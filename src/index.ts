@@ -18,19 +18,29 @@ const SKILL_PATH = join(SKILL_DIR, 'SKILL.md')
 const AGENTS_URL = new URL('../AGENTS.md', import.meta.url)
 const NS = settingsNamespace('prompt-tool')
 
-// 常驻层：~/.dsh/AGENTS.md，由 dsh-agent-instructions 在每个会话首次请求自动注入（user 层 system-reminder）。
+// 常驻层：~/.dsh/AGENTS.md。上游现已用 instruction-hint 取代 dsh-agent-instructions
+// 的大块注入：晋升后只提示一次"这些指令文件存在，先读"，模型经文件工具自行读取。
 const DSH_HOME = process.env.DSH_HOME ?? join(homedir(), '.dsh')
 const AGENTS_PATH = join(DSH_HOME, 'AGENTS.md')
 const PRESET_DIR = join(DSH_HOME, '.agent-presets', 'prompt-tool')
 const PRESET_CORDIS = join(PRESET_DIR, 'agent.cordis.yml')
 const PRESET_META = join(PRESET_DIR, 'preset.yml')
-const PRESET_BOOTSTRAP = join(PRESET_DIR, 'tool-bootstrap.mjs')
 const PRESET_INJECTOR = join(PRESET_DIR, 'prompt-injector.mjs')
 const PRESET_ANCHOR = join(PRESET_DIR, 'turn-anchor.mjs')
 const PRESET_TEMPLATE_META = fileURLToPath(new URL('../preset/preset.yml', import.meta.url))
 const PRESET_TEMPLATE_INJECTOR = fileURLToPath(new URL('../preset/prompt-injector.mjs', import.meta.url))
 const PRESET_TEMPLATE_ANCHOR = fileURLToPath(new URL('../preset/turn-anchor.mjs', import.meta.url))
-const VENDOR_BOOTSTRAP = fileURLToPath(new URL('../vendor/dsh-anchored-standard/preset/tool-bootstrap.mjs', import.meta.url))
+// 上游 preset 目录直引：agent.cordis.yml 由 buildCordis 读取，所有 .mjs 模块
+// 随 preset 完整复制（tool-bootstrap 现在 import compaction-epoch.mjs，缺一不可）。
+const VENDOR_PRESET_DIR = fileURLToPath(new URL('../vendor/dsh-anchored-standard/preset', import.meta.url))
+const VENDOR_MODULES = [
+  'tool-bootstrap.mjs',
+  'compaction-epoch.mjs',
+  'custom-bash.mjs',
+  'dev-tool-search.mjs',
+  'instruction-hint.mjs',
+  'skill-search.mjs',
+]
 
 export const SKILL_NAME = 'prompt'
 
@@ -95,14 +105,16 @@ function warn(ctx: any, message: string): void {
 
 // agent.cordis.yml 的生成逻辑在 src/preset-core.ts（纯函数，可单测）。
 
-// 完整 anchored preset：上游文件（agent.cordis.yml + tool-bootstrap.mjs）直引
+// 完整 anchored preset：上游文件（agent.cordis.yml + 全部 preset/*.mjs）直引
 // 子模块，本项目自有文件（preset.yml / prompt-injector.mjs / turn-anchor.mjs）
 // 走 preset/ 快照。anchorFirstTurn 开启时 cordis 注入 turn-anchor 行。
 function writePreset(prompt: string, options: { anchorFirstTurn: boolean; anchorText: string }): void {
   mkdirSync(PRESET_DIR, { recursive: true })
   writeFileSync(PRESET_CORDIS, buildCordis(prompt, options), 'utf8')
   writeFileSync(PRESET_META, readFileSync(PRESET_TEMPLATE_META, 'utf8'), 'utf8')
-  writeFileSync(PRESET_BOOTSTRAP, readFileSync(VENDOR_BOOTSTRAP, 'utf8'), 'utf8')
+  for (const file of VENDOR_MODULES) {
+    writeFileSync(join(PRESET_DIR, file), readFileSync(join(VENDOR_PRESET_DIR, file), 'utf8'), 'utf8')
+  }
   writeFileSync(PRESET_INJECTOR, readFileSync(PRESET_TEMPLATE_INJECTOR, 'utf8'), 'utf8')
   if (options.anchorFirstTurn) {
     writeFileSync(PRESET_ANCHOR, readFileSync(PRESET_TEMPLATE_ANCHOR, 'utf8'), 'utf8')
@@ -218,6 +230,7 @@ export function apply(ctx: any, config: ApplyConfig): void {
     writePreset: runtime.writePreset,
   })
 
+  let needsInitialApply = true
   const applyState = () => {
     const next = currentSource()
     const nextRuntime: RuntimeOptions = {
@@ -231,7 +244,9 @@ export function apply(ctx: any, config: ApplyConfig): void {
       || runtime.writePreset !== nextRuntime.writePreset
       || runtime.anchorFirstTurn !== nextRuntime.anchorFirstTurn
       || runtime.anchorText !== nextRuntime.anchorText
-    if (!promptChanged && !settingsChanged) return
+    // 首次必须写入：settings 与文件/config 一致时也不能跳过 preset/AGENTS 生成。
+    if (!needsInitialApply && !promptChanged && !settingsChanged) return
+    needsInitialApply = false
 
     if (promptChanged) {
       current = next.promptText!

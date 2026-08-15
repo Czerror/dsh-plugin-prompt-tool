@@ -245,13 +245,21 @@ B/C 组兜底注入 5/5 + 中文生效。测试耗时：并行约 2.5 分钟（�
 | 复杂英文 ×5 | we **5/5**；H1=[bash,str_replace_editor] maxTokens=256000（无 cap）；H2=33 工具；注入 5/5；首请求前消息纯净（仅 user） |
 | 时间线（run2 详查） | 首请求（bootstrap schema）→ "We" reasoning → tool/call → **we 确认后同 turn 下一步注入 prompt.md** → 晋升后 agent-instructions/skill-catalog 恢复 → 模型继续干活 |
 
+> v2.2（2026-08-15）子模块已同步上游 main `ffb845c`（PR #20/#21/#23/#27/#29）：
+> 晋升后目录由全量 33 工具改为 resident 集（bootstrap 对 + dev_tool_search /
+> skill_search / skill_load + 已解锁工具）；AGENTS.md 由 dsh-agent-instructions 每轮
+> 注入改为 instruction-hint 一次性提示 + 模型自读；新增 compaction 回落与 Windows
+> custom-bash。上表 H2=33 工具与"agent-instructions 恢复"仅作为 v2.1 及之前版本
+> 的历史记录，当前断言以 resident 集为准。
+
 新版相对旧版的改善：无输出 cap，模型 turn1 内即可正常干活（旧版 1024 cap 会截断
 首轮 text/tool），注入发生在 turn1 内（旧版要等 turn2），全程不需要用户再发消息。
 
 ## 六、风险与兜底
 
 - we 未锚定：锚定消息失效 → 强制兜底注入（最多延迟一轮），不影响任务完成。
-- 原版上游再更新：`tool-bootstrap.mjs` / `agent.cordis.yml` 保持可重新复制
-  （prompt-injector 行是唯一本地差异，冲突面最小）。
+- 原版上游再更新：`writePreset` 完整复制上游 `preset/*.mjs` 全集并注入
+  prompt-injector 行（唯一本地差异，冲突面最小）；同步命令
+  `git submodule update --remote vendor/dsh-anchored-standard`。
 - 缓存：promptText 若频繁编辑会改变 pre-step 注入文本 → 仅影响注入轮之后的
   前缀缓存；prompt.md 编辑频率低，可接受（不违反 system 静态铁律）。

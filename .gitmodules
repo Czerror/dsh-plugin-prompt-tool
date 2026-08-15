@@ -1,3 +1,4 @@
 [submodule "vendor/dsh-anchored-standard"]
 	path = vendor/dsh-anchored-standard
 	url = https://github.com/xiaobright/dsh-anchored-standard.git
+	branch = main
