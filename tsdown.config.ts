@@ -22,14 +22,14 @@ const CSS_VIRTUAL_SUFFIX = '.mjs'
 
 const lib: UserConfig = {
   name: PLUGIN_ID,
-  entry: ['src/index.ts'],
+  entry: ['src/index.ts', 'src/preset-core.ts'],
   outDir: 'lib',
   format: ['esm'],
   platform: 'node',
   target: 'es2024',
-  dts: false,
+  dts: true,
   clean: false,
-  external: ['@deepseek-ai/cordis'],
+  deps: { neverBundle: ['@deepseek-ai/cordis'] },
 }
 
 const client: UserConfig = {
@@ -41,13 +41,15 @@ const client: UserConfig = {
   dts: false,
   sourcemap: true,
   clean: false,
-  external: CLIENT_EXTERNALS,
+  deps: {
+    neverBundle: CLIENT_EXTERNALS,
+    alwaysBundle: (id: string) => (CLIENT_EXTERNALS.includes(id) ? undefined : true),
+  },
   define: {
     'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV ?? 'production'),
     'import.meta.env.MODE': JSON.stringify(process.env.NODE_ENV ?? 'production'),
     'import.meta.env': JSON.stringify({ MODE: process.env.NODE_ENV ?? 'production' }),
   },
-  noExternal: (id: string) => (CLIENT_EXTERNALS.includes(id) ? undefined : true),
   plugins: [{
     name: 'dsh-css-modules-inline',
     resolveId(source: string, importer: string | undefined) {

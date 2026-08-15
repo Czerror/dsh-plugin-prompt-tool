@@ -18,7 +18,7 @@ metadata:
 
 | 当前模型 | 规则来源 |
 |---|---|
-| `deepseek-v4-flash`（7013） | 读取 `references/flash-7013.md`，**完全以其为准**，忽略本文件其余条款 |
+| `deepseek-v4-flash`（7013） | 读取 `references/flash-7013.md`，以该文件为**唯一规则源**；该文件独立成立，本文件其余条款对 flash 不再生效 |
 | `deepseek-v4-pro`（8013） | 读取 `references/pro-8013.md`，与本文件叠加，该文件条款优先 |
 | 无法确定 | 使用本文件以下全部规则 |
 

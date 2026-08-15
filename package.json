@@ -9,12 +9,17 @@
   },
   "type": "module",
   "main": "lib/index.mjs",
+  "types": "lib/index.d.mts",
   "exports": {
     ".": {
+      "types": "./lib/index.d.mts",
       "default": "./lib/index.mjs"
     },
     "./client": "./lib/client.js",
     "./package.json": "./package.json"
+  },
+  "engines": {
+    "node": ">=20"
   },
   "dsh": {
     "bundle": {
@@ -30,33 +35,54 @@
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
-    "@deepseek-ai/schemastery": "^3.18.1",
+    "@deepseek-ai/dsh-api-remotes": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-client-connection": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-client-runtime": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-client-ui-primitives": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-client-ui-settings-plugins": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-settings": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-system-prompt": "^0.1.0-rc.6",
-    "@deepseek-ai/dsh-settings": "^0.1.0-rc.6"
+    "@deepseek-ai/schemastery": "^3.18.1",
+    "react": "^18.2.0"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
     "@deepseek-ai/dsh-api-remotes": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-client-runtime": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-client-ui-primitives": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-client-ui-settings": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-settings": "^0.1.0-rc.6",
+    "@types/node": "^26.2.0",
+    "@types/react": "~18.3.1",
+    "clsx": "^2.1.1",
     "lightningcss": "^1.32.0",
+    "oxlint": "^1.78.0",
     "react": "^18.3.1",
     "tsdown": "^0.22.2",
-    "@deepseek-ai/dsh-client-ui-primitives": "^0.1.0-rc.6",
-    "clsx": "^2.1.1"
+    "typescript": "^5.9.2"
   },
   "files": [
     "lib",
     "cordis.patch.yml",
+    "LICENSE",
     "preset",
     "vendor/dsh-anchored-standard/preset",
+    "vendor/dsh-anchored-standard/LICENSE",
+    "vendor/dsh-anchored-standard/NOTICE",
     "prompt",
     "prompt.md",
-    "AGENTS.md"
+    "AGENTS.md",
+    "plan.md",
+    "README.md"
   ],
   "scripts": {
     "build": "tsdown",
-    "prepare": "tsdown"
+    "prepare": "tsdown",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.client.json --noEmit",
+    "lint": "oxlint src test tsdown.config.ts",
+    "test": "pnpm build && node --test \"test/*.test.mjs\""
+  },
+  "dependencies": {
+    "yaml": "^2.9.0"
   }
 }

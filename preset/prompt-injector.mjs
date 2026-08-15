@@ -12,7 +12,12 @@
  *   - 锚定消息（"Tools are not open yet"）在 2 工具下不产生 we
  *     （模型回复 "The user says..." 叙述语气），已废弃。
  *
- * 状态全部从持久 session events 推导（resume/reload 安全）；注入仅一次。
+ * 状态全部从持久 session events 推导（resume/reload 安全）：
+ *   - promoted：events 含 tool/call 或 assistant/message；
+ *   - 已注入：events 含 source.kind=plugin + source.plugin=prompt-injector 的
+ *     消息事件（注入消息本身就是持久事件），进程重启/插件重载后据此跳过；
+ *   - 内存 Set/Map 只做进程内快路径 memo，不承载跨进程真相。
+ *   注入仅一次。
  */
 
 /** Cordis plugin name used by loader diagnostics. */
@@ -26,10 +31,33 @@ export function apply(ctx, config) {
     ? config.promptText
     : undefined
 
+  /** 消息 id：优先 crypto.randomUUID，旧运行时回退到随机串。 */
+  const newMessageId = () =>
+    typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : `prompt-injector-${Date.now()}-${Math.random().toString(36).slice(2)}`
+
   /** Sessions whose promptText has been injected (append-only). */
   const injectedPrompt = new Set()
   /** Sessions already promoted in this process (memoized). */
   const promoted = new Set()
+  /** Sessions whose first assistant reasoning has been scanned (memoized). */
+  const weScanned = new Map()
+
+  /**
+   * 从持久 session events 推导「是否已经注入过 promptText」。
+   * 注入消息本身就是 user/message 持久事件（data 即消息本体），因此跨进程
+   * 重启 / 插件热重载后仍能识别；兼容 router-standard 观测到的
+   * `data.message` 嵌套形状。内存 Set 只做快路径 memo，真相在事件流。
+   */
+  const hasInjectedPrompt = (session) =>
+    session.events.some((event) => {
+      const payload = event.data && typeof event.data.message === 'object' && event.data.message !== null
+        ? event.data.message
+        : event.data
+      const source = payload?.source
+      return source?.kind === 'plugin' && source?.plugin === 'prompt-injector'
+    })
 
   /** 与 tool-bootstrap 的 promoteOn: either 同定义。 */
   const isPromoted = (agent) => {
@@ -46,11 +74,16 @@ export function apply(ctx, config) {
   /** 第一个 assistant/message（锚定轮）的 reasoning 是否以 "we" 开头。 */
   const isWeAnchored = (agent) => {
     const session = agent.session
+    const cached = weScanned.get(session.id)
+    if (cached !== undefined) return cached
     const first = session.events.find((event) => event.type === 'assistant/message')
+    // 首个 assistant 消息尚未落库时不要缓存 false，等待下一轮再查。
     if (first === undefined) return false
     const content = first.data?.message?.content ?? []
     const reasoning = content.find((block) => block.type === 'reasoning')
-    return reasoning !== undefined && /^we\b/i.test(String(reasoning.text ?? '').trim())
+    const anchored = reasoning !== undefined && /^we\b/i.test(String(reasoning.text ?? '').trim())
+    weScanned.set(session.id, anchored)
+    return anchored
   }
 
   /** 已落库的 assistant 回合数（we 未确认时的兜底轮计数）。 */
@@ -65,11 +98,16 @@ export function apply(ctx, config) {
     if (!isPromoted(agent)) return decision
     const session = agent.session
     if (session === undefined || injectedPrompt.has(session.id)) return decision
+    // 持久事件级幂等：进程重启/插件重载后，已注入消息仍在事件流里，据此跳过。
+    if (hasInjectedPrompt(session)) {
+      injectedPrompt.add(session.id)
+      return decision
+    }
     const weOk = isWeAnchored(agent)
     if (!weOk && assistantRounds(agent) <= 1) return decision
     injectedPrompt.add(session.id)
     const message = {
-      id: crypto.randomUUID(),
+      id: newMessageId(),
       role: 'user',
       content: [{ type: 'text', text: promptText }],
       source: {

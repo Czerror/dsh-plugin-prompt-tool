@@ -13,8 +13,9 @@
 ## 〇、发布规划（哪些内容进远程仓库）
 
 **发布**：package.json、README.md、AGENTS.md、prompt.md、plan.md、cordis.patch.yml、
-tsdown.config.ts、.gitignore、pnpm-lock.yaml（复现构建）、preset/（4 文件）、
-prompt/（SKILL.md + references/）、src/（host + client）、scripts/sync-anchored.mjs。
+tsdown.config.ts、.gitignore、pnpm-lock.yaml（复现构建）、preset/（2 文件）、
+prompt/（SKILL.md + references/）、src/（host + client）。上游同步已由子模块直引取代，
+不再发布同步脚本。
 
 **不发布**：node_modules/、lib/（构建产物，clone 后 `pnpm install && pnpm build` 生成）、
 artifacts/（本地调试残留）。
@@ -222,7 +223,7 @@ session.export  → zip 内 session.jsonl 逐条断言
 | B 简单英文 | "List the files in the current directory" | 5 | turn1 正常干活；兜底注入 5/5；request 结构 |
 | C 中文 | 中文任务 | 1 | 注入后思维链/回答为简体中文 |
 
-**实测结果（2026-08-15，deepseek-v4-pro + reasoningEffort=max，并行会话）：**
+**旧版实测结果（2026-08-15，历史存档，已被下方新版实测取代）：**
 
 | 组 | 结果 |
 |---|---|
@@ -234,9 +235,8 @@ session.export  → zip 内 session.jsonl 逐条断言
 B/C 组兜底注入 5/5 + 中文生效。测试耗时：并行约 2.5 分钟（串行约 35 分钟，
 复杂任务 turn2 无需等结束——注入在 turn2 请求前已落库）。
 
-> 上表为旧版（pwsh/read + 1024 cap）的实测记录。上游更新后需按新断言
-> （bash/str_replace_editor + 无 cap）重测：we 锚定依据 = issue #11 的
-> 5/5 数据 + 本机复测；B/C 组注入路径不变。
+> 上表为旧版（pwsh/read + 1024 cap）的历史实测，仅存档参考。当前有效数据
+> 以紧跟其后的新版实测（bash/str_replace_editor + 无 cap）为准。
 
 **新版实测（2026-08-15，上游 PR #14 同步后重测，deepseek-v4-pro + max）：**
 

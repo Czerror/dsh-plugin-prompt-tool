@@ -31,18 +31,21 @@ prompt-injector 块与 `prompt.md`）与 `tool-bootstrap.mjs` 最新内容。
 - 上游仓库以子模块形式固定在 `vendor/dsh-anchored-standard`
 - `preset.yml`、`prompt-injector.mjs` 为本项目自有文件，固定走 `preset/`
 - vendor 缺失（git 安装未初始化子模块）或上游结构变化 → 插件加载时报错（fail loud）
+- npm 安装走发布包内置的 `vendor/dsh-anchored-standard/preset` 快照，无需子模块；
+  git clone / `link:` 安装则需 `git submodule update --init` 后再使用
 
 ## 修改记录
 
-- **v2.1（2026-08-15）**：技能目录重命名 `dreammod` → `skill` → `prompt`；新增 `scripts/sync-anchored.mjs` 上游同步脚本。
+- **v2.1（2026-08-15）**：技能目录重命名 `dreammod` → `skill` → `prompt`；上游改为子模块直引，移除不再需要的同步脚本。
 - **v2.0（2026-08-15）**：跟随 anchored-standard PR #14，首轮工具 schema 从 `pwsh/read + 1024 cap` 改为官方 Minimal 真实 schema（持久 `bash` + `str_replace_editor`，无 cap）；删除 zero 变体与锚定消息机制，回归原版 tool-bootstrap（字节一致）+ `prompt-injector.mjs` 附加件（we 确认后注入一次 prompt.md，未确认最多等一轮兜底）。实测：复杂英文任务 ×5 并行，we 锚定 5/5、首请求纯净、注入恰好一次。
 - **v1（2026-08）**：初版——zero 工具锚定变体 + 固定锚定消息 + 三层注入（AGENTS.md 常驻层、skill 按需层、preset 层）。
 
 ## Web UI
 
-在 Settings 注册「提示词工具」项，展开后提供：
+在 Settings → 插件 → **插件配置**分区注册「提示词工具」可折叠卡片（`settings.plugin.item`，与其他插件卡片同款式），展开后提供：
 
-- **保存**：把编辑框内容写入 `prompt-tool` settings 命名空间，Host 监听后写回 `prompt.md` 与 `~/.dsh/AGENTS.md`
+- **注入开关**：首轮独立锚定轮（`anchorFirstTurn`）、锚定句文本（`anchorText`，可自定义）、写入 `~/.dsh/AGENTS.md`（`writeAgents`）、生成锚定注入 preset（`writePreset`）
+- **保存 / 还原**：把编辑框内容与全部开关写入 `prompt-tool` settings 命名空间（未保存时头部显示"未保存"标记，可一键还原草稿）；Host 监听后写回 `prompt.md`、按开关刷新 `~/.dsh/AGENTS.md` 与 preset，下一次请求即生效
 - **打开编辑**：用系统编辑器打开 `prompt.md`
 - **在线编辑框**：直接编辑 `prompt.md` 文本
 
@@ -52,50 +55,62 @@ prompt-injector 块与 `prompt.md`）与 `tool-bootstrap.mjs` 最新内容。
 2. 常驻层：`AGENTS.md` 规则写入 `~/.dsh/AGENTS.md`（首轮被剥离，晋升后由 dsh-agent-instructions 每轮注入）。
 3. 按需层：注册 `prompt` 技能，name/description/whenToUse/metadata 全部来自 `SKILL.md` frontmatter。
 4. preset 层：直引 `vendor/` 上游文件生成 `~/.dsh/.agent-presets/prompt-tool/`，并把 `prompt.md` 注入 `prompt-injector` 的 `promptText`（we 锚定确认后注入）。
-5. UI 保存通过 settings API 写入 `promptText`；Host 的 watch 回调写回 `prompt.md` 与 `AGENTS.md`，下一次请求即生效。
+5. UI 保存通过 settings API 写入 `promptText` 与全部开关；Host 的 watch 回调写回 `prompt.md`，并按开关刷新 `AGENTS.md` 与 preset（含 turn-anchor 行的增删），下一次请求即生效。
 
 ## 文件结构
 
 ```text
 dsh-plugin-prompt-tool/
 ├── package.json
-├── prompt.md                  # 中文规范源文件（Web UI 可编辑）
-├── AGENTS.md                  # 常驻层附加规则
-├── plan.md                    # 设计与测试计划（含上游更新对照、实测数据）
-├── tsdown.config.ts           # 构建配置（host lib + client bundle，自包含）
-├── cordis.patch.yml           # 挂载配置
-├── preset/                    # 本项目自有 preset 文件（上游文件直引 vendor 子模块）
-│   ├── preset.yml             # preset 元数据
-│   └── prompt-injector.mjs    # 附加件：we 锚定确认后注入一次 prompt.md
+├── LICENSE                     # MIT
+├── prompt.md                   # 中文规范源文件（Web UI 可编辑）
+├── AGENTS.md                   # 常驻层附加规则
+├── plan.md                     # 设计与测试计划（含上游更新对照、实测数据）
+├── tsconfig.json               # Host 类型检查 program（排除 src/client）
+├── tsconfig.client.json        # Client 类型检查 program（jsx: react-jsx）
+├── tsdown.config.ts            # 构建配置（host lib + client bundle，自包含）
+├── cordis.patch.yml            # 挂载配置
+├── preset/                     # 本项目自有 preset 文件（上游文件直引 vendor 子模块）
+│   ├── preset.yml              # preset 元数据
+│   ├── prompt-injector.mjs     # 附加件：we 锚定确认后注入一次 prompt.md
+│   └── turn-anchor.mjs         # 可选附加件：首轮独立锚定轮（anchorFirstTurn 开关）
 ├── prompt/
-│   ├── SKILL.md               # 按需层技能定义（name: prompt）
+│   ├── SKILL.md                # 按需层技能定义（name: prompt）
 │   └── references/
 │       ├── flash-7013.md
 │       └── pro-8013.md
 ├── src/
-│   ├── index.ts               # Host 入口
+│   ├── index.ts                # Host 入口
+│   ├── preset-core.ts          # preset 生成纯函数（buildCordis / parseFrontmatter）
 │   ├── css-modules.d.ts
 │   └── client/
-│       ├── index.ts           # Client 入口（注册 settings item）
-│       ├── PromptEditor.tsx   # 编辑框组件
+│       ├── index.ts            # Client 入口（注册 settings.plugin.item 卡片）
+│       ├── PromptEditor.tsx    # 编辑框组件
 │       └── PromptEditor.module.css
-├── vendor/                    # git 子模块：dsh-anchored-standard（agent.cordis.yml + tool-bootstrap.mjs 直引源）
-└── lib/                       # 构建产物（pnpm build 生成，不提交）
-    ├── index.mjs              # Host 运行时
-    └── client.js              # Client 运行时
+├── test/
+│   └── preset-core.test.mjs    # node:test 单元测试（buildCordis / parseFrontmatter）
+├── vendor/                     # git 子模块：dsh-anchored-standard（agent.cordis.yml + tool-bootstrap.mjs 直引源）
+└── lib/                        # 构建产物（pnpm build 生成，不提交）
+    ├── index.mjs               # Host 运行时（ESM）
+    ├── index.d.mts             # Host 类型声明
+    ├── preset-core.mjs         # preset 生成核心（测试导入）
+    └── client.js               # Client 运行时（浏览器模块加载器协议，经 exports["./client"] 扫描）
 ```
 
-## 构建
+## 构建与检查
 
 ```sh
 pnpm install
 pnpm build
+pnpm typecheck    # Host 与 Client 两个 tsc program，均 --noEmit
+pnpm lint         # oxlint
+pnpm test         # pnpm build + node --test
 ```
 
-按官方发布规范，`prepare` 也指向同一份 tsdown 配置（自包含转译 `src/`，无类型检查）：
+按官方发布规范，`prepare` 也指向同一份 tsdown 配置（自包含转译 `src/`，并产出 `.d.mts` 类型声明）：
 
 ```sh
-pnpm prepare      # npm publish 前自动触发（构建 lib/ 与 vendor/ 直引文件的发布快照）
+pnpm prepare      # npm publish / git install 前自动触发（构建 lib/ 与 vendor/ 直引文件的发布快照）
 ```
 
 ## 装载（官方 bundle-in-profile 模式）
@@ -134,9 +149,19 @@ dsh --profile prompt-tool --patch <cordis.yml>
       config:
         text: ''            # 可选：覆盖 prompt.md 文本（默认读文件）
         writeAgents: true   # 是否写 ~/.dsh/AGENTS.md（默认 true）
+        writePreset: true   # 是否生成锚定注入 preset（默认 true）
+        anchorFirstTurn: false  # 首轮独立锚定轮开关（默认关闭）
+        anchorText: "You are a helpful software assistant.\n\nBegin every reasoning block with 'We need'."  # 锚定句文本
 ```
 
-config 字段：`text`（覆盖 `prompt.md` 文本，默认读文件）、`writeAgents`（是否写 `~/.dsh/AGENTS.md`，默认 true）。`strict` 字段仍在 Config 中但当前未使用。
+config 字段：`text`（覆盖 `prompt.md` 文本，默认读文件）、`writeAgents`（是否写 `~/.dsh/AGENTS.md`，默认 true）、`writePreset`（是否生成 `~/.dsh/.agent-presets/prompt-tool/`，默认 true）。两个写入开关相互独立。
+
+`anchorFirstTurn`（默认 false）开启后，preset 额外挂载 `turn-anchor.mjs`：会话首个真实用户消息先原样入 `agent.inbox` 的 `next-step`，首步只把 `anchorText` 作为独立输入发给模型；模型回应锚定句后，driver 在同一轮内自动消费任务继续执行。任务绝不丢失：inbox 入队失败时回退为原样直发。
+
+锚定句实测（deepseek-v4-pro + reasoningEffort=max，简单任务）：
+
+- 默认句（含 "Begin every reasoning block with 'We need'."）：**12/12** 首轮 reasoning 以 "We need" 开头，prompt.md 全部走 we 确认注入；
+- 裸句 "You are a helpful software assistant."：首词 "We need" 约 58-67%（12 会话 7-8 次），其余走兜底注入。
 
 ## 锚定机制实测
 
