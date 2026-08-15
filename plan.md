@@ -12,9 +12,9 @@
 
 ## 〇、发布规划（哪些内容进远程仓库）
 
-**发布**：package.json、README.md、AGENTS.md、prompt.md、plan.md、cordis.patch.yml、
+**发布**：package.json、README.md、AGENTS.md、preset.md、plan.md、cordis.patch.yml、
 tsdown.config.ts、.gitignore、pnpm-lock.yaml（复现构建）、preset/（2 文件）、
-prompt/（SKILL.md + references/）、src/（host + client）。上游同步已由子模块直引取代，
+skills/（sandboxmod/SKILL.md）、src/（host + client）。上游同步已由子模块直引取代，
 不再发布同步脚本。
 
 **不发布**：node_modules/、lib/（构建产物，clone 后 `pnpm install && pnpm build` 生成）、
@@ -172,7 +172,7 @@ preset/
 
 - `cordis.patch.yml`（插件自身装配）保持现状——anchored-standard 是 preset 形态，
   仓库内无 patch 文件，无物可复制。
-- `~/.dsh/AGENTS.md` 只写 AGENTS 规则，prompt.md 不进 AGENTS.md（防重复注入）。
+- `~/.dsh/AGENTS.md` 只写 AGENTS 规则，preset.md 不进 AGENTS.md（防重复注入）。
 - 打包产物、peerDeps 范围声明不变。
 
 ## 四、实施步骤
@@ -213,7 +213,7 @@ session.export  → zip 内 session.jsonl 逐条断言
   无 `skill-catalog` / `agent-instructions` 消息；
 - request #2 起：完整工具目录（含 pwsh）；
 - turn1 的 assistant/message reasoning 首词 `/^we\b/i`；
-- prompt.md 文本恰好出现一次（turn2 或 turn3，绝不重复）。
+- preset.md 文本恰好出现一次（turn2 或 turn3，绝不重复）。
 
 测试矩阵：
 
@@ -243,7 +243,7 @@ B/C 组兜底注入 5/5 + 中文生效。测试耗时：并行约 2.5 分钟（�
 | 组 | 结果 |
 |---|---|
 | 复杂英文 ×5 | we **5/5**；H1=[bash,str_replace_editor] maxTokens=256000（无 cap）；H2=33 工具；注入 5/5；首请求前消息纯净（仅 user） |
-| 时间线（run2 详查） | 首请求（bootstrap schema）→ "We" reasoning → tool/call → **we 确认后同 turn 下一步注入 prompt.md** → 晋升后 agent-instructions/skill-catalog 恢复 → 模型继续干活 |
+| 时间线（run2 详查） | 首请求（bootstrap schema）→ "We" reasoning → tool/call → **we 确认后同 turn 下一步注入 preset.md** → 晋升后 agent-instructions/skill-catalog 恢复 → 模型继续干活 |
 
 > v2.2（2026-08-15）子模块已同步上游 main `ffb845c`（PR #20/#21/#23/#27/#29）：
 > 晋升后目录由全量 33 工具改为 resident 集（bootstrap 对 + dev_tool_search /
@@ -262,4 +262,4 @@ B/C 组兜底注入 5/5 + 中文生效。测试耗时：并行约 2.5 分钟（�
   prompt-injector 行（唯一本地差异，冲突面最小）；同步命令
   `git submodule update --remote vendor/dsh-anchored-standard`。
 - 缓存：promptText 若频繁编辑会改变 pre-step 注入文本 → 仅影响注入轮之后的
-  前缀缓存；prompt.md 编辑频率低，可接受（不违反 system 静态铁律）。
+  前缀缓存；preset.md 编辑频率低，可接受（不违反 system 静态铁律）。

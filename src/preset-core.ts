@@ -17,7 +17,7 @@ export interface SkillFrontmatter {
   metadata?: Record<string, unknown>
 }
 
-const LOCAL_INJECTOR_BLOCK = `# prompt-tool 附加件：锚定确认后注入 prompt.md。注册在 tool-bootstrap 之后，
+const LOCAL_INJECTOR_BLOCK = `# prompt-tool 附加件：锚定确认后注入 preset.md。注册在 tool-bootstrap 之后，
 # 不参与首轮剥离顺序；tools / 上下文剥离全部由原版 tool-bootstrap 负责
 # （首轮 = Minimal 真实 schema：持久 bash + str_replace_editor，无输出 cap），
 # 此插件只做一件事——锚定轮结束后（we 确认或兜底）注入一次提示词。
@@ -38,7 +38,7 @@ const TURN_ANCHOR_BLOCK = `# prompt-tool 可选附加件：首轮独立锚定轮
       __ANCHOR_TEXT__
 `
 
-// 解析 prompt/SKILL.md 的 YAML frontmatter（name/description/whenToUse/metadata）。
+// 解析 skills/*/SKILL.md 的 YAML frontmatter（name/description/whenToUse/metadata）。
 // 使用正规 YAML 解析器，与 dsh 技能包的 filesystem provider 保持同一套字段来源。
 export function parseFrontmatter(text: string): { data: SkillFrontmatter; body: string } {
   const match = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/.exec(text)
@@ -60,7 +60,7 @@ export interface BuildCordisOptions {
   /** 首轮独立锚定轮：首个用户消息先入 next-step inbox，首步只发 anchorText。 */
   anchorFirstTurn?: boolean
   anchorText?: string
-  /** 锚定确认后注入 prompt.md；关闭时仍保留工具引导，但不注册 prompt-injector 行。 */
+  /** 锚定确认后注入 preset.md；关闭时仍保留工具引导，但不注册 prompt-injector 行。 */
   injectPrompt?: boolean
 }
 

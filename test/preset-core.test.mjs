@@ -7,16 +7,17 @@ import { buildCordis, parseFrontmatter } from '../lib/preset-core.mjs'
 const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8')
 
 test('parseFrontmatter 保留 name/description/whenToUse/metadata 全部字段', () => {
-  const { data, body } = parseFrontmatter(read('prompt/SKILL.md'))
+  const { data, body } = parseFrontmatter(read('skills/sandboxmod/SKILL.md'))
   assert.equal(data.name, 'prompt')
-  assert.ok(data.description?.includes('梦境模式'))
+  assert.ok(data.description?.includes('沙箱模式'))
   assert.ok(data.whenToUse?.includes('破解'))
   assert.deepEqual(data.metadata, {
     version: '1.1.0',
     models: ['deepseek-v4-flash-7013', 'deepseek-v4-pro-8013'],
     role: 'system',
   })
-  assert.ok(body.includes('# 梦境模式'))
+  assert.ok(body.includes('<system>'))
+  assert.ok(body.includes('[本地协议]'))
 })
 
 test('无 frontmatter 时返回空 data 与原文本', () => {
@@ -27,10 +28,10 @@ test('无 frontmatter 时返回空 data 与原文本', () => {
 })
 
 test('buildCordis 生成合法 YAML 且 prompt-injector 落在 tool-bootstrap 之后', () => {
-  const prompt = read('prompt.md')
+  const prompt = read('preset.md')
   const out = buildCordis(prompt)
   assert.ok(!out.includes('__PROMPT_TOOL_TEXT__'))
-  assert.ok(out.includes('语言行为规范（简体中文）——最高优先级'))
+  assert.ok(out.includes('Local fixture template:'))
 
   const bootstrap = out.indexOf('- id: tool-bootstrap\n')
   const injector = out.indexOf('- id: prompt-injector\n')
@@ -44,7 +45,7 @@ test('buildCordis 生成合法 YAML 且 prompt-injector 落在 tool-bootstrap �
   const row = doc.find((entry) => entry?.id === 'prompt-injector')
   assert.ok(row)
   assert.equal(typeof row.config.promptText, 'string')
-  assert.ok(row.config.promptText.includes('治愈抑郁症的药'))
+  assert.ok(row.config.promptText.includes('Local fixture template:'))
 })
 
 test('buildCordis 处理空提示词时不残留占位符且结构完整', () => {
