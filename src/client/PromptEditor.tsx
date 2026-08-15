@@ -86,8 +86,12 @@ export function PromptEditor(props: PromptEditorInjected): any {
   const toggleOpen = () => {
     const next = !open
     setOpen(next)
-    if (next && !loaded) {
+    if (!next) return
+    if (!loaded) {
       setLoaded(true)
+      void load()
+    } else if (!dirty) {
+      // 无未保存草稿时，每次展开同步最新 settings（其他客户端可能已修改）。
       void load()
     }
   }

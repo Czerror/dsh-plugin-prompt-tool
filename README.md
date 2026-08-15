@@ -187,3 +187,11 @@ config 字段：`text`（覆盖 `prompt.md` 文本，默认读文件）、`write
 | 晋升后目录 | resident 集：bash + str_replace_editor + dev_tool_search / skill_search / skill_load + 已解锁工具（上游 v2.2 起） |
 
 详细设计、上游更新对照与踩坑记录见 [plan.md](plan.md)。
+
+## 已知限制
+
+- **模型设置页目录条目**：为让 `prompt-tool` settings 命名空间可被配置客户端读写，必须经 `ctx.llm.registerConfigurableProviders` 暴露（官方协议，settings 域只服务该目录 + 固定 allowlist）。模型设置页因此会出现「提示词工具」条目，官方无隐藏机制，删除该注册会使 Web UI 在线编辑失效。
+- **AGENTS.md 覆盖**：`writeAgents` 开启时直接覆盖 `~/.dsh/AGENTS.md`，失败仅记录日志，卸载插件不恢复原文件；请自行保留原内容。
+- **UI 刷新策略**：插件配置卡片在无未保存草稿时每次展开都会同步最新 settings；存在草稿时保留本地编辑，点击「还原」可重新拉取。
+- **MCP 工具**：本 preset 晋升后为 resident 目录，外部 MCP 工具（`mcp__*`）不会默认可见，需模型经 `dev_tool_search` 解锁。
+- **上游跟随**：`writePreset` 动态复制上游 `preset/*.mjs` 全集；上游结构变化导致生成 YAML 非法或锚点缺失时 fail loud，同步命令见上文。

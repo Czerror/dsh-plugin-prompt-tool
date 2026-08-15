@@ -1,6 +1,6 @@
 import z from '@deepseek-ai/schemastery'
 import { settingsNamespace, installSettingsSection } from '@deepseek-ai/dsh-settings'
-import { readFileSync, writeFileSync, mkdirSync, rmSync } from 'node:fs'
+import { readFileSync, writeFileSync, mkdirSync, rmSync, readdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
@@ -31,16 +31,9 @@ const PRESET_TEMPLATE_META = fileURLToPath(new URL('../preset/preset.yml', impor
 const PRESET_TEMPLATE_INJECTOR = fileURLToPath(new URL('../preset/prompt-injector.mjs', import.meta.url))
 const PRESET_TEMPLATE_ANCHOR = fileURLToPath(new URL('../preset/turn-anchor.mjs', import.meta.url))
 // 上游 preset 目录直引：agent.cordis.yml 由 buildCordis 读取，所有 .mjs 模块
-// 随 preset 完整复制（tool-bootstrap 现在 import compaction-epoch.mjs，缺一不可）。
+// 动态枚举并随 preset 完整复制（tool-bootstrap import compaction-epoch.mjs，
+// 上游再新增模块也自动跟随，缺一不可则 fail loud）。
 const VENDOR_PRESET_DIR = fileURLToPath(new URL('../vendor/dsh-anchored-standard/preset', import.meta.url))
-const VENDOR_MODULES = [
-  'tool-bootstrap.mjs',
-  'compaction-epoch.mjs',
-  'custom-bash.mjs',
-  'dev-tool-search.mjs',
-  'instruction-hint.mjs',
-  'skill-search.mjs',
-]
 
 export const SKILL_NAME = 'prompt'
 
@@ -112,7 +105,8 @@ function writePreset(prompt: string, options: { anchorFirstTurn: boolean; anchor
   mkdirSync(PRESET_DIR, { recursive: true })
   writeFileSync(PRESET_CORDIS, buildCordis(prompt, options), 'utf8')
   writeFileSync(PRESET_META, readFileSync(PRESET_TEMPLATE_META, 'utf8'), 'utf8')
-  for (const file of VENDOR_MODULES) {
+  for (const file of readdirSync(VENDOR_PRESET_DIR)) {
+    if (!file.endsWith('.mjs')) continue
     writeFileSync(join(PRESET_DIR, file), readFileSync(join(VENDOR_PRESET_DIR, file), 'utf8'), 'utf8')
   }
   writeFileSync(PRESET_INJECTOR, readFileSync(PRESET_TEMPLATE_INJECTOR, 'utf8'), 'utf8')
