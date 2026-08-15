@@ -25,10 +25,23 @@ const PRESET_CORDIS = join(PRESET_DIR, 'agent.cordis.yml')
 const PRESET_META = join(PRESET_DIR, 'preset.yml')
 const PRESET_BOOTSTRAP = join(PRESET_DIR, 'tool-bootstrap.mjs')
 const PRESET_INJECTOR = join(PRESET_DIR, 'prompt-injector.mjs')
-const PRESET_TEMPLATE_CORDIS = fileURLToPath(new URL('../preset/agent.cordis.yml', import.meta.url))
 const PRESET_TEMPLATE_META = fileURLToPath(new URL('../preset/preset.yml', import.meta.url))
-const PRESET_TEMPLATE_BOOTSTRAP = fileURLToPath(new URL('../preset/tool-bootstrap.mjs', import.meta.url))
 const PRESET_TEMPLATE_INJECTOR = fileURLToPath(new URL('../preset/prompt-injector.mjs', import.meta.url))
+// 子模块直引（唯一源）：插件加载时读 vendor 最新版，子模块更新后无需任何
+// 同步步骤、重启即生效。vendor 缺失或上游结构变化 → fail loud。
+const VENDOR_CORDIS = fileURLToPath(new URL('../vendor/dsh-anchored-standard/preset/agent.cordis.yml', import.meta.url))
+const VENDOR_BOOTSTRAP = fileURLToPath(new URL('../vendor/dsh-anchored-standard/preset/tool-bootstrap.mjs', import.meta.url))
+
+const LOCAL_INJECTOR_BLOCK = `# prompt-tool 附加件：锚定确认后注入 prompt.md。注册在 tool-bootstrap 之后，
+# 不参与首轮剥离顺序；tools / 上下文剥离全部由原版 tool-bootstrap 负责
+# （首轮 = Minimal 真实 schema：持久 bash + str_replace_editor，无输出 cap），
+# 此插件只做一件事——锚定轮结束后（we 确认或兜底）注入一次提示词。
+- id: prompt-injector
+  name: ./prompt-injector.mjs
+  config:
+    promptText: |-
+      __PROMPT_TOOL_TEXT__
+`
 
 export const SKILL_NAME = 'prompt'
 
@@ -109,20 +122,27 @@ function writeAgents(text: string): void {
   } catch {}
 }
 
-// 完整 anchored preset：复制 preset/ 目录（agent.cordis.yml + preset.yml +
-// tool-bootstrap.mjs 原版 + prompt-injector.mjs）。persona 保持 Minimal；
-// prompt.md 通过 prompt-injector 的 promptText 在 we 锚定确认后注入。
-function writePreset(prompt: string): void {
+// agent.cordis.yml 直引子模块 + 运行时注入 prompt-injector 块。
+function buildCordis(prompt: string): string {
   const indent = (s: string) => s.split(/\r?\n/).map((l) => '      ' + l).join('\n')
-  mkdirSync(PRESET_DIR, { recursive: true })
-  const template = readFileSync(PRESET_TEMPLATE_CORDIS, 'utf8').replace(/\r\n/g, '\n')
-  const cordis = template.replace(
+  const up = readFileSync(VENDOR_CORDIS, 'utf8').replace(/\r\n/g, '\n')
+  const idx = up.indexOf('- id: tool-bootstrap\n')
+  if (idx < 0) throw new Error('vendor agent.cordis.yml missing tool-bootstrap anchor')
+  const end = up.indexOf('\n', up.indexOf('suppressedContextSources:', idx)) + 1
+  if (end <= 0) throw new Error('vendor agent.cordis.yml missing suppressedContextSources')
+  return (up.slice(0, end) + LOCAL_INJECTOR_BLOCK + '\n' + up.slice(end)).replace(
     '    promptText: |-\n      __PROMPT_TOOL_TEXT__',
     '    promptText: |-\n' + indent(prompt),
   )
-  writeFileSync(PRESET_CORDIS, cordis, 'utf8')
+}
+
+// 完整 anchored preset：上游文件（agent.cordis.yml + tool-bootstrap.mjs）直引
+// 子模块，本项目自有文件（preset.yml / prompt-injector.mjs）走 preset/ 快照。
+function writePreset(prompt: string): void {
+  mkdirSync(PRESET_DIR, { recursive: true })
+  writeFileSync(PRESET_CORDIS, buildCordis(prompt), 'utf8')
   writeFileSync(PRESET_META, readFileSync(PRESET_TEMPLATE_META, 'utf8'), 'utf8')
-  writeFileSync(PRESET_BOOTSTRAP, readFileSync(PRESET_TEMPLATE_BOOTSTRAP, 'utf8'), 'utf8')
+  writeFileSync(PRESET_BOOTSTRAP, readFileSync(VENDOR_BOOTSTRAP, 'utf8'), 'utf8')
   writeFileSync(PRESET_INJECTOR, readFileSync(PRESET_TEMPLATE_INJECTOR, 'utf8'), 'utf8')
 }
 

@@ -2,11 +2,16 @@
   "name": "dsh-plugin-prompt-tool",
   "version": "0.1.0",
   "description": "DSH 插件：提示词工具，规范模型的思维链与回答内容，强制使用简体中文，并提供 Web UI 编辑 prompt.md。",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Czerror/dsh-plugin-prompt-tool"
+  },
   "type": "module",
-  "main": "lib/index.js",
+  "main": "lib/index.mjs",
   "exports": {
     ".": {
-      "default": "./lib/index.js"
+      "default": "./lib/index.mjs"
     },
     "./client": "./lib/client.js",
     "./package.json": "./package.json"
@@ -38,7 +43,17 @@
     "@deepseek-ai/dsh-client-ui-primitives": "^0.1.0-rc.6",
     "clsx": "^2.1.1"
   },
+  "files": [
+    "lib",
+    "cordis.patch.yml",
+    "preset",
+    "vendor/dsh-anchored-standard/preset",
+    "prompt",
+    "prompt.md",
+    "AGENTS.md"
+  ],
   "scripts": {
-    "build": "tsdown"
+    "build": "tsdown",
+    "prepare": "tsdown"
   }
 }
