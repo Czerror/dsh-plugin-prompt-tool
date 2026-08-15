@@ -8,7 +8,7 @@
 > - [dsh-router-standard](https://github.com/yjh051108/dsh-router-standard)（复杂度启发式 / 近距离注入）
 > - [dsh-super-injector](https://github.com/yjh051108/dsh-super-injector)（缓存铁律 / 开发工具链）
 > - 姊妹项目 [dsh 破限者](https://github.com/1449690477/dsh)（unrestricted-executor 技能包）
-> - 本插件 GitHub 仓库：<待发布后填写>
+> - 本插件 GitHub 仓库：https://github.com/Czerror/dsh-plugin-prompt-tool
 
 ## 〇、发布规划（哪些内容进远程仓库）
 
