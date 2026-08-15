@@ -101,7 +101,7 @@ function warn(ctx: any, message: string): void {
 // 完整 anchored preset：上游文件（agent.cordis.yml + 全部 preset/*.mjs）直引
 // 子模块，本项目自有文件（preset.yml / prompt-injector.mjs / turn-anchor.mjs）
 // 走 preset/ 快照。anchorFirstTurn 开启时 cordis 注入 turn-anchor 行。
-function writePreset(prompt: string, options: { anchorFirstTurn: boolean; anchorText: string }): void {
+function writePreset(prompt: string, options: { anchorFirstTurn: boolean; anchorText: string; injectPrompt: boolean }): void {
   mkdirSync(PRESET_DIR, { recursive: true })
   writeFileSync(PRESET_CORDIS, buildCordis(prompt, options), 'utf8')
   writeFileSync(PRESET_META, readFileSync(PRESET_TEMPLATE_META, 'utf8'), 'utf8')
@@ -109,7 +109,12 @@ function writePreset(prompt: string, options: { anchorFirstTurn: boolean; anchor
     if (!file.endsWith('.mjs')) continue
     writeFileSync(join(PRESET_DIR, file), readFileSync(join(VENDOR_PRESET_DIR, file), 'utf8'), 'utf8')
   }
-  writeFileSync(PRESET_INJECTOR, readFileSync(PRESET_TEMPLATE_INJECTOR, 'utf8'), 'utf8')
+  if (options.injectPrompt) {
+    writeFileSync(PRESET_INJECTOR, readFileSync(PRESET_TEMPLATE_INJECTOR, 'utf8'), 'utf8')
+  } else {
+    // 关闭 prompt.md 注入时清掉旧快照，只保留工具引导。
+    rmSync(PRESET_INJECTOR, { force: true })
+  }
   if (options.anchorFirstTurn) {
     writeFileSync(PRESET_ANCHOR, readFileSync(PRESET_TEMPLATE_ANCHOR, 'utf8'), 'utf8')
   } else {
@@ -122,6 +127,7 @@ export const Config = z.object({
   text: z.string().default(''),
   writeAgents: z.boolean().default(true),
   writePreset: z.boolean().default(true),
+  injectPrompt: z.boolean().default(true),
   anchorFirstTurn: z.boolean().default(false),
   // 实测 12/12 首轮 reasoning 以 "We need" 开头的锚定句（原句命中率约 67%）。
   anchorText: z.string().default("You are a helpful software assistant.\n\nBegin every reasoning block with 'We need'."),
@@ -132,6 +138,7 @@ const PromptSettingsSchema = z.object({
   promptPath: z.string().default(''),
   anchorFirstTurn: z.boolean().default(false),
   anchorText: z.string().default("You are a helpful software assistant.\n\nBegin every reasoning block with 'We need'."),
+  injectPrompt: z.boolean().default(true),
   writeAgents: z.boolean().default(true),
   writePreset: z.boolean().default(true),
 })
@@ -140,6 +147,7 @@ export interface ApplyConfig {
   text: string
   writeAgents: boolean
   writePreset: boolean
+  injectPrompt: boolean
   anchorFirstTurn: boolean
   anchorText: string
 }
@@ -147,6 +155,7 @@ export interface ApplyConfig {
 interface RuntimeOptions {
   writeAgents: boolean
   writePreset: boolean
+  injectPrompt: boolean
   anchorFirstTurn: boolean
   anchorText: string
 }
@@ -156,6 +165,7 @@ interface PromptSettings {
   promptPath: string
   anchorFirstTurn?: boolean
   anchorText?: string
+  injectPrompt?: boolean
   writeAgents?: boolean
   writePreset?: boolean
 }
@@ -211,6 +221,7 @@ export function apply(ctx: any, config: ApplyConfig): void {
   const runtime: RuntimeOptions = {
     writeAgents: config.writeAgents,
     writePreset: config.writePreset,
+    injectPrompt: config.injectPrompt,
     anchorFirstTurn: config.anchorFirstTurn,
     anchorText: config.anchorText,
   }
@@ -220,6 +231,7 @@ export function apply(ctx: any, config: ApplyConfig): void {
     promptPath: PROMPT_FILE_PATH,
     anchorFirstTurn: runtime.anchorFirstTurn,
     anchorText: runtime.anchorText,
+    injectPrompt: runtime.injectPrompt,
     writeAgents: runtime.writeAgents,
     writePreset: runtime.writePreset,
   })
@@ -230,12 +242,14 @@ export function apply(ctx: any, config: ApplyConfig): void {
     const nextRuntime: RuntimeOptions = {
       writeAgents: typeof next.writeAgents === 'boolean' ? next.writeAgents : config.writeAgents,
       writePreset: typeof next.writePreset === 'boolean' ? next.writePreset : config.writePreset,
+      injectPrompt: typeof next.injectPrompt === 'boolean' ? next.injectPrompt : config.injectPrompt,
       anchorFirstTurn: typeof next.anchorFirstTurn === 'boolean' ? next.anchorFirstTurn : config.anchorFirstTurn,
       anchorText: typeof next.anchorText === 'string' && next.anchorText.length > 0 ? next.anchorText : config.anchorText,
     }
     const promptChanged = typeof next.promptText === 'string' && next.promptText !== current
     const settingsChanged = runtime.writeAgents !== nextRuntime.writeAgents
       || runtime.writePreset !== nextRuntime.writePreset
+      || runtime.injectPrompt !== nextRuntime.injectPrompt
       || runtime.anchorFirstTurn !== nextRuntime.anchorFirstTurn
       || runtime.anchorText !== nextRuntime.anchorText
     // 首次必须写入：settings 与文件/config 一致时也不能跳过 preset/AGENTS 生成。
@@ -252,6 +266,7 @@ export function apply(ctx: any, config: ApplyConfig): void {
     }
     runtime.writeAgents = nextRuntime.writeAgents
     runtime.writePreset = nextRuntime.writePreset
+    runtime.injectPrompt = nextRuntime.injectPrompt
     runtime.anchorFirstTurn = nextRuntime.anchorFirstTurn
     runtime.anchorText = nextRuntime.anchorText
 
@@ -259,7 +274,11 @@ export function apply(ctx: any, config: ApplyConfig): void {
       warn(ctx, `prompt-tool: failed to write resident rules to ${AGENTS_PATH}`)
     }
     if (runtime.writePreset) {
-      writePreset(current, { anchorFirstTurn: runtime.anchorFirstTurn, anchorText: runtime.anchorText })
+      writePreset(current, {
+        anchorFirstTurn: runtime.anchorFirstTurn,
+        anchorText: runtime.anchorText,
+        injectPrompt: runtime.injectPrompt,
+      })
     }
   }
 
@@ -268,6 +287,7 @@ export function apply(ctx: any, config: ApplyConfig): void {
     promptPath: PROMPT_FILE_PATH,
     anchorFirstTurn: config.anchorFirstTurn,
     anchorText: config.anchorText,
+    injectPrompt: config.injectPrompt,
     writeAgents: config.writeAgents,
     writePreset: config.writePreset,
   }, {

@@ -69,3 +69,21 @@ test('buildCordis 开启 anchorFirstTurn 时注入 turn-anchor 行与自定义�
 test('buildCordis 关闭 anchorFirstTurn 时输出与无选项版本一致', () => {
   assert.equal(buildCordis('PROMPT', { anchorFirstTurn: false, anchorText: 'X' }), buildCordis('PROMPT'))
 })
+
+test('buildCordis 关闭 injectPrompt 时只保留工具引导，不生成 prompt-injector 行', () => {
+  const out = buildCordis('PROMPT', { injectPrompt: false, anchorFirstTurn: false })
+  assert.ok(!out.includes('__PROMPT_TOOL_TEXT__'))
+  const doc = parse(out, { logLevel: 'silent' })
+  assert.ok(Array.isArray(doc))
+  assert.ok(doc.some((entry) => entry?.id === 'tool-bootstrap'))
+  assert.ok(!doc.some((entry) => entry?.id === 'prompt-injector'))
+})
+
+test('buildCordis injectPrompt=false 且 anchorFirstTurn=true 只生成 turn-anchor', () => {
+  const out = buildCordis('PROMPT', { injectPrompt: false, anchorFirstTurn: true, anchorText: 'A' })
+  const doc = parse(out, { logLevel: 'silent' })
+  const ids = doc.map((entry) => entry?.id)
+  assert.ok(ids.includes('tool-bootstrap'))
+  assert.ok(ids.includes('turn-anchor'))
+  assert.ok(!ids.includes('prompt-injector'))
+})

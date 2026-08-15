@@ -52,7 +52,7 @@ pnpm build                                                   # 重建插件
 
 在 Settings → 插件 → **插件配置**分区注册「提示词工具」可折叠卡片（`settings.plugin.item`，与其他插件卡片同款式），展开后提供：
 
-- **注入开关**：首轮独立锚定轮（`anchorFirstTurn`）、锚定句文本（`anchorText`，可自定义）、写入 `~/.dsh/AGENTS.md`（`writeAgents`）、生成锚定注入 preset（`writePreset`）
+- **注入开关**：注入 prompt.md（`injectPrompt`）、首轮独立锚定轮（`anchorFirstTurn`）、锚定句文本（`anchorText`，可自定义）、写入 `~/.dsh/AGENTS.md`（`writeAgents`）、生成锚定注入 preset（`writePreset`）
 - **保存 / 还原**：把编辑框内容与全部开关写入 `prompt-tool` settings 命名空间（未保存时头部显示"未保存"标记，可一键还原草稿）；Host 监听后写回 `prompt.md`、按开关刷新 `~/.dsh/AGENTS.md` 与 preset，下一次请求即生效
 - **打开编辑**：用系统编辑器打开 `prompt.md`
 - **在线编辑框**：直接编辑 `prompt.md` 文本
@@ -158,11 +158,12 @@ dsh --profile prompt-tool --patch <cordis.yml>
         text: ''            # 可选：覆盖 prompt.md 文本（默认读文件）
         writeAgents: true   # 是否写 ~/.dsh/AGENTS.md（默认 true）
         writePreset: true   # 是否生成锚定注入 preset（默认 true）
+        injectPrompt: true  # 锚定确认后是否注入 prompt.md（默认 true；关闭只保留工具引导）
         anchorFirstTurn: false  # 首轮独立锚定轮开关（默认关闭）
         anchorText: "You are a helpful software assistant.\n\nBegin every reasoning block with 'We need'."  # 锚定句文本
 ```
 
-config 字段：`text`（覆盖 `prompt.md` 文本，默认读文件）、`writeAgents`（是否写 `~/.dsh/AGENTS.md`，默认 true）、`writePreset`（是否生成 `~/.dsh/.agent-presets/prompt-tool/`，默认 true）。两个写入开关相互独立。
+config 字段：`text`（覆盖 `prompt.md` 文本，默认读文件）、`writeAgents`（是否写 `~/.dsh/AGENTS.md`，默认 true）、`writePreset`（是否生成 `~/.dsh/.agent-presets/prompt-tool/`，默认 true）、`injectPrompt`（锚定确认后是否注入 `prompt.md`，默认 true）。三个写入/注入开关相互独立：关闭 `injectPrompt` 后首轮工具引导与 resident 目录照常，但不会注册 `prompt-injector` 行、不会向会话注入 `prompt.md`。
 
 `anchorFirstTurn`（默认 false）开启后，preset 额外挂载 `turn-anchor.mjs`：会话首个真实用户消息先原样入 `agent.inbox` 的 `next-step`，首步只把 `anchorText` 作为独立输入发给模型；模型回应锚定句后，driver 在同一轮内自动消费任务继续执行。任务绝不丢失：inbox 入队失败时回退为原样直发。
 

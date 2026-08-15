@@ -14,6 +14,7 @@ interface Fields {
   promptPath: string
   anchorFirstTurn: boolean
   anchorText: string
+  injectPrompt: boolean
   writeAgents: boolean
   writePreset: boolean
 }
@@ -23,6 +24,7 @@ const EMPTY: Fields = {
   promptPath: '',
   anchorFirstTurn: false,
   anchorText: '',
+  injectPrompt: true,
   writeAgents: true,
   writePreset: true,
 }
@@ -56,6 +58,7 @@ export function PromptEditor(props: PromptEditorInjected): any {
         promptPath: ns.value?.promptPath ?? '',
         anchorFirstTurn: ns.value?.anchorFirstTurn ?? false,
         anchorText: ns.value?.anchorText ?? '',
+        injectPrompt: ns.value?.injectPrompt ?? true,
         writeAgents: ns.value?.writeAgents ?? true,
         writePreset: ns.value?.writePreset ?? true,
       }
@@ -121,6 +124,7 @@ export function PromptEditor(props: PromptEditorInjected): any {
           { op: 'set', path: ['promptText'], value: fields.promptText },
           { op: 'set', path: ['anchorFirstTurn'], value: fields.anchorFirstTurn },
           { op: 'set', path: ['anchorText'], value: fields.anchorText },
+          { op: 'set', path: ['injectPrompt'], value: fields.injectPrompt },
           { op: 'set', path: ['writeAgents'], value: fields.writeAgents },
           { op: 'set', path: ['writePreset'], value: fields.writePreset },
         ],
@@ -142,7 +146,7 @@ export function PromptEditor(props: PromptEditorInjected): any {
     }
   }
 
-  const toggle = (key: 'anchorFirstTurn' | 'writeAgents' | 'writePreset') =>
+  const toggle = (key: 'anchorFirstTurn' | 'injectPrompt' | 'writeAgents' | 'writePreset') =>
     patch({ [key]: !fields[key] })
 
   const dirty = saved !== undefined && JSON.stringify(fields) !== saved
@@ -163,6 +167,17 @@ export function PromptEditor(props: PromptEditorInjected): any {
 
           <div className={styles.group}>
             <span className={styles.groupTitle}>注入开关</span>
+            <label className={styles.row}>
+              <input
+                type="checkbox"
+                checked={fields.injectPrompt}
+                onChange={() => toggle('injectPrompt')}
+              />
+              <span className={styles.rowText}>
+                <span className={styles.rowName}>注入 prompt.md 提示词</span>
+                <span className={styles.rowDesc}>关闭后保留首轮工具引导，但不向会话注入 prompt.md</span>
+              </span>
+            </label>
             <label className={styles.row}>
               <input
                 type="checkbox"

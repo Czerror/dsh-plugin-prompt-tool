@@ -60,6 +60,8 @@ export interface BuildCordisOptions {
   /** 首轮独立锚定轮：首个用户消息先入 next-step inbox，首步只发 anchorText。 */
   anchorFirstTurn?: boolean
   anchorText?: string
+  /** 锚定确认后注入 prompt.md；关闭时仍保留工具引导，但不注册 prompt-injector 行。 */
+  injectPrompt?: boolean
 }
 
 // agent.cordis.yml 直引子模块 + 运行时注入 prompt-injector 块（可选 turn-anchor 块）。
@@ -67,6 +69,7 @@ export interface BuildCordisOptions {
 // 替换占位符后断言无残留，并用 YAML 解析器验证生成文件结构，失败即 fail loud。
 export function buildCordis(prompt: string, options: BuildCordisOptions = {}): string {
   const anchorFirstTurn = options.anchorFirstTurn === true
+  const injectPrompt = options.injectPrompt !== false
   const anchorText = typeof options.anchorText === 'string' && options.anchorText.length > 0
     ? options.anchorText
     : "You are a helpful software assistant.\n\nBegin every reasoning block with 'We need'."
@@ -96,29 +99,30 @@ export function buildCordis(prompt: string, options: BuildCordisOptions = {}): s
   const tail = up.slice(insertAt)
   const separator = head.endsWith('\n\n') ? '' : head.endsWith('\n') ? '\n' : '\n\n'
 
-  // 2) 注入 promptText，并断言占位符确实被替换、没有残留。
-  const promptMarker = '    promptText: |-\n      __PROMPT_TOOL_TEXT__'
-  if (!LOCAL_INJECTOR_BLOCK.includes(promptMarker)) {
-    throw new Error('internal error: prompt-injector template lost its promptText placeholder')
-  }
-  const injector = LOCAL_INJECTOR_BLOCK.replace(promptMarker, '    promptText: |-\n' + indent(prompt))
-
-  // 可选：首轮独立锚定轮块，注册在 prompt-injector 之前。
-  let extra = injector
+  // 2) 按开关组装附加块；prompt-injector 块负责 promptText 注入。
+  const parts: string[] = []
   if (anchorFirstTurn) {
     const anchorMarker = '    anchorText: |-\n      __ANCHOR_TEXT__'
     if (!TURN_ANCHOR_BLOCK.includes(anchorMarker)) {
       throw new Error('internal error: turn-anchor template lost its anchorText placeholder')
     }
-    extra = TURN_ANCHOR_BLOCK.replace(anchorMarker, '    anchorText: |-\n' + indent(anchorText)) + '\n' + injector
+    parts.push(TURN_ANCHOR_BLOCK.replace(anchorMarker, '    anchorText: |-\n' + indent(anchorText)))
+  }
+  if (injectPrompt) {
+    const promptMarker = '    promptText: |-\n      __PROMPT_TOOL_TEXT__'
+    if (!LOCAL_INJECTOR_BLOCK.includes(promptMarker)) {
+      throw new Error('internal error: prompt-injector template lost its promptText placeholder')
+    }
+    parts.push(LOCAL_INJECTOR_BLOCK.replace(promptMarker, '    promptText: |-\n' + indent(prompt)))
   }
 
+  const extra = parts.join('\n')
   const out = head + separator + extra + '\n' + tail
-  if (out.includes('__PROMPT_TOOL_TEXT__') || (anchorFirstTurn && out.includes('__ANCHOR_TEXT__'))) {
+  if ((injectPrompt && out.includes('__PROMPT_TOOL_TEXT__')) || (anchorFirstTurn && out.includes('__ANCHOR_TEXT__'))) {
     throw new Error('internal error: preset template placeholder was not replaced')
   }
 
-  // 3) 生成文件必须是合法 YAML，且本插件行确实落位。
+  // 3) 生成文件必须是合法 YAML，且按开关校验本插件行落位。
   let parsed: unknown
   try {
     parsed = parseYaml(out, { logLevel: 'silent' })
@@ -127,7 +131,8 @@ export function buildCordis(prompt: string, options: BuildCordisOptions = {}): s
   }
   if (!Array.isArray(parsed)) throw new Error('generated agent.cordis.yml is not a YAML array')
   const ids = new Set(parsed.map((row) => (row as { id?: string } | null)?.id))
-  if (!ids.has('prompt-injector')) throw new Error('generated agent.cordis.yml is missing the prompt-injector row')
+  if (injectPrompt && !ids.has('prompt-injector')) throw new Error('generated agent.cordis.yml is missing the prompt-injector row')
+  if (!injectPrompt && ids.has('prompt-injector')) throw new Error('generated agent.cordis.yml still contains the prompt-injector row')
   if (anchorFirstTurn && !ids.has('turn-anchor')) throw new Error('generated agent.cordis.yml is missing the turn-anchor row')
   return out
 }
