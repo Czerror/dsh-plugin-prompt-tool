@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const HERE = join(fileURLToPath(import.meta.url), '..', '..')
-const UPSTREAM = process.argv[2] ?? 'E:/Documents/GitHub/dsh-anchored-standard'
+const UPSTREAM = process.argv[2] ?? join(HERE, 'vendor', 'dsh-anchored-standard')
 const upstreamCordis = join(UPSTREAM, 'preset', 'agent.cordis.yml')
 const upstreamBootstrap = join(UPSTREAM, 'preset', 'tool-bootstrap.mjs')
 const localCordis = join(HERE, 'preset', 'agent.cordis.yml')

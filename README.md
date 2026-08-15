@@ -26,10 +26,12 @@ DSH 插件：把简体中文行为规范注入三层（常驻层 + 按需技能�
 `preset/` 的上游文件不手工修改，通过同步脚本更新（本地差异只有 prompt-injector 块，自动重新注入，永不冲突）：
 
 ```sh
-node scripts/sync-anchored.mjs                     # 默认上游 E:/Documents/GitHub/dsh-anchored-standard
+git submodule update --remote                      # 先更新 vendor/dsh-anchored-standard 子模块
+node scripts/sync-anchored.mjs                     # 默认源 = vendor 子模块
 node scripts/sync-anchored.mjs <anchored仓库路径>  # 自定义上游路径
 ```
 
+- 上游仓库以子模块形式固定在 `vendor/dsh-anchored-standard`，版本可复现；`preset/` 内为同步快照（clone 无需子模块即可直接运行）
 - 同步 `tool-bootstrap.mjs`（字节级）+ `agent.cordis.yml`（上游内容 + 本地 prompt-injector 块）
 - `preset.yml`、`prompt-injector.mjs` 为本项目自有文件，不覆盖
 
