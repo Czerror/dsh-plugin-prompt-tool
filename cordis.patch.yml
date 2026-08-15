@@ -1,0 +1,5 @@
+- insert:
+    - id: prompt-tool
+      name: dsh-plugin-prompt-tool
+      config:
+        strict: true
