@@ -12,7 +12,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { SettingsDescriptor, SettingsPathOp } from '@deepseek-ai/dsh-settings'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import type { CommandResult } from '@deepseek-ai/dsh-commands'
-import { readFileSync, writeFileSync, mkdirSync, rmSync, readdirSync } from 'node:fs'
+import { readFileSync, writeFileSync, mkdirSync, rmSync, readdirSync, existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
@@ -206,10 +206,101 @@ function readAgents(): string {
   }
 }
 
+interface ProjectOriginals {
+  presetText: string
+  agentsText: string
+}
+
+/** 直接读取项目根目录的 preset.md 与 AGENTS.md；宿主不再回写这两个文件。 */
+function readProjectOriginals(): ProjectOriginals {
+  return { presetText: readPromptFile(''), agentsText: readAgents() }
+}
+
+/** 首次安装时，把项目文件内容作为 user 层种子写入 settings.yaml；已有字段不覆盖。 */
+function seedSettingsOnce(ctx: Context, originals: ProjectOriginals): void {
+  ctx.inject(['settings'], (sctx: Context) => {
+    void (async () => {
+      try {
+        const descriptor = sctx.settings.describe({ redactSecrets: true })
+          .find((entry) => String(entry.ns) === String(NS))
+        if (descriptor === undefined) return
+        const user = descriptor.user !== null && typeof descriptor.user === 'object'
+          ? descriptor.user as Record<string, unknown>
+          : {}
+        const ops: SettingsPathOp[] = []
+        if (typeof user.promptText !== 'string') ops.push({ op: 'set', path: ['promptText'], value: originals.presetText })
+        if (typeof user.agentsText !== 'string') ops.push({ op: 'set', path: ['agentsText'], value: originals.agentsText })
+        if (ops.length === 0) return
+        await sctx.settings.mutate(NS, ops)
+      } catch (error) {
+        warn(ctx, `prompt-tool: failed to seed settings from project files: ${error instanceof Error ? error.message : String(error)}`)
+      }
+    })()
+  })
+}
+
+const RESIDENT_AGENTS_BEGIN = '# === prompt-tool managed block begin ==='
+const RESIDENT_AGENTS_END = '# === prompt-tool managed block end ==='
+
+interface ManagedBlockEdit {
+  /** 去掉受管块之后的原文（保持原换行风格）。 */
+  body: string
+  /** 是否确实删除了一个完整的受管块。 */
+  found: boolean
+}
+
+/** 从正文中删除成对的受管标记块；标记不成对时保持原样，避免误删。 */
+function stripManagedBlock(source: string): ManagedBlockEdit {
+  const eol = source.includes('\r\n') ? '\r\n' : '\n'
+  const normalized = source.replace(/\r\n/g, '\n')
+  const lines = normalized.split('\n')
+  const start = lines.findIndex((line) => line.trim() === RESIDENT_AGENTS_BEGIN)
+  if (start < 0) return { body: source, found: false }
+  const end = lines.findIndex((line, index) => index > start && line.trim() === RESIDENT_AGENTS_END)
+  if (end < 0) return { body: source, found: false }
+  lines.splice(start, end - start + 1)
+  return { body: lines.join(eol), found: true }
+}
+
+/** 生成要放到文件头部的受管块。 */
+function buildManagedBlock(text: string, eol: '\n' | '\r\n'): string {
+  const content = text.replace(/\r\n/g, '\n').trim()
+  return [RESIDENT_AGENTS_BEGIN, content, RESIDENT_AGENTS_END].join(eol)
+}
+
+/** 把 AGENTS.md 内容作为受管块写到目标文件头部，保留文件其余内容。 */
 function writeAgents(text: string, targetPath: string): boolean {
   try {
     mkdirSync(join(targetPath, '..'), { recursive: true })
-    writeFileSync(targetPath, text, 'utf8')
+    const existing = existsSync(targetPath) ? readFileSync(targetPath, 'utf8') : ''
+    const eol: '\n' | '\r\n' = existing.includes('\r\n') ? '\r\n' : '\n'
+    const stripped = stripManagedBlock(existing)
+    const content = text.trim()
+    if (content.length === 0) {
+      // 关闭或空内容：只删除受管块；本来没有块时不做任何写入。
+      if (!stripped.found) return true
+      writeFileSync(targetPath, stripped.body, 'utf8')
+      return true
+    }
+    const rest = stripped.body.replace(/^[\r\n]+/, '')
+    const managed = buildManagedBlock(content, eol)
+    const next = rest.length > 0 ? managed + eol + rest : managed + eol
+    if (next === existing) return true
+    writeFileSync(targetPath, next, 'utf8')
+    return true
+  } catch {
+    return false
+  }
+}
+
+/** 关闭写入开关后，从目标文件删除本插件的受管块。 */
+function removeResidentAgentsBlock(targetPath: string): boolean {
+  try {
+    if (!existsSync(targetPath)) return true
+    const existing = readFileSync(targetPath, 'utf8')
+    const stripped = stripManagedBlock(existing)
+    if (!stripped.found) return true
+    writeFileSync(targetPath, stripped.body, 'utf8')
     return true
   } catch {
     return false
@@ -437,6 +528,40 @@ function registerSettingsBridge(ctx: Context): void {
             writeBridgeJson(res, 200, { ok: true, value: descriptor })
           },
         }),
+        sctx.webServer.register({
+          kind: 'exact',
+          path: SETTINGS_BRIDGE_PREFIX + '/restore-originals',
+          handler: async (req, res) => {
+            if (!guard(req, res)) return
+            const body = await readBridgeBody(req)
+            if (body === null || body === undefined || typeof body !== 'object') {
+              writeBridgeJson(res, 400, { ok: false, code: 'settings-rejected', message: 'unreadable JSON body' })
+              return
+            }
+            const record = body as Record<string, unknown>
+            const scope = record.scope === 'preset' || record.scope === 'agents' || record.scope === 'all'
+              ? record.scope
+              : 'all'
+            const originals = readProjectOriginals()
+            const ops: SettingsPathOp[] = []
+            if (scope === 'preset' || scope === 'all') ops.push({ op: 'set', path: ['promptText'], value: originals.presetText })
+            if (scope === 'agents' || scope === 'all') ops.push({ op: 'set', path: ['agentsText'], value: originals.agentsText })
+            const expectedRevision = typeof record.expectedRevision === 'number' ? record.expectedRevision : undefined
+            try {
+              await sctx.settings.mutate(NS, ops, expectedRevision)
+            } catch (error) {
+              const message = error instanceof Error ? error.message : String(error)
+              writeBridgeJson(res, 409, { ok: false, code: 'settings-rejected', message })
+              return
+            }
+            const descriptor = findDescriptor()
+            if (descriptor === undefined) {
+              writeBridgeJson(res, 500, { ok: false, code: 'settings-rejected', message: 'prompt-tool settings namespace was disposed after restore' })
+              return
+            }
+            writeBridgeJson(res, 200, { ok: true, value: descriptor })
+          },
+        }),
       ]
       return () => {
         for (const dispose of disposers) dispose()
@@ -613,22 +738,8 @@ export function apply(ctx: Context, config: Config): void {
     if (!needsInitialApply && !promptChanged && !agentsChanged && !settingsChanged) return
     needsInitialApply = false
 
-    if (promptChanged) {
-      current = next.promptText
-      try {
-        writeFileSync(PRESET_FILE_URL, next.promptText, 'utf8')
-      } catch (error) {
-        warn(ctx, `prompt-tool: failed to write ${PRESET_FILE_PATH}: ${String(error)}`)
-      }
-    }
-    if (agentsChanged) {
-      currentAgents = next.agentsText
-      try {
-        writeFileSync(AGENTS_URL, next.agentsText, 'utf8')
-      } catch (error) {
-        warn(ctx, `prompt-tool: failed to write ${AGENTS_FILE_PATH}: ${String(error)}`)
-      }
-    }
+    if (promptChanged) current = next.promptText
+    if (agentsChanged) currentAgents = next.agentsText
     runtime.writeAgents = nextRuntime.writeAgents
     runtime.writePreset = nextRuntime.writePreset
     runtime.injectAgentsPrompt = nextRuntime.injectAgentsPrompt
@@ -644,6 +755,11 @@ export function apply(ctx: Context, config: Config): void {
       residentAgentsWritten = writeAgents(currentAgents, config.residentAgentsPath)
       if (!residentAgentsWritten) {
         warn(ctx, `prompt-tool: failed to write resident rules to ${config.residentAgentsPath}`)
+      }
+    } else {
+      residentAgentsWritten = removeResidentAgentsBlock(config.residentAgentsPath)
+      if (!residentAgentsWritten) {
+        warn(ctx, `prompt-tool: failed to remove resident rules block from ${config.residentAgentsPath}`)
       }
     }
     if (runtime.writePreset) {
@@ -685,4 +801,7 @@ export function apply(ctx: Context, config: Config): void {
     setSource: (source) => { currentSource = source },
     onChange: applyState,
   })
+
+  // 首次安装：settings.yaml 没有 user 层文本时，用项目文件内容初始化。
+  seedSettingsOnce(ctx, readProjectOriginals())
 }

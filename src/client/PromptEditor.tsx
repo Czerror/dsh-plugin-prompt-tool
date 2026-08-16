@@ -176,6 +176,8 @@ export function PromptEditor(props: PromptEditorProps): ReactNode {
   const [loading, setLoading] = useState(false)
   const [savingPrompt, setSavingPrompt] = useState(false)
   const [savingAgents, setSavingAgents] = useState(false)
+  const [restoringPrompt, setRestoringPrompt] = useState(false)
+  const [restoringAgents, setRestoringAgents] = useState(false)
   const [notice, setNotice] = useState('')
   const [noticeKind, setNoticeKind] = useState<'ok' | 'error'>('ok')
   const fieldsRef = useRef<Fields>(EMPTY)
@@ -236,6 +238,30 @@ export function PromptEditor(props: PromptEditorProps): ReactNode {
       // 刷新失败保持原 revision，用户可重试。
     }
   }, [])
+
+  const restoreOriginal = useCallback(async (scope: 'preset' | 'agents') => {
+    const setBusy = scope === 'preset' ? setRestoringPrompt : setRestoringAgents
+    setBusy(true)
+    try {
+      const res = await bridgePost<BridgeSettingsView>('/restore-originals', {
+        scope,
+        expectedRevision: revisionRef.current,
+      })
+      if (!res.ok) {
+        await refreshRevision()
+        showNotice('error', '从项目还原失败：' + (res.message ?? '') + '（已刷新配置版本，可重试）')
+        return
+      }
+      revisionRef.current = res.value.revision
+      await load()
+      showNotice('ok', scope === 'preset' ? 'preset.md 已从项目原文还原到设置' : 'AGENTS.md 已从项目原文还原到设置')
+    } catch (error) {
+      await refreshRevision()
+      showNotice('error', '从项目还原失败：' + errorMessage(error) + '（已刷新配置版本，可重试）')
+    } finally {
+      setBusy(false)
+    }
+  }, [load, refreshRevision, showNotice])
 
   const patch = (partial: Partial<Fields>) => {
     const next = { ...fieldsRef.current, ...partial }
@@ -398,7 +424,8 @@ export function PromptEditor(props: PromptEditorProps): ReactNode {
               />
               <div className={styles.actions}>
                 <button type="button" className={styles.primary} disabled={savingPrompt || savingAgents || !dirtyPrompt} onClick={savePrompt}>{savingPrompt ? '保存中…' : '保存'}</button>
-                <button type="button" className={styles.secondary} disabled={!dirtyPrompt} onClick={discardPrompt}>还原</button>
+                <button type="button" className={styles.secondary} disabled={!dirtyPrompt} onClick={discardPrompt}>还原草稿</button>
+                <button type="button" className={styles.secondary} disabled={savingPrompt || savingAgents || restoringPrompt || restoringAgents} onClick={() => void restoreOriginal('preset')}>{restoringPrompt ? '还原中…' : '项目还原'}</button>
                 <button type="button" className={styles.secondary} onClick={openEdit}>打开</button>
               </div>
             </CollapsibleSection>
@@ -441,7 +468,8 @@ export function PromptEditor(props: PromptEditorProps): ReactNode {
               />
               <div className={styles.actions}>
                 <button type="button" className={styles.primary} disabled={savingPrompt || savingAgents || !dirtyAgents} onClick={saveAgents}>{savingAgents ? '保存中…' : '保存'}</button>
-                <button type="button" className={styles.secondary} disabled={!dirtyAgents} onClick={discardAgents}>还原</button>
+                <button type="button" className={styles.secondary} disabled={!dirtyAgents} onClick={discardAgents}>还原草稿</button>
+                <button type="button" className={styles.secondary} disabled={savingPrompt || savingAgents || restoringPrompt || restoringAgents} onClick={() => void restoreOriginal('agents')}>{restoringAgents ? '还原中…' : '项目还原'}</button>
                 <button type="button" className={styles.secondary} onClick={openAgents}>打开</button>
               </div>
             </CollapsibleSection>

@@ -58,17 +58,17 @@ pnpm build                                                   # 重建插件
 在 Settings → 插件 → **插件配置**分区注册「提示词工具」可折叠卡片（`settings.plugin.item`，与其他插件卡片同款式），展开后提供：
 
 - **分区折叠**：Preset预设区（编辑器 + `injectPrompt`）、AGENTS设置区（编辑器 + `injectAgentsPrompt` + `writeAgents`）、Skills设置区（每个技能独立开关 `skillSwitches`）、锚定轮与 preset 区（`writePreset`、`anchorFirstTurn`、`anchorText`）；每个分区默认折叠，文件分区带独立保存/还原/打开按钮，开关点击即时生效
-- **保存 / 还原**：`preset.md` 与 `AGENTS.md` 各自独立保存/还原/打开（未保存时头部显示"未保存"标记，可分别还原草稿）；注入开关与技能开关点击后即时写入 settings 并生效，不需要保存按钮。Host 监听后写回 `preset.md` 与 `AGENTS.md`、按开关刷新 `~/.dsh/AGENTS.md` 与 preset、失效技能目录缓存，下一次请求即生效
+- **保存 / 还原草稿 / 项目还原 / 打开**：`preset.md` 与 `AGENTS.md` 各自独立保存、还原未保存草稿、从项目原文还原、用系统编辑器打开。UI 只读写 `settings.yaml` 中的插件配置；`保存` 只写 settings，`项目还原` 读取项目根目录里的原始 `preset.md` / `AGENTS.md` 并覆盖写回 settings。注入开关与技能开关点击后即时写入 settings 并生效，不需要保存按钮。Host 监听 settings 变化后刷新 `~/.dsh/AGENTS.md` 受管块与 preset、失效技能目录缓存，下一次请求即生效
 - **打开编辑**：用系统编辑器分别打开 `preset.md` 或 `AGENTS.md`
 - **在线编辑框**：直接编辑 `preset.md` 与 `AGENTS.md` 文本
 
 ## 工作原理
 
-1. Host 启动读取 `preset.md` 作为提示词规范源，读取 `AGENTS.md` 作为常驻层源文件。
+1. 首次安装时，Host 读取项目根目录的 `preset.md` 与 `AGENTS.md`，把内容写入 `settings.yaml` 的 `prompt-tool.promptText` / `prompt-tool.agentsText`；之后每次启动优先读取 settings，项目文件不再被设置回写。
 2. 常驻层：`writeAgents` 开启时把当前 `AGENTS.md` 写入 `~/.dsh/AGENTS.md`；`injectAgentsPrompt` 开启时，`instruction-hint` 位置注入的是 `AGENTS.md` 内容本身，而不是提示模型自行读取。
 3. 按需层：扫描 `skills/*/SKILL.md`；每个技能的 name/description/whenToUse/metadata 来自自身 frontmatter，并按 `skillSwitches` 决定是否注册；全部技能关闭时技能列表自动为空。加载内容为 `preset.md` 规范 + 技能正文。
 4. preset 层：直引 `vendor/` 上游 `agent.cordis.yml` + 全部 `*.mjs` 生成 `~/.dsh/.agent-presets/prompt-tool/`，并把 `preset.md` 注入 `prompt-injector` 的 `promptText`（we 锚定确认后注入）。晋升后目录为 resident 集，其余工具经 `dev_tool_search` 按需解锁。
-5. UI 保存通过 settings API 写入 `promptText`、`agentsText` 与全部开关；Host 的 watch 回调写回 `preset.md` 与 `AGENTS.md`，并按开关刷新 `~/.dsh/AGENTS.md` 与 preset（含 turn-anchor 行的增删）、失效技能目录缓存，下一次请求即生效。
+5. UI 保存通过 settings API 只写入 `settings.yaml` 的 `promptText`、`agentsText` 与全部开关；Host 的 watch 回调按最新设置刷新 `~/.dsh/AGENTS.md` 受管块与 preset（含 turn-anchor 行的增删）、失效技能目录缓存，下一次请求即生效，不再覆盖项目根文件。
 
 ## 文件结构
 
@@ -76,8 +76,8 @@ pnpm build                                                   # 重建插件
 dsh-plugin-prompt-tool/
 ├── package.json
 ├── LICENSE                     # MIT
-├── preset.md                   # 提示词规范源文件（Web UI 可编辑）
-├── AGENTS.md                   # 常驻层源文件（Web UI 可编辑）
+├── preset.md                   # 项目原文：首次种子与「项目还原」按钮的数据来源
+├── AGENTS.md                   # 项目原文：首次种子与「项目还原」按钮的数据来源
 ├── plan.md                     # 设计与测试计划（含上游更新对照、实测数据）
 ├── tsconfig.json               # Host 类型检查 program（排除 src/client）
 ├── tsconfig.client.json        # Client 类型检查 program（jsx: react-jsx）
@@ -204,7 +204,7 @@ config 字段：`text`（覆盖 `preset.md` 文本，默认读文件）、`agent
 ## 已知限制
 
 - **模型设置页目录条目**：已不再经 `ctx.llm.registerConfigurableProviders` 暴露 settings 命名空间，改为自建 loopback-only `/api/prompt-tool/settings` bridge，模型设置页不会再出现「提示词工具」条目。
-- **AGENTS.md 覆盖**：在线保存会直接覆盖项目根 `AGENTS.md`；`writeAgents` 开启时还会覆盖 `~/.dsh/AGENTS.md`，失败仅记录日志，卸载插件不恢复原文件；请自行保留原内容。
+- **AGENTS.md 写入**：UI 在线保存只写 `settings.yaml`，不再覆盖项目根 `AGENTS.md`。`writeAgents` 开启时，本插件在 `~/.dsh/AGENTS.md` 头部维护一个带 begin/end 标记的受管块，只更新该块，保留文件中其他内容；关闭开关后只删除该受管块。写入失败仅记录日志，请自行保留重要内容。
 - **UI 刷新策略**：插件配置卡片在无未保存草稿时每次展开都会同步最新 settings；存在草稿时保留本地编辑，点击「还原」可重新拉取。
 - **技能目录扫描**：`skills/*/SKILL.md` 在插件加载时扫描；新增或删除技能目录后重启 dsh 即生效，无需改代码。每个目录的开关默认开启，按目录名写入 `skillSwitches`。
 - **MCP 工具**：本 preset 晋升后为 resident 目录，外部 MCP 工具（`mcp__*`）不会默认可见，需模型经 `dev_tool_search` 解锁。
