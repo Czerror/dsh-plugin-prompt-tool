@@ -291,7 +291,6 @@ async function readBridgeBody(req: IncomingMessage): Promise<unknown> {
   }
 }
 
-/** 自建 loopback settings bridge：替代 registerConfigurableProviders，避免模型设置区出现插件条目。 */
 /** dsh-tui 暴露的布尔开关：键名与 settings 路径一致。 */
 const TUI_BOOLEAN_SWITCHES: ReadonlyArray<readonly [key: string, label: string]> = [
   ['writeAgents', '写入常驻规则 AGENTS.md'],
@@ -316,9 +315,8 @@ function renderTuiStatus(source: PromptSettings): string {
     const value = source.skillSwitches[skill.folder] !== false
     lines.push(`${('skill ' + skill.folder).padEnd(22)}${onOff(value)}  ${skill.name || skill.folder}`)
   }
-      return lines.join('\n')
+  return lines.join('\n')
 }
-
 
 /** 解析 on/off/toggle 三种输入。 */
 function parseTuiBoolean(token: string | undefined, current: boolean): boolean | undefined {
@@ -331,7 +329,7 @@ function parseTuiBoolean(token: string | undefined, current: boolean): boolean |
 /** 通过 DSH 命令注册表暴露 /prompt-tool，Web 与 dsh-tui 都能执行。 */
 function registerTuiCommand(ctx: Context, getSource: () => PromptSettings): void {
   ctx.inject(['settings'], (sctx: Context) => {
-    sctx.commands.register({
+    return sctx.commands.register({
       name: 'prompt-tool',
       description: '提示词工具：查看或切换本插件开关',
       input: { hint: 'status | on/off/toggle <开关> | skill <目录名> on/off' },
@@ -377,6 +375,7 @@ ${renderTuiStatus(getSource())}` }
   })
 }
 
+/** 自建 loopback settings bridge：替代 registerConfigurableProviders，避免模型设置区出现插件条目。 */
 function registerSettingsBridge(ctx: Context): void {
   ctx.inject(['settings'], (sctx: Context) => {
     sctx.effect(() => {
