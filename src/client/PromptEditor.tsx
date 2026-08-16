@@ -26,6 +26,7 @@ interface Fields {
   promptPath: string
   agentsText: string
   agentsPath: string
+  injectAgentsPrompt: boolean
   anchorFirstTurn: boolean
   anchorText: string
   injectPrompt: boolean
@@ -40,6 +41,7 @@ const EMPTY: Fields = {
   promptPath: '',
   agentsText: '',
   agentsPath: '',
+  injectAgentsPrompt: false,
   anchorFirstTurn: false,
   anchorText: '',
   injectPrompt: true,
@@ -50,6 +52,7 @@ const EMPTY: Fields = {
 }
 
 interface SwitchSnapshot {
+  injectAgentsPrompt: boolean
   anchorFirstTurn: boolean
   anchorText: string
   injectPrompt: boolean
@@ -59,6 +62,7 @@ interface SwitchSnapshot {
 }
 
 const EMPTY_SWITCHES: SwitchSnapshot = {
+  injectAgentsPrompt: false,
   anchorFirstTurn: false,
   anchorText: '',
   injectPrompt: true,
@@ -68,6 +72,7 @@ const EMPTY_SWITCHES: SwitchSnapshot = {
 }
 
 const snapshotSwitches = (fields: Fields): SwitchSnapshot => ({
+  injectAgentsPrompt: fields.injectAgentsPrompt,
   anchorFirstTurn: fields.anchorFirstTurn,
   anchorText: fields.anchorText,
   injectPrompt: fields.injectPrompt,
@@ -77,7 +82,8 @@ const snapshotSwitches = (fields: Fields): SwitchSnapshot => ({
 })
 
 const switchesEqual = (a: SwitchSnapshot, b: SwitchSnapshot): boolean =>
-  a.anchorFirstTurn === b.anchorFirstTurn
+  a.injectAgentsPrompt === b.injectAgentsPrompt
+  && a.anchorFirstTurn === b.anchorFirstTurn
   && a.anchorText === b.anchorText
   && a.injectPrompt === b.injectPrompt
   && JSON.stringify(a.skillSwitches) === JSON.stringify(b.skillSwitches)
@@ -182,6 +188,7 @@ export function PromptEditor(props: PromptEditorProps): ReactNode {
         promptPath: readString(value, 'promptPath') ?? readString(base, 'promptPath') ?? '',
         agentsText: readString(value, 'agentsText') ?? readString(base, 'agentsText') ?? '',
         agentsPath: readString(value, 'agentsPath') ?? readString(base, 'agentsPath') ?? '',
+        injectAgentsPrompt: readBoolean(value, 'injectAgentsPrompt', readBoolean(base, 'injectAgentsPrompt', false)),
         anchorFirstTurn: readBoolean(value, 'anchorFirstTurn', readBoolean(base, 'anchorFirstTurn', false)),
         anchorText: readString(value, 'anchorText') ?? readString(base, 'anchorText') ?? '',
         injectPrompt: readBoolean(value, 'injectPrompt', readBoolean(base, 'injectPrompt', true)),
@@ -298,6 +305,7 @@ export function PromptEditor(props: PromptEditorProps): ReactNode {
 
   const persistSwitches = () => enqueueSave(
     [
+      { op: 'set', path: ['injectAgentsPrompt'], value: fieldsRef.current.injectAgentsPrompt },
       { op: 'set', path: ['anchorFirstTurn'], value: fieldsRef.current.anchorFirstTurn },
       { op: 'set', path: ['anchorText'], value: fieldsRef.current.anchorText },
       { op: 'set', path: ['injectPrompt'], value: fieldsRef.current.injectPrompt },
@@ -309,7 +317,7 @@ export function PromptEditor(props: PromptEditorProps): ReactNode {
     () => setSavedSwitches(snapshotSwitches(fieldsRef.current)),
   )
 
-  const toggle = (key: 'anchorFirstTurn' | 'injectPrompt' | 'writeAgents' | 'writePreset') => {
+  const toggle = (key: 'injectAgentsPrompt' | 'anchorFirstTurn' | 'injectPrompt' | 'writeAgents' | 'writePreset') => {
     patch({ [key]: !fieldsRef.current[key] })
     persistSwitches()
   }
@@ -328,7 +336,8 @@ export function PromptEditor(props: PromptEditorProps): ReactNode {
   const dirtySwitches = !switchesEqual(currentSwitches, savedSwitches)
   const dirty = dirtyPrompt || dirtyAgents || dirtySwitches
   const promptSwitchDirty = fields.injectPrompt !== savedSwitches.injectPrompt
-  const agentsSwitchDirty = fields.writeAgents !== savedSwitches.writeAgents
+  const agentsSwitchDirty = fields.injectAgentsPrompt !== savedSwitches.injectAgentsPrompt
+    || fields.writeAgents !== savedSwitches.writeAgents
   const skillsSwitchDirty = JSON.stringify(fields.skillSwitches) !== JSON.stringify(savedSwitches.skillSwitches)
   const presetSwitchDirty = fields.writePreset !== savedSwitches.writePreset
     || fields.anchorFirstTurn !== savedSwitches.anchorFirstTurn
@@ -361,11 +370,12 @@ export function PromptEditor(props: PromptEditorProps): ReactNode {
                 <input
                   type="checkbox"
                   checked={fields.injectPrompt}
+                    disabled={!fields.writePreset}
                   onChange={() => toggle('injectPrompt')}
                 />
                 <span className={styles.rowText}>
                   <span className={styles.rowName}>注入 preset.md（锚定层）</span>
-                  <span className={styles.rowDesc}>开启时由 preset 在 we 锚定确认后注入一次 preset.md；关闭仅保留首轮工具引导</span>
+                  <span className={styles.rowDesc}>开启时注入 preset.md；关闭后不再注入 preset.md。若 AGENTS 头部注入开启，关闭本开关仍会只注入 AGENTS.md</span>
                 </span>
               </label>
               <textarea
@@ -389,16 +399,28 @@ export function PromptEditor(props: PromptEditorProps): ReactNode {
               onToggle={() => setAgentsOpen(!agentsOpen)}
             >
               <label className={styles.row}>
-                <input
-                  type="checkbox"
-                  checked={fields.writeAgents}
-                  onChange={() => toggle('writeAgents')}
-                />
-                <span className={styles.rowText}>
-                  <span className={styles.rowName}>写入 ~/.dsh/AGENTS.md</span>
-                  <span className={styles.rowDesc}>开启时把项目 AGENTS.md 写入常驻层；关闭时不写入，已有文件保持原样</span>
-                </span>
-              </label>
+                  <input
+                    type="checkbox"
+                    checked={fields.injectAgentsPrompt}
+                    disabled={!fields.writePreset}
+                    onChange={() => toggle('injectAgentsPrompt')}
+                  />
+                  <span className={styles.rowText}>
+                    <span className={styles.rowName}>注入 AGENTS.md 到 preset 头部</span>
+                    <span className={styles.rowDesc}>开启时把 AGENTS.md 拼接到 preset.md 内容头部注入；与写入 ~/.dsh/AGENTS.md 的全局开关相互独立</span>
+                  </span>
+                </label>
+                <label className={styles.row}>
+                  <input
+                    type="checkbox"
+                    checked={fields.writeAgents}
+                    onChange={() => toggle('writeAgents')}
+                  />
+                  <span className={styles.rowText}>
+                    <span className={styles.rowName}>写入 ~/.dsh/AGENTS.md</span>
+                    <span className={styles.rowDesc}>保持 AGENTS.md 的全局常驻注入；关闭后不再写入，已有文件保持原样</span>
+                  </span>
+                </label>
               <textarea
                 className={styles.textarea}
                 aria-label="AGENTS.md 内容"
@@ -457,6 +479,7 @@ export function PromptEditor(props: PromptEditorProps): ReactNode {
                 <input
                   type="checkbox"
                   checked={fields.anchorFirstTurn}
+                  disabled={!fields.writePreset}
                   onChange={() => toggle('anchorFirstTurn')}
                 />
                 <span className={styles.rowText}>
@@ -472,7 +495,7 @@ export function PromptEditor(props: PromptEditorProps): ReactNode {
                 <textarea
                   className={styles.anchorInput}
                   value={fields.anchorText}
-                  disabled={!fields.anchorFirstTurn}
+                  disabled={!fields.writePreset || !fields.anchorFirstTurn}
                   onChange={(e) => patch({ anchorText: e.target.value })}
                   onBlur={() => persistSwitches()}
                   spellCheck={false}

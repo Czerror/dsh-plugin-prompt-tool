@@ -6,6 +6,11 @@
  *   turn1 reasoning 以 "we" 开头 → 下一轮注入 promptText 一次；
  *   we 未确认 → 最多再等一轮，仍无则强制注入（兜底，绝不卡死）。
  *
+ * promptText 由宿主在生成 preset 时准备好：
+ *   - 默认等于 preset.md 原文；
+ *   - 开启 injectAgentsPrompt 时，宿主会把 AGENTS.md 拼接到 preset.md 头部。
+ *   本模块只负责把最终文本作为一条 user 消息注入，不做路径探测。
+ *
  * 实测依据：
  *   - 复杂任务 + 原版 2 工具 + maxTokens 1024 → turn1 reasoning "We need"；
  *   - 简单任务模型直接调工具干活（无 we 首词），走兜底注入；

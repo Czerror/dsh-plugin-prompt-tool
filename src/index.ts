@@ -47,6 +47,8 @@ export interface Config {
   text: string
   /** 可选：覆盖 AGENTS.md 文本（默认读文件）。 */
   agentsText: string
+  /** 是否把 AGENTS.md 拼接到 preset.md 内容头部注入（默认关闭，本地安全测试用）。 */
+  injectAgentsPrompt: boolean
   /** 是否写 ~/.dsh/AGENTS.md（默认 true）。 */
   writeAgents: boolean
   /** 是否生成锚定注入 preset（默认 true）。 */
@@ -78,6 +80,7 @@ export interface Config {
 export const Config: z<Config> = z.object({
   text: z.string().default(''),
   agentsText: z.string().default(''),
+  injectAgentsPrompt: z.boolean().default(false),
   writeAgents: z.boolean().default(true),
   writePreset: z.boolean().default(true),
   injectPrompt: z.boolean().default(true),
@@ -113,6 +116,7 @@ export interface PromptSettings {
   promptPath: string
   agentsText: string
   agentsPath: string
+  injectAgentsPrompt: boolean
   anchorFirstTurn: boolean
   anchorText: string
   injectPrompt: boolean
@@ -127,6 +131,7 @@ const PromptSettingsSchema: z<PromptSettings> = z.object({
   promptPath: z.string().default(''),
   agentsText: z.string().default(''),
   agentsPath: z.string().default(''),
+  injectAgentsPrompt: z.boolean().default(false),
   anchorFirstTurn: z.boolean().default(false),
   anchorText: z.string().default("You are a helpful software assistant.\n\nBegin every reasoning block with 'We need'."),
   injectPrompt: z.boolean().default(true),
@@ -143,6 +148,7 @@ const PromptSettingsSchema: z<PromptSettings> = z.object({
 interface RuntimeOptions {
   writeAgents: boolean
   writePreset: boolean
+  injectAgentsPrompt: boolean
   injectPrompt: boolean
   skillSwitches: Record<string, boolean>
   anchorFirstTurn: boolean
@@ -225,7 +231,8 @@ interface WritePresetOptions {
 
 // 完整 anchored preset：上游文件（agent.cordis.yml + 全部 preset/*.mjs）直引
 // 子模块，本项目自有文件（preset.yml / prompt-injector.mjs / turn-anchor.mjs）
-// 走 preset/ 快照。anchorFirstTurn 开启时 cordis 注入 turn-anchor 行。
+// 走 preset/ 快照。agent.cordis.yml 只保留最小 prompt-injector 行，常驻规则
+// 提示等附加内容全部由 prompt-injector.mjs 在运行时注入。
 function writePreset(prompt: string, options: WritePresetOptions): void {
   const presetDir = options.presetDir
   mkdirSync(presetDir, { recursive: true })
@@ -267,7 +274,7 @@ export function apply(ctx: Context, config: Config): void {
   }))
 
   // 1) 按需层：注册 skills/*/SKILL.md，name/description/whenToUse/metadata 全部来自各自 frontmatter。
-  //    content = preset.md 规范（Web UI 可编辑）+ 技能正文；全部技能关闭时列表自然为空。
+  //    content 只包含技能自身正文；preset.md 不拼进技能正文，全部技能关闭时列表自然为空。
   let skillSwitches: Record<string, boolean> = { ...config.skillSwitches }
   let invalidateSkills: (() => void) | undefined
   ctx.skills.registerProvider((control: SkillProviderControl): SkillProvider => {
@@ -306,7 +313,7 @@ export function apply(ctx: Context, config: Config): void {
           resourceBase: candidate.resourceBase,
           ...(candidate.path !== undefined ? { path: candidate.path } : { path: skill.file }),
           ...(candidate.metadata !== undefined ? { metadata: candidate.metadata } : {}),
-          content: skill.body ? current + '\n\n---\n\n' + skill.body : current,
+          content: skill.body,
         }
       },
     }
@@ -327,6 +334,7 @@ export function apply(ctx: Context, config: Config): void {
   const runtime: RuntimeOptions = {
     writeAgents: config.writeAgents,
     writePreset: config.writePreset,
+    injectAgentsPrompt: config.injectAgentsPrompt,
     injectPrompt: config.injectPrompt,
     skillSwitches: { ...config.skillSwitches },
     anchorFirstTurn: config.anchorFirstTurn,
@@ -338,6 +346,7 @@ export function apply(ctx: Context, config: Config): void {
     promptPath: PRESET_FILE_PATH,
     agentsText: currentAgents,
     agentsPath: AGENTS_FILE_PATH,
+    injectAgentsPrompt: runtime.injectAgentsPrompt,
     anchorFirstTurn: runtime.anchorFirstTurn,
     anchorText: runtime.anchorText,
     injectPrompt: runtime.injectPrompt,
@@ -353,6 +362,7 @@ export function apply(ctx: Context, config: Config): void {
     const nextRuntime: RuntimeOptions = {
       writeAgents: typeof next.writeAgents === 'boolean' ? next.writeAgents : config.writeAgents,
       writePreset: typeof next.writePreset === 'boolean' ? next.writePreset : config.writePreset,
+      injectAgentsPrompt: typeof next.injectAgentsPrompt === 'boolean' ? next.injectAgentsPrompt : config.injectAgentsPrompt,
       injectPrompt: typeof next.injectPrompt === 'boolean' ? next.injectPrompt : config.injectPrompt,
       skillSwitches: next.skillSwitches !== undefined ? next.skillSwitches : config.skillSwitches,
       anchorFirstTurn: typeof next.anchorFirstTurn === 'boolean' ? next.anchorFirstTurn : config.anchorFirstTurn,
@@ -363,6 +373,7 @@ export function apply(ctx: Context, config: Config): void {
     const skillSwitchesChanged = JSON.stringify(runtime.skillSwitches) !== JSON.stringify(nextRuntime.skillSwitches)
     const settingsChanged = runtime.writeAgents !== nextRuntime.writeAgents
       || runtime.writePreset !== nextRuntime.writePreset
+      || runtime.injectAgentsPrompt !== nextRuntime.injectAgentsPrompt
       || runtime.injectPrompt !== nextRuntime.injectPrompt
       || skillSwitchesChanged
       || runtime.anchorFirstTurn !== nextRuntime.anchorFirstTurn
@@ -389,6 +400,7 @@ export function apply(ctx: Context, config: Config): void {
     }
     runtime.writeAgents = nextRuntime.writeAgents
     runtime.writePreset = nextRuntime.writePreset
+    runtime.injectAgentsPrompt = nextRuntime.injectAgentsPrompt
     runtime.injectPrompt = nextRuntime.injectPrompt
     runtime.skillSwitches = nextRuntime.skillSwitches
     runtime.anchorFirstTurn = nextRuntime.anchorFirstTurn
@@ -396,17 +408,33 @@ export function apply(ctx: Context, config: Config): void {
     skillSwitches = runtime.skillSwitches
     if (skillSwitchesChanged) invalidateSkills?.()
 
-    if (runtime.writeAgents && !writeAgents(currentAgents, config.residentAgentsPath)) {
-      warn(ctx, `prompt-tool: failed to write resident rules to ${config.residentAgentsPath}`)
+    let residentAgentsWritten = false
+    if (runtime.writeAgents) {
+      residentAgentsWritten = writeAgents(currentAgents, config.residentAgentsPath)
+      if (!residentAgentsWritten) {
+        warn(ctx, `prompt-tool: failed to write resident rules to ${config.residentAgentsPath}`)
+      }
     }
     if (runtime.writePreset) {
-      writePreset(current, {
+      const promptParts: string[] = []
+      if (runtime.injectAgentsPrompt && currentAgents.length > 0) promptParts.push(currentAgents)
+      if (runtime.injectPrompt && current.length > 0) promptParts.push(current)
+      const presetPrompt = promptParts.join('\n\n')
+      const enableInjector = (runtime.injectAgentsPrompt || runtime.injectPrompt) && presetPrompt.length > 0
+      writePreset(presetPrompt, {
         anchorFirstTurn: runtime.anchorFirstTurn,
         anchorText: runtime.anchorText,
-        injectPrompt: runtime.injectPrompt,
+        injectPrompt: enableInjector,
         presetDir: config.presetDir,
         presetOrder: config.presetOrder,
       })
+    } else {
+      // writePreset 关闭时移除旧的生成目录，避免残留 prompt-injector 继续注入。
+      try {
+        rmSync(config.presetDir, { recursive: true, force: true })
+      } catch (error) {
+        warn(ctx, 'prompt-tool: failed to remove ' + config.presetDir + ': ' + String(error))
+      }
     }
   }
 
@@ -415,6 +443,7 @@ export function apply(ctx: Context, config: Config): void {
     promptPath: PRESET_FILE_PATH,
     agentsText: currentAgents,
     agentsPath: AGENTS_FILE_PATH,
+    injectAgentsPrompt: config.injectAgentsPrompt,
     anchorFirstTurn: config.anchorFirstTurn,
     anchorText: config.anchorText,
     injectPrompt: config.injectPrompt,
