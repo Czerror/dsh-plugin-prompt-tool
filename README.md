@@ -126,7 +126,7 @@ pnpm prepare      # npm publish / git install 前自动触发（构建 lib/ 与 
 
 ## 装载（官方 bundle-in-profile 模式）
 
-本插件挂载在**独立 profile**（`prompt-tool`），不混入 web profile（web 是别人的插件组合）。
+本插件挂载在**独立 profile**（`prompt-tool`）。
 
 ```sh
 dsh plugin --profile prompt-tool add link:<本仓库绝对路径>      # 官方 link 安装
