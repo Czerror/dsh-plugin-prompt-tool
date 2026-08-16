@@ -1,211 +1,115 @@
 # 提示词工具（dsh-plugin-prompt-tool）
 
-DSH 插件：把提示词规范注入三层（常驻层 + 按需技能层 + agent preset 锚定注入层），并提供 Web UI 在线编辑 `preset.md` 与 `AGENTS.md`。完整集成 [dsh-anchored-standard](https://github.com/xiaobright/dsh-anchored-standard) 的首轮锚定机制。
+DSH 插件：为 DeepSeek Harness 提供三层提示词规范注入，并通过 Web 界面在线编辑。核心是“最优组合”首轮锚定：保持官方 Minimal（极简）训练分布的首轮条件，在模型轨迹稳定后再恢复完整能力。
 
-## 三层注入
-
-- **常驻层（user 层）**：`AGENTS.md` 规则写入 `~/.dsh/AGENTS.md`。上游现以 `instruction-hint` 取代 dsh-agent-instructions 的大块注入：晋升后只提示一次"这些指令文件存在，先读"，模型经文件工具自行读取；开启 `injectAgentsPrompt` 时，该提示文本改为直接注入 `AGENTS.md` 内容，注入位置不变，每会话一次（`preset.md` 不混入，改由 preset 层在锚定确认后注入，避免重复）。
-- **按需层（技能）**：扫描 `skills/*/SKILL.md` 注册全部技能；每个技能的开关以目录名为键、以 frontmatter 的 `name`（缺省用目录名）显示；加载时 content = `preset.md` 规范 + 技能正文，`resourceBase` 指向 `skills/<目录>`。
-- **独立 agent preset 层**：插件加载时直引 anchored-standard 上游文件生成 preset 到 `~/.dsh/.agent-presets/prompt-tool/`（首轮 = 官方 Minimal 真实 schema：持久 `bash` + `str_replace_editor` + 剥离自动注入上下文，无输出 cap）；首轮 reasoning 稳定 "we" 轨迹，we 锚定确认后注入 `preset.md`；晋升后不放全量目录，改为 resident 集（bootstrap 对 + `dev_tool_search` / `skill_search` / `skill_load` + 已解锁工具）。
-
-> 提示词采用「we 锚定确认后注入」：首轮剥离自动注入（`agent-instructions` / `skill-catalog`），Minimal 真实工具 schema 下 reasoning 稳定走 "We need…" 轨迹；确认 we 锚定后（或不确认则最多等一轮兜底）把提示词规范作为 user 消息补进来（每会话一次）。工具目录晋升不依赖 we 确认（首个工具调用或助手回复即放开），锚定失败也不会卡死。
-
-## 项目引用
-
-本项目集成与参考的生态项目：
+## 来源与参考
 
 | 项目 | 关系 | 复用内容 |
 |---|---|---|
-| [dsh-anchored-standard](https://github.com/xiaobright/dsh-anchored-standard) | **集成（上游，跟踪 main）** | 加载时直引子模块 `vendor/dsh-anchored-standard/preset/` 的 `agent.cordis.yml` 与全部 `*.mjs` 模块（更新即生效），Minimal 真实 schema 首轮锚定机制 |
-| [dsh-router-standard](https://github.com/yjh051108/dsh-router-standard) | 参考 | 复杂度启发式正则、近距离注入原则、持久事件推导状态（resume 安全） |
-| [dsh-super-injector](https://github.com/yjh051108/dsh-super-injector) | 参考 | 缓存铁律（静态进 system 头、动态走消息尾）、首轮锚定铁律、开发工具链（dev_* 注入/热重载） |
-| [dsh 破限者（1449690477/dsh）](https://github.com/1449690477/dsh) | 姊妹项目 | `skills/` 技能目录（sandboxmod/SKILL.md）与之同源，常驻层 AGENTS.md 机制一致 |
+| [xiaobright/dsh-anchored-standard](https://github.com/xiaobright/dsh-anchored-standard) | 上游，内联快照 | 两阶段首轮锚定、tool-bootstrap、context-gate、resident 目录与按需解锁 |
+| [yjh051108/dsh-router-standard](https://github.com/yjh051108/dsh-router-standard) | 参考 | 首轮结构、追加任务引导、Flash 弱路由人设与三锚、子代理方案 |
+| [yjh051108/dsh-super-injector](https://github.com/yjh051108/dsh-super-injector) | 参考 | 缓存铁律、工具面成本原则 |
 
-### 上游直引（子模块）
+上游文件固化在 `upstream/dsh-anchored-standard/`（含 `LICENSE`、`NOTICE`、`REVISION`），
+用 `pnpm sync:anchored` 更新。
 
-上游文件不复制、不锁版本：`.gitmodules` 已声明 `branch = main`，插件加载（写 preset）时
-直接读子模块 `vendor/dsh-anchored-standard/preset/` 里的 `agent.cordis.yml`（运行时注入
-prompt-injector 块与 `preset.md`）以及全部上游 `*.mjs` 模块（tool-bootstrap /
-compaction-epoch / custom-bash / dev-tool-search / instruction-hint / skill-search），
-并把它们完整复制进生成的 preset。同步上游：
+## 项目说明
 
-```sh
-git submodule update --remote vendor/dsh-anchored-standard   # 跟随上游 main
-pnpm build                                                   # 重建插件
-# 重启 dsh 即生效
-```
+- **常驻层**：把 `AGENTS.md` 作为受管块写入 `~/.dsh/AGENTS.md`；开启 `injectAgentsPrompt` 时，以 `instruction-hint` 的位置每会话注入一次。
+- **按需层**：扫描 `skills/*/SKILL.md` 注册可开关技能，内容只来自技能自身。
+- **锚定层**：生成独立的 `~/.dsh/.agent-presets/prompt-tool/` 预设，承载首轮工具引导、上下文闸门、任务引导注入与提示词注入。
+- **Web 界面**：自建回环设置桥，在线编辑 `preset.md` 与 `AGENTS.md`，切换全部开关；不占用模型设置区。
+- **TUI（终端界面）命令**：`/prompt-tool status` 查看状态，`/prompt-tool on|off|toggle <开关>` 切换。
+- **上游管理**：上游 dsh-anchored-standard 以内联快照形式放在 `upstream/`，`pnpm sync:anchored` 刷新；不再使用 git 子模块。
 
-- 上游仓库以子模块形式固定在 `vendor/dsh-anchored-standard`，跟踪 main，不锁 commit
-- `preset.yml`、`prompt-injector.mjs`、`turn-anchor.mjs` 为本项目自有文件，固定走 `preset/`
-- vendor 缺失（git 安装未初始化子模块）或上游结构变化 → 插件加载时报错（fail loud）
-- npm 安装走发布包内置的 `vendor/dsh-anchored-standard/preset` 快照，无需子模块；
-  git clone / `link:` 安装则需 `git submodule update --init` 后再使用
-
-## 修改记录
-
-- **v2.3（2026-08-15）**：删除 `prompt/references` 档位参考目录（SKILL.md 已内联全部规则，不再需要）；README 描述同步。
-- **v2.4（2026-08-15）**：新增 `injectSkill` 开关（按需层 `prompt/SKILL.md` 技能注入）；UI 开关描述按实际生效层级修正，`injectPrompt` 明确为锚定层注入。
-- **v2.5（2026-08-15）**：技能目录更名 `prompt` → `skills`，`SKILL.md` 移至 `skills/sandboxmod/`；新增 AGENTS.md 在线编辑保存与 skills 子折叠栏逐个技能开关。
-- **v2.6（2026-08-15）**：移除 `injectSkill` 总开关（全部技能关闭时技能列表自动为空）；UI 改为 preset.md / AGENTS.md / skills / 锚定轮与 preset 四个分区，每个分区默认折叠。
-- **v2.7（2026-08-15）**：`prompt.md` 文件更名为 `preset.md`；分区更名为 Preset预设 / AGENTS设置 / Skills设置 / 锚定轮与 preset。
-- **v2.2（2026-08-15）**：子模块同步上游 main（`ffb845c`，PR #20/#21/#23/#27/#29）。晋升后由全量目录改为 resident 集（bootstrap 对 + dev_tool_search / skill_search / skill_load + 解锁工具）；AGENTS.md 由每轮注入改为 instruction-hint 一次性提示 + 模型自读；新增 compaction 回落与 Windows custom-bash；`writePreset` 复制上游全部 `preset/*.mjs`；`.gitmodules` 声明 `branch = main`。
-- **v2.1（2026-08-15）**：技能目录重命名 `dreammod` → `skill` → `prompt`；上游改为子模块直引，移除不再需要的同步脚本。
-- **v2.0（2026-08-15）**：跟随 anchored-standard PR #14，首轮工具 schema 从 `pwsh/read + 1024 cap` 改为官方 Minimal 真实 schema（持久 `bash` + `str_replace_editor`，无 cap）；删除 zero 变体与锚定消息机制，回归原版 tool-bootstrap（字节一致）+ `prompt-injector.mjs` 附加件（we 确认后注入一次 preset.md，未确认最多等一轮兜底）。实测：复杂英文任务 ×5 并行，we 锚定 5/5、首请求纯净、注入恰好一次。
-- **v1（2026-08）**：初版——zero 工具锚定变体 + 固定锚定消息 + 三层注入（AGENTS.md 常驻层、skill 按需层、preset 层）。
-
-## Web UI
-
-在 Settings → 插件 → **插件配置**分区注册「提示词工具」可折叠卡片（`settings.plugin.item`，与其他插件卡片同款式），展开后提供：
-
-- **分区折叠**：Preset预设区（编辑器 + `injectPrompt`）、AGENTS设置区（编辑器 + `injectAgentsPrompt` + `writeAgents`）、Skills设置区（每个技能独立开关 `skillSwitches`）、锚定轮与 preset 区（`writePreset`、`anchorFirstTurn`、`anchorText`）；每个分区默认折叠，文件分区带独立保存/还原/打开按钮，开关点击即时生效
-- **保存 / 还原草稿 / 项目还原 / 打开**：`preset.md` 与 `AGENTS.md` 各自独立保存、还原未保存草稿、从项目原文还原、用系统编辑器打开。UI 只读写 `settings.yaml` 中的插件配置；`保存` 只写 settings，`项目还原` 读取项目根目录里的原始 `preset.md` / `AGENTS.md` 并覆盖写回 settings。注入开关与技能开关点击后即时写入 settings 并生效，不需要保存按钮。Host 监听 settings 变化后刷新 `~/.dsh/AGENTS.md` 受管块与 preset、失效技能目录缓存，下一次请求即生效
-- **打开编辑**：用系统编辑器分别打开 `preset.md` 或 `AGENTS.md`
-- **在线编辑框**：直接编辑 `preset.md` 与 `AGENTS.md` 文本
-
-## 工作原理
-
-1. 首次安装时，Host 读取项目根目录的 `preset.md` 与 `AGENTS.md`，把内容写入 `settings.yaml` 的 `prompt-tool.promptText` / `prompt-tool.agentsText`；之后每次启动优先读取 settings，项目文件不再被设置回写。
-2. 常驻层：`writeAgents` 开启时把当前 `AGENTS.md` 写入 `~/.dsh/AGENTS.md`；`injectAgentsPrompt` 开启时，`instruction-hint` 位置注入的是 `AGENTS.md` 内容本身，而不是提示模型自行读取。
-3. 按需层：扫描 `skills/*/SKILL.md`；每个技能的 name/description/whenToUse/metadata 来自自身 frontmatter，并按 `skillSwitches` 决定是否注册；全部技能关闭时技能列表自动为空。加载内容为 `preset.md` 规范 + 技能正文。
-4. preset 层：直引 `vendor/` 上游 `agent.cordis.yml` + 全部 `*.mjs` 生成 `~/.dsh/.agent-presets/prompt-tool/`，并把 `preset.md` 注入 `prompt-injector` 的 `promptText`（we 锚定确认后注入）。晋升后目录为 resident 集，其余工具经 `dev_tool_search` 按需解锁。
-5. UI 保存通过 settings API 只写入 `settings.yaml` 的 `promptText`、`agentsText` 与全部开关；Host 的 watch 回调按最新设置刷新 `~/.dsh/AGENTS.md` 受管块与 preset（含 turn-anchor 行的增删）、失效技能目录缓存，下一次请求即生效，不再覆盖项目根文件。
-
-## 文件结构
-
-```text
-dsh-plugin-prompt-tool/
-├── package.json
-├── LICENSE                     # MIT
-├── preset.md                   # 项目原文：首次种子与「项目还原」按钮的数据来源
-├── AGENTS.md                   # 项目原文：首次种子与「项目还原」按钮的数据来源
-├── plan.md                     # 设计与测试计划（含上游更新对照、实测数据）
-├── tsconfig.json               # Host 类型检查 program（排除 src/client）
-├── tsconfig.client.json        # Client 类型检查 program（jsx: react-jsx）
-├── tsdown.config.ts            # 构建配置（host lib + client bundle，自包含）
-├── cordis.patch.yml            # 挂载配置
-├── preset/                     # 本项目自有 preset 文件（上游文件直引 vendor 子模块）
-│   ├── preset.yml              # preset 元数据
-│   ├── prompt-injector.mjs     # 附加件：we 锚定确认后注入一次 preset.md
-│   └── turn-anchor.mjs         # 可选附加件：首轮独立锚定轮（anchorFirstTurn 开关）
-├── skills/                     # 按需层技能目录
-│   └── sandboxmod/
-│       └── SKILL.md            # 技能定义（frontmatter name: prompt，开关键 sandboxmod）
-├── src/
-│   ├── index.ts                # Host 入口
-│   ├── preset-core.ts          # preset 生成纯函数（buildCordis / parseFrontmatter）
-│   ├── css-modules.d.ts
-│   └── client/
-│       ├── index.ts            # Client 入口（注册 settings.plugin.item 卡片）
-│       ├── PromptEditor.tsx    # 编辑框组件
-│       └── PromptEditor.module.css
-├── test/
-│   └── preset-core.test.mjs    # node:test 单元测试（buildCordis / parseFrontmatter）
-├── vendor/                     # git 子模块：dsh-anchored-standard（跟踪 main；agent.cordis.yml + 全部 preset/*.mjs 直引源）
-└── lib/                        # 构建产物（pnpm build 生成，不提交）
-    ├── index.mjs               # Host 运行时（ESM）
-    ├── index.d.mts             # Host 类型声明
-    ├── preset-core.mjs         # preset 生成核心（测试导入）
-    └── client.js               # Client 运行时（浏览器模块加载器协议，经 exports["./client"] 扫描）
-```
-
-## 构建与检查
+## 构建 / 装载
 
 ```sh
 pnpm install
-pnpm build
-pnpm typecheck    # Host 与 Client 两个 tsc program，均 --noEmit
-pnpm lint         # oxlint
-pnpm test         # pnpm build + node --test
+pnpm build          # 生成 lib/
+pnpm typecheck      # Host 与 Client 两个 tsc program
+pnpm lint           # oxlint
+pnpm test           # pnpm build + node --test
+pnpm prepare        # npm publish / git install 前自动触发
+pnpm sync:anchored  # 从上游 main 刷新内联快照（可加 ref 参数）
 ```
 
-按官方发布规范，`prepare` 也指向同一份 tsdown 配置（自包含转译 `src/`，并产出 `.d.mts` 类型声明）：
+本插件挂载在独立 profile（`prompt-tool`）：
 
 ```sh
-pnpm prepare      # npm publish / git install 前自动触发（构建 lib/ 与 vendor/ 直引文件的发布快照）
-```
-
-## 装载（官方 bundle-in-profile 模式）
-
-本插件挂载在**独立 profile**（`prompt-tool`）。
-
-```sh
-dsh plugin --profile prompt-tool add link:<本仓库绝对路径>      # 官方 link 安装
-dsh plugin --profile prompt-tool remove dsh-plugin-prompt-tool # 卸载
-```
-
-profile 的 bundles：`@deepseek-ai/dsh-base` + `@deepseek-ai/dsh-web-app`（in-box，直接写进
-bundles 列表，pnpm 不管理）+ `dsh-plugin-prompt-tool`。本地仓库 link 后：`lib/` 为已构建
-产物（`pnpm build` 生成），`vendor/` 子模块随仓库 checkout，插件加载时直引上游最新文件
-（`git submodule update --remote vendor/dsh-anchored-standard` 后重启 dsh 即生效）。
-
-启动（web app 随 `dsh-web-app` bundle 自动挂载）：
-
-```sh
+dsh plugin --profile prompt-tool add link:<本仓库绝对路径>
 dsh --profile prompt-tool
+dsh plugin --profile prompt-tool remove dsh-plugin-prompt-tool
 ```
 
-注意：`dsh web` 是 `--profile web` 的保留别名，不可与 `--profile` 组合。临时调试可用官方
-`--patch` 覆盖层（不落盘、不改任何 profile）：
+临时调试可用官方 `--patch` 覆盖层（不落盘、不改 profile）：
 
 ```sh
 dsh --profile prompt-tool --patch <cordis.yml>
 ```
 
-## 挂载
+完全重启 dsh 后，新建会话并选择 prompt-tool 预设。
+
+## 原理
+
+模型的首轮请求结构决定整条会话轨迹。上游实测：官方 Minimal 首轮（训练原句 + 持久 `bash` + `str_replace_editor`，无输出封顶）稳定锚定 we 轨迹；完整 Standard 目录与自动注入在场会破坏锚定。
+
+本插件把“首轮轨迹选择”和“后续完整能力”拆开：
+
+1. **干净首轮**：`context-gate` 清空首轮自动上下文并剥离自动注入；`tool-bootstrap` 只暴露 Minimal 两个工具；`router-first-turn` 把 persona 替换为训练原句。
+2. **晋升**：首次工具调用或助手回复落地后，目录进入 resident（常驻）集，上下文与注入恢复；工具按需解锁。
+3. **追加任务引导**：可选 `near-anchor`，在首条真实用户消息之后追加一次引导——默认按任务自动选择 we/let 首句，也可固定使用自定义文本。
+4. **提示词注入**：we 锚定确认后，把 `preset.md` 作为用户消息注入一次；未确认最多等一轮兜底。
+5. **子代理**：目录直接全量放行（实际仍受调用方工具白名单过滤）；开启 `subagentFlash` 时，采用 dsh-router-standard 的 Flash 方案——固定 Flash 路由、任务分类人设与三锚。
+
+主会话首轮始终只有两个工具；模型性能不受记忆、技能等自动注入影响，完整能力在轨迹稳定后恢复。
+
+## 配置参考
+
+挂载配置（cordis.patch.yml / profile patch）：
 
 ```yaml
 - insert:
     - id: prompt-tool
       name: dsh-plugin-prompt-tool
       config:
-        text: ''            # 可选：覆盖 preset.md 文本（默认读文件）
-        agentsText: ''      # 可选：覆盖 AGENTS.md 文本（默认读文件）
-        injectAgentsPrompt: false  # 是否用 AGENTS.md 内容替换上游 instruction-hint 提示（默认关闭，本地安全测试用）
-        writeAgents: true   # 是否写 ~/.dsh/AGENTS.md（默认 true）
-        writePreset: true   # 是否生成锚定注入 preset（默认 true）
-        injectPrompt: true  # 是否注入 preset.md（默认 true；关闭后只停止 preset.md 注入，AGENTS 注入不受影响）
-        skillSwitches: {}   # 按 skills/* 目录名自动生成，未列出的目录默认 true
-        anchorFirstTurn: false  # 首轮独立锚定轮开关（默认关闭）
-        anchorText: "You are a helpful software assistant.\n\nBegin every reasoning block with 'We need'."  # 锚定句文本
-        skillsDir: ''       # 可选：技能目录（默认包内 skills/，可指向本地测试目录）
-        skillRankBase: 250  # 技能候选排序基数，技能目录内按下标递增
-        residentAgentsPath: ''  # 可选：常驻规则文件目标路径（默认 ~/.dsh/AGENTS.md）
-        presetDir: ''       # 可选：生成的 agent preset 目录（默认 ~/.dsh/.agent-presets/prompt-tool/）
-        presetOrder: 5      # 生成 preset 的显示顺序
-        fallbackText: ''    # 可选：preset.md 缺失或不可读时使用的文本（默认空文本）
+        text: ''            # 覆盖 preset.md 文本；默认读项目文件
+        agentsText: ''      # 覆盖 AGENTS.md 文本；默认读项目文件
+        injectAgentsPrompt: false  # 用 AGENTS.md 替换 instruction-hint 提示文本
+        writeAgents: true   # 写 ~/.dsh/AGENTS.md 受管块（默认 true）
+        writePreset: true   # 启用锚定预设（总开关，默认 true）
+        injectPrompt: true  # we 确认后注入 preset.md（默认 true）
+        skillSwitches: {}   # 按 skills/* 目录名开关，未列出默认开启
+        anchorFirstTurn: false  # 追加任务引导（默认关闭）
+        anchorText: ''      # 自定义引导文本
+        anchorCustom: false # 使用自定义引导（true=固定使用 anchorText；false=自动选择）
+        subagentFlash: false    # 子代理固定 Flash 模型（默认关闭）
+        subagentFlashProvider: 'deepseek-official'
+        subagentFlashModel: 'deepseek-v4-flash'
+        customBashPath: 'bash.exe'  # 自定义 bash 路径（默认 PATH 查找）
+        skillsDir: ''       # 可选技能目录（默认包内 skills/）
+        skillRankBase: 250  # 技能候选排序基数
+        residentAgentsPath: ''  # 默认 ~/.dsh/AGENTS.md
+        presetDir: ''       # 默认 ~/.dsh/.agent-presets/prompt-tool/
+        presetOrder: 5      # preset 显示顺序
+        fallbackText: ''    # preset.md 缺失或不可读时的回退文本
 ```
 
-config 字段：`text`（覆盖 `preset.md` 文本，默认读文件）、`agentsText`（覆盖 `AGENTS.md` 文本，默认读文件）、`injectAgentsPrompt`（是否用 `AGENTS.md` 内容替换上游 `instruction-hint` 提示，默认关闭，本地安全测试用）、`writeAgents`（是否写 `~/.dsh/AGENTS.md`，默认 true）、`writePreset`（是否生成 `~/.dsh/.agent-presets/prompt-tool/`，默认 true）、`injectPrompt`（锚定层：we 锚定确认后是否注入 `preset.md`，默认 true）、`skillSwitches`（以技能目录名为键的逐技能开关，缺省视为 true）。 `skillsDir`（技能目录）、`skillRankBase`（技能候选排序基数）、`residentAgentsPath`（常驻规则文件目标路径）、`presetDir`（生成的 preset 目录）、`presetOrder`（preset 显示顺序）、`fallbackText`（`preset.md` 缺失时的回退文本）均可通过 cordis config 覆盖，默认值与上方注释一致。`writeAgents`、`writePreset`、`injectPrompt`、`injectAgentsPrompt`、`skillSwitches` 相互独立；`preset.md` 不拼进技能正文，技能加载内容只来自 `skills/<目录>/SKILL.md`。关闭 `injectPrompt` 只停止注入 `preset.md`；`injectAgentsPrompt` 开启时 `AGENTS.md` 走 `instruction-hint` 同一位置，与 `prompt-injector` 无关。`anchorFirstTurn` 与 `injectPrompt` 均通过 `writePreset` 生成的 preset 生效。开启 `injectAgentsPrompt` 后，宿主生成 `agents-instruction.txt` 并修补生成目录中的 `instruction-hint.mjs`，让 `AGENTS.md` 内容在 `instruction-hint` 的同一位置注入；`prompt-injector` 的 `promptText` 只由 `injectPrompt` 控制，不再拼接 `AGENTS.md`。开启 `injectAgentsPrompt` 时，`AGENTS.md` 内容会以 `instruction-hint` 的同一位置（消息尾部、同一 source 语义）注入，代替上游“请先读取 instruction files”这段提示文本；不会拼接到 `prompt-injector` 的 `promptText` 头部。
+字段说明：
 
-`anchorFirstTurn`（默认 false）开启后，preset 额外挂载 `turn-anchor.mjs`：会话首个真实用户消息先原样入 `agent.inbox` 的 `next-step`，首步只把 `anchorText` 作为独立输入发给模型；模型回应锚定句后，driver 在同一轮内自动消费任务继续执行。任务绝不丢失：inbox 入队失败时回退为原样直发。
+- **启用锚定预设**：总开关。开启时生成并刷新 `~/.dsh/.agent-presets/prompt-tool/`；关闭时移除已生成目录，锚定相关开关失效。
+- **追加任务引导**：开启时挂载 `near-anchor`，在首条真实用户消息后追加一次任务引导。
+- **使用自定义引导**：开启时固定使用 `anchorText`；关闭时按任务自动选择 we/let 引导，Flash 模型附加三锚。开启且文本为空时不注入。
+- **子代理固定 Flash 模型**：开启时采用 dsh-router-standard 的 Flash 子代理方案——通用子代理行加固定 Flash 路由、任务分类人设与三锚；宿主直派子代理（含 dsh-mnemon）自动补 Flash 路由，调用方显式模型优先。检测不到 DeepSeek 模型路由时 Web/TUI 禁用，且运行时强制降级为关闭。
+- **自定义 bash 路径**：上游若带作者机器固定路径，生成 preset 时归一化为该值，默认 PATH 查找 `bash.exe`。
+- 其他字段语义见上方配置注释；设置文件优先级高于挂载配置，首次安装时用项目文件内容初始化设置。
 
-锚定句实测（deepseek-v4-pro + reasoningEffort=max，简单任务）：
+## 版权
 
-- 默认句（含 "Begin every reasoning block with 'We need'."）：**12/12** 首轮 reasoning 以 "We need" 开头，preset.md 全部走 we 确认注入；
-- 裸句 "You are a helpful software assistant."：首词 "We need" 约 58-67%（12 会话 7-8 次），其余走兜底注入。
+本项目采用 MIT 许可证。
 
-## 锚定机制实测
-
-工具引导由 preset 层的 `tool-bootstrap.mjs`（anchored-standard 上游直引）承担（挂在 agent-plane 首行，`inject:[]` + `prepend: true`，保证 strip 是 waterfall 的最终 transform）：首轮 = Minimal 真实 schema（持久 `bash` + `str_replace_editor`）+ 剥离自动注入 → reasoning 稳定 "we" 轨迹 → 首个工具调用/助手回复落库后进入 resident 目录（bootstrap 对 + `dev_tool_search` / `skill_search` / `skill_load` + 已解锁工具）→ we 确认后（`prompt-injector.mjs`，注册在 tool-bootstrap 之后）注入 `preset.md` 一次。prompt-tool 插件（host 层）只负责生成 preset，不直接注册工具引导事件，避免与 preset 层重复。
-
-实测（deepseek-v4-pro + reasoningEffort=max，复杂英文任务 ×5 并行，dsh web HTTP API）：
-
-| 断言 | 结果 |
-|---|---|
-| turn1 reasoning 首词 we | **5/5** |
-| 首请求工具 | [bash, str_replace_editor]（5/5） |
-| 首请求 maxTokens | 256000（无 cap，5/5） |
-| 首请求前注入消息 | 纯净（仅 user，5/5） |
-| preset.md 注入 | 恰好一次，we 确认后同 turn 注入（5/5） |
-| 晋升后目录 | resident 集：bash + str_replace_editor + dev_tool_search / skill_search / skill_load + 已解锁工具（上游 v2.2 起） |
-
-详细设计、上游更新对照与踩坑记录见 [plan.md](plan.md)。
-
-## 已知限制
-
-- **模型设置页目录条目**：已不再经 `ctx.llm.registerConfigurableProviders` 暴露 settings 命名空间，改为自建 loopback-only `/api/prompt-tool/settings` bridge，模型设置页不会再出现「提示词工具」条目。
-- **AGENTS.md 写入**：UI 在线保存只写 `settings.yaml`，不再覆盖项目根 `AGENTS.md`。`writeAgents` 开启时，本插件在 `~/.dsh/AGENTS.md` 头部维护一个带 begin/end 标记的受管块，只更新该块，保留文件中其他内容；关闭开关后只删除该受管块。写入失败仅记录日志，请自行保留重要内容。
-- **UI 刷新策略**：插件配置卡片在无未保存草稿时每次展开都会同步最新 settings；存在草稿时保留本地编辑，点击「还原」可重新拉取。
-- **技能目录扫描**：`skills/*/SKILL.md` 在插件加载时扫描；新增或删除技能目录后重启 dsh 即生效，无需改代码。每个目录的开关默认开启，按目录名写入 `skillSwitches`。
-- **MCP 工具**：本 preset 晋升后为 resident 目录，外部 MCP 工具（`mcp__*`）不会默认可见，需模型经 `dev_tool_search` 解锁。
-- **上游跟随**：`writePreset` 动态复制上游 `preset/*.mjs` 全集；上游结构变化导致生成 YAML 非法或锚点缺失时 fail loud，同步命令见上文。
+- 首轮锚定机制源自 [xiaobright/dsh-anchored-standard](https://github.com/xiaobright/dsh-anchored-standard)（MIT），其 `preset/` 快照内联于本仓库 `upstream/`，对应上游提交记录见 `REVISION`。
+- 任务引导与 Flash 子代理方案参考 [yjh051108/dsh-router-standard](https://github.com/yjh051108/dsh-router-standard)（MIT）。
+- 缓存与工具面成本原则参考 [yjh051108/dsh-super-injector](https://github.com/yjh051108/dsh-super-injector)（MIT）。
+- 上游 `agent.cordis.yml` 基于 DeepSeek Harness Standard 预设修改；原始 DeepSeek 版权与 MIT 声明保留在 `upstream/dsh-anchored-standard/NOTICE` 与 `LICENSE`。
+- 本项目 `LICENSE` 见仓库根目录；随上游快照发布的 `upstream/dsh-anchored-standard/LICENSE` 与 `NOTICE` 继续保留。

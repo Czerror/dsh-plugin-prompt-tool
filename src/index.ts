@@ -21,7 +21,7 @@ import { buildCordis, parseFrontmatter } from './preset-core.ts'
 export const name = 'prompt-tool'
 // 内容走 user 层（AGENTS.md 常驻层 + skill 按需层），
 // 不再注册 system prompt section（否则会被 persona 的 complete:true 整个清零）。
-export const inject = ['skills', 'webServer', 'commands']
+export const inject = ['skills', 'webServer', 'commands', 'llm', 'subagents']
 
 const PRESET_FILE_URL = new URL('../preset.md', import.meta.url)
 const PRESET_FILE_PATH = fileURLToPath(PRESET_FILE_URL)
@@ -42,8 +42,9 @@ const DEFAULT_SKILL_RANK_BASE = 250
 // preset 模板文件（本项目自有快照；上游 agent.cordis.yml 与全部 *.mjs 直引 vendor 子模块）。
 const PRESET_TEMPLATE_META = fileURLToPath(new URL('../preset/preset.yml', import.meta.url))
 const PRESET_TEMPLATE_INJECTOR = fileURLToPath(new URL('../preset/prompt-injector.mjs', import.meta.url))
-const PRESET_TEMPLATE_ANCHOR = fileURLToPath(new URL('../preset/turn-anchor.mjs', import.meta.url))
-const VENDOR_PRESET_DIR = fileURLToPath(new URL('../vendor/dsh-anchored-standard/preset', import.meta.url))
+const PRESET_TEMPLATE_ANCHOR = fileURLToPath(new URL('../preset/near-anchor.mjs', import.meta.url))
+const PRESET_TEMPLATE_ROUTER = fileURLToPath(new URL('../preset/router-first-turn.mjs', import.meta.url))
+const VENDOR_PRESET_DIR = fileURLToPath(new URL('../upstream/dsh-anchored-standard/preset', import.meta.url))
 
 export interface Config {
   /** 可选：覆盖 preset.md 文本（默认读文件）。 */
@@ -60,10 +61,20 @@ export interface Config {
   injectPrompt: boolean
   /** 以技能目录名为键的逐技能开关，缺省视为 true。 */
   skillSwitches: Record<string, boolean>
-  /** 首轮独立锚定轮开关（默认关闭）。 */
+  /** 首轮近距离锚定开关（默认关闭）。 */
   anchorFirstTurn: boolean
-  /** 独立锚定轮发给模型的输入内容。 */
+  /** 自定义锚点文本；anchorCustom=true 时固定使用。 */
   anchorText: string
+  /** 自定义锚点开关：true 固定使用 anchorText；false 按任务自动选择。 */
+  anchorCustom: boolean
+  /** 子代理固定 Flash 模型：开启时给 subagent/subagent_fork 行加固定 Flash 路由；关闭时子代理继承主会话路由，目录全量放行。 */
+  subagentFlash: boolean
+  /** 子代理 Flash 路由 provider（默认 deepseek-official）。 */
+  subagentFlashProvider: string
+  /** 子代理 Flash 模型名（默认 deepseek-v4-flash）。 */
+  subagentFlashModel: string
+  /** Windows custom-bash 可执行名或路径；默认 bash.exe（PATH 查找）。 */
+  customBashPath: string
   /** 技能目录（默认包内 skills/，可指向本地测试目录）。 */
   skillsDir: string
   /** 技能候选排序基数，技能目录内按下标递增。 */
@@ -89,7 +100,12 @@ export const Config: z<Config> = z.object({
   injectPrompt: z.boolean().default(true),
   skillSwitches: z.dict(z.boolean()).default({}),
   anchorFirstTurn: z.boolean().default(false),
-  anchorText: z.string().default("You are a helpful software assistant.\n\nBegin every reasoning block with 'We need'."),
+  anchorText: z.string().default(''),
+  anchorCustom: z.boolean().default(false),
+  subagentFlash: z.boolean().default(false),
+  subagentFlashProvider: z.string().default('deepseek-official'),
+  subagentFlashModel: z.string().default('deepseek-v4-flash'),
+  customBashPath: z.string().default('bash.exe'),
   skillsDir: z.string().default(DEFAULT_SKILLS_DIR),
   skillRankBase: z.natural().default(DEFAULT_SKILL_RANK_BASE),
   residentAgentsPath: z.string().default(DEFAULT_RESIDENT_AGENTS_PATH),
@@ -122,6 +138,10 @@ export interface PromptSettings {
   injectAgentsPrompt: boolean
   anchorFirstTurn: boolean
   anchorText: string
+  anchorCustom: boolean
+  subagentFlash: boolean
+  /** 运行时检测：是否注册了 DeepSeek 模型路由（不写入 settings）。 */
+  deepseekAvailable: boolean
   injectPrompt: boolean
   skillSwitches: Record<string, boolean>
   skillCatalog: SkillCatalogEntry[]
@@ -136,7 +156,10 @@ const PromptSettingsSchema: z<PromptSettings> = z.object({
   agentsPath: z.string().default(''),
   injectAgentsPrompt: z.boolean().default(false),
   anchorFirstTurn: z.boolean().default(false),
-  anchorText: z.string().default("You are a helpful software assistant.\n\nBegin every reasoning block with 'We need'."),
+  anchorText: z.string().default(''),
+  anchorCustom: z.boolean().default(false),
+  subagentFlash: z.boolean().default(false),
+  deepseekAvailable: z.boolean().default(true),
   injectPrompt: z.boolean().default(true),
   skillSwitches: z.dict(z.boolean()).default({}),
   skillCatalog: z.array(z.object({
@@ -156,6 +179,8 @@ interface RuntimeOptions {
   skillSwitches: Record<string, boolean>
   anchorFirstTurn: boolean
   anchorText: string
+  anchorCustom: boolean
+  subagentFlash: boolean
 }
 
 function readPromptFile(fallbackText: string): string {
@@ -385,10 +410,12 @@ async function readBridgeBody(req: IncomingMessage): Promise<unknown> {
 /** dsh-tui 暴露的布尔开关：键名与 settings 路径一致。 */
 const TUI_BOOLEAN_SWITCHES: ReadonlyArray<readonly [key: string, label: string]> = [
   ['writeAgents', '写入常驻规则 AGENTS.md'],
-  ['writePreset', '生成 prompt-tool 独立 preset'],
+  ['writePreset', '启用锚定预设'],
   ['injectPrompt', '锚定确认后注入 preset.md'],
   ['injectAgentsPrompt', '用 AGENTS.md 替换 instruction-hint 提示'],
-  ['anchorFirstTurn', '开启首轮独立锚定轮'],
+  ['anchorFirstTurn', '追加任务引导'],
+  ['anchorCustom', '使用自定义引导'],
+  ['subagentFlash', '子代理固定 Flash 模型'],
 ] as const
 
 /** 把布尔开关渲染成 dsh-tui 命令输出。 */
@@ -400,6 +427,9 @@ function renderTuiStatus(source: PromptSettings): string {
       const value = source[key as keyof PromptSettings]
       return `${key.padEnd(22)}${onOff(typeof value === 'boolean' ? value : false)}  ${label}`
     }),
+    '锚点文本:',
+    `  anchorText               ${source.anchorText.length > 0 ? source.anchorText : '（空 = 按任务自动选择）'}`,
+    `  deepseekAvailable       ${source.deepseekAvailable ? '是' : '否（未检测到 DeepSeek 模型，subagentFlash 不可用）'}`,
     '技能开关:',
   ]
   for (const skill of source.skillCatalog) {
@@ -418,7 +448,7 @@ function parseTuiBoolean(token: string | undefined, current: boolean): boolean |
 }
 
 /** 通过 DSH 命令注册表暴露 /prompt-tool，Web 与 dsh-tui 都能执行。 */
-function registerTuiCommand(ctx: Context, getSource: () => PromptSettings): void {
+function registerTuiCommand(ctx: Context, getSource: () => PromptSettings, getDeepseekAvailable: () => boolean, getDeepseekState: () => DeepseekDetection): void {
   ctx.inject(['settings'], (sctx: Context) => {
     return sctx.commands.register({
       name: 'prompt-tool',
@@ -428,13 +458,17 @@ function registerTuiCommand(ctx: Context, getSource: () => PromptSettings): void
         const usage = (): CommandResult => ({
           kind: 'error',
           text: '用法：/prompt-tool status\n' +
-            '      /prompt-tool on|off|toggle <writeAgents|writePreset|injectPrompt|injectAgentsPrompt|anchorFirstTurn>\n' +
+            '      /prompt-tool on|off|toggle <writeAgents|writePreset|injectPrompt|injectAgentsPrompt|anchorFirstTurn|anchorCustom|subagentFlash>\n' +
             '      /prompt-tool skill <技能目录名> on|off|toggle',
         })
         const tokens = invocation.rawInput.trim().split(/\s+/).filter((token) => token.length > 0)
         const source = getSource()
         if (tokens.length === 0 || tokens[0] === 'status') {
-          return { kind: 'success', text: renderTuiStatus(source) }
+          const detection = getDeepseekState()
+          const deepseekLine = detection.available
+            ? `检测到的 DeepSeek 模型路由: ${detection.providers.join(', ') || '（无）'}`
+            : `未检测到 DeepSeek 模型路由。providers=[${detection.providers.join(', ') || '空'}] error=${detection.error ?? '无'}`
+          return { kind: 'success', text: renderTuiStatus(source) + '\n' + deepseekLine }
         }
         if (tokens[0] === 'skill') {
           const folder = tokens[1]
@@ -451,6 +485,10 @@ ${renderTuiStatus(getSource())}` }
         const key = tokens[1]
         if (action !== 'on' && action !== 'off' && action !== 'toggle') return usage()
         if (key === undefined || !TUI_BOOLEAN_SWITCHES.some(([candidate]) => candidate === key)) return usage()
+        if (key === 'subagentFlash' && !getDeepseekAvailable()) {
+          const detection = getDeepseekState()
+          return { kind: 'error', text: `未检测到 DeepSeek 模型路由，subagentFlash 开关不可用。providers=[${detection.providers.join(', ') || '空'}] error=${detection.error ?? '无'}` }
+        }
         const currentValue = source[key as keyof PromptSettings]
         if (typeof currentValue !== 'boolean') {
           return { kind: 'error', text: `${key} 不是布尔开关，不能这样切换` }
@@ -467,7 +505,7 @@ ${renderTuiStatus(getSource())}` }
 }
 
 /** 自建 loopback settings bridge：替代 registerConfigurableProviders，避免模型设置区出现插件条目。 */
-function registerSettingsBridge(ctx: Context): void {
+function registerSettingsBridge(ctx: Context, getDeepseekAvailable: () => boolean, getDeepseekState: () => DeepseekDetection): void {
   ctx.inject(['settings'], (sctx: Context) => {
     sctx.effect(() => {
       const findDescriptor = (): SettingsDescriptor | undefined =>
@@ -494,7 +532,8 @@ function registerSettingsBridge(ctx: Context): void {
               writeBridgeJson(res, 404, { ok: false, code: 'settings-not-exposed', message: 'prompt-tool settings namespace is not registered' })
               return
             }
-            writeBridgeJson(res, 200, { ok: true, value: descriptor })
+            const detection = getDeepseekState()
+            writeBridgeJson(res, 200, { ok: true, value: descriptor, deepseekAvailable: detection.available, deepseekProviders: detection.providers, deepseekError: detection.error })
           },
         }),
         sctx.webServer.register({
@@ -573,30 +612,138 @@ function registerSettingsBridge(ctx: Context): void {
 interface WritePresetOptions {
   anchorFirstTurn: boolean
   anchorText: string
+  anchorCustom: boolean
   injectPrompt: boolean
+  subagentFlash: boolean
+  subagentFlashProvider: string
+  subagentFlashModel: string
+  customBashPath: string
   /** 用该文本替换上游 instruction-hint 的提示内容；不传则保持上游原样。 */
   agentsInstructionText?: string
   presetDir: string
   presetOrder: number
 }
 
+/** 旧版“每块强制 we need”默认锚句；已存 settings 时归一化为自动模式。 */
+const LEGACY_ANCHOR_TEXT = [
+  'You are a helpful software assistant.',
+  '',
+  "Begin every reasoning block with 'We need'.",
+].join('\n')
+
+/** 旧默认值归一化为空（自动）；用户自定义文本原样保留。 */
+function normalizeAnchorText(text: string | undefined): string {
+  const value = typeof text === 'string' ? text : ''
+  return value.trim() === LEGACY_ANCHOR_TEXT.trim() ? '' : value
+}
+
+/** DeepSeek 模型检测结果（含诊断信息，供 Web/TUI 展示）。 */
+interface DeepseekDetection {
+  available: boolean
+  providers: string[]
+  error?: string
+}
+
+/** 检测 DeepSeek 模型：live provider + 可配置 provider 目录双通道匹配。 */
+function detectDeepseek(ctx: Context): DeepseekDetection {
+  const empty = { available: false, providers: [] }
+  try {
+    const llm = ctx.get('llm') as {
+      listProviders?: () => Array<{ id?: string; name?: string }>
+      listConfigurableProviders?: () => Array<{ provider?: string; displayName?: string }>
+    } | undefined
+    if (llm === undefined) return { ...empty, error: 'ctx.get("llm") 返回 undefined' }
+    const live = llm.listProviders?.() ?? []
+    const configured = llm.listConfigurableProviders?.() ?? []
+    const names = new Set<string>()
+    const matches = (id: string | undefined, name: string | undefined): boolean =>
+      /deepseek/i.test(id ?? '') || /deepseek/i.test(name ?? '')
+    for (const provider of live) {
+      const id = typeof provider.id === 'string' ? provider.id : String(provider.id ?? '')
+      names.add(id || provider.name || '(unnamed)')
+      if (matches(provider.id, provider.name)) return { available: true, providers: [...names] }
+    }
+    for (const provider of configured) {
+      const id = typeof provider.provider === 'string' ? provider.provider : ''
+      if (id.length > 0) names.add(id)
+      if (matches(provider.provider, provider.displayName)) return { available: true, providers: [...names] }
+    }
+    return { available: false, providers: [...names], ...(live.length === 0 && configured.length === 0 ? { error: 'llm 服务未返回任何 provider' } : {}) }
+  } catch (error) {
+    return { ...empty, error: error instanceof Error ? error.message : String(error) }
+  }
+}
+
+/** 给宿主直派的子代理补 Flash 路由；调用方显式 provider/model 优先，不覆盖 persona 与工具白名单。 */
+function installSubagentFlashRoute(ctx: Context, isEnabled: () => boolean, provider: string, model: string): void {
+  ctx.inject(['subagents'], (sctx: Context) => {
+    const service = sctx.get('subagents') as { start?: (name: string, request: Record<string, unknown>) => unknown } | undefined
+    if (service === undefined || typeof service.start !== 'function') return
+    const original = service.start
+    const wrapped = (name: string, request: Record<string, unknown>): unknown => {
+      if (!isEnabled() || request === null || typeof request !== 'object') return original.call(service, name, request)
+      const agentOptions = request.agentOptions !== null && typeof request.agentOptions === 'object'
+        ? request.agentOptions as Record<string, unknown>
+        : {}
+      if (agentOptions.provider === undefined && agentOptions.model === undefined) {
+        return original.call(service, name, { ...request, agentOptions: { ...agentOptions, provider, model } })
+      }
+      return original.call(service, name, request)
+    }
+    service.start = wrapped
+    return () => {
+      if (service.start === wrapped) service.start = original
+    }
+  })
+}
+
+/** prompt-tool 补丁：子代理直接全量放行（assembled.tools 本身已是动态白名单）。 */
+function patchToolBootstrap(source: string): string {
+  source = source.replace(/\r\n/g, '\n')
+  const original = [
+    '    const assembled = await next()',
+    '    try {',
+    '      const status = promotion.status(context.agent)',
+  ].join('\n')
+  const replacement = [
+    '    const assembled = await next()',
+    '    try {',
+    '      // prompt-tool 补丁：子代理跳过目录裁剪，直接使用组装结果；',
+    '      // 调用方（如 dsh-mnemon）的工具白名单已先行过滤 assembled.tools，',
+    '      // 因此任意前缀的新插件工具都会自动出现在子代理第一次会话。',
+    "      if ((context.agent?.session?.header?.delegationDepth ?? 0) > 0) return assembled",
+    '      const status = promotion.status(context.agent)',
+  ].join('\n')
+  if (!source.includes(original)) {
+    throw new Error('tool-bootstrap.mjs assembled marker missing')
+  }
+  return source.replace(original, replacement)
+}
+
 // 完整 anchored preset：上游文件（agent.cordis.yml + 全部 preset/*.mjs）直引
-// 子模块，本项目自有文件（preset.yml / prompt-injector.mjs / turn-anchor.mjs）
-// 走 preset/ 快照。agent.cordis.yml 只保留最小 prompt-injector 行，常驻规则
-// 提示等附加内容全部由 prompt-injector.mjs 在运行时注入。
+// 子模块，本项目自有文件（preset.yml / router-first-turn.mjs / near-anchor.mjs /
+// prompt-injector.mjs）走 preset/ 快照。agent.cordis.yml 注入本地附加件，常驻
+// 规则提示等附加内容全部由 prompt-injector.mjs 在运行时注入。
 function writePreset(prompt: string, options: WritePresetOptions): void {
   const presetDir = options.presetDir
   mkdirSync(presetDir, { recursive: true })
   writeFileSync(join(presetDir, 'agent.cordis.yml'), buildCordis(prompt, {
     anchorFirstTurn: options.anchorFirstTurn,
     anchorText: options.anchorText,
+    anchorCustom: options.anchorCustom,
     injectPrompt: options.injectPrompt,
+    subagentFlash: options.subagentFlash,
+    subagentFlashProvider: options.subagentFlashProvider,
+    subagentFlashModel: options.subagentFlashModel,
+    bashPath: options.customBashPath,
   }), 'utf8')
   const meta = readFileSync(PRESET_TEMPLATE_META, 'utf8').replace(/^order:.*$/m, `order: ${options.presetOrder}`)
   writeFileSync(join(presetDir, 'preset.yml'), meta, 'utf8')
   for (const file of readdirSync(VENDOR_PRESET_DIR)) {
     if (!file.endsWith('.mjs')) continue
-    writeFileSync(join(presetDir, file), readFileSync(join(VENDOR_PRESET_DIR, file), 'utf8'), 'utf8')
+    const vendorSource = readFileSync(join(VENDOR_PRESET_DIR, file), 'utf8')
+    // 最优组合补丁：子代理直接全量放行（assembled.tools 本身已是动态白名单）。
+    writeFileSync(join(presetDir, file), file === 'tool-bootstrap.mjs' ? patchToolBootstrap(vendorSource) : vendorSource, 'utf8')
   }
   const agentsInstructionPath = join(presetDir, 'agents-instruction.txt')
   if (options.agentsInstructionText !== undefined) {
@@ -613,7 +760,10 @@ function writePreset(prompt: string, options: WritePresetOptions): void {
     // 关闭 preset.md 注入时清掉旧快照，只保留工具引导。
     rmSync(injectorPath, { force: true })
   }
-  const anchorPath = join(presetDir, 'turn-anchor.mjs')
+  writeFileSync(join(presetDir, 'router-first-turn.mjs'), readFileSync(PRESET_TEMPLATE_ROUTER, 'utf8'), 'utf8')
+  // 清理历史版本的独立锚定轮快照；新版不再引用该文件。
+  rmSync(join(presetDir, 'turn-anchor.mjs'), { force: true })
+  const anchorPath = join(presetDir, 'near-anchor.mjs')
   if (options.anchorFirstTurn) {
     writeFileSync(anchorPath, readFileSync(PRESET_TEMPLATE_ANCHOR, 'utf8'), 'utf8')
   } else {
@@ -623,6 +773,9 @@ function writePreset(prompt: string, options: WritePresetOptions): void {
 }
 
 export function apply(ctx: Context, config: Config): void {
+  const deepseekState = (): DeepseekDetection => detectDeepseek(ctx)
+  const getDeepseekAvailable = (): boolean => deepseekState().available
+  const getDeepseekState = (): DeepseekDetection => deepseekState()
   let current = config.text || readPromptFile(config.fallbackText)
   let currentAgents = config.agentsText || readAgents()
   const skills = readSkills(config.skillsDir)
@@ -680,7 +833,7 @@ export function apply(ctx: Context, config: Config): void {
 
   // 在线编辑不再经 ctx.llm 暴露 settings namespace：改为自建 loopback bridge，
   // 这样模型设置页不会出现「提示词工具」目录条目。
-  registerSettingsBridge(ctx)
+  registerSettingsBridge(ctx, getDeepseekAvailable, getDeepseekState)
 
   // settings 存储优先于 cordis config：installSettingsSection 注册后立即用
   // settings 的解析值触发一次 onChange，完成初始写入，因此 config 只作 base。
@@ -692,7 +845,13 @@ export function apply(ctx: Context, config: Config): void {
     skillSwitches: { ...config.skillSwitches },
     anchorFirstTurn: config.anchorFirstTurn,
     anchorText: config.anchorText,
+    anchorCustom: config.anchorCustom,
+    subagentFlash: config.subagentFlash && getDeepseekAvailable(),
   }
+
+  // 宿主直派子代理（如 dsh-mnemon）也按开关补 Flash 路由；
+  // 调用方显式模型优先，persona 与 toolFilter 保持不变。
+  installSubagentFlashRoute(ctx, () => runtime.subagentFlash, config.subagentFlashProvider, config.subagentFlashModel)
 
   let currentSource = (): PromptSettings => ({
     promptText: current,
@@ -701,7 +860,10 @@ export function apply(ctx: Context, config: Config): void {
     agentsPath: AGENTS_FILE_PATH,
     injectAgentsPrompt: runtime.injectAgentsPrompt,
     anchorFirstTurn: runtime.anchorFirstTurn,
-    anchorText: runtime.anchorText,
+    anchorText: normalizeAnchorText(runtime.anchorText),
+    anchorCustom: runtime.anchorCustom,
+    subagentFlash: runtime.subagentFlash,
+    deepseekAvailable: getDeepseekAvailable(),
     injectPrompt: runtime.injectPrompt,
     skillSwitches: runtime.skillSwitches,
     skillCatalog,
@@ -710,7 +872,7 @@ export function apply(ctx: Context, config: Config): void {
   })
 
   // dsh-tui 命令入口：/prompt-tool 查看或切换开关。
-  registerTuiCommand(ctx, () => currentSource())
+  registerTuiCommand(ctx, () => currentSource(), getDeepseekAvailable, getDeepseekState)
 
   let needsInitialApply = true
   const applyState = (): void => {
@@ -722,7 +884,9 @@ export function apply(ctx: Context, config: Config): void {
       injectPrompt: typeof next.injectPrompt === 'boolean' ? next.injectPrompt : config.injectPrompt,
       skillSwitches: next.skillSwitches !== undefined ? next.skillSwitches : config.skillSwitches,
       anchorFirstTurn: typeof next.anchorFirstTurn === 'boolean' ? next.anchorFirstTurn : config.anchorFirstTurn,
-      anchorText: typeof next.anchorText === 'string' && next.anchorText.length > 0 ? next.anchorText : config.anchorText,
+      anchorText: normalizeAnchorText(typeof next.anchorText === 'string' ? next.anchorText : config.anchorText),
+      anchorCustom: typeof next.anchorCustom === 'boolean' ? next.anchorCustom : config.anchorCustom,
+      subagentFlash: (typeof next.subagentFlash === 'boolean' ? next.subagentFlash : config.subagentFlash) && getDeepseekAvailable(),
     }
     const promptChanged = next.promptText !== current
     const agentsChanged = next.agentsText !== currentAgents
@@ -734,6 +898,8 @@ export function apply(ctx: Context, config: Config): void {
       || skillSwitchesChanged
       || runtime.anchorFirstTurn !== nextRuntime.anchorFirstTurn
       || runtime.anchorText !== nextRuntime.anchorText
+      || runtime.anchorCustom !== nextRuntime.anchorCustom
+      || runtime.subagentFlash !== nextRuntime.subagentFlash
     // 首次必须写入：settings 与文件/config 一致时也不能跳过 preset/AGENTS 生成。
     if (!needsInitialApply && !promptChanged && !agentsChanged && !settingsChanged) return
     needsInitialApply = false
@@ -747,6 +913,8 @@ export function apply(ctx: Context, config: Config): void {
     runtime.skillSwitches = nextRuntime.skillSwitches
     runtime.anchorFirstTurn = nextRuntime.anchorFirstTurn
     runtime.anchorText = nextRuntime.anchorText
+    runtime.anchorCustom = nextRuntime.anchorCustom
+    runtime.subagentFlash = nextRuntime.subagentFlash
     skillSwitches = runtime.skillSwitches
     if (skillSwitchesChanged) invalidateSkills?.()
 
@@ -767,7 +935,12 @@ export function apply(ctx: Context, config: Config): void {
       writePreset(presetPrompt, {
         anchorFirstTurn: runtime.anchorFirstTurn,
         anchorText: runtime.anchorText,
+        anchorCustom: runtime.anchorCustom,
         injectPrompt: runtime.injectPrompt,
+        subagentFlash: runtime.subagentFlash,
+        subagentFlashProvider: config.subagentFlashProvider,
+        subagentFlashModel: config.subagentFlashModel,
+        customBashPath: config.customBashPath,
         agentsInstructionText: runtime.injectAgentsPrompt && currentAgents.length > 0 ? currentAgents : undefined,
         presetDir: config.presetDir,
         presetOrder: config.presetOrder,
@@ -790,6 +963,9 @@ export function apply(ctx: Context, config: Config): void {
     injectAgentsPrompt: config.injectAgentsPrompt,
     anchorFirstTurn: config.anchorFirstTurn,
     anchorText: config.anchorText,
+    anchorCustom: config.anchorCustom,
+    subagentFlash: config.subagentFlash && getDeepseekAvailable(),
+    deepseekAvailable: getDeepseekAvailable(),
     injectPrompt: config.injectPrompt,
     skillSwitches: { ...config.skillSwitches },
     skillCatalog,

@@ -1,4 +1,31 @@
 # dsh-plugin-prompt-tool 重新设计计划（v2）
+> **v2.14 上游同步与路径校对（当前实现）**：已从上游 main 同步到
+> `ba7a27c`；新增 context-gate.mjs；custom-bash 的固定路径在生成时归一化为
+> `customBashPath`（默认 bash.exe，PATH 查找）。
+
+> **v2.14 剥离上游子模块（历史）**：上游改为内联快照 `upstream/dsh-anchored-standard/`
+> （preset + LICENSE + NOTICE + REVISION），删除 `vendor/` 子模块与 `.gitmodules`；
+> `pnpm sync:anchored [ref]` 从上游拉取刷新。
+
+> **v2.11 自定义锚点开关（历史）**：新增 `anchorCustom`——开启时固定
+> 使用自定义 anchorText，关闭时忽略 anchorText 并使用任务自适应自动文本。
+
+> **v2.10 Flash 子代理 + 模型检测（历史）**：在 v2.9 基础上，宿主经
+> `llm.listProviders()` 检测 DeepSeek 模型路由；未检测到时 `subagentFlash`
+> 在 Web/TUI 禁用并强制降级为 false。
+
+> **v2.9 Flash 子代理（历史）**：在 v2.8 最优组合之上，子代理目录改为直接
+> 全量放行（`assembled.tools` 本身已是调用方白名单过滤后的动态白名单）；新增
+> `subagentFlash` 开关——开=给子代理固定 Flash 模型路由（参考 dsh-router-standard
+> 的 Flash 方案），关=继承主会话模型且目录全量放行。
+
+> **v2.8 最优组合（历史）**：在保留本插件全部独有功能（skills 注册、settings
+> bridge、UI、AGENTS 受管块、prompt-injector）的前提下，首轮结构改为最优组合——
+> `router-first-turn`（persona 替换为训练原句，保留计划段；首轮隐藏 mnemon 记忆段、清 contexts，晋升恢复）、上游 `tool-bootstrap`
+> （Minimal 真实工具对 + 子代理放行补丁）、`near-anchor`（近距离首句自锚定，按任务
+> 自动选择 we/let）。旧独立锚定轮 `turn-anchor` 已移除，旧默认“每块强制 we”会在
+> 运行时归一化为空。以下正文为 v2 历史设计记录，其中 turn-anchor 段落按上为准。
+
 
 > 目标：完整实现 dsh-anchored-standard 功能（原版机制），在首轮 "we" 锚定确认后注入
 > prompt-tool 提示词。设计依据 = 三个项目的源码/README + 已完成的实测数据。

@@ -11,7 +11,7 @@ const SETTINGS_BRIDGE_PREFIX = '/api/prompt-tool/settings'
 
 type BridgePathOp = { op: 'set' | 'unset'; path: string[]; value?: unknown }
 interface BridgeSettingsView { ns: string; value: unknown; base?: unknown; revision: number }
-type BridgeResult<T> = { ok: true; value: T } | { ok: false; code?: string; message?: string }
+type BridgeResult<T> = { ok: true; value: T; deepseekAvailable?: boolean; deepseekProviders?: string[]; deepseekError?: string } | { ok: false; code?: string; message?: string }
 
 async function bridgePost<T>(path: string, body: unknown): Promise<BridgeResult<T>> {
   try {
@@ -48,6 +48,8 @@ interface Fields {
   injectAgentsPrompt: boolean
   anchorFirstTurn: boolean
   anchorText: string
+  anchorCustom: boolean
+  subagentFlash: boolean
   injectPrompt: boolean
   skillSwitches: Record<string, boolean>
   skillCatalog: SkillCatalogEntry[]
@@ -63,6 +65,8 @@ const EMPTY: Fields = {
   injectAgentsPrompt: false,
   anchorFirstTurn: false,
   anchorText: '',
+  anchorCustom: false,
+  subagentFlash: false,
   injectPrompt: true,
   skillSwitches: {},
   skillCatalog: [],
@@ -74,6 +78,8 @@ interface SwitchSnapshot {
   injectAgentsPrompt: boolean
   anchorFirstTurn: boolean
   anchorText: string
+  anchorCustom: boolean
+  subagentFlash: boolean
   injectPrompt: boolean
   skillSwitches: Record<string, boolean>
   writeAgents: boolean
@@ -84,6 +90,8 @@ const EMPTY_SWITCHES: SwitchSnapshot = {
   injectAgentsPrompt: false,
   anchorFirstTurn: false,
   anchorText: '',
+  anchorCustom: false,
+  subagentFlash: false,
   injectPrompt: true,
   skillSwitches: {},
   writeAgents: true,
@@ -94,6 +102,8 @@ const snapshotSwitches = (fields: Fields): SwitchSnapshot => ({
   injectAgentsPrompt: fields.injectAgentsPrompt,
   anchorFirstTurn: fields.anchorFirstTurn,
   anchorText: fields.anchorText,
+  anchorCustom: fields.anchorCustom,
+  subagentFlash: fields.subagentFlash,
   injectPrompt: fields.injectPrompt,
   skillSwitches: { ...fields.skillSwitches },
   writeAgents: fields.writeAgents,
@@ -104,6 +114,8 @@ const switchesEqual = (a: SwitchSnapshot, b: SwitchSnapshot): boolean =>
   a.injectAgentsPrompt === b.injectAgentsPrompt
   && a.anchorFirstTurn === b.anchorFirstTurn
   && a.anchorText === b.anchorText
+  && a.anchorCustom === b.anchorCustom
+  && a.subagentFlash === b.subagentFlash
   && a.injectPrompt === b.injectPrompt
   && JSON.stringify(a.skillSwitches) === JSON.stringify(b.skillSwitches)
   && a.writeAgents === b.writeAgents
@@ -168,6 +180,9 @@ export function PromptEditor(props: PromptEditorProps): ReactNode {
   const [agentsOpen, setAgentsOpen] = useState(false)
   const [skillsOpen, setSkillsOpen] = useState(false)
   const [presetOpen, setPresetOpen] = useState(false)
+  const [deepseekAvailable, setDeepseekAvailable] = useState(false)
+  const [deepseekProviders, setDeepseekProviders] = useState<string[]>([])
+  const [deepseekError, setDeepseekError] = useState('')
   const [loaded, setLoaded] = useState(false)
   const [fields, setFields] = useState<Fields>(EMPTY)
   const [savedPromptText, setSavedPromptText] = useState('')
@@ -194,6 +209,9 @@ export function PromptEditor(props: PromptEditorProps): ReactNode {
     try {
       const res = await bridgePost<BridgeSettingsView>('/describe', {})
       if (!res.ok) { showNotice('error', '读取配置失败：' + (res.message ?? '')); return }
+      setDeepseekAvailable(res.deepseekAvailable === true)
+      setDeepseekProviders(res.deepseekProviders ?? [])
+      setDeepseekError(res.deepseekError ?? '')
       const ns = res.value
       const value = asRecord(ns.value)
       const base = asRecord(ns.base)
@@ -205,6 +223,8 @@ export function PromptEditor(props: PromptEditorProps): ReactNode {
         injectAgentsPrompt: readBoolean(value, 'injectAgentsPrompt', readBoolean(base, 'injectAgentsPrompt', false)),
         anchorFirstTurn: readBoolean(value, 'anchorFirstTurn', readBoolean(base, 'anchorFirstTurn', false)),
         anchorText: readString(value, 'anchorText') ?? readString(base, 'anchorText') ?? '',
+        anchorCustom: readBoolean(value, 'anchorCustom', readBoolean(base, 'anchorCustom', false)),
+        subagentFlash: readBoolean(value, 'subagentFlash', readBoolean(base, 'subagentFlash', false)),
         injectPrompt: readBoolean(value, 'injectPrompt', readBoolean(base, 'injectPrompt', true)),
         skillSwitches: value.skillSwitches !== undefined || base.skillSwitches !== undefined
           ? { ...readSkillSwitches(base, 'skillSwitches'), ...readSkillSwitches(value, 'skillSwitches') }
@@ -345,6 +365,8 @@ export function PromptEditor(props: PromptEditorProps): ReactNode {
       { op: 'set', path: ['injectAgentsPrompt'], value: fieldsRef.current.injectAgentsPrompt },
       { op: 'set', path: ['anchorFirstTurn'], value: fieldsRef.current.anchorFirstTurn },
       { op: 'set', path: ['anchorText'], value: fieldsRef.current.anchorText },
+      { op: 'set', path: ['anchorCustom'], value: fieldsRef.current.anchorCustom },
+      { op: 'set', path: ['subagentFlash'], value: fieldsRef.current.subagentFlash },
       { op: 'set', path: ['injectPrompt'], value: fieldsRef.current.injectPrompt },
       { op: 'set', path: ['skillSwitches'], value: fieldsRef.current.skillSwitches },
       { op: 'set', path: ['writeAgents'], value: fieldsRef.current.writeAgents },
@@ -354,7 +376,11 @@ export function PromptEditor(props: PromptEditorProps): ReactNode {
     () => setSavedSwitches(snapshotSwitches(fieldsRef.current)),
   )
 
-  const toggle = (key: 'injectAgentsPrompt' | 'anchorFirstTurn' | 'injectPrompt' | 'writeAgents' | 'writePreset') => {
+  const toggle = (key: 'injectAgentsPrompt' | 'anchorFirstTurn' | 'anchorCustom' | 'subagentFlash' | 'injectPrompt' | 'writeAgents' | 'writePreset') => {
+    if (key === 'subagentFlash' && !deepseekAvailable) {
+      showNotice('error', '未检测到 DeepSeek 模型配置，子代理 Flash 开关不可用')
+      return
+    }
     patch({ [key]: !fieldsRef.current[key] })
     persistSwitches()
   }
@@ -498,11 +524,12 @@ export function PromptEditor(props: PromptEditorProps): ReactNode {
             </CollapsibleSection>
 
             <CollapsibleSection
-              title="锚定轮与 preset"
+              title="锚定与 preset"
               hint={presetSwitchDirty ? '未保存' : undefined}
               open={presetOpen}
               onToggle={() => setPresetOpen(!presetOpen)}
             >
+
               <label className={styles.row}>
                 <input
                   type="checkbox"
@@ -510,8 +537,20 @@ export function PromptEditor(props: PromptEditorProps): ReactNode {
                   onChange={() => toggle('writePreset')}
                 />
                 <span className={styles.rowText}>
-                  <span className={styles.rowName}>生成锚定注入 preset</span>
-                  <span className={styles.rowDesc}>开启时生成并刷新 preset 目录，承载首轮工具引导与上述注入件；关闭时不生成，已有文件保持原样</span>
+                  <span className={styles.rowName}>启用锚定预设</span>
+                  <span className={styles.rowDesc}>总开关：开启时生成并刷新 ~/.dsh/.agent-presets/prompt-tool/，整套锚定预设才有载体；关闭时移除已生成的目录，下面锚定开关随之失效</span>
+                </span>
+              </label>
+              <label className={styles.row}>
+                <input
+                  type="checkbox"
+                  checked={fields.subagentFlash}
+                  disabled={!fields.writePreset || !deepseekAvailable}
+                  onChange={() => toggle('subagentFlash')}
+                />
+                <span className={styles.rowText}>
+                  <span className={styles.rowName}>子代理固定 Flash 模型</span>
+                  <span className={styles.rowDesc}>{deepseekAvailable ? '开启时采用 dsh-router-standard 的 Flash 子代理方案：固定 Flash 路由 + 任务分类人设 + 三锚；宿主直派子代理（含 dsh-mnemon）也会自动补 Flash 路由。关闭时继承主会话模型，工具目录全量放行' : `未检测到 DeepSeek 模型配置，此开关不可用。providers=[${deepseekProviders.join(', ') || '空'}]${deepseekError ? ' error=' + deepseekError : ''}`}</span>
                 </span>
               </label>
               <label className={styles.row}>
@@ -522,19 +561,31 @@ export function PromptEditor(props: PromptEditorProps): ReactNode {
                   onChange={() => toggle('anchorFirstTurn')}
                 />
                 <span className={styles.rowText}>
-                  <span className={styles.rowName}>首轮独立锚定轮</span>
-                  <span className={styles.rowDesc}>开启时 preset 挂载 turn-anchor：首个真实用户消息先入 next-step，首步只发锚定句</span>
+                  <span className={styles.rowName}>追加任务引导</span>
+                  <span className={styles.rowDesc}>开启后在首条真实用户消息之后追加一句任务引导，不拆轮、不挪任务；内容按下方“使用自定义引导”开关选择</span>
+                </span>
+              </label>
+              <label className={styles.row}>
+                <input
+                  type="checkbox"
+                  checked={fields.anchorCustom}
+                  disabled={!fields.writePreset || !fields.anchorFirstTurn}
+                  onChange={() => toggle('anchorCustom')}
+                />
+                <span className={styles.rowText}>
+                  <span className={styles.rowName}>使用自定义引导</span>
+                  <span className={styles.rowDesc}>开启时使用下方文本作为引导；关闭时忽略下方文本，按任务自动选择 we/let 引导</span>
                 </span>
               </label>
               <label className={clsx(styles.rowStack, !fields.anchorFirstTurn && styles.rowDisabled)}>
                 <span className={styles.rowText}>
-                  <span className={styles.rowName}>锚定句文本（可自定义）</span>
-                  <span className={styles.rowDesc}>独立锚定轮发给模型的输入内容</span>
+                  <span className={styles.rowName}>自定义引导文本</span>
+                  <span className={styles.rowDesc}>仅在上方“使用自定义引导”开启时生效；关闭时自动文本优先</span>
                 </span>
                 <textarea
                   className={styles.anchorInput}
                   value={fields.anchorText}
-                  disabled={!fields.writePreset || !fields.anchorFirstTurn}
+                  disabled={!fields.writePreset || !fields.anchorFirstTurn || !fields.anchorCustom}
                   onChange={(e) => patch({ anchorText: e.target.value })}
                   onBlur={() => persistSwitches()}
                   spellCheck={false}

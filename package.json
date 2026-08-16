@@ -1,6 +1,6 @@
 {
   "name": "dsh-plugin-prompt-tool",
-  "version": "0.1.5",
+  "version": "0.2.0",
   "description": "DSH 插件：提示词工具，规范模型的思维链与回答内容，提供 Web UI 编辑 preset.md 与 AGENTS.md，并按 skills 目录注册可开关技能。",
   "license": "MIT",
   "repository": {
@@ -74,21 +74,20 @@
     "cordis.patch.yml",
     "LICENSE",
     "preset",
-    "vendor/dsh-anchored-standard/preset",
-    "vendor/dsh-anchored-standard/LICENSE",
-    "vendor/dsh-anchored-standard/NOTICE",
     "skills",
     "preset.md",
     "AGENTS.md",
     "plan.md",
-    "README.md"
+    "README.md",
+    "upstream/dsh-anchored-standard"
   ],
   "scripts": {
     "build": "tsdown",
     "prepare": "tsdown",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.client.json --noEmit",
     "lint": "oxlint src test tsdown.config.ts",
-    "test": "pnpm build && node --test \"test/*.test.mjs\""
+    "test": "pnpm build && node --test \"test/*.test.mjs\"",
+    "sync:anchored": "node scripts/sync-anchored.mjs"
   },
   "dependencies": {
     "yaml": "^2.9.0"
