@@ -11,6 +11,7 @@ import type {
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { SettingsDescriptor, SettingsPathOp } from '@deepseek-ai/dsh-settings'
 import type {} from '@deepseek-ai/dsh-host-webserver'
+import type { CommandResult } from '@deepseek-ai/dsh-commands'
 import { readFileSync, writeFileSync, mkdirSync, rmSync, readdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
@@ -20,7 +21,7 @@ import { buildCordis, parseFrontmatter } from './preset-core.ts'
 export const name = 'prompt-tool'
 // 内容走 user 层（AGENTS.md 常驻层 + skill 按需层），
 // 不再注册 system prompt section（否则会被 persona 的 complete:true 整个清零）。
-export const inject = ['skills', 'webServer']
+export const inject = ['skills', 'webServer', 'commands']
 
 const PRESET_FILE_URL = new URL('../preset.md', import.meta.url)
 const PRESET_FILE_PATH = fileURLToPath(PRESET_FILE_URL)
@@ -291,6 +292,91 @@ async function readBridgeBody(req: IncomingMessage): Promise<unknown> {
 }
 
 /** 自建 loopback settings bridge：替代 registerConfigurableProviders，避免模型设置区出现插件条目。 */
+/** dsh-tui 暴露的布尔开关：键名与 settings 路径一致。 */
+const TUI_BOOLEAN_SWITCHES: ReadonlyArray<readonly [key: string, label: string]> = [
+  ['writeAgents', '写入常驻规则 AGENTS.md'],
+  ['writePreset', '生成 prompt-tool 独立 preset'],
+  ['injectPrompt', '锚定确认后注入 preset.md'],
+  ['injectAgentsPrompt', '用 AGENTS.md 替换 instruction-hint 提示'],
+  ['anchorFirstTurn', '开启首轮独立锚定轮'],
+] as const
+
+/** 把布尔开关渲染成 dsh-tui 命令输出。 */
+function renderTuiStatus(source: PromptSettings): string {
+  const onOff = (value: boolean): string => value ? '开' : '关'
+  const lines = [
+    '提示词工具开关',
+    ...TUI_BOOLEAN_SWITCHES.map(([key, label]) => {
+      const value = source[key as keyof PromptSettings]
+      return `${key.padEnd(22)}${onOff(typeof value === 'boolean' ? value : false)}  ${label}`
+    }),
+    '技能开关:',
+  ]
+  for (const skill of source.skillCatalog) {
+    const value = source.skillSwitches[skill.folder] !== false
+    lines.push(`${('skill ' + skill.folder).padEnd(22)}${onOff(value)}  ${skill.name || skill.folder}`)
+  }
+      return lines.join('\n')
+}
+
+
+/** 解析 on/off/toggle 三种输入。 */
+function parseTuiBoolean(token: string | undefined, current: boolean): boolean | undefined {
+  if (token === 'on') return true
+  if (token === 'off') return false
+  if (token === 'toggle') return !current
+  return undefined
+}
+
+/** 通过 DSH 命令注册表暴露 /prompt-tool，Web 与 dsh-tui 都能执行。 */
+function registerTuiCommand(ctx: Context, getSource: () => PromptSettings): void {
+  ctx.inject(['settings'], (sctx: Context) => {
+    sctx.commands.register({
+      name: 'prompt-tool',
+      description: '提示词工具：查看或切换本插件开关',
+      input: { hint: 'status | on/off/toggle <开关> | skill <目录名> on/off' },
+      handler: async (invocation): Promise<CommandResult> => {
+        const usage = (): CommandResult => ({
+          kind: 'error',
+          text: '用法：/prompt-tool status\n' +
+            '      /prompt-tool on|off|toggle <writeAgents|writePreset|injectPrompt|injectAgentsPrompt|anchorFirstTurn>\n' +
+            '      /prompt-tool skill <技能目录名> on|off|toggle',
+        })
+        const tokens = invocation.rawInput.trim().split(/\s+/).filter((token) => token.length > 0)
+        const source = getSource()
+        if (tokens.length === 0 || tokens[0] === 'status') {
+          return { kind: 'success', text: renderTuiStatus(source) }
+        }
+        if (tokens[0] === 'skill') {
+          const folder = tokens[1]
+          if (folder === undefined) return usage()
+          const current = source.skillSwitches[folder] !== false
+          const next = parseTuiBoolean(tokens[2], current)
+          if (next === undefined) return usage()
+          await sctx.settings.mutate(NS, [{ op: 'set', path: ['skillSwitches', folder], value: next }])
+          return { kind: 'success', text: `已把技能 ${folder} 设为 ${next ? '开' : '关'}
+
+${renderTuiStatus(getSource())}` }
+        }
+        const action = tokens[0]
+        const key = tokens[1]
+        if (action !== 'on' && action !== 'off' && action !== 'toggle') return usage()
+        if (key === undefined || !TUI_BOOLEAN_SWITCHES.some(([candidate]) => candidate === key)) return usage()
+        const currentValue = source[key as keyof PromptSettings]
+        if (typeof currentValue !== 'boolean') {
+          return { kind: 'error', text: `${key} 不是布尔开关，不能这样切换` }
+        }
+        const next = parseTuiBoolean(action, currentValue)
+        if (next === undefined) return usage()
+        await sctx.settings.mutate(NS, [{ op: 'set', path: [key], value: next }])
+        return { kind: 'success', text: `已把 ${key} 设为 ${next ? '开' : '关'}
+
+${renderTuiStatus(getSource())}` }
+      },
+    })
+  })
+}
+
 function registerSettingsBridge(ctx: Context): void {
   ctx.inject(['settings'], (sctx: Context) => {
     sctx.effect(() => {
@@ -498,6 +584,9 @@ export function apply(ctx: Context, config: Config): void {
     writeAgents: runtime.writeAgents,
     writePreset: runtime.writePreset,
   })
+
+  // dsh-tui 命令入口：/prompt-tool 查看或切换开关。
+  registerTuiCommand(ctx, () => currentSource())
 
   let needsInitialApply = true
   const applyState = (): void => {
