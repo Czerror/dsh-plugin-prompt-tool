@@ -18,5 +18,5 @@ export function apply(ctx: ClientContext): void {
     id: 'prompt-tool',
     order: 30,
     inject: injected,
-  }, PromptEditor as any))
+  }, PromptEditor))
 }

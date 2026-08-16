@@ -1,13 +1,19 @@
 import { useCallback, useRef, useState } from 'react'
+import type { ReactNode } from 'react'
 import clsx from 'clsx'
 import { IconChevronDownOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
+import type { IApiClient, RpcResponse, SettingsNamespaceView, SettingsPathOpView } from '@deepseek-ai/dsh-client-connection/client'
+import type { InjectFace, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import type {} from '@deepseek-ai/dsh-client-ui-settings-plugins/client'
 import styles from './PromptEditor.module.css'
 
 const NS = 'prompt-tool'
 
 export interface PromptEditorInjected {
-  api: any
+  api: IApiClient
 }
+
+export type PromptEditorProps = PropsRuntime<'settings.plugin.item'> & InjectFace<PromptEditorInjected>
 
 interface SkillCatalogEntry {
   folder: string
@@ -78,7 +84,52 @@ const switchesEqual = (a: SwitchSnapshot, b: SwitchSnapshot): boolean =>
   && a.writeAgents === b.writeAgents
   && a.writePreset === b.writePreset
 
-function CollapsibleSection(props: { title: string; hint?: string; open: boolean; onToggle: () => void; children: any }): any {
+type SettingsDescribeResponse = RpcResponse<{
+  writable: boolean
+  hasDocument: boolean
+  namespaces: SettingsNamespaceView[]
+}>
+
+const asRecord = (value: unknown): Record<string, unknown> =>
+  value !== null && typeof value === 'object' ? value as Record<string, unknown> : {}
+
+const readString = (source: Record<string, unknown>, key: string): string | undefined => {
+  const value = source[key]
+  return typeof value === 'string' ? value : undefined
+}
+
+const readBoolean = (source: Record<string, unknown>, key: string, fallback: boolean): boolean => {
+  const value = source[key]
+  return typeof value === 'boolean' ? value : fallback
+}
+
+const readSkillSwitches = (source: Record<string, unknown>, key: string): Record<string, boolean> => {
+  const value = source[key]
+  if (value === null || typeof value !== 'object') return {}
+  const entries = Object.entries(value as Record<string, unknown>)
+  const result: Record<string, boolean> = {}
+  for (const [name, enabled] of entries) {
+    if (typeof enabled === 'boolean') result[name] = enabled
+  }
+  return result
+}
+
+const readSkillCatalog = (source: Record<string, unknown>, key: string): SkillCatalogEntry[] => {
+  const value = source[key]
+  if (!Array.isArray(value)) return []
+  return value.flatMap((entry) => {
+    if (entry === null || typeof entry !== 'object') return []
+    const record = entry as Record<string, unknown>
+    const folder = readString(record, 'folder')
+    const name = readString(record, 'name')
+    if (folder === undefined || name === undefined) return []
+    return [{ folder, name, description: readString(record, 'description') ?? '' }]
+  })
+}
+
+const errorMessage = (error: unknown): string => error instanceof Error ? error.message : String(error)
+
+function CollapsibleSection(props: { title: string; hint?: string; open: boolean; onToggle: () => void; children: ReactNode }): ReactNode {
   return (
     <div className={styles.subSection}>
       <button type="button" className={styles.subHeader} aria-expanded={props.open} onClick={props.onToggle}>
@@ -91,7 +142,7 @@ function CollapsibleSection(props: { title: string; hint?: string; open: boolean
   )
 }
 
-export function PromptEditor(props: PromptEditorInjected): any {
+export function PromptEditor(props: PromptEditorProps): ReactNode {
   const { api } = props
   const [open, setOpen] = useState(false)
   const [promptOpen, setPromptOpen] = useState(false)
@@ -120,26 +171,28 @@ export function PromptEditor(props: PromptEditorInjected): any {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const res = await api.settings.describe({})
+      const res: SettingsDescribeResponse = await api.settings.describe({})
       if (!res.result.ok) { showNotice('error', '读取配置失败'); return }
-      const ns = res.result.value.namespaces.find((n: any) => n.ns === NS)
+      const ns = res.result.value.namespaces.find((entry) => entry.ns === NS)
       if (!ns) { showNotice('error', '未找到提示词工具配置'); return }
-      const value = ns.value ?? {}
-      const base = ns.base ?? {}
+      const value = asRecord(ns.value)
+      const base = asRecord(ns.base)
       const next: Fields = {
-        promptText: value.promptText ?? base.promptText ?? '',
-        promptPath: value.promptPath ?? base.promptPath ?? '',
-        agentsText: value.agentsText ?? base.agentsText ?? '',
-        agentsPath: value.agentsPath ?? base.agentsPath ?? '',
-        anchorFirstTurn: value.anchorFirstTurn ?? base.anchorFirstTurn ?? false,
-        anchorText: value.anchorText ?? base.anchorText ?? '',
-        injectPrompt: value.injectPrompt ?? base.injectPrompt ?? true,
-        skillSwitches: value.skillSwitches ?? base.skillSwitches ?? {},
-        skillCatalog: Array.isArray(value.skillCatalog)
-          ? value.skillCatalog
-          : Array.isArray(base.skillCatalog) ? base.skillCatalog : [],
-        writeAgents: value.writeAgents ?? base.writeAgents ?? true,
-        writePreset: value.writePreset ?? base.writePreset ?? true,
+        promptText: readString(value, 'promptText') ?? readString(base, 'promptText') ?? '',
+        promptPath: readString(value, 'promptPath') ?? readString(base, 'promptPath') ?? '',
+        agentsText: readString(value, 'agentsText') ?? readString(base, 'agentsText') ?? '',
+        agentsPath: readString(value, 'agentsPath') ?? readString(base, 'agentsPath') ?? '',
+        anchorFirstTurn: readBoolean(value, 'anchorFirstTurn', readBoolean(base, 'anchorFirstTurn', false)),
+        anchorText: readString(value, 'anchorText') ?? readString(base, 'anchorText') ?? '',
+        injectPrompt: readBoolean(value, 'injectPrompt', readBoolean(base, 'injectPrompt', true)),
+        skillSwitches: value.skillSwitches !== undefined || base.skillSwitches !== undefined
+          ? { ...readSkillSwitches(base, 'skillSwitches'), ...readSkillSwitches(value, 'skillSwitches') }
+          : {},
+        skillCatalog: readSkillCatalog(value, 'skillCatalog').length > 0
+          ? readSkillCatalog(value, 'skillCatalog')
+          : readSkillCatalog(base, 'skillCatalog'),
+        writeAgents: readBoolean(value, 'writeAgents', readBoolean(base, 'writeAgents', true)),
+        writePreset: readBoolean(value, 'writePreset', readBoolean(base, 'writePreset', true)),
       }
       fieldsRef.current = next
       setFields(next)
@@ -148,8 +201,8 @@ export function PromptEditor(props: PromptEditorInjected): any {
       setSavedSwitches(snapshotSwitches(next))
       revisionRef.current = ns.revision
       setNotice('')
-    } catch (e: any) {
-      showNotice('error', '读取失败：' + (e?.message ?? e))
+    } catch (error) {
+      showNotice('error', '读取失败：' + errorMessage(error))
     } finally {
       setLoading(false)
     }
@@ -157,9 +210,9 @@ export function PromptEditor(props: PromptEditorInjected): any {
 
   const refreshRevision = useCallback(async () => {
     try {
-      const res = await api.settings.describe({})
+      const res: SettingsDescribeResponse = await api.settings.describe({})
       if (!res.result.ok) return
-      const ns = res.result.value.namespaces.find((n: any) => n.ns === NS)
+      const ns = res.result.value.namespaces.find((entry) => entry.ns === NS)
       if (ns) revisionRef.current = ns.revision
     } catch {
       // 刷新失败保持原 revision，用户可重试。
@@ -191,8 +244,8 @@ export function PromptEditor(props: PromptEditorInjected): any {
       const res = await api.host.openPath({ path: fields.promptPath })
       if (res.result.ok) showNotice('ok', '已用系统编辑器打开 preset.md')
       else showNotice('error', '打开失败：' + (res.result.error?.message ?? '') + '；可直接在下方编辑框保存')
-    } catch (e: any) {
-      showNotice('error', '打开失败：' + (e?.message ?? e) + '；可直接在下方编辑框保存')
+    } catch (error) {
+      showNotice('error', '打开失败：' + errorMessage(error) + '；可直接在下方编辑框保存')
     }
   }
 
@@ -202,12 +255,12 @@ export function PromptEditor(props: PromptEditorInjected): any {
       const res = await api.host.openPath({ path: fields.agentsPath })
       if (res.result.ok) showNotice('ok', '已用系统编辑器打开 AGENTS.md')
       else showNotice('error', '打开失败：' + (res.result.error?.message ?? '') + '；可直接在下方编辑框保存')
-    } catch (e: any) {
-      showNotice('error', '打开失败：' + (e?.message ?? e) + '；可直接在下方编辑框保存')
+    } catch (error) {
+      showNotice('error', '打开失败：' + errorMessage(error) + '；可直接在下方编辑框保存')
     }
   }
 
-  const enqueueSave = useCallback((ops: any[], okMessage: string | undefined, onSaved: () => void, setBusy?: (value: boolean) => void) => {
+  const enqueueSave = useCallback((ops: SettingsPathOpView[], okMessage: string | undefined, onSaved: () => void, setBusy?: (busy: boolean) => void) => {
     setBusy?.(true)
     saveQueueRef.current = saveQueueRef.current.then(async () => {
       try {
@@ -220,9 +273,9 @@ export function PromptEditor(props: PromptEditorInjected): any {
           await refreshRevision()
           showNotice('error', '保存失败：' + (res.result.error?.message ?? '') + '（已刷新配置版本，可重试）')
         }
-      } catch (e: any) {
+      } catch (error) {
         await refreshRevision()
-        showNotice('error', '保存失败：' + (e?.message ?? e) + '（已刷新配置版本，可重试）')
+        showNotice('error', '保存失败：' + errorMessage(error) + '（已刷新配置版本，可重试）')
       } finally {
         setBusy?.(false)
       }

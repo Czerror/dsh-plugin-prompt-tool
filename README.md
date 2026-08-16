@@ -163,12 +163,18 @@ dsh --profile prompt-tool --patch <cordis.yml>
         writeAgents: true   # 是否写 ~/.dsh/AGENTS.md（默认 true）
         writePreset: true   # 是否生成锚定注入 preset（默认 true）
         injectPrompt: true  # 锚定层：we 锚定确认后是否注入 preset.md（默认 true；关闭只保留工具引导）
-        skillSwitches: {}   # 按 skills/* 目录名自动生成，未列出的目录默认 true
-        anchorFirstTurn: false  # 首轮独立锚定轮开关（默认关闭）
-        anchorText: "You are a helpful software assistant.\n\nBegin every reasoning block with 'We need'."  # 锚定句文本
+          skillSwitches: {}   # 按 skills/* 目录名自动生成，未列出的目录默认 true
+          anchorFirstTurn: false  # 首轮独立锚定轮开关（默认关闭）
+          anchorText: "You are a helpful software assistant.\n\nBegin every reasoning block with 'We need'."  # 锚定句文本
+          skillsDir: ''       # 可选：技能目录（默认包内 skills/，可指向本地测试目录）
+          skillRankBase: 250  # 技能候选排序基数，技能目录内按下标递增
+          residentAgentsPath: ''  # 可选：常驻规则文件目标路径（默认 ~/.dsh/AGENTS.md）
+          presetDir: ''       # 可选：生成的 agent preset 目录（默认 ~/.dsh/.agent-presets/prompt-tool/）
+          presetOrder: 5      # 生成 preset 的显示顺序
+          fallbackText: ''    # 可选：preset.md 缺失或不可读时使用的文本（默认空文本）
 ```
 
-config 字段：`text`（覆盖 `preset.md` 文本，默认读文件）、`agentsText`（覆盖 `AGENTS.md` 文本，默认读文件）、`writeAgents`（是否写 `~/.dsh/AGENTS.md`，默认 true）、`writePreset`（是否生成 `~/.dsh/.agent-presets/prompt-tool/`，默认 true）、`injectPrompt`（锚定层：we 锚定确认后是否注入 `preset.md`，默认 true）、`skillSwitches`（以技能目录名为键的逐技能开关，缺省视为 true）。`writeAgents`、`writePreset`、`injectPrompt`、`skillSwitches` 相互独立：关闭 `injectPrompt` 后 preset 不会注册 `prompt-injector` 行，但技能开关仍可经技能调用注入 `preset.md`；要完全停用提示词注入需同时关闭两条注入路径。`anchorFirstTurn` 与 `injectPrompt` 均通过 `writePreset` 生成的 preset 生效。
+config 字段：`text`（覆盖 `preset.md` 文本，默认读文件）、`agentsText`（覆盖 `AGENTS.md` 文本，默认读文件）、`writeAgents`（是否写 `~/.dsh/AGENTS.md`，默认 true）、`writePreset`（是否生成 `~/.dsh/.agent-presets/prompt-tool/`，默认 true）、`injectPrompt`（锚定层：we 锚定确认后是否注入 `preset.md`，默认 true）、`skillSwitches`（以技能目录名为键的逐技能开关，缺省视为 true）。 `skillsDir`（技能目录）、`skillRankBase`（技能候选排序基数）、`residentAgentsPath`（常驻规则文件目标路径）、`presetDir`（生成的 preset 目录）、`presetOrder`（preset 显示顺序）、`fallbackText`（`preset.md` 缺失时的回退文本）均可通过 cordis config 覆盖，默认值与上方注释一致。`writeAgents`、`writePreset`、`injectPrompt`、`skillSwitches` 相互独立：关闭 `injectPrompt` 后 preset 不会注册 `prompt-injector` 行，但技能开关仍可经技能调用注入 `preset.md`；要完全停用提示词注入需同时关闭两条注入路径。`anchorFirstTurn` 与 `injectPrompt` 均通过 `writePreset` 生成的 preset 生效。
 
 `anchorFirstTurn`（默认 false）开启后，preset 额外挂载 `turn-anchor.mjs`：会话首个真实用户消息先原样入 `agent.inbox` 的 `next-step`，首步只把 `anchorText` 作为独立输入发给模型；模型回应锚定句后，driver 在同一轮内自动消费任务继续执行。任务绝不丢失：inbox 入队失败时回退为原样直发。
 
