@@ -64,6 +64,7 @@ export interface BuildCordisOptions {
   injectPrompt?: boolean
 }
 
+
 // agent.cordis.yml 直引子模块 + 运行时注入 prompt-injector 块（可选 turn-anchor 块）。
 // 锚点定位到 tool-bootstrap 行与其后第一个零缩进非空行，不依赖 config 字段文本；
 // 替换占位符后断言无残留，并用 YAML 解析器验证生成文件结构，失败即 fail loud。

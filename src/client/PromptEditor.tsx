@@ -375,7 +375,7 @@ export function PromptEditor(props: PromptEditorProps): ReactNode {
                 />
                 <span className={styles.rowText}>
                   <span className={styles.rowName}>注入 preset.md（锚定层）</span>
-                  <span className={styles.rowDesc}>开启时注入 preset.md；关闭后不再注入 preset.md。若 AGENTS 头部注入开启，关闭本开关仍会只注入 AGENTS.md</span>
+                  <span className={styles.rowDesc}>注入会话晋升后的 agent/pre-step，消息插入决策消息开头，每会话一次</span>
                 </span>
               </label>
               <textarea
@@ -406,8 +406,8 @@ export function PromptEditor(props: PromptEditorProps): ReactNode {
                     onChange={() => toggle('injectAgentsPrompt')}
                   />
                   <span className={styles.rowText}>
-                    <span className={styles.rowName}>注入 AGENTS.md 到 preset 头部</span>
-                    <span className={styles.rowDesc}>开启时把 AGENTS.md 拼接到 preset.md 内容头部注入；与写入 ~/.dsh/AGENTS.md 的全局开关相互独立</span>
+                    <span className={styles.rowName}>注入 AGENTS.md</span>
+                    <span className={styles.rowDesc}>注入会话晋升后的第一个 agent/pre-step，消息追加在决策消息末尾，每会话一次</span>
                   </span>
                 </label>
                 <label className={styles.row}>

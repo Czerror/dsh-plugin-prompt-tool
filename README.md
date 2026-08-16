@@ -4,7 +4,7 @@ DSH 插件：把提示词规范注入三层（常驻层 + 按需技能层 + agen
 
 ## 三层注入
 
-- **常驻层（user 层）**：`AGENTS.md` 规则写入 `~/.dsh/AGENTS.md`。上游现以 `instruction-hint` 取代 dsh-agent-instructions 的大块注入：晋升后只提示一次"这些指令文件存在，先读"，模型经文件工具自行读取（`preset.md` 不混入，改由 preset 层在锚定确认后注入，避免重复）。
+- **常驻层（user 层）**：`AGENTS.md` 规则写入 `~/.dsh/AGENTS.md`。上游现以 `instruction-hint` 取代 dsh-agent-instructions 的大块注入：晋升后只提示一次"这些指令文件存在，先读"，模型经文件工具自行读取；开启 `injectAgentsPrompt` 时，该提示文本改为直接注入 `AGENTS.md` 内容，注入位置不变，每会话一次（`preset.md` 不混入，改由 preset 层在锚定确认后注入，避免重复）。
 - **按需层（技能）**：扫描 `skills/*/SKILL.md` 注册全部技能；每个技能的开关以目录名为键、以 frontmatter 的 `name`（缺省用目录名）显示；加载时 content = `preset.md` 规范 + 技能正文，`resourceBase` 指向 `skills/<目录>`。
 - **独立 agent preset 层**：插件加载时直引 anchored-standard 上游文件生成 preset 到 `~/.dsh/.agent-presets/prompt-tool/`（首轮 = 官方 Minimal 真实 schema：持久 `bash` + `str_replace_editor` + 剥离自动注入上下文，无输出 cap）；首轮 reasoning 稳定 "we" 轨迹，we 锚定确认后注入 `preset.md`；晋升后不放全量目录，改为 resident 集（bootstrap 对 + `dev_tool_search` / `skill_search` / `skill_load` + 已解锁工具）。
 
@@ -57,7 +57,7 @@ pnpm build                                                   # 重建插件
 
 在 Settings → 插件 → **插件配置**分区注册「提示词工具」可折叠卡片（`settings.plugin.item`，与其他插件卡片同款式），展开后提供：
 
-- **分区折叠**：Preset预设区（编辑器 + `injectPrompt`）、AGENTS设置区（编辑器 + `writeAgents`）、Skills设置区（每个技能独立开关 `skillSwitches`）、锚定轮与 preset 区（`writePreset`、`anchorFirstTurn`、`anchorText`）；每个分区默认折叠，文件分区带独立保存/还原/打开按钮，开关点击即时生效
+- **分区折叠**：Preset预设区（编辑器 + `injectPrompt`）、AGENTS设置区（编辑器 + `injectAgentsPrompt` + `writeAgents`）、Skills设置区（每个技能独立开关 `skillSwitches`）、锚定轮与 preset 区（`writePreset`、`anchorFirstTurn`、`anchorText`）；每个分区默认折叠，文件分区带独立保存/还原/打开按钮，开关点击即时生效
 - **保存 / 还原**：`preset.md` 与 `AGENTS.md` 各自独立保存/还原/打开（未保存时头部显示"未保存"标记，可分别还原草稿）；注入开关与技能开关点击后即时写入 settings 并生效，不需要保存按钮。Host 监听后写回 `preset.md` 与 `AGENTS.md`、按开关刷新 `~/.dsh/AGENTS.md` 与 preset、失效技能目录缓存，下一次请求即生效
 - **打开编辑**：用系统编辑器分别打开 `preset.md` 或 `AGENTS.md`
 - **在线编辑框**：直接编辑 `preset.md` 与 `AGENTS.md` 文本
@@ -65,7 +65,7 @@ pnpm build                                                   # 重建插件
 ## 工作原理
 
 1. Host 启动读取 `preset.md` 作为提示词规范源，读取 `AGENTS.md` 作为常驻层源文件。
-2. 常驻层：`writeAgents` 开启时把当前 `AGENTS.md` 写入 `~/.dsh/AGENTS.md`（首轮被剥离；晋升后由 `instruction-hint` 提示一次，模型经文件工具自行读取）。
+2. 常驻层：`writeAgents` 开启时把当前 `AGENTS.md` 写入 `~/.dsh/AGENTS.md`；`injectAgentsPrompt` 开启时，`instruction-hint` 位置注入的是 `AGENTS.md` 内容本身，而不是提示模型自行读取。
 3. 按需层：扫描 `skills/*/SKILL.md`；每个技能的 name/description/whenToUse/metadata 来自自身 frontmatter，并按 `skillSwitches` 决定是否注册；全部技能关闭时技能列表自动为空。加载内容为 `preset.md` 规范 + 技能正文。
 4. preset 层：直引 `vendor/` 上游 `agent.cordis.yml` + 全部 `*.mjs` 生成 `~/.dsh/.agent-presets/prompt-tool/`，并把 `preset.md` 注入 `prompt-injector` 的 `promptText`（we 锚定确认后注入）。晋升后目录为 resident 集，其余工具经 `dev_tool_search` 按需解锁。
 5. UI 保存通过 settings API 写入 `promptText`、`agentsText` 与全部开关；Host 的 watch 回调写回 `preset.md` 与 `AGENTS.md`，并按开关刷新 `~/.dsh/AGENTS.md` 与 preset（含 turn-anchor 行的增删）、失效技能目录缓存，下一次请求即生效。
@@ -160,10 +160,10 @@ dsh --profile prompt-tool --patch <cordis.yml>
       config:
         text: ''            # 可选：覆盖 preset.md 文本（默认读文件）
         agentsText: ''      # 可选：覆盖 AGENTS.md 文本（默认读文件）
-        injectAgentsPrompt: false  # 是否把 AGENTS.md 拼接到 preset.md 头部注入（默认关闭，本地安全测试用）
+        injectAgentsPrompt: false  # 是否用 AGENTS.md 内容替换上游 instruction-hint 提示（默认关闭，本地安全测试用）
         writeAgents: true   # 是否写 ~/.dsh/AGENTS.md（默认 true）
         writePreset: true   # 是否生成锚定注入 preset（默认 true）
-        injectPrompt: true  # 锚定层：we 锚定确认后是否注入 preset.md（默认 true；关闭只保留工具引导）
+        injectPrompt: true  # 是否注入 preset.md（默认 true；关闭后只停止 preset.md 注入，AGENTS 注入不受影响）
         skillSwitches: {}   # 按 skills/* 目录名自动生成，未列出的目录默认 true
         anchorFirstTurn: false  # 首轮独立锚定轮开关（默认关闭）
         anchorText: "You are a helpful software assistant.\n\nBegin every reasoning block with 'We need'."  # 锚定句文本
@@ -175,7 +175,7 @@ dsh --profile prompt-tool --patch <cordis.yml>
         fallbackText: ''    # 可选：preset.md 缺失或不可读时使用的文本（默认空文本）
 ```
 
-config 字段：`text`（覆盖 `preset.md` 文本，默认读文件）、`agentsText`（覆盖 `AGENTS.md` 文本，默认读文件）、`injectAgentsPrompt`（是否把 `AGENTS.md` 拼接到 `preset.md` 头部注入，默认关闭，本地安全测试用）、`writeAgents`（是否写 `~/.dsh/AGENTS.md`，默认 true）、`writePreset`（是否生成 `~/.dsh/.agent-presets/prompt-tool/`，默认 true）、`injectPrompt`（锚定层：we 锚定确认后是否注入 `preset.md`，默认 true）、`skillSwitches`（以技能目录名为键的逐技能开关，缺省视为 true）。 `skillsDir`（技能目录）、`skillRankBase`（技能候选排序基数）、`residentAgentsPath`（常驻规则文件目标路径）、`presetDir`（生成的 preset 目录）、`presetOrder`（preset 显示顺序）、`fallbackText`（`preset.md` 缺失时的回退文本）均可通过 cordis config 覆盖，默认值与上方注释一致。`writeAgents`、`writePreset`、`injectPrompt`、`injectAgentsPrompt`、`skillSwitches` 相互独立；`preset.md` 不拼进技能正文，技能加载内容只来自 `skills/<目录>/SKILL.md`。关闭 `injectPrompt` 只停止注入 `preset.md`；若同时开启 `injectAgentsPrompt`，`prompt-injector` 仍会只注入 `AGENTS.md`。`anchorFirstTurn` 与 `injectPrompt` 均通过 `writePreset` 生成的 preset 生效。开启 `injectAgentsPrompt` 后，宿主生成注入文本时先放当前 `AGENTS.md`；`injectPrompt` 开启时再拼接 `preset.md`。两者按开关独立组合（都关闭则不注册 `prompt-injector`），最终文本交给 `prompt-injector.mjs` 作为一条 user 消息注入；`agent.cordis.yml` 的 `prompt-injector` 行仍只携带最终 `promptText`，不新增其他配置行。
+config 字段：`text`（覆盖 `preset.md` 文本，默认读文件）、`agentsText`（覆盖 `AGENTS.md` 文本，默认读文件）、`injectAgentsPrompt`（是否用 `AGENTS.md` 内容替换上游 `instruction-hint` 提示，默认关闭，本地安全测试用）、`writeAgents`（是否写 `~/.dsh/AGENTS.md`，默认 true）、`writePreset`（是否生成 `~/.dsh/.agent-presets/prompt-tool/`，默认 true）、`injectPrompt`（锚定层：we 锚定确认后是否注入 `preset.md`，默认 true）、`skillSwitches`（以技能目录名为键的逐技能开关，缺省视为 true）。 `skillsDir`（技能目录）、`skillRankBase`（技能候选排序基数）、`residentAgentsPath`（常驻规则文件目标路径）、`presetDir`（生成的 preset 目录）、`presetOrder`（preset 显示顺序）、`fallbackText`（`preset.md` 缺失时的回退文本）均可通过 cordis config 覆盖，默认值与上方注释一致。`writeAgents`、`writePreset`、`injectPrompt`、`injectAgentsPrompt`、`skillSwitches` 相互独立；`preset.md` 不拼进技能正文，技能加载内容只来自 `skills/<目录>/SKILL.md`。关闭 `injectPrompt` 只停止注入 `preset.md`；`injectAgentsPrompt` 开启时 `AGENTS.md` 走 `instruction-hint` 同一位置，与 `prompt-injector` 无关。`anchorFirstTurn` 与 `injectPrompt` 均通过 `writePreset` 生成的 preset 生效。开启 `injectAgentsPrompt` 后，宿主生成 `agents-instruction.txt` 并修补生成目录中的 `instruction-hint.mjs`，让 `AGENTS.md` 内容在 `instruction-hint` 的同一位置注入；`prompt-injector` 的 `promptText` 只由 `injectPrompt` 控制，不再拼接 `AGENTS.md`。开启 `injectAgentsPrompt` 时，`AGENTS.md` 内容会以 `instruction-hint` 的同一位置（消息尾部、同一 source 语义）注入，代替上游“请先读取 instruction files”这段提示文本；不会拼接到 `prompt-injector` 的 `promptText` 头部。
 
 `anchorFirstTurn`（默认 false）开启后，preset 额外挂载 `turn-anchor.mjs`：会话首个真实用户消息先原样入 `agent.inbox` 的 `next-step`，首步只把 `anchorText` 作为独立输入发给模型；模型回应锚定句后，driver 在同一轮内自动消费任务继续执行。任务绝不丢失：inbox 入队失败时回退为原样直发。
 

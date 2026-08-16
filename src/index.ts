@@ -47,7 +47,7 @@ export interface Config {
   text: string
   /** 可选：覆盖 AGENTS.md 文本（默认读文件）。 */
   agentsText: string
-  /** 是否把 AGENTS.md 拼接到 preset.md 内容头部注入（默认关闭，本地安全测试用）。 */
+  /** 是否用 AGENTS.md 内容替换上游 instruction-hint 提示文本（默认关闭，本地安全测试用）。 */
   injectAgentsPrompt: boolean
   /** 是否写 ~/.dsh/AGENTS.md（默认 true）。 */
   writeAgents: boolean
@@ -220,11 +220,41 @@ function warn(ctx: Context, message: string): void {
     // 日志不可用时保持静默，避免二次故障掩盖主路径。
   }
 }
+/** 把上游 instruction-hint.mjs 的提示文本替换为读同目录 agents-instruction.txt。 */
+function patchInstructionHint(source: string): string {
+  source = source.replace(/\r\n/g, '\n')
+  const original = [
+    '      const text = [',
+    '        ...sections,',
+    '        \'Do NOT assume their content. When a task touches this workspace, read the relevant instruction files first and follow them.\',',
+    '      ].join(\' \')',
+  ].join('\n')
+  const replacement = [
+    '  const agentsInstructionText = readFileSync(new URL(\'./agents-instruction.txt\', import.meta.url), \'utf8\').trim()',
+    '  const text = agentsInstructionText.length > 0',
+    '    ? agentsInstructionText',
+    '    : [',
+    '        ...sections,',
+    '        \'Do NOT assume their content. When a task touches this workspace, read the relevant instruction files first and follow them.\',',
+    '      ].join(\' \')',
+  ].join('\n')
+  if (!source.includes("import { createEpochPromotion }")) {
+    throw new Error('instruction-hint.mjs import marker missing')
+  }
+  if (!source.includes(original)) {
+    throw new Error('instruction-hint.mjs text marker missing')
+  }
+  return source
+    .replace("import { createEpochPromotion } from './compaction-epoch.mjs'", "import { readFileSync } from 'node:fs'\nimport { createEpochPromotion } from './compaction-epoch.mjs'")
+    .replace(original, replacement)
+}
 
 interface WritePresetOptions {
   anchorFirstTurn: boolean
   anchorText: string
   injectPrompt: boolean
+  /** 用该文本替换上游 instruction-hint 的提示内容；不传则保持上游原样。 */
+  agentsInstructionText?: string
   presetDir: string
   presetOrder: number
 }
@@ -246,6 +276,14 @@ function writePreset(prompt: string, options: WritePresetOptions): void {
   for (const file of readdirSync(VENDOR_PRESET_DIR)) {
     if (!file.endsWith('.mjs')) continue
     writeFileSync(join(presetDir, file), readFileSync(join(VENDOR_PRESET_DIR, file), 'utf8'), 'utf8')
+  }
+  const agentsInstructionPath = join(presetDir, 'agents-instruction.txt')
+  if (options.agentsInstructionText !== undefined) {
+    writeFileSync(agentsInstructionPath, options.agentsInstructionText, 'utf8')
+    const hintPath = join(presetDir, 'instruction-hint.mjs')
+    writeFileSync(hintPath, patchInstructionHint(readFileSync(hintPath, 'utf8')), 'utf8')
+  } else {
+    rmSync(agentsInstructionPath, { force: true })
   }
   const injectorPath = join(presetDir, 'prompt-injector.mjs')
   if (options.injectPrompt) {
@@ -416,15 +454,12 @@ export function apply(ctx: Context, config: Config): void {
       }
     }
     if (runtime.writePreset) {
-      const promptParts: string[] = []
-      if (runtime.injectAgentsPrompt && currentAgents.length > 0) promptParts.push(currentAgents)
-      if (runtime.injectPrompt && current.length > 0) promptParts.push(current)
-      const presetPrompt = promptParts.join('\n\n')
-      const enableInjector = (runtime.injectAgentsPrompt || runtime.injectPrompt) && presetPrompt.length > 0
+      const presetPrompt = runtime.injectPrompt && current.length > 0 ? current : ''
       writePreset(presetPrompt, {
         anchorFirstTurn: runtime.anchorFirstTurn,
         anchorText: runtime.anchorText,
-        injectPrompt: enableInjector,
+        injectPrompt: runtime.injectPrompt,
+        agentsInstructionText: runtime.injectAgentsPrompt && currentAgents.length > 0 ? currentAgents : undefined,
         presetDir: config.presetDir,
         presetOrder: config.presetOrder,
       })
