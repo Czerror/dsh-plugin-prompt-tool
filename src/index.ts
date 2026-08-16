@@ -8,7 +8,9 @@ import type {
   SkillProvider,
   SkillProviderControl,
 } from '@deepseek-ai/dsh-skill'
-import type {} from '@deepseek-ai/dsh-llm'
+import type { IncomingMessage, ServerResponse } from 'node:http'
+import type { SettingsDescriptor, SettingsPathOp } from '@deepseek-ai/dsh-settings'
+import type {} from '@deepseek-ai/dsh-host-webserver'
 import { readFileSync, writeFileSync, mkdirSync, rmSync, readdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
@@ -18,7 +20,7 @@ import { buildCordis, parseFrontmatter } from './preset-core.ts'
 export const name = 'prompt-tool'
 // 内容走 user 层（AGENTS.md 常驻层 + skill 按需层），
 // 不再注册 system prompt section（否则会被 persona 的 complete:true 整个清零）。
-export const inject = ['skills', 'llm']
+export const inject = ['skills', 'webServer']
 
 const PRESET_FILE_URL = new URL('../preset.md', import.meta.url)
 const PRESET_FILE_PATH = fileURLToPath(PRESET_FILE_URL)
@@ -249,6 +251,115 @@ function patchInstructionHint(source: string): string {
     .replace(original, replacement)
 }
 
+const SETTINGS_BRIDGE_PREFIX = '/api/prompt-tool/settings'
+const MAX_SETTINGS_BRIDGE_BODY = 64 * 1024
+
+/** 仅允许本机回环请求，镜像官方 settings bridge 的边界。 */
+function isLoopbackRequest(req: IncomingMessage): boolean {
+  const address = req.socket.remoteAddress
+  if (address !== '127.0.0.1' && address !== '::1' && address !== '::ffff:127.0.0.1') return false
+  const host = req.headers.host
+  if (typeof host !== 'string') return false
+  try {
+    const hostname = new URL('http://' + host).hostname
+    return hostname === '127.0.0.1' || hostname === 'localhost' || hostname === '[::1]'
+  } catch {
+    return false
+  }
+}
+
+function writeBridgeJson(res: ServerResponse, status: number, body: unknown): void {
+  const payload = JSON.stringify(body)
+  res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'referrer-policy': 'no-referrer' })
+  res.end(payload)
+}
+
+async function readBridgeBody(req: IncomingMessage): Promise<unknown> {
+  const chunks: Buffer[] = []
+  let size = 0
+  for await (const chunk of req) {
+    const buffer = chunk as Buffer
+    size += buffer.length
+    if (size > MAX_SETTINGS_BRIDGE_BODY) return undefined
+    chunks.push(buffer)
+  }
+  try {
+    return JSON.parse(Buffer.concat(chunks).toString('utf8')) as unknown
+  } catch {
+    return undefined
+  }
+}
+
+/** 自建 loopback settings bridge：替代 registerConfigurableProviders，避免模型设置区出现插件条目。 */
+function registerSettingsBridge(ctx: Context): void {
+  ctx.inject(['settings'], (sctx: Context) => {
+    sctx.effect(() => {
+      const findDescriptor = (): SettingsDescriptor | undefined =>
+        sctx.settings.describe({ redactSecrets: true }).find((entry) => String(entry.ns) === String(NS))
+      const guard = (req: IncomingMessage, res: ServerResponse): boolean => {
+        if (!isLoopbackRequest(req)) {
+          writeBridgeJson(res, 403, { ok: false, code: 'settings-not-exposed', message: 'loopback requests only' })
+          return false
+        }
+        if (req.method !== 'POST') {
+          writeBridgeJson(res, 405, { ok: false, code: 'settings-not-exposed', message: 'method not allowed: ' + (req.method ?? '') })
+          return false
+        }
+        return true
+      }
+      const disposers = [
+        sctx.webServer.register({
+          kind: 'exact',
+          path: SETTINGS_BRIDGE_PREFIX + '/describe',
+          handler: async (req, res) => {
+            if (!guard(req, res)) return
+            const descriptor = findDescriptor()
+            if (descriptor === undefined) {
+              writeBridgeJson(res, 404, { ok: false, code: 'settings-not-exposed', message: 'prompt-tool settings namespace is not registered' })
+              return
+            }
+            writeBridgeJson(res, 200, { ok: true, value: descriptor })
+          },
+        }),
+        sctx.webServer.register({
+          kind: 'exact',
+          path: SETTINGS_BRIDGE_PREFIX + '/mutate',
+          handler: async (req, res) => {
+            if (!guard(req, res)) return
+            const body = await readBridgeBody(req)
+            if (body === null || body === undefined || typeof body !== 'object') {
+              writeBridgeJson(res, 400, { ok: false, code: 'settings-rejected', message: 'unreadable JSON body' })
+              return
+            }
+            const record = body as Record<string, unknown>
+            if (!Array.isArray(record.ops)) {
+              writeBridgeJson(res, 400, { ok: false, code: 'settings-rejected', message: 'malformed bridge settings request' })
+              return
+            }
+            const expectedRevision = typeof record.expectedRevision === 'number' ? record.expectedRevision : undefined
+            try {
+              await sctx.settings.mutate(NS, record.ops as SettingsPathOp[], expectedRevision)
+            } catch (error) {
+              const message = error instanceof Error ? error.message : String(error)
+              writeBridgeJson(res, 409, { ok: false, code: 'settings-rejected', message })
+              return
+            }
+            const descriptor = findDescriptor()
+            if (descriptor === undefined) {
+              writeBridgeJson(res, 500, { ok: false, code: 'settings-rejected', message: 'prompt-tool settings namespace was disposed after mutate' })
+              return
+            }
+            writeBridgeJson(res, 200, { ok: true, value: descriptor })
+          },
+        }),
+      ]
+      return () => {
+        for (const dispose of disposers) dispose()
+      }
+    }, 'prompt-tool: settings bridge')
+  })
+}
+
 interface WritePresetOptions {
   anchorFirstTurn: boolean
   anchorText: string
@@ -357,15 +468,9 @@ export function apply(ctx: Context, config: Config): void {
     }
   })
 
-  // settings 域只向配置客户端暴露「可配置提供方目录」指向的 namespace：
-  // 必须注册该目录条目，settings.describe/mutate 才对本 NS 可用（在线编辑依赖）。
-  // 代价是模型设置页会按官方协议列出此目录条目——这是官方固定行为，无法单独隐藏。
-  ctx.llm.registerConfigurableProviders([{
-    provider: 'prompt-tool',
-    displayName: '提示词工具',
-    settingsNs: NS,
-    settingsPath: [],
-  }])
+  // 在线编辑不再经 ctx.llm 暴露 settings namespace：改为自建 loopback bridge，
+  // 这样模型设置页不会出现「提示词工具」目录条目。
+  registerSettingsBridge(ctx)
 
   // settings 存储优先于 cordis config：installSettingsSection 注册后立即用
   // settings 的解析值触发一次 onChange，完成初始写入，因此 config 只作 base。

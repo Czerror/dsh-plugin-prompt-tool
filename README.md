@@ -203,7 +203,7 @@ config 字段：`text`（覆盖 `preset.md` 文本，默认读文件）、`agent
 
 ## 已知限制
 
-- **模型设置页目录条目**：为让 `prompt-tool` settings 命名空间可被配置客户端读写，必须经 `ctx.llm.registerConfigurableProviders` 暴露（官方协议，settings 域只服务该目录 + 固定 allowlist）。模型设置页因此会出现「提示词工具」条目，官方无隐藏机制，删除该注册会使 Web UI 在线编辑失效。
+- **模型设置页目录条目**：已不再经 `ctx.llm.registerConfigurableProviders` 暴露 settings 命名空间，改为自建 loopback-only `/api/prompt-tool/settings` bridge，模型设置页不会再出现「提示词工具」条目。
 - **AGENTS.md 覆盖**：在线保存会直接覆盖项目根 `AGENTS.md`；`writeAgents` 开启时还会覆盖 `~/.dsh/AGENTS.md`，失败仅记录日志，卸载插件不恢复原文件；请自行保留原内容。
 - **UI 刷新策略**：插件配置卡片在无未保存草稿时每次展开都会同步最新 settings；存在草稿时保留本地编辑，点击「还原」可重新拉取。
 - **技能目录扫描**：`skills/*/SKILL.md` 在插件加载时扫描；新增或删除技能目录后重启 dsh 即生效，无需改代码。每个目录的开关默认开启，按目录名写入 `skillSwitches`。

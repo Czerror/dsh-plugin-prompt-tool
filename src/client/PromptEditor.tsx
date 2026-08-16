@@ -2,12 +2,31 @@ import { useCallback, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import clsx from 'clsx'
 import { IconChevronDownOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { IApiClient, RpcResponse, SettingsNamespaceView, SettingsPathOpView } from '@deepseek-ai/dsh-client-connection/client'
+import type { IApiClient } from '@deepseek-ai/dsh-client-connection/client'
 import type { InjectFace, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-settings-plugins/client'
 import styles from './PromptEditor.module.css'
 
-const NS = 'prompt-tool'
+const SETTINGS_BRIDGE_PREFIX = '/api/prompt-tool/settings'
+
+type BridgePathOp = { op: 'set' | 'unset'; path: string[]; value?: unknown }
+interface BridgeSettingsView { ns: string; value: unknown; base?: unknown; revision: number }
+type BridgeResult<T> = { ok: true; value: T } | { ok: false; code?: string; message?: string }
+
+async function bridgePost<T>(path: string, body: unknown): Promise<BridgeResult<T>> {
+  try {
+    const response = await fetch(SETTINGS_BRIDGE_PREFIX + path, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+    const payload = await response.json() as unknown
+    if (payload !== null && typeof payload === 'object') return payload as BridgeResult<T>
+    return { ok: false, message: 'settings bridge unavailable' }
+  } catch (error) {
+    return { ok: false, message: errorMessage(error) }
+  }
+}
 
 export interface PromptEditorInjected {
   api: IApiClient
@@ -90,12 +109,6 @@ const switchesEqual = (a: SwitchSnapshot, b: SwitchSnapshot): boolean =>
   && a.writeAgents === b.writeAgents
   && a.writePreset === b.writePreset
 
-type SettingsDescribeResponse = RpcResponse<{
-  writable: boolean
-  hasDocument: boolean
-  namespaces: SettingsNamespaceView[]
-}>
-
 const asRecord = (value: unknown): Record<string, unknown> =>
   value !== null && typeof value === 'object' ? value as Record<string, unknown> : {}
 
@@ -177,10 +190,9 @@ export function PromptEditor(props: PromptEditorProps): ReactNode {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const res: SettingsDescribeResponse = await api.settings.describe({})
-      if (!res.result.ok) { showNotice('error', '读取配置失败'); return }
-      const ns = res.result.value.namespaces.find((entry) => entry.ns === NS)
-      if (!ns) { showNotice('error', '未找到提示词工具配置'); return }
+      const res = await bridgePost<BridgeSettingsView>('/describe', {})
+      if (!res.ok) { showNotice('error', '读取配置失败：' + (res.message ?? '')); return }
+      const ns = res.value
       const value = asRecord(ns.value)
       const base = asRecord(ns.base)
       const next: Fields = {
@@ -213,18 +225,17 @@ export function PromptEditor(props: PromptEditorProps): ReactNode {
     } finally {
       setLoading(false)
     }
-  }, [api, showNotice])
+  }, [showNotice])
 
   const refreshRevision = useCallback(async () => {
     try {
-      const res: SettingsDescribeResponse = await api.settings.describe({})
-      if (!res.result.ok) return
-      const ns = res.result.value.namespaces.find((entry) => entry.ns === NS)
-      if (ns) revisionRef.current = ns.revision
+      const res = await bridgePost<BridgeSettingsView>('/describe', {})
+      if (!res.ok) return
+      revisionRef.current = res.value.revision
     } catch {
       // 刷新失败保持原 revision，用户可重试。
     }
-  }, [api])
+  }, [])
 
   const patch = (partial: Partial<Fields>) => {
     const next = { ...fieldsRef.current, ...partial }
@@ -267,18 +278,18 @@ export function PromptEditor(props: PromptEditorProps): ReactNode {
     }
   }
 
-  const enqueueSave = useCallback((ops: SettingsPathOpView[], okMessage: string | undefined, onSaved: () => void, setBusy?: (busy: boolean) => void) => {
+  const enqueueSave = useCallback((ops: BridgePathOp[], okMessage: string | undefined, onSaved: () => void, setBusy?: (busy: boolean) => void) => {
     setBusy?.(true)
     saveQueueRef.current = saveQueueRef.current.then(async () => {
       try {
-        const res = await api.settings.mutate({ ns: NS, ops, expectedRevision: revisionRef.current })
-        if (res.result.ok) {
-          revisionRef.current = res.result.value.revision
+        const res = await bridgePost<BridgeSettingsView>('/mutate', { ops, expectedRevision: revisionRef.current })
+        if (res.ok) {
+          revisionRef.current = res.value.revision
           onSaved()
           if (okMessage) showNotice('ok', okMessage)
         } else {
           await refreshRevision()
-          showNotice('error', '保存失败：' + (res.result.error?.message ?? '') + '（已刷新配置版本，可重试）')
+          showNotice('error', '保存失败：' + (res.message ?? '') + '（已刷新配置版本，可重试）')
         }
       } catch (error) {
         await refreshRevision()
@@ -287,7 +298,7 @@ export function PromptEditor(props: PromptEditorProps): ReactNode {
         setBusy?.(false)
       }
     }).catch(() => {})
-  }, [api, refreshRevision, showNotice])
+  }, [refreshRevision, showNotice])
 
   const savePrompt = () => enqueueSave(
     [{ op: 'set', path: ['promptText'], value: fieldsRef.current.promptText }],
