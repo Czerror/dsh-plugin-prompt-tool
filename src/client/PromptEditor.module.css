@@ -37,6 +37,12 @@
 .primary:focus-visible, .secondary:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary); outline-offset: 1px; }
 .notice { font-size: 12px; color: var(--dsw-alias-state-success-primary); }
 .noticeError { color: var(--dsw-alias-state-error-primary, #d5484d); }
+.skillsBar { display: flex; flex-direction: column; gap: 8px; padding: 2px 0 8px; }
+.skillsDirRow { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.skillsDirRow .secondary { flex: none; }
+.skillsDirInput { flex: 1; min-width: 0; min-height: 34px; box-sizing: border-box; font-size: 12px; line-height: 1.4; color: var(--dsw-alias-label-primary); background: var(--dsw-alias-bg-layer-2); border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; padding: 6px 10px; }
+.skillsDirInput:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary); outline-offset: 1px; }
+.skillsPath { flex: 1; min-width: 0; font-size: 12px; line-height: 1.5; color: var(--dsw-alias-label-tertiary); overflow-wrap: anywhere; }
 .bootstrapTokensInput {
   width: 96px;
   min-height: 36px;

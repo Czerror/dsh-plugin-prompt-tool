@@ -17,11 +17,17 @@ import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
 import { buildCordis, parseFrontmatter } from './preset-core.ts'
+import { ensureWebSurface } from './web-surface.ts'
+import { resolveProfileSkillsDir } from './profile-skills.ts'
 
 export const name = 'prompt-tool'
 // 内容走 user 层（AGENTS.md 常驻层 + skill 按需层），
 // 不再注册 system prompt section（否则会被 persona 的 complete:true 整个清零）。
-export const inject = ['skills', 'webServer', 'commands', 'llm', 'subagents']
+// 注意：webServer 不放在静态 inject 里——profile 首次可能只有
+// @deepseek-ai/dsh-base（没有 @deepseek-ai/dsh-web-app），硬注入会让插件
+// pending 并导致启动失败。Web 表面改为动态等待 webServer；首次启动时由
+// ensureWebSurface 自动把 web-app bundle 补进 profile，重启一次后生效。
+export const inject = ['skills', 'commands', 'llm', 'subagents']
 
 const PRESET_FILE_URL = new URL('../preset.md', import.meta.url)
 const PRESET_FILE_PATH = fileURLToPath(PRESET_FILE_URL)
@@ -89,7 +95,7 @@ export interface Config {
   bootstrapMaxTokens: number
   /** 使用 PTC 模式：默认开启——晋升后把 wire 切换为 Code Mode（单一 run_code，完整插件工具经生成 SDK 调用）；关闭时晋升后恢复原生完整工具目录。 */
   usePtcMode: boolean
-  /** 技能目录（默认包内 skills/，可指向本地测试目录）。 */
+  /** 用户自定义技能目录；空 = 自动使用当前 profile 下的 skills/ 副本。 */
   skillsDir: string
   /** 技能候选排序基数，技能目录内按下标递增。 */
   skillRankBase: number
@@ -166,6 +172,10 @@ export interface PromptSettings {
   injectPrompt: boolean
   skillSwitches: Record<string, boolean>
   skillCatalog: SkillCatalogEntry[]
+  /** 用户自定义技能目录；空 = 自动使用 profile skills 副本。 */
+  skillsDir: string
+  /** 当前实际生效的技能目录（profile 副本或用户自定义路径）。 */
+  activeSkillsDir: string
   writeAgents: boolean
   writePreset: boolean
 }
@@ -192,6 +202,8 @@ const PromptSettingsSchema: z<PromptSettings> = z.object({
     name: z.string(),
     description: z.string().default(''),
   })).default([]),
+  skillsDir: z.string().default(''),
+  activeSkillsDir: z.string().default(''),
   writeAgents: z.boolean().default(true),
   writePreset: z.boolean().default(true),
 })
@@ -202,6 +214,8 @@ interface RuntimeOptions {
   injectAgentsPrompt: boolean
   injectPrompt: boolean
   skillSwitches: Record<string, boolean>
+  /** 用户自定义技能目录；空 = 自动使用 profile skills 副本。 */
+  skillsDir: string
   anchorFirstTurn: boolean
   anchorText: string
   anchorCustom: boolean
@@ -434,6 +448,7 @@ function renderTuiStatus(source: PromptSettings): string {
     `  anchorText               ${source.anchorText.length > 0 ? source.anchorText : '（空 = 按任务自动选择）'}`,
     `  deepseekAvailable       ${source.deepseekAvailable ? '是' : '否（未检测到 DeepSeek 模型，subagentFlash 不可用）'}`,
     `  bootstrapMaxTokens      ${source.bootstrapMaxTokens > 0 ? source.bootstrapMaxTokens : '0（关闭，不设封顶）'}`,
+    `  activeSkillsDir         ${source.activeSkillsDir || '（未解析到技能目录）'}`,
     '技能开关:',
   ]
   for (const skill of source.skillCatalog) {
@@ -520,9 +535,17 @@ ${renderTuiStatus(getSource())}` }
   })
 }
 
+interface SkillsBridgeState {
+  activeSkillsDir: string
+  skillCatalog: SkillCatalogEntry[]
+}
+
 /** 自建 loopback settings bridge：替代 registerConfigurableProviders，避免模型设置区出现插件条目。 */
-function registerSettingsBridge(ctx: Context, getDeepseekAvailable: () => boolean, getDeepseekState: () => DeepseekDetection): void {
-  ctx.inject(['settings'], (sctx: Context) => {
+function registerSettingsBridge(ctx: Context, getDeepseekAvailable: () => boolean, getDeepseekState: () => DeepseekDetection, getSkillsState: () => SkillsBridgeState): void {
+  // 动态等待 webServer：webServer 由 @deepseek-ai/dsh-web-app 提供。
+  // profile 首次缺少该 bundle 时，本子插件先 pending 但不阻塞启动审计；
+  // ensureWebSurface 会把 bundle 补进 manifest，重启后本子插件自动激活。
+  ctx.inject(['settings', 'webServer'], (sctx: Context) => {
     sctx.effect(() => {
       const findDescriptor = (): SettingsDescriptor | undefined =>
         sctx.settings.describe({ redactSecrets: true }).find((entry) => String(entry.ns) === String(NS))
@@ -549,7 +572,16 @@ function registerSettingsBridge(ctx: Context, getDeepseekAvailable: () => boolea
               return
             }
             const detection = getDeepseekState()
-            writeBridgeJson(res, 200, { ok: true, value: descriptor, deepseekAvailable: detection.available, deepseekProviders: detection.providers, deepseekError: detection.error })
+            const skillsState = getSkillsState()
+            writeBridgeJson(res, 200, {
+              ok: true,
+              value: descriptor,
+              deepseekAvailable: detection.available,
+              deepseekProviders: detection.providers,
+              deepseekError: detection.error,
+              activeSkillsDir: skillsState.activeSkillsDir,
+              skillCatalog: skillsState.skillCatalog,
+            })
           },
         }),
         sctx.webServer.register({
@@ -776,12 +808,36 @@ export function apply(ctx: Context, config: Config): void {
   const getDeepseekState = (): DeepseekDetection => deepseekState()
   let current = config.text || readPromptFile(config.fallbackText)
   let currentAgents = config.agentsText || readAgents()
-  const skills = readSkills(config.skillsDir)
-  const skillCatalog: SkillCatalogEntry[] = skills.map((skill) => ({
+  // 首次启动把包内 skills/ 增量复制到 $DSH_HOME/profiles/<profile>/skills，
+  // 并优先使用 profile 副本；已有同名文件不覆盖，用户编辑会保留。
+  // 显式配置了其他 skillsDir 时尊重用户选择，不做复制。
+  const configuredSkillsDir = config.skillsDir !== DEFAULT_SKILLS_DIR && config.skillsDir.length > 0
+    ? config.skillsDir
+    : ''
+  let activeSkillsDir = configuredSkillsDir.length > 0
+    ? configuredSkillsDir
+    : resolveProfileSkillsDir(ctx, DEFAULT_SKILLS_DIR, (message) => warn(ctx, message))
+  let skillCatalog: SkillCatalogEntry[] = readSkills(activeSkillsDir).map((skill) => ({
     folder: skill.folder,
     name: skill.name,
     description: skill.description,
   }))
+
+  /** 切换生效技能目录并刷新目录快照（供 describe / TUI 显示）。 */
+  const applyActiveSkillsDir = (dir: string): void => {
+    activeSkillsDir = dir
+    skillCatalog = readSkills(dir).map((skill) => ({
+      folder: skill.folder,
+      name: skill.name,
+      description: skill.description,
+    }))
+  }
+
+  /** 用户 skillsDir 设置 → 实际生效目录。 */
+  const resolveActiveSkillsDir = (userDir: string): string =>
+    userDir.length > 0
+      ? userDir
+      : resolveProfileSkillsDir(ctx, DEFAULT_SKILLS_DIR, (message) => warn(ctx, message))
 
   // 1) 按需层：注册 skills/*/SKILL.md，name/description/whenToUse/metadata 全部来自各自 frontmatter。
   //    content 只包含技能自身正文；preset.md 不拼进技能正文，全部技能关闭时列表自然为空。
@@ -793,7 +849,7 @@ export function apply(ctx: Context, config: Config): void {
       name: 'prompt-tool',
       list: async (options: SkillLookupOptions): Promise<readonly SkillCandidate[]> => {
         if (options.signal?.aborted) return []
-        return readSkills(config.skillsDir)
+        return readSkills(activeSkillsDir)
           .filter((skill) => skillSwitches[skill.folder] !== false)
           .map((skill, index): SkillCandidate => ({
             name: skill.name,
@@ -802,7 +858,7 @@ export function apply(ctx: Context, config: Config): void {
             invocation: { modelInvocable: true, userInvocable: true },
             source: 'runtime',
             provider: 'prompt-tool',
-            resourceBase: { kind: 'directory', path: join(config.skillsDir, skill.folder) },
+            resourceBase: { kind: 'directory', path: join(activeSkillsDir, skill.folder) },
             rank: config.skillRankBase + index,
             locator: skill.folder,
             path: skill.file,
@@ -811,7 +867,7 @@ export function apply(ctx: Context, config: Config): void {
       },
       get: async (candidate: SkillCandidate, options: SkillLookupOptions): Promise<SkillDefinition | undefined> => {
         if (options.signal?.aborted) return undefined
-        const skill = readSkills(config.skillsDir).find((entry) => entry.folder === candidate.locator || entry.name === candidate.name)
+        const skill = readSkills(activeSkillsDir).find((entry) => entry.folder === candidate.locator || entry.name === candidate.name)
         if (skill === undefined || skillSwitches[skill.folder] === false) return undefined
         return {
           name: candidate.name,
@@ -831,7 +887,13 @@ export function apply(ctx: Context, config: Config): void {
 
   // 在线编辑不再经 ctx.llm 暴露 settings namespace：改为自建 loopback bridge，
   // 这样模型设置页不会出现「提示词工具」目录条目。
-  registerSettingsBridge(ctx, getDeepseekAvailable, getDeepseekState)
+  registerSettingsBridge(ctx, getDeepseekAvailable, getDeepseekState, () => ({ activeSkillsDir, skillCatalog }))
+
+  // 首次以 base-only profile 启动时自动补 @deepseek-ai/dsh-web-app：
+  // 写进 profile bundles（下一次启动由官方装配路径生效），并提示重启。
+  setImmediate(() => {
+    void ensureWebSurface(ctx, (message) => warn(ctx, message))
+  })
 
   // settings 存储优先于 cordis config：installSettingsSection 注册后立即用
   // settings 的解析值触发一次 onChange，完成初始写入，因此 config 只作 base。
@@ -841,6 +903,7 @@ export function apply(ctx: Context, config: Config): void {
     injectAgentsPrompt: config.injectAgentsPrompt,
     injectPrompt: config.injectPrompt,
     skillSwitches: { ...config.skillSwitches },
+    skillsDir: configuredSkillsDir,
     anchorFirstTurn: config.anchorFirstTurn,
     anchorText: config.anchorText,
     anchorCustom: config.anchorCustom,
@@ -873,6 +936,8 @@ export function apply(ctx: Context, config: Config): void {
     injectPrompt: runtime.injectPrompt,
     skillSwitches: runtime.skillSwitches,
     skillCatalog,
+    skillsDir: runtime.skillsDir,
+    activeSkillsDir,
     writeAgents: runtime.writeAgents,
     writePreset: runtime.writePreset,
   })
@@ -889,6 +954,7 @@ export function apply(ctx: Context, config: Config): void {
       injectAgentsPrompt: typeof next.injectAgentsPrompt === 'boolean' ? next.injectAgentsPrompt : config.injectAgentsPrompt,
       injectPrompt: typeof next.injectPrompt === 'boolean' ? next.injectPrompt : config.injectPrompt,
       skillSwitches: next.skillSwitches !== undefined ? next.skillSwitches : config.skillSwitches,
+      skillsDir: typeof next.skillsDir === 'string' ? next.skillsDir : configuredSkillsDir,
       anchorFirstTurn: typeof next.anchorFirstTurn === 'boolean' ? next.anchorFirstTurn : config.anchorFirstTurn,
       anchorText: normalizeAnchorText(typeof next.anchorText === 'string' ? next.anchorText : config.anchorText),
       anchorCustom: typeof next.anchorCustom === 'boolean' ? next.anchorCustom : config.anchorCustom,
@@ -901,11 +967,13 @@ export function apply(ctx: Context, config: Config): void {
     const promptChanged = next.promptText !== current
     const agentsChanged = next.agentsText !== currentAgents
     const skillSwitchesChanged = JSON.stringify(runtime.skillSwitches) !== JSON.stringify(nextRuntime.skillSwitches)
+    const skillsDirChanged = runtime.skillsDir !== nextRuntime.skillsDir
     const settingsChanged = runtime.writeAgents !== nextRuntime.writeAgents
       || runtime.writePreset !== nextRuntime.writePreset
       || runtime.injectAgentsPrompt !== nextRuntime.injectAgentsPrompt
       || runtime.injectPrompt !== nextRuntime.injectPrompt
       || skillSwitchesChanged
+      || skillsDirChanged
       || runtime.anchorFirstTurn !== nextRuntime.anchorFirstTurn
       || runtime.anchorText !== nextRuntime.anchorText
       || runtime.anchorCustom !== nextRuntime.anchorCustom
@@ -925,6 +993,7 @@ export function apply(ctx: Context, config: Config): void {
     runtime.injectAgentsPrompt = nextRuntime.injectAgentsPrompt
     runtime.injectPrompt = nextRuntime.injectPrompt
     runtime.skillSwitches = nextRuntime.skillSwitches
+    runtime.skillsDir = nextRuntime.skillsDir
     runtime.anchorFirstTurn = nextRuntime.anchorFirstTurn
     runtime.anchorText = nextRuntime.anchorText
     runtime.anchorCustom = nextRuntime.anchorCustom
@@ -934,7 +1003,12 @@ export function apply(ctx: Context, config: Config): void {
     runtime.bootstrapMaxTokens = nextRuntime.bootstrapMaxTokens
     runtime.usePtcMode = nextRuntime.usePtcMode
     skillSwitches = runtime.skillSwitches
-    if (skillSwitchesChanged) invalidateSkills?.()
+    if (skillsDirChanged) {
+      applyActiveSkillsDir(resolveActiveSkillsDir(runtime.skillsDir))
+      invalidateSkills?.()
+    } else if (skillSwitchesChanged) {
+      invalidateSkills?.()
+    }
 
     let residentAgentsWritten = false
     if (runtime.writeAgents) {
@@ -994,6 +1068,8 @@ export function apply(ctx: Context, config: Config): void {
     injectPrompt: config.injectPrompt,
     skillSwitches: { ...config.skillSwitches },
     skillCatalog,
+    skillsDir: configuredSkillsDir,
+    activeSkillsDir,
     writeAgents: config.writeAgents,
     writePreset: config.writePreset,
   }

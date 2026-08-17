@@ -1,6 +1,6 @@
 # 提示词工具（dsh-plugin-prompt-tool）
 
-把「Anchored Standard + dsh-router-standard 最优组合」做成 DSH 全家桶里的一键安装插件：插件启动时生成并维护 `~/.dsh/.agent-presets/prompt-tool/` 预设，首轮模型请求只看到官方 Minimal 精确双工具——持久 `bash` 与 `str_replace_editor`——和正确的 persona，没有运行时上下文与指令注入；锚定建立后进入 resident 目录，恢复常规注入，并在确认轨迹后注入 `preset.md`。同时提供 Web 界面在线编辑 `preset.md` / `AGENTS.md`、切换全部开关，以及可开关的 skills 技能层。全部通过官方插件接口实现，不修改 DSH 源码。
+把「Anchored Standard + dsh-router-standard 最优组合」做成 DSH 全家桶里的一键安装插件：插件启动时生成并维护 `~/.dsh/.agent-presets/prompt-tool/` 预设，首轮模型请求只看到官方 Minimal 精确双工具——持久 `bash` 与 `str_replace_editor`——和正确的 persona，没有运行时上下文与指令注入；锚定建立后进入 resident 目录，恢复常规注入，并在确认轨迹后注入 `preset.md`。同时提供 Web 界面在线编辑 `preset.md` / `AGENTS.md`、切换全部开关，以及可开关的 skills 技能层（含一键打开技能目录、设置自定义技能目录）。全部通过官方插件接口实现，不修改 DSH 源码。
 
 ## 原理
 
@@ -32,27 +32,106 @@ DeepSeek V4 会强烈依赖 API 中可见的**首轮工具目录与 persona** �
 
 ## 安装
 
-```sh
-# 1. 先安装宿主服务（提供 webServer 等本插件依赖的服务）
-dsh plugin --profile prompt-tool add @deepseek-ai/dsh-web-app
-# 或使用 dsh-tui：dsh plugin --profile prompt-tool add @deepseek-harness-tui/dsh-tui
+依据官方[《打包与安装插件》](https://deepseek-harness.github.io/deepseek-harness/develop/basic/publish)准则：
+`dsh plugin add` 只把**声明了 `dsh.bundle` 的直接依赖**追加进
+`dsh.profile.bundles`；`@deepseek-ai/dsh-web-app` 是随 DSH 安装自带的 in-box
+bundle（从 dsh 安装目录解析，不需要也不应写进 `dependencies`）。
 
-# 2. 安装本插件（官方插件指令，自动加入 profile bundles）
+### npm 安装与源码安装
+
+两种安装源等价，后续初始化流程相同：
+
+```sh
+# 方式 A：npm / registry 安装
 dsh plugin --profile prompt-tool add dsh-plugin-prompt-tool
 
-# 3. 本地开发安装（任选其一，会覆盖 registry 依赖）
+# 方式 B：本地源码安装（link 会覆盖 registry 依赖）
 dsh plugin --profile prompt-tool add link:<本仓库绝对路径>
+```
 
-# 4. 启动
+### 初始化：启动一次即可
+
+```sh
 dsh --profile prompt-tool
-dsh web
-dsh-tui
+```
 
-# 卸载
+第一次启动只负责完成初始化。首次进程尚未挂载 Web 表面，这是预期行为；
+自愈完成后**插件会自动退出（exit 0）**，无需手动停止：
+
+```text
+prompt-tool: auto-added @deepseek-ai/dsh-web-app to dsh.profile.bundles for profile "prompt-tool"; next launch will mount the Web surface ...
+prompt-tool: initialization complete — exiting so the repaired profile can be launched
+```
+
+这一次启动会自动完成：
+
+1. **prompt-tool profile**：把 `@deepseek-ai/dsh-web-app` 补进
+   `dsh.profile.bundles`，最终为
+   `base → web-app → dsh-plugin-prompt-tool`；
+2. **web profile**：若存在，把 `dsh-plugin-prompt-tool` 写进它的
+   `dependencies` + `bundles`（dependency 写法复用当前 profile 的安装
+   spec）。**只写 package.json，不手工创建 node_modules 链接**；
+3. **dsh-tui profile**：若存在且确实装有
+   `@deepseek-harness-tui/dsh-tui`，同样写进 `dsh-plugin-prompt-tool`；
+   **没有 dsh-tui 则整体跳过，不写入本插件**。dsh-tui 不需要
+   `@deepseek-ai/dsh-web-app`，因此不会给它补 web-app。
+
+所有写入幂等：文件已正确时不做任何改动。
+
+### 初始化之后直接使用
+
+```sh
+# Web：官方内置 profile，本插件已自动写入
+dsh web
+
+# TUI：dsh-tui 的安装流程已经物化过其 profile 依赖
+dsh-tui
+```
+
+`dsh web` 随 dsh 安装必然存在；`dsh-tui` 则在其自身安装说明中已经执行过
+profile 依赖物化。因此初始化只需写入 package.json，不需要额外 `install`。
+
+如果还想直接使用 `prompt-tool` 这个 profile 本身，再运行一次即可
+（第二次启动时 web-app 已由官方装配路径加载）：
+
+```sh
+dsh --profile prompt-tool
+```
+
+> TUI 前提：先安装/初始化过 `@deepseek-harness-tui/dsh-tui` 并已生成
+> `dsh-tui` profile，再执行上面的初始化启动；否则按设计会跳过 dsh-tui
+> profile。之后补装 dsh-tui 时，重新执行一次
+> `dsh --profile prompt-tool` 即可把本插件补进 dsh-tui profile。
+
+### 备选：直接把本插件装进官方 `web` 模板 profile
+
+`web` 是官方内置模板，初始 bundles 已含
+`@deepseek-ai/dsh-base` + `@deepseek-ai/dsh-web-app`：
+
+```sh
+# registry 安装
+dsh plugin --profile web add dsh-plugin-prompt-tool
+# 本地开发安装
+dsh plugin --profile web add link:<本仓库绝对路径>
+
+# 启动
+dsh --profile web
+```
+
+完成初始化后，用 `dsh web`、`dsh-tui` 或 `dsh --profile prompt-tool` 启动，
+新建空 session，预设选择 **prompt-tool**。插件会在启动时生成并刷新
+`~/.dsh/.agent-presets/prompt-tool/`（升级插件后重启即自动更新）。
+
+### 卸载
+
+```sh
 dsh plugin --profile prompt-tool remove dsh-plugin-prompt-tool
 ```
 
-装完**完整重启 `dsh web`**，新建空 session，预设选择 **prompt-tool**。插件会在启动时生成并刷新 `~/.dsh/.agent-presets/prompt-tool/`（升级插件后重启即自动更新）。
+首次启动还会把包内 `skills/` 增量复制到当前 profile 目录下的
+`$DSH_HOME/profiles/<profile>/skills`，并优先使用这份副本：已有同名文件不覆盖，
+用户对副本的编辑会保留；包内新增技能文件会在下次启动补齐。想改回包内原始
+skills，删除该 `skills` 目录后重启即可（或在配置里显式设置 `skillsDir`）。
 
 ## 验证
 
@@ -124,7 +203,7 @@ pnpm sync:anchored  # 从上游 main 刷新内联快照（可加 ref 参数）
         subagentFlashModel: 'deepseek-v4-flash'
         bootstrapMaxTokens: 0   # 首轮输出封顶：0=关闭；正整数=请求 #1 maxTokens
         usePtcMode: true  # 使用 PTC 模式：true=晋升后切换为 Code Mode（run_code）；false=恢复原生完整目录
-        skillsDir: ''       # 可选技能目录（默认包内 skills/）
+        skillsDir: ''       # 用户自定义技能目录；空 = 自动使用 profile 下 skills/ 副本
         skillRankBase: 250  # 技能候选排序基数
         residentAgentsPath: ''  # 默认 ~/.dsh/AGENTS.md
         presetDir: ''       # 默认 ~/.dsh/.agent-presets/prompt-tool/

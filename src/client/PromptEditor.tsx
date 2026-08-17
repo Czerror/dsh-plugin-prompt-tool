@@ -11,7 +11,7 @@ const SETTINGS_BRIDGE_PREFIX = '/api/prompt-tool/settings'
 
 type BridgePathOp = { op: 'set' | 'unset'; path: string[]; value?: unknown }
 interface BridgeSettingsView { ns: string; value: unknown; base?: unknown; revision: number }
-type BridgeResult<T> = { ok: true; value: T; deepseekAvailable?: boolean; deepseekProviders?: string[]; deepseekError?: string } | { ok: false; code?: string; message?: string }
+type BridgeResult<T> = { ok: true; value: T; deepseekAvailable?: boolean; deepseekProviders?: string[]; deepseekError?: string; activeSkillsDir?: string; skillCatalog?: SkillCatalogEntry[] } | { ok: false; code?: string; message?: string }
 
 async function bridgePost<T>(path: string, body: unknown): Promise<BridgeResult<T>> {
   try {
@@ -57,6 +57,8 @@ interface Fields {
   injectPrompt: boolean
   skillSwitches: Record<string, boolean>
   skillCatalog: SkillCatalogEntry[]
+  skillsDir: string
+  activeSkillsDir: string
   writeAgents: boolean
   writePreset: boolean
 }
@@ -78,6 +80,8 @@ const EMPTY: Fields = {
   injectPrompt: true,
   skillSwitches: {},
   skillCatalog: [],
+  skillsDir: '',
+  activeSkillsDir: '',
   writeAgents: true,
   writePreset: true,
 }
@@ -94,6 +98,7 @@ interface SwitchSnapshot {
   usePtcMode: boolean
   injectPrompt: boolean
   skillSwitches: Record<string, boolean>
+  skillsDir: string
   writeAgents: boolean
   writePreset: boolean
 }
@@ -110,6 +115,7 @@ const EMPTY_SWITCHES: SwitchSnapshot = {
   usePtcMode: true,
   injectPrompt: true,
   skillSwitches: {},
+  skillsDir: '',
   writeAgents: true,
   writePreset: true,
 }
@@ -129,6 +135,7 @@ const snapshotSwitches = (fields: Fields): SwitchSnapshot => ({
   usePtcMode: fields.usePtcMode,
   injectPrompt: fields.injectPrompt,
   skillSwitches: { ...fields.skillSwitches },
+  skillsDir: fields.skillsDir,
   writeAgents: fields.writeAgents,
   writePreset: fields.writePreset,
 })
@@ -145,6 +152,7 @@ const switchesEqual = (a: SwitchSnapshot, b: SwitchSnapshot): boolean =>
   && a.usePtcMode === b.usePtcMode
   && a.injectPrompt === b.injectPrompt
   && JSON.stringify(a.skillSwitches) === JSON.stringify(b.skillSwitches)
+  && a.skillsDir === b.skillsDir
   && a.writeAgents === b.writeAgents
   && a.writePreset === b.writePreset
 
@@ -218,12 +226,14 @@ export function PromptEditor(props: PromptEditorProps): ReactNode {
   const [loaded, setLoaded] = useState(false)
   const [fields, setFields] = useState<Fields>(EMPTY)
   const [bootstrapTokensDraft, setBootstrapTokensDraft] = useState(DEFAULT_BOOTSTRAP_DISPLAY)
+  const [skillsDirDraft, setSkillsDirDraft] = useState('')
   const [savedPromptText, setSavedPromptText] = useState('')
   const [savedAgentsText, setSavedAgentsText] = useState('')
   const [savedSwitches, setSavedSwitches] = useState<SwitchSnapshot>(EMPTY_SWITCHES)
   const [loading, setLoading] = useState(false)
   const [savingPrompt, setSavingPrompt] = useState(false)
   const [savingAgents, setSavingAgents] = useState(false)
+  const [savingSkillsDir, setSavingSkillsDir] = useState(false)
   const [restoringPrompt, setRestoringPrompt] = useState(false)
   const [restoringAgents, setRestoringAgents] = useState(false)
   const [notice, setNotice] = useState('')
@@ -266,15 +276,18 @@ export function PromptEditor(props: PromptEditorProps): ReactNode {
         skillSwitches: value.skillSwitches !== undefined || base.skillSwitches !== undefined
           ? { ...readSkillSwitches(base, 'skillSwitches'), ...readSkillSwitches(value, 'skillSwitches') }
           : {},
-        skillCatalog: readSkillCatalog(value, 'skillCatalog').length > 0
+        skillCatalog: res.skillCatalog ?? (readSkillCatalog(value, 'skillCatalog').length > 0
           ? readSkillCatalog(value, 'skillCatalog')
-          : readSkillCatalog(base, 'skillCatalog'),
+          : readSkillCatalog(base, 'skillCatalog')),
+        skillsDir: readString(value, 'skillsDir') ?? readString(base, 'skillsDir') ?? '',
+        activeSkillsDir: res.activeSkillsDir ?? readString(value, 'activeSkillsDir') ?? readString(base, 'activeSkillsDir') ?? '',
         writeAgents: readBoolean(value, 'writeAgents', readBoolean(base, 'writeAgents', true)),
         writePreset: readBoolean(value, 'writePreset', readBoolean(base, 'writePreset', true)),
       }
       fieldsRef.current = next
       setFields(next)
       setBootstrapTokensDraft(next.bootstrapMaxTokens > 0 ? String(next.bootstrapMaxTokens) : DEFAULT_BOOTSTRAP_DISPLAY)
+      setSkillsDirDraft(next.skillsDir)
       setSavedPromptText(next.promptText)
       setSavedAgentsText(next.agentsText)
       setSavedSwitches(snapshotSwitches(next))
@@ -362,6 +375,18 @@ export function PromptEditor(props: PromptEditorProps): ReactNode {
     }
   }
 
+  const openSkillsDir = async () => {
+    const path = fields.activeSkillsDir || fields.skillsDir
+    if (!path) { showNotice('error', '技能目录路径未知，请先重新展开面板读取配置'); return }
+    try {
+      const res = await api.host.openPath({ path })
+      if (res.result.ok) showNotice('ok', '已打开技能目录：' + path)
+      else showNotice('error', '打开失败：' + (res.result.error?.message ?? ''))
+    } catch (error) {
+      showNotice('error', '打开失败：' + errorMessage(error))
+    }
+  }
+
   const enqueueSave = useCallback((ops: BridgePathOp[], okMessage: string | undefined, onSaved: () => void, setBusy?: (busy: boolean) => void) => {
     setBusy?.(true)
     saveQueueRef.current = saveQueueRef.current.then(async () => {
@@ -411,6 +436,7 @@ export function PromptEditor(props: PromptEditorProps): ReactNode {
       { op: 'set', path: ['usePtcMode'], value: fieldsRef.current.usePtcMode },
       { op: 'set', path: ['injectPrompt'], value: fieldsRef.current.injectPrompt },
       { op: 'set', path: ['skillSwitches'], value: fieldsRef.current.skillSwitches },
+      { op: 'set', path: ['skillsDir'], value: fieldsRef.current.skillsDir },
       { op: 'set', path: ['writeAgents'], value: fieldsRef.current.writeAgents },
       { op: 'set', path: ['writePreset'], value: fieldsRef.current.writePreset },
     ],
@@ -446,6 +472,20 @@ export function PromptEditor(props: PromptEditorProps): ReactNode {
     persistSwitches()
   }
 
+  const applySkillsDir = () => {
+    const next = skillsDirDraft.trim()
+    patch({ skillsDir: next })
+    enqueueSave(
+      [{ op: 'set', path: ['skillsDir'], value: next }],
+      next.length > 0 ? `自定义技能目录已保存并生效：${next}` : '已切回自动技能目录（当前 profile 下 skills/）',
+      () => {
+        setSavedSwitches(snapshotSwitches(fieldsRef.current))
+        void load()
+      },
+      setSavingSkillsDir,
+    )
+  }
+
   const skillEnabled = (folder: string) => fields.skillSwitches[folder] !== false
 
   const toggleSkill = (folder: string) => {
@@ -463,6 +503,7 @@ export function PromptEditor(props: PromptEditorProps): ReactNode {
   const agentsSwitchDirty = fields.injectAgentsPrompt !== savedSwitches.injectAgentsPrompt
     || fields.writeAgents !== savedSwitches.writeAgents
   const skillsSwitchDirty = JSON.stringify(fields.skillSwitches) !== JSON.stringify(savedSwitches.skillSwitches)
+  const skillsDirDirty = fields.skillsDir !== savedSwitches.skillsDir || skillsDirDraft.trim() !== fields.skillsDir
   const presetSwitchDirty = fields.writePreset !== savedSwitches.writePreset
     || fields.anchorFirstTurn !== savedSwitches.anchorFirstTurn
     || fields.anchorText !== savedSwitches.anchorText
@@ -565,10 +606,42 @@ export function PromptEditor(props: PromptEditorProps): ReactNode {
 
             <CollapsibleSection
               title="Skills设置"
-              hint={`${fields.skillCatalog.length} 个${skillsSwitchDirty ? ' · 未保存' : ''}`}
+              hint={`${fields.skillCatalog.length} 个${skillsSwitchDirty || skillsDirDirty ? ' · 未保存' : ''}`}
               open={skillsOpen}
               onToggle={() => setSkillsOpen(!skillsOpen)}
             >
+              <div className={styles.skillsBar}>
+                <div className={styles.skillsDirRow}>
+                  <button
+                    type="button"
+                    className={styles.secondary}
+                    disabled={!fields.activeSkillsDir && !fields.skillsDir}
+                    onClick={() => void openSkillsDir()}
+                  >
+                    打开技能目录
+                  </button>
+                  <span className={styles.skillsPath}>{fields.activeSkillsDir || fields.skillsDir || '（技能目录路径未知，请重新展开面板）'}</span>
+                </div>
+                <div className={styles.skillsDirRow}>
+                  <input
+                    className={styles.skillsDirInput}
+                    aria-label="用户自定义技能目录"
+                    value={skillsDirDraft}
+                    placeholder={fields.activeSkillsDir || '留空 = 自动使用当前 profile 下的 skills/ 副本'}
+                    spellCheck={false}
+                    onChange={(e) => setSkillsDirDraft(e.target.value)}
+                  />
+                  <button
+                    type="button"
+                    className={styles.primary}
+                    disabled={savingSkillsDir || skillsDirDraft.trim() === fields.skillsDir}
+                    onClick={applySkillsDir}
+                  >
+                    {savingSkillsDir ? '设置中…' : '设置自定义目录'}
+                  </button>
+                </div>
+                <span className={styles.rowDesc}>留空并点“设置自定义目录”会切回自动目录（当前 profile 下的 skills/ 副本）。修改后技能目录立即重新扫描。</span>
+              </div>
               {fields.skillCatalog.length === 0 ? (
                 <span className={styles.subEmpty}>skills 目录下没有技能</span>
               ) : fields.skillCatalog.map((skill) => (
