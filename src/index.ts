@@ -84,8 +84,8 @@ export interface Config {
   subagentFlashProvider: string
   /** 子代理 Flash 模型名（默认 deepseek-v4-flash）。 */
   subagentFlashModel: string
-  /** Windows custom-bash 可执行名或路径；默认 bash.exe（PATH 查找）。 */
-  customBashPath: string
+  /** 首轮输出封顶；0 或未设置 = 不设封顶（本项目默认），正整数 = 请求 #1 的 maxTokens。 */
+  bootstrapMaxTokens: number
   /** 技能目录（默认包内 skills/，可指向本地测试目录）。 */
   skillsDir: string
   /** 技能候选排序基数，技能目录内按下标递增。 */
@@ -118,7 +118,7 @@ export const Config: z<Config> = z.object({
   subagentFlash: z.boolean().default(false),
   subagentFlashProvider: z.string().default('deepseek-official'),
   subagentFlashModel: z.string().default('deepseek-v4-flash'),
-  customBashPath: z.string().default('bash.exe'),
+  bootstrapMaxTokens: z.natural().default(0),
   skillsDir: z.string().default(DEFAULT_SKILLS_DIR),
   skillRankBase: z.natural().default(DEFAULT_SKILL_RANK_BASE),
   residentAgentsPath: z.string().default(DEFAULT_RESIDENT_AGENTS_PATH),
@@ -155,6 +155,7 @@ export interface PromptSettings {
   guideText: string
   guideCustom: boolean
   subagentFlash: boolean
+  bootstrapMaxTokens: number
   /** 运行时检测：是否注册了 DeepSeek 模型路由（不写入 settings）。 */
   deepseekAvailable: boolean
   injectPrompt: boolean
@@ -176,6 +177,7 @@ const PromptSettingsSchema: z<PromptSettings> = z.object({
   guideText: z.string().default(DEFAULT_GUIDE_TEXT),
   guideCustom: z.boolean().default(false),
   subagentFlash: z.boolean().default(false),
+  bootstrapMaxTokens: z.natural().default(0),
   deepseekAvailable: z.boolean().default(true),
   injectPrompt: z.boolean().default(true),
   skillSwitches: z.dict(z.boolean()).default({}),
@@ -200,6 +202,7 @@ interface RuntimeOptions {
   guideText: string
   guideCustom: boolean
   subagentFlash: boolean
+  bootstrapMaxTokens: number
 }
 
 function readPromptFile(fallbackText: string): string {
@@ -450,6 +453,7 @@ function renderTuiStatus(source: PromptSettings): string {
     '锚点文本:',
     `  anchorText               ${source.anchorText.length > 0 ? source.anchorText : '（空 = 按任务自动选择）'}`,
     `  deepseekAvailable       ${source.deepseekAvailable ? '是' : '否（未检测到 DeepSeek 模型，subagentFlash 不可用）'}`,
+    `  bootstrapMaxTokens      ${source.bootstrapMaxTokens > 0 ? source.bootstrapMaxTokens : '0（关闭，不设封顶）'}`,
     '技能开关:',
   ]
   for (const skill of source.skillCatalog) {
@@ -479,7 +483,8 @@ function registerTuiCommand(ctx: Context, getSource: () => PromptSettings, getDe
           kind: 'error',
           text: '用法：/prompt-tool status\n' +
             '      /prompt-tool on|off|toggle <writeAgents|writePreset|injectPrompt|injectAgentsPrompt|anchorFirstTurn|anchorCustom|guideCustom|subagentFlash>\n' +
-            '      /prompt-tool skill <技能目录名> on|off|toggle',
+            '      /prompt-tool skill <技能目录名> on|off|toggle\n' +
+            '      /prompt-tool bootstrapMaxTokens <正整数|0（关闭）>',
         })
         const tokens = invocation.rawInput.trim().split(/\s+/).filter((token) => token.length > 0)
         const source = getSource()
@@ -498,6 +503,17 @@ function registerTuiCommand(ctx: Context, getSource: () => PromptSettings, getDe
           if (next === undefined) return usage()
           await sctx.settings.mutate(NS, [{ op: 'set', path: ['skillSwitches', folder], value: next }])
           return { kind: 'success', text: `已把技能 ${folder} 设为 ${next ? '开' : '关'}
+
+${renderTuiStatus(getSource())}` }
+        }
+        if (tokens[0] === 'bootstrapMaxTokens') {
+          const raw = tokens[1]
+          const value = raw === undefined ? NaN : Number(raw)
+          if (!Number.isSafeInteger(value) || value < 0) {
+            return { kind: 'error', text: 'bootstrapMaxTokens 需要非负整数：0 关闭封顶，正整数设置首轮 maxTokens。' }
+          }
+          await sctx.settings.mutate(NS, [{ op: 'set', path: ['bootstrapMaxTokens'], value }])
+          return { kind: 'success', text: `已把 bootstrapMaxTokens 设为 ${value === 0 ? '关闭（不设封顶）' : String(value)}
 
 ${renderTuiStatus(getSource())}` }
         }
@@ -639,7 +655,7 @@ interface WritePresetOptions {
   subagentFlash: boolean
   subagentFlashProvider: string
   subagentFlashModel: string
-  customBashPath: string
+  bootstrapMaxTokens: number
   /** 用该文本替换上游 instruction-hint 的提示内容；不传则保持上游原样。 */
   agentsInstructionText?: string
   presetDir: string
@@ -759,7 +775,7 @@ function writePreset(prompt: string, options: WritePresetOptions): void {
     subagentFlash: options.subagentFlash,
     subagentFlashProvider: options.subagentFlashProvider,
     subagentFlashModel: options.subagentFlashModel,
-    bashPath: options.customBashPath,
+    bootstrapMaxTokens: options.bootstrapMaxTokens,
   }), 'utf8')
   const meta = readFileSync(PRESET_TEMPLATE_META, 'utf8').replace(/^order:.*$/m, `order: ${options.presetOrder}`)
   writeFileSync(join(presetDir, 'preset.yml'), meta, 'utf8')
@@ -874,6 +890,7 @@ export function apply(ctx: Context, config: Config): void {
     guideText: config.guideText,
     guideCustom: config.guideCustom,
     subagentFlash: config.subagentFlash && getDeepseekAvailable(),
+    bootstrapMaxTokens: config.bootstrapMaxTokens,
   }
 
   // 宿主直派子代理（如 dsh-mnemon）也按开关补 Flash 路由；
@@ -892,6 +909,7 @@ export function apply(ctx: Context, config: Config): void {
     guideText: runtime.guideText,
     guideCustom: runtime.guideCustom,
     subagentFlash: runtime.subagentFlash,
+    bootstrapMaxTokens: runtime.bootstrapMaxTokens,
     deepseekAvailable: getDeepseekAvailable(),
     injectPrompt: runtime.injectPrompt,
     skillSwitches: runtime.skillSwitches,
@@ -918,6 +936,7 @@ export function apply(ctx: Context, config: Config): void {
       guideText: typeof next.guideText === 'string' ? next.guideText : config.guideText,
       guideCustom: typeof next.guideCustom === 'boolean' ? next.guideCustom : config.guideCustom,
       subagentFlash: (typeof next.subagentFlash === 'boolean' ? next.subagentFlash : config.subagentFlash) && getDeepseekAvailable(),
+    bootstrapMaxTokens: Number.isSafeInteger(next.bootstrapMaxTokens) && next.bootstrapMaxTokens >= 0 ? next.bootstrapMaxTokens : config.bootstrapMaxTokens,
     }
     const promptChanged = next.promptText !== current
     const agentsChanged = next.agentsText !== currentAgents
@@ -933,6 +952,7 @@ export function apply(ctx: Context, config: Config): void {
       || runtime.guideText !== nextRuntime.guideText
       || runtime.guideCustom !== nextRuntime.guideCustom
       || runtime.subagentFlash !== nextRuntime.subagentFlash
+      || runtime.bootstrapMaxTokens !== nextRuntime.bootstrapMaxTokens
     // 首次必须写入：settings 与文件/config 一致时也不能跳过 preset/AGENTS 生成。
     if (!needsInitialApply && !promptChanged && !agentsChanged && !settingsChanged) return
     needsInitialApply = false
@@ -950,6 +970,7 @@ export function apply(ctx: Context, config: Config): void {
     runtime.guideText = nextRuntime.guideText
     runtime.guideCustom = nextRuntime.guideCustom
     runtime.subagentFlash = nextRuntime.subagentFlash
+    runtime.bootstrapMaxTokens = nextRuntime.bootstrapMaxTokens
     skillSwitches = runtime.skillSwitches
     if (skillSwitchesChanged) invalidateSkills?.()
 
@@ -977,7 +998,7 @@ export function apply(ctx: Context, config: Config): void {
         subagentFlash: runtime.subagentFlash,
         subagentFlashProvider: config.subagentFlashProvider,
         subagentFlashModel: config.subagentFlashModel,
-        customBashPath: config.customBashPath,
+        bootstrapMaxTokens: runtime.bootstrapMaxTokens,
         agentsInstructionText: runtime.injectAgentsPrompt && currentAgents.length > 0 ? currentAgents : undefined,
         presetDir: config.presetDir,
         presetOrder: config.presetOrder,
@@ -1004,6 +1025,7 @@ export function apply(ctx: Context, config: Config): void {
     guideText: config.guideText,
     guideCustom: config.guideCustom,
     subagentFlash: config.subagentFlash && getDeepseekAvailable(),
+    bootstrapMaxTokens: config.bootstrapMaxTokens,
     deepseekAvailable: getDeepseekAvailable(),
     injectPrompt: config.injectPrompt,
     skillSwitches: { ...config.skillSwitches },

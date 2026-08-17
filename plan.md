@@ -1,4 +1,8 @@
 # dsh-plugin-prompt-tool 重新设计计划（v2）
+> **v2.15 上游同步（当前实现）**：同步上游到 `25f21ae`；移除
+> `customBashPath` 生成时改写，直接沿用上游 custom-bash 运行时探测。
+> 新增 `bootstrapMaxTokens` 开关（0=关闭；正整数写入上游 tool-bootstrap）。
+
 > **v2.14 上游同步与路径校对（当前实现）**：已从上游 main 同步到
 > `ba7a27c`；新增 context-gate.mjs；custom-bash 的固定路径在生成时归一化为
 > `customBashPath`（默认 bash.exe，PATH 查找）。

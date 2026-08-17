@@ -13,9 +13,27 @@
  * the ordinary (cross-platform) subprocess seam keeps the schema anchor
  * without the PTY dependency.
  *
- * Executable resolution (config `bashPath`):
- *  - explicit absolute path (e.g. `C:\Program Files\Git\bin\bash.exe`), or
- *  - `bash` resolved through `ctx.subprocess.resolveExecutable` (PATH lookup).
+ * Executable resolution (config `bashPath`, issue #24 — no hardcoded install
+ * path): an explicit non-empty `bashPath` wins unconditionally. Unset, the
+ * Git Bash executable is INFERRED, in probe order:
+ *  1. the `git` executable on PATH — its install root carries `bin\bash.exe`
+ *     one level up from `cmd\`, beside `bin\`, or two levels up from
+ *     `mingw64\bin\` (the standard installer, choco, and winget all resolve
+ *     here; a scoop SHIM does not — its directory is the shims root, not the
+ *     app — which is what step 2 covers);
+ *  2. the well-known Git-for-Windows roots derived from environment variables
+ *     (`ProgramFiles`, `ProgramFiles(x86)`, per-user `LOCALAPPDATA\Programs
+ *     \Git`, scoop's `~\scoop\apps\git\current` junction);
+ *  3. plain `bash` through `ctx.subprocess.resolveExecutable` (PATH lookup —
+ *     last resort, since on Windows that may pick the WSL shim; WSL bash is
+ *     still true bash, only the filesystem paths shift to /mnt/…).
+ *
+ * If NOTHING resolves, the tool fails with an actionable error naming the
+ * remedies — it does NOT silently execute under a different shell: the
+ * schema above promises `bash -c` semantics, and pwsh/cmd are different
+ * command languages. PowerShell stays available as its OWN tool (`pwsh`,
+ * present in the promoted catalog on Windows, unlockable via
+ * dev_tool_search).
  *
  * Semantics mirror the official bash tool: `bash -c <command>` in a fresh
  * process, bounded output, non-zero exit reported not thrown. No sandbox
@@ -23,6 +41,9 @@
  * description says so. The bootstrap catalog pairs this with
  * `str_replace_editor` (Minimal's two tools).
  */
+
+import { access } from 'node:fs/promises'
+import { dirname, join } from 'node:path'
 
 /** Cordis plugin name used by loader diagnostics. */
 export const name = 'custom-bash'
@@ -32,6 +53,34 @@ export const inject = ['subprocess', 'tools']
 
 const DEFAULT_TIMEOUT_MS = 120000
 const DEFAULT_MAX_OUTPUT_BYTES = 64000
+
+/**
+ * Git Bash candidate paths, in probe order (see the header): the `git`
+ * executable's install root first, then the well-known env-derived roots.
+ * Exported for tests; pure — existence probing happens at the call site.
+ */
+export function bashCandidates(env, gitExe) {
+  const candidates = []
+  // git at <root>\cmd\git.exe (installer/scoop) or <root>\bin\git.exe →
+  // <root>\bin\bash.exe; <root>\mingw64\bin\git.exe (portable) → two up.
+  // A bare relative name means `git` did not actually resolve to a path.
+  if (typeof gitExe === 'string' && /[/\\]/.test(gitExe)) {
+    const dir = dirname(gitExe)
+    const root = dirname(dir)
+    candidates.push(
+      join(root, 'bin', 'bash.exe'),
+      join(dir, 'bash.exe'),
+      join(dirname(root), 'bin', 'bash.exe'),
+    )
+  }
+  if (env.ProgramFiles) candidates.push(join(env.ProgramFiles, 'Git', 'bin', 'bash.exe'))
+  if (env['ProgramFiles(x86)']) candidates.push(join(env['ProgramFiles(x86)'], 'Git', 'bin', 'bash.exe'))
+  if (env.LOCALAPPDATA) candidates.push(join(env.LOCALAPPDATA, 'Programs', 'Git', 'bin', 'bash.exe'))
+  if (env.USERPROFILE) candidates.push(join(env.USERPROFILE, 'scoop', 'apps', 'git', 'current', 'bin', 'bash.exe'))
+  // Layouts overlap (a `bin` git.exe derives the same bash twice) — probe
+  // order survives the dedupe, insertion order is preserved.
+  return [...new Set(candidates)]
+}
 
 /** Tool parameter schema for the model-facing command. */
 const commandSchema = {
@@ -52,9 +101,53 @@ const commandSchema = {
 
 /** Register the model-facing `bash` tool. */
 export function apply(ctx, config) {
-  const bashPath = typeof config?.bashPath === 'string' && config.bashPath.length > 0 ? config.bashPath : 'bash'
+  const explicitBashPath = typeof config?.bashPath === 'string' && config.bashPath.length > 0 ? config.bashPath : undefined
   const timeoutMs = Number.isSafeInteger(config?.timeoutMs) && config.timeoutMs > 0 ? config.timeoutMs : DEFAULT_TIMEOUT_MS
   const maxOutputBytes = Number.isSafeInteger(config?.maxOutputBytes) && config.maxOutputBytes > 0 ? config.maxOutputBytes : DEFAULT_MAX_OUTPUT_BYTES
+
+  // The inferred executable is memoized per plugin instance: candidate probing
+  // walks the filesystem, and the answer cannot change within a mount. A
+  // failed inference is NOT memoized — the plain `bash` fallback resolves
+  // fresh on every execute until some probe succeeds.
+  let inferredShell
+  const exists = (path) => access(path).then(() => true, () => false)
+  const resolveShell = async (signal) => {
+    if (explicitBashPath !== undefined) {
+      // A misconfigured explicit path must fail as itself, not as a
+      // discovery miss — the raw resolution error says which path failed.
+      return ctx.subprocess.resolveExecutable(explicitBashPath, undefined, signal)
+    }
+    if (inferredShell !== undefined) {
+      return ctx.subprocess.resolveExecutable(inferredShell, undefined, signal)
+    }
+    let gitExe
+    try {
+      gitExe = await ctx.subprocess.resolveExecutable('git', undefined, signal)
+    } catch {
+      // git unresolvable → the env-derived candidates below still apply
+    }
+    for (const candidate of bashCandidates(process.env, gitExe)) {
+      if (!(await exists(candidate))) continue
+      try {
+        inferredShell = await ctx.subprocess.resolveExecutable(candidate, undefined, signal)
+        return inferredShell
+      } catch {
+        // Exists but unresolvable (EPERM, a broken scoop junction): keep
+        // probing — one bad root must not block the rest of the chain, and
+        // nothing is memoized so later executes can still find a good one.
+        continue
+      }
+    }
+    try {
+      return await ctx.subprocess.resolveExecutable('bash', undefined, signal)
+    } catch (error) {
+      // Total discovery failure (no Git Bash root, no env root, no bash on
+      // PATH): name the remedies instead of leaking a raw ENOENT. Never
+      // fall back to pwsh/cmd here — the schema promises `bash -c`
+      // semantics; a different shell would silently break every command.
+      throw new Error(`bash executable not found — install Git for Windows, expose a bash on PATH, or set the custom-bash \`bashPath\` config (${String((error && error.message) || error)})`)
+    }
+  }
 
   ctx.tools.register({
     name: 'bash',
@@ -81,7 +174,7 @@ export function apply(ctx, config) {
       render: (_args, value) => [{ type: 'text', text: value.text }],
     },
     async execute(args, exec) {
-      const shell = await ctx.subprocess.resolveExecutable(bashPath, undefined, exec?.signal)
+      const shell = await resolveShell(exec?.signal)
       const workdir = typeof args.workdir === 'string' && args.workdir.length > 0
         ? args.workdir
         : exec?.agent?.session?.header?.cwd

@@ -1,6 +1,6 @@
 {
   "name": "dsh-plugin-prompt-tool",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "DSH 插件：提示词工具，规范模型的思维链与回答内容，提供 Web UI 编辑 preset.md 与 AGENTS.md，并按 skills 目录注册可开关技能。",
   "license": "MIT",
   "repository": {

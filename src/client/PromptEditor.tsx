@@ -52,6 +52,7 @@ interface Fields {
   guideText: string
   guideCustom: boolean
   subagentFlash: boolean
+  bootstrapMaxTokens: number
   injectPrompt: boolean
   skillSwitches: Record<string, boolean>
   skillCatalog: SkillCatalogEntry[]
@@ -71,6 +72,7 @@ const EMPTY: Fields = {
   guideText: '',
   guideCustom: false,
   subagentFlash: false,
+  bootstrapMaxTokens: 0,
   injectPrompt: true,
   skillSwitches: {},
   skillCatalog: [],
@@ -86,6 +88,7 @@ interface SwitchSnapshot {
   guideText: string
   guideCustom: boolean
   subagentFlash: boolean
+  bootstrapMaxTokens: number
   injectPrompt: boolean
   skillSwitches: Record<string, boolean>
   writeAgents: boolean
@@ -100,11 +103,15 @@ const EMPTY_SWITCHES: SwitchSnapshot = {
   guideText: '',
   guideCustom: false,
   subagentFlash: false,
+  bootstrapMaxTokens: 0,
   injectPrompt: true,
   skillSwitches: {},
   writeAgents: true,
   writePreset: true,
 }
+
+/** 本项目默认不设上限时的显示值（adapter 默认 maxTokens）。 */
+const DEFAULT_BOOTSTRAP_DISPLAY = '256000'
 
 const snapshotSwitches = (fields: Fields): SwitchSnapshot => ({
   injectAgentsPrompt: fields.injectAgentsPrompt,
@@ -114,6 +121,7 @@ const snapshotSwitches = (fields: Fields): SwitchSnapshot => ({
   guideText: fields.guideText,
   guideCustom: fields.guideCustom,
   subagentFlash: fields.subagentFlash,
+  bootstrapMaxTokens: fields.bootstrapMaxTokens,
   injectPrompt: fields.injectPrompt,
   skillSwitches: { ...fields.skillSwitches },
   writeAgents: fields.writeAgents,
@@ -128,6 +136,7 @@ const switchesEqual = (a: SwitchSnapshot, b: SwitchSnapshot): boolean =>
   && a.guideText === b.guideText
   && a.guideCustom === b.guideCustom
   && a.subagentFlash === b.subagentFlash
+  && a.bootstrapMaxTokens === b.bootstrapMaxTokens
   && a.injectPrompt === b.injectPrompt
   && JSON.stringify(a.skillSwitches) === JSON.stringify(b.skillSwitches)
   && a.writeAgents === b.writeAgents
@@ -144,6 +153,11 @@ const readString = (source: Record<string, unknown>, key: string): string | unde
 const readBoolean = (source: Record<string, unknown>, key: string, fallback: boolean): boolean => {
   const value = source[key]
   return typeof value === 'boolean' ? value : fallback
+}
+
+const readNumber = (source: Record<string, unknown>, key: string, fallback: number): number => {
+  const value = source[key]
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : fallback
 }
 
 const readSkillSwitches = (source: Record<string, unknown>, key: string): Record<string, boolean> => {
@@ -197,6 +211,7 @@ export function PromptEditor(props: PromptEditorProps): ReactNode {
   const [deepseekError, setDeepseekError] = useState('')
   const [loaded, setLoaded] = useState(false)
   const [fields, setFields] = useState<Fields>(EMPTY)
+  const [bootstrapTokensDraft, setBootstrapTokensDraft] = useState(DEFAULT_BOOTSTRAP_DISPLAY)
   const [savedPromptText, setSavedPromptText] = useState('')
   const [savedAgentsText, setSavedAgentsText] = useState('')
   const [savedSwitches, setSavedSwitches] = useState<SwitchSnapshot>(EMPTY_SWITCHES)
@@ -239,6 +254,7 @@ export function PromptEditor(props: PromptEditorProps): ReactNode {
         guideText: readString(value, 'guideText') ?? readString(base, 'guideText') ?? '',
         guideCustom: readBoolean(value, 'guideCustom', readBoolean(base, 'guideCustom', false)),
         subagentFlash: readBoolean(value, 'subagentFlash', readBoolean(base, 'subagentFlash', false)),
+        bootstrapMaxTokens: readNumber(value, 'bootstrapMaxTokens', readNumber(base, 'bootstrapMaxTokens', 0)),
         injectPrompt: readBoolean(value, 'injectPrompt', readBoolean(base, 'injectPrompt', true)),
         skillSwitches: value.skillSwitches !== undefined || base.skillSwitches !== undefined
           ? { ...readSkillSwitches(base, 'skillSwitches'), ...readSkillSwitches(value, 'skillSwitches') }
@@ -251,6 +267,7 @@ export function PromptEditor(props: PromptEditorProps): ReactNode {
       }
       fieldsRef.current = next
       setFields(next)
+      setBootstrapTokensDraft(next.bootstrapMaxTokens > 0 ? String(next.bootstrapMaxTokens) : DEFAULT_BOOTSTRAP_DISPLAY)
       setSavedPromptText(next.promptText)
       setSavedAgentsText(next.agentsText)
       setSavedSwitches(snapshotSwitches(next))
@@ -383,6 +400,7 @@ export function PromptEditor(props: PromptEditorProps): ReactNode {
       { op: 'set', path: ['guideText'], value: fieldsRef.current.guideText },
       { op: 'set', path: ['guideCustom'], value: fieldsRef.current.guideCustom },
       { op: 'set', path: ['subagentFlash'], value: fieldsRef.current.subagentFlash },
+      { op: 'set', path: ['bootstrapMaxTokens'], value: fieldsRef.current.bootstrapMaxTokens },
       { op: 'set', path: ['injectPrompt'], value: fieldsRef.current.injectPrompt },
       { op: 'set', path: ['skillSwitches'], value: fieldsRef.current.skillSwitches },
       { op: 'set', path: ['writeAgents'], value: fieldsRef.current.writeAgents },
@@ -398,6 +416,25 @@ export function PromptEditor(props: PromptEditorProps): ReactNode {
       return
     }
     patch({ [key]: !fieldsRef.current[key] })
+    persistSwitches()
+  }
+
+  const toggleBootstrapMaxTokens = () => {
+    const next = fieldsRef.current.bootstrapMaxTokens > 0 ? 0 : 256000
+    patch({ bootstrapMaxTokens: next })
+    setBootstrapTokensDraft(DEFAULT_BOOTSTRAP_DISPLAY)
+    persistSwitches()
+  }
+
+  const commitBootstrapTokensDraft = () => {
+    const parsed = Number(bootstrapTokensDraft)
+    if (!Number.isSafeInteger(parsed) || parsed <= 0) {
+      // 清空或非法输入不关闭开关：恢复为项目默认 256000（不设上限）。
+      setBootstrapTokensDraft(DEFAULT_BOOTSTRAP_DISPLAY)
+      patch({ bootstrapMaxTokens: 256000 })
+    } else {
+      patch({ bootstrapMaxTokens: parsed })
+    }
     persistSwitches()
   }
 
@@ -421,6 +458,7 @@ export function PromptEditor(props: PromptEditorProps): ReactNode {
   const presetSwitchDirty = fields.writePreset !== savedSwitches.writePreset
     || fields.anchorFirstTurn !== savedSwitches.anchorFirstTurn
     || fields.anchorText !== savedSwitches.anchorText
+    || fields.bootstrapMaxTokens !== savedSwitches.bootstrapMaxTokens
 
   const discardPrompt = () => patch({ promptText: savedPromptText })
   const discardAgents = () => patch({ agentsText: savedAgentsText })
@@ -557,6 +595,30 @@ export function PromptEditor(props: PromptEditorProps): ReactNode {
                   <span className={styles.rowDesc}>总开关：开启时生成并刷新 ~/.dsh/.agent-presets/prompt-tool/，整套锚定预设才有载体；关闭时移除已生成的目录，下面锚定开关随之失效</span>
                 </span>
               </label>
+
+              <div className={styles.row}>
+                <input
+                  id="prompt-tool-bootstrap-max-tokens"
+                  type="checkbox"
+                  checked={fields.bootstrapMaxTokens > 0}
+                  disabled={!fields.writePreset}
+                  onChange={toggleBootstrapMaxTokens}
+                />
+                <label htmlFor="prompt-tool-bootstrap-max-tokens" className={styles.rowText}>
+                  <span className={styles.rowName}>首轮输出封顶</span>
+                  <span className={styles.rowDesc}>关闭时显示项目默认 256000（不设上限）；开启后右侧数值生效，晋升后自动剥离。清空或输入 0 会恢复 256000，不关闭开关</span>
+                </label>
+                <input
+                  className={styles.bootstrapTokensInput}
+                  type="number"
+                  min={1}
+                  step={1}
+                  value={bootstrapTokensDraft}
+                  disabled={!fields.writePreset || fields.bootstrapMaxTokens === 0}
+                  onChange={(e) => setBootstrapTokensDraft(e.target.value)}
+                  onBlur={commitBootstrapTokensDraft}
+                />
+              </div>
               <label className={styles.row}>
                 <input
                   type="checkbox"

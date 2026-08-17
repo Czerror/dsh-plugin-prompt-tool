@@ -94,8 +94,8 @@ export interface BuildCordisOptions {
   subagentFlashProvider?: string
   /** 子代理 Flash 模型名（默认 deepseek-v4-flash）。 */
   subagentFlashModel?: string
-  /** Windows custom-bash 可执行名或路径；默认 bash.exe（PATH 查找）。 */
-  bashPath?: string
+  /** 首轮输出封顶（bootstrapMaxTokens）；0 或未设置 = 本项目默认无封顶。 */
+  bootstrapMaxTokens?: number
 }
 
 /** dsh-router-standard 的 Flash 弱路由 persona（子代理版）。 */
@@ -124,11 +124,15 @@ function normalizeContextGate(source: string): string {
   return source.replace(block, replaced)
 }
 
-/** 上游可能携带作者机器固定路径；生成时统一改写为可配置 bashPath。 */
-function normalizeBashPath(source: string, bashPath: string): string {
-  const marker = /bashPath:\s*'[^']*'/.exec(source)
-  if (marker === null) throw new Error('vendor agent.cordis.yml missing bashPath row')
-  return source.replace(marker[0], `bashPath: '${bashPath}'`)
+/** 按开关向上游 tool-bootstrap 行注入 bootstrapMaxTokens；0/未设置保持无封顶。 */
+function applyBootstrapMaxTokens(source: string, value?: number): string {
+  if (value === undefined || !Number.isSafeInteger(value) || value <= 0) return source
+  const rowStart = source.indexOf('- id: tool-bootstrap\n  name: ./tool-bootstrap.mjs\n  config:\n')
+  if (rowStart < 0) throw new Error('vendor agent.cordis.yml missing tool-bootstrap config block')
+  const include = source.indexOf('    includeSubagents: true\n', rowStart)
+  if (include < 0) throw new Error('vendor agent.cordis.yml tool-bootstrap row missing includeSubagents')
+  const at = include + '    includeSubagents: true'.length + 1
+  return source.slice(0, at) + `    bootstrapMaxTokens: ${value}` + '\n' + source.slice(at)
 }
 
 /** 给 subagent/subagent_fork 行加 dsh-router-standard 的 Flash 子代理方案；关闭时保持继承主会话路由。 */
@@ -173,17 +177,14 @@ export function buildCordis(prompt: string, options: BuildCordisOptions = {}): s
     ? options.anchorText
     : ''
   const indent = (s: string) => s.split(/\r?\n/).map((l) => l.length === 0 ? '' : '      ' + l).join('\n')
-  const up = normalizeContextGate(
-    normalizeBashPath(
+  const up = applyBootstrapMaxTokens(normalizeContextGate(
     applySubagentFlash(
       readFileSync(VENDOR_CORDIS, 'utf8').replace(/\r\n/g, '\n'),
       options.subagentFlash === true,
       typeof options.subagentFlashProvider === 'string' && options.subagentFlashProvider.length > 0 ? options.subagentFlashProvider : 'deepseek-official',
       typeof options.subagentFlashModel === 'string' && options.subagentFlashModel.length > 0 ? options.subagentFlashModel : 'deepseek-v4-flash',
     ),
-    typeof options.bashPath === 'string' && options.bashPath.length > 0 ? options.bashPath : 'bash.exe',
-    ),
-  )
+  ), options.bootstrapMaxTokens)
 
   // 1) 定位 tool-bootstrap 顶层条目，并把插入点放在该条目之后：
   //    条目内部行（缩进行）与空行跳过，遇到下一个零缩进非空行（注释块或条目）即停。

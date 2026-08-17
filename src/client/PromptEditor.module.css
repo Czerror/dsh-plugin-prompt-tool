@@ -37,3 +37,25 @@
 .primary:focus-visible, .secondary:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary); outline-offset: 1px; }
 .notice { font-size: 12px; color: var(--dsw-alias-state-success-primary); }
 .noticeError { color: var(--dsw-alias-state-error-primary, #d5484d); }
+.bootstrapTokensInput {
+  width: 96px;
+  min-height: 36px;
+  max-height: 48px;
+  align-self: stretch;
+  box-sizing: border-box;
+  margin: 0 0 0 auto;
+  flex: none;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-bg-layer-2);
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  padding: 4px 8px;
+  text-align: right;
+}
+
+.bootstrapTokensInput:disabled {
+  opacity: .55;
+  cursor: default;
+}

@@ -180,16 +180,28 @@ test('buildCordis 恒生成 router-guide 行', () => {
   assert.ok(doc.some((entry) => entry?.id === 'router-guide'))
 })
 
-test('buildCordis 默认把上游固定 bashPath 归一化为 bash.exe', () => {
+test('buildCordis 直接沿用上游 custom-bash 运行时探测（不写 bashPath）', () => {
   const out = buildCordis('PROMPT')
-  assert.ok(!out.includes('Program Files'))
-  assert.ok(out.includes("bashPath: 'bash.exe'"))
+  assert.ok(!out.includes('bashPath:'))
+  const doc = parse(out, { logLevel: 'silent' })
+  const row = findAllRows(doc, new Set(['custom-bash']))[0]
+  assert.ok(row)
+  assert.equal(row.config, undefined)
 })
 
-test('buildCordis 支持 customBashPath 覆盖', () => {
-  const out = buildCordis('PROMPT', { bashPath: 'D:/App/Git/bin/bash.exe' })
-  assert.ok(out.includes("bashPath: 'D:/App/Git/bin/bash.exe'"))
+test('buildCordis 默认不注入 bootstrapMaxTokens（本项目默认无封顶）', () => {
+  const out = buildCordis('PROMPT')
+  assert.ok(!out.includes('bootstrapMaxTokens:'))
 })
+
+test('buildCordis 按配置注入任意正整数 bootstrapMaxTokens', () => {
+  const out = buildCordis('PROMPT', { bootstrapMaxTokens: 2048 })
+  const doc = parse(out, { logLevel: 'silent' })
+  const row = findAllRows(doc, new Set(['tool-bootstrap']))[0]
+  assert.ok(row)
+  assert.equal(row.config.bootstrapMaxTokens, 2048)
+})
+
 
 test('buildCordis 关闭 subagentFlash 时子代理行不出现 agentOptions', () => {
   const out = buildCordis('PROMPT')
