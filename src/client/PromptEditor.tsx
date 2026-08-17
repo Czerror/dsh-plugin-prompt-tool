@@ -53,6 +53,7 @@ interface Fields {
   guideCustom: boolean
   subagentFlash: boolean
   bootstrapMaxTokens: number
+  usePtcMode: boolean
   injectPrompt: boolean
   skillSwitches: Record<string, boolean>
   skillCatalog: SkillCatalogEntry[]
@@ -73,6 +74,7 @@ const EMPTY: Fields = {
   guideCustom: false,
   subagentFlash: false,
   bootstrapMaxTokens: 0,
+  usePtcMode: true,
   injectPrompt: true,
   skillSwitches: {},
   skillCatalog: [],
@@ -89,6 +91,7 @@ interface SwitchSnapshot {
   guideCustom: boolean
   subagentFlash: boolean
   bootstrapMaxTokens: number
+  usePtcMode: boolean
   injectPrompt: boolean
   skillSwitches: Record<string, boolean>
   writeAgents: boolean
@@ -104,6 +107,7 @@ const EMPTY_SWITCHES: SwitchSnapshot = {
   guideCustom: false,
   subagentFlash: false,
   bootstrapMaxTokens: 0,
+  usePtcMode: true,
   injectPrompt: true,
   skillSwitches: {},
   writeAgents: true,
@@ -122,6 +126,7 @@ const snapshotSwitches = (fields: Fields): SwitchSnapshot => ({
   guideCustom: fields.guideCustom,
   subagentFlash: fields.subagentFlash,
   bootstrapMaxTokens: fields.bootstrapMaxTokens,
+  usePtcMode: fields.usePtcMode,
   injectPrompt: fields.injectPrompt,
   skillSwitches: { ...fields.skillSwitches },
   writeAgents: fields.writeAgents,
@@ -137,6 +142,7 @@ const switchesEqual = (a: SwitchSnapshot, b: SwitchSnapshot): boolean =>
   && a.guideCustom === b.guideCustom
   && a.subagentFlash === b.subagentFlash
   && a.bootstrapMaxTokens === b.bootstrapMaxTokens
+  && a.usePtcMode === b.usePtcMode
   && a.injectPrompt === b.injectPrompt
   && JSON.stringify(a.skillSwitches) === JSON.stringify(b.skillSwitches)
   && a.writeAgents === b.writeAgents
@@ -255,6 +261,7 @@ export function PromptEditor(props: PromptEditorProps): ReactNode {
         guideCustom: readBoolean(value, 'guideCustom', readBoolean(base, 'guideCustom', false)),
         subagentFlash: readBoolean(value, 'subagentFlash', readBoolean(base, 'subagentFlash', false)),
         bootstrapMaxTokens: readNumber(value, 'bootstrapMaxTokens', readNumber(base, 'bootstrapMaxTokens', 0)),
+        usePtcMode: readBoolean(value, 'usePtcMode', readBoolean(base, 'usePtcMode', true)),
         injectPrompt: readBoolean(value, 'injectPrompt', readBoolean(base, 'injectPrompt', true)),
         skillSwitches: value.skillSwitches !== undefined || base.skillSwitches !== undefined
           ? { ...readSkillSwitches(base, 'skillSwitches'), ...readSkillSwitches(value, 'skillSwitches') }
@@ -401,6 +408,7 @@ export function PromptEditor(props: PromptEditorProps): ReactNode {
       { op: 'set', path: ['guideCustom'], value: fieldsRef.current.guideCustom },
       { op: 'set', path: ['subagentFlash'], value: fieldsRef.current.subagentFlash },
       { op: 'set', path: ['bootstrapMaxTokens'], value: fieldsRef.current.bootstrapMaxTokens },
+      { op: 'set', path: ['usePtcMode'], value: fieldsRef.current.usePtcMode },
       { op: 'set', path: ['injectPrompt'], value: fieldsRef.current.injectPrompt },
       { op: 'set', path: ['skillSwitches'], value: fieldsRef.current.skillSwitches },
       { op: 'set', path: ['writeAgents'], value: fieldsRef.current.writeAgents },
@@ -410,7 +418,7 @@ export function PromptEditor(props: PromptEditorProps): ReactNode {
     () => setSavedSwitches(snapshotSwitches(fieldsRef.current)),
   )
 
-  const toggle = (key: 'injectAgentsPrompt' | 'anchorFirstTurn' | 'anchorCustom' | 'guideCustom' | 'subagentFlash' | 'injectPrompt' | 'writeAgents' | 'writePreset') => {
+  const toggle = (key: 'injectAgentsPrompt' | 'anchorFirstTurn' | 'anchorCustom' | 'guideCustom' | 'subagentFlash' | 'injectPrompt' | 'usePtcMode' | 'writeAgents' | 'writePreset') => {
     if (key === 'subagentFlash' && !deepseekAvailable) {
       showNotice('error', '未检测到 DeepSeek 模型配置，子代理 Flash 开关不可用')
       return
@@ -459,6 +467,7 @@ export function PromptEditor(props: PromptEditorProps): ReactNode {
     || fields.anchorFirstTurn !== savedSwitches.anchorFirstTurn
     || fields.anchorText !== savedSwitches.anchorText
     || fields.bootstrapMaxTokens !== savedSwitches.bootstrapMaxTokens
+    || fields.usePtcMode !== savedSwitches.usePtcMode
 
   const discardPrompt = () => patch({ promptText: savedPromptText })
   const discardAgents = () => patch({ agentsText: savedAgentsText })
@@ -593,6 +602,19 @@ export function PromptEditor(props: PromptEditorProps): ReactNode {
                 <span className={styles.rowText}>
                   <span className={styles.rowName}>启用锚定预设</span>
                   <span className={styles.rowDesc}>总开关：开启时生成并刷新 ~/.dsh/.agent-presets/prompt-tool/，整套锚定预设才有载体；关闭时移除已生成的目录，下面锚定开关随之失效</span>
+                </span>
+              </label>
+
+              <label className={styles.row}>
+                <input
+                  type="checkbox"
+                  checked={fields.usePtcMode}
+                  disabled={!fields.writePreset}
+                  onChange={() => toggle('usePtcMode')}
+                />
+                <span className={styles.rowText}>
+                  <span className={styles.rowName}>使用 PTC 模式</span>
+                  <span className={styles.rowDesc}>默认开启：晋升后把 wire 切换为 Code Mode（PTC，单一 run_code），完整插件工具通过生成 SDK 调用。关闭后恢复原生完整工具目录</span>
                 </span>
               </label>
 

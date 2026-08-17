@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { parse } from 'yaml'
-import { buildCordis, parseFrontmatter } from '../lib/preset-core.mjs'
+import { buildCordis, parseFrontmatter, patchToolBootstrap } from '../lib/preset-core.mjs'
 
 const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8')
 
@@ -180,13 +180,14 @@ test('buildCordis 恒生成 router-guide 行', () => {
   assert.ok(doc.some((entry) => entry?.id === 'router-guide'))
 })
 
-test('buildCordis 直接沿用上游 custom-bash 运行时探测（不写 bashPath）', () => {
+test('buildCordis custom-bash 运行时探测并显式写入超时/输出上限', () => {
   const out = buildCordis('PROMPT')
   assert.ok(!out.includes('bashPath:'))
   const doc = parse(out, { logLevel: 'silent' })
   const row = findAllRows(doc, new Set(['custom-bash']))[0]
   assert.ok(row)
-  assert.equal(row.config, undefined)
+  assert.equal(row.config.timeoutMs, 120000)
+  assert.equal(row.config.maxOutputBytes, 64000)
 })
 
 test('buildCordis 默认不注入 bootstrapMaxTokens（本项目默认无封顶）', () => {
@@ -219,4 +220,65 @@ test('buildCordis injectPrompt=false 且 anchorFirstTurn=true 只生成 near-anc
   assert.ok(ids.includes('router-first-turn'))
   assert.ok(ids.includes('near-anchor'))
   assert.ok(!ids.includes('prompt-injector'))
+})
+
+
+test('buildCordis 默认开启使用 PTC 模式', () => {
+  const out = buildCordis('PROMPT')
+  const doc = parse(out, { logLevel: 'silent' })
+  const bootstrap = doc.find((entry) => entry?.id === 'tool-bootstrap')
+  const search = doc.find((entry) => entry?.id === 'dev-tool-search')
+  assert.ok(bootstrap)
+  assert.equal(bootstrap.config.usePtcMode, true)
+  assert.equal(search, undefined)
+})
+
+test('buildCordis 可显式关闭使用 PTC 模式：恢复原生完整目录', () => {
+  const out = buildCordis('PROMPT', { usePtcMode: false })
+  const doc = parse(out, { logLevel: 'silent' })
+  const bootstrap = doc.find((entry) => entry?.id === 'tool-bootstrap')
+  assert.ok(bootstrap)
+  assert.equal(bootstrap.config.usePtcMode, false)
+})
+
+test('preset/tool-bootstrap.mjs 已是含共享工具与 PTC 逻辑的最终自有快照', () => {
+  const source = read('preset/tool-bootstrap.mjs')
+  assert.ok(source.includes("from './shared.mjs'"))
+  assert.ok(source.includes("tools.presentAs('code')"))
+  assert.ok(source.includes('if (usePtcMode) applyCodePresentation(agent)'))
+  assert.ok(!source.includes('dev_tool_search'))
+  assert.ok(!source.includes('RESIDENT_DISCOVERY_TOOLS'))
+})
+
+test('preset/shared.mjs 提供公共晋升解析与消息工具', () => {
+  const source = read('preset/shared.mjs')
+  assert.ok(source.includes('export const PROMOTE_EVENTS'))
+  assert.ok(source.includes('export function parsePromoteOn'))
+  assert.ok(source.includes('export function newMessageId'))
+  assert.ok(source.includes('export function extractText'))
+  assert.ok(source.includes('export function isDelegated'))
+})
+
+test('preset/instruction-hint.mjs 已自带 agents-instruction.txt 读取逻辑', () => {
+  const source = read('preset/instruction-hint.mjs')
+  assert.ok(source.includes("readFileSync(new URL('./agents-instruction.txt', import.meta.url)"))
+  assert.ok(source.includes('if (agentsInstructionText.length > 0)'))
+})
+
+test('patchToolBootstrap 注入 PTC 呈现状态机与晋升后的完整目录分支', () => {
+  const source = read('upstream/dsh-anchored-standard/preset/tool-bootstrap.mjs')
+  const patched = patchToolBootstrap(source)
+  assert.ok(patched.includes("const usePtcMode = booleanOption(source.usePtcMode, 'usePtcMode', true)"))
+  assert.ok(patched.includes("tools.presentAs('code')"))
+  assert.ok(patched.includes('if (usePtcMode) applyCodePresentation(agent)'))
+  assert.ok(patched.includes('agentBySession.set(agent.session, agent)'))
+  assert.ok(patched.includes('return assembled'))
+  assert.ok(patched.includes("event.type === 'compaction/end'"))
+  assert.ok(!patched.includes('const RESIDENT_DISCOVERY_TOOLS'))
+  assert.ok(!patched.includes('const unlockedFor = (session) => {'))
+  // 晋升分支位于受控阶段注释之前，目录不再被 resident 白名单裁剪。
+  const promoted = patched.indexOf('if (usePtcMode) applyCodePresentation(agent)')
+  const controlled = patched.indexOf('// Controlled phase:', promoted)
+  assert.ok(promoted >= 0)
+  assert.ok(controlled > promoted)
 })

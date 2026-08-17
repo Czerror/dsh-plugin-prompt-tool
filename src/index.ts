@@ -45,20 +45,21 @@ const AUTO_GUIDE_DEEP = '\nRouter: classify this task (build or fix) now, then a
 /** 每轮引导文本框的默认内容：写入自动引导的两段文本。 */
 const DEFAULT_GUIDE_TEXT = `简单任务自动引导：${AUTO_GUIDE_WEAK.trim()}\n\n复杂任务自动引导：${AUTO_GUIDE_DEEP.trim()}`
 
-// preset 模板文件（本项目自有快照；上游 agent.cordis.yml 与全部 *.mjs 直引 vendor 子模块）。
+// preset 模板文件：本项目自有快照，运行时不再直读 upstream/ 下的 JS。
 const PRESET_TEMPLATE_META = fileURLToPath(new URL('../preset/preset.yml', import.meta.url))
 const PRESET_TEMPLATE_INJECTOR = fileURLToPath(new URL('../preset/prompt-injector.mjs', import.meta.url))
 const PRESET_TEMPLATE_ANCHOR = fileURLToPath(new URL('../preset/near-anchor.mjs', import.meta.url))
 const PRESET_TEMPLATE_ROUTER = fileURLToPath(new URL('../preset/router-first-turn.mjs', import.meta.url))
 const PRESET_TEMPLATE_GUIDE = fileURLToPath(new URL('../preset/router-guide.mjs', import.meta.url))
-const VENDOR_PRESET_DIR = fileURLToPath(new URL('../upstream/dsh-anchored-standard/preset', import.meta.url))
+const LOCAL_PRESET_DIR = fileURLToPath(new URL('../preset', import.meta.url))
+const LOCAL_PRESET_SCRIPTS = ['shared.mjs', 'context-gate.mjs', 'compaction-epoch.mjs', 'custom-bash.mjs', 'instruction-hint.mjs', 'skill-search.mjs', 'tool-bootstrap.mjs'] as const
 
 export interface Config {
   /** 可选：覆盖 preset.md 文本（默认读文件）。 */
   text: string
   /** 可选：覆盖 AGENTS.md 文本（默认读文件）。 */
   agentsText: string
-  /** 是否用 AGENTS.md 内容替换上游 instruction-hint 提示文本（默认关闭，本地安全测试用）。 */
+  /** 是否用 AGENTS.md 内容替换本地 instruction-hint 的默认提示文本（默认关闭）。 */
   injectAgentsPrompt: boolean
   /** 是否写 ~/.dsh/AGENTS.md（默认 true）。 */
   writeAgents: boolean
@@ -86,6 +87,8 @@ export interface Config {
   subagentFlashModel: string
   /** 首轮输出封顶；0 或未设置 = 不设封顶（本项目默认），正整数 = 请求 #1 的 maxTokens。 */
   bootstrapMaxTokens: number
+  /** 使用 PTC 模式：默认开启——晋升后把 wire 切换为 Code Mode（单一 run_code，完整插件工具经生成 SDK 调用）；关闭时晋升后恢复原生完整工具目录。 */
+  usePtcMode: boolean
   /** 技能目录（默认包内 skills/，可指向本地测试目录）。 */
   skillsDir: string
   /** 技能候选排序基数，技能目录内按下标递增。 */
@@ -119,6 +122,7 @@ export const Config: z<Config> = z.object({
   subagentFlashProvider: z.string().default('deepseek-official'),
   subagentFlashModel: z.string().default('deepseek-v4-flash'),
   bootstrapMaxTokens: z.natural().default(0),
+  usePtcMode: z.boolean().default(true),
   skillsDir: z.string().default(DEFAULT_SKILLS_DIR),
   skillRankBase: z.natural().default(DEFAULT_SKILL_RANK_BASE),
   residentAgentsPath: z.string().default(DEFAULT_RESIDENT_AGENTS_PATH),
@@ -156,6 +160,7 @@ export interface PromptSettings {
   guideCustom: boolean
   subagentFlash: boolean
   bootstrapMaxTokens: number
+  usePtcMode: boolean
   /** 运行时检测：是否注册了 DeepSeek 模型路由（不写入 settings）。 */
   deepseekAvailable: boolean
   injectPrompt: boolean
@@ -178,6 +183,7 @@ const PromptSettingsSchema: z<PromptSettings> = z.object({
   guideCustom: z.boolean().default(false),
   subagentFlash: z.boolean().default(false),
   bootstrapMaxTokens: z.natural().default(0),
+  usePtcMode: z.boolean().default(true),
   deepseekAvailable: z.boolean().default(true),
   injectPrompt: z.boolean().default(true),
   skillSwitches: z.dict(z.boolean()).default({}),
@@ -203,6 +209,7 @@ interface RuntimeOptions {
   guideCustom: boolean
   subagentFlash: boolean
   bootstrapMaxTokens: number
+  usePtcMode: boolean
 }
 
 function readPromptFile(fallbackText: string): string {
@@ -361,34 +368,6 @@ function warn(ctx: Context, message: string): void {
     // 日志不可用时保持静默，避免二次故障掩盖主路径。
   }
 }
-/** 把上游 instruction-hint.mjs 的提示文本替换为读同目录 agents-instruction.txt。 */
-function patchInstructionHint(source: string): string {
-  source = source.replace(/\r\n/g, '\n')
-  const original = [
-    '      const text = [',
-    '        ...sections,',
-    '        \'Do NOT assume their content. When a task touches this workspace, read the relevant instruction files first and follow them.\',',
-    '      ].join(\' \')',
-  ].join('\n')
-  const replacement = [
-    '  const agentsInstructionText = readFileSync(new URL(\'./agents-instruction.txt\', import.meta.url), \'utf8\').trim()',
-    '  const text = agentsInstructionText.length > 0',
-    '    ? agentsInstructionText',
-    '    : [',
-    '        ...sections,',
-    '        \'Do NOT assume their content. When a task touches this workspace, read the relevant instruction files first and follow them.\',',
-    '      ].join(\' \')',
-  ].join('\n')
-  if (!source.includes("import { createEpochPromotion }")) {
-    throw new Error('instruction-hint.mjs import marker missing')
-  }
-  if (!source.includes(original)) {
-    throw new Error('instruction-hint.mjs text marker missing')
-  }
-  return source
-    .replace("import { createEpochPromotion } from './compaction-epoch.mjs'", "import { readFileSync } from 'node:fs'\nimport { createEpochPromotion } from './compaction-epoch.mjs'")
-    .replace(original, replacement)
-}
 
 const SETTINGS_BRIDGE_PREFIX = '/api/prompt-tool/settings'
 const MAX_SETTINGS_BRIDGE_BODY = 64 * 1024
@@ -439,6 +418,7 @@ const TUI_BOOLEAN_SWITCHES: ReadonlyArray<readonly [key: string, label: string]>
   ['anchorCustom', '使用自定义引导（首句）'],
   ['guideCustom', '使用自定义引导（每轮）'],
   ['subagentFlash', '子代理固定 Flash 模型'],
+  ['usePtcMode', '使用 PTC 模式'],
 ] as const
 
 /** 把布尔开关渲染成 dsh-tui 命令输出。 */
@@ -482,7 +462,7 @@ function registerTuiCommand(ctx: Context, getSource: () => PromptSettings, getDe
         const usage = (): CommandResult => ({
           kind: 'error',
           text: '用法：/prompt-tool status\n' +
-            '      /prompt-tool on|off|toggle <writeAgents|writePreset|injectPrompt|injectAgentsPrompt|anchorFirstTurn|anchorCustom|guideCustom|subagentFlash>\n' +
+            '      /prompt-tool on|off|toggle <writeAgents|writePreset|injectPrompt|injectAgentsPrompt|anchorFirstTurn|anchorCustom|guideCustom|subagentFlash|usePtcMode>\n' +
             '      /prompt-tool skill <技能目录名> on|off|toggle\n' +
             '      /prompt-tool bootstrapMaxTokens <正整数|0（关闭）>',
         })
@@ -656,7 +636,8 @@ interface WritePresetOptions {
   subagentFlashProvider: string
   subagentFlashModel: string
   bootstrapMaxTokens: number
-  /** 用该文本替换上游 instruction-hint 的提示内容；不传则保持上游原样。 */
+  usePtcMode: boolean
+  /** 写入 agents-instruction.txt 供本地 instruction-hint.mjs 读取；不传则使用本地默认 hint。 */
   agentsInstructionText?: string
   presetDir: string
   presetOrder: number
@@ -735,33 +716,10 @@ function installSubagentFlashRoute(ctx: Context, isEnabled: () => boolean, provi
   })
 }
 
-/** prompt-tool 补丁：子代理直接全量放行（assembled.tools 本身已是动态白名单）。 */
-function patchToolBootstrap(source: string): string {
-  source = source.replace(/\r\n/g, '\n')
-  const original = [
-    '    const assembled = await next()',
-    '    try {',
-    '      const status = promotion.status(context.agent)',
-  ].join('\n')
-  const replacement = [
-    '    const assembled = await next()',
-    '    try {',
-    '      // prompt-tool 补丁：子代理跳过目录裁剪，直接使用组装结果；',
-    '      // 调用方（如 dsh-mnemon）的工具白名单已先行过滤 assembled.tools，',
-    '      // 因此任意前缀的新插件工具都会自动出现在子代理第一次会话。',
-    "      if ((context.agent?.session?.header?.delegationDepth ?? 0) > 0) return assembled",
-    '      const status = promotion.status(context.agent)',
-  ].join('\n')
-  if (!source.includes(original)) {
-    throw new Error('tool-bootstrap.mjs assembled marker missing')
-  }
-  return source.replace(original, replacement)
-}
 
-// 完整 anchored preset：上游文件（agent.cordis.yml + 全部 preset/*.mjs）直引
-// 子模块，本项目自有文件（preset.yml / router-first-turn.mjs / near-anchor.mjs /
-// prompt-injector.mjs）走 preset/ 快照。agent.cordis.yml 注入本地附加件，常驻
-// 规则提示等附加内容全部由 prompt-injector.mjs 在运行时注入。
+// 完整 anchored preset：全部由 preset/ 自有快照组装；动态项（usePtcMode /
+// bootstrapMaxTokens / subagentFlash）由 buildCordis 注入，常驻规则提示等
+// 附加内容由 prompt-injector.mjs 在运行时注入。
 function writePreset(prompt: string, options: WritePresetOptions): void {
   const presetDir = options.presetDir
   mkdirSync(presetDir, { recursive: true })
@@ -776,20 +734,19 @@ function writePreset(prompt: string, options: WritePresetOptions): void {
     subagentFlashProvider: options.subagentFlashProvider,
     subagentFlashModel: options.subagentFlashModel,
     bootstrapMaxTokens: options.bootstrapMaxTokens,
+    usePtcMode: options.usePtcMode,
   }), 'utf8')
   const meta = readFileSync(PRESET_TEMPLATE_META, 'utf8').replace(/^order:.*$/m, `order: ${options.presetOrder}`)
   writeFileSync(join(presetDir, 'preset.yml'), meta, 'utf8')
-  for (const file of readdirSync(VENDOR_PRESET_DIR)) {
-    if (!file.endsWith('.mjs')) continue
-    const vendorSource = readFileSync(join(VENDOR_PRESET_DIR, file), 'utf8')
-    // 最优组合补丁：子代理直接全量放行（assembled.tools 本身已是动态白名单）。
-    writeFileSync(join(presetDir, file), file === 'tool-bootstrap.mjs' ? patchToolBootstrap(vendorSource) : vendorSource, 'utf8')
+  // 全部预设 JS 已自有化：直接复制 preset/ 下的最终文件，不再读上游目录。
+  for (const file of LOCAL_PRESET_SCRIPTS) {
+    writeFileSync(join(presetDir, file), readFileSync(join(LOCAL_PRESET_DIR, file), 'utf8'), 'utf8')
   }
+  // 清理历史版本从上游复制、现已移除的脚本快照。
+  rmSync(join(presetDir, 'dev-tool-search.mjs'), { force: true })
   const agentsInstructionPath = join(presetDir, 'agents-instruction.txt')
   if (options.agentsInstructionText !== undefined) {
     writeFileSync(agentsInstructionPath, options.agentsInstructionText, 'utf8')
-    const hintPath = join(presetDir, 'instruction-hint.mjs')
-    writeFileSync(hintPath, patchInstructionHint(readFileSync(hintPath, 'utf8')), 'utf8')
   } else {
     rmSync(agentsInstructionPath, { force: true })
   }
@@ -891,6 +848,7 @@ export function apply(ctx: Context, config: Config): void {
     guideCustom: config.guideCustom,
     subagentFlash: config.subagentFlash && getDeepseekAvailable(),
     bootstrapMaxTokens: config.bootstrapMaxTokens,
+    usePtcMode: config.usePtcMode,
   }
 
   // 宿主直派子代理（如 dsh-mnemon）也按开关补 Flash 路由；
@@ -910,6 +868,7 @@ export function apply(ctx: Context, config: Config): void {
     guideCustom: runtime.guideCustom,
     subagentFlash: runtime.subagentFlash,
     bootstrapMaxTokens: runtime.bootstrapMaxTokens,
+    usePtcMode: runtime.usePtcMode,
     deepseekAvailable: getDeepseekAvailable(),
     injectPrompt: runtime.injectPrompt,
     skillSwitches: runtime.skillSwitches,
@@ -937,6 +896,7 @@ export function apply(ctx: Context, config: Config): void {
       guideCustom: typeof next.guideCustom === 'boolean' ? next.guideCustom : config.guideCustom,
       subagentFlash: (typeof next.subagentFlash === 'boolean' ? next.subagentFlash : config.subagentFlash) && getDeepseekAvailable(),
     bootstrapMaxTokens: Number.isSafeInteger(next.bootstrapMaxTokens) && next.bootstrapMaxTokens >= 0 ? next.bootstrapMaxTokens : config.bootstrapMaxTokens,
+    usePtcMode: typeof next.usePtcMode === 'boolean' ? next.usePtcMode : config.usePtcMode,
     }
     const promptChanged = next.promptText !== current
     const agentsChanged = next.agentsText !== currentAgents
@@ -953,6 +913,7 @@ export function apply(ctx: Context, config: Config): void {
       || runtime.guideCustom !== nextRuntime.guideCustom
       || runtime.subagentFlash !== nextRuntime.subagentFlash
       || runtime.bootstrapMaxTokens !== nextRuntime.bootstrapMaxTokens
+      || runtime.usePtcMode !== nextRuntime.usePtcMode
     // 首次必须写入：settings 与文件/config 一致时也不能跳过 preset/AGENTS 生成。
     if (!needsInitialApply && !promptChanged && !agentsChanged && !settingsChanged) return
     needsInitialApply = false
@@ -971,6 +932,7 @@ export function apply(ctx: Context, config: Config): void {
     runtime.guideCustom = nextRuntime.guideCustom
     runtime.subagentFlash = nextRuntime.subagentFlash
     runtime.bootstrapMaxTokens = nextRuntime.bootstrapMaxTokens
+    runtime.usePtcMode = nextRuntime.usePtcMode
     skillSwitches = runtime.skillSwitches
     if (skillSwitchesChanged) invalidateSkills?.()
 
@@ -999,6 +961,7 @@ export function apply(ctx: Context, config: Config): void {
         subagentFlashProvider: config.subagentFlashProvider,
         subagentFlashModel: config.subagentFlashModel,
         bootstrapMaxTokens: runtime.bootstrapMaxTokens,
+        usePtcMode: runtime.usePtcMode,
         agentsInstructionText: runtime.injectAgentsPrompt && currentAgents.length > 0 ? currentAgents : undefined,
         presetDir: config.presetDir,
         presetOrder: config.presetOrder,
@@ -1026,6 +989,7 @@ export function apply(ctx: Context, config: Config): void {
     guideCustom: config.guideCustom,
     subagentFlash: config.subagentFlash && getDeepseekAvailable(),
     bootstrapMaxTokens: config.bootstrapMaxTokens,
+    usePtcMode: config.usePtcMode,
     deepseekAvailable: getDeepseekAvailable(),
     injectPrompt: config.injectPrompt,
     skillSwitches: { ...config.skillSwitches },

@@ -15,6 +15,8 @@
  * false（默认）时忽略 anchorText，按任务与模型自动选择文本。
  */
 
+import { extractText, isDelegated, newMessageId } from './shared.mjs'
+
 /** Cordis 插件名，供 loader 诊断使用。 */
 export const name = 'near-anchor'
 
@@ -33,23 +35,8 @@ const ANCHOR_INSPECT = "Start your reasoning with the exact sentence: 'We need t
 /** 复杂规划类：放行 Let 深度规划路径。 */
 const ANCHOR_DEEP = "Start your reasoning with the exact sentence: 'Let me think through the design before changing anything.'"
 
-/** 生成消息 id：优先加密随机 id，旧运行时回退到随机串。 */
-function newMessageId() {
-  return typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
-    ? crypto.randomUUID()
-    : `near-anchor-${Date.now()}-${Math.random().toString(36).slice(2)}`
-}
-
-/** 从 user/message 的 data 中提取纯文本；兼容 data.message 嵌套形状。 */
-function extractText(data) {
-  if (!data) return ''
-  const payload = data && typeof data.message === 'object' && data.message !== null ? data.message : data
-  const content = Array.isArray(payload.content) ? payload.content : []
-  return content.map((block) => (typeof block === 'string' ? block : (block?.text ?? ''))).join(' ').trim()
-}
-
 /** 按开关与任务选择锚点：useCustom=true 固定用自定义；false 自动选择。 */
-function chooseAnchor(text, modelId, customText, useCustom) {
+function chooseAnchor(text, customText, useCustom) {
   if (useCustom === true) {
     return typeof customText === 'string' ? customText.trim() : ''
   }
@@ -83,7 +70,7 @@ export function apply(ctx, config) {
     const session = agent.session
     if (session === undefined || handled.has(session.id) || seenAnchor(session)) return decision
     // 子代理不注入锚点：让 dsh-mnemon 等结构化 worker 按自己的提示词工作。
-    if ((session.header?.delegationDepth ?? 0) > 0) return decision
+    if (isDelegated(session)) return decision
 
     const messages = Array.isArray(decision.messages) ? decision.messages : []
     // 只锚真实用户消息；插件消息原样保留。
@@ -92,12 +79,12 @@ export function apply(ctx, config) {
     const taskText = extractText(messages[userIndex])
     if (taskText.length === 0) return decision
 
-    const anchorText = chooseAnchor(taskText, agent.options?.model, customText, useCustom)
+    const anchorText = chooseAnchor(taskText, customText, useCustom)
     if (anchorText.length === 0) return decision
     handled.add(session.id)
 
     const anchor = {
-      id: newMessageId(),
+      id: newMessageId('near-anchor'),
       role: 'user',
       content: [{ type: 'text', text: anchorText }],
       source: {

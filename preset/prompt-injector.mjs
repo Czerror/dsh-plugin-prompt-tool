@@ -1,15 +1,12 @@
 /**
- * prompt-injector — anchored-standard 的附加件（prompt-tool 自研，唯一本地件）。
+ * prompt-injector — prompt-tool 的提示词注入层。
  *
- * 职责（tools / maxTokens / 上下文剥离全部留给原版 tool-bootstrap）：
- *   会话晋升（首个 tool/call 或 assistant/message，与 promoteOn: either 同定义）后，
- *   turn1 reasoning 以 "we" 开头 → 下一轮注入 promptText 一次；
- *   we 未确认 → 最多再等一轮，仍无则强制注入（兜底，绝不卡死）。
+ * 职责：会话晋升（首个 tool/call 或 assistant/message，与 promoteOn: either
+ * 同定义）后，turn1 reasoning 以 "we" 开头 → 下一轮注入 promptText 一次；
+ * we 未确认 → 最多再等一轮，仍无则强制注入（兜底，绝不卡死）。
  *
- * promptText 由宿主在生成 preset 时准备好：
- *   - 默认等于 preset.md 原文；
- *   - 开启 injectAgentsPrompt 时，宿主会把 AGENTS.md 拼接到 preset.md 头部。
- *   本模块只负责把最终文本作为一条 user 消息注入，不做路径探测。
+ * promptText 由宿主在生成 preset 时写入 config（默认等于 preset.md 原文）。
+ * AGENTS.md 的注入走 instruction-hint.mjs，不由本模块拼接。
  *
  * 实测依据：
  *   - 复杂任务 + 原版 2 工具 + maxTokens 1024 → turn1 reasoning "We need"；
@@ -25,6 +22,9 @@
  *   注入仅一次。
  */
 
+import { createEpochPromotion } from './compaction-epoch.mjs'
+import { newMessageId, PROMOTE_EVENTS } from './shared.mjs'
+
 /** Cordis plugin name used by loader diagnostics. */
 export const name = 'prompt-injector'
 
@@ -36,18 +36,13 @@ export function apply(ctx, config) {
     ? config.promptText
     : undefined
 
-  /** 消息 id：优先 crypto.randomUUID，旧运行时回退到随机串。 */
-  const newMessageId = () =>
-    typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
-      ? crypto.randomUUID()
-      : `prompt-injector-${Date.now()}-${Math.random().toString(36).slice(2)}`
-
   /** Sessions whose promptText has been injected (append-only). */
   const injectedPrompt = new Set()
-  /** Sessions already promoted in this process (memoized). */
-  const promoted = new Set()
   /** Sessions whose first assistant reasoning has been scanned (memoized). */
   const weScanned = new Map()
+  /** Epoch-aware promotion, same definition as tool-bootstrap/context-gate. */
+  const promotion = createEpochPromotion(PROMOTE_EVENTS.either, { includeSubagents: false })
+  ctx.on('session/event', (session, event) => promotion.observe(session, event))
 
   /**
    * 从持久 session events 推导「是否已经注入过 promptText」。
@@ -64,17 +59,7 @@ export function apply(ctx, config) {
       return source?.kind === 'plugin' && source?.plugin === 'prompt-injector'
     })
 
-  /** 与 tool-bootstrap 的 promoteOn: either 同定义。 */
-  const isPromoted = (agent) => {
-    if (agent === undefined) return true
-    const session = agent.session
-    if (session === undefined) return true
-    if ((session.header.delegationDepth ?? 0) > 0) return true
-    if (promoted.has(session.id)) return true
-    const hit = session.events.some((event) => event.type === 'tool/call' || event.type === 'assistant/message')
-    if (hit) promoted.add(session.id)
-    return hit
-  }
+
 
   /** 第一个 assistant/message（锚定轮）的 reasoning 是否以 "we" 开头。 */
   const isWeAnchored = (agent) => {
@@ -99,8 +84,8 @@ export function apply(ctx, config) {
   ctx.on('agent/pre-step', async ({ agent }, next) => {
     const decision = await next()
     if (decision.kind === 'reject') return decision
-    if (promptText === undefined) return decision
-    if (!isPromoted(agent)) return decision
+    if (agent === undefined || promptText === undefined) return decision
+    if (!promotion.status(agent).promoted) return decision
     const session = agent.session
     if (session === undefined || injectedPrompt.has(session.id)) return decision
     // 持久事件级幂等：进程重启/插件重载后，已注入消息仍在事件流里，据此跳过。
@@ -112,7 +97,7 @@ export function apply(ctx, config) {
     if (!weOk && assistantRounds(agent) <= 1) return decision
     injectedPrompt.add(session.id)
     const message = {
-      id: newMessageId(),
+      id: newMessageId('prompt-injector'),
       role: 'user',
       content: [{ type: 'text', text: promptText }],
       source: {

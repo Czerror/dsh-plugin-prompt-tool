@@ -1,5 +1,21 @@
 # dsh-plugin-prompt-tool 重新设计计划（v2）
-> **v2.15 上游同步（当前实现）**：同步上游到 `25f21ae`；移除
+> **v2.19 preset 脚本审查清理（当前实现）**：抽取 `shared.mjs` 公共工具；
+> router-first-turn 不再重复清 contexts（交给 context-gate）；router-first-turn /
+> router-guide / prompt-injector 统一使用 epoch-aware 晋升状态；修正 stale 注释与未用变量。
+
+> **v2.18 全部预设脚本自有化**：`preset/` 新增 shared / context-gate /
+> compaction-epoch / custom-bash / instruction-hint / skill-search / tool-bootstrap 最终快照；
+> 公共配置校验、晋升解析、消息工具合并进 `shared.mjs`；运行时不再直读 `upstream/` 任何文件，
+> `upstream/` 仅作溯源与 sync 对照。
+
+> **v2.17 agent.cordis.yml 脱离上游**：新增自有模板 `preset/agent.cordis.yml`；
+> 运行时不再直读 `upstream/.../agent.cordis.yml`，动态项仅由 `buildCordis` 注入。
+
+> **v2.16 使用 PTC 模式开关**：新增 `usePtcMode`（默认开启）。
+> 开启=晋升后把 wire 切换为 Code Mode（PTC，单一 run_code），完整插件工具经生成 SDK 调用；
+> 关闭=晋升后恢复原生完整工具目录；两种模式都不再依赖 `dev_tool_search`，生成 preset 时直接移除该行且不复制 `dev-tool-search.mjs`。
+
+> **v2.15 上游同步**：同步上游到 `25f21ae`；移除
 > `customBashPath` 生成时改写，直接沿用上游 custom-bash 运行时探测。
 > 新增 `bootstrapMaxTokens` 开关（0=关闭；正整数写入上游 tool-bootstrap）。
 

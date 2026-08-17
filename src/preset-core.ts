@@ -6,9 +6,10 @@ import { parse as parseYaml } from 'yaml'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
-// 子模块直引（唯一源）：插件加载时读 vendor 最新版，子模块更新后无需任何
-// 同步步骤、重启即生效。vendor 缺失或上游结构变化 → fail loud。
-const VENDOR_CORDIS = fileURLToPath(new URL('../upstream/dsh-anchored-standard/preset/agent.cordis.yml', import.meta.url))
+// agent.cordis.yml 已脱离上游运行时直读：使用本项目自有模板（preset/agent.cordis.yml），
+// 动态项（usePtcMode / bootstrapMaxTokens / subagentFlash）仍由 buildCordis 注入。
+// 上游文件仅作溯源与 sync 对照。
+const CORDIS_TEMPLATE = fileURLToPath(new URL('../preset/agent.cordis.yml', import.meta.url))
 
 export interface SkillFrontmatter {
   name?: string
@@ -96,6 +97,8 @@ export interface BuildCordisOptions {
   subagentFlashModel?: string
   /** 首轮输出封顶（bootstrapMaxTokens）；0 或未设置 = 本项目默认无封顶。 */
   bootstrapMaxTokens?: number
+  /** 使用 PTC 模式：默认 true——晋升后把 wire 切换为 Code Mode（单一 run_code，完整插件工具经生成 SDK 调用）；显式 false 时晋升后恢复原生完整工具目录。 */
+  usePtcMode?: boolean
 }
 
 /** dsh-router-standard 的 Flash 弱路由 persona（子代理版）。 */
@@ -106,34 +109,22 @@ const ROUTER_FLASH_PERSONA = [
   'Think deeply first, then produce.',
 ].join('\n')
 
-/** 适配上游 context-gate：保留 near-anchor 消息；子代理沿用全量放行策略。 */
-function normalizeContextGate(source: string): string {
-  const block = `- id: context-gate
-  name: ./context-gate.mjs
-  config:
-    promoteOn: either
-    includeSubagents: true
-    allowKinds: [skill-invocation]`
-  const replaced = `- id: context-gate
-  name: ./context-gate.mjs
-  config:
-    promoteOn: either
-    includeSubagents: false
-    allowKinds: [skill-invocation, near-anchor, router-guide]`
-  if (!source.includes(block)) throw new Error('vendor agent.cordis.yml missing context-gate row')
-  return source.replace(block, replaced)
+
+/** 按开关向本地 tool-bootstrap 行注入 usePtcMode / bootstrapMaxTokens。 */
+function applyToolBootstrapOptions(source: string, usePtcMode: boolean, bootstrapMaxTokens?: number): string {
+  const rowStart = source.indexOf('- id: tool-bootstrap\n  name: ./tool-bootstrap.mjs\n  config:\n')
+  if (rowStart < 0) throw new Error('preset/agent.cordis.yml missing tool-bootstrap config block')
+  const include = source.indexOf('    includeSubagents: true\n', rowStart)
+  if (include < 0) throw new Error('preset/agent.cordis.yml tool-bootstrap row missing includeSubagents')
+  const at = include + '    includeSubagents: true'.length + 1
+  const lines = [`    usePtcMode: ${usePtcMode}`]
+  if (bootstrapMaxTokens !== undefined && Number.isSafeInteger(bootstrapMaxTokens) && bootstrapMaxTokens > 0) {
+    lines.push(`    bootstrapMaxTokens: ${bootstrapMaxTokens}`)
+  }
+  return source.slice(0, at) + lines.join('\n') + '\n' + source.slice(at)
 }
 
-/** 按开关向上游 tool-bootstrap 行注入 bootstrapMaxTokens；0/未设置保持无封顶。 */
-function applyBootstrapMaxTokens(source: string, value?: number): string {
-  if (value === undefined || !Number.isSafeInteger(value) || value <= 0) return source
-  const rowStart = source.indexOf('- id: tool-bootstrap\n  name: ./tool-bootstrap.mjs\n  config:\n')
-  if (rowStart < 0) throw new Error('vendor agent.cordis.yml missing tool-bootstrap config block')
-  const include = source.indexOf('    includeSubagents: true\n', rowStart)
-  if (include < 0) throw new Error('vendor agent.cordis.yml tool-bootstrap row missing includeSubagents')
-  const at = include + '    includeSubagents: true'.length + 1
-  return source.slice(0, at) + `    bootstrapMaxTokens: ${value}` + '\n' + source.slice(at)
-}
+
 
 /** 给 subagent/subagent_fork 行加 dsh-router-standard 的 Flash 子代理方案；关闭时保持继承主会话路由。 */
 function applySubagentFlash(source: string, enabled: boolean, provider: string, model: string): string {
@@ -158,10 +149,154 @@ function applySubagentFlash(source: string, enabled: boolean, provider: string, 
 ${agentOptions}
         persona: |-
 ${persona}`
-    if (!out.includes(block)) throw new Error(`vendor agent.cordis.yml missing ${target.id} row`)
+    if (!out.includes(block)) throw new Error(`preset/agent.cordis.yml missing ${target.id} row`)
     out = out.replace(block, replaced)
   }
   return out
+}
+
+/** 给生成的 tool-bootstrap.mjs 打补丁：子代理全量放行 + 可选的 PTC 呈现切换。 */
+export function patchToolBootstrap(source: string): string {
+  source = source.replace(/\r\n/g, '\n')
+
+  // 1) 子代理跳过目录裁剪，直接使用组装结果。
+  const original = [
+    '    const assembled = await next()',
+    '    try {',
+    '      const status = promotion.status(context.agent)',
+  ].join('\n')
+  const replacement = [
+    '    const assembled = await next()',
+    '    try {',
+    '      const agent = context.agent',
+    '      if (agent === undefined) return assembled',
+    '      // prompt-tool patch: subagents skip catalog narrowing and use assembled tools directly.',
+    '      // Callers (such as dsh-mnemon) already filter assembled.tools through their own whitelists.',
+    '      // New plugin tools with any prefix therefore appear in the subagent first session automatically.',
+    "      agentBySession.set(agent.session, agent)",
+    "      if ((agent.session?.header?.delegationDepth ?? 0) > 0) {",
+    '        if (usePtcMode) applyCodePresentation(agent)',
+    '        return assembled',
+    '      }',
+    '      const status = promotion.status(agent)',
+  ].join('\n')
+  if (!source.includes(original)) {
+    throw new Error('tool-bootstrap.mjs assembled marker missing')
+  }
+  source = source.replace(original, replacement)
+
+  // 2) 允许并解析 usePtcMode 配置。
+  const allowedOriginal = "const ALLOWED_KEYS = new Set(['bootstrapTools', 'promoteOn', 'bootstrapMaxTokens', 'compactionTools', 'includeSubagents'])"
+  const allowedReplacement = "const ALLOWED_KEYS = new Set(['bootstrapTools', 'promoteOn', 'bootstrapMaxTokens', 'compactionTools', 'includeSubagents', 'usePtcMode'])"
+  if (!source.includes(allowedOriginal)) {
+    throw new Error('tool-bootstrap.mjs ALLOWED_KEYS marker missing')
+  }
+  source = source.replace(allowedOriginal, allowedReplacement)
+
+  const parseOriginal = "  const includeSubagents = booleanOption(source.includeSubagents, 'includeSubagents', false)"
+  const parseReplacement = parseOriginal + "\n  const usePtcMode = booleanOption(source.usePtcMode, 'usePtcMode', true)"
+  if (!source.includes(parseOriginal)) {
+    throw new Error('tool-bootstrap.mjs includeSubagents parse marker missing')
+  }
+  source = source.replace(parseOriginal, parseReplacement)
+
+  // 3) 插入 PTC 呈现状态机与 step/turn 边界监听器。
+  const trackerOriginal = [
+    '  const promotion = createEpochPromotion(promoteEvents, { includeSubagents })',
+    "  ctx.on('session/event', (session, event) => promotion.observe(session, event))",
+  ].join('\n')
+  const trackerReplacement = [
+    '  const promotion = createEpochPromotion(promoteEvents, { includeSubagents })',
+    '',
+    '  // prompt-tool patch: optional Code Mode (PTC) wire presentation after promotion.',
+    '  const presentationBySession = new WeakMap()',
+    '  const agentBySession = new WeakMap()',
+    '  const presentationState = (session) => {',
+    '    let state = presentationBySession.get(session)',
+    '    if (state === undefined) {',
+    '      state = { applied: false, disposer: undefined }',
+    '      presentationBySession.set(session, state)',
+    '    }',
+    '    return state',
+    '  }',
+    '  const applyCodePresentation = (agent) => {',
+    '    const session = agent?.session',
+    '    if (session === undefined) return',
+    '    const state = presentationState(session)',
+    '    if (state.applied) return',
+    '    const tools = agent.ctx?.tools',
+    '    if (tools === undefined || typeof tools.presentAs !== \'function\') return',
+    '    state.disposer = tools.presentAs(\'code\')',
+    '    state.applied = true',
+    '  }',
+    '  const releaseCodePresentation = (session) => {',
+    '    const state = presentationBySession.get(session)',
+    '    if (state === undefined) return',
+    '    if (typeof state.disposer === \'function\') {',
+    '      try { state.disposer() } catch { /* never brick the session */ }',
+    '    }',
+    '    state.disposer = undefined',
+    '    state.applied = false',
+    '  }',
+    "  ctx.on('session/event', (session, event) => promotion.observe(session, event))",
+    '',
+    "  ctx.on('session/event', (session, event) => {",
+    '    if (!usePtcMode) return',
+    "    if (event.type === 'compaction/end') {",
+    '      releaseCodePresentation(session)',
+    '      return',
+    '    }',
+    "    if (event.type !== 'step/end' && event.type !== 'turn/end') return",
+    '    const agent = agentBySession.get(session)',
+    '    if (agent !== undefined && promotion.status(agent).promoted) applyCodePresentation(agent)',
+    '  })',
+  ].join('\n')
+  if (!source.includes(trackerOriginal)) {
+    throw new Error('tool-bootstrap.mjs promotion tracker marker missing')
+  }
+  source = source.replace(trackerOriginal, trackerReplacement)
+
+  // 4) 晋升后保留组装目录；usePtcMode 只切换 wire 呈现，不再裁剪 resident 集。
+  const promotedStart = source.indexOf('      if (status.promoted) {\n        // PROMOTED:')
+  const promotedEnd = source.indexOf('      // Controlled phase:', promotedStart)
+  if (promotedStart < 0 || promotedEnd < 0) {
+    throw new Error('tool-bootstrap.mjs promoted/controlled marker missing')
+  }
+  const promotedReplacement = [
+    '      if (status.promoted) {',
+    '        // prompt-tool patch: both modes keep the assembled catalog after promotion.',
+    '        // usePtcMode switches the wire presentation instead of narrowing resident tools.',
+    '        if (usePtcMode) applyCodePresentation(agent)',
+    '        return assembled',
+    '      }',
+    '',
+  ].join('\n')
+  source = source.slice(0, promotedStart) + promotedReplacement + source.slice(promotedEnd)
+
+  // 5) 移除上游 dev_tool_search 常驻集与解锁状态机（该工具已从 preset 移除）。
+  const residentOriginal = "const RESIDENT_DISCOVERY_TOOLS = ['dev_tool_search', 'skill_search', 'skill_load']\n\n"
+  if (source.includes(residentOriginal)) source = source.replace(residentOriginal, '')
+  const unlockedStart = source.indexOf('/**\n   * Tool names the model explicitly unlocked via `dev_tool_search`')
+  const unlockedEnd = source.indexOf('  /** Narrow the assembled catalog', unlockedStart)
+  if (unlockedStart >= 0 && unlockedEnd > unlockedStart) {
+    source = source.slice(0, unlockedStart) + source.slice(unlockedEnd)
+  }
+
+  // 6) 更新晋升后目录说明，移除 dev_tool_search 历史叙述。
+  const headerStart = source.indexOf(' * POST-PROMOTION RESIDENT SET')
+  const headerEnd = source.indexOf(' * COMPACTION (local addition)', headerStart)
+  if (headerStart >= 0 && headerEnd > headerStart) {
+    const headerReplacement = [
+      ' * POST-PROMOTION CATALOG (prompt-tool patch): after promotion both modes',
+      ' * keep the assembled catalog. `usePtcMode` switches the wire presentation',
+      ' * to Code Mode (PTC, single run_code) instead of narrowing the resident set.',
+      ' * The controlled phase below still narrows the catalog before promotion and',
+      ' * after compaction.',
+      '',
+    ].join(String.fromCharCode(10))
+    source = source.slice(0, headerStart) + headerReplacement + source.slice(headerEnd)
+  }
+  return source
 }
 
 // agent.cordis.yml 直引子模块 + 运行时注入本地附加块。
@@ -173,25 +308,27 @@ export function buildCordis(prompt: string, options: BuildCordisOptions = {}): s
   const guideCustom = options.guideCustom === true
   const guideText = typeof options.guideText === 'string' && options.guideText.length > 0 ? options.guideText : ''
   const injectPrompt = options.injectPrompt !== false
+  const usePtcMode = options.usePtcMode !== false
   const anchorText = typeof options.anchorText === 'string' && options.anchorText.length > 0
     ? options.anchorText
     : ''
   const indent = (s: string) => s.split(/\r?\n/).map((l) => l.length === 0 ? '' : '      ' + l).join('\n')
-  const up = applyBootstrapMaxTokens(normalizeContextGate(
+  const up = applyToolBootstrapOptions(
     applySubagentFlash(
-      readFileSync(VENDOR_CORDIS, 'utf8').replace(/\r\n/g, '\n'),
+      readFileSync(CORDIS_TEMPLATE, 'utf8').replace(/\r\n/g, '\n'),
       options.subagentFlash === true,
       typeof options.subagentFlashProvider === 'string' && options.subagentFlashProvider.length > 0 ? options.subagentFlashProvider : 'deepseek-official',
       typeof options.subagentFlashModel === 'string' && options.subagentFlashModel.length > 0 ? options.subagentFlashModel : 'deepseek-v4-flash',
     ),
-  ), options.bootstrapMaxTokens)
-
+    usePtcMode,
+    options.bootstrapMaxTokens,
+  )
   // 1) 定位 tool-bootstrap 顶层条目，并把插入点放在该条目之后：
   //    条目内部行（缩进行）与空行跳过，遇到下一个零缩进非空行（注释块或条目）即停。
   const bootstrap = /^-\s+id:\s+tool-bootstrap\s*$/m.exec(up)
-  if (!bootstrap) throw new Error('vendor agent.cordis.yml missing tool-bootstrap row')
+  if (!bootstrap) throw new Error('preset/agent.cordis.yml missing tool-bootstrap row')
   let cursor = up.indexOf('\n', bootstrap.index)
-  if (cursor < 0) throw new Error('vendor agent.cordis.yml has no top-level row after tool-bootstrap')
+  if (cursor < 0) throw new Error('preset/agent.cordis.yml has no top-level row after tool-bootstrap')
   cursor += 1
   let insertAt = -1
   while (cursor <= up.length) {
@@ -204,7 +341,7 @@ export function buildCordis(prompt: string, options: BuildCordisOptions = {}): s
     if (lineEnd < 0) break
     cursor = lineEnd + 1
   }
-  if (insertAt < 0) throw new Error('vendor agent.cordis.yml has no top-level row after tool-bootstrap')
+  if (insertAt < 0) throw new Error('preset/agent.cordis.yml has no top-level row after tool-bootstrap')
   const head = up.slice(0, insertAt)
   const tail = up.slice(insertAt)
   const separator = head.endsWith('\n\n') ? '' : head.endsWith('\n') ? '\n' : '\n\n'

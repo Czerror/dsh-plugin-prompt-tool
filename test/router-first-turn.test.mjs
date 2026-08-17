@@ -12,7 +12,7 @@ function makeStep({ events = [], delegationDepth = 0, model = 'deepseek-v4-pro-8
   return async (assembled) => handler(undefined, { agent }, async () => assembled)
 }
 
-test('Pro 首轮替换 persona，保留 plan 与第三方 section，隐藏 mnemon 段，并清空 contexts', async () => {
+test('Pro 首轮替换 persona，保留 plan 与第三方 section，隐藏 mnemon 段，contexts 交给 context-gate', async () => {
   const step = makeStep()
   const out = await step({
     sections: [
@@ -25,7 +25,7 @@ test('Pro 首轮替换 persona，保留 plan 与第三方 section，隐藏 mnemo
   })
   assert.deepEqual(out.sections.map((s) => s.name), ['plan-mode', 'router-persona'])
   assert.equal(out.sections.at(-1).text, 'You are a helpful software engineer assistant.')
-  assert.deepEqual(out.contexts, [])
+  assert.deepEqual(out.contexts, [{ name: 'auto', text: 'AUTO' }])
   assert.deepEqual(out.tools, [{ name: 'bash' }])
 })
 
@@ -49,6 +49,15 @@ test('晋升后恢复 contexts 与 mnemon 记忆段', async () => {
     contexts: [{ name: 'auto', text: 'AUTO' }],
   })
   assert.deepEqual(out.contexts, [{ name: 'auto', text: 'AUTO' }])
+  assert.ok(out.sections.some((s) => s.name === 'mnemon:runtime-memory'))
+})
+
+test('首条 assistant 消息（无工具调用）也视为晋升并恢复 mnemon 段', async () => {
+  const step = makeStep({ events: [{ type: 'assistant/message', seq: 1, time: 1, data: { message: { content: [{ type: 'text', text: 'ok' }] } } }] })
+  const out = await step({
+    sections: [{ name: 'persona', text: 'OLD' }, { name: 'mnemon:runtime-memory', text: 'MEMORY' }],
+    contexts: [{ name: 'auto', text: 'AUTO' }],
+  })
   assert.ok(out.sections.some((s) => s.name === 'mnemon:runtime-memory'))
 })
 

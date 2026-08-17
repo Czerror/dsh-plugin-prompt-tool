@@ -1,0 +1,217 @@
+/**
+ * instruction-hint — replace `dsh-agent-instructions`' full AGENTS.md/CLAUDE.md
+ * injection with a minimal "these files exist" hint.
+ *
+ * WHY: the full workspace-instruction digest is a large injected block. After
+ * the anchored bootstrap promotes, we want the model to KNOW the instruction
+ * files exist (so it reads them before acting) without dumping their content
+ * into every request. The model reads the files itself via the filesystem
+ * tools when it needs them.
+ *
+ * Behavior:
+ *  - After the session records its first durable promotion signal
+ *    (`promoteOn`, default `either`), ONE hint message is injected, listing
+ *    which instruction files were found:
+ *      - user-global: `$DSH_HOME/AGENTS.md`
+ *      - project chain: AGENTS.md / CLAUDE.md / AGENTS.local.md / CLAUDE.local.md
+ *        walking up from the session cwd to the project root (a directory
+ *        containing `.git`, or the cwd itself).
+ *  - The hint is ONCE PER SESSION, DERIVED FROM DURABLE EVENTS: the guard
+ *    scans the session log for an existing `instruction-hint` message (then
+ *    O(1)), so a process restart — whose in-memory state starts empty —
+ *    cannot inject a second copy. A duplicate would collide with the first
+ *    message's deterministic id (`instruction-hint-<sessionId>`) and break
+ *    history replay.
+ *  - The hint instructs the model to READ the files before acting when
+ *    relevant, without embedding their content.
+ *  - Files are probed via `ctx.fs` (the host filesystem seam); a missing fs
+ *    service or an unreadable probe degrades to no hint (never throws).
+ *  - Pre-promotion requests get NO hint (matches the anchored bootstrap).
+ *  - Subagents skip the phase wait by default (their first request already
+ *    counts as promoted); `includeSubagents: true` makes a subagent's own
+ *    first reply or tool call open the hint — which also keeps the injection
+ *    out of the context gate's stripped first request (the gate strips
+ *    non-claimed messages while unpromoted).
+ *
+ * ROW ORDER: this plugin registers its `agent/pre-step` handler with
+ * `prepend: true` and after `context-gate`/`tool-bootstrap`, so it runs
+ * inside the gate's outermost strip — but it emits AFTER promotion, when the
+ * strip is inactive. The hint source kind is `instruction-hint`, which is
+ * not in the gate's claimed-baseline allowlist, so the gate can strip it
+ * only while the session is unpromoted (never the intended path).
+ */
+
+import { readFileSync } from 'node:fs'
+import { createEpochPromotion } from './compaction-epoch.mjs'
+import { booleanOption, createWarnOnce, parsePromoteOn, validateConfig } from './shared.mjs'
+
+/** Cordis plugin name used by loader diagnostics. */
+export const name = 'instruction-hint'
+
+/** Optional prompt-tool hint text (agents-instruction.txt beside this module). */
+function readAgentsInstructionText() {
+  try {
+    return readFileSync(new URL('./agents-instruction.txt', import.meta.url), 'utf8').trim()
+  } catch {
+    return ''
+  }
+}
+
+/** Candidate file names, in probe order, for the project chain and user-global. */
+const PROJECT_CANDIDATES = ['AGENTS.md', 'CLAUDE.md', 'AGENTS.local.md', 'CLAUDE.local.md']
+const USER_GLOBAL_CANDIDATE = 'AGENTS.md'
+
+
+/** Every config key this plugin accepts — anything else is a typo. */
+const ALLOWED_KEYS = new Set(['promoteOn', 'includeSubagents'])
+
+
+/** Find the project root: first ancestor containing any root marker (e.g. .git). */
+async function findProjectRoot(fs, cwd, signal) {
+  let current = cwd
+  for (;;) {
+    for (const marker of ['.git', '.hg', '.svn']) {
+      try {
+        const target = await fs.resolve(joinPath(current, marker), { cwd, signal })
+        const info = await fs.stat(target, signal)
+        if (info !== undefined) return current
+      } catch {
+        // Probe failure = marker absent; continue.
+      }
+    }
+    const parent = parentPath(current)
+    if (parent === current || parent.length === 0) return cwd
+    current = parent
+  }
+}
+
+/** List instruction files present in one directory (project candidates). */
+async function presentInDir(fs, dir, candidates, signal) {
+  const found = []
+  for (const candidate of candidates) {
+    try {
+      const target = await fs.resolve(joinPath(dir, candidate), { cwd: dir, signal })
+      const info = await fs.stat(target, signal)
+      if (info !== undefined && info.type === 'file') found.push(candidate)
+    } catch {
+      // Absent or unreadable — skip.
+    }
+  }
+  return found
+}
+
+/** Join one path segment onto a directory (platform-agnostic string join). */
+function joinPath(dir, segment) {
+  if (dir.endsWith('/') || dir.endsWith('\\')) return dir + segment
+  const sep = dir.includes('\\') ? '\\' : '/'
+  return dir + sep + segment
+}
+
+/** Parent of an absolute Windows or POSIX path. */
+function parentPath(path) {
+  const idx = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'))
+  if (idx <= 0) return path
+  const parent = path.slice(0, idx)
+  return parent.length === 0 ? path : parent
+}
+
+/** Register the post-promotion instruction-hint injector. */
+export function apply(ctx, config) {
+  const source = validateConfig(name, config, ALLOWED_KEYS)
+  const promoteEvents = parsePromoteOn(name, source.promoteOn)
+  const includeSubagents = booleanOption(name, source.includeSubagents, 'includeSubagents', false)
+  const agentsInstructionText = readAgentsInstructionText()
+  const promotion = createEpochPromotion(promoteEvents, { includeSubagents })
+  ctx.on('session/event', (session, event) => promotion.observe(session, event))
+
+  /**
+   * Sessions whose hint is already durable in the event log — the
+   * restart-safe replacement for an in-memory "already hinted" set. Seeded by
+   * a one-time scan, then maintained incrementally through `session/event`.
+   */
+  const hinted = new Map()
+  const hintIsDurable = (session) => {
+    const known = hinted.get(session.id)
+    if (known !== undefined) return known
+    const found = (Array.isArray(session.events) ? session.events : []).some((event) =>
+      event.type === 'user/message' && event.data?.source?.kind === 'instruction-hint',
+    )
+    hinted.set(session.id, found)
+    return found
+  }
+  ctx.on('session/event', (session, event) => {
+    if (event.type === 'user/message' && event.data?.source?.kind === 'instruction-hint') {
+      hinted.set(session.id, true)
+    }
+  })
+
+  const warnOnce = createWarnOnce(ctx, name)
+
+  ctx.on('agent/pre-step', async ({ agent, signal }, next) => {
+    const decision = await next()
+    try {
+      if (promotion.status(agent).promoted !== true) return decision
+      const session = agent.session
+      if (session === undefined || hintIsDurable(session)) return decision
+      hinted.set(session.id, true)
+
+      if (agentsInstructionText.length > 0) {
+        return {
+          ...decision,
+          messages: [...decision.messages, {
+            id: `instruction-hint-${session.id}`,
+            role: 'user',
+            content: [{ type: 'text', text: agentsInstructionText }],
+            source: { kind: 'instruction-hint', form: 'hint' },
+          }],
+        }
+      }
+
+      const fs = ctx.get('fs')
+      if (fs === undefined) return decision
+      const cwd = session.header.cwd ?? process.cwd()
+
+      const projectFiles = []
+      const root = await findProjectRoot(fs, cwd, signal)
+      projectFiles.push(...await presentInDir(fs, root, PROJECT_CANDIDATES, signal))
+
+      const userGlobalFiles = []
+      try {
+        const dshHome = process.env.DSH_HOME ?? (process.env.USERPROFILE ? `${process.env.USERPROFILE}\\.dsh` : undefined)
+        if (dshHome !== undefined) {
+          userGlobalFiles.push(...await presentInDir(fs, dshHome, [USER_GLOBAL_CANDIDATE], signal))
+        }
+      } catch {
+        // Unreadable home probe — ignore.
+      }
+
+      const sections = []
+      if (projectFiles.length > 0) {
+        sections.push(`Workspace instruction files exist: ${projectFiles.join(', ')} (project root: ${root}).`)
+      }
+      if (userGlobalFiles.length > 0) {
+        sections.push(`A user-global instruction file exists: ${USER_GLOBAL_CANDIDATE}.`)
+      }
+      if (sections.length === 0) return decision
+
+      const text = [
+        ...sections,
+        'Do NOT assume their content. When a task touches this workspace, read the relevant instruction files first and follow them.',
+      ].join(' ')
+
+      return {
+        ...decision,
+        messages: [...decision.messages, {
+          id: `instruction-hint-${session.id}`,
+          role: 'user',
+          content: [{ type: 'text', text }],
+          source: { kind: 'instruction-hint', form: 'hint' },
+        }],
+      }
+    } catch (error) {
+      // A hint bug must never hurt the session: skip the hint.
+      warnOnce(`${name}: hint injection failed, skipping: ${String((error && error.message) || error)}`)
+      return decision
+    }
+  }, { prepend: true })
+}

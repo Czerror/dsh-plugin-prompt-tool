@@ -3,7 +3,7 @@
  *
  * 依据 dsh-router-standard 的 router-bootstrap 组装逻辑：
  *   - 只替换 persona 段，保留计划模式段与其他第三方 section；
- *   - 首轮隐藏 mnemon:* 自动注入段并清空 contexts，晋升后恢复；
+ *   - 首轮隐藏 mnemon:* 自动注入段，晋升后恢复（contexts 由 context-gate 清空/恢复）；
  *   - 按主会话模型自动选择 persona：
  *       Pro  → 官方训练原句；
  *       Flash → dsh-router-standard 的 Flash 弱路由人设（build/fix 分类 +
@@ -11,9 +11,12 @@
  *   - 子代理（委托深度 > 0）直接放行完整结果，保证 dsh-mnemon 等插件
  *     通过工具白名单要求的 mnemon_* 工具首轮可见。
  *
- * 工具目录裁剪仍由上游 tool-bootstrap 负责（首轮 = 真实 Minimal 工具对；
- * 晋升后 = resident 集），本模块不触碰 tools，避免两层过滤器冲突。
+ * 工具目录裁剪仍由 tool-bootstrap 负责（首轮 = 真实 Minimal 工具对；晋升后
+ * 恢复完整目录或切换 PTC），本模块不触碰 tools，避免两层过滤器冲突。
  */
+
+import { createEpochPromotion } from './compaction-epoch.mjs'
+import { isDelegated, isFlashModel, PROMOTE_EVENTS } from './shared.mjs'
 
 /** Cordis 插件名，供 loader 诊断使用。 */
 export const name = 'router-first-turn'
@@ -46,6 +49,9 @@ function isMnemonSection(section) {
 }
 
 export function apply(ctx) {
+  const promotion = createEpochPromotion(PROMOTE_EVENTS.either, { includeSubagents: false })
+  ctx.on('session/event', (session, event) => promotion.observe(session, event))
+
   ctx.on('system-prompt/assemble', async (_assembly, context, next) => {
     const assembled = await next()
     const agent = context.agent
@@ -54,17 +60,14 @@ export function apply(ctx) {
     if (session === undefined) return assembled
 
     // 子代理不裁剪任何 section/context：它与 dsh-mnemon 的工具白名单协作。
-    if ((session.header?.delegationDepth ?? 0) > 0) return assembled
+    if (isDelegated(session)) return assembled
 
-    const modelId = agent.options?.model
-    const persona = typeof modelId === 'string' && /flash/i.test(modelId) ? FLASH_PERSONA : RL_PERSONA
+    const persona = isFlashModel(agent.options?.model) ? FLASH_PERSONA : RL_PERSONA
 
     const sections = assembled.sections ?? []
-    const promoted = session.events.some((event) => event.type === 'tool/call')
+    const promoted = promotion.status(agent).promoted
     const kept = sections.filter((section) => !isPersonaSection(section) && (promoted || !isMnemonSection(section)))
-    const routerSections = [...kept, { name: 'router-persona', text: persona, order: 0 }]
-    return promoted
-      ? { ...assembled, sections: routerSections }
-      : { ...assembled, sections: routerSections, contexts: [] }
+    // contexts 由 context-gate 统一清空/恢复，本模块只替换 persona 与隐藏 mnemon 段。
+    return { ...assembled, sections: [...kept, { name: 'router-persona', text: persona, order: 0 }] }
   })
 }

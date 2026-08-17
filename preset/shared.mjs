@@ -1,0 +1,83 @@
+/**
+ * shared — small utilities shared by the prompt-tool preset scripts.
+ * Not a plugin row: no name/inject exports and no listeners.
+ */
+
+/** Durable session event types that count as a promotion signal per mode. */
+export const PROMOTE_EVENTS = {
+  'tool-call': ['tool/call'],
+  'assistant-message': ['assistant/message'],
+  either: ['tool/call', 'assistant/message'],
+}
+
+/** Parse the shared promoteOn vocabulary. */
+export function parsePromoteOn(pluginName, value) {
+  if (value === undefined || value === 'either') return PROMOTE_EVENTS.either
+  if (value === 'tool-call' || value === 'assistant-message') return PROMOTE_EVENTS[value]
+  throw new TypeError(`${pluginName}: promoteOn must be one of "tool-call", "assistant-message", "either"; got ${JSON.stringify(value)}`)
+}
+
+/** Validate an optional boolean config flag with a default. */
+export function booleanOption(pluginName, value, field, fallback) {
+  if (value === undefined) return fallback
+  if (typeof value !== 'boolean') {
+    throw new TypeError(`${pluginName}: ${field} must be a boolean`)
+  }
+  return value
+}
+
+/** Validate the shared config envelope and unknown-key contract. */
+export function validateConfig(pluginName, source, allowedKeys) {
+  const config = source === undefined ? {} : source
+  if (typeof config !== 'object' || config === null || Array.isArray(config)) {
+    throw new TypeError(`${pluginName}: config must be an object`)
+  }
+  const unknown = Object.keys(config).filter((key) => !allowedKeys.has(key))
+  if (unknown.length > 0) {
+    throw new TypeError(
+      `${pluginName}: unknown config key(s) ${unknown.join(', ')} — allowed keys: ${[...allowedKeys].sort().join(', ')}`,
+    )
+  }
+  return config
+}
+
+/** One-shot logger guard shared by filters that degrade instead of throwing. */
+export function createWarnOnce(ctx, pluginName) {
+  let warned = false
+  return (message) => {
+    if (warned) return
+    warned = true
+    try {
+      ctx.logger.warn(message)
+    } catch {
+      // Logger unavailable — the guard exists only to avoid spamming.
+    }
+  }
+}
+
+/** Random message id with a crypto.randomUUID fast path. */
+export function newMessageId(prefix) {
+  return typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+    ? crypto.randomUUID()
+    : `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2)}`
+}
+
+/** Extract plain text from a message or from a wrapped event data shape. */
+export function extractText(message) {
+  if (!message) return ''
+  const payload = message && typeof message.message === 'object' && message.message !== null
+    ? message.message
+    : message
+  const content = Array.isArray(payload.content) ? payload.content : []
+  return content.map((block) => (typeof block === 'string' ? block : (block?.text ?? ''))).join(' ').trim()
+}
+
+/** True for subagent sessions. */
+export function isDelegated(session) {
+  return (session?.header?.delegationDepth ?? 0) > 0
+}
+
+/** True when a model id looks like a Flash-family model. */
+export function isFlashModel(modelId) {
+  return typeof modelId === 'string' && /flash/i.test(modelId)
+}

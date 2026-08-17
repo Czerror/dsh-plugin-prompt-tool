@@ -11,10 +11,13 @@
  * 子代理不注入；首轮不注入（首句锚定由 near-anchor 负责）。
  */
 
+import { createEpochPromotion } from './compaction-epoch.mjs'
+import { extractText, isDelegated, isFlashModel, newMessageId, PROMOTE_EVENTS } from './shared.mjs'
+
 /** Cordis 插件名，供 loader 诊断使用。 */
 export const name = 'router-guide'
 
-/** 无服务依赖，只监听 pre-step 消息组装。 */
+/** 无服务依赖，只监听 session/event 与 pre-step。 */
 export const inject = []
 
 /** 复杂任务判定：长度或架构关键词。 */
@@ -23,26 +26,19 @@ const COMPLEX_RE = /(架构|重构|全面|详细|设计|系统|优化|分析|arc
 const GUIDE_WEAK = '\nRouter: classify this task (build or fix) now, then adopt the matching style — build: direct production; fix: inspect-first. Think deeply first, then commit and act.'
 const GUIDE_DEEP = '\nRouter: classify this task (build or fix) now, then adopt the matching style — build: direct production; fix: inspect-first. Think deeply about the architecture, edge cases, and integration points. Do not spend reasoning on the environment or tooling. Produce when your information is complete. End each reasoning block with a decision or an information need.'
 
-function newMessageId() {
-  return typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
-    ? crypto.randomUUID()
-    : `router-guide-${Date.now()}-${Math.random().toString(36).slice(2)}`
-}
+/** 宿主 UI 写入的默认编辑框文本；未改动时等价自动模式。 */
+const DEFAULT_GUIDE_TEXT = ['简单任务自动引导：', GUIDE_WEAK.trim(), '', '复杂任务自动引导：', GUIDE_DEEP.trim()].join('\n')
 
-function extractText(message) {
-  if (!message) return ''
-  const content = Array.isArray(message.content) ? message.content : []
-  return content.map((block) => (typeof block === 'string' ? block : (block?.text ?? ''))).join(' ').trim()
-}
+
 
 export function apply(ctx, config) {
   const useCustom = config?.useCustom === true
   const customText = typeof config?.text === 'string' ? config.text : ''
   const enabled = config?.enabled !== false
-  // 与宿主写入的默认内容一致：打开自定义但未改动默认文本时，等价自动模式。
-  const DEFAULT_GUIDE_TEXT = ['简单任务自动引导：', GUIDE_WEAK.trim(), '', '复杂任务自动引导：', GUIDE_DEEP.trim()].join('\n')
   const unchangedDefault = customText.trim() === DEFAULT_GUIDE_TEXT.trim()
-  const effectiveAuto = !useCustom || unchangedDefault
+
+  const promotion = createEpochPromotion(PROMOTE_EVENTS.either, { includeSubagents: false })
+  ctx.on('session/event', (session, event) => promotion.observe(session, event))
 
   ctx.on('agent/pre-step', async ({ agent }, next) => {
     const decision = await next()
@@ -51,14 +47,12 @@ export function apply(ctx, config) {
     const session = agent.session
     if (session === undefined) return decision
     // 子代理不注入。
-    if ((session.header?.delegationDepth ?? 0) > 0) return decision
+    if (isDelegated(session)) return decision
     // 自动模式只对 Flash 主会话注入；自定义开关打开后，Pro 与 Flash 一样注入。
-    const modelId = agent.options?.model
-    const isFlash = typeof modelId === 'string' && /flash/i.test(modelId)
+    const isFlash = isFlashModel(agent.options?.model)
     if (!useCustom && !isFlash) return decision
     // 晋升后才注入（首轮由 near-anchor 负责）。
-    const promoted = session.events.some((event) => event.type === 'tool/call' || event.type === 'assistant/message')
-    if (!promoted) return decision
+    if (!promotion.status(agent).promoted) return decision
 
     const messages = Array.isArray(decision.messages) ? decision.messages : []
     const userIndex = messages.findIndex((message) => message?.source?.kind === 'user')
@@ -75,7 +69,7 @@ export function apply(ctx, config) {
 
     const nextMessages = [...messages]
     nextMessages.splice(userIndex + 1, 0, {
-      id: newMessageId(),
+      id: newMessageId('router-guide'),
       role: 'user',
       content: [{ type: 'text', text: guide }],
       source: { kind: 'router-guide', plugin: 'router-guide', form: 'notice', summary: 'router-guide 每轮近距离引导' },
