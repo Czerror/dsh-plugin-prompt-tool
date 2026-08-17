@@ -128,8 +128,9 @@ dsh --profile web
 dsh plugin --profile prompt-tool remove dsh-plugin-prompt-tool
 ```
 
-首次启动还会把包内 `skills/` 增量复制到当前 profile 目录下的
-`$DSH_HOME/profiles/<profile>/skills`，并优先使用这份副本：已有同名文件不覆盖，
+首次启动还会把包内 `skills/` 增量复制到**本插件自己的 profile** 目录下的
+`$DSH_HOME/profiles/prompt-tool/skills`，并优先使用这份副本（从 `dsh web`
+或 `dsh-tui` 启动也一样写这里，不会写到 web/dsh-tui profile）：已有同名文件不覆盖，
 用户对副本的编辑会保留；包内新增技能文件会在下次启动补齐。想改回包内原始
 skills，删除该 `skills` 目录后重启即可（或在配置里显式设置 `skillsDir`）。
 
@@ -203,7 +204,7 @@ pnpm sync:anchored  # 从上游 main 刷新内联快照（可加 ref 参数）
         subagentFlashModel: 'deepseek-v4-flash'
         bootstrapMaxTokens: 0   # 首轮输出封顶：0=关闭；正整数=请求 #1 maxTokens
         usePtcMode: true  # 使用 PTC 模式：true=晋升后切换为 Code Mode（run_code）；false=恢复原生完整目录
-        skillsDir: ''       # 用户自定义技能目录；空 = 自动使用 profile 下 skills/ 副本
+        skillsDir: ''       # 用户自定义技能目录；空 = 自动使用 prompt-tool profile 下 skills/ 副本
         skillRankBase: 250  # 技能候选排序基数
         residentAgentsPath: ''  # 默认 ~/.dsh/AGENTS.md
         presetDir: ''       # 默认 ~/.dsh/.agent-presets/prompt-tool/
