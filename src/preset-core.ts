@@ -24,6 +24,18 @@ const ROUTER_FIRST_TURN_BLOCK = `# prompt-tool 本地附加件（最优组合）
   name: ./router-first-turn.mjs
 `
 
+const ROUTER_GUIDE_BLOCK = `# Flash 主会话每轮近距离深度引导（dsh-router-standard 方案）。
+# 模型为 Flash 且会话晋升后，每个真实用户消息之后追加固定引导。
+# useCustom=true 时固定使用 text；false 按任务自动选择。
+- id: router-guide
+  name: ./router-guide.mjs
+  config:
+    text: |-
+      __GUIDE_TEXT__
+    useCustom: __USE_GUIDE_CUSTOM__
+    enabled: __GUIDE_ENABLED__
+`
+
 const NEAR_ANCHOR_BLOCK = `# prompt-tool 近距离首句锚定：在首条真实用户消息之后追加一次性锚点。
 # 不拆轮、不挪任务；useCustom=false 时按任务自动选择 we/let 首句，
 # useCustom=true 时固定使用 anchorText。
@@ -70,6 +82,10 @@ export interface BuildCordisOptions {
   anchorText?: string
   /** 自定义锚点开关：true 固定使用 anchorText；false 按任务自动选择。 */
   anchorCustom?: boolean
+  /** 自定义每轮引导文本；guideCustom=true 时固定使用。 */
+  guideText?: string
+  /** 自定义每轮引导开关：true 固定使用 guideText；false 按任务自动选择。 */
+  guideCustom?: boolean
   /** 锚定确认后注入 preset.md；关闭时仍保留工具引导，但不注册 prompt-injector 行。 */
   injectPrompt?: boolean
   /** 子代理固定 Flash 模型：true 时给 subagent/subagent_fork 行加 agentOptions。 */
@@ -103,7 +119,7 @@ function normalizeContextGate(source: string): string {
   config:
     promoteOn: either
     includeSubagents: false
-    allowKinds: [skill-invocation, near-anchor]`
+    allowKinds: [skill-invocation, near-anchor, router-guide]`
   if (!source.includes(block)) throw new Error('vendor agent.cordis.yml missing context-gate row')
   return source.replace(block, replaced)
 }
@@ -150,6 +166,8 @@ ${persona}`
 export function buildCordis(prompt: string, options: BuildCordisOptions = {}): string {
   const anchorFirstTurn = options.anchorFirstTurn === true
   const anchorCustom = options.anchorCustom === true
+  const guideCustom = options.guideCustom === true
+  const guideText = typeof options.guideText === 'string' && options.guideText.length > 0 ? options.guideText : ''
   const injectPrompt = options.injectPrompt !== false
   const anchorText = typeof options.anchorText === 'string' && options.anchorText.length > 0
     ? options.anchorText
@@ -192,7 +210,11 @@ export function buildCordis(prompt: string, options: BuildCordisOptions = {}): s
 
   // 2) 按开关组装附加块：router-first-turn 恒启用（最优组合）；
   //    near-anchor 由 anchorFirstTurn 控制；prompt-injector 负责 promptText 注入。
-  const parts: string[] = [ROUTER_FIRST_TURN_BLOCK]
+  const guideBlock = ROUTER_GUIDE_BLOCK
+    .replace('    useCustom: __USE_GUIDE_CUSTOM__', `    useCustom: ${anchorFirstTurn && guideCustom}`)
+    .replace('    enabled: __GUIDE_ENABLED__', `    enabled: ${anchorFirstTurn}`)
+    .replace('    text: |-\n      __GUIDE_TEXT__', '    text: |-\n' + (guideText.length > 0 ? indent(guideText) : '      '))
+  const parts: string[] = [ROUTER_FIRST_TURN_BLOCK, guideBlock]
   if (anchorFirstTurn) {
     const anchorMarker = '    anchorText: |-\n      __ANCHOR_TEXT__'
     if (!NEAR_ANCHOR_BLOCK.includes(anchorMarker)) {
@@ -213,7 +235,7 @@ export function buildCordis(prompt: string, options: BuildCordisOptions = {}): s
 
   const extra = parts.join('\n')
   const out = head + separator + extra + '\n' + tail
-  if ((injectPrompt && out.includes('__PROMPT_TOOL_TEXT__')) || (anchorFirstTurn && (out.includes('__ANCHOR_TEXT__') || out.includes('__USE_CUSTOM__')))) {
+  if ((injectPrompt && out.includes('__PROMPT_TOOL_TEXT__')) || (anchorFirstTurn && (out.includes('__ANCHOR_TEXT__') || out.includes('__USE_CUSTOM__'))) || out.includes('__GUIDE_TEXT__') || out.includes('__USE_GUIDE_CUSTOM__') || out.includes('__GUIDE_ENABLED__')) {
     throw new Error('internal error: preset template placeholder was not replaced')
   }
 

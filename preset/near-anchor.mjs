@@ -33,9 +33,6 @@ const ANCHOR_INSPECT = "Start your reasoning with the exact sentence: 'We need t
 /** 复杂规划类：放行 Let 深度规划路径。 */
 const ANCHOR_DEEP = "Start your reasoning with the exact sentence: 'Let me think through the design before changing anything.'"
 
-/** Flash 模型附加三锚（回顾已完成 + 信息足够就产出 + 禁止环境检查/穷举）。 */
-const FLASH_ANCHORS = ' Before acting, briefly review what you have already done in this session and continue from where you left off; do not repeat completed steps. When you have gathered enough information, stop exploring and produce the deliverable. Do not run environment checks (echo, whoami, uname, node --version, date) or exhaustive grep/glob scans.'
-
 /** 生成消息 id：优先加密随机 id，旧运行时回退到随机串。 */
 function newMessageId() {
   return typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
@@ -60,7 +57,7 @@ function chooseAnchor(text, modelId, customText, useCustom) {
   if (COMPLEX_RE.test(text)) anchor = ANCHOR_DEEP
   else if (BUILD_RE.test(text)) anchor = ANCHOR_BUILD
   else anchor = ANCHOR_INSPECT
-  if (typeof modelId === 'string' && /flash/i.test(modelId)) return anchor + FLASH_ANCHORS
+  // Flash 主会话的 persona 已由 router-first-turn 注入三锚，这里不再重复。
   return anchor
 }
 

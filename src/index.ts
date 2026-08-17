@@ -39,11 +39,18 @@ const DEFAULT_SKILLS_DIR = SKILLS_DIR
 const DEFAULT_PRESET_ORDER = 5
 const DEFAULT_SKILL_RANK_BASE = 250
 
+// 自动每轮引导文本（与 preset/router-guide.mjs 保持同步）；作为每轮引导编辑框的默认内容。
+const AUTO_GUIDE_WEAK = '\nRouter: classify this task (build or fix) now, then adopt the matching style — build: direct production; fix: inspect-first. Think deeply first, then commit and act.'
+const AUTO_GUIDE_DEEP = '\nRouter: classify this task (build or fix) now, then adopt the matching style — build: direct production; fix: inspect-first. Think deeply about the architecture, edge cases, and integration points. Do not spend reasoning on the environment or tooling. Produce when your information is complete. End each reasoning block with a decision or an information need.'
+/** 每轮引导文本框的默认内容：写入自动引导的两段文本。 */
+const DEFAULT_GUIDE_TEXT = `简单任务自动引导：${AUTO_GUIDE_WEAK.trim()}\n\n复杂任务自动引导：${AUTO_GUIDE_DEEP.trim()}`
+
 // preset 模板文件（本项目自有快照；上游 agent.cordis.yml 与全部 *.mjs 直引 vendor 子模块）。
 const PRESET_TEMPLATE_META = fileURLToPath(new URL('../preset/preset.yml', import.meta.url))
 const PRESET_TEMPLATE_INJECTOR = fileURLToPath(new URL('../preset/prompt-injector.mjs', import.meta.url))
 const PRESET_TEMPLATE_ANCHOR = fileURLToPath(new URL('../preset/near-anchor.mjs', import.meta.url))
 const PRESET_TEMPLATE_ROUTER = fileURLToPath(new URL('../preset/router-first-turn.mjs', import.meta.url))
+const PRESET_TEMPLATE_GUIDE = fileURLToPath(new URL('../preset/router-guide.mjs', import.meta.url))
 const VENDOR_PRESET_DIR = fileURLToPath(new URL('../upstream/dsh-anchored-standard/preset', import.meta.url))
 
 export interface Config {
@@ -67,6 +74,10 @@ export interface Config {
   anchorText: string
   /** 自定义锚点开关：true 固定使用 anchorText；false 按任务自动选择。 */
   anchorCustom: boolean
+  /** 自定义每轮引导文本；guideCustom=true 时固定使用。 */
+  guideText: string
+  /** 自定义每轮引导开关：true 固定使用 guideText；false 按任务自动选择。 */
+  guideCustom: boolean
   /** 子代理固定 Flash 模型：开启时给 subagent/subagent_fork 行加固定 Flash 路由；关闭时子代理继承主会话路由，目录全量放行。 */
   subagentFlash: boolean
   /** 子代理 Flash 路由 provider（默认 deepseek-official）。 */
@@ -102,6 +113,8 @@ export const Config: z<Config> = z.object({
   anchorFirstTurn: z.boolean().default(false),
   anchorText: z.string().default(''),
   anchorCustom: z.boolean().default(false),
+  guideText: z.string().default(DEFAULT_GUIDE_TEXT),
+  guideCustom: z.boolean().default(false),
   subagentFlash: z.boolean().default(false),
   subagentFlashProvider: z.string().default('deepseek-official'),
   subagentFlashModel: z.string().default('deepseek-v4-flash'),
@@ -139,6 +152,8 @@ export interface PromptSettings {
   anchorFirstTurn: boolean
   anchorText: string
   anchorCustom: boolean
+  guideText: string
+  guideCustom: boolean
   subagentFlash: boolean
   /** 运行时检测：是否注册了 DeepSeek 模型路由（不写入 settings）。 */
   deepseekAvailable: boolean
@@ -158,6 +173,8 @@ const PromptSettingsSchema: z<PromptSettings> = z.object({
   anchorFirstTurn: z.boolean().default(false),
   anchorText: z.string().default(''),
   anchorCustom: z.boolean().default(false),
+  guideText: z.string().default(DEFAULT_GUIDE_TEXT),
+  guideCustom: z.boolean().default(false),
   subagentFlash: z.boolean().default(false),
   deepseekAvailable: z.boolean().default(true),
   injectPrompt: z.boolean().default(true),
@@ -180,6 +197,8 @@ interface RuntimeOptions {
   anchorFirstTurn: boolean
   anchorText: string
   anchorCustom: boolean
+  guideText: string
+  guideCustom: boolean
   subagentFlash: boolean
 }
 
@@ -414,7 +433,8 @@ const TUI_BOOLEAN_SWITCHES: ReadonlyArray<readonly [key: string, label: string]>
   ['injectPrompt', '锚定确认后注入 preset.md'],
   ['injectAgentsPrompt', '用 AGENTS.md 替换 instruction-hint 提示'],
   ['anchorFirstTurn', '追加任务引导'],
-  ['anchorCustom', '使用自定义引导'],
+  ['anchorCustom', '使用自定义引导（首句）'],
+  ['guideCustom', '使用自定义引导（每轮）'],
   ['subagentFlash', '子代理固定 Flash 模型'],
 ] as const
 
@@ -458,7 +478,7 @@ function registerTuiCommand(ctx: Context, getSource: () => PromptSettings, getDe
         const usage = (): CommandResult => ({
           kind: 'error',
           text: '用法：/prompt-tool status\n' +
-            '      /prompt-tool on|off|toggle <writeAgents|writePreset|injectPrompt|injectAgentsPrompt|anchorFirstTurn|anchorCustom|subagentFlash>\n' +
+            '      /prompt-tool on|off|toggle <writeAgents|writePreset|injectPrompt|injectAgentsPrompt|anchorFirstTurn|anchorCustom|guideCustom|subagentFlash>\n' +
             '      /prompt-tool skill <技能目录名> on|off|toggle',
         })
         const tokens = invocation.rawInput.trim().split(/\s+/).filter((token) => token.length > 0)
@@ -613,6 +633,8 @@ interface WritePresetOptions {
   anchorFirstTurn: boolean
   anchorText: string
   anchorCustom: boolean
+  guideText: string
+  guideCustom: boolean
   injectPrompt: boolean
   subagentFlash: boolean
   subagentFlashProvider: string
@@ -731,6 +753,8 @@ function writePreset(prompt: string, options: WritePresetOptions): void {
     anchorFirstTurn: options.anchorFirstTurn,
     anchorText: options.anchorText,
     anchorCustom: options.anchorCustom,
+    guideText: options.guideText,
+    guideCustom: options.guideCustom,
     injectPrompt: options.injectPrompt,
     subagentFlash: options.subagentFlash,
     subagentFlashProvider: options.subagentFlashProvider,
@@ -761,6 +785,7 @@ function writePreset(prompt: string, options: WritePresetOptions): void {
     rmSync(injectorPath, { force: true })
   }
   writeFileSync(join(presetDir, 'router-first-turn.mjs'), readFileSync(PRESET_TEMPLATE_ROUTER, 'utf8'), 'utf8')
+  writeFileSync(join(presetDir, 'router-guide.mjs'), readFileSync(PRESET_TEMPLATE_GUIDE, 'utf8'), 'utf8')
   // 清理历史版本的独立锚定轮快照；新版不再引用该文件。
   rmSync(join(presetDir, 'turn-anchor.mjs'), { force: true })
   const anchorPath = join(presetDir, 'near-anchor.mjs')
@@ -846,6 +871,8 @@ export function apply(ctx: Context, config: Config): void {
     anchorFirstTurn: config.anchorFirstTurn,
     anchorText: config.anchorText,
     anchorCustom: config.anchorCustom,
+    guideText: config.guideText,
+    guideCustom: config.guideCustom,
     subagentFlash: config.subagentFlash && getDeepseekAvailable(),
   }
 
@@ -862,6 +889,8 @@ export function apply(ctx: Context, config: Config): void {
     anchorFirstTurn: runtime.anchorFirstTurn,
     anchorText: normalizeAnchorText(runtime.anchorText),
     anchorCustom: runtime.anchorCustom,
+    guideText: runtime.guideText,
+    guideCustom: runtime.guideCustom,
     subagentFlash: runtime.subagentFlash,
     deepseekAvailable: getDeepseekAvailable(),
     injectPrompt: runtime.injectPrompt,
@@ -886,6 +915,8 @@ export function apply(ctx: Context, config: Config): void {
       anchorFirstTurn: typeof next.anchorFirstTurn === 'boolean' ? next.anchorFirstTurn : config.anchorFirstTurn,
       anchorText: normalizeAnchorText(typeof next.anchorText === 'string' ? next.anchorText : config.anchorText),
       anchorCustom: typeof next.anchorCustom === 'boolean' ? next.anchorCustom : config.anchorCustom,
+      guideText: typeof next.guideText === 'string' ? next.guideText : config.guideText,
+      guideCustom: typeof next.guideCustom === 'boolean' ? next.guideCustom : config.guideCustom,
       subagentFlash: (typeof next.subagentFlash === 'boolean' ? next.subagentFlash : config.subagentFlash) && getDeepseekAvailable(),
     }
     const promptChanged = next.promptText !== current
@@ -899,6 +930,8 @@ export function apply(ctx: Context, config: Config): void {
       || runtime.anchorFirstTurn !== nextRuntime.anchorFirstTurn
       || runtime.anchorText !== nextRuntime.anchorText
       || runtime.anchorCustom !== nextRuntime.anchorCustom
+      || runtime.guideText !== nextRuntime.guideText
+      || runtime.guideCustom !== nextRuntime.guideCustom
       || runtime.subagentFlash !== nextRuntime.subagentFlash
     // 首次必须写入：settings 与文件/config 一致时也不能跳过 preset/AGENTS 生成。
     if (!needsInitialApply && !promptChanged && !agentsChanged && !settingsChanged) return
@@ -914,6 +947,8 @@ export function apply(ctx: Context, config: Config): void {
     runtime.anchorFirstTurn = nextRuntime.anchorFirstTurn
     runtime.anchorText = nextRuntime.anchorText
     runtime.anchorCustom = nextRuntime.anchorCustom
+    runtime.guideText = nextRuntime.guideText
+    runtime.guideCustom = nextRuntime.guideCustom
     runtime.subagentFlash = nextRuntime.subagentFlash
     skillSwitches = runtime.skillSwitches
     if (skillSwitchesChanged) invalidateSkills?.()
@@ -936,6 +971,8 @@ export function apply(ctx: Context, config: Config): void {
         anchorFirstTurn: runtime.anchorFirstTurn,
         anchorText: runtime.anchorText,
         anchorCustom: runtime.anchorCustom,
+        guideText: runtime.guideText,
+        guideCustom: runtime.guideCustom,
         injectPrompt: runtime.injectPrompt,
         subagentFlash: runtime.subagentFlash,
         subagentFlashProvider: config.subagentFlashProvider,
@@ -964,6 +1001,8 @@ export function apply(ctx: Context, config: Config): void {
     anchorFirstTurn: config.anchorFirstTurn,
     anchorText: config.anchorText,
     anchorCustom: config.anchorCustom,
+    guideText: config.guideText,
+    guideCustom: config.guideCustom,
     subagentFlash: config.subagentFlash && getDeepseekAvailable(),
     deepseekAvailable: getDeepseekAvailable(),
     injectPrompt: config.injectPrompt,

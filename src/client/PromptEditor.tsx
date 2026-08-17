@@ -49,6 +49,8 @@ interface Fields {
   anchorFirstTurn: boolean
   anchorText: string
   anchorCustom: boolean
+  guideText: string
+  guideCustom: boolean
   subagentFlash: boolean
   injectPrompt: boolean
   skillSwitches: Record<string, boolean>
@@ -66,6 +68,8 @@ const EMPTY: Fields = {
   anchorFirstTurn: false,
   anchorText: '',
   anchorCustom: false,
+  guideText: '',
+  guideCustom: false,
   subagentFlash: false,
   injectPrompt: true,
   skillSwitches: {},
@@ -79,6 +83,8 @@ interface SwitchSnapshot {
   anchorFirstTurn: boolean
   anchorText: string
   anchorCustom: boolean
+  guideText: string
+  guideCustom: boolean
   subagentFlash: boolean
   injectPrompt: boolean
   skillSwitches: Record<string, boolean>
@@ -91,6 +97,8 @@ const EMPTY_SWITCHES: SwitchSnapshot = {
   anchorFirstTurn: false,
   anchorText: '',
   anchorCustom: false,
+  guideText: '',
+  guideCustom: false,
   subagentFlash: false,
   injectPrompt: true,
   skillSwitches: {},
@@ -103,6 +111,8 @@ const snapshotSwitches = (fields: Fields): SwitchSnapshot => ({
   anchorFirstTurn: fields.anchorFirstTurn,
   anchorText: fields.anchorText,
   anchorCustom: fields.anchorCustom,
+  guideText: fields.guideText,
+  guideCustom: fields.guideCustom,
   subagentFlash: fields.subagentFlash,
   injectPrompt: fields.injectPrompt,
   skillSwitches: { ...fields.skillSwitches },
@@ -115,6 +125,8 @@ const switchesEqual = (a: SwitchSnapshot, b: SwitchSnapshot): boolean =>
   && a.anchorFirstTurn === b.anchorFirstTurn
   && a.anchorText === b.anchorText
   && a.anchorCustom === b.anchorCustom
+  && a.guideText === b.guideText
+  && a.guideCustom === b.guideCustom
   && a.subagentFlash === b.subagentFlash
   && a.injectPrompt === b.injectPrompt
   && JSON.stringify(a.skillSwitches) === JSON.stringify(b.skillSwitches)
@@ -224,6 +236,8 @@ export function PromptEditor(props: PromptEditorProps): ReactNode {
         anchorFirstTurn: readBoolean(value, 'anchorFirstTurn', readBoolean(base, 'anchorFirstTurn', false)),
         anchorText: readString(value, 'anchorText') ?? readString(base, 'anchorText') ?? '',
         anchorCustom: readBoolean(value, 'anchorCustom', readBoolean(base, 'anchorCustom', false)),
+        guideText: readString(value, 'guideText') ?? readString(base, 'guideText') ?? '',
+        guideCustom: readBoolean(value, 'guideCustom', readBoolean(base, 'guideCustom', false)),
         subagentFlash: readBoolean(value, 'subagentFlash', readBoolean(base, 'subagentFlash', false)),
         injectPrompt: readBoolean(value, 'injectPrompt', readBoolean(base, 'injectPrompt', true)),
         skillSwitches: value.skillSwitches !== undefined || base.skillSwitches !== undefined
@@ -366,6 +380,8 @@ export function PromptEditor(props: PromptEditorProps): ReactNode {
       { op: 'set', path: ['anchorFirstTurn'], value: fieldsRef.current.anchorFirstTurn },
       { op: 'set', path: ['anchorText'], value: fieldsRef.current.anchorText },
       { op: 'set', path: ['anchorCustom'], value: fieldsRef.current.anchorCustom },
+      { op: 'set', path: ['guideText'], value: fieldsRef.current.guideText },
+      { op: 'set', path: ['guideCustom'], value: fieldsRef.current.guideCustom },
       { op: 'set', path: ['subagentFlash'], value: fieldsRef.current.subagentFlash },
       { op: 'set', path: ['injectPrompt'], value: fieldsRef.current.injectPrompt },
       { op: 'set', path: ['skillSwitches'], value: fieldsRef.current.skillSwitches },
@@ -376,7 +392,7 @@ export function PromptEditor(props: PromptEditorProps): ReactNode {
     () => setSavedSwitches(snapshotSwitches(fieldsRef.current)),
   )
 
-  const toggle = (key: 'injectAgentsPrompt' | 'anchorFirstTurn' | 'anchorCustom' | 'subagentFlash' | 'injectPrompt' | 'writeAgents' | 'writePreset') => {
+  const toggle = (key: 'injectAgentsPrompt' | 'anchorFirstTurn' | 'anchorCustom' | 'guideCustom' | 'subagentFlash' | 'injectPrompt' | 'writeAgents' | 'writePreset') => {
     if (key === 'subagentFlash' && !deepseekAvailable) {
       showNotice('error', '未检测到 DeepSeek 模型配置，子代理 Flash 开关不可用')
       return
@@ -562,7 +578,7 @@ export function PromptEditor(props: PromptEditorProps): ReactNode {
                 />
                 <span className={styles.rowText}>
                   <span className={styles.rowName}>追加任务引导</span>
-                  <span className={styles.rowDesc}>开启后在首条真实用户消息之后追加一句任务引导，不拆轮、不挪任务；内容按下方“使用自定义引导”开关选择</span>
+                  <span className={styles.rowDesc}>总开关：开启后在首条真实用户消息之后追加任务引导；关闭时下方首句与每轮的自定义开关、编辑框全部禁用</span>
                 </span>
               </label>
               <label className={styles.row}>
@@ -573,20 +589,46 @@ export function PromptEditor(props: PromptEditorProps): ReactNode {
                   onChange={() => toggle('anchorCustom')}
                 />
                 <span className={styles.rowText}>
-                  <span className={styles.rowName}>使用自定义引导</span>
+                  <span className={styles.rowName}>使用自定义引导（首句）</span>
                   <span className={styles.rowDesc}>开启时使用下方文本作为引导；关闭时忽略下方文本，按任务自动选择 we/let 引导</span>
                 </span>
               </label>
-              <label className={clsx(styles.rowStack, !fields.anchorFirstTurn && styles.rowDisabled)}>
+              <label className={clsx(styles.rowStack, (!fields.anchorFirstTurn || !fields.anchorCustom) && styles.rowDisabled)}>
                 <span className={styles.rowText}>
-                  <span className={styles.rowName}>自定义引导文本</span>
-                  <span className={styles.rowDesc}>仅在上方“使用自定义引导”开启时生效；关闭时自动文本优先</span>
+                  <span className={styles.rowName}>自定义引导文本（首句）</span>
+                  <span className={styles.rowDesc}>仅在上方“使用自定义引导（首句）”开启时生效；关闭时自动文本优先</span>
                 </span>
                 <textarea
                   className={styles.anchorInput}
                   value={fields.anchorText}
                   disabled={!fields.writePreset || !fields.anchorFirstTurn || !fields.anchorCustom}
                   onChange={(e) => patch({ anchorText: e.target.value })}
+                  onBlur={() => persistSwitches()}
+                  spellCheck={false}
+                />
+              </label>
+              <label className={styles.row}>
+                <input
+                  type="checkbox"
+                  checked={fields.guideCustom}
+                  disabled={!fields.writePreset || !fields.anchorFirstTurn}
+                  onChange={() => toggle('guideCustom')}
+                />
+                <span className={styles.rowText}>
+                  <span className={styles.rowName}>使用自定义引导（每轮）</span>
+                  <span className={styles.rowDesc}>开启时每轮固定使用下方文本作为引导；关闭时忽略下方文本，按任务自动选择</span>
+                </span>
+              </label>
+              <label className={clsx(styles.rowStack, (!fields.anchorFirstTurn || !fields.guideCustom) && styles.rowDisabled)}>
+                <span className={styles.rowText}>
+                  <span className={styles.rowName}>自定义引导文本（每轮）</span>
+                  <span className={styles.rowDesc}>仅在上方“使用自定义引导（每轮）”开启时生效；留空则不注入</span>
+                </span>
+                <textarea
+                  className={styles.anchorInput}
+                  value={fields.guideText}
+                  disabled={!fields.writePreset || !fields.anchorFirstTurn || !fields.guideCustom}
+                  onChange={(e) => patch({ guideText: e.target.value })}
                   onBlur={() => persistSwitches()}
                   spellCheck={false}
                 />

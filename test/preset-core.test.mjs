@@ -141,7 +141,43 @@ test('buildCordis 适配 context-gate：放行 near-anchor，子代理不关门'
   const row = doc.find((entry) => entry?.id === 'context-gate')
   assert.ok(row)
   assert.equal(row.config.includeSubagents, false)
-  assert.deepEqual(row.config.allowKinds, ['skill-invocation', 'near-anchor'])
+  assert.deepEqual(row.config.allowKinds, ['skill-invocation', 'near-anchor', 'router-guide'])
+})
+
+test('buildCordis 恒生成 router-guide 行，默认自动引导', () => {
+  const out = buildCordis('PROMPT')
+  const doc = parse(out, { logLevel: 'silent' })
+  const row = doc.find((entry) => entry?.id === 'router-guide')
+  assert.ok(row)
+  assert.equal(row.config.useCustom, false)
+  assert.equal(row.config.text, '')
+  assert.equal(row.config.enabled, false)
+})
+
+test('buildCordis 开启 anchorFirstTurn 时 router-guide 启用', () => {
+  const out = buildCordis('PROMPT', { anchorFirstTurn: true })
+  const doc = parse(out, { logLevel: 'silent' })
+  const row = doc.find((entry) => entry?.id === 'router-guide')
+  assert.ok(row)
+  assert.equal(row.config.enabled, true)
+  assert.equal(row.config.useCustom, false)
+})
+
+test('buildCordis guideCustom=true 时固定自定义每轮引导', () => {
+  const out = buildCordis('PROMPT', { anchorFirstTurn: true, guideCustom: true, guideText: 'CUSTOM GUIDE' })
+  assert.ok(!out.includes('__GUIDE_TEXT__'))
+  const doc = parse(out, { logLevel: 'silent' })
+  const row = doc.find((entry) => entry?.id === 'router-guide')
+  assert.ok(row)
+  assert.equal(row.config.enabled, true)
+  assert.equal(row.config.useCustom, true)
+  assert.equal(row.config.text, 'CUSTOM GUIDE')
+})
+
+test('buildCordis 恒生成 router-guide 行', () => {
+  const out = buildCordis('PROMPT')
+  const doc = parse(out, { logLevel: 'silent' })
+  assert.ok(doc.some((entry) => entry?.id === 'router-guide'))
 })
 
 test('buildCordis 默认把上游固定 bashPath 归一化为 bash.exe', () => {

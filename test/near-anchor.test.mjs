@@ -84,10 +84,11 @@ test('useCustom=true 且 anchorText 为空时不注入锚点', async () => {
   assert.equal(decision.messages[0].id, 'task-1')
 })
 
-test('Flash 模型追加三锚', async () => {
+test('Flash 模型不重复追加三锚（persona 已含）', async () => {
   const { step } = makeStep({ model: 'deepseek-v4-flash-7013' })
   const decision = await step([{ ...userTask, content: [{ type: 'text', text: '修复报错' }] }])
-  assert.match(decision.messages[1].content[0].text, /Do not run environment checks/)
+  assert.doesNotMatch(decision.messages[1].content[0].text, /Do not run environment checks/)
+  assert.match(decision.messages[1].content[0].text, /We need to inspect/)
 })
 
 test('同一进程后续 pre-step 不再追加锚点', async () => {

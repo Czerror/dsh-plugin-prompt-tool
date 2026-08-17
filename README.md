@@ -34,12 +34,44 @@ pnpm prepare        # npm publish / git install 前自动触发
 pnpm sync:anchored  # 从上游 main 刷新内联快照（可加 ref 参数）
 ```
 
-本插件挂载在独立 profile（`prompt-tool`）：
+安装到 `prompt-tool` profile：
 
 ```sh
+# 1. 先安装宿主服务（提供 webServer 等本插件依赖的服务）
+dsh plugin --profile prompt-tool add @deepseek-ai/dsh-web-app
+# 或使用 dsh-tui：dsh plugin --profile prompt-tool add @deepseek-harness-tui/dsh-tui
+
+# 2. npm 安装本插件（官方插件指令，自动加入 profile bundles）
+dsh plugin --profile prompt-tool add dsh-plugin-prompt-tool
+
+# 3. 本地开发安装（任选其一，会覆盖上一步的 registry 依赖）
 dsh plugin --profile prompt-tool add link:<本仓库绝对路径>
+
+# 4. 启动方式（任选）
 dsh --profile prompt-tool
+dsh web
+dsh-tui
+
+# 卸载
 dsh plugin --profile prompt-tool remove dsh-plugin-prompt-tool
+```
+
+本插件声明了 `dsh.bundle`，所以官方 `add` 会自动把它追加进
+`dsh.profile.bundles`；`dsh-base` 与 `dsh-web-app` 不会由本插件写入。
+如果启动时报 `waiting for service: webServer`，说明该 profile 缺少宿主
+服务，先执行第 1 步。等价的 profile 清单如下：
+
+```jsonc
+// <DSH_HOME>/profiles/prompt-tool/package.json
+"dsh": {
+  "profile": {
+    "bundles": [
+      "@deepseek-ai/dsh-base",
+      "@deepseek-ai/dsh-web-app",
+      "dsh-plugin-prompt-tool"
+    ]
+  }
+}
 ```
 
 临时调试可用官方 `--patch` 覆盖层（不落盘、不改 profile）：
@@ -56,9 +88,9 @@ dsh --profile prompt-tool --patch <cordis.yml>
 
 本插件把“首轮轨迹选择”和“后续完整能力”拆开：
 
-1. **干净首轮**：`context-gate` 清空首轮自动上下文并剥离自动注入；`tool-bootstrap` 只暴露 Minimal 两个工具；`router-first-turn` 把 persona 替换为训练原句。
+1. **干净首轮**：`context-gate` 清空首轮自动上下文并剥离自动注入；`tool-bootstrap` 只暴露 Minimal 两个工具；`router-first-turn` 按主会话模型替换 persona——Pro 用训练原句，Flash 自动采用 dsh-router-standard 的 Flash 弱路由人设（build/fix 分类 + 三锚 + 先深想再产出）。
 2. **晋升**：首次工具调用或助手回复落地后，目录进入 resident（常驻）集，上下文与注入恢复；工具按需解锁。
-3. **追加任务引导**：可选 `near-anchor`，在首条真实用户消息之后追加一次引导——默认按任务自动选择 we/let 首句，也可固定使用自定义文本。
+3. **追加任务引导**：可选 `near-anchor`，在首条真实用户消息之后追加一次引导——默认按任务自动选择 we/let 首句，也可固定使用自定义文本。Flash 主会话晋升后，`router-guide` 还会在每个真实用户消息后追加固定深度引导；首句与每轮分别有独立的自定义开关和文本框。
 4. **提示词注入**：we 锚定确认后，把 `preset.md` 作为用户消息注入一次；未确认最多等一轮兜底。
 5. **子代理**：目录直接全量放行（实际仍受调用方工具白名单过滤）；开启 `subagentFlash` 时，采用 dsh-router-standard 的 Flash 方案——固定 Flash 路由、任务分类人设与三锚。
 
@@ -81,8 +113,10 @@ dsh --profile prompt-tool --patch <cordis.yml>
         injectPrompt: true  # we 确认后注入 preset.md（默认 true）
         skillSwitches: {}   # 按 skills/* 目录名开关，未列出默认开启
         anchorFirstTurn: false  # 追加任务引导（默认关闭）
-        anchorText: ''      # 自定义引导文本
-        anchorCustom: false # 使用自定义引导（true=固定使用 anchorText；false=自动选择）
+        anchorText: ''      # 自定义引导文本（首句）
+        anchorCustom: false # 使用自定义引导（首句）
+        guideText: ''       # 自定义引导文本（每轮）；默认写入自动引导（简单/复杂两段）
+        guideCustom: false  # 使用自定义引导（每轮；仅 Flash 主会话晋升后生效）
         subagentFlash: false    # 子代理固定 Flash 模型（默认关闭）
         subagentFlashProvider: 'deepseek-official'
         subagentFlashModel: 'deepseek-v4-flash'
@@ -99,7 +133,8 @@ dsh --profile prompt-tool --patch <cordis.yml>
 
 - **启用锚定预设**：总开关。开启时生成并刷新 `~/.dsh/.agent-presets/prompt-tool/`；关闭时移除已生成目录，锚定相关开关失效。
 - **追加任务引导**：开启时挂载 `near-anchor`，在首条真实用户消息后追加一次任务引导。
-- **使用自定义引导**：开启时固定使用 `anchorText`；关闭时按任务自动选择 we/let 引导，Flash 模型附加三锚。开启且文本为空时不注入。
+- **使用自定义引导（首句）**：开启时固定使用 `anchorText`；关闭时按任务自动选择 we/let 首句。开启且文本为空时不注入。
+- **使用自定义引导（每轮）**：开启时每轮固定使用 `guideText`，Pro 与 Flash 都注入（便于对照测试）；关闭时按任务自动选择快速收敛/深度引导，仅 Flash 主会话晋升后由 router-guide 注入。留空则不注入。
 - **子代理固定 Flash 模型**：开启时采用 dsh-router-standard 的 Flash 子代理方案——通用子代理行加固定 Flash 路由、任务分类人设与三锚；宿主直派子代理（含 dsh-mnemon）自动补 Flash 路由，调用方显式模型优先。检测不到 DeepSeek 模型路由时 Web/TUI 禁用，且运行时强制降级为关闭。
 - **自定义 bash 路径**：上游若带作者机器固定路径，生成 preset 时归一化为该值，默认 PATH 查找 `bash.exe`。
 - 其他字段语义见上方配置注释；设置文件优先级高于挂载配置，首次安装时用项目文件内容初始化设置。
