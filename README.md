@@ -80,7 +80,7 @@ pnpm lint        # oxlint
 - preset 与 shell 访问具有相同信任等级，安装前可自行审阅 `upstream/` 与生成目录。
 - 插件只监听本机回环设置桥，不发起网络请求，也不增加遥测。
 - 不要在已经产生内容的会话中途切换 preset。
-- 需要 DSH 0.1.0-rc.5+（preset 机制与 `system-prompt/assemble` 钩子）。
+- 需要 DSH 0.1.0-rc.7+（preset 机制、`system-prompt/assemble` 钩子与 keyed `settings.plugin.item` 插槽）。
 
 ## 构建与上游管理
 

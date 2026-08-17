@@ -61,8 +61,8 @@ artifacts/（本地调试残留）。
 | 首轮输出预算 | `bootstrapMaxTokens: 1024` 固定 | **opt-in，默认无 cap**（adapter 默认 256000 流过） | 实测（issue #11）：Minimal schema 在 256000 下锚定 5/5（`We need` 首行、`we` 1.4、`let me` 0.0），而 pwsh/read 等标准家族 schema 在 256000 下 11/11 全失败——**工具 schema 是决定性变量，不是 cap** |
 | agent.cordis.yml 结构 | 无 Minimal 组 | 新增 `persistent-shell` 组（dsh-terminal + dsh-terminal-bash + dsh-tool-bash-persistent）与 `bootstrap-filesystem` 组（dsh-fs-local + dsh-tool-str-replace-editor），与官方 minimal 字节一致；`tool-bash` 行全平台禁用（避免 `bash` 名重复注册） | 完全复制；prompt-injector 仍插在 tool-bootstrap 行后 |
 | tool-bootstrap 参数 | `shellTools`+`commonTools` | `bootstrapTools: [bash, str_replace_editor]`；cap 监听器仅在显式设置 cap 时注册 | prompt-injector 逻辑不变（we 检测 + promoted 检测与参数无关） |
-| 验证工具 | 无 | `verify/run-verify.mjs` + `verify-runner.mjs`：preset-roster compose + CLI driver，`--stop-after-first-assistant` 只测首请求（秒级） | 本地 harness 源码未构建（`apps/cli/lib/bin.js` 不存在），暂继续用 prebuilt rc.6 的 dsh web HTTP API；将来构建 harness 后可切换 |
-| cap 行为差异 | — | rc.5 源码 checkout 上 cap 能到达首请求；rc.6 prebuilt 包会覆盖为 adapterDefaults | 与我们无关（默认不设 cap） |
+| 验证工具 | 无 | `verify/run-verify.mjs` + `verify-runner.mjs`：preset-roster compose + CLI driver，`--stop-after-first-assistant` 只测首请求（秒级） | 本地 harness 源码未构建（`apps/cli/lib/bin.js` 不存在），暂继续用 prebuilt rc.7 的 dsh web HTTP API；将来构建 harness 后可切换 |
+| cap 行为差异 | — | rc.5 源码 checkout 上 cap 能到达首请求；rc.6 prebuilt 包会覆盖为 adapterDefaults；rc.7 修复 max-tokens 截断后的 replay 续跑 | 默认不设 cap；开启 bootstrapMaxTokens 时 rc.7 更稳 |
 
 结论：**设计骨架不变**（完全复制原版 + prompt-injector 附加件），只是复制源更新为
 新版文件，测试断言从 `pwsh/read + 1024` 改为 `bash/str_replace_editor + 无 cap`。

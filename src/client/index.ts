@@ -13,10 +13,11 @@ export function apply(ctx: ClientContext): void {
     api: connection.api,
   })
 
+  // dsh 0.1.0-rc.7 起 settings.plugin.item 是 keyed slot，
+  // key = 插件 settings namespace（与 Host 端 settingsNamespace('prompt-tool') 对应）。
   ctx.slots.inject('settings.plugin.item', () => ctx.slots.register({
     name: 'settings.plugin.item',
-    id: 'prompt-tool',
-    order: 30,
+    key: 'prompt-tool',
     inject: injected,
   }, PromptEditor))
 }
