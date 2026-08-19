@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { parseFrontmatter, createCachedSkillsReader, readSkills, validSkills, SKILL_NAME_RE } from '../../lib/index.mjs'
@@ -89,6 +89,29 @@ test('readSkills：无 frontmatter 时回退目录名；SKILL.md 缺失的目录
     assert.equal(entries.find((entry) => entry.folder === 'broken-skill'), undefined)
     assert.equal(entries.find((entry) => entry.folder === '.hidden'), undefined)
     assert.equal(validSkills(entries).length, 1)
+  } finally {
+    cleanup()
+  }
+})
+
+test('readSkills：junction/符号链接技能目录被跟随并标记 linked', () => {
+  const { dir, cleanup } = makeDir()
+  try {
+    // 真实技能目录（含 SKILL.md）+ junction 链接挂入扫描根（模拟 Windows 链接挂载）。
+    const real = writeSkill(dir, 'real-skill', '---\nname: linked-skill\ndescription: Linked\n---\nBODY')
+    const linkedRoot = join(dir, 'linked-root')
+    mkdirSync(linkedRoot, { recursive: true })
+    try {
+      symlinkSync(real, join(linkedRoot, 'linked-skill'), 'junction')
+    } catch {
+      // 无权限创建链接时跳过该测试（如 CI 限制）。
+      return
+    }
+    const entries = readSkills(linkedRoot)
+    const linked = entries.find((entry) => entry.folder === 'linked-skill')
+    assert.ok(linked, 'junction 链接的技能应被扫描到')
+    assert.equal(linked.valid, true)
+    assert.equal(linked.linked, true)
   } finally {
     cleanup()
   }

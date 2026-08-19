@@ -247,6 +247,7 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
   const fieldsRef = useRef<Fields>(EMPTY_FIELDS)
   const revisionRef = useRef<number | undefined>(undefined)
   const saveQueueRef = useRef<Promise<void>>(Promise.resolve())
+  const loadSeqRef = useRef(0)
 
   const showNotice = useCallback((kind: 'ok' | 'error', message: string) => {
     setNotice(message)
@@ -270,9 +271,12 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
   }, [])
 
   const load = useCallback(async () => {
+    // 并发保护：慢的旧请求不得覆盖新请求（last-good 语义保留旧数据）。
+    const seq = ++loadSeqRef.current
     setLoading(true)
     try {
       const metaRes = await bridgePost<{ meta: EngineMeta }>('/meta', {})
+      if (seq !== loadSeqRef.current) return EMPTY_FIELDS
       if (metaRes.ok) setMeta(metaRes.value.meta)
       // 自定义 /describe 只用于拿到 live runtime facts（DeepSeek 检测、技能目录快照），
       // 标准 settings 分层数据来自 rc8 共享 describe mirror 的 scope。
@@ -280,6 +284,7 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
       await settings.ensure()
       const snapshot = await waitForScope(settings.scope)
       const res = bridgeViewFromScope(snapshot, runtime)
+      if (seq !== loadSeqRef.current) return EMPTY_FIELDS
       if (!res.ok) {
         showNotice('error', '读取配置失败：' + (res.message ?? ''))
         return EMPTY_FIELDS
@@ -291,7 +296,7 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
       showNotice('error', '读取失败：' + errorMessage(error))
       return EMPTY_FIELDS
     } finally {
-      setLoading(false)
+      if (seq === loadSeqRef.current) setLoading(false)
     }
   }, [applyView, settings, showNotice])
 

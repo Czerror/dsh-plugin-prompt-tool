@@ -420,7 +420,8 @@ function SkillsSettings(props: { store: PromptToolStore; api: IApiClient }): Rea
     <section className={ui.section} aria-labelledby="pt-skills-heading">
       <div className={ui.sectionHeading}>
         <div><h2 id="pt-skills-heading">Skills 设置</h2><p>{fields.skillCatalog.length} 个技能；拖动 ⠿ 排序即模型看到的先后顺序，排第一的技能最先被看到。关闭后立即注销，开启即恢复。</p></div>
-<div className={ui.sectionActions}>
+        <div className={ui.sectionActions}>
+          <button type="button" className={ui.pillButton} onClick={() => void store.load()}>刷新技能列表</button>
           <button type="button" className={ui.pillButton} disabled={!fields.activeSkillsDir && !fields.skillsDir} onClick={() => void store.openSkillsDir()}>打开技能目录</button>
         </div>
       </div>

@@ -187,6 +187,7 @@ export function apply(ctx: Context, configIn: Config): void {
     description: skill.description,
     valid: skill.valid,
     ...(skill.issue !== undefined ? { issue: skill.issue } : {}),
+    ...(skill.linked === true ? { linked: true } : {}),
     modelInvocable: skill.modelInvocable,
     userInvocable: skill.userInvocable,
   }))

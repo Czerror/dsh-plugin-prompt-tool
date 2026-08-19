@@ -153,6 +153,8 @@ export interface SkillEntry {
   valid: boolean
   /** invalid 条目的原因（可为空）。 */
   issue?: string
+  /** 通过符号链接/junction 挂入的目录（删除类操作需谨慎）。 */
+  linked?: boolean
   /** 官方调用策略：disable-model-invocation: true 时模型不可调用。 */
   modelInvocable: boolean
   /** 官方调用策略：user-invocable: false 时用户不可调用。 */
@@ -167,6 +169,8 @@ export interface SkillCatalogEntry {
   valid: boolean
   /** invalid 条目的原因。 */
   issue?: string
+  /** 通过符号链接/junction 挂入的目录（删除类操作需谨慎）。 */
+  linked?: boolean
   modelInvocable: boolean
   userInvocable: boolean
 }
