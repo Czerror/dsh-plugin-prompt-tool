@@ -5,6 +5,7 @@ import {
   bridgePost,
   type Fields,
   type PromptToolStore,
+  type PromptToolSettingsTransport,
   type SkillCatalogEntry,
   type SwitchKey,
   usePromptToolStore,
@@ -626,6 +627,7 @@ function SkillsSettings(props: { store: PromptToolStore; api: IApiClient }): Rea
 
 export interface PromptWorkspaceProps {
   api: IApiClient
+  settings: PromptToolSettingsTransport
   controller: PromptToolWorkspaceController
   onClose: () => void
 }
@@ -642,7 +644,7 @@ const ENTRY_PAGES: Array<{ id: EntryPage; label: string }> = [
 
 /** 侧边栏独立工作台：顶部六个层级标签 + Skills 设置。 */
 export function PromptWorkspace(props: PromptWorkspaceProps): ReactNode {
-  const store = usePromptToolStore(props.api)
+  const store = usePromptToolStore(props.api, props.settings)
   const [page, setPage] = useState<WorkspacePage>('pre-step')
   const [entryPage, setEntryPage] = useState<EntryPage>('switches')
   const open = useSyncExternalStore(

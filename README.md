@@ -34,7 +34,7 @@ dsh --profile prompt-tool
 
 ## 兼容性
 
-- 需要 DSH `0.1.0-rc.7+`（agent preset 机制、`system-prompt/assemble` 钩子、
+- 需要 DSH `0.1.0-rc.8+`（agent preset 机制、`system-prompt/assemble` 钩子、
   `agent/pre-step` 瀑布、`settings.section` 一级设置段（官方术语））。
 - 不硬编码内部实现：宿主面只用官方 Context 服务与事件 API
   （`systemPrompt` / `tools` / `llm` / `agent/*` / `session/*` / `tools/*`）。
@@ -55,8 +55,9 @@ dsh --profile prompt-tool
 - 🧩 **三源合并**：默认四条提示词配置 < `promptConfigsDir`（目录文件） <
   `promptConfigs`（settings 数组）——同名 `id` 覆盖、新 `id` 追加。
 - 🖥️ **提示词配置编辑器就绪**：设置面板主菜单一级 section（不占「插件」分类）只保留
-  提示词配置页：列表 / 单条表单 / 模板插入 / **目录导入** / 保存前权威校验；
-  `/api/prompt-tool/settings/describe` 输出完整提示词配置数据，
+  提示词配置页：列表 / 单条表单 / 模板插入 / **目录导入** / 保存前权威校验。
+  标准 settings 字段经 rc8 官方 `settingsScope`（共享 describe mirror）读写；
+  `/api/prompt-tool/settings/describe` 仍输出完整描述与 live runtime facts，
   `/api/prompt-tool/settings/configs-validate` 复用引擎校验，
   `/api/prompt-tool/settings/import-directory` 从本地目录导入并合并提示词配置，
   `/api/prompt-tool/settings/templates` 输出内置模板库。

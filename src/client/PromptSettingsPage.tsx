@@ -4,21 +4,21 @@ import clsx from 'clsx'
 import type { IApiClient } from '@deepseek-ai/dsh-client-connection/client'
 import type { InjectFace, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
-import type {} from '@deepseek-ai/dsh-client-ui-settings-plugins/client'
 import { PromptConfigsEditor } from './PromptConfigsEditor.tsx'
-import { usePromptToolStore } from './prompt-tool-store.ts'
+import { usePromptToolStore, type PromptToolSettingsTransport } from './prompt-tool-store.ts'
 import styles from './PromptUi.module.css'
 
 export interface PromptSettingsPageInjected {
   api: IApiClient
+  settings: PromptToolSettingsTransport
 }
 
 export type PromptSettingsPageProps = PropsRuntime<'settings.section'> & InjectFace<PromptSettingsPageInjected>
 
 /** 主设置页：只保留「提示词配置」区块（含目录导入）。 */
 export function PromptSettingsPage(props: PromptSettingsPageProps): ReactNode {
-  const { api } = props
-  const store = usePromptToolStore(api)
+  const { api, settings } = props
+  const store = usePromptToolStore(api, settings)
 
   useEffect(() => {
     void store.load()

@@ -1,11 +1,24 @@
 import { useCallback, useRef, useState } from 'react'
-import type { IApiClient } from '@deepseek-ai/dsh-client-connection/client'
+import type {
+  IApiClient,
+  SettingsNamespaceView,
+  SettingsPathOpView,
+} from '@deepseek-ai/dsh-client-connection/client'
+import type { SettingsScope, SettingsScopeSnapshot } from '@deepseek-ai/dsh-client-runtime/client'
 import type { PromptConfigDraft } from './PromptConfigsEditor.tsx'
 
 export const SETTINGS_BRIDGE_PREFIX = '/api/prompt-tool/settings'
 
-type BridgePathOp = { op: 'set' | 'unset'; path: string[]; value?: unknown }
 export interface BridgeSettingsView { ns: string; value: unknown; base?: unknown; revision: number }
+/** rc8 ui-settings 共享镜像传输面：标准字段经官方 settingsScope 读写。 */
+export interface PromptToolSettingsTransport {
+  /** 宿主注册的 prompt-tool settings namespace 绑定。 */
+  scope: SettingsScope<Record<string, unknown>>
+  /** 触发一次共享 describe mirror 读取（idle 时才真正发 RPC）。 */
+  ensure: () => Promise<void>
+  /** 批量 path-op 写入；成功后已把应答 fold 回共享 mirror。 */
+  mutate: (ops: SettingsPathOpView[], expectedRevision?: number) => Promise<SettingsNamespaceView>
+}
 export type BridgeResult<T> = { ok: true; value: T; deepseekAvailable?: boolean; deepseekProviders?: string[]; deepseekError?: string; activeSkillsDir?: string; skillCatalog?: SkillCatalogEntry[] } | { ok: false; code?: string; message?: string }
 
 export interface SkillCatalogEntry {
@@ -371,7 +384,51 @@ export interface PromptToolStore {
   dirty: boolean
 }
 
-export function usePromptToolStore(api: IApiClient): PromptToolStore {
+
+/** 等待共享 mirror 的首次应答离开 loading（ready/idle/unavailable 都会返回）。 */
+function waitForScope(scope: SettingsScope<Record<string, unknown>>): Promise<SettingsScopeSnapshot<Record<string, unknown>>> {
+  const current = scope.getSnapshot()
+  if (current.status !== 'loading') return Promise.resolve(current)
+  return new Promise((resolve) => {
+    const dispose = scope.subscribe(() => {
+      const next = scope.getSnapshot()
+      if (next.status === 'loading') return
+      dispose()
+      resolve(next)
+    })
+  })
+}
+
+/** 把 rc8 scope 快照 + 自定义 /describe 的 runtime facts 组装成旧 BridgeResult 视图。 */
+function bridgeViewFromScope(
+  snapshot: SettingsScopeSnapshot<Record<string, unknown>>,
+  runtime: BridgeResult<BridgeSettingsView>,
+): BridgeResult<BridgeSettingsView> {
+  if (snapshot.status !== 'ready' || snapshot.value === undefined) {
+    return {
+      ok: false,
+      message: snapshot.status === 'unavailable'
+        ? 'settings namespace "prompt-tool" is not exposed'
+        : 'settings namespace "prompt-tool" is not ready',
+    }
+  }
+  return {
+    ok: true,
+    value: {
+      ns: 'prompt-tool',
+      value: snapshot.value,
+      base: snapshot.base,
+      revision: snapshot.revision ?? 0,
+    },
+    deepseekAvailable: runtime.ok ? runtime.deepseekAvailable : undefined,
+    deepseekProviders: runtime.ok ? runtime.deepseekProviders : undefined,
+    deepseekError: runtime.ok ? runtime.deepseekError : undefined,
+    activeSkillsDir: runtime.ok ? runtime.activeSkillsDir : undefined,
+    skillCatalog: runtime.ok ? runtime.skillCatalog : undefined,
+  }
+}
+
+export function usePromptToolStore(api: IApiClient, settings: PromptToolSettingsTransport): PromptToolStore {
   const [deepseekAvailable, setDeepseekAvailable] = useState(false)
   const [deepseekProviders, setDeepseekProviders] = useState<string[]>([])
   const [deepseekError, setDeepseekError] = useState('')
@@ -420,7 +477,12 @@ export function usePromptToolStore(api: IApiClient): PromptToolStore {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const res = await bridgePost<BridgeSettingsView>('/describe', {})
+      // 自定义 /describe 只用于拿到 live runtime facts（DeepSeek 检测、技能目录快照），
+      // 标准 settings 分层数据来自 rc8 共享 describe mirror 的 scope。
+      const runtime = await bridgePost<BridgeSettingsView>('/describe', {})
+      await settings.ensure()
+      const snapshot = await waitForScope(settings.scope)
+      const res = bridgeViewFromScope(snapshot, runtime)
       if (!res.ok) {
         showNotice('error', '读取配置失败：' + (res.message ?? ''))
         return EMPTY_FIELDS
@@ -434,16 +496,17 @@ export function usePromptToolStore(api: IApiClient): PromptToolStore {
     } finally {
       setLoading(false)
     }
-  }, [applyView, showNotice])
+  }, [applyView, settings, showNotice])
 
   const refreshRevision = useCallback(async () => {
     try {
-      const res = await bridgePost<BridgeSettingsView>('/describe', {})
-      if (res.ok) revisionRef.current = res.value.revision
+      await settings.ensure()
+      const snapshot = await waitForScope(settings.scope)
+      if (snapshot.revision !== undefined) revisionRef.current = snapshot.revision
     } catch {
       // 刷新失败保持原 revision，用户可重试。
     }
-  }, [])
+  }, [settings])
 
   const patch = useCallback((partial: Partial<Fields>) => {
     const next = { ...fieldsRef.current, ...partial }
@@ -451,19 +514,14 @@ export function usePromptToolStore(api: IApiClient): PromptToolStore {
     setFields(next)
   }, [])
 
-  const enqueueSave = useCallback((ops: BridgePathOp[], okMessage: string | undefined, onSaved: () => void, setBusy?: (busy: boolean) => void) => {
+  const enqueueSave = useCallback((ops: SettingsPathOpView[], okMessage: string | undefined, onSaved: () => void, setBusy?: (busy: boolean) => void) => {
     setBusy?.(true)
     saveQueueRef.current = saveQueueRef.current.then(async () => {
       try {
-        const res = await bridgePost<BridgeSettingsView>('/mutate', { ops, expectedRevision: revisionRef.current })
-        if (res.ok) {
-          revisionRef.current = res.value.revision
-          onSaved()
-          if (okMessage) showNotice('ok', okMessage)
-        } else {
-          await refreshRevision()
-          showNotice('error', '保存失败：' + (res.message ?? '') + '（已刷新配置版本，可重试）')
-        }
+        const view = await settings.mutate(ops, revisionRef.current)
+        revisionRef.current = view.revision
+        onSaved()
+        if (okMessage) showNotice('ok', okMessage)
       } catch (error) {
         await refreshRevision()
         showNotice('error', '保存失败：' + errorMessage(error) + '（已刷新配置版本，可重试）')
@@ -471,7 +529,7 @@ export function usePromptToolStore(api: IApiClient): PromptToolStore {
         setBusy?.(false)
       }
     }).catch(() => {})
-  }, [refreshRevision, showNotice])
+  }, [refreshRevision, settings, showNotice])
 
   const savePrompt = useCallback(() => enqueueSave(
     [{ op: 'set', path: ['promptText'], value: fieldsRef.current.promptText }],

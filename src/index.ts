@@ -27,6 +27,7 @@ import { writePreset } from './engine/write-preset.ts'
 import {
   Config,
   DEFAULT_SKILLS_DIR,
+  DSH_HOME,
   NS,
   normalizeAnchorText,
   PromptSettings,
@@ -109,10 +110,18 @@ function normalizePresetValue(value: unknown): unknown {
   return value
 }
 
-/** hostDefaults 中的路径类字段展开 ~/，避免把字面量 `~` 目录写进进程 cwd。 */
+/** hostDefaults 中的路径类字段展开 ~/，避免把字面量 `~` 目录写进进程 cwd。
+ *  `~/.dsh/...` 特指 Harness home（${DSH_HOME} 或默认 ~/.dsh），
+ *  其余 `~/...` 才按操作系统 home 展开。 */
 const HOME_PATH_KEYS = new Set(['residentAgentsPath', 'presetDir', 'skillsDir'])
+const DSH_HOME_PREFIX = '~/.dsh'
 function normalizePresetPath(key: string, value: unknown): unknown {
   if (typeof value !== 'string' || !HOME_PATH_KEYS.has(key)) return value
+  if (value === DSH_HOME_PREFIX) return DSH_HOME
+  if (value.startsWith(DSH_HOME_PREFIX + '/') || value.startsWith(DSH_HOME_PREFIX + '\\')) {
+    const suffix = value.slice(DSH_HOME_PREFIX.length).replace(/^[/\\]+/, '')
+    return suffix.length > 0 ? join(DSH_HOME, suffix) : DSH_HOME
+  }
   if (value === '~') return homedir()
   if (value.startsWith('~/') || value.startsWith('~\\')) return join(homedir(), value.slice(2))
   return value

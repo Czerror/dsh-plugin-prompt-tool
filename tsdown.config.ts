@@ -8,7 +8,10 @@ import { transform } from 'lightningcss'
 
 const PLUGIN_ID = 'dsh-plugin-prompt-tool'
 
-/** 从 loader 模块表解析的外部（不打包）。 */
+/**
+ * rc8 client-modules baseline：全部是宿主 PLATFORM_MODULES / PRELOADED_CLIENT_EXTERNALS
+ * 表中的模块。它们从 loader 模块表解析，不打包进 lib/client.js。
+ */
 const CLIENT_EXTERNALS = [
   'react', 'react/jsx-runtime', 'react-dom', 'react-dom/client',
   'cordis',
@@ -46,6 +49,9 @@ const client: UserConfig = {
     alwaysBundle: (id: string) => (CLIENT_EXTERNALS.includes(id) ? undefined : true),
   },
   define: {
+    // rc8 client bundle build environment：先提供空 process.env 容器，
+    // 精确键的替换会覆盖该容器，避免内联依赖在浏览器里抛 ReferenceError。
+    'process.env': '{}',
     'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV ?? 'production'),
     'import.meta.env.MODE': JSON.stringify(process.env.NODE_ENV ?? 'production'),
     'import.meta.env': JSON.stringify({ MODE: process.env.NODE_ENV ?? 'production' }),
@@ -88,6 +94,8 @@ const client: UserConfig = {
   }],
   outputOptions: {
     entryFileNames: 'client.js',
+    // rc8 queue/live facade 契约：脚本执行只调用 load() 登记 factory；
+    // Host 在 module-system create() 前把登记放入 pendingQueue，create() 时切到 live 并排空。
     banner: `window.__ModuleLoader__.load({ id: ${JSON.stringify(PLUGIN_ID)}, factory: (require) => {`,
     footer: 'return module.exports; } });',
     intro: 'var module = { exports: {} }; var exports = module.exports;',
