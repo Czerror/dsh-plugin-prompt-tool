@@ -235,24 +235,26 @@ html[data-dsh-prompt-tool-active]:not([data-dsh-taskboard-active]):not([data-dsh
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--dsw-alias-label-tertiary) 12%, transparent);
 }
 
-.iconButton {
-  display: grid;
-  width: 28px;
-  height: 28px;
+.backButton {
+  display: inline-flex;
+  align-items: center;
   flex: 0 0 auto;
-  place-items: center;
-  border: 1px solid transparent;
-  border-radius: 8px;
-  padding: 0;
+  /* 固定右上角：brand 已占满左侧，此按钮保持最右。 */
+  margin-left: auto;
+  padding: 7px 16px;
+  border: 1px solid color-mix(in srgb, var(--dsw-alias-state-business-primary) 40%, var(--dsw-alias-border-l1));
+  border-radius: 999px;
   color: var(--dsw-alias-label-secondary);
   background: transparent;
   cursor: pointer;
-  font-size: 16px;
+  font: inherit;
+  font-size: 13px;
   line-height: 1;
+  white-space: nowrap;
   transition: color .14s ease, background-color .14s ease, border-color .14s ease, transform .14s ease;
 }
 
-.iconButton:hover {
+.backButton:hover {
   color: var(--dsw-alias-label-primary);
   border-color: var(--dsw-alias-border-l2);
   background: var(--dsw-alias-interactive-bg-hover);
@@ -440,13 +442,13 @@ html[data-dsh-prompt-tool-active]:not([data-dsh-taskboard-active]):not([data-dsh
   .brand h1 { font-size: 16px; }
   .brandLogo { width: 26px; height: 26px; }
   .statusCluster { display: none; }
-  /* 触控热区：入口与关闭按钮提升到接近 44px 命中区。 */
+  /* 触控热区：入口与返回按钮提升到接近 44px 命中区。 */
   .entry { height: 40px; }
-  .iconButton { width: 36px; height: 36px; }
+  .backButton { min-height: 40px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .iconButton,
+  .backButton,
   .entry,
   .nav button,
   .memoryTabs button { transition: none; }

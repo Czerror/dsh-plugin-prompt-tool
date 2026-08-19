@@ -633,7 +633,7 @@ export function PromptWorkspace(props: PromptWorkspaceProps): ReactNode {
           <span className={css.statusDot} data-state={store.loading ? 'checking' : 'online'} aria-hidden="true" />
           <span>{store.loading ? '读取中' : `${store.fields.promptConfigs.length} 配置 · ${enabledCount} 启用`}</span>
         </div>
-        <button type="button" className={css.iconButton} onClick={props.onClose} aria-label="关闭工作台">×</button>
+        <button type="button" className={css.backButton} onClick={props.onClose}>返回对话</button>
       </header>
 
       <div className={css.topNavigation}>
