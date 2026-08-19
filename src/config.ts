@@ -5,7 +5,8 @@ import type { SettingsNamespace } from '@deepseek-ai/dsh-settings'
 import { fileURLToPath } from 'node:url'
 import { join, resolve } from 'node:path'
 import { homedir } from 'node:os'
-import type { PromptConfigSpec } from './engine/prompt-configs.ts'
+import type { PromptConfigSpec } from './host/prompt-configs.ts'
+import { loadPresetSpec, packagePresetDir, resolvePresetParams } from './host/manifest.ts'
 
 export const NS: SettingsNamespace = settingsNamespace('prompt-tool')
 
@@ -41,11 +42,25 @@ export const DEFAULT_SKILLS_DIR = SKILLS_DIR
 export const DEFAULT_PRESET_ORDER = 5
 export const DEFAULT_SKILL_RANK_BASE = 250
 
-// 自动每轮引导文本（与 prompt-config-engine.mjs 的 guide-auto 策略保持同步）；作为每轮引导编辑框的默认内容。
-const AUTO_GUIDE_WEAK = '\nRouter: classify this task (build or fix) now, then adopt the matching style — build: direct production; fix: inspect-first. Think deeply first, then commit and act.'
-const AUTO_GUIDE_DEEP = '\nRouter: classify this task (build or fix) now, then adopt the matching style — build: direct production; fix: inspect-first. Think deeply about the architecture, edge cases, and integration points. Do not spend reasoning on the environment or tooling. Produce when your information is complete. End each reasoning block with a decision or an information need.'
+// 自动每轮引导文本：唯一来源是 preset/anchored/preset.yml 的 guideWeak / guideDeep。
+// 这里只负责读取 preset 参数并组装成 settings 编辑框默认内容，不再硬编码第二份文本。
+function loadGuideDefaults(): { weak: string; deep: string } {
+  try {
+    const spec = loadPresetSpec(join(packagePresetDir(), 'anchored'))
+    const params = resolvePresetParams(spec, {})
+    const weak = typeof params.guideWeak === 'string' ? params.guideWeak : ''
+    const deep = typeof params.guideDeep === 'string' ? params.guideDeep : ''
+    return { weak, deep }
+  } catch {
+    return { weak: '', deep: '' }
+  }
+}
+
+const GUIDE_DEFAULTS = loadGuideDefaults()
 /** 每轮引导文本框的默认内容：写入自动引导的两段文本。 */
-export const DEFAULT_GUIDE_TEXT = `简单任务自动引导：${AUTO_GUIDE_WEAK.trim()}\n\n复杂任务自动引导：${AUTO_GUIDE_DEEP.trim()}`
+export const DEFAULT_GUIDE_TEXT = GUIDE_DEFAULTS.weak.length > 0 || GUIDE_DEFAULTS.deep.length > 0
+  ? `简单任务自动引导：${GUIDE_DEFAULTS.weak.trim()}\n\n复杂任务自动引导：${GUIDE_DEFAULTS.deep.trim()}`
+  : ''
 
 /** 旧版“每块强制 we need”默认锚句；已存 settings 时归一化为自动模式。 */
 const LEGACY_ANCHOR_TEXT = [
@@ -71,6 +86,8 @@ export interface Config {
   writeAgents: boolean
   /** 是否生成锚定注入 preset（默认 true）。 */
   writePreset: boolean
+  /** 预设模板名（默认 anchored；其他模板时 anchored 专属 UI 可隐藏）。 */
+  presetTemplate: string
   /** 锚定层：we 锚定确认后是否注入 preset.md（默认 true）。 */
   injectPrompt: boolean
   /** 以技能目录名为键的逐技能开关，缺省视为 true。 */
@@ -123,6 +140,7 @@ export const Config: z<Config> = z.object({
   injectAgentsPrompt: z.boolean().default(false),
   writeAgents: z.boolean().default(true),
   writePreset: z.boolean().default(true),
+  presetTemplate: z.string().default('anchored'),
   injectPrompt: z.boolean().default(true),
   skillSwitches: z.dict(z.boolean()).default({}),
   skillOrder: z.array(z.string()).default([]),
@@ -217,6 +235,7 @@ export interface PromptSettings {
   fallbackText: string
   writeAgents: boolean
   writePreset: boolean
+  presetTemplate: string
   /** 用户自定义提示词配置（settings 层；UI 设置最后消费此数组渲染提示词配置编辑器）。 */
   promptConfigs: PromptConfigSpec[]
   /** 用户自定义提示词配置目录；空 = 不扫描。 */
@@ -261,6 +280,7 @@ export const PromptSettingsSchema: z<PromptSettings> = z.object({
   fallbackText: z.string().default(''),
   writeAgents: z.boolean().default(true),
   writePreset: z.boolean().default(true),
+  presetTemplate: z.string().default('anchored'),
   promptConfigs: z.array(PromptConfigEntrySchema).default([]) as unknown as z<PromptConfigSpec[]>,
   promptConfigsDir: z.string().default(''),
 })
@@ -268,6 +288,7 @@ export const PromptSettingsSchema: z<PromptSettings> = z.object({
 export interface RuntimeOptions {
   writeAgents: boolean
   writePreset: boolean
+  presetTemplate: string
   injectAgentsPrompt: boolean
   injectPrompt: boolean
   skillSwitches: Record<string, boolean>

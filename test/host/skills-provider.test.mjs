@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { parseFrontmatter } from '../../lib/preset-core.mjs'
-import { readSkills, validSkills, SKILL_NAME_RE } from '../../lib/index.mjs'
+import { createCachedSkillsReader, readSkills, validSkills, SKILL_NAME_RE } from '../../lib/index.mjs'
 
 const makeDir = () => {
   const dir = mkdtempSync(join(tmpdir(), 'prompt-tool-skills-'))
@@ -89,6 +89,31 @@ test('readSkills：无 frontmatter 时回退目录名；SKILL.md 缺失时保留
     assert.equal(broken.valid, false)
     assert.match(broken.issue, /不可读|不存在/)
     assert.equal(validSkills(entries).length, 1)
+  } finally {
+    cleanup()
+  }
+})
+
+test('createCachedSkillsReader：内容未变化时复用同一次扫描结果，变化后自动失效', () => {
+  const { dir, cleanup } = makeDir()
+  try {
+    writeSkill(dir, 'cached-skill', '---\nname: cached-skill\ndescription: v1\n---\nBODY-ONE')
+    const cached = createCachedSkillsReader()
+    const first = cached.read(dir)
+    const second = cached.read(dir)
+    assert.equal(first, second)
+    assert.equal(first[0].body, 'BODY-ONE')
+
+    writeSkill(dir, 'cached-skill', '---\nname: cached-skill\ndescription: v2\n---\nBODY-TWO-LONGER')
+    const third = cached.read(dir)
+    assert.notEqual(third, first)
+    assert.equal(third[0].body, 'BODY-TWO-LONGER')
+
+    const fourth = cached.read(dir)
+    assert.equal(fourth, third)
+    cached.invalidate(dir)
+    const fifth = cached.read(dir)
+    assert.notEqual(fifth, third)
   } finally {
     cleanup()
   }

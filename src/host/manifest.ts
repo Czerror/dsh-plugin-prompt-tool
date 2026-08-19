@@ -36,7 +36,7 @@ export interface PresetSpec {
   upstream?: Record<string, unknown>
 }
 
-/** 包根 preset/ 目录(配置/模板文件夹):兼容源码运行(src/engine)与打包运行(lib/)。 */
+/** 包根 preset/ 目录(配置/模板文件夹):兼容源码运行(src/host)与打包运行(lib/)。 */
 export function packagePresetDir(): string {
   const candidates = [
     new URL('../preset/', import.meta.url),
@@ -158,6 +158,7 @@ export function renderEngineTokens(params: Record<string, unknown>): Record<stri
     BOOTSTRAP_MAX_TOKENS: bootstrap,
     FLASH_PERSONA: JSON.stringify(flashPersona).slice(1, -1),
     SUBAGENT_FLASH: subagentFlashBlock,
+    ALLOW_KINDS: asString(params.allowKinds, '[skill-invocation, near-anchor, router-guide]'),
   }
 }
 

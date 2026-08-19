@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { applyPromptConfigs, createPromptConfigs as createPromptConfigsCore, inject, loadPromptConfigFiles, parsePromptConfigYaml } from '../../engine/prompt-config-engine.mjs'
 
-/** 引擎测试夹具使用包内 anchored 预设的策略目录(模板专属策略的唯一来源)。 */
+/** 引擎测试夹具使用包内 engine 目录作为自定义策略探测目录;内置策略不依赖 strategyDir。 */
 const STRATEGY_DIR = new URL('../../engine/', import.meta.url).href
 const createPromptConfigs = (specs, options = {}) =>
   createPromptConfigsCore(specs, { strategyDir: STRATEGY_DIR, ...options })
@@ -43,7 +43,7 @@ const agent = (overrides = {}) => ({
 test('parsePromptConfigYaml 解析嵌套 identity 与 block scalar 文本', () => {
   const doc = parsePromptConfigYaml([
     'id: prompt-injector',
-    'strategy: anchor-fallback',
+    'strategy: custom-fallback',
     'params:',
     '  text: |-',
     '    line one',
@@ -54,8 +54,9 @@ test('parsePromptConfigYaml 解析嵌套 identity 与 block scalar 文本', () =
     '# full-line comment',
   ].join('\n'))
   assert.equal(doc.id, 'prompt-injector')
-  assert.equal(doc.strategy, 'anchor-fallback')
-  assert.equal(createPromptConfigs([{ id: 'legacy', strategy: 'we-fallback' }])[0].strategy, 'we-fallback') // 兼容别名
+  assert.equal(doc.strategy, 'custom-fallback')
+  assert.equal(createPromptConfigs([{ id: 'legacy', strategy: 'custom-fallback' }])[0].strategy, 'custom-fallback')
+  assert.equal(createPromptConfigs([{ id: 'legacy', strategy: 'anchor-fallback' }])[0].strategy, 'custom-fallback') // 兼容别名归一化
   assert.equal(doc.params.text, 'line one\nline two')
   assert.deepEqual(doc.identity, { field: 'plugin', value: 'prompt-injector' })
 })
@@ -83,7 +84,13 @@ test('同位置多配置默认按声明顺序插入：near-anchor 与 router-gui
       dedupe: 'session',
       promotion: 'none',
       subagents: 'none',
-      params: {},
+      params: {
+        buildPattern: 'build',
+        complexPattern: 'complex',
+        anchorBuild: 'BUILD',
+        anchorInspect: 'INSPECT',
+        anchorDeep: 'DEEP',
+      },
     },
     {
       id: 'router-guide',
@@ -94,7 +101,11 @@ test('同位置多配置默认按声明顺序插入：near-anchor 与 router-gui
       promotion: 'main',
       subagents: 'none',
       modelScope: 'flash',
-      params: {},
+      params: {
+        guideComplexPattern: 'complex',
+        guideWeak: 'WEAK',
+        guideDeep: 'DEEP',
+      },
     },
   ]))
   const decision = await step(agent({ session: {
@@ -517,16 +528,16 @@ const assistantReasoning = (text) => ({
   data: { message: { content: [{ type: 'reasoning', text }] } },
 })
 
-test('anchor-fallback 支持自定义锚定词：命中「我是xxx」立即注入一次', async () => {
+test('custom-fallback 支持自定义锚定词：命中「我是xxx」立即注入一次', async () => {
   const { step } = makeHarness(createPromptConfigs([{
     id: 'anchor-custom',
-    strategy: 'anchor-fallback',
+    strategy: 'custom-fallback',
     position: 'before-all',
     dedupe: 'session',
     promotion: 'main',
     subagents: 'inherit',
     sourceKind: 'plugin',
-    params: { text: 'CONFIG_TEXT', anchorWord: '我是xxx' },
+    params: { text: 'CONFIG_TEXT', customAnchorWord: '我是xxx' },
   }]))
   const decision = await step(agent({ session: {
     id: 'ac1', header: { delegationDepth: 0 },
@@ -536,16 +547,16 @@ test('anchor-fallback 支持自定义锚定词：命中「我是xxx」立即注�
   assert.equal(decision.messages[0].content[0].text, 'CONFIG_TEXT')
 })
 
-test('anchor-fallback 自定义锚定词未命中时按两轮兜底', async () => {
+test('custom-fallback 自定义锚定词未命中时按两轮兜底', async () => {
   const { step } = makeHarness(createPromptConfigs([{
     id: 'anchor-custom2',
-    strategy: 'anchor-fallback',
+    strategy: 'custom-fallback',
     position: 'before-all',
     dedupe: 'session',
     promotion: 'main',
     subagents: 'inherit',
     sourceKind: 'plugin',
-    params: { text: 'FALLBACK_TEXT', anchorWord: '锚点A' },
+    params: { text: 'FALLBACK_TEXT', customAnchorWord: '锚点A' },
   }]))
   const oneRound = await step(agent({ session: {
     id: 'ac2', header: { delegationDepth: 0 },

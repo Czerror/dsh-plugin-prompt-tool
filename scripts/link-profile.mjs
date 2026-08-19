@@ -9,9 +9,10 @@
  * 缺链接时启动报 `Cannot find package '@linxin666/...' imported from <profile>`。
  *
  * 自 dsh-web-ui 的 scripts/link-profile.mjs 引入，差异：
- *   - 定位 .dsh 目录：`--dsh-home <dir>` > `DSH_HOME` 环境变量 > `$HOME/.dsh`
- *     （本机是 `D:\AI\DeepSeek harness\.dsh`，启动器不常驻 DSH_HOME 环境变量，
- *     裸跑脚本会错链到 ~/.dsh，务必显式传）；
+ *   - 定位 .dsh 目录：`--dsh-home <dir>` > `DSH_HOME` 环境变量（非空白）> `~/.dsh`
+ *     （与官方 @deepseek-ai/dsh-home-paths 的 resolveDshHome 语义一致：Windows 用
+ *     os.homedir() 不读 HOME 环境变量，支持 `~` 展开；本机真实目录
+ *     `D:\AI\DeepSeek harness\.dsh` 由 DSH_HOME 提供，裸跑无 DSH_HOME 时务必显式传）；
  *   - 定位 dsh-web-ui 仓库：`--repo <dir>` > `DSH_WEB_UI_REPO` 环境变量 >
  *     从兜底层 `dsh-web-ui-all` 链接目标反推（target/packages/dsh-web-ui-all）。
  *
@@ -27,6 +28,24 @@ import { homedir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 
 const FAMILY_SCOPE = '@linxin666/'
+
+/** 展开 `~`、`~/`、`~\` 前缀（与官方 @deepseek-ai/dsh-home-paths 的 expandHomePath 一致）。 */
+function expandHomePath(path) {
+  if (path === '~') return homedir()
+  if (path.startsWith('~/') || path.startsWith('~\\')) return join(homedir(), path.slice(2))
+  return path
+}
+
+/**
+ * 纯决策：解析 dsh home。优先级 `--dsh-home` > `$DSH_HOME`（空白视为未设置）> `~/.dsh`，
+ * 与官方 resolveDshHome 语义一致。
+ */
+export function resolveDshHomeArg(args, env = process.env) {
+  const fromArgs = argValue(args, '--dsh-home')
+  const fromEnv = env.DSH_HOME
+  const raw = fromArgs ?? (fromEnv !== undefined && fromEnv.trim() ? fromEnv : join(homedir(), '.dsh'))
+  return resolvePath(expandHomePath(raw))
+}
 
 /**
  * 纯决策：链接点当前状态 + 期望 target 下应执行什么动作。
@@ -89,8 +108,7 @@ function main() {
   const DRY = args.includes('--dry-run')
   const report = (msg) => console.log(`[link-profile] ${msg}`)
 
-  const dshHome = argValue(args, '--dsh-home') ?? process.env.DSH_HOME
-    ?? (process.env.HOME ? join(process.env.HOME, '.dsh') : join(homedir(), '.dsh'))
+  const dshHome = resolveDshHomeArg(args)
   if (!dshHome) {
     console.error('[link-profile] cannot determine .dsh dir; pass --dsh-home <dir> or set DSH_HOME')
     process.exit(1)

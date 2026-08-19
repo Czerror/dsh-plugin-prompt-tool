@@ -12,9 +12,9 @@ import { rmSync, watch, type FSWatcher } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
-import { loadPresetContent, loadPresetSpec, packagePresetDir } from './engine/manifest.ts'
-import type { PresetSpec } from './engine/manifest.ts'
-import { readSkills } from './runtime/skills-provider.ts'
+import { loadPresetContent, loadPresetSpec, packagePresetDir } from './host/manifest.ts'
+import type { PresetSpec } from './host/manifest.ts'
+import { createCachedSkillsReader } from './runtime/skills-provider.ts'
 import { ensureWebSurface } from './web-surface.ts'
 import { resolveProfileSkillsDir } from './profile-skills.ts'
 import { detectDeepseek, installSubagentFlashRoute } from './runtime/deepseek.ts'
@@ -23,7 +23,7 @@ import { registerSettingsBridge } from './runtime/settings-bridge.ts'
 import { registerTuiCommand } from './runtime/tui.ts'
 import { ensureSettingsRegistered } from './runtime/settings-registration.ts'
 import { removeResidentAgentsBlock, writeAgents } from './runtime/agents-file.ts'
-import { writePreset } from './engine/write-preset.ts'
+import { writePreset } from './host/write-preset.ts'
 import {
   Config,
   DEFAULT_SKILLS_DIR,
@@ -50,7 +50,7 @@ export const inject = ['skills', 'commands', 'llm', 'subagents']
 const PRESET_FILE_URL = new URL('../preset/anchored/preset.yml', import.meta.url)
 const PRESET_FILE_PATH = fileURLToPath(PRESET_FILE_URL)
 const AGENTS_FILE_PATH = PRESET_FILE_PATH
-/** 模板专属策略目录(anchored 策略已全部内置;自定义模板声明 strategyDir 时再启用)。 */
+/** 模板专属策略目录:当前 anchored 策略为引擎内置,自定义模板可通过 settings bridge 注入。 */
 const ENGINE_STRATEGY_DIR_URL = ''
 
 function readPromptFile(fallbackText: string): string {
@@ -184,7 +184,8 @@ export function apply(ctx: Context, configIn: Config): void {
   //  2) provider 层严格——只有 valid=true 的候选注册给模型；
   //  3) 文件 watcher——目录变化时重扫 catalog 并 invalidateSkills。
   const skillWarned = new Set<string>()
-  const readSkillsChecked = (dir: string) => readSkills(dir, (message) => {
+  const cachedSkills = createCachedSkillsReader()
+  const readSkillsChecked = (dir: string) => cachedSkills.read(dir, (message) => {
     if (skillWarned.has(message)) return
     skillWarned.add(message)
     warn(ctx, message)
@@ -217,7 +218,7 @@ export function apply(ctx: Context, configIn: Config): void {
         skillsWatcherTimer = setTimeout(() => {
           skillsWatcherTimer = undefined
           skillCatalog = catalogOf(readSkillsChecked(activeSkillsDir))
-          invalidateSkills?.()
+          cachedSkills.invalidate(activeSkillsDir); invalidateSkills?.()
         }, 300)
       })
     } catch {
@@ -229,6 +230,7 @@ export function apply(ctx: Context, configIn: Config): void {
   /** 切换生效技能目录并刷新目录快照（供 describe / TUI 显示）。 */
   const applyActiveSkillsDir = (dir: string): void => {
     activeSkillsDir = dir
+    cachedSkills.invalidate(dir)
     skillCatalog = catalogOf(readSkillsChecked(dir))
     watchActiveSkillsDir()
   }
@@ -312,7 +314,7 @@ export function apply(ctx: Context, configIn: Config): void {
     () => {
       // 一键修复后立即重扫目录并失效官方 registry 缓存。
       skillCatalog = catalogOf(readSkillsChecked(activeSkillsDir))
-      invalidateSkills?.()
+      cachedSkills.invalidate(activeSkillsDir); invalidateSkills?.()
     },
   )
 
@@ -327,6 +329,7 @@ export function apply(ctx: Context, configIn: Config): void {
   const runtime: RuntimeOptions = {
     writeAgents: config.writeAgents,
     writePreset: config.writePreset,
+    presetTemplate: typeof config.presetTemplate === 'string' && config.presetTemplate.length > 0 ? config.presetTemplate : 'anchored',
     injectAgentsPrompt: config.injectAgentsPrompt,
     injectPrompt: config.injectPrompt,
     skillSwitches: { ...config.skillSwitches },
@@ -385,6 +388,7 @@ export function apply(ctx: Context, configIn: Config): void {
     fallbackText: runtime.fallbackText,
     writeAgents: runtime.writeAgents,
     writePreset: runtime.writePreset,
+    presetTemplate: runtime.presetTemplate,
     promptConfigs: runtime.promptConfigs,
     promptConfigsDir: runtime.promptConfigsDir,
   })
@@ -398,6 +402,7 @@ export function apply(ctx: Context, configIn: Config): void {
     const nextRuntime: RuntimeOptions = {
       writeAgents: typeof next.writeAgents === 'boolean' ? next.writeAgents : config.writeAgents,
       writePreset: typeof next.writePreset === 'boolean' ? next.writePreset : config.writePreset,
+      presetTemplate: typeof next.presetTemplate === 'string' && next.presetTemplate.length > 0 ? next.presetTemplate : 'anchored',
       injectAgentsPrompt: typeof next.injectAgentsPrompt === 'boolean' ? next.injectAgentsPrompt : config.injectAgentsPrompt,
       injectPrompt: typeof next.injectPrompt === 'boolean' ? next.injectPrompt : config.injectPrompt,
       skillSwitches: next.skillSwitches !== undefined ? next.skillSwitches : config.skillSwitches,
@@ -430,6 +435,7 @@ export function apply(ctx: Context, configIn: Config): void {
     const fallbackTextChanged = runtime.fallbackText !== nextRuntime.fallbackText
     const settingsChanged = runtime.writeAgents !== nextRuntime.writeAgents
       || runtime.writePreset !== nextRuntime.writePreset
+      || runtime.presetTemplate !== nextRuntime.presetTemplate
       || runtime.injectAgentsPrompt !== nextRuntime.injectAgentsPrompt
       || runtime.injectPrompt !== nextRuntime.injectPrompt
       || skillSwitchesChanged
@@ -461,6 +467,7 @@ export function apply(ctx: Context, configIn: Config): void {
     if (agentsChanged) currentAgents = next.agentsText
     runtime.writeAgents = nextRuntime.writeAgents
     runtime.writePreset = nextRuntime.writePreset
+    runtime.presetTemplate = nextRuntime.presetTemplate
     runtime.injectAgentsPrompt = nextRuntime.injectAgentsPrompt
     runtime.injectPrompt = nextRuntime.injectPrompt
     runtime.skillSwitches = nextRuntime.skillSwitches
@@ -488,9 +495,9 @@ export function apply(ctx: Context, configIn: Config): void {
     skillRankBase = runtime.skillRankBase
     if (skillsDirChanged) {
       applyActiveSkillsDir(resolveActiveSkillsDir(runtime.skillsDir))
-      invalidateSkills?.()
+      cachedSkills.invalidate(activeSkillsDir); invalidateSkills?.()
     } else if (skillSwitchesChanged || skillOrderChanged || skillRankBaseChanged) {
-      invalidateSkills?.()
+      cachedSkills.invalidate(activeSkillsDir); invalidateSkills?.()
     }
 
     let residentAgentsWritten = false
@@ -524,6 +531,7 @@ export function apply(ctx: Context, configIn: Config): void {
         presetOrder: runtime.presetOrder,
         promptConfigs: runtime.promptConfigs,
         promptConfigsDir: runtime.promptConfigsDir,
+        presetTemplate: runtime.presetTemplate,
         warn: (message) => warn(ctx, message),
       })
     } else {
@@ -566,6 +574,7 @@ export function apply(ctx: Context, configIn: Config): void {
     fallbackText: config.fallbackText,
     writeAgents: config.writeAgents,
     writePreset: config.writePreset,
+    presetTemplate: typeof config.presetTemplate === 'string' && config.presetTemplate.length > 0 ? config.presetTemplate : 'anchored',
     promptConfigs: Array.isArray(config.promptConfigs) ? config.promptConfigs : [],
     promptConfigsDir: typeof config.promptConfigsDir === 'string' ? config.promptConfigsDir : '',
   }
@@ -613,14 +622,20 @@ export function apply(ctx: Context, configIn: Config): void {
 
 // 公共 API：宿主与测试复用 settings schema 与提示词配置权威校验。
 export { Config, PromptSettingsSchema } from './config.ts'
+export { writePreset } from './host/write-preset.ts'
+export { ensureWebSurface, resolveProfileDir } from './web-surface.ts'
+export { resolveProfileSkillsDir } from './profile-skills.ts'
+export type { WritePresetOptions } from './host/write-preset.ts'
 export { validatePromptConfigs } from './runtime/configs-validate.ts'
+export { registerSettingsBridge } from './runtime/settings-bridge.ts'
 export type { PromptConfigValidationError, PromptConfigValidationResult } from './runtime/configs-validate.ts'
-export { loadPromptTemplates } from './engine/templates.ts'
-export type { PromptConfigTemplate } from './engine/templates.ts'
+export { loadPromptTemplates } from './host/templates.ts'
+export type { PromptConfigTemplate } from './host/templates.ts'
 export { registerTuiCommand } from './runtime/tui.ts'
 export { ensureSettingsRegistered } from './runtime/settings-registration.ts'
 export type { SettingsRegistrationHooks } from './runtime/settings-registration.ts'
-export { readSkills, listSkillFolders, isValidSkill, validSkills, SKILL_NAME_RE } from './runtime/skills-provider.ts'
+export { createCachedSkillsReader, readSkills, listSkillFolders, isValidSkill, validSkills, SKILL_NAME_RE } from './runtime/skills-provider.ts'
+export type { CachedSkillsReader } from './runtime/skills-provider.ts'
 export { fixSkillEntry, toKebabName } from './runtime/skill-fix.ts'
 export type { SkillFixResult } from './runtime/skill-fix.ts'
 export type { SkillEntry, SkillCatalogEntry } from './config.ts'

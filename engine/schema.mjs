@@ -86,7 +86,7 @@ export function loadPromptConfigFiles(dirUrl) {
   return specs
 }
 
-export const KNOWN_STRATEGIES = new Set(['static', 'placeholder', 'instruction-hint', 'anchor-auto', 'guide-auto', 'anchor-fallback', 'we-fallback'])
+export const KNOWN_STRATEGIES = new Set(['static', 'placeholder', 'instruction-hint', 'anchor-auto', 'guide-auto', 'custom-fallback'])
 export const KNOWN_SLOT_KINDS = new Set(['ordered', 'anchor'])
 export const KNOWN_LAYERS = new Set(['pre-step', 'system-section', 'runtime-context', 'agent-request', 'llm-stream', 'tool-pipeline'])
 export const KNOWN_POSITIONS = new Set(['after-user', 'before-all', 'after-all'])
@@ -97,6 +97,45 @@ export const KNOWN_MERGE_MODES = new Set(['separate', 'merged'])
 export const KNOWN_MODEL_SCOPES = new Set(['all', 'pro', 'flash'])
 export const KNOWN_ROLES = new Set(['user', 'assistant'])
 export const KNOWN_FILLS = new Set(['instruction-hint', 'env-facts', 'skill-catalog'])
+
+/** 层能力矩阵：每个字段只在对应注入层生效。客户端表单据此动态渲染。 */
+export const LAYER_FIELD_POLICIES = {
+  'pre-step': { position: true, dedupe: true, promotion: true, subagents: true, modelScope: true, merge: true, order: true, priority: true, role: true, placeholder: true },
+  'system-section': { position: false, dedupe: false, promotion: false, subagents: false, modelScope: false, merge: true, order: true, priority: true, role: false, placeholder: false },
+  'runtime-context': { position: false, dedupe: false, promotion: false, subagents: false, modelScope: false, merge: true, order: true, priority: true, role: false, placeholder: true },
+  'agent-request': { position: false, dedupe: false, promotion: false, subagents: true, modelScope: true, merge: false, order: false, priority: true, role: false, placeholder: false },
+  'llm-stream': { position: false, dedupe: false, promotion: false, subagents: false, modelScope: true, merge: false, order: false, priority: true, role: false, placeholder: false },
+  'tool-pipeline': { position: false, dedupe: false, promotion: false, subagents: true, modelScope: true, merge: false, order: false, priority: true, role: false, placeholder: false },
+}
+
+/** 层显示名与说明：由引擎统一下发，客户端不再各自维护。 */
+export const LAYER_LABELS = {
+  'pre-step': { title: '消息批层', detail: '官方默认层：agent/pre-step 消息批。支持 position / dedupe / promotion / subagents / mergeMode 与文本插值。' },
+  'system-section': { title: '系统段层', detail: 'system-section 静态层：注册即全局，由 order 与 params.complete / sectionName 控制。' },
+  'runtime-context': { title: '运行上下文', detail: 'runtime-context 层：static 按 order 注册，placeholder 单条生效，由 params.contextName 控制。' },
+  'agent-request': { title: '调用配置层', detail: 'agent-request 层：按 priority 注册，params.patch 改写请求配置。' },
+  'llm-stream': { title: '模型流层', detail: 'llm/stream 层：按 priority 注册，params.mode = pass | replace。' },
+  'tool-pipeline': { title: '工具管线层', detail: 'tools/* 层：按 priority 注册，params.toolNames 与 preDecision / postAction 控制。' },
+}
+
+/** 引擎能力矩阵：作为 /meta 的唯一数据源，客户端表单据此动态渲染。 */
+export function getEngineMeta() {
+  return {
+    layers: [...KNOWN_LAYERS].sort(),
+    strategies: [...KNOWN_STRATEGIES].sort(),
+    slotKinds: [...KNOWN_SLOT_KINDS].sort(),
+    positions: [...KNOWN_POSITIONS].sort(),
+    dedupes: [...KNOWN_DEDUPES].sort(),
+    promotions: [...KNOWN_PROMOTIONS].sort(),
+    subagentModes: [...KNOWN_SUBAGENT_MODES].sort(),
+    modelScopes: [...KNOWN_MODEL_SCOPES].sort(),
+    roles: [...KNOWN_ROLES].sort(),
+    mergeModes: [...KNOWN_MERGE_MODES].sort(),
+    fills: [...KNOWN_FILLS].sort(),
+    layerFieldPolicies: LAYER_FIELD_POLICIES,
+    layerLabels: LAYER_LABELS,
+  }
+}
 
 /** 从 YAML 提示词配置描述构造运行时提示词配置。配置错误必须在挂载时暴露(fail loud)。 */
 export function createPromptConfigs(specs, options = {}) {
@@ -110,7 +149,9 @@ export function createPromptConfigs(specs, options = {}) {
     if (typeof spec.id !== 'string' || spec.id.length === 0) {
       throw new TypeError(`${name}: ${label}.id must be a non-empty string`)
     }
-    const strategy = spec.strategy ?? 'static'
+    // anchor-fallback 是 custom-fallback 的兼容别名，统一归一化为 custom-fallback。
+    const rawStrategy = spec.strategy ?? 'static'
+    const strategy = rawStrategy === 'anchor-fallback' ? 'custom-fallback' : rawStrategy
     if (!KNOWN_STRATEGIES.has(strategy)) {
       // 模板专属策略:声明了 strategyDir 时由 strategies.bindResolver 懒加载,
       // 否则视为未知策略 fail loud。

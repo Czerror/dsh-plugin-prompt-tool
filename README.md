@@ -70,8 +70,8 @@ dsh --profile prompt-tool
   可直接复制的单条提示词配置；`/api/prompt-tool/settings/templates` 只读输出模板列表，
   编辑器"插入模板"直接消费。
 - 🧪 **内置五种内容策略**：`static`（固定文本/外部模板）、`anchor-auto`（任务自动
-  锚句）、`guide-auto`（弱/深度引导）、`anchor-fallback`（自定义锚定词命中后注入一次，
-  未命中最多等两轮兜底；`we-fallback` 为默认锚定词 `we` 的兼容别名）、`instruction-hint`（指令文件提示）；`placeholder` 动态填充器已含 `instruction-hint` / `env-facts` / `skill-catalog` 三个数据源。
+  锚句）、`guide-auto`（弱/深度引导）、`custom-fallback`（自定义锚定词命中后注入一次，
+  未命中最多等两轮兜底；旧别名 `anchor-fallback` 会自动归一化为 `custom-fallback`）、`instruction-hint`（指令文件提示）；`placeholder` 动态填充器已含 `instruction-hint` / `env-facts` / `skill-catalog` 三个数据源。
 - 🛡️ **失败不伤会话**：单条提示词配置失败只跳过该提示词配置并 `warnOnce`；配置错误（未知 layer /
   strategy / fill、坏 yml）在挂载时 fail loud。
 - 🔁 **持久幂等**：`dedupe: session` 的提示词配置以持久 session events 判重，进程重启 /
@@ -97,9 +97,9 @@ dsh --profile prompt-tool
   自由拼接；`agent-request / llm-stream / tool-pipeline` 按 `priority` 排序注册。
 - `priority`：数值小者更靠近插入锚点；同值保持配置声明顺序，同时决定 `merged`
   组内的拼接顺序。单条配置用 `texts` 数组可一次注入多个 text 内容块。
-- `anchor-fallback`：`params.anchorWord` 默认 `"we"`，可自定义任意锚定词（如
-  `"我是xxx"`）。晋升后首个 reasoning 命中锚定词立即注入一次；未命中最多等满两轮
-  assistant 消息兜底注入。
+- `custom-fallback`：`params.customAnchorWord` 默认 `"we"`，可自定义任意锚定词（如
+  `"我是xxx"`）；兼容旧参数 `anchorWord`。晋升后首个 reasoning 命中锚定词立即注入一次；
+  未命中最多等满两轮 assistant 消息兜底注入。
 - `dedupe: session` 按持久 session events 幂等；`batch` 只对当前消息批去重。
 - `promotion`：`none` 不要求晋升；`main` 主会话晋升状态；`include-subagents`
   子代理跟随自身晋升状态。

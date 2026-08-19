@@ -1,0 +1,116 @@
+import { test } from 'node:test'
+import assert from 'node:assert/strict'
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { writePreset } from '../../lib/index.mjs'
+
+const root = fileURLToPath(new URL('../..', import.meta.url))
+const sourceEngineDir = join(root, 'engine')
+
+function listFiles(dir) {
+  const out = []
+  const walk = (current) => {
+    for (const entry of readdirSync(current, { withFileTypes: true })) {
+      const full = join(current, entry.name)
+      if (entry.isDirectory()) walk(full)
+      else out.push(full)
+    }
+  }
+  if (existsSync(dir)) walk(dir)
+  return out.sort()
+}
+
+function makeOptions(presetDir) {
+  return {
+    anchorFirstTurn: false,
+    anchorText: '',
+    anchorCustom: false,
+    guideText: '',
+    guideCustom: false,
+    injectPrompt: true,
+    subagentFlash: false,
+    subagentFlashProvider: 'deepseek-official',
+    subagentFlashModel: 'deepseek-v4-flash',
+    bootstrapMaxTokens: 0,
+    usePtcMode: true,
+    presetDir,
+    presetOrder: 5,
+    promptConfigs: [],
+    promptConfigsDir: '',
+  }
+}
+
+test('writePreset 生成目录 engine/ 与源码 engine/ 逐字节一致', () => {
+  const dir = join(tmpdir(), `prompt-tool-wp-${process.pid}-${Date.now()}`)
+  const presetDir = join(dir, 'preset')
+  try {
+    writePreset('PROMPT', makeOptions(presetDir))
+    const generated = listFiles(join(presetDir, 'engine'))
+    const source = listFiles(sourceEngineDir)
+    const generatedRel = generated.map((file) => file.slice(join(presetDir, 'engine').length + 1)).sort()
+    const sourceRel = source.map((file) => file.slice(sourceEngineDir.length + 1)).sort()
+    assert.deepEqual(generatedRel, sourceRel)
+    for (const rel of generatedRel) {
+      const generatedFile = join(presetDir, 'engine', rel)
+      const sourceFile = join(sourceEngineDir, rel)
+      assert.ok(readFileSync(generatedFile).equals(readFileSync(sourceFile)), `byte mismatch: ${rel}`)
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('writePreset 输出不包含未解析的 __VARIABLE__ 残留', () => {
+  const dir = join(tmpdir(), `prompt-tool-wp-${process.pid}-${Date.now()}`)
+  const presetDir = join(dir, 'preset')
+  try {
+    writePreset('PROMPT', makeOptions(presetDir))
+    const agent = readFileSync(join(presetDir, 'agent.cordis.yml'), 'utf8')
+    assert.doesNotMatch(agent, /__[A-Z0-9_]+__/g)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('writePreset 生成 agent.cordis.yml 注入 allowKinds', () => {
+  const dir = join(tmpdir(), `prompt-tool-wp-${process.pid}-${Date.now()}`)
+  const presetDir = join(dir, 'preset')
+  try {
+    writePreset('PROMPT', makeOptions(presetDir))
+    const agent = readFileSync(join(presetDir, 'agent.cordis.yml'), 'utf8')
+    assert.ok(agent.includes('allowKinds: [skill-invocation, near-anchor, router-guide]'))
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('writePreset 将 preset.yml 的锚点/引导参数写入提示词配置', () => {
+  const dir = join(tmpdir(), `prompt-tool-wp-${process.pid}-${Date.now()}`)
+  const presetDir = join(dir, 'preset')
+  try {
+    writePreset('PROMPT', makeOptions(presetDir))
+    const near = readFileSync(join(presetDir, 'prompt-configs', '00-near-anchor.yml'), 'utf8')
+    const guide = readFileSync(join(presetDir, 'prompt-configs', '10-router-guide.yml'), 'utf8')
+    assert.ok(near.includes('buildPattern'))
+    assert.ok(near.includes('anchorBuild'))
+    assert.ok(guide.includes('guideComplexPattern'))
+    assert.ok(guide.includes('guideWeak'))
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('writePreset 失败时保留旧生成目录', () => {
+  const dir = join(tmpdir(), `prompt-tool-wp-${process.pid}-${Date.now()}`)
+  const presetDir = join(dir, 'preset')
+  mkdirSync(presetDir, { recursive: true })
+  writeFileSync(join(presetDir, 'keep.txt'), 'old', 'utf8')
+  try {
+    assert.throws(() => writePreset('PROMPT', { ...makeOptions(presetDir), presetTemplate: 'missing-template' }))
+    assert.equal(readFileSync(join(presetDir, 'keep.txt'), 'utf8'), 'old')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})

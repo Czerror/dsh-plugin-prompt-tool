@@ -3,39 +3,12 @@ import clsx from 'clsx'
 import { IconChevronDownOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { IApiClient } from '@deepseek-ai/dsh-client-connection/client'
 import { bridgePost, errorMessage, type BridgeSettingsView } from './prompt-tool-store.ts'
+import { PromptConfigList } from './PromptConfigList.tsx'
 import styles from './PromptUi.module.css'
 
-/** 客户端侧的提示词配置草稿：与宿主 PromptConfigSpec 同构，字段全部宽松。 */
-export interface PromptConfigDraft {
-  id: string
-  name?: string
-  enabled?: boolean
-  layer?: string
-  strategy?: string
-  position?: string
-  dedupe?: string
-  promotion?: string
-  subagents?: string
-  modelScope?: string
-  configKind?: string
-  order?: number
-  role?: string
-  group?: string
-  exclusive?: boolean
-  priority?: number
-  mergeMode?: string
-  mergeGroup?: string
-  sourceKind?: string
-  form?: string
-  summary?: string
-  text?: string
-  texts?: string[]
-  templateFile?: string
-  fill?: string
-  variables?: Record<string, string>
-  params?: Record<string, unknown>
-  identity?: { field: string; value: string }
-}
+import type { EngineMeta, LayerFieldPolicy, PromptConfigDraft } from './prompt-tool-types.ts'
+
+export type { PromptConfigDraft, LayerFieldPolicy } from './prompt-tool-types.ts'
 
 export interface PromptConfigTemplateEntry {
   file: string
@@ -49,13 +22,6 @@ export interface ValidationErrorEntry {
   message: string
 }
 
-interface ValidateResult {
-  ok: boolean
-  valid: boolean
-  errors?: ValidationErrorEntry[]
-  message?: string
-}
-
 interface TemplatesResult {
   ok: boolean
   templates?: PromptConfigTemplateEntry[]
@@ -67,57 +33,27 @@ type ImportValue = BridgeSettingsView
 type ImportResult = { ok: true; value: ImportValue; importedCount?: number; mergedCount?: number }
   | { ok: false; code?: string; message?: string; errors?: ValidationErrorEntry[] }
 
-/** 所有枚举选项与引擎 KNOWN_* 保持一致。 */
-export const LAYERS = ['pre-step', 'system-section', 'runtime-context', 'agent-request', 'llm-stream', 'tool-pipeline'] as const
-export const STRATEGIES = ['static', 'anchor-auto', 'guide-auto', 'anchor-fallback', 'instruction-hint', 'placeholder'] as const
-export const POSITIONS = ['after-user', 'before-all', 'after-all'] as const
-export const DEDUPES = ['none', 'session', 'batch'] as const
-export const PROMOTIONS = ['none', 'main', 'include-subagents'] as const
-export const SUBAGENT_MODES = ['none', 'inherit', 'only'] as const
-export const MODEL_SCOPES = ['all', 'pro', 'flash'] as const
-export const CONFIG_KINDS = ['ordered', 'anchor'] as const
-export const ROLES = ['user', 'assistant'] as const
-export const MERGE_MODES = ['separate', 'merged'] as const
-export const FILLS = ['', 'instruction-hint', 'env-facts', 'skill-catalog'] as const
-
-export const LAYER_LABELS: Record<typeof LAYERS[number], { title: string; detail: string }> = {
-  'pre-step': { title: '消息批层', detail: '官方默认层：agent/pre-step 消息批。支持 position / dedupe / promotion / subagents / mergeMode 与文本插值。' },
-  'system-section': { title: '系统段层', detail: 'system-section 静态层：注册即全局，由 order 与 params.complete / sectionName 控制。' },
-  'runtime-context': { title: '运行上下文', detail: 'runtime-context 层：static 按 order 注册，placeholder 单条生效，由 params.contextName 控制。' },
-  'agent-request': { title: '调用配置层', detail: 'agent-request 层：按 priority 注册，params.patch 改写请求配置。' },
-  'llm-stream': { title: '模型流层', detail: 'llm/stream 层：按 priority 注册，params.mode = pass | replace。' },
-  'tool-pipeline': { title: '工具管线层', detail: 'tools/* 层：按 priority 注册，params.toolNames 与 preDecision / postAction 控制。' },
-}
-
-/** 与 README 层能力矩阵一致：每个字段只在本层生效时出现。 */
-export interface LayerFieldPolicy {
-  position: boolean
-  dedupe: boolean
-  promotion: boolean
-  subagents: boolean
-  modelScope: boolean
-  merge: boolean
-  order: boolean
-  priority: boolean
-  role: boolean
-  placeholder: boolean
-}
-
-export const LAYER_FIELD_POLICIES: Record<typeof LAYERS[number], LayerFieldPolicy> = {
-  'pre-step': { position: true, dedupe: true, promotion: true, subagents: true, modelScope: true, merge: true, order: true, priority: true, role: true, placeholder: true },
-  'system-section': { position: false, dedupe: false, promotion: false, subagents: false, modelScope: false, merge: true, order: true, priority: true, role: false, placeholder: false },
-  'runtime-context': { position: false, dedupe: false, promotion: false, subagents: false, modelScope: false, merge: true, order: true, priority: true, role: false, placeholder: true },
-  'agent-request': { position: false, dedupe: false, promotion: false, subagents: true, modelScope: true, merge: false, order: false, priority: true, role: false, placeholder: false },
-  'llm-stream': { position: false, dedupe: false, promotion: false, subagents: false, modelScope: true, merge: false, order: false, priority: true, role: false, placeholder: false },
-  'tool-pipeline': { position: false, dedupe: false, promotion: false, subagents: true, modelScope: true, merge: false, order: false, priority: true, role: false, placeholder: false },
-}
-
-export const fieldPolicyFor = (layer: string | undefined): LayerFieldPolicy =>
-  LAYER_FIELD_POLICIES[(layer ?? 'pre-step') as typeof LAYERS[number]] ?? LAYER_FIELD_POLICIES['pre-step']
-
 /** sourceKind / form 是少量固定语义值，用下拉选择；引擎不设枚举，因此额外保留当前值。 */
 export const SOURCE_KINDS = ['', 'plugin', 'instruction-hint', 'skill-catalog', 'env-facts'] as const
 export const SOURCE_FORMS = ['notice', 'hint', ''] as const
+
+/** 从引擎 /meta 中读取某层的字段能力；未知层回退 pre-step。 */
+const EMPTY_POLICY: LayerFieldPolicy = {
+  position: false,
+  dedupe: false,
+  promotion: false,
+  subagents: false,
+  modelScope: false,
+  merge: false,
+  order: false,
+  priority: false,
+  role: false,
+  placeholder: false,
+}
+
+export function fieldPolicyFor(meta: EngineMeta, layer: string | undefined): LayerFieldPolicy {
+  return meta.layerFieldPolicies[(layer ?? 'pre-step')] ?? EMPTY_POLICY
+}
 
 function selectOptions(options: readonly string[], value: string | undefined): Array<{ value: string; label: string }> {
   const current = value ?? ''
@@ -188,11 +124,12 @@ function OptionField(props: { label: string; hint?: string; value: string | unde
 }
 
 /** 单条提示词配置表单：按注入层级的能力矩阵过滤字段，只显示本层生效的参数。 */
-export function PromptConfigForm(props: { config: PromptConfigDraft; onPatch: (patch: Partial<PromptConfigDraft>) => void }): ReactNode {
-  const { config, onPatch } = props
-  const policy = fieldPolicyFor(config.layer)
+export function PromptConfigForm(props: { meta: EngineMeta; config: PromptConfigDraft; onPatch: (patch: Partial<PromptConfigDraft>) => void }): ReactNode {
+  const { meta, config, onPatch } = props
+  const policy = fieldPolicyFor(meta, config.layer)
   const strategy = config.strategy ?? 'static'
   const placeholder = strategy === 'placeholder' && policy.placeholder
+  const fillOptions = ['', ...meta.fills]
   return (
     <div className={styles.configForm}>
       <div className={styles.configGrid}>
@@ -205,22 +142,22 @@ export function PromptConfigForm(props: { config: PromptConfigDraft; onPatch: (p
         <Field label="enabled">
           <input type="checkbox" checked={config.enabled !== false} onChange={(e) => onPatch({ enabled: e.target.checked })} />
         </Field>
-        <OptionField label="layer" hint="注入层级；切换后下方字段按新层能力矩阵重新出现" value={config.layer} options={LAYERS} fallback="pre-step" onChange={(value) => onPatch({ layer: value })} />
-        <OptionField label="strategy" hint="内容策略；placeholder 需配合 fill" value={config.strategy} options={STRATEGIES} fallback="static" onChange={(value) => onPatch({ strategy: value })} />
-        <OptionField label="configKind" hint="ordered 按 order 升序；anchor 固定文件序排最前" value={config.configKind} options={CONFIG_KINDS} fallback="ordered" onChange={(value) => onPatch({ configKind: value })} />
-        {policy.role && <OptionField label="role" hint="注入消息角色：user / assistant" value={config.role} options={ROLES} fallback="user" onChange={(value) => onPatch({ role: value })} />}
-        {policy.position && <OptionField label="position" hint="同层拼接位置：after-user / before-all / after-all" value={config.position} options={POSITIONS} fallback="after-user" onChange={(value) => onPatch({ position: value })} />}
-        {policy.merge && <OptionField label="mergeMode" hint="merged=同位置同 mergeGroup 拼接为一条消息" value={config.mergeMode} options={MERGE_MODES} fallback="separate" onChange={(value) => onPatch({ mergeMode: value })} />}
+        <OptionField label="layer" hint="注入层级；切换后下方字段按新层能力矩阵重新出现" value={config.layer} options={meta.layers} fallback="pre-step" onChange={(value) => onPatch({ layer: value })} />
+        <OptionField label="strategy" hint="内容策略；placeholder 需配合 fill" value={config.strategy} options={meta.strategies} fallback="static" onChange={(value) => onPatch({ strategy: value })} />
+        <OptionField label="configKind" hint="ordered 按 order 升序；anchor 固定文件序排最前" value={config.configKind} options={meta.slotKinds} fallback="ordered" onChange={(value) => onPatch({ configKind: value })} />
+        {policy.role && <OptionField label="role" hint="注入消息角色：user / assistant" value={config.role} options={meta.roles} fallback="user" onChange={(value) => onPatch({ role: value })} />}
+        {policy.position && <OptionField label="position" hint="同层拼接位置：after-user / before-all / after-all" value={config.position} options={meta.positions} fallback="after-user" onChange={(value) => onPatch({ position: value })} />}
+        {policy.merge && <OptionField label="mergeMode" hint="merged=同位置同 mergeGroup 拼接为一条消息" value={config.mergeMode} options={meta.mergeModes} fallback="separate" onChange={(value) => onPatch({ mergeMode: value })} />}
         {policy.merge && <Field label="mergeGroup" hint="拼接分组名；不填 = 同位置共享默认组"><input className={styles.configInput} value={config.mergeGroup ?? ''} spellCheck={false} onChange={(e) => onPatch({ mergeGroup: e.target.value })} /></Field>}
         {policy.order && <Field label="order" hint="本层排序：数值小者在前（与同层列表上下移动等价）"><input className={styles.configInput} type="number" step={1} value={config.order ?? 0} onChange={(e) => onPatch({ order: Number(e.target.value) })} /></Field>}
         {policy.priority && <Field label="priority" hint="同位置插入顺序与 merged 拼接顺序：数值小者更靠近锚点"><input className={styles.configInput} type="number" step={1} value={config.priority ?? 0} onChange={(e) => onPatch({ priority: Number(e.target.value) })} /></Field>}
         <Field label="group" hint="互斥组名：同 group 且 exclusive=true 时只执行排序后的第一个 enabled 配置"><input className={styles.configInput} value={config.group ?? ''} spellCheck={false} onChange={(e) => onPatch({ group: e.target.value })} /></Field>
         <Field label="exclusive" hint="同 group 互斥：只执行第一个 enabled 配置"><input type="checkbox" checked={config.exclusive === true} onChange={(e) => onPatch({ exclusive: e.target.checked })} /></Field>
-        {policy.dedupe && <OptionField label="dedupe" hint="session=每会话一次；batch=当前批去重" value={config.dedupe} options={DEDUPES} fallback="none" onChange={(value) => onPatch({ dedupe: value })} />}
-        {policy.promotion && <OptionField label="promotion" hint="none=不要求晋升；main=主会话晋升；include-subagents=子代理跟随" value={config.promotion} options={PROMOTIONS} fallback="none" onChange={(value) => onPatch({ promotion: value })} />}
-        {policy.subagents && <OptionField label="subagents" hint="none=仅主会话；inherit=都适用；only=仅子代理" value={config.subagents} options={SUBAGENT_MODES} fallback="none" onChange={(value) => onPatch({ subagents: value })} />}
-        {policy.modelScope && <OptionField label="modelScope" hint="all / pro / flash；flash 按模型名包含 flash 判定" value={config.modelScope} options={MODEL_SCOPES} fallback="all" onChange={(value) => onPatch({ modelScope: value })} />}
-        {placeholder && <OptionField label="fill（placeholder 专用）" hint="instruction-hint / env-facts / skill-catalog" value={config.fill} options={FILLS} fallback="" onChange={(value) => onPatch({ fill: value || undefined })} />}
+        {policy.dedupe && <OptionField label="dedupe" hint="session=每会话一次；batch=当前批去重" value={config.dedupe} options={meta.dedupes} fallback="none" onChange={(value) => onPatch({ dedupe: value })} />}
+        {policy.promotion && <OptionField label="promotion" hint="none=不要求晋升；main=主会话晋升；include-subagents=子代理跟随" value={config.promotion} options={meta.promotions} fallback="none" onChange={(value) => onPatch({ promotion: value })} />}
+        {policy.subagents && <OptionField label="subagents" hint="none=仅主会话；inherit=都适用；only=仅子代理" value={config.subagents} options={meta.subagentModes} fallback="none" onChange={(value) => onPatch({ subagents: value })} />}
+        {policy.modelScope && <OptionField label="modelScope" hint="all / pro / flash；flash 按模型名包含 flash 判定" value={config.modelScope} options={meta.modelScopes} fallback="all" onChange={(value) => onPatch({ modelScope: value })} />}
+        {placeholder && <OptionField label="fill（placeholder 专用）" hint="instruction-hint / env-facts / skill-catalog" value={config.fill} options={fillOptions} fallback="" onChange={(value) => onPatch({ fill: value || undefined })} />}
         <OptionField label="sourceKind" hint="注入消息 source.kind；默认等于 id" value={config.sourceKind} options={SOURCE_KINDS} fallback="" keepCurrent onChange={(value) => onPatch({ sourceKind: value || undefined })} />
         <OptionField label="form" hint="source.form；默认 notice，hint 用于指令提示" value={config.form} options={SOURCE_FORMS} fallback="notice" keepCurrent onChange={(value) => onPatch({ form: value || undefined })} />
         <Field label="summary">
@@ -256,6 +193,7 @@ export interface PromptConfigCardActions {
 
 /** 列表卡片：开关按钮 + 4 个操作按钮 + 可展开编辑表单。 */
 export function PromptConfigCard(props: {
+  meta: EngineMeta
   config: PromptConfigDraft
   expanded: boolean
   onToggleExpanded: () => void
@@ -263,23 +201,23 @@ export function PromptConfigCard(props: {
   onPatch: (patch: Partial<PromptConfigDraft>) => void
   actions: PromptConfigCardActions
 }): ReactNode {
-  const { config, actions } = props
+  const { meta, config, actions } = props
   const enabled = config.enabled !== false
-  const policy = fieldPolicyFor(config.layer)
-  const meta = [config.layer ?? 'pre-step', config.strategy ?? 'static']
-  if (config.fill) meta.push(config.fill)
-  if (policy.position) meta.push(`pos=${config.position ?? 'after-user'}`)
-  if (config.mergeMode === 'merged') meta.push(`merged:${config.mergeGroup || '默认组'}`)
-  if ((config.priority ?? 0) !== 0) meta.push(`priority=${config.priority}`)
-  if ((config.order ?? 0) !== 0) meta.push(`order=${config.order}`)
-  if (config.group) meta.push(config.exclusive === true ? `exclusive:${config.group}` : `group:${config.group}`)
+  const policy = fieldPolicyFor(meta, config.layer)
+  const chips = [config.layer ?? 'pre-step', config.strategy ?? 'static']
+  if (config.fill) chips.push(config.fill)
+  if (policy.position) chips.push(`pos=${config.position ?? 'after-user'}`)
+  if (config.mergeMode === 'merged') chips.push(`merged:${config.mergeGroup || '默认组'}`)
+  if ((config.priority ?? 0) !== 0) chips.push(`priority=${config.priority}`)
+  if ((config.order ?? 0) !== 0) chips.push(`order=${config.order}`)
+  if (config.group) chips.push(config.exclusive === true ? `exclusive:${config.group}` : `group:${config.group}`)
   return (
     <article className={clsx(styles.configCard, props.expanded && styles.configCardOpen)}>
       <header className={styles.configHeader}>
         <button type="button" className={styles.configToggle} aria-expanded={props.expanded} onClick={props.onToggleExpanded}>
           <span className={styles.configTitle}>
             <span className={styles.configName}>{config.name && config.name !== config.id ? `${config.id} · ${config.name}` : config.id}</span>
-            <span className={styles.configMeta}>{meta.join(' · ')}</span>
+            <span className={styles.configMeta}>{chips.join(' · ')}</span>
           </span>
           <IconChevronDownOutline14 className={clsx(styles.chevron, props.expanded && styles.chevronOpen)} />
         </button>
@@ -294,13 +232,14 @@ export function PromptConfigCard(props: {
           <button type="button" className={styles.pillButton} data-danger onClick={actions.onDelete}>删除</button>
         </div>
       </header>
-      {props.expanded && <PromptConfigForm config={config} onPatch={props.onPatch} />}
+      {props.expanded && <PromptConfigForm meta={meta} config={config} onPatch={props.onPatch} />}
     </article>
   )
 }
 
 export interface PromptConfigsEditorProps {
   api: IApiClient
+  meta: EngineMeta
   configs: PromptConfigDraft[]
   configsDir: string
   savedConfigs: PromptConfigDraft[]
@@ -315,13 +254,8 @@ export interface PromptConfigsEditorProps {
 
 /** 主设置页唯一保留的区块：提示词配置（目录导入 + 模板插入 + 保存前权威校验）。 */
 export function PromptConfigsEditor(props: PromptConfigsEditorProps): ReactNode {
-  const [expanded, setExpanded] = useState<string | undefined>(undefined)
   const [templates, setTemplates] = useState<PromptConfigTemplateEntry[]>([])
   const [templateFile, setTemplateFile] = useState('')
-  const [validateErrors, setValidateErrors] = useState<ValidationErrorEntry[]>([])
-  const [validated, setValidated] = useState(false)
-  const [validating, setValidating] = useState(false)
-  const [saving, setSaving] = useState(false)
   const [savingDir, setSavingDir] = useState(false)
   const [importing, setImporting] = useState(false)
   const [importErrors, setImportErrors] = useState<ValidationErrorEntry[]>([])
@@ -341,38 +275,6 @@ export function PromptConfigsEditor(props: PromptConfigsEditorProps): ReactNode 
     } catch (error) {
       props.onNotice('error', '读取模板库失败：' + errorMessage(error))
     }
-  }
-
-  const runValidate = async (configs: PromptConfigDraft[]): Promise<boolean> => {
-    setValidating(true)
-    try {
-      const res = await bridgePost<ValidateResult>('/configs-validate', { promptConfigs: configs })
-      if (!res.ok) {
-        props.onNotice('error', '校验请求失败：' + (res.message ?? 'settings bridge unavailable'))
-        return false
-      }
-      setValidated(true)
-      setValidateErrors(res.value.valid ? [] : res.value.errors ?? [])
-      return res.value.valid
-    } catch (error) {
-      props.onNotice('error', '校验请求失败：' + errorMessage(error))
-      return false
-    } finally {
-      setValidating(false)
-    }
-  }
-
-  const validateOnly = () => { void runValidate(props.configs) }
-
-  const save = async () => {
-    setSaving(true)
-    const valid = await runValidate(props.configs)
-    if (valid) {
-      setValidateErrors([])
-      props.onSaveConfigs(props.configs)
-      props.onNotice('ok', `提示词配置已校验并保存（${props.configs.length} 条）`)
-    }
-    setSaving(false)
   }
 
   const applyDir = () => {
@@ -399,8 +301,6 @@ export function PromptConfigsEditor(props: PromptConfigsEditorProps): ReactNode 
         props.onNotice('error', `导入失败：${res.message ?? ''}${(res.errors?.length ?? 0) > 0 ? `（${res.errors!.length} 个错误）` : ''}`)
         return
       }
-      setValidated(false)
-      setValidateErrors([])
       await props.onReload()
       props.onNotice('ok', `已从目录导入 ${res.importedCount ?? 0} 条提示词配置并保存（合并后 ${res.mergedCount ?? props.configs.length} 条）`)
     } catch (error) {
@@ -422,56 +322,7 @@ export function PromptConfigsEditor(props: PromptConfigsEditorProps): ReactNode 
     }
     const clone = JSON.parse(JSON.stringify(entry.spec)) as PromptConfigDraft
     props.onPatchConfigs([...props.configs, clone])
-    setExpanded(clone.id)
     props.onNotice('ok', `已插入模板 ${entry.file}（id=${clone.id}）`)
-  }
-
-  const patchAt = (index: number, patch: Partial<PromptConfigDraft>) => {
-    props.onPatchConfigs(props.configs.map((config, at) => at === index ? { ...config, ...patch } : config))
-  }
-
-  const removeAt = (index: number) => {
-    const next = props.configs.filter((_, at) => at !== index)
-    props.onPatchConfigs(next)
-    if (expanded === props.configs[index]?.id) setExpanded(undefined)
-    props.onNotice('ok', '已删除提示词配置（记得保存）')
-  }
-
-  const duplicateAt = (index: number) => {
-    const source = props.configs[index]
-    if (source === undefined) return
-    let id = `${source.id}-copy`
-    let suffix = 2
-    while (props.configs.some((config) => config.id === id)) {
-      id = `${source.id}-copy${suffix}`
-      suffix += 1
-    }
-    const clone = JSON.parse(JSON.stringify(source)) as PromptConfigDraft
-    clone.id = id
-    props.onPatchConfigs([...props.configs, clone])
-    setExpanded(id)
-    props.onNotice('ok', '已复制提示词配置（记得保存）')
-  }
-
-  const moveAt = (index: number, delta: -1 | 1) => {
-    const target = index + delta
-    if (target < 0 || target >= props.configs.length) return
-    const next = [...props.configs]
-    const current = next[index]
-    next[index] = next[target]!
-    next[target] = current!
-    props.onPatchConfigs(next)
-  }
-
-  const toggleEnabledAt = (index: number, enabled: boolean) => patchAt(index, { enabled })
-
-  const dirtyConfigs = JSON.stringify(props.configs) !== JSON.stringify(props.savedConfigs)
-  const dirtyConfigsDir = props.configsDir !== props.savedConfigsDir
-  const discard = () => {
-    props.onPatchConfigs(props.savedConfigs)
-    props.onPatchConfigsDir(props.savedConfigsDir)
-    setValidateErrors([])
-    setValidated(false)
   }
 
   return (
@@ -530,65 +381,15 @@ export function PromptConfigsEditor(props: PromptConfigsEditorProps): ReactNode 
         </div>
       </section>
 
-      <section className={styles.section} aria-labelledby="prompt-tool-configs-heading">
-        <div className={styles.sectionHeading}>
-          <div><h2 id="prompt-tool-configs-heading">配置列表</h2><p>{props.configs.length} 条自定义配置；开关即 enabled，展开后编辑完整字段。</p></div>
-          <div className={styles.sectionActions}>
-            <button type="button" className={styles.pillButton} disabled={validating} onClick={validateOnly}>{validating ? '校验中…' : '校验'}</button>
-            <button type="button" className={styles.primaryPill} disabled={saving || validating} onClick={() => void save()}>{saving ? '保存中…' : '保存提示词配置'}</button>
-          </div>
-        </div>
+      <PromptConfigList
+        meta={props.meta}
+        configs={props.configs}
+        savedConfigs={props.savedConfigs}
+        onPatchConfigs={props.onPatchConfigs}
+        onSaveConfigs={props.onSaveConfigs}
+        onNotice={props.onNotice}
+      />
 
-        {validated && validateErrors.length > 0 && (
-          <div className={styles.configErrorBox}>
-            {validateErrors.map((error, index) => (
-              <div key={`${error.index}-${index}`} className={styles.configErrorLine}>[{error.index}] {error.id || '(缺 id)'}：{error.message}</div>
-            ))}
-          </div>
-        )}
-
-        {props.configs.length === 0 ? (
-          <div className={styles.emptyState}><span className={styles.emptyGlyph} aria-hidden="true">⌁</span><div><h3>还没有自定义提示词配置</h3><p>从上方模板插入一条，或从本地目录导入；默认四条内置配置不受影响。</p></div></div>
-        ) : (
-          <div className={styles.configList}>
-            {props.configs.map((config, index) => {
-              const isOpen = expanded === config.id
-              return (
-                <PromptConfigCard
-                  key={config.id}
-                  config={config}
-                  expanded={isOpen}
-                  onToggleExpanded={() => setExpanded(isOpen ? undefined : config.id)}
-                  onToggleEnabled={(enabled) => toggleEnabledAt(index, enabled)}
-                  onPatch={(patch) => patchAt(index, patch)}
-                  actions={{
-                    canMoveUp: index > 0,
-                    canMoveDown: index < props.configs.length - 1,
-                    onMoveUp: () => moveAt(index, -1),
-                    onMoveDown: () => moveAt(index, 1),
-                    onDuplicate: () => duplicateAt(index),
-                    onDelete: () => removeAt(index),
-                  }}
-                />
-              )
-            })}
-          </div>
-        )}
-      </section>
-
-      <div className={styles.feedback} aria-live="polite">
-        {dirtyConfigs && <p className={styles.readOnly}>配置列表有未保存修改。</p>}
-        {dirtyConfigsDir && <p className={styles.readOnly}>目录路径有未保存修改。</p>}
-        {validated && validateErrors.length === 0 && <p className={styles.success}>最近一次校验通过。</p>}
-      </div>
-
-      <footer className={`${styles.actions} ${dirtyConfigs || dirtyConfigsDir ? styles.actionsVisible : ''}`} aria-live="polite">
-        <span>{dirtyConfigs || dirtyConfigsDir ? '有未保存修改' : ''}</span>
-        <div>
-          <button type="button" className={styles.discard} disabled={saving || savingDir || !dirtyConfigs && !dirtyConfigsDir} onClick={discard}>放弃修改</button>
-          <button type="button" className={styles.save} disabled={saving || validating || !dirtyConfigs && !dirtyConfigsDir} onClick={() => void save()}>{saving ? '保存中…' : '保存全部'}</button>
-        </div>
-      </footer>
       <p className={styles.settingsNote}>提示词配置写入 <code>settings.promptConfigs</code>；目录合并优先级：默认四条 &lt; promptConfigsDir &lt; settings.promptConfigs。</p>
     </section>
   )

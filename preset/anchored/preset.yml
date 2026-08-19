@@ -179,6 +179,92 @@ params:
 
     Think deeply first, then produce.
   guideCustom: false
+  guideComplexPattern: "(架构|重构|全面|详细|设计|系统|优化|分析|architecture|refactor|comprehensive|detailed|design|system|optimize|analyze)"
+  guideWeak: "\nRouter: classify this task (build or fix) now, then adopt the matching style — build: direct production; fix: inspect-first. Think deeply first, then commit and act."
+  guideDeep: "\nRouter: classify this task (build or fix) now, then adopt the matching style — build: direct production; fix: inspect-first. Think deeply about the architecture, edge cases, and integration points. Do not spend reasoning on the environment or tooling. Produce when your information is complete. End each reasoning block with a decision or an information need."
+  buildPattern: "(开发|创建|写一个|生成|从零|做一个|构建|新项目|搭建|实现|做出|上线|落地|脚本|工具|应用|build|create|develop|generate|implement|make a|new project)"
+  complexPattern: "(架构|重构|设计|系统|全面|深度|迁移|兼容|审查|architecture|refactor|comprehensive|design|system|migrate|review)"
+  anchorBuild: "Start your reasoning with the exact sentence: 'We need to build it directly and verify it.'"
+  anchorInspect: "Start your reasoning with the exact sentence: 'We need to inspect the code first.'"
+  anchorDeep: "Start your reasoning with the exact sentence: 'Let me think through the design before changing anything.'"
+  allowKinds: "[skill-invocation, near-anchor, router-guide]"
+promptConfigs:
+  - id: near-anchor
+    name: 首句锚点
+    enabled: true
+    strategy: anchor-auto
+    layer: pre-step
+    configKind: ordered
+    order: 0
+    role: user
+    position: after-user
+    dedupe: session
+    promotion: none
+    subagents: none
+    params:
+      useCustom: false
+      anchorText: ""
+      buildPattern: "(开发|创建|写一个|生成|从零|做一个|构建|新项目|搭建|实现|做出|上线|落地|脚本|工具|应用|build|create|develop|generate|implement|make a|new project)"
+      complexPattern: "(架构|重构|设计|系统|全面|深度|迁移|兼容|审查|architecture|refactor|comprehensive|design|system|migrate|review)"
+      anchorBuild: "Start your reasoning with the exact sentence: 'We need to build it directly and verify it.'"
+      anchorInspect: "Start your reasoning with the exact sentence: 'We need to inspect the code first.'"
+      anchorDeep: "Start your reasoning with the exact sentence: 'Let me think through the design before changing anything.'"
+  - id: router-guide
+    name: 每轮引导
+    enabled: true
+    strategy: guide-auto
+    layer: pre-step
+    configKind: ordered
+    order: 10
+    role: user
+    position: after-user
+    dedupe: batch
+    promotion: main
+    subagents: none
+    modelScope: flash
+    params:
+      useCustom: false
+      text: ""
+      guideComplexPattern: "(架构|重构|全面|详细|设计|系统|优化|分析|architecture|refactor|comprehensive|detailed|design|system|optimize|analyze)"
+      guideWeak: "\nRouter: classify this task (build or fix) now, then adopt the matching style — build: direct production; fix: inspect-first. Think deeply first, then commit and act."
+      guideDeep: "\nRouter: classify this task (build or fix) now, then adopt the matching style — build: direct production; fix: inspect-first. Think deeply about the architecture, edge cases, and integration points. Do not spend reasoning on the environment or tooling. Produce when your information is complete. End each reasoning block with a decision or an information need."
+  - id: prompt-injector
+    name: preset.md 注入
+    enabled: true
+    strategy: custom-fallback
+    layer: pre-step
+    configKind: ordered
+    order: 20
+    role: user
+    position: before-all
+    dedupe: session
+    promotion: main
+    subagents: inherit
+    sourceKind: plugin
+    params:
+      text: ""
+      customAnchorWord: we
+  - id: instruction-hint
+    name: 指令文件提示
+    enabled: true
+    strategy: placeholder
+    layer: pre-step
+    configKind: ordered
+    order: 30
+    role: user
+    position: after-all
+    dedupe: session
+    promotion: include-subagents
+    subagents: inherit
+    sourceKind: instruction-hint
+    form: hint
+    fill: instruction-hint
+    identity:
+      field: kind
+      value: instruction-hint
+    params:
+      promoteOn: either
+      includeSubagents: true
 settingsExtension:
   anchorFirstTurn:
     type: boolean

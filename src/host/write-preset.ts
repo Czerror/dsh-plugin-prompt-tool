@@ -6,12 +6,11 @@
  * 默认提示词配置与组合 token 都由引擎按 params 生成,参数文件不含任何模板语法。
  */
 
-import { writeFileSync, mkdirSync, rmSync, cpSync } from 'node:fs'
-import { join } from 'node:path'
+import { writeFileSync, mkdirSync, rmSync, cpSync, mkdtempSync, renameSync, existsSync } from 'node:fs'
+import { join, basename, dirname } from 'node:path'
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml'
 import { DEFAULT_PRESET_DIR } from '../config.ts'
 import {
-  buildDefaultPromptConfigs,
   loadPromptConfigFiles,
   mergePromptConfigs,
   renderPromptConfigYaml,
@@ -92,27 +91,30 @@ export function writePreset(prompt: string, options: WritePresetOptions): void {
   const params = resolvePresetParams(spec, runtime)
   const tokens = resolvePresetTokens(spec, runtime)
 
-  mkdirSync(presetDir, { recursive: true })
-
+  const parentDir = dirname(presetDir)
+  mkdirSync(parentDir, { recursive: true })
+  const tmpDir = mkdtempSync(join(parentDir, `.${basename(presetDir)}.tmp-`))
+  const outDir = tmpDir
+  try {
   // 1) 组合文件:modules 模块库装配 + 引擎内部 token 渲染 + YAML 校验。
   const composition = renderTemplateVariables(loadCompositionText(spec), tokens)
   const unresolved = composition.match(/__[A-Z0-9_]+__/g)
   if (unresolved !== null) throw new Error(`generated agent.cordis.yml has unresolved variables: ${unresolved.join(', ')}`)
   const parsedComposition = parseYaml(composition, { logLevel: 'silent' })
   if (!Array.isArray(parsedComposition)) throw new Error(`generated agent.cordis.yml is not a YAML array (template ${templateName})`)
-  writeFileSync(join(presetDir, 'agent.cordis.yml'), composition, 'utf8')
+  writeFileSync(join(outDir, 'agent.cordis.yml'), composition, 'utf8')
 
   // 2) 宿主预设元数据(模板 meta 参数 + 运行时 order)。
   const meta = spec.meta !== null && typeof spec.meta === 'object' ? spec.meta as Record<string, unknown> : {}
-  writeFileSync(join(presetDir, 'preset.yml'), stringifyYaml({ ...meta, order: options.presetOrder }) + '\n', 'utf8')
+  writeFileSync(join(outDir, 'preset.yml'), stringifyYaml({ ...meta, order: options.presetOrder }) + '\n', 'utf8')
 
   // 3) 项目本体:引擎目录整体复制(全部执行逻辑;预设只有参数)。
-  const engineDir = join(presetDir, 'engine')
+  const engineDir = join(outDir, 'engine')
   rmSync(engineDir, { recursive: true, force: true })
   cpSync(ENGINE_DIR, engineDir, { recursive: true, force: true })
 
   // 4) 提示词配置:引擎默认(按 params)< 模板覆盖 < promptConfigsDir < settings。
-  const promptConfigsDir = join(presetDir, 'prompt-configs')
+  const promptConfigsDir = join(outDir, 'prompt-configs')
   rmSync(promptConfigsDir, { recursive: true, force: true })
   mkdirSync(promptConfigsDir, { recursive: true })
   let dirConfigs: PromptConfigSpec[] = []
@@ -123,30 +125,85 @@ export function writePreset(prompt: string, options: WritePresetOptions): void {
       options.warn?.(`prompt-tool: failed to load promptConfigsDir ${JSON.stringify(options.promptConfigsDir)}: ${error instanceof Error ? error.message : String(error)}`)
     }
   }
-  const engineDefaults = buildDefaultPromptConfigs({
-    anchorFirstTurn: params.anchorFirstTurn === true,
-    anchorCustom: params.anchorCustom === true,
-    anchorText: asString(params.anchorText),
-    guideCustom: params.guideCustom === true,
-    guideText: asString(params.guideText),
-    injectPrompt: params.injectPrompt !== false,
-  }, prompt)
   const templateConfigs = Array.isArray(spec.promptConfigs) ? spec.promptConfigs as PromptConfigSpec[] : []
-  const merged = mergePromptConfigs(engineDefaults, templateConfigs, dirConfigs, options.promptConfigs)
+  let templateDefaults: PromptConfigSpec[]
+  if (templateConfigs.length > 0) {
+    // 模板自带默认提示词配置：运行时只覆盖 anchored 动态字段，结构数据来自 preset.yml。
+    templateDefaults = templateConfigs.map((config) => {
+      const next: PromptConfigSpec = { ...config, params: { ...config.params } }
+      if (next.id === 'near-anchor') {
+        next.enabled = params.anchorFirstTurn === true
+        next.params = {
+          ...next.params,
+          useCustom: params.anchorCustom === true,
+          anchorText: asString(params.anchorText),
+          buildPattern: asString(params.buildPattern),
+          complexPattern: asString(params.complexPattern),
+          anchorBuild: asString(params.anchorBuild),
+          anchorInspect: asString(params.anchorInspect),
+          anchorDeep: asString(params.anchorDeep),
+        }
+      } else if (next.id === 'router-guide') {
+        next.enabled = params.anchorFirstTurn === true
+        next.params = {
+          ...next.params,
+          useCustom: params.anchorFirstTurn === true && params.guideCustom === true,
+          text: asString(params.guideText),
+          guideComplexPattern: asString(params.guideComplexPattern),
+          guideWeak: asString(params.guideWeak),
+          guideDeep: asString(params.guideDeep),
+        }
+      } else if (next.id === 'prompt-injector') {
+        next.enabled = params.injectPrompt !== false
+        next.params = { ...next.params, text: prompt, customAnchorWord: 'we' }
+      }
+      return next
+    })
+  } else {
+    // 通用模板未提供 promptConfigs 时，writer 不注入任何 anchored 默认配置；
+    // 全部内容由模板数据或用户 settings 提供。
+    templateDefaults = []
+  }
+  const merged = mergePromptConfigs(templateDefaults, dirConfigs, options.promptConfigs)
   for (const [index, config] of merged.entries()) {
     writeFileSync(join(promptConfigsDir, `${String(index * 10).padStart(2, '0')}-${config.id}.yml`), renderPromptConfigYaml(config), 'utf8')
   }
 
   // 5) 历史残留清理(模板参数声明,writer 只执行)。
   for (const legacy of spec.legacyCleanup ?? []) {
-    rmSync(join(presetDir, legacy), { force: true })
+    rmSync(join(outDir, legacy), { force: true })
   }
 
   // 6) agents-instruction.txt(模板内容资产经 settings 覆盖时写入)。
-  const agentsInstructionPath = join(presetDir, 'agents-instruction.txt')
+  const agentsInstructionPath = join(outDir, 'agents-instruction.txt')
   if (options.agentsInstructionText !== undefined) {
     writeFileSync(agentsInstructionPath, options.agentsInstructionText, 'utf8')
   } else {
     rmSync(agentsInstructionPath, { force: true })
+  }
+
+  // 7) 原子提交:新目录完全写好后替换旧目录;失败时恢复旧目录并清理临时目录。
+  const backupDir = join(parentDir, `.${basename(presetDir)}.bak-${Date.now().toString(36)}`)
+  let oldMoved = false
+  if (existsSync(presetDir)) {
+    renameSync(presetDir, backupDir)
+    oldMoved = true
+  }
+  try {
+    renameSync(outDir, presetDir)
+  } catch (error) {
+    if (oldMoved) {
+      try {
+        renameSync(backupDir, presetDir)
+      } catch {
+        // 恢复失败时保留 backup 供人工处理,不再覆盖现场。
+      }
+    }
+    throw error
+  }
+  if (oldMoved) rmSync(backupDir, { recursive: true, force: true })
+  } catch (error) {
+    rmSync(tmpDir, { recursive: true, force: true })
+    throw error
   }
 }

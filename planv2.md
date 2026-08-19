@@ -1,8 +1,8 @@
 # planv2.md — 架构审查结论与演进计划(dsh-plugin-prompt-tool)
 
 > 状态:现行计划,取代已过期的 `plan.md`。
-> 日期:2026-08-19
-> 审查基础:全量勘察 `plan.md`、`docs/architecture-v4.md`、`README.md`、`src/`(含 `client/`、`runtime/`)、`engine/`、`preset/anchored/`、`templates/`、`skills/` 与全部测试;`pnpm test` 122 项全部通过。
+> 日期:2026-08-20(深度重构后更新)
+> 审查基础:全量勘察 `plan.md`、`docs/architecture-v4.md`、`README.md`、`src/`(含 `client/`、`runtime/`)、`engine/`、`preset/anchored/`、`templates/`、`skills/` 与全部测试;`pnpm test` 156 项全部通过。
 > 范围:架构、数据流、UI 与测试。模型安全边界的测试技能内容按测试者要求不在本文件讨论范围。
 
 ---
@@ -11,7 +11,19 @@
 
 项目架构主线健康:单一引擎接线六层注入、三源合并、配置即状态、失败降级不伤会话、持久事件幂等,这些核心决策全部成立,且测试覆盖扎实。
 
-本计划聚焦 4 个架构级债务(P1)与 6 个工程化债务(P2),目标是把"功能完备但存在多处平行真相"的现状收敛为"schema 单一权威 + 引擎可拆分 + 单一编辑面 + 原子写入"的 v2 架构。
+截至 2026-08-20,深度重构已落地大部分 P1/P2 债务:
+- ✅ P1-1 schema 单一权威 + `/meta`
+- ✅ P1-2 引擎拆分
+- 🟡 P1-3 HostSurfaceAdapter 已建立并优先探测官方 slot,selector 兜底仍在使用
+- ✅ P1-4 双编辑面收敛为共享 `PromptConfigList`
+- ✅ P2-1 双 YAML 解析器一致性
+- ✅ P2-2 技能版本化迁移
+- ✅ P2-3 技能扫描缓存
+- ✅ P2-4 `writePreset` 原子化
+- ✅ P2-5 `web-surface` 去 `process.exit` / 同级 profile 修改
+- 🟡 P2-6 测试缺口大部分补齐(settings bridge 已补)
+
+§7 anchored 预设提取与 `customStrategyDir` 已打通;后续增强项为 C6 完整字段拆分、工作台视觉重构与合成 DOM 测试。
 
 ---
 
@@ -25,13 +37,15 @@
 | 单条失败跳过 + `warnOnce`;配置错误挂载期 fail loud | 分级失败语义合理,不伤会话 |
 | vendored yaml 进生成目录 | 生成 preset 运行时零外部依赖,方向正确 |
 | settings bridge loopback-only + revision 乐观锁 + body 上限 | 本地工具边界清晰 |
-| 122 项单测覆盖引擎/渲染/合并/模板/TUI | 回归保护充足,保持这个标准 |
+| 156 项单测覆盖引擎/渲染/合并/模板/TUI/宿主自愈/写入原子性/选择器集中/settings bridge | 回归保护充足,保持这个标准 |
 
 ---
 
 ## 2. 问题与债务清单
 
 ### P1-1 Schema/枚举存在三处平行真相,必然漂移
+
+> 状态:✅ 已完成。`engine/schema.mjs` 导出 `getEngineMeta()`,settings bridge 新增 `/meta`,客户端已动态加载并删除硬编码枚举。
 
 同一份 schema 当前在四处独立维护:
 
@@ -44,11 +58,15 @@
 
 ### P1-2 引擎 1254 行单文件,职责过载
 
+> 状态:✅ 已完成。已拆为 `schema.mjs / strategies.mjs / fillers.mjs / layers.mjs / executor.mjs`,`prompt-config-engine.mjs` 仅装配入口;生成目录与源码逐字节一致测试已补。
+
 `prompt-config-engine.mjs` 同时承担 YAML 加载、schema 归一化校验、五种策略 resolver、三个 filler、六层接线、pre-step 合并/插入执行器。
 
 **方案**:拆为 `schema.mjs / strategies.mjs / fillers.mjs / layers.mjs / executor.mjs`,`prompt-config-engine.mjs` 只做装配入口。同步修改 `preset-write.ts` 的 `ENGINE_SCRIPTS` 复制清单;新增"生成目录文件与源码逐字节一致"的测试断言,防止两处漂移。
 
 ### P1-3 客户端用 DOM 选择器挂载,违反"只用官方 API"约束
+
+> 状态:🟡 部分完成。已新增 `src/client/host-surface.ts` 集中所有选择器,并优先探测 `[data-dsh-workspace-slot]` 官方挂载点;selector 兜底仍在使用,合成 DOM 测试仍未落地。
 
 `workspace-mount.tsx` / `sidebar-entry.ts` 依赖 `[class*="centerCol"]`、`[class*="sidebarCol"]`、`[class*="newSession"]` 等宿主 CSS 类名 + 全局 `MutationObserver` 自愈。宿主 UI 一次改版即失效。
 
@@ -60,11 +78,15 @@
 
 ### P1-4 两个 UI 编辑面重复实现
 
+> 状态:✅ 已完成。新增共享 `PromptConfigList`,主设置页与工作台统一使用;移动语义统一为同层内移动。注意:原工作台 per-config 分页导航被简化,如需保留可后续在共享组件上加回 `focusedId` 受控模式。
+
 主设置页 `PromptConfigsEditor` 与工作台 `LayerConfigList` 各写一遍列表、表单、校验、保存、脏检测,且移动语义不一致(一个按整数组顺序、一个按层内顺序)。
 
 **方案**:收敛为一套 `configEditorStore` + 共享编辑组件,两个页面只做容器与导航差异;移动语义统一为"层内重排 + order 值同步",避免两种排序模型并存。
 
 ### P2-1 双 YAML 解析器
+
+> 状态:✅ 已完成。vendor 版本/来源已记录,`sync:yaml` 脚本存在,双解析器语料一致性测试已补。
 
 `src/` 用 npm `yaml@^2.9`,`engine` 用 vendored 副本。运行时 vendor 是正确决策,但需要:
 
@@ -74,11 +96,15 @@
 
 ### P2-2 技能副本"只补缺失、绝不覆盖"导致技能无法升级
 
+> 状态:✅ 已完成。新增 `skills/manifest.json` 与 `.prompt-tool-manifest.json`,按版本迁移;UI“恢复默认技能”动作仍未做,可列为后续增强。
+
 `profile-skills.ts` 的 `mergeMissing` 使包内 `SKILL.md` 更新永远无法到达已有副本的用户。
 
 **方案**:技能包携带 manifest 版本号,副本按版本迁移;UI 提供"恢复默认技能"动作;删除任何技能时提供显式清理策略,避免旧副本残留。
 
 ### P2-3 技能扫描无缓存
+
+> 状态:✅ 已完成。新增 `createCachedSkillsReader()`,按目录 + SKILL.md mtime/size 签名失效;`invalidateSkills` 与目录切换联动。
 
 `list` / `get` 每次同步 `readdir + readFile` 整个技能目录。
 
@@ -86,17 +112,23 @@
 
 ### P2-4 `writePreset` 非原子
 
+> 状态:✅ 已完成。改为临时目录 + 整体 rename,失败保留旧目录;生成目录与源码逐字节一致测试已补。跨进程并发锁仍未实现,建议文档标注边界。
+
 `rmSync + mkdir + 逐文件写`,中途崩溃留下不完整生成目录;跨进程并发无锁。
 
 **方案**:写临时目录后整体 `rename`;至少文档标注"同一 DSH_HOME 多实例并发保存"的边界;失败路径保留上一份可用生成目录。
 
 ### P2-5 `ensureWebSurface` 越界 + `process.exit(0)`
 
+> 状态:✅ 已完成。已删除同级 profile 修改与 `process.exit(0)`,写前保留 `.bak` 备份;测试已覆盖。
+
 插件运行时改写 profile `package.json`(含同级 `web` / `dsh-tui` profile),首次自愈后主动退出进程。库代码主动 `exit` 是设计坏味道。
 
 **方案**:当前 profile 补 bundle 的自愈保留;移除同级 profile 改写与 `process.exit`,改为提示文案让用户重启;写入前备份 manifest。
 
 ### P2-6 测试缺口
+
+> 状态:🟡 大部分完成。已补 `web-surface`、`profile-skills`、`writePreset`、引擎 `/meta`、settings bridge、选择器集中等测试;`workspace-mount` / `sidebar-entry` 合成 DOM 测试仍未覆盖。
 
 `web-surface.ts`、`workspace-mount` / `sidebar-entry`、`profile-skills`、settings bridge 真实 HTTP 层无集成覆盖。
 
@@ -112,7 +144,7 @@
 2. **排版**:配置 `id`、yml 键、路径一律等宽字体,与描述文本形成对比;避免系统默认字体。
 3. **组合结构**:改长列表为 master-detail + 右侧注入预览面板——左侧层内列表,右侧显示当前层最终装配顺序(`order → priority → mergeGroup`),把 `LAYER_FIELD_POLICIES` 的"字段在哪层生效"可视化。
 4. **动效**:保存时受影响层脉冲高亮;层级切换 stagger 入场;Skills 拖拽排序补齐键盘可达的上移/下移(当前只有鼠标 DnD)。
-5. **一致性**:先完成 P1-4 的双编辑面收敛,再做视觉打磨,避免在重复实现上叠加样式。
+5. **一致性**:P1-4 双编辑面已收敛为共享 `PromptConfigList`;视觉打磨仍待做。注意当前工作台 per-config 分页被简化,后续若恢复需在共享组件上增加 `focusedId` 受控模式。
 
 ---
 
@@ -138,13 +170,13 @@
 
 ## 5. 实施顺序与验收
 
-| 里程碑 | 内容 | 验收标准 |
-|---|---|---|
-| M1 | schema 单一权威:`KNOWN_*`/能力矩阵从引擎导出,`/meta` 端点下发,客户端去硬编码 | 客户端源码无枚举字面量;新增枚举只改引擎一处;`/meta` 返回与 README 矩阵一致 |
-| M2 | 双编辑面收敛为单一 store/组件;按 §3 做工作台视觉重构 | 删除重复的保存/校验/脏检测逻辑;Skills 排序有键盘操作;层能力矩阵可视化 |
-| M3 | 引擎拆分 + 生成目录一致性测试 + `writePreset` 原子写入 | 5 个模块职责清晰;生成目录与源码逐字节一致;崩溃中断不留下半成品目录 |
-| M4 | 技能版本化迁移与缓存、`ensureWebSurface` 去 exit、补集成测试 | 旧副本可升级;`list/get` 单次扫描复用;插件不再主动退出进程;P2-6 覆盖的模块有测试 |
-| M5 | anchored 预设提取为单一预设单元 + 目录结构重设计(§7 / §8) | 引擎不再引用任何 anchored 专属符号;`writePreset` 可物化任意模板;新旧生成产物行为等价 |
+| 里程碑 | 内容 | 状态 | 验收标准 |
+|---|---|---|---|
+| M1 | schema 单一权威:`KNOWN_*`/能力矩阵从引擎导出,`/meta` 端点下发,客户端去硬编码 | ✅ 已完成 | 客户端源码无枚举字面量;新增枚举只改引擎一处;`/meta` 返回与 README 矩阵一致 |
+| M2 | 双编辑面收敛为单一 store/组件;按 §3 做工作台视觉重构 | 🟡 编辑面已收敛,视觉重构未做 | 删除重复的保存/校验/脏检测逻辑;Skills 排序有键盘操作;层能力矩阵可视化 |
+| M3 | 引擎拆分 + 生成目录一致性测试 + `writePreset` 原子写入 | ✅ 已完成 | 5 个模块职责清晰;生成目录与源码逐字节一致;崩溃中断不留下半成品目录 |
+| M4 | 技能版本化迁移与缓存、`ensureWebSurface` 去 exit、补集成测试 | 🟡 核心已完成,集成测试仍缺 | 旧副本可升级;`list/get` 单次扫描复用;插件不再主动退出进程;P2-6 覆盖的模块有测试 |
+| M5 | anchored 预设提取为单一预设单元 + 目录结构重设计(§7 / §8) | ✅ 核心完成:策略为引擎内置,默认配置/allowKinds 已参数化到 `preset.yml`;最小模板夹具与 C6 完整拆分为后续增强 | 引擎内置策略参数全部来自单一配置;`writePreset` 可物化任意模板;新旧生成产物行为等价 |
 
 约束不变,延续原 plan.md 的四条:
 
@@ -173,15 +205,15 @@
 
 | # | 耦合点 | 位置 |
 |---|---|---|
-| C1 | `buildCordis` 用字符串标记给 `agent.cordis.yml` 做手术:插入 `router-first-turn` / `prompt-config-engine` 行、给 `tool-subagent*` 注入 Flash persona、给 `tool-bootstrap` 注入 `usePtcMode/bootstrapMaxTokens` | `src/preset-core.ts` |
-| C2 | `patchToolBootstrap` 是对上游原始文件的字符串补丁,但 `writePreset` 已不再调用(anchored 快照已内联补丁)——死代码 | `src/preset-core.ts` |
-| C3 | `ROUTER_FLASH_PERSONA` 与 `router-first-turn.mjs` 的 `FLASH_PERSONA` 两份相同文本,需手工同步 | `src/preset-core.ts:67` vs `preset/anchored/router-first-turn.mjs:31` |
-| C4 | 默认四条提示词配置是 anchored/router 专属策略,却硬编码在引擎插件里 | `src/prompt-configs.ts` |
-| C5 | 引擎内置 anchored 专属策略:`anchor-auto / guide-auto / anchor-fallback / we-fallback`;纯注入引擎本不需要 | `engine/prompt-config-engine.mjs` |
-| C6 | `Config` / settings schema / Web 工作台塞满 anchored 专属开关(`anchorFirstTurn、usePtcMode、bootstrapMaxTokens、subagentFlash…`) | `src/config.ts`、`src/client/PromptWorkspace.tsx` |
-| C7 | `context-gate` 的 `allowKinds: [skill-invocation, near-anchor, router-guide]` 依赖 C4 的默认配置身份 | `preset/agent.cordis.yml` |
-| C8 | `router-first-turn` 硬编码 `mnemon:*` 段隐藏逻辑——第三方插件行为写死在默认预设里 | `preset/anchored/router-first-turn.mjs` |
-| C9 | `test/preset-core.test.mjs` 大量断言 anchored 生成结构,模板可替换后这些测试应迁移到预设包 | `test/preset-core.test.mjs` |
+| C1 | `buildCordis` 用字符串标记给 `agent.cordis.yml` 做手术:插入 `router-first-turn` / `prompt-config-engine` 行、给 `tool-subagent*` 注入 Flash persona、给 `tool-bootstrap` 注入 `usePtcMode/bootstrapMaxTokens` | 🟡 已改为模块装配 + token 渲染,不再字符串补丁;仍保留 anchored 结构校验 | `src/preset-core.ts` |
+| C2 | ~~`patchToolBootstrap` 是对上游原始文件的字符串补丁~~ 已删除 | ✅ 已删除 | `src/preset-core.ts` |
+| C3 | `ROUTER_FLASH_PERSONA` 与 `router-first-turn.mjs` 的 `FLASH_PERSONA` 两份相同文本,需手工同步 | ✅ 已消除,`flashPersona` 由 `preset.yml` 参数下发 | `src/host/manifest.ts` |
+| C4 | 默认四条提示词配置是 anchored/router 专属策略,却硬编码在引擎插件里 | ✅ 已迁到 `preset/anchored/preset.yml` 的 `promptConfigs`,writer 只做运行时字段覆盖 | `preset/anchored/preset.yml` |
+| C5 | 引擎内置 anchored 专属策略:`anchor-auto / guide-auto / custom-fallback`(`anchor-fallback` 为归一化旧别名);纯注入引擎本不需要 | ✅ 策略为引擎内置,参数由 `preset.yml` 单一配置下发 | `engine/strategies.mjs` |
+| C6 | `Config` / settings schema / Web 工作台塞满 anchored 专属开关(`anchorFirstTurn、usePtcMode、bootstrapMaxTokens、subagentFlash…`) | 🟡 已新增 `presetTemplate` 并按模板隐藏 anchored 专属 UI;字段尚未从 Config 完全拆分 | `src/config.ts`、`src/client/PromptWorkspace.tsx` |
+| C7 | `context-gate` 的 `allowKinds: [skill-invocation, near-anchor, router-guide]` 依赖 C4 的默认配置身份 | ✅ 已参数化为 `__ALLOW_KINDS__`,由 `preset.yml` 的 `allowKinds` 下发 | `engine/compositions/library/context-gate.yml` |
+| C8 | `router-first-turn` 硬编码 `mnemon:*` 段隐藏逻辑——第三方插件行为写死在默认预设里 | 🟡 已参数化为 `hideSectionPrefixes`,默认仍为 `[mnemon:]` | `engine/router-first-turn.mjs` |
+| C9 | `test/preset-core.test.mjs` 大量断言 anchored 生成结构,模板可替换后这些测试应迁移到预设包 | ⬜ 未解决 | `test/host/preset-core.test.mjs` |
 
 ### 7.2 anchored 预设功能审查
 
@@ -200,20 +232,20 @@
 ### 7.3 三件套目标形态
 
 - **引擎插件(dsh-plugin-prompt-tool)**:六层接线、merge/dedupe/promotion、插值、settings bridge、`/meta`、skills provider、TUI、通用 writer;内置策略仅 `static + placeholder`,fillers 仅通用三件(`env-facts / skill-catalog / instruction-hint`);配置新增 `presetTemplate`。
-- **单一预设单元(presets/anchored)**:`preset-manifest.yml` + 完整 `agent.cordis.yml` + `preset.yml` + 脚本 + 默认配置 + 专属策略(anchor/guide/we 从引擎迁出,经 `customStrategyDir` 注册)。
+- **单一预设单元(presets/anchored)**:`preset-manifest.yml` + 完整 `agent.cordis.yml` + `preset.yml` + 脚本 + 默认配置;专属策略为引擎内置,参数由 `preset.yml` 单一配置下发,`customStrategyDir` 保留为自定义模板扩展点。
 - **任意用户模板**:同一 manifest 约定,引用引擎行,注入任意提示词配置。
 
 ### 7.4 迁移步骤
 
-| 步 | 内容 | 验收 |
-|---|---|---|
-| S1 | 新增 `preset-manifest.yml` 约定;`writePreset` 改为通用"复制模板 + 注入引擎 + 渲染配置",删除全部字符串补丁 | `writePreset` 不引用任何 anchored 专属字符串 |
-| S2 | `preset/anchored/*`、`agent.cordis.yml`、`preset.yml`、默认四条配置整体迁入预设单元并补 manifest | 包内 `preset/` 只剩引擎;anchored 测试随迁 |
-| S3 | 引擎增加 `customStrategyDir` 注册点;anchor/guide/we 策略迁出为模板策略模块 | 引擎源码不再出现 anchor-auto 分支 |
-| S4 | 删除 `patchToolBootstrap` 死代码;合并双份 Flash persona;`allowKinds` 改由 manifest 生成;`mnemon:*` 前缀可配置 | 无重复 persona;preset-core 测试只测通用能力 |
-| S5 | settings 拆分:引擎字段 + 模板扩展字段;工作台按 manifest 动态渲染;`presetTemplate` 可切换 | 不装 anchored 模板时 UI 不出现 anchored 开关 |
-| S6 | 补 context-gate / tool-bootstrap 直接单测;加"最小模板端到端"夹具(证明任意模板可注入) | 最小模板仅 static 配置即可跑通全链路 |
-| S7 | 可选包级拆分:引擎包 + `@…/dsh-preset-anchored` 双包发布;默认 `presetTemplate=anchored` 保持兼容 | 老用户升级行为等价(现有测试全绿 + 新旧产物 diff) |
+| 步 | 内容 | 状态 | 验收 |
+|---|---|---|---|
+| S1 | 新增 `preset-manifest.yml` 约定;`writePreset` 改为通用"复制模板 + 注入引擎 + 渲染配置",删除全部字符串补丁 | 🟡 `writePreset` 已无字符串补丁、已复制模板策略目录;`preset-manifest.yml` 约定尚未引入 | `writePreset` 不引用任何 anchored 专属字符串 |
+| S2 | `preset/anchored/*`、`agent.cordis.yml`、`preset.yml`、默认四条配置整体迁入预设单元并补 manifest | ✅ 默认四条配置已迁入 `preset/anchored/preset.yml` 的 `promptConfigs`;`agent.cordis.yml` 仍由模块装配生成 | 包内 `preset/` 只剩引擎;anchored 测试随迁 |
+| S3 | 引擎增加 `customStrategyDir` 注册点;anchor/guide/we 策略迁出为模板策略模块 | ✅ 策略为引擎内置,`customStrategyDir` 保留为自定义模板扩展点 | 引擎内置策略参数全部来自单一配置 |
+| S4 | ~~删除 `patchToolBootstrap` 死代码~~ 已完成;合并双份 Flash persona;`allowKinds` 改由 manifest 生成;`mnemon:*` 前缀可配置 | 🟡 `patchToolBootstrap` 已删除、Flash persona 已收敛、`hideSectionPrefixes` 已参数化、`allowKinds` 已由 `preset.yml` 下发;preset-core 测试仍含 anchored 断言 | 无重复 persona;preset-core 测试只测通用能力 |
+| S5 | settings 拆分:引擎字段 + 模板扩展字段;工作台按 manifest 动态渲染;`presetTemplate` 可切换 | ⬜ 未完成 | 不装 anchored 模板时 UI 不出现 anchored 开关 |
+| S6 | 补 context-gate / tool-bootstrap 直接单测;加"最小模板端到端"夹具(证明任意模板可注入) | ⬜ 未完成 | 最小模板仅 static 配置即可跑通全链路 |
+| S7 | 可选包级拆分:引擎包 + `@…/dsh-preset-anchored` 双包发布;默认 `presetTemplate=anchored` 保持兼容 | ⬜ 未完成 | 老用户升级行为等价(现有测试全绿 + 新旧产物 diff) |
 
 ### 7.5 风险
 
@@ -251,8 +283,8 @@ dsh-plugin-prompt-tool/
 ├── engine/                       # ① 插件引擎(根目录,与配置文件夹 preset/ 分离)
 │   ├── prompt-config-engine.mjs  # 装配入口(仅接线)
 │   ├── schema.mjs            #    schema 归一化 + KNOWN_* 单一权威
-│   ├── strategies.mjs        #    全部内容策略:static/placeholder/instruction-hint/anchor-auto/guide-auto/anchor-fallback/we-fallback
-│   │                         #    (anchor-fallback=任意自定义锚定词;we-fallback=兼容别名;strategyDir 保留为自定义扩展点)
+│   ├── strategies.mjs        #    全部内容策略:static/placeholder/instruction-hint/anchor-auto/guide-auto/custom-fallback
+│   │                         #    (anchor-fallback 为归一化旧别名;锚点/引导文案与正则全部来自 preset.yml 参数)
 │   ├── fillers.mjs           #    通用 filler:env-facts/skill-catalog/instruction-hint
 │   ├── layers.mjs            #    非 pre-step 五层接线
 │   ├── executor.mjs          #    pre-step 执行器(过滤/去重/合并/落位)
@@ -277,14 +309,14 @@ dsh-plugin-prompt-tool/
 ├── src/                          # ③ 插件宿主侧(TypeScript,构建为 lib/)
 │   ├── index.ts                  #    apply 编排:skills/settings bridge/TUI + writer + 内容读取
 │   ├── config.ts                 #    引擎级 Config(anchored 旧开关兼容保留,新模板走 settingsExtension)
-│   ├── engine/                   #    通用 writer/数据层
+│   ├── host/                     #    宿主侧数据/生成层(原 src/engine)
 │   │   ├── prompt-configs.ts     #    spec 类型、渲染、三源合并、目录加载
 │   │   ├── manifest.ts           #    preset.yml 加载 + 变量解析 + __TOKEN__ 渲染 + 类型化深渲染
 │   │   ├── write-preset.ts       #    单文件参数驱动的生成目录物化器(零 anchored 字符串)
 │   │   └── templates.ts          #    通用模板库扫描(原 runtime/templates.ts)
-│   ├── preset-core.ts            #    兼容层:buildCordis(渲染 anchored 单文件模板)/patchToolBootstrap/parseFrontmatter
+│   ├── preset-core.ts            #    兼容层:buildCordis(渲染 anchored 单文件模板)/parseFrontmatter
 │   ├── runtime/                  #    宿主运行时适配
-│   │   ├── settings-bridge.ts    #    loopback bridge(/describe /mutate /configs-validate /import-directory /templates)
+│   │   ├── settings-bridge.ts    #    loopback bridge(/meta /describe /mutate /configs-validate /import-directory /templates)
 │   │   ├── configs-validate.ts   #    权威校验
 │   │   ├── skills-provider.ts
 │   │   ├── settings-registration.ts
@@ -294,6 +326,15 @@ dsh-plugin-prompt-tool/
 │   ├── profile-skills.ts
 │   ├── web-surface.ts
 │   └── client/                   #    Web 客户端(store/编辑器/工作台/挂载)
+│       ├── prompt-tool-types.ts  #    共享类型(PromptConfigDraft / EngineMeta / LayerFieldPolicy)
+│       ├── prompt-tool-store.ts  #    统一 store(含 /meta 加载)
+│       ├── PromptConfigList.tsx  #    共享配置列表/校验/保存/移动组件
+│       ├── host-surface.ts       #    HostSurfaceAdapter(所有 DOM 选择器集中地)
+│       ├── PromptConfigsEditor.tsx
+│       ├── PromptWorkspace.tsx
+│       ├── PromptSettingsPage.tsx
+│       ├── sidebar-entry.ts
+│       └── workspace-mount.tsx
 │
 ├── templates/                    # 通用示例模板(六层 + placeholder)
 ├── skills/                       # 随包技能
@@ -337,6 +378,14 @@ params:                               # 直读参数,无任何模板语法
   anchorText: ''
   guideCustom: false
   guideText: ''
+  guideComplexPattern: '(架构|重构|...)'
+  guideWeak: '\nRouter: ...'
+  guideDeep: '\nRouter: ...'
+  buildPattern: '(开发|创建|...)'
+  complexPattern: '(架构|重构|...)'
+  anchorBuild: "Start your reasoning with the exact sentence: '...'"
+  anchorInspect: "Start your reasoning with the exact sentence: '...'"
+  anchorDeep: "Start your reasoning with the exact sentence: '...'"
   injectPrompt: true
   usePtcMode: true
   bootstrapMaxTokens: 0
@@ -372,14 +421,14 @@ settingsExtension: { ... }
 | `preset-manifest.yml` + `agent.cordis.yml` + `preset.md` + `AGENTS.md` + `configs/*.yml` | `preset/anchored/preset.yml`(单一参数文件) | **最终目标:用户写一个参数 YAML 即可复刻 anchored 全部能力** |
 | `engine/*` | `engine/*`(保持) | 拆为 schema/strategies/fillers/layers/executor + facade |
 | `preset/anchored/*.mjs` | `engine/*.mjs` | anchored 全部执行逻辑抽象为插件引擎 |
-| `preset/anchored/strategies/` | `engine/strategies.mjs` | anchor-auto/guide-auto/anchor-fallback/we-fallback 全部内置;strategyDir 保留为自定义模板扩展点 |
+| `preset/anchored/strategies/` | `engine/strategies.mjs` | anchor-auto/guide-auto/custom-fallback 全部内置(`anchor-fallback` 归一化);strategyDir 保留为自定义模板扩展点 |
 | `preset/anchored/scripts/flash-persona.txt` | manifest `variables.FLASH_PERSONA` | 文本改为参数传递 |
 | `preset/agent.cordis.yml` / `preset/preset.yml` / 根 `preset.md` / `AGENTS.md` | `preset/anchored/` | 预设内容与预设放一起 |
-| `src/prompt-configs.ts` | `src/engine/prompt-configs.ts` | 纯移动 |
-| `src/runtime/templates.ts` | `src/engine/templates.ts` | 纯移动 |
-| `src/preset-write.ts` | `src/engine/write-preset.ts` | 重写为 manifest 驱动,删除全部字符串补丁 |
+| `src/prompt-configs.ts` | `src/host/prompt-configs.ts` | 纯移动 |
+| `src/runtime/templates.ts` | `src/host/templates.ts` | 纯移动 |
+| `src/preset-write.ts` | `src/host/write-preset.ts` | 重写为 manifest 驱动,删除全部字符串补丁 |
 | `engine/compositions/anchored-standard.yml`(历史拆分) | `scripts/rebuild-composition.mjs` → 从官方 standard/minimal 源码切块 + 声明式补丁重建 `library/*.yml` | 官方行模块即数据源;本地附加模块在 `source/local/` |
-| `src/preset-core.ts` | 保留为兼容层 | buildCordis=渲染 anchored 模板;patchToolBootstrap 仅溯源测试 |
+| `src/preset-core.ts` | 保留为兼容层 | buildCordis=渲染 anchored 模板;parseFrontmatter |
 | `test/*.test.mjs` | `test/{engine,host,presets/anchored}/*` | 按层拆测试 |
 | `upstream/dsh-anchored-standard` | 保持根级 | 仅 review 用,引擎包发布不携带 |
 
@@ -391,3 +440,4 @@ settingsExtension: { ... }
 4. 生成目录中 `engine/` 与源码 `engine/` 逐字节一致;
 5. `writePreset` 输出不包含任何 `__VARIABLE__` 残留(变量替换完成断言);
 6. 任意新模板只要 manifest 合法即可通过同一端到端夹具(证明"预设只设参数、引擎可注入任何模板")。
+7. 锚点/引导策略的文案与正则只出现在 `preset/<template>/preset.yml`;`src/` 与 `engine/` 不得重复维护同一份默认文案。

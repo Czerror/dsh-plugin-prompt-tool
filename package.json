@@ -83,10 +83,8 @@
     "preset",
     "templates",
     "skills",
-    "plan.md",
-    "planv2.md",
-    "README.md",
-    "upstream/dsh-anchored-standard"
+    "docs",
+    "README.md"
   ],
   "scripts": {
     "build": "tsdown",

@@ -10,8 +10,8 @@
  * 校验过程只读不写：不写 settings、不重建生成目录，调用方可以安全地在
  * 保存前反复调用。
  */
-import type { PromptConfigFile, PromptConfigSpec } from '../engine/prompt-configs.ts'
-import { renderPromptConfigYaml } from '../engine/prompt-configs.ts'
+import type { PromptConfigFile, PromptConfigSpec } from '../host/prompt-configs.ts'
+import { renderPromptConfigYaml } from '../host/prompt-configs.ts'
 
 export interface PromptConfigValidationError {
   /** 数组下标；结构层整组错误为 -1。 */

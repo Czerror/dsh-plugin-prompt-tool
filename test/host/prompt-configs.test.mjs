@@ -137,9 +137,9 @@ test('buildPromptConfigFiles 恒生成四个提示词配置模块，数字前缀
 test('buildPromptConfigFiles 处理空提示词时提示词配置结构完整', () => {
   const { yaml } = configByName({}, '', '20-prompt-injector')
   assert.equal(yaml.enabled, true)
-  assert.equal(yaml.strategy, 'anchor-fallback')
+  assert.equal(yaml.strategy, 'custom-fallback')
   assert.equal(yaml.params.text, '')
-  assert.equal(yaml.params.anchorWord, 'we')
+  assert.equal(yaml.params.customAnchorWord, 'we')
 })
 
 

@@ -31,6 +31,7 @@ export function PromptSettingsPage(props: PromptSettingsPageProps): ReactNode {
       {!store.loading && (
         <PromptConfigsEditor
           api={api}
+          meta={store.meta}
           configs={store.fields.promptConfigs}
           configsDir={store.fields.promptConfigsDir}
           savedConfigs={store.savedConfigs}

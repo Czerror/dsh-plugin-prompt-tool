@@ -77,6 +77,22 @@ export interface BuildCordisOptions {
   bootstrapMaxTokens?: number
   /** 使用 PTC 模式：默认 true。 */
   usePtcMode?: boolean
+  /** guide-auto 复杂任务判定正则（单一配置来源，缺省用引擎内置）。 */
+  guideComplexPattern?: string
+  /** guide-auto 弱引导默认文本。 */
+  guideWeak?: string
+  /** guide-auto 深度引导默认文本。 */
+  guideDeep?: string
+  /** anchor-auto 构建类任务判定正则。 */
+  buildPattern?: string
+  /** anchor-auto 复杂/设计类任务判定正则。 */
+  complexPattern?: string
+  /** anchor-auto 构建类首句锚点。 */
+  anchorBuild?: string
+  /** anchor-auto 检查类首句锚点。 */
+  anchorInspect?: string
+  /** anchor-auto 深度设计类首句锚点。 */
+  anchorDeep?: string
 }
 
 /** 从 BuildCordisOptions 构造默认四条提示词配置（顺序即引擎执行顺序契约）。 */
@@ -103,7 +119,15 @@ export function buildDefaultPromptConfigs(options: BuildCordisOptions, prompt: s
       dedupe: 'session',
       promotion: 'none',
       subagents: 'none',
-      params: { useCustom: anchorCustom, anchorText },
+      params: {
+        useCustom: anchorCustom,
+        anchorText,
+        buildPattern: options.buildPattern,
+        complexPattern: options.complexPattern,
+        anchorBuild: options.anchorBuild,
+        anchorInspect: options.anchorInspect,
+        anchorDeep: options.anchorDeep,
+      },
     },
     {
       id: 'router-guide',
@@ -119,13 +143,19 @@ export function buildDefaultPromptConfigs(options: BuildCordisOptions, prompt: s
       promotion: 'main',
       subagents: 'none',
       modelScope: routerGuideUseCustom ? 'all' : 'flash',
-      params: { useCustom: routerGuideUseCustom, text: guideText },
+      params: {
+        useCustom: routerGuideUseCustom,
+        text: guideText,
+        guideComplexPattern: options.guideComplexPattern,
+        guideWeak: options.guideWeak,
+        guideDeep: options.guideDeep,
+      },
     },
     {
       id: 'prompt-injector',
       name: 'preset.md 注入',
       enabled: injectPrompt,
-      strategy: 'anchor-fallback',
+      strategy: 'custom-fallback',
       layer: 'pre-step',
       configKind: 'ordered',
       order: 20,
@@ -135,7 +165,7 @@ export function buildDefaultPromptConfigs(options: BuildCordisOptions, prompt: s
       promotion: 'main',
       subagents: 'inherit',
       sourceKind: 'plugin',
-      params: { text: prompt, anchorWord: 'we' },
+      params: { text: prompt, customAnchorWord: 'we' },
     },
     {
       id: 'instruction-hint',

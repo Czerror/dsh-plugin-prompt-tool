@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } fr
 import clsx from 'clsx'
 import type { IApiClient } from '@deepseek-ai/dsh-client-connection/client'
 import {
-  bridgePost,
   type Fields,
   type PromptToolStore,
   type PromptToolSettingsTransport,
@@ -10,39 +9,16 @@ import {
   type SwitchKey,
   usePromptToolStore,
 } from './prompt-tool-store.ts'
-import {
-  LAYER_LABELS,
-  LAYERS,
-  PromptConfigCard,
-  type PromptConfigDraft,
-  type ValidationErrorEntry,
-} from './PromptConfigsEditor.tsx'
+import { PromptConfigList } from './PromptConfigList.tsx'
+import type { PromptConfigDraft } from './PromptConfigsEditor.tsx'
 import type { PromptToolWorkspaceController } from './workspace-controller.ts'
 import ui from './PromptUi.module.css'
 import css from './PromptWorkspace.module.css'
-
-interface ValidateResult {
-  ok: boolean
-  valid: boolean
-  errors?: ValidationErrorEntry[]
-  message?: string
-}
 
 const layerOf = (config: PromptConfigDraft): string => config.layer ?? 'pre-step'
 
 const configsOfLayer = (configs: PromptConfigDraft[], layer: string): PromptConfigDraft[] =>
   configs.filter((config) => layerOf(config) === layer)
-
-/** 与 settings-bridge /configs-validate 相同的保存前权威校验。 */
-async function validateConfigs(configs: PromptConfigDraft[]): Promise<{ valid: boolean; errors: ValidationErrorEntry[] }> {
-  try {
-    const res = await bridgePost<ValidateResult>('/configs-validate', { promptConfigs: configs })
-    if (!res.ok) return { valid: false, errors: [{ index: -1, id: '', message: res.message ?? 'settings bridge unavailable' }] }
-    return { valid: res.value.valid, errors: res.value.valid ? [] : res.value.errors ?? [] }
-  } catch (error) {
-    return { valid: false, errors: [{ index: -1, id: '', message: error instanceof Error ? error.message : String(error) }] }
-  }
-}
 
 function ToggleRow(props: { id: string; label: string; hint: string; checked: boolean; disabled?: boolean; extra?: ReactNode; onChange: (value: boolean) => void }): ReactNode {
   return (
@@ -114,7 +90,7 @@ function BuiltinConfigRows(props: { fields: Fields; disabled: boolean; onChange:
           checked={fields.anchorFirstTurn} disabled={props.disabled || !fields.writePreset} onChange={(value) => props.onChange('anchorFirstTurn', value)} />
         <ToggleRow id="pt-builtin-router-guide" label="router-guide · 每轮引导" hint="strategy=guide-auto · position=after-user · dedupe=batch；跟随「追加任务引导」。"
           checked={fields.anchorFirstTurn} disabled={props.disabled || !fields.writePreset} onChange={(value) => props.onChange('anchorFirstTurn', value)} />
-        <ToggleRow id="pt-builtin-prompt-injector" label="prompt-injector · preset.md 注入" hint="strategy=anchor-fallback · position=before-all · dedupe=session；跟随「注入 preset.md」。"
+        <ToggleRow id="pt-builtin-prompt-injector" label="prompt-injector · preset.md 注入" hint="strategy=custom-fallback · position=before-all · dedupe=session；跟随「注入 preset.md」。"
           checked={fields.injectPrompt} disabled={props.disabled || !fields.writePreset} onChange={(value) => props.onChange('injectPrompt', value)} />
         <ToggleRow id="pt-builtin-instruction-hint" label="instruction-hint · 指令文件提示" hint="strategy=placeholder · fill=instruction-hint · position=after-all；常开，不可在此关闭。"
           checked={true} disabled onChange={() => {}} />
@@ -328,146 +304,16 @@ function FileEditor(props: { store: PromptToolStore; scope: 'preset' | 'agents' 
 
 function LayerConfigList(props: { store: PromptToolStore; layer: string }): ReactNode {
   const { store, layer } = props
-  const [expanded, setExpanded] = useState<string | undefined>(undefined)
-  const [subTab, setSubTab] = useState<string>('list')
-  const [errors, setErrors] = useState<ValidationErrorEntry[]>([])
-  const [saving, setSaving] = useState(false)
-  const configs = useMemo(() => configsOfLayer(store.fields.promptConfigs, layer), [store.fields.promptConfigs, layer])
-  const dirty = JSON.stringify(store.fields.promptConfigs) !== JSON.stringify(store.savedConfigs)
-  const activeTab = subTab !== 'list' && configs.some((config) => config.id === subTab) ? subTab : 'list'
-  const focusedConfig = activeTab === 'list' ? undefined : configs.find((config) => config.id === activeTab)
-
-  const save = async () => {
-    setSaving(true)
-    const result = await validateConfigs(store.fields.promptConfigs)
-    if (result.valid) {
-      setErrors([])
-      store.persistConfigs(store.fields.promptConfigs)
-      store.showNotice('ok', `提示词配置已校验并保存（${store.fields.promptConfigs.length} 条）`)
-    } else {
-      setErrors(result.errors)
-      store.showNotice('error', `校验失败：${result.errors.length} 个错误`)
-    }
-    setSaving(false)
-  }
-
-  const discard = () => {
-    store.patch({ promptConfigs: store.savedConfigs })
-    setErrors([])
-  }
-
-  const patchAt = (globalIndex: number, patch: Partial<PromptConfigDraft>) => {
-    store.patch({
-      promptConfigs: store.fields.promptConfigs.map((config, index) => index === globalIndex ? { ...config, ...patch } : config),
-    })
-  }
-
-  const duplicateAt = (globalIndex: number) => {
-    const source = store.fields.promptConfigs[globalIndex]
-    if (source === undefined) return
-    let id = `${source.id}-copy`
-    let suffix = 2
-    while (store.fields.promptConfigs.some((config) => config.id === id)) {
-      id = `${source.id}-copy${suffix}`
-      suffix += 1
-    }
-    const clone = JSON.parse(JSON.stringify(source)) as PromptConfigDraft
-    clone.id = id
-    store.patch({ promptConfigs: [...store.fields.promptConfigs, clone] })
-    setExpanded(id)
-    setSubTab(id)
-  }
-
-  const removeAt = (globalIndex: number) => {
-    const next = store.fields.promptConfigs.filter((_, index) => index !== globalIndex)
-    const removedId = store.fields.promptConfigs[globalIndex]?.id
-    store.patch({ promptConfigs: next })
-    if (expanded === removedId) setExpanded(undefined)
-    if (subTab === removedId) setSubTab('list')
-  }
-
-  /** 上移/下移只在本层级内交换：其他层级顺序保持稳定。 */
-  const moveWithinLayer = (globalIndex: number, delta: -1 | 1) => {
-    const all = store.fields.promptConfigs
-    const indices = all.flatMap((config, index) => layerOf(config) === layer ? [index] : [])
-    const position = indices.indexOf(globalIndex)
-    const target = position + delta
-    if (position < 0 || target < 0 || target >= indices.length) return
-    const targetIndex = indices[target]!
-    const next = [...all]
-    const current = next[globalIndex]
-    next[globalIndex] = next[targetIndex]!
-    next[targetIndex] = current!
-    store.patch({ promptConfigs: next })
-  }
-
-  const renderCard = (config: PromptConfigDraft, forceOpen: boolean) => {
-    const globalIndex = store.fields.promptConfigs.indexOf(config)
-    const layerIndices = store.fields.promptConfigs.flatMap((candidate, index) => layerOf(candidate) === layer ? [index] : [])
-    const position = layerIndices.indexOf(globalIndex)
-    const isOpen = forceOpen || expanded === config.id
-    return (
-      <PromptConfigCard
-        key={config.id}
-        config={config}
-        expanded={isOpen}
-        onToggleExpanded={() => {
-          if (forceOpen) return
-          setExpanded(isOpen ? undefined : config.id)
-        }}
-        onToggleEnabled={(enabled) => patchAt(globalIndex, { enabled })}
-        onPatch={(patch) => patchAt(globalIndex, patch)}
-        actions={{
-          canMoveUp: position > 0,
-          canMoveDown: position >= 0 && position < layerIndices.length - 1,
-          onMoveUp: () => moveWithinLayer(globalIndex, -1),
-          onMoveDown: () => moveWithinLayer(globalIndex, 1),
-          onDuplicate: () => duplicateAt(globalIndex),
-          onDelete: () => removeAt(globalIndex),
-        }}
-      />
-    )
-  }
-
   return (
-    <section className={ui.section} aria-labelledby="pt-layer-configs-heading">
-      <div className={ui.sectionHeading}>
-        <div><h2 id="pt-layer-configs-heading">本层提示词配置</h2><p>{configs.length} 条自定义配置 · {configs.filter((config) => config.enabled !== false).length} 条启用；上下移动控制同层顺序，priority 小者更靠近锚点。</p></div>
-        <div className={css.sectionActions}>
-          <button type="button" className={ui.primaryPill} disabled={saving} onClick={() => void save()}>{saving ? '保存中…' : '校验并保存'}</button>
-          <button type="button" className={ui.pillButton} disabled={!dirty} onClick={discard}>放弃修改</button>
-        </div>
-      </div>
-
-      {errors.length > 0 && (
-        <div className={ui.configErrorBox}>
-          {errors.map((error, index) => <div key={`${error.index}-${index}`} className={ui.configErrorLine}>[{error.index}] {error.id || '(缺 id)'}：{error.message}</div>)}
-        </div>
-      )}
-
-      {configs.length === 0 ? (
-        <div className={ui.emptyState}><span className={ui.emptyGlyph} aria-hidden="true">⌁</span><div><h3>本层还没有自定义配置</h3><p>请到主设置「提示词配置」从模板插入或从目录导入。</p></div></div>
-      ) : (
-        <>
-          {configs.length > 1 && (
-            <div className={css.memoryNavigation} data-nested>
-              <div className={css.memoryTabs} role="tablist" aria-label={`${LAYER_LABELS[layer as typeof LAYERS[number]]?.title ?? layer}配置分页`}>
-                <button type="button" role="tab" aria-selected={activeTab === 'list'} data-active={activeTab === 'list' ? '' : undefined} onClick={() => setSubTab('list')}>全部（{configs.length}）</button>
-                {configs.map((config) => (
-                  <button key={config.id} type="button" role="tab" aria-selected={activeTab === config.id} data-active={activeTab === config.id ? '' : undefined} onClick={() => setSubTab(config.id)}>
-                    {config.name && config.name !== config.id ? `${config.name}` : config.id}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {focusedConfig === undefined
-            ? <div className={ui.configList}>{configs.map((config) => renderCard(config, false))}</div>
-            : <div className={ui.configList}>{renderCard(focusedConfig, true)}</div>}
-        </>
-      )}
-    </section>
+    <PromptConfigList
+      meta={store.meta}
+      configs={store.fields.promptConfigs}
+      savedConfigs={store.savedConfigs}
+      layer={layer}
+      onPatchConfigs={(configs) => store.patch({ promptConfigs: configs })}
+      onSaveConfigs={(configs) => store.persistConfigs(configs)}
+      onNotice={store.showNotice}
+    />
   )
 }
 
@@ -632,7 +478,7 @@ export interface PromptWorkspaceProps {
   onClose: () => void
 }
 
-type WorkspacePage = typeof LAYERS[number] | 'skills' | 'features'
+type WorkspacePage = string
 type EntryPage = 'switches' | 'preset' | 'agents' | 'configs'
 
 const ENTRY_PAGES: Array<{ id: EntryPage; label: string }> = [
@@ -642,9 +488,21 @@ const ENTRY_PAGES: Array<{ id: EntryPage; label: string }> = [
   { id: 'configs', label: '消息批配置' },
 ]
 
+/** /meta 尚未加载或失败时的 UI 兜底层列表，保证 Skills 页仍可返回注入层。 */
+const FALLBACK_LAYERS = ['pre-step', 'system-section', 'runtime-context', 'agent-request', 'llm-stream', 'tool-pipeline']
+const FALLBACK_LAYER_LABELS: Record<string, { title: string; detail: string }> = {
+  'pre-step': { title: '消息批层', detail: '官方默认层：agent/pre-step 消息批。' },
+  'system-section': { title: '系统段层', detail: 'system-section 静态层。' },
+  'runtime-context': { title: '运行上下文', detail: 'runtime-context 层。' },
+  'agent-request': { title: '调用配置层', detail: 'agent-request 层。' },
+  'llm-stream': { title: '模型流层', detail: 'llm/stream 层。' },
+  'tool-pipeline': { title: '工具管线层', detail: 'tools/* 层。' },
+}
+
 /** 侧边栏独立工作台：顶部六个层级标签 + Skills 设置。 */
 export function PromptWorkspace(props: PromptWorkspaceProps): ReactNode {
   const store = usePromptToolStore(props.api, props.settings)
+  const layers = store.meta.layers.length > 0 ? store.meta.layers : FALLBACK_LAYERS
   const [page, setPage] = useState<WorkspacePage>('pre-step')
   const [entryPage, setEntryPage] = useState<EntryPage>('switches')
   const open = useSyncExternalStore(
@@ -660,17 +518,21 @@ export function PromptWorkspace(props: PromptWorkspaceProps): ReactNode {
 
 
   const enabledCount = store.fields.promptConfigs.filter((config) => config.enabled !== false).length
+  const isAnchoredTemplate = store.fields.presetTemplate === 'anchored'
   const layerMeta = page === 'skills'
     ? `${store.fields.skillCatalog.length} 技能`
     : page === 'features'
       ? '全局'
       : `${configsOfLayer(store.fields.promptConfigs, page).length} 配置`
-  const pageTitle = page === 'skills' ? 'Skills 设置' : page === 'features' ? '功能设置' : LAYER_LABELS[page].title
+  const layerLabel = page !== 'skills' && page !== 'features'
+    ? (store.meta.layerLabels[page] ?? FALLBACK_LAYER_LABELS[page])
+    : undefined
+  const pageTitle = page === 'skills' ? 'Skills 设置' : page === 'features' ? '功能设置' : (layerLabel?.title ?? page)
   const pageDetail = page === 'skills'
     ? '按 skills 目录注册的可开关技能；目录与逐技能开关立即生效。'
     : page === 'features'
       ? '无法明确归属到单一注入层级的全局功能开关。'
-      : LAYER_LABELS[page].detail
+      : (layerLabel?.detail ?? '')
 
   return (
     <div className={css.shell}>
@@ -688,9 +550,9 @@ export function PromptWorkspace(props: PromptWorkspaceProps): ReactNode {
 
       <div className={css.topNavigation}>
         <div className={css.nav} role="tablist" aria-label="提示词工具层级">
-          {LAYERS.map((item) => (
+          {layers.map((item) => (
             <button key={item} type="button" role="tab" aria-selected={page === item} data-active={page === item ? '' : undefined} onClick={() => setPage(item)}>
-              <span><strong>{LAYER_LABELS[item].title}</strong><small>{item}</small></span>
+              <span><strong>{store.meta.layerLabels[item]?.title ?? FALLBACK_LAYER_LABELS[item]?.title ?? item}</strong><small>{item}</small></span>
             </button>
           ))}
           <button type="button" role="tab" aria-selected={page === 'skills'} data-active={page === 'skills' ? '' : undefined} onClick={() => setPage('skills')}>
@@ -718,22 +580,28 @@ export function PromptWorkspace(props: PromptWorkspaceProps): ReactNode {
 
           {page === 'skills' ? <SkillsSettings store={store} api={props.api} /> : (
             <>
-              {page === 'pre-step' && entryPage === 'switches' && <EntrySwitches store={store} />}
+              {page === 'pre-step' && entryPage === 'switches' && (isAnchoredTemplate
+                ? <EntrySwitches store={store} />
+                : <p className={ui.readOnly} role="status">当前预设模板非 anchored，anchored 专属入口开关已隐藏。</p>)}
               {page === 'pre-step' && entryPage === 'preset' && <FileEditor store={store} scope="preset" />}
               {page === 'pre-step' && entryPage === 'agents' && <FileEditor store={store} scope="agents" />}
               {page === 'pre-step' && entryPage === 'configs' && (
                 <>
-                  <BuiltinConfigRows fields={store.fields} disabled={store.loading} onChange={(key, value) => {
+                  {isAnchoredTemplate && <BuiltinConfigRows fields={store.fields} disabled={store.loading} onChange={(key, value) => {
                     if (store.fields[key] !== value) store.toggle(key)
-                  }} />
+                  }} />}
                   <LayerConfigList store={store} layer="pre-step" />
                 </>
               )}
               {page === 'features' && <FeatureSettings store={store} />}
               {page !== 'pre-step' && page !== 'features' && (
                 <>
-                  {page === 'agent-request' && <AgentRequestSwitches store={store} />}
-                  {page === 'tool-pipeline' && <ToolPipelineSwitches store={store} />}
+                  {page === 'agent-request' && (isAnchoredTemplate
+                    ? <AgentRequestSwitches store={store} />
+                    : <p className={ui.readOnly} role="status">当前预设模板非 anchored，调用配置层 anchored 专属开关已隐藏。</p>)}
+                  {page === 'tool-pipeline' && (isAnchoredTemplate
+                    ? <ToolPipelineSwitches store={store} />
+                    : <p className={ui.readOnly} role="status">当前预设模板非 anchored，工具管线层 anchored 专属开关已隐藏。</p>)}
                   <LayerConfigList store={store} layer={page} />
                 </>
               )}

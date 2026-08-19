@@ -1,8 +1,8 @@
 /**
  * strategies — 引擎内容策略绑定(config.resolve)。
- * 内置通用策略:static / placeholder / instruction-hint(兼容别名)。
- * 模板专属策略(如 anchored 的 anchor-auto / guide-auto / anchor-fallback)
- * 可通过 createPromptConfigs(specs, { strategyDir }) 从外部模块懒加载。
+ * 内置策略: static / placeholder / instruction-hint / anchor-auto / guide-auto / custom-fallback / anchor-fallback。
+ * 策略参数全部来自 config.params（由 preset.yml 单一配置源下发），引擎只负责组装。
+ * 仍支持 strategyDir 懒加载自定义模板策略。
  */
 
 import { extractText } from './shared.mjs'
@@ -10,66 +10,67 @@ import { createInstructionHintResolver, createPlaceholderResolver } from './fill
 
 const name = 'prompt-config-engine'
 
-// ── 通用策略默认文本 ───────────────────────────────────────────────────────
-export const DEFAULT_GUIDE_TEXT = ['简单任务自动引导:', 'Router: classify this task (build or fix) now, then adopt the matching style — build: direct production; fix: inspect-first. Think deeply first, then commit and act.', '', '复杂任务自动引导:', 'Router: classify this task (build or fix) now, then adopt the matching style — build: direct production; fix: inspect-first. Think deeply about the architecture, edge cases, and integration points. Do not spend reasoning on the environment or tooling. Produce when your information is complete. End each reasoning block with a decision or an information need.'].join('\n')
-
 /** 锚定词正则转义。 */
 function escapeRegExp(text) {
   return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
 /**
- * anchor-auto(通用策略):首条真实用户消息后的一次性任务锚点。
- * 锚句与分类正则均为引擎内置默认;params.useCustom / params.anchorText 由预设参数覆盖。
+ * anchor-auto:首条真实用户消息后的一次性任务锚点。
+ * 正则与锚句文本全部来自 config.params（由 preset.yml 单一配置源下发）。
  */
-const BUILD_RE = /(开发|创建|写一个|生成|从零|做一个|构建|新项目|搭建|实现|做出|上线|落地|脚本|工具|应用|build|create|develop|generate|implement|make a|new project)/i
-const COMPLEX_RE = /(架构|重构|设计|系统|全面|深度|迁移|兼容|审查|architecture|refactor|comprehensive|design|system|migrate|review)/i
-export const ANCHOR_BUILD = "Start your reasoning with the exact sentence: 'We need to build it directly and verify it.'"
-export const ANCHOR_INSPECT = "Start your reasoning with the exact sentence: 'We need to inspect the code first.'"
-export const ANCHOR_DEEP = "Start your reasoning with the exact sentence: 'Let me think through the design before changing anything.'"
-
 function createAnchorAutoResolver(config) {
   const useCustom = config.params?.useCustom === true
   const customText = typeof config.params?.anchorText === 'string' ? config.params.anchorText : ''
+  const buildPattern = typeof config.params?.buildPattern === 'string' ? config.params.buildPattern : ''
+  const complexPattern = typeof config.params?.complexPattern === 'string' ? config.params.complexPattern : ''
+  const anchorBuild = typeof config.params?.anchorBuild === 'string' ? config.params.anchorBuild : ''
+  const anchorInspect = typeof config.params?.anchorInspect === 'string' ? config.params.anchorInspect : ''
+  const anchorDeep = typeof config.params?.anchorDeep === 'string' ? config.params.anchorDeep : ''
+  const buildRe = buildPattern.length > 0 ? new RegExp(buildPattern, 'i') : undefined
+  const complexRe = complexPattern.length > 0 ? new RegExp(complexPattern, 'i') : undefined
   return ({ messages }) => {
     if (useCustom) {
       const text = customText.trim()
       return text.length > 0 ? { text } : null
+    }
+    if (buildRe === undefined || complexRe === undefined || (anchorBuild.length === 0 && anchorInspect.length === 0 && anchorDeep.length === 0)) {
+      return null
     }
     const userIndex = messages.findIndex((message) => message?.source?.kind === 'user')
     if (userIndex < 0) return null
     const taskText = extractText(messages[userIndex])
     if (taskText.length === 0) return null
     let anchor
-    if (COMPLEX_RE.test(taskText)) anchor = ANCHOR_DEEP
-    else if (BUILD_RE.test(taskText)) anchor = ANCHOR_BUILD
-    else anchor = ANCHOR_INSPECT
-    return { text: anchor }
+    if (complexRe.test(taskText)) anchor = anchorDeep
+    else if (buildRe.test(taskText)) anchor = anchorBuild
+    else anchor = anchorInspect
+    return anchor.length > 0 ? { text: anchor } : null
   }
 }
 
 /**
- * guide-auto(通用策略):晋升后每轮用户消息后的弱/深度引导。
- * 引导文本为引擎内置默认;params.useCustom / params.text 由预设参数覆盖。
+ * guide-auto:晋升后每轮用户消息后的弱/深度引导。
+ * 正则与引导文本全部来自 config.params（由 preset.yml 单一配置源下发）。
  */
-const GUIDE_COMPLEX_RE = /(架构|重构|全面|详细|设计|系统|优化|分析|architecture|refactor|comprehensive|detailed|design|system|optimize|analyze)/i
-export const GUIDE_WEAK = '\nRouter: classify this task (build or fix) now, then adopt the matching style — build: direct production; fix: inspect-first. Think deeply first, then commit and act.'
-export const GUIDE_DEEP = '\nRouter: classify this task (build or fix) now, then adopt the matching style — build: direct production; fix: inspect-first. Think deeply about the architecture, edge cases, and integration points. Do not spend reasoning on the environment or tooling. Produce when your information is complete. End each reasoning block with a decision or an information need.'
-
 function createGuideAutoResolver(config) {
   const useCustom = config.params?.useCustom === true
   const customText = typeof config.params?.text === 'string' ? config.params.text : ''
-  const unchangedDefault = customText.trim() === DEFAULT_GUIDE_TEXT.trim()
+  const guideComplexPattern = typeof config.params?.guideComplexPattern === 'string' ? config.params.guideComplexPattern : ''
+  const guideWeak = typeof config.params?.guideWeak === 'string' ? config.params.guideWeak : ''
+  const guideDeep = typeof config.params?.guideDeep === 'string' ? config.params.guideDeep : ''
+  const guideComplexRe = guideComplexPattern.length > 0 ? new RegExp(guideComplexPattern, 'i') : undefined
   return ({ messages }) => {
     const userIndex = messages.findIndex((message) => message?.source?.kind === 'user')
     if (userIndex < 0) return null
     const text = extractText(messages[userIndex])
     if (text.length === 0) return null
-    if (useCustom && !unchangedDefault) {
+    if (useCustom) {
       const guide = customText.trim()
       return guide.length > 0 ? { text: guide } : null
     }
-    return { text: (text.length > 120 || GUIDE_COMPLEX_RE.test(text)) ? GUIDE_DEEP : GUIDE_WEAK }
+    if (guideWeak.length === 0 && guideDeep.length === 0) return null
+    return { text: (text.length > 120 || (guideComplexRe !== undefined && guideComplexRe.test(text))) ? guideDeep : guideWeak }
   }
 }
 
@@ -84,19 +85,19 @@ function matchesAnchorWord(raw, anchorWord) {
 }
 
 /**
- * anchor-fallback(we-fallback 为其兼容别名):通用自定义锚定词注入。
- * params.anchorWord 可锚定任意词/字(默认 "we"):晋升后首个 reasoning 命中
- * 立即注入一次,未命中最多等满两轮兜底。与任何模板内容无关,因此属于引擎内置。
+ * custom-fallback(anchor-fallback 为其兼容别名):自定义锚定词命中后注入一次，未命中最多两轮兜底。
+ * 参数全部来自 config.params（由 preset.yml 单一配置源下发）。
  */
-function createAnchorFallbackResolver(config) {
+function createCustomFallbackResolver(config) {
   const promptText = (typeof config.text === 'string' && config.text.length > 0)
     ? config.text
     : (typeof config.params?.text === 'string' && config.params.text.length > 0 ? config.params.text : undefined)
-  const anchorWord = typeof config.params?.anchorWord === 'string' && config.params.anchorWord.length > 0
-    ? config.params.anchorWord
-    : 'we'
+  const anchorWord = typeof config.params?.customAnchorWord === 'string' && config.params.customAnchorWord.length > 0
+    ? config.params.customAnchorWord
+    : (typeof config.params?.anchorWord === 'string' && config.params.anchorWord.length > 0
+        ? config.params.anchorWord
+        : 'we')
 
-  /** Sessions whose first assistant reasoning has been scanned (memoized). */
   const anchorScanned = new Map()
 
   const isAnchorConfirmed = (agent) => {
@@ -104,7 +105,6 @@ function createAnchorFallbackResolver(config) {
     const cached = anchorScanned.get(session.id)
     if (cached !== undefined) return cached
     const first = session.events.find((event) => event.type === 'assistant/message')
-    // 首个 assistant 消息尚未落库时不要缓存 false,等待下一轮再查。
     if (first === undefined) return false
     const content = first.data?.message?.content ?? []
     const reasoning = content.find((block) => block.type === 'reasoning')
@@ -145,8 +145,8 @@ export function bindResolver(config, strategyDir) {
     case 'instruction-hint': return createInstructionHintResolver()
     case 'anchor-auto': return createAnchorAutoResolver(config)
     case 'guide-auto': return createGuideAutoResolver(config)
-    case 'anchor-fallback':
-    case 'we-fallback': return createAnchorFallbackResolver(config)
+    case 'custom-fallback':
+    case 'anchor-fallback': return createCustomFallbackResolver(config)
     case 'static': {
       const text = config.text
       const texts = config.texts

@@ -1,25 +1,8 @@
 import css from './PromptWorkspace.module.css'
 import type { PromptToolWorkspaceController } from './workspace-controller.ts'
+import { findFamilyEntries, findNewSessionButton, findSidebarInsertBase, findSidebarRoot } from './host-surface.ts'
 
-export const PROMPT_TOOL_ENTRY_SELECTOR = '[data-dsh-prompt-tool-entry]'
-
-const FAMILY_SELECTOR = '[data-dsh-taskboard-entry], [data-dsh-ssh-entry], [data-dsh-prompt-tool-entry]'
-
-function sidebarRoot(): HTMLElement | undefined {
-  const column = document.querySelector<HTMLElement>('[data-pane="sidebar"], [class*="sidebarCol"]')
-  if (column === null) return undefined
-  return column.querySelector<HTMLElement>('[class*="logoRow"]')?.parentElement
-    ?? (column.firstElementChild as HTMLElement | undefined)
-}
-
-function newSessionButton(root: HTMLElement): HTMLButtonElement | undefined {
-  const nested = root.querySelector<HTMLButtonElement>('button[class*="newSession"]')
-  if (nested !== null) return nested
-  for (const child of root.children) {
-    if (child.tagName === 'BUTTON') return child as HTMLButtonElement
-  }
-  return undefined
-}
+export { PROMPT_TOOL_ENTRY_SELECTOR } from './host-surface.ts'
 
 function createIcon(): SVGSVGElement {
   const namespace = 'http://www.w3.org/2000/svg'
@@ -58,14 +41,11 @@ function createEntry(controller: PromptToolWorkspaceController): { entry: HTMLBu
 }
 
 function placeEntry(root: HTMLElement, entry: HTMLButtonElement): boolean {
-  const button = newSessionButton(root)
+  const button = findNewSessionButton(root)
   if (button === undefined) return false
   if (entry.parentElement === root) return true
-  const row = button.closest('[class*="logoRow"]')
-  const base = row !== null && row.parentElement === root ? row : button
-  const family = Array.from(root.children).filter(
-    (element): element is HTMLElement => element instanceof HTMLElement && element.matches(FAMILY_SELECTOR),
-  )
+  const base = findSidebarInsertBase(root, button)
+  const family = findFamilyEntries(root)
   const anchor = family.at(-1)?.nextElementSibling ?? base.nextElementSibling
   root.insertBefore(entry, anchor)
   return true
@@ -106,7 +86,7 @@ export function mountPromptToolSidebarEntry(controller: PromptToolWorkspaceContr
       root = undefined
       placed = false
     }
-    root ??= sidebarRoot()
+    root ??= findSidebarRoot()
     if (root === undefined) return
     placed = placeEntry(root, entry)
     if (placed) rootObserver.observe(root, { childList: true, subtree: true })

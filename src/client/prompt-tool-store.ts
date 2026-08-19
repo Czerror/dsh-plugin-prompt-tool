@@ -5,7 +5,7 @@ import type {
   SettingsPathOpView,
 } from '@deepseek-ai/dsh-client-connection/client'
 import type { SettingsScope, SettingsScopeSnapshot } from '@deepseek-ai/dsh-client-runtime/client'
-import type { PromptConfigDraft } from './PromptConfigsEditor.tsx'
+import type { EngineMeta, PromptConfigDraft } from './prompt-tool-types.ts'
 
 export const SETTINGS_BRIDGE_PREFIX = '/api/prompt-tool/settings'
 
@@ -60,10 +60,26 @@ export interface Fields {
   fallbackText: string
   writeAgents: boolean
   writePreset: boolean
+  presetTemplate: string
   promptConfigs: PromptConfigDraft[]
   promptConfigsDir: string
 }
 
+export const EMPTY_META: EngineMeta = {
+  layers: [],
+  strategies: [],
+  slotKinds: [],
+  positions: [],
+  dedupes: [],
+  promotions: [],
+  subagentModes: [],
+  modelScopes: [],
+  roles: [],
+  mergeModes: [],
+  fills: [],
+  layerFieldPolicies: {},
+  layerLabels: {},
+}
 export const EMPTY_FIELDS: Fields = {
   promptText: '',
   promptPath: '',
@@ -93,6 +109,7 @@ export const EMPTY_FIELDS: Fields = {
   fallbackText: '',
   writeAgents: true,
   writePreset: true,
+  presetTemplate: 'anchored',
   promptConfigs: [],
   promptConfigsDir: '',
 }
@@ -326,6 +343,7 @@ export function fieldsFromView(res: BridgeResult<BridgeSettingsView>): Fields {
     fallbackText: readString(value, 'fallbackText') ?? readString(base, 'fallbackText') ?? '',
     writeAgents: readBoolean(value, 'writeAgents', readBoolean(base, 'writeAgents', true)),
     writePreset: readBoolean(value, 'writePreset', readBoolean(base, 'writePreset', true)),
+    presetTemplate: readString(value, 'presetTemplate') ?? readString(base, 'presetTemplate') ?? 'anchored',
     promptConfigs: value.promptConfigs !== undefined
       ? readPromptConfigs(value, 'promptConfigs')
       : readPromptConfigs(base, 'promptConfigs'),
@@ -338,6 +356,7 @@ export type SwitchKey = 'injectAgentsPrompt' | 'anchorFirstTurn' | 'anchorCustom
 
 export interface PromptToolStore {
   fields: Fields
+  meta: EngineMeta
   loading: boolean
   deepseekAvailable: boolean
   deepseekProviders: string[]
@@ -433,6 +452,7 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
   const [deepseekProviders, setDeepseekProviders] = useState<string[]>([])
   const [deepseekError, setDeepseekError] = useState('')
   const [fields, setFields] = useState<Fields>(EMPTY_FIELDS)
+  const [meta, setMeta] = useState<EngineMeta>(EMPTY_META)
   const [bootstrapTokensDraft, setBootstrapTokensDraft] = useState(DEFAULT_BOOTSTRAP_DISPLAY)
   const [skillsDirDraft, setSkillsDirDraft] = useState('')
   const [savedPromptText, setSavedPromptText] = useState('')
@@ -477,6 +497,8 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
   const load = useCallback(async () => {
     setLoading(true)
     try {
+      const metaRes = await bridgePost<{ meta: EngineMeta }>('/meta', {})
+      if (metaRes.ok) setMeta(metaRes.value.meta)
       // 自定义 /describe 只用于拿到 live runtime facts（DeepSeek 检测、技能目录快照），
       // 标准 settings 分层数据来自 rc8 共享 describe mirror 的 scope。
       const runtime = await bridgePost<BridgeSettingsView>('/describe', {})
@@ -687,6 +709,7 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
 
   return {
     fields,
+    meta,
     loading,
     deepseekAvailable,
     deepseekProviders,

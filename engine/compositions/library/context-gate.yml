@@ -6,7 +6,7 @@
   config:
     promoteOn: either
     includeSubagents: false
-    allowKinds: [skill-invocation, near-anchor, router-guide]
+    allowKinds: __ALLOW_KINDS__
 
 # ── bootstrap ───────────────────────────────────────────────────────────────
 

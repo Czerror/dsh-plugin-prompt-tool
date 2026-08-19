@@ -7,7 +7,7 @@
  *   3. 注册给 ctx.skills 的 provider 只返回 valid=true 的候选，
  *      并尊重 frontmatter 的 disable-model-invocation / user-invocable 调用策略。
  */
-import { readFileSync, readdirSync } from 'node:fs'
+import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { parseFrontmatter } from '../preset-core.ts'
 import type { SkillEntry } from '../config.ts'
@@ -89,4 +89,51 @@ export function readSkills(skillsDir: string, warn?: (message: string) => void):
       userInvocable: valid && data.userInvocable !== false,
     }]
   })
+}
+
+/**
+ * 进程内技能扫描缓存：按目录 + 每个 SKILL.md 的 mtime/size 签名失效。
+ * 同一目录在内容未变化时，list/get 可复用同一次扫描结果。
+ */
+export interface CachedSkillsReader {
+  read: (skillsDir: string, warn?: (message: string) => void) => SkillEntry[]
+  invalidate: (skillsDir?: string) => void
+}
+
+function skillSignature(skillsDir: string): string {
+  const folders = listSkillFolders(skillsDir)
+  const parts: string[] = []
+  for (const folder of folders) {
+    const file = join(skillsDir, folder, 'SKILL.md')
+    try {
+      const stat = statSync(file)
+      parts.push(`${folder}:${stat.mtimeMs}:${stat.size}`)
+    } catch {
+      parts.push(`${folder}:missing`)
+    }
+  }
+  return parts.join('|')
+}
+
+export function createCachedSkillsReader(): CachedSkillsReader {
+  const cache = new Map<string, { signature: string; entries: SkillEntry[] }>()
+
+  const read = (skillsDir: string, warn?: (message: string) => void): SkillEntry[] => {
+    const signature = skillSignature(skillsDir)
+    const cached = cache.get(skillsDir)
+    if (cached !== undefined && cached.signature === signature) return cached.entries
+    const entries = readSkills(skillsDir, warn)
+    cache.set(skillsDir, { signature, entries })
+    return entries
+  }
+
+  const invalidate = (skillsDir?: string): void => {
+    if (skillsDir === undefined) {
+      cache.clear()
+      return
+    }
+    cache.delete(skillsDir)
+  }
+
+  return { read, invalidate }
 }

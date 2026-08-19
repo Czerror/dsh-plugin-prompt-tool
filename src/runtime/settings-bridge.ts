@@ -4,10 +4,10 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { SettingsDescriptor, SettingsNamespace, SettingsPathOp } from '@deepseek-ai/dsh-settings'
 import type { DeepseekDetection } from './deepseek.ts'
 import type { SkillCatalogEntry } from '../config.ts'
-import type { PromptConfigSpec } from '../engine/prompt-configs.ts'
-import { loadPromptConfigFiles, mergePromptConfigs } from '../engine/prompt-configs.ts'
+import type { PromptConfigSpec } from '../host/prompt-configs.ts'
+import { loadPromptConfigFiles, mergePromptConfigs } from '../host/prompt-configs.ts'
 import { validatePromptConfigs } from './configs-validate.ts'
-import { loadPromptTemplates } from '../engine/templates.ts'
+import { loadPromptTemplates } from '../host/templates.ts'
 import { fixSkillEntry } from './skill-fix.ts'
 
 export const SETTINGS_BRIDGE_PREFIX = '/api/prompt-tool/settings'
@@ -101,6 +101,18 @@ export function registerSettingsBridge(
         return true
       }
       const disposers = [
+        sctx.webServer.register({
+          kind: 'exact',
+          path: SETTINGS_BRIDGE_PREFIX + '/meta',
+          handler: async (req, res) => {
+            if (!guard(req, res)) return
+            const engineMetaUrl = new URL('../engine/schema.mjs', import.meta.url)
+            const { getEngineMeta } = await import(engineMetaUrl.href) as {
+              getEngineMeta: () => Record<string, unknown>
+            }
+            writeBridgeJson(res, 200, { ok: true, meta: getEngineMeta() })
+          },
+        }),
         sctx.webServer.register({
           kind: 'exact',
           path: SETTINGS_BRIDGE_PREFIX + '/describe',

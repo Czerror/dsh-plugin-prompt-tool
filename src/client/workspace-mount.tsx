@@ -5,19 +5,14 @@ import type { PromptToolSettingsTransport } from './prompt-tool-store.ts'
 import css from './PromptWorkspace.module.css'
 import { mountPromptToolSidebarEntry } from './sidebar-entry.ts'
 import { PromptToolWorkspaceController } from './workspace-controller.ts'
+import { findConversationColumn, findOfficialWorkspaceMount, matchesSidebarContext } from './host-surface.ts'
 
-export const PROMPT_TOOL_VIEW_SELECTOR = '[data-dsh-prompt-tool-view]'
+export { PROMPT_TOOL_VIEW_SELECTOR } from './host-surface.ts'
 
-const CONVERSATION_COLUMN_SELECTOR = '[data-pane="conversation"], [class*="centerCol"]'
 const ACTIVE_ATTR = 'data-dsh-prompt-tool-active'
 const TASKBOARD_ACTIVE_ATTR = 'data-dsh-taskboard-active'
 const SSH_ACTIVE_ATTR = 'data-dsh-ssh-active'
 const ACTIVATE_EVENT = 'dsh-panel-activate'
-const SIDEBAR_CONTEXT_SELECTOR = '[class*="sessionRow"], [class*="projectRow"], [class*="searchResultRow"], [class*="searchResultWorkspace"], [class*="newSession"]'
-
-function conversationColumn(): HTMLElement | undefined {
-  return document.querySelector<HTMLElement>(CONVERSATION_COLUMN_SELECTOR) ?? undefined
-}
 
 function mountPanel(controller: PromptToolWorkspaceController, api: IApiClient, settings: PromptToolSettingsTransport): () => void {
   let root: Root | undefined
@@ -30,7 +25,7 @@ function mountPanel(controller: PromptToolWorkspaceController, api: IApiClient, 
       root = undefined
       container = undefined
     }
-    const column = conversationColumn()
+    const column = findOfficialWorkspaceMount() ?? findConversationColumn()
     if (column === undefined) return
     container = document.createElement('div')
     container.dataset.dshPromptToolView = ''
@@ -69,7 +64,7 @@ function mountPanel(controller: PromptToolWorkspaceController, api: IApiClient, 
   const onSidebarContextClick = (event: MouseEvent): void => {
     if (!controller.getSnapshot().open) return
     const target = event.target
-    if (target instanceof Element && target.closest(SIDEBAR_CONTEXT_SELECTOR) !== null) controller.close()
+    if (target instanceof Element && matchesSidebarContext(target)) controller.close()
   }
 
   document.addEventListener('click', onSidebarContextClick, true)
