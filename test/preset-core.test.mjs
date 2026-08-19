@@ -27,80 +27,41 @@ test('无 frontmatter 时返回空 data 与原文本', () => {
   assert.equal(body, text)
 })
 
-test('buildCordis 生成合法 YAML，router-first-turn 与 prompt-injector 落在 tool-bootstrap 之后', () => {
-  const prompt = read('preset.md')
-  const out = buildCordis(prompt)
-  assert.ok(!out.includes('__PROMPT_TOOL_TEXT__'))
-  assert.ok(out.includes('Local fixture template:'))
+test('buildCordis 生成合法 YAML：prompt-config-engine 指向提示词配置模块目录，且落在 tool-bootstrap 之后', () => {
+  const out = buildCordis(read('preset.md'))
+  assert.ok(!out.includes('__SLOTS__'))
 
   const bootstrap = out.indexOf('- id: tool-bootstrap\n')
-  const router = out.indexOf('- id: router-first-turn\n')
-  const injector = out.indexOf('- id: prompt-injector\n')
+  const engine = out.indexOf('- id: prompt-config-engine\n')
   const identity = out.indexOf('# ── identity')
   assert.ok(bootstrap >= 0)
-  assert.ok(bootstrap < router)
-  assert.ok(router < injector)
-  assert.ok(injector < identity)
+  assert.ok(bootstrap < engine)
+  assert.ok(engine < identity)
 
   const doc = parse(out, { logLevel: 'silent' })
   assert.ok(Array.isArray(doc))
-  const row = doc.find((entry) => entry?.id === 'prompt-injector')
+  const row = doc.find((entry) => entry?.id === 'prompt-config-engine')
   assert.ok(row)
-  assert.equal(typeof row.config.promptText, 'string')
-  assert.ok(row.config.promptText.includes('Local fixture template:'))
+  assert.equal(row.name, './engine/prompt-config-engine.mjs')
+  assert.equal(row.config.configsDir, '../prompt-configs')
+  const rft = doc.find((entry) => entry?.id === 'router-first-turn')
+  assert.ok(rft)
+  assert.equal(rft.name, './anchored/router-first-turn.mjs')
 })
 
-test('buildCordis 处理空提示词时不残留占位符且结构完整', () => {
-  const out = buildCordis('')
-  assert.ok(!out.includes('__PROMPT_TOOL_TEXT__'))
+test('buildCordis 恒生成 run-code-env 行（PTC env 提示词配置）', () => {
+  const out = buildCordis('PROMPT')
   const doc = parse(out, { logLevel: 'silent' })
-  assert.ok(Array.isArray(doc))
-  assert.ok(doc.some((entry) => entry?.id === 'router-first-turn'))
-  assert.ok(doc.some((entry) => entry?.id === 'prompt-injector'))
-  assert.ok(!doc.some((entry) => entry?.id === 'near-anchor'))
-})
-
-test('buildCordis 开启 anchorFirstTurn 时注入 near-anchor 行与自定义锚定句', () => {
-  const out = buildCordis('PROMPT', { anchorFirstTurn: true, anchorText: 'ANCHOR SENTENCE' })
-  assert.ok(!out.includes('__PROMPT_TOOL_TEXT__'))
-  assert.ok(!out.includes('__ANCHOR_TEXT__'))
-  const doc = parse(out, { logLevel: 'silent' })
-  const rows = doc.filter((entry) => entry?.id === 'near-anchor' || entry?.id === 'prompt-injector')
-  assert.deepEqual(rows.map((entry) => entry.id), ['near-anchor', 'prompt-injector'])
-  assert.equal(rows[0].config.anchorText, 'ANCHOR SENTENCE')
-  assert.equal(rows[0].config.useCustom, false)
-})
-
-test('buildCordis 开启 anchorCustom 时 near-anchor 固定使用自定义文本', () => {
-  const out = buildCordis('PROMPT', { anchorFirstTurn: true, anchorText: 'CUSTOM', anchorCustom: true })
-  assert.ok(!out.includes('__USE_CUSTOM__'))
-  const doc = parse(out, { logLevel: 'silent' })
-  const row = doc.find((entry) => entry?.id === 'near-anchor')
+  const row = doc.find((entry) => entry?.id === 'run-code-env')
   assert.ok(row)
-  assert.equal(row.config.useCustom, true)
-  assert.equal(row.config.anchorText, 'CUSTOM')
-})
-
-test('buildCordis 开启 anchorFirstTurn 且空锚点文本时生成自动模式配置', () => {
-  const out = buildCordis('PROMPT', { anchorFirstTurn: true, anchorText: '' })
-  const doc = parse(out, { logLevel: 'silent' })
-  const row = doc.find((entry) => entry?.id === 'near-anchor')
-  assert.ok(row)
-  assert.equal(row.config.anchorText, '')
+  assert.equal(row.name, './anchored/run-code-env.mjs')
+  assert.equal(row.config.enabled, true)
+  assert.ok(row.config.envKeys.includes('PATH'))
+  assert.ok(row.config.envKeys.includes('USERPROFILE'))
 })
 
 test('buildCordis 关闭 anchorFirstTurn 时输出与无选项版本一致', () => {
   assert.equal(buildCordis('PROMPT', { anchorFirstTurn: false, anchorText: 'X' }), buildCordis('PROMPT'))
-})
-
-test('buildCordis 关闭 injectPrompt 时只保留工具引导，不生成 prompt-injector 行', () => {
-  const out = buildCordis('PROMPT', { injectPrompt: false, anchorFirstTurn: false })
-  assert.ok(!out.includes('__PROMPT_TOOL_TEXT__'))
-  const doc = parse(out, { logLevel: 'silent' })
-  assert.ok(Array.isArray(doc))
-  assert.ok(doc.some((entry) => entry?.id === 'tool-bootstrap'))
-  assert.ok(doc.some((entry) => entry?.id === 'router-first-turn'))
-  assert.ok(!doc.some((entry) => entry?.id === 'prompt-injector'))
 })
 
 function findAllRows(doc, ids) {
@@ -135,49 +96,13 @@ test('buildCordis 开启 subagentFlash 时给 subagent/subagent_fork 加固定 F
   }
 })
 
-test('buildCordis 适配 context-gate：放行 near-anchor，子代理不关门', () => {
+test('buildCordis 适配 context-gate：放行 near-anchor/router-guide，子代理不关门', () => {
   const out = buildCordis('PROMPT')
   const doc = parse(out, { logLevel: 'silent' })
   const row = doc.find((entry) => entry?.id === 'context-gate')
   assert.ok(row)
   assert.equal(row.config.includeSubagents, false)
   assert.deepEqual(row.config.allowKinds, ['skill-invocation', 'near-anchor', 'router-guide'])
-})
-
-test('buildCordis 恒生成 router-guide 行，默认自动引导', () => {
-  const out = buildCordis('PROMPT')
-  const doc = parse(out, { logLevel: 'silent' })
-  const row = doc.find((entry) => entry?.id === 'router-guide')
-  assert.ok(row)
-  assert.equal(row.config.useCustom, false)
-  assert.equal(row.config.text, '')
-  assert.equal(row.config.enabled, false)
-})
-
-test('buildCordis 开启 anchorFirstTurn 时 router-guide 启用', () => {
-  const out = buildCordis('PROMPT', { anchorFirstTurn: true })
-  const doc = parse(out, { logLevel: 'silent' })
-  const row = doc.find((entry) => entry?.id === 'router-guide')
-  assert.ok(row)
-  assert.equal(row.config.enabled, true)
-  assert.equal(row.config.useCustom, false)
-})
-
-test('buildCordis guideCustom=true 时固定自定义每轮引导', () => {
-  const out = buildCordis('PROMPT', { anchorFirstTurn: true, guideCustom: true, guideText: 'CUSTOM GUIDE' })
-  assert.ok(!out.includes('__GUIDE_TEXT__'))
-  const doc = parse(out, { logLevel: 'silent' })
-  const row = doc.find((entry) => entry?.id === 'router-guide')
-  assert.ok(row)
-  assert.equal(row.config.enabled, true)
-  assert.equal(row.config.useCustom, true)
-  assert.equal(row.config.text, 'CUSTOM GUIDE')
-})
-
-test('buildCordis 恒生成 router-guide 行', () => {
-  const out = buildCordis('PROMPT')
-  const doc = parse(out, { logLevel: 'silent' })
-  assert.ok(doc.some((entry) => entry?.id === 'router-guide'))
 })
 
 test('buildCordis custom-bash 运行时探测并显式写入超时/输出上限', () => {
@@ -203,7 +128,6 @@ test('buildCordis 按配置注入任意正整数 bootstrapMaxTokens', () => {
   assert.equal(row.config.bootstrapMaxTokens, 2048)
 })
 
-
 test('buildCordis 关闭 subagentFlash 时子代理行不出现 agentOptions', () => {
   const out = buildCordis('PROMPT')
   const doc = parse(out, { logLevel: 'silent' })
@@ -211,17 +135,6 @@ test('buildCordis 关闭 subagentFlash 时子代理行不出现 agentOptions', (
   assert.ok(row)
   assert.equal(row.config.agentOptions, undefined)
 })
-
-test('buildCordis injectPrompt=false 且 anchorFirstTurn=true 只生成 near-anchor', () => {
-  const out = buildCordis('PROMPT', { injectPrompt: false, anchorFirstTurn: true, anchorText: 'A' })
-  const doc = parse(out, { logLevel: 'silent' })
-  const ids = doc.map((entry) => entry?.id)
-  assert.ok(ids.includes('tool-bootstrap'))
-  assert.ok(ids.includes('router-first-turn'))
-  assert.ok(ids.includes('near-anchor'))
-  assert.ok(!ids.includes('prompt-injector'))
-})
-
 
 test('buildCordis 默认开启使用 PTC 模式', () => {
   const out = buildCordis('PROMPT')
@@ -241,9 +154,9 @@ test('buildCordis 可显式关闭使用 PTC 模式：恢复原生完整目录', 
   assert.equal(bootstrap.config.usePtcMode, false)
 })
 
-test('preset/tool-bootstrap.mjs 已是含共享工具与 PTC 逻辑的最终自有快照', () => {
-  const source = read('preset/tool-bootstrap.mjs')
-  assert.ok(source.includes("from './shared.mjs'"))
+test('preset/anchored/tool-bootstrap.mjs 已是含共享工具与 PTC 逻辑的最终自有快照', () => {
+  const source = read('preset/anchored/tool-bootstrap.mjs')
+  assert.ok(source.includes("from '../engine/shared.mjs'"))
   assert.ok(source.includes("tools.presentAs('code')"))
   assert.ok(source.includes('if (usePtcMode) applyCodePresentation(agent)'))
   assert.ok(!source.includes('dev_tool_search'))
@@ -251,7 +164,7 @@ test('preset/tool-bootstrap.mjs 已是含共享工具与 PTC 逻辑的最终自�
 })
 
 test('preset/shared.mjs 提供公共晋升解析与消息工具', () => {
-  const source = read('preset/shared.mjs')
+  const source = read('preset/engine/shared.mjs')
   assert.ok(source.includes('export const PROMOTE_EVENTS'))
   assert.ok(source.includes('export function parsePromoteOn'))
   assert.ok(source.includes('export function newMessageId'))
@@ -259,10 +172,22 @@ test('preset/shared.mjs 提供公共晋升解析与消息工具', () => {
   assert.ok(source.includes('export function isDelegated'))
 })
 
-test('preset/instruction-hint.mjs 已自带 agents-instruction.txt 读取逻辑', () => {
-  const source = read('preset/instruction-hint.mjs')
-  assert.ok(source.includes("readFileSync(new URL('./agents-instruction.txt', import.meta.url)"))
-  assert.ok(source.includes('if (agentsInstructionText.length > 0)'))
+test('preset/prompt-config-engine.mjs 内置 instruction-hint 的 agents-instruction.txt 读取逻辑', () => {
+  const source = read('preset/engine/prompt-config-engine.mjs')
+  assert.ok(source.includes("new URL('./agents-instruction.txt', import.meta.url)"))
+  assert.ok(source.includes('agentsInstructionText.length > 0'))
+  assert.ok(source.includes('configsDir'))
+  assert.ok(source.includes('loadPromptConfigFiles'))
+  assert.ok(source.includes('parsePromptConfigYaml'))
+})
+
+test('旧独立注入模块已移除：agent.cordis.yml 不再注册 near-anchor/router-guide/prompt-injector/instruction-hint 行', () => {
+  const out = buildCordis('PROMPT')
+  assert.ok(!out.includes('- id: near-anchor\n'))
+  assert.ok(!out.includes('- id: router-guide\n'))
+  assert.ok(!out.includes('- id: prompt-injector\n'))
+  assert.ok(!out.includes('- id: instruction-hint\n'))
+  assert.ok(out.includes('- id: prompt-config-engine\n'))
 })
 
 test('patchToolBootstrap 注入 PTC 呈现状态机与晋升后的完整目录分支', () => {

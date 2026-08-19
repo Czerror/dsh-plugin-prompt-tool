@@ -1,0 +1,9 @@
+# 模板：llm-stream 模型流包装（pass 透传 / replace 用 text 替代整个流）
+id: example-llm-stream
+layer: llm-stream
+strategy: static
+modelScope: flash
+priority: 0
+text: 自定义流替换文本
+params:
+  mode: pass

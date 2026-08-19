@@ -1,0 +1,11 @@
+# 模板：tool-pipeline 工具调用三阶段（pre-execute / execute / post-execute）
+id: example-tool-pipeline
+layer: tool-pipeline
+strategy: static
+priority: 0
+text: 替换后的工具结果
+params:
+  toolNames: bash,run_code
+  preDecision: allow
+  denyReason: 该工具被提示词配置禁用
+  postAction: accept

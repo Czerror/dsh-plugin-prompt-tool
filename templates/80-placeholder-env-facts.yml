@@ -1,0 +1,11 @@
+# 模板：placeholder 动态填充位 —— env-facts（机器事实）
+# 默认输出 Environment facts 列表；可用 text 模板 + {{变量}} 完全自定义。
+id: example-placeholder
+layer: pre-step
+strategy: placeholder
+fill: env-facts
+position: after-all
+dedupe: session
+promotion: include-subagents
+params:
+  envKeys: DSH_HOME,DSH_WORKSPACE

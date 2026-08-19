@@ -1,0 +1,10 @@
+# 模板：runtime-context 动态运行时快照（随会话变化的内容放这里，不要进 system）
+id: example-runtime-context
+layer: runtime-context
+strategy: static
+order: 5
+mergeMode: merged
+text: |-
+  当前工作区：{{WORKSPACE}}
+params:
+  contextName: ''

@@ -1,312 +1,97 @@
-# dsh-plugin-prompt-tool 重新设计计划（v2）
-> **v2.19 preset 脚本审查清理（当前实现）**：抽取 `shared.mjs` 公共工具；
-> router-first-turn 不再重复清 contexts（交给 context-gate）；router-first-turn /
-> router-guide / prompt-injector 统一使用 epoch-aware 晋升状态；修正 stale 注释与未用变量。
+# dsh-plugin-prompt-tool 开发目标
 
-> **v2.18 全部预设脚本自有化**：`preset/` 新增 shared / context-gate /
-> compaction-epoch / custom-bash / instruction-hint / skill-search / tool-bootstrap 最终快照；
-> 公共配置校验、晋升解析、消息工具合并进 `shared.mjs`；运行时不再直读 `upstream/` 任何文件，
-> `upstream/` 仅作溯源与 sync 对照。
+## 定位
 
-> **v2.17 agent.cordis.yml 脱离上游**：新增自有模板 `preset/agent.cordis.yml`；
-> 运行时不再直读 `upstream/.../agent.cordis.yml`，动态项仅由 `buildCordis` 注入。
+官方说「一切皆是插件」——本项目是「**一切皆可注入**」：一个层级提示词注入器。
+把 DSH 官方开放 API 的全部注入层级收敛为可配置提示词配置，由用户自定义注入内容与层级位置。
 
-> **v2.16 使用 PTC 模式开关**：新增 `usePtcMode`（默认开启）。
-> 开启=晋升后把 wire 切换为 Code Mode（PTC，单一 run_code），完整插件工具经生成 SDK 调用；
-> 关闭=晋升后恢复原生完整工具目录；两种模式都不再依赖 `dev_tool_search`，生成 preset 时直接移除该行且不复制 `dev-tool-search.mjs`。
+anchored 首轮锚定、PTC（Code Mode）、任务引导、模型能力增强都不是项目本体，只是
+注入工具上的**可替换预设配置**。相关机制原理与性能数据见
+[dsh-anchored-standard](https://github.com/xiaobright/dsh-anchored-standard) 与
+[dsh-router-standard](https://github.com/yjh051108/dsh-router-standard)。
 
-> **v2.15 上游同步**：同步上游到 `25f21ae`；移除
-> `customBashPath` 生成时改写，直接沿用上游 custom-bash 运行时探测。
-> 新增 `bootstrapMaxTokens` 开关（0=关闭；正整数写入上游 tool-bootstrap）。
+## 开发目标
 
-> **v2.14 上游同步与路径校对（当前实现）**：已从上游 main 同步到
-> `ba7a27c`；新增 context-gate.mjs；custom-bash 的固定路径在生成时归一化为
-> `customBashPath`（默认 bash.exe，PATH 查找）。
+1. **单引擎、全层级**：`preset/engine/prompt-config-engine.mjs` 唯一接线官方六个注入
+   层级——`pre-step` / `system-section` / `runtime-context` / `agent-request` /
+   `llm-stream` / `tool-pipeline`。
+2. **一切皆可自定义**：提示词配置内容（text / 外部模板 / 动态策略）与提示词配置字段（layer /
+   position / 时机 / 作用域 / 幂等）全部由用户配置。
+3. **配置即状态、UI 最后做**：提示词配置数组进 DSH settings 并输出到
+   `/api/prompt-tool/settings/describe`；Web/TUI 提示词配置编辑器最后接入，功能层先行。
+4. **内容与执行分离**：引擎只负责注入；内容来源 = 默认四条提示词配置 <
+   `promptConfigsDir`（yml/json 目录）< `promptConfigs`（settings 数组）。
+5. **本体与预设分离**：`preset/engine/` 是项目本体；`preset/anchored/` 是 anchored
+   默认预设配置，可整体替换。
 
-> **v2.14 剥离上游子模块（历史）**：上游改为内联快照 `upstream/dsh-anchored-standard/`
-> （preset + LICENSE + NOTICE + REVISION），删除 `vendor/` 子模块与 `.gitmodules`；
-> `pnpm sync:anchored [ref]` 从上游拉取刷新。
-
-> **v2.11 自定义锚点开关（历史）**：新增 `anchorCustom`——开启时固定
-> 使用自定义 anchorText，关闭时忽略 anchorText 并使用任务自适应自动文本。
-
-> **v2.10 Flash 子代理 + 模型检测（历史）**：在 v2.9 基础上，宿主经
-> `llm.listProviders()` 检测 DeepSeek 模型路由；未检测到时 `subagentFlash`
-> 在 Web/TUI 禁用并强制降级为 false。
-
-> **v2.9 Flash 子代理（历史）**：在 v2.8 最优组合之上，子代理目录改为直接
-> 全量放行（`assembled.tools` 本身已是调用方白名单过滤后的动态白名单）；新增
-> `subagentFlash` 开关——开=给子代理固定 Flash 模型路由（参考 dsh-router-standard
-> 的 Flash 方案），关=继承主会话模型且目录全量放行。
-
-> **v2.8 最优组合（历史）**：在保留本插件全部独有功能（skills 注册、settings
-> bridge、UI、AGENTS 受管块、prompt-injector）的前提下，首轮结构改为最优组合——
-> `router-first-turn`（persona 替换为训练原句，保留计划段；首轮隐藏 mnemon 记忆段、清 contexts，晋升恢复）、上游 `tool-bootstrap`
-> （Minimal 真实工具对 + 子代理放行补丁）、`near-anchor`（近距离首句自锚定，按任务
-> 自动选择 we/let）。旧独立锚定轮 `turn-anchor` 已移除，旧默认“每块强制 we”会在
-> 运行时归一化为空。以下正文为 v2 历史设计记录，其中 turn-anchor 段落按上为准。
-
-
-> 目标：完整实现 dsh-anchored-standard 功能（原版机制），在首轮 "we" 锚定确认后注入
-> prompt-tool 提示词。设计依据 = 三个项目的源码/README + 已完成的实测数据。
-
-> 参考项目：
-> - [dsh-anchored-standard](https://github.com/xiaobright/dsh-anchored-standard)（集成上游，preset 原版复制）
-> - [dsh-router-standard](https://github.com/yjh051108/dsh-router-standard)（复杂度启发式 / 近距离注入）
-> - [dsh-super-injector](https://github.com/yjh051108/dsh-super-injector)（缓存铁律 / 开发工具链）
-> - 姊妹项目 [dsh 破限者](https://github.com/1449690477/dsh)（unrestricted-executor 技能包）
-> - 本插件 GitHub 仓库：https://github.com/Czerror/dsh-plugin-prompt-tool
-
-## 〇、发布规划（哪些内容进远程仓库）
-
-**发布**：package.json、README.md、AGENTS.md、preset.md、plan.md、cordis.patch.yml、
-tsdown.config.ts、.gitignore、pnpm-lock.yaml（复现构建）、preset/（2 文件）、
-skills/（sandboxmod/SKILL.md）、src/（host + client）。上游同步已由子模块直引取代，
-不再发布同步脚本。
-
-**不发布**：node_modules/、lib/（构建产物，clone 后 `pnpm install && pnpm build` 生成）、
-artifacts/（本地调试残留）。
-
-## 〇、上游更新对照（anchored-standard PR #14，2026-08-15）
-
-拉取覆盖后上游的关键变化（`a1e1c1d` / merge `95b98af`）：
-
-| 项 | 旧版（本计划初稿） | 新版（当前上游） | 对 prompt-tool 的影响 |
-|---|---|---|---|
-| 首轮工具 schema | 平台 shell + `read` | **官方 Minimal 真实工具对**：持久 `bash` + `str_replace_editor` | 完全复制即可；Windows 下 `bash` 为 PTY 持久 shell，`pwsh` 晋升后仍可用 |
-| 首轮输出预算 | `bootstrapMaxTokens: 1024` 固定 | **opt-in，默认无 cap**（adapter 默认 256000 流过） | 实测（issue #11）：Minimal schema 在 256000 下锚定 5/5（`We need` 首行、`we` 1.4、`let me` 0.0），而 pwsh/read 等标准家族 schema 在 256000 下 11/11 全失败——**工具 schema 是决定性变量，不是 cap** |
-| agent.cordis.yml 结构 | 无 Minimal 组 | 新增 `persistent-shell` 组（dsh-terminal + dsh-terminal-bash + dsh-tool-bash-persistent）与 `bootstrap-filesystem` 组（dsh-fs-local + dsh-tool-str-replace-editor），与官方 minimal 字节一致；`tool-bash` 行全平台禁用（避免 `bash` 名重复注册） | 完全复制；prompt-injector 仍插在 tool-bootstrap 行后 |
-| tool-bootstrap 参数 | `shellTools`+`commonTools` | `bootstrapTools: [bash, str_replace_editor]`；cap 监听器仅在显式设置 cap 时注册 | prompt-injector 逻辑不变（we 检测 + promoted 检测与参数无关） |
-| 验证工具 | 无 | `verify/run-verify.mjs` + `verify-runner.mjs`：preset-roster compose + CLI driver，`--stop-after-first-assistant` 只测首请求（秒级） | 本地 harness 源码未构建（`apps/cli/lib/bin.js` 不存在），暂继续用 prebuilt rc.7 的 dsh web HTTP API；将来构建 harness 后可切换 |
-| cap 行为差异 | — | rc.5 源码 checkout 上 cap 能到达首请求；rc.6 prebuilt 包会覆盖为 adapterDefaults；rc.7 修复 max-tokens 截断后的 replay 续跑 | 默认不设 cap；开启 bootstrapMaxTokens 时 rc.7 更稳 |
-
-结论：**设计骨架不变**（完全复制原版 + prompt-injector 附加件），只是复制源更新为
-新版文件，测试断言从 `pwsh/read + 1024` 改为 `bash/str_replace_editor + 无 cap`。
-
-## 一、三个项目分析结论
-
-### 1. dsh-anchored-standard（原版，2026-08-15 最新）
-
-机制（`preset/tool-bootstrap.mjs` + `agent.cordis.yml`）：
-
-- 首轮请求近似 Minimal：工具面收窄为 1 个平台 shell + `read`；`bootstrapMaxTokens: 1024`；
-  剥离 `skill-catalog` / `agent-instructions` 两类自动注入（`suppressedContextSources`）。
-- `promoteOn: either`：首个 `tool/call` **或** `assistant/message` 落库即晋升，
-  request #2 起完整目录 + 正常预算 + 恢复注入。**不会卡死**。
-- 关键实现细节：
-  - `tool-bootstrap` 行必须排第一 + 插件 `inject: []` + 监听器 `prepend: true`
-    → 剥离是 waterfall 的最后一个 transform，能真正删掉后面监听器注入的消息。
-  - 首轮 maxTokens 用 `agent/request` 监听（`prepend: true`）设置，晋升后显式移除
-    （header 的 maxTokens 会被下一请求种子继承，不显式移除会粘整个会话）。
-  - 降级安全：缺 bootstrap 工具 → 全目录 + 一次性告警；过滤器异常 → 保留全部。
-
-### 2. dsh-router-standard（v0.1.0）
-
-机制（`router-core.mjs` + `router-bootstrap.mjs`）：
-
-- 首条用户消息分类 → spec（读优先）/ react（写优先）/ weak（模型自路由）。
-  实测行为带：spec [0,0.15]、transition [0.2,0.45]（陷阱）、react [0.5,1.0]。
-- 复杂度启发式 `isComplexTask`：文本 >120 字符或含重构/设计/架构等词 → 复杂任务。
-- **近距离信号原则**（实测 P14/P16/P20）：行为引导必须放用户消息之后（inbox.append /
-  pre-step），放 system（远距离）会衰减甚至反向；固定文本保持缓存命中 92-94%。
-- `applyPersona` 只换 persona section，保留 plan-mode section（避免 plan 失忆）。
-- 模型不能自路由（P3/P5/P8），必须外部路由。
-
-可复用点：`isComplexTask` 正则、近距离注入模式、会话事件推导状态（resume 安全）。
-
-### 3. dsh-super-injector（v0.3.x）
-
-机制：运行时插件注入生产线（`dev_inject_plugin` / `dev_reload_package` / `dev_stage_*` /
-`dev_install_package`），junction 链接 + `ctx.loader.create` + `ctx.effect` 资源清理 +
-registry 持久化恢复。
-
-对 prompt-tool 的约束（铁律 4/6/8）：
-
-- 缓存原则：静态文本放 system 头部，动态内容走消息尾；**严禁动态拼接进 system**
-  （system 前缀任何变化 = 全会话缓存全灭）。
-- 首轮锚定：工具面大时首轮只露核心 1-2 个工具，首个 tool/call 后恢复（就是 anchored 机制）。
-- 资源注册挂 `ctx.effect`，peerDeps 用范围声明。
-
-prompt-tool 是 preset 形态插件，不依赖 injector 运行时注入；injector 仅作为
-后续开发/热重载工具链使用。
-
-## 二、实测结论（决定设计的硬事实）
-
-| 实验 | 结果 |
-|---|---|
-| 原版 anchored（旧版 pwsh+read + maxTokens 1024）+ 复杂英文任务 | we 锚定 **5/5**（全部 "We need"） |
-| 新版 anchored（Minimal 真实 schema：bash+str_replace_editor，**无 cap**，256000） | 锚定 **5/5**（issue #11 上游实测：`We need` 首行、`we` 1.4、`let me` 0.0；标准家族 schema 11/11 全失败） |
-| 原版 anchored + 简单任务 | we ≈ 0%（模型直接调工具干活，不产出 reasoning） |
-| zero 变体（0 工具首轮）+ 简单任务 + 固定锚定消息 | we 锚定 **5/5**，但多一次模型调用 |
-| zero 变体 + persona 句当锚定消息 | we 仅 60%（差） |
-| 决定锚定的因素 | **任务复杂度**（不是工具数量）；maxTokens 1024 起决定性作用（官方端点实测 26/32 vs 0/5） |
-| 原版 2 工具 + 锚定消息（"Tools are not open yet"） | 不产生 we（模型回复 "The user says..." 叙述语气，本次实测） |
-
-推论：
-
-1. **回到原版**（2 工具 + 1024 + suppressedContextSources），放弃 zero 变体
-   （多一次调用、无收益、且原版已原生支持上下文剥离）。
-2. **放弃锚定消息**：原版 2 工具下锚定消息不产生 we（见上表末行）；复杂任务
-   原版机制本身 5/5 "We need"，简单任务模型直接调工具干活（轨迹正确，无需 we）。
-3. 提示词注入走消息层（pre-step / inbox），不进 system（缓存铁律）。
-
-## 三、新设计
-
-### preset 文件布局（完全复制原版 + 一个附加件）
+## 当前架构
 
 ```
 preset/
-  agent.cordis.yml      ← 原样复制 anchored-standard（tool-bootstrap 行第一 +
-                           25 工具标准目录），仅在 bootstrap 段后追加
-                           prompt-injector 一行（见下）
-  tool-bootstrap.mjs    ← 原样复制（字节一致，不做任何修改）
-  preset.yml            ← 复制，name/description 改为 prompt-tool
-  prompt-injector.mjs   ← 新增（唯一自研件），替换现有的
-                           zero-tool-bootstrap.mjs + anchor-turn.mjs
+├── engine/        prompt-config-engine / shared / compaction-epoch      ← 注入工具本体
+├── anchored/      context-gate / tool-bootstrap / router-first-turn
+│                  custom-bash / skill-search / run-code-env          ← 默认预设配置
+├── agent.cordis.yml   装配模板（engine 行 configsDir: ../prompt-configs）
+└── preset.yml
+
+src/
+├── index.ts               apply 编排（装配入口）
+├── config.ts              Config / PromptSettings / settings schema
+├── prompt-configs.ts        提示词配置 schema、默认提示词配置、渲染、三源合并、目录加载
+├── preset-core.ts         buildCordis / patchToolBootstrap / parseFrontmatter
+├── preset-write.ts        生成目录写入（engine/ + anchored/ + prompt-configs/）
+└── runtime/               deepseek / settings-bridge / tui / agents-file / skills-provider
 ```
 
-`agent.cordis.yml` 的 bootstrap 段变为（其余全部原样）：
+## 提示词配置 schema
 
 ```yaml
-- id: tool-bootstrap
-  name: ./tool-bootstrap.mjs
-  config:
-    shellTools: [bash, pwsh]
-    commonTools: [read]
-    promoteOn: either
-    bootstrapMaxTokens: 1024
-    suppressedContextSources: [agent-instructions, skill-catalog]
-
-- id: prompt-injector
-  name: ./prompt-injector.mjs
-  config:
-    promptText: |-
-      __PROMPT_TOOL_TEXT__
+id / name / enabled / layer / strategy / position / dedupe / promotion /
+subagents / modelScope / configKind / order / role / sourceKind / identity /
+text / templateFile / fill / variables / params
 ```
 
-### prompt-injector.mjs 职责
+`subagents` 三态：`none`=仅主会话，`inherit`=主会话与子代理都适用，`only`=仅子代理。
+`mergeMode`：`separate`=同位置先后插入独立消息；`merged`=同位置拼接为一条消息（pre-step / system-section / runtime-context 通用）。
+`priority`：同位置插入顺序与拼接顺序，数值小者更靠近插入锚点；单配置多段用 `texts`。
 
-零依赖、`inject: []`、注册在 tool-bootstrap 之后（不抢剥离顺序）。
+六层参数：`system-section`（order、params.complete、params.sectionName）、
+`runtime-context`（order、params.contextName）、`agent-request`（params.patch /
+params.replace）、`llm-stream`（params.mode=pass|replace）、`tool-pipeline`
+（params.toolNames、preDecision、postAction）、`pre-step`（position/dedupe/promotion）。
 
-**唯一监听器 — 锚定确认后注入（`agent/pre-step`）：**
+## 路线图
 
-- 每会话注入一次，状态机：
-  - `promoted` = 会话已出现首个 `tool/call` 或 `assistant/message`
-    （与 tool-bootstrap 的 promoteOn: either 同定义）；
-  - `weAnchored` = turn1 的 assistant/message 存在 reasoning block 且
-    `/^we\b/i` 匹配（复用 zero 版已验证的检测逻辑）；
-  - 注入条件：`promoted && (weAnchored || 当前最大 turn > 锚定轮 turn)`：
-    - we 确认 → 锚定轮结束后的下一轮注入（满足"确认锚定后再注入"）；
-    - we 未确认 → 最多再等一轮，仍无 we 则强制注入（兜底，绝不卡死）。
-  - 注入内容 = `promptText` 一条 user 消息（`source.kind: 'plugin'`），
-    放在 decision.messages 之前（近距离信号）；
-  - 注入后 `injectedPrompt` 记录，绝不重复注入。
-- 不触碰 tools 目录、maxTokens、上下文剥离——全部留给原版 tool-bootstrap。
+已完成：
+- [x] 统一注入引擎与全层级接线（官方 0.1.0-rc.7 API 面）
+- [x] 旧四个注入模块移除，退化为 prompt-configs/*.yml 提示词配置
+- [x] 提示词配置三源合并与 settings 接口输出
+- [x] preset / src 分层与模块化
+- [x] 默认 anchored 预设与提示词配置行为等价（测试逐条对照）
 
-**已废弃的设计**（实测推翻）：`agent/inbox/inserted` 监听 + `isComplexTask`
-分流 + 简单任务锚定消息。实测证明 2 工具下锚定消息不产生 we，且 inbox
-消息结构（扁平 UserMessage）导致提取错误需修正——直接删除整条路径，简单任务
-走兜底注入（turn1 模型正常干活，turn2 注入提示词）。
+- [x] 文档同步：修正 README / plan 旧模块名（createSlots → createPromptConfigs、
+  mergeInjectionSlots → mergePromptConfigs、configs.ts → prompt-configs.ts），
+  并写入层能力矩阵与文本插值规则
 
-### src/index.ts 改动
+- [x] `placeholder` 数据源：skill-catalog 真实填充（skill-catalog / env-facts / instruction-hint 全部就绪）
 
-- `writePreset()`：复制 anchored 原版 `agent.cordis.yml`（替换 `__PROMPT_TOOL_TEXT__`
-  占位符）+ 原版 `tool-bootstrap.mjs` + `preset.yml` + 新增 `prompt-injector.mjs`。
-- 删除对 `zero-tool-bootstrap.mjs` / `anchor-turn.mjs` 的复制逻辑。
-- 其余不动：skill 注册（prompt）、AGENTS.md 常驻层、settings Web UI。
+- [x] 提示词配置保存前权威校验：/configs-validate 端点 + PromptSettingsSchema 最小结构强化
 
-### 不变项
+- [x] 默认模板库：templates/ 十个独立模板 + /templates 只读端点（六层 + 两个 placeholder）
 
-- `cordis.patch.yml`（插件自身装配）保持现状——anchored-standard 是 preset 形态，
-  仓库内无 patch 文件，无物可复制。
-- `~/.dsh/AGENTS.md` 只写 AGENTS 规则，preset.md 不进 AGENTS.md（防重复注入）。
-- 打包产物、peerDeps 范围声明不变。
+- [x] Web/TUI 提示词配置编辑器：主设置菜单一级 section（settings.section，不占插件分类），
+  列表 / 表单 / 模板插入 / 保存前校验；TUI 增加 /prompt-tool config 子命令
 
-## 四、实施步骤
+- [x] Web UI 重建（参考 dsh-mnemon）：主设置只保留提示词配置页（含 /import-directory
+  目录导入）；侧边栏新增独立工作台，顶部标签页为六个注入层级 + Skills 设置，
+  层页内开关按钮 + 上移/下移/复制/删除 + 展开编辑框；pre-step 层承载
+  preset.md / AGENTS.md 编辑与全部入口开关
 
-1. 从 `E:\Documents\GitHub\dsh-anchored-standard\preset\` 复制
-   `agent.cordis.yml`、`tool-bootstrap.mjs` 到 prompt-tool `preset/`；
-2. 按上节修改 `agent.cordis.yml`（追加 prompt-injector 行，其余不动）；
-3. 写 `preset/prompt-injector.mjs`（一个 pre-step 监听器 + we 检测 + 兜底轮计数）；
-4. 改 `preset/preset.yml`（name: prompt-tool）；
-5. 删 `preset/zero-tool-bootstrap.mjs`、`preset/anchor-turn.mjs`；
-6. 改 `src/index.ts` 的 `writePreset()`；
-7. `pnpm build`；
-8. 部署：运行插件装配 → 验证 `~/.dsh/.agent-presets/prompt-tool/` 文件
-   与 anchored-standard 原版 diff 仅剩 prompt-injector 行 + preset.yml 头部；
-9. 按第五节用 dsh web 测试；
-10. 同步 README（中英文）说明新机制。
+待办：
 
-## 五、测试计划与结果（dsh web）
+## 约束
 
-工具链：启动 dsh web（`--port 0` 自动分配）→ HTTP API：
-
-> **测试工作目录约定（用户全局指令：任何项目的所有测试都必须在 `_temp`）**：所有测试会话的 `cwd` 一律使用临时目录
-> `D:\AI\CodexCLI\workspase\_temp`，禁止用任何源码仓库当 cwd
-> （模型会在任务中写入产物，污染仓库工作区）。
-
-```
-session.create  { agentPreset: prompt-tool }
-session.selectModel { deepseek-official / deepseek-v4-pro / reasoningEffort: max }
-session.prompt  { text: 任务 }
-session.history → 轮询 turn/end（复杂任务 180s+ 超时）
-session.export  → zip 内 session.jsonl 逐条断言
-```
-
-断言脚本（PowerShell，写入 `%TEMP%`）逐条检查：
-
-- request #1：`tools` 仅 `bash`+`str_replace_editor`（Minimal 真实 schema）；
-  `config.maxTokens` 无注入 cap（adapter 默认 256000 或 undefined）；
-  无 `skill-catalog` / `agent-instructions` 消息；
-- request #2 起：完整工具目录（含 pwsh）；
-- turn1 的 assistant/message reasoning 首词 `/^we\b/i`；
-- preset.md 文本恰好出现一次（turn2 或 turn3，绝不重复）。
-
-测试矩阵：
-
-| 组 | 任务 | 次数 | 断言 |
-|---|---|---|---|
-| A 复杂英文 | "Design and implement ..."（>120 字符） | 5 | we 5/5；注入 5/5；request 结构如上 |
-| B 简单英文 | "List the files in the current directory" | 5 | turn1 正常干活；兜底注入 5/5；request 结构 |
-| C 中文 | 中文任务 | 1 | 注入后思维链/回答为简体中文 |
-
-**旧版实测结果（2026-08-15，历史存档，已被下方新版实测取代）：**
-
-| 组 | 结果 |
-|---|---|
-| A ×5 | we **5/5**；H1=[pwsh,read] maxTokens=1024；H2=31 工具 maxTokens=256000；注入 5/5；首请求前消息纯净（仅 user） |
-| B ×5 | turn1 first="The" + tool/call×2（直接干活）；注入 5/5；H1/H2 同上；注入后回复转简体中文 |
-| C ×1 | 同 B；turn2 中文回复 ✓ |
-
-验收通过：A 组 we 锚定 5/5、注入 5/5、无重复注入、request #1 结构全部命中；
-B/C 组兜底注入 5/5 + 中文生效。测试耗时：并行约 2.5 分钟（串行约 35 分钟，
-复杂任务 turn2 无需等结束——注入在 turn2 请求前已落库）。
-
-> 上表为旧版（pwsh/read + 1024 cap）的历史实测，仅存档参考。当前有效数据
-> 以紧跟其后的新版实测（bash/str_replace_editor + 无 cap）为准。
-
-**新版实测（2026-08-15，上游 PR #14 同步后重测，deepseek-v4-pro + max）：**
-
-| 组 | 结果 |
-|---|---|
-| 复杂英文 ×5 | we **5/5**；H1=[bash,str_replace_editor] maxTokens=256000（无 cap）；H2=33 工具；注入 5/5；首请求前消息纯净（仅 user） |
-| 时间线（run2 详查） | 首请求（bootstrap schema）→ "We" reasoning → tool/call → **we 确认后同 turn 下一步注入 preset.md** → 晋升后 agent-instructions/skill-catalog 恢复 → 模型继续干活 |
-
-> v2.2（2026-08-15）子模块已同步上游 main `ffb845c`（PR #20/#21/#23/#27/#29）：
-> 晋升后目录由全量 33 工具改为 resident 集（bootstrap 对 + dev_tool_search /
-> skill_search / skill_load + 已解锁工具）；AGENTS.md 由 dsh-agent-instructions 每轮
-> 注入改为 instruction-hint 一次性提示 + 模型自读；新增 compaction 回落与 Windows
-> custom-bash。上表 H2=33 工具与"agent-instructions 恢复"仅作为 v2.1 及之前版本
-> 的历史记录，当前断言以 resident 集为准。
-
-新版相对旧版的改善：无输出 cap，模型 turn1 内即可正常干活（旧版 1024 cap 会截断
-首轮 text/tool），注入发生在 turn1 内（旧版要等 turn2），全程不需要用户再发消息。
-
-## 六、风险与兜底
-
-- we 未锚定：锚定消息失效 → 强制兜底注入（最多延迟一轮），不影响任务完成。
-- 原版上游再更新：`writePreset` 完整复制上游 `preset/*.mjs` 全集并注入
-  prompt-injector 行（唯一本地差异，冲突面最小）；同步命令
-  `git submodule update --remote vendor/dsh-anchored-standard`。
-- 缓存：promptText 若频繁编辑会改变 pre-step 注入文本 → 仅影响注入轮之后的
-  前缀缓存；preset.md 编辑频率低，可接受（不违反 system 静态铁律）。
+1. 功能先行、UI/开关最后：任何 UI 只消费既有 settings 数据，不引入新后端状态。
+2. 行为等价：重构必须有测试对照；验收用确定性单测，不用模型评分。
+3. 只用官方 API：不 fork DSH 内部实现；服务缺失降级、配置错误 fail loud。
+4. 注入引擎永不破坏会话：单条提示词配置失败跳过并告警；幂等以持久 session events 为准。

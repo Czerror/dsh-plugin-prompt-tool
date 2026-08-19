@@ -1,0 +1,12 @@
+# 模板：merged 拼接组第一条（同 position + 同 mergeGroup 拼接为一条消息）
+# 与 21-merged-b.yml 搭配使用；priority 小者在前。
+id: example-merged-a
+layer: pre-step
+strategy: static
+position: before-all
+mergeMode: merged
+mergeGroup: grp
+priority: 0
+texts:
+  - 合并段 A1
+  - 合并段 A2

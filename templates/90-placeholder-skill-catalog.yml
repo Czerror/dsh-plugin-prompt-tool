@@ -1,0 +1,20 @@
+# 模板：placeholder 动态填充位 —— skill-catalog（技能目录）
+# 数据来自宿主 skills 服务（已按 skillSwitches 过滤）；服务缺失时跳过不注入。
+# 建议 promotion: main + dedupe: session：晋升后注入一次，避开首轮目录扰动。
+id: example-skill-catalog
+name: 示例：技能目录
+layer: pre-step
+strategy: placeholder
+fill: skill-catalog
+position: after-all
+dedupe: session
+promotion: main
+text: |-
+  可用技能 {{SKILL_COUNT}} 个：
+  {{SKILLS_TEXT}}
+params:
+  limit: 20
+  fields: name,description
+  providers: ''
+  emptyBehavior: skip
+  emptyText: 当前没有可用技能。

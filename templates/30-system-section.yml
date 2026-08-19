@@ -1,0 +1,16 @@
+# 模板：system-section 静态 system 段（缓存友好，静态内容优先放这里）
+# order 参考：-100 身份 / 0 persona / 100-199 工具引导。
+id: example-system-section
+name: 示例：system 静态段
+layer: system-section
+strategy: static
+order: -50
+priority: 0
+mergeMode: merged
+mergeGroup: sys-grp
+text: |-
+  你是 {{AGENT_NAME}}，回复前先说明正在做什么。
+variables: {}
+params:
+  complete: false
+  sectionName: ''

@@ -1,0 +1,153 @@
+# promptConfigs 完整模板（复制到 cordis.patch.yml 的 config 下，或参考此结构写入 settings）
+# 拆分的独立模板见 templates/ 目录（每个文件一条配置，可直接复制或经 /templates 端点读取）。
+
+# 说明：本文件是模板示例，放在仓库根目录，不会被引擎直接扫描；
+#       引擎实际读取的目录是生成后的 preset/prompt-configs/。
+# 合并优先级：默认四条配置 < promptConfigsDir（目录文件） < promptConfigs（settings 数组）。
+# 同名 id 覆盖默认配置并保留顺序；新 id 追加在末尾。
+# 内容为空一律不注入；未知枚举值会在挂载时 fail loud。
+
+promptConfigs:
+  # ── 1. pre-step：消息批注入（默认层，完整通用字段示例） ─────────────────
+  - id: example-pre-step            # 唯一 id，必填；同名覆盖默认配置
+    name: 示例：消息批注入          # 显示名，默认等于 id（UI 使用）
+    enabled: true                   # 总开关，默认 true
+    layer: pre-step                 # 注入层级，默认 pre-step
+    strategy: static                # 内容策略，默认 static
+    position: after-user            # 插入位置：after-user / before-all / after-all，默认 after-user
+    dedupe: session                 # 幂等：none / session（每会话一次）/ batch（当批去重），默认 none
+    promotion: none                 # 晋升门槛：none / main / include-subagents，默认 none
+    subagents: none                 # 子代理作用域：none=仅主会话 / inherit=都适用 / only=仅子代理，默认 none
+    modelScope: all                 # 模型范围：all / pro / flash，默认 all
+    configKind: ordered             # 排序类型：ordered（按 order 升序）/ anchor（固定文件序，排最前），默认 ordered
+    order: 0                        # 同层排序权重，默认 0
+    role: user                      # 注入消息角色：user / assistant，默认 user
+    priority: 0                     # 同位置插入顺序与 merged 拼接顺序：数值小者更靠近插入锚点，默认 0
+    mergeMode: separate             # 同位置多条配置：separate=先后插入独立消息（默认）/ merged=拼接为一条消息
+    # mergeGroup: ''                # merged 模式分组名；空=同位置共享默认组（示例见 example-merged-a）
+    sourceKind: ''                  # 注入消息 source.kind，默认等于 id
+    form: notice                    # source.form，默认 notice
+    summary: ''                     # source.summary，默认空
+    identity:                       # 持久幂等匹配字段，默认 {field: plugin, value: id}
+      field: plugin                 #   plugin=按 source.plugin 匹配；kind=按 source.kind 匹配
+      value: example-pre-step       #   匹配值，默认 id（merged 时自动改用 mergeGroup/合成组名）
+    text: |                         # 注入文本；与 texts 二选一，text 优先；空 = 不注入
+      这是注入到用户消息后的提示词内容。
+      支持 {{WORKSPACE}} / {{CWD}} / {{DSH_HOME}} 与下方 variables。
+    # texts:                        # 单配置多段文本（多个 text 内容块），text 为空时生效
+    #   - 第一段
+    #   - 第二段
+    # templateFile: ''              # 外部 yml/json/纯文本内容模板，text 优先于模板
+    variables:                      # 模板变量，可选；内置 WORKSPACE / CWD / DSH_HOME
+      WHO: 张三
+    params: {}                      # 本层无专用参数
+
+  # ── 2. pre-step：多段文本 + 同位置拼接 ─────────────────────────────────
+  - id: example-merged-a            # merged 组内第一条：priority 小者排前
+    layer: pre-step
+    strategy: static
+    position: before-all
+    mergeMode: merged               # 与同 position + 同 mergeGroup 的配置拼接为一条消息
+    mergeGroup: grp                 # 分组名；组内 source 身份改用该组名，保证持久幂等
+    priority: 0                     # 拼接顺序：0 在 1 之前
+    texts:                          # 单配置多段内容块
+      - 合并段 A1
+      - 合并段 A2
+  - id: example-merged-b
+    layer: pre-step
+    strategy: static
+    position: before-all
+    mergeMode: merged
+    mergeGroup: grp
+    priority: 1
+    text: 合并段 B
+
+  # ── 3. system-section：静态 system 段 ───────────────────────────────────
+  - id: example-system-section
+    name: 示例：system 静态段
+    layer: system-section           # 走 ctx.systemPrompt.section，缓存友好（静态优先放这里）
+    strategy: static
+    order: -50                      # system section 排序：-100 身份 / 0 persona / 100-199 工具引导
+    priority: 0                     # 同 order 拼接顺序
+    mergeMode: merged               # 同 order + mergeGroup 的多条配置拼接为一个 section
+    mergeGroup: sys-grp
+    text: |                         # 支持官方 {{variable}}；文本在请求渲染时插值
+      你是 {{AGENT_NAME}}，回复前先说明正在做什么。
+    variables: {}
+    params:
+      complete: false               # true = 独占整个 system prompt（只能有一条生效）
+      sectionName: ''               # 注册名，默认 mergeGroup 或 id
+
+  # ── 4. runtime-context：动态运行时快照 ─────────────────────────────────
+  - id: example-runtime-context
+    layer: runtime-context          # 走 ctx.systemPrompt.context；晋升后由 context-gate 差分投影
+    strategy: static
+    order: 5                        # context 排序，同层可 merged 拼接
+    mergeMode: merged
+    text: |
+      当前工作区：{{WORKSPACE}}
+    params:
+      contextName: ''               # 注册名，默认 mergeGroup 或 id
+
+  # ── 5. agent-request：调用配置修改 ─────────────────────────────────────
+  - id: example-agent-request
+    layer: agent-request            # agent/request 瀑布，可改 LlmCallConfig
+    strategy: static
+    modelScope: flash               # 可选：只对 Flash 生效
+    subagents: none                 # none=主会话 / inherit=含子代理 / only=仅子代理
+    priority: 0                     # 排序注册；多个 patch 时优先级小者先注册
+    params:
+      patch:                        # 浅合并字段：provider / model / reasoningEffort / temperature / maxTokens / stop
+        maxTokens: 4096
+        temperature: 0.3
+      replace: false                # true = 用 patch 整体替换调用配置（必须给完整 provider/model 等）
+
+  # ── 6. llm-stream：模型流包装 ──────────────────────────────────────────
+  - id: example-llm-stream
+    layer: llm-stream               # llm/stream 瀑布
+    strategy: static
+    modelScope: flash
+    priority: 0
+    text: 自定义流替换文本           # mode=replace 时的流内容
+    params:
+      mode: pass                    # pass=透传原始流（默认）；replace=用 text 替代整个模型流
+
+  # ── 7. tool-pipeline：工具调用三阶段 ────────────────────────────────────
+  - id: example-tool-pipeline
+    layer: tool-pipeline            # tools/pre-execute + tools/execute + tools/post-execute
+    strategy: static
+    priority: 0
+    text: 替换后的工具结果           # postAction=replace / block 时使用
+    params:
+      toolNames: bash,run_code      # 逗号分隔的工具名过滤；空 = 全部工具
+      preDecision: allow            # 调用前：allow（默认）/ deny / ask
+      denyReason: 该工具被提示词配置禁用   # preDecision=deny 时的原因
+      postAction: accept            # 调用后：accept（默认）/ replace（用 text 替换结果）/ block
+
+  # ── 8. placeholder：动态填充位 ─────────────────────────────────────────
+  - id: example-placeholder
+    layer: pre-step
+    strategy: placeholder           # 动态填充器，不写 text
+    fill: env-facts                 # instruction-hint（已实现）/ env-facts（已实现）/ skill-catalog（已实现）
+    position: after-all
+    dedupe: session
+    promotion: include-subagents
+
+  # ── 9. placeholder：技能目录 ───────────────────────────────────────────
+  - id: example-skill-catalog
+    name: 示例：技能目录
+    layer: pre-step                 # 或 runtime-context（每次装配动态刷新）
+    strategy: placeholder
+    fill: skill-catalog
+    position: after-all
+    dedupe: session
+    promotion: main                 # 建议：晋升后注入一次，避开首轮目录扰动
+    text: |-                        # 可选：完全自定义；变量 SKILL_COUNT / SKILL_NAMES / SKILLS_TEXT
+      可用技能 {{SKILL_COUNT}} 个：
+      {{SKILLS_TEXT}}
+    params:
+      limit: 20                     # 输出数量上限；0 = 全部（谨慎使用）
+      fields: name,description      # 输出字段：name / description / whenToUse
+      providers: ''                 # provider 过滤，逗号分隔；空 = 全部
+      emptyBehavior: skip           # skip=无技能不注入；text=注入 emptyText
+      emptyText: 当前没有可用技能。

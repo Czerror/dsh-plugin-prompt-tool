@@ -38,7 +38,7 @@
 # stripped by default). After the first durable promotion signal (a tool call
 # OR the first assistant message, `promoteOn: either`) the gate opens, and the
 # loop's own snapshot projection diffs exactly ONE fresh runtime-context
-# message into the next request: minimal first round, injections on the second
+# message into the next request: minimal first round, prompt-configs on the second
 # round. A `compaction/end` boundary re-closes the gate the same way.
 #
 # This row deliberately sits before every other row: waterfall after-next
@@ -51,7 +51,7 @@
 # requests (prompt-tool opts for catalog-level subagent pass-through); the
 # tool-bootstrap row below still gates subagent tools via its own flag.
 - id: context-gate
-  name: ./context-gate.mjs
+  name: ./anchored/context-gate.mjs
   config:
     promoteOn: either
     includeSubagents: false
@@ -88,7 +88,7 @@
 # context-gate row: a subagent's first request sees the bootstrap pair, then
 # its own first reply or tool call promotes it to the assembled catalog.
 - id: tool-bootstrap
-  name: ./tool-bootstrap.mjs
+  name: ./anchored/tool-bootstrap.mjs
   config:
     bootstrapTools: [bash, str_replace_editor]
     promoteOn: either
@@ -96,6 +96,20 @@
     # Post-compaction core work set: the model is mid-task and needs to keep
     # working, but faces a small catalog instead of the full Standard set.
     compactionTools: [read, write, edit, glob, grep, todo_write, ask_user_question]
+
+# ── PTC run_code environment (prompt-tool local addition) ──────────────────
+#
+# Official Code Mode runs the model program in a worker with env={}; the
+# program cannot read system environment. This row patches the reserved
+# run_code transport so every program gets a frozen `env` global containing
+# the whitelisted non-secret host variables below plus managed DSH_* facts
+# and DSH_WORKSPACE. Add deployment-specific names to envKeys as needed.
+# Credential-shaped names (KEY/PASSWORD/SECRET/TOKEN) are always rejected.
+- id: run-code-env
+  name: ./anchored/run-code-env.mjs
+  config:
+    enabled: true
+    envKeys: [PATH, PATHEXT, HOME, USERPROFILE, USERNAME, COMPUTERNAME, OS, TEMP, TMP, SystemRoot, ProgramFiles, ProgramFiles(x86), LOCALAPPDATA, APPDATA]
 
 # ── identity ────────────────────────────────────────────────────────────────
 
@@ -115,17 +129,9 @@
 # that perturbs the trajectory even after promotion. Instead, after promotion
 # ONE short hint is injected once per session — "these instruction files
 # exist; read them before acting" — and the model reads the files itself via
-# the filesystem tools when relevant. The once-per-session guard is DERIVED
-# FROM DURABLE EVENTS (restart-safe): a process restart must never inject a
-# second hint with the same deterministic message id — the duplicate id
-# breaks history replay. `includeSubagents: true` makes a subagent's own
-# first reply or tool call open its hint, keeping it out of the context
-# gate's stripped first request.
-- id: instruction-hint
-  name: ./instruction-hint.mjs
-  config:
-    promoteOn: either
-    includeSubagents: true
+# the filesystem tools when relevant. This behavior is a config
+# (`instruction-hint`) inside the prompt-config-engine row appended below, not a
+# standalone row.
 
 # ── shell ───────────────────────────────────────────────────────────────────
 
@@ -209,7 +215,7 @@
 # guidance instead of switching shells — pwsh stays its own tool in the
 # promoted catalog.
 - id: custom-bash
-  name: ./custom-bash.mjs
+  name: ./anchored/custom-bash.mjs
   disabled: !!js process.platform !== 'win32'
   config:
     timeoutMs: 120000
@@ -276,7 +282,7 @@
   name: '@deepseek-ai/dsh-skill-filesystem'
 
 - id: skill-search
-  name: ./skill-search.mjs
+  name: ./anchored/skill-search.mjs
 
 # ── goals ───────────────────────────────────────────────────────────────────
 

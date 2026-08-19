@@ -1,0 +1,12 @@
+# 模板：agent-request 调用配置修改（LlmCallConfig 浅合并 / 整体替换）
+id: example-agent-request
+layer: agent-request
+strategy: static
+modelScope: flash
+subagents: none
+priority: 0
+params:
+  patch:
+    maxTokens: 4096
+    temperature: 0.3
+  replace: false

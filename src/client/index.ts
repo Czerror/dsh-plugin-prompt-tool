@@ -2,22 +2,24 @@ import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 import type { ConnectionHandle } from '@deepseek-ai/dsh-api-remotes/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings-plugins/client'
-import { PromptEditor, type PromptEditorInjected } from './PromptEditor.tsx'
+import { PromptSettingsPage, type PromptSettingsPageInjected } from './PromptSettingsPage.tsx'
+import { mountPromptToolWorkspace } from './workspace-mount.tsx'
 
 export const inject = ['slots', 'connection']
 
 export function apply(ctx: ClientContext): void {
-  const connection = ctx.get('connection') as ConnectionHandle
+  const connection = ctx.get('connection') as ConnectionHandle | undefined
+  if (connection === undefined) return
 
-  const injected = (): PromptEditorInjected => ({
-    api: connection.api,
-  })
+  // 主设置一级 section：现在只保留「提示词配置」页（含目录导入）。
+  ctx.slots.inject('settings.section', () => ctx.slots.register({
+    name: 'settings.section',
+    id: 'prompt-tool',
+    order: 160,
+    label: () => '提示词工具',
+    inject: (): PromptSettingsPageInjected => ({ api: connection.api }),
+  }, PromptSettingsPage))
 
-  // dsh 0.1.0-rc.7 起 settings.plugin.item 是 keyed slot，
-  // key = 插件 settings namespace（与 Host 端 settingsNamespace('prompt-tool') 对应）。
-  ctx.slots.inject('settings.plugin.item', () => ctx.slots.register({
-    name: 'settings.plugin.item',
-    key: 'prompt-tool',
-    inject: injected,
-  }, PromptEditor))
+  // 侧边栏独立工作台：新建会话行下方入口 + 中央列面板。
+  ctx.effect(() => mountPromptToolWorkspace(connection.api), 'prompt-tool: sidebar workspace')
 }

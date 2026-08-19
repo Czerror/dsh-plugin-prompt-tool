@@ -1,0 +1,9 @@
+# 模板：merged 拼接组第二条（与 20-merged-a.yml 同 group，拼接到其内容块之后）
+id: example-merged-b
+layer: pre-step
+strategy: static
+position: before-all
+mergeMode: merged
+mergeGroup: grp
+priority: 1
+text: 合并段 B
