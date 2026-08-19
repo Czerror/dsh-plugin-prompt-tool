@@ -14,8 +14,8 @@ test('preset.yml params + hostDefaults 合并进 Config 作为唯一入口默认
   const spec = {
     params: {
       usePtcMode: true,
-      anchorFirstTurn: true,
-      anchorCustom: false,
+      firstTurnAnchor: true,
+      firstTurnCustom: false,
       bootstrapMaxTokens: 2048,
     },
     hostDefaults: {
@@ -35,7 +35,7 @@ test('preset.yml params + hostDefaults 合并进 Config 作为唯一入口默认
   }
   const merged = mergePresetDefaults(base, spec)
   assert.equal(merged.usePtcMode, true)
-  assert.equal(merged.anchorFirstTurn, true)
+  assert.equal(merged.firstTurnAnchor, true)
   assert.equal(merged.bootstrapMaxTokens, 2048)
   assert.equal(merged.writeAgents, false)
   assert.equal(merged.skillsDir, 'C:/skills')

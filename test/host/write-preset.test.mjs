@@ -25,9 +25,9 @@ function listFiles(dir) {
 
 function makeOptions(presetDir) {
   return {
-    anchorFirstTurn: false,
-    anchorText: '',
-    anchorCustom: false,
+    firstTurnAnchor: false,
+    firstTurnText: '',
+    firstTurnCustom: false,
     guideText: '',
     guideCustom: false,
     injectPrompt: true,
@@ -97,7 +97,7 @@ test('writePreset 将 preset.yml 的锚点/引导参数写入提示词配置', (
     const near = readFileSync(join(presetDir, 'prompt-configs', '00-near-anchor.yml'), 'utf8')
     const guide = readFileSync(join(presetDir, 'prompt-configs', '10-router-guide.yml'), 'utf8')
     assert.ok(near.includes('buildPattern'))
-    assert.ok(near.includes('anchorBuild'))
+    assert.ok(near.includes('firstTurnBuild'))
     assert.ok(guide.includes('guideComplexPattern'))
     assert.ok(guide.includes('guideWeak'))
   } finally {

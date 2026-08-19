@@ -43,16 +43,16 @@ export const DEFAULT_GUIDE_TEXT = GUIDE_DEFAULTS.weak.length > 0 || GUIDE_DEFAUL
   : ''
 
 /** 旧版“每块强制 we need”默认锚句；已存 settings 时归一化为自动模式。 */
-const LEGACY_ANCHOR_TEXT = [
+const LEGACY_FIRST_TURN_TEXT = [
   'You are a helpful software assistant.',
   '',
   "Begin every reasoning block with 'We need'.",
 ].join('\n')
 
 /** 旧默认值归一化为空（自动）；用户自定义文本原样保留。 */
-export function normalizeAnchorText(text: string | undefined): string {
+export function normalizeFirstTurnText(text: string | undefined): string {
   const value = typeof text === 'string' ? text : ''
-  return value.trim() === LEGACY_ANCHOR_TEXT.trim() ? '' : value
+  return value.trim() === LEGACY_FIRST_TURN_TEXT.trim() ? '' : value
 }
 
 export interface Config {
@@ -75,11 +75,11 @@ export interface Config {
   /** 技能展示顺序（目录名数组）：排前面的技能 rank 更小，模型最先看到。 */
   skillOrder: string[]
   /** 首轮近距离锚定开关（默认关闭）。 */
-  anchorFirstTurn: boolean
-  /** 自定义锚点文本；anchorCustom=true 时固定使用。 */
-  anchorText: string
-  /** 自定义锚点开关：true 固定使用 anchorText；false 按任务自动选择。 */
-  anchorCustom: boolean
+  firstTurnAnchor: boolean
+  /** 自定义锚点文本；firstTurnCustom=true 时固定使用。 */
+  firstTurnText: string
+  /** 自定义锚点开关：true 固定使用 firstTurnText；false 按任务自动选择。 */
+  firstTurnCustom: boolean
   /** 自定义每轮引导文本；guideCustom=true 时固定使用。 */
   guideText: string
   /** 自定义每轮引导开关：true 固定使用 guideText；false 按任务自动选择。 */
@@ -122,9 +122,9 @@ export const Config: z<Config> = z.object({
   injectPrompt: z.boolean().default(true),
   skillSwitches: z.dict(z.boolean()).default({}),
   skillOrder: z.array(z.string()).default([]),
-  anchorFirstTurn: z.boolean().default(false),
-  anchorText: z.string().default(''),
-  anchorCustom: z.boolean().default(false),
+  firstTurnAnchor: z.boolean().default(false),
+  firstTurnText: z.string().default(''),
+  firstTurnCustom: z.boolean().default(false),
   guideText: z.string().default(DEFAULT_GUIDE_TEXT),
   guideCustom: z.boolean().default(false),
   subagentFlashProvider: z.string().default(''),
@@ -177,9 +177,9 @@ export interface PromptSettings {
   agentsText: string
   agentsPath: string
   injectAgentsPrompt: boolean
-  anchorFirstTurn: boolean
-  anchorText: string
-  anchorCustom: boolean
+  firstTurnAnchor: boolean
+  firstTurnText: string
+  firstTurnCustom: boolean
   guideText: string
   guideCustom: boolean
   /** 子代理固定模型路由 provider；与模型名同时非空时生效。 */
@@ -224,9 +224,9 @@ export const PromptSettingsSchema: z<PromptSettings> = z.object({
   agentsText: z.string().default(''),
   agentsPath: z.string().default(''),
   injectAgentsPrompt: z.boolean().default(false),
-  anchorFirstTurn: z.boolean().default(false),
-  anchorText: z.string().default(''),
-  anchorCustom: z.boolean().default(false),
+  firstTurnAnchor: z.boolean().default(false),
+  firstTurnText: z.string().default(''),
+  firstTurnCustom: z.boolean().default(false),
   guideText: z.string().default(DEFAULT_GUIDE_TEXT),
   guideCustom: z.boolean().default(false),
   subagentFlashProvider: z.string().default(''),
@@ -271,9 +271,9 @@ export interface RuntimeOptions {
   skillOrder: string[]
   /** 用户自定义技能目录；空 = 自动使用 profile skills 副本。 */
   skillsDir: string
-  anchorFirstTurn: boolean
-  anchorText: string
-  anchorCustom: boolean
+  firstTurnAnchor: boolean
+  firstTurnText: string
+  firstTurnCustom: boolean
   guideText: string
   guideCustom: boolean
   bootstrapMaxTokens: number

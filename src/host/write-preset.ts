@@ -30,9 +30,9 @@ const PRESETS_DIR = packagePresetDir()
 const ENGINE_DIR = packageEngineDir()
 
 export interface WritePresetOptions {
-  anchorFirstTurn: boolean
-  anchorText: string
-  anchorCustom: boolean
+  firstTurnAnchor: boolean
+  firstTurnText: string
+  firstTurnCustom: boolean
   guideText: string
   guideCustom: boolean
   injectPrompt: boolean
@@ -57,9 +57,9 @@ export interface WritePresetOptions {
 function runtimeOf(options: WritePresetOptions, prompt: string): Record<string, unknown> {
   return {
     promptText: prompt,
-    anchorFirstTurn: options.anchorFirstTurn === true,
-    anchorCustom: options.anchorCustom === true,
-    anchorText: typeof options.anchorText === 'string' ? options.anchorText : '',
+    firstTurnAnchor: options.firstTurnAnchor === true,
+    firstTurnCustom: options.firstTurnCustom === true,
+    firstTurnText: typeof options.firstTurnText === 'string' ? options.firstTurnText : '',
     guideCustom: options.guideCustom === true,
     guideText: typeof options.guideText === 'string' ? options.guideText : '',
     injectPrompt: options.injectPrompt !== false,
@@ -124,22 +124,22 @@ export function writePreset(prompt: string, options: WritePresetOptions): void {
     templateDefaults = templateConfigs.map((config) => {
       const next: PromptConfigSpec = { ...config, params: { ...config.params } }
       if (next.id === 'near-anchor') {
-        next.enabled = params.anchorFirstTurn === true
+        next.enabled = params.firstTurnAnchor === true
         next.params = {
           ...next.params,
-          useCustom: params.anchorCustom === true,
-          anchorText: asString(params.anchorText),
+          useCustom: params.firstTurnCustom === true,
+          firstTurnText: asString(params.firstTurnText),
           buildPattern: asString(params.buildPattern),
           complexPattern: asString(params.complexPattern),
-          anchorBuild: asString(params.anchorBuild),
-          anchorInspect: asString(params.anchorInspect),
-          anchorDeep: asString(params.anchorDeep),
+          firstTurnBuild: asString(params.firstTurnBuild),
+          firstTurnInspect: asString(params.firstTurnInspect),
+          firstTurnDeep: asString(params.firstTurnDeep),
         }
       } else if (next.id === 'router-guide') {
-        next.enabled = params.anchorFirstTurn === true
+        next.enabled = params.firstTurnAnchor === true
         next.params = {
           ...next.params,
-          useCustom: params.anchorFirstTurn === true && params.guideCustom === true,
+          useCustom: params.firstTurnAnchor === true && params.guideCustom === true,
           text: asString(params.guideText),
           guideComplexPattern: asString(params.guideComplexPattern),
           guideWeak: asString(params.guideWeak),
@@ -147,7 +147,7 @@ export function writePreset(prompt: string, options: WritePresetOptions): void {
         }
       } else if (next.id === 'prompt-injector') {
         next.enabled = params.injectPrompt !== false
-        next.params = { ...next.params, text: prompt, customAnchorWord: 'we' }
+        next.params = { ...next.params, text: prompt, firstTurnWord: 'we' }
       }
       return next
     })

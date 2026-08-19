@@ -13,7 +13,7 @@ import {
 } from '../../lib/preset-core.mjs'
 
 test('默认四条提示词配置 spec 渲染后 YAML 可解析且字段完整', () => {
-  const specs = buildDefaultPromptConfigs({ anchorFirstTurn: true, guideCustom: true, guideText: 'CUSTOM' }, 'PROMPT')
+  const specs = buildDefaultPromptConfigs({ firstTurnAnchor: true, guideCustom: true, guideText: 'CUSTOM' }, 'PROMPT')
   assert.deepEqual(specs.map((spec) => spec.id), ['near-anchor', 'router-guide', 'prompt-injector', 'instruction-hint'])
   for (const spec of specs) {
     const doc = parse(renderPromptConfigYaml(spec), { logLevel: 'silent' })
@@ -139,30 +139,30 @@ test('buildPromptConfigFiles 处理空提示词时提示词配置结构完整', 
   assert.equal(yaml.enabled, true)
   assert.equal(yaml.strategy, 'custom-fallback')
   assert.equal(yaml.params.text, '')
-  assert.equal(yaml.params.customAnchorWord, 'we')
+  assert.equal(yaml.params.firstTurnWord, 'we')
 })
 
 
-test('buildPromptConfigFiles 开启 anchorFirstTurn 时 near-anchor 提示词配置启用并携带自定义锚定句', () => {
-  const { yaml } = configByName({ anchorFirstTurn: true, anchorText: 'ANCHOR SENTENCE' }, 'PROMPT', '00-near-anchor')
+test('buildPromptConfigFiles 开启 firstTurnAnchor 时 near-anchor 提示词配置启用并携带自定义锚定句', () => {
+  const { yaml } = configByName({ firstTurnAnchor: true, firstTurnText: 'ANCHOR SENTENCE' }, 'PROMPT', '00-near-anchor')
   assert.equal(yaml.enabled, true)
-  assert.equal(yaml.strategy, 'anchor-auto')
+  assert.equal(yaml.strategy, 'first-turn-anchor')
   assert.equal(yaml.position, 'after-user')
   assert.equal(yaml.params.useCustom, false)
-  assert.equal(yaml.params.anchorText, 'ANCHOR SENTENCE')
+  assert.equal(yaml.params.firstTurnText, 'ANCHOR SENTENCE')
 })
 
 
-test('buildPromptConfigFiles 开启 anchorCustom 时 near-anchor 固定使用自定义文本', () => {
-  const { yaml } = configByName({ anchorFirstTurn: true, anchorText: 'CUSTOM', anchorCustom: true }, 'PROMPT', '00-near-anchor')
+test('buildPromptConfigFiles 开启 firstTurnCustom 时 near-anchor 固定使用自定义文本', () => {
+  const { yaml } = configByName({ firstTurnAnchor: true, firstTurnText: 'CUSTOM', firstTurnCustom: true }, 'PROMPT', '00-near-anchor')
   assert.equal(yaml.params.useCustom, true)
-  assert.equal(yaml.params.anchorText, 'CUSTOM')
+  assert.equal(yaml.params.firstTurnText, 'CUSTOM')
 })
 
 
-test('buildPromptConfigFiles 开启 anchorFirstTurn 且空锚点文本时生成自动模式配置', () => {
-  const { yaml } = configByName({ anchorFirstTurn: true, anchorText: '' }, 'PROMPT', '00-near-anchor')
-  assert.equal(yaml.params.anchorText, '')
+test('buildPromptConfigFiles 开启 firstTurnAnchor 且空锚点文本时生成自动模式配置', () => {
+  const { yaml } = configByName({ firstTurnAnchor: true, firstTurnText: '' }, 'PROMPT', '00-near-anchor')
+  assert.equal(yaml.params.firstTurnText, '')
 })
 
 
@@ -180,8 +180,8 @@ test('buildPromptConfigFiles 默认 router-guide 提示词配置关闭，自动�
 })
 
 
-test('buildPromptConfigFiles 开启 anchorFirstTurn 时 router-guide 提示词配置启用', () => {
-  const { yaml } = configByName({ anchorFirstTurn: true }, 'PROMPT', '10-router-guide')
+test('buildPromptConfigFiles 开启 firstTurnAnchor 时 router-guide 提示词配置启用', () => {
+  const { yaml } = configByName({ firstTurnAnchor: true }, 'PROMPT', '10-router-guide')
   assert.equal(yaml.enabled, true)
   assert.equal(yaml.modelScope, 'flash')
   assert.equal(yaml.params.useCustom, false)
@@ -189,7 +189,7 @@ test('buildPromptConfigFiles 开启 anchorFirstTurn 时 router-guide 提示词�
 
 
 test('buildPromptConfigFiles guideCustom=true 时固定自定义每轮引导（Pro/Flash 都注入）', () => {
-  const { yaml } = configByName({ anchorFirstTurn: true, guideCustom: true, guideText: 'CUSTOM GUIDE' }, 'PROMPT', '10-router-guide')
+  const { yaml } = configByName({ firstTurnAnchor: true, guideCustom: true, guideText: 'CUSTOM GUIDE' }, 'PROMPT', '10-router-guide')
   assert.equal(yaml.enabled, true)
   assert.equal(yaml.modelScope, 'all')
   assert.equal(yaml.params.useCustom, true)
@@ -197,8 +197,8 @@ test('buildPromptConfigFiles guideCustom=true 时固定自定义每轮引导（P
 })
 
 
-test('buildPromptConfigFiles injectPrompt=false 且 anchorFirstTurn=true 只启用近锚提示词配置', () => {
-  const files = buildPromptConfigFiles({ injectPrompt: false, anchorFirstTurn: true, anchorText: 'A' }, 'PROMPT')
+test('buildPromptConfigFiles injectPrompt=false 且 firstTurnAnchor=true 只启用近锚提示词配置', () => {
+  const files = buildPromptConfigFiles({ injectPrompt: false, firstTurnAnchor: true, firstTurnText: 'A' }, 'PROMPT')
   const byName = Object.fromEntries(files.map((entry) => [entry.file, parse(entry.content, { logLevel: 'silent' })]))
   assert.equal(byName['00-near-anchor.yml'].enabled, true)
   assert.equal(byName['10-router-guide.yml'].enabled, true)

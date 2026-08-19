@@ -1,6 +1,6 @@
 /**
  * strategies — 引擎内容策略绑定(config.resolve)。
- * 内置策略: static / placeholder / instruction-hint / anchor-auto / guide-auto / custom-fallback / anchor-fallback。
+ * 内置策略: static / placeholder / instruction-hint / first-turn-anchor / guide-auto / custom-fallback。
  * 策略参数全部来自 config.params（由 preset.yml 单一配置源下发），引擎只负责组装。
  * 仍支持 strategyDir 懒加载自定义模板策略。
  */
@@ -16,17 +16,17 @@ function escapeRegExp(text) {
 }
 
 /**
- * anchor-auto:首条真实用户消息后的一次性任务锚点。
+ * first-turn-anchor:首条真实用户消息后的一次性任务锚点。
  * 正则与锚句文本全部来自 config.params（由 preset.yml 单一配置源下发）。
  */
-function createAnchorAutoResolver(config) {
+function createFirstTurnAnchorResolver(config) {
   const useCustom = config.params?.useCustom === true
-  const customText = typeof config.params?.anchorText === 'string' ? config.params.anchorText : ''
+  const customText = typeof config.params?.firstTurnText === 'string' ? config.params.firstTurnText : ''
   const buildPattern = typeof config.params?.buildPattern === 'string' ? config.params.buildPattern : ''
   const complexPattern = typeof config.params?.complexPattern === 'string' ? config.params.complexPattern : ''
-  const anchorBuild = typeof config.params?.anchorBuild === 'string' ? config.params.anchorBuild : ''
-  const anchorInspect = typeof config.params?.anchorInspect === 'string' ? config.params.anchorInspect : ''
-  const anchorDeep = typeof config.params?.anchorDeep === 'string' ? config.params.anchorDeep : ''
+  const firstTurnBuild = typeof config.params?.firstTurnBuild === 'string' ? config.params.firstTurnBuild : ''
+  const firstTurnInspect = typeof config.params?.firstTurnInspect === 'string' ? config.params.firstTurnInspect : ''
+  const firstTurnDeep = typeof config.params?.firstTurnDeep === 'string' ? config.params.firstTurnDeep : ''
   const buildRe = buildPattern.length > 0 ? new RegExp(buildPattern, 'i') : undefined
   const complexRe = complexPattern.length > 0 ? new RegExp(complexPattern, 'i') : undefined
   return ({ messages }) => {
@@ -34,7 +34,7 @@ function createAnchorAutoResolver(config) {
       const text = customText.trim()
       return text.length > 0 ? { text } : null
     }
-    if (buildRe === undefined || complexRe === undefined || (anchorBuild.length === 0 && anchorInspect.length === 0 && anchorDeep.length === 0)) {
+    if (buildRe === undefined || complexRe === undefined || (firstTurnBuild.length === 0 && firstTurnInspect.length === 0 && firstTurnDeep.length === 0)) {
       return null
     }
     const userIndex = messages.findIndex((message) => message?.source?.kind === 'user')
@@ -42,9 +42,9 @@ function createAnchorAutoResolver(config) {
     const taskText = extractText(messages[userIndex])
     if (taskText.length === 0) return null
     let anchor
-    if (complexRe.test(taskText)) anchor = anchorDeep
-    else if (buildRe.test(taskText)) anchor = anchorBuild
-    else anchor = anchorInspect
+    if (complexRe.test(taskText)) anchor = firstTurnDeep
+    else if (buildRe.test(taskText)) anchor = firstTurnBuild
+    else anchor = firstTurnInspect
     return anchor.length > 0 ? { text: anchor } : null
   }
 }
@@ -75,27 +75,27 @@ function createGuideAutoResolver(config) {
 }
 
 /** 判断 reasoning 开头是否命中自定义锚定词:ASCII 词按词边界匹配,其他按前缀匹配。 */
-function matchesAnchorWord(raw, anchorWord) {
+function matchesAnchorWord(raw, firstTurnWord) {
   const text = String(raw ?? '').trim()
-  if (text.length === 0 || anchorWord.length === 0) return false
-  if (/^[\x20-\x7E]+$/.test(anchorWord)) {
-    return new RegExp(`^${escapeRegExp(anchorWord.toLowerCase())}\\b`, 'i').test(text)
+  if (text.length === 0 || firstTurnWord.length === 0) return false
+  if (/^[\x20-\x7E]+$/.test(firstTurnWord)) {
+    return new RegExp(`^${escapeRegExp(firstTurnWord.toLowerCase())}\\b`, 'i').test(text)
   }
-  return text.startsWith(anchorWord)
+  return text.startsWith(firstTurnWord)
 }
 
 /**
- * custom-fallback(anchor-fallback 为其兼容别名):自定义锚定词命中后注入一次，未命中最多两轮兜底。
+ * custom-fallback:自定义锚定词命中后注入一次，未命中最多两轮兜底。
  * 参数全部来自 config.params（由 preset.yml 单一配置源下发）。
  */
 function createCustomFallbackResolver(config) {
   const promptText = (typeof config.text === 'string' && config.text.length > 0)
     ? config.text
     : (typeof config.params?.text === 'string' && config.params.text.length > 0 ? config.params.text : undefined)
-  const anchorWord = typeof config.params?.customAnchorWord === 'string' && config.params.customAnchorWord.length > 0
-    ? config.params.customAnchorWord
-    : (typeof config.params?.anchorWord === 'string' && config.params.anchorWord.length > 0
-        ? config.params.anchorWord
+  const firstTurnWord = typeof config.params?.firstTurnWord === 'string' && config.params.firstTurnWord.length > 0
+    ? config.params.firstTurnWord
+    : (typeof config.params?.firstTurnWord === 'string' && config.params.firstTurnWord.length > 0
+        ? config.params.firstTurnWord
         : 'we')
 
   const anchorScanned = new Map()
@@ -108,7 +108,7 @@ function createCustomFallbackResolver(config) {
     if (first === undefined) return false
     const content = first.data?.message?.content ?? []
     const reasoning = content.find((block) => block.type === 'reasoning')
-    const confirmed = reasoning !== undefined && matchesAnchorWord(reasoning.text, anchorWord)
+    const confirmed = reasoning !== undefined && matchesAnchorWord(reasoning.text, firstTurnWord)
     anchorScanned.set(session.id, confirmed)
     return confirmed
   }
@@ -128,8 +128,8 @@ function createCustomFallbackResolver(config) {
         plugin: config.id,
         form: 'notice',
         summary: confirmed
-          ? `prompt-tool 提示词(「${anchorWord}」锚定确认后注入)`
-          : `prompt-tool 提示词(「${anchorWord}」未确认,兜底注入)`,
+          ? `prompt-tool 提示词(「${firstTurnWord}」锚定确认后注入)`
+          : `prompt-tool 提示词(「${firstTurnWord}」未确认,兜底注入)`,
       },
     }
   }
@@ -143,10 +143,10 @@ export function bindResolver(config, strategyDir) {
   switch (config.strategy) {
     case 'placeholder': return createPlaceholderResolver(config)
     case 'instruction-hint': return createInstructionHintResolver()
-    case 'anchor-auto': return createAnchorAutoResolver(config)
+    case 'first-turn-anchor': return createFirstTurnAnchorResolver(config)
     case 'guide-auto': return createGuideAutoResolver(config)
     case 'custom-fallback':
-    case 'anchor-fallback': return createCustomFallbackResolver(config)
+      return createCustomFallbackResolver(config)
     case 'static': {
       const text = config.text
       const texts = config.texts

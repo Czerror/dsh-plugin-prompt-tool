@@ -156,9 +156,9 @@ content:
     1. 你的思考过程（思维链 / thinking）必须全部使用简体中文。
     2. 你的回答内容必须使用简体中文。
 params:
-  anchorFirstTurn: false
-  anchorCustom: false
-  anchorText: ""
+  firstTurnAnchor: false
+  firstTurnCustom: false
+  firstTurnText: ""
   guideText: ""
   injectPrompt: true
   usePtcMode: true
@@ -183,15 +183,15 @@ params:
   guideDeep: "\nRouter: classify this task (build or fix) now, then adopt the matching style — build: direct production; fix: inspect-first. Think deeply about the architecture, edge cases, and integration points. Do not spend reasoning on the environment or tooling. Produce when your information is complete. End each reasoning block with a decision or an information need."
   buildPattern: "(开发|创建|写一个|生成|从零|做一个|构建|新项目|搭建|实现|做出|上线|落地|脚本|工具|应用|build|create|develop|generate|implement|make a|new project)"
   complexPattern: "(架构|重构|设计|系统|全面|深度|迁移|兼容|审查|architecture|refactor|comprehensive|design|system|migrate|review)"
-  anchorBuild: "Start your reasoning with the exact sentence: 'We need to build it directly and verify it.'"
-  anchorInspect: "Start your reasoning with the exact sentence: 'We need to inspect the code first.'"
-  anchorDeep: "Start your reasoning with the exact sentence: 'Let me think through the design before changing anything.'"
+  firstTurnBuild: "Start your reasoning with the exact sentence: 'We need to build it directly and verify it.'"
+  firstTurnInspect: "Start your reasoning with the exact sentence: 'We need to inspect the code first.'"
+  firstTurnDeep: "Start your reasoning with the exact sentence: 'Let me think through the design before changing anything.'"
   allowKinds: "[skill-invocation, near-anchor, router-guide]"
 promptConfigs:
   - id: near-anchor
     name: 首句锚点
     enabled: true
-    strategy: anchor-auto
+    strategy: first-turn-anchor
     layer: pre-step
     configKind: ordered
     order: 0
@@ -202,12 +202,12 @@ promptConfigs:
     subagents: none
     params:
       useCustom: false
-      anchorText: ""
+      firstTurnText: ""
       buildPattern: "(开发|创建|写一个|生成|从零|做一个|构建|新项目|搭建|实现|做出|上线|落地|脚本|工具|应用|build|create|develop|generate|implement|make a|new project)"
       complexPattern: "(架构|重构|设计|系统|全面|深度|迁移|兼容|审查|architecture|refactor|comprehensive|design|system|migrate|review)"
-      anchorBuild: "Start your reasoning with the exact sentence: 'We need to build it directly and verify it.'"
-      anchorInspect: "Start your reasoning with the exact sentence: 'We need to inspect the code first.'"
-      anchorDeep: "Start your reasoning with the exact sentence: 'Let me think through the design before changing anything.'"
+      firstTurnBuild: "Start your reasoning with the exact sentence: 'We need to build it directly and verify it.'"
+      firstTurnInspect: "Start your reasoning with the exact sentence: 'We need to inspect the code first.'"
+      firstTurnDeep: "Start your reasoning with the exact sentence: 'Let me think through the design before changing anything.'"
   - id: router-guide
     name: 每轮引导
     enabled: true
@@ -242,7 +242,7 @@ promptConfigs:
     sourceKind: plugin
     params:
       text: ""
-      customAnchorWord: we
+      firstTurnWord: we
   - id: instruction-hint
     name: 指令文件提示
     enabled: true

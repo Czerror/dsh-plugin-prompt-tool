@@ -56,11 +56,11 @@ export interface PromptConfigFile {
 
 export interface BuildCordisOptions {
   /** 首轮近距离锚定：首条真实用户消息后追加一次性首句锚点。 */
-  anchorFirstTurn?: boolean
-  /** 自定义锚点文本；anchorCustom=true 时固定使用。 */
-  anchorText?: string
-  /** 自定义锚点开关：true 固定使用 anchorText；false 按任务自动选择。 */
-  anchorCustom?: boolean
+  firstTurnAnchor?: boolean
+  /** 自定义锚点文本；firstTurnCustom=true 时固定使用。 */
+  firstTurnText?: string
+  /** 自定义锚点开关：true 固定使用 firstTurnText；false 按任务自动选择。 */
+  firstTurnCustom?: boolean
   /** 自定义每轮引导文本；guideCustom=true 时固定使用。 */
   guideText?: string
   /** 自定义每轮引导开关：true 固定使用 guideText；false 按任务自动选择。 */
@@ -81,34 +81,34 @@ export interface BuildCordisOptions {
   guideWeak?: string
   /** guide-auto 深度引导默认文本。 */
   guideDeep?: string
-  /** anchor-auto 构建类任务判定正则。 */
+  /** first-turn-anchor 构建类任务判定正则。 */
   buildPattern?: string
-  /** anchor-auto 复杂/设计类任务判定正则。 */
+  /** first-turn-anchor 复杂/设计类任务判定正则。 */
   complexPattern?: string
-  /** anchor-auto 构建类首句锚点。 */
-  anchorBuild?: string
-  /** anchor-auto 检查类首句锚点。 */
-  anchorInspect?: string
-  /** anchor-auto 深度设计类首句锚点。 */
-  anchorDeep?: string
+  /** first-turn-anchor 构建类首句锚点。 */
+  firstTurnBuild?: string
+  /** first-turn-anchor 检查类首句锚点。 */
+  firstTurnInspect?: string
+  /** first-turn-anchor 深度设计类首句锚点。 */
+  firstTurnDeep?: string
 }
 
 /** 从 BuildCordisOptions 构造默认四条提示词配置（顺序即引擎执行顺序契约）。 */
 export function buildDefaultPromptConfigs(options: BuildCordisOptions, prompt: string): PromptConfigSpec[] {
-  const anchorFirstTurn = options.anchorFirstTurn === true
-  const anchorCustom = options.anchorCustom === true
+  const firstTurnAnchor = options.firstTurnAnchor === true
+  const firstTurnCustom = options.firstTurnCustom === true
   const guideCustom = options.guideCustom === true
   const guideText = typeof options.guideText === 'string' && options.guideText.length > 0 ? options.guideText : ''
   const injectPrompt = options.injectPrompt !== false
-  const anchorText = typeof options.anchorText === 'string' && options.anchorText.length > 0 ? options.anchorText : ''
-  const routerGuideUseCustom = anchorFirstTurn && guideCustom
+  const firstTurnText = typeof options.firstTurnText === 'string' && options.firstTurnText.length > 0 ? options.firstTurnText : ''
+  const routerGuideUseCustom = firstTurnAnchor && guideCustom
 
   return [
     {
       id: 'near-anchor',
       name: '首句锚点',
-      enabled: anchorFirstTurn,
-      strategy: 'anchor-auto',
+      enabled: firstTurnAnchor,
+      strategy: 'first-turn-anchor',
       layer: 'pre-step',
       configKind: 'ordered',
       order: 0,
@@ -118,19 +118,19 @@ export function buildDefaultPromptConfigs(options: BuildCordisOptions, prompt: s
       promotion: 'none',
       subagents: 'none',
       params: {
-        useCustom: anchorCustom,
-        anchorText,
+        useCustom: firstTurnCustom,
+        firstTurnText,
         buildPattern: options.buildPattern,
         complexPattern: options.complexPattern,
-        anchorBuild: options.anchorBuild,
-        anchorInspect: options.anchorInspect,
-        anchorDeep: options.anchorDeep,
+        firstTurnBuild: options.firstTurnBuild,
+        firstTurnInspect: options.firstTurnInspect,
+        firstTurnDeep: options.firstTurnDeep,
       },
     },
     {
       id: 'router-guide',
       name: '每轮引导',
-      enabled: anchorFirstTurn,
+      enabled: firstTurnAnchor,
       strategy: 'guide-auto',
       layer: 'pre-step',
       configKind: 'ordered',
@@ -163,7 +163,7 @@ export function buildDefaultPromptConfigs(options: BuildCordisOptions, prompt: s
       promotion: 'main',
       subagents: 'inherit',
       sourceKind: 'plugin',
-      params: { text: prompt, customAnchorWord: 'we' },
+      params: { text: prompt, firstTurnWord: 'we' },
     },
     {
       id: 'instruction-hint',

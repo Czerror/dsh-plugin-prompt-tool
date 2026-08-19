@@ -16,7 +16,7 @@ function makeTui() {
   }
   const ctx = { inject(_deps, callback) { callback(sctx) } }
   const source = () => ({
-    anchorText: '',
+    firstTurnText: '',
     deepseekAvailable: true,
     subagentFlashProvider: '',
     subagentFlashModel: '',
@@ -26,8 +26,8 @@ function makeTui() {
     skillSwitches: {},
     promptConfigs,
     ...Object.fromEntries([
-      'writeAgents', 'writePreset', 'injectPrompt', 'injectAgentsPrompt', 'anchorFirstTurn',
-      'anchorCustom', 'guideCustom', 'usePtcMode',
+      'writeAgents', 'writePreset', 'injectPrompt', 'injectAgentsPrompt', 'firstTurnAnchor',
+      'firstTurnCustom', 'guideCustom', 'usePtcMode',
     ].map((key) => [key, true])),
   })
   registerTuiCommand(ctx, 'prompt-tool', source, () => true, () => ({ available: true, providers: ['deepseek-official'] }))

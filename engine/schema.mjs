@@ -86,7 +86,7 @@ export function loadPromptConfigFiles(dirUrl) {
   return specs
 }
 
-export const KNOWN_STRATEGIES = new Set(['static', 'placeholder', 'instruction-hint', 'anchor-auto', 'guide-auto', 'custom-fallback'])
+export const KNOWN_STRATEGIES = new Set(['static', 'placeholder', 'instruction-hint', 'first-turn-anchor', 'guide-auto', 'custom-fallback'])
 export const KNOWN_SLOT_KINDS = new Set(['ordered', 'anchor'])
 export const KNOWN_LAYERS = new Set(['pre-step', 'system-section', 'runtime-context', 'agent-request', 'llm-stream', 'tool-pipeline'])
 export const KNOWN_POSITIONS = new Set(['after-user', 'before-all', 'after-all'])
@@ -149,9 +149,8 @@ export function createPromptConfigs(specs, options = {}) {
     if (typeof spec.id !== 'string' || spec.id.length === 0) {
       throw new TypeError(`${name}: ${label}.id must be a non-empty string`)
     }
-    // anchor-fallback 是 custom-fallback 的兼容别名，统一归一化为 custom-fallback。
     const rawStrategy = spec.strategy ?? 'static'
-    const strategy = rawStrategy === 'anchor-fallback' ? 'custom-fallback' : rawStrategy
+    const strategy = rawStrategy
     if (!KNOWN_STRATEGIES.has(strategy)) {
       // 模板专属策略:声明了 strategyDir 时由 strategies.bindResolver 懒加载,
       // 否则视为未知策略 fail loud。

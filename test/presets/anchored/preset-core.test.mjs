@@ -36,8 +36,8 @@ test('buildCordis 恒生成 run-code-env 行（PTC env 提示词配置）', () =
   assert.ok(row.config.envKeys.includes('USERPROFILE'))
 })
 
-test('buildCordis 关闭 anchorFirstTurn 时输出与无选项版本一致', () => {
-  assert.equal(buildCordis('PROMPT', { anchorFirstTurn: false, anchorText: 'X' }), buildCordis('PROMPT'))
+test('buildCordis 关闭 firstTurnAnchor 时输出与无选项版本一致', () => {
+  assert.equal(buildCordis('PROMPT', { firstTurnAnchor: false, firstTurnText: 'X' }), buildCordis('PROMPT'))
 })
 
 function findAllRows(doc, ids) {

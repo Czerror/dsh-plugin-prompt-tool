@@ -88,10 +88,10 @@ function BuiltinConfigRows(props: { fields: Fields; disabled: boolean; onChange:
     <section className={ui.section} aria-labelledby="prompt-tool-builtin-heading">
       <div className={ui.sectionHeading}><div><h2 id="prompt-tool-builtin-heading">内置消息批配置</h2><p>包内 anchored 预设的四条默认配置，由下方总开关驱动；这里只读展示层内接线。</p></div></div>
       <div className={ui.rowGroup}>
-        <ToggleRow id="pt-builtin-near-anchor" label="near-anchor · 首句锚点" hint="strategy=anchor-auto · position=after-user · dedupe=session；跟随「追加任务引导」。"
-          checked={fields.anchorFirstTurn} disabled={props.disabled || !fields.writePreset} onChange={(value) => props.onChange('anchorFirstTurn', value)} />
+        <ToggleRow id="pt-builtin-near-anchor" label="near-anchor · 首句锚点" hint="strategy=first-turn-anchor · position=after-user · dedupe=session；跟随「追加任务引导」。"
+          checked={fields.firstTurnAnchor} disabled={props.disabled || !fields.writePreset} onChange={(value) => props.onChange('firstTurnAnchor', value)} />
         <ToggleRow id="pt-builtin-router-guide" label="router-guide · 每轮引导" hint="strategy=guide-auto · position=after-user · dedupe=batch；跟随「追加任务引导」。"
-          checked={fields.anchorFirstTurn} disabled={props.disabled || !fields.writePreset} onChange={(value) => props.onChange('anchorFirstTurn', value)} />
+          checked={fields.firstTurnAnchor} disabled={props.disabled || !fields.writePreset} onChange={(value) => props.onChange('firstTurnAnchor', value)} />
         <ToggleRow id="pt-builtin-prompt-injector" label="prompt-injector · preset.md 注入" hint="strategy=custom-fallback · position=before-all · dedupe=session；跟随「注入 preset.md」。"
           checked={fields.injectPrompt} disabled={props.disabled || !fields.writePreset} onChange={(value) => props.onChange('injectPrompt', value)} />
         <ToggleRow id="pt-builtin-instruction-hint" label="instruction-hint · 指令文件提示" hint="strategy=placeholder · fill=instruction-hint · position=after-all；常开，不可在此关闭。"
@@ -143,33 +143,33 @@ function EntrySwitches(props: { store: PromptToolStore }): ReactNode {
         <ToggleRow id="pt-inject-prompt" label="注入 preset.md（锚定层）" hint="prompt-injector 提示词配置：消息插入决策消息开头，每会话一次。"
           checked={fields.injectPrompt} disabled={!fields.writePreset} onChange={(value) => setSwitch('injectPrompt', value)} />
         <ToggleRow id="pt-anchor-first" label="追加任务引导" hint="near-anchor / router-guide 提示词配置：在首条真实用户消息之后追加任务引导。"
-          checked={fields.anchorFirstTurn} disabled={!fields.writePreset} onChange={(value) => setSwitch('anchorFirstTurn', value)} />
+          checked={fields.firstTurnAnchor} disabled={!fields.writePreset} onChange={(value) => setSwitch('firstTurnAnchor', value)} />
         <ToggleRow id="pt-anchor-custom" label="使用自定义引导（首句）" hint="near-anchor 的 params.useCustom；关闭时按任务自动选择 we / let 引导。"
-          checked={fields.anchorCustom} disabled={!fields.writePreset || !fields.anchorFirstTurn} onChange={(value) => setSwitch('anchorCustom', value)} />
+          checked={fields.firstTurnCustom} disabled={!fields.writePreset || !fields.firstTurnAnchor} onChange={(value) => setSwitch('firstTurnCustom', value)} />
         <ToggleRow id="pt-guide-custom" label="使用自定义引导（每轮）" hint="router-guide 的 params.useCustom；关闭时按任务自动选择。"
-          checked={fields.guideCustom} disabled={!fields.writePreset || !fields.anchorFirstTurn} onChange={(value) => setSwitch('guideCustom', value)} />
+          checked={fields.guideCustom} disabled={!fields.writePreset || !fields.firstTurnAnchor} onChange={(value) => setSwitch('guideCustom', value)} />
       </div>
 
-      <div className={clsx(ui.rowGroup, (!fields.anchorFirstTurn || !fields.anchorCustom) && ui.rowDisabled)}>
+      <div className={clsx(ui.rowGroup, (!fields.firstTurnAnchor || !fields.firstTurnCustom) && ui.rowDisabled)}>
         <label className={ui.textBlock}>
           <span className={ui.settingCopy}><strong>自定义引导文本（首句）</strong><small>仅在「使用自定义引导（首句）」开启时生效。</small></span>
           <textarea
-            className={ui.anchorInput}
-            value={fields.anchorText}
-            disabled={!fields.writePreset || !fields.anchorFirstTurn || !fields.anchorCustom}
-            onChange={(event) => store.patch({ anchorText: event.target.value })}
+            className={ui.firstTurnInput}
+            value={fields.firstTurnText}
+            disabled={!fields.writePreset || !fields.firstTurnAnchor || !fields.firstTurnCustom}
+            onChange={(event) => store.patch({ firstTurnText: event.target.value })}
             onBlur={store.persistSwitches}
             spellCheck={false}
           />
         </label>
       </div>
-      <div className={clsx(ui.rowGroup, (!fields.anchorFirstTurn || !fields.guideCustom) && ui.rowDisabled)}>
+      <div className={clsx(ui.rowGroup, (!fields.firstTurnAnchor || !fields.guideCustom) && ui.rowDisabled)}>
         <label className={ui.textBlock}>
           <span className={ui.settingCopy}><strong>自定义引导文本（每轮）</strong><small>仅在「使用自定义引导（每轮）」开启时生效；留空则不注入。</small></span>
           <textarea
-            className={ui.anchorInput}
+            className={ui.firstTurnInput}
             value={fields.guideText}
-            disabled={!fields.writePreset || !fields.anchorFirstTurn || !fields.guideCustom}
+            disabled={!fields.writePreset || !fields.firstTurnAnchor || !fields.guideCustom}
             onChange={(event) => store.patch({ guideText: event.target.value })}
             onBlur={store.persistSwitches}
             spellCheck={false}
@@ -336,7 +336,7 @@ function FileEditor(props: { store: PromptToolStore; scope: 'preset' | 'agents' 
           <label className={ui.textBlock}>
             <span className={ui.settingCopy}><strong>缺省文本（preset.md 缺失时使用）</strong><small>仅当包内 preset.md 不存在或不可读时生效；修改后失焦保存。</small></span>
             <textarea
-              className={ui.anchorInput}
+              className={ui.firstTurnInput}
               value={fields.fallbackText}
               onChange={(event) => store.patch({ fallbackText: event.target.value })}
               onBlur={store.persistSwitches}

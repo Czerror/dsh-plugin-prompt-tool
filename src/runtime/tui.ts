@@ -11,8 +11,8 @@ const TUI_BOOLEAN_SWITCHES: ReadonlyArray<readonly [key: string, label: string]>
   ['writePreset', '启用锚定预设'],
   ['injectPrompt', '锚定确认后注入 preset.md'],
   ['injectAgentsPrompt', '用 AGENTS.md 替换 instruction-hint 提示'],
-  ['anchorFirstTurn', '追加任务引导'],
-  ['anchorCustom', '使用自定义引导（首句）'],
+  ['firstTurnAnchor', '追加任务引导'],
+  ['firstTurnCustom', '使用自定义引导（首句）'],
   ['guideCustom', '使用自定义引导（每轮）'],
   ['usePtcMode', '使用 PTC 模式'],
 ] as const
@@ -27,7 +27,7 @@ function renderTuiStatus(source: PromptSettings): string {
       return `${key.padEnd(22)}${onOff(typeof value === 'boolean' ? value : false)}  ${label}`
     }),
     '锚点文本:',
-    `  anchorText               ${source.anchorText.length > 0 ? source.anchorText : '（空 = 按任务自动选择）'}`,
+    `  firstTurnText               ${source.firstTurnText.length > 0 ? source.firstTurnText : '（空 = 按任务自动选择）'}`,
     `  deepseekAvailable       ${source.deepseekAvailable ? '是' : '否（未检测到 DeepSeek 模型路由）'}`,
     `  subagentProvider        ${source.subagentFlashProvider.length > 0 ? source.subagentFlashProvider : '（空 = 不设置）'}`,
     `  subagentModel           ${source.subagentFlashModel.length > 0 ? source.subagentFlashModel : '（空 = 不设置）'}`,
@@ -121,7 +121,7 @@ export function registerTuiCommand(
         const usage = (): CommandResult => ({
           kind: 'error',
           text: '用法：/prompt-tool status\n' +
-            '      /prompt-tool on|off|toggle <writeAgents|writePreset|injectPrompt|injectAgentsPrompt|anchorFirstTurn|anchorCustom|guideCustom|usePtcMode>\n' +
+            '      /prompt-tool on|off|toggle <writeAgents|writePreset|injectPrompt|injectAgentsPrompt|firstTurnAnchor|firstTurnCustom|guideCustom|usePtcMode>\n' +
             '      /prompt-tool skill <技能目录名> on|off|toggle\n' +
             '      /prompt-tool config <id>\n' +
             '      /prompt-tool config <id> on|off|toggle\n' +

@@ -29,9 +29,9 @@ export interface PromptToolSettingsTransport {
 
 export interface SwitchSnapshot {
   injectAgentsPrompt: boolean
-  anchorFirstTurn: boolean
-  anchorText: string
-  anchorCustom: boolean
+  firstTurnAnchor: boolean
+  firstTurnText: string
+  firstTurnCustom: boolean
   guideText: string
   guideCustom: boolean
   subagentFlashProvider: string
@@ -53,9 +53,9 @@ export interface SwitchSnapshot {
 
 const EMPTY_SWITCHES: SwitchSnapshot = {
   injectAgentsPrompt: false,
-  anchorFirstTurn: false,
-  anchorText: '',
-  anchorCustom: false,
+  firstTurnAnchor: false,
+  firstTurnText: '',
+  firstTurnCustom: false,
   guideText: '',
   guideCustom: false,
   subagentFlashProvider: '',
@@ -80,9 +80,9 @@ const DEFAULT_BOOTSTRAP_DISPLAY = '256000'
 
 export const snapshotSwitches = (fields: Fields): SwitchSnapshot => ({
   injectAgentsPrompt: fields.injectAgentsPrompt,
-  anchorFirstTurn: fields.anchorFirstTurn,
-  anchorText: fields.anchorText,
-  anchorCustom: fields.anchorCustom,
+  firstTurnAnchor: fields.firstTurnAnchor,
+  firstTurnText: fields.firstTurnText,
+  firstTurnCustom: fields.firstTurnCustom,
   guideText: fields.guideText,
   guideCustom: fields.guideCustom,
   subagentFlashProvider: fields.subagentFlashProvider,
@@ -104,9 +104,9 @@ export const snapshotSwitches = (fields: Fields): SwitchSnapshot => ({
 
 const switchesEqual = (a: SwitchSnapshot, b: SwitchSnapshot): boolean =>
   a.injectAgentsPrompt === b.injectAgentsPrompt
-  && a.anchorFirstTurn === b.anchorFirstTurn
-  && a.anchorText === b.anchorText
-  && a.anchorCustom === b.anchorCustom
+  && a.firstTurnAnchor === b.firstTurnAnchor
+  && a.firstTurnText === b.firstTurnText
+  && a.firstTurnCustom === b.firstTurnCustom
   && a.guideText === b.guideText
   && a.guideCustom === b.guideCustom
   && a.subagentFlashProvider === b.subagentFlashProvider
@@ -125,7 +125,7 @@ const switchesEqual = (a: SwitchSnapshot, b: SwitchSnapshot): boolean =>
   && a.writeAgents === b.writeAgents
   && a.writePreset === b.writePreset
 
-export type SwitchKey = 'injectAgentsPrompt' | 'anchorFirstTurn' | 'anchorCustom' | 'guideCustom' | 'injectPrompt' | 'usePtcMode' | 'writeAgents' | 'writePreset'
+export type SwitchKey = 'injectAgentsPrompt' | 'firstTurnAnchor' | 'firstTurnCustom' | 'guideCustom' | 'injectPrompt' | 'usePtcMode' | 'writeAgents' | 'writePreset'
 
 export interface PromptToolStore {
   fields: Fields
@@ -345,9 +345,9 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
   const persistSwitches = useCallback(() => enqueueSave(
     [
       { op: 'set', path: ['injectAgentsPrompt'], value: fieldsRef.current.injectAgentsPrompt },
-      { op: 'set', path: ['anchorFirstTurn'], value: fieldsRef.current.anchorFirstTurn },
-      { op: 'set', path: ['anchorText'], value: fieldsRef.current.anchorText },
-      { op: 'set', path: ['anchorCustom'], value: fieldsRef.current.anchorCustom },
+      { op: 'set', path: ['firstTurnAnchor'], value: fieldsRef.current.firstTurnAnchor },
+      { op: 'set', path: ['firstTurnText'], value: fieldsRef.current.firstTurnText },
+      { op: 'set', path: ['firstTurnCustom'], value: fieldsRef.current.firstTurnCustom },
       { op: 'set', path: ['guideText'], value: fieldsRef.current.guideText },
       { op: 'set', path: ['guideCustom'], value: fieldsRef.current.guideCustom },
       { op: 'set', path: ['subagentFlashProvider'], value: fieldsRef.current.subagentFlashProvider },

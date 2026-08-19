@@ -513,7 +513,7 @@
   padding: 11px 0;
 }
 
-.anchorInput,
+.firstTurnInput,
 .textarea {
   width: 100%;
   box-sizing: border-box;
@@ -528,9 +528,9 @@
   line-height: 1.6;
   resize: vertical;
 }
-.anchorInput { min-height: 84px; }
+.firstTurnInput { min-height: 84px; }
 .textarea { min-height: 420px; }
-.anchorInput:disabled,
+.firstTurnInput:disabled,
 .textarea:disabled { cursor: default; opacity: .55; }
 
 .notice { font-size: 12px; color: var(--dsw-alias-state-success-primary); overflow-wrap: anywhere; }
@@ -668,7 +668,7 @@
 .actions button:focus-visible,
 .directoryInput:focus-visible,
 .bootstrapTokensInput:focus-visible,
-.anchorInput:focus-visible,
+.firstTurnInput:focus-visible,
 .textarea:focus-visible,
 .toggleRow input:focus-visible + .switch,
 .configEnable > input:focus-visible + .switch {

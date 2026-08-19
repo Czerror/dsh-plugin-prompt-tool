@@ -28,7 +28,7 @@ import { writePreset } from './host/write-preset.ts'
 import {
   Config,
   NS,
-  normalizeAnchorText,
+  normalizeFirstTurnText,
   PromptSettings,
   PromptSettingsSchema,
   RuntimeOptions,
@@ -310,9 +310,9 @@ export function apply(ctx: Context, configIn: Config): void {
     skillSwitches: { ...config.skillSwitches },
     skillOrder: [...skillOrder],
     skillsDir: configuredSkillsDir,
-    anchorFirstTurn: config.anchorFirstTurn,
-    anchorText: config.anchorText,
-    anchorCustom: config.anchorCustom,
+    firstTurnAnchor: config.firstTurnAnchor,
+    firstTurnText: config.firstTurnText,
+    firstTurnCustom: config.firstTurnCustom,
     guideText: config.guideText,
     guideCustom: config.guideCustom,
     subagentFlashProvider: config.subagentFlashProvider,
@@ -343,9 +343,9 @@ export function apply(ctx: Context, configIn: Config): void {
     agentsText: currentAgents,
     agentsPath: AGENTS_FILE_PATH,
     injectAgentsPrompt: runtime.injectAgentsPrompt,
-    anchorFirstTurn: runtime.anchorFirstTurn,
-    anchorText: normalizeAnchorText(runtime.anchorText),
-    anchorCustom: runtime.anchorCustom,
+    firstTurnAnchor: runtime.firstTurnAnchor,
+    firstTurnText: normalizeFirstTurnText(runtime.firstTurnText),
+    firstTurnCustom: runtime.firstTurnCustom,
     guideText: runtime.guideText,
     guideCustom: runtime.guideCustom,
     subagentFlashProvider: runtime.subagentFlashProvider,
@@ -386,9 +386,9 @@ export function apply(ctx: Context, configIn: Config): void {
       skillSwitches: next.skillSwitches !== undefined ? next.skillSwitches : config.skillSwitches,
       skillOrder: Array.isArray(next.skillOrder) ? next.skillOrder.filter((folder): folder is string => typeof folder === 'string') : config.skillOrder,
       skillsDir: typeof next.skillsDir === 'string' ? next.skillsDir : configuredSkillsDir,
-      anchorFirstTurn: typeof next.anchorFirstTurn === 'boolean' ? next.anchorFirstTurn : config.anchorFirstTurn,
-      anchorText: normalizeAnchorText(typeof next.anchorText === 'string' ? next.anchorText : config.anchorText),
-      anchorCustom: typeof next.anchorCustom === 'boolean' ? next.anchorCustom : config.anchorCustom,
+      firstTurnAnchor: typeof next.firstTurnAnchor === 'boolean' ? next.firstTurnAnchor : config.firstTurnAnchor,
+      firstTurnText: normalizeFirstTurnText(typeof next.firstTurnText === 'string' ? next.firstTurnText : config.firstTurnText),
+      firstTurnCustom: typeof next.firstTurnCustom === 'boolean' ? next.firstTurnCustom : config.firstTurnCustom,
       guideText: typeof next.guideText === 'string' ? next.guideText : config.guideText,
       guideCustom: typeof next.guideCustom === 'boolean' ? next.guideCustom : config.guideCustom,
       subagentFlashProvider: typeof next.subagentFlashProvider === 'string' ? next.subagentFlashProvider : config.subagentFlashProvider,
@@ -419,9 +419,9 @@ export function apply(ctx: Context, configIn: Config): void {
       || skillOrderChanged
       || skillsDirChanged
       || skillRankBaseChanged
-      || runtime.anchorFirstTurn !== nextRuntime.anchorFirstTurn
-      || runtime.anchorText !== nextRuntime.anchorText
-      || runtime.anchorCustom !== nextRuntime.anchorCustom
+      || runtime.firstTurnAnchor !== nextRuntime.firstTurnAnchor
+      || runtime.firstTurnText !== nextRuntime.firstTurnText
+      || runtime.firstTurnCustom !== nextRuntime.firstTurnCustom
       || runtime.guideText !== nextRuntime.guideText
       || runtime.guideCustom !== nextRuntime.guideCustom
       || runtime.subagentFlashProvider !== nextRuntime.subagentFlashProvider
@@ -449,9 +449,9 @@ export function apply(ctx: Context, configIn: Config): void {
     runtime.skillSwitches = nextRuntime.skillSwitches
     runtime.skillOrder = nextRuntime.skillOrder
     runtime.skillsDir = nextRuntime.skillsDir
-    runtime.anchorFirstTurn = nextRuntime.anchorFirstTurn
-    runtime.anchorText = nextRuntime.anchorText
-    runtime.anchorCustom = nextRuntime.anchorCustom
+    runtime.firstTurnAnchor = nextRuntime.firstTurnAnchor
+    runtime.firstTurnText = nextRuntime.firstTurnText
+    runtime.firstTurnCustom = nextRuntime.firstTurnCustom
     runtime.guideText = nextRuntime.guideText
     runtime.guideCustom = nextRuntime.guideCustom
     runtime.subagentFlashProvider = nextRuntime.subagentFlashProvider
@@ -490,9 +490,9 @@ export function apply(ctx: Context, configIn: Config): void {
     if (runtime.writePreset) {
       const presetPrompt = runtime.injectPrompt && current.length > 0 ? current : ''
       writePreset(presetPrompt, {
-        anchorFirstTurn: runtime.anchorFirstTurn,
-        anchorText: runtime.anchorText,
-        anchorCustom: runtime.anchorCustom,
+        firstTurnAnchor: runtime.firstTurnAnchor,
+        firstTurnText: runtime.firstTurnText,
+        firstTurnCustom: runtime.firstTurnCustom,
         guideText: runtime.guideText,
         guideCustom: runtime.guideCustom,
         injectPrompt: runtime.injectPrompt,
@@ -524,9 +524,9 @@ export function apply(ctx: Context, configIn: Config): void {
     agentsText: currentAgents,
     agentsPath: AGENTS_FILE_PATH,
     injectAgentsPrompt: config.injectAgentsPrompt,
-    anchorFirstTurn: config.anchorFirstTurn,
-    anchorText: config.anchorText,
-    anchorCustom: config.anchorCustom,
+    firstTurnAnchor: config.firstTurnAnchor,
+    firstTurnText: config.firstTurnText,
+    firstTurnCustom: config.firstTurnCustom,
     guideText: config.guideText,
     guideCustom: config.guideCustom,
     subagentFlashProvider: config.subagentFlashProvider,

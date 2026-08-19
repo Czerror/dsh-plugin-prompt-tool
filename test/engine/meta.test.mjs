@@ -9,7 +9,7 @@ test('getEngineMeta 返回引擎能力矩阵，anchored 策略为内置策略', 
   assert.ok(meta.strategies.includes('custom-fallback'))
   assert.ok(!meta.strategies.includes('anchor-fallback'))
   assert.ok(!meta.strategies.includes('we-fallback'))
-  assert.deepEqual(meta.strategies, ['anchor-auto', 'custom-fallback', 'guide-auto', 'instruction-hint', 'placeholder', 'static'])
+  assert.deepEqual(meta.strategies, ['custom-fallback', 'first-turn-anchor', 'guide-auto', 'instruction-hint', 'placeholder', 'static'])
   assert.ok(meta.fills.includes('skill-catalog'))
   assert.ok(meta.layerFieldPolicies['pre-step'].position === true)
   assert.ok(meta.layerFieldPolicies['agent-request'].priority === true)

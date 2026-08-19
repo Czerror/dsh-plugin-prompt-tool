@@ -21,9 +21,9 @@ export interface Fields {
   agentsText: string
   agentsPath: string
   injectAgentsPrompt: boolean
-  anchorFirstTurn: boolean
-  anchorText: string
-  anchorCustom: boolean
+  firstTurnAnchor: boolean
+  firstTurnText: string
+  firstTurnCustom: boolean
   guideText: string
   guideCustom: boolean
   subagentFlashProvider: string
@@ -69,9 +69,9 @@ export const EMPTY_FIELDS: Fields = {
   agentsText: '',
   agentsPath: '',
   injectAgentsPrompt: false,
-  anchorFirstTurn: false,
-  anchorText: '',
-  anchorCustom: false,
+  firstTurnAnchor: false,
+  firstTurnText: '',
+  firstTurnCustom: false,
   guideText: '',
   guideCustom: false,
   subagentFlashProvider: '',
@@ -190,9 +190,9 @@ export function fieldsFromView(res: BridgeResult<BridgeSettingsView>): Fields {
     agentsText: readString(value, 'agentsText') ?? readString(base, 'agentsText') ?? '',
     agentsPath: readString(value, 'agentsPath') ?? readString(base, 'agentsPath') ?? '',
     injectAgentsPrompt: readBoolean(value, 'injectAgentsPrompt', readBoolean(base, 'injectAgentsPrompt', false)),
-    anchorFirstTurn: readBoolean(value, 'anchorFirstTurn', readBoolean(base, 'anchorFirstTurn', false)),
-    anchorText: readString(value, 'anchorText') ?? readString(base, 'anchorText') ?? '',
-    anchorCustom: readBoolean(value, 'anchorCustom', readBoolean(base, 'anchorCustom', false)),
+    firstTurnAnchor: readBoolean(value, 'firstTurnAnchor', readBoolean(base, 'firstTurnAnchor', false)),
+    firstTurnText: readString(value, 'firstTurnText') ?? readString(base, 'firstTurnText') ?? '',
+    firstTurnCustom: readBoolean(value, 'firstTurnCustom', readBoolean(base, 'firstTurnCustom', false)),
     guideText: readString(value, 'guideText') ?? readString(base, 'guideText') ?? '',
     guideCustom: readBoolean(value, 'guideCustom', readBoolean(base, 'guideCustom', false)),
     subagentFlashProvider: readString(value, 'subagentFlashProvider') ?? readString(base, 'subagentFlashProvider') ?? '',

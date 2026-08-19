@@ -26,9 +26,9 @@ export function buildCordis(prompt: string, options: BuildCordisOptions = {}): s
   const spec = loadPresetSpec(ANCHORED_TEMPLATE_DIR)
   const runtime = {
     promptText: prompt,
-    anchorFirstTurn: options.anchorFirstTurn === true,
-    anchorCustom: options.anchorCustom === true,
-    anchorText: typeof options.anchorText === 'string' ? options.anchorText : '',
+    firstTurnAnchor: options.firstTurnAnchor === true,
+    firstTurnCustom: options.firstTurnCustom === true,
+    firstTurnText: typeof options.firstTurnText === 'string' ? options.firstTurnText : '',
     guideCustom: options.guideCustom === true,
     guideText: typeof options.guideText === 'string' ? options.guideText : '',
     injectPrompt: options.injectPrompt !== false,

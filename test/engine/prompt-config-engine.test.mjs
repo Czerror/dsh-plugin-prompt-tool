@@ -56,7 +56,7 @@ test('parsePromptConfigYaml 解析嵌套 identity 与 block scalar 文本', () =
   assert.equal(doc.id, 'prompt-injector')
   assert.equal(doc.strategy, 'custom-fallback')
   assert.equal(createPromptConfigs([{ id: 'legacy', strategy: 'custom-fallback' }])[0].strategy, 'custom-fallback')
-  assert.equal(createPromptConfigs([{ id: 'legacy', strategy: 'anchor-fallback' }])[0].strategy, 'custom-fallback') // 兼容别名归一化
+  assert.equal(createPromptConfigs([{ id: 'legacy', strategy: 'anchor-fallback' }])[0].strategy, 'anchor-fallback') // 已移除兼容别名归一化，策略名原样透传（bindResolver 阶段 fail loud）
   assert.equal(doc.params.text, 'line one\nline two')
   assert.deepEqual(doc.identity, { field: 'plugin', value: 'prompt-injector' })
 })
@@ -79,7 +79,7 @@ test('同位置多配置默认按声明顺序插入：near-anchor 与 router-gui
     {
       id: 'near-anchor',
       enabled: true,
-      strategy: 'anchor-auto',
+      strategy: 'first-turn-anchor',
       position: 'after-user',
       dedupe: 'session',
       promotion: 'none',
@@ -87,9 +87,9 @@ test('同位置多配置默认按声明顺序插入：near-anchor 与 router-gui
       params: {
         buildPattern: 'build',
         complexPattern: 'complex',
-        anchorBuild: 'BUILD',
-        anchorInspect: 'INSPECT',
-        anchorDeep: 'DEEP',
+        firstTurnBuild: 'BUILD',
+        firstTurnInspect: 'INSPECT',
+        firstTurnDeep: 'DEEP',
       },
     },
     {
@@ -537,7 +537,7 @@ test('custom-fallback 支持自定义锚定词：命中「我是xxx」立即注�
     promotion: 'main',
     subagents: 'inherit',
     sourceKind: 'plugin',
-    params: { text: 'CONFIG_TEXT', customAnchorWord: '我是xxx' },
+    params: { text: 'CONFIG_TEXT', firstTurnWord: '我是xxx' },
   }]))
   const decision = await step(agent({ session: {
     id: 'ac1', header: { delegationDepth: 0 },
@@ -556,7 +556,7 @@ test('custom-fallback 自定义锚定词未命中时按两轮兜底', async () =
     promotion: 'main',
     subagents: 'inherit',
     sourceKind: 'plugin',
-    params: { text: 'FALLBACK_TEXT', customAnchorWord: '锚点A' },
+    params: { text: 'FALLBACK_TEXT', firstTurnWord: '锚点A' },
   }]))
   const oneRound = await step(agent({ session: {
     id: 'ac2', header: { delegationDepth: 0 },
