@@ -74,19 +74,20 @@ test('readSkills：disable-model-invocation / user-invocable 映射到调用标�
   }
 })
 
-test('readSkills：无 frontmatter 时回退目录名；SKILL.md 缺失时保留坏条目', () => {
+test('readSkills：无 frontmatter 时回退目录名；SKILL.md 缺失的目录与隐藏目录被跳过', () => {
   const { dir, cleanup } = makeDir()
   try {
     writeSkill(dir, 'fallback-skill', 'BODY without frontmatter')
     const missing = join(dir, 'broken-skill')
     mkdirSync(missing, { recursive: true })
+    mkdirSync(join(dir, '.hidden'), { recursive: true })
     const entries = readSkills(dir)
     const fallback = entries.find((entry) => entry.folder === 'fallback-skill')
     assert.equal(fallback.name, 'fallback-skill')
     assert.equal(fallback.valid, true)
-    const broken = entries.find((entry) => entry.folder === 'broken-skill')
-    assert.equal(broken.valid, false)
-    assert.match(broken.issue, /不可读|不存在/)
+    // 技能规范：只有含 SKILL.md 的一级子目录才是技能；缺失/隐藏目录不出现在列表。
+    assert.equal(entries.find((entry) => entry.folder === 'broken-skill'), undefined)
+    assert.equal(entries.find((entry) => entry.folder === '.hidden'), undefined)
     assert.equal(validSkills(entries).length, 1)
   } finally {
     cleanup()

@@ -2,7 +2,9 @@
  * skills 目录扫描与 SKILL.md frontmatter 读取（纯函数）。
  *
  * 三层结构（扫描层宽松、管理界面全量展示、provider 层严格注册）：
- *   1. readSkills 返回目录内所有条目，坏条目不静默丢弃，而是 valid=false + issue；
+ *   1. 技能规范：只有含 SKILL.md 的一级子目录才是技能——readSkills 跳过无
+ *      SKILL.md 的目录（含隐藏目录）；SKILL.md 存在但名称非法时保留
+ *      valid=false + issue 供修复；
  *   2. Web/TUI 管理界面消费全量条目，灰显坏条目并展示原因；
  *   3. 注册给 ctx.skills 的 provider 只返回 valid=true 的候选，
  *      并尊重 frontmatter 的 disable-model-invocation / user-invocable 调用策略。
@@ -18,7 +20,8 @@ export const SKILL_NAME_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 export function listSkillFolders(skillsDir: string): string[] {
   try {
     return readdirSync(skillsDir, { withFileTypes: true })
-      .filter((entry) => entry.isDirectory())
+      // 技能名官方要求 kebab-case，点开头目录（.git/.github 等）永远不是技能。
+      .filter((entry) => entry.isDirectory() && !entry.name.startsWith('.'))
       .map((entry) => entry.name)
       .sort((a, b) => a.localeCompare(b))
   } catch {
@@ -40,7 +43,7 @@ export function validSkills(entries: SkillEntry[]): SkillEntry[] {
  * 读取技能目录的全部条目（含坏条目）。
  *  - frontmatter 无 name 时回退目录名；
  *  - name（frontmatter 或目录名）必须 kebab-case 才 valid；
- *  - SKILL.md 不可读时条目保留并标记 issue；
+ *  - SKILL.md 不可读的目录不是技能，直接跳过（不列为坏条目）；
  *  - warn 仅用于日志，不再决定条目去留。
  */
 export function readSkills(skillsDir: string, warn?: (message: string) => void): SkillEntry[] {
@@ -50,19 +53,9 @@ export function readSkills(skillsDir: string, warn?: (message: string) => void):
     try {
       raw = readFileSync(file, 'utf8')
     } catch {
-      const issue = 'SKILL.md 不可读或不存在'
-      warn?.(`prompt-tool: skill ${JSON.stringify(folder)} ignored — ${issue}`)
-      return [{
-        folder,
-        file,
-        name: folder,
-        description: '',
-        body: '',
-        valid: false,
-        issue,
-        modelInvocable: false,
-        userInvocable: false,
-      }]
+      // 二级子目录由 SKILL.md 引导链接，不属于技能本体；缺失 SKILL.md 的目录跳过。
+      warn?.(`prompt-tool: ${JSON.stringify(folder)} has no readable SKILL.md — skipped`)
+      return []
     }
 
     const { data, body } = parseFrontmatter(raw)
