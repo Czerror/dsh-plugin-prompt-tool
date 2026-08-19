@@ -5,4 +5,4 @@
   name: ./engine/router-first-turn.mjs
   config:
     flashPersona: "__FLASH_PERSONA__"
-    hideSectionPrefixes: [mnemon:]
+    hideSectionPrefixes: ["mnemon:"]

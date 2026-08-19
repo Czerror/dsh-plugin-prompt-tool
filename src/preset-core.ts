@@ -6,10 +6,8 @@
 import { fileURLToPath } from 'node:url'
 import {
   assertCompositionArray,
-  loadCompositionText,
   loadPresetSpec,
-  renderTemplateVariables,
-  resolvePresetTokens,
+  renderComposition,
 } from './host/manifest.ts'
 
 // anchored 预设模板目录(打包后 lib/ 与包根 preset/ 平级)。
@@ -45,8 +43,7 @@ export function buildCordis(prompt: string, options: BuildCordisOptions = {}): s
       ? options.subagentFlashModel
       : '',
   }
-  const tokens = resolvePresetTokens(spec, runtime)
-  const out = renderTemplateVariables(loadCompositionText(spec), tokens)
+  const out = renderComposition(spec, runtime)
   // 生成文件必须含引擎必需行，且引擎行指向提示词配置模块目录。
   const parsed = assertCompositionArray(out, spec)
   const ids = new Set(parsed.map((row) => (row as { id?: string } | null)?.id))

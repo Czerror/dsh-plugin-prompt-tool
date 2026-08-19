@@ -596,6 +596,8 @@ export function apply(ctx: Context, configIn: Config): void {
 // 公共 API：宿主与测试复用 settings schema 与提示词配置权威校验。
 export { Config, PromptSettingsSchema } from './config.ts'
 export { writePreset } from './host/write-preset.ts'
+export { applyModuleConfigs } from './host/manifest.ts'
+export type { PresetSpec } from './host/manifest.ts'
 export { ensureWebSurface, resolveProfileDir } from './web-surface.ts'
 export { resolveProfileSkillsDir } from './profile-skills.ts'
 export type { WritePresetOptions } from './host/write-preset.ts'

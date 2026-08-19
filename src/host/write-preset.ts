@@ -19,13 +19,11 @@ import type { PromptConfigSpec } from './prompt-configs.ts'
 import {
   assertCompositionArray,
   asString,
-  loadCompositionText,
   loadPresetSpec,
   packageEngineDir,
   packagePresetDir,
-  renderTemplateVariables,
+  renderComposition,
   resolvePresetParams,
-  resolvePresetTokens,
 } from './manifest.ts'
 
 const PRESETS_DIR = packagePresetDir()
@@ -87,15 +85,14 @@ export function writePreset(prompt: string, options: WritePresetOptions): void {
   const spec = loadPresetSpec(templateDir)
   const runtime = runtimeOf(options, prompt)
   const params = resolvePresetParams(spec, runtime)
-  const tokens = resolvePresetTokens(spec, runtime)
 
   const parentDir = dirname(presetDir)
   mkdirSync(parentDir, { recursive: true })
   const tmpDir = mkdtempSync(join(parentDir, `.${basename(presetDir)}.tmp-`))
   const outDir = tmpDir
   try {
-  // 1) 组合文件:modules 模块库装配 + 引擎内部 token 渲染 + YAML 校验。
-  const composition = renderTemplateVariables(loadCompositionText(spec), tokens)
+  // 1) 组合文件:modules 模块库装配 + token 渲染 + moduleConfigs 行级合并 + YAML 校验。
+  const composition = renderComposition(spec, runtime)
   assertCompositionArray(composition, spec)
   writeFileSync(join(outDir, 'agent.cordis.yml'), composition, 'utf8')
 

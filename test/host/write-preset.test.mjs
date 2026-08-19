@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { writePreset } from '../../lib/index.mjs'
+import { parse as parseYaml } from 'yaml'
 
 const root = fileURLToPath(new URL('../..', import.meta.url))
 const sourceEngineDir = join(root, 'engine')
@@ -79,7 +80,10 @@ test('writePreset 生成 agent.cordis.yml 注入 allowKinds', () => {
   try {
     writePreset('PROMPT', makeOptions(presetDir))
     const agent = readFileSync(join(presetDir, 'agent.cordis.yml'), 'utf8')
-    assert.ok(agent.includes('allowKinds: [skill-invocation, near-anchor, router-guide]'))
+    const rows = parseYaml(agent)
+    const contextGate = rows.find((row) => row?.id === 'context-gate')
+    assert.ok(contextGate, 'agent.cordis.yml 应含 context-gate 行')
+    assert.deepEqual(contextGate.config.allowKinds, ['skill-invocation', 'near-anchor', 'router-guide'])
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }

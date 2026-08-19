@@ -12,7 +12,7 @@
 import { readFileSync, existsSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { parse as parseYaml } from 'yaml'
+import { parse as parseYaml, parseDocument, YAMLMap, YAMLSeq } from 'yaml'
 
 export interface PresetSpec {
   id: string
@@ -31,6 +31,8 @@ export interface PresetSpec {
   hostDefaults?: Record<string, unknown>
   /** 可选:模板自定义提示词配置覆盖(纯数据,不使用模板语法)。 */
   promptConfigs?: unknown[]
+  /** 可选:引擎组合模块行参数覆盖(行级 map config 浅合并,preset 优先)。 */
+  moduleConfigs?: Record<string, Record<string, unknown>>
   legacyCleanup?: string[]
   upstream?: Record<string, unknown>
 }
@@ -188,22 +190,62 @@ function assembleModules(spec: PresetSpec, library: string): string {
  *   1. `modules:` 清单 → 引擎模块库按序装配(最终形态);
  *   2. 兼容 `composition:` 内联文本或组合清单名。
  */
+/**
+ * 行级 config 合并(moduleConfigs):仅支持 map 型 config 浅合并;
+ * 数组型 config(如 compaction)与未声明模块原样保留。
+ * 未声明 moduleConfigs 时返回原文(零开销);parseDocument 往返保留注释与 __TOKEN__。
+ */
+export function applyModuleConfigs(raw: string, configs: Record<string, Record<string, unknown>> | undefined): string {
+  if (configs === undefined || Object.keys(configs).length === 0) return raw
+  const doc = parseDocument(raw, { logLevel: 'silent' })
+  if (!(doc.contents instanceof YAMLSeq)) return raw
+  const rows = doc.contents
+  let changed = false
+  for (const item of rows.items) {
+    if (!(item instanceof YAMLMap)) continue
+    const idNode = item.get('id', true)
+    const id = idNode !== null && typeof idNode === 'object' && 'value' in idNode ? String(idNode.value) : undefined
+    if (id === undefined || !Object.prototype.hasOwnProperty.call(configs, id)) continue
+    const configNode = item.get('config', true)
+    if (!(configNode instanceof YAMLMap)) continue
+    for (const [key, value] of Object.entries(configs[id]!)) {
+      configNode.set(key, value)
+    }
+    changed = true
+  }
+  return changed ? doc.toString() : raw
+}
+
+/** 加载预设声明的组合(原始 token 文本,未渲染)。 */
 export function loadCompositionText(spec: PresetSpec): string {
   const library = join(packageEngineDir(), 'compositions', 'library')
-  if (Array.isArray(spec.modules)) return assembleModules(spec, library)
-  const name = typeof spec.composition === 'string' ? spec.composition : ''
-  if (name.includes('\n')) return name
-  if (name.length > 0) {
-    const file = join(dirname(library), `${name}.yml`)
-    let raw: string
-    try {
-      raw = readFileSync(file, 'utf8')
-    } catch (error) {
-      throw new Error(`preset ${spec.id}: engine composition ${name} not found (${file}): ${String((error as Error).message ?? error)}`)
+  let raw: string
+  if (Array.isArray(spec.modules)) raw = assembleModules(spec, library)
+  else {
+    const name = typeof spec.composition === 'string' ? spec.composition : ''
+    if (name.includes('\n')) raw = name
+    else if (name.length > 0) {
+      const file = join(dirname(library), `${name}.yml`)
+      try {
+        raw = readFileSync(file, 'utf8')
+      } catch (error) {
+        throw new Error(`preset ${spec.id}: engine composition ${name} not found (${file}): ${String((error as Error).message ?? error)}`)
+      }
+    } else {
+      throw new Error(`preset ${spec.id}: no modules list and no composition declared`)
     }
-    return raw
   }
-  throw new Error(`preset ${spec.id}: no modules list and no composition declared`)
+  return raw
+}
+
+/**
+ * 预设组合渲染完整链路:token 渲染 → moduleConfigs 行级合并。
+ * 合并必须发生在 token 渲染之后(独立行 token 在渲染前是非法 YAML,
+ * 如 __SUBAGENT_FLASH__ / __BOOTSTRAP_MAX_TOKENS__)。
+ */
+export function renderComposition(spec: PresetSpec, runtime: Record<string, unknown>): string {
+  const tokens = resolvePresetTokens(spec, runtime)
+  return applyModuleConfigs(renderTemplateVariables(loadCompositionText(spec), tokens), spec.moduleConfigs)
 }
 
 /** 组合文本基础校验（模板无关）：无未解析 token，且必须是 YAML 数组。 */

@@ -308,6 +308,18 @@ modules:
   - tool-ask-user
   - tool-todo
   - tool-web
+moduleConfigs:
+  # 引擎组合模块参数（本文件为唯一配置源；library 行默认值仅作未声明时的回退）。
+  custom-bash:
+    timeoutMs: 120000
+    maxOutputBytes: 64000
+  router-first-turn:
+    hideSectionPrefixes: ["mnemon:"]
+  run-code-env:
+    envKeys: [PATH, PATHEXT, HOME, USERPROFILE, USERNAME, COMPUTERNAME, OS, TEMP, TMP, SystemRoot, ProgramFiles, ProgramFiles(x86), LOCALAPPDATA, APPDATA]
+  context-gate:
+    promoteOn: either
+    includeSubagents: false
 hostDefaults:
   writePreset: true
   writeAgents: true
