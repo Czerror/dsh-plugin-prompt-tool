@@ -77,6 +77,7 @@ export function registerSettingsBridge(
   getDeepseekState: () => DeepseekDetection,
   getSkillsState: () => SkillsBridgeState,
   readOriginals: () => ProjectOriginals,
+  ensureRegistered: (sctx: Context) => boolean,
 ): void {
   // 动态等待 webServer：webServer 由 @deepseek-ai/dsh-web-app 提供。
   // profile 首次缺少该 bundle 时，本子插件先 pending 但不阻塞启动审计；
@@ -102,6 +103,7 @@ export function registerSettingsBridge(
           path: SETTINGS_BRIDGE_PREFIX + '/describe',
           handler: async (req, res) => {
             if (!guard(req, res)) return
+            ensureRegistered(sctx)
             const descriptor = findDescriptor()
             if (descriptor === undefined) {
               writeBridgeJson(res, 404, { ok: false, code: 'settings-not-exposed', message: 'prompt-tool settings namespace is not registered' })
@@ -125,6 +127,7 @@ export function registerSettingsBridge(
           path: SETTINGS_BRIDGE_PREFIX + '/mutate',
           handler: async (req, res) => {
             if (!guard(req, res)) return
+            ensureRegistered(sctx)
             const body = await readBridgeBody(req)
             if (body === null || body === undefined || typeof body !== 'object') {
               writeBridgeJson(res, 400, { ok: false, code: 'settings-rejected', message: 'unreadable JSON body' })
@@ -156,6 +159,7 @@ export function registerSettingsBridge(
           path: SETTINGS_BRIDGE_PREFIX + '/restore-originals',
           handler: async (req, res) => {
             if (!guard(req, res)) return
+            ensureRegistered(sctx)
             const body = await readBridgeBody(req)
             if (body === null || body === undefined || typeof body !== 'object') {
               writeBridgeJson(res, 400, { ok: false, code: 'settings-rejected', message: 'unreadable JSON body' })
@@ -205,6 +209,7 @@ export function registerSettingsBridge(
           path: SETTINGS_BRIDGE_PREFIX + '/import-directory',
           handler: async (req, res) => {
             if (!guard(req, res)) return
+            ensureRegistered(sctx)
             const body = await readBridgeBody(req)
             if (body === null || body === undefined || typeof body !== 'object') {
               writeBridgeJson(res, 400, { ok: false, code: 'settings-rejected', message: 'unreadable JSON body' })

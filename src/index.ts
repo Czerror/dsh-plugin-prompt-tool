@@ -1,4 +1,3 @@
-import { installSettingsSection } from '@deepseek-ai/dsh-settings'
 import type { Context } from '@deepseek-ai/cordis'
 import type {
   SkillCandidate,
@@ -19,6 +18,7 @@ import { detectDeepseek, installSubagentFlashRoute } from './runtime/deepseek.ts
 import type { DeepseekDetection } from './runtime/deepseek.ts'
 import { registerSettingsBridge } from './runtime/settings-bridge.ts'
 import { registerTuiCommand } from './runtime/tui.ts'
+import { ensureSettingsRegistered } from './runtime/settings-registration.ts'
 import { removeResidentAgentsBlock, writeAgents } from './runtime/agents-file.ts'
 import { writePreset } from './preset-write.ts'
 import {
@@ -203,7 +203,15 @@ export function apply(ctx: Context, config: Config): void {
 
   // 在线编辑不再经 ctx.llm 暴露 settings namespace：改为自建 loopback bridge，
   // 这样模型设置页不会出现「提示词工具」目录条目。
-  registerSettingsBridge(ctx, NS, getDeepseekAvailable, getDeepseekState, () => ({ activeSkillsDir, skillCatalog }), readProjectOriginals)
+  registerSettingsBridge(
+    ctx,
+    NS,
+    getDeepseekAvailable,
+    getDeepseekState,
+    () => ({ activeSkillsDir, skillCatalog }),
+    readProjectOriginals,
+    (sctx: Context) => ensureRegistered(sctx),
+  )
 
   // 首次以 base-only profile 启动时自动补 @deepseek-ai/dsh-web-app：
   // 写进 profile bundles（下一次启动由官方装配路径生效），并提示重启。
@@ -459,19 +467,42 @@ export function apply(ctx: Context, config: Config): void {
     promptConfigsDir: typeof config.promptConfigsDir === 'string' ? config.promptConfigsDir : '',
   }
 
-  installSettingsSection(ctx, NS, PromptSettingsSchema, settingsEntry, {
-    setSource: (source) => { currentSource = source },
-    onChange: () => {
-      // applyState 里的用户态 IO 失败不能打断 settings 注册链：
-      // onChange 从 installSettingsSection 的 inject 回调内同步调用，
-      // 任何异常冒泡都会让 cordis 把该 fiber 置 FAILED 并回滚注册，
-      // 表现为「保存失败：settings namespace "prompt-tool" is not registered」。
+  // 幂等注册 + 自愈：settings 服务实例被替换（provider fiber reload）时，
+  // 官方 installSettingsSection 的一次性 inject 回调不会重跑，注册随之丢失，
+  // Web 保存报「settings namespace "prompt-tool" is not registered」。
+  // bridge 每次请求前经此兜底自愈，坏数据修复后的下次请求同样自动恢复。
+  const ensureRegistered = (sctx: Context): boolean => ensureSettingsRegistered(sctx, NS, PromptSettingsSchema, {
+    base: () => settingsEntry,
+    onRegistered: (scope) => {
+      currentSource = () => scope.get()
+      scope.watch(() => {
+        try {
+          applyState()
+        } catch (error) {
+          warn(ctx, `prompt-tool: applyState failed: ${error instanceof Error ? error.message : String(error)}`)
+        }
+      })
+      // 注册后立即用 settings 解析值触发一次初始写入（settings 优先于 cordis config）。
       try {
         applyState()
       } catch (error) {
         warn(ctx, `prompt-tool: applyState failed: ${error instanceof Error ? error.message : String(error)}`)
       }
     },
+    onError: (message) => warn(ctx, `prompt-tool: settings register failed: ${message}`),
+  })
+  ctx.inject(['settings'], (sctx: Context) => {
+    ensureRegistered(sctx)
+    // settings 服务 detach 时回退到 cordis config 构造的 entry，
+    // 并重判派生状态（等价 installSettingsSection 的 fallback 语义）。
+    sctx.effect(() => () => {
+      currentSource = () => settingsEntry
+      try {
+        applyState()
+      } catch (error) {
+        warn(ctx, `prompt-tool: applyState failed: ${error instanceof Error ? error.message : String(error)}`)
+      }
+    })
   })
   // 首次安装：settings.yaml 没有 user 层文本时，用项目文件内容初始化。
   seedSettingsOnce(ctx, readProjectOriginals())
@@ -484,3 +515,5 @@ export type { PromptConfigValidationError, PromptConfigValidationResult } from '
 export { loadPromptTemplates } from './runtime/templates.ts'
 export type { PromptConfigTemplate } from './runtime/templates.ts'
 export { registerTuiCommand } from './runtime/tui.ts'
+export { ensureSettingsRegistered } from './runtime/settings-registration.ts'
+export type { SettingsRegistrationHooks } from './runtime/settings-registration.ts'
