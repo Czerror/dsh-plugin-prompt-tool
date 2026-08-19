@@ -75,8 +75,10 @@ dsh --profile prompt-tool
   strategy / fill、坏 yml）在挂载时 fail loud。
 - 🔁 **持久幂等**：`dedupe: session` 的提示词配置以持久 session events 判重，进程重启 /
   插件重载不重复注入。
-- 📦 **anchored 默认预设**：包内自带 agent 组合与四个默认提示词配置，可选 PTC（Code Mode）、
-  子代理 Flash 路由、skills 注册与 `/prompt-tool` 命令。
+- 📦 **anchored 默认预设**：`preset/anchored/preset.yml` 是插件**唯一配置入口**——
+  `modules` 决定 23 个行/组模块装配顺序,`params` 驱动引擎开关(`usePtcMode`、`subagentFlash`、
+  `anchorFirstTurn`…),`hostDefaults` 提供宿主开关默认值,`content` 携带 presetText/agentsText;
+  settings(Web/TUI)仅作运行时覆盖。用户写一个参数 YAML 即可复刻 anchored 全部能力。
 
 ## 默认行为
 
@@ -124,7 +126,7 @@ dsh --profile prompt-tool
 | dsh-anchored-standard / dsh-router-standard | 策略来源 | 提供默认提示词配置与 agent 组合的行为依据 |
 | **prompt-config-engine** | **注入执行层** | 官方六层 API 的唯一接线点，提示词配置驱动 |
 | prompt-configs/*.yml + settings | **内容配置层** | 用户自定义注入内容与层级位置 |
-| anchored/ 预设脚本 | **默认预设** | 可整体替换的示例组合（PTC / gate / bootstrap） |
+| anchored 单一参数 `preset.yml` | **默认预设** | 纯参数可替换模板(PTC / gate / bootstrap / 提示词配置) |
 
 ## 设计原则
 
@@ -246,7 +248,7 @@ params:
 
 ## 机制
 
-1. **扫描**：`engine/prompt-config-engine.mjs` 读 `config.configsDir`（默认 `../prompt-configs`），
+1. **扫描**：源码 `engine/prompt-config-engine.mjs`(生成目录为 `engine/prompt-config-engine.mjs`)读 `config.configsDir`(默认 `../prompt-configs`),
    按文件名数字前缀排序加载 `*.yml / *.yaml / *.json`；
 2. **归一化**：`createPromptConfigs` 校验并补全全部提示词配置字段，未知值 fail loud；
 3. **接线**：非 `pre-step` 提示词配置按 `layer` 注册官方通道（section/context 注册挂
@@ -281,6 +283,7 @@ pnpm test         # 提示词配置渲染/合并、六层级接线、preset 生�
 pnpm typecheck
 pnpm lint
 pnpm sync:anchored   # 刷新 upstream/dsh-anchored-standard 内联快照（可加 ref）
+pnpm rebuild:composition   # 从官方 deepseek-harness 内置预设源码重建组合模块
 ```
 
 ## 许可

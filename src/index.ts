@@ -8,9 +8,11 @@ import type {
 } from '@deepseek-ai/dsh-skill'
 import type { SettingsPathOp } from '@deepseek-ai/dsh-settings'
 import type {} from '@deepseek-ai/dsh-host-webserver'
-import { readFileSync, rmSync } from 'node:fs'
+import { rmSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
+import { loadPresetContent, loadPresetSpec, packagePresetDir } from './engine/manifest.ts'
+import type { PresetSpec } from './engine/manifest.ts'
 import { readSkills } from './runtime/skills-provider.ts'
 import { ensureWebSurface } from './web-surface.ts'
 import { resolveProfileSkillsDir } from './profile-skills.ts'
@@ -20,7 +22,7 @@ import { registerSettingsBridge } from './runtime/settings-bridge.ts'
 import { registerTuiCommand } from './runtime/tui.ts'
 import { ensureSettingsRegistered } from './runtime/settings-registration.ts'
 import { removeResidentAgentsBlock, writeAgents } from './runtime/agents-file.ts'
-import { writePreset } from './preset-write.ts'
+import { writePreset } from './engine/write-preset.ts'
 import {
   Config,
   DEFAULT_SKILLS_DIR,
@@ -42,25 +44,20 @@ export const name = 'prompt-tool'
 // ensureWebSurface 自动把 web-app bundle 补进 profile，重启一次后生效。
 export const inject = ['skills', 'commands', 'llm', 'subagents']
 
-const PRESET_FILE_URL = new URL('../preset.md', import.meta.url)
+/** 内容资产统一从预设模板的单一参数 YAML 读取(preset/anchored/preset.yml)。 */
+const PRESET_FILE_URL = new URL('../preset/anchored/preset.yml', import.meta.url)
 const PRESET_FILE_PATH = fileURLToPath(PRESET_FILE_URL)
-const AGENTS_URL = new URL('../AGENTS.md', import.meta.url)
-const AGENTS_FILE_PATH = fileURLToPath(AGENTS_URL)
+const AGENTS_FILE_PATH = PRESET_FILE_PATH
+/** 模板专属策略目录(anchored 策略已全部内置;自定义模板声明 strategyDir 时再启用)。 */
+const ENGINE_STRATEGY_DIR_URL = ''
 
 function readPromptFile(fallbackText: string): string {
-  try {
-    return readFileSync(PRESET_FILE_URL, 'utf8')
-  } catch {
-    return fallbackText
-  }
+  const text = loadPresetContent().presetText
+  return text.length > 0 ? text : fallbackText
 }
 
 function readAgents(): string {
-  try {
-    return readFileSync(AGENTS_URL, 'utf8')
-  } catch {
-    return ''
-  }
+  return loadPresetContent().agentsText
 }
 
 interface ProjectOriginals {
@@ -68,7 +65,7 @@ interface ProjectOriginals {
   agentsText: string
 }
 
-/** 直接读取项目根目录的 preset.md 与 AGENTS.md；宿主不再回写这两个文件。 */
+/** 直接读取预设模板单一参数 YAML 的 content 字段；宿主不再回写模板文件。 */
 function readProjectOriginals(): ProjectOriginals {
   return { presetText: readPromptFile(''), agentsText: readAgents() }
 }
@@ -104,8 +101,51 @@ function warn(ctx: Context, message: string): void {
   }
 }
 
+/** on/off 兼容写法。 */
+function normalizePresetValue(value: unknown): unknown {
+  if (value === 'on') return true
+  if (value === 'off') return false
+  return value
+}
 
-export function apply(ctx: Context, config: Config): void {
+/**
+ * 单一入口:preset.yml 的 params + hostDefaults 作为 Config 的预设默认值。
+ * settings(用户/Web)仍优先;此处只覆盖 Config 未提供或默认值位置。
+ */
+export function mergePresetDefaults<T extends Config>(config: T, spec: PresetSpec | undefined): T {
+  if (spec === undefined) return config
+  const merged: Record<string, unknown> = { ...config } as Record<string, unknown>
+  const source = config as unknown as Record<string, unknown>
+  const entries = { ...spec.params, ...spec.hostDefaults }
+  for (const [key, raw] of Object.entries(entries)) {
+    if (!(key in source)) continue
+    const value = normalizePresetValue(raw)
+    const current = source[key]
+    if (typeof current === 'boolean') {
+      if (typeof value === 'boolean') merged[key] = value
+    } else if (typeof current === 'number') {
+      if (typeof value === 'number' && Number.isFinite(value) && value >= 0) merged[key] = value
+    } else if (typeof current === 'string') {
+      if (typeof value === 'string') merged[key] = value
+    } else if (Array.isArray(current)) {
+      if (Array.isArray(value)) merged[key] = value
+    } else if (typeof current === 'object' && current !== null) {
+      if (typeof value === 'object' && value !== null && !Array.isArray(value)) merged[key] = value
+    }
+  }
+  return merged as unknown as T
+}
+
+
+export function apply(ctx: Context, configIn: Config): void {
+  // 唯一入口:preset.yml 的参数与 hostDefaults 合并进 Config 默认值。
+  let presetSpec: PresetSpec | undefined
+  try {
+    presetSpec = loadPresetSpec(join(packagePresetDir(), 'anchored'))
+  } catch (error) {
+    warn(ctx, `prompt-tool: preset.yml unavailable, falling back to cordis config: ${error instanceof Error ? error.message : String(error)}`)
+  }
+  const config = mergePresetDefaults(configIn, presetSpec)
   const deepseekState = (): DeepseekDetection => detectDeepseek(ctx)
   const getDeepseekAvailable = (): boolean => deepseekState().available
   const getDeepseekState = (): DeepseekDetection => deepseekState()
@@ -120,7 +160,14 @@ export function apply(ctx: Context, config: Config): void {
   let activeSkillsDir = configuredSkillsDir.length > 0
     ? configuredSkillsDir
     : resolveProfileSkillsDir(ctx, DEFAULT_SKILLS_DIR, (message) => warn(ctx, message))
-  let skillCatalog: SkillCatalogEntry[] = readSkills(activeSkillsDir).map((skill) => ({
+  // 无效技能按官方契约跳过并告警一次(不因单个坏技能让整个 provider 被 registry 抛弃)。
+  const skillWarned = new Set<string>()
+  const readSkillsChecked = (dir: string) => readSkills(dir, (message) => {
+    if (skillWarned.has(message)) return
+    skillWarned.add(message)
+    warn(ctx, message)
+  })
+  let skillCatalog: SkillCatalogEntry[] = readSkillsChecked(activeSkillsDir).map((skill) => ({
     folder: skill.folder,
     name: skill.name,
     description: skill.description,
@@ -129,7 +176,7 @@ export function apply(ctx: Context, config: Config): void {
   /** 切换生效技能目录并刷新目录快照（供 describe / TUI 显示）。 */
   const applyActiveSkillsDir = (dir: string): void => {
     activeSkillsDir = dir
-    skillCatalog = readSkills(dir).map((skill) => ({
+    skillCatalog = readSkillsChecked(dir).map((skill) => ({
       folder: skill.folder,
       name: skill.name,
       description: skill.description,
@@ -165,7 +212,7 @@ export function apply(ctx: Context, config: Config): void {
       name: 'prompt-tool',
       list: async (options: SkillLookupOptions): Promise<readonly SkillCandidate[]> => {
         if (options.signal?.aborted) return []
-        return orderSkills(readSkills(activeSkillsDir))
+        return orderSkills(readSkillsChecked(activeSkillsDir))
           .filter((skill) => skillSwitches[skill.folder] !== false)
           .map((skill, index): SkillCandidate => ({
             name: skill.name,
@@ -183,7 +230,7 @@ export function apply(ctx: Context, config: Config): void {
       },
       get: async (candidate: SkillCandidate, options: SkillLookupOptions): Promise<SkillDefinition | undefined> => {
         if (options.signal?.aborted) return undefined
-        const skill = readSkills(activeSkillsDir).find((entry) => entry.folder === candidate.locator || entry.name === candidate.name)
+        const skill = readSkillsChecked(activeSkillsDir).find((entry) => entry.folder === candidate.locator || entry.name === candidate.name)
         if (skill === undefined || skillSwitches[skill.folder] === false) return undefined
         return {
           name: candidate.name,
@@ -210,6 +257,7 @@ export function apply(ctx: Context, config: Config): void {
     getDeepseekState,
     () => ({ activeSkillsDir, skillCatalog }),
     readProjectOriginals,
+    () => ENGINE_STRATEGY_DIR_URL,
     (sctx: Context) => ensureRegistered(sctx),
   )
 
@@ -512,8 +560,8 @@ export function apply(ctx: Context, config: Config): void {
 export { Config, PromptSettingsSchema } from './config.ts'
 export { validatePromptConfigs } from './runtime/configs-validate.ts'
 export type { PromptConfigValidationError, PromptConfigValidationResult } from './runtime/configs-validate.ts'
-export { loadPromptTemplates } from './runtime/templates.ts'
-export type { PromptConfigTemplate } from './runtime/templates.ts'
+export { loadPromptTemplates } from './engine/templates.ts'
+export type { PromptConfigTemplate } from './engine/templates.ts'
 export { registerTuiCommand } from './runtime/tui.ts'
 export { ensureSettingsRegistered } from './runtime/settings-registration.ts'
 export type { SettingsRegistrationHooks } from './runtime/settings-registration.ts'

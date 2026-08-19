@@ -1,0 +1,13 @@
+- id: tool-bootstrap
+  name: ./engine/tool-bootstrap.mjs
+  config:
+    bootstrapTools: [bash, str_replace_editor]
+    promoteOn: either
+    includeSubagents: true
+    usePtcMode: __USE_PTC_MODE__
+    __BOOTSTRAP_MAX_TOKENS__
+    # Post-compaction core work set: the model is mid-task and needs to keep
+    # working, but faces a small catalog instead of the full Standard set.
+    compactionTools: [read, write, edit, glob, grep, todo_write, ask_user_question]
+
+# ── prompt-tool 模板自带行(由 write-preset 按 manifest 变量物化) ─────────────

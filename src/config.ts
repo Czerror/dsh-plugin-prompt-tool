@@ -5,7 +5,7 @@ import type { SettingsNamespace } from '@deepseek-ai/dsh-settings'
 import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
-import type { PromptConfigSpec } from './prompt-configs.ts'
+import type { PromptConfigSpec } from './engine/prompt-configs.ts'
 
 export const NS: SettingsNamespace = settingsNamespace('prompt-tool')
 
@@ -14,7 +14,7 @@ export const SKILLS_DIR = fileURLToPath(new URL('../skills', import.meta.url))
 /**
  * promptConfigs 数组元素的最小结构 schema：只强校验“元素是对象、id 是字符串”。
  * 其余字段全部宽松透传（schemastery object 非 strict 合并保留未知键），
- * 枚举级权威校验归 preset/engine 的 createPromptConfigs，避免两处枚举漂移。
+ * 枚举级权威校验归 engine 的 createPromptConfigs，避免两处枚举漂移。
  */
 const PromptConfigEntrySchema = z.object({ id: z.string().required() }) as unknown as z<PromptConfigSpec>
 

@@ -4,14 +4,14 @@
  * 校验分两层：
  *   1. 最小结构校验（本文件）：promptConfigs 必须是数组、元素必须是对象、
  *      id 必须是非空字符串——settings 保存前就能给出逐条错误；
- *   2. 权威校验（引擎）：复用 preset/engine/prompt-config-engine.mjs 的
+ *   2. 权威校验（引擎）：复用 engine/prompt-config-engine.mjs 的
  *      createPromptConfigs 逐条校验枚举与字段约束，错误消息与引擎挂载时一致。
  *
  * 校验过程只读不写：不写 settings、不重建生成目录，调用方可以安全地在
  * 保存前反复调用。
  */
-import type { PromptConfigFile, PromptConfigSpec } from '../prompt-configs.ts'
-import { renderPromptConfigYaml } from '../prompt-configs.ts'
+import type { PromptConfigFile, PromptConfigSpec } from '../engine/prompt-configs.ts'
+import { renderPromptConfigYaml } from '../engine/prompt-configs.ts'
 
 export interface PromptConfigValidationError {
   /** 数组下标；结构层整组错误为 -1。 */
@@ -57,15 +57,15 @@ function shapeErrors(value: unknown): PromptConfigValidationError[] {
  * 逐条调用引擎权威校验并渲染预览文件。
  * 逐条（而非整组一次）校验保证一条坏配置不吞掉其余错误，且 index 可直接映射。
  */
-export async function validatePromptConfigs(value: unknown): Promise<PromptConfigValidationResult> {
+export async function validatePromptConfigs(value: unknown, options: { strategyDir?: string } = {}): Promise<PromptConfigValidationResult> {
   const errors = shapeErrors(value)
   if (errors.length > 0 || !Array.isArray(value)) return { valid: false, errors }
   const specs = value as PromptConfigSpec[]
-  // 引擎是生成目录里的运行时 .mjs（vendor yaml 相对引擎文件解析）；
-  // 打包产物位于 lib/，包根 preset/ 与 lib/ 平级，因此 ../preset 相对路径成立。
-  const engineUrl = new URL('../preset/engine/prompt-config-engine.mjs', import.meta.url)
+  // 引擎与配置文件夹分离:包根 engine/ 与 lib/ 平级,../engine 相对路径成立。
+  // strategyDir 让模板专属策略也能通过同一权威校验(当前 anchored 全部内置)。
+  const engineUrl = new URL('../engine/prompt-config-engine.mjs', import.meta.url)
   const { createPromptConfigs } = await import(engineUrl.href) as {
-    createPromptConfigs: (specs: unknown[]) => unknown
+    createPromptConfigs: (specs: unknown[], options?: { strategyDir?: string }) => unknown
   }
   for (let index = 0; index < specs.length; index += 1) {
     const spec = specs[index]
@@ -73,7 +73,9 @@ export async function validatePromptConfigs(value: unknown): Promise<PromptConfi
       ? (spec as { id: string }).id
       : ''
     try {
-      createPromptConfigs([spec])
+      createPromptConfigs([spec], typeof options.strategyDir === 'string' && options.strategyDir.length > 0
+        ? { strategyDir: options.strategyDir }
+        : {})
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       errors.push({ index, id, message })

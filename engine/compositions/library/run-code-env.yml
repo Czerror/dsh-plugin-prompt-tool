@@ -1,0 +1,15 @@
+# module: run-code-env
+# source: preset/engine/compositions/source/local/run-code-env.yml (本地附加,非官方模块)
+
+- id: run-code-env
+  name: ./engine/run-code-env.mjs
+  config:
+    enabled: true
+    envKeys: [PATH, PATHEXT, HOME, USERPROFILE, USERNAME, COMPUTERNAME, OS, TEMP, TMP, SystemRoot, ProgramFiles, ProgramFiles(x86), LOCALAPPDATA, APPDATA]
+
+# ── identity ────────────────────────────────────────────────────────────────
+
+# Keep this text byte-identical to the Minimal preset. `complete` prevents the
+# Harness identity and per-tool guidance from changing the system prompt, while
+# runtime-context suppression leaves task and repository rules to user messages
+# and explicit file reads. Tool schemas and their runtime enforcement remain.

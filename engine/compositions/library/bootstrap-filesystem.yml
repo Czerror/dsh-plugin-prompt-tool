@@ -1,0 +1,19 @@
+# module: bootstrap-filesystem
+# source: E:\Documents\GitHub\deepseek-harness/apps/cli/config/agent-presets/minimal/agent.cordis.yml
+# local patches: 1
+
+- id: bootstrap-filesystem
+  name: cordis:group
+  group: true
+  isolate:
+    fs: true
+  config:
+    - id: fs-local
+      name: '@deepseek-ai/dsh-fs-local'
+      config:
+        cwd: !!js process.env.DSH_CWD ?? process.cwd()
+
+    - id: str-replace-editor
+      name: '@deepseek-ai/dsh-tool-str-replace-editor'
+      config:
+        maxOutputChars: 16000

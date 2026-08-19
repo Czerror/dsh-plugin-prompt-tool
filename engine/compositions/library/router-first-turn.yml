@@ -1,0 +1,8 @@
+# module: router-first-turn
+# source: preset/engine/compositions/source/local/router-first-turn.yml (本地附加,非官方模块)
+
+- id: router-first-turn
+  name: ./engine/router-first-turn.mjs
+  config:
+    flashPersona: "__FLASH_PERSONA__"
+    hideSectionPrefixes: [mnemon:]

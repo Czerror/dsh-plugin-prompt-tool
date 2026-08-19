@@ -4,10 +4,10 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { SettingsDescriptor, SettingsNamespace, SettingsPathOp } from '@deepseek-ai/dsh-settings'
 import type { DeepseekDetection } from './deepseek.ts'
 import type { SkillCatalogEntry } from '../config.ts'
-import type { PromptConfigSpec } from '../prompt-configs.ts'
-import { loadPromptConfigFiles, mergePromptConfigs } from '../prompt-configs.ts'
+import type { PromptConfigSpec } from '../engine/prompt-configs.ts'
+import { loadPromptConfigFiles, mergePromptConfigs } from '../engine/prompt-configs.ts'
 import { validatePromptConfigs } from './configs-validate.ts'
-import { loadPromptTemplates } from './templates.ts'
+import { loadPromptTemplates } from '../engine/templates.ts'
 
 export const SETTINGS_BRIDGE_PREFIX = '/api/prompt-tool/settings'
 const MAX_SETTINGS_BRIDGE_BODY = 64 * 1024
@@ -77,6 +77,7 @@ export function registerSettingsBridge(
   getDeepseekState: () => DeepseekDetection,
   getSkillsState: () => SkillsBridgeState,
   readOriginals: () => ProjectOriginals,
+  getEngineStrategyDir: () => string,
   ensureRegistered: (sctx: Context) => boolean,
 ): void {
   // 动态等待 webServer：webServer 由 @deepseek-ai/dsh-web-app 提供。
@@ -200,7 +201,7 @@ export function registerSettingsBridge(
               return
             }
             const record = body as Record<string, unknown>
-            const result = await validatePromptConfigs(record.promptConfigs)
+            const result = await validatePromptConfigs(record.promptConfigs, { strategyDir: getEngineStrategyDir() })
             writeBridgeJson(res, 200, { ok: true, ...result })
           },
         }),
@@ -232,7 +233,7 @@ export function registerSettingsBridge(
               writeBridgeJson(res, 400, { ok: false, code: 'import-empty', message: `目录 ${JSON.stringify(dir)} 中没有可导入的 *.yml / *.yaml / *.json 提示词配置` })
               return
             }
-            const validation = await validatePromptConfigs(imported)
+            const validation = await validatePromptConfigs(imported, { strategyDir: getEngineStrategyDir() })
             if (!validation.valid) {
               writeBridgeJson(res, 400, { ok: false, code: 'import-invalid', message: '导入目录中的提示词配置未通过权威校验', errors: validation.errors })
               return

@@ -76,14 +76,14 @@
   },
   "files": [
     "lib",
+    "engine",
     "cordis.patch.yml",
     "LICENSE",
     "preset",
     "templates",
     "skills",
-    "preset.md",
-    "AGENTS.md",
     "plan.md",
+    "planv2.md",
     "README.md",
     "upstream/dsh-anchored-standard"
   ],
@@ -92,9 +92,10 @@
     "prepare": "tsdown",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.client.json --noEmit",
     "lint": "oxlint src test tsdown.config.ts",
-    "test": "pnpm build && node --test \"test/*.test.mjs\"",
+    "test": "pnpm build && node --test \"test/**/*.test.mjs\"",
     "link:profile": "node scripts/link-profile.mjs",
-    "sync:anchored": "node scripts/sync-anchored.mjs"
+    "sync:anchored": "node scripts/sync-anchored.mjs",
+    "rebuild:composition": "node scripts/rebuild-composition.mjs"
   },
   "dependencies": {
     "yaml": "^2.9.0"

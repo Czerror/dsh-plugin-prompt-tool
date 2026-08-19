@@ -1,0 +1,37 @@
+- id: context-gate
+  name: ./engine/context-gate.mjs
+  config:
+    promoteOn: either
+    includeSubagents: false
+    allowKinds: [skill-invocation, near-anchor, router-guide]
+
+# ── bootstrap ───────────────────────────────────────────────────────────────
+
+# Tool catalog control (mode-owned tool-bootstrap.mjs). V4 Pro conditions
+# strongly on the API tool catalog AND the first request output budget:
+# request #1 exposes the OFFICIAL Minimal preset's real tool pair —
+# persistent `bash` + `str_replace_editor` — which anchors at the
+# adapter-default maxTokens (256000) with no output cap needed (issue #11:
+# 5/5 anchored vs 11/11 standard-like for every standard-family schema);
+# after the session records its first durable promotion signal (a tool call OR
+# the first assistant message, default `promoteOn: either`), later steps keep
+# the assembled catalog and usePtcMode optionally switches the wire to Code
+# Mode (PTC). `bootstrapMaxTokens` is
+# opt-in for standard-schema bootstraps; unset, the adapter default flows. See
+# tool-bootstrap.mjs for the other triggers. Context stripping is NOT here —
+# the context-gate row above owns it.
+#
+# POST-PROMOTION (prompt-tool local addition): both modes keep the assembled
+# catalog after promotion. `usePtcMode` switches the wire presentation to Code
+# Mode (PTC, a single run_code backed by the full registry SDK) instead of
+# narrowing the resident set; the pre-promotion and post-compaction controlled
+# phase below still stays on the bootstrap pair + `compactionTools`.
+#
+# COMPACTION (local addition): after `compaction/end` the session falls back
+# to the controlled phase — bootstrap pair + `compactionTools` — until a NEW
+# durable promotion signal exists past the boundary (epoch-aware, see
+# compaction-epoch.mjs).
+#
+# `includeSubagents: true` keeps the subagent phase in sync with the
+# context-gate row: a subagent's first request sees the bootstrap pair, then
+# its own first reply or tool call promotes it to the assembled catalog.
