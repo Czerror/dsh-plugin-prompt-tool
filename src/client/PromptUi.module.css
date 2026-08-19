@@ -323,7 +323,7 @@
 .skillDragRow {
   display: flex;
   min-width: 0;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
   border-top: 1px solid var(--dsw-alias-border-l2);
   padding: 11px 0;
@@ -331,20 +331,76 @@
 
 .skillDragRow[data-dragging] { opacity: .4; }
 
-/* 未通过官方校验的技能：灰显、禁拖、禁开关，issue 由 hint 展示。 */
-.skillRowInvalid {
-  opacity: .55;
-  filter: saturate(.4);
-}
+/* 未通过官方校验的技能：只弱化文字与手柄，状态芯片和修复按钮保持满对比度。 */
+.skillRowInvalid .settingCopy { opacity: .55; }
+.skillRowInvalid .dragHandle { opacity: .4; cursor: not-allowed; }
+.skillRowInvalid .switch { opacity: .55; }
 
-.skillRowInvalid .dragHandle { cursor: not-allowed; }
+.skillDragRow > .dragHandle,
+.skillDragRow > .pillButton { align-self: center; }
+
+.skillEntryBody {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+}
 
 .skillDragRow .toggleRow {
   min-height: 0;
   flex: 1;
   border-top: 0;
   padding: 0;
-  gap: 18px;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+/* 状态芯片：带底色胶囊，模型=蓝 / 用户=绿 / 关闭=灰 / 未注册=红。 */
+.skillStatusRow {
+  display: inline-flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.skillStatusChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  border: 1px solid var(--chip);
+  border-radius: 999px;
+  color: #fff;
+  background: var(--chip);
+  font-size: 11px;
+  font-weight: 650;
+  line-height: 16px;
+  white-space: nowrap;
+  text-shadow: 0 1px 1px rgb(0 0 0 / .18);
+}
+
+/* 实底深色 + 白字，保证浅色/深色宿主主题下都清晰。 */
+.skillStatusModel { --chip: #1d4ed8; }
+.skillStatusError { --chip: #b91c1c; }
+.skillStatusOff { --chip: #6b7280; }
+
+.skillStatusDot {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.skillIssue {
+  margin: 0;
+  padding-left: 2px;
+  overflow-wrap: anywhere;
+  color: var(--dsw-alias-state-error-primary, #d5484d);
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .dragHandle {

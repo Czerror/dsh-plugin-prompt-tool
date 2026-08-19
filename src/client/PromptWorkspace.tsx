@@ -5,6 +5,7 @@ import {
   bridgePost,
   type Fields,
   type PromptToolStore,
+  type SkillCatalogEntry,
   type SwitchKey,
   usePromptToolStore,
 } from './prompt-tool-store.ts'
@@ -42,13 +43,28 @@ async function validateConfigs(configs: PromptConfigDraft[]): Promise<{ valid: b
   }
 }
 
-function ToggleRow(props: { id: string; label: string; hint: string; checked: boolean; disabled?: boolean; onChange: (value: boolean) => void }): ReactNode {
+function ToggleRow(props: { id: string; label: string; hint: string; checked: boolean; disabled?: boolean; extra?: ReactNode; onChange: (value: boolean) => void }): ReactNode {
   return (
     <label className={ui.toggleRow} htmlFor={props.id}>
       <span className={ui.settingCopy}><strong>{props.label}</strong><small>{props.hint}</small></span>
+      {props.extra}
       <input id={props.id} type="checkbox" aria-label={props.label} checked={props.checked} disabled={props.disabled} onChange={(event) => props.onChange(event.target.checked)} />
       <span className={ui.switch} aria-hidden="true"><i /></span>
     </label>
+  )
+}
+
+/** 技能调用状态徽章：只保留模型可调用状态，开关关闭后立即变灰。 */
+function SkillStatusChips(props: { skill: SkillCatalogEntry; enabled: boolean }): ReactNode {
+  const { skill, enabled } = props
+  const callable = skill.valid && skill.modelInvocable && enabled
+  return (
+    <span className={ui.skillStatusRow} aria-label="技能调用状态">
+      <span className={clsx(ui.skillStatusChip, skill.valid ? (callable ? ui.skillStatusModel : ui.skillStatusOff) : ui.skillStatusError)}>
+        <i className={ui.skillStatusDot} aria-hidden="true" />
+        {skill.valid ? (callable ? '模型可调用' : '模型不可调用') : '未注册'}
+      </span>
+    </span>
   )
 }
 
@@ -554,9 +570,7 @@ function SkillsSettings(props: { store: PromptToolStore; api: IApiClient }): Rea
       ) : (
         <div className={ui.rowGroup}>
           {orderedSkills.map((skill, index) => {
-            const invocationHint = skill.valid
-              ? `${skill.modelInvocable ? '模型' : '非模型'} · ${skill.userInvocable ? '用户' : '非用户'}可调用`
-              : `未注册给模型：${skill.issue ?? '技能不合法'}`
+            const hint = `skills/${skill.folder}${skill.description ? ` · ${skill.description}` : ''}`
             return (
               <div
                 key={skill.folder}
@@ -576,14 +590,20 @@ function SkillsSettings(props: { store: PromptToolStore; api: IApiClient }): Rea
                 onDragEnd={() => setDragFolder(undefined)}
               >
                 <span className={ui.dragHandle} title={`第 ${index + 1} 位，拖动调整`} aria-hidden="true">⠿</span>
-                <ToggleRow
-                  id={`pt-skill-${skill.folder}`}
-                  label={`${index + 1}. ${skill.name || skill.folder}`}
-                  hint={`skills/${skill.folder}${skill.description ? ` · ${skill.description}` : ''} · ${invocationHint}`}
-                  checked={store.skillEnabled(skill.folder)}
-                  disabled={!skill.valid}
-                  onChange={() => store.toggleSkill(skill.folder)}
-                />
+                <div className={ui.skillEntryBody}>
+                  <ToggleRow
+                    id={`pt-skill-${skill.folder}`}
+                    label={`${index + 1}. ${skill.name || skill.folder}`}
+                    hint={hint}
+                    checked={store.skillEnabled(skill.folder)}
+                    disabled={!skill.valid}
+                    extra={<SkillStatusChips skill={skill} enabled={store.skillEnabled(skill.folder)} />}
+                    onChange={() => store.toggleSkill(skill.folder)}
+                  />
+                  {!skill.valid && (
+                    <p className={ui.skillIssue} role="note">{skill.issue ?? '技能不合法'}</p>
+                  )}
+                </div>
                 {!skill.valid && (
                   <button
                     type="button"

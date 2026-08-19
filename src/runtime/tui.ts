@@ -41,7 +41,7 @@ function renderTuiStatus(source: PromptSettings): string {
   for (const skill of source.skillCatalog) {
     const value = source.skillSwitches[skill.folder] !== false
     const detail = skill.valid
-      ? `${skill.modelInvocable ? '模型' : '非模型'}/${skill.userInvocable ? '用户' : '非用户'}`
+      ? (skill.modelInvocable ? '模型可调用' : '模型不可调用')
       : `未注册:${skill.issue ?? '不合法'}`
     lines.push(`${('skill ' + skill.folder).padEnd(22)}${onOff(value)}  ${skill.name || skill.folder}  [${detail}]`)
   }
