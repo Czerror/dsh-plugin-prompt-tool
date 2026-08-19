@@ -83,7 +83,6 @@
     "preset",
     "templates",
     "skills",
-    "docs",
     "README.md"
   ],
   "scripts": {
