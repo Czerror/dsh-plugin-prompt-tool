@@ -12,6 +12,10 @@ export interface SkillCatalogEntry {
   folder: string
   name: string
   description: string
+  valid: boolean
+  issue?: string
+  modelInvocable: boolean
+  userInvocable: boolean
 }
 
 export interface Fields {
@@ -225,7 +229,17 @@ const readSkillCatalog = (source: Record<string, unknown>, key: string): SkillCa
     const folder = readString(record, 'folder')
     const name = readString(record, 'name')
     if (folder === undefined || name === undefined) return []
-    return [{ folder, name, description: readString(record, 'description') ?? '' }]
+    return [{
+      folder,
+      name,
+      description: readString(record, 'description') ?? '',
+      // 向后兼容旧宿主：旧版 /describe 只返回 folder/name/description（且旧扫描
+      // 已过滤非法名），缺字段按旧语义默认 true；新版宿主显式携带 valid=false。
+      valid: readBoolean(record, 'valid', true),
+      ...(typeof record.issue === 'string' && record.issue.length > 0 ? { issue: record.issue } : {}),
+      modelInvocable: readBoolean(record, 'modelInvocable', true),
+      userInvocable: readBoolean(record, 'userInvocable', true),
+    }]
   })
 }
 
@@ -325,6 +339,7 @@ export interface PromptToolStore {
   savingPrompt: boolean
   savingAgents: boolean
   savingSkillsDir: boolean
+  fixingSkill: string | undefined
   notice: string
   noticeKind: 'ok' | 'error'
   load: () => Promise<Fields>
@@ -344,6 +359,7 @@ export interface PromptToolStore {
   applySkillsDirValue: (dir: string) => void
   toggleSkill: (folder: string) => void
   skillEnabled: (folder: string) => boolean
+  fixSkill: (folder: string) => void
   openSkillsDir: () => Promise<void>
   discardPrompt: () => void
   discardAgents: () => void
@@ -371,6 +387,7 @@ export function usePromptToolStore(api: IApiClient): PromptToolStore {
   const [savingPrompt, setSavingPrompt] = useState(false)
   const [savingAgents, setSavingAgents] = useState(false)
   const [savingSkillsDir, setSavingSkillsDir] = useState(false)
+  const [fixingSkill, setFixingSkill] = useState<string | undefined>(undefined)
   const [notice, setNotice] = useState('')
   const [noticeKind, setNoticeKind] = useState<'ok' | 'error'>('ok')
   const fieldsRef = useRef<Fields>(EMPTY_FIELDS)
@@ -564,6 +581,29 @@ export function usePromptToolStore(api: IApiClient): PromptToolStore {
     persistSwitches()
   }, [patch, persistSwitches])
 
+  interface SkillFixValue {
+    folder: string
+    fixedFolder: string
+    name: string
+    actions: string[]
+  }
+  const fixSkill = useCallback(async (folder: string) => {
+    setFixingSkill(folder)
+    try {
+      const res = await bridgePost<SkillFixValue>('/skill-fix', { folder })
+      if (res.ok) {
+        showNotice('ok', `已修复技能 ${res.value.folder} → ${res.value.fixedFolder}：${res.value.actions.join('；') || '无需改动'}`)
+        await load()
+      } else {
+        showNotice('error', '一键修复失败：' + (res.message ?? 'settings bridge unavailable'))
+      }
+    } catch (error) {
+      showNotice('error', '一键修复失败：' + errorMessage(error))
+    } finally {
+      setFixingSkill(undefined)
+    }
+  }, [load, showNotice])
+
   const openSkillsDir = useCallback(async () => {
     const path = fieldsRef.current.activeSkillsDir || fieldsRef.current.skillsDir
     if (!path) { showNotice('error', '技能目录路径未知，请先重新读取配置'); return }
@@ -603,6 +643,7 @@ export function usePromptToolStore(api: IApiClient): PromptToolStore {
     savingPrompt,
     savingAgents,
     savingSkillsDir,
+    fixingSkill,
     notice,
     noticeKind,
     load,
@@ -622,6 +663,7 @@ export function usePromptToolStore(api: IApiClient): PromptToolStore {
     applySkillsDirValue,
     toggleSkill,
     skillEnabled,
+    fixSkill,
     openSkillsDir,
     discardPrompt,
     discardAgents,

@@ -8,9 +8,10 @@ import type {
 } from '@deepseek-ai/dsh-skill'
 import type { SettingsPathOp } from '@deepseek-ai/dsh-settings'
 import type {} from '@deepseek-ai/dsh-host-webserver'
-import { rmSync } from 'node:fs'
+import { rmSync, watch, type FSWatcher } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
+import { homedir } from 'node:os'
 import { loadPresetContent, loadPresetSpec, packagePresetDir } from './engine/manifest.ts'
 import type { PresetSpec } from './engine/manifest.ts'
 import { readSkills } from './runtime/skills-provider.ts'
@@ -108,6 +109,15 @@ function normalizePresetValue(value: unknown): unknown {
   return value
 }
 
+/** hostDefaults 中的路径类字段展开 ~/，避免把字面量 `~` 目录写进进程 cwd。 */
+const HOME_PATH_KEYS = new Set(['residentAgentsPath', 'presetDir', 'skillsDir'])
+function normalizePresetPath(key: string, value: unknown): unknown {
+  if (typeof value !== 'string' || !HOME_PATH_KEYS.has(key)) return value
+  if (value === '~') return homedir()
+  if (value.startsWith('~/') || value.startsWith('~\\')) return join(homedir(), value.slice(2))
+  return value
+}
+
 /**
  * 单一入口:preset.yml 的 params + hostDefaults 作为 Config 的预设默认值。
  * settings(用户/Web)仍优先;此处只覆盖 Config 未提供或默认值位置。
@@ -119,7 +129,7 @@ export function mergePresetDefaults<T extends Config>(config: T, spec: PresetSpe
   const entries = { ...spec.params, ...spec.hostDefaults }
   for (const [key, raw] of Object.entries(entries)) {
     if (!(key in source)) continue
-    const value = normalizePresetValue(raw)
+    const value = normalizePresetPath(key, normalizePresetValue(raw))
     const current = source[key]
     if (typeof current === 'boolean') {
       if (typeof value === 'boolean') merged[key] = value
@@ -160,27 +170,58 @@ export function apply(ctx: Context, configIn: Config): void {
   let activeSkillsDir = configuredSkillsDir.length > 0
     ? configuredSkillsDir
     : resolveProfileSkillsDir(ctx, DEFAULT_SKILLS_DIR, (message) => warn(ctx, message))
-  // 无效技能按官方契约跳过并告警一次(不因单个坏技能让整个 provider 被 registry 抛弃)。
+  // 三层结构：
+  //  1) 扫描层宽松——坏技能也进 catalog（valid=false + issue），UI 可见可修；
+  //  2) provider 层严格——只有 valid=true 的候选注册给模型；
+  //  3) 文件 watcher——目录变化时重扫 catalog 并 invalidateSkills。
   const skillWarned = new Set<string>()
   const readSkillsChecked = (dir: string) => readSkills(dir, (message) => {
     if (skillWarned.has(message)) return
     skillWarned.add(message)
     warn(ctx, message)
   })
-  let skillCatalog: SkillCatalogEntry[] = readSkillsChecked(activeSkillsDir).map((skill) => ({
+  const catalogOf = (skills: SkillEntry[]): SkillCatalogEntry[] => skills.map((skill) => ({
     folder: skill.folder,
     name: skill.name,
     description: skill.description,
+    valid: skill.valid,
+    ...(skill.issue !== undefined ? { issue: skill.issue } : {}),
+    modelInvocable: skill.modelInvocable,
+    userInvocable: skill.userInvocable,
   }))
+  let skillCatalog: SkillCatalogEntry[] = catalogOf(readSkillsChecked(activeSkillsDir))
+
+  // 技能目录热更新：新增/删除/改名技能目录后，catalog 与注册表缓存一起刷新。
+  let skillsWatcher: FSWatcher | undefined
+  let skillsWatcherTimer: NodeJS.Timeout | undefined
+  const closeSkillsWatcher = (): void => {
+    if (skillsWatcherTimer !== undefined) clearTimeout(skillsWatcherTimer)
+    skillsWatcherTimer = undefined
+    skillsWatcher?.close()
+    skillsWatcher = undefined
+  }
+  const watchActiveSkillsDir = (): void => {
+    closeSkillsWatcher()
+    try {
+      skillsWatcher = watch(activeSkillsDir, { persistent: false }, () => {
+        if (skillsWatcherTimer !== undefined) clearTimeout(skillsWatcherTimer)
+        skillsWatcherTimer = setTimeout(() => {
+          skillsWatcherTimer = undefined
+          skillCatalog = catalogOf(readSkillsChecked(activeSkillsDir))
+          invalidateSkills?.()
+        }, 300)
+      })
+    } catch {
+      // 目录不可 watch 时降级为目录切换时重扫，不阻断启动。
+    }
+  }
+  watchActiveSkillsDir()
 
   /** 切换生效技能目录并刷新目录快照（供 describe / TUI 显示）。 */
   const applyActiveSkillsDir = (dir: string): void => {
     activeSkillsDir = dir
-    skillCatalog = readSkillsChecked(dir).map((skill) => ({
-      folder: skill.folder,
-      name: skill.name,
-      description: skill.description,
-    }))
+    skillCatalog = catalogOf(readSkillsChecked(dir))
+    watchActiveSkillsDir()
   }
 
   /** 用户 skillsDir 设置 → 实际生效目录。 */
@@ -213,12 +254,12 @@ export function apply(ctx: Context, configIn: Config): void {
       list: async (options: SkillLookupOptions): Promise<readonly SkillCandidate[]> => {
         if (options.signal?.aborted) return []
         return orderSkills(readSkillsChecked(activeSkillsDir))
-          .filter((skill) => skillSwitches[skill.folder] !== false)
+          .filter((skill) => skill.valid && skillSwitches[skill.folder] !== false)
           .map((skill, index): SkillCandidate => ({
             name: skill.name,
             description: skill.description || skill.folder,
             ...(skill.whenToUse !== undefined ? { whenToUse: skill.whenToUse } : {}),
-            invocation: { modelInvocable: true, userInvocable: true },
+            invocation: { modelInvocable: skill.modelInvocable, userInvocable: skill.userInvocable },
             source: 'runtime',
             provider: 'prompt-tool',
             resourceBase: { kind: 'directory', path: join(activeSkillsDir, skill.folder) },
@@ -231,7 +272,7 @@ export function apply(ctx: Context, configIn: Config): void {
       get: async (candidate: SkillCandidate, options: SkillLookupOptions): Promise<SkillDefinition | undefined> => {
         if (options.signal?.aborted) return undefined
         const skill = readSkillsChecked(activeSkillsDir).find((entry) => entry.folder === candidate.locator || entry.name === candidate.name)
-        if (skill === undefined || skillSwitches[skill.folder] === false) return undefined
+        if (skill === undefined || !skill.valid || skillSwitches[skill.folder] === false) return undefined
         return {
           name: candidate.name,
           description: candidate.description,
@@ -259,6 +300,11 @@ export function apply(ctx: Context, configIn: Config): void {
     readProjectOriginals,
     () => ENGINE_STRATEGY_DIR_URL,
     (sctx: Context) => ensureRegistered(sctx),
+    () => {
+      // 一键修复后立即重扫目录并失效官方 registry 缓存。
+      skillCatalog = catalogOf(readSkillsChecked(activeSkillsDir))
+      invalidateSkills?.()
+    },
   )
 
   // 首次以 base-only profile 启动时自动补 @deepseek-ai/dsh-web-app：
@@ -565,3 +611,7 @@ export type { PromptConfigTemplate } from './engine/templates.ts'
 export { registerTuiCommand } from './runtime/tui.ts'
 export { ensureSettingsRegistered } from './runtime/settings-registration.ts'
 export type { SettingsRegistrationHooks } from './runtime/settings-registration.ts'
+export { readSkills, listSkillFolders, isValidSkill, validSkills, SKILL_NAME_RE } from './runtime/skills-provider.ts'
+export { fixSkillEntry, toKebabName } from './runtime/skill-fix.ts'
+export type { SkillFixResult } from './runtime/skill-fix.ts'
+export type { SkillEntry, SkillCatalogEntry } from './config.ts'

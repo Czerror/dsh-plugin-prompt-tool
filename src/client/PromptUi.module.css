@@ -331,6 +331,14 @@
 
 .skillDragRow[data-dragging] { opacity: .4; }
 
+/* 未通过官方校验的技能：灰显、禁拖、禁开关，issue 由 hint 展示。 */
+.skillRowInvalid {
+  opacity: .55;
+  filter: saturate(.4);
+}
+
+.skillRowInvalid .dragHandle { cursor: not-allowed; }
+
 .skillDragRow .toggleRow {
   min-height: 0;
   flex: 1;

@@ -283,6 +283,7 @@ pnpm test         # 提示词配置渲染/合并、六层级接线、preset 生�
 pnpm typecheck
 pnpm lint
 pnpm sync:anchored   # 刷新 upstream/dsh-anchored-standard 内联快照（可加 ref）
+pnpm sync:yaml       # 刷新 engine/vendor/yaml（生成目录运行时 YAML 解析器）
 pnpm rebuild:composition   # 从官方 deepseek-harness 内置预设源码重建组合模块
 ```
 

@@ -140,12 +140,26 @@ export interface SkillEntry {
   whenToUse?: string
   metadata?: Record<string, unknown>
   body: string
+  /** 是否通过官方 dsh-skill 候选校验；false 时只进管理界面，不注册给模型。 */
+  valid: boolean
+  /** invalid 条目的原因（可为空）。 */
+  issue?: string
+  /** 官方调用策略：disable-model-invocation: true 时模型不可调用。 */
+  modelInvocable: boolean
+  /** 官方调用策略：user-invocable: false 时用户不可调用。 */
+  userInvocable: boolean
 }
 
 export interface SkillCatalogEntry {
   folder: string
   name: string
   description: string
+  /** 是否通过官方 dsh-skill 候选校验；false 时 UI 灰显并展示 issue。 */
+  valid: boolean
+  /** invalid 条目的原因。 */
+  issue?: string
+  modelInvocable: boolean
+  userInvocable: boolean
 }
 
 export interface PromptSettings {
@@ -219,6 +233,10 @@ export const PromptSettingsSchema: z<PromptSettings> = z.object({
     folder: z.string(),
     name: z.string(),
     description: z.string().default(''),
+    valid: z.boolean().default(false),
+    issue: z.string().default(''),
+    modelInvocable: z.boolean().default(false),
+    userInvocable: z.boolean().default(false),
   })).default([]),
   skillsDir: z.string().default(''),
   activeSkillsDir: z.string().default(''),

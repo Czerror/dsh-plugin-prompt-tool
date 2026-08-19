@@ -1,3 +1,11 @@
 {
-  "type": "module"
+  "name": "yaml-vendor",
+  "version": "2.9.0",
+  "private": true,
+  "type": "module",
+  "description": "Vendored ESM build of npm `yaml` for the generated agent preset runtime (zero external dependency).",
+  "source": "https://www.npmjs.com/package/yaml",
+  "vendoredFrom": "node_modules/yaml/browser (ESM dist)",
+  "license": "ISC",
+  "repository": "github:eemeli/yaml"
 }

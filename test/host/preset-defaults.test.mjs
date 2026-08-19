@@ -1,5 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
 import { Config, mergePresetDefaults } from '../../lib/index.mjs'
 
 test('preset.yml params + hostDefaults 合并进 Config 作为唯一入口默认值', () => {
@@ -39,6 +41,9 @@ test('preset.yml params + hostDefaults 合并进 Config 作为唯一入口默认
   assert.deepEqual(merged.promptConfigs, [{ id: 'custom', text: 'hello' }])
   assert.deepEqual(merged.skillSwitches, { sandboxmod: false })
   assert.deepEqual(merged.skillOrder, ['sandboxmod'])
+  // ~/ 路径展开为真实 home 路径，绝不把字面量 `~` 目录写进进程 cwd。
+  assert.equal(merged.residentAgentsPath, join(homedir(), '.dsh', 'AGENTS.md'))
+  assert.equal(merged.presetDir, join(homedir(), '.dsh', '.agent-presets', 'prompt-tool'))
 })
 
 test('优先级:cordis Config < preset.yml < settings;preset 覆盖 cordis 默认值', () => {

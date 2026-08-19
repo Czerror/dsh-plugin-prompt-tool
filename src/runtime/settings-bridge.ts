@@ -8,6 +8,7 @@ import type { PromptConfigSpec } from '../engine/prompt-configs.ts'
 import { loadPromptConfigFiles, mergePromptConfigs } from '../engine/prompt-configs.ts'
 import { validatePromptConfigs } from './configs-validate.ts'
 import { loadPromptTemplates } from '../engine/templates.ts'
+import { fixSkillEntry } from './skill-fix.ts'
 
 export const SETTINGS_BRIDGE_PREFIX = '/api/prompt-tool/settings'
 const MAX_SETTINGS_BRIDGE_BODY = 64 * 1024
@@ -79,6 +80,7 @@ export function registerSettingsBridge(
   readOriginals: () => ProjectOriginals,
   getEngineStrategyDir: () => string,
   ensureRegistered: (sctx: Context) => boolean,
+  afterSkillFix?: () => void,
 ): void {
   // 动态等待 webServer：webServer 由 @deepseek-ai/dsh-web-app 提供。
   // profile 首次缺少该 bundle 时，本子插件先 pending 但不阻塞启动审计；
@@ -259,6 +261,63 @@ export function registerSettingsBridge(
               return
             }
             writeBridgeJson(res, 200, { ok: true, value: next, importedCount: imported.length, mergedCount: merged.length })
+          },
+        }),
+        sctx.webServer.register({
+          kind: 'exact',
+          path: SETTINGS_BRIDGE_PREFIX + '/skill-fix',
+          handler: async (req, res) => {
+            if (!guard(req, res)) return
+            ensureRegistered(sctx)
+            const body = await readBridgeBody(req)
+            if (body === null || body === undefined || typeof body !== 'object') {
+              writeBridgeJson(res, 400, { ok: false, code: 'settings-rejected', message: 'unreadable JSON body' })
+              return
+            }
+            const record = body as Record<string, unknown>
+            const folder = typeof record.folder === 'string' ? record.folder : ''
+            const result = fixSkillEntry(getSkillsState().activeSkillsDir, folder)
+            if (!result.fixed) {
+              writeBridgeJson(res, 400, { ok: false, code: 'skill-fix-failed', message: result.error ?? '修复失败' })
+              return
+            }
+            // 目录重命名后同步 settings 里的 skillSwitches / skillOrder 键。
+            const descriptor = findDescriptor()
+            if (descriptor !== undefined && result.folder !== result.fixedFolder) {
+              const value = asRecord(descriptor.value)
+              const base = asRecord(descriptor.base)
+              const switches = asRecord(value.skillSwitches !== undefined ? value.skillSwitches : base.skillSwitches)
+              const orderValue = value.skillOrder !== undefined ? value.skillOrder : base.skillOrder
+              const order = Array.isArray(orderValue) ? orderValue.filter((item): item is string => typeof item === 'string') : []
+              const ops: SettingsPathOp[] = []
+              if (Object.prototype.hasOwnProperty.call(switches, result.folder)) {
+                ops.push({ op: 'set', path: ['skillSwitches', result.fixedFolder], value: switches[result.folder] })
+                ops.push({ op: 'unset', path: ['skillSwitches', result.folder] })
+              }
+              if (order.includes(result.folder)) {
+                ops.push({ op: 'set', path: ['skillOrder'], value: order.map((item) => item === result.folder ? result.fixedFolder : item) })
+              }
+              if (ops.length > 0) {
+                try {
+                  await sctx.settings.mutate(ns, ops)
+                } catch (error) {
+                  const message = error instanceof Error ? error.message : String(error)
+                  writeBridgeJson(res, 409, { ok: false, code: 'settings-rejected', message: `技能文件已修复，但 settings 键迁移失败：${message}` })
+                  return
+                }
+              }
+            }
+            afterSkillFix?.()
+            writeBridgeJson(res, 200, {
+              ok: true,
+              value: {
+                folder: result.folder,
+                fixedFolder: result.fixedFolder,
+                name: result.name,
+                actions: result.actions,
+                skillCatalog: getSkillsState().skillCatalog,
+              },
+            })
           },
         }),
         sctx.webServer.register({

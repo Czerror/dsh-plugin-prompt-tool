@@ -95,6 +95,7 @@
     "test": "pnpm build && node --test \"test/**/*.test.mjs\"",
     "link:profile": "node scripts/link-profile.mjs",
     "sync:anchored": "node scripts/sync-anchored.mjs",
+    "sync:yaml": "node scripts/sync-yaml-vendor.mjs",
     "rebuild:composition": "node scripts/rebuild-composition.mjs"
   },
   "dependencies": {

@@ -553,34 +553,50 @@ function SkillsSettings(props: { store: PromptToolStore; api: IApiClient }): Rea
         <div className={ui.emptyState}><span className={ui.emptyGlyph} aria-hidden="true">◇</span><div><h3>skills 目录下没有技能</h3><p>从上方选择目录导入，或确认技能目录路径后重新打开工作台。</p></div></div>
       ) : (
         <div className={ui.rowGroup}>
-          {orderedSkills.map((skill, index) => (
-            <div
-              key={skill.folder}
-              className={ui.skillDragRow}
-              data-dragging={dragFolder === skill.folder ? '' : undefined}
-              draggable
-              onDragStart={(event) => {
-                setDragFolder(skill.folder)
-                event.dataTransfer.effectAllowed = 'move'
-              }}
-              onDragOver={(event) => event.preventDefault()}
-              onDrop={(event) => {
-                event.preventDefault()
-                if (dragFolder !== undefined && dragFolder !== skill.folder) moveSkill(dragFolder, skill.folder)
-                setDragFolder(undefined)
-              }}
-              onDragEnd={() => setDragFolder(undefined)}
-            >
-              <span className={ui.dragHandle} title={`第 ${index + 1} 位，拖动调整`} aria-hidden="true">⠿</span>
-              <ToggleRow
-                id={`pt-skill-${skill.folder}`}
-                label={`${index + 1}. ${skill.name || skill.folder}`}
-                hint={`skills/${skill.folder}${skill.description ? ` · ${skill.description}` : ''}`}
-                checked={store.skillEnabled(skill.folder)}
-                onChange={() => store.toggleSkill(skill.folder)}
-              />
-            </div>
-          ))}
+          {orderedSkills.map((skill, index) => {
+            const invocationHint = skill.valid
+              ? `${skill.modelInvocable ? '模型' : '非模型'} · ${skill.userInvocable ? '用户' : '非用户'}可调用`
+              : `未注册给模型：${skill.issue ?? '技能不合法'}`
+            return (
+              <div
+                key={skill.folder}
+                className={clsx(ui.skillDragRow, !skill.valid && ui.skillRowInvalid)}
+                data-dragging={dragFolder === skill.folder ? '' : undefined}
+                draggable={skill.valid}
+                onDragStart={(event) => {
+                  setDragFolder(skill.folder)
+                  event.dataTransfer.effectAllowed = 'move'
+                }}
+                onDragOver={(event) => event.preventDefault()}
+                onDrop={(event) => {
+                  event.preventDefault()
+                  if (dragFolder !== undefined && dragFolder !== skill.folder) moveSkill(dragFolder, skill.folder)
+                  setDragFolder(undefined)
+                }}
+                onDragEnd={() => setDragFolder(undefined)}
+              >
+                <span className={ui.dragHandle} title={`第 ${index + 1} 位，拖动调整`} aria-hidden="true">⠿</span>
+                <ToggleRow
+                  id={`pt-skill-${skill.folder}`}
+                  label={`${index + 1}. ${skill.name || skill.folder}`}
+                  hint={`skills/${skill.folder}${skill.description ? ` · ${skill.description}` : ''} · ${invocationHint}`}
+                  checked={store.skillEnabled(skill.folder)}
+                  disabled={!skill.valid}
+                  onChange={() => store.toggleSkill(skill.folder)}
+                />
+                {!skill.valid && (
+                  <button
+                    type="button"
+                    className={ui.pillButton}
+                    disabled={store.fixingSkill === skill.folder}
+                    onClick={() => void store.fixSkill(skill.folder)}
+                  >
+                    {store.fixingSkill === skill.folder ? '修复中…' : '一键修复'}
+                  </button>
+                )}
+              </div>
+            )
+          })}
         </div>
       )}
       {dirty && <p className={ui.readOnly} role="status">Skills 开关与目录修改立即保存；如上方按钮仍在写入，请稍候。</p>}

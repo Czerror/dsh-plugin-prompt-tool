@@ -40,7 +40,10 @@ function renderTuiStatus(source: PromptSettings): string {
   lines.push('技能开关:')
   for (const skill of source.skillCatalog) {
     const value = source.skillSwitches[skill.folder] !== false
-    lines.push(`${('skill ' + skill.folder).padEnd(22)}${onOff(value)}  ${skill.name || skill.folder}`)
+    const detail = skill.valid
+      ? `${skill.modelInvocable ? '模型' : '非模型'}/${skill.userInvocable ? '用户' : '非用户'}`
+      : `未注册:${skill.issue ?? '不合法'}`
+    lines.push(`${('skill ' + skill.folder).padEnd(22)}${onOff(value)}  ${skill.name || skill.folder}  [${detail}]`)
   }
   return lines.join('\n')
 }
