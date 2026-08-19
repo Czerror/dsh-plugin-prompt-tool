@@ -163,9 +163,8 @@ params:
   injectPrompt: true
   usePtcMode: true
   bootstrapMaxTokens: 0
-  subagentFlash: false
-  subagentFlashProvider: deepseek-official
-  subagentFlashModel: deepseek-v4-flash
+  subagentFlashProvider: ""
+  subagentFlashModel: ""
   flashPersona: >
     You are a helpful assistant.
 
@@ -265,31 +264,6 @@ promptConfigs:
     params:
       promoteOn: either
       includeSubagents: true
-settingsExtension:
-  anchorFirstTurn:
-    type: boolean
-    default: false
-  anchorCustom:
-    type: boolean
-    default: false
-  anchorText:
-    type: string
-    default: ""
-  guideCustom:
-    type: boolean
-    default: false
-  guideText:
-    type: string
-    default: ""
-  injectPrompt:
-    type: boolean
-    default: true
-  usePtcMode:
-    type: boolean
-    default: true
-  bootstrapMaxTokens:
-    type: number
-    default: 0
 legacyCleanup:
   - prompt-injector.mjs
   - near-anchor.mjs
@@ -348,4 +322,3 @@ hostDefaults:
   promptConfigs: []
   skillSwitches: {}
   skillOrder: []
-

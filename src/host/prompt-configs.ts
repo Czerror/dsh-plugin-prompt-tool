@@ -67,11 +67,9 @@ export interface BuildCordisOptions {
   guideCustom?: boolean
   /** 锚定确认后注入 preset.md；关闭时仍保留工具引导，但不生成 prompt-injector 提示词配置内容。 */
   injectPrompt?: boolean
-  /** 子代理固定 Flash 模型：true 时给 subagent/subagent_fork 行加 agentOptions。 */
-  subagentFlash?: boolean
-  /** 子代理 Flash 路由 provider（默认 deepseek-official）。 */
+  /** 子代理固定模型路由 provider；与模型名同时非空时给 subagent/subagent_fork 行加 agentOptions。 */
   subagentFlashProvider?: string
-  /** 子代理 Flash 模型名（默认 deepseek-v4-flash）。 */
+  /** 子代理固定模型名；与 provider 同时非空时生效。 */
   subagentFlashModel?: string
   /** 首轮输出封顶（bootstrapMaxTokens）；0 或未设置 = 本项目默认无封顶。 */
   bootstrapMaxTokens?: number

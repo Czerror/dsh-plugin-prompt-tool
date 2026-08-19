@@ -92,7 +92,12 @@ export function mountPromptToolSidebarEntry(controller: PromptToolWorkspaceContr
     if (placed) rootObserver.observe(root, { childList: true, subtree: true })
   }
 
-  const waitObserver = new MutationObserver(tryPlace)
+  // 宿主 DOM 高频变动：body subtree 观察防抖，避免每次变更都全文档扫描。
+  let waitTimer: ReturnType<typeof setTimeout> | undefined
+  const waitObserver = new MutationObserver(() => {
+    if (waitTimer !== undefined) clearTimeout(waitTimer)
+    waitTimer = setTimeout(tryPlace, 200)
+  })
   waitObserver.observe(document.body, { childList: true, subtree: true })
 
   const syncActive = (): void => {
@@ -104,6 +109,7 @@ export function mountPromptToolSidebarEntry(controller: PromptToolWorkspaceContr
   tryPlace()
 
   return () => {
+    if (waitTimer !== undefined) clearTimeout(waitTimer)
     waitObserver.disconnect()
     rootObserver.disconnect()
     unsubscribe()

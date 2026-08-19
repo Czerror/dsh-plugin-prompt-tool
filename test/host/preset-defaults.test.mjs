@@ -16,7 +16,6 @@ test('preset.yml params + hostDefaults 合并进 Config 作为唯一入口默认
       usePtcMode: true,
       anchorFirstTurn: true,
       anchorCustom: false,
-      subagentFlash: false,
       bootstrapMaxTokens: 2048,
     },
     hostDefaults: {

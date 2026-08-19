@@ -14,7 +14,6 @@ const TUI_BOOLEAN_SWITCHES: ReadonlyArray<readonly [key: string, label: string]>
   ['anchorFirstTurn', '追加任务引导'],
   ['anchorCustom', '使用自定义引导（首句）'],
   ['guideCustom', '使用自定义引导（每轮）'],
-  ['subagentFlash', '子代理固定 Flash 模型'],
   ['usePtcMode', '使用 PTC 模式'],
 ] as const
 
@@ -29,7 +28,9 @@ function renderTuiStatus(source: PromptSettings): string {
     }),
     '锚点文本:',
     `  anchorText               ${source.anchorText.length > 0 ? source.anchorText : '（空 = 按任务自动选择）'}`,
-    `  deepseekAvailable       ${source.deepseekAvailable ? '是' : '否（未检测到 DeepSeek 模型，subagentFlash 不可用）'}`,
+    `  deepseekAvailable       ${source.deepseekAvailable ? '是' : '否（未检测到 DeepSeek 模型路由）'}`,
+    `  subagentProvider        ${source.subagentFlashProvider.length > 0 ? source.subagentFlashProvider : '（空 = 不设置）'}`,
+    `  subagentModel           ${source.subagentFlashModel.length > 0 ? source.subagentFlashModel : '（空 = 不设置）'}`,
     `  bootstrapMaxTokens      ${source.bootstrapMaxTokens > 0 ? source.bootstrapMaxTokens : '0（关闭，不设封顶）'}`,
     `  activeSkillsDir         ${source.activeSkillsDir || '（未解析到技能目录）'}`,
     '提示词配置:',
@@ -120,7 +121,7 @@ export function registerTuiCommand(
         const usage = (): CommandResult => ({
           kind: 'error',
           text: '用法：/prompt-tool status\n' +
-            '      /prompt-tool on|off|toggle <writeAgents|writePreset|injectPrompt|injectAgentsPrompt|anchorFirstTurn|anchorCustom|guideCustom|subagentFlash|usePtcMode>\n' +
+            '      /prompt-tool on|off|toggle <writeAgents|writePreset|injectPrompt|injectAgentsPrompt|anchorFirstTurn|anchorCustom|guideCustom|usePtcMode>\n' +
             '      /prompt-tool skill <技能目录名> on|off|toggle\n' +
             '      /prompt-tool config <id>\n' +
             '      /prompt-tool config <id> on|off|toggle\n' +
@@ -178,10 +179,6 @@ ${renderTuiStatus(getSource())}` }
         const key = tokens[1]
         if (action !== 'on' && action !== 'off' && action !== 'toggle') return usage()
         if (key === undefined || !TUI_BOOLEAN_SWITCHES.some(([candidate]) => candidate === key)) return usage()
-        if (key === 'subagentFlash' && !getDeepseekAvailable()) {
-          const detection = getDeepseekState()
-          return { kind: 'error', text: `未检测到 DeepSeek 模型路由，subagentFlash 开关不可用。providers=[${detection.providers.join(', ') || '空'}] error=${detection.error ?? '无'}` }
-        }
         const currentValue = source[key as keyof PromptSettings]
         if (typeof currentValue !== 'boolean') {
           return { kind: 'error', text: `${key} 不是布尔开关，不能这样切换` }

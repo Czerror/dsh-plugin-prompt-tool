@@ -62,8 +62,8 @@ test('settings bridge /meta 返回引擎能力矩阵', async () => {
   assert.equal(res.status, 200)
   const payload = JSON.parse(res.body)
   assert.equal(payload.ok, true)
-  assert.ok(payload.meta.layers.includes('pre-step'))
-  assert.ok(payload.meta.strategies.includes('custom-fallback'))
+  assert.ok(payload.value.meta.layers.includes('pre-step'))
+  assert.ok(payload.value.meta.strategies.includes('custom-fallback'))
 })
 
 test('settings bridge 拒绝非 loopback 请求', async () => {

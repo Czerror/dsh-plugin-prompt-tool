@@ -6,7 +6,13 @@
  */
 import { parse as parseYaml } from 'yaml'
 import { fileURLToPath } from 'node:url'
-import { loadCompositionText, loadPresetSpec, renderTemplateVariables, resolvePresetTokens } from './host/manifest.ts'
+import {
+  assertCompositionArray,
+  loadCompositionText,
+  loadPresetSpec,
+  renderTemplateVariables,
+  resolvePresetTokens,
+} from './host/manifest.ts'
 
 // anchored 预设模板目录(打包后 lib/ 与包根 preset/ 平级)。
 const ANCHORED_TEMPLATE_DIR = fileURLToPath(new URL('../preset/anchored/', import.meta.url))
@@ -84,17 +90,8 @@ export function buildCordis(prompt: string, options: BuildCordisOptions = {}): s
   }
   const tokens = resolvePresetTokens(spec, runtime)
   const out = renderTemplateVariables(loadCompositionText(spec), tokens)
-  const unresolved = out.match(/__[A-Z0-9_]+__/g)
-  if (unresolved !== null) throw new Error(`generated agent.cordis.yml has unresolved variables: ${unresolved.join(', ')}`)
-
-  // 生成文件必须是合法 YAML,且引擎行指向提示词配置模块目录与模板策略目录。
-  let parsed: unknown
-  try {
-    parsed = parseYaml(out, { logLevel: 'silent' })
-  } catch (error) {
-    throw new Error(`generated agent.cordis.yml is invalid YAML: ${String((error as Error & { message?: string }).message ?? error)}`)
-  }
-  if (!Array.isArray(parsed)) throw new Error('generated agent.cordis.yml is not a YAML array')
+  // 生成文件必须含引擎必需行，且引擎行指向提示词配置模块目录。
+  const parsed = assertCompositionArray(out, spec)
   const ids = new Set(parsed.map((row) => (row as { id?: string } | null)?.id))
   if (!ids.has('router-first-turn')) throw new Error('generated agent.cordis.yml is missing the router-first-turn row')
   if (!ids.has('prompt-config-engine')) throw new Error('generated agent.cordis.yml is missing the prompt-config-engine row')

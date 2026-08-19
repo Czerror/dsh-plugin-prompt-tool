@@ -31,10 +31,23 @@ function isLoopbackRequest(req: IncomingMessage): boolean {
   if (typeof host !== 'string') return false
   try {
     const hostname = new URL('http://' + host).hostname
-    return hostname === '127.0.0.1' || hostname === 'localhost' || hostname === '[::1]'
+    if (hostname !== '127.0.0.1' && hostname !== 'localhost' && hostname !== '[::1]') return false
   } catch {
     return false
   }
+  // 浏览器跨站盲请求（字符串 body 的 POST 是 CORS 简单请求，text/plain 不触发预检）
+  // 可绕过上面的 socket/Host 检查直接到达本桥；校验 Origin 拦截跨站来源。
+  // 非浏览器客户端（curl 等）不带 Origin，放行。
+  const origin = req.headers.origin
+  if (origin !== undefined) {
+    try {
+      const originHost = new URL(origin).hostname
+      if (originHost !== '127.0.0.1' && originHost !== 'localhost' && originHost !== '[::1]') return false
+    } catch {
+      return false
+    }
+  }
+  return true
 }
 
 function writeBridgeJson(res: ServerResponse, status: number, body: unknown): void {
@@ -57,12 +70,20 @@ function readPromptConfigs(descriptor: SettingsDescriptor | undefined): PromptCo
 async function readBridgeBody(req: IncomingMessage): Promise<unknown> {
   const chunks: Buffer[] = []
   let size = 0
+  let overflow = false
   for await (const chunk of req) {
+    if (overflow) continue
     const buffer = chunk as Buffer
     size += buffer.length
-    if (size > MAX_SETTINGS_BRIDGE_BODY) return undefined
+    if (size > MAX_SETTINGS_BRIDGE_BODY) {
+      // 超限：继续消费完请求流（保持连接可用），丢弃已收内容。
+      overflow = true
+      chunks.length = 0
+      continue
+    }
     chunks.push(buffer)
   }
+  if (overflow) return undefined
   try {
     return JSON.parse(Buffer.concat(chunks).toString('utf8')) as unknown
   } catch {

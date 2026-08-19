@@ -409,12 +409,22 @@ function waitForScope(scope: SettingsScope<Record<string, unknown>>): Promise<Se
   const current = scope.getSnapshot()
   if (current.status !== 'loading') return Promise.resolve(current)
   return new Promise((resolve) => {
+    let settled = false
     const dispose = scope.subscribe(() => {
       const next = scope.getSnapshot()
       if (next.status === 'loading') return
+      if (settled) return
+      settled = true
       dispose()
       resolve(next)
     })
+    // 宿主 mirror 卡 loading 时兜底超时，避免 UI 永久 loading。
+    setTimeout(() => {
+      if (settled) return
+      settled = true
+      dispose()
+      resolve(scope.getSnapshot())
+    }, 5000)
   })
 }
 

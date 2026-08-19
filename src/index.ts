@@ -12,7 +12,7 @@ import { rmSync, watch, type FSWatcher } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
-import { loadPresetContent, loadPresetSpec, packagePresetDir } from './host/manifest.ts'
+import { loadPresetContent, loadPresetSpec, normalizeParam, packagePresetDir } from './host/manifest.ts'
 import type { PresetSpec } from './host/manifest.ts'
 import { createCachedSkillsReader } from './runtime/skills-provider.ts'
 import { ensureWebSurface } from './web-surface.ts'
@@ -50,8 +50,6 @@ export const inject = ['skills', 'commands', 'llm', 'subagents']
 const PRESET_FILE_URL = new URL('../preset/anchored/preset.yml', import.meta.url)
 const PRESET_FILE_PATH = fileURLToPath(PRESET_FILE_URL)
 const AGENTS_FILE_PATH = PRESET_FILE_PATH
-/** 模板专属策略目录:当前 anchored 策略为引擎内置,自定义模板可通过 settings bridge 注入。 */
-const ENGINE_STRATEGY_DIR_URL = ''
 
 function readPromptFile(fallbackText: string): string {
   const text = loadPresetContent().presetText
@@ -103,13 +101,6 @@ function warn(ctx: Context, message: string): void {
   }
 }
 
-/** on/off 兼容写法。 */
-function normalizePresetValue(value: unknown): unknown {
-  if (value === 'on') return true
-  if (value === 'off') return false
-  return value
-}
-
 /** hostDefaults 中的路径类字段展开 ~/，避免把字面量 `~` 目录写进进程 cwd。
  *  `~/.dsh/...` 特指 Harness home（${DSH_HOME} 或默认 ~/.dsh），
  *  其余 `~/...` 才按操作系统 home 展开。 */
@@ -138,7 +129,7 @@ export function mergePresetDefaults<T extends Config>(config: T, spec: PresetSpe
   const entries = { ...spec.params, ...spec.hostDefaults }
   for (const [key, raw] of Object.entries(entries)) {
     if (!(key in source)) continue
-    const value = normalizePresetPath(key, normalizePresetValue(raw))
+    const value = normalizePresetPath(key, normalizeParam(raw))
     const current = source[key]
     if (typeof current === 'boolean') {
       if (typeof value === 'boolean') merged[key] = value
@@ -226,6 +217,8 @@ export function apply(ctx: Context, configIn: Config): void {
     }
   }
   watchActiveSkillsDir()
+  // 插件卸载时关闭技能目录 watcher，避免泄漏与对已卸载 provider 的无效刷新。
+  ctx.effect(() => () => closeSkillsWatcher())
 
   /** 切换生效技能目录并刷新目录快照（供 describe / TUI 显示）。 */
   const applyActiveSkillsDir = (dir: string): void => {
@@ -309,7 +302,8 @@ export function apply(ctx: Context, configIn: Config): void {
     getDeepseekState,
     () => ({ activeSkillsDir, skillCatalog }),
     readProjectOriginals,
-    () => ENGINE_STRATEGY_DIR_URL,
+    // 模板专属策略目录：当前 anchored 策略为引擎内置，自定义模板可经此注入。
+    () => '',
     (sctx: Context) => ensureRegistered(sctx),
     () => {
       // 一键修复后立即重扫目录并失效官方 registry 缓存。

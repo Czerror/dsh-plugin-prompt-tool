@@ -18,6 +18,8 @@ function makeTui() {
   const source = () => ({
     anchorText: '',
     deepseekAvailable: true,
+    subagentFlashProvider: '',
+    subagentFlashModel: '',
     bootstrapMaxTokens: 0,
     activeSkillsDir: 'D:/skills',
     skillCatalog: [],
@@ -25,7 +27,7 @@ function makeTui() {
     promptConfigs,
     ...Object.fromEntries([
       'writeAgents', 'writePreset', 'injectPrompt', 'injectAgentsPrompt', 'anchorFirstTurn',
-      'anchorCustom', 'guideCustom', 'subagentFlash', 'usePtcMode',
+      'anchorCustom', 'guideCustom', 'usePtcMode',
     ].map((key) => [key, true])),
   })
   registerTuiCommand(ctx, 'prompt-tool', source, () => true, () => ({ available: true, providers: ['deepseek-official'] }))

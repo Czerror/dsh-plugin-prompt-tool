@@ -8,7 +8,7 @@
 
 import { writeFileSync, mkdirSync, rmSync, cpSync, mkdtempSync, renameSync, existsSync } from 'node:fs'
 import { join, basename, dirname } from 'node:path'
-import { parse as parseYaml, stringify as stringifyYaml } from 'yaml'
+import { stringify as stringifyYaml } from 'yaml'
 import { DEFAULT_PRESET_DIR } from '../config.ts'
 import {
   loadPromptConfigFiles,
@@ -17,6 +17,8 @@ import {
 } from './prompt-configs.ts'
 import type { PromptConfigSpec } from './prompt-configs.ts'
 import {
+  assertCompositionArray,
+  asString,
   loadCompositionText,
   loadPresetSpec,
   packageEngineDir,
@@ -76,8 +78,6 @@ function runtimeOf(options: WritePresetOptions, prompt: string): Record<string, 
   }
 }
 
-const asString = (value: unknown, fallback = ''): string => (typeof value === 'string' ? value : fallback)
-
 /** 把任意单一参数预设模板物化到生成目录;全部失败 fail loud。 */
 export function writePreset(prompt: string, options: WritePresetOptions): void {
   // 空路径兜底:旧版 UI 保存的空串 presetDir 不得传入 mkdirSync('')。
@@ -98,10 +98,7 @@ export function writePreset(prompt: string, options: WritePresetOptions): void {
   try {
   // 1) 组合文件:modules 模块库装配 + 引擎内部 token 渲染 + YAML 校验。
   const composition = renderTemplateVariables(loadCompositionText(spec), tokens)
-  const unresolved = composition.match(/__[A-Z0-9_]+__/g)
-  if (unresolved !== null) throw new Error(`generated agent.cordis.yml has unresolved variables: ${unresolved.join(', ')}`)
-  const parsedComposition = parseYaml(composition, { logLevel: 'silent' })
-  if (!Array.isArray(parsedComposition)) throw new Error(`generated agent.cordis.yml is not a YAML array (template ${templateName})`)
+  assertCompositionArray(composition, spec)
   writeFileSync(join(outDir, 'agent.cordis.yml'), composition, 'utf8')
 
   // 2) 宿主预设元数据(模板 meta 参数 + 运行时 order)。

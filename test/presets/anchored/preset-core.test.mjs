@@ -54,9 +54,8 @@ function findAllRows(doc, ids) {
   return found
 }
 
-test('buildCordis 开启 subagentFlash 时给 subagent/subagent_fork 加固定 Flash 路由', () => {
+test('buildCordis 设置模型服务商与模型名时给 subagent/subagent_fork 加固定模型路由', () => {
   const out = buildCordis('PROMPT', {
-    subagentFlash: true,
     subagentFlashProvider: 'my-provider',
     subagentFlashModel: 'deepseek-v4-flash-7013',
   })
@@ -104,7 +103,7 @@ test('buildCordis 按配置注入任意正整数 bootstrapMaxTokens', () => {
   assert.equal(row.config.bootstrapMaxTokens, 2048)
 })
 
-test('buildCordis 关闭 subagentFlash 时子代理行不出现 agentOptions', () => {
+test('buildCordis 未设置模型服务商/模型名时子代理行不出现 agentOptions', () => {
   const out = buildCordis('PROMPT')
   const doc = parse(out, { logLevel: 'silent' })
   const row = findAllRows(doc, new Set(['tool-subagent']))[0]

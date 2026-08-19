@@ -2,6 +2,11 @@
 
 :root {
   --pt-accent: var(--dsw-alias-state-business-primary, #1783ff);
+  /* 状态芯片语义 token：实底深色 + 白字，浅/深宿主主题下均保持 ≥ 4.5:1。 */
+  --pt-chip-model: #1d4ed8;
+  --pt-chip-error: #b91c1c;
+  --pt-chip-off: #6b7280;
+  --pt-on-chip: #fff;
 }
 
 .pageShell {
@@ -199,6 +204,7 @@
 .actions button:disabled { cursor: default; opacity: .4; }
 .primaryPill,
 .save {
+  /* !important：覆盖宿主按钮默认 token，主按钮实底反色必须无条件生效。 */
   border-color: transparent !important;
   color: var(--dsw-alias-label-primary-foreground) !important;
   background: var(--dsw-alias-button-primary-fill) !important;
@@ -325,6 +331,7 @@
   min-width: 0;
   align-items: flex-start;
   gap: 8px;
+  flex-wrap: wrap;
   border-top: 1px solid var(--dsw-alias-border-l2);
   padding: 11px 0;
 }
@@ -372,7 +379,7 @@
   padding: 3px 9px;
   border: 1px solid var(--chip);
   border-radius: 999px;
-  color: #fff;
+  color: var(--pt-on-chip);
   background: var(--chip);
   font-size: 11px;
   font-weight: 650;
@@ -382,9 +389,25 @@
 }
 
 /* 实底深色 + 白字，保证浅色/深色宿主主题下都清晰。 */
-.skillStatusModel { --chip: #1d4ed8; }
-.skillStatusError { --chip: #b91c1c; }
-.skillStatusOff { --chip: #6b7280; }
+.skillStatusModel { --chip: var(--pt-chip-model); }
+.skillStatusError { --chip: var(--pt-chip-error); }
+.skillStatusOff { --chip: var(--pt-chip-off); }
+
+/* 技能行键盘排序按钮：垂直双箭头，仅合法技能显示。 */
+.skillOrderButtons {
+  display: inline-flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  align-self: center;
+  gap: 4px;
+}
+.skillOrderButtons .pillButton {
+  height: 22px;
+  padding: 0 9px;
+  border-radius: 11px;
+  font-size: 12px;
+  line-height: 1;
+}
 
 .skillStatusDot {
   width: 6px;
@@ -568,7 +591,7 @@
 }
 .configInput:focus-visible { border-color: var(--dsw-alias-state-business-primary); outline: none; }
 .configInput:disabled { color: var(--dsw-alias-label-tertiary); cursor: default; }
-.configInputError { border-color: var(--dsw-alias-label-error) !important; }
+.configInputError { /* !important：错误态必须压过 :focus-visible 边框。 */ border-color: var(--dsw-alias-label-error) !important; }
 .configTextarea {
   width: 100%;
   min-height: 72px;
@@ -635,7 +658,7 @@
 }
 .actions > span { color: var(--dsw-alias-label-tertiary); font-size: 12px; line-height: 18px; }
 .actions > div { display: flex; gap: 8px; }
-.discard { border-color: var(--dsw-alias-border-l2) !important; color: var(--dsw-alias-label-primary); background: transparent; }
+.discard { /* !important：次级按钮边框不被主按钮实底规则覆盖。 */ border-color: var(--dsw-alias-border-l2) !important; color: var(--dsw-alias-label-primary); background: transparent; }
 
 .settingsNote { margin: -14px 0 0; color: var(--dsw-alias-label-tertiary); font-size: 10px; line-height: 16px; }
 .settingsNote code { color: var(--dsw-alias-label-secondary); font-family: var(--ds-font-family-code, ui-monospace, monospace); }
@@ -660,6 +683,7 @@
 
 @media (max-width: 620px) {
   .page { gap: 24px; }
+  .textarea { min-height: 260px; }
   .settingRow,
   .toggleRow { align-items: stretch; flex-direction: column; gap: 9px; }
   .directoryControl { max-width: none; justify-content: space-between; }

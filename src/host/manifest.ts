@@ -31,7 +31,6 @@ export interface PresetSpec {
   hostDefaults?: Record<string, unknown>
   /** 可选:模板自定义提示词配置覆盖(纯数据,不使用模板语法)。 */
   promptConfigs?: unknown[]
-  settingsExtension?: Record<string, unknown>
   legacyCleanup?: string[]
   upstream?: Record<string, unknown>
 }
@@ -88,14 +87,14 @@ export function loadPresetContent(template = 'anchored'): { presetText: string; 
   }
 }
 
-const asString = (value: unknown, fallback = ''): string => {
+export const asString = (value: unknown, fallback = ''): string => {
   if (typeof value === 'string') return value
   if (value === undefined || value === null) return fallback
   return String(value)
 }
 
 /** on/off 等字面开关归一化为布尔。 */
-function normalizeParam(value: unknown): unknown {
+export function normalizeParam(value: unknown): unknown {
   if (value === 'on') return true
   if (value === 'off') return false
   return value
@@ -137,14 +136,15 @@ function interpolateNested(text: string, scope: Record<string, unknown>): string
 
 /**
  * 引擎内部 token 渲染:把直读参数变成组合模块里的 __TOKEN__ 值。
- * anchored 的全部组合行为(usePtcMode/bootstrapMaxTokens/subagentFlash/flashPersona)
+ * anchored 的全部组合行为(usePtcMode/bootstrapMaxTokens/子代理固定模型路由/flashPersona)
  * 在这里完成参数化,用户参数文件不需要任何模板语法。
  */
 export function renderEngineTokens(params: Record<string, unknown>): Record<string, string> {
   const flashPersona = asString(params.flashPersona)
-  const provider = asString(params.subagentFlashProvider, 'deepseek-official')
-  const model = asString(params.subagentFlashModel, 'deepseek-v4-flash')
-  const subagentFlashBlock = params.subagentFlash === true
+  const provider = asString(params.subagentFlashProvider, '')
+  const model = asString(params.subagentFlashModel, '')
+  // 服务商与模型名同时非空才注入子代理固定路由；任一为空 = 子代理继承主会话模型。
+  const subagentFlashBlock = provider.length > 0 && model.length > 0
     ? interpolateNested(
         'agentOptions:\n  provider: {{subagentFlashProvider}}\n  model: {{subagentFlashModel}}\npersona: |-\n  {{flashPersona}}',
         { subagentFlashProvider: provider, subagentFlashModel: model, flashPersona },
@@ -204,6 +204,15 @@ export function loadCompositionText(spec: PresetSpec): string {
     return raw
   }
   throw new Error(`preset ${spec.id}: no modules list and no composition declared`)
+}
+
+/** 组合文本基础校验（模板无关）：无未解析 token，且必须是 YAML 数组。 */
+export function assertCompositionArray(raw: string, spec: PresetSpec): unknown[] {
+  const unresolved = raw.match(/__[A-Z0-9_]+__/g)
+  if (unresolved !== null) throw new Error(`generated agent.cordis.yml has unresolved variables: ${unresolved.join(', ')}`)
+  const parsed = parseYaml(raw, { logLevel: 'silent' })
+  if (!Array.isArray(parsed)) throw new Error(`generated agent.cordis.yml is not a YAML array (preset ${spec.id})`)
+  return parsed
 }
 
 /**

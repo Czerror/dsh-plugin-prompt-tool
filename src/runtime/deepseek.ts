@@ -38,7 +38,7 @@ export function detectDeepseek(ctx: Context): DeepseekDetection {
   }
 }
 
-/** 给宿主直派的子代理补 Flash 路由；调用方显式 provider/model 优先，不覆盖 persona 与工具白名单。 */
+/** 给宿主直派的子代理补固定模型路由（服务商 + 模型名同时非空时生效）；调用方显式 provider/model 优先，不覆盖 persona 与工具白名单。 */
 export function installSubagentFlashRoute(ctx: Context, isEnabled: () => boolean, provider: () => string, model: () => string): void {
   ctx.inject(['subagents'], (sctx: Context) => {
     const service = sctx.get('subagents') as { start?: (name: string, request: Record<string, unknown>) => unknown } | undefined

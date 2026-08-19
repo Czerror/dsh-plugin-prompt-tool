@@ -31,7 +31,7 @@ const lib: UserConfig = {
   platform: 'node',
   target: 'es2024',
   dts: true,
-  clean: false,
+  clean: true,
   deps: { neverBundle: ['@deepseek-ai/cordis'] },
 }
 
@@ -43,7 +43,7 @@ const client: UserConfig = {
   platform: 'browser',
   dts: false,
   sourcemap: true,
-  clean: false,
+  clean: true,
   deps: {
     neverBundle: CLIENT_EXTERNALS,
     alwaysBundle: (id: string) => (CLIENT_EXTERNALS.includes(id) ? undefined : true),
