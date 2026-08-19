@@ -8,7 +8,8 @@ import type {
 } from '@deepseek-ai/dsh-skill'
 import type { SettingsPathOp } from '@deepseek-ai/dsh-settings'
 import type {} from '@deepseek-ai/dsh-host-webserver'
-import { rmSync, watch, type FSWatcher } from 'node:fs'
+import { rmSync } from 'node:fs'
+import { createSkillsWatcher } from './runtime/skills-watcher.ts'
 import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
@@ -26,8 +27,6 @@ import { removeResidentAgentsBlock, writeAgents } from './runtime/agents-file.ts
 import { writePreset } from './host/write-preset.ts'
 import {
   Config,
-  DEFAULT_SKILLS_DIR,
-  DSH_HOME,
   NS,
   normalizeAnchorText,
   PromptSettings,
@@ -36,6 +35,7 @@ import {
   SkillCatalogEntry,
   SkillEntry,
 } from './config.ts'
+import { DEFAULT_SKILLS_DIR, DSH_HOME } from './host/paths.ts'
 
 export const name = 'prompt-tool'
 // 内容走 user 层（AGENTS.md 常驻层 + skill 按需层），
@@ -193,39 +193,20 @@ export function apply(ctx: Context, configIn: Config): void {
   let skillCatalog: SkillCatalogEntry[] = catalogOf(readSkillsChecked(activeSkillsDir))
 
   // 技能目录热更新：新增/删除/改名技能目录后，catalog 与注册表缓存一起刷新。
-  let skillsWatcher: FSWatcher | undefined
-  let skillsWatcherTimer: NodeJS.Timeout | undefined
-  const closeSkillsWatcher = (): void => {
-    if (skillsWatcherTimer !== undefined) clearTimeout(skillsWatcherTimer)
-    skillsWatcherTimer = undefined
-    skillsWatcher?.close()
-    skillsWatcher = undefined
-  }
-  const watchActiveSkillsDir = (): void => {
-    closeSkillsWatcher()
-    try {
-      skillsWatcher = watch(activeSkillsDir, { persistent: false }, () => {
-        if (skillsWatcherTimer !== undefined) clearTimeout(skillsWatcherTimer)
-        skillsWatcherTimer = setTimeout(() => {
-          skillsWatcherTimer = undefined
-          skillCatalog = catalogOf(readSkillsChecked(activeSkillsDir))
-          cachedSkills.invalidate(activeSkillsDir); invalidateSkills?.()
-        }, 300)
-      })
-    } catch {
-      // 目录不可 watch 时降级为目录切换时重扫，不阻断启动。
-    }
-  }
-  watchActiveSkillsDir()
+  const skillsWatcher = createSkillsWatcher(() => activeSkillsDir, () => {
+    skillCatalog = catalogOf(readSkillsChecked(activeSkillsDir))
+    cachedSkills.invalidate(activeSkillsDir); invalidateSkills?.()
+  })
+  skillsWatcher.watch()
   // 插件卸载时关闭技能目录 watcher，避免泄漏与对已卸载 provider 的无效刷新。
-  ctx.effect(() => () => closeSkillsWatcher())
+  ctx.effect(() => () => skillsWatcher.close())
 
   /** 切换生效技能目录并刷新目录快照（供 describe / TUI 显示）。 */
   const applyActiveSkillsDir = (dir: string): void => {
     activeSkillsDir = dir
     cachedSkills.invalidate(dir)
     skillCatalog = catalogOf(readSkillsChecked(dir))
-    watchActiveSkillsDir()
+    skillsWatcher.watch()
   }
 
   /** 用户 skillsDir 设置 → 实际生效目录。 */
@@ -334,7 +315,6 @@ export function apply(ctx: Context, configIn: Config): void {
     anchorCustom: config.anchorCustom,
     guideText: config.guideText,
     guideCustom: config.guideCustom,
-    subagentFlash: config.subagentFlash && getDeepseekAvailable(),
     subagentFlashProvider: config.subagentFlashProvider,
     subagentFlashModel: config.subagentFlashModel,
     bootstrapMaxTokens: config.bootstrapMaxTokens,
@@ -348,9 +328,14 @@ export function apply(ctx: Context, configIn: Config): void {
     promptConfigsDir: typeof config.promptConfigsDir === 'string' ? config.promptConfigsDir : '',
   }
 
-  // 宿主直派子代理（如 dsh-mnemon）也按开关补 Flash 路由；
-  // 调用方显式模型优先，persona 与 toolFilter 保持不变。
-  installSubagentFlashRoute(ctx, () => runtime.subagentFlash, () => runtime.subagentFlashProvider, () => runtime.subagentFlashModel)
+  // 宿主直派子代理（如 dsh-mnemon）也补固定模型路由：
+  // 服务商与模型名同时非空时生效；调用方显式模型优先，persona 与 toolFilter 保持不变。
+  installSubagentFlashRoute(
+    ctx,
+    () => runtime.subagentFlashProvider.length > 0 && runtime.subagentFlashModel.length > 0,
+    () => runtime.subagentFlashProvider,
+    () => runtime.subagentFlashModel,
+  )
 
   let currentSource = (): PromptSettings => ({
     promptText: current,
@@ -363,7 +348,6 @@ export function apply(ctx: Context, configIn: Config): void {
     anchorCustom: runtime.anchorCustom,
     guideText: runtime.guideText,
     guideCustom: runtime.guideCustom,
-    subagentFlash: runtime.subagentFlash,
     subagentFlashProvider: runtime.subagentFlashProvider,
     subagentFlashModel: runtime.subagentFlashModel,
     bootstrapMaxTokens: runtime.bootstrapMaxTokens,
@@ -407,7 +391,6 @@ export function apply(ctx: Context, configIn: Config): void {
       anchorCustom: typeof next.anchorCustom === 'boolean' ? next.anchorCustom : config.anchorCustom,
       guideText: typeof next.guideText === 'string' ? next.guideText : config.guideText,
       guideCustom: typeof next.guideCustom === 'boolean' ? next.guideCustom : config.guideCustom,
-      subagentFlash: (typeof next.subagentFlash === 'boolean' ? next.subagentFlash : config.subagentFlash) && getDeepseekAvailable(),
       subagentFlashProvider: typeof next.subagentFlashProvider === 'string' ? next.subagentFlashProvider : config.subagentFlashProvider,
       subagentFlashModel: typeof next.subagentFlashModel === 'string' ? next.subagentFlashModel : config.subagentFlashModel,
       bootstrapMaxTokens: Number.isSafeInteger(next.bootstrapMaxTokens) && next.bootstrapMaxTokens >= 0 ? next.bootstrapMaxTokens : config.bootstrapMaxTokens,
@@ -441,7 +424,6 @@ export function apply(ctx: Context, configIn: Config): void {
       || runtime.anchorCustom !== nextRuntime.anchorCustom
       || runtime.guideText !== nextRuntime.guideText
       || runtime.guideCustom !== nextRuntime.guideCustom
-      || runtime.subagentFlash !== nextRuntime.subagentFlash
       || runtime.subagentFlashProvider !== nextRuntime.subagentFlashProvider
       || runtime.subagentFlashModel !== nextRuntime.subagentFlashModel
       || runtime.bootstrapMaxTokens !== nextRuntime.bootstrapMaxTokens
@@ -472,7 +454,6 @@ export function apply(ctx: Context, configIn: Config): void {
     runtime.anchorCustom = nextRuntime.anchorCustom
     runtime.guideText = nextRuntime.guideText
     runtime.guideCustom = nextRuntime.guideCustom
-    runtime.subagentFlash = nextRuntime.subagentFlash
     runtime.subagentFlashProvider = nextRuntime.subagentFlashProvider
     runtime.subagentFlashModel = nextRuntime.subagentFlashModel
     runtime.bootstrapMaxTokens = nextRuntime.bootstrapMaxTokens
@@ -515,7 +496,6 @@ export function apply(ctx: Context, configIn: Config): void {
         guideText: runtime.guideText,
         guideCustom: runtime.guideCustom,
         injectPrompt: runtime.injectPrompt,
-        subagentFlash: runtime.subagentFlash,
         subagentFlashProvider: runtime.subagentFlashProvider,
         subagentFlashModel: runtime.subagentFlashModel,
         bootstrapMaxTokens: runtime.bootstrapMaxTokens,
@@ -549,7 +529,6 @@ export function apply(ctx: Context, configIn: Config): void {
     anchorCustom: config.anchorCustom,
     guideText: config.guideText,
     guideCustom: config.guideCustom,
-    subagentFlash: config.subagentFlash && getDeepseekAvailable(),
     subagentFlashProvider: config.subagentFlashProvider,
     subagentFlashModel: config.subagentFlashModel,
     bootstrapMaxTokens: config.bootstrapMaxTokens,
@@ -633,3 +612,7 @@ export type { CachedSkillsReader } from './runtime/skills-provider.ts'
 export { fixSkillEntry, toKebabName } from './runtime/skill-fix.ts'
 export type { SkillFixResult } from './runtime/skill-fix.ts'
 export type { SkillEntry, SkillCatalogEntry } from './config.ts'
+export { BRIDGE_ENDPOINTS, SETTINGS_BRIDGE_PREFIX } from './shared/bridge-contract.ts'
+export type { BridgeEndpoint, BridgeErrorPayload } from './shared/bridge-contract.ts'
+export { parseFrontmatter } from './runtime/skills-parse.ts'
+export type { SkillFrontmatter } from './runtime/skills-parse.ts'

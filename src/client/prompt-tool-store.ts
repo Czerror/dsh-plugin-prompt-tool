@@ -6,10 +6,17 @@ import type {
 } from '@deepseek-ai/dsh-client-connection/client'
 import type { SettingsScope, SettingsScopeSnapshot } from '@deepseek-ai/dsh-client-runtime/client'
 import type { EngineMeta, PromptConfigDraft } from './prompt-tool-types.ts'
+import {
+  EMPTY_FIELDS,
+  EMPTY_META,
+  bridgePost,
+  errorMessage,
+  fieldsFromView,
+  type BridgeResult,
+  type BridgeSettingsView,
+  type Fields,
+} from './prompt-tool-bridge.ts'
 
-export const SETTINGS_BRIDGE_PREFIX = '/api/prompt-tool/settings'
-
-export interface BridgeSettingsView { ns: string; value: unknown; base?: unknown; revision: number }
 /** rc8 ui-settings 共享镜像传输面：标准字段经官方 settingsScope 读写。 */
 export interface PromptToolSettingsTransport {
   /** 宿主注册的 prompt-tool settings namespace 绑定。 */
@@ -19,100 +26,6 @@ export interface PromptToolSettingsTransport {
   /** 批量 path-op 写入；成功后已把应答 fold 回共享 mirror。 */
   mutate: (ops: SettingsPathOpView[], expectedRevision?: number) => Promise<SettingsNamespaceView>
 }
-export type BridgeResult<T> = { ok: true; value: T; deepseekAvailable?: boolean; deepseekProviders?: string[]; deepseekError?: string; activeSkillsDir?: string; skillCatalog?: SkillCatalogEntry[] } | { ok: false; code?: string; message?: string }
-
-export interface SkillCatalogEntry {
-  folder: string
-  name: string
-  description: string
-  valid: boolean
-  issue?: string
-  modelInvocable: boolean
-  userInvocable: boolean
-}
-
-export interface Fields {
-  promptText: string
-  promptPath: string
-  agentsText: string
-  agentsPath: string
-  injectAgentsPrompt: boolean
-  anchorFirstTurn: boolean
-  anchorText: string
-  anchorCustom: boolean
-  guideText: string
-  guideCustom: boolean
-  subagentFlash: boolean
-  subagentFlashProvider: string
-  subagentFlashModel: string
-  bootstrapMaxTokens: number
-  usePtcMode: boolean
-  injectPrompt: boolean
-  skillSwitches: Record<string, boolean>
-  skillOrder: string[]
-  skillCatalog: SkillCatalogEntry[]
-  skillsDir: string
-  activeSkillsDir: string
-  skillRankBase: number
-  residentAgentsPath: string
-  presetDir: string
-  presetOrder: number
-  fallbackText: string
-  writeAgents: boolean
-  writePreset: boolean
-  presetTemplate: string
-  promptConfigs: PromptConfigDraft[]
-  promptConfigsDir: string
-}
-
-export const EMPTY_META: EngineMeta = {
-  layers: [],
-  strategies: [],
-  slotKinds: [],
-  positions: [],
-  dedupes: [],
-  promotions: [],
-  subagentModes: [],
-  modelScopes: [],
-  roles: [],
-  mergeModes: [],
-  fills: [],
-  layerFieldPolicies: {},
-  layerLabels: {},
-}
-export const EMPTY_FIELDS: Fields = {
-  promptText: '',
-  promptPath: '',
-  agentsText: '',
-  agentsPath: '',
-  injectAgentsPrompt: false,
-  anchorFirstTurn: false,
-  anchorText: '',
-  anchorCustom: false,
-  guideText: '',
-  guideCustom: false,
-  subagentFlash: false,
-  subagentFlashProvider: 'deepseek-official',
-  subagentFlashModel: 'deepseek-v4-flash',
-  bootstrapMaxTokens: 0,
-  usePtcMode: true,
-  injectPrompt: true,
-  skillSwitches: {},
-  skillOrder: [],
-  skillCatalog: [],
-  skillsDir: '',
-  activeSkillsDir: '',
-  skillRankBase: 250,
-  residentAgentsPath: '',
-  presetDir: '',
-  presetOrder: 5,
-  fallbackText: '',
-  writeAgents: true,
-  writePreset: true,
-  presetTemplate: 'anchored',
-  promptConfigs: [],
-  promptConfigsDir: '',
-}
 
 export interface SwitchSnapshot {
   injectAgentsPrompt: boolean
@@ -121,7 +34,6 @@ export interface SwitchSnapshot {
   anchorCustom: boolean
   guideText: string
   guideCustom: boolean
-  subagentFlash: boolean
   subagentFlashProvider: string
   subagentFlashModel: string
   bootstrapMaxTokens: number
@@ -146,9 +58,8 @@ const EMPTY_SWITCHES: SwitchSnapshot = {
   anchorCustom: false,
   guideText: '',
   guideCustom: false,
-  subagentFlash: false,
-  subagentFlashProvider: 'deepseek-official',
-  subagentFlashModel: 'deepseek-v4-flash',
+  subagentFlashProvider: '',
+  subagentFlashModel: '',
   bootstrapMaxTokens: 0,
   usePtcMode: true,
   injectPrompt: true,
@@ -174,7 +85,6 @@ export const snapshotSwitches = (fields: Fields): SwitchSnapshot => ({
   anchorCustom: fields.anchorCustom,
   guideText: fields.guideText,
   guideCustom: fields.guideCustom,
-  subagentFlash: fields.subagentFlash,
   subagentFlashProvider: fields.subagentFlashProvider,
   subagentFlashModel: fields.subagentFlashModel,
   bootstrapMaxTokens: fields.bootstrapMaxTokens,
@@ -199,7 +109,6 @@ const switchesEqual = (a: SwitchSnapshot, b: SwitchSnapshot): boolean =>
   && a.anchorCustom === b.anchorCustom
   && a.guideText === b.guideText
   && a.guideCustom === b.guideCustom
-  && a.subagentFlash === b.subagentFlash
   && a.subagentFlashProvider === b.subagentFlashProvider
   && a.subagentFlashModel === b.subagentFlashModel
   && a.bootstrapMaxTokens === b.bootstrapMaxTokens
@@ -216,151 +125,13 @@ const switchesEqual = (a: SwitchSnapshot, b: SwitchSnapshot): boolean =>
   && a.writeAgents === b.writeAgents
   && a.writePreset === b.writePreset
 
-const asRecord = (value: unknown): Record<string, unknown> =>
-  value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
-
-const readString = (source: Record<string, unknown>, key: string): string | undefined => {
-  const value = source[key]
-  return typeof value === 'string' ? value : undefined
-}
-
-const readStringArray = (source: Record<string, unknown>, key: string): string[] => {
-  const value = source[key]
-  return Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === 'string') : []
-}
-
-const readBoolean = (source: Record<string, unknown>, key: string, fallback: boolean): boolean => {
-  const value = source[key]
-  return typeof value === 'boolean' ? value : fallback
-}
-
-const readNumber = (source: Record<string, unknown>, key: string, fallback: number): number => {
-  const value = source[key]
-  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : fallback
-}
-
-const readSkillSwitches = (source: Record<string, unknown>, key: string): Record<string, boolean> => {
-  const value = source[key]
-  if (value === null || typeof value !== 'object') return {}
-  const entries = Object.entries(value as Record<string, unknown>)
-  const result: Record<string, boolean> = {}
-  for (const [name, enabled] of entries) {
-    if (typeof enabled === 'boolean') result[name] = enabled
-  }
-  return result
-}
-
-const readSkillCatalog = (source: Record<string, unknown>, key: string): SkillCatalogEntry[] => {
-  const value = source[key]
-  if (!Array.isArray(value)) return []
-  return value.flatMap((entry) => {
-    if (entry === null || typeof entry !== 'object') return []
-    const record = entry as Record<string, unknown>
-    const folder = readString(record, 'folder')
-    const name = readString(record, 'name')
-    if (folder === undefined || name === undefined) return []
-    return [{
-      folder,
-      name,
-      description: readString(record, 'description') ?? '',
-      // 向后兼容旧宿主：旧版 /describe 只返回 folder/name/description（且旧扫描
-      // 已过滤非法名），缺字段按旧语义默认 true；新版宿主显式携带 valid=false。
-      valid: readBoolean(record, 'valid', true),
-      ...(typeof record.issue === 'string' && record.issue.length > 0 ? { issue: record.issue } : {}),
-      modelInvocable: readBoolean(record, 'modelInvocable', true),
-      userInvocable: readBoolean(record, 'userInvocable', true),
-    }]
-  })
-}
-
-const readPromptConfigs = (source: Record<string, unknown>, key: string): PromptConfigDraft[] => {
-  const value = source[key]
-  if (!Array.isArray(value)) return []
-  return value.flatMap((entry) => {
-    if (entry === null || typeof entry !== 'object') return []
-    const record = entry as Record<string, unknown>
-    return typeof record.id === 'string' && record.id.length > 0 ? [entry as PromptConfigDraft] : []
-  })
-}
-
-export const errorMessage = (error: unknown): string => error instanceof Error ? error.message : String(error)
-
-export async function bridgePost<T>(path: string, body: unknown): Promise<BridgeResult<T>> {
-  try {
-    const response = await fetch(SETTINGS_BRIDGE_PREFIX + path, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(body),
-    })
-    const payload = await response.json() as unknown
-    if (payload !== null && typeof payload === 'object') return payload as BridgeResult<T>
-    return { ok: false, message: 'settings bridge unavailable' }
-  } catch (error) {
-    return { ok: false, message: errorMessage(error) }
-  }
-}
-
-export function fieldsFromView(res: BridgeResult<BridgeSettingsView>): Fields {
-  const ns = res.ok ? res.value : undefined
-  const value = asRecord(ns?.value)
-  const base = asRecord(ns?.base)
-  const next: Fields = {
-    promptText: readString(value, 'promptText') ?? readString(base, 'promptText') ?? '',
-    promptPath: readString(value, 'promptPath') ?? readString(base, 'promptPath') ?? '',
-    agentsText: readString(value, 'agentsText') ?? readString(base, 'agentsText') ?? '',
-    agentsPath: readString(value, 'agentsPath') ?? readString(base, 'agentsPath') ?? '',
-    injectAgentsPrompt: readBoolean(value, 'injectAgentsPrompt', readBoolean(base, 'injectAgentsPrompt', false)),
-    anchorFirstTurn: readBoolean(value, 'anchorFirstTurn', readBoolean(base, 'anchorFirstTurn', false)),
-    anchorText: readString(value, 'anchorText') ?? readString(base, 'anchorText') ?? '',
-    anchorCustom: readBoolean(value, 'anchorCustom', readBoolean(base, 'anchorCustom', false)),
-    guideText: readString(value, 'guideText') ?? readString(base, 'guideText') ?? '',
-    guideCustom: readBoolean(value, 'guideCustom', readBoolean(base, 'guideCustom', false)),
-    subagentFlash: readBoolean(value, 'subagentFlash', readBoolean(base, 'subagentFlash', false)),
-    subagentFlashProvider: readString(value, 'subagentFlashProvider') ?? readString(base, 'subagentFlashProvider') ?? 'deepseek-official',
-    subagentFlashModel: readString(value, 'subagentFlashModel') ?? readString(base, 'subagentFlashModel') ?? 'deepseek-v4-flash',
-    bootstrapMaxTokens: readNumber(value, 'bootstrapMaxTokens', readNumber(base, 'bootstrapMaxTokens', 0)),
-    usePtcMode: readBoolean(value, 'usePtcMode', readBoolean(base, 'usePtcMode', true)),
-    injectPrompt: readBoolean(value, 'injectPrompt', readBoolean(base, 'injectPrompt', true)),
-    skillSwitches: value.skillSwitches !== undefined || base.skillSwitches !== undefined
-      ? { ...readSkillSwitches(base, 'skillSwitches'), ...readSkillSwitches(value, 'skillSwitches') }
-      : {},
-    skillOrder: readStringArray(value, 'skillOrder').length > 0
-      ? readStringArray(value, 'skillOrder')
-      : readStringArray(base, 'skillOrder'),
-    skillCatalog: res.ok && res.skillCatalog !== undefined && res.skillCatalog.length > 0
-      ? res.skillCatalog
-      : readSkillCatalog(value, 'skillCatalog').length > 0
-        ? readSkillCatalog(value, 'skillCatalog')
-        : readSkillCatalog(base, 'skillCatalog'),
-    skillsDir: readString(value, 'skillsDir') ?? readString(base, 'skillsDir') ?? '',
-    activeSkillsDir: res.ok && res.activeSkillsDir !== undefined
-      ? res.activeSkillsDir
-      : readString(value, 'activeSkillsDir') ?? readString(base, 'activeSkillsDir') ?? '',
-    skillRankBase: readNumber(value, 'skillRankBase', readNumber(base, 'skillRankBase', 250)),
-    residentAgentsPath: readString(value, 'residentAgentsPath') ?? readString(base, 'residentAgentsPath') ?? '',
-    presetDir: readString(value, 'presetDir') ?? readString(base, 'presetDir') ?? '',
-    presetOrder: readNumber(value, 'presetOrder', readNumber(base, 'presetOrder', 5)),
-    fallbackText: readString(value, 'fallbackText') ?? readString(base, 'fallbackText') ?? '',
-    writeAgents: readBoolean(value, 'writeAgents', readBoolean(base, 'writeAgents', true)),
-    writePreset: readBoolean(value, 'writePreset', readBoolean(base, 'writePreset', true)),
-    presetTemplate: readString(value, 'presetTemplate') ?? readString(base, 'presetTemplate') ?? 'anchored',
-    promptConfigs: value.promptConfigs !== undefined
-      ? readPromptConfigs(value, 'promptConfigs')
-      : readPromptConfigs(base, 'promptConfigs'),
-    promptConfigsDir: readString(value, 'promptConfigsDir') ?? readString(base, 'promptConfigsDir') ?? '',
-  }
-  return next
-}
-
-export type SwitchKey = 'injectAgentsPrompt' | 'anchorFirstTurn' | 'anchorCustom' | 'guideCustom' | 'subagentFlash' | 'injectPrompt' | 'usePtcMode' | 'writeAgents' | 'writePreset'
+export type SwitchKey = 'injectAgentsPrompt' | 'anchorFirstTurn' | 'anchorCustom' | 'guideCustom' | 'injectPrompt' | 'usePtcMode' | 'writeAgents' | 'writePreset'
 
 export interface PromptToolStore {
   fields: Fields
   meta: EngineMeta
   loading: boolean
-  deepseekAvailable: boolean
   deepseekProviders: string[]
-  deepseekError: string
   bootstrapTokensDraft: string
   skillsDirDraft: string
   savedPromptText: string
@@ -449,18 +220,14 @@ function bridgeViewFromScope(
       base: snapshot.base,
       revision: snapshot.revision ?? 0,
     },
-    deepseekAvailable: runtime.ok ? runtime.deepseekAvailable : undefined,
     deepseekProviders: runtime.ok ? runtime.deepseekProviders : undefined,
-    deepseekError: runtime.ok ? runtime.deepseekError : undefined,
     activeSkillsDir: runtime.ok ? runtime.activeSkillsDir : undefined,
     skillCatalog: runtime.ok ? runtime.skillCatalog : undefined,
   }
 }
 
 export function usePromptToolStore(api: IApiClient, settings: PromptToolSettingsTransport): PromptToolStore {
-  const [deepseekAvailable, setDeepseekAvailable] = useState(false)
   const [deepseekProviders, setDeepseekProviders] = useState<string[]>([])
-  const [deepseekError, setDeepseekError] = useState('')
   const [fields, setFields] = useState<Fields>(EMPTY_FIELDS)
   const [meta, setMeta] = useState<EngineMeta>(EMPTY_META)
   const [bootstrapTokensDraft, setBootstrapTokensDraft] = useState(DEFAULT_BOOTSTRAP_DISPLAY)
@@ -487,9 +254,7 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
   }, [])
 
   const applyView = useCallback((res: BridgeResult<BridgeSettingsView>): Fields => {
-    setDeepseekAvailable(res.ok && res.deepseekAvailable === true)
     setDeepseekProviders(res.ok ? res.deepseekProviders ?? [] : [])
-    setDeepseekError(res.ok ? res.deepseekError ?? '' : '')
     const next = fieldsFromView(res)
     fieldsRef.current = next
     setFields(next)
@@ -585,7 +350,6 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
       { op: 'set', path: ['anchorCustom'], value: fieldsRef.current.anchorCustom },
       { op: 'set', path: ['guideText'], value: fieldsRef.current.guideText },
       { op: 'set', path: ['guideCustom'], value: fieldsRef.current.guideCustom },
-      { op: 'set', path: ['subagentFlash'], value: fieldsRef.current.subagentFlash },
       { op: 'set', path: ['subagentFlashProvider'], value: fieldsRef.current.subagentFlashProvider },
       { op: 'set', path: ['subagentFlashModel'], value: fieldsRef.current.subagentFlashModel },
       { op: 'set', path: ['bootstrapMaxTokens'], value: fieldsRef.current.bootstrapMaxTokens },
@@ -619,13 +383,9 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
   ), [enqueueSave])
 
   const toggle = useCallback((key: SwitchKey) => {
-    if (key === 'subagentFlash' && !deepseekAvailable) {
-      showNotice('error', '未检测到 DeepSeek 模型配置，子代理 Flash 开关不可用')
-      return
-    }
     patch({ [key]: !fieldsRef.current[key] })
     persistSwitches()
-  }, [deepseekAvailable, patch, persistSwitches, showNotice])
+  }, [patch, persistSwitches])
 
   const toggleBootstrapMaxTokens = useCallback(() => {
     const next = fieldsRef.current.bootstrapMaxTokens > 0 ? 0 : 256000
@@ -721,9 +481,7 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
     fields,
     meta,
     loading,
-    deepseekAvailable,
     deepseekProviders,
-    deepseekError,
     bootstrapTokensDraft,
     skillsDirDraft,
     savedPromptText,

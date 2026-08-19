@@ -1,5 +1,11 @@
 # prompt-tool v4 架构设计：skill-catalog 数据源与提示词配置编辑面
 
+> ## 2026-08-20 深度重构变更记录（追加）
+>
+> - **跨端契约单点**：`src/shared/bridge-contract.ts` 是 settings bridge 前缀、8 端点路径与失败载荷的唯一来源；host（`runtime/settings-bridge.ts`）注册与 client（`client/prompt-tool-bridge.ts` 传输层）消费共用，契约测试 `test/shared/bridge-contract.test.mjs` 锁定。
+> - **目录新增**：`src/host/paths.ts`（部署路径/序数常量）、`src/runtime/skills-parse.ts`（skills frontmatter 解析）、`src/runtime/skills-watcher.ts`（技能目录 watcher）、`src/client/prompt-tool-bridge.ts`（bridge 传输+载荷解析）、`src/client/PromptConfigCard.tsx`（卡片/表单组件）。
+> - **分层纪律修正**：host 层不再反向依赖 config 常量；client 组件图无环（`Editor → List → Card → types`）。
+
 > 状态：架构设计文档（仅设计，不改代码）
 > 输入：`plan.md`、`prompt-tool-v3` 交接文档、`src/`、`preset/engine/`、`test/` 全量勘察
 > 日期：2026-08-18

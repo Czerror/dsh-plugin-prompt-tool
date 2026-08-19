@@ -9,7 +9,7 @@
  */
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
-import { parseFrontmatter } from '../preset-core.ts'
+import { parseFrontmatter } from './skills-parse.ts'
 import type { SkillEntry } from '../config.ts'
 
 /** 官方 dsh-skill 的 SkillName 契约：kebab-case。 */

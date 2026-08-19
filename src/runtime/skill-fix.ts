@@ -10,7 +10,7 @@
 import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join, resolve, sep } from 'node:path'
 import { randomBytes } from 'node:crypto'
-import { parseFrontmatter } from '../preset-core.ts'
+import { parseFrontmatter } from './skills-parse.ts'
 import { SKILL_NAME_RE } from './skills-provider.ts'
 
 export interface SkillFixResult {

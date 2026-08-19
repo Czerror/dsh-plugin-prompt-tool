@@ -9,8 +9,8 @@ import { loadPromptConfigFiles, mergePromptConfigs } from '../host/prompt-config
 import { validatePromptConfigs } from './configs-validate.ts'
 import { loadPromptTemplates } from '../host/templates.ts'
 import { fixSkillEntry } from './skill-fix.ts'
+import { BRIDGE_ENDPOINTS, SETTINGS_BRIDGE_PREFIX } from '../shared/bridge-contract.ts'
 
-export const SETTINGS_BRIDGE_PREFIX = '/api/prompt-tool/settings'
 const MAX_SETTINGS_BRIDGE_BODY = 64 * 1024
 
 export interface SkillsBridgeState {
@@ -124,19 +124,19 @@ export function registerSettingsBridge(
       const disposers = [
         sctx.webServer.register({
           kind: 'exact',
-          path: SETTINGS_BRIDGE_PREFIX + '/meta',
+          path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.meta,
           handler: async (req, res) => {
             if (!guard(req, res)) return
             const engineMetaUrl = new URL('../engine/schema.mjs', import.meta.url)
             const { getEngineMeta } = await import(engineMetaUrl.href) as {
               getEngineMeta: () => Record<string, unknown>
             }
-            writeBridgeJson(res, 200, { ok: true, meta: getEngineMeta() })
+            writeBridgeJson(res, 200, { ok: true, value: { meta: getEngineMeta() } })
           },
         }),
         sctx.webServer.register({
           kind: 'exact',
-          path: SETTINGS_BRIDGE_PREFIX + '/describe',
+          path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.describe,
           handler: async (req, res) => {
             if (!guard(req, res)) return
             ensureRegistered(sctx)
@@ -160,7 +160,7 @@ export function registerSettingsBridge(
         }),
         sctx.webServer.register({
           kind: 'exact',
-          path: SETTINGS_BRIDGE_PREFIX + '/mutate',
+          path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.mutate,
           handler: async (req, res) => {
             if (!guard(req, res)) return
             ensureRegistered(sctx)
@@ -192,7 +192,7 @@ export function registerSettingsBridge(
         }),
         sctx.webServer.register({
           kind: 'exact',
-          path: SETTINGS_BRIDGE_PREFIX + '/restore-originals',
+          path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.restoreOriginals,
           handler: async (req, res) => {
             if (!guard(req, res)) return
             ensureRegistered(sctx)
@@ -227,7 +227,7 @@ export function registerSettingsBridge(
         }),
         sctx.webServer.register({
           kind: 'exact',
-          path: SETTINGS_BRIDGE_PREFIX + '/configs-validate',
+          path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.configsValidate,
           handler: async (req, res) => {
             if (!guard(req, res)) return
             const body = await readBridgeBody(req)
@@ -237,12 +237,12 @@ export function registerSettingsBridge(
             }
             const record = body as Record<string, unknown>
             const result = await validatePromptConfigs(record.promptConfigs, { strategyDir: getEngineStrategyDir() })
-            writeBridgeJson(res, 200, { ok: true, ...result })
+            writeBridgeJson(res, 200, { ok: true, value: result })
           },
         }),
         sctx.webServer.register({
           kind: 'exact',
-          path: SETTINGS_BRIDGE_PREFIX + '/import-directory',
+          path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.importDirectory,
           handler: async (req, res) => {
             if (!guard(req, res)) return
             ensureRegistered(sctx)
@@ -298,7 +298,7 @@ export function registerSettingsBridge(
         }),
         sctx.webServer.register({
           kind: 'exact',
-          path: SETTINGS_BRIDGE_PREFIX + '/skill-fix',
+          path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.skillFix,
           handler: async (req, res) => {
             if (!guard(req, res)) return
             ensureRegistered(sctx)
@@ -355,12 +355,12 @@ export function registerSettingsBridge(
         }),
         sctx.webServer.register({
           kind: 'exact',
-          path: SETTINGS_BRIDGE_PREFIX + '/templates',
+          path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.templates,
           handler: async (req, res) => {
             if (!guard(req, res)) return
             try {
               const templates = loadPromptTemplates()
-              writeBridgeJson(res, 200, { ok: true, templates })
+              writeBridgeJson(res, 200, { ok: true, value: { templates } })
             } catch (error) {
               const message = error instanceof Error ? error.message : String(error)
               writeBridgeJson(res, 500, { ok: false, code: 'templates-unavailable', message })

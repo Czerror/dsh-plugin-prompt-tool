@@ -62,3 +62,10 @@ export interface EngineMeta {
   layerFieldPolicies: Record<string, LayerFieldPolicy>
   layerLabels: Record<string, { title: string; detail: string }>
 }
+
+/** 配置校验错误条目（编辑器导入失败展示与列表校验共用）。 */
+export interface ValidationErrorEntry {
+  index: number
+  id: string
+  message: string
+}

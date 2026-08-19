@@ -1,12 +1,22 @@
 /* 侧边栏独立工作台：DSH 面板接管模式 + 顶部标签页，外观对齐 dsh-mnemon。 */
 
+:root {
+  /* 面板 z-index：与 taskboard / ssh 面板共用 60 档，靠 data-*-active 属性互斥显隐。 */
+  --pt-panel-z: 60;
+  /* Logo 渐变深色端点：与 --dsw-alias-state-business-primary 配对的固定阴影色。 */
+  --pt-logo-shade: #062b4f;
+}
+
 [data-pane='conversation'] {
   position: relative;
 }
 
+/* 宿主结构依赖：与 src/client/host-surface.ts 的
+ * CONVERSATION_COLUMN_SELECTOR / OFFICIAL_WORKSPACE_SLOT_SELECTOR 一一对应；
+ * 宿主改版时优先改 host-surface.ts，再同步这里的选择器。 */
 [data-dsh-prompt-tool-view] {
   position: absolute;
-  z-index: 60;
+  z-index: var(--pt-panel-z);
   inset: 0;
   display: none;
   min-width: 0;
@@ -31,6 +41,7 @@ html[data-dsh-prompt-tool-active]:not([data-dsh-taskboard-active]):not([data-dsh
 
 html[data-dsh-prompt-tool-active]:not([data-dsh-taskboard-active]):not([data-dsh-ssh-active]) [data-pane='conversation'] > :not([data-dsh-prompt-tool-view]),
 html[data-dsh-prompt-tool-active]:not([data-dsh-taskboard-active]):not([data-dsh-ssh-active]) [class*='centerCol'] > :not([data-dsh-prompt-tool-view]) {
+  /* !important：面板接管中央列时隐藏宿主对话内容，须压过宿主自身规则。 */
   display: none !important;
 }
 
@@ -164,8 +175,8 @@ html[data-dsh-prompt-tool-active]:not([data-dsh-taskboard-active]):not([data-dsh
   place-items: center;
   border: 1px solid color-mix(in srgb, var(--dsw-alias-state-business-primary) 40%, var(--dsw-alias-border-l1));
   border-radius: 9px;
-  color: #fff;
-  background: linear-gradient(135deg, var(--dsw-alias-state-business-primary), color-mix(in srgb, var(--dsw-alias-state-business-primary) 55%, #062b4f));
+  color: var(--pt-on-chip, #fff);
+  background: linear-gradient(135deg, var(--dsw-alias-state-business-primary), color-mix(in srgb, var(--dsw-alias-state-business-primary) 55%, var(--pt-logo-shade)));
   box-shadow: 0 6px 16px -10px color-mix(in srgb, var(--dsw-alias-state-business-primary) 80%, transparent), inset 0 1px 0 color-mix(in srgb, #fff 28%, transparent);
   font-size: 15px;
   font-weight: 700;
@@ -414,16 +425,6 @@ html[data-dsh-prompt-tool-active]:not([data-dsh-taskboard-active]):not([data-dsh
   letter-spacing: .04em;
 }
 
-.sectionActions {
-  display: flex;
-  flex: 0 0 auto;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  margin-left: auto;
-}
-
 @media (max-width: 760px) {
   .masthead { min-height: 48px; padding: 8px 12px 4px; }
   .statusCluster > span:not(.statusDot) { display: none; }
@@ -439,6 +440,9 @@ html[data-dsh-prompt-tool-active]:not([data-dsh-taskboard-active]):not([data-dsh
   .brand h1 { font-size: 16px; }
   .brandLogo { width: 26px; height: 26px; }
   .statusCluster { display: none; }
+  /* 触控热区：入口与关闭按钮提升到接近 44px 命中区。 */
+  .entry { height: 40px; }
+  .iconButton { width: 36px; height: 36px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

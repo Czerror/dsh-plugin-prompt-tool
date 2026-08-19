@@ -1,11 +1,7 @@
 import { useState, type ReactNode } from 'react'
-import { bridgePost, errorMessage } from './prompt-tool-store.ts'
-import {
-  PromptConfigCard,
-  type PromptConfigDraft,
-  type ValidationErrorEntry,
-} from './PromptConfigsEditor.tsx'
-import type { EngineMeta } from './prompt-tool-types.ts'
+import { bridgePost, errorMessage } from './prompt-tool-bridge.ts'
+import { PromptConfigCard } from './PromptConfigCard.tsx'
+import type { EngineMeta, PromptConfigDraft, ValidationErrorEntry } from './prompt-tool-types.ts'
 import styles from './PromptUi.module.css'
 
 interface ValidateResult {

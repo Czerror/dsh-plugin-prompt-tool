@@ -1,14 +1,14 @@
 import { useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from 'react'
+import type { KeyboardEvent as ReactKeyboardEvent } from 'react'
 import clsx from 'clsx'
 import type { IApiClient } from '@deepseek-ai/dsh-client-connection/client'
 import {
-  type Fields,
   type PromptToolStore,
   type PromptToolSettingsTransport,
-  type SkillCatalogEntry,
   type SwitchKey,
   usePromptToolStore,
 } from './prompt-tool-store.ts'
+import type { Fields, SkillCatalogEntry } from './prompt-tool-bridge.ts'
 import { PromptConfigList } from './PromptConfigList.tsx'
 import type { PromptConfigDraft } from './PromptConfigsEditor.tsx'
 import type { PromptToolWorkspaceController } from './workspace-controller.ts'
@@ -35,11 +35,12 @@ function ToggleRow(props: { id: string; label: string; hint: string; checked: bo
 function SkillStatusChips(props: { skill: SkillCatalogEntry; enabled: boolean }): ReactNode {
   const { skill, enabled } = props
   const callable = skill.valid && skill.modelInvocable && enabled
+  const status = skill.valid ? (callable ? '模型可调用' : '模型不可调用') : '未注册'
   return (
-    <span className={ui.skillStatusRow} aria-label="技能调用状态">
+    <span className={ui.skillStatusRow} aria-label={`技能调用状态：${status}`}>
       <span className={clsx(ui.skillStatusChip, skill.valid ? (callable ? ui.skillStatusModel : ui.skillStatusOff) : ui.skillStatusError)}>
         <i className={ui.skillStatusDot} aria-hidden="true" />
-        {skill.valid ? (callable ? '模型可调用' : '模型不可调用') : '未注册'}
+        {status}
       </span>
     </span>
   )
@@ -57,6 +58,7 @@ function SettingInputRow(props: { id: string; label: string; hint: string; value
             className={ui.directoryInput}
             type={props.type ?? 'text'}
             value={props.value}
+            aria-label={props.label}
             placeholder={props.placeholder}
             disabled={props.disabled}
             spellCheck={false}
@@ -178,30 +180,74 @@ function EntrySwitches(props: { store: PromptToolStore }): ReactNode {
   )
 }
 
-/** 调用配置层开关：首轮 maxTokens 与子代理固定 Flash 路由。 */
+/** 调用配置层开关：首轮 maxTokens。 */
 function AgentRequestSwitches(props: { store: PromptToolStore }): ReactNode {
   const { store } = props
-  const fields = store.fields
   return (
     <section className={ui.section} aria-labelledby="pt-agent-request-switches">
-      <div className={ui.sectionHeading}><div><h2 id="pt-agent-request-switches">调用配置层开关</h2><p>作用于首轮请求配置与子代理调用参数，和本层提示词配置的 priority / modelScope / subagents 语义一致。</p></div></div>
+      <div className={ui.sectionHeading}><div><h2 id="pt-agent-request-switches">调用配置层开关</h2><p>作用于首轮请求配置，和本层提示词配置的 priority / modelScope 语义一致。</p></div></div>
       <BootstrapTokensRow store={store} />
+    </section>
+  )
+}
+
+/** 子代理设置：模型服务商 + 模型名下拉；任一为空 = 子代理继承主会话模型。 */
+function SubagentSettings(props: { store: PromptToolStore }): ReactNode {
+  const { store } = props
+  const fields = store.fields
+  const providerOptions = ['', ...store.deepseekProviders, 'deepseek-official']
+  const modelOptions = ['', 'deepseek-v4-flash', 'deepseek-v4-pro']
+  const withCurrent = (options: string[], current: string): string[] =>
+    current.length > 0 && !options.includes(current) ? [...options, current] : options
+  const active = fields.subagentFlashProvider.length > 0 && fields.subagentFlashModel.length > 0
+  return (
+    <section className={ui.section} aria-labelledby="pt-subagent-settings">
+      <div className={ui.sectionHeading}><div><h2 id="pt-subagent-settings">子代理设置</h2><p>模型服务商与模型名同时设置时，子代理与宿主直派子代理自动使用该固定模型；任一为空 = 子代理继承主会话模型。</p></div></div>
       <div className={ui.rowGroup}>
-        <ToggleRow id="pt-subagent-flash" label="子代理固定 Flash 模型" hint={fields.subagentFlash
-          ? '固定 Flash 路由 + 任务分类人设 + 三锚；宿主直派子代理也会自动补 Flash 路由。'
-          : store.deepseekAvailable
-            ? '开启时采用 dsh-router-standard 的 Flash 子代理方案；关闭时继承主会话模型。'
-            : `未检测到 DeepSeek 模型配置，此开关不可用。providers=[${store.deepseekProviders.join(', ') || '空'}]${store.deepseekError ? ' error=' + store.deepseekError : ''}`}
-          checked={fields.subagentFlash} disabled={!fields.writePreset || !store.deepseekAvailable} onChange={() => store.toggle('subagentFlash')} />
+        <div className={ui.settingRowStack}>
+          <span className={ui.settingCopy}>
+            <strong>模型服务商</strong>
+            <small>调用方未显式指定 provider 时自动补入；例如 deepseek-official。{store.deepseekProviders.length > 0 ? `当前检测到：${store.deepseekProviders.join('、')}` : '未检测到模型路由，可手动选择 deepseek-official。'}</small>
+          </span>
+          <select
+            className={ui.configInput}
+            aria-label="模型服务商"
+            value={fields.subagentFlashProvider}
+            disabled={!fields.writePreset}
+            onChange={(event) => {
+              store.patch({ subagentFlashProvider: event.target.value })
+              store.persistSwitches()
+            }}
+          >
+            {withCurrent(providerOptions, fields.subagentFlashProvider).map((item) => (
+              <option key={item} value={item}>{item.length > 0 ? item : '（不设置）'}</option>
+            ))}
+          </select>
+        </div>
       </div>
-      <SettingInputRow id="pt-subagent-flash-provider" label="Flash 路由 provider" hint="调用方未显式指定 provider 时自动补入；例如 deepseek-official。"
-        value={fields.subagentFlashProvider} disabled={!fields.writePreset}
-        onInput={(value) => store.patch({ subagentFlashProvider: value })}
-        onCommit={store.persistSwitches} />
-      <SettingInputRow id="pt-subagent-flash-model" label="Flash 模型名" hint="调用方未显式指定 model 时自动补入；例如 deepseek-v4-flash。"
-        value={fields.subagentFlashModel} disabled={!fields.writePreset}
-        onInput={(value) => store.patch({ subagentFlashModel: value })}
-        onCommit={store.persistSwitches} />
+      <div className={ui.rowGroup}>
+        <div className={ui.settingRowStack}>
+          <span className={ui.settingCopy}>
+            <strong>模型名</strong>
+            <small>调用方未显式指定 model 时自动补入；例如 deepseek-v4-flash。</small>
+          </span>
+          <select
+            className={ui.configInput}
+            aria-label="模型名"
+            value={fields.subagentFlashModel}
+            disabled={!fields.writePreset}
+            onChange={(event) => {
+              store.patch({ subagentFlashModel: event.target.value })
+              store.persistSwitches()
+            }}
+          >
+            {withCurrent(modelOptions, fields.subagentFlashModel).map((item) => (
+              <option key={item} value={item}>{item.length > 0 ? item : '（不设置）'}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+      {!active && <p className={ui.readOnly} role="status">未设置：子代理将继承主会话模型路由。</p>}
     </section>
   )
 }
@@ -246,6 +292,7 @@ function FeatureSettings(props: { store: PromptToolStore }): ReactNode {
         type="number" value={String(fields.presetOrder)}
         onInput={(value) => store.patch({ presetOrder: Number(value) || 0 })}
         onCommit={store.persistSwitches} />
+      <SubagentSettings store={store} />
     </section>
   )
 }
@@ -266,7 +313,7 @@ function FileEditor(props: { store: PromptToolStore; scope: 'preset' | 'agents' 
     <section className={ui.section} aria-labelledby={`pt-${scope}-heading`}>
       <div className={ui.sectionHeading}>
         <div><h2 id={`pt-${scope}-heading`}>{title}{dirty ? ' · 未保存' : ''}</h2><p>{desc}</p></div>
-        <div className={css.sectionActions}>
+<div className={ui.sectionActions}>
           <button type="button" className={ui.primaryPill} disabled={saving || !dirty} onClick={isPreset ? store.savePrompt : store.saveAgents}>{saving ? '保存中…' : '校验并保存'}</button>
           <button type="button" className={ui.pillButton} disabled={!dirty} onClick={isPreset ? store.discardPrompt : store.discardAgents}>放弃修改</button>
         </div>
@@ -373,7 +420,7 @@ function SkillsSettings(props: { store: PromptToolStore; api: IApiClient }): Rea
     <section className={ui.section} aria-labelledby="pt-skills-heading">
       <div className={ui.sectionHeading}>
         <div><h2 id="pt-skills-heading">Skills 设置</h2><p>{fields.skillCatalog.length} 个技能；拖动 ⠿ 排序即模型看到的先后顺序，排第一的技能最先被看到。关闭后立即注销，开启即恢复。</p></div>
-        <div className={css.sectionActions}>
+<div className={ui.sectionActions}>
           <button type="button" className={ui.pillButton} disabled={!fields.activeSkillsDir && !fields.skillsDir} onClick={() => void store.openSkillsDir()}>打开技能目录</button>
         </div>
       </div>
@@ -451,6 +498,26 @@ function SkillsSettings(props: { store: PromptToolStore; api: IApiClient }): Rea
                     <p className={ui.skillIssue} role="note">{skill.issue ?? '技能不合法'}</p>
                   )}
                 </div>
+                {skill.valid && (
+                  <span className={ui.skillOrderButtons}>
+                    <button
+                      type="button"
+                      className={ui.pillButton}
+                      aria-label={`上移 ${skill.name || skill.folder}`}
+                      title="上移（键盘排序）"
+                      disabled={index === 0}
+                      onClick={() => moveSkill(skill.folder, orderedSkills[index - 1]!.folder)}
+                    >↑</button>
+                    <button
+                      type="button"
+                      className={ui.pillButton}
+                      aria-label={`下移 ${skill.name || skill.folder}`}
+                      title="下移（键盘排序）"
+                      disabled={index >= orderedSkills.length - 1}
+                      onClick={() => moveSkill(skill.folder, orderedSkills[index + 1]!.folder)}
+                    >↓</button>
+                  </span>
+                )}
                 {!skill.valid && (
                   <button
                     type="button"
@@ -487,6 +554,26 @@ const ENTRY_PAGES: Array<{ id: EntryPage; label: string }> = [
   { id: 'agents', label: 'AGENTS 设置' },
   { id: 'configs', label: '消息批配置' },
 ]
+
+/** ARIA tabs 键盘导航：左右切换、Home/End 跳首尾。 */
+function tabKeyHandler<T>(
+  items: readonly T[],
+  current: T,
+  onSelect: (item: T) => void,
+): (event: ReactKeyboardEvent<HTMLElement>) => void {
+  return (event) => {
+    const index = items.indexOf(current)
+    if (index < 0) return
+    let next: number | undefined
+    if (event.key === 'ArrowRight') next = (index + 1) % items.length
+    else if (event.key === 'ArrowLeft') next = (index - 1 + items.length) % items.length
+    else if (event.key === 'Home') next = 0
+    else if (event.key === 'End') next = items.length - 1
+    if (next === undefined) return
+    event.preventDefault()
+    onSelect(items[next]!)
+  }
+}
 
 /** /meta 尚未加载或失败时的 UI 兜底层列表，保证 Skills 页仍可返回注入层。 */
 const FALLBACK_LAYERS = ['pre-step', 'system-section', 'runtime-context', 'agent-request', 'llm-stream', 'tool-pipeline']
@@ -551,14 +638,14 @@ export function PromptWorkspace(props: PromptWorkspaceProps): ReactNode {
       <div className={css.topNavigation}>
         <div className={css.nav} role="tablist" aria-label="提示词工具层级">
           {layers.map((item) => (
-            <button key={item} type="button" role="tab" aria-selected={page === item} data-active={page === item ? '' : undefined} onClick={() => setPage(item)}>
+            <button key={item} type="button" role="tab" aria-selected={page === item} data-active={page === item ? '' : undefined} onClick={() => setPage(item)} onKeyDown={tabKeyHandler([...layers, 'skills', 'features'], page, setPage)}>
               <span><strong>{store.meta.layerLabels[item]?.title ?? FALLBACK_LAYER_LABELS[item]?.title ?? item}</strong><small>{item}</small></span>
             </button>
           ))}
-          <button type="button" role="tab" aria-selected={page === 'skills'} data-active={page === 'skills' ? '' : undefined} onClick={() => setPage('skills')}>
+          <button type="button" role="tab" aria-selected={page === 'skills'} data-active={page === 'skills' ? '' : undefined} onClick={() => setPage('skills')} onKeyDown={tabKeyHandler([...layers, 'skills', 'features'], page, setPage)}>
             <span><strong>Skills 设置</strong><small>skills</small></span>
           </button>
-          <button type="button" role="tab" aria-selected={page === 'features'} data-active={page === 'features' ? '' : undefined} onClick={() => setPage('features')}>
+          <button type="button" role="tab" aria-selected={page === 'features'} data-active={page === 'features' ? '' : undefined} onClick={() => setPage('features')} onKeyDown={tabKeyHandler([...layers, 'skills', 'features'], page, setPage)}>
             <span><strong>功能设置</strong><small>features</small></span>
           </button>
         </div>
@@ -568,7 +655,7 @@ export function PromptWorkspace(props: PromptWorkspaceProps): ReactNode {
         <div className={css.memoryNavigation}>
           <div className={css.memoryTabs} role="tablist" aria-label="消息批层子页">
             {ENTRY_PAGES.map((item) => (
-              <button key={item.id} type="button" role="tab" aria-selected={entryPage === item.id} data-active={entryPage === item.id ? '' : undefined} onClick={() => setEntryPage(item.id)}>{item.label}</button>
+              <button key={item.id} type="button" role="tab" aria-selected={entryPage === item.id} data-active={entryPage === item.id ? '' : undefined} onClick={() => setEntryPage(item.id)} onKeyDown={tabKeyHandler(ENTRY_PAGES.map((entry) => entry.id), entryPage, setEntryPage)}>{item.label}</button>
             ))}
           </div>
         </div>

@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fixSkillEntry } from '../../lib/index.mjs'
-import { parseFrontmatter } from '../../lib/preset-core.mjs'
+import { parseFrontmatter } from '../../lib/index.mjs'
 
 const makeRoot = () => {
   const dir = mkdtempSync(join(tmpdir(), 'prompt-tool-skill-fix-'))

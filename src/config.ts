@@ -2,15 +2,18 @@
 import z from '@deepseek-ai/schemastery'
 import { settingsNamespace } from '@deepseek-ai/dsh-settings'
 import type { SettingsNamespace } from '@deepseek-ai/dsh-settings'
-import { fileURLToPath } from 'node:url'
-import { join, resolve } from 'node:path'
-import { homedir } from 'node:os'
+import { join } from 'node:path'
 import type { PromptConfigSpec } from './host/prompt-configs.ts'
 import { loadPresetSpec, packagePresetDir, resolvePresetParams } from './host/manifest.ts'
+import {
+  DEFAULT_PRESET_DIR,
+  DEFAULT_PRESET_ORDER,
+  DEFAULT_RESIDENT_AGENTS_PATH,
+  DEFAULT_SKILL_RANK_BASE,
+  DEFAULT_SKILLS_DIR,
+} from './host/paths.ts'
 
 export const NS: SettingsNamespace = settingsNamespace('prompt-tool')
-
-export const SKILLS_DIR = fileURLToPath(new URL('../skills', import.meta.url))
 
 /**
  * promptConfigs 数组元素的最小结构 schema：只强校验“元素是对象、id 是字符串”。
@@ -18,29 +21,6 @@ export const SKILLS_DIR = fileURLToPath(new URL('../skills', import.meta.url))
  * 枚举级权威校验归 engine 的 createPromptConfigs，避免两处枚举漂移。
  */
 const PromptConfigEntrySchema = z.object({ id: z.string().required() }) as unknown as z<PromptConfigSpec>
-
-// 部署路径默认值；凡是不同部署可能需要不同值的参数都通过 Config 暴露，
-// cordis.yml 可以覆盖，无需改代码。
-// 与官方 dsh-home-paths.resolveDshHome 语义对齐：
-// 未设置 / 空串 / 纯空白回退 OS home 下的 .dsh；支持 ~、~/、~\；
-// 相对路径按进程 cwd 解析为绝对路径，避免生成目录随运行目录漂移。
-function resolveDshHome(): string {
-  const ambient = process.env.DSH_HOME
-  if (typeof ambient !== 'string' || ambient.trim().length === 0) return join(homedir(), '.dsh')
-  const expanded = ambient === '~'
-    ? homedir()
-    : ambient.startsWith('~/') || ambient.startsWith('~\\')
-      ? join(homedir(), ambient.slice(2))
-      : ambient
-  return resolve(expanded)
-}
-
-export const DSH_HOME = resolveDshHome()
-export const DEFAULT_RESIDENT_AGENTS_PATH = join(DSH_HOME, 'AGENTS.md')
-export const DEFAULT_PRESET_DIR = join(DSH_HOME, '.agent-presets', 'prompt-tool')
-export const DEFAULT_SKILLS_DIR = SKILLS_DIR
-export const DEFAULT_PRESET_ORDER = 5
-export const DEFAULT_SKILL_RANK_BASE = 250
 
 // 自动每轮引导文本：唯一来源是 preset/anchored/preset.yml 的 guideWeak / guideDeep。
 // 这里只负责读取 preset 参数并组装成 settings 编辑框默认内容，不再硬编码第二份文本。
@@ -104,11 +84,9 @@ export interface Config {
   guideText: string
   /** 自定义每轮引导开关：true 固定使用 guideText；false 按任务自动选择。 */
   guideCustom: boolean
-  /** 子代理固定 Flash 模型：开启时给 subagent/subagent_fork 行加固定 Flash 路由；关闭时子代理继承主会话路由，目录全量放行。 */
-  subagentFlash: boolean
-  /** 子代理 Flash 路由 provider（默认 deepseek-official）。 */
+  /** 子代理固定模型路由 provider；与模型名同时非空时，子代理/宿主直派子代理自动补入该路由。 */
   subagentFlashProvider: string
-  /** 子代理 Flash 模型名（默认 deepseek-v4-flash）。 */
+  /** 子代理固定模型名；与 provider 同时非空时生效。 */
   subagentFlashModel: string
   /** 首轮输出封顶；0 或未设置 = 不设封顶（本项目默认），正整数 = 请求 #1 的 maxTokens。 */
   bootstrapMaxTokens: number
@@ -149,9 +127,8 @@ export const Config: z<Config> = z.object({
   anchorCustom: z.boolean().default(false),
   guideText: z.string().default(DEFAULT_GUIDE_TEXT),
   guideCustom: z.boolean().default(false),
-  subagentFlash: z.boolean().default(false),
-  subagentFlashProvider: z.string().default('deepseek-official'),
-  subagentFlashModel: z.string().default('deepseek-v4-flash'),
+  subagentFlashProvider: z.string().default(''),
+  subagentFlashModel: z.string().default(''),
   bootstrapMaxTokens: z.natural().default(0),
   usePtcMode: z.boolean().default(true),
   skillsDir: z.string().default(DEFAULT_SKILLS_DIR),
@@ -205,10 +182,9 @@ export interface PromptSettings {
   anchorCustom: boolean
   guideText: string
   guideCustom: boolean
-  subagentFlash: boolean
-  /** 子代理 Flash 路由 provider。 */
+  /** 子代理固定模型路由 provider；与模型名同时非空时生效。 */
   subagentFlashProvider: string
-  /** 子代理 Flash 模型名。 */
+  /** 子代理固定模型名；与 provider 同时非空时生效。 */
   subagentFlashModel: string
   bootstrapMaxTokens: number
   usePtcMode: boolean
@@ -253,9 +229,8 @@ export const PromptSettingsSchema: z<PromptSettings> = z.object({
   anchorCustom: z.boolean().default(false),
   guideText: z.string().default(DEFAULT_GUIDE_TEXT),
   guideCustom: z.boolean().default(false),
-  subagentFlash: z.boolean().default(false),
-  subagentFlashProvider: z.string().default('deepseek-official'),
-  subagentFlashModel: z.string().default('deepseek-v4-flash'),
+  subagentFlashProvider: z.string().default(''),
+  subagentFlashModel: z.string().default(''),
   bootstrapMaxTokens: z.natural().default(0),
   usePtcMode: z.boolean().default(true),
   deepseekAvailable: z.boolean().default(true),
@@ -301,7 +276,6 @@ export interface RuntimeOptions {
   anchorCustom: boolean
   guideText: string
   guideCustom: boolean
-  subagentFlash: boolean
   bootstrapMaxTokens: number
   usePtcMode: boolean
   /** 技能候选排序基数。 */
@@ -314,9 +288,9 @@ export interface RuntimeOptions {
   presetOrder: number
   /** preset.md 缺失或不可读时使用的文本。 */
   fallbackText: string
-  /** 子代理 Flash 路由 provider。 */
+  /** 子代理固定模型路由 provider；与模型名同时非空时生效。 */
   subagentFlashProvider: string
-  /** 子代理 Flash 模型名。 */
+  /** 子代理固定模型名；与 provider 同时非空时生效。 */
   subagentFlashModel: string
   /** 用户自定义提示词配置（settings 数组）。 */
   promptConfigs: PromptConfigSpec[]

@@ -9,7 +9,7 @@
 import { writeFileSync, mkdirSync, rmSync, cpSync, mkdtempSync, renameSync, existsSync } from 'node:fs'
 import { join, basename, dirname } from 'node:path'
 import { stringify as stringifyYaml } from 'yaml'
-import { DEFAULT_PRESET_DIR } from '../config.ts'
+import { DEFAULT_PRESET_DIR } from './paths.ts'
 import {
   loadPromptConfigFiles,
   mergePromptConfigs,
@@ -38,7 +38,6 @@ export interface WritePresetOptions {
   guideText: string
   guideCustom: boolean
   injectPrompt: boolean
-  subagentFlash: boolean
   subagentFlashProvider: string
   subagentFlashModel: string
   bootstrapMaxTokens: number
@@ -68,13 +67,12 @@ function runtimeOf(options: WritePresetOptions, prompt: string): Record<string, 
     injectPrompt: options.injectPrompt !== false,
     usePtcMode: options.usePtcMode !== false,
     bootstrapMaxTokens: Number.isSafeInteger(options.bootstrapMaxTokens) ? options.bootstrapMaxTokens : 0,
-    subagentFlash: options.subagentFlash === true,
     subagentFlashProvider: typeof options.subagentFlashProvider === 'string' && options.subagentFlashProvider.length > 0
       ? options.subagentFlashProvider
-      : 'deepseek-official',
+      : '',
     subagentFlashModel: typeof options.subagentFlashModel === 'string' && options.subagentFlashModel.length > 0
       ? options.subagentFlashModel
-      : 'deepseek-v4-flash',
+      : '',
   }
 }
 

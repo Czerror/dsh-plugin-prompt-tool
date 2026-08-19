@@ -1,7 +1,8 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { buildCordis, parseFrontmatter } from '../../lib/preset-core.mjs'
+import { buildCordis } from '../../lib/preset-core.mjs'
+import { parseFrontmatter } from '../../lib/index.mjs'
 
 const read = (path) => readFileSync(new URL(`../../${path}`, import.meta.url), 'utf8')
 
@@ -62,4 +63,3 @@ test('旧独立注入模块已移除：agent.cordis.yml 不再注册 near-anchor
   assert.ok(!out.includes('- id: instruction-hint\n'))
   assert.ok(out.includes('- id: prompt-config-engine\n'))
 })
-

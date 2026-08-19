@@ -3,8 +3,7 @@ import assert from 'node:assert/strict'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { parseFrontmatter } from '../../lib/preset-core.mjs'
-import { createCachedSkillsReader, readSkills, validSkills, SKILL_NAME_RE } from '../../lib/index.mjs'
+import { parseFrontmatter, createCachedSkillsReader, readSkills, validSkills, SKILL_NAME_RE } from '../../lib/index.mjs'
 
 const makeDir = () => {
   const dir = mkdtempSync(join(tmpdir(), 'prompt-tool-skills-'))
