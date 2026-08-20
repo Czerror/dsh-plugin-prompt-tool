@@ -145,8 +145,8 @@ export function listPresets(): Array<{ id: string; name: string }> {
         .flatMap((entry) => {
           try {
             const spec = loadPresetSpec(join(dir, entry.name))
-            // 切换值用目录名（与 resolvePresetDir 路径一致），spec.id 仅作展示。
-            return [{ id: entry.name, name: `${spec.id} · ${spec.name}` }]
+            // 切换值用目录名（与 resolvePresetDir 路径一致）；name 保持 spec.name 契约。
+            return [{ id: entry.name, name: spec.name }]
           } catch {
             return []
           }
