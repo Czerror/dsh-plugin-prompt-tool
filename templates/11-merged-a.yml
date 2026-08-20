@@ -1,5 +1,6 @@
-# 模板：merged 拼接组第一条（同 position 的 merged 配置拼接为一条消息）
-# 与 12-merged-b.yml 搭配使用；order 小者在前。
+# 模板：merged 拼接（同 position 的 merged 配置拼接为一条消息）
+# 本模板演示完整参数（mergeMode + texts 多块）；复制本文件为多条同 position
+# 配置并调整 order，即演示多配置拼接（UI 卡片可复制/新建）。
 id: example-merged-a
 layer: pre-step
 strategy: static

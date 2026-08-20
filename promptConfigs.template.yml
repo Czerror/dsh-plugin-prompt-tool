@@ -17,20 +17,18 @@ promptConfigs:
     position: after-user            # 插入位置：after-user / before-all / after-all，默认 after-user
     dedupe: session                 # 幂等：none / session（每会话一次）/ batch（当批去重），默认 none
     promotion: none                 # 晋升门槛：none / main / include-subagents，默认 none
-    subagents: none                 # 子代理作用域：none=仅主会话 / inherit=都适用 / only=仅子代理，默认 none
+    audience: ''                    # 消息受众：缺省=公用（主会话+子代理都注入）；main=仅主会话；subagent=仅子代理
     modelScope: all                 # 模型范围：all / pro / flash，默认 all
     configKind: ordered             # 排序类型：ordered（按 order 升序）/ anchor（固定文件序，排最前），默认 ordered
-    order: 0                        # 同层排序权重，默认 0
+    order: 0                        # 同层排序权重（同时决定 merged 拼接顺序），默认 0
     role: user                      # 注入消息角色：user / assistant，默认 user
-    priority: 0                     # 同位置插入顺序与 merged 拼接顺序：数值小者更靠近插入锚点，默认 0
     mergeMode: separate             # 同位置多条配置：separate=先后插入独立消息（默认）/ merged=拼接为一条消息
-    # mergeGroup: ''                # merged 模式分组名；空=同位置共享默认组（示例见 example-merged-a）
     sourceKind: ''                  # 注入消息 source.kind，默认等于 id
     form: notice                    # source.form，默认 notice
     summary: ''                     # source.summary，默认空
     identity:                       # 持久幂等匹配字段，默认 {field: plugin, value: id}
       field: plugin                 #   plugin=按 source.plugin 匹配；kind=按 source.kind 匹配
-      value: example-pre-step       #   匹配值，默认 id（merged 时自动改用 mergeGroup/合成组名）
+      value: example-pre-step       #   匹配值，默认 id（merged 时自动改用 merged:<position> 组名）
     text: |                         # 注入文本；与 texts 二选一，text 优先；空 = 不注入
       这是注入到用户消息后的提示词内容。
       支持 {{WORKSPACE}} / {{CWD}} / {{DSH_HOME}} 与下方 variables。
@@ -42,25 +40,18 @@ promptConfigs:
       WHO: 张三
     params: {}                      # 本层无专用参数
 
-  # ── 2. pre-step：多段文本 + 同位置拼接 ─────────────────────────────────
-  - id: example-merged-a            # merged 组内第一条：priority 小者排前
-    layer: pre-step
-    strategy: static
-    position: before-all
-    mergeMode: merged               # 与同 position + 同 mergeGroup 的配置拼接为一条消息
-    mergeGroup: grp                 # 分组名；组内 source 身份改用该组名，保证持久幂等
-    priority: 0                     # 拼接顺序：0 在 1 之前
-    texts:                          # 单配置多段内容块
-      - 合并段 A1
-      - 合并段 A2
-  - id: example-merged-b
+  # ── 2. pre-step：多段文本 + 同位置拼接（merged）────────────────────────
+  # 同 position 的 merged 配置拼接为一条消息（按 order 升序）；复制本配置为
+  # 多条同 position 条目即可演示多配置拼接（UI 卡片可复制/新建）。
+  - id: example-merged
     layer: pre-step
     strategy: static
     position: before-all
     mergeMode: merged
-    mergeGroup: grp
-    priority: 1
-    text: 合并段 B
+    order: 0
+    texts:                          # 单配置多段内容块
+      - 合并段 A1
+      - 合并段 A2
 
   # ── 3. system-section：静态 system 段 ───────────────────────────────────
   - id: example-system-section
@@ -68,15 +59,13 @@ promptConfigs:
     layer: system-section           # 走 ctx.systemPrompt.section，缓存友好（静态优先放这里）
     strategy: static
     order: -50                      # system section 排序：-100 身份 / 0 persona / 100-199 工具引导
-    priority: 0                     # 同 order 拼接顺序
-    mergeMode: merged               # 同 order + mergeGroup 的多条配置拼接为一个 section
-    mergeGroup: sys-grp
+    mergeMode: merged               # 同层多条 merged 配置按 order 拼接为一个 section
     text: |                         # 支持官方 {{variable}}；文本在请求渲染时插值
       你是 {{AGENT_NAME}}，回复前先说明正在做什么。
     variables: {}
     params:
       complete: false               # true = 独占整个 system prompt（只能有一条生效）
-      sectionName: ''               # 注册名，默认 mergeGroup 或 id
+      sectionName: ''               # 注册名，默认 id
 
   # ── 4. runtime-context：动态运行时快照 ─────────────────────────────────
   - id: example-runtime-context
@@ -87,15 +76,15 @@ promptConfigs:
     text: |
       当前工作区：{{WORKSPACE}}
     params:
-      contextName: ''               # 注册名，默认 mergeGroup 或 id
+      contextName: ''               # 注册名，默认 id
 
   # ── 5. agent-request：调用配置修改 ─────────────────────────────────────
   - id: example-agent-request
     layer: agent-request            # agent/request 瀑布，可改 LlmCallConfig
     strategy: static
     modelScope: flash               # 可选：只对 Flash 生效
-    subagents: none                 # none=主会话 / inherit=含子代理 / only=仅子代理
-    priority: 0                     # 排序注册；多个 patch 时优先级小者先注册
+    audience: main                  # 缺省=公用；main=仅主会话；subagent=仅子代理
+    order: 0                        # 注册顺序；多个 patch 时 order 小者先应用
     params:
       patch:                        # 浅合并字段：provider / model / reasoningEffort / temperature / maxTokens / stop
         maxTokens: 4096
@@ -107,7 +96,7 @@ promptConfigs:
     layer: llm-stream               # llm/stream 瀑布
     strategy: static
     modelScope: flash
-    priority: 0
+    order: 0
     text: 自定义流替换文本           # mode=replace 时的流内容
     params:
       mode: pass                    # pass=透传原始流（默认）；replace=用 text 替代整个模型流
@@ -116,7 +105,7 @@ promptConfigs:
   - id: example-tool-pipeline
     layer: tool-pipeline            # tools/pre-execute + tools/execute + tools/post-execute
     strategy: static
-    priority: 0
+    order: 0
     text: 替换后的工具结果           # postAction=replace / block 时使用
     params:
       toolNames: bash,run_code      # 逗号分隔的工具名过滤；空 = 全部工具
