@@ -69,11 +69,25 @@ function parentPath(path) {
   return parent.length === 0 ? path : parent
 }
 
-/** instruction-hint:晋升后一次性提示指令文件存在(agents-instruction.txt 优先)。 */
-function createInstructionHintResolver() {
+/**
+ * instruction-hint:晋升后一次性提示指令文件存在(agents-instruction.txt 优先)。
+ * 可自定义参数:params.text 直接作为提示文本(覆盖文件与动态探测);
+ * 其余字段语义与 env-facts / skill-catalog 一致(config.params 由单一配置源下发)。
+ */
+function createInstructionHintResolver(config) {
+  const customText = typeof config?.params?.text === 'string' && config.params.text.trim().length > 0
+    ? config.params.text.trim()
+    : ''
   const agentsInstructionText = readAgentsInstructionText()
   return async ({ ctx, agent, session }) => {
     const id = `instruction-hint-${session.id}`
+    if (customText.length > 0) {
+      return {
+        id,
+        text: customText,
+        source: { kind: 'instruction-hint', form: 'hint' },
+      }
+    }
     if (agentsInstructionText.length > 0) {
       return {
         id,
@@ -233,7 +247,7 @@ function createSkillCatalogResolver(config) {
 
 /** 动态填充器:strategy=placeholder 时按 fill 键在注入点填充内容。 */
 export const FILLERS = {
-  'instruction-hint': () => createInstructionHintResolver(),
+  'instruction-hint': (config) => createInstructionHintResolver(config),
   'env-facts': (config) => createEnvFactsResolver(config),
   'skill-catalog': (config) => createSkillCatalogResolver(config),
 }

@@ -1,5 +1,7 @@
-# 模板：指令文件提示（strategy=placeholder + fill=instruction-hint）
-# 读取 agents-instruction.txt 内容注入；promotion=include-subagents 表示子代理晋升后同样注入。
+# 模板：指令文件提示（strategy=placeholder + fill=instruction-hint；
+# 等价快捷写法 strategy=instruction-hint，二者同一实现）。
+# params.text 可自定义提示文本（覆盖 agents-instruction.txt 与动态探测）；
+# promotion=include-subagents 表示子代理晋升后同样注入。
 # 提示：把本文件放入 promptConfigsDir 目录，或把对象写入 settings.promptConfigs 数组。
 id: example-instruction-hint
 name: 示例：指令文件提示
@@ -23,5 +25,4 @@ identity:
   field: kind
   value: instruction-hint
 params:
-  promoteOn: either
-  includeSubagents: true
+  text: ""

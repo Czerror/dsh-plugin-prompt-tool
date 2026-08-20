@@ -142,7 +142,7 @@ function createCustomFallbackResolver(config) {
 export function bindResolver(config, strategyDir) {
   switch (config.strategy) {
     case 'placeholder': return createPlaceholderResolver(config)
-    case 'instruction-hint': return createInstructionHintResolver()
+    case 'instruction-hint': return createInstructionHintResolver(config)
     case 'first-turn-anchor': return createFirstTurnAnchorResolver(config)
     case 'guide-auto': return createGuideAutoResolver(config)
     case 'custom-fallback':
