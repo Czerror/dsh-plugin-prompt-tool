@@ -185,8 +185,7 @@ function SubagentSettings(props: { store: PromptToolStore }): ReactNode {
   const active = fields.subagentModelProvider.length > 0 && fields.subagentModelName.length > 0
   const detected = store.deepseekProviders.length > 0
   return (
-    <section className={ui.section} aria-labelledby="pt-subagent-settings">
-      <div className={ui.sectionHeading}><div><h2 id="pt-subagent-settings">子代理设置</h2><p>模型服务商与模型名同时设置时，子代理与宿主直派子代理自动使用该固定模型；任一为空 = 子代理继承主会话模型。</p></div></div>
+    <section className={ui.section} aria-label="子代理设置">
       <div className={ui.skillStatusRow} aria-label="子代理路由状态">
         <span className={clsx(ui.skillStatusChip, detected ? ui.skillStatusModel : ui.skillStatusOff)}>
           <i className={ui.skillStatusDot} aria-hidden="true" />
@@ -321,8 +320,7 @@ function FeatureSettings(props: { store: PromptToolStore }): ReactNode {
   const { store } = props
   const fields = store.fields
   return (
-    <section className={ui.section} aria-labelledby="pt-feature-settings">
-      <div className={ui.sectionHeading}><div><h2 id="pt-feature-settings">主对话与全局</h2><p>主对话参数（快速模型人设、注入 kind 白名单）与全局开关（预设生成、AGENTS.md、路径与顺序）；所有修改立即写入并生效。</p></div></div>
+    <section className={ui.section} aria-label="主对话与全局">
       <div className={ui.rowGroup}>
         <ToggleRow id="pt-write-agents" label="写入 ~/.dsh/AGENTS.md" hint="保持 AGENTS.md 的全局常驻注入；关闭后不再写入，已有文件保持原样。与六层注入无关，属于宿主常驻层。"
           checked={fields.writeAgents} onChange={() => store.toggle('writeAgents')} />
@@ -702,9 +700,8 @@ function SkillsSettings(props: { store: PromptToolStore; api: IApiClient }): Rea
   }
 
   return (
-    <section className={ui.section} aria-labelledby="pt-skills-heading">
+    <section className={ui.section} aria-label="Skills 设置">
       <div className={ui.sectionHeading}>
-        <div><h2 id="pt-skills-heading">Skills 设置</h2><p>{fields.skillCatalog.length} 个技能；勾选框只做选择，Switch 或批量按钮控制开关；↑↓ 或拖动 ⠿ 调整主技能顺序。关闭后立即注销，开启即恢复。</p></div>
         <div className={ui.sectionActions}>
           <button type="button" className={ui.pillButton} onClick={() => void store.load()}>刷新技能列表</button>
         </div>
