@@ -48,6 +48,8 @@ export interface LayerFieldPolicy {
 
 /** settings bridge /meta 返回的引擎能力矩阵。 */
 export interface EngineMeta {
+  /** 可用预设模板清单（UI 预设切换器）。 */
+  presets?: Array<{ id: string; name: string }>
   layers: string[]
   strategies: string[]
   slotKinds: string[]

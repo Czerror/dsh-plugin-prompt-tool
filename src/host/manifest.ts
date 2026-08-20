@@ -9,7 +9,7 @@
  * 本模块负责参数归一化与引擎 token 渲染;所有 anchored 专属行为都在引擎内部。
  */
 
-import { readFileSync, existsSync } from 'node:fs'
+import { readFileSync, existsSync, readdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Pair, Scalar, parse as parseYaml, parseDocument, YAMLMap, YAMLSeq } from 'yaml'
@@ -93,6 +93,25 @@ export const asString = (value: unknown, fallback = ''): string => {
   if (typeof value === 'string') return value
   if (value === undefined || value === null) return fallback
   return String(value)
+}
+
+/** 可用预设清单（preset/ 下含 preset.yml 的目录）：供 UI 预设切换器展示。 */
+export function listPresets(): Array<{ id: string; name: string }> {
+  try {
+    return readdirSync(packagePresetDir(), { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .flatMap((entry) => {
+        try {
+          const spec = loadPresetSpec(join(packagePresetDir(), entry.name))
+          return [{ id: spec.id, name: spec.name }]
+        } catch {
+          return []
+        }
+      })
+      .sort((a, b) => a.id.localeCompare(b.id))
+  } catch {
+    return []
+  }
 }
 
 /** on/off 等字面开关归一化为布尔。 */

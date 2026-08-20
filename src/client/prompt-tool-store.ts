@@ -155,6 +155,7 @@ export interface PromptToolStore {
   persistConfigsDir: (dir: string) => void
   toggle: (key: SwitchKey) => void
   toggleBootstrapMaxTokens: () => void
+  setPresetTemplate: (id: string) => void
   setBootstrapTokensDraft: (value: string) => void
   commitBootstrapTokensDraft: () => void
   setSkillsDirDraft: (value: string) => void
@@ -424,6 +425,16 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
     persistSwitches()
   }, [patch, persistSwitches])
 
+  const setPresetTemplate = useCallback((id: string) => {
+    if (fieldsRef.current.presetTemplate === id) return
+    patch({ presetTemplate: id })
+    enqueueSave(
+      [{ op: 'set', path: ['presetTemplate'], value: id }],
+      `已切换预设模板：${id}`,
+      () => { void load() },
+    )
+  }, [enqueueSave, load, patch])
+
   const commitBootstrapTokensDraft = useCallback(() => {
     const parsed = Number(bootstrapTokensDraft)
     if (!Number.isSafeInteger(parsed) || parsed <= 0) {
@@ -552,6 +563,7 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
     persistConfigsDir,
     toggle,
     toggleBootstrapMaxTokens,
+    setPresetTemplate,
     setBootstrapTokensDraft,
     commitBootstrapTokensDraft,
     setSkillsDirDraft,

@@ -11,6 +11,7 @@ import { loadPromptConfigFiles, mergePromptConfigs } from '../host/prompt-config
 import { validatePromptConfigs } from './configs-validate.ts'
 import { loadPromptTemplates } from '../host/templates.ts'
 import { fixSkillEntry } from './skill-fix.ts'
+import { listPresets } from '../host/manifest.ts'
 import { BRIDGE_ENDPOINTS, SETTINGS_BRIDGE_PREFIX } from '../shared/bridge-contract.ts'
 
 const MAX_SETTINGS_BRIDGE_BODY = 64 * 1024
@@ -137,7 +138,9 @@ export function registerSettingsBridge(
             const { getEngineMeta } = await import(engineMetaUrl.href) as {
               getEngineMeta: () => Record<string, unknown>
             }
-            writeBridgeJson(res, 200, { ok: true, value: { meta: getEngineMeta() } })
+            const meta = getEngineMeta() as Record<string, unknown>
+            meta.presets = listPresets()
+            writeBridgeJson(res, 200, { ok: true, value: { meta } })
           },
         }),
         sctx.webServer.register({
