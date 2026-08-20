@@ -8,9 +8,7 @@ modules:
   - prompt-config-engine
 moduleConfigs:
   persona:
-    text: You are a helpful software engineer assistant.
     complete: false
-    includeRuntimeContext: true
 promptConfigs:
   - id: main
     name: ➡️扩写/转述输入
