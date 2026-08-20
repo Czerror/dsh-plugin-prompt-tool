@@ -123,8 +123,8 @@ test('order 决定同位置插入顺序与 merged 拼接顺序', async () => {
   const { step } = makeHarness(createPromptConfigs([
   { id: 'p-later', strategy: 'static', text: 'LATER', position: 'after-user', order: 1 },
   { id: 'p-first', strategy: 'static', text: 'FIRST', position: 'after-user', order: 0 },
-  { id: 'm-b', strategy: 'static', text: 'B', position: 'after-all', mergeMode: 'merged', mergeGroup: 'grp', order: 1 },
-  { id: 'm-a', strategy: 'static', text: 'A', position: 'after-all', mergeMode: 'merged', mergeGroup: 'grp', order: 0 },
+  { id: 'm-b', strategy: 'static', text: 'B', position: 'after-all', mergeMode: 'merged', order: 1 },
+  { id: 'm-a', strategy: 'static', text: 'A', position: 'after-all', mergeMode: 'merged', order: 0 },
   ]))
   const decision = await step(agent())
   assert.equal(decision.messages[1].content[0].text, 'FIRST')
@@ -294,7 +294,7 @@ test('llm-stream 提示词配置 pass 模式透传原始流', async () => {
   assert.deepEqual(chunks, ['PASSED'])
 })
 
-test('tool-pipeline 提示词配置接入 pre/execute/post 三个官方事件', async () => {
+test('tool-pipeline 提示词配置接入 pre/post 官方事件（execute 为透传包装点，未注册空壳）', async () => {
   const { listeners } = makeWiredHarness([{
     id: 'tp', layer: 'tool-pipeline', strategy: 'static', text: 'REPLACED',
     params: { toolNames: 'bash', preDecision: 'deny', denyReason: 'no bash', postAction: 'replace' },
@@ -306,10 +306,6 @@ test('tool-pipeline 提示词配置接入 pre/execute/post 三个官方事件', 
   assert.ok(pre)
   assert.deepEqual(await pre(exec, async () => ({ kind: 'allow' })), { kind: 'deny', reason: 'no bash' })
   assert.deepEqual(await pre(other, async () => ({ kind: 'allow' })), { kind: 'allow' })
-
-  const execute = listeners.get('tools/execute')
-  assert.ok(execute)
-  assert.equal(await execute(exec, async () => 'EXEC'), 'EXEC')
 
   const post = listeners.get('tools/post-execute')
   assert.ok(post)

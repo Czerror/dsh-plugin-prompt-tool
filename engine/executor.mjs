@@ -25,7 +25,7 @@ function eventMessage(event) {
   return message?.source !== null && typeof message?.source === 'object' ? message : undefined
 }
 
-/** 合并身份:merged 模式用 mergeGroup 或同位置默认组名;separate 模式保持自身身份。 */
+/** 合并身份:merged 模式按位置分组(merged:<position>);separate 模式保持自身身份。 */
 function mergedIdentity(config) {
   if (config.mergeMode !== 'merged') return config.id
   return `merged:${config.position}`
@@ -112,10 +112,13 @@ export function applyPromptConfigs(ctx, configs, options = {}) {
   })
 
   /** 每提示词配置每会话的进程内快路径;真相在持久事件流。 */
+  // ponytail: 会话数上限防无界增长（Set 按 session.id 累积）；若需精确淘汰改 LRU。
+  const MAX_MEMO_SESSIONS = 4096
   const injectedMemo = new Map()
   const configMemo = (config) => {
     let memo = injectedMemo.get(config.id)
     if (memo === undefined) {
+      if (injectedMemo.size >= MAX_MEMO_SESSIONS) injectedMemo.clear()
       memo = new Set()
       injectedMemo.set(config.id, memo)
     }
@@ -189,13 +192,13 @@ export function applyPromptConfigs(ctx, configs, options = {}) {
   // order 升序(同值保持声明顺序):决定拼接顺序与同位置插入顺序。
   due.sort((a, b) => a.config.order - b.config.order)
 
-      // 同一 mergeGroup 的多条提示词配置在首条配置的位置合并为一条消息;
-      // 文本按内容块拼接,source 身份改用 mergeGroup 以保持持久幂等。
+      // merged 模式的多条提示词配置在首条配置的位置合并为一条消息;
+      // 文本按内容块拼接,source 身份改用 merged:<position> 以保持持久幂等。
       const orderedGroups = []
       const groupIndex = new Map()
       for (const entry of due) {
         const group = entry.config.mergeMode === 'merged'
-          ? `${entry.config.position}:${entry.config.mergeGroup ?? ''}`
+          ? mergedIdentity(entry.config)
           : undefined
         if (group === undefined) {
           orderedGroups.push([entry])
@@ -222,17 +225,16 @@ export function applyPromptConfigs(ctx, configs, options = {}) {
               : []
           })
           if (message.source !== null && typeof message.source === 'object') {
-            if (base.config.identity.field === 'kind') message.source = { ...message.source, kind: mergedIdentity(base.config) }
-            else message.source = { ...message.source, plugin: mergedIdentity(base.config) }
+            message.source = { ...message.source, plugin: mergedIdentity(base.config) }
           }
           if (new Set(group.map((entry) => entry.config.position)).size > 1) {
-            warnOnce(`${name}: mergeGroup ${String(base.config.mergeGroup)} mixes positions — using ${String(base.config.position)} from the first config`)
+            warnOnce(`${name}: merged group mixes positions — using ${String(base.config.position)} from the first config`)
           }
         }
         planned.push({ position: base.config.position, message, group })
       }
 
-      // 同位置批量插入:planned 已按 priority 升序,多元素 splice/unshift/push 保持该顺序。
+      // 同位置批量插入:planned 已按 order 升序,多元素 splice/unshift/push 保持该顺序。
       const markGroup = (group) => {
         for (const entry of group) {
           if (entry.config.dedupe === 'session') configMemo(entry.config).add(session.id)

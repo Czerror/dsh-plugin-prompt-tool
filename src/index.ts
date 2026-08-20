@@ -6,9 +6,8 @@ import type {
   SkillProvider,
   SkillProviderControl,
 } from '@deepseek-ai/dsh-skill'
-import type { SettingsPathOp } from '@deepseek-ai/dsh-settings'
 import type {} from '@deepseek-ai/dsh-host-webserver'
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { readFileSync, rmSync } from 'node:fs'
 import { parse as parseYaml } from 'yaml'
 import { createSkillsWatcher } from './runtime/skills-watcher.ts'
 import { fileURLToPath } from 'node:url'
@@ -29,7 +28,6 @@ import { writePreset } from './host/write-preset.ts'
 import {
   Config,
   NS,
-  normalizeFirstTurnText,
   PromptSettings,
   PromptSettingsSchema,
   RuntimeOptions,
@@ -68,39 +66,6 @@ function readGeneratedContent(presetDir: string, name: string): string {
   } catch {
     return ''
   }
-}
-
-interface ProjectOriginals {
-  presetText: string
-  agentsText: string
-}
-
-/** 直接读取预设模板单一参数 YAML 的 content 字段；宿主不再回写模板文件。 */
-function readProjectOriginals(): ProjectOriginals {
-  return { presetText: readPromptFile(''), agentsText: readAgents() }
-}
-
-/** 首次安装时，把项目文件内容作为 user 层种子写入 settings.yaml；已有字段不覆盖。 */
-function seedSettingsOnce(ctx: Context, originals: ProjectOriginals): void {
-  ctx.inject(['settings'], (sctx: Context) => {
-    void (async () => {
-      try {
-        const descriptor = sctx.settings.describe({ redactSecrets: true })
-          .find((entry) => String(entry.ns) === String(NS))
-        if (descriptor === undefined) return
-        const user = descriptor.user !== null && typeof descriptor.user === 'object'
-          ? descriptor.user as Record<string, unknown>
-          : {}
-        const ops: SettingsPathOp[] = []
-        if (typeof user.promptText !== 'string') ops.push({ op: 'set', path: ['promptText'], value: originals.presetText })
-        if (typeof user.agentsText !== 'string') ops.push({ op: 'set', path: ['agentsText'], value: originals.agentsText })
-        if (ops.length === 0) return
-        await sctx.settings.mutate(NS, ops)
-      } catch (error) {
-        warn(ctx, `prompt-tool: failed to seed settings from project files: ${error instanceof Error ? error.message : String(error)}`)
-      }
-    })()
-  })
 }
 
 function warn(ctx: Context, message: string): void {
@@ -352,7 +317,6 @@ export function apply(ctx: Context, configIn: Config): void {
     getDeepseekAvailable,
     getDeepseekState,
     () => ({ activeSkillsDir, skillCatalog }),
-    readProjectOriginals,
     // 模板专属策略目录：当前 anchored 策略为引擎内置，自定义模板可经此注入。
     () => '',
     (sctx: Context) => ensureRegistered(sctx),
@@ -433,7 +397,7 @@ export function apply(ctx: Context, configIn: Config): void {
     agentsPath: AGENTS_FILE_PATH,
     injectAgentsPrompt: runtime.injectAgentsPrompt,
     firstTurnAnchor: runtime.firstTurnAnchor,
-    firstTurnText: normalizeFirstTurnText(runtime.firstTurnText),
+    firstTurnText: runtime.firstTurnText,
     firstTurnCustom: runtime.firstTurnCustom,
     guideText: runtime.guideText,
     guideCustom: runtime.guideCustom,
@@ -476,7 +440,7 @@ registerTuiCommand(ctx, NS, () => currentSource(), getDeepseekAvailable, getDeep
       skillOrder: Array.isArray(next.skillOrder) ? next.skillOrder.filter((folder): folder is string => typeof folder === 'string') : config.skillOrder,
       skillsDir: typeof next.skillsDir === 'string' ? next.skillsDir : configuredSkillsDir,
       firstTurnAnchor: typeof next.firstTurnAnchor === 'boolean' ? next.firstTurnAnchor : config.firstTurnAnchor,
-      firstTurnText: normalizeFirstTurnText(typeof next.firstTurnText === 'string' ? next.firstTurnText : config.firstTurnText),
+      firstTurnText: typeof next.firstTurnText === 'string' ? next.firstTurnText : config.firstTurnText,
       firstTurnCustom: typeof next.firstTurnCustom === 'boolean' ? next.firstTurnCustom : config.firstTurnCustom,
       guideText: typeof next.guideText === 'string' ? next.guideText : config.guideText,
       guideCustom: typeof next.guideCustom === 'boolean' ? next.guideCustom : config.guideCustom,
@@ -527,9 +491,11 @@ registerTuiCommand(ctx, NS, () => currentSource(), getDeepseekAvailable, getDeep
     if (!needsInitialApply && !promptChanged && !agentsChanged && !settingsChanged) return
     needsInitialApply = false
 
-    if (promptChanged) current = next.promptText
+    // settings.promptText 为空时保留生成目录/模板内容（大文本不再写入 settings，
+    // 显式非空文本仍作为运行时覆盖生效）。
+    if (promptChanged && next.promptText.trim().length > 0) current = next.promptText
     if (fallbackTextChanged && next.promptText.trim() === '' && current.trim() === '') current = readPromptFile(nextRuntime.fallbackText)
-    if (agentsChanged) currentAgents = next.agentsText
+    if (agentsChanged && next.agentsText.trim().length > 0) currentAgents = next.agentsText
     runtime.writeAgents = nextRuntime.writeAgents
     runtime.writePreset = nextRuntime.writePreset
     runtime.presetTemplate = nextRuntime.presetTemplate
@@ -579,39 +545,8 @@ registerTuiCommand(ctx, NS, () => currentSource(), getDeepseekAvailable, getDeep
     rebuildPreset()
   }
 
-  const settingsEntry: PromptSettings = {
-    promptText: current,
-    promptPath: PRESET_FILE_PATH,
-    agentsText: currentAgents,
-    agentsPath: AGENTS_FILE_PATH,
-    injectAgentsPrompt: config.injectAgentsPrompt,
-    firstTurnAnchor: config.firstTurnAnchor,
-    firstTurnText: config.firstTurnText,
-    firstTurnCustom: config.firstTurnCustom,
-    guideText: config.guideText,
-    guideCustom: config.guideCustom,
-    subagentFlashProvider: config.subagentFlashProvider,
-    subagentFlashModel: config.subagentFlashModel,
-    bootstrapMaxTokens: config.bootstrapMaxTokens,
-    usePtcMode: config.usePtcMode,
-    deepseekAvailable: getDeepseekAvailable(),
-    injectPrompt: config.injectPrompt,
-    skillSwitches: { ...config.skillSwitches },
-    skillOrder: [...skillOrder],
-    skillCatalog,
-    skillsDir: configuredSkillsDir,
-    activeSkillsDir,
-    skillRankBase: config.skillRankBase,
-    residentAgentsPath: config.residentAgentsPath,
-    presetDir: config.presetDir,
-    presetOrder: config.presetOrder,
-    fallbackText: config.fallbackText,
-    writeAgents: config.writeAgents,
-    writePreset: config.writePreset,
-    presetTemplate: typeof config.presetTemplate === 'string' && config.presetTemplate.length > 0 ? config.presetTemplate : 'anchored',
-    promptConfigs: Array.isArray(config.promptConfigs) ? config.promptConfigs : [],
-    promptConfigsDir: typeof config.promptConfigsDir === 'string' ? config.promptConfigsDir : '',
-  }
+  // settings 注册 base 与运行时快照同源（单一组装，避免双份字段漂移）。
+  const settingsEntry: PromptSettings = currentSource()
 
   // 幂等注册 + 自愈：settings 服务实例被替换（provider fiber reload）时，
   // 官方 installSettingsSection 的一次性 inject 回调不会重跑，注册随之丢失，
@@ -620,26 +555,6 @@ registerTuiCommand(ctx, NS, () => currentSource(), getDeepseekAvailable, getDeep
   const ensureRegistered = (sctx: Context): boolean => ensureSettingsRegistered(sctx, NS, PromptSettingsSchema, {
     base: () => settingsEntry,
     onRegistered: (scope) => {
-      // 旧版 settings 大文本迁移：生成目录无内容文件且 settings 旧值非空时落盘（一次性）。
-      try {
-        const hasPresetMd = readGeneratedContent(runtime.presetDir, 'preset.md') !== ''
-        const hasAgentsMd = readGeneratedContent(runtime.presetDir, 'agents.md') !== ''
-        if (!hasPresetMd || !hasAgentsMd) {
-          const legacy = scope.get()
-          if (!hasPresetMd && legacy.promptText.length > 0) {
-            mkdirSync(runtime.presetDir, { recursive: true })
-            writeFileSync(join(runtime.presetDir, 'preset.md'), legacy.promptText, 'utf8')
-            current = legacy.promptText
-          }
-          if (!hasAgentsMd && legacy.agentsText.length > 0) {
-            mkdirSync(runtime.presetDir, { recursive: true })
-            writeFileSync(join(runtime.presetDir, 'agents.md'), legacy.agentsText, 'utf8')
-            currentAgents = legacy.agentsText
-          }
-        }
-      } catch (error) {
-        warn(ctx, `prompt-tool: legacy settings content migration failed: ${String(error)}`)
-      }
       currentSource = () => scope.get()
       scope.watch(() => {
         try {
@@ -670,8 +585,6 @@ registerTuiCommand(ctx, NS, () => currentSource(), getDeepseekAvailable, getDeep
       }
     })
   })
-  // 首次安装：settings.yaml 没有 user 层文本时，用项目文件内容初始化。
-  seedSettingsOnce(ctx, readProjectOriginals())
 }
 
 // 公共 API：宿主与测试复用 settings schema 与提示词配置权威校验。

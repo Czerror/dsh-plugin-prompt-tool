@@ -13,7 +13,7 @@ promotion: none
 subagents: none
 modelScope: all
 role: user
-priority: 0
+order: 0
 mergeMode: separate
 sourceKind: ''
 form: notice

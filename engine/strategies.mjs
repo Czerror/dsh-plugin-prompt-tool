@@ -94,9 +94,7 @@ function createCustomFallbackResolver(config) {
     : (typeof config.params?.text === 'string' && config.params.text.length > 0 ? config.params.text : undefined)
   const firstTurnWord = typeof config.params?.firstTurnWord === 'string' && config.params.firstTurnWord.length > 0
     ? config.params.firstTurnWord
-    : (typeof config.params?.firstTurnWord === 'string' && config.params.firstTurnWord.length > 0
-        ? config.params.firstTurnWord
-        : 'we')
+    : 'we'
 
   const anchorScanned = new Map()
 

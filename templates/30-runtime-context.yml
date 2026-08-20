@@ -3,7 +3,6 @@ id: example-runtime-context
 layer: runtime-context
 strategy: static
 order: 5
-priority: 0
 mergeMode: merged
 text: |-
   当前工作区：{{WORKSPACE}}

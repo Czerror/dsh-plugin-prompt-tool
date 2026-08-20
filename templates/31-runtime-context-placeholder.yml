@@ -9,7 +9,6 @@ strategy: placeholder
 fill: skill-catalog
 configKind: ordered
 order: 0
-priority: 0
 mergeMode: separate
 sourceKind: ''
 form: notice

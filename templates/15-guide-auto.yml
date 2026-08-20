@@ -14,7 +14,6 @@ modelScope: flash
 configKind: ordered
 order: 10
 role: user
-priority: 0
 mergeMode: separate
 sourceKind: ''
 form: notice

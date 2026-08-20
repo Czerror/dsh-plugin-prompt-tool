@@ -42,19 +42,6 @@ export const DEFAULT_GUIDE_TEXT = GUIDE_DEFAULTS.weak.length > 0 || GUIDE_DEFAUL
   ? `简单任务自动引导：${GUIDE_DEFAULTS.weak.trim()}\n\n复杂任务自动引导：${GUIDE_DEFAULTS.deep.trim()}`
   : ''
 
-/** 旧版“每块强制 we need”默认锚句；已存 settings 时归一化为自动模式。 */
-const LEGACY_FIRST_TURN_TEXT = [
-  'You are a helpful software assistant.',
-  '',
-  "Begin every reasoning block with 'We need'.",
-].join('\n')
-
-/** 旧默认值归一化为空（自动）；用户自定义文本原样保留。 */
-export function normalizeFirstTurnText(text: string | undefined): string {
-  const value = typeof text === 'string' ? text : ''
-  return value.trim() === LEGACY_FIRST_TURN_TEXT.trim() ? '' : value
-}
-
 export interface Config {
   /** 是否用 AGENTS.md 内容替换本地 instruction-hint 的默认提示文本（默认关闭）。 */
   injectAgentsPrompt: boolean

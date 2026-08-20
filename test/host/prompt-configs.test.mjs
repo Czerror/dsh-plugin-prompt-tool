@@ -5,27 +5,42 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { parse } from 'yaml'
 import {
-  buildDefaultPromptConfigs,
-  buildPromptConfigFiles,
   loadPromptConfigFiles,
   mergePromptConfigs,
   renderPromptConfigYaml,
 } from '../../lib/preset-core.mjs'
+import { writePreset } from '../../lib/index.mjs'
 
-test('默认四条提示词配置 spec 渲染后 YAML 可解析且字段完整', () => {
-  const specs = buildDefaultPromptConfigs({ firstTurnAnchor: true, guideCustom: true, guideText: 'CUSTOM' }, 'PROMPT')
-  assert.deepEqual(specs.map((spec) => spec.id), ['near-anchor', 'router-guide', 'prompt-injector', 'instruction-hint'])
-  for (const spec of specs) {
-    const doc = parse(renderPromptConfigYaml(spec), { logLevel: 'silent' })
-    assert.equal(doc.id, spec.id)
-    assert.equal(doc.layer, spec.layer)
-    assert.equal(doc.enabled, spec.enabled)
-    assert.equal(doc.strategy, spec.strategy)
+/** writePreset 生成 anchored 提示词配置（生产路径：preset.yml 数据 + 顶层 params 动态字段）。 */
+function generatedConfigs(options = {}, prompt = 'PROMPT') {
+  const dir = mkdtempSync(join(tmpdir(), 'pt-wp-configs-'))
+  try {
+    writePreset(prompt, {
+      presetDir: dir,
+      presetOrder: 5,
+      firstTurnAnchor: options.firstTurnAnchor === true,
+      firstTurnText: options.firstTurnText ?? '',
+      firstTurnCustom: options.firstTurnCustom === true,
+      guideText: options.guideText ?? '',
+      guideCustom: options.guideCustom === true,
+      injectPrompt: options.injectPrompt !== false,
+      subagentFlashProvider: '',
+      subagentFlashModel: '',
+      bootstrapMaxTokens: 0,
+      usePtcMode: true,
+      promptConfigs: [],
+      promptConfigsDir: '',
+    })
+    const specs = loadPromptConfigFiles(join(dir, 'prompt-configs'))
+    const byId = Object.fromEntries(specs.map((spec) => [spec.id, spec]))
+    return { specs, byId }
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
   }
-})
+}
 
 test('mergePromptConfigs：同名 id 后者覆盖且保留位置，新 id 追加末尾', () => {
-  const defaults = buildDefaultPromptConfigs({}, 'P')
+  const defaults = generatedConfigs().specs
   const merged = mergePromptConfigs(defaults, [
     { id: 'near-anchor', enabled: false, strategy: 'static', text: '覆盖后的锚点' },
     { id: 'extra', strategy: 'static', layer: 'system-section', text: '新增提示词配置' },
@@ -34,25 +49,6 @@ test('mergePromptConfigs：同名 id 后者覆盖且保留位置，新 id 追加
   assert.equal(merged[0].enabled, false)
   assert.equal(merged[0].text, '覆盖后的锚点')
   assert.equal(merged[4].layer, 'system-section')
-})
-
-test('buildPromptConfigFiles 合并自定义提示词配置后生成 00-40 文件名且内容正确', () => {
-  const files = buildPromptConfigFiles({}, 'P', [
-    { id: 'near-anchor', text: '覆盖内容' },
-    { id: 'custom', strategy: 'static', layer: 'runtime-context', text: '自定义上下文' },
-  ])
-  assert.deepEqual(files.map((entry) => entry.file), [
-    '00-near-anchor.yml',
-    '10-router-guide.yml',
-    '20-prompt-injector.yml',
-    '30-instruction-hint.yml',
-    '40-custom.yml',
-  ])
-  const near = parse(files[0].content, { logLevel: 'silent' })
-  assert.deepEqual(near.texts, ['覆盖内容'])
-  const custom = parse(files[4].content, { logLevel: 'silent' })
-  assert.equal(custom.layer, 'runtime-context')
-  assert.deepEqual(custom.texts, ['自定义上下文'])
 })
 
 test('loadPromptConfigFiles 扫描 yml 与 json，非法文件 fail loud', () => {
@@ -106,102 +102,78 @@ test('renderPromptConfigYaml 全字段开放：variables/identity/params 嵌套�
   assert.equal(doc.params.toolNames, 'bash,run_code')
   assert.deepEqual(doc.params.patch, { maxTokens: 2048 })
 })
-function configByName(options, prompt, name) {
-  const config = buildPromptConfigFiles(options, prompt).find((entry) => entry.file.includes(name))
-  assert.ok(config, `${name} config file generated`)
-  return { content: config.content, yaml: parse(config.content, { logLevel: 'silent' }) }
-}
 
-
-test('buildPromptConfigFiles 恒生成四个提示词配置模块，数字前缀决定执行顺序', () => {
-  const files = buildPromptConfigFiles({}, 'PROMPT')
-  assert.deepEqual(files.map((entry) => entry.file), [
-    '00-near-anchor.yml',
-    '10-router-guide.yml',
-    '20-prompt-injector.yml',
-    '30-instruction-hint.yml',
-  ])
-  for (const entry of files) {
-    const doc = parse(entry.content, { logLevel: 'silent' })
-    assert.ok(doc.id)
-    assert.equal(typeof doc.strategy, 'string')
-    assert.equal(typeof doc.enabled, 'boolean')
-    assert.equal(doc.layer, 'pre-step')
-    assert.equal(doc.configKind, 'ordered')
-    assert.equal(typeof doc.order, 'number')
-    assert.equal(doc.role, 'user')
+test('writePreset 生成 anchored 四个提示词配置模块，数字前缀决定执行顺序', () => {
+  const { specs } = generatedConfigs()
+  assert.deepEqual(specs.map((spec) => spec.id), ['near-anchor', 'router-guide', 'prompt-injector', 'instruction-hint'])
+  for (const spec of specs) {
+    assert.equal(spec.layer, 'pre-step')
+    assert.equal(spec.configKind, 'ordered')
+    assert.equal(typeof spec.order, 'number')
+    assert.equal(spec.role, 'user')
   }
 })
 
-
-test('buildPromptConfigFiles 处理空提示词时提示词配置结构完整', () => {
-  const { yaml } = configByName({}, '', '20-prompt-injector')
-  assert.equal(yaml.enabled, true)
-  assert.equal(yaml.strategy, 'custom-fallback')
-  assert.equal(yaml.params.text, '')
-  assert.equal(yaml.params.firstTurnWord, 'we')
+test('writePreset 处理空提示词时 prompt-injector 结构完整', () => {
+  const { byId } = generatedConfigs({}, '')
+  assert.equal(byId['prompt-injector'].enabled, true)
+  assert.equal(byId['prompt-injector'].strategy, 'custom-fallback')
+  assert.equal(byId['prompt-injector'].params.text, '')
+  assert.equal(byId['prompt-injector'].params.firstTurnWord, 'we')
 })
 
-
-test('buildPromptConfigFiles 开启 firstTurnAnchor 时 near-anchor 提示词配置启用并携带自定义锚定句', () => {
-  const { yaml } = configByName({ firstTurnAnchor: true, firstTurnText: 'ANCHOR SENTENCE' }, 'PROMPT', '00-near-anchor')
-  assert.equal(yaml.enabled, true)
-  assert.equal(yaml.strategy, 'first-turn-anchor')
-  assert.equal(yaml.position, 'after-user')
-  assert.equal(yaml.params.useCustom, false)
-  assert.equal(yaml.params.firstTurnText, 'ANCHOR SENTENCE')
+test('writePreset 开启 firstTurnAnchor 时 near-anchor 启用并携带自定义锚定句', () => {
+  const { byId } = generatedConfigs({ firstTurnAnchor: true, firstTurnText: 'ANCHOR SENTENCE' })
+  assert.equal(byId['near-anchor'].enabled, true)
+  assert.equal(byId['near-anchor'].strategy, 'first-turn-anchor')
+  assert.equal(byId['near-anchor'].position, 'after-user')
+  assert.equal(byId['near-anchor'].params.useCustom, false)
+  assert.equal(byId['near-anchor'].params.firstTurnText, 'ANCHOR SENTENCE')
 })
 
-
-test('buildPromptConfigFiles 开启 firstTurnCustom 时 near-anchor 固定使用自定义文本', () => {
-  const { yaml } = configByName({ firstTurnAnchor: true, firstTurnText: 'CUSTOM', firstTurnCustom: true }, 'PROMPT', '00-near-anchor')
-  assert.equal(yaml.params.useCustom, true)
-  assert.equal(yaml.params.firstTurnText, 'CUSTOM')
+test('writePreset 开启 firstTurnCustom 时 near-anchor 固定使用自定义文本', () => {
+  const { byId } = generatedConfigs({ firstTurnAnchor: true, firstTurnText: 'CUSTOM', firstTurnCustom: true })
+  assert.equal(byId['near-anchor'].params.useCustom, true)
+  assert.equal(byId['near-anchor'].params.firstTurnText, 'CUSTOM')
 })
 
-
-test('buildPromptConfigFiles 开启 firstTurnAnchor 且空锚点文本时生成自动模式配置', () => {
-  const { yaml } = configByName({ firstTurnAnchor: true, firstTurnText: '' }, 'PROMPT', '00-near-anchor')
-  assert.equal(yaml.params.firstTurnText, '')
+test('writePreset 开启 firstTurnAnchor 且空锚点文本时生成自动模式配置', () => {
+  const { byId } = generatedConfigs({ firstTurnAnchor: true, firstTurnText: '' })
+  assert.equal(byId['near-anchor'].params.firstTurnText, '')
 })
 
-
-test('buildPromptConfigFiles 关闭 injectPrompt 时 prompt-injector 提示词配置禁用（引擎仍扫描四个模块）', () => {
-  const { yaml } = configByName({ injectPrompt: false }, 'PROMPT', '20-prompt-injector')
-  assert.equal(yaml.enabled, false)
+test('writePreset 关闭 injectPrompt 时 prompt-injector 禁用（引擎仍扫描四个模块）', () => {
+  const { byId } = generatedConfigs({ injectPrompt: false })
+  assert.equal(byId['prompt-injector'].enabled, false)
 })
 
-test('buildPromptConfigFiles 默认 router-guide 提示词配置关闭，自动引导', () => {
-  const { yaml } = configByName({}, 'PROMPT', '10-router-guide')
-  assert.equal(yaml.enabled, false)
-  assert.equal(yaml.modelScope, 'flash')
-  assert.equal(yaml.params.useCustom, false)
-  assert.equal(yaml.params.text, '')
+test('writePreset 默认 router-guide 关闭（firstTurnAnchor=false），自动引导', () => {
+  const { byId } = generatedConfigs()
+  assert.equal(byId['router-guide'].enabled, false)
+  assert.equal(byId['router-guide'].modelScope, 'flash')
+  assert.equal(byId['router-guide'].params.useCustom, false)
+  assert.equal(byId['router-guide'].params.text, '')
 })
 
-
-test('buildPromptConfigFiles 开启 firstTurnAnchor 时 router-guide 提示词配置启用', () => {
-  const { yaml } = configByName({ firstTurnAnchor: true }, 'PROMPT', '10-router-guide')
-  assert.equal(yaml.enabled, true)
-  assert.equal(yaml.modelScope, 'flash')
-  assert.equal(yaml.params.useCustom, false)
+test('writePreset 开启 firstTurnAnchor 时 router-guide 启用', () => {
+  const { byId } = generatedConfigs({ firstTurnAnchor: true })
+  assert.equal(byId['router-guide'].enabled, true)
+  assert.equal(byId['router-guide'].modelScope, 'flash')
+  assert.equal(byId['router-guide'].params.useCustom, false)
 })
 
-
-test('buildPromptConfigFiles guideCustom=true 时固定自定义每轮引导（Pro/Flash 都注入）', () => {
-  const { yaml } = configByName({ firstTurnAnchor: true, guideCustom: true, guideText: 'CUSTOM GUIDE' }, 'PROMPT', '10-router-guide')
-  assert.equal(yaml.enabled, true)
-  assert.equal(yaml.modelScope, 'all')
-  assert.equal(yaml.params.useCustom, true)
-  assert.equal(yaml.params.text, 'CUSTOM GUIDE')
+test('writePreset guideCustom=true 时固定自定义每轮引导（Pro/Flash 都注入）', () => {
+  const { byId } = generatedConfigs({ firstTurnAnchor: true, guideCustom: true, guideText: 'CUSTOM GUIDE' })
+  assert.equal(byId['router-guide'].enabled, true)
+  assert.equal(byId['router-guide'].modelScope, 'all')
+  assert.equal(byId['router-guide'].params.useCustom, true)
+  assert.equal(byId['router-guide'].params.text, 'CUSTOM GUIDE')
 })
 
-
-test('buildPromptConfigFiles injectPrompt=false 且 firstTurnAnchor=true 只启用近锚提示词配置', () => {
-  const files = buildPromptConfigFiles({ injectPrompt: false, firstTurnAnchor: true, firstTurnText: 'A' }, 'PROMPT')
-  const byName = Object.fromEntries(files.map((entry) => [entry.file, parse(entry.content, { logLevel: 'silent' })]))
-  assert.equal(byName['00-near-anchor.yml'].enabled, true)
-  assert.equal(byName['10-router-guide.yml'].enabled, true)
-  assert.equal(byName['20-prompt-injector.yml'].enabled, false)
-  assert.equal(byName['30-instruction-hint.yml'].enabled, true)
+test('writePreset injectPrompt=false 且 firstTurnAnchor=true 只启用近锚与引导', () => {
+  const { byId } = generatedConfigs({ injectPrompt: false, firstTurnAnchor: true, firstTurnText: 'A' })
+  assert.equal(byId['near-anchor'].enabled, true)
+  assert.equal(byId['router-guide'].enabled, true)
+  assert.equal(byId['prompt-injector'].enabled, false)
+  assert.equal(byId['instruction-hint'].enabled, true)
 })

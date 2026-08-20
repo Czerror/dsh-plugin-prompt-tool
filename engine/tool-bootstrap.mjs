@@ -126,14 +126,6 @@ const PERSONA_SECTION_NAMES = new Set(['deployment:persona', 'persona'])
 const WORKSPACE_LINE_PREFIX = '\n\nYour working directory is '
 
 
-/**
- * The default first-request catalog: the OFFICIAL Minimal preset's exact tool
- * pair — the persistent `bash` shell and `str_replace_editor`. Issue #11
- * measured this schema anchoring 5/5 at the adapter-default maxTokens while
- * every standard-family schema failed 11/11.
- */
-const DEFAULT_BOOTSTRAP_TOOLS = ['bash', 'str_replace_editor']
-
 /** Non-empty string list config validator. */
 function stringList(value, field) {
   if (!Array.isArray(value) || value.length === 0 || value.some((item) => typeof item !== 'string' || item.length === 0)) {
@@ -280,6 +272,7 @@ export function apply(ctx, config) {
     try {
       const agent = context.agent
       if (agent === undefined) return assembled
+      if (agent.session === undefined) return assembled
       agentBySession.set(agent.session, agent)
       if ((agent.session?.header?.delegationDepth ?? 0) > 0 && !includeSubagents) {
         // 默认：子代理继承完整目录（历史 prompt-tool 默认）；

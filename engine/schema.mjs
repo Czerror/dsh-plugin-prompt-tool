@@ -113,9 +113,9 @@ export const LAYER_LABELS = {
   'pre-step': { title: '消息批层', detail: '官方默认层：agent/pre-step 消息批。支持 position / dedupe / promotion / subagents / mergeMode 与文本插值。' },
   'system-section': { title: '系统段层', detail: 'system-section 静态层：注册即全局，由 order 与 params.complete / sectionName 控制。' },
   'runtime-context': { title: '运行上下文', detail: 'runtime-context 层：static 按 order 注册，placeholder 单条生效，由 params.contextName 控制。' },
-  'agent-request': { title: '调用配置层', detail: 'agent-request 层：按 priority 注册，params.patch 改写请求配置。' },
-  'llm-stream': { title: '模型流层', detail: 'llm/stream 层：按 priority 注册，params.mode = pass | replace。' },
-  'tool-pipeline': { title: '工具管线层', detail: 'tools/* 层：按 priority 注册，params.toolNames 与 preDecision / postAction 控制。' },
+  'agent-request': { title: '调用配置层', detail: 'agent-request 层：按 order 注册，params.patch 改写请求配置。' },
+  'llm-stream': { title: '模型流层', detail: 'llm/stream 层：按 order 注册，params.mode = pass | replace。' },
+  'tool-pipeline': { title: '工具管线层', detail: 'tools/* 层：按 order 注册，params.toolNames 与 preDecision / postAction 控制。' },
 }
 
 /** 引擎能力矩阵：作为 /meta 的唯一数据源，客户端表单据此动态渲染。 */

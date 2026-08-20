@@ -46,8 +46,8 @@ dsh --profile prompt-tool
   过滤与降级语义。
 - ✍️ **一切皆可配置**：提示词配置的 `id / name / enabled / layer / strategy / position /
   dedupe / promotion / subagents / modelScope / configKind / order / role / text /
-  texts / templateFile / fill / variables / params / identity / mergeMode /
-  mergeGroup / priority` 全部开放。
+  texts / templateFile / fill / variables / params / identity / mergeMode / group /
+  exclusive` 全部开放。
 - 🧑‍🤝‍🧑 **子代理作用域三态**：`subagents: none`（仅主会话）、`inherit`（主会话与
   子代理都适用）、`only`（仅子代理）——身份类提示词可以只针对子代理注入。
 - 🗂️ **内容与执行分离**：每条提示词配置一个 yml（或 json），放在模块文件夹；YAML 使用内置 vendored yaml 包完整解析（列表、行尾注释、block scalar 等全部支持）
@@ -59,7 +59,6 @@ dsh --profile prompt-tool
   标准 settings 字段经 rc8 官方 `settingsScope`（共享 describe mirror）读写；
   `/api/prompt-tool/settings/describe` 仍输出完整描述与 live runtime facts，
   `/api/prompt-tool/settings/configs-validate` 复用引擎校验，
-  `/api/prompt-tool/settings/import-directory` 从本地目录导入并合并提示词配置，
   `/api/prompt-tool/settings/templates` 输出内置模板库。
 - 🧭 **侧边栏独立工作台**：新建会话行下方的「提示词工具」入口打开中央列工作台，
   顶部标签页为六个注入层级 + Skills 设置；层页内按层管理提示词配置
@@ -69,16 +68,17 @@ dsh --profile prompt-tool
 - 🧱 **内置模板库**：`templates/*.yml` 覆盖六层与两个 placeholder 数据源，每个文件都是
   可直接复制的单条提示词配置；`/api/prompt-tool/settings/templates` 只读输出模板列表，
   编辑器"插入模板"直接消费。
-- 🧪 **内置五种内容策略**：`static`（固定文本/外部模板）、`anchor-auto`（任务自动
+- 🧪 **内置六种内容策略**：`static`（固定文本/外部模板）、`first-turn-anchor`（任务自动
   锚句）、`guide-auto`（弱/深度引导）、`custom-fallback`（自定义锚定词命中后注入一次，
-  未命中最多等两轮兜底；旧别名 `anchor-fallback` 会自动归一化为 `custom-fallback`）、`instruction-hint`（指令文件提示）；`placeholder` 动态填充器已含 `instruction-hint` / `env-facts` / `skill-catalog` 三个数据源。
+  未命中最多等两轮兜底）、`instruction-hint`（指令文件提示）与 `placeholder` 动态填充器
+  （`instruction-hint` / `env-facts` / `skill-catalog` 三个数据源）。
 - 🛡️ **失败不伤会话**：单条提示词配置失败只跳过该提示词配置并 `warnOnce`；配置错误（未知 layer /
   strategy / fill、坏 yml）在挂载时 fail loud。
 - 🔁 **持久幂等**：`dedupe: session` 的提示词配置以持久 session events 判重，进程重启 /
   插件重载不重复注入。
 - 📦 **anchored 默认预设**：`preset/anchored/preset.yml` 是插件**唯一配置入口**——
-  `modules` 决定 23 个行/组模块装配顺序,`params` 驱动引擎开关(`usePtcMode`、`subagentFlash`、
-  `anchorFirstTurn`…),`hostDefaults` 提供宿主开关默认值,`content` 携带 presetText/agentsText;
+  `modules` 决定 23 个行/组模块装配顺序,`params` 驱动引擎开关(`usePtcMode`、`bootstrapMaxTokens`、
+  `firstTurnAnchor`…),`hostDefaults` 提供宿主开关默认值,`content` 携带 presetText/agentsText;
   settings(Web/TUI)仅作运行时覆盖。用户写一个参数 YAML 即可复刻 anchored 全部能力。
 
 ## 默认行为
@@ -88,17 +88,17 @@ dsh --profile prompt-tool
 | 字段 | 默认值 |
 |---|---|
 | `enabled / strategy / layer / configKind / order / position / dedupe / promotion / subagents / modelScope / role` | `true / static / pre-step / ordered / 0 / after-user / none / none / none / all / user` |
-| `name / sourceKind / form / summary / identity / text / texts / templateFile / fill / variables / params / mergeMode / mergeGroup / priority` | `id / id / notice / '' / {field:plugin,value:id} / '' / [] / 无 / 无 / {} / {} / separate / 无 / 0` |
+| `name / sourceKind / form / summary / identity / text / texts / templateFile / fill / variables / params / mergeMode / group` | `id / id / notice / '' / {field:plugin,value:id} / '' / [] / 无 / 无 / {} / {} / separate / 无` |
 
 - `mergeMode`：`separate`（默认）同位置多条配置先后插入为独立消息；`merged`
-  同位置且同 `mergeGroup`（未指定则同位置共享默认组）的多条配置拼接为一条消息。
+  同位置（`merged:<position>` 分组键）的多条配置拼接为一条消息。
   该组合对文本型层通用：`pre-step`（消息批）、`system-section`（system 段）、
-  `runtime-context`（运行时快照）都可用 `mergeMode / mergeGroup / priority / texts`
-  自由拼接；`agent-request / llm-stream / tool-pipeline` 按 `priority` 排序注册。
-- `priority`：数值小者更靠近插入锚点；同值保持配置声明顺序，同时决定 `merged`
+  `runtime-context`（运行时快照）都可用 `mergeMode / order / texts` 自由拼接；
+  `agent-request / llm-stream / tool-pipeline` 按 `order` 排序注册。
+- `order`：数值小者更靠近插入锚点；同值保持配置声明顺序，同时决定 `merged`
   组内的拼接顺序。单条配置用 `texts` 数组可一次注入多个 text 内容块。
-- `custom-fallback`：`params.customAnchorWord` 默认 `"we"`，可自定义任意锚定词（如
-  `"我是xxx"`）；兼容旧参数 `anchorWord`。晋升后首个 reasoning 命中锚定词立即注入一次；
+- `custom-fallback`：`params.firstTurnWord` 默认 `"we"`，可自定义任意锚定词（如
+  `"我是xxx"`）。晋升后首个 reasoning 命中锚定词立即注入一次；
   未命中最多等满两轮 assistant 消息兜底注入。
 - `dedupe: session` 按持久 session events 幂等；`batch` 只对当前消息批去重。
 - `promotion`：`none` 不要求晋升；`main` 主会话晋升状态；`include-subagents`
@@ -181,9 +181,9 @@ moduleConfigs 读取，不写入 settings 层——用户环境 settings.yaml �
 | system-section | ✗（注册即全局） | ✗ | ✗ | ✗ | ✓（同 order） | variables + 官方 `{{variable}}` |
 | runtime-context（static） | ✗ | ✗ | ✗ | ✗ | ✓（同 order） | variables |
 | runtime-context（placeholder） | ✗ | ✗ | ✗ | ✗ | 单条 | variables + filler 变量 |
-| agent-request | ✓ | ✓ | ✗ | ✗ | 按 priority 注册 | params.patch 不插值 |
-| llm-stream | ✓ | ✗ | ✗ | ✗ | 按 priority 注册 | 不插值 |
-| tool-pipeline | ✓ | ✓ | ✗ | ✗ | 按 priority 注册 | text 不插值 |
+| agent-request | ✓ | ✓ | ✗ | ✗ | 按 order 注册 | params.patch 不插值 |
+| llm-stream | ✓ | ✗ | ✗ | ✗ | 按 order 注册 | 不插值 |
+| tool-pipeline | ✓ | ✓ | ✗ | ✗ | 按 order 注册 | text 不插值 |
 
 > ✗ 表示该层官方 API 没有逐 agent / 逐消息概念，字段配置了也不会在该层生效，
 > 不是配置错误。文本插值规则：只有 `pre-step` 支持内置环境变量与 filler 变量；

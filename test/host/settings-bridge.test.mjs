@@ -54,7 +54,6 @@ test('settings bridge /meta 返回引擎能力矩阵', async () => {
     () => true,
     () => ({ available: true, providers: [] }),
     () => ({ activeSkillsDir: '', skillCatalog: [] }),
-    () => ({ presetText: '', agentsText: '' }),
     () => '',
     () => true,
   )
@@ -77,7 +76,6 @@ test('settings bridge 拒绝非 loopback 请求', async () => {
     () => true,
     () => ({ available: true, providers: [] }),
     () => ({ activeSkillsDir: '', skillCatalog: [] }),
-    () => ({ presetText: '', agentsText: '' }),
     () => '',
     () => true,
   )
@@ -96,7 +94,6 @@ test('settings bridge /prompt-configs 返回生成目录实际生效配置', asy
     () => true,
     () => ({ available: true, providers: [] }),
     () => ({ activeSkillsDir: '', skillCatalog: [] }),
-    () => ({ presetText: '', agentsText: '' }),
     () => '',
     () => true,
     undefined,
@@ -125,7 +122,6 @@ test('settings bridge /import-preset 写入生成目录并触发回调；/preset
       () => true,
       () => ({ available: true, providers: [] }),
       () => ({ activeSkillsDir: '', skillCatalog: [] }),
-      () => ({ presetText: '', agentsText: '' }),
       () => '',
       () => true,
       undefined,

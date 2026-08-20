@@ -5,9 +5,7 @@ name: 示例：system 静态段
 layer: system-section
 strategy: static
 order: -50
-priority: 0
 mergeMode: merged
-mergeGroup: sys-grp
 text: |-
   你是 {{AGENT_NAME}}，回复前先说明正在做什么。
 variables: {}

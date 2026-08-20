@@ -26,9 +26,11 @@ test('官方格式预设：无 id 回退目录名，无 modules/composition 回�
       "  name: '@deepseek-ai/dsh-demo'",
       '',
     ].join('\n'), 'utf8')
+    // 官方格式预设可引用模板目录内的本地模块（./xxx.mjs 相对路径）。
+    writeFileSync(join(presetDir, 'demo-local.mjs'), 'export function apply() {}\n', 'utf8')
 
     const script = `
-      import { readFileSync } from 'node:fs'
+      import { readFileSync, existsSync } from 'node:fs'
       import { join } from 'node:path'
       const { listPresets, writePreset, resolvePresetDir } = await import('./lib/index.mjs')
       const found = listPresets().find((p) => p.id === 'official-demo')
@@ -47,6 +49,7 @@ test('官方格式预设：无 id 回退目录名，无 modules/composition 回�
       const cordis = readFileSync(join(gen, 'agent.cordis.yml'), 'utf8')
       if (!cordis.includes('demo-row')) throw new Error('组合未回退 agent.cordis.yml')
       if (/__[A-Z0-9_]+__/.test(cordis)) throw new Error('存在未解析 token')
+      if (!existsSync(join(gen, 'demo-local.mjs'))) throw new Error('模板目录本地模块未复制到生成目录')
       console.log('OK')
     `
     const res = spawnSync(process.execPath, ['--input-type=module', '-e', script], {

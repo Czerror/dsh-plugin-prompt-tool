@@ -15,7 +15,7 @@ const ANCHORED_TEMPLATE_DIR = fileURLToPath(new URL('../preset/anchored/', impor
 
 import type { BuildCordisOptions } from './host/prompt-configs.ts'
 export type { BuildCordisOptions, PromptConfigFile, PromptConfigSpec } from './host/prompt-configs.ts'
-export { buildDefaultPromptConfigs, buildPromptConfigFiles, loadPromptConfigFiles, mergePromptConfigs, renderPromptConfigYaml } from './host/prompt-configs.ts'
+export { loadPromptConfigFiles, mergePromptConfigs, renderPromptConfigYaml } from './host/prompt-configs.ts'
 
 /**
  * 渲染 anchored 组合文件:

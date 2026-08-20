@@ -8,8 +8,9 @@
  *       Pro  → 官方训练原句；
  *       Flash → dsh-router-standard 的 Flash 弱路由人设（build/fix 分类 +
  *               回顾锚 + 收敛锚 + 反跑题锚 + 先深想再产出）；
- *   - 子代理（委托深度 > 0）直接放行完整结果，保证 dsh-mnemon 等插件
- *     通过工具白名单要求的 mnemon_* 工具首轮可见。
+ *   - 子代理（委托深度 > 0）默认直接放行完整结果，保证 dsh-mnemon 等插件
+ *     通过工具白名单要求的 mnemon_* 工具首轮可见；includeSubagents=true 时
+ *     子代理与主会话一样走首轮 persona 替换与段隐藏。
  *
  * 工具目录裁剪仍由 tool-bootstrap 负责（首轮 = 真实 Minimal 工具对；晋升后
  * 恢复完整目录或切换 PTC），本模块不触碰 tools，避免两层过滤器冲突。
@@ -43,7 +44,7 @@ function isMnemonSection(section) {
 /**
  * 引擎级 router-first-turn:所有内容(含 Flash persona)都由预设配置参数传入,
  * 本文件不含任何模板专属文本。
- * config: { flashPersona: string, hideSectionPrefixes?: string[] }
+ * config: { flashPersona: string, hideSectionPrefixes?: string[], includeSubagents?: boolean }
  */
 export function apply(ctx, config) {
   const flashPersona = typeof config?.flashPersona === 'string' && config.flashPersona.trim().length > 0
@@ -55,6 +56,7 @@ export function apply(ctx, config) {
   const hidePrefixes = Array.isArray(config?.hideSectionPrefixes)
     ? config.hideSectionPrefixes.filter((item) => typeof item === 'string' && item.length > 0)
     : ['mnemon:']
+  const includeSubagents = config?.includeSubagents === true
 
   const promotion = createEpochPromotion(PROMOTE_EVENTS.either, { includeSubagents: false })
   ctx.on('session/event', (session, event) => promotion.observe(session, event))
@@ -66,8 +68,9 @@ export function apply(ctx, config) {
     const session = agent.session
     if (session === undefined) return assembled
 
-    // 子代理不裁剪任何 section/context：它与宿主白名单子代理协作。
-    if (isDelegated(session)) return assembled
+    // 子代理默认不裁剪任何 section/context：它与宿主白名单子代理协作；
+    // includeSubagents=true 时与主会话同一相位逻辑（首轮替换 + 段隐藏）。
+    if (isDelegated(session) && !includeSubagents) return assembled
 
     const persona = isFlashModel(agent.options?.model) ? flashPersona : RL_PERSONA
 

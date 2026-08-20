@@ -2,7 +2,7 @@
  * manifest — 预设模板单一参数 YAML(preset.yml)的加载与引擎参数解析。
  *
  * 一个预设 = 一个 preset.yml:
- *   - modules/params/content/meta/settingsExtension 全部是直读参数,无模板语法;
+ *   - modules/params/content/meta 全部是直读参数,无模板语法;
  *   - 默认提示词配置由引擎按 params 生成(见 write-preset),promptConfigs 仅为可选覆盖;
  *   - 组合模块中的 __TOKEN__ 由引擎内部 renderEngineTokens 按 params 生成,
  *     不再暴露到参数文件。
@@ -216,7 +216,9 @@ export function renderEngineTokens(params: Record<string, unknown>): Record<stri
     BOOTSTRAP_MAX_TOKENS: bootstrap,
     FLASH_PERSONA: JSON.stringify(flashPersona).slice(1, -1),
     SUBAGENT_FLASH: subagentFlashBlock,
-    ALLOW_KINDS: asString(params.allowKinds, '[skill-invocation, near-anchor, router-guide]'),
+    // 引擎默认与 context-gate 的 DEFAULT_ALLOW_KINDS 一致（单一默认源）；
+    // 需要放行更多 kind 的预设（anchored）在 preset.yml 显式声明 allowKinds。
+    ALLOW_KINDS: asString(params.allowKinds, '[skill-invocation]'),
     STR_REPLACE_EDITOR_MAX_OUTPUT_CHARS: editorMaxOutputChars,
   }
 }

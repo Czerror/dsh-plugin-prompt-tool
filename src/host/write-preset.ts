@@ -6,7 +6,7 @@
  * 默认提示词配置与组合 token 都由引擎按 params 生成,参数文件不含任何模板语法。
  */
 
-import { writeFileSync, mkdirSync, rmSync, cpSync, mkdtempSync, renameSync, existsSync } from 'node:fs'
+import { writeFileSync, mkdirSync, rmSync, cpSync, mkdtempSync, renameSync, existsSync, readdirSync } from 'node:fs'
 import { join, basename, dirname } from 'node:path'
 import { stringify as stringifyYaml } from 'yaml'
 import { DEFAULT_PRESET_DIR } from './paths.ts'
@@ -109,6 +109,19 @@ export function writePreset(prompt: string, options: WritePresetOptions): void {
   writeFileSync(join(outDir, 'preset.md'), prompt, 'utf8')
   writeFileSync(join(outDir, 'agents.md'), options.agentsInstructionText ?? '', 'utf8')
 
+  // 2.6) 模板目录本地文件复制（官方格式预设的组合引用 ./xxx.mjs 等相对路径模块，
+  // 必须随预设进入生成目录；跳过定义文件 preset.yml / agent.cordis.yml 与
+  // 内容资产 preset.md / agents.md——后者由运行时 prompt 决定）。
+  const templateEntries = readdirSync(templateDir, { withFileTypes: true })
+  for (const entry of templateEntries) {
+    if (entry.name === 'preset.yml' || entry.name === 'agent.cordis.yml'
+      || entry.name === 'preset.md' || entry.name === 'agents.md') continue
+    const source = join(templateDir, entry.name)
+    const target = join(outDir, entry.name)
+    if (entry.isDirectory()) cpSync(source, target, { recursive: true, force: true })
+    else cpSync(source, target, { force: true })
+  }
+
   // 3) 项目本体:引擎目录整体复制(全部执行逻辑;预设只有参数)。
   const engineDir = join(outDir, 'engine')
   rmSync(engineDir, { recursive: true, force: true })
@@ -146,9 +159,12 @@ export function writePreset(prompt: string, options: WritePresetOptions): void {
         }
       } else if (next.id === 'router-guide') {
         next.enabled = params.firstTurnAnchor === true
+        // 自定义引导对所有模型注入（Pro/Flash），自动引导只服务 Flash 家族。
+        const useCustom = params.firstTurnAnchor === true && params.guideCustom === true
+        next.modelScope = useCustom ? 'all' : 'flash'
         next.params = {
           ...next.params,
-          useCustom: params.firstTurnAnchor === true && params.guideCustom === true,
+          useCustom,
           text: asString(params.guideText),
           guideComplexPattern: asString(params.guideComplexPattern),
           guideWeak: asString(params.guideWeak),

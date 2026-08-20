@@ -30,11 +30,6 @@ export interface SkillsBridgeState {
   skillCatalog: SkillCatalogEntry[]
 }
 
-export interface ProjectOriginals {
-  presetText: string
-  agentsText: string
-}
-
 /** 仅允许本机回环请求，镜像官方 settings bridge 的边界。 */
 function isLoopbackRequest(req: IncomingMessage): boolean {
   const address = req.socket.remoteAddress
@@ -122,7 +117,6 @@ export function registerSettingsBridge(
   getDeepseekAvailable: () => boolean,
   getDeepseekState: () => DeepseekDetection,
   getSkillsState: () => SkillsBridgeState,
-  readOriginals: () => ProjectOriginals,
   getEngineStrategyDir: () => string,
   ensureRegistered: (sctx: Context) => boolean,
   afterSkillFix?: () => void,
@@ -217,41 +211,6 @@ export function registerSettingsBridge(
             const descriptor = findDescriptor()
             if (descriptor === undefined) {
               writeBridgeJson(res, 500, { ok: false, code: 'settings-rejected', message: 'prompt-tool settings namespace was disposed after mutate' })
-              return
-            }
-            writeBridgeJson(res, 200, { ok: true, value: descriptor })
-          },
-        }),
-        sctx.webServer.register({
-          kind: 'exact',
-          path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.restoreOriginals,
-          handler: async (req, res) => {
-            if (!guard(req, res)) return
-            ensureRegistered(sctx)
-            const { body } = await readBridgeBody(req)
-            if (body === null || body === undefined || typeof body !== 'object') {
-              writeBridgeJson(res, 400, { ok: false, code: 'settings-rejected', message: 'unreadable JSON body' })
-              return
-            }
-            const record = body as Record<string, unknown>
-            const scope = record.scope === 'preset' || record.scope === 'agents' || record.scope === 'all'
-              ? record.scope
-              : 'all'
-            const originals = readOriginals()
-            const ops: SettingsPathOp[] = []
-            if (scope === 'preset' || scope === 'all') ops.push({ op: 'set', path: ['promptText'], value: originals.presetText })
-            if (scope === 'agents' || scope === 'all') ops.push({ op: 'set', path: ['agentsText'], value: originals.agentsText })
-            const expectedRevision = typeof record.expectedRevision === 'number' ? record.expectedRevision : undefined
-            try {
-              await sctx.settings.mutate(ns, ops, expectedRevision)
-            } catch (error) {
-              const message = error instanceof Error ? error.message : String(error)
-              writeBridgeJson(res, 409, { ok: false, code: 'settings-rejected', message })
-              return
-            }
-            const descriptor = findDescriptor()
-            if (descriptor === undefined) {
-              writeBridgeJson(res, 500, { ok: false, code: 'settings-rejected', message: 'prompt-tool settings namespace was disposed after restore' })
               return
             }
             writeBridgeJson(res, 200, { ok: true, value: descriptor })

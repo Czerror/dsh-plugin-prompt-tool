@@ -48,7 +48,7 @@ test('模板库覆盖六个注入层级与两个 placeholder 数据源', () => {
   assert.equal(byId.get('example-skill-catalog').fill, 'skill-catalog')
 })
 
-test('merged 模板对保持同 position + 同 mergeGroup，priority 递增', () => {
+test('merged 模板对保持同 position，order 递增', () => {
   const specs = loadPromptTemplates().map((template) => template.spec)
   const a = specs.find((spec) => spec.id === 'example-merged-a')
   const b = specs.find((spec) => spec.id === 'example-merged-b')
@@ -56,10 +56,8 @@ test('merged 模板对保持同 position + 同 mergeGroup，priority 递增', ()
   assert.equal(b.mergeMode, 'merged')
   assert.equal(a.position, 'before-all')
   assert.equal(b.position, 'before-all')
-  assert.equal(a.mergeGroup, 'grp')
-  assert.equal(b.mergeGroup, 'grp')
-  assert.equal(a.priority, 0)
-  assert.equal(b.priority, 1)
+  assert.equal(a.order, 0)
+  assert.equal(b.order, 1)
 })
 
 test('模板库全部条目通过引擎权威校验（模板即合法配置）', async () => {

@@ -65,6 +65,3 @@ promptConfigs:
     promotion: main
     subagents: inherit
     sourceKind: plugin
-    params:
-      text: ""
-      firstTurnWord: we

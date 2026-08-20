@@ -19,6 +19,6 @@
 ## 关键概念
 
 - 六层注入：`pre-step / system-section / runtime-context / agent-request / llm-stream / tool-pipeline`
-- 内容策略：`static / placeholder / instruction-hint / anchor-auto / guide-auto / custom-fallback`
-- `custom-fallback`：自定义锚定词兜底注入，参数 `customAnchorWord`，兼容 `anchorWord`
+- 内容策略：`static / placeholder / instruction-hint / first-turn-anchor / guide-auto / custom-fallback`
+- `custom-fallback`：自定义锚定词兜底注入，参数 `params.firstTurnWord`（默认 `we`）
 - `/api/prompt-tool/settings/meta`：客户端动态枚举来源

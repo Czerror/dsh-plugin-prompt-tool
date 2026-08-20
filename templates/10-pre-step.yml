@@ -14,7 +14,6 @@ modelScope: all
 configKind: ordered
 order: 0
 role: user
-priority: 0
 mergeMode: separate
 sourceKind: ''
 form: notice

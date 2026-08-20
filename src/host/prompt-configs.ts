@@ -50,6 +50,7 @@ export interface PromptConfigFile {
   content: string
 }
 
+/** buildCordis 兼容层的运行时选项（生产路径为 writePreset + preset.yml 数据驱动）。 */
 export interface BuildCordisOptions {
   /** 首轮近距离锚定：首条真实用户消息后追加一次性首句锚点。 */
   firstTurnAnchor?: boolean
@@ -71,115 +72,6 @@ export interface BuildCordisOptions {
   bootstrapMaxTokens?: number
   /** 使用 PTC 模式：默认 true。 */
   usePtcMode?: boolean
-  /** guide-auto 复杂任务判定正则（单一配置来源，缺省用引擎内置）。 */
-  guideComplexPattern?: string
-  /** guide-auto 弱引导默认文本。 */
-  guideWeak?: string
-  /** guide-auto 深度引导默认文本。 */
-  guideDeep?: string
-  /** first-turn-anchor 构建类任务判定正则。 */
-  buildPattern?: string
-  /** first-turn-anchor 复杂/设计类任务判定正则。 */
-  complexPattern?: string
-  /** first-turn-anchor 构建类首句锚点。 */
-  firstTurnBuild?: string
-  /** first-turn-anchor 检查类首句锚点。 */
-  firstTurnInspect?: string
-  /** first-turn-anchor 深度设计类首句锚点。 */
-  firstTurnDeep?: string
-}
-
-/** 从 BuildCordisOptions 构造默认四条提示词配置（顺序即引擎执行顺序契约）。 */
-export function buildDefaultPromptConfigs(options: BuildCordisOptions, prompt: string): PromptConfigSpec[] {
-  const firstTurnAnchor = options.firstTurnAnchor === true
-  const firstTurnCustom = options.firstTurnCustom === true
-  const guideCustom = options.guideCustom === true
-  const guideText = typeof options.guideText === 'string' && options.guideText.length > 0 ? options.guideText : ''
-  const injectPrompt = options.injectPrompt !== false
-  const firstTurnText = typeof options.firstTurnText === 'string' && options.firstTurnText.length > 0 ? options.firstTurnText : ''
-  const routerGuideUseCustom = firstTurnAnchor && guideCustom
-
-  return [
-    {
-      id: 'near-anchor',
-      name: '首句锚点',
-      enabled: firstTurnAnchor,
-      strategy: 'first-turn-anchor',
-      layer: 'pre-step',
-      configKind: 'ordered',
-      order: 0,
-      role: 'user',
-      position: 'after-user',
-      dedupe: 'session',
-      promotion: 'none',
-      subagents: 'none',
-      params: {
-        useCustom: firstTurnCustom,
-        firstTurnText,
-        buildPattern: options.buildPattern,
-        complexPattern: options.complexPattern,
-        firstTurnBuild: options.firstTurnBuild,
-        firstTurnInspect: options.firstTurnInspect,
-        firstTurnDeep: options.firstTurnDeep,
-      },
-    },
-    {
-      id: 'router-guide',
-      name: '每轮引导',
-      enabled: firstTurnAnchor,
-      strategy: 'guide-auto',
-      layer: 'pre-step',
-      configKind: 'ordered',
-      order: 10,
-      role: 'user',
-      position: 'after-user',
-      dedupe: 'batch',
-      promotion: 'main',
-      subagents: 'none',
-      modelScope: routerGuideUseCustom ? 'all' : 'flash',
-      params: {
-        useCustom: routerGuideUseCustom,
-        text: guideText,
-        guideComplexPattern: options.guideComplexPattern,
-        guideWeak: options.guideWeak,
-        guideDeep: options.guideDeep,
-      },
-    },
-    {
-      id: 'prompt-injector',
-      name: 'preset.md 注入',
-      enabled: injectPrompt,
-      strategy: 'custom-fallback',
-      layer: 'pre-step',
-      configKind: 'ordered',
-      order: 20,
-      role: 'user',
-      position: 'before-all',
-      dedupe: 'session',
-      promotion: 'main',
-      subagents: 'inherit',
-      sourceKind: 'plugin',
-      params: { text: prompt, firstTurnWord: 'we' },
-    },
-    {
-      id: 'instruction-hint',
-      name: '指令文件提示',
-      enabled: true,
-      strategy: 'placeholder',
-      layer: 'pre-step',
-      configKind: 'ordered',
-      order: 30,
-      role: 'user',
-      position: 'after-all',
-      dedupe: 'session',
-      promotion: 'include-subagents',
-      subagents: 'inherit',
-      sourceKind: 'instruction-hint',
-      form: 'hint',
-      fill: 'instruction-hint',
-      params: { promoteOn: 'either', includeSubagents: true },
-    },
-  ]
 }
 
 /** 文本块缩进 n 个空格（YAML block scalar）。 */
@@ -305,20 +197,4 @@ export function loadPromptConfigFiles(dir: string): PromptConfigSpec[] {
     specs.push(parsed as PromptConfigSpec)
   }
   return specs
-}
-
-/**
- * 生成全部提示词配置模块文件：默认提示词配置 + 自定义提示词配置合并，按最终顺序编号落盘。
- * 默认四条提示词配置保持 00/10/20/30 文件名；新增提示词配置接在默认之后。
- */
-export function buildPromptConfigFiles(
-  options: BuildCordisOptions,
-  prompt: string,
-  ...extraSources: Array<PromptConfigSpec[] | undefined>
-): PromptConfigFile[] {
-  const configs = mergePromptConfigs(buildDefaultPromptConfigs(options, prompt), ...extraSources)
-  return configs.map((spec, index) => ({
-    file: `${String(index * 10).padStart(2, '0')}-${spec.id}.yml`,
-    content: renderPromptConfigYaml(spec),
-  }))
 }

@@ -190,16 +190,6 @@ function wireToolPipelines(ctx, configs, warnOnce) {
         return next()
       }
     })
-    ctx.on('tools/execute', async (exec, next) => {
-      try {
-        if (!matchesTool(exec) || !matchesAgentScope(config, exec?.agent)) return next()
-        // 透传包装点:未来 timeout/重试参数在此接入。
-        return next()
-      } catch (error) {
-        warnOnce(`${name}: tool-pipeline(execute) config ${config.id} failed: ${String(error?.message ?? error)}`)
-        return next()
-      }
-    })
     ctx.on('tools/post-execute', async (exec, result, next) => {
       try {
         if (!matchesTool(exec) || !matchesAgentScope(config, exec?.agent)) return next()

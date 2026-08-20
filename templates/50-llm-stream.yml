@@ -3,7 +3,7 @@ id: example-llm-stream
 layer: llm-stream
 strategy: static
 modelScope: flash
-priority: 0
+order: 0
 text: 自定义流替换文本
 params:
   mode: pass

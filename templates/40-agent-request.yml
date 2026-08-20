@@ -4,7 +4,7 @@ layer: agent-request
 strategy: static
 modelScope: flash
 subagents: none
-priority: 0
+order: 0
 params:
   patch:
     maxTokens: 4096
