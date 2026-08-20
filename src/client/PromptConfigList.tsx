@@ -170,7 +170,7 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
   return (
     <section className={styles.section} aria-labelledby="prompt-tool-configs-heading">
       <div className={styles.sectionHeading}>
-      <div><h2 id="prompt-tool-configs-heading">{layer === undefined ? '配置列表' : '本层提示词配置'}</h2><p>{scoped.length} 条配置 · {scoped.filter((config) => config.enabled !== false).length} 条启用；上下移动控制同层顺序。</p></div>
+      <div><h2 id="prompt-tool-configs-heading">{layer === undefined ? '模块列表' : '本层提示词配置'}</h2><p>{scoped.length} 条配置 · {scoped.filter((config) => config.enabled !== false).length} 条启用；上下移动控制同层顺序。</p></div>
         <div className={styles.sectionActions}>
           {extraActions}
           <button type="button" className={styles.pillButton} disabled={validating} onClick={() => void runValidate(configs)}>{validating && <span className={styles.spinner} aria-hidden="true" />}{validating ? '校验中…' : '校验'}</button>
@@ -183,7 +183,7 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
           <input
             className={styles.listFilter}
             value={filter}
-            aria-label="过滤配置列表"
+            aria-label="过滤模块列表"
             placeholder="过滤：按 id / 名称 / strategy…"
             spellCheck={false}
             onChange={(event) => setFilter(event.target.value)}
@@ -210,7 +210,7 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
       )}
 
       <div className={styles.feedback} aria-live="polite">
-        {dirty && <p className={styles.readOnly}>配置列表有未保存修改。</p>}
+        {dirty && <p className={styles.readOnly}>模块列表有未保存修改。</p>}
       </div>
 
       <footer className={`${styles.actions} ${dirty ? styles.actionsVisible : ''}`} aria-live="polite">
