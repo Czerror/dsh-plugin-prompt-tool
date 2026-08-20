@@ -8,7 +8,7 @@ import type {
 } from '@deepseek-ai/dsh-skill'
 import type { SettingsPathOp } from '@deepseek-ai/dsh-settings'
 import type {} from '@deepseek-ai/dsh-host-webserver'
-import { rmSync } from 'node:fs'
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createSkillsWatcher } from './runtime/skills-watcher.ts'
 import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
@@ -58,6 +58,15 @@ function readPromptFile(fallbackText: string): string {
 
 function readAgents(): string {
   return loadPresetContent().agentsText
+}
+
+/** 生成目录内容文件（writePreset 落盘；大文本存文件而非 settings）。 */
+function readGeneratedContent(presetDir: string, name: string): string {
+  try {
+    return readFileSync(join(presetDir, name), 'utf8')
+  } catch {
+    return ''
+  }
 }
 
 interface ProjectOriginals {
@@ -159,8 +168,43 @@ export function apply(ctx: Context, configIn: Config): void {
   const deepseekState = (): DeepseekDetection => detectDeepseek(ctx)
   const getDeepseekAvailable = (): boolean => deepseekState().available
   const getDeepseekState = (): DeepseekDetection => deepseekState()
-  let current = config.text || readPromptFile(config.fallbackText)
-  let currentAgents = config.agentsText || readAgents()
+  // 内容资产优先读生成目录文件（writePreset 落盘），模板 content 作回退；
+  // settings.yaml 不再承载大文本（web 打开加载慢的根因）。
+  let current = readGeneratedContent(config.presetDir, 'preset.md') || readPromptFile(config.fallbackText)
+  let currentAgents = readGeneratedContent(config.presetDir, 'agents.md') || readAgents()
+
+  /** 重建生成目录（文本/组合/引擎/提示词配置）；writePreset 关闭时移除旧目录。 */
+  const rebuildPreset = (): void => {
+    if (runtime.writePreset) {
+      const presetPrompt = runtime.injectPrompt && current.length > 0 ? current : ''
+      writePreset(presetPrompt, {
+        firstTurnAnchor: runtime.firstTurnAnchor,
+        firstTurnText: runtime.firstTurnText,
+        firstTurnCustom: runtime.firstTurnCustom,
+        guideText: runtime.guideText,
+        guideCustom: runtime.guideCustom,
+        injectPrompt: runtime.injectPrompt,
+        subagentFlashProvider: runtime.subagentFlashProvider,
+        subagentFlashModel: runtime.subagentFlashModel,
+        bootstrapMaxTokens: runtime.bootstrapMaxTokens,
+        usePtcMode: runtime.usePtcMode,
+        agentsInstructionText: currentAgents,
+        presetDir: runtime.presetDir,
+        presetOrder: runtime.presetOrder,
+        promptConfigs: runtime.promptConfigs,
+        promptConfigsDir: runtime.promptConfigsDir,
+        presetTemplate: runtime.presetTemplate,
+        warn: (message) => warn(ctx, message),
+      })
+    } else {
+      // writePreset 关闭时移除旧的生成目录，避免残留 prompt-injector 继续注入。
+      try {
+        rmSync(runtime.presetDir, { recursive: true, force: true })
+      } catch (error) {
+        warn(ctx, 'prompt-tool: failed to remove ' + runtime.presetDir + ': ' + String(error))
+      }
+    }
+  }
   // 首次启动把包内 skills/ 增量复制到 $DSH_HOME/profiles/<profile>/skills，
   // 并优先使用 profile 副本；已有同名文件不覆盖，用户编辑会保留。
   // 显式配置了其他 skillsDir 时尊重用户选择，不做复制。
@@ -293,6 +337,16 @@ export function apply(ctx: Context, configIn: Config): void {
       cachedSkills.invalidate(activeSkillsDir); invalidateSkills?.()
     },
     () => runtime.presetDir,
+    (scope) => {
+      // 内容导入后：更新运行时文本并重建生成目录。
+      if (scope === 'preset') current = readGeneratedContent(runtime.presetDir, 'preset.md')
+      else currentAgents = readGeneratedContent(runtime.presetDir, 'agents.md')
+      try {
+        rebuildPreset()
+      } catch (error) {
+        warn(ctx, `prompt-tool: preset import rebuild failed: ${String(error)}`)
+      }
+    },
   )
 
   // 首次以 base-only profile 启动时自动补 @deepseek-ai/dsh-web-app：
@@ -489,35 +543,7 @@ registerTuiCommand(ctx, NS, () => currentSource(), getDeepseekAvailable, getDeep
         warn(ctx, `prompt-tool: failed to remove resident rules block from ${runtime.residentAgentsPath}`)
       }
     }
-    if (runtime.writePreset) {
-      const presetPrompt = runtime.injectPrompt && current.length > 0 ? current : ''
-      writePreset(presetPrompt, {
-        firstTurnAnchor: runtime.firstTurnAnchor,
-        firstTurnText: runtime.firstTurnText,
-        firstTurnCustom: runtime.firstTurnCustom,
-        guideText: runtime.guideText,
-        guideCustom: runtime.guideCustom,
-        injectPrompt: runtime.injectPrompt,
-        subagentFlashProvider: runtime.subagentFlashProvider,
-        subagentFlashModel: runtime.subagentFlashModel,
-        bootstrapMaxTokens: runtime.bootstrapMaxTokens,
-        usePtcMode: runtime.usePtcMode,
-        agentsInstructionText: runtime.injectAgentsPrompt && currentAgents.length > 0 ? currentAgents : undefined,
-        presetDir: runtime.presetDir,
-        presetOrder: runtime.presetOrder,
-        promptConfigs: runtime.promptConfigs,
-        promptConfigsDir: runtime.promptConfigsDir,
-        presetTemplate: runtime.presetTemplate,
-        warn: (message) => warn(ctx, message),
-      })
-    } else {
-      // writePreset 关闭时移除旧的生成目录，避免残留 prompt-injector 继续注入。
-      try {
-        rmSync(runtime.presetDir, { recursive: true, force: true })
-      } catch (error) {
-        warn(ctx, 'prompt-tool: failed to remove ' + runtime.presetDir + ': ' + String(error))
-      }
-    }
+    rebuildPreset()
   }
 
   const settingsEntry: PromptSettings = {
@@ -561,6 +587,26 @@ registerTuiCommand(ctx, NS, () => currentSource(), getDeepseekAvailable, getDeep
   const ensureRegistered = (sctx: Context): boolean => ensureSettingsRegistered(sctx, NS, PromptSettingsSchema, {
     base: () => settingsEntry,
     onRegistered: (scope) => {
+      // 旧版 settings 大文本迁移：生成目录无内容文件且 settings 旧值非空时落盘（一次性）。
+      try {
+        const hasPresetMd = readGeneratedContent(runtime.presetDir, 'preset.md') !== ''
+        const hasAgentsMd = readGeneratedContent(runtime.presetDir, 'agents.md') !== ''
+        if (!hasPresetMd || !hasAgentsMd) {
+          const legacy = scope.get()
+          if (!hasPresetMd && legacy.promptText.length > 0) {
+            mkdirSync(runtime.presetDir, { recursive: true })
+            writeFileSync(join(runtime.presetDir, 'preset.md'), legacy.promptText, 'utf8')
+            current = legacy.promptText
+          }
+          if (!hasAgentsMd && legacy.agentsText.length > 0) {
+            mkdirSync(runtime.presetDir, { recursive: true })
+            writeFileSync(join(runtime.presetDir, 'agents.md'), legacy.agentsText, 'utf8')
+            currentAgents = legacy.agentsText
+          }
+        }
+      } catch (error) {
+        warn(ctx, `prompt-tool: legacy settings content migration failed: ${String(error)}`)
+      }
       currentSource = () => scope.get()
       scope.watch(() => {
         try {

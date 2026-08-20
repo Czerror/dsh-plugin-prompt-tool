@@ -100,6 +100,10 @@ export function writePreset(prompt: string, options: WritePresetOptions): void {
   const meta = spec.meta !== null && typeof spec.meta === 'object' ? spec.meta as Record<string, unknown> : {}
   writeFileSync(join(outDir, 'preset.yml'), stringifyYaml({ ...meta, order: options.presetOrder }) + '\n', 'utf8')
 
+  // 2.5) 内容资产:preset.md / agents.md(与组合文件同层;大文本存文件而非 settings)。
+  writeFileSync(join(outDir, 'preset.md'), prompt, 'utf8')
+  writeFileSync(join(outDir, 'agents.md'), options.agentsInstructionText ?? '', 'utf8')
+
   // 3) 项目本体:引擎目录整体复制(全部执行逻辑;预设只有参数)。
   const engineDir = join(outDir, 'engine')
   rmSync(engineDir, { recursive: true, force: true })

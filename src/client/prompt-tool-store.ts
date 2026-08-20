@@ -164,6 +164,7 @@ export interface PromptToolStore {
   skillEnabled: (folder: string) => boolean
   fixSkill: (folder: string) => void
   openSkillsDir: () => Promise<void>
+  importPreset: (scope: 'preset' | 'agents', content: string) => Promise<void>
   discardPrompt: () => void
   discardAgents: () => void
   dirtyPrompt: boolean
@@ -290,6 +291,19 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
         return EMPTY_FIELDS
       }
       applyView(res)
+      // 内容资产在生成目录文件（settings 不再承载大文本）；按需拉取填充编辑器预览。
+      const presetContent = await bridgePost<{ content: string }>('/preset-content', { scope: 'preset' })
+      if (seq !== loadSeqRef.current) return EMPTY_FIELDS
+      if (presetContent.ok) {
+        patch({ promptText: presetContent.value.content })
+        setSavedPromptText(presetContent.value.content)
+      }
+      const agentsContent = await bridgePost<{ content: string }>('/preset-content', { scope: 'agents' })
+      if (seq !== loadSeqRef.current) return EMPTY_FIELDS
+      if (agentsContent.ok) {
+        patch({ agentsText: agentsContent.value.content })
+        setSavedAgentsText(agentsContent.value.content)
+      }
       // 实际生效配置（引擎从生成目录加载；settings.promptConfigs 仅为覆盖层，
       // 默认为空不代表无配置）。非空时以实际配置为准，并同步已保存快照避免误判 dirty。
       const configsRes = await bridgePost<{ promptConfigs: PromptConfigDraft[] }>('/prompt-configs', {})
@@ -482,6 +496,23 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
     }
   }, [api, showNotice])
 
+  const importPreset = useCallback(async (scope: 'preset' | 'agents', content: string) => {
+    const res = await bridgePost<{ scope: string }>('/import-preset', { scope, content })
+    if (res.ok) {
+      if (scope === 'preset') {
+        patch({ promptText: content })
+        setSavedPromptText(content)
+      } else {
+        patch({ agentsText: content })
+        setSavedAgentsText(content)
+      }
+      showNotice('ok', scope === 'preset' ? 'preset.md 已导入并生效' : 'AGENTS.md 已导入并生效')
+      await load()
+    } else {
+      showNotice('error', '导入失败：' + (res.message ?? 'settings bridge unavailable'))
+    }
+  }, [load, patch, showNotice])
+
   const discardPrompt = useCallback(() => patch({ promptText: savedPromptText }), [patch, savedPromptText])
   const discardAgents = useCallback(() => patch({ agentsText: savedAgentsText }), [patch, savedAgentsText])
 
@@ -530,6 +561,7 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
     skillEnabled,
     fixSkill,
     openSkillsDir,
+    importPreset,
     discardPrompt,
     discardAgents,
     dirtyPrompt,

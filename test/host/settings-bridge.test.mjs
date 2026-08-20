@@ -2,6 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
+import { rmSync } from 'node:fs'
 import { registerSettingsBridge } from '../../lib/index.mjs'
 
 const PREFIX = '/api/prompt-tool/settings'
@@ -111,4 +112,44 @@ test('settings bridge /prompt-configs 返回生成目录实际生效配置', asy
   assert.equal(payload.ok, true)
   assert.ok(Array.isArray(payload.value.promptConfigs), '降级为空数组')
   assert.equal(payload.value.promptConfigs.length, 0)
+})
+
+test('settings bridge /import-preset 写入生成目录并触发回调；/preset-content 读回', async () => {
+  const { ctx, handlers } = makeHarness()
+  let importedScope
+  const dir = join(tmpdir(), `prompt-tool-bridge-${process.pid}-${Date.now()}`)
+  try {
+    registerSettingsBridge(
+      ctx,
+      'prompt-tool',
+      () => true,
+      () => ({ available: true, providers: [] }),
+      () => ({ activeSkillsDir: '', skillCatalog: [] }),
+      () => ({ presetText: '', agentsText: '' }),
+      () => '',
+      () => true,
+      undefined,
+      () => dir,
+      (scope) => { importedScope = scope },
+    )
+    const write = handlers.get(`${PREFIX}/import-preset`)
+    const read = handlers.get(`${PREFIX}/preset-content`)
+    assert.ok(write && read, '/import-preset 与 /preset-content 应注册')
+    // 导入 preset
+    const wres = fakeRes()
+    await write(fakeReq({ body: undefined, [Symbol.asyncIterator]: async function* () {
+      yield Buffer.from(JSON.stringify({ scope: 'preset', content: 'HELLO PRESET' }))
+    } }), wres)
+    assert.equal(wres.status, 200)
+    assert.equal(importedScope, 'preset')
+    // 读回
+    const rres = fakeRes()
+    await read(fakeReq({ body: undefined, [Symbol.asyncIterator]: async function* () {
+      yield Buffer.from(JSON.stringify({ scope: 'preset' }))
+    } }), rres)
+    assert.equal(rres.status, 200)
+    assert.equal(JSON.parse(rres.body).value.content, 'HELLO PRESET')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
 })

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react'
 import clsx from 'clsx'
 import type { IApiClient } from '@deepseek-ai/dsh-client-connection/client'
@@ -339,20 +339,32 @@ function FileEditor(props: { store: PromptToolStore; scope: 'preset' | 'agents' 
   const fields = store.fields
   const isPreset = scope === 'preset'
   const text = isPreset ? fields.promptText : fields.agentsText
-  const saved = isPreset ? store.savedPromptText : store.savedAgentsText
-  const dirty = text !== saved
-  const saving = isPreset ? store.savingPrompt : store.savingAgents
+  const [importing, setImporting] = useState(false)
+  const fileRef = useRef<HTMLInputElement>(null)
   const title = isPreset ? 'Preset 预设' : 'AGENTS 设置'
   const desc = isPreset
-    ? 'preset.md 内容写入 settings.promptText；由消息批层的 prompt-injector 提示词配置注入。生成总开关在「功能设置」。'
-    : 'AGENTS.md 内容写入 settings.agentsText；下方开关决定是否经 instruction-hint 注入，常驻写入开关在「功能设置」。'
+    ? 'preset.md 内容存于生成目录（.agent-presets/<模板>/preset.md），由 prompt-injector 提示词配置注入；主设置通过「导入配置文件」写入，不再内嵌在 settings.yaml。生成总开关在「功能设置」。'
+    : 'AGENTS.md 内容存于生成目录 agents.md；主设置通过「导入配置文件」写入；注入开关在「消息批层入口」。'
+  const pickFile = (file: File | undefined): void => {
+    if (file === undefined) return
+    const reader = new FileReader()
+    reader.onload = () => {
+      const content = String(reader.result ?? '')
+      setImporting(true)
+      void store.importPreset(scope, content).finally(() => setImporting(false))
+    }
+    reader.readAsText(file)
+  }
   return (
     <section className={ui.section} aria-labelledby={`pt-${scope}-heading`}>
       <div className={ui.sectionHeading}>
-        <div><h2 id={`pt-${scope}-heading`}>{title}{dirty ? ' · 未保存' : ''}</h2><p>{desc}</p></div>
-<div className={ui.sectionActions}>
-          <button type="button" className={ui.primaryPill} disabled={saving || !dirty} onClick={isPreset ? store.savePrompt : store.saveAgents}>{saving ? '保存中…' : '校验并保存'}</button>
-          <button type="button" className={ui.pillButton} disabled={!dirty} onClick={isPreset ? store.discardPrompt : store.discardAgents}>放弃修改</button>
+        <div><h2 id={`pt-${scope}-heading`}>{title}</h2><p>{desc}</p></div>
+        <div className={ui.sectionActions}>
+          <input ref={fileRef} type="file" accept=".md,.markdown,.txt" style={{ display: 'none' }} aria-label="选择配置文件"
+            onChange={(event) => { pickFile(event.target.files?.[0]); event.target.value = '' }} />
+          <button type="button" className={ui.primaryPill} disabled={importing} onClick={() => fileRef.current?.click()}>
+            {importing ? '导入中…' : '导入配置文件'}
+          </button>
         </div>
       </div>
       {!isPreset && (
@@ -361,13 +373,12 @@ function FileEditor(props: { store: PromptToolStore; scope: 'preset' | 'agents' 
             checked={fields.injectAgentsPrompt} disabled={!fields.writePreset} onChange={() => store.toggle('injectAgentsPrompt')} />
         </div>
       )}
-      <textarea
-        className={ui.textarea}
-        aria-label={`${title}内容`}
-        value={text}
-        onChange={(event) => store.patch(isPreset ? { promptText: event.target.value } : { agentsText: event.target.value })}
-        spellCheck={false}
-      />
+      <div className={ui.rowGroup}>
+        <label className={ui.textBlock}>
+          <span className={ui.settingCopy}><strong>当前内容（只读预览）</strong><small>导入文件后自动刷新；内容存于生成目录，不写入 settings.yaml。</small></span>
+          <textarea className={ui.firstTurnInput} value={text} readOnly spellCheck={false} aria-label={`${title}当前内容`} />
+        </label>
+      </div>
       {isPreset && (
         <div className={ui.rowGroup}>
           <label className={ui.textBlock}>

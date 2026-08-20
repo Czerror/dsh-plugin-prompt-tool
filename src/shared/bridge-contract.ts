@@ -17,6 +17,8 @@ export const BRIDGE_ENDPOINTS = {
   skillFix: '/skill-fix',
   templates: '/templates',
   promptConfigs: '/prompt-configs',
+  presetContent: '/preset-content',
+  importPreset: '/import-preset',
 } as const
 
 export type BridgeEndpoint = (typeof BRIDGE_ENDPOINTS)[keyof typeof BRIDGE_ENDPOINTS]

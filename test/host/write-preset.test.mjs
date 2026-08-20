@@ -135,6 +135,18 @@ test('writePreset 官方导入预设（standard/minimal/ptc/creative）渲染组
   }
 })
 
+test('writePreset 生成内容资产文件 preset.md / agents.md', () => {
+  const dir = join(tmpdir(), `prompt-tool-md-${process.pid}-${Date.now()}`)
+  const presetDir = join(dir, 'preset')
+  try {
+    writePreset('PRESET CONTENT', { ...makeOptions(presetDir), agentsInstructionText: 'AGENTS CONTENT' })
+    assert.equal(readFileSync(join(presetDir, 'preset.md'), 'utf8'), 'PRESET CONTENT')
+    assert.equal(readFileSync(join(presetDir, 'agents.md'), 'utf8'), 'AGENTS CONTENT')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
 test('writePreset 失败时保留旧生成目录', () => {
   const dir = join(tmpdir(), `prompt-tool-wp-${process.pid}-${Date.now()}`)
   const presetDir = join(dir, 'preset')

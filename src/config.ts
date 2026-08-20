@@ -56,10 +56,6 @@ export function normalizeFirstTurnText(text: string | undefined): string {
 }
 
 export interface Config {
-  /** 可选：覆盖 preset.md 文本（默认读文件）。 */
-  text: string
-  /** 可选：覆盖 AGENTS.md 文本（默认读文件）。 */
-  agentsText: string
   /** 是否用 AGENTS.md 内容替换本地 instruction-hint 的默认提示文本（默认关闭）。 */
   injectAgentsPrompt: boolean
   /** 是否写 ~/.dsh/AGENTS.md（默认 true）。 */
@@ -113,8 +109,6 @@ export interface Config {
 // 官方插件配置范式：同名 interface Config 与 Schemastery schema 成对导出，
 // 框架在插件加载时校验并填充默认值。
 export const Config: z<Config> = z.object({
-  text: z.string().default(''),
-  agentsText: z.string().default(''),
   injectAgentsPrompt: z.boolean().default(false),
   writeAgents: z.boolean().default(true),
   writePreset: z.boolean().default(true),

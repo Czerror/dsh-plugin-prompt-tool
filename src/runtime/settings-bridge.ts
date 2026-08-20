@@ -2,6 +2,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { join } from 'node:path'
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import type { SettingsDescriptor, SettingsNamespace, SettingsPathOp } from '@deepseek-ai/dsh-settings'
 import type { DeepseekDetection } from './deepseek.ts'
 import type { SkillCatalogEntry } from '../config.ts'
@@ -105,6 +106,8 @@ export function registerSettingsBridge(
   afterSkillFix?: () => void,
   /** 生成目录（presetDir）：读取实际生效的提示词配置（引擎加载源）。 */
   getPresetConfigsDir?: () => string,
+  /** 内容导入完成回调（更新运行时文本并重建预设）。 */
+  afterPresetImport?: (scope: 'preset' | 'agents') => void,
 ): void {
   // 动态等待 webServer：webServer 由 @deepseek-ai/dsh-web-app 提供。
   // profile 首次缺少该 bundle 时，本子插件先 pending 但不阻塞启动审计；
@@ -384,6 +387,55 @@ export function registerSettingsBridge(
             } catch {
               // 生成目录缺失/未生成时降级为空（settings 覆盖层仍可编辑）。
               writeBridgeJson(res, 200, { ok: true, value: { promptConfigs: [] } })
+            }
+          },
+        }),
+        sctx.webServer.register({
+          kind: 'exact',
+          path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.presetContent,
+          handler: async (req, res) => {
+            if (!guard(req, res)) return
+            const body = await readBridgeBody(req)
+            const record = (body ?? {}) as Record<string, unknown>
+            const scope = record.scope === 'agents' ? 'agents' : 'preset'
+            try {
+              // 内容资产在生成目录 preset.md / agents.md（settings 不承载大文本）。
+              const dir = getPresetConfigsDir?.() ?? ''
+              const content = dir.length > 0
+                ? readFileSync(join(dir, scope === 'preset' ? 'preset.md' : 'agents.md'), 'utf8')
+                : ''
+              writeBridgeJson(res, 200, { ok: true, value: { content } })
+            } catch {
+              writeBridgeJson(res, 200, { ok: true, value: { content: '' } })
+            }
+          },
+        }),
+        sctx.webServer.register({
+          kind: 'exact',
+          path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.importPreset,
+          handler: async (req, res) => {
+            if (!guard(req, res)) return
+            const body = await readBridgeBody(req)
+            if (body === null || body === undefined || typeof body !== 'object') {
+              writeBridgeJson(res, 400, { ok: false, code: 'settings-rejected', message: 'unreadable JSON body' })
+              return
+            }
+            const record = body as Record<string, unknown>
+            const scope = record.scope === 'agents' ? 'agents' : 'preset'
+            const content = typeof record.content === 'string' ? record.content : ''
+            const dir = getPresetConfigsDir?.() ?? ''
+            if (dir.length === 0) {
+              writeBridgeJson(res, 400, { ok: false, code: 'preset-dir-unavailable', message: 'presetDir 未配置' })
+              return
+            }
+            try {
+              mkdirSync(dir, { recursive: true })
+              writeFileSync(join(dir, scope === 'preset' ? 'preset.md' : 'agents.md'), content, 'utf8')
+              afterPresetImport?.(scope)
+              writeBridgeJson(res, 200, { ok: true, value: { scope } })
+            } catch (error) {
+              const message = error instanceof Error ? error.message : String(error)
+              writeBridgeJson(res, 500, { ok: false, code: 'preset-import-failed', message })
             }
           },
         }),
