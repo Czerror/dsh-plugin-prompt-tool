@@ -275,10 +275,10 @@ function ModelRouteStatus(props: { store: PromptToolStore }): ReactNode {
   const detected = store.deepseekProviders.length > 0
   const models = store.deepseekModels
   return (
-    <div className={ui.skillStatusRow} aria-label="模型路由状态">
+    <div className={ui.skillStatusRow} aria-label="模型服务商状态">
       <span className={clsx(ui.skillStatusChip, detected ? ui.skillStatusModel : ui.skillStatusOff)}>
         <i className={ui.skillStatusDot} aria-hidden="true" />
-        {detected ? `已检测到模型路由：${store.deepseekProviders.join('、')}` : '未检测到模型路由'}
+        {detected ? `已检测到模型服务商：${store.deepseekProviders.join('、')}` : '未检测到模型服务商'}
       </span>
       <span className={clsx(ui.skillStatusChip, models.length > 0 ? ui.skillStatusModel : ui.skillStatusOff)}>
         <i className={ui.skillStatusDot} aria-hidden="true" />
