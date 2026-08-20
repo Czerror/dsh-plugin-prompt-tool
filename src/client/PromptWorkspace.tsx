@@ -352,11 +352,13 @@ function FileEditor(props: { store: PromptToolStore; scope: 'preset' | 'agents' 
   const isPreset = scope === 'preset'
   const text = isPreset ? fields.promptText : fields.agentsText
   const [importing, setImporting] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [dirty, setDirty] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
   const title = isPreset ? 'Preset 预设' : 'AGENTS 设置'
   const desc = isPreset
-    ? 'preset.md 内容存于生成目录（.agent-presets/<模板>/preset.md），由 prompt-injector 提示词配置注入；主设置通过「导入配置文件」写入，不再内嵌在 settings.yaml。生成总开关在「功能设置」。'
-    : 'AGENTS.md 内容存于生成目录 agents.md；主设置通过「导入配置文件」写入；注入开关在「消息批层入口」。'
+    ? 'preset.md 内容存于生成目录（.agent-presets/<模板>/preset.md），由 prompt-injector 提示词配置注入；可直接编辑保存，或通过「导入配置文件」写入；不再内嵌在 settings.yaml。生成总开关在「主对话与全局」。'
+    : 'AGENTS.md 内容存于生成目录 agents.md；可直接编辑保存，或通过「导入配置文件」写入；注入开关在「消息批层入口」。'
   const pickFile = (file: File | undefined): void => {
     if (file === undefined) return
     const reader = new FileReader()
@@ -374,6 +376,13 @@ function FileEditor(props: { store: PromptToolStore; scope: 'preset' | 'agents' 
         <div className={ui.sectionActions}>
           <input ref={fileRef} type="file" accept=".md,.markdown,.txt" style={{ display: 'none' }} aria-label="选择配置文件"
             onChange={(event) => { pickFile(event.target.files?.[0]); event.target.value = '' }} />
+          <button type="button" className={ui.primaryPill} disabled={!dirty || saving} onClick={() => {
+            setSaving(true)
+            void store.importPreset(scope, isPreset ? fields.promptText : fields.agentsText)
+              .finally(() => { setSaving(false); setDirty(false) })
+          }}>
+            {saving ? '保存中…' : '保存内容'}
+          </button>
           <button type="button" className={ui.primaryPill} disabled={importing} onClick={() => fileRef.current?.click()}>
             {importing ? '导入中…' : '导入配置文件'}
           </button>
@@ -387,8 +396,20 @@ function FileEditor(props: { store: PromptToolStore; scope: 'preset' | 'agents' 
       )}
       <div className={ui.rowGroup}>
         <label className={ui.textBlock}>
-          <span className={ui.settingCopy}><strong>当前内容（只读预览）</strong><small>导入文件后自动刷新；内容存于生成目录，不写入 settings.yaml。</small></span>
-          <textarea className={ui.firstTurnInput} value={text} readOnly spellCheck={false} aria-label={`${title}当前内容`} />
+          <span className={ui.settingCopy}><strong>当前内容</strong><small>直接编辑后点「保存内容」写入生成目录；导入文件后自动刷新；不写入 settings.yaml。{dirty ? '有未保存修改。' : ''}</small></span>
+          <textarea
+            className={ui.firstTurnInput}
+            value={text}
+            disabled={!fields.writePreset}
+            spellCheck={false}
+            aria-label={`${title}当前内容`}
+            onChange={(event) => {
+              autoResizeTextarea(event)
+              if (isPreset) store.patch({ promptText: event.target.value })
+              else store.patch({ agentsText: event.target.value })
+              setDirty(true)
+            }}
+          />
         </label>
       </div>
       {isPreset && (
