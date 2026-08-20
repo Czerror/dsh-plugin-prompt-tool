@@ -424,43 +424,182 @@
 .toggleRow:has(input:disabled) { cursor: default; opacity: .46; }
 .rowDisabled { opacity: .55; }
 
-/* 技能列表拖拽行：手柄 + 开关行，顺序即模型可见顺序。 */
-.skillDragRow {
+/* 技能管理卡片：选择框 + 手柄 + 序号 + 主体 + 开关 + 行操作。 */
+.skillCardList { display: flex; min-width: 0; flex-direction: column; gap: 8px; }
+.skillCard {
   display: flex;
   min-width: 0;
-  align-items: flex-start;
+  align-items: center;
   gap: 8px;
-  flex-wrap: wrap;
-  border-top: 1px solid var(--dsw-alias-border-l2);
-  padding: 11px 0;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 12px;
+  padding: 9px 12px;
+  background: var(--dsw-alias-bg-layer-3);
+  transition: border-color .16s ease, box-shadow .16s ease, opacity .16s ease;
 }
+.skillCard:hover { border-color: color-mix(in srgb, var(--pt-accent) 28%, var(--dsw-alias-border-l2)); }
+.skillCard[data-dragging] { opacity: .4; }
+.skillCard[data-drop-before] { box-shadow: 0 -2px 0 0 var(--pt-accent); }
+.skillCard[data-drop-after] { box-shadow: 0 2px 0 0 var(--pt-accent); }
+.skillCard:has(.skillSelect input:checked) {
+  border-color: color-mix(in srgb, var(--pt-accent) 55%, var(--dsw-alias-border-l2));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--pt-accent) 16%, transparent);
+}
+.skillCard:has(.skillCardToggle input:disabled) .switch { opacity: .55; }
 
-.skillDragRow[data-dragging] { opacity: .4; }
-
-/* 未通过官方校验的技能：只弱化文字与手柄，状态芯片和修复按钮保持满对比度。 */
-.skillRowInvalid .settingCopy { opacity: .55; }
+/* 未通过官方校验的技能：弱化主体文字，状态徽章与修复按钮保持满对比度。 */
+.skillRowInvalid .skillCardBody { opacity: .55; }
 .skillRowInvalid .dragHandle { opacity: .4; cursor: not-allowed; }
 .skillRowInvalid .switch { opacity: .55; }
 
-.skillDragRow > .dragHandle,
-.skillDragRow > .pillButton { align-self: center; }
+.skillSelect {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  cursor: pointer;
+}
+.skillSelect input {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  accent-color: var(--pt-accent);
+  cursor: pointer;
+}
+.skillSelect input:disabled { cursor: default; }
 
-.skillEntryBody {
+.skillRankBadge {
+  display: grid;
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 50%;
+  color: var(--dsw-alias-label-secondary);
+  background: var(--dsw-alias-bg-layer-2);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.skillCardToggle {
   display: flex;
   min-width: 0;
   flex: 1;
-  flex-direction: column;
-  gap: 4px;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
 }
+.skillCardBody { display: flex; min-width: 0; flex: 1; flex-direction: column; gap: 2px; }
+.skillCardTitleRow { display: flex; min-width: 0; align-items: center; gap: 8px; flex-wrap: wrap; }
+.skillCardTitleRow strong { font-size: 13px; font-weight: 600; line-height: 1.5; color: var(--dsw-alias-label-primary); overflow-wrap: anywhere; }
+.skillCardMeta { color: var(--dsw-alias-label-tertiary); font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }
 
-.skillDragRow .toggleRow {
-  min-height: 0;
-  flex: 1;
-  border-top: 0;
-  padding: 0;
-  gap: 14px;
-  flex-wrap: wrap;
+/* 行操作菜单（⋯）：上移/下移替代行内双箭头，节省窄面板空间。 */
+.skillMenuHost { position: relative; display: inline-flex; flex: 0 0 auto; }
+.skillMenuButton { width: 28px; height: 28px; padding: 0; border-radius: 14px; font-size: 14px; letter-spacing: 1px; }
+.menuBackdrop { position: fixed; inset: 0; z-index: 40; }
+.skillMenu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  min-width: 110px;
+  padding: 6px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-base);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
 }
+.skillMenu button {
+  appearance: none;
+  border: 0;
+  border-radius: 7px;
+  padding: 7px 10px;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+.skillMenu button:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover); }
+.skillMenu button:disabled { opacity: .4; cursor: default; }
+
+/* 状态统计卡：点击即切筛选（兼作筛选 Tabs）。 */
+.skillStats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+.skillStats button {
+  appearance: none;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 12px;
+  padding: 9px 11px;
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-bg-layer-2);
+  font: inherit;
+  cursor: pointer;
+  transition: border-color .16s ease, box-shadow .16s ease, transform .16s ease;
+}
+.skillStats button:hover { border-color: color-mix(in srgb, var(--pt-accent) 30%, var(--dsw-alias-border-l2)); transform: translateY(-1px); }
+.skillStats button[data-active] {
+  border-color: color-mix(in srgb, var(--pt-accent) 45%, var(--dsw-alias-border-l2));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--pt-accent) 18%, transparent);
+}
+.skillStats strong { font-size: 18px; font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.skillStats small { color: var(--dsw-alias-label-tertiary); font-size: 11px; line-height: 1.3; }
+.skillStatDot { width: 8px; height: 8px; margin-bottom: 1px; border-radius: 50%; background: var(--chip); }
+.skillStatAll { --chip: var(--dsw-alias-label-tertiary); }
+.skillStatEnabled { --chip: var(--dsw-alias-state-success-primary); }
+
+/* 批量操作条：多选后浮现。 */
+.batchBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border: 1px solid color-mix(in srgb, var(--pt-accent) 26%, var(--dsw-alias-border-l2));
+  border-radius: 12px;
+  padding: 8px 12px;
+  background: color-mix(in srgb, var(--pt-accent) 6%, var(--dsw-alias-bg-layer-2));
+  animation: pt-rise .28s cubic-bezier(.22, 1, .36, 1) both;
+}
+.batchBar > span { font-size: 12px; font-weight: 600; line-height: 1.5; color: var(--dsw-alias-label-primary); }
+.batchBar > div { display: flex; gap: 6px; flex-wrap: wrap; }
+.batchBar .pillButton { height: 30px; padding: 0 12px; font-size: 12px; }
+
+/* 折叠区（目录与来源 / 高级）：原生 details，零 JS。 */
+.disclosure { border-top: 1px solid var(--dsw-alias-border-l2); }
+.disclosure > summary {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 10px 2px;
+  list-style: none;
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.disclosure > summary::-webkit-details-marker { display: none; }
+.disclosure > summary::before {
+  content: "▸";
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  transition: transform .18s cubic-bezier(.22, 1, .36, 1);
+}
+.disclosure[open] > summary::before { transform: rotate(90deg); }
+.disclosure > summary small { font-weight: 400; color: var(--dsw-alias-label-tertiary); font-size: 11px; }
+.disclosureBody { display: flex; flex-direction: column; gap: 10px; padding: 2px 0 6px; }
 
 /* 状态芯片：带底色胶囊，模型=蓝 / 用户=绿 / 关闭=灰 / 未注册=红。 */
 .skillStatusRow {
@@ -491,22 +630,6 @@
 .skillStatusModel { --chip: var(--pt-chip-model); }
 .skillStatusError { --chip: var(--pt-chip-error); }
 .skillStatusOff { --chip: var(--pt-chip-off); }
-
-/* 技能行键盘排序按钮：垂直双箭头，仅合法技能显示。 */
-.skillOrderButtons {
-  display: inline-flex;
-  flex: 0 0 auto;
-  flex-direction: column;
-  align-self: center;
-  gap: 4px;
-}
-.skillOrderButtons .pillButton {
-  height: 22px;
-  padding: 0 9px;
-  border-radius: 11px;
-  font-size: 12px;
-  line-height: 1;
-}
 
 .skillStatusDot {
   width: 6px;
@@ -542,7 +665,7 @@
   transition: color .14s ease, background-color .14s ease, border-color .14s ease, transform .14s ease;
 }
 
-.skillDragRow:hover .dragHandle {
+.skillCard:hover .dragHandle {
   color: var(--pt-accent);
   border-color: color-mix(in srgb, var(--pt-accent) 22%, var(--dsw-alias-border-l2));
   background: color-mix(in srgb, var(--pt-accent) 7%, transparent);
@@ -927,6 +1050,7 @@
 @media (max-width: 620px) {
   .page { gap: 24px; }
   .textarea { min-height: 260px; }
+  .skillStats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .settingRow,
   .toggleRow { align-items: stretch; flex-direction: column; gap: 9px; }
   .directoryControl { max-width: none; justify-content: space-between; }

@@ -486,12 +486,26 @@ function SubagentPage(props: { store: PromptToolStore }): ReactNode {
   )
 }
 
+/** 技能状态筛选维度（统计条与列表联动）。 */
+type SkillStatusTab = 'all' | 'enabled' | 'callable' | 'invalid'
+
+const SKILL_STATUS_TABS: Array<{ id: SkillStatusTab; label: string }> = [
+  { id: 'all', label: '全部' },
+  { id: 'enabled', label: '已启用' },
+  { id: 'callable', label: '模型可调用' },
+  { id: 'invalid', label: '未注册' },
+]
+
 function SkillsSettings(props: { store: PromptToolStore; api: IApiClient }): ReactNode {
   const { store, api } = props
   const fields = store.fields
   const [pickingDir, setPickingDir] = useState(false)
   const [dragFolder, setDragFolder] = useState<string | undefined>(undefined)
+  const [dropTarget, setDropTarget] = useState<{ folder: string; before: boolean } | undefined>(undefined)
   const [skillFilter, setSkillFilter] = useState('')
+  const [statusTab, setStatusTab] = useState<SkillStatusTab>('all')
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [menuOpen, setMenuOpen] = useState<string | undefined>(undefined)
   const orderedSkills = useMemo(() => {
     const index = new Map(fields.skillOrder.map((folder, at) => [folder, at]))
     return [...fields.skillCatalog].sort((left, right) => {
@@ -507,11 +521,46 @@ function SkillsSettings(props: { store: PromptToolStore; api: IApiClient }): Rea
     || JSON.stringify(fields.skillOrder) !== JSON.stringify(store.savedSwitches.skillOrder)
     || fields.skillsDir !== store.savedSwitches.skillsDir
     || store.skillsDirDraft.trim() !== fields.skillsDir
-  const skillKeyword = skillFilter.trim().toLowerCase()
-  const visibleSkills = skillKeyword.length === 0
-    ? orderedSkills
-    : orderedSkills.filter((skill) =>
-      [skill.folder, skill.name ?? '', skill.description ?? ''].join(' ').toLowerCase().includes(skillKeyword))
+
+  const enabledCount = orderedSkills.filter((skill) => store.skillEnabled(skill.folder)).length
+  const callableCount = orderedSkills.filter((skill) => skill.valid && skill.modelInvocable && store.skillEnabled(skill.folder)).length
+  const invalidCount = orderedSkills.filter((skill) => !skill.valid).length
+  const tabCounts: Record<SkillStatusTab, number> = {
+    all: orderedSkills.length,
+    enabled: enabledCount,
+    callable: callableCount,
+    invalid: invalidCount,
+  }
+
+  const keyword = skillFilter.trim().toLowerCase()
+  const visibleSkills = orderedSkills.filter((skill) => {
+    if (statusTab === 'enabled' && !store.skillEnabled(skill.folder)) return false
+    if (statusTab === 'callable' && !(skill.valid && skill.modelInvocable && store.skillEnabled(skill.folder))) return false
+    if (statusTab === 'invalid' && skill.valid) return false
+    return keyword.length === 0
+      || [skill.folder, skill.name ?? '', skill.description ?? ''].join(' ').toLowerCase().includes(keyword)
+  })
+
+  const selectionMode = selected.size > 0
+
+  const toggleSelect = (folder: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(folder)) next.delete(folder)
+      else next.add(folder)
+      return next
+    })
+  }
+
+  /** 批量启用/禁用：一次 patch + 一次保存（避免逐项写 N 次）。 */
+  const batchSet = (enabled: boolean) => {
+    const next = { ...fields.skillSwitches }
+    for (const folder of selected) next[folder] = enabled
+    store.patch({ skillSwitches: next })
+    store.persistSwitches()
+    store.showNotice('ok', `已${enabled ? '启用' : '禁用'} ${selected.size} 个技能`)
+    setSelected(new Set())
+  }
 
   const moveSkill = (from: string, to: string) => {
     const folders = orderedSkills.map((skill) => skill.folder)
@@ -519,6 +568,21 @@ function SkillsSettings(props: { store: PromptToolStore; api: IApiClient }): Rea
     const toAt = folders.indexOf(to)
     if (fromAt < 0 || toAt < 0 || fromAt === toAt) return
     const [moved] = folders.splice(fromAt, 1)
+    folders.splice(toAt, 0, moved!)
+    store.patch({ skillOrder: folders })
+    store.persistSwitches()
+  }
+
+  /** 拖拽插入：插到目标技能前/后（带放置方向指示）。 */
+  const moveSkillAt = (from: string, target: string, before: boolean) => {
+    const folders = orderedSkills.map((skill) => skill.folder)
+    const fromAt = folders.indexOf(from)
+    if (fromAt < 0) return
+    let toAt = folders.indexOf(target)
+    if (toAt < 0 || fromAt === toAt) return
+    const [moved] = folders.splice(fromAt, 1)
+    if (fromAt < toAt) toAt -= 1
+    if (!before) toAt += 1
     folders.splice(toAt, 0, moved!)
     store.patch({ skillOrder: folders })
     store.persistSwitches()
@@ -544,141 +608,200 @@ function SkillsSettings(props: { store: PromptToolStore; api: IApiClient }): Rea
     }
   }
 
+  const renderCard = (skill: SkillCatalogEntry, index: number): ReactNode => {
+    const hint = `skills/${skill.folder}${skill.description ? ` · ${skill.description}` : ''}`
+    const enabled = store.skillEnabled(skill.folder)
+    return (
+      <div
+        key={skill.folder}
+        className={clsx(ui.skillCard, !skill.valid && ui.skillRowInvalid)}
+        data-dragging={dragFolder === skill.folder ? '' : undefined}
+        data-drop-before={dropTarget?.folder === skill.folder && dropTarget.before ? '' : undefined}
+        data-drop-after={dropTarget?.folder === skill.folder && !dropTarget.before ? '' : undefined}
+        draggable={skill.valid && !selectionMode}
+        onDragStart={(event) => {
+          setDragFolder(skill.folder)
+          event.dataTransfer.effectAllowed = 'move'
+        }}
+        onDragOver={(event) => {
+          event.preventDefault()
+          if (dragFolder === undefined || dragFolder === skill.folder) return
+          const rect = event.currentTarget.getBoundingClientRect()
+          setDropTarget({ folder: skill.folder, before: event.clientY < rect.top + rect.height / 2 })
+        }}
+        onDrop={(event) => {
+          event.preventDefault()
+          const target = dropTarget
+          if (dragFolder !== undefined && target !== undefined && dragFolder !== skill.folder) {
+            moveSkillAt(dragFolder, target.folder, target.before)
+          }
+          setDragFolder(undefined)
+          setDropTarget(undefined)
+        }}
+        onDragEnd={() => { setDragFolder(undefined); setDropTarget(undefined) }}
+      >
+        <label className={ui.skillSelect} aria-label={`选择 ${skill.name || skill.folder}`}>
+          <input type="checkbox" checked={selected.has(skill.folder)} disabled={!skill.valid} onChange={() => toggleSelect(skill.folder)} />
+        </label>
+        <span className={ui.dragHandle} title={`第 ${index + 1} 位${selectionMode ? '（选择模式下拖拽已禁用）' : '，拖动调整顺序'}`} aria-hidden="true">⠿</span>
+        <span className={ui.skillRankBadge} title={`第 ${index + 1} 位`}>{index + 1}</span>
+        <label className={ui.skillCardToggle} htmlFor={`pt-skill-${skill.folder}`}>
+          <span className={ui.skillCardBody}>
+            <span className={ui.skillCardTitleRow}>
+              <strong>{skill.name || skill.folder}</strong>
+              <SkillStatusChips skill={skill} enabled={enabled} />
+            </span>
+            <small className={ui.skillCardMeta}>{hint}</small>
+            {!skill.valid && skill.issue && <span className={ui.skillIssue} role="note">{skill.issue}</span>}
+          </span>
+          <span className={ui.inlineControls}>
+            <input id={`pt-skill-${skill.folder}`} type="checkbox" checked={enabled} disabled={!skill.valid} aria-label={`启用 ${skill.name || skill.folder}`} onChange={() => store.toggleSkill(skill.folder)} />
+            <span className={ui.switch} aria-hidden="true"><i /></span>
+          </span>
+        </label>
+        {skill.valid ? (
+          <span className={ui.skillMenuHost}>
+            <button
+              type="button"
+              className={clsx(ui.pillButton, ui.skillMenuButton)}
+              aria-label={`排序 ${skill.name || skill.folder}`}
+              aria-expanded={menuOpen === skill.folder}
+              onClick={() => setMenuOpen(menuOpen === skill.folder ? undefined : skill.folder)}
+            >⋯</button>
+            {menuOpen === skill.folder && (
+              <>
+                <span className={ui.menuBackdrop} onClick={() => setMenuOpen(undefined)} />
+                <span className={ui.skillMenu} role="menu" aria-label={`排序 ${skill.name || skill.folder}`} onKeyDown={(event) => { if (event.key === 'Escape') setMenuOpen(undefined) }}>
+                  <button type="button" role="menuitem" disabled={index === 0} onClick={() => { moveSkill(skill.folder, orderedSkills[index - 1]!.folder); setMenuOpen(undefined) }}>上移</button>
+                  <button type="button" role="menuitem" disabled={index >= orderedSkills.length - 1} onClick={() => { moveSkill(skill.folder, orderedSkills[index + 1]!.folder); setMenuOpen(undefined) }}>下移</button>
+                </span>
+              </>
+            )}
+          </span>
+        ) : (
+          <button type="button" className={ui.pillButton} disabled={store.fixingSkill === skill.folder} onClick={() => void store.fixSkill(skill.folder)}>
+            {store.fixingSkill === skill.folder && <span className={ui.spinner} aria-hidden="true" />}
+            {store.fixingSkill === skill.folder ? '修复中…' : '修复'}
+          </button>
+        )}
+      </div>
+    )
+  }
+
   return (
     <section className={ui.section} aria-labelledby="pt-skills-heading">
       <div className={ui.sectionHeading}>
-        <div><h2 id="pt-skills-heading">Skills 设置</h2><p>{fields.skillCatalog.length} 个技能；拖动 ⠿ 排序即模型看到的先后顺序，排第一的技能最先被看到。关闭后立即注销，开启即恢复。</p></div>
+        <div><h2 id="pt-skills-heading">Skills 设置</h2><p>{fields.skillCatalog.length} 个技能；拖动 ⠿ 或「⋯」菜单调整顺序，排第一的技能最先被看到；关闭后立即注销，开启即恢复。</p></div>
         <div className={ui.sectionActions}>
           <button type="button" className={ui.pillButton} onClick={() => void store.load()}>刷新技能列表</button>
-          <button type="button" className={ui.pillButton} disabled={!fields.activeSkillsDir && !fields.skillsDir} onClick={() => void store.openSkillsDir()}>打开技能目录</button>
         </div>
       </div>
-
-      <div className={ui.importBar}>
-        <div><strong>从目录导入技能目录</strong><small>打开系统文件管理器选择目录；选中路径写入下方编辑框并立即保存生效。每个子文件夹应含 SKILL.md。</small></div>
-        <button type="button" className={ui.primaryPill} disabled={pickingDir} onClick={() => void pickSkillsDir()}>{pickingDir && <span className={ui.spinner} aria-hidden="true" />}{pickingDir ? '选择中…' : '选择目录并导入'}</button>
-      </div>
-
-      <div className={ui.rowGroup}>
-        <div className={ui.settingRowStack}>
-          <span className={ui.settingCopy}>
-            <strong>技能目录</strong>
-            <small>编辑框可直接输入路径；留空 = 当前 profile 下的 skills/ 副本，设置后立即重新扫描。</small>
-            <code className={ui.activePath} title={fields.activeSkillsDir}>{fields.activeSkillsDir || '（路径未知，请重新打开工作台）'}</code>
-          </span>
-          <div className={ui.directoryControl}>
-            <input
-              className={ui.directoryInput}
-              aria-label="用户自定义技能目录"
-              value={store.skillsDirDraft}
-              placeholder="留空 = 自动使用当前生效目录"
-              title={`当前生效：${fields.activeSkillsDir || '未知'}`}
-              spellCheck={false}
-              onChange={(event) => store.setSkillsDirDraft(event.target.value)}
-            />
-            <button type="button" className={ui.pillButton} disabled={store.savingSkillsDir || store.skillsDirDraft.trim() === fields.skillsDir} onClick={store.applySkillsDir}>
-              {store.savingSkillsDir && <span className={ui.spinner} aria-hidden="true" />}{store.savingSkillsDir ? '设置中…' : '设置目录'}
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <SettingInputRow id="pt-skill-rank-base" label="技能排序基数" hint="每个技能实际 rank = 基数 + 拖拽序号；默认 250。数值过小会让本项目技能抢占其他插件技能的位置，但不会影响任何提示词消息注入。"
-        type="number" value={String(fields.skillRankBase)}
-        onInput={(value) => store.patch({ skillRankBase: Number(value) || 0 })}
-        onCommit={store.persistSwitches} />
 
       {fields.skillCatalog.length > 0 && (
-        <div className={ui.listFilterRow}>
-          <input
-            className={ui.listFilter}
-            value={skillFilter}
-            aria-label="过滤技能列表"
-            placeholder="过滤技能：名称 / 目录 / 描述…"
-            spellCheck={false}
-            onChange={(event) => setSkillFilter(event.target.value)}
-          />
-        </div>
+        <>
+          <div className={ui.skillStats} role="tablist" aria-label="技能状态筛选">
+            {SKILL_STATUS_TABS.map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                role="tab"
+                aria-selected={statusTab === tab.id}
+                data-active={statusTab === tab.id ? '' : undefined}
+                onClick={() => setStatusTab(tab.id)}
+                onKeyDown={tabKeyHandler(SKILL_STATUS_TABS.map((entry) => entry.id), statusTab, setStatusTab)}
+              >
+                <i className={clsx(ui.skillStatDot,
+                  tab.id === 'invalid' ? ui.skillStatusError
+                    : tab.id === 'callable' ? ui.skillStatusModel
+                      : tab.id === 'enabled' ? ui.skillStatEnabled
+                        : ui.skillStatAll)} aria-hidden="true" />
+                <strong>{tabCounts[tab.id]}</strong>
+                <small>{tab.label}</small>
+              </button>
+            ))}
+          </div>
+          <div className={ui.listFilterRow}>
+            <input
+              className={ui.listFilter}
+              value={skillFilter}
+              aria-label="过滤技能列表"
+              placeholder="过滤技能：名称 / 目录 / 描述…"
+              spellCheck={false}
+              onChange={(event) => setSkillFilter(event.target.value)}
+            />
+          </div>
+        </>
       )}
 
       {fields.skillCatalog.length === 0 ? (
-        <div className={ui.emptyState}><span className={ui.emptyGlyph} aria-hidden="true">◇</span><div><h3>skills 目录下没有技能</h3><p>从上方选择目录导入，或确认技能目录路径后重新打开工作台。</p></div></div>
+        <div className={ui.emptyState}><span className={ui.emptyGlyph} aria-hidden="true">◇</span><div><h3>skills 目录下没有技能</h3><p>展开下方「目录与来源」选择目录导入，或确认技能目录路径后重新打开工作台。</p></div></div>
       ) : visibleSkills.length === 0 ? (
-        <p className={ui.readOnly} role="status">没有匹配「{skillFilter.trim()}」的技能。</p>
+        <p className={ui.readOnly} role="status">没有匹配当前筛选的技能。</p>
       ) : (
-        <div className={ui.rowGroup}>
-          {visibleSkills.map((skill) => {
-            const index = orderedSkills.indexOf(skill)
-            const hint = `skills/${skill.folder}${skill.description ? ` · ${skill.description}` : ''}`
-            return (
-              <div
-                key={skill.folder}
-                className={clsx(ui.skillDragRow, !skill.valid && ui.skillRowInvalid)}
-                data-dragging={dragFolder === skill.folder ? '' : undefined}
-                draggable={skill.valid}
-                onDragStart={(event) => {
-                  setDragFolder(skill.folder)
-                  event.dataTransfer.effectAllowed = 'move'
-                }}
-                onDragOver={(event) => event.preventDefault()}
-                onDrop={(event) => {
-                  event.preventDefault()
-                  if (dragFolder !== undefined && dragFolder !== skill.folder) moveSkill(dragFolder, skill.folder)
-                  setDragFolder(undefined)
-                }}
-                onDragEnd={() => setDragFolder(undefined)}
-              >
-                <span className={ui.dragHandle} title={`第 ${index + 1} 位，拖动调整`} aria-hidden="true">⠿</span>
-                <div className={ui.skillEntryBody}>
-                  <ToggleRow
-                    id={`pt-skill-${skill.folder}`}
-                    label={`${index + 1}. ${skill.name || skill.folder}`}
-                    hint={hint}
-                    checked={store.skillEnabled(skill.folder)}
-                    disabled={!skill.valid}
-                    extra={<SkillStatusChips skill={skill} enabled={store.skillEnabled(skill.folder)} />}
-                    onChange={() => store.toggleSkill(skill.folder)}
-                  />
-                  {!skill.valid && (
-                    <p className={ui.skillIssue} role="note">{skill.issue ?? '技能不合法'}</p>
-                  )}
-                </div>
-                {skill.valid && (
-                  <span className={ui.skillOrderButtons}>
-                    <button
-                      type="button"
-                      className={ui.pillButton}
-                      aria-label={`上移 ${skill.name || skill.folder}`}
-                      title="上移（键盘排序）"
-                      disabled={index === 0}
-                      onClick={() => moveSkill(skill.folder, orderedSkills[index - 1]!.folder)}
-                    >↑</button>
-                    <button
-                      type="button"
-                      className={ui.pillButton}
-                      aria-label={`下移 ${skill.name || skill.folder}`}
-                      title="下移（键盘排序）"
-                      disabled={index >= orderedSkills.length - 1}
-                      onClick={() => moveSkill(skill.folder, orderedSkills[index + 1]!.folder)}
-                    >↓</button>
-                  </span>
-                )}
-                {!skill.valid && (
-                  <button
-                    type="button"
-                    className={ui.pillButton}
-                    disabled={store.fixingSkill === skill.folder}
-                    onClick={() => void store.fixSkill(skill.folder)}
-                  >
-                    {store.fixingSkill === skill.folder && <span className={ui.spinner} aria-hidden="true" />}
-                    {store.fixingSkill === skill.folder ? '修复中…' : '一键修复'}
-                  </button>
-                )}
+        <>
+          {selectionMode && (
+            <div className={ui.batchBar} role="toolbar" aria-label="批量操作">
+              <span>已选 {selected.size} 项</span>
+              <div>
+                <button type="button" className={ui.pillButton} onClick={() => batchSet(true)}>启用</button>
+                <button type="button" className={ui.pillButton} onClick={() => batchSet(false)}>禁用</button>
+                <button type="button" className={ui.pillButton} data-variant="secondary" onClick={() => setSelected(new Set())}>取消选择</button>
               </div>
-            )
-          })}
-        </div>
+            </div>
+          )}
+          <div className={ui.skillCardList}>
+            {visibleSkills.map((skill) => {
+              const index = orderedSkills.indexOf(skill)
+              return renderCard(skill, index)
+            })}
+          </div>
+        </>
       )}
+
+      <details className={ui.disclosure}>
+        <summary><span>目录与来源</span><small>导入 / 路径 / 重扫</small></summary>
+        <div className={ui.disclosureBody}>
+          <div className={ui.importBar}>
+            <div><strong>从目录导入技能目录</strong><small>打开系统文件管理器选择目录；选中路径写入下方编辑框并立即保存生效。每个子文件夹应含 SKILL.md。</small></div>
+            <button type="button" className={ui.primaryPill} disabled={pickingDir} onClick={() => void pickSkillsDir()}>{pickingDir && <span className={ui.spinner} aria-hidden="true" />}{pickingDir ? '选择中…' : '选择目录并导入'}</button>
+          </div>
+          <div className={ui.rowGroup}>
+            <div className={ui.settingRowStack}>
+              <span className={ui.settingCopy}>
+                <strong>技能目录</strong>
+                <small>编辑框可直接输入路径；留空 = 当前 profile 下的 skills/ 副本，设置后立即重新扫描。</small>
+                <code className={ui.activePath} title={fields.activeSkillsDir}>{fields.activeSkillsDir || '（路径未知，请重新打开工作台）'}</code>
+              </span>
+              <div className={ui.directoryControl}>
+                <input
+                  className={ui.directoryInput}
+                  aria-label="用户自定义技能目录"
+                  value={store.skillsDirDraft}
+                  placeholder="留空 = 自动使用当前生效目录"
+                  title={`当前生效：${fields.activeSkillsDir || '未知'}`}
+                  spellCheck={false}
+                  onChange={(event) => store.setSkillsDirDraft(event.target.value)}
+                />
+                <button type="button" className={ui.pillButton} disabled={store.savingSkillsDir || store.skillsDirDraft.trim() === fields.skillsDir} onClick={store.applySkillsDir}>
+                  {store.savingSkillsDir && <span className={ui.spinner} aria-hidden="true" />}{store.savingSkillsDir ? '设置中…' : '设置目录'}
+                </button>
+                <button type="button" className={ui.pillButton} disabled={!fields.activeSkillsDir && !fields.skillsDir} onClick={() => void store.openSkillsDir()}>打开技能目录</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </details>
+
+      <details className={ui.disclosure}>
+        <summary><span>高级</span><small>技能排序基数</small></summary>
+        <div className={ui.disclosureBody}>
+          <SettingInputRow id="pt-skill-rank-base" label="技能排序基数" hint="每个技能实际 rank = 基数 + 拖拽序号；默认 250。数值过小会让本项目技能抢占其他插件技能的位置，但不会影响任何提示词消息注入。"
+            type="number" value={String(fields.skillRankBase)}
+            onInput={(value) => store.patch({ skillRankBase: Number(value) || 0 })}
+            onCommit={store.persistSwitches} />
+        </div>
+      </details>
+
       {dirty && <p className={ui.readOnly} role="status">Skills 开关与目录修改立即保存；如上方按钮仍在写入，请稍候。</p>}
     </section>
   )
