@@ -1,0 +1,23 @@
+# 模板：自定义锚词兜底注入（strategy=custom-fallback）
+# 首轮推理命中锚词（customAnchorWord）后注入一次；未命中最多两轮兜底。
+# 提示：把本文件放入 promptConfigsDir 目录，或把对象写入 settings.promptConfigs 数组。
+id: example-custom-fallback
+name: 示例：自定义锚词兜底注入
+enabled: true
+layer: pre-step
+strategy: custom-fallback
+position: before-all
+dedupe: session
+promotion: main
+subagents: inherit
+modelScope: all
+configKind: ordered
+order: 20
+role: user
+priority: 0
+mergeMode: separate
+sourceKind: plugin
+form: notice
+params:
+  text: "在此填写注入文本（如 preset.md 内容）。"
+  customAnchorWord: we

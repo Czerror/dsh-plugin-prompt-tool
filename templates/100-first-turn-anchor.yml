@@ -1,0 +1,28 @@
+# 模板：首句锚点（strategy=first-turn-anchor）
+# 首条真实用户消息后按任务类型（build / inspect / deep）注入锚句，每会话一次。
+# 提示：把本文件放入 promptConfigsDir 目录，或把对象写入 settings.promptConfigs 数组。
+id: example-first-turn-anchor
+name: 示例：首句锚点
+enabled: true
+layer: pre-step
+strategy: first-turn-anchor
+position: after-user
+dedupe: session
+promotion: none
+subagents: none
+modelScope: all
+configKind: ordered
+order: 0
+role: user
+priority: 0
+mergeMode: separate
+sourceKind: ''
+form: notice
+params:
+  useCustom: false
+  firstTurnText: ""
+  buildPattern: "(开发|创建|写一个|生成|从零|做一个|构建|新项目|搭建|实现|做出|上线|落地|脚本|工具|应用|build|create|develop|generate|implement|make a|new project)"
+  complexPattern: "(架构|重构|设计|系统|全面|深度|迁移|兼容|审查|architecture|refactor|comprehensive|design|system|migrate|review)"
+  firstTurnBuild: "Start your reasoning with the exact sentence: 'We need to build it directly and verify it.'"
+  firstTurnInspect: "Start your reasoning with the exact sentence: 'We need to inspect the code first.'"
+  firstTurnDeep: "Start your reasoning with the exact sentence: 'Let me think through the design before changing anything.'"

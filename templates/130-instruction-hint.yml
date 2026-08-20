@@ -1,0 +1,27 @@
+# 模板：指令文件提示（strategy=placeholder + fill=instruction-hint）
+# 读取 agents-instruction.txt 内容注入；promotion=include-subagents 表示子代理晋升后同样注入。
+# 提示：把本文件放入 promptConfigsDir 目录，或把对象写入 settings.promptConfigs 数组。
+id: example-instruction-hint
+name: 示例：指令文件提示
+enabled: true
+layer: pre-step
+strategy: placeholder
+fill: instruction-hint
+position: after-all
+dedupe: session
+promotion: include-subagents
+subagents: inherit
+modelScope: all
+configKind: ordered
+order: 30
+role: user
+priority: 0
+mergeMode: separate
+sourceKind: instruction-hint
+form: hint
+identity:
+  field: kind
+  value: instruction-hint
+params:
+  promoteOn: either
+  includeSubagents: true
