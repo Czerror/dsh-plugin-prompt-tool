@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactN
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react'
 import clsx from 'clsx'
 import type { IApiClient } from '@deepseek-ai/dsh-client-connection/client'
-import { IconChevronDownOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
 import {
   type PromptToolStore,
   type PromptToolSettingsTransport,
