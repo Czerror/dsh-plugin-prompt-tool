@@ -134,7 +134,11 @@ export function PromptConfigForm(props: { meta: EngineMeta; config: PromptConfig
         {policy.order && <Field label="order" hint="本层排序：数值小者在前（与同层列表上下移动等价）"><input className={styles.configInput} type="number" step={1} value={config.order ?? 0} onChange={(e) => onPatch({ order: Number(e.target.value) })} /></Field>}
         {policy.priority && <Field label="priority" hint="同位置插入顺序与 merged 拼接顺序：数值小者更靠近锚点"><input className={styles.configInput} type="number" step={1} value={config.priority ?? 0} onChange={(e) => onPatch({ priority: Number(e.target.value) })} /></Field>}
         <Field label="group" hint="互斥组名：同 group 且 exclusive=true 时只执行排序后的第一个 enabled 配置"><input className={styles.configInput} value={config.group ?? ''} spellCheck={false} onChange={(e) => onPatch({ group: e.target.value })} /></Field>
-        <Field label="exclusive" hint="同 group 互斥：只执行第一个 enabled 配置"><input type="checkbox" checked={config.exclusive === true} onChange={(e) => onPatch({ exclusive: e.target.checked })} /></Field>
+        <label className={styles.configEnable} title={config.exclusive === true ? '点击关闭互斥' : '点击开启互斥'}>
+          <span className={styles.configFieldLabel}>exclusive</span>
+          <input type="checkbox" aria-label="exclusive" checked={config.exclusive === true} onChange={(e) => onPatch({ exclusive: e.target.checked })} />
+          <span className={styles.switch} aria-hidden="true"><i /></span>
+        </label>
         {policy.dedupe && <OptionField label="dedupe" hint="session=每会话一次；batch=当前批去重" value={config.dedupe} options={meta.dedupes} fallback="none" onChange={(value) => onPatch({ dedupe: value })} />}
         {policy.promotion && <OptionField label="promotion" hint="none=不要求晋升；main=主会话晋升；include-subagents=子代理跟随" value={config.promotion} options={meta.promotions} fallback="none" onChange={(value) => onPatch({ promotion: value })} />}
         {policy.subagents && <OptionField label="subagents" hint="none=仅主会话；inherit=都适用；only=仅子代理" value={config.subagents} options={meta.subagentModes} fallback="none" onChange={(value) => onPatch({ subagents: value })} />}
