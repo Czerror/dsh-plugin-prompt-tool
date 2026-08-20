@@ -180,14 +180,25 @@ function SubagentSettings(props: { store: PromptToolStore }): ReactNode {
   const withCurrent = (options: string[], current: string): string[] =>
     current.length > 0 && !options.includes(current) ? [...options, current] : options
   const active = fields.subagentModelProvider.length > 0 && fields.subagentModelName.length > 0
+  const detected = store.deepseekProviders.length > 0
   return (
     <section className={ui.section} aria-labelledby="pt-subagent-settings">
       <div className={ui.sectionHeading}><div><h2 id="pt-subagent-settings">子代理设置</h2><p>模型服务商与模型名同时设置时，子代理与宿主直派子代理自动使用该固定模型；任一为空 = 子代理继承主会话模型。</p></div></div>
+      <div className={ui.skillStatusRow} aria-label="子代理路由状态">
+        <span className={clsx(ui.skillStatusChip, detected ? ui.skillStatusModel : ui.skillStatusOff)}>
+          <i className={ui.skillStatusDot} aria-hidden="true" />
+          {detected ? `已检测到模型路由：${store.deepseekProviders.join('、')}` : '未检测到模型路由'}
+        </span>
+        <span className={clsx(ui.skillStatusChip, active ? ui.skillStatusModel : ui.skillStatusOff)}>
+          <i className={ui.skillStatusDot} aria-hidden="true" />
+          {active ? '固定模型路由已设置' : '未设置：继承主会话模型'}
+        </span>
+      </div>
       <div className={ui.rowGroup}>
         <div className={ui.settingRowStack}>
           <span className={ui.settingCopy}>
             <strong>模型服务商</strong>
-            <small>调用方未显式指定 provider 时自动补入；例如 deepseek-official。{store.deepseekProviders.length > 0 ? `当前检测到：${store.deepseekProviders.join('、')}` : '未检测到模型路由，可手动选择 deepseek-official。'}</small>
+            <small>调用方未显式指定 provider 时自动补入；检测到 DeepSeek 路由时可直接选择，未检测到可手动选择 deepseek-official。</small>
           </span>
           <select
             className={ui.configInput}
@@ -200,7 +211,9 @@ function SubagentSettings(props: { store: PromptToolStore }): ReactNode {
             }}
           >
             {withCurrent(providerOptions, fields.subagentModelProvider).map((item) => (
-              <option key={item} value={item}>{item.length > 0 ? item : '（不设置）'}</option>
+              <option key={item} value={item}>
+                {item.length > 0 ? item : (detected ? `（不设置 · 检测到 ${store.deepseekProviders.join('、')}）` : '（不设置）')}
+              </option>
             ))}
           </select>
         </div>
@@ -270,7 +283,6 @@ function SubagentSettings(props: { store: PromptToolStore }): ReactNode {
           </select>
         </div>
       </div>
-      {!active && <p className={ui.readOnly} role="status">未设置：子代理将继承主会话模型路由。</p>}
     </section>
   )
 }
