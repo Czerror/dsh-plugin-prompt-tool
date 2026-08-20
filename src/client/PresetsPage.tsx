@@ -10,8 +10,7 @@ export function PresetsPage(props: { store: PromptToolStore }): ReactNode {
   const { store } = props
   return (
     <>
-      <section className={ui.section} aria-labelledby="pt-global-switch">
-        <div className={ui.sectionHeading}><div><h2 id="pt-global-switch">全局开关</h2><p>预设生成总开关：关闭时移除生成目录，各层锚定开关随之失效；切换后自动重新加载模块卡片。</p></div></div>
+      <section className={ui.section} aria-label="全局开关">
         <div className={ui.rowGroup}>
           <ToggleRow id="pt-write-preset" label="全局开关" hint="预设生成总开关，作用于全部六个层级：开启时生成并刷新生成目录；关闭时移除生成目录。关闭/开启后自动重新加载模块卡片。"
             checked={store.fields.writePreset} onChange={() => store.toggle('writePreset')} />
