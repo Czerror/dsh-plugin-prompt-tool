@@ -269,18 +269,26 @@ function ModelToolCards(props: { store: PromptToolStore }): ReactNode {
   )
 }
 
-/** 子代理设置页：路由状态 + 子代理参数卡片（模型 / 工具与深度）。 */
-function SubagentSettings(props: { store: PromptToolStore }): ReactNode {
+/** 模型路由状态 chip：主对话页与子代理页共用（检测到 DeepSeek 路由时展示 provider 列表）。 */
+function ModelRouteStatus(props: { store: PromptToolStore }): ReactNode {
   const { store } = props
   const detected = store.deepseekProviders.length > 0
   return (
+    <div className={ui.skillStatusRow} aria-label="模型路由状态">
+      <span className={clsx(ui.skillStatusChip, detected ? ui.skillStatusModel : ui.skillStatusOff)}>
+        <i className={ui.skillStatusDot} aria-hidden="true" />
+        {detected ? `已检测到模型路由：${store.deepseekProviders.join('、')}` : '未检测到模型路由'}
+      </span>
+    </div>
+  )
+}
+
+/** 子代理设置页：路由状态 + 子代理参数卡片（模型 / 工具与深度）。 */
+function SubagentSettings(props: { store: PromptToolStore }): ReactNode {
+  const { store } = props
+  return (
     <section className={ui.section} aria-label="子代理设置">
-      <div className={ui.skillStatusRow} aria-label="子代理路由状态">
-        <span className={clsx(ui.skillStatusChip, detected ? ui.skillStatusModel : ui.skillStatusOff)}>
-          <i className={ui.skillStatusDot} aria-hidden="true" />
-          {detected ? `已检测到模型路由：${store.deepseekProviders.join('、')}` : '未检测到模型路由'}
-        </span>
-      </div>
+      <ModelRouteStatus store={store} />
       <ModelToolCards store={store} />
     </section>
   )
@@ -306,6 +314,7 @@ function FeatureSettings(props: { store: PromptToolStore }): ReactNode {
   const fields = store.fields
   return (
     <section className={ui.section} aria-label="主对话与全局">
+      <ModelRouteStatus store={store} />
       <ModelToolCards store={store} />
       <PromptConfigsEditor
         meta={store.meta}
