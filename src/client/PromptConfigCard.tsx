@@ -277,11 +277,6 @@ export function PromptConfigForm(props: { meta: EngineMeta; config: PromptConfig
         <Field label="name（显示名）">
           <input className={styles.configInput} value={config.name ?? ''} spellCheck={false} onChange={(e) => onPatch({ name: e.target.value })} />
         </Field>
-        <label className={styles.configEnable} title={config.enabled !== false ? '点击关闭' : '点击启用'}>
-          <span className={styles.configFieldLabel}>enabled</span>
-          <input type="checkbox" aria-label="enabled" checked={config.enabled !== false} onChange={(e) => onPatch({ enabled: e.target.checked })} />
-          <span className={styles.switch} aria-hidden="true"><i /></span>
-        </label>
         <OptionField label="layer" hint="注入层级；切换后下方字段按新层能力矩阵重新出现" value={config.layer} options={meta.layers} fallback="pre-step" onChange={(value) => onPatch({ layer: value })} />
         <OptionField label="strategy" hint="内容策略；placeholder 需配合 fill" value={config.strategy} options={meta.strategies} fallback="static" onChange={(value) => onPatch({ strategy: value })} />
         <OptionField label="configKind" hint="ordered 按 order 升序；anchor 固定文件序排最前" value={config.configKind} options={meta.slotKinds} fallback="ordered" onChange={(value) => onPatch({ configKind: value })} />
