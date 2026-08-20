@@ -3,7 +3,31 @@ name: 创造模式
 description: 用于创建自定义 Agent preset：具备标准模式的全部能力，并提供运行时检查、插件实验和 preset 创作指导。
 version: 1.0.0
 engineCompat: ">=0.4.2"
-composition: ./agent.cordis.yml
+modules:
+  - official-persona-cordis
+  - official-agent-instructions
+  - official-tool-bash
+  - official-tool-pwsh
+  - official-tool-fs
+  - official-tool-fs-search
+  - official-tool-jobs
+  - official-skill-filesystem-cordis
+  - official-tool-skill
+  - official-tool-goal
+  - official-planning
+  - official-compaction
+  - official-delegation
+  - official-tool-ask-user
+  - official-tool-todo
+  - official-tool-web
+  - official-tool-cordis
+  - context-gate
+  - tool-bootstrap
+  - router-first-turn
+  - prompt-config-engine
+  - run-code-env
+  - custom-bash
+  - skill-search
 params:
   usePtcMode: true
   bootstrapMaxTokens: 0

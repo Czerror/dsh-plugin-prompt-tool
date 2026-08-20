@@ -1,0 +1,5 @@
+# module: official-skill-filesystem
+# source: deepseek-harness official standard agent preset (skill-filesystem)
+
+- id: skill-filesystem
+  name: '@deepseek-ai/dsh-skill-filesystem'

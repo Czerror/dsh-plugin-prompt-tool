@@ -1,0 +1,8 @@
+# module: official-tool-web
+# source: deepseek-harness official standard agent preset (tool-web)
+
+- id: tool-web
+  name: '@deepseek-ai/dsh-tool-web'
+  config:
+    fetch: false
+    searchTimeoutMs: 60000

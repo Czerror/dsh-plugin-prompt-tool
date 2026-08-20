@@ -3,7 +3,31 @@ name: PTC 模式
 description: 具备标准模式的全部能力，并通过 Code Mode SDK 呈现工具，让模型用一个 TypeScript 程序组合多步操作。
 version: 1.0.0
 engineCompat: ">=0.4.2"
-composition: ./agent.cordis.yml
+modules:
+  - official-persona
+  - official-agent-instructions
+  - official-tool-bash
+  - official-tool-pwsh
+  - official-tool-fs
+  - official-tool-fs-search
+  - official-tool-jobs
+  - official-skill-filesystem
+  - official-tool-skill
+  - official-tool-goal
+  - official-planning
+  - official-compaction
+  - official-delegation
+  - official-tool-ask-user
+  - official-tool-todo
+  - official-tool-web
+  - official-tool-presentation
+  - context-gate
+  - tool-bootstrap
+  - router-first-turn
+  - prompt-config-engine
+  - run-code-env
+  - custom-bash
+  - skill-search
 params:
   usePtcMode: true
   bootstrapMaxTokens: 0

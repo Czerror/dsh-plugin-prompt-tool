@@ -4,7 +4,7 @@
 
 ### 架构重构（2026-08-20）
 
-- 官方预设导入：从 deepseek-harness 官方源码导入 4 个预设模板——`preset/{standard,minimal,ptc,creative}/`（标准模式/极简模式/PTC 模式/创造模式），组合文件 = 官方 `agent.cordis.yml` 直用 + prompt-tool 本地附加行（context-gate/tool-bootstrap/router-first-turn/prompt-config-engine/run-code-env/custom-bash/skill-search）；`manifest.loadCompositionText` 新增 `composition: ./xxx.yml` 相对路径支持（模板目录内组合文件）；`presetTemplate` 切换即用。
+- 官方预设模块化导入：从 deepseek-harness 官方源码拆解 4 个预设为模块——`engine/compositions/library/official-*.yml`（23 个官方模块文件，按行块提取；persona/skill-filesystem 按预设分版本），`preset/{standard,minimal,ptc,creative}/preset.yml` 用 `modules:` 清单声明（官方行 + prompt-tool 本地附加行）由插件拼接；`manifest.loadCompositionText` 保留 `composition: ./xxx.yml` 相对路径能力（通用）；`presetTemplate` 切换即用。
 - UI 审查建议落地：S1 自定义引导文本行灰显条件补 `!writePreset`（与输入禁用一致）；S2 Anchored Standard 模块行新增「编辑」按钮——受控聚焦（focusId+focusTick）展开下方配置卡片并滚动到可视区，同 id 重复点击可重触发。
 - UI 预设分组：内置消息批配置模块行归类到「Anchored Standard(prompt-tool)」分组，并按实际生效配置**动态生成**（预设模板声明什么显示什么；模块缺失不渲染，切换模板自然跟随）；模块行 label 优先取配置 name。
 - 修复 UI/TUI 配置计数显示：settings.promptConfigs 仅是用户覆盖层（默认空），实际生效配置在生成目录 `prompt-configs/`（引擎加载源）——新增 bridge 端点 `/prompt-configs` 返回实际生效配置（client 加载时以其为准并同步保存快照），TUI `status`/`config` 命令同样按生成目录优先；契约端点 8→9。

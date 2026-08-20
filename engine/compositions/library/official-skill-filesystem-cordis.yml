@@ -1,0 +1,8 @@
+# module: official-skill-filesystem-cordis
+# source: deepseek-harness official cordis agent preset (skill-filesystem)
+
+- id: skill-filesystem
+  name: '@deepseek-ai/dsh-skill-filesystem'
+  config:
+    customSkillDirs:
+      - !!js "process.getBuiltinModule('node:url').fileURLToPath(new URL('skills/', baseUrl))"

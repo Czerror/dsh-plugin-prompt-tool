@@ -3,7 +3,17 @@ name: 极简模式
 description: 仅提供持久 bash 与 str_replace_editor 的双工具编码 Agent。
 version: 1.0.0
 engineCompat: ">=0.4.2"
-composition: ./agent.cordis.yml
+modules:
+  - official-persona-minimal
+  - official-persistent-shell
+  - official-filesystem
+  - context-gate
+  - tool-bootstrap
+  - router-first-turn
+  - prompt-config-engine
+  - run-code-env
+  - custom-bash
+  - skill-search
 params:
   usePtcMode: true
   bootstrapMaxTokens: 0
