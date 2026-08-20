@@ -99,7 +99,7 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
     if (valid) {
       setErrors([])
       onSaveConfigs(configs)
-      onNotice('ok', `提示词配置已校验并保存（${configs.length} 条）`)
+      onNotice('ok', `已校验并保存（${configs.length} 条）`)
     }
     setSaving(false)
   }
@@ -118,7 +118,7 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
     const removedId = configs[globalIndex]?.id
     onPatchConfigs(configs.filter((_, index) => index !== globalIndex))
     if (expanded === removedId) setExpanded(undefined)
-    onNotice('ok', '已删除提示词配置（记得保存）')
+    onNotice('ok', '已删除')
   }
 
   const duplicateAt = (globalIndex: number) => {
@@ -134,7 +134,7 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
     clone.id = id
     onPatchConfigs([...configs, clone])
     setExpanded(id)
-    onNotice('ok', '已复制提示词配置（记得保存）')
+    onNotice('ok', '已复制')
   }
 
   const renderCard = (config: PromptConfigDraft) => {
@@ -170,7 +170,7 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
   return (
     <section className={styles.section} aria-labelledby="prompt-tool-configs-heading">
       <div className={styles.sectionHeading}>
-      <div><h2 id="prompt-tool-configs-heading">{layer === undefined ? '模块列表' : '本层提示词配置'}</h2><p>{scoped.length} 条配置 · {scoped.filter((config) => config.enabled !== false).length} 条启用；上下移动控制同层顺序。</p></div>
+      <div><h2 id="prompt-tool-configs-heading">{layer === undefined ? '模块列表' : '本层配置'}</h2><p>{scoped.length} 条配置 · {scoped.filter((config) => config.enabled !== false).length} 条启用；上下移动控制同层顺序。</p></div>
         <div className={styles.sectionActions}>
           {extraActions}
           <button type="button" className={styles.pillButton} disabled={validating} onClick={() => void runValidate(configs)}>{validating && <span className={styles.spinner} aria-hidden="true" />}{validating ? '校验中…' : '校验'}</button>
@@ -200,7 +200,7 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
       )}
 
       {scoped.length === 0 ? (
-        <div className={styles.emptyState}><span className={styles.emptyGlyph} aria-hidden="true">⌁</span><div><h3>{scope === 'subagent' ? '还没有子代理可见的提示词配置' : layer === undefined ? '还没有自定义提示词配置' : '本层还没有自定义配置'}</h3><p>{scope === 'subagent' ? '从上方「新建」插入一条（插入后可在卡片「消息受众」下拉自由切换仅主会话/公用/仅子代理），或到主设置「提示词配置」从目录导入。' : layer === undefined ? '从上方模板插入一条，或从本地目录导入；默认四条内置配置不受影响。' : '请到主设置「提示词配置」从模板插入或从目录导入。'}</p></div></div>
+        <div className={styles.emptyState}><span className={styles.emptyGlyph} aria-hidden="true">⌁</span><div><h3>{scope === 'subagent' ? '还没有子代理可见的配置' : layer === undefined ? '还没有自定义配置' : '本层还没有自定义配置'}</h3><p>{scope === 'subagent' ? '从上方「新建」插入一条（插入后可在卡片「消息受众」下拉自由切换仅主会话/公用/仅子代理），或到主设置「配置」从目录导入。' : layer === undefined ? '从上方模板插入一条，或从本地目录导入；默认四条内置配置不受影响。' : '请到主设置「配置」从模板插入或从目录导入。'}</p></div></div>
       ) : filtered.length === 0 ? (
         <p className={styles.readOnly} role="status">没有匹配「{filter.trim()}」的配置。</p>
       ) : (
