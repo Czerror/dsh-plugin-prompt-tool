@@ -227,20 +227,20 @@ function parseListParam(value: unknown): string[] {
  * 引擎内部 token 渲染:把直读参数变成组合模块里的 __TOKEN__ 值。
  * anchored 的全部组合行为(usePtcMode/bootstrapMaxTokens/模型路由与委派完整自定义)
  * 在这里完成参数化,用户参数文件不需要任何模板语法。
- * 模型路由/委派参数统一扁平键（modelProvider/toolFilterAllow/maxDepth 等），
+ * 模型路由/委派参数统一扁平键（modelProvider/subagentModelProvider/toolFilterAllow/maxDepth 等），
  * 与官方 AgentOptions{provider,model} / toolFilter{allow,deny} / maxDepth 对齐。
  */
 export function renderEngineTokens(params: Record<string, unknown>): Record<string, string> {
   const mainPersona = asString(params.mainPersona)
-  const provider = asString(params.modelProvider, '')
-  const model = asString(params.modelName, '')
-  // 模型路由与委派完整自定义（官方 tool-subagent Config 参数化，主对话与子代理通用）：
-  //   modelProvider/modelName → agentOptions{provider,model}（固定模型路由）；
-  //   subagentPersona → persona（per-child shadow，显式优先；固定路由时回退
+  // 子代理模型路由与委派完整自定义（官方 tool-subagent Config 参数化）：
+  //   subagentModelProvider/subagentModelName → agentOptions{provider,model}（子代理固定模型路由）；
+  //   subagentPersona → persona（per-child shadow，显式优先；子代理固定路由时回退
   //     mainPersona；两者都缺省 = 不渲染，子代理继承主会话 persona，官方行为）；
   //   toolFilterAllow/Deny → toolFilter{allow,deny}（委派工具集白/黑名单）；
   //   maxDepth → maxDepth（0 禁止委派 / provider-managed / 正整数）。
   // 任一字段非空即渲染对应行，全部缺省 = 官方默认（继承主会话）。
+  const provider = asString(params.subagentModelProvider, '')
+  const model = asString(params.subagentModelName, '')
   const subagentPersona = asString(params.subagentPersona)
     || (provider.length > 0 && model.length > 0 ? mainPersona : '')
   const toolFilterAllow = parseListParam(params.toolFilterAllow)

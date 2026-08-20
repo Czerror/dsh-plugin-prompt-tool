@@ -145,36 +145,43 @@ function AgentRequestSwitches(props: { store: PromptToolStore }): ReactNode {
   )
 }
 
-/** 模型与委派参数卡片（模型设置 + 工具与深度）：主对话页与子代理页共用同一配置源（缺省继承宿主默认）；人设按作用域分别显示（main=主对话自定义、subagent=子代理自定义）。 */
+/** 模型与委派参数卡片（模型设置 + 工具与深度）：主对话页与子代理页共用同一配置源（缺省继承宿主默认）；模型路由与人设按作用域完全分离（main=主对话模型、subagent=子代理模型，参数各自独立），工具与深度两页通用。 */
 function ModelToolCards(props: { store: PromptToolStore; scope: 'main' | 'subagent' }): ReactNode {
   const { store } = props
   const fields = store.fields
   const providerOptions = ['', ...store.providers]
-  const modelOptions = ['', ...(store.modelCatalog[fields.modelProvider] ?? [])]
+  const provider = props.scope === 'main' ? fields.modelProvider : fields.subagentModelProvider
+  const modelName = props.scope === 'main' ? fields.modelName : fields.subagentModelName
+  const modelOptions = ['', ...(store.modelCatalog[provider] ?? [])]
   const maxDepthOptions = ['', 'provider-managed', '0', '1', '2', '3', '5']
   const withCurrent = (options: string[], current: string): string[] =>
     current.length > 0 && !options.includes(current) ? [...options, current] : options
-  const active = fields.modelProvider.length > 0 && fields.modelName.length > 0
+  const active = provider.length > 0 && modelName.length > 0
+  const scopeMeta = props.scope === 'main'
+    ? { title: '主对话模型', idle: '未设置：继承宿主默认模型', active: '固定模型路由已设置（新会话默认模型）' }
+    : { title: '子代理模型', idle: '未设置：继承主会话模型', active: '子代理固定模型路由已设置' }
   return (
     <>
-      <CollapsibleCard id="pt-model-route" title="模型设置" meta={active ? '固定模型路由已设置' : '未设置：继承宿主默认模型'}>
+      <CollapsibleCard id={props.scope === 'main' ? 'pt-main-model' : 'pt-subagent-model'} title={scopeMeta.title} meta={active ? scopeMeta.active : scopeMeta.idle}>
         <div className={ui.rowGroup}>
           <div className={ui.settingRowStack}>
             <span className={ui.settingCopy}>
               <strong>模型服务商</strong>
-              <small>主对话新会话默认模型（agent-default-model）+ 直派/委派子代理固定路由（官方 AgentOptions.provider）；调用方未显式指定时自动补入。检测到的服务商可直接选择。</small>
+              <small>{props.scope === 'main'
+                ? '主对话新会话默认模型（agent-default-model）；调用方未显式指定时自动补入。检测到的服务商可直接选择。'
+                : '子代理固定模型路由（agentOptions 注入 tool-subagent，经预设参数传递）；调用方显式模型优先。检测到的服务商可直接选择。'}</small>
             </span>
             <select
               className={ui.configInput}
               aria-label="模型服务商"
-              value={fields.modelProvider}
+              value={provider}
               disabled={!fields.writePreset}
               onChange={(event) => {
-                store.patch({ modelProvider: event.target.value })
+                store.patch(props.scope === 'main' ? { modelProvider: event.target.value } : { subagentModelProvider: event.target.value })
                 void store.persistParamOverrides()
               }}
             >
-              {withCurrent(providerOptions, fields.modelProvider).map((item) => (
+              {withCurrent(providerOptions, provider).map((item) => (
                 <option key={item} value={item}>{item.length > 0 ? item : '（不设置）'}</option>
               ))}
             </select>
@@ -184,19 +191,21 @@ function ModelToolCards(props: { store: PromptToolStore; scope: 'main' | 'subage
           <div className={ui.settingRowStack}>
             <span className={ui.settingCopy}>
               <strong>模型名</strong>
-              <small>与模型服务商同时非空时生效：主对话新会话默认模型 + 子代理固定路由，例如 deepseek-v4-flash。</small>
+              <small>{props.scope === 'main'
+                ? '与模型服务商同时非空时生效（主对话新会话默认模型），例如 deepseek-v4-flash。'
+                : '与子代理模型服务商同时非空时生效（子代理固定路由），例如 deepseek-v4-flash。'}</small>
             </span>
             <select
               className={ui.configInput}
               aria-label="模型名"
-              value={fields.modelName}
+              value={modelName}
               disabled={!fields.writePreset}
               onChange={(event) => {
-                store.patch({ modelName: event.target.value })
+                store.patch(props.scope === 'main' ? { modelName: event.target.value } : { subagentModelName: event.target.value })
                 void store.persistParamOverrides()
               }}
             >
-              {withCurrent(modelOptions, fields.modelName).map((item) => (
+              {withCurrent(modelOptions, modelName).map((item) => (
                 <option key={item} value={item}>{item.length > 0 ? item : '（不设置）'}</option>
               ))}
             </select>

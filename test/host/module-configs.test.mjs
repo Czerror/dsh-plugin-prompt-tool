@@ -66,7 +66,7 @@ test('resolvePresetParams 模型路由/委派参数全扁平（preset.yml params
   assert.equal(overridden.modelProvider, 'runtime-wins')
   assert.equal(overridden.modelName, 'm1')
   // 空默认值不渲染（renderEngineTokens 对空串/空数组跳过）。
-  const empty = resolvePresetParams({ id: 't', params: { modelProvider: '', modelName: '', persona: '', toolFilterAllow: [], toolFilterDeny: [], maxDepth: '' } }, {})
+  const empty = resolvePresetParams({ id: 't', params: { modelProvider: '', modelName: '', subagentPersona: '', toolFilterAllow: [], toolFilterDeny: [], maxDepth: '' } }, {})
   assert.equal(empty.modelProvider, '')
   assert.deepEqual(empty.toolFilterAllow, [])
   assert.equal(empty.maxDepth, '')
@@ -95,10 +95,10 @@ test('anchored buildCordis 集成：moduleConfigs 合并与 token 渲染共存',
   assert.ok(!/__[A-Z0-9_]+__/.test(buildCordis('P')), '生成文本不应残留未解析 token')
 })
 
-test('模型路由与委派完整自定义：persona + toolFilter + maxDepth 渲染（官方 tool-subagent Config）', () => {
+test('子代理模型路由与委派完整自定义：persona + toolFilter + maxDepth 渲染（官方 tool-subagent Config）', () => {
   const rows = parseYaml(buildCordis('P', {
-    modelProvider: 'my-provider',
-    modelName: 'deepseek-v4-flash-7013',
+    subagentModelProvider: 'my-provider',
+    subagentModelName: 'deepseek-v4-flash-7013',
     subagentPersona: '你是审查子代理，只读不改。',
     toolFilterAllow: ['read', 'write', 'glob'],
     toolFilterDeny: 'bash, run_code',
@@ -115,8 +115,8 @@ test('模型路由与委派完整自定义：persona + toolFilter + maxDepth 渲
   }
 })
 
-test('persona 回退：无 subagentPersona 时固定路由用 mainPersona，无路由不渲染', () => {
-  const routed = parseYaml(buildCordis('P', { modelProvider: 'p', modelName: 'm' }))
+test('persona 回退：无 subagentPersona 时子代理固定路由用 mainPersona，无路由不渲染', () => {
+  const routed = parseYaml(buildCordis('P', { subagentModelProvider: 'p', subagentModelName: 'm' }))
   const routedRow = findAllNested(routed, new Set(['tool-subagent']))[0]
   assert.match(routedRow.config.persona, /decide the task type \(build or fix\)/, '固定路由时 persona 回退 mainPersona')
   assert.equal(routedRow.config.toolFilter, undefined, '未配置 toolFilter 不渲染')

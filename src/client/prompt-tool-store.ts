@@ -36,6 +36,8 @@ export interface SwitchSnapshot {
   guideCustom: boolean
   modelProvider: string
   modelName: string
+  subagentModelProvider: string
+  subagentModelName: string
   bootstrapMaxTokens: number
   usePtcMode: boolean
   injectPrompt: boolean
@@ -60,6 +62,8 @@ const EMPTY_SWITCHES: SwitchSnapshot = {
   guideCustom: false,
   modelProvider: '',
   modelName: '',
+  subagentModelProvider: '',
+  subagentModelName: '',
   bootstrapMaxTokens: 0,
   usePtcMode: true,
   injectPrompt: true,
@@ -87,6 +91,8 @@ export const snapshotSwitches = (fields: Fields): SwitchSnapshot => ({
   guideCustom: fields.guideCustom,
   modelProvider: fields.modelProvider,
   modelName: fields.modelName,
+  subagentModelProvider: fields.subagentModelProvider,
+  subagentModelName: fields.subagentModelName,
   bootstrapMaxTokens: fields.bootstrapMaxTokens,
   usePtcMode: fields.usePtcMode,
   injectPrompt: fields.injectPrompt,
@@ -111,6 +117,8 @@ const switchesEqual = (a: SwitchSnapshot, b: SwitchSnapshot): boolean =>
   && a.guideCustom === b.guideCustom
   && a.modelProvider === b.modelProvider
   && a.modelName === b.modelName
+  && a.subagentModelProvider === b.subagentModelProvider
+  && a.subagentModelName === b.subagentModelName
   && a.bootstrapMaxTokens === b.bootstrapMaxTokens
   && a.usePtcMode === b.usePtcMode
   && a.injectPrompt === b.injectPrompt
@@ -312,6 +320,8 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
         if (typeof o.guideCustom === 'boolean') paramPatch.guideCustom = o.guideCustom
         if (typeof o.modelProvider === 'string') paramPatch.modelProvider = o.modelProvider
         if (typeof o.modelName === 'string') paramPatch.modelName = o.modelName
+        if (typeof o.subagentModelProvider === 'string') paramPatch.subagentModelProvider = o.subagentModelProvider
+        if (typeof o.subagentModelName === 'string') paramPatch.subagentModelName = o.subagentModelName
         if (typeof o.mainPersona === 'string') paramPatch.mainPersona = o.mainPersona
         if (typeof o.subagentPersona === 'string') paramPatch.subagentPersona = o.subagentPersona
         if (Array.isArray(o.toolFilterAllow)) paramPatch.toolFilterAllow = o.toolFilterAllow.join(', ')
@@ -424,6 +434,8 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
         guideCustom: f.guideCustom,
         modelProvider: f.modelProvider,
         modelName: f.modelName,
+        subagentModelProvider: f.subagentModelProvider,
+        subagentModelName: f.subagentModelName,
         ...(f.mainPersona.trim().length > 0 ? { mainPersona: f.mainPersona } : {}),
         ...(f.subagentPersona.trim().length > 0 ? { subagentPersona: f.subagentPersona } : {}),
         toolFilterAllow: splitList(f.toolFilterAllow),

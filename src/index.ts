@@ -158,6 +158,8 @@ export function apply(ctx: Context, configIn: Config): void {
         injectPrompt: runtime.injectPrompt,
         modelProvider: runtime.modelProvider,
         modelName: runtime.modelName,
+        subagentModelProvider: runtime.subagentModelProvider,
+        subagentModelName: runtime.subagentModelName,
         mainPersona: runtime.mainPersona,
         subagentPersona: runtime.subagentPersona,
         toolFilterAllow: runtime.toolFilterAllow,
@@ -204,6 +206,8 @@ export function apply(ctx: Context, configIn: Config): void {
     if (typeof overrides.guideText === 'string') runtime.guideText = overrides.guideText
     if (typeof overrides.modelProvider === 'string') runtime.modelProvider = overrides.modelProvider
     if (typeof overrides.modelName === 'string') runtime.modelName = overrides.modelName
+    if (typeof overrides.subagentModelProvider === 'string') runtime.subagentModelProvider = overrides.subagentModelProvider
+    if (typeof overrides.subagentModelName === 'string') runtime.subagentModelName = overrides.subagentModelName
     // mainPersona 引擎必需非空：历史 overrides 里的空串直接忽略（保留模板默认）。
     if (typeof overrides.mainPersona === 'string' && overrides.mainPersona.trim().length > 0) {
       runtime.mainPersona = overrides.mainPersona
@@ -425,6 +429,8 @@ export function apply(ctx: Context, configIn: Config): void {
     guideCustom: config.guideCustom,
     modelProvider: config.modelProvider,
     modelName: config.modelName,
+    subagentModelProvider: config.subagentModelProvider,
+    subagentModelName: config.subagentModelName,
     bootstrapMaxTokens: config.bootstrapMaxTokens,
     usePtcMode: config.usePtcMode,
     skillRankBase: config.skillRankBase,
@@ -436,12 +442,13 @@ export function apply(ctx: Context, configIn: Config): void {
   }
 
   // 模型路由（主对话直派子代理与委派子代理通用）：
-  // 服务商与模型名同时非空时生效；调用方显式模型优先，persona 与 toolFilter 保持不变。
+  // 宿主直派子代理补子代理固定模型路由（subagentModelProvider + subagentModelName 同时非空时生效）；
+  // 调用方显式模型优先，persona 与 toolFilter 保持不变。
   installSubagentModelRoute(
     ctx,
-    () => runtime.modelProvider.length > 0 && runtime.modelName.length > 0,
-    () => runtime.modelProvider,
-    () => runtime.modelName,
+    () => runtime.subagentModelProvider.length > 0 && runtime.subagentModelName.length > 0,
+    () => runtime.subagentModelProvider,
+    () => runtime.subagentModelName,
   )
   // 主对话默认模型控制：modelProvider + modelName 非空时写入官方 agent-default-model
   // （新会话默认模型；任一为空 = 不干预，继承用户在宿主 web 的选择）。
@@ -465,6 +472,8 @@ export function apply(ctx: Context, configIn: Config): void {
     guideCustom: runtime.guideCustom,
     modelProvider: runtime.modelProvider,
     modelName: runtime.modelName,
+    subagentModelProvider: runtime.subagentModelProvider,
+    subagentModelName: runtime.subagentModelName,
     bootstrapMaxTokens: runtime.bootstrapMaxTokens,
     usePtcMode: runtime.usePtcMode,
     modelsAvailable: getModelsState().available,
@@ -510,6 +519,8 @@ registerTuiCommand(ctx, NS, () => currentSource(), getModelsState, () => listAdv
       guideCustom: typeof next.guideCustom === 'boolean' ? next.guideCustom : config.guideCustom,
       modelProvider: typeof next.modelProvider === 'string' ? next.modelProvider : config.modelProvider,
       modelName: typeof next.modelName === 'string' ? next.modelName : config.modelName,
+      subagentModelProvider: typeof next.subagentModelProvider === 'string' ? next.subagentModelProvider : config.subagentModelProvider,
+      subagentModelName: typeof next.subagentModelName === 'string' ? next.subagentModelName : config.subagentModelName,
       bootstrapMaxTokens: Number.isSafeInteger(next.bootstrapMaxTokens) && next.bootstrapMaxTokens >= 0 ? next.bootstrapMaxTokens : config.bootstrapMaxTokens,
       usePtcMode: typeof next.usePtcMode === 'boolean' ? next.usePtcMode : config.usePtcMode,
       skillRankBase: Number.isSafeInteger(next.skillRankBase) && next.skillRankBase >= 0 ? next.skillRankBase : config.skillRankBase,
@@ -542,6 +553,8 @@ registerTuiCommand(ctx, NS, () => currentSource(), getModelsState, () => listAdv
       || runtime.guideCustom !== nextRuntime.guideCustom
       || runtime.modelProvider !== nextRuntime.modelProvider
       || runtime.modelName !== nextRuntime.modelName
+      || runtime.subagentModelProvider !== nextRuntime.subagentModelProvider
+      || runtime.subagentModelName !== nextRuntime.subagentModelName
       || runtime.bootstrapMaxTokens !== nextRuntime.bootstrapMaxTokens
       || runtime.usePtcMode !== nextRuntime.usePtcMode
       || runtime.residentAgentsPath !== nextRuntime.residentAgentsPath
@@ -575,6 +588,8 @@ registerTuiCommand(ctx, NS, () => currentSource(), getModelsState, () => listAdv
     runtime.guideCustom = nextRuntime.guideCustom
     runtime.modelProvider = nextRuntime.modelProvider
     runtime.modelName = nextRuntime.modelName
+    runtime.subagentModelProvider = nextRuntime.subagentModelProvider
+    runtime.subagentModelName = nextRuntime.subagentModelName
     runtime.bootstrapMaxTokens = nextRuntime.bootstrapMaxTokens
     runtime.usePtcMode = nextRuntime.usePtcMode
     runtime.skillRankBase = nextRuntime.skillRankBase

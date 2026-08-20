@@ -45,6 +45,8 @@ function renderTuiStatus(source: PromptSettings, promptConfigs: PromptConfigSpec
     `  modelsAvailable         ${source.modelsAvailable ? '是' : '否（未检测到模型服务商）'}`,
     `  modelProvider           ${source.modelProvider.length > 0 ? source.modelProvider : '（空 = 不设置）'}`,
     `  modelName               ${source.modelName.length > 0 ? source.modelName : '（空 = 不设置）'}`,
+    `  subagentModelProvider   ${source.subagentModelProvider.length > 0 ? source.subagentModelProvider : '（空 = 不设置）'}`,
+    `  subagentModelName       ${source.subagentModelName.length > 0 ? source.subagentModelName : '（空 = 不设置）'}`,
     `  bootstrapMaxTokens      ${source.bootstrapMaxTokens > 0 ? source.bootstrapMaxTokens : '0（关闭，不设封顶）'}`,
     `  activeSkillsDirs        ${source.activeSkillsDirs.length > 0 ? source.activeSkillsDirs.join(' → ') : '（未解析到技能目录）'}`,
     '提示词配置:',

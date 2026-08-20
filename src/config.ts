@@ -70,6 +70,10 @@ export interface Config {
   modelProvider: string
   /** 模型名；与 provider 同时非空时生效。 */
   modelName: string
+  /** 子代理固定模型路由 provider；与子代理模型名同时非空时生效（agentOptions 注入 tool-subagent）。 */
+  subagentModelProvider: string
+  /** 子代理固定模型名；与 provider 同时非空时生效。 */
+  subagentModelName: string
   /** 主对话自定义模型人设（preset.yml mainPersona；仅经 overrides 覆盖，不进 settings）。 */
   mainPersona?: string
   /** 子代理自定义模型人设（per-child shadow；仅经 overrides 覆盖，不进 settings）。 */
@@ -123,6 +127,8 @@ export const Config: z<Config> = z.object({
   guideCustom: z.boolean().default(false),
   modelProvider: z.string().default(''),
   modelName: z.string().default(''),
+  subagentModelProvider: z.string().default(''),
+  subagentModelName: z.string().default(''),
   bootstrapMaxTokens: z.natural().default(0),
   usePtcMode: z.boolean().default(true),
   skillsDirs: z.array(z.string()).default([]),
@@ -191,6 +197,10 @@ export interface PromptSettings {
   modelProvider: string
   /** 模型名；与 provider 同时非空时生效。 */
   modelName: string
+  /** 子代理固定模型路由 provider；与子代理模型名同时非空时生效。 */
+  subagentModelProvider: string
+  /** 子代理固定模型名；与 provider 同时非空时生效。 */
+  subagentModelName: string
   /** 主对话自定义模型人设（经 overrides 覆盖，不写入 settings）。 */
   mainPersona?: string
   /** 子代理自定义模型人设（经 overrides 覆盖，不写入 settings）。 */
@@ -250,6 +260,8 @@ export const PromptSettingsSchema: z<PromptSettings> = z.object({
   guideCustom: z.boolean().default(false),
   modelProvider: z.string().default(''),
   modelName: z.string().default(''),
+  subagentModelProvider: z.string().default(''),
+  subagentModelName: z.string().default(''),
   bootstrapMaxTokens: z.natural().default(0),
   usePtcMode: z.boolean().default(true),
   modelsAvailable: z.boolean().default(true),
@@ -313,6 +325,10 @@ export interface RuntimeOptions {
   modelProvider: string
   /** 模型名；与 provider 同时非空时生效。 */
   modelName: string
+  /** 子代理固定模型路由 provider；与子代理模型名同时非空时生效。 */
+  subagentModelProvider: string
+  /** 子代理固定模型名；与 provider 同时非空时生效。 */
+  subagentModelName: string
   /** 主对话自定义模型人设（经 overrides 覆盖，不写入 settings）。 */
   mainPersona?: string
   /** 子代理自定义模型人设（经 overrides 覆盖，不写入 settings）。 */

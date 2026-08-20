@@ -36,6 +36,10 @@ export interface WritePresetOptions {
   injectPrompt: boolean
   modelProvider: string
   modelName: string
+  /** 子代理固定模型路由 provider（agentOptions 注入 tool-subagent）。 */
+  subagentModelProvider: string
+  /** 子代理固定模型名。 */
+  subagentModelName: string
   /** 子代理自定义模型人设（per-child shadow；缺省回退 mainPersona，两者缺省=继承主会话）。 */
   subagentPersona?: string
   /** 委派工具集白名单（toolFilter.allow；支持数组或逗号/空格分隔字符串）。 */
@@ -80,6 +84,12 @@ function runtimeOf(options: WritePresetOptions, prompt: string): Record<string, 
       : '',
     modelName: typeof options.modelName === 'string' && options.modelName.length > 0
       ? options.modelName
+      : '',
+    subagentModelProvider: typeof options.subagentModelProvider === 'string' && options.subagentModelProvider.length > 0
+      ? options.subagentModelProvider
+      : '',
+    subagentModelName: typeof options.subagentModelName === 'string' && options.subagentModelName.length > 0
+      ? options.subagentModelName
       : '',
     subagentPersona: typeof options.subagentPersona === 'string' && options.subagentPersona.length > 0
       ? options.subagentPersona

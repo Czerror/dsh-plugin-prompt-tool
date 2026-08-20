@@ -24,7 +24,7 @@ function generatedConfigs(options = {}, prompt = 'PROMPT') {
       guideText: options.guideText ?? '',
       guideCustom: options.guideCustom === true,
       injectPrompt: options.injectPrompt !== false,
-      modelProvider: '',
+      modelProvider: '', subagentModelProvider: '', subagentModelName: '',
       modelName: '',
       bootstrapMaxTokens: 0,
       usePtcMode: true,

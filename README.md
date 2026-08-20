@@ -90,7 +90,7 @@ dsh --profile prompt-tool
 
   | 维度 | 主对话 | 子代理（preset.yml 键 → 引擎落点） |
   |---|---|---|
-  | 模型 agentOptions | `modelProvider/modelName` → `agentOptions{provider,model}`（主对话直派子代理与委派子代理通用） | 同上 |
+  | 模型 agentOptions | `modelProvider/modelName` → `agent-default-model`（主对话新会话默认模型） | `subagentModelProvider/subagentModelName` → `agentOptions{provider,model}`（子代理固定路由） |
   | 人设 persona | `mainPersona`（Flash 档替换人设） | `subagentPersona`（显式 → 固定路由回退 `mainPersona` → 继承主会话） |
   | 工具集 toolFilter | `allowKinds`（注入门控）+ `usePtcMode` + tool-bootstrap | `toolFilterAllow/toolFilterDeny` → `toolFilter{allow,deny}` |
   | 深度 maxDepth | 不适用 | `maxDepth`（0 禁止委派 / `provider-managed` / 正整数） |

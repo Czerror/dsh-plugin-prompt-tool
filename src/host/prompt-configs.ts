@@ -69,6 +69,10 @@ export interface BuildCordisOptions {
   modelProvider?: string
   /** 模型名；与 provider 同时非空时生效。 */
   modelName?: string
+  /** 子代理固定模型路由 provider（agentOptions 注入 tool-subagent）。 */
+  subagentModelProvider?: string
+  /** 子代理固定模型名。 */
+  subagentModelName?: string
   /** 子代理自定义模型人设（per-child shadow；缺省回退 mainPersona，两者缺省=继承主会话）。 */
   subagentPersona?: string
   /** 委派工具集白名单（toolFilter.allow；支持数组或逗号/空格分隔字符串）。 */

@@ -32,6 +32,8 @@ export interface Fields {
   guideCustom: boolean
   modelProvider: string
   modelName: string
+  subagentModelProvider: string
+  subagentModelName: string
   mainPersona: string
   subagentPersona: string
   toolFilterAllow: string
@@ -90,6 +92,8 @@ export const EMPTY_FIELDS: Fields = {
   guideCustom: false,
   modelProvider: '',
   modelName: '',
+  subagentModelProvider: '',
+  subagentModelName: '',
   mainPersona: '',
   subagentPersona: '',
   toolFilterAllow: '',
@@ -220,6 +224,8 @@ export function fieldsFromView(res: BridgeResult<BridgeSettingsView>): Fields {
     guideCustom: readBoolean(value, 'guideCustom', readBoolean(base, 'guideCustom', false)),
     modelProvider: readString(value, 'modelProvider') ?? readString(base, 'modelProvider') ?? '',
     modelName: readString(value, 'modelName') ?? readString(base, 'modelName') ?? '',
+    subagentModelProvider: readString(value, 'subagentModelProvider') ?? readString(base, 'subagentModelProvider') ?? '',
+    subagentModelName: readString(value, 'subagentModelName') ?? readString(base, 'subagentModelName') ?? '',
     // 预设级参数（mainPersona/subagentPersona/toolFilterAllow/toolFilterDeny/maxDepth/allowKinds/firstTurnWord）
     // 不进 settings namespace：默认空，由 /param-overrides 读回后填充（store.load paramPatch）。
     mainPersona: '',

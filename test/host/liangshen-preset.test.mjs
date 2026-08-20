@@ -20,7 +20,7 @@ test('preset/liangshen 渲染：模块清单 + moduleConfigs 表达两阶段锚�
       guideText: '',
       guideCustom: false,
       injectPrompt: true,
-      modelProvider: '',
+      modelProvider: '', subagentModelProvider: '', subagentModelName: '',
       modelName: '',
       bootstrapMaxTokens: 0,
       usePtcMode: true,
