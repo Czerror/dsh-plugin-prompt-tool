@@ -27,7 +27,7 @@ const RAW = `# module: custom-bash
 - id: router-first-turn
   name: ./engine/router-first-turn.mjs
   config:
-    fastModelPersona: "__FAST_MODEL_PERSONA__"
+    mainPersona: "__MAIN_PERSONA__"
     hideSectionPrefixes: ["mnemon:"]
 `
 
@@ -44,7 +44,7 @@ test('moduleConfigs 不影响未声明模块与 __TOKEN__', () => {
   const router = rows.find((row) => row?.id === 'router-first-turn')
   assert.ok(router)
   assert.deepEqual(router.config.hideSectionPrefixes, ['mnemon:'])
-  assert.equal(router.config.fastModelPersona, '__FAST_MODEL_PERSONA__')
+  assert.equal(router.config.mainPersona, '__MAIN_PERSONA__')
 })
 
 test('moduleConfigs 未声明时返回原文（零开销）', () => {
@@ -53,10 +53,11 @@ test('moduleConfigs 未声明时返回原文（零开销）', () => {
 })
 
 test('resolvePresetParams 模型路由/委派参数全扁平（preset.yml params 与运行时扁平键等价）', () => {
-  const flat = resolvePresetParams({ id: 't', params: { fastModelPersona: 'F', modelProvider: 'deepseek', modelName: 'deepseek-v4-flash-7013', persona: '固定路由人设', toolFilterAllow: ['read', 'glob'], toolFilterDeny: ['bash'], maxDepth: 2 } }, {})
+  const flat = resolvePresetParams({ id: 't', params: { mainPersona: 'F', modelProvider: 'deepseek', modelName: 'deepseek-v4-flash-7013', subagentPersona: '子代理路由人设', toolFilterAllow: ['read', 'glob'], toolFilterDeny: ['bash'], maxDepth: 2 } }, {})
   assert.equal(flat.modelProvider, 'deepseek')
   assert.equal(flat.modelName, 'deepseek-v4-flash-7013')
-  assert.equal(flat.persona, '固定路由人设')
+  assert.equal(flat.mainPersona, 'F')
+  assert.equal(flat.subagentPersona, '子代理路由人设')
   assert.deepEqual(flat.toolFilterAllow, ['read', 'glob'])
   assert.deepEqual(flat.toolFilterDeny, ['bash'])
   assert.equal(flat.maxDepth, 2)
@@ -98,7 +99,7 @@ test('模型路由与委派完整自定义：persona + toolFilter + maxDepth 渲
   const rows = parseYaml(buildCordis('P', {
     modelProvider: 'my-provider',
     modelName: 'deepseek-v4-flash-7013',
-    persona: '你是审查子代理，只读不改。',
+    subagentPersona: '你是审查子代理，只读不改。',
     toolFilterAllow: ['read', 'write', 'glob'],
     toolFilterDeny: 'bash, run_code',
     maxDepth: 1,
@@ -114,28 +115,28 @@ test('模型路由与委派完整自定义：persona + toolFilter + maxDepth 渲
   }
 })
 
-test('persona 回退：无显式 persona 时固定路由用 fastModelPersona，无路由不渲染', () => {
+test('persona 回退：无 subagentPersona 时固定路由用 mainPersona，无路由不渲染', () => {
   const routed = parseYaml(buildCordis('P', { modelProvider: 'p', modelName: 'm' }))
   const routedRow = findAllNested(routed, new Set(['tool-subagent']))[0]
-  assert.match(routedRow.config.persona, /decide the task type \(build or fix\)/, '固定路由时 persona 回退 fastModelPersona')
+  assert.match(routedRow.config.persona, /decide the task type \(build or fix\)/, '固定路由时 persona 回退 mainPersona')
   assert.equal(routedRow.config.toolFilter, undefined, '未配置 toolFilter 不渲染')
   assert.equal(routedRow.config.maxDepth, undefined, '未配置 maxDepth 不渲染（官方默认 3）')
 
   const plain = parseYaml(buildCordis('P'))
   const plainRow = findAllNested(plain, new Set(['tool-subagent']))[0]
-  assert.equal(plainRow.config.persona, undefined, '无路由且无独立 persona 时不渲染（继承主会话）')
+  assert.equal(plainRow.config.persona, undefined, '无路由且无 subagentPersona 时不渲染（继承主会话）')
   assert.equal(plainRow.config.agentOptions, undefined)
 })
 
-test('buildCordis 透传 fastModelPersona / allowKinds 覆盖模板默认', () => {
-  const rows = parseYaml(buildCordis('P', { fastModelPersona: 'FAST-PERSONA', allowKinds: ['skill-invocation'] }))
+test('buildCordis 透传 mainPersona / allowKinds 覆盖模板默认', () => {
+  const rows = parseYaml(buildCordis('P', { mainPersona: 'MAIN-PERSONA', allowKinds: ['skill-invocation'] }))
   const router = rows.find((row) => row?.id === 'router-first-turn')
   const gate = rows.find((row) => row?.id === 'context-gate')
   assert.ok(router && gate)
-  assert.equal(router.config.fastModelPersona, 'FAST-PERSONA')
+  assert.equal(router.config.mainPersona, 'MAIN-PERSONA')
   assert.deepEqual(gate.config.allowKinds, ['skill-invocation'])
-  // 未传时用 preset.yml 模板默认（anchored fastModelPersona 非空、allowKinds 白名单）。
+  // 未传时用 preset.yml 模板默认（anchored mainPersona 非空、allowKinds 白名单）。
   const defaults = parseYaml(buildCordis('P'))
   const defaultRouter = defaults.find((row) => row?.id === 'router-first-turn')
-  assert.match(defaultRouter.config.fastModelPersona, /helpful assistant/)
+  assert.match(defaultRouter.config.mainPersona, /helpful assistant/)
 })

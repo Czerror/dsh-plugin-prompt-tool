@@ -159,8 +159,8 @@ export function apply(ctx: Context, configIn: Config): void {
         injectPrompt: runtime.injectPrompt,
         modelProvider: runtime.modelProvider,
         modelName: runtime.modelName,
-        fastModelPersona: runtime.fastModelPersona,
-        persona: runtime.persona,
+        mainPersona: runtime.mainPersona,
+        subagentPersona: runtime.subagentPersona,
         toolFilterAllow: runtime.toolFilterAllow,
         toolFilterDeny: runtime.toolFilterDeny,
         maxDepth: runtime.maxDepth,
@@ -206,11 +206,11 @@ export function apply(ctx: Context, configIn: Config): void {
     if (typeof overrides.guideText === 'string') runtime.guideText = overrides.guideText
     if (typeof overrides.modelProvider === 'string') runtime.modelProvider = overrides.modelProvider
     if (typeof overrides.modelName === 'string') runtime.modelName = overrides.modelName
-    // fastModelPersona 引擎必需非空：历史 overrides 里的空串直接忽略（保留模板默认）。
-    if (typeof overrides.fastModelPersona === 'string' && overrides.fastModelPersona.trim().length > 0) {
-      runtime.fastModelPersona = overrides.fastModelPersona
+    // mainPersona 引擎必需非空：历史 overrides 里的空串直接忽略（保留模板默认）。
+    if (typeof overrides.mainPersona === 'string' && overrides.mainPersona.trim().length > 0) {
+      runtime.mainPersona = overrides.mainPersona
     }
-    if (typeof overrides.persona === 'string') runtime.persona = overrides.persona
+    if (typeof overrides.subagentPersona === 'string') runtime.subagentPersona = overrides.subagentPersona
     if (typeof overrides.firstTurnWord === 'string') runtime.firstTurnWord = overrides.firstTurnWord
     if (typeof overrides.bootstrapMaxTokens === 'number') runtime.bootstrapMaxTokens = overrides.bootstrapMaxTokens
     // 列表/枚举类参数：类型守卫收窄（overrides YAML 可能是数组或字符串）。

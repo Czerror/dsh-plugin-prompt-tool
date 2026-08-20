@@ -69,16 +69,16 @@ export interface BuildCordisOptions {
   modelProvider?: string
   /** 模型名；与 provider 同时非空时生效。 */
   modelName?: string
-  /** 固定模型路由人设（per-child shadow；缺省回退 fastModelPersona，两者缺省=继承主会话）。 */
-  persona?: string
+  /** 子代理自定义模型人设（per-child shadow；缺省回退 mainPersona，两者缺省=继承主会话）。 */
+  subagentPersona?: string
   /** 委派工具集白名单（toolFilter.allow；支持数组或逗号/空格分隔字符串）。 */
   toolFilterAllow?: string[] | string
   /** 委派工具集黑名单（toolFilter.deny）。 */
   toolFilterDeny?: string[] | string
   /** 委派递归深度上限（0 禁止委派 / provider-managed / 正整数）。 */
   maxDepth?: number | 'provider-managed'
-  /** 主对话快速模型路由人设（覆盖 preset.yml fastModelPersona 默认）。 */
-  fastModelPersona?: string
+  /** 主对话自定义模型人设（覆盖 preset.yml mainPersona 默认）。 */
+  mainPersona?: string
   /** 注入 kind 白名单（context-gate allowKinds；数组或逗号分隔字符串）。 */
   allowKinds?: string[] | string
   /** custom-fallback 锚定词（prompt-injector params.firstTurnWord）。 */

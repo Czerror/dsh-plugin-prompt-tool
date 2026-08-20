@@ -70,10 +70,10 @@ export interface Config {
   modelProvider: string
   /** 模型名；与 provider 同时非空时生效。 */
   modelName: string
-  /** 主对话快速模型路由人设（preset.yml fastModelPersona；仅经 overrides 覆盖，不进 settings）。 */
-  fastModelPersona?: string
-  /** 固定模型路由人设（per-child shadow；仅经 overrides 覆盖，不进 settings）。 */
-  persona?: string
+  /** 主对话自定义模型人设（preset.yml mainPersona；仅经 overrides 覆盖，不进 settings）。 */
+  mainPersona?: string
+  /** 子代理自定义模型人设（per-child shadow；仅经 overrides 覆盖，不进 settings）。 */
+  subagentPersona?: string
   /** 委派工具集白名单（仅经 overrides 覆盖，不进 settings）。 */
   toolFilterAllow?: string[] | string
   /** 委派工具集黑名单（仅经 overrides 覆盖，不进 settings）。 */
@@ -194,10 +194,10 @@ export interface PromptSettings {
   modelProvider: string
   /** 模型名；与 provider 同时非空时生效。 */
   modelName: string
-  /** 主对话快速模型路由人设（经 overrides 覆盖，不写入 settings）。 */
-  fastModelPersona?: string
-  /** 固定模型路由人设（经 overrides 覆盖，不写入 settings）。 */
-  persona?: string
+  /** 主对话自定义模型人设（经 overrides 覆盖，不写入 settings）。 */
+  mainPersona?: string
+  /** 子代理自定义模型人设（经 overrides 覆盖，不写入 settings）。 */
+  subagentPersona?: string
   /** 委派工具集白名单（经 overrides 覆盖，不写入 settings）。 */
   toolFilterAllow?: string[] | string
   /** 委派工具集黑名单（经 overrides 覆盖，不写入 settings）。 */
@@ -319,10 +319,10 @@ export interface RuntimeOptions {
   modelProvider: string
   /** 模型名；与 provider 同时非空时生效。 */
   modelName: string
-  /** 主对话快速模型路由人设（经 overrides 覆盖，不写入 settings）。 */
-  fastModelPersona?: string
-  /** 固定模型路由人设（经 overrides 覆盖，不写入 settings）。 */
-  persona?: string
+  /** 主对话自定义模型人设（经 overrides 覆盖，不写入 settings）。 */
+  mainPersona?: string
+  /** 子代理自定义模型人设（经 overrides 覆盖，不写入 settings）。 */
+  subagentPersona?: string
   /** 委派工具集白名单（经 overrides 覆盖，不写入 settings）。 */
   toolFilterAllow?: string[] | string
   /** 委派工具集黑名单（经 overrides 覆盖，不写入 settings）。 */

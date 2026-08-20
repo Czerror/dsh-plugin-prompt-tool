@@ -205,12 +205,12 @@ function ModelToolCards(props: { store: PromptToolStore }): ReactNode {
         </div>
         <div className={ui.rowGroup}>
           <label className={ui.textBlock}>
-            <span className={ui.settingCopy}><strong>主对话快速模型人设</strong><small>主对话命中快速模型（Flash 档）时替换人设（router-first-turn）；固定模型路由未显式人设（persona）时回退使用。留空 = 模板默认；失焦保存。</small></span>
+            <span className={ui.settingCopy}><strong>主对话自定义模型人设</strong><small>主对话命中快速模型（Flash 档）时替换人设（router-first-turn）；子代理自定义模型人设未设置时回退使用。留空 = 模板默认；失焦保存。</small></span>
             <textarea
               className={ui.firstTurnInput}
-              value={fields.fastModelPersona}
+              value={fields.mainPersona}
               disabled={!fields.writePreset}
-              onChange={(event) => { autoResizeTextarea(event); store.patch({ fastModelPersona: event.target.value }) }}
+              onChange={(event) => { autoResizeTextarea(event); store.patch({ mainPersona: event.target.value }) }}
               onBlur={() => void store.persistParamOverrides()}
               spellCheck={false}
             />
@@ -218,12 +218,12 @@ function ModelToolCards(props: { store: PromptToolStore }): ReactNode {
         </div>
         <div className={ui.rowGroup}>
           <label className={ui.textBlock}>
-            <span className={ui.settingCopy}><strong>固定模型路由人设</strong><small>persona（per-child shadow）；留空 = 固定模型路由时回退主对话快速模型人设，两者都空 = 继承主会话。失焦保存。</small></span>
+            <span className={ui.settingCopy}><strong>子代理自定义模型人设</strong><small>subagentPersona（per-child shadow）；留空 = 固定模型路由时回退主对话自定义模型人设，两者都空 = 继承主会话。失焦保存。</small></span>
             <textarea
               className={ui.firstTurnInput}
-              value={fields.persona}
+              value={fields.subagentPersona}
               disabled={!fields.writePreset}
-              onChange={(event) => { autoResizeTextarea(event); store.patch({ persona: event.target.value }) }}
+              onChange={(event) => { autoResizeTextarea(event); store.patch({ subagentPersona: event.target.value }) }}
               onBlur={() => void store.persistParamOverrides()}
               spellCheck={false}
             />

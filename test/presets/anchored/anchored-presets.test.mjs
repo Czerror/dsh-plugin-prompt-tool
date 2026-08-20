@@ -55,7 +55,7 @@ test('正常退出返回输出文本', async () => {
 
 import { apply as applyRouterFirstTurn } from '../../../engine/router-first-turn.mjs'
 
-const FAST_MODEL_PERSONA = [
+const MAIN_PERSONA = [
   'You are a helpful assistant.',
   'Before acting, decide the task type (build or fix) and adopt the matching style: build → hands-on production; fix → inspect-and-plan.',
   'Before acting, briefly review what you have already done in this session and continue from where you left off; do not repeat completed steps. Do not run environment checks (echo, whoami, uname, node --version, date) or exhaustive grep/glob scans.',
@@ -65,7 +65,7 @@ const FAST_MODEL_PERSONA = [
 function makeStep({ events = [], delegationDepth = 0, model = 'deepseek-v4-pro-8013' } = {}) {
   const listeners = new Map()
   const ctx = { on(name, handler) { listeners.set(name, handler) } }
-  applyRouterFirstTurn(ctx, { fastModelPersona: FAST_MODEL_PERSONA, hideSectionPrefixes: ['mnemon:'] })
+  applyRouterFirstTurn(ctx, { mainPersona: MAIN_PERSONA, hideSectionPrefixes: ['mnemon:'] })
   const handler = listeners.get('system-prompt/assemble')
   assert.ok(handler)
   const agent = { session: { id: 's1', header: { delegationDepth }, events }, options: { model } }
@@ -134,7 +134,7 @@ test('子代理原样返回，不裁剪 section/context', async () => {
 
 test('agent 缺失时原样返回', async () => {
   const listeners = new Map()
-  applyRouterFirstTurn({ on: (name, handler) => listeners.set(name, handler) }, { fastModelPersona: FAST_MODEL_PERSONA })
+  applyRouterFirstTurn({ on: (name, handler) => listeners.set(name, handler) }, { mainPersona: MAIN_PERSONA })
   const handler = listeners.get('system-prompt/assemble')
   const out = await handler(undefined, {}, async () => ({ sections: [] }))
   assert.deepEqual(out, { sections: [] })

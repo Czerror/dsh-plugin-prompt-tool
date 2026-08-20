@@ -163,9 +163,9 @@ params:
   injectPrompt: true
   usePtcMode: true
   bootstrapMaxTokens: 0
-  # 人设·快速模型路由：主对话命中快速模型（Flash 档）时替换人设；
-  # 固定模型路由且未显式 persona 时回退使用。
-  fastModelPersona: >
+  # 人设·主对话自定义模型人设：主对话命中快速模型（Flash 档）时替换人设；
+  # 子代理自定义模型人设（subagentPersona）未设置时回退使用。
+  mainPersona: >
     You are a helpful assistant.
 
     Before acting, decide the task type (build or fix) and adopt the matching
@@ -191,8 +191,8 @@ params:
 # ── 模型路由与委派 · 主对话与子代理通用（全部可选，缺省 = 官方默认 / 继承宿主）──
 #   维度      preset.yml 键                         引擎渲染落点
 #   模型      modelProvider / modelName             tool-subagent agentOptions{provider,model}
-#   人设      persona                               tool-subagent persona
-#             （显式 → 固定路由回退 fastModelPersona → 继承主会话）
+#   人设      subagentPersona                       tool-subagent persona
+#             （显式 → 固定路由回退 mainPersona → 继承主会话）
 #   工具集    toolFilter.allow / deny               tool-subagent toolFilter{allow,deny}
 #   深度      maxDepth                              tool-subagent maxDepth
 #             （0 禁止委派 / provider-managed / 正整数）
@@ -200,7 +200,7 @@ params:
 #             moduleConfigs.*.includeSubagents 控制（主对话与子代理共用）
   modelProvider: ""
   modelName: ""
-  persona: ""
+  subagentPersona: ""
   toolFilterAllow: []
   toolFilterDeny: []
   maxDepth: ""

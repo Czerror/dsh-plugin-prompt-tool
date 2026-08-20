@@ -313,8 +313,8 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
         if (typeof o.guideCustom === 'boolean') paramPatch.guideCustom = o.guideCustom
         if (typeof o.modelProvider === 'string') paramPatch.modelProvider = o.modelProvider
         if (typeof o.modelName === 'string') paramPatch.modelName = o.modelName
-        if (typeof o.fastModelPersona === 'string') paramPatch.fastModelPersona = o.fastModelPersona
-        if (typeof o.persona === 'string') paramPatch.persona = o.persona
+        if (typeof o.mainPersona === 'string') paramPatch.mainPersona = o.mainPersona
+        if (typeof o.subagentPersona === 'string') paramPatch.subagentPersona = o.subagentPersona
         if (Array.isArray(o.toolFilterAllow)) paramPatch.toolFilterAllow = o.toolFilterAllow.join(', ')
         else if (typeof o.toolFilterAllow === 'string') paramPatch.toolFilterAllow = o.toolFilterAllow
         if (Array.isArray(o.toolFilterDeny)) paramPatch.toolFilterDeny = o.toolFilterDeny.join(', ')
@@ -414,7 +414,7 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
   const persistParamOverrides = useCallback(async () => {
     const f = fieldsRef.current
     const splitList = (value: string): string[] => value.split(',').map((item) => item.trim()).filter((item) => item.length > 0)
-    // 空值不写键：保留 preset.yml 模板默认。fastModelPersona 引擎必需非空；
+    // 空值不写键：保留 preset.yml 模板默认。mainPersona 引擎必需非空；
     // allowKinds 空数组 = 白名单全拦（危险）；maxDepth '' = 不设置。
     const res = await bridgePost<{ overrides: unknown }>('/param-overrides', {
       overrides: {
@@ -425,8 +425,8 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
         guideCustom: f.guideCustom,
         modelProvider: f.modelProvider,
         modelName: f.modelName,
-        ...(f.fastModelPersona.trim().length > 0 ? { fastModelPersona: f.fastModelPersona } : {}),
-        ...(f.persona.trim().length > 0 ? { persona: f.persona } : {}),
+        ...(f.mainPersona.trim().length > 0 ? { mainPersona: f.mainPersona } : {}),
+        ...(f.subagentPersona.trim().length > 0 ? { subagentPersona: f.subagentPersona } : {}),
         toolFilterAllow: splitList(f.toolFilterAllow),
         toolFilterDeny: splitList(f.toolFilterDeny),
         ...(f.maxDepth !== ''

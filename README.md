@@ -86,19 +86,18 @@ dsh --profile prompt-tool
   运行时上下文（context-gate 的晋升后恢复失效），`true` 时由 context-gate 动态控制。
   **参数归类分层**（作用域 × 维度）：preset.yml 顶层分段归类——`params` 为主对话
   运行时参数（模型 agentOptions 由 dsh 全局配置，插件只读），子代理参数为独立顶层
-  `subagent:` 段（与 params 平级，查找不埋在主对话设置里；引擎合并入口拍平为扁平键，
-  运行时/UI/overrides 两套表示等价）：
+  `params:` 内扁平键（模型路由主对话与子代理通用；人设按作用域分别自定义）：
 
-  | 维度 | 主对话 | 子代理（preset.yml 嵌套键 → 引擎落点） |
+  | 维度 | 主对话 | 子代理（preset.yml 键 → 引擎落点） |
   |---|---|---|
-  | 模型 agentOptions | dsh 全局配置 | `subagent.modelProvider/modelName` → `agentOptions{provider,model}` |
-  | 人设 persona | `moduleConfigs.persona` + `fastModelPersona`（快速模型路由） | `subagent.persona` → `persona`（显式 → 固定路由回退 `fastModelPersona` → 继承主会话） |
-  | 工具集 toolFilter | `allowKinds`（注入门控）+ `usePtcMode` + tool-bootstrap | `subagent.toolFilter.allow/deny` → `toolFilter{allow,deny}` |
-  | 深度 maxDepth | 不适用 | `subagent.maxDepth` → `maxDepth`（0 禁止委派 / `provider-managed` / 正整数） |
+  | 模型 agentOptions | `modelProvider/modelName` → `agentOptions{provider,model}`（主对话直派子代理与委派子代理通用） | 同上 |
+  | 人设 persona | `mainPersona`（Flash 档替换人设） | `subagentPersona`（显式 → 固定路由回退 `mainPersona` → 继承主会话） |
+  | 工具集 toolFilter | `allowKinds`（注入门控）+ `usePtcMode` + tool-bootstrap | `toolFilterAllow/toolFilterDeny` → `toolFilter{allow,deny}` |
+  | 深度 maxDepth | 不适用 | `maxDepth`（0 禁止委派 / `provider-managed` / 正整数） |
   | 相位 includeSubagents | `moduleConfigs.*.includeSubagents` | 同上（promptConfigs[].subagents 控制注入是否作用于子代理） |
   | 注入 | `promptConfigs[].subagents/promotion/modelScope` | 同上 |
 
-  全部子代理参数缺省 = 官方默认（继承主会话）。
+  全部参数缺省 = 官方默认（继承主会话/宿主）。
 
 ## 默认行为
 

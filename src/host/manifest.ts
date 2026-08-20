@@ -229,18 +229,18 @@ function parseListParam(value: unknown): string[] {
  * 与官方 AgentOptions{provider,model} / toolFilter{allow,deny} / maxDepth 对齐。
  */
 export function renderEngineTokens(params: Record<string, unknown>): Record<string, string> {
-  const fastModelPersona = asString(params.fastModelPersona)
+  const mainPersona = asString(params.mainPersona)
   const provider = asString(params.modelProvider, '')
   const model = asString(params.modelName, '')
   // 模型路由与委派完整自定义（官方 tool-subagent Config 参数化，主对话与子代理通用）：
   //   modelProvider/modelName → agentOptions{provider,model}（固定模型路由）；
-  //   persona → persona（per-child shadow，显式优先；固定路由时回退
-  //     fastModelPersona；两者都缺省 = 不渲染，子代理继承主会话 persona，官方行为）；
+  //   subagentPersona → persona（per-child shadow，显式优先；固定路由时回退
+  //     mainPersona；两者都缺省 = 不渲染，子代理继承主会话 persona，官方行为）；
   //   toolFilterAllow/Deny → toolFilter{allow,deny}（委派工具集白/黑名单）；
   //   maxDepth → maxDepth（0 禁止委派 / provider-managed / 正整数）。
   // 任一字段非空即渲染对应行，全部缺省 = 官方默认（继承主会话）。
-  const subagentPersona = asString(params.persona)
-    || (provider.length > 0 && model.length > 0 ? fastModelPersona : '')
+  const subagentPersona = asString(params.subagentPersona)
+    || (provider.length > 0 && model.length > 0 ? mainPersona : '')
   const toolFilterAllow = parseListParam(params.toolFilterAllow)
   const toolFilterDeny = parseListParam(params.toolFilterDeny)
   const rawMaxDepth = params.maxDepth
@@ -276,7 +276,7 @@ export function renderEngineTokens(params: Record<string, unknown>): Record<stri
   return {
     USE_PTC_MODE: params.usePtcMode === true ? 'true' : 'false',
     BOOTSTRAP_MAX_TOKENS: bootstrap,
-    FAST_MODEL_PERSONA: JSON.stringify(fastModelPersona).slice(1, -1),
+    MAIN_PERSONA: JSON.stringify(mainPersona).slice(1, -1),
     SUBAGENT_CONFIG: subagentConfigBlock,
     // 引擎默认与 context-gate 的 DEFAULT_ALLOW_KINDS 一致（单一默认源）；
     // 需要放行更多 kind 的预设（anchored）在 preset.yml 显式声明 allowKinds。

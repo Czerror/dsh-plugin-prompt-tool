@@ -42,14 +42,14 @@ export function buildCordis(prompt: string, options: BuildCordisOptions = {}): s
     modelName: typeof options.modelName === 'string' && options.modelName.length > 0
       ? options.modelName
       : '',
-    persona: typeof options.persona === 'string' && options.persona.length > 0
-      ? options.persona
+    subagentPersona: typeof options.subagentPersona === 'string' && options.subagentPersona.length > 0
+      ? options.subagentPersona
       : '',
     toolFilterAllow: options.toolFilterAllow,
     toolFilterDeny: options.toolFilterDeny,
     maxDepth: options.maxDepth,
-    fastModelPersona: typeof options.fastModelPersona === 'string' && options.fastModelPersona.trim().length > 0
-      ? options.fastModelPersona
+    mainPersona: typeof options.mainPersona === 'string' && options.mainPersona.trim().length > 0
+      ? options.mainPersona
       : undefined,
     allowKinds: options.allowKinds,
     firstTurnWord: typeof options.firstTurnWord === 'string' && options.firstTurnWord.length > 0
