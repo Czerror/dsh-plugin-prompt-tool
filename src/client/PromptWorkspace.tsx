@@ -149,10 +149,10 @@ function AgentRequestSwitches(props: { store: PromptToolStore }): ReactNode {
 function ModelToolCards(props: { store: PromptToolStore; scope: 'main' | 'subagent' }): ReactNode {
   const { store } = props
   const fields = store.fields
-  const providerOptions = ['', ...store.providers]
+  const providerOptions = [...store.providers]
   const provider = props.scope === 'main' ? fields.modelProvider : fields.subagentModelProvider
   const modelName = props.scope === 'main' ? fields.modelName : fields.subagentModelName
-  const modelOptions = ['', ...(store.modelCatalog[provider] ?? [])]
+  const modelOptions = [...(store.modelCatalog[provider] ?? [])]
   const maxDepthOptions = ['', 'provider-managed', '0', '1', '2', '3', '5']
   const withCurrent = (options: string[], current: string): string[] =>
     current.length > 0 && !options.includes(current) ? [...options, current] : options
@@ -182,7 +182,7 @@ function ModelToolCards(props: { store: PromptToolStore; scope: 'main' | 'subage
               }}
             >
               {withCurrent(providerOptions, provider).map((item) => (
-                <option key={item} value={item}>{item.length === 0 ? '（不设置）' : item}</option>
+                <option key={item} value={item}>{item}</option>
               ))}
             </select>
           </div>
@@ -206,7 +206,7 @@ function ModelToolCards(props: { store: PromptToolStore; scope: 'main' | 'subage
               }}
             >
               {withCurrent(modelOptions, modelName).map((item) => (
-                <option key={item} value={item}>{item.length > 0 ? item : '（不设置）'}</option>
+                <option key={item} value={item}>{item}</option>
               ))}
             </select>
           </div>
