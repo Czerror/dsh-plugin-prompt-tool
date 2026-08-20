@@ -1,7 +1,7 @@
 /** 内置模板选择弹窗：按注入层分组展示；传入 layer 时只显示该层模板。 */
 import { useEffect, useRef, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import styles from './PromptUi.module.css'
-import type { PromptConfigTemplateEntry } from './PromptConfigsEditor.tsx'
+import type { PromptConfigTemplateEntry } from './prompt-tool-types.ts'
 
 export const TEMPLATE_LAYER_TITLES: Record<string, string> = {
   'pre-step': '消息批层',
@@ -16,12 +16,12 @@ export function TemplatePicker(props: {
   templates: PromptConfigTemplateEntry[]
   /** 传入 layer 时只显示该层模板（无分组标题）；不传按层分组展示全部。 */
   layer?: string
-  /** 子代理作用域：只显示 subagents != none 的模板（主会话专属模板在子代理列表不可见）。 */
-  subagentScope?: boolean
+  /** 作用域过滤：subagent 只显示 subagents != none 的模板（主会话专属模板在子代理列表不可见）。 */
+  scope?: 'main' | 'subagent'
   onPick: (entry: PromptConfigTemplateEntry) => void
   onClose: () => void
 }): ReactNode {
-  const { templates, layer, subagentScope, onPick, onClose } = props
+  const { templates, layer, scope, onPick, onClose } = props
   const dialogRef = useRef<HTMLDivElement>(null)
   const restoreRef = useRef<HTMLElement | null>(null)
 
@@ -63,7 +63,7 @@ export function TemplatePicker(props: {
   const visible = (layer === undefined
     ? templates
     : templates.filter((template) => (template.spec.layer ?? 'pre-step') === layer))
-    .filter((template) => !subagentScope || (template.spec.subagents ?? 'none') !== 'none')
+    .filter((template) => scope !== 'subagent' || (template.spec.subagents ?? 'none') !== 'none')
   const groups = new Map<string, PromptConfigTemplateEntry[]>()
   for (const template of visible) {
     const key = template.spec.layer ?? 'pre-step'
@@ -87,7 +87,7 @@ export function TemplatePicker(props: {
           <button type="button" className={styles.pillButton} aria-label="关闭模板选择" onClick={onClose}>×</button>
         </div>
         <div className={styles.templateModalList}>
-          {visible.length === 0 && <p className={styles.configFieldHint}>{subagentScope ? '无子代理可见（subagents 非 none）的内置模板。' : '本层暂无内置模板。'}</p>}
+          {visible.length === 0 && <p className={styles.configFieldHint}>{scope === 'subagent' ? '无子代理可见（subagents 非 none）的内置模板。' : '本层暂无内置模板。'}</p>}
           {[...groups.entries()].map(([groupLayer, items]) => (
             <div key={groupLayer} className={styles.templateGroup}>
               {layer === undefined && <strong className={styles.templateGroupTitle}>{TEMPLATE_LAYER_TITLES[groupLayer] ?? groupLayer}</strong>}

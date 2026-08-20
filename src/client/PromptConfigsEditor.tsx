@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react'
-import { bridgePost, errorMessage } from './prompt-tool-bridge.ts'
 import { PromptConfigList } from './PromptConfigList.tsx'
 import { TemplatePicker } from './TemplatePicker.tsx'
+import { useTemplatePicker } from './useTemplatePicker.ts'
 import styles from './PromptUi.module.css'
 
 import type { EngineMeta, PromptConfigDraft } from './prompt-tool-types.ts'
@@ -10,18 +10,7 @@ export type { PromptConfigDraft, LayerFieldPolicy } from './prompt-tool-types.ts
 export type { ValidationErrorEntry } from './prompt-tool-types.ts'
 export { Field, JsonField, PromptConfigCard, PromptConfigForm, SOURCE_FORMS, SOURCE_KINDS, fieldPolicyFor } from './PromptConfigCard.tsx'
 export type { PromptConfigCardActions } from './PromptConfigCard.tsx'
-
-export interface PromptConfigTemplateEntry {
-  file: string
-  content: string
-  spec: PromptConfigDraft
-}
-
-interface TemplatesResult {
-  ok: boolean
-  templates?: PromptConfigTemplateEntry[]
-  message?: string
-}
+export type { PromptConfigTemplateEntry } from './prompt-tool-types.ts'
 
 export interface PromptConfigsEditorProps {
   meta: EngineMeta
@@ -38,47 +27,17 @@ export interface PromptConfigsEditorProps {
 
 /** 主设置页唯一保留的区块：提示词配置（目录导入 + 模板插入 + 保存前权威校验）。 */
 export function PromptConfigsEditor(props: PromptConfigsEditorProps): ReactNode {
-  const [templates, setTemplates] = useState<PromptConfigTemplateEntry[]>([])
-  const [templatePickerOpen, setTemplatePickerOpen] = useState(false)
   const [savingDir, setSavingDir] = useState(false)
-
-  const loadTemplates = async () => {
-    try {
-      const res = await bridgePost<TemplatesResult>('/templates', {})
-      if (res.ok) {
-        if (Array.isArray(res.value.templates)) {
-          setTemplates(res.value.templates)
-          return
-        }
-        props.onNotice('error', '读取模板库失败：模板列表为空')
-        return
-      }
-      props.onNotice('error', '读取模板库失败：' + (res.message ?? ''))
-    } catch (error) {
-      props.onNotice('error', '读取模板库失败：' + errorMessage(error))
-    }
-  }
+  const templatePicker = useTemplatePicker(
+    props.configs,
+    (config) => props.onPatchConfigs([...props.configs, config]),
+    props.onNotice,
+  )
 
   const applyDir = () => {
     setSavingDir(true)
     props.onSaveConfigsDir(props.configsDir.trim())
     setSavingDir(false)
-  }
-
-  const openTemplatePicker = () => {
-    setTemplatePickerOpen(true)
-    if (templates.length === 0) void loadTemplates()
-  }
-
-  const pickTemplate = (entry: PromptConfigTemplateEntry) => {
-    if (props.configs.some((config) => config.id === entry.spec.id)) {
-      props.onNotice('error', `id 已存在：${entry.spec.id}（请先改名或删除同 id 配置）`)
-      return
-    }
-    const clone = JSON.parse(JSON.stringify(entry.spec)) as PromptConfigDraft
-    props.onPatchConfigs([...props.configs, clone])
-    props.onNotice('ok', `已插入模板 ${entry.file}（id=${clone.id}）`)
-    setTemplatePickerOpen(false)
   }
 
   return (
@@ -116,14 +75,14 @@ export function PromptConfigsEditor(props: PromptConfigsEditorProps): ReactNode 
         meta={props.meta}
         configs={props.configs}
         savedConfigs={props.savedConfigs}
-        extraActions={<button type="button" className={styles.primaryPill} onClick={openTemplatePicker}>新建模板</button>}
+        extraActions={<button type="button" className={styles.primaryPill} onClick={templatePicker.openPicker}>新建模板</button>}
         onPatchConfigs={props.onPatchConfigs}
         onSaveConfigs={props.onSaveConfigs}
         onNotice={props.onNotice}
       />
 
-      {templatePickerOpen && (
-        <TemplatePicker templates={templates} onPick={pickTemplate} onClose={() => setTemplatePickerOpen(false)} />
+      {templatePicker.open && (
+        <TemplatePicker templates={templatePicker.templates} onPick={templatePicker.pickTemplate} onClose={templatePicker.closePicker} />
       )}
 
       <p className={styles.settingsNote}>提示词配置写入 <code>settings.promptConfigs</code>；目录合并优先级：默认四条 &lt; promptConfigsDir &lt; settings.promptConfigs。</p>

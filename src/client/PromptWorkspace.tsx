@@ -11,11 +11,10 @@ import {
 import type { SkillCatalogEntry } from './prompt-tool-bridge.ts'
 import { PromptConfigList } from './PromptConfigList.tsx'
 import type { PromptConfigDraft } from './PromptConfigsEditor.tsx'
-import type { PromptConfigTemplateEntry } from './PromptConfigsEditor.tsx'
 import type { PromptToolWorkspaceController } from './workspace-controller.ts'
 import { PresetsPage } from './PresetsPage.tsx'
 import { TemplatePicker } from './TemplatePicker.tsx'
-import { bridgePost } from './prompt-tool-bridge.ts'
+import { useTemplatePicker } from './useTemplatePicker.ts'
 import { ToggleRow } from './ToggleRow.tsx'
 import { TagInput } from './TagInput.tsx'
 import { autoResizeTextarea } from './textarea-resize.ts'
@@ -426,27 +425,11 @@ function FileEditor(props: { store: PromptToolStore; scope: 'preset' | 'agents' 
 /** 配置列表 + 新建模板：六层页按 layer 过滤，子代理页按 scope 过滤（subagent 只列子代理可见模板）。 */
 function ConfigListWithTemplates(props: { store: PromptToolStore; layer?: string; scope?: 'main' | 'subagent' }): ReactNode {
   const { store, layer, scope } = props
-  const [templates, setTemplates] = useState<PromptConfigTemplateEntry[]>([])
-  const [templatePickerOpen, setTemplatePickerOpen] = useState(false)
-  const loadTemplates = async () => {
-    if (templates.length > 0) return
-    const res = await bridgePost<{ templates?: PromptConfigTemplateEntry[] }>('/templates', {})
-    if (!res.ok) {
-      store.showNotice('error', '读取模板库失败：' + (res.message ?? 'settings bridge unavailable'))
-      return
-    }
-    if (Array.isArray(res.value.templates)) setTemplates(res.value.templates)
-  }
-  const pickTemplate = (entry: PromptConfigTemplateEntry) => {
-    if (store.fields.promptConfigs.some((config) => config.id === entry.spec.id)) {
-      store.showNotice('error', `id 已存在：${entry.spec.id}（请先改名或删除同 id 配置）`)
-      return
-    }
-    const clone = JSON.parse(JSON.stringify(entry.spec)) as PromptConfigDraft
-    store.patch({ promptConfigs: [...store.fields.promptConfigs, clone] })
-    store.showNotice('ok', `已插入模板 ${entry.file}（id=${clone.id}）`)
-    setTemplatePickerOpen(false)
-  }
+  const templatePicker = useTemplatePicker(
+    store.fields.promptConfigs,
+    (config) => store.patch({ promptConfigs: [...store.fields.promptConfigs, config] }),
+    store.showNotice,
+  )
   return (
     <>
       <PromptConfigList
@@ -456,14 +439,14 @@ function ConfigListWithTemplates(props: { store: PromptToolStore; layer?: string
         layer={layer}
         scope={scope}
         extraActions={
-          <button type="button" className={ui.primaryPill} onClick={() => { setTemplatePickerOpen(true); void loadTemplates() }}>新建模板</button>
+          <button type="button" className={ui.primaryPill} onClick={templatePicker.openPicker}>新建模板</button>
         }
         onPatchConfigs={(configs) => store.patch({ promptConfigs: configs })}
         onSaveConfigs={(configs) => store.persistConfigs(configs)}
         onNotice={store.showNotice}
       />
-      {templatePickerOpen && (
-        <TemplatePicker templates={templates} layer={layer} subagentScope={scope === 'subagent'} onPick={pickTemplate} onClose={() => setTemplatePickerOpen(false)} />
+      {templatePicker.open && (
+        <TemplatePicker templates={templatePicker.templates} layer={layer} scope={scope} onPick={templatePicker.pickTemplate} onClose={templatePicker.closePicker} />
       )}
     </>
   )
