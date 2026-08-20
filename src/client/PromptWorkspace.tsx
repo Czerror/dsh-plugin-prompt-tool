@@ -355,8 +355,8 @@ function FileEditor(props: { store: PromptToolStore; scope: 'preset' | 'agents' 
   const fileRef = useRef<HTMLInputElement>(null)
   const title = isPreset ? 'Preset 预设' : 'AGENTS 设置'
   const desc = isPreset
-    ? 'preset.md 内容存于生成目录（.agent-presets/<模板>/preset.md），由 prompt-injector 提示词配置注入；直接编辑、失焦自动保存，或通过「导入配置文件」写入；不再内嵌在 settings.yaml。生成总开关在「主对话与全局」。'
-    : 'AGENTS.md 内容存于生成目录 agents.md；直接编辑、失焦自动保存，或通过「导入配置文件」写入；注入开关在「消息批层入口」。'
+    ? 'preset.md 内容存于生成目录（.agent-presets/<模板>/preset.md），由 prompt-injector 提示词配置注入；直接编辑、失焦自动保存，或通过「导入」写入；不再内嵌在 settings.yaml。生成总开关在「主对话与全局」。'
+    : 'AGENTS.md 内容存于生成目录 agents.md；直接编辑、失焦自动保存，或通过「导入」写入；注入开关在「消息批层入口」。'
   const pickFile = (file: File | undefined): void => {
     if (file === undefined) return
     const reader = new FileReader()
@@ -376,7 +376,7 @@ function FileEditor(props: { store: PromptToolStore; scope: 'preset' | 'agents' 
             onChange={(event) => { pickFile(event.target.files?.[0]); event.target.value = '' }} />
           <button type="button" className={ui.primaryPill} disabled={importing} onClick={() => fileRef.current?.click()}>
             {importing && <span className={ui.spinner} aria-hidden="true" />}
-            {importing ? '导入中…' : '导入配置文件'}
+            {importing ? '导入中…' : '导入'}
           </button>
         </div>
       </div>
