@@ -3,7 +3,6 @@ id: example-agent-request
 layer: agent-request
 strategy: static
 modelScope: flash
-audience: main
 order: 0
 params:
   patch:

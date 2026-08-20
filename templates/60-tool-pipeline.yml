@@ -3,7 +3,6 @@ id: example-tool-pipeline
 layer: tool-pipeline
 strategy: static
 order: 0
-audience: main
 modelScope: all
 text: 替换后的工具结果
 params:
