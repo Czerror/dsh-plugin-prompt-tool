@@ -16,6 +16,9 @@ export type { PromptConfigDraft, LayerFieldPolicy } from './prompt-tool-types.ts
 export const SOURCE_KINDS = ['', 'plugin', 'instruction-hint', 'skill-catalog', 'env-facts'] as const
 export const SOURCE_FORMS = ['notice', 'hint', ''] as const
 
+/** subagents 官方三值的 UI 中文标签：底层保持官方契约 none/inherit/only，仅呈现层映射。 */
+const AUDIENCE_LABELS: Record<string, string> = { none: '仅主对话', inherit: '公用', only: '仅子代理' }
+
 /** 从引擎 /meta 中读取某层的字段能力；未知层回退 pre-step。 */
 const EMPTY_POLICY: LayerFieldPolicy = {
   position: false,
@@ -247,12 +250,12 @@ function IdentityFields(props: { identity: { field: string; value: string } | un
 }
 
 /** 枚举下拉：值不在选项内时用回退值，保证表单始终可渲染。 */
-function OptionField(props: { label: string; hint?: string; value: string | undefined; options: readonly string[]; fallback: string; onChange: (value: string) => void; keepCurrent?: boolean }): ReactNode {
+function OptionField(props: { label: string; hint?: string; value: string | undefined; options: readonly string[]; fallback: string; onChange: (value: string) => void; keepCurrent?: boolean; labels?: Record<string, string> }): ReactNode {
   const options = props.keepCurrent === true ? selectOptions(props.options, props.value) : props.options.map((item) => ({ value: item, label: item }))
   return (
     <Field label={props.label} hint={props.hint}>
       <select className={styles.configInput} value={selectValue(props.options, props.value, props.fallback)} onChange={(e) => props.onChange(e.target.value)}>
-        {options.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+        {options.map((item) => <option key={item.value} value={item.value}>{props.labels?.[item.value] ?? item.label}</option>)}
       </select>
     </Field>
   )
@@ -294,7 +297,7 @@ export function PromptConfigForm(props: { meta: EngineMeta; config: PromptConfig
         </label>
         {policy.dedupe && <OptionField label="dedupe" hint="session=每会话一次；batch=当前批去重" value={config.dedupe} options={meta.dedupes} fallback="none" onChange={(value) => onPatch({ dedupe: value })} />}
         {policy.promotion && <OptionField label="promotion" hint="none=不要求晋升；main=主会话晋升；include-subagents=子代理跟随" value={config.promotion} options={meta.promotions} fallback="none" onChange={(value) => onPatch({ promotion: value })} />}
-        {policy.subagents && <OptionField label="subagents" hint="none=仅主会话；inherit=都适用；only=仅子代理" value={config.subagents} options={meta.subagentModes} fallback="none" onChange={(value) => onPatch({ subagents: value })} />}
+        {policy.subagents && <OptionField label="消息受众" hint="仅主对话=仅主会话；公用=都适用；仅子代理=仅子代理（配置字段 subagents，官方契约）" value={config.subagents} options={meta.subagentModes} fallback="none" labels={AUDIENCE_LABELS} onChange={(value) => onPatch({ subagents: value })} />}
         {policy.modelScope && <OptionField label="modelScope" hint="all / pro / flash；flash 按模型名包含 flash 判定" value={config.modelScope} options={meta.modelScopes} fallback="all" onChange={(value) => onPatch({ modelScope: value })} />}
         {placeholder && <OptionField label="fill（placeholder 专用）" hint="instruction-hint / env-facts / skill-catalog" value={config.fill} options={fillOptions} fallback="" onChange={(value) => onPatch({ fill: value || undefined })} />}
         <OptionField label="sourceKind" hint="注入消息 source.kind；默认等于 id" value={config.sourceKind} options={SOURCE_KINDS} fallback="" keepCurrent onChange={(value) => onPatch({ sourceKind: value || undefined })} />

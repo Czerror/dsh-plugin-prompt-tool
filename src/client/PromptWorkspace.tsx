@@ -11,6 +11,7 @@ import {
 import type { SkillCatalogEntry } from './prompt-tool-bridge.ts'
 import { PromptConfigList } from './PromptConfigList.tsx'
 import type { PromptConfigDraft } from './PromptConfigsEditor.tsx'
+import type { PromptConfigTemplateEntry } from './prompt-tool-types.ts'
 import type { PromptToolWorkspaceController } from './workspace-controller.ts'
 import { PresetsPage } from './PresetsPage.tsx'
 import { TemplatePicker } from './TemplatePicker.tsx'
@@ -430,6 +431,14 @@ function ConfigListWithTemplates(props: { store: PromptToolStore; layer?: string
     (config) => store.patch({ promptConfigs: [...store.fields.promptConfigs, config] }),
     store.showNotice,
   )
+  /** 子代理页插入时，主会话专属模板（subagents=none）自动归一为公用（inherit），保证插入后子代理可见。 */
+  const pickTemplate = (entry: PromptConfigTemplateEntry): void => {
+    if (scope === 'subagent' && (entry.spec.subagents ?? 'none') === 'none') {
+      templatePicker.pickTemplate({ ...entry, spec: { ...entry.spec, subagents: 'inherit' } })
+      return
+    }
+    templatePicker.pickTemplate(entry)
+  }
   return (
     <>
       <PromptConfigList
@@ -446,7 +455,7 @@ function ConfigListWithTemplates(props: { store: PromptToolStore; layer?: string
         onNotice={store.showNotice}
       />
       {templatePicker.open && (
-        <TemplatePicker templates={templatePicker.templates} layer={layer} scope={scope} onPick={templatePicker.pickTemplate} onClose={templatePicker.closePicker} />
+        <TemplatePicker templates={templatePicker.templates} layer={layer} onPick={pickTemplate} onClose={templatePicker.closePicker} />
       )}
     </>
   )
