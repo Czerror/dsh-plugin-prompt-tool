@@ -52,29 +52,23 @@ test('moduleConfigs 未声明时返回原文（零开销）', () => {
   assert.equal(applyModuleConfigs(RAW, {}), RAW)
 })
 
-test('resolvePresetParams 把嵌套 subagent 块拍平为扁平键（preset.yml 归类写法 ↔ 运行时扁平键等价）', () => {
-  const flat = resolvePresetParams({ id: 't', params: { fastModelPersona: 'F' }, subagent: {
-      modelProvider: 'deepseek',
-      modelName: 'deepseek-v4-flash-7013',
-      persona: '子代理专用人设',
-      toolFilter: { allow: ['read', 'glob'], deny: ['bash'] },
-      maxDepth: 2,
-    } }, {})
-  assert.equal(flat.subagentModelProvider, 'deepseek')
-  assert.equal(flat.subagentModelName, 'deepseek-v4-flash-7013')
-  assert.equal(flat.subagentPersona, '子代理专用人设')
-  assert.deepEqual(flat.subagentToolFilterAllow, ['read', 'glob'])
-  assert.deepEqual(flat.subagentToolFilterDeny, ['bash'])
-  assert.equal(flat.subagentMaxDepth, 2)
-  // 运行时扁平键优先于 preset.yml 嵌套默认值。
-  const overridden = resolvePresetParams({ id: 't', subagent: { modelProvider: 'preset-default', modelName: 'm1' } }, { subagentModelProvider: 'runtime-wins' })
-  assert.equal(overridden.subagentModelProvider, 'runtime-wins')
-  assert.equal(overridden.subagentModelName, 'm1')
+test('resolvePresetParams 模型路由/委派参数全扁平（preset.yml params 与运行时扁平键等价）', () => {
+  const flat = resolvePresetParams({ id: 't', params: { fastModelPersona: 'F', modelProvider: 'deepseek', modelName: 'deepseek-v4-flash-7013', persona: '固定路由人设', toolFilterAllow: ['read', 'glob'], toolFilterDeny: ['bash'], maxDepth: 2 } }, {})
+  assert.equal(flat.modelProvider, 'deepseek')
+  assert.equal(flat.modelName, 'deepseek-v4-flash-7013')
+  assert.equal(flat.persona, '固定路由人设')
+  assert.deepEqual(flat.toolFilterAllow, ['read', 'glob'])
+  assert.deepEqual(flat.toolFilterDeny, ['bash'])
+  assert.equal(flat.maxDepth, 2)
+  // 运行时扁平键优先于 preset.yml 默认值。
+  const overridden = resolvePresetParams({ id: 't', params: { modelProvider: 'preset-default', modelName: 'm1' } }, { modelProvider: 'runtime-wins' })
+  assert.equal(overridden.modelProvider, 'runtime-wins')
+  assert.equal(overridden.modelName, 'm1')
   // 空默认值不渲染（renderEngineTokens 对空串/空数组跳过）。
-  const empty = resolvePresetParams({ id: 't', subagent: { modelProvider: '', modelName: '', persona: '', toolFilter: { allow: [], deny: [] }, maxDepth: '' } }, {})
-  assert.equal(empty.subagentModelProvider, '')
-  assert.deepEqual(empty.subagentToolFilterAllow, [])
-  assert.equal(empty.subagentMaxDepth, '')
+  const empty = resolvePresetParams({ id: 't', params: { modelProvider: '', modelName: '', persona: '', toolFilterAllow: [], toolFilterDeny: [], maxDepth: '' } }, {})
+  assert.equal(empty.modelProvider, '')
+  assert.deepEqual(empty.toolFilterAllow, [])
+  assert.equal(empty.maxDepth, '')
 })
 
 test('anchored buildCordis 集成：moduleConfigs 合并与 token 渲染共存', () => {
@@ -100,14 +94,14 @@ test('anchored buildCordis 集成：moduleConfigs 合并与 token 渲染共存',
   assert.ok(!/__[A-Z0-9_]+__/.test(buildCordis('P')), '生成文本不应残留未解析 token')
 })
 
-test('子代理完整自定义：独立 persona + toolFilter + maxDepth 渲染（官方 tool-subagent Config）', () => {
+test('模型路由与委派完整自定义：persona + toolFilter + maxDepth 渲染（官方 tool-subagent Config）', () => {
   const rows = parseYaml(buildCordis('P', {
-    subagentModelProvider: 'my-provider',
-    subagentModelName: 'deepseek-v4-flash-7013',
-    subagentPersona: '你是审查子代理，只读不改。',
-    subagentToolFilterAllow: ['read', 'write', 'glob'],
-    subagentToolFilterDeny: 'bash, run_code',
-    subagentMaxDepth: 1,
+    modelProvider: 'my-provider',
+    modelName: 'deepseek-v4-flash-7013',
+    persona: '你是审查子代理，只读不改。',
+    toolFilterAllow: ['read', 'write', 'glob'],
+    toolFilterDeny: 'bash, run_code',
+    maxDepth: 1,
   }))
   const subs = findAllNested(rows, new Set(['tool-subagent', 'tool-subagent-fork']))
   assert.equal(subs.length, 2, 'subagent 与 subagent_fork 两行都应渲染')
@@ -120,8 +114,8 @@ test('子代理完整自定义：独立 persona + toolFilter + maxDepth 渲染�
   }
 })
 
-test('子代理 persona 回退：无独立 persona 时固定路由用 fastModelPersona，无路由不渲染', () => {
-  const routed = parseYaml(buildCordis('P', { subagentModelProvider: 'p', subagentModelName: 'm' }))
+test('persona 回退：无显式 persona 时固定路由用 fastModelPersona，无路由不渲染', () => {
+  const routed = parseYaml(buildCordis('P', { modelProvider: 'p', modelName: 'm' }))
   const routedRow = findAllNested(routed, new Set(['tool-subagent']))[0]
   assert.match(routedRow.config.persona, /decide the task type \(build or fix\)/, '固定路由时 persona 回退 fastModelPersona')
   assert.equal(routedRow.config.toolFilter, undefined, '未配置 toolFilter 不渲染')

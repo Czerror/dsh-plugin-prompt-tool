@@ -35,16 +35,16 @@ export interface WritePresetOptions {
   guideText: string
   guideCustom: boolean
   injectPrompt: boolean
-  subagentModelProvider: string
-  subagentModelName: string
-  /** 子代理独立 persona（per-child shadow；缺省回退 fastModelPersona，两者缺省=继承主会话）。 */
-  subagentPersona?: string
-  /** 子代理工具集白名单（toolFilter.allow；支持数组或逗号/空格分隔字符串）。 */
-  subagentToolFilterAllow?: string[] | string
-  /** 子代理工具集黑名单（toolFilter.deny）。 */
-  subagentToolFilterDeny?: string[] | string
-  /** 子代理递归深度上限（0 禁止委派 / provider-managed / 正整数）。 */
-  subagentMaxDepth?: number | 'provider-managed' | string
+  modelProvider: string
+  modelName: string
+  /** 固定模型路由人设（per-child shadow；缺省回退 fastModelPersona，两者缺省=继承主会话）。 */
+  persona?: string
+  /** 委派工具集白名单（toolFilter.allow；支持数组或逗号/空格分隔字符串）。 */
+  toolFilterAllow?: string[] | string
+  /** 委派工具集黑名单（toolFilter.deny）。 */
+  toolFilterDeny?: string[] | string
+  /** 委派递归深度上限（0 禁止委派 / provider-managed / 正整数）。 */
+  maxDepth?: number | 'provider-managed' | string
   /** 主对话快速模型路由人设（preset.yml fastModelPersona；覆盖模板默认）。 */
   fastModelPersona?: string
   /** 注入 kind 白名单（context-gate allowKinds；数组或逗号分隔字符串）。 */
@@ -78,18 +78,18 @@ function runtimeOf(options: WritePresetOptions, prompt: string): Record<string, 
     injectPrompt: options.injectPrompt !== false,
     usePtcMode: options.usePtcMode !== false,
     bootstrapMaxTokens: Number.isSafeInteger(options.bootstrapMaxTokens) ? options.bootstrapMaxTokens : 0,
-    subagentModelProvider: typeof options.subagentModelProvider === 'string' && options.subagentModelProvider.length > 0
-      ? options.subagentModelProvider
+    modelProvider: typeof options.modelProvider === 'string' && options.modelProvider.length > 0
+      ? options.modelProvider
       : '',
-    subagentModelName: typeof options.subagentModelName === 'string' && options.subagentModelName.length > 0
-      ? options.subagentModelName
+    modelName: typeof options.modelName === 'string' && options.modelName.length > 0
+      ? options.modelName
       : '',
-    subagentPersona: typeof options.subagentPersona === 'string' && options.subagentPersona.length > 0
-      ? options.subagentPersona
+    persona: typeof options.persona === 'string' && options.persona.length > 0
+      ? options.persona
       : '',
-    subagentToolFilterAllow: options.subagentToolFilterAllow,
-    subagentToolFilterDeny: options.subagentToolFilterDeny,
-    subagentMaxDepth: options.subagentMaxDepth,
+    toolFilterAllow: options.toolFilterAllow,
+    toolFilterDeny: options.toolFilterDeny,
+    maxDepth: options.maxDepth,
     // 空值不覆盖：fastModelPersona 引擎必需非空（空串会触发 router-first-turn 抛错），
     // firstTurnWord 空应回退 preset.yml 模板默认（we）。
     fastModelPersona: typeof options.fastModelPersona === 'string' && options.fastModelPersona.trim().length > 0

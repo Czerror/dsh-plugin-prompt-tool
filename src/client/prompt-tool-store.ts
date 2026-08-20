@@ -34,8 +34,8 @@ export interface SwitchSnapshot {
   firstTurnCustom: boolean
   guideText: string
   guideCustom: boolean
-  subagentModelProvider: string
-  subagentModelName: string
+  modelProvider: string
+  modelName: string
   bootstrapMaxTokens: number
   usePtcMode: boolean
   injectPrompt: boolean
@@ -58,8 +58,8 @@ const EMPTY_SWITCHES: SwitchSnapshot = {
   firstTurnCustom: false,
   guideText: '',
   guideCustom: false,
-  subagentModelProvider: '',
-  subagentModelName: '',
+  modelProvider: '',
+  modelName: '',
   bootstrapMaxTokens: 0,
   usePtcMode: true,
   injectPrompt: true,
@@ -85,8 +85,8 @@ export const snapshotSwitches = (fields: Fields): SwitchSnapshot => ({
   firstTurnCustom: fields.firstTurnCustom,
   guideText: fields.guideText,
   guideCustom: fields.guideCustom,
-  subagentModelProvider: fields.subagentModelProvider,
-  subagentModelName: fields.subagentModelName,
+  modelProvider: fields.modelProvider,
+  modelName: fields.modelName,
   bootstrapMaxTokens: fields.bootstrapMaxTokens,
   usePtcMode: fields.usePtcMode,
   injectPrompt: fields.injectPrompt,
@@ -109,8 +109,8 @@ const switchesEqual = (a: SwitchSnapshot, b: SwitchSnapshot): boolean =>
   && a.firstTurnCustom === b.firstTurnCustom
   && a.guideText === b.guideText
   && a.guideCustom === b.guideCustom
-  && a.subagentModelProvider === b.subagentModelProvider
-  && a.subagentModelName === b.subagentModelName
+  && a.modelProvider === b.modelProvider
+  && a.modelName === b.modelName
   && a.bootstrapMaxTokens === b.bootstrapMaxTokens
   && a.usePtcMode === b.usePtcMode
   && a.injectPrompt === b.injectPrompt
@@ -255,8 +255,8 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
     const next = fieldsFromView(res)
     // 检测到 DeepSeek 路由且用户未设置服务商时，直接预选第一个检测到的 provider
     // （模型名为空则路由不激活，继承主会话语义不变；用户后续选择模型名即生效）。
-    if (res.ok && next.subagentModelProvider === '' && (res.deepseekProviders?.length ?? 0) > 0) {
-      next.subagentModelProvider = res.deepseekProviders![0]!
+    if (res.ok && next.modelProvider === '' && (res.deepseekProviders?.length ?? 0) > 0) {
+      next.modelProvider = res.deepseekProviders![0]!
     }
     fieldsRef.current = next
     setFields(next)
@@ -311,16 +311,16 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
         if (typeof o.firstTurnCustom === 'boolean') paramPatch.firstTurnCustom = o.firstTurnCustom
         if (typeof o.guideText === 'string') paramPatch.guideText = o.guideText
         if (typeof o.guideCustom === 'boolean') paramPatch.guideCustom = o.guideCustom
-        if (typeof o.subagentModelProvider === 'string') paramPatch.subagentModelProvider = o.subagentModelProvider
-        if (typeof o.subagentModelName === 'string') paramPatch.subagentModelName = o.subagentModelName
+        if (typeof o.modelProvider === 'string') paramPatch.modelProvider = o.modelProvider
+        if (typeof o.modelName === 'string') paramPatch.modelName = o.modelName
         if (typeof o.fastModelPersona === 'string') paramPatch.fastModelPersona = o.fastModelPersona
-        if (typeof o.subagentPersona === 'string') paramPatch.subagentPersona = o.subagentPersona
-        if (Array.isArray(o.subagentToolFilterAllow)) paramPatch.subagentToolFilterAllow = o.subagentToolFilterAllow.join(', ')
-        else if (typeof o.subagentToolFilterAllow === 'string') paramPatch.subagentToolFilterAllow = o.subagentToolFilterAllow
-        if (Array.isArray(o.subagentToolFilterDeny)) paramPatch.subagentToolFilterDeny = o.subagentToolFilterDeny.join(', ')
-        else if (typeof o.subagentToolFilterDeny === 'string') paramPatch.subagentToolFilterDeny = o.subagentToolFilterDeny
-        if (o.subagentMaxDepth !== undefined && o.subagentMaxDepth !== null && o.subagentMaxDepth !== '') {
-          paramPatch.subagentMaxDepth = String(o.subagentMaxDepth)
+        if (typeof o.persona === 'string') paramPatch.persona = o.persona
+        if (Array.isArray(o.toolFilterAllow)) paramPatch.toolFilterAllow = o.toolFilterAllow.join(', ')
+        else if (typeof o.toolFilterAllow === 'string') paramPatch.toolFilterAllow = o.toolFilterAllow
+        if (Array.isArray(o.toolFilterDeny)) paramPatch.toolFilterDeny = o.toolFilterDeny.join(', ')
+        else if (typeof o.toolFilterDeny === 'string') paramPatch.toolFilterDeny = o.toolFilterDeny
+        if (o.maxDepth !== undefined && o.maxDepth !== null && o.maxDepth !== '') {
+          paramPatch.maxDepth = String(o.maxDepth)
         }
         if (Array.isArray(o.allowKinds)) paramPatch.allowKinds = o.allowKinds.join(', ')
         else if (typeof o.allowKinds === 'string') paramPatch.allowKinds = o.allowKinds
@@ -415,7 +415,7 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
     const f = fieldsRef.current
     const splitList = (value: string): string[] => value.split(',').map((item) => item.trim()).filter((item) => item.length > 0)
     // 空值不写键：保留 preset.yml 模板默认。fastModelPersona 引擎必需非空；
-    // allowKinds 空数组 = 白名单全拦（危险）；subagentMaxDepth '' = 不设置。
+    // allowKinds 空数组 = 白名单全拦（危险）；maxDepth '' = 不设置。
     const res = await bridgePost<{ overrides: unknown }>('/param-overrides', {
       overrides: {
         firstTurnAnchor: f.firstTurnAnchor,
@@ -423,14 +423,14 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
         firstTurnCustom: f.firstTurnCustom,
         guideText: f.guideText,
         guideCustom: f.guideCustom,
-        subagentModelProvider: f.subagentModelProvider,
-        subagentModelName: f.subagentModelName,
+        modelProvider: f.modelProvider,
+        modelName: f.modelName,
         ...(f.fastModelPersona.trim().length > 0 ? { fastModelPersona: f.fastModelPersona } : {}),
-        ...(f.subagentPersona.trim().length > 0 ? { subagentPersona: f.subagentPersona } : {}),
-        subagentToolFilterAllow: splitList(f.subagentToolFilterAllow),
-        subagentToolFilterDeny: splitList(f.subagentToolFilterDeny),
-        ...(f.subagentMaxDepth !== ''
-          ? { subagentMaxDepth: f.subagentMaxDepth === 'provider-managed' ? 'provider-managed' : Number(f.subagentMaxDepth) }
+        ...(f.persona.trim().length > 0 ? { persona: f.persona } : {}),
+        toolFilterAllow: splitList(f.toolFilterAllow),
+        toolFilterDeny: splitList(f.toolFilterDeny),
+        ...(f.maxDepth !== ''
+          ? { maxDepth: f.maxDepth === 'provider-managed' ? 'provider-managed' : Number(f.maxDepth) }
           : {}),
         ...(splitList(f.allowKinds).length > 0 ? { allowKinds: splitList(f.allowKinds) } : {}),
         ...(f.firstTurnWord.trim().length > 0 ? { firstTurnWord: f.firstTurnWord } : {}),

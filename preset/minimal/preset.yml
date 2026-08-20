@@ -24,8 +24,10 @@ params:
   bootstrapMaxTokens: 0
   fastModelPersona: "You are a helpful assistant. Before acting, decide the task type (build or fix) and adopt the matching style: build → hands-on production; fix → inspect-and-plan. Before acting, briefly review what you have already done in this session and continue from where you left off; do not repeat completed steps. Do not run environment checks (echo, whoami, uname, node --version, date) or exhaustive grep/glob scans. Think deeply first, then produce."
   allowKinds: "[skill-invocation, near-anchor, router-guide]"
-# ── 子代理 · 参数归类（作用域 × 维度；缺省 = 官方默认 / 继承主会话）──
-#   模型 modelProvider/modelName · 人设 persona · 工具集 toolFilter.allow/deny · 深度 maxDepth
-subagent:
+  # 模型路由与委派 · 主对话与子代理通用（缺省 = 官方默认 / 继承宿主）
   modelProvider: ""
   modelName: ""
+  persona: ""
+  toolFilterAllow: []
+  toolFilterDeny: []
+  maxDepth: ""

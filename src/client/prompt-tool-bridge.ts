@@ -30,13 +30,13 @@ export interface Fields {
   firstTurnCustom: boolean
   guideText: string
   guideCustom: boolean
-  subagentModelProvider: string
-  subagentModelName: string
+  modelProvider: string
+  modelName: string
   fastModelPersona: string
-  subagentPersona: string
-  subagentToolFilterAllow: string
-  subagentToolFilterDeny: string
-  subagentMaxDepth: string
+  persona: string
+  toolFilterAllow: string
+  toolFilterDeny: string
+  maxDepth: string
   allowKinds: string
   firstTurnWord: string
   bootstrapMaxTokens: number
@@ -89,13 +89,13 @@ export const EMPTY_FIELDS: Fields = {
   firstTurnCustom: false,
   guideText: '',
   guideCustom: false,
-  subagentModelProvider: '',
-  subagentModelName: '',
+  modelProvider: '',
+  modelName: '',
   fastModelPersona: '',
-  subagentPersona: '',
-  subagentToolFilterAllow: '',
-  subagentToolFilterDeny: '',
-  subagentMaxDepth: '',
+  persona: '',
+  toolFilterAllow: '',
+  toolFilterDeny: '',
+  maxDepth: '',
   allowKinds: '',
   firstTurnWord: '',
   bootstrapMaxTokens: 0,
@@ -220,15 +220,15 @@ export function fieldsFromView(res: BridgeResult<BridgeSettingsView>): Fields {
     firstTurnCustom: readBoolean(value, 'firstTurnCustom', readBoolean(base, 'firstTurnCustom', false)),
     guideText: readString(value, 'guideText') ?? readString(base, 'guideText') ?? '',
     guideCustom: readBoolean(value, 'guideCustom', readBoolean(base, 'guideCustom', false)),
-    subagentModelProvider: readString(value, 'subagentModelProvider') ?? readString(base, 'subagentModelProvider') ?? '',
-    subagentModelName: readString(value, 'subagentModelName') ?? readString(base, 'subagentModelName') ?? '',
-    // 预设级参数（fastModelPersona/subagentPersona/toolFilter/maxDepth/allowKinds/firstTurnWord）
+    modelProvider: readString(value, 'modelProvider') ?? readString(base, 'modelProvider') ?? '',
+    modelName: readString(value, 'modelName') ?? readString(base, 'modelName') ?? '',
+    // 预设级参数（fastModelPersona/persona/toolFilterAllow/toolFilterDeny/maxDepth/allowKinds/firstTurnWord）
     // 不进 settings namespace：默认空，由 /param-overrides 读回后填充（store.load paramPatch）。
     fastModelPersona: '',
-    subagentPersona: '',
-    subagentToolFilterAllow: '',
-    subagentToolFilterDeny: '',
-    subagentMaxDepth: '',
+    persona: '',
+    toolFilterAllow: '',
+    toolFilterDeny: '',
+    maxDepth: '',
     allowKinds: '',
     firstTurnWord: '',
     bootstrapMaxTokens: readNumber(value, 'bootstrapMaxTokens', readNumber(base, 'bootstrapMaxTokens', 0)),

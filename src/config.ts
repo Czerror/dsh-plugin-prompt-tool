@@ -66,20 +66,20 @@ export interface Config {
   guideText: string
   /** 自定义每轮引导开关：true 固定使用 guideText；false 按任务自动选择。 */
   guideCustom: boolean
-  /** 子代理固定模型路由 provider；与模型名同时非空时，子代理/宿主直派子代理自动补入该路由。 */
-  subagentModelProvider: string
-  /** 子代理固定模型名；与 provider 同时非空时生效。 */
-  subagentModelName: string
+  /** 模型路由 provider（主对话直派子代理与委派子代理通用）；与模型名同时非空时自动补入。 */
+  modelProvider: string
+  /** 模型名；与 provider 同时非空时生效。 */
+  modelName: string
   /** 主对话快速模型路由人设（preset.yml fastModelPersona；仅经 overrides 覆盖，不进 settings）。 */
   fastModelPersona?: string
-  /** 子代理独立 persona（仅经 overrides 覆盖，不进 settings）。 */
-  subagentPersona?: string
-  /** 子代理工具集白名单（仅经 overrides 覆盖，不进 settings）。 */
-  subagentToolFilterAllow?: string[] | string
-  /** 子代理工具集黑名单（仅经 overrides 覆盖，不进 settings）。 */
-  subagentToolFilterDeny?: string[] | string
-  /** 子代理递归深度（0 禁止委派 / provider-managed / 正整数；仅经 overrides 覆盖）。 */
-  subagentMaxDepth?: number | 'provider-managed' | string
+  /** 固定模型路由人设（per-child shadow；仅经 overrides 覆盖，不进 settings）。 */
+  persona?: string
+  /** 委派工具集白名单（仅经 overrides 覆盖，不进 settings）。 */
+  toolFilterAllow?: string[] | string
+  /** 委派工具集黑名单（仅经 overrides 覆盖，不进 settings）。 */
+  toolFilterDeny?: string[] | string
+  /** 委派递归深度（0 禁止委派 / provider-managed / 正整数；仅经 overrides 覆盖）。 */
+  maxDepth?: number | 'provider-managed' | string
   /** 注入 kind 白名单（仅经 overrides 覆盖，不进 settings）。 */
   allowKinds?: string[] | string
   /** custom-fallback 锚定词（仅经 overrides 覆盖，不进 settings）。 */
@@ -123,8 +123,8 @@ export const Config: z<Config> = z.object({
   firstTurnCustom: z.boolean().default(false),
   guideText: z.string().default(DEFAULT_GUIDE_TEXT),
   guideCustom: z.boolean().default(false),
-  subagentModelProvider: z.string().default(''),
-  subagentModelName: z.string().default(''),
+  modelProvider: z.string().default(''),
+  modelName: z.string().default(''),
   bootstrapMaxTokens: z.natural().default(0),
   usePtcMode: z.boolean().default(true),
   skillsDirs: z.array(z.string()).default([]),
@@ -190,20 +190,20 @@ export interface PromptSettings {
   firstTurnCustom: boolean
   guideText: string
   guideCustom: boolean
-  /** 子代理固定模型路由 provider；与模型名同时非空时生效。 */
-  subagentModelProvider: string
-  /** 子代理固定模型名；与 provider 同时非空时生效。 */
-  subagentModelName: string
+  /** 模型路由 provider（主对话直派子代理与委派子代理通用）；与模型名同时非空时生效。 */
+  modelProvider: string
+  /** 模型名；与 provider 同时非空时生效。 */
+  modelName: string
   /** 主对话快速模型路由人设（经 overrides 覆盖，不写入 settings）。 */
   fastModelPersona?: string
-  /** 子代理独立 persona（经 overrides 覆盖，不写入 settings）。 */
-  subagentPersona?: string
-  /** 子代理工具集白名单（经 overrides 覆盖，不写入 settings）。 */
-  subagentToolFilterAllow?: string[] | string
-  /** 子代理工具集黑名单（经 overrides 覆盖，不写入 settings）。 */
-  subagentToolFilterDeny?: string[] | string
-  /** 子代理递归深度（经 overrides 覆盖，不写入 settings）。 */
-  subagentMaxDepth?: number | 'provider-managed' | string
+  /** 固定模型路由人设（经 overrides 覆盖，不写入 settings）。 */
+  persona?: string
+  /** 委派工具集白名单（经 overrides 覆盖，不写入 settings）。 */
+  toolFilterAllow?: string[] | string
+  /** 委派工具集黑名单（经 overrides 覆盖，不写入 settings）。 */
+  toolFilterDeny?: string[] | string
+  /** 委派递归深度（经 overrides 覆盖，不写入 settings）。 */
+  maxDepth?: number | 'provider-managed' | string
   /** 注入 kind 白名单（经 overrides 覆盖，不写入 settings）。 */
   allowKinds?: string[] | string
   /** custom-fallback 锚定词（经 overrides 覆盖，不写入 settings）。 */
@@ -253,8 +253,8 @@ export const PromptSettingsSchema: z<PromptSettings> = z.object({
   firstTurnCustom: z.boolean().default(false),
   guideText: z.string().default(DEFAULT_GUIDE_TEXT),
   guideCustom: z.boolean().default(false),
-  subagentModelProvider: z.string().default(''),
-  subagentModelName: z.string().default(''),
+  modelProvider: z.string().default(''),
+  modelName: z.string().default(''),
   bootstrapMaxTokens: z.natural().default(0),
   usePtcMode: z.boolean().default(true),
   deepseekAvailable: z.boolean().default(true),
@@ -315,20 +315,20 @@ export interface RuntimeOptions {
   presetOrder: number
   /** preset.md 缺失或不可读时使用的文本。 */
   fallbackText: string
-  /** 子代理固定模型路由 provider；与模型名同时非空时生效。 */
-  subagentModelProvider: string
-  /** 子代理固定模型名；与 provider 同时非空时生效。 */
-  subagentModelName: string
+  /** 模型路由 provider（主对话直派子代理与委派子代理通用）；与模型名同时非空时生效。 */
+  modelProvider: string
+  /** 模型名；与 provider 同时非空时生效。 */
+  modelName: string
   /** 主对话快速模型路由人设（经 overrides 覆盖，不写入 settings）。 */
   fastModelPersona?: string
-  /** 子代理独立 persona（经 overrides 覆盖，不写入 settings）。 */
-  subagentPersona?: string
-  /** 子代理工具集白名单（经 overrides 覆盖，不写入 settings）。 */
-  subagentToolFilterAllow?: string[] | string
-  /** 子代理工具集黑名单（经 overrides 覆盖，不写入 settings）。 */
-  subagentToolFilterDeny?: string[] | string
-  /** 子代理递归深度（经 overrides 覆盖，不写入 settings）。 */
-  subagentMaxDepth?: number | 'provider-managed' | string
+  /** 固定模型路由人设（经 overrides 覆盖，不写入 settings）。 */
+  persona?: string
+  /** 委派工具集白名单（经 overrides 覆盖，不写入 settings）。 */
+  toolFilterAllow?: string[] | string
+  /** 委派工具集黑名单（经 overrides 覆盖，不写入 settings）。 */
+  toolFilterDeny?: string[] | string
+  /** 委派递归深度（经 overrides 覆盖，不写入 settings）。 */
+  maxDepth?: number | 'provider-managed' | string
   /** 注入 kind 白名单（经 overrides 覆盖，不写入 settings）。 */
   allowKinds?: string[] | string
   /** custom-fallback 锚定词（经 overrides 覆盖，不写入 settings）。 */

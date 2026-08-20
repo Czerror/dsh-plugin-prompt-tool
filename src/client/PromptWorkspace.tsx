@@ -146,8 +146,8 @@ function AgentRequestSwitches(props: { store: PromptToolStore }): ReactNode {
   )
 }
 
-/** 子代理参数卡片（模型 + 工具与深度）：主对话页与子代理页共用（全链路同一配置源）。 */
-function SubagentCards(props: { store: PromptToolStore }): ReactNode {
+/** 模型与委派参数卡片（模型设置 + 工具与深度）：主对话页与子代理页共用（全链路同一配置源，缺省继承宿主默认）。 */
+function ModelToolCards(props: { store: PromptToolStore }): ReactNode {
   const { store } = props
   const fields = store.fields
   const providerOptions = ['', ...store.deepseekProviders, 'deepseek-official']
@@ -155,27 +155,27 @@ function SubagentCards(props: { store: PromptToolStore }): ReactNode {
   const maxDepthOptions = ['', 'provider-managed', '0', '1', '2', '3', '5']
   const withCurrent = (options: string[], current: string): string[] =>
     current.length > 0 && !options.includes(current) ? [...options, current] : options
-  const active = fields.subagentModelProvider.length > 0 && fields.subagentModelName.length > 0
+  const active = fields.modelProvider.length > 0 && fields.modelName.length > 0
   return (
     <>
-      <CollapsibleCard id="pt-subagent-model" title="子代理模型" meta={active ? '固定模型路由已设置' : '未设置：继承主会话模型'}>
+      <CollapsibleCard id="pt-model-route" title="模型设置" meta={active ? '固定模型路由已设置' : '未设置：继承宿主默认模型'}>
         <div className={ui.rowGroup}>
           <div className={ui.settingRowStack}>
             <span className={ui.settingCopy}>
               <strong>模型服务商</strong>
-              <small>调用方未显式指定 provider 时自动补入；检测到 DeepSeek 路由时可直接选择，未检测到可手动选择 deepseek-official。</small>
+              <small>主对话直派子代理与委派子代理通用（官方 AgentOptions.provider）；调用方未显式指定时自动补入。检测到 DeepSeek 路由可直接选择，未检测到可手动选择 deepseek-official。</small>
             </span>
             <select
               className={ui.configInput}
               aria-label="模型服务商"
-              value={fields.subagentModelProvider}
+              value={fields.modelProvider}
               disabled={!fields.writePreset}
               onChange={(event) => {
-                store.patch({ subagentModelProvider: event.target.value })
+                store.patch({ modelProvider: event.target.value })
                 void store.persistParamOverrides()
               }}
             >
-              {withCurrent(providerOptions, fields.subagentModelProvider).map((item) => (
+              {withCurrent(providerOptions, fields.modelProvider).map((item) => (
                 <option key={item} value={item}>{item.length > 0 ? item : '（不设置）'}</option>
               ))}
             </select>
@@ -185,19 +185,19 @@ function SubagentCards(props: { store: PromptToolStore }): ReactNode {
           <div className={ui.settingRowStack}>
             <span className={ui.settingCopy}>
               <strong>模型名</strong>
-              <small>调用方未显式指定 model 时自动补入；例如 deepseek-v4-flash。</small>
+              <small>官方 AgentOptions.model；与模型服务商同时非空时生效，例如 deepseek-v4-flash。</small>
             </span>
             <select
               className={ui.configInput}
               aria-label="模型名"
-              value={fields.subagentModelName}
+              value={fields.modelName}
               disabled={!fields.writePreset}
               onChange={(event) => {
-                store.patch({ subagentModelName: event.target.value })
+                store.patch({ modelName: event.target.value })
                 void store.persistParamOverrides()
               }}
             >
-              {withCurrent(modelOptions, fields.subagentModelName).map((item) => (
+              {withCurrent(modelOptions, fields.modelName).map((item) => (
                 <option key={item} value={item}>{item.length > 0 ? item : '（不设置）'}</option>
               ))}
             </select>
@@ -205,40 +205,40 @@ function SubagentCards(props: { store: PromptToolStore }): ReactNode {
         </div>
         <div className={ui.rowGroup}>
           <label className={ui.textBlock}>
-            <span className={ui.settingCopy}><strong>子代理独立人设</strong><small>子代理 persona（per-child shadow）；留空 = 固定模型路由时回退主对话快速模型人设，两者都空 = 继承主会话。失焦保存。</small></span>
+            <span className={ui.settingCopy}><strong>固定模型路由人设</strong><small>persona（per-child shadow）；留空 = 固定模型路由时回退主对话快速模型人设，两者都空 = 继承主会话。失焦保存。</small></span>
             <textarea
               className={ui.firstTurnInput}
-              value={fields.subagentPersona}
+              value={fields.persona}
               disabled={!fields.writePreset}
-              onChange={(event) => { autoResizeTextarea(event); store.patch({ subagentPersona: event.target.value }) }}
+              onChange={(event) => { autoResizeTextarea(event); store.patch({ persona: event.target.value }) }}
               onBlur={() => void store.persistParamOverrides()}
               spellCheck={false}
             />
           </label>
         </div>
       </CollapsibleCard>
-      <CollapsibleCard id="pt-subagent-tools" title="子代理工具与深度" meta="工具集白名单/黑名单 + 递归深度">
-        <TagInput id="pt-subagent-tool-allow" label="子代理工具集白名单" hint="toolFilter.allow；回车或逗号添加标签，× 移除；留空 = 不限制。每次增删立即保存。"
-          value={fields.subagentToolFilterAllow} placeholder="read, write, glob" disabled={!fields.writePreset}
-          onChange={(value) => store.patch({ subagentToolFilterAllow: value })}
+      <CollapsibleCard id="pt-delegation-tools" title="工具与深度" meta="委派工具集白名单/黑名单 + 递归深度">
+        <TagInput id="pt-tool-filter-allow" label="工具集白名单" hint="toolFilter.allow（委派子代理）；回车或逗号添加标签，× 移除；留空 = 不限制。每次增删立即保存。"
+          value={fields.toolFilterAllow} placeholder="read, write, glob" disabled={!fields.writePreset}
+          onChange={(value) => store.patch({ toolFilterAllow: value })}
           onCommit={() => void store.persistParamOverrides()} />
-        <TagInput id="pt-subagent-tool-deny" label="子代理工具集黑名单" hint="toolFilter.deny；回车或逗号添加标签，× 移除；留空 = 不限制。每次增删立即保存。"
-          value={fields.subagentToolFilterDeny} placeholder="bash, run_code" disabled={!fields.writePreset}
-          onChange={(value) => store.patch({ subagentToolFilterDeny: value })}
+        <TagInput id="pt-tool-filter-deny" label="工具集黑名单" hint="toolFilter.deny（委派子代理）；回车或逗号添加标签，× 移除；留空 = 不限制。每次增删立即保存。"
+          value={fields.toolFilterDeny} placeholder="bash, run_code" disabled={!fields.writePreset}
+          onChange={(value) => store.patch({ toolFilterDeny: value })}
           onCommit={() => void store.persistParamOverrides()} />
         <div className={ui.rowGroup}>
           <div className={ui.settingRowStack}>
             <span className={ui.settingCopy}>
-              <strong>子代理递归深度</strong>
-              <small>maxDepth：0 禁止委派；provider-managed 由服务商管理；正整数限制递归层数；不设置 = 官方默认。选择即保存。</small>
+              <strong>递归深度</strong>
+              <small>委派 maxDepth：0 禁止委派；provider-managed 由服务商管理；正整数限制递归层数；不设置 = 官方默认。选择即保存。</small>
             </span>
             <select
               className={ui.configInput}
-              aria-label="子代理递归深度"
-              value={fields.subagentMaxDepth}
+              aria-label="递归深度"
+              value={fields.maxDepth}
               disabled={!fields.writePreset}
               onChange={(event) => {
-                store.patch({ subagentMaxDepth: event.target.value })
+                store.patch({ maxDepth: event.target.value })
                 void store.persistParamOverrides()
               }}
             >
@@ -265,7 +265,7 @@ function SubagentSettings(props: { store: PromptToolStore }): ReactNode {
           {detected ? `已检测到模型路由：${store.deepseekProviders.join('、')}` : '未检测到模型路由'}
         </span>
       </div>
-      <SubagentCards store={store} />
+      <ModelToolCards store={store} />
     </section>
   )
 }
@@ -293,7 +293,7 @@ function FeatureSettings(props: { store: PromptToolStore }): ReactNode {
     <section className={ui.section} aria-label="主对话与全局">
       <div className={ui.rowGroup}>
         <label className={ui.textBlock}>
-          <span className={ui.settingCopy}><strong>主对话快速模型人设</strong><small>主对话命中快速模型（Flash 档）时替换人设；子代理固定模型路由未显式人设时回退使用。留空 = 模板默认；失焦保存。</small></span>
+          <span className={ui.settingCopy}><strong>主对话快速模型人设</strong><small>主对话命中快速模型（Flash 档）时替换人设；固定模型路由未显式人设（persona）时回退使用。留空 = 模板默认；失焦保存。</small></span>
           <textarea
             className={ui.firstTurnInput}
             value={fields.fastModelPersona}
@@ -308,7 +308,7 @@ function FeatureSettings(props: { store: PromptToolStore }): ReactNode {
         value={fields.allowKinds} placeholder="skill-invocation, near-anchor, router-guide" disabled={!fields.writePreset}
         onChange={(value) => store.patch({ allowKinds: value })}
         onCommit={() => void store.persistParamOverrides()} />
-      <SubagentCards store={store} />
+      <ModelToolCards store={store} />
       <PromptConfigsEditor
         meta={store.meta}
         configs={fields.promptConfigs}

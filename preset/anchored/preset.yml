@@ -164,7 +164,7 @@ params:
   usePtcMode: true
   bootstrapMaxTokens: 0
   # 人设·快速模型路由：主对话命中快速模型（Flash 档）时替换人设；
-  # 子代理固定模型路由且未显式 subagent.persona 时回退使用。
+  # 固定模型路由且未显式 persona 时回退使用。
   fastModelPersona: >
     You are a helpful assistant.
 
@@ -188,7 +188,7 @@ params:
   firstTurnDeep: "Start your reasoning with the exact sentence: Let me think through the design before changing anything."
   firstTurnWord: we
   allowKinds: "[skill-invocation, near-anchor, router-guide]"
-# ── 子代理 · 参数归类（作用域 × 维度；全部可选，缺省 = 官方默认 / 继承主会话）──
+# ── 模型路由与委派 · 主对话与子代理通用（全部可选，缺省 = 官方默认 / 继承宿主）──
 #   维度      preset.yml 键                         引擎渲染落点
 #   模型      modelProvider / modelName             tool-subagent agentOptions{provider,model}
 #   人设      persona                               tool-subagent persona
@@ -198,15 +198,11 @@ params:
 #             （0 禁止委派 / provider-managed / 正整数）
 #   相位/注入 由 promptConfigs[].audience/promotion/modelScope 与
 #             moduleConfigs.*.includeSubagents 控制（主对话与子代理共用）
-# 本段由引擎合并入口拍平为扁平键（subagentModelProvider 等），
-# 运行时/UI/overrides 继续用扁平键，两套表示等价。
-subagent:
   modelProvider: ""
   modelName: ""
   persona: ""
-  toolFilter:
-    allow: []
-    deny: []
+  toolFilterAllow: []
+  toolFilterDeny: []
   maxDepth: ""
 # ── 提示词配置（audience 依据本项目 main 分支三合一规则查证）──
 # main 分支 preset/agent.cordis.yml + buildCordis 的独有子代理组合：

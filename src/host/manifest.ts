@@ -28,9 +28,6 @@ export interface PresetSpec {
   composition?: string
   /** 扁平参数:全部直读(true/false、数字、字符串),on/off 作为兼容写法。 */
   params?: Record<string, unknown>
-  /** 子代理参数（独立顶层段，与 params 平级）：嵌套块由 resolvePresetParams
-   *  拍平为扁平键（subagentModelProvider 等），运行时/UI/overrides 继续用扁平键。 */
-  subagent?: Record<string, unknown>
   /** 宿主层默认值(唯一入口):apply 时合并进 Config,settings 仍可覆盖。 */
   hostDefaults?: Record<string, unknown>
   /** 可选:模板自定义提示词配置覆盖(纯数据,不使用模板语法)。 */
@@ -183,31 +180,11 @@ function upperKey(key: string): string {
   return key.replace(/([a-z0-9])([A-Z])/g, '$1_$2').toUpperCase()
 }
 
-/**
- * 把子代理作用域块（preset.yml 顶层 subagent:）拍平为扁平键
- * （subagentModelProvider 等）。preset.yml 面向用户写嵌套（归类自文档化），
- * 运行时/UI/overrides/引擎渲染全部继续消费扁平键，两套表示在合并入口归一。
- */
-function flattenScopeParams(scope: string, block: Record<string, unknown>, out: Record<string, unknown>): void {
-  for (const [key, value] of Object.entries(block)) {
-    if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
-      // toolFilter: { allow, deny } 再拍平一级 → subagentToolFilterAllow / Deny。
-      flattenScopeParams(scope + key.charAt(0).toUpperCase() + key.slice(1), value as Record<string, unknown>, out)
-      continue
-    }
-    out[scope + key.charAt(0).toUpperCase() + key.slice(1)] = normalizeParam(value)
-  }
-}
-
 /** 预设 params(默认参数)与运行时 settings 合并;settings 值优先。 */
 export function resolvePresetParams(spec: PresetSpec, runtime: Record<string, unknown>): Record<string, unknown> {
   const params: Record<string, unknown> = {}
   for (const [key, value] of Object.entries(spec.params ?? {})) {
     params[key] = normalizeParam(value)
-  }
-  // 子代理参数独立顶层段（preset.yml 顶层 subagent:），拍平为 subagentXxx 扁平键。
-  if (spec.subagent !== null && typeof spec.subagent === 'object' && !Array.isArray(spec.subagent)) {
-    flattenScopeParams('subagent', spec.subagent as Record<string, unknown>, params)
   }
   for (const [key, value] of Object.entries(runtime)) {
     if (value !== undefined) params[key] = value
@@ -246,28 +223,27 @@ function parseListParam(value: unknown): string[] {
 
 /**
  * 引擎内部 token 渲染:把直读参数变成组合模块里的 __TOKEN__ 值。
- * anchored 的全部组合行为(usePtcMode/bootstrapMaxTokens/子代理完整自定义)
+ * anchored 的全部组合行为(usePtcMode/bootstrapMaxTokens/模型路由与委派完整自定义)
  * 在这里完成参数化,用户参数文件不需要任何模板语法。
- * 子代理参数在 preset.yml 支持嵌套 subagent: 块(resolvePresetParams 拍平),
- * 运行时/overrides 仍用扁平键——两套表示等价。
+ * 模型路由/委派参数统一扁平键（modelProvider/toolFilterAllow/maxDepth 等），
+ * 与官方 AgentOptions{provider,model} / toolFilter{allow,deny} / maxDepth 对齐。
  */
 export function renderEngineTokens(params: Record<string, unknown>): Record<string, string> {
   const fastModelPersona = asString(params.fastModelPersona)
-  const provider = asString(params.subagentModelProvider, '')
-  const model = asString(params.subagentModelName, '')
-  // 子代理完整自定义（官方 tool-subagent Config 参数化）：
-  //   subagentModelProvider/Model（preset.yml 嵌套 subagent.modelProvider/modelName）
-  //     → agentOptions{provider,model}（固定模型路由）；
-  //   subagentPersona → persona（per-child shadow，显式优先；固定路由时回退
+  const provider = asString(params.modelProvider, '')
+  const model = asString(params.modelName, '')
+  // 模型路由与委派完整自定义（官方 tool-subagent Config 参数化，主对话与子代理通用）：
+  //   modelProvider/modelName → agentOptions{provider,model}（固定模型路由）；
+  //   persona → persona（per-child shadow，显式优先；固定路由时回退
   //     fastModelPersona；两者都缺省 = 不渲染，子代理继承主会话 persona，官方行为）；
-  //   subagentToolFilterAllow/Deny → toolFilter{allow,deny}（子代理工具集白/黑名单）；
-  //   subagentMaxDepth → maxDepth（0 禁止委派 / provider-managed / 正整数）。
+  //   toolFilterAllow/Deny → toolFilter{allow,deny}（委派工具集白/黑名单）；
+  //   maxDepth → maxDepth（0 禁止委派 / provider-managed / 正整数）。
   // 任一字段非空即渲染对应行，全部缺省 = 官方默认（继承主会话）。
-  const subagentPersona = asString(params.subagentPersona)
+  const subagentPersona = asString(params.persona)
     || (provider.length > 0 && model.length > 0 ? fastModelPersona : '')
-  const toolFilterAllow = parseListParam(params.subagentToolFilterAllow)
-  const toolFilterDeny = parseListParam(params.subagentToolFilterDeny)
-  const rawMaxDepth = params.subagentMaxDepth
+  const toolFilterAllow = parseListParam(params.toolFilterAllow)
+  const toolFilterDeny = parseListParam(params.toolFilterDeny)
+  const rawMaxDepth = params.maxDepth
   const subagentMaxDepth = rawMaxDepth === 'provider-managed'
     ? 'provider-managed'
     : Number.isSafeInteger(rawMaxDepth) && (rawMaxDepth as number) >= 0

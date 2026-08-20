@@ -21,8 +21,8 @@ function makeTui() {
   const source = () => ({
     firstTurnText: '',
     deepseekAvailable: true,
-    subagentModelProvider: '',
-    subagentModelName: '',
+    modelProvider: '',
+    modelName: '',
     bootstrapMaxTokens: 0,
     activeSkillsDirs: ['D:/skills'],
     skillCatalog: [],
@@ -62,7 +62,7 @@ test('TUI：presetDir 提供时 status 显示生成目录实际配置（settings
     }
     const ctx = { inject(_deps, callback) { callback(sctx) } }
     const source = () => ({
-      firstTurnText: '', deepseekAvailable: true, subagentModelProvider: '', subagentModelName: '',
+      firstTurnText: '', deepseekAvailable: true, modelProvider: '', modelName: '',
       bootstrapMaxTokens: 0, activeSkillsDirs: [], skillCatalog: [], skillSwitches: {}, promptConfigs: [],
       writeAgents: true, writePreset: true, injectPrompt: true, injectAgentsPrompt: false,
       firstTurnAnchor: true, firstTurnCustom: false, guideCustom: false, usePtcMode: true,

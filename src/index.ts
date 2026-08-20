@@ -157,13 +157,13 @@ export function apply(ctx: Context, configIn: Config): void {
         guideText: runtime.guideText,
         guideCustom: runtime.guideCustom,
         injectPrompt: runtime.injectPrompt,
-        subagentModelProvider: runtime.subagentModelProvider,
-        subagentModelName: runtime.subagentModelName,
+        modelProvider: runtime.modelProvider,
+        modelName: runtime.modelName,
         fastModelPersona: runtime.fastModelPersona,
-        subagentPersona: runtime.subagentPersona,
-        subagentToolFilterAllow: runtime.subagentToolFilterAllow,
-        subagentToolFilterDeny: runtime.subagentToolFilterDeny,
-        subagentMaxDepth: runtime.subagentMaxDepth,
+        persona: runtime.persona,
+        toolFilterAllow: runtime.toolFilterAllow,
+        toolFilterDeny: runtime.toolFilterDeny,
+        maxDepth: runtime.maxDepth,
         allowKinds: runtime.allowKinds,
         firstTurnWord: runtime.firstTurnWord,
         bootstrapMaxTokens: runtime.bootstrapMaxTokens,
@@ -204,13 +204,13 @@ export function apply(ctx: Context, configIn: Config): void {
     if (typeof overrides.firstTurnText === 'string') runtime.firstTurnText = overrides.firstTurnText
     if (typeof overrides.guideCustom === 'boolean') runtime.guideCustom = overrides.guideCustom
     if (typeof overrides.guideText === 'string') runtime.guideText = overrides.guideText
-    if (typeof overrides.subagentModelProvider === 'string') runtime.subagentModelProvider = overrides.subagentModelProvider
-    if (typeof overrides.subagentModelName === 'string') runtime.subagentModelName = overrides.subagentModelName
+    if (typeof overrides.modelProvider === 'string') runtime.modelProvider = overrides.modelProvider
+    if (typeof overrides.modelName === 'string') runtime.modelName = overrides.modelName
     // fastModelPersona 引擎必需非空：历史 overrides 里的空串直接忽略（保留模板默认）。
     if (typeof overrides.fastModelPersona === 'string' && overrides.fastModelPersona.trim().length > 0) {
       runtime.fastModelPersona = overrides.fastModelPersona
     }
-    if (typeof overrides.subagentPersona === 'string') runtime.subagentPersona = overrides.subagentPersona
+    if (typeof overrides.persona === 'string') runtime.persona = overrides.persona
     if (typeof overrides.firstTurnWord === 'string') runtime.firstTurnWord = overrides.firstTurnWord
     if (typeof overrides.bootstrapMaxTokens === 'number') runtime.bootstrapMaxTokens = overrides.bootstrapMaxTokens
     // 列表/枚举类参数：类型守卫收窄（overrides YAML 可能是数组或字符串）。
@@ -219,19 +219,19 @@ export function apply(ctx: Context, configIn: Config): void {
       if (Array.isArray(value)) return value.filter((item): item is string => typeof item === 'string')
       return undefined
     }
-    const tfAllow = listOf(overrides.subagentToolFilterAllow)
-    if (tfAllow !== undefined) runtime.subagentToolFilterAllow = tfAllow
-    const tfDeny = listOf(overrides.subagentToolFilterDeny)
-    if (tfDeny !== undefined) runtime.subagentToolFilterDeny = tfDeny
+    const tfAllow = listOf(overrides.toolFilterAllow)
+    if (tfAllow !== undefined) runtime.toolFilterAllow = tfAllow
+    const tfDeny = listOf(overrides.toolFilterDeny)
+    if (tfDeny !== undefined) runtime.toolFilterDeny = tfDeny
     const kinds = listOf(overrides.allowKinds)
     // allowKinds 空值 = 跳过（保留官方不过滤）；空数组白名单会全拦注入，禁止写入。
     if (kinds !== undefined && (typeof kinds === 'string' ? kinds.trim().length > 0 : kinds.length > 0)) {
       runtime.allowKinds = kinds
     }
-    const depth = overrides.subagentMaxDepth
-    if (depth === 'provider-managed') runtime.subagentMaxDepth = 'provider-managed'
-    else if (typeof depth === 'number' && Number.isSafeInteger(depth) && depth >= 0) runtime.subagentMaxDepth = depth
-    else if (typeof depth === 'string' && depth.length > 0) runtime.subagentMaxDepth = depth
+    const depth = overrides.maxDepth
+    if (depth === 'provider-managed') runtime.maxDepth = 'provider-managed'
+    else if (typeof depth === 'number' && Number.isSafeInteger(depth) && depth >= 0) runtime.maxDepth = depth
+    else if (typeof depth === 'string' && depth.length > 0) runtime.maxDepth = depth
   }
   // 首次启动把包内 skills/ 增量复制到 $DSH_HOME/profiles/<profile>/skills，
   // 并优先使用 profile 副本；已有同名文件不覆盖，用户编辑会保留。
@@ -425,8 +425,8 @@ export function apply(ctx: Context, configIn: Config): void {
     firstTurnCustom: config.firstTurnCustom,
     guideText: config.guideText,
     guideCustom: config.guideCustom,
-    subagentModelProvider: config.subagentModelProvider,
-    subagentModelName: config.subagentModelName,
+    modelProvider: config.modelProvider,
+    modelName: config.modelName,
     bootstrapMaxTokens: config.bootstrapMaxTokens,
     usePtcMode: config.usePtcMode,
     skillRankBase: config.skillRankBase,
@@ -438,13 +438,13 @@ export function apply(ctx: Context, configIn: Config): void {
     promptConfigsDir: typeof config.promptConfigsDir === 'string' ? config.promptConfigsDir : '',
   }
 
-  // 宿主直派子代理（如 dsh-mnemon）也补固定模型路由：
+  // 模型路由（主对话直派子代理与委派子代理通用）：
   // 服务商与模型名同时非空时生效；调用方显式模型优先，persona 与 toolFilter 保持不变。
   installSubagentModelRoute(
     ctx,
-    () => runtime.subagentModelProvider.length > 0 && runtime.subagentModelName.length > 0,
-    () => runtime.subagentModelProvider,
-    () => runtime.subagentModelName,
+    () => runtime.modelProvider.length > 0 && runtime.modelName.length > 0,
+    () => runtime.modelProvider,
+    () => runtime.modelName,
   )
 
   let currentSource = (): PromptSettings => ({
@@ -458,8 +458,8 @@ export function apply(ctx: Context, configIn: Config): void {
     firstTurnCustom: runtime.firstTurnCustom,
     guideText: runtime.guideText,
     guideCustom: runtime.guideCustom,
-    subagentModelProvider: runtime.subagentModelProvider,
-    subagentModelName: runtime.subagentModelName,
+    modelProvider: runtime.modelProvider,
+    modelName: runtime.modelName,
     bootstrapMaxTokens: runtime.bootstrapMaxTokens,
     usePtcMode: runtime.usePtcMode,
     deepseekAvailable: getDeepseekAvailable(),
@@ -504,8 +504,8 @@ registerTuiCommand(ctx, NS, () => currentSource(), getDeepseekAvailable, getDeep
       firstTurnCustom: typeof next.firstTurnCustom === 'boolean' ? next.firstTurnCustom : config.firstTurnCustom,
       guideText: typeof next.guideText === 'string' ? next.guideText : config.guideText,
       guideCustom: typeof next.guideCustom === 'boolean' ? next.guideCustom : config.guideCustom,
-      subagentModelProvider: typeof next.subagentModelProvider === 'string' ? next.subagentModelProvider : config.subagentModelProvider,
-      subagentModelName: typeof next.subagentModelName === 'string' ? next.subagentModelName : config.subagentModelName,
+      modelProvider: typeof next.modelProvider === 'string' ? next.modelProvider : config.modelProvider,
+      modelName: typeof next.modelName === 'string' ? next.modelName : config.modelName,
       bootstrapMaxTokens: Number.isSafeInteger(next.bootstrapMaxTokens) && next.bootstrapMaxTokens >= 0 ? next.bootstrapMaxTokens : config.bootstrapMaxTokens,
       usePtcMode: typeof next.usePtcMode === 'boolean' ? next.usePtcMode : config.usePtcMode,
       skillRankBase: Number.isSafeInteger(next.skillRankBase) && next.skillRankBase >= 0 ? next.skillRankBase : config.skillRankBase,
@@ -537,8 +537,8 @@ registerTuiCommand(ctx, NS, () => currentSource(), getDeepseekAvailable, getDeep
       || runtime.firstTurnCustom !== nextRuntime.firstTurnCustom
       || runtime.guideText !== nextRuntime.guideText
       || runtime.guideCustom !== nextRuntime.guideCustom
-      || runtime.subagentModelProvider !== nextRuntime.subagentModelProvider
-      || runtime.subagentModelName !== nextRuntime.subagentModelName
+      || runtime.modelProvider !== nextRuntime.modelProvider
+      || runtime.modelName !== nextRuntime.modelName
       || runtime.bootstrapMaxTokens !== nextRuntime.bootstrapMaxTokens
       || runtime.usePtcMode !== nextRuntime.usePtcMode
       || runtime.residentAgentsPath !== nextRuntime.residentAgentsPath
@@ -571,8 +571,8 @@ registerTuiCommand(ctx, NS, () => currentSource(), getDeepseekAvailable, getDeep
     runtime.firstTurnCustom = nextRuntime.firstTurnCustom
     runtime.guideText = nextRuntime.guideText
     runtime.guideCustom = nextRuntime.guideCustom
-    runtime.subagentModelProvider = nextRuntime.subagentModelProvider
-    runtime.subagentModelName = nextRuntime.subagentModelName
+    runtime.modelProvider = nextRuntime.modelProvider
+    runtime.modelName = nextRuntime.modelName
     runtime.bootstrapMaxTokens = nextRuntime.bootstrapMaxTokens
     runtime.usePtcMode = nextRuntime.usePtcMode
     runtime.skillRankBase = nextRuntime.skillRankBase

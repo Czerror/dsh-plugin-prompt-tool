@@ -36,18 +36,18 @@ export function buildCordis(prompt: string, options: BuildCordisOptions = {}): s
     bootstrapMaxTokens: Number.isSafeInteger(options.bootstrapMaxTokens) && (options.bootstrapMaxTokens ?? 0) > 0
       ? options.bootstrapMaxTokens
       : 0,
-    subagentModelProvider: typeof options.subagentModelProvider === 'string' && options.subagentModelProvider.length > 0
-      ? options.subagentModelProvider
+    modelProvider: typeof options.modelProvider === 'string' && options.modelProvider.length > 0
+      ? options.modelProvider
       : '',
-    subagentModelName: typeof options.subagentModelName === 'string' && options.subagentModelName.length > 0
-      ? options.subagentModelName
+    modelName: typeof options.modelName === 'string' && options.modelName.length > 0
+      ? options.modelName
       : '',
-    subagentPersona: typeof options.subagentPersona === 'string' && options.subagentPersona.length > 0
-      ? options.subagentPersona
+    persona: typeof options.persona === 'string' && options.persona.length > 0
+      ? options.persona
       : '',
-    subagentToolFilterAllow: options.subagentToolFilterAllow,
-    subagentToolFilterDeny: options.subagentToolFilterDeny,
-    subagentMaxDepth: options.subagentMaxDepth,
+    toolFilterAllow: options.toolFilterAllow,
+    toolFilterDeny: options.toolFilterDeny,
+    maxDepth: options.maxDepth,
     fastModelPersona: typeof options.fastModelPersona === 'string' && options.fastModelPersona.trim().length > 0
       ? options.fastModelPersona
       : undefined,

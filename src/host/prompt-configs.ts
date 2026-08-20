@@ -65,18 +65,18 @@ export interface BuildCordisOptions {
   guideCustom?: boolean
   /** 锚定确认后注入 preset.md；关闭时仍保留工具引导，但不生成 prompt-injector 提示词配置内容。 */
   injectPrompt?: boolean
-  /** 子代理固定模型路由 provider；与模型名同时非空时给 subagent/subagent_fork 行加 agentOptions。 */
-  subagentModelProvider?: string
-  /** 子代理固定模型名；与 provider 同时非空时生效。 */
-  subagentModelName?: string
-  /** 子代理独立 persona（per-child shadow；缺省回退 fastModelPersona，两者缺省=继承主会话）。 */
-  subagentPersona?: string
-  /** 子代理工具集白名单（toolFilter.allow；支持数组或逗号/空格分隔字符串）。 */
-  subagentToolFilterAllow?: string[] | string
-  /** 子代理工具集黑名单（toolFilter.deny）。 */
-  subagentToolFilterDeny?: string[] | string
-  /** 子代理递归深度上限（0 禁止委派 / provider-managed / 正整数）。 */
-  subagentMaxDepth?: number | 'provider-managed'
+  /** 模型路由 provider；与模型名同时非空时给 subagent/subagent_fork 行加 agentOptions（主对话直派子代理与委派子代理通用）。 */
+  modelProvider?: string
+  /** 模型名；与 provider 同时非空时生效。 */
+  modelName?: string
+  /** 固定模型路由人设（per-child shadow；缺省回退 fastModelPersona，两者缺省=继承主会话）。 */
+  persona?: string
+  /** 委派工具集白名单（toolFilter.allow；支持数组或逗号/空格分隔字符串）。 */
+  toolFilterAllow?: string[] | string
+  /** 委派工具集黑名单（toolFilter.deny）。 */
+  toolFilterDeny?: string[] | string
+  /** 委派递归深度上限（0 禁止委派 / provider-managed / 正整数）。 */
+  maxDepth?: number | 'provider-managed'
   /** 主对话快速模型路由人设（覆盖 preset.yml fastModelPersona 默认）。 */
   fastModelPersona?: string
   /** 注入 kind 白名单（context-gate allowKinds；数组或逗号分隔字符串）。 */
