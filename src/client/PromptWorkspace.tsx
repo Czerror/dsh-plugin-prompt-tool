@@ -82,8 +82,8 @@ function PageHeader(props: { title: string; description: string; meta?: string }
 }
 
 /** Anchored Standard 预设模块行：按实际生效配置动态生成（模板声明什么显示什么）。 */
-function BuiltinConfigRows(props: { fields: Fields; configs: PromptConfigDraft[]; disabled: boolean; onChange: (key: SwitchKey, value: boolean) => void }): ReactNode {
-  const { fields, configs } = props
+function BuiltinConfigRows(props: { fields: Fields; configs: PromptConfigDraft[]; disabled: boolean; onChange: (key: SwitchKey, value: boolean) => void; onEdit: (id: string) => void }): ReactNode {
+  const { fields, configs, onEdit } = props
   /** 预设声明的消息批模块：id → 开关键映射；模块不存在（模板未声明）时行不渲染。 */
   const rows: Array<{ id: string; label: string; hint: string; checked: boolean; onChange: (value: boolean) => void }> = [
     {
@@ -129,7 +129,8 @@ function BuiltinConfigRows(props: { fields: Fields; configs: PromptConfigDraft[]
             : row.label
           return [
             <ToggleRow key={row.id} id={`pt-builtin-${row.id}`} label={label} hint={row.hint}
-              checked={row.checked} disabled={disabled} onChange={row.onChange} />,
+              checked={row.checked} disabled={disabled} onChange={row.onChange}
+              extra={<button type="button" className={ui.pillButton} onClick={(event) => { event.preventDefault(); event.stopPropagation(); onEdit(config.id) }}>编辑</button>} />,
           ]
         })}
       </div>
@@ -186,7 +187,7 @@ function EntrySwitches(props: { store: PromptToolStore }): ReactNode {
           checked={fields.guideCustom} disabled={!fields.writePreset || !fields.firstTurnAnchor} onChange={(value) => setSwitch('guideCustom', value)} />
       </div>
 
-      <div className={clsx(ui.rowGroup, (!fields.firstTurnAnchor || !fields.firstTurnCustom) && ui.rowDisabled)}>
+      <div className={clsx(ui.rowGroup, (!fields.writePreset || !fields.firstTurnAnchor || !fields.firstTurnCustom) && ui.rowDisabled)}>
         <label className={ui.textBlock}>
           <span className={ui.settingCopy}><strong>自定义引导文本（首句）</strong><small>仅在「使用自定义引导（首句）」开启时生效。</small></span>
           <textarea
@@ -199,7 +200,7 @@ function EntrySwitches(props: { store: PromptToolStore }): ReactNode {
           />
         </label>
       </div>
-      <div className={clsx(ui.rowGroup, (!fields.firstTurnAnchor || !fields.guideCustom) && ui.rowDisabled)}>
+      <div className={clsx(ui.rowGroup, (!fields.writePreset || !fields.firstTurnAnchor || !fields.guideCustom) && ui.rowDisabled)}>
         <label className={ui.textBlock}>
           <span className={ui.settingCopy}><strong>自定义引导文本（每轮）</strong><small>仅在「使用自定义引导（每轮）」开启时生效；留空则不注入。</small></span>
           <textarea
@@ -385,14 +386,16 @@ function FileEditor(props: { store: PromptToolStore; scope: 'preset' | 'agents' 
   )
 }
 
-function LayerConfigList(props: { store: PromptToolStore; layer: string }): ReactNode {
-  const { store, layer } = props
+function LayerConfigList(props: { store: PromptToolStore; layer: string; focusId?: string; focusTick?: number }): ReactNode {
+  const { store, layer, focusId, focusTick } = props
   return (
     <PromptConfigList
       meta={store.meta}
       configs={store.fields.promptConfigs}
       savedConfigs={store.savedConfigs}
       layer={layer}
+      focusId={focusId}
+      focusTick={focusTick}
       onPatchConfigs={(configs) => store.patch({ promptConfigs: configs })}
       onSaveConfigs={(configs) => store.persistConfigs(configs)}
       onNotice={store.showNotice}
@@ -629,6 +632,10 @@ export function PromptWorkspace(props: PromptWorkspaceProps): ReactNode {
   const layers = store.meta.layers.length > 0 ? store.meta.layers : FALLBACK_LAYERS
   const [page, setPage] = useState<WorkspacePage>('pre-step')
   const [entryPage, setEntryPage] = useState<EntryPage>('switches')
+  const [configFocus, setConfigFocus] = useState<{ id: string; tick: number } | undefined>(undefined)
+  const requestConfigEdit = (id: string): void => {
+    setConfigFocus((current) => ({ id, tick: (current?.tick ?? 0) + 1 }))
+  }
   const open = useSyncExternalStore(
     props.controller.subscribe,
     props.controller.getSnapshot,
@@ -713,8 +720,8 @@ export function PromptWorkspace(props: PromptWorkspaceProps): ReactNode {
                 <>
                   {isAnchoredTemplate && <BuiltinConfigRows fields={store.fields} configs={store.fields.promptConfigs} disabled={store.loading} onChange={(key, value) => {
                     if (store.fields[key] !== value) store.toggle(key)
-                  }} />}
-                  <LayerConfigList store={store} layer="pre-step" />
+                  }} onEdit={requestConfigEdit} />}
+                  <LayerConfigList store={store} layer="pre-step" focusId={configFocus?.id} focusTick={configFocus?.tick} />
                 </>
               )}
               {page === 'features' && <FeatureSettings store={store} />}

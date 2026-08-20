@@ -192,7 +192,7 @@ export function PromptConfigCard(props: {
   if ((config.order ?? 0) !== 0) chips.push(`order=${config.order}`)
   if (config.group) chips.push(config.exclusive === true ? `exclusive:${config.group}` : `group:${config.group}`)
   return (
-    <article className={clsx(styles.configCard, props.expanded && styles.configCardOpen)}>
+    <article id={`pt-config-card-${config.id}`} className={clsx(styles.configCard, props.expanded && styles.configCardOpen)}>
       <header className={styles.configHeader}>
         <button type="button" className={styles.configToggle} aria-expanded={props.expanded} onClick={props.onToggleExpanded}>
           <span className={styles.configTitle}>
