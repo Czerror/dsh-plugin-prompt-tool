@@ -266,6 +266,10 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
     if (res.ok && next.modelProvider === '' && (res.providers?.length ?? 0) > 0) {
       next.modelProvider = res.providers![0]!
     }
+    // 子代理服务商同样预选：模型名为空则固定路由不激活（继承主会话），仅让模型名下拉有候选。
+    if (res.ok && next.subagentModelProvider === '' && (res.providers?.length ?? 0) > 0) {
+      next.subagentModelProvider = res.providers![0]!
+    }
     fieldsRef.current = next
     setFields(next)
     setBootstrapTokensDraft(next.bootstrapMaxTokens > 0 ? String(next.bootstrapMaxTokens) : DEFAULT_BOOTSTRAP_DISPLAY)
