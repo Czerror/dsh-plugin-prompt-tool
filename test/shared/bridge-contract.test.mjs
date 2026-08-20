@@ -64,7 +64,7 @@ test('契约：client 前缀与 server 注册前缀同源', () => {
   assert.ok(SETTINGS_BRIDGE_PREFIX.startsWith('/api/'))
 })
 
-test('契约：8 个端点路径全部注册且无多余', () => {
+test('契约：12 个端点路径全部注册且无多余', () => {
   const handlers = register()
   const expected = Object.values(BRIDGE_ENDPOINTS)
   assert.equal(expected.length, 12, 'BRIDGE_ENDPOINTS 应恰好 12 个端点')

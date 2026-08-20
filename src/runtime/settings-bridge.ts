@@ -2,7 +2,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { dirname, join } from 'node:path'
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml'
 import type { SettingsDescriptor, SettingsNamespace, SettingsPathOp } from '@deepseek-ai/dsh-settings'
 import type { DeepseekDetection } from './deepseek.ts'
@@ -11,11 +11,19 @@ import { loadPromptConfigFiles } from '../host/prompt-configs.ts'
 import { validatePromptConfigs } from './configs-validate.ts'
 import { loadPromptTemplates } from '../host/templates.ts'
 import { fixSkillEntry } from './skill-fix.ts'
-import { listPresets } from '../host/manifest.ts'
-import { parseImportedPresetId, userPresetsDir } from '../host/manifest.ts'
+import {
+  assertCompositionArray,
+  listPresets,
+  parseImportedPresetId,
+  renderComposition,
+  userPresetsDir,
+} from '../host/manifest.ts'
+import type { PresetSpec } from '../host/manifest.ts'
 import { BRIDGE_ENDPOINTS, SETTINGS_BRIDGE_PREFIX } from '../shared/bridge-contract.ts'
 
 const MAX_SETTINGS_BRIDGE_BODY = 64 * 1024
+/** 预设包导入独立上限（含 .mjs 模块的官方预设可远超 64KB 设置桥上限；8MB 足够）。 */
+const PRESET_PACKAGE_MAX_BYTES = 8 * 1024 * 1024
 
 export interface SkillsBridgeState {
   activeSkillsDir: string
@@ -63,7 +71,11 @@ function writeBridgeJson(res: ServerResponse, status: number, body: unknown): vo
 const asRecord = (value: unknown): Record<string, unknown> =>
   value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
 
-async function readBridgeBody(req: IncomingMessage): Promise<unknown> {
+/** 读取桥请求体；超限时返回 tooLarge 标记（由调用方决定状态码与错误信息）。 */
+async function readBridgeBody(
+  req: IncomingMessage,
+  maxBytes = MAX_SETTINGS_BRIDGE_BODY,
+): Promise<{ body: unknown; tooLarge: boolean }> {
   const chunks: Buffer[] = []
   let size = 0
   let overflow = false
@@ -71,7 +83,7 @@ async function readBridgeBody(req: IncomingMessage): Promise<unknown> {
     if (overflow) continue
     const buffer = chunk as Buffer
     size += buffer.length
-    if (size > MAX_SETTINGS_BRIDGE_BODY) {
+    if (size > maxBytes) {
       // 超限：继续消费完请求流（保持连接可用），丢弃已收内容。
       overflow = true
       chunks.length = 0
@@ -79,11 +91,27 @@ async function readBridgeBody(req: IncomingMessage): Promise<unknown> {
     }
     chunks.push(buffer)
   }
-  if (overflow) return undefined
+  if (overflow) return { body: undefined, tooLarge: true }
   try {
-    return JSON.parse(Buffer.concat(chunks).toString('utf8')) as unknown
+    return { body: JSON.parse(Buffer.concat(chunks).toString('utf8')) as unknown, tooLarge: false }
   } catch {
-    return undefined
+    return { body: undefined, tooLarge: false }
+  }
+}
+
+/** 预设导入失败回滚：删除新目录并恢复同名预设备份（如有）。 */
+function restorePresetImport(targetDir: string, backupDir: string | undefined): void {
+  try {
+    rmSync(targetDir, { recursive: true, force: true })
+  } catch {
+    // 删除失败不阻断恢复
+  }
+  if (backupDir !== undefined) {
+    try {
+      renameSync(backupDir, targetDir)
+    } catch {
+      // 恢复失败保留备份目录供人工处理
+    }
   }
 }
 
@@ -168,7 +196,7 @@ export function registerSettingsBridge(
           handler: async (req, res) => {
             if (!guard(req, res)) return
             ensureRegistered(sctx)
-            const body = await readBridgeBody(req)
+            const { body } = await readBridgeBody(req)
             if (body === null || body === undefined || typeof body !== 'object') {
               writeBridgeJson(res, 400, { ok: false, code: 'settings-rejected', message: 'unreadable JSON body' })
               return
@@ -200,7 +228,7 @@ export function registerSettingsBridge(
           handler: async (req, res) => {
             if (!guard(req, res)) return
             ensureRegistered(sctx)
-            const body = await readBridgeBody(req)
+            const { body } = await readBridgeBody(req)
             if (body === null || body === undefined || typeof body !== 'object') {
               writeBridgeJson(res, 400, { ok: false, code: 'settings-rejected', message: 'unreadable JSON body' })
               return
@@ -234,7 +262,7 @@ export function registerSettingsBridge(
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.configsValidate,
           handler: async (req, res) => {
             if (!guard(req, res)) return
-            const body = await readBridgeBody(req)
+            const { body } = await readBridgeBody(req)
             if (body === null || body === undefined || typeof body !== 'object') {
               writeBridgeJson(res, 400, { ok: false, code: 'settings-rejected', message: 'unreadable JSON body' })
               return
@@ -250,7 +278,7 @@ export function registerSettingsBridge(
           handler: async (req, res) => {
             if (!guard(req, res)) return
             ensureRegistered(sctx)
-            const body = await readBridgeBody(req)
+            const { body } = await readBridgeBody(req)
             if (body === null || body === undefined || typeof body !== 'object') {
               writeBridgeJson(res, 400, { ok: false, code: 'settings-rejected', message: 'unreadable JSON body' })
               return
@@ -337,7 +365,7 @@ export function registerSettingsBridge(
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.presetContent,
           handler: async (req, res) => {
             if (!guard(req, res)) return
-            const body = await readBridgeBody(req)
+            const { body } = await readBridgeBody(req)
             const record = (body ?? {}) as Record<string, unknown>
             const scope = record.scope === 'agents' ? 'agents' : 'preset'
             try {
@@ -357,7 +385,7 @@ export function registerSettingsBridge(
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.importPreset,
           handler: async (req, res) => {
             if (!guard(req, res)) return
-            const body = await readBridgeBody(req)
+            const { body } = await readBridgeBody(req)
             if (body === null || body === undefined || typeof body !== 'object') {
               writeBridgeJson(res, 400, { ok: false, code: 'settings-rejected', message: 'unreadable JSON body' })
               return
@@ -392,7 +420,7 @@ export function registerSettingsBridge(
               return
             }
             const file = join(dir, 'prompt-tool.overrides.yml')
-            const body = await readBridgeBody(req)
+            const { body } = await readBridgeBody(req)
             const record = (body ?? {}) as Record<string, unknown>
             // 无 overrides 载荷 = 读取；带载荷 = 写入。
             if (record.overrides === undefined) {
@@ -424,7 +452,15 @@ export function registerSettingsBridge(
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.importPresetPackage,
           handler: async (req, res) => {
             if (!guard(req, res)) return
-            const body = await readBridgeBody(req)
+            const { body, tooLarge } = await readBridgeBody(req, PRESET_PACKAGE_MAX_BYTES)
+            if (tooLarge) {
+              writeBridgeJson(res, 413, {
+                ok: false,
+                code: 'preset-package-too-large',
+                message: `预设包超过 ${Math.round(PRESET_PACKAGE_MAX_BYTES / 1024 / 1024)}MB 上限`,
+              })
+              return
+            }
             if (body === null || body === undefined || typeof body !== 'object') {
               writeBridgeJson(res, 400, { ok: false, code: 'settings-rejected', message: 'unreadable JSON body' })
               return
@@ -450,14 +486,36 @@ export function registerSettingsBridge(
               writeBridgeJson(res, 400, { ok: false, code: 'preset-package-invalid', message: 'preset.yml 内容为空' })
               return
             }
-            // 预设 id 取自 preset.yml；缺失时用包目录名（preset.yml 所在目录）。
-            const topDir = presetYaml.path.split('/')[0] ?? ''
-            const id = parseImportedPresetId(presetYaml.content, topDir.replace(/\.ya?ml$/i, '') || 'imported-preset')
+            // 导入前校验：preset.yml 必须可解析为 YAML 映射（fail loud，避免坏包导入后静默消失）。
+            let parsedSpec: Record<string, unknown>
+            try {
+              const parsed = parseYaml(presetYaml.content, { logLevel: 'silent' })
+              if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+                throw new Error('preset.yml 不是 YAML 映射')
+              }
+              parsedSpec = parsed as Record<string, unknown>
+            } catch (error) {
+              const message = error instanceof Error ? error.message : String(error)
+              writeBridgeJson(res, 400, { ok: false, code: 'preset-package-invalid', message: `preset.yml 解析失败：${message}` })
+              return
+            }
+            // 预设 id 取自 preset.yml；缺失时用 preset.yml 所在目录名（单文件导入无目录段 → imported-preset）。
+            const slashIdx = presetYaml.path.lastIndexOf('/')
+            const topDir = slashIdx >= 0 ? presetYaml.path.slice(0, slashIdx) : ''
+            const fallback = /^[a-zA-Z0-9][a-zA-Z0-9-]*$/.test(topDir) ? topDir : 'imported-preset'
+            const id = parseImportedPresetId(presetYaml.content, fallback)
             const targetDir = join(userPresetsDir(), id)
+            // 同名预设已存在 → 先备份（导入失败时恢复，成功后保留备份供回退）。
+            let backupDir: string | undefined
+            if (existsSync(targetDir)) {
+              backupDir = join(userPresetsDir(), `.${id}.bak-${Date.now().toString(36)}`)
+              renameSync(targetDir, backupDir)
+            }
             try {
               mkdirSync(targetDir, { recursive: true })
               for (const entry of normalized) {
-                // 去掉顶层目录段（文件夹导入时 webkitRelativePath 的顶层）；preset.yml 在顶层时无目录段。
+                // 唯一剥离点：去掉顶层目录段（文件夹导入时 webkitRelativePath 的顶层）；
+                // preset.yml 在顶层或单文件导入时无目录段。客户端不再剥离，防止双重剥层。
                 const slash = entry.path.indexOf('/')
                 const rel = slash > 0 ? entry.path.slice(slash + 1) : entry.path
                 if (rel.length === 0) continue
@@ -466,11 +524,27 @@ export function registerSettingsBridge(
                 mkdirSync(dirname(dest), { recursive: true })
                 writeFileSync(dest, entry.content, 'utf8')
               }
-              writeBridgeJson(res, 200, { ok: true, value: { id } })
             } catch (error) {
               const message = error instanceof Error ? error.message : String(error)
-              writeBridgeJson(res, 500, { ok: false, code: 'preset-import-failed', message })
+              restorePresetImport(targetDir, backupDir)
+              writeBridgeJson(res, 500, { ok: false, code: 'preset-import-failed', message: `预设写入失败：${message}` })
+              return
             }
+            // 组合路径可解析校验（modules 存在性 / composition / agent.cordis.yml 回退）。
+            try {
+              const spec = { ...parsedSpec, id } as PresetSpec
+              const composition = renderComposition(spec, {}, targetDir)
+              assertCompositionArray(composition, spec)
+            } catch (error) {
+              const message = error instanceof Error ? error.message : String(error)
+              restorePresetImport(targetDir, backupDir)
+              writeBridgeJson(res, 400, { ok: false, code: 'preset-package-invalid', message: `预设组合校验失败：${message}` })
+              return
+            }
+            writeBridgeJson(res, 200, {
+              ok: true,
+              value: { id, ...(backupDir !== undefined ? { backupPath: backupDir } : {}) },
+            })
           },
         }),
 

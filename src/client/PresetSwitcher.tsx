@@ -35,6 +35,16 @@ export function PresetSwitcher(props: { store: PromptToolStore }): ReactNode {
   /** 上传预设包：path 为相对路径（preset.yml 或文件夹内文件），服务端按 id 归入用户预设目录。 */
   const uploadPreset = async (entries: Array<{ path: string; content: string }>): Promise<void> => {
     if (entries.length === 0) return
+    // 预判目标 id（与服务端一致：preset.yml id 优先，否则顶层目录名），同名时先确认覆盖。
+    const presetYaml = entries.find((entry) => entry.path.endsWith('preset.yml'))
+    const idMatch = presetYaml?.content.match(/^id:\s*([a-zA-Z0-9][a-zA-Z0-9-]*)/m)
+    const topDir = presetYaml !== undefined && presetYaml.path.includes('/')
+      ? presetYaml.path.slice(0, presetYaml.path.indexOf('/'))
+      : ''
+    const predictedId = idMatch?.[1] ?? (/^[a-zA-Z0-9][a-zA-Z0-9-]*$/.test(topDir) ? topDir : undefined)
+    if (predictedId !== undefined && (store.meta.presets ?? []).some((preset) => preset.id === predictedId)) {
+      if (!window.confirm(`预设「${predictedId}」已存在，导入将备份旧版后覆盖。继续？`)) return
+    }
     setImporting(true)
     try {
       const res = await bridgePost<{ id: string }>('/import-preset-package', { files: entries })
@@ -57,17 +67,13 @@ export function PresetSwitcher(props: { store: PromptToolStore }): ReactNode {
     })()
   }
 
-  /** 导入整个预设文件夹（webkitdirectory；保留相对路径）。 */
+  /** 导入整个预设文件夹（webkitdirectory；传原始相对路径，顶层目录段由服务端剥离）。 */
   const pickPresetDir = (files: FileList | null): void => {
     if (files === null || files.length === 0) return
     void (async () => {
       const entries: Array<{ path: string; content: string }> = []
       for (const file of Array.from(files)) {
-        const rel = file.webkitRelativePath || file.name
-        // 去掉顶层文件夹名，保留预设内部相对路径。
-        const slash = rel.indexOf('/')
-        const path = slash >= 0 ? rel.slice(slash + 1) : rel
-        entries.push({ path, content: await file.text() })
+        entries.push({ path: file.webkitRelativePath || file.name, content: await file.text() })
       }
       await uploadPreset(entries)
     })()
