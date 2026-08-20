@@ -172,7 +172,6 @@ export function apply(ctx: Context, configIn: Config): void {
         presetDir: runtime.presetDir,
         presetOrder: runtime.presetOrder,
         promptConfigs: runtime.promptConfigs,
-        promptConfigsDir: runtime.promptConfigsDir,
         presetTemplate: runtime.presetTemplate,
         warn: (message) => warn(ctx, message),
       })
@@ -435,7 +434,6 @@ export function apply(ctx: Context, configIn: Config): void {
     presetOrder: config.presetOrder,
     fallbackText: config.fallbackText,
     promptConfigs: Array.isArray(config.promptConfigs) ? config.promptConfigs : [],
-    promptConfigsDir: typeof config.promptConfigsDir === 'string' ? config.promptConfigsDir : '',
   }
 
   // 模型路由（主对话直派子代理与委派子代理通用）：
@@ -479,7 +477,6 @@ export function apply(ctx: Context, configIn: Config): void {
     writePreset: runtime.writePreset,
     presetTemplate: runtime.presetTemplate,
     promptConfigs: runtime.promptConfigs,
-    promptConfigsDir: runtime.promptConfigsDir,
   })
 
   // dsh-tui 命令入口：/prompt-tool 查看或切换开关。
@@ -514,7 +511,6 @@ registerTuiCommand(ctx, NS, () => currentSource(), getDeepseekAvailable, getDeep
       presetOrder: Number.isSafeInteger(next.presetOrder) && next.presetOrder >= 0 ? next.presetOrder : config.presetOrder,
       fallbackText: typeof next.fallbackText === 'string' ? next.fallbackText : config.fallbackText,
       promptConfigs: Array.isArray(next.promptConfigs) ? next.promptConfigs : config.promptConfigs,
-      promptConfigsDir: typeof next.promptConfigsDir === 'string' ? next.promptConfigsDir : config.promptConfigsDir,
     }
     const promptChanged = next.promptText !== current
     const agentsChanged = next.agentsText !== currentAgents
@@ -546,7 +542,6 @@ registerTuiCommand(ctx, NS, () => currentSource(), getDeepseekAvailable, getDeep
       || runtime.presetOrder !== nextRuntime.presetOrder
       || fallbackTextChanged
       || JSON.stringify(runtime.promptConfigs) !== JSON.stringify(nextRuntime.promptConfigs)
-      || runtime.promptConfigsDir !== nextRuntime.promptConfigsDir
     // 首次必须写入：settings 与文件/config 一致时也不能跳过 preset/AGENTS 生成。
     if (!needsInitialApply && !promptChanged && !agentsChanged && !settingsChanged) return
     needsInitialApply = false
@@ -581,7 +576,6 @@ registerTuiCommand(ctx, NS, () => currentSource(), getDeepseekAvailable, getDeep
     runtime.presetOrder = nextRuntime.presetOrder
     runtime.fallbackText = nextRuntime.fallbackText
     runtime.promptConfigs = nextRuntime.promptConfigs
-    runtime.promptConfigsDir = nextRuntime.promptConfigsDir
     skillSwitches = runtime.skillSwitches
     skillOrder = runtime.skillOrder
     skillRankBase = runtime.skillRankBase

@@ -51,7 +51,7 @@ export function PromptConfigsEditor(props: PromptConfigsEditorProps): ReactNode 
         <TemplatePicker templates={templatePicker.templates} onPick={templatePicker.pickTemplate} onClose={templatePicker.closePicker} />
       )}
 
-      <p className={styles.settingsNote}>提示词配置写入 <code>settings.promptConfigs</code>；目录合并优先级：默认四条 &lt; promptConfigsDir（预设和配置页设置）&lt; settings.promptConfigs。</p>
+      <p className={styles.settingsNote}>提示词配置写入 <code>settings.promptConfigs</code>；外部提示词配置可经「预设和配置 → 导入预设」引入。</p>
     </section>
   )
 }

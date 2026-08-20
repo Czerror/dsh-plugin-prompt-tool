@@ -20,6 +20,7 @@ import {
   userPresetsDir,
 } from '../host/manifest.ts'
 import type { PresetSpec } from '../host/manifest.ts'
+import { convertStToPreset } from '../host/sillytavern.ts'
 import { BRIDGE_ENDPOINTS, SETTINGS_BRIDGE_PREFIX } from '../shared/bridge-contract.ts'
 
 const MAX_SETTINGS_BRIDGE_BODY = 64 * 1024
@@ -432,7 +433,7 @@ export function registerSettingsBridge(
             }
             const record = body as Record<string, unknown>
             const files = Array.isArray(record.files) ? record.files : []
-            const normalized = files.flatMap((entry) => {
+            let normalized = files.flatMap((entry) => {
               if (entry === null || typeof entry !== 'object') return []
               const f = entry as { path?: unknown; name?: unknown; content?: unknown }
               const path = typeof f.path === 'string' && f.path.length > 0 ? f.path : (typeof f.name === 'string' ? f.name : '')
@@ -454,8 +455,24 @@ export function registerSettingsBridge(
             }
             let presetYaml = normalized.find((entry) => topRel(entry.path) === 'preset.yml')
             if (presetYaml === undefined) presetYaml = normalized.find(isDefinition)
+            // SillyTavern JSON 预设：无定义文件时若含单个 .json → 调用转换引擎生成定义。
             if (presetYaml === undefined) {
-              writeBridgeJson(res, 400, { ok: false, code: 'preset-package-invalid', message: '导入包缺少预设定义文件（preset.yml 或任意 *.yml/*.yaml，排除 agent.cordis.yml）' })
+              const stJson = normalized.find((entry) => /\.json$/i.test(topRel(entry.path)))
+              if (stJson !== undefined) {
+                try {
+                  const baseName = topRel(stJson.path).replace(/\.json$/i, '') || 'sillytavern'
+                  const converted = convertStToPreset(JSON.parse(stJson.content), baseName)
+                  presetYaml = { path: 'preset.yml', content: stringifyYaml(converted, { lineWidth: 0 }) }
+                  normalized = [...normalized, presetYaml]
+                } catch (error) {
+                  const message = error instanceof Error ? error.message : String(error)
+                  writeBridgeJson(res, 400, { ok: false, code: 'preset-package-invalid', message: `SillyTavern JSON 转换失败：${message}` })
+                  return
+                }
+              }
+            }
+            if (presetYaml === undefined) {
+              writeBridgeJson(res, 400, { ok: false, code: 'preset-package-invalid', message: '导入包缺少预设定义文件（preset.yml / 任意 *.yml/*.yaml / SillyTavern *.json）' })
               return
             }
             if (presetYaml.content.trim().length === 0) {

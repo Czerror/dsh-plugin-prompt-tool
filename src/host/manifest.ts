@@ -18,6 +18,8 @@ import { DEFAULT_USER_PRESETS_DIR } from './paths.ts'
 export interface PresetSpec {
   id: string
   name: string
+  /** 预设说明（官方用户预设格式元数据；列表展示用，可选）。 */
+  description?: string
   version: string
   engineCompat: string
   meta?: Record<string, unknown>

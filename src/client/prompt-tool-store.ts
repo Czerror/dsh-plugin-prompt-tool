@@ -140,7 +140,6 @@ export interface PromptToolStore {
   skillsDirDraft: string
   savedSwitches: SwitchSnapshot
   savedConfigs: PromptConfigDraft[]
-  savedConfigsDir: string
   savingSkillsDir: boolean
   fixingSkill: string | undefined
   notice: string
@@ -151,7 +150,6 @@ export interface PromptToolStore {
   persistSwitches: () => void
   persistParamOverrides: () => Promise<void>
   persistConfigs: (configs: PromptConfigDraft[]) => void
-  persistConfigsDir: (dir: string) => void
   toggle: (key: SwitchKey) => void
   toggleBootstrapMaxTokens: () => void
   setPresetTemplate: (id: string) => void
@@ -170,7 +168,6 @@ export interface PromptToolStore {
   importPreset: (scope: 'preset' | 'agents', content: string, reload?: boolean) => Promise<void>
   dirtySwitches: boolean
   dirtyConfigs: boolean
-  dirtyConfigsDir: boolean
   dirty: boolean
 }
 
@@ -234,7 +231,6 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
   const [skillsDirDraft, setSkillsDirDraft] = useState('')
   const [savedSwitches, setSavedSwitches] = useState<SwitchSnapshot>(EMPTY_SWITCHES)
   const [savedConfigs, setSavedConfigs] = useState<PromptConfigDraft[]>([])
-  const [savedConfigsDir, setSavedConfigsDir] = useState('')
   const [loading, setLoading] = useState(false)
   const [savingSkillsDir, setSavingSkillsDir] = useState(false)
   const [fixingSkill, setFixingSkill] = useState<string | undefined>(undefined)
@@ -264,7 +260,6 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
     setSkillsDirDraft('')
     setSavedSwitches(snapshotSwitches(next))
     setSavedConfigs(next.promptConfigs)
-    setSavedConfigsDir(next.promptConfigsDir)
     if (res.ok) revisionRef.current = res.value.revision
     return next
   }, [])
@@ -450,12 +445,6 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
     () => setSavedConfigs(configs),
   ), [enqueueSave])
 
-  const persistConfigsDir = useCallback((dir: string) => enqueueSave(
-    [{ op: 'set', path: ['promptConfigsDir'], value: dir }],
-    undefined,
-    () => setSavedConfigsDir(dir),
-  ), [enqueueSave])
-
   const toggle = useCallback((key: SwitchKey) => {
     patch({ [key]: !fieldsRef.current[key] })
     if (PARAM_SWITCH_KEYS.has(key)) void persistParamOverrides()
@@ -590,8 +579,7 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
   const currentSwitches = snapshotSwitches(fields)
   const dirtySwitches = !switchesEqual(currentSwitches, savedSwitches)
   const dirtyConfigs = JSON.stringify(fields.promptConfigs) !== JSON.stringify(savedConfigs)
-  const dirtyConfigsDir = fields.promptConfigsDir !== savedConfigsDir
-  const dirty = dirtySwitches || dirtyConfigs || dirtyConfigsDir
+  const dirty = dirtySwitches || dirtyConfigs
 
   return {
     fields,
@@ -602,7 +590,6 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
     skillsDirDraft,
     savedSwitches,
     savedConfigs,
-    savedConfigsDir,
     savingSkillsDir,
     fixingSkill,
     notice,
@@ -613,7 +600,6 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
     persistSwitches,
     persistParamOverrides,
     persistConfigs,
-    persistConfigsDir,
     toggle,
     toggleBootstrapMaxTokens,
     setPresetTemplate,
@@ -629,7 +615,6 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
     importPreset,
     dirtySwitches,
     dirtyConfigs,
-    dirtyConfigsDir,
     dirty,
   }
 }

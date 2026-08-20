@@ -11,7 +11,6 @@ import { join, basename, dirname } from 'node:path'
 import { stringify as stringifyYaml } from 'yaml'
 import { DEFAULT_PRESET_DIR } from './paths.ts'
 import {
-  loadPromptConfigFiles,
   mergePromptConfigs,
   renderPromptConfigYaml,
 } from './prompt-configs.ts'
@@ -59,8 +58,6 @@ export interface WritePresetOptions {
   presetOrder: number
   /** settings 层用户自定义提示词配置(优先级最高)。 */
   promptConfigs: PromptConfigSpec[]
-  /** 用户自定义提示词配置目录(优先级低于 promptConfigs)。 */
-  promptConfigsDir: string
   /** 预设模板名(preset/<name>);默认 anchored(兼容期)。 */
   presetTemplate?: string
   /** 目录加载失败等非致命告警回调。 */
@@ -156,18 +153,10 @@ export function writePreset(prompt: string, options: WritePresetOptions): void {
   rmSync(engineDir, { recursive: true, force: true })
   cpSync(ENGINE_DIR, engineDir, { recursive: true, force: true })
 
-  // 4) 提示词配置:引擎默认(按 params)< 模板覆盖 < promptConfigsDir < settings。
+  // 4) 提示词配置:引擎默认(按 params)< 模板覆盖 < settings。
   const promptConfigsDir = join(outDir, 'prompt-configs')
   rmSync(promptConfigsDir, { recursive: true, force: true })
   mkdirSync(promptConfigsDir, { recursive: true })
-  let dirConfigs: PromptConfigSpec[] = []
-  if (options.promptConfigsDir.length > 0) {
-    try {
-      dirConfigs = loadPromptConfigFiles(options.promptConfigsDir)
-    } catch (error) {
-      options.warn?.(`prompt-tool: failed to load promptConfigsDir ${JSON.stringify(options.promptConfigsDir)}: ${error instanceof Error ? error.message : String(error)}`)
-    }
-  }
   const templateConfigs = Array.isArray(spec.promptConfigs) ? spec.promptConfigs as PromptConfigSpec[] : []
   let templateDefaults: PromptConfigSpec[]
   if (templateConfigs.length > 0) {
@@ -210,7 +199,7 @@ export function writePreset(prompt: string, options: WritePresetOptions): void {
     // 全部内容由模板数据或用户 settings 提供。
     templateDefaults = []
   }
-  const merged = mergePromptConfigs(templateDefaults, dirConfigs, options.promptConfigs)
+  const merged = mergePromptConfigs(templateDefaults, options.promptConfigs)
   for (const [index, config] of merged.entries()) {
     writeFileSync(join(promptConfigsDir, `${String(index * 10).padStart(2, '0')}-${config.id}.yml`), renderPromptConfigYaml(config), 'utf8')
   }

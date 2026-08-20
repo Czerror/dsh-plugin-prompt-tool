@@ -38,7 +38,6 @@ function makeOptions(presetDir) {
     presetDir,
     presetOrder: 5,
     promptConfigs: [],
-    promptConfigsDir: '',
   }
 }
 

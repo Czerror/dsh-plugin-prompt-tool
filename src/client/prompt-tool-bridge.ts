@@ -60,7 +60,6 @@ export interface Fields {
   writePreset: boolean
   presetTemplate: string
   promptConfigs: PromptConfigDraft[]
-  promptConfigsDir: string
 }
 
 export const EMPTY_META: EngineMeta = {
@@ -116,7 +115,6 @@ export const EMPTY_FIELDS: Fields = {
   writePreset: true,
   presetTemplate: 'anchored',
   promptConfigs: [],
-  promptConfigsDir: '',
 }
 
 const asRecord = (value: unknown): Record<string, unknown> =>
@@ -277,7 +275,6 @@ export function fieldsFromView(res: BridgeResult<BridgeSettingsView>): Fields {
     promptConfigs: value.promptConfigs !== undefined
       ? readPromptConfigs(value, 'promptConfigs')
       : readPromptConfigs(base, 'promptConfigs'),
-    promptConfigsDir: readString(value, 'promptConfigsDir') ?? readString(base, 'promptConfigsDir') ?? '',
   }
   return next
 }

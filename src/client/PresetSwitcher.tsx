@@ -44,11 +44,12 @@ export function PresetSwitcher(props: { store: PromptToolStore }): ReactNode {
     }
   }
 
-  /** 导入单个 preset.yml 配置文件。 */
+  /** 导入单个配置文件：preset.yml / 任意 *.yml/*.yaml / SillyTavern *.json（服务端按扩展名分流）。 */
   const pickPresetYaml = (file: File | undefined): void => {
     if (file === undefined) return
     void (async () => {
-      await uploadPreset([{ path: 'preset.yml', content: await file.text() }])
+      const path = /\.json$/i.test(file.name) ? file.name : 'preset.yml'
+      await uploadPreset([{ path, content: await file.text() }])
     })()
   }
 
@@ -86,7 +87,7 @@ export function PresetSwitcher(props: { store: PromptToolStore }): ReactNode {
       <div className={styles.settingRowStack}>
         <span className={styles.settingCopy}>
           <strong>预设模板</strong>
-          <small>切换后按新模板重建生成目录；anchored 为插件默认，另有官方标准/极简/PTC/创造四套。导入预设 = 选择 preset.yml 配置文件或整个预设文件夹。</small>
+          <small>切换后按新模板重建生成目录；anchored 为插件默认，另有官方标准/极简/PTC/创造四套。导入预设 = 选择 preset.yml / 任意 *.yml/*.yaml / SillyTavern *.json 配置文件，或整个预设文件夹。</small>
         </span>
         <span className={styles.inlineControls}>
           <select
@@ -103,9 +104,9 @@ export function PresetSwitcher(props: { store: PromptToolStore }): ReactNode {
           <input
             ref={yamlRef}
             type="file"
-            accept=".yml,.yaml"
+            accept=".yml,.yaml,.json"
             style={{ display: 'none' }}
-            aria-label="选择 preset.yml 配置文件"
+            aria-label="选择 preset.yml / SillyTavern JSON 配置文件"
             onChange={(event) => { pickPresetYaml(event.target.files?.[0]); event.target.value = '' }}
           />
           <input

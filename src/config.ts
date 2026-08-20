@@ -104,8 +104,6 @@ export interface Config {
   fallbackText: string
   /** 用户自定义提示词配置（settings 数组）：按 id 覆盖默认提示词配置或追加新提示词配置；UI 设置最终消费此接口。 */
   promptConfigs: PromptConfigSpec[]
-  /** 用户自定义提示词配置目录：扫描 *.yml/*.yaml/*.json，优先级低于 promptConfigs。 */
-  promptConfigsDir: string
 }
 
 // 官方插件配置范式：同名 interface Config 与 Schemastery schema 成对导出，
@@ -136,7 +134,6 @@ export const Config: z<Config> = z.object({
   presetOrder: z.natural().default(DEFAULT_PRESET_ORDER),
   fallbackText: z.string().default(''),
   promptConfigs: z.array(PromptConfigEntrySchema).default([]) as unknown as z<PromptConfigSpec[]>,
-  promptConfigsDir: z.string().default(''),
 })
 
 export interface SkillEntry {
@@ -238,8 +235,6 @@ export interface PromptSettings {
   presetTemplate: string
   /** 用户自定义提示词配置（settings 层；UI 设置最后消费此数组渲染提示词配置编辑器）。 */
   promptConfigs: PromptConfigSpec[]
-  /** 用户自定义提示词配置目录；空 = 不扫描。 */
-  promptConfigsDir: string
 }
 
 export const PromptSettingsSchema: z<PromptSettings> = z.object({
@@ -284,7 +279,6 @@ export const PromptSettingsSchema: z<PromptSettings> = z.object({
   writePreset: z.boolean().default(true),
   presetTemplate: z.string().default('anchored'),
   promptConfigs: z.array(PromptConfigEntrySchema).default([]) as unknown as z<PromptConfigSpec[]>,
-  promptConfigsDir: z.string().default(''),
 })
 
 export interface RuntimeOptions {
@@ -335,6 +329,4 @@ export interface RuntimeOptions {
   firstTurnWord?: string
   /** 用户自定义提示词配置（settings 数组）。 */
   promptConfigs: PromptConfigSpec[]
-  /** 用户自定义提示词配置目录。 */
-  promptConfigsDir: string
 }

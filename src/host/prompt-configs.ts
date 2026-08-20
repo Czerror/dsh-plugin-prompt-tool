@@ -3,7 +3,7 @@
  *
  * 这是「用户自定义注入内容 + 自定义注入层级位置」的功能层：
  *   1. settings.promptConfigs 数组（UI 设置最终消费此接口）
- *   2. promptConfigsDir 目录（yml/json 提示词配置文件）
+ *   2. 生成目录 prompt-configs/（yml/json 提示词配置文件）
  *   3. 默认四条提示词配置
  * 三者按此优先级合并，同名 id 后者覆盖，新 id 追加在默认提示词配置之后。
  * 引擎（engine/prompt-config-engine.mjs）在运行时对生成 yml 做权威校验。
@@ -194,7 +194,7 @@ export function loadPromptConfigFiles(dir: string): PromptConfigSpec[] {
   try {
     entries = readdirSync(dir, { withFileTypes: true })
   } catch (error) {
-    throw new Error(`promptConfigsDir ${JSON.stringify(dir)} is not readable: ${String((error as Error).message ?? error)}`)
+    throw new Error(`提示词配置目录 ${JSON.stringify(dir)} 不可读: ${String((error as Error).message ?? error)}`)
   }
   const specs: PromptConfigSpec[] = []
   const files = entries

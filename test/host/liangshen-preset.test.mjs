@@ -25,7 +25,6 @@ test('preset/liangshen 渲染：模块清单 + moduleConfigs 表达两阶段锚�
       bootstrapMaxTokens: 0,
       usePtcMode: true,
       promptConfigs: [],
-      promptConfigsDir: '',
     })
 
     const cordis = readFileSync(join(gen, 'agent.cordis.yml'), 'utf8')

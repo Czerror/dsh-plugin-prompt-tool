@@ -52,7 +52,6 @@ test('preset.yml params + hostDefaults 合并进 Config 作为唯一入口默认
       presetDir: '~/.dsh/.agent-presets/prompt-tool',
       presetOrder: 9,
       fallbackText: 'FALLBACK',
-      promptConfigsDir: 'C:/configs',
       promptConfigs: [{ id: 'custom', text: 'hello' }],
       skillSwitches: { sandboxmod: false },
       skillOrder: ['sandboxmod'],
@@ -67,7 +66,6 @@ test('preset.yml params + hostDefaults 合并进 Config 作为唯一入口默认
   assert.deepEqual(merged.skillsDirs, [join(homedir(), 'my-skills')])
   assert.equal(merged.skillRankBase, 300)
   assert.equal(merged.presetOrder, 9)
-  assert.equal(merged.promptConfigsDir, 'C:/configs')
   assert.deepEqual(merged.promptConfigs, [{ id: 'custom', text: 'hello' }])
   assert.deepEqual(merged.skillSwitches, { sandboxmod: false })
   assert.deepEqual(merged.skillOrder, ['sandboxmod'])

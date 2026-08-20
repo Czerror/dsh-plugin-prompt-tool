@@ -44,7 +44,7 @@ test('官方格式预设：无 id 回退目录名，无 modules/composition 回�
         guideText: '', guideCustom: false, injectPrompt: true,
         modelProvider: '', modelName: '',
         bootstrapMaxTokens: 0, usePtcMode: true,
-        promptConfigs: [], promptConfigsDir: '',
+        promptConfigs: [],
       })
       const cordis = readFileSync(join(gen, 'agent.cordis.yml'), 'utf8')
       if (!cordis.includes('demo-row')) throw new Error('组合未回退 agent.cordis.yml')
@@ -91,7 +91,7 @@ test('官方 str-replace-editor 行：params 覆盖 maxOutputChars 渲染生效'
         guideText: '', guideCustom: false, injectPrompt: true,
         modelProvider: '', modelName: '',
         bootstrapMaxTokens: 0, usePtcMode: true,
-        promptConfigs: [], promptConfigsDir: '',
+        promptConfigs: [],
       })
       const cordis = readFileSync(join(gen, 'agent.cordis.yml'), 'utf8')
       if (!cordis.includes('maxOutputChars: 32000')) throw new Error('params 覆盖未生效: ' + cordis)

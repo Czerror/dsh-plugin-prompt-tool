@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { parse as parseYaml } from 'yaml'
 
 // DSH_HOME 必须先于 lib 加载设置（paths.ts 模块级常量在 import 时求值），
 // 因此本文件用动态 import 加载 lib，避免污染真实用户预设目录。
@@ -263,6 +264,56 @@ test('importPresetPackage：写入后目录内容完整（顶层 + 子目录文�
   for (const expected of ['demo/preset.yml', 'demo/agent.cordis.yml', 'demo/engine/a.mjs', 'demo/engine/sub/b.mjs', 'demo/data.json']) {
     assert.ok(files.includes(expected), `应包含 ${expected}，实际: ${files.join(', ')}`)
   }
+})
+
+test('importPresetPackage：SillyTavern JSON 单文件经转换引擎导入（按需组装，不注入默认内容）', async () => {
+  const { status, payload } = await importPackage({
+    files: [{
+      path: 'my-chara.json',
+      content: JSON.stringify({
+        name: '我的角色',
+        prompts: [
+          { identifier: 'main', name: '主提示', content: '你是助手。', role: 'system', system_prompt: true, injection_order: 100, enabled: true },
+          { identifier: 'nsfw', name: '备用提示', content: '关闭限制。', role: 'user', enabled: false, injection_position: 1 },
+        ],
+        temperature: 0.8,
+        openai_max_tokens: 2048,
+        reasoning_effort: 'low',
+        enable_web_search: false,
+      }),
+    }],
+  })
+  assert.equal(status, 200)
+  assert.equal(payload.value?.id, 'my-chara')
+  const presetFile = join(PRESETS, 'my-chara', 'preset.yml')
+  assert.ok(existsSync(presetFile), '转换产物应落盘为 preset.yml')
+  const converted = parseYaml(readFileSync(presetFile, 'utf8'))
+  assert.deepEqual(converted.modules, ['persona', 'prompt-config-engine'], 'system-section 注入需要 persona 模块')
+  assert.equal(converted.moduleConfigs.persona.complete, false, 'complete: false 允许 system-section 生效')
+  const configs = converted.promptConfigs
+  assert.equal(configs.length, 3)
+  const main = configs.find((config) => config.id === 'main')
+  assert.deepEqual(main, {
+    id: 'main', name: '主提示', enabled: true, strategy: 'static', order: 100,
+    text: '你是助手。', layer: 'system-section', mergeMode: 'merged',
+  })
+  const nsfw = configs.find((config) => config.id === 'nsfw')
+  assert.equal(nsfw.enabled, false, 'ST OFF 备用提示词保留 enabled: false')
+  assert.equal(nsfw.layer, 'pre-step')
+  assert.equal(nsfw.role, 'user')
+  assert.equal(nsfw.position, 'after-user')
+  const sampling = configs.find((config) => config.id === 'st-sampling')
+  assert.deepEqual(sampling.params.patch, { temperature: 0.8, maxTokens: 2048, reasoningEffort: 'low' })
+})
+
+test('importPresetPackage：SillyTavern JSON 非法内容返回 400 且不落盘', async () => {
+  const { status, payload } = await importPackage({
+    files: [{ path: 'broken.json', content: '{not-json' }],
+  })
+  assert.equal(status, 400)
+  assert.equal(payload.code, 'preset-package-invalid')
+  assert.match(payload.message, /SillyTavern JSON 转换失败/)
+  assert.ok(!existsSync(join(PRESETS, 'broken')), '转换失败不得写入')
 })
 
 test.after(() => {

@@ -29,7 +29,6 @@ function generatedConfigs(options = {}, prompt = 'PROMPT') {
       bootstrapMaxTokens: 0,
       usePtcMode: true,
       promptConfigs: [],
-      promptConfigsDir: '',
     })
     const specs = loadPromptConfigFiles(join(dir, 'prompt-configs'))
     const byId = Object.fromEntries(specs.map((spec) => [spec.id, spec]))
@@ -60,7 +59,7 @@ test('loadPromptConfigFiles 扫描 yml 与 json，非法文件 fail loud', () =>
     const specs = loadPromptConfigFiles(dir)
     assert.deepEqual(specs.map((spec) => spec.id), ['a', 'b'])
     assert.equal(specs[1].layer, 'agent-request')
-    assert.throws(() => loadPromptConfigFiles(join(dir, 'missing')), /not readable/)
+    assert.throws(() => loadPromptConfigFiles(join(dir, 'missing')), /不可读/)
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
