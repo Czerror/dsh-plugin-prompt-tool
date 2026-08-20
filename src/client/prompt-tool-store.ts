@@ -163,7 +163,7 @@ export interface PromptToolStore {
   skillEnabled: (folder: string) => boolean
   fixSkill: (folder: string) => void
   openSkillsDir: () => Promise<void>
-  importPreset: (scope: 'preset' | 'agents', content: string) => Promise<void>
+  importPreset: (scope: 'preset' | 'agents', content: string, reload?: boolean) => Promise<void>
   dirtySwitches: boolean
   dirtyConfigs: boolean
   dirtyConfigsDir: boolean
@@ -544,7 +544,7 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
     }
   }, [api, showNotice])
 
-  const importPreset = useCallback(async (scope: 'preset' | 'agents', content: string) => {
+  const importPreset = useCallback(async (scope: 'preset' | 'agents', content: string, reload = true) => {
     const res = await bridgePost<{ scope: string }>('/import-preset', { scope, content })
     if (res.ok) {
       if (scope === 'preset') {
@@ -552,8 +552,9 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
       } else {
         patch({ agentsText: content })
       }
-      showNotice('ok', scope === 'preset' ? 'preset.md 已导入并生效' : 'AGENTS.md 已导入并生效')
-      await load()
+      showNotice('ok', scope === 'preset' ? 'preset.md 已保存并生效' : 'AGENTS.md 已保存并生效')
+      // 编辑失焦保存传 reload=false：内容已知，跳过 load 避免覆盖正在编辑的输入。
+      if (reload) await load()
     } else {
       showNotice('error', '导入失败：' + (res.message ?? 'settings bridge unavailable'))
     }
