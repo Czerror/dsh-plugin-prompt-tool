@@ -148,7 +148,10 @@ export function registerTuiCommand(
           const deepseekLine = detection.available
             ? `检测到的 DeepSeek 模型路由: ${detection.providers.join(', ') || '（无）'}`
             : `未检测到 DeepSeek 模型路由。providers=[${detection.providers.join(', ') || '空'}] error=${detection.error ?? '无'}`
-          return { kind: 'success', text: renderTuiStatus(source, promptConfigs) + '\n' + deepseekLine }
+          const modelsLine = detection.models.length > 0
+            ? `检测到的模型名: ${detection.models.join(', ')}`
+            : '未检测到模型名（adapter 未公布或查询失败）'
+          return { kind: 'success', text: renderTuiStatus(source, promptConfigs) + '\n' + deepseekLine + '\n' + modelsLine }
         }
         if (tokens[0] === 'skill') {
           const folder = tokens[1]

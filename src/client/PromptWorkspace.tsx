@@ -273,11 +273,16 @@ function ModelToolCards(props: { store: PromptToolStore }): ReactNode {
 function ModelRouteStatus(props: { store: PromptToolStore }): ReactNode {
   const { store } = props
   const detected = store.deepseekProviders.length > 0
+  const models = store.deepseekModels
   return (
     <div className={ui.skillStatusRow} aria-label="模型路由状态">
       <span className={clsx(ui.skillStatusChip, detected ? ui.skillStatusModel : ui.skillStatusOff)}>
         <i className={ui.skillStatusDot} aria-hidden="true" />
         {detected ? `已检测到模型路由：${store.deepseekProviders.join('、')}` : '未检测到模型路由'}
+      </span>
+      <span className={clsx(ui.skillStatusChip, models.length > 0 ? ui.skillStatusModel : ui.skillStatusOff)}>
+        <i className={ui.skillStatusDot} aria-hidden="true" />
+        {models.length > 0 ? `已检测到模型名：${models.join('、')}` : '未检测到模型名'}
       </span>
     </div>
   )

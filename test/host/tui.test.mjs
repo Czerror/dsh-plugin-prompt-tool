@@ -33,7 +33,7 @@ function makeTui() {
       'firstTurnCustom', 'guideCustom', 'usePtcMode',
     ].map((key) => [key, true])),
   })
-  registerTuiCommand(ctx, 'prompt-tool', source, () => true, () => ({ available: true, providers: ['deepseek-official'] }))
+  registerTuiCommand(ctx, 'prompt-tool', source, () => true, () => ({ available: true, providers: ['deepseek-official'], models: ['deepseek-v4-flash', 'deepseek-v4-pro'] }))
   const handler = commands[0].handler
   return {
     run: (raw) => handler({ rawInput: raw }),
@@ -67,7 +67,7 @@ test('TUI：presetDir 提供时 status 显示生成目录实际配置（settings
       writeAgents: true, writePreset: true, injectPrompt: true, injectAgentsPrompt: false,
       firstTurnAnchor: true, firstTurnCustom: false, guideCustom: false, usePtcMode: true,
     })
-    registerTuiCommand(ctx, 'prompt-tool', source, () => true, () => ({ available: true, providers: [] }), () => dir)
+    registerTuiCommand(ctx, 'prompt-tool', source, () => true, () => ({ available: true, providers: [], models: [] }), () => dir)
     const result = await commands[0].handler({ rawInput: 'status' })
     assert.equal(result.kind, 'success')
     assert.match(result.text, /config real-config\s+开/)

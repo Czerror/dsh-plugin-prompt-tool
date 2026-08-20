@@ -5,12 +5,14 @@ import type { Context } from '@deepseek-ai/cordis'
 export interface DeepseekDetection {
   available: boolean
   providers: string[]
+  /** 检测到的模型 id（官方 adapter 公布；仅作展示，不构成路由白名单）。 */
+  models: string[]
   error?: string
 }
 
 /** 检测 DeepSeek 模型：live provider + 可配置 provider 目录双通道匹配。 */
 export function detectDeepseek(ctx: Context): DeepseekDetection {
-  const empty = { available: false, providers: [] }
+  const empty = { available: false, providers: [], models: [] }
   try {
     const llm = ctx.get('llm') as {
       listProviders?: () => Array<{ id?: string; name?: string }>
@@ -25,16 +27,33 @@ export function detectDeepseek(ctx: Context): DeepseekDetection {
     for (const provider of live) {
       const id = typeof provider.id === 'string' ? provider.id : String(provider.id ?? '')
       names.add(id || provider.name || '(unnamed)')
-      if (matches(provider.id, provider.name)) return { available: true, providers: [...names] }
+      if (matches(provider.id, provider.name)) return { available: true, providers: [...names], models: [] }
     }
     for (const provider of configured) {
       const id = typeof provider.provider === 'string' ? provider.provider : ''
       if (id.length > 0) names.add(id)
-      if (matches(provider.provider, provider.displayName)) return { available: true, providers: [...names] }
+      if (matches(provider.provider, provider.displayName)) return { available: true, providers: [...names], models: [] }
     }
-    return { available: false, providers: [...names], ...(live.length === 0 && configured.length === 0 ? { error: 'llm 服务未返回任何 provider' } : {}) }
+    return { available: false, providers: [...names], models: [], ...(live.length === 0 && configured.length === 0 ? { error: 'llm 服务未返回任何 provider' } : {}) }
   } catch (error) {
     return { ...empty, error: error instanceof Error ? error.message : String(error) }
+  }
+}
+
+/** 查询 DeepSeek 路由公布的模型 id（官方 llm-deepseek 默认公布 deepseek-v4-flash/pro）。 */
+export async function listDeepseekModels(ctx: Context): Promise<string[]> {
+  try {
+    const llm = ctx.get('llm') as {
+      listModels?: (provider: string) => Promise<Array<{ id?: string; name?: string }>>
+    } | undefined
+    if (llm?.listModels === undefined) return []
+    const models = await llm.listModels('deepseek-official')
+    if (!Array.isArray(models)) return []
+    return models
+      .map((entry) => (typeof entry?.id === 'string' && entry.id.length > 0 ? entry.id : (typeof entry?.name === 'string' ? entry.name : '')))
+      .filter((id) => id.length > 0)
+  } catch {
+    return []
   }
 }
 

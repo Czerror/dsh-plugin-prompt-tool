@@ -5,7 +5,7 @@ import { dirname, join } from 'node:path'
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml'
 import type { SettingsDescriptor, SettingsNamespace, SettingsPathOp } from '@deepseek-ai/dsh-settings'
-import type { DeepseekDetection } from './deepseek.ts'
+import { listDeepseekModels, type DeepseekDetection } from './deepseek.ts'
 import type { SkillCatalogEntry } from '../config.ts'
 import { loadPromptConfigFiles } from '../host/prompt-configs.ts'
 import { validatePromptConfigs } from './configs-validate.ts'
@@ -175,11 +175,13 @@ export function registerSettingsBridge(
             }
             const detection = getDeepseekState()
             const skillsState = getSkillsState()
+            const deepseekModels = await listDeepseekModels(sctx)
             writeBridgeJson(res, 200, {
               ok: true,
               value: descriptor,
               deepseekAvailable: detection.available,
               deepseekProviders: detection.providers,
+              deepseekModels,
               deepseekError: detection.error,
               activeSkillsDirs: skillsState.activeSkillsDirs,
               skillsDirExists: Object.fromEntries(skillsState.activeSkillsDirs.map((dir) => [dir, existsSync(dir)])),
