@@ -57,9 +57,8 @@ export function validSkills(entries: SkillEntry[]): SkillEntry[] {
 
 /**
  * 读取技能目录树的全部条目（含坏条目与嵌套子技能）。
- *  - 递归语义：技能目录（含 SKILL.md）的子目录可能是子技能（嵌套技能包），
- *    继续下探；不含 SKILL.md 的目录是资源/引导/仓库目录，不产生条目也不下探
- *    （根目录自身除外——根目录展开一级子目录发现技能）。
+ *  - 递归语义：任意层级含 SKILL.md 的目录都是技能（folder = 相对路径，嵌套用 / 分隔）；
+ *    不含 SKILL.md 的目录（含多层空文件夹）不产生条目，继续下探其子目录。
  *  - 链接（junction/symlink）目录作为技能叶子：含 SKILL.md 则注册，不递归进入（防环）。
  *  - frontmatter 无 name 时回退目录名；name（frontmatter 或目录名）必须 kebab-case 才 valid；
  *  - warn 仅用于日志，不再决定条目去留。
@@ -72,12 +71,10 @@ export function readSkills(skillsDir: string, warn?: (message: string) => void):
     try {
       raw = readFileSync(file, 'utf8')
     } catch {
-      if (linked || rel.length > 0) return
-      // 根目录自身不是技能：只展开一级子目录发现技能；
-      // 非技能子目录（资源/引导/仓库目录）不再下探，避免把其中的
-      // SKILL.md（如 .agents/skills、docs）误注册为技能。
+      if (linked) return
+      // 当前目录不是技能：下探子目录找（嵌套）技能；空文件夹自然不产生条目。
       for (const folder of listSkillFolders(current)) {
-        walk(join(current, folder.name), folder.name, folder.linked)
+        walk(join(current, folder.name), rel.length > 0 ? `${rel}/${folder.name}` : folder.name, folder.linked)
       }
       return
     }

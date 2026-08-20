@@ -94,18 +94,19 @@ test('readSkills：嵌套子技能同时注册（folder 相对路径），空文
   }
 })
 
-test('readSkills：非技能目录（资源/引导目录）内的 SKILL.md 不注册，仅技能目录内下探', () => {
+test('readSkills：无差别递归——任意层级含 SKILL.md 的目录都注册（点开头目录仍跳过）', () => {
   const { dir, cleanup } = makeDir()
   try {
     writeSkill(dir, 'main-skill', '---\nname: main-skill\ndescription: Main\n---\nMAIN')
-    // 无 SKILL.md 的资源目录（含嵌套 SKILL.md）：不注册也不下探（.agents/skills、skills/ 场景）。
+    // 无 SKILL.md 的资源目录内含 SKILL.md：递归注册（嵌套技能包语义）。
     writeSkill(dir, 'resources/inner-skill', '---\nname: inner-skill\ndescription: Inner\n---\nINNER')
+    // 点开头目录（.agents 等）：永远跳过。
     writeSkill(dir, '.agents/skills/inner-skill', '---\nname: inner-skill\ndescription: Inner\n---\nINNER')
     // 技能目录内的一级子目录含 SKILL.md：是嵌套子技能，注册。
     writeSkill(dir, 'main-skill/sub-skill', '---\nname: sub-skill\ndescription: Sub\n---\nSUB')
     const entries = readSkills(dir)
     const folders = entries.map((entry) => entry.folder).sort()
-    assert.deepEqual(folders, ['main-skill', 'main-skill/sub-skill'])
+    assert.deepEqual(folders, ['main-skill', 'main-skill/sub-skill', 'resources/inner-skill'])
   } finally {
     cleanup()
   }

@@ -72,18 +72,6 @@ function syncSkillsByManifest(sourceDir: string, targetDir: string): void {
   mkdirSync(targetDir, { recursive: true })
   const targetManifest = readManifest(join(targetDir, TARGET_MANIFEST)) ?? { version: 0, skills: {} }
 
-  // 迁移清理：历史版本曾把项目根结构误复制进副本（解析路径错位）。
-  // 删除「非包内技能且不含 SKILL.md」的顶层目录（.agents/.git/docs 等垃圾）；
-  // 用户自定义技能（含 SKILL.md）与包内技能目录保留。
-  for (const entry of readdirSync(targetDir, { withFileTypes: true })) {
-    if (!entry.isDirectory()) continue
-    if (sourceManifest.skills[entry.name] !== undefined) continue
-    const targetEntry = join(targetDir, entry.name)
-    if (!existsSync(join(targetEntry, 'SKILL.md'))) {
-      rmSync(targetEntry, { recursive: true, force: true })
-    }
-  }
-
   for (const [folder, version] of Object.entries(sourceManifest.skills)) {
     const sourceEntry = join(sourceDir, folder)
     if (!existsSync(sourceEntry)) continue
