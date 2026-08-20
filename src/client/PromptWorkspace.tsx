@@ -505,7 +505,6 @@ function SkillsSettings(props: { store: PromptToolStore; api: IApiClient }): Rea
   const [skillFilter, setSkillFilter] = useState('')
   const [statusTab, setStatusTab] = useState<SkillStatusTab>('all')
   const [selected, setSelected] = useState<Set<string>>(new Set())
-  const [menuOpen, setMenuOpen] = useState<string | undefined>(undefined)
   const [removingDir, setRemovingDir] = useState<string | undefined>(undefined)
   const orderedSkills = useMemo(() => {
     const index = new Map(fields.skillOrder.map((folder, at) => [folder, at]))
@@ -543,6 +542,14 @@ function SkillsSettings(props: { store: PromptToolStore; api: IApiClient }): Rea
   })
 
   const selectionMode = selected.size > 0
+  const toggleSelect = (folder: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(folder)) next.delete(folder)
+      else next.add(folder)
+      return next
+    })
+  }
   /** 全选目标：当前筛选后的合法技能（同名/无效技能不可批量启用）。 */
   const selectableSkills = visibleSkills.filter((skill) => skill.valid)
   const allSelected = selectionMode && selectableSkills.length > 0
@@ -634,6 +641,7 @@ function SkillsSettings(props: { store: PromptToolStore; api: IApiClient }): Rea
     const hint = `${skill.dir ?? 'skills'}/${skill.folder}${skill.description ? ` · ${skill.description}` : ''}`
     const enabled = store.skillEnabled(skill.folder)
     const nested = depth > 0
+    const isSelected = selected.has(skill.folder)
     return (
       <div
         key={skill.folder}
@@ -673,46 +681,39 @@ function SkillsSettings(props: { store: PromptToolStore; api: IApiClient }): Rea
               <span className={ui.skillRankBadge} title={`第 ${primaryIndex + 1} 位`}>{primaryIndex + 1}</span>
             </>
           )}
-        <label className={ui.skillCardToggle} htmlFor={`pt-skill-${skill.folder}`}>
-          <span className={ui.skillCardBody}>
-            <span className={ui.skillCardTitleRow}>
-              <strong>{skill.name || skill.folder}</strong>
-              {skill.duplicate === true && <span className={ui.duplicateBadge} title={`同名技能：来源目录 ${skill.dir ?? '未知'}`}>同名</span>}
-              <SkillStatusChips skill={skill} enabled={enabled} />
-            </span>
-            <small className={ui.skillCardMeta}>{hint}</small>
-            {!skill.valid && skill.issue && <span className={ui.skillIssue} role="note">{skill.issue}</span>}
+        {/* 主体：点击 = 选择/取消选择（只选择，不切换开关；开关由行内 Switch 与上方批量按钮控制）。 */}
+        <button
+          type="button"
+          className={ui.skillCardBody}
+          data-selected={isSelected ? '' : undefined}
+          aria-pressed={isSelected}
+          aria-label={`选择 ${skill.name || skill.folder}`}
+          onClick={() => toggleSelect(skill.folder)}
+        >
+          <span className={ui.skillCardTitleRow}>
+            <strong>{skill.name || skill.folder}</strong>
+            {skill.duplicate === true && <span className={ui.duplicateBadge} title={`同名技能：来源目录 ${skill.dir ?? '未知'}`}>同名</span>}
+            <SkillStatusChips skill={skill} enabled={enabled} />
           </span>
-          <span className={ui.inlineControls}>
-            <input id={`pt-skill-${skill.folder}`} type="checkbox" checked={enabled} disabled={!skill.valid} aria-label={`启用 ${skill.name || skill.folder}`} onChange={() => store.toggleSkill(skill.folder)} />
-            <span className={ui.switch} aria-hidden="true"><i /></span>
-          </span>
+          <small className={ui.skillCardMeta}>{hint}</small>
+          {!skill.valid && skill.issue && <span className={ui.skillIssue} role="note">{skill.issue}</span>}
+        </button>
+        {/* Switch：独立切换技能开关。 */}
+        <label className={ui.skillSwitch} htmlFor={`pt-skill-${skill.folder}`}>
+          <input id={`pt-skill-${skill.folder}`} type="checkbox" checked={enabled} disabled={!skill.valid} aria-label={`启用 ${skill.name || skill.folder}`} onChange={() => store.toggleSkill(skill.folder)} />
+          <span className={ui.switch} aria-hidden="true"><i /></span>
         </label>
-        {skill.valid && !nested ? (
-          <span className={ui.skillMenuHost}>
-            <button
-              type="button"
-              className={clsx(ui.pillButton, ui.skillMenuButton)}
-              aria-label={`排序 ${skill.name || skill.folder}`}
-              aria-expanded={menuOpen === skill.folder}
-              onClick={() => setMenuOpen(menuOpen === skill.folder ? undefined : skill.folder)}
-            >⋯</button>
-            {menuOpen === skill.folder && (
-              <>
-                <span className={ui.menuBackdrop} onClick={() => setMenuOpen(undefined)} />
-                <span className={ui.skillMenu} role="menu" aria-label={`排序 ${skill.name || skill.folder}`} onKeyDown={(event) => { if (event.key === 'Escape') setMenuOpen(undefined) }}>
-                  <button type="button" role="menuitem" disabled={primaryIndex === 0} onClick={() => { moveSkill(skill.folder, orderedPrimary[primaryIndex - 1]!.folder); setMenuOpen(undefined) }}>上移</button>
-                  <button type="button" role="menuitem" disabled={primaryIndex >= orderedPrimary.length - 1} onClick={() => { moveSkill(skill.folder, orderedPrimary[primaryIndex + 1]!.folder); setMenuOpen(undefined) }}>下移</button>
-                </span>
-              </>
-            )}
-          </span>
-        ) : (
+        {!skill.valid ? (
           <button type="button" className={ui.pillButton} disabled={store.fixingSkill === skill.folder} onClick={() => void store.fixSkill(skill.folder)}>
             {store.fixingSkill === skill.folder && <span className={ui.spinner} aria-hidden="true" />}
             {store.fixingSkill === skill.folder ? '修复中…' : '修复'}
           </button>
-        )}
+        ) : !nested ? (
+          <span className={ui.skillOrderButtons}>
+            <button type="button" className={ui.pillButton} aria-label={`上移 ${skill.name || skill.folder}`} title="上移（键盘排序）" disabled={primaryIndex === 0} onClick={() => moveSkill(skill.folder, orderedPrimary[primaryIndex - 1]!.folder)}>↑</button>
+            <button type="button" className={ui.pillButton} aria-label={`下移 ${skill.name || skill.folder}`} title="下移（键盘排序）" disabled={primaryIndex >= orderedPrimary.length - 1} onClick={() => moveSkill(skill.folder, orderedPrimary[primaryIndex + 1]!.folder)}>↓</button>
+          </span>
+        ) : null}
       </div>
     )
   }
@@ -720,7 +721,7 @@ function SkillsSettings(props: { store: PromptToolStore; api: IApiClient }): Rea
   return (
     <section className={ui.section} aria-labelledby="pt-skills-heading">
       <div className={ui.sectionHeading}>
-        <div><h2 id="pt-skills-heading">Skills 设置</h2><p>{fields.skillCatalog.length} 个技能；拖动 ⠿ 或「⋯」菜单调整顺序，排第一的技能最先被看到；关闭后立即注销，开启即恢复。</p></div>
+        <div><h2 id="pt-skills-heading">Skills 设置</h2><p>{fields.skillCatalog.length} 个技能；点击卡片选择，↑↓ 或拖动 ⠿ 调整主技能顺序；Switch 或上方批量按钮控制开关。关闭后立即注销，开启即恢复。</p></div>
         <div className={ui.sectionActions}>
           <button type="button" className={ui.pillButton} onClick={() => void store.load()}>刷新技能列表</button>
         </div>
@@ -783,7 +784,7 @@ function SkillsSettings(props: { store: PromptToolStore; api: IApiClient }): Rea
               </div>
             </div>
           )}
-          <div className={ui.skillCardList}>
+          <div className={ui.skillCardList} data-dragging={dragFolder !== undefined ? '' : undefined}>
             {renderOrder.map((skill) => {
               const depth = depthOf(skill.folder)
               const primaryIndex = depth === 0 ? orderedPrimary.indexOf(skill) : 0

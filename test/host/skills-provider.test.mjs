@@ -94,6 +94,23 @@ test('readSkills：嵌套子技能同时注册（folder 相对路径），空文
   }
 })
 
+test('readSkills：非技能目录（资源/引导目录）内的 SKILL.md 不注册，仅技能目录内下探', () => {
+  const { dir, cleanup } = makeDir()
+  try {
+    writeSkill(dir, 'main-skill', '---\nname: main-skill\ndescription: Main\n---\nMAIN')
+    // 无 SKILL.md 的资源目录（含嵌套 SKILL.md）：不注册也不下探（.agents/skills、skills/ 场景）。
+    writeSkill(dir, 'resources/inner-skill', '---\nname: inner-skill\ndescription: Inner\n---\nINNER')
+    writeSkill(dir, '.agents/skills/inner-skill', '---\nname: inner-skill\ndescription: Inner\n---\nINNER')
+    // 技能目录内的一级子目录含 SKILL.md：是嵌套子技能，注册。
+    writeSkill(dir, 'main-skill/sub-skill', '---\nname: sub-skill\ndescription: Sub\n---\nSUB')
+    const entries = readSkills(dir)
+    const folders = entries.map((entry) => entry.folder).sort()
+    assert.deepEqual(folders, ['main-skill', 'main-skill/sub-skill'])
+  } finally {
+    cleanup()
+  }
+})
+
 test('readSkills：非法名条目保留（valid=false + issue），provider 过滤层会跳过它', () => {
   const { dir, cleanup } = makeDir()
   try {

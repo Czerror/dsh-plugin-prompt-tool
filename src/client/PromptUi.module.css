@@ -456,7 +456,9 @@
   border-color: color-mix(in srgb, var(--pt-accent) 55%, var(--dsw-alias-border-l2));
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--pt-accent) 16%, transparent);
 }
-.skillCard:has(.skillCardToggle input:disabled) .switch { opacity: .55; }
+/* 拖拽进行中禁用卡片过渡：避免整列表重渲染时所有卡片闪动动画。 */
+.skillCardList[data-dragging] .skillCard { transition: none; }
+.skillCard:has(.skillSwitch input:disabled) .switch { opacity: .55; }
 
 /* 嵌套子技能标记：替代序号徽章与拖拽手柄。 */
 .skillNestedMark {
@@ -553,51 +555,51 @@
   font-variant-numeric: tabular-nums;
 }
 
-.skillCardToggle {
+.skillCardBody {
+  appearance: none;
   display: flex;
   min-width: 0;
   flex: 1;
-  align-items: center;
-  gap: 10px;
+  flex-direction: column;
+  gap: 2px;
+  border: 0;
+  border-radius: 8px;
+  padding: 2px;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  text-align: left;
   cursor: pointer;
 }
-.skillCardBody { display: flex; min-width: 0; flex: 1; flex-direction: column; gap: 2px; }
+.skillCardBody:hover { background: color-mix(in srgb, var(--pt-accent) 6%, transparent); }
+.skillCardBody[data-selected] { background: color-mix(in srgb, var(--pt-accent) 10%, transparent); }
 .skillCardTitleRow { display: flex; min-width: 0; align-items: center; gap: 8px; flex-wrap: wrap; }
 .skillCardTitleRow strong { font-size: 13px; font-weight: 600; line-height: 1.5; color: var(--dsw-alias-label-primary); overflow-wrap: anywhere; }
 .skillCardMeta { color: var(--dsw-alias-label-tertiary); font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }
 
-/* 行操作菜单（⋯）：上移/下移替代行内双箭头，节省窄面板空间。 */
-.skillMenuHost { position: relative; display: inline-flex; flex: 0 0 auto; }
-.skillMenuButton { width: 28px; height: 28px; padding: 0; border-radius: 14px; font-size: 14px; letter-spacing: 1px; }
-.menuBackdrop { position: fixed; inset: 0; z-index: 40; }
-.skillMenu {
-  position: absolute;
-  top: calc(100% + 6px);
-  right: 0;
-  z-index: 50;
-  display: flex;
-  flex-direction: column;
-  min-width: 110px;
-  padding: 6px;
-  border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 10px;
-  background: var(--dsw-alias-bg-base);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
-}
-.skillMenu button {
-  appearance: none;
-  border: 0;
-  border-radius: 7px;
-  padding: 7px 10px;
-  background: transparent;
-  color: var(--dsw-alias-label-primary);
-  font: inherit;
-  font-size: 12px;
-  text-align: left;
+/* Switch：独立切换控件（不包裹卡片主体）。 */
+.skillSwitch {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
   cursor: pointer;
 }
-.skillMenu button:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover); }
-.skillMenu button:disabled { opacity: .4; cursor: default; }
+
+/* 行内排序按钮：垂直双箭头，仅主技能显示。 */
+.skillOrderButtons {
+  display: inline-flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  align-self: center;
+  gap: 4px;
+}
+.skillOrderButtons .pillButton {
+  height: 22px;
+  padding: 0 9px;
+  border-radius: 11px;
+  font-size: 12px;
+  line-height: 1;
+}
 
 /* 状态统计卡：点击即切筛选（兼作筛选 Tabs）。 */
 .skillStats {
