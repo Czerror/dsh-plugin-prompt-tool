@@ -107,11 +107,33 @@ export function userPresetsDir(): string {
   return DEFAULT_USER_PRESETS_DIR
 }
 
-/** 解析预设模板目录：用户自定义优先，包内模板回退。 */
+/** 在指定扫描目录内按 template 定位预设目录：目录名精确匹配优先，preset.yml 的 id 匹配兜底。 */
+function findPresetDir(scanDir: string, template: string): string | undefined {
+  const exact = join(scanDir, template)
+  if (existsSync(join(exact, 'preset.yml'))) return exact
+  try {
+    for (const entry of readdirSync(scanDir, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue
+      const dir = join(scanDir, entry.name)
+      try {
+        if (loadPresetSpec(dir).id === template) return dir
+      } catch {
+        // 目录无有效 preset.yml，跳过
+      }
+    }
+  } catch {
+    // 扫描目录不可读
+  }
+  return undefined
+}
+
+/**
+ * 解析预设模板目录：用户自定义优先，包内模板回退。
+ * 目录名与 preset.yml id 双匹配（UI 切换值=目录名；旧 settings 存量值=id 也兼容）。
+ */
 export function resolvePresetDir(template: string): string {
-  const userDir = join(userPresetsDir(), template)
-  if (existsSync(join(userDir, 'preset.yml'))) return userDir
-  return join(packagePresetDir(), template)
+  const found = findPresetDir(userPresetsDir(), template) ?? findPresetDir(packagePresetDir(), template)
+  return found ?? join(packagePresetDir(), template)
 }
 
 /** 可用预设清单（包内 preset/ + 用户 ~/.dsh/presets，用户同名覆盖）。 */
@@ -123,7 +145,8 @@ export function listPresets(): Array<{ id: string; name: string }> {
         .flatMap((entry) => {
           try {
             const spec = loadPresetSpec(join(dir, entry.name))
-            return [{ id: spec.id, name: spec.name }]
+            // 切换值用目录名（与 resolvePresetDir 路径一致），spec.id 仅作展示。
+            return [{ id: entry.name, name: `${spec.id} · ${spec.name}` }]
           } catch {
             return []
           }
