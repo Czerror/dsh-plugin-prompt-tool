@@ -38,7 +38,7 @@ export interface PromptConfigsEditorProps {
 /** 主设置页唯一保留的区块：提示词配置（目录导入 + 模板插入 + 保存前权威校验）。 */
 export function PromptConfigsEditor(props: PromptConfigsEditorProps): ReactNode {
   const [templates, setTemplates] = useState<PromptConfigTemplateEntry[]>([])
-  const [templateFile, setTemplateFile] = useState('')
+  const [templatePickerOpen, setTemplatePickerOpen] = useState(false)
   const [savingDir, setSavingDir] = useState(false)
 
   const loadTemplates = async () => {
@@ -64,12 +64,12 @@ export function PromptConfigsEditor(props: PromptConfigsEditorProps): ReactNode 
     setSavingDir(false)
   }
 
-  const insertTemplate = () => {
-    const entry = templates.find((item) => item.file === templateFile)
-    if (entry === undefined) {
-      props.onNotice('error', '请先选择模板')
-      return
-    }
+  const openTemplatePicker = () => {
+    setTemplatePickerOpen(true)
+    if (templates.length === 0) void loadTemplates()
+  }
+
+  const pickTemplate = (entry: PromptConfigTemplateEntry) => {
     if (props.configs.some((config) => config.id === entry.spec.id)) {
       props.onNotice('error', `id 已存在：${entry.spec.id}（请先改名或删除同 id 配置）`)
       return
@@ -77,6 +77,7 @@ export function PromptConfigsEditor(props: PromptConfigsEditorProps): ReactNode 
     const clone = JSON.parse(JSON.stringify(entry.spec)) as PromptConfigDraft
     props.onPatchConfigs([...props.configs, clone])
     props.onNotice('ok', `已插入模板 ${entry.file}（id=${clone.id}）`)
+    setTemplatePickerOpen(false)
   }
 
   return (
@@ -85,20 +86,6 @@ export function PromptConfigsEditor(props: PromptConfigsEditorProps): ReactNode 
         <h1>提示词配置</h1>
         <p>统一管理六个注入层级的提示词配置：内容、层级与位置全部自定义。保存前自动做引擎权威校验；同名 id 后写入者覆盖，新 id 追加。</p>
       </header>
-
-      <section className={styles.section} aria-labelledby="prompt-tool-import-heading">
-        <div className={styles.sectionHeading}>
-          <div><h2 id="prompt-tool-import-heading">内置模板</h2><p>templates/ 覆盖六层与 placeholder 数据源，插入后按需修改；批量配置建议使用下方「提示词配置目录」动态引用。</p></div>
-        </div>
-        <div className={styles.importBar}>
-          <div><strong>内置模板</strong><small>templates/ 覆盖六层与 placeholder 数据源，插入后按需修改。</small></div>
-          <select className={styles.configInput} value={templateFile} onChange={(e) => setTemplateFile(e.target.value)} onFocus={() => { if (templates.length === 0) void loadTemplates() }} aria-label="选择提示词配置模板">
-            <option value="">选择模板插入…</option>
-            {templates.map((template) => <option key={template.file} value={template.file}>{template.file} · {template.spec.name ?? template.spec.id}</option>)}
-          </select>
-          <button type="button" className={styles.pillButton} onClick={insertTemplate}>插入模板</button>
-        </div>
-      </section>
 
       <section className={styles.section} aria-labelledby="prompt-tool-directory-heading">
         <div className={styles.sectionHeading}>
@@ -124,6 +111,11 @@ export function PromptConfigsEditor(props: PromptConfigsEditorProps): ReactNode 
         </div>
       </section>
 
+      <div className={styles.sectionActions}>
+        <button type="button" className={styles.primaryPill} onClick={openTemplatePicker}>新建模板</button>
+        <span className={styles.settingsNote}>从内置模板（templates/ 覆盖六层与 placeholder）开始，插入后按需修改。</span>
+      </div>
+
       <PromptConfigList
         meta={props.meta}
         configs={props.configs}
@@ -132,6 +124,25 @@ export function PromptConfigsEditor(props: PromptConfigsEditorProps): ReactNode 
         onSaveConfigs={props.onSaveConfigs}
         onNotice={props.onNotice}
       />
+
+      {templatePickerOpen && (
+        <div className={styles.modalBackdrop} onClick={() => setTemplatePickerOpen(false)}>
+          <div className={styles.templateModal} role="dialog" aria-modal="true" aria-label="选择内置模板" onClick={(event) => event.stopPropagation()}>
+            <div className={styles.templateModalHead}>
+              <strong>选择内置模板</strong>
+              <button type="button" className={styles.pillButton} aria-label="关闭模板选择" onClick={() => setTemplatePickerOpen(false)}>×</button>
+            </div>
+            <div className={styles.templateModalList}>
+              {templates.map((template) => (
+                <button key={template.file} type="button" className={styles.templateModalItem} onClick={() => pickTemplate(template)}>
+                  <strong>{template.file}</strong>
+                  <small>{template.spec.name ?? template.spec.id}</small>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       <p className={styles.settingsNote}>提示词配置写入 <code>settings.promptConfigs</code>；目录合并优先级：默认四条 &lt; promptConfigsDir &lt; settings.promptConfigs。</p>
     </section>
