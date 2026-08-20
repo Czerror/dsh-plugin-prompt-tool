@@ -12,7 +12,7 @@ fill: instruction-hint
 position: after-all
 dedupe: session
 promotion: include-subagents
-subagents: inherit
+audience: 公用
 modelScope: all
 configKind: ordered
 order: 30

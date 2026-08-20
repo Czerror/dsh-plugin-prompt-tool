@@ -9,7 +9,6 @@ strategy: guide-auto
 position: after-user
 dedupe: batch
 promotion: main
-subagents: none
 modelScope: flash
 configKind: ordered
 order: 10

@@ -452,7 +452,7 @@ function ConfigListWithTemplates(props: { store: PromptToolStore; layer?: string
   )
 }
 
-/** 子代理设置页：子代理参数 + 子代理提示词配置（subagents != none）。 */
+/** 子代理设置页：子代理参数 + 子代理提示词配置（audience 已声明）。 */
 function SubagentPage(props: { store: PromptToolStore }): ReactNode {
   const { store } = props
   return (
@@ -953,7 +953,7 @@ export function PromptWorkspace(props: PromptWorkspaceProps): ReactNode {
       ? '主对话参数（快速模型人设、注入 kind 白名单）与全局开关（预设生成、AGENTS.md、路径与顺序）。'
       : page === 'presets'
         ? '统一管理预设模板（切换/导入）与提示词配置（六层列表/模板插入/配置目录）。'
-        : '子代理作用域参数（模型/人设/工具集/深度）与子代理提示词配置（subagents 非 none）。'
+        : '子代理作用域参数（模型/人设/工具集/深度）与子代理提示词配置（audience 非缺省）。'
 
   return (
     <div className={css.shell}>

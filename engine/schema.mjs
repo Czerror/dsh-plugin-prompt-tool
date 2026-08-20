@@ -92,7 +92,8 @@ export const KNOWN_LAYERS = new Set(['pre-step', 'system-section', 'runtime-cont
 export const KNOWN_POSITIONS = new Set(['after-user', 'before-all', 'after-all'])
 export const KNOWN_DEDUPES = new Set(['session', 'batch', 'none'])
 export const KNOWN_PROMOTIONS = new Set(['none', 'main', 'include-subagents'])
-export const KNOWN_SUBAGENT_MODES = new Set(['none', 'inherit', 'only'])
+/** audience 显式值：缺省（省略/undefined）= 仅主会话，官方「缺省即主对话」形式。 */
+export const KNOWN_AUDIENCES = new Set(['公用', '仅子代理'])
 export const KNOWN_MERGE_MODES = new Set(['separate', 'merged'])
 export const KNOWN_MODEL_SCOPES = new Set(['all', 'pro', 'flash'])
 export const KNOWN_ROLES = new Set(['user', 'assistant'])
@@ -100,17 +101,17 @@ export const KNOWN_FILLS = new Set(['instruction-hint', 'env-facts', 'skill-cata
 
 /** 层能力矩阵：每个字段只在对应注入层生效。客户端表单据此动态渲染。 */
 export const LAYER_FIELD_POLICIES = {
-  'pre-step': { position: true, dedupe: true, promotion: true, subagents: true, modelScope: true, merge: true, order: true, role: true, placeholder: true },
-  'system-section': { position: false, dedupe: false, promotion: false, subagents: false, modelScope: false, merge: true, order: true, role: false, placeholder: false },
-  'runtime-context': { position: false, dedupe: false, promotion: false, subagents: false, modelScope: false, merge: true, order: true, role: false, placeholder: true },
-  'agent-request': { position: false, dedupe: false, promotion: false, subagents: true, modelScope: true, merge: false, order: true, role: false, placeholder: false },
-  'llm-stream': { position: false, dedupe: false, promotion: false, subagents: false, modelScope: true, merge: false, order: true, role: false, placeholder: false },
-  'tool-pipeline': { position: false, dedupe: false, promotion: false, subagents: true, modelScope: true, merge: false, order: true, role: false, placeholder: false },
+  'pre-step': { position: true, dedupe: true, promotion: true, audience: true, modelScope: true, merge: true, order: true, role: true, placeholder: true },
+  'system-section': { position: false, dedupe: false, promotion: false, audience: false, modelScope: false, merge: true, order: true, role: false, placeholder: false },
+  'runtime-context': { position: false, dedupe: false, promotion: false, audience: false, modelScope: false, merge: true, order: true, role: false, placeholder: true },
+  'agent-request': { position: false, dedupe: false, promotion: false, audience: true, modelScope: true, merge: false, order: true, role: false, placeholder: false },
+  'llm-stream': { position: false, dedupe: false, promotion: false, audience: false, modelScope: true, merge: false, order: true, role: false, placeholder: false },
+  'tool-pipeline': { position: false, dedupe: false, promotion: false, audience: true, modelScope: true, merge: false, order: true, role: false, placeholder: false },
 }
 
 /** 层显示名与说明：由引擎统一下发，客户端不再各自维护。 */
 export const LAYER_LABELS = {
-  'pre-step': { title: '消息批层', detail: '官方默认层：agent/pre-step 消息批。支持 position / dedupe / promotion / subagents / mergeMode 与文本插值。' },
+  'pre-step': { title: '消息批层', detail: '官方默认层：agent/pre-step 消息批。支持 position / dedupe / promotion / audience / mergeMode 与文本插值。' },
   'system-section': { title: '系统段层', detail: 'system-section 静态层：注册即全局，由 order 与 params.complete / sectionName 控制。' },
   'runtime-context': { title: '运行上下文', detail: 'runtime-context 层：static 按 order 注册，placeholder 单条生效，由 params.contextName 控制。' },
   'agent-request': { title: '调用配置层', detail: 'agent-request 层：按 order 注册，params.patch 改写请求配置。' },
@@ -127,7 +128,7 @@ export function getEngineMeta() {
     positions: [...KNOWN_POSITIONS].sort(),
     dedupes: [...KNOWN_DEDUPES].sort(),
     promotions: [...KNOWN_PROMOTIONS].sort(),
-    subagentModes: [...KNOWN_SUBAGENT_MODES].sort(),
+  audienceModes: [...KNOWN_AUDIENCES],
     modelScopes: [...KNOWN_MODEL_SCOPES].sort(),
     roles: [...KNOWN_ROLES].sort(),
     mergeModes: [...KNOWN_MERGE_MODES].sort(),
@@ -178,9 +179,9 @@ export function createPromptConfigs(specs, options = {}) {
     if (!KNOWN_PROMOTIONS.has(promotion)) {
       throw new TypeError(`${name}: ${label} unknown promotion ${JSON.stringify(promotion)}`)
     }
-    const subagents = spec.subagents ?? 'none'
-    if (!KNOWN_SUBAGENT_MODES.has(subagents)) {
-      throw new TypeError(`${name}: ${label} unknown subagents ${JSON.stringify(subagents)}`)
+    const audience = spec.audience
+    if (audience !== undefined && !KNOWN_AUDIENCES.has(audience)) {
+      throw new TypeError(`${name}: ${label} unknown audience ${JSON.stringify(audience)}`)
     }
     const modelScope = spec.modelScope ?? 'all'
     if (!KNOWN_MODEL_SCOPES.has(modelScope)) {
@@ -248,7 +249,7 @@ export function createPromptConfigs(specs, options = {}) {
       position,
       dedupe,
       promotion,
-      subagents,
+      audience,
       modelScope,
       sourceKind: typeof spec.sourceKind === 'string' && spec.sourceKind.length > 0 ? spec.sourceKind : spec.id,
       form: typeof spec.form === 'string' ? spec.form : 'notice',
