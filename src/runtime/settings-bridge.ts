@@ -477,9 +477,20 @@ export function registerSettingsBridge(
               if (path.includes('..') || /^[a-zA-Z]:/.test(path) || path.startsWith('/') || path.startsWith('\\')) return []
               return [{ path, content }]
             })
-            const presetYaml = normalized.find((entry) => entry.path.endsWith('preset.yml'))
+            // 预设定义文件：顶层 preset.yml 优先；缺失时用顶层任意 *.yml/*.yaml
+            // （排除 agent.cordis.yml 组合文件），支持自定义定义文件名导入。
+            const topRel = (path: string): string => {
+              const slash = path.indexOf('/')
+              return slash > 0 ? path.slice(slash + 1) : path
+            }
+            const isDefinition = (entry: { path: string }): boolean => {
+              const rel = topRel(entry.path)
+              return /\.ya?ml$/i.test(rel) && rel !== 'agent.cordis.yml'
+            }
+            let presetYaml = normalized.find((entry) => topRel(entry.path) === 'preset.yml')
+            if (presetYaml === undefined) presetYaml = normalized.find(isDefinition)
             if (presetYaml === undefined) {
-              writeBridgeJson(res, 400, { ok: false, code: 'preset-package-invalid', message: '导入包缺少 preset.yml' })
+              writeBridgeJson(res, 400, { ok: false, code: 'preset-package-invalid', message: '导入包缺少预设定义文件（preset.yml 或任意 *.yml/*.yaml，排除 agent.cordis.yml）' })
               return
             }
             if (presetYaml.content.trim().length === 0) {
@@ -519,7 +530,8 @@ export function registerSettingsBridge(
                 const slash = entry.path.indexOf('/')
                 const rel = slash > 0 ? entry.path.slice(slash + 1) : entry.path
                 if (rel.length === 0) continue
-                const dest = join(targetDir, rel)
+                // 被选中的定义文件统一落盘为 preset.yml（自定义文件名导入后按项目约定归一）。
+                const dest = join(targetDir, entry === presetYaml ? 'preset.yml' : rel)
                 // 子目录（如 engine/、agent.cordis.yml 同层）逐级创建。
                 mkdirSync(dirname(dest), { recursive: true })
                 writeFileSync(dest, entry.content, 'utf8')

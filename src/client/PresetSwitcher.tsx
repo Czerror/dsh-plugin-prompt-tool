@@ -36,7 +36,13 @@ export function PresetSwitcher(props: { store: PromptToolStore }): ReactNode {
   const uploadPreset = async (entries: Array<{ path: string; content: string }>): Promise<void> => {
     if (entries.length === 0) return
     // 预判目标 id（与服务端一致：preset.yml id 优先，否则顶层目录名），同名时先确认覆盖。
-    const presetYaml = entries.find((entry) => entry.path.endsWith('preset.yml'))
+    // 预设定义文件：顶层 preset.yml 优先，缺失时顶层任意 *.yml/*.yaml（排除 agent.cordis.yml）。
+    const topRel = (path: string): string => {
+      const slash = path.indexOf('/')
+      return slash > 0 ? path.slice(slash + 1) : path
+    }
+    const presetYaml = entries.find((entry) => topRel(entry.path) === 'preset.yml')
+      ?? entries.find((entry) => /\.ya?ml$/i.test(topRel(entry.path)) && topRel(entry.path) !== 'agent.cordis.yml')
     const idMatch = presetYaml?.content.match(/^id:\s*([a-zA-Z0-9][a-zA-Z0-9-]*)/m)
     const topDir = presetYaml !== undefined && presetYaml.path.includes('/')
       ? presetYaml.path.slice(0, presetYaml.path.indexOf('/'))

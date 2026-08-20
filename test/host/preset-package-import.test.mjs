@@ -211,6 +211,39 @@ test('importPresetPackage：文件夹导入且 preset.yml 无 id 时回退文件
   assert.ok(existsSync(join(PRESETS, 'my-persona', 'preset.yml')))
 })
 
+test('importPresetPackage：文件夹导入支持自定义定义文件名（落盘统一为 preset.yml）', async () => {
+  const { status, payload } = await importPackage({
+    files: [
+      { path: 'custom-name/config.yaml', content: 'id: custom-name\nname: 自定义文件名预设\n' },
+      { path: 'custom-name/agent.cordis.yml', content: '- id: demo-row\n  name: "@deepseek-ai/dsh-demo"\n' },
+    ],
+  })
+  assert.equal(status, 200)
+  assert.equal(payload.value?.id, 'custom-name')
+  assert.ok(existsSync(join(PRESETS, 'custom-name', 'preset.yml')), '定义文件应归一为 preset.yml')
+  assert.ok(!existsSync(join(PRESETS, 'custom-name', 'config.yaml')), '原文件名不应残留')
+  assert.ok(existsSync(join(PRESETS, 'custom-name', 'agent.cordis.yml')), '组合文件保留原名')
+})
+
+test('importPresetPackage：顶层多个 yml 时仅被选中的定义文件改名，其余保留', async () => {
+  const { status, payload } = await importPackage({
+    files: [
+      { path: 'multi/my-definition.yml', content: 'id: multi\nname: 多 yml 预设\n' },
+      { path: 'multi/notes.yaml', content: 'note: 这是说明文件\n' },
+      { path: 'multi/agent.cordis.yml', content: '- id: demo-row\n  name: "@deepseek-ai/dsh-demo"\n' },
+    ],
+  })
+  assert.equal(status, 200)
+  assert.equal(payload.value?.id, 'multi')
+  assert.ok(existsSync(join(PRESETS, 'multi', 'preset.yml')), '被选中的定义文件应改名为 preset.yml')
+  assert.ok(existsSync(join(PRESETS, 'multi', 'notes.yaml')), '其余 yml 保留原名')
+  assert.equal(
+    readFileSync(join(PRESETS, 'multi', 'preset.yml'), 'utf8'),
+    'id: multi\nname: 多 yml 预设\n',
+    'preset.yml 内容应来自被选中的定义文件',
+  )
+})
+
 test('importPresetPackage：写入后目录内容完整（顶层 + 子目录文件计数）', async () => {
   const { status } = await importPackage(presetPackage({
     files: [
