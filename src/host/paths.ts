@@ -2,9 +2,24 @@
 import { fileURLToPath } from 'node:url'
 import { join, resolve } from 'node:path'
 import { homedir } from 'node:os'
+import { existsSync } from 'node:fs'
+import { dirname } from 'node:path'
 
-/** 包内 skills 目录（构建后与 lib/ 同级）。 */
-export const SKILLS_DIR = fileURLToPath(new URL('../../skills', import.meta.url))
+/**
+ * 包内 skills 目录。
+ * 源码位于 src/host/（../../skills = 包根/skills），构建后内联进 lib/（层级变浅）。
+ * 统一向上查找最近包含 skills/manifest.json 的包根，两种形态都正确。
+ */
+export const SKILLS_DIR = (() => {
+  let dir = dirname(fileURLToPath(import.meta.url))
+  for (let depth = 0; depth < 6; depth += 1) {
+    if (existsSync(join(dir, 'skills', 'manifest.json'))) return join(dir, 'skills')
+    const parent = dirname(dir)
+    if (parent === dir) break
+    dir = parent
+  }
+  return join(dir, 'skills')
+})()
 
 /**
  * 部署路径默认值；凡是不同部署可能需要不同值的参数都通过 Config 暴露，
