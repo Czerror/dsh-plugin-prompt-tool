@@ -119,12 +119,12 @@ test('同位置多配置默认按声明顺序插入：near-anchor 与 router-gui
   assert.equal(decision.messages[2].source.plugin, 'router-guide')
 })
 
-test('priority 决定同位置插入顺序与 merged 拼接顺序', async () => {
+test('order 决定同位置插入顺序与 merged 拼接顺序', async () => {
   const { step } = makeHarness(createPromptConfigs([
-    { id: 'p-later', strategy: 'static', text: 'LATER', position: 'after-user', priority: 1 },
-    { id: 'p-first', strategy: 'static', text: 'FIRST', position: 'after-user', priority: 0 },
-    { id: 'm-b', strategy: 'static', text: 'B', position: 'after-all', mergeMode: 'merged', mergeGroup: 'grp', priority: 1 },
-    { id: 'm-a', strategy: 'static', text: 'A', position: 'after-all', mergeMode: 'merged', mergeGroup: 'grp', priority: 0 },
+  { id: 'p-later', strategy: 'static', text: 'LATER', position: 'after-user', order: 1 },
+  { id: 'p-first', strategy: 'static', text: 'FIRST', position: 'after-user', order: 0 },
+  { id: 'm-b', strategy: 'static', text: 'B', position: 'after-all', mergeMode: 'merged', mergeGroup: 'grp', order: 1 },
+  { id: 'm-a', strategy: 'static', text: 'A', position: 'after-all', mergeMode: 'merged', mergeGroup: 'grp', order: 0 },
   ]))
   const decision = await step(agent())
   assert.equal(decision.messages[1].content[0].text, 'FIRST')
@@ -150,7 +150,7 @@ test('单条提示词配置 resolve 抛错时只跳过该提示词配置，其�
   assert.equal(decision.messages[1].content[0].text, 'OK')
 })
 
-test('identity=kind 的提示词配置用 source.kind 做持久幂等', async () => {
+test('identity 归一：kind 维度去重由 sourceKind 承担（外来消息按 kind 匹配）', async () => {
   const { step } = makeHarness(createPromptConfigs([{
     id: 'instruction-hint',
     strategy: 'static',
@@ -160,7 +160,6 @@ test('identity=kind 的提示词配置用 source.kind 做持久幂等', async ()
     promotion: 'include-subagents',
     subagents: 'inherit',
     sourceKind: 'instruction-hint',
-    identity: { field: 'kind', value: 'instruction-hint' },
   }]))
   const withEvent = agent({ session: {
     id: 's3',
@@ -586,27 +585,27 @@ test('texts 数组：单条提示词配置注入为一条消息的多个 text �
   assert.equal(decision.messages[1].content[1].text, '第二段')
 })
 
-test('mergeGroup：同一位置的多条提示词配置合并为一条消息', async () => {
+test('merged：同一位置的多条提示词配置合并为一条消息（分组键=位置）', async () => {
   const { step } = makeHarness(createPromptConfigs([
-    { id: 'part-a', strategy: 'static', text: 'A', position: 'after-all', mergeGroup: 'grp', mergeMode: 'merged' },
-    { id: 'part-b', strategy: 'static', text: 'B', position: 'after-all', mergeGroup: 'grp', mergeMode: 'merged' },
+    { id: 'part-a', strategy: 'static', text: 'A', position: 'after-all', mergeMode: 'merged' },
+    { id: 'part-b', strategy: 'static', text: 'B', position: 'after-all', mergeMode: 'merged' },
     { id: 'alone', strategy: 'static', text: 'C', position: 'after-all' },
   ]))
   const decision = await step(agent())
   assert.equal(decision.messages.length, 3)
   assert.deepEqual(decision.messages[1].content.map((block) => block.text), ['A', 'B'])
-  assert.equal(decision.messages[1].source.plugin, 'grp')
+  assert.equal(decision.messages[1].source.plugin, 'merged:after-all')
   assert.equal(decision.messages[2].content[0].text, 'C')
 })
 
-test('mergeGroup 持久幂等：事件流已有合并组消息时组内配置全部跳过', async () => {
+test('merged 持久幂等：事件流已有同位置合并消息时组内配置全部跳过', async () => {
   const { step } = makeHarness(createPromptConfigs([
-    { id: 'part-a2', strategy: 'static', text: 'A', position: 'after-all', dedupe: 'session', mergeGroup: 'grp2', mergeMode: 'merged' },
-    { id: 'part-b2', strategy: 'static', text: 'B', position: 'after-all', dedupe: 'session', mergeGroup: 'grp2', mergeMode: 'merged' },
+    { id: 'part-a2', strategy: 'static', text: 'A', position: 'after-all', dedupe: 'session', mergeMode: 'merged' },
+    { id: 'part-b2', strategy: 'static', text: 'B', position: 'after-all', dedupe: 'session', mergeMode: 'merged' },
   ]))
   const withEvent = agent({ session: {
     id: 'mg1', header: { delegationDepth: 0 },
-    events: [{ type: 'user/message', data: { source: { kind: 'plugin', plugin: 'grp2' } } }],
+    events: [{ type: 'user/message', data: { source: { kind: 'plugin', plugin: 'merged:after-all' } } }],
   } })
   const decision = await step(withEvent)
   assert.equal(decision.messages.length, 1)
@@ -624,21 +623,20 @@ test('mergeMode=separate（默认）：同位置多条配置先后插入为独�
 })
 
 test('parsePromptConfigYaml 解析 texts 数组标量', () => {
-  const doc = parsePromptConfigYaml('id: x\ntexts: ["A", "B"]\nmergeGroup: grp\n')
+  const doc = parsePromptConfigYaml('id: x\ntexts: ["A", "B"]\n')
   assert.deepEqual(doc.texts, ['A', 'B'])
-  assert.equal(doc.mergeGroup, 'grp')
 })
 
-test('system-section：merged 模式按 order+mergeGroup 拼接为单个 section', () => {
+test('system-section：merged 模式同位置拼接为单个 section', () => {
   const sections = []
   makeWiredHarness([
-    { id: 'sys-a', layer: 'system-section', strategy: 'static', text: 'A', order: 10, mergeMode: 'merged', mergeGroup: 'grp', priority: 0 },
-    { id: 'sys-b', layer: 'system-section', strategy: 'static', texts: ['B1', 'B2'], order: 10, mergeMode: 'merged', mergeGroup: 'grp', priority: 1 },
+    { id: 'sys-a', layer: 'system-section', strategy: 'static', text: 'A', order: 10, mergeMode: 'merged' },
+    { id: 'sys-b', layer: 'system-section', strategy: 'static', texts: ['B1', 'B2'], order: 10, mergeMode: 'merged' },
   ], {
     systemPrompt: { section(def) { sections.push(def); return () => {} }, context() { return () => {} } },
   })
   assert.equal(sections.length, 1)
-  assert.equal(sections[0].name, 'grp')
+  assert.equal(sections[0].name, 'sys-a')
   assert.equal(sections[0].order, 10)
   assert.equal(sections[0].text, 'A\n\nB1\n\nB2')
 })
@@ -654,11 +652,11 @@ test('system-section：separate 模式同 order 保持独立 section（官方按
   assert.deepEqual(sections.map((section) => section.text), ['A', 'B'])
 })
 
-test('runtime-context：merged 模式同样支持拼接与 priority 顺序', () => {
+test('runtime-context：merged 模式同样支持拼接与 order 顺序', () => {
   const contexts = []
   makeWiredHarness([
-    { id: 'ctx-b', layer: 'runtime-context', strategy: 'static', text: 'B', order: 5, mergeMode: 'merged', priority: 1 },
-    { id: 'ctx-a', layer: 'runtime-context', strategy: 'static', text: 'A', order: 5, mergeMode: 'merged', priority: 0 },
+    { id: 'ctx-b', layer: 'runtime-context', strategy: 'static', text: 'B', order: 5, mergeMode: 'merged' },
+    { id: 'ctx-a', layer: 'runtime-context', strategy: 'static', text: 'A', order: 4, mergeMode: 'merged' },
   ], {
     systemPrompt: { section() { return () => {} }, context(def) { contexts.push(def); return () => {} } },
   })

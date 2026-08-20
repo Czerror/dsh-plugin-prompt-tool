@@ -17,12 +17,8 @@ modelScope: all
 configKind: ordered
 order: 30
 role: user
-priority: 0
 mergeMode: separate
 sourceKind: instruction-hint
 form: hint
-identity:
-  field: kind
-  value: instruction-hint
 params:
   text: ""

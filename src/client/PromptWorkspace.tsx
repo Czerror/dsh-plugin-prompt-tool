@@ -157,7 +157,7 @@ function AgentRequestSwitches(props: { store: PromptToolStore }): ReactNode {
   const { store } = props
   return (
     <section className={ui.section} aria-labelledby="pt-agent-request-switches">
-      <div className={ui.sectionHeading}><div><h2 id="pt-agent-request-switches">调用配置层开关</h2><p>作用于首轮请求配置，和本层提示词配置的 priority / modelScope 语义一致。</p></div></div>
+        <div className={ui.sectionHeading}><div><h2 id="pt-agent-request-switches">调用配置层开关</h2><p>作用于首轮请求配置，和本层提示词配置的 order / modelScope 语义一致。</p></div></div>
       <BootstrapTokensRow store={store} />
     </section>
   )

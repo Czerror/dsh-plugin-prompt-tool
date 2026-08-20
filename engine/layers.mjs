@@ -15,10 +15,8 @@ import {
 
 const name = 'prompt-config-engine'
 
-/** 单条文本型配置的完整文本:text 优先,否则 texts 数组按空行拼接。 */
+/** 单条文本型配置的完整文本:texts 数组按空行拼接（单一文本字段）。 */
 function configText(config) {
-  const text = interpolateStatic(config.text, config.variables)
-  if (text.length > 0) return text
   return config.texts
     .map((item) => interpolateStatic(item, config.variables))
     .filter((item) => item.length > 0)
@@ -34,13 +32,13 @@ function matchesAgentScope(config, agent) {
   return matchesModel(config.modelScope, agent.options?.model)
 }
 
-/** 文本型层分组:merged 模式按 order+mergeGroup 分组,否则每条独立。 */
+/** 文本型层分组:merged 模式按位置分组,否则每条独立。 */
 function textLayerGroups(configs) {
-  const sorted = [...configs].sort((a, b) => (a.order - b.order) || (a.priority - b.priority))
+  const sorted = [...configs].sort((a, b) => a.order - b.order)
   const groups = []
   const index = new Map()
   for (const config of sorted) {
-    const key = config.mergeMode === 'merged' ? `merged:${config.order}:${config.mergeGroup ?? ''}` : undefined
+    const key = config.mergeMode === 'merged' ? `merged:${config.position ?? ''}` : undefined
     if (key === undefined) {
       groups.push([config])
       continue
@@ -69,7 +67,7 @@ function wireSystemSections(ctx, configs, warnOnce) {
       const text = group.map((config) => configText(config)).filter((item) => item.length > 0).join('\n\n')
       if (text.length === 0) continue
       keepDisposer(ctx, systemPrompt.section({
-        name: typeof base.params?.sectionName === 'string' && base.params.sectionName.length > 0 ? base.params.sectionName : (base.mergeGroup ?? base.id),
+        name: typeof base.params?.sectionName === 'string' && base.params.sectionName.length > 0 ? base.params.sectionName : base.id,
         order: base.order,
         text,
         ...(base.params?.complete === true ? { complete: true } : {}),
@@ -94,7 +92,7 @@ function wireRuntimeContexts(ctx, configs, warnOnce) {
       const text = group.map((config) => configText(config)).filter((item) => item.length > 0).join('\n\n')
       if (text.length === 0) continue
       keepDisposer(ctx, systemPrompt.context({
-        name: typeof base.params?.contextName === 'string' && base.params.contextName.length > 0 ? base.params.contextName : (base.mergeGroup ?? base.id),
+        name: typeof base.params?.contextName === 'string' && base.params.contextName.length > 0 ? base.params.contextName : base.id,
         order: base.order,
         text,
       }), `${name}: context ${base.id}`)
@@ -104,12 +102,12 @@ function wireRuntimeContexts(ctx, configs, warnOnce) {
   }
   // placeholder:官方 context 接受函数 provider,在每次 assembly 时动态填充。
   const placeholders = configs.filter((config) => config.strategy === 'placeholder')
-    .sort((a, b) => (a.order - b.order) || (a.priority - b.priority))
+    .sort((a, b) => a.order - b.order)
   for (const config of placeholders) {
     try {
       const resolver = config.resolve
       keepDisposer(ctx, systemPrompt.context({
-        name: typeof config.params?.contextName === 'string' && config.params.contextName.length > 0 ? config.params.contextName : (config.mergeGroup ?? config.id),
+        name: typeof config.params?.contextName === 'string' && config.params.contextName.length > 0 ? config.params.contextName : config.id,
         order: config.order,
         text: async (assembly) => {
           const agent = assembly?.agent
@@ -117,7 +115,7 @@ function wireRuntimeContexts(ctx, configs, warnOnce) {
           const resolved = await resolver({ ctx, agent, session, decision: { kind: 'ok', messages: [] }, messages: [] })
           if (resolved === null || resolved === undefined) return ''
           const variables = { ...config.variables, ...(resolved.variables !== null && typeof resolved.variables === 'object' ? resolved.variables : {}) }
-          if (config.text.length > 0) return interpolateVariables(config.text, variables, session)
+          if (config.texts.length > 0) return interpolateVariables(config.texts.join('\n\n'), variables, session)
           return typeof resolved.text === 'string' ? interpolateVariables(resolved.text, variables, session) : ''
         },
       }), `${name}: context ${config.id}`)
@@ -160,8 +158,8 @@ function wireLlmStreams(ctx, configs, warnOnce) {
     ctx.on('llm/stream', (options, next) => {
       try {
         const mode = config.params?.mode ?? 'pass'
-        if (mode === 'replace' && config.text.length > 0 && matchesModel(config.modelScope, options?.model)) {
-          return replacedStream(config.text)
+        if (mode === 'replace' && config.texts.length > 0 && matchesModel(config.modelScope, options?.model)) {
+          return replacedStream(config.texts.join('\n\n'))
         }
         return next()
       } catch (error) {
@@ -207,11 +205,11 @@ function wireToolPipelines(ctx, configs, warnOnce) {
         if (!matchesTool(exec) || !matchesAgentScope(config, exec?.agent)) return next()
         const action = config.params?.postAction ?? 'accept'
         if (action === 'accept') return next()
-        if (action === 'replace' && config.text.length > 0) {
-          return { kind: 'accept', content: [{ type: 'text', text: config.text }] }
+        if (action === 'replace' && config.texts.length > 0) {
+          return { kind: 'accept', content: [{ type: 'text', text: config.texts.join('\n\n') }] }
         }
         if (action === 'block') {
-          return { kind: 'block', feedback: [{ type: 'text', text: config.text.length > 0 ? config.text : `${config.name}: blocked by prompt config` }] }
+          return { kind: 'block', feedback: [{ type: 'text', text: config.texts.length > 0 ? config.texts.join('\n\n') : `${config.name}: blocked by prompt config` }] }
         }
         return next()
       } catch (error) {

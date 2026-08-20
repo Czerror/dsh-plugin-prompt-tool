@@ -100,12 +100,12 @@ export const KNOWN_FILLS = new Set(['instruction-hint', 'env-facts', 'skill-cata
 
 /** 层能力矩阵：每个字段只在对应注入层生效。客户端表单据此动态渲染。 */
 export const LAYER_FIELD_POLICIES = {
-  'pre-step': { position: true, dedupe: true, promotion: true, subagents: true, modelScope: true, merge: true, order: true, priority: true, role: true, placeholder: true },
-  'system-section': { position: false, dedupe: false, promotion: false, subagents: false, modelScope: false, merge: true, order: true, priority: true, role: false, placeholder: false },
-  'runtime-context': { position: false, dedupe: false, promotion: false, subagents: false, modelScope: false, merge: true, order: true, priority: true, role: false, placeholder: true },
-  'agent-request': { position: false, dedupe: false, promotion: false, subagents: true, modelScope: true, merge: false, order: false, priority: true, role: false, placeholder: false },
-  'llm-stream': { position: false, dedupe: false, promotion: false, subagents: false, modelScope: true, merge: false, order: false, priority: true, role: false, placeholder: false },
-  'tool-pipeline': { position: false, dedupe: false, promotion: false, subagents: true, modelScope: true, merge: false, order: false, priority: true, role: false, placeholder: false },
+  'pre-step': { position: true, dedupe: true, promotion: true, subagents: true, modelScope: true, merge: true, order: true, role: true, placeholder: true },
+  'system-section': { position: false, dedupe: false, promotion: false, subagents: false, modelScope: false, merge: true, order: true, role: false, placeholder: false },
+  'runtime-context': { position: false, dedupe: false, promotion: false, subagents: false, modelScope: false, merge: true, order: true, role: false, placeholder: true },
+  'agent-request': { position: false, dedupe: false, promotion: false, subagents: true, modelScope: true, merge: false, order: true, role: false, placeholder: false },
+  'llm-stream': { position: false, dedupe: false, promotion: false, subagents: false, modelScope: true, merge: false, order: true, role: false, placeholder: false },
+  'tool-pipeline': { position: false, dedupe: false, promotion: false, subagents: true, modelScope: true, merge: false, order: true, role: false, placeholder: false },
 }
 
 /** 层显示名与说明：由引擎统一下发，客户端不再各自维护。 */
@@ -190,10 +190,11 @@ export function createPromptConfigs(specs, options = {}) {
     if (!KNOWN_ROLES.has(role)) {
       throw new TypeError(`${name}: ${label} unknown role ${JSON.stringify(role)}`)
     }
-    const identity = spec.identity ?? { field: 'plugin', value: spec.id }
-    if (identity === null || typeof identity !== 'object' || Array.isArray(identity)
-      || !['plugin', 'kind'].includes(identity.field) || typeof identity.value !== 'string' || identity.value.length === 0) {
-      throw new TypeError(`${name}: ${label}.identity must be { field: 'plugin'|'kind', value: string }`)
+  // identity 仅支持 plugin 命名空间（kind 模式与 sourceKind 重复，已归一）。
+  const identity = spec.identity ?? { field: 'plugin', value: spec.id }
+  if (identity === null || typeof identity !== 'object' || Array.isArray(identity)
+  || identity.field !== 'plugin' || typeof identity.value !== 'string' || identity.value.length === 0) {
+    throw new TypeError(`${name}: ${label}.identity must be { field: 'plugin', value: string }`)
     }
     const order = spec.order ?? 0
     if (typeof order !== 'number' || !Number.isFinite(order)) {
@@ -213,13 +214,6 @@ export function createPromptConfigs(specs, options = {}) {
     }
     if (spec.texts !== undefined && (!Array.isArray(spec.texts) || spec.texts.some((item) => typeof item !== 'string'))) {
       throw new TypeError(`${name}: ${label}.texts must be an array of strings when present`)
-    }
-    if (spec.mergeGroup !== undefined && (typeof spec.mergeGroup !== 'string' || spec.mergeGroup.length === 0)) {
-      throw new TypeError(`${name}: ${label}.mergeGroup must be a non-empty string when present`)
-    }
-    const priority = spec.priority ?? 0
-    if (typeof priority !== 'number' || !Number.isFinite(priority)) {
-      throw new TypeError(`${name}: ${label}.priority must be a finite number`)
     }
     const mergeMode = spec.mergeMode ?? 'separate'
     if (!KNOWN_MERGE_MODES.has(mergeMode)) {
@@ -260,11 +254,16 @@ export function createPromptConfigs(specs, options = {}) {
       form: typeof spec.form === 'string' ? spec.form : 'notice',
       summary: typeof spec.summary === 'string' ? spec.summary : '',
       identity,
-      text: typeof spec.text === 'string' && spec.text.length > 0 ? spec.text : (typeof template?.text === 'string' ? template.text : ''),
-      texts: Array.isArray(spec.texts) ? spec.texts.filter((item) => typeof item === 'string' && item.length > 0) : [],
+      // text/texts 统一：text 为单块便捷写法，运行时与渲染只消费 texts。
+      texts: (() => {
+        const specText = typeof spec.text === 'string' && spec.text.length > 0 ? spec.text : undefined
+        const specTexts = Array.isArray(spec.texts) ? spec.texts.filter((item) => typeof item === 'string' && item.length > 0) : []
+        const templateText = typeof template?.text === 'string' ? template.text : ''
+        return specText !== undefined || specTexts.length > 0
+          ? [...(specText !== undefined ? [specText] : []), ...specTexts]
+          : (templateText.length > 0 ? [templateText] : [])
+      })(),
       mergeMode,
-      mergeGroup: typeof spec.mergeGroup === 'string' && spec.mergeGroup.length > 0 ? spec.mergeGroup : undefined,
-      priority,
       variables: spec.variables !== null && typeof spec.variables === 'object' && !Array.isArray(spec.variables) ? spec.variables : {},
       templatePatch,
       params: spec.params !== null && typeof spec.params === 'object' && !Array.isArray(spec.params) ? spec.params : {},

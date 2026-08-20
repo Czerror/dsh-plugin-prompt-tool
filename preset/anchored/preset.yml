@@ -258,9 +258,6 @@ promptConfigs:
     sourceKind: instruction-hint
     form: hint
     fill: instruction-hint
-    identity:
-      field: kind
-      value: instruction-hint
     params:
       promoteOn: either
       includeSubagents: true

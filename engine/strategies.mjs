@@ -89,8 +89,8 @@ function matchesAnchorWord(raw, firstTurnWord) {
  * 参数全部来自 config.params（由 preset.yml 单一配置源下发）。
  */
 function createCustomFallbackResolver(config) {
-  const promptText = (typeof config.text === 'string' && config.text.length > 0)
-    ? config.text
+  const promptText = config.texts.length > 0
+    ? config.texts.join('\n\n')
     : (typeof config.params?.text === 'string' && config.params.text.length > 0 ? config.params.text : undefined)
   const firstTurnWord = typeof config.params?.firstTurnWord === 'string' && config.params.firstTurnWord.length > 0
     ? config.params.firstTurnWord
@@ -148,12 +148,11 @@ export function bindResolver(config, strategyDir) {
     case 'custom-fallback':
       return createCustomFallbackResolver(config)
     case 'static': {
-      const text = config.text
       const texts = config.texts
       const patch = config.templatePatch ?? {}
       return () => {
         if (texts.length > 0) return { ...patch, content: texts.map((item) => ({ type: 'text', text: item })) }
-        return text.length > 0 ? { ...patch, text } : null
+        return null
       }
     }
     default: {

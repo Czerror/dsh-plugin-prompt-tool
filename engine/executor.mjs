@@ -27,23 +27,25 @@ function eventMessage(event) {
 
 /** 合并身份:merged 模式用 mergeGroup 或同位置默认组名;separate 模式保持自身身份。 */
 function mergedIdentity(config) {
-  if (config.mergeMode !== 'merged') return config.mergeGroup ?? config.id
-  return config.mergeGroup ?? `merged:${config.position}`
+  if (config.mergeMode !== 'merged') return config.id
+  return `merged:${config.position}`
 }
 
 function hasInjected(config, session) {
-  const field = config.identity.field
-  const value = config.mergeMode === 'merged' ? mergedIdentity(config) : config.mergeGroup ?? config.identity.value
+  const value = config.mergeMode === 'merged' ? mergedIdentity(config) : config.identity.value
   return (Array.isArray(session.events) ? session.events : []).some((event) => {
     const message = eventMessage(event)
-    return message?.source?.[field] === value
+    // 双通道去重：kind（外来/第三方消息，如 context-gate 的 instruction-hint）或
+    // plugin（本引擎注入的命名空间，merged 组用 merged:<position>）。
+    return message?.source?.kind === config.sourceKind || message?.source?.plugin === value
   })
 }
 
 /** 当前消息批内是否已有该提示词配置注入(每轮去重)。 */
 function hasInBatch(config, messages) {
-  const value = config.mergeMode === 'merged' ? mergedIdentity(config) : config.mergeGroup ?? config.identity.value
-  return messages.some((message) => message?.source?.[config.identity.field] === value)
+  const value = config.mergeMode === 'merged' ? mergedIdentity(config) : config.identity.value
+  return messages.some((message) =>
+    message?.source?.kind === config.sourceKind || message?.source?.plugin === value)
 }
 
 /** 构造默认 user/assistant 消息;策略返回完整 patch 时覆盖对应字段。 */
@@ -61,7 +63,7 @@ function buildMessage(config, resolved) {
       ? resolved.source
       : {
           kind: config.sourceKind,
-          ...(config.identity.field !== 'kind' ? { plugin: sourceValue } : {}),
+          plugin: sourceValue,
           ...(typeof config.form === 'string' ? { form: config.form } : {}),
           ...(typeof config.summary === 'string' && config.summary.length > 0 ? { summary: config.summary } : {}),
         },
@@ -163,10 +165,7 @@ export function applyPromptConfigs(ctx, configs, options = {}) {
           if (resolved === null || resolved === undefined) continue
           const patched = { ...resolved }
           const mergedVars = { ...config.variables, ...(resolved.variables !== null && typeof resolved.variables === 'object' ? resolved.variables : {}) }
-          if (config.strategy === 'placeholder' && config.text.length > 0) {
-            // 高度自定义:filler 提供变量,用户用 text 模板决定输出。
-            patched.text = interpolateVariables(config.text, mergedVars, session)
-          } else if (typeof patched.text === 'string') {
+          if (typeof patched.text === 'string') {
             // 提示词配置级模板变量 + filler 变量 + 内置环境变量插值。
             patched.text = interpolateVariables(patched.text, mergedVars, session)
           }
@@ -180,15 +179,15 @@ export function applyPromptConfigs(ctx, configs, options = {}) {
           const hasText = typeof patched.text === 'string' && patched.text.length > 0
           const hasContent = Array.isArray(patched.content) && patched.content.length > 0
           if (!hasText && !hasContent) continue
-          due.push({ config, resolved: patched, priority: config.priority })
+          due.push({ config, resolved: patched })
         } catch (error) {
           // 单个提示词配置失败不得伤及会话:跳过该提示词配置,只告警一次。
           warnOnce(`${name}: config ${String(config?.id ?? '<unknown>')} failed, skipping: ${String((error && error.message) || error)}`)
         }
       }
 
-      // priority 升序(同值保持声明顺序):决定拼接顺序与同位置插入顺序。
-      due.sort((a, b) => a.priority - b.priority)
+  // order 升序(同值保持声明顺序):决定拼接顺序与同位置插入顺序。
+  due.sort((a, b) => a.config.order - b.config.order)
 
       // 同一 mergeGroup 的多条提示词配置在首条配置的位置合并为一条消息;
       // 文本按内容块拼接,source 身份改用 mergeGroup 以保持持久幂等。

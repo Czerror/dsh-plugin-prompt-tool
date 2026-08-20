@@ -25,7 +25,6 @@ const EMPTY_POLICY: LayerFieldPolicy = {
   modelScope: false,
   merge: false,
   order: false,
-  priority: false,
   role: false,
   placeholder: false,
 }
@@ -130,10 +129,8 @@ export function PromptConfigForm(props: { meta: EngineMeta; config: PromptConfig
         <OptionField label="configKind" hint="ordered 按 order 升序；anchor 固定文件序排最前" value={config.configKind} options={meta.slotKinds} fallback="ordered" onChange={(value) => onPatch({ configKind: value })} />
         {policy.role && <OptionField label="role" hint="注入消息角色：user / assistant" value={config.role} options={meta.roles} fallback="user" onChange={(value) => onPatch({ role: value })} />}
         {policy.position && <OptionField label="position" hint="同层拼接位置：after-user / before-all / after-all" value={config.position} options={meta.positions} fallback="after-user" onChange={(value) => onPatch({ position: value })} />}
-        {policy.merge && <OptionField label="mergeMode" hint="merged=同位置同 mergeGroup 拼接为一条消息" value={config.mergeMode} options={meta.mergeModes} fallback="separate" onChange={(value) => onPatch({ mergeMode: value })} />}
-        {policy.merge && <Field label="mergeGroup" hint="拼接分组名；不填 = 同位置共享默认组"><input className={styles.configInput} value={config.mergeGroup ?? ''} spellCheck={false} onChange={(e) => onPatch({ mergeGroup: e.target.value })} /></Field>}
+        {policy.merge && <OptionField label="mergeMode" hint="merged=同位置配置拼接为一条消息" value={config.mergeMode} options={meta.mergeModes} fallback="separate" onChange={(value) => onPatch({ mergeMode: value })} />}
         {policy.order && <Field label="order" hint="本层排序：数值小者在前（与同层列表上下移动等价）"><input className={styles.configInput} type="number" step={1} value={config.order ?? 0} onChange={(e) => onPatch({ order: Number(e.target.value) })} /></Field>}
-        {policy.priority && <Field label="priority" hint="同位置插入顺序与 merged 拼接顺序：数值小者更靠近锚点"><input className={styles.configInput} type="number" step={1} value={config.priority ?? 0} onChange={(e) => onPatch({ priority: Number(e.target.value) })} /></Field>}
         <Field label="group" hint="互斥组名：同 group 且 exclusive=true 时只执行排序后的第一个 enabled 配置"><input className={styles.configInput} value={config.group ?? ''} spellCheck={false} onChange={(e) => onPatch({ group: e.target.value })} /></Field>
         <label className={styles.configEnable} title={config.exclusive === true ? '点击关闭互斥' : '点击开启互斥'}>
           <span className={styles.configFieldLabel}>exclusive</span>
@@ -194,8 +191,7 @@ export function PromptConfigCard(props: {
   const chips = [config.layer ?? 'pre-step', config.strategy ?? 'static']
   if (config.fill) chips.push(config.fill)
   if (policy.position) chips.push(`pos=${config.position ?? 'after-user'}`)
-  if (config.mergeMode === 'merged') chips.push(`merged:${config.mergeGroup || '默认组'}`)
-  if ((config.priority ?? 0) !== 0) chips.push(`priority=${config.priority}`)
+  if (config.mergeMode === 'merged') chips.push('merged')
   if ((config.order ?? 0) !== 0) chips.push(`order=${config.order}`)
   if (config.group) chips.push(config.exclusive === true ? `exclusive:${config.group}` : `group:${config.group}`)
   return (

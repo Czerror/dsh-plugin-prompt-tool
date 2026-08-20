@@ -49,10 +49,10 @@ test('buildPromptConfigFiles 合并自定义提示词配置后生成 00-40 文�
     '40-custom.yml',
   ])
   const near = parse(files[0].content, { logLevel: 'silent' })
-  assert.equal(near.text, '覆盖内容')
+  assert.deepEqual(near.texts, ['覆盖内容'])
   const custom = parse(files[4].content, { logLevel: 'silent' })
   assert.equal(custom.layer, 'runtime-context')
-  assert.equal(custom.text, '自定义上下文')
+  assert.deepEqual(custom.texts, ['自定义上下文'])
 })
 
 test('loadPromptConfigFiles 扫描 yml 与 json，非法文件 fail loud', () => {
@@ -94,14 +94,14 @@ test('renderPromptConfigYaml 全字段开放：variables/identity/params 嵌套�
     templateFile: 'template.json',
     fill: 'env-facts',
     variables: { WHO: '李雷' },
-    identity: { field: 'kind', value: 'full-kind' },
+    identity: { field: 'plugin', value: 'full-kind' },
     params: { toolNames: 'bash,run_code', patch: { maxTokens: 2048 } },
   })
   const doc = parse(yaml, { logLevel: 'silent' })
   assert.equal(doc.id, 'full')
   assert.equal(doc.layer, 'tool-pipeline')
-  assert.equal(doc.text, '第一行\n第二行')
-  assert.deepEqual(doc.identity, { field: 'kind', value: 'full-kind' })
+  assert.deepEqual(doc.texts, ['第一行\n第二行'])
+  assert.deepEqual(doc.identity, { field: 'plugin', value: 'full-kind' })
   assert.deepEqual(doc.variables, { WHO: '李雷' })
   assert.equal(doc.params.toolNames, 'bash,run_code')
   assert.deepEqual(doc.params.patch, { maxTokens: 2048 })
@@ -205,5 +205,3 @@ test('buildPromptConfigFiles injectPrompt=false 且 firstTurnAnchor=true 只启�
   assert.equal(byName['20-prompt-injector.yml'].enabled, false)
   assert.equal(byName['30-instruction-hint.yml'].enabled, true)
 })
-
-

@@ -37,10 +37,6 @@ export interface PromptConfigSpec {
   texts?: string[]
   /** 同位置多条提示词配置的插入方式：separate=先后插入独立消息（默认）；merged=拼接为一条消息。 */
   mergeMode?: 'separate' | 'merged'
-  /** merged 模式下的分组名；未指定则同位置共享一个默认组。 */
-  mergeGroup?: string
-  /** 同位置（或拼接组内）的顺序：数值小者更靠近插入锚点。 */
-  priority?: number
   templateFile?: string
   fill?: string
   variables?: Record<string, string>
@@ -181,7 +177,6 @@ export function buildDefaultPromptConfigs(options: BuildCordisOptions, prompt: s
       sourceKind: 'instruction-hint',
       form: 'hint',
       fill: 'instruction-hint',
-      identity: { field: 'kind', value: 'instruction-hint' },
       params: { promoteOn: 'either', includeSubagents: true },
     },
   ]
@@ -243,12 +238,14 @@ export function renderPromptConfigYaml(spec: PromptConfigSpec): string {
   if (typeof spec.summary === 'string' && spec.summary.length > 0) lines.push(yamlScalar('summary', 0, spec.summary))
   if (typeof spec.templateFile === 'string' && spec.templateFile.length > 0) lines.push(`templateFile: ${spec.templateFile}`)
   if (typeof spec.fill === 'string' && spec.fill.length > 0) lines.push(`fill: ${spec.fill}`)
-  if (typeof spec.text === 'string' && spec.text.length > 0) lines.push(yamlScalar('text', 0, spec.text))
-  if (Array.isArray(spec.texts) && spec.texts.length > 0) lines.push(`texts: ${JSON.stringify(spec.texts)}`)
+  // text/texts 统一：text 为单块便捷写法，渲染归一为 texts。
+  const texts = [
+    ...(typeof spec.text === 'string' && spec.text.length > 0 ? [spec.text] : []),
+    ...(Array.isArray(spec.texts) ? spec.texts : []),
+  ]
+  if (texts.length > 0) lines.push(`texts: ${JSON.stringify(texts)}`)
   if (spec.mergeMode !== undefined && spec.mergeMode !== 'separate') lines.push(`mergeMode: ${spec.mergeMode}`)
-  if (spec.priority !== undefined && spec.priority !== 0) lines.push(`priority: ${spec.priority}`)
-  if (typeof spec.mergeGroup === 'string' && spec.mergeGroup.length > 0) lines.push(`mergeGroup: ${spec.mergeGroup}`)
-  if (spec.identity !== undefined && (spec.identity.field !== 'plugin' || spec.identity.value !== spec.id)) {
+  if (spec.identity !== undefined && spec.identity.value !== spec.id) {
     lines.push('identity:', `  field: ${spec.identity.field}`, `  value: ${spec.identity.value}`)
   }
   if (spec.variables !== undefined && Object.keys(spec.variables).length > 0) {

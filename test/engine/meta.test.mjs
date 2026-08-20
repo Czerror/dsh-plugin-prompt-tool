@@ -12,7 +12,7 @@ test('getEngineMeta 返回引擎能力矩阵，anchored 策略为内置策略', 
   assert.deepEqual(meta.strategies, ['custom-fallback', 'first-turn-anchor', 'guide-auto', 'instruction-hint', 'placeholder', 'static'])
   assert.ok(meta.fills.includes('skill-catalog'))
   assert.ok(meta.layerFieldPolicies['pre-step'].position === true)
-  assert.ok(meta.layerFieldPolicies['agent-request'].priority === true)
+  assert.ok(meta.layerFieldPolicies['agent-request'].order === true)
   assert.ok(meta.layerLabels['pre-step'].title.length > 0)
   assert.deepEqual([...KNOWN_STRATEGIES].sort(), meta.strategies)
 })

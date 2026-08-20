@@ -17,9 +17,7 @@ export interface PromptConfigDraft {
   role?: string
   group?: string
   exclusive?: boolean
-  priority?: number
   mergeMode?: string
-  mergeGroup?: string
   sourceKind?: string
   form?: string
   summary?: string
@@ -41,7 +39,6 @@ export interface LayerFieldPolicy {
   modelScope: boolean
   merge: boolean
   order: boolean
-  priority: boolean
   role: boolean
   placeholder: boolean
 }
