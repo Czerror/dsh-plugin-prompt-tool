@@ -67,6 +67,28 @@ export async function listAdvertisedModels(ctx: Context): Promise<Record<string,
   return catalog
 }
 
+/**
+ * 主对话默认模型控制：modelProvider + modelName 同时非空时，经官方
+ * `agentDefaultModel.saveSelection` 写入新会话默认模型（对齐官方 web 切换模型的
+ * 默认级持久化；只影响新创建的 Agent，不干预已有会话）。任一为空 = 不干预
+ * （继承用户在宿主 web 的选择）；agent-default-model 服务未装配时静默跳过。
+ */
+export function installDefaultModelRoute(ctx: Context, isEnabled: () => boolean, provider: () => string, model: () => string): () => void {
+  const apply = (): void => {
+    try {
+      const service = ctx.get('agentDefaultModel') as {
+        saveSelection?: (selection: { provider: string; model: string; reasoningEffort?: string }) => void
+      } | undefined
+      if (service?.saveSelection === undefined) return
+      if (isEnabled()) service.saveSelection({ provider: provider(), model: model() })
+    } catch {
+      // agent-default-model 服务缺失（core 未装配）时静默跳过，不阻断插件。
+    }
+  }
+  apply()
+  return apply
+}
+
 /** 给宿主直派子代理补固定模型路由（modelProvider + modelName 同时非空时生效）；调用方显式 provider/model 优先，不覆盖 persona 与工具白名单。 */
 export function installSubagentModelRoute(ctx: Context, isEnabled: () => boolean, provider: () => string, model: () => string): void {
   ctx.inject(['subagents'], (sctx: Context) => {

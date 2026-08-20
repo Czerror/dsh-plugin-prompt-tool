@@ -162,7 +162,7 @@ function ModelToolCards(props: { store: PromptToolStore }): ReactNode {
           <div className={ui.settingRowStack}>
             <span className={ui.settingCopy}>
               <strong>模型服务商</strong>
-              <small>主对话直派子代理与委派子代理通用（官方 AgentOptions.provider）；调用方未显式指定时自动补入。检测到 DeepSeek 路由可直接选择，未检测到可手动选择 deepseek-official。</small>
+              <small>主对话新会话默认模型（agent-default-model）+ 直派/委派子代理固定路由（官方 AgentOptions.provider）；调用方未显式指定时自动补入。检测到的服务商可直接选择。</small>
             </span>
             <select
               className={ui.configInput}
@@ -184,7 +184,7 @@ function ModelToolCards(props: { store: PromptToolStore }): ReactNode {
           <div className={ui.settingRowStack}>
             <span className={ui.settingCopy}>
               <strong>模型名</strong>
-              <small>官方 AgentOptions.model；与模型服务商同时非空时生效，例如 deepseek-v4-flash。</small>
+              <small>与模型服务商同时非空时生效：主对话新会话默认模型 + 子代理固定路由，例如 deepseek-v4-flash。</small>
             </span>
             <select
               className={ui.configInput}

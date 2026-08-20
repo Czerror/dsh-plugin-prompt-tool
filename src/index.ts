@@ -18,7 +18,7 @@ import type { PresetSpec } from './host/manifest.ts'
 import { createCachedSkillsReader, mergeSkillDirs } from './runtime/skills-provider.ts'
 import { ensureWebSurface } from './web-surface.ts'
 import { resolveProfileSkillsDir } from './profile-skills.ts'
-import { detectModels, installSubagentModelRoute, listAdvertisedModels } from './runtime/models.ts'
+import { detectModels, installDefaultModelRoute, installSubagentModelRoute, listAdvertisedModels } from './runtime/models.ts'
 import type { ModelDetection } from './runtime/models.ts'
 import { registerSettingsBridge } from './runtime/settings-bridge.ts'
 import { registerTuiCommand } from './runtime/tui.ts'
@@ -394,6 +394,7 @@ export function apply(ctx: Context, configIn: Config): void {
       // 参数覆盖变更：应用参数并重建。
       try {
         rebuildPreset()
+        applyDefaultModel()
       } catch (error) {
         warn(ctx, `prompt-tool: overrides rebuild failed: ${String(error)}`)
       }
@@ -437,6 +438,14 @@ export function apply(ctx: Context, configIn: Config): void {
   // 模型路由（主对话直派子代理与委派子代理通用）：
   // 服务商与模型名同时非空时生效；调用方显式模型优先，persona 与 toolFilter 保持不变。
   installSubagentModelRoute(
+    ctx,
+    () => runtime.modelProvider.length > 0 && runtime.modelName.length > 0,
+    () => runtime.modelProvider,
+    () => runtime.modelName,
+  )
+  // 主对话默认模型控制：modelProvider + modelName 非空时写入官方 agent-default-model
+  // （新会话默认模型；任一为空 = 不干预，继承用户在宿主 web 的选择）。
+  const applyDefaultModel = installDefaultModelRoute(
     ctx,
     () => runtime.modelProvider.length > 0 && runtime.modelName.length > 0,
     () => runtime.modelProvider,
@@ -650,6 +659,7 @@ export type { PresetSpec } from './host/manifest.ts'
 export { listPresets, resolvePresetDir, userPresetsDir } from './host/manifest.ts'
 export { ensureWebSurface, resolveProfileDir } from './web-surface.ts'
 export { resolveProfileSkillsDir } from './profile-skills.ts'
+export { installDefaultModelRoute } from './runtime/models.ts'
 export type { WritePresetOptions } from './host/write-preset.ts'
 export { validatePromptConfigs } from './runtime/configs-validate.ts'
 export { registerSettingsBridge } from './runtime/settings-bridge.ts'
