@@ -647,7 +647,7 @@ function SkillsSettings(props: { store: PromptToolStore; api: IApiClient }): Rea
         data-dragging={dragFolder === skill.folder ? '' : undefined}
         data-drop-before={dropTarget?.folder === skill.folder && dropTarget.before ? '' : undefined}
         data-drop-after={dropTarget?.folder === skill.folder && !dropTarget.before ? '' : undefined}
-        draggable={skill.valid && !selectionMode && !nested}
+        draggable={skill.valid && !nested}
         onDragStart={(event) => {
           setDragFolder(skill.folder)
           event.dataTransfer.effectAllowed = 'move'
@@ -669,24 +669,19 @@ function SkillsSettings(props: { store: PromptToolStore; api: IApiClient }): Rea
         }}
         onDragEnd={() => { setDragFolder(undefined); setDropTarget(undefined) }}
       >
+        {/* 勾选框：只选择（职责分离——开关状态由行内 Switch 与上方批量按钮控制）。 */}
+        <label className={ui.skillSelect} aria-label={`选择 ${skill.name || skill.folder}`}>
+          <input type="checkbox" checked={isSelected} disabled={!skill.valid} onChange={() => toggleSelect(skill.folder)} />
+        </label>
         {nested
           ? <span className={ui.skillNestedMark} aria-hidden="true" title="嵌套子技能（跟随主技能，不参与拖拽排序）">▸</span>
           : (
             <>
-              <span className={ui.dragHandle} title={`第 ${primaryIndex + 1} 位${selectionMode ? '（选择模式下拖拽已禁用）' : '，拖动调整顺序'}`} aria-hidden="true">⠿</span>
+              <span className={ui.dragHandle} title={`第 ${primaryIndex + 1} 位，拖动调整顺序`} aria-hidden="true">⠿</span>
               <span className={ui.skillRankBadge} title={`第 ${primaryIndex + 1} 位`}>{primaryIndex + 1}</span>
             </>
           )}
-        {/* 主体：点击 = 选择/取消选择（只选择，不切换开关；开关由行内 Switch 与上方批量按钮控制）。 */}
-        <button
-          type="button"
-          className={ui.skillCardBody}
-          data-selected={isSelected ? '' : undefined}
-          aria-pressed={isSelected}
-          aria-label={`选择 ${skill.name || skill.folder}`}
-          disabled={!skill.valid}
-          onClick={() => toggleSelect(skill.folder)}
-        >
+        <div className={ui.skillCardBody}>
           <span className={ui.skillCardTitleRow}>
             <strong>{skill.name || skill.folder}</strong>
             {skill.duplicate === true && <span className={ui.duplicateBadge} title={`同名技能：来源目录 ${skill.dir ?? '未知'}`}>同名</span>}
@@ -694,7 +689,7 @@ function SkillsSettings(props: { store: PromptToolStore; api: IApiClient }): Rea
           </span>
           <small className={ui.skillCardMeta}>{hint}</small>
           {!skill.valid && skill.issue && <span className={ui.skillIssue} role="note">{skill.issue}</span>}
-        </button>
+        </div>
         {/* Switch：独立切换技能开关。 */}
         <label className={ui.skillSwitch} htmlFor={`pt-skill-${skill.folder}`}>
           <input id={`pt-skill-${skill.folder}`} type="checkbox" checked={enabled} disabled={!skill.valid} aria-label={`启用 ${skill.name || skill.folder}`} onChange={() => store.toggleSkill(skill.folder)} />
@@ -718,7 +713,7 @@ function SkillsSettings(props: { store: PromptToolStore; api: IApiClient }): Rea
   return (
     <section className={ui.section} aria-labelledby="pt-skills-heading">
       <div className={ui.sectionHeading}>
-        <div><h2 id="pt-skills-heading">Skills 设置</h2><p>{fields.skillCatalog.length} 个技能；点击卡片选择，↑↓ 或拖动 ⠿ 调整主技能顺序；Switch 或上方批量按钮控制开关。关闭后立即注销，开启即恢复。</p></div>
+        <div><h2 id="pt-skills-heading">Skills 设置</h2><p>{fields.skillCatalog.length} 个技能；勾选框只做选择，Switch 或批量按钮控制开关；↑↓ 或拖动 ⠿ 调整主技能顺序。关闭后立即注销，开启即恢复。</p></div>
         <div className={ui.sectionActions}>
           <button type="button" className={ui.pillButton} onClick={() => void store.load()}>刷新技能列表</button>
         </div>
@@ -755,11 +750,14 @@ function SkillsSettings(props: { store: PromptToolStore; api: IApiClient }): Rea
               spellCheck={false}
               onChange={(event) => setSkillFilter(event.target.value)}
             />
+            {selected.size > 0 && <span className={ui.selectionCount}>已选 {selected.size}</span>}
             {selectableSkills.length > 0 && (
               <button type="button" className={ui.pillButton} onClick={toggleSelectAll}>
                 {allSelected ? '取消全选' : `全选（${selectableSkills.length}）`}
               </button>
             )}
+            <button type="button" className={ui.pillButton} disabled={!selectionMode} onClick={() => batchSet(true)}>批量启用</button>
+            <button type="button" className={ui.pillButton} disabled={!selectionMode} onClick={() => batchSet(false)}>批量禁用</button>
           </div>
         </>
       )}
@@ -770,16 +768,6 @@ function SkillsSettings(props: { store: PromptToolStore; api: IApiClient }): Rea
         <p className={ui.readOnly} role="status">没有匹配当前筛选的技能。</p>
       ) : (
         <>
-          {selectionMode && (
-            <div className={ui.batchBar} role="toolbar" aria-label="批量操作">
-              <span>已选 {selected.size} 项</span>
-              <div>
-                <button type="button" className={ui.pillButton} onClick={() => batchSet(true)}>启用</button>
-                <button type="button" className={ui.pillButton} onClick={() => batchSet(false)}>禁用</button>
-                <button type="button" className={ui.pillButton} data-variant="secondary" onClick={() => setSelected(new Set())}>取消选择</button>
-              </div>
-            </div>
-          )}
           <div className={ui.skillCardList} data-dragging={dragFolder !== undefined ? '' : undefined}>
             {renderOrder.map((skill) => {
               const depth = depthOf(skill.folder)

@@ -556,27 +556,31 @@
 }
 
 .skillCardBody {
-  appearance: none;
   display: flex;
   min-width: 0;
   flex: 1;
   flex-direction: column;
   gap: 2px;
-  border: 0;
-  border-radius: 8px;
-  padding: 2px;
-  color: inherit;
-  background: transparent;
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
 }
-.skillCardBody:hover { background: color-mix(in srgb, var(--pt-accent) 6%, transparent); }
-.skillCardBody:disabled { cursor: default; }
-.skillCardBody[data-selected] { background: color-mix(in srgb, var(--pt-accent) 10%, transparent); }
 .skillCardTitleRow { display: flex; min-width: 0; align-items: center; gap: 8px; flex-wrap: wrap; }
 .skillCardTitleRow strong { font-size: 13px; font-weight: 600; line-height: 1.5; color: var(--dsw-alias-label-primary); overflow-wrap: anywhere; }
 .skillCardMeta { color: var(--dsw-alias-label-tertiary); font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }
+
+/* 勾选框：只选择（职责分离——技能开关由 Switch 与批量按钮控制）。 */
+.skillSelect {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  cursor: pointer;
+}
+.skillSelect input {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  accent-color: var(--pt-accent);
+  cursor: pointer;
+}
+.skillSelect input:disabled { cursor: default; }
 
 /* Switch：独立切换控件（不包裹卡片主体）。 */
 .skillSwitch {
@@ -633,21 +637,15 @@
 .skillStatDot { width: 8px; height: 8px; margin-bottom: 1px; border-radius: 50%; background: var(--chip); }
 .skillStatAll { --chip: var(--dsw-alias-label-tertiary); }
 
-/* 批量操作条：多选后浮现。 */
-.batchBar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  border: 1px solid color-mix(in srgb, var(--pt-accent) 26%, var(--dsw-alias-border-l2));
-  border-radius: 12px;
-  padding: 8px 12px;
-  background: color-mix(in srgb, var(--pt-accent) 6%, var(--dsw-alias-bg-layer-2));
-  animation: pt-rise .28s cubic-bezier(.22, 1, .36, 1) both;
+/* 已选计数（批量按钮旁）。 */
+.selectionCount {
+  flex: 0 0 auto;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.5;
+  white-space: nowrap;
 }
-.batchBar > span { font-size: 12px; font-weight: 600; line-height: 1.5; color: var(--dsw-alias-label-primary); }
-.batchBar > div { display: flex; gap: 6px; flex-wrap: wrap; }
-.batchBar .pillButton { height: 30px; padding: 0 12px; font-size: 12px; }
 
 /* 折叠区（目录与来源 / 高级）：原生 details，零 JS。 */
 .disclosure { border-top: 1px solid var(--dsw-alias-border-l2); }
