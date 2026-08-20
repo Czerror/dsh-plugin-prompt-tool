@@ -249,6 +249,11 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
   const applyView = useCallback((res: BridgeResult<BridgeSettingsView>): Fields => {
     setDeepseekProviders(res.ok ? res.deepseekProviders ?? [] : [])
     const next = fieldsFromView(res)
+    // 检测到 DeepSeek 路由且用户未设置服务商时，直接预选第一个检测到的 provider
+    // （模型名为空则路由不激活，继承主会话语义不变；用户后续选择模型名即生效）。
+    if (res.ok && next.subagentModelProvider === '' && (res.deepseekProviders?.length ?? 0) > 0) {
+      next.subagentModelProvider = res.deepseekProviders![0]!
+    }
     fieldsRef.current = next
     setFields(next)
     setBootstrapTokensDraft(next.bootstrapMaxTokens > 0 ? String(next.bootstrapMaxTokens) : DEFAULT_BOOTSTRAP_DISPLAY)

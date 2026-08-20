@@ -211,9 +211,7 @@ function SubagentSettings(props: { store: PromptToolStore }): ReactNode {
             }}
           >
             {withCurrent(providerOptions, fields.subagentModelProvider).map((item) => (
-              <option key={item} value={item}>
-                {item.length > 0 ? item : (detected ? `（不设置 · 检测到 ${store.deepseekProviders.join('、')}）` : '（不设置）')}
-              </option>
+              <option key={item} value={item}>{item.length > 0 ? item : '（不设置）'}</option>
             ))}
           </select>
         </div>
