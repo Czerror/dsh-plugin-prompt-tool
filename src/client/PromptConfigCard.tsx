@@ -17,7 +17,7 @@ export const SOURCE_KINDS = ['', 'plugin', 'instruction-hint', 'skill-catalog', 
 export const SOURCE_FORMS = ['notice', 'hint', ''] as const
 
 /** subagents 官方三值的 UI 中文标签：底层保持官方契约 none/inherit/only，仅呈现层映射。 */
-const AUDIENCE_LABELS: Record<string, string> = { none: '仅主对话', inherit: '公用', only: '仅子代理' }
+export const AUDIENCE_LABELS: Record<string, string> = { none: '仅主对话', inherit: '公用', only: '仅子代理' }
 
 /** 从引擎 /meta 中读取某层的字段能力；未知层回退 pre-step。 */
 const EMPTY_POLICY: LayerFieldPolicy = {

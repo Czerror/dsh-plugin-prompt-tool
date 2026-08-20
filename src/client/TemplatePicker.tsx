@@ -1,7 +1,8 @@
 /** 内置模板选择弹窗：按注入层分组展示；传入 layer 时只显示该层模板。 */
-import { useEffect, useRef, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import styles from './PromptUi.module.css'
 import type { PromptConfigTemplateEntry } from './prompt-tool-types.ts'
+import { AUDIENCE_LABELS } from './PromptConfigCard.tsx'
 
 export const TEMPLATE_LAYER_TITLES: Record<string, string> = {
   'pre-step': '消息批层',
@@ -16,12 +17,15 @@ export function TemplatePicker(props: {
   templates: PromptConfigTemplateEntry[]
   /** 传入 layer 时只显示该层模板（无分组标题）；不传按层分组展示全部。 */
   layer?: string
+  /** 插入前弹出消息受众三选（子代理页）：none/inherit/only 自由选择，确认后才插入。 */
+  audiencePicker?: boolean
   onPick: (entry: PromptConfigTemplateEntry) => void
   onClose: () => void
 }): ReactNode {
-  const { templates, layer, onPick, onClose } = props
+  const { templates, layer, audiencePicker, onPick, onClose } = props
   const dialogRef = useRef<HTMLDivElement>(null)
   const restoreRef = useRef<HTMLElement | null>(null)
+  const [pending, setPending] = useState<PromptConfigTemplateEntry | undefined>(undefined)
 
   // 打开时记录触发元素并聚焦弹窗首控件；关闭时还原焦点（焦点陷阱闭环）。
   useEffect(() => {
@@ -68,6 +72,11 @@ export function TemplatePicker(props: {
     if (items === undefined) groups.set(key, [template])
     else items.push(template)
   }
+  const confirmPending = (audience: string): void => {
+    if (pending === undefined) return
+    onPick({ ...pending, spec: { ...pending.spec, subagents: audience } })
+    setPending(undefined)
+  }
   return (
     <div className={styles.modalBackdrop} onClick={onClose}>
       <div
@@ -83,13 +92,27 @@ export function TemplatePicker(props: {
           <strong>选择内置模板{layer !== undefined ? `（${TEMPLATE_LAYER_TITLES[layer] ?? layer}）` : ''}</strong>
           <button type="button" className={styles.pillButton} aria-label="关闭模板选择" onClick={onClose}>×</button>
         </div>
+        {pending !== undefined && (
+          <div className={styles.templateAudiencePicker}>
+            <strong>消息受众（{pending.file}）</strong>
+            <div>
+              {Object.entries(AUDIENCE_LABELS).map(([value, label]) => (
+                <button key={value} type="button" className={styles.pillButton} onClick={() => confirmPending(value)}>{label}</button>
+              ))}
+              <button type="button" className={styles.pillButton} onClick={() => setPending(undefined)}>取消</button>
+            </div>
+          </div>
+        )}
         <div className={styles.templateModalList}>
           {visible.length === 0 && <p className={styles.configFieldHint}>本层暂无内置模板。</p>}
           {[...groups.entries()].map(([groupLayer, items]) => (
             <div key={groupLayer} className={styles.templateGroup}>
               {layer === undefined && <strong className={styles.templateGroupTitle}>{TEMPLATE_LAYER_TITLES[groupLayer] ?? groupLayer}</strong>}
               {items.map((template) => (
-                <button key={template.file} type="button" className={styles.templateModalItem} onClick={() => onPick(template)}>
+                <button key={template.file} type="button" className={styles.templateModalItem} onClick={() => {
+                  if (audiencePicker === true) setPending(template)
+                  else onPick(template)
+                }}>
                   <strong>{template.file}</strong>
                   <small>{template.spec.name ?? template.spec.id}</small>
                 </button>
