@@ -288,11 +288,18 @@ modules:
   - tool-web
 moduleConfigs:
   # 引擎组合模块参数（本文件为唯一配置源；library 行默认值仅作未声明时的回退）。
-  # persona 为 standard 语义（非 minimal complete）：router-first-turn 替换
-  # persona（Flash 路由人设）、planning 计划模式段、context-gate 动态上下文
-  # 都需要非 complete + 非永久 runtime-context 抑制，否则被官方 assemble 覆盖。
+  # persona.complete 是可选功能开关（官方 assemble 语义）：
+  #   complete: true  = minimal 语义——persona 为唯一 system prompt，全局身份、
+  #                     plan-mode 段与 router-first-turn 的 persona 替换（Flash 路由
+  #                     人设）被官方 assemble 的 complete 恢复机制抑制；
+  #   complete: false = standard 语义——plan-mode 段与 Flash 路由人设生效。
+  # includeRuntimeContext: false 时 runtime-context 被永久抑制（context-gate 的
+  # 晋升后恢复失效）；true 时由 context-gate 动态控制（首轮清空、晋升后恢复）。
+  # 如需 standard 语义，把 complete 改为 false 并按需放开 includeRuntimeContext。
   persona:
     text: You are a helpful software engineer assistant.
+    complete: true
+    includeRuntimeContext: false
   custom-bash:
     timeoutMs: 120000
     maxOutputBytes: 64000

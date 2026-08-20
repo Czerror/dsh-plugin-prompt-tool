@@ -80,6 +80,10 @@ dsh --profile prompt-tool
   `modules` 决定 23 个行/组模块装配顺序,`params` 驱动引擎开关(`usePtcMode`、`bootstrapMaxTokens`、
   `firstTurnAnchor`…),`hostDefaults` 提供宿主开关默认值,`content` 携带 presetText/agentsText;
   settings(Web/TUI)仅作运行时覆盖。用户写一个参数 YAML 即可复刻 anchored 全部能力。
+  `moduleConfigs.persona.complete` 是可选功能开关（官方 assemble 语义）：`true`（默认）
+  = minimal 完整 persona（plan-mode 段与 Flash 路由人设被抑制）；`false` = standard
+  语义（plan-mode 与 Flash 路由人设生效）。`includeRuntimeContext: false` 为永久抑制
+  运行时上下文（context-gate 的晋升后恢复失效），`true` 时由 context-gate 动态控制。
 
 ## 默认行为
 

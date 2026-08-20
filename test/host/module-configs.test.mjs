@@ -50,10 +50,11 @@ test('anchored buildCordis 集成：moduleConfigs 合并与 token 渲染共存',
   assert.deepEqual(router.config.hideSectionPrefixes, ['mnemon:'])
   assert.equal(gate.config.promoteOn, 'either')
   assert.deepEqual(gate.config.allowKinds, ['skill-invocation', 'near-anchor', 'router-guide'])
-  // persona 为 standard 语义（非 minimal complete）：complete 会抑制 plan-mode /
-  // router-persona（Flash 路由人设）；永久 runtime-context 抑制会失效 context-gate 恢复。
-  assert.notEqual(persona.config.complete, true, 'persona 不得 complete')
-  assert.notEqual(persona.config.includeRuntimeContext, false, 'persona 不得永久抑制 runtime-context')
+  // persona.complete 是可选功能开关（官方 assemble 语义）：默认 true = minimal
+  // 完整 persona（plan-mode/Flash 路由人设被抑制）；设 false 切 standard 语义。
+  // includeRuntimeContext 同理：false = 永久抑制（context-gate 恢复失效）。
+  assert.equal(persona.config.complete, true, 'persona 默认 minimal 语义（complete 开关可配）')
+  assert.equal(persona.config.includeRuntimeContext, false, 'persona 默认抑制 runtime-context（开关可配）')
   // 子代理相位两行显式一致（tool-bootstrap 与 context-gate 保持同步）。
   assert.equal(bootstrap.config.includeSubagents, false)
   assert.equal(gate.config.includeSubagents, false)
