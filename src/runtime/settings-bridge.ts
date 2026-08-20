@@ -16,6 +16,7 @@ import {
   listPresets,
   parseImportedPresetId,
   renderComposition,
+  resolvePresetDir,
   userPresetsDir,
 } from '../host/manifest.ts'
 import type { PresetSpec } from '../host/manifest.ts'
@@ -521,6 +522,34 @@ export function registerSettingsBridge(
               ok: true,
               value: { id, ...(backupDir !== undefined ? { backupPath: backupDir } : {}) },
             })
+          },
+        }),
+        sctx.webServer.register({
+          kind: 'exact',
+          path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.exportPreset,
+          handler: async (req, res) => {
+            if (!guard(req, res)) return
+            const { body } = await readBridgeBody(req)
+            const record = (body ?? {}) as Record<string, unknown>
+            const id = typeof record.id === 'string' && record.id.trim().length > 0 ? record.id.trim() : 'anchored'
+            try {
+              const dir = resolvePresetDir(id)
+              const file = join(dir, 'preset.yml')
+              if (!existsSync(file)) throw new Error(`模板 ${id} 无 preset.yml`)
+              const content = readFileSync(file, 'utf8')
+              const spec = parseYaml(content, { logLevel: 'silent' }) as { id?: unknown; name?: unknown } | null
+              writeBridgeJson(res, 200, {
+                ok: true,
+                value: {
+                  id: typeof spec?.id === 'string' ? spec.id : id,
+                  name: typeof spec?.name === 'string' ? spec.name : id,
+                  content,
+                },
+              })
+            } catch (error) {
+              const message = error instanceof Error ? error.message : String(error)
+              writeBridgeJson(res, 500, { ok: false, code: 'preset-export-failed', message })
+            }
           },
         }),
 

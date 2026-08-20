@@ -64,6 +64,23 @@ export function PresetSwitcher(props: { store: PromptToolStore }): ReactNode {
     })()
   }
 
+  /** 导出当前预设为单文件配置（浏览器下载，可保存到任意目录）。 */
+  const exportPreset = async (): Promise<void> => {
+    const res = await bridgePost<{ id: string; name: string; content: string }>('/export-preset', { id: fields.presetTemplate })
+    if (!res.ok) {
+      store.showNotice('error', '导出预设失败：' + (res.message ?? 'settings bridge unavailable'))
+      return
+    }
+    const blob = new Blob([res.value.content], { type: 'application/yaml' })
+    const url = URL.createObjectURL(blob)
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = `${res.value.id}.preset.yml`
+    anchor.click()
+    URL.revokeObjectURL(url)
+    store.showNotice('ok', `已导出 ${res.value.id}.preset.yml（单文件配置，可保存到任意目录）`)
+  }
+
   return (
     <div className={styles.rowGroup}>
       <div className={styles.settingRowStack}>
@@ -105,6 +122,9 @@ export function PresetSwitcher(props: { store: PromptToolStore }): ReactNode {
           </button>
           <button type="button" className={styles.pillButton} disabled={importing} onClick={() => dirRef.current?.click()}>
             导入文件夹
+          </button>
+          <button type="button" className={styles.pillButton} onClick={() => void exportPreset()}>
+            导出预设
           </button>
         </span>
       </div>
