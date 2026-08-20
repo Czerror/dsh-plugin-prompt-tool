@@ -18,6 +18,7 @@ import { TemplatePicker } from './TemplatePicker.tsx'
 import { useTemplatePicker } from './useTemplatePicker.ts'
 import { ToggleRow } from './ToggleRow.tsx'
 import { TagInput } from './TagInput.tsx'
+import { CollapsibleCard } from './CollapsibleCard.tsx'
 import { autoResizeTextarea } from './textarea-resize.ts'
 import ui from './PromptUi.module.css'
 import css from './PromptWorkspace.module.css'
@@ -264,36 +265,38 @@ function SubagentSettings(props: { store: PromptToolStore }): ReactNode {
           </div>
         )}
       </article>
-      <TagInput id="pt-subagent-tool-allow" label="子代理工具集白名单" hint="toolFilter.allow；回车或逗号添加标签，× 移除；留空 = 不限制。每次增删立即保存。"
-        value={fields.subagentToolFilterAllow} placeholder="read, write, glob" disabled={!fields.writePreset}
-        onChange={(value) => store.patch({ subagentToolFilterAllow: value })}
-        onCommit={() => void store.persistParamOverrides()} />
-      <TagInput id="pt-subagent-tool-deny" label="子代理工具集黑名单" hint="toolFilter.deny；回车或逗号添加标签，× 移除；留空 = 不限制。每次增删立即保存。"
-        value={fields.subagentToolFilterDeny} placeholder="bash, run_code" disabled={!fields.writePreset}
-        onChange={(value) => store.patch({ subagentToolFilterDeny: value })}
-        onCommit={() => void store.persistParamOverrides()} />
-      <div className={ui.rowGroup}>
-        <div className={ui.settingRowStack}>
-          <span className={ui.settingCopy}>
-            <strong>子代理递归深度</strong>
-            <small>maxDepth：0 禁止委派；provider-managed 由服务商管理；正整数限制递归层数；不设置 = 官方默认。选择即保存。</small>
-          </span>
-          <select
-            className={ui.configInput}
-            aria-label="子代理递归深度"
-            value={fields.subagentMaxDepth}
-            disabled={!fields.writePreset}
-            onChange={(event) => {
-              store.patch({ subagentMaxDepth: event.target.value })
-              void store.persistParamOverrides()
-            }}
-          >
-            {maxDepthOptions.map((item) => (
-              <option key={item} value={item}>{item === '' ? '（不设置）' : item}</option>
-            ))}
-          </select>
+      <CollapsibleCard id="pt-subagent-tools" title="子代理工具与深度" meta="工具集白名单/黑名单 + 递归深度">
+        <TagInput id="pt-subagent-tool-allow" label="子代理工具集白名单" hint="toolFilter.allow；回车或逗号添加标签，× 移除；留空 = 不限制。每次增删立即保存。"
+          value={fields.subagentToolFilterAllow} placeholder="read, write, glob" disabled={!fields.writePreset}
+          onChange={(value) => store.patch({ subagentToolFilterAllow: value })}
+          onCommit={() => void store.persistParamOverrides()} />
+        <TagInput id="pt-subagent-tool-deny" label="子代理工具集黑名单" hint="toolFilter.deny；回车或逗号添加标签，× 移除；留空 = 不限制。每次增删立即保存。"
+          value={fields.subagentToolFilterDeny} placeholder="bash, run_code" disabled={!fields.writePreset}
+          onChange={(value) => store.patch({ subagentToolFilterDeny: value })}
+          onCommit={() => void store.persistParamOverrides()} />
+        <div className={ui.rowGroup}>
+          <div className={ui.settingRowStack}>
+            <span className={ui.settingCopy}>
+              <strong>子代理递归深度</strong>
+              <small>maxDepth：0 禁止委派；provider-managed 由服务商管理；正整数限制递归层数；不设置 = 官方默认。选择即保存。</small>
+            </span>
+            <select
+              className={ui.configInput}
+              aria-label="子代理递归深度"
+              value={fields.subagentMaxDepth}
+              disabled={!fields.writePreset}
+              onChange={(event) => {
+                store.patch({ subagentMaxDepth: event.target.value })
+                void store.persistParamOverrides()
+              }}
+            >
+              {maxDepthOptions.map((item) => (
+                <option key={item} value={item}>{item === '' ? '（不设置）' : item}</option>
+              ))}
+            </select>
+          </div>
         </div>
-      </div>
+      </CollapsibleCard>
     </section>
   )
 }
