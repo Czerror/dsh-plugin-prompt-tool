@@ -19,6 +19,7 @@ import { useTemplatePicker } from './useTemplatePicker.ts'
 import { ToggleRow } from './ToggleRow.tsx'
 import { TagInput } from './TagInput.tsx'
 import { CollapsibleCard } from './CollapsibleCard.tsx'
+import { SettingInputRow } from './SettingInputRow.tsx'
 import { autoResizeTextarea } from './textarea-resize.ts'
 import ui from './PromptUi.module.css'
 import css from './PromptWorkspace.module.css'
@@ -40,32 +41,6 @@ function SkillStatusChips(props: { skill: SkillCatalogEntry; enabled: boolean })
         {status}
       </span>
     </span>
-  )
-}
-
-/** 设置输入行：编辑框失焦即保存（与 anchor 文本一致）。 */
-function SettingInputRow(props: { id: string; label: string; hint: string; value: string; type?: 'text' | 'number'; placeholder?: string; disabled?: boolean; onInput: (value: string) => void; onCommit: () => void }): ReactNode {
-  return (
-    <div className={ui.rowGroup}>
-      <div className={ui.settingRowStack}>
-        <span className={ui.settingCopy}><strong>{props.label}</strong><small>{props.hint}</small></span>
-        <div className={ui.directoryControl}>
-          <input
-            id={props.id}
-            className={ui.directoryInput}
-            type={props.type ?? 'text'}
-            value={props.value}
-            aria-label={props.label}
-            placeholder={props.placeholder}
-            disabled={props.disabled}
-            spellCheck={false}
-            autoComplete="off"
-            onChange={(event) => props.onInput(event.target.value)}
-            onBlur={props.onCommit}
-          />
-        </div>
-      </div>
-    </div>
   )
 }
 
@@ -321,22 +296,6 @@ function FeatureSettings(props: { store: PromptToolStore }): ReactNode {
   const fields = store.fields
   return (
     <section className={ui.section} aria-label="主对话与全局">
-      <div className={ui.rowGroup}>
-        <ToggleRow id="pt-write-agents" label="写入 ~/.dsh/AGENTS.md" hint="保持 AGENTS.md 的全局常驻注入；关闭后不再写入，已有文件保持原样。与六层注入无关，属于宿主常驻层。"
-          checked={fields.writeAgents} onChange={() => store.toggle('writeAgents')} />
-      </div>
-      <SettingInputRow id="pt-resident-agents-path" label="AGENTS.md 常驻路径" hint="写入/移除 AGENTS.md 受管块的目标文件；修改后下一次开关保存立即切换。"
-        value={fields.residentAgentsPath} placeholder={fields.residentAgentsPath || '默认 ~/.dsh/AGENTS.md'}
-        onInput={(value) => store.patch({ residentAgentsPath: value })}
-        onCommit={store.persistSwitches} />
-      <SettingInputRow id="pt-preset-dir" label="生成 preset 目录" hint="锚定预设生成目录；修改后下次写入会生成到新目录，建议同时在宿主 agent-presets 设置里选择该目录。"
-        value={fields.presetDir} placeholder={fields.presetDir || '默认 ~/.dsh/.agent-presets/prompt-tool'}
-        onInput={(value) => store.patch({ presetDir: value })}
-        onCommit={store.persistSwitches} />
-      <SettingInputRow id="pt-preset-order" label="preset 显示顺序" hint="生成 preset.yml 的 order；数值小的 preset 在宿主列表中靠前。"
-        type="number" value={String(fields.presetOrder)}
-        onInput={(value) => store.patch({ presetOrder: Number(value) || 0 })}
-        onCommit={store.persistSwitches} />
       <div className={ui.rowGroup}>
         <label className={ui.textBlock}>
           <span className={ui.settingCopy}><strong>主对话快速模型人设</strong><small>主对话命中快速模型（Flash 档）时替换人设；子代理固定模型路由未显式人设时回退使用。留空 = 模板默认；失焦保存。</small></span>
