@@ -938,7 +938,6 @@ export function PromptWorkspace(props: PromptWorkspaceProps): ReactNode {
 
 
   const enabledCount = store.fields.promptConfigs.filter((config) => config.enabled !== false).length
-  const isAnchoredTemplate = store.fields.presetTemplate === 'anchored'
   const layerMeta = page === 'layers'
     ? `${configsOfLayer(store.fields.promptConfigs, layerPage).length} 配置`
     : page === 'skills'
@@ -1024,19 +1023,13 @@ export function PromptWorkspace(props: PromptWorkspaceProps): ReactNode {
             <>
               {page === 'layers' && (
                 <>
-                  {layerPage === 'pre-step' && entryPage === 'switches' && (isAnchoredTemplate
-                    ? <EntrySwitches store={store} />
-                    : <p className={ui.readOnly} role="status">当前预设模板非 anchored，anchored 专属入口开关已隐藏。</p>)}
+                  {layerPage === 'pre-step' && entryPage === 'switches' && <EntrySwitches store={store} />}
                   {layerPage === 'pre-step' && entryPage === 'preset' && <FileEditor store={store} scope="preset" />}
                   {layerPage === 'pre-step' && entryPage === 'agents' && <FileEditor store={store} scope="agents" />}
                   {layerPage !== 'pre-step' && (
                     <>
-                      {layerPage === 'agent-request' && (isAnchoredTemplate
-                        ? <AgentRequestSwitches store={store} />
-                        : <p className={ui.readOnly} role="status">当前预设模板非 anchored，调用配置层 anchored 专属开关已隐藏。</p>)}
-                      {layerPage === 'tool-pipeline' && (isAnchoredTemplate
-                        ? <ToolPipelineSwitches store={store} />
-                        : <p className={ui.readOnly} role="status">当前预设模板非 anchored，工具管线层 anchored 专属开关已隐藏。</p>)}
+                      {layerPage === 'agent-request' && <AgentRequestSwitches store={store} />}
+                      {layerPage === 'tool-pipeline' && <ToolPipelineSwitches store={store} />}
                       <ConfigListWithTemplates store={store} layer={layerPage} />
                     </>
                   )}
