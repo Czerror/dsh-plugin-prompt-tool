@@ -195,7 +195,7 @@ function EntrySwitches(props: { store: PromptToolStore }): ReactNode {
             value={fields.firstTurnText}
             disabled={!fields.writePreset || !fields.firstTurnAnchor || !fields.firstTurnCustom}
             onChange={(event) => store.patch({ firstTurnText: event.target.value })}
-            onBlur={store.persistSwitches}
+            onBlur={() => void store.persistParamOverrides()}
             spellCheck={false}
           />
         </label>
@@ -208,7 +208,7 @@ function EntrySwitches(props: { store: PromptToolStore }): ReactNode {
             value={fields.guideText}
             disabled={!fields.writePreset || !fields.firstTurnAnchor || !fields.guideCustom}
             onChange={(event) => store.patch({ guideText: event.target.value })}
-            onBlur={store.persistSwitches}
+            onBlur={() => void store.persistParamOverrides()}
             spellCheck={false}
           />
         </label>
@@ -253,7 +253,7 @@ function SubagentSettings(props: { store: PromptToolStore }): ReactNode {
             disabled={!fields.writePreset}
             onChange={(event) => {
               store.patch({ subagentFlashProvider: event.target.value })
-              store.persistSwitches()
+              void store.persistParamOverrides()
             }}
           >
             {withCurrent(providerOptions, fields.subagentFlashProvider).map((item) => (
@@ -275,7 +275,7 @@ function SubagentSettings(props: { store: PromptToolStore }): ReactNode {
             disabled={!fields.writePreset}
             onChange={(event) => {
               store.patch({ subagentFlashModel: event.target.value })
-              store.persistSwitches()
+              void store.persistParamOverrides()
             }}
           >
             {withCurrent(modelOptions, fields.subagentFlashModel).map((item) => (

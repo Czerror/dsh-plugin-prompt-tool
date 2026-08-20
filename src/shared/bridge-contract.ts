@@ -19,6 +19,7 @@ export const BRIDGE_ENDPOINTS = {
   promptConfigs: '/prompt-configs',
   presetContent: '/preset-content',
   importPreset: '/import-preset',
+  paramOverrides: '/param-overrides',
 } as const
 
 export type BridgeEndpoint = (typeof BRIDGE_ENDPOINTS)[keyof typeof BRIDGE_ENDPOINTS]

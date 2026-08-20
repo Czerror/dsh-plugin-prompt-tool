@@ -127,6 +127,9 @@ const switchesEqual = (a: SwitchSnapshot, b: SwitchSnapshot): boolean =>
 
 export type SwitchKey = 'injectAgentsPrompt' | 'firstTurnAnchor' | 'firstTurnCustom' | 'guideCustom' | 'injectPrompt' | 'usePtcMode' | 'writeAgents' | 'writePreset'
 
+/** 参数类布尔开关：写入生成目录 overrides（settings 只留总开关）。 */
+const PARAM_SWITCH_KEYS: ReadonlySet<SwitchKey> = new Set(['firstTurnAnchor', 'firstTurnCustom', 'guideCustom'])
+
 export interface PromptToolStore {
   fields: Fields
   meta: EngineMeta
@@ -151,6 +154,7 @@ export interface PromptToolStore {
   savePrompt: () => void
   saveAgents: () => void
   persistSwitches: () => void
+  persistParamOverrides: () => Promise<void>
   persistConfigs: (configs: PromptConfigDraft[]) => void
   persistConfigsDir: (dir: string) => void
   toggle: (key: SwitchKey) => void
@@ -305,6 +309,27 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
         patch({ agentsText: agentsContent.value.content })
         setSavedAgentsText(agentsContent.value.content)
       }
+      // 用户参数覆盖（生成目录 prompt-tool.overrides.yml；settings 不再承载参数）。
+      const overridesRes = await bridgePost<{ overrides: Record<string, unknown> }>('/param-overrides', {})
+      if (seq !== loadSeqRef.current) return EMPTY_FIELDS
+      if (overridesRes.ok) {
+        const o = overridesRes.value.overrides
+        const paramPatch: Partial<Fields> = {}
+        if (typeof o.firstTurnAnchor === 'boolean') paramPatch.firstTurnAnchor = o.firstTurnAnchor
+        if (typeof o.firstTurnText === 'string') paramPatch.firstTurnText = o.firstTurnText
+        if (typeof o.firstTurnCustom === 'boolean') paramPatch.firstTurnCustom = o.firstTurnCustom
+        if (typeof o.guideText === 'string') paramPatch.guideText = o.guideText
+        if (typeof o.guideCustom === 'boolean') paramPatch.guideCustom = o.guideCustom
+        if (typeof o.subagentFlashProvider === 'string') paramPatch.subagentFlashProvider = o.subagentFlashProvider
+        if (typeof o.subagentFlashModel === 'string') paramPatch.subagentFlashModel = o.subagentFlashModel
+        if (typeof o.bootstrapMaxTokens === 'number') paramPatch.bootstrapMaxTokens = o.bootstrapMaxTokens
+        if (Object.keys(paramPatch).length > 0) {
+          const next = { ...fieldsRef.current, ...paramPatch }
+          fieldsRef.current = next
+          setFields(next)
+          setSavedSwitches(snapshotSwitches(next))
+        }
+      }
       // 实际生效配置（引擎从生成目录加载；settings.promptConfigs 仅为覆盖层，
       // 默认为空不代表无配置）。非空时以实际配置为准，并同步已保存快照避免误判 dirty。
       const configsRes = await bridgePost<{ promptConfigs: PromptConfigDraft[] }>('/prompt-configs', {})
@@ -376,14 +401,6 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
   const persistSwitches = useCallback(() => enqueueSave(
     [
       { op: 'set', path: ['injectAgentsPrompt'], value: fieldsRef.current.injectAgentsPrompt },
-      { op: 'set', path: ['firstTurnAnchor'], value: fieldsRef.current.firstTurnAnchor },
-      { op: 'set', path: ['firstTurnText'], value: fieldsRef.current.firstTurnText },
-      { op: 'set', path: ['firstTurnCustom'], value: fieldsRef.current.firstTurnCustom },
-      { op: 'set', path: ['guideText'], value: fieldsRef.current.guideText },
-      { op: 'set', path: ['guideCustom'], value: fieldsRef.current.guideCustom },
-      { op: 'set', path: ['subagentFlashProvider'], value: fieldsRef.current.subagentFlashProvider },
-      { op: 'set', path: ['subagentFlashModel'], value: fieldsRef.current.subagentFlashModel },
-      { op: 'set', path: ['bootstrapMaxTokens'], value: fieldsRef.current.bootstrapMaxTokens },
       { op: 'set', path: ['usePtcMode'], value: fieldsRef.current.usePtcMode },
       { op: 'set', path: ['injectPrompt'], value: fieldsRef.current.injectPrompt },
       { op: 'set', path: ['skillSwitches'], value: fieldsRef.current.skillSwitches },
@@ -401,6 +418,28 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
     () => setSavedSwitches(snapshotSwitches(fieldsRef.current)),
   ), [enqueueSave])
 
+  /** 参数类设置：写入生成目录 prompt-tool.overrides.yml（随预设隔离，重建保留）。 */
+  const persistParamOverrides = useCallback(async () => {
+    const f = fieldsRef.current
+    const res = await bridgePost<{ overrides: unknown }>('/param-overrides', {
+      overrides: {
+        firstTurnAnchor: f.firstTurnAnchor,
+        firstTurnText: f.firstTurnText,
+        firstTurnCustom: f.firstTurnCustom,
+        guideText: f.guideText,
+        guideCustom: f.guideCustom,
+        subagentFlashProvider: f.subagentFlashProvider,
+        subagentFlashModel: f.subagentFlashModel,
+        bootstrapMaxTokens: f.bootstrapMaxTokens,
+      },
+    })
+    if (res.ok) {
+      setSavedSwitches(snapshotSwitches(fieldsRef.current))
+    } else {
+      showNotice('error', '参数保存失败：' + (res.message ?? 'settings bridge unavailable'))
+    }
+  }, [showNotice])
+
   const persistConfigs = useCallback((configs: PromptConfigDraft[]) => enqueueSave(
     [{ op: 'set', path: ['promptConfigs'], value: configs }],
     undefined,
@@ -415,15 +454,16 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
 
   const toggle = useCallback((key: SwitchKey) => {
     patch({ [key]: !fieldsRef.current[key] })
-    persistSwitches()
-  }, [patch, persistSwitches])
+    if (PARAM_SWITCH_KEYS.has(key)) void persistParamOverrides()
+    else persistSwitches()
+  }, [patch, persistParamOverrides, persistSwitches])
 
   const toggleBootstrapMaxTokens = useCallback(() => {
     const next = fieldsRef.current.bootstrapMaxTokens > 0 ? 0 : 256000
     patch({ bootstrapMaxTokens: next })
     setBootstrapTokensDraft(DEFAULT_BOOTSTRAP_DISPLAY)
-    persistSwitches()
-  }, [patch, persistSwitches])
+    void persistParamOverrides()
+  }, [patch, persistParamOverrides])
 
   const setPresetTemplate = useCallback((id: string) => {
     if (fieldsRef.current.presetTemplate === id) return
@@ -443,8 +483,8 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
     } else {
       patch({ bootstrapMaxTokens: parsed })
     }
-    persistSwitches()
-  }, [bootstrapTokensDraft, patch, persistSwitches])
+    void persistParamOverrides()
+  }, [bootstrapTokensDraft, patch, persistParamOverrides])
 
   const applySkillsDirValue = useCallback((dir: string) => {
     const next = dir.trim()
@@ -559,6 +599,7 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
     savePrompt,
     saveAgents,
     persistSwitches,
+    persistParamOverrides,
     persistConfigs,
     persistConfigsDir,
     toggle,

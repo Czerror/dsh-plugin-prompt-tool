@@ -9,6 +9,7 @@ import type {
 import type { SettingsPathOp } from '@deepseek-ai/dsh-settings'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { parse as parseYaml } from 'yaml'
 import { createSkillsWatcher } from './runtime/skills-watcher.ts'
 import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
@@ -175,6 +176,7 @@ export function apply(ctx: Context, configIn: Config): void {
 
   /** 重建生成目录（文本/组合/引擎/提示词配置）；writePreset 关闭时移除旧目录。 */
   const rebuildPreset = (): void => {
+    applyParamOverrides()
     if (runtime.writePreset) {
       const presetPrompt = runtime.injectPrompt && current.length > 0 ? current : ''
       writePreset(presetPrompt, {
@@ -204,6 +206,29 @@ export function apply(ctx: Context, configIn: Config): void {
         warn(ctx, 'prompt-tool: failed to remove ' + runtime.presetDir + ': ' + String(error))
       }
     }
+  }
+
+  /** 用户参数覆盖（生成目录 prompt-tool.overrides.yml；settings 不再承载参数）。 */
+  const applyParamOverrides = (): void => {
+    const raw = readGeneratedContent(runtime.presetDir, 'prompt-tool.overrides.yml')
+    if (raw.length === 0) return
+    let overrides: Record<string, unknown>
+    try {
+      const parsed = parseYaml(raw, { logLevel: 'silent' })
+      overrides = parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)
+        ? parsed as Record<string, unknown>
+        : {}
+    } catch {
+      return
+    }
+    if (typeof overrides.firstTurnAnchor === 'boolean') runtime.firstTurnAnchor = overrides.firstTurnAnchor
+    if (typeof overrides.firstTurnCustom === 'boolean') runtime.firstTurnCustom = overrides.firstTurnCustom
+    if (typeof overrides.firstTurnText === 'string') runtime.firstTurnText = overrides.firstTurnText
+    if (typeof overrides.guideCustom === 'boolean') runtime.guideCustom = overrides.guideCustom
+    if (typeof overrides.guideText === 'string') runtime.guideText = overrides.guideText
+    if (typeof overrides.subagentFlashProvider === 'string') runtime.subagentFlashProvider = overrides.subagentFlashProvider
+    if (typeof overrides.subagentFlashModel === 'string') runtime.subagentFlashModel = overrides.subagentFlashModel
+    if (typeof overrides.bootstrapMaxTokens === 'number') runtime.bootstrapMaxTokens = overrides.bootstrapMaxTokens
   }
   // 首次启动把包内 skills/ 增量复制到 $DSH_HOME/profiles/<profile>/skills，
   // 并优先使用 profile 副本；已有同名文件不覆盖，用户编辑会保留。
@@ -345,6 +370,14 @@ export function apply(ctx: Context, configIn: Config): void {
         rebuildPreset()
       } catch (error) {
         warn(ctx, `prompt-tool: preset import rebuild failed: ${String(error)}`)
+      }
+    },
+    () => {
+      // 参数覆盖变更：应用参数并重建。
+      try {
+        rebuildPreset()
+      } catch (error) {
+        warn(ctx, `prompt-tool: overrides rebuild failed: ${String(error)}`)
       }
     },
   )

@@ -91,6 +91,12 @@ export function writePreset(prompt: string, options: WritePresetOptions): void {
   const tmpDir = mkdtempSync(join(parentDir, `.${basename(presetDir)}.tmp-`))
   const outDir = tmpDir
   try {
+  // 0) 保留用户参数覆盖文件（重建/升级不丢用户修改；随预设隔离）。
+  const overridesSrc = join(presetDir, 'prompt-tool.overrides.yml')
+  if (existsSync(overridesSrc)) {
+    cpSync(overridesSrc, join(outDir, 'prompt-tool.overrides.yml'), { force: true })
+  }
+
   // 1) 组合文件:modules 模块库装配 + token 渲染 + moduleConfigs 行级合并 + YAML 校验。
   const composition = renderComposition(spec, runtime, templateDir)
   assertCompositionArray(composition, spec)

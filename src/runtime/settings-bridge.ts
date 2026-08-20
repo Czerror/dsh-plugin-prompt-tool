@@ -3,6 +3,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { join } from 'node:path'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { parse as parseYaml, stringify as stringifyYaml } from 'yaml'
 import type { SettingsDescriptor, SettingsNamespace, SettingsPathOp } from '@deepseek-ai/dsh-settings'
 import type { DeepseekDetection } from './deepseek.ts'
 import type { SkillCatalogEntry } from '../config.ts'
@@ -109,6 +110,8 @@ export function registerSettingsBridge(
   getPresetConfigsDir?: () => string,
   /** 内容导入完成回调（更新运行时文本并重建预设）。 */
   afterPresetImport?: (scope: 'preset' | 'agents') => void,
+  /** 参数覆盖写入回调（重建预设使参数生效）。 */
+  afterOverridesChange?: () => void,
 ): void {
   // 动态等待 webServer：webServer 由 @deepseek-ai/dsh-web-app 提供。
   // profile 首次缺少该 bundle 时，本子插件先 pending 但不阻塞启动审计；
@@ -439,6 +442,44 @@ export function registerSettingsBridge(
             } catch (error) {
               const message = error instanceof Error ? error.message : String(error)
               writeBridgeJson(res, 500, { ok: false, code: 'preset-import-failed', message })
+            }
+          },
+        }),
+        sctx.webServer.register({
+          kind: 'exact',
+          path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.paramOverrides,
+          handler: async (req, res) => {
+            if (!guard(req, res)) return
+            const dir = getPresetConfigsDir?.() ?? ''
+            if (dir.length === 0) {
+              writeBridgeJson(res, 400, { ok: false, code: 'preset-dir-unavailable', message: 'presetDir 未配置' })
+              return
+            }
+            const file = join(dir, 'prompt-tool.overrides.yml')
+            const body = await readBridgeBody(req)
+            const record = (body ?? {}) as Record<string, unknown>
+            // 无 overrides 载荷 = 读取；带载荷 = 写入。
+            if (record.overrides === undefined) {
+              try {
+                const raw = readFileSync(file, 'utf8')
+                const parsed = parseYaml(raw, { logLevel: 'silent' })
+                writeBridgeJson(res, 200, {
+                  ok: true,
+                  value: { overrides: parsed !== null && typeof parsed === 'object' ? parsed : {} },
+                })
+              } catch {
+                writeBridgeJson(res, 200, { ok: true, value: { overrides: {} } })
+              }
+              return
+            }
+            try {
+              mkdirSync(dir, { recursive: true })
+              writeFileSync(file, stringifyYaml(record.overrides), 'utf8')
+              afterOverridesChange?.()
+              writeBridgeJson(res, 200, { ok: true, value: { overrides: record.overrides } })
+            } catch (error) {
+              const message = error instanceof Error ? error.message : String(error)
+              writeBridgeJson(res, 500, { ok: false, code: 'overrides-write-failed', message })
             }
           },
         }),
