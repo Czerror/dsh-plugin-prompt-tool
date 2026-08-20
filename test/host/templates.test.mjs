@@ -5,13 +5,16 @@ import { loadPromptTemplates, validatePromptConfigs } from '../../lib/index.mjs'
 
 test('loadPromptTemplates：按文件名数字前缀顺序返回包内模板库', () => {
   const templates = loadPromptTemplates()
-  assert.equal(templates.length, 14)
+  assert.equal(templates.length, 17)
   assert.deepEqual(templates.map((template) => template.file), [
     '10-pre-step.yml',
     '100-first-turn-anchor.yml',
     '110-guide-auto.yml',
     '120-custom-fallback.yml',
     '130-instruction-hint.yml',
+    '140-runtime-context-placeholder.yml',
+    '150-instruction-hint-strategy.yml',
+    '160-anchor.yml',
     '20-merged-a.yml',
     '21-merged-b.yml',
     '30-system-section.yml',

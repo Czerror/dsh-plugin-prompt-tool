@@ -1,0 +1,20 @@
+# 模板：固定锚点序（configKind=anchor）
+# anchor 配置按模块文件相对顺序排在所有 ordered 配置之前（固定锚点），不参与 order 排序。
+# 提示：把本文件放入 promptConfigsDir 目录，或把对象写入 settings.promptConfigs 数组。
+id: example-anchor
+name: 示例：固定锚点序
+enabled: true
+layer: pre-step
+strategy: static
+configKind: anchor
+position: before-all
+dedupe: session
+promotion: none
+subagents: none
+modelScope: all
+role: user
+priority: 0
+mergeMode: separate
+sourceKind: ''
+form: notice
+text: "固定锚点文本：始终排在所有配置最前。"

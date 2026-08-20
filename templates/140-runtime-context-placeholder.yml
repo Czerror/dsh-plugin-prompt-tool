@@ -1,0 +1,19 @@
+# 模板：runtime-context 层 placeholder（strategy=placeholder + fill=skill-catalog）
+# runtime-context 是除 pre-step 外唯一支持 placeholder 的层级；演示技能目录动态填充。
+# 提示：把本文件放入 promptConfigsDir 目录，或把对象写入 settings.promptConfigs 数组。
+id: example-runtime-context-placeholder
+name: 示例：运行时上下文技能目录
+enabled: true
+layer: runtime-context
+strategy: placeholder
+fill: skill-catalog
+configKind: ordered
+order: 0
+priority: 0
+mergeMode: separate
+sourceKind: ''
+form: notice
+params:
+  limit: 20
+  fields: name,description
+  emptyBehavior: skip

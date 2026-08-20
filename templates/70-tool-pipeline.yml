@@ -3,6 +3,8 @@ id: example-tool-pipeline
 layer: tool-pipeline
 strategy: static
 priority: 0
+subagents: none
+modelScope: all
 text: 替换后的工具结果
 params:
   toolNames: bash,run_code
