@@ -216,14 +216,29 @@ export function applyModuleConfigs(raw: string, configs: Record<string, Record<s
   return changed ? doc.toString() : raw
 }
 
-/** 加载预设声明的组合(原始 token 文本,未渲染)。 */
-export function loadCompositionText(spec: PresetSpec): string {
+/**
+ * 加载预设声明的组合(原始 token 文本,未渲染)。
+ *  - `modules:` 清单 → 引擎模块库按序装配;
+ *  - `composition: ./xxx.yml` → 预设模板目录内组合文件(官方预设直用);
+ *  - `composition:` 内联文本或组合清单名。
+ */
+export function loadCompositionText(spec: PresetSpec, templateDir?: string): string {
   const library = join(packageEngineDir(), 'compositions', 'library')
   let raw: string
   if (Array.isArray(spec.modules)) raw = assembleModules(spec, library)
   else {
     const name = typeof spec.composition === 'string' ? spec.composition : ''
     if (name.includes('\n')) raw = name
+    else if (name.startsWith('./')) {
+      if (templateDir === undefined) {
+        throw new Error(`preset ${spec.id}: composition relative path needs a templateDir (${JSON.stringify(name)})`)
+      }
+      try {
+        raw = readFileSync(join(templateDir, name.slice(2)), 'utf8')
+      } catch (error) {
+        throw new Error(`preset ${spec.id}: composition file not found (${join(templateDir, name.slice(2))}): ${String((error as Error).message ?? error)}`)
+      }
+    }
     else if (name.length > 0) {
       const file = join(dirname(library), `${name}.yml`)
       try {
@@ -243,9 +258,9 @@ export function loadCompositionText(spec: PresetSpec): string {
  * 合并必须发生在 token 渲染之后(独立行 token 在渲染前是非法 YAML,
  * 如 __SUBAGENT_FLASH__ / __BOOTSTRAP_MAX_TOKENS__)。
  */
-export function renderComposition(spec: PresetSpec, runtime: Record<string, unknown>): string {
+export function renderComposition(spec: PresetSpec, runtime: Record<string, unknown>, templateDir?: string): string {
   const tokens = resolvePresetTokens(spec, runtime)
-  return applyModuleConfigs(renderTemplateVariables(loadCompositionText(spec), tokens), spec.moduleConfigs)
+  return applyModuleConfigs(renderTemplateVariables(loadCompositionText(spec, templateDir), tokens), spec.moduleConfigs)
 }
 
 /** 组合文本基础校验（模板无关）：无未解析 token，且必须是 YAML 数组。 */

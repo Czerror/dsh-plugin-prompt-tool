@@ -1,0 +1,13 @@
+id: standard
+name: 标准模式
+description: 功能完整的编码 Agent，支持文件编辑、Shell、文件与网页检索、Skills、计划、目标、子代理和工作流。
+version: 1.0.0
+engineCompat: ">=0.4.2"
+composition: ./agent.cordis.yml
+params:
+  usePtcMode: true
+  bootstrapMaxTokens: 0
+  flashPersona: "You are a helpful assistant. Before acting, decide the task type (build or fix) and adopt the matching style: build → hands-on production; fix → inspect-and-plan. Before acting, briefly review what you have already done in this session and continue from where you left off; do not repeat completed steps. Do not run environment checks (echo, whoami, uname, node --version, date) or exhaustive grep/glob scans. Think deeply first, then produce."
+  subagentFlashProvider: ""
+  subagentFlashModel: ""
+  allowKinds: "[skill-invocation, near-anchor, router-guide]"

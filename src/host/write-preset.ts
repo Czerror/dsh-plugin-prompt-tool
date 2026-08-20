@@ -92,7 +92,7 @@ export function writePreset(prompt: string, options: WritePresetOptions): void {
   const outDir = tmpDir
   try {
   // 1) 组合文件:modules 模块库装配 + token 渲染 + moduleConfigs 行级合并 + YAML 校验。
-  const composition = renderComposition(spec, runtime)
+  const composition = renderComposition(spec, runtime, templateDir)
   assertCompositionArray(composition, spec)
   writeFileSync(join(outDir, 'agent.cordis.yml'), composition, 'utf8')
 

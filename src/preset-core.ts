@@ -43,7 +43,7 @@ export function buildCordis(prompt: string, options: BuildCordisOptions = {}): s
       ? options.subagentFlashModel
       : '',
   }
-  const out = renderComposition(spec, runtime)
+  const out = renderComposition(spec, runtime, ANCHORED_TEMPLATE_DIR)
   // 生成文件必须含引擎必需行，且引擎行指向提示词配置模块目录。
   const parsed = assertCompositionArray(out, spec)
   const ids = new Set(parsed.map((row) => (row as { id?: string } | null)?.id))

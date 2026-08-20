@@ -105,6 +105,36 @@ test('writePreset 将 preset.yml 的锚点/引导参数写入提示词配置', (
   }
 })
 
+test('writePreset 官方导入预设（standard/minimal/ptc/creative）渲染组合且含 prompt-tool 引擎行', () => {
+  for (const template of ['standard', 'minimal', 'ptc', 'creative']) {
+    const dir = join(tmpdir(), `prompt-tool-${template}-${process.pid}-${Date.now()}`)
+    const presetDir = join(dir, 'preset')
+    try {
+      writePreset('PROMPT', {
+        ...makeOptions(presetDir),
+        presetTemplate: template,
+        injectPrompt: true,
+        firstTurnAnchor: false,
+        firstTurnText: '',
+        firstTurnCustom: false,
+        guideText: '',
+        guideCustom: false,
+        subagentFlashProvider: '',
+        subagentFlashModel: '',
+        bootstrapMaxTokens: 0,
+        usePtcMode: true,
+      })
+      const agent = readFileSync(join(presetDir, 'agent.cordis.yml'), 'utf8')
+      const rows = parseYaml(agent)
+      assert.ok(rows.some((row) => row?.id === 'prompt-config-engine'), `${template}: 应含 prompt-config-engine 行`)
+      assert.ok(!/__[A-Z0-9_]+__/.test(agent), `${template}: 不应残留未解析 token`)
+      assert.ok(rows.length >= 10, `${template}: 组合行数异常（${rows.length}）`)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  }
+})
+
 test('writePreset 失败时保留旧生成目录', () => {
   const dir = join(tmpdir(), `prompt-tool-wp-${process.pid}-${Date.now()}`)
   const presetDir = join(dir, 'preset')
