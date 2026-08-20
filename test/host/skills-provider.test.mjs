@@ -124,7 +124,7 @@ test('readSkills：disable-model-invocation / user-invocable 映射到调用标�
   }
 })
 
-test('readSkills：无 frontmatter 时回退目录名；SKILL.md 缺失的目录与隐藏目录被跳过', () => {
+test('readSkills：无 frontmatter 标记 invalid（官方忽略语义的管理面保留）；缺失/隐藏目录跳过', () => {
   const { dir, cleanup } = makeDir()
   try {
     writeSkill(dir, 'fallback-skill', 'BODY without frontmatter')
@@ -134,11 +134,28 @@ test('readSkills：无 frontmatter 时回退目录名；SKILL.md 缺失的目录
     const entries = readSkills(dir)
     const fallback = entries.find((entry) => entry.folder === 'fallback-skill')
     assert.equal(fallback.name, 'fallback-skill')
-    assert.equal(fallback.valid, true)
+    assert.equal(fallback.valid, false)
+    assert.match(fallback.issue, /frontmatter/)
     // 技能规范：只有含 SKILL.md 的一级子目录才是技能；缺失/隐藏目录不出现在列表。
     assert.equal(entries.find((entry) => entry.folder === 'broken-skill'), undefined)
     assert.equal(entries.find((entry) => entry.folder === '.hidden'), undefined)
-    assert.equal(validSkills(entries).length, 1)
+    // 无 frontmatter 的技能标记 invalid，不进入注册面。
+    assert.equal(validSkills(entries).length, 0)
+  } finally {
+    cleanup()
+  }
+})
+
+test('readSkills：frontmatter 缺 name 或缺 description 标记 invalid（官方必填契约）', () => {
+  const { dir, cleanup } = makeDir()
+  try {
+    writeSkill(dir, 'no-desc', '---\nname: no-desc\n---\nBODY')
+    writeSkill(dir, 'no-name', '---\ndescription: Only desc\n---\nBODY')
+    const entries = readSkills(dir)
+    assert.equal(entries.find((entry) => entry.folder === 'no-desc').valid, false)
+    assert.match(entries.find((entry) => entry.folder === 'no-desc').issue, /description/)
+    assert.equal(entries.find((entry) => entry.folder === 'no-name').valid, false)
+    assert.match(entries.find((entry) => entry.folder === 'no-name').issue, /name/)
   } finally {
     cleanup()
   }

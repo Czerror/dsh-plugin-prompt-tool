@@ -80,11 +80,25 @@ export function readSkills(skillsDir: string, warn?: (message: string) => void):
     }
     const name = basename(current)
     const { data, body } = parseFrontmatter(raw)
-    const declaredName = typeof data.name === 'string' && data.name.length > 0 ? data.name : name
-    const valid = SKILL_NAME_RE.test(declaredName)
+    // 官方契约（skill-filesystem）：frontmatter 必须含 name 与 description，
+    // name 必须 kebab-case；缺失时官方整条忽略——本项目保留管理面：标记
+    // invalid + issue（UI 可见可修），不注册给模型。
+    const source = raw.charCodeAt(0) === 0xfeff ? raw.slice(1) : raw
+    const hasFrontmatter = /^---\r?\n[\s\S]*?\r?\n---\r?\n?/.test(source)
     let issue: string | undefined
-    if (!valid) {
+    if (!hasFrontmatter) {
+      issue = 'SKILL.md 缺少 YAML frontmatter（官方要求 name 与 description）。请补全 frontmatter。'
+    } else if (typeof data.name !== 'string' || data.name.length === 0) {
+      issue = 'frontmatter 缺少 name（官方要求 kebab-case 技能名）。'
+    } else if (typeof data.description !== 'string' || data.description.length === 0) {
+      issue = 'frontmatter 缺少 description（官方必填字段）。'
+    }
+    const declaredName = typeof data.name === 'string' && data.name.length > 0 ? data.name : name
+    const valid = issue === undefined && SKILL_NAME_RE.test(declaredName)
+    if (valid === false && issue === undefined) {
       issue = `技能名不合法（官方要求 kebab-case 小写连字符）：${JSON.stringify(declaredName)}。请把目录改为 kebab-case，或修改 SKILL.md frontmatter 的 name。`
+    }
+    if (issue !== undefined) {
       warn?.(`prompt-tool: skill ${JSON.stringify(rel)} ignored — ${issue}`)
     }
     entries.push({
@@ -92,9 +106,7 @@ export function readSkills(skillsDir: string, warn?: (message: string) => void):
       folder: rel.length > 0 ? rel : name,
       file,
       name: declaredName,
-      description: typeof data.description === 'string' && data.description.length > 0
-        ? data.description
-        : name,
+      description: typeof data.description === 'string' ? data.description : '',
       ...(typeof data.whenToUse === 'string' ? { whenToUse: data.whenToUse } : {}),
       ...(data.metadata !== undefined ? { metadata: data.metadata } : {}),
       body: body.trim(),
