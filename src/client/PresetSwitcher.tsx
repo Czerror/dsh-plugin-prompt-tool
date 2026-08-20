@@ -8,6 +8,7 @@ export function PresetSwitcher(props: { store: PromptToolStore }): ReactNode {
   const { store } = props
   const fields = store.fields
   const [importing, setImporting] = useState(false)
+  const [menuOpen, setMenuOpen] = useState(false)
   const yamlRef = useRef<HTMLInputElement>(null)
   const dirRef = useRef<HTMLInputElement>(null)
 
@@ -88,12 +89,21 @@ export function PresetSwitcher(props: { store: PromptToolStore }): ReactNode {
             aria-label="选择预设文件夹"
             onChange={(event) => { pickPresetDir(event.target.files); event.target.value = '' }}
           />
-          <button type="button" className={styles.pillButton} disabled={importing} onClick={() => yamlRef.current?.click()}>
-            {importing ? '导入中…' : '导入 preset.yml'}
-          </button>
-          <button type="button" className={styles.pillButton} disabled={importing} onClick={() => dirRef.current?.click()}>
-            导入预设文件夹
-          </button>
+          <span className={styles.importMenuHost}>
+            <button type="button" className={styles.primaryPill} disabled={importing} onClick={() => setMenuOpen((open) => !open)}>
+              {importing ? '导入中…' : '导入预设 ▾'}
+            </button>
+            {menuOpen && (
+              <span className={styles.importMenu} role="menu" aria-label="导入预设">
+                <button type="button" role="menuitem" className={styles.importMenuItem} onClick={() => { setMenuOpen(false); yamlRef.current?.click() }}>
+                  选择 preset.yml 配置文件
+                </button>
+                <button type="button" role="menuitem" className={styles.importMenuItem} onClick={() => { setMenuOpen(false); dirRef.current?.click() }}>
+                  选择预设文件夹
+                </button>
+              </span>
+            )}
+          </span>
         </span>
       </div>
     </div>

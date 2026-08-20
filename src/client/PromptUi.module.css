@@ -173,6 +173,43 @@
 .importBar small { color: var(--dsw-alias-label-tertiary); font-size: 10px; line-height: 15px; }
 .importBar .configInput { min-width: 220px; height: 36px; }
 
+.importMenuHost {
+  position: relative;
+  display: inline-flex;
+}
+
+.importMenu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  min-width: 200px;
+  padding: 6px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-base);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+}
+
+.importMenuItem {
+  appearance: none;
+  border: 0;
+  border-radius: 7px;
+  padding: 8px 10px;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.importMenuItem:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
 .pillButton,
 .primaryPill,
 .actions button {
