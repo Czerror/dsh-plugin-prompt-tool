@@ -17,6 +17,8 @@ export interface PromptConfigListProps {
   savedConfigs: PromptConfigDraft[]
   /** 传入 layer 时只展示该层配置；不传展示全部配置。 */
   layer?: string
+  /** 传入 scope 时按 subagents 作用域过滤：main = 非 only（主会话可见）；subagent = 非 none（子代理可见）。 */
+  scope?: 'main' | 'subagent'
   /** 列表工具栏追加操作（如「新建模板」）。 */
   extraActions?: ReactNode
   onPatchConfigs: (configs: PromptConfigDraft[]) => void
@@ -49,7 +51,7 @@ function moveWithinLayer(
 
 /** 共享的提示词配置列表：校验、保存、脏检测、复制、删除、层内移动。 */
 export function PromptConfigList(props: PromptConfigListProps): ReactNode {
-  const { meta, configs, savedConfigs, layer, extraActions, onPatchConfigs, onSaveConfigs, onNotice } = props
+  const { meta, configs, savedConfigs, layer, scope, extraActions, onPatchConfigs, onSaveConfigs, onNotice } = props
   const [expanded, setExpanded] = useState<string | undefined>(undefined)
   const [errors, setErrors] = useState<ValidationErrorEntry[]>([])
   const [validating, setValidating] = useState(false)
@@ -58,6 +60,12 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
   const visible = layer === undefined
     ? configs
     : configs.filter((config) => layerOf(config) === layer)
+  const scoped = scope === undefined
+    ? visible
+    : visible.filter((config) => {
+      const mode = config.subagents ?? 'none'
+      return scope === 'main' ? mode !== 'only' : mode !== 'none'
+    })
 
   const dirty = JSON.stringify(configs) !== JSON.stringify(savedConfigs)
 
@@ -156,7 +164,7 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
   return (
     <section className={styles.section} aria-labelledby="prompt-tool-configs-heading">
       <div className={styles.sectionHeading}>
-        <div><h2 id="prompt-tool-configs-heading">{layer === undefined ? '配置列表' : '本层提示词配置'}</h2><p>{visible.length} 条配置 · {visible.filter((config) => config.enabled !== false).length} 条启用；上下移动控制同层顺序。</p></div>
+      <div><h2 id="prompt-tool-configs-heading">{layer === undefined ? '配置列表' : '本层提示词配置'}</h2><p>{scoped.length} 条配置 · {scoped.filter((config) => config.enabled !== false).length} 条启用；上下移动控制同层顺序。</p></div>
         <div className={styles.sectionActions}>
           {extraActions}
           <button type="button" className={styles.pillButton} disabled={validating} onClick={() => void runValidate(configs)}>{validating ? '校验中…' : '校验'}</button>
@@ -172,11 +180,11 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
         </div>
       )}
 
-      {visible.length === 0 ? (
+      {scoped.length === 0 ? (
         <div className={styles.emptyState}><span className={styles.emptyGlyph} aria-hidden="true">⌁</span><div><h3>{layer === undefined ? '还没有自定义提示词配置' : '本层还没有自定义配置'}</h3><p>{layer === undefined ? '从上方模板插入一条，或从本地目录导入；默认四条内置配置不受影响。' : '请到主设置「提示词配置」从模板插入或从目录导入。'}</p></div></div>
       ) : (
         <div className={styles.configList}>
-          {visible.map((config) => renderCard(config))}
+          {scoped.map((config) => renderCard(config))}
         </div>
       )}
 
