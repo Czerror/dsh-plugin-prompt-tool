@@ -208,6 +208,11 @@ subagent:
     allow: []
     deny: []
   maxDepth: ""
+# ── 提示词配置（audience 依据上游 dsh-anchored-standard preset/agent.cordis.yml 查证）──
+# 上游全部注入相位（context-gate / tool-bootstrap / instruction-hint）均显式
+# includeSubagents: true —— 子代理与主会话同步经历门控→晋升→注入，官方行为为
+# 「子代理跟随」，故本预设全部配置缺省=公用（主会话+子代理都注入）。
+# 如需仅主会话/仅子代理，显式 audience: main / subagent 即可（配置项，不锁定）。
 promptConfigs:
   - id: near-anchor
     name: 首句锚点
@@ -220,7 +225,6 @@ promptConfigs:
     position: after-user
     dedupe: session
     promotion: none
-    audience: main
   - id: router-guide
     name: 每轮引导
     enabled: true
@@ -232,7 +236,6 @@ promptConfigs:
     position: after-user
     dedupe: batch
     promotion: main
-    audience: main
     modelScope: flash
   - id: prompt-injector
     name: preset.md 注入
