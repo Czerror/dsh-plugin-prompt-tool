@@ -38,6 +38,12 @@ export interface SwitchSnapshot {
   modelName: string
   subagentModelProvider: string
   subagentModelName: string
+  modelReasoningEffort: string
+  modelTemperature: string
+  modelMaxTokens: string
+  subagentReasoningEffort: string
+  subagentTemperature: string
+  subagentMaxTokens: string
   bootstrapMaxTokens: number
   usePtcMode: boolean
   injectPrompt: boolean
@@ -64,6 +70,12 @@ const EMPTY_SWITCHES: SwitchSnapshot = {
   modelName: '',
   subagentModelProvider: '',
   subagentModelName: '',
+  modelReasoningEffort: '',
+  modelTemperature: '',
+  modelMaxTokens: '',
+  subagentReasoningEffort: '',
+  subagentTemperature: '',
+  subagentMaxTokens: '',
   bootstrapMaxTokens: 0,
   usePtcMode: true,
   injectPrompt: true,
@@ -93,6 +105,12 @@ export const snapshotSwitches = (fields: Fields): SwitchSnapshot => ({
   modelName: fields.modelName,
   subagentModelProvider: fields.subagentModelProvider,
   subagentModelName: fields.subagentModelName,
+  modelReasoningEffort: fields.modelReasoningEffort,
+  modelTemperature: fields.modelTemperature,
+  modelMaxTokens: fields.modelMaxTokens,
+  subagentReasoningEffort: fields.subagentReasoningEffort,
+  subagentTemperature: fields.subagentTemperature,
+  subagentMaxTokens: fields.subagentMaxTokens,
   bootstrapMaxTokens: fields.bootstrapMaxTokens,
   usePtcMode: fields.usePtcMode,
   injectPrompt: fields.injectPrompt,
@@ -119,6 +137,12 @@ const switchesEqual = (a: SwitchSnapshot, b: SwitchSnapshot): boolean =>
   && a.modelName === b.modelName
   && a.subagentModelProvider === b.subagentModelProvider
   && a.subagentModelName === b.subagentModelName
+  && a.modelReasoningEffort === b.modelReasoningEffort
+  && a.modelTemperature === b.modelTemperature
+  && a.modelMaxTokens === b.modelMaxTokens
+  && a.subagentReasoningEffort === b.subagentReasoningEffort
+  && a.subagentTemperature === b.subagentTemperature
+  && a.subagentMaxTokens === b.subagentMaxTokens
   && a.bootstrapMaxTokens === b.bootstrapMaxTokens
   && a.usePtcMode === b.usePtcMode
   && a.injectPrompt === b.injectPrompt
@@ -440,6 +464,12 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
         modelName: f.modelName,
         subagentModelProvider: f.subagentModelProvider,
         subagentModelName: f.subagentModelName,
+        ...(f.modelReasoningEffort.trim().length > 0 ? { modelReasoningEffort: f.modelReasoningEffort } : {}),
+        ...(f.modelTemperature.trim().length > 0 ? { modelTemperature: f.modelTemperature } : {}),
+        ...(f.modelMaxTokens.trim().length > 0 ? { modelMaxTokens: f.modelMaxTokens } : {}),
+        ...(f.subagentReasoningEffort.trim().length > 0 ? { subagentReasoningEffort: f.subagentReasoningEffort } : {}),
+        ...(f.subagentTemperature.trim().length > 0 ? { subagentTemperature: f.subagentTemperature } : {}),
+        ...(f.subagentMaxTokens.trim().length > 0 ? { subagentMaxTokens: f.subagentMaxTokens } : {}),
         ...(f.mainPersona.trim().length > 0 ? { mainPersona: f.mainPersona } : {}),
         ...(f.subagentPersona.trim().length > 0 ? { subagentPersona: f.subagentPersona } : {}),
         toolFilterAllow: splitList(f.toolFilterAllow),

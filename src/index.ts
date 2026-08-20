@@ -160,6 +160,12 @@ export function apply(ctx: Context, configIn: Config): void {
         modelName: runtime.modelName,
         subagentModelProvider: runtime.subagentModelProvider,
         subagentModelName: runtime.subagentModelName,
+        modelReasoningEffort: runtime.modelReasoningEffort,
+        modelTemperature: runtime.modelTemperature,
+        modelMaxTokens: runtime.modelMaxTokens,
+        subagentReasoningEffort: runtime.subagentReasoningEffort,
+        subagentTemperature: runtime.subagentTemperature,
+        subagentMaxTokens: runtime.subagentMaxTokens,
         mainPersona: runtime.mainPersona,
         subagentPersona: runtime.subagentPersona,
         toolFilterAllow: runtime.toolFilterAllow,
@@ -208,6 +214,12 @@ export function apply(ctx: Context, configIn: Config): void {
     if (typeof overrides.modelName === 'string') runtime.modelName = overrides.modelName
     if (typeof overrides.subagentModelProvider === 'string') runtime.subagentModelProvider = overrides.subagentModelProvider
     if (typeof overrides.subagentModelName === 'string') runtime.subagentModelName = overrides.subagentModelName
+    if (typeof overrides.modelReasoningEffort === 'string') runtime.modelReasoningEffort = overrides.modelReasoningEffort
+    if (typeof overrides.modelTemperature === 'string') runtime.modelTemperature = overrides.modelTemperature
+    if (typeof overrides.modelMaxTokens === 'string') runtime.modelMaxTokens = overrides.modelMaxTokens
+    if (typeof overrides.subagentReasoningEffort === 'string') runtime.subagentReasoningEffort = overrides.subagentReasoningEffort
+    if (typeof overrides.subagentTemperature === 'string') runtime.subagentTemperature = overrides.subagentTemperature
+    if (typeof overrides.subagentMaxTokens === 'string') runtime.subagentMaxTokens = overrides.subagentMaxTokens
     // mainPersona 引擎必需非空：历史 overrides 里的空串直接忽略（保留模板默认）。
     if (typeof overrides.mainPersona === 'string' && overrides.mainPersona.trim().length > 0) {
       runtime.mainPersona = overrides.mainPersona
@@ -431,6 +443,12 @@ export function apply(ctx: Context, configIn: Config): void {
     modelName: config.modelName,
     subagentModelProvider: config.subagentModelProvider,
     subagentModelName: config.subagentModelName,
+    modelReasoningEffort: config.modelReasoningEffort,
+    modelTemperature: config.modelTemperature,
+    modelMaxTokens: config.modelMaxTokens,
+    subagentReasoningEffort: config.subagentReasoningEffort,
+    subagentTemperature: config.subagentTemperature,
+    subagentMaxTokens: config.subagentMaxTokens,
     bootstrapMaxTokens: config.bootstrapMaxTokens,
     usePtcMode: config.usePtcMode,
     skillRankBase: config.skillRankBase,
@@ -474,6 +492,12 @@ export function apply(ctx: Context, configIn: Config): void {
     modelName: runtime.modelName,
     subagentModelProvider: runtime.subagentModelProvider,
     subagentModelName: runtime.subagentModelName,
+    modelReasoningEffort: runtime.modelReasoningEffort,
+    modelTemperature: runtime.modelTemperature,
+    modelMaxTokens: runtime.modelMaxTokens,
+    subagentReasoningEffort: runtime.subagentReasoningEffort,
+    subagentTemperature: runtime.subagentTemperature,
+    subagentMaxTokens: runtime.subagentMaxTokens,
     bootstrapMaxTokens: runtime.bootstrapMaxTokens,
     usePtcMode: runtime.usePtcMode,
     modelsAvailable: getModelsState().available,
@@ -521,6 +545,12 @@ registerTuiCommand(ctx, NS, () => currentSource(), getModelsState, () => listAdv
       modelName: typeof next.modelName === 'string' ? next.modelName : config.modelName,
       subagentModelProvider: typeof next.subagentModelProvider === 'string' ? next.subagentModelProvider : config.subagentModelProvider,
       subagentModelName: typeof next.subagentModelName === 'string' ? next.subagentModelName : config.subagentModelName,
+      modelReasoningEffort: typeof next.modelReasoningEffort === 'string' ? next.modelReasoningEffort : config.modelReasoningEffort,
+      modelTemperature: typeof next.modelTemperature === 'string' ? next.modelTemperature : config.modelTemperature,
+      modelMaxTokens: typeof next.modelMaxTokens === 'string' ? next.modelMaxTokens : config.modelMaxTokens,
+      subagentReasoningEffort: typeof next.subagentReasoningEffort === 'string' ? next.subagentReasoningEffort : config.subagentReasoningEffort,
+      subagentTemperature: typeof next.subagentTemperature === 'string' ? next.subagentTemperature : config.subagentTemperature,
+      subagentMaxTokens: typeof next.subagentMaxTokens === 'string' ? next.subagentMaxTokens : config.subagentMaxTokens,
       bootstrapMaxTokens: Number.isSafeInteger(next.bootstrapMaxTokens) && next.bootstrapMaxTokens >= 0 ? next.bootstrapMaxTokens : config.bootstrapMaxTokens,
       usePtcMode: typeof next.usePtcMode === 'boolean' ? next.usePtcMode : config.usePtcMode,
       skillRankBase: Number.isSafeInteger(next.skillRankBase) && next.skillRankBase >= 0 ? next.skillRankBase : config.skillRankBase,

@@ -73,6 +73,50 @@ test('writePreset 输出不包含未解析的 __VARIABLE__ 残留', () => {
   }
 })
 
+test('writePreset 模型参数（思维程度/温度/输出上限）→ agent-request 配置，audience 区分主/子', () => {
+  const dir = join(tmpdir(), `prompt-tool-wp-${process.pid}-${Date.now()}`)
+  const presetDir = join(dir, 'preset')
+  try {
+    writePreset('PROMPT', {
+      ...makeOptions(presetDir),
+      modelReasoningEffort: 'high',
+      modelTemperature: '1',
+      modelMaxTokens: '32000',
+      subagentReasoningEffort: 'max',
+      subagentTemperature: '',
+      subagentMaxTokens: '',
+    })
+    const configsDir = join(presetDir, 'prompt-configs')
+    const files = readdirSync(configsDir).sort()
+    const modelParams = files.find((file) => file.includes('model-params'))
+    assert.ok(modelParams, `缺 model-params 配置，实际文件: ${files.join(', ')}`)
+    const parsed = parseYaml(readFileSync(join(configsDir, modelParams), 'utf8'))
+    assert.equal(parsed.audience, 'main')
+    assert.deepEqual(parsed.params.patch, { reasoningEffort: 'high', temperature: 1, maxTokens: 32000 })
+    const subagentParams = files.find((file) => file.includes('subagent-model-params'))
+    assert.ok(subagentParams, `缺 subagent-model-params 配置，实际文件: ${files.join(', ')}`)
+    const subagentParsed = parseYaml(readFileSync(join(configsDir, subagentParams), 'utf8'))
+    assert.equal(subagentParsed.audience, 'subagent')
+    assert.deepEqual(subagentParsed.params.patch, { reasoningEffort: 'max' })
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('writePreset 模型参数全部留空 = 不生成 agent-request 配置', () => {
+  const dir = join(tmpdir(), `prompt-tool-wp-${process.pid}-${Date.now()}`)
+  const presetDir = join(dir, 'preset')
+  try {
+    writePreset('PROMPT', makeOptions(presetDir))
+    const configsDir = join(presetDir, 'prompt-configs')
+    const files = readdirSync(configsDir)
+    assert.ok(!files.some((file) => file.includes('model-params')), `不应生成 model-params，实际: ${files.join(', ')}`)
+    assert.ok(!files.some((file) => file.includes('subagent-model-params')), `不应生成 subagent-model-params，实际: ${files.join(', ')}`)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
 test('writePreset 生成 agent.cordis.yml 注入 allowKinds', () => {
   const dir = join(tmpdir(), `prompt-tool-wp-${process.pid}-${Date.now()}`)
   const presetDir = join(dir, 'preset')

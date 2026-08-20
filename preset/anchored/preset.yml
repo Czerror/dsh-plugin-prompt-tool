@@ -190,19 +190,28 @@ params:
   allowKinds: "[skill-invocation, near-anchor, router-guide]"
 # ── 模型路由与委派 · 主对话与子代理通用（全部可选，缺省 = 官方默认 / 继承宿主）──
 #   维度      preset.yml 键                         引擎渲染落点
-#   模型      modelProvider / modelName（主对话）   agent-default-model 新会话默认模型
-#             subagentModelProvider / Name（子代理）tool-subagent agentOptions{provider,model}
-#   人设      subagentPersona                       tool-subagent persona
+  #   模型      modelProvider / modelName（主对话）   agent-default-model 新会话默认模型
+  #             subagentModelProvider / Name（子代理）tool-subagent agentOptions{provider,model}
+  #   模型参数  modelReasoningEffort / Temperature / MaxTokens（主对话）
+  #             subagentReasoningEffort / Temperature / MaxTokens（子代理）
+  #             agent-request patch（官方 LlmCallConfig；audience 区分主/子；''=不设置）
+  #   人设      subagentPersona                       tool-subagent persona
 #             （显式 → 固定路由回退 mainPersona → 继承主会话）
 #   工具集    toolFilter.allow / deny               tool-subagent toolFilter{allow,deny}
-#   深度      maxDepth                              tool-subagent maxDepth
-#             （0 禁止委派 / provider-managed / 正整数）
-#   相位/注入 由 promptConfigs[].audience/promotion/modelScope 与
-#             moduleConfigs.*.includeSubagents 控制（主对话与子代理共用）
+  #   深度      maxDepth                              tool-subagent maxDepth
+  #             （0 禁止委派 / provider-managed / 正整数）
+  #   相位/注入 由 promptConfigs[].audience/promotion/modelScope 与
+  #             moduleConfigs.*.includeSubagents 控制（主对话与子代理共用）
   modelProvider: ""
   modelName: ""
   subagentModelProvider: ""
   subagentModelName: ""
+  modelReasoningEffort: ""
+  modelTemperature: ""
+  modelMaxTokens: ""
+  subagentReasoningEffort: ""
+  subagentTemperature: ""
+  subagentMaxTokens: ""
   subagentPersona: ""
   toolFilterAllow: []
   toolFilterDeny: []

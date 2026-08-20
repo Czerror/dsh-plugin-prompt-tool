@@ -48,6 +48,12 @@ export function buildCordis(prompt: string, options: BuildCordisOptions = {}): s
     subagentModelName: typeof options.subagentModelName === 'string' && options.subagentModelName.length > 0
       ? options.subagentModelName
       : '',
+    modelReasoningEffort: typeof options.modelReasoningEffort === 'string' ? options.modelReasoningEffort : '',
+    modelTemperature: typeof options.modelTemperature === 'string' ? options.modelTemperature : '',
+    modelMaxTokens: typeof options.modelMaxTokens === 'string' ? options.modelMaxTokens : '',
+    subagentReasoningEffort: typeof options.subagentReasoningEffort === 'string' ? options.subagentReasoningEffort : '',
+    subagentTemperature: typeof options.subagentTemperature === 'string' ? options.subagentTemperature : '',
+    subagentMaxTokens: typeof options.subagentMaxTokens === 'string' ? options.subagentMaxTokens : '',
     subagentPersona: typeof options.subagentPersona === 'string' && options.subagentPersona.length > 0
       ? options.subagentPersona
       : '',

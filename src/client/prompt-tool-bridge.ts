@@ -34,6 +34,12 @@ export interface Fields {
   modelName: string
   subagentModelProvider: string
   subagentModelName: string
+  modelReasoningEffort: string
+  modelTemperature: string
+  modelMaxTokens: string
+  subagentReasoningEffort: string
+  subagentTemperature: string
+  subagentMaxTokens: string
   mainPersona: string
   subagentPersona: string
   toolFilterAllow: string
@@ -94,6 +100,12 @@ export const EMPTY_FIELDS: Fields = {
   modelName: '',
   subagentModelProvider: '',
   subagentModelName: '',
+  modelReasoningEffort: '',
+  modelTemperature: '',
+  modelMaxTokens: '',
+  subagentReasoningEffort: '',
+  subagentTemperature: '',
+  subagentMaxTokens: '',
   mainPersona: '',
   subagentPersona: '',
   toolFilterAllow: '',
@@ -226,6 +238,12 @@ export function fieldsFromView(res: BridgeResult<BridgeSettingsView>): Fields {
     modelName: readString(value, 'modelName') ?? readString(base, 'modelName') ?? '',
     subagentModelProvider: readString(value, 'subagentModelProvider') ?? readString(base, 'subagentModelProvider') ?? '',
     subagentModelName: readString(value, 'subagentModelName') ?? readString(base, 'subagentModelName') ?? '',
+    modelReasoningEffort: readString(value, 'modelReasoningEffort') ?? readString(base, 'modelReasoningEffort') ?? '',
+    modelTemperature: readString(value, 'modelTemperature') ?? readString(base, 'modelTemperature') ?? '',
+    modelMaxTokens: readString(value, 'modelMaxTokens') ?? readString(base, 'modelMaxTokens') ?? '',
+    subagentReasoningEffort: readString(value, 'subagentReasoningEffort') ?? readString(base, 'subagentReasoningEffort') ?? '',
+    subagentTemperature: readString(value, 'subagentTemperature') ?? readString(base, 'subagentTemperature') ?? '',
+    subagentMaxTokens: readString(value, 'subagentMaxTokens') ?? readString(base, 'subagentMaxTokens') ?? '',
     // 预设级参数（mainPersona/subagentPersona/toolFilterAllow/toolFilterDeny/maxDepth/allowKinds/firstTurnWord）
     // 不进 settings namespace：默认空，由 /param-overrides 读回后填充（store.load paramPatch）。
     mainPersona: '',

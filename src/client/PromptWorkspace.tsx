@@ -154,9 +154,17 @@ function ModelToolCards(props: { store: PromptToolStore; scope: 'main' | 'subage
   const modelName = props.scope === 'main' ? fields.modelName : fields.subagentModelName
   const modelOptions = [...(store.modelCatalog[provider] ?? [])]
   const maxDepthOptions = ['', 'provider-managed', '0', '1', '2', '3', '5']
+  const reasoningEffortOptions = ['', 'off', 'low', 'high', 'max']
   const withCurrent = (options: string[], current: string): string[] =>
     current.length > 0 && !options.includes(current) ? [...options, current] : options
   const active = provider.length > 0 && modelName.length > 0
+  const reasoningEffort = props.scope === 'main' ? fields.modelReasoningEffort : fields.subagentReasoningEffort
+  const temperature = props.scope === 'main' ? fields.modelTemperature : fields.subagentTemperature
+  const maxTokens = props.scope === 'main' ? fields.modelMaxTokens : fields.subagentMaxTokens
+  const patchModelParam = (key: 'modelReasoningEffort' | 'modelTemperature' | 'modelMaxTokens' | 'subagentReasoningEffort' | 'subagentTemperature' | 'subagentMaxTokens', value: string): void => {
+    store.patch({ [key]: value } as Partial<typeof fields>)
+    void store.persistParamOverrides()
+  }
   const scopeMeta = props.scope === 'main'
     ? { title: '主对话模型', idle: '未设置：继承宿主默认模型', active: '固定模型路由已设置（新会话默认模型）' }
     : { title: '子代理模型', idle: '未设置：继承主会话模型', active: '子代理固定模型路由已设置' }
@@ -209,6 +217,75 @@ function ModelToolCards(props: { store: PromptToolStore; scope: 'main' | 'subage
                 <option key={item} value={item}>{item}</option>
               ))}
             </select>
+          </div>
+        </div>
+        <div className={ui.rowGroup}>
+          <div className={ui.settingRowStack}>
+            <span className={ui.settingCopy}>
+              <strong>思维程度</strong>
+              <small>reasoningEffort（agent-request patch）；官方档位 off / low / high / max；留空 = 不设置（模型默认）。选择即保存。</small>
+            </span>
+            <select
+              className={ui.configInput}
+              aria-label="思维程度"
+              value={reasoningEffort}
+              disabled={!fields.writePreset}
+              onChange={(event) => patchModelParam(
+                props.scope === 'main' ? 'modelReasoningEffort' : 'subagentReasoningEffort',
+                event.target.value,
+              )}
+            >
+              {withCurrent(reasoningEffortOptions, reasoningEffort).map((item) => (
+                <option key={item} value={item}>{item.length === 0 ? '（不设置）' : item}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+        <div className={ui.rowGroup}>
+          <div className={ui.settingRowStack}>
+            <span className={ui.settingCopy}>
+              <strong>采样温度</strong>
+              <small>temperature（agent-request patch）；数字 0–2，留空 = 不设置（模型默认）。失焦保存。</small>
+            </span>
+            <input
+              className={ui.configInput}
+              type="number"
+              min={0}
+              max={2}
+              step={0.1}
+              aria-label="采样温度"
+              value={temperature}
+              disabled={!fields.writePreset}
+              placeholder="不设置"
+              onChange={(event) => patchModelParam(
+                props.scope === 'main' ? 'modelTemperature' : 'subagentTemperature',
+                event.target.value,
+              )}
+              onBlur={() => void store.persistParamOverrides()}
+            />
+          </div>
+        </div>
+        <div className={ui.rowGroup}>
+          <div className={ui.settingRowStack}>
+            <span className={ui.settingCopy}>
+              <strong>输出上限</strong>
+              <small>maxTokens（agent-request patch）；正整数，留空 = 不设置（模型默认）。失焦保存。</small>
+            </span>
+            <input
+              className={ui.configInput}
+              type="number"
+              min={1}
+              step={1}
+              aria-label="输出上限"
+              value={maxTokens}
+              disabled={!fields.writePreset}
+              placeholder="不设置"
+              onChange={(event) => patchModelParam(
+                props.scope === 'main' ? 'modelMaxTokens' : 'subagentMaxTokens',
+                event.target.value,
+              )}
+              onBlur={() => void store.persistParamOverrides()}
+            />
           </div>
         </div>
         {props.scope === 'main' && (

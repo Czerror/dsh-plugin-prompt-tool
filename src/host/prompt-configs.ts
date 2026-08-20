@@ -73,6 +73,18 @@ export interface BuildCordisOptions {
   subagentModelProvider?: string
   /** 子代理固定模型名。 */
   subagentModelName?: string
+  /** 主对话思维程度（agent-request patch reasoningEffort；''=不设置，官方档位 off/low/high/max）。 */
+  modelReasoningEffort?: string
+  /** 主对话采样温度（agent-request patch temperature；''=不设置）。 */
+  modelTemperature?: string
+  /** 主对话输出上限（agent-request patch maxTokens；''=不设置）。 */
+  modelMaxTokens?: string
+  /** 子代理思维程度（agent-request patch，audience=subagent；''=不设置）。 */
+  subagentReasoningEffort?: string
+  /** 子代理采样温度（agent-request patch，audience=subagent；''=不设置）。 */
+  subagentTemperature?: string
+  /** 子代理输出上限（agent-request patch，audience=subagent；''=不设置）。 */
+  subagentMaxTokens?: string
   /** 子代理自定义模型人设（per-child shadow；缺省回退 mainPersona，两者缺省=继承主会话）。 */
   subagentPersona?: string
   /** 委派工具集白名单（toolFilter.allow；支持数组或逗号/空格分隔字符串）。 */

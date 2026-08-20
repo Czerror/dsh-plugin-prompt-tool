@@ -50,6 +50,12 @@ params:
   modelName: ""
   subagentModelProvider: ""
   subagentModelName: ""
+  modelReasoningEffort: ""
+  modelTemperature: ""
+  modelMaxTokens: ""
+  subagentReasoningEffort: ""
+  subagentTemperature: ""
+  subagentMaxTokens: ""
   subagentPersona: ""
   toolFilterAllow: []
   toolFilterDeny: []

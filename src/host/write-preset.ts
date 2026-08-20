@@ -40,6 +40,18 @@ export interface WritePresetOptions {
   subagentModelProvider: string
   /** 子代理固定模型名。 */
   subagentModelName: string
+  /** 主对话思维程度（agent-request patch reasoningEffort；''=不设置，官方档位 off/low/high/max）。 */
+  modelReasoningEffort?: string
+  /** 主对话采样温度（agent-request patch temperature；''=不设置）。 */
+  modelTemperature?: string
+  /** 主对话输出上限（agent-request patch maxTokens；''=不设置）。 */
+  modelMaxTokens?: string
+  /** 子代理思维程度（agent-request patch，audience=subagent；''=不设置）。 */
+  subagentReasoningEffort?: string
+  /** 子代理采样温度（agent-request patch，audience=subagent；''=不设置）。 */
+  subagentTemperature?: string
+  /** 子代理输出上限（agent-request patch，audience=subagent；''=不设置）。 */
+  subagentMaxTokens?: string
   /** 子代理自定义模型人设（per-child shadow；缺省回退 mainPersona，两者缺省=继承主会话）。 */
   subagentPersona?: string
   /** 委派工具集白名单（toolFilter.allow；支持数组或逗号/空格分隔字符串）。 */
@@ -91,6 +103,12 @@ function runtimeOf(options: WritePresetOptions, prompt: string): Record<string, 
     subagentModelName: typeof options.subagentModelName === 'string' && options.subagentModelName.length > 0
       ? options.subagentModelName
       : '',
+    modelReasoningEffort: typeof options.modelReasoningEffort === 'string' ? options.modelReasoningEffort : '',
+    modelTemperature: typeof options.modelTemperature === 'string' ? options.modelTemperature : '',
+    modelMaxTokens: typeof options.modelMaxTokens === 'string' ? options.modelMaxTokens : '',
+    subagentReasoningEffort: typeof options.subagentReasoningEffort === 'string' ? options.subagentReasoningEffort : '',
+    subagentTemperature: typeof options.subagentTemperature === 'string' ? options.subagentTemperature : '',
+    subagentMaxTokens: typeof options.subagentMaxTokens === 'string' ? options.subagentMaxTokens : '',
     subagentPersona: typeof options.subagentPersona === 'string' && options.subagentPersona.length > 0
       ? options.subagentPersona
       : '',
@@ -107,6 +125,32 @@ function runtimeOf(options: WritePresetOptions, prompt: string): Record<string, 
       ? options.firstTurnWord
       : undefined,
   }
+}
+
+/** 模型参数（思维程度/温度/输出上限）→ agent-request 提示词配置（官方 LlmCallConfig patch 浅合并）。 */
+function modelRequestConfigs(options: WritePresetOptions): PromptConfigSpec[] {
+  const patchOf = (prefix: 'model' | 'subagent'): Record<string, unknown> => {
+    const patch: Record<string, unknown> = {}
+    const effort = options[`${prefix}ReasoningEffort`]
+    const temperature = options[`${prefix}Temperature`]
+    const maxTokens = options[`${prefix}MaxTokens`]
+    if (typeof effort === 'string' && effort.trim().length > 0) patch.reasoningEffort = effort.trim()
+    const temp = typeof temperature === 'string' ? Number(temperature) : NaN
+    if (typeof temperature === 'string' && temperature.trim().length > 0 && Number.isFinite(temp)) patch.temperature = temp
+    const tokens = typeof maxTokens === 'string' ? Number(maxTokens) : NaN
+    if (typeof maxTokens === 'string' && maxTokens.trim().length > 0 && Number.isSafeInteger(tokens) && tokens > 0) patch.maxTokens = tokens
+    return patch
+  }
+  const configs: PromptConfigSpec[] = []
+  const mainPatch = patchOf('model')
+  if (Object.keys(mainPatch).length > 0) {
+    configs.push({ id: 'model-params', name: '模型参数（主对话）', layer: 'agent-request', audience: 'main', order: -100, params: { patch: mainPatch } })
+  }
+  const subagentPatch = patchOf('subagent')
+  if (Object.keys(subagentPatch).length > 0) {
+    configs.push({ id: 'subagent-model-params', name: '模型参数（子代理）', layer: 'agent-request', audience: 'subagent', order: -100, params: { patch: subagentPatch } })
+  }
+  return configs
 }
 
 /** 把任意单一参数预设模板物化到生成目录;全部失败 fail loud。 */
@@ -209,7 +253,8 @@ export function writePreset(prompt: string, options: WritePresetOptions): void {
     // 全部内容由模板数据或用户 settings 提供。
     templateDefaults = []
   }
-  const merged = mergePromptConfigs(templateDefaults, options.promptConfigs)
+  // 模型参数（agent-request）作为引擎默认级注入，优先级低于模板与 settings。
+  const merged = mergePromptConfigs(modelRequestConfigs(options), templateDefaults, options.promptConfigs)
   for (const [index, config] of merged.entries()) {
     writeFileSync(join(promptConfigsDir, `${String(index * 10).padStart(2, '0')}-${config.id}.yml`), renderPromptConfigYaml(config), 'utf8')
   }

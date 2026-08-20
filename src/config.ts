@@ -74,6 +74,18 @@ export interface Config {
   subagentModelProvider: string
   /** 子代理固定模型名；与 provider 同时非空时生效。 */
   subagentModelName: string
+  /** 主对话思维程度（agent-request patch reasoningEffort；''=不设置，官方档位 off/low/high/max）。 */
+  modelReasoningEffort: string
+  /** 主对话采样温度（agent-request patch temperature；''=不设置）。 */
+  modelTemperature: string
+  /** 主对话输出上限（agent-request patch maxTokens；''=不设置）。 */
+  modelMaxTokens: string
+  /** 子代理思维程度（agent-request patch reasoningEffort，audience=subagent；''=不设置）。 */
+  subagentReasoningEffort: string
+  /** 子代理采样温度（agent-request patch temperature，audience=subagent；''=不设置）。 */
+  subagentTemperature: string
+  /** 子代理输出上限（agent-request patch maxTokens，audience=subagent；''=不设置）。 */
+  subagentMaxTokens: string
   /** 主对话自定义模型人设（preset.yml mainPersona；仅经 overrides 覆盖，不进 settings）。 */
   mainPersona?: string
   /** 子代理自定义模型人设（per-child shadow；仅经 overrides 覆盖，不进 settings）。 */
@@ -129,6 +141,12 @@ export const Config: z<Config> = z.object({
   modelName: z.string().default(''),
   subagentModelProvider: z.string().default(''),
   subagentModelName: z.string().default(''),
+  modelReasoningEffort: z.string().default(''),
+  modelTemperature: z.string().default(''),
+  modelMaxTokens: z.string().default(''),
+  subagentReasoningEffort: z.string().default(''),
+  subagentTemperature: z.string().default(''),
+  subagentMaxTokens: z.string().default(''),
   bootstrapMaxTokens: z.natural().default(0),
   usePtcMode: z.boolean().default(true),
   skillsDirs: z.array(z.string()).default([]),
@@ -201,6 +219,18 @@ export interface PromptSettings {
   subagentModelProvider: string
   /** 子代理固定模型名；与 provider 同时非空时生效。 */
   subagentModelName: string
+  /** 主对话思维程度（agent-request patch reasoningEffort；''=不设置）。 */
+  modelReasoningEffort: string
+  /** 主对话采样温度（agent-request patch temperature；''=不设置）。 */
+  modelTemperature: string
+  /** 主对话输出上限（agent-request patch maxTokens；''=不设置）。 */
+  modelMaxTokens: string
+  /** 子代理思维程度（agent-request patch，audience=subagent；''=不设置）。 */
+  subagentReasoningEffort: string
+  /** 子代理采样温度（agent-request patch，audience=subagent；''=不设置）。 */
+  subagentTemperature: string
+  /** 子代理输出上限（agent-request patch，audience=subagent；''=不设置）。 */
+  subagentMaxTokens: string
   /** 主对话自定义模型人设（经 overrides 覆盖，不写入 settings）。 */
   mainPersona?: string
   /** 子代理自定义模型人设（经 overrides 覆盖，不写入 settings）。 */
@@ -262,6 +292,12 @@ export const PromptSettingsSchema: z<PromptSettings> = z.object({
   modelName: z.string().default(''),
   subagentModelProvider: z.string().default(''),
   subagentModelName: z.string().default(''),
+  modelReasoningEffort: z.string().default(''),
+  modelTemperature: z.string().default(''),
+  modelMaxTokens: z.string().default(''),
+  subagentReasoningEffort: z.string().default(''),
+  subagentTemperature: z.string().default(''),
+  subagentMaxTokens: z.string().default(''),
   bootstrapMaxTokens: z.natural().default(0),
   usePtcMode: z.boolean().default(true),
   modelsAvailable: z.boolean().default(true),
@@ -329,6 +365,18 @@ export interface RuntimeOptions {
   subagentModelProvider: string
   /** 子代理固定模型名；与 provider 同时非空时生效。 */
   subagentModelName: string
+  /** 主对话思维程度（agent-request patch reasoningEffort；''=不设置）。 */
+  modelReasoningEffort: string
+  /** 主对话采样温度（agent-request patch temperature；''=不设置）。 */
+  modelTemperature: string
+  /** 主对话输出上限（agent-request patch maxTokens；''=不设置）。 */
+  modelMaxTokens: string
+  /** 子代理思维程度（agent-request patch，audience=subagent；''=不设置）。 */
+  subagentReasoningEffort: string
+  /** 子代理采样温度（agent-request patch，audience=subagent；''=不设置）。 */
+  subagentTemperature: string
+  /** 子代理输出上限（agent-request patch，audience=subagent；''=不设置）。 */
+  subagentMaxTokens: string
   /** 主对话自定义模型人设（经 overrides 覆盖，不写入 settings）。 */
   mainPersona?: string
   /** 子代理自定义模型人设（经 overrides 覆盖，不写入 settings）。 */
