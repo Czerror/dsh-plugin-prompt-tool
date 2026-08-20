@@ -6,6 +6,7 @@ import type { InjectFace, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import { PromptConfigsEditor } from './PromptConfigsEditor.tsx'
 import { usePromptToolStore, type PromptToolSettingsTransport } from './prompt-tool-store.ts'
+import { PresetSwitcher } from './PresetSwitcher.tsx'
 import styles from './PromptUi.module.css'
 
 export interface PromptSettingsPageInjected {
@@ -29,20 +30,23 @@ export function PromptSettingsPage(props: PromptSettingsPageProps): ReactNode {
     <div className={styles.pageShell}>
       {store.loading && <p className={styles.loading} role="status">正在读取提示词配置…</p>}
       {!store.loading && (
-        <PromptConfigsEditor
-          api={api}
-          meta={store.meta}
-          configs={store.fields.promptConfigs}
-          configsDir={store.fields.promptConfigsDir}
-          savedConfigs={store.savedConfigs}
-          savedConfigsDir={store.savedConfigsDir}
-          onPatchConfigs={(configs) => store.patch({ promptConfigs: configs })}
-          onPatchConfigsDir={(dir) => store.patch({ promptConfigsDir: dir })}
-          onSaveConfigs={(configs) => store.persistConfigs(configs)}
-          onSaveConfigsDir={(dir) => store.persistConfigsDir(dir)}
-          onReload={store.load}
-          onNotice={store.showNotice}
-        />
+        <>
+          <PresetSwitcher store={store} />
+          <PromptConfigsEditor
+            api={api}
+            meta={store.meta}
+            configs={store.fields.promptConfigs}
+            configsDir={store.fields.promptConfigsDir}
+            savedConfigs={store.savedConfigs}
+            savedConfigsDir={store.savedConfigsDir}
+            onPatchConfigs={(configs) => store.patch({ promptConfigs: configs })}
+            onPatchConfigsDir={(dir) => store.patch({ promptConfigsDir: dir })}
+            onSaveConfigs={(configs) => store.persistConfigs(configs)}
+            onSaveConfigsDir={(dir) => store.persistConfigsDir(dir)}
+            onReload={store.load}
+            onNotice={store.showNotice}
+          />
+        </>
       )}
       {store.notice && <p className={clsx(styles.notice, store.noticeKind === 'error' && styles.noticeError)} role="status">{store.notice}</p>}
     </div>

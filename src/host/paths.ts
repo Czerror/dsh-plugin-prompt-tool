@@ -27,6 +27,8 @@ function resolveDshHome(): string {
 export const DSH_HOME = resolveDshHome()
 export const DEFAULT_RESIDENT_AGENTS_PATH = join(DSH_HOME, 'AGENTS.md')
 export const DEFAULT_PRESET_DIR = join(DSH_HOME, '.agent-presets', 'prompt-tool')
+/** 用户自定义预设目录（导入的预设放这里；独立于包内模板与生成目录）。 */
+export const DEFAULT_USER_PRESETS_DIR = join(DSH_HOME, 'presets')
 export const DEFAULT_SKILLS_DIR = SKILLS_DIR
 export const DEFAULT_PRESET_ORDER = 5
 export const DEFAULT_SKILL_RANK_BASE = 250

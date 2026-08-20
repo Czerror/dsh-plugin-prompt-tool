@@ -21,12 +21,11 @@ import {
   asString,
   loadPresetSpec,
   packageEngineDir,
-  packagePresetDir,
+  resolvePresetDir,
   renderComposition,
   resolvePresetParams,
 } from './manifest.ts'
 
-const PRESETS_DIR = packagePresetDir()
 const ENGINE_DIR = packageEngineDir()
 
 export interface WritePresetOptions {
@@ -81,7 +80,7 @@ export function writePreset(prompt: string, options: WritePresetOptions): void {
   const templateName = typeof options.presetTemplate === 'string' && options.presetTemplate.trim().length > 0
     ? options.presetTemplate.trim()
     : 'anchored'
-  const templateDir = join(PRESETS_DIR, templateName)
+  const templateDir = resolvePresetDir(templateName)
   const spec = loadPresetSpec(templateDir)
   const runtime = runtimeOf(options, prompt)
   const params = resolvePresetParams(spec, runtime)

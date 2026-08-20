@@ -156,7 +156,8 @@
 .importBar {
   display: grid;
   min-width: 0;
-  grid-template-columns: minmax(0, 1fr) auto auto;
+  /* 说明列至少 160px：下拉框展开/选项变宽时不再挤压说明文本。 */
+  grid-template-columns: minmax(160px, 1fr) auto auto;
   align-items: center;
   gap: 10px;
   border: 1px solid color-mix(in srgb, var(--pt-accent) 16%, var(--dsw-alias-border-l2));

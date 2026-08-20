@@ -13,6 +13,7 @@ import { readFileSync, existsSync, readdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Pair, Scalar, parse as parseYaml, parseDocument, YAMLMap, YAMLSeq } from 'yaml'
+import { DEFAULT_USER_PRESETS_DIR } from './paths.ts'
 
 export interface PresetSpec {
   id: string
@@ -96,21 +97,49 @@ export const asString = (value: unknown, fallback = ''): string => {
 }
 
 /** 可用预设清单（preset/ 下含 preset.yml 的目录）：供 UI 预设切换器展示。 */
+/** 用户自定义预设目录（~/.dsh/presets；导入的预设放这里，插件更新不丢失）。 */
+export function userPresetsDir(): string {
+  return DEFAULT_USER_PRESETS_DIR
+}
+
+/** 解析预设模板目录：用户自定义优先，包内模板回退。 */
+export function resolvePresetDir(template: string): string {
+  const userDir = join(userPresetsDir(), template)
+  if (existsSync(join(userDir, 'preset.yml'))) return userDir
+  return join(packagePresetDir(), template)
+}
+
+/** 可用预设清单（包内 preset/ + 用户 ~/.dsh/presets，用户同名覆盖）。 */
 export function listPresets(): Array<{ id: string; name: string }> {
+  const scan = (dir: string): Array<{ id: string; name: string }> => {
+    try {
+      return readdirSync(dir, { withFileTypes: true })
+        .filter((entry) => entry.isDirectory())
+        .flatMap((entry) => {
+          try {
+            const spec = loadPresetSpec(join(dir, entry.name))
+            return [{ id: spec.id, name: spec.name }]
+          } catch {
+            return []
+          }
+        })
+    } catch {
+      return []
+    }
+  }
+  const byId = new Map<string, { id: string; name: string }>()
+  for (const preset of scan(packagePresetDir())) byId.set(preset.id, preset)
+  for (const preset of scan(userPresetsDir())) byId.set(preset.id, preset)
+  return [...byId.values()].sort((a, b) => a.id.localeCompare(b.id))
+}
+
+/** 从导入的 preset.yml 文本解析预设 id（非法/缺失回退目录名）。 */
+export function parseImportedPresetId(presetYaml: string, fallback: string): string {
   try {
-    return readdirSync(packagePresetDir(), { withFileTypes: true })
-      .filter((entry) => entry.isDirectory())
-      .flatMap((entry) => {
-        try {
-          const spec = loadPresetSpec(join(packagePresetDir(), entry.name))
-          return [{ id: spec.id, name: spec.name }]
-        } catch {
-          return []
-        }
-      })
-      .sort((a, b) => a.id.localeCompare(b.id))
+    const parsed = parseYaml(presetYaml, { logLevel: 'silent' }) as { id?: unknown } | null
+    return typeof parsed?.id === 'string' && /^[a-zA-Z0-9][a-zA-Z0-9-]*$/.test(parsed.id) ? parsed.id : fallback
   } catch {
-    return []
+    return fallback
   }
 }
 

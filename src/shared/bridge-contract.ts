@@ -20,6 +20,7 @@ export const BRIDGE_ENDPOINTS = {
   presetContent: '/preset-content',
   importPreset: '/import-preset',
   paramOverrides: '/param-overrides',
+  importPresetPackage: '/import-preset-package',
 } as const
 
 export type BridgeEndpoint = (typeof BRIDGE_ENDPOINTS)[keyof typeof BRIDGE_ENDPOINTS]

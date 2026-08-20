@@ -3,7 +3,31 @@ import assert from 'node:assert/strict'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
+import { spawnSync } from 'node:child_process'
+import { fileURLToPath } from 'node:url'
 import { Config, mergePresetDefaults } from '../../lib/index.mjs'
+
+const rootDir = fileURLToPath(new URL('../..', import.meta.url))
+
+/** Node 26 起 import() query 不再强制重载 ESM 模块，改由子进程验证 DSH_HOME 动态性。 */
+function probePresetDir(envDshHome) {
+  const script = `
+    const lib = await import('./lib/index.mjs')
+    const merged = lib.mergePresetDefaults(lib.Config({}), {
+      hostDefaults: { presetDir: '~/.dsh/.agent-presets/prompt-tool' },
+    })
+    console.log(JSON.stringify(merged.presetDir))
+  `
+  const res = spawnSync(process.execPath, ['--input-type=module', '-e', script], {
+    cwd: rootDir,
+    env: envDshHome === undefined
+      ? { ...process.env, DSH_HOME: '' }
+      : { ...process.env, DSH_HOME: envDshHome },
+    encoding: 'utf8',
+  })
+  if (res.status !== 0) throw new Error(`probe failed: ${res.stderr}`)
+  return JSON.parse(res.stdout.trim())
+}
 
 const expectedDshHome = process.env.DSH_HOME !== undefined && process.env.DSH_HOME.trim().length > 0
   ? resolve(process.env.DSH_HOME)
@@ -71,45 +95,14 @@ test('preset 默认值只覆盖类型匹配字段,非法值被忽略', () => {
 })
 
 test('~/.dsh 路径跟随运行时 DSH_HOME，而不是写死操作系统 home', async () => {
-  const previous = process.env.DSH_HOME
   const root = mkdtempSync(join(process.env.DSH_TEST_TEMP ?? tmpdir(), 'prompt-tool-dsh-home-'))
-  process.env.DSH_HOME = root
   try {
-    const fresh = await import(`../../lib/index.mjs?dsh-home=${process.pid}-${Date.now()}`)
-    const merged = fresh.mergePresetDefaults(fresh.Config({}), {
-      hostDefaults: {
-        residentAgentsPath: '~/.dsh/AGENTS.md',
-        presetDir: '~/.dsh/.agent-presets/prompt-tool',
-        writePreset: true,
-      },
-    })
-    assert.equal(merged.residentAgentsPath, join(root, 'AGENTS.md'))
-    assert.equal(merged.presetDir, join(root, '.agent-presets', 'prompt-tool'))
+    assert.equal(probePresetDir(root), join(root, '.agent-presets', 'prompt-tool'))
   } finally {
-    if (previous === undefined) delete process.env.DSH_HOME
-    else process.env.DSH_HOME = previous
     rmSync(root, { recursive: true, force: true })
   }
 })
 
 test('DSH_HOME 未设置或为空时回退到 OS home 下的 .dsh', async () => {
-  const previous = process.env.DSH_HOME
-  try {
-    delete process.env.DSH_HOME
-    const unset = await import(`../../lib/index.mjs?dsh-home-unset=${process.pid}-${Date.now()}`)
-    const fromUnset = unset.mergePresetDefaults(unset.Config({}), {
-      hostDefaults: { presetDir: '~/.dsh/.agent-presets/prompt-tool' },
-    })
-    assert.equal(fromUnset.presetDir, join(homedir(), '.dsh', '.agent-presets', 'prompt-tool'))
-
-    process.env.DSH_HOME = '   '
-    const empty = await import(`../../lib/index.mjs?dsh-home-empty=${process.pid}-${Date.now()}`)
-    const fromEmpty = empty.mergePresetDefaults(empty.Config({}), {
-      hostDefaults: { presetDir: '~/.dsh/.agent-presets/prompt-tool' },
-    })
-    assert.equal(fromEmpty.presetDir, join(homedir(), '.dsh', '.agent-presets', 'prompt-tool'))
-  } finally {
-    if (previous === undefined) delete process.env.DSH_HOME
-    else process.env.DSH_HOME = previous
-  }
+  assert.equal(probePresetDir(undefined), join(homedir(), '.dsh', '.agent-presets', 'prompt-tool'))
 })

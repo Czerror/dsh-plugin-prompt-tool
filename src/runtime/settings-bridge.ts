@@ -1,7 +1,7 @@
 /** 自建 loopback settings bridge：Web 设置页数据通道（提示词配置数组经此输出到 UI）。 */
 import type { Context } from '@deepseek-ai/cordis'
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml'
 import type { SettingsDescriptor, SettingsNamespace, SettingsPathOp } from '@deepseek-ai/dsh-settings'
@@ -13,6 +13,7 @@ import { validatePromptConfigs } from './configs-validate.ts'
 import { loadPromptTemplates } from '../host/templates.ts'
 import { fixSkillEntry } from './skill-fix.ts'
 import { listPresets } from '../host/manifest.ts'
+import { parseImportedPresetId, userPresetsDir } from '../host/manifest.ts'
 import { BRIDGE_ENDPOINTS, SETTINGS_BRIDGE_PREFIX } from '../shared/bridge-contract.ts'
 
 const MAX_SETTINGS_BRIDGE_BODY = 64 * 1024
@@ -480,6 +481,60 @@ export function registerSettingsBridge(
             } catch (error) {
               const message = error instanceof Error ? error.message : String(error)
               writeBridgeJson(res, 500, { ok: false, code: 'overrides-write-failed', message })
+            }
+          },
+        }),
+        sctx.webServer.register({
+          kind: 'exact',
+          path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.importPresetPackage,
+          handler: async (req, res) => {
+            if (!guard(req, res)) return
+            const body = await readBridgeBody(req)
+            if (body === null || body === undefined || typeof body !== 'object') {
+              writeBridgeJson(res, 400, { ok: false, code: 'settings-rejected', message: 'unreadable JSON body' })
+              return
+            }
+            const record = body as Record<string, unknown>
+            const files = Array.isArray(record.files) ? record.files : []
+            const normalized = files.flatMap((entry) => {
+              if (entry === null || typeof entry !== 'object') return []
+              const f = entry as { path?: unknown; name?: unknown; content?: unknown }
+              const path = typeof f.path === 'string' && f.path.length > 0 ? f.path : (typeof f.name === 'string' ? f.name : '')
+              const content = typeof f.content === 'string' ? f.content : ''
+              if (path.length === 0) return []
+              // 路径穿越防护：仅允许扁平相对路径（不含 .. 与盘符）。
+              if (path.includes('..') || /^[a-zA-Z]:/.test(path) || path.startsWith('/') || path.startsWith('\\')) return []
+              return [{ path, content }]
+            })
+            const presetYaml = normalized.find((entry) => entry.path.endsWith('preset.yml'))
+            if (presetYaml === undefined) {
+              writeBridgeJson(res, 400, { ok: false, code: 'preset-package-invalid', message: '导入包缺少 preset.yml' })
+              return
+            }
+            if (presetYaml.content.trim().length === 0) {
+              writeBridgeJson(res, 400, { ok: false, code: 'preset-package-invalid', message: 'preset.yml 内容为空' })
+              return
+            }
+            // 预设 id 取自 preset.yml；缺失时用包目录名（preset.yml 所在目录）。
+            const topDir = presetYaml.path.split('/')[0] ?? ''
+            const id = parseImportedPresetId(presetYaml.content, topDir.replace(/\.ya?ml$/i, '') || 'imported-preset')
+            const targetDir = join(userPresetsDir(), id)
+            try {
+              mkdirSync(targetDir, { recursive: true })
+              for (const entry of normalized) {
+                // 去掉顶层目录段（文件夹导入时 webkitRelativePath 的顶层）；preset.yml 在顶层时无目录段。
+                const slash = entry.path.indexOf('/')
+                const rel = slash > 0 ? entry.path.slice(slash + 1) : entry.path
+                if (rel.length === 0) continue
+                const dest = join(targetDir, rel)
+                // 子目录（如 engine/、agent.cordis.yml 同层）逐级创建。
+                mkdirSync(dirname(dest), { recursive: true })
+                writeFileSync(dest, entry.content, 'utf8')
+              }
+              writeBridgeJson(res, 200, { ok: true, value: { id } })
+            } catch (error) {
+              const message = error instanceof Error ? error.message : String(error)
+              writeBridgeJson(res, 500, { ok: false, code: 'preset-import-failed', message })
             }
           },
         }),

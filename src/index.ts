@@ -14,7 +14,7 @@ import { createSkillsWatcher } from './runtime/skills-watcher.ts'
 import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
-import { loadPresetContent, loadPresetSpec, normalizeParam, packagePresetDir } from './host/manifest.ts'
+import { loadPresetContent, loadPresetSpec, normalizeParam, resolvePresetDir } from './host/manifest.ts'
 import type { PresetSpec } from './host/manifest.ts'
 import { createCachedSkillsReader } from './runtime/skills-provider.ts'
 import { ensureWebSurface } from './web-surface.ts'
@@ -161,7 +161,7 @@ export function apply(ctx: Context, configIn: Config): void {
   // 唯一入口:preset.yml 的参数与 hostDefaults 合并进 Config 默认值。
   let presetSpec: PresetSpec | undefined
   try {
-    presetSpec = loadPresetSpec(join(packagePresetDir(), 'anchored'))
+    presetSpec = loadPresetSpec(resolvePresetDir('anchored'))
   } catch (error) {
     warn(ctx, `prompt-tool: preset.yml unavailable, falling back to cordis config: ${error instanceof Error ? error.message : String(error)}`)
   }

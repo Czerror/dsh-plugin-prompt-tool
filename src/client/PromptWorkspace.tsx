@@ -12,6 +12,7 @@ import type { Fields, SkillCatalogEntry } from './prompt-tool-bridge.ts'
 import { PromptConfigList } from './PromptConfigList.tsx'
 import type { PromptConfigDraft } from './PromptConfigsEditor.tsx'
 import type { PromptToolWorkspaceController } from './workspace-controller.ts'
+import { PresetSwitcher } from './PresetSwitcher.tsx'
 import ui from './PromptUi.module.css'
 import css from './PromptWorkspace.module.css'
 
@@ -317,25 +318,7 @@ function FeatureSettings(props: { store: PromptToolStore }): ReactNode {
         <ToggleRow id="pt-write-agents" label="写入 ~/.dsh/AGENTS.md" hint="保持 AGENTS.md 的全局常驻注入；关闭后不再写入，已有文件保持原样。与六层注入无关，属于宿主常驻层。"
           checked={fields.writeAgents} onChange={() => store.toggle('writeAgents')} />
       </div>
-      <div className={ui.rowGroup}>
-        <div className={ui.settingRowStack}>
-          <span className={ui.settingCopy}>
-            <strong>预设模板</strong>
-            <small>切换后按新模板重建生成目录；anchored 为插件默认模板，另有官方标准/极简/PTC/创造四套。</small>
-          </span>
-          <select
-            className={ui.configInput}
-            aria-label="预设模板"
-            value={fields.presetTemplate}
-            disabled={!fields.writePreset}
-            onChange={(event) => store.setPresetTemplate(event.target.value)}
-          >
-            {(store.meta.presets ?? []).map((preset) => (
-              <option key={preset.id} value={preset.id}>{preset.id} · {preset.name}</option>
-            ))}
-          </select>
-        </div>
-      </div>
+      <PresetSwitcher store={store} />
       <SettingInputRow id="pt-resident-agents-path" label="AGENTS.md 常驻路径" hint="写入/移除 AGENTS.md 受管块的目标文件；修改后下一次开关保存立即切换。"
         value={fields.residentAgentsPath} placeholder={fields.residentAgentsPath || '默认 ~/.dsh/AGENTS.md'}
         onInput={(value) => store.patch({ residentAgentsPath: value })}
