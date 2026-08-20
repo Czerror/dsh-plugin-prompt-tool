@@ -10,7 +10,7 @@
  */
 
 import { readFileSync, existsSync, readdirSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Pair, Scalar, parse as parseYaml, parseDocument, YAMLMap, YAMLSeq } from 'yaml'
 import { DEFAULT_USER_PRESETS_DIR } from './paths.ts'
@@ -68,11 +68,12 @@ export function packageEngineDir(): string {
 export function loadPresetSpec(dir: string): PresetSpec {
   const raw = readFileSync(join(dir, 'preset.yml'), 'utf8')
   const parsed = parseYaml(raw, { logLevel: 'silent' }) as Partial<PresetSpec> | null
-  if (parsed === null || typeof parsed !== 'object' || typeof parsed.id !== 'string' || parsed.id.length === 0) {
-    throw new Error(`preset ${join(dir, 'preset.yml')} must declare a non-empty string id`)
+  if (parsed === null || typeof parsed !== 'object') {
+    throw new Error(`preset ${join(dir, 'preset.yml')} is not a YAML map`)
   }
-  if (!Array.isArray(parsed.modules) && (typeof parsed.composition !== 'string' || parsed.composition.length === 0)) {
-    throw new Error(`preset ${parsed.id} must declare a modules list or a composition`)
+  // 官方用户预设格式：preset.yml 仅元数据（name/description/order），id 回退目录名。
+  if (typeof parsed.id !== 'string' || parsed.id.length === 0) {
+    parsed.id = basename(dir)
   }
   return parsed as PresetSpec
 }
@@ -305,6 +306,13 @@ export function loadCompositionText(spec: PresetSpec, templateDir?: string): str
         raw = readFileSync(file, 'utf8')
       } catch (error) {
         throw new Error(`preset ${spec.id}: engine composition ${name} not found (${file}): ${String((error as Error).message ?? error)}`)
+      }
+    } else if (templateDir !== undefined) {
+      // 官方用户预设约定：preset.yml 仅元数据时，组合文件为同目录 agent.cordis.yml。
+      try {
+        raw = readFileSync(join(templateDir, 'agent.cordis.yml'), 'utf8')
+      } catch (error) {
+        throw new Error(`preset ${spec.id}: no modules/composition and no agent.cordis.yml in template dir (${templateDir}): ${String((error as Error).message ?? error)}`)
       }
     } else {
       throw new Error(`preset ${spec.id}: no modules list and no composition declared`)
