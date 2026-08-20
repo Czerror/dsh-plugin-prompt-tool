@@ -21,6 +21,8 @@ export interface PromptConfigListProps {
   focusId?: string
   /** 聚焦请求序号：同 id 重复请求时递增以重新触发（依赖数组含此值）。 */
   focusTick?: number
+  /** 列表工具栏追加操作（如「新建模板」）。 */
+  extraActions?: ReactNode
   onPatchConfigs: (configs: PromptConfigDraft[]) => void
   onSaveConfigs: (configs: PromptConfigDraft[]) => void
   onNotice: (kind: 'ok' | 'error', message: string) => void
@@ -51,7 +53,7 @@ function moveWithinLayer(
 
 /** 共享的提示词配置列表：校验、保存、脏检测、复制、删除、层内移动。 */
 export function PromptConfigList(props: PromptConfigListProps): ReactNode {
-  const { meta, configs, savedConfigs, layer, focusId, focusTick, onPatchConfigs, onSaveConfigs, onNotice } = props
+  const { meta, configs, savedConfigs, layer, focusId, focusTick, extraActions, onPatchConfigs, onSaveConfigs, onNotice } = props
   const [expanded, setExpanded] = useState<string | undefined>(undefined)
   const [errors, setErrors] = useState<ValidationErrorEntry[]>([])
   const [validating, setValidating] = useState(false)
@@ -169,6 +171,7 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
       <div className={styles.sectionHeading}>
         <div><h2 id="prompt-tool-configs-heading">{layer === undefined ? '配置列表' : '本层提示词配置'}</h2><p>{visible.length} 条配置 · {visible.filter((config) => config.enabled !== false).length} 条启用；上下移动控制同层顺序。</p></div>
         <div className={styles.sectionActions}>
+          {extraActions}
           <button type="button" className={styles.pillButton} disabled={validating} onClick={() => void runValidate(configs)}>{validating ? '校验中…' : '校验'}</button>
           <button type="button" className={styles.primaryPill} disabled={saving || validating} onClick={() => void save()}>{saving ? '保存中…' : '保存提示词配置'}</button>
         </div>

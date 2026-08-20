@@ -111,15 +111,11 @@ export function PromptConfigsEditor(props: PromptConfigsEditorProps): ReactNode 
         </div>
       </section>
 
-      <div className={styles.sectionActions}>
-        <button type="button" className={styles.primaryPill} onClick={openTemplatePicker}>新建模板</button>
-        <span className={styles.settingsNote}>从内置模板（templates/ 覆盖六层与 placeholder）开始，插入后按需修改。</span>
-      </div>
-
       <PromptConfigList
         meta={props.meta}
         configs={props.configs}
         savedConfigs={props.savedConfigs}
+        extraActions={<button type="button" className={styles.primaryPill} onClick={openTemplatePicker}>新建模板</button>}
         onPatchConfigs={props.onPatchConfigs}
         onSaveConfigs={props.onSaveConfigs}
         onNotice={props.onNotice}
