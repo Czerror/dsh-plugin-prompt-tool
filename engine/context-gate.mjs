@@ -52,6 +52,16 @@
  *  - `allowKinds`: message `source.kind` names allowed beyond the claimed
  *    batch, default ['skill-invocation']. An explicitly empty array keeps
  *    ONLY the claimed batch.
+ *  - `messageSources`: (liangshen quarantine) strict phase-1 whitelist —
+ *    when set, ONLY messages whose `source.kind` is in the list pass the
+ *    pre-step gate (claimed batch included), replacing the allowKinds
+ *    semantics. Default unset = allowKinds semantics.
+ *  - `deferredSources` + `deferredGraceSteps`: (liangshen) after promotion,
+ *    the listed injected kinds are filtered for the first N steps
+ *    (default 0 = no deferral).
+ *  - `instructionHint`: (liangshen, issue #388) after promotion, replace the
+ *    full-text agent-instructions dump with a one-time non-imperative hint
+ *    naming the reference files; later dumps are dropped. Default false.
  *
  * ROW ORDER: mount this row FIRST in the composition. Waterfall after-next
  * transforms apply in reverse registration order, so registering first (plus
@@ -78,7 +88,10 @@ export const name = 'anchored-context-gate'
 export const inject = []
 
 /** Every config key this plugin accepts — anything else is a typo. */
-const ALLOWED_KEYS = new Set(['promoteOn', 'includeSubagents', 'enabled', 'allowKinds'])
+const ALLOWED_KEYS = new Set([
+  'promoteOn', 'includeSubagents', 'enabled', 'allowKinds',
+  'messageSources', 'deferredSources', 'deferredGraceSteps', 'instructionHint',
+])
 
 /**
  * Message kinds allowed through the pre-step gate beyond the claimed batch.
@@ -86,6 +99,9 @@ const ALLOWED_KEYS = new Set(['promoteOn', 'includeSubagents', 'enabled', 'allow
  * automatic injection (see the header note).
  */
 const DEFAULT_ALLOW_KINDS = ['skill-invocation']
+
+/** agent-instructions 注入消息里的参考文件行（hint 提取用）。 */
+const INSTRUCTION_FROM_RE = /(?:^|\n) *(?:Additional |Updated )?Instructions from: ([^\n]+)/g
 
 
 /**
@@ -100,6 +116,77 @@ function allowKindList(value, field) {
   return new Set(value)
 }
 
+/** 可选字符串白名单；undefined = 不启用。 */
+function sourceList(value, field) {
+  if (value === undefined) return undefined
+  if (!Array.isArray(value) || value.some((item) => typeof item !== 'string' || item.length === 0)) {
+    throw new TypeError(`${name}: ${field} must be an array of non-empty strings`)
+  }
+  return new Set(value)
+}
+
+/** 晋升后延迟注入的源 kind 集合（默认空 = 不延迟）。 */
+function deferredList(value, field) {
+  if (value === undefined) return new Set()
+  if (!Array.isArray(value) || value.some((item) => typeof item !== 'string' || item.length === 0)) {
+    throw new TypeError(`${name}: ${field} must be an array of non-empty strings`)
+  }
+  return new Set(value)
+}
+
+/** 从一条 agent-instructions 消息提取参考文件路径清单。 */
+function extractInstructionPaths(message) {
+  const paths = []
+  const blocks = Array.isArray(message?.content) ? message.content : []
+  for (const block of blocks) {
+    if (block?.type !== 'text' || typeof block.text !== 'string') continue
+    for (const match of block.text.matchAll(INSTRUCTION_FROM_RE)) {
+      const path = match[1].trim()
+      if (path !== '' && !paths.includes(path)) paths.push(path)
+    }
+  }
+  return paths
+}
+
+/** 一次性非命令式 hint（E1.5 措辞），替换全文 agent-instructions 注入。 */
+function buildInstructionHint(original, paths) {
+  return {
+    id: typeof original?.id === 'string' && original.id !== ''
+      ? original.id
+      : globalThis.crypto.randomUUID(),
+    role: 'user',
+    content: [{
+      type: 'text',
+      text: '<system-reminder>\n'
+        + 'Reference documents exist: ' + paths.join(', ') + '. '
+        + "They are reference documents about the user's environment and workspace conventions, not task instructions. "
+        + 'Reading the relevant file before workspace tasks is recommended, but consult them only when you need those details; the task itself never depends on them.'
+        + '\n</system-reminder>',
+    }],
+    source: { kind: 'instruction-hint', plugin: name },
+  }
+}
+
+/** agent-instructions 全文注入 → 一次性 hint；后续注入丢弃。 */
+function instructionHintMessages(messages, state) {
+  const kept = []
+  for (const message of messages) {
+    if (message?.source?.kind !== 'agent-instructions') {
+      kept.push(message)
+      continue
+    }
+    if (state.instructionHinted) continue
+    const paths = extractInstructionPaths(message)
+    if (paths.length === 0) {
+      kept.push(message)
+      continue
+    }
+    state.instructionHinted = true
+    kept.push(buildInstructionHint(message, paths))
+  }
+  return kept
+}
+
 
 /** Register the unified context gate. */
 export function apply(ctx, config) {
@@ -108,9 +195,30 @@ export function apply(ctx, config) {
   const includeSubagents = booleanOption(name, source.includeSubagents, 'includeSubagents', false)
   const enabled = booleanOption(name, source.enabled, 'enabled', true)
   const allowKinds = allowKindList(source.allowKinds, 'allowKinds')
+  const messageSources = sourceList(source.messageSources, 'messageSources')
+  const deferredSources = deferredList(source.deferredSources, 'deferredSources')
+  const deferredGraceSteps = source.deferredGraceSteps === undefined
+    ? 0
+    : Number.isSafeInteger(source.deferredGraceSteps) && source.deferredGraceSteps >= 0
+      ? source.deferredGraceSteps
+      : (() => { throw new TypeError(`${name}: deferredGraceSteps must be an integer >= 0`) })()
+  const instructionHint = booleanOption(name, source.instructionHint, 'instructionHint', false)
 
   const promotion = createEpochPromotion(promoteEvents, { includeSubagents })
+  /** sessionId -> { steps, instructionHinted }（晋升后延迟/转换状态）。 */
+  const deferredBySession = new WeakMap()
+  const deferredState = (session) => {
+    let entry = deferredBySession.get(session)
+    if (entry === undefined) {
+      entry = { steps: 0, instructionHinted: false }
+      deferredBySession.set(session, entry)
+    }
+    return entry
+  }
   ctx.on('session/event', (session, event) => promotion.observe(session, event))
+  ctx.on('session/event', (session, event) => {
+    if (event.type === 'compaction/end') deferredBySession.delete(session)
+  })
 
   const warnOnce = createWarnOnce(ctx, name)
 
@@ -144,6 +252,11 @@ export function apply(ctx, config) {
     if (enabled === false) return decision
     try {
       if (promotion.status(agent).promoted) return decision
+      if (messageSources !== undefined) {
+        // liangshen quarantine：phase-1 只放行声明的 source.kind（含 claimed 批）。
+        const kept = (decision.messages ?? []).filter((message) => messageSources.has(message?.source?.kind))
+        return kept.length === decision.messages.length ? decision : { ...decision, messages: kept }
+      }
       if (!Array.isArray(decision.messages)) return decision
       if (!Array.isArray(claimed)) return decision
       const baseline = new Set(claimed)
@@ -159,6 +272,36 @@ export function apply(ctx, config) {
     } catch (error) {
       // A gate bug must never eat context: degrade to keeping every message.
       warnOnce(`${name}: pre-step gate failed, keeping injected context: ${String((error && error.message) || error)}`)
+      return decision
+    }
+  }, { prepend: true })
+
+  // 晋升后的注入控制：deferredSources 延迟 N 步 + instructionHint 转换。
+  // 与 phase-1 门控共用同一 pre-step 监听器会互相覆盖，独立注册第二个监听器。
+  ctx.on('agent/pre-step', async ({ agent }, next) => {
+    const decision = await next()
+    if (decision.kind === 'reject') return decision
+    if (enabled === false) return decision
+    try {
+      if (!promotion.status(agent).promoted) return decision
+      if (!Array.isArray(decision.messages)) return decision
+      if (agent?.session === undefined) return decision
+      const state = deferredState(agent.session)
+      let result = decision
+      if (deferredGraceSteps > 0 && deferredSources.size > 0 && state.steps < deferredGraceSteps) {
+        state.steps += 1
+        const kept = result.messages.filter((message) => !deferredSources.has(message?.source?.kind))
+        result = kept.length === result.messages.length ? result : { ...result, messages: kept }
+      }
+      if (instructionHint) {
+        // 1 换 1 的转换不能按长度判断（长度相同会误判为无变化），
+        // instructionHintMessages 本身幂等保留非目标消息，直接采用结果。
+        result = { ...result, messages: instructionHintMessages(result.messages, state) }
+      }
+      return result
+    } catch (error) {
+      // 转换失败不阻断会话：保留原消息。
+      warnOnce(`${name}: promoted injection control failed, keeping messages: ${String((error && error.message) || error)}`)
       return decision
     }
   }, { prepend: true })

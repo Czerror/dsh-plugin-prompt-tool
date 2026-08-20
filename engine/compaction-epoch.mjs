@@ -20,29 +20,93 @@
  * promoted so their first request can use tools. Set `includeSubagents: true`
  * to make subagents follow the same bootstrap/anchor phase as top-level
  * sessions.
+ *
+ * GATE MODE (liangshen 稳定化扩展, source: xiaobright/dsh-anchored-standard
+ * MIT + phase-1 quarantine): `anchorGate: true` gates the promotion on the
+ * first reasoning block classifying minimal-like (`we` present, no `let me`),
+ * with a `maxBootstrapSteps` (default 4) fallback; `promoteAfterFirstResponse:
+ * true` promotes a tool-less first response once it has responded, and also
+ * releases an anchor-gated session when its first turn ends. Gate mode uses
+ * the durable-event state machine below and ignores `promoteEvents` (fixed
+ * either semantics: `tool/call` and `assistant/message` are both tracked).
+ * Non-gate mode keeps the original event-set semantics byte-for-byte.
  */
+
+/** 首段 reasoning 块分类（liangshen 移植）：we 且无 let me = minimal-like。 */
+export function classifyReasoning(text) {
+  const trimmed = String(text ?? '').trim()
+  const we = [...trimmed.matchAll(/\bwe\b/gi)].length
+  const letMe = [...trimmed.matchAll(/\blet me\b/gi)].length
+  const metrics = { we, letMe }
+  if (we > 0 && letMe === 0) return { label: 'minimal-like', score: 4, metrics }
+  if (letMe > 0) return { label: 'standard-like', score: -4, metrics }
+  return { label: 'ambiguous', score: 0, metrics }
+}
+
+/** 首段 reasoning 块是否为 minimal-like（后续块不覆盖首个标准样块）。 */
+export function hasAnchoredReasoning(content) {
+  if (!Array.isArray(content)) return false
+  const first = content.find((block) => block?.type === 'reasoning')
+  return first !== undefined && classifyReasoning(first.text).label === 'minimal-like'
+}
 
 /** Build one epoch-aware promotion tracker. */
 export function createEpochPromotion(promoteEvents, options = {}) {
   const includeSubagents = options.includeSubagents === true
+  const anchorGate = options.anchorGate === true
+  const promoteAfterFirstResponse = options.promoteAfterFirstResponse === true
+  const maxBootstrapSteps = Number.isSafeInteger(options.maxBootstrapSteps) && options.maxBootstrapSteps > 0
+    ? options.maxBootstrapSteps
+    : 4
   const promote = new Set(promoteEvents)
-  /** sessionId -> { boundary, promoted } */
+  const gated = anchorGate || promoteAfterFirstResponse
+  /** sessionId -> entry（boundary/promoted + 门控字段） */
   const state = new Map()
+
+  const freshEntry = (boundary) => ({
+    boundary,
+    promoted: false,
+    toolCalled: false,
+    responded: false,
+    anchored: false,
+    turnEnded: false,
+    steps: 0,
+  })
+
+  /** 门控晋升判定（liangshen decidePromotion 移植）。 */
+  const decideGate = (entry) => {
+    if (entry.promoted) return true
+    if (entry.toolCalled && !anchorGate) return true
+    if (entry.toolCalled && anchorGate && (entry.anchored || entry.steps >= maxBootstrapSteps)) return true
+    if (entry.toolCalled && anchorGate && promoteAfterFirstResponse && entry.turnEnded) return true
+    if (!entry.toolCalled && entry.responded && promoteAfterFirstResponse) return true
+    return false
+  }
+
+  /** 应用一个事件；compaction/end 返回新 entry（旧状态清零、boundary 前推）。 */
+  const applyEvent = (entry, event) => {
+    const seq = event.seq ?? 0
+    if (event.type === 'compaction/end') return freshEntry(seq)
+    if (seq <= entry.boundary) return entry
+    if (gated) {
+      if (event.type === 'tool/call') entry.toolCalled = true
+      else if (event.type === 'step/start') entry.steps += 1
+      else if (event.type === 'turn/end') entry.turnEnded = true
+      else if (event.type === 'assistant/message') {
+        entry.responded = true
+        if (!entry.anchored) entry.anchored = hasAnchoredReasoning(event.data?.message?.content)
+      }
+      if (decideGate(entry)) entry.promoted = true
+      return entry
+    }
+    if (promote.has(event.type)) entry.promoted = true
+    return entry
+  }
 
   /** Scan a session's durable log from scratch (cold start / resume). */
   const scan = (session) => {
-    let boundary = -1
-    let promoted = false
-    for (const event of session.events) {
-      const seq = event.seq ?? 0 // events without a seq are treated as post-boundary
-      if (event.type === 'compaction/end') {
-        boundary = seq
-        promoted = false
-        continue
-      }
-      if (promote.has(event.type) && seq > boundary) promoted = true
-    }
-    const entry = { boundary, promoted }
+    let entry = freshEntry(-1)
+    for (const event of session.events) entry = applyEvent(entry, event)
     state.set(session.id, entry)
     return entry
   }
@@ -68,14 +132,8 @@ export function createEpochPromotion(promoteEvents, options = {}) {
     observe(session, event) {
       const entry = state.get(session.id)
       if (entry === undefined) return
-      const seq = event.seq ?? 0
-      if (event.type === 'compaction/end') {
-        state.set(session.id, { boundary: seq, promoted: false })
-        return
-      }
-      if (promote.has(event.type) && seq > entry.boundary && !entry.promoted) {
-        state.set(session.id, { ...entry, promoted: true })
-      }
+      const next = applyEvent(entry, event)
+      if (next !== entry) state.set(session.id, next)
     },
   }
 }

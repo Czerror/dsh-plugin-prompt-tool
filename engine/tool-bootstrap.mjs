@@ -6,6 +6,19 @@
  * Code Mode (PTC). Injected-context control lives in the companion
  * `context-gate` plugin, not here.
  *
+ * GATE MODE (liangshen stabilize 扩展, source: xiaobright/dsh-anchored-standard
+ * MIT + phase-1 quarantine): `anchorGate: true` gates the promotion on the
+ * first reasoning block classifying minimal-like (`we` present, no `let me`),
+ * `maxBootstrapSteps` (default 4) is the gate fallback, and
+ * `promoteAfterFirstResponse: true` promotes a tool-less first response and
+ * releases an anchor-gated session at its first `turn/end`.
+ * `personaSectionsOnly: true` narrows phase-1 prompt sections to the persona
+ * (plan-mode policy and other sections return after promotion);
+ * `workspaceLine: true` appends the session's working directory to the
+ * promoted persona; `phase1FirstCallInstruction` is an opt-in extra line
+ * appended to the phase-1 persona (test builds, issue #274) — unset keeps
+ * the exact one-line Minimal anchor.
+ *
  * The phase is derived from durable session events, so resume and reload
  * preserve it. By default (`promoteOn: 'either'`) a session promotes after the
  * first `tool/call` OR the first `assistant/message`, whichever comes first:
@@ -98,7 +111,18 @@ export const name = 'anchored-tool-bootstrap'
 export const inject = []
 
 /** Every config key this plugin accepts — anything else is a typo. */
-const ALLOWED_KEYS = new Set(['bootstrapTools', 'promoteOn', 'bootstrapMaxTokens', 'compactionTools', 'includeSubagents', 'usePtcMode'])
+const ALLOWED_KEYS = new Set([
+  'bootstrapTools', 'promoteOn', 'bootstrapMaxTokens', 'compactionTools',
+  'includeSubagents', 'usePtcMode',
+  'anchorGate', 'maxBootstrapSteps', 'promoteAfterFirstResponse',
+  'personaSectionsOnly', 'workspaceLine', 'phase1FirstCallInstruction',
+])
+
+/** 预设 persona section 名（官方注册名 + 旧名）。 */
+const PERSONA_SECTION_NAMES = new Set(['deployment:persona', 'persona'])
+
+/** 晋升后 persona 附加的工作目录行前缀。 */
+const WORKSPACE_LINE_PREFIX = '\n\nYour working directory is '
 
 
 /**
@@ -145,12 +169,22 @@ export function apply(ctx, config) {
   const bootstrapMaxTokens = optionalPositiveInt(source.bootstrapMaxTokens, 'bootstrapMaxTokens')
   const includeSubagents = booleanOption(name, source.includeSubagents, 'includeSubagents', false)
   const usePtcMode = booleanOption(name, source.usePtcMode, 'usePtcMode', true)
+  const personaSectionsOnly = booleanOption(name, source.personaSectionsOnly, 'personaSectionsOnly', false)
+  const workspaceLine = booleanOption(name, source.workspaceLine, 'workspaceLine', false)
+  const phase1FirstCallInstruction = typeof source.phase1FirstCallInstruction === 'string'
+    ? source.phase1FirstCallInstruction
+    : ''
   // Core work set exposed after a compaction, before re-promotion. Empty
   // means "no compaction recovery catalog": the session stays on the
   // bootstrap pair until a new promotion signal.
   const compactionTools = stringListOrEmpty(source.compactionTools, 'compactionTools')
 
-  const promotion = createEpochPromotion(promoteEvents, { includeSubagents })
+  const promotion = createEpochPromotion(promoteEvents, {
+    includeSubagents,
+    anchorGate: source.anchorGate === true,
+    promoteAfterFirstResponse: source.promoteAfterFirstResponse === true,
+    maxBootstrapSteps: source.maxBootstrapSteps,
+  })
 
   // prompt-tool patch: optional Code Mode (PTC) wire presentation after promotion.
   const presentationBySession = new WeakMap()
@@ -197,6 +231,25 @@ export function apply(ctx, config) {
 
   const warnOnce = createWarnOnce(ctx, name)
 
+  /** 晋升后给 persona 追加工作目录行（无 persona/无 cwd/已含则原样返回）。 */
+  const withWorkspaceLine = (assembly, agent) => {
+    const cwd = agent?.session?.header?.cwd
+    if (typeof cwd !== 'string' || cwd.length === 0) return assembly
+    if (!Array.isArray(assembly.sections)) return assembly
+    const line = `${WORKSPACE_LINE_PREFIX}${cwd}.`
+    const persona = assembly.sections.find((section) =>
+      PERSONA_SECTION_NAMES.has(section?.name)
+      && typeof section?.text === 'string'
+      && !section.text.includes(line))
+    if (persona === undefined) return assembly
+    return {
+      ...assembly,
+      sections: assembly.sections.map((section) => section === persona
+        ? { ...section, text: `${persona.text}${line}` }
+        : section),
+    }
+  }
+
   /** Narrow the assembled catalog to a keep-set; validate required names. */
   const keepTools = (assembled, keep, missingAllowsFullCatalog) => {
     const available = new Set(assembled.tools.map((tool) => tool.name))
@@ -233,7 +286,7 @@ export function apply(ctx, config) {
         // prompt-tool patch: both modes keep the assembled catalog after promotion.
         // usePtcMode switches the wire presentation instead of narrowing resident tools.
         if (usePtcMode) applyCodePresentation(agent)
-        return assembled
+        return workspaceLine ? withWorkspaceLine(assembled, agent) : assembled
       }
       // Controlled phase: the bootstrap pair; after a compaction, plus the
       // compaction work set so mid-task work can continue. Context control is
@@ -242,7 +295,23 @@ export function apply(ctx, config) {
       const { boundary } = status
       const keep = new Set(bootstrapTools)
       if (boundary >= 0) for (const toolName of compactionTools) keep.add(toolName)
-      return keepTools(assembled, keep, true)
+      let next = keepTools(assembled, keep, true)
+      if (personaSectionsOnly) {
+        // Phase-1 提示词段只留 persona（plan-mode 策略等晋升后才恢复）。
+        const sections = Array.isArray(next.sections)
+          ? next.sections.filter((section) => PERSONA_SECTION_NAMES.has(section?.name))
+          : undefined
+        if (sections !== undefined) {
+          const phase1Sections = phase1FirstCallInstruction === ''
+            ? sections
+            : sections.map((section) => {
+                if (typeof section?.text !== 'string' || section.text.includes(phase1FirstCallInstruction)) return section
+                return { ...section, text: `${section.text}${phase1FirstCallInstruction}` }
+              })
+          next = { ...next, sections: phase1Sections }
+        }
+      }
+      return next
     } catch (error) {
       // A filter bug must never brick a session: degrade to the full catalog.
       warnOnce(`${name}: bootstrap filter failed, exposing the full catalog: ${String((error && error.message) || error)}`)

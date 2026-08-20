@@ -1,0 +1,9 @@
+# module: str-replace-editor
+# source: E:\Documents\GitHub\deepseek-harness/apps/cli/config/agent-presets/minimal/agent.cordis.yml
+# 独立行形态（官方 minimal filesystem group 内的 str-replace-editor 行拆出）：
+# 复用宿主 sandbox 的 ctx.fs，不挂 fs-local 裸文件系统（liangshen 形态）。
+
+- id: str-replace-editor
+  name: '@deepseek-ai/dsh-tool-str-replace-editor'
+  config:
+    maxOutputChars: 16000
