@@ -688,6 +688,7 @@ function SkillsSettings(props: { store: PromptToolStore; api: IApiClient }): Rea
           data-selected={isSelected ? '' : undefined}
           aria-pressed={isSelected}
           aria-label={`选择 ${skill.name || skill.folder}`}
+          disabled={!skill.valid}
           onClick={() => toggleSelect(skill.folder)}
         >
           <span className={ui.skillCardTitleRow}>

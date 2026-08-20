@@ -572,6 +572,7 @@
   cursor: pointer;
 }
 .skillCardBody:hover { background: color-mix(in srgb, var(--pt-accent) 6%, transparent); }
+.skillCardBody:disabled { cursor: default; }
 .skillCardBody[data-selected] { background: color-mix(in srgb, var(--pt-accent) 10%, transparent); }
 .skillCardTitleRow { display: flex; min-width: 0; align-items: center; gap: 8px; flex-wrap: wrap; }
 .skillCardTitleRow strong { font-size: 13px; font-weight: 600; line-height: 1.5; color: var(--dsw-alias-label-primary); overflow-wrap: anywhere; }
@@ -754,7 +755,8 @@
 }
 
 .toggleRow input[type='checkbox'],
-.configEnable > input {
+.configEnable > input,
+.skillSwitch input {
   position: absolute;
   width: 1px;
   height: 1px;
@@ -797,12 +799,15 @@
 }
 
 .configEnable:hover .switch,
-.toggleRow:hover .switch { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--pt-accent) 45%, var(--dsw-alias-border-l2)); }
+.toggleRow:hover .switch,
+.skillSwitch:hover .switch { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--pt-accent) 45%, var(--dsw-alias-border-l2)); }
 
 .toggleRow input:checked + .switch,
-.configEnable > input:checked + .switch { background: var(--pt-accent); box-shadow: none; }
+.configEnable > input:checked + .switch,
+.skillSwitch input:checked + .switch { background: var(--pt-accent); box-shadow: none; }
 .toggleRow input:checked + .switch i,
-.configEnable > input:checked + .switch i { transform: translateX(16px); }
+.configEnable > input:checked + .switch i,
+.skillSwitch input:checked + .switch i { transform: translateX(16px); }
 
 /* 标签输入：chip 增删 + 输入框；底层仍为逗号分隔字符串。 */
 .tagInput {
@@ -1109,7 +1114,8 @@
 .firstTurnInput:focus-visible,
 .textarea:focus-visible,
 .toggleRow input:focus-visible + .switch,
-.configEnable > input:focus-visible + .switch {
+.configEnable > input:focus-visible + .switch,
+.skillSwitch input:focus-visible + .switch {
   outline: none;
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--pt-accent) 45%, transparent);
 }
