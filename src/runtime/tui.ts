@@ -2,8 +2,11 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { CommandResult } from '@deepseek-ai/dsh-commands'
 import type { SettingsNamespace } from '@deepseek-ai/dsh-settings'
+import { join } from 'node:path'
 import type { DeepseekDetection } from './deepseek.ts'
 import type { PromptSettings } from '../config.ts'
+import type { PromptConfigSpec } from '../host/prompt-configs.ts'
+import { loadPromptConfigFiles } from '../host/prompt-configs.ts'
 
 /** dsh-tui 暴露的布尔开关：键名与 settings 路径一致。 */
 const TUI_BOOLEAN_SWITCHES: ReadonlyArray<readonly [key: string, label: string]> = [
@@ -18,7 +21,18 @@ const TUI_BOOLEAN_SWITCHES: ReadonlyArray<readonly [key: string, label: string]>
 ] as const
 
 /** 把布尔开关渲染成 dsh-tui 命令输出。 */
-function renderTuiStatus(source: PromptSettings): string {
+/** 实际生效配置：生成目录优先（引擎加载源），settings 覆盖层作回退。 */
+function resolvePromptConfigs(presetDir: string | undefined, fallback: PromptConfigSpec[]): PromptConfigSpec[] {
+  if (presetDir === undefined || presetDir.length === 0) return fallback
+  try {
+    const actual = loadPromptConfigFiles(join(presetDir, 'prompt-configs'))
+    return actual.length > 0 ? actual : fallback
+  } catch {
+    return fallback
+  }
+}
+
+function renderTuiStatus(source: PromptSettings, promptConfigs: PromptConfigSpec[]): string {
   const onOff = (value: boolean): string => value ? '开' : '关'
   const lines = [
     '提示词工具开关',
@@ -35,7 +49,7 @@ function renderTuiStatus(source: PromptSettings): string {
     `  activeSkillsDir         ${source.activeSkillsDir || '（未解析到技能目录）'}`,
     '提示词配置:',
   ]
-  for (const config of source.promptConfigs) {
+  for (const config of promptConfigs) {
     lines.push(`${('config ' + config.id).padEnd(22)}${onOff(config.enabled !== false)}  layer=${config.layer ?? 'pre-step'} strategy=${config.strategy ?? 'static'}`)
   }
   lines.push('技能开关:')
@@ -50,8 +64,8 @@ function renderTuiStatus(source: PromptSettings): string {
 }
 
 /** 渲染单条提示词配置详情（params 以 JSON 摘要输出）。 */
-function renderConfigDetail(source: PromptSettings, id: string): string {
-  const config = source.promptConfigs.find((item) => item.id === id)
+function renderConfigDetail(source: PromptSettings, id: string, promptConfigs: PromptConfigSpec[]): string {
+  const config = promptConfigs.find((item) => item.id === id)
   if (config === undefined) return `未找到提示词配置 ${id}`
   const lines = [`提示词配置 ${config.id}`, '']
   const fields: Array<[string, unknown]> = [
@@ -111,6 +125,7 @@ export function registerTuiCommand(
   getSource: () => PromptSettings,
   getDeepseekAvailable: () => boolean,
   getDeepseekState: () => DeepseekDetection,
+  getPresetConfigsDir?: () => string,
 ): void {
   ctx.inject(['settings'], (sctx: Context) => {
     return sctx.commands.register({
@@ -129,12 +144,13 @@ export function registerTuiCommand(
         })
         const tokens = invocation.rawInput.trim().split(/\s+/).filter((token) => token.length > 0)
         const source = getSource()
+        const promptConfigs = resolvePromptConfigs(getPresetConfigsDir?.(), source.promptConfigs)
         if (tokens.length === 0 || tokens[0] === 'status') {
           const detection = getDeepseekState()
           const deepseekLine = detection.available
             ? `检测到的 DeepSeek 模型路由: ${detection.providers.join(', ') || '（无）'}`
             : `未检测到 DeepSeek 模型路由。providers=[${detection.providers.join(', ') || '空'}] error=${detection.error ?? '无'}`
-          return { kind: 'success', text: renderTuiStatus(source) + '\n' + deepseekLine }
+          return { kind: 'success', text: renderTuiStatus(source, promptConfigs) + '\n' + deepseekLine }
         }
         if (tokens[0] === 'skill') {
           const folder = tokens[1]
@@ -145,24 +161,24 @@ export function registerTuiCommand(
           await sctx.settings.mutate(ns, [{ op: 'set', path: ['skillSwitches', folder], value: next }])
           return { kind: 'success', text: `已把技能 ${folder} 设为 ${next ? '开' : '关'}
 
-${renderTuiStatus(getSource())}` }
+${renderTuiStatus(getSource(), resolvePromptConfigs(getPresetConfigsDir?.(), getSource().promptConfigs))}` }
         }
         if (tokens[0] === 'config') {
           const id = tokens[1]
           if (id === undefined) return usage()
-          const current = source.promptConfigs.find((config) => config.id === id)
+          const current = promptConfigs.find((config) => config.id === id)
           if (current === undefined) {
             return { kind: 'error', text: `未找到提示词配置 ${id}；用 /prompt-tool status 查看全部 id。` }
           }
           const action = tokens[2]
-          if (action === undefined) return { kind: 'success', text: renderConfigDetail(source, id) }
+          if (action === undefined) return { kind: 'success', text: renderConfigDetail(source, id, promptConfigs) }
           const next = parseTuiBoolean(action, current.enabled !== false)
           if (next === undefined) return usage()
-          const nextConfigs = source.promptConfigs.map((config) => config.id === id ? { ...config, enabled: next } : config)
+          const nextConfigs = promptConfigs.map((config) => config.id === id ? { ...config, enabled: next } : config)
           await sctx.settings.mutate(ns, [{ op: 'set', path: ['promptConfigs'], value: nextConfigs }])
           return { kind: 'success', text: `已把提示词配置 ${id} 设为 ${next ? '开' : '关'}
 
-${renderConfigDetail(getSource(), id)}` }
+${renderConfigDetail(getSource(), id, resolvePromptConfigs(getPresetConfigsDir?.(), getSource().promptConfigs))}` }
         }
         if (tokens[0] === 'bootstrapMaxTokens') {
           const raw = tokens[1]
@@ -173,7 +189,7 @@ ${renderConfigDetail(getSource(), id)}` }
           await sctx.settings.mutate(ns, [{ op: 'set', path: ['bootstrapMaxTokens'], value }])
           return { kind: 'success', text: `已把 bootstrapMaxTokens 设为 ${value === 0 ? '关闭（不设封顶）' : String(value)}
 
-${renderTuiStatus(getSource())}` }
+${renderTuiStatus(getSource(), resolvePromptConfigs(getPresetConfigsDir?.(), getSource().promptConfigs))}` }
         }
         const action = tokens[0]
         const key = tokens[1]
@@ -188,7 +204,7 @@ ${renderTuiStatus(getSource())}` }
         await sctx.settings.mutate(ns, [{ op: 'set', path: [key], value: next }])
         return { kind: 'success', text: `已把 ${key} 设为 ${next ? '开' : '关'}
 
-${renderTuiStatus(getSource())}` }
+${renderTuiStatus(getSource(), resolvePromptConfigs(getPresetConfigsDir?.(), getSource().promptConfigs))}` }
       },
     })
   })

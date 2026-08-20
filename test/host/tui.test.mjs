@@ -1,5 +1,8 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { registerTuiCommand } from '../../lib/index.mjs'
 
 const promptConfigs = [
@@ -44,6 +47,33 @@ test('TUI：/prompt-tool status 列出提示词配置行', async () => {
   assert.equal(result.kind, 'success')
   assert.match(result.text, /config extra\s+开  layer=pre-step strategy=static/)
   assert.match(result.text, /config sys\s+关  layer=system-section strategy=static/)
+})
+
+test('TUI：presetDir 提供时 status 显示生成目录实际配置（settings 空也非 0 配置）', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'prompt-tool-tui-'))
+  try {
+    mkdirSync(join(dir, 'prompt-configs'), { recursive: true })
+    writeFileSync(join(dir, 'prompt-configs', '00-real.yml'),
+      'id: real-config\nname: 实际配置\nenabled: true\nlayer: pre-step\nstrategy: static\ntext: T\n')
+    const commands = []
+    const sctx = {
+      commands: { register(def) { commands.push(def); return () => {} } },
+      settings: { mutate: async () => {} },
+    }
+    const ctx = { inject(_deps, callback) { callback(sctx) } }
+    const source = () => ({
+      firstTurnText: '', deepseekAvailable: true, subagentFlashProvider: '', subagentFlashModel: '',
+      bootstrapMaxTokens: 0, activeSkillsDir: '', skillCatalog: [], skillSwitches: {}, promptConfigs: [],
+      writeAgents: true, writePreset: true, injectPrompt: true, injectAgentsPrompt: false,
+      firstTurnAnchor: true, firstTurnCustom: false, guideCustom: false, usePtcMode: true,
+    })
+    registerTuiCommand(ctx, 'prompt-tool', source, () => true, () => ({ available: true, providers: [] }), () => dir)
+    const result = await commands[0].handler({ rawInput: 'status' })
+    assert.equal(result.kind, 'success')
+    assert.match(result.text, /config real-config\s+开/)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
 })
 
 test('TUI：/prompt-tool config <id> 渲染单条详情含 params JSON', async () => {

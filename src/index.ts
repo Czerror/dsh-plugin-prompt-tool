@@ -374,7 +374,7 @@ export function apply(ctx: Context, configIn: Config): void {
   })
 
   // dsh-tui 命令入口：/prompt-tool 查看或切换开关。
-  registerTuiCommand(ctx, NS, () => currentSource(), getDeepseekAvailable, getDeepseekState)
+registerTuiCommand(ctx, NS, () => currentSource(), getDeepseekAvailable, getDeepseekState, () => runtime.presetDir)
 
   let needsInitialApply = true
   const applyState = (): void => {
