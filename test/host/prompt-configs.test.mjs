@@ -81,7 +81,7 @@ test('renderPromptConfigYaml 全字段开放：variables/identity/params 嵌套�
     position: 'after-all',
     dedupe: 'batch',
     promotion: 'main',
-    audience: '公用',
+    subagents: 'inherit',
     modelScope: 'pro',
     sourceKind: 'full-kind',
     form: 'hint',

@@ -9,7 +9,7 @@ strategy: custom-fallback
 position: before-all
 dedupe: session
 promotion: main
-audience: 公用
+subagents: inherit
 modelScope: all
 configKind: ordered
 order: 20

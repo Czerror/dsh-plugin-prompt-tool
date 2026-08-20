@@ -26,8 +26,7 @@ export interface PromptConfigSpec {
   position?: 'after-user' | 'before-all' | 'after-all'
   dedupe?: 'session' | 'batch' | 'none'
   promotion?: 'none' | 'main' | 'include-subagents'
-  /** 消息受众：缺省（省略）= 仅主会话；公用=inherit；仅子代理=only。 */
-  audience?: '公用' | '仅子代理'
+  subagents?: 'none' | 'inherit' | 'only'
   modelScope?: 'all' | 'pro' | 'flash'
   sourceKind?: string
   form?: string
@@ -136,7 +135,7 @@ export function renderPromptConfigYaml(spec: PromptConfigSpec): string {
   if (spec.position !== undefined) lines.push(`position: ${spec.position}`)
   if (spec.dedupe !== undefined) lines.push(`dedupe: ${spec.dedupe}`)
   if (spec.promotion !== undefined) lines.push(`promotion: ${spec.promotion}`)
-  if (spec.audience !== undefined) lines.push(`audience: ${spec.audience}`)
+  if (spec.subagents !== undefined) lines.push(`subagents: ${spec.subagents}`)
   if (spec.modelScope !== undefined) lines.push(`modelScope: ${spec.modelScope}`)
   if (typeof spec.group === 'string' && spec.group.length > 0) lines.push(`group: ${spec.group}`)
   if (spec.exclusive === true) lines.push('exclusive: true')

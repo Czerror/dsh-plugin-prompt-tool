@@ -16,15 +16,15 @@ export type { PromptConfigDraft, LayerFieldPolicy } from './prompt-tool-types.ts
 export const SOURCE_KINDS = ['', 'plugin', 'instruction-hint', 'skill-catalog', 'env-facts'] as const
 export const SOURCE_FORMS = ['notice', 'hint', ''] as const
 
-/** audience 空值选项的呈现标签：缺省（不写）= 仅主会话（官方「缺省即主对话」形式）。 */
-export const AUDIENCE_LABELS: Record<string, string> = { '': '仅主会话（缺省）' }
+/** subagents 官方三值的 UI 中文标签：底层保持官方契约 none/inherit/only，仅呈现层映射。 */
+export const AUDIENCE_LABELS: Record<string, string> = { none: '仅主会话', inherit: '公用', only: '仅子代理' }
 
 /** 从引擎 /meta 中读取某层的字段能力；未知层回退 pre-step。 */
 const EMPTY_POLICY: LayerFieldPolicy = {
   position: false,
   dedupe: false,
   promotion: false,
-  audience: false,
+  subagents: false,
   modelScope: false,
   merge: false,
   order: false,
@@ -297,7 +297,7 @@ export function PromptConfigForm(props: { meta: EngineMeta; config: PromptConfig
         </label>
         {policy.dedupe && <OptionField label="dedupe" hint="session=每会话一次；batch=当前批去重" value={config.dedupe} options={meta.dedupes} fallback="none" onChange={(value) => onPatch({ dedupe: value })} />}
         {policy.promotion && <OptionField label="promotion" hint="none=不要求晋升；main=主会话晋升；include-subagents=子代理跟随" value={config.promotion} options={meta.promotions} fallback="none" onChange={(value) => onPatch({ promotion: value })} />}
-        {policy.audience && <OptionField label="消息受众" hint="缺省=仅主会话；公用=inherit（都适用）；仅子代理=only（配置字段 audience，省略即仅主会话）" value={config.audience} options={['', ...meta.audienceModes]} fallback="" labels={AUDIENCE_LABELS} onChange={(value) => onPatch(value === '' ? { audience: undefined } : { audience: value })} />}
+        {policy.subagents && <OptionField label="消息受众" hint="仅主会话=none；公用=inherit（都适用）；仅子代理=only（配置字段 subagents，官方契约）" value={config.subagents} options={meta.subagentModes} fallback="none" labels={AUDIENCE_LABELS} onChange={(value) => onPatch({ subagents: value })} />}
         {policy.modelScope && <OptionField label="modelScope" hint="all / pro / flash；flash 按模型名包含 flash 判定" value={config.modelScope} options={meta.modelScopes} fallback="all" onChange={(value) => onPatch({ modelScope: value })} />}
         {placeholder && <OptionField label="fill（placeholder 专用）" hint="instruction-hint / env-facts / skill-catalog" value={config.fill} options={fillOptions} fallback="" onChange={(value) => onPatch({ fill: value || undefined })} />}
         <OptionField label="sourceKind" hint="注入消息 source.kind；默认等于 id" value={config.sourceKind} options={SOURCE_KINDS} fallback="" keepCurrent onChange={(value) => onPatch({ sourceKind: value || undefined })} />

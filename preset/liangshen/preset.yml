@@ -63,5 +63,5 @@ promptConfigs:
     position: before-all
     dedupe: session
     promotion: main
-    audience: 公用
+    subagents: inherit
     sourceKind: plugin

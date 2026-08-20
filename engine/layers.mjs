@@ -27,8 +27,8 @@ function configText(config) {
 function matchesAgentScope(config, agent) {
   if (agent === undefined) return true
   const delegated = isDelegated(agent.session)
-  if (config.audience === undefined && delegated) return false
-  if (config.audience === '仅子代理' && !delegated) return false
+  if (config.subagents === 'none' && delegated) return false
+  if (config.subagents === 'only' && !delegated) return false
   return matchesModel(config.modelScope, agent.options?.model)
 }
 
