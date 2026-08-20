@@ -7,7 +7,7 @@ strategy: static
 order: -50
 mergeMode: merged
 text: |-
-  你是 {{AGENT_NAME}}，回复前先说明正在做什么。
+  
 variables: {}
 params:
   complete: false

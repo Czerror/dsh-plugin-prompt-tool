@@ -10,11 +10,10 @@ position: after-all
 dedupe: session
 promotion: main
 text: |-
-  可用技能 {{SKILL_COUNT}} 个：
-  {{SKILLS_TEXT}}
+  
 params:
   limit: 20
   fields: name,description
   providers: ''
   emptyBehavior: skip
-  emptyText: 当前没有可用技能。
+  emptyText: ""     # emptyBehavior=text 时的空结果提示；留空 = 空文本

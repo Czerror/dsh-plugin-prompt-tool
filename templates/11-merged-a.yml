@@ -8,5 +8,4 @@ position: before-all
 mergeMode: merged
 order: 0
 texts:
-  - 合并段 A1
-  - 合并段 A2
+  - ''

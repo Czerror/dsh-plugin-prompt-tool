@@ -8,4 +8,4 @@ position: after-all
 dedupe: session
 promotion: include-subagents
 params:
-  envKeys: DSH_HOME,DSH_WORKSPACE
+  envKeys: ""       # 环境变量白名单（逗号分隔）；留空 = 默认 DSH_HOME,DSH_WORKSPACE

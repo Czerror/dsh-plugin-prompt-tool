@@ -22,8 +22,7 @@ identity:
   field: plugin
   value: example-pre-step
 text: |-
-  这是注入到用户消息后的提示词内容。
-  支持 {{WORKSPACE}} / {{CWD}} / {{DSH_HOME}} 与下方 variables。
+  
 variables:
-  WHO: 张三
+  WHO: ''
 params: {}

@@ -4,6 +4,6 @@ layer: llm-stream
 strategy: static
 modelScope: flash
 order: 0
-text: 自定义流替换文本
+text: ""            # mode=replace 时替代整个模型流的文本
 params:
   mode: pass

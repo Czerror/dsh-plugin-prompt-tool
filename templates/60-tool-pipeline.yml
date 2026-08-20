@@ -4,7 +4,7 @@ layer: tool-pipeline
 strategy: static
 order: 0
 modelScope: all
-text: 替换后的工具结果
+text: ""            # postAction=replace/block 时使用的文本
 params:
   toolNames: bash,run_code
   preDecision: allow

@@ -5,6 +5,6 @@ strategy: static
 order: 5
 mergeMode: merged
 text: |-
-  当前工作区：{{WORKSPACE}}
+  
 params:
   contextName: ''
