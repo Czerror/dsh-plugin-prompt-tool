@@ -149,17 +149,13 @@ function AgentRequestSwitches(props: { store: PromptToolStore }): ReactNode {
 function ModelToolCards(props: { store: PromptToolStore; scope: 'main' | 'subagent' }): ReactNode {
   const { store } = props
   const fields = store.fields
-  const providerOptions = ['', ...store.providerCandidates]
+  const providerOptions = ['', ...store.providers]
   const provider = props.scope === 'main' ? fields.modelProvider : fields.subagentModelProvider
   const modelName = props.scope === 'main' ? fields.modelName : fields.subagentModelName
   const modelOptions = ['', ...(store.modelCatalog[provider] ?? [])]
   const maxDepthOptions = ['', 'provider-managed', '0', '1', '2', '3', '5']
   const withCurrent = (options: string[], current: string): string[] =>
     current.length > 0 && !options.includes(current) ? [...options, current] : options
-  const liveProviders = new Set(store.providers)
-  const optionLabel = (item: string): string => item.length === 0
-    ? '（不设置）'
-    : liveProviders.has(item) ? `${item}（已注册）` : `${item}（未注册）`
   const active = provider.length > 0 && modelName.length > 0
   const scopeMeta = props.scope === 'main'
     ? { title: '主对话模型', idle: '未设置：继承宿主默认模型', active: '固定模型路由已设置（新会话默认模型）' }
@@ -186,7 +182,7 @@ function ModelToolCards(props: { store: PromptToolStore; scope: 'main' | 'subage
               }}
             >
               {withCurrent(providerOptions, provider).map((item) => (
-                <option key={item} value={item}>{optionLabel(item)}</option>
+                <option key={item} value={item}>{item.length === 0 ? '（不设置）' : item}</option>
               ))}
             </select>
           </div>

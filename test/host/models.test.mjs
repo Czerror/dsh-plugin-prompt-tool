@@ -2,31 +2,25 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { detectModels, installDefaultModelRoute } from '../../lib/index.mjs'
 
-test('detectModels：providers 只含 live 注册路由，candidates 含 live + 可配置目录（dormant）', () => {
+test('detectModels：只统计 live 注册路由', () => {
   const ctx = {
     get: () => ({
       listProviders: () => [
         { id: 'deepseek-official', name: 'DeepSeek' },
         { id: 'local-provider', name: 'Local' },
       ],
-      listConfigurableProviders: () => [
-        { provider: 'deepseek-official', displayName: 'DeepSeek' },
-        { provider: 'amazon-bedrock', displayName: 'Amazon Bedrock' },
-      ],
     }),
   }
   const detection = detectModels(ctx)
-  assert.deepEqual(detection.providers, ['deepseek-official', 'local-provider'], '状态提示只显示已注册路由')
-  assert.deepEqual(detection.candidates, ['deepseek-official', 'local-provider', 'amazon-bedrock'], '下拉候选含已注册 + 未注册目录')
+  assert.deepEqual(detection.providers, ['deepseek-official', 'local-provider'], '只显示 live 注册路由')
   assert.equal(detection.available, true)
 })
 
-test('detectModels：无任何 provider 时 available=false 且带诊断', () => {
-  const ctx = { get: () => ({ listProviders: () => [], listConfigurableProviders: () => [] }) }
+test('detectModels：无 live provider 时 available=false 且带诊断（含 dormant 目录不算检测到）', () => {
+  const ctx = { get: () => ({ listProviders: () => [] }) }
   const detection = detectModels(ctx)
   assert.equal(detection.available, false)
   assert.deepEqual(detection.providers, [])
-  assert.deepEqual(detection.candidates, [])
   assert.match(detection.error ?? '', /未返回任何 provider/)
 })
 

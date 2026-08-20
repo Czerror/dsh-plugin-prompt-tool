@@ -7,38 +7,27 @@ export interface ModelDetection {
   available: boolean
   /** 已检测到（live 注册）的模型服务商 id——状态提示用。 */
   providers: string[]
-  /** 全部可选服务商 id（live + 可配置目录，去重保序）——下拉候选用。 */
-  candidates: string[]
   error?: string
 }
 
-/** 检测模型服务商：providers=live 注册路由（状态提示），candidates=live + 可配置目录（下拉候选，含 dormant）。 */
+/** 检测模型服务商：只统计 live 注册路由（状态提示与下拉共用同一来源）。 */
 export function detectModels(ctx: Context): ModelDetection {
-  const empty = { available: false, providers: [], candidates: [] }
+  const empty = { available: false, providers: [] }
   try {
     const llm = ctx.get('llm') as {
       listProviders?: () => Array<{ id?: string; name?: string }>
-      listConfigurableProviders?: () => Array<{ provider?: string; displayName?: string }>
     } | undefined
     if (llm === undefined) return { ...empty, error: 'ctx.get("llm") 返回 undefined' }
     const live = llm.listProviders?.() ?? []
-    const configured = llm.listConfigurableProviders?.() ?? []
     const liveNames = new Set<string>()
-    const configuredNames = new Set<string>()
     for (const provider of live) {
       const id = typeof provider.id === 'string' ? provider.id : String(provider.id ?? '')
       liveNames.add(id || provider.name || '(unnamed)')
     }
-    for (const provider of configured) {
-      const id = typeof provider.provider === 'string' ? provider.provider : ''
-      if (id.length > 0) configuredNames.add(id)
-    }
-    const candidates = [...new Set([...liveNames, ...configuredNames])]
     return {
-      available: candidates.length > 0,
+      available: liveNames.size > 0,
       providers: [...liveNames],
-      candidates,
-      ...(live.length === 0 && configured.length === 0 ? { error: 'llm 服务未返回任何 provider' } : {}),
+      ...(live.length === 0 ? { error: 'llm 服务未返回任何 provider' } : {}),
     }
   } catch (error) {
     return { ...empty, error: error instanceof Error ? error.message : String(error) }
