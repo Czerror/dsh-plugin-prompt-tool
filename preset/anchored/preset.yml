@@ -183,9 +183,9 @@ params:
   guideDeep: "\nRouter: classify this task (build or fix) now, then adopt the matching style — build: direct production; fix: inspect-first. Think deeply about the architecture, edge cases, and integration points. Do not spend reasoning on the environment or tooling. Produce when your information is complete. End each reasoning block with a decision or an information need."
   buildPattern: "(开发|创建|写一个|生成|从零|做一个|构建|新项目|搭建|实现|做出|上线|落地|脚本|工具|应用|build|create|develop|generate|implement|make a|new project)"
   complexPattern: "(架构|重构|设计|系统|全面|深度|迁移|兼容|审查|architecture|refactor|comprehensive|design|system|migrate|review)"
-  firstTurnBuild: "Start your reasoning with the exact sentence: 'We need to build it directly and verify it.'"
-  firstTurnInspect: "Start your reasoning with the exact sentence: 'We need to inspect the code first.'"
-  firstTurnDeep: "Start your reasoning with the exact sentence: 'Let me think through the design before changing anything.'"
+  firstTurnBuild: "Start your reasoning with the exact sentence: We need to build it directly and verify it."
+  firstTurnInspect: "Start your reasoning with the exact sentence: We need to inspect the code first."
+  firstTurnDeep: "Start your reasoning with the exact sentence: Let me think through the design before changing anything."
   firstTurnWord: we
   allowKinds: "[skill-invocation, near-anchor, router-guide]"
 # ── 子代理 · 参数归类（作用域 × 维度；全部可选，缺省 = 官方默认 / 继承主会话）──
