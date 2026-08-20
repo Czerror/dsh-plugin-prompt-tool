@@ -1,5 +1,5 @@
 /** 预设切换器：切换预设模板 + 导入自定义预设（配置页与功能设置共用）。 */
-import { useRef, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { bridgePost } from './prompt-tool-bridge.ts'
 import type { PromptToolStore } from './prompt-tool-store.ts'
 import styles from './PromptUi.module.css'
@@ -11,6 +11,26 @@ export function PresetSwitcher(props: { store: PromptToolStore }): ReactNode {
   const [menuOpen, setMenuOpen] = useState(false)
   const yamlRef = useRef<HTMLInputElement>(null)
   const dirRef = useRef<HTMLInputElement>(null)
+  const hostRef = useRef<HTMLSpanElement>(null)
+
+  // 点击菜单外部或 Esc 时关闭（菜单不阻塞页面其余操作）。
+  useEffect(() => {
+    if (!menuOpen) return
+    const onDocClick = (event: MouseEvent): void => {
+      if (hostRef.current !== null && !hostRef.current.contains(event.target as Node)) {
+        setMenuOpen(false)
+      }
+    }
+    const onKey = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') setMenuOpen(false)
+    }
+    document.addEventListener('click', onDocClick)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('click', onDocClick)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [menuOpen])
 
   /** 上传预设包：path 为相对路径（preset.yml 或文件夹内文件），服务端按 id 归入用户预设目录。 */
   const uploadPreset = async (entries: Array<{ path: string; content: string }>): Promise<void> => {
@@ -89,7 +109,7 @@ export function PresetSwitcher(props: { store: PromptToolStore }): ReactNode {
             aria-label="选择预设文件夹"
             onChange={(event) => { pickPresetDir(event.target.files); event.target.value = '' }}
           />
-          <span className={styles.importMenuHost}>
+          <span ref={hostRef} className={styles.importMenuHost}>
             <button type="button" className={styles.primaryPill} disabled={importing} onClick={() => setMenuOpen((open) => !open)}>
               {importing ? '导入中…' : '导入预设 ▾'}
             </button>
