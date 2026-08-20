@@ -205,6 +205,19 @@ function ModelToolCards(props: { store: PromptToolStore }): ReactNode {
         </div>
         <div className={ui.rowGroup}>
           <label className={ui.textBlock}>
+            <span className={ui.settingCopy}><strong>主对话快速模型人设</strong><small>主对话命中快速模型（Flash 档）时替换人设（router-first-turn）；固定模型路由未显式人设（persona）时回退使用。留空 = 模板默认；失焦保存。</small></span>
+            <textarea
+              className={ui.firstTurnInput}
+              value={fields.fastModelPersona}
+              disabled={!fields.writePreset}
+              onChange={(event) => { autoResizeTextarea(event); store.patch({ fastModelPersona: event.target.value }) }}
+              onBlur={() => void store.persistParamOverrides()}
+              spellCheck={false}
+            />
+          </label>
+        </div>
+        <div className={ui.rowGroup}>
+          <label className={ui.textBlock}>
             <span className={ui.settingCopy}><strong>固定模型路由人设</strong><small>persona（per-child shadow）；留空 = 固定模型路由时回退主对话快速模型人设，两者都空 = 继承主会话。失焦保存。</small></span>
             <textarea
               className={ui.firstTurnInput}
@@ -291,19 +304,6 @@ function FeatureSettings(props: { store: PromptToolStore }): ReactNode {
   const fields = store.fields
   return (
     <section className={ui.section} aria-label="主对话与全局">
-      <div className={ui.rowGroup}>
-        <label className={ui.textBlock}>
-          <span className={ui.settingCopy}><strong>主对话快速模型人设</strong><small>主对话命中快速模型（Flash 档）时替换人设；固定模型路由未显式人设（persona）时回退使用。留空 = 模板默认；失焦保存。</small></span>
-          <textarea
-            className={ui.firstTurnInput}
-            value={fields.fastModelPersona}
-            disabled={!fields.writePreset}
-            onChange={(event) => { autoResizeTextarea(event); store.patch({ fastModelPersona: event.target.value }) }}
-            onBlur={() => void store.persistParamOverrides()}
-            spellCheck={false}
-          />
-        </label>
-      </div>
       <TagInput id="pt-allow-kinds" label="注入 kind 白名单" hint="context-gate allowKinds；回车或逗号添加标签，× 移除，例如 skill-invocation、near-anchor、router-guide；留空 = 官方默认（不过滤）。每次增删立即保存。"
         value={fields.allowKinds} placeholder="skill-invocation, near-anchor, router-guide" disabled={!fields.writePreset}
         onChange={(value) => store.patch({ allowKinds: value })}
@@ -927,7 +927,7 @@ export function PromptWorkspace(props: PromptWorkspaceProps): ReactNode {
     : page === 'skills'
     ? '按 skills 目录注册的可开关技能；目录与逐技能开关立即生效。'
     : page === 'features'
-      ? '主对话参数（快速模型人设、注入 kind 白名单）与提示词配置模块列表。'
+      ? '主对话参数（注入 kind 白名单、模型设置、工具与深度）与提示词配置模块列表。'
       : page === 'presets'
         ? '统一管理预设模板（切换/导入）与提示词配置（六层列表/模板插入/配置目录）。'
         : '子代理作用域参数（模型/人设/工具集/深度）与子代理提示词配置（audience 非仅主会话）。'
