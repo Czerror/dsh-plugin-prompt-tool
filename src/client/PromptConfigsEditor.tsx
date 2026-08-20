@@ -1,10 +1,9 @@
 import { useState, type ReactNode } from 'react'
-import type { IApiClient } from '@deepseek-ai/dsh-client-connection/client'
-import { bridgePost, errorMessage, type BridgeSettingsView } from './prompt-tool-bridge.ts'
+import { bridgePost, errorMessage } from './prompt-tool-bridge.ts'
 import { PromptConfigList } from './PromptConfigList.tsx'
 import styles from './PromptUi.module.css'
 
-import type { EngineMeta, PromptConfigDraft, ValidationErrorEntry } from './prompt-tool-types.ts'
+import type { EngineMeta, PromptConfigDraft } from './prompt-tool-types.ts'
 
 export type { PromptConfigDraft, LayerFieldPolicy } from './prompt-tool-types.ts'
 export type { ValidationErrorEntry } from './prompt-tool-types.ts'
@@ -23,13 +22,7 @@ interface TemplatesResult {
   message?: string
 }
 
-type ImportValue = BridgeSettingsView
-
-type ImportResult = { ok: true; value: ImportValue; importedCount?: number; mergedCount?: number }
-  | { ok: false; code?: string; message?: string; errors?: ValidationErrorEntry[] }
-
 export interface PromptConfigsEditorProps {
-  api: IApiClient
   meta: EngineMeta
   configs: PromptConfigDraft[]
   configsDir: string
@@ -39,7 +32,6 @@ export interface PromptConfigsEditorProps {
   onPatchConfigsDir: (dir: string) => void
   onSaveConfigs: (configs: PromptConfigDraft[]) => void
   onSaveConfigsDir: (dir: string) => void
-  onReload: () => Promise<unknown>
   onNotice: (kind: 'ok' | 'error', message: string) => void
 }
 
@@ -48,8 +40,6 @@ export function PromptConfigsEditor(props: PromptConfigsEditorProps): ReactNode 
   const [templates, setTemplates] = useState<PromptConfigTemplateEntry[]>([])
   const [templateFile, setTemplateFile] = useState('')
   const [savingDir, setSavingDir] = useState(false)
-  const [importing, setImporting] = useState(false)
-  const [importErrors, setImportErrors] = useState<ValidationErrorEntry[]>([])
 
   const loadTemplates = async () => {
     try {
@@ -72,33 +62,6 @@ export function PromptConfigsEditor(props: PromptConfigsEditorProps): ReactNode 
     setSavingDir(true)
     props.onSaveConfigsDir(props.configsDir.trim())
     setSavingDir(false)
-  }
-
-  const importFromDirectory = async () => {
-    if (importing) return
-    setImporting(true)
-    setImportErrors([])
-    try {
-      const picked = await props.api.host.pickDirectory({})
-      if (!picked.result.ok) {
-        props.onNotice('error', '选择目录失败：' + (picked.result.error?.message ?? 'host.pickDirectory 不可用'))
-        return
-      }
-      const dir = picked.result.value?.path
-      if (!dir) return
-      const res = await bridgePost<ImportValue>('/import-directory', { dir }) as unknown as ImportResult
-      if (!res.ok) {
-        setImportErrors(res.errors ?? [])
-        props.onNotice('error', `导入失败：${res.message ?? ''}${(res.errors?.length ?? 0) > 0 ? `（${res.errors!.length} 个错误）` : ''}`)
-        return
-      }
-      await props.onReload()
-      props.onNotice('ok', `已从目录导入 ${res.importedCount ?? 0} 条提示词配置并保存（合并后 ${res.mergedCount ?? props.configs.length} 条）`)
-    } catch (error) {
-      props.onNotice('error', '导入失败：' + errorMessage(error))
-    } finally {
-      setImporting(false)
-    }
   }
 
   const insertTemplate = () => {
@@ -125,19 +88,8 @@ export function PromptConfigsEditor(props: PromptConfigsEditorProps): ReactNode 
 
       <section className={styles.section} aria-labelledby="prompt-tool-import-heading">
         <div className={styles.sectionHeading}>
-          <div><h2 id="prompt-tool-import-heading">导入提示词配置</h2><p>从本地目录批量导入 *.yml / *.yaml / *.json 配置；同名 id 覆盖现有配置，新 id 追加到末尾。</p></div>
+          <div><h2 id="prompt-tool-import-heading">内置模板</h2><p>templates/ 覆盖六层与 placeholder 数据源，插入后按需修改；批量配置建议使用下方「提示词配置目录」动态引用。</p></div>
         </div>
-        <div className={styles.importBar}>
-          <div><strong>从目录导入</strong><small>目录内每个文件必须是单条提示词配置对象，且 id 为非空字符串。</small></div>
-          <button type="button" className={styles.primaryPill} disabled={importing} onClick={() => void importFromDirectory()}>{importing ? '导入中…' : '选择目录并导入'}</button>
-        </div>
-        {importErrors.length > 0 && (
-          <div className={styles.configErrorBox}>
-            {importErrors.map((error, index) => (
-              <div key={`${error.index}-${index}`} className={styles.configErrorLine}>[{error.index}] {error.id || '(缺 id)'}：{error.message}</div>
-            ))}
-          </div>
-        )}
         <div className={styles.importBar}>
           <div><strong>内置模板</strong><small>templates/ 覆盖六层与 placeholder 数据源，插入后按需修改。</small></div>
           <select className={styles.configInput} value={templateFile} onChange={(e) => setTemplateFile(e.target.value)} onFocus={() => { if (templates.length === 0) void loadTemplates() }} aria-label="选择提示词配置模板">

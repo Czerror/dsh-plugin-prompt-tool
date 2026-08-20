@@ -7,8 +7,7 @@ import { parse as parseYaml, stringify as stringifyYaml } from 'yaml'
 import type { SettingsDescriptor, SettingsNamespace, SettingsPathOp } from '@deepseek-ai/dsh-settings'
 import type { DeepseekDetection } from './deepseek.ts'
 import type { SkillCatalogEntry } from '../config.ts'
-import type { PromptConfigSpec } from '../host/prompt-configs.ts'
-import { loadPromptConfigFiles, mergePromptConfigs } from '../host/prompt-configs.ts'
+import { loadPromptConfigFiles } from '../host/prompt-configs.ts'
 import { validatePromptConfigs } from './configs-validate.ts'
 import { loadPromptTemplates } from '../host/templates.ts'
 import { fixSkillEntry } from './skill-fix.ts'
@@ -63,14 +62,6 @@ function writeBridgeJson(res: ServerResponse, status: number, body: unknown): vo
 
 const asRecord = (value: unknown): Record<string, unknown> =>
   value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
-
-/** 读取当前 settings 中生效的 promptConfigs（user 层优先，其次 base）。 */
-function readPromptConfigs(descriptor: SettingsDescriptor | undefined): PromptConfigSpec[] {
-  const value = asRecord(descriptor?.value)
-  const base = asRecord(descriptor?.base)
-  const current = value.promptConfigs !== undefined ? value.promptConfigs : base.promptConfigs
-  return Array.isArray(current) ? current as PromptConfigSpec[] : []
-}
 
 async function readBridgeBody(req: IncomingMessage): Promise<unknown> {
   const chunks: Buffer[] = []
@@ -251,62 +242,6 @@ export function registerSettingsBridge(
             const record = body as Record<string, unknown>
             const result = await validatePromptConfigs(record.promptConfigs, { strategyDir: getEngineStrategyDir() })
             writeBridgeJson(res, 200, { ok: true, value: result })
-          },
-        }),
-        sctx.webServer.register({
-          kind: 'exact',
-          path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.importDirectory,
-          handler: async (req, res) => {
-            if (!guard(req, res)) return
-            ensureRegistered(sctx)
-            const body = await readBridgeBody(req)
-            if (body === null || body === undefined || typeof body !== 'object') {
-              writeBridgeJson(res, 400, { ok: false, code: 'settings-rejected', message: 'unreadable JSON body' })
-              return
-            }
-            const record = body as Record<string, unknown>
-            const dir = typeof record.dir === 'string' ? record.dir.trim() : ''
-            if (dir.length === 0) {
-              writeBridgeJson(res, 400, { ok: false, code: 'settings-rejected', message: 'import directory is required' })
-              return
-            }
-            let imported: PromptConfigSpec[]
-            try {
-              imported = loadPromptConfigFiles(dir)
-            } catch (error) {
-              writeBridgeJson(res, 400, { ok: false, code: 'import-invalid', message: error instanceof Error ? error.message : String(error) })
-              return
-            }
-            if (imported.length === 0) {
-              writeBridgeJson(res, 400, { ok: false, code: 'import-empty', message: `目录 ${JSON.stringify(dir)} 中没有可导入的 *.yml / *.yaml / *.json 提示词配置` })
-              return
-            }
-            const validation = await validatePromptConfigs(imported, { strategyDir: getEngineStrategyDir() })
-            if (!validation.valid) {
-              writeBridgeJson(res, 400, { ok: false, code: 'import-invalid', message: '导入目录中的提示词配置未通过权威校验', errors: validation.errors })
-              return
-            }
-            const descriptor = findDescriptor()
-            if (descriptor === undefined) {
-              writeBridgeJson(res, 404, { ok: false, code: 'settings-not-exposed', message: 'prompt-tool settings namespace is not registered' })
-              return
-            }
-            // 与引擎三源合并同构：同名 id 被导入文件覆盖，新 id 追加在现有配置之后。
-            const merged = mergePromptConfigs(readPromptConfigs(descriptor), imported)
-            const expectedRevision = typeof record.expectedRevision === 'number' ? record.expectedRevision : undefined
-            try {
-              await sctx.settings.mutate(ns, [{ op: 'set', path: ['promptConfigs'], value: merged }], expectedRevision)
-            } catch (error) {
-              const message = error instanceof Error ? error.message : String(error)
-              writeBridgeJson(res, 409, { ok: false, code: 'settings-rejected', message })
-              return
-            }
-            const next = findDescriptor()
-            if (next === undefined) {
-              writeBridgeJson(res, 500, { ok: false, code: 'settings-rejected', message: 'prompt-tool settings namespace was disposed after import' })
-              return
-            }
-            writeBridgeJson(res, 200, { ok: true, value: next, importedCount: imported.length, mergedCount: merged.length })
           },
         }),
         sctx.webServer.register({

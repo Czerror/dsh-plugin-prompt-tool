@@ -33,7 +33,6 @@ export function PromptSettingsPage(props: PromptSettingsPageProps): ReactNode {
         <>
           <PresetSwitcher store={store} />
           <PromptConfigsEditor
-            api={api}
             meta={store.meta}
             configs={store.fields.promptConfigs}
             configsDir={store.fields.promptConfigsDir}
@@ -43,7 +42,6 @@ export function PromptSettingsPage(props: PromptSettingsPageProps): ReactNode {
             onPatchConfigsDir={(dir) => store.patch({ promptConfigsDir: dir })}
             onSaveConfigs={(configs) => store.persistConfigs(configs)}
             onSaveConfigsDir={(dir) => store.persistConfigsDir(dir)}
-            onReload={store.load}
             onNotice={store.showNotice}
           />
         </>
