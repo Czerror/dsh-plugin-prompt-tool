@@ -487,11 +487,10 @@ function SubagentPage(props: { store: PromptToolStore }): ReactNode {
 }
 
 /** 技能状态筛选维度（统计条与列表联动）。 */
-type SkillStatusTab = 'all' | 'enabled' | 'callable' | 'invalid'
+type SkillStatusTab = 'all' | 'callable' | 'invalid'
 
 const SKILL_STATUS_TABS: Array<{ id: SkillStatusTab; label: string }> = [
   { id: 'all', label: '全部' },
-  { id: 'enabled', label: '已启用' },
   { id: 'callable', label: '模型可调用' },
   { id: 'invalid', label: '未注册' },
 ]
@@ -522,19 +521,16 @@ function SkillsSettings(props: { store: PromptToolStore; api: IApiClient }): Rea
     || JSON.stringify(fields.skillsDirs) !== JSON.stringify(store.savedSwitches.skillsDirs)
     || store.skillsDirDraft.trim().length > 0
 
-  const enabledCount = orderedSkills.filter((skill) => store.skillEnabled(skill.folder)).length
   const callableCount = orderedSkills.filter((skill) => skill.valid && skill.modelInvocable && store.skillEnabled(skill.folder)).length
   const invalidCount = orderedSkills.filter((skill) => !skill.valid).length
   const tabCounts: Record<SkillStatusTab, number> = {
     all: orderedSkills.length,
-    enabled: enabledCount,
     callable: callableCount,
     invalid: invalidCount,
   }
 
   const keyword = skillFilter.trim().toLowerCase()
   const visibleSkills = orderedSkills.filter((skill) => {
-    if (statusTab === 'enabled' && !store.skillEnabled(skill.folder)) return false
     if (statusTab === 'callable' && !(skill.valid && skill.modelInvocable && store.skillEnabled(skill.folder))) return false
     if (statusTab === 'invalid' && skill.valid) return false
     return keyword.length === 0
@@ -744,8 +740,7 @@ function SkillsSettings(props: { store: PromptToolStore; api: IApiClient }): Rea
                 <i className={clsx(ui.skillStatDot,
                   tab.id === 'invalid' ? ui.skillStatusError
                     : tab.id === 'callable' ? ui.skillStatusModel
-                      : tab.id === 'enabled' ? ui.skillStatEnabled
-                        : ui.skillStatAll)} aria-hidden="true" />
+                      : ui.skillStatAll)} aria-hidden="true" />
                 <strong>{tabCounts[tab.id]}</strong>
                 <small>{tab.label}</small>
               </button>
