@@ -91,6 +91,97 @@ export function JsonField(props: { label: string; value: Record<string, unknown>
   )
 }
 
+/** 布尔开关行（params 结构化编辑用）。 */
+function ParamToggle(props: { label: string; hint?: string; checked: boolean; onChange: (checked: boolean) => void }): ReactNode {
+  return (
+    <label className={styles.configEnable} title={props.checked ? '点击关闭' : '点击开启'}>
+      <span className={styles.configFieldLabel}>{props.label}</span>
+      <input type="checkbox" aria-label={props.label} checked={props.checked} onChange={(e) => props.onChange(e.target.checked)} />
+      <span className={styles.switch} aria-hidden="true"><i /></span>
+      {props.hint && <span className={styles.configFieldHint}>{props.hint}</span>}
+    </label>
+  )
+}
+
+/** params 文本域（结构化编辑用）：失焦写入草稿 params。 */
+function ParamTextarea(props: { label: string; hint?: string; value: string; onChange: (value: string) => void }): ReactNode {
+  return (
+    <span className={styles.configFieldStack}>
+      <span className={styles.configFieldLabel}>{props.label}</span>
+      <textarea
+        className={styles.configTextarea}
+        aria-label={props.label}
+        value={props.value}
+        spellCheck={false}
+        onChange={(e) => { autoResizeTextarea(e); props.onChange(e.target.value) }}
+      />
+      {props.hint && <p className={styles.configFieldHint}>{props.hint}</p>}
+    </span>
+  )
+}
+
+/** params 单行文本域（结构化编辑用）。 */
+function ParamInput(props: { label: string; hint?: string; value: string; onChange: (value: string) => void }): ReactNode {
+  return (
+    <Field label={props.label} hint={props.hint}>
+      <input className={styles.configInput} value={props.value} spellCheck={false} onChange={(e) => props.onChange(e.target.value)} />
+    </Field>
+  )
+}
+
+/**
+ * 按 strategy 拆解 params 为结构化编辑框（替代裸 JSON）：
+ *   first-turn-anchor → near-anchor 锚点参数（开关/锚文本/任务正则/引导句）；
+ *   guide-auto → router-guide 每轮引导参数（开关/文本/复杂正则/强弱引导句）；
+ *   custom-fallback → prompt-injector 锚定词（params.text 为运行时注入内容，不暴露编辑）；
+ * 未知策略回退 JSON 编辑（保留任意 params 能力）。
+ */
+export function StrategyParamsFields(props: { strategy: string; params: Record<string, unknown> | undefined; onPatch: (params: Record<string, unknown>) => void }): ReactNode {
+  const { strategy, params, onPatch } = props
+  const value = params ?? {}
+  const str = (key: string): string => (typeof value[key] === 'string' ? value[key] as string : '')
+  const bool = (key: string): boolean => value[key] === true
+  const set = (key: string, next: unknown): void => onPatch({ ...value, [key]: next })
+  if (strategy === 'first-turn-anchor') {
+    return (
+      <>
+        <ParamToggle label="useCustom（自定义锚文本）" hint="true = 固定使用 firstTurnText；false = 按 buildPattern/complexPattern 自动选择引导句"
+          checked={bool('useCustom')} onChange={(next) => set('useCustom', next)} />
+        <ParamTextarea label="firstTurnText（自定义锚文本）" hint="useCustom=true 时固定注入" value={str('firstTurnText')} onChange={(next) => set('firstTurnText', next)} />
+        <ParamInput label="buildPattern（构建任务正则）" hint="命中即用 firstTurnBuild 引导句" value={str('buildPattern')} onChange={(next) => set('buildPattern', next)} />
+        <ParamInput label="complexPattern（复杂任务正则）" hint="命中即用 firstTurnDeep 引导句" value={str('complexPattern')} onChange={(next) => set('complexPattern', next)} />
+        <ParamTextarea label="firstTurnBuild（构建引导句）" value={str('firstTurnBuild')} onChange={(next) => set('firstTurnBuild', next)} />
+        <ParamTextarea label="firstTurnInspect（排查引导句）" value={str('firstTurnInspect')} onChange={(next) => set('firstTurnInspect', next)} />
+        <ParamTextarea label="firstTurnDeep（复杂设计引导句）" value={str('firstTurnDeep')} onChange={(next) => set('firstTurnDeep', next)} />
+      </>
+    )
+  }
+  if (strategy === 'guide-auto') {
+    return (
+      <>
+        <ParamToggle label="useCustom（自定义每轮引导）" hint="true = 固定使用 text；false = 按任务自动选择强弱引导"
+          checked={bool('useCustom')} onChange={(next) => set('useCustom', next)} />
+        <ParamTextarea label="text（自定义引导文本）" hint="useCustom=true 时固定注入" value={str('text')} onChange={(next) => set('text', next)} />
+        <ParamInput label="guideComplexPattern（复杂任务正则）" value={str('guideComplexPattern')} onChange={(next) => set('guideComplexPattern', next)} />
+        <ParamTextarea label="guideWeak（简单任务自动引导）" value={str('guideWeak')} onChange={(next) => set('guideWeak', next)} />
+        <ParamTextarea label="guideDeep（复杂任务自动引导）" value={str('guideDeep')} onChange={(next) => set('guideDeep', next)} />
+      </>
+    )
+  }
+  if (strategy === 'custom-fallback') {
+    return (
+      <>
+        <ParamInput label="firstTurnWord（锚定词）" hint="晋升后首个 reasoning 命中该词即注入；任意自定义文本"
+          value={str('firstTurnWord')} onChange={(next) => set('firstTurnWord', next)} />
+        {Object.keys(value).some((key) => key !== 'firstTurnWord') && (
+          <JsonField label="params（其余参数 JSON）" value={value} onChange={(next) => { if (next !== undefined) onPatch(next) }} />
+        )}
+      </>
+    )
+  }
+  return <JsonField label="params（各层专用参数 JSON）" value={value} onChange={(next) => { if (next !== undefined) onPatch(next) }} />
+}
+
 /** 枚举下拉：值不在选项内时用回退值，保证表单始终可渲染。 */
 function OptionField(props: { label: string; hint?: string; value: string | undefined; options: readonly string[]; fallback: string; onChange: (value: string) => void; keepCurrent?: boolean }): ReactNode {
   const options = props.keepCurrent === true ? selectOptions(props.options, props.value) : props.options.map((item) => ({ value: item, label: item }))
@@ -160,7 +251,7 @@ export function PromptConfigForm(props: { meta: EngineMeta; config: PromptConfig
         <textarea className={styles.configTextarea} value={(config.texts ?? []).join('\n')} spellCheck={false} onChange={(e) => { autoResizeTextarea(e); onPatch({ texts: e.target.value.split('\n').filter((line) => line.length > 0) }) }} />
       </span>
       <JsonField label="variables（模板变量 JSON）" value={config.variables as Record<string, unknown> | undefined} onChange={(value) => onPatch({ variables: value as Record<string, string> | undefined })} />
-      <JsonField label="params（各层专用参数 JSON）" value={config.params} onChange={(value) => onPatch({ params: value })} />
+      <StrategyParamsFields strategy={strategy} params={config.params} onPatch={(value) => onPatch({ params: value })} />
       <JsonField label="identity（幂等身份 JSON；留空使用默认）" value={config.identity as unknown as Record<string, unknown> | undefined} onChange={(value) => onPatch({ identity: value as unknown as { field: string; value: string } | undefined })} />
     </div>
   )
