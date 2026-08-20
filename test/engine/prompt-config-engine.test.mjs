@@ -179,7 +179,7 @@ test('createPromptConfigs 默认 layer=pre-step；未知 layer fail loud', () =>
 
 test('system-section 服务缺失时降级跳过，pre-step 提示词配置照常注入', async () => {
   const { step } = makeHarness(createPromptConfigs([
-    { id: 'sys-section', layer: 'system-section', strategy: 'static', text: 'SYS', position: 'after-all' },
+    { id: 'sys-section', layer: 'system-section', strategy: 'static', text: 'SYS' },
     { id: 'pre', layer: 'pre-step', strategy: 'static', text: 'PRE', position: 'after-all' },
   ]))
   const decision = await step(agent())
@@ -492,6 +492,21 @@ test('audience=subagent 的 pre-step 配置：仅子代理注入，主会话跳�
   assert.equal(delegated.messages[1].content[0].text, 'SUB')
 })
 
+test('audience=main 的 pre-step 配置：仅主会话注入，子代理跳过', async () => {
+  const { step } = makeHarness(createPromptConfigs([
+    { id: 'main-only', strategy: 'static', text: 'MAIN', position: 'after-all', audience: 'main' },
+  ]))
+  const main = await step(agent({ session: {
+    id: 'm1', header: { delegationDepth: 0 }, events: [],
+  } }))
+  assert.equal(main.messages.length, 2)
+  assert.equal(main.messages[1].content[0].text, 'MAIN')
+  const delegated = await step(agent({ session: {
+    id: 'sub2', header: { delegationDepth: 1 }, events: [],
+  } }))
+  assert.equal(delegated.messages.length, 1)
+})
+
 test('audience=subagent 的 agent-request 配置：仅子代理 patch，主会话透传', async () => {
   const { listeners } = makeWiredHarness([
     { id: 'req-only', layer: 'agent-request', strategy: 'static', audience: 'subagent', params: { patch: { maxTokens: 1234 } } },
@@ -502,6 +517,36 @@ test('audience=subagent 的 agent-request 配置：仅子代理 patch，主会�
   assert.deepEqual(await handler({ agent: mainAgent }, base), { provider: 'p', model: 'm', maxTokens: 1000 })
   const subAgent = { session: { header: { delegationDepth: 1 } }, options: { model: 'deepseek-v4-pro-8013' } }
   assert.deepEqual(await handler({ agent: subAgent }, base), { provider: 'p', model: 'm', maxTokens: 1234 })
+})
+
+test('audience=main 的 agent-request 配置：仅主会话 patch，子代理透传', async () => {
+  const { listeners } = makeWiredHarness([
+    { id: 'req-main', layer: 'agent-request', strategy: 'static', audience: 'main', params: { patch: { maxTokens: 5678 } } },
+  ])
+  const handler = listeners.get('agent/request')
+  const base = async () => ({ provider: 'p', model: 'm', maxTokens: 1000 })
+  const mainAgent = { session: { header: { delegationDepth: 0 } }, options: { model: 'deepseek-v4-pro-8013' } }
+  assert.deepEqual(await handler({ agent: mainAgent }, base), { provider: 'p', model: 'm', maxTokens: 5678 })
+  const subAgent = { session: { header: { delegationDepth: 1 } }, options: { model: 'deepseek-v4-pro-8013' } }
+  assert.deepEqual(await handler({ agent: subAgent }, base), { provider: 'p', model: 'm', maxTokens: 1000 })
+})
+
+test('层能力矩阵校验：矩阵 false 字段在对应层显式提供时 fail loud', () => {
+  assert.throws(
+    () => createPromptConfigs([{ id: 'bad', layer: 'llm-stream', audience: 'main' }]),
+    /layer "llm-stream" does not support field\(s\): audience/,
+  )
+  assert.throws(
+    () => createPromptConfigs([{ id: 'bad2', layer: 'system-section', modelScope: 'flash' }]),
+    /layer "system-section" does not support field\(s\): modelScope/,
+  )
+  assert.throws(
+    () => createPromptConfigs([{ id: 'bad3', layer: 'agent-request', position: 'after-user' }]),
+    /layer "agent-request" does not support field\(s\): position/,
+  )
+  // audience: null（UI 写回的「公用」）不算显式提供，应放行。
+  const ok = createPromptConfigs([{ id: 'ok', layer: 'llm-stream', audience: null }])
+  assert.equal(ok[0].audience, null)
 })
 
 test('createPromptConfigs 对未知 strategy 配置 fail loud', () => {

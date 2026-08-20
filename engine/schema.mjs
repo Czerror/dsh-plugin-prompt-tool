@@ -128,7 +128,7 @@ export function getEngineMeta() {
     positions: [...KNOWN_POSITIONS].sort(),
     dedupes: [...KNOWN_DEDUPES].sort(),
     promotions: [...KNOWN_PROMOTIONS].sort(),
-  audienceModes: [...KNOWN_AUDIENCES],
+  audienceModes: [...KNOWN_AUDIENCES].sort(),
     modelScopes: [...KNOWN_MODEL_SCOPES].sort(),
     roles: [...KNOWN_ROLES].sort(),
     mergeModes: [...KNOWN_MERGE_MODES].sort(),
@@ -166,6 +166,13 @@ export function createPromptConfigs(specs, options = {}) {
     const layer = spec.layer ?? 'pre-step'
     if (!KNOWN_LAYERS.has(layer)) {
       throw new TypeError(`${name}: ${label} unknown layer ${JSON.stringify(layer)} — known layers: ${[...KNOWN_LAYERS].sort().join(', ')}`)
+    }
+    // 层能力矩阵同时是引擎校验源：矩阵标记 false 的字段在对应层不生效，
+    // 显式提供时 fail loud（UI 表单已按矩阵隐藏，此处兜底手写配置）。
+    const restricted = ['position', 'dedupe', 'promotion', 'audience', 'modelScope', 'merge', 'role']
+      .filter((field) => LAYER_FIELD_POLICIES[layer][field] === false && spec[field === 'merge' ? 'mergeMode' : field] != null)
+    if (restricted.length > 0) {
+      throw new TypeError(`${name}: ${label} layer ${JSON.stringify(layer)} does not support field(s): ${restricted.join(', ')}`)
     }
     const position = spec.position ?? 'after-user'
     if (!KNOWN_POSITIONS.has(position)) {
