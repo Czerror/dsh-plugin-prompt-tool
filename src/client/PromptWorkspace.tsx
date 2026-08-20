@@ -753,7 +753,7 @@ function SkillsSettings(props: { store: PromptToolStore; api: IApiClient }): Rea
             {selected.size > 0 && <span className={ui.selectionCount}>已选 {selected.size}</span>}
             {selectableSkills.length > 0 && (
               <button type="button" className={ui.pillButton} onClick={toggleSelectAll}>
-                {allSelected ? '取消全选' : `全选（${selectableSkills.length}）`}
+                {allSelected ? '取消全选' : '全选'}
               </button>
             )}
             <button type="button" className={ui.pillButton} disabled={!selectionMode} onClick={() => batchSet(true)}>批量启用</button>
