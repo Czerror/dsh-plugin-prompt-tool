@@ -147,98 +147,77 @@ function AgentRequestSwitches(props: { store: PromptToolStore }): ReactNode {
   )
 }
 
-/** 子代理设置：模型相关（服务商/模型名/人设）折叠进卡片；工具集与深度平铺。 */
-function SubagentSettings(props: { store: PromptToolStore }): ReactNode {
+/** 子代理参数卡片（模型 + 工具与深度）：主对话页与子代理页共用（全链路同一配置源）。 */
+function SubagentCards(props: { store: PromptToolStore }): ReactNode {
   const { store } = props
   const fields = store.fields
-  const [modelExpanded, setModelExpanded] = useState(false)
   const providerOptions = ['', ...store.deepseekProviders, 'deepseek-official']
   const modelOptions = ['', 'deepseek-v4-flash', 'deepseek-v4-pro']
   const maxDepthOptions = ['', 'provider-managed', '0', '1', '2', '3', '5']
   const withCurrent = (options: string[], current: string): string[] =>
     current.length > 0 && !options.includes(current) ? [...options, current] : options
   const active = fields.subagentModelProvider.length > 0 && fields.subagentModelName.length > 0
-  const detected = store.deepseekProviders.length > 0
   return (
-    <section className={ui.section} aria-label="子代理设置">
-      <div className={ui.skillStatusRow} aria-label="子代理路由状态">
-        <span className={clsx(ui.skillStatusChip, detected ? ui.skillStatusModel : ui.skillStatusOff)}>
-          <i className={ui.skillStatusDot} aria-hidden="true" />
-          {detected ? `已检测到模型路由：${store.deepseekProviders.join('、')}` : '未检测到模型路由'}
-        </span>
-      </div>
-      <article className={clsx(ui.configCard, modelExpanded && ui.configCardOpen)}>
-        <header className={ui.configHeader}>
-          <button type="button" className={ui.configToggle} aria-expanded={modelExpanded} onClick={() => setModelExpanded((open) => !open)}>
-            <span className={ui.configTitle}>
-              <span className={ui.configName}>子代理模型</span>
-              <span className={ui.configMeta}>{active ? '固定模型路由已设置' : '未设置：继承主会话模型'}</span>
+    <>
+      <CollapsibleCard id="pt-subagent-model" title="子代理模型" meta={active ? '固定模型路由已设置' : '未设置：继承主会话模型'}>
+        <div className={ui.rowGroup}>
+          <div className={ui.settingRowStack}>
+            <span className={ui.settingCopy}>
+              <strong>模型服务商</strong>
+              <small>调用方未显式指定 provider 时自动补入；检测到 DeepSeek 路由时可直接选择，未检测到可手动选择 deepseek-official。</small>
             </span>
-            <IconChevronDownOutline14 className={clsx(ui.chevron, modelExpanded && ui.chevronOpen)} />
-          </button>
-        </header>
-        {modelExpanded && (
-          <div className={ui.configForm}>
-            <div className={ui.rowGroup}>
-              <div className={ui.settingRowStack}>
-                <span className={ui.settingCopy}>
-                  <strong>模型服务商</strong>
-                  <small>调用方未显式指定 provider 时自动补入；检测到 DeepSeek 路由时可直接选择，未检测到可手动选择 deepseek-official。</small>
-                </span>
-                <select
-                  className={ui.configInput}
-                  aria-label="模型服务商"
-                  value={fields.subagentModelProvider}
-                  disabled={!fields.writePreset}
-                  onChange={(event) => {
-                    store.patch({ subagentModelProvider: event.target.value })
-                    void store.persistParamOverrides()
-                  }}
-                >
-                  {withCurrent(providerOptions, fields.subagentModelProvider).map((item) => (
-                    <option key={item} value={item}>{item.length > 0 ? item : '（不设置）'}</option>
-                  ))}
-                </select>
-              </div>
-            </div>
-            <div className={ui.rowGroup}>
-              <div className={ui.settingRowStack}>
-                <span className={ui.settingCopy}>
-                  <strong>模型名</strong>
-                  <small>调用方未显式指定 model 时自动补入；例如 deepseek-v4-flash。</small>
-                </span>
-                <select
-                  className={ui.configInput}
-                  aria-label="模型名"
-                  value={fields.subagentModelName}
-                  disabled={!fields.writePreset}
-                  onChange={(event) => {
-                    store.patch({ subagentModelName: event.target.value })
-                    void store.persistParamOverrides()
-                  }}
-                >
-                  {withCurrent(modelOptions, fields.subagentModelName).map((item) => (
-                    <option key={item} value={item}>{item.length > 0 ? item : '（不设置）'}</option>
-                  ))}
-                </select>
-              </div>
-            </div>
-            <div className={ui.rowGroup}>
-              <label className={ui.textBlock}>
-                <span className={ui.settingCopy}><strong>子代理独立人设</strong><small>子代理 persona（per-child shadow）；留空 = 固定模型路由时回退主对话快速模型人设，两者都空 = 继承主会话。失焦保存。</small></span>
-                <textarea
-                  className={ui.firstTurnInput}
-                  value={fields.subagentPersona}
-                  disabled={!fields.writePreset}
-                  onChange={(event) => { autoResizeTextarea(event); store.patch({ subagentPersona: event.target.value }) }}
-                  onBlur={() => void store.persistParamOverrides()}
-                  spellCheck={false}
-                />
-              </label>
-            </div>
+            <select
+              className={ui.configInput}
+              aria-label="模型服务商"
+              value={fields.subagentModelProvider}
+              disabled={!fields.writePreset}
+              onChange={(event) => {
+                store.patch({ subagentModelProvider: event.target.value })
+                void store.persistParamOverrides()
+              }}
+            >
+              {withCurrent(providerOptions, fields.subagentModelProvider).map((item) => (
+                <option key={item} value={item}>{item.length > 0 ? item : '（不设置）'}</option>
+              ))}
+            </select>
           </div>
-        )}
-      </article>
+        </div>
+        <div className={ui.rowGroup}>
+          <div className={ui.settingRowStack}>
+            <span className={ui.settingCopy}>
+              <strong>模型名</strong>
+              <small>调用方未显式指定 model 时自动补入；例如 deepseek-v4-flash。</small>
+            </span>
+            <select
+              className={ui.configInput}
+              aria-label="模型名"
+              value={fields.subagentModelName}
+              disabled={!fields.writePreset}
+              onChange={(event) => {
+                store.patch({ subagentModelName: event.target.value })
+                void store.persistParamOverrides()
+              }}
+            >
+              {withCurrent(modelOptions, fields.subagentModelName).map((item) => (
+                <option key={item} value={item}>{item.length > 0 ? item : '（不设置）'}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+        <div className={ui.rowGroup}>
+          <label className={ui.textBlock}>
+            <span className={ui.settingCopy}><strong>子代理独立人设</strong><small>子代理 persona（per-child shadow）；留空 = 固定模型路由时回退主对话快速模型人设，两者都空 = 继承主会话。失焦保存。</small></span>
+            <textarea
+              className={ui.firstTurnInput}
+              value={fields.subagentPersona}
+              disabled={!fields.writePreset}
+              onChange={(event) => { autoResizeTextarea(event); store.patch({ subagentPersona: event.target.value }) }}
+              onBlur={() => void store.persistParamOverrides()}
+              spellCheck={false}
+            />
+          </label>
+        </div>
+      </CollapsibleCard>
       <CollapsibleCard id="pt-subagent-tools" title="子代理工具与深度" meta="工具集白名单/黑名单 + 递归深度">
         <TagInput id="pt-subagent-tool-allow" label="子代理工具集白名单" hint="toolFilter.allow；回车或逗号添加标签，× 移除；留空 = 不限制。每次增删立即保存。"
           value={fields.subagentToolFilterAllow} placeholder="read, write, glob" disabled={!fields.writePreset}
@@ -271,6 +250,23 @@ function SubagentSettings(props: { store: PromptToolStore }): ReactNode {
           </div>
         </div>
       </CollapsibleCard>
+    </>
+  )
+}
+
+/** 子代理设置页：路由状态 + 子代理参数卡片（模型 / 工具与深度）。 */
+function SubagentSettings(props: { store: PromptToolStore }): ReactNode {
+  const { store } = props
+  const detected = store.deepseekProviders.length > 0
+  return (
+    <section className={ui.section} aria-label="子代理设置">
+      <div className={ui.skillStatusRow} aria-label="子代理路由状态">
+        <span className={clsx(ui.skillStatusChip, detected ? ui.skillStatusModel : ui.skillStatusOff)}>
+          <i className={ui.skillStatusDot} aria-hidden="true" />
+          {detected ? `已检测到模型路由：${store.deepseekProviders.join('、')}` : '未检测到模型路由'}
+        </span>
+      </div>
+      <SubagentCards store={store} />
     </section>
   )
 }
@@ -313,6 +309,7 @@ function FeatureSettings(props: { store: PromptToolStore }): ReactNode {
         value={fields.allowKinds} placeholder="skill-invocation, near-anchor, router-guide" disabled={!fields.writePreset}
         onChange={(value) => store.patch({ allowKinds: value })}
         onCommit={() => void store.persistParamOverrides()} />
+      <SubagentCards store={store} />
       <PromptConfigsEditor
         meta={store.meta}
         configs={fields.promptConfigs}
