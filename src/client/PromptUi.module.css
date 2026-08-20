@@ -700,6 +700,9 @@
 .configTextarea {
   width: 100%;
   min-height: 72px;
+  /* 随内容自适应拉高（长文本不再挤在小编辑框）；resize: vertical 仍可手动覆盖。 */
+  field-sizing: content;
+  max-height: 60vh;
   box-sizing: border-box;
   font-family: var(--ds-font-family-code, ui-monospace, monospace);
   font-size: 12px;

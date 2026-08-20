@@ -2,7 +2,7 @@
  * 单条提示词配置卡片 + 编辑表单（独立文件：
  * 打破 PromptConfigsEditor ⇄ PromptConfigList 的循环 import）。
  */
-import { cloneElement, isValidElement, useEffect, useId, useState, type ReactElement, type ReactNode } from 'react'
+import { cloneElement, isValidElement, useEffect, useId, useState, type ChangeEvent, type ReactElement, type ReactNode } from 'react'
 import clsx from 'clsx'
 import { IconChevronDownOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
 import styles from './PromptUi.module.css'
@@ -10,6 +10,14 @@ import styles from './PromptUi.module.css'
 import type { EngineMeta, LayerFieldPolicy, PromptConfigDraft } from './prompt-tool-types.ts'
 
 export type { PromptConfigDraft, LayerFieldPolicy } from './prompt-tool-types.ts'
+
+/** textarea 随内容自适应高度（field-sizing 的 JS 兜底：不支持的内核手动调整）。 */
+function autoResizeTextarea(event: ChangeEvent<HTMLTextAreaElement>): void {
+  const el = event.currentTarget
+  if (typeof CSS !== 'undefined' && typeof CSS.supports === 'function' && CSS.supports('field-sizing', 'content')) return
+  el.style.height = 'auto'
+  el.style.height = `${el.scrollHeight}px`
+}
 
 /** sourceKind / form 是少量固定语义值，用下拉选择；引擎不设枚举，因此额外保留当前值。 */
 export const SOURCE_KINDS = ['', 'plugin', 'instruction-hint', 'skill-catalog', 'env-facts'] as const
@@ -84,7 +92,7 @@ export function JsonField(props: { label: string; value: Record<string, unknown>
         aria-label={props.label}
         value={text}
         spellCheck={false}
-        onChange={(e) => setText(e.target.value)}
+        onChange={(e) => { autoResizeTextarea(e); setText(e.target.value) }}
         onBlur={commit}
       />
     </span>
@@ -155,11 +163,11 @@ export function PromptConfigForm(props: { meta: EngineMeta; config: PromptConfig
       </div>
       <span className={styles.configFieldStack}>
         <span className={styles.configFieldLabel}>text（注入文本；空 = 不注入）</span>
-        <textarea className={styles.configTextarea} value={config.text ?? ''} spellCheck={false} onChange={(e) => onPatch({ text: e.target.value })} />
+        <textarea className={styles.configTextarea} value={config.text ?? ''} spellCheck={false} onChange={(e) => { autoResizeTextarea(e); onPatch({ text: e.target.value }) }} />
       </span>
       <span className={styles.configFieldStack}>
         <span className={styles.configFieldLabel}>texts（多段内容块，每行一段；text 为空时生效）</span>
-        <textarea className={styles.configTextarea} value={(config.texts ?? []).join('\n')} spellCheck={false} onChange={(e) => onPatch({ texts: e.target.value.split('\n').filter((line) => line.length > 0) })} />
+        <textarea className={styles.configTextarea} value={(config.texts ?? []).join('\n')} spellCheck={false} onChange={(e) => { autoResizeTextarea(e); onPatch({ texts: e.target.value.split('\n').filter((line) => line.length > 0) }) }} />
       </span>
       <JsonField label="variables（模板变量 JSON）" value={config.variables as Record<string, unknown> | undefined} onChange={(value) => onPatch({ variables: value as Record<string, string> | undefined })} />
       <JsonField label="params（各层专用参数 JSON）" value={config.params} onChange={(value) => onPatch({ params: value })} />
