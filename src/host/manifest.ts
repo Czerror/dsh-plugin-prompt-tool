@@ -219,12 +219,13 @@ export function renderEngineTokens(params: Record<string, unknown>): Record<stri
     SUBAGENT_FLASH: subagentFlashBlock,
     // 引擎默认与 context-gate 的 DEFAULT_ALLOW_KINDS 一致（单一默认源）；
     // 需要放行更多 kind 的预设（anchored）在 preset.yml 显式声明 allowKinds。
-    // 引擎默认与 context-gate 的 DEFAULT_ALLOW_KINDS 一致（单一默认源）；
-    // 需要放行更多 kind 的预设（anchored）在 preset.yml 显式声明 allowKinds。
-    // 兼容数组写法（YAML flow 序列化）与字符串写法（token 纯文本插入）。
-    ALLOW_KINDS: Array.isArray(params.allowKinds)
-      ? `[${params.allowKinds.map((item) => String(item)).join(', ')}]`
-      : asString(params.allowKinds, '[skill-invocation]'),
+    // allowKinds 未声明 = 不写行 → context-gate 走官方 pre-step 行为（不过滤）；
+    // 显式声明（anchored）才启用白名单门控。兼容数组与字符串写法。
+    ALLOW_KINDS: params.allowKinds === undefined
+      ? ''
+      : Array.isArray(params.allowKinds)
+        ? `[${params.allowKinds.map((item) => String(item)).join(', ')}]`
+        : asString(params.allowKinds),
     STR_REPLACE_EDITOR_MAX_OUTPUT_CHARS: editorMaxOutputChars,
   }
 }
@@ -362,15 +363,20 @@ export function assertCompositionArray(raw: string, spec: PresetSpec): unknown[]
  *   - token 内联时直接替换(用于布尔/字符串标量)。
  */
 export function renderTemplateVariables(raw: string, variables: Record<string, string>): string {
-  return raw.replace(/__([A-Z0-9_]+)__/g, (whole: string, key: string, offset: number): string => {
+  // 空值 token 独立成行（含 key: 前缀，如 `allowKinds: __ALLOW_KINDS__`）时先删除
+  // 整行，避免 YAML 空值残留（allowKinds 未声明时不得产生 `allowKinds:` null）。
+  let text = raw.replace(/^[ \t]*(?:[A-Za-z0-9_.-]+:[ \t]*)?__([A-Z0-9_]+)__[ \t]*\r?\n/gm, (whole: string, key: string): string =>
+    Object.prototype.hasOwnProperty.call(variables, key) && variables[key] === '' ? '' : whole)
+  return text.replace(/__([A-Z0-9_]+)__/g, (whole: string, key: string, offset: number): string => {
     if (!Object.prototype.hasOwnProperty.call(variables, key)) return whole
     const value = variables[key]!
     if (value === '') return ''
-    const lineStart = raw.lastIndexOf('\n', offset) + 1
-    const lineEndRaw = raw.indexOf('\n', offset)
-    const lineEnd = lineEndRaw < 0 ? raw.length : lineEndRaw
-    const prefix = raw.slice(lineStart, offset)
-    const rest = raw.slice(offset + whole.length, lineEnd)
+    // 注意：偏移量相对当前文本（空值行已删），行定位必须用同一文本。
+    const lineStart = text.lastIndexOf('\n', offset) + 1
+    const lineEndRaw = text.indexOf('\n', offset)
+    const lineEnd = lineEndRaw < 0 ? text.length : lineEndRaw
+    const prefix = text.slice(lineStart, offset)
+    const rest = text.slice(offset + whole.length, lineEnd)
     if (prefix.trim() === '' && rest.trim() === '') {
       // token 前的缩进仍保留在原文中,首行不再叠加;后续行按该缩进对齐。
       return value.split('\n').map((line, at) => (at === 0 ? line : (line.length > 0 ? prefix + line : ''))).join('\n')

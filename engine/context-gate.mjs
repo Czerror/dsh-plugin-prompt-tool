@@ -19,15 +19,14 @@
  *
  *  b. STEP MESSAGES (agent/pre-step): the waterfall payload carries the
  *     CLAIMED message batch (the inbox messages this step owns). While
- *     unpromoted, the gate keeps exactly the claimed messages plus a small
- *     kind allowlist, and strips everything any listener appended — skill
- *     catalog, AGENTS.md digest, time/tmux context, hooks, unknown
- *     third-party plugins — by DEFAULT, regardless of source identity. The
- *     default allowlist is `['skill-invocation']`: a user-initiated skill
- *     gesture is not an automatic injection, and stripping it would lose the
- *     skill content once the gesture scrolls out of the per-step claim.
- *     Durable history (compaction summaries included) never passes through
- *     this gate: it enters the request via the session surface, not the
+ *     unpromoted, the gate applies the `allowKinds` whitelist when declared
+ *     (claimed batch plus the listed kinds pass, everything any listener
+ *     appended is stripped). When `allowKinds` is UNCONFIGURED the pre-step
+ *     path performs no kind filtering — the official deepseek-harness
+ *     `agent/pre-step` default (claimed batch plus every injection passes);
+ *     the assembly path still blanks runtime-context contributions. Durable
+ *     history (compaction summaries included) never passes through this
+ *     gate: it enters the request via the session surface, not the
  *     pre-step waterfall.
  *
  * The phase is the same epoch-aware promotion machine the anchored presets
@@ -51,8 +50,10 @@
  *  - `enabled`: boolean, default true. `false` disables both interception
  *    paths (A/B testing without touching the row set).
  *  - `allowKinds`: message `source.kind` names allowed beyond the claimed
- *    batch, default ['skill-invocation']. An explicitly empty array keeps
- *    ONLY the claimed batch.
+ *    batch. UNCONFIGURED = official pre-step behavior (no kind filtering:
+ *    claimed batch plus every injection pass, matching deepseek-harness
+ *    `agent/pre-step` default). An explicitly empty array keeps ONLY the
+ *    claimed batch; a non-empty array is the whitelist gate.
  *  - `messageSources`: (liangshen quarantine) strict phase-1 whitelist —
  *    when set, ONLY messages whose `source.kind` is in the list pass the
  *    pre-step gate (claimed batch included), replacing the allowKinds
@@ -94,23 +95,16 @@ const ALLOWED_KEYS = new Set([
   'messageSources', 'deferredSources', 'deferredGraceSteps', 'instructionHint',
 ])
 
-/**
- * Message kinds allowed through the pre-step gate beyond the claimed batch.
- * A user-initiated skill gesture is the only default entry: it is not an
- * automatic injection (see the header note).
- */
-const DEFAULT_ALLOW_KINDS = ['skill-invocation']
-
 /** agent-instructions 注入消息里的参考文件行（hint 提取用）。 */
 const INSTRUCTION_FROM_RE = /(?:^|\n) *(?:Additional |Updated )?Instructions from: ([^\n]+)/g
 
 
 /**
- * Validate the kind allowlist. An explicitly empty array is meaningful: keep
- * ONLY the claimed batch, stripping even user skill gestures.
+ * Validate the kind allowlist. `undefined` = no kind filtering (official
+ * pre-step behavior); an explicitly empty array keeps ONLY the claimed batch.
  */
 function allowKindList(value, field) {
-  if (value === undefined) return new Set(DEFAULT_ALLOW_KINDS)
+  if (value === undefined) return undefined
   if (!Array.isArray(value) || value.some((item) => typeof item !== 'string' || item.length === 0)) {
     throw new TypeError(`${name}: ${field} must be an array of non-empty strings`)
   }
@@ -258,6 +252,8 @@ export function apply(ctx, config) {
         const kept = (decision.messages ?? []).filter((message) => messageSources.has(message?.source?.kind))
         return kept.length === decision.messages.length ? decision : { ...decision, messages: kept }
       }
+      // allowKinds 未声明 = 官方 pre-step 行为（不过滤注入消息，与 deepseek-harness 一致）。
+      if (allowKinds === undefined) return decision
       if (!Array.isArray(decision.messages)) return decision
       if (!Array.isArray(claimed)) return decision
       const baseline = new Set(claimed)

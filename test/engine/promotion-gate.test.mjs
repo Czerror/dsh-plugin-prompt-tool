@@ -287,9 +287,18 @@ test('context-gate：instructionHint 晋升后全文 dump 替换为一次性 hin
   assert.deepEqual(second.messages.map((m) => m.source.kind), ['user'], '后续 dump 静默丢弃')
 })
 
-test('context-gate：默认 allowKinds 语义回归（skill-invocation 放行）', async () => {
+test('context-gate：allowKinds 未声明时不过滤（对齐官方 pre-step 行为）', async () => {
   const { ctx, listeners } = makeCtx()
   applyContextGate(ctx, {})
+  const session = makeSession([])
+  const agent = makeAgent(session)
+  const decision = await preStepThrough(listeners, agent, [msg('skill-invocation', 'skill'), msg('agent-instructions', 'dump')])
+  assert.deepEqual(decision.messages.map((m) => m.source.kind), ['skill-invocation', 'agent-instructions'], '未声明=官方行为：注入全部保留')
+})
+
+test('context-gate：显式 allowKinds 白名单门控（只放行声明 kind）', async () => {
+  const { ctx, listeners } = makeCtx()
+  applyContextGate(ctx, { allowKinds: ['skill-invocation'] })
   const session = makeSession([])
   const agent = makeAgent(session)
   const decision = await preStepThrough(listeners, agent, [msg('skill-invocation', 'skill'), msg('agent-instructions', 'dump')])
