@@ -423,8 +423,9 @@ function FileEditor(props: { store: PromptToolStore; scope: 'preset' | 'agents' 
   )
 }
 
-function LayerConfigList(props: { store: PromptToolStore; layer: string }): ReactNode {
-  const { store, layer } = props
+/** 配置列表 + 新建模板：六层页按 layer 过滤，子代理页按 scope 过滤（subagent 只列子代理可见模板）。 */
+function ConfigListWithTemplates(props: { store: PromptToolStore; layer?: string; scope?: 'main' | 'subagent' }): ReactNode {
+  const { store, layer, scope } = props
   const [templates, setTemplates] = useState<PromptConfigTemplateEntry[]>([])
   const [templatePickerOpen, setTemplatePickerOpen] = useState(false)
   const loadTemplates = async () => {
@@ -453,6 +454,7 @@ function LayerConfigList(props: { store: PromptToolStore; layer: string }): Reac
         configs={store.fields.promptConfigs}
         savedConfigs={store.savedConfigs}
         layer={layer}
+        scope={scope}
         extraActions={
           <button type="button" className={ui.primaryPill} onClick={() => { setTemplatePickerOpen(true); void loadTemplates() }}>新建模板</button>
         }
@@ -461,7 +463,7 @@ function LayerConfigList(props: { store: PromptToolStore; layer: string }): Reac
         onNotice={store.showNotice}
       />
       {templatePickerOpen && (
-        <TemplatePicker templates={templates} layer={layer} onPick={pickTemplate} onClose={() => setTemplatePickerOpen(false)} />
+        <TemplatePicker templates={templates} layer={layer} subagentScope={scope === 'subagent'} onPick={pickTemplate} onClose={() => setTemplatePickerOpen(false)} />
       )}
     </>
   )
@@ -473,15 +475,7 @@ function SubagentPage(props: { store: PromptToolStore }): ReactNode {
   return (
     <>
       <SubagentSettings store={store} />
-      <PromptConfigList
-        meta={store.meta}
-        configs={store.fields.promptConfigs}
-        savedConfigs={store.savedConfigs}
-        scope="subagent"
-        onPatchConfigs={(configs) => store.patch({ promptConfigs: configs })}
-        onSaveConfigs={(configs) => store.persistConfigs(configs)}
-        onNotice={store.showNotice}
-      />
+      <ConfigListWithTemplates store={store} scope="subagent" />
     </>
   )
 }
@@ -1049,7 +1043,7 @@ export function PromptWorkspace(props: PromptWorkspaceProps): ReactNode {
                       {layerPage === 'tool-pipeline' && (isAnchoredTemplate
                         ? <ToolPipelineSwitches store={store} />
                         : <p className={ui.readOnly} role="status">当前预设模板非 anchored，工具管线层 anchored 专属开关已隐藏。</p>)}
-                      <LayerConfigList store={store} layer={layerPage} />
+                      <ConfigListWithTemplates store={store} layer={layerPage} />
                     </>
                   )}
                 </>
