@@ -11,7 +11,7 @@ import {
 } from './prompt-tool-store.ts'
 import type { SkillCatalogEntry } from './prompt-tool-bridge.ts'
 import { PromptConfigList } from './PromptConfigList.tsx'
-import type { PromptConfigDraft } from './PromptConfigsEditor.tsx'
+import { PromptConfigsEditor, type PromptConfigDraft } from './PromptConfigsEditor.tsx'
 import type { PromptToolWorkspaceController } from './workspace-controller.ts'
 import { PresetsPage } from './PresetsPage.tsx'
 import { TemplatePicker } from './TemplatePicker.tsx'
