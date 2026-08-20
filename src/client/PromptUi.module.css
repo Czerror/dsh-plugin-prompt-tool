@@ -553,6 +553,13 @@
 
 .toggleRow input[type='checkbox'],
 .choiceCard > input,
+.configEnable {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+}
+
 .configEnable > input {
   position: absolute;
   width: 1px;
