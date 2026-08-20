@@ -387,7 +387,7 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
     }).catch(() => {})
   }, [refreshRevision, settings, showNotice])
 
-  const persistSwitches = useCallback(() => enqueueSave(
+  const persistSwitches = useCallback((onSaved?: () => void) => enqueueSave(
     [
       { op: 'set', path: ['injectAgentsPrompt'], value: fieldsRef.current.injectAgentsPrompt },
       { op: 'set', path: ['usePtcMode'], value: fieldsRef.current.usePtcMode },
@@ -404,7 +404,10 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
       { op: 'set', path: ['writePreset'], value: fieldsRef.current.writePreset },
     ],
     undefined,
-    () => setSavedSwitches(snapshotSwitches(fieldsRef.current)),
+    () => {
+      setSavedSwitches(snapshotSwitches(fieldsRef.current))
+      onSaved?.()
+    },
   ), [enqueueSave])
 
   /** 参数类设置：写入生成目录 prompt-tool.overrides.yml（随预设隔离，重建保留）。 */
@@ -456,8 +459,11 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
   const toggle = useCallback((key: SwitchKey) => {
     patch({ [key]: !fieldsRef.current[key] })
     if (PARAM_SWITCH_KEYS.has(key)) void persistParamOverrides()
+    // writePreset 关闭/开启会重建或移除生成目录：保存后必须重新加载，
+    // 否则模块卡片仍显示旧配置（不刷新）。
+    else if (key === 'writePreset') persistSwitches(() => { void load() })
     else persistSwitches()
-  }, [patch, persistParamOverrides, persistSwitches])
+  }, [patch, persistParamOverrides, persistSwitches, load])
 
   const toggleBootstrapMaxTokens = useCallback(() => {
     const next = fieldsRef.current.bootstrapMaxTokens > 0 ? 0 : 256000

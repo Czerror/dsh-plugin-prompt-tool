@@ -308,8 +308,6 @@ function FeatureSettings(props: { store: PromptToolStore }): ReactNode {
     <section className={ui.section} aria-labelledby="pt-feature-settings">
       <div className={ui.sectionHeading}><div><h2 id="pt-feature-settings">主对话与全局</h2><p>主对话参数（快速模型人设、注入 kind 白名单）与全局开关（预设生成、AGENTS.md、路径与顺序）；所有修改立即写入并生效。</p></div></div>
       <div className={ui.rowGroup}>
-        <ToggleRow id="pt-write-preset" label="启用锚定预设" hint="预设生成总开关，作用于全部六个层级：开启时生成并刷新 ~/.dsh/.agent-presets/prompt-tool/；关闭时移除生成目录，各层锚定开关随之失效。"
-          checked={fields.writePreset} onChange={() => store.toggle('writePreset')} />
         <ToggleRow id="pt-write-agents" label="写入 ~/.dsh/AGENTS.md" hint="保持 AGENTS.md 的全局常驻注入；关闭后不再写入，已有文件保持原样。与六层注入无关，属于宿主常驻层。"
           checked={fields.writeAgents} onChange={() => store.toggle('writeAgents')} />
       </div>
