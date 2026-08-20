@@ -139,8 +139,7 @@ function EntrySwitches(props: { store: PromptToolStore }): ReactNode {
 function AgentRequestSwitches(props: { store: PromptToolStore }): ReactNode {
   const { store } = props
   return (
-    <section className={ui.section} aria-labelledby="pt-agent-request-switches">
-        <div className={ui.sectionHeading}><div><h2 id="pt-agent-request-switches">调用配置层开关</h2><p>作用于首轮请求配置，和本层提示词配置的 order / modelScope 语义一致。</p></div></div>
+    <section className={ui.section} aria-label="调用配置层开关">
       <BootstrapTokensRow store={store} />
     </section>
   )
@@ -288,8 +287,7 @@ function ToolPipelineSwitches(props: { store: PromptToolStore }): ReactNode {
   const { store } = props
   const fields = store.fields
   return (
-    <section className={ui.section} aria-labelledby="pt-tool-pipeline-switches">
-      <div className={ui.sectionHeading}><div><h2 id="pt-tool-pipeline-switches">工具管线层开关</h2><p>晋升后的 wire 工具目录形态，与本层 tools/* 提示词配置同级。</p></div></div>
+    <section className={ui.section} aria-label="工具管线层开关">
       <div className={ui.rowGroup}>
         <ToggleRow id="pt-use-ptc" label="使用 PTC 模式" hint="晋升后把 wire 切换为 Code Mode（单一 run_code），完整插件工具通过生成 SDK 调用；关闭时恢复原生完整工具目录。"
           checked={fields.usePtcMode} disabled={!fields.writePreset} onChange={() => store.toggle('usePtcMode')} />
