@@ -551,8 +551,6 @@
 
 .dragHandle:active { cursor: grabbing; transform: scale(.94); }
 
-.toggleRow input[type='checkbox'],
-.choiceCard > input,
 .configEnable {
   display: inline-flex;
   align-items: center;
@@ -560,6 +558,7 @@
   cursor: pointer;
 }
 
+.toggleRow input[type='checkbox'],
 .configEnable > input {
   position: absolute;
   width: 1px;
