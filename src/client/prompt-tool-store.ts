@@ -137,13 +137,9 @@ export interface PromptToolStore {
   deepseekProviders: string[]
   bootstrapTokensDraft: string
   skillsDirDraft: string
-  savedPromptText: string
-  savedAgentsText: string
   savedSwitches: SwitchSnapshot
   savedConfigs: PromptConfigDraft[]
   savedConfigsDir: string
-  savingPrompt: boolean
-  savingAgents: boolean
   savingSkillsDir: boolean
   fixingSkill: string | undefined
   notice: string
@@ -151,8 +147,6 @@ export interface PromptToolStore {
   load: () => Promise<Fields>
   showNotice: (kind: 'ok' | 'error', message: string) => void
   patch: (partial: Partial<Fields>) => void
-  savePrompt: () => void
-  saveAgents: () => void
   persistSwitches: () => void
   persistParamOverrides: () => Promise<void>
   persistConfigs: (configs: PromptConfigDraft[]) => void
@@ -170,10 +164,6 @@ export interface PromptToolStore {
   fixSkill: (folder: string) => void
   openSkillsDir: () => Promise<void>
   importPreset: (scope: 'preset' | 'agents', content: string) => Promise<void>
-  discardPrompt: () => void
-  discardAgents: () => void
-  dirtyPrompt: boolean
-  dirtyAgents: boolean
   dirtySwitches: boolean
   dirtyConfigs: boolean
   dirtyConfigsDir: boolean
@@ -238,14 +228,10 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
   const [meta, setMeta] = useState<EngineMeta>(EMPTY_META)
   const [bootstrapTokensDraft, setBootstrapTokensDraft] = useState(DEFAULT_BOOTSTRAP_DISPLAY)
   const [skillsDirDraft, setSkillsDirDraft] = useState('')
-  const [savedPromptText, setSavedPromptText] = useState('')
-  const [savedAgentsText, setSavedAgentsText] = useState('')
   const [savedSwitches, setSavedSwitches] = useState<SwitchSnapshot>(EMPTY_SWITCHES)
   const [savedConfigs, setSavedConfigs] = useState<PromptConfigDraft[]>([])
   const [savedConfigsDir, setSavedConfigsDir] = useState('')
   const [loading, setLoading] = useState(false)
-  const [savingPrompt, setSavingPrompt] = useState(false)
-  const [savingAgents, setSavingAgents] = useState(false)
   const [savingSkillsDir, setSavingSkillsDir] = useState(false)
   const [fixingSkill, setFixingSkill] = useState<string | undefined>(undefined)
   const [notice, setNotice] = useState('')
@@ -267,8 +253,6 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
     setFields(next)
     setBootstrapTokensDraft(next.bootstrapMaxTokens > 0 ? String(next.bootstrapMaxTokens) : DEFAULT_BOOTSTRAP_DISPLAY)
     setSkillsDirDraft(next.skillsDir)
-    setSavedPromptText(next.promptText)
-    setSavedAgentsText(next.agentsText)
     setSavedSwitches(snapshotSwitches(next))
     setSavedConfigs(next.promptConfigs)
     setSavedConfigsDir(next.promptConfigsDir)
@@ -301,13 +285,11 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
       if (seq !== loadSeqRef.current) return EMPTY_FIELDS
       if (presetContent.ok) {
         patch({ promptText: presetContent.value.content })
-        setSavedPromptText(presetContent.value.content)
       }
       const agentsContent = await bridgePost<{ content: string }>('/preset-content', { scope: 'agents' })
       if (seq !== loadSeqRef.current) return EMPTY_FIELDS
       if (agentsContent.ok) {
         patch({ agentsText: agentsContent.value.content })
-        setSavedAgentsText(agentsContent.value.content)
       }
       // 用户参数覆盖（生成目录 prompt-tool.overrides.yml；settings 不再承载参数）。
       const overridesRes = await bridgePost<{ overrides: Record<string, unknown> }>('/param-overrides', {})
@@ -383,20 +365,6 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
       }
     }).catch(() => {})
   }, [refreshRevision, settings, showNotice])
-
-  const savePrompt = useCallback(() => enqueueSave(
-    [{ op: 'set', path: ['promptText'], value: fieldsRef.current.promptText }],
-    'preset.md 已保存并生效',
-    () => setSavedPromptText(fieldsRef.current.promptText),
-    setSavingPrompt,
-  ), [enqueueSave])
-
-  const saveAgents = useCallback(() => enqueueSave(
-    [{ op: 'set', path: ['agentsText'], value: fieldsRef.current.agentsText }],
-    'AGENTS.md 已保存并生效',
-    () => setSavedAgentsText(fieldsRef.current.agentsText),
-    setSavingAgents,
-  ), [enqueueSave])
 
   const persistSwitches = useCallback(() => enqueueSave(
     [
@@ -552,10 +520,8 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
     if (res.ok) {
       if (scope === 'preset') {
         patch({ promptText: content })
-        setSavedPromptText(content)
       } else {
         patch({ agentsText: content })
-        setSavedAgentsText(content)
       }
       showNotice('ok', scope === 'preset' ? 'preset.md 已导入并生效' : 'AGENTS.md 已导入并生效')
       await load()
@@ -564,16 +530,11 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
     }
   }, [load, patch, showNotice])
 
-  const discardPrompt = useCallback(() => patch({ promptText: savedPromptText }), [patch, savedPromptText])
-  const discardAgents = useCallback(() => patch({ agentsText: savedAgentsText }), [patch, savedAgentsText])
-
   const currentSwitches = snapshotSwitches(fields)
-  const dirtyPrompt = fields.promptText !== savedPromptText
-  const dirtyAgents = fields.agentsText !== savedAgentsText
   const dirtySwitches = !switchesEqual(currentSwitches, savedSwitches)
   const dirtyConfigs = JSON.stringify(fields.promptConfigs) !== JSON.stringify(savedConfigs)
   const dirtyConfigsDir = fields.promptConfigsDir !== savedConfigsDir
-  const dirty = dirtyPrompt || dirtyAgents || dirtySwitches || dirtyConfigs || dirtyConfigsDir
+  const dirty = dirtySwitches || dirtyConfigs || dirtyConfigsDir
 
   return {
     fields,
@@ -582,13 +543,9 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
     deepseekProviders,
     bootstrapTokensDraft,
     skillsDirDraft,
-    savedPromptText,
-    savedAgentsText,
     savedSwitches,
     savedConfigs,
     savedConfigsDir,
-    savingPrompt,
-    savingAgents,
     savingSkillsDir,
     fixingSkill,
     notice,
@@ -596,8 +553,6 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
     load,
     showNotice,
     patch,
-    savePrompt,
-    saveAgents,
     persistSwitches,
     persistParamOverrides,
     persistConfigs,
@@ -615,10 +570,6 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
     fixSkill,
     openSkillsDir,
     importPreset,
-    discardPrompt,
-    discardAgents,
-    dirtyPrompt,
-    dirtyAgents,
     dirtySwitches,
     dirtyConfigs,
     dirtyConfigsDir,

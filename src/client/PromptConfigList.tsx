@@ -123,13 +123,13 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
     onNotice('ok', '已复制提示词配置（记得保存）')
   }
 
-  const renderCard = (config: PromptConfigDraft, forceOpen: boolean) => {
+  const renderCard = (config: PromptConfigDraft) => {
     const globalIndex = configs.indexOf(config)
     const layerIndices = configs.flatMap((candidate, index) =>
       (layer === undefined || layerOf(candidate) === layer) ? [index] : [],
     )
     const position = layerIndices.indexOf(globalIndex)
-    const isOpen = forceOpen || expanded === config.id
+    const isOpen = expanded === config.id
     return (
       <PromptConfigCard
         key={config.id}
@@ -137,7 +137,6 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
         config={config}
         expanded={isOpen}
         onToggleExpanded={() => {
-          if (forceOpen) return
           setExpanded(isOpen ? undefined : config.id)
         }}
         onToggleEnabled={(enabled) => patchAt(globalIndex, { enabled })}
@@ -177,7 +176,7 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
         <div className={styles.emptyState}><span className={styles.emptyGlyph} aria-hidden="true">⌁</span><div><h3>{layer === undefined ? '还没有自定义提示词配置' : '本层还没有自定义配置'}</h3><p>{layer === undefined ? '从上方模板插入一条，或从本地目录导入；默认四条内置配置不受影响。' : '请到主设置「提示词配置」从模板插入或从目录导入。'}</p></div></div>
       ) : (
         <div className={styles.configList}>
-          {visible.map((config) => renderCard(config, false))}
+          {visible.map((config) => renderCard(config))}
         </div>
       )}
 
