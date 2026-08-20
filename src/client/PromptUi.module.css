@@ -240,27 +240,6 @@
   border-bottom: 1px solid var(--dsw-alias-border-l1);
 }
 
-.templateAudiencePicker {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 10px 16px;
-  border-bottom: 1px solid var(--dsw-alias-border-l1);
-  font-size: 12px;
-}
-
-.templateAudiencePicker > div {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.templateAudiencePicker .pillButton {
-  height: 26px;
-  padding: 0 10px;
-  font-size: 12px;
-}
-
 .templateModalList {
   display: grid;
   gap: 4px;

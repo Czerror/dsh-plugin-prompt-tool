@@ -446,7 +446,7 @@ function ConfigListWithTemplates(props: { store: PromptToolStore; layer?: string
         onNotice={store.showNotice}
       />
       {templatePicker.open && (
-        <TemplatePicker templates={templatePicker.templates} layer={layer} audiencePicker={scope === 'subagent'} onPick={templatePicker.pickTemplate} onClose={templatePicker.closePicker} />
+        <TemplatePicker templates={templatePicker.templates} layer={layer} onPick={templatePicker.pickTemplate} onClose={templatePicker.closePicker} />
       )}
     </>
   )
