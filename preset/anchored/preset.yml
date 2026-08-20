@@ -188,26 +188,26 @@ params:
   firstTurnDeep: "Start your reasoning with the exact sentence: 'Let me think through the design before changing anything.'"
   firstTurnWord: we
   allowKinds: "[skill-invocation, near-anchor, router-guide]"
-  # ── 子代理 · 参数归类（作用域 × 维度；全部可选，缺省 = 官方默认 / 继承主会话）──
-  #   维度      preset.yml 键                         引擎渲染落点
-  #   模型      subagent.modelProvider / modelName    tool-subagent agentOptions{provider,model}
-  #   人设      subagent.persona                      tool-subagent persona
-  #             （显式 → 固定路由回退 fastModelPersona → 继承主会话）
-  #   工具集    subagent.toolFilter.allow / deny      tool-subagent toolFilter{allow,deny}
-  #   深度      subagent.maxDepth                     tool-subagent maxDepth
-  #             （0 禁止委派 / provider-managed / 正整数）
-  #   相位/注入 由 promptConfigs[].subagents/promotion/modelScope 与
-  #             moduleConfigs.*.includeSubagents 控制（主对话与子代理共用）
-  # 嵌套块由引擎合并入口拍平为扁平键（subagentModelProvider 等），
-  # 运行时/UI/overrides 继续用扁平键，两套表示等价。
-  subagent:
-    modelProvider: ""
-    modelName: ""
-    persona: ""
-    toolFilter:
-      allow: []
-      deny: []
-    maxDepth: ""
+# ── 子代理 · 参数归类（作用域 × 维度；全部可选，缺省 = 官方默认 / 继承主会话）──
+#   维度      preset.yml 键                         引擎渲染落点
+#   模型      modelProvider / modelName             tool-subagent agentOptions{provider,model}
+#   人设      persona                               tool-subagent persona
+#             （显式 → 固定路由回退 fastModelPersona → 继承主会话）
+#   工具集    toolFilter.allow / deny               tool-subagent toolFilter{allow,deny}
+#   深度      maxDepth                              tool-subagent maxDepth
+#             （0 禁止委派 / provider-managed / 正整数）
+#   相位/注入 由 promptConfigs[].subagents/promotion/modelScope 与
+#             moduleConfigs.*.includeSubagents 控制（主对话与子代理共用）
+# 本段由引擎合并入口拍平为扁平键（subagentModelProvider 等），
+# 运行时/UI/overrides 继续用扁平键，两套表示等价。
+subagent:
+  modelProvider: ""
+  modelName: ""
+  persona: ""
+  toolFilter:
+    allow: []
+    deny: []
+  maxDepth: ""
 promptConfigs:
   - id: near-anchor
     name: 首句锚点

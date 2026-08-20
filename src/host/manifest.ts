@@ -28,6 +28,9 @@ export interface PresetSpec {
   composition?: string
   /** 扁平参数:全部直读(true/false、数字、字符串),on/off 作为兼容写法。 */
   params?: Record<string, unknown>
+  /** 子代理参数（独立顶层段，与 params 平级）：嵌套块由 resolvePresetParams
+   *  拍平为扁平键（subagentModelProvider 等），运行时/UI/overrides 继续用扁平键。 */
+  subagent?: Record<string, unknown>
   /** 宿主层默认值(唯一入口):apply 时合并进 Config,settings 仍可覆盖。 */
   hostDefaults?: Record<string, unknown>
   /** 可选:模板自定义提示词配置覆盖(纯数据,不使用模板语法)。 */
@@ -158,9 +161,9 @@ function upperKey(key: string): string {
 }
 
 /**
- * 把嵌套作用域块（params.subagent）拍平为扁平键（subagentModelProvider 等）。
- * preset.yml 面向用户写嵌套（归类自文档化），运行时/UI/overrides/引擎渲染
- * 全部继续消费扁平键，两套表示在合并入口归一。
+ * 把子代理作用域块（preset.yml 顶层 subagent:）拍平为扁平键
+ * （subagentModelProvider 等）。preset.yml 面向用户写嵌套（归类自文档化），
+ * 运行时/UI/overrides/引擎渲染全部继续消费扁平键，两套表示在合并入口归一。
  */
 function flattenScopeParams(scope: string, block: Record<string, unknown>, out: Record<string, unknown>): void {
   for (const [key, value] of Object.entries(block)) {
@@ -177,11 +180,11 @@ function flattenScopeParams(scope: string, block: Record<string, unknown>, out: 
 export function resolvePresetParams(spec: PresetSpec, runtime: Record<string, unknown>): Record<string, unknown> {
   const params: Record<string, unknown> = {}
   for (const [key, value] of Object.entries(spec.params ?? {})) {
-    if (key === 'subagent' && value !== null && typeof value === 'object' && !Array.isArray(value)) {
-      flattenScopeParams('subagent', value as Record<string, unknown>, params)
-      continue
-    }
     params[key] = normalizeParam(value)
+  }
+  // 子代理参数独立顶层段（preset.yml 顶层 subagent:），拍平为 subagentXxx 扁平键。
+  if (spec.subagent !== null && typeof spec.subagent === 'object' && !Array.isArray(spec.subagent)) {
+    flattenScopeParams('subagent', spec.subagent as Record<string, unknown>, params)
   }
   for (const [key, value] of Object.entries(runtime)) {
     if (value !== undefined) params[key] = value

@@ -84,9 +84,10 @@ dsh --profile prompt-tool
   = minimal 完整 persona（plan-mode 段与 Flash 路由人设被抑制）；`false` = standard
   语义（plan-mode 与 Flash 路由人设生效）。`includeRuntimeContext: false` 为永久抑制
   运行时上下文（context-gate 的晋升后恢复失效），`true` 时由 context-gate 动态控制。
-  **参数归类分层**（作用域 × 维度）：preset.yml `params` 按「主对话 / 子代理」归类，
-  主对话运行时参数平铺（模型 agentOptions 由 dsh 全局配置，插件只读），子代理参数写
-  嵌套 `subagent:` 块（引擎合并入口拍平为扁平键，运行时/UI/overrides 两套表示等价）：
+  **参数归类分层**（作用域 × 维度）：preset.yml 顶层分段归类——`params` 为主对话
+  运行时参数（模型 agentOptions 由 dsh 全局配置，插件只读），子代理参数为独立顶层
+  `subagent:` 段（与 params 平级，查找不埋在主对话设置里；引擎合并入口拍平为扁平键，
+  运行时/UI/overrides 两套表示等价）：
 
   | 维度 | 主对话 | 子代理（preset.yml 嵌套键 → 引擎落点） |
   |---|---|---|

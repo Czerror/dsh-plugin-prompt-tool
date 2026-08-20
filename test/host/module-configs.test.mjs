@@ -53,16 +53,13 @@ test('moduleConfigs 未声明时返回原文（零开销）', () => {
 })
 
 test('resolvePresetParams 把嵌套 subagent 块拍平为扁平键（preset.yml 归类写法 ↔ 运行时扁平键等价）', () => {
-  const flat = resolvePresetParams({ id: 't', params: {
-    fastModelPersona: 'F',
-    subagent: {
+  const flat = resolvePresetParams({ id: 't', params: { fastModelPersona: 'F' }, subagent: {
       modelProvider: 'deepseek',
       modelName: 'deepseek-v4-flash-7013',
       persona: '子代理专用人设',
       toolFilter: { allow: ['read', 'glob'], deny: ['bash'] },
       maxDepth: 2,
-    },
-  } }, {})
+    } }, {})
   assert.equal(flat.subagentModelProvider, 'deepseek')
   assert.equal(flat.subagentModelName, 'deepseek-v4-flash-7013')
   assert.equal(flat.subagentPersona, '子代理专用人设')
@@ -70,15 +67,11 @@ test('resolvePresetParams 把嵌套 subagent 块拍平为扁平键（preset.yml 
   assert.deepEqual(flat.subagentToolFilterDeny, ['bash'])
   assert.equal(flat.subagentMaxDepth, 2)
   // 运行时扁平键优先于 preset.yml 嵌套默认值。
-  const overridden = resolvePresetParams({ id: 't', params: {
-    subagent: { modelProvider: 'preset-default', modelName: 'm1' },
-  } }, { subagentModelProvider: 'runtime-wins' })
+  const overridden = resolvePresetParams({ id: 't', subagent: { modelProvider: 'preset-default', modelName: 'm1' } }, { subagentModelProvider: 'runtime-wins' })
   assert.equal(overridden.subagentModelProvider, 'runtime-wins')
   assert.equal(overridden.subagentModelName, 'm1')
   // 空默认值不渲染（renderEngineTokens 对空串/空数组跳过）。
-  const empty = resolvePresetParams({ id: 't', params: {
-    subagent: { modelProvider: '', modelName: '', persona: '', toolFilter: { allow: [], deny: [] }, maxDepth: '' },
-  } }, {})
+  const empty = resolvePresetParams({ id: 't', subagent: { modelProvider: '', modelName: '', persona: '', toolFilter: { allow: [], deny: [] }, maxDepth: '' } }, {})
   assert.equal(empty.subagentModelProvider, '')
   assert.deepEqual(empty.subagentToolFilterAllow, [])
   assert.equal(empty.subagentMaxDepth, '')
