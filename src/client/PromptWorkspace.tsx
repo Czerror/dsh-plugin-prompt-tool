@@ -145,8 +145,8 @@ function AgentRequestSwitches(props: { store: PromptToolStore }): ReactNode {
   )
 }
 
-/** 模型与委派参数卡片（模型设置 + 工具与深度）：主对话页与子代理页共用（全链路同一配置源，缺省继承宿主默认）。 */
-function ModelToolCards(props: { store: PromptToolStore }): ReactNode {
+/** 模型与委派参数卡片（模型设置 + 工具与深度）：主对话页与子代理页共用同一配置源（缺省继承宿主默认）；人设按作用域分别显示（main=主对话自定义、subagent=子代理自定义）。 */
+function ModelToolCards(props: { store: PromptToolStore; scope: 'main' | 'subagent' }): ReactNode {
   const { store } = props
   const fields = store.fields
   const providerOptions = ['', ...store.providers]
@@ -202,32 +202,36 @@ function ModelToolCards(props: { store: PromptToolStore }): ReactNode {
             </select>
           </div>
         </div>
-        <div className={ui.rowGroup}>
-          <label className={ui.textBlock}>
-            <span className={ui.settingCopy}><strong>主对话自定义模型人设</strong><small>主对话命中快速模型（Flash 档）时替换人设（router-first-turn）；子代理自定义模型人设未设置时回退使用。留空 = 模板默认；失焦保存。</small></span>
-            <textarea
-              className={ui.firstTurnInput}
-              value={fields.mainPersona}
-              disabled={!fields.writePreset}
-              onChange={(event) => { autoResizeTextarea(event); store.patch({ mainPersona: event.target.value }) }}
-              onBlur={() => void store.persistParamOverrides()}
-              spellCheck={false}
-            />
-          </label>
-        </div>
-        <div className={ui.rowGroup}>
-          <label className={ui.textBlock}>
-            <span className={ui.settingCopy}><strong>子代理自定义模型人设</strong><small>subagentPersona（per-child shadow）；留空 = 固定模型路由时回退主对话自定义模型人设，两者都空 = 继承主会话。失焦保存。</small></span>
-            <textarea
-              className={ui.firstTurnInput}
-              value={fields.subagentPersona}
-              disabled={!fields.writePreset}
-              onChange={(event) => { autoResizeTextarea(event); store.patch({ subagentPersona: event.target.value }) }}
-              onBlur={() => void store.persistParamOverrides()}
-              spellCheck={false}
-            />
-          </label>
-        </div>
+        {props.scope === 'main' && (
+          <div className={ui.rowGroup}>
+            <label className={ui.textBlock}>
+              <span className={ui.settingCopy}><strong>主对话自定义模型人设</strong><small>主对话命中快速模型（Flash 档）时替换人设（router-first-turn）；子代理未单独设置时回退使用。留空 = 模板默认；失焦保存。</small></span>
+              <textarea
+                className={ui.firstTurnInput}
+                value={fields.mainPersona}
+                disabled={!fields.writePreset}
+                onChange={(event) => { autoResizeTextarea(event); store.patch({ mainPersona: event.target.value }) }}
+                onBlur={() => void store.persistParamOverrides()}
+                spellCheck={false}
+              />
+            </label>
+          </div>
+        )}
+        {props.scope === 'subagent' && (
+          <div className={ui.rowGroup}>
+            <label className={ui.textBlock}>
+              <span className={ui.settingCopy}><strong>子代理自定义模型人设</strong><small>subagentPersona（per-child shadow）；留空 = 固定模型路由时回退主对话自定义模型人设，两者都空 = 继承主会话。失焦保存。</small></span>
+              <textarea
+                className={ui.firstTurnInput}
+                value={fields.subagentPersona}
+                disabled={!fields.writePreset}
+                onChange={(event) => { autoResizeTextarea(event); store.patch({ subagentPersona: event.target.value }) }}
+                onBlur={() => void store.persistParamOverrides()}
+                spellCheck={false}
+              />
+            </label>
+          </div>
+        )}
       </CollapsibleCard>
       <CollapsibleCard id="pt-delegation-tools" title="工具与深度" meta="工具集白名单/黑名单 + 注入 kind 白名单 + 递归深度">
         <TagInput id="pt-tool-filter-allow" label="工具集白名单" hint="toolFilter.allow（委派子代理）；回车或逗号添加标签，× 移除；留空 = 不限制。每次增删立即保存。"
@@ -295,7 +299,7 @@ function SubagentSettings(props: { store: PromptToolStore }): ReactNode {
   return (
     <section className={ui.section} aria-label="子代理设置">
       <ModelRouteStatus store={store} />
-      <ModelToolCards store={store} />
+      <ModelToolCards store={store} scope="subagent" />
     </section>
   )
 }
@@ -321,7 +325,7 @@ function FeatureSettings(props: { store: PromptToolStore }): ReactNode {
   return (
     <section className={ui.section} aria-label="主对话与全局">
       <ModelRouteStatus store={store} />
-      <ModelToolCards store={store} />
+      <ModelToolCards store={store} scope="main" />
       <PromptConfigsEditor
         meta={store.meta}
         configs={fields.promptConfigs}
