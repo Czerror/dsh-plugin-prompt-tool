@@ -204,12 +204,20 @@ export function renderEngineTokens(params: Record<string, unknown>): Record<stri
   const bootstrap = typeof params.bootstrapMaxTokens === 'number' && params.bootstrapMaxTokens > 0
     ? `bootstrapMaxTokens: ${params.bootstrapMaxTokens}`
     : ''
+  // 官方 minimal 的 str-replace-editor 默认 maxOutputChars=16000；
+  // params.strReplaceEditorMaxOutputChars 可调（token 默认渲染官方值）。
+  const editorMaxOutputChars = typeof params.strReplaceEditorMaxOutputChars === 'number'
+    && Number.isSafeInteger(params.strReplaceEditorMaxOutputChars)
+    && params.strReplaceEditorMaxOutputChars > 0
+    ? String(params.strReplaceEditorMaxOutputChars)
+    : '16000'
   return {
     USE_PTC_MODE: params.usePtcMode === true ? 'true' : 'false',
     BOOTSTRAP_MAX_TOKENS: bootstrap,
     FLASH_PERSONA: JSON.stringify(flashPersona).slice(1, -1),
     SUBAGENT_FLASH: subagentFlashBlock,
     ALLOW_KINDS: asString(params.allowKinds, '[skill-invocation, near-anchor, router-guide]'),
+    STR_REPLACE_EDITOR_MAX_OUTPUT_CHARS: editorMaxOutputChars,
   }
 }
 

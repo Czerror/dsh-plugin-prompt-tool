@@ -60,3 +60,49 @@ test('官方格式预设：无 id 回退目录名，无 modules/composition 回�
     rmSync(home, { recursive: true, force: true })
   }
 })
+
+/** str-replace-editor 参数化：params.strReplaceEditorMaxOutputChars 覆盖官方默认 16000。 */
+test('官方 str-replace-editor 行：params 覆盖 maxOutputChars 渲染生效', () => {
+  const home = mkdtempSync(join(tmpdir(), 'pt-editor-param-'))
+  try {
+    const presetDir = join(home, 'presets', 'editor-param')
+    mkdirSync(presetDir, { recursive: true })
+    writeFileSync(join(presetDir, 'preset.yml'), [
+      'id: editor-param',
+      'name: 编辑器参数覆盖',
+      'modules:',
+      '  - str-replace-editor',
+      'params:',
+      '  strReplaceEditorMaxOutputChars: 32000',
+      '',
+    ].join('\n'), 'utf8')
+
+    const script = `
+      import { readFileSync } from 'node:fs'
+      import { join } from 'node:path'
+      const { writePreset } = await import('./lib/index.mjs')
+      const gen = join(process.env.DSH_HOME, '.agent-presets', 'prompt-tool')
+      writePreset('PROMPT', {
+        presetDir: gen, presetTemplate: 'editor-param', presetOrder: 1,
+        firstTurnAnchor: false, firstTurnText: '', firstTurnCustom: false,
+        guideText: '', guideCustom: false, injectPrompt: true,
+        subagentFlashProvider: '', subagentFlashModel: '',
+        bootstrapMaxTokens: 0, usePtcMode: true,
+        promptConfigs: [], promptConfigsDir: '',
+      })
+      const cordis = readFileSync(join(gen, 'agent.cordis.yml'), 'utf8')
+      if (!cordis.includes('maxOutputChars: 32000')) throw new Error('params 覆盖未生效: ' + cordis)
+      if (/__[A-Z0-9_]+__/.test(cordis)) throw new Error('存在未解析 token')
+      console.log('OK')
+    `
+    const res = spawnSync(process.execPath, ['--input-type=module', '-e', script], {
+      cwd: rootDir,
+      env: { ...process.env, DSH_HOME: home },
+      encoding: 'utf8',
+    })
+    if (res.status !== 0) throw new Error(`probe failed: ${res.stderr || res.stdout}`)
+    assert.match(res.stdout, /OK/)
+  } finally {
+    rmSync(home, { recursive: true, force: true })
+  }
+})
