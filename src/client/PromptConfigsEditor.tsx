@@ -25,9 +25,6 @@ interface TemplatesResult {
 export interface PromptConfigsEditorProps {
   meta: EngineMeta
   configs: PromptConfigDraft[]
-  /** 外部聚焦请求（Anchored Standard 模块行「编辑」跳转）。 */
-  focusId?: string
-  focusTick?: number
   configsDir: string
   savedConfigs: PromptConfigDraft[]
   savedConfigsDir: string
@@ -119,8 +116,6 @@ export function PromptConfigsEditor(props: PromptConfigsEditorProps): ReactNode 
         configs={props.configs}
         savedConfigs={props.savedConfigs}
         extraActions={<button type="button" className={styles.primaryPill} onClick={openTemplatePicker}>新建模板</button>}
-        focusId={props.focusId}
-        focusTick={props.focusTick}
         onPatchConfigs={props.onPatchConfigs}
         onSaveConfigs={props.onSaveConfigs}
         onNotice={props.onNotice}

@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { bridgePost, errorMessage } from './prompt-tool-bridge.ts'
 import { PromptConfigCard } from './PromptConfigCard.tsx'
 import type { EngineMeta, PromptConfigDraft, ValidationErrorEntry } from './prompt-tool-types.ts'
@@ -17,10 +17,6 @@ export interface PromptConfigListProps {
   savedConfigs: PromptConfigDraft[]
   /** 传入 layer 时只展示该层配置；不传展示全部配置。 */
   layer?: string
-  /** 外部聚焦请求：变化时展开对应卡片并滚动到可视区（来自 Anchored Standard 模块行的编辑入口）。 */
-  focusId?: string
-  /** 聚焦请求序号：同 id 重复请求时递增以重新触发（依赖数组含此值）。 */
-  focusTick?: number
   /** 列表工具栏追加操作（如「新建模板」）。 */
   extraActions?: ReactNode
   onPatchConfigs: (configs: PromptConfigDraft[]) => void
@@ -53,19 +49,11 @@ function moveWithinLayer(
 
 /** 共享的提示词配置列表：校验、保存、脏检测、复制、删除、层内移动。 */
 export function PromptConfigList(props: PromptConfigListProps): ReactNode {
-  const { meta, configs, savedConfigs, layer, focusId, focusTick, extraActions, onPatchConfigs, onSaveConfigs, onNotice } = props
+  const { meta, configs, savedConfigs, layer, extraActions, onPatchConfigs, onSaveConfigs, onNotice } = props
   const [expanded, setExpanded] = useState<string | undefined>(undefined)
   const [errors, setErrors] = useState<ValidationErrorEntry[]>([])
   const [validating, setValidating] = useState(false)
   const [saving, setSaving] = useState(false)
-
-  useEffect(() => {
-    if (focusId === undefined) return
-    setExpanded(focusId)
-    requestAnimationFrame(() => {
-      document.getElementById(`pt-config-card-${focusId}`)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
-    })
-  }, [focusId, focusTick])
 
   const visible = layer === undefined
     ? configs

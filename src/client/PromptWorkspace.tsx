@@ -331,16 +331,14 @@ function FileEditor(props: { store: PromptToolStore; scope: 'preset' | 'agents' 
   )
 }
 
-function LayerConfigList(props: { store: PromptToolStore; layer: string; focusId?: string; focusTick?: number }): ReactNode {
-  const { store, layer, focusId, focusTick } = props
+function LayerConfigList(props: { store: PromptToolStore; layer: string }): ReactNode {
+  const { store, layer } = props
   return (
     <PromptConfigList
       meta={store.meta}
       configs={store.fields.promptConfigs}
       savedConfigs={store.savedConfigs}
       layer={layer}
-      focusId={focusId}
-      focusTick={focusTick}
       onPatchConfigs={(configs) => store.patch({ promptConfigs: configs })}
       onSaveConfigs={(configs) => store.persistConfigs(configs)}
       onNotice={store.showNotice}
