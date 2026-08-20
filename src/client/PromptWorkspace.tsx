@@ -8,11 +8,12 @@ import {
   type SwitchKey,
   usePromptToolStore,
 } from './prompt-tool-store.ts'
-import type { Fields, SkillCatalogEntry } from './prompt-tool-bridge.ts'
+import type { SkillCatalogEntry } from './prompt-tool-bridge.ts'
 import { PromptConfigList } from './PromptConfigList.tsx'
 import type { PromptConfigDraft } from './PromptConfigsEditor.tsx'
 import type { PromptToolWorkspaceController } from './workspace-controller.ts'
 import { PresetsPage } from './PresetsPage.tsx'
+import { ToggleRow } from './ToggleRow.tsx'
 import ui from './PromptUi.module.css'
 import css from './PromptWorkspace.module.css'
 
@@ -20,17 +21,6 @@ const layerOf = (config: PromptConfigDraft): string => config.layer ?? 'pre-step
 
 const configsOfLayer = (configs: PromptConfigDraft[], layer: string): PromptConfigDraft[] =>
   configs.filter((config) => layerOf(config) === layer)
-
-function ToggleRow(props: { id: string; label: string; hint: string; checked: boolean; disabled?: boolean; extra?: ReactNode; onChange: (value: boolean) => void }): ReactNode {
-  return (
-    <label className={ui.toggleRow} htmlFor={props.id}>
-      <span className={ui.settingCopy}><strong>{props.label}</strong><small>{props.hint}</small></span>
-      {props.extra}
-      <input id={props.id} type="checkbox" aria-label={props.label} checked={props.checked} disabled={props.disabled} onChange={(event) => props.onChange(event.target.checked)} />
-      <span className={ui.switch} aria-hidden="true"><i /></span>
-    </label>
-  )
-}
 
 /** 技能调用状态徽章：只保留模型可调用状态，开关关闭后立即变灰。 */
 function SkillStatusChips(props: { skill: SkillCatalogEntry; enabled: boolean }): ReactNode {
@@ -79,63 +69,6 @@ function PageHeader(props: { title: string; description: string; meta?: string }
       <div><h2>{props.title}</h2><p>{props.description}</p></div>
       {props.meta !== undefined && <div className={css.pageHeaderMeta}><code>{props.meta}</code></div>}
     </div>
-  )
-}
-
-/** Anchored Standard 预设模块行：按实际生效配置动态生成（模板声明什么显示什么）。 */
-function BuiltinConfigRows(props: { fields: Fields; configs: PromptConfigDraft[]; disabled: boolean; onChange: (key: SwitchKey, value: boolean) => void; onEdit: (id: string) => void }): ReactNode {
-  const { fields, configs, onEdit } = props
-  /** 预设声明的消息批模块：id → 开关键映射；模块不存在（模板未声明）时行不渲染。 */
-  const rows: Array<{ id: string; label: string; hint: string; checked: boolean; onChange: (value: boolean) => void }> = [
-    {
-      id: 'near-anchor',
-      label: 'near-anchor · 首句锚点',
-      hint: 'strategy=first-turn-anchor · position=after-user · dedupe=session；跟随「追加任务引导」。',
-      checked: fields.firstTurnAnchor,
-      onChange: (value) => props.onChange('firstTurnAnchor', value),
-    },
-    {
-      id: 'router-guide',
-      label: 'router-guide · 每轮引导',
-      hint: 'strategy=guide-auto · position=after-user · dedupe=batch；跟随「追加任务引导」。',
-      checked: fields.firstTurnAnchor,
-      onChange: (value) => props.onChange('firstTurnAnchor', value),
-    },
-    {
-      id: 'prompt-injector',
-      label: 'prompt-injector · preset.md 注入',
-      hint: 'strategy=custom-fallback · position=before-all · dedupe=session；跟随「注入 preset.md」。',
-      checked: fields.injectPrompt,
-      onChange: (value) => props.onChange('injectPrompt', value),
-    },
-    {
-      id: 'instruction-hint',
-      label: 'instruction-hint · 指令文件提示',
-      hint: 'strategy=placeholder · fill=instruction-hint · position=after-all；常开，不可在此关闭。',
-      checked: true,
-      onChange: () => {},
-    },
-  ]
-  const disabled = props.disabled || !fields.writePreset
-  return (
-    <section className={ui.section} aria-labelledby="prompt-tool-builtin-heading">
-      <div className={ui.sectionHeading}><div><h2 id="prompt-tool-builtin-heading">Anchored Standard(prompt-tool)</h2><p>预设模板（preset.yml）声明的消息批模块，按实际生效配置展示；切换模板后此处跟随模板声明。</p></div></div>
-      <div className={ui.rowGroup}>
-        {rows.flatMap((row) => {
-          const config = configs.find((item) => item.id === row.id)
-          // 模板未声明该模块（或已被删除）时不渲染；label 优先用配置名。
-          if (config === undefined) return []
-          const label = config.name !== undefined && config.name.length > 0 && config.name !== config.id
-            ? `${config.id} · ${config.name}`
-            : row.label
-          return [
-            <ToggleRow key={row.id} id={`pt-builtin-${row.id}`} label={label} hint={row.hint}
-              checked={row.checked} disabled={disabled} onChange={row.onChange}
-              extra={<button type="button" className={ui.pillButton} onClick={(event) => { event.preventDefault(); event.stopPropagation(); onEdit(config.id) }}>编辑</button>} />,
-          ]
-        })}
-      </div>
-    </section>
   )
 }
 
@@ -598,13 +531,12 @@ export interface PromptWorkspaceProps {
 }
 
 type WorkspacePage = string
-type EntryPage = 'switches' | 'preset' | 'agents' | 'configs'
+type EntryPage = 'switches' | 'preset' | 'agents'
 
 const ENTRY_PAGES: Array<{ id: EntryPage; label: string }> = [
   { id: 'switches', label: '入口开关' },
   { id: 'preset', label: 'Preset 预设' },
   { id: 'agents', label: 'AGENTS 设置' },
-  { id: 'configs', label: '消息批配置' },
 ]
 
 /** ARIA tabs 键盘导航：左右切换、Home/End 跳首尾。 */
@@ -644,10 +576,6 @@ export function PromptWorkspace(props: PromptWorkspaceProps): ReactNode {
   const layers = store.meta.layers.length > 0 ? store.meta.layers : FALLBACK_LAYERS
   const [page, setPage] = useState<WorkspacePage>('pre-step')
   const [entryPage, setEntryPage] = useState<EntryPage>('switches')
-  const [configFocus, setConfigFocus] = useState<{ id: string; tick: number } | undefined>(undefined)
-  const requestConfigEdit = (id: string): void => {
-    setConfigFocus((current) => ({ id, tick: (current?.tick ?? 0) + 1 }))
-  }
   const open = useSyncExternalStore(
     props.controller.subscribe,
     props.controller.getSnapshot,
@@ -735,14 +663,6 @@ export function PromptWorkspace(props: PromptWorkspaceProps): ReactNode {
                 : <p className={ui.readOnly} role="status">当前预设模板非 anchored，anchored 专属入口开关已隐藏。</p>)}
               {page === 'pre-step' && entryPage === 'preset' && <FileEditor store={store} scope="preset" />}
               {page === 'pre-step' && entryPage === 'agents' && <FileEditor store={store} scope="agents" />}
-              {page === 'pre-step' && entryPage === 'configs' && (
-                <>
-                  {isAnchoredTemplate && <BuiltinConfigRows fields={store.fields} configs={store.fields.promptConfigs} disabled={store.loading} onChange={(key, value) => {
-                    if (store.fields[key] !== value) store.toggle(key)
-                  }} onEdit={requestConfigEdit} />}
-                  <LayerConfigList store={store} layer="pre-step" focusId={configFocus?.id} focusTick={configFocus?.tick} />
-                </>
-              )}
               {page === 'features' && <FeatureSettings store={store} />}
               {page === 'presets' && <PresetsPage store={store} />}
               {page !== 'pre-step' && page !== 'features' && page !== 'presets' && (
