@@ -48,3 +48,22 @@ moduleConfigs:
     deferredSources: [agent-instructions, skill-catalog]
     deferredGraceSteps: 1
     instructionHint: true
+promptConfigs:
+  # 晋升后注入 preset.md 内容（custom-fallback 策略：自定义锚定词命中后注入一次）。
+  # phase-1 由 context-gate 的 messageSources 白名单拦截，晋升后随普通注入恢复。
+  - id: prompt-injector
+    name: preset.md 注入
+    enabled: true
+    strategy: custom-fallback
+    layer: pre-step
+    configKind: ordered
+    order: 20
+    role: user
+    position: before-all
+    dedupe: session
+    promotion: main
+    subagents: inherit
+    sourceKind: plugin
+    params:
+      text: ""
+      firstTurnWord: we

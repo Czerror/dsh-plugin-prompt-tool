@@ -78,9 +78,15 @@ test('preset/liangshen 渲染：模块清单 + moduleConfigs 表达两阶段锚�
       assert.ok(byId.get(id), `应含 ${id} 行`)
     }
 
-    // liangshen 无默认提示词配置（注入全部由 tool-bootstrap/context-gate 承担）。
+    // liangshen 只有 prompt-injector（custom-fallback）一条提示词配置。
     const configsDir = join(gen, 'prompt-configs')
-    assert.equal(readdirSync(configsDir).filter((f) => f.endsWith('.yml')).length, 0)
+    const configFiles = readdirSync(configsDir).filter((f) => f.endsWith('.yml'))
+    assert.deepEqual(configFiles, ['00-prompt-injector.yml'])
+    const injector = parseYaml(readFileSync(join(configsDir, '00-prompt-injector.yml'), 'utf8'))
+    assert.equal(injector.strategy, 'custom-fallback')
+    assert.equal(injector.params.firstTurnWord, 'we')
+    assert.equal(injector.enabled, true)
+    assert.equal(injector.promotion, 'main')
   } finally {
     rmSync(gen, { recursive: true, force: true })
   }
