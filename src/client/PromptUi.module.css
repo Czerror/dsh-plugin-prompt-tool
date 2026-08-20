@@ -822,3 +822,8 @@
   .pillButton,
   .primaryPill { transition: none; animation: none; }
 }
+
+/* 模板变量键值对行：两输入 + 删除按钮水平排列。 */
+.variableRow { display: flex; align-items: center; gap: 6px; }
+.variableRow .configInput { min-width: 0; flex: 1; }
+.variableRow .pillButton { flex: 0 0 auto; }

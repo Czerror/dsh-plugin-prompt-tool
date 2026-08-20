@@ -134,7 +134,8 @@ function ParamInput(props: { label: string; hint?: string; value: string; onChan
  *   first-turn-anchor → near-anchor 锚点参数（开关/锚文本/任务正则/引导句）；
  *   guide-auto → router-guide 每轮引导参数（开关/文本/复杂正则/强弱引导句）；
  *   custom-fallback → prompt-injector 锚定词（params.text 为运行时注入内容，不暴露编辑）；
- * 未知策略回退 JSON 编辑（保留任意 params 能力）。
+ *   placeholder / instruction-hint → fill 模板参数（text/envKeys/limit/fields/providers/emptyBehavior/emptyText）；
+ * 无固定字段的策略回退 JSON 编辑（保留任意 params 能力）。
  */
 export function StrategyParamsFields(props: { strategy: string; params: Record<string, unknown> | undefined; onPatch: (params: Record<string, unknown>) => void }): ReactNode {
   const { strategy, params, onPatch } = props
@@ -173,13 +174,76 @@ export function StrategyParamsFields(props: { strategy: string; params: Record<s
       <>
         <ParamInput label="firstTurnWord（锚定词）" hint="晋升后首个 reasoning 命中该词即注入；任意自定义文本"
           value={str('firstTurnWord')} onChange={(next) => set('firstTurnWord', next)} />
-        {Object.keys(value).some((key) => key !== 'firstTurnWord') && (
-          <JsonField label="params（其余参数 JSON）" value={value} onChange={(next) => { if (next !== undefined) onPatch(next) }} />
-        )}
       </>
     )
   }
-  return <JsonField label="params（各层专用参数 JSON）" value={value} onChange={(next) => { if (next !== undefined) onPatch(next) }} />
+  if (strategy === 'placeholder' || strategy === 'instruction-hint') {
+    return (
+      <>
+        <ParamTextarea label="text（自定义提示文本）" hint="覆盖文件与动态探测的提示文本；留空 = 默认"
+          value={str('text')} onChange={(next) => set('text', next)} />
+        <ParamInput label="envKeys（env-facts 环境变量白名单）" hint="逗号分隔；留空 = 默认 DSH_HOME,DSH_WORKSPACE"
+          value={str('envKeys')} onChange={(next) => set('envKeys', next)} />
+        <ParamInput label="limit（skill-catalog 数量上限）" hint="正整数；留空 = 不限制"
+          value={str('limit')} onChange={(next) => set('limit', next === '' ? '' : Number(next))} />
+        <ParamInput label="fields（skill-catalog 字段）" hint="逗号分隔；默认 name,description"
+          value={str('fields')} onChange={(next) => set('fields', next)} />
+        <ParamInput label="providers（skill-catalog provider 白名单）" hint="逗号分隔；留空 = 全部"
+          value={str('providers')} onChange={(next) => set('providers', next)} />
+        <OptionField label="emptyBehavior（空结果行为）" hint="skip = 不注入；text = 注入 emptyText"
+          value={str('emptyBehavior')} options={['skip', 'text']} fallback="skip" onChange={(next) => set('emptyBehavior', next)} />
+        <ParamTextarea label="emptyText（空结果提示文本）" value={str('emptyText')} onChange={(next) => set('emptyText', next)} />
+      </>
+    )
+  }
+  return <JsonField label="params（高级参数 JSON；本策略无固定字段）" value={value} onChange={(next) => { if (next !== undefined) onPatch(next) }} />
+}
+
+/** 模板变量键值对编辑器（替代 JSON）：每行 key + value，可增删。 */
+function VariablesEditor(props: { value: Record<string, string> | undefined; onChange: (value: Record<string, string> | undefined) => void }): ReactNode {
+  const entries = Object.entries(props.value ?? {})
+  const commit = (next: Array<[string, string]>) => {
+    const cleaned = next.filter(([key]) => key.trim().length > 0)
+    props.onChange(cleaned.length > 0 ? Object.fromEntries(cleaned) : undefined)
+  }
+  const setEntry = (index: number, key: string, value: string) => {
+    commit(entries.map((entry, at): [string, string] => at === index ? [key, value] : entry))
+  }
+  return (
+    <span className={styles.configFieldStack}>
+      <span className={styles.configFieldLabel}>{'variables（模板变量 {{key}} 插值）'}</span>
+      {entries.length === 0 && <p className={styles.configFieldHint}>{'无模板变量；下方添加键值对，注入文本中的 {{key}} 会被替换。'}</p>}
+      {entries.map(([key, value], index) => (
+        <span key={`${key}-${index}`} className={styles.variableRow}>
+          <input className={styles.configInput} aria-label="模板变量名" value={key} spellCheck={false} placeholder="变量名"
+            onChange={(e) => setEntry(index, e.target.value, value)} />
+          <input className={styles.configInput} aria-label="模板变量值" value={value} spellCheck={false} placeholder="变量值"
+            onChange={(e) => setEntry(index, key, e.target.value)} />
+          <button type="button" className={styles.pillButton} data-danger aria-label={`删除变量 ${key || index}`}
+            onClick={() => commit(entries.filter((_, at) => at !== index))}>删除</button>
+        </span>
+      ))}
+      <span>
+        <button type="button" className={styles.pillButton} onClick={() => commit([...entries, ['', '']])}>添加变量</button>
+      </span>
+    </span>
+  )
+}
+
+/** identity 结构化编辑（替代 JSON）：field 下拉 + value 输入；value 留空 = 使用默认（等于配置 id）。 */
+function IdentityFields(props: { identity: { field: string; value: string } | undefined; onPatch: (identity: { field: string; value: string } | undefined) => void }): ReactNode {
+  const field = props.identity?.field ?? 'plugin'
+  const value = props.identity?.value ?? ''
+  return (
+    <>
+      <OptionField label="identity.field（幂等身份域）" hint="plugin = 按插件 id 幂等；kind = 按注入类型"
+        value={field} options={['plugin', 'kind']} fallback="plugin" onChange={(next) => props.onPatch({ field: next, value })} />
+      <Field label="identity.value（幂等身份值）" hint="留空 = 使用默认（等于配置 id）">
+        <input className={styles.configInput} value={value} spellCheck={false}
+          onChange={(e) => props.onPatch(e.target.value.length > 0 ? { field, value: e.target.value } : undefined)} />
+      </Field>
+    </>
+  )
 }
 
 /** 枚举下拉：值不在选项内时用回退值，保证表单始终可渲染。 */
@@ -250,9 +314,9 @@ export function PromptConfigForm(props: { meta: EngineMeta; config: PromptConfig
         <span className={styles.configFieldLabel}>texts（多段内容块，每行一段；text 为空时生效）</span>
         <textarea className={styles.configTextarea} value={(config.texts ?? []).join('\n')} spellCheck={false} onChange={(e) => { autoResizeTextarea(e); onPatch({ texts: e.target.value.split('\n').filter((line) => line.length > 0) }) }} />
       </span>
-      <JsonField label="variables（模板变量 JSON）" value={config.variables as Record<string, unknown> | undefined} onChange={(value) => onPatch({ variables: value as Record<string, string> | undefined })} />
+      <VariablesEditor value={config.variables} onChange={(value) => onPatch({ variables: value })} />
       <StrategyParamsFields strategy={strategy} params={config.params} onPatch={(value) => onPatch({ params: value })} />
-      <JsonField label="identity（幂等身份 JSON；留空使用默认）" value={config.identity as unknown as Record<string, unknown> | undefined} onChange={(value) => onPatch({ identity: value as unknown as { field: string; value: string } | undefined })} />
+      <IdentityFields identity={config.identity} onPatch={(value) => onPatch({ identity: value })} />
     </div>
   )
 }
