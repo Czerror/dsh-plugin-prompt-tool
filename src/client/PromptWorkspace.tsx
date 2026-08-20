@@ -310,13 +310,9 @@ function FeatureSettings(props: { store: PromptToolStore }): ReactNode {
       <PromptConfigsEditor
         meta={store.meta}
         configs={fields.promptConfigs}
-        configsDir={fields.promptConfigsDir}
         savedConfigs={store.savedConfigs}
-        savedConfigsDir={store.savedConfigsDir}
         onPatchConfigs={(configs) => store.patch({ promptConfigs: configs })}
-        onPatchConfigsDir={(dir) => store.patch({ promptConfigsDir: dir })}
         onSaveConfigs={(configs) => store.persistConfigs(configs)}
-        onSaveConfigsDir={(dir) => store.persistConfigsDir(dir)}
         onNotice={store.showNotice}
       />
     </section>

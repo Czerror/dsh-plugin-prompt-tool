@@ -35,6 +35,12 @@ export function PresetsPage(props: { store: PromptToolStore }): ReactNode {
           onInput={(value) => store.patch({ presetOrder: Number(value) || 0 })}
           onCommit={store.persistSwitches} />
       </CollapsibleCard>
+      <CollapsibleCard id="pt-configs-dir" title="提示词配置目录" meta="运行时扫描 *.yml / *.yaml / *.json 的配置来源">
+        <SettingInputRow id="pt-prompt-configs-dir" label="目录路径" hint="留空 = 不扫描目录；失焦保存，引擎下次重建时生效。目录合并优先级：默认四条 &lt; 本目录 &lt; 各页 settings 数组。"
+          value={store.fields.promptConfigsDir} placeholder="留空 = 不扫描目录"
+          onInput={(value) => store.patch({ promptConfigsDir: value })}
+          onCommit={() => store.persistConfigsDir(store.fields.promptConfigsDir.trim())} />
+      </CollapsibleCard>
       <PresetSwitcher store={store} />
     </>
   )
