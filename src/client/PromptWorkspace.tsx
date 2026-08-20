@@ -12,7 +12,7 @@ import type { Fields, SkillCatalogEntry } from './prompt-tool-bridge.ts'
 import { PromptConfigList } from './PromptConfigList.tsx'
 import type { PromptConfigDraft } from './PromptConfigsEditor.tsx'
 import type { PromptToolWorkspaceController } from './workspace-controller.ts'
-import { PresetSwitcher } from './PresetSwitcher.tsx'
+import { PresetsPage } from './PresetsPage.tsx'
 import ui from './PromptUi.module.css'
 import css from './PromptWorkspace.module.css'
 
@@ -318,7 +318,6 @@ function FeatureSettings(props: { store: PromptToolStore }): ReactNode {
         <ToggleRow id="pt-write-agents" label="写入 ~/.dsh/AGENTS.md" hint="保持 AGENTS.md 的全局常驻注入；关闭后不再写入，已有文件保持原样。与六层注入无关，属于宿主常驻层。"
           checked={fields.writeAgents} onChange={() => store.toggle('writeAgents')} />
       </div>
-      <PresetSwitcher store={store} />
       <SettingInputRow id="pt-resident-agents-path" label="AGENTS.md 常驻路径" hint="写入/移除 AGENTS.md 受管块的目标文件；修改后下一次开关保存立即切换。"
         value={fields.residentAgentsPath} placeholder={fields.residentAgentsPath || '默认 ~/.dsh/AGENTS.md'}
         onInput={(value) => store.patch({ residentAgentsPath: value })}
@@ -667,15 +666,19 @@ export function PromptWorkspace(props: PromptWorkspaceProps): ReactNode {
     ? `${store.fields.skillCatalog.length} 技能`
     : page === 'features'
       ? '全局'
+      : page === 'presets'
+        ? '预设与配置'
       : `${configsOfLayer(store.fields.promptConfigs, page).length} 配置`
-  const layerLabel = page !== 'skills' && page !== 'features'
+  const layerLabel = page !== 'skills' && page !== 'features' && page !== 'presets'
     ? (store.meta.layerLabels[page] ?? FALLBACK_LAYER_LABELS[page])
     : undefined
-  const pageTitle = page === 'skills' ? 'Skills 设置' : page === 'features' ? '功能设置' : (layerLabel?.title ?? page)
+  const pageTitle = page === 'skills' ? 'Skills 设置' : page === 'features' ? '功能设置' : page === 'presets' ? '预设和配置' : (layerLabel?.title ?? page)
   const pageDetail = page === 'skills'
     ? '按 skills 目录注册的可开关技能；目录与逐技能开关立即生效。'
     : page === 'features'
       ? '无法明确归属到单一注入层级的全局功能开关。'
+      : page === 'presets'
+        ? '统一管理预设模板（切换/导入）与提示词配置（六层列表/模板插入/配置目录）。'
       : (layerLabel?.detail ?? '')
 
   return (
@@ -695,15 +698,18 @@ export function PromptWorkspace(props: PromptWorkspaceProps): ReactNode {
       <div className={css.topNavigation}>
         <div className={css.nav} role="tablist" aria-label="提示词工具层级">
           {layers.map((item) => (
-            <button key={item} type="button" role="tab" aria-selected={page === item} data-active={page === item ? '' : undefined} onClick={() => setPage(item)} onKeyDown={tabKeyHandler([...layers, 'skills', 'features'], page, setPage)}>
+            <button key={item} type="button" role="tab" aria-selected={page === item} data-active={page === item ? '' : undefined} onClick={() => setPage(item)} onKeyDown={tabKeyHandler([...layers, 'skills', 'features', 'presets'], page, setPage)}>
               <span><strong>{store.meta.layerLabels[item]?.title ?? FALLBACK_LAYER_LABELS[item]?.title ?? item}</strong><small>{item}</small></span>
             </button>
           ))}
-          <button type="button" role="tab" aria-selected={page === 'skills'} data-active={page === 'skills' ? '' : undefined} onClick={() => setPage('skills')} onKeyDown={tabKeyHandler([...layers, 'skills', 'features'], page, setPage)}>
+          <button type="button" role="tab" aria-selected={page === 'skills'} data-active={page === 'skills' ? '' : undefined} onClick={() => setPage('skills')} onKeyDown={tabKeyHandler([...layers, 'skills', 'features', 'presets'], page, setPage)}>
             <span><strong>Skills 设置</strong><small>skills</small></span>
           </button>
-          <button type="button" role="tab" aria-selected={page === 'features'} data-active={page === 'features' ? '' : undefined} onClick={() => setPage('features')} onKeyDown={tabKeyHandler([...layers, 'skills', 'features'], page, setPage)}>
+          <button type="button" role="tab" aria-selected={page === 'features'} data-active={page === 'features' ? '' : undefined} onClick={() => setPage('features')} onKeyDown={tabKeyHandler([...layers, 'skills', 'features', 'presets'], page, setPage)}>
             <span><strong>功能设置</strong><small>features</small></span>
+          </button>
+          <button type="button" role="tab" aria-selected={page === 'presets'} data-active={page === 'presets' ? '' : undefined} onClick={() => setPage('presets')} onKeyDown={tabKeyHandler([...layers, 'skills', 'features', 'presets'], page, setPage)}>
+            <span><strong>预设和配置</strong><small>presets</small></span>
           </button>
         </div>
       </div>
@@ -738,7 +744,8 @@ export function PromptWorkspace(props: PromptWorkspaceProps): ReactNode {
                 </>
               )}
               {page === 'features' && <FeatureSettings store={store} />}
-              {page !== 'pre-step' && page !== 'features' && (
+              {page === 'presets' && <PresetsPage store={store} />}
+              {page !== 'pre-step' && page !== 'features' && page !== 'presets' && (
                 <>
                   {page === 'agent-request' && (isAnchoredTemplate
                     ? <AgentRequestSwitches store={store} />
