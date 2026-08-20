@@ -208,10 +208,14 @@ subagent:
     allow: []
     deny: []
   maxDepth: ""
-# ── 提示词配置（audience 依据上游 dsh-anchored-standard preset/agent.cordis.yml 查证）──
-# 上游全部注入相位（context-gate / tool-bootstrap / instruction-hint）均显式
-# includeSubagents: true —— 子代理与主会话同步经历门控→晋升→注入，官方行为为
-# 「子代理跟随」，故本预设全部配置缺省=公用（主会话+子代理都注入）。
+# ── 提示词配置（audience 依据本项目 main 分支三合一规则查证）──
+# main 分支 preset/agent.cordis.yml + buildCordis 的独有子代理组合：
+#   context-gate   includeSubagents: false（子代理不做上下文门控）+ allowKinds
+#                  [skill-invocation, near-anchor, router-guide]（注入对子代理放行）
+#   tool-bootstrap includeSubagents: true（子代理工具目录跟随 bootstrap→晋升）
+#   instruction-hint includeSubagents: true（子代理晋升后同样注入 hint）
+# 三合一结论：注入（near-anchor/router-guide/prompt-injector/instruction-hint）
+# 对子代理全部放行/跟随，故本预设全部配置缺省=公用（主会话+子代理都注入）。
 # 如需仅主会话/仅子代理，显式 audience: main / subagent 即可（配置项，不锁定）。
 promptConfigs:
   - id: near-anchor
