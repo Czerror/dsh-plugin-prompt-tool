@@ -3,7 +3,7 @@ import type { PromptConfigDraft, EngineMeta } from './prompt-tool-types.ts'
 import { SETTINGS_BRIDGE_PREFIX, type BridgeErrorPayload } from '../shared/bridge-contract.ts'
 
 export interface BridgeSettingsView { ns: string; value: unknown; base?: unknown; revision: number }
-export type BridgeResult<T> = { ok: true; value: T; providers?: string[]; modelCatalog?: Record<string, string[]>; activeSkillsDirs?: string[]; skillCatalog?: SkillCatalogEntry[] } | BridgeErrorPayload
+export type BridgeResult<T> = { ok: true; value: T; providers?: string[]; providerCandidates?: string[]; modelCatalog?: Record<string, string[]>; activeSkillsDirs?: string[]; skillCatalog?: SkillCatalogEntry[] } | BridgeErrorPayload
 
 export interface SkillCatalogEntry {
   folder: string

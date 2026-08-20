@@ -149,7 +149,7 @@ function AgentRequestSwitches(props: { store: PromptToolStore }): ReactNode {
 function ModelToolCards(props: { store: PromptToolStore; scope: 'main' | 'subagent' }): ReactNode {
   const { store } = props
   const fields = store.fields
-  const providerOptions = ['', ...store.providers]
+  const providerOptions = ['', ...store.providerCandidates]
   const provider = props.scope === 'main' ? fields.modelProvider : fields.subagentModelProvider
   const modelName = props.scope === 'main' ? fields.modelName : fields.subagentModelName
   const modelOptions = ['', ...(store.modelCatalog[provider] ?? [])]

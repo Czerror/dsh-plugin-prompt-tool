@@ -180,6 +180,7 @@ export function registerSettingsBridge(
               value: descriptor,
               modelsAvailable: detection.available,
               providers: detection.providers,
+              providerCandidates: detection.candidates,
               modelCatalog,
               modelsError: detection.error,
               activeSkillsDirs: skillsState.activeSkillsDirs,

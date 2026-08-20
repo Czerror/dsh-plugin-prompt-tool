@@ -143,6 +143,7 @@ export interface PromptToolStore {
   meta: EngineMeta
   loading: boolean
   providers: string[]
+  providerCandidates: string[]
   modelCatalog: Record<string, string[]>
   bootstrapTokensDraft: string
   /** 新技能目录路径输入（多目录卡片：输入路径添加）。 */
@@ -227,6 +228,7 @@ function bridgeViewFromScope(
       revision: snapshot.revision ?? 0,
     },
     providers: runtime.ok ? runtime.providers : undefined,
+    providerCandidates: runtime.ok ? runtime.providerCandidates : undefined,
     modelCatalog: runtime.ok ? runtime.modelCatalog : undefined,
     activeSkillsDirs: runtime.ok ? runtime.activeSkillsDirs : undefined,
     skillCatalog: runtime.ok ? runtime.skillCatalog : undefined,
@@ -235,6 +237,7 @@ function bridgeViewFromScope(
 
 export function usePromptToolStore(api: IApiClient, settings: PromptToolSettingsTransport): PromptToolStore {
   const [providers, setProviders] = useState<string[]>([])
+  const [providerCandidates, setProviderCandidates] = useState<string[]>([])
   const [modelCatalog, setModelCatalog] = useState<Record<string, string[]>>({})
   const [fields, setFields] = useState<Fields>(EMPTY_FIELDS)
   const [meta, setMeta] = useState<EngineMeta>(EMPTY_META)
@@ -259,6 +262,7 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
 
   const applyView = useCallback((res: BridgeResult<BridgeSettingsView>): Fields => {
     setProviders(res.ok ? res.providers ?? [] : [])
+    setProviderCandidates(res.ok ? res.providerCandidates ?? res.providers ?? [] : [])
     setModelCatalog(res.ok ? res.modelCatalog ?? {} : {})
     const next = fieldsFromView(res)
     // 检测到 DeepSeek 路由且用户未设置服务商时，直接预选第一个检测到的 provider
@@ -602,6 +606,7 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
     meta,
     loading,
     providers,
+    providerCandidates,
     modelCatalog,
     bootstrapTokensDraft,
     skillsDirDraft,

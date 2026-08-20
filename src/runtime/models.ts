@@ -5,14 +5,16 @@ import type { Context } from '@deepseek-ai/cordis'
 export interface ModelDetection {
   /** 是否检测到任何已注册/可配置的服务商路由。 */
   available: boolean
-  /** 全部模型服务商 id（live 路由 + 可配置目录，去重保序）。 */
+  /** 已检测到（live 注册）的模型服务商 id——状态提示用。 */
   providers: string[]
+  /** 全部可选服务商 id（live + 可配置目录，去重保序）——下拉候选用。 */
+  candidates: string[]
   error?: string
 }
 
-/** 检测全部模型服务商：live provider + 可配置 provider 目录双通道合并（不限定厂商）。 */
+/** 检测模型服务商：providers=live 注册路由（状态提示），candidates=live + 可配置目录（下拉候选，含 dormant）。 */
 export function detectModels(ctx: Context): ModelDetection {
-  const empty = { available: false, providers: [] }
+  const empty = { available: false, providers: [], candidates: [] }
   try {
     const llm = ctx.get('llm') as {
       listProviders?: () => Array<{ id?: string; name?: string }>
@@ -21,18 +23,21 @@ export function detectModels(ctx: Context): ModelDetection {
     if (llm === undefined) return { ...empty, error: 'ctx.get("llm") 返回 undefined' }
     const live = llm.listProviders?.() ?? []
     const configured = llm.listConfigurableProviders?.() ?? []
-    const names = new Set<string>()
+    const liveNames = new Set<string>()
+    const configuredNames = new Set<string>()
     for (const provider of live) {
       const id = typeof provider.id === 'string' ? provider.id : String(provider.id ?? '')
-      names.add(id || provider.name || '(unnamed)')
+      liveNames.add(id || provider.name || '(unnamed)')
     }
     for (const provider of configured) {
       const id = typeof provider.provider === 'string' ? provider.provider : ''
-      if (id.length > 0) names.add(id)
+      if (id.length > 0) configuredNames.add(id)
     }
+    const candidates = [...new Set([...liveNames, ...configuredNames])]
     return {
-      available: names.size > 0,
-      providers: [...names],
+      available: candidates.length > 0,
+      providers: [...liveNames],
+      candidates,
       ...(live.length === 0 && configured.length === 0 ? { error: 'llm 服务未返回任何 provider' } : {}),
     }
   } catch (error) {
