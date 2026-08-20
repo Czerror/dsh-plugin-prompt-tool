@@ -75,7 +75,7 @@ export function PromptConfigsEditor(props: PromptConfigsEditorProps): ReactNode 
         meta={props.meta}
         configs={props.configs}
         savedConfigs={props.savedConfigs}
-        extraActions={<button type="button" className={styles.primaryPill} onClick={templatePicker.openPicker}>新建模板</button>}
+        extraActions={<button type="button" className={styles.primaryPill} onClick={templatePicker.openPicker}>新建</button>}
         onPatchConfigs={props.onPatchConfigs}
         onSaveConfigs={props.onSaveConfigs}
         onNotice={props.onNotice}

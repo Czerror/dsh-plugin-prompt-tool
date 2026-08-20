@@ -439,7 +439,7 @@ function ConfigListWithTemplates(props: { store: PromptToolStore; layer?: string
         layer={layer}
         scope={scope}
         extraActions={
-          <button type="button" className={ui.primaryPill} onClick={templatePicker.openPicker}>新建模板</button>
+          <button type="button" className={ui.primaryPill} onClick={templatePicker.openPicker}>新建</button>
         }
         onPatchConfigs={(configs) => store.patch({ promptConfigs: configs })}
         onSaveConfigs={(configs) => store.persistConfigs(configs)}
