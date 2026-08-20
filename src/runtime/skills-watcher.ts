@@ -1,4 +1,4 @@
-/** 技能目录文件 watcher：目录变化防抖 300ms 后触发 onRefresh；目录不可 watch 时静默降级。 */
+/** 技能目录文件 watcher（多目录）：任一目录变化防抖 300ms 后触发 onRefresh；单目录不可 watch 时跳过。 */
 import { watch, type FSWatcher } from 'node:fs'
 
 export interface SkillsWatcher {
@@ -6,28 +6,31 @@ export interface SkillsWatcher {
   close: () => void
 }
 
-export function createSkillsWatcher(dir: () => string, onRefresh: () => void): SkillsWatcher {
-  let skillsWatcher: FSWatcher | undefined
+export function createSkillsWatcher(dirs: () => string[], onRefresh: () => void): SkillsWatcher {
+  let watchers: FSWatcher[] = []
   let timer: NodeJS.Timeout | undefined
   const close = (): void => {
     if (timer !== undefined) clearTimeout(timer)
     timer = undefined
-    skillsWatcher?.close()
-    skillsWatcher = undefined
+    for (const watcher of watchers) watcher.close()
+    watchers = []
   }
-  const watchDir = (): void => {
+  const watchDirs = (): void => {
     close()
-    try {
-      skillsWatcher = watch(dir(), { persistent: false }, () => {
-        if (timer !== undefined) clearTimeout(timer)
-        timer = setTimeout(() => {
-          timer = undefined
-          onRefresh()
-        }, 300)
-      })
-    } catch {
-      // 目录不可 watch 时降级为目录切换时重扫，不阻断启动。
+    for (const dir of dirs()) {
+      try {
+        const watcher = watch(dir, { persistent: false }, () => {
+          if (timer !== undefined) clearTimeout(timer)
+          timer = setTimeout(() => {
+            timer = undefined
+            onRefresh()
+          }, 300)
+        })
+        watchers.push(watcher)
+      } catch {
+        // 单个目录不可 watch 时跳过该目录，不阻断其他目录。
+      }
     }
   }
-  return { watch: watchDir, close }
+  return { watch: watchDirs, close }
 }

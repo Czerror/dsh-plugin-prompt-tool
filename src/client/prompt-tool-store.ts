@@ -41,7 +41,7 @@ export interface SwitchSnapshot {
   injectPrompt: boolean
   skillSwitches: Record<string, boolean>
   skillOrder: string[]
-  skillsDir: string
+  skillsDirs: string[]
   skillRankBase: number
   residentAgentsPath: string
   presetDir: string
@@ -65,7 +65,7 @@ const EMPTY_SWITCHES: SwitchSnapshot = {
   injectPrompt: true,
   skillSwitches: {},
   skillOrder: [],
-  skillsDir: '',
+  skillsDirs: [],
   skillRankBase: 250,
   residentAgentsPath: '',
   presetDir: '',
@@ -92,7 +92,7 @@ export const snapshotSwitches = (fields: Fields): SwitchSnapshot => ({
   injectPrompt: fields.injectPrompt,
   skillSwitches: { ...fields.skillSwitches },
   skillOrder: [...fields.skillOrder],
-  skillsDir: fields.skillsDir,
+  skillsDirs: [...fields.skillsDirs],
   skillRankBase: fields.skillRankBase,
   residentAgentsPath: fields.residentAgentsPath,
   presetDir: fields.presetDir,
@@ -116,7 +116,7 @@ const switchesEqual = (a: SwitchSnapshot, b: SwitchSnapshot): boolean =>
   && a.injectPrompt === b.injectPrompt
   && JSON.stringify(a.skillSwitches) === JSON.stringify(b.skillSwitches)
   && JSON.stringify(a.skillOrder) === JSON.stringify(b.skillOrder)
-  && a.skillsDir === b.skillsDir
+  && JSON.stringify(a.skillsDirs) === JSON.stringify(b.skillsDirs)
   && a.skillRankBase === b.skillRankBase
   && a.residentAgentsPath === b.residentAgentsPath
   && a.presetDir === b.presetDir
@@ -136,6 +136,7 @@ export interface PromptToolStore {
   loading: boolean
   deepseekProviders: string[]
   bootstrapTokensDraft: string
+  /** 新技能目录路径输入（多目录卡片：输入路径添加）。 */
   skillsDirDraft: string
   savedSwitches: SwitchSnapshot
   savedConfigs: PromptConfigDraft[]
@@ -157,12 +158,15 @@ export interface PromptToolStore {
   setBootstrapTokensDraft: (value: string) => void
   commitBootstrapTokensDraft: () => void
   setSkillsDirDraft: (value: string) => void
-  applySkillsDir: () => void
-  applySkillsDirValue: (dir: string) => void
+  /** 追加技能目录（按添加顺序；重复路径拒绝）。 */
+  addSkillsDir: (dir: string) => void
+  /** 移除技能目录引用（只删引用，不删原文件）。 */
+  removeSkillsDir: (dir: string) => void
   toggleSkill: (folder: string) => void
   skillEnabled: (folder: string) => boolean
   fixSkill: (folder: string) => void
-  openSkillsDir: () => Promise<void>
+  /** 打开指定技能目录；不传 = 打开第一个生效目录。 */
+  openSkillsDir: (path?: string) => Promise<void>
   importPreset: (scope: 'preset' | 'agents', content: string, reload?: boolean) => Promise<void>
   dirtySwitches: boolean
   dirtyConfigs: boolean
@@ -217,7 +221,7 @@ function bridgeViewFromScope(
       revision: snapshot.revision ?? 0,
     },
     deepseekProviders: runtime.ok ? runtime.deepseekProviders : undefined,
-    activeSkillsDir: runtime.ok ? runtime.activeSkillsDir : undefined,
+    activeSkillsDirs: runtime.ok ? runtime.activeSkillsDirs : undefined,
     skillCatalog: runtime.ok ? runtime.skillCatalog : undefined,
   }
 }
@@ -257,7 +261,7 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
     fieldsRef.current = next
     setFields(next)
     setBootstrapTokensDraft(next.bootstrapMaxTokens > 0 ? String(next.bootstrapMaxTokens) : DEFAULT_BOOTSTRAP_DISPLAY)
-    setSkillsDirDraft(next.skillsDir)
+    setSkillsDirDraft('')
     setSavedSwitches(snapshotSwitches(next))
     setSavedConfigs(next.promptConfigs)
     setSavedConfigsDir(next.promptConfigsDir)
@@ -390,7 +394,7 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
       { op: 'set', path: ['injectPrompt'], value: fieldsRef.current.injectPrompt },
       { op: 'set', path: ['skillSwitches'], value: fieldsRef.current.skillSwitches },
       { op: 'set', path: ['skillOrder'], value: fieldsRef.current.skillOrder },
-      { op: 'set', path: ['skillsDir'], value: fieldsRef.current.skillsDir },
+      { op: 'set', path: ['skillsDirs'], value: fieldsRef.current.skillsDirs },
       { op: 'set', path: ['skillRankBase'], value: fieldsRef.current.skillRankBase },
       { op: 'set', path: ['residentAgentsPath'], value: fieldsRef.current.residentAgentsPath },
       { op: 'set', path: ['presetDir'], value: fieldsRef.current.presetDir },
@@ -483,23 +487,40 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
     void persistParamOverrides()
   }, [bootstrapTokensDraft, patch, persistParamOverrides])
 
-  const applySkillsDirValue = useCallback((dir: string) => {
+  const addSkillsDir = useCallback((dir: string) => {
     const next = dir.trim()
-    patch({ skillsDir: next })
+    if (next.length === 0) return
+    const current = fieldsRef.current.skillsDirs
+    if (current.includes(next)) {
+      showNotice('error', '该目录已在列表中')
+      return
+    }
+    const dirs = [...current, next]
+    patch({ skillsDirs: dirs })
     enqueueSave(
-      [{ op: 'set', path: ['skillsDir'], value: next }],
-      next.length > 0 ? `自定义技能目录已保存并生效：${next}` : '已切回自动技能目录（当前 profile 下 skills/）',
+      [{ op: 'set', path: ['skillsDirs'], value: dirs }],
+      `技能目录已添加：${next}`,
       () => {
         setSavedSwitches(snapshotSwitches(fieldsRef.current))
         void load()
       },
       setSavingSkillsDir,
     )
-  }, [enqueueSave, load, patch])
+  }, [enqueueSave, load, patch, showNotice])
 
-  const applySkillsDir = useCallback(() => {
-    applySkillsDirValue(skillsDirDraft)
-  }, [applySkillsDirValue, skillsDirDraft])
+  const removeSkillsDir = useCallback((dir: string) => {
+    const dirs = fieldsRef.current.skillsDirs.filter((item) => item !== dir)
+    patch({ skillsDirs: dirs })
+    enqueueSave(
+      [{ op: 'set', path: ['skillsDirs'], value: dirs }],
+      `已移除技能目录引用：${dir}`,
+      () => {
+        setSavedSwitches(snapshotSwitches(fieldsRef.current))
+        void load()
+      },
+      setSavingSkillsDir,
+    )
+  }, [enqueueSave, load, patch, showNotice])
 
   const skillEnabled = useCallback((folder: string) => fieldsRef.current.skillSwitches[folder] !== false, [])
 
@@ -532,12 +553,12 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
     }
   }, [load, showNotice])
 
-  const openSkillsDir = useCallback(async () => {
-    const path = fieldsRef.current.activeSkillsDir || fieldsRef.current.skillsDir
-    if (!path) { showNotice('error', '技能目录路径未知，请先重新读取配置'); return }
+  const openSkillsDir = useCallback(async (path?: string) => {
+    const target = path ?? fieldsRef.current.activeSkillsDirs[0] ?? ''
+    if (!target) { showNotice('error', '技能目录路径未知，请先重新读取配置'); return }
     try {
-      const res = await api.host.openPath({ path })
-      if (res.result.ok) showNotice('ok', '已打开技能目录：' + path)
+      const res = await api.host.openPath({ path: target })
+      if (res.result.ok) showNotice('ok', '已打开技能目录：' + target)
       else showNotice('error', '打开失败：' + (res.result.error?.message ?? ''))
     } catch (error) {
       showNotice('error', '打开失败：' + errorMessage(error))
@@ -593,8 +614,8 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
     setBootstrapTokensDraft,
     commitBootstrapTokensDraft,
     setSkillsDirDraft,
-    applySkillsDir,
-    applySkillsDirValue,
+    addSkillsDir,
+    removeSkillsDir,
     toggleSkill,
     skillEnabled,
     fixSkill,

@@ -7,7 +7,7 @@ import type {
   SkillProviderControl,
 } from '@deepseek-ai/dsh-skill'
 import type {} from '@deepseek-ai/dsh-host-webserver'
-import { readFileSync, rmSync } from 'node:fs'
+import { existsSync, readFileSync, rmSync } from 'node:fs'
 import { parse as parseYaml } from 'yaml'
 import { createSkillsWatcher } from './runtime/skills-watcher.ts'
 import { fileURLToPath } from 'node:url'
@@ -15,7 +15,7 @@ import { join } from 'node:path'
 import { homedir } from 'node:os'
 import { loadPresetContent, loadPresetSpec, normalizeParam, resolvePresetDir } from './host/manifest.ts'
 import type { PresetSpec } from './host/manifest.ts'
-import { createCachedSkillsReader } from './runtime/skills-provider.ts'
+import { createCachedSkillsReader, mergeSkillDirs } from './runtime/skills-provider.ts'
 import { ensureWebSurface } from './web-surface.ts'
 import { resolveProfileSkillsDir } from './profile-skills.ts'
 import { detectDeepseek, installSubagentModelRoute } from './runtime/deepseek.ts'
@@ -79,9 +79,12 @@ function warn(ctx: Context, message: string): void {
 /** hostDefaults 中的路径类字段展开 ~/，避免把字面量 `~` 目录写进进程 cwd。
  *  `~/.dsh/...` 特指 Harness home（${DSH_HOME} 或默认 ~/.dsh），
  *  其余 `~/...` 才按操作系统 home 展开。 */
-const HOME_PATH_KEYS = new Set(['residentAgentsPath', 'presetDir', 'skillsDir'])
+const HOME_PATH_KEYS = new Set(['residentAgentsPath', 'presetDir', 'skillsDir', 'skillsDirs'])
 const DSH_HOME_PREFIX = '~/.dsh'
 function normalizePresetPath(key: string, value: unknown): unknown {
+  if (Array.isArray(value) && key === 'skillsDirs') {
+    return value.map((item) => normalizePresetPath('skillsDir', item))
+  }
   if (typeof value !== 'string' || !HOME_PATH_KEYS.has(key)) return value
   if (value === DSH_HOME_PREFIX) return DSH_HOME
   if (value.startsWith(DSH_HOME_PREFIX + '/') || value.startsWith(DSH_HOME_PREFIX + '\\')) {
@@ -232,13 +235,19 @@ export function apply(ctx: Context, configIn: Config): void {
   }
   // 首次启动把包内 skills/ 增量复制到 $DSH_HOME/profiles/<profile>/skills，
   // 并优先使用 profile 副本；已有同名文件不覆盖，用户编辑会保留。
-  // 显式配置了其他 skillsDir 时尊重用户选择，不做复制。
-  const configuredSkillsDir = config.skillsDir !== DEFAULT_SKILLS_DIR && config.skillsDir.length > 0
+  // 显式配置了其他技能目录时尊重用户选择，不做复制。
+  const legacySkillsDir = typeof config.skillsDir === 'string' && config.skillsDir.length > 0 && config.skillsDir !== DEFAULT_SKILLS_DIR
     ? config.skillsDir
     : ''
-  let activeSkillsDir = configuredSkillsDir.length > 0
-    ? configuredSkillsDir
-    : resolveProfileSkillsDir(ctx, DEFAULT_SKILLS_DIR, (message) => warn(ctx, message))
+  const userSkillsDirs = Array.isArray(config.skillsDirs) && config.skillsDirs.length > 0
+    ? config.skillsDirs.filter((dir): dir is string => typeof dir === 'string' && dir.trim().length > 0)
+    : legacySkillsDir.length > 0 ? [legacySkillsDir] : []
+  /** 用户技能目录设置 → 实际生效目录列表（空配置 = profile skills 副本兜底）。 */
+  const resolveActiveSkillsDirs = (dirs: string[]): string[] =>
+    dirs.length > 0
+      ? dirs
+      : [resolveProfileSkillsDir(ctx, DEFAULT_SKILLS_DIR, (message) => warn(ctx, message))]
+  let activeSkillsDirs = resolveActiveSkillsDirs(userSkillsDirs)
   // 三层结构：
   //  1) 扫描层宽松——坏技能也进 catalog（valid=false + issue），UI 可见可修；
   //  2) provider 层严格——只有 valid=true 的候选注册给模型；
@@ -250,40 +259,43 @@ export function apply(ctx: Context, configIn: Config): void {
     skillWarned.add(message)
     warn(ctx, message)
   })
-  const catalogOf = (skills: SkillEntry[]): SkillCatalogEntry[] => skills.map((skill) => ({
-    folder: skill.folder,
-    name: skill.name,
-    description: skill.description,
-    valid: skill.valid,
-    ...(skill.issue !== undefined ? { issue: skill.issue } : {}),
-    ...(skill.linked === true ? { linked: true } : {}),
-    modelInvocable: skill.modelInvocable,
-    userInvocable: skill.userInvocable,
-  }))
-  let skillCatalog: SkillCatalogEntry[] = catalogOf(readSkillsChecked(activeSkillsDir))
+  const catalogOf = (skills: SkillEntry[]): SkillCatalogEntry[] => {
+    const counts = new Map<string, number>()
+    for (const skill of skills) counts.set(skill.folder, (counts.get(skill.folder) ?? 0) + 1)
+    return skills.map((skill) => ({
+      folder: skill.folder,
+      name: skill.name,
+      description: skill.description,
+      valid: skill.valid,
+      dir: skill.dir,
+      ...(counts.get(skill.folder)! > 1 ? { duplicate: true } : {}),
+      ...(skill.issue !== undefined ? { issue: skill.issue } : {}),
+      ...(skill.linked === true ? { linked: true } : {}),
+      modelInvocable: skill.modelInvocable,
+      userInvocable: skill.userInvocable,
+    }))
+  }
+  /** 全量合并：多目录条目全部保留（同名不跳过，catalog 全量展示）。 */
+  const readAllSkillsChecked = (): SkillEntry[] =>
+    mergeSkillDirs(activeSkillsDirs, readSkillsChecked)
+  let skillCatalog: SkillCatalogEntry[] = catalogOf(readAllSkillsChecked())
 
-  // 技能目录热更新：新增/删除/改名技能目录后，catalog 与注册表缓存一起刷新。
-  const skillsWatcher = createSkillsWatcher(() => activeSkillsDir, () => {
-    skillCatalog = catalogOf(readSkillsChecked(activeSkillsDir))
-    cachedSkills.invalidate(activeSkillsDir); invalidateSkills?.()
+  // 技能目录热更新：任一目录新增/删除/改名后，catalog 与注册表缓存一起刷新。
+  const skillsWatcher = createSkillsWatcher(() => activeSkillsDirs, () => {
+    skillCatalog = catalogOf(readAllSkillsChecked())
+    cachedSkills.invalidate(); invalidateSkills?.()
   })
   skillsWatcher.watch()
   // 插件卸载时关闭技能目录 watcher，避免泄漏与对已卸载 provider 的无效刷新。
   ctx.effect(() => () => skillsWatcher.close())
 
-  /** 切换生效技能目录并刷新目录快照（供 describe / TUI 显示）。 */
-  const applyActiveSkillsDir = (dir: string): void => {
-    activeSkillsDir = dir
-    cachedSkills.invalidate(dir)
-    skillCatalog = catalogOf(readSkillsChecked(dir))
+  /** 切换生效技能目录列表并刷新目录快照（供 describe / TUI 显示）。 */
+  const applyActiveSkillsDirs = (dirs: string[]): void => {
+    activeSkillsDirs = dirs
+    cachedSkills.invalidate()
+    skillCatalog = catalogOf(readAllSkillsChecked())
     skillsWatcher.watch()
   }
-
-  /** 用户 skillsDir 设置 → 实际生效目录。 */
-  const resolveActiveSkillsDir = (userDir: string): string =>
-    userDir.length > 0
-      ? userDir
-      : resolveProfileSkillsDir(ctx, DEFAULT_SKILLS_DIR, (message) => warn(ctx, message))
 
   // 1) 按需层：注册 skills/*/SKILL.md，name/description/whenToUse/metadata 全部来自各自 frontmatter。
   //    content 只包含技能自身正文；preset.md 不拼进技能正文，全部技能关闭时列表自然为空。
@@ -308,7 +320,15 @@ export function apply(ctx: Context, configIn: Config): void {
       name: 'prompt-tool',
       list: async (options: SkillLookupOptions): Promise<readonly SkillCandidate[]> => {
         if (options.signal?.aborted) return []
-        return orderSkills(readSkillsChecked(activeSkillsDir))
+        // 多目录同名技能：catalog 全量展示，模型注册只保留首个目录（添加顺序优先）。
+        const unique: SkillEntry[] = []
+        const seen = new Set<string>()
+        for (const skill of readAllSkillsChecked()) {
+          if (seen.has(skill.folder)) continue
+          seen.add(skill.folder)
+          unique.push(skill)
+        }
+        return orderSkills(unique)
           .filter((skill) => skill.valid && skillSwitches[skill.folder] !== false)
           .map((skill, index): SkillCandidate => ({
             name: skill.name,
@@ -317,7 +337,7 @@ export function apply(ctx: Context, configIn: Config): void {
             invocation: { modelInvocable: skill.modelInvocable, userInvocable: skill.userInvocable },
             source: 'runtime',
             provider: 'prompt-tool',
-            resourceBase: { kind: 'directory', path: join(activeSkillsDir, skill.folder) },
+            resourceBase: { kind: 'directory', path: join(skill.dir, skill.folder) },
             rank: skillRankBase + index,
             locator: skill.folder,
             path: skill.file,
@@ -326,7 +346,9 @@ export function apply(ctx: Context, configIn: Config): void {
       },
       get: async (candidate: SkillCandidate, options: SkillLookupOptions): Promise<SkillDefinition | undefined> => {
         if (options.signal?.aborted) return undefined
-        const skill = readSkillsChecked(activeSkillsDir).find((entry) => entry.folder === candidate.locator || entry.name === candidate.name)
+        // 精确匹配来源文件；同名回退 folder（保留首个目录条目）。
+        const skill = readAllSkillsChecked().find((entry) => entry.file === candidate.path)
+          ?? readAllSkillsChecked().find((entry) => entry.folder === candidate.locator || entry.name === candidate.name)
         if (skill === undefined || !skill.valid || skillSwitches[skill.folder] === false) return undefined
         return {
           name: candidate.name,
@@ -351,14 +373,14 @@ export function apply(ctx: Context, configIn: Config): void {
     NS,
     getDeepseekAvailable,
     getDeepseekState,
-    () => ({ activeSkillsDir, skillCatalog }),
+    () => ({ activeSkillsDirs, skillCatalog }),
     // 模板专属策略目录：当前 anchored 策略为引擎内置，自定义模板可经此注入。
     () => '',
     (sctx: Context) => ensureRegistered(sctx),
     () => {
       // 一键修复后立即重扫目录并失效官方 registry 缓存。
-      skillCatalog = catalogOf(readSkillsChecked(activeSkillsDir))
-      cachedSkills.invalidate(activeSkillsDir); invalidateSkills?.()
+      skillCatalog = catalogOf(readAllSkillsChecked())
+      cachedSkills.invalidate(); invalidateSkills?.()
     },
     () => runtime.presetDir,
     (scope) => {
@@ -397,7 +419,7 @@ export function apply(ctx: Context, configIn: Config): void {
     injectPrompt: config.injectPrompt,
     skillSwitches: { ...config.skillSwitches },
     skillOrder: [...skillOrder],
-    skillsDir: configuredSkillsDir,
+    skillsDirs: [...userSkillsDirs],
     firstTurnAnchor: config.firstTurnAnchor,
     firstTurnText: config.firstTurnText,
     firstTurnCustom: config.firstTurnCustom,
@@ -445,8 +467,9 @@ export function apply(ctx: Context, configIn: Config): void {
     skillSwitches: runtime.skillSwitches,
     skillOrder: runtime.skillOrder,
     skillCatalog,
-    skillsDir: runtime.skillsDir,
-    activeSkillsDir,
+    skillsDirs: runtime.skillsDirs,
+    activeSkillsDirs,
+    skillsDirExists: Object.fromEntries(activeSkillsDirs.map((dir) => [dir, existsSync(dir)])),
     skillRankBase: runtime.skillRankBase,
     residentAgentsPath: runtime.residentAgentsPath,
     presetDir: runtime.presetDir,
@@ -473,7 +496,9 @@ registerTuiCommand(ctx, NS, () => currentSource(), getDeepseekAvailable, getDeep
       injectPrompt: typeof next.injectPrompt === 'boolean' ? next.injectPrompt : config.injectPrompt,
       skillSwitches: next.skillSwitches !== undefined ? next.skillSwitches : config.skillSwitches,
       skillOrder: Array.isArray(next.skillOrder) ? next.skillOrder.filter((folder): folder is string => typeof folder === 'string') : config.skillOrder,
-      skillsDir: typeof next.skillsDir === 'string' ? next.skillsDir : configuredSkillsDir,
+      skillsDirs: Array.isArray(next.skillsDirs)
+        ? next.skillsDirs.filter((dir): dir is string => typeof dir === 'string' && dir.trim().length > 0)
+        : userSkillsDirs,
       firstTurnAnchor: typeof next.firstTurnAnchor === 'boolean' ? next.firstTurnAnchor : config.firstTurnAnchor,
       firstTurnText: typeof next.firstTurnText === 'string' ? next.firstTurnText : config.firstTurnText,
       firstTurnCustom: typeof next.firstTurnCustom === 'boolean' ? next.firstTurnCustom : config.firstTurnCustom,
@@ -495,7 +520,7 @@ registerTuiCommand(ctx, NS, () => currentSource(), getDeepseekAvailable, getDeep
     const agentsChanged = next.agentsText !== currentAgents
     const skillSwitchesChanged = JSON.stringify(runtime.skillSwitches) !== JSON.stringify(nextRuntime.skillSwitches)
     const skillOrderChanged = JSON.stringify(runtime.skillOrder) !== JSON.stringify(nextRuntime.skillOrder)
-    const skillsDirChanged = runtime.skillsDir !== nextRuntime.skillsDir
+    const skillsDirsChanged = JSON.stringify(runtime.skillsDirs) !== JSON.stringify(nextRuntime.skillsDirs)
     const skillRankBaseChanged = runtime.skillRankBase !== nextRuntime.skillRankBase
     const fallbackTextChanged = runtime.fallbackText !== nextRuntime.fallbackText
     const settingsChanged = runtime.writeAgents !== nextRuntime.writeAgents
@@ -505,7 +530,7 @@ registerTuiCommand(ctx, NS, () => currentSource(), getDeepseekAvailable, getDeep
       || runtime.injectPrompt !== nextRuntime.injectPrompt
       || skillSwitchesChanged
       || skillOrderChanged
-      || skillsDirChanged
+      || skillsDirsChanged
       || skillRankBaseChanged
       || runtime.firstTurnAnchor !== nextRuntime.firstTurnAnchor
       || runtime.firstTurnText !== nextRuntime.firstTurnText
@@ -540,7 +565,7 @@ registerTuiCommand(ctx, NS, () => currentSource(), getDeepseekAvailable, getDeep
     runtime.injectPrompt = nextRuntime.injectPrompt
     runtime.skillSwitches = nextRuntime.skillSwitches
     runtime.skillOrder = nextRuntime.skillOrder
-    runtime.skillsDir = nextRuntime.skillsDir
+    runtime.skillsDirs = nextRuntime.skillsDirs
     runtime.firstTurnAnchor = nextRuntime.firstTurnAnchor
     runtime.firstTurnText = nextRuntime.firstTurnText
     runtime.firstTurnCustom = nextRuntime.firstTurnCustom
@@ -560,11 +585,11 @@ registerTuiCommand(ctx, NS, () => currentSource(), getDeepseekAvailable, getDeep
     skillSwitches = runtime.skillSwitches
     skillOrder = runtime.skillOrder
     skillRankBase = runtime.skillRankBase
-    if (skillsDirChanged) {
-      applyActiveSkillsDir(resolveActiveSkillsDir(runtime.skillsDir))
-      cachedSkills.invalidate(activeSkillsDir); invalidateSkills?.()
+    if (skillsDirsChanged) {
+      applyActiveSkillsDirs(resolveActiveSkillsDirs(runtime.skillsDirs))
+      cachedSkills.invalidate(); invalidateSkills?.()
     } else if (skillSwitchesChanged || skillOrderChanged || skillRankBaseChanged) {
-      cachedSkills.invalidate(activeSkillsDir); invalidateSkills?.()
+      cachedSkills.invalidate(); invalidateSkills?.()
     }
 
     let residentAgentsWritten = false
@@ -642,7 +667,7 @@ export type { PromptConfigTemplate } from './host/templates.ts'
 export { registerTuiCommand } from './runtime/tui.ts'
 export { ensureSettingsRegistered } from './runtime/settings-registration.ts'
 export type { SettingsRegistrationHooks } from './runtime/settings-registration.ts'
-export { createCachedSkillsReader, readSkills, listSkillFolders, isValidSkill, validSkills, SKILL_NAME_RE } from './runtime/skills-provider.ts'
+export { createCachedSkillsReader, readSkills, mergeSkillDirs, listSkillFolders, isValidSkill, validSkills, SKILL_NAME_RE } from './runtime/skills-provider.ts'
 export type { CachedSkillsReader } from './runtime/skills-provider.ts'
 export { fixSkillEntry, toKebabName } from './runtime/skill-fix.ts'
 export type { SkillFixResult } from './runtime/skill-fix.ts'

@@ -3,13 +3,17 @@ import type { PromptConfigDraft, EngineMeta } from './prompt-tool-types.ts'
 import { SETTINGS_BRIDGE_PREFIX, type BridgeErrorPayload } from '../shared/bridge-contract.ts'
 
 export interface BridgeSettingsView { ns: string; value: unknown; base?: unknown; revision: number }
-export type BridgeResult<T> = { ok: true; value: T; deepseekProviders?: string[]; activeSkillsDir?: string; skillCatalog?: SkillCatalogEntry[] } | BridgeErrorPayload
+export type BridgeResult<T> = { ok: true; value: T; deepseekProviders?: string[]; activeSkillsDirs?: string[]; skillCatalog?: SkillCatalogEntry[] } | BridgeErrorPayload
 
 export interface SkillCatalogEntry {
   folder: string
   name: string
   description: string
   valid: boolean
+  /** 来源技能目录绝对路径。 */
+  dir?: string
+  /** 同名标记：多目录存在相同 folder 时 UI 标注。 */
+  duplicate?: boolean
   issue?: string
   modelInvocable: boolean
   userInvocable: boolean
@@ -41,8 +45,12 @@ export interface Fields {
   skillSwitches: Record<string, boolean>
   skillOrder: string[]
   skillCatalog: SkillCatalogEntry[]
-  skillsDir: string
-  activeSkillsDir: string
+  /** 用户技能目录列表（按添加顺序）；空 = 默认副本。 */
+  skillsDirs: string[]
+  /** 实际生效目录列表（空配置 = [默认副本路径]）。 */
+  activeSkillsDirs: string[]
+  /** 生效目录存在性（path → 是否存在）。 */
+  skillsDirExists: Record<string, boolean>
   skillRankBase: number
   residentAgentsPath: string
   presetDir: string
@@ -96,8 +104,9 @@ export const EMPTY_FIELDS: Fields = {
   skillSwitches: {},
   skillOrder: [],
   skillCatalog: [],
-  skillsDir: '',
-  activeSkillsDir: '',
+  skillsDirs: [],
+  activeSkillsDirs: [],
+  skillsDirExists: {},
   skillRankBase: 250,
   residentAgentsPath: '',
   presetDir: '',
@@ -160,6 +169,8 @@ const readSkillCatalog = (source: Record<string, unknown>, key: string): SkillCa
       // 向后兼容旧宿主：旧版 /describe 只返回 folder/name/description（且旧扫描
       // 已过滤非法名），缺字段按旧语义默认 true；新版宿主显式携带 valid=false。
       valid: readBoolean(record, 'valid', true),
+      ...(typeof record.dir === 'string' && record.dir.length > 0 ? { dir: record.dir } : {}),
+      ...(record.duplicate === true ? { duplicate: true } : {}),
       ...(typeof record.issue === 'string' && record.issue.length > 0 ? { issue: record.issue } : {}),
       modelInvocable: readBoolean(record, 'modelInvocable', true),
       userInvocable: readBoolean(record, 'userInvocable', true),
@@ -234,10 +245,27 @@ export function fieldsFromView(res: BridgeResult<BridgeSettingsView>): Fields {
       : readSkillCatalog(value, 'skillCatalog').length > 0
         ? readSkillCatalog(value, 'skillCatalog')
         : readSkillCatalog(base, 'skillCatalog'),
-    skillsDir: readString(value, 'skillsDir') ?? readString(base, 'skillsDir') ?? '',
-    activeSkillsDir: res.ok && res.activeSkillsDir !== undefined
-      ? res.activeSkillsDir
-      : readString(value, 'activeSkillsDir') ?? readString(base, 'activeSkillsDir') ?? '',
+    skillsDirs: readStringArray(value, 'skillsDirs').length > 0
+      ? readStringArray(value, 'skillsDirs')
+      : readStringArray(base, 'skillsDirs'),
+    activeSkillsDirs: readStringArray(value, 'activeSkillsDirs').length > 0
+      ? readStringArray(value, 'activeSkillsDirs')
+      : readStringArray(base, 'activeSkillsDirs'),
+    skillsDirExists: (() => {
+      const merged: Record<string, boolean> = {}
+      for (const entry of [value, base]) {
+        const record = entry
+        const exists = record.skillsDirExists
+        if (exists !== null && typeof exists === 'object' && !Array.isArray(exists)) {
+          Object.assign(merged, exists as Record<string, unknown>)
+        }
+      }
+      const result: Record<string, boolean> = {}
+      for (const [path, ok] of Object.entries(merged)) {
+        if (typeof ok === 'boolean') result[path] = ok
+      }
+      return result
+    })(),
     skillRankBase: readNumber(value, 'skillRankBase', readNumber(base, 'skillRankBase', 250)),
     residentAgentsPath: readString(value, 'residentAgentsPath') ?? readString(base, 'residentAgentsPath') ?? '',
     presetDir: readString(value, 'presetDir') ?? readString(base, 'presetDir') ?? '',

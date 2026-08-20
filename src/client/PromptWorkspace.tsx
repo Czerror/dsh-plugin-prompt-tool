@@ -506,6 +506,7 @@ function SkillsSettings(props: { store: PromptToolStore; api: IApiClient }): Rea
   const [statusTab, setStatusTab] = useState<SkillStatusTab>('all')
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [menuOpen, setMenuOpen] = useState<string | undefined>(undefined)
+  const [removingDir, setRemovingDir] = useState<string | undefined>(undefined)
   const orderedSkills = useMemo(() => {
     const index = new Map(fields.skillOrder.map((folder, at) => [folder, at]))
     return [...fields.skillCatalog].sort((left, right) => {
@@ -519,8 +520,8 @@ function SkillsSettings(props: { store: PromptToolStore; api: IApiClient }): Rea
   }, [fields.skillCatalog, fields.skillOrder])
   const dirty = JSON.stringify(fields.skillSwitches) !== JSON.stringify(store.savedSwitches.skillSwitches)
     || JSON.stringify(fields.skillOrder) !== JSON.stringify(store.savedSwitches.skillOrder)
-    || fields.skillsDir !== store.savedSwitches.skillsDir
-    || store.skillsDirDraft.trim() !== fields.skillsDir
+    || JSON.stringify(fields.skillsDirs) !== JSON.stringify(store.savedSwitches.skillsDirs)
+    || store.skillsDirDraft.trim().length > 0
 
   const enabledCount = orderedSkills.filter((skill) => store.skillEnabled(skill.folder)).length
   const callableCount = orderedSkills.filter((skill) => skill.valid && skill.modelInvocable && store.skillEnabled(skill.folder)).length
@@ -542,15 +543,37 @@ function SkillsSettings(props: { store: PromptToolStore; api: IApiClient }): Rea
   })
 
   const selectionMode = selected.size > 0
-
-  const toggleSelect = (folder: string) => {
-    setSelected((prev) => {
-      const next = new Set(prev)
-      if (next.has(folder)) next.delete(folder)
-      else next.add(folder)
-      return next
-    })
+  /** 全选目标：当前筛选后的合法技能（同名/无效技能不可批量启用）。 */
+  const selectableSkills = visibleSkills.filter((skill) => skill.valid)
+  const allSelected = selectionMode && selectableSkills.length > 0
+    && selectableSkills.every((skill) => selected.has(skill.folder))
+  const toggleSelectAll = () => {
+    if (allSelected) setSelected(new Set())
+    else setSelected(new Set(selectableSkills.map((skill) => skill.folder)))
   }
+  const dirSkillCount = (dir: string): number =>
+    fields.skillCatalog.filter((skill) => skill.dir === dir).length
+  /** 空配置 = 默认副本兜底（只读，不可移除）。 */
+  const isDefaultDir = (dir: string): boolean =>
+    fields.skillsDirs.length === 0 && fields.activeSkillsDirs[0] === dir
+  /** 嵌套技能：folder 含 /（相对路径）即子技能；渲染时父技能下递归展开。 */
+  const isNestedFolder = (folder: string): boolean => folder.includes('/')
+  /** 主技能序列（不嵌套）：拖拽/菜单排序只在主技能间进行，子技能跟随。 */
+  const orderedPrimary = orderedSkills.filter((skill) => !isNestedFolder(skill.folder))
+  const childrenByParent = new Map<string, SkillCatalogEntry[]>()
+  for (const skill of visibleSkills) {
+    if (!isNestedFolder(skill.folder)) continue
+    const slash = skill.folder.lastIndexOf('/')
+    const parent = skill.folder.slice(0, slash)
+    const list = childrenByParent.get(parent) ?? []
+    list.push(skill)
+    childrenByParent.set(parent, list)
+  }
+  for (const list of childrenByParent.values()) list.sort((a, b) => a.folder.localeCompare(b.folder))
+  const expandSkill = (skill: SkillCatalogEntry): SkillCatalogEntry[] =>
+    [skill, ...(childrenByParent.get(skill.folder) ?? []).flatMap(expandSkill)]
+  const renderOrder = visibleSkills.filter((skill) => !isNestedFolder(skill.folder)).flatMap(expandSkill)
+  const depthOf = (folder: string): number => folder.split('/').length - 1
 
   /** 批量启用/禁用：一次 patch + 一次保存（避免逐项写 N 次）。 */
   const batchSet = (enabled: boolean) => {
@@ -599,8 +622,7 @@ function SkillsSettings(props: { store: PromptToolStore; api: IApiClient }): Rea
       }
       const path = picked.result.value?.path
       if (!path) return
-      store.setSkillsDirDraft(path)
-      store.applySkillsDirValue(path)
+      store.addSkillsDir(path)
     } catch (error) {
       store.showNotice('error', '选择目录失败：' + (error instanceof Error ? error.message : String(error)))
     } finally {
@@ -608,31 +630,34 @@ function SkillsSettings(props: { store: PromptToolStore; api: IApiClient }): Rea
     }
   }
 
-  const renderCard = (skill: SkillCatalogEntry, index: number): ReactNode => {
-    const hint = `skills/${skill.folder}${skill.description ? ` · ${skill.description}` : ''}`
+  const renderCard = (skill: SkillCatalogEntry, depth: number, primaryIndex: number): ReactNode => {
+    const hint = `${skill.dir ?? 'skills'}/${skill.folder}${skill.description ? ` · ${skill.description}` : ''}`
     const enabled = store.skillEnabled(skill.folder)
+    const nested = depth > 0
     return (
       <div
         key={skill.folder}
         className={clsx(ui.skillCard, !skill.valid && ui.skillRowInvalid)}
+        data-nested={nested ? '' : undefined}
+        data-selected={selected.has(skill.folder) ? '' : undefined}
         data-dragging={dragFolder === skill.folder ? '' : undefined}
         data-drop-before={dropTarget?.folder === skill.folder && dropTarget.before ? '' : undefined}
         data-drop-after={dropTarget?.folder === skill.folder && !dropTarget.before ? '' : undefined}
-        draggable={skill.valid && !selectionMode}
+        draggable={skill.valid && !selectionMode && !nested}
         onDragStart={(event) => {
           setDragFolder(skill.folder)
           event.dataTransfer.effectAllowed = 'move'
         }}
         onDragOver={(event) => {
           event.preventDefault()
-          if (dragFolder === undefined || dragFolder === skill.folder) return
+          if (dragFolder === undefined || dragFolder === skill.folder || nested) return
           const rect = event.currentTarget.getBoundingClientRect()
           setDropTarget({ folder: skill.folder, before: event.clientY < rect.top + rect.height / 2 })
         }}
         onDrop={(event) => {
           event.preventDefault()
           const target = dropTarget
-          if (dragFolder !== undefined && target !== undefined && dragFolder !== skill.folder) {
+          if (dragFolder !== undefined && target !== undefined && dragFolder !== skill.folder && !nested) {
             moveSkillAt(dragFolder, target.folder, target.before)
           }
           setDragFolder(undefined)
@@ -640,15 +665,19 @@ function SkillsSettings(props: { store: PromptToolStore; api: IApiClient }): Rea
         }}
         onDragEnd={() => { setDragFolder(undefined); setDropTarget(undefined) }}
       >
-        <label className={ui.skillSelect} aria-label={`选择 ${skill.name || skill.folder}`}>
-          <input type="checkbox" checked={selected.has(skill.folder)} disabled={!skill.valid} onChange={() => toggleSelect(skill.folder)} />
-        </label>
-        <span className={ui.dragHandle} title={`第 ${index + 1} 位${selectionMode ? '（选择模式下拖拽已禁用）' : '，拖动调整顺序'}`} aria-hidden="true">⠿</span>
-        <span className={ui.skillRankBadge} title={`第 ${index + 1} 位`}>{index + 1}</span>
+        {nested
+          ? <span className={ui.skillNestedMark} aria-hidden="true" title="嵌套子技能（跟随主技能，不参与拖拽排序）">▸</span>
+          : (
+            <>
+              <span className={ui.dragHandle} title={`第 ${primaryIndex + 1} 位${selectionMode ? '（选择模式下拖拽已禁用）' : '，拖动调整顺序'}`} aria-hidden="true">⠿</span>
+              <span className={ui.skillRankBadge} title={`第 ${primaryIndex + 1} 位`}>{primaryIndex + 1}</span>
+            </>
+          )}
         <label className={ui.skillCardToggle} htmlFor={`pt-skill-${skill.folder}`}>
           <span className={ui.skillCardBody}>
             <span className={ui.skillCardTitleRow}>
               <strong>{skill.name || skill.folder}</strong>
+              {skill.duplicate === true && <span className={ui.duplicateBadge} title={`同名技能：来源目录 ${skill.dir ?? '未知'}`}>同名</span>}
               <SkillStatusChips skill={skill} enabled={enabled} />
             </span>
             <small className={ui.skillCardMeta}>{hint}</small>
@@ -659,7 +688,7 @@ function SkillsSettings(props: { store: PromptToolStore; api: IApiClient }): Rea
             <span className={ui.switch} aria-hidden="true"><i /></span>
           </span>
         </label>
-        {skill.valid ? (
+        {skill.valid && !nested ? (
           <span className={ui.skillMenuHost}>
             <button
               type="button"
@@ -672,8 +701,8 @@ function SkillsSettings(props: { store: PromptToolStore; api: IApiClient }): Rea
               <>
                 <span className={ui.menuBackdrop} onClick={() => setMenuOpen(undefined)} />
                 <span className={ui.skillMenu} role="menu" aria-label={`排序 ${skill.name || skill.folder}`} onKeyDown={(event) => { if (event.key === 'Escape') setMenuOpen(undefined) }}>
-                  <button type="button" role="menuitem" disabled={index === 0} onClick={() => { moveSkill(skill.folder, orderedSkills[index - 1]!.folder); setMenuOpen(undefined) }}>上移</button>
-                  <button type="button" role="menuitem" disabled={index >= orderedSkills.length - 1} onClick={() => { moveSkill(skill.folder, orderedSkills[index + 1]!.folder); setMenuOpen(undefined) }}>下移</button>
+                  <button type="button" role="menuitem" disabled={primaryIndex === 0} onClick={() => { moveSkill(skill.folder, orderedPrimary[primaryIndex - 1]!.folder); setMenuOpen(undefined) }}>上移</button>
+                  <button type="button" role="menuitem" disabled={primaryIndex >= orderedPrimary.length - 1} onClick={() => { moveSkill(skill.folder, orderedPrimary[primaryIndex + 1]!.folder); setMenuOpen(undefined) }}>下移</button>
                 </span>
               </>
             )}
@@ -729,6 +758,11 @@ function SkillsSettings(props: { store: PromptToolStore; api: IApiClient }): Rea
               spellCheck={false}
               onChange={(event) => setSkillFilter(event.target.value)}
             />
+            {selectableSkills.length > 0 && (
+              <button type="button" className={ui.pillButton} onClick={toggleSelectAll}>
+                {allSelected ? '取消全选' : `全选（${selectableSkills.length}）`}
+              </button>
+            )}
           </div>
         </>
       )}
@@ -750,45 +784,93 @@ function SkillsSettings(props: { store: PromptToolStore; api: IApiClient }): Rea
             </div>
           )}
           <div className={ui.skillCardList}>
-            {visibleSkills.map((skill) => {
-              const index = orderedSkills.indexOf(skill)
-              return renderCard(skill, index)
+            {renderOrder.map((skill) => {
+              const depth = depthOf(skill.folder)
+              const primaryIndex = depth === 0 ? orderedPrimary.indexOf(skill) : 0
+              return renderCard(skill, depth, primaryIndex)
             })}
           </div>
         </>
       )}
 
       <details className={ui.disclosure}>
-        <summary><span>目录与来源</span><small>导入 / 路径 / 重扫</small></summary>
+        <summary><span>目录与来源</span><small>{fields.activeSkillsDirs.length} 个目录 · 添加 / 移除引用</small></summary>
         <div className={ui.disclosureBody}>
-          <div className={ui.importBar}>
-            <div><strong>从目录导入技能目录</strong><small>打开系统文件管理器选择目录；选中路径写入下方编辑框并立即保存生效。每个子文件夹应含 SKILL.md。</small></div>
-            <button type="button" className={ui.primaryPill} disabled={pickingDir} onClick={() => void pickSkillsDir()}>{pickingDir && <span className={ui.spinner} aria-hidden="true" />}{pickingDir ? '选择中…' : '选择目录并导入'}</button>
-          </div>
-          <div className={ui.rowGroup}>
-            <div className={ui.settingRowStack}>
-              <span className={ui.settingCopy}>
-                <strong>技能目录</strong>
-                <small>编辑框可直接输入路径；留空 = 当前 profile 下的 skills/ 副本，设置后立即重新扫描。</small>
-                <code className={ui.activePath} title={fields.activeSkillsDir}>{fields.activeSkillsDir || '（路径未知，请重新打开工作台）'}</code>
-              </span>
-              <div className={ui.directoryControl}>
-                <input
-                  className={ui.directoryInput}
-                  aria-label="用户自定义技能目录"
-                  value={store.skillsDirDraft}
-                  placeholder="留空 = 自动使用当前生效目录"
-                  title={`当前生效：${fields.activeSkillsDir || '未知'}`}
-                  spellCheck={false}
-                  onChange={(event) => store.setSkillsDirDraft(event.target.value)}
-                />
-                <button type="button" className={ui.pillButton} disabled={store.savingSkillsDir || store.skillsDirDraft.trim() === fields.skillsDir} onClick={store.applySkillsDir}>
-                  {store.savingSkillsDir && <span className={ui.spinner} aria-hidden="true" />}{store.savingSkillsDir ? '设置中…' : '设置目录'}
-                </button>
-                <button type="button" className={ui.pillButton} disabled={!fields.activeSkillsDir && !fields.skillsDir} onClick={() => void store.openSkillsDir()}>打开技能目录</button>
-              </div>
+          <div className={ui.dirAddBar}>
+            <button type="button" className={ui.primaryPill} disabled={pickingDir} onClick={() => void pickSkillsDir()}>
+              {pickingDir && <span className={ui.spinner} aria-hidden="true" />}
+              {pickingDir ? '选择中…' : '从文件夹选择器添加'}
+            </button>
+            <div className={ui.dirAddInput}>
+              <input
+                className={ui.directoryInput}
+                aria-label="按路径添加技能目录"
+                value={store.skillsDirDraft}
+                placeholder="或输入目录路径后添加"
+                spellCheck={false}
+                onChange={(event) => store.setSkillsDirDraft(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' && store.skillsDirDraft.trim().length > 0) {
+                    store.addSkillsDir(store.skillsDirDraft)
+                    store.setSkillsDirDraft('')
+                  }
+                }}
+              />
+              <button
+                type="button"
+                className={ui.pillButton}
+                disabled={store.savingSkillsDir || store.skillsDirDraft.trim().length === 0}
+                onClick={() => {
+                  store.addSkillsDir(store.skillsDirDraft)
+                  store.setSkillsDirDraft('')
+                }}
+              >
+                {store.savingSkillsDir && <span className={ui.spinner} aria-hidden="true" />}
+                添加
+              </button>
             </div>
           </div>
+          {fields.activeSkillsDirs.length === 0 ? (
+            <p className={ui.readOnly} role="status">技能目录列表为空。</p>
+          ) : (
+            <div className={ui.dirCardList}>
+              {fields.activeSkillsDirs.map((dir, index) => {
+                const exists = fields.skillsDirExists[dir] === true
+                const count = dirSkillCount(dir)
+                const isDefault = isDefaultDir(dir)
+                return (
+                  <div key={dir} className={ui.dirCard} data-invalid={!exists ? '' : undefined}>
+                    <span className={ui.skillRankBadge} title={`第 ${index + 1} 个目录`}>{index + 1}</span>
+                    <div className={ui.dirCardBody}>
+                      <span className={ui.dirCardTitle}>
+                        <code className={ui.dirPath} title={dir}>{dir}</code>
+                        {isDefault && <span className={ui.duplicateBadge} title="未配置自定义目录时使用的 profile skills 副本">默认副本</span>}
+                      </span>
+                      <span className={ui.dirCardMeta}>
+                        {exists
+                          ? (count > 0 ? `${count} 个技能` : '空目录')
+                          : '目录不存在'}
+                        {!exists && ' · 可移除后重新添加'}
+                      </span>
+                    </div>
+                    <div className={ui.dirCardActions}>
+                      <button type="button" className={ui.pillButton} onClick={() => void store.openSkillsDir(dir)}>打开</button>
+                      <button type="button" className={ui.pillButton} onClick={() => void store.load()}>重扫</button>
+                      {!isDefault && (removingDir === dir ? (
+                        <>
+                          <button type="button" className={ui.pillButton} data-danger onClick={() => { store.removeSkillsDir(dir); setRemovingDir(undefined) }}>确认移除</button>
+                          <button type="button" className={ui.pillButton} data-variant="secondary" onClick={() => setRemovingDir(undefined)}>取消</button>
+                        </>
+                      ) : (
+                        <button type="button" className={ui.pillButton} onClick={() => setRemovingDir(dir)}>移除</button>
+                      ))}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+          <p className={ui.readOnly}>目录顺序即添加顺序；同名技能全部保留并标注「同名」，模型注册只取首个目录。移除目录只删除引用，不删除原文件。</p>
         </div>
       </details>
 

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { parseFrontmatter, createCachedSkillsReader, readSkills, validSkills, SKILL_NAME_RE } from '../../lib/index.mjs'
+import { parseFrontmatter, createCachedSkillsReader, readSkills, mergeSkillDirs, validSkills, SKILL_NAME_RE } from '../../lib/index.mjs'
 
 const makeDir = () => {
   const dir = mkdtempSync(join(tmpdir(), 'prompt-tool-skills-'))
@@ -35,10 +35,60 @@ test('readSkills：BOM + 合法 kebab name 是有效条目，调用标志默认�
     assert.equal(entry.folder, 'demo-skill')
     assert.equal(entry.name, 'demo-skill')
     assert.equal(entry.valid, true)
+    assert.equal(entry.dir, dir)
     assert.equal(entry.modelInvocable, true)
     assert.equal(entry.userInvocable, true)
     assert.equal(entry.body, 'BODY')
     assert.equal(validSkills([entry]).length, 1)
+  } finally {
+    cleanup()
+  }
+})
+
+test('mergeSkillDirs：多目录全量合并，同名技能全部保留并带各自来源 dir', () => {
+  const a = makeDir()
+  const b = makeDir()
+  try {
+    writeSkill(a.dir, 'shared-skill', '---\nname: shared-skill\ndescription: A\n---\nA')
+    writeSkill(a.dir, 'only-a', '---\nname: only-a\ndescription: A\n---\nA')
+    writeSkill(b.dir, 'shared-skill', '---\nname: shared-skill\ndescription: B\n---\nB')
+    writeSkill(b.dir, 'only-b', '---\nname: only-b\ndescription: B\n---\nB')
+    const merged = mergeSkillDirs([a.dir, b.dir], readSkills)
+    assert.equal(merged.length, 4)
+    const shared = merged.filter((entry) => entry.folder === 'shared-skill')
+    assert.equal(shared.length, 2)
+    assert.deepEqual(shared.map((entry) => entry.dir).sort(), [a.dir, b.dir].sort())
+    assert.equal(merged.find((entry) => entry.folder === 'only-a').dir, a.dir)
+    assert.equal(merged.find((entry) => entry.folder === 'only-b').dir, b.dir)
+  } finally {
+    a.cleanup()
+    b.cleanup()
+  }
+})
+
+test('readSkills：嵌套子技能同时注册（folder 相对路径），空文件夹不产生条目', () => {
+  const { dir, cleanup } = makeDir()
+  try {
+    writeSkill(dir, 'main-skill', '---\nname: main-skill\ndescription: Main\n---\nMAIN')
+    writeSkill(dir, 'main-skill/sub-skill', '---\nname: sub-skill\ndescription: Sub\n---\nSUB')
+    writeSkill(dir, 'main-skill/sub-skill/deep-skill', '---\nname: deep-skill\ndescription: Deep\n---\nDEEP')
+    // 多层空文件夹：不产生条目。
+    mkdirSync(join(dir, 'empty-folder', 'inner', 'deeper'), { recursive: true })
+    // 技能目录下的非技能子目录（无 SKILL.md）：不产生条目。
+    mkdirSync(join(dir, 'main-skill', 'assets'), { recursive: true })
+    const entries = readSkills(dir)
+    const main = entries.find((entry) => entry.folder === 'main-skill')
+    const sub = entries.find((entry) => entry.folder === 'main-skill/sub-skill')
+    const deep = entries.find((entry) => entry.folder === 'main-skill/sub-skill/deep-skill')
+    assert.ok(main, '主技能应注册')
+    assert.ok(sub, '一级子技能应注册')
+    assert.ok(deep, '多级嵌套子技能应注册')
+    assert.equal(main.valid, true)
+    assert.equal(sub.valid, true)
+    assert.equal(deep.valid, true)
+    assert.equal(sub.dir, dir)
+    assert.equal(entries.find((entry) => entry.folder.includes('empty-folder')), undefined)
+    assert.equal(entries.find((entry) => entry.folder.includes('assets')), undefined)
   } finally {
     cleanup()
   }

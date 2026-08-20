@@ -36,7 +36,7 @@ function register() {
     'prompt-tool',
     () => true,
     () => ({ available: true, providers: [] }),
-    () => ({ activeSkillsDir: '', skillCatalog: [] }),
+    () => ({ activeSkillsDirs: [], skillCatalog: [] }),
     () => '',
     () => true,
   )

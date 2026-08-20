@@ -428,6 +428,7 @@
 .skillCardList { display: flex; min-width: 0; flex-direction: column; gap: 8px; }
 .skillCard {
   display: flex;
+  position: relative;
   min-width: 0;
   align-items: center;
   gap: 8px;
@@ -439,33 +440,102 @@
 }
 .skillCard:hover { border-color: color-mix(in srgb, var(--pt-accent) 28%, var(--dsw-alias-border-l2)); }
 .skillCard[data-dragging] { opacity: .4; }
+.skillCard[data-nested] { margin-left: 26px; }
+.skillCard[data-nested]::before {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -13px;
+  width: 1px;
+  content: "";
+  background: color-mix(in srgb, var(--pt-accent) 22%, var(--dsw-alias-border-l2));
+}
 .skillCard[data-drop-before] { box-shadow: 0 -2px 0 0 var(--pt-accent); }
 .skillCard[data-drop-after] { box-shadow: 0 2px 0 0 var(--pt-accent); }
-.skillCard:has(.skillSelect input:checked) {
+.skillCard[data-selected] {
   border-color: color-mix(in srgb, var(--pt-accent) 55%, var(--dsw-alias-border-l2));
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--pt-accent) 16%, transparent);
 }
 .skillCard:has(.skillCardToggle input:disabled) .switch { opacity: .55; }
+
+/* 嵌套子技能标记：替代序号徽章与拖拽手柄。 */
+.skillNestedMark {
+  display: grid;
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 50%;
+  color: var(--dsw-alias-label-tertiary);
+  background: var(--dsw-alias-bg-layer-2);
+  font-size: 10px;
+  line-height: 1;
+}
 
 /* 未通过官方校验的技能：弱化主体文字，状态徽章与修复按钮保持满对比度。 */
 .skillRowInvalid .skillCardBody { opacity: .55; }
 .skillRowInvalid .dragHandle { opacity: .4; cursor: not-allowed; }
 .skillRowInvalid .switch { opacity: .55; }
 
-.skillSelect {
+.duplicateBadge {
   display: inline-flex;
   flex: 0 0 auto;
   align-items: center;
-  cursor: pointer;
+  border: 1px solid color-mix(in srgb, var(--pt-chip-error) 36%, var(--dsw-alias-border-l2));
+  border-radius: 999px;
+  padding: 1px 8px;
+  color: var(--dsw-alias-state-error-primary, #d5484d);
+  background: color-mix(in srgb, var(--pt-chip-error) 7%, transparent);
+  font-size: 10px;
+  font-weight: 650;
+  line-height: 16px;
+  white-space: nowrap;
 }
-.skillSelect input {
-  width: 15px;
-  height: 15px;
-  margin: 0;
-  accent-color: var(--pt-accent);
-  cursor: pointer;
+
+/* 多目录卡片：路径 + 状态 + 计数 + 行操作。 */
+.dirCardList { display: flex; min-width: 0; flex-direction: column; gap: 8px; }
+.dirCard {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 12px;
+  padding: 9px 12px;
+  background: var(--dsw-alias-bg-layer-3);
+  transition: border-color .16s ease;
 }
-.skillSelect input:disabled { cursor: default; }
+.dirCard[data-invalid] { border-color: color-mix(in srgb, var(--pt-chip-error) 38%, var(--dsw-alias-border-l2)); }
+.dirCardBody { display: flex; min-width: 0; flex: 1; flex-direction: column; gap: 2px; }
+.dirCardTitle { display: flex; min-width: 0; align-items: center; gap: 8px; flex-wrap: wrap; }
+.dirPath {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--dsw-alias-label-primary);
+  font-family: var(--ds-font-family-code, ui-monospace, monospace);
+  font-size: 12px;
+  line-height: 1.5;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dirCardMeta { color: var(--dsw-alias-label-tertiary); font-size: 11px; line-height: 1.5; }
+.dirCardActions { display: flex; flex: 0 0 auto; align-items: center; gap: 6px; flex-wrap: wrap; }
+.dirCardActions .pillButton { height: 28px; padding: 0 11px; font-size: 12px; }
+
+/* 添加目录行：选择器主按钮 + 输入路径次要。 */
+.dirAddBar {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.dirAddInput { display: flex; min-width: 0; flex: 1 1 280px; align-items: center; gap: 8px; }
+.dirAddInput .directoryInput { flex: 1; }
+
+/* 过滤行：搜索框 + 全选按钮同排。 */
+.listFilterRow { display: flex; min-width: 0; align-items: center; gap: 8px; }
+.listFilterRow .listFilter { max-width: none; flex: 1; }
 
 .skillRankBadge {
   display: grid;

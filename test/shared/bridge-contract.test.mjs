@@ -27,7 +27,7 @@ function register() {
     'prompt-tool',
     () => true,
     () => ({ available: true, providers: ['deepseek-official'] }),
-    () => ({ activeSkillsDir: '', skillCatalog: [] }),
+    () => ({ activeSkillsDirs: [], skillCatalog: [] }),
     () => '',
     () => true,
   )

@@ -10,7 +10,6 @@ import {
   DEFAULT_PRESET_ORDER,
   DEFAULT_RESIDENT_AGENTS_PATH,
   DEFAULT_SKILL_RANK_BASE,
-  DEFAULT_SKILLS_DIR,
 } from './host/paths.ts'
 
 export const NS: SettingsNamespace = settingsNamespace('prompt-tool')
@@ -89,8 +88,10 @@ export interface Config {
   bootstrapMaxTokens: number
   /** 使用 PTC 模式：默认开启——晋升后把 wire 切换为 Code Mode（单一 run_code，完整插件工具经生成 SDK 调用）；关闭时晋升后恢复原生完整工具目录。 */
   usePtcMode: boolean
-  /** 用户自定义技能目录；空 = 自动使用当前 profile 下的 skills/ 副本。 */
-  skillsDir: string
+  /** 用户自定义技能目录列表（按添加顺序，首个目录优先级最高）；空 = 自动使用当前 profile 下的 skills/ 副本。 */
+  skillsDirs: string[]
+  /** 旧版单值技能目录（仅读取迁移用，新版本统一写回 skillsDirs）。 */
+  skillsDir?: string
   /** 技能候选排序基数，技能目录内按下标递增。 */
   skillRankBase: number
   /** 常驻规则文件目标路径。 */
@@ -126,7 +127,9 @@ export const Config: z<Config> = z.object({
   subagentModelName: z.string().default(''),
   bootstrapMaxTokens: z.natural().default(0),
   usePtcMode: z.boolean().default(true),
-  skillsDir: z.string().default(DEFAULT_SKILLS_DIR),
+  skillsDirs: z.array(z.string()).default([]),
+  // 兼容旧版单值 key：读取后由 index 归一迁移到 skillsDirs。
+  skillsDir: z.string().default(''),
   skillRankBase: z.natural().default(DEFAULT_SKILL_RANK_BASE),
   residentAgentsPath: z.string().default(DEFAULT_RESIDENT_AGENTS_PATH),
   presetDir: z.string().default(DEFAULT_PRESET_DIR),
@@ -137,6 +140,8 @@ export const Config: z<Config> = z.object({
 })
 
 export interface SkillEntry {
+  /** 来源技能目录的绝对路径（多目录合并后用于修复定位与归属展示）。 */
+  dir: string
   folder: string
   file: string
   name: string
@@ -162,6 +167,10 @@ export interface SkillCatalogEntry {
   description: string
   /** 是否通过官方 dsh-skill 候选校验；false 时 UI 灰显并展示 issue。 */
   valid: boolean
+  /** 来源技能目录绝对路径（多目录管理：修复定位 / 归属展示 / 目录计数）。 */
+  dir?: string
+  /** 同名标记：多个目录存在相同 folder 时全部保留，UI 标注同名。 */
+  duplicate?: boolean
   /** invalid 条目的原因。 */
   issue?: string
   /** 通过符号链接/junction 挂入的目录（删除类操作需谨慎）。 */
@@ -208,10 +217,12 @@ export interface PromptSettings {
   /** 技能展示顺序（目录名数组）。 */
   skillOrder: string[]
   skillCatalog: SkillCatalogEntry[]
-  /** 用户自定义技能目录；空 = 自动使用 profile skills 副本。 */
-  skillsDir: string
-  /** 当前实际生效的技能目录（profile 副本或用户自定义路径）。 */
-  activeSkillsDir: string
+  /** 用户自定义技能目录列表（按添加顺序）；空 = 自动使用 profile skills 副本。 */
+  skillsDirs: string[]
+  /** 当前实际生效的技能目录列表（空配置 = [profile 副本路径]）。 */
+  activeSkillsDirs: string[]
+  /** 生效目录存在性（path → 目录是否存在，供 UI 状态徽章）。 */
+  skillsDirExists: Record<string, boolean>
   /** 技能候选排序基数。 */
   skillRankBase: number
   /** 常驻规则文件目标路径。 */
@@ -255,12 +266,15 @@ export const PromptSettingsSchema: z<PromptSettings> = z.object({
     name: z.string(),
     description: z.string().default(''),
     valid: z.boolean().default(false),
+    dir: z.string().default(''),
+    duplicate: z.boolean().default(false),
     issue: z.string().default(''),
     modelInvocable: z.boolean().default(false),
     userInvocable: z.boolean().default(false),
   })).default([]),
-  skillsDir: z.string().default(''),
-  activeSkillsDir: z.string().default(''),
+  skillsDirs: z.array(z.string()).default([]),
+  activeSkillsDirs: z.array(z.string()).default([]),
+  skillsDirExists: z.dict(z.boolean()).default({}),
   skillRankBase: z.natural().default(DEFAULT_SKILL_RANK_BASE),
   residentAgentsPath: z.string().default(DEFAULT_RESIDENT_AGENTS_PATH),
   presetDir: z.string().default(DEFAULT_PRESET_DIR),
@@ -282,8 +296,8 @@ export interface RuntimeOptions {
   skillSwitches: Record<string, boolean>
   /** 技能展示顺序（目录名数组）。 */
   skillOrder: string[]
-  /** 用户自定义技能目录；空 = 自动使用 profile skills 副本。 */
-  skillsDir: string
+  /** 用户自定义技能目录列表（按添加顺序）；空 = 自动使用 profile skills 副本。 */
+  skillsDirs: string[]
   firstTurnAnchor: boolean
   firstTurnText: string
   firstTurnCustom: boolean

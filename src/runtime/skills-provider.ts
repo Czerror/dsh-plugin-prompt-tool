@@ -9,8 +9,8 @@
  *   3. 注册给 ctx.skills 的 provider 只返回 valid=true 的候选，
  *      并尊重 frontmatter 的 disable-model-invocation / user-invocable 调用策略。
  */
-import { readFileSync, readdirSync, statSync } from 'node:fs'
-import { join } from 'node:path'
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
+import { basename, dirname, join } from 'node:path'
 import { parseFrontmatter } from './skills-parse.ts'
 import type { SkillEntry } from '../config.ts'
 
@@ -56,49 +56,72 @@ export function validSkills(entries: SkillEntry[]): SkillEntry[] {
 }
 
 /**
- * 读取技能目录的全部条目（含坏条目）。
- *  - frontmatter 无 name 时回退目录名；
- *  - name（frontmatter 或目录名）必须 kebab-case 才 valid；
- *  - SKILL.md 不可读的目录不是技能，直接跳过（不列为坏条目）；
+ * 读取技能目录树的全部条目（含坏条目与嵌套子技能）。
+ *  - 递归语义：凡含 SKILL.md 的目录都是技能（folder = 相对路径，嵌套用 / 分隔）；
+ *    不含 SKILL.md 的目录（含多层空文件夹）不产生条目，直接下探其子目录。
+ *  - 链接（junction/symlink）目录作为技能叶子：含 SKILL.md 则注册，不递归进入（防环）。
+ *  - frontmatter 无 name 时回退目录名；name（frontmatter 或目录名）必须 kebab-case 才 valid；
  *  - warn 仅用于日志，不再决定条目去留。
  */
 export function readSkills(skillsDir: string, warn?: (message: string) => void): SkillEntry[] {
-  return listSkillFolders(skillsDir).flatMap((folder) => {
-    const file = join(skillsDir, folder.name, 'SKILL.md')
+  const entries: SkillEntry[] = []
+  const walk = (current: string, rel: string, linked: boolean): void => {
+    const file = join(current, 'SKILL.md')
     let raw: string
     try {
       raw = readFileSync(file, 'utf8')
     } catch {
-      // 二级子目录由 SKILL.md 引导链接，不属于技能本体；缺失 SKILL.md 的目录跳过。
-      warn?.(`prompt-tool: ${JSON.stringify(folder.name)} has no readable SKILL.md — skipped`)
-      return []
+      if (linked) return
+      // 当前目录不是技能：下探子目录找（嵌套）技能；空文件夹自然不产生条目。
+      for (const folder of listSkillFolders(current)) {
+        walk(join(current, folder.name), rel.length > 0 ? `${rel}/${folder.name}` : folder.name, folder.linked)
+      }
+      return
     }
-
+    const name = basename(current)
     const { data, body } = parseFrontmatter(raw)
-    const declaredName = typeof data.name === 'string' && data.name.length > 0 ? data.name : folder.name
+    const declaredName = typeof data.name === 'string' && data.name.length > 0 ? data.name : name
     const valid = SKILL_NAME_RE.test(declaredName)
     let issue: string | undefined
     if (!valid) {
       issue = `技能名不合法（官方要求 kebab-case 小写连字符）：${JSON.stringify(declaredName)}。请把目录改为 kebab-case，或修改 SKILL.md frontmatter 的 name。`
-      warn?.(`prompt-tool: skill ${JSON.stringify(folder.name)} ignored — ${issue}`)
+      warn?.(`prompt-tool: skill ${JSON.stringify(rel)} ignored — ${issue}`)
     }
-    return [{
-      folder: folder.name,
+    entries.push({
+      dir: skillsDir,
+      folder: rel.length > 0 ? rel : name,
       file,
       name: declaredName,
       description: typeof data.description === 'string' && data.description.length > 0
         ? data.description
-        : folder.name,
+        : name,
       ...(typeof data.whenToUse === 'string' ? { whenToUse: data.whenToUse } : {}),
       ...(data.metadata !== undefined ? { metadata: data.metadata } : {}),
       body: body.trim(),
       valid,
       ...(issue !== undefined ? { issue } : {}),
-      ...(folder.linked ? { linked: true } : {}),
+      ...(linked ? { linked: true } : {}),
       modelInvocable: valid && data.disableModelInvocation !== true,
       userInvocable: valid && data.userInvocable !== false,
-    }]
-  })
+    })
+    // 技能目录下的一级子目录可能含 SKILL.md（嵌套子技能），继续下探。
+    if (!linked) {
+      for (const folder of listSkillFolders(current)) {
+        walk(join(current, folder.name), `${rel}/${folder.name}`, folder.linked)
+      }
+    }
+  }
+  walk(skillsDir, '', false)
+  return entries
+}
+
+/** 多目录全量合并：条目全部保留（同名不跳过，UI 层再做 duplicate 标注）。 */
+export function mergeSkillDirs(
+  dirs: string[],
+  read: (dir: string, warn?: (message: string) => void) => SkillEntry[],
+  warn?: (message: string) => void,
+): SkillEntry[] {
+  return dirs.flatMap((dir) => read(dir, warn))
 }
 
 /**
@@ -111,18 +134,24 @@ export interface CachedSkillsReader {
 }
 
 function skillSignature(skillsDir: string): string {
-  const folders = listSkillFolders(skillsDir)
-  const parts: string[] = []
-  for (const folder of folders) {
-    const file = join(skillsDir, folder.name, 'SKILL.md')
-    try {
-      const stat = statSync(file)
-      parts.push(`${folder.name}:${stat.mtimeMs}:${stat.size}`)
-    } catch {
-      parts.push(`${folder.name}:missing`)
+  const files: string[] = []
+  const walk = (current: string, linked: boolean): void => {
+    const file = join(current, 'SKILL.md')
+    if (existsSync(file)) files.push(file)
+    if (linked) return
+    for (const folder of listSkillFolders(current)) {
+      walk(join(current, folder.name), folder.linked)
     }
   }
-  return parts.join('|')
+  walk(skillsDir, false)
+  return files.map((file) => {
+    try {
+      const stat = statSync(file)
+      return `${basename(dirname(file))}:${stat.mtimeMs}:${stat.size}`
+    } catch {
+      return `${file}:missing`
+    }
+  }).join('|')
 }
 
 export function createCachedSkillsReader(): CachedSkillsReader {

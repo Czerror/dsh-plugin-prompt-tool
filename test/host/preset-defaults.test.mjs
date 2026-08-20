@@ -46,6 +46,7 @@ test('preset.yml params + hostDefaults 合并进 Config 作为唯一入口默认
       writePreset: true,
       writeAgents: false,
       skillsDir: 'C:/skills',
+      skillsDirs: ['~/my-skills'],
       skillRankBase: 300,
       residentAgentsPath: '~/.dsh/AGENTS.md',
       presetDir: '~/.dsh/.agent-presets/prompt-tool',
@@ -63,6 +64,7 @@ test('preset.yml params + hostDefaults 合并进 Config 作为唯一入口默认
   assert.equal(merged.bootstrapMaxTokens, 2048)
   assert.equal(merged.writeAgents, false)
   assert.equal(merged.skillsDir, 'C:/skills')
+  assert.deepEqual(merged.skillsDirs, [join(homedir(), 'my-skills')])
   assert.equal(merged.skillRankBase, 300)
   assert.equal(merged.presetOrder, 9)
   assert.equal(merged.promptConfigsDir, 'C:/configs')
@@ -91,7 +93,8 @@ test('preset 默认值只覆盖类型匹配字段,非法值被忽略', () => {
   assert.equal(merged.usePtcMode, true) // on → true
   assert.equal(merged.bootstrapMaxTokens, 0) // -1 非法,保持默认
   assert.equal(merged.writeAgents, true) // 非布尔忽略
-  assert.equal(merged.skillsDir.length >= 0, true)
+  // 非法值被忽略（回退 schema 默认空），不炸校验。
+  assert.equal(merged.skillsDir, '')
 })
 
 test('~/.dsh 路径跟随运行时 DSH_HOME，而不是写死操作系统 home', async () => {

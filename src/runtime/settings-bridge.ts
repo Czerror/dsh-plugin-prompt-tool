@@ -26,7 +26,7 @@ const MAX_SETTINGS_BRIDGE_BODY = 64 * 1024
 const PRESET_PACKAGE_MAX_BYTES = 8 * 1024 * 1024
 
 export interface SkillsBridgeState {
-  activeSkillsDir: string
+  activeSkillsDirs: string[]
   skillCatalog: SkillCatalogEntry[]
 }
 
@@ -179,7 +179,8 @@ export function registerSettingsBridge(
               deepseekAvailable: detection.available,
               deepseekProviders: detection.providers,
               deepseekError: detection.error,
-              activeSkillsDir: skillsState.activeSkillsDir,
+              activeSkillsDirs: skillsState.activeSkillsDirs,
+              skillsDirExists: Object.fromEntries(skillsState.activeSkillsDirs.map((dir) => [dir, existsSync(dir)])),
               skillCatalog: skillsState.skillCatalog,
             })
           },
@@ -244,7 +245,11 @@ export function registerSettingsBridge(
             }
             const record = body as Record<string, unknown>
             const folder = typeof record.folder === 'string' ? record.folder : ''
-            const result = fixSkillEntry(getSkillsState().activeSkillsDir, folder)
+            // 多目录：优先按条目来源目录修复；目录不存在/条目缺失时回退第一个目录。
+            const state = getSkillsState()
+            const sourceDir = state.skillCatalog.find((entry) => entry.folder === folder)?.dir
+              ?? state.activeSkillsDirs[0]
+            const result = fixSkillEntry(sourceDir ?? '', folder)
             if (!result.fixed) {
               writeBridgeJson(res, 400, { ok: false, code: 'skill-fix-failed', message: result.error ?? '修复失败' })
               return
