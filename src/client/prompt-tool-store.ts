@@ -290,6 +290,17 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
         return EMPTY_FIELDS
       }
       applyView(res)
+      // 实际生效配置（引擎从生成目录加载；settings.promptConfigs 仅为覆盖层，
+      // 默认为空不代表无配置）。非空时以实际配置为准，并同步已保存快照避免误判 dirty。
+      const configsRes = await bridgePost<{ promptConfigs: PromptConfigDraft[] }>('/prompt-configs', {})
+      if (seq !== loadSeqRef.current) return EMPTY_FIELDS
+      if (configsRes.ok && Array.isArray(configsRes.value.promptConfigs) && configsRes.value.promptConfigs.length > 0) {
+        const actual = configsRes.value.promptConfigs
+        const next = { ...fieldsRef.current, promptConfigs: actual }
+        fieldsRef.current = next
+        setFields(next)
+        setSavedConfigs(actual)
+      }
       setNotice('')
       return fieldsRef.current
     } catch (error) {

@@ -1,6 +1,7 @@
 /** 自建 loopback settings bridge：Web 设置页数据通道（提示词配置数组经此输出到 UI）。 */
 import type { Context } from '@deepseek-ai/cordis'
 import type { IncomingMessage, ServerResponse } from 'node:http'
+import { join } from 'node:path'
 import type { SettingsDescriptor, SettingsNamespace, SettingsPathOp } from '@deepseek-ai/dsh-settings'
 import type { DeepseekDetection } from './deepseek.ts'
 import type { SkillCatalogEntry } from '../config.ts'
@@ -102,6 +103,8 @@ export function registerSettingsBridge(
   getEngineStrategyDir: () => string,
   ensureRegistered: (sctx: Context) => boolean,
   afterSkillFix?: () => void,
+  /** 生成目录（presetDir）：读取实际生效的提示词配置（引擎加载源）。 */
+  getPresetConfigsDir?: () => string,
 ): void {
   // 动态等待 webServer：webServer 由 @deepseek-ai/dsh-web-app 提供。
   // profile 首次缺少该 bundle 时，本子插件先 pending 但不阻塞启动审计；
@@ -364,6 +367,23 @@ export function registerSettingsBridge(
             } catch (error) {
               const message = error instanceof Error ? error.message : String(error)
               writeBridgeJson(res, 500, { ok: false, code: 'templates-unavailable', message })
+            }
+          },
+        }),
+        sctx.webServer.register({
+          kind: 'exact',
+          path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.promptConfigs,
+          handler: async (req, res) => {
+            if (!guard(req, res)) return
+            try {
+              // 实际生效配置 = 生成目录 prompt-configs/（引擎加载源）；
+              // settings.promptConfigs 仅是用户覆盖层，默认为空不代表无配置。
+              const dir = join(getPresetConfigsDir?.() ?? '', 'prompt-configs')
+              const promptConfigs = dir.length > 0 ? loadPromptConfigFiles(dir) : []
+              writeBridgeJson(res, 200, { ok: true, value: { promptConfigs } })
+            } catch {
+              // 生成目录缺失/未生成时降级为空（settings 覆盖层仍可编辑）。
+              writeBridgeJson(res, 200, { ok: true, value: { promptConfigs: [] } })
             }
           },
         }),

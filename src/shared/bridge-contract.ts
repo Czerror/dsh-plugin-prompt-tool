@@ -16,6 +16,7 @@ export const BRIDGE_ENDPOINTS = {
   importDirectory: '/import-directory',
   skillFix: '/skill-fix',
   templates: '/templates',
+  promptConfigs: '/prompt-configs',
 } as const
 
 export type BridgeEndpoint = (typeof BRIDGE_ENDPOINTS)[keyof typeof BRIDGE_ENDPOINTS]

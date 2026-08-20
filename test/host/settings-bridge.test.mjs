@@ -1,5 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { join } from 'node:path'
+import { tmpdir } from 'node:os'
 import { registerSettingsBridge } from '../../lib/index.mjs'
 
 const PREFIX = '/api/prompt-tool/settings'
@@ -83,4 +85,30 @@ test('settings bridge 拒绝非 loopback 请求', async () => {
   await handler(fakeReq({ socket: { remoteAddress: '203.0.113.1' } }), res)
   assert.equal(res.status, 403)
   assert.equal(JSON.parse(res.body).ok, false)
+})
+
+test('settings bridge /prompt-configs 返回生成目录实际生效配置', async () => {
+  const { ctx, handlers } = makeHarness()
+  registerSettingsBridge(
+    ctx,
+    'prompt-tool',
+    () => true,
+    () => ({ available: true, providers: [] }),
+    () => ({ activeSkillsDir: '', skillCatalog: [] }),
+    () => ({ presetText: '', agentsText: '' }),
+    () => '',
+    () => true,
+    undefined,
+    // 指向真实的生成目录（本仓库构建产物，writePreset 测试已生成）。
+    () => join(tmpdir(), 'prompt-tool-preset-not-exist'),
+  )
+  const handler = handlers.get(`${PREFIX}/prompt-configs`)
+  assert.ok(handler, '/prompt-configs 端点应注册')
+  const res = fakeRes()
+  await handler(fakeReq(), res)
+  assert.equal(res.status, 200)
+  const payload = JSON.parse(res.body)
+  assert.equal(payload.ok, true)
+  assert.ok(Array.isArray(payload.value.promptConfigs), '降级为空数组')
+  assert.equal(payload.value.promptConfigs.length, 0)
 })
