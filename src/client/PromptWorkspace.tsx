@@ -313,6 +313,18 @@ function FeatureSettings(props: { store: PromptToolStore }): ReactNode {
         value={fields.allowKinds} placeholder="skill-invocation, near-anchor, router-guide" disabled={!fields.writePreset}
         onChange={(value) => store.patch({ allowKinds: value })}
         onCommit={() => void store.persistParamOverrides()} />
+      <PromptConfigsEditor
+        meta={store.meta}
+        configs={fields.promptConfigs}
+        configsDir={fields.promptConfigsDir}
+        savedConfigs={store.savedConfigs}
+        savedConfigsDir={store.savedConfigsDir}
+        onPatchConfigs={(configs) => store.patch({ promptConfigs: configs })}
+        onPatchConfigsDir={(dir) => store.patch({ promptConfigsDir: dir })}
+        onSaveConfigs={(configs) => store.persistConfigs(configs)}
+        onSaveConfigsDir={(dir) => store.persistConfigsDir(dir)}
+        onNotice={store.showNotice}
+      />
     </section>
   )
 }
@@ -873,7 +885,7 @@ const TOP_PAGES: Array<{ id: WorkspacePage; label: string }> = [
   { id: 'layers', label: '注入层级' },
   { id: 'subagent', label: '子代理设置' },
   { id: 'skills', label: 'Skills 设置' },
-  { id: 'features', label: '主对话与全局' },
+  { id: 'features', label: '主对话' },
   { id: 'presets', label: '预设和配置' },
 ]
 
@@ -911,7 +923,7 @@ export function PromptWorkspace(props: PromptWorkspaceProps): ReactNode {
     : undefined
   const pageTitle = page === 'layers' ? (layerLabel?.title ?? '注入层级')
     : page === 'skills' ? 'Skills 设置'
-      : page === 'features' ? '主对话与全局'
+      : page === 'features' ? '主对话'
         : page === 'presets' ? '预设和配置'
           : '子代理设置'
   const pageDetail = page === 'layers'
@@ -919,7 +931,7 @@ export function PromptWorkspace(props: PromptWorkspaceProps): ReactNode {
     : page === 'skills'
     ? '按 skills 目录注册的可开关技能；目录与逐技能开关立即生效。'
     : page === 'features'
-      ? '主对话参数（快速模型人设、注入 kind 白名单）与全局开关（预设生成、AGENTS.md、路径与顺序）。'
+      ? '主对话参数（快速模型人设、注入 kind 白名单）与提示词配置模块列表。'
       : page === 'presets'
         ? '统一管理预设模板（切换/导入）与提示词配置（六层列表/模板插入/配置目录）。'
         : '子代理作用域参数（模型/人设/工具集/深度）与子代理提示词配置（audience 非仅主会话）。'
