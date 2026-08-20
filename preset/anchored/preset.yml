@@ -310,6 +310,10 @@ modules:
   - tool-web
 moduleConfigs:
   # 引擎组合模块参数（本文件为唯一配置源；library 行默认值仅作未声明时的回退）。
+  persona:
+    text: You are a helpful software engineer assistant.
+    complete: true
+    includeRuntimeContext: false
   custom-bash:
     timeoutMs: 120000
     maxOutputBytes: 64000

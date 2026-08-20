@@ -12,7 +12,7 @@
 import { readFileSync, existsSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { parse as parseYaml, parseDocument, YAMLMap, YAMLSeq } from 'yaml'
+import { Pair, Scalar, parse as parseYaml, parseDocument, YAMLMap, YAMLSeq } from 'yaml'
 
 export interface PresetSpec {
   id: string
@@ -206,8 +206,20 @@ export function applyModuleConfigs(raw: string, configs: Record<string, Record<s
     const idNode = item.get('id', true)
     const id = idNode !== null && typeof idNode === 'object' && 'value' in idNode ? String(idNode.value) : undefined
     if (id === undefined || !Object.prototype.hasOwnProperty.call(configs, id)) continue
-    const configNode = item.get('config', true)
-    if (!(configNode instanceof YAMLMap)) continue
+    const existingConfig = item.get('config', true)
+    let configNode: YAMLMap
+    if (existingConfig instanceof YAMLMap) {
+      configNode = existingConfig
+    } else if (existingConfig === null || existingConfig === undefined) {
+      // 行无 config 时按 moduleConfigs 声明创建（官方行如 skill-filesystem 只有 name）。
+      configNode = new YAMLMap()
+      // Parsed 行节点的 set 约束 key/value 为 ParsedNode；新建节点运行时合法，
+      // 类型断言绕过 Parsed 泛型（构造节点无 range 元数据）。
+      item.items.push(new Pair(new Scalar('config'), configNode) as never)
+      changed = true
+    } else {
+      continue
+    }
     for (const [key, value] of Object.entries(configs[id]!)) {
       configNode.set(key, value)
     }

@@ -4,9 +4,9 @@ description: 仅提供持久 bash 与 str_replace_editor 的双工具编码 Agen
 version: 1.0.0
 engineCompat: ">=0.4.2"
 modules:
-  - official-persona-minimal
+  - persona
   - official-persistent-shell
-  - official-filesystem
+  - bootstrap-filesystem
   - context-gate
   - tool-bootstrap
   - router-first-turn
@@ -14,6 +14,11 @@ modules:
   - run-code-env
   - custom-bash
   - skill-search
+moduleConfigs:
+  persona:
+    text: You are a helpful software engineer assistant.
+    complete: true
+    includeRuntimeContext: false
 params:
   usePtcMode: true
   bootstrapMaxTokens: 0

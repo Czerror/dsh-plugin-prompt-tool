@@ -1,5 +1,0 @@
-# module: official-tool-fs
-# source: deepseek-harness official standard agent preset (tool-fs)
-
-- id: tool-fs
-  name: '@deepseek-ai/dsh-tool-fs'

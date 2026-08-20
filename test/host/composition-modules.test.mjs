@@ -22,7 +22,7 @@ test('模块清单由参数文件决定:preset/anchored/preset.yml 声明 23 个
 
 test('模块来源可追溯:官方切块带 provenance,本地附加模块单独标记', () => {
   const official = read('engine/compositions/library/persona.yml')
-  assert.match(official, /# source: .*deepseek-harness.*agent\.cordis\.yml/)
+  assert.match(official, /# source: deepseek-harness official standard agent preset \(persona\)/)
   const local = read('engine/compositions/library/context-gate.yml')
   assert.match(local, /本地附加/)
 })

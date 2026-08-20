@@ -1,14 +1,9 @@
 # module: persona
-# source: E:\Documents\GitHub\deepseek-harness/apps/cli/config/agent-presets/minimal/agent.cordis.yml
-# local patches: 0
+# source: deepseek-harness official standard agent preset (persona)
+# persona 差异（creative/minimal/anchored）由 preset.yml moduleConfigs 参数传递。
 
 - id: persona
   name: '@deepseek-ai/dsh-persona'
   config:
-    text: You are a helpful software engineer assistant.
-    complete: true
-    includeRuntimeContext: false
-
-# The PTY registry is an agent-owned service, so it lives in an entry-local
-# realm. The backend still consumes the host sandbox policy and subprocess
-# implementation, while the tool registers into this agent's scoped catalog.
+    text: >-
+      You are a coding agent powered by the {{model}} model. Your working directory is {{cwd}}.
