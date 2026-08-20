@@ -44,7 +44,13 @@ export interface WritePresetOptions {
   /** 子代理工具集黑名单（toolFilter.deny）。 */
   subagentToolFilterDeny?: string[] | string
   /** 子代理递归深度上限（0 禁止委派 / provider-managed / 正整数）。 */
-  subagentMaxDepth?: number | 'provider-managed'
+  subagentMaxDepth?: number | 'provider-managed' | string
+  /** 主对话快速模型路由人设（preset.yml fastModelPersona；覆盖模板默认）。 */
+  fastModelPersona?: string
+  /** 注入 kind 白名单（context-gate allowKinds；数组或逗号分隔字符串）。 */
+  allowKinds?: string[] | string
+  /** custom-fallback 锚定词（prompt-injector params.firstTurnWord）。 */
+  firstTurnWord?: string
   bootstrapMaxTokens: number
   usePtcMode: boolean
   /** 写入 agents-instruction.txt 供 instruction-hint 配置读取;不传则使用本地默认 hint。 */
@@ -84,6 +90,15 @@ function runtimeOf(options: WritePresetOptions, prompt: string): Record<string, 
     subagentToolFilterAllow: options.subagentToolFilterAllow,
     subagentToolFilterDeny: options.subagentToolFilterDeny,
     subagentMaxDepth: options.subagentMaxDepth,
+    // 空值不覆盖：fastModelPersona 引擎必需非空（空串会触发 router-first-turn 抛错），
+    // firstTurnWord 空应回退 preset.yml 模板默认（we）。
+    fastModelPersona: typeof options.fastModelPersona === 'string' && options.fastModelPersona.trim().length > 0
+      ? options.fastModelPersona
+      : undefined,
+    allowKinds: options.allowKinds,
+    firstTurnWord: typeof options.firstTurnWord === 'string' && options.firstTurnWord.length > 0
+      ? options.firstTurnWord
+      : undefined,
   }
 }
 

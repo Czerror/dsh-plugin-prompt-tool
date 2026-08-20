@@ -156,6 +156,13 @@ export function apply(ctx: Context, configIn: Config): void {
         injectPrompt: runtime.injectPrompt,
         subagentModelProvider: runtime.subagentModelProvider,
         subagentModelName: runtime.subagentModelName,
+        fastModelPersona: runtime.fastModelPersona,
+        subagentPersona: runtime.subagentPersona,
+        subagentToolFilterAllow: runtime.subagentToolFilterAllow,
+        subagentToolFilterDeny: runtime.subagentToolFilterDeny,
+        subagentMaxDepth: runtime.subagentMaxDepth,
+        allowKinds: runtime.allowKinds,
+        firstTurnWord: runtime.firstTurnWord,
         bootstrapMaxTokens: runtime.bootstrapMaxTokens,
         usePtcMode: runtime.usePtcMode,
         agentsInstructionText: currentAgents,
@@ -196,7 +203,32 @@ export function apply(ctx: Context, configIn: Config): void {
     if (typeof overrides.guideText === 'string') runtime.guideText = overrides.guideText
     if (typeof overrides.subagentModelProvider === 'string') runtime.subagentModelProvider = overrides.subagentModelProvider
     if (typeof overrides.subagentModelName === 'string') runtime.subagentModelName = overrides.subagentModelName
+    // fastModelPersona 引擎必需非空：历史 overrides 里的空串直接忽略（保留模板默认）。
+    if (typeof overrides.fastModelPersona === 'string' && overrides.fastModelPersona.trim().length > 0) {
+      runtime.fastModelPersona = overrides.fastModelPersona
+    }
+    if (typeof overrides.subagentPersona === 'string') runtime.subagentPersona = overrides.subagentPersona
+    if (typeof overrides.firstTurnWord === 'string') runtime.firstTurnWord = overrides.firstTurnWord
     if (typeof overrides.bootstrapMaxTokens === 'number') runtime.bootstrapMaxTokens = overrides.bootstrapMaxTokens
+    // 列表/枚举类参数：类型守卫收窄（overrides YAML 可能是数组或字符串）。
+    const listOf = (value: unknown): string[] | string | undefined => {
+      if (typeof value === 'string') return value
+      if (Array.isArray(value)) return value.filter((item): item is string => typeof item === 'string')
+      return undefined
+    }
+    const tfAllow = listOf(overrides.subagentToolFilterAllow)
+    if (tfAllow !== undefined) runtime.subagentToolFilterAllow = tfAllow
+    const tfDeny = listOf(overrides.subagentToolFilterDeny)
+    if (tfDeny !== undefined) runtime.subagentToolFilterDeny = tfDeny
+    const kinds = listOf(overrides.allowKinds)
+    // allowKinds 空值 = 跳过（保留官方不过滤）；空数组白名单会全拦注入，禁止写入。
+    if (kinds !== undefined && (typeof kinds === 'string' ? kinds.trim().length > 0 : kinds.length > 0)) {
+      runtime.allowKinds = kinds
+    }
+    const depth = overrides.subagentMaxDepth
+    if (depth === 'provider-managed') runtime.subagentMaxDepth = 'provider-managed'
+    else if (typeof depth === 'number' && Number.isSafeInteger(depth) && depth >= 0) runtime.subagentMaxDepth = depth
+    else if (typeof depth === 'string' && depth.length > 0) runtime.subagentMaxDepth = depth
   }
   // 首次启动把包内 skills/ 增量复制到 $DSH_HOME/profiles/<profile>/skills，
   // 并优先使用 profile 副本；已有同名文件不覆盖，用户编辑会保留。

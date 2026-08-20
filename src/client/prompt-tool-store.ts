@@ -304,6 +304,18 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
         if (typeof o.guideCustom === 'boolean') paramPatch.guideCustom = o.guideCustom
         if (typeof o.subagentModelProvider === 'string') paramPatch.subagentModelProvider = o.subagentModelProvider
         if (typeof o.subagentModelName === 'string') paramPatch.subagentModelName = o.subagentModelName
+        if (typeof o.fastModelPersona === 'string') paramPatch.fastModelPersona = o.fastModelPersona
+        if (typeof o.subagentPersona === 'string') paramPatch.subagentPersona = o.subagentPersona
+        if (Array.isArray(o.subagentToolFilterAllow)) paramPatch.subagentToolFilterAllow = o.subagentToolFilterAllow.join(', ')
+        else if (typeof o.subagentToolFilterAllow === 'string') paramPatch.subagentToolFilterAllow = o.subagentToolFilterAllow
+        if (Array.isArray(o.subagentToolFilterDeny)) paramPatch.subagentToolFilterDeny = o.subagentToolFilterDeny.join(', ')
+        else if (typeof o.subagentToolFilterDeny === 'string') paramPatch.subagentToolFilterDeny = o.subagentToolFilterDeny
+        if (o.subagentMaxDepth !== undefined && o.subagentMaxDepth !== null && o.subagentMaxDepth !== '') {
+          paramPatch.subagentMaxDepth = String(o.subagentMaxDepth)
+        }
+        if (Array.isArray(o.allowKinds)) paramPatch.allowKinds = o.allowKinds.join(', ')
+        else if (typeof o.allowKinds === 'string') paramPatch.allowKinds = o.allowKinds
+        if (typeof o.firstTurnWord === 'string') paramPatch.firstTurnWord = o.firstTurnWord
         if (typeof o.bootstrapMaxTokens === 'number') paramPatch.bootstrapMaxTokens = o.bootstrapMaxTokens
         if (Object.keys(paramPatch).length > 0) {
           const next = { ...fieldsRef.current, ...paramPatch }
@@ -389,6 +401,9 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
   /** 参数类设置：写入生成目录 prompt-tool.overrides.yml（随预设隔离，重建保留）。 */
   const persistParamOverrides = useCallback(async () => {
     const f = fieldsRef.current
+    const splitList = (value: string): string[] => value.split(',').map((item) => item.trim()).filter((item) => item.length > 0)
+    // 空值不写键：保留 preset.yml 模板默认。fastModelPersona 引擎必需非空；
+    // allowKinds 空数组 = 白名单全拦（危险）；subagentMaxDepth '' = 不设置。
     const res = await bridgePost<{ overrides: unknown }>('/param-overrides', {
       overrides: {
         firstTurnAnchor: f.firstTurnAnchor,
@@ -398,6 +413,15 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
         guideCustom: f.guideCustom,
         subagentModelProvider: f.subagentModelProvider,
         subagentModelName: f.subagentModelName,
+        ...(f.fastModelPersona.trim().length > 0 ? { fastModelPersona: f.fastModelPersona } : {}),
+        ...(f.subagentPersona.trim().length > 0 ? { subagentPersona: f.subagentPersona } : {}),
+        subagentToolFilterAllow: splitList(f.subagentToolFilterAllow),
+        subagentToolFilterDeny: splitList(f.subagentToolFilterDeny),
+        ...(f.subagentMaxDepth !== ''
+          ? { subagentMaxDepth: f.subagentMaxDepth === 'provider-managed' ? 'provider-managed' : Number(f.subagentMaxDepth) }
+          : {}),
+        ...(splitList(f.allowKinds).length > 0 ? { allowKinds: splitList(f.allowKinds) } : {}),
+        ...(f.firstTurnWord.trim().length > 0 ? { firstTurnWord: f.firstTurnWord } : {}),
         bootstrapMaxTokens: f.bootstrapMaxTokens,
       },
     })

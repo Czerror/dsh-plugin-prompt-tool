@@ -105,6 +105,23 @@ test('writePreset 将 preset.yml 的锚点/引导参数写入提示词配置', (
   }
 })
 
+test('writePreset 透传 firstTurnWord 覆盖到 prompt-injector 配置', () => {
+  const dir = join(tmpdir(), `prompt-tool-ftw-${process.pid}-${Date.now()}`)
+  const presetDir = join(dir, 'preset')
+  try {
+    writePreset('PROMPT', { ...makeOptions(presetDir), firstTurnWord: '开始' })
+    const injector = readFileSync(join(presetDir, 'prompt-configs', '20-prompt-injector.yml'), 'utf8')
+    assert.ok(injector.includes('firstTurnWord: |-') && injector.includes('开始'), injector)
+    // 未传 firstTurnWord 时回退 preset.yml 模板默认（we），不写空值覆盖。
+    const dir2 = join(dir, 'preset2')
+    writePreset('PROMPT', makeOptions(dir2))
+    const injector2 = readFileSync(join(dir2, 'prompt-configs', '20-prompt-injector.yml'), 'utf8')
+    assert.ok(injector2.includes('firstTurnWord: |-') && injector2.includes('we'), injector2)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
 test('writePreset 官方导入预设（standard/minimal/ptc/creative）渲染组合且含 prompt-tool 引擎行', () => {
   for (const template of ['standard', 'minimal', 'ptc', 'creative']) {
     const dir = join(tmpdir(), `prompt-tool-${template}-${process.pid}-${Date.now()}`)

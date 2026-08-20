@@ -148,6 +148,10 @@ function EntrySwitches(props: { store: PromptToolStore }): ReactNode {
           />
         </label>
       </div>
+      <SettingInputRow id="pt-first-turn-word" label="锚定词" hint="prompt-injector 的 custom-fallback 锚定词：晋升后首个 reasoning 命中该词即注入 preset.md；直接输入任意自定义文本；留空 = 模板默认 we。失焦保存。"
+        value={fields.firstTurnWord} placeholder="we（默认）" disabled={!fields.writePreset}
+        onInput={(value) => store.patch({ firstTurnWord: value })}
+        onCommit={() => void store.persistParamOverrides()} />
     </section>
   )
 }
@@ -169,6 +173,7 @@ function SubagentSettings(props: { store: PromptToolStore }): ReactNode {
   const fields = store.fields
   const providerOptions = ['', ...store.deepseekProviders, 'deepseek-official']
   const modelOptions = ['', 'deepseek-v4-flash', 'deepseek-v4-pro']
+  const maxDepthOptions = ['', 'provider-managed', '0', '1', '2', '3', '5']
   const withCurrent = (options: string[], current: string): string[] =>
     current.length > 0 && !options.includes(current) ? [...options, current] : options
   const active = fields.subagentModelProvider.length > 0 && fields.subagentModelName.length > 0
@@ -219,6 +224,49 @@ function SubagentSettings(props: { store: PromptToolStore }): ReactNode {
           </select>
         </div>
       </div>
+      <div className={ui.rowGroup}>
+        <label className={ui.textBlock}>
+          <span className={ui.settingCopy}><strong>子代理独立人设</strong><small>子代理 persona（per-child shadow）；留空 = 固定模型路由时回退主对话快速模型人设，两者都空 = 继承主会话。失焦保存。</small></span>
+          <textarea
+            className={ui.firstTurnInput}
+            value={fields.subagentPersona}
+            disabled={!fields.writePreset}
+            onChange={(event) => { autoResizeTextarea(event); store.patch({ subagentPersona: event.target.value }) }}
+            onBlur={() => void store.persistParamOverrides()}
+            spellCheck={false}
+          />
+        </label>
+      </div>
+      <SettingInputRow id="pt-subagent-tool-allow" label="子代理工具集白名单" hint="toolFilter.allow；逗号分隔，例如 read, write, glob；留空 = 不限制。失焦保存。"
+        value={fields.subagentToolFilterAllow} placeholder="read, write, glob" disabled={!fields.writePreset}
+        onInput={(value) => store.patch({ subagentToolFilterAllow: value })}
+        onCommit={() => void store.persistParamOverrides()} />
+      <SettingInputRow id="pt-subagent-tool-deny" label="子代理工具集黑名单" hint="toolFilter.deny；逗号分隔；留空 = 不限制。失焦保存。"
+        value={fields.subagentToolFilterDeny} placeholder="bash, run_code" disabled={!fields.writePreset}
+        onInput={(value) => store.patch({ subagentToolFilterDeny: value })}
+        onCommit={() => void store.persistParamOverrides()} />
+      <div className={ui.rowGroup}>
+        <div className={ui.settingRowStack}>
+          <span className={ui.settingCopy}>
+            <strong>子代理递归深度</strong>
+            <small>maxDepth：0 禁止委派；provider-managed 由服务商管理；正整数限制递归层数；不设置 = 官方默认。选择即保存。</small>
+          </span>
+          <select
+            className={ui.configInput}
+            aria-label="子代理递归深度"
+            value={fields.subagentMaxDepth}
+            disabled={!fields.writePreset}
+            onChange={(event) => {
+              store.patch({ subagentMaxDepth: event.target.value })
+              void store.persistParamOverrides()
+            }}
+          >
+            {maxDepthOptions.map((item) => (
+              <option key={item} value={item}>{item === '' ? '（不设置）' : item}</option>
+            ))}
+          </select>
+        </div>
+      </div>
       {!active && <p className={ui.readOnly} role="status">未设置：子代理将继承主会话模型路由。</p>}
     </section>
   )
@@ -264,6 +312,23 @@ function FeatureSettings(props: { store: PromptToolStore }): ReactNode {
         type="number" value={String(fields.presetOrder)}
         onInput={(value) => store.patch({ presetOrder: Number(value) || 0 })}
         onCommit={store.persistSwitches} />
+      <div className={ui.rowGroup}>
+        <label className={ui.textBlock}>
+          <span className={ui.settingCopy}><strong>主对话快速模型人设</strong><small>主对话命中快速模型（Flash 档）时替换人设；子代理固定模型路由未显式人设时回退使用。留空 = 模板默认；失焦保存。</small></span>
+          <textarea
+            className={ui.firstTurnInput}
+            value={fields.fastModelPersona}
+            disabled={!fields.writePreset}
+            onChange={(event) => { autoResizeTextarea(event); store.patch({ fastModelPersona: event.target.value }) }}
+            onBlur={() => void store.persistParamOverrides()}
+            spellCheck={false}
+          />
+        </label>
+      </div>
+      <SettingInputRow id="pt-allow-kinds" label="注入 kind 白名单" hint="context-gate allowKinds；逗号分隔，例如 skill-invocation, near-anchor, router-guide；留空 = 官方默认（不过滤）。失焦保存。"
+        value={fields.allowKinds} placeholder="skill-invocation, near-anchor, router-guide" disabled={!fields.writePreset}
+        onInput={(value) => store.patch({ allowKinds: value })}
+        onCommit={() => void store.persistParamOverrides()} />
       <SubagentSettings store={store} />
     </section>
   )

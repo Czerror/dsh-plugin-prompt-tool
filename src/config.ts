@@ -71,6 +71,20 @@ export interface Config {
   subagentModelProvider: string
   /** 子代理固定模型名；与 provider 同时非空时生效。 */
   subagentModelName: string
+  /** 主对话快速模型路由人设（preset.yml fastModelPersona；仅经 overrides 覆盖，不进 settings）。 */
+  fastModelPersona?: string
+  /** 子代理独立 persona（仅经 overrides 覆盖，不进 settings）。 */
+  subagentPersona?: string
+  /** 子代理工具集白名单（仅经 overrides 覆盖，不进 settings）。 */
+  subagentToolFilterAllow?: string[] | string
+  /** 子代理工具集黑名单（仅经 overrides 覆盖，不进 settings）。 */
+  subagentToolFilterDeny?: string[] | string
+  /** 子代理递归深度（0 禁止委派 / provider-managed / 正整数；仅经 overrides 覆盖）。 */
+  subagentMaxDepth?: number | 'provider-managed' | string
+  /** 注入 kind 白名单（仅经 overrides 覆盖，不进 settings）。 */
+  allowKinds?: string[] | string
+  /** custom-fallback 锚定词（仅经 overrides 覆盖，不进 settings）。 */
+  firstTurnWord?: string
   /** 首轮输出封顶；0 或未设置 = 不设封顶（本项目默认），正整数 = 请求 #1 的 maxTokens。 */
   bootstrapMaxTokens: number
   /** 使用 PTC 模式：默认开启——晋升后把 wire 切换为 Code Mode（单一 run_code，完整插件工具经生成 SDK 调用）；关闭时晋升后恢复原生完整工具目录。 */
@@ -171,6 +185,20 @@ export interface PromptSettings {
   subagentModelProvider: string
   /** 子代理固定模型名；与 provider 同时非空时生效。 */
   subagentModelName: string
+  /** 主对话快速模型路由人设（经 overrides 覆盖，不写入 settings）。 */
+  fastModelPersona?: string
+  /** 子代理独立 persona（经 overrides 覆盖，不写入 settings）。 */
+  subagentPersona?: string
+  /** 子代理工具集白名单（经 overrides 覆盖，不写入 settings）。 */
+  subagentToolFilterAllow?: string[] | string
+  /** 子代理工具集黑名单（经 overrides 覆盖，不写入 settings）。 */
+  subagentToolFilterDeny?: string[] | string
+  /** 子代理递归深度（经 overrides 覆盖，不写入 settings）。 */
+  subagentMaxDepth?: number | 'provider-managed' | string
+  /** 注入 kind 白名单（经 overrides 覆盖，不写入 settings）。 */
+  allowKinds?: string[] | string
+  /** custom-fallback 锚定词（经 overrides 覆盖，不写入 settings）。 */
+  firstTurnWord?: string
   bootstrapMaxTokens: number
   usePtcMode: boolean
   /** 运行时检测：是否注册了 DeepSeek 模型路由（不写入 settings）。 */
@@ -277,6 +305,20 @@ export interface RuntimeOptions {
   subagentModelProvider: string
   /** 子代理固定模型名；与 provider 同时非空时生效。 */
   subagentModelName: string
+  /** 主对话快速模型路由人设（经 overrides 覆盖，不写入 settings）。 */
+  fastModelPersona?: string
+  /** 子代理独立 persona（经 overrides 覆盖，不写入 settings）。 */
+  subagentPersona?: string
+  /** 子代理工具集白名单（经 overrides 覆盖，不写入 settings）。 */
+  subagentToolFilterAllow?: string[] | string
+  /** 子代理工具集黑名单（经 overrides 覆盖，不写入 settings）。 */
+  subagentToolFilterDeny?: string[] | string
+  /** 子代理递归深度（经 overrides 覆盖，不写入 settings）。 */
+  subagentMaxDepth?: number | 'provider-managed' | string
+  /** 注入 kind 白名单（经 overrides 覆盖，不写入 settings）。 */
+  allowKinds?: string[] | string
+  /** custom-fallback 锚定词（经 overrides 覆盖，不写入 settings）。 */
+  firstTurnWord?: string
   /** 用户自定义提示词配置（settings 数组）。 */
   promptConfigs: PromptConfigSpec[]
   /** 用户自定义提示词配置目录。 */

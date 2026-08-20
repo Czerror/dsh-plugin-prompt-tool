@@ -76,6 +76,12 @@ export interface BuildCordisOptions {
   subagentToolFilterDeny?: string[] | string
   /** 子代理递归深度上限（0 禁止委派 / provider-managed / 正整数）。 */
   subagentMaxDepth?: number | 'provider-managed'
+  /** 主对话快速模型路由人设（覆盖 preset.yml fastModelPersona 默认）。 */
+  fastModelPersona?: string
+  /** 注入 kind 白名单（context-gate allowKinds；数组或逗号分隔字符串）。 */
+  allowKinds?: string[] | string
+  /** custom-fallback 锚定词（prompt-injector params.firstTurnWord）。 */
+  firstTurnWord?: string
   /** 首轮输出封顶（bootstrapMaxTokens）；0 或未设置 = 本项目默认无封顶。 */
   bootstrapMaxTokens?: number
   /** 使用 PTC 模式：默认 true。 */

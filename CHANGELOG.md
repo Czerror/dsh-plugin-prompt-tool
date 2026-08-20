@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### UI 参数全覆盖：预设级参数可自定义（2026-08-20）
+
+- **overrides 通道 8→15 项**：`fastModelPersona`（主对话快速模型人设，textarea）、`subagentPersona`（子代理独立人设，textarea）、`subagentToolFilterAllow/Deny`（工具集白/黑名单，逗号分隔 input）、`subagentMaxDepth`（递归深度，下拉：不设置/provider-managed/0/1/2/3/5）、`allowKinds`（注入 kind 白名单，逗号分隔 input）、`firstTurnWord`（锚定词，**自由文本输入**任意自定义文本）——全部经 prompt-tool.overrides.yml 随预设隔离，settings.yaml 保持纯净。
+- **空值保护**：fastModelPersona 引擎必需非空（空串触发 router-first-turn 抛错）——空值不写 overrides 键，保留模板默认；allowKinds 空数组 = 白名单全拦（危险）——空值跳过；firstTurnWord 空回退模板默认 we；subagentMaxDepth 空 = 不设置（官方默认）。
+- **链路**：WritePresetOptions / BuildCordisOptions / RuntimeOptions / Fields / store（load paramPatch + persistParamOverrides）/ applyParamOverrides 同步扩展；UI「消息批层入口」加锚定词、「功能设置」加主对话快速模型人设 + kind 白名单、「子代理设置」加独立人设 + 工具集白/黑名单 + 递归深度。
+- **回归**：buildCordis fastModelPersona/allowKinds 覆盖断言 + writePreset firstTurnWord 透传/回退断言（210 pass）。
+
 ### 参数归类分层：作用域 × 维度（2026-08-20）
 
 - **子代理参数归类**：参数统一为「作用域（主对话 / 子代理）× 维度（模型/人设/工具集/深度/相位/注入）」矩阵——preset.yml 顶层**独立 `subagent:` 段**（与 `params` 平级，不埋在主对话设置中；`modelProvider/modelName`、`persona`、`toolFilter.allow/deny`、`maxDepth`），引擎合并入口 `resolvePresetParams` 拍平为扁平键（`subagentModelProvider` 等），运行时/UI/overrides 继续消费扁平键，两套表示等价；主对话模型由 dsh 全局配置（插件只读），相位（`moduleConfigs.*.includeSubagents`）与注入（`promptConfigs[].subagents/promotion/modelScope`）保持既定段位。

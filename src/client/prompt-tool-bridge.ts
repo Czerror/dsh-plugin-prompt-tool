@@ -28,6 +28,13 @@ export interface Fields {
   guideCustom: boolean
   subagentModelProvider: string
   subagentModelName: string
+  fastModelPersona: string
+  subagentPersona: string
+  subagentToolFilterAllow: string
+  subagentToolFilterDeny: string
+  subagentMaxDepth: string
+  allowKinds: string
+  firstTurnWord: string
   bootstrapMaxTokens: number
   usePtcMode: boolean
   injectPrompt: boolean
@@ -76,6 +83,13 @@ export const EMPTY_FIELDS: Fields = {
   guideCustom: false,
   subagentModelProvider: '',
   subagentModelName: '',
+  fastModelPersona: '',
+  subagentPersona: '',
+  subagentToolFilterAllow: '',
+  subagentToolFilterDeny: '',
+  subagentMaxDepth: '',
+  allowKinds: '',
+  firstTurnWord: '',
   bootstrapMaxTokens: 0,
   usePtcMode: true,
   injectPrompt: true,
@@ -197,6 +211,15 @@ export function fieldsFromView(res: BridgeResult<BridgeSettingsView>): Fields {
     guideCustom: readBoolean(value, 'guideCustom', readBoolean(base, 'guideCustom', false)),
     subagentModelProvider: readString(value, 'subagentModelProvider') ?? readString(base, 'subagentModelProvider') ?? '',
     subagentModelName: readString(value, 'subagentModelName') ?? readString(base, 'subagentModelName') ?? '',
+    // 预设级参数（fastModelPersona/subagentPersona/toolFilter/maxDepth/allowKinds/firstTurnWord）
+    // 不进 settings namespace：默认空，由 /param-overrides 读回后填充（store.load paramPatch）。
+    fastModelPersona: '',
+    subagentPersona: '',
+    subagentToolFilterAllow: '',
+    subagentToolFilterDeny: '',
+    subagentMaxDepth: '',
+    allowKinds: '',
+    firstTurnWord: '',
     bootstrapMaxTokens: readNumber(value, 'bootstrapMaxTokens', readNumber(base, 'bootstrapMaxTokens', 0)),
     usePtcMode: readBoolean(value, 'usePtcMode', readBoolean(base, 'usePtcMode', true)),
     injectPrompt: readBoolean(value, 'injectPrompt', readBoolean(base, 'injectPrompt', true)),

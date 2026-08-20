@@ -132,3 +132,16 @@ test('子代理 persona 回退：无独立 persona 时固定路由用 fastModelP
   assert.equal(plainRow.config.persona, undefined, '无路由且无独立 persona 时不渲染（继承主会话）')
   assert.equal(plainRow.config.agentOptions, undefined)
 })
+
+test('buildCordis 透传 fastModelPersona / allowKinds 覆盖模板默认', () => {
+  const rows = parseYaml(buildCordis('P', { fastModelPersona: 'FAST-PERSONA', allowKinds: ['skill-invocation'] }))
+  const router = rows.find((row) => row?.id === 'router-first-turn')
+  const gate = rows.find((row) => row?.id === 'context-gate')
+  assert.ok(router && gate)
+  assert.equal(router.config.fastModelPersona, 'FAST-PERSONA')
+  assert.deepEqual(gate.config.allowKinds, ['skill-invocation'])
+  // 未传时用 preset.yml 模板默认（anchored fastModelPersona 非空、allowKinds 白名单）。
+  const defaults = parseYaml(buildCordis('P'))
+  const defaultRouter = defaults.find((row) => row?.id === 'router-first-turn')
+  assert.match(defaultRouter.config.fastModelPersona, /helpful assistant/)
+})
