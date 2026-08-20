@@ -207,8 +207,8 @@ export interface PromptSettings {
   firstTurnWord?: string
   bootstrapMaxTokens: number
   usePtcMode: boolean
-  /** 运行时检测：是否注册了 DeepSeek 模型路由（不写入 settings）。 */
-  deepseekAvailable: boolean
+  /** 运行时检测：是否检测到任何模型服务商（不写入 settings）。 */
+  modelsAvailable: boolean
   injectPrompt: boolean
   skillSwitches: Record<string, boolean>
   /** 技能展示顺序（目录名数组）。 */
@@ -252,7 +252,7 @@ export const PromptSettingsSchema: z<PromptSettings> = z.object({
   modelName: z.string().default(''),
   bootstrapMaxTokens: z.natural().default(0),
   usePtcMode: z.boolean().default(true),
-  deepseekAvailable: z.boolean().default(true),
+  modelsAvailable: z.boolean().default(true),
   injectPrompt: z.boolean().default(true),
   skillSwitches: z.dict(z.boolean()).default({}),
   skillOrder: z.array(z.string()).default([]),

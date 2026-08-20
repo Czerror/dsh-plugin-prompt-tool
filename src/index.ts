@@ -18,8 +18,8 @@ import type { PresetSpec } from './host/manifest.ts'
 import { createCachedSkillsReader, mergeSkillDirs } from './runtime/skills-provider.ts'
 import { ensureWebSurface } from './web-surface.ts'
 import { resolveProfileSkillsDir } from './profile-skills.ts'
-import { detectDeepseek, installSubagentModelRoute } from './runtime/deepseek.ts'
-import type { DeepseekDetection } from './runtime/deepseek.ts'
+import { detectModels, installSubagentModelRoute, listAdvertisedModels } from './runtime/models.ts'
+import type { ModelDetection } from './runtime/models.ts'
 import { registerSettingsBridge } from './runtime/settings-bridge.ts'
 import { registerTuiCommand } from './runtime/tui.ts'
 import { ensureSettingsRegistered } from './runtime/settings-registration.ts'
@@ -134,9 +134,8 @@ export function apply(ctx: Context, configIn: Config): void {
     warn(ctx, `prompt-tool: preset.yml unavailable, falling back to cordis config: ${error instanceof Error ? error.message : String(error)}`)
   }
   const config = mergePresetDefaults(configIn, presetSpec)
-  const deepseekState = (): DeepseekDetection => detectDeepseek(ctx)
-  const getDeepseekAvailable = (): boolean => deepseekState().available
-  const getDeepseekState = (): DeepseekDetection => deepseekState()
+  const modelsState = (): ModelDetection => detectModels(ctx)
+  const getModelsState = (): ModelDetection => modelsState()
   // 内容资产优先读生成目录文件（writePreset 落盘），模板 content 作回退；
   // settings.yaml 不再承载大文本（web 打开加载慢的根因）。
   const initialTemplate = typeof config.presetTemplate === 'string' && config.presetTemplate.length > 0
@@ -370,8 +369,7 @@ export function apply(ctx: Context, configIn: Config): void {
   registerSettingsBridge(
     ctx,
     NS,
-    getDeepseekAvailable,
-    getDeepseekState,
+    getModelsState,
     () => ({ activeSkillsDirs, skillCatalog }),
     // 模板专属策略目录：当前 anchored 策略为引擎内置，自定义模板可经此注入。
     () => '',
@@ -460,7 +458,7 @@ export function apply(ctx: Context, configIn: Config): void {
     modelName: runtime.modelName,
     bootstrapMaxTokens: runtime.bootstrapMaxTokens,
     usePtcMode: runtime.usePtcMode,
-    deepseekAvailable: getDeepseekAvailable(),
+    modelsAvailable: getModelsState().available,
     injectPrompt: runtime.injectPrompt,
     skillSwitches: runtime.skillSwitches,
     skillOrder: runtime.skillOrder,
@@ -480,7 +478,7 @@ export function apply(ctx: Context, configIn: Config): void {
   })
 
   // dsh-tui 命令入口：/prompt-tool 查看或切换开关。
-registerTuiCommand(ctx, NS, () => currentSource(), getDeepseekAvailable, getDeepseekState, () => runtime.presetDir)
+registerTuiCommand(ctx, NS, () => currentSource(), getModelsState, () => listAdvertisedModels(ctx), () => runtime.presetDir)
 
   let needsInitialApply = true
   const applyState = (): void => {

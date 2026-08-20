@@ -24,8 +24,6 @@ function register() {
   const { ctx, handlers } = makeHarness()
   registerSettingsBridge(
     ctx,
-    'prompt-tool',
-    () => true,
     () => ({ available: true, providers: ['deepseek-official'] }),
     () => ({ activeSkillsDirs: [], skillCatalog: [] }),
     () => '',

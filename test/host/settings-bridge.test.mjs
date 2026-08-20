@@ -50,8 +50,6 @@ test('settings bridge /meta 返回引擎能力矩阵', async () => {
   const { ctx, handlers } = makeHarness()
   registerSettingsBridge(
     ctx,
-    'prompt-tool',
-    () => true,
     () => ({ available: true, providers: [] }),
     () => ({ activeSkillsDirs: [], skillCatalog: [] }),
     () => '',
@@ -72,8 +70,6 @@ test('settings bridge 拒绝非 loopback 请求', async () => {
   const { ctx, handlers } = makeHarness()
   registerSettingsBridge(
     ctx,
-    'prompt-tool',
-    () => true,
     () => ({ available: true, providers: [] }),
     () => ({ activeSkillsDirs: [], skillCatalog: [] }),
     () => '',
@@ -90,8 +86,6 @@ test('settings bridge /prompt-configs 返回生成目录实际生效配置', asy
   const { ctx, handlers } = makeHarness()
   registerSettingsBridge(
     ctx,
-    'prompt-tool',
-    () => true,
     () => ({ available: true, providers: [] }),
     () => ({ activeSkillsDirs: [], skillCatalog: [] }),
     () => '',
@@ -119,7 +113,6 @@ test('settings bridge /import-preset 写入生成目录并触发回调；/preset
     registerSettingsBridge(
       ctx,
       'prompt-tool',
-      () => true,
       () => ({ available: true, providers: [] }),
       () => ({ activeSkillsDirs: [], skillCatalog: [] }),
       () => '',

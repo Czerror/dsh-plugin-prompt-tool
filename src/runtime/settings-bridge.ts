@@ -5,7 +5,7 @@ import { dirname, join } from 'node:path'
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml'
 import type { SettingsDescriptor, SettingsNamespace, SettingsPathOp } from '@deepseek-ai/dsh-settings'
-import { listDeepseekModels, type DeepseekDetection } from './deepseek.ts'
+import { listAdvertisedModels, type ModelDetection } from './models.ts'
 import type { SkillCatalogEntry } from '../config.ts'
 import { loadPromptConfigFiles } from '../host/prompt-configs.ts'
 import { validatePromptConfigs } from './configs-validate.ts'
@@ -116,8 +116,7 @@ function restorePresetImport(targetDir: string, backupDir: string | undefined): 
 export function registerSettingsBridge(
   ctx: Context,
   ns: SettingsNamespace,
-  getDeepseekAvailable: () => boolean,
-  getDeepseekState: () => DeepseekDetection,
+  getModelsState: () => ModelDetection,
   getSkillsState: () => SkillsBridgeState,
   getEngineStrategyDir: () => string,
   ensureRegistered: (sctx: Context) => boolean,
@@ -173,16 +172,16 @@ export function registerSettingsBridge(
               writeBridgeJson(res, 404, { ok: false, code: 'settings-not-exposed', message: 'prompt-tool settings namespace is not registered' })
               return
             }
-            const detection = getDeepseekState()
+            const detection = getModelsState()
             const skillsState = getSkillsState()
-            const deepseekModels = await listDeepseekModels(sctx)
+            const modelCatalog = await listAdvertisedModels(sctx)
             writeBridgeJson(res, 200, {
               ok: true,
               value: descriptor,
-              deepseekAvailable: detection.available,
-              deepseekProviders: detection.providers,
-              deepseekModels,
-              deepseekError: detection.error,
+              modelsAvailable: detection.available,
+              providers: detection.providers,
+              modelCatalog,
+              modelsError: detection.error,
               activeSkillsDirs: skillsState.activeSkillsDirs,
               skillsDirExists: Object.fromEntries(skillsState.activeSkillsDirs.map((dir) => [dir, existsSync(dir)])),
               skillCatalog: skillsState.skillCatalog,

@@ -3,7 +3,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { CommandResult } from '@deepseek-ai/dsh-commands'
 import type { SettingsNamespace } from '@deepseek-ai/dsh-settings'
 import { join } from 'node:path'
-import type { DeepseekDetection } from './deepseek.ts'
+import type { ModelDetection } from './models.ts'
 import type { PromptSettings } from '../config.ts'
 import type { PromptConfigSpec } from '../host/prompt-configs.ts'
 import { loadPromptConfigFiles } from '../host/prompt-configs.ts'
@@ -42,7 +42,7 @@ function renderTuiStatus(source: PromptSettings, promptConfigs: PromptConfigSpec
     }),
     '锚点文本:',
     `  firstTurnText               ${source.firstTurnText.length > 0 ? source.firstTurnText : '（空 = 按任务自动选择）'}`,
-    `  deepseekAvailable       ${source.deepseekAvailable ? '是' : '否（未检测到 DeepSeek 模型路由）'}`,
+    `  modelsAvailable         ${source.modelsAvailable ? '是' : '否（未检测到模型服务商）'}`,
     `  modelProvider           ${source.modelProvider.length > 0 ? source.modelProvider : '（空 = 不设置）'}`,
     `  modelName               ${source.modelName.length > 0 ? source.modelName : '（空 = 不设置）'}`,
     `  bootstrapMaxTokens      ${source.bootstrapMaxTokens > 0 ? source.bootstrapMaxTokens : '0（关闭，不设封顶）'}`,
@@ -121,8 +121,8 @@ export function registerTuiCommand(
   ctx: Context,
   ns: SettingsNamespace,
   getSource: () => PromptSettings,
-  getDeepseekAvailable: () => boolean,
-  getDeepseekState: () => DeepseekDetection,
+  getModelsState: () => ModelDetection,
+  getModelCatalog: () => Promise<Record<string, string[]>>,
   getPresetConfigsDir?: () => string,
 ): void {
   ctx.inject(['settings'], (sctx: Context) => {
@@ -144,14 +144,16 @@ export function registerTuiCommand(
         const source = getSource()
         const promptConfigs = resolvePromptConfigs(getPresetConfigsDir?.(), source.promptConfigs)
         if (tokens.length === 0 || tokens[0] === 'status') {
-          const detection = getDeepseekState()
-          const deepseekLine = detection.available
-            ? `检测到的 DeepSeek 模型路由: ${detection.providers.join(', ') || '（无）'}`
-            : `未检测到 DeepSeek 模型路由。providers=[${detection.providers.join(', ') || '空'}] error=${detection.error ?? '无'}`
-          const modelsLine = detection.models.length > 0
-            ? `检测到的模型名: ${detection.models.join(', ')}`
+          const detection = getModelsState()
+          const catalog = await getModelCatalog()
+          const providersLine = detection.available
+            ? `检测到的模型服务商: ${detection.providers.join(', ') || '（无）'}`
+            : `未检测到模型服务商。providers=[${detection.providers.join(', ') || '空'}] error=${detection.error ?? '无'}`
+          const catalogEntries = Object.entries(catalog)
+          const modelsLine = catalogEntries.length > 0
+            ? `检测到的模型名: ${catalogEntries.map(([provider, models]) => `${provider} → ${models.join(', ')}`).join('；')}`
             : '未检测到模型名（adapter 未公布或查询失败）'
-          return { kind: 'success', text: renderTuiStatus(source, promptConfigs) + '\n' + deepseekLine + '\n' + modelsLine }
+          return { kind: 'success', text: renderTuiStatus(source, promptConfigs) + '\n' + providersLine + '\n' + modelsLine }
         }
         if (tokens[0] === 'skill') {
           const folder = tokens[1]

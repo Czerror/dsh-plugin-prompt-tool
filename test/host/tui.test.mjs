@@ -20,7 +20,7 @@ function makeTui() {
   const ctx = { inject(_deps, callback) { callback(sctx) } }
   const source = () => ({
     firstTurnText: '',
-    deepseekAvailable: true,
+    modelsAvailable: true,
     modelProvider: '',
     modelName: '',
     bootstrapMaxTokens: 0,
@@ -33,7 +33,7 @@ function makeTui() {
       'firstTurnCustom', 'guideCustom', 'usePtcMode',
     ].map((key) => [key, true])),
   })
-  registerTuiCommand(ctx, 'prompt-tool', source, () => true, () => ({ available: true, providers: ['deepseek-official'], models: ['deepseek-v4-flash', 'deepseek-v4-pro'] }))
+  registerTuiCommand(ctx, 'prompt-tool', source, () => ({ available: true, providers: ['deepseek-official'] }), () => Promise.resolve({ 'deepseek-official': ['deepseek-v4-flash', 'deepseek-v4-pro'] }))
   const handler = commands[0].handler
   return {
     run: (raw) => handler({ rawInput: raw }),
@@ -62,12 +62,12 @@ test('TUI：presetDir 提供时 status 显示生成目录实际配置（settings
     }
     const ctx = { inject(_deps, callback) { callback(sctx) } }
     const source = () => ({
-      firstTurnText: '', deepseekAvailable: true, modelProvider: '', modelName: '',
+      firstTurnText: '', modelsAvailable: true, modelProvider: '', modelName: '',
       bootstrapMaxTokens: 0, activeSkillsDirs: [], skillCatalog: [], skillSwitches: {}, promptConfigs: [],
       writeAgents: true, writePreset: true, injectPrompt: true, injectAgentsPrompt: false,
       firstTurnAnchor: true, firstTurnCustom: false, guideCustom: false, usePtcMode: true,
     })
-    registerTuiCommand(ctx, 'prompt-tool', source, () => true, () => ({ available: true, providers: [], models: [] }), () => dir)
+    registerTuiCommand(ctx, 'prompt-tool', source, () => ({ available: true, providers: [] }), () => Promise.resolve({}), () => dir)
     const result = await commands[0].handler({ rawInput: 'status' })
     assert.equal(result.kind, 'success')
     assert.match(result.text, /config real-config\s+开/)

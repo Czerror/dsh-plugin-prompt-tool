@@ -34,8 +34,6 @@ function register() {
   const { ctx, handlers } = makeHarness()
   registerSettingsBridge(
     ctx,
-    'prompt-tool',
-    () => true,
     () => ({ available: true, providers: [] }),
     () => ({ activeSkillsDirs: [], skillCatalog: [] }),
     () => '',

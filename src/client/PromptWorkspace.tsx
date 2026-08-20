@@ -149,8 +149,8 @@ function AgentRequestSwitches(props: { store: PromptToolStore }): ReactNode {
 function ModelToolCards(props: { store: PromptToolStore }): ReactNode {
   const { store } = props
   const fields = store.fields
-  const providerOptions = ['', ...store.deepseekProviders, 'deepseek-official']
-  const modelOptions = ['', 'deepseek-v4-flash', 'deepseek-v4-pro']
+  const providerOptions = ['', ...store.providers]
+  const modelOptions = ['', ...(store.modelCatalog[fields.modelProvider] ?? [])]
   const maxDepthOptions = ['', 'provider-managed', '0', '1', '2', '3', '5']
   const withCurrent = (options: string[], current: string): string[] =>
     current.length > 0 && !options.includes(current) ? [...options, current] : options
@@ -272,17 +272,18 @@ function ModelToolCards(props: { store: PromptToolStore }): ReactNode {
 /** 模型路由状态 chip：主对话页与子代理页共用（检测到 DeepSeek 路由时展示 provider 列表）。 */
 function ModelRouteStatus(props: { store: PromptToolStore }): ReactNode {
   const { store } = props
-  const detected = store.deepseekProviders.length > 0
-  const models = store.deepseekModels
+  const detected = store.providers.length > 0
+  const catalog = store.modelCatalog
+  const catalogEntries = Object.entries(catalog)
   return (
     <div className={ui.skillStatusRow} aria-label="模型服务商状态">
       <span className={clsx(ui.skillStatusChip, detected ? ui.skillStatusModel : ui.skillStatusOff)}>
         <i className={ui.skillStatusDot} aria-hidden="true" />
-        {detected ? `已检测到模型服务商：${store.deepseekProviders.join('、')}` : '未检测到模型服务商'}
+        {detected ? `已检测到模型服务商：${store.providers.join('、')}` : '未检测到模型服务商'}
       </span>
-      <span className={clsx(ui.skillStatusChip, models.length > 0 ? ui.skillStatusModel : ui.skillStatusOff)}>
+      <span className={clsx(ui.skillStatusChip, catalogEntries.length > 0 ? ui.skillStatusModel : ui.skillStatusOff)}>
         <i className={ui.skillStatusDot} aria-hidden="true" />
-        {models.length > 0 ? `已检测到模型名：${models.join('、')}` : '未检测到模型名'}
+        {catalogEntries.length > 0 ? `已检测到模型名：${catalogEntries.map(([provider, models]) => `${provider} → ${models.join('、')}`).join('；')}` : '未检测到模型名'}
       </span>
     </div>
   )
