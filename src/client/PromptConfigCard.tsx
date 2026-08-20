@@ -2,22 +2,15 @@
  * 单条提示词配置卡片 + 编辑表单（独立文件：
  * 打破 PromptConfigsEditor ⇄ PromptConfigList 的循环 import）。
  */
-import { cloneElement, isValidElement, useEffect, useId, useState, type ChangeEvent, type ReactElement, type ReactNode } from 'react'
+import { cloneElement, isValidElement, useEffect, useId, useState, type ReactElement, type ReactNode } from 'react'
 import clsx from 'clsx'
 import { IconChevronDownOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
 import styles from './PromptUi.module.css'
+import { autoResizeTextarea } from './textarea-resize.ts'
 
 import type { EngineMeta, LayerFieldPolicy, PromptConfigDraft } from './prompt-tool-types.ts'
 
 export type { PromptConfigDraft, LayerFieldPolicy } from './prompt-tool-types.ts'
-
-/** textarea 随内容自适应高度（field-sizing 的 JS 兜底：不支持的内核手动调整）。 */
-function autoResizeTextarea(event: ChangeEvent<HTMLTextAreaElement>): void {
-  const el = event.currentTarget
-  if (typeof CSS !== 'undefined' && typeof CSS.supports === 'function' && CSS.supports('field-sizing', 'content')) return
-  el.style.height = 'auto'
-  el.style.height = `${el.scrollHeight}px`
-}
 
 /** sourceKind / form 是少量固定语义值，用下拉选择；引擎不设枚举，因此额外保留当前值。 */
 export const SOURCE_KINDS = ['', 'plugin', 'instruction-hint', 'skill-catalog', 'env-facts'] as const

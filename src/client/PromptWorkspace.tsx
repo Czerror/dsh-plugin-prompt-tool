@@ -14,6 +14,7 @@ import type { PromptConfigDraft } from './PromptConfigsEditor.tsx'
 import type { PromptToolWorkspaceController } from './workspace-controller.ts'
 import { PresetsPage } from './PresetsPage.tsx'
 import { ToggleRow } from './ToggleRow.tsx'
+import { autoResizeTextarea } from './textarea-resize.ts'
 import ui from './PromptUi.module.css'
 import css from './PromptWorkspace.module.css'
 
@@ -128,7 +129,7 @@ function EntrySwitches(props: { store: PromptToolStore }): ReactNode {
             className={ui.firstTurnInput}
             value={fields.firstTurnText}
             disabled={!fields.writePreset || !fields.firstTurnAnchor || !fields.firstTurnCustom}
-            onChange={(event) => store.patch({ firstTurnText: event.target.value })}
+            onChange={(event) => { autoResizeTextarea(event); store.patch({ firstTurnText: event.target.value }) }}
             onBlur={() => void store.persistParamOverrides()}
             spellCheck={false}
           />
@@ -141,7 +142,7 @@ function EntrySwitches(props: { store: PromptToolStore }): ReactNode {
             className={ui.firstTurnInput}
             value={fields.guideText}
             disabled={!fields.writePreset || !fields.firstTurnAnchor || !fields.guideCustom}
-            onChange={(event) => store.patch({ guideText: event.target.value })}
+            onChange={(event) => { autoResizeTextarea(event); store.patch({ guideText: event.target.value }) }}
             onBlur={() => void store.persistParamOverrides()}
             spellCheck={false}
           />
@@ -320,7 +321,7 @@ function FileEditor(props: { store: PromptToolStore; scope: 'preset' | 'agents' 
             <textarea
               className={ui.firstTurnInput}
               value={fields.fallbackText}
-              onChange={(event) => store.patch({ fallbackText: event.target.value })}
+              onChange={(event) => { autoResizeTextarea(event); store.patch({ fallbackText: event.target.value }) }}
               onBlur={store.persistSwitches}
               spellCheck={false}
             />

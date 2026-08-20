@@ -620,6 +620,9 @@
 
 .firstTurnInput,
 .textarea {
+  /* 随内容自适应拉高（长文本不再挤压）；resize 手动覆盖保留。 */
+  field-sizing: content;
+  max-height: 60vh;
   width: 100%;
   box-sizing: border-box;
   border: 1px solid var(--dsw-alias-border-l2);
