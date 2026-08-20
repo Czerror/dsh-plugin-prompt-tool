@@ -23,6 +23,7 @@ promptConfigs:
       - User的<最新互动>视为尚未展开/尚待发展的情节。
       - <最新互动>中的伊始情节务必为本轮情节的开始，
     layer: pre-step
+    mergeMode: merged
     role: user
     position: before-all
     dedupe: none
