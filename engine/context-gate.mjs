@@ -41,8 +41,9 @@
  * first request already sees full context). `includeSubagents: true` gates
  * them too — their first request is clean and their own first reply or tool
  * call opens the gate — so a delegation cannot reintroduce an uncontrolled
- * first request. Keep this flag in sync with any companion phase plugin
- * (e.g. the tool-bootstrap row).
+ * first request. Keep this flag in sync with the tool-bootstrap row's
+ * includeSubagents when both rows are present (anchored: both false;
+ * liangshen: both true).
  *
  * CONFIG:
  *  - `promoteOn`: 'either' (default) | 'tool-call' | 'assistant-message'.

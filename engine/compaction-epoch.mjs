@@ -22,9 +22,9 @@
  * sessions.
  *
  * GATE MODE (liangshen 稳定化扩展, source: xiaobright/dsh-anchored-standard
- * MIT + phase-1 quarantine): `anchorGate: true` gates the promotion on the
+ * MIT + phase-1 quarantine): `promoteGate: true` gates the promotion on the
  * first reasoning block classifying minimal-like (`we` present, no `let me`),
- * with a `maxBootstrapSteps` (default 4) fallback; `promoteAfterFirstResponse:
+ * with a `maxPromoteSteps` (default 4) fallback; `promoteAfterFirstResponse:
  * true` promotes a tool-less first response once it has responded, and also
  * releases an anchor-gated session when its first turn ends. Gate mode uses
  * the durable-event state machine below and ignores `promoteEvents` (fixed
@@ -53,13 +53,13 @@ export function hasAnchoredReasoning(content) {
 /** Build one epoch-aware promotion tracker. */
 export function createEpochPromotion(promoteEvents, options = {}) {
   const includeSubagents = options.includeSubagents === true
-  const anchorGate = options.anchorGate === true
+  const promoteGate = options.promoteGate === true
   const promoteAfterFirstResponse = options.promoteAfterFirstResponse === true
-  const maxBootstrapSteps = Number.isSafeInteger(options.maxBootstrapSteps) && options.maxBootstrapSteps > 0
-    ? options.maxBootstrapSteps
+  const maxPromoteSteps = Number.isSafeInteger(options.maxPromoteSteps) && options.maxPromoteSteps > 0
+    ? options.maxPromoteSteps
     : 4
   const promote = new Set(promoteEvents)
-  const gated = anchorGate || promoteAfterFirstResponse
+  const gated = promoteGate || promoteAfterFirstResponse
   /** sessionId -> entry（boundary/promoted + 门控字段） */
   const state = new Map()
 
@@ -76,9 +76,9 @@ export function createEpochPromotion(promoteEvents, options = {}) {
   /** 门控晋升判定（liangshen decidePromotion 移植）。 */
   const decideGate = (entry) => {
     if (entry.promoted) return true
-    if (entry.toolCalled && !anchorGate) return true
-    if (entry.toolCalled && anchorGate && (entry.anchored || entry.steps >= maxBootstrapSteps)) return true
-    if (entry.toolCalled && anchorGate && promoteAfterFirstResponse && entry.turnEnded) return true
+    if (entry.toolCalled && !promoteGate) return true
+    if (entry.toolCalled && promoteGate && (entry.anchored || entry.steps >= maxPromoteSteps)) return true
+    if (entry.toolCalled && promoteGate && promoteAfterFirstResponse && entry.turnEnded) return true
     if (!entry.toolCalled && entry.responded && promoteAfterFirstResponse) return true
     return false
   }

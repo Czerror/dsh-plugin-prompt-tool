@@ -57,8 +57,8 @@ test('门控关闭：事件级晋升行为不变（回归）', () => {
   assert.equal(promo.status(agent).promoted, true)
 })
 
-test('anchorGate：tool/call + minimal-like reasoning 才晋升', () => {
-  const promo = createEpochPromotion([], { anchorGate: true, maxBootstrapSteps: 4 })
+test('promoteGate：tool/call + minimal-like reasoning 才晋升', () => {
+  const promo = createEpochPromotion([], { promoteGate: true, maxPromoteSteps: 4 })
   const session = makeSession([])
   const agent = makeAgent(session)
   promo.status(agent) // 初始化（state 空时 observe 是热路径，冷启动靠 status 扫 durable log）
@@ -69,8 +69,8 @@ test('anchorGate：tool/call + minimal-like reasoning 才晋升', () => {
   assert.equal(promo.status(agent).promoted, true, 'minimal-like reasoning 晋升')
 })
 
-test('anchorGate：maxBootstrapSteps 回退晋升', () => {
-  const promo = createEpochPromotion([], { anchorGate: true, maxBootstrapSteps: 4 })
+test('promoteGate：maxPromoteSteps 回退晋升', () => {
+  const promo = createEpochPromotion([], { promoteGate: true, maxPromoteSteps: 4 })
   const session = makeSession([])
   const agent = makeAgent(session)
   promo.status(agent)
@@ -89,11 +89,11 @@ test('promoteAfterFirstResponse：无工具首响应也晋升', () => {
   assert.equal(promo.status(agent).promoted, true)
 })
 
-test('anchorGate + promoteAfterFirstResponse：turn/end 释放门控会话', () => {
+test('promoteGate + promoteAfterFirstResponse：turn/end 释放门控会话', () => {
   const promo = createEpochPromotion([], {
-    anchorGate: true,
+    promoteGate: true,
     promoteAfterFirstResponse: true,
-    maxBootstrapSteps: 4,
+    maxPromoteSteps: 4,
   })
   const session = makeSession([])
   const agent = makeAgent(session)
@@ -106,7 +106,7 @@ test('anchorGate + promoteAfterFirstResponse：turn/end 释放门控会话', () 
 })
 
 test('compaction/end 重置门控状态，边界前事件不重新晋升', () => {
-  const promo = createEpochPromotion([], { anchorGate: true, maxBootstrapSteps: 4 })
+  const promo = createEpochPromotion([], { promoteGate: true, maxPromoteSteps: 4 })
   const session = makeSession([])
   const agent = makeAgent(session)
   promo.status(agent)
@@ -123,7 +123,7 @@ test('compaction/end 重置门控状态，边界前事件不重新晋升', () =>
 })
 
 test('门控冷启动：从 durable log 重建同一相位', () => {
-  const promo = createEpochPromotion([], { anchorGate: true, maxBootstrapSteps: 4 })
+  const promo = createEpochPromotion([], { promoteGate: true, maxPromoteSteps: 4 })
   const session = makeSession([
     { type: 'tool/call', seq: 1 },
     assistantMessage([reasoning('Let me check.')], 2),
@@ -175,12 +175,55 @@ test('tool-bootstrap：personaSectionsOnly 默认关闭时 sections 不被过滤
   assert.equal(out.sections.length, 2, '默认保留全部 sections')
 })
 
+test('tool-bootstrap：门控模式与 promoteOn 非 either 互斥 fail loud', () => {
+  const { ctx } = makeCtx()
+  assert.throws(
+    () => applyToolBootstrap(ctx, { bootstrapTools: ['bash'], promoteGate: true, promoteOn: 'tool-call' }),
+    /either/,
+    'promoteGate 门控模式固定 either 语义，promoteOn 非 either 应报错',
+  )
+  assert.throws(
+    () => applyToolBootstrap(ctx, { bootstrapTools: ['bash'], promoteAfterFirstResponse: true, promoteOn: 'assistant-message' }),
+    /either/,
+  )
+  // 门控 + either 允许（显式 either 与省略等价）。
+  applyToolBootstrap(makeCtx().ctx, { bootstrapTools: ['bash'], promoteGate: true, promoteOn: 'either' })
+})
+
 test('tool-bootstrap：workspaceLine 晋升后给 persona 附加工作目录', async () => {
   const { ctx, listeners } = makeCtx()
   applyToolBootstrap(ctx, { bootstrapTools: ['bash', 'str_replace_editor'], workspaceLine: true })
   const session = makeSession([{ type: 'tool/call', seq: 1 }])
   const out = await assembleThrough(listeners, makeAgent(session), assembled())
   assert.match(out.sections[0].text, /Your working directory is \/workspace\.$/)
+})
+
+test('tool-bootstrap：includeSubagents=false（默认）子代理继承完整目录', async () => {
+  const { ctx, listeners } = makeCtx()
+  applyToolBootstrap(ctx, { bootstrapTools: ['bash', 'str_replace_editor'] })
+  const subagent = {
+    session: { id: `s-${Math.random()}`, header: { cwd: '/workspace', delegationDepth: 1 }, events: [] },
+    ctx: { tools: { presentAs: () => () => {} } },
+  }
+  const out = await assembleThrough(listeners, subagent, assembled())
+  assert.deepEqual(out.tools.map((t) => t.name), ['bash', 'str_replace_editor', 'read'], '子代理不裁剪')
+  assert.equal(out.sections.length, 2, '子代理不过滤 sections')
+})
+
+test('tool-bootstrap：includeSubagents=true 子代理与主会话同相位（首轮裁剪）', async () => {
+  const { ctx, listeners } = makeCtx()
+  applyToolBootstrap(ctx, {
+    bootstrapTools: ['bash', 'str_replace_editor'],
+    includeSubagents: true,
+    personaSectionsOnly: true,
+  })
+  const subagent = {
+    session: { id: `s-${Math.random()}`, header: { cwd: '/workspace', delegationDepth: 1 }, events: [] },
+    ctx: { tools: { presentAs: () => () => {} } },
+  }
+  const out = await assembleThrough(listeners, subagent, assembled())
+  assert.deepEqual(out.tools.map((t) => t.name), ['bash', 'str_replace_editor'], '子代理首轮裁剪到 bootstrap 对')
+  assert.deepEqual(out.sections.map((s) => s.name), ['deployment:persona'], '子代理 sections 过滤生效')
 })
 
 // ── context-gate：messageSources / deferredSources / instructionHint ───────

@@ -7,9 +7,9 @@
  * `context-gate` plugin, not here.
  *
  * GATE MODE (liangshen stabilize 扩展, source: xiaobright/dsh-anchored-standard
- * MIT + phase-1 quarantine): `anchorGate: true` gates the promotion on the
+ * MIT + phase-1 quarantine): `promoteGate: true` gates the promotion on the
  * first reasoning block classifying minimal-like (`we` present, no `let me`),
- * `maxBootstrapSteps` (default 4) is the gate fallback, and
+ * `maxPromoteSteps` (default 4) is the gate fallback, and
  * `promoteAfterFirstResponse: true` promotes a tool-less first response and
  * releases an anchor-gated session at its first `turn/end`.
  * `personaSectionsOnly: true` narrows phase-1 prompt sections to the persona
@@ -61,11 +61,13 @@
  *     separately for context control alone; this file narrows only the tool
  *     catalog (plus the optional output cap below).
  *
- * SUBAGENTS: by default subagents (delegationDepth > 0) are always promoted
- * (assembled catalog from their first request). `includeSubagents: true`
- * makes them follow the same bootstrap phase — their first request also sees
- * the bootstrap pair, and their own first reply or tool call promotes them.
- * Keep this flag in sync with the context-gate row's flag.
+ * SUBAGENTS: `includeSubagents` (default false) controls whether subagents
+ * (delegationDepth > 0) follow the same bootstrap phase as the main session —
+ * false (default) keeps the assembled catalog from their very first request
+ * (the historical prompt-tool default: delegated agents inherit the full
+ * tool surface); true makes their first request see the bootstrap pair and
+ * their own first reply or tool call promotes them. Keep in sync with the
+ * context-gate row's flag when both rows are present.
  *
  * POST-PROMOTION CATALOG (prompt-tool patch): after promotion both modes
  * keep the assembled catalog. `usePtcMode` switches the wire presentation
@@ -84,8 +86,7 @@
  * Robustness:
  *  - Promotion decisions are memoized per session id for this process; the
  *    durable event scan runs once per session per process, then O(1).
- *  - Subagents (delegationDepth > 0) are always promoted (assembled catalog)
- *    unless `includeSubagents: true`.
+ *  - Subagents keep the assembled catalog unless `includeSubagents: true`.
  *  - A missing bootstrap tool degrades to the full catalog with a one-time
  *    warning instead of throwing, so a composition drift can never brick
  *    every request of a session.
@@ -114,7 +115,7 @@ export const inject = []
 const ALLOWED_KEYS = new Set([
   'bootstrapTools', 'promoteOn', 'bootstrapMaxTokens', 'compactionTools',
   'includeSubagents', 'usePtcMode',
-  'anchorGate', 'maxBootstrapSteps', 'promoteAfterFirstResponse',
+  'promoteGate', 'maxPromoteSteps', 'promoteAfterFirstResponse',
   'personaSectionsOnly', 'workspaceLine', 'phase1FirstCallInstruction',
 ])
 
@@ -164,6 +165,12 @@ function optionalPositiveInt(value, field) {
 /** Register the per-session bootstrap filters. */
 export function apply(ctx, config) {
   const source = validateConfig(name, config, ALLOWED_KEYS)
+  // 门控模式（promoteGate / promoteAfterFirstResponse）固定 either 晋升语义，
+  // promoteOn 显式非 either 时与门控互斥，fail loud 而非静默忽略。
+  if ((source.promoteGate === true || source.promoteAfterFirstResponse === true)
+    && source.promoteOn !== undefined && source.promoteOn !== 'either') {
+    throw new TypeError(`${name}: promoteGate/promoteAfterFirstResponse 门控模式固定 either 晋升语义，promoteOn 必须省略或为 "either"`)
+  }
   const bootstrapTools = stringList(source.bootstrapTools, 'bootstrapTools')
   const promoteEvents = parsePromoteOn(name, source.promoteOn)
   const bootstrapMaxTokens = optionalPositiveInt(source.bootstrapMaxTokens, 'bootstrapMaxTokens')
@@ -181,9 +188,9 @@ export function apply(ctx, config) {
 
   const promotion = createEpochPromotion(promoteEvents, {
     includeSubagents,
-    anchorGate: source.anchorGate === true,
+    promoteGate: source.promoteGate === true,
     promoteAfterFirstResponse: source.promoteAfterFirstResponse === true,
-    maxBootstrapSteps: source.maxBootstrapSteps,
+    maxPromoteSteps: source.maxPromoteSteps,
   })
 
   // prompt-tool patch: optional Code Mode (PTC) wire presentation after promotion.
@@ -273,11 +280,10 @@ export function apply(ctx, config) {
     try {
       const agent = context.agent
       if (agent === undefined) return assembled
-      // prompt-tool patch: subagents skip catalog narrowing and use assembled tools directly.
-      // Callers (such as dsh-mnemon) already filter assembled.tools through their own whitelists.
-      // New plugin tools with any prefix therefore appear in the subagent first session automatically.
       agentBySession.set(agent.session, agent)
-      if ((agent.session?.header?.delegationDepth ?? 0) > 0) {
+      if ((agent.session?.header?.delegationDepth ?? 0) > 0 && !includeSubagents) {
+        // 默认：子代理继承完整目录（历史 prompt-tool 默认）；
+        // includeSubagents=true 时落到下方正常相位逻辑（首轮裁剪 + 晋升）。
         if (usePtcMode) applyCodePresentation(agent)
         return assembled
       }

@@ -142,6 +142,21 @@ dsh --profile prompt-tool
 6. **缓存原则**：静态内容走 `system-section`（system 头），动态内容走
    `pre-step` / `runtime-context`（消息面），不把动态文本拼进 system。
 
+### 四层默认值体系（预设参数从哪来）
+
+预设行为由 preset.yml 单一配置源下发，共四层默认值，各层职责不重叠：
+
+| 层 | 载体 | 职责 | 覆盖关系 |
+|---|---|---|---|
+| hostDefaults | preset.yml `hostDefaults:` | settings 层默认值（写入开关/路径） | 被用户 settings 覆盖 |
+| params | preset.yml `params:` | 引擎行为默认（锚定/引导/PTC/门控/工具参数） | 被运行时 settings 覆盖（resolvePresetParams 合并） |
+| moduleConfigs | preset.yml `moduleConfigs:` | 引擎库组合行级 config（persona 文本/超时/白名单等） | 行默认值的预设级覆盖 |
+| promptConfigs | preset.yml `promptConfigs:` | 注入提示词配置（策略/层/位置/时机） | 被用户 promptConfigs 与目录合并 |
+
+引擎内置参数（如 tool-bootstrap 的 `promoteGate` / context-gate 的 `messageSources`）只从
+moduleConfigs 读取，不写入 settings 层——用户环境 settings.yaml 保持精简，预设行为全部
+由 preset.yml 决定。
+
 ## 提示词配置全家桶
 
 | `layer` | 官方通道 | 提示词配置参数 |
