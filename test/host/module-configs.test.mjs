@@ -43,10 +43,19 @@ test('anchored buildCordis 集成：moduleConfigs 合并与 token 渲染共存',
   const bash = rows.find((row) => row?.id === 'custom-bash')
   const router = rows.find((row) => row?.id === 'router-first-turn')
   const gate = rows.find((row) => row?.id === 'context-gate')
-  assert.ok(bash && router && gate, 'agent 组合应含 custom-bash / router-first-turn / context-gate 行')
+  const persona = rows.find((row) => row?.id === 'persona')
+  const bootstrap = rows.find((row) => row?.id === 'tool-bootstrap')
+  assert.ok(bash && router && gate && persona && bootstrap, 'agent 组合应含核心行')
   assert.equal(bash.config.timeoutMs, 120000)
   assert.deepEqual(router.config.hideSectionPrefixes, ['mnemon:'])
   assert.equal(gate.config.promoteOn, 'either')
   assert.deepEqual(gate.config.allowKinds, ['skill-invocation', 'near-anchor', 'router-guide'])
+  // persona 为 standard 语义（非 minimal complete）：complete 会抑制 plan-mode /
+  // router-persona（Flash 路由人设）；永久 runtime-context 抑制会失效 context-gate 恢复。
+  assert.notEqual(persona.config.complete, true, 'persona 不得 complete')
+  assert.notEqual(persona.config.includeRuntimeContext, false, 'persona 不得永久抑制 runtime-context')
+  // 子代理相位两行显式一致（tool-bootstrap 与 context-gate 保持同步）。
+  assert.equal(bootstrap.config.includeSubagents, false)
+  assert.equal(gate.config.includeSubagents, false)
   assert.ok(!/__[A-Z0-9_]+__/.test(buildCordis('P')), '生成文本不应残留未解析 token')
 })

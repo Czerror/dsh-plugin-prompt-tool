@@ -186,6 +186,7 @@ params:
   firstTurnBuild: "Start your reasoning with the exact sentence: 'We need to build it directly and verify it.'"
   firstTurnInspect: "Start your reasoning with the exact sentence: 'We need to inspect the code first.'"
   firstTurnDeep: "Start your reasoning with the exact sentence: 'Let me think through the design before changing anything.'"
+  firstTurnWord: we
   allowKinds: "[skill-invocation, near-anchor, router-guide]"
 promptConfigs:
   - id: near-anchor
@@ -287,13 +288,17 @@ modules:
   - tool-web
 moduleConfigs:
   # 引擎组合模块参数（本文件为唯一配置源；library 行默认值仅作未声明时的回退）。
+  # persona 为 standard 语义（非 minimal complete）：router-first-turn 替换
+  # persona（Flash 路由人设）、planning 计划模式段、context-gate 动态上下文
+  # 都需要非 complete + 非永久 runtime-context 抑制，否则被官方 assemble 覆盖。
   persona:
     text: You are a helpful software engineer assistant.
-    complete: true
-    includeRuntimeContext: false
   custom-bash:
     timeoutMs: 120000
     maxOutputBytes: 64000
+  tool-bootstrap:
+    includeSubagents: false
+    promoteOn: either
   router-first-turn:
     hideSectionPrefixes: ["mnemon:"]
   run-code-env:

@@ -78,10 +78,11 @@ export function loadPresetSpec(dir: string): PresetSpec {
   return parsed as PresetSpec
 }
 
-/** 读取预设模板内容资产(presetText / agentsText);模板缺失时静默降级。 */
+/** 读取预设模板内容资产(presetText / agentsText);模板缺失时静默降级。
+ *  模板目录按 resolvePresetDir 解析（用户自定义预设优先，包内模板回退）。 */
 export function loadPresetContent(template = 'anchored'): { presetText: string; agentsText: string } {
   try {
-    const spec = loadPresetSpec(join(packagePresetDir(), template))
+    const spec = loadPresetSpec(resolvePresetDir(template))
     return {
       presetText: typeof spec.content?.presetText === 'string' ? spec.content.presetText : '',
       agentsText: typeof spec.content?.agentsText === 'string' ? spec.content.agentsText : '',
@@ -218,7 +219,12 @@ export function renderEngineTokens(params: Record<string, unknown>): Record<stri
     SUBAGENT_FLASH: subagentFlashBlock,
     // 引擎默认与 context-gate 的 DEFAULT_ALLOW_KINDS 一致（单一默认源）；
     // 需要放行更多 kind 的预设（anchored）在 preset.yml 显式声明 allowKinds。
-    ALLOW_KINDS: asString(params.allowKinds, '[skill-invocation]'),
+    // 引擎默认与 context-gate 的 DEFAULT_ALLOW_KINDS 一致（单一默认源）；
+    // 需要放行更多 kind 的预设（anchored）在 preset.yml 显式声明 allowKinds。
+    // 兼容数组写法（YAML flow 序列化）与字符串写法（token 纯文本插入）。
+    ALLOW_KINDS: Array.isArray(params.allowKinds)
+      ? `[${params.allowKinds.map((item) => String(item)).join(', ')}]`
+      : asString(params.allowKinds, '[skill-invocation]'),
     STR_REPLACE_EDITOR_MAX_OUTPUT_CHARS: editorMaxOutputChars,
   }
 }

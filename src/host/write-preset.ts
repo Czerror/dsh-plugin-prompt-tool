@@ -172,7 +172,7 @@ export function writePreset(prompt: string, options: WritePresetOptions): void {
         }
       } else if (next.id === 'prompt-injector') {
         next.enabled = params.injectPrompt !== false
-        next.params = { ...next.params, text: prompt, firstTurnWord: 'we' }
+        next.params = { ...next.params, text: prompt, firstTurnWord: asString(params.firstTurnWord, 'we') }
       }
       return next
     })

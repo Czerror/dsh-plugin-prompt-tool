@@ -50,13 +50,13 @@ const PRESET_FILE_URL = new URL('../preset/anchored/preset.yml', import.meta.url
 const PRESET_FILE_PATH = fileURLToPath(PRESET_FILE_URL)
 const AGENTS_FILE_PATH = PRESET_FILE_PATH
 
-function readPromptFile(fallbackText: string): string {
-  const text = loadPresetContent().presetText
+function readPromptFile(template: string, fallbackText: string): string {
+  const text = loadPresetContent(template).presetText
   return text.length > 0 ? text : fallbackText
 }
 
-function readAgents(): string {
-  return loadPresetContent().agentsText
+function readAgents(template: string): string {
+  return loadPresetContent(template).agentsText
 }
 
 /** 生成目录内容文件（writePreset 落盘；大文本存文件而非 settings）。 */
@@ -136,8 +136,11 @@ export function apply(ctx: Context, configIn: Config): void {
   const getDeepseekState = (): DeepseekDetection => deepseekState()
   // 内容资产优先读生成目录文件（writePreset 落盘），模板 content 作回退；
   // settings.yaml 不再承载大文本（web 打开加载慢的根因）。
-  let current = readGeneratedContent(config.presetDir, 'preset.md') || readPromptFile(config.fallbackText)
-  let currentAgents = readGeneratedContent(config.presetDir, 'agents.md') || readAgents()
+  const initialTemplate = typeof config.presetTemplate === 'string' && config.presetTemplate.length > 0
+    ? config.presetTemplate
+    : 'anchored'
+  let current = readGeneratedContent(config.presetDir, 'preset.md') || readPromptFile(initialTemplate, config.fallbackText)
+  let currentAgents = readGeneratedContent(config.presetDir, 'agents.md') || readAgents(initialTemplate)
 
   /** 重建生成目录（文本/组合/引擎/提示词配置）；writePreset 关闭时移除旧目录。 */
   const rebuildPreset = (): void => {
@@ -494,7 +497,9 @@ registerTuiCommand(ctx, NS, () => currentSource(), getDeepseekAvailable, getDeep
     // settings.promptText 为空时保留生成目录/模板内容（大文本不再写入 settings，
     // 显式非空文本仍作为运行时覆盖生效）。
     if (promptChanged && next.promptText.trim().length > 0) current = next.promptText
-    if (fallbackTextChanged && next.promptText.trim() === '' && current.trim() === '') current = readPromptFile(nextRuntime.fallbackText)
+    if (fallbackTextChanged && next.promptText.trim() === '' && current.trim() === '') {
+      current = readPromptFile(nextRuntime.presetTemplate, nextRuntime.fallbackText)
+    }
     if (agentsChanged && next.agentsText.trim().length > 0) currentAgents = next.agentsText
     runtime.writeAgents = nextRuntime.writeAgents
     runtime.writePreset = nextRuntime.writePreset
