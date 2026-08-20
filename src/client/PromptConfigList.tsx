@@ -56,6 +56,7 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
   const [errors, setErrors] = useState<ValidationErrorEntry[]>([])
   const [validating, setValidating] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [filter, setFilter] = useState('')
 
   const visible = layer === undefined
     ? configs
@@ -66,6 +67,11 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
       const mode = config.subagents ?? 'none'
       return scope === 'main' ? mode !== 'only' : mode !== 'none'
     })
+  const keyword = filter.trim().toLowerCase()
+  const filtered = keyword.length === 0
+    ? scoped
+    : scoped.filter((config) =>
+      [config.id, config.name ?? '', config.strategy ?? ''].join(' ').toLowerCase().includes(keyword))
 
   const dirty = JSON.stringify(configs) !== JSON.stringify(savedConfigs)
 
@@ -167,10 +173,23 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
       <div><h2 id="prompt-tool-configs-heading">{layer === undefined ? '配置列表' : '本层提示词配置'}</h2><p>{scoped.length} 条配置 · {scoped.filter((config) => config.enabled !== false).length} 条启用；上下移动控制同层顺序。</p></div>
         <div className={styles.sectionActions}>
           {extraActions}
-          <button type="button" className={styles.pillButton} disabled={validating} onClick={() => void runValidate(configs)}>{validating ? '校验中…' : '校验'}</button>
-          <button type="button" className={styles.primaryPill} disabled={saving || validating} onClick={() => void save()}>{saving ? '保存中…' : '保存提示词配置'}</button>
+          <button type="button" className={styles.pillButton} disabled={validating} onClick={() => void runValidate(configs)}>{validating && <span className={styles.spinner} aria-hidden="true" />}{validating ? '校验中…' : '校验'}</button>
+          <button type="button" className={styles.primaryPill} disabled={saving || validating} onClick={() => void save()}>{saving && <span className={styles.spinner} aria-hidden="true" />}{saving ? '保存中…' : '保存提示词配置'}</button>
         </div>
       </div>
+
+      {scoped.length > 0 && (
+        <div className={styles.listFilterRow}>
+          <input
+            className={styles.listFilter}
+            value={filter}
+            aria-label="过滤配置列表"
+            placeholder="过滤：按 id / 名称 / strategy…"
+            spellCheck={false}
+            onChange={(event) => setFilter(event.target.value)}
+          />
+        </div>
+      )}
 
       {errors.length > 0 && (
         <div className={styles.configErrorBox}>
@@ -182,9 +201,11 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
 
       {scoped.length === 0 ? (
         <div className={styles.emptyState}><span className={styles.emptyGlyph} aria-hidden="true">⌁</span><div><h3>{layer === undefined ? '还没有自定义提示词配置' : '本层还没有自定义配置'}</h3><p>{layer === undefined ? '从上方模板插入一条，或从本地目录导入；默认四条内置配置不受影响。' : '请到主设置「提示词配置」从模板插入或从目录导入。'}</p></div></div>
+      ) : filtered.length === 0 ? (
+        <p className={styles.readOnly} role="status">没有匹配「{filter.trim()}」的配置。</p>
       ) : (
         <div className={styles.configList}>
-          {scoped.map((config) => renderCard(config))}
+          {filtered.map((config) => renderCard(config))}
         </div>
       )}
 
@@ -195,8 +216,8 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
       <footer className={`${styles.actions} ${dirty ? styles.actionsVisible : ''}`} aria-live="polite">
         <span>{dirty ? '有未保存修改' : ''}</span>
         <div>
-          <button type="button" className={styles.discard} disabled={saving || !dirty} onClick={discard}>放弃修改</button>
-          <button type="button" className={styles.save} disabled={saving || validating || !dirty} onClick={() => void save()}>{saving ? '保存中…' : '保存全部'}</button>
+          <button type="button" className={styles.pillButton} data-variant="secondary" disabled={saving || !dirty} onClick={discard}>放弃修改</button>
+          <button type="button" className={styles.save} disabled={saving || validating || !dirty} onClick={() => void save()}>{saving && <span className={styles.spinner} aria-hidden="true" />}{saving ? '保存中…' : '保存全部'}</button>
         </div>
       </footer>
     </section>

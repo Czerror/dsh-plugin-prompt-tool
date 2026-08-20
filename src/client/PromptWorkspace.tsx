@@ -17,6 +17,7 @@ import { PresetsPage } from './PresetsPage.tsx'
 import { TemplatePicker } from './TemplatePicker.tsx'
 import { bridgePost } from './prompt-tool-bridge.ts'
 import { ToggleRow } from './ToggleRow.tsx'
+import { TagInput } from './TagInput.tsx'
 import { autoResizeTextarea } from './textarea-resize.ts'
 import ui from './PromptUi.module.css'
 import css from './PromptWorkspace.module.css'
@@ -251,13 +252,13 @@ function SubagentSettings(props: { store: PromptToolStore }): ReactNode {
           />
         </label>
       </div>
-      <SettingInputRow id="pt-subagent-tool-allow" label="子代理工具集白名单" hint="toolFilter.allow；逗号分隔，例如 read, write, glob；留空 = 不限制。失焦保存。"
+      <TagInput id="pt-subagent-tool-allow" label="子代理工具集白名单" hint="toolFilter.allow；回车或逗号添加标签，× 移除；留空 = 不限制。每次增删立即保存。"
         value={fields.subagentToolFilterAllow} placeholder="read, write, glob" disabled={!fields.writePreset}
-        onInput={(value) => store.patch({ subagentToolFilterAllow: value })}
+        onChange={(value) => store.patch({ subagentToolFilterAllow: value })}
         onCommit={() => void store.persistParamOverrides()} />
-      <SettingInputRow id="pt-subagent-tool-deny" label="子代理工具集黑名单" hint="toolFilter.deny；逗号分隔；留空 = 不限制。失焦保存。"
+      <TagInput id="pt-subagent-tool-deny" label="子代理工具集黑名单" hint="toolFilter.deny；回车或逗号添加标签，× 移除；留空 = 不限制。每次增删立即保存。"
         value={fields.subagentToolFilterDeny} placeholder="bash, run_code" disabled={!fields.writePreset}
-        onInput={(value) => store.patch({ subagentToolFilterDeny: value })}
+        onChange={(value) => store.patch({ subagentToolFilterDeny: value })}
         onCommit={() => void store.persistParamOverrides()} />
       <div className={ui.rowGroup}>
         <div className={ui.settingRowStack}>
@@ -338,9 +339,9 @@ function FeatureSettings(props: { store: PromptToolStore }): ReactNode {
           />
         </label>
       </div>
-      <SettingInputRow id="pt-allow-kinds" label="注入 kind 白名单" hint="context-gate allowKinds；逗号分隔，例如 skill-invocation, near-anchor, router-guide；留空 = 官方默认（不过滤）。失焦保存。"
+      <TagInput id="pt-allow-kinds" label="注入 kind 白名单" hint="context-gate allowKinds；回车或逗号添加标签，× 移除，例如 skill-invocation、near-anchor、router-guide；留空 = 官方默认（不过滤）。每次增删立即保存。"
         value={fields.allowKinds} placeholder="skill-invocation, near-anchor, router-guide" disabled={!fields.writePreset}
-        onInput={(value) => store.patch({ allowKinds: value })}
+        onChange={(value) => store.patch({ allowKinds: value })}
         onCommit={() => void store.persistParamOverrides()} />
     </section>
   )
@@ -375,6 +376,7 @@ function FileEditor(props: { store: PromptToolStore; scope: 'preset' | 'agents' 
           <input ref={fileRef} type="file" accept=".md,.markdown,.txt" style={{ display: 'none' }} aria-label="选择配置文件"
             onChange={(event) => { pickFile(event.target.files?.[0]); event.target.value = '' }} />
           <button type="button" className={ui.primaryPill} disabled={importing} onClick={() => fileRef.current?.click()}>
+            {importing && <span className={ui.spinner} aria-hidden="true" />}
             {importing ? '导入中…' : '导入配置文件'}
           </button>
         </div>
@@ -489,6 +491,7 @@ function SkillsSettings(props: { store: PromptToolStore; api: IApiClient }): Rea
   const fields = store.fields
   const [pickingDir, setPickingDir] = useState(false)
   const [dragFolder, setDragFolder] = useState<string | undefined>(undefined)
+  const [skillFilter, setSkillFilter] = useState('')
   const orderedSkills = useMemo(() => {
     const index = new Map(fields.skillOrder.map((folder, at) => [folder, at]))
     return [...fields.skillCatalog].sort((left, right) => {
@@ -504,6 +507,11 @@ function SkillsSettings(props: { store: PromptToolStore; api: IApiClient }): Rea
     || JSON.stringify(fields.skillOrder) !== JSON.stringify(store.savedSwitches.skillOrder)
     || fields.skillsDir !== store.savedSwitches.skillsDir
     || store.skillsDirDraft.trim() !== fields.skillsDir
+  const skillKeyword = skillFilter.trim().toLowerCase()
+  const visibleSkills = skillKeyword.length === 0
+    ? orderedSkills
+    : orderedSkills.filter((skill) =>
+      [skill.folder, skill.name ?? '', skill.description ?? ''].join(' ').toLowerCase().includes(skillKeyword))
 
   const moveSkill = (from: string, to: string) => {
     const folders = orderedSkills.map((skill) => skill.folder)
@@ -548,7 +556,7 @@ function SkillsSettings(props: { store: PromptToolStore; api: IApiClient }): Rea
 
       <div className={ui.importBar}>
         <div><strong>从目录导入技能目录</strong><small>打开系统文件管理器选择目录；选中路径写入下方编辑框并立即保存生效。每个子文件夹应含 SKILL.md。</small></div>
-        <button type="button" className={ui.primaryPill} disabled={pickingDir} onClick={() => void pickSkillsDir()}>{pickingDir ? '选择中…' : '选择目录并导入'}</button>
+        <button type="button" className={ui.primaryPill} disabled={pickingDir} onClick={() => void pickSkillsDir()}>{pickingDir && <span className={ui.spinner} aria-hidden="true" />}{pickingDir ? '选择中…' : '选择目录并导入'}</button>
       </div>
 
       <div className={ui.rowGroup}>
@@ -569,7 +577,7 @@ function SkillsSettings(props: { store: PromptToolStore; api: IApiClient }): Rea
               onChange={(event) => store.setSkillsDirDraft(event.target.value)}
             />
             <button type="button" className={ui.pillButton} disabled={store.savingSkillsDir || store.skillsDirDraft.trim() === fields.skillsDir} onClick={store.applySkillsDir}>
-              {store.savingSkillsDir ? '设置中…' : '设置目录'}
+              {store.savingSkillsDir && <span className={ui.spinner} aria-hidden="true" />}{store.savingSkillsDir ? '设置中…' : '设置目录'}
             </button>
           </div>
         </div>
@@ -580,11 +588,27 @@ function SkillsSettings(props: { store: PromptToolStore; api: IApiClient }): Rea
         onInput={(value) => store.patch({ skillRankBase: Number(value) || 0 })}
         onCommit={store.persistSwitches} />
 
+      {fields.skillCatalog.length > 0 && (
+        <div className={ui.listFilterRow}>
+          <input
+            className={ui.listFilter}
+            value={skillFilter}
+            aria-label="过滤技能列表"
+            placeholder="过滤技能：名称 / 目录 / 描述…"
+            spellCheck={false}
+            onChange={(event) => setSkillFilter(event.target.value)}
+          />
+        </div>
+      )}
+
       {fields.skillCatalog.length === 0 ? (
         <div className={ui.emptyState}><span className={ui.emptyGlyph} aria-hidden="true">◇</span><div><h3>skills 目录下没有技能</h3><p>从上方选择目录导入，或确认技能目录路径后重新打开工作台。</p></div></div>
+      ) : visibleSkills.length === 0 ? (
+        <p className={ui.readOnly} role="status">没有匹配「{skillFilter.trim()}」的技能。</p>
       ) : (
         <div className={ui.rowGroup}>
-          {orderedSkills.map((skill, index) => {
+          {visibleSkills.map((skill) => {
+            const index = orderedSkills.indexOf(skill)
             const hint = `skills/${skill.folder}${skill.description ? ` · ${skill.description}` : ''}`
             return (
               <div
@@ -646,6 +670,7 @@ function SkillsSettings(props: { store: PromptToolStore; api: IApiClient }): Rea
                     disabled={store.fixingSkill === skill.folder}
                     onClick={() => void store.fixSkill(skill.folder)}
                   >
+                    {store.fixingSkill === skill.folder && <span className={ui.spinner} aria-hidden="true" />}
                     {store.fixingSkill === skill.folder ? '修复中…' : '一键修复'}
                   </button>
                 )}
@@ -666,7 +691,8 @@ export interface PromptWorkspaceProps {
   onClose: () => void
 }
 
-type WorkspacePage = string
+/** 顶层页面：六层折叠为「注入层级」，内部用 layerPage 切换。 */
+type WorkspacePage = 'layers' | 'subagent' | 'skills' | 'features' | 'presets'
 type EntryPage = 'switches' | 'preset' | 'agents'
 
 const ENTRY_PAGES: Array<{ id: EntryPage; label: string }> = [
@@ -706,11 +732,20 @@ const FALLBACK_LAYER_LABELS: Record<string, { title: string; detail: string }> =
   'tool-pipeline': { title: '工具管线层', detail: 'tools/* 层。' },
 }
 
-/** 侧边栏独立工作台：顶部六个层级标签 + Skills 设置。 */
+const TOP_PAGES: Array<{ id: WorkspacePage; label: string }> = [
+  { id: 'layers', label: '注入层级' },
+  { id: 'subagent', label: '子代理设置' },
+  { id: 'skills', label: 'Skills 设置' },
+  { id: 'features', label: '主对话与全局' },
+  { id: 'presets', label: '预设和配置' },
+]
+
+/** 侧边栏独立工作台：顶层 5 页 +「注入层级」内部六层子导航。 */
 export function PromptWorkspace(props: PromptWorkspaceProps): ReactNode {
   const store = usePromptToolStore(props.api, props.settings)
   const layers = store.meta.layers.length > 0 ? store.meta.layers : FALLBACK_LAYERS
-  const [page, setPage] = useState<WorkspacePage>('pre-step')
+  const [page, setPage] = useState<WorkspacePage>('layers')
+  const [layerPage, setLayerPage] = useState<string>('pre-step')
   const [entryPage, setEntryPage] = useState<EntryPage>('switches')
   const open = useSyncExternalStore(
     props.controller.subscribe,
@@ -726,28 +761,32 @@ export function PromptWorkspace(props: PromptWorkspaceProps): ReactNode {
 
   const enabledCount = store.fields.promptConfigs.filter((config) => config.enabled !== false).length
   const isAnchoredTemplate = store.fields.presetTemplate === 'anchored'
-  const layerMeta = page === 'skills'
+  const layerMeta = page === 'layers'
+    ? `${configsOfLayer(store.fields.promptConfigs, layerPage).length} 配置`
+    : page === 'skills'
     ? `${store.fields.skillCatalog.length} 技能`
     : page === 'features'
       ? '全局'
       : page === 'presets'
         ? '预设与配置'
-      : page === 'subagent'
-        ? '子代理'
-      : `${configsOfLayer(store.fields.promptConfigs, page).length} 配置`
-  const layerLabel = page !== 'skills' && page !== 'features' && page !== 'presets' && page !== 'subagent'
-    ? (store.meta.layerLabels[page] ?? FALLBACK_LAYER_LABELS[page])
+        : '子代理'
+  const layerLabel = page === 'layers'
+    ? (store.meta.layerLabels[layerPage] ?? FALLBACK_LAYER_LABELS[layerPage])
     : undefined
-  const pageTitle = page === 'skills' ? 'Skills 设置' : page === 'features' ? '主对话与全局' : page === 'presets' ? '预设和配置' : page === 'subagent' ? '子代理设置' : (layerLabel?.title ?? page)
-  const pageDetail = page === 'skills'
+  const pageTitle = page === 'layers' ? (layerLabel?.title ?? '注入层级')
+    : page === 'skills' ? 'Skills 设置'
+      : page === 'features' ? '主对话与全局'
+        : page === 'presets' ? '预设和配置'
+          : '子代理设置'
+  const pageDetail = page === 'layers'
+    ? (layerLabel?.detail ?? '')
+    : page === 'skills'
     ? '按 skills 目录注册的可开关技能；目录与逐技能开关立即生效。'
     : page === 'features'
       ? '主对话参数（快速模型人设、注入 kind 白名单）与全局开关（预设生成、AGENTS.md、路径与顺序）。'
       : page === 'presets'
         ? '统一管理预设模板（切换/导入）与提示词配置（六层列表/模板插入/配置目录）。'
-      : page === 'subagent'
-        ? '子代理作用域参数（模型/人设/工具集/深度）与子代理提示词配置（subagents 非 none）。'
-      : (layerLabel?.detail ?? '')
+        : '子代理作用域参数（模型/人设/工具集/深度）与子代理提示词配置（subagents 非 none）。'
 
   return (
     <div className={css.shell}>
@@ -764,28 +803,28 @@ export function PromptWorkspace(props: PromptWorkspaceProps): ReactNode {
       </header>
 
       <div className={css.topNavigation}>
-        <div className={css.nav} role="tablist" aria-label="提示词工具层级">
-          {layers.map((item) => (
-            <button key={item} type="button" role="tab" aria-selected={page === item} data-active={page === item ? '' : undefined} onClick={() => setPage(item)} onKeyDown={tabKeyHandler([...layers, 'subagent', 'skills', 'features', 'presets'], page, setPage)}>
-              <span><strong>{store.meta.layerLabels[item]?.title ?? FALLBACK_LAYER_LABELS[item]?.title ?? item}</strong><small>{item}</small></span>
+        <div className={css.nav} role="tablist" aria-label="提示词工具页面">
+          {TOP_PAGES.map((item) => (
+            <button key={item.id} type="button" role="tab" aria-selected={page === item.id} data-active={page === item.id ? '' : undefined} onClick={() => setPage(item.id)} onKeyDown={tabKeyHandler(TOP_PAGES.map((entry) => entry.id), page, setPage)}>
+              <span><strong>{item.label}</strong></span>
             </button>
           ))}
-          <button type="button" role="tab" aria-selected={page === 'subagent'} data-active={page === 'subagent' ? '' : undefined} onClick={() => setPage('subagent')} onKeyDown={tabKeyHandler([...layers, 'subagent', 'skills', 'features', 'presets'], page, setPage)}>
-            <span><strong>子代理设置</strong><small>subagent</small></span>
-          </button>
-          <button type="button" role="tab" aria-selected={page === 'skills'} data-active={page === 'skills' ? '' : undefined} onClick={() => setPage('skills')} onKeyDown={tabKeyHandler([...layers, 'subagent', 'skills', 'features', 'presets'], page, setPage)}>
-            <span><strong>Skills 设置</strong><small>skills</small></span>
-          </button>
-          <button type="button" role="tab" aria-selected={page === 'features'} data-active={page === 'features' ? '' : undefined} onClick={() => setPage('features')} onKeyDown={tabKeyHandler([...layers, 'subagent', 'skills', 'features', 'presets'], page, setPage)}>
-            <span><strong>主对话与全局</strong><small>features</small></span>
-          </button>
-          <button type="button" role="tab" aria-selected={page === 'presets'} data-active={page === 'presets' ? '' : undefined} onClick={() => setPage('presets')} onKeyDown={tabKeyHandler([...layers, 'subagent', 'skills', 'features', 'presets'], page, setPage)}>
-            <span><strong>预设和配置</strong><small>presets</small></span>
-          </button>
         </div>
       </div>
 
-      {page === 'pre-step' && (
+      {page === 'layers' && (
+        <div className={css.memoryNavigation}>
+          <div className={css.memoryTabs} role="tablist" aria-label="注入层级">
+            {layers.map((item) => (
+              <button key={item} type="button" role="tab" aria-selected={layerPage === item} data-active={layerPage === item ? '' : undefined} onClick={() => setLayerPage(item)} onKeyDown={tabKeyHandler(layers, layerPage, setLayerPage)}>
+                {store.meta.layerLabels[item]?.title ?? FALLBACK_LAYER_LABELS[item]?.title ?? item}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {page === 'layers' && layerPage === 'pre-step' && (
         <div className={css.memoryNavigation}>
           <div className={css.memoryTabs} role="tablist" aria-label="消息批层子页">
             {ENTRY_PAGES.map((item) => (
@@ -799,27 +838,35 @@ export function PromptWorkspace(props: PromptWorkspaceProps): ReactNode {
         <div>
           <PageHeader title={pageTitle} description={pageDetail} meta={layerMeta} />
 
-          {page === 'skills' ? <SkillsSettings store={store} api={props.api} /> : (
+          {store.loading ? (
+            <div className={ui.skeletonStack} aria-hidden="true">
+              {[0, 1, 2, 3].map((item) => <div key={item} className={ui.skeletonRow} />)}
+            </div>
+          ) : page === 'skills' ? <SkillsSettings store={store} api={props.api} /> : (
             <>
-              {page === 'pre-step' && entryPage === 'switches' && (isAnchoredTemplate
-                ? <EntrySwitches store={store} />
-                : <p className={ui.readOnly} role="status">当前预设模板非 anchored，anchored 专属入口开关已隐藏。</p>)}
-              {page === 'pre-step' && entryPage === 'preset' && <FileEditor store={store} scope="preset" />}
-              {page === 'pre-step' && entryPage === 'agents' && <FileEditor store={store} scope="agents" />}
+              {page === 'layers' && (
+                <>
+                  {layerPage === 'pre-step' && entryPage === 'switches' && (isAnchoredTemplate
+                    ? <EntrySwitches store={store} />
+                    : <p className={ui.readOnly} role="status">当前预设模板非 anchored，anchored 专属入口开关已隐藏。</p>)}
+                  {layerPage === 'pre-step' && entryPage === 'preset' && <FileEditor store={store} scope="preset" />}
+                  {layerPage === 'pre-step' && entryPage === 'agents' && <FileEditor store={store} scope="agents" />}
+                  {layerPage !== 'pre-step' && (
+                    <>
+                      {layerPage === 'agent-request' && (isAnchoredTemplate
+                        ? <AgentRequestSwitches store={store} />
+                        : <p className={ui.readOnly} role="status">当前预设模板非 anchored，调用配置层 anchored 专属开关已隐藏。</p>)}
+                      {layerPage === 'tool-pipeline' && (isAnchoredTemplate
+                        ? <ToolPipelineSwitches store={store} />
+                        : <p className={ui.readOnly} role="status">当前预设模板非 anchored，工具管线层 anchored 专属开关已隐藏。</p>)}
+                      <LayerConfigList store={store} layer={layerPage} />
+                    </>
+                  )}
+                </>
+              )}
               {page === 'features' && <FeatureSettings store={store} />}
               {page === 'presets' && <PresetsPage store={store} />}
               {page === 'subagent' && <SubagentPage store={store} />}
-              {page !== 'pre-step' && page !== 'features' && page !== 'presets' && page !== 'subagent' && (
-                <>
-                  {page === 'agent-request' && (isAnchoredTemplate
-                    ? <AgentRequestSwitches store={store} />
-                    : <p className={ui.readOnly} role="status">当前预设模板非 anchored，调用配置层 anchored 专属开关已隐藏。</p>)}
-                  {page === 'tool-pipeline' && (isAnchoredTemplate
-                    ? <ToolPipelineSwitches store={store} />
-                    : <p className={ui.readOnly} role="status">当前预设模板非 anchored，工具管线层 anchored 专属开关已隐藏。</p>)}
-                  <LayerConfigList store={store} layer={page} />
-                </>
-              )}
             </>
           )}
 

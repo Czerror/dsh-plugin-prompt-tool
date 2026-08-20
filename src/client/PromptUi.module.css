@@ -605,9 +605,80 @@
 .toggleRow:hover .switch { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--pt-accent) 45%, var(--dsw-alias-border-l2)); }
 
 .toggleRow input:checked + .switch,
-.configEnable > input:checked + .switch { background: var(--dsw-alias-label-primary); box-shadow: none; }
+.configEnable > input:checked + .switch { background: var(--pt-accent); box-shadow: none; }
 .toggleRow input:checked + .switch i,
 .configEnable > input:checked + .switch i { transform: translateX(16px); }
+
+/* 标签输入：chip 增删 + 输入框；底层仍为逗号分隔字符串。 */
+.tagInput {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 10px;
+  padding: 6px 8px;
+  background: var(--dsw-alias-bg-layer-3);
+  transition: border-color .14s ease, box-shadow .14s ease;
+}
+
+.tagInput:focus-within {
+  border-color: color-mix(in srgb, var(--pt-accent) 55%, var(--dsw-alias-border-l2));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--pt-accent) 20%, transparent);
+}
+
+.tagInput[data-disabled] { opacity: .46; }
+
+.tagChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid color-mix(in srgb, var(--pt-accent) 26%, var(--dsw-alias-border-l2));
+  border-radius: 999px;
+  padding: 2px 9px;
+  color: var(--dsw-alias-label-primary);
+  background: color-mix(in srgb, var(--pt-accent) 8%, transparent);
+  font-size: 11px;
+  line-height: 17px;
+  white-space: nowrap;
+}
+
+.tagChipRemove {
+  appearance: none;
+  display: grid;
+  width: 14px;
+  height: 14px;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  padding: 0;
+  color: var(--dsw-alias-label-tertiary);
+  background: transparent;
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.tagChipRemove:hover {
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-interactive-bg-hover-solid);
+}
+
+.tagInputField {
+  min-width: 90px;
+  flex: 1;
+  border: 0;
+  outline: none;
+  padding: 4px 2px;
+  color: var(--dsw-alias-label-primary);
+  background: transparent;
+  font: inherit;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.tagInputField::placeholder { color: var(--dsw-alias-label-caption); }
 
 .textBlock {
   display: flex;
@@ -769,7 +840,68 @@
 }
 .actions > span { color: var(--dsw-alias-label-tertiary); font-size: 12px; line-height: 18px; }
 .actions > div { display: flex; gap: 8px; }
-.discard { /* !important：次级按钮边框不被主按钮实底规则覆盖。 */ border-color: var(--dsw-alias-border-l2) !important; color: var(--dsw-alias-label-primary); background: transparent; }
+/* 次级按钮语义变体：显式声明，避免未来主按钮规则误伤。 */
+.pillButton[data-variant='secondary'] {
+  border-color: var(--dsw-alias-border-l2);
+  color: var(--dsw-alias-label-primary);
+  background: transparent;
+}
+
+/* 列表过滤框（配置 / 技能）。 */
+.listFilterRow { display: flex; min-width: 0; }
+.listFilter {
+  width: 100%;
+  max-width: 320px;
+  box-sizing: border-box;
+  height: 32px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 9px;
+  outline: none;
+  padding: 0 10px;
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-bg-layer-3);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.listFilter:focus-visible {
+  border-color: color-mix(in srgb, var(--pt-accent) 55%, var(--dsw-alias-border-l2));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--pt-accent) 20%, transparent);
+}
+.listFilter::placeholder { color: var(--dsw-alias-label-caption); }
+
+/* 加载骨架屏：行状 shimmer 占位，替代加载期空白。 */
+.skeletonStack {
+  display: grid;
+  gap: 10px;
+  padding: 2px 0;
+}
+.skeletonRow {
+  height: 46px;
+  border-radius: 11px;
+  background: linear-gradient(90deg, var(--dsw-alias-bg-layer-2) 25%, var(--dsw-alias-bg-layer-3) 50%, var(--dsw-alias-bg-layer-2) 75%);
+  background-size: 200% 100%;
+  animation: pt-shimmer 1.4s linear infinite;
+}
+
+@keyframes pt-shimmer {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}
+
+/* 忙碌状态小圆环：currentColor 自适应主/次按钮前景色。 */
+.spinner {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  flex: 0 0 auto;
+  border: 2px solid color-mix(in srgb, currentColor 28%, transparent);
+  border-top-color: currentColor;
+  border-radius: 50%;
+  animation: pt-spin .7s linear infinite;
+}
+
+@keyframes pt-spin { to { transform: rotate(360deg); } }
 
 .settingsNote { margin: -14px 0 0; color: var(--dsw-alias-label-tertiary); font-size: 10px; line-height: 16px; }
 .settingsNote code { color: var(--dsw-alias-label-secondary); font-family: var(--ds-font-family-code, ui-monospace, monospace); }
@@ -784,7 +916,7 @@
 .toggleRow input:focus-visible + .switch,
 .configEnable > input:focus-visible + .switch {
   outline: none;
-  box-shadow: 0 0 0 2px var(--dsw-alias-border-l3);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--pt-accent) 45%, transparent);
 }
 
 @keyframes pt-rise {

@@ -348,6 +348,9 @@ html[data-dsh-prompt-tool-active]:not([data-dsh-taskboard-active]):not([data-dsh
   scrollbar-width: none;
 }
 
+/* 注入层级 + 消息批层子页两行堆叠时，第二行不再重复上边距。 */
+.memoryNavigation + .memoryNavigation { padding-top: 0; }
+
 .memoryTabs::-webkit-scrollbar { display: none; }
 
 .memoryTabs button {
