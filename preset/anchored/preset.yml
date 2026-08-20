@@ -188,6 +188,10 @@ params:
   firstTurnDeep: "Start your reasoning with the exact sentence: 'Let me think through the design before changing anything.'"
   firstTurnWord: we
   allowKinds: "[skill-invocation, near-anchor, router-guide]"
+  # 子代理完整自定义（官方 tool-subagent Config；全部可选，缺省=官方默认）：
+  #   subagentPersona: 子代理独立 persona（缺省回退 flashPersona，两者缺省=继承主会话）
+  #   subagentToolFilterAllow/Deny: 子代理工具集白/黑名单（数组或逗号分隔字符串）
+  #   subagentMaxDepth: 递归深度（0 禁止委派 / provider-managed / 正整数）
 promptConfigs:
   - id: near-anchor
     name: 首句锚点

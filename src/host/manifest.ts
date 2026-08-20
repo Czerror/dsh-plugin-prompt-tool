@@ -186,22 +186,56 @@ function interpolateNested(text: string, scope: Record<string, unknown>): string
   })
 }
 
+/** 逗号分隔 / YAML flow 数组 / 空格分隔的字符串列表 → 字符串数组。 */
+function parseListParam(value: unknown): string[] {
+  if (Array.isArray(value)) return value.map((item) => String(item)).filter((item) => item.length > 0)
+  if (typeof value !== 'string') return []
+  const trimmed = value.trim()
+  if (trimmed.length === 0) return []
+  const inner = trimmed.startsWith('[') && trimmed.endsWith(']') ? trimmed.slice(1, -1) : trimmed
+  return inner.split(',').map((item) => item.trim()).filter((item) => item.length > 0)
+}
+
 /**
  * 引擎内部 token 渲染:把直读参数变成组合模块里的 __TOKEN__ 值。
- * anchored 的全部组合行为(usePtcMode/bootstrapMaxTokens/子代理固定模型路由/flashPersona)
+ * anchored 的全部组合行为(usePtcMode/bootstrapMaxTokens/子代理完整自定义)
  * 在这里完成参数化,用户参数文件不需要任何模板语法。
  */
 export function renderEngineTokens(params: Record<string, unknown>): Record<string, string> {
   const flashPersona = asString(params.flashPersona)
   const provider = asString(params.subagentFlashProvider, '')
   const model = asString(params.subagentFlashModel, '')
-  // 服务商与模型名同时非空才注入子代理固定路由；任一为空 = 子代理继承主会话模型。
-  const subagentFlashBlock = provider.length > 0 && model.length > 0
-    ? interpolateNested(
-        'agentOptions:\n  provider: {{subagentFlashProvider}}\n  model: {{subagentFlashModel}}\npersona: |-\n  {{flashPersona}}',
-        { subagentFlashProvider: provider, subagentFlashModel: model, flashPersona },
-      )
-    : ''
+  // 子代理完整自定义（官方 tool-subagent Config 参数化）：
+  //   subagentFlashProvider/Model → agentOptions{provider,model}（固定模型路由）；
+  //   subagentPersona → persona（per-child shadow，显式优先；固定路由时回退
+  //     flashPersona；两者都缺省 = 不渲染，子代理继承主会话 persona，官方行为）；
+  //   subagentToolFilterAllow/Deny → toolFilter{allow,deny}（子代理工具集白/黑名单）；
+  //   subagentMaxDepth → maxDepth（0 禁止委派 / provider-managed / 正整数）。
+  // 任一字段非空即渲染对应行，全部缺省 = 官方默认（继承主会话）。
+  const subagentPersona = asString(params.subagentPersona)
+    || (provider.length > 0 && model.length > 0 ? flashPersona : '')
+  const toolFilterAllow = parseListParam(params.subagentToolFilterAllow)
+  const toolFilterDeny = parseListParam(params.subagentToolFilterDeny)
+  const rawMaxDepth = params.subagentMaxDepth
+  const subagentMaxDepth = rawMaxDepth === 'provider-managed'
+    ? 'provider-managed'
+    : Number.isSafeInteger(rawMaxDepth) && (rawMaxDepth as number) >= 0
+      ? String(rawMaxDepth)
+      : ''
+  const subagentLines: string[] = []
+  if (provider.length > 0 && model.length > 0) {
+    subagentLines.push('agentOptions:', `  provider: ${provider}`, `  model: ${model}`)
+  }
+  if (subagentPersona.length > 0) {
+    subagentLines.push(interpolateNested('persona: |-\n  {{subagentPersona}}', { subagentPersona }))
+  }
+  if (toolFilterAllow.length > 0 || toolFilterDeny.length > 0) {
+    subagentLines.push('toolFilter:')
+    if (toolFilterAllow.length > 0) subagentLines.push(`  allow: [${toolFilterAllow.join(', ')}]`)
+    if (toolFilterDeny.length > 0) subagentLines.push(`  deny: [${toolFilterDeny.join(', ')}]`)
+  }
+  if (subagentMaxDepth.length > 0) subagentLines.push(`maxDepth: ${subagentMaxDepth}`)
+  const subagentFlashBlock = subagentLines.join('\n')
   const bootstrap = typeof params.bootstrapMaxTokens === 'number' && params.bootstrapMaxTokens > 0
     ? `bootstrapMaxTokens: ${params.bootstrapMaxTokens}`
     : ''

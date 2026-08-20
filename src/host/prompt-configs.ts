@@ -68,6 +68,14 @@ export interface BuildCordisOptions {
   subagentFlashProvider?: string
   /** 子代理固定模型名；与 provider 同时非空时生效。 */
   subagentFlashModel?: string
+  /** 子代理独立 persona（per-child shadow；缺省回退 flashPersona，两者缺省=继承主会话）。 */
+  subagentPersona?: string
+  /** 子代理工具集白名单（toolFilter.allow；支持数组或逗号/空格分隔字符串）。 */
+  subagentToolFilterAllow?: string[] | string
+  /** 子代理工具集黑名单（toolFilter.deny）。 */
+  subagentToolFilterDeny?: string[] | string
+  /** 子代理递归深度上限（0 禁止委派 / provider-managed / 正整数）。 */
+  subagentMaxDepth?: number | 'provider-managed'
   /** 首轮输出封顶（bootstrapMaxTokens）；0 或未设置 = 本项目默认无封顶。 */
   bootstrapMaxTokens?: number
   /** 使用 PTC 模式：默认 true。 */

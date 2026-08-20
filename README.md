@@ -84,6 +84,11 @@ dsh --profile prompt-tool
   = minimal 完整 persona（plan-mode 段与 Flash 路由人设被抑制）；`false` = standard
   语义（plan-mode 与 Flash 路由人设生效）。`includeRuntimeContext: false` 为永久抑制
   运行时上下文（context-gate 的晋升后恢复失效），`true` 时由 context-gate 动态控制。
+  **子代理完整自定义**（官方 tool-subagent Config 参数化）：`subagentFlashProvider/Model`
+  → `agentOptions{provider,model}`（固定模型路由）；`subagentPersona` → 子代理独立 persona
+  （显式优先，固定路由时回退 `flashPersona`，两者缺省=继承主会话 persona）；`subagentToolFilterAllow/Deny`
+  → `toolFilter{allow,deny}`（子代理工具集白/黑名单）；`subagentMaxDepth` → `maxDepth`
+  （0 禁止委派 / `provider-managed` / 正整数）。全部缺省 = 官方默认。
 
 ## 默认行为
 

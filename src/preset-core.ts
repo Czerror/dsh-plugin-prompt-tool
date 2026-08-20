@@ -42,6 +42,12 @@ export function buildCordis(prompt: string, options: BuildCordisOptions = {}): s
     subagentFlashModel: typeof options.subagentFlashModel === 'string' && options.subagentFlashModel.length > 0
       ? options.subagentFlashModel
       : '',
+    subagentPersona: typeof options.subagentPersona === 'string' && options.subagentPersona.length > 0
+      ? options.subagentPersona
+      : '',
+    subagentToolFilterAllow: options.subagentToolFilterAllow,
+    subagentToolFilterDeny: options.subagentToolFilterDeny,
+    subagentMaxDepth: options.subagentMaxDepth,
   }
   const out = renderComposition(spec, runtime, ANCHORED_TEMPLATE_DIR)
   // 生成文件必须含引擎必需行，且引擎行指向提示词配置模块目录。

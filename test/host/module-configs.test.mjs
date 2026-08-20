@@ -4,6 +4,20 @@ import { buildCordis } from '../../lib/preset-core.mjs'
 import { applyModuleConfigs } from '../../lib/index.mjs'
 import { parse as parseYaml } from 'yaml'
 
+/** 递归收集指定 id 的嵌套行（delegation 组内工具行）。 */
+function findAllNested(rows, idSet) {
+  const found = []
+  const walk = (items) => {
+    for (const item of Array.isArray(items) ? items : []) {
+      if (item === null || typeof item !== 'object') continue
+      if (idSet.has(item.id)) found.push(item)
+      walk(item.config)
+    }
+  }
+  walk(rows)
+  return found
+}
+
 const RAW = `# module: custom-bash
 - id: custom-bash
   name: ./engine/custom-bash.mjs
@@ -59,4 +73,37 @@ test('anchored buildCordis 集成：moduleConfigs 合并与 token 渲染共存',
   assert.equal(bootstrap.config.includeSubagents, false)
   assert.equal(gate.config.includeSubagents, false)
   assert.ok(!/__[A-Z0-9_]+__/.test(buildCordis('P')), '生成文本不应残留未解析 token')
+})
+
+test('子代理完整自定义：独立 persona + toolFilter + maxDepth 渲染（官方 tool-subagent Config）', () => {
+  const rows = parseYaml(buildCordis('P', {
+    subagentFlashProvider: 'my-provider',
+    subagentFlashModel: 'deepseek-v4-flash-7013',
+    subagentPersona: '你是审查子代理，只读不改。',
+    subagentToolFilterAllow: ['read', 'write', 'glob'],
+    subagentToolFilterDeny: 'bash, run_code',
+    subagentMaxDepth: 1,
+  }))
+  const subs = findAllNested(rows, new Set(['tool-subagent', 'tool-subagent-fork']))
+  assert.equal(subs.length, 2, 'subagent 与 subagent_fork 两行都应渲染')
+  for (const row of subs) {
+    assert.equal(row.config.agentOptions.provider, 'my-provider')
+    assert.equal(row.config.agentOptions.model, 'deepseek-v4-flash-7013')
+    assert.equal(row.config.persona, '你是审查子代理，只读不改。')
+    assert.deepEqual(row.config.toolFilter, { allow: ['read', 'write', 'glob'], deny: ['bash', 'run_code'] })
+    assert.equal(row.config.maxDepth, 1)
+  }
+})
+
+test('子代理 persona 回退：无独立 persona 时固定路由用 flashPersona，无路由不渲染', () => {
+  const routed = parseYaml(buildCordis('P', { subagentFlashProvider: 'p', subagentFlashModel: 'm' }))
+  const routedRow = findAllNested(routed, new Set(['tool-subagent']))[0]
+  assert.match(routedRow.config.persona, /decide the task type \(build or fix\)/, '固定路由时 persona 回退 flashPersona')
+  assert.equal(routedRow.config.toolFilter, undefined, '未配置 toolFilter 不渲染')
+  assert.equal(routedRow.config.maxDepth, undefined, '未配置 maxDepth 不渲染（官方默认 3）')
+
+  const plain = parseYaml(buildCordis('P'))
+  const plainRow = findAllNested(plain, new Set(['tool-subagent']))[0]
+  assert.equal(plainRow.config.persona, undefined, '无路由且无独立 persona 时不渲染（继承主会话）')
+  assert.equal(plainRow.config.agentOptions, undefined)
 })
