@@ -148,8 +148,8 @@ export function applyPromptConfigs(ctx, configs, options = {}) {
         try {
           if (config.layer !== 'pre-step') continue
           const delegated = isDelegated(session)
-          if (config.subagents === 'none' && delegated) continue
-          if (config.subagents === 'only' && !delegated) continue
+          if (config.audience === 'main' && delegated) continue
+          if (config.audience === 'subagent' && !delegated) continue
           if (!matchesModel(config.modelScope, agent.options?.model)) continue
           if (config.promotion === 'main' && !main.status(agent).promoted) continue
           if (config.promotion === 'include-subagents' && !withSubagents.status(agent).promoted) continue

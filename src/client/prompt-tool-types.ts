@@ -10,7 +10,8 @@ export interface PromptConfigDraft {
   position?: string
   dedupe?: string
   promotion?: string
-  subagents?: string
+  /** 消息受众：缺省/null = 公用；main=仅主会话；subagent=仅子代理。 */
+  audience?: string | null
   modelScope?: string
   configKind?: string
   order?: number
@@ -42,7 +43,7 @@ export interface LayerFieldPolicy {
   position: boolean
   dedupe: boolean
   promotion: boolean
-  subagents: boolean
+  audience: boolean
   modelScope: boolean
   merge: boolean
   order: boolean
@@ -60,7 +61,7 @@ export interface EngineMeta {
   positions: string[]
   dedupes: string[]
   promotions: string[]
-  subagentModes: string[]
+  audienceModes: string[]
   modelScopes: string[]
   roles: string[]
   mergeModes: string[]

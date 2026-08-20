@@ -70,7 +70,7 @@ export const EMPTY_META: EngineMeta = {
   positions: [],
   dedupes: [],
   promotions: [],
-  subagentModes: [],
+  audienceModes: [],
   modelScopes: [],
   roles: [],
   mergeModes: [],

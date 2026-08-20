@@ -12,7 +12,6 @@ fill: instruction-hint
 position: after-all
 dedupe: session
 promotion: include-subagents
-subagents: inherit
 modelScope: all
 configKind: ordered
 order: 30

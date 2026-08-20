@@ -17,7 +17,7 @@ export interface PromptConfigListProps {
   savedConfigs: PromptConfigDraft[]
   /** 传入 layer 时只展示该层配置；不传展示全部配置。 */
   layer?: string
-  /** 传入 scope 时按 subagents 作用域过滤：main = 非 only（主会话可见）；subagent = 非 none（子代理可见）。 */
+  /** 传入 scope 时按 audience 作用域过滤：main = 非仅子代理（主会话可见）；subagent = 非仅主会话（子代理可见；缺省公用两边都可见）。 */
   scope?: 'main' | 'subagent'
   /** 列表工具栏追加操作（如「新建模板」）。 */
   extraActions?: ReactNode
@@ -64,8 +64,8 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
   const scoped = scope === undefined
     ? visible
     : visible.filter((config) => {
-      const mode = config.subagents ?? 'none'
-      return scope === 'main' ? mode !== 'only' : mode !== 'none'
+      const mode = config.audience
+      return scope === 'main' ? mode !== 'subagent' : mode !== 'main'
     })
   const keyword = filter.trim().toLowerCase()
   const filtered = keyword.length === 0

@@ -9,7 +9,7 @@ strategy: static
 position: after-user
 dedupe: session
 promotion: none
-subagents: none
+audience: main
 modelScope: all
 configKind: ordered
 order: 0

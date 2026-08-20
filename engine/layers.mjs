@@ -27,8 +27,8 @@ function configText(config) {
 function matchesAgentScope(config, agent) {
   if (agent === undefined) return true
   const delegated = isDelegated(agent.session)
-  if (config.subagents === 'none' && delegated) return false
-  if (config.subagents === 'only' && !delegated) return false
+  if (config.audience === 'main' && delegated) return false
+  if (config.audience === 'subagent' && !delegated) return false
   return matchesModel(config.modelScope, agent.options?.model)
 }
 

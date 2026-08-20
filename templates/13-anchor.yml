@@ -10,7 +10,7 @@ configKind: anchor
 position: before-all
 dedupe: session
 promotion: none
-subagents: none
+audience: main
 modelScope: all
 role: user
 order: 0

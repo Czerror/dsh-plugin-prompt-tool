@@ -83,7 +83,7 @@ test('同位置多配置默认按声明顺序插入：near-anchor 与 router-gui
       position: 'after-user',
       dedupe: 'session',
       promotion: 'none',
-      subagents: 'none',
+      audience: 'main',
       params: {
         buildPattern: 'build',
         complexPattern: 'complex',
@@ -99,7 +99,7 @@ test('同位置多配置默认按声明顺序插入：near-anchor 与 router-gui
       position: 'after-user',
       dedupe: 'batch',
       promotion: 'main',
-      subagents: 'none',
+      audience: 'main',
       modelScope: 'flash',
       params: {
         guideComplexPattern: 'complex',
@@ -158,7 +158,6 @@ test('identity 归一：kind 维度去重由 sourceKind 承担（外来消息按
     position: 'after-all',
     dedupe: 'session',
     promotion: 'include-subagents',
-    subagents: 'inherit',
     sourceKind: 'instruction-hint',
   }]))
   const withEvent = agent({ session: {
@@ -480,9 +479,9 @@ test('placeholder 仅允许 pre-step 或 runtime-context 层', () => {
   assert.throws(() => createPromptConfigs([{ id: 'bad', strategy: 'placeholder', fill: 'env-facts', layer: 'system-section' }]), /supports layer pre-step or runtime-context only/)
 })
 
-test('subagents=only 的 pre-step 配置：仅子代理注入，主会话跳过', async () => {
+test('audience=subagent 的 pre-step 配置：仅子代理注入，主会话跳过', async () => {
   const { step } = makeHarness(createPromptConfigs([
-    { id: 'sub-only', strategy: 'static', text: 'SUB', position: 'after-all', subagents: 'only' },
+    { id: 'sub-only', strategy: 'static', text: 'SUB', position: 'after-all', audience: 'subagent' },
   ]))
   const main = await step(agent())
   assert.equal(main.messages.length, 1)
@@ -493,9 +492,9 @@ test('subagents=only 的 pre-step 配置：仅子代理注入，主会话跳过'
   assert.equal(delegated.messages[1].content[0].text, 'SUB')
 })
 
-test('subagents=only 的 agent-request 配置：仅子代理 patch，主会话透传', async () => {
+test('audience=subagent 的 agent-request 配置：仅子代理 patch，主会话透传', async () => {
   const { listeners } = makeWiredHarness([
-    { id: 'req-only', layer: 'agent-request', strategy: 'static', subagents: 'only', params: { patch: { maxTokens: 1234 } } },
+    { id: 'req-only', layer: 'agent-request', strategy: 'static', audience: 'subagent', params: { patch: { maxTokens: 1234 } } },
   ])
   const handler = listeners.get('agent/request')
   const base = async () => ({ provider: 'p', model: 'm', maxTokens: 1000 })
@@ -530,7 +529,6 @@ test('custom-fallback 支持自定义锚定词：命中「我是xxx」立即注�
     position: 'before-all',
     dedupe: 'session',
     promotion: 'main',
-    subagents: 'inherit',
     sourceKind: 'plugin',
     params: { text: 'CONFIG_TEXT', firstTurnWord: '我是xxx' },
   }]))
@@ -549,7 +547,6 @@ test('custom-fallback 自定义锚定词未命中时按两轮兜底', async () =
     position: 'before-all',
     dedupe: 'session',
     promotion: 'main',
-    subagents: 'inherit',
     sourceKind: 'plugin',
     params: { text: 'FALLBACK_TEXT', firstTurnWord: '锚点A' },
   }]))

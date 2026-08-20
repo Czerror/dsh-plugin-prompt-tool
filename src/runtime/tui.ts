@@ -76,7 +76,7 @@ function renderConfigDetail(source: PromptSettings, id: string, promptConfigs: P
     ['position', config.position],
     ['dedupe', config.dedupe],
     ['promotion', config.promotion],
-    ['subagents', config.subagents],
+    ['audience', config.audience ?? undefined],
     ['modelScope', config.modelScope],
     ['configKind', config.configKind],
     ['order', config.order],
