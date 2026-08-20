@@ -81,21 +81,57 @@ function PageHeader(props: { title: string; description: string; meta?: string }
   )
 }
 
-/** 内置四条默认配置：开关由既有总开关驱动，只读展示层内接线。 */
-function BuiltinConfigRows(props: { fields: Fields; disabled: boolean; onChange: (key: SwitchKey, value: boolean) => void }): ReactNode {
-  const { fields } = props
+/** Anchored Standard 预设模块行：按实际生效配置动态生成（模板声明什么显示什么）。 */
+function BuiltinConfigRows(props: { fields: Fields; configs: PromptConfigDraft[]; disabled: boolean; onChange: (key: SwitchKey, value: boolean) => void }): ReactNode {
+  const { fields, configs } = props
+  /** 预设声明的消息批模块：id → 开关键映射；模块不存在（模板未声明）时行不渲染。 */
+  const rows: Array<{ id: string; label: string; hint: string; checked: boolean; onChange: (value: boolean) => void }> = [
+    {
+      id: 'near-anchor',
+      label: 'near-anchor · 首句锚点',
+      hint: 'strategy=first-turn-anchor · position=after-user · dedupe=session；跟随「追加任务引导」。',
+      checked: fields.firstTurnAnchor,
+      onChange: (value) => props.onChange('firstTurnAnchor', value),
+    },
+    {
+      id: 'router-guide',
+      label: 'router-guide · 每轮引导',
+      hint: 'strategy=guide-auto · position=after-user · dedupe=batch；跟随「追加任务引导」。',
+      checked: fields.firstTurnAnchor,
+      onChange: (value) => props.onChange('firstTurnAnchor', value),
+    },
+    {
+      id: 'prompt-injector',
+      label: 'prompt-injector · preset.md 注入',
+      hint: 'strategy=custom-fallback · position=before-all · dedupe=session；跟随「注入 preset.md」。',
+      checked: fields.injectPrompt,
+      onChange: (value) => props.onChange('injectPrompt', value),
+    },
+    {
+      id: 'instruction-hint',
+      label: 'instruction-hint · 指令文件提示',
+      hint: 'strategy=placeholder · fill=instruction-hint · position=after-all；常开，不可在此关闭。',
+      checked: true,
+      onChange: () => {},
+    },
+  ]
+  const disabled = props.disabled || !fields.writePreset
   return (
     <section className={ui.section} aria-labelledby="prompt-tool-builtin-heading">
-      <div className={ui.sectionHeading}><div><h2 id="prompt-tool-builtin-heading">内置消息批配置</h2><p>包内 anchored 预设的四条默认配置，由下方总开关驱动；这里只读展示层内接线。</p></div></div>
+      <div className={ui.sectionHeading}><div><h2 id="prompt-tool-builtin-heading">Anchored Standard(prompt-tool)</h2><p>预设模板（preset.yml）声明的消息批模块，按实际生效配置展示；切换模板后此处跟随模板声明。</p></div></div>
       <div className={ui.rowGroup}>
-        <ToggleRow id="pt-builtin-near-anchor" label="near-anchor · 首句锚点" hint="strategy=first-turn-anchor · position=after-user · dedupe=session；跟随「追加任务引导」。"
-          checked={fields.firstTurnAnchor} disabled={props.disabled || !fields.writePreset} onChange={(value) => props.onChange('firstTurnAnchor', value)} />
-        <ToggleRow id="pt-builtin-router-guide" label="router-guide · 每轮引导" hint="strategy=guide-auto · position=after-user · dedupe=batch；跟随「追加任务引导」。"
-          checked={fields.firstTurnAnchor} disabled={props.disabled || !fields.writePreset} onChange={(value) => props.onChange('firstTurnAnchor', value)} />
-        <ToggleRow id="pt-builtin-prompt-injector" label="prompt-injector · preset.md 注入" hint="strategy=custom-fallback · position=before-all · dedupe=session；跟随「注入 preset.md」。"
-          checked={fields.injectPrompt} disabled={props.disabled || !fields.writePreset} onChange={(value) => props.onChange('injectPrompt', value)} />
-        <ToggleRow id="pt-builtin-instruction-hint" label="instruction-hint · 指令文件提示" hint="strategy=placeholder · fill=instruction-hint · position=after-all；常开，不可在此关闭。"
-          checked={true} disabled onChange={() => {}} />
+        {rows.flatMap((row) => {
+          const config = configs.find((item) => item.id === row.id)
+          // 模板未声明该模块（或已被删除）时不渲染；label 优先用配置名。
+          if (config === undefined) return []
+          const label = config.name !== undefined && config.name.length > 0 && config.name !== config.id
+            ? `${config.id} · ${config.name}`
+            : row.label
+          return [
+            <ToggleRow key={row.id} id={`pt-builtin-${row.id}`} label={label} hint={row.hint}
+              checked={row.checked} disabled={disabled} onChange={row.onChange} />,
+          ]
+        })}
       </div>
     </section>
   )
@@ -675,7 +711,7 @@ export function PromptWorkspace(props: PromptWorkspaceProps): ReactNode {
               {page === 'pre-step' && entryPage === 'agents' && <FileEditor store={store} scope="agents" />}
               {page === 'pre-step' && entryPage === 'configs' && (
                 <>
-                  {isAnchoredTemplate && <BuiltinConfigRows fields={store.fields} disabled={store.loading} onChange={(key, value) => {
+                  {isAnchoredTemplate && <BuiltinConfigRows fields={store.fields} configs={store.fields.promptConfigs} disabled={store.loading} onChange={(key, value) => {
                     if (store.fields[key] !== value) store.toggle(key)
                   }} />}
                   <LayerConfigList store={store} layer="pre-step" />
