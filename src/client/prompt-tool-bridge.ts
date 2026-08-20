@@ -26,8 +26,8 @@ export interface Fields {
   firstTurnCustom: boolean
   guideText: string
   guideCustom: boolean
-  subagentFlashProvider: string
-  subagentFlashModel: string
+  subagentModelProvider: string
+  subagentModelName: string
   bootstrapMaxTokens: number
   usePtcMode: boolean
   injectPrompt: boolean
@@ -74,8 +74,8 @@ export const EMPTY_FIELDS: Fields = {
   firstTurnCustom: false,
   guideText: '',
   guideCustom: false,
-  subagentFlashProvider: '',
-  subagentFlashModel: '',
+  subagentModelProvider: '',
+  subagentModelName: '',
   bootstrapMaxTokens: 0,
   usePtcMode: true,
   injectPrompt: true,
@@ -195,8 +195,8 @@ export function fieldsFromView(res: BridgeResult<BridgeSettingsView>): Fields {
     firstTurnCustom: readBoolean(value, 'firstTurnCustom', readBoolean(base, 'firstTurnCustom', false)),
     guideText: readString(value, 'guideText') ?? readString(base, 'guideText') ?? '',
     guideCustom: readBoolean(value, 'guideCustom', readBoolean(base, 'guideCustom', false)),
-    subagentFlashProvider: readString(value, 'subagentFlashProvider') ?? readString(base, 'subagentFlashProvider') ?? '',
-    subagentFlashModel: readString(value, 'subagentFlashModel') ?? readString(base, 'subagentFlashModel') ?? '',
+    subagentModelProvider: readString(value, 'subagentModelProvider') ?? readString(base, 'subagentModelProvider') ?? '',
+    subagentModelName: readString(value, 'subagentModelName') ?? readString(base, 'subagentModelName') ?? '',
     bootstrapMaxTokens: readNumber(value, 'bootstrapMaxTokens', readNumber(base, 'bootstrapMaxTokens', 0)),
     usePtcMode: readBoolean(value, 'usePtcMode', readBoolean(base, 'usePtcMode', true)),
     injectPrompt: readBoolean(value, 'injectPrompt', readBoolean(base, 'injectPrompt', true)),

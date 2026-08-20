@@ -42,7 +42,7 @@ test('官方格式预设：无 id 回退目录名，无 modules/composition 回�
         presetDir: gen, presetTemplate: 'official-demo', presetOrder: 7,
         firstTurnAnchor: false, firstTurnText: '', firstTurnCustom: false,
         guideText: '', guideCustom: false, injectPrompt: true,
-        subagentFlashProvider: '', subagentFlashModel: '',
+        subagentModelProvider: '', subagentModelName: '',
         bootstrapMaxTokens: 0, usePtcMode: true,
         promptConfigs: [], promptConfigsDir: '',
       })
@@ -89,7 +89,7 @@ test('官方 str-replace-editor 行：params 覆盖 maxOutputChars 渲染生效'
         presetDir: gen, presetTemplate: 'editor-param', presetOrder: 1,
         firstTurnAnchor: false, firstTurnText: '', firstTurnCustom: false,
         guideText: '', guideCustom: false, injectPrompt: true,
-        subagentFlashProvider: '', subagentFlashModel: '',
+        subagentModelProvider: '', subagentModelName: '',
         bootstrapMaxTokens: 0, usePtcMode: true,
         promptConfigs: [], promptConfigsDir: '',
       })

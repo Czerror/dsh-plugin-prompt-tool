@@ -68,9 +68,9 @@ export interface Config {
   /** 自定义每轮引导开关：true 固定使用 guideText；false 按任务自动选择。 */
   guideCustom: boolean
   /** 子代理固定模型路由 provider；与模型名同时非空时，子代理/宿主直派子代理自动补入该路由。 */
-  subagentFlashProvider: string
+  subagentModelProvider: string
   /** 子代理固定模型名；与 provider 同时非空时生效。 */
-  subagentFlashModel: string
+  subagentModelName: string
   /** 首轮输出封顶；0 或未设置 = 不设封顶（本项目默认），正整数 = 请求 #1 的 maxTokens。 */
   bootstrapMaxTokens: number
   /** 使用 PTC 模式：默认开启——晋升后把 wire 切换为 Code Mode（单一 run_code，完整插件工具经生成 SDK 调用）；关闭时晋升后恢复原生完整工具目录。 */
@@ -108,8 +108,8 @@ export const Config: z<Config> = z.object({
   firstTurnCustom: z.boolean().default(false),
   guideText: z.string().default(DEFAULT_GUIDE_TEXT),
   guideCustom: z.boolean().default(false),
-  subagentFlashProvider: z.string().default(''),
-  subagentFlashModel: z.string().default(''),
+  subagentModelProvider: z.string().default(''),
+  subagentModelName: z.string().default(''),
   bootstrapMaxTokens: z.natural().default(0),
   usePtcMode: z.boolean().default(true),
   skillsDir: z.string().default(DEFAULT_SKILLS_DIR),
@@ -168,9 +168,9 @@ export interface PromptSettings {
   guideText: string
   guideCustom: boolean
   /** 子代理固定模型路由 provider；与模型名同时非空时生效。 */
-  subagentFlashProvider: string
+  subagentModelProvider: string
   /** 子代理固定模型名；与 provider 同时非空时生效。 */
-  subagentFlashModel: string
+  subagentModelName: string
   bootstrapMaxTokens: number
   usePtcMode: boolean
   /** 运行时检测：是否注册了 DeepSeek 模型路由（不写入 settings）。 */
@@ -214,8 +214,8 @@ export const PromptSettingsSchema: z<PromptSettings> = z.object({
   firstTurnCustom: z.boolean().default(false),
   guideText: z.string().default(DEFAULT_GUIDE_TEXT),
   guideCustom: z.boolean().default(false),
-  subagentFlashProvider: z.string().default(''),
-  subagentFlashModel: z.string().default(''),
+  subagentModelProvider: z.string().default(''),
+  subagentModelName: z.string().default(''),
   bootstrapMaxTokens: z.natural().default(0),
   usePtcMode: z.boolean().default(true),
   deepseekAvailable: z.boolean().default(true),
@@ -274,9 +274,9 @@ export interface RuntimeOptions {
   /** preset.md 缺失或不可读时使用的文本。 */
   fallbackText: string
   /** 子代理固定模型路由 provider；与模型名同时非空时生效。 */
-  subagentFlashProvider: string
+  subagentModelProvider: string
   /** 子代理固定模型名；与 provider 同时非空时生效。 */
-  subagentFlashModel: string
+  subagentModelName: string
   /** 用户自定义提示词配置（settings 数组）。 */
   promptConfigs: PromptConfigSpec[]
   /** 用户自定义提示词配置目录。 */

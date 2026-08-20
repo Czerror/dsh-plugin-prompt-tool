@@ -1,6 +1,6 @@
 # module: delegation
 # source: E:\Documents\GitHub\deepseek-harness/apps/cli/config/agent-presets/standard/agent.cordis.yml
-# local patches: 2（SUBAGENT-FLASH token ×2：子代理固定模型路由，随预设参数渲染）
+# local patches: 2（SUBAGENT-CONFIG token ×2：子代理完整配置（模型/人设/工具集/深度），随预设参数渲染）
 
 # ── delegation and workflows ────────────────────────────────────────────────
 
@@ -37,7 +37,7 @@
         provider: spawn
         toolName: subagent
         backgroundMode: continuable
-        __SUBAGENT_FLASH__
+        __SUBAGENT_CONFIG__
 
     - id: tool-subagent-fork
       name: '@deepseek-ai/dsh-tool-subagent'
@@ -45,7 +45,7 @@
         provider: fork
         toolName: subagent_fork
         backgroundMode: continuable
-        __SUBAGENT_FLASH__
+        __SUBAGENT_CONFIG__
 
     # Production dsh does not install these optional providers. An opting-in
     # Profile mounts each provider once on the host plane; copy this preset,

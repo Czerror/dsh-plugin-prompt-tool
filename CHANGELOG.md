@@ -2,9 +2,16 @@
 
 ## [Unreleased]
 
+### 参数归类分层：作用域 × 维度（2026-08-20）
+
+- **子代理参数归类**：`params` 子代理参数统一为「作用域（主对话 / 子代理）× 维度（模型/人设/工具集/深度/相位/注入）」矩阵——preset.yml 写嵌套 `subagent:` 块（`modelProvider/modelName`、`persona`、`toolFilter.allow/deny`、`maxDepth`），引擎合并入口 `resolvePresetParams` 拍平为扁平键（`subagentModelProvider` 等），运行时/UI/overrides 继续消费扁平键，两套表示等价；主对话模型由 dsh 全局配置（插件只读），相位（`moduleConfigs.*.includeSubagents`）与注入（`promptConfigs[].subagents/promotion/modelScope`）保持既定段位。
+- **命名脱离上游**：`subagentFlashProvider/Model` → `subagentModelProvider/ModelName`（UI 已为「模型服务商/模型名」）、`flashPersona` → `fastModelPersona`（快速模型路由人设）、`installSubagentFlashRoute` → `installSubagentModelRoute`、渲染 token `__FLASH_PERSONA__/__SUBAGENT_FLASH__` → `__FAST_MODEL_PERSONA__/__SUBAGENT_CONFIG__`；全链路 26 文件同步，无旧格式兼容。
+- **相位补齐**：`moduleConfigs.router-first-turn.includeSubagents` 暴露（与 tool-bootstrap/context-gate 同段，router-first-turn 子代理首轮相位可配）。
+- **回归**：`resolvePresetParams` 嵌套拍平测试（含空默认值不渲染、运行时扁平键优先）。
+
 ### 审查修复：官方对照归一（2026-08-20）
 
-- **子代理完整自定义（官方 tool-subagent Config 参数化）**：`params` 新增 `subagentPersona`（per-child shadow，显式优先/固定路由回退 flashPersona/缺省继承主会话）、`subagentToolFilterAllow/Deny`（toolFilter 白/黑名单，数组或逗号/空格字符串）、`subagentMaxDepth`（0 禁止委派/provider-managed/正整数）——渲染进 tool-subagent/subagent_fork 行（`agentOptions` + `persona` + `toolFilter` + `maxDepth`）；任一字段非空即渲染对应行，全部缺省=官方默认；WritePresetOptions/BuildCordisOptions 同步透传；全预设冒烟（minimal 无 delegation 模块按官方不渲染）。
+- **子代理完整自定义（官方 tool-subagent Config 参数化）**：`params` 新增 `subagentPersona`（per-child shadow，显式优先/固定路由回退 fastModelPersona/缺省继承主会话）、`subagentToolFilterAllow/Deny`（toolFilter 白/黑名单，数组或逗号/空格字符串）、`subagentMaxDepth`（0 禁止委派/provider-managed/正整数）——渲染进 tool-subagent/subagent_fork 行（`agentOptions` + `persona` + `toolFilter` + `maxDepth`）；任一字段非空即渲染对应行，全部缺省=官方默认；WritePresetOptions/BuildCordisOptions 同步透传；全预设冒烟（minimal 无 delegation 模块按官方不渲染）。
 
 - **allowKinds 兜底对齐官方 pre-step 行为**：官方 deepseek-harness 的 `agent/pre-step` 默认无 kind 过滤（claimed + runtime-context 快照，kind 全集 user/plugin/tool/skill-catalog/skill-invocation/agent-instructions/goal）——`allowKinds` 未声明时不再写行、context-gate 不做 kind 过滤（官方行为）；显式声明（anchored 等）仍为白名单门控。配套修复 `renderTemplateVariables` 空值 token 独立行整行删除（原只删 token 残留 `key:` null）与两步替换的行定位错位。
 
@@ -27,7 +34,7 @@
 - 参数覆盖随预设隔离：新增生成目录内 `prompt-tool.overrides.yml`（writePreset 原子重建时保留），参数类设置（firstTurnAnchor/guideText/subagentFlash/bootstrapMaxTokens 等 8 项）由 UI 写入 overrides 而非 settings，运行时 `applyParamOverrides` 合并进模板 params；bridge 新增 `/param-overrides`（读+写）；settings.yaml 保持总开关纯净；契约端点 11→12。
 - UI 预设切换器：/meta 端点附加可用预设清单（`listPresets()` 扫描 preset/ 目录），功能设置新增「预设模板」下拉（anchored + 官方四套），`store.setPresetTemplate` 写入 settings 并重建生成目录；参数类设置（firstTurnAnchor/guideText/subagentFlash 等）从 settings.yaml 移除，由各预设模板 params 提供默认（settings 仅保留总开关/技能/路径配置，用户环境 1.3KB）。
 - 存储分层对齐官方：大文本内容（preset.md/AGENTS.md）移出 settings.yaml → 生成目录文件（writePreset 落盘 `preset.md`/`agents.md`）；settings.yaml 只存小配置（用户环境 10KB→2.1KB，web 打开不再全量传输/解析大字段）；旧 settings 值首启一次性迁移（onRegistered 落盘）；文本来源改为生成目录文件优先 → 模板 content 回退；bridge 新增 `/preset-content`（按需读文件）+ `/import-preset`（导入写入，触发重建）；UI 主设置 preset/agents 区改为「**导入配置文件**」+ 只读预览（不再内嵌编辑大文本）；契约端点 9→11。
-- library 合并与差异参数化：删除 17 个与现有模块重复/可合并的 `official-*`（tool-pwsh/tool-fs/planning/compaction/delegation 等 11 个与现有一致、official-filesystem=bootstrap-filesystem、official-delegation 的 `__SUBAGENT_FLASH__` token 对官方预设渲染为空可兼容）；**persona 差异参数化**——persona.yml 收敛为 standard 版（仅 text），anchored/minimal/creative 的差异（text/complete/includeRuntimeContext）由 preset.yml `moduleConfigs` 传递（纯数据可参数化）；`applyModuleConfigs` 支持行无 config 时创建节点；**`!!js` 表达式差异不参数化**（YAML tag 经 preset.yml 解析丢失，代码类差异保留独立文件 official-skill-filesystem-cordis）；保留 official-* 6 个（agent-instructions/tool-bash/tool-skill/tool-presentation/tool-cordis/persistent-shell，现有无对应或内容为本地定制）。
+- library 合并与差异参数化：删除 17 个与现有模块重复/可合并的 `official-*`（tool-pwsh/tool-fs/planning/compaction/delegation 等 11 个与现有一致、official-filesystem=bootstrap-filesystem、official-delegation 的 `__SUBAGENT_CONFIG__` token 对官方预设渲染为空可兼容）；**persona 差异参数化**——persona.yml 收敛为 standard 版（仅 text），anchored/minimal/creative 的差异（text/complete/includeRuntimeContext）由 preset.yml `moduleConfigs` 传递（纯数据可参数化）；`applyModuleConfigs` 支持行无 config 时创建节点；**`!!js` 表达式差异不参数化**（YAML tag 经 preset.yml 解析丢失，代码类差异保留独立文件 official-skill-filesystem-cordis）；保留 official-* 6 个（agent-instructions/tool-bash/tool-skill/tool-presentation/tool-cordis/persistent-shell，现有无对应或内容为本地定制）。
 - 官方预设模块化导入：从 deepseek-harness 官方源码拆解 4 个预设为模块——`engine/compositions/library/official-*.yml`（23 个官方模块文件，按行块提取；persona/skill-filesystem 按预设分版本），`preset/{standard,minimal,ptc,creative}/preset.yml` 用 `modules:` 清单声明（官方行 + prompt-tool 本地附加行）由插件拼接；`manifest.loadCompositionText` 保留 `composition: ./xxx.yml` 相对路径能力（通用）；`presetTemplate` 切换即用。
 - UI 审查建议落地：S1 自定义引导文本行灰显条件补 `!writePreset`（与输入禁用一致）；S2 Anchored Standard 模块行新增「编辑」按钮——受控聚焦（focusId+focusTick）展开下方配置卡片并滚动到可视区，同 id 重复点击可重触发。
 - UI 预设分组：内置消息批配置模块行归类到「Anchored Standard(prompt-tool)」分组，并按实际生效配置**动态生成**（预设模板声明什么显示什么；模块缺失不渲染，切换模板自然跟随）；模块行 label 优先取配置 name。

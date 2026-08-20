@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { buildCordis } from '../../lib/preset-core.mjs'
-import { applyModuleConfigs } from '../../lib/index.mjs'
+import { applyModuleConfigs, resolvePresetParams } from '../../lib/index.mjs'
 import { parse as parseYaml } from 'yaml'
 
 /** 递归收集指定 id 的嵌套行（delegation 组内工具行）。 */
@@ -27,7 +27,7 @@ const RAW = `# module: custom-bash
 - id: router-first-turn
   name: ./engine/router-first-turn.mjs
   config:
-    flashPersona: "__FLASH_PERSONA__"
+    fastModelPersona: "__FAST_MODEL_PERSONA__"
     hideSectionPrefixes: ["mnemon:"]
 `
 
@@ -44,12 +44,44 @@ test('moduleConfigs 不影响未声明模块与 __TOKEN__', () => {
   const router = rows.find((row) => row?.id === 'router-first-turn')
   assert.ok(router)
   assert.deepEqual(router.config.hideSectionPrefixes, ['mnemon:'])
-  assert.equal(router.config.flashPersona, '__FLASH_PERSONA__')
+  assert.equal(router.config.fastModelPersona, '__FAST_MODEL_PERSONA__')
 })
 
 test('moduleConfigs 未声明时返回原文（零开销）', () => {
   assert.equal(applyModuleConfigs(RAW, undefined), RAW)
   assert.equal(applyModuleConfigs(RAW, {}), RAW)
+})
+
+test('resolvePresetParams 把嵌套 subagent 块拍平为扁平键（preset.yml 归类写法 ↔ 运行时扁平键等价）', () => {
+  const flat = resolvePresetParams({ id: 't', params: {
+    fastModelPersona: 'F',
+    subagent: {
+      modelProvider: 'deepseek',
+      modelName: 'deepseek-v4-flash-7013',
+      persona: '子代理专用人设',
+      toolFilter: { allow: ['read', 'glob'], deny: ['bash'] },
+      maxDepth: 2,
+    },
+  } }, {})
+  assert.equal(flat.subagentModelProvider, 'deepseek')
+  assert.equal(flat.subagentModelName, 'deepseek-v4-flash-7013')
+  assert.equal(flat.subagentPersona, '子代理专用人设')
+  assert.deepEqual(flat.subagentToolFilterAllow, ['read', 'glob'])
+  assert.deepEqual(flat.subagentToolFilterDeny, ['bash'])
+  assert.equal(flat.subagentMaxDepth, 2)
+  // 运行时扁平键优先于 preset.yml 嵌套默认值。
+  const overridden = resolvePresetParams({ id: 't', params: {
+    subagent: { modelProvider: 'preset-default', modelName: 'm1' },
+  } }, { subagentModelProvider: 'runtime-wins' })
+  assert.equal(overridden.subagentModelProvider, 'runtime-wins')
+  assert.equal(overridden.subagentModelName, 'm1')
+  // 空默认值不渲染（renderEngineTokens 对空串/空数组跳过）。
+  const empty = resolvePresetParams({ id: 't', params: {
+    subagent: { modelProvider: '', modelName: '', persona: '', toolFilter: { allow: [], deny: [] }, maxDepth: '' },
+  } }, {})
+  assert.equal(empty.subagentModelProvider, '')
+  assert.deepEqual(empty.subagentToolFilterAllow, [])
+  assert.equal(empty.subagentMaxDepth, '')
 })
 
 test('anchored buildCordis 集成：moduleConfigs 合并与 token 渲染共存', () => {
@@ -77,8 +109,8 @@ test('anchored buildCordis 集成：moduleConfigs 合并与 token 渲染共存',
 
 test('子代理完整自定义：独立 persona + toolFilter + maxDepth 渲染（官方 tool-subagent Config）', () => {
   const rows = parseYaml(buildCordis('P', {
-    subagentFlashProvider: 'my-provider',
-    subagentFlashModel: 'deepseek-v4-flash-7013',
+    subagentModelProvider: 'my-provider',
+    subagentModelName: 'deepseek-v4-flash-7013',
     subagentPersona: '你是审查子代理，只读不改。',
     subagentToolFilterAllow: ['read', 'write', 'glob'],
     subagentToolFilterDeny: 'bash, run_code',
@@ -95,10 +127,10 @@ test('子代理完整自定义：独立 persona + toolFilter + maxDepth 渲染�
   }
 })
 
-test('子代理 persona 回退：无独立 persona 时固定路由用 flashPersona，无路由不渲染', () => {
-  const routed = parseYaml(buildCordis('P', { subagentFlashProvider: 'p', subagentFlashModel: 'm' }))
+test('子代理 persona 回退：无独立 persona 时固定路由用 fastModelPersona，无路由不渲染', () => {
+  const routed = parseYaml(buildCordis('P', { subagentModelProvider: 'p', subagentModelName: 'm' }))
   const routedRow = findAllNested(routed, new Set(['tool-subagent']))[0]
-  assert.match(routedRow.config.persona, /decide the task type \(build or fix\)/, '固定路由时 persona 回退 flashPersona')
+  assert.match(routedRow.config.persona, /decide the task type \(build or fix\)/, '固定路由时 persona 回退 fastModelPersona')
   assert.equal(routedRow.config.toolFilter, undefined, '未配置 toolFilter 不渲染')
   assert.equal(routedRow.config.maxDepth, undefined, '未配置 maxDepth 不渲染（官方默认 3）')
 

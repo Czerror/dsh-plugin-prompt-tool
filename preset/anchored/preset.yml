@@ -163,9 +163,9 @@ params:
   injectPrompt: true
   usePtcMode: true
   bootstrapMaxTokens: 0
-  subagentFlashProvider: ""
-  subagentFlashModel: ""
-  flashPersona: >
+  # 人设·快速模型路由：主对话命中快速模型（Flash 档）时替换人设；
+  # 子代理固定模型路由且未显式 subagent.persona 时回退使用。
+  fastModelPersona: >
     You are a helpful assistant.
 
     Before acting, decide the task type (build or fix) and adopt the matching
@@ -188,10 +188,26 @@ params:
   firstTurnDeep: "Start your reasoning with the exact sentence: 'Let me think through the design before changing anything.'"
   firstTurnWord: we
   allowKinds: "[skill-invocation, near-anchor, router-guide]"
-  # 子代理完整自定义（官方 tool-subagent Config；全部可选，缺省=官方默认）：
-  #   subagentPersona: 子代理独立 persona（缺省回退 flashPersona，两者缺省=继承主会话）
-  #   subagentToolFilterAllow/Deny: 子代理工具集白/黑名单（数组或逗号分隔字符串）
-  #   subagentMaxDepth: 递归深度（0 禁止委派 / provider-managed / 正整数）
+  # ── 子代理 · 参数归类（作用域 × 维度；全部可选，缺省 = 官方默认 / 继承主会话）──
+  #   维度      preset.yml 键                         引擎渲染落点
+  #   模型      subagent.modelProvider / modelName    tool-subagent agentOptions{provider,model}
+  #   人设      subagent.persona                      tool-subagent persona
+  #             （显式 → 固定路由回退 fastModelPersona → 继承主会话）
+  #   工具集    subagent.toolFilter.allow / deny      tool-subagent toolFilter{allow,deny}
+  #   深度      subagent.maxDepth                     tool-subagent maxDepth
+  #             （0 禁止委派 / provider-managed / 正整数）
+  #   相位/注入 由 promptConfigs[].subagents/promotion/modelScope 与
+  #             moduleConfigs.*.includeSubagents 控制（主对话与子代理共用）
+  # 嵌套块由引擎合并入口拍平为扁平键（subagentModelProvider 等），
+  # 运行时/UI/overrides 继续用扁平键，两套表示等价。
+  subagent:
+    modelProvider: ""
+    modelName: ""
+    persona: ""
+    toolFilter:
+      allow: []
+      deny: []
+    maxDepth: ""
 promptConfigs:
   - id: near-anchor
     name: 首句锚点
@@ -312,6 +328,7 @@ moduleConfigs:
     promoteOn: either
   router-first-turn:
     hideSectionPrefixes: ["mnemon:"]
+    includeSubagents: false
   run-code-env:
     envKeys: [PATH, PATHEXT, HOME, USERPROFILE, USERNAME, COMPUTERNAME, OS, TEMP, TMP, SystemRoot, ProgramFiles, ProgramFiles(x86), LOCALAPPDATA, APPDATA]
   context-gate:

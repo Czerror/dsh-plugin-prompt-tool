@@ -36,11 +36,11 @@ export function buildCordis(prompt: string, options: BuildCordisOptions = {}): s
     bootstrapMaxTokens: Number.isSafeInteger(options.bootstrapMaxTokens) && (options.bootstrapMaxTokens ?? 0) > 0
       ? options.bootstrapMaxTokens
       : 0,
-    subagentFlashProvider: typeof options.subagentFlashProvider === 'string' && options.subagentFlashProvider.length > 0
-      ? options.subagentFlashProvider
+    subagentModelProvider: typeof options.subagentModelProvider === 'string' && options.subagentModelProvider.length > 0
+      ? options.subagentModelProvider
       : '',
-    subagentFlashModel: typeof options.subagentFlashModel === 'string' && options.subagentFlashModel.length > 0
-      ? options.subagentFlashModel
+    subagentModelName: typeof options.subagentModelName === 'string' && options.subagentModelName.length > 0
+      ? options.subagentModelName
       : '',
     subagentPersona: typeof options.subagentPersona === 'string' && options.subagentPersona.length > 0
       ? options.subagentPersona

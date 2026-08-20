@@ -1,4 +1,4 @@
-/** DeepSeek 模型检测与子代理 Flash 路由（宿主侧运行时工具）。 */
+/** DeepSeek 模型检测与子代理固定模型路由（宿主侧运行时工具）。 */
 import type { Context } from '@deepseek-ai/cordis'
 
 /** DeepSeek 模型检测结果（含诊断信息，供 Web/TUI 展示）。 */
@@ -39,7 +39,7 @@ export function detectDeepseek(ctx: Context): DeepseekDetection {
 }
 
 /** 给宿主直派的子代理补固定模型路由（服务商 + 模型名同时非空时生效）；调用方显式 provider/model 优先，不覆盖 persona 与工具白名单。 */
-export function installSubagentFlashRoute(ctx: Context, isEnabled: () => boolean, provider: () => string, model: () => string): void {
+export function installSubagentModelRoute(ctx: Context, isEnabled: () => boolean, provider: () => string, model: () => string): void {
   ctx.inject(['subagents'], (sctx: Context) => {
     const service = sctx.get('subagents') as { start?: (name: string, request: Record<string, unknown>) => unknown } | undefined
     if (service === undefined || typeof service.start !== 'function') return

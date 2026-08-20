@@ -4,6 +4,6 @@
 - id: router-first-turn
   name: ./engine/router-first-turn.mjs
   config:
-    flashPersona: "__FLASH_PERSONA__"
+    fastModelPersona: "__FAST_MODEL_PERSONA__"
     hideSectionPrefixes: ["mnemon:"]
     includeSubagents: false

@@ -56,8 +56,8 @@ function findAllRows(doc, ids) {
 
 test('buildCordis 设置模型服务商与模型名时给 subagent/subagent_fork 加固定模型路由', () => {
   const out = buildCordis('PROMPT', {
-    subagentFlashProvider: 'my-provider',
-    subagentFlashModel: 'deepseek-v4-flash-7013',
+    subagentModelProvider: 'my-provider',
+    subagentModelName: 'deepseek-v4-flash-7013',
   })
   const doc = parse(out, { logLevel: 'silent' })
   const rows = findAllRows(doc, new Set(['tool-subagent', 'tool-subagent-fork']))

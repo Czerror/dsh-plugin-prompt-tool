@@ -35,9 +35,9 @@ export interface WritePresetOptions {
   guideText: string
   guideCustom: boolean
   injectPrompt: boolean
-  subagentFlashProvider: string
-  subagentFlashModel: string
-  /** 子代理独立 persona（per-child shadow；缺省回退 flashPersona，两者缺省=继承主会话）。 */
+  subagentModelProvider: string
+  subagentModelName: string
+  /** 子代理独立 persona（per-child shadow；缺省回退 fastModelPersona，两者缺省=继承主会话）。 */
   subagentPersona?: string
   /** 子代理工具集白名单（toolFilter.allow；支持数组或逗号/空格分隔字符串）。 */
   subagentToolFilterAllow?: string[] | string
@@ -72,11 +72,11 @@ function runtimeOf(options: WritePresetOptions, prompt: string): Record<string, 
     injectPrompt: options.injectPrompt !== false,
     usePtcMode: options.usePtcMode !== false,
     bootstrapMaxTokens: Number.isSafeInteger(options.bootstrapMaxTokens) ? options.bootstrapMaxTokens : 0,
-    subagentFlashProvider: typeof options.subagentFlashProvider === 'string' && options.subagentFlashProvider.length > 0
-      ? options.subagentFlashProvider
+    subagentModelProvider: typeof options.subagentModelProvider === 'string' && options.subagentModelProvider.length > 0
+      ? options.subagentModelProvider
       : '',
-    subagentFlashModel: typeof options.subagentFlashModel === 'string' && options.subagentFlashModel.length > 0
-      ? options.subagentFlashModel
+    subagentModelName: typeof options.subagentModelName === 'string' && options.subagentModelName.length > 0
+      ? options.subagentModelName
       : '',
     subagentPersona: typeof options.subagentPersona === 'string' && options.subagentPersona.length > 0
       ? options.subagentPersona

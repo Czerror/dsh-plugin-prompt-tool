@@ -30,7 +30,11 @@ modules:
 params:
   usePtcMode: true
   bootstrapMaxTokens: 0
-  flashPersona: "You are a helpful assistant. Before acting, decide the task type (build or fix) and adopt the matching style: build → hands-on production; fix → inspect-and-plan. Before acting, briefly review what you have already done in this session and continue from where you left off; do not repeat completed steps. Do not run environment checks (echo, whoami, uname, node --version, date) or exhaustive grep/glob scans. Think deeply first, then produce."
-  subagentFlashProvider: ""
-  subagentFlashModel: ""
+  fastModelPersona: "You are a helpful assistant. Before acting, decide the task type (build or fix) and adopt the matching style: build → hands-on production; fix → inspect-and-plan. Before acting, briefly review what you have already done in this session and continue from where you left off; do not repeat completed steps. Do not run environment checks (echo, whoami, uname, node --version, date) or exhaustive grep/glob scans. Think deeply first, then produce."
+  # 子代理归类（作用域 × 维度；缺省 = 官方默认 / 继承主会话）：
+  #   模型 subagent.modelProvider/modelName · 人设 subagent.persona
+  #   工具集 subagent.toolFilter.allow/deny · 深度 subagent.maxDepth
+  subagent:
+    modelProvider: ""
+    modelName: ""
   allowKinds: "[skill-invocation, near-anchor, router-guide]"

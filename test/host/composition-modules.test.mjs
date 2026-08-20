@@ -35,7 +35,7 @@ test('官方源码重建后的本地参数化补丁仍存在', () => {
     const editor = read('engine/compositions/library/str-replace-editor.yml')
     assert.ok(editor.includes('maxOutputChars: __STR_REPLACE_EDITOR_MAX_OUTPUT_CHARS__'))
   const delegation = read('engine/compositions/library/delegation.yml')
-  assert.equal((delegation.match(/__SUBAGENT_FLASH__/g) ?? []).length, 2)
+  assert.equal((delegation.match(/__SUBAGENT_CONFIG__/g) ?? []).length, 2)
   const bash = read('engine/compositions/library/tool-bash.yml')
   assert.ok(bash.includes('disabled: true'))
   const filesystem = read('engine/compositions/library/bootstrap-filesystem.yml')

@@ -42,16 +42,16 @@ function isMnemonSection(section) {
 }
 
 /**
- * 引擎级 router-first-turn:所有内容(含 Flash persona)都由预设配置参数传入,
+ * 引擎级 router-first-turn:所有内容(含快速模型人设 fastModelPersona)都由预设配置参数传入,
  * 本文件不含任何模板专属文本。
- * config: { flashPersona: string, hideSectionPrefixes?: string[], includeSubagents?: boolean }
+ * config: { fastModelPersona: string, hideSectionPrefixes?: string[], includeSubagents?: boolean }
  */
 export function apply(ctx, config) {
-  const flashPersona = typeof config?.flashPersona === 'string' && config.flashPersona.trim().length > 0
-    ? config.flashPersona
+  const fastModelPersona = typeof config?.fastModelPersona === 'string' && config.fastModelPersona.trim().length > 0
+    ? config.fastModelPersona
     : undefined
-  if (flashPersona === undefined) {
-    throw new TypeError(`${name}: config.flashPersona must be a non-empty string`)
+  if (fastModelPersona === undefined) {
+    throw new TypeError(`${name}: config.fastModelPersona must be a non-empty string`)
   }
   const hidePrefixes = Array.isArray(config?.hideSectionPrefixes)
     ? config.hideSectionPrefixes.filter((item) => typeof item === 'string' && item.length > 0)
@@ -72,7 +72,7 @@ export function apply(ctx, config) {
     // includeSubagents=true 时与主会话同一相位逻辑（首轮替换 + 段隐藏）。
     if (isDelegated(session) && !includeSubagents) return assembled
 
-    const persona = isFlashModel(agent.options?.model) ? flashPersona : RL_PERSONA
+    const persona = isFlashModel(agent.options?.model) ? fastModelPersona : RL_PERSONA
 
     const sections = assembled.sections ?? []
     const promoted = promotion.status(agent).promoted

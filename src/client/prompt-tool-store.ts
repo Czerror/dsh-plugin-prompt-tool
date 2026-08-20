@@ -34,8 +34,8 @@ export interface SwitchSnapshot {
   firstTurnCustom: boolean
   guideText: string
   guideCustom: boolean
-  subagentFlashProvider: string
-  subagentFlashModel: string
+  subagentModelProvider: string
+  subagentModelName: string
   bootstrapMaxTokens: number
   usePtcMode: boolean
   injectPrompt: boolean
@@ -58,8 +58,8 @@ const EMPTY_SWITCHES: SwitchSnapshot = {
   firstTurnCustom: false,
   guideText: '',
   guideCustom: false,
-  subagentFlashProvider: '',
-  subagentFlashModel: '',
+  subagentModelProvider: '',
+  subagentModelName: '',
   bootstrapMaxTokens: 0,
   usePtcMode: true,
   injectPrompt: true,
@@ -85,8 +85,8 @@ export const snapshotSwitches = (fields: Fields): SwitchSnapshot => ({
   firstTurnCustom: fields.firstTurnCustom,
   guideText: fields.guideText,
   guideCustom: fields.guideCustom,
-  subagentFlashProvider: fields.subagentFlashProvider,
-  subagentFlashModel: fields.subagentFlashModel,
+  subagentModelProvider: fields.subagentModelProvider,
+  subagentModelName: fields.subagentModelName,
   bootstrapMaxTokens: fields.bootstrapMaxTokens,
   usePtcMode: fields.usePtcMode,
   injectPrompt: fields.injectPrompt,
@@ -109,8 +109,8 @@ const switchesEqual = (a: SwitchSnapshot, b: SwitchSnapshot): boolean =>
   && a.firstTurnCustom === b.firstTurnCustom
   && a.guideText === b.guideText
   && a.guideCustom === b.guideCustom
-  && a.subagentFlashProvider === b.subagentFlashProvider
-  && a.subagentFlashModel === b.subagentFlashModel
+  && a.subagentModelProvider === b.subagentModelProvider
+  && a.subagentModelName === b.subagentModelName
   && a.bootstrapMaxTokens === b.bootstrapMaxTokens
   && a.usePtcMode === b.usePtcMode
   && a.injectPrompt === b.injectPrompt
@@ -302,8 +302,8 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
         if (typeof o.firstTurnCustom === 'boolean') paramPatch.firstTurnCustom = o.firstTurnCustom
         if (typeof o.guideText === 'string') paramPatch.guideText = o.guideText
         if (typeof o.guideCustom === 'boolean') paramPatch.guideCustom = o.guideCustom
-        if (typeof o.subagentFlashProvider === 'string') paramPatch.subagentFlashProvider = o.subagentFlashProvider
-        if (typeof o.subagentFlashModel === 'string') paramPatch.subagentFlashModel = o.subagentFlashModel
+        if (typeof o.subagentModelProvider === 'string') paramPatch.subagentModelProvider = o.subagentModelProvider
+        if (typeof o.subagentModelName === 'string') paramPatch.subagentModelName = o.subagentModelName
         if (typeof o.bootstrapMaxTokens === 'number') paramPatch.bootstrapMaxTokens = o.bootstrapMaxTokens
         if (Object.keys(paramPatch).length > 0) {
           const next = { ...fieldsRef.current, ...paramPatch }
@@ -396,8 +396,8 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
         firstTurnCustom: f.firstTurnCustom,
         guideText: f.guideText,
         guideCustom: f.guideCustom,
-        subagentFlashProvider: f.subagentFlashProvider,
-        subagentFlashModel: f.subagentFlashModel,
+        subagentModelProvider: f.subagentModelProvider,
+        subagentModelName: f.subagentModelName,
         bootstrapMaxTokens: f.bootstrapMaxTokens,
       },
     })

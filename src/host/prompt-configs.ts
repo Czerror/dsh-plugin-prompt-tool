@@ -65,10 +65,10 @@ export interface BuildCordisOptions {
   /** 锚定确认后注入 preset.md；关闭时仍保留工具引导，但不生成 prompt-injector 提示词配置内容。 */
   injectPrompt?: boolean
   /** 子代理固定模型路由 provider；与模型名同时非空时给 subagent/subagent_fork 行加 agentOptions。 */
-  subagentFlashProvider?: string
+  subagentModelProvider?: string
   /** 子代理固定模型名；与 provider 同时非空时生效。 */
-  subagentFlashModel?: string
-  /** 子代理独立 persona（per-child shadow；缺省回退 flashPersona，两者缺省=继承主会话）。 */
+  subagentModelName?: string
+  /** 子代理独立 persona（per-child shadow；缺省回退 fastModelPersona，两者缺省=继承主会话）。 */
   subagentPersona?: string
   /** 子代理工具集白名单（toolFilter.allow；支持数组或逗号/空格分隔字符串）。 */
   subagentToolFilterAllow?: string[] | string

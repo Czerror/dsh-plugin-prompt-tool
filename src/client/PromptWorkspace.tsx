@@ -171,7 +171,7 @@ function SubagentSettings(props: { store: PromptToolStore }): ReactNode {
   const modelOptions = ['', 'deepseek-v4-flash', 'deepseek-v4-pro']
   const withCurrent = (options: string[], current: string): string[] =>
     current.length > 0 && !options.includes(current) ? [...options, current] : options
-  const active = fields.subagentFlashProvider.length > 0 && fields.subagentFlashModel.length > 0
+  const active = fields.subagentModelProvider.length > 0 && fields.subagentModelName.length > 0
   return (
     <section className={ui.section} aria-labelledby="pt-subagent-settings">
       <div className={ui.sectionHeading}><div><h2 id="pt-subagent-settings">子代理设置</h2><p>模型服务商与模型名同时设置时，子代理与宿主直派子代理自动使用该固定模型；任一为空 = 子代理继承主会话模型。</p></div></div>
@@ -184,14 +184,14 @@ function SubagentSettings(props: { store: PromptToolStore }): ReactNode {
           <select
             className={ui.configInput}
             aria-label="模型服务商"
-            value={fields.subagentFlashProvider}
+            value={fields.subagentModelProvider}
             disabled={!fields.writePreset}
             onChange={(event) => {
-              store.patch({ subagentFlashProvider: event.target.value })
+              store.patch({ subagentModelProvider: event.target.value })
               void store.persistParamOverrides()
             }}
           >
-            {withCurrent(providerOptions, fields.subagentFlashProvider).map((item) => (
+            {withCurrent(providerOptions, fields.subagentModelProvider).map((item) => (
               <option key={item} value={item}>{item.length > 0 ? item : '（不设置）'}</option>
             ))}
           </select>
@@ -206,14 +206,14 @@ function SubagentSettings(props: { store: PromptToolStore }): ReactNode {
           <select
             className={ui.configInput}
             aria-label="模型名"
-            value={fields.subagentFlashModel}
+            value={fields.subagentModelName}
             disabled={!fields.writePreset}
             onChange={(event) => {
-              store.patch({ subagentFlashModel: event.target.value })
+              store.patch({ subagentModelName: event.target.value })
               void store.persistParamOverrides()
             }}
           >
-            {withCurrent(modelOptions, fields.subagentFlashModel).map((item) => (
+            {withCurrent(modelOptions, fields.subagentModelName).map((item) => (
               <option key={item} value={item}>{item.length > 0 ? item : '（不设置）'}</option>
             ))}
           </select>

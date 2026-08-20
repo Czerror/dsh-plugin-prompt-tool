@@ -18,7 +18,7 @@ import type { PresetSpec } from './host/manifest.ts'
 import { createCachedSkillsReader } from './runtime/skills-provider.ts'
 import { ensureWebSurface } from './web-surface.ts'
 import { resolveProfileSkillsDir } from './profile-skills.ts'
-import { detectDeepseek, installSubagentFlashRoute } from './runtime/deepseek.ts'
+import { detectDeepseek, installSubagentModelRoute } from './runtime/deepseek.ts'
 import type { DeepseekDetection } from './runtime/deepseek.ts'
 import { registerSettingsBridge } from './runtime/settings-bridge.ts'
 import { registerTuiCommand } from './runtime/tui.ts'
@@ -154,8 +154,8 @@ export function apply(ctx: Context, configIn: Config): void {
         guideText: runtime.guideText,
         guideCustom: runtime.guideCustom,
         injectPrompt: runtime.injectPrompt,
-        subagentFlashProvider: runtime.subagentFlashProvider,
-        subagentFlashModel: runtime.subagentFlashModel,
+        subagentModelProvider: runtime.subagentModelProvider,
+        subagentModelName: runtime.subagentModelName,
         bootstrapMaxTokens: runtime.bootstrapMaxTokens,
         usePtcMode: runtime.usePtcMode,
         agentsInstructionText: currentAgents,
@@ -194,8 +194,8 @@ export function apply(ctx: Context, configIn: Config): void {
     if (typeof overrides.firstTurnText === 'string') runtime.firstTurnText = overrides.firstTurnText
     if (typeof overrides.guideCustom === 'boolean') runtime.guideCustom = overrides.guideCustom
     if (typeof overrides.guideText === 'string') runtime.guideText = overrides.guideText
-    if (typeof overrides.subagentFlashProvider === 'string') runtime.subagentFlashProvider = overrides.subagentFlashProvider
-    if (typeof overrides.subagentFlashModel === 'string') runtime.subagentFlashModel = overrides.subagentFlashModel
+    if (typeof overrides.subagentModelProvider === 'string') runtime.subagentModelProvider = overrides.subagentModelProvider
+    if (typeof overrides.subagentModelName === 'string') runtime.subagentModelName = overrides.subagentModelName
     if (typeof overrides.bootstrapMaxTokens === 'number') runtime.bootstrapMaxTokens = overrides.bootstrapMaxTokens
   }
   // 首次启动把包内 skills/ 增量复制到 $DSH_HOME/profiles/<profile>/skills，
@@ -371,8 +371,8 @@ export function apply(ctx: Context, configIn: Config): void {
     firstTurnCustom: config.firstTurnCustom,
     guideText: config.guideText,
     guideCustom: config.guideCustom,
-    subagentFlashProvider: config.subagentFlashProvider,
-    subagentFlashModel: config.subagentFlashModel,
+    subagentModelProvider: config.subagentModelProvider,
+    subagentModelName: config.subagentModelName,
     bootstrapMaxTokens: config.bootstrapMaxTokens,
     usePtcMode: config.usePtcMode,
     skillRankBase: config.skillRankBase,
@@ -386,11 +386,11 @@ export function apply(ctx: Context, configIn: Config): void {
 
   // 宿主直派子代理（如 dsh-mnemon）也补固定模型路由：
   // 服务商与模型名同时非空时生效；调用方显式模型优先，persona 与 toolFilter 保持不变。
-  installSubagentFlashRoute(
+  installSubagentModelRoute(
     ctx,
-    () => runtime.subagentFlashProvider.length > 0 && runtime.subagentFlashModel.length > 0,
-    () => runtime.subagentFlashProvider,
-    () => runtime.subagentFlashModel,
+    () => runtime.subagentModelProvider.length > 0 && runtime.subagentModelName.length > 0,
+    () => runtime.subagentModelProvider,
+    () => runtime.subagentModelName,
   )
 
   let currentSource = (): PromptSettings => ({
@@ -404,8 +404,8 @@ export function apply(ctx: Context, configIn: Config): void {
     firstTurnCustom: runtime.firstTurnCustom,
     guideText: runtime.guideText,
     guideCustom: runtime.guideCustom,
-    subagentFlashProvider: runtime.subagentFlashProvider,
-    subagentFlashModel: runtime.subagentFlashModel,
+    subagentModelProvider: runtime.subagentModelProvider,
+    subagentModelName: runtime.subagentModelName,
     bootstrapMaxTokens: runtime.bootstrapMaxTokens,
     usePtcMode: runtime.usePtcMode,
     deepseekAvailable: getDeepseekAvailable(),
@@ -447,8 +447,8 @@ registerTuiCommand(ctx, NS, () => currentSource(), getDeepseekAvailable, getDeep
       firstTurnCustom: typeof next.firstTurnCustom === 'boolean' ? next.firstTurnCustom : config.firstTurnCustom,
       guideText: typeof next.guideText === 'string' ? next.guideText : config.guideText,
       guideCustom: typeof next.guideCustom === 'boolean' ? next.guideCustom : config.guideCustom,
-      subagentFlashProvider: typeof next.subagentFlashProvider === 'string' ? next.subagentFlashProvider : config.subagentFlashProvider,
-      subagentFlashModel: typeof next.subagentFlashModel === 'string' ? next.subagentFlashModel : config.subagentFlashModel,
+      subagentModelProvider: typeof next.subagentModelProvider === 'string' ? next.subagentModelProvider : config.subagentModelProvider,
+      subagentModelName: typeof next.subagentModelName === 'string' ? next.subagentModelName : config.subagentModelName,
       bootstrapMaxTokens: Number.isSafeInteger(next.bootstrapMaxTokens) && next.bootstrapMaxTokens >= 0 ? next.bootstrapMaxTokens : config.bootstrapMaxTokens,
       usePtcMode: typeof next.usePtcMode === 'boolean' ? next.usePtcMode : config.usePtcMode,
       skillRankBase: Number.isSafeInteger(next.skillRankBase) && next.skillRankBase >= 0 ? next.skillRankBase : config.skillRankBase,
@@ -480,8 +480,8 @@ registerTuiCommand(ctx, NS, () => currentSource(), getDeepseekAvailable, getDeep
       || runtime.firstTurnCustom !== nextRuntime.firstTurnCustom
       || runtime.guideText !== nextRuntime.guideText
       || runtime.guideCustom !== nextRuntime.guideCustom
-      || runtime.subagentFlashProvider !== nextRuntime.subagentFlashProvider
-      || runtime.subagentFlashModel !== nextRuntime.subagentFlashModel
+      || runtime.subagentModelProvider !== nextRuntime.subagentModelProvider
+      || runtime.subagentModelName !== nextRuntime.subagentModelName
       || runtime.bootstrapMaxTokens !== nextRuntime.bootstrapMaxTokens
       || runtime.usePtcMode !== nextRuntime.usePtcMode
       || runtime.residentAgentsPath !== nextRuntime.residentAgentsPath
@@ -514,8 +514,8 @@ registerTuiCommand(ctx, NS, () => currentSource(), getDeepseekAvailable, getDeep
     runtime.firstTurnCustom = nextRuntime.firstTurnCustom
     runtime.guideText = nextRuntime.guideText
     runtime.guideCustom = nextRuntime.guideCustom
-    runtime.subagentFlashProvider = nextRuntime.subagentFlashProvider
-    runtime.subagentFlashModel = nextRuntime.subagentFlashModel
+    runtime.subagentModelProvider = nextRuntime.subagentModelProvider
+    runtime.subagentModelName = nextRuntime.subagentModelName
     runtime.bootstrapMaxTokens = nextRuntime.bootstrapMaxTokens
     runtime.usePtcMode = nextRuntime.usePtcMode
     runtime.skillRankBase = nextRuntime.skillRankBase
@@ -596,6 +596,7 @@ registerTuiCommand(ctx, NS, () => currentSource(), getDeepseekAvailable, getDeep
 export { Config, PromptSettingsSchema } from './config.ts'
 export { writePreset } from './host/write-preset.ts'
 export { applyModuleConfigs } from './host/manifest.ts'
+export { loadPresetSpec, resolvePresetParams } from './host/manifest.ts'
 export type { PresetSpec } from './host/manifest.ts'
 export { listPresets, resolvePresetDir, userPresetsDir } from './host/manifest.ts'
 export { ensureWebSurface, resolveProfileDir } from './web-surface.ts'

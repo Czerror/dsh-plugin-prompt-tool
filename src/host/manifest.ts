@@ -157,10 +157,32 @@ function upperKey(key: string): string {
   return key.replace(/([a-z0-9])([A-Z])/g, '$1_$2').toUpperCase()
 }
 
+/**
+ * 把嵌套作用域块（params.subagent）拍平为扁平键（subagentModelProvider 等）。
+ * preset.yml 面向用户写嵌套（归类自文档化），运行时/UI/overrides/引擎渲染
+ * 全部继续消费扁平键，两套表示在合并入口归一。
+ */
+function flattenScopeParams(scope: string, block: Record<string, unknown>, out: Record<string, unknown>): void {
+  for (const [key, value] of Object.entries(block)) {
+    if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+      // toolFilter: { allow, deny } 再拍平一级 → subagentToolFilterAllow / Deny。
+      flattenScopeParams(scope + key.charAt(0).toUpperCase() + key.slice(1), value as Record<string, unknown>, out)
+      continue
+    }
+    out[scope + key.charAt(0).toUpperCase() + key.slice(1)] = normalizeParam(value)
+  }
+}
+
 /** 预设 params(默认参数)与运行时 settings 合并;settings 值优先。 */
 export function resolvePresetParams(spec: PresetSpec, runtime: Record<string, unknown>): Record<string, unknown> {
   const params: Record<string, unknown> = {}
-  for (const [key, value] of Object.entries(spec.params ?? {})) params[key] = normalizeParam(value)
+  for (const [key, value] of Object.entries(spec.params ?? {})) {
+    if (key === 'subagent' && value !== null && typeof value === 'object' && !Array.isArray(value)) {
+      flattenScopeParams('subagent', value as Record<string, unknown>, params)
+      continue
+    }
+    params[key] = normalizeParam(value)
+  }
   for (const [key, value] of Object.entries(runtime)) {
     if (value !== undefined) params[key] = value
   }
@@ -200,20 +222,23 @@ function parseListParam(value: unknown): string[] {
  * 引擎内部 token 渲染:把直读参数变成组合模块里的 __TOKEN__ 值。
  * anchored 的全部组合行为(usePtcMode/bootstrapMaxTokens/子代理完整自定义)
  * 在这里完成参数化,用户参数文件不需要任何模板语法。
+ * 子代理参数在 preset.yml 支持嵌套 subagent: 块(resolvePresetParams 拍平),
+ * 运行时/overrides 仍用扁平键——两套表示等价。
  */
 export function renderEngineTokens(params: Record<string, unknown>): Record<string, string> {
-  const flashPersona = asString(params.flashPersona)
-  const provider = asString(params.subagentFlashProvider, '')
-  const model = asString(params.subagentFlashModel, '')
+  const fastModelPersona = asString(params.fastModelPersona)
+  const provider = asString(params.subagentModelProvider, '')
+  const model = asString(params.subagentModelName, '')
   // 子代理完整自定义（官方 tool-subagent Config 参数化）：
-  //   subagentFlashProvider/Model → agentOptions{provider,model}（固定模型路由）；
+  //   subagentModelProvider/Model（preset.yml 嵌套 subagent.modelProvider/modelName）
+  //     → agentOptions{provider,model}（固定模型路由）；
   //   subagentPersona → persona（per-child shadow，显式优先；固定路由时回退
-  //     flashPersona；两者都缺省 = 不渲染，子代理继承主会话 persona，官方行为）；
+  //     fastModelPersona；两者都缺省 = 不渲染，子代理继承主会话 persona，官方行为）；
   //   subagentToolFilterAllow/Deny → toolFilter{allow,deny}（子代理工具集白/黑名单）；
   //   subagentMaxDepth → maxDepth（0 禁止委派 / provider-managed / 正整数）。
   // 任一字段非空即渲染对应行，全部缺省 = 官方默认（继承主会话）。
   const subagentPersona = asString(params.subagentPersona)
-    || (provider.length > 0 && model.length > 0 ? flashPersona : '')
+    || (provider.length > 0 && model.length > 0 ? fastModelPersona : '')
   const toolFilterAllow = parseListParam(params.subagentToolFilterAllow)
   const toolFilterDeny = parseListParam(params.subagentToolFilterDeny)
   const rawMaxDepth = params.subagentMaxDepth
@@ -235,7 +260,7 @@ export function renderEngineTokens(params: Record<string, unknown>): Record<stri
     if (toolFilterDeny.length > 0) subagentLines.push(`  deny: [${toolFilterDeny.join(', ')}]`)
   }
   if (subagentMaxDepth.length > 0) subagentLines.push(`maxDepth: ${subagentMaxDepth}`)
-  const subagentFlashBlock = subagentLines.join('\n')
+  const subagentConfigBlock = subagentLines.join('\n')
   const bootstrap = typeof params.bootstrapMaxTokens === 'number' && params.bootstrapMaxTokens > 0
     ? `bootstrapMaxTokens: ${params.bootstrapMaxTokens}`
     : ''
@@ -249,8 +274,8 @@ export function renderEngineTokens(params: Record<string, unknown>): Record<stri
   return {
     USE_PTC_MODE: params.usePtcMode === true ? 'true' : 'false',
     BOOTSTRAP_MAX_TOKENS: bootstrap,
-    FLASH_PERSONA: JSON.stringify(flashPersona).slice(1, -1),
-    SUBAGENT_FLASH: subagentFlashBlock,
+    FAST_MODEL_PERSONA: JSON.stringify(fastModelPersona).slice(1, -1),
+    SUBAGENT_CONFIG: subagentConfigBlock,
     // 引擎默认与 context-gate 的 DEFAULT_ALLOW_KINDS 一致（单一默认源）；
     // 需要放行更多 kind 的预设（anchored）在 preset.yml 显式声明 allowKinds。
     // allowKinds 未声明 = 不写行 → context-gate 走官方 pre-step 行为（不过滤）；
@@ -375,7 +400,7 @@ export function loadCompositionText(spec: PresetSpec, templateDir?: string): str
 /**
  * 预设组合渲染完整链路:token 渲染 → moduleConfigs 行级合并。
  * 合并必须发生在 token 渲染之后(独立行 token 在渲染前是非法 YAML,
- * 如 __SUBAGENT_FLASH__ / __BOOTSTRAP_MAX_TOKENS__)。
+ * 如 __SUBAGENT_CONFIG__ / __BOOTSTRAP_MAX_TOKENS__)。
  */
 export function renderComposition(spec: PresetSpec, runtime: Record<string, unknown>, templateDir?: string): string {
   const tokens = resolvePresetTokens(spec, runtime)
