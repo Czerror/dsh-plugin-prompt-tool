@@ -827,3 +827,8 @@
 .variableRow { display: flex; align-items: center; gap: 6px; }
 .variableRow .configInput { min-width: 0; flex: 1; }
 .variableRow .pillButton { flex: 0 0 auto; }
+
+/* 模板选择弹窗按层分组。 */
+.templateGroup { display: flex; flex-direction: column; gap: 4px; }
+.templateGroup + .templateGroup { margin-top: 12px; }
+.templateGroupTitle { font-size: 12px; color: var(--dsw-alias-label-tertiary); padding: 0 4px; }

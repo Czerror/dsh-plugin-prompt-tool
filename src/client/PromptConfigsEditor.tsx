@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from 'react'
 import { bridgePost, errorMessage } from './prompt-tool-bridge.ts'
 import { PromptConfigList } from './PromptConfigList.tsx'
+import { TemplatePicker } from './TemplatePicker.tsx'
 import styles from './PromptUi.module.css'
 
 import type { EngineMeta, PromptConfigDraft } from './prompt-tool-types.ts'
@@ -122,22 +123,7 @@ export function PromptConfigsEditor(props: PromptConfigsEditorProps): ReactNode 
       />
 
       {templatePickerOpen && (
-        <div className={styles.modalBackdrop} onClick={() => setTemplatePickerOpen(false)}>
-          <div className={styles.templateModal} role="dialog" aria-modal="true" aria-label="选择内置模板" onClick={(event) => event.stopPropagation()}>
-            <div className={styles.templateModalHead}>
-              <strong>选择内置模板</strong>
-              <button type="button" className={styles.pillButton} aria-label="关闭模板选择" onClick={() => setTemplatePickerOpen(false)}>×</button>
-            </div>
-            <div className={styles.templateModalList}>
-              {templates.map((template) => (
-                <button key={template.file} type="button" className={styles.templateModalItem} onClick={() => pickTemplate(template)}>
-                  <strong>{template.file}</strong>
-                  <small>{template.spec.name ?? template.spec.id}</small>
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
+        <TemplatePicker templates={templates} onPick={pickTemplate} onClose={() => setTemplatePickerOpen(false)} />
       )}
 
       <p className={styles.settingsNote}>提示词配置写入 <code>settings.promptConfigs</code>；目录合并优先级：默认四条 &lt; promptConfigsDir &lt; settings.promptConfigs。</p>
