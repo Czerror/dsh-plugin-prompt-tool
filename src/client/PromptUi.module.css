@@ -519,6 +519,7 @@
 
 /* 多目录卡片：路径 + 状态 + 计数 + 行操作。 */
 .dirCardList { display: flex; min-width: 0; flex-direction: column; gap: 8px; }
+.presetList { display: flex; min-width: 0; flex-direction: column; gap: 8px; margin-top: 2px; }
 .dirCard {
   display: flex;
   min-width: 0;

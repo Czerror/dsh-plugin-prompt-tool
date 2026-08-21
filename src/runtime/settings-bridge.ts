@@ -16,6 +16,7 @@ import {
   listPresets,
   loadPresetSpec,
   parseImportedPresetId,
+  removeUserPreset,
   renderComposition,
   resolvePresetDir,
   userPresetsDir,
@@ -588,6 +589,37 @@ export function registerSettingsBridge(
               const message = error instanceof Error ? error.message : String(error)
               writeBridgeJson(res, 500, { ok: false, code: 'preset-export-failed', message })
             }
+          },
+        }),
+        sctx.webServer.register({
+          kind: 'exact',
+          path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.presetDelete,
+          handler: async (req, res) => {
+            if (!guard(req, res)) return
+            ensureRegistered(sctx)
+            const { body } = await readBridgeBody(req)
+            const record = (body ?? {}) as Record<string, unknown>
+            const id = typeof record.id === 'string' ? record.id.trim() : ''
+            if (id.length === 0) {
+              writeBridgeJson(res, 400, { ok: false, code: 'preset-delete-rejected', message: '缺少预设 id' })
+              return
+            }
+            // 当前使用中的预设不可删除（先切换再删）。
+            const descriptor = findDescriptor()
+            const value = (descriptor?.value ?? {}) as Record<string, unknown>
+            const base = (descriptor?.base ?? {}) as Record<string, unknown>
+            const active = typeof value.presetTemplate === 'string' ? value.presetTemplate
+              : typeof base.presetTemplate === 'string' ? base.presetTemplate : undefined
+            if (typeof active === 'string' && active.length > 0 && active === id) {
+              writeBridgeJson(res, 400, { ok: false, code: 'preset-in-use', message: `预设「${id}」正在使用中，请先切换其他预设再删除` })
+              return
+            }
+            const result = removeUserPreset(id)
+            if (!result.ok) {
+              writeBridgeJson(res, 400, { ok: false, code: 'preset-delete-rejected', message: result.message })
+              return
+            }
+            writeBridgeJson(res, 200, { ok: true, value: { id } })
           },
         }),
 

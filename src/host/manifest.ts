@@ -9,8 +9,8 @@
  * 本模块负责参数归一化与引擎 token 渲染;所有 anchored 专属行为都在引擎内部。
  */
 
-import { readFileSync, existsSync, readdirSync } from 'node:fs'
-import { basename, dirname, join } from 'node:path'
+import { readFileSync, existsSync, readdirSync, rmSync } from 'node:fs'
+import { basename, dirname, join, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Pair, Scalar, parse as parseYaml, parseDocument, YAMLMap, YAMLSeq } from 'yaml'
 import { DEFAULT_USER_PRESETS_DIR } from './paths.ts'
@@ -135,9 +135,10 @@ export function resolvePresetDir(template: string): string {
   return found ?? join(packagePresetDir(), template)
 }
 
-/** 可用预设清单（包内 preset/ + 用户 ~/.dsh/presets，用户同名覆盖）。 */
-export function listPresets(): Array<{ id: string; name: string }> {
-  const scan = (dir: string): Array<{ id: string; name: string }> => {
+/** 可用预设清单（包内 preset/ + 用户 ~/.dsh/presets，用户同名覆盖）。
+ *  user=false 表示仅包内置（不可删除）；user=true 表示用户目录存在（可删除，删除后同名内置回退）。 */
+export function listPresets(): Array<{ id: string; name: string; user: boolean }> {
+  const scan = (dir: string, user: boolean): Array<{ id: string; name: string; user: boolean }> => {
     try {
       return readdirSync(dir, { withFileTypes: true })
         .filter((entry) => entry.isDirectory())
@@ -145,7 +146,7 @@ export function listPresets(): Array<{ id: string; name: string }> {
           try {
             const spec = loadPresetSpec(join(dir, entry.name))
             // 切换值用目录名（与 resolvePresetDir 路径一致）；name 保持 spec.name 契约。
-            return [{ id: entry.name, name: spec.name }]
+            return [{ id: entry.name, name: spec.name, user }]
           } catch {
             return []
           }
@@ -154,10 +155,34 @@ export function listPresets(): Array<{ id: string; name: string }> {
       return []
     }
   }
-  const byId = new Map<string, { id: string; name: string }>()
-  for (const preset of scan(packagePresetDir())) byId.set(preset.id, preset)
-  for (const preset of scan(userPresetsDir())) byId.set(preset.id, preset)
+  const byId = new Map<string, { id: string; name: string; user: boolean }>()
+  for (const preset of scan(packagePresetDir(), false)) byId.set(preset.id, preset)
+  for (const preset of scan(userPresetsDir(), true)) byId.set(preset.id, preset)
   return [...byId.values()].sort((a, b) => a.id.localeCompare(b.id))
+}
+
+/** 删除用户预设目录（~/.dsh/presets/<id>；含同名导入的 .bak-* 备份目录）。
+ *  仅作用于用户目录，包内置预设天然不受影响；路径越界与非法 id 拒绝。 */
+export function removeUserPreset(id: string): { ok: true } | { ok: false; message: string } {
+  if (typeof id !== 'string' || id.length === 0 || id === '.' || id === '..'
+    || id.includes('/') || id.includes('\\')) {
+    return { ok: false, message: `非法预设 id：${id}` }
+  }
+  const root = userPresetsDir()
+  const target = resolve(join(root, id))
+  const rootResolved = resolve(root)
+  if (target !== rootResolved && !target.startsWith(rootResolved + sep)) {
+    return { ok: false, message: `预设路径越界：${id}` }
+  }
+  if (!existsSync(target)) {
+    return { ok: false, message: `预设 ${id} 不存在（用户目录 ~/.dsh/presets）` }
+  }
+  try {
+    rmSync(target, { recursive: true, force: true })
+    return { ok: true }
+  } catch (error) {
+    return { ok: false, message: `删除失败：${error instanceof Error ? error.message : String(error)}` }
+  }
 }
 
 /** 从导入的 preset.yml 文本解析预设 id（非法/缺失回退目录名）。 */

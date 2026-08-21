@@ -8,8 +8,21 @@ export function PresetSwitcher(props: { store: PromptToolStore }): ReactNode {
   const { store } = props
   const fields = store.fields
   const [importing, setImporting] = useState(false)
+  const [confirmingDelete, setConfirmingDelete] = useState<string | undefined>(undefined)
   const yamlRef = useRef<HTMLInputElement>(null)
   const dirRef = useRef<HTMLInputElement>(null)
+
+  /** 删除用户预设（含同名导入备份目录）；当前使用中由服务端拒绝。 */
+  const deletePreset = async (id: string): Promise<void> => {
+    const res = await bridgePost<{ id: string }>('/preset-delete', { id })
+    if (res.ok) {
+      setConfirmingDelete(undefined)
+      store.showNotice('ok', `预设 ${id} 已删除`)
+      await store.load()
+    } else {
+      store.showNotice('error', '删除预设失败：' + (res.message ?? 'settings bridge unavailable'))
+    }
+  }
 
   /** 上传预设包：path 为相对路径（preset.yml 或文件夹内文件），服务端按 id 归入用户预设目录。 */
   const uploadPreset = async (entries: Array<{ path: string; content: string }>): Promise<void> => {
@@ -113,6 +126,37 @@ export function PresetSwitcher(props: { store: PromptToolStore }): ReactNode {
             导出预设
           </button>
         </span>
+      </div>
+      <div className={styles.presetList}>
+        {(store.meta.presets ?? []).map((preset) => {
+          const active = fields.presetTemplate === preset.id
+          const deletable = preset.user === true
+          const confirming = confirmingDelete === preset.id
+          return (
+            <div key={preset.id} className={styles.dirCard}>
+              <span className={styles.dirCardBody}>
+                <span className={styles.dirCardTitle}>
+                  <code className={styles.dirPath} title={preset.id}>{preset.id}</code>
+                  {active && <span className={styles.duplicateBadge} title="当前预设模板">使用中</span>}
+                  {!deletable && <span className={styles.duplicateBadge} title="包内置预设模板，不可删除">内置</span>}
+                </span>
+                <span className={styles.dirCardMeta}>{preset.name}{!deletable ? ' · 包内置' : ' · 用户导入'}</span>
+              </span>
+              <span className={styles.dirCardActions}>
+                {deletable && (confirming ? (
+                  <>
+                    <button type="button" className={styles.pillButton} data-danger onClick={() => void deletePreset(preset.id)}>确认删除</button>
+                    <button type="button" className={styles.pillButton} data-variant="secondary" onClick={() => setConfirmingDelete(undefined)}>取消</button>
+                  </>
+                ) : (
+                  <button type="button" className={styles.pillButton} data-danger disabled={active}
+                    title={active ? '先切换其他预设再删除' : '删除用户预设（含同名导入的备份目录）'}
+                    onClick={() => setConfirmingDelete(preset.id)}>删除</button>
+                ))}
+              </span>
+            </div>
+          )
+        })}
       </div>
     </div>
   )
