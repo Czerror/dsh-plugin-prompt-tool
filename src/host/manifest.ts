@@ -137,8 +137,8 @@ export function resolvePresetDir(template: string): string {
 
 /** 可用预设清单：全部来自用户目录 ~/.dsh/presets（插件目录模板只经「新建」复制进入；
  *  首次启动由 ensurePresetSeed 种子化，删除后可用「新建」还原）。 */
-export function listPresets(): Array<{ id: string; name: string; user: boolean }> {
-  const scan = (dir: string): Array<{ id: string; name: string; user: boolean }> => {
+export function listPresets(): Array<{ id: string; name: string; user: boolean; description?: string }> {
+  const scan = (dir: string): Array<{ id: string; name: string; user: boolean; description?: string }> => {
     try {
       return readdirSync(dir, { withFileTypes: true })
         .filter((entry) => entry.isDirectory())
@@ -146,7 +146,12 @@ export function listPresets(): Array<{ id: string; name: string; user: boolean }
           try {
             const spec = loadPresetSpec(join(dir, entry.name))
             // 切换值用目录名（与 resolvePresetDir 路径一致）；name 保持 spec.name 契约。
-            return [{ id: entry.name, name: spec.name, user: true }]
+            return [{
+              id: entry.name,
+              name: spec.name,
+              user: true,
+              ...(typeof spec.description === 'string' && spec.description.length > 0 ? { description: spec.description } : {}),
+            }]
           } catch {
             return []
           }

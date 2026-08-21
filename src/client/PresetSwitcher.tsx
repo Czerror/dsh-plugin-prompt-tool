@@ -164,10 +164,10 @@ export function PresetSwitcher(props: { store: PromptToolStore }): ReactNode {
           </button>
         </span>
       </div>
-      <div className={styles.presetList}>
+      <div className={styles.presetGrid}>
         {presets.length === 0 ? (
           <p className={styles.readOnly} role="status">暂无预设；点击上方「新建预设」从内置模板创建，或「导入预设」添加。</p>
-        ) : presets.map((preset) => renderRow(preset))}
+        ) : presets.map((preset) => renderCard(preset))}
       </div>
       {pickerOpen && (
         <div className={styles.modalBackdrop} onClick={() => setPickerOpen(false)}>
@@ -206,28 +206,30 @@ export function PresetSwitcher(props: { store: PromptToolStore }): ReactNode {
     </div>
   )
 
-  function renderRow(preset: { id: string; name: string }): ReactNode {
+  function renderCard(preset: { id: string; name: string; description?: string }): ReactNode {
     const active = fields.presetTemplate === preset.id
     const confirming = confirmingDelete === preset.id
     return (
-      <div key={preset.id} className={clsx(styles.presetRow, active && styles.presetRowActive)}
+      <div key={preset.id} className={clsx(styles.presetCard, active && styles.presetCardActive)}
         data-active={active ? '' : undefined}>
-        <button type="button" className={styles.presetRowMain} disabled={!fields.writePreset}
+        <button type="button" className={styles.presetCardMain} disabled={!fields.writePreset}
           title={active ? '当前预设模板' : `切换到 ${preset.name}`}
           onClick={() => store.setPresetTemplate(preset.id)}>
-          <span className={styles.presetRowName}>
-            <strong>{preset.name}</strong>
-            <code>{preset.id}</code>
-          </span>
+          <strong className={styles.presetCardName}>{preset.name}</strong>
+          <code className={styles.presetCardId}>{preset.id}</code>
+          {preset.description !== undefined && preset.description.length > 0
+            && <p className={styles.presetCardDesc}>{preset.description}</p>}
         </button>
-        <span className={styles.presetRowActions}>
-          {active && <span className={styles.presetRowBadge} data-kind="active">使用中</span>}
+        <span className={styles.presetCardFooter}>
+          {active
+            ? <span className={styles.presetRowBadge} data-kind="active">使用中</span>
+            : <span aria-hidden="true" />}
           {confirming ? (
-            <>
+            <span className={styles.presetCardActions}>
               <button type="button" className={styles.pillButton} data-danger disabled={active}
                 title="删除后可从内置模板「新建」还原" onClick={() => void deletePreset(preset.id)}>确认删除</button>
               <button type="button" className={styles.pillButton} data-variant="secondary" onClick={() => setConfirmingDelete(undefined)}>取消</button>
-            </>
+            </span>
           ) : (
             <button type="button" className={styles.pillButton} data-danger disabled={active}
               title={active ? '先切换其他预设再删除' : '删除用户目录副本（内置模板保留，可新建还原）'}

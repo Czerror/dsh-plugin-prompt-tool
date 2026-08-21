@@ -519,33 +519,43 @@
 
 /* 多目录卡片：路径 + 状态 + 计数 + 行操作。 */
 .dirCardList { display: flex; min-width: 0; flex-direction: column; gap: 8px; }
-.presetList { display: flex; min-width: 0; flex-direction: column; gap: 6px; margin-top: 2px; }
-.presetRow {
+.presetGrid {
   display: flex;
   min-width: 0;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 10px;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 2px;
+}
+.presetCard {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 210px;
+  max-width: 260px;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
   border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 10px;
+  border-radius: 12px;
   background: var(--dsw-alias-bg-layer-3);
   transition: border-color .16s ease, box-shadow .16s ease, transform .16s ease;
 }
-.presetRow:hover {
+.presetCard:hover {
   border-color: color-mix(in srgb, var(--pt-accent) 28%, var(--dsw-alias-border-l2));
   box-shadow: 0 8px 22px -16px color-mix(in srgb, var(--pt-accent) 50%, transparent);
   transform: translateY(-1px);
 }
-.presetRow[data-active] {
+.presetCard[data-active] {
   border-color: color-mix(in srgb, var(--pt-accent) 45%, var(--dsw-alias-border-l2));
   background: color-mix(in srgb, var(--pt-accent) 6%, transparent);
 }
-.presetRowMain {
+.presetCardMain {
   display: flex;
-  flex: 1;
   min-width: 0;
-  align-items: center;
-  padding: 2px 0;
+  flex: 1;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  padding: 0;
   border: 0;
   background: none;
   font: inherit;
@@ -553,36 +563,47 @@
   text-align: left;
   cursor: pointer;
 }
-.presetRowMain:disabled { cursor: default; opacity: .6; }
-.presetRowMain:focus-visible {
+.presetCardMain:disabled { cursor: default; opacity: .6; }
+.presetCardMain:focus-visible {
   outline: 2px solid var(--dsw-alias-state-business-primary);
   outline-offset: 2px;
   border-radius: 6px;
 }
-.presetRowName {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  gap: 1px;
-}
-.presetRowName strong {
+.presetCardName {
   color: var(--dsw-alias-label-primary);
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
-  line-height: 1.5;
+  line-height: 1.4;
   overflow-wrap: anywhere;
 }
-.presetRowName code {
+.presetCardId {
   color: var(--dsw-alias-label-tertiary);
   font-family: var(--ds-font-family-code, ui-monospace, monospace);
   font-size: 11px;
   line-height: 1.5;
 }
-.presetRowActions {
+.presetCardDesc {
+  display: -webkit-box;
+  margin: 0;
+  overflow: hidden;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 1.5;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.presetCardFooter {
   display: flex;
-  flex: 0 0 auto;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.presetCardActions {
+  display: flex;
   align-items: center;
   gap: 6px;
+  margin-left: auto;
 }
 .presetRowBadge {
   padding: 3px 8px;
