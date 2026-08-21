@@ -102,10 +102,16 @@ function PipelineStatusCards(props: { store: PromptToolStore }): ReactNode {
 function ModelToolCards(props: { store: PromptToolStore; scope: 'main' | 'subagent' }): ReactNode {
   const { store } = props
   const fields = store.fields
-  const providerOptions = [...store.providers]
+  const host = store.hostDefaultModel
+  // 宿主默认模型回显：插件参数未设置（空 = 继承宿主）时，下拉可见宿主当前
+  // agent-default-model 的可选项（模型目录查询失败/未公布时也能选择与回显）。
+  const providerOptions = [...new Set([...store.providers, ...(host?.provider !== undefined && host.provider.length > 0 ? [host.provider] : [])])]
   const provider = props.scope === 'main' ? fields.modelProvider : fields.subagentModelProvider
   const modelName = props.scope === 'main' ? fields.modelName : fields.subagentModelName
-  const modelOptions = [...(store.modelCatalog[provider] ?? [])]
+  const modelOptions = [...new Set([
+    ...(store.modelCatalog[provider] ?? []),
+    ...(host?.model !== undefined && host.model.length > 0 ? [host.model] : []),
+  ])]
   const maxDepthOptions = ['', 'provider-managed', '0', '1', '2', '3', '5']
   const reasoningEffortOptions = ['', 'off', 'low', 'high', 'max']
   const withCurrent = (options: string[], current: string): string[] =>
@@ -121,9 +127,13 @@ function ModelToolCards(props: { store: PromptToolStore; scope: 'main' | 'subage
   const scopeMeta = props.scope === 'main'
     ? { title: '主对话模型', idle: '未设置：继承宿主默认模型', active: '固定模型路由已设置（新会话默认模型）' }
     : { title: '子代理模型', idle: '未设置：继承主会话模型', active: '子代理固定模型路由已设置' }
+  // 主对话卡片：宿主默认模型名回显（子代理默认继承主会话，不回显宿主）。
+  const idleMeta = props.scope === 'main' && host?.model !== undefined && host.model.length > 0
+    ? `未设置：继承宿主默认（${host.model}）`
+    : scopeMeta.idle
   return (
     <>
-      <CollapsibleCard id={props.scope === 'main' ? 'pt-main-model' : 'pt-subagent-model'} title={scopeMeta.title} meta={active ? scopeMeta.active : scopeMeta.idle}>
+      <CollapsibleCard id={props.scope === 'main' ? 'pt-main-model' : 'pt-subagent-model'} title={scopeMeta.title} meta={active ? scopeMeta.active : idleMeta}>
         <div className={ui.rowGroup}>
           <div className={ui.settingRowStack}>
             <span className={ui.settingCopy}>
@@ -318,6 +328,7 @@ function ModelRouteStatus(props: { store: PromptToolStore }): ReactNode {
   const detected = store.providers.length > 0
   const catalog = store.modelCatalog
   const catalogEntries = Object.entries(catalog)
+  const hostModel = store.hostDefaultModel?.model
   return (
     <div className={ui.skillStatusRow} aria-label="模型服务商状态">
       <span className={clsx(ui.skillStatusChip, detected ? ui.skillStatusModel : ui.skillStatusOff)}>
@@ -326,7 +337,11 @@ function ModelRouteStatus(props: { store: PromptToolStore }): ReactNode {
       </span>
       <span className={clsx(ui.skillStatusChip, catalogEntries.length > 0 ? ui.skillStatusModel : ui.skillStatusOff)}>
         <i className={ui.skillStatusDot} aria-hidden="true" />
-        {catalogEntries.length > 0 ? `已检测到模型名：${catalogEntries.map(([provider, models]) => `${provider} → ${models.join('、')}`).join('；')}` : '未检测到模型名'}
+        {catalogEntries.length > 0
+          ? `已检测到模型名：${catalogEntries.map(([provider, models]) => `${provider} → ${models.join('、')}`).join('；')}`
+          : hostModel !== undefined && hostModel.length > 0
+            ? `模型名：继承宿主默认（${hostModel}）`
+            : '未检测到模型名'}
       </span>
     </div>
   )

@@ -3,7 +3,13 @@ import type { PromptConfigDraft, EngineMeta } from './prompt-tool-types.ts'
 import { SETTINGS_BRIDGE_PREFIX, type BridgeErrorPayload } from '../shared/bridge-contract.ts'
 
 export interface BridgeSettingsView { ns: string; value: unknown; base?: unknown; revision: number }
-export type BridgeResult<T> = { ok: true; value: T; providers?: string[]; modelCatalog?: Record<string, string[]>; activeSkillsDirs?: string[]; skillCatalog?: SkillCatalogEntry[]; templatePreStepCount?: number; presetParams?: Record<string, unknown> } | BridgeErrorPayload
+export type BridgeResult<T> = { ok: true; value: T; providers?: string[]; modelCatalog?: Record<string, string[]>; activeSkillsDirs?: string[]; skillCatalog?: SkillCatalogEntry[]; templatePreStepCount?: number; presetParams?: Record<string, unknown>; hostDefaultModel?: { provider?: string; model?: string } } | BridgeErrorPayload
+
+/** 宿主默认模型回显（agent-default-model；插件参数未设置 = 继承宿主）。 */
+export interface HostDefaultModel {
+  provider?: string
+  model?: string
+}
 
 export interface SkillCatalogEntry {
   folder: string

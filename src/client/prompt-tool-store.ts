@@ -15,6 +15,7 @@ import {
   type BridgeResult,
   type BridgeSettingsView,
   type Fields,
+  type HostDefaultModel,
 } from './prompt-tool-bridge.ts'
 
 /** rc8 ui-settings 共享镜像传输面：标准字段经官方 settingsScope 读写。 */
@@ -193,6 +194,7 @@ export interface PromptToolStore {
   loading: boolean
   providers: string[]
   modelCatalog: Record<string, string[]>
+  hostDefaultModel?: HostDefaultModel
   bootstrapTokensDraft: string
   /** 新技能目录路径输入（多目录卡片：输入路径添加）。 */
   skillsDirDraft: string
@@ -286,6 +288,7 @@ function bridgeViewFromScope(
 export function usePromptToolStore(api: IApiClient, settings: PromptToolSettingsTransport): PromptToolStore {
   const [providers, setProviders] = useState<string[]>([])
   const [modelCatalog, setModelCatalog] = useState<Record<string, string[]>>({})
+  const [hostDefaultModel, setHostDefaultModel] = useState<HostDefaultModel | undefined>(undefined)
   const [fields, setFields] = useState<Fields>(EMPTY_FIELDS)
   const [meta, setMeta] = useState<EngineMeta>(EMPTY_META)
   const [bootstrapTokensDraft, setBootstrapTokensDraft] = useState(DEFAULT_BOOTSTRAP_DISPLAY)
@@ -318,6 +321,7 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
     setTemplatePreStepCount(res.ok && typeof res.templatePreStepCount === 'number' ? res.templatePreStepCount : 0)
     setProviders(res.ok ? res.providers ?? [] : [])
     setModelCatalog(res.ok ? res.modelCatalog ?? {} : {})
+    setHostDefaultModel(res.ok ? res.hostDefaultModel : undefined)
     const next = fieldsFromView(res)
     // 引擎参数按预设存储（激活预设 preset.yml）：settings 不再承载，
     // 参数键由 /describe 的 presetParams 合并（类型匹配键覆盖，其余保持）。
@@ -691,6 +695,7 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
     loading,
     providers,
     modelCatalog,
+    hostDefaultModel,
     bootstrapTokensDraft,
     skillsDirDraft,
     templatePreStepCount,

@@ -4,7 +4,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import { basename, dirname, join } from 'node:path'
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml'
-import type { SettingsDescriptor, SettingsNamespace, SettingsPathOp } from '@deepseek-ai/dsh-settings'
+import { settingsNamespace, type SettingsDescriptor, type SettingsNamespace, type SettingsPathOp } from '@deepseek-ai/dsh-settings'
 import { PARAM_KEYS } from '../config.ts'
 import { listAdvertisedModels, peekModelCatalog, type ModelDetection } from './models.ts'
 import type { SkillCatalogEntry } from '../config.ts'
@@ -200,6 +200,23 @@ export function registerSettingsBridge(
             }
             const detection = getModelsState()
             const skillsState = getSkillsState()
+            // 宿主默认模型（agent-default-model settings：主对话新会话默认）：
+            // 插件参数未设置（空 = 继承宿主）时回显给客户端（模型名下拉候选/状态行）。
+            let hostDefaultModel: { provider?: string; model?: string } | undefined
+            try {
+              const selection = sctx.settings.get(settingsNamespace('agent-default-model')) as
+                { provider?: unknown; model?: unknown } | undefined
+              if (selection !== null && typeof selection === 'object') {
+                const record = selection as Record<string, unknown>
+                hostDefaultModel = {
+                  ...(typeof record.provider === 'string' && record.provider.length > 0 ? { provider: record.provider } : {}),
+                  ...(typeof record.model === 'string' && record.model.length > 0 ? { model: record.model } : {}),
+                }
+                if (Object.keys(hostDefaultModel).length === 0) hostDefaultModel = undefined
+              }
+            } catch {
+              // 宿主未装配 agent-default-model 时忽略。
+            }
             // 模型目录移出关键路径：/describe 只读缓存（未命中返回空），
             // 查询由独立 /models 端点触发（客户端惰性加载，不阻塞工作台）。
             const modelCatalog = peekModelCatalog()
@@ -232,6 +249,7 @@ export function registerSettingsBridge(
               ok: true,
               value: descriptor,
               presetParams,
+              hostDefaultModel,
               templatePreStepCount,
               modelsAvailable: detection.available,
               providers: detection.providers,
