@@ -8,7 +8,6 @@ import {
   usePromptToolStore,
 } from './prompt-tool-store.ts'
 import type { SkillCatalogEntry } from './prompt-tool-bridge.ts'
-import { ContentAssetCard } from './ContentAssetCard.tsx'
 import { PromptConfigList } from './PromptConfigList.tsx'
 import { PromptConfigsEditor } from './PromptConfigsEditor.tsx'
 import type { PromptToolWorkspaceController } from './workspace-controller.ts'
@@ -353,9 +352,9 @@ function FeatureSettings(props: { store: PromptToolStore }): ReactNode {
     <section className={ui.section} aria-label="主会话与全局">
       <ModelRouteStatus store={store} />
       <ModelToolCards store={store} scope="main" />
-      <ContentAssetCard store={store} />
       <PipelineStatusCards store={store} />
       <PromptConfigsEditor
+        store={store}
         meta={store.meta}
         configs={fields.promptConfigs}
         savedConfigs={store.savedConfigs}
