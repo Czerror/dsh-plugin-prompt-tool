@@ -529,8 +529,13 @@
   border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 10px;
   background: var(--dsw-alias-bg-layer-3);
+  transition: border-color .16s ease, box-shadow .16s ease, transform .16s ease;
 }
-.presetRow:hover { background: var(--dsw-alias-interactive-bg-hover); }
+.presetRow:hover {
+  border-color: color-mix(in srgb, var(--pt-accent) 28%, var(--dsw-alias-border-l2));
+  box-shadow: 0 8px 22px -16px color-mix(in srgb, var(--pt-accent) 50%, transparent);
+  transform: translateY(-1px);
+}
 .presetRow[data-active] {
   border-color: color-mix(in srgb, var(--pt-accent) 45%, var(--dsw-alias-border-l2));
   background: color-mix(in srgb, var(--pt-accent) 6%, transparent);
