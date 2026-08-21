@@ -262,14 +262,34 @@ function OptionField(props: { label: string; hint?: string; value: string | unde
 }
 
 /** 单条提示词配置表单：按注入层级的能力矩阵过滤字段，只显示本层生效的参数。 */
-export function PromptConfigForm(props: { meta: EngineMeta; config: PromptConfigDraft; onPatch: (patch: Partial<PromptConfigDraft>) => void }): ReactNode {
-  const { meta, config, onPatch } = props
+export function PromptConfigForm(props: {
+  meta: EngineMeta
+  config: PromptConfigDraft
+  onPatch: (patch: Partial<PromptConfigDraft>) => void
+  enabled: boolean
+  onToggleEnabled: (enabled: boolean) => void
+  actions: PromptConfigCardActions
+}): ReactNode {
+  const { meta, config, onPatch, enabled, onToggleEnabled, actions } = props
   const policy = fieldPolicyFor(meta, config.layer)
   const strategy = config.strategy ?? 'static'
   const placeholder = strategy === 'placeholder' && policy.placeholder
   const fillOptions = ['', ...meta.fills]
   return (
     <div className={styles.configForm}>
+      <div className={styles.configFormToolbar}>
+        <label className={styles.configEnable} title={enabled ? '点击关闭' : '点击启用'}>
+          <input type="checkbox" checked={enabled} aria-label={`启用 ${config.name ?? config.id}`} onChange={(e) => onToggleEnabled(e.target.checked)} />
+          <span className={styles.switch} aria-hidden="true"><i /></span>
+          <span className={styles.configFieldLabel}>启用</span>
+        </label>
+        <div className={styles.configActions}>
+          <button type="button" className={styles.pillButton} disabled={!actions.canMoveUp} onClick={actions.onMoveUp}>上移</button>
+          <button type="button" className={styles.pillButton} disabled={!actions.canMoveDown} onClick={actions.onMoveDown}>下移</button>
+          <button type="button" className={styles.pillButton} onClick={actions.onDuplicate}>复制</button>
+          <button type="button" className={styles.pillButton} data-danger onClick={actions.onDelete}>删除</button>
+        </div>
+      </div>
       <div className={styles.configGrid}>
         <Field label="id（唯一，必填）">
           <input className={styles.configInput} value={config.id} spellCheck={false} onChange={(e) => onPatch({ id: e.target.value })} />
@@ -357,18 +377,8 @@ export function PromptConfigCard(props: {
           </span>
           <IconChevronDownOutline14 className={clsx(styles.chevron, props.expanded && styles.chevronOpen)} />
         </button>
-        <label className={styles.configEnable} title={enabled ? '点击关闭' : '点击启用'}>
-          <input type="checkbox" checked={enabled} aria-label={`启用 ${config.name ?? config.id}`} onChange={(e) => props.onToggleEnabled(e.target.checked)} />
-          <span className={styles.switch} aria-hidden="true"><i /></span>
-        </label>
-        <div className={styles.configActions}>
-          <button type="button" className={styles.pillButton} disabled={!actions.canMoveUp} onClick={actions.onMoveUp}>上移</button>
-          <button type="button" className={styles.pillButton} disabled={!actions.canMoveDown} onClick={actions.onMoveDown}>下移</button>
-          <button type="button" className={styles.pillButton} onClick={actions.onDuplicate}>复制</button>
-          <button type="button" className={styles.pillButton} data-danger onClick={actions.onDelete}>删除</button>
-        </div>
       </header>
-      {props.expanded && <PromptConfigForm meta={meta} config={config} onPatch={props.onPatch} />}
+      {props.expanded && <PromptConfigForm meta={meta} config={config} onPatch={props.onPatch} enabled={enabled} onToggleEnabled={props.onToggleEnabled} actions={actions} />}
     </article>
   )
 }

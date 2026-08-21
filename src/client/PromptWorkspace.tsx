@@ -90,47 +90,58 @@ function EntrySwitches(props: { store: PromptToolStore }): ReactNode {
   return (
     <section className={ui.section} aria-labelledby="pt-entry-heading">
       <div className={ui.sectionHeading}><div><h2 id="pt-entry-heading">消息批层入口开关</h2><p>以下开关全部作用于 agent/pre-step 消息批；预设总开关、PTC、子代理路由等已按各自层级归位。</p></div></div>
-      <div className={ui.rowGroup}>
-        <ToggleRow id="pt-inject-prompt" label="注入 preset.md（锚定层）" hint="prompt-injector 提示词配置：消息插入决策消息开头，每会话一次。"
-          checked={fields.injectPrompt} disabled={!fields.writePreset} onChange={(value) => setSwitch('injectPrompt', value)} />
-        <ToggleRow id="pt-anchor-first" label="追加任务引导" hint="near-anchor / router-guide 提示词配置：在首条真实用户消息之后追加任务引导。"
-          checked={fields.firstTurnAnchor} disabled={!fields.writePreset} onChange={(value) => setSwitch('firstTurnAnchor', value)} />
-        <ToggleRow id="pt-anchor-custom" label="使用自定义引导（首句）" hint="near-anchor 的 params.useCustom；关闭时按任务自动选择 we / let 引导。"
-          checked={fields.firstTurnCustom} disabled={!fields.writePreset || !fields.firstTurnAnchor} onChange={(value) => setSwitch('firstTurnCustom', value)} />
-        <ToggleRow id="pt-guide-custom" label="使用自定义引导（每轮）" hint="router-guide 的 params.useCustom；关闭时按任务自动选择。"
-          checked={fields.guideCustom} disabled={!fields.writePreset || !fields.firstTurnAnchor} onChange={(value) => setSwitch('guideCustom', value)} />
-      </div>
+      <CollapsibleCard id="pt-entry-switches" title="入口开关"
+        meta={`${[fields.injectPrompt, fields.firstTurnAnchor, fields.firstTurnCustom, fields.guideCustom].filter(Boolean).length}/4 已启用`}
+        defaultOpen>
+        <div className={ui.rowGroup}>
+          <ToggleRow id="pt-inject-prompt" label="注入 preset.md（锚定层）" hint="prompt-injector 提示词配置：消息插入决策消息开头，每会话一次。"
+            checked={fields.injectPrompt} disabled={!fields.writePreset} onChange={(value) => setSwitch('injectPrompt', value)} />
+          <ToggleRow id="pt-anchor-first" label="追加任务引导" hint="near-anchor / router-guide 提示词配置：在首条真实用户消息之后追加任务引导。"
+            checked={fields.firstTurnAnchor} disabled={!fields.writePreset} onChange={(value) => setSwitch('firstTurnAnchor', value)} />
+          <ToggleRow id="pt-anchor-custom" label="使用自定义引导（首句）" hint="near-anchor 的 params.useCustom；关闭时按任务自动选择 we / let 引导。"
+            checked={fields.firstTurnCustom} disabled={!fields.writePreset || !fields.firstTurnAnchor} onChange={(value) => setSwitch('firstTurnCustom', value)} />
+          <ToggleRow id="pt-guide-custom" label="使用自定义引导（每轮）" hint="router-guide 的 params.useCustom；关闭时按任务自动选择。"
+            checked={fields.guideCustom} disabled={!fields.writePreset || !fields.firstTurnAnchor} onChange={(value) => setSwitch('guideCustom', value)} />
+        </div>
+      </CollapsibleCard>
 
-      <div className={clsx(ui.rowGroup, (!fields.writePreset || !fields.firstTurnAnchor || !fields.firstTurnCustom) && ui.rowDisabled)}>
-        <label className={ui.textBlock}>
-          <span className={ui.settingCopy}><strong>自定义引导文本（首句）</strong><small>仅在「使用自定义引导（首句）」开启时生效。</small></span>
-          <textarea
-            className={ui.firstTurnInput}
-            value={fields.firstTurnText}
-            disabled={!fields.writePreset || !fields.firstTurnAnchor || !fields.firstTurnCustom}
-            onChange={(event) => { autoResizeTextarea(event); store.patch({ firstTurnText: event.target.value }) }}
-            onBlur={() => void store.persistParamOverrides()}
-            spellCheck={false}
-          />
-        </label>
-      </div>
-      <div className={clsx(ui.rowGroup, (!fields.writePreset || !fields.firstTurnAnchor || !fields.guideCustom) && ui.rowDisabled)}>
-        <label className={ui.textBlock}>
-          <span className={ui.settingCopy}><strong>自定义引导文本（每轮）</strong><small>仅在「使用自定义引导（每轮）」开启时生效；留空则不注入。</small></span>
-          <textarea
-            className={ui.firstTurnInput}
-            value={fields.guideText}
-            disabled={!fields.writePreset || !fields.firstTurnAnchor || !fields.guideCustom}
-            onChange={(event) => { autoResizeTextarea(event); store.patch({ guideText: event.target.value }) }}
-            onBlur={() => void store.persistParamOverrides()}
-            spellCheck={false}
-          />
-        </label>
-      </div>
-      <SettingInputRow id="pt-first-turn-word" label="锚定词" hint="prompt-injector 的 custom-fallback 锚定词：晋升后首个 reasoning 命中该词即注入 preset.md；直接输入任意自定义文本；留空 = 模板默认 we。失焦保存。"
-        value={fields.firstTurnWord} placeholder="we（默认）" disabled={!fields.writePreset}
-        onInput={(value) => store.patch({ firstTurnWord: value })}
-        onCommit={() => void store.persistParamOverrides()} />
+      <CollapsibleCard id="pt-entry-guide-texts" title="自定义引导文本"
+        meta={`首句${fields.firstTurnText.trim().length > 0 ? '已填' : '留空'} · 每轮${fields.guideText.trim().length > 0 ? '已填' : '留空'}`}>
+        <div className={clsx(ui.rowGroup, (!fields.writePreset || !fields.firstTurnAnchor || !fields.firstTurnCustom) && ui.rowDisabled)}>
+          <label className={ui.textBlock}>
+            <span className={ui.settingCopy}><strong>自定义引导文本（首句）</strong><small>仅在「使用自定义引导（首句）」开启时生效。</small></span>
+            <textarea
+              className={ui.firstTurnInput}
+              value={fields.firstTurnText}
+              disabled={!fields.writePreset || !fields.firstTurnAnchor || !fields.firstTurnCustom}
+              onChange={(event) => { autoResizeTextarea(event); store.patch({ firstTurnText: event.target.value }) }}
+              onBlur={() => void store.persistParamOverrides()}
+              spellCheck={false}
+            />
+          </label>
+        </div>
+        <div className={clsx(ui.rowGroup, (!fields.writePreset || !fields.firstTurnAnchor || !fields.guideCustom) && ui.rowDisabled)}>
+          <label className={ui.textBlock}>
+            <span className={ui.settingCopy}><strong>自定义引导文本（每轮）</strong><small>仅在「使用自定义引导（每轮）」开启时生效；留空则不注入。</small></span>
+            <textarea
+              className={ui.firstTurnInput}
+              value={fields.guideText}
+              disabled={!fields.writePreset || !fields.firstTurnAnchor || !fields.guideCustom}
+              onChange={(event) => { autoResizeTextarea(event); store.patch({ guideText: event.target.value }) }}
+              onBlur={() => void store.persistParamOverrides()}
+              spellCheck={false}
+            />
+          </label>
+        </div>
+      </CollapsibleCard>
+
+      <CollapsibleCard id="pt-entry-anchor-word" title="注入锚定词"
+        meta={fields.firstTurnWord.trim().length > 0 ? `当前：${fields.firstTurnWord}` : '未设置：默认 we'}>
+        <SettingInputRow id="pt-first-turn-word" label="锚定词" hint="prompt-injector 的 custom-fallback 锚定词：晋升后首个 reasoning 命中该词即注入 preset.md；直接输入任意自定义文本；留空 = 模板默认 we。失焦保存。"
+          value={fields.firstTurnWord} placeholder="we（默认）" disabled={!fields.writePreset}
+          onInput={(value) => store.patch({ firstTurnWord: value })}
+          onCommit={() => void store.persistParamOverrides()} />
+      </CollapsibleCard>
     </section>
   )
 }
@@ -140,7 +151,12 @@ function AgentRequestSwitches(props: { store: PromptToolStore }): ReactNode {
   const { store } = props
   return (
     <section className={ui.section} aria-label="调用配置层开关">
-      <BootstrapTokensRow store={store} />
+      <div className={ui.sectionHeading}><div><h2>调用配置层开关</h2><p>agent-request 调用参数：首轮输出封顶，晋升后自动剥离恢复模型默认上限。</p></div></div>
+      <div className={ui.configCard}>
+        <div className={ui.configBody}>
+          <BootstrapTokensRow store={store} />
+        </div>
+      </div>
     </section>
   )
 }
@@ -383,7 +399,7 @@ function ModelRouteStatus(props: { store: PromptToolStore }): ReactNode {
 function SubagentSettings(props: { store: PromptToolStore }): ReactNode {
   const { store } = props
   return (
-    <section className={ui.section} aria-label="子代理设置">
+    <section className={ui.section} aria-label="子代理">
       <ModelRouteStatus store={store} />
       <ModelToolCards store={store} scope="subagent" />
     </section>
@@ -396,9 +412,14 @@ function ToolPipelineSwitches(props: { store: PromptToolStore }): ReactNode {
   const fields = store.fields
   return (
     <section className={ui.section} aria-label="工具管线层开关">
-      <div className={ui.rowGroup}>
-        <ToggleRow id="pt-use-ptc" label="使用 PTC 模式" hint="晋升后把 wire 切换为 Code Mode（单一 run_code），完整插件工具通过生成 SDK 调用；关闭时恢复原生完整工具目录。"
-          checked={fields.usePtcMode} disabled={!fields.writePreset} onChange={() => store.toggle('usePtcMode')} />
+      <div className={ui.sectionHeading}><div><h2>工具管线层开关</h2><p>tools/* 管线参数：PTC（Code Mode）工具目录切换。</p></div></div>
+      <div className={ui.configCard}>
+        <div className={ui.configBody}>
+          <div className={ui.rowGroup}>
+            <ToggleRow id="pt-use-ptc" label="使用 PTC 模式" hint="晋升后把 wire 切换为 Code Mode（单一 run_code），完整插件工具通过生成 SDK 调用；关闭时恢复原生完整工具目录。"
+              checked={fields.usePtcMode} disabled={!fields.writePreset} onChange={() => store.toggle('usePtcMode')} />
+          </div>
+        </div>
       </div>
     </section>
   )
@@ -409,7 +430,7 @@ function FeatureSettings(props: { store: PromptToolStore }): ReactNode {
   const { store } = props
   const fields = store.fields
   return (
-    <section className={ui.section} aria-label="主对话与全局">
+    <section className={ui.section} aria-label="主会话与全局">
       <ModelRouteStatus store={store} />
       <ModelToolCards store={store} scope="main" />
       <PromptConfigsEditor
@@ -433,7 +454,7 @@ function FileEditor(props: { store: PromptToolStore; scope: 'preset' | 'agents' 
   const fileRef = useRef<HTMLInputElement>(null)
   const title = isPreset ? 'Preset 预设' : 'AGENTS 设置'
   const desc = isPreset
-    ? 'preset.md 内容存于生成目录（.agent-presets/<模板>/preset.md），由 prompt-injector 提示词配置注入；直接编辑、失焦自动保存，或通过「导入」写入；不再内嵌在 settings.yaml。生成总开关在「主对话与全局」。'
+    ? 'preset.md 内容存于生成目录（.agent-presets/<模板>/preset.md），由 prompt-injector 提示词配置注入；直接编辑、失焦自动保存，或通过「导入」写入；不再内嵌在 settings.yaml。生成总开关在「主会话与全局」。'
     : 'AGENTS.md 内容存于生成目录 agents.md；直接编辑、失焦自动保存，或通过「导入」写入；注入开关在「消息批层入口」。'
   const pickFile = (file: File | undefined): void => {
     if (file === undefined) return
@@ -459,9 +480,13 @@ function FileEditor(props: { store: PromptToolStore; scope: 'preset' | 'agents' 
         </div>
       </div>
       {!isPreset && (
-        <div className={ui.rowGroup}>
-          <ToggleRow id="pt-inject-agents" label="注入 AGENTS.md" hint="经 pre-step 的 instruction-hint 提示词配置注入：消息追加在决策消息末尾，每会话一次。"
-            checked={fields.injectAgentsPrompt} disabled={!fields.writePreset} onChange={() => store.toggle('injectAgentsPrompt')} />
+        <div className={ui.configCard}>
+          <div className={ui.configBody}>
+            <div className={ui.rowGroup}>
+              <ToggleRow id="pt-inject-agents" label="注入 AGENTS.md" hint="经 pre-step 的 instruction-hint 提示词配置注入：消息追加在决策消息末尾，每会话一次。"
+                checked={fields.injectAgentsPrompt} disabled={!fields.writePreset} onChange={() => store.toggle('injectAgentsPrompt')} />
+            </div>
+          </div>
         </div>
       )}
       <div className={ui.rowGroup}>
@@ -536,7 +561,9 @@ function SubagentPage(props: { store: PromptToolStore }): ReactNode {
   return (
     <>
       <SubagentSettings store={store} />
-      <ConfigListWithTemplates store={store} scope="subagent" />
+      <div className={ui.subagentConfigs}>
+        <ConfigListWithTemplates store={store} scope="subagent" />
+      </div>
     </>
   )
 }
@@ -766,7 +793,7 @@ function SkillsSettings(props: { store: PromptToolStore; api: IApiClient }): Rea
   }
 
   return (
-    <section className={ui.section} aria-label="Skills 设置">
+    <section className={ui.section} aria-label="技能设置">
       <div className={ui.sectionHeading}>
         <div className={ui.sectionActions}>
           <button type="button" className={ui.pillButton} onClick={() => void store.load()}>刷新技能列表</button>
@@ -806,7 +833,7 @@ function SkillsSettings(props: { store: PromptToolStore; api: IApiClient }): Rea
             />
             {selected.size > 0 && <span className={ui.selectionCount}>已选 {selected.size}</span>}
             {selectableSkills.length > 0 && (
-              <button type="button" className={ui.pillButton} onClick={toggleSelectAll}>
+              <button type="button" className={ui.pillButton} data-active={allSelected ? '' : undefined} onClick={toggleSelectAll}>
                 {allSelected ? '取消全选' : '全选'}
               </button>
             )}
@@ -832,96 +859,89 @@ function SkillsSettings(props: { store: PromptToolStore; api: IApiClient }): Rea
         </>
       )}
 
-      <details className={ui.disclosure}>
-        <summary><span>目录与来源</span><small>{fields.activeSkillsDirs.length} 个目录 · 添加 / 移除引用</small></summary>
-        <div className={ui.disclosureBody}>
-          <div className={ui.dirAddBar}>
-            <button type="button" className={ui.primaryPill} disabled={pickingDir} onClick={() => void pickSkillsDir()}>
-              {pickingDir && <span className={ui.spinner} aria-hidden="true" />}
-              {pickingDir ? '选择中…' : '从文件夹选择器添加'}
-            </button>
-            <div className={ui.dirAddInput}>
-              <input
-                className={ui.directoryInput}
-                aria-label="按路径添加技能目录"
-                value={store.skillsDirDraft}
-                placeholder="或输入目录路径后添加"
-                spellCheck={false}
-                onChange={(event) => store.setSkillsDirDraft(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter' && store.skillsDirDraft.trim().length > 0) {
-                    store.addSkillsDir(store.skillsDirDraft)
-                    store.setSkillsDirDraft('')
-                  }
-                }}
-              />
-              <button
-                type="button"
-                className={ui.pillButton}
-                disabled={store.savingSkillsDir || store.skillsDirDraft.trim().length === 0}
-                onClick={() => {
+      <CollapsibleCard id="pt-skills-dirs" title="目录与来源"
+        meta={`${fields.activeSkillsDirs.length} 个目录 · 添加 / 移除引用`}>
+        <div className={ui.dirAddBar}>
+          <button type="button" className={ui.primaryPill} disabled={pickingDir} onClick={() => void pickSkillsDir()}>
+            {pickingDir && <span className={ui.spinner} aria-hidden="true" />}
+            {pickingDir ? '选择中…' : '从文件夹选择器添加'}
+          </button>
+          <div className={ui.dirAddInput}>
+            <input
+              className={ui.directoryInput}
+              aria-label="按路径添加技能目录"
+              value={store.skillsDirDraft}
+              placeholder="或输入目录路径后添加"
+              spellCheck={false}
+              onChange={(event) => store.setSkillsDirDraft(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' && store.skillsDirDraft.trim().length > 0) {
                   store.addSkillsDir(store.skillsDirDraft)
                   store.setSkillsDirDraft('')
-                }}
-              >
-                {store.savingSkillsDir && <span className={ui.spinner} aria-hidden="true" />}
-                添加
-              </button>
-            </div>
+                }
+              }}
+            />
+            <button
+              type="button"
+              className={ui.pillButton}
+              disabled={store.savingSkillsDir || store.skillsDirDraft.trim().length === 0}
+              onClick={() => {
+                store.addSkillsDir(store.skillsDirDraft)
+                store.setSkillsDirDraft('')
+              }}
+            >
+              {store.savingSkillsDir && <span className={ui.spinner} aria-hidden="true" />}
+              添加
+            </button>
           </div>
-          {fields.activeSkillsDirs.length === 0 ? (
-            <p className={ui.readOnly} role="status">技能目录列表为空。</p>
-          ) : (
-            <div className={ui.dirCardList}>
-              {fields.activeSkillsDirs.map((dir, index) => {
-                const exists = fields.skillsDirExists[dir] === true
-                const count = dirSkillCount(dir)
-                const isDefault = isDefaultDir(dir)
-                return (
-                  <div key={dir} className={ui.dirCard} data-invalid={!exists ? '' : undefined}>
-                    <span className={ui.skillRankBadge} title={`第 ${index + 1} 个目录`}>{index + 1}</span>
-                    <div className={ui.dirCardBody}>
-                      <span className={ui.dirCardTitle}>
-                        <code className={ui.dirPath} title={dir}>{dir}</code>
-                        {isDefault && <span className={ui.duplicateBadge} title="未配置自定义目录时使用的 profile skills 副本">默认副本</span>}
-                      </span>
-                      <span className={ui.dirCardMeta}>
-                        {exists
-                          ? (count > 0 ? `${count} 个技能` : '空目录')
-                          : '目录不存在'}
-                        {!exists && ' · 可移除后重新添加'}
-                      </span>
-                    </div>
-                    <div className={ui.dirCardActions}>
-                      <button type="button" className={ui.pillButton} onClick={() => void store.openSkillsDir(dir)}>打开</button>
-                      <button type="button" className={ui.pillButton} onClick={() => void store.load()}>重扫</button>
-                      {!isDefault && (removingDir === dir ? (
-                        <>
-                          <button type="button" className={ui.pillButton} data-danger onClick={() => { store.removeSkillsDir(dir); setRemovingDir(undefined) }}>确认移除</button>
-                          <button type="button" className={ui.pillButton} data-variant="secondary" onClick={() => setRemovingDir(undefined)}>取消</button>
-                        </>
-                      ) : (
-                        <button type="button" className={ui.pillButton} onClick={() => setRemovingDir(dir)}>移除</button>
-                      ))}
-                    </div>
+        </div>
+        {fields.activeSkillsDirs.length === 0 ? (
+          <p className={ui.readOnly} role="status">技能目录列表为空。</p>
+        ) : (
+          <div className={ui.dirCardList}>
+            {fields.activeSkillsDirs.map((dir, index) => {
+              const exists = fields.skillsDirExists[dir] === true
+              const count = dirSkillCount(dir)
+              const isDefault = isDefaultDir(dir)
+              return (
+                <div key={dir} className={ui.dirCard} data-invalid={!exists ? '' : undefined}>
+                  <span className={ui.skillRankBadge} title={`第 ${index + 1} 个目录`}>{index + 1}</span>
+                  <div className={ui.dirCardBody}>
+                    <span className={ui.dirCardTitle}>
+                      <code className={ui.dirPath} title={dir}>{dir}</code>
+                      {isDefault && <span className={ui.duplicateBadge} title="未配置自定义目录时使用的 profile skills 副本">默认副本</span>}
+                    </span>
+                    <span className={ui.dirCardMeta}>
+                      {exists
+                        ? (count > 0 ? `${count} 个技能` : '空目录')
+                        : '目录不存在'}
+                      {!exists && ' · 可移除后重新添加'}
+                    </span>
                   </div>
-                )
-              })}
-            </div>
-          )}
-          <p className={ui.readOnly}>目录顺序即添加顺序；同名技能全部保留并标注「同名」，模型注册只取首个目录。移除目录只删除引用，不删除原文件。</p>
-        </div>
-      </details>
-
-      <details className={ui.disclosure}>
-        <summary><span>高级</span><small>技能排序基数</small></summary>
-        <div className={ui.disclosureBody}>
-          <SettingInputRow id="pt-skill-rank-base" label="技能排序基数" hint="每个技能实际 rank = 基数 + 拖拽序号；默认 250。数值过小会让本项目技能抢占其他插件技能的位置，但不会影响任何提示词消息注入。"
-            type="number" value={String(fields.skillRankBase)}
-            onInput={(value) => store.patch({ skillRankBase: Number(value) || 0 })}
-            onCommit={store.persistSwitches} />
-        </div>
-      </details>
+                  <div className={ui.dirCardActions}>
+                    <button type="button" className={ui.pillButton} onClick={() => void store.openSkillsDir(dir)}>打开</button>
+                    <button type="button" className={ui.pillButton} onClick={() => void store.load()}>重扫</button>
+                    {!isDefault && (removingDir === dir ? (
+                      <>
+                        <button type="button" className={ui.pillButton} data-danger onClick={() => { store.removeSkillsDir(dir); setRemovingDir(undefined) }}>确认移除</button>
+                        <button type="button" className={ui.pillButton} data-variant="secondary" onClick={() => setRemovingDir(undefined)}>取消</button>
+                      </>
+                    ) : (
+                      <button type="button" className={ui.pillButton} onClick={() => setRemovingDir(dir)}>移除</button>
+                    ))}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+        <p className={ui.readOnly}>目录顺序即添加顺序；同名技能全部保留并标注「同名」，模型注册只取首个目录。移除目录只删除引用，不删除原文件。</p>
+        <div className={ui.cardDivider} />
+        <SettingInputRow id="pt-skill-rank-base" label="技能排序基数" hint="每个技能实际 rank = 基数 + 拖拽序号；默认 250。数值过小会让本项目技能抢占其他插件技能的位置，但不会影响任何提示词消息注入。"
+          type="number" value={String(fields.skillRankBase)}
+          onInput={(value) => store.patch({ skillRankBase: Number(value) || 0 })}
+          onCommit={store.persistSwitches} />
+      </CollapsibleCard>
 
       {dirty && <p className={ui.readOnly} role="status">Skills 开关与目录修改立即保存；如上方按钮仍在写入，请稍候。</p>}
     </section>
@@ -935,7 +955,7 @@ export interface PromptWorkspaceProps {
   onClose: () => void
 }
 
-/** 顶层页面：六层折叠为「注入层级」，内部用 layerPage 切换。 */
+/** 顶层页面：六层折叠为「注入层」，内部用 layerPage 切换。 */
 type WorkspacePage = 'layers' | 'subagent' | 'skills' | 'features' | 'presets'
 type EntryPage = 'switches' | 'preset' | 'agents'
 
@@ -977,14 +997,14 @@ const FALLBACK_LAYER_LABELS: Record<string, { title: string; detail: string }> =
 }
 
 const TOP_PAGES: Array<{ id: WorkspacePage; label: string }> = [
-  { id: 'layers', label: '注入层级' },
-  { id: 'subagent', label: '子代理设置' },
-  { id: 'skills', label: 'Skills 设置' },
-  { id: 'features', label: '主对话' },
-  { id: 'presets', label: '预设和配置' },
+  { id: 'features', label: '主会话' },
+  { id: 'subagent', label: '子代理' },
+  { id: 'layers', label: '注入层' },
+  { id: 'skills', label: '技能设置' },
+  { id: 'presets', label: '预设配置' },
 ]
 
-/** 侧边栏独立工作台：顶层 5 页 +「注入层级」内部六层子导航。 */
+/** 侧边栏独立工作台：顶层 5 页 +「注入层」内部六层子导航。 */
 export function PromptWorkspace(props: PromptWorkspaceProps): ReactNode {
   const store = usePromptToolStore(props.api, props.settings)
   const layers = store.meta.layers.length > 0 ? store.meta.layers : FALLBACK_LAYERS
@@ -1011,22 +1031,22 @@ export function PromptWorkspace(props: PromptWorkspaceProps): ReactNode {
     : page === 'features'
       ? '全局'
       : page === 'presets'
-        ? '预设与配置'
+        ? '预设配置'
         : '子代理'
   const layerLabel = page === 'layers'
     ? (store.meta.layerLabels[layerPage] ?? FALLBACK_LAYER_LABELS[layerPage])
     : undefined
-  const pageTitle = page === 'layers' ? (layerLabel?.title ?? '注入层级')
-    : page === 'skills' ? 'Skills 设置'
-      : page === 'features' ? '主对话'
-        : page === 'presets' ? '预设和配置'
-          : '子代理设置'
+  const pageTitle = page === 'layers' ? (layerLabel?.title ?? '注入层')
+    : page === 'skills' ? '技能设置'
+      : page === 'features' ? '主会话'
+        : page === 'presets' ? '预设配置'
+          : '子代理'
   const pageDetail = page === 'layers'
     ? (layerLabel?.detail ?? '')
     : page === 'skills'
     ? '按 skills 目录注册的可开关技能；目录与逐技能开关立即生效。'
     : page === 'features'
-      ? '主对话参数（模型设置、工具与深度）与提示词配置模块列表。'
+      ? '主会话参数（模型设置、工具与深度）与提示词配置模块列表。'
       : page === 'presets'
         ? '统一管理预设模板（切换/导入）与提示词配置（六层列表/模板插入/配置目录）。'
         : '子代理作用域参数（模型/人设/工具集/深度）与子代理提示词配置（audience 非仅主会话）。'
@@ -1096,7 +1116,13 @@ export function PromptWorkspace(props: PromptWorkspaceProps): ReactNode {
                     <>
                       {layerPage === 'agent-request' && <AgentRequestSwitches store={store} />}
                       {layerPage === 'tool-pipeline' && <ToolPipelineSwitches store={store} />}
-                      <ConfigListWithTemplates store={store} layer={layerPage} />
+                      {layerPage === 'agent-request' || layerPage === 'tool-pipeline' ? (
+                        <div className={ui.configsStack}>
+                          <ConfigListWithTemplates store={store} layer={layerPage} />
+                        </div>
+                      ) : (
+                        <ConfigListWithTemplates store={store} layer={layerPage} />
+                      )}
                     </>
                   )}
                 </>

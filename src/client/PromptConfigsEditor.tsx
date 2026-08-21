@@ -31,12 +31,6 @@ export function PromptConfigsEditor(props: PromptConfigsEditorProps): ReactNode 
 
   return (
     <section className={styles.page} aria-label="提示词配置">
-      <div className={styles.sectionHeading}>
-        <div><h2>提示词配置</h2>
-        <p>统一管理六个注入层级的提示词配置：内容、层级与位置全部自定义。保存前自动做引擎权威校验；同名 id 后写入者覆盖，新 id 追加。</p>
-        </div>
-      </div>
-
       <PromptConfigList
         meta={props.meta}
         configs={props.configs}
@@ -51,7 +45,7 @@ export function PromptConfigsEditor(props: PromptConfigsEditorProps): ReactNode 
         <TemplatePicker templates={templatePicker.templates} onPick={templatePicker.pickTemplate} onClose={templatePicker.closePicker} />
       )}
 
-      <p className={styles.settingsNote}>提示词配置写入 <code>settings.promptConfigs</code>；外部提示词配置可经「预设和配置 → 导入预设」引入。</p>
+      <p className={styles.settingsNote}>提示词配置写入 <code>settings.promptConfigs</code>；外部提示词配置可经「预设配置 → 导入预设」引入。</p>
     </section>
   )
 }

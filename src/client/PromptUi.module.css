@@ -19,7 +19,6 @@
   box-sizing: border-box;
   display: flex;
   width: 100%;
-  max-width: 720px;
   min-width: 0;
   flex-direction: column;
   gap: 28px;
@@ -104,6 +103,10 @@
   animation: pt-rise .32s cubic-bezier(.22, 1, .36, 1) both;
 }
 
+/* 子代理页 / 注入层开关页：上方卡片区与下方模块列表之间的间距（与 section gap 一致）。 */
+.subagentConfigs,
+.configsStack { margin-top: 12px; }
+
 .sectionHeading {
   display: flex;
   min-width: 0;
@@ -111,6 +114,10 @@
   justify-content: space-between;
   gap: 18px;
   flex-wrap: wrap;
+  padding: 10px 14px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 12px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--pt-accent) 5%, transparent), transparent 60%), var(--dsw-alias-bg-layer-3);
 }
 
 .sectionHeading > div { min-width: 0; flex: 1; }
@@ -227,7 +234,7 @@
   overflow: hidden;
   border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 14px;
-  background: var(--dsw-alias-bg-base);
+  background: var(--dsw-alias-bg-layer-3);
   box-shadow: 0 14px 44px rgba(0, 0, 0, 0.32);
 }
 
@@ -242,33 +249,49 @@
 
 .templateModalList {
   display: grid;
-  gap: 4px;
+  gap: 8px;
   overflow-y: auto;
-  padding: 8px;
+  padding: 10px;
 }
 
 .templateModalItem {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  padding: 10px 12px;
-  border: 0;
-  border-radius: 8px;
-  background: transparent;
+  gap: 3px;
+  padding: 12px 14px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 12px;
+  background: var(--dsw-alias-bg-layer-2);
   color: var(--dsw-alias-label-primary);
   font: inherit;
-  font-size: 12px;
   text-align: left;
   cursor: pointer;
 }
 
+.templateModalItem strong {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.5;
+  letter-spacing: -0.005em;
+  overflow-wrap: anywhere;
+}
+
 .templateModalItem small {
   color: var(--dsw-alias-label-tertiary);
-  font-size: 11px;
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
 }
 
 .templateModalItem:hover {
-  background: var(--dsw-alias-interactive-bg-hover);
+  border-color: color-mix(in srgb, var(--pt-accent) 28%, var(--dsw-alias-border-l2));
+  box-shadow: 0 8px 22px -16px color-mix(in srgb, var(--pt-accent) 50%, transparent);
+  transform: translateY(-1px);
+}
+
+.templateModalItem:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--pt-accent) 45%, var(--dsw-alias-border-l2));
+  outline-offset: 2px;
 }
 
 .pillButton,
@@ -647,6 +670,14 @@
   white-space: nowrap;
 }
 
+/* 全选按钮选中态：与统计筛选卡选中态同语言（accent 边框 + ring）。 */
+.listFilterRow .pillButton[data-active] {
+  border-color: color-mix(in srgb, var(--pt-accent) 45%, var(--dsw-alias-border-l2));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--pt-accent) 18%, transparent);
+  color: color-mix(in srgb, var(--pt-accent) 80%, var(--dsw-alias-label-primary));
+  background: color-mix(in srgb, var(--pt-accent) 8%, transparent);
+}
+
 /* 折叠区（目录与来源 / 高级）：原生 details，零 JS。 */
 .disclosure { border-top: 1px solid var(--dsw-alias-border-l2); }
 .disclosure > summary {
@@ -670,6 +701,13 @@
 .disclosure[open] > summary::before { transform: rotate(90deg); }
 .disclosure > summary small { font-weight: 400; color: var(--dsw-alias-label-tertiary); font-size: 11px; }
 .disclosureBody { display: flex; flex-direction: column; gap: 10px; padding: 2px 0 6px; }
+
+/* 卡片内部分隔（configForm 内的次级设置分区）。 */
+.cardDivider {
+  border-top: 1px solid var(--dsw-alias-border-l2);
+  margin: 2px 0 10px;
+  padding-top: 12px;
+}
 
 /* 状态芯片：带底色胶囊，模型=蓝 / 用户=绿 / 关闭=灰 / 未注册=红。 */
 .skillStatusRow {
@@ -945,6 +983,27 @@
   border-top: 1px solid color-mix(in srgb, var(--pt-accent) 16%, var(--dsw-alias-border-l2));
   padding: 12px 14px;
   background: linear-gradient(180deg, color-mix(in srgb, var(--pt-accent) 4%, transparent), transparent 28%), var(--dsw-alias-bg-layer-2);
+}
+
+/* 固定卡片内容区（无折叠头的 configCard 体：PTC / 首轮输出封顶）。 */
+.configBody {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--pt-accent) 4%, transparent), transparent 28%), var(--dsw-alias-bg-layer-2);
+}
+.configBody .rowGroup { border-bottom: 0; }
+.configBody .toggleRow:first-child { border-top: 0; }
+
+.configFormToolbar {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding-bottom: 12px;
+  border-bottom: 1px solid color-mix(in srgb, var(--pt-accent) 16%, var(--dsw-alias-border-l2));
 }
 .configGrid { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: flex-end; }
 .configField { display: flex; flex-direction: column; gap: 4px; min-width: 0; }

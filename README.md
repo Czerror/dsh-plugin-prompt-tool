@@ -61,7 +61,7 @@ dsh --profile prompt-tool
   `/api/prompt-tool/settings/configs-validate` 复用引擎校验，
   `/api/prompt-tool/settings/templates` 输出内置模板库。
 - 🧭 **侧边栏独立工作台**：新建会话行下方的「提示词工具」入口打开中央列工作台，
-  顶部标签页为六个注入层级 + Skills 设置；层页内按层管理提示词配置
+  顶部标签页为 主会话 / 子代理 / 注入层 / 技能设置 / 预设配置；层页内按层管理提示词配置
   （开关按钮 / 上移下移复制删除 / 展开编辑框），pre-step 层还承载
   preset.md / AGENTS.md 编辑与全部入口开关。
 
