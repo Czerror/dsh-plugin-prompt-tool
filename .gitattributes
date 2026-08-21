@@ -1,0 +1,2 @@
+# 统一 LF 换行：vendor 同步文件与测试断言依赖逐字节一致，Windows 检出不得转 CRLF。
+* text=auto eol=lf
