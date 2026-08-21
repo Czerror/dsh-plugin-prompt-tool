@@ -46,8 +46,12 @@ function moveWithinLayer(
   const targetIndex = layerIndices[target]!
   const next = [...all]
   const current = next[globalIndex]
-  next[globalIndex] = next[targetIndex]!
-  next[targetIndex] = current!
+  const targetCard = next[targetIndex]
+  // 引擎按 order 升序渲染（executor pre-step / layers 同规则）：层内移动必须同步
+  // 交换 order，否则拖拽后实际注入顺序不变（显示与引擎脱节 = 排序混乱）。
+  if (current === undefined || targetCard === undefined) return all
+  next[globalIndex] = { ...targetCard, order: current.order ?? 0 }
+  next[targetIndex] = { ...current, order: targetCard.order ?? 0 }
   return next
 }
 
@@ -74,6 +78,22 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
     ? scoped
     : scoped.filter((config) =>
       [config.id, config.name ?? '', config.strategy ?? ''].join(' ').toLowerCase().includes(keyword))
+  // 显示顺序 = 引擎注入顺序：按（层序, order, 声明序）稳定排序，跨层全量视图
+  // 也一致；order 相同时保持数组原序（同值稳定）。
+  const layerRank = (config: PromptConfigDraft): number => {
+    const index = meta.layers.indexOf(layerOf(config))
+    return index < 0 ? meta.layers.length : index
+  }
+  const ordered = filtered
+    .map((config, index) => ({ config, index }))
+    .sort((a, b) => {
+      const byLayer = layerRank(a.config) - layerRank(b.config)
+      if (byLayer !== 0) return byLayer
+      const byOrder = (a.config.order ?? 0) - (b.config.order ?? 0)
+      if (byOrder !== 0) return byOrder
+      return a.index - b.index
+    })
+    .map((entry) => entry.config)
 
   const dirty = JSON.stringify(configs) !== JSON.stringify(savedConfigs)
 
@@ -209,7 +229,7 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
         <p className={styles.readOnly} role="status">没有匹配「{filter.trim()}」的配置。</p>
       ) : (
         <div className={styles.configList}>
-          {filtered.map((config) => renderCard(config))}
+          {ordered.map((config) => renderCard(config))}
         </div>
       )}
 

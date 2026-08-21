@@ -12,7 +12,7 @@ import type {} from '@deepseek-ai/dsh-host-webserver'
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { parse as parseYaml } from 'yaml'
 import { createSkillsWatcher } from './runtime/skills-watcher.ts'
-import { join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import {
   asString,
   loadPresetContent,
@@ -29,6 +29,8 @@ import { resolveProfileSkillsDir } from './profile-skills.ts'
 import { detectModels, installDefaultModelRoute, installSubagentModelRoute, listAdvertisedModels } from './runtime/models.ts'
 import type { ModelDetection } from './runtime/models.ts'
 import { registerSettingsBridge } from './runtime/settings-bridge.ts'
+import { registerCharacterTools } from './runtime/character-tools.ts'
+import { registerWorldBookTools } from './runtime/world-book-tools.ts'
 import { registerTuiCommand } from './runtime/tui.ts'
 import { ensureSettingsRegistered } from './runtime/settings-registration.ts'
 import { removeResidentAgentsBlock, writeAgents } from './runtime/agents-file.ts'
@@ -238,7 +240,7 @@ export function apply(ctx: Context, configIn: Config): void {
 
   /** 激活预设目录（内容按预设根 presetDir/<template>/ 隔离；非法名回退 anchored）。 */
   const activePresetDir = (): string =>
-    join(runtime.presetDir, /^[a-zA-Z0-9_-]+$/.test(runtime.presetTemplate) ? runtime.presetTemplate : 'anchored')
+    join(runtime.presetDir, /^[a-zA-Z0-9\u4e00-\u9fff_-]+$/.test(runtime.presetTemplate) ? runtime.presetTemplate : 'anchored')
 
   /** 预设目录是否需要（重新）渲染：agent.cordis.yml 缺失，或仍是旧布局组合（../engine 引用）。 */
   const needsPresetRender = (targetDir: string): boolean => {
@@ -476,6 +478,14 @@ export function apply(ctx: Context, configIn: Config): void {
         warn(ctx, `prompt-tool: overrides rebuild failed: ${String(error)}`)
       }
     },
+    // 预设包导入后物化该预设：组合/配置目录/共享引擎落盘，宿主 discovery 立即可见。
+    (id) => {
+      try {
+        materializeImportedPreset(id)
+      } catch (error) {
+        warn(ctx, `prompt-tool: imported preset materialize failed: ${String(error)}`)
+      }
+    },
   )
 
   // 首次以 base-only profile 启动时自动补 @deepseek-ai/dsh-web-app：
@@ -611,6 +621,41 @@ registerTuiCommand(
   },
 )
 
+  /**
+   * 物化导入的预设：用其自身 preset.yml（spec 参数 + modules + promptConfigs）渲染
+   * 组合本体 agent.cordis.yml / prompt-configs / 共享引擎，不携带激活预设的
+   * settings 参数（导入预设参数自洽；promptConfigs=[] 避免 settings 覆盖层挤掉
+   * 导入预设自身配置）。宿主 agent-presets discovery 以 agent.cordis.yml 为准，
+   * 不物化则导入的预设从宿主主菜单不可见。
+   */
+  const materializeImportedPreset = (id: string): void => {
+    if (!runtime.writePreset) return
+    const options: WritePresetOptions = {
+      firstTurnAnchor: false,
+      firstTurnText: '',
+      firstTurnCustom: false,
+      guideText: '',
+      guideCustom: false,
+      injectPrompt: false,
+      modelProvider: '',
+      modelName: '',
+      subagentModelProvider: '',
+      subagentModelName: '',
+      mainPersona: '',
+      subagentPersona: '',
+      injectAgentsPrompt: false,
+      bootstrapMaxTokens: 0,
+      usePtcMode: false,
+      presetDir: runtime.presetDir,
+      presetOrder: runtime.presetOrder,
+      // 导入预设的配置以自身 preset.yml promptConfigs 为准（settings 覆盖层
+      // 属于激活预设的编辑上下文，不得污染导入预设）。
+      promptConfigs: [],
+      presetTemplate: id,
+    }
+    writePreset('', options)
+  }
+
   let needsInitialApply = true
   const applyState = (): void => {
     const next = currentSource()
@@ -660,7 +705,7 @@ registerTuiCommand(
     // 切换预设：内容资产从新预设目录/模板重读——否则 rebuildPreset 会把旧预设的
     // preset.md/agents.md 内容复制进新预设（custom 空白预设被写入 anchored 文本）。
     if (presetTemplateChanged) {
-      const newDir = join(nextRuntime.presetDir, /^[a-zA-Z0-9_-]+$/.test(nextRuntime.presetTemplate) ? nextRuntime.presetTemplate : 'anchored')
+      const newDir = join(nextRuntime.presetDir, /^[a-zA-Z0-9\u4e00-\u9fff_-]+$/.test(nextRuntime.presetTemplate) ? nextRuntime.presetTemplate : 'anchored')
       current = readGeneratedContent(newDir, 'preset.md') || readPromptFile(nextRuntime.presetTemplate, nextRuntime.fallbackText)
       currentAgents = readGeneratedContent(newDir, 'agents.md') || readAgents(nextRuntime.presetTemplate)
     }
@@ -701,6 +746,31 @@ registerTuiCommand(
     rebuildPreset()
     if (presetTemplateChanged) syncHostDefault('switch')
   }
+
+  // 角色卡库模型工具：会话中直接导入/应用/移除角色卡（与 UI 角色管理页同源）。
+  registerCharacterTools(ctx, {
+    presetRoot: () => dirname(activePresetDir()),
+    templateName: () => basename(activePresetDir()),
+    rebuild: () => {
+      try {
+        rebuildPreset()
+      } catch (error) {
+        warn(ctx, `prompt-tool: character tool rebuild failed: ${String(error)}`)
+      }
+    },
+  })
+  // 世界书条目级工具：当前预设 world-book 配置的增删改。
+  registerWorldBookTools(ctx, {
+    activeDir: () => activePresetDir(),
+    presetRoot: () => dirname(activePresetDir()),
+    rebuild: () => {
+      try {
+        rebuildPreset()
+      } catch (error) {
+        warn(ctx, `prompt-tool: world-book tool rebuild failed: ${String(error)}`)
+      }
+    },
+  })
 
   // settings 注册 base 与运行时快照同源（单一组装，避免双份字段漂移）。
   const settingsEntry: PromptSettings = currentSource()
@@ -840,6 +910,8 @@ export { detectModels, installDefaultModelRoute, listAdvertisedModels } from './
 export type { WritePresetOptions } from './host/write-preset.ts'
 export { validatePromptConfigs } from './runtime/configs-validate.ts'
 export { registerSettingsBridge } from './runtime/settings-bridge.ts'
+export { registerCharacterTools } from './runtime/character-tools.ts'
+export { registerWorldBookTools } from './runtime/world-book-tools.ts'
 export type { PromptConfigValidationError, PromptConfigValidationResult } from './runtime/configs-validate.ts'
 export { loadPromptTemplates } from './host/templates.ts'
 export type { PromptConfigTemplate } from './host/templates.ts'

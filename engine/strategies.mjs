@@ -134,6 +134,41 @@ function createCustomFallbackResolver(config) {
 }
 
 /**
+ * world-book:世界书条目(角色卡 lorebook)。constant=true 恒注入(不扫 keys);
+ * selective 条目扫描当前消息批文本,keys/secondaryKeys 任一命中即注入。
+ * 大小写/整词匹配可配(caseSensitive / wholeWords);未命中返回 null(不注入)。
+ */
+function createWorldBookResolver(config) {
+  const constant = config.params?.constant === true
+  const caseSensitive = config.params?.caseSensitive === true
+  const wholeWords = config.params?.wholeWords === true
+  const rawKeys = Array.isArray(config.params?.keys) ? config.params.keys : []
+  const rawSecondary = Array.isArray(config.params?.secondaryKeys) ? config.params.secondaryKeys : []
+  const keys = [...rawKeys, ...rawSecondary]
+    .map((key) => String(key).trim())
+    .filter((key) => key.length > 0)
+  const needle = keys.length > 0
+    ? (wholeWords
+      ? new RegExp(`(^|[^\\p{L}\\p{N}])(${keys.map((key) => escapeRegExp(key)).join('|')})(?![\\p{L}\\p{N}])`, `${caseSensitive ? '' : 'i'}u`)
+      : new RegExp(keys.map((key) => escapeRegExp(key)).join('|'), caseSensitive ? '' : 'i'))
+    : undefined
+  const promptText = config.texts.length > 0
+    ? config.texts.join('\n\n')
+    : (typeof config.params?.text === 'string' && config.params.text.length > 0 ? config.params.text : undefined)
+  return ({ messages }) => {
+    if (promptText === undefined) return null
+    if (constant || needle === undefined) return { text: promptText }
+    const haystack = (Array.isArray(messages) ? messages : [])
+      .map((message) => extractText(message))
+      .filter((text) => text.length > 0)
+      .join('\n')
+    if (haystack.length === 0) return null
+    needle.lastIndex = 0
+    return needle.test(haystack) ? { text: promptText } : null
+  }
+}
+
+/**
  * 为归一化后的提示词配置绑定策略 resolve(策略状态随提示词配置对象,不随 apply)。
  * strategyDir:外部策略模块目录(相对本文件 URL)。未声明时只允许内置策略。
  */
@@ -145,6 +180,8 @@ export function bindResolver(config, strategyDir) {
     case 'guide-auto': return createGuideAutoResolver(config)
     case 'custom-fallback':
       return createCustomFallbackResolver(config)
+    case 'world-book':
+      return createWorldBookResolver(config)
     case 'static': {
       const texts = config.texts
       const patch = config.templatePatch ?? {}

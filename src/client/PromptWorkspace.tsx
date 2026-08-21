@@ -12,6 +12,7 @@ import { PromptConfigList } from './PromptConfigList.tsx'
 import { PromptConfigsEditor } from './PromptConfigsEditor.tsx'
 import type { PromptToolWorkspaceController } from './workspace-controller.ts'
 import { PresetsPage } from './PresetsPage.tsx'
+import { CharactersPage } from './CharactersPage.tsx'
 import { TemplatePicker } from './TemplatePicker.tsx'
 import { useTemplatePicker } from './useTemplatePicker.ts'
 import { TagInput } from './TagInput.tsx'
@@ -818,13 +819,14 @@ export interface PromptWorkspaceProps {
 }
 
 /** 顶层页面：注入层已并入主会话页（层专属开关 + 内容资产卡片 + 模块库层筛选）。 */
-type WorkspacePage = 'subagent' | 'skills' | 'features' | 'presets'
+type WorkspacePage = 'subagent' | 'skills' | 'features' | 'presets' | 'characters'
 
 const TOP_PAGES: Array<{ id: WorkspacePage; label: string }> = [
   { id: 'features', label: '主会话' },
   { id: 'subagent', label: '子代理' },
   { id: 'skills', label: '技能设置' },
   { id: 'presets', label: '预设配置' },
+  { id: 'characters', label: '角色管理' },
 ]
 
 /** 侧边栏独立工作台：顶层 4 页（注入层并入主会话）。 */
@@ -850,18 +852,23 @@ export function PromptWorkspace(props: PromptWorkspaceProps): ReactNode {
       ? '全局'
       : page === 'presets'
         ? '预设配置'
-        : '子代理'
+        : page === 'characters'
+          ? `${(store.meta.presets ?? []).filter((preset) => preset.meta?.source === 'sillytavern').length} 角色卡`
+          : '子代理'
   const pageTitle = page === 'skills' ? '技能设置'
     : page === 'features' ? '主会话'
       : page === 'presets' ? '预设配置'
-        : '子代理'
+        : page === 'characters' ? '角色管理'
+          : '子代理'
   const pageDetail = page === 'skills'
     ? '按 skills 目录注册的可开关技能；目录与逐技能开关立即生效。'
     : page === 'features'
       ? '主会话参数（模型设置、工具与深度）、消息批层入口开关、Preset/AGENTS 内容与提示词配置模块库（按层级筛选）。'
       : page === 'presets'
         ? '统一管理预设模板（切换/导入）与提示词配置（六层列表/模板插入/配置目录）。'
-        : '子代理作用域参数（模型/人设/工具集/深度）与子代理提示词配置（audience 非仅主会话）。'
+        : page === 'characters'
+          ? '导入 SillyTavern 角色卡（PNG / JSON）并管理转换出的角色卡预设模块（角色设定 / 系统提示 / 开场白 / 提示词库）。'
+          : '子代理作用域参数（模型/人设/工具集/深度）与子代理提示词配置（audience 非仅主会话）。'
   // 已加载过数据时保留旧内容（顶部状态点显示「读取中」），避免切换/保存触发整区骨架屏闪烁。
   const hasData = store.meta.layers.length > 0
     || store.fields.skillCatalog.length > 0
@@ -903,6 +910,7 @@ export function PromptWorkspace(props: PromptWorkspaceProps): ReactNode {
             <>
               {page === 'features' && <FeatureSettings store={store} />}
               {page === 'presets' && <PresetsPage store={store} />}
+              {page === 'characters' && <CharactersPage store={store} />}
               {page === 'subagent' && <SubagentPage store={store} />}
             </>
           )}

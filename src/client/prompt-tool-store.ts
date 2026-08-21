@@ -398,6 +398,17 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
         if (typeof o.modelName === 'string') paramPatch.modelName = o.modelName
         if (typeof o.subagentModelProvider === 'string') paramPatch.subagentModelProvider = o.subagentModelProvider
         if (typeof o.subagentModelName === 'string') paramPatch.subagentModelName = o.subagentModelName
+        // 模型参数三件套（主对话 + 子代理）：引擎按这些 params 生成 model-params
+        // 配置（agent-request patch），UI 侧统一在「模型设置」卡片编辑显示，
+        // 不依赖模块列表里的 model-params 卡片。
+        if (typeof o.modelReasoningEffort === 'string') paramPatch.modelReasoningEffort = o.modelReasoningEffort
+        if (typeof o.modelTemperature === 'string') paramPatch.modelTemperature = o.modelTemperature
+        if (typeof o.modelMaxTokens === 'string') paramPatch.modelMaxTokens = o.modelMaxTokens
+        if (typeof o.subagentReasoningEffort === 'string') paramPatch.subagentReasoningEffort = o.subagentReasoningEffort
+        if (typeof o.subagentTemperature === 'string') paramPatch.subagentTemperature = o.subagentTemperature
+        if (typeof o.subagentMaxTokens === 'string') paramPatch.subagentMaxTokens = o.subagentMaxTokens
+        if (typeof o.usePtcMode === 'boolean') paramPatch.usePtcMode = o.usePtcMode
+        if (typeof o.injectPrompt === 'boolean') paramPatch.injectPrompt = o.injectPrompt
         if (typeof o.mainPersona === 'string') paramPatch.mainPersona = o.mainPersona
         if (typeof o.subagentPersona === 'string') paramPatch.subagentPersona = o.subagentPersona
         if (Array.isArray(o.toolFilterAllow)) paramPatch.toolFilterAllow = o.toolFilterAllow.join(', ')
@@ -423,9 +434,13 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
       const configsRes = await bridgePost<{ promptConfigs: PromptConfigDraft[] }>('/prompt-configs', {})
       if (seq !== loadSeqRef.current) return EMPTY_FIELDS
       if (configsRes.ok && Array.isArray(configsRes.value.promptConfigs) && configsRes.value.promptConfigs.length > 0) {
+        // 引擎自动生成的模型参数配置（model-params / subagent-model-params）由
+        // 「模型设置」卡片管理，不进入模块列表（避免重复编辑入口）。
+        const engineGenerated = new Set(['model-params', 'subagent-model-params'])
+        const userConfigs = configsRes.value.promptConfigs.filter((config) => !engineGenerated.has(config.id))
         // 内容资产条目（prompt-injector / instruction-hint）：params.text（生成目录文件渲染产物）
         // 提升到 text 框显示，编辑入口统一为模块卡片。
-        const actual = configsRes.value.promptConfigs.map(liftContentText)
+        const actual = userConfigs.map(liftContentText)
         const next = { ...fieldsRef.current, promptConfigs: actual }
         fieldsRef.current = next
         setFields(next)

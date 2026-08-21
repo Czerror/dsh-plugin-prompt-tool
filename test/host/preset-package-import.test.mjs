@@ -295,7 +295,8 @@ test('importPresetPackage：SillyTavern JSON 单文件经转换引擎导入（�
   assert.equal(configs.length, 2, '采样参数归一到顶层 params 后不再生成 agent-request 配置')
   const main = configs.find((config) => config.id === 'main')
   assert.deepEqual(main, {
-    id: 'main', name: '主提示', enabled: true, strategy: 'static', order: 100,
+    // RELATIVE 注入顺序 = prompt_order / 数组顺序（ST 忽略 injection_order）。
+    id: 'main', name: '主提示', enabled: true, strategy: 'static', order: 0,
     text: '你是助手。', layer: 'system-section', mergeMode: 'merged',
   })
   const nsfw = configs.find((config) => config.id === 'nsfw')
@@ -303,6 +304,7 @@ test('importPresetPackage：SillyTavern JSON 单文件经转换引擎导入（�
   assert.equal(nsfw.layer, 'pre-step')
   assert.equal(nsfw.role, 'user')
   assert.equal(nsfw.position, 'after-user')
+  assert.equal(nsfw.order, 10, 'in-chat 注入同样按数组顺序排（本项目无深度注入）')
   // 采样参数 → 顶层 params.model*（主对话统一参数体系，字符串与 Config schema 对齐）。
   assert.equal(converted.params.modelTemperature, '0.8')
   assert.equal(converted.params.modelMaxTokens, '2048')

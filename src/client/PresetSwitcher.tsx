@@ -1,6 +1,7 @@
 /** 预设切换器：预设全部在用户目录（首次启动种子化），列表点击切换；新建 = 从内置模板复制还原。 */
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import clsx from 'clsx'
+import { IconCopyOutline16, IconFolderOpenOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { bridgePost } from './prompt-tool-bridge.ts'
 import type { PromptToolStore } from './prompt-tool-store.ts'
 import styles from './PromptUi.module.css'
@@ -92,6 +93,27 @@ export function PresetSwitcher(props: { store: PromptToolStore }): ReactNode {
       await store.load()
     } else {
       store.showNotice('error', '删除预设失败：' + (res.message ?? 'settings bridge unavailable'))
+    }
+  }
+
+  /** 复制预设：用户目录完整副本，id 自动递增（<id>-copy / <id>-copy-2 / …）。 */
+  const duplicatePreset = async (id: string): Promise<void> => {
+    const res = await bridgePost<{ id: string }>('/preset-duplicate', { id })
+    if (res.ok) {
+      store.showNotice('ok', `已复制为预设 ${res.value.id}`)
+      await store.load()
+    } else {
+      store.showNotice('error', '复制预设失败：' + (res.message ?? 'settings bridge unavailable'))
+    }
+  }
+
+  /** 打开预设文件夹（宿主系统文件管理器；失败时提示路径）。 */
+  const openLocation = async (id: string): Promise<void> => {
+    const res = await bridgePost<{ path: string }>('/preset-open', { id })
+    if (res.ok) {
+      store.showNotice('ok', `已打开预设文件夹：${res.value.path}`)
+    } else {
+      store.showNotice('error', '打开预设文件夹失败：' + (res.message ?? 'settings bridge unavailable'))
     }
   }
 
@@ -215,15 +237,25 @@ export function PresetSwitcher(props: { store: PromptToolStore }): ReactNode {
         <button type="button" className={styles.presetCardMain} disabled={!fields.writePreset}
           title={active ? '当前预设模板' : `切换到 ${preset.name}`}
           onClick={() => store.setPresetTemplate(preset.id)}>
-          <strong className={styles.presetCardName}>{preset.name}</strong>
-          <code className={styles.presetCardId}>{preset.id}</code>
+          <span className={styles.presetCardHead}>
+            <strong className={styles.presetCardName}>{preset.name}</strong>
+            {active && <span className={styles.presetInUse}>使用中</span>}
+          </span>
           {preset.description !== undefined && preset.description.length > 0
             && <p className={styles.presetCardDesc}>{preset.description}</p>}
+          <code className={styles.presetCardId}>{preset.id}</code>
         </button>
         <span className={styles.presetCardFooter}>
-          {active
-            ? <span className={styles.presetRowBadge} data-kind="active">使用中</span>
-            : <span aria-hidden="true" />}
+          <button type="button" className={styles.presetIconButton} data-tip="复制预设"
+            aria-label={`复制预设：${preset.name}`}
+            onClick={() => void duplicatePreset(preset.id)}>
+            <IconCopyOutline16 />
+          </button>
+          <button type="button" className={styles.presetIconButton} data-tip="打开预设文件夹"
+            aria-label={`打开预设文件夹：${preset.name}`}
+            onClick={() => void openLocation(preset.id)}>
+            <IconFolderOpenOutline16 />
+          </button>
           {confirming ? (
             <span className={styles.presetCardActions}>
               <button type="button" className={styles.pillButton} data-danger disabled={active}

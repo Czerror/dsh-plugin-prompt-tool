@@ -220,8 +220,9 @@ export function writePreset(prompt: string, options: WritePresetOptions): void {
     ? options.presetTemplate.trim()
     : 'anchored'
   // 安全边界：templateName 现在是写入路径段（presetDir/<template>/），只允许
-  // 目录名形态，拒绝路径分隔符与 ..（防穿越写入预设根之外）。
-  if (!/^[a-zA-Z0-9_-]+$/.test(templateName)) {
+  // 目录名形态（含中文：角色卡/预设导入的 id 可含中文），拒绝路径分隔符与 ..
+  // （防穿越写入预设根之外）。
+  if (!/^[a-zA-Z0-9\u4e00-\u9fff_-]+$/.test(templateName)) {
     throw new Error(`invalid presetTemplate ${JSON.stringify(templateName)}: must be a bare directory name`)
   }
   const templateDir = resolvePresetDir(templateName)
@@ -374,6 +375,42 @@ export function writePreset(prompt: string, options: WritePresetOptions): void {
   }
   // 模型参数（agent-request）作为引擎默认级注入，优先级低于模板与 settings。
   const merged = mergePromptConfigs(modelRequestConfigs(params), templateDefaults, options.promptConfigs)
+  // 世界书（preset.yml 顶层 worldBook 段）→ world-book 策略配置（pre-step before-all）：
+  //   injectMode=full → 全部条目恒注入（constant=true）；
+  //   injectMode=keyword（缺省）→ 无 keys 条目恒注入（全局条目），有 keys 条目命中触发。
+  // 条目 id 带 chara-<卡>- 前缀由 characters.apply 合并时处理；这里保持原样。
+  const worldBook = spec.worldBook
+  if (worldBook !== undefined && worldBook !== null && Array.isArray(worldBook.entries)) {
+    const fullMode = worldBook.injectMode === 'full'
+    for (const entry of worldBook.entries) {
+      if (entry === null || typeof entry !== 'object') continue
+      const content = typeof entry.text === 'string' ? entry.text : ''
+      if (content.trim().length === 0) continue
+      const id = String(entry.id ?? '')
+      if (id.length === 0) continue
+      const keys = Array.isArray(entry.keys) ? entry.keys.map(String).filter((key) => key.trim().length > 0) : []
+      const secondaryKeys = Array.isArray(entry.secondaryKeys)
+        ? entry.secondaryKeys.map(String).filter((key) => key.trim().length > 0) : []
+      const constant = entry.constant === true || fullMode || (keys.length === 0 && secondaryKeys.length === 0)
+      merged.push({
+        id,
+        name: typeof entry.name === 'string' && entry.name.length > 0 ? entry.name : id,
+        enabled: entry.enabled !== false,
+        strategy: 'world-book',
+        order: typeof entry.order === 'number' ? entry.order : 100,
+        text: content,
+        layer: 'pre-step',
+        position: 'before-all',
+        params: {
+          constant,
+          ...(keys.length > 0 ? { keys } : {}),
+          ...(secondaryKeys.length > 0 ? { secondaryKeys } : {}),
+          ...(entry.caseSensitive === true ? { caseSensitive: true } : {}),
+          ...(entry.wholeWords === true ? { wholeWords: true } : {}),
+        },
+      } satisfies PromptConfigSpec)
+    }
+  }
   for (const [index, config] of merged.entries()) {
     // 内容资产单一事实源（大文本存生成目录文件，settings 覆盖层只保留轻字段）：
     // prompt-injector 的注入文本永远来自 preset.md（presetPrompt），settings 条目即使带 text 也强制清空，

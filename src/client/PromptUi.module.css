@@ -519,44 +519,44 @@
 
 /* 多目录卡片：路径 + 状态 + 计数 + 行操作。 */
 .dirCardList { display: flex; min-width: 0; flex-direction: column; gap: 8px; }
+/* 预设卡片：对齐官方主菜单 agent 预设（自定义预设组）的卡片样式。 */
 .presetGrid {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(268px, 1fr));
+  /* 同行卡片等高，短描述不把卡片压矮。 */
+  grid-auto-rows: 1fr;
   min-width: 0;
-  flex-wrap: wrap;
-  gap: 10px;
+  gap: 12px;
   margin-top: 2px;
 }
 .presetCard {
   display: flex;
   min-width: 0;
-  flex: 1 1 210px;
-  max-width: 260px;
   flex-direction: column;
-  gap: 10px;
-  padding: 12px;
-  border: 1px solid var(--dsw-alias-border-l2);
+  /* 无描边：透明边框占位防 hover 布局跳动，聚焦/选中全靠 accent 光影表达。 */
+  border: 1px solid transparent;
   border-radius: 12px;
   background: var(--dsw-alias-bg-layer-3);
-  transition: border-color .16s ease, box-shadow .16s ease, transform .16s ease;
+  transition: border-color .16s ease, box-shadow .16s ease, transform .16s ease, background .16s ease;
 }
-.presetCard:hover {
-  border-color: color-mix(in srgb, var(--pt-accent) 28%, var(--dsw-alias-border-l2));
+.presetCard:hover:not([data-active]) {
   box-shadow: 0 8px 22px -16px color-mix(in srgb, var(--pt-accent) 50%, transparent);
   transform: translateY(-1px);
 }
 .presetCard[data-active] {
-  border-color: color-mix(in srgb, var(--pt-accent) 45%, var(--dsw-alias-border-l2));
+  /* accent 光圈替代描边 + 同款 tint 底：本插件激活状态。 */
   background: color-mix(in srgb, var(--pt-accent) 6%, var(--dsw-alias-bg-layer-3));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--pt-accent) 45%, transparent);
 }
 .presetCardMain {
   display: flex;
   min-width: 0;
   flex: 1;
   flex-direction: column;
-  align-items: flex-start;
-  gap: 3px;
-  padding: 0;
+  gap: 8px;
+  padding: 14px 16px 12px;
   border: 0;
+  border-radius: 12px 12px 0 0;
   background: none;
   font: inherit;
   color: inherit;
@@ -565,59 +565,127 @@
 }
 .presetCardMain:disabled { cursor: default; opacity: .6; }
 .presetCardMain:focus-visible {
-  outline: 2px solid var(--dsw-alias-state-business-primary);
-  outline-offset: 2px;
-  border-radius: 6px;
+  outline: 2px solid var(--dsw-alias-brand-primary);
+  outline-offset: -2px;
+}
+/* 非交互卡片主体（角色卡等无点击语义）：与 presetCardMain 同布局，无按钮态。 */
+.presetCardBody {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px 12px;
+  border-radius: 12px 12px 0 0;
+}
+.presetCardHead {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
 }
 .presetCardName {
   color: var(--dsw-alias-label-primary);
-  font-size: 14px;
+  min-width: 0;
+  font-size: 15px;
   font-weight: 600;
   line-height: 1.4;
   overflow-wrap: anywhere;
 }
 .presetCardId {
-  color: var(--dsw-alias-label-tertiary);
-  font-family: var(--ds-font-family-code, ui-monospace, monospace);
+  margin-top: auto;
+  color: var(--dsw-alias-label-dimmed);
+  font-family: var(--dsw-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
   font-size: 11px;
   line-height: 1.5;
+  overflow-wrap: anywhere;
 }
 .presetCardDesc {
   display: -webkit-box;
+  min-height: 42px;
   margin: 0;
   overflow: hidden;
-  color: var(--dsw-alias-label-tertiary);
-  font-size: 12px;
-  line-height: 1.5;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 4;
 }
 .presetCardFooter {
   display: flex;
   min-width: 0;
+  flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
+  justify-content: flex-end;
+  gap: 4px;
+  padding: 6px 10px;
+  border-top: 1px solid var(--dsw-alias-border-l2);
 }
 .presetCardActions {
   display: flex;
   align-items: center;
   gap: 6px;
-  margin-left: auto;
 }
-.presetRowBadge {
-  padding: 3px 8px;
-  border: 1px solid var(--dsw-alias-border-l2);
+.presetInUse {
+  flex: none;
+  margin-left: auto;
   border-radius: 999px;
-  color: var(--dsw-alias-label-secondary);
+  padding: 1px 8px;
+  background: var(--pt-accent);
+  color: var(--pt-on-chip);
   font-size: 11px;
-  line-height: 1;
+  font-weight: 500;
+  line-height: 17px;
   white-space: nowrap;
 }
-.presetRowBadge[data-kind='active'] {
-  border-color: transparent;
-  color: var(--pt-on-chip);
-  background: var(--pt-accent);
+.presetCardFooter .pillButton {
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 14px;
+  font-size: 12px;
+  line-height: 18px;
+}
+.presetIconButton {
+  position: relative;
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  border: 0;
+  border-radius: 7px;
+  padding: 6px;
+  background: none;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+}
+.presetIconButton:hover:not(:disabled) {
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+}
+.presetIconButton:focus-visible {
+  outline: 2px solid var(--dsw-alias-brand-primary);
+  outline-offset: -1px;
+}
+.presetIconButton::after {
+  content: attr(data-tip);
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: var(--dsw-alias-label-primary);
+  color: var(--dsw-alias-bg-layer-3);
+  font-size: 11px;
+  line-height: 17px;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .12s;
+}
+.presetIconButton:hover::after,
+.presetIconButton:focus-visible::after {
+  opacity: 1;
 }
 .dirCard {
   display: flex;

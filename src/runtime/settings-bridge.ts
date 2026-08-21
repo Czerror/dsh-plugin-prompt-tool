@@ -15,9 +15,11 @@ import { fixSkillEntry } from './skill-fix.ts'
 import {
   assertCompositionArray,
   cloneBuiltinPreset,
+  duplicateUserPreset,
   listBuiltinTemplates,
   listPresets,
   loadPresetSpec,
+  openPresetLocation,
   parseImportedPresetId,
   removeUserPreset,
   renderComposition,
@@ -27,7 +29,15 @@ import {
   userPresetsDir,
 } from '../host/manifest.ts'
 import type { PresetSpec } from '../host/manifest.ts'
-import { convertStToPreset } from '../host/sillytavern.ts'
+import {
+  applyCharacterToPreset,
+  deleteCharacterCard,
+  importCharacterCard,
+  listCharacterCards,
+  removeCharacterFromPreset,
+} from '../host/characters.ts'
+import { deleteWorldBookEntry, readWorldBook, upsertWorldBookEntry, writeWorldBook } from '../host/worldbook.ts'
+import { convertStToPreset, mergeStPresets } from '../host/sillytavern.ts'
 import { BRIDGE_ENDPOINTS, SETTINGS_BRIDGE_PREFIX } from '../shared/bridge-contract.ts'
 import { DEFAULT_PRESET_DIR } from '../host/paths.ts'
 
@@ -135,6 +145,8 @@ export function registerSettingsBridge(
   afterPresetImport?: (scope: 'preset' | 'agents') => void,
   /** 参数覆盖写入回调（重建预设使参数生效）。 */
   afterOverridesChange?: () => void,
+  /** 预设包导入完成回调（物化导入预设：组合/配置目录/共享引擎落盘，宿主 discovery 可见）。 */
+  afterPresetPackageImport?: (id: string) => void,
 ): void {
   // 动态等待 webServer：webServer 由 @deepseek-ai/dsh-web-app 提供。
   // profile 首次缺少该 bundle 时，本子插件先 pending 但不阻塞启动审计；
@@ -574,15 +586,22 @@ export function registerSettingsBridge(
             }
             let presetYaml = normalized.find((entry) => topRel(entry.path) === 'preset.yml')
             if (presetYaml === undefined) presetYaml = normalized.find(isDefinition)
-            // SillyTavern JSON 预设：无定义文件时若含单个 .json → 调用转换引擎生成定义。
+            // SillyTavern JSON 预设：无定义文件时把所有 .json 交给转换引擎
+            // （角色卡 × 响应预设多文件 → 合并为单个预设），转换消费的 json 不再落盘。
             if (presetYaml === undefined) {
-              const stJson = normalized.find((entry) => /\.json$/i.test(topRel(entry.path)))
-              if (stJson !== undefined) {
+              const stJsons = normalized.filter((entry) => /\.json$/i.test(topRel(entry.path)))
+              if (stJsons.length > 0) {
                 try {
-                  const baseName = topRel(stJson.path).replace(/\.json$/i, '') || 'sillytavern'
-                  const converted = convertStToPreset(JSON.parse(stJson.content), baseName)
-                  presetYaml = { path: 'preset.yml', content: stringifyYaml(converted, { lineWidth: 0 }) }
-                  normalized = [...normalized, presetYaml]
+                  const converted = stJsons.map((entry) => {
+                    const baseName = topRel(entry.path).replace(/\.json$/i, '') || 'sillytavern'
+                    return convertStToPreset(JSON.parse(entry.content), baseName)
+                  })
+                  const merged = converted.length > 1 ? mergeStPresets(converted) : converted[0]!
+                  presetYaml = { path: 'preset.yml', content: stringifyYaml(merged, { lineWidth: 0 }) }
+                  normalized = [
+                    ...normalized.filter((entry) => !/\.json$/i.test(topRel(entry.path))),
+                    presetYaml,
+                  ]
                 } catch (error) {
                   const message = error instanceof Error ? error.message : String(error)
                   writeBridgeJson(res, 400, { ok: false, code: 'preset-package-invalid', message: `SillyTavern JSON 转换失败：${message}` })
@@ -635,7 +654,12 @@ export function registerSettingsBridge(
                 const dest = join(targetDir, entry === presetYaml ? 'preset.yml' : rel)
                 // 子目录（如 engine/、agent.cordis.yml 同层）逐级创建。
                 mkdirSync(dirname(dest), { recursive: true })
-                writeFileSync(dest, entry.content, 'utf8')
+                // 角色卡 PNG（客户端已转 base64 上传）解码落盘为头像资产 avatar.png。
+                if (/\.png$/i.test(rel)) {
+                  writeFileSync(dest, Buffer.from(entry.content, 'base64'))
+                } else {
+                  writeFileSync(dest, entry.content, 'utf8')
+                }
               }
             } catch (error) {
               const message = error instanceof Error ? error.message : String(error)
@@ -654,6 +678,9 @@ export function registerSettingsBridge(
               writeBridgeJson(res, 400, { ok: false, code: 'preset-package-invalid', message: `预设组合校验失败：${message}` })
               return
             }
+            // 物化导入预设：仅写 preset.yml 时宿主 discovery 不可见（缺 agent.cordis.yml
+            // 组合本体 / prompt-configs / 共享引擎），导入成功即触发宿主重建该预设。
+            afterPresetPackageImport?.(id)
             writeBridgeJson(res, 200, {
               ok: true,
               value: { id, ...(backupDir !== undefined ? { backupPath: backupDir } : {}) },
@@ -744,6 +771,297 @@ export function registerSettingsBridge(
               return
             }
             writeBridgeJson(res, 200, { ok: true, value: { id: result.id } })
+          },
+        }),
+        sctx.webServer.register({
+          kind: 'exact',
+          path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.presetDuplicate,
+          handler: async (req, res) => {
+            if (!guard(req, res)) return
+            ensureRegistered(sctx)
+            const { body } = await readBridgeBody(req)
+            const record = (body ?? {}) as Record<string, unknown>
+            const id = typeof record.id === 'string' ? record.id.trim() : ''
+            if (id.length === 0) {
+              writeBridgeJson(res, 400, { ok: false, code: 'preset-duplicate-rejected', message: '缺少预设 id' })
+              return
+            }
+            const descriptor = findDescriptor()
+            const value = (descriptor?.value ?? {}) as Record<string, unknown>
+            const base = (descriptor?.base ?? {}) as Record<string, unknown>
+            const presetDir = typeof value.presetDir === 'string' && value.presetDir.trim().length > 0
+              ? value.presetDir
+              : typeof base.presetDir === 'string' && base.presetDir.trim().length > 0 ? base.presetDir
+                : DEFAULT_PRESET_DIR
+            const result = duplicateUserPreset(id, presetDir)
+            if (!result.ok) {
+              writeBridgeJson(res, 400, { ok: false, code: 'preset-duplicate-rejected', message: result.message })
+              return
+            }
+            writeBridgeJson(res, 200, { ok: true, value: { id: result.id } })
+          },
+        }),
+        sctx.webServer.register({
+          kind: 'exact',
+          path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.presetOpen,
+          handler: async (req, res) => {
+            if (!guard(req, res)) return
+            ensureRegistered(sctx)
+            const { body } = await readBridgeBody(req)
+            const record = (body ?? {}) as Record<string, unknown>
+            const id = typeof record.id === 'string' ? record.id.trim() : ''
+            if (id.length === 0) {
+              writeBridgeJson(res, 400, { ok: false, code: 'preset-open-rejected', message: '缺少预设 id' })
+              return
+            }
+            const descriptor = findDescriptor()
+            const value = (descriptor?.value ?? {}) as Record<string, unknown>
+            const base = (descriptor?.base ?? {}) as Record<string, unknown>
+            const presetDir = typeof value.presetDir === 'string' && value.presetDir.trim().length > 0
+              ? value.presetDir
+              : typeof base.presetDir === 'string' && base.presetDir.trim().length > 0 ? base.presetDir
+                : DEFAULT_PRESET_DIR
+            const result = openPresetLocation(id, presetDir)
+            if (!result.ok) {
+              writeBridgeJson(res, 400, { ok: false, code: 'preset-open-rejected', message: `${result.message}（${result.path}）` })
+              return
+            }
+            writeBridgeJson(res, 200, { ok: true, value: { path: result.path } })
+          },
+        }),
+        // ---- 角色卡库：素材+参数独立存储，按需导入/移除当前预设 ----
+        sctx.webServer.register({
+          kind: 'exact',
+          path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.charactersImport,
+          handler: async (req, res) => {
+            if (!guard(req, res)) return
+            const dir = getPresetConfigsDir?.() ?? ''
+            if (dir.length === 0) {
+              writeBridgeJson(res, 400, { ok: false, code: 'preset-dir-unavailable', message: 'presetDir 未配置' })
+              return
+            }
+            const { body, tooLarge } = await readBridgeBody(req, PRESET_PACKAGE_MAX_BYTES)
+            if (tooLarge) {
+              writeBridgeJson(res, 413, { ok: false, code: 'preset-package-too-large', message: '角色卡文件超过 8MB 上限' })
+              return
+            }
+            if (body === null || typeof body !== 'object') {
+              writeBridgeJson(res, 400, { ok: false, code: 'settings-rejected', message: 'unreadable JSON body' })
+              return
+            }
+            const record = body as Record<string, unknown>
+            const files = Array.isArray(record.files) ? record.files : []
+            const normalized = files.flatMap((entry) => {
+              if (entry === null || typeof entry !== 'object') return []
+              const f = entry as { path?: unknown; content?: unknown }
+              const path = typeof f.path === 'string' && f.path.length > 0 ? f.path : ''
+              const content = typeof f.content === 'string' ? f.content : ''
+              if (path.length === 0) return []
+              if (path.includes('..') || /^[a-zA-Z]:/.test(path) || path.startsWith('/') || path.startsWith('\\')) return []
+              return [{ path, content }]
+            })
+            if (normalized.length === 0) {
+              writeBridgeJson(res, 400, { ok: false, code: 'characters-rejected', message: '未收到角色卡文件' })
+              return
+            }
+            const result = importCharacterCard(dirname(dir), normalized)
+            if (!result.ok) {
+              writeBridgeJson(res, 400, { ok: false, code: 'characters-rejected', message: result.message })
+              return
+            }
+            writeBridgeJson(res, 200, { ok: true, value: { id: result.id, name: result.name } })
+          },
+        }),
+        sctx.webServer.register({
+          kind: 'exact',
+          path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.charactersList,
+          handler: async (req, res) => {
+            if (!guard(req, res)) return
+            const dir = getPresetConfigsDir?.() ?? ''
+            if (dir.length === 0) {
+              writeBridgeJson(res, 400, { ok: false, code: 'preset-dir-unavailable', message: 'presetDir 未配置' })
+              return
+            }
+            const characters = listCharacterCards(dirname(dir), basename(dir))
+            writeBridgeJson(res, 200, { ok: true, value: { characters } })
+          },
+        }),
+        sctx.webServer.register({
+          kind: 'exact',
+          path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.charactersDelete,
+          handler: async (req, res) => {
+            if (!guard(req, res)) return
+            const dir = getPresetConfigsDir?.() ?? ''
+            if (dir.length === 0) {
+              writeBridgeJson(res, 400, { ok: false, code: 'preset-dir-unavailable', message: 'presetDir 未配置' })
+              return
+            }
+            const { body } = await readBridgeBody(req)
+            const record = (body ?? {}) as Record<string, unknown>
+            const id = typeof record.id === 'string' ? record.id.trim() : ''
+            if (id.length === 0) {
+              writeBridgeJson(res, 400, { ok: false, code: 'characters-rejected', message: '缺少角色卡 id' })
+              return
+            }
+            const result = deleteCharacterCard(dirname(dir), id)
+            if (!result.ok) {
+              writeBridgeJson(res, 400, { ok: false, code: 'characters-rejected', message: result.message })
+              return
+            }
+            writeBridgeJson(res, 200, { ok: true, value: { id } })
+          },
+        }),
+        sctx.webServer.register({
+          kind: 'exact',
+          path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.charactersApply,
+          handler: async (req, res) => {
+            if (!guard(req, res)) return
+            const dir = getPresetConfigsDir?.() ?? ''
+            if (dir.length === 0) {
+              writeBridgeJson(res, 400, { ok: false, code: 'preset-dir-unavailable', message: 'presetDir 未配置' })
+              return
+            }
+            const { body } = await readBridgeBody(req)
+            const record = (body ?? {}) as Record<string, unknown>
+            const id = typeof record.id === 'string' ? record.id.trim() : ''
+            if (id.length === 0) {
+              writeBridgeJson(res, 400, { ok: false, code: 'characters-rejected', message: '缺少角色卡 id' })
+              return
+            }
+            const result = applyCharacterToPreset(dirname(dir), basename(dir), id)
+            if (!result.ok) {
+              writeBridgeJson(res, 400, { ok: false, code: 'characters-rejected', message: result.message })
+              return
+            }
+            afterOverridesChange?.()
+            writeBridgeJson(res, 200, { ok: true, value: { id, count: result.count } })
+          },
+        }),
+        sctx.webServer.register({
+          kind: 'exact',
+          path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.charactersRemove,
+          handler: async (req, res) => {
+            if (!guard(req, res)) return
+            const dir = getPresetConfigsDir?.() ?? ''
+            if (dir.length === 0) {
+              writeBridgeJson(res, 400, { ok: false, code: 'preset-dir-unavailable', message: 'presetDir 未配置' })
+              return
+            }
+            const { body } = await readBridgeBody(req)
+            const record = (body ?? {}) as Record<string, unknown>
+            const id = typeof record.id === 'string' ? record.id.trim() : ''
+            if (id.length === 0) {
+              writeBridgeJson(res, 400, { ok: false, code: 'characters-rejected', message: '缺少角色卡 id' })
+              return
+            }
+            const result = removeCharacterFromPreset(dirname(dir), basename(dir), id)
+            if (!result.ok) {
+              writeBridgeJson(res, 400, { ok: false, code: 'characters-rejected', message: result.message })
+              return
+            }
+            afterOverridesChange?.()
+            writeBridgeJson(res, 200, { ok: true, value: { id, count: result.count } })
+          },
+        }),
+        // ---- 世界书（worldBook 段）：UI 与模型工具共用 host/worldbook.ts ----
+        sctx.webServer.register({
+          kind: 'exact',
+          path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.worldbookList,
+          handler: async (req, res) => {
+            if (!guard(req, res)) return
+            const dir = getPresetConfigsDir?.() ?? ''
+            if (dir.length === 0) {
+              writeBridgeJson(res, 400, { ok: false, code: 'preset-dir-unavailable', message: 'presetDir 未配置' })
+              return
+            }
+            writeBridgeJson(res, 200, { ok: true, value: readWorldBook(dir) })
+          },
+        }),
+        sctx.webServer.register({
+          kind: 'exact',
+          path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.worldbookUpsert,
+          handler: async (req, res) => {
+            if (!guard(req, res)) return
+            const dir = getPresetConfigsDir?.() ?? ''
+            if (dir.length === 0) {
+              writeBridgeJson(res, 400, { ok: false, code: 'preset-dir-unavailable', message: 'presetDir 未配置' })
+              return
+            }
+            const { body } = await readBridgeBody(req)
+            const record = (body ?? {}) as Record<string, unknown>
+            const entry = record.entry !== null && typeof record.entry === 'object'
+              ? record.entry as Record<string, unknown> : {}
+            const id = typeof entry.id === 'string' ? entry.id : ''
+            const name = typeof entry.name === 'string' ? entry.name : ''
+            const text = typeof entry.text === 'string' ? entry.text : ''
+            if (name.length === 0 || text.length === 0) {
+              writeBridgeJson(res, 400, { ok: false, code: 'worldbook-rejected', message: '缺少条目名称或内容' })
+              return
+            }
+            const normalized: Record<string, unknown> = { id, name, text }
+            for (const key of ['keys', 'secondaryKeys', 'constant', 'enabled', 'order', 'caseSensitive', 'wholeWords']) {
+              if (entry[key] !== undefined) normalized[key] = entry[key]
+            }
+            try {
+              const result = upsertWorldBookEntry(dir, normalized as Parameters<typeof upsertWorldBookEntry>[1],
+                record.mode === 'full' || record.mode === 'keyword' ? record.mode : undefined)
+              afterOverridesChange?.()
+              writeBridgeJson(res, 200, { ok: true, value: result })
+            } catch (error) {
+              const message = error instanceof Error ? error.message : String(error)
+              writeBridgeJson(res, 500, { ok: false, code: 'worldbook-rejected', message })
+            }
+          },
+        }),
+        sctx.webServer.register({
+          kind: 'exact',
+          path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.worldbookDelete,
+          handler: async (req, res) => {
+            if (!guard(req, res)) return
+            const dir = getPresetConfigsDir?.() ?? ''
+            if (dir.length === 0) {
+              writeBridgeJson(res, 400, { ok: false, code: 'preset-dir-unavailable', message: 'presetDir 未配置' })
+              return
+            }
+            const { body } = await readBridgeBody(req)
+            const record = (body ?? {}) as Record<string, unknown>
+            const id = typeof record.id === 'string' ? record.id.trim() : ''
+            if (id.length === 0) {
+              writeBridgeJson(res, 400, { ok: false, code: 'worldbook-rejected', message: '缺少条目 id' })
+              return
+            }
+            try {
+              const result = deleteWorldBookEntry(dir, id)
+              afterOverridesChange?.()
+              writeBridgeJson(res, 200, { ok: true, value: { id, ...result } })
+            } catch (error) {
+              const message = error instanceof Error ? error.message : String(error)
+              writeBridgeJson(res, 400, { ok: false, code: 'worldbook-rejected', message })
+            }
+          },
+        }),
+        sctx.webServer.register({
+          kind: 'exact',
+          path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.worldbookMode,
+          handler: async (req, res) => {
+            if (!guard(req, res)) return
+            const dir = getPresetConfigsDir?.() ?? ''
+            if (dir.length === 0) {
+              writeBridgeJson(res, 400, { ok: false, code: 'preset-dir-unavailable', message: 'presetDir 未配置' })
+              return
+            }
+            const { body } = await readBridgeBody(req)
+            const record = (body ?? {}) as Record<string, unknown>
+            const mode = record.mode
+            if (mode !== 'full' && mode !== 'keyword') {
+              writeBridgeJson(res, 400, { ok: false, code: 'worldbook-rejected', message: `非法注入模式：${String(mode)}` })
+              return
+            }
+            const book = readWorldBook(dir)
+            book.injectMode = mode
+            writeWorldBook(dir, book)
+            afterOverridesChange?.()
+            writeBridgeJson(res, 200, { ok: true, value: { mode: book.injectMode, count: book.entries.length } })
           },
         }),
 

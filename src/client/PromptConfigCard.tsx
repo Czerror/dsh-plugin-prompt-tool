@@ -7,6 +7,7 @@ import clsx from 'clsx'
 import { IconChevronDownOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
 import styles from './PromptUi.module.css'
 import { autoResizeTextarea } from './textarea-resize.ts'
+import { TagInput } from './TagInput.tsx'
 
 import type { EngineMeta, LayerFieldPolicy, PromptConfigDraft } from './prompt-tool-types.ts'
 
@@ -177,6 +178,26 @@ export function StrategyParamsFields(props: { strategy: string; params: Record<s
       <>
         <ParamInput label="firstTurnWord（锚定词）" hint="晋升后首个 reasoning 命中该词即注入；任意自定义文本"
           value={str('firstTurnWord')} onChange={(next) => set('firstTurnWord', next)} />
+      </>
+    )
+  }
+  if (strategy === 'world-book') {
+    const keyId = useId()
+    const list = (key: string): string => Array.isArray(value[key])
+      ? (value[key] as unknown[]).map(String).join(', ') : str(key)
+    const setList = (key: string, next: string): void => set(key, next.split(',').map((item) => item.trim()).filter((item) => item.length > 0))
+    return (
+      <>
+        <ParamToggle label="constant（常驻注入）" hint="true = 不依赖关键字，每轮恒注入；false = 命中 keys 才注入"
+          checked={bool('constant')} onChange={(next) => set('constant', next)} />
+        <TagInput id={`${keyId}-keys`} label="keys（触发关键字）" hint="命中消息文本中的任一关键字即注入；逗号分隔" onCommit={() => {}}
+          value={list('keys')} placeholder="关键字，回车添加" onChange={(next) => setList('keys', next)} />
+        <TagInput id={`${keyId}-secondary-keys`} label="secondaryKeys（次级关键字）" hint="与 keys 合并匹配（任一命中即注入）；逗号分隔" onCommit={() => {}}
+          value={list('secondaryKeys')} placeholder="次级关键字，回车添加" onChange={(next) => setList('secondaryKeys', next)} />
+        <ParamToggle label="caseSensitive（区分大小写）" hint="true = 关键字精确大小写匹配"
+          checked={bool('caseSensitive')} onChange={(next) => set('caseSensitive', next)} />
+        <ParamToggle label="wholeWords（整词匹配）" hint="true = 关键字必须整词出现（词边界），false = 子串包含即命中"
+          checked={bool('wholeWords')} onChange={(next) => set('wholeWords', next)} />
       </>
     )
   }

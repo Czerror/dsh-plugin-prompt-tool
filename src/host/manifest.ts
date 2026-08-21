@@ -10,6 +10,7 @@
  */
 
 import { readFileSync, existsSync, readdirSync, mkdirSync, rmSync, writeFileSync, cpSync } from 'node:fs'
+import { spawn } from 'node:child_process'
 import { basename, dirname, join, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Pair, Scalar, parse as parseYaml, parseDocument, YAMLMap, YAMLSeq } from 'yaml'
@@ -36,6 +37,11 @@ export interface PresetSpec {
   promptConfigs?: unknown[]
   /** 可选:引擎组合模块行参数覆盖(行级 map config 浅合并,preset 优先)。 */
   moduleConfigs?: Record<string, Record<string, unknown>>
+  /** 世界书（独立存储段，不进 promptConfigs）：injectMode + 条目。 */
+  worldBook?: {
+    injectMode?: 'full' | 'keyword'
+    entries: Array<Record<string, unknown>>
+  }
   legacyCleanup?: string[]
   upstream?: Record<string, unknown>
 }
@@ -136,8 +142,8 @@ export function resolvePresetDir(template: string): string {
 
 /** 可用预设清单：全部来自预设根 ~/.dsh/.agent-presets（官方预设目录，含 agent.cordis.yml
  *  即被宿主挂载；点前缀目录与无 preset.yml 的官方目录跳过，不占本插件列表）。 */
-export function listPresets(): Array<{ id: string; name: string; user: boolean; description?: string }> {
-  const scan = (dir: string): Array<{ id: string; name: string; user: boolean; description?: string }> => {
+export function listPresets(): Array<{ id: string; name: string; user: boolean; description?: string; meta?: Record<string, unknown> }> {
+  const scan = (dir: string): Array<{ id: string; name: string; user: boolean; description?: string; meta?: Record<string, unknown> }> => {
     try {
       return readdirSync(dir, { withFileTypes: true })
         .filter((entry) => entry.isDirectory() && !entry.name.startsWith('.'))
@@ -151,6 +157,7 @@ export function listPresets(): Array<{ id: string; name: string; user: boolean; 
               name: spec.name,
               user: true,
               ...(typeof spec.description === 'string' && spec.description.length > 0 ? { description: spec.description } : {}),
+              ...(spec.meta !== undefined && spec.meta !== null ? { meta: spec.meta } : {}),
             }]
           } catch {
             return []
@@ -241,6 +248,66 @@ export function cloneBuiltinPreset(id: string, autoSuffix = false): { ok: true; 
   }
 }
 
+/** 复制用户预设目录为新预设（id 自动递增：<id>-copy / <id>-copy-2 / …）。
+ *  复制的是用户目录完整副本（preset.yml / agent.cordis.yml / prompt-configs /
+ *  内容资产 / 覆盖文件），与「从内置模板新建」互补：后者还原模板，前者备份现状。 */
+export function duplicateUserPreset(id: string, presetRoot = userPresetsDir()): { ok: true; id: string } | { ok: false; message: string } {
+  if (typeof id !== 'string' || id.length === 0 || id === '.' || id === '..'
+    || id.includes('/') || id.includes('\\')) {
+    return { ok: false, message: `非法预设 id：${id}` }
+  }
+  const root = resolve(presetRoot)
+  const source = resolve(join(root, id))
+  const rootResolved = resolve(root)
+  if (source !== rootResolved && !source.startsWith(rootResolved + sep)) {
+    return { ok: false, message: `预设路径越界：${id}` }
+  }
+  if (!existsSync(source)) {
+    return { ok: false, message: `预设 ${id} 不存在` }
+  }
+  let targetId = `${id}-copy`
+  let target = join(root, targetId)
+  for (let suffix = 2; existsSync(target); suffix++) {
+    targetId = `${id}-copy${suffix}`
+    target = join(root, targetId)
+  }
+  try {
+    mkdirSync(root, { recursive: true })
+    cpSync(source, target, { recursive: true, force: true })
+    return { ok: true, id: targetId }
+  } catch (error) {
+    return { ok: false, message: `复制预设失败：${error instanceof Error ? error.message : String(error)}` }
+  }
+}
+
+/** 在系统文件管理器中打开预设目录（尽力而为：无桌面环境时打开失败也返回路径供 UI 展示）。 */
+export function openPresetLocation(id: string, presetRoot = userPresetsDir()): { ok: true; path: string } | { ok: false; message: string; path: string } {
+  // 普通预设 id（裸目录名）或角色卡库子路径（/.characters/<cardId>）两种形态。
+  const isBareId = typeof id === 'string' && id.length > 0 && id !== '.' && id !== '..'
+    && !id.includes('/') && !id.includes('\\')
+  const isCardPath = typeof id === 'string' && /^\/\.[a-zA-Z0-9_-]+\/[^/\\]+$/.test(id)
+  if (!isBareId && !isCardPath) {
+    return { ok: false, message: `非法预设 id：${id}`, path: '' }
+  }
+  const dir = resolve(join(presetRoot, id))
+  const rootResolved = resolve(presetRoot)
+  if (dir !== rootResolved && !dir.startsWith(rootResolved + sep)) {
+    return { ok: false, message: `预设路径越界：${id}`, path: dir }
+  }
+  if (!existsSync(dir)) {
+    return { ok: false, message: `预设 ${id} 不存在`, path: dir }
+  }
+  try {
+    const command = process.platform === 'win32' ? 'explorer'
+      : process.platform === 'darwin' ? 'open' : 'xdg-open'
+    const child = spawn(command, [dir], { detached: true, stdio: 'ignore' })
+    child.unref()
+    return { ok: true, path: dir }
+  } catch (error) {
+    return { ok: false, message: `打开目录失败：${error instanceof Error ? error.message : String(error)}`, path: dir }
+  }
+}
+
 /**
  * 保存预设参数：写激活预设目录 preset.yml 的 params（merge）/ promptConfigs（整体替换）。
  * parseDocument 保留注释与未知键（preset.yml 模板含大量注释）；空值键跳过
@@ -298,7 +365,7 @@ export function removeUserPreset(id: string, presetRoot = userPresetsDir()): { o
 export function parseImportedPresetId(presetYaml: string, fallback: string): string {
   try {
     const parsed = parseYaml(presetYaml, { logLevel: 'silent' }) as { id?: unknown } | null
-    return typeof parsed?.id === 'string' && /^[a-zA-Z0-9][a-zA-Z0-9-]*$/.test(parsed.id) ? parsed.id : fallback
+    return typeof parsed?.id === 'string' && /^[a-zA-Z0-9\u4e00-\u9fff][a-zA-Z0-9\u4e00-\u9fff-]*$/.test(parsed.id) ? parsed.id : fallback
   } catch {
     return fallback
   }
