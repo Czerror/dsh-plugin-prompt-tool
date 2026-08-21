@@ -639,12 +639,12 @@ export function registerSettingsBridge(
               writeBridgeJson(res, 400, { ok: false, code: 'preset-clone-rejected', message: '缺少预设 id' })
               return
             }
-            const result = cloneBuiltinPreset(id)
+            const result = cloneBuiltinPreset(id, record.autoSuffix === true)
             if (!result.ok) {
               writeBridgeJson(res, 400, { ok: false, code: 'preset-clone-rejected', message: result.message })
               return
             }
-            writeBridgeJson(res, 200, { ok: true, value: { id } })
+            writeBridgeJson(res, 200, { ok: true, value: { id: result.id } })
           },
         }),
 

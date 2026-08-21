@@ -95,12 +95,12 @@ export function PresetSwitcher(props: { store: PromptToolStore }): ReactNode {
     }
   }
 
-  /** 新建：从插件目录模板复制到用户目录（还原/自定义起点）。 */
-  const clonePreset = async (id: string): Promise<void> => {
-    const res = await bridgePost<{ id: string }>('/preset-clone', { id })
+  /** 新建：从插件目录模板复制到用户目录（还原/自定义起点）；自定义入口重名自动递增。 */
+  const clonePreset = async (id: string, autoSuffix = false): Promise<void> => {
+    const res = await bridgePost<{ id: string }>('/preset-clone', { id, autoSuffix })
     if (res.ok) {
       setPickerOpen(false)
-      store.showNotice('ok', `已从内置模板新建预设 ${id}`)
+      store.showNotice('ok', `已从内置模板新建预设 ${res.value.id}`)
       await store.load()
     } else {
       store.showNotice('error', '新建预设失败：' + (res.message ?? 'settings bridge unavailable'))
@@ -186,6 +186,12 @@ export function PresetSwitcher(props: { store: PromptToolStore }): ReactNode {
             </div>
             <div className={styles.templateModalList}>
               {templates.length === 0 && <p className={styles.configFieldHint}>插件目录无内置模板。</p>}
+              <button type="button" className={styles.templateModalItem} data-custom
+                title="新建一份所有参数为空的自定义预设（重名自动加序号）"
+                onClick={() => void clonePreset('custom', true)}>
+                <strong>自定义预设</strong>
+                <small>custom · 所有参数为空（空白起点，重名自动加序号）</small>
+              </button>
               {templates.map((template) => (
                 <button key={template.id} type="button" className={styles.templateModalItem}
                   title={`新建到用户目录：${template.id}`} onClick={() => void clonePreset(template.id)}>

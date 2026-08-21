@@ -45,7 +45,7 @@ test('removeUserPreset：非法 id 与路径越界拒绝', () => {
 test('ensurePresetSeed：首次种子化全部内置模板，.seeded 后不重复且删除不复活', () => {
   const first = ensurePresetSeed()
   assert.ok(first.created.length >= BUILTIN_IDS.length, `首次应复制全部内置（实际 ${first.created.length}）`)
-  for (const id of BUILTIN_IDS) {
+  for (const id of [...BUILTIN_IDS, 'custom']) {
     assert.ok(existsSync(join(PRESETS_DIR, id, 'preset.yml')), `${id} 应种子化`)
   }
   // 二次调用不重复复制。
@@ -73,9 +73,23 @@ test('cloneBuiltinPreset：非内置/非法 id/用户目录已存在同名拒绝
 
 test('cloneBuiltinPreset：删除后可新建还原', () => {
   assert.equal(existsSync(join(PRESETS_DIR, 'ptc')), false)
-  assert.deepEqual(cloneBuiltinPreset('ptc'), { ok: true })
+  const cloned = cloneBuiltinPreset('ptc')
+  assert.equal(cloned.ok, true)
+  assert.equal(cloned.ok && cloned.id, 'ptc')
   assert.ok(existsSync(join(PRESETS_DIR, 'ptc', 'preset.yml')), 'ptc 应还原到用户目录')
   assert.ok(listPresets().some((preset) => preset.id === 'ptc' && preset.user === true))
+})
+
+test('cloneBuiltinPreset：autoSuffix 自定义预设重名自动递增', () => {
+  // custom 已种子化存在：autoSuffix 应生成 custom-2。
+  const cloned = cloneBuiltinPreset('custom', true)
+  assert.equal(cloned.ok, true)
+  assert.equal(cloned.ok && cloned.id, 'custom-2')
+  assert.ok(existsSync(join(PRESETS_DIR, 'custom-2', 'preset.yml')), 'custom-2 应创建')
+  assert.ok(listPresets().some((preset) => preset.id === 'custom-2' && preset.user === true))
+  // 非 autoSuffix 同名仍拒绝。
+  assert.equal(cloneBuiltinPreset('custom').ok, false)
+  removeUserPreset('custom-2')
 })
 
 test('removeUserPreset：删除后 listPresets 不再列出', () => {

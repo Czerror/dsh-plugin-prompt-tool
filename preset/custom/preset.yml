@@ -1,0 +1,23 @@
+# 自定义预设：空白起点（所有参数为空，由引擎与 UI 默认值兜底）。
+# 新建时选择本模板得到一份可自由配置的用户预设；模块集为最小引擎骨架（与 minimal 一致），
+# 参数/模块配置/提示词配置全部留空，按需从 UI（模型/引导/工具/提示词模块列表）填充。
+id: custom
+name: 自定义预设
+description: 空白起点：所有参数为空，按需从 UI 配置。
+version: 1.0.0
+engineCompat: ">=0.4.2"
+modules:
+  - persona
+  - official-persistent-shell
+  - bootstrap-filesystem
+  - context-gate
+  - tool-bootstrap
+  - router-first-turn
+  - prompt-config-engine
+  - run-code-env
+  - custom-bash
+  - skill-search
+moduleConfigs: {}
+params: {}
+promptConfigs: []
+legacyCleanup: []

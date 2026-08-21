@@ -243,6 +243,29 @@ test('writePreset 官方导入预设（standard/minimal/ptc/creative）渲染组
   }
 })
 
+test('writePreset 自定义预设（custom，所有参数为空）渲染安全', () => {
+  const dir = join(tmpdir(), `prompt-tool-custom-${process.pid}-${Date.now()}`)
+  const presetDir = join(dir, 'preset')
+  try {
+    writePreset('', {
+      ...makeOptions(presetDir),
+      presetTemplate: 'custom',
+      injectPrompt: false,
+      firstTurnAnchor: false,
+      bootstrapMaxTokens: 0,
+      usePtcMode: true,
+    })
+    const agent = readFileSync(join(presetDir, 'custom', 'agent.cordis.yml'), 'utf8')
+    const rows = parseYaml(agent)
+    assert.ok(Array.isArray(rows) && rows.length >= 5, `自定义预设组合应含引擎骨架（${rows.length}）`)
+    assert.ok(!/__[A-Z0-9_]+__/.test(agent), '不应残留未解析 token')
+    const promptConfigs = readdirSync(join(presetDir, 'custom', 'prompt-configs'))
+    assert.equal(promptConfigs.length, 0, '自定义预设 promptConfigs 应为空')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
 test('writePreset 生成内容资产文件 preset.md / agents.md', () => {
   const dir = join(tmpdir(), `prompt-tool-md-${process.pid}-${Date.now()}`)
   const presetDir = join(dir, 'preset')

@@ -165,6 +165,8 @@ export function listBuiltinTemplates(): Array<{ id: string; name: string }> {
   try {
     return readdirSync(packagePresetDir(), { withFileTypes: true })
       .filter((entry) => entry.isDirectory())
+      // 自定义预设走「新建」顶部专用入口（autoSuffix），不重复出现在普通模板列表。
+      .filter((entry) => entry.name !== 'custom')
       .flatMap((entry) => {
         try {
           const spec = loadPresetSpec(join(packagePresetDir(), entry.name))
@@ -202,8 +204,9 @@ export function ensurePresetSeed(): { created: string[] } {
   return { created }
 }
 
-/** 从插件目录复制内置预设到用户目录（新建/还原）；已存在同名或非内置拒绝。 */
-export function cloneBuiltinPreset(id: string): { ok: true } | { ok: false; message: string } {
+/** 从插件目录复制内置预设到用户目录（新建/还原）。
+ *  autoSuffix=true（自定义预设入口）时同名自动递增（custom → custom-2 → …）；否则同名拒绝。 */
+export function cloneBuiltinPreset(id: string, autoSuffix = false): { ok: true; id: string } | { ok: false; message: string } {
   if (typeof id !== 'string' || id.length === 0 || id === '.' || id === '..'
     || id.includes('/') || id.includes('\\')) {
     return { ok: false, message: `非法预设 id：${id}` }
@@ -212,14 +215,22 @@ export function cloneBuiltinPreset(id: string): { ok: true } | { ok: false; mess
   if (builtin === undefined) {
     return { ok: false, message: `预设 ${id} 不是包内置预设` }
   }
-  const target = join(userPresetsDir(), id)
+  let targetId = id
+  let target = join(userPresetsDir(), targetId)
   if (existsSync(target)) {
-    return { ok: false, message: `用户目录已存在同名预设 ${id}，请先删除再新建` }
+    if (!autoSuffix) {
+      return { ok: false, message: `用户目录已存在同名预设 ${id}，请先删除再新建` }
+    }
+    for (let suffix = 2; ; suffix++) {
+      targetId = `${id}-${suffix}`
+      target = join(userPresetsDir(), targetId)
+      if (!existsSync(target)) break
+    }
   }
   try {
     mkdirSync(userPresetsDir(), { recursive: true })
     cpSync(builtin, target, { recursive: true, force: true })
-    return { ok: true }
+    return { ok: true, id: targetId }
   } catch (error) {
     return { ok: false, message: `新建预设失败：${error instanceof Error ? error.message : String(error)}` }
   }
