@@ -6,7 +6,7 @@
  * 默认提示词配置与组合 token 都由引擎按 params 生成,参数文件不含任何模板语法。
  */
 
-import { writeFileSync, mkdirSync, rmSync, cpSync, mkdtempSync, renameSync, existsSync, readdirSync } from 'node:fs'
+import { writeFileSync, mkdirSync, rmSync, cpSync, mkdtempSync, renameSync, existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { stringify as stringifyYaml } from 'yaml'
 import { DEFAULT_PRESET_DIR } from './paths.ts'
@@ -26,6 +26,24 @@ import {
 } from './manifest.ts'
 
 const ENGINE_DIR = packageEngineDir()
+
+/** 包内引擎指纹（相对路径 + size）：引擎文件未变时容器根共享引擎不重刷。
+ *  每次 settings 变更都会 rebuildPreset → writePreset，引擎重刷（130 文件复制 +
+ *  Windows 锁等待）是纯浪费；指纹 stat 遍历约 2-5ms，远小于复制成本。 */
+function engineFingerprint(): string {
+  const parts: string[] = []
+  const walk = (rel: string): void => {
+    for (const entry of readdirSync(join(ENGINE_DIR, rel), { withFileTypes: true })) {
+      const child = rel.length === 0 ? entry.name : `${rel}/${entry.name}`
+      if (entry.isDirectory()) walk(child)
+      else parts.push(`${child}:${statSync(join(ENGINE_DIR, child)).size}`)
+    }
+  }
+  walk('')
+  return parts.sort().join('|')
+}
+
+const ENGINE_FINGERPRINT_MARKER = '.pt-engine-fingerprint'
 
 export interface WritePresetOptions {
   firstTurnAnchor: boolean
@@ -269,11 +287,23 @@ export function writePreset(prompt: string, options: WritePresetOptions): void {
   // 3) 共享引擎：引擎代码只物化一份于容器根（全部子预设组合以 ../engine 引用，
   //    容器根转发 name 指向 ./engine/...）。每次写入重刷保证与包内引擎一致，
   //    并清理旧版子预设的 engine/ 残留（全量/按需复制时代的迁移）。
+  //    指纹标记：包内引擎未变时跳过 rmSync+cpSync（settings 每次变更都会重建，
+  //    引擎重刷是纯浪费且引入 Windows 锁等待）。
   const sharedEngine = join(presetRoot, 'engine')
-  withLockRetry(() => {
-    rmSync(sharedEngine, { recursive: true, force: true })
-    cpSync(ENGINE_DIR, sharedEngine, { recursive: true, force: true })
-  })
+  const fingerprint = engineFingerprint()
+  let currentMarker = ''
+  try {
+    currentMarker = readFileSync(join(sharedEngine, ENGINE_FINGERPRINT_MARKER), 'utf8')
+  } catch {
+    // 无标记 = 首次写入或旧版布局，重刷。
+  }
+  if (currentMarker !== fingerprint) {
+    withLockRetry(() => {
+      rmSync(sharedEngine, { recursive: true, force: true })
+      cpSync(ENGINE_DIR, sharedEngine, { recursive: true, force: true })
+    })
+    writeFileSync(join(sharedEngine, ENGINE_FINGERPRINT_MARKER), fingerprint, 'utf8')
+  }
   for (const entry of readdirSync(presetRoot, { withFileTypes: true })) {
     if (!entry.isDirectory() || entry.name === 'engine' || entry.name.startsWith('.')) continue
     try {

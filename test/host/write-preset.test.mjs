@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -55,6 +55,24 @@ test('writePreset 容器根共享引擎：子预设不复制 engine，组合引�
     const sub = readFileSync(join(presetDir, 'anchored', 'agent.cordis.yml'), 'utf8')
     assert.match(sub, /name: \.\.\/engine\/prompt-config-engine\.mjs/, '子预设引擎引用 ../engine（容器根共享）')
     assert.match(sub, /configsDir: \.\/anchored\/prompt-configs/, 'configsDir 相对容器根引擎指向子预设')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('writePreset 引擎指纹：包内引擎未变时二次写入不重刷共享引擎', () => {
+  const dir = join(tmpdir(), `prompt-tool-fp-${process.pid}-${Date.now()}`)
+  const presetDir = join(dir, 'preset')
+  try {
+    writePreset('PROMPT', makeOptions(presetDir))
+    const engineFile = join(presetDir, 'engine', 'prompt-config-engine.mjs')
+    const marker = join(presetDir, 'engine', '.pt-engine-fingerprint')
+    assert.ok(existsSync(marker), '指纹标记应写入')
+    assert.ok(readFileSync(marker, 'utf8').length > 10, '指纹内容非空')
+    const mtime1 = statSync(engineFile).mtimeMs
+    writePreset('PROMPT', makeOptions(presetDir))
+    const mtime2 = statSync(engineFile).mtimeMs
+    assert.equal(mtime2, mtime1, '引擎未变不应重刷（mtime 保持不变）')
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
