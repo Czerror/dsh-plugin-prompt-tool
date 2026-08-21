@@ -519,7 +519,87 @@
 
 /* 多目录卡片：路径 + 状态 + 计数 + 行操作。 */
 .dirCardList { display: flex; min-width: 0; flex-direction: column; gap: 8px; }
-.presetList { display: flex; min-width: 0; flex-direction: column; gap: 8px; margin-top: 2px; }
+.presetList { display: flex; min-width: 0; flex-direction: column; gap: 6px; margin-top: 2px; }
+.presetGroupTitle {
+  padding: 10px 2px 0;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 16px;
+  letter-spacing: .02em;
+}
+.presetRow {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-base);
+}
+.presetRow:hover { background: var(--dsw-alias-interactive-bg-hover); }
+.presetRow[data-active] {
+  border-color: color-mix(in srgb, var(--pt-accent) 45%, var(--dsw-alias-border-l2));
+  background: color-mix(in srgb, var(--pt-accent) 6%, transparent);
+}
+.presetRowMain {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  align-items: center;
+  padding: 2px 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.presetRowMain:disabled { cursor: default; opacity: .6; }
+.presetRowMain:focus-visible {
+  outline: 2px solid var(--dsw-alias-state-business-primary);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+.presetRowName {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 1px;
+}
+.presetRowName strong {
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.presetRowName code {
+  color: var(--dsw-alias-label-tertiary);
+  font-family: var(--ds-font-family-code, ui-monospace, monospace);
+  font-size: 11px;
+  line-height: 1.5;
+}
+.presetRowActions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+}
+.presetRowBadge {
+  padding: 3px 8px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 999px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 11px;
+  line-height: 1;
+  white-space: nowrap;
+}
+.presetRowBadge[data-kind='active'] {
+  border-color: transparent;
+  color: var(--pt-on-chip);
+  background: var(--pt-accent);
+}
 .dirCard {
   display: flex;
   min-width: 0;

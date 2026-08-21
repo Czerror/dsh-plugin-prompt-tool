@@ -1,5 +1,6 @@
 /** 预设切换器：切换预设模板 + 导入自定义预设（配置页与功能设置共用）。 */
 import { useRef, useState, type ReactNode } from 'react'
+import clsx from 'clsx'
 import { bridgePost } from './prompt-tool-bridge.ts'
 import type { PromptToolStore } from './prompt-tool-store.ts'
 import styles from './PromptUi.module.css'
@@ -7,6 +8,7 @@ import styles from './PromptUi.module.css'
 export function PresetSwitcher(props: { store: PromptToolStore }): ReactNode {
   const { store } = props
   const fields = store.fields
+  const presets = store.meta.presets ?? []
   const [importing, setImporting] = useState(false)
   const [confirmingDelete, setConfirmingDelete] = useState<string | undefined>(undefined)
   const yamlRef = useRef<HTMLInputElement>(null)
@@ -85,20 +87,9 @@ export function PresetSwitcher(props: { store: PromptToolStore }): ReactNode {
       <div className={styles.settingRowStack}>
         <span className={styles.settingCopy}>
           <strong>预设模板</strong>
-          <small>切换后按新模板重建生成目录；anchored 为插件默认，另有官方标准/极简/PTC/创造四套。导入预设 = 选择 preset.yml / 任意 *.yml/*.yaml / SillyTavern *.json 配置文件，或整个预设文件夹。</small>
+          <small>点击预设卡片即切换并按新模板重建生成目录；anchored 为插件默认，另有官方标准/极简/PTC/创造四套。导入预设 = 选择 preset.yml / 任意 *.yml/*.yaml / SillyTavern *.json 配置文件，或整个预设文件夹。</small>
         </span>
         <span className={styles.inlineControls}>
-          <select
-            className={styles.configInput}
-            aria-label="预设模板"
-            value={fields.presetTemplate}
-            disabled={!fields.writePreset}
-            onChange={(event) => store.setPresetTemplate(event.target.value)}
-          >
-            {(store.meta.presets ?? []).map((preset) => (
-              <option key={preset.id} value={preset.id}>{preset.id} · {preset.name}</option>
-            ))}
-          </select>
           <input
             ref={yamlRef}
             type="file"
@@ -128,21 +119,36 @@ export function PresetSwitcher(props: { store: PromptToolStore }): ReactNode {
         </span>
       </div>
       <div className={styles.presetList}>
-        {(store.meta.presets ?? []).map((preset) => {
+        {presets.filter((preset) => preset.user !== true).length > 0 && (
+          <span className={styles.presetGroupTitle}>内置预设</span>
+        )}
+        {presets.filter((preset) => preset.user !== true).map((preset) => renderRow(preset))}
+        <span className={styles.presetGroupTitle}>用户预设</span>
+        {presets.filter((preset) => preset.user === true).length === 0 ? (
+          <p className={styles.readOnly} role="status">暂无用户预设；点击上方「导入预设」或「导入文件夹」添加。</p>
+        ) : presets.filter((preset) => preset.user === true).map((preset) => renderRow(preset))}
+      </div>
+    </div>
+  )
+
+  function renderRow(preset: { id: string; name: string; user?: boolean }): ReactNode {
           const active = fields.presetTemplate === preset.id
           const deletable = preset.user === true
           const confirming = confirmingDelete === preset.id
           return (
-            <div key={preset.id} className={styles.dirCard}>
-              <span className={styles.dirCardBody}>
-                <span className={styles.dirCardTitle}>
-                  <code className={styles.dirPath} title={preset.id}>{preset.id}</code>
-                  {active && <span className={styles.duplicateBadge} title="当前预设模板">使用中</span>}
-                  {!deletable && <span className={styles.duplicateBadge} title="包内置预设模板，不可删除">内置</span>}
+            <div key={preset.id} className={clsx(styles.presetRow, active && styles.presetRowActive)}
+              data-active={active ? '' : undefined}>
+              <button type="button" className={styles.presetRowMain} disabled={!fields.writePreset}
+                title={active ? '当前预设模板' : `切换到 ${preset.name}`}
+                onClick={() => store.setPresetTemplate(preset.id)}>
+                <span className={styles.presetRowName}>
+                  <strong>{preset.name}</strong>
+                  <code>{preset.id}</code>
                 </span>
-                <span className={styles.dirCardMeta}>{preset.name}{!deletable ? ' · 包内置' : ' · 用户导入'}</span>
-              </span>
-              <span className={styles.dirCardActions}>
+              </button>
+              <span className={styles.presetRowActions}>
+                {active && <span className={styles.presetRowBadge} data-kind="active">使用中</span>}
+                {!deletable && <span className={styles.presetRowBadge} data-kind="builtin">内置</span>}
                 {deletable && (confirming ? (
                   <>
                     <button type="button" className={styles.pillButton} data-danger onClick={() => void deletePreset(preset.id)}>确认删除</button>
@@ -156,8 +162,5 @@ export function PresetSwitcher(props: { store: PromptToolStore }): ReactNode {
               </span>
             </div>
           )
-        })}
-      </div>
-    </div>
-  )
+  }
 }
