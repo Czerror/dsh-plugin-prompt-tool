@@ -65,12 +65,13 @@ export async function listAdvertisedModels(ctx: Context): Promise<Record<string,
     listModels?: (provider: string) => Promise<Array<{ id?: string; name?: string }>>
   } | undefined
   if (llm?.listProviders === undefined || llm.listModels === undefined) return catalog
+  const listModels = llm.listModels
   const liveProviders = (llm.listProviders() ?? [])
     .map((entry) => (typeof entry?.id === 'string' && entry.id.length > 0 ? entry.id : (typeof entry?.name === 'string' ? entry.name : '')))
     .filter((id) => id.length > 0)
   await Promise.all(liveProviders.map(async (provider) => {
     try {
-      const models = await withModelTimeout(llm.listModels(provider), MODEL_QUERY_TIMEOUT_MS)
+      const models = await withModelTimeout(listModels(provider), MODEL_QUERY_TIMEOUT_MS)
       if (!Array.isArray(models)) return
       const ids = models
         .map((entry) => (typeof entry?.id === 'string' && entry.id.length > 0 ? entry.id : (typeof entry?.name === 'string' ? entry.name : '')))

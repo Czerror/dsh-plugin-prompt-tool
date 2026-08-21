@@ -13,7 +13,7 @@ test('官方格式预设：无 id 回退目录名，无 modules/composition 回�
   const home = mkdtempSync(join(tmpdir(), 'pt-official-'))
   try {
     // 构造官方格式预设（preset.yml 无 id；组合文件在预设目录）。
-    const presetDir = join(home, 'presets', 'official-demo')
+    const presetDir = join(home, '.agent-presets', 'official-demo')
     mkdirSync(presetDir, { recursive: true })
     writeFileSync(join(presetDir, 'preset.yml'), [
       'name: 官方格式演示',
@@ -36,8 +36,8 @@ test('官方格式预设：无 id 回退目录名，无 modules/composition 回�
       const found = listPresets().find((p) => p.id === 'official-demo')
       if (!found) throw new Error('official-demo 未出现在预设清单')
       if (found.name !== '官方格式演示') throw new Error('name 读取错误')
-      if (!resolvePresetDir('official-demo').includes('presets')) throw new Error('resolvePresetDir 未指向用户目录')
-      const gen = join(process.env.DSH_HOME, '.agent-presets', 'prompt-tool')
+      if (!resolvePresetDir('official-demo').includes('.agent-presets')) throw new Error('resolvePresetDir 未指向预设根')
+      const gen = join(process.env.DSH_HOME, '.agent-presets')
       writePreset('PROMPT', {
         presetDir: gen, presetTemplate: 'official-demo', presetOrder: 7,
         firstTurnAnchor: false, firstTurnText: '', firstTurnCustom: false,
@@ -68,7 +68,7 @@ test('官方格式预设：无 id 回退目录名，无 modules/composition 回�
 test('官方 str-replace-editor 行：params 覆盖 maxOutputChars 渲染生效', () => {
   const home = mkdtempSync(join(tmpdir(), 'pt-editor-param-'))
   try {
-    const presetDir = join(home, 'presets', 'editor-param')
+    const presetDir = join(home, '.agent-presets', 'editor-param')
     mkdirSync(presetDir, { recursive: true })
     writeFileSync(join(presetDir, 'preset.yml'), [
       'id: editor-param',
@@ -84,7 +84,7 @@ test('官方 str-replace-editor 行：params 覆盖 maxOutputChars 渲染生效'
       import { readFileSync } from 'node:fs'
       import { join } from 'node:path'
       const { writePreset } = await import('./lib/index.mjs')
-      const gen = join(process.env.DSH_HOME, '.agent-presets', 'prompt-tool')
+      const gen = join(process.env.DSH_HOME, '.agent-presets')
       writePreset('PROMPT', {
         presetDir: gen, presetTemplate: 'editor-param', presetOrder: 1,
         firstTurnAnchor: false, firstTurnText: '', firstTurnCustom: false,

@@ -13,7 +13,7 @@ import { readFileSync, existsSync, readdirSync, mkdirSync, rmSync, writeFileSync
 import { basename, dirname, join, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Pair, Scalar, parse as parseYaml, parseDocument, YAMLMap, YAMLSeq } from 'yaml'
-import { DEFAULT_USER_PRESETS_DIR } from './paths.ts'
+import { DEFAULT_PRESET_DIR } from './paths.ts'
 
 export interface PresetSpec {
   id: string
@@ -100,10 +100,9 @@ export const asString = (value: unknown, fallback = ''): string => {
   return String(value)
 }
 
-/** 可用预设清单（preset/ 下含 preset.yml 的目录）：供 UI 预设切换器展示。 */
-/** 用户自定义预设目录（~/.dsh/presets；导入的预设放这里，插件更新不丢失）。 */
+/** 预设根：官方 USER_PRESET_DIR（~/.dsh/.agent-presets），导入/新建/种子化的预设都放这里。 */
 export function userPresetsDir(): string {
-  return DEFAULT_USER_PRESETS_DIR
+  return DEFAULT_PRESET_DIR
 }
 
 /** 在指定扫描目录内按 template 定位预设目录：目录名精确匹配优先，preset.yml 的 id 匹配兜底。 */
@@ -135,16 +134,17 @@ export function resolvePresetDir(template: string): string {
   return found ?? join(packagePresetDir(), template)
 }
 
-/** 可用预设清单：全部来自用户目录 ~/.dsh/presets（插件目录模板只经「新建」复制进入；
- *  首次启动由 ensurePresetSeed 种子化，删除后可用「新建」还原）。 */
+/** 可用预设清单：全部来自预设根 ~/.dsh/.agent-presets（官方预设目录，含 agent.cordis.yml
+ *  即被宿主挂载；点前缀目录与无 preset.yml 的官方目录跳过，不占本插件列表）。 */
 export function listPresets(): Array<{ id: string; name: string; user: boolean; description?: string }> {
   const scan = (dir: string): Array<{ id: string; name: string; user: boolean; description?: string }> => {
     try {
       return readdirSync(dir, { withFileTypes: true })
-        .filter((entry) => entry.isDirectory())
+        .filter((entry) => entry.isDirectory() && !entry.name.startsWith('.'))
         .flatMap((entry) => {
           try {
             const spec = loadPresetSpec(join(dir, entry.name))
+            if (typeof spec.id !== 'string' || spec.id.length === 0) return []
             // 切换值用目录名（与 resolvePresetDir 路径一致）；name 保持 spec.name 契约。
             return [{
               id: entry.name,
@@ -186,17 +186,17 @@ export function listBuiltinTemplates(): Array<{ id: string; name: string }> {
   }
 }
 
-/** 首次启动种子化：把插件目录全部内置模板复制到用户目录（.seeded 标记后不再自动补）。
+/** 首次启动种子化：把插件目录全部内置模板复制到预设根（.pt-seeded 标记后不再自动补）。
  *  用户删除的预设不会自动复活；升级新增的模板用「新建」按需复制。 */
 export function ensurePresetSeed(): { created: string[] } {
   const root = userPresetsDir()
-  const mark = join(root, '.seeded')
+  const mark = join(root, '.pt-seeded')
   if (existsSync(mark)) return { created: [] }
   const created: string[] = []
   try {
     mkdirSync(root, { recursive: true })
     for (const entry of readdirSync(packagePresetDir(), { withFileTypes: true })) {
-      if (!entry.isDirectory()) continue
+      if (!entry.isDirectory() || entry.name.startsWith('.')) continue
       const target = join(root, entry.name)
       if (existsSync(target)) continue
       cpSync(join(packagePresetDir(), entry.name), target, { recursive: true })
@@ -209,7 +209,7 @@ export function ensurePresetSeed(): { created: string[] } {
   return { created }
 }
 
-/** 从插件目录复制内置预设到用户目录（新建/还原）。
+/** 从插件目录复制内置预设到预设根（新建/还原）。
  *  autoSuffix=true（自定义预设入口）时同名自动递增（custom → custom-2 → …）；否则同名拒绝。 */
 export function cloneBuiltinPreset(id: string, autoSuffix = false): { ok: true; id: string } | { ok: false; message: string } {
   if (typeof id !== 'string' || id.length === 0 || id === '.' || id === '..'
@@ -241,49 +241,29 @@ export function cloneBuiltinPreset(id: string, autoSuffix = false): { ok: true; 
   }
 }
 
-/** 删除用户预设目录（~/.dsh/presets/<id>；含同名导入的 .bak-* 备份目录）。
- *  仅作用于用户目录，包内置预设天然不受影响；路径越界与非法 id 拒绝。
- *  presetDir 可选：同时清理生成目录同名子预设（物化残留，避免宿主 agent-presets 列表残留已删预设）。 */
-export function removeUserPreset(id: string, presetDir?: string): { ok: true } | { ok: false; message: string } {
+/** 删除预设目录（预设根/<id>；含同名导入的 .bak-* 备份目录）。
+ *  仅作用于预设根（官方 USER_PRESET_DIR），包内置模板天然不受影响；路径越界与非法 id 拒绝。
+ *  删除后宿主 agent-presets 目录列表自然不再出现该预设（官方 roster 即目录列表）。 */
+export function removeUserPreset(id: string, presetRoot = userPresetsDir()): { ok: true } | { ok: false; message: string } {
   if (typeof id !== 'string' || id.length === 0 || id === '.' || id === '..'
     || id.includes('/') || id.includes('\\')) {
     return { ok: false, message: `非法预设 id：${id}` }
   }
-  const root = userPresetsDir()
+  const root = presetRoot
   const target = resolve(join(root, id))
   const rootResolved = resolve(root)
   if (target !== rootResolved && !target.startsWith(rootResolved + sep)) {
     return { ok: false, message: `预设路径越界：${id}` }
   }
-  // 用户目录与生成目录解耦删除：任一存在即删除成功（生成目录孤儿——用户目录已无
-  // 对应预设的物化残留——也能清理）；两处都不存在才报不存在。
-  let removed = false
   if (existsSync(target)) {
     try {
       rmSync(target, { recursive: true, force: true })
-      removed = true
+      return { ok: true }
     } catch (error) {
       return { ok: false, message: `删除失败：${error instanceof Error ? error.message : String(error)}` }
     }
   }
-  if (typeof presetDir === 'string' && presetDir.trim().length > 0) {
-    const genRoot = resolve(presetDir.trim())
-    const genTarget = resolve(join(genRoot, id))
-    if (genTarget !== genRoot && genTarget.startsWith(genRoot + sep)) {
-      if (existsSync(genTarget)) {
-        try {
-          rmSync(genTarget, { recursive: true, force: true })
-          removed = true
-        } catch {
-          // Windows 瞬时锁：生成目录残留无害（无引用），下次写入重建时覆盖。
-        }
-      }
-    }
-  }
-  if (!removed) {
-    return { ok: false, message: `预设 ${id} 不存在（用户目录 ~/.dsh/presets）` }
-  }
-  return { ok: true }
+  return { ok: false, message: `预设 ${id} 不存在（预设根 ~/.dsh/.agent-presets）` }
 }
 
 /** 从导入的 preset.yml 文本解析预设 id（非法/缺失回退目录名）。 */

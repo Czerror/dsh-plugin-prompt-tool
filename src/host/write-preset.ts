@@ -1,9 +1,11 @@
 /**
- * write-preset — 单一参数 YAML 驱动的预设生成目录物化器。
+ * write-preset — 单一参数 YAML 驱动的官方预设目录物化器。
  *
  * 用户只需编写 preset/<template>/preset.yml(纯参数):
  *   meta + content + modules(模块清单)+ params(直读参数)+ 可选 promptConfigs 覆盖。
  * 默认提示词配置与组合 token 都由引擎按 params 生成,参数文件不含任何模板语法。
+ * 输出 = 官方对齐布局：presetDir/<template>/（预设目录，agent.cordis.yml 组合本体
+ * 直接可挂载）+ presetDir/.engine/（共享引擎，点前缀不占预设槽）。
  */
 
 import { writeFileSync, mkdirSync, rmSync, cpSync, mkdtempSync, renameSync, existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
@@ -27,7 +29,7 @@ import {
 
 const ENGINE_DIR = packageEngineDir()
 
-/** 包内引擎指纹（相对路径 + size）：引擎文件未变时容器根共享引擎不重刷。
+/** 包内引擎指纹（相对路径 + size）：引擎文件未变时共享引擎不重刷。
  *  每次 settings 变更都会 rebuildPreset → writePreset，引擎重刷（130 文件复制 +
  *  Windows 锁等待）是纯浪费；指纹 stat 遍历约 2-5ms，远小于复制成本。 */
 function engineFingerprint(): string {
@@ -35,7 +37,11 @@ function engineFingerprint(): string {
   const walk = (rel: string): void => {
     for (const entry of readdirSync(join(ENGINE_DIR, rel), { withFileTypes: true })) {
       const child = rel.length === 0 ? entry.name : `${rel}/${entry.name}`
-      if (entry.isDirectory()) walk(child)
+      if (entry.isDirectory()) {
+        // 生成期资产（组合库/源）运行时不需要，不复制也不计入指纹。
+        if (rel.length === 0 && entry.name === 'compositions') continue
+        walk(child)
+      }
       else parts.push(`${child}:${statSync(join(ENGINE_DIR, child)).size}`)
     }
   }
@@ -96,8 +102,6 @@ export interface WritePresetOptions {
   promptConfigs: PromptConfigSpec[]
   /** 预设模板名(preset/<name>);默认 anchored(兼容期)。 */
   presetTemplate?: string
-  /** 仅生成子预设目录，不写容器根薄转发（预生成/补建非激活预设时使用）。 */
-  skipForward?: boolean
   /** 目录加载失败等非致命告警回调。 */
   warn?: (message: string) => void
 }
@@ -216,7 +220,7 @@ export function writePreset(prompt: string, options: WritePresetOptions): void {
     ? options.presetTemplate.trim()
     : 'anchored'
   // 安全边界：templateName 现在是写入路径段（presetDir/<template>/），只允许
-  // 目录名形态，拒绝路径分隔符与 ..（防穿越写入容器根之外）。
+  // 目录名形态，拒绝路径分隔符与 ..（防穿越写入预设根之外）。
   if (!/^[a-zA-Z0-9_-]+$/.test(templateName)) {
     throw new Error(`invalid presetTemplate ${JSON.stringify(templateName)}: must be a bare directory name`)
   }
@@ -225,42 +229,29 @@ export function writePreset(prompt: string, options: WritePresetOptions): void {
   const runtime = runtimeOf(options, prompt)
   const params = resolvePresetParams(spec, runtime)
 
-  // 预设分离：presetDir 是容器根（官方按目录名加载 id），渲染目标为
-  // presetDir/<template>/ 子预设目录——各预设完整隔离（引擎/提示词配置/overrides
-  // 各自独立），切换预设只更新容器根的薄转发 agent.cordis.yml。
-  const presetRoot = presetDir
-  const targetDir = join(presetRoot, templateName)
-  mkdirSync(presetRoot, { recursive: true })
-  const tmpDir = mkdtempSync(join(presetRoot, `.${templateName}.tmp-`))
+  // 官方对齐布局：presetDir 是预设根（官方 USER_PRESET_DIR），每个预设一个
+  // 官方预设目录 presetDir/<template>/（agent.cordis.yml 组合本体直接可挂载），
+  // 共享引擎物化一份于 presetDir/.engine（点前缀，官方 discovery 跳过）。
+  const targetDir = join(presetDir, templateName)
+  mkdirSync(presetDir, { recursive: true })
+  const tmpDir = mkdtempSync(join(presetDir, `.${templateName}.tmp-`))
   const outDir = tmpDir
   try {
   // 0) 保留用户参数覆盖文件（重建/升级不丢用户修改；随子预设隔离）。
-  //    旧单目录结构（overrides 在容器根）首次生成时迁移进子预设。
   const overridesSrc = join(targetDir, 'prompt-tool.overrides.yml')
-  const legacyOverrides = join(presetRoot, 'prompt-tool.overrides.yml')
   if (existsSync(overridesSrc)) {
     cpSync(overridesSrc, join(outDir, 'prompt-tool.overrides.yml'), { force: true })
-  } else if (existsSync(legacyOverrides)) {
-    cpSync(legacyOverrides, join(outDir, 'prompt-tool.overrides.yml'), { force: true })
-  }
-  // 旧单目录结构迁移：容器根残留（prompt-configs/内容资产）归位后清理一次；
-  // 容器根 engine 为共享引擎，由步骤 3 整体重刷（含旧单目录残留）。
-  if (existsSync(join(presetRoot, 'engine')) && !existsSync(targetDir)) {
-    for (const name of ['prompt-configs', 'preset.md', 'agents.md', 'preset.yml',
-      'agents-instruction.txt', 'prompt-tool.overrides.yml']) {
-      rmSync(join(presetRoot, name), { recursive: true, force: true })
-    }
   }
 
   // 1) 组合文件:modules 模块库装配 + token 渲染 + moduleConfigs 行级合并 + YAML 校验。
   const composition = renderComposition(spec, runtime, templateDir)
   assertCompositionArray(composition, spec)
-  // 共享引擎路径重写（引擎只物化一份于容器根）：子预设组合的引擎引用
-  // ./engine/ → ../engine/（相对子预设目录 = 容器根/engine）；configsDir 相对
-  // 容器根引擎文件解析 → ./<template>/prompt-configs（指向本子预设）。
+  // 共享引擎路径重写（引擎只物化一份于预设根 .engine）：组合的引擎引用
+  // ./engine/ → ../.engine/（相对预设目录 = 预设根/.engine）；configsDir 相对
+  // 引擎文件（.engine/）解析 → ../<template>/prompt-configs（指向本预设目录）。
   const subComposition = composition
-    .replaceAll('./engine/', '../engine/')
-    .replaceAll('../prompt-configs', `./${templateName}/prompt-configs`)
+    .replaceAll('./engine/', '../.engine/')
+    .replaceAll('../prompt-configs', `../${templateName}/prompt-configs`)
   writeFileSync(join(outDir, 'agent.cordis.yml'), subComposition, 'utf8')
 
   // 2) 宿主预设元数据(模板 meta 参数 + 运行时 order)。
@@ -284,12 +275,12 @@ export function writePreset(prompt: string, options: WritePresetOptions): void {
     else cpSync(source, target, { force: true })
   }
 
-  // 3) 共享引擎：引擎代码只物化一份于容器根（全部子预设组合以 ../engine 引用，
-  //    容器根转发 name 指向 ./engine/...）。每次写入重刷保证与包内引擎一致，
-  //    并清理旧版子预设的 engine/ 残留（全量/按需复制时代的迁移）。
+  // 3) 共享引擎：引擎代码只物化一份于预设根 .engine（全部预设组合以 ../.engine 引用）。
+  //    每次写入重刷保证与包内引擎一致，并清理旧版子预设的 engine/ 残留
+  //    （全量/按需复制时代的迁移）。compositions/（生成期资产）不复制。
   //    指纹标记：包内引擎未变时跳过 rmSync+cpSync（settings 每次变更都会重建，
   //    引擎重刷是纯浪费且引入 Windows 锁等待）。
-  const sharedEngine = join(presetRoot, 'engine')
+  const sharedEngine = join(presetDir, '.engine')
   const fingerprint = engineFingerprint()
   let currentMarker = ''
   try {
@@ -300,14 +291,18 @@ export function writePreset(prompt: string, options: WritePresetOptions): void {
   if (currentMarker !== fingerprint) {
     withLockRetry(() => {
       rmSync(sharedEngine, { recursive: true, force: true })
-      cpSync(ENGINE_DIR, sharedEngine, { recursive: true, force: true })
+      mkdirSync(sharedEngine, { recursive: true })
+      for (const entry of readdirSync(ENGINE_DIR, { withFileTypes: true })) {
+        if (entry.name === 'compositions') continue
+        cpSync(join(ENGINE_DIR, entry.name), join(sharedEngine, entry.name), { recursive: true, force: true })
+      }
     })
     writeFileSync(join(sharedEngine, ENGINE_FINGERPRINT_MARKER), fingerprint, 'utf8')
   }
-  for (const entry of readdirSync(presetRoot, { withFileTypes: true })) {
+  for (const entry of readdirSync(presetDir, { withFileTypes: true })) {
     if (!entry.isDirectory() || entry.name === 'engine' || entry.name.startsWith('.')) continue
     try {
-      rmSync(join(presetRoot, entry.name, 'engine'), { recursive: true, force: true })
+      rmSync(join(presetDir, entry.name, 'engine'), { recursive: true, force: true })
     } catch {
       // Windows 瞬时锁：残留无害（无引用），下次写入再试。
     }
@@ -374,11 +369,11 @@ export function writePreset(prompt: string, options: WritePresetOptions): void {
     }
     // instruction-hint：agents.md 内容经 injectAgentsPrompt 开关注入 params.text
     //（关闭时保持无 text，引擎回退 agents-instruction.txt / 动态探测）。
-    // agentsInstructionPath：共享引擎后 fillers 相对容器根引擎解析，必须显式指向本子预设文件。
+    // agentsInstructionPath：共享引擎后 fillers 相对 .engine 解析，必须显式指向本预设目录文件。
     if (config.fill === 'instruction-hint') {
       config.params = {
         ...config.params,
-        agentsInstructionPath: `./${templateName}/agents-instruction.txt`,
+        agentsInstructionPath: `../${templateName}/agents-instruction.txt`,
         ...(options.injectAgentsPrompt === true ? { text: asString(options.agentsInstructionText) } : {}),
       }
     }
@@ -399,7 +394,7 @@ export function writePreset(prompt: string, options: WritePresetOptions): void {
   }
 
   // 7) 原子提交:新目录完全写好后替换旧目录;失败时恢复旧目录并清理临时目录。
-  const backupDir = join(presetRoot, `.${templateName}.bak-${Date.now().toString(36)}`)
+  const backupDir = join(presetDir, `.${templateName}.bak-${Date.now().toString(36)}`)
   let oldMoved = false
   if (existsSync(targetDir)) {
     withLockRetry(() => renameSync(targetDir, backupDir))
@@ -418,15 +413,6 @@ export function writePreset(prompt: string, options: WritePresetOptions): void {
     throw error
   }
   if (oldMoved) rmSync(backupDir, { recursive: true, force: true })
-
-  // 8) 容器根薄转发：agent.cordis.yml 指向激活子预设（官方契约：目录名 = 预设 id，
-  //    容器根必须始终有完整组合）。共享引擎后 name 保持 `./engine/`（容器根有共享
-  //    引擎）；configsDir 相对容器根引擎文件解析，重写为 `./<template>/prompt-configs`。
-  //    skipForward（预生成非激活预设）时不触碰容器根。
-  if (options.skipForward !== true) {
-    const forwarded = composition.replaceAll('../prompt-configs', `./${templateName}/prompt-configs`)
-    withLockRetry(() => writeFileSync(join(presetRoot, 'agent.cordis.yml'), forwarded, 'utf8'))
-  }
   } catch (error) {
     rmSync(tmpDir, { recursive: true, force: true })
     throw error

@@ -1,4 +1,6 @@
 import type { Context } from '@deepseek-ai/cordis'
+import { settingsNamespace } from '@deepseek-ai/dsh-settings'
+import type SettingsService from '@deepseek-ai/dsh-settings'
 import type {
   SkillCandidate,
   SkillDefinition,
@@ -36,7 +38,14 @@ import {
   SkillCatalogEntry,
   SkillEntry,
 } from './config.ts'
-import { DEFAULT_SKILLS_DIR, DSH_HOME } from './host/paths.ts'
+import {
+  DEFAULT_PRESET_DIR,
+  DEFAULT_SKILLS_DIR,
+  DSH_HOME,
+  LEGACY_CONTAINER_DIR,
+  LEGACY_USER_PRESETS_DIR,
+} from './host/paths.ts'
+import { migrateLegacyLayout, normalizePresetRootDir } from './host/migration.ts'
 
 export const name = 'prompt-tool'
 // 内容走 user 层（AGENTS.md 常驻层 + skill 按需层），
@@ -128,7 +137,14 @@ export function mergePresetDefaults<T extends Config>(config: T, spec: PresetSpe
 
 
 export function apply(ctx: Context, configIn: Config): void {
-  // 首次启动种子化：全部内置模板复制到用户目录（之后只经「新建」还原）。
+  // 旧布局 → 官方对齐布局一次性迁移（幂等；旧目录归档 .bak 保留安全网）。
+  let legacyMigrated = false
+  try {
+    legacyMigrated = migrateLegacyLayout(DEFAULT_PRESET_DIR, LEGACY_USER_PRESETS_DIR)
+  } catch (error) {
+    warn(ctx, `prompt-tool: 旧布局迁移失败（下次启动重试）：${error instanceof Error ? error.message : String(error)}`)
+  }
+  // 首次启动种子化：全部内置模板复制到预设根（之后只经「新建」还原）。
   try {
     ensurePresetSeed()
   } catch (error) {
@@ -142,6 +158,8 @@ export function apply(ctx: Context, configIn: Config): void {
     warn(ctx, `prompt-tool: preset.yml unavailable, falling back to cordis config: ${error instanceof Error ? error.message : String(error)}`)
   }
   const config = mergePresetDefaults(configIn, presetSpec)
+  // 旧版 presetDir 存量值（容器根/旧用户目录）归一化为预设根。
+  config.presetDir = normalizePresetRootDir(config.presetDir, DEFAULT_PRESET_DIR, LEGACY_CONTAINER_DIR)
   const modelsState = (): ModelDetection => detectModels(ctx)
   const getModelsState = (): ModelDetection => modelsState()
   // 内容资产优先读生成目录文件（writePreset 落盘），模板 content 作回退；
@@ -149,7 +167,7 @@ export function apply(ctx: Context, configIn: Config): void {
   const initialTemplate = typeof config.presetTemplate === 'string' && config.presetTemplate.length > 0
     ? config.presetTemplate
     : 'anchored'
-  // 预设分离：生成内容按预设隔离在 presetDir/<template>/ 子目录（容器根只有薄转发）。
+  // 预设分离：每个预设 = 预设根下的官方预设目录 presetDir/<template>/。
   const initialPresetDir = join(config.presetDir, /^[a-zA-Z0-9_-]+$/.test(initialTemplate) ? initialTemplate : 'anchored')
   let current = readGeneratedContent(initialPresetDir, 'preset.md') || readPromptFile(initialTemplate, config.fallbackText)
   let currentAgents = readGeneratedContent(initialPresetDir, 'agents.md') || readAgents(initialTemplate)
@@ -193,20 +211,20 @@ export function apply(ctx: Context, configIn: Config): void {
         presetTemplate: runtime.presetTemplate,
         warn: (message) => warn(ctx, message),
       }
-      // 预生成缺失的内置预设子目录（切换目标就绪；内容用模板默认，不触碰容器根薄转发）。
-      // 仅补建缺失项，已存在的子预设内容由切换时更新，避免每次重建全部模板。
+      // 补建缺失/旧布局的预设目录（切换目标就绪；内容用模板默认）。
+      // 仅补建缺失项与旧布局组合（../engine 引用），已就绪的预设由切换时更新。
       for (const preset of listPresets()) {
-        if (preset.user || preset.id === runtime.presetTemplate) continue
-        if (existsSync(join(runtime.presetDir, preset.id, 'preset.yml'))) continue
+        if (preset.id === runtime.presetTemplate) continue
+        const targetDir = join(runtime.presetDir, preset.id)
+        if (!needsPresetRender(targetDir)) continue
         try {
           writePreset(readPromptFile(preset.id, runtime.fallbackText), {
             ...options,
             presetTemplate: preset.id,
-            skipForward: true,
             agentsInstructionText: '',
           })
         } catch (error) {
-          warn(ctx, `prompt-tool: 预生成预设 ${preset.id} 失败（切换时可重试）：${error instanceof Error ? error.message : String(error)}`)
+          warn(ctx, `prompt-tool: 补建预设 ${preset.id} 失败（切换时可重试）：${error instanceof Error ? error.message : String(error)}`)
         }
       }
       writePreset(presetPrompt, options)
@@ -220,9 +238,21 @@ export function apply(ctx: Context, configIn: Config): void {
     }
   }
 
-  /** 激活子预设目录（预设分离后内容按 presetDir/<template>/ 隔离；非法名回退 anchored）。 */
+  /** 激活预设目录（内容按预设根 presetDir/<template>/ 隔离；非法名回退 anchored）。 */
   const activePresetDir = (): string =>
     join(runtime.presetDir, /^[a-zA-Z0-9_-]+$/.test(runtime.presetTemplate) ? runtime.presetTemplate : 'anchored')
+
+  /** 预设目录是否需要（重新）渲染：agent.cordis.yml 缺失，或仍是旧布局组合（../engine 引用）。 */
+  const needsPresetRender = (targetDir: string): boolean => {
+    const compositionFile = join(targetDir, 'agent.cordis.yml')
+    if (!existsSync(compositionFile)) return true
+    try {
+      const raw = readFileSync(compositionFile, 'utf8')
+      return raw.includes('../engine/') || raw.includes('./engine/')
+    } catch {
+      return true
+    }
+  }
 
   /** 用户参数覆盖（生成目录 prompt-tool.overrides.yml；settings 不再承载参数）。 */
   const applyParamOverrides = (): void => {
@@ -427,8 +457,7 @@ export function apply(ctx: Context, configIn: Config): void {
       skillCatalog = catalogOf(readAllSkillsChecked())
       cachedSkills.invalidate(); invalidateSkills?.()
     },
-    // 生成目录（激活子预设）：预设分离后容器根只有薄转发，内容资产/提示词配置
-    // 按预设隔离在 presetDir/<template>/ 子目录。
+    // 激活预设目录：内容资产/提示词配置按预设隔离在 presetDir/<template>/。
     () => activePresetDir(),
     (scope) => {
       // 内容导入后：更新运行时文本并重建生成目录。
@@ -493,6 +522,25 @@ export function apply(ctx: Context, configIn: Config): void {
     promptConfigs: Array.isArray(config.promptConfigs) ? config.promptConfigs : [],
   }
 
+  // 宿主 agent-presets settings `default` 同步：插件 UI 切换预设时把宿主默认预设
+  // 设为激活预设（官方机制：新会话按 default 挂载），让插件预设选择真正生效。
+  // 迁移场景（旧布局升级）强制同步一次（修复宿主 default 指向已删除的 prompt-tool 容器）。
+  let hostSettingsService: SettingsService | undefined
+  let lastSyncedHostDefault: string | undefined
+  const syncHostDefault = (reason: 'migrate' | 'switch'): void => {
+    const s = hostSettingsService
+    if (s === undefined) return
+    const template = runtime.presetTemplate
+    if (reason === 'switch' && lastSyncedHostDefault === template) return
+    lastSyncedHostDefault = template
+    try {
+      s.mutate(settingsNamespace('agent-presets'), [{ op: 'set', path: ['default'], value: template }])
+    } catch (error) {
+      // 宿主未装配 agent-presets（或文档被锁定）时忽略：插件预设仍可经官方 UI 手动选择。
+      warn(ctx, `prompt-tool: 同步宿主 agent-presets default 失败：${error instanceof Error ? error.message : String(error)}`)
+    }
+  }
+
   // 模型路由（主对话直派子代理与委派子代理通用）：
   // 宿主直派子代理补子代理固定模型路由（subagentModelProvider + subagentModelName 同时非空时生效）；
   // 调用方显式模型优先，persona 与 toolFilter 保持不变。
@@ -554,7 +602,7 @@ export function apply(ctx: Context, configIn: Config): void {
   })
 
   // dsh-tui 命令入口：/prompt-tool 查看或切换开关。
-registerTuiCommand(ctx, NS, () => currentSource(), getModelsState, () => listAdvertisedModels(ctx), () => runtime.presetDir)
+registerTuiCommand(ctx, NS, () => currentSource(), getModelsState, () => listAdvertisedModels(ctx), () => activePresetDir())
 
   let needsInitialApply = true
   const applyState = (): void => {
@@ -589,7 +637,9 @@ registerTuiCommand(ctx, NS, () => currentSource(), getModelsState, () => listAdv
       usePtcMode: typeof next.usePtcMode === 'boolean' ? next.usePtcMode : config.usePtcMode,
       skillRankBase: Number.isSafeInteger(next.skillRankBase) && next.skillRankBase >= 0 ? next.skillRankBase : config.skillRankBase,
       residentAgentsPath: typeof next.residentAgentsPath === 'string' && next.residentAgentsPath.trim().length > 0 ? next.residentAgentsPath : config.residentAgentsPath,
-      presetDir: typeof next.presetDir === 'string' && next.presetDir.trim().length > 0 ? next.presetDir : config.presetDir,
+      presetDir: typeof next.presetDir === 'string' && next.presetDir.trim().length > 0
+        ? normalizePresetRootDir(next.presetDir.trim(), DEFAULT_PRESET_DIR, LEGACY_CONTAINER_DIR)
+        : config.presetDir,
       presetOrder: Number.isSafeInteger(next.presetOrder) && next.presetOrder >= 0 ? next.presetOrder : config.presetOrder,
       fallbackText: typeof next.fallbackText === 'string' ? next.fallbackText : config.fallbackText,
       promptConfigs: Array.isArray(next.promptConfigs) ? next.promptConfigs : config.promptConfigs,
@@ -601,6 +651,7 @@ registerTuiCommand(ctx, NS, () => currentSource(), getModelsState, () => listAdv
     const skillsDirsChanged = JSON.stringify(runtime.skillsDirs) !== JSON.stringify(nextRuntime.skillsDirs)
     const skillRankBaseChanged = runtime.skillRankBase !== nextRuntime.skillRankBase
     const fallbackTextChanged = runtime.fallbackText !== nextRuntime.fallbackText
+    const presetTemplateChanged = runtime.presetTemplate !== nextRuntime.presetTemplate
     const settingsChanged = runtime.writeAgents !== nextRuntime.writeAgents
       || runtime.writePreset !== nextRuntime.writePreset
       || runtime.presetTemplate !== nextRuntime.presetTemplate
@@ -685,6 +736,7 @@ registerTuiCommand(ctx, NS, () => currentSource(), getModelsState, () => listAdv
       }
     }
     rebuildPreset()
+    if (presetTemplateChanged) syncHostDefault('switch')
   }
 
   // settings 注册 base 与运行时快照同源（单一组装，避免双份字段漂移）。
@@ -715,7 +767,10 @@ registerTuiCommand(ctx, NS, () => currentSource(), getModelsState, () => listAdv
     onError: (message) => warn(ctx, `prompt-tool: settings register failed: ${message}`),
   })
   ctx.inject(['settings'], (sctx: Context) => {
+    hostSettingsService = sctx.settings
     ensureRegistered(sctx)
+    // 旧布局迁移完成（或宿主 default 指向已删除的 prompt-tool 容器）时同步宿主默认预设。
+    if (legacyMigrated) syncHostDefault('migrate')
     // settings 服务 detach 时回退到 cordis config 构造的 entry，
     // 并重判派生状态（等价 installSettingsSection 的 fallback 语义）。
     sctx.effect(() => () => {
@@ -746,6 +801,7 @@ export {
 } from './host/manifest.ts'
 export { ensureWebSurface, resolveProfileDir } from './web-surface.ts'
 export { resolveProfileSkillsDir } from './profile-skills.ts'
+export { migrateLegacyLayout, normalizePresetRootDir } from './host/migration.ts'
 export { detectModels, installDefaultModelRoute } from './runtime/models.ts'
 export type { WritePresetOptions } from './host/write-preset.ts'
 export { validatePromptConfigs } from './runtime/configs-validate.ts'

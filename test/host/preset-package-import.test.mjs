@@ -12,7 +12,7 @@ process.env.DSH_HOME = home
 const { registerSettingsBridge } = await import('../../lib/index.mjs')
 
 const PREFIX = '/api/prompt-tool/settings'
-const PRESETS = join(home, 'presets')
+const PRESETS = join(home, '.agent-presets')
 
 function makeHarness() {
   const handlers = new Map()

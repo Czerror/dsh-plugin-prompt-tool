@@ -4,11 +4,14 @@ import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { parse as parseYaml } from 'yaml'
-import { writePreset } from '../../lib/index.mjs'
+// 隔离 DSH_HOME：避免真实用户预设（如 .agent-presets/liangshen 官方格式）遮蔽包内模板。
+const home = mkdtempSync(join(tmpdir(), 'pt-liangshen-'))
+process.env.DSH_HOME = home
+const { writePreset } = await import('../../lib/index.mjs')
 
 /** liangshen 单文件预设渲染：全部机制参数化到引擎模块，无本地 .mjs。 */
 test('preset/liangshen 渲染：模块清单 + moduleConfigs 表达两阶段锚定', () => {
-  const gen = mkdtempSync(join(tmpdir(), 'pt-liangshen-'))
+  const gen = join(home, 'gen')
   try {
     writePreset('PROMPT', {
       presetDir: gen,
@@ -45,7 +48,7 @@ test('preset/liangshen 渲染：模块清单 + moduleConfigs 表达两阶段锚�
     // 两阶段锚定：tool-bootstrap 行（引擎模块，非本地 .mjs）。
     const bootstrap = byId.get('tool-bootstrap')
     assert.ok(bootstrap, '应含 tool-bootstrap 行')
-    assert.equal(bootstrap.name, '../engine/tool-bootstrap.mjs', '指向容器根共享引擎模块而非本地 .mjs')
+    assert.equal(bootstrap.name, '../.engine/tool-bootstrap.mjs', '指向预设根共享引擎模块而非本地 .mjs')
     assert.deepEqual(bootstrap.config.bootstrapTools, ['bash', 'str_replace_editor'])
     assert.equal(bootstrap.config.promoteGate, true)
     assert.equal(bootstrap.config.maxPromoteSteps, 4)
@@ -90,4 +93,8 @@ test('preset/liangshen 渲染：模块清单 + moduleConfigs 表达两阶段锚�
   } finally {
     rmSync(gen, { recursive: true, force: true })
   }
+})
+
+test.after(() => {
+  rmSync(home, { recursive: true, force: true })
 })

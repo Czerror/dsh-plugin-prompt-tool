@@ -15,7 +15,7 @@ const {
   removeUserPreset,
 } = await import('../../lib/index.mjs')
 
-const PRESETS_DIR = join(root, 'presets')
+const PRESETS_DIR = join(root, '.agent-presets')
 const BUILTIN_IDS = ['anchored', 'creative', 'liangshen', 'minimal', 'ptc', 'standard']
 
 test('removeUserPreset：删除用户预设目录', () => {
@@ -31,27 +31,6 @@ test('removeUserPreset：.bak 备份目录可删除（垃圾清理）', () => {
   writeFileSync(join(PRESETS_DIR, '.foo.bak-mt12345', 'preset.yml'), 'id: foo\n', 'utf8')
   assert.deepEqual(removeUserPreset('.foo.bak-mt12345'), { ok: true })
   assert.equal(existsSync(join(PRESETS_DIR, '.foo.bak-mt12345')), false)
-})
-
-test('removeUserPreset：同时清理生成目录同名子预设', () => {
-  const genDir = join(root, 'generated')
-  mkdirSync(join(genDir, 'foo'), { recursive: true })
-  writeFileSync(join(genDir, 'foo', 'preset.yml'), 'id: foo\n', 'utf8')
-  mkdirSync(join(PRESETS_DIR, 'foo'), { recursive: true })
-  writeFileSync(join(PRESETS_DIR, 'foo', 'preset.yml'), 'id: foo\n', 'utf8')
-  assert.deepEqual(removeUserPreset('foo', genDir), { ok: true })
-  assert.equal(existsSync(join(PRESETS_DIR, 'foo')), false)
-  assert.equal(existsSync(join(genDir, 'foo')), false, '生成目录同名子预设应一并清理')
-})
-
-test('removeUserPreset：仅生成目录存在（孤儿残留）时删除成功并清理', () => {
-  const genDir = join(root, 'generated-orphan')
-  mkdirSync(join(genDir, 'orphan'), { recursive: true })
-  writeFileSync(join(genDir, 'orphan', 'preset.yml'), 'id: orphan\n', 'utf8')
-  assert.deepEqual(removeUserPreset('orphan', genDir), { ok: true })
-  assert.equal(existsSync(join(genDir, 'orphan')), false, '生成目录孤儿应清理')
-  // 两处都不存在仍报不存在（回归）。
-  assert.equal(removeUserPreset('not-exists', genDir).ok, false)
 })
 
 test('removeUserPreset：非法 id 与路径越界拒绝', () => {
@@ -84,6 +63,7 @@ test('listPresets：全部来自用户目录（种子化后内置模板即为用
     assert.ok(preset !== undefined && preset.user === true, `${id} 应为用户目录预设`)
   }
   assert.ok(!presets.some((preset) => preset.id === 'ptc'), 'ptc 已删除不应列出')
+  assert.ok(!presets.some((preset) => preset.id.startsWith('.')), '点前缀目录（.engine/.pt-seeded/.bak）不列出')
 })
 
 test('cloneBuiltinPreset：非内置/非法 id/用户目录已存在同名拒绝', () => {

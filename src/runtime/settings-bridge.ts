@@ -650,8 +650,8 @@ export function registerSettingsBridge(
               writeBridgeJson(res, 400, { ok: false, code: 'preset-in-use', message: `预设「${id}」正在使用中，请先切换其他预设再删除` })
               return
             }
-            // 全部预设都在用户目录（首次启动种子化）：删除 = 物理删除用户目录副本，插件目录模板保留。
-            // 生成目录同名子预设一并清理（宿主 agent-presets 不残留）。
+            // 全部预设都在预设根（首次启动种子化）：删除 = 物理删除官方预设目录，插件目录模板保留。
+            // 宿主 agent-presets roster 即目录列表，删除后自然消失。
             const presetDir = typeof value.presetDir === 'string' && value.presetDir.trim().length > 0
               ? value.presetDir
               : typeof base.presetDir === 'string' && base.presetDir.trim().length > 0 ? base.presetDir

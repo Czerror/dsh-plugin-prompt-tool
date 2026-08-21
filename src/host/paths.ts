@@ -41,9 +41,18 @@ function resolveDshHome(): string {
 
 export const DSH_HOME = resolveDshHome()
 export const DEFAULT_RESIDENT_AGENTS_PATH = join(DSH_HOME, 'AGENTS.md')
-export const DEFAULT_PRESET_DIR = join(DSH_HOME, '.agent-presets', 'prompt-tool')
-/** 用户自定义预设目录（导入的预设放这里；独立于包内模板与生成目录）。 */
-export const DEFAULT_USER_PRESETS_DIR = join(DSH_HOME, 'presets')
+/**
+ * 预设根：官方 USER_PRESET_DIR（DSH_HOME/.agent-presets）。
+ * 每个预设一个官方预设目录（agent.cordis.yml 组合本体 + preset.yml 参数），
+ * 宿主 agent-presets 直接可挂载；共享引擎在 .engine（点前缀 → discovery 跳过）。
+ */
+export const DEFAULT_PRESET_DIR = join(DSH_HOME, '.agent-presets')
+/** 共享引擎目录（点前缀：官方 PRESET_ID 校验跳过，不占预设槽）。 */
+export const SHARED_ENGINE_DIR = join(DEFAULT_PRESET_DIR, '.engine')
+/** 旧版用户预设目录（~/.dsh/presets；迁移后归档为 presets.bak-*）。 */
+export const LEGACY_USER_PRESETS_DIR = join(DSH_HOME, 'presets')
+/** 旧版容器根（.agent-presets/prompt-tool；迁移后归档为 prompt-tool.bak-*）。 */
+export const LEGACY_CONTAINER_DIR = join(DEFAULT_PRESET_DIR, 'prompt-tool')
 export const DEFAULT_SKILLS_DIR = SKILLS_DIR
 export const DEFAULT_PRESET_ORDER = 5
 export const DEFAULT_SKILL_RANK_BASE = 250

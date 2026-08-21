@@ -26,8 +26,8 @@ export function PresetsPage(props: { store: PromptToolStore }): ReactNode {
           value={store.fields.residentAgentsPath} placeholder={store.fields.residentAgentsPath || '默认 ~/.dsh/AGENTS.md'}
           onInput={(value) => store.patch({ residentAgentsPath: value })}
           onCommit={store.persistSwitches} />
-        <SettingInputRow id="pt-preset-dir" label="生成 preset 目录" hint="预设生成目录；修改后下次写入会生成到新目录，建议同时在宿主 agent-presets 设置里选择该目录。"
-          value={store.fields.presetDir} placeholder={store.fields.presetDir || '默认 ~/.dsh/.agent-presets/prompt-tool'}
+        <SettingInputRow id="pt-preset-dir" label="预设根目录" hint="预设根目录（官方 USER_PRESET_DIR）；每个预设一个官方预设目录，修改后下次写入会生成到新根，建议同时在宿主 agent-presets 设置里选择该目录。"
+          value={store.fields.presetDir} placeholder={store.fields.presetDir || '默认 ~/.dsh/.agent-presets'}
           onInput={(value) => store.patch({ presetDir: value })}
           onCommit={store.persistSwitches} />
         <SettingInputRow id="pt-preset-order" label="preset 显示顺序" hint="生成 preset.yml 的 order；数值小的 preset 在宿主列表中靠前。"
