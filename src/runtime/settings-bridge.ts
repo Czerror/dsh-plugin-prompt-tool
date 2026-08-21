@@ -202,15 +202,18 @@ export function registerSettingsBridge(
             const skillsState = getSkillsState()
             // 宿主默认模型（agent-default-model settings：主对话新会话默认）：
             // 插件参数未设置（空 = 继承宿主）时回显给客户端（模型名下拉候选/状态行）。
-            let hostDefaultModel: { provider?: string; model?: string } | undefined
+            let hostDefaultModel: { provider?: string; model?: string; reasoningEffort?: string } | undefined
             try {
               const selection = sctx.settings.get(settingsNamespace('agent-default-model')) as
-                { provider?: unknown; model?: unknown } | undefined
+                { provider?: unknown; model?: unknown; reasoningEffort?: unknown } | undefined
               if (selection !== null && typeof selection === 'object') {
                 const record = selection as Record<string, unknown>
                 hostDefaultModel = {
                   ...(typeof record.provider === 'string' && record.provider.length > 0 ? { provider: record.provider } : {}),
                   ...(typeof record.model === 'string' && record.model.length > 0 ? { model: record.model } : {}),
+                  ...(typeof record.reasoningEffort === 'string' && record.reasoningEffort.length > 0
+                    ? { reasoningEffort: record.reasoningEffort }
+                    : {}),
                 }
                 if (Object.keys(hostDefaultModel).length === 0) hostDefaultModel = undefined
               }

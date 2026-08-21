@@ -91,14 +91,29 @@ export async function listAdvertisedModels(ctx: Context): Promise<Record<string,
  * 默认级持久化；只影响新创建的 Agent，不干预已有会话）。任一为空 = 不干预
  * （继承用户在宿主 web 的选择）；agent-default-model 服务未装配时静默跳过。
  */
-export function installDefaultModelRoute(ctx: Context, isEnabled: () => boolean, provider: () => string, model: () => string): () => void {
+export function installDefaultModelRoute(
+  ctx: Context,
+  isEnabled: () => boolean,
+  provider: () => string,
+  model: () => string,
+  getReasoningEffort?: () => string,
+): () => void {
   const apply = (): void => {
     try {
       const service = ctx.get('agentDefaultModel') as {
         saveSelection?: (selection: { provider: string; model: string; reasoningEffort?: string }) => void
       } | undefined
       if (service?.saveSelection === undefined) return
-      if (isEnabled()) service.saveSelection({ provider: provider(), model: model() })
+      if (isEnabled()) {
+        // 官方 AgentDefaultModelSettings 含 reasoningEffort：插件思维程度设置非空时一并写入
+        // 宿主默认（saveSelection 整体替换语义；插件 agent-request patch 仍按会话生效）。
+        const effort = getReasoningEffort?.() ?? ''
+        service.saveSelection({
+          provider: provider(),
+          model: model(),
+          ...(effort.trim().length > 0 ? { reasoningEffort: effort.trim() } : {}),
+        })
+      }
     } catch {
       // agent-default-model 服务缺失（core 未装配）时静默跳过，不阻断插件。
     }

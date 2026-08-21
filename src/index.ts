@@ -565,6 +565,7 @@ export function apply(ctx: Context, configIn: Config): void {
     () => runtime.modelProvider.length > 0 && runtime.modelName.length > 0,
     () => runtime.modelProvider,
     () => runtime.modelName,
+    () => runtime.modelReasoningEffort,
   )
 
   let currentSource = (): PromptSettings => ({

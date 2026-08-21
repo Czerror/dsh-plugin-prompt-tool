@@ -114,6 +114,10 @@ function ModelToolCards(props: { store: PromptToolStore; scope: 'main' | 'subage
   ])]
   const maxDepthOptions = ['', 'provider-managed', '0', '1', '2', '3', '5']
   const reasoningEffortOptions = ['', 'off', 'low', 'high', 'max']
+  // 宿主默认思维程度回显（agent-default-model settings reasoningEffort；官方档位同源）。
+  const hostEffort = host?.reasoningEffort !== undefined && host.reasoningEffort.length > 0
+    ? host.reasoningEffort
+    : undefined
   const withCurrent = (options: string[], current: string): string[] =>
     current.length > 0 && !options.includes(current) ? [...options, current] : options
   const active = provider.length > 0 && modelName.length > 0
@@ -186,7 +190,9 @@ function ModelToolCards(props: { store: PromptToolStore; scope: 'main' | 'subage
           <div className={ui.settingRowStack}>
             <span className={ui.settingCopy}>
               <strong>思维程度</strong>
-              <small>reasoningEffort（agent-request patch）；官方档位 off / low / high / max；留空 = 不设置（模型默认）。选择即保存。</small>
+              <small>reasoningEffort（agent-request patch）；官方档位 off / low / high / max；{reasoningEffort.length === 0 && hostEffort !== undefined
+                ? `留空 = 继承宿主默认（${hostEffort}）。`
+                : '留空 = 不设置（模型默认）。'}选择即保存。</small>
             </span>
             <select
               className={ui.configInput}
@@ -198,7 +204,7 @@ function ModelToolCards(props: { store: PromptToolStore; scope: 'main' | 'subage
                 event.target.value,
               )}
             >
-              {withCurrent(reasoningEffortOptions, reasoningEffort).map((item) => (
+              {withCurrent(hostEffort !== undefined ? [...new Set([...reasoningEffortOptions, hostEffort])] : reasoningEffortOptions, reasoningEffort).map((item) => (
                 <option key={item} value={item}>{item.length === 0 ? '（不设置）' : item}</option>
               ))}
             </select>
