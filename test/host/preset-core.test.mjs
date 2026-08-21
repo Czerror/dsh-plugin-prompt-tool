@@ -45,7 +45,7 @@ test('preset/shared.mjs 提供公共晋升解析与消息工具', () => {
   assert.ok(source.includes('export function isDelegated'))
 })
 
-test('engine/fillers.mjs 内置 instruction-hint 的 agents-instruction.txt 读取逻辑', () => {
+test('engine/fillers.mjs 内置 instruction-hint 的 agents-instruction.md 读取逻辑', () => {
   const source = read('engine/fillers.mjs')
   assert.ok(source.includes('new URL(path, import.meta.url)'), '共享引擎下路径经 params.agentsInstructionPath 注入')
   assert.ok(source.includes("agentsInstructionPath"), 'fillers 支持显式路径参数')

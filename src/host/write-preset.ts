@@ -275,8 +275,13 @@ export function writePreset(prompt: string, options: WritePresetOptions): void {
   }
 
   // 2.5) 内容资产:preset.md / agents.md(与组合文件同层;大文本存文件而非 settings)。
-  writeFileSync(join(outDir, 'preset.md'), prompt, 'utf8')
-  writeFileSync(join(outDir, 'agents.md'), options.agentsInstructionText ?? '', 'utf8')
+  //      空白预设（custom 等无 content）不生成空内容资产——prompt-injector 无文本即禁用。
+  if (prompt.trim().length > 0) {
+    writeFileSync(join(outDir, 'preset.md'), prompt, 'utf8')
+  }
+  if (typeof options.agentsInstructionText === 'string' && options.agentsInstructionText.trim().length > 0) {
+    writeFileSync(join(outDir, 'agents.md'), options.agentsInstructionText, 'utf8')
+  }
 
   // 2.6) 模板目录本地文件复制（官方格式预设的组合引用 ./xxx.mjs 等相对路径模块，
   // 必须随预设进入生成目录；跳过定义文件 preset.yml / agent.cordis.yml 与
@@ -376,7 +381,8 @@ export function writePreset(prompt: string, options: WritePresetOptions): void {
     if (config.id === 'prompt-injector') {
       delete config.text
       config.texts = []
-      config.enabled = params.injectPrompt !== false
+      // 无注入内容（空白预设）时禁用，避免注入空消息。
+      config.enabled = params.injectPrompt !== false && prompt.trim().length > 0
       config.params = {
         ...config.params,
         text: prompt,
@@ -389,7 +395,7 @@ export function writePreset(prompt: string, options: WritePresetOptions): void {
     if (config.fill === 'instruction-hint') {
       config.params = {
         ...config.params,
-        agentsInstructionPath: `../${templateName}/agents-instruction.txt`,
+        agentsInstructionPath: `../${templateName}/agents-instruction.md`,
         ...(options.injectAgentsPrompt === true ? { text: asString(options.agentsInstructionText) } : {}),
       }
     }
@@ -401,13 +407,14 @@ export function writePreset(prompt: string, options: WritePresetOptions): void {
     rmSync(join(outDir, legacy), { force: true })
   }
 
-  // 6) agents-instruction.txt(模板内容资产经 settings 覆盖时写入)。
-  const agentsInstructionPath = join(outDir, 'agents-instruction.txt')
-  if (options.agentsInstructionText !== undefined) {
+  // 6) agents-instruction.md(模板内容资产经 settings 覆盖时写入；清旧 .txt 残留)。
+  const agentsInstructionPath = join(outDir, 'agents-instruction.md')
+  if (typeof options.agentsInstructionText === 'string' && options.agentsInstructionText.trim().length > 0) {
     writeFileSync(agentsInstructionPath, options.agentsInstructionText, 'utf8')
   } else {
     rmSync(agentsInstructionPath, { force: true })
   }
+  rmSync(join(outDir, 'agents-instruction.txt'), { force: true })
 
   // 7) 原子提交:新目录完全写好后替换旧目录;失败时恢复旧目录并清理临时目录。
   const backupDir = join(presetDir, `.${templateName}.bak-${Date.now().toString(36)}`)

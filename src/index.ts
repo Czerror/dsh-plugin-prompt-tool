@@ -656,6 +656,13 @@ registerTuiCommand(
     if (!needsInitialApply && !settingsChanged) return
     needsInitialApply = false
 
+    // 切换预设：内容资产从新预设目录/模板重读——否则 rebuildPreset 会把旧预设的
+    // preset.md/agents.md 内容复制进新预设（custom 空白预设被写入 anchored 文本）。
+    if (presetTemplateChanged) {
+      const newDir = join(nextRuntime.presetDir, /^[a-zA-Z0-9_-]+$/.test(nextRuntime.presetTemplate) ? nextRuntime.presetTemplate : 'anchored')
+      current = readGeneratedContent(newDir, 'preset.md') || readPromptFile(nextRuntime.presetTemplate, nextRuntime.fallbackText)
+      currentAgents = readGeneratedContent(newDir, 'agents.md') || readAgents(nextRuntime.presetTemplate)
+    }
     runtime.writeAgents = nextRuntime.writeAgents
     runtime.writePreset = nextRuntime.writePreset
     runtime.presetTemplate = nextRuntime.presetTemplate
@@ -731,9 +738,13 @@ registerTuiCommand(
     try {
       const descriptor = sctx.settings.describe({ redactSecrets: true })
         .find((entry) => String(entry.ns) === String(NS))
-      userSection = descriptor?.value !== null && typeof descriptor?.value === 'object'
-        ? descriptor.value as Record<string, unknown>
-        : {}
+      // 官方 describe：value = schema 解析后的 resolved 值（参数键删除后不含旧参数），
+      // user = 原始文档 user section（含旧版全局参数键）——迁移必须读 user。
+      userSection = descriptor?.user !== null && typeof descriptor?.user === 'object'
+        ? descriptor.user as Record<string, unknown>
+        : descriptor?.value !== null && typeof descriptor?.value === 'object'
+          ? descriptor.value as Record<string, unknown>
+          : {}
     } catch {
       // describe 失败（settings 服务不可用）跳过，下次启动重试。
       return

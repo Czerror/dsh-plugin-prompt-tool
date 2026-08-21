@@ -216,11 +216,34 @@ test('writePreset injectAgentsPrompt 注入 agents 内容到 instruction-hint pa
     writePreset('PROMPT', { ...makeOptions(presetDir), agentsInstructionText: 'AGENTS CONTENT', injectAgentsPrompt: true })
     const hint = readFileSync(join(presetDir, 'anchored', 'prompt-configs', '30-instruction-hint.yml'), 'utf8')
     assert.ok(hint.includes('AGENTS CONTENT'), hint)
-    // 关闭时不注入：instruction-hint 保持无 params.text（引擎回退 agents-instruction.txt / 动态探测）。
+    assert.ok(hint.includes('agentsInstructionPath: |-') && hint.includes('../anchored/agents-instruction.md'), hint)
+    assert.ok(existsSync(join(presetDir, 'anchored', 'agents-instruction.md')), 'agents-instruction.md 应写入')
+    assert.equal(existsSync(join(presetDir, 'anchored', 'agents-instruction.txt')), false, '旧 .txt 残留应清理')
+    // 关闭时不注入：instruction-hint 保持无 params.text（引擎回退 agents-instruction.md / 动态探测）。
     const dir2 = join(dir, 'preset2')
     writePreset('PROMPT', { ...makeOptions(dir2), agentsInstructionText: 'AGENTS CONTENT', injectAgentsPrompt: false })
     const hint2 = readFileSync(join(dir2, 'anchored', 'prompt-configs', '30-instruction-hint.yml'), 'utf8')
     assert.ok(!hint2.includes('AGENTS CONTENT'), hint2)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('writePreset 空 prompt/agents 不生成空内容资产，prompt-injector 禁用', () => {
+  const dir = join(tmpdir(), `prompt-tool-blank-${process.pid}-${Date.now()}`)
+  const presetDir = join(dir, 'preset')
+  try {
+    writePreset('', {
+      ...makeOptions(presetDir),
+      injectPrompt: true,
+      agentsInstructionText: '',
+    })
+    assert.equal(existsSync(join(presetDir, 'anchored', 'preset.md')), false, '空内容不生成 preset.md')
+    assert.equal(existsSync(join(presetDir, 'anchored', 'agents.md')), false, '空内容不生成 agents.md')
+    assert.equal(existsSync(join(presetDir, 'anchored', 'agents-instruction.md')), false, '空内容不生成 agents-instruction.md')
+    const injector = readFileSync(join(presetDir, 'anchored', 'prompt-configs', '20-prompt-injector.yml'), 'utf8')
+    const parsed = parseYaml(injector)
+    assert.equal(parsed.enabled, false, '空内容时 prompt-injector 应禁用（无内容可注入）')
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }

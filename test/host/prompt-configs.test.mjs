@@ -114,7 +114,7 @@ test('writePreset 生成 anchored 四个提示词配置模块，数字前缀决�
 
 test('writePreset 处理空提示词时 prompt-injector 结构完整', () => {
   const { byId } = generatedConfigs({}, '')
-  assert.equal(byId['prompt-injector'].enabled, true)
+  assert.equal(byId['prompt-injector'].enabled, false, '空提示词无内容可注入，应禁用')
   assert.equal(byId['prompt-injector'].strategy, 'custom-fallback')
   assert.equal(byId['prompt-injector'].params.text, '')
   assert.equal(byId['prompt-injector'].params.firstTurnWord, 'we')
