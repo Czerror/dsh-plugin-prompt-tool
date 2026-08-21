@@ -546,7 +546,7 @@
 }
 .presetCard[data-active] {
   border-color: color-mix(in srgb, var(--pt-accent) 45%, var(--dsw-alias-border-l2));
-  background: color-mix(in srgb, var(--pt-accent) 6%, transparent);
+  background: color-mix(in srgb, var(--pt-accent) 6%, var(--dsw-alias-bg-layer-3));
 }
 .presetCardMain {
   display: flex;
