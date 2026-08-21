@@ -286,6 +286,7 @@ test('importPresetPackage：SillyTavern JSON 单文件经转换引擎导入（�
   const presetFile = join(PRESETS, 'my-chara', 'preset.yml')
   assert.ok(existsSync(presetFile), '转换产物应落盘为 preset.yml')
   const converted = parseYaml(readFileSync(presetFile, 'utf8'))
+  assert.equal(converted.name, '我的角色（SillyTavern 转换）', '预设名取卡片 name 字段')
   assert.deepEqual(converted.modules, ['persona', 'prompt-config-engine', 'tool-filter'], 'system-section 注入需要 persona 模块；enable_web_search: false 改加 tool-filter 黑名单')
   assert.equal(converted.moduleConfigs.persona.complete, false, 'complete: false 允许 system-section 生效')
   assert.equal(converted.modules.includes('tool-web'), false, 'enable_web_search: false 不组装 tool-web')
@@ -330,8 +331,21 @@ test('importPresetPackage：SillyTavern enable_web_search=true 时组装 tool-we
   assert.equal(status, 200)
   const presetFile = join(PRESETS, 'web', 'preset.yml')
   const converted = parseYaml(readFileSync(presetFile, 'utf8'))
+  assert.equal(converted.name, 'web 角色（SillyTavern 转换）', '预设名取卡片 name 字段')
   assert.ok(converted.modules.includes('tool-web'), 'enable_web_search: true 应组装 tool-web')
   assert.deepEqual(converted.moduleConfigs['tool-web'], { fetch: true }, 'true 时启用 fetch')
+})
+
+test('importPresetPackage：SillyTavern 卡片无 name 时预设名回退文件名', async () => {
+  const { status } = await importPackage({
+    files: [{ path: 'unnamed-chara.json', content: JSON.stringify({
+      prompts: [{ identifier: 'main', content: '你是助手。', role: 'user', enabled: true }],
+    }) }],
+  })
+  assert.equal(status, 200)
+  const presetFile = join(PRESETS, 'unnamed-chara', 'preset.yml')
+  const converted = parseYaml(readFileSync(presetFile, 'utf8'))
+  assert.equal(converted.name, 'unnamed-chara（SillyTavern 转换）', '卡片 name 缺失时回退文件名（去 .json）')
 })
 
 test.after(() => {

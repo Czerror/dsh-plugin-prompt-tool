@@ -85,9 +85,11 @@ export function convertStToPreset(card: unknown, baseName: string): PresetSpec {
   }
 
   const presetId = baseName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'sillytavern'
+  // 预设名优先取卡片 name 字段；缺失/空白时回退文件名（去 .json 的 baseName）。
+  const cardName = typeof record.name === 'string' && record.name.trim().length > 0 ? record.name.trim() : ''
   return {
     id: presetId,
-    name: `${baseName}（SillyTavern 转换）`,
+    name: `${cardName || baseName}（SillyTavern 转换）`,
     version: '1.0.0',
     engineCompat: '>=0.4.2',
     ...(Object.keys(params).length > 0 ? { params } : {}),
