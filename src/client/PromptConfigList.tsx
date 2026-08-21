@@ -119,7 +119,7 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
   const removeAt = (globalIndex: number) => {
     const removedId = configs[globalIndex]?.id
     if (removedId === undefined) return
-    if (!window.confirm(`删除配置「${removedId}」？此操作不可撤销。`)) return
+    // 删除确认由卡片头部「删除 → 确认删除」两段式承担（宿主 webview 禁 window.confirm，不依赖原生弹窗）。
     onPatchConfigs(configs.filter((_, index) => index !== globalIndex))
     if (expanded === removedId) setExpanded(undefined)
     onNotice('ok', '已删除')

@@ -14,22 +14,7 @@ export function PresetSwitcher(props: { store: PromptToolStore }): ReactNode {
   /** 上传预设包：path 为相对路径（preset.yml 或文件夹内文件），服务端按 id 归入用户预设目录。 */
   const uploadPreset = async (entries: Array<{ path: string; content: string }>): Promise<void> => {
     if (entries.length === 0) return
-    // 预判目标 id（与服务端一致：preset.yml id 优先，否则顶层目录名），同名时先确认覆盖。
-    // 预设定义文件：顶层 preset.yml 优先，缺失时顶层任意 *.yml/*.yaml（排除 agent.cordis.yml）。
-    const topRel = (path: string): string => {
-      const slash = path.indexOf('/')
-      return slash > 0 ? path.slice(slash + 1) : path
-    }
-    const presetYaml = entries.find((entry) => topRel(entry.path) === 'preset.yml')
-      ?? entries.find((entry) => /\.ya?ml$/i.test(topRel(entry.path)) && topRel(entry.path) !== 'agent.cordis.yml')
-    const idMatch = presetYaml?.content.match(/^id:\s*([a-zA-Z0-9][a-zA-Z0-9-]*)/m)
-    const topDir = presetYaml !== undefined && presetYaml.path.includes('/')
-      ? presetYaml.path.slice(0, presetYaml.path.indexOf('/'))
-      : ''
-    const predictedId = idMatch?.[1] ?? (/^[a-zA-Z0-9][a-zA-Z0-9-]*$/.test(topDir) ? topDir : undefined)
-    if (predictedId !== undefined && (store.meta.presets ?? []).some((preset) => preset.id === predictedId)) {
-      if (!window.confirm(`预设「${predictedId}」已存在，导入将备份旧版后覆盖。继续？`)) return
-    }
+    // 同名覆盖由服务端备份旧版保护（宿主 webview 禁 window.confirm，不做原生弹窗确认）。
     setImporting(true)
     try {
       const res = await bridgePost<{ id: string }>('/import-preset-package', { files: entries })
