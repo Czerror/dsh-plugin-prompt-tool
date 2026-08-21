@@ -841,6 +841,10 @@ export function PromptWorkspace(props: PromptWorkspaceProps): ReactNode {
       : page === 'presets'
         ? '统一管理预设模板（切换/导入）与提示词配置（六层列表/模板插入/配置目录）。'
         : '子代理作用域参数（模型/人设/工具集/深度）与子代理提示词配置（audience 非仅主会话）。'
+  // 已加载过数据时保留旧内容（顶部状态点显示「读取中」），避免切换/保存触发整区骨架屏闪烁。
+  const hasData = store.meta.layers.length > 0
+    || store.fields.skillCatalog.length > 0
+    || store.fields.promptConfigs.length > 0
 
   return (
     <div className={css.shell}>
@@ -870,7 +874,7 @@ export function PromptWorkspace(props: PromptWorkspaceProps): ReactNode {
         <div>
           <PageHeader title={pageTitle} description={pageDetail} meta={layerMeta} />
 
-          {store.loading ? (
+          {store.loading && !hasData ? (
             <div className={ui.skeletonStack} aria-hidden="true">
               {[0, 1, 2, 3].map((item) => <div key={item} className={ui.skeletonRow} />)}
             </div>
