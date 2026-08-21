@@ -308,7 +308,7 @@
   border-radius: 18px;
   padding: 0 14px;
   color: var(--dsw-alias-label-primary);
-  background: transparent;
+  background: var(--dsw-alias-fill-field, var(--dsw-alias-bg-layer-3));
   cursor: pointer;
   font-size: 14px;
   line-height: 22px;
