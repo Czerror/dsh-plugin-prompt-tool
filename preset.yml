@@ -1,0 +1,337 @@
+# =============================================================================
+# dsh-plugin-prompt-tool — 全参数 preset.yml 模板
+# -----------------------------------------------------------------------------
+# 本文件是【配置参数齐全、逐项注释】的预设模板，复制到
+#   ~/.dsh/.agent-presets/<你的预设名>/preset.yml
+# 或 preset/<预设名>/preset.yml 即可作为自定义预设起点。
+# 完整可用示例见 preset/anchored/preset.yml（含真实 prompt 文本）。
+#
+# 四层默认值体系（职责不重叠）：
+#   hostDefaults  → settings 层默认值（开关/路径），被用户 settings 覆盖
+#   params        → 引擎行为默认（锚定/引导/PTC/门控/模型/工具），被运行时 settings 覆盖
+#   moduleConfigs → 引擎组合行级 config（persona 文本/超时/白名单）
+#   promptConfigs → 注入提示词配置（策略/层/位置/时机），与目录、settings 三源合并
+# =============================================================================
+
+# ── 预设元数据 ──────────────────────────────────────────────────────────────
+id: my-preset                    # 预设唯一 id（UI 切换值=目录名，id 兼容兜底）
+name: 我的预设                    # 预设显示名（UI 预设切换器展示）
+version: 1.0.0                   # 预设版本（引擎兼容性诊断用）
+engineCompat: ">=0.4.2"          # 插件引擎最低版本约束
+
+meta:
+  name: prompt-tool              # 归属插件
+  description: 一句话描述这个预设。  # 预设说明
+  order: 5                       # 预设列表排序（数字小在前）
+
+# ── 内容：preset.md / AGENTS.md 文本（占位，替换为你自己的提示词）────────────
+content:
+  # 系统提示词（写入生成目录 preset.md；支持官方 {{variable}} 渲染）。
+  # 完整示例见 preset/anchored/preset.yml 的 content.presetText。
+  presetText: >
+    You are a helpful software assistant.
+
+    Answer requests directly in the user's language.
+
+  # 项目级规范（写入生成目录 AGENTS.md）。
+  agentsText: |
+    # 语言行为规范
+
+    1. 思维链使用简体中文。
+    2. 回答内容使用简体中文。
+
+# ── params：引擎行为参数（34 键，全部可选，缺省 = 官方默认）──────────────────
+params:
+  # ── 锚定（首轮任务类型判定）──
+  firstTurnAnchor: true          # true=首轮启用任务锚定（判定 build/fix/deep）
+  firstTurnCustom: false         # true=用 firstTurnText 替代内置锚定句
+  firstTurnText: ""              # 自定义锚定句（firstTurnCustom=true 时生效）
+  firstTurnWord: we              # 自定义锚定词（custom-fallback 命中词，默认 we）
+  firstTurnBuild: "Start your reasoning with the exact sentence: We need to build it directly and verify it."
+  firstTurnInspect: "Start your reasoning with the exact sentence: We need to inspect the code first."
+  firstTurnDeep: "Start your reasoning with the exact sentence: Let me think through the design before changing anything."
+
+  # ── 引导（每轮路由引导）──
+  guideCustom: false             # true=用 guideText 替代内置引导
+  guideText: ""                  # 自定义引导文本（guideCustom=true 时生效）
+  guideComplexPattern: "架构|重构|全面|详细|设计|系统|优化|分析|architecture|refactor|comprehensive|detailed|design|system|optimize|analyze"
+  guideWeak: "Router: classify this task (build or fix) now, then adopt the matching style — build: direct production; fix: inspect-first. Think deeply first, then commit and act."
+  guideDeep: "Router: classify this task (build or fix) now, then adopt the matching style — build: direct production; fix: inspect-first. Think deeply about the architecture, edge cases, and integration points. Do not spend reasoning on the environment or tooling. Produce when your information is complete. End each reasoning block with a decision or an information need."
+  buildPattern: "开发|创建|写一个|生成|从零|做一个|构建|新项目|搭建|实现|做出|上线|落地|脚本|工具|应用|build|create|develop|generate|implement|make a|new project"
+  complexPattern: "架构|重构|设计|系统|全面|深度|迁移|兼容|审查|architecture|refactor|comprehensive|design|system|migrate|review"
+
+  # ── PTC 模式 / 门控 ──
+  usePtcMode: true               # true=使用 PTC 模式（子代理 prompt-config-engine 行）
+  bootstrapMaxTokens: 0          # 首轮工具目录引导的 maxTokens 上限；0=不封顶
+  injectPrompt: true             # true=we 确认后注入 preset.md 一次
+  allowKinds: "[skill-invocation, near-anchor, router-guide]"  # 注入 kind 白名单（context-gate 门控；空=白名单全拦，危险）
+
+  # ── 主对话模型（agentOptions 由 dsh 全局配置，此处仅 preset 默认）──
+  modelProvider: ""              # 主对话新会话默认模型服务商（agent-default-model）
+  modelName: ""                  # 主对话新会话默认模型名（空=继承宿主）
+  modelReasoningEffort: ""       # 主对话思维程度（''=不设置）
+  modelTemperature: ""           # 主对话采样温度（''=不设置）
+  modelMaxTokens: ""             # 主对话输出上限（''=不设置）
+
+  # ── 子代理模型（固定路由）──
+  subagentModelProvider: ""      # 子代理模型服务商（tool-subagent agentOptions.provider）
+  subagentModelName: ""          # 子代理模型名（空=继承主会话）
+  subagentReasoningEffort: ""    # 子代理思维程度（''=不设置）
+  subagentTemperature: ""        # 子代理采样温度（''=不设置）
+  subagentMaxTokens: ""          # 子代理输出上限（''=不设置）
+
+  # ── 人设 ──
+  # 主对话自定义模型人设：主对话命中快速模型（Flash 档）时替换人设；
+  # 子代理（subagentPersona）未设置时回退使用。
+  mainPersona: >                 # 主对话 Flash 档人设（多行文本）
+    You are a helpful assistant.
+
+    Think deeply first, then produce.
+  subagentPersona: ""            # 子代理独立人设（显式 → 回退 mainPersona → 继承主会话）
+
+  # ── 工具集（子代理 toolFilter；主对话 tool-filter 模块共用同一扁平键）──
+  toolFilterAllow: []            # 子代理工具白名单（数组或逗号/空格字符串；空=不过滤）
+  toolFilterDeny: []             # 子代理工具黑名单（数组或逗号/空格字符串；空=不过滤）
+
+  # ── 委派深度 ──
+  maxDepth: ""                   # 子代理递归深度：0=禁止委派 / provider-managed / 正整数；空=官方默认
+
+# ── promptConfigs：注入提示词配置（三源合并：默认 < 目录 < 本段）──────────────
+# 每条配置的字段全开放：id / name / enabled / layer / strategy / position /
+# dedupe / promotion / subagents / modelScope / configKind / order / role /
+# text / texts / templateFile / fill / variables / params / identity /
+# mergeMode / group / exclusive。
+# 六个 layer 全覆盖：pre-step（下方默认四条）、system-section / runtime-context /
+# agent-request / llm-stream / tool-pipeline 的参数说明与示例见本段下方各块。
+# 默认四条（子代理默认全部放行/跟随；如需仅主会话/仅子代理，显式写
+# subagents: none / only 即可）：
+promptConfigs:
+  - id: near-anchor              # 首句任务锚点（首轮注入一次）
+    name: 首句锚点
+    enabled: true
+    strategy: first-turn-anchor
+    layer: pre-step
+    configKind: ordered
+    order: 0
+    role: user
+    position: after-user
+    dedupe: session
+    promotion: none
+  - id: router-guide             # 每轮路由引导（仅快速模型档）
+    name: 每轮引导
+    enabled: true
+    strategy: guide-auto
+    layer: pre-step
+    configKind: ordered
+    order: 10
+    role: user
+    position: after-user
+    dedupe: batch
+    promotion: main
+    modelScope: flash
+  - id: prompt-injector          # we 确认后注入 preset.md 一次
+    name: preset.md 注入
+    enabled: true
+    strategy: custom-fallback
+    layer: pre-step
+    configKind: ordered
+    order: 20
+    role: user
+    position: before-all
+    dedupe: session
+    promotion: main
+    sourceKind: plugin
+  - id: instruction-hint         # 指令文件存在性提示（子代理晋升后跟随）
+    name: 指令文件提示
+    enabled: true
+    strategy: placeholder
+    layer: pre-step
+    configKind: ordered
+    order: 30
+    role: user
+    position: after-all
+    dedupe: session
+    promotion: include-subagents
+    sourceKind: instruction-hint
+    form: hint
+    fill: instruction-hint
+
+# ── system-section 层参数说明（官方 ctx.systemPrompt.section 静态段）─────────
+# 本层是唯一支持官方 {{variable}} 渲染的静态层（缓存友好，静态内容优先放这里），
+# 可用参数：
+#   order              段内排序，数值小者靠前（多条 system-section 的拼接顺序；
+#                      order 参考：-100 身份 / 0 persona / 100-199 工具引导）
+#   text               静态文本，支持官方 {{variable}} 渲染
+#   templateFile       外部模板文件（相对引擎文件解析，与 text 二选一）
+#   variables          文本变量表（text 中 {{KEY}} 的替换值）
+#   mergeMode          merged=与同层其他配置按 order 拼接为一条 system prompt
+#   params.complete    true=minimal 完整 persona（plan-mode/Flash 路由人设被抑制）；
+#                      false=standard 语义——system-section 生效的前提
+#   params.sectionName 自定义段名（默认取 id）
+# 注意：本层注册即全局，官方 API 无逐 agent / 逐消息概念——subagents /
+#       promotion / dedupe / position / modelScope 配置了也不会生效（非配置错误）。
+# 示例（取消注释即可启用）：
+# - id: identity-section
+#   name: 身份段
+#   enabled: true
+#   strategy: static
+#   layer: system-section
+#   order: -50
+#   text: |
+#     你是 {{AGENT_NAME}}，回复前先说明正在做什么。
+#   variables:
+#     AGENT_NAME: prompt-tool
+#   params:
+#     complete: false
+
+# ── runtime-context 层参数说明（官方 ctx.systemPrompt.context 动态快照）──────
+# 随会话变化的内容放这里（动态文本不要进 system-section）：
+#   order / text / templateFile / variables   同 system-section（静态文本只替换 variables）
+#   params.contextName                       自定义快照名（默认取 id）
+# 两种 strategy：
+#   static      按 order 注册，每次会话装配注入
+#   placeholder 单条生效（fill: env-facts / skill-catalog / instruction-hint），
+#               支持 filler 变量（如 SKILL_COUNT / SKILL_NAMES）
+# 注意：本层无逐 agent / 逐消息概念——subagents / promotion / dedupe / modelScope 不生效。
+# 示例（取消注释即可启用）：
+# - id: workspace-context
+#   name: 工作区快照
+#   enabled: true
+#   strategy: static
+#   layer: runtime-context
+#   order: 5
+#   text: |
+#     当前工作区：{{WORKSPACE}}
+#   variables:
+#     WORKSPACE: /path/to/project
+
+# ── agent-request 层参数说明（官方 agent/request，LlmCallConfig 修改）────────
+# 按 order 注册；modelScope / subagents 生效。
+#   params.patch   对象，对冻结的 LlmCallConfig 浅合并（默认，安全）
+#   params.replace true=整体替换（返回 patch 本身，需提供完整 provider/model 等字段）
+# 注意：params.patch 不插值（原样使用）；text / texts 本层不使用。
+# 示例（取消注释即可启用）：
+# - id: flash-cap
+#   name: Flash 档上限
+#   enabled: true
+#   layer: agent-request
+#   modelScope: flash
+#   order: 0
+#   params:
+#     patch:
+#       maxTokens: 4096
+#       temperature: 0.3
+
+# ── llm-stream 层参数说明（官方 llm/stream 流包装）──────────────────────────
+# 按 order 注册；modelScope 生效（subagents 不适用）。
+#   params.mode  pass（默认，透传）/ replace（用 text / texts 替代整个模型流，
+#                text 为空时透传）
+# 注意：text 不插值。
+# 示例（取消注释即可启用）：
+# - id: fixed-reply
+#   name: 固定回复
+#   enabled: true
+#   layer: llm-stream
+#   modelScope: flash
+#   order: 0
+#   text: 这是固定回复内容。
+#   params:
+#     mode: replace
+
+# ── tool-pipeline 层参数说明（官方 tools/pre-execute / post-execute）─────────
+# 按 order 注册；modelScope / subagents 生效。
+#   params.toolNames  逗号分隔工具名白名单；空=全部工具
+#   params.preDecision allow（默认）/ deny / ask（tools/pre-execute 判定）
+#   params.denyReason  deny 时的原因文本（默认「{name}: denied by prompt config」）
+#   params.postAction  accept（默认）/ replace（用 text 替换工具结果）/
+#                      block（阻断并反馈 text）
+# 注意：text / texts 用于 postAction=replace/block 的反馈内容，不插值。
+# 示例（取消注释即可启用）：
+# - id: no-web
+#   name: 禁用 web 工具
+#   enabled: true
+#   layer: tool-pipeline
+#   modelScope: all
+#   order: 0
+#   params:
+#     toolNames: web_search,web_fetch
+#     preDecision: deny
+#     denyReason: 本预设禁用 web 工具
+
+# ── modules：引擎行/组模块装配顺序（增删即改装配）───────────────────────────
+# 24 个可用模块：context-gate / tool-filter / tool-bootstrap /
+# router-first-turn / prompt-config-engine / run-code-env / persona /
+# tool-bash / tool-pwsh / persistent-shell / custom-bash / tool-fs /
+# tool-fs-search / bootstrap-filesystem / tool-jobs / skill-filesystem /
+# skill-search / tool-goal / planning / compaction / delegation /
+# tool-ask-user / tool-todo / tool-web
+modules:
+  - context-gate                 # 上下文门控（晋升后才放行注入）
+  - tool-filter                  # 主对话工具过滤
+  - tool-bootstrap               # 工具目录引导
+  - router-first-turn            # 首轮任务分类路由
+  - prompt-config-engine         # 提示词注入引擎（必需行，勿删）
+  - run-code-env                 # 代码运行环境变量注入
+  - persona                      # 人设组装
+  - tool-bash                    # bash 工具
+  - tool-pwsh                    # pwsh 工具
+  - persistent-shell             # 持久 shell
+  - custom-bash                  # 自定义 bash（超时/输出上限）
+  - tool-fs                      # 文件系统工具
+  - tool-fs-search               # 文件搜索工具
+  - bootstrap-filesystem         # 引导期文件系统
+  - tool-jobs                    # 任务面板
+  - skill-filesystem             # 技能文件系统
+  - skill-search                 # 技能搜索
+  - tool-goal                    # goal 工具
+  - planning                     # 规划
+  - compaction                   # 压缩
+  - delegation                   # 委派（subagent）
+  - tool-ask-user                # 提问工具
+  - tool-todo                    # todo 工具
+  - tool-web                     # web 搜索
+
+# ── moduleConfigs：引擎组合行级 config（覆盖行默认值）───────────────────────
+moduleConfigs:
+  persona:
+    text: You are a helpful software engineer assistant.  # 人设文本
+    complete: true               # true=minimal 完整 persona（plan-mode/Flash 路由人设被抑制）；false=standard 语义
+    includeRuntimeContext: false # false=永久抑制运行时上下文；true=由 context-gate 动态控制
+  custom-bash:
+    timeoutMs: 120000            # 自定义 bash 超时（ms）
+    maxOutputBytes: 64000        # 自定义 bash 输出上限（bytes）
+  tool-bootstrap:
+    includeSubagents: false      # true=子代理工具目录跟随 bootstrap→晋升
+    promoteOn: either            # 晋升触发：either / main / subagent
+  router-first-turn:
+    hideSectionPrefixes: ["mnemon:"]  # 隐藏这些前缀的 system 段
+    includeSubagents: false      # true=子代理首轮也做任务分类
+  run-code-env:
+    envKeys: [PATH, PATHEXT, HOME, USERPROFILE, USERNAME, COMPUTERNAME, OS, TEMP, TMP, SystemRoot, ProgramFiles, ProgramFiles(x86), LOCALAPPDATA, APPDATA]  # 注入的环境变量白名单
+  context-gate:
+    promoteOn: either            # 晋升触发
+    includeSubagents: false      # true=子代理也做上下文门控
+  tool-filter:
+    includeSubagents: false      # true=子代理也启用主对话工具过滤
+
+# ── hostDefaults：settings 层默认值（被用户 settings 覆盖）──────────────────
+hostDefaults:
+  writePreset: true              # 启动时写入 preset.md 到生成目录
+  writeAgents: true              # 启动时写入 AGENTS.md 到生成目录
+  injectAgentsPrompt: false      # true=AGENTS.md 内容也注入 system
+  skillsDir: ""                  # skills 目录（空=插件自带 skills/）
+  skillRankBase: 250             # 技能排序基础值
+  residentAgentsPath: ~/.dsh/AGENTS.md  # 常驻 AGENTS.md 路径
+  presetDir: ~/.dsh/.agent-presets/prompt-tool  # 预设生成目录
+  presetOrder: 5                 # 预设排序
+  fallbackText: ""               # 兜底注入文本（空=不注入）
+  promptConfigs: []              # settings 数组提示词配置（优先级最高）
+  skillSwitches: {}              # 技能开关（id -> true/false）
+  skillOrder: []                 # 技能排序
+
+# ── 清理与上游（可选）───────────────────────────────────────────────────────
+legacyCleanup: []                # 历史残留文件清理列表
+upstream:
+  repo: dsh-anchored-standard    # 上游策略来源仓库
+  snapshot: upstream/dsh-anchored-standard  # 内联快照目录
+  sync: pnpm sync:anchored       # 快照刷新命令
