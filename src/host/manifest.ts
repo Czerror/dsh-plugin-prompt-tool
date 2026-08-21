@@ -106,15 +106,6 @@ export function userPresetsDir(): string {
   return DEFAULT_USER_PRESETS_DIR
 }
 
-/** 内置预设隐藏标记：~/.dsh/presets/.hidden-<id>（存在 = 用户从列表移除，插件目录原版保留）。 */
-function hiddenMarkPath(id: string): string {
-  return join(userPresetsDir(), `.hidden-${id}`)
-}
-
-export function isPresetHidden(id: string): boolean {
-  return existsSync(hiddenMarkPath(id))
-}
-
 /** 在指定扫描目录内按 template 定位预设目录：目录名精确匹配优先，preset.yml 的 id 匹配兜底。 */
 function findPresetDir(scanDir: string, template: string): string | undefined {
   const exact = join(scanDir, template)
@@ -144,10 +135,10 @@ export function resolvePresetDir(template: string): string {
   return found ?? join(packagePresetDir(), template)
 }
 
-/** 可用预设清单（包内 preset/ + 用户 ~/.dsh/presets，用户同名覆盖）。
- *  user=false 表示仅包内置（不可删除）；user=true 表示用户目录存在（可删除，删除后同名内置回退）。 */
+/** 可用预设清单：全部来自用户目录 ~/.dsh/presets（插件目录模板只经「新建」复制进入；
+ *  首次启动由 ensurePresetSeed 种子化，删除后可用「新建」还原）。 */
 export function listPresets(): Array<{ id: string; name: string; user: boolean }> {
-  const scan = (dir: string, user: boolean): Array<{ id: string; name: string; user: boolean }> => {
+  const scan = (dir: string): Array<{ id: string; name: string; user: boolean }> => {
     try {
       return readdirSync(dir, { withFileTypes: true })
         .filter((entry) => entry.isDirectory())
@@ -155,7 +146,7 @@ export function listPresets(): Array<{ id: string; name: string; user: boolean }
           try {
             const spec = loadPresetSpec(join(dir, entry.name))
             // 切换值用目录名（与 resolvePresetDir 路径一致）；name 保持 spec.name 契约。
-            return [{ id: entry.name, name: spec.name, user }]
+            return [{ id: entry.name, name: spec.name, user: true }]
           } catch {
             return []
           }
@@ -165,31 +156,53 @@ export function listPresets(): Array<{ id: string; name: string; user: boolean }
     }
   }
   const byId = new Map<string, { id: string; name: string; user: boolean }>()
-  for (const preset of scan(packagePresetDir(), false)) {
-    if (!isPresetHidden(preset.id)) byId.set(preset.id, preset)
-  }
-  for (const preset of scan(userPresetsDir(), true)) byId.set(preset.id, preset)
+  for (const preset of scan(userPresetsDir())) byId.set(preset.id, preset)
   return [...byId.values()].sort((a, b) => a.id.localeCompare(b.id))
 }
 
-/** 隐藏内置预设（从列表移除；插件目录原版保留，用户目录同名副本一并删除）。 */
-export function hideBuiltinPreset(id: string): { ok: true } | { ok: false; message: string } {
-  const builtin = findPresetDir(packagePresetDir(), id)
-  if (builtin === undefined) {
-    return { ok: false, message: `预设 ${id} 不是包内置预设` }
-  }
+/** 插件目录模板清单（「新建」选择器与首次种子化数据源；不直接出现在预设列表）。 */
+export function listBuiltinTemplates(): Array<{ id: string; name: string }> {
   try {
-    mkdirSync(userPresetsDir(), { recursive: true })
-    // 用户目录同名副本（新建过）一并删除；隐藏标记写入。
-    rmSync(join(userPresetsDir(), id), { recursive: true, force: true })
-    writeFileSync(hiddenMarkPath(id), '', 'utf8')
-    return { ok: true }
-  } catch (error) {
-    return { ok: false, message: `移除预设失败：${error instanceof Error ? error.message : String(error)}` }
+    return readdirSync(packagePresetDir(), { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .flatMap((entry) => {
+        try {
+          const spec = loadPresetSpec(join(packagePresetDir(), entry.name))
+          return [{ id: entry.name, name: spec.name }]
+        } catch {
+          return []
+        }
+      })
+      .sort((a, b) => a.id.localeCompare(b.id))
+  } catch {
+    return []
   }
 }
 
-/** 从插件目录复制内置预设到用户目录（新建）；已存在同名或非内置拒绝。 */
+/** 首次启动种子化：把插件目录全部内置模板复制到用户目录（.seeded 标记后不再自动补）。
+ *  用户删除的预设不会自动复活；升级新增的模板用「新建」按需复制。 */
+export function ensurePresetSeed(): { created: string[] } {
+  const root = userPresetsDir()
+  const mark = join(root, '.seeded')
+  if (existsSync(mark)) return { created: [] }
+  const created: string[] = []
+  try {
+    mkdirSync(root, { recursive: true })
+    for (const entry of readdirSync(packagePresetDir(), { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue
+      const target = join(root, entry.name)
+      if (existsSync(target)) continue
+      cpSync(join(packagePresetDir(), entry.name), target, { recursive: true })
+      created.push(entry.name)
+    }
+    writeFileSync(mark, '', 'utf8')
+  } catch {
+    // 种子化失败（目录不可写等）不阻断启动，用户仍可经 UI 新建/导入。
+  }
+  return { created }
+}
+
+/** 从插件目录复制内置预设到用户目录（新建/还原）；已存在同名或非内置拒绝。 */
 export function cloneBuiltinPreset(id: string): { ok: true } | { ok: false; message: string } {
   if (typeof id !== 'string' || id.length === 0 || id === '.' || id === '..'
     || id.includes('/') || id.includes('\\')) {
@@ -206,8 +219,6 @@ export function cloneBuiltinPreset(id: string): { ok: true } | { ok: false; mess
   try {
     mkdirSync(userPresetsDir(), { recursive: true })
     cpSync(builtin, target, { recursive: true, force: true })
-    // 新建即恢复：清除隐藏标记。
-    rmSync(hiddenMarkPath(id), { force: true })
     return { ok: true }
   } catch (error) {
     return { ok: false, message: `新建预设失败：${error instanceof Error ? error.message : String(error)}` }

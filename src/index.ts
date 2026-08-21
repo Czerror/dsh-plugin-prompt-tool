@@ -26,7 +26,7 @@ import { ensureSettingsRegistered } from './runtime/settings-registration.ts'
 import { removeResidentAgentsBlock, writeAgents } from './runtime/agents-file.ts'
 import { writePreset } from './host/write-preset.ts'
 import type { WritePresetOptions } from './host/write-preset.ts'
-import { listPresets } from './host/manifest.ts'
+import { ensurePresetSeed, listPresets } from './host/manifest.ts'
 import {
   Config,
   NS,
@@ -128,6 +128,12 @@ export function mergePresetDefaults<T extends Config>(config: T, spec: PresetSpe
 
 
 export function apply(ctx: Context, configIn: Config): void {
+  // 首次启动种子化：全部内置模板复制到用户目录（之后只经「新建」还原）。
+  try {
+    ensurePresetSeed()
+  } catch (error) {
+    warn(ctx, `prompt-tool: preset seed failed: ${error instanceof Error ? error.message : String(error)}`)
+  }
   // 唯一入口:preset.yml 的参数与 hostDefaults 合并进 Config 默认值。
   let presetSpec: PresetSpec | undefined
   try {
@@ -731,8 +737,8 @@ export { loadPresetSpec, resolvePresetParams } from './host/manifest.ts'
 export type { PresetSpec } from './host/manifest.ts'
 export {
   cloneBuiltinPreset,
-  hideBuiltinPreset,
-  isPresetHidden,
+  ensurePresetSeed,
+  listBuiltinTemplates,
   listPresets,
   removeUserPreset,
   resolvePresetDir,

@@ -4,19 +4,19 @@ import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-// removeUserPreset / listPresets 依赖 DSH_HOME（paths 模块加载时求值）。
-// 本文件独立进程运行：先设临时 DSH_HOME 再动态 import lib。
+// removeUserPreset / ensurePresetSeed / listPresets / cloneBuiltinPreset 依赖 DSH_HOME
+// （paths 模块加载时求值）。本文件独立进程运行：先设临时 DSH_HOME 再动态 import lib。
 const root = join(tmpdir(), `prompt-tool-user-presets-${process.pid}-${Date.now()}`)
 process.env.DSH_HOME = root
 const {
   cloneBuiltinPreset,
-  hideBuiltinPreset,
-  isPresetHidden,
+  ensurePresetSeed,
   listPresets,
   removeUserPreset,
 } = await import('../../lib/index.mjs')
 
 const PRESETS_DIR = join(root, 'presets')
+const BUILTIN_IDS = ['anchored', 'creative', 'liangshen', 'minimal', 'ptc', 'standard']
 
 test('removeUserPreset：删除用户预设目录', () => {
   mkdirSync(join(PRESETS_DIR, 'foo'), { recursive: true })
@@ -39,18 +39,43 @@ test('removeUserPreset：非法 id 与路径越界拒绝', () => {
   assert.equal(removeUserPreset('a/b').ok, false)
   assert.equal(removeUserPreset('a\\b').ok, false)
   assert.equal(removeUserPreset('not-exists').ok, false)
-  // 越界目标（resolve 后不在用户预设根内）拒绝。
   assert.equal(removeUserPreset('..\\..\\temp').ok, false)
 })
 
-test('listPresets：user 标记区分用户导入与包内置', () => {
-  mkdirSync(join(PRESETS_DIR, 'user-only'), { recursive: true })
-  writeFileSync(join(PRESETS_DIR, 'user-only', 'preset.yml'), 'id: user-only\nname: 用户\n', 'utf8')
+test('ensurePresetSeed：首次种子化全部内置模板，.seeded 后不重复且删除不复活', () => {
+  const first = ensurePresetSeed()
+  assert.ok(first.created.length >= BUILTIN_IDS.length, `首次应复制全部内置（实际 ${first.created.length}）`)
+  for (const id of BUILTIN_IDS) {
+    assert.ok(existsSync(join(PRESETS_DIR, id, 'preset.yml')), `${id} 应种子化`)
+  }
+  // 二次调用不重复复制。
+  assert.deepEqual(ensurePresetSeed().created, [])
+  // 用户删除后不自动复活（种子化只在首次执行）。
+  assert.deepEqual(removeUserPreset('ptc'), { ok: true })
+  ensurePresetSeed()
+  assert.equal(existsSync(join(PRESETS_DIR, 'ptc')), false, '删除后种子化不应自动复活')
+})
+
+test('listPresets：全部来自用户目录（种子化后内置模板即为用户预设）', () => {
   const presets = listPresets()
-  const userOnly = presets.find((preset) => preset.id === 'user-only')
-  assert.ok(userOnly !== undefined && userOnly.user === true, JSON.stringify(userOnly))
-  const anchored = presets.find((preset) => preset.id === 'anchored')
-  assert.ok(anchored !== undefined && anchored.user === false, JSON.stringify(anchored))
+  for (const id of ['anchored', 'creative', 'liangshen', 'minimal', 'standard']) {
+    const preset = presets.find((entry) => entry.id === id)
+    assert.ok(preset !== undefined && preset.user === true, `${id} 应为用户目录预设`)
+  }
+  assert.ok(!presets.some((preset) => preset.id === 'ptc'), 'ptc 已删除不应列出')
+})
+
+test('cloneBuiltinPreset：非内置/非法 id/用户目录已存在同名拒绝', () => {
+  assert.equal(cloneBuiltinPreset('not-a-builtin').ok, false)
+  assert.equal(cloneBuiltinPreset('a/b').ok, false)
+  assert.equal(cloneBuiltinPreset('anchored').ok, false, '种子化后用户目录已存在 anchored，应拒绝')
+})
+
+test('cloneBuiltinPreset：删除后可新建还原', () => {
+  assert.equal(existsSync(join(PRESETS_DIR, 'ptc')), false)
+  assert.deepEqual(cloneBuiltinPreset('ptc'), { ok: true })
+  assert.ok(existsSync(join(PRESETS_DIR, 'ptc', 'preset.yml')), 'ptc 应还原到用户目录')
+  assert.ok(listPresets().some((preset) => preset.id === 'ptc' && preset.user === true))
 })
 
 test('removeUserPreset：删除后 listPresets 不再列出', () => {
@@ -59,31 +84,6 @@ test('removeUserPreset：删除后 listPresets 不再列出', () => {
   assert.ok(listPresets().some((preset) => preset.id === 'temp-preset'))
   removeUserPreset('temp-preset')
   assert.ok(!listPresets().some((preset) => preset.id === 'temp-preset'))
-})
-
-test('hideBuiltinPreset：内置预设从列表移除，插件目录保留，新建恢复', () => {
-  // anchored 在包内 preset/（user=false 前置条件）。
-  assert.ok(listPresets().some((preset) => preset.id === 'anchored' && preset.user === false))
-  assert.deepEqual(hideBuiltinPreset('anchored'), { ok: true })
-  assert.ok(isPresetHidden('anchored'), '应写入隐藏标记')
-  assert.ok(!listPresets().some((preset) => preset.id === 'anchored'), '列表不应再含 anchored')
-  // 新建（克隆）恢复：复制到用户目录 + 清除隐藏标记。
-  assert.deepEqual(cloneBuiltinPreset('anchored'), { ok: true })
-  assert.ok(!isPresetHidden('anchored'), '新建后隐藏标记应清除')
-  const anchored = listPresets().find((preset) => preset.id === 'anchored')
-  assert.ok(anchored !== undefined && anchored.user === true, '恢复后应为用户预设（可删除）')
-  // 清理：删除用户副本，回退内置可见。
-  assert.deepEqual(removeUserPreset('anchored'), { ok: true })
-  assert.ok(listPresets().some((preset) => preset.id === 'anchored' && preset.user === false))
-})
-
-test('cloneBuiltinPreset：非内置/非法 id/已存在同名拒绝', () => {
-  assert.equal(cloneBuiltinPreset('not-a-builtin').ok, false)
-  assert.equal(cloneBuiltinPreset('a/b').ok, false)
-  mkdirSync(join(PRESETS_DIR, 'ptc'), { recursive: true })
-  writeFileSync(join(PRESETS_DIR, 'ptc', 'preset.yml'), 'id: ptc\n', 'utf8')
-  assert.equal(cloneBuiltinPreset('ptc').ok, false, '用户目录已存在同名应拒绝')
-  removeUserPreset('ptc')
 })
 
 test.after(() => {

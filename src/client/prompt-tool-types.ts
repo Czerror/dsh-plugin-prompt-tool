@@ -55,6 +55,8 @@ export interface LayerFieldPolicy {
 export interface EngineMeta {
   /** 可用预设模板清单（UI 预设切换器）。 */
   presets?: Array<{ id: string; name: string; user?: boolean }>
+  /** 插件目录内置模板清单（「新建预设」选择器数据源）。 */
+  builtinTemplates?: Array<{ id: string; name: string }>
   layers: string[]
   strategies: string[]
   slotKinds: string[]

@@ -520,13 +520,6 @@
 /* 多目录卡片：路径 + 状态 + 计数 + 行操作。 */
 .dirCardList { display: flex; min-width: 0; flex-direction: column; gap: 8px; }
 .presetList { display: flex; min-width: 0; flex-direction: column; gap: 6px; margin-top: 2px; }
-.presetGroupTitle {
-  padding: 10px 2px 0;
-  color: var(--dsw-alias-label-tertiary);
-  font-size: 11px;
-  line-height: 16px;
-  letter-spacing: .02em;
-}
 .presetRow {
   display: flex;
   min-width: 0;

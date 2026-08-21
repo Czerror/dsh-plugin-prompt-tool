@@ -1,5 +1,5 @@
-/** 预设切换器：切换预设模板 + 导入自定义预设（配置页与功能设置共用）。 */
-import { useRef, useState, type ReactNode } from 'react'
+/** 预设切换器：预设全部在用户目录（首次启动种子化），列表点击切换；新建 = 从内置模板复制还原。 */
+import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import clsx from 'clsx'
 import { bridgePost } from './prompt-tool-bridge.ts'
 import type { PromptToolStore } from './prompt-tool-store.ts'
@@ -9,43 +9,33 @@ export function PresetSwitcher(props: { store: PromptToolStore }): ReactNode {
   const { store } = props
   const fields = store.fields
   const presets = store.meta.presets ?? []
+  const templates = store.meta.builtinTemplates ?? []
   const [importing, setImporting] = useState(false)
   const [confirmingDelete, setConfirmingDelete] = useState<string | undefined>(undefined)
+  const [pickerOpen, setPickerOpen] = useState(false)
+  const dialogRef = useRef<HTMLDivElement>(null)
   const yamlRef = useRef<HTMLInputElement>(null)
   const dirRef = useRef<HTMLInputElement>(null)
 
-  /** 删除预设：内置 = 从列表移除（隐藏，插件目录保留）；用户 = 物理删除（含同名导入备份目录）。 */
-  const deletePreset = async (id: string, builtin: boolean): Promise<void> => {
-    const res = await bridgePost<{ id: string }>('/preset-delete', { id, builtin })
-    if (res.ok) {
-      setConfirmingDelete(undefined)
-      store.showNotice('ok', builtin ? `预设 ${id} 已从列表移除（插件目录模板保留）` : `预设 ${id} 已删除`)
-      await store.load()
-    } else {
-      store.showNotice('error', '删除预设失败：' + (res.message ?? 'settings bridge unavailable'))
+  // 新建弹窗：聚焦首控件 + Esc 关闭。
+  useEffect(() => {
+    if (!pickerOpen) return
+    dialogRef.current?.querySelector<HTMLElement>('button')?.focus()
+    const onKeyDown = (event: globalThis.KeyboardEvent): void => {
+      if (event.key === 'Escape') setPickerOpen(false)
     }
-  }
-
-  /** 新建：从插件目录复制内置预设到用户目录（成为可删除的用户预设；同名的已隐藏内置同时恢复）。 */
-  const clonePreset = async (id: string): Promise<void> => {
-    const res = await bridgePost<{ id: string }>('/preset-clone', { id })
-    if (res.ok) {
-      store.showNotice('ok', `已从内置模板新建预设 ${id}（用户目录副本，可删除）`)
-      await store.load()
-    } else {
-      store.showNotice('error', '新建预设失败：' + (res.message ?? 'settings bridge unavailable'))
-    }
-  }
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+  }, [pickerOpen])
 
   /** 上传预设包：path 为相对路径（preset.yml 或文件夹内文件），服务端按 id 归入用户预设目录。 */
   const uploadPreset = async (entries: Array<{ path: string; content: string }>): Promise<void> => {
     if (entries.length === 0) return
-    // 同名覆盖由服务端备份旧版保护（宿主 webview 禁 window.confirm，不做原生弹窗确认）。
     setImporting(true)
     try {
       const res = await bridgePost<{ id: string }>('/import-preset-package', { files: entries })
       if (res.ok) {
-        store.showNotice('ok', `预设 ${res.value.id} 已导入，可在上方切换`)
+        store.showNotice('ok', `预设 ${res.value.id} 已导入，点击卡片即可切换`)
         await store.load()
       } else {
         store.showNotice('error', '导入预设失败：' + (res.message ?? 'settings bridge unavailable'))
@@ -93,12 +83,56 @@ export function PresetSwitcher(props: { store: PromptToolStore }): ReactNode {
     store.showNotice('ok', `已导出 ${res.value.id}.preset.yml（单文件配置，可保存到任意目录）`)
   }
 
+  /** 删除预设（物理删除用户目录副本；插件目录模板保留，可经「新建预设」还原）。 */
+  const deletePreset = async (id: string): Promise<void> => {
+    const res = await bridgePost<{ id: string }>('/preset-delete', { id })
+    if (res.ok) {
+      setConfirmingDelete(undefined)
+      store.showNotice('ok', `预设 ${id} 已删除（可经「新建预设」从内置模板还原）`)
+      await store.load()
+    } else {
+      store.showNotice('error', '删除预设失败：' + (res.message ?? 'settings bridge unavailable'))
+    }
+  }
+
+  /** 新建：从插件目录模板复制到用户目录（还原/自定义起点）。 */
+  const clonePreset = async (id: string): Promise<void> => {
+    const res = await bridgePost<{ id: string }>('/preset-clone', { id })
+    if (res.ok) {
+      setPickerOpen(false)
+      store.showNotice('ok', `已从内置模板新建预设 ${id}`)
+      await store.load()
+    } else {
+      store.showNotice('error', '新建预设失败：' + (res.message ?? 'settings bridge unavailable'))
+    }
+  }
+
+  const onDialogKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>): void => {
+    if (event.key !== 'Tab' || dialogRef.current === null) return
+    const focusables = [...dialogRef.current.querySelectorAll<HTMLElement>(
+      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+    )].filter((element) => !element.hasAttribute('disabled'))
+    if (focusables.length === 0) return
+    const first = focusables[0]!
+    const last = focusables[focusables.length - 1]!
+    const active = document.activeElement
+    if (event.shiftKey) {
+      if (active === first || !dialogRef.current.contains(active)) {
+        event.preventDefault()
+        last.focus()
+      }
+    } else if (active === last || !dialogRef.current.contains(active)) {
+      event.preventDefault()
+      first.focus()
+    }
+  }
+
   return (
     <div className={styles.rowGroup}>
       <div className={styles.settingRowStack}>
         <span className={styles.settingCopy}>
           <strong>预设模板</strong>
-          <small>点击预设卡片即切换并按新模板重建生成目录；anchored 为插件默认，另有官方标准/极简/PTC/创造四套。导入预设 = 选择 preset.yml / 任意 *.yml/*.yaml / SillyTavern *.json 配置文件，或整个预设文件夹。</small>
+          <small>预设保存在用户目录（首次启动自动内置全部模板）；点击卡片即切换并按新模板重建生成目录。删除后可从内置模板「新建」还原；导入预设 = 选择 preset.yml / 任意 *.yml/*.yaml / SillyTavern *.json 配置文件，或整个预设文件夹。</small>
         </span>
         <span className={styles.inlineControls}>
           <input
@@ -118,7 +152,8 @@ export function PresetSwitcher(props: { store: PromptToolStore }): ReactNode {
             aria-label="选择预设文件夹"
             onChange={(event) => { pickPresetDir(event.target.files); event.target.value = '' }}
           />
-          <button type="button" className={styles.primaryPill} disabled={importing} onClick={() => yamlRef.current?.click()}>
+          <button type="button" className={styles.primaryPill} onClick={() => setPickerOpen(true)}>新建预设</button>
+          <button type="button" className={styles.pillButton} disabled={importing} onClick={() => yamlRef.current?.click()}>
             {importing ? '导入中…' : '导入预设'}
           </button>
           <button type="button" className={styles.pillButton} disabled={importing} onClick={() => dirRef.current?.click()}>
@@ -130,59 +165,70 @@ export function PresetSwitcher(props: { store: PromptToolStore }): ReactNode {
         </span>
       </div>
       <div className={styles.presetList}>
-        {presets.filter((preset) => preset.user !== true).length > 0 && (
-          <span className={styles.presetGroupTitle}>内置预设</span>
-        )}
-        {presets.filter((preset) => preset.user !== true).map((preset) => renderRow(preset))}
-        <span className={styles.presetGroupTitle}>用户预设</span>
-        {presets.filter((preset) => preset.user === true).length === 0 ? (
-          <p className={styles.readOnly} role="status">暂无用户预设；点击上方「导入预设」或「导入文件夹」添加。</p>
-        ) : presets.filter((preset) => preset.user === true).map((preset) => renderRow(preset))}
+        {presets.length === 0 ? (
+          <p className={styles.readOnly} role="status">暂无预设；点击上方「新建预设」从内置模板创建，或「导入预设」添加。</p>
+        ) : presets.map((preset) => renderRow(preset))}
       </div>
+      {pickerOpen && (
+        <div className={styles.modalBackdrop} onClick={() => setPickerOpen(false)}>
+          <div
+            ref={dialogRef}
+            className={styles.templateModal}
+            role="dialog"
+            aria-modal="true"
+            aria-label="从内置模板新建预设"
+            onClick={(event) => event.stopPropagation()}
+            onKeyDown={onDialogKeyDown}
+          >
+            <div className={styles.templateModalHead}>
+              <strong>从内置模板新建预设</strong>
+              <button type="button" className={styles.pillButton} aria-label="关闭模板选择" onClick={() => setPickerOpen(false)}>×</button>
+            </div>
+            <div className={styles.templateModalList}>
+              {templates.length === 0 && <p className={styles.configFieldHint}>插件目录无内置模板。</p>}
+              {templates.map((template) => (
+                <button key={template.id} type="button" className={styles.templateModalItem}
+                  title={`新建到用户目录：${template.id}`} onClick={() => void clonePreset(template.id)}>
+                  <strong>{template.name}</strong>
+                  <small>{template.id}</small>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 
-  function renderRow(preset: { id: string; name: string; user?: boolean }): ReactNode {
-          const active = fields.presetTemplate === preset.id
-          const deletable = preset.user === true
-          const confirming = confirmingDelete === preset.id
-          const confirmText = deletable
-            ? `删除用户预设「${preset.name}」？此操作不可恢复（内置同名可重新「新建」）。`
-            : `从列表移除内置预设「${preset.name}」？插件目录模板保留，可随时「新建」恢复。`
-          return (
-            <div key={preset.id} className={clsx(styles.presetRow, active && styles.presetRowActive)}
-              data-active={active ? '' : undefined}>
-              <button type="button" className={styles.presetRowMain} disabled={!fields.writePreset}
-                title={active ? '当前预设模板' : `切换到 ${preset.name}`}
-                onClick={() => store.setPresetTemplate(preset.id)}>
-                <span className={styles.presetRowName}>
-                  <strong>{preset.name}</strong>
-                  <code>{preset.id}</code>
-                </span>
-              </button>
-              <span className={styles.presetRowActions}>
-                {active && <span className={styles.presetRowBadge} data-kind="active">使用中</span>}
-                {!deletable && <span className={styles.presetRowBadge} data-kind="builtin">内置</span>}
-                {!deletable && (
-                  <button type="button" className={styles.pillButton} title={`从内置模板新建预设 ${preset.id}（用户目录副本）`}
-                    onClick={() => void clonePreset(preset.id)}>新建</button>
-                )}
-                {confirming ? (
-                  <>
-                    <button type="button" className={styles.pillButton} data-danger disabled={active}
-                      title={active ? '先切换其他预设再操作' : confirmText}
-                      onClick={() => void deletePreset(preset.id, !deletable)}>
-                      {deletable ? '确认删除' : '确认移除'}
-                    </button>
-                    <button type="button" className={styles.pillButton} data-variant="secondary" onClick={() => setConfirmingDelete(undefined)}>取消</button>
-                  </>
-                ) : (
-                  <button type="button" className={styles.pillButton} data-danger disabled={active}
-                    title={active ? '先切换其他预设再操作' : confirmText}
-                    onClick={() => setConfirmingDelete(preset.id)}>删除</button>
-                )}
-              </span>
-            </div>
-          )
+  function renderRow(preset: { id: string; name: string }): ReactNode {
+    const active = fields.presetTemplate === preset.id
+    const confirming = confirmingDelete === preset.id
+    return (
+      <div key={preset.id} className={clsx(styles.presetRow, active && styles.presetRowActive)}
+        data-active={active ? '' : undefined}>
+        <button type="button" className={styles.presetRowMain} disabled={!fields.writePreset}
+          title={active ? '当前预设模板' : `切换到 ${preset.name}`}
+          onClick={() => store.setPresetTemplate(preset.id)}>
+          <span className={styles.presetRowName}>
+            <strong>{preset.name}</strong>
+            <code>{preset.id}</code>
+          </span>
+        </button>
+        <span className={styles.presetRowActions}>
+          {active && <span className={styles.presetRowBadge} data-kind="active">使用中</span>}
+          {confirming ? (
+            <>
+              <button type="button" className={styles.pillButton} data-danger disabled={active}
+                title="删除后可从内置模板「新建」还原" onClick={() => void deletePreset(preset.id)}>确认删除</button>
+              <button type="button" className={styles.pillButton} data-variant="secondary" onClick={() => setConfirmingDelete(undefined)}>取消</button>
+            </>
+          ) : (
+            <button type="button" className={styles.pillButton} data-danger disabled={active}
+              title={active ? '先切换其他预设再删除' : '删除用户目录副本（内置模板保留，可新建还原）'}
+              onClick={() => setConfirmingDelete(preset.id)}>删除</button>
+          )}
+        </span>
+      </div>
+    )
   }
 }

@@ -14,7 +14,7 @@ import { fixSkillEntry } from './skill-fix.ts'
 import {
   assertCompositionArray,
   cloneBuiltinPreset,
-  hideBuiltinPreset,
+  listBuiltinTemplates,
   listPresets,
   loadPresetSpec,
   parseImportedPresetId,
@@ -162,6 +162,7 @@ export function registerSettingsBridge(
             }
             const meta = getEngineMeta() as Record<string, unknown>
             meta.presets = listPresets()
+            meta.builtinTemplates = listBuiltinTemplates()
             writeBridgeJson(res, 200, { ok: true, value: { meta } })
           },
         }),
@@ -616,8 +617,8 @@ export function registerSettingsBridge(
               writeBridgeJson(res, 400, { ok: false, code: 'preset-in-use', message: `预设「${id}」正在使用中，请先切换其他预设再删除` })
               return
             }
-            // builtin=true：删除内置预设 = 隐藏（插件目录保留，用户副本一并删）；否则删除用户预设目录。
-            const result = record.builtin === true ? hideBuiltinPreset(id) : removeUserPreset(id)
+            // 全部预设都在用户目录（首次启动种子化）：删除 = 物理删除用户目录副本，插件目录模板保留。
+            const result = removeUserPreset(id)
             if (!result.ok) {
               writeBridgeJson(res, 400, { ok: false, code: 'preset-delete-rejected', message: result.message })
               return
