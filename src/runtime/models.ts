@@ -34,8 +34,15 @@ export function detectModels(ctx: Context): ModelDetection {
   }
 }
 
-/** 查询各已注册服务商公布的模型 id（对齐官方 web 选择器 buildModelCatalog：只遍历 listProviders() live 路由，单点失败不拖垮整体；仅作展示，不构成路由白名单）。 */
+/** 模型目录会话内缓存（60s TTL）：provider 模型列表在会话内基本固定，
+ *  而 listModels 可能走远端查询——每次 /describe 全量重查会拖慢工作台加载与每次保存。 */
+const catalogCache = new Map<string, { at: number; value: Record<string, string[]> }>()
+const CATALOG_TTL_MS = 60_000
+
+/** 查询各已注册服务商公布的模型 id（对齐官方 web 选择器 buildModelCatalog：只遍历 listProviders() live 路由，单点失败不拖垮整体；仅作展示，不构成路由白名单）。并行查询 + 60s 缓存。 */
 export async function listAdvertisedModels(ctx: Context): Promise<Record<string, string[]>> {
+  const cached = catalogCache.get('default')
+  if (cached !== undefined && Date.now() - cached.at < CATALOG_TTL_MS) return cached.value
   const catalog: Record<string, string[]> = {}
   const llm = ctx.get('llm') as {
     listProviders?: () => Array<{ id?: string; name?: string }>
@@ -45,19 +52,19 @@ export async function listAdvertisedModels(ctx: Context): Promise<Record<string,
   const liveProviders = (llm.listProviders() ?? [])
     .map((entry) => (typeof entry?.id === 'string' && entry.id.length > 0 ? entry.id : (typeof entry?.name === 'string' ? entry.name : '')))
     .filter((id) => id.length > 0)
-  for (const provider of liveProviders) {
+  await Promise.all(liveProviders.map(async (provider) => {
     try {
       const models = await llm.listModels(provider)
-      if (!Array.isArray(models)) continue
+      if (!Array.isArray(models)) return
       const ids = models
         .map((entry) => (typeof entry?.id === 'string' && entry.id.length > 0 ? entry.id : (typeof entry?.name === 'string' ? entry.name : '')))
         .filter((id) => id.length > 0)
       if (ids.length > 0) catalog[provider] = ids
     } catch {
       // 单个服务商查询失败不影响其余（adapter 可能未公布模型）。
-      continue
     }
-  }
+  }))
+  catalogCache.set('default', { at: Date.now(), value: catalog })
   return catalog
 }
 
