@@ -78,8 +78,22 @@ export interface WritePresetOptions {
   promptConfigs: PromptConfigSpec[]
   /** 预设模板名(preset/<name>);默认 anchored(兼容期)。 */
   presetTemplate?: string
+  /** 仅生成子预设目录，不写容器根薄转发（预生成/补建非激活预设时使用）。 */
+  skipForward?: boolean
   /** 目录加载失败等非致命告警回调。 */
   warn?: (message: string) => void
+}
+
+/** Windows 瞬时文件锁（杀软/宿主短读）下的重试：rename/写文件失败最多重试 3 次、间隔 400ms。 */
+function withLockRetry<T>(action: () => T, retries = 3): T {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return action()
+    } catch (error) {
+      if (attempt >= retries) throw error
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 400)
+    }
+  }
 }
 
 function runtimeOf(options: WritePresetOptions, prompt: string): Record<string, unknown> {
@@ -334,15 +348,15 @@ export function writePreset(prompt: string, options: WritePresetOptions): void {
   const backupDir = join(presetRoot, `.${templateName}.bak-${Date.now().toString(36)}`)
   let oldMoved = false
   if (existsSync(targetDir)) {
-    renameSync(targetDir, backupDir)
+    withLockRetry(() => renameSync(targetDir, backupDir))
     oldMoved = true
   }
   try {
-    renameSync(outDir, targetDir)
+    withLockRetry(() => renameSync(outDir, targetDir))
   } catch (error) {
     if (oldMoved) {
       try {
-        renameSync(backupDir, targetDir)
+        withLockRetry(() => renameSync(backupDir, targetDir))
       } catch {
         // 恢复失败时保留 backup 供人工处理,不再覆盖现场。
       }
@@ -354,9 +368,11 @@ export function writePreset(prompt: string, options: WritePresetOptions): void {
   // 8) 容器根薄转发：agent.cordis.yml 指向激活子预设（官方契约：目录名 = 预设 id，
   //    容器根必须始终有完整组合）。组合内 `name: ./engine/...` 重写为
   //    `./<template>/engine/...`；configsDir 相对引擎文件解析，引擎文件在子预设
-  //    内，无需改写。
-  const forwarded = composition.replaceAll('./engine/', `./${templateName}/engine/`)
-  writeFileSync(join(presetRoot, 'agent.cordis.yml'), forwarded, 'utf8')
+  //    内，无需改写。skipForward（预生成非激活预设）时不触碰容器根。
+  if (options.skipForward !== true) {
+    const forwarded = composition.replaceAll('./engine/', `./${templateName}/engine/`)
+    withLockRetry(() => writeFileSync(join(presetRoot, 'agent.cordis.yml'), forwarded, 'utf8'))
+  }
   } catch (error) {
     rmSync(tmpDir, { recursive: true, force: true })
     throw error

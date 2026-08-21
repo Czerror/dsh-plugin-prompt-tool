@@ -25,6 +25,8 @@ import { registerTuiCommand } from './runtime/tui.ts'
 import { ensureSettingsRegistered } from './runtime/settings-registration.ts'
 import { removeResidentAgentsBlock, writeAgents } from './runtime/agents-file.ts'
 import { writePreset } from './host/write-preset.ts'
+import type { WritePresetOptions } from './host/write-preset.ts'
+import { listPresets } from './host/manifest.ts'
 import {
   Config,
   NS,
@@ -151,7 +153,7 @@ export function apply(ctx: Context, configIn: Config): void {
     applyParamOverrides()
     if (runtime.writePreset) {
       const presetPrompt = runtime.injectPrompt && current.length > 0 ? current : ''
-      writePreset(presetPrompt, {
+      const options: WritePresetOptions = {
         firstTurnAnchor: runtime.firstTurnAnchor,
         firstTurnText: runtime.firstTurnText,
         firstTurnCustom: runtime.firstTurnCustom,
@@ -184,7 +186,24 @@ export function apply(ctx: Context, configIn: Config): void {
         promptConfigs: runtime.promptConfigs,
         presetTemplate: runtime.presetTemplate,
         warn: (message) => warn(ctx, message),
-      })
+      }
+      // 预生成缺失的内置预设子目录（切换目标就绪；内容用模板默认，不触碰容器根薄转发）。
+      // 仅补建缺失项，已存在的子预设内容由切换时更新，避免每次重建全部模板。
+      for (const preset of listPresets()) {
+        if (preset.user || preset.id === runtime.presetTemplate) continue
+        if (existsSync(join(runtime.presetDir, preset.id, 'preset.yml'))) continue
+        try {
+          writePreset(readPromptFile(preset.id, runtime.fallbackText), {
+            ...options,
+            presetTemplate: preset.id,
+            skipForward: true,
+            agentsInstructionText: '',
+          })
+        } catch (error) {
+          warn(ctx, `prompt-tool: 预生成预设 ${preset.id} 失败（切换时可重试）：${error instanceof Error ? error.message : String(error)}`)
+        }
+      }
+      writePreset(presetPrompt, options)
     } else {
       // writePreset 关闭时移除旧的生成目录，避免残留 prompt-injector 继续注入。
       try {

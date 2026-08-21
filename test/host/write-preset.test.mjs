@@ -184,6 +184,18 @@ test('writePreset 内容资产单一事实源：settings 覆盖层带 text 也�
   }
 })
 
+test('writePreset skipForward 只生成子预设、不写容器根薄转发', () => {
+  const dir = join(tmpdir(), `prompt-tool-skip-${process.pid}-${Date.now()}`)
+  const presetDir = join(dir, 'preset')
+  try {
+    writePreset('PROMPT', { ...makeOptions(presetDir), presetTemplate: 'minimal', skipForward: true })
+    assert.ok(existsSync(join(presetDir, 'minimal', 'preset.yml')), '子预设应生成')
+    assert.equal(existsSync(join(presetDir, 'agent.cordis.yml')), false, 'skipForward 不应写容器根')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
 test('writePreset injectAgentsPrompt 注入 agents 内容到 instruction-hint params.text', () => {
   const dir = join(tmpdir(), `prompt-tool-ai-${process.pid}-${Date.now()}`)
   const presetDir = join(dir, 'preset')
