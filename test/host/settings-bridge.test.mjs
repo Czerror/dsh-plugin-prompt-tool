@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { rmSync } from 'node:fs'
-import { registerSettingsBridge } from '../../lib/index.mjs'
+import { BRIDGE_ENDPOINTS, registerSettingsBridge } from '../../lib/index.mjs'
 
 const PREFIX = '/api/prompt-tool/settings'
 
@@ -12,6 +12,9 @@ function makeHarness() {
   const sctx = {
     settings: {
       describe: () => [{ ns: 'prompt-tool', value: { promptText: 'P' }, base: {} }],
+      get: (ns) => ns === 'agent-default-model'
+        ? { provider: 'deepseek-official', model: 'deepseek-v4-flash', reasoningEffort: 'high' }
+        : undefined,
       mutate: async () => {},
     },
     webServer: {
@@ -22,6 +25,29 @@ function makeHarness() {
   const ctx = { inject: (_deps, cb) => cb(sctx) }
   return { ctx, handlers }
 }
+
+test('settings bridge /describe 返回宿主默认模型（agent-default-model 回显）', async () => {
+  const { ctx, handlers } = makeHarness()
+  registerSettingsBridge(
+    ctx,
+    'prompt-tool',
+    () => ({ available: true, providers: ['deepseek-official'] }),
+    () => ({ activeSkillsDirs: [], skillCatalog: [] }),
+    () => '',
+    () => true,
+  )
+  const handler = handlers.get(PREFIX + BRIDGE_ENDPOINTS.describe)
+  assert.ok(handler, 'describe 端点应注册')
+  const res = fakeRes()
+  await handler(fakeReq(), res)
+  assert.equal(res.status, 200)
+  const payload = JSON.parse(res.body)
+  assert.deepEqual(payload.hostDefaultModel, {
+    provider: 'deepseek-official',
+    model: 'deepseek-v4-flash',
+    reasoningEffort: 'high',
+  })
+})
 
 function fakeReq(overrides = {}) {
   return {

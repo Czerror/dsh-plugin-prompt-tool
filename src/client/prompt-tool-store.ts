@@ -282,6 +282,8 @@ function bridgeViewFromScope(
     modelCatalog: runtime.ok ? runtime.modelCatalog : undefined,
     activeSkillsDirs: runtime.ok ? runtime.activeSkillsDirs : undefined,
     skillCatalog: runtime.ok ? runtime.skillCatalog : undefined,
+    templatePreStepCount: runtime.ok ? runtime.templatePreStepCount : undefined,
+    hostDefaultModel: runtime.ok ? runtime.hostDefaultModel : undefined,
   }
 }
 
