@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from 'react'
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react'
 import clsx from 'clsx'
 import type { IApiClient } from '@deepseek-ai/dsh-client-connection/client'
@@ -9,8 +9,9 @@ import {
   usePromptToolStore,
 } from './prompt-tool-store.ts'
 import type { SkillCatalogEntry } from './prompt-tool-bridge.ts'
+import { ContentAssetCard } from './ContentAssetCard.tsx'
 import { PromptConfigList } from './PromptConfigList.tsx'
-import { PromptConfigsEditor, type PromptConfigDraft } from './PromptConfigsEditor.tsx'
+import { PromptConfigsEditor } from './PromptConfigsEditor.tsx'
 import type { PromptToolWorkspaceController } from './workspace-controller.ts'
 import { PresetsPage } from './PresetsPage.tsx'
 import { TemplatePicker } from './TemplatePicker.tsx'
@@ -22,11 +23,6 @@ import { SettingInputRow } from './SettingInputRow.tsx'
 import { autoResizeTextarea } from './textarea-resize.ts'
 import ui from './PromptUi.module.css'
 import css from './PromptWorkspace.module.css'
-
-const layerOf = (config: PromptConfigDraft): string => config.layer ?? 'pre-step'
-
-const configsOfLayer = (configs: PromptConfigDraft[], layer: string): PromptConfigDraft[] =>
-  configs.filter((config) => layerOf(config) === layer)
 
 /** 技能调用状态徽章：只保留模型可调用状态，开关关闭后立即变灰。 */
 function SkillStatusChips(props: { skill: SkillCatalogEntry; enabled: boolean }): ReactNode {
@@ -84,49 +80,51 @@ function BootstrapTokensRow(props: { store: PromptToolStore }): ReactNode {
 function EntrySwitches(props: { store: PromptToolStore }): ReactNode {
   const { store } = props
   const fields = store.fields
+  // 当前预设模板无消息批层配置（layer 缺省即 pre-step）时，入口开关联动关闭且禁编辑。
+  const preStepEmpty = store.templatePreStepCount === 0
   const setSwitch = (key: SwitchKey, value: boolean) => {
     if (fields[key] !== value) store.toggle(key)
   }
   return (
     <section className={ui.section} aria-labelledby="pt-entry-heading">
-      <div className={ui.sectionHeading}><div><h2 id="pt-entry-heading">消息批层入口开关</h2><p>以下开关全部作用于 agent/pre-step 消息批；预设总开关、PTC、子代理路由等已按各自层级归位。</p></div></div>
+      <div className={ui.sectionHeading}><div><h2 id="pt-entry-heading">消息批层入口开关</h2><p>以下开关全部作用于 agent/pre-step 消息批；预设总开关、PTC、子代理路由等已按各自层级归位。{preStepEmpty && ' 当前预设模板无消息批层配置，开关已关闭且不可编辑（切换到含 pre-step 配置的预设后恢复）。'}</p></div></div>
       <CollapsibleCard id="pt-entry-switches" title="入口开关"
-        meta={`${[fields.injectPrompt, fields.firstTurnAnchor, fields.firstTurnCustom, fields.guideCustom].filter(Boolean).length}/4 已启用`}
+        meta={preStepEmpty ? '预设无消息批层配置，已关闭' : `${[fields.injectPrompt, fields.firstTurnAnchor, fields.firstTurnCustom, fields.guideCustom].filter(Boolean).length}/4 已启用`}
         defaultOpen>
         <div className={ui.rowGroup}>
           <ToggleRow id="pt-inject-prompt" label="注入 preset.md（锚定层）" hint="prompt-injector 提示词配置：消息插入决策消息开头，每会话一次。"
-            checked={fields.injectPrompt} disabled={!fields.writePreset} onChange={(value) => setSwitch('injectPrompt', value)} />
+            checked={preStepEmpty ? false : fields.injectPrompt} disabled={!fields.writePreset || preStepEmpty} onChange={(value) => setSwitch('injectPrompt', value)} />
           <ToggleRow id="pt-anchor-first" label="追加任务引导" hint="near-anchor / router-guide 提示词配置：在首条真实用户消息之后追加任务引导。"
-            checked={fields.firstTurnAnchor} disabled={!fields.writePreset} onChange={(value) => setSwitch('firstTurnAnchor', value)} />
+            checked={preStepEmpty ? false : fields.firstTurnAnchor} disabled={!fields.writePreset || preStepEmpty} onChange={(value) => setSwitch('firstTurnAnchor', value)} />
           <ToggleRow id="pt-anchor-custom" label="使用自定义引导（首句）" hint="near-anchor 的 params.useCustom；关闭时按任务自动选择 we / let 引导。"
-            checked={fields.firstTurnCustom} disabled={!fields.writePreset || !fields.firstTurnAnchor} onChange={(value) => setSwitch('firstTurnCustom', value)} />
+            checked={preStepEmpty ? false : fields.firstTurnCustom} disabled={!fields.writePreset || preStepEmpty || !fields.firstTurnAnchor} onChange={(value) => setSwitch('firstTurnCustom', value)} />
           <ToggleRow id="pt-guide-custom" label="使用自定义引导（每轮）" hint="router-guide 的 params.useCustom；关闭时按任务自动选择。"
-            checked={fields.guideCustom} disabled={!fields.writePreset || !fields.firstTurnAnchor} onChange={(value) => setSwitch('guideCustom', value)} />
+            checked={preStepEmpty ? false : fields.guideCustom} disabled={!fields.writePreset || preStepEmpty || !fields.firstTurnAnchor} onChange={(value) => setSwitch('guideCustom', value)} />
         </div>
       </CollapsibleCard>
 
       <CollapsibleCard id="pt-entry-guide-texts" title="自定义引导文本"
         meta={`首句${fields.firstTurnText.trim().length > 0 ? '已填' : '留空'} · 每轮${fields.guideText.trim().length > 0 ? '已填' : '留空'}`}>
-        <div className={clsx(ui.rowGroup, (!fields.writePreset || !fields.firstTurnAnchor || !fields.firstTurnCustom) && ui.rowDisabled)}>
+        <div className={clsx(ui.rowGroup, (preStepEmpty || !fields.writePreset || !fields.firstTurnAnchor || !fields.firstTurnCustom) && ui.rowDisabled)}>
           <label className={ui.textBlock}>
             <span className={ui.settingCopy}><strong>自定义引导文本（首句）</strong><small>仅在「使用自定义引导（首句）」开启时生效。</small></span>
             <textarea
               className={ui.firstTurnInput}
               value={fields.firstTurnText}
-              disabled={!fields.writePreset || !fields.firstTurnAnchor || !fields.firstTurnCustom}
+              disabled={preStepEmpty || !fields.writePreset || !fields.firstTurnAnchor || !fields.firstTurnCustom}
               onChange={(event) => { autoResizeTextarea(event); store.patch({ firstTurnText: event.target.value }) }}
               onBlur={() => void store.persistParamOverrides()}
               spellCheck={false}
             />
           </label>
         </div>
-        <div className={clsx(ui.rowGroup, (!fields.writePreset || !fields.firstTurnAnchor || !fields.guideCustom) && ui.rowDisabled)}>
+        <div className={clsx(ui.rowGroup, (preStepEmpty || !fields.writePreset || !fields.firstTurnAnchor || !fields.guideCustom) && ui.rowDisabled)}>
           <label className={ui.textBlock}>
             <span className={ui.settingCopy}><strong>自定义引导文本（每轮）</strong><small>仅在「使用自定义引导（每轮）」开启时生效；留空则不注入。</small></span>
             <textarea
               className={ui.firstTurnInput}
               value={fields.guideText}
-              disabled={!fields.writePreset || !fields.firstTurnAnchor || !fields.guideCustom}
+              disabled={preStepEmpty || !fields.writePreset || !fields.firstTurnAnchor || !fields.guideCustom}
               onChange={(event) => { autoResizeTextarea(event); store.patch({ guideText: event.target.value }) }}
               onBlur={() => void store.persistParamOverrides()}
               spellCheck={false}
@@ -136,9 +134,9 @@ function EntrySwitches(props: { store: PromptToolStore }): ReactNode {
       </CollapsibleCard>
 
       <CollapsibleCard id="pt-entry-anchor-word" title="注入锚定词"
-        meta={fields.firstTurnWord.trim().length > 0 ? `当前：${fields.firstTurnWord}` : '未设置：默认 we'}>
+        meta={preStepEmpty ? '预设无消息批层配置' : fields.firstTurnWord.trim().length > 0 ? `当前：${fields.firstTurnWord}` : '未设置：默认 we'}>
         <SettingInputRow id="pt-first-turn-word" label="锚定词" hint="prompt-injector 的 custom-fallback 锚定词：晋升后首个 reasoning 命中该词即注入 preset.md；直接输入任意自定义文本；留空 = 模板默认 we。失焦保存。"
-          value={fields.firstTurnWord} placeholder="we（默认）" disabled={!fields.writePreset}
+          value={fields.firstTurnWord} placeholder="we（默认）" disabled={preStepEmpty || !fields.writePreset}
           onInput={(value) => store.patch({ firstTurnWord: value })}
           onCommit={() => void store.persistParamOverrides()} />
       </CollapsibleCard>
@@ -425,7 +423,8 @@ function ToolPipelineSwitches(props: { store: PromptToolStore }): ReactNode {
   )
 }
 
-/** 主对话与全局：主对话参数（快速模型人设 / kind 白名单）+ 全局开关。 */
+/** 主会话页：主对话参数 + 消息批层入口开关 + Preset/AGENTS 内容 + 调用配置/PTC 开关 + 模块库（层筛选）。
+ *  注入层 tab 已并入本页（层专属开关与内容资产卡片），模块库按层级下拉筛选浏览。 */
 function FeatureSettings(props: { store: PromptToolStore }): ReactNode {
   const { store } = props
   const fields = store.fields
@@ -433,6 +432,10 @@ function FeatureSettings(props: { store: PromptToolStore }): ReactNode {
     <section className={ui.section} aria-label="主会话与全局">
       <ModelRouteStatus store={store} />
       <ModelToolCards store={store} scope="main" />
+      <EntrySwitches store={store} />
+      <ContentAssetCard store={store} />
+      <AgentRequestSwitches store={store} />
+      <ToolPipelineSwitches store={store} />
       <PromptConfigsEditor
         meta={store.meta}
         configs={fields.promptConfigs}
@@ -445,89 +448,12 @@ function FeatureSettings(props: { store: PromptToolStore }): ReactNode {
   )
 }
 
-function FileEditor(props: { store: PromptToolStore; scope: 'preset' | 'agents' }): ReactNode {
-  const { store, scope } = props
-  const fields = store.fields
-  const isPreset = scope === 'preset'
-  const text = isPreset ? fields.promptText : fields.agentsText
-  const [importing, setImporting] = useState(false)
-  const fileRef = useRef<HTMLInputElement>(null)
-  const title = isPreset ? 'Preset 预设' : 'AGENTS 设置'
-  const desc = isPreset
-    ? 'preset.md 内容存于生成目录（.agent-presets/<模板>/preset.md），由 prompt-injector 提示词配置注入；直接编辑、失焦自动保存，或通过「导入」写入；不再内嵌在 settings.yaml。生成总开关在「主会话与全局」。'
-    : 'AGENTS.md 内容存于生成目录 agents.md；直接编辑、失焦自动保存，或通过「导入」写入；注入开关在「消息批层入口」。'
-  const pickFile = (file: File | undefined): void => {
-    if (file === undefined) return
-    const reader = new FileReader()
-    reader.onload = () => {
-      const content = String(reader.result ?? '')
-      setImporting(true)
-      void store.importPreset(scope, content).finally(() => setImporting(false))
-    }
-    reader.readAsText(file)
-  }
-  return (
-    <section className={ui.section} aria-labelledby={`pt-${scope}-heading`}>
-      <div className={ui.sectionHeading}>
-        <div><h2 id={`pt-${scope}-heading`}>{title}</h2><p>{desc}</p></div>
-        <div className={ui.sectionActions}>
-          <input ref={fileRef} type="file" accept=".md,.markdown,.txt" style={{ display: 'none' }} aria-label="选择配置文件"
-            onChange={(event) => { pickFile(event.target.files?.[0]); event.target.value = '' }} />
-          <button type="button" className={ui.primaryPill} disabled={importing} onClick={() => fileRef.current?.click()}>
-            {importing && <span className={ui.spinner} aria-hidden="true" />}
-            {importing ? '导入中…' : '导入'}
-          </button>
-        </div>
-      </div>
-      {!isPreset && (
-        <div className={ui.configCard}>
-          <div className={ui.configBody}>
-            <div className={ui.rowGroup}>
-              <ToggleRow id="pt-inject-agents" label="注入 AGENTS.md" hint="经 pre-step 的 instruction-hint 提示词配置注入：消息追加在决策消息末尾，每会话一次。"
-                checked={fields.injectAgentsPrompt} disabled={!fields.writePreset} onChange={() => store.toggle('injectAgentsPrompt')} />
-            </div>
-          </div>
-        </div>
-      )}
-      <div className={ui.rowGroup}>
-        <label className={ui.textBlock}>
-          <span className={ui.settingCopy}><strong>当前内容</strong><small>直接编辑、失焦自动保存到生成目录；导入文件后自动刷新；不写入 settings.yaml。</small></span>
-          <textarea
-            className={ui.firstTurnInput}
-            value={text}
-            disabled={!fields.writePreset}
-            spellCheck={false}
-            aria-label={`${title}当前内容`}
-            onChange={(event) => {
-              autoResizeTextarea(event)
-              if (isPreset) store.patch({ promptText: event.target.value })
-              else store.patch({ agentsText: event.target.value })
-            }}
-            onBlur={() => void store.importPreset(scope, isPreset ? fields.promptText : fields.agentsText, false)}
-          />
-        </label>
-      </div>
-      {isPreset && (
-        <div className={ui.rowGroup}>
-          <label className={ui.textBlock}>
-            <span className={ui.settingCopy}><strong>缺省文本（preset.md 缺失时使用）</strong><small>仅当包内 preset.md 不存在或不可读时生效；修改后失焦保存。</small></span>
-            <textarea
-              className={ui.firstTurnInput}
-              value={fields.fallbackText}
-              onChange={(event) => { autoResizeTextarea(event); store.patch({ fallbackText: event.target.value }) }}
-              onBlur={store.persistSwitches}
-              spellCheck={false}
-            />
-          </label>
-        </div>
-      )}
-    </section>
-  )
-}
-
 /** 配置列表 + 新建模板：六层页按 layer 过滤，子代理页按 scope 过滤（subagent 只列子代理可见模板）。 */
 function ConfigListWithTemplates(props: { store: PromptToolStore; layer?: string; scope?: 'main' | 'subagent' }): ReactNode {
   const { store, layer, scope } = props
+  // 当前预设模板消息批层无配置时，pre-step 层空状态追加提示（列表仍可自定义：
+  // 新建配置作为 settings 覆盖层保存，切换预设后保留）。
+  const preStepEmpty = store.templatePreStepCount === 0 && (layer === undefined || layer === 'pre-step')
   const templatePicker = useTemplatePicker(
     store.fields.promptConfigs,
     (config) => store.patch({ promptConfigs: [...store.fields.promptConfigs, config] }),
@@ -541,6 +467,7 @@ function ConfigListWithTemplates(props: { store: PromptToolStore; layer?: string
         savedConfigs={store.savedConfigs}
         layer={layer}
         scope={scope}
+        emptyHint={preStepEmpty ? '当前预设模板消息批层无配置；可新建自定义配置（作为 settings 覆盖层，切换预设后仍保留）。' : undefined}
         extraActions={
           <button type="button" className={ui.primaryPill} onClick={templatePicker.openPicker}>新建</button>
         }
@@ -955,15 +882,8 @@ export interface PromptWorkspaceProps {
   onClose: () => void
 }
 
-/** 顶层页面：六层折叠为「注入层」，内部用 layerPage 切换。 */
-type WorkspacePage = 'layers' | 'subagent' | 'skills' | 'features' | 'presets'
-type EntryPage = 'switches' | 'preset' | 'agents'
-
-const ENTRY_PAGES: Array<{ id: EntryPage; label: string }> = [
-  { id: 'switches', label: '入口开关' },
-  { id: 'preset', label: 'Preset 预设' },
-  { id: 'agents', label: 'AGENTS 设置' },
-]
+/** 顶层页面：注入层已并入主会话页（层专属开关 + 内容资产卡片 + 模块库层筛选）。 */
+type WorkspacePage = 'subagent' | 'skills' | 'features' | 'presets'
 
 /** ARIA tabs 键盘导航：左右切换、Home/End 跳首尾。 */
 function tabKeyHandler<T>(
@@ -985,32 +905,17 @@ function tabKeyHandler<T>(
   }
 }
 
-/** /meta 尚未加载或失败时的 UI 兜底层列表，保证 Skills 页仍可返回注入层。 */
-const FALLBACK_LAYERS = ['pre-step', 'system-section', 'runtime-context', 'agent-request', 'llm-stream', 'tool-pipeline']
-const FALLBACK_LAYER_LABELS: Record<string, { title: string; detail: string }> = {
-  'pre-step': { title: '消息批层', detail: '官方默认层：agent/pre-step 消息批。' },
-  'system-section': { title: '系统段层', detail: 'system-section 静态层。' },
-  'runtime-context': { title: '运行上下文', detail: 'runtime-context 层。' },
-  'agent-request': { title: '调用配置层', detail: 'agent-request 层。' },
-  'llm-stream': { title: '模型流层', detail: 'llm/stream 层。' },
-  'tool-pipeline': { title: '工具管线层', detail: 'tools/* 层。' },
-}
-
 const TOP_PAGES: Array<{ id: WorkspacePage; label: string }> = [
   { id: 'features', label: '主会话' },
   { id: 'subagent', label: '子代理' },
-  { id: 'layers', label: '注入层' },
   { id: 'skills', label: '技能设置' },
   { id: 'presets', label: '预设配置' },
 ]
 
-/** 侧边栏独立工作台：顶层 5 页 +「注入层」内部六层子导航。 */
+/** 侧边栏独立工作台：顶层 4 页（注入层并入主会话）。 */
 export function PromptWorkspace(props: PromptWorkspaceProps): ReactNode {
   const store = usePromptToolStore(props.api, props.settings)
-  const layers = store.meta.layers.length > 0 ? store.meta.layers : FALLBACK_LAYERS
-  const [page, setPage] = useState<WorkspacePage>('layers')
-  const [layerPage, setLayerPage] = useState<string>('pre-step')
-  const [entryPage, setEntryPage] = useState<EntryPage>('switches')
+  const [page, setPage] = useState<WorkspacePage>('features')
   const open = useSyncExternalStore(
     props.controller.subscribe,
     props.controller.getSnapshot,
@@ -1024,29 +929,21 @@ export function PromptWorkspace(props: PromptWorkspaceProps): ReactNode {
 
 
   const enabledCount = store.fields.promptConfigs.filter((config) => config.enabled !== false).length
-  const layerMeta = page === 'layers'
-    ? `${configsOfLayer(store.fields.promptConfigs, layerPage).length} 配置`
-    : page === 'skills'
+  const layerMeta = page === 'skills'
     ? `${store.fields.skillCatalog.length} 技能`
     : page === 'features'
       ? '全局'
       : page === 'presets'
         ? '预设配置'
         : '子代理'
-  const layerLabel = page === 'layers'
-    ? (store.meta.layerLabels[layerPage] ?? FALLBACK_LAYER_LABELS[layerPage])
-    : undefined
-  const pageTitle = page === 'layers' ? (layerLabel?.title ?? '注入层')
-    : page === 'skills' ? '技能设置'
-      : page === 'features' ? '主会话'
-        : page === 'presets' ? '预设配置'
-          : '子代理'
-  const pageDetail = page === 'layers'
-    ? (layerLabel?.detail ?? '')
-    : page === 'skills'
+  const pageTitle = page === 'skills' ? '技能设置'
+    : page === 'features' ? '主会话'
+      : page === 'presets' ? '预设配置'
+        : '子代理'
+  const pageDetail = page === 'skills'
     ? '按 skills 目录注册的可开关技能；目录与逐技能开关立即生效。'
     : page === 'features'
-      ? '主会话参数（模型设置、工具与深度）与提示词配置模块列表。'
+      ? '主会话参数（模型设置、工具与深度）、消息批层入口开关、Preset/AGENTS 内容与提示词配置模块库（按层级筛选）。'
       : page === 'presets'
         ? '统一管理预设模板（切换/导入）与提示词配置（六层列表/模板插入/配置目录）。'
         : '子代理作用域参数（模型/人设/工具集/深度）与子代理提示词配置（audience 非仅主会话）。'
@@ -1075,28 +972,6 @@ export function PromptWorkspace(props: PromptWorkspaceProps): ReactNode {
         </div>
       </div>
 
-      {page === 'layers' && (
-        <div className={css.memoryNavigation}>
-          <div className={css.memoryTabs} role="tablist" aria-label="注入层级">
-            {layers.map((item) => (
-              <button key={item} type="button" role="tab" aria-selected={layerPage === item} data-active={layerPage === item ? '' : undefined} onClick={() => setLayerPage(item)} onKeyDown={tabKeyHandler(layers, layerPage, setLayerPage)}>
-                {store.meta.layerLabels[item]?.title ?? FALLBACK_LAYER_LABELS[item]?.title ?? item}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {page === 'layers' && layerPage === 'pre-step' && (
-        <div className={css.memoryNavigation}>
-          <div className={css.memoryTabs} role="tablist" aria-label="消息批层子页">
-            {ENTRY_PAGES.map((item) => (
-              <button key={item.id} type="button" role="tab" aria-selected={entryPage === item.id} data-active={entryPage === item.id ? '' : undefined} onClick={() => setEntryPage(item.id)} onKeyDown={tabKeyHandler(ENTRY_PAGES.map((entry) => entry.id), entryPage, setEntryPage)}>{item.label}</button>
-            ))}
-          </div>
-        </div>
-      )}
-
       <main className={css.canvas}>
         <div>
           <PageHeader title={pageTitle} description={pageDetail} meta={layerMeta} />
@@ -1107,26 +982,6 @@ export function PromptWorkspace(props: PromptWorkspaceProps): ReactNode {
             </div>
           ) : page === 'skills' ? <SkillsSettings store={store} api={props.api} /> : (
             <>
-              {page === 'layers' && (
-                <>
-                  {layerPage === 'pre-step' && entryPage === 'switches' && <EntrySwitches store={store} />}
-                  {layerPage === 'pre-step' && entryPage === 'preset' && <FileEditor store={store} scope="preset" />}
-                  {layerPage === 'pre-step' && entryPage === 'agents' && <FileEditor store={store} scope="agents" />}
-                  {layerPage !== 'pre-step' && (
-                    <>
-                      {layerPage === 'agent-request' && <AgentRequestSwitches store={store} />}
-                      {layerPage === 'tool-pipeline' && <ToolPipelineSwitches store={store} />}
-                      {layerPage === 'agent-request' || layerPage === 'tool-pipeline' ? (
-                        <div className={ui.configsStack}>
-                          <ConfigListWithTemplates store={store} layer={layerPage} />
-                        </div>
-                      ) : (
-                        <ConfigListWithTemplates store={store} layer={layerPage} />
-                      )}
-                    </>
-                  )}
-                </>
-              )}
               {page === 'features' && <FeatureSettings store={store} />}
               {page === 'presets' && <PresetsPage store={store} />}
               {page === 'subagent' && <SubagentPage store={store} />}
