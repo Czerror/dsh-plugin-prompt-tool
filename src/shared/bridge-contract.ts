@@ -6,7 +6,7 @@
  */
 export const SETTINGS_BRIDGE_PREFIX = '/api/prompt-tool/settings'
 
-/** 13 个桥端点路径（相对前缀）。新增端点必须同时登记到契约测试。 */
+/** 14 个桥端点路径（相对前缀）。新增端点必须同时登记到契约测试。 */
 export const BRIDGE_ENDPOINTS = {
   meta: '/meta',
   describe: '/describe',
@@ -21,6 +21,7 @@ export const BRIDGE_ENDPOINTS = {
   importPresetPackage: '/import-preset-package',
   exportPreset: '/export-preset',
   presetDelete: '/preset-delete',
+  presetClone: '/preset-clone',
 } as const
 
 export type BridgeEndpoint = (typeof BRIDGE_ENDPOINTS)[keyof typeof BRIDGE_ENDPOINTS]

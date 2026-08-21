@@ -14,15 +14,26 @@ export function PresetSwitcher(props: { store: PromptToolStore }): ReactNode {
   const yamlRef = useRef<HTMLInputElement>(null)
   const dirRef = useRef<HTMLInputElement>(null)
 
-  /** 删除用户预设（含同名导入备份目录）；当前使用中由服务端拒绝。 */
-  const deletePreset = async (id: string): Promise<void> => {
-    const res = await bridgePost<{ id: string }>('/preset-delete', { id })
+  /** 删除预设：内置 = 从列表移除（隐藏，插件目录保留）；用户 = 物理删除（含同名导入备份目录）。 */
+  const deletePreset = async (id: string, builtin: boolean): Promise<void> => {
+    const res = await bridgePost<{ id: string }>('/preset-delete', { id, builtin })
     if (res.ok) {
       setConfirmingDelete(undefined)
-      store.showNotice('ok', `预设 ${id} 已删除`)
+      store.showNotice('ok', builtin ? `预设 ${id} 已从列表移除（插件目录模板保留）` : `预设 ${id} 已删除`)
       await store.load()
     } else {
       store.showNotice('error', '删除预设失败：' + (res.message ?? 'settings bridge unavailable'))
+    }
+  }
+
+  /** 新建：从插件目录复制内置预设到用户目录（成为可删除的用户预设；同名的已隐藏内置同时恢复）。 */
+  const clonePreset = async (id: string): Promise<void> => {
+    const res = await bridgePost<{ id: string }>('/preset-clone', { id })
+    if (res.ok) {
+      store.showNotice('ok', `已从内置模板新建预设 ${id}（用户目录副本，可删除）`)
+      await store.load()
+    } else {
+      store.showNotice('error', '新建预设失败：' + (res.message ?? 'settings bridge unavailable'))
     }
   }
 
@@ -135,6 +146,9 @@ export function PresetSwitcher(props: { store: PromptToolStore }): ReactNode {
           const active = fields.presetTemplate === preset.id
           const deletable = preset.user === true
           const confirming = confirmingDelete === preset.id
+          const confirmText = deletable
+            ? `删除用户预设「${preset.name}」？此操作不可恢复（内置同名可重新「新建」）。`
+            : `从列表移除内置预设「${preset.name}」？插件目录模板保留，可随时「新建」恢复。`
           return (
             <div key={preset.id} className={clsx(styles.presetRow, active && styles.presetRowActive)}
               data-active={active ? '' : undefined}>
@@ -149,16 +163,24 @@ export function PresetSwitcher(props: { store: PromptToolStore }): ReactNode {
               <span className={styles.presetRowActions}>
                 {active && <span className={styles.presetRowBadge} data-kind="active">使用中</span>}
                 {!deletable && <span className={styles.presetRowBadge} data-kind="builtin">内置</span>}
-                {deletable && (confirming ? (
+                {!deletable && (
+                  <button type="button" className={styles.pillButton} title={`从内置模板新建预设 ${preset.id}（用户目录副本）`}
+                    onClick={() => void clonePreset(preset.id)}>新建</button>
+                )}
+                {confirming ? (
                   <>
-                    <button type="button" className={styles.pillButton} data-danger onClick={() => void deletePreset(preset.id)}>确认删除</button>
+                    <button type="button" className={styles.pillButton} data-danger disabled={active}
+                      title={active ? '先切换其他预设再操作' : confirmText}
+                      onClick={() => void deletePreset(preset.id, !deletable)}>
+                      {deletable ? '确认删除' : '确认移除'}
+                    </button>
                     <button type="button" className={styles.pillButton} data-variant="secondary" onClick={() => setConfirmingDelete(undefined)}>取消</button>
                   </>
                 ) : (
                   <button type="button" className={styles.pillButton} data-danger disabled={active}
-                    title={active ? '先切换其他预设再删除' : '删除用户预设（含同名导入的备份目录）'}
+                    title={active ? '先切换其他预设再操作' : confirmText}
                     onClick={() => setConfirmingDelete(preset.id)}>删除</button>
-                ))}
+                )}
               </span>
             </div>
           )

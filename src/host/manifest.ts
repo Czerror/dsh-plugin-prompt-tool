@@ -9,7 +9,7 @@
  * 本模块负责参数归一化与引擎 token 渲染;所有 anchored 专属行为都在引擎内部。
  */
 
-import { readFileSync, existsSync, readdirSync, rmSync } from 'node:fs'
+import { readFileSync, existsSync, readdirSync, mkdirSync, rmSync, writeFileSync, cpSync } from 'node:fs'
 import { basename, dirname, join, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Pair, Scalar, parse as parseYaml, parseDocument, YAMLMap, YAMLSeq } from 'yaml'
@@ -106,6 +106,15 @@ export function userPresetsDir(): string {
   return DEFAULT_USER_PRESETS_DIR
 }
 
+/** 内置预设隐藏标记：~/.dsh/presets/.hidden-<id>（存在 = 用户从列表移除，插件目录原版保留）。 */
+function hiddenMarkPath(id: string): string {
+  return join(userPresetsDir(), `.hidden-${id}`)
+}
+
+export function isPresetHidden(id: string): boolean {
+  return existsSync(hiddenMarkPath(id))
+}
+
 /** 在指定扫描目录内按 template 定位预设目录：目录名精确匹配优先，preset.yml 的 id 匹配兜底。 */
 function findPresetDir(scanDir: string, template: string): string | undefined {
   const exact = join(scanDir, template)
@@ -156,9 +165,53 @@ export function listPresets(): Array<{ id: string; name: string; user: boolean }
     }
   }
   const byId = new Map<string, { id: string; name: string; user: boolean }>()
-  for (const preset of scan(packagePresetDir(), false)) byId.set(preset.id, preset)
+  for (const preset of scan(packagePresetDir(), false)) {
+    if (!isPresetHidden(preset.id)) byId.set(preset.id, preset)
+  }
   for (const preset of scan(userPresetsDir(), true)) byId.set(preset.id, preset)
   return [...byId.values()].sort((a, b) => a.id.localeCompare(b.id))
+}
+
+/** 隐藏内置预设（从列表移除；插件目录原版保留，用户目录同名副本一并删除）。 */
+export function hideBuiltinPreset(id: string): { ok: true } | { ok: false; message: string } {
+  const builtin = findPresetDir(packagePresetDir(), id)
+  if (builtin === undefined) {
+    return { ok: false, message: `预设 ${id} 不是包内置预设` }
+  }
+  try {
+    mkdirSync(userPresetsDir(), { recursive: true })
+    // 用户目录同名副本（新建过）一并删除；隐藏标记写入。
+    rmSync(join(userPresetsDir(), id), { recursive: true, force: true })
+    writeFileSync(hiddenMarkPath(id), '', 'utf8')
+    return { ok: true }
+  } catch (error) {
+    return { ok: false, message: `移除预设失败：${error instanceof Error ? error.message : String(error)}` }
+  }
+}
+
+/** 从插件目录复制内置预设到用户目录（新建）；已存在同名或非内置拒绝。 */
+export function cloneBuiltinPreset(id: string): { ok: true } | { ok: false; message: string } {
+  if (typeof id !== 'string' || id.length === 0 || id === '.' || id === '..'
+    || id.includes('/') || id.includes('\\')) {
+    return { ok: false, message: `非法预设 id：${id}` }
+  }
+  const builtin = findPresetDir(packagePresetDir(), id)
+  if (builtin === undefined) {
+    return { ok: false, message: `预设 ${id} 不是包内置预设` }
+  }
+  const target = join(userPresetsDir(), id)
+  if (existsSync(target)) {
+    return { ok: false, message: `用户目录已存在同名预设 ${id}，请先删除再新建` }
+  }
+  try {
+    mkdirSync(userPresetsDir(), { recursive: true })
+    cpSync(builtin, target, { recursive: true, force: true })
+    // 新建即恢复：清除隐藏标记。
+    rmSync(hiddenMarkPath(id), { force: true })
+    return { ok: true }
+  } catch (error) {
+    return { ok: false, message: `新建预设失败：${error instanceof Error ? error.message : String(error)}` }
+  }
 }
 
 /** 删除用户预设目录（~/.dsh/presets/<id>；含同名导入的 .bak-* 备份目录）。

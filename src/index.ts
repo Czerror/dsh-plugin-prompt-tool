@@ -729,7 +729,15 @@ export { writePreset } from './host/write-preset.ts'
 export { applyModuleConfigs } from './host/manifest.ts'
 export { loadPresetSpec, resolvePresetParams } from './host/manifest.ts'
 export type { PresetSpec } from './host/manifest.ts'
-export { listPresets, removeUserPreset, resolvePresetDir, userPresetsDir } from './host/manifest.ts'
+export {
+  cloneBuiltinPreset,
+  hideBuiltinPreset,
+  isPresetHidden,
+  listPresets,
+  removeUserPreset,
+  resolvePresetDir,
+  userPresetsDir,
+} from './host/manifest.ts'
 export { ensureWebSurface, resolveProfileDir } from './web-surface.ts'
 export { resolveProfileSkillsDir } from './profile-skills.ts'
 export { detectModels, installDefaultModelRoute } from './runtime/models.ts'

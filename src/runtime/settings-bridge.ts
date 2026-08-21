@@ -13,6 +13,8 @@ import { loadPromptTemplates } from '../host/templates.ts'
 import { fixSkillEntry } from './skill-fix.ts'
 import {
   assertCompositionArray,
+  cloneBuiltinPreset,
+  hideBuiltinPreset,
   listPresets,
   loadPresetSpec,
   parseImportedPresetId,
@@ -614,9 +616,31 @@ export function registerSettingsBridge(
               writeBridgeJson(res, 400, { ok: false, code: 'preset-in-use', message: `预设「${id}」正在使用中，请先切换其他预设再删除` })
               return
             }
-            const result = removeUserPreset(id)
+            // builtin=true：删除内置预设 = 隐藏（插件目录保留，用户副本一并删）；否则删除用户预设目录。
+            const result = record.builtin === true ? hideBuiltinPreset(id) : removeUserPreset(id)
             if (!result.ok) {
               writeBridgeJson(res, 400, { ok: false, code: 'preset-delete-rejected', message: result.message })
+              return
+            }
+            writeBridgeJson(res, 200, { ok: true, value: { id } })
+          },
+        }),
+        sctx.webServer.register({
+          kind: 'exact',
+          path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.presetClone,
+          handler: async (req, res) => {
+            if (!guard(req, res)) return
+            ensureRegistered(sctx)
+            const { body } = await readBridgeBody(req)
+            const record = (body ?? {}) as Record<string, unknown>
+            const id = typeof record.id === 'string' ? record.id.trim() : ''
+            if (id.length === 0) {
+              writeBridgeJson(res, 400, { ok: false, code: 'preset-clone-rejected', message: '缺少预设 id' })
+              return
+            }
+            const result = cloneBuiltinPreset(id)
+            if (!result.ok) {
+              writeBridgeJson(res, 400, { ok: false, code: 'preset-clone-rejected', message: result.message })
               return
             }
             writeBridgeJson(res, 200, { ok: true, value: { id } })

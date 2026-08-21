@@ -8,7 +8,13 @@ import { join } from 'node:path'
 // 本文件独立进程运行：先设临时 DSH_HOME 再动态 import lib。
 const root = join(tmpdir(), `prompt-tool-user-presets-${process.pid}-${Date.now()}`)
 process.env.DSH_HOME = root
-const { listPresets, removeUserPreset } = await import('../../lib/index.mjs')
+const {
+  cloneBuiltinPreset,
+  hideBuiltinPreset,
+  isPresetHidden,
+  listPresets,
+  removeUserPreset,
+} = await import('../../lib/index.mjs')
 
 const PRESETS_DIR = join(root, 'presets')
 
@@ -53,6 +59,31 @@ test('removeUserPreset：删除后 listPresets 不再列出', () => {
   assert.ok(listPresets().some((preset) => preset.id === 'temp-preset'))
   removeUserPreset('temp-preset')
   assert.ok(!listPresets().some((preset) => preset.id === 'temp-preset'))
+})
+
+test('hideBuiltinPreset：内置预设从列表移除，插件目录保留，新建恢复', () => {
+  // anchored 在包内 preset/（user=false 前置条件）。
+  assert.ok(listPresets().some((preset) => preset.id === 'anchored' && preset.user === false))
+  assert.deepEqual(hideBuiltinPreset('anchored'), { ok: true })
+  assert.ok(isPresetHidden('anchored'), '应写入隐藏标记')
+  assert.ok(!listPresets().some((preset) => preset.id === 'anchored'), '列表不应再含 anchored')
+  // 新建（克隆）恢复：复制到用户目录 + 清除隐藏标记。
+  assert.deepEqual(cloneBuiltinPreset('anchored'), { ok: true })
+  assert.ok(!isPresetHidden('anchored'), '新建后隐藏标记应清除')
+  const anchored = listPresets().find((preset) => preset.id === 'anchored')
+  assert.ok(anchored !== undefined && anchored.user === true, '恢复后应为用户预设（可删除）')
+  // 清理：删除用户副本，回退内置可见。
+  assert.deepEqual(removeUserPreset('anchored'), { ok: true })
+  assert.ok(listPresets().some((preset) => preset.id === 'anchored' && preset.user === false))
+})
+
+test('cloneBuiltinPreset：非内置/非法 id/已存在同名拒绝', () => {
+  assert.equal(cloneBuiltinPreset('not-a-builtin').ok, false)
+  assert.equal(cloneBuiltinPreset('a/b').ok, false)
+  mkdirSync(join(PRESETS_DIR, 'ptc'), { recursive: true })
+  writeFileSync(join(PRESETS_DIR, 'ptc', 'preset.yml'), 'id: ptc\n', 'utf8')
+  assert.equal(cloneBuiltinPreset('ptc').ok, false, '用户目录已存在同名应拒绝')
+  removeUserPreset('ptc')
 })
 
 test.after(() => {
