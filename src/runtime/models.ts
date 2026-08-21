@@ -65,7 +65,9 @@ export async function listAdvertisedModels(ctx: Context): Promise<Record<string,
     listModels?: (provider: string) => Promise<Array<{ id?: string; name?: string }>>
   } | undefined
   if (llm?.listProviders === undefined || llm.listModels === undefined) return catalog
-  const listModels = llm.listModels
+  // 官方 llm 服务方法是类方法（内部经 this 访问 adapters/registration）：
+  // 解构后直接调用会丢失 this 绑定（TypeError）→ 必须 bind。
+  const listModels = llm.listModels.bind(llm)
   const liveProviders = (llm.listProviders() ?? [])
     .map((entry) => (typeof entry?.id === 'string' && entry.id.length > 0 ? entry.id : (typeof entry?.name === 'string' ? entry.name : '')))
     .filter((id) => id.length > 0)

@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { detectModels, installDefaultModelRoute } from '../../lib/index.mjs'
+import { detectModels, installDefaultModelRoute, listAdvertisedModels } from '../../lib/index.mjs'
 
 test('detectModels：只统计 live 注册路由', () => {
   const ctx = {
@@ -22,6 +22,31 @@ test('detectModels：无 live provider 时 available=false 且带诊断（含 do
   assert.equal(detection.available, false)
   assert.deepEqual(detection.providers, [])
   assert.match(detection.error ?? '', /未返回任何 provider/)
+})
+
+test('listAdvertisedModels：官方类方法风格 mock（依赖 this）也能查询到模型目录（防解构丢 this 回归）', async () => {
+  // 官方 LlmRuntime.listModels 是类方法（内部经 this 访问 adapters/registration）：
+  // mock 用真实类方法风格，解构调用（llm.listModels 提变量）会丢 this 抛错被吞。
+  class MockLlm {
+    provider = 'deepseek-official'
+
+    listProviders() {
+      return [{ id: this.provider, name: 'DeepSeek' }]
+    }
+
+    async listModels(provider) {
+      assert.equal(provider, this.provider, 'listModels 应经 this 校验 provider（解构调用会失败）')
+      return [
+        { id: 'deepseek-v4-flash', name: 'DeepSeek-V4-Flash', provider },
+        { id: 'deepseek-v4-pro', name: 'DeepSeek-V4-Pro', provider },
+      ]
+    }
+  }
+  const ctx = { get: () => new MockLlm() }
+  const catalog = await listAdvertisedModels(ctx)
+  assert.deepEqual(catalog, {
+    'deepseek-official': ['deepseek-v4-flash', 'deepseek-v4-pro'],
+  })
 })
 
 test('installDefaultModelRoute：参数非空时写入官方 agent-default-model 默认选择', () => {

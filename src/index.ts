@@ -836,7 +836,7 @@ export {
 export { ensureWebSurface, resolveProfileDir } from './web-surface.ts'
 export { resolveProfileSkillsDir } from './profile-skills.ts'
 export { migrateLegacyLayout, normalizePresetRootDir } from './host/migration.ts'
-export { detectModels, installDefaultModelRoute } from './runtime/models.ts'
+export { detectModels, installDefaultModelRoute, listAdvertisedModels } from './runtime/models.ts'
 export type { WritePresetOptions } from './host/write-preset.ts'
 export { validatePromptConfigs } from './runtime/configs-validate.ts'
 export { registerSettingsBridge } from './runtime/settings-bridge.ts'
