@@ -44,6 +44,16 @@ test('removeUserPreset：同时清理生成目录同名子预设', () => {
   assert.equal(existsSync(join(genDir, 'foo')), false, '生成目录同名子预设应一并清理')
 })
 
+test('removeUserPreset：仅生成目录存在（孤儿残留）时删除成功并清理', () => {
+  const genDir = join(root, 'generated-orphan')
+  mkdirSync(join(genDir, 'orphan'), { recursive: true })
+  writeFileSync(join(genDir, 'orphan', 'preset.yml'), 'id: orphan\n', 'utf8')
+  assert.deepEqual(removeUserPreset('orphan', genDir), { ok: true })
+  assert.equal(existsSync(join(genDir, 'orphan')), false, '生成目录孤儿应清理')
+  // 两处都不存在仍报不存在（回归）。
+  assert.equal(removeUserPreset('not-exists', genDir).ok, false)
+})
+
 test('removeUserPreset：非法 id 与路径越界拒绝', () => {
   assert.equal(removeUserPreset('').ok, false)
   assert.equal(removeUserPreset('..').ok, false)

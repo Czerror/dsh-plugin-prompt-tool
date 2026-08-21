@@ -255,26 +255,35 @@ export function removeUserPreset(id: string, presetDir?: string): { ok: true } |
   if (target !== rootResolved && !target.startsWith(rootResolved + sep)) {
     return { ok: false, message: `预设路径越界：${id}` }
   }
-  if (!existsSync(target)) {
-    return { ok: false, message: `预设 ${id} 不存在（用户目录 ~/.dsh/presets）` }
+  // 用户目录与生成目录解耦删除：任一存在即删除成功（生成目录孤儿——用户目录已无
+  // 对应预设的物化残留——也能清理）；两处都不存在才报不存在。
+  let removed = false
+  if (existsSync(target)) {
+    try {
+      rmSync(target, { recursive: true, force: true })
+      removed = true
+    } catch (error) {
+      return { ok: false, message: `删除失败：${error instanceof Error ? error.message : String(error)}` }
+    }
   }
-  try {
-    rmSync(target, { recursive: true, force: true })
-    if (typeof presetDir === 'string' && presetDir.trim().length > 0) {
-      const genRoot = resolve(presetDir.trim())
-      const genTarget = resolve(join(genRoot, id))
-      if (genTarget !== genRoot && genTarget.startsWith(genRoot + sep)) {
+  if (typeof presetDir === 'string' && presetDir.trim().length > 0) {
+    const genRoot = resolve(presetDir.trim())
+    const genTarget = resolve(join(genRoot, id))
+    if (genTarget !== genRoot && genTarget.startsWith(genRoot + sep)) {
+      if (existsSync(genTarget)) {
         try {
           rmSync(genTarget, { recursive: true, force: true })
+          removed = true
         } catch {
           // Windows 瞬时锁：生成目录残留无害（无引用），下次写入重建时覆盖。
         }
       }
     }
-    return { ok: true }
-  } catch (error) {
-    return { ok: false, message: `删除失败：${error instanceof Error ? error.message : String(error)}` }
   }
+  if (!removed) {
+    return { ok: false, message: `预设 ${id} 不存在（用户目录 ~/.dsh/presets）` }
+  }
+  return { ok: true }
 }
 
 /** 从导入的 preset.yml 文本解析预设 id（非法/缺失回退目录名）。 */
