@@ -14,6 +14,7 @@ import { fixSkillEntry } from './skill-fix.ts'
 import {
   assertCompositionArray,
   listPresets,
+  loadPresetSpec,
   parseImportedPresetId,
   renderComposition,
   resolvePresetDir,
@@ -175,9 +176,28 @@ export function registerSettingsBridge(
             const detection = getModelsState()
             const skillsState = getSkillsState()
             const modelCatalog = await listAdvertisedModels(sctx)
+            // 当前预设模板消息批层（pre-step）配置数：UI 消息批层入口开关联动——
+            // 模板无 pre-step 配置（layer 缺省即 pre-step）时开关关闭且禁编辑。
+            let templatePreStepCount = 0
+            try {
+              const settingsValue = descriptor.value !== null && typeof descriptor.value === 'object'
+                ? descriptor.value as Record<string, unknown>
+                : {}
+              const templateName = typeof settingsValue.presetTemplate === 'string' && (settingsValue.presetTemplate as string).length > 0
+                ? settingsValue.presetTemplate as string
+                : 'anchored'
+              const spec = loadPresetSpec(resolvePresetDir(templateName))
+              templatePreStepCount = (spec.promptConfigs ?? []).filter((config) => {
+                const layer = (config as { layer?: string }).layer
+                return layer === undefined || layer === 'pre-step'
+              }).length
+            } catch {
+              templatePreStepCount = 0
+            }
             writeBridgeJson(res, 200, {
               ok: true,
               value: descriptor,
+              templatePreStepCount,
               modelsAvailable: detection.available,
               providers: detection.providers,
               modelCatalog,

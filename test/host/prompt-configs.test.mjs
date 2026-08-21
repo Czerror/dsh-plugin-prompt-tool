@@ -30,7 +30,7 @@ function generatedConfigs(options = {}, prompt = 'PROMPT') {
       usePtcMode: true,
       promptConfigs: [],
     })
-    const specs = loadPromptConfigFiles(join(dir, 'prompt-configs'))
+    const specs = loadPromptConfigFiles(join(dir, 'anchored', 'prompt-configs'))
     const byId = Object.fromEntries(specs.map((spec) => [spec.id, spec]))
     return { specs, byId }
   } finally {

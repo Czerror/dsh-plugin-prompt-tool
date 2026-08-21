@@ -141,8 +141,10 @@ export function apply(ctx: Context, configIn: Config): void {
   const initialTemplate = typeof config.presetTemplate === 'string' && config.presetTemplate.length > 0
     ? config.presetTemplate
     : 'anchored'
-  let current = readGeneratedContent(config.presetDir, 'preset.md') || readPromptFile(initialTemplate, config.fallbackText)
-  let currentAgents = readGeneratedContent(config.presetDir, 'agents.md') || readAgents(initialTemplate)
+  // 预设分离：生成内容按预设隔离在 presetDir/<template>/ 子目录（容器根只有薄转发）。
+  const initialPresetDir = join(config.presetDir, /^[a-zA-Z0-9_-]+$/.test(initialTemplate) ? initialTemplate : 'anchored')
+  let current = readGeneratedContent(initialPresetDir, 'preset.md') || readPromptFile(initialTemplate, config.fallbackText)
+  let currentAgents = readGeneratedContent(initialPresetDir, 'agents.md') || readAgents(initialTemplate)
 
   /** 重建生成目录（文本/组合/引擎/提示词配置）；writePreset 关闭时移除旧目录。 */
   const rebuildPreset = (): void => {
@@ -192,9 +194,13 @@ export function apply(ctx: Context, configIn: Config): void {
     }
   }
 
+  /** 激活子预设目录（预设分离后内容按 presetDir/<template>/ 隔离；非法名回退 anchored）。 */
+  const activePresetDir = (): string =>
+    join(runtime.presetDir, /^[a-zA-Z0-9_-]+$/.test(runtime.presetTemplate) ? runtime.presetTemplate : 'anchored')
+
   /** 用户参数覆盖（生成目录 prompt-tool.overrides.yml；settings 不再承载参数）。 */
   const applyParamOverrides = (): void => {
-    const raw = readGeneratedContent(runtime.presetDir, 'prompt-tool.overrides.yml')
+    const raw = readGeneratedContent(activePresetDir(), 'prompt-tool.overrides.yml')
     if (raw.length === 0) return
     let overrides: Record<string, unknown>
     try {
@@ -395,11 +401,13 @@ export function apply(ctx: Context, configIn: Config): void {
       skillCatalog = catalogOf(readAllSkillsChecked())
       cachedSkills.invalidate(); invalidateSkills?.()
     },
-    () => runtime.presetDir,
+    // 生成目录（激活子预设）：预设分离后容器根只有薄转发，内容资产/提示词配置
+    // 按预设隔离在 presetDir/<template>/ 子目录。
+    () => activePresetDir(),
     (scope) => {
       // 内容导入后：更新运行时文本并重建生成目录。
-      if (scope === 'preset') current = readGeneratedContent(runtime.presetDir, 'preset.md')
-      else currentAgents = readGeneratedContent(runtime.presetDir, 'agents.md')
+      if (scope === 'preset') current = readGeneratedContent(activePresetDir(), 'preset.md')
+      else currentAgents = readGeneratedContent(activePresetDir(), 'agents.md')
       try {
         rebuildPreset()
       } catch (error) {

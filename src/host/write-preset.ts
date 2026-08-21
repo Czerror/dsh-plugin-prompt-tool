@@ -7,7 +7,7 @@
  */
 
 import { writeFileSync, mkdirSync, rmSync, cpSync, mkdtempSync, renameSync, existsSync, readdirSync } from 'node:fs'
-import { join, basename, dirname } from 'node:path'
+import { join } from 'node:path'
 import { stringify as stringifyYaml } from 'yaml'
 import { DEFAULT_PRESET_DIR } from './paths.ts'
 import {
@@ -181,20 +181,40 @@ export function writePreset(prompt: string, options: WritePresetOptions): void {
   const templateName = typeof options.presetTemplate === 'string' && options.presetTemplate.trim().length > 0
     ? options.presetTemplate.trim()
     : 'anchored'
+  // 安全边界：templateName 现在是写入路径段（presetDir/<template>/），只允许
+  // 目录名形态，拒绝路径分隔符与 ..（防穿越写入容器根之外）。
+  if (!/^[a-zA-Z0-9_-]+$/.test(templateName)) {
+    throw new Error(`invalid presetTemplate ${JSON.stringify(templateName)}: must be a bare directory name`)
+  }
   const templateDir = resolvePresetDir(templateName)
   const spec = loadPresetSpec(templateDir)
   const runtime = runtimeOf(options, prompt)
   const params = resolvePresetParams(spec, runtime)
 
-  const parentDir = dirname(presetDir)
-  mkdirSync(parentDir, { recursive: true })
-  const tmpDir = mkdtempSync(join(parentDir, `.${basename(presetDir)}.tmp-`))
+  // 预设分离：presetDir 是容器根（官方按目录名加载 id），渲染目标为
+  // presetDir/<template>/ 子预设目录——各预设完整隔离（引擎/提示词配置/overrides
+  // 各自独立），切换预设只更新容器根的薄转发 agent.cordis.yml。
+  const presetRoot = presetDir
+  const targetDir = join(presetRoot, templateName)
+  mkdirSync(presetRoot, { recursive: true })
+  const tmpDir = mkdtempSync(join(presetRoot, `.${templateName}.tmp-`))
   const outDir = tmpDir
   try {
-  // 0) 保留用户参数覆盖文件（重建/升级不丢用户修改；随预设隔离）。
-  const overridesSrc = join(presetDir, 'prompt-tool.overrides.yml')
+  // 0) 保留用户参数覆盖文件（重建/升级不丢用户修改；随子预设隔离）。
+  //    旧单目录结构（overrides 在容器根）首次生成时迁移进子预设。
+  const overridesSrc = join(targetDir, 'prompt-tool.overrides.yml')
+  const legacyOverrides = join(presetRoot, 'prompt-tool.overrides.yml')
   if (existsSync(overridesSrc)) {
     cpSync(overridesSrc, join(outDir, 'prompt-tool.overrides.yml'), { force: true })
+  } else if (existsSync(legacyOverrides)) {
+    cpSync(legacyOverrides, join(outDir, 'prompt-tool.overrides.yml'), { force: true })
+  }
+  // 旧单目录结构迁移：容器根残留（engine/prompt-configs/内容资产）归位后清理一次。
+  if (existsSync(join(presetRoot, 'engine')) && !existsSync(targetDir)) {
+    for (const name of ['engine', 'prompt-configs', 'preset.md', 'agents.md', 'preset.yml',
+      'agents-instruction.txt', 'prompt-tool.overrides.yml']) {
+      rmSync(join(presetRoot, name), { recursive: true, force: true })
+    }
   }
 
   // 1) 组合文件:modules 模块库装配 + token 渲染 + moduleConfigs 行级合并 + YAML 校验。
@@ -294,18 +314,18 @@ export function writePreset(prompt: string, options: WritePresetOptions): void {
   }
 
   // 7) 原子提交:新目录完全写好后替换旧目录;失败时恢复旧目录并清理临时目录。
-  const backupDir = join(parentDir, `.${basename(presetDir)}.bak-${Date.now().toString(36)}`)
+  const backupDir = join(presetRoot, `.${templateName}.bak-${Date.now().toString(36)}`)
   let oldMoved = false
-  if (existsSync(presetDir)) {
-    renameSync(presetDir, backupDir)
+  if (existsSync(targetDir)) {
+    renameSync(targetDir, backupDir)
     oldMoved = true
   }
   try {
-    renameSync(outDir, presetDir)
+    renameSync(outDir, targetDir)
   } catch (error) {
     if (oldMoved) {
       try {
-        renameSync(backupDir, presetDir)
+        renameSync(backupDir, targetDir)
       } catch {
         // 恢复失败时保留 backup 供人工处理,不再覆盖现场。
       }
@@ -313,6 +333,13 @@ export function writePreset(prompt: string, options: WritePresetOptions): void {
     throw error
   }
   if (oldMoved) rmSync(backupDir, { recursive: true, force: true })
+
+  // 8) 容器根薄转发：agent.cordis.yml 指向激活子预设（官方契约：目录名 = 预设 id，
+  //    容器根必须始终有完整组合）。组合内 `name: ./engine/...` 重写为
+  //    `./<template>/engine/...`；configsDir 相对引擎文件解析，引擎文件在子预设
+  //    内，无需改写。
+  const forwarded = composition.replaceAll('./engine/', `./${templateName}/engine/`)
+  writeFileSync(join(presetRoot, 'agent.cordis.yml'), forwarded, 'utf8')
   } catch (error) {
     rmSync(tmpDir, { recursive: true, force: true })
     throw error

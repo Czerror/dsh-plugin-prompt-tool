@@ -171,6 +171,8 @@ export interface PromptToolStore {
   bootstrapTokensDraft: string
   /** 新技能目录路径输入（多目录卡片：输入路径添加）。 */
   skillsDirDraft: string
+  /** 当前预设模板消息批层（pre-step）配置数；0 = 模板无配置（入口开关联动关闭）。 */
+  templatePreStepCount: number
   savedSwitches: SwitchSnapshot
   savedConfigs: PromptConfigDraft[]
   savingSkillsDir: boolean
@@ -264,6 +266,7 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
   const [meta, setMeta] = useState<EngineMeta>(EMPTY_META)
   const [bootstrapTokensDraft, setBootstrapTokensDraft] = useState(DEFAULT_BOOTSTRAP_DISPLAY)
   const [skillsDirDraft, setSkillsDirDraft] = useState('')
+  const [templatePreStepCount, setTemplatePreStepCount] = useState(0)
   const [savedSwitches, setSavedSwitches] = useState<SwitchSnapshot>(EMPTY_SWITCHES)
   const [savedConfigs, setSavedConfigs] = useState<PromptConfigDraft[]>([])
   const [loading, setLoading] = useState(false)
@@ -282,6 +285,7 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
   }, [])
 
   const applyView = useCallback((res: BridgeResult<BridgeSettingsView>): Fields => {
+    setTemplatePreStepCount(res.ok && typeof res.templatePreStepCount === 'number' ? res.templatePreStepCount : 0)
     setProviders(res.ok ? res.providers ?? [] : [])
     setModelCatalog(res.ok ? res.modelCatalog ?? {} : {})
     const next = fieldsFromView(res)
@@ -639,6 +643,7 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
     modelCatalog,
     bootstrapTokensDraft,
     skillsDirDraft,
+    templatePreStepCount,
     savedSwitches,
     savedConfigs,
     savingSkillsDir,
