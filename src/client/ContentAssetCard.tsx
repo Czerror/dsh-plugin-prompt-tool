@@ -7,6 +7,7 @@ import { useRef, useState, type ReactNode } from 'react'
 import { CollapsibleCard } from './CollapsibleCard.tsx'
 import { ToggleRow } from './ToggleRow.tsx'
 import { autoResizeTextarea } from './textarea-resize.ts'
+import { tabKeyHandler } from './tab-key.ts'
 import ui from './PromptUi.module.css'
 import type { PromptToolStore } from './prompt-tool-store.ts'
 
@@ -38,8 +39,8 @@ export function ContentAssetCard(props: { store: PromptToolStore }): ReactNode {
     <CollapsibleCard id="pt-content-assets" title="Preset / AGENTS 内容"
       meta={`${isPreset ? 'preset.md' : 'agents.md'} · ${text.length} 字符`}>
       <div className={ui.assetTabs} role="tablist" aria-label="内容资产">
-        <button type="button" role="tab" aria-selected={isPreset} data-active={isPreset ? '' : undefined} onClick={() => setScope('preset')}>Preset 预设</button>
-        <button type="button" role="tab" aria-selected={!isPreset} data-active={!isPreset ? '' : undefined} onClick={() => setScope('agents')}>AGENTS 设置</button>
+        <button type="button" role="tab" aria-selected={isPreset} data-active={isPreset ? '' : undefined} onClick={() => setScope('preset')} onKeyDown={tabKeyHandler(['preset', 'agents'] as const, scope, setScope)}>Preset 预设</button>
+        <button type="button" role="tab" aria-selected={!isPreset} data-active={!isPreset ? '' : undefined} onClick={() => setScope('agents')} onKeyDown={tabKeyHandler(['preset', 'agents'] as const, scope, setScope)}>AGENTS 设置</button>
       </div>
       <p className={ui.settingCopy}><small>{desc}</small></p>
       {!isPreset && (
@@ -67,7 +68,7 @@ export function ContentAssetCard(props: { store: PromptToolStore }): ReactNode {
         </label>
       </div>
       <div className={ui.sectionActions}>
-        <input ref={fileRef} type="file" accept=".md,.markdown,.txt" style={{ display: 'none' }} aria-label="选择配置文件"
+        <input ref={fileRef} type="file" accept=".md,.markdown,.txt" className={ui.visuallyHidden} aria-label="选择配置文件"
           onChange={(event) => { pickFile(event.target.files?.[0]); event.target.value = '' }} />
         <button type="button" className={ui.pillButton} disabled={importing} onClick={() => fileRef.current?.click()}>
           {importing && <span className={ui.spinner} aria-hidden="true" />}

@@ -326,11 +326,11 @@ export function PromptConfigForm(props: {
       </div>
       <span className={styles.configFieldStack}>
         <span className={styles.configFieldLabel}>text（注入文本；空 = 不注入）</span>
-        <textarea className={styles.configTextarea} value={config.text ?? ''} spellCheck={false} onChange={(e) => { autoResizeTextarea(e); onPatch({ text: e.target.value }) }} />
+        <textarea className={styles.configTextarea} aria-label="注入文本（text，空 = 不注入）" value={config.text ?? ''} spellCheck={false} onChange={(e) => { autoResizeTextarea(e); onPatch({ text: e.target.value }) }} />
       </span>
       <span className={styles.configFieldStack}>
         <span className={styles.configFieldLabel}>texts（多段内容块，每行一段；text 为空时生效）</span>
-        <textarea className={styles.configTextarea} value={(config.texts ?? []).join('\n')} spellCheck={false} onChange={(e) => { autoResizeTextarea(e); onPatch({ texts: e.target.value.split('\n').filter((line) => line.length > 0) }) }} />
+        <textarea className={styles.configTextarea} aria-label="多段内容块（texts，每行一段；text 为空时生效）" value={(config.texts ?? []).join('\n')} spellCheck={false} onChange={(e) => { autoResizeTextarea(e); onPatch({ texts: e.target.value.split('\n').filter((line) => line.length > 0) }) }} />
       </span>
       <VariablesEditor value={config.variables} onChange={(value) => onPatch({ variables: value })} />
       <StrategyParamsFields strategy={strategy} params={config.params} onPatch={(value) => onPatch({ params: value })} />

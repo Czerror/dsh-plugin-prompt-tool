@@ -105,7 +105,7 @@ export function PresetSwitcher(props: { store: PromptToolStore }): ReactNode {
             ref={yamlRef}
             type="file"
             accept=".yml,.yaml,.json"
-            style={{ display: 'none' }}
+            className={styles.visuallyHidden}
             aria-label="选择 preset.yml / SillyTavern JSON 配置文件"
             onChange={(event) => { pickPresetYaml(event.target.files?.[0]); event.target.value = '' }}
           />
@@ -114,7 +114,7 @@ export function PresetSwitcher(props: { store: PromptToolStore }): ReactNode {
             type="file"
             // @ts-expect-error webkitdirectory 为 Chromium 扩展属性（文件夹选择）。
             webkitdirectory=""
-            style={{ display: 'none' }}
+            className={styles.visuallyHidden}
             aria-label="选择预设文件夹"
             onChange={(event) => { pickPresetDir(event.target.files); event.target.value = '' }}
           />

@@ -1,11 +1,10 @@
 import { useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from 'react'
-import type { KeyboardEvent as ReactKeyboardEvent } from 'react'
 import clsx from 'clsx'
 import type { IApiClient } from '@deepseek-ai/dsh-client-connection/client'
+import { tabKeyHandler } from './tab-key.ts'
 import {
   type PromptToolStore,
   type PromptToolSettingsTransport,
-  type SwitchKey,
   usePromptToolStore,
 } from './prompt-tool-store.ts'
 import type { SkillCatalogEntry } from './prompt-tool-bridge.ts'
@@ -16,7 +15,6 @@ import type { PromptToolWorkspaceController } from './workspace-controller.ts'
 import { PresetsPage } from './PresetsPage.tsx'
 import { TemplatePicker } from './TemplatePicker.tsx'
 import { useTemplatePicker } from './useTemplatePicker.ts'
-import { ToggleRow } from './ToggleRow.tsx'
 import { TagInput } from './TagInput.tsx'
 import { CollapsibleCard } from './CollapsibleCard.tsx'
 import { SettingInputRow } from './SettingInputRow.tsx'
@@ -48,114 +46,56 @@ function PageHeader(props: { title: string; description: string; meta?: string }
   )
 }
 
-/** 首轮输出封顶：数字框 + 开关组成的行，挂在调用配置层。 */
-function BootstrapTokensRow(props: { store: PromptToolStore }): ReactNode {
+/** 管线参数卡片（与主会话其他卡片同样式）：首轮输出封顶 + PTC 模式。
+ *  两者是模块装配参数（渲染进 agent.cordis.yml 组合行 config，非提示词配置），
+ *  模块库无对应可编辑项，故保留独立开关。 */
+function PipelineStatusCards(props: { store: PromptToolStore }): ReactNode {
   const { store } = props
   const fields = store.fields
+  const capped = fields.bootstrapMaxTokens > 0
   return (
-    <div className={ui.rowGroup}>
-      <label className={ui.toggleRow} htmlFor="pt-bootstrap-tokens">
-        <span className={ui.settingCopy}><strong>首轮输出封顶</strong><small>开启后首轮请求 #1 使用右侧 maxTokens；关闭显示默认 256000（不设上限），晋升后自动剥离。</small></span>
-        <span className={ui.inlineControls}>
-          <input
-            className={ui.bootstrapTokensInput}
-            type="number"
-            min={1}
-            step={1}
-            value={store.bootstrapTokensDraft}
-            disabled={!fields.writePreset || fields.bootstrapMaxTokens === 0}
-            aria-label="首轮输出封顶数值"
-            onChange={(event) => store.setBootstrapTokensDraft(event.target.value)}
-            onBlur={store.commitBootstrapTokensDraft}
-          />
-          <input id="pt-bootstrap-tokens" type="checkbox" checked={fields.bootstrapMaxTokens > 0} disabled={!fields.writePreset} aria-label="首轮输出封顶" onChange={store.toggleBootstrapMaxTokens} />
-          <span className={ui.switch} aria-hidden="true"><i /></span>
-        </span>
-      </label>
-    </div>
-  )
-}
-
-/** 消息批层入口开关：只保留真正注入 pre-step 的开关。 */
-function EntrySwitches(props: { store: PromptToolStore }): ReactNode {
-  const { store } = props
-  const fields = store.fields
-  // 当前预设模板无消息批层配置（layer 缺省即 pre-step）时，入口开关联动关闭且禁编辑。
-  const preStepEmpty = store.templatePreStepCount === 0
-  const setSwitch = (key: SwitchKey, value: boolean) => {
-    if (fields[key] !== value) store.toggle(key)
-  }
-  return (
-    <section className={ui.section} aria-labelledby="pt-entry-heading">
-      <div className={ui.sectionHeading}><div><h2 id="pt-entry-heading">消息批层入口开关</h2><p>以下开关全部作用于 agent/pre-step 消息批；预设总开关、PTC、子代理路由等已按各自层级归位。{preStepEmpty && ' 当前预设模板无消息批层配置，开关已关闭且不可编辑（切换到含 pre-step 配置的预设后恢复）。'}</p></div></div>
-      <CollapsibleCard id="pt-entry-switches" title="入口开关"
-        meta={preStepEmpty ? '预设无消息批层配置，已关闭' : `${[fields.injectPrompt, fields.firstTurnAnchor, fields.firstTurnCustom, fields.guideCustom].filter(Boolean).length}/4 已启用`}
-        defaultOpen>
-        <div className={ui.rowGroup}>
-          <ToggleRow id="pt-inject-prompt" label="注入 preset.md（锚定层）" hint="prompt-injector 提示词配置：消息插入决策消息开头，每会话一次。"
-            checked={preStepEmpty ? false : fields.injectPrompt} disabled={!fields.writePreset || preStepEmpty} onChange={(value) => setSwitch('injectPrompt', value)} />
-          <ToggleRow id="pt-anchor-first" label="追加任务引导" hint="near-anchor / router-guide 提示词配置：在首条真实用户消息之后追加任务引导。"
-            checked={preStepEmpty ? false : fields.firstTurnAnchor} disabled={!fields.writePreset || preStepEmpty} onChange={(value) => setSwitch('firstTurnAnchor', value)} />
-          <ToggleRow id="pt-anchor-custom" label="使用自定义引导（首句）" hint="near-anchor 的 params.useCustom；关闭时按任务自动选择 we / let 引导。"
-            checked={preStepEmpty ? false : fields.firstTurnCustom} disabled={!fields.writePreset || preStepEmpty || !fields.firstTurnAnchor} onChange={(value) => setSwitch('firstTurnCustom', value)} />
-          <ToggleRow id="pt-guide-custom" label="使用自定义引导（每轮）" hint="router-guide 的 params.useCustom；关闭时按任务自动选择。"
-            checked={preStepEmpty ? false : fields.guideCustom} disabled={!fields.writePreset || preStepEmpty || !fields.firstTurnAnchor} onChange={(value) => setSwitch('guideCustom', value)} />
-        </div>
-      </CollapsibleCard>
-
-      <CollapsibleCard id="pt-entry-guide-texts" title="自定义引导文本"
-        meta={`首句${fields.firstTurnText.trim().length > 0 ? '已填' : '留空'} · 每轮${fields.guideText.trim().length > 0 ? '已填' : '留空'}`}>
-        <div className={clsx(ui.rowGroup, (preStepEmpty || !fields.writePreset || !fields.firstTurnAnchor || !fields.firstTurnCustom) && ui.rowDisabled)}>
-          <label className={ui.textBlock}>
-            <span className={ui.settingCopy}><strong>自定义引导文本（首句）</strong><small>仅在「使用自定义引导（首句）」开启时生效。</small></span>
-            <textarea
-              className={ui.firstTurnInput}
-              value={fields.firstTurnText}
-              disabled={preStepEmpty || !fields.writePreset || !fields.firstTurnAnchor || !fields.firstTurnCustom}
-              onChange={(event) => { autoResizeTextarea(event); store.patch({ firstTurnText: event.target.value }) }}
-              onBlur={() => void store.persistParamOverrides()}
-              spellCheck={false}
+    <>
+      <article className={ui.configCard}>
+        <header className={ui.configHeader}>
+          <span className={ui.configTitle}>
+            <span className={ui.configName}>首轮输出封顶</span>
+            <span className={ui.configMeta}>{capped ? `调用配置层 · 首轮 maxTokens ${fields.bootstrapMaxTokens}` : '调用配置层 · 默认 256000（不设上限）'}</span>
+          </span>
+          <span className={ui.configHeaderActions}>
+            <input
+              className={ui.configInput}
+              type="number"
+              min={1}
+              step={1}
+              value={store.bootstrapTokensDraft}
+              disabled={!fields.writePreset || !capped}
+              title="首轮请求 #1 的 maxTokens（正整数，失焦保存）"
+              aria-label="首轮输出封顶数值"
+              onChange={(event) => store.setBootstrapTokensDraft(event.target.value)}
+              onBlur={store.commitBootstrapTokensDraft}
             />
-          </label>
-        </div>
-        <div className={clsx(ui.rowGroup, (preStepEmpty || !fields.writePreset || !fields.firstTurnAnchor || !fields.guideCustom) && ui.rowDisabled)}>
-          <label className={ui.textBlock}>
-            <span className={ui.settingCopy}><strong>自定义引导文本（每轮）</strong><small>仅在「使用自定义引导（每轮）」开启时生效；留空则不注入。</small></span>
-            <textarea
-              className={ui.firstTurnInput}
-              value={fields.guideText}
-              disabled={preStepEmpty || !fields.writePreset || !fields.firstTurnAnchor || !fields.guideCustom}
-              onChange={(event) => { autoResizeTextarea(event); store.patch({ guideText: event.target.value }) }}
-              onBlur={() => void store.persistParamOverrides()}
-              spellCheck={false}
-            />
-          </label>
-        </div>
-      </CollapsibleCard>
-
-      <CollapsibleCard id="pt-entry-anchor-word" title="注入锚定词"
-        meta={preStepEmpty ? '预设无消息批层配置' : fields.firstTurnWord.trim().length > 0 ? `当前：${fields.firstTurnWord}` : '未设置：默认 we'}>
-        <SettingInputRow id="pt-first-turn-word" label="锚定词" hint="prompt-injector 的 custom-fallback 锚定词：晋升后首个 reasoning 命中该词即注入 preset.md；直接输入任意自定义文本；留空 = 模板默认 we。失焦保存。"
-          value={fields.firstTurnWord} placeholder="we（默认）" disabled={preStepEmpty || !fields.writePreset}
-          onInput={(value) => store.patch({ firstTurnWord: value })}
-          onCommit={() => void store.persistParamOverrides()} />
-      </CollapsibleCard>
-    </section>
-  )
-}
-
-/** 调用配置层开关：首轮 maxTokens。 */
-function AgentRequestSwitches(props: { store: PromptToolStore }): ReactNode {
-  const { store } = props
-  return (
-    <section className={ui.section} aria-label="调用配置层开关">
-      <div className={ui.sectionHeading}><div><h2>调用配置层开关</h2><p>agent-request 调用参数：首轮输出封顶，晋升后自动剥离恢复模型默认上限。</p></div></div>
-      <div className={ui.configCard}>
-        <div className={ui.configBody}>
-          <BootstrapTokensRow store={store} />
-        </div>
-      </div>
-    </section>
+            <label className={ui.configEnable} htmlFor="pt-bootstrap-tokens">
+              <input id="pt-bootstrap-tokens" type="checkbox" checked={capped} disabled={!fields.writePreset} aria-label="首轮输出封顶" onChange={store.toggleBootstrapMaxTokens} />
+              <span className={ui.switch} aria-hidden="true"><i /></span>
+            </label>
+          </span>
+        </header>
+      </article>
+      <article className={ui.configCard}>
+        <header className={ui.configHeader}>
+          <span className={ui.configTitle}>
+            <span className={ui.configName}>使用 PTC 模式</span>
+            <span className={ui.configMeta}>{fields.usePtcMode ? '工具管线层 · Code Mode（run_code）' : '工具管线层 · 原生完整工具目录'}</span>
+          </span>
+          <span className={ui.configHeaderActions}>
+            <label className={ui.configEnable} htmlFor="pt-use-ptc">
+              <input id="pt-use-ptc" type="checkbox" checked={fields.usePtcMode} disabled={!fields.writePreset} aria-label="使用 PTC 模式" onChange={() => store.toggle('usePtcMode')} />
+              <span className={ui.switch} aria-hidden="true"><i /></span>
+            </label>
+          </span>
+        </header>
+      </article>
+    </>
   )
 }
 
@@ -404,26 +344,7 @@ function SubagentSettings(props: { store: PromptToolStore }): ReactNode {
   )
 }
 
-/** 工具管线层开关：PTC（Code Mode）工具目录。 */
-function ToolPipelineSwitches(props: { store: PromptToolStore }): ReactNode {
-  const { store } = props
-  const fields = store.fields
-  return (
-    <section className={ui.section} aria-label="工具管线层开关">
-      <div className={ui.sectionHeading}><div><h2>工具管线层开关</h2><p>tools/* 管线参数：PTC（Code Mode）工具目录切换。</p></div></div>
-      <div className={ui.configCard}>
-        <div className={ui.configBody}>
-          <div className={ui.rowGroup}>
-            <ToggleRow id="pt-use-ptc" label="使用 PTC 模式" hint="晋升后把 wire 切换为 Code Mode（单一 run_code），完整插件工具通过生成 SDK 调用；关闭时恢复原生完整工具目录。"
-              checked={fields.usePtcMode} disabled={!fields.writePreset} onChange={() => store.toggle('usePtcMode')} />
-          </div>
-        </div>
-      </div>
-    </section>
-  )
-}
-
-/** 主会话页：主对话参数 + 消息批层入口开关 + Preset/AGENTS 内容 + 调用配置/PTC 开关 + 模块库（层筛选）。
+/** 主会话页：主对话参数 + Preset/AGENTS 内容 + 管线状态卡 + 模块库（层筛选）。
  *  注入层 tab 已并入本页（层专属开关与内容资产卡片），模块库按层级下拉筛选浏览。 */
 function FeatureSettings(props: { store: PromptToolStore }): ReactNode {
   const { store } = props
@@ -432,10 +353,8 @@ function FeatureSettings(props: { store: PromptToolStore }): ReactNode {
     <section className={ui.section} aria-label="主会话与全局">
       <ModelRouteStatus store={store} />
       <ModelToolCards store={store} scope="main" />
-      <EntrySwitches store={store} />
       <ContentAssetCard store={store} />
-      <AgentRequestSwitches store={store} />
-      <ToolPipelineSwitches store={store} />
+      <PipelineStatusCards store={store} />
       <PromptConfigsEditor
         meta={store.meta}
         configs={fields.promptConfigs}
@@ -721,33 +640,30 @@ function SkillsSettings(props: { store: PromptToolStore; api: IApiClient }): Rea
 
   return (
     <section className={ui.section} aria-label="技能设置">
-      <div className={ui.sectionHeading}>
-        <div className={ui.sectionActions}>
-          <button type="button" className={ui.pillButton} onClick={() => void store.load()}>刷新技能列表</button>
-        </div>
-      </div>
-
       {fields.skillCatalog.length > 0 && (
         <>
-          <div className={ui.skillStats} role="tablist" aria-label="技能状态筛选">
-            {SKILL_STATUS_TABS.map((tab) => (
-              <button
-                key={tab.id}
-                type="button"
-                role="tab"
-                aria-selected={statusTab === tab.id}
-                data-active={statusTab === tab.id ? '' : undefined}
-                onClick={() => setStatusTab(tab.id)}
-                onKeyDown={tabKeyHandler(SKILL_STATUS_TABS.map((entry) => entry.id), statusTab, setStatusTab)}
-              >
-                <i className={clsx(ui.skillStatDot,
-                  tab.id === 'invalid' ? ui.skillStatusError
-                    : tab.id === 'callable' ? ui.skillStatusModel
-                      : ui.skillStatAll)} aria-hidden="true" />
-                <strong>{tabCounts[tab.id]}</strong>
-                <small>{tab.label}</small>
-              </button>
-            ))}
+          <div className={ui.skillStatsRow}>
+            <div className={ui.skillStats} role="tablist" aria-label="技能状态筛选">
+              {SKILL_STATUS_TABS.map((tab) => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={statusTab === tab.id}
+                  data-active={statusTab === tab.id ? '' : undefined}
+                  onClick={() => setStatusTab(tab.id)}
+                  onKeyDown={tabKeyHandler(SKILL_STATUS_TABS.map((entry) => entry.id), statusTab, setStatusTab)}
+                >
+                  <i className={clsx(ui.skillStatDot,
+                    tab.id === 'invalid' ? ui.skillStatusError
+                      : tab.id === 'callable' ? ui.skillStatusModel
+                        : ui.skillStatAll)} aria-hidden="true" />
+                  <strong>{tabCounts[tab.id]}</strong>
+                  <small>{tab.label}</small>
+                </button>
+              ))}
+            </div>
+            <button type="button" className={ui.pillButton} onClick={() => void store.load()}>刷新技能列表</button>
           </div>
           <div className={ui.listFilterRow}>
             <input
@@ -884,26 +800,6 @@ export interface PromptWorkspaceProps {
 
 /** 顶层页面：注入层已并入主会话页（层专属开关 + 内容资产卡片 + 模块库层筛选）。 */
 type WorkspacePage = 'subagent' | 'skills' | 'features' | 'presets'
-
-/** ARIA tabs 键盘导航：左右切换、Home/End 跳首尾。 */
-function tabKeyHandler<T>(
-  items: readonly T[],
-  current: T,
-  onSelect: (item: T) => void,
-): (event: ReactKeyboardEvent<HTMLElement>) => void {
-  return (event) => {
-    const index = items.indexOf(current)
-    if (index < 0) return
-    let next: number | undefined
-    if (event.key === 'ArrowRight') next = (index + 1) % items.length
-    else if (event.key === 'ArrowLeft') next = (index - 1 + items.length) % items.length
-    else if (event.key === 'Home') next = 0
-    else if (event.key === 'End') next = items.length - 1
-    if (next === undefined) return
-    event.preventDefault()
-    onSelect(items[next]!)
-  }
-}
 
 const TOP_PAGES: Array<{ id: WorkspacePage; label: string }> = [
   { id: 'features', label: '主会话' },

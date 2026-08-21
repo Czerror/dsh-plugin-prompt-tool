@@ -7,6 +7,19 @@
   --pt-chip-error: #b91c1c;
   --pt-chip-off: #6b7280;
   --pt-on-chip: #fff;
+  /* z-index 层级常量：模态浮层统一管理。 */
+  --pt-z-modal: 100;
+}
+
+/* 视觉隐藏但保留可访问性（隐藏 file input 由按钮触发时使用）。 */
+.visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 .pageShell {
@@ -204,42 +217,10 @@
   color: var(--dsw-alias-text-on-accent, #fff);
 }
 
-.importMenu {
-  position: absolute;
-  top: calc(100% + 6px);
-  right: 0;
-  z-index: 30;
-  display: flex;
-  flex-direction: column;
-  min-width: 200px;
-  padding: 6px;
-  border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 10px;
-  background: var(--dsw-alias-bg-base);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
-}
-
-.importMenuItem {
-  appearance: none;
-  border: 0;
-  border-radius: 7px;
-  padding: 8px 10px;
-  background: transparent;
-  color: var(--dsw-alias-label-primary);
-  font: inherit;
-  font-size: 12px;
-  text-align: left;
-  cursor: pointer;
-}
-
-.importMenuItem:hover {
-  background: var(--dsw-alias-interactive-bg-hover);
-}
-
 .modalBackdrop {
   position: fixed;
   inset: 0;
-  z-index: 100;
+  z-index: var(--pt-z-modal);
   display: grid;
   place-items: center;
   background: rgba(0, 0, 0, 0.42);
@@ -654,6 +635,20 @@
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px;
 }
+.skillStatsRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.skillStatsRow .skillStats {
+  flex: 1;
+  min-width: 0;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.skillStatsRow > button {
+  flex: 0 0 auto;
+}
 .skillStats button {
   appearance: none;
   display: flex;
@@ -983,6 +978,13 @@
 .configCard:hover { border-color: color-mix(in srgb, var(--pt-accent) 28%, var(--dsw-alias-border-l2)); box-shadow: 0 8px 22px -16px color-mix(in srgb, var(--pt-accent) 50%, transparent); transform: translateY(-1px); }
 .configCardOpen { border-color: color-mix(in srgb, var(--pt-accent) 38%, var(--dsw-alias-border-l2)); box-shadow: 0 10px 26px -18px color-mix(in srgb, var(--pt-accent) 55%, transparent); }
 .configHeader { display: flex; align-items: center; gap: 10px; padding: 10px 12px; flex-wrap: wrap; }
+.configHeaderActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+  margin-left: auto;
+}
 .configToggle { flex: 1; min-width: 160px; appearance: none; border: 0; background: none; font: inherit; color: inherit; text-align: left; cursor: pointer; display: flex; align-items: center; gap: 8px; padding: 4px 0; }
 .configToggle:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary); outline-offset: 2px; }
 .configTitle { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
@@ -1228,6 +1230,8 @@
   .chevron,
   .pageHeader,
   .section,
+  .skeletonRow,
+  .spinner,
   .pillButton,
   .primaryPill { transition: none; animation: none; }
 }
