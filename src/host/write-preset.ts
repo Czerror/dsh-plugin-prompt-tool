@@ -10,7 +10,7 @@
 
 import { writeFileSync, mkdirSync, rmSync, cpSync, mkdtempSync, renameSync, existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
-import { stringify as stringifyYaml } from 'yaml'
+import { parseDocument, stringify as stringifyYaml } from 'yaml'
 import { DEFAULT_PRESET_DIR } from './paths.ts'
 import {
   mergePromptConfigs,
@@ -254,9 +254,25 @@ export function writePreset(prompt: string, options: WritePresetOptions): void {
     .replaceAll('../prompt-configs', `../${templateName}/prompt-configs`)
   writeFileSync(join(outDir, 'agent.cordis.yml'), subComposition, 'utf8')
 
-  // 2) 宿主预设元数据(模板 meta 参数 + 运行时 order)。
+  // 2) 宿主预设元数据：新布局 preset.yml = 参数 + 元数据一体。
+  //    已存在参数文件（种子化/新建复制）时只合并元数据键（name/description/order/meta），
+  //    保留 params/modules/promptConfigs/content——不得整体覆盖（会摧毁参数源）。
   const meta = spec.meta !== null && typeof spec.meta === 'object' ? spec.meta as Record<string, unknown> : {}
-  writeFileSync(join(outDir, 'preset.yml'), stringifyYaml({ ...meta, order: options.presetOrder }) + '\n', 'utf8')
+  const existingPresetYaml = existsSync(join(targetDir, 'preset.yml'))
+    ? readFileSync(join(targetDir, 'preset.yml'), 'utf8')
+    : undefined
+  if (existingPresetYaml !== undefined && existingPresetYaml.trim().length > 0) {
+    const doc = parseDocument(existingPresetYaml, { logLevel: 'silent' })
+    doc.setIn(['order'], options.presetOrder)
+    if (typeof spec.name === 'string' && spec.name.length > 0) doc.setIn(['name'], spec.name)
+    if (typeof spec.description === 'string' && spec.description.length > 0) {
+      doc.setIn(['description'], spec.description)
+    }
+    if (Object.keys(meta).length > 0) doc.setIn(['meta'], meta)
+    writeFileSync(join(outDir, 'preset.yml'), doc.toString(), 'utf8')
+  } else {
+    writeFileSync(join(outDir, 'preset.yml'), stringifyYaml({ ...meta, order: options.presetOrder }) + '\n', 'utf8')
+  }
 
   // 2.5) 内容资产:preset.md / agents.md(与组合文件同层;大文本存文件而非 settings)。
   writeFileSync(join(outDir, 'preset.md'), prompt, 'utf8')

@@ -7,18 +7,38 @@ import type { ModelDetection } from './models.ts'
 import type { PromptSettings } from '../config.ts'
 import type { PromptConfigSpec } from '../host/prompt-configs.ts'
 import { loadPromptConfigFiles } from '../host/prompt-configs.ts'
+import { loadPresetSpec, resolvePresetParams } from '../host/manifest.ts'
 
-/** dsh-tui 暴露的布尔开关：键名与 settings 路径一致。 */
-const TUI_BOOLEAN_SWITCHES: ReadonlyArray<readonly [key: string, label: string]> = [
+/** dsh-tui 全局开关：键名与 settings 路径一致（settings mutate）。 */
+const TUI_GLOBAL_SWITCHES: ReadonlyArray<readonly [key: string, label: string]> = [
   ['writeAgents', '写入常驻规则 AGENTS.md'],
   ['writePreset', '启用锚定预设'],
-  ['injectPrompt', '锚定确认后注入 preset.md'],
   ['injectAgentsPrompt', '用 AGENTS.md 替换 instruction-hint 提示'],
+]
+
+/** dsh-tui 参数开关：写激活预设 preset.yml（settings 不再承载引擎参数）。 */
+const TUI_PARAM_SWITCHES: ReadonlyArray<readonly [key: string, label: string]> = [
+  ['injectPrompt', '锚定确认后注入 preset.md'],
   ['firstTurnAnchor', '追加任务引导'],
   ['firstTurnCustom', '使用自定义引导（首句）'],
   ['guideCustom', '使用自定义引导（每轮）'],
   ['usePtcMode', '使用 PTC 模式'],
 ] as const
+
+/** 参数显示行（从激活预设 preset.yml params 读）。 */
+const TUI_PARAM_TEXT_LINES: ReadonlyArray<readonly [key: string, label: string, emptyText: string]> = [
+  ['firstTurnText', 'firstTurnText', '（空 = 按任务自动选择）'],
+  ['modelProvider', 'modelProvider', '（空 = 不设置）'],
+  ['modelName', 'modelName', '（空 = 不设置）'],
+  ['subagentModelProvider', 'subagentModelProvider', '（空 = 不设置）'],
+  ['subagentModelName', 'subagentModelName', '（空 = 不设置）'],
+  ['modelReasoningEffort', 'modelReasoningEffort', '（空 = 不设置）'],
+  ['modelTemperature', 'modelTemperature', '（空 = 不设置）'],
+  ['modelMaxTokens', 'modelMaxTokens', '（空 = 不设置）'],
+  ['subagentReasoningEffort', 'subagentReasoningEffort', '（空 = 不设置）'],
+  ['subagentTemperature', 'subagentTemperature', '（空 = 不设置）'],
+  ['subagentMaxTokens', 'subagentMaxTokens', '（空 = 不设置）'],
+]
 
 /** 把布尔开关渲染成 dsh-tui 命令输出。 */
 /** 实际生效配置：生成目录优先（引擎加载源），settings 覆盖层作回退。 */
@@ -32,28 +52,42 @@ function resolvePromptConfigs(presetDir: string | undefined, fallback: PromptCon
   }
 }
 
-function renderTuiStatus(source: PromptSettings, promptConfigs: PromptConfigSpec[]): string {
+/** 激活预设参数（status 显示与参数开关来源；settings 不再承载引擎参数）。 */
+function readPresetParams(presetDir: string | undefined): Record<string, unknown> {
+  if (presetDir === undefined || presetDir.length === 0) return {}
+  try {
+    const spec = loadPresetSpec(presetDir)
+    const params = resolvePresetParams(spec, {})
+    if (Array.isArray(spec.promptConfigs)) params.promptConfigs = spec.promptConfigs
+    return params
+  } catch {
+    return {}
+  }
+}
+
+function renderTuiStatus(source: PromptSettings, params: Record<string, unknown>, promptConfigs: PromptConfigSpec[]): string {
   const onOff = (value: boolean): string => value ? '开' : '关'
+  const paramBoolean = (key: string): boolean => params[key] === true
+  const paramText = (key: string): string => {
+    const value = params[key]
+    return typeof value === 'string' && value.length > 0 ? value : ''
+  }
   const lines = [
     '提示词工具开关',
-    ...TUI_BOOLEAN_SWITCHES.map(([key, label]) => {
+    ...TUI_GLOBAL_SWITCHES.map(([key, label]) => {
       const value = source[key as keyof PromptSettings]
       return `${key.padEnd(22)}${onOff(typeof value === 'boolean' ? value : false)}  ${label}`
     }),
+    ...TUI_PARAM_SWITCHES.map(([key, label]) => {
+      return `${key.padEnd(22)}${onOff(paramBoolean(key))}  ${label}（预设）`
+    }),
     '锚点文本:',
-    `  firstTurnText               ${source.firstTurnText.length > 0 ? source.firstTurnText : '（空 = 按任务自动选择）'}`,
+    ...TUI_PARAM_TEXT_LINES.map(([key, label, emptyText]) => {
+      const text = paramText(key)
+      return `  ${label.padEnd(26)}${text.length > 0 ? text : emptyText}`
+    }),
     `  modelsAvailable         ${source.modelsAvailable ? '是' : '否（未检测到模型服务商）'}`,
-    `  modelProvider           ${source.modelProvider.length > 0 ? source.modelProvider : '（空 = 不设置）'}`,
-    `  modelName               ${source.modelName.length > 0 ? source.modelName : '（空 = 不设置）'}`,
-    `  subagentModelProvider   ${source.subagentModelProvider.length > 0 ? source.subagentModelProvider : '（空 = 不设置）'}`,
-    `  subagentModelName       ${source.subagentModelName.length > 0 ? source.subagentModelName : '（空 = 不设置）'}`,
-    `  modelReasoningEffort    ${(source.modelReasoningEffort ?? '').length > 0 ? source.modelReasoningEffort : '（空 = 不设置）'}`,
-    `  modelTemperature        ${(source.modelTemperature ?? '').length > 0 ? source.modelTemperature : '（空 = 不设置）'}`,
-    `  modelMaxTokens          ${(source.modelMaxTokens ?? '').length > 0 ? source.modelMaxTokens : '（空 = 不设置）'}`,
-    `  subagentReasoningEffort ${(source.subagentReasoningEffort ?? '').length > 0 ? source.subagentReasoningEffort : '（空 = 不设置）'}`,
-    `  subagentTemperature     ${(source.subagentTemperature ?? '').length > 0 ? source.subagentTemperature : '（空 = 不设置）'}`,
-    `  subagentMaxTokens       ${(source.subagentMaxTokens ?? '').length > 0 ? source.subagentMaxTokens : '（空 = 不设置）'}`,
-    `  bootstrapMaxTokens      ${source.bootstrapMaxTokens > 0 ? source.bootstrapMaxTokens : '0（关闭，不设封顶）'}`,
+    `  bootstrapMaxTokens      ${typeof params.bootstrapMaxTokens === 'number' && params.bootstrapMaxTokens > 0 ? String(params.bootstrapMaxTokens) : '0（关闭，不设封顶）'}`,
     `  activeSkillsDirs        ${source.activeSkillsDirs.length > 0 ? source.activeSkillsDirs.join(' → ') : '（未解析到技能目录）'}`,
     '提示词配置:',
   ]
@@ -132,6 +166,8 @@ export function registerTuiCommand(
   getModelsState: () => ModelDetection,
   getModelCatalog: () => Promise<Record<string, string[]>>,
   getPresetConfigsDir?: () => string,
+  /** 参数保存回调（写激活预设 preset.yml；key='promptConfigs' 时 value 为数组）。 */
+  savePresetParam?: (key: string, value: unknown) => void,
 ): void {
   ctx.inject(['settings'], (sctx: Context) => {
     return sctx.commands.register({
@@ -150,7 +186,9 @@ export function registerTuiCommand(
         })
         const tokens = invocation.rawInput.trim().split(/\s+/).filter((token) => token.length > 0)
         const source = getSource()
-        const promptConfigs = resolvePromptConfigs(getPresetConfigsDir?.(), source.promptConfigs)
+        const presetDir = getPresetConfigsDir?.()
+        const params = readPresetParams(presetDir)
+        const promptConfigs = resolvePromptConfigs(presetDir, Array.isArray(params.promptConfigs) ? params.promptConfigs as PromptConfigSpec[] : [])
         if (tokens.length === 0 || tokens[0] === 'status') {
           const detection = getModelsState()
           const catalog = await getModelCatalog()
@@ -161,7 +199,7 @@ export function registerTuiCommand(
           const modelsLine = catalogEntries.length > 0
             ? `检测到的模型名: ${catalogEntries.map(([provider, models]) => `${provider} → ${models.join(', ')}`).join('；')}`
             : '未检测到模型名（adapter 未公布或查询失败）'
-          return { kind: 'success', text: renderTuiStatus(source, promptConfigs) + '\n' + providersLine + '\n' + modelsLine }
+          return { kind: 'success', text: renderTuiStatus(source, params, promptConfigs) + '\n' + providersLine + '\n' + modelsLine }
         }
         if (tokens[0] === 'skill') {
           const folder = tokens[1]
@@ -172,7 +210,7 @@ export function registerTuiCommand(
           await sctx.settings.mutate(ns, [{ op: 'set', path: ['skillSwitches', folder], value: next }])
           return { kind: 'success', text: `已把技能 ${folder} 设为 ${next ? '开' : '关'}
 
-${renderTuiStatus(getSource(), resolvePromptConfigs(getPresetConfigsDir?.(), getSource().promptConfigs))}` }
+${renderTuiStatus(getSource(), readPresetParams(getPresetConfigsDir?.()), resolvePromptConfigs(getPresetConfigsDir?.(), []))}` }
         }
         if (tokens[0] === 'config') {
           const id = tokens[1]
@@ -186,10 +224,11 @@ ${renderTuiStatus(getSource(), resolvePromptConfigs(getPresetConfigsDir?.(), get
           const next = parseTuiBoolean(action, current.enabled !== false)
           if (next === undefined) return usage()
           const nextConfigs = promptConfigs.map((config) => config.id === id ? { ...config, enabled: next } : config)
-          await sctx.settings.mutate(ns, [{ op: 'set', path: ['promptConfigs'], value: nextConfigs }])
+          // promptConfigs 按预设存储：写激活预设 preset.yml。
+          savePresetParam?.('promptConfigs', nextConfigs)
           return { kind: 'success', text: `已把提示词配置 ${id} 设为 ${next ? '开' : '关'}
 
-${renderConfigDetail(getSource(), id, resolvePromptConfigs(getPresetConfigsDir?.(), getSource().promptConfigs))}` }
+${renderConfigDetail(getSource(), id, resolvePromptConfigs(getPresetConfigsDir?.(), []))}` }
         }
         if (tokens[0] === 'bootstrapMaxTokens') {
           const raw = tokens[1]
@@ -197,25 +236,36 @@ ${renderConfigDetail(getSource(), id, resolvePromptConfigs(getPresetConfigsDir?.
           if (!Number.isSafeInteger(value) || value < 0) {
             return { kind: 'error', text: 'bootstrapMaxTokens 需要非负整数：0 关闭封顶，正整数设置首轮 maxTokens。' }
           }
-          await sctx.settings.mutate(ns, [{ op: 'set', path: ['bootstrapMaxTokens'], value }])
+          // bootstrapMaxTokens 按预设存储：写激活预设 preset.yml。
+          savePresetParam?.('bootstrapMaxTokens', value)
           return { kind: 'success', text: `已把 bootstrapMaxTokens 设为 ${value === 0 ? '关闭（不设封顶）' : String(value)}
 
-${renderTuiStatus(getSource(), resolvePromptConfigs(getPresetConfigsDir?.(), getSource().promptConfigs))}` }
+${renderTuiStatus(getSource(), readPresetParams(getPresetConfigsDir?.()), resolvePromptConfigs(getPresetConfigsDir?.(), []))}` }
         }
         const action = tokens[0]
         const key = tokens[1]
         if (action !== 'on' && action !== 'off' && action !== 'toggle') return usage()
-        if (key === undefined || !TUI_BOOLEAN_SWITCHES.some(([candidate]) => candidate === key)) return usage()
-        const currentValue = source[key as keyof PromptSettings]
+        if (key === undefined
+          || (!TUI_GLOBAL_SWITCHES.some(([candidate]) => candidate === key)
+            && !TUI_PARAM_SWITCHES.some(([candidate]) => candidate === key))) {
+          return usage()
+        }
+        const globalSwitch = TUI_GLOBAL_SWITCHES.some(([candidate]) => candidate === key)
+        const currentValue = globalSwitch ? source[key as keyof PromptSettings] : params[key]
         if (typeof currentValue !== 'boolean') {
           return { kind: 'error', text: `${key} 不是布尔开关，不能这样切换` }
         }
         const next = parseTuiBoolean(action, currentValue)
         if (next === undefined) return usage()
-        await sctx.settings.mutate(ns, [{ op: 'set', path: [key], value: next }])
+        if (globalSwitch) {
+          await sctx.settings.mutate(ns, [{ op: 'set', path: [key], value: next }])
+        } else {
+          // 参数开关：写激活预设 preset.yml（settings 不再承载引擎参数）。
+          savePresetParam?.(key, next)
+        }
         return { kind: 'success', text: `已把 ${key} 设为 ${next ? '开' : '关'}
 
-${renderTuiStatus(getSource(), resolvePromptConfigs(getPresetConfigsDir?.(), getSource().promptConfigs))}` }
+${renderTuiStatus(getSource(), readPresetParams(getPresetConfigsDir?.()), resolvePromptConfigs(getPresetConfigsDir?.(), []))}` }
       },
     })
   })

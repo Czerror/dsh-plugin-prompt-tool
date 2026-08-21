@@ -13,11 +13,22 @@ import {
 export const NS: SettingsNamespace = settingsNamespace('prompt-tool')
 
 /**
- * promptConfigs 数组元素的最小结构 schema：只强校验“元素是对象、id 是字符串”。
- * 其余字段全部宽松透传（schemastery object 非 strict 合并保留未知键），
- * 枚举级权威校验归 engine 的 createPromptConfigs，避免两处枚举漂移。
+ * 引擎行为参数键（按预设存储：激活预设 preset.yml 的 params + promptConfigs）。
+ * 不进 Config schema、不进 settings namespace——每预设一份，随预设走（官方范式：
+ * Config = 部署轴，引擎行为在预设文件）。
  */
-const PromptConfigEntrySchema = z.object({ id: z.string().required() }) as unknown as z<PromptConfigSpec>
+export const PARAM_KEYS: ReadonlySet<string> = new Set([
+  'firstTurnAnchor', 'firstTurnText', 'firstTurnCustom',
+  'guideText', 'guideCustom',
+  'modelProvider', 'modelName',
+  'subagentModelProvider', 'subagentModelName',
+  'modelReasoningEffort', 'modelTemperature', 'modelMaxTokens',
+  'subagentReasoningEffort', 'subagentTemperature', 'subagentMaxTokens',
+  'mainPersona', 'subagentPersona',
+  'toolFilterAllow', 'toolFilterDeny', 'maxDepth', 'allowKinds', 'firstTurnWord',
+  'bootstrapMaxTokens', 'usePtcMode', 'injectPrompt',
+  'promptConfigs',
+])
 
 export interface Config {
   /** 是否用 AGENTS.md 内容替换本地 instruction-hint 的默认提示文本（默认关闭）。 */
@@ -28,60 +39,10 @@ export interface Config {
   writePreset: boolean
   /** 预设模板名（默认 anchored；其他模板时 anchored 专属 UI 可隐藏）。 */
   presetTemplate: string
-  /** 锚定层：we 锚定确认后是否注入 preset.md（默认 true）。 */
-  injectPrompt: boolean
   /** 以技能目录名为键的逐技能开关，缺省视为 true。 */
   skillSwitches: Record<string, boolean>
   /** 技能展示顺序（目录名数组）：排前面的技能 rank 更小，模型最先看到。 */
   skillOrder: string[]
-  /** 首轮近距离锚定开关（默认关闭）。 */
-  firstTurnAnchor: boolean
-  /** 自定义锚点文本；firstTurnCustom=true 时固定使用。 */
-  firstTurnText: string
-  /** 自定义锚点开关：true 固定使用 firstTurnText；false 按任务自动选择。 */
-  firstTurnCustom: boolean
-  /** 自定义每轮引导文本；guideCustom=true 时固定使用。 */
-  guideText: string
-  /** 自定义每轮引导开关：true 固定使用 guideText；false 按任务自动选择。 */
-  guideCustom: boolean
-  /** 模型路由 provider（主对话直派子代理与委派子代理通用）；与模型名同时非空时自动补入。 */
-  modelProvider: string
-  /** 模型名；与 provider 同时非空时生效。 */
-  modelName: string
-  /** 子代理固定模型路由 provider；与子代理模型名同时非空时生效（agentOptions 注入 tool-subagent）。 */
-  subagentModelProvider: string
-  /** 子代理固定模型名；与 provider 同时非空时生效。 */
-  subagentModelName: string
-  /** 主对话思维程度（agent-request patch reasoningEffort；''=不设置，官方档位 off/low/high/max）。 */
-  modelReasoningEffort: string
-  /** 主对话采样温度（agent-request patch temperature；''=不设置）。 */
-  modelTemperature: string
-  /** 主对话输出上限（agent-request patch maxTokens；''=不设置）。 */
-  modelMaxTokens: string
-  /** 子代理思维程度（agent-request patch reasoningEffort，audience=subagent；''=不设置）。 */
-  subagentReasoningEffort: string
-  /** 子代理采样温度（agent-request patch temperature，audience=subagent；''=不设置）。 */
-  subagentTemperature: string
-  /** 子代理输出上限（agent-request patch maxTokens，audience=subagent；''=不设置）。 */
-  subagentMaxTokens: string
-  /** 主对话自定义模型人设（preset.yml mainPersona；仅经 overrides 覆盖，不进 settings）。 */
-  mainPersona?: string
-  /** 子代理自定义模型人设（per-child shadow；仅经 overrides 覆盖，不进 settings）。 */
-  subagentPersona?: string
-  /** 委派工具集白名单（仅经 overrides 覆盖，不进 settings）。 */
-  toolFilterAllow?: string[] | string
-  /** 委派工具集黑名单（仅经 overrides 覆盖，不进 settings）。 */
-  toolFilterDeny?: string[] | string
-  /** 委派递归深度（0 禁止委派 / provider-managed / 正整数；仅经 overrides 覆盖）。 */
-  maxDepth?: number | 'provider-managed' | string
-  /** 注入 kind 白名单（仅经 overrides 覆盖，不进 settings）。 */
-  allowKinds?: string[] | string
-  /** custom-fallback 锚定词（仅经 overrides 覆盖，不进 settings）。 */
-  firstTurnWord?: string
-  /** 首轮输出封顶；0 或未设置 = 不设封顶（本项目默认），正整数 = 请求 #1 的 maxTokens。 */
-  bootstrapMaxTokens: number
-  /** 使用 PTC 模式：默认开启——晋升后把 wire 切换为 Code Mode（单一 run_code，完整插件工具经生成 SDK 调用）；关闭时晋升后恢复原生完整工具目录。 */
-  usePtcMode: boolean
   /** 用户自定义技能目录列表（按添加顺序，首个目录优先级最高）；空 = 自动使用当前 profile 下的 skills/ 副本。 */
   skillsDirs: string[]
   /** 旧版单值技能目录（仅读取迁移用，新版本统一写回 skillsDirs）。 */
@@ -96,8 +57,6 @@ export interface Config {
   presetOrder: number
   /** preset.md 缺失或不可读时使用的文本。 */
   fallbackText: string
-  /** 用户自定义提示词配置（settings 数组）：按 id 覆盖默认提示词配置或追加新提示词配置；UI 设置最终消费此接口。 */
-  promptConfigs: PromptConfigSpec[]
 }
 
 // 官方插件配置范式：同名 interface Config 与 Schemastery schema 成对导出，
@@ -107,26 +66,8 @@ export const Config: z<Config> = z.object({
   writeAgents: z.boolean().default(true),
   writePreset: z.boolean().default(true),
   presetTemplate: z.string().default('anchored'),
-  injectPrompt: z.boolean().default(true),
   skillSwitches: z.dict(z.boolean()).default({}),
   skillOrder: z.array(z.string()).default([]),
-  firstTurnAnchor: z.boolean().default(false),
-  firstTurnText: z.string().default(''),
-  firstTurnCustom: z.boolean().default(false),
-  guideText: z.string().default(''),
-  guideCustom: z.boolean().default(false),
-  modelProvider: z.string().default(''),
-  modelName: z.string().default(''),
-  subagentModelProvider: z.string().default(''),
-  subagentModelName: z.string().default(''),
-  modelReasoningEffort: z.string().default(''),
-  modelTemperature: z.string().default(''),
-  modelMaxTokens: z.string().default(''),
-  subagentReasoningEffort: z.string().default(''),
-  subagentTemperature: z.string().default(''),
-  subagentMaxTokens: z.string().default(''),
-  bootstrapMaxTokens: z.natural().default(0),
-  usePtcMode: z.boolean().default(true),
   skillsDirs: z.array(z.string()).default([]),
   // 兼容旧版单值 key：读取后由 index 归一迁移到 skillsDirs。
   skillsDir: z.string().default(''),
@@ -135,7 +76,6 @@ export const Config: z<Config> = z.object({
   presetDir: z.string().default(DEFAULT_PRESET_DIR),
   presetOrder: z.natural().default(DEFAULT_PRESET_ORDER),
   fallbackText: z.string().default(''),
-  promptConfigs: z.array(PromptConfigEntrySchema).default([]) as unknown as z<PromptConfigSpec[]>,
 })
 
 export interface SkillEntry {
@@ -179,55 +119,9 @@ export interface SkillCatalogEntry {
 }
 
 export interface PromptSettings {
-  promptText: string
-  promptPath: string
-  agentsText: string
-  agentsPath: string
   injectAgentsPrompt: boolean
-  firstTurnAnchor: boolean
-  firstTurnText: string
-  firstTurnCustom: boolean
-  guideText: string
-  guideCustom: boolean
-  /** 模型路由 provider（主对话直派子代理与委派子代理通用）；与模型名同时非空时生效。 */
-  modelProvider: string
-  /** 模型名；与 provider 同时非空时生效。 */
-  modelName: string
-  /** 子代理固定模型路由 provider；与子代理模型名同时非空时生效。 */
-  subagentModelProvider: string
-  /** 子代理固定模型名；与 provider 同时非空时生效。 */
-  subagentModelName: string
-  /** 主对话思维程度（agent-request patch reasoningEffort；''=不设置）。 */
-  modelReasoningEffort: string
-  /** 主对话采样温度（agent-request patch temperature；''=不设置）。 */
-  modelTemperature: string
-  /** 主对话输出上限（agent-request patch maxTokens；''=不设置）。 */
-  modelMaxTokens: string
-  /** 子代理思维程度（agent-request patch，audience=subagent；''=不设置）。 */
-  subagentReasoningEffort: string
-  /** 子代理采样温度（agent-request patch，audience=subagent；''=不设置）。 */
-  subagentTemperature: string
-  /** 子代理输出上限（agent-request patch，audience=subagent；''=不设置）。 */
-  subagentMaxTokens: string
-  /** 主对话自定义模型人设（经 overrides 覆盖，不写入 settings）。 */
-  mainPersona?: string
-  /** 子代理自定义模型人设（经 overrides 覆盖，不写入 settings）。 */
-  subagentPersona?: string
-  /** 委派工具集白名单（经 overrides 覆盖，不写入 settings）。 */
-  toolFilterAllow?: string[] | string
-  /** 委派工具集黑名单（经 overrides 覆盖，不写入 settings）。 */
-  toolFilterDeny?: string[] | string
-  /** 委派递归深度（经 overrides 覆盖，不写入 settings）。 */
-  maxDepth?: number | 'provider-managed' | string
-  /** 注入 kind 白名单（经 overrides 覆盖，不写入 settings）。 */
-  allowKinds?: string[] | string
-  /** custom-fallback 锚定词（经 overrides 覆盖，不写入 settings）。 */
-  firstTurnWord?: string
-  bootstrapMaxTokens: number
-  usePtcMode: boolean
   /** 运行时检测：是否检测到任何模型服务商（不写入 settings）。 */
   modelsAvailable: boolean
-  injectPrompt: boolean
   skillSwitches: Record<string, boolean>
   /** 技能展示顺序（目录名数组）。 */
   skillOrder: string[]
@@ -251,35 +145,11 @@ export interface PromptSettings {
   writeAgents: boolean
   writePreset: boolean
   presetTemplate: string
-  /** 用户自定义提示词配置（settings 层；UI 设置最后消费此数组渲染提示词配置编辑器）。 */
-  promptConfigs: PromptConfigSpec[]
 }
 
 export const PromptSettingsSchema: z<PromptSettings> = z.object({
-  promptText: z.string().default(''),
-  promptPath: z.string().default(''),
-  agentsText: z.string().default(''),
-  agentsPath: z.string().default(''),
   injectAgentsPrompt: z.boolean().default(false),
-  firstTurnAnchor: z.boolean().default(false),
-  firstTurnText: z.string().default(''),
-  firstTurnCustom: z.boolean().default(false),
-  guideText: z.string().default(''),
-  guideCustom: z.boolean().default(false),
-  modelProvider: z.string().default(''),
-  modelName: z.string().default(''),
-  subagentModelProvider: z.string().default(''),
-  subagentModelName: z.string().default(''),
-  modelReasoningEffort: z.string().default(''),
-  modelTemperature: z.string().default(''),
-  modelMaxTokens: z.string().default(''),
-  subagentReasoningEffort: z.string().default(''),
-  subagentTemperature: z.string().default(''),
-  subagentMaxTokens: z.string().default(''),
-  bootstrapMaxTokens: z.natural().default(0),
-  usePtcMode: z.boolean().default(true),
   modelsAvailable: z.boolean().default(true),
-  injectPrompt: z.boolean().default(true),
   skillSwitches: z.dict(z.boolean()).default({}),
   skillOrder: z.array(z.string()).default([]),
   skillCatalog: z.array(z.object({
@@ -304,7 +174,6 @@ export const PromptSettingsSchema: z<PromptSettings> = z.object({
   writeAgents: z.boolean().default(true),
   writePreset: z.boolean().default(true),
   presetTemplate: z.string().default('anchored'),
-  promptConfigs: z.array(PromptConfigEntrySchema).default([]) as unknown as z<PromptConfigSpec[]>,
 })
 
 export interface RuntimeOptions {

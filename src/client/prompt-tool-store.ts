@@ -184,8 +184,8 @@ const switchesEqual = (a: SwitchSnapshot, b: SwitchSnapshot): boolean =>
 
 export type SwitchKey = 'injectAgentsPrompt' | 'firstTurnAnchor' | 'firstTurnCustom' | 'guideCustom' | 'injectPrompt' | 'usePtcMode' | 'writeAgents' | 'writePreset'
 
-/** 参数类布尔开关：写入生成目录 overrides（settings 只留总开关）。 */
-const PARAM_SWITCH_KEYS: ReadonlySet<SwitchKey> = new Set(['firstTurnAnchor', 'firstTurnCustom', 'guideCustom'])
+/** 参数类布尔开关：写激活预设 preset.yml（settings 只留全局开关）。 */
+const PARAM_SWITCH_KEYS: ReadonlySet<SwitchKey> = new Set(['firstTurnAnchor', 'firstTurnCustom', 'guideCustom', 'injectPrompt', 'usePtcMode'])
 
 export interface PromptToolStore {
   fields: Fields
@@ -319,6 +319,25 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
     setProviders(res.ok ? res.providers ?? [] : [])
     setModelCatalog(res.ok ? res.modelCatalog ?? {} : {})
     const next = fieldsFromView(res)
+    // 引擎参数按预设存储（激活预设 preset.yml）：settings 不再承载，
+    // 参数键由 /describe 的 presetParams 合并（类型匹配键覆盖，其余保持）。
+    if (res.ok && res.presetParams !== undefined) {
+      const params = res.presetParams
+      const nextRecord = next as unknown as Record<string, unknown>
+      for (const key of Object.keys(params)) {
+        const value = params[key]
+        if (value === undefined || value === null || key === 'promptConfigs') continue
+        const current = nextRecord[key]
+        if (current === undefined) continue
+        if (typeof current === 'boolean' && typeof value === 'boolean') {
+          nextRecord[key] = value
+        } else if (typeof current === 'number' && typeof value === 'number') {
+          nextRecord[key] = value
+        } else if (typeof current === 'string' && typeof value === 'string') {
+          nextRecord[key] = value
+        }
+      }
+    }
     // 检测到 DeepSeek 路由且用户未设置服务商时，直接预选第一个检测到的 provider
     // （模型名为空则路由不激活，继承主会话语义不变；用户后续选择模型名即生效）。
     if (res.ok && next.modelProvider === '' && (res.providers?.length ?? 0) > 0) {
@@ -457,8 +476,6 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
   const persistSwitches = useCallback((onSaved?: () => void) => enqueueSave(
     [
       { op: 'set', path: ['injectAgentsPrompt'], value: fieldsRef.current.injectAgentsPrompt },
-      { op: 'set', path: ['usePtcMode'], value: fieldsRef.current.usePtcMode },
-      { op: 'set', path: ['injectPrompt'], value: fieldsRef.current.injectPrompt },
       { op: 'set', path: ['skillSwitches'], value: fieldsRef.current.skillSwitches },
       { op: 'set', path: ['skillOrder'], value: fieldsRef.current.skillOrder },
       { op: 'set', path: ['skillsDirs'], value: fieldsRef.current.skillsDirs },
@@ -490,6 +507,8 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
         firstTurnCustom: f.firstTurnCustom,
         guideText: f.guideText,
         guideCustom: f.guideCustom,
+        usePtcMode: f.usePtcMode,
+        injectPrompt: f.injectPrompt,
         modelProvider: f.modelProvider,
         modelName: f.modelName,
         subagentModelProvider: f.subagentModelProvider,
@@ -514,24 +533,17 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
     })
     if (res.ok) {
       setSavedSwitches(snapshotSwitches(fieldsRef.current))
+      // 参数已写激活预设 preset.yml：服务端重建后刷新（模型参数配置等随预设变化）。
+      void load()
     } else {
       showNotice('error', '参数保存失败：' + (res.message ?? 'settings bridge unavailable'))
     }
-  }, [showNotice])
+  }, [load, showNotice])
 
   const persistConfigs = useCallback((configs: PromptConfigDraft[]) => {
     const contentEntries = configs.filter(isContentAsset)
-    if (contentEntries.length === 0) {
-      enqueueSave(
-        [{ op: 'set', path: ['promptConfigs'], value: configs }],
-        undefined,
-        () => setSavedConfigs(configs),
-      )
-      return
-    }
-    // 内容资产：text 先写生成目录文件（afterPresetImport 触发重建，渲染产物 params.text 更新），
-    // settings 载荷剥离 text（大文本不进 settings，避免覆盖层整体替换挤掉渲染注入）。
     void (async () => {
+      // 内容资产：text 先写生成目录文件（afterPresetImport 触发重建，渲染产物 params.text 更新）。
       for (const config of contentEntries) {
         const scope = config.id === 'prompt-injector' ? 'preset' : 'agents'
         const res = await bridgePost<{ scope: string }>('/import-preset', { scope, content: config.text ?? '' })
@@ -540,13 +552,18 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
           return
         }
       }
-      enqueueSave(
-        [{ op: 'set', path: ['promptConfigs'], value: configs.map(stripContentText) }],
-        undefined,
-        () => { void load() },
-      )
+      // promptConfigs 按预设存储：写激活预设 preset.yml（settings 不再承载）。
+      const res = await bridgePost<{ promptConfigs: unknown }>('/param-overrides', {
+        promptConfigs: configs.map(stripContentText),
+      })
+      if (res.ok) {
+        setSavedConfigs(configs)
+        void load()
+      } else {
+        showNotice('error', '提示词配置保存失败：' + (res.message ?? 'settings bridge unavailable'))
+      }
     })()
-  }, [enqueueSave, load, showNotice])
+  }, [load, showNotice])
 
   const toggle = useCallback((key: SwitchKey) => {
     patch({ [key]: !fieldsRef.current[key] })

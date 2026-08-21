@@ -1,10 +1,11 @@
 /** 自建 loopback settings bridge：Web 设置页数据通道（提示词配置数组经此输出到 UI）。 */
 import type { Context } from '@deepseek-ai/cordis'
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { dirname, join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml'
 import type { SettingsDescriptor, SettingsNamespace, SettingsPathOp } from '@deepseek-ai/dsh-settings'
+import { PARAM_KEYS } from '../config.ts'
 import { listAdvertisedModels, peekModelCatalog, type ModelDetection } from './models.ts'
 import type { SkillCatalogEntry } from '../config.ts'
 import { loadPromptConfigFiles } from '../host/prompt-configs.ts'
@@ -20,7 +21,9 @@ import {
   parseImportedPresetId,
   removeUserPreset,
   renderComposition,
+  resolvePresetParams,
   resolvePresetDir,
+  savePresetParams,
   userPresetsDir,
 } from '../host/manifest.ts'
 import type { PresetSpec } from '../host/manifest.ts'
@@ -200,6 +203,9 @@ export function registerSettingsBridge(
             // 模型目录移出关键路径：/describe 只读缓存（未命中返回空），
             // 查询由独立 /models 端点触发（客户端惰性加载，不阻塞工作台）。
             const modelCatalog = peekModelCatalog()
+            // 引擎参数按预设存储：/describe 附带激活预设参数（settings 已不承载；
+            // 客户端 fields 参数键由此合并，promptConfigs 仍以 /prompt-configs 实际配置为准）。
+            let presetParams: Record<string, unknown> = {}
             // 当前预设模板消息批层（pre-step）配置数：UI 消息批层入口开关联动——
             // 模板无 pre-step 配置（layer 缺省即 pre-step）时开关关闭且禁编辑。
             let templatePreStepCount = 0
@@ -211,6 +217,10 @@ export function registerSettingsBridge(
                 ? settingsValue.presetTemplate as string
                 : 'anchored'
               const spec = loadPresetSpec(resolvePresetDir(templateName))
+              presetParams = resolvePresetParams(spec, {})
+              if (Array.isArray(spec.promptConfigs)) {
+                presetParams.promptConfigs = spec.promptConfigs
+              }
               templatePreStepCount = (spec.promptConfigs ?? []).filter((config) => {
                 const layer = (config as { layer?: string }).layer
                 return layer === undefined || layer === 'pre-step'
@@ -221,6 +231,7 @@ export function registerSettingsBridge(
             writeBridgeJson(res, 200, {
               ok: true,
               value: descriptor,
+              presetParams,
               templatePreStepCount,
               modelsAvailable: detection.available,
               providers: detection.providers,
@@ -256,6 +267,15 @@ export function registerSettingsBridge(
             const record = body as Record<string, unknown>
             if (!Array.isArray(record.ops)) {
               writeBridgeJson(res, 400, { ok: false, code: 'settings-rejected', message: 'malformed bridge settings request' })
+              return
+            }
+            // 引擎参数按预设存储（激活预设 preset.yml）：settings mutate 只接受全局键。
+            const paramOp = record.ops.find((op) => {
+              const path = (op as { path?: unknown })?.path
+              return Array.isArray(path) && path.length > 0 && typeof path[0] === 'string' && PARAM_KEYS.has(path[0])
+            })
+            if (paramOp !== undefined) {
+              writeBridgeJson(res, 400, { ok: false, code: 'settings-rejected', message: '引擎参数按预设存储：请用设置页保存（/param-overrides），settings 只接受全局开关' })
               return
             }
             const expectedRevision = typeof record.expectedRevision === 'number' ? record.expectedRevision : undefined
@@ -443,17 +463,25 @@ export function registerSettingsBridge(
               writeBridgeJson(res, 400, { ok: false, code: 'preset-dir-unavailable', message: 'presetDir 未配置' })
               return
             }
-            const file = join(dir, 'prompt-tool.overrides.yml')
+            // 阶段 2：参数按预设存储——读写激活预设 preset.yml 的 params（+ promptConfigs）。
+            const presetRoot = dirname(dir)
+            const templateName = basename(dir)
             const { body } = await readBridgeBody(req)
             const record = (body ?? {}) as Record<string, unknown>
-            // 无 overrides 载荷 = 读取；带载荷 = 写入。
-            if (record.overrides === undefined) {
+            // 无载荷 = 读取（preset.yml params 子集，兼容旧读回）。
+            if (record.overrides === undefined && record.promptConfigs === undefined) {
               try {
-                const raw = readFileSync(file, 'utf8')
-                const parsed = parseYaml(raw, { logLevel: 'silent' })
+                const spec = loadPresetSpec(dir)
+                const params: Record<string, unknown> = {}
+                for (const key of PARAM_KEYS) {
+                  if (key === 'promptConfigs') continue
+                  if (spec.params !== null && typeof spec.params === 'object' && key in spec.params) {
+                    params[key] = spec.params[key]
+                  }
+                }
                 writeBridgeJson(res, 200, {
                   ok: true,
-                  value: { overrides: parsed !== null && typeof parsed === 'object' ? parsed : {} },
+                  value: { overrides: params },
                 })
               } catch {
                 writeBridgeJson(res, 200, { ok: true, value: { overrides: {} } })
@@ -461,10 +489,22 @@ export function registerSettingsBridge(
               return
             }
             try {
-              mkdirSync(dir, { recursive: true })
-              writeFileSync(file, stringifyYaml(record.overrides), 'utf8')
+              savePresetParams(
+                presetRoot,
+                templateName,
+                record.overrides !== null && typeof record.overrides === 'object' && !Array.isArray(record.overrides)
+                  ? record.overrides as Record<string, unknown>
+                  : undefined,
+                Array.isArray(record.promptConfigs) ? record.promptConfigs as unknown[] : undefined,
+              )
               afterOverridesChange?.()
-              writeBridgeJson(res, 200, { ok: true, value: { overrides: record.overrides } })
+              writeBridgeJson(res, 200, {
+                ok: true,
+                value: {
+                  ...(record.overrides !== undefined ? { overrides: record.overrides } : {}),
+                  ...(record.promptConfigs !== undefined ? { promptConfigs: record.promptConfigs } : {}),
+                },
+              })
             } catch (error) {
               const message = error instanceof Error ? error.message : String(error)
               writeBridgeJson(res, 500, { ok: false, code: 'overrides-write-failed', message })

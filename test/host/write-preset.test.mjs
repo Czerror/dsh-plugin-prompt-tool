@@ -1,27 +1,16 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { fileURLToPath, pathToFileURL } from 'node:url'
-import { writePreset } from '../../lib/index.mjs'
+import { pathToFileURL } from 'node:url'
 import { parse as parseYaml } from 'yaml'
 
-const root = fileURLToPath(new URL('../..', import.meta.url))
-const sourceEngineDir = join(root, 'engine')
-
-function listFiles(dir) {
-  const out = []
-  const walk = (current) => {
-    for (const entry of readdirSync(current, { withFileTypes: true })) {
-      const full = join(current, entry.name)
-      if (entry.isDirectory()) walk(full)
-      else out.push(full)
-    }
-  }
-  if (existsSync(dir)) walk(dir)
-  return out.sort()
-}
+// 隔离 DSH_HOME：writePreset 的模板解析（resolvePresetDir）用户预设优先——
+// 真实用户环境 .agent-presets/<id> 会遮蔽包内模板，测试必须隔离。
+const home = mkdtempSync(join(tmpdir(), 'pt-wp-home-'))
+process.env.DSH_HOME = home
+const { writePreset } = await import('../../lib/index.mjs')
 
 function makeOptions(presetDir) {
   return {
@@ -355,4 +344,8 @@ test('writePreset 拒绝非法 presetTemplate（路径穿越防护）', () => {
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
+})
+
+test.after(() => {
+  rmSync(home, { recursive: true, force: true })
 })

@@ -9,14 +9,20 @@ import type {
   SkillProviderControl,
 } from '@deepseek-ai/dsh-skill'
 import type {} from '@deepseek-ai/dsh-host-webserver'
-import { existsSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { parse as parseYaml } from 'yaml'
 import { createSkillsWatcher } from './runtime/skills-watcher.ts'
-import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
-import { homedir } from 'node:os'
-import { loadPresetContent, loadPresetSpec, normalizeParam, resolvePresetDir } from './host/manifest.ts'
+import {
+  asString,
+  loadPresetContent,
+  loadPresetSpec,
+  resolvePresetDir,
+  resolvePresetParams,
+  savePresetParams,
+} from './host/manifest.ts'
 import type { PresetSpec } from './host/manifest.ts'
+import type { PromptConfigSpec } from './host/prompt-configs.ts'
 import { createCachedSkillsReader, mergeSkillDirs } from './runtime/skills-provider.ts'
 import { ensureWebSurface } from './web-surface.ts'
 import { resolveProfileSkillsDir } from './profile-skills.ts'
@@ -32,6 +38,7 @@ import { ensurePresetSeed, listPresets } from './host/manifest.ts'
 import {
   Config,
   NS,
+  PARAM_KEYS,
   PromptSettings,
   PromptSettingsSchema,
   RuntimeOptions,
@@ -41,7 +48,6 @@ import {
 import {
   DEFAULT_PRESET_DIR,
   DEFAULT_SKILLS_DIR,
-  DSH_HOME,
   LEGACY_CONTAINER_DIR,
   LEGACY_USER_PRESETS_DIR,
 } from './host/paths.ts'
@@ -55,11 +61,6 @@ export const name = 'prompt-tool'
 // pending 并导致启动失败。Web 表面改为动态等待 webServer；首次启动时由
 // ensureWebSurface 自动把 web-app bundle 补进 profile，重启一次后生效。
 export const inject = ['skills', 'commands', 'llm', 'subagents']
-
-/** 内容资产统一从预设模板的单一参数 YAML 读取(preset/anchored/preset.yml)。 */
-const PRESET_FILE_URL = new URL('../preset/anchored/preset.yml', import.meta.url)
-const PRESET_FILE_PATH = fileURLToPath(PRESET_FILE_URL)
-const AGENTS_FILE_PATH = PRESET_FILE_PATH
 
 function readPromptFile(template: string, fallbackText: string): string {
   const text = loadPresetContent(template).presetText
@@ -87,55 +88,6 @@ function warn(ctx: Context, message: string): void {
   }
 }
 
-/** hostDefaults 中的路径类字段展开 ~/，避免把字面量 `~` 目录写进进程 cwd。
- *  `~/.dsh/...` 特指 Harness home（${DSH_HOME} 或默认 ~/.dsh），
- *  其余 `~/...` 才按操作系统 home 展开。 */
-const HOME_PATH_KEYS = new Set(['residentAgentsPath', 'presetDir', 'skillsDir', 'skillsDirs'])
-const DSH_HOME_PREFIX = '~/.dsh'
-function normalizePresetPath(key: string, value: unknown): unknown {
-  if (Array.isArray(value) && key === 'skillsDirs') {
-    return value.map((item) => normalizePresetPath('skillsDir', item))
-  }
-  if (typeof value !== 'string' || !HOME_PATH_KEYS.has(key)) return value
-  if (value === DSH_HOME_PREFIX) return DSH_HOME
-  if (value.startsWith(DSH_HOME_PREFIX + '/') || value.startsWith(DSH_HOME_PREFIX + '\\')) {
-    const suffix = value.slice(DSH_HOME_PREFIX.length).replace(/^[/\\]+/, '')
-    return suffix.length > 0 ? join(DSH_HOME, suffix) : DSH_HOME
-  }
-  if (value === '~') return homedir()
-  if (value.startsWith('~/') || value.startsWith('~\\')) return join(homedir(), value.slice(2))
-  return value
-}
-
-/**
- * 单一入口:preset.yml 的 params + hostDefaults 作为 Config 的预设默认值。
- * settings(用户/Web)仍优先;此处只覆盖 Config 未提供或默认值位置。
- */
-export function mergePresetDefaults<T extends Config>(config: T, spec: PresetSpec | undefined): T {
-  if (spec === undefined) return config
-  const merged: Record<string, unknown> = { ...config } as Record<string, unknown>
-  const source = config as unknown as Record<string, unknown>
-  const entries = { ...spec.params, ...spec.hostDefaults }
-  for (const [key, raw] of Object.entries(entries)) {
-    if (!(key in source)) continue
-    const value = normalizePresetPath(key, normalizeParam(raw))
-    const current = source[key]
-    if (typeof current === 'boolean') {
-      if (typeof value === 'boolean') merged[key] = value
-    } else if (typeof current === 'number') {
-      if (typeof value === 'number' && Number.isFinite(value) && value >= 0) merged[key] = value
-    } else if (typeof current === 'string') {
-      if (typeof value === 'string') merged[key] = value
-    } else if (Array.isArray(current)) {
-      if (Array.isArray(value)) merged[key] = value
-    } else if (typeof current === 'object' && current !== null) {
-      if (typeof value === 'object' && value !== null && !Array.isArray(value)) merged[key] = value
-    }
-  }
-  return merged as unknown as T
-}
-
-
 export function apply(ctx: Context, configIn: Config): void {
   // 旧布局 → 官方对齐布局一次性迁移（幂等；旧目录归档 .bak 保留安全网）。
   let legacyMigrated = false
@@ -150,14 +102,7 @@ export function apply(ctx: Context, configIn: Config): void {
   } catch (error) {
     warn(ctx, `prompt-tool: preset seed failed: ${error instanceof Error ? error.message : String(error)}`)
   }
-  // 唯一入口:preset.yml 的参数与 hostDefaults 合并进 Config 默认值。
-  let presetSpec: PresetSpec | undefined
-  try {
-    presetSpec = loadPresetSpec(resolvePresetDir('anchored'))
-  } catch (error) {
-    warn(ctx, `prompt-tool: preset.yml unavailable, falling back to cordis config: ${error instanceof Error ? error.message : String(error)}`)
-  }
-  const config = mergePresetDefaults(configIn, presetSpec)
+  const config = { ...configIn }
   // 旧版 presetDir 存量值（容器根/旧用户目录）归一化为预设根。
   config.presetDir = normalizePresetRootDir(config.presetDir, DEFAULT_PRESET_DIR, LEGACY_CONTAINER_DIR)
   const modelsState = (): ModelDetection => detectModels(ctx)
@@ -169,11 +114,64 @@ export function apply(ctx: Context, configIn: Config): void {
     : 'anchored'
   // 预设分离：每个预设 = 预设根下的官方预设目录 presetDir/<template>/。
   const initialPresetDir = join(config.presetDir, /^[a-zA-Z0-9_-]+$/.test(initialTemplate) ? initialTemplate : 'anchored')
+  // 引擎参数从激活预设 preset.yml 读（settings 不再承载参数；每预设独立，随预设走）。
+  let initialParams: Record<string, unknown> = {}
+  let initialSpec: PresetSpec | undefined
+  try {
+    initialSpec = loadPresetSpec(resolvePresetDir(initialTemplate))
+    initialParams = resolvePresetParams(initialSpec, {})
+  } catch (error) {
+    warn(ctx, `prompt-tool: 激活预设参数读取失败（使用默认值）：${error instanceof Error ? error.message : String(error)}`)
+  }
   let current = readGeneratedContent(initialPresetDir, 'preset.md') || readPromptFile(initialTemplate, config.fallbackText)
   let currentAgents = readGeneratedContent(initialPresetDir, 'agents.md') || readAgents(initialTemplate)
 
+  /** 从激活预设 preset.yml 重读引擎参数到 runtime（参数保存/切换后调用）。 */
+  const reloadPresetParams = (): void => {
+    let spec: PresetSpec | undefined
+    try {
+      spec = loadPresetSpec(resolvePresetDir(runtime.presetTemplate))
+    } catch (error) {
+      warn(ctx, `prompt-tool: 读取激活预设参数失败：${error instanceof Error ? error.message : String(error)}`)
+      return
+    }
+    const params = resolvePresetParams(spec, {})
+    runtime.firstTurnAnchor = params.firstTurnAnchor === true
+    runtime.firstTurnText = asString(params.firstTurnText)
+    runtime.firstTurnCustom = params.firstTurnCustom === true
+    runtime.guideText = asString(params.guideText)
+    runtime.guideCustom = params.guideCustom === true
+    runtime.modelProvider = asString(params.modelProvider)
+    runtime.modelName = asString(params.modelName)
+    runtime.subagentModelProvider = asString(params.subagentModelProvider)
+    runtime.subagentModelName = asString(params.subagentModelName)
+    runtime.modelReasoningEffort = asString(params.modelReasoningEffort)
+    runtime.modelTemperature = asString(params.modelTemperature)
+    runtime.modelMaxTokens = asString(params.modelMaxTokens)
+    runtime.subagentReasoningEffort = asString(params.subagentReasoningEffort)
+    runtime.subagentTemperature = asString(params.subagentTemperature)
+    runtime.subagentMaxTokens = asString(params.subagentMaxTokens)
+    runtime.bootstrapMaxTokens = Number.isSafeInteger(params.bootstrapMaxTokens) && (params.bootstrapMaxTokens as number) >= 0
+      ? params.bootstrapMaxTokens as number
+      : 0
+    runtime.usePtcMode = params.usePtcMode !== false
+    runtime.injectPrompt = params.injectPrompt !== false
+    runtime.mainPersona = asString(params.mainPersona) || undefined
+    runtime.subagentPersona = asString(params.subagentPersona) || undefined
+    runtime.toolFilterAllow = params.toolFilterAllow as string[] | string | undefined
+    runtime.toolFilterDeny = params.toolFilterDeny as string[] | string | undefined
+    runtime.maxDepth = params.maxDepth as RuntimeOptions['maxDepth']
+    runtime.allowKinds = params.allowKinds as string[] | string | undefined
+    runtime.firstTurnWord = asString(params.firstTurnWord) || undefined
+    runtime.promptConfigs = Array.isArray(spec.promptConfigs)
+      ? spec.promptConfigs as PromptConfigSpec[]
+      : []
+  }
+
   /** 重建生成目录（文本/组合/引擎/提示词配置）；writePreset 关闭时移除旧目录。 */
   const rebuildPreset = (): void => {
+    // 先重读激活预设参数（/param-overrides 保存、TUI 开关、预设切换后生效）。
+    reloadPresetParams()
     applyParamOverrides()
     if (runtime.writePreset) {
       const presetPrompt = runtime.injectPrompt && current.length > 0 ? current : ''
@@ -493,33 +491,43 @@ export function apply(ctx: Context, configIn: Config): void {
     writePreset: config.writePreset,
     presetTemplate: typeof config.presetTemplate === 'string' && config.presetTemplate.length > 0 ? config.presetTemplate : 'anchored',
     injectAgentsPrompt: config.injectAgentsPrompt,
-    injectPrompt: config.injectPrompt,
     skillSwitches: { ...config.skillSwitches },
     skillOrder: [...skillOrder],
     skillsDirs: [...userSkillsDirs],
-    firstTurnAnchor: config.firstTurnAnchor,
-    firstTurnText: config.firstTurnText,
-    firstTurnCustom: config.firstTurnCustom,
-    guideText: config.guideText,
-    guideCustom: config.guideCustom,
-    modelProvider: config.modelProvider,
-    modelName: config.modelName,
-    subagentModelProvider: config.subagentModelProvider,
-    subagentModelName: config.subagentModelName,
-    modelReasoningEffort: config.modelReasoningEffort,
-    modelTemperature: config.modelTemperature,
-    modelMaxTokens: config.modelMaxTokens,
-    subagentReasoningEffort: config.subagentReasoningEffort,
-    subagentTemperature: config.subagentTemperature,
-    subagentMaxTokens: config.subagentMaxTokens,
-    bootstrapMaxTokens: config.bootstrapMaxTokens,
-    usePtcMode: config.usePtcMode,
+    // 引擎参数：激活预设 preset.yml（每预设独立，settings 不再承载）。
+    firstTurnAnchor: initialParams.firstTurnAnchor === true,
+    firstTurnText: asString(initialParams.firstTurnText),
+    firstTurnCustom: initialParams.firstTurnCustom === true,
+    guideText: asString(initialParams.guideText),
+    guideCustom: initialParams.guideCustom === true,
+    injectPrompt: initialParams.injectPrompt !== false,
+    modelProvider: asString(initialParams.modelProvider),
+    modelName: asString(initialParams.modelName),
+    subagentModelProvider: asString(initialParams.subagentModelProvider),
+    subagentModelName: asString(initialParams.subagentModelName),
+    modelReasoningEffort: asString(initialParams.modelReasoningEffort),
+    modelTemperature: asString(initialParams.modelTemperature),
+    modelMaxTokens: asString(initialParams.modelMaxTokens),
+    subagentReasoningEffort: asString(initialParams.subagentReasoningEffort),
+    subagentTemperature: asString(initialParams.subagentTemperature),
+    subagentMaxTokens: asString(initialParams.subagentMaxTokens),
+    bootstrapMaxTokens: Number.isSafeInteger(initialParams.bootstrapMaxTokens) && (initialParams.bootstrapMaxTokens as number) >= 0
+      ? initialParams.bootstrapMaxTokens as number
+      : 0,
+    usePtcMode: initialParams.usePtcMode !== false,
+    mainPersona: asString(initialParams.mainPersona) || undefined,
+    subagentPersona: asString(initialParams.subagentPersona) || undefined,
+    toolFilterAllow: initialParams.toolFilterAllow as string[] | string | undefined,
+    toolFilterDeny: initialParams.toolFilterDeny as string[] | string | undefined,
+    maxDepth: initialParams.maxDepth as RuntimeOptions['maxDepth'],
+    allowKinds: initialParams.allowKinds as string[] | string | undefined,
+    firstTurnWord: asString(initialParams.firstTurnWord) || undefined,
     skillRankBase: config.skillRankBase,
     residentAgentsPath: config.residentAgentsPath,
     presetDir: config.presetDir,
     presetOrder: config.presetOrder,
     fallbackText: config.fallbackText,
-    promptConfigs: Array.isArray(config.promptConfigs) ? config.promptConfigs : [],
+    promptConfigs: Array.isArray(initialSpec?.promptConfigs) ? initialSpec.promptConfigs as PromptConfigSpec[] : [],
   }
 
   // 宿主 agent-presets settings `default` 同步：插件 UI 切换预设时把宿主默认预设
@@ -560,30 +568,8 @@ export function apply(ctx: Context, configIn: Config): void {
   )
 
   let currentSource = (): PromptSettings => ({
-    promptText: current,
-    promptPath: PRESET_FILE_PATH,
-    agentsText: currentAgents,
-    agentsPath: AGENTS_FILE_PATH,
     injectAgentsPrompt: runtime.injectAgentsPrompt,
-    firstTurnAnchor: runtime.firstTurnAnchor,
-    firstTurnText: runtime.firstTurnText,
-    firstTurnCustom: runtime.firstTurnCustom,
-    guideText: runtime.guideText,
-    guideCustom: runtime.guideCustom,
-    modelProvider: runtime.modelProvider,
-    modelName: runtime.modelName,
-    subagentModelProvider: runtime.subagentModelProvider,
-    subagentModelName: runtime.subagentModelName,
-    modelReasoningEffort: runtime.modelReasoningEffort,
-    modelTemperature: runtime.modelTemperature,
-    modelMaxTokens: runtime.modelMaxTokens,
-    subagentReasoningEffort: runtime.subagentReasoningEffort,
-    subagentTemperature: runtime.subagentTemperature,
-    subagentMaxTokens: runtime.subagentMaxTokens,
-    bootstrapMaxTokens: runtime.bootstrapMaxTokens,
-    usePtcMode: runtime.usePtcMode,
     modelsAvailable: getModelsState().available,
-    injectPrompt: runtime.injectPrompt,
     skillSwitches: runtime.skillSwitches,
     skillOrder: runtime.skillOrder,
     skillCatalog,
@@ -598,43 +584,48 @@ export function apply(ctx: Context, configIn: Config): void {
     writeAgents: runtime.writeAgents,
     writePreset: runtime.writePreset,
     presetTemplate: runtime.presetTemplate,
-    promptConfigs: runtime.promptConfigs,
   })
 
   // dsh-tui 命令入口：/prompt-tool 查看或切换开关。
-registerTuiCommand(ctx, NS, () => currentSource(), getModelsState, () => listAdvertisedModels(ctx), () => activePresetDir())
+registerTuiCommand(
+  ctx,
+  NS,
+  () => currentSource(),
+  getModelsState,
+  () => listAdvertisedModels(ctx),
+  () => activePresetDir(),
+  // TUI 参数开关：写激活预设 preset.yml（settings 不再承载引擎参数）。
+  (key, value) => {
+    try {
+      if (key === 'promptConfigs') {
+        savePresetParams(runtime.presetDir, runtime.presetTemplate, undefined, Array.isArray(value) ? value as unknown[] : undefined)
+      } else {
+        savePresetParams(runtime.presetDir, runtime.presetTemplate, { [key]: value }, undefined)
+      }
+      reloadPresetParams()
+      rebuildPreset()
+    } catch (error) {
+      warn(ctx, `prompt-tool: TUI 参数保存失败：${error instanceof Error ? error.message : String(error)}`)
+    }
+  },
+)
 
   let needsInitialApply = true
   const applyState = (): void => {
     const next = currentSource()
-    const nextRuntime: RuntimeOptions = {
+    const nextRuntime: Pick<RuntimeOptions,
+      'writeAgents' | 'writePreset' | 'presetTemplate' | 'injectAgentsPrompt'
+      | 'skillSwitches' | 'skillOrder' | 'skillsDirs' | 'skillRankBase'
+      | 'residentAgentsPath' | 'presetDir' | 'presetOrder' | 'fallbackText'> = {
       writeAgents: typeof next.writeAgents === 'boolean' ? next.writeAgents : config.writeAgents,
       writePreset: typeof next.writePreset === 'boolean' ? next.writePreset : config.writePreset,
       presetTemplate: typeof next.presetTemplate === 'string' && next.presetTemplate.length > 0 ? next.presetTemplate : 'anchored',
       injectAgentsPrompt: typeof next.injectAgentsPrompt === 'boolean' ? next.injectAgentsPrompt : config.injectAgentsPrompt,
-      injectPrompt: typeof next.injectPrompt === 'boolean' ? next.injectPrompt : config.injectPrompt,
       skillSwitches: next.skillSwitches !== undefined ? next.skillSwitches : config.skillSwitches,
       skillOrder: Array.isArray(next.skillOrder) ? next.skillOrder.filter((folder): folder is string => typeof folder === 'string') : config.skillOrder,
       skillsDirs: Array.isArray(next.skillsDirs)
         ? next.skillsDirs.filter((dir): dir is string => typeof dir === 'string' && dir.trim().length > 0)
         : userSkillsDirs,
-      firstTurnAnchor: typeof next.firstTurnAnchor === 'boolean' ? next.firstTurnAnchor : config.firstTurnAnchor,
-      firstTurnText: typeof next.firstTurnText === 'string' ? next.firstTurnText : config.firstTurnText,
-      firstTurnCustom: typeof next.firstTurnCustom === 'boolean' ? next.firstTurnCustom : config.firstTurnCustom,
-      guideText: typeof next.guideText === 'string' ? next.guideText : config.guideText,
-      guideCustom: typeof next.guideCustom === 'boolean' ? next.guideCustom : config.guideCustom,
-      modelProvider: typeof next.modelProvider === 'string' ? next.modelProvider : config.modelProvider,
-      modelName: typeof next.modelName === 'string' ? next.modelName : config.modelName,
-      subagentModelProvider: typeof next.subagentModelProvider === 'string' ? next.subagentModelProvider : config.subagentModelProvider,
-      subagentModelName: typeof next.subagentModelName === 'string' ? next.subagentModelName : config.subagentModelName,
-      modelReasoningEffort: typeof next.modelReasoningEffort === 'string' ? next.modelReasoningEffort : config.modelReasoningEffort,
-      modelTemperature: typeof next.modelTemperature === 'string' ? next.modelTemperature : config.modelTemperature,
-      modelMaxTokens: typeof next.modelMaxTokens === 'string' ? next.modelMaxTokens : config.modelMaxTokens,
-      subagentReasoningEffort: typeof next.subagentReasoningEffort === 'string' ? next.subagentReasoningEffort : config.subagentReasoningEffort,
-      subagentTemperature: typeof next.subagentTemperature === 'string' ? next.subagentTemperature : config.subagentTemperature,
-      subagentMaxTokens: typeof next.subagentMaxTokens === 'string' ? next.subagentMaxTokens : config.subagentMaxTokens,
-      bootstrapMaxTokens: Number.isSafeInteger(next.bootstrapMaxTokens) && next.bootstrapMaxTokens >= 0 ? next.bootstrapMaxTokens : config.bootstrapMaxTokens,
-      usePtcMode: typeof next.usePtcMode === 'boolean' ? next.usePtcMode : config.usePtcMode,
       skillRankBase: Number.isSafeInteger(next.skillRankBase) && next.skillRankBase >= 0 ? next.skillRankBase : config.skillRankBase,
       residentAgentsPath: typeof next.residentAgentsPath === 'string' && next.residentAgentsPath.trim().length > 0 ? next.residentAgentsPath : config.residentAgentsPath,
       presetDir: typeof next.presetDir === 'string' && next.presetDir.trim().length > 0
@@ -642,10 +633,7 @@ registerTuiCommand(ctx, NS, () => currentSource(), getModelsState, () => listAdv
         : config.presetDir,
       presetOrder: Number.isSafeInteger(next.presetOrder) && next.presetOrder >= 0 ? next.presetOrder : config.presetOrder,
       fallbackText: typeof next.fallbackText === 'string' ? next.fallbackText : config.fallbackText,
-      promptConfigs: Array.isArray(next.promptConfigs) ? next.promptConfigs : config.promptConfigs,
     }
-    const promptChanged = next.promptText !== current
-    const agentsChanged = next.agentsText !== currentAgents
     const skillSwitchesChanged = JSON.stringify(runtime.skillSwitches) !== JSON.stringify(nextRuntime.skillSwitches)
     const skillOrderChanged = JSON.stringify(runtime.skillOrder) !== JSON.stringify(nextRuntime.skillOrder)
     const skillsDirsChanged = JSON.stringify(runtime.skillsDirs) !== JSON.stringify(nextRuntime.skillsDirs)
@@ -656,63 +644,30 @@ registerTuiCommand(ctx, NS, () => currentSource(), getModelsState, () => listAdv
       || runtime.writePreset !== nextRuntime.writePreset
       || runtime.presetTemplate !== nextRuntime.presetTemplate
       || runtime.injectAgentsPrompt !== nextRuntime.injectAgentsPrompt
-      || runtime.injectPrompt !== nextRuntime.injectPrompt
       || skillSwitchesChanged
       || skillOrderChanged
       || skillsDirsChanged
       || skillRankBaseChanged
-      || runtime.firstTurnAnchor !== nextRuntime.firstTurnAnchor
-      || runtime.firstTurnText !== nextRuntime.firstTurnText
-      || runtime.firstTurnCustom !== nextRuntime.firstTurnCustom
-      || runtime.guideText !== nextRuntime.guideText
-      || runtime.guideCustom !== nextRuntime.guideCustom
-      || runtime.modelProvider !== nextRuntime.modelProvider
-      || runtime.modelName !== nextRuntime.modelName
-      || runtime.subagentModelProvider !== nextRuntime.subagentModelProvider
-      || runtime.subagentModelName !== nextRuntime.subagentModelName
-      || runtime.bootstrapMaxTokens !== nextRuntime.bootstrapMaxTokens
-      || runtime.usePtcMode !== nextRuntime.usePtcMode
       || runtime.residentAgentsPath !== nextRuntime.residentAgentsPath
       || runtime.presetDir !== nextRuntime.presetDir
       || runtime.presetOrder !== nextRuntime.presetOrder
       || fallbackTextChanged
-      || JSON.stringify(runtime.promptConfigs) !== JSON.stringify(nextRuntime.promptConfigs)
     // 首次必须写入：settings 与文件/config 一致时也不能跳过 preset/AGENTS 生成。
-    if (!needsInitialApply && !promptChanged && !agentsChanged && !settingsChanged) return
+    if (!needsInitialApply && !settingsChanged) return
     needsInitialApply = false
 
-    // settings.promptText 为空时保留生成目录/模板内容（大文本不再写入 settings，
-    // 显式非空文本仍作为运行时覆盖生效）。
-    if (promptChanged && next.promptText.trim().length > 0) current = next.promptText
-    if (fallbackTextChanged && next.promptText.trim() === '' && current.trim() === '') {
-      current = readPromptFile(nextRuntime.presetTemplate, nextRuntime.fallbackText)
-    }
-    if (agentsChanged && next.agentsText.trim().length > 0) currentAgents = next.agentsText
     runtime.writeAgents = nextRuntime.writeAgents
     runtime.writePreset = nextRuntime.writePreset
     runtime.presetTemplate = nextRuntime.presetTemplate
     runtime.injectAgentsPrompt = nextRuntime.injectAgentsPrompt
-    runtime.injectPrompt = nextRuntime.injectPrompt
     runtime.skillSwitches = nextRuntime.skillSwitches
     runtime.skillOrder = nextRuntime.skillOrder
     runtime.skillsDirs = nextRuntime.skillsDirs
-    runtime.firstTurnAnchor = nextRuntime.firstTurnAnchor
-    runtime.firstTurnText = nextRuntime.firstTurnText
-    runtime.firstTurnCustom = nextRuntime.firstTurnCustom
-    runtime.guideText = nextRuntime.guideText
-    runtime.guideCustom = nextRuntime.guideCustom
-    runtime.modelProvider = nextRuntime.modelProvider
-    runtime.modelName = nextRuntime.modelName
-    runtime.subagentModelProvider = nextRuntime.subagentModelProvider
-    runtime.subagentModelName = nextRuntime.subagentModelName
-    runtime.bootstrapMaxTokens = nextRuntime.bootstrapMaxTokens
-    runtime.usePtcMode = nextRuntime.usePtcMode
     runtime.skillRankBase = nextRuntime.skillRankBase
     runtime.residentAgentsPath = nextRuntime.residentAgentsPath
     runtime.presetDir = nextRuntime.presetDir
     runtime.presetOrder = nextRuntime.presetOrder
     runtime.fallbackText = nextRuntime.fallbackText
-    runtime.promptConfigs = nextRuntime.promptConfigs
     skillSwitches = runtime.skillSwitches
     skillOrder = runtime.skillOrder
     skillRankBase = runtime.skillRankBase
@@ -766,11 +721,59 @@ registerTuiCommand(ctx, NS, () => currentSource(), getModelsState, () => listAdv
     },
     onError: (message) => warn(ctx, `prompt-tool: settings register failed: ${message}`),
   })
+
+  /** 阶段 2 迁移：旧全局 settings 引擎参数 → 激活预设 preset.yml（一次性，标记后跳过）。 */
+  const PARAMS_MIGRATED_MARK = '.pt-params-migrated'
+  const migrateSettingsParamsToPreset = (sctx: Context): void => {
+    const mark = join(runtime.presetDir, PARAMS_MIGRATED_MARK)
+    if (existsSync(mark)) return
+    let userSection: Record<string, unknown> = {}
+    try {
+      const descriptor = sctx.settings.describe({ redactSecrets: true })
+        .find((entry) => String(entry.ns) === String(NS))
+      userSection = descriptor?.value !== null && typeof descriptor?.value === 'object'
+        ? descriptor.value as Record<string, unknown>
+        : {}
+    } catch {
+      // describe 失败（settings 服务不可用）跳过，下次启动重试。
+      return
+    }
+    const params: Record<string, unknown> = {}
+    for (const key of PARAM_KEYS) {
+      if (key !== 'promptConfigs' && Object.prototype.hasOwnProperty.call(userSection, key)) {
+        params[key] = userSection[key]
+      }
+    }
+    const promptConfigs = Array.isArray(userSection.promptConfigs)
+      ? userSection.promptConfigs as unknown[]
+      : undefined
+    if (Object.keys(params).length === 0 && promptConfigs === undefined) {
+      try {
+        mkdirSync(runtime.presetDir, { recursive: true })
+        writeFileSync(mark, '', 'utf8')
+      } catch {
+        // 只读目录忽略。
+      }
+      return
+    }
+    try {
+      savePresetParams(runtime.presetDir, runtime.presetTemplate, params, promptConfigs)
+      reloadPresetParams()
+      rebuildPreset()
+      writeFileSync(mark, '', 'utf8')
+      warn(ctx, 'prompt-tool: 已把旧全局 settings 参数迁移到激活预设 preset.yml（每预设独立存储）')
+    } catch (error) {
+      warn(ctx, `prompt-tool: settings 参数迁移失败（下次启动重试）：${error instanceof Error ? error.message : String(error)}`)
+    }
+  }
+
   ctx.inject(['settings'], (sctx: Context) => {
     hostSettingsService = sctx.settings
     ensureRegistered(sctx)
     // 旧布局迁移完成（或宿主 default 指向已删除的 prompt-tool 容器）时同步宿主默认预设。
     if (legacyMigrated) syncHostDefault('migrate')
+    // 阶段 2 迁移：旧全局 settings 参数 → 激活预设 preset.yml。
+    migrateSettingsParamsToPreset(sctx)
     // settings 服务 detach 时回退到 cordis config 构造的 entry，
     // 并重判派生状态（等价 installSettingsSection 的 fallback 语义）。
     sctx.effect(() => () => {
@@ -787,7 +790,7 @@ registerTuiCommand(ctx, NS, () => currentSource(), getModelsState, () => listAdv
 // 公共 API：宿主与测试复用 settings schema 与提示词配置权威校验。
 export { Config, PromptSettingsSchema } from './config.ts'
 export { writePreset } from './host/write-preset.ts'
-export { applyModuleConfigs } from './host/manifest.ts'
+export { applyModuleConfigs, savePresetParams } from './host/manifest.ts'
 export { loadPresetSpec, resolvePresetParams } from './host/manifest.ts'
 export type { PresetSpec } from './host/manifest.ts'
 export {
@@ -816,6 +819,7 @@ export { createCachedSkillsReader, readSkills, mergeSkillDirs, listSkillFolders,
 export type { CachedSkillsReader } from './runtime/skills-provider.ts'
 export { fixSkillEntry, toKebabName } from './runtime/skill-fix.ts'
 export type { SkillFixResult } from './runtime/skill-fix.ts'
+export { PARAM_KEYS } from './config.ts'
 export type { SkillEntry, SkillCatalogEntry } from './config.ts'
 export { BRIDGE_ENDPOINTS, SETTINGS_BRIDGE_PREFIX } from './shared/bridge-contract.ts'
 export type { BridgeEndpoint, BridgeErrorPayload } from './shared/bridge-contract.ts'

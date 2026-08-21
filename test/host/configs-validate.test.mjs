@@ -81,23 +81,13 @@ test('validatePromptConfigs：一条坏配置不吞掉其余错误，全部收�
   assert.deepEqual(result.errors.map((error) => error.index), [0, 2])
 })
 
-test('Config / PromptSettingsSchema：只强校验 id，其余字段宽松透传', () => {
-  const input = { promptConfigs: [{ id: 'x', layer: 'system-section', params: { complete: true }, text: 'A' }] }
-  const config = Config(input)
-  assert.equal(config.promptConfigs[0].id, 'x')
-  assert.equal(config.promptConfigs[0].layer, 'system-section')
-  assert.equal(config.promptConfigs[0].params.complete, true)
-  assert.equal(config.promptConfigs[0].text, 'A')
-  const settings = PromptSettingsSchema(input)
-  assert.equal(settings.promptConfigs[0].layer, 'system-section')
-  assert.equal(settings.promptConfigs[0].params.complete, true)
-})
-
-test('Config / PromptSettingsSchema：元素缺 id 或元素非对象在 settings 层即拒绝', () => {
-  assert.throws(() => Config({ promptConfigs: [{ layer: 'pre-step' }] }), /missing required value/)
-  assert.throws(() => PromptSettingsSchema({ promptConfigs: [{ layer: 'pre-step' }] }), /missing required value/)
-  assert.throws(() => Config({ promptConfigs: [{ id: 42 }] }), /expected string/)
-  assert.throws(() => PromptSettingsSchema({ promptConfigs: [{ id: 42 }] }), /expected string/)
-  assert.throws(() => Config({ promptConfigs: [1] }), /expected object/)
-  assert.throws(() => PromptSettingsSchema({ promptConfigs: 'x' }), /expected array/)
+test('Config / PromptSettingsSchema：引擎参数（promptConfigs 等）按预设存储，不进 Config/settings', () => {
+  const config = Config({})
+  const settings = PromptSettingsSchema({})
+  assert.equal('promptConfigs' in config, false)
+  assert.equal('firstTurnAnchor' in config, false)
+  assert.equal('usePtcMode' in config, false)
+  assert.equal('promptConfigs' in settings, false)
+  assert.equal('firstTurnAnchor' in settings, false)
+  assert.equal('promptText' in settings, false)
 })

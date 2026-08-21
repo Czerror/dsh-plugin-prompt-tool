@@ -241,6 +241,34 @@ export function cloneBuiltinPreset(id: string, autoSuffix = false): { ok: true; 
   }
 }
 
+/**
+ * 保存预设参数：写激活预设目录 preset.yml 的 params（merge）/ promptConfigs（整体替换）。
+ * parseDocument 保留注释与未知键（preset.yml 模板含大量注释）；空值键跳过
+ * （保留 preset.yml 模板默认）。写入后删除 prompt-tool.overrides.yml（旧参数覆盖
+ * 通道残留——参数已并入 preset.yml，避免旧值覆盖新值）。
+ */
+export function savePresetParams(
+  presetRoot: string,
+  templateName: string,
+  params: Record<string, unknown> | undefined,
+  promptConfigs: unknown[] | undefined,
+): void {
+  const file = join(presetRoot, templateName, 'preset.yml')
+  if (!existsSync(file)) throw new Error(`preset ${templateName} 无 preset.yml`)
+  const doc = parseDocument(readFileSync(file, 'utf8'), { logLevel: 'silent' })
+  if (params !== undefined) {
+    for (const [key, value] of Object.entries(params)) {
+      if (value === undefined || value === null) continue
+      doc.setIn(['params', key], value)
+    }
+  }
+  if (promptConfigs !== undefined) {
+    doc.setIn(['promptConfigs'], promptConfigs)
+  }
+  writeFileSync(file, doc.toString(), 'utf8')
+  rmSync(join(presetRoot, templateName, 'prompt-tool.overrides.yml'), { force: true })
+}
+
 /** 删除预设目录（预设根/<id>；含同名导入的 .bak-* 备份目录）。
  *  仅作用于预设根（官方 USER_PRESET_DIR），包内置模板天然不受影响；路径越界与非法 id 拒绝。
  *  删除后宿主 agent-presets 目录列表自然不再出现该预设（官方 roster 即目录列表）。 */
