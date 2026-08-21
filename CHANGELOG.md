@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.5.0] - 2026-08-22
+
+### 角色卡 / 世界书 / ST 变量（SillyTavern 全链路）
+
+- **角色卡库**：SillyTavern 角色卡（PNG tEXt chunk `ccv3`/`chara` 或 chara_card JSON）导入独立库 `~/.dsh/.agent-presets/.characters/<id>/`（原图 / 原始 JSON / 转换参数 / 角色记忆），按需「导入到当前预设」（`chara-<卡>-` 前缀合并、幂等可移除）；多文件（角色卡 × 响应预设）自动合并；中文 id 支持
+- **角色记忆**：`memory.md` 跟随角色卡跨预设，应用时合并为 world-book constant 配置注入；世界书工具 `note` 参数按 id 前缀归属写入卡记忆
+- **世界书回归模块体系**：`character_book` 转 world-book 策略配置（`keys` 命中触发 / `constant` 常驻 / `useRegex` 正则 / `caseSensitive` / `wholeWords`），与普通模块同一存储与编辑；模块列表「世界书」过滤 + 批量启用/禁用；旧 `worldBook` 段自动迁移
+- **ST 变量 fallback**：`setvar` 收集进 params、`getvar`（含默认值）改写 `{{key}}` 由引擎插值兜底（key 支持中文）；`trim`/注释/ERA 剥离、`{{user}}`/`{{char}}` 替换、TavernHelper 扩展注入物剥离
+- **模型工具 8 个**：`character_import/apply/remove/delete/list` + `world_book_list/upsert/delete`（会话中直接管理角色卡与世界书）
+- **UI**：角色管理页（方块卡片）、模块列表合并过滤下拉（全部/世界书/层级）+ 批量开关、备用开场白、TavernHelper 剥离
+- **依赖**：新增 `@deepseek-ai/dsh-tools`（模型工具注册）；`.gitattributes` 统一 LF
+
 ## [Unreleased]
 
 ### 适配 DSH v0.1.1-rc.1（2026-08-21）
