@@ -41,26 +41,20 @@ function makeOptions(presetDir) {
   }
 }
 
-test('writePreset 子预设 engine 按需复制（组合引用闭包，无 compositions）', () => {
+test('writePreset 容器根共享引擎：子预设不复制 engine，组合引用 ../engine', () => {
   const dir = join(tmpdir(), `prompt-tool-wp-${process.pid}-${Date.now()}`)
   const presetDir = join(dir, 'preset')
   try {
     writePreset('PROMPT', makeOptions(presetDir))
-    const engineDir = join(presetDir, 'anchored', 'engine')
-    // 组合直接引用的本地引擎模块（anchored 全量 8 个）。
-    for (const rel of ['context-gate.mjs', 'tool-filter.mjs', 'tool-bootstrap.mjs',
-      'router-first-turn.mjs', 'prompt-config-engine.mjs', 'run-code-env.mjs',
-      'custom-bash.mjs', 'skill-search.mjs']) {
-      assert.ok(existsSync(join(engineDir, rel)), `${rel} 应随组合复制`)
-    }
-    // 静态 import 闭包。
-    for (const rel of ['shared.mjs', 'compaction-epoch.mjs', 'schema.mjs',
-      'executor.mjs', 'layers.mjs', 'strategies.mjs', 'fillers.mjs']) {
-      assert.ok(existsSync(join(engineDir, rel)), `${rel} 闭包依赖应复制`)
-    }
-    // schema → vendor/yaml 整体复制；生成期组合库不复制。
-    assert.ok(existsSync(join(engineDir, 'vendor', 'yaml', 'index.js')), 'vendor/yaml 应复制')
-    assert.equal(existsSync(join(engineDir, 'compositions')), false, 'compositions 生成期文件不复制')
+    // 容器根共享引擎完整存在（含组合库与 vendor）。
+    const engineDir = join(presetDir, 'engine')
+    assert.ok(existsSync(join(engineDir, 'prompt-config-engine.mjs')), '容器根共享引擎存在')
+    assert.ok(existsSync(join(engineDir, 'vendor', 'yaml', 'index.js')), '容器根共享引擎含 vendor')
+    assert.equal(existsSync(join(presetDir, 'anchored', 'engine')), false, '子预设不再复制 engine')
+    // 子预设组合路径重写：引擎引用 ../engine（相对子预设 = 容器根），configsDir 相对容器根引擎。
+    const sub = readFileSync(join(presetDir, 'anchored', 'agent.cordis.yml'), 'utf8')
+    assert.match(sub, /name: \.\.\/engine\/prompt-config-engine\.mjs/, '子预设引擎引用 ../engine（容器根共享）')
+    assert.match(sub, /configsDir: \.\/anchored\/prompt-configs/, 'configsDir 相对容器根引擎指向子预设')
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
@@ -266,8 +260,7 @@ test('writePreset 自定义预设（custom，所有参数为空）渲染安全',
     assert.ok(!/__[A-Z0-9_]+__/.test(agent), '不应残留未解析 token')
     const promptConfigs = readdirSync(join(presetDir, 'custom', 'prompt-configs'))
     assert.equal(promptConfigs.length, 0, '自定义预设 promptConfigs 应为空')
-    assert.equal(existsSync(join(presetDir, 'custom', 'engine', 'tool-filter.mjs')), false,
-      '自定义预设（默认骨架）不应复制未引用模块')
+    assert.equal(existsSync(join(presetDir, 'custom', 'engine')), false, '子预设不复制 engine（共享于容器根）')
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
@@ -298,7 +291,7 @@ test('writePreset 失败时保留旧生成目录', () => {
   }
 })
 
-test('writePreset 容器根薄转发：agent.cordis.yml 指向激活子预设，子预设内相对路径不变', () => {
+test('writePreset 容器根薄转发：agent.cordis.yml 指向容器根共享引擎与激活子预设配置', () => {
   const dir = join(tmpdir(), `prompt-tool-fwd-${process.pid}-${Date.now()}`)
   const presetDir = join(dir, 'preset')
   try {
@@ -307,12 +300,13 @@ test('writePreset 容器根薄转发：agent.cordis.yml 指向激活子预设，
     const rows = parseYaml(forwarded)
     const engine = rows.find((row) => row?.id === 'prompt-config-engine')
     assert.ok(engine, '容器根转发应含 prompt-config-engine 行')
-    assert.equal(engine.name, './anchored/engine/prompt-config-engine.mjs', '转发 name 应指向子预设引擎')
+    assert.equal(engine.name, './engine/prompt-config-engine.mjs', '转发 name 指向容器根共享引擎')
+    assert.equal(engine.config.configsDir, './anchored/prompt-configs', '转发 configsDir 指向激活子预设配置')
     const subagent = readFileSync(join(presetDir, 'anchored', 'agent.cordis.yml'), 'utf8')
     const subRows = parseYaml(subagent)
     const subEngine = subRows.find((row) => row?.id === 'prompt-config-engine')
-    assert.equal(subEngine.name, './engine/prompt-config-engine.mjs', '子预设组合保持原始相对路径')
-    assert.equal(subEngine.config.configsDir, '../prompt-configs', 'configsDir 相对子预设引擎文件解析')
+    assert.equal(subEngine.name, '../engine/prompt-config-engine.mjs', '子预设引擎引用 ../engine（容器根共享）')
+    assert.equal(subEngine.config.configsDir, './anchored/prompt-configs', 'configsDir 相对容器根引擎指向子预设')
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
@@ -334,7 +328,8 @@ test('writePreset 预设隔离：多模板并存，overrides 随子预设互不�
     assert.ok(!existsSync(join(presetDir, 'minimal', 'prompt-tool.overrides.yml')), 'minimal 无 anchored 的 overrides（隔离）')
     // 转发跟随最新激活预设
     const forwarded = readFileSync(join(presetDir, 'agent.cordis.yml'), 'utf8')
-    assert.match(forwarded, /\.\/minimal\/engine\//, '转发应指向 minimal')
+    assert.match(forwarded, /\.\/engine\//, '转发指向容器根共享引擎')
+    assert.match(forwarded, /configsDir: \.\/minimal\/prompt-configs/, '转发 configsDir 跟随激活预设 minimal')
     // 切回 anchored：overrides 仍在
     writePreset('PROMPT', makeOptions(presetDir))
     const overrides = readFileSync(join(presetDir, 'anchored', 'prompt-tool.overrides.yml'), 'utf8')
@@ -354,7 +349,8 @@ test('writePreset 旧单目录结构迁移：根残留清理 + overrides 归位�
     writeFileSync(join(presetDir, 'agent.cordis.yml'), 'stale', 'utf8')
     writeFileSync(join(presetDir, 'prompt-tool.overrides.yml'), 'firstTurnWord: legacy\n', 'utf8')
     writePreset('PROMPT', makeOptions(presetDir))
-    assert.ok(!existsSync(join(presetDir, 'engine')), '容器根残留 engine/ 已清理')
+    assert.equal(existsSync(join(presetDir, 'engine', 'stale.mjs')), false, '容器根旧单目录 engine 残留已重刷为共享引擎')
+    assert.ok(existsSync(join(presetDir, 'engine', 'prompt-config-engine.mjs')), '容器根现为共享引擎')
     assert.ok(!existsSync(join(presetDir, 'prompt-tool.overrides.yml')), '容器根旧 overrides 已清理')
     assert.equal(
       readFileSync(join(presetDir, 'anchored', 'prompt-tool.overrides.yml'), 'utf8'),

@@ -45,7 +45,7 @@ test('preset/liangshen 渲染：模块清单 + moduleConfigs 表达两阶段锚�
     // 两阶段锚定：tool-bootstrap 行（引擎模块，非本地 .mjs）。
     const bootstrap = byId.get('tool-bootstrap')
     assert.ok(bootstrap, '应含 tool-bootstrap 行')
-    assert.equal(bootstrap.name, './engine/tool-bootstrap.mjs', '指向引擎模块而非本地 .mjs')
+    assert.equal(bootstrap.name, '../engine/tool-bootstrap.mjs', '指向容器根共享引擎模块而非本地 .mjs')
     assert.deepEqual(bootstrap.config.bootstrapTools, ['bash', 'str_replace_editor'])
     assert.equal(bootstrap.config.promoteGate, true)
     assert.equal(bootstrap.config.maxPromoteSteps, 4)

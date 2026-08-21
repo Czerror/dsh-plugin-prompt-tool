@@ -11,10 +11,12 @@ const name = 'prompt-config-engine'
 const PROJECT_CANDIDATES = ['AGENTS.md', 'CLAUDE.md', 'AGENTS.local.md', 'CLAUDE.local.md']
 const USER_GLOBAL_CANDIDATE = 'AGENTS.md'
 
-/** instruction-hint 提示文本:agents-instruction.txt 优先,否则动态探测。 */
-function readAgentsInstructionText() {
+/** instruction-hint 提示文本:agents-instruction.txt 优先,否则动态探测。
+ *  path 可经提示词配置 params.agentsInstructionPath 指定（共享引擎时引擎文件在
+ *  容器根，必须显式指向子预设内的文件）。 */
+function readAgentsInstructionText(path = './agents-instruction.txt') {
   try {
-    return readFileSync(new URL('./agents-instruction.txt', import.meta.url), 'utf8').trim()
+    return readFileSync(new URL(path, import.meta.url), 'utf8').trim()
   } catch {
     return ''
   }
@@ -78,7 +80,14 @@ function createInstructionHintResolver(config) {
   const customText = typeof config?.params?.text === 'string' && config.params.text.trim().length > 0
     ? config.params.text.trim()
     : ''
-  const agentsInstructionText = readAgentsInstructionText()
+  // 共享引擎：引擎文件在容器根，agents-instruction.txt 必须经
+  // params.agentsInstructionPath 显式指向子预设内文件（旧版子预设无此参数时回退
+  // './agents-instruction.txt'——引擎文件与内容资产同目录的旧布局）。
+  const instructionPath = typeof config?.params?.agentsInstructionPath === 'string'
+    && config.params.agentsInstructionPath.trim().length > 0
+    ? config.params.agentsInstructionPath
+    : './agents-instruction.txt'
+  const agentsInstructionText = readAgentsInstructionText(instructionPath)
   return async ({ ctx, agent, session }) => {
     const id = `instruction-hint-${session.id}`
     if (customText.length > 0) {
