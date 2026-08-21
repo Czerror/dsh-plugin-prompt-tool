@@ -3,7 +3,7 @@
 # 提示：把本文件放入 promptConfigsDir 目录，或把对象写入 settings.promptConfigs 数组。
 id: example-anchor
 name: 示例：固定锚点序
-enabled: true
+enabled: false
 layer: pre-step
 strategy: static
 configKind: anchor

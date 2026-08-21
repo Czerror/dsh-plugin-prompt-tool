@@ -5,7 +5,7 @@
 # 提示：把本文件放入 promptConfigsDir 目录，或把对象写入 settings.promptConfigs 数组。
 id: example-instruction-hint
 name: 示例：指令文件提示
-enabled: true
+enabled: false
 layer: pre-step
 strategy: placeholder
 fill: instruction-hint

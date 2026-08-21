@@ -4,7 +4,7 @@
 # 提示：把本文件放入 promptConfigsDir 目录，或把对象写入 settings.promptConfigs 数组。
 id: example-guide-auto
 name: 示例：每轮引导
-enabled: true
+enabled: false
 layer: pre-step
 strategy: guide-auto
 position: after-user

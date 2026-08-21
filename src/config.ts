@@ -2,9 +2,7 @@
 import z from '@deepseek-ai/schemastery'
 import { settingsNamespace } from '@deepseek-ai/dsh-settings'
 import type { SettingsNamespace } from '@deepseek-ai/dsh-settings'
-import { join } from 'node:path'
 import type { PromptConfigSpec } from './host/prompt-configs.ts'
-import { loadPresetSpec, packagePresetDir, resolvePresetParams } from './host/manifest.ts'
 import {
   DEFAULT_PRESET_DIR,
   DEFAULT_PRESET_ORDER,
@@ -20,26 +18,6 @@ export const NS: SettingsNamespace = settingsNamespace('prompt-tool')
  * 枚举级权威校验归 engine 的 createPromptConfigs，避免两处枚举漂移。
  */
 const PromptConfigEntrySchema = z.object({ id: z.string().required() }) as unknown as z<PromptConfigSpec>
-
-// 自动每轮引导文本：唯一来源是 preset/anchored/preset.yml 的 guideWeak / guideDeep。
-// 这里只负责读取 preset 参数并组装成 settings 编辑框默认内容，不再硬编码第二份文本。
-function loadGuideDefaults(): { weak: string; deep: string } {
-  try {
-    const spec = loadPresetSpec(join(packagePresetDir(), 'anchored'))
-    const params = resolvePresetParams(spec, {})
-    const weak = typeof params.guideWeak === 'string' ? params.guideWeak : ''
-    const deep = typeof params.guideDeep === 'string' ? params.guideDeep : ''
-    return { weak, deep }
-  } catch {
-    return { weak: '', deep: '' }
-  }
-}
-
-const GUIDE_DEFAULTS = loadGuideDefaults()
-/** 每轮引导文本框的默认内容：写入自动引导的两段文本。 */
-export const DEFAULT_GUIDE_TEXT = GUIDE_DEFAULTS.weak.length > 0 || GUIDE_DEFAULTS.deep.length > 0
-  ? `简单任务自动引导：${GUIDE_DEFAULTS.weak.trim()}\n\n复杂任务自动引导：${GUIDE_DEFAULTS.deep.trim()}`
-  : ''
 
 export interface Config {
   /** 是否用 AGENTS.md 内容替换本地 instruction-hint 的默认提示文本（默认关闭）。 */
@@ -135,7 +113,7 @@ export const Config: z<Config> = z.object({
   firstTurnAnchor: z.boolean().default(false),
   firstTurnText: z.string().default(''),
   firstTurnCustom: z.boolean().default(false),
-  guideText: z.string().default(DEFAULT_GUIDE_TEXT),
+  guideText: z.string().default(''),
   guideCustom: z.boolean().default(false),
   modelProvider: z.string().default(''),
   modelName: z.string().default(''),
@@ -286,7 +264,7 @@ export const PromptSettingsSchema: z<PromptSettings> = z.object({
   firstTurnAnchor: z.boolean().default(false),
   firstTurnText: z.string().default(''),
   firstTurnCustom: z.boolean().default(false),
-  guideText: z.string().default(DEFAULT_GUIDE_TEXT),
+  guideText: z.string().default(''),
   guideCustom: z.boolean().default(false),
   modelProvider: z.string().default(''),
   modelName: z.string().default(''),

@@ -245,6 +245,13 @@ export function renderEngineTokens(params: Record<string, unknown>): Record<stri
     || (provider.length > 0 && model.length > 0 ? mainPersona : '')
   const toolFilterAllow = parseListParam(params.toolFilterAllow)
   const toolFilterDeny = parseListParam(params.toolFilterDeny)
+  // 主会话工具过滤（tool-filter 模块）：与子代理 toolFilter 共用同一扁平键，
+  // 作用于任意注册工具（含第三方插件工具）。空列表 = 不过滤（不写行）。
+  const mainFilterAllow = parseListParam(params.toolFilterAllow)
+  const mainFilterDeny = parseListParam(params.toolFilterDeny)
+  const mainFilterSubagents = params.toolFilterSubagents === true
+  const mainFilterAllowLine = mainFilterAllow.length > 0 ? `[${mainFilterAllow.join(', ')}]` : ''
+  const mainFilterDenyLine = mainFilterDeny.length > 0 ? `[${mainFilterDeny.join(', ')}]` : ''
   const rawMaxDepth = params.maxDepth
   const subagentMaxDepth = rawMaxDepth === 'provider-managed'
     ? 'provider-managed'
@@ -290,6 +297,9 @@ export function renderEngineTokens(params: Record<string, unknown>): Record<stri
         ? `[${params.allowKinds.map((item) => String(item)).join(', ')}]`
         : asString(params.allowKinds),
     STR_REPLACE_EDITOR_MAX_OUTPUT_CHARS: editorMaxOutputChars,
+    MAIN_TOOL_FILTER_ALLOW: mainFilterAllowLine,
+    MAIN_TOOL_FILTER_DENY: mainFilterDenyLine,
+    MAIN_TOOL_FILTER_SUBAGENTS: String(mainFilterSubagents),
   }
 }
 

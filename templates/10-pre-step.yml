@@ -4,7 +4,7 @@
 # audience 为配置项（缺省=公用；main=仅主会话；subagent=仅子代理），模板不锁定。
 id: example-pre-step
 name: 示例：消息批注入
-enabled: true
+enabled: false
 layer: pre-step
 strategy: static
 position: after-user

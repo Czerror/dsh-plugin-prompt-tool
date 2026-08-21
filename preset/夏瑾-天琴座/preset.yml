@@ -1,14 +1,23 @@
 id: xiajin-lyra
 name: 夏瑾 天琴座 Beta 2.42（SillyTavern 转换）
-description: "由 SillyTavern 预设「夏瑾 天琴座 Beta 2.42」按需转换：130 条配置（main/nsfw/jailbreak/enhanceDefinitions/st-prompt-13/st-prompt-14/st-prompt-15/st-prompt-16/st-prompt-17/st-prompt-18/st-prompt-19/st-prompt-20/st-prompt-21/st-prompt-22/st-prompt-23/st-prompt-25/st-prompt-26/st-prompt-27/st-prompt-28/st-prompt-29/st-prompt-30/st-prompt-32/st-prompt-33/st-prompt-34/st-prompt-35/st-prompt-36/st-prompt-37/st-prompt-38/st-prompt-39/st-prompt-40/st-prompt-41/st-prompt-42/st-prompt-43/st-prompt-44/st-prompt-45/st-prompt-46/st-prompt-47/st-prompt-48/st-prompt-49/st-prompt-50/st-prompt-51/st-prompt-52/st-prompt-53/st-prompt-54/st-prompt-55/st-prompt-56/st-prompt-57/st-prompt-58/st-prompt-59/st-prompt-60/st-prompt-61/st-prompt-62/st-prompt-63/st-prompt-64/st-prompt-65/st-prompt-66/st-prompt-67/st-prompt-68/st-prompt-69/st-prompt-70/st-prompt-71/st-prompt-72/st-prompt-73/st-prompt-74/st-prompt-75/st-prompt-76/st-prompt-77/st-prompt-78/st-prompt-79/st-prompt-80/st-prompt-81/st-prompt-82/st-prompt-83/st-prompt-84/st-prompt-86/st-prompt-87/st-prompt-88/st-prompt-89/st-prompt-90/st-prompt-91/st-prompt-92/st-prompt-93/st-prompt-94/st-prompt-95/st-prompt-96/st-prompt-97/st-prompt-98/st-prompt-99/st-prompt-100/st-prompt-101/st-prompt-102/st-prompt-103/st-prompt-104/st-prompt-105/st-prompt-106/st-prompt-107/st-prompt-108/st-prompt-109/st-prompt-110/st-prompt-111/st-prompt-112/st-prompt-113/st-prompt-115/st-prompt-116/st-prompt-117/st-prompt-118/st-prompt-119/st-prompt-120/st-prompt-121/st-prompt-122/st-prompt-123/SPresetSettings/st-prompt-125/st-prompt-126/st-prompt-127/st-prompt-128/st-prompt-129/st-prompt-130/st-prompt-131/st-prompt-132/st-prompt-133/st-prompt-134/st-prompt-135/st-prompt-136/st-prompt-137/st-prompt-138/st-prompt-139/st-prompt-140/st-prompt-141/st-sampling）。modules 按需组装（persona + prompt-config-engine）。已丢弃：dialogueExamples: 空内容；chatHistory: 空内容；worldInfoAfter: 空内容；worldInfoBefore: 空内容；charDescription: 空内容；charPersonality: 空内容；scenario: 空内容；personaDescription: 空内容；2de8eb3f-9b2c-4b64-8f3f-5233941031bd: 空内容；738b5ad4-9ca1-4d5f-8b35-33bace0286cf: 空内容；1ae96c42-e1aa-4a4a-8862-79e9ddf89819: 空内容；3be1ed2b-f996-4077-ba55-f79b394873fb: 空内容；enable_web_search: false（不启用 web 搜索）"
 version: 1.0.0
 engineCompat: ">=0.4.2"
+params:
+  modelTemperature: "1"
+  modelMaxTokens: "32000"
+  modelReasoningEffort: high
 modules:
   - persona
   - prompt-config-engine
+  - tool-filter
 moduleConfigs:
   persona:
     complete: false
+  tool-filter:
+    includeSubagents: false
+    deny:
+      - web_search
+      - web_fetch
 promptConfigs:
   - id: main
     name: ➡️扩写/转述输入
@@ -2041,14 +2050,3 @@ promptConfigs:
     role: user
     position: before-all
     dedupe: none
-  - id: st-sampling
-    name: 采样参数（SillyTavern 转换）
-    enabled: true
-    strategy: static
-    layer: agent-request
-    order: -100
-    params:
-      patch:
-        temperature: 1
-        maxTokens: 32000
-        reasoningEffort: high

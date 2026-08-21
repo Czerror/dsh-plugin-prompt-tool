@@ -103,17 +103,37 @@ function runtimeOf(options: WritePresetOptions, prompt: string): Record<string, 
     subagentModelName: typeof options.subagentModelName === 'string' && options.subagentModelName.length > 0
       ? options.subagentModelName
       : '',
-    modelReasoningEffort: typeof options.modelReasoningEffort === 'string' ? options.modelReasoningEffort : '',
-    modelTemperature: typeof options.modelTemperature === 'string' ? options.modelTemperature : '',
-    modelMaxTokens: typeof options.modelMaxTokens === 'string' ? options.modelMaxTokens : '',
-    subagentReasoningEffort: typeof options.subagentReasoningEffort === 'string' ? options.subagentReasoningEffort : '',
-    subagentTemperature: typeof options.subagentTemperature === 'string' ? options.subagentTemperature : '',
-    subagentMaxTokens: typeof options.subagentMaxTokens === 'string' ? options.subagentMaxTokens : '',
+    // 模型参数空值不覆盖：spec.params（预设模板默认）保留，settings 显式值优先。
+    modelReasoningEffort: typeof options.modelReasoningEffort === 'string' && options.modelReasoningEffort.length > 0
+      ? options.modelReasoningEffort
+      : undefined,
+    modelTemperature: typeof options.modelTemperature === 'string' && options.modelTemperature.length > 0
+      ? options.modelTemperature
+      : undefined,
+    modelMaxTokens: typeof options.modelMaxTokens === 'string' && options.modelMaxTokens.length > 0
+      ? options.modelMaxTokens
+      : undefined,
+    subagentReasoningEffort: typeof options.subagentReasoningEffort === 'string' && options.subagentReasoningEffort.length > 0
+      ? options.subagentReasoningEffort
+      : undefined,
+    subagentTemperature: typeof options.subagentTemperature === 'string' && options.subagentTemperature.length > 0
+      ? options.subagentTemperature
+      : undefined,
+    subagentMaxTokens: typeof options.subagentMaxTokens === 'string' && options.subagentMaxTokens.length > 0
+      ? options.subagentMaxTokens
+      : undefined,
     subagentPersona: typeof options.subagentPersona === 'string' && options.subagentPersona.length > 0
       ? options.subagentPersona
       : '',
-    toolFilterAllow: options.toolFilterAllow,
-    toolFilterDeny: options.toolFilterDeny,
+    // 工具过滤空值不覆盖：spec.params（预设模板默认）保留，settings/overrides 显式值优先。
+    toolFilterAllow: options.toolFilterAllow !== undefined
+      && (Array.isArray(options.toolFilterAllow) ? options.toolFilterAllow.length > 0 : String(options.toolFilterAllow).trim().length > 0)
+      ? options.toolFilterAllow
+      : undefined,
+    toolFilterDeny: options.toolFilterDeny !== undefined
+      && (Array.isArray(options.toolFilterDeny) ? options.toolFilterDeny.length > 0 : String(options.toolFilterDeny).trim().length > 0)
+      ? options.toolFilterDeny
+      : undefined,
     maxDepth: options.maxDepth,
     // 空值不覆盖：mainPersona 引擎必需非空（空串会触发 router-first-turn 抛错），
     // firstTurnWord 空应回退 preset.yml 模板默认（we）。
@@ -127,13 +147,14 @@ function runtimeOf(options: WritePresetOptions, prompt: string): Record<string, 
   }
 }
 
-/** 模型参数（思维程度/温度/输出上限）→ agent-request 提示词配置（官方 LlmCallConfig patch 浅合并）。 */
-function modelRequestConfigs(options: WritePresetOptions): PromptConfigSpec[] {
+/** 模型参数（思维程度/温度/输出上限）→ agent-request 提示词配置（官方 LlmCallConfig patch 浅合并）。
+ *  读合并后 params（preset.yml 模板默认 + settings/overrides 覆盖），空值不产生配置。 */
+function modelRequestConfigs(params: Record<string, unknown>): PromptConfigSpec[] {
   const patchOf = (prefix: 'model' | 'subagent'): Record<string, unknown> => {
     const patch: Record<string, unknown> = {}
-    const effort = options[`${prefix}ReasoningEffort`]
-    const temperature = options[`${prefix}Temperature`]
-    const maxTokens = options[`${prefix}MaxTokens`]
+    const effort = params[`${prefix}ReasoningEffort`]
+    const temperature = params[`${prefix}Temperature`]
+    const maxTokens = params[`${prefix}MaxTokens`]
     if (typeof effort === 'string' && effort.trim().length > 0) patch.reasoningEffort = effort.trim()
     const temp = typeof temperature === 'string' ? Number(temperature) : NaN
     if (typeof temperature === 'string' && temperature.trim().length > 0 && Number.isFinite(temp)) patch.temperature = temp
@@ -254,7 +275,7 @@ export function writePreset(prompt: string, options: WritePresetOptions): void {
     templateDefaults = []
   }
   // 模型参数（agent-request）作为引擎默认级注入，优先级低于模板与 settings。
-  const merged = mergePromptConfigs(modelRequestConfigs(options), templateDefaults, options.promptConfigs)
+  const merged = mergePromptConfigs(modelRequestConfigs(params), templateDefaults, options.promptConfigs)
   for (const [index, config] of merged.entries()) {
     writeFileSync(join(promptConfigsDir, `${String(index * 10).padStart(2, '0')}-${config.id}.yml`), renderPromptConfigYaml(config), 'utf8')
   }

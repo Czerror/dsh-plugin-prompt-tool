@@ -3,7 +3,7 @@
 # 提示：把本文件放入 promptConfigsDir 目录，或把对象写入 settings.promptConfigs 数组。
 id: example-custom-fallback
 name: 示例：自定义锚词兜底注入
-enabled: true
+enabled: false
 layer: pre-step
 strategy: custom-fallback
 position: before-all

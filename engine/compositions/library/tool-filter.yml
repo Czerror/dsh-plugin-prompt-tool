@@ -1,0 +1,12 @@
+# module: tool-filter
+# source: 本地附加（本项目主会话工具过滤；非官方模块）
+# 主会话常驻工具白名单/黑名单：作用于任意注册工具（含第三方插件工具）。
+# allow 非空 = 白名单（只保留列表内工具）；deny 非空 = 黑名单（移除列表内工具）；
+# 两者都空 = 不过滤（官方默认）。includeSubagents=true 时子代理同样过滤。
+
+- id: tool-filter
+  name: ./engine/tool-filter.mjs
+  config:
+    allow: __MAIN_TOOL_FILTER_ALLOW__
+    deny: __MAIN_TOOL_FILTER_DENY__
+    includeSubagents: __MAIN_TOOL_FILTER_SUBAGENTS__

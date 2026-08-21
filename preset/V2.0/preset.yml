@@ -1,14 +1,23 @@
 id: v2-0
 name: V2.0（SillyTavern 转换）
-description: "由 SillyTavern 预设「V2.0」按需转换：42 条配置（declarative/antiMark/main/nsfw/jailbreak/InertiaWaaagh/worldInfo_Start/enhanceDefinitions/worldInfo_End/FormatSet_Start/wordCount/TBC/antiSpoilersInfo/DeepSeek_adjust/antiStereotype/DIY_WritingStyle/MTdrive_MOD/ATdrive_MOD/Interactive_mode/Talker_mode/RealWorld/inner_monologue/thirdPerson/secondPerson/firstPerson/realWaaagh/fakeWaaagh/Fanatic_mode/Observer_mode/Interrogate_mode/Battle_mode/Analysis_mode/RP_mode/TimeInfo/DicePool/antiTruncation/normal_reminder/MVU_reminder/FormatSet_End/JustDoIt/StillThink/st-sampling）。modules 按需组装（persona + prompt-config-engine）。已丢弃：worldInfoBefore: 空内容；personaDescription: 空内容；charDescription: 空内容；charPersonality: 空内容；scenario: 空内容；worldInfoAfter: 空内容；dialogueExamples: 空内容；chatHistory: 空内容；chatHistory_point: 空内容；reasoning_effort: auto（dsh 仅支持 off/low/high/max）；enable_web_search: false（不启用 web 搜索）"
 version: 1.0.0
 engineCompat: ">=0.4.2"
+params:
+  modelTemperature: "1"
+  modelMaxTokens: "30000"
+  modelReasoningEffort: auto
 modules:
   - persona
   - prompt-config-engine
+  - tool-filter
 moduleConfigs:
   persona:
     complete: false
+  tool-filter:
+    includeSubagents: false
+    deny:
+      - web_search
+      - web_fetch
 promptConfigs:
   - id: declarative
     name: 说明信息（别开）
@@ -721,13 +730,3 @@ promptConfigs:
     role: user
     position: before-all
     dedupe: none
-  - id: st-sampling
-    name: 采样参数（SillyTavern 转换）
-    enabled: true
-    strategy: static
-    layer: agent-request
-    order: -100
-    params:
-      patch:
-        temperature: 1
-        maxTokens: 30000

@@ -188,16 +188,18 @@ params:
   firstTurnDeep: "Start your reasoning with the exact sentence: Let me think through the design before changing anything."
   firstTurnWord: we
   allowKinds: "[skill-invocation, near-anchor, router-guide]"
-# ── 模型路由与委派 · 主对话与子代理通用（全部可选，缺省 = 官方默认 / 继承宿主）──
-#   维度      preset.yml 键                         引擎渲染落点
+  # ── 模型路由与委派 · 主对话与子代理通用（全部可选，缺省 = 官方默认 / 继承宿主）──
+  #   维度      preset.yml 键                         引擎渲染落点
   #   模型      modelProvider / modelName（主对话）   agent-default-model 新会话默认模型
   #             subagentModelProvider / Name（子代理）tool-subagent agentOptions{provider,model}
   #   模型参数  modelReasoningEffort / Temperature / MaxTokens（主对话）
   #             subagentReasoningEffort / Temperature / MaxTokens（子代理）
   #             agent-request patch（官方 LlmCallConfig；audience 区分主/子；''=不设置）
   #   人设      subagentPersona                       tool-subagent persona
-#             （显式 → 固定路由回退 mainPersona → 继承主会话）
-#   工具集    toolFilter.allow / deny               tool-subagent toolFilter{allow,deny}
+  #             （显式 → 固定路由回退 mainPersona → 继承主会话）
+  #   工具集    toolFilter.allow / deny               tool-subagent toolFilter{allow,deny}
+  #             （主会话 tool-filter 模块共用同一扁平键，作用于任意注册工具，
+  #               含第三方插件工具；空列表 = 不过滤）
   #   深度      maxDepth                              tool-subagent maxDepth
   #             （0 禁止委派 / provider-managed / 正整数）
   #   相位/注入 由 promptConfigs[].audience/promotion/modelScope 与
@@ -276,27 +278,14 @@ promptConfigs:
     form: hint
     fill: instruction-hint
 legacyCleanup:
-  - prompt-injector.mjs
-  - near-anchor.mjs
-  - router-guide.mjs
-  - instruction-hint.mjs
-  - turn-anchor.mjs
-  - dev-tool-search.mjs
-  - prompt-config-engine.mjs
-  - shared.mjs
-  - compaction-epoch.mjs
-  - context-gate.mjs
-  - tool-bootstrap.mjs
-  - router-first-turn.mjs
-  - custom-bash.mjs
-  - skill-search.mjs
-  - run-code-env.mjs
+  []
 upstream:
   repo: dsh-anchored-standard
   snapshot: upstream/dsh-anchored-standard
   sync: pnpm sync:anchored
 modules:
   - context-gate
+  - tool-filter
   - tool-bootstrap
   - router-first-turn
   - prompt-config-engine
@@ -320,15 +309,6 @@ modules:
   - tool-todo
   - tool-web
 moduleConfigs:
-  # 引擎组合模块参数（本文件为唯一配置源；library 行默认值仅作未声明时的回退）。
-  # persona.complete 是可选功能开关（官方 assemble 语义）：
-  #   complete: true  = minimal 语义——persona 为唯一 system prompt，全局身份、
-  #                     plan-mode 段与 router-first-turn 的 persona 替换（Flash 路由
-  #                     人设）被官方 assemble 的 complete 恢复机制抑制；
-  #   complete: false = standard 语义——plan-mode 段与 Flash 路由人设生效。
-  # includeRuntimeContext: false 时 runtime-context 被永久抑制（context-gate 的
-  # 晋升后恢复失效）；true 时由 context-gate 动态控制（首轮清空、晋升后恢复）。
-  # 如需 standard 语义，把 complete 改为 false 并按需放开 includeRuntimeContext。
   persona:
     text: You are a helpful software engineer assistant.
     complete: true
@@ -347,6 +327,8 @@ moduleConfigs:
   context-gate:
     promoteOn: either
     includeSubagents: false
+  tool-filter:
+    includeSubagents: false
 hostDefaults:
   writePreset: true
   writeAgents: true
@@ -357,7 +339,6 @@ hostDefaults:
   presetDir: ~/.dsh/.agent-presets/prompt-tool
   presetOrder: 5
   fallbackText: ""
-  promptConfigsDir: ""
   promptConfigs: []
   skillSwitches: {}
   skillOrder: []

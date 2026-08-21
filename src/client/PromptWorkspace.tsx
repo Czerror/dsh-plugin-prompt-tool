@@ -319,12 +319,12 @@ function ModelToolCards(props: { store: PromptToolStore; scope: 'main' | 'subage
           </div>
         )}
       </CollapsibleCard>
-      <CollapsibleCard id="pt-delegation-tools" title="工具与深度" meta="工具集白名单/黑名单 + 注入 kind 白名单 + 递归深度">
-        <TagInput id="pt-tool-filter-allow" label="工具集白名单" hint="toolFilter.allow（委派子代理）；回车或逗号添加标签，× 移除；留空 = 不限制。每次增删立即保存。"
+<CollapsibleCard id="pt-delegation-tools" title="工具与深度" meta="工具集白名单/黑名单（主会话+子代理） + 注入 kind 白名单 + 递归深度">
+<TagInput id="pt-tool-filter-allow" label="工具集白名单" hint="toolFilter.allow：主会话常驻过滤（tool-filter 模块，作用于任意注册工具含自定义插件）+ 委派子代理 toolFilter；回车或逗号添加标签，× 移除；留空 = 不限制。每次增删立即保存。"
           value={fields.toolFilterAllow} placeholder="read, write, glob" disabled={!fields.writePreset}
           onChange={(value) => store.patch({ toolFilterAllow: value })}
           onCommit={() => void store.persistParamOverrides()} />
-        <TagInput id="pt-tool-filter-deny" label="工具集黑名单" hint="toolFilter.deny（委派子代理）；回车或逗号添加标签，× 移除；留空 = 不限制。每次增删立即保存。"
+<TagInput id="pt-tool-filter-deny" label="工具集黑名单" hint="toolFilter.deny：主会话常驻过滤（tool-filter 模块）+ 委派子代理 toolFilter；回车或逗号添加标签，× 移除；留空 = 不限制。每次增删立即保存。"
           value={fields.toolFilterDeny} placeholder="bash, run_code" disabled={!fields.writePreset}
           onChange={(value) => store.patch({ toolFilterDeny: value })}
           onCommit={() => void store.persistParamOverrides()} />

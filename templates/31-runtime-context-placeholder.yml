@@ -3,7 +3,7 @@
 # 提示：把本文件放入 promptConfigsDir 目录，或把对象写入 settings.promptConfigs 数组。
 id: example-runtime-context-placeholder
 name: 示例：运行时上下文技能目录
-enabled: true
+enabled: false
 layer: runtime-context
 strategy: placeholder
 fill: skill-catalog

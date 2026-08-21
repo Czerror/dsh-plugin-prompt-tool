@@ -286,10 +286,12 @@ test('importPresetPackage：SillyTavern JSON 单文件经转换引擎导入（�
   const presetFile = join(PRESETS, 'my-chara', 'preset.yml')
   assert.ok(existsSync(presetFile), '转换产物应落盘为 preset.yml')
   const converted = parseYaml(readFileSync(presetFile, 'utf8'))
-  assert.deepEqual(converted.modules, ['persona', 'prompt-config-engine'], 'system-section 注入需要 persona 模块')
+  assert.deepEqual(converted.modules, ['persona', 'prompt-config-engine', 'tool-filter'], 'system-section 注入需要 persona 模块；enable_web_search: false 改加 tool-filter 黑名单')
   assert.equal(converted.moduleConfigs.persona.complete, false, 'complete: false 允许 system-section 生效')
+  assert.equal(converted.modules.includes('tool-web'), false, 'enable_web_search: false 不组装 tool-web')
+  assert.deepEqual(converted.moduleConfigs['tool-filter'], { includeSubagents: false, deny: ['web_search', 'web_fetch'] }, 'false 时 tool-filter deny web 工具')
   const configs = converted.promptConfigs
-  assert.equal(configs.length, 3)
+  assert.equal(configs.length, 2, '采样参数归一到顶层 params 后不再生成 agent-request 配置')
   const main = configs.find((config) => config.id === 'main')
   assert.deepEqual(main, {
     id: 'main', name: '主提示', enabled: true, strategy: 'static', order: 100,
@@ -300,8 +302,11 @@ test('importPresetPackage：SillyTavern JSON 单文件经转换引擎导入（�
   assert.equal(nsfw.layer, 'pre-step')
   assert.equal(nsfw.role, 'user')
   assert.equal(nsfw.position, 'after-user')
-  const sampling = configs.find((config) => config.id === 'st-sampling')
-  assert.deepEqual(sampling.params.patch, { temperature: 0.8, maxTokens: 2048, reasoningEffort: 'low' })
+  // 采样参数 → 顶层 params.model*（主对话统一参数体系，字符串与 Config schema 对齐）。
+  assert.equal(converted.params.modelTemperature, '0.8')
+  assert.equal(converted.params.modelMaxTokens, '2048')
+  assert.equal(converted.params.modelReasoningEffort, 'low')
+  assert.equal(configs.find((config) => config.id === 'st-sampling'), undefined, '不再生成 st-sampling agent-request 配置')
 })
 
 test('importPresetPackage：SillyTavern JSON 非法内容返回 400 且不落盘', async () => {
@@ -312,6 +317,21 @@ test('importPresetPackage：SillyTavern JSON 非法内容返回 400 且不落盘
   assert.equal(payload.code, 'preset-package-invalid')
   assert.match(payload.message, /SillyTavern JSON 转换失败/)
   assert.ok(!existsSync(join(PRESETS, 'broken')), '转换失败不得写入')
+})
+
+test('importPresetPackage：SillyTavern enable_web_search=true 时组装 tool-web 并启用 fetch', async () => {
+  const { status, payload } = await importPackage({
+    files: [{ path: 'web.json', content: JSON.stringify({
+      name: 'web 角色',
+      prompts: [{ identifier: 'main', name: '主提示', content: '你是助手。', role: 'user', system_prompt: false, enabled: true }],
+      enable_web_search: true,
+    }) }],
+  })
+  assert.equal(status, 200)
+  const presetFile = join(PRESETS, 'web', 'preset.yml')
+  const converted = parseYaml(readFileSync(presetFile, 'utf8'))
+  assert.ok(converted.modules.includes('tool-web'), 'enable_web_search: true 应组装 tool-web')
+  assert.deepEqual(converted.moduleConfigs['tool-web'], { fetch: true }, 'true 时启用 fetch')
 })
 
 test.after(() => {

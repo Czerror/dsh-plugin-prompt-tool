@@ -8,11 +8,11 @@ import { parse } from 'yaml'
 const root = fileURLToPath(new URL('../..', import.meta.url))
 const read = (path) => readFileSync(join(root, path), 'utf8')
 
-test('模块清单由参数文件决定:preset/anchored/preset.yml 声明 23 个模块,且全部存在', () => {
+test('模块清单由参数文件决定:preset/anchored/preset.yml 声明 24 个模块,且全部存在', () => {
   const preset = parse(read('preset/anchored/preset.yml'))
   const modules = preset.modules
   assert.ok(Array.isArray(modules))
-  assert.equal(modules.length, 23)
+  assert.equal(modules.length, 24)
   for (const name of modules) {
     const file = `engine/compositions/library/${name}.yml`
     assert.ok(existsSync(join(root, file)), `missing module ${file}`)

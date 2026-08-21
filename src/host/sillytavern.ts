@@ -4,13 +4,12 @@
  * 按需转换原则：只按注入层级映射 SillyTavern 实际内容，不注入本项目默认内容。
  *   - prompts[] → promptConfigs：system_prompt+role=system → system-section（可拼接）；
  *     其余 → pre-step（role/position/dedupe 按 ST 语义）；
- *   - 采样参数 → agent-request 层 st-sampling（官方 LlmCallConfig patch）；
+ *   - 采样参数 → 顶层 params.model*（主对话统一参数体系；经 mergePresetDefaults
+ *     合并进 Config，由 writePreset 渲染为 agent-request patch，audience=main）；
  *   - modules 按需组装：prompt-config-engine 始终，system-section 注入需要
  *     persona（complete: false 允许 system-section 生效）。
  */
 import type { PresetSpec } from './manifest.ts'
-
-const REASONING_EFFORT_WHITELIST = new Set(['off', 'low', 'high', 'max'])
 
 /** SillyTavern JSON 预设卡片 → 本项目 PresetSpec（导入端点直接消费）。 */
 export function convertStToPreset(card: unknown, baseName: string): PresetSpec {
@@ -18,16 +17,12 @@ export function convertStToPreset(card: unknown, baseName: string): PresetSpec {
   const prompts = Array.isArray(record.prompts)
     ? (record.prompts as Array<Record<string, unknown>>).filter((item) => item !== null && typeof item === 'object')
     : []
-  const dropped: string[] = []
   const configs: Array<Record<string, unknown>> = []
   let systemSectionCount = 0
 
   for (const [index, prompt] of prompts.entries()) {
     const content = typeof prompt.content === 'string' ? prompt.content : ''
-    if (content.trim().length === 0) {
-      dropped.push(`${String(prompt.identifier ?? prompt.name ?? '未命名')}: 空内容`)
-      continue
-    }
+    if (content.trim().length === 0) continue
     const rawId = typeof prompt.identifier === 'string' ? prompt.identifier : ''
     const id = rawId.length > 0 && !/^[0-9a-f-]{36}$/i.test(rawId) ? rawId : `st-prompt-${index + 1}`
     const base = {
@@ -55,29 +50,18 @@ export function convertStToPreset(card: unknown, baseName: string): PresetSpec {
     }
   }
 
-  // 采样参数 → agent-request patch（官方 LlmCallConfig 支持 temperature/maxTokens/reasoningEffort）。
-  const patch: Record<string, unknown> = {}
-  if (typeof record.temperature === 'number') patch.temperature = record.temperature
-  if (typeof record.openai_max_tokens === 'number' && record.openai_max_tokens > 0) patch.maxTokens = record.openai_max_tokens
-  if (typeof record.reasoning_effort === 'string' && REASONING_EFFORT_WHITELIST.has(record.reasoning_effort)) {
-    patch.reasoningEffort = record.reasoning_effort
-  } else if (typeof record.reasoning_effort === 'string' && record.reasoning_effort.length > 0) {
-    dropped.push(`reasoning_effort: ${record.reasoning_effort}（dsh 仅支持 off/low/high/max）`)
+  // 采样参数 → 顶层 params.model*（本项目主对话统一参数体系，字符串与 Config schema 对齐；
+  // 由 writePreset 的 modelRequestConfigs 渲染为 agent-request patch，audience=main）。
+  const params: Record<string, unknown> = {}
+  if (typeof record.temperature === 'number') params.modelTemperature = String(record.temperature)
+  if (typeof record.openai_max_tokens === 'number' && record.openai_max_tokens > 0) {
+    params.modelMaxTokens = String(record.openai_max_tokens)
   }
-  if (Object.keys(patch).length > 0) {
-    configs.push({
-      id: 'st-sampling',
-      name: '采样参数（SillyTavern 转换）',
-      enabled: true,
-      strategy: 'static',
-      layer: 'agent-request',
-      order: -100,
-      params: { patch },
-    })
+  // reasoning_effort 透传任意非空字符串：官方 ReasoningEffortId 是不透明标识
+  // （适配器拥有，无校验），档位由模型适配器决定；仅丢弃非字符串/空值。
+  if (typeof record.reasoning_effort === 'string' && record.reasoning_effort.trim().length > 0) {
+    params.modelReasoningEffort = record.reasoning_effort.trim()
   }
-  dropped.push(record.enable_web_search === true
-    ? 'enable_web_search: true → 需 tool-web 模块（当前未启用）'
-    : 'enable_web_search: false（不启用 web 搜索）')
 
   // modules 按需组装：prompt-config-engine 始终；system-section 注入需要 persona 服务。
   const modules = ['prompt-config-engine']
@@ -88,14 +72,25 @@ export function convertStToPreset(card: unknown, baseName: string): PresetSpec {
     // text/includeRuntimeContext 不声明（用引擎模块库默认，不注入 anchored 内容）。
     moduleConfigs.persona = { complete: false }
   }
+  // enable_web_search → 按原 JSON 开关装配：
+  //   true  → 组装 tool-web（fetch: true 启用）；
+  //   false → 不组装 tool-web，改加 tool-filter 黑名单（deny web_search/web_fetch），
+  //           即使宿主/其他模块装配了 tool-web，本预设会话也不暴露 web 工具。
+  if (record.enable_web_search === true) {
+    modules.push('tool-web')
+    moduleConfigs['tool-web'] = { fetch: true }
+  } else if (record.enable_web_search === false) {
+    modules.push('tool-filter')
+    moduleConfigs['tool-filter'] = { includeSubagents: false, deny: ['web_search', 'web_fetch'] }
+  }
 
   const presetId = baseName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'sillytavern'
   return {
     id: presetId,
     name: `${baseName}（SillyTavern 转换）`,
-    description: `由 SillyTavern 预设「${baseName}」按需转换：${configs.length} 条配置（${configs.map((config) => String(config.id)).join('/')}）。modules 按需组装（${modules.join(' + ')}）。已丢弃：${dropped.join('；')}`,
     version: '1.0.0',
     engineCompat: '>=0.4.2',
+    ...(Object.keys(params).length > 0 ? { params } : {}),
     modules,
     moduleConfigs,
     promptConfigs: configs,

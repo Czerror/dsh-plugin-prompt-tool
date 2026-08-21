@@ -4,7 +4,7 @@
 # 提示：把本文件放入 promptConfigsDir 目录，或把对象写入 settings.promptConfigs 数组。
 id: example-first-turn-anchor
 name: 示例：首句锚点
-enabled: true
+enabled: false
 layer: pre-step
 strategy: first-turn-anchor
 position: after-user
