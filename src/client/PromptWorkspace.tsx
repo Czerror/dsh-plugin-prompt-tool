@@ -53,7 +53,7 @@ function PipelineStatusCards(props: { store: PromptToolStore }): ReactNode {
   const fields = store.fields
   const capped = fields.bootstrapMaxTokens > 0
   return (
-    <>
+    <div className={ui.configCardPair}>
       <article className={ui.configCard}>
         <header className={ui.configHeader}>
           <span className={ui.configTitle}>
@@ -94,7 +94,7 @@ function PipelineStatusCards(props: { store: PromptToolStore }): ReactNode {
           </span>
         </header>
       </article>
-    </>
+    </div>
   )
 }
 

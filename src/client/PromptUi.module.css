@@ -1066,6 +1066,13 @@
 
 /* 提示词配置列表：卡片 + 开关 + 四按钮 + 表单。 */
 .configList { display: flex; min-width: 0; flex-direction: column; gap: 10px; }
+/* 管线参数双卡片：同一行自适应两列（窄屏自动折行）。 */
+.configCardPair {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 10px;
+}
+.configCardPair > .configCard { min-width: 0; }
 .configCard {
   display: flex;
   flex-direction: column;
