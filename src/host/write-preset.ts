@@ -227,6 +227,58 @@ export function writePreset(prompt: string, options: WritePresetOptions): void {
   }
   const templateDir = resolvePresetDir(templateName)
   const spec = loadPresetSpec(templateDir)
+  // 世界书旧存储段一次性迁移：旧版 preset.yml 顶层 worldBook 段（injectMode + entries）
+  // → world-book 策略配置并入 spec.promptConfigs（模块体系），并删除段写回。
+  // 必须在第 2 步 preset.yml 生成之前执行——否则 existingPresetYaml 读到未删段的
+  // 旧文件，原子替换会把段带回来。新版转换/apply 直接写 promptConfigs，不再产生段。
+  const worldBook = spec.worldBook
+  if (worldBook !== undefined && worldBook !== null && Array.isArray(worldBook.entries)) {
+    const fullMode = worldBook.injectMode === 'full'
+    const migrated: PromptConfigSpec[] = []
+    for (const entry of worldBook.entries) {
+      if (entry === null || typeof entry !== 'object') continue
+      const content = typeof entry.text === 'string' ? entry.text : ''
+      if (content.trim().length === 0) continue
+      const id = String(entry.id ?? '')
+      if (id.length === 0) continue
+      const keys = Array.isArray(entry.keys) ? entry.keys.map(String).filter((key) => key.trim().length > 0) : []
+      const secondaryKeys = Array.isArray(entry.secondaryKeys)
+        ? entry.secondaryKeys.map(String).filter((key) => key.trim().length > 0) : []
+      const constant = entry.constant === true || fullMode || (keys.length === 0 && secondaryKeys.length === 0)
+      migrated.push({
+        id,
+        name: typeof entry.name === 'string' && entry.name.length > 0 ? entry.name : id,
+        enabled: entry.enabled !== false,
+        strategy: 'world-book',
+        order: typeof entry.order === 'number' ? entry.order : 100,
+        text: content,
+        layer: 'pre-step',
+        position: 'before-all',
+        params: {
+          constant,
+          ...(keys.length > 0 ? { keys } : {}),
+          ...(secondaryKeys.length > 0 ? { secondaryKeys } : {}),
+          ...(entry.caseSensitive === true ? { caseSensitive: true } : {}),
+          ...(entry.wholeWords === true ? { wholeWords: true } : {}),
+          ...(entry.useRegex === true ? { useRegex: true } : {}),
+        },
+      } satisfies PromptConfigSpec)
+    }
+    if (migrated.length > 0) {
+      spec.promptConfigs = [...(Array.isArray(spec.promptConfigs) ? spec.promptConfigs : []), ...migrated]
+      // 删除段并写回（一次性迁移；模板 preset.yml 无段时零开销跳过）。
+      const presetYamlPath = join(presetDir, templateName, 'preset.yml')
+      if (existsSync(presetYamlPath)) {
+        try {
+          const doc = parseDocument(readFileSync(presetYamlPath, 'utf8'), { logLevel: 'silent' })
+          doc.deleteIn(['worldBook'])
+          writeFileSync(presetYamlPath, doc.toString(), 'utf8')
+        } catch {
+          // 迁移写回失败不阻断（下次写入重试）；组合渲染用迁移后的 spec。
+        }
+      }
+    }
+  }
   const runtime = runtimeOf(options, prompt)
   const params = resolvePresetParams(spec, runtime)
 
@@ -375,43 +427,11 @@ export function writePreset(prompt: string, options: WritePresetOptions): void {
   }
   // 模型参数（agent-request）作为引擎默认级注入，优先级低于模板与 settings。
   const merged = mergePromptConfigs(modelRequestConfigs(params), templateDefaults, options.promptConfigs)
-  // 世界书（preset.yml 顶层 worldBook 段）→ world-book 策略配置（pre-step before-all）：
-  //   injectMode=full → 全部条目恒注入（constant=true）；
-  //   injectMode=keyword（缺省）→ 无 keys 条目恒注入（全局条目），有 keys 条目命中触发。
-  // 条目 id 带 chara-<卡>- 前缀由 characters.apply 合并时处理；这里保持原样。
-  const worldBook = spec.worldBook
-  if (worldBook !== undefined && worldBook !== null && Array.isArray(worldBook.entries)) {
-    const fullMode = worldBook.injectMode === 'full'
-    for (const entry of worldBook.entries) {
-      if (entry === null || typeof entry !== 'object') continue
-      const content = typeof entry.text === 'string' ? entry.text : ''
-      if (content.trim().length === 0) continue
-      const id = String(entry.id ?? '')
-      if (id.length === 0) continue
-      const keys = Array.isArray(entry.keys) ? entry.keys.map(String).filter((key) => key.trim().length > 0) : []
-      const secondaryKeys = Array.isArray(entry.secondaryKeys)
-        ? entry.secondaryKeys.map(String).filter((key) => key.trim().length > 0) : []
-      const constant = entry.constant === true || fullMode || (keys.length === 0 && secondaryKeys.length === 0)
-      merged.push({
-        id,
-        name: typeof entry.name === 'string' && entry.name.length > 0 ? entry.name : id,
-        enabled: entry.enabled !== false,
-        strategy: 'world-book',
-        order: typeof entry.order === 'number' ? entry.order : 100,
-        text: content,
-        layer: 'pre-step',
-        position: 'before-all',
-        params: {
-          constant,
-          ...(keys.length > 0 ? { keys } : {}),
-          ...(secondaryKeys.length > 0 ? { secondaryKeys } : {}),
-          ...(entry.caseSensitive === true ? { caseSensitive: true } : {}),
-          ...(entry.wholeWords === true ? { wholeWords: true } : {}),
-        },
-      } satisfies PromptConfigSpec)
-    }
-  }
   for (const [index, config] of merged.entries()) {
+    // 解析后 params（模板默认 + runtime/ST 变量收集）并入配置 params：world-book
+    // 条目与提示词文本的 {{key}} 插值可读到预设级变量（fallback 基准）。配置自身
+    // params 覆盖同名键（策略参数优先），prompt-injector 等特殊配置后续覆盖不受影响。
+    config.params = { ...params, ...config.params }
     // 内容资产单一事实源（大文本存生成目录文件，settings 覆盖层只保留轻字段）：
     // prompt-injector 的注入文本永远来自 preset.md（presetPrompt），settings 条目即使带 text 也强制清空，
     // 避免「settings 覆盖层整体替换模板条目」时把渲染产物 params.text 挤掉。

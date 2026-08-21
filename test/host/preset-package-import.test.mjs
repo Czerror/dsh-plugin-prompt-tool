@@ -322,8 +322,29 @@ test('importPresetPackage：SillyTavern JSON 非法内容返回 400 且不落盘
   assert.ok(!existsSync(join(PRESETS, 'broken')), '转换失败不得写入')
 })
 
-test('importPresetPackage：SillyTavern enable_web_search=true 时组装 tool-web 并启用 fetch', async () => {
+test('importPresetPackage：TavernHelper 扩展注入物剥离（JS 脚本不进入转换产物）', async () => {
   const { status, payload } = await importPackage({
+    files: [{ path: '带扩展角色.json', content: JSON.stringify({
+      spec: 'chara_card_v3', spec_version: '3.0', name: '带扩展角色',
+      first_mes: '你好',
+      data: {
+        name: '带扩展角色', first_mes: '你好',
+        extensions: {
+          tavern_helper: [['scripts', [{ type: 'script', name: 'ERA框架', content: 'import{Converter}from opencc-js' }]]],
+          regex_scripts: [{ scriptName: 'test' }],
+        },
+      },
+    }) }],
+  })
+  assert.equal(status, 200)
+  const presetFile = join(PRESETS, '带扩展角色', 'preset.yml')
+  const content = readFileSync(presetFile, 'utf8')
+  assert.ok(!content.includes('opencc') && !content.includes('tavern_helper') && !content.includes('regex_scripts'),
+    '扩展注入物（TavernHelper 脚本/正则）不进转换产物')
+})
+
+test('importPresetPackage：SillyTavern enable_web_search=true 时组装 tool-web 并启用 fetch', async () => {
+  const { status } = await importPackage({
     files: [{ path: 'web.json', content: JSON.stringify({
       name: 'web 角色',
       prompts: [{ identifier: 'main', name: '主提示', content: '你是助手。', role: 'user', system_prompt: false, enabled: true }],

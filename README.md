@@ -24,9 +24,11 @@ dsh --profile prompt-tool                                          # 首次启�
 - 🗂️ **内容与执行分离**：每条提示词配置一个 yml/json 放 `prompt-configs/`，引擎按文件名数字前缀顺序扫描
 - 🧩 **三源合并**：默认提示词配置 < 目录文件 < settings 数组，同名 `id` 覆盖
 - 🖥️ **独立工作台**：侧边栏「提示词工具」入口（主会话/子代理/注入层/技能设置/预设配置五页）+ 设置面板提示词配置页（列表/表单/模板插入/保存前校验）
-- 🧪 **六种内容策略**：`static / first-turn-anchor / guide-auto / custom-fallback / instruction-hint / placeholder`
+- 🧪 **七种内容策略**：`static / first-turn-anchor / guide-auto / custom-fallback / instruction-hint / placeholder / world-book`
 - 🛡️ **失败不伤会话**：单条失败跳过 + `warnOnce`；配置错误挂载时 fail loud；`dedupe: session` 持久幂等
 - 🎭 **SillyTavern 导入**：JSON 预设卡片一键转换为本地预设——`prompts[]` 映射提示词配置、采样参数进 `params.model*`、`enable_web_search` 按开关装配工具
+- 🎴 **角色卡库**：SillyTavern 角色卡（PNG tEXt chunk `ccv3`/`chara`，或 chara_card JSON）导入独立库（`.characters/<id>/`，含原图/转换参数/角色记忆），按需「导入到当前预设」（`chara-<卡>-` 前缀合并、幂等可移除），多文件自动合并
+- 📚 **世界书**：`character_book` 转 world-book 策略配置（`keys` 命中触发 / `constant` 常驻 / `useRegex` 正则），与模块卡片同一存储与编辑（模块列表「世界书」过滤 + 批量启用/禁用）；ST 变量规则（`setvar`/`getvar` 含默认值）由 params fallback 插值承载
 
 ## 预设参数体系
 
@@ -82,6 +84,30 @@ dsh --profile prompt-tool                                          # 首次启�
 - `modules` 按需装配：`prompt-config-engine` 始终；含 system-section 时补 `persona`（`complete: false` 允许 system 段生效）
 
 转换结果是一个普通预设（id 由文件名生成），可在工作台预设切换器中直接使用。字段级参数对照与完整示例见 [SillyTavern.md](SillyTavern.md)。
+
+### 角色卡（PNG / JSON）与角色卡库
+
+工作台「角色管理」页导入角色卡到**角色卡库**（`~/.dsh/.agent-presets/.characters/<id>/`）：
+
+- **PNG**：tEXt chunk（`ccv3` 优先 / `chara` 兜底）base64 解析，原图存 `avatar.png`（字节无损）
+- **JSON**：chara_card_v2/v3 直接转换；多文件（角色卡 × 响应预设）自动合并
+- 正文映射：`first_mes` → 开场白（`dedupe: session`）、`alternate_greetings` → 备用开场白、
+  `description/personality/scenario` → 角色设定、采样参数 → `params.model*`
+- **导入到当前预设**：参数合并进当前预设 promptConfigs（`chara-<卡>-` 前缀、幂等）；可一键移除
+- **角色记忆**：`memory.md` 跟随角色卡跨预设，应用时合并为 world-book constant 配置注入
+
+### 世界书（world-book 策略）
+
+`character_book` 条目转 world-book 策略配置（与普通模块同一存储/编辑）：
+
+- **注入语义**：`constant` 常驻注入；有 `keys` 命中聊天内容才注入；无 keys 全局每次注入
+- **匹配选项**：`caseSensitive` / `wholeWords` / `useRegex`（keys 按正则）
+- **管理**：模块列表顶部下拉选「世界书」过滤（完整模块卡片编辑 + 批量启用/禁用）；
+  模型工具 `world_book_list/upsert/delete`（`note` 写入角色卡记忆）
+- **ST 变量**：`setvar` 收集进 params、`getvar`（含默认值）改写为 `{{key}}` 由引擎插值兜底；
+  `trim`/注释/ERA 剥离，`{{user}}`/`{{char}}` 替换；TavernHelper 扩展注入物自动剥离
+
+详细转换规则见 [SillyTavern.md](SillyTavern.md)。
 
 ## 开发与验证
 

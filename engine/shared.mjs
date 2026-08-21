@@ -124,7 +124,7 @@ export function interpolateVariables(text, variables, session) {
     WORKSPACE: process.env.DSH_WORKSPACE ?? session?.header?.cwd ?? process.cwd(),
     CWD: session?.header?.cwd ?? process.cwd(),
   }
-  return text.replace(/\{\{([A-Za-z0-9_.-]+)\}\}/g, (whole, key) => {
+  return text.replace(/\{\{([A-Za-z0-9_.\u4e00-\u9fff-]+)\}\}/g, (whole, key) => {
     if (Object.prototype.hasOwnProperty.call(variables, key)) return String(variables[key])
     return Object.prototype.hasOwnProperty.call(builtins, key) ? builtins[key] : whole
   })
@@ -132,6 +132,6 @@ export function interpolateVariables(text, variables, session) {
 
 /** 仅做配置级静态变量替换(无 session 上下文的层)。 */
 export function interpolateStatic(text, variables) {
-  return text.replace(/\{\{([A-Za-z0-9_.-]+)\}\}/g, (whole, key) =>
+  return text.replace(/\{\{([A-Za-z0-9_.\u4e00-\u9fff-]+)\}\}/g, (whole, key) =>
     Object.prototype.hasOwnProperty.call(variables, key) ? String(variables[key]) : whole)
 }

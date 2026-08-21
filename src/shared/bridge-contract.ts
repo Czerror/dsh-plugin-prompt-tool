@@ -6,7 +6,7 @@
  */
 export const SETTINGS_BRIDGE_PREFIX = '/api/prompt-tool/settings'
 
-/** 26 个桥端点路径（相对前缀）。新增端点必须同时登记到契约测试。 */
+/** 22 个桥端点路径（相对前缀）。新增端点必须同时登记到契约测试。 */
 export const BRIDGE_ENDPOINTS = {
   meta: '/meta',
   describe: '/describe',
@@ -30,10 +30,6 @@ export const BRIDGE_ENDPOINTS = {
   charactersDelete: '/characters-delete',
   charactersApply: '/characters-apply',
   charactersRemove: '/characters-remove',
-  worldbookList: '/worldbook-list',
-  worldbookUpsert: '/worldbook-upsert',
-  worldbookDelete: '/worldbook-delete',
-  worldbookMode: '/worldbook-mode',
 } as const
 
 export type BridgeEndpoint = (typeof BRIDGE_ENDPOINTS)[keyof typeof BRIDGE_ENDPOINTS]

@@ -40,7 +40,7 @@ content:
     1. 思维链使用简体中文。
     2. 回答内容使用简体中文。
 
-# ── params：引擎行为参数（34 键，全部可选，缺省 = 官方默认）──────────────────
+# ── params：引擎行为参数（33 键，全部可选，缺省 = 官方默认）──────────────────
 params:
   # ── 锚定（首轮任务类型判定）──
   firstTurnAnchor: true          # true=首轮启用任务锚定（判定 build/fix/deep）
@@ -101,6 +101,10 @@ params:
 # dedupe / promotion / subagents / modelScope / configKind / order / role /
 # text / texts / templateFile / fill / variables / params / identity /
 # mergeMode / group / exclusive。
+# strategy 七种：static（静态文本）/ first-turn-anchor（首轮任务锚定）/
+# guide-auto（每轮路由引导）/ custom-fallback（锚定词兜底注入）/
+# instruction-hint（指令文件提示）/ placeholder（动态填充：env-facts 等）/
+# world-book（世界书条目，见下方专项说明）。
 # 六个 layer 全覆盖：pre-step（下方默认四条）、system-section / runtime-context /
 # agent-request / llm-stream / tool-pipeline 的参数说明与示例见本段下方各块。
 # 默认四条（子代理默认全部放行/跟随；如需仅主会话/仅子代理，显式写
@@ -155,6 +159,45 @@ promptConfigs:
     sourceKind: instruction-hint
     form: hint
     fill: instruction-hint
+
+# ── world-book 策略（世界书条目，SillyTavern character_book 转换落点）───────
+# 策略 strategy: world-book，按关键字触发的上下文条目，全部字段与普通配置一致
+# （layer / position / order / enabled / dedupe…），关键参数在 params：
+#   params.constant       true=常驻注入（不扫描关键字，每轮注入）
+#   params.keys           触发关键字数组（命中聊天内容任一即注入；与 secondaryKeys 合并匹配）
+#   params.secondaryKeys  次级关键字（与 keys 合并匹配，任一命中即注入）
+#   params.caseSensitive  true=关键字区分大小写（默认不区分）
+#   params.wholeWords     true=整词匹配（默认子串包含；中文无词边界，对英文生效）
+#   params.useRegex       true=keys 按正则表达式匹配（SillyTavern use_regex 透传）
+# 注入语义：constant=true 恒注入；有 keys 命中才注入；无 keys 且非常驻 = 全局条目
+# 每轮注入（对齐 dsh-tavern 语义）。管理入口：模块列表下拉「世界书」过滤
+# （完整模块卡片编辑 + 批量启用/禁用）；模型工具（会话中直接维护，写入本段
+# promptConfigs）：world_book_list（列出条目）/ world_book_upsert（新增或更新，
+# note 参数可选写入角色卡记忆 .characters/<卡>/memory.md）/ world_book_delete
+# （删除条目，note 同）。
+# 示例（取消注释即可启用）：
+# - id: world-rule
+#   name: 世界观规则
+#   enabled: true
+#   strategy: world-book
+#   layer: pre-step
+#   position: before-all
+#   order: 40
+#   text: |
+#     魔法系统的核心规则：魔力来自星辉，施法需要手势配合。
+#   params:
+#     constant: true
+# - id: world-trigger
+#   name: 触发条目
+#   enabled: true
+#   strategy: world-book
+#   layer: pre-step
+#   position: before-all
+#   order: 50
+#   text: |
+#     当对话提到酒馆时注入这段设定。
+#   params:
+#     keys: [酒馆, 旅店, tavern]
 
 # ── system-section 层参数说明（官方 ctx.systemPrompt.section 静态段）─────────
 # 本层是唯一支持官方 {{variable}} 渲染的静态层（缓存友好，静态内容优先放这里），

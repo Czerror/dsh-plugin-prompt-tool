@@ -138,6 +138,107 @@ promptConfigs:
   - id: st-prompt-3             # identifier 是 UUID 形态 → 序号兜底 id
     name: st-prompt-3
     enabled: true
+    # …（strategy: static / layer: pre-step / role: assistant / position: after-user）
+
+---
+
+# 角色卡（PNG / JSON）导入与角色卡库
+
+**入口**：工作台「角色管理」页（顶层第 5 页）——导入角色卡 PNG 或 JSON 到**角色卡库**，
+参数不直接生成预设，而是按需「导入到当前预设」合并生效。
+
+## 角色卡库存储（预设根下点前缀目录，官方 discovery 跳过）
+
+```
+~/.dsh/.agent-presets/.characters/<cardId>/
+  ├── avatar.png      # PNG 原图（base64 解码落盘，字节无损）
+  ├── card.json       # 原始角色卡 JSON 存档
+  ├── converted.yml   # 转换参数（convertStToPreset 产物）
+  └── memory.md       # 角色本地记忆（跟随角色卡跨预设）
+```
+
+## PNG 解析（对齐官方 character-card-parser.js）
+
+- tEXt chunk 关键字：**ccv3 优先 / chara 兜底**，值为 base64 编码的角色卡 JSON
+- 客户端字节流解析（无第三方依赖），原图提取为 `avatar.png`
+- 角色卡 id 保留中文（如 `我的教师母亲`），目录名/宿主发现均支持
+
+## 角色卡正文映射
+
+| SillyTavern 字段 | 转换规则 |
+|---|---|
+| `first_mes` | → `first-mes` 开场白（pre-step / assistant / before-all / `dedupe: session` 每会话一次） |
+| `alternate_greetings[]` | → `first-mes-2/3…` 备用开场白（默认禁用，UI 可切换启用） |
+| `description` + `personality` + `scenario` | → `character-definition` 角色设定（system-section，拼接） |
+| `system_prompt` / `post_history_instructions` | → `system-prompt` / `post-history-instructions`（system-section） |
+| 采样参数（`temperature` 等） | → `params.model*`（与响应预设同规则） |
+| `extensions.*`（TavernHelper 脚本 / regex_scripts） | **剥离**——ST 扩展注入物，不进转换产物 |
+
+## 应用到当前预设 / 移除
+
+- 「导入到当前预设」：角色卡全部参数（正文 + 世界书 + 记忆）合并进当前预设
+  `promptConfigs`，id 带 `chara-<cardId>-` 前缀防冲突，重复应用幂等
+- 「从当前预设移除」：按前缀批量移除，`meta.importedCharacters` 除名
+- 多文件导入（角色卡 × 响应预设）自动合并为一个预设（`mergeStPresets`）
+
+## 角色记忆（角色卡级，优于预设级）
+
+- 模型工具 `world_book_upsert/delete` 的 `note` 参数按条目 id 前缀归属写入
+  `.characters/<cardId>/memory.md`（跟随角色卡跨预设）；无归属回退预设 `memory.md`
+- 应用到预设时记忆合并为 world-book constant 配置 `chara-<cardId>-memory`，模型直接可见
+
+---
+
+# 世界书（world-book 策略）
+
+`character_book`（lorebook）条目转为 **world-book 策略配置**（`promptConfigs` 模块体系，
+与普通提示词配置同一存储/编辑/工具链）。
+
+## 条目字段映射
+
+| SillyTavern 字段 | 落点 |
+|---|---|
+| `comment` | `name` |
+| `content` | `text`（命中后注入） |
+| `keys[]` / `secondary_keys[]` | `params.keys` / `params.secondaryKeys`（合并匹配，任一命中即注入） |
+| `constant: true` | `params.constant: true`（恒注入，不依赖关键字） |
+| `case_sensitive` / `match_whole_words` | `params.caseSensitive` / `params.wholeWords` |
+| `use_regex: true` | `params.useRegex`（keys 按正则匹配） |
+| `insertion_order` | `order`（层内升序） |
+| `enabled` | `enabled`（原样保留） |
+
+## 注入语义
+
+- `constant: true` → 每轮恒注入（不扫描关键字）
+- 有 `keys` → 命中当前消息批文本（`extractText`）任一关键字即注入，未命中不注入
+- 无 `keys` 且非常驻 → **全局条目，每轮注入**（对齐 dsh-tavern 语义）
+- 注入形态：pre-step `before-all` 独立消息；`useRegex` / `caseSensitive` / `wholeWords` 控制匹配方式
+
+## 管理方式（与模块体系统一）
+
+- **模块列表「世界书」过滤**：主会话页模块列表顶部下拉选「世界书」，全部世界书条目以
+  完整模块卡片形态展示——可编辑任意字段（id/名称/层级/策略参数/排序/启用），可批量启用/禁用
+- **模型工具**：`world_book_list / world_book_upsert / world_book_delete`
+  （读写 promptConfigs 的 world-book 配置；`note` 写入角色卡记忆）
+- **旧数据迁移**：旧版 preset.yml 顶层 `worldBook` 段在下次重建时自动迁移为
+  world-book 配置并删除段（一次性、幂等）
+
+---
+
+# ST 变量规则（fallback 语义）
+
+ST 变量系统本质 = **变量读取 + 默认值兜底**，由引擎 `interpolateVariables` 的 params
+插值 fallback 承载（`{{key}}` 有值替换、无值保留原样；key 支持中文）。
+
+| ST 语法 | 处理 |
+|---|---|
+| `{{setvar::k::v}}` | 收集 `k=v` 进预设 `params`（会话变量初始值 = fallback 基准），指令剥离 |
+| `{{getvar::k::default}}` | 改写 `{{k}}`，`params.k` 缺省时写入 `default`（兜底落 params） |
+| `{{getvar::k}}` | 改写 `{{k}}`（引擎按 params 插值） |
+| `{{trim}}` / `{{//注释}}` / `{{ERA:...}}` | 剥离（格式化指令 / 注释 / 第三方运行时） |
+| `{{user}}` / `{{char}}` | 替换为「用户」/ 角色名 |
+
+纯指令 prompt（setvar/注释无正文）剥离后自动过滤；TavernHelper 扩展注入物（JS 脚本）不执行、不进转换产物。
     strategy: static
     order: 23                   # injection_order=3 + 2×10
     text: 备用提示词（无名称）

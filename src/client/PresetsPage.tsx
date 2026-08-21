@@ -4,7 +4,6 @@ import { PresetSwitcher } from './PresetSwitcher.tsx'
 import { ToggleRow } from './ToggleRow.tsx'
 import { CollapsibleCard } from './CollapsibleCard.tsx'
 import { SettingInputRow } from './SettingInputRow.tsx'
-import { WorldBookSection } from './WorldBookSection.tsx'
 import ui from './PromptUi.module.css'
 import type { PromptToolStore } from './prompt-tool-store.ts'
 
@@ -37,7 +36,6 @@ export function PresetsPage(props: { store: PromptToolStore }): ReactNode {
           onCommit={store.persistSwitches} />
       </CollapsibleCard>
       <PresetSwitcher store={store} />
-      <WorldBookSection store={store} />
     </>
   )
 }

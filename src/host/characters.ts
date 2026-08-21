@@ -202,50 +202,32 @@ export function applyCharacterToPreset(
       const added = (spec.promptConfigs ?? []).flatMap((config) => {
         if (config === null || typeof config !== 'object' || Array.isArray(config)) return []
         const entry = config as Record<string, unknown>
+        // 世界书（world-book 策略）与普通配置一起带前缀并入；空文本跳过。
         if (entry.text === undefined || String(entry.text).trim().length === 0) return []
         return [{ ...entry, id: `${prefix}${String(entry.id ?? '')}` }]
       })
-      // 合并后按（层序, order）排序写盘：UI 列表与引擎注入顺序一致，避免排序混乱。
-      doc.setIn(['promptConfigs'], sortConfigs([...existing, ...added]))
       for (const [key, value] of Object.entries(spec.params ?? {})) {
         doc.setIn(['params', key], value)
       }
-      // 世界书段合并：角色卡 worldBook.entries 带前缀并入预设 worldBook（keyword 模式）。
-      const currentJs = doc.toJS() as { worldBook?: { injectMode?: string; entries?: unknown[] } }
-      // 幂等：先移除本卡旧前缀条目（重复 apply 不重复追加），再并入。
-      const existingEntries = Array.isArray(currentJs.worldBook?.entries)
-        ? currentJs.worldBook.entries.filter((entry) => {
-          const id = entry !== null && typeof entry === 'object' ? String((entry as Record<string, unknown>).id ?? '') : ''
-          return !id.startsWith(prefix)
-        })
-        : []
-      const addedEntries = (spec.worldBook?.entries ?? []).flatMap((entry) => {
-        if (entry === null || typeof entry !== 'object') return []
-        const record = entry as Record<string, unknown>
-        const id = `${prefix}${String(record.id ?? '')}`
-        if (String(record.text ?? '').trim().length === 0) return []
-        return [{ ...record, id }]
-      })
-      if (addedEntries.length > 0) {
-        doc.setIn(['worldBook', 'injectMode'], currentJs.worldBook?.injectMode === 'full' ? 'full' : 'keyword')
-        doc.setIn(['worldBook', 'entries'], [...existingEntries, ...addedEntries])
-      }
-      // 角色卡本地记忆（memory.md）合并为 worldBook constant 条目（chara-<卡>-memory）：
-      // 记忆跟随角色卡注入，remove 时一并移除。
+      // 角色卡本地记忆（memory.md）合并为 world-book constant 配置（chara-<卡>-memory）。
       const memory = readCharacterMemory(presetRoot, cardId)
+      const memoryId = `${prefix}memory`
       if (memory.length > 0) {
-        const memoryId = `${prefix}memory`
-        const withoutOld = existingEntries.filter((entry) => String((entry as Record<string, unknown>).id ?? '') !== memoryId)
-        const memoryEntry = {
+        const memoryEntry: Record<string, unknown> = {
           id: memoryId,
           name: '角色记忆',
-          constant: true,
+          strategy: 'world-book',
+          layer: 'pre-step',
+          position: 'before-all',
           enabled: true,
           order: 1000,
           text: `【${spec.name} 的关系记忆】\n${memory}`,
+          params: { constant: true },
         }
-        doc.setIn(['worldBook', 'injectMode'], 'keyword')
-        doc.setIn(['worldBook', 'entries'], [...withoutOld, ...addedEntries, memoryEntry])
+        doc.setIn(['promptConfigs'], sortConfigs([...existing, ...added, memoryEntry]))
+      } else {
+        // 合并后按（层序, order）排序写盘：UI 列表与引擎注入顺序一致。
+        doc.setIn(['promptConfigs'], sortConfigs([...existing, ...added]))
       }
       const list = Array.isArray(current.meta?.importedCharacters) ? current.meta.importedCharacters : []
       if (!list.map(String).includes(cardId)) list.push(cardId)
@@ -278,21 +260,6 @@ export function removeCharacterFromPreset(
         return !isCard
       })
       doc.setIn(['promptConfigs'], kept)
-      // 世界书段移除：删前缀条目（injectMode 保留）。
-      const bookCurrent = doc.toJS() as { worldBook?: { injectMode?: string; entries?: unknown[] } }
-      if (Array.isArray(bookCurrent.worldBook?.entries)) {
-        const bookKept = bookCurrent.worldBook.entries.filter((entry) => {
-          const id = entry !== null && typeof entry === 'object' ? String((entry as Record<string, unknown>).id ?? '') : ''
-          const isCard = id.startsWith(prefix)
-          if (isCard) removed += 1
-          return !isCard
-        })
-        if (bookKept.length > 0) {
-          doc.setIn(['worldBook', 'entries'], bookKept)
-        } else {
-          doc.deleteIn(['worldBook'])
-        }
-      }
       // 删除该卡声明的 params 键（若曾覆盖预设原值无法恢复——文档说明）。
       for (const key of Object.keys(spec?.params ?? {})) {
         doc.deleteIn(['params', key])

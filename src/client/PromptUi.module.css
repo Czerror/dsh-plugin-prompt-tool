@@ -1300,7 +1300,7 @@
 }
 
 /* 列表过滤框（配置 / 技能）。 */
-.listFilterRow { display: flex; min-width: 0; }
+.listFilterRow { display: flex; min-width: 0; align-items: center; gap: 8px; flex-wrap: wrap; }
 .listFilter {
   width: 100%;
   max-width: 320px;
@@ -1321,6 +1321,21 @@
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--pt-accent) 20%, transparent);
 }
 .listFilter::placeholder { color: var(--dsw-alias-label-caption); }
+.listFilterRow select.listFilter { flex: 0 0 auto; width: auto; max-width: none; }
+/* 批量启用/禁用按钮组：过滤行右侧，按过滤后可见配置一次性开关。 */
+.batchControls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+.batchControls .pillButton {
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 16px;
+  font-size: 12px;
+  line-height: 18px;
+}
 
 /* 加载骨架屏：行状 shimmer 占位，替代加载期空白。 */
 .skeletonStack {

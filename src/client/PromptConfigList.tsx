@@ -63,20 +63,26 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
   const [validating, setValidating] = useState(false)
   const [saving, setSaving] = useState(false)
   const [filter, setFilter] = useState('')
+  /** 合并过滤下拉：全部 / 世界书（策略）/ 各注入层级。外部 layer prop 传入时固定该层。 */
+  const [viewFilter, setViewFilter] = useState<string>('all')
 
-  const visible = layer === undefined
+  const effectiveLayer = layer ?? (viewFilter !== 'all' && viewFilter !== 'world-book' ? viewFilter : undefined)
+  const visible = effectiveLayer === undefined
     ? configs
-    : configs.filter((config) => layerOf(config) === layer)
+    : configs.filter((config) => layerOf(config) === effectiveLayer)
   const scoped = scope === undefined
     ? visible
     : visible.filter((config) => {
       const mode = config.audience
       return scope === 'main' ? mode !== 'subagent' : mode !== 'main'
     })
+  const byStrategy = viewFilter !== 'world-book'
+    ? scoped
+    : scoped.filter((config) => config.strategy === 'world-book')
   const keyword = filter.trim().toLowerCase()
   const filtered = keyword.length === 0
-    ? scoped
-    : scoped.filter((config) =>
+    ? byStrategy
+    : byStrategy.filter((config) =>
       [config.id, config.name ?? '', config.strategy ?? ''].join(' ').toLowerCase().includes(keyword))
   // 显示顺序 = 引擎注入顺序：按（层序, order, 声明序）稳定排序，跨层全量视图
   // 也一致；order 相同时保持数组原序（同值稳定）。
@@ -94,6 +100,11 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
       return a.index - b.index
     })
     .map((entry) => entry.config)
+  /** 按过滤后可见配置一次性启用/禁用（批量开关）。 */
+  const batchSetEnabled = (enabled: boolean): void => {
+    const visibleIds = new Set(ordered.map((config) => config.id))
+    onPatchConfigs(configs.map((config) => visibleIds.has(config.id) ? { ...config, enabled } : config))
+  }
 
   const dirty = JSON.stringify(configs) !== JSON.stringify(savedConfigs)
 
@@ -208,10 +219,30 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
             className={styles.listFilter}
             value={filter}
             aria-label="过滤模块列表"
-            placeholder="过滤：按 id / 名称 / strategy…"
+            placeholder="过滤：按 id / 名称…"
             spellCheck={false}
             onChange={(event) => setFilter(event.target.value)}
           />
+          {layer === undefined && (
+            <select
+              className={styles.listFilter}
+              value={viewFilter}
+              aria-label="按层级或策略过滤"
+              onChange={(event) => setViewFilter(event.target.value)}
+            >
+              <option value="all">全部</option>
+              <option value="world-book">世界书</option>
+              {meta.layers.map((item) => (
+                <option key={item} value={item}>层级：{item}</option>
+              ))}
+            </select>
+          )}
+          <span className={styles.batchControls}>
+            <button type="button" className={styles.pillButton} disabled={ordered.length === 0}
+              onClick={() => batchSetEnabled(true)}>启用</button>
+            <button type="button" className={styles.pillButton} disabled={ordered.length === 0}
+              onClick={() => batchSetEnabled(false)}>禁用</button>
+          </span>
         </div>
       )}
 

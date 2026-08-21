@@ -36,7 +36,6 @@ import {
   listCharacterCards,
   removeCharacterFromPreset,
 } from '../host/characters.ts'
-import { deleteWorldBookEntry, readWorldBook, upsertWorldBookEntry, writeWorldBook } from '../host/worldbook.ts'
 import { convertStToPreset, mergeStPresets } from '../host/sillytavern.ts'
 import { BRIDGE_ENDPOINTS, SETTINGS_BRIDGE_PREFIX } from '../shared/bridge-contract.ts'
 import { DEFAULT_PRESET_DIR } from '../host/paths.ts'
@@ -963,108 +962,6 @@ export function registerSettingsBridge(
             writeBridgeJson(res, 200, { ok: true, value: { id, count: result.count } })
           },
         }),
-        // ---- 世界书（worldBook 段）：UI 与模型工具共用 host/worldbook.ts ----
-        sctx.webServer.register({
-          kind: 'exact',
-          path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.worldbookList,
-          handler: async (req, res) => {
-            if (!guard(req, res)) return
-            const dir = getPresetConfigsDir?.() ?? ''
-            if (dir.length === 0) {
-              writeBridgeJson(res, 400, { ok: false, code: 'preset-dir-unavailable', message: 'presetDir 未配置' })
-              return
-            }
-            writeBridgeJson(res, 200, { ok: true, value: readWorldBook(dir) })
-          },
-        }),
-        sctx.webServer.register({
-          kind: 'exact',
-          path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.worldbookUpsert,
-          handler: async (req, res) => {
-            if (!guard(req, res)) return
-            const dir = getPresetConfigsDir?.() ?? ''
-            if (dir.length === 0) {
-              writeBridgeJson(res, 400, { ok: false, code: 'preset-dir-unavailable', message: 'presetDir 未配置' })
-              return
-            }
-            const { body } = await readBridgeBody(req)
-            const record = (body ?? {}) as Record<string, unknown>
-            const entry = record.entry !== null && typeof record.entry === 'object'
-              ? record.entry as Record<string, unknown> : {}
-            const id = typeof entry.id === 'string' ? entry.id : ''
-            const name = typeof entry.name === 'string' ? entry.name : ''
-            const text = typeof entry.text === 'string' ? entry.text : ''
-            if (name.length === 0 || text.length === 0) {
-              writeBridgeJson(res, 400, { ok: false, code: 'worldbook-rejected', message: '缺少条目名称或内容' })
-              return
-            }
-            const normalized: Record<string, unknown> = { id, name, text }
-            for (const key of ['keys', 'secondaryKeys', 'constant', 'enabled', 'order', 'caseSensitive', 'wholeWords']) {
-              if (entry[key] !== undefined) normalized[key] = entry[key]
-            }
-            try {
-              const result = upsertWorldBookEntry(dir, normalized as Parameters<typeof upsertWorldBookEntry>[1],
-                record.mode === 'full' || record.mode === 'keyword' ? record.mode : undefined)
-              afterOverridesChange?.()
-              writeBridgeJson(res, 200, { ok: true, value: result })
-            } catch (error) {
-              const message = error instanceof Error ? error.message : String(error)
-              writeBridgeJson(res, 500, { ok: false, code: 'worldbook-rejected', message })
-            }
-          },
-        }),
-        sctx.webServer.register({
-          kind: 'exact',
-          path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.worldbookDelete,
-          handler: async (req, res) => {
-            if (!guard(req, res)) return
-            const dir = getPresetConfigsDir?.() ?? ''
-            if (dir.length === 0) {
-              writeBridgeJson(res, 400, { ok: false, code: 'preset-dir-unavailable', message: 'presetDir 未配置' })
-              return
-            }
-            const { body } = await readBridgeBody(req)
-            const record = (body ?? {}) as Record<string, unknown>
-            const id = typeof record.id === 'string' ? record.id.trim() : ''
-            if (id.length === 0) {
-              writeBridgeJson(res, 400, { ok: false, code: 'worldbook-rejected', message: '缺少条目 id' })
-              return
-            }
-            try {
-              const result = deleteWorldBookEntry(dir, id)
-              afterOverridesChange?.()
-              writeBridgeJson(res, 200, { ok: true, value: { id, ...result } })
-            } catch (error) {
-              const message = error instanceof Error ? error.message : String(error)
-              writeBridgeJson(res, 400, { ok: false, code: 'worldbook-rejected', message })
-            }
-          },
-        }),
-        sctx.webServer.register({
-          kind: 'exact',
-          path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.worldbookMode,
-          handler: async (req, res) => {
-            if (!guard(req, res)) return
-            const dir = getPresetConfigsDir?.() ?? ''
-            if (dir.length === 0) {
-              writeBridgeJson(res, 400, { ok: false, code: 'preset-dir-unavailable', message: 'presetDir 未配置' })
-              return
-            }
-            const { body } = await readBridgeBody(req)
-            const record = (body ?? {}) as Record<string, unknown>
-            const mode = record.mode
-            if (mode !== 'full' && mode !== 'keyword') {
-              writeBridgeJson(res, 400, { ok: false, code: 'worldbook-rejected', message: `非法注入模式：${String(mode)}` })
-              return
-            }
-            const book = readWorldBook(dir)
-            book.injectMode = mode
-            writeWorldBook(dir, book)
-            afterOverridesChange?.()
-            writeBridgeJson(res, 200, { ok: true, value: { mode: book.injectMode, count: book.entries.length } })
-          },
-        }),
-
       ]
       return () => {
         for (const dispose of disposers) dispose()

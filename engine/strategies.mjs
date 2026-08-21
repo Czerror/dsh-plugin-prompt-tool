@@ -142,15 +142,20 @@ function createWorldBookResolver(config) {
   const constant = config.params?.constant === true
   const caseSensitive = config.params?.caseSensitive === true
   const wholeWords = config.params?.wholeWords === true
+  const useRegex = config.params?.useRegex === true
   const rawKeys = Array.isArray(config.params?.keys) ? config.params.keys : []
   const rawSecondary = Array.isArray(config.params?.secondaryKeys) ? config.params.secondaryKeys : []
   const keys = [...rawKeys, ...rawSecondary]
     .map((key) => String(key).trim())
     .filter((key) => key.length > 0)
   const needle = keys.length > 0
-    ? (wholeWords
+    ? (useRegex
+      // ST use_regex=true：keys 为正则表达式（原样拼接，模型提示词作者负责合法性）。
+      ? new RegExp(keys.join('|'), caseSensitive ? '' : 'i')
+      : (wholeWords
       ? new RegExp(`(^|[^\\p{L}\\p{N}])(${keys.map((key) => escapeRegExp(key)).join('|')})(?![\\p{L}\\p{N}])`, `${caseSensitive ? '' : 'i'}u`)
       : new RegExp(keys.map((key) => escapeRegExp(key)).join('|'), caseSensitive ? '' : 'i'))
+    )
     : undefined
   const promptText = config.texts.length > 0
     ? config.texts.join('\n\n')

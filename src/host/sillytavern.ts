@@ -30,14 +30,14 @@ export function processStText(text: string, cardName: string, params: Record<str
   // 顺序敏感：先改写 getvar / 收集 setvar，最后才剥离残留指令——
   // 否则 ST_DIRECTIVE 会先把 setvar/getvar 整段剥掉，收集正则匹配不到。
   // getvar 带默认值（fallback）：{{getvar::k::default}} → {{k}} + params.k ??= default。
-  let cleaned = text.replace(/\{\{getvar::([A-Za-z0-9_.-]+)::([^}]*)\}\}/g, (_whole, key: string, fallback: string) => {
+  let cleaned = text.replace(/\{\{getvar::([A-Za-z0-9_.\u4e00-\u9fff-]+)::([^}]*)\}\}/g, (_whole, key: string, fallback: string) => {
     if (!(key in params) && fallback.length > 0) params[key] = fallback
     return `{{${key}}}`
   })
   // getvar 无默认：{{getvar::k}} → {{k}}（引擎按 params 插值，无值保留原样）。
-  cleaned = cleaned.replace(/\{\{getvar::([A-Za-z0-9_.-]+)\}\}/g, (_whole, key: string) => `{{${key}}}`)
+  cleaned = cleaned.replace(/\{\{getvar::([A-Za-z0-9_.\u4e00-\u9fff-]+)\}\}/g, (_whole, key: string) => `{{${key}}}`)
   // setvar：{{setvar::k::v}} → 收集 k=v（会话变量初始值 = fallback 基准），指令剥离。
-  cleaned = cleaned.replace(/\{\{setvar::([A-Za-z0-9_.-]+)::([^}]*)\}\}/g, (_whole, key: string, value: string) => {
+  cleaned = cleaned.replace(/\{\{setvar::([A-Za-z0-9_.\u4e00-\u9fff-]+)::([^}]*)\}\}/g, (_whole, key: string, value: string) => {
     params[key] = value
     return ''
   })
@@ -80,18 +80,6 @@ export function mergeStPresets(specs: PresetSpec[]): PresetSpec {
       moduleConfigs[key] = { ...moduleConfigs[key], ...value }
     }
   }
-  const worldBookEntries: Array<Record<string, unknown>> = []
-  const seenBookIds = new Set<string>()
-  for (const spec of specs) {
-    for (const entry of spec.worldBook?.entries ?? []) {
-      if (entry === null || typeof entry !== 'object') continue
-      const base = String(entry.id ?? '')
-      let id = base
-      for (let suffix = 2; seenBookIds.has(id); suffix++) id = `${base}-${suffix}`
-      seenBookIds.add(id)
-      worldBookEntries.push({ ...entry, id })
-    }
-  }
   const stripSuffix = (name: string): string => name.replace(/（SillyTavern 转换）$/, '')
   return {
     // 多源合并：id 拼接（2 + beta-2-42 → 2-beta-2-42），避免与任一源预设冲突。
@@ -101,7 +89,6 @@ export function mergeStPresets(specs: PresetSpec[]): PresetSpec {
     engineCompat: '>=0.4.2',
     meta: { source: 'sillytavern' },
     ...(Object.keys(params).length > 0 ? { params } : {}),
-    ...(worldBookEntries.length > 0 ? { worldBook: { injectMode: 'keyword', entries: worldBookEntries } } : {}),
     modules,
     moduleConfigs,
     promptConfigs,
@@ -134,6 +121,17 @@ export function convertStToPreset(card: unknown, baseName: string): PresetSpec {
   let systemSectionCount = 0
   // 角色卡正文：chara_card_v3 实际内容在 data 内层（顶层为同步冗余），旧版顶层直存。
   const body = (record.data !== null && typeof record.data === 'object' ? record.data as Record<string, unknown> : record) as Record<string, unknown>
+  // 扩展注入物剥离（TavernHelper 等 ST 扩展脚本/文档）：本引擎不执行 JS，
+  // 原样注入只会污染模型上下文。显式剔除 extensions 下的脚本注入字段，
+  // 防御未来转换逻辑读取 data 全字段时带入（当前只读正文/世界书，本步为显式边界）。
+  const extensions = body.extensions !== null && typeof body.extensions === 'object'
+    ? body.extensions as Record<string, unknown>
+    : undefined
+  if (extensions !== undefined) {
+    for (const key of Object.keys(extensions)) {
+      if (/helper|script|regex|tavern/i.test(key)) delete extensions[key]
+    }
+  }
   const bodyText = (key: string): string => typeof body[key] === 'string' ? (body[key] as string).trim() : ''
   const cardName = (typeof record.name === 'string' && record.name.trim().length > 0 ? record.name.trim()
     : typeof body.name === 'string' && body.name.trim().length > 0 ? (body.name as string).trim() : '')
@@ -161,11 +159,10 @@ export function convertStToPreset(card: unknown, baseName: string): PresetSpec {
     configs.push({ id: 'post-history-instructions', name: '后续指令', strategy: 'static', order: -10, text: postHistoryClean, layer: 'system-section', mergeMode: 'merged' })
     systemSectionCount += 1
   }
-  // 世界书（lorebook / character_book）→ 独立 worldBook 存储段（preset.yml 顶层，
-  // 不进 promptConfigs）：injectMode=keyword（无 keys 条目恒注入 = 全局条目，
-  // 有 keys 条目命中触发，对齐 dsh-tavern 语义）；条目字段全透传。
+  // 世界书（lorebook / character_book）→ world-book 策略配置（promptConfigs，
+  // 与模块体系统一）：无 keys 条目恒注入（全局条目）、有 keys 条目命中触发
+  // （keyword 语义由 resolver 的 constant/keys 判定）；字段全透传。
   const book = (body as Record<string, unknown>).character_book
-  const worldBookEntries: Array<Record<string, unknown>> = []
   if (book !== null && typeof book === 'object' && !Array.isArray(book)
     && Array.isArray((book as Record<string, unknown>).entries)) {
     for (const [index, entry] of ((book as Record<string, unknown>).entries as Array<Record<string, unknown>>).entries()) {
@@ -178,19 +175,24 @@ export function convertStToPreset(card: unknown, baseName: string): PresetSpec {
       const secondaryKeys = Array.isArray(entry.secondary_keys)
         ? entry.secondary_keys.map(String).filter((key) => key.trim().length > 0) : []
       const constant = entry.constant === true
-      worldBookEntries.push({
+      configs.push({
         id: `lore-${String(entry.id ?? index)}`,
         name: comment,
-        // ST 启用状态保留；constant 或有关键词或为全局条目（无 keys）都可用
-        // （keyword 模式下无 keys 条目按全局每次注入）。
+        // ST 启用状态保留；无 keys 条目由 resolver 按全局（constant 语义）每次注入。
         enabled: entry.enabled !== false,
+        strategy: 'world-book',
         order: typeof entry.insertion_order === 'number' ? entry.insertion_order : 100,
         text: content,
-        ...(constant ? { constant: true } : {}),
-        ...(keys.length > 0 ? { keys } : {}),
-        ...(secondaryKeys.length > 0 ? { secondaryKeys } : {}),
-        ...(entry.case_sensitive === true ? { caseSensitive: true } : {}),
-        ...(entry.match_whole_words === true ? { wholeWords: true } : {}),
+        layer: 'pre-step',
+        position: 'before-all',
+        params: {
+          constant,
+          ...(keys.length > 0 ? { keys } : {}),
+          ...(secondaryKeys.length > 0 ? { secondaryKeys } : {}),
+          ...(entry.case_sensitive === true ? { caseSensitive: true } : {}),
+          ...(entry.match_whole_words === true ? { wholeWords: true } : {}),
+          ...(entry.use_regex === true ? { useRegex: true } : {}),
+        },
       })
     }
   }
@@ -200,6 +202,26 @@ export function convertStToPreset(card: unknown, baseName: string): PresetSpec {
     configs.push({
       id: 'first-mes', name: '开场白', strategy: 'static', order: -40, text: firstMes,
       layer: 'pre-step', mergeMode: 'merged', role: 'assistant', position: 'before-all', dedupe: 'session',
+    })
+  }
+  // 备用开场白（alternate_greetings）：首条已启用；备用条目转禁用配置（UI 可切换启用，
+  // fallback 起点——引擎按 order 排序，同一 dedupe=session 身份不重复注入）。
+  const alternateGreetings = Array.isArray(body.alternate_greetings)
+    ? (body.alternate_greetings as unknown[]).map((item) => typeof item === 'string' ? item : '').map(clean).filter((item) => item.length > 0)
+    : []
+  for (const [index, greeting] of alternateGreetings.entries()) {
+    configs.push({
+      id: `first-mes-${index + 2}`,
+      name: `开场白 ${index + 2}`,
+      strategy: 'static',
+      enabled: false,
+      order: -40 + index + 1,
+      text: greeting,
+      layer: 'pre-step',
+      mergeMode: 'merged',
+      role: 'assistant',
+      position: 'before-all',
+      dedupe: 'session',
     })
   }
 
@@ -290,7 +312,6 @@ export function convertStToPreset(card: unknown, baseName: string): PresetSpec {
     // 来源标记：角色管理页据此列出「从 SillyTavern 导入的预设」。
     meta: { source: 'sillytavern' },
     ...(Object.keys(params).length > 0 ? { params } : {}),
-    ...(worldBookEntries.length > 0 ? { worldBook: { injectMode: 'keyword', entries: worldBookEntries } } : {}),
     modules,
     moduleConfigs,
     promptConfigs: configs,
