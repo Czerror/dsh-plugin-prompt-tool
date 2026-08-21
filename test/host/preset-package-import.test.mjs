@@ -371,6 +371,34 @@ test('importPresetPackage：SillyTavern 卡片无 name 时预设名回退文件�
   assert.equal(converted.name, 'unnamed-chara（SillyTavern 转换）', '卡片 name 缺失时回退文件名（去 .json）')
 })
 
+test('importPresetPackage：角色卡世界书 add_always（CCv2/CCv3 常驻标记）→ constant: true', async () => {
+  const { status, payload } = await importPackage({
+    files: [{ path: 'ccv3-card.json', content: JSON.stringify({
+      spec: 'chara_card_v3', spec_version: '3.0', name: 'CCv3 角色',
+      first_mes: '你好',
+      data: {
+        name: 'CCv3 角色',
+        description: '设定',
+        character_book: {
+          entries: [
+            { id: 1, key: ['魔法'], keysecondary: [], content: '魔法设定', add_always: true, enabled: true, insertion_order: 100 },
+            { id: 2, key: ['剑'], keysecondary: [], content: '剑设定', add_always: false, enabled: true, insertion_order: 200 },
+            { id: 3, key: ['盾'], keysecondary: [], content: '盾设定', constant: true, enabled: true, insertion_order: 300 },
+          ],
+        },
+      },
+    }) }],
+  })
+  assert.equal(status, 200)
+  assert.equal(payload.value?.id, 'ccv3-card')
+  const converted = parseYaml(readFileSync(join(PRESETS, 'ccv3-card', 'preset.yml'), 'utf8'))
+  const configs = converted.promptConfigs.filter((config) => config.strategy === 'world-book')
+  assert.equal(configs.length, 3, '三条世界书条目全部转换')
+  assert.equal(configs.find((config) => config.id === 'lore-1').params.constant, true, 'add_always: true 应常驻')
+  assert.equal(configs.find((config) => config.id === 'lore-2').params.constant, false, 'add_always: false 不常驻')
+  assert.equal(configs.find((config) => config.id === 'lore-3').params.constant, true, 'constant: true 仍常驻')
+})
+
 test.after(() => {
   rmSync(home, { recursive: true, force: true })
 })

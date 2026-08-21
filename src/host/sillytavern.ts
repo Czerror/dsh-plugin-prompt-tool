@@ -174,7 +174,8 @@ export function convertStToPreset(card: unknown, baseName: string): PresetSpec {
       const keys = Array.isArray(entry.keys) ? entry.keys.map(String).filter((key) => key.trim().length > 0) : []
       const secondaryKeys = Array.isArray(entry.secondary_keys)
         ? entry.secondary_keys.map(String).filter((key) => key.trim().length > 0) : []
-      const constant = entry.constant === true
+      // 常驻兼容：ST 编辑器内部格式用 constant，角色卡（CCv2/CCv3）world entries 用 add_always。
+      const constant = entry.constant === true || entry.add_always === true
       configs.push({
         id: `lore-${String(entry.id ?? index)}`,
         name: comment,
