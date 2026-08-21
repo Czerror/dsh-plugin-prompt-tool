@@ -138,8 +138,25 @@ export function registerSettingsBridge(
   // ensureWebSurface 会把 bundle 补进 manifest，重启后本子插件自动激活。
   ctx.inject(['settings', 'webServer'], (sctx: Context) => {
     sctx.effect(() => {
-      const findDescriptor = (): SettingsDescriptor | undefined =>
-        sctx.settings.describe({ redactSecrets: true }).find((entry) => String(entry.ns) === String(ns))
+      // descriptor 缓存（30s TTL）：宿主 settings.describe 是同步全量遍历——
+      // 遍历所有注册 namespace + section 读取 + structuredClone 深度克隆 + schema
+      // 序列化；插件越多越慢且阻塞事件循环。每个桥端点（meta/describe/delete/export…）
+      // 都调 findDescriptor，无缓存时每个请求都付全量成本。
+      let cachedDescriptor: SettingsDescriptor | undefined
+      let cachedAt = 0
+      const DESCRIPTOR_TTL_MS = 30_000
+      const findDescriptor = (): SettingsDescriptor | undefined => {
+        const now = Date.now()
+        if (cachedDescriptor !== undefined && now - cachedAt < DESCRIPTOR_TTL_MS) return cachedDescriptor
+        cachedDescriptor = sctx.settings.describe({ redactSecrets: true })
+          .find((entry) => String(entry.ns) === String(ns))
+        cachedAt = now
+        return cachedDescriptor
+      }
+      /** mutate 成功后强制失效，下次 findDescriptor 重查宿主（响应必须带新 view）。 */
+      const invalidateDescriptor = (): void => {
+        cachedDescriptor = undefined
+      }
       const guard = (req: IncomingMessage, res: ServerResponse): boolean => {
         if (!isLoopbackRequest(req)) {
           writeBridgeJson(res, 403, { ok: false, code: 'settings-not-exposed', message: 'loopback requests only' })
@@ -249,6 +266,8 @@ export function registerSettingsBridge(
               writeBridgeJson(res, 409, { ok: false, code: 'settings-rejected', message })
               return
             }
+            // mutate 后必须重查宿主拿新 view（缓存已失效，跳过旧值）。
+            invalidateDescriptor()
             const descriptor = findDescriptor()
             if (descriptor === undefined) {
               writeBridgeJson(res, 500, { ok: false, code: 'settings-rejected', message: 'prompt-tool settings namespace was disposed after mutate' })
@@ -313,6 +332,7 @@ export function registerSettingsBridge(
               if (ops.length > 0) {
                 try {
                   await sctx.settings.mutate(ns, ops)
+                  invalidateDescriptor()
                 } catch (error) {
                   const message = error instanceof Error ? error.message : String(error)
                   writeBridgeJson(res, 409, { ok: false, code: 'settings-rejected', message: `技能文件已修复，但 settings 键迁移失败：${message}` })
