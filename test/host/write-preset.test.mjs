@@ -41,21 +41,26 @@ function makeOptions(presetDir) {
   }
 }
 
-test('writePreset 生成目录 engine/ 与源码 engine/ 逐字节一致', () => {
+test('writePreset 子预设 engine 按需复制（组合引用闭包，无 compositions）', () => {
   const dir = join(tmpdir(), `prompt-tool-wp-${process.pid}-${Date.now()}`)
   const presetDir = join(dir, 'preset')
   try {
     writePreset('PROMPT', makeOptions(presetDir))
-    const generated = listFiles(join(presetDir, 'anchored', 'engine'))
-    const source = listFiles(sourceEngineDir)
-    const generatedRel = generated.map((file) => file.slice(join(presetDir, 'anchored', 'engine').length + 1)).sort()
-    const sourceRel = source.map((file) => file.slice(sourceEngineDir.length + 1)).sort()
-    assert.deepEqual(generatedRel, sourceRel)
-    for (const rel of generatedRel) {
-      const generatedFile = join(presetDir, 'anchored', 'engine', rel)
-      const sourceFile = join(sourceEngineDir, rel)
-      assert.ok(readFileSync(generatedFile).equals(readFileSync(sourceFile)), `byte mismatch: ${rel}`)
+    const engineDir = join(presetDir, 'anchored', 'engine')
+    // 组合直接引用的本地引擎模块（anchored 全量 8 个）。
+    for (const rel of ['context-gate.mjs', 'tool-filter.mjs', 'tool-bootstrap.mjs',
+      'router-first-turn.mjs', 'prompt-config-engine.mjs', 'run-code-env.mjs',
+      'custom-bash.mjs', 'skill-search.mjs']) {
+      assert.ok(existsSync(join(engineDir, rel)), `${rel} 应随组合复制`)
     }
+    // 静态 import 闭包。
+    for (const rel of ['shared.mjs', 'compaction-epoch.mjs', 'schema.mjs',
+      'executor.mjs', 'layers.mjs', 'strategies.mjs', 'fillers.mjs']) {
+      assert.ok(existsSync(join(engineDir, rel)), `${rel} 闭包依赖应复制`)
+    }
+    // schema → vendor/yaml 整体复制；生成期组合库不复制。
+    assert.ok(existsSync(join(engineDir, 'vendor', 'yaml', 'index.js')), 'vendor/yaml 应复制')
+    assert.equal(existsSync(join(engineDir, 'compositions')), false, 'compositions 生成期文件不复制')
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
@@ -261,6 +266,8 @@ test('writePreset 自定义预设（custom，所有参数为空）渲染安全',
     assert.ok(!/__[A-Z0-9_]+__/.test(agent), '不应残留未解析 token')
     const promptConfigs = readdirSync(join(presetDir, 'custom', 'prompt-configs'))
     assert.equal(promptConfigs.length, 0, '自定义预设 promptConfigs 应为空')
+    assert.equal(existsSync(join(presetDir, 'custom', 'engine', 'tool-filter.mjs')), false,
+      '自定义预设（默认骨架）不应复制未引用模块')
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }

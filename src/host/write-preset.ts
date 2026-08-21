@@ -6,8 +6,8 @@
  * 默认提示词配置与组合 token 都由引擎按 params 生成,参数文件不含任何模板语法。
  */
 
-import { writeFileSync, mkdirSync, rmSync, cpSync, mkdtempSync, renameSync, existsSync, readdirSync } from 'node:fs'
-import { join } from 'node:path'
+import { writeFileSync, mkdirSync, rmSync, cpSync, mkdtempSync, renameSync, existsSync, readdirSync, readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 import { stringify as stringifyYaml } from 'yaml'
 import { DEFAULT_PRESET_DIR } from './paths.ts'
 import {
@@ -26,6 +26,42 @@ import {
 } from './manifest.ts'
 
 const ENGINE_DIR = packageEngineDir()
+
+/** 按需引擎闭包：组合文本引用的本地引擎模块 + 静态相对 import 闭包。
+ *  npm 包（@deepseek-ai/*）与 cordis:group 由宿主解析，不复制；
+ *  vendor/ 为第三方包目录整体复制；compositions/ 为生成期装配源，不随预设复制。 */
+function collectEngineFiles(composition: string): { files: string[]; vendor: boolean } {
+  const files = new Set<string>()
+  let vendor = false
+  const seen = new Set<string>()
+  const pending = [...composition.matchAll(/name:\s*['"]?\.\/engine\/([A-Za-z0-9_.-]+\.mjs)/g)]
+    .map((match) => match[1])
+  while (pending.length > 0) {
+    const rel = pending.pop()!
+    if (seen.has(rel) || rel.startsWith('..')) continue
+    seen.add(rel)
+    if (rel.startsWith('vendor/')) {
+      vendor = true
+      continue
+    }
+    files.add(rel)
+    let text = ''
+    try {
+      text = readFileSync(join(ENGINE_DIR, rel), 'utf8')
+    } catch {
+      continue
+    }
+    for (const match of text.matchAll(/(?:from\s*|import\s*\(?\s*)['"](\.[^'"]+)['"]/g)) {
+      const target = match[1]
+      if (target.startsWith('vendor/')) {
+        vendor = true
+        continue
+      }
+      pending.push(join(dirname(rel), target).replaceAll('\\', '/'))
+    }
+  }
+  return { files: [...files], vendor }
+}
 
 export interface WritePresetOptions {
   firstTurnAnchor: boolean
@@ -259,10 +295,28 @@ export function writePreset(prompt: string, options: WritePresetOptions): void {
     else cpSync(source, target, { force: true })
   }
 
-  // 3) 项目本体:引擎目录整体复制(全部执行逻辑;预设只有参数)。
+  // 3) 按需引擎：只复制本预设组合实际引用的引擎模块（静态 import 闭包）。
+  //    npm 包与 cordis:group 由宿主解析；vendor/ 整体复制；compositions/ 为
+  //    生成期装配源不随预设复制。同时清理其他子预设的生成期残留（旧版全量复制）。
   const engineDir = join(outDir, 'engine')
-  rmSync(engineDir, { recursive: true, force: true })
-  cpSync(ENGINE_DIR, engineDir, { recursive: true, force: true })
+  mkdirSync(engineDir, { recursive: true })
+  const needed = collectEngineFiles(composition)
+  for (const rel of needed.files) {
+    const target = join(engineDir, rel)
+    mkdirSync(dirname(target), { recursive: true })
+    cpSync(join(ENGINE_DIR, rel), target, { force: true })
+  }
+  if (needed.vendor) {
+    cpSync(join(ENGINE_DIR, 'vendor'), join(engineDir, 'vendor'), { recursive: true, force: true })
+  }
+  for (const entry of readdirSync(presetRoot, { withFileTypes: true })) {
+    if (!entry.isDirectory() || entry.name === 'engine' || entry.name.startsWith('.')) continue
+    try {
+      rmSync(join(presetRoot, entry.name, 'engine', 'compositions'), { recursive: true, force: true })
+    } catch {
+      // Windows 瞬时锁：残留无害（无引用），下次写入再试。
+    }
+  }
 
   // 4) 提示词配置:引擎默认(按 params)< 模板覆盖 < settings。
   const promptConfigsDir = join(outDir, 'prompt-configs')

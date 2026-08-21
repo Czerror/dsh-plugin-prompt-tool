@@ -33,6 +33,17 @@ test('removeUserPreset：.bak 备份目录可删除（垃圾清理）', () => {
   assert.equal(existsSync(join(PRESETS_DIR, '.foo.bak-mt12345')), false)
 })
 
+test('removeUserPreset：同时清理生成目录同名子预设', () => {
+  const genDir = join(root, 'generated')
+  mkdirSync(join(genDir, 'foo'), { recursive: true })
+  writeFileSync(join(genDir, 'foo', 'preset.yml'), 'id: foo\n', 'utf8')
+  mkdirSync(join(PRESETS_DIR, 'foo'), { recursive: true })
+  writeFileSync(join(PRESETS_DIR, 'foo', 'preset.yml'), 'id: foo\n', 'utf8')
+  assert.deepEqual(removeUserPreset('foo', genDir), { ok: true })
+  assert.equal(existsSync(join(PRESETS_DIR, 'foo')), false)
+  assert.equal(existsSync(join(genDir, 'foo')), false, '生成目录同名子预设应一并清理')
+})
+
 test('removeUserPreset：非法 id 与路径越界拒绝', () => {
   assert.equal(removeUserPreset('').ok, false)
   assert.equal(removeUserPreset('..').ok, false)

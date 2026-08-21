@@ -26,6 +26,7 @@ import {
 import type { PresetSpec } from '../host/manifest.ts'
 import { convertStToPreset } from '../host/sillytavern.ts'
 import { BRIDGE_ENDPOINTS, SETTINGS_BRIDGE_PREFIX } from '../shared/bridge-contract.ts'
+import { DEFAULT_PRESET_DIR } from '../host/paths.ts'
 
 const MAX_SETTINGS_BRIDGE_BODY = 64 * 1024
 /** 预设包导入独立上限（含 .mjs 模块的官方预设可远超 64KB 设置桥上限；8MB 足够）。 */
@@ -618,7 +619,12 @@ export function registerSettingsBridge(
               return
             }
             // 全部预设都在用户目录（首次启动种子化）：删除 = 物理删除用户目录副本，插件目录模板保留。
-            const result = removeUserPreset(id)
+            // 生成目录同名子预设一并清理（宿主 agent-presets 不残留）。
+            const presetDir = typeof value.presetDir === 'string' && value.presetDir.trim().length > 0
+              ? value.presetDir
+              : typeof base.presetDir === 'string' && base.presetDir.trim().length > 0 ? base.presetDir
+                : DEFAULT_PRESET_DIR
+            const result = removeUserPreset(id, presetDir)
             if (!result.ok) {
               writeBridgeJson(res, 400, { ok: false, code: 'preset-delete-rejected', message: result.message })
               return

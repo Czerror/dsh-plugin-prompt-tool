@@ -242,8 +242,9 @@ export function cloneBuiltinPreset(id: string, autoSuffix = false): { ok: true; 
 }
 
 /** 删除用户预设目录（~/.dsh/presets/<id>；含同名导入的 .bak-* 备份目录）。
- *  仅作用于用户目录，包内置预设天然不受影响；路径越界与非法 id 拒绝。 */
-export function removeUserPreset(id: string): { ok: true } | { ok: false; message: string } {
+ *  仅作用于用户目录，包内置预设天然不受影响；路径越界与非法 id 拒绝。
+ *  presetDir 可选：同时清理生成目录同名子预设（物化残留，避免宿主 agent-presets 列表残留已删预设）。 */
+export function removeUserPreset(id: string, presetDir?: string): { ok: true } | { ok: false; message: string } {
   if (typeof id !== 'string' || id.length === 0 || id === '.' || id === '..'
     || id.includes('/') || id.includes('\\')) {
     return { ok: false, message: `非法预设 id：${id}` }
@@ -259,6 +260,17 @@ export function removeUserPreset(id: string): { ok: true } | { ok: false; messag
   }
   try {
     rmSync(target, { recursive: true, force: true })
+    if (typeof presetDir === 'string' && presetDir.trim().length > 0) {
+      const genRoot = resolve(presetDir.trim())
+      const genTarget = resolve(join(genRoot, id))
+      if (genTarget !== genRoot && genTarget.startsWith(genRoot + sep)) {
+        try {
+          rmSync(genTarget, { recursive: true, force: true })
+        } catch {
+          // Windows 瞬时锁：生成目录残留无害（无引用），下次写入重建时覆盖。
+        }
+      }
+    }
     return { ok: true }
   } catch (error) {
     return { ok: false, message: `删除失败：${error instanceof Error ? error.message : String(error)}` }
@@ -414,6 +426,11 @@ export function resolvePresetTokens(spec: PresetSpec, runtime: Record<string, un
 }
 
 /** 按参数文件的 modules 清单从引擎模块库装配组合文本。 */
+/** 空模块清单兜底骨架（自定义预设空白起点：模块集与 minimal 一致，参数/配置全空）。 */
+const FALLBACK_MODULES = ['persona', 'official-persistent-shell', 'bootstrap-filesystem',
+  'context-gate', 'tool-bootstrap', 'router-first-turn', 'prompt-config-engine',
+  'run-code-env', 'custom-bash', 'skill-search']
+
 function assembleModules(spec: PresetSpec, library: string): string {
   const parts: string[] = []
   for (const name of spec.modules ?? []) {
@@ -481,7 +498,10 @@ export function applyModuleConfigs(raw: string, configs: Record<string, Record<s
 export function loadCompositionText(spec: PresetSpec, templateDir?: string): string {
   const library = join(packageEngineDir(), 'compositions', 'library')
   let raw: string
-  if (Array.isArray(spec.modules)) raw = assembleModules(spec, library)
+  const modules = Array.isArray(spec.modules) && spec.modules.length === 0
+    ? FALLBACK_MODULES
+    : spec.modules
+  if (Array.isArray(modules)) raw = assembleModules({ ...spec, modules }, library)
   else {
     const name = typeof spec.composition === 'string' ? spec.composition : ''
     if (name.includes('\n')) raw = name
