@@ -34,12 +34,22 @@ export function detectModels(ctx: Context): ModelDetection {
   }
 }
 
-/** 模型目录会话内缓存（60s TTL）：provider 模型列表在会话内基本固定，
- *  而 listModels 可能走远端查询——每次 /describe 全量重查会拖慢工作台加载与每次保存。 */
+/** 模型目录会话内缓存（10min TTL）：provider 模型列表在会话内基本固定，
+ *  而 listModels 可能走远端查询——每次 /describe 全量重查会拖慢工作台加载与每次保存。
+ *  TTL 过短（60s）会让「首次打开工作台」每次都重新全量查询。 */
 const catalogCache = new Map<string, { at: number; value: Record<string, string[]> }>()
-const CATALOG_TTL_MS = 60_000
+const CATALOG_TTL_MS = 600_000
+/** 单 provider 模型查询超时：远端 listModels 慢/挂起时快速降级，不拖垮整个目录。 */
+const MODEL_QUERY_TIMEOUT_MS = 1500
 
-/** 查询各已注册服务商公布的模型 id（对齐官方 web 选择器 buildModelCatalog：只遍历 listProviders() live 路由，单点失败不拖垮整体；仅作展示，不构成路由白名单）。并行查询 + 60s 缓存。 */
+function withModelTimeout<T>(promise: Promise<T>, ms: number): Promise<T | undefined> {
+  return Promise.race([
+    promise,
+    new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), ms)),
+  ])
+}
+
+/** 查询各已注册服务商公布的模型 id（对齐官方 web 选择器 buildModelCatalog：只遍历 listProviders() live 路由，单点失败/超时不拖垮整体；仅作展示，不构成路由白名单）。并行查询 + 10min 缓存 + 单点超时。 */
 export async function listAdvertisedModels(ctx: Context): Promise<Record<string, string[]>> {
   const cached = catalogCache.get('default')
   if (cached !== undefined && Date.now() - cached.at < CATALOG_TTL_MS) return cached.value
@@ -54,7 +64,7 @@ export async function listAdvertisedModels(ctx: Context): Promise<Record<string,
     .filter((id) => id.length > 0)
   await Promise.all(liveProviders.map(async (provider) => {
     try {
-      const models = await llm.listModels(provider)
+      const models = await withModelTimeout(llm.listModels(provider), MODEL_QUERY_TIMEOUT_MS)
       if (!Array.isArray(models)) return
       const ids = models
         .map((entry) => (typeof entry?.id === 'string' && entry.id.length > 0 ? entry.id : (typeof entry?.name === 'string' ? entry.name : '')))
