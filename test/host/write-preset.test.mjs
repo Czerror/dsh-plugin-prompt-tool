@@ -165,6 +165,42 @@ test('writePreset 透传 firstTurnWord 覆盖到 prompt-injector 配置', () => 
   }
 })
 
+test('writePreset 内容资产单一事实源：settings 覆盖层带 text 也被清空，注入来自 preset.md', () => {
+  const dir = join(tmpdir(), `prompt-tool-src-${process.pid}-${Date.now()}`)
+  const presetDir = join(dir, 'preset')
+  try {
+    writePreset('FILE CONTENT', {
+      ...makeOptions(presetDir),
+      promptConfigs: [
+        { id: 'prompt-injector', name: '用户覆盖', enabled: true, strategy: 'custom-fallback', text: 'SETTINGS TEXT' },
+      ],
+    })
+    const injector = readFileSync(join(presetDir, 'anchored', 'prompt-configs', '20-prompt-injector.yml'), 'utf8')
+    assert.ok(injector.includes('text: |-') && injector.includes('FILE CONTENT'), injector)
+    assert.ok(!injector.includes('SETTINGS TEXT'), injector)
+    assert.ok(!injector.includes('texts:'), injector)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('writePreset injectAgentsPrompt 注入 agents 内容到 instruction-hint params.text', () => {
+  const dir = join(tmpdir(), `prompt-tool-ai-${process.pid}-${Date.now()}`)
+  const presetDir = join(dir, 'preset')
+  try {
+    writePreset('PROMPT', { ...makeOptions(presetDir), agentsInstructionText: 'AGENTS CONTENT', injectAgentsPrompt: true })
+    const hint = readFileSync(join(presetDir, 'anchored', 'prompt-configs', '30-instruction-hint.yml'), 'utf8')
+    assert.ok(hint.includes('AGENTS CONTENT'), hint)
+    // 关闭时不注入：instruction-hint 保持无 params.text（引擎回退 agents-instruction.txt / 动态探测）。
+    const dir2 = join(dir, 'preset2')
+    writePreset('PROMPT', { ...makeOptions(dir2), agentsInstructionText: 'AGENTS CONTENT', injectAgentsPrompt: false })
+    const hint2 = readFileSync(join(dir2, 'anchored', 'prompt-configs', '30-instruction-hint.yml'), 'utf8')
+    assert.ok(!hint2.includes('AGENTS CONTENT'), hint2)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
 test('writePreset 官方导入预设（standard/minimal/ptc/creative）渲染组合且含 prompt-tool 引擎行', () => {
   for (const template of ['standard', 'minimal', 'ptc', 'creative']) {
     const dir = join(tmpdir(), `prompt-tool-${template}-${process.pid}-${Date.now()}`)

@@ -66,6 +66,8 @@ export interface WritePresetOptions {
   allowKinds?: string[] | string
   /** custom-fallback 锚定词（prompt-injector params.firstTurnWord）。 */
   firstTurnWord?: string
+  /** 是否注入 agents.md 内容到 instruction-hint（false 时 instruction-hint 走引擎默认提示/动态探测）。 */
+  injectAgentsPrompt?: boolean
   bootstrapMaxTokens: number
   usePtcMode: boolean
   /** 写入 agents-instruction.txt 供 instruction-hint 配置读取;不传则使用本地默认 hint。 */
@@ -283,9 +285,6 @@ export function writePreset(prompt: string, options: WritePresetOptions): void {
           guideWeak: asString(params.guideWeak),
           guideDeep: asString(params.guideDeep),
         }
-      } else if (next.id === 'prompt-injector') {
-        next.enabled = params.injectPrompt !== false
-        next.params = { ...next.params, text: prompt, firstTurnWord: asString(params.firstTurnWord, 'we') }
       }
       return next
     })
@@ -297,6 +296,24 @@ export function writePreset(prompt: string, options: WritePresetOptions): void {
   // 模型参数（agent-request）作为引擎默认级注入，优先级低于模板与 settings。
   const merged = mergePromptConfigs(modelRequestConfigs(params), templateDefaults, options.promptConfigs)
   for (const [index, config] of merged.entries()) {
+    // 内容资产单一事实源（大文本存生成目录文件，settings 覆盖层只保留轻字段）：
+    // prompt-injector 的注入文本永远来自 preset.md（presetPrompt），settings 条目即使带 text 也强制清空，
+    // 避免「settings 覆盖层整体替换模板条目」时把渲染产物 params.text 挤掉。
+    if (config.id === 'prompt-injector') {
+      delete config.text
+      config.texts = []
+      config.enabled = params.injectPrompt !== false
+      config.params = {
+        ...config.params,
+        text: prompt,
+        firstTurnWord: asString(config.params?.firstTurnWord ?? params.firstTurnWord, 'we'),
+      }
+    }
+    // instruction-hint：agents.md 内容经 injectAgentsPrompt 开关注入 params.text
+    //（关闭时保持无 text，引擎回退 agents-instruction.txt / 动态探测）。
+    if (config.fill === 'instruction-hint' && options.injectAgentsPrompt === true) {
+      config.params = { ...config.params, text: asString(options.agentsInstructionText) }
+    }
     writeFileSync(join(promptConfigsDir, `${String(index * 10).padStart(2, '0')}-${config.id}.yml`), renderPromptConfigYaml(config), 'utf8')
   }
 

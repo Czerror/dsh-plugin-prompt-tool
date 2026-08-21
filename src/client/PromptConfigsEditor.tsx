@@ -1,12 +1,10 @@
 import { useState, type ReactNode } from 'react'
-import { ContentAssetCard } from './ContentAssetCard.tsx'
 import { PromptConfigList } from './PromptConfigList.tsx'
 import { TemplatePicker } from './TemplatePicker.tsx'
 import { useTemplatePicker } from './useTemplatePicker.ts'
 import styles from './PromptUi.module.css'
 
 import type { EngineMeta, PromptConfigDraft } from './prompt-tool-types.ts'
-import type { PromptToolStore } from './prompt-tool-store.ts'
 
 export type { PromptConfigDraft, LayerFieldPolicy } from './prompt-tool-types.ts'
 export type { ValidationErrorEntry } from './prompt-tool-types.ts'
@@ -18,7 +16,6 @@ export type { PromptConfigTemplateEntry } from './prompt-tool-types.ts'
 const FALLBACK_EDITOR_LAYERS = ['pre-step', 'system-section', 'runtime-context', 'agent-request', 'llm-stream', 'tool-pipeline']
 
 export interface PromptConfigsEditorProps {
-  store: PromptToolStore
   meta: EngineMeta
   configs: PromptConfigDraft[]
   savedConfigs: PromptConfigDraft[]
@@ -58,7 +55,6 @@ export function PromptConfigsEditor(props: PromptConfigsEditorProps): ReactNode 
         configs={props.configs}
         savedConfigs={props.savedConfigs}
         layer={filterLayer.length > 0 ? filterLayer : undefined}
-        listHeader={<ContentAssetCard store={props.store} />}
         extraActions={<button type="button" className={styles.primaryPill} onClick={templatePicker.openPicker}>新建</button>}
         onPatchConfigs={props.onPatchConfigs}
         onSaveConfigs={props.onSaveConfigs}

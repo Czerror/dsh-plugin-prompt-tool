@@ -354,7 +354,6 @@ function FeatureSettings(props: { store: PromptToolStore }): ReactNode {
       <ModelToolCards store={store} scope="main" />
       <PipelineStatusCards store={store} />
       <PromptConfigsEditor
-        store={store}
         meta={store.meta}
         configs={fields.promptConfigs}
         savedConfigs={store.savedConfigs}

@@ -94,6 +94,31 @@ const EMPTY_SWITCHES: SwitchSnapshot = {
 /** 本项目默认不设上限时的显示值（adapter 默认 maxTokens）。 */
 const DEFAULT_BOOTSTRAP_DISPLAY = '256000'
 
+/** 内容资产条目：preset.md（prompt-injector）/ agents.md（instruction-hint），
+ *  text 走生成目录文件通道，settings 覆盖层只存轻字段。 */
+const isContentAsset = (config: PromptConfigDraft): boolean =>
+  config.id === 'prompt-injector' || config.fill === 'instruction-hint'
+
+/** 剥离内容资产的 text（顶层 + params.text）：settings 载荷不承载大文本。 */
+const stripContentText = (config: PromptConfigDraft): PromptConfigDraft => {
+  const next: PromptConfigDraft = { ...config }
+  delete next.text
+  if (next.params !== undefined) {
+    const params = { ...next.params }
+    delete params.text
+    next.params = params
+  }
+  return next
+}
+
+/** 渲染产物 → 编辑草稿：内容资产条目的 params.text（生成目录文件内容）提升到 text 框显示。 */
+const liftContentText = (config: PromptConfigDraft): PromptConfigDraft => {
+  if (!isContentAsset(config)) return config
+  if ((config.text ?? '') !== '') return config
+  const text = typeof config.params?.text === 'string' ? config.params.text : ''
+  return text.length > 0 ? { ...config, text } : config
+}
+
 export const snapshotSwitches = (fields: Fields): SwitchSnapshot => ({
   injectAgentsPrompt: fields.injectAgentsPrompt,
   firstTurnAnchor: fields.firstTurnAnchor,
@@ -200,7 +225,6 @@ export interface PromptToolStore {
   fixSkill: (folder: string) => void
   /** 打开指定技能目录；不传 = 打开第一个生效目录。 */
   openSkillsDir: (path?: string) => Promise<void>
-  importPreset: (scope: 'preset' | 'agents', content: string, reload?: boolean) => Promise<void>
   dirtySwitches: boolean
   dirtyConfigs: boolean
   dirty: boolean
@@ -328,17 +352,6 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
         return EMPTY_FIELDS
       }
       applyView(res)
-      // 内容资产在生成目录文件（settings 不再承载大文本）；按需拉取填充编辑器预览。
-      const presetContent = await bridgePost<{ content: string }>('/preset-content', { scope: 'preset' })
-      if (seq !== loadSeqRef.current) return EMPTY_FIELDS
-      if (presetContent.ok) {
-        patch({ promptText: presetContent.value.content })
-      }
-      const agentsContent = await bridgePost<{ content: string }>('/preset-content', { scope: 'agents' })
-      if (seq !== loadSeqRef.current) return EMPTY_FIELDS
-      if (agentsContent.ok) {
-        patch({ agentsText: agentsContent.value.content })
-      }
       // 用户参数覆盖（生成目录 prompt-tool.overrides.yml；settings 不再承载参数）。
       const overridesRes = await bridgePost<{ overrides: Record<string, unknown> }>('/param-overrides', {})
       if (seq !== loadSeqRef.current) return EMPTY_FIELDS
@@ -379,7 +392,9 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
       const configsRes = await bridgePost<{ promptConfigs: PromptConfigDraft[] }>('/prompt-configs', {})
       if (seq !== loadSeqRef.current) return EMPTY_FIELDS
       if (configsRes.ok && Array.isArray(configsRes.value.promptConfigs) && configsRes.value.promptConfigs.length > 0) {
-        const actual = configsRes.value.promptConfigs
+        // 内容资产条目（prompt-injector / instruction-hint）：params.text（生成目录文件渲染产物）
+        // 提升到 text 框显示，编辑入口统一为模块卡片。
+        const actual = configsRes.value.promptConfigs.map(liftContentText)
         const next = { ...fieldsRef.current, promptConfigs: actual }
         fieldsRef.current = next
         setFields(next)
@@ -493,11 +508,34 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
     }
   }, [showNotice])
 
-  const persistConfigs = useCallback((configs: PromptConfigDraft[]) => enqueueSave(
-    [{ op: 'set', path: ['promptConfigs'], value: configs }],
-    undefined,
-    () => setSavedConfigs(configs),
-  ), [enqueueSave])
+  const persistConfigs = useCallback((configs: PromptConfigDraft[]) => {
+    const contentEntries = configs.filter(isContentAsset)
+    if (contentEntries.length === 0) {
+      enqueueSave(
+        [{ op: 'set', path: ['promptConfigs'], value: configs }],
+        undefined,
+        () => setSavedConfigs(configs),
+      )
+      return
+    }
+    // 内容资产：text 先写生成目录文件（afterPresetImport 触发重建，渲染产物 params.text 更新），
+    // settings 载荷剥离 text（大文本不进 settings，避免覆盖层整体替换挤掉渲染注入）。
+    void (async () => {
+      for (const config of contentEntries) {
+        const scope = config.id === 'prompt-injector' ? 'preset' : 'agents'
+        const res = await bridgePost<{ scope: string }>('/import-preset', { scope, content: config.text ?? '' })
+        if (!res.ok) {
+          showNotice('error', `${scope === 'preset' ? 'preset.md' : 'agents.md'} 保存失败：` + (res.message ?? 'settings bridge unavailable'))
+          return
+        }
+      }
+      enqueueSave(
+        [{ op: 'set', path: ['promptConfigs'], value: configs.map(stripContentText) }],
+        undefined,
+        () => { void load() },
+      )
+    })()
+  }, [enqueueSave, load, showNotice])
 
   const toggle = useCallback((key: SwitchKey) => {
     patch({ [key]: !fieldsRef.current[key] })
@@ -614,22 +652,6 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
     }
   }, [api, showNotice])
 
-  const importPreset = useCallback(async (scope: 'preset' | 'agents', content: string, reload = true) => {
-    const res = await bridgePost<{ scope: string }>('/import-preset', { scope, content })
-    if (res.ok) {
-      if (scope === 'preset') {
-        patch({ promptText: content })
-      } else {
-        patch({ agentsText: content })
-      }
-      showNotice('ok', scope === 'preset' ? 'preset.md 已保存并生效' : 'AGENTS.md 已保存并生效')
-      // 编辑失焦保存传 reload=false：内容已知，跳过 load 避免覆盖正在编辑的输入。
-      if (reload) await load()
-    } else {
-      showNotice('error', '导入失败：' + (res.message ?? 'settings bridge unavailable'))
-    }
-  }, [load, patch, showNotice])
-
   const currentSwitches = snapshotSwitches(fields)
   const dirtySwitches = !switchesEqual(currentSwitches, savedSwitches)
   const dirtyConfigs = JSON.stringify(fields.promptConfigs) !== JSON.stringify(savedConfigs)
@@ -668,7 +690,6 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
     skillEnabled,
     fixSkill,
     openSkillsDir,
-    importPreset,
     dirtySwitches,
     dirtyConfigs,
     dirty,

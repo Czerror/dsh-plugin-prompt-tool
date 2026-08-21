@@ -175,6 +175,7 @@ export function apply(ctx: Context, configIn: Config): void {
         maxDepth: runtime.maxDepth,
         allowKinds: runtime.allowKinds,
         firstTurnWord: runtime.firstTurnWord,
+        injectAgentsPrompt: runtime.injectAgentsPrompt,
         bootstrapMaxTokens: runtime.bootstrapMaxTokens,
         usePtcMode: runtime.usePtcMode,
         agentsInstructionText: currentAgents,
