@@ -399,6 +399,66 @@ test('importPresetPackage：角色卡世界书 add_always（CCv2/CCv3 常驻标�
   assert.equal(configs.find((config) => config.id === 'lore-3').params.constant, true, 'constant: true 仍常驻')
 })
 
+test('importPresetPackage：世界书 ST 编辑器内部格式（key/keysecondary/order/disable/uid）别名收敛', async () => {
+  const { status } = await importPackage({
+    files: [{ path: 'editor-format.json', content: JSON.stringify({
+      spec: 'chara_card_v3', spec_version: '3.0', name: '编辑器格式',
+      data: {
+        name: '编辑器格式',
+        character_book: {
+          entries: [
+            // 关键词条目：key 单数 + add_always false → 必须保持关键词触发（不得常驻）。
+            { uid: 10, key: ['酒吧'], keysecondary: ['酒保'], content: '酒吧设定', add_always: false, disable: false, order: 50 },
+            // 禁用条目：disable: true → enabled: false。
+            { uid: 11, key: ['禁词'], content: '禁用设定', add_always: false, disable: true, order: 60 },
+            // 匹配开关 camelCase 形态（编辑器内部格式）。
+            { uid: 12, key: ['城堡'], content: '城堡设定', add_always: false, disable: false, order: 70, caseSensitive: true, matchWholeWords: true, useRegex: true },
+          ],
+        },
+      },
+    }) }],
+  })
+  assert.equal(status, 200)
+  const converted = parseYaml(readFileSync(join(PRESETS, 'editor-format', 'preset.yml'), 'utf8'))
+  const configs = converted.promptConfigs.filter((config) => config.strategy === 'world-book')
+  assert.equal(configs.length, 3)
+  const bar = configs.find((config) => config.id === 'lore-10')
+  assert.deepEqual(bar.params.keys, ['酒吧'], 'key 单数应收敛为 keys')
+  assert.deepEqual(bar.params.secondaryKeys, ['酒保'], 'keysecondary 应收敛为 secondaryKeys')
+  assert.equal(bar.params.constant, false, '关键词条目不常驻')
+  assert.equal(bar.enabled, true, 'disable: false → 启用')
+  assert.equal(bar.order, 50, 'order 应取用（编辑器格式无 insertion_order）')
+  const banned = configs.find((config) => config.id === 'lore-11')
+  assert.equal(banned.enabled, false, 'disable: true → 禁用')
+  const castle = configs.find((config) => config.id === 'lore-12')
+  assert.equal(castle.params.caseSensitive, true)
+  assert.equal(castle.params.wholeWords, true)
+  assert.equal(castle.params.useRegex, true)
+})
+
+test('importPresetPackage：世界书 entries 为对象（键为字符串序数）时形态兼容', async () => {
+  const { status } = await importPackage({
+    files: [{ path: 'obj-entries.json', content: JSON.stringify({
+      spec: 'chara_card_v3', spec_version: '3.0', name: '对象条目',
+      data: {
+        name: '对象条目',
+        character_book: {
+          entries: {
+            0: { uid: 1, key: ['森林'], content: '森林设定', add_always: false, enabled: true, insertion_order: 10 },
+            1: { uid: 2, key: ['河流'], content: '河流设定', add_always: false, enabled: true, insertion_order: 20 },
+          },
+        },
+      },
+    }) }],
+  })
+  assert.equal(status, 200)
+  const converted = parseYaml(readFileSync(join(PRESETS, 'obj-entries', 'preset.yml'), 'utf8'))
+  const configs = converted.promptConfigs.filter((config) => config.strategy === 'world-book')
+  assert.equal(configs.length, 2, '对象形态 entries 应全部转换')
+  assert.deepEqual(configs.map((config) => config.id).sort(), ['lore-1', 'lore-2'], 'uid 应作为条目 id')
+  assert.deepEqual(configs.find((config) => config.id === 'lore-2').params.keys, ['河流'])
+})
+
 test.after(() => {
   rmSync(home, { recursive: true, force: true })
 })

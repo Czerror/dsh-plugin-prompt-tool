@@ -161,28 +161,45 @@ export function convertStToPreset(card: unknown, baseName: string): PresetSpec {
   }
   // 世界书（lorebook / character_book）→ world-book 策略配置（promptConfigs，
   // 与模块体系统一）：无 keys 条目恒注入（全局条目）、有 keys 条目命中触发
-  // （keyword 语义由 resolver 的 constant/keys 判定）；字段全透传。
+  // （keyword 语义由 resolver 的 constant/keys 判定）。
+  // 形态兼容：entries 可能是数组（角色卡 CCv2/CCv3、spec v2）或对象
+  // （ST 编辑器内部格式，键为字符串序数）。
+  // 别名收敛：角色卡用 keys/secondary_keys/insertion_order/enabled/id，
+  // ST 编辑器内部格式用 key/keysecondary/order/disable/uid——两套名字都真实
+  // 存在，漏读会让关键词条目 keys 为空、退化为常驻注入（引擎对无 keys 条目恒注入）。
   const book = (body as Record<string, unknown>).character_book
-  if (book !== null && typeof book === 'object' && !Array.isArray(book)
-    && Array.isArray((book as Record<string, unknown>).entries)) {
-    for (const [index, entry] of ((book as Record<string, unknown>).entries as Array<Record<string, unknown>>).entries()) {
+  if (book !== null && typeof book === 'object' && !Array.isArray(book)) {
+    const rawEntries = (book as Record<string, unknown>).entries
+    const entryList = Array.isArray(rawEntries)
+      ? rawEntries as Array<Record<string, unknown>>
+      : rawEntries !== null && typeof rawEntries === 'object'
+        ? Object.values(rawEntries as Record<string, unknown>)
+          .filter((e): e is Record<string, unknown> => e !== null && typeof e === 'object' && !Array.isArray(e))
+        : []
+    for (const [index, entry] of entryList.entries()) {
       if (entry === null || typeof entry !== 'object') continue
       const content = clean(typeof entry.content === 'string' ? entry.content : '')
       if (content.length === 0) continue
       const comment = typeof entry.comment === 'string' && entry.comment.trim().length > 0
-        ? entry.comment.trim() : `世界书 ${String(entry.id ?? index)}`
-      const keys = Array.isArray(entry.keys) ? entry.keys.map(String).filter((key) => key.trim().length > 0) : []
-      const secondaryKeys = Array.isArray(entry.secondary_keys)
-        ? entry.secondary_keys.map(String).filter((key) => key.trim().length > 0) : []
+        ? entry.comment.trim() : `世界书 ${String(entry.id ?? entry.uid ?? index)}`
+      const rawKeys = entry.keys ?? entry.key
+      const keys = Array.isArray(rawKeys) ? rawKeys.map(String).filter((key) => key.trim().length > 0) : []
+      const rawSecondary = entry.secondary_keys ?? entry.keysecondary
+      const secondaryKeys = Array.isArray(rawSecondary)
+        ? rawSecondary.map(String).filter((key) => key.trim().length > 0) : []
       // 常驻兼容：ST 编辑器内部格式用 constant，角色卡（CCv2/CCv3）world entries 用 add_always。
       const constant = entry.constant === true || entry.add_always === true
+      // 启用兼容：disable 是 ST 编辑器内部格式（disable=true 禁用），enabled 是角色卡格式。
+      const enabled = entry.disable !== undefined ? entry.disable !== true : entry.enabled !== false
       configs.push({
-        id: `lore-${String(entry.id ?? index)}`,
+        id: `lore-${String(entry.id ?? entry.uid ?? index)}`,
         name: comment,
         // ST 启用状态保留；无 keys 条目由 resolver 按全局（constant 语义）每次注入。
-        enabled: entry.enabled !== false,
+        enabled,
         strategy: 'world-book',
-        order: typeof entry.insertion_order === 'number' ? entry.insertion_order : 100,
+        order: typeof entry.insertion_order === 'number'
+          ? entry.insertion_order
+          : (typeof entry.order === 'number' ? entry.order : 100),
         text: content,
         layer: 'pre-step',
         position: 'before-all',
@@ -190,9 +207,9 @@ export function convertStToPreset(card: unknown, baseName: string): PresetSpec {
           constant,
           ...(keys.length > 0 ? { keys } : {}),
           ...(secondaryKeys.length > 0 ? { secondaryKeys } : {}),
-          ...(entry.case_sensitive === true ? { caseSensitive: true } : {}),
-          ...(entry.match_whole_words === true ? { wholeWords: true } : {}),
-          ...(entry.use_regex === true ? { useRegex: true } : {}),
+          ...((entry.case_sensitive ?? entry.caseSensitive) === true ? { caseSensitive: true } : {}),
+          ...((entry.match_whole_words ?? entry.matchWholeWords) === true ? { wholeWords: true } : {}),
+          ...((entry.use_regex ?? entry.useRegex) === true ? { useRegex: true } : {}),
         },
       })
     }
