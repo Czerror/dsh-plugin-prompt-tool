@@ -155,3 +155,28 @@ promptConfigs:
 - 转换后的 `params.model*` 走主对话统一参数体系，由 writePreset 渲染为 `agent-request` patch（audience=main）。
 - 导入端点有路径穿越防护（仅接受扁平相对路径，拒绝 `..` / 盘符 / 绝对路径）。
 - JSON 解析失败或转换异常 → 导入返回 400 `preset-package-invalid`，不会静默产生坏预设。
+
+## 角色卡 PNG 提取（人设卡片图）
+
+SillyTavern 人设卡片 PNG 的 JSON 藏在 PNG 的 `tEXt` chunk（键 `chara`）：
+V1 = `base64(明文 JSON)`，V2 = `base64(zlib 压缩 JSON)`。项目提供提取脚本
+（`scripts/extract-st-character.mjs`，零依赖，Node 内置 zlib）：
+
+```sh
+node scripts/extract-st-character.mjs card.png           # 提取角色卡 JSON → card.json
+node scripts/extract-st-character.mjs --preset card.png  # 转本插件预设 JSON → card-preset.json
+```
+
+`--preset` 模式把角色卡字段映射为预设卡 JSON（`prompts[]` 结构，工作台「预设配置」页
+直接导入，走与预设卡相同的转换链路）：
+
+| 角色卡字段 | 预设 JSON prompts[] | 转换后注入层 |
+|---|---|---|
+| `system_prompt` | `role: system` + `system_prompt: true` | `system-section`（系统静态段） |
+| `description` + `personality` + `scenario` | 合并为 `role: user` | `pre-step`（角色设定） |
+| `first_mes` | `role: assistant` | `pre-step`（开场白） |
+| `post_history_instructions` | `role: user` | `pre-step`（历史后指令） |
+| `extensions.sampling.temperature` / `max_tokens` | 顶层 `temperature` / `openai_max_tokens` | `params.model*` |
+
+> 角色卡 ≠ 预设卡：角色卡描述「角色是谁」，预设卡描述「注入什么、注入到哪一层」；
+> PNG 提取转换后是后者，可在工作台预设切换器中直接使用。
