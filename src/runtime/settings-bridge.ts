@@ -5,7 +5,7 @@ import { dirname, join } from 'node:path'
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml'
 import type { SettingsDescriptor, SettingsNamespace, SettingsPathOp } from '@deepseek-ai/dsh-settings'
-import { listAdvertisedModels, type ModelDetection } from './models.ts'
+import { listAdvertisedModels, peekModelCatalog, type ModelDetection } from './models.ts'
 import type { SkillCatalogEntry } from '../config.ts'
 import { loadPromptConfigFiles } from '../host/prompt-configs.ts'
 import { validatePromptConfigs } from './configs-validate.ts'
@@ -180,7 +180,9 @@ export function registerSettingsBridge(
             }
             const detection = getModelsState()
             const skillsState = getSkillsState()
-            const modelCatalog = await listAdvertisedModels(sctx)
+            // 模型目录移出关键路径：/describe 只读缓存（未命中返回空），
+            // 查询由独立 /models 端点触发（客户端惰性加载，不阻塞工作台）。
+            const modelCatalog = peekModelCatalog()
             // 当前预设模板消息批层（pre-step）配置数：UI 消息批层入口开关联动——
             // 模板无 pre-step 配置（layer 缺省即 pre-step）时开关关闭且禁编辑。
             let templatePreStepCount = 0
@@ -211,6 +213,16 @@ export function registerSettingsBridge(
               skillsDirExists: Object.fromEntries(skillsState.activeSkillsDirs.map((dir) => [dir, existsSync(dir)])),
               skillCatalog: skillsState.skillCatalog,
             })
+          },
+        }),
+        sctx.webServer.register({
+          kind: 'exact',
+          path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.models,
+          handler: async (req, res) => {
+            if (!guard(req, res)) return
+            ensureRegistered(sctx)
+            const modelCatalog = await listAdvertisedModels(sctx)
+            writeBridgeJson(res, 200, { ok: true, value: { modelCatalog } })
           },
         }),
         sctx.webServer.register({

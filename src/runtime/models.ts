@@ -49,6 +49,12 @@ function withModelTimeout<T>(promise: Promise<T>, ms: number): Promise<T | undef
   ])
 }
 
+/** 同步读模型目录缓存（命中返回，未命中/过期返回空）：/describe 不触发查询。 */
+export function peekModelCatalog(): Record<string, string[]> {
+  const cached = catalogCache.get('default')
+  return cached !== undefined && Date.now() - cached.at < CATALOG_TTL_MS ? cached.value : {}
+}
+
 /** 查询各已注册服务商公布的模型 id（对齐官方 web 选择器 buildModelCatalog：只遍历 listProviders() live 路由，单点失败/超时不拖垮整体；仅作展示，不构成路由白名单）。并行查询 + 10min 缓存 + 单点超时。 */
 export async function listAdvertisedModels(ctx: Context): Promise<Record<string, string[]>> {
   const cached = catalogCache.get('default')

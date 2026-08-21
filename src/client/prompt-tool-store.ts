@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type {
   IApiClient,
   SettingsNamespaceView,
@@ -308,6 +308,12 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
     setNoticeKind(kind)
   }, [])
 
+  /** 模型目录惰性加载：独立于主 load（/describe 不再阻塞等模型查询）。 */
+  const loadModels = useCallback(async (): Promise<void> => {
+    const res = await bridgePost<{ modelCatalog: Record<string, string[]> }>('/models', {})
+    if (res.ok) setModelCatalog(res.value.modelCatalog ?? {})
+  }, [])
+
   const applyView = useCallback((res: BridgeResult<BridgeSettingsView>): Fields => {
     setTemplatePreStepCount(res.ok && typeof res.templatePreStepCount === 'number' ? res.templatePreStepCount : 0)
     setProviders(res.ok ? res.providers ?? [] : [])
@@ -409,6 +415,11 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
       if (seq === loadSeqRef.current) setLoading(false)
     }
   }, [applyView, settings, showNotice])
+
+  // 挂载即后台拉取模型目录（不阻塞工作台首屏；10min 缓存兜底重复打开）。
+  useEffect(() => {
+    void loadModels()
+  }, [loadModels])
 
   const refreshRevision = useCallback(async () => {
     try {

@@ -6,10 +6,11 @@
  */
 export const SETTINGS_BRIDGE_PREFIX = '/api/prompt-tool/settings'
 
-/** 14 个桥端点路径（相对前缀）。新增端点必须同时登记到契约测试。 */
+/** 15 个桥端点路径（相对前缀）。新增端点必须同时登记到契约测试。 */
 export const BRIDGE_ENDPOINTS = {
   meta: '/meta',
   describe: '/describe',
+  models: '/models',
   mutate: '/mutate',
   configsValidate: '/configs-validate',
   skillFix: '/skill-fix',
