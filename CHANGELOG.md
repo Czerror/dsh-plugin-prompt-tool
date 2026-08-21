@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### 适配 DSH v0.1.1-rc.1（2026-08-21）
+
+- **依赖升级**：peerDependencies / devDependencies 全部 `^0.1.0-rc.8` → `^0.1.1-rc.1`（dsh-api-remotes、dsh-client-connection、dsh-client-runtime、dsh-client-ui-primitives、dsh-client-ui-settings、dsh-client-ui-slots、dsh-commands、dsh-host-webserver、dsh-settings、dsh-skill、dsh-system-prompt），pnpm-workspace.yaml minimumReleaseAgeExclude 同步更新。
+- **兼容性核对**：插件 import 的 11 个符号（ClientContext / SettingsScope / IApiClient / ConnectionHandle / settingsNamespace 等）在 rc.1 全部保留且签名未变；上游类型变化均为增量（RpcFetch / ClientTransportHooks / IndexInjection 新增、sessions 可选字段、MarkdownRenderContext.inBlockquote）；`credentials/updated` 事件更名为 `credentials/reference-updated`（插件未使用，无影响）。
+- **回归**：typecheck / lint / 235 测试全绿。
+
 ### UI 参数全覆盖：预设级参数可自定义（2026-08-20）
 
 - **overrides 通道 8→15 项**：`fastModelPersona`（主对话快速模型人设，textarea）、`subagentPersona`（子代理独立人设，textarea）、`subagentToolFilterAllow/Deny`（工具集白/黑名单，逗号分隔 input）、`subagentMaxDepth`（递归深度，下拉：不设置/provider-managed/0/1/2/3/5）、`allowKinds`（注入 kind 白名单，逗号分隔 input）、`firstTurnWord`（锚定词，**自由文本输入**任意自定义文本）——全部经 prompt-tool.overrides.yml 随预设隔离，settings.yaml 保持纯净。

@@ -34,7 +34,7 @@ dsh --profile prompt-tool
 
 ## 兼容性
 
-- 需要 DSH `0.1.0-rc.8+`（agent preset 机制、`system-prompt/assemble` 钩子、
+- 需要 DSH `0.1.1-rc.1+`（agent preset 机制、`system-prompt/assemble` 钩子、
   `agent/pre-step` 瀑布、`settings.section` 一级设置段（官方术语））。
 - 不硬编码内部实现：宿主面只用官方 Context 服务与事件 API
   （`systemPrompt` / `tools` / `llm` / `agent/*` / `session/*` / `tools/*`）。
