@@ -768,11 +768,30 @@ registerTuiCommand(
       return
     }
     try {
-      savePresetParams(runtime.presetDir, runtime.presetTemplate, params, promptConfigs)
+      // 旧版参数是全局单文档（切换任何预设都生效）：写全部插件格式预设
+      // （含 modules/params 段的种子化模板），保持旧语义；官方格式预设
+      // （无 modules/params，组合直接挂载）跳过——不往用户手动建的预设注入参数。
+      let written = 0
+      for (const preset of listPresets()) {
+        try {
+          const spec = loadPresetSpec(resolvePresetDir(preset.id))
+          const isPluginFormat = Array.isArray(spec.modules)
+            || (spec.params !== null && typeof spec.params === 'object')
+          if (!isPluginFormat) continue
+          savePresetParams(runtime.presetDir, preset.id, params, promptConfigs)
+          written++
+        } catch {
+          // 单个预设写入失败不阻断其余（下次启动重试）。
+        }
+      }
+      if (written === 0) {
+        writeFileSync(mark, '', 'utf8')
+        return
+      }
       reloadPresetParams()
       rebuildPreset()
       writeFileSync(mark, '', 'utf8')
-      warn(ctx, 'prompt-tool: 已把旧全局 settings 参数迁移到激活预设 preset.yml（每预设独立存储）')
+      warn(ctx, `prompt-tool: 已把旧全局 settings 参数迁移到 ${written} 个预设 preset.yml（每预设独立存储）`)
     } catch (error) {
       warn(ctx, `prompt-tool: settings 参数迁移失败（下次启动重试）：${error instanceof Error ? error.message : String(error)}`)
     }
