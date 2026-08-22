@@ -473,15 +473,17 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
   const patch = useCallback((partial: Partial<Fields>) => {
     let next = { ...fieldsRef.current, ...partial }
     // complete 互斥：system-section/persona 共用官方 complete 语义（预设内仅一个），
-    // 开启任一配置的 complete 时自动关闭其他配置（手写冲突仍由官方 fail loud 兜底）。
+    // 开启任一 enabled 配置的 complete 时自动关闭其他 enabled 配置的 complete。
+    // disabled 配置不参与（引擎 effectiveList 已过滤，不注册即不独占；重新启用时由本次收敛）。
     if (Array.isArray(next.promptConfigs)) {
-      const enabledComplete = next.promptConfigs.some((config) => config.params?.complete === true)
+      const activeComplete = (config: PromptConfigDraft): boolean => config.enabled !== false && config.params?.complete === true
+      const enabledComplete = next.promptConfigs.some(activeComplete)
       if (enabledComplete) {
-        const kept = next.promptConfigs.findIndex((config) => config.params?.complete === true)
+        const kept = next.promptConfigs.findIndex(activeComplete)
         next = {
           ...next,
           promptConfigs: next.promptConfigs.map((config, index) =>
-            index === kept
+            index === kept || config.enabled === false
               ? config
               : { ...config, params: { ...config.params, complete: false } }),
         }
