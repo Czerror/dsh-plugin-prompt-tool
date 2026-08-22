@@ -227,12 +227,23 @@ export function apply(ctx: Context, configIn: Config): void {
       }
       writePreset(presetPrompt, options)
     } else {
-      // writePreset 关闭时移除旧的生成目录，避免残留 prompt-injector 继续注入。
-      try {
-        rmSync(runtime.presetDir, { recursive: true, force: true })
-      } catch (error) {
-        warn(ctx, 'prompt-tool: failed to remove ' + runtime.presetDir + ': ' + String(error))
+      // writePreset 关闭时移除各预设目录的生成物（agent.cordis.yml / prompt-configs /
+      // 内容资产），保留 preset.yml 参数源与预设根本身——宿主以 agent.cordis.yml
+      // 为准挂载，删除组合本体即停止注入；绝不删除整个用户预设目录
+      // （旧版误删 presetDir 根：用户全部预设、种子标记 .pt-seeded、共享 .engine 一并清空）。
+      let cleaned = 0
+      for (const preset of listPresets()) {
+        const dir = join(runtime.presetDir, preset.id)
+        for (const name of ['agent.cordis.yml', 'prompt-configs', 'preset.md', 'agents.md', 'agents-instruction.md', 'engine']) {
+          try {
+            rmSync(join(dir, name), { recursive: true, force: true })
+          } catch {
+            // Windows 瞬时锁：残留无害（下次重建/清理重试）。
+          }
+        }
+        cleaned += 1
       }
+      warn(ctx, `prompt-tool: writePreset 已关闭，清理 ${cleaned} 个预设目录的生成物（preset.yml 参数保留）`)
     }
   }
 
