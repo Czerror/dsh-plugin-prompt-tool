@@ -7,7 +7,7 @@ import { join } from 'node:path'
 // 隔离 DSH_HOME：paths.ts 模块级常量在 import 时求值，必须先设 env 再动态 import lib。
 const home = mkdtempSync(join(tmpdir(), 'pt-wp-off-'))
 process.env.DSH_HOME = home
-const { apply } = await import('../../lib/index.mjs')
+const { apply, writePluginState } = await import('../../lib/index.mjs')
 
 function makeCtx(settingsValue) {
   const makeSctx = () => ({
@@ -55,7 +55,8 @@ function settings(presetDir, writePreset) {
 test('writePreset 关闭时只清理各预设目录生成物，保留 preset.yml 与预设根（防误删回归）', () => {
   const presetDir = join(home, '.agent-presets')
   mkdirSync(join(presetDir, 'anchored', 'prompt-configs'), { recursive: true })
-  writeFileSync(join(presetDir, '.pt-seeded'), '', 'utf8')
+  // 预置已种子化状态：避免 ensurePresetSeed 复制全部内置模板干扰预设根断言。
+  writePluginState({ seeded: true })
   writeFileSync(join(presetDir, 'anchored', 'preset.yml'),
     'id: anchored\nname: Anchored\nmodules: [prompt-config-engine]\n', 'utf8')
   writeFileSync(join(presetDir, 'anchored', 'agent.cordis.yml'),
@@ -70,14 +71,13 @@ test('writePreset 关闭时只清理各预设目录生成物，保留 preset.yml
   assert.equal(existsSync(join(presetDir, 'anchored', 'prompt-configs')), false, 'prompt-configs 应被清理')
   // 参数源与预设根保留——绝不删除整个用户预设目录。
   assert.equal(existsSync(join(presetDir, 'anchored', 'preset.yml')), true, 'preset.yml 参数必须保留')
-  assert.equal(existsSync(join(presetDir, '.pt-seeded')), true, '.pt-seeded 种子标记必须保留')
-  assert.deepEqual(readdirSync(presetDir).sort(), ['.pt-params-migrated', '.pt-seeded', 'anchored'],
-    '预设根目录不得被清空')
+  assert.deepEqual(readdirSync(presetDir).sort(), ['anchored'], '预设根只应保留预设目录（状态已移出）')
 })
 
 test('writePreset 开启时不受影响：预设目录正常生成', () => {
   const presetDir = join(home, '.agent-presets-2')
   mkdirSync(join(presetDir, 'anchored'), { recursive: true })
+  writePluginState({ seeded: true })
   writeFileSync(join(presetDir, 'anchored', 'preset.yml'),
     'id: anchored\nname: Anchored\nmodules: [prompt-config-engine]\n', 'utf8')
 

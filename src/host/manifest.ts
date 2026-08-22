@@ -9,12 +9,12 @@
  * 本模块负责参数归一化与引擎 token 渲染;所有 anchored 专属行为都在引擎内部。
  */
 
-import { readFileSync, existsSync, readdirSync, mkdirSync, rmSync, writeFileSync, cpSync } from 'node:fs'
+import { readFileSync, existsSync, readdirSync, mkdirSync, rmSync, writeFileSync, cpSync, renameSync } from 'node:fs'
 import { spawn } from 'node:child_process'
 import { basename, dirname, join, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Pair, Scalar, parse as parseYaml, parseDocument, YAMLMap, YAMLSeq } from 'yaml'
-import { DEFAULT_PRESET_DIR } from './paths.ts'
+import { DEFAULT_PRESET_DIR, DSH_HOME } from './paths.ts'
 
 export interface PresetSpec {
   id: string
@@ -193,12 +193,53 @@ export function listBuiltinTemplates(): Array<{ id: string; name: string }> {
   }
 }
 
-/** 首次启动种子化：把插件目录全部内置模板复制到预设根（.pt-seeded 标记后不再自动补）。
- *  用户删除的预设不会自动复活；升级新增的模板用「新建」按需复制。 */
+/** 插件状态文件（DSH_HOME 下，预设根之外）：与用户资产解耦，删除/备份/迁移预设根不影响状态。
+ *  原子写（tmp+rename），避免半写文件。 */
+export function stateFilePath(): string {
+  return join(DSH_HOME, '.prompt-tool-state.json')
+}
+
+export interface PromptToolState {
+  seeded?: boolean
+  paramsMigrated?: boolean
+}
+
+/** 读插件状态；文件缺失/损坏返回空对象（按未标记处理，触发首次动作）。 */
+export function readPluginState(): PromptToolState {
+  try {
+    const parsed = JSON.parse(readFileSync(stateFilePath(), 'utf8'))
+    return parsed !== null && typeof parsed === 'object' ? parsed as PromptToolState : {}
+  } catch {
+    return {}
+  }
+}
+
+/** 原子写插件状态（tmp+rename）。 */
+export function writePluginState(state: PromptToolState): void {
+  const file = stateFilePath()
+  const tmp = `${file}.tmp`
+  writeFileSync(tmp, JSON.stringify(state, null, 2), 'utf8')
+  renameSync(tmp, file)
+}
+
+/** 首次启动种子化：把插件目录全部内置模板复制到预设根（state.seeded 后不再自动补）。
+ *  用户删除的预设不会自动复活；升级新增的模板用「新建」按需复制。
+ *  兼容旧版预设根内 .pt-seeded 标记：存在即视为已种子化，并迁入状态文件后删除。 */
 export function ensurePresetSeed(): { created: string[] } {
   const root = userPresetsDir()
-  const mark = join(root, '.pt-seeded')
-  if (existsSync(mark)) return { created: [] }
+  const legacyMark = join(root, '.pt-seeded')
+  const state = readPluginState()
+  if (state.seeded === true || existsSync(legacyMark)) {
+    if (existsSync(legacyMark)) {
+      try {
+        writePluginState({ ...state, seeded: true })
+        rmSync(legacyMark, { force: true })
+      } catch {
+        // 旧标记迁移失败不阻断（下次启动重试）。
+      }
+    }
+    return { created: [] }
+  }
   const created: string[] = []
   try {
     mkdirSync(root, { recursive: true })
@@ -209,7 +250,7 @@ export function ensurePresetSeed(): { created: string[] } {
       cpSync(join(packagePresetDir(), entry.name), target, { recursive: true })
       created.push(entry.name)
     }
-    writeFileSync(mark, '', 'utf8')
+    writePluginState({ ...readPluginState(), seeded: true })
   } catch {
     // 种子化失败（目录不可写等）不阻断启动，用户仍可经 UI 新建/导入。
   }

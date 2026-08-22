@@ -9,7 +9,7 @@ import type {
   SkillProviderControl,
 } from '@deepseek-ai/dsh-skill'
 import type {} from '@deepseek-ai/dsh-host-webserver'
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs'
 import { parse as parseYaml } from 'yaml'
 import { createSkillsWatcher } from './runtime/skills-watcher.ts'
 import { basename, dirname, join } from 'node:path'
@@ -36,7 +36,7 @@ import { ensureSettingsRegistered } from './runtime/settings-registration.ts'
 import { removeResidentAgentsBlock, writeAgents } from './runtime/agents-file.ts'
 import { writePreset } from './host/write-preset.ts'
 import type { WritePresetOptions } from './host/write-preset.ts'
-import { ensurePresetSeed, listPresets } from './host/manifest.ts'
+import { ensurePresetSeed, listPresets, readPluginState, writePluginState } from './host/manifest.ts'
 import {
   Config,
   NS,
@@ -803,11 +803,22 @@ registerTuiCommand(
     onError: (message) => warn(ctx, `prompt-tool: settings register failed: ${message}`),
   })
 
-  /** 阶段 2 迁移：旧全局 settings 引擎参数 → 激活预设 preset.yml（一次性，标记后跳过）。 */
-  const PARAMS_MIGRATED_MARK = '.pt-params-migrated'
+  /** 阶段 2 迁移：旧全局 settings 引擎参数 → 激活预设 preset.yml（一次性，state.paramsMigrated 后跳过）。
+   *  兼容旧版预设根内 .pt-params-migrated 标记：存在即视为已迁移，并迁入状态文件后删除。 */
   const migrateSettingsParamsToPreset = (sctx: Context): void => {
-    const mark = join(runtime.presetDir, PARAMS_MIGRATED_MARK)
-    if (existsSync(mark)) return
+    const legacyMark = join(runtime.presetDir, '.pt-params-migrated')
+    const state = readPluginState()
+    if (state.paramsMigrated === true || existsSync(legacyMark)) {
+      if (existsSync(legacyMark)) {
+        try {
+          writePluginState({ ...state, paramsMigrated: true })
+          rmSync(legacyMark, { force: true })
+        } catch {
+          // 旧标记迁移失败不阻断（下次启动重试）。
+        }
+      }
+      return
+    }
     let userSection: Record<string, unknown> = {}
     try {
       const descriptor = sctx.settings.describe({ redactSecrets: true })
@@ -835,9 +846,9 @@ registerTuiCommand(
     if (Object.keys(params).length === 0 && promptConfigs === undefined) {
       try {
         mkdirSync(runtime.presetDir, { recursive: true })
-        writeFileSync(mark, '', 'utf8')
+        writePluginState({ ...readPluginState(), paramsMigrated: true })
       } catch {
-        // 只读目录忽略。
+        // 状态写入失败忽略（下次启动重试）。
       }
       return
     }
@@ -859,12 +870,12 @@ registerTuiCommand(
         }
       }
       if (written === 0) {
-        writeFileSync(mark, '', 'utf8')
+        writePluginState({ ...readPluginState(), paramsMigrated: true })
         return
       }
       reloadPresetParams()
       rebuildPreset()
-      writeFileSync(mark, '', 'utf8')
+      writePluginState({ ...readPluginState(), paramsMigrated: true })
       warn(ctx, `prompt-tool: 已把旧全局 settings 参数迁移到 ${written} 个预设 preset.yml（每预设独立存储）`)
     } catch (error) {
       warn(ctx, `prompt-tool: settings 参数迁移失败（下次启动重试）：${error instanceof Error ? error.message : String(error)}`)
@@ -902,9 +913,11 @@ export {
   ensurePresetSeed,
   listBuiltinTemplates,
   listPresets,
+  readPluginState,
   removeUserPreset,
   resolvePresetDir,
   userPresetsDir,
+  writePluginState,
 } from './host/manifest.ts'
 export { ensureWebSurface, resolveProfileDir } from './web-surface.ts'
 export { resolveProfileSkillsDir } from './profile-skills.ts'

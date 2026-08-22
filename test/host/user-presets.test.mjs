@@ -63,7 +63,7 @@ test('listPresets：全部来自用户目录（种子化后内置模板即为用
     assert.ok(preset !== undefined && preset.user === true, `${id} 应为用户目录预设`)
   }
   assert.ok(!presets.some((preset) => preset.id === 'ptc'), 'ptc 已删除不应列出')
-  assert.ok(!presets.some((preset) => preset.id.startsWith('.')), '点前缀目录（.engine/.pt-seeded/.bak）不列出')
+  assert.ok(!presets.some((preset) => preset.id.startsWith('.')), '点前缀目录（.engine/.bak）不列出')
 })
 
 test('cloneBuiltinPreset：非内置/非法 id/用户目录已存在同名拒绝', () => {
