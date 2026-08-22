@@ -1165,6 +1165,7 @@
 .configTitle { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .configName { font-size: 13px; font-weight: 600; line-height: 1.5; color: var(--dsw-alias-label-primary); overflow-wrap: anywhere; letter-spacing: -.005em; }
 .configMeta { font-size: 12px; line-height: 1.5; color: var(--dsw-alias-label-tertiary); overflow-wrap: anywhere; }
+.configChip { margin-left: 8px; padding: 1px 8px; border-radius: 999px; font-size: 11px; line-height: 1.6; color: var(--dsw-alias-label-brand, #3b82f6); background: color-mix(in srgb, var(--dsw-alias-label-brand, #3b82f6) 12%, transparent); }
 .chevron { flex: none; color: var(--dsw-alias-label-tertiary); transition: transform .18s cubic-bezier(.22, 1, .36, 1); }
 .chevronOpen { transform: rotate(180deg); color: var(--pt-accent); }
 

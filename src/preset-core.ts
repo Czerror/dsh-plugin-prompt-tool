@@ -19,7 +19,7 @@ export { loadPromptConfigFiles, mergePromptConfigs, renderPromptConfigYaml } fro
 
 /**
  * 渲染 anchored 组合文件:
- * agent.cordis.yml 是模板自带完整组合(含 router-first-turn 与 prompt-config-engine 行),
+ * agent.cordis.yml 是模板自带完整组合(含 prompt-config-engine 行),
  * 动态值全部由 preset.yml 的 variables 声明为 __TOKEN__;本函数只做变量替换 + YAML 校验。
  */
 export function buildCordis(prompt: string, options: BuildCordisOptions = {}): string {
@@ -60,9 +60,6 @@ export function buildCordis(prompt: string, options: BuildCordisOptions = {}): s
     toolFilterAllow: options.toolFilterAllow,
     toolFilterDeny: options.toolFilterDeny,
     maxDepth: options.maxDepth,
-    mainPersona: typeof options.mainPersona === 'string' && options.mainPersona.trim().length > 0
-      ? options.mainPersona
-      : undefined,
     allowKinds: options.allowKinds,
     firstTurnWord: typeof options.firstTurnWord === 'string' && options.firstTurnWord.length > 0
       ? options.firstTurnWord
@@ -72,7 +69,6 @@ export function buildCordis(prompt: string, options: BuildCordisOptions = {}): s
   // 生成文件必须含引擎必需行，且引擎行指向提示词配置模块目录。
   const parsed = assertCompositionArray(out, spec)
   const ids = new Set(parsed.map((row) => (row as { id?: string } | null)?.id))
-  if (!ids.has('router-first-turn')) throw new Error('generated agent.cordis.yml is missing the router-first-turn row')
   if (!ids.has('prompt-config-engine')) throw new Error('generated agent.cordis.yml is missing the prompt-config-engine row')
   const engine = parsed.find((row) => (row as { id?: string } | null)?.id === 'prompt-config-engine') as { config?: { configsDir?: string } } | undefined
   if (engine?.config?.configsDir !== '../prompt-configs') throw new Error('generated agent.cordis.yml prompt-config-engine row must point configsDir at ../prompt-configs')

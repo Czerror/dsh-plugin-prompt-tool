@@ -163,20 +163,6 @@ params:
   injectPrompt: true
   usePtcMode: true
   bootstrapMaxTokens: 0
-  # 人设·主对话自定义模型人设：主对话命中快速模型（Flash 档）时替换人设；
-  # 子代理自定义模型人设（subagentPersona）未设置时回退使用。
-  mainPersona: >
-    You are a helpful assistant.
-
-    Before acting, decide the task type (build or fix) and adopt the matching
-    style: build → hands-on production; fix → inspect-and-plan.
-
-    Before acting, briefly review what you have already done in this session and
-    continue from where you left off; do not repeat completed steps. Do not run
-    environment checks (echo, whoami, uname, node --version, date) or exhaustive
-    grep/glob scans.
-
-    Think deeply first, then produce.
   guideCustom: false
   guideComplexPattern: "架构|重构|全面|详细|设计|系统|优化|分析|architecture|refactor|comprehensive|detailed|design|system|optimize|analyze"
   guideWeak: "Router: classify this task (build or fix) now, then adopt the matching style — build: direct production; fix: inspect-first. Think deeply first, then commit and act."
@@ -196,7 +182,7 @@ params:
   #             subagentReasoningEffort / Temperature / MaxTokens（子代理）
   #             agent-request patch（官方 LlmCallConfig；audience 区分主/子；''=不设置）
   #   人设      subagentPersona                       tool-subagent persona
-  #             （显式 → 固定路由回退 mainPersona → 继承主会话）
+  #             （显式 → 继承主会话 persona（scope 链））
   #   工具集    toolFilter.allow / deny               tool-subagent toolFilter{allow,deny}
   #             （主会话 tool-filter 模块共用同一扁平键，作用于任意注册工具，
   #               含第三方插件工具；空列表 = 不过滤）
@@ -277,6 +263,27 @@ promptConfigs:
     sourceKind: instruction-hint
     form: hint
     fill: instruction-hint
+  - id: persona-main
+    name: 主会话人设
+    layer: system-section
+    strategy: static
+    order: 0
+    params:
+      sectionName: deployment:persona
+      complete: true
+      suppressRuntimeContext: true
+    text: >-
+      You are a helpful assistant.
+
+      Before acting, decide the task type (build or fix) and adopt the matching
+      style: build → hands-on production; fix → inspect-and-plan.
+
+      Before acting, briefly review what you have already done in this session and
+      continue from where you left off; do not repeat completed steps. Do not run
+      environment checks (echo, whoami, uname, node --version, date) or exhaustive
+      grep/glob scans.
+
+      Think deeply first, then produce.
 legacyCleanup:
   []
 upstream:
@@ -287,10 +294,8 @@ modules:
   - context-gate
   - tool-filter
   - tool-bootstrap
-  - router-first-turn
   - prompt-config-engine
   - run-code-env
-  - persona
   - tool-bash
   - tool-pwsh
   - persistent-shell
@@ -309,19 +314,12 @@ modules:
   - tool-todo
   - tool-web
 moduleConfigs:
-  persona:
-    text: You are a helpful software engineer assistant.
-    complete: true
-    includeRuntimeContext: false
   custom-bash:
     timeoutMs: 120000
     maxOutputBytes: 64000
   tool-bootstrap:
     includeSubagents: false
     promoteOn: either
-  router-first-turn:
-    hideSectionPrefixes: ["mnemon:"]
-    includeSubagents: false
   run-code-env:
     envKeys: [PATH, PATHEXT, HOME, USERPROFILE, USERNAME, COMPUTERNAME, OS, TEMP, TMP, SystemRoot, ProgramFiles, ProgramFiles(x86), LOCALAPPDATA, APPDATA]
   context-gate:

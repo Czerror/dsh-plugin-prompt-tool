@@ -76,7 +76,7 @@ export interface WritePresetOptions {
   subagentTemperature?: string
   /** 子代理输出上限（agent-request patch，audience=subagent；''=不设置）。 */
   subagentMaxTokens?: string
-  /** 子代理自定义模型人设（per-child shadow；缺省回退 mainPersona，两者缺省=继承主会话）。 */
+  /** 子代理自定义模型人设（per-child shadow；缺省 = 经 scope 链继承主会话 persona 模块）。 */
   subagentPersona?: string
   /** 委派工具集白名单（toolFilter.allow；支持数组或逗号/空格分隔字符串）。 */
   toolFilterAllow?: string[] | string
@@ -84,8 +84,6 @@ export interface WritePresetOptions {
   toolFilterDeny?: string[] | string
   /** 委派递归深度上限（0 禁止委派 / provider-managed / 正整数）。 */
   maxDepth?: number | 'provider-managed' | string
-  /** 主对话自定义模型人设（preset.yml mainPersona；覆盖模板默认）。 */
-  mainPersona?: string
   /** 注入 kind 白名单（context-gate allowKinds；数组或逗号分隔字符串）。 */
   allowKinds?: string[] | string
   /** custom-fallback 锚定词（prompt-injector params.firstTurnWord）。 */
@@ -173,11 +171,7 @@ function runtimeOf(options: WritePresetOptions, prompt: string): Record<string, 
       ? options.toolFilterDeny
       : undefined,
     maxDepth: options.maxDepth,
-    // 空值不覆盖：mainPersona 引擎必需非空（空串会触发 router-first-turn 抛错），
     // firstTurnWord 空应回退 preset.yml 模板默认（we）。
-    mainPersona: typeof options.mainPersona === 'string' && options.mainPersona.trim().length > 0
-      ? options.mainPersona
-      : undefined,
     allowKinds: options.allowKinds,
     firstTurnWord: typeof options.firstTurnWord === 'string' && options.firstTurnWord.length > 0
       ? options.firstTurnWord

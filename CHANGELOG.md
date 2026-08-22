@@ -14,6 +14,19 @@
 
 ## [Unreleased]
 
+### persona 注册层重构：router-first-turn 接管人设（2026-08-22）
+
+- **人设彻底模块化（方案 B 落地）**：人设从 params 参数迁移为 promptConfigs 的 `persona-main` 模块（`layer: system-section` + `params.sectionName: deployment:persona`）——与普通模块同一存储/编辑/新建通道（模块列表「人设」徽标）；`complete` 保留且 UI 互斥（预设内仅一个，手写冲突官方 fail loud，与官方行为一致）；`suppressRuntimeContext` 经 wireSystemSections 透传（等价官方 includeRuntimeContext:false）；`router-first-turn.mjs` 整体退役（引擎文件、composition 行、`__MAIN_PERSONA__` token、FALLBACK_MODULES 引用全删）；`mainPersona` 参数删除，6 预设人设文本迁入 promptConfigs（anchored/minimal complete 独占系、standard/ptc/creative/liangshen 非独占）；子代理回退链改为「显式 subagentPersona → scope 链继承主会话 persona」；templates/20-system-section.yml 补 persona 用法；测试重写（persona 模块集成测试：shadow 注册/complete 独占/多 complete fail loud/suppressRuntimeContext/子代理不继承）+ 修复 prompt-configs 测试 DSH_HOME 隔离（paths 模块顶层缓存 DEFAULT_PRESET_DIR，必须动态 import）。
+- **官方预设人设全量对齐**：standard → 官方 standard 原文（`You are a coding agent powered by the {{model}} model. Your working directory is {{cwd}}.`，非独占）；ptc → 官方 code 原文（同 standard，PTC 保留）；minimal → 官方 minimal 原文（`You are a helpful software engineer assistant.`，complete 独占 + 抑制 runtime context 由组合默认提供）；creative → 官方 cordis（上条）。anchored / liangshen / custom 为自研预设无官方对应，保留自有设计。write-preset 测试新增三预设人设对齐断言。
+- **creative 对齐官方 cordis（创造模式）**：`preset/creative/preset.yml` 人设替换为官方 cordis 创意文本（`{{model}}`/`{{cwd}}` 变量经 token 渲染保留、assemble 后由官方插值）；`usePtcMode` 改 false（官方 cordis 非 PTC）；配套 skills 补齐——`preset/creative/skills/cordis-plugin-development/` 与 `editing-cordis-compositions/`（官方原文复制，writePreset 随预设复制进生成目录，skill-filesystem `customSkillDirs` 解析）；write-preset 测试加变量保留与 skills 复制断言。
+- **人设体系收敛为「主会话 / 子代理」两轴**（用户定稿）：完全放弃 Flash/Pro 模型档位分流——`mainPersona` 重定义为主会话人设（全模型通用，静态注册层 shadow + complete 独占），`proPersona` 参数取消（曾短暂引入后按用户决策回退）；子代理轴由既有 `subagentPersona`（显式 → 回退 mainPersona → 继承主会话）承担，与主会话天然隔离（scope 链不继承）。
+- **修复真实宿主缺陷**：官方 `dsh-system-prompt` 的 `complete` 语义在 assembly waterfall 后恢复注册原文——旧实现的 waterfall 段替换（Flash/Pro 人设路由、mnemon 隐藏、plan 保留）在 `complete: true` 预设下被整体覆盖，**mainPersona 自定义从未真正到达模型**（桩 ctx 测试掩盖）。经官方源码核对 + 真实 cordis/dsh-system-prompt 集成验证（6 场景全绿）。
+- **注册层实现**：`engine/router-first-turn.mjs` 改为官方 scope shadow 机制——同名注册 `deployment:persona` 遮蔽全局 persona，`section.text` 为函数 provider 按 `context.agent.options.model` 每次组装路由（Flash → `mainPersona`，Pro → 官方 RL 原句），首轮即正确、模型切换自动跟随；`complete: true`（默认）天然独占 system prompt，无需 waterfall 修改。
+- **persona 行移除**：6 个预设（anchored/minimal/liangshen/standard/ptc/creative）的 `modules` 删除 `persona` 行与 `moduleConfigs.persona`（同名单注册冲突）；`includeRuntimeContext: false` 语义迁移为 `router-first-turn.suppressRuntimeContext`（anchored/minimal 开启）；standard/ptc/creative/liangshen 保持非独占（`complete: false`）；liangshen 补挂 router-first-turn 与 `params.mainPersona`。
+- **配置收敛**：`hideSectionPrefixes` / `includeSubagents` 删除——mnemon 段隐藏由 complete 免费实现（原真实宿主上同样被覆盖，无回归）；子代理 scope 不继承 shadow（官方 scope 链），天然放行全局 persona，自定义走 tool-subagent 行 `subagentPersona`。
+- **测试升级**：`anchored-presets.test.mjs` router 用例从桩 ctx 改为真实 cordis + dsh-system-prompt + dsh-scope 集成测试（Flash/Pro 路由、complete 独占、子代理放行、suppressRuntimeContext 等 6 用例）；devDependencies 新增 `@deepseek-ai/dsh-scope`。
+- **回归**：typecheck / lint / 257 测试全绿。
+
 ### 适配 DSH v0.1.1-rc.1（2026-08-21）
 
 - **依赖升级**：peerDependencies / devDependencies 全部 `^0.1.0-rc.8` → `^0.1.1-rc.1`（dsh-api-remotes、dsh-client-connection、dsh-client-runtime、dsh-client-ui-primitives、dsh-client-ui-settings、dsh-client-ui-slots、dsh-commands、dsh-host-webserver、dsh-settings、dsh-skill、dsh-system-prompt），pnpm-workspace.yaml minimumReleaseAgeExclude 同步更新。

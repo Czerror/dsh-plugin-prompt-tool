@@ -75,20 +75,15 @@ test('resolvePresetParams 模型路由/委派参数全扁平（preset.yml params
 test('anchored buildCordis 集成：moduleConfigs 合并与 token 渲染共存', () => {
   const rows = parseYaml(buildCordis('P'))
   const bash = rows.find((row) => row?.id === 'custom-bash')
-  const router = rows.find((row) => row?.id === 'router-first-turn')
   const gate = rows.find((row) => row?.id === 'context-gate')
-  const persona = rows.find((row) => row?.id === 'persona')
   const bootstrap = rows.find((row) => row?.id === 'tool-bootstrap')
-  assert.ok(bash && router && gate && persona && bootstrap, 'agent 组合应含核心行')
+  assert.ok(bash && gate && bootstrap, 'agent 组合应含核心行')
   assert.equal(bash.config.timeoutMs, 120000)
-  assert.deepEqual(router.config.hideSectionPrefixes, ['mnemon:'])
+  // 人设已模块化：组合不再含 router-first-turn 行（persona 由 promptConfigs 的
+  // system-section 模块承担，见 write-preset 测试的 persona-main 断言）。
+  assert.equal(rows.some((row) => row?.id === 'router-first-turn'), false, '组合不应含 router-first-turn 行')
   assert.equal(gate.config.promoteOn, 'either')
   assert.deepEqual(gate.config.allowKinds, ['skill-invocation', 'near-anchor', 'router-guide'])
-  // persona.complete 是可选功能开关（官方 assemble 语义）：默认 true = minimal
-  // 完整 persona（plan-mode/Flash 路由人设被抑制）；设 false 切 standard 语义。
-  // includeRuntimeContext 同理：false = 永久抑制（context-gate 恢复失效）。
-  assert.equal(persona.config.complete, true, 'persona 默认 minimal 语义（complete 开关可配）')
-  assert.equal(persona.config.includeRuntimeContext, false, 'persona 默认抑制 runtime-context（开关可配）')
   // 子代理相位两行显式一致（tool-bootstrap 与 context-gate 保持同步）。
   assert.equal(bootstrap.config.includeSubagents, false)
   assert.equal(gate.config.includeSubagents, false)
@@ -115,28 +110,25 @@ test('子代理模型路由与委派完整自定义：persona + toolFilter + max
   }
 })
 
-test('persona 回退：无 subagentPersona 时子代理固定路由用 mainPersona，无路由不渲染', () => {
+test('子代理 persona：仅显式 subagentPersona 渲染；缺省不渲染（scope 链继承主会话 persona）', () => {
   const routed = parseYaml(buildCordis('P', { subagentModelProvider: 'p', subagentModelName: 'm' }))
   const routedRow = findAllNested(routed, new Set(['tool-subagent']))[0]
-  assert.match(routedRow.config.persona, /decide the task type \(build or fix\)/, '固定路由时 persona 回退 mainPersona')
+  assert.equal(routedRow.config.persona, undefined, '无 subagentPersona 不渲染（继承主会话 persona 模块）')
   assert.equal(routedRow.config.toolFilter, undefined, '未配置 toolFilter 不渲染')
   assert.equal(routedRow.config.maxDepth, undefined, '未配置 maxDepth 不渲染（官方默认 3）')
 
-  const plain = parseYaml(buildCordis('P'))
-  const plainRow = findAllNested(plain, new Set(['tool-subagent']))[0]
-  assert.equal(plainRow.config.persona, undefined, '无路由且无 subagentPersona 时不渲染（继承主会话）')
-  assert.equal(plainRow.config.agentOptions, undefined)
+  const explicit = parseYaml(buildCordis('P', { subagentModelProvider: 'p', subagentModelName: 'm', subagentPersona: '子代理专属人设' }))
+  const explicitRow = findAllNested(explicit, new Set(['tool-subagent']))[0]
+  assert.equal(explicitRow.config.persona, '子代理专属人设', '显式 subagentPersona 渲染')
 })
 
-test('buildCordis 透传 mainPersona / allowKinds 覆盖模板默认', () => {
-  const rows = parseYaml(buildCordis('P', { mainPersona: 'MAIN-PERSONA', allowKinds: ['skill-invocation'] }))
-  const router = rows.find((row) => row?.id === 'router-first-turn')
+test('buildCordis 透传 allowKinds 覆盖模板默认', () => {
+  const rows = parseYaml(buildCordis('P', { allowKinds: ['skill-invocation'] }))
   const gate = rows.find((row) => row?.id === 'context-gate')
-  assert.ok(router && gate)
-  assert.equal(router.config.mainPersona, 'MAIN-PERSONA')
+  assert.ok(gate)
   assert.deepEqual(gate.config.allowKinds, ['skill-invocation'])
-  // 未传时用 preset.yml 模板默认（anchored mainPersona 非空、allowKinds 白名单）。
+  // 未传时用 preset.yml 模板默认（anchored allowKinds 白名单）。
   const defaults = parseYaml(buildCordis('P'))
-  const defaultRouter = defaults.find((row) => row?.id === 'router-first-turn')
-  assert.match(defaultRouter.config.mainPersona, /helpful assistant/)
+  const defaultGate = defaults.find((row) => row?.id === 'context-gate')
+  assert.deepEqual(defaultGate.config.allowKinds, ['skill-invocation', 'near-anchor', 'router-guide'])
 })

@@ -258,21 +258,6 @@ function ModelToolCards(props: { store: PromptToolStore; scope: 'main' | 'subage
             />
           </div>
         </div>
-        {props.scope === 'main' && (
-          <div className={ui.rowGroup}>
-            <label className={ui.textBlock}>
-              <span className={ui.settingCopy}><strong>主对话自定义模型人设</strong><small>主对话命中快速模型（Flash 档）时替换人设（router-first-turn）；子代理未单独设置时回退使用。留空 = 模板默认；失焦保存。</small></span>
-              <textarea
-                className={ui.firstTurnInput}
-                value={fields.mainPersona}
-                disabled={!fields.writePreset}
-                onChange={(event) => { autoResizeTextarea(event); store.patch({ mainPersona: event.target.value }) }}
-                onBlur={() => void store.persistParamOverrides()}
-                spellCheck={false}
-              />
-            </label>
-          </div>
-        )}
         {props.scope === 'subagent' && (
           <div className={ui.rowGroup}>
             <label className={ui.textBlock}>

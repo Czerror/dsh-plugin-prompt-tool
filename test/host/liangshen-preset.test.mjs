@@ -63,8 +63,9 @@ test('preset/liangshen 渲染：模块清单 + moduleConfigs 表达两阶段锚�
       ['read', 'write', 'edit', 'glob', 'grep', 'todo_write', 'ask_user_question'],
     )
 
-    // persona 文本覆盖。
-    assert.equal(byId.get('persona').config.text, 'You are a helpful software engineer assistant.')
+    // persona 已模块化：组合不再含 router-first-turn 行，人设由 promptConfigs 的
+    // persona-main（system-section + deployment:persona）承担，非独占。
+    assert.equal(byId.get('router-first-turn'), undefined, '组合不应含 router-first-turn 行')
 
     // 官方工具行：独立 str-replace-editor + 宿主 sandbox 的 tool-fs（无 fs-local）。
     assert.equal(byId.get('str-replace-editor').name, '@deepseek-ai/dsh-tool-str-replace-editor')
@@ -74,21 +75,24 @@ test('preset/liangshen 渲染：模块清单 + moduleConfigs 表达两阶段锚�
 
     // 行序：context-gate 必须 FIRST（waterfall 外层）。
     assert.equal(rows[0].id, 'context-gate', 'context-gate 必须为组合首行')
-    assert.equal(rows[1].id, 'persona')
+    assert.equal(rows[1].id, 'tool-bootstrap')
 
     // 其余官方工具行齐全。
     for (const id of ['agent-instructions', 'persistent-shell', 'custom-bash', 'tool-fs-search', 'tool-jobs', 'skill-filesystem', 'tool-skill', 'tool-goal', 'planning', 'compaction', 'delegation', 'tool-ask-user', 'tool-todo', 'tool-web']) {
       assert.ok(byId.get(id), `应含 ${id} 行`)
     }
 
-    // liangshen 只有 prompt-injector（custom-fallback）一条提示词配置。
+    // liangshen 两条提示词配置：prompt-injector（custom-fallback）+ persona-main（主会话人设）。
     const configsDir = join(gen, 'liangshen', 'prompt-configs')
     const configFiles = readdirSync(configsDir).filter((f) => f.endsWith('.yml'))
-    assert.deepEqual(configFiles, ['00-prompt-injector.yml'])
+    assert.deepEqual(configFiles, ['00-prompt-injector.yml', '10-persona-main.yml'])
     const injector = parseYaml(readFileSync(join(configsDir, '00-prompt-injector.yml'), 'utf8'))
     assert.equal(injector.strategy, 'custom-fallback')
     assert.equal(injector.params.firstTurnWord, 'we')
     assert.equal(injector.enabled, true)
+    const persona = parseYaml(readFileSync(join(configsDir, '10-persona-main.yml'), 'utf8'))
+    assert.equal(persona.params.sectionName, 'deployment:persona')
+    assert.equal(persona.params.complete, undefined, 'liangshen 人设非独占')
     assert.equal(injector.promotion, 'main')
   } finally {
     rmSync(gen, { recursive: true, force: true })

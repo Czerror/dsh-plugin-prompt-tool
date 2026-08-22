@@ -24,7 +24,7 @@ export const PARAM_KEYS: ReadonlySet<string> = new Set([
   'subagentModelProvider', 'subagentModelName',
   'modelReasoningEffort', 'modelTemperature', 'modelMaxTokens',
   'subagentReasoningEffort', 'subagentTemperature', 'subagentMaxTokens',
-  'mainPersona', 'subagentPersona',
+  'subagentPersona',
   'toolFilterAllow', 'toolFilterDeny', 'maxDepth', 'allowKinds', 'firstTurnWord',
   'bootstrapMaxTokens', 'usePtcMode', 'injectPrompt',
   'promptConfigs',
@@ -224,8 +224,6 @@ export interface RuntimeOptions {
   subagentTemperature: string
   /** 子代理输出上限（agent-request patch，audience=subagent；''=不设置）。 */
   subagentMaxTokens: string
-  /** 主对话自定义模型人设（经 overrides 覆盖，不写入 settings）。 */
-  mainPersona?: string
   /** 子代理自定义模型人设（经 overrides 覆盖，不写入 settings）。 */
   subagentPersona?: string
   /** 委派工具集白名单（经 overrides 覆盖，不写入 settings）。 */

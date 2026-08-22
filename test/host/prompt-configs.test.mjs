@@ -4,12 +4,18 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { parse } from 'yaml'
-import {
+
+// 隔离 DSH_HOME：writePreset 的模板解析（resolvePresetDir）用户预设优先——
+// 真实用户环境 .agent-presets/<id> 会遮蔽包内模板，测试必须隔离。
+// 注意：paths 模块顶层缓存 DEFAULT_PRESET_DIR（join(DSH_HOME, ...)），
+// preset-core/index 必须全部在 env 设置后动态 import，否则读到真实用户根。
+process.env.DSH_HOME = mkdtempSync(join(tmpdir(), 'pt-pc-home-'))
+const {
   loadPromptConfigFiles,
   mergePromptConfigs,
   renderPromptConfigYaml,
-} from '../../lib/preset-core.mjs'
-import { writePreset } from '../../lib/index.mjs'
+} = await import('../../lib/preset-core.mjs')
+const { writePreset } = await import('../../lib/index.mjs')
 
 /** writePreset 生成 anchored 提示词配置（生产路径：preset.yml 数据 + 顶层 params 动态字段）。 */
 function generatedConfigs(options = {}, prompt = 'PROMPT') {
@@ -44,7 +50,7 @@ test('mergePromptConfigs：同名 id 后者覆盖且保留位置，新 id 追加
     { id: 'near-anchor', enabled: false, strategy: 'static', text: '覆盖后的锚点' },
     { id: 'extra', strategy: 'static', layer: 'system-section', text: '新增提示词配置' },
   ])
-  assert.deepEqual(merged.map((spec) => spec.id), ['near-anchor', 'router-guide', 'prompt-injector', 'instruction-hint', 'extra'])
+  assert.deepEqual(merged.map((spec) => spec.id), ['near-anchor', 'router-guide', 'prompt-injector', 'instruction-hint', 'persona-main', 'extra'])
   assert.equal(merged[0].enabled, false)
   assert.equal(merged[0].text, '覆盖后的锚点')
   assert.equal(merged[4].layer, 'system-section')
@@ -101,15 +107,21 @@ test('renderPromptConfigYaml 全字段开放：variables/identity/params 嵌套�
   assert.deepEqual(doc.params.patch, { maxTokens: 2048 })
 })
 
-test('writePreset 生成 anchored 四个提示词配置模块，数字前缀决定执行顺序', () => {
+test('writePreset 生成 anchored 提示词配置模块（含 persona-main 人设段），数字前缀决定执行顺序', () => {
   const { specs } = generatedConfigs()
-  assert.deepEqual(specs.map((spec) => spec.id), ['near-anchor', 'router-guide', 'prompt-injector', 'instruction-hint'])
-  for (const spec of specs) {
+  assert.deepEqual(specs.map((spec) => spec.id), ['near-anchor', 'router-guide', 'prompt-injector', 'instruction-hint', 'persona-main'])
+  for (const spec of specs.filter((spec) => spec.id !== 'persona-main')) {
     assert.equal(spec.layer, 'pre-step')
     assert.equal(spec.configKind, 'ordered')
     assert.equal(typeof spec.order, 'number')
     assert.equal(spec.role, 'user')
   }
+  const persona = specs.find((spec) => spec.id === 'persona-main')
+  assert.equal(persona.layer, 'system-section')
+  assert.equal(persona.params.sectionName, 'deployment:persona')
+  assert.equal(persona.params.complete, true)
+  assert.equal(persona.params.suppressRuntimeContext, true)
+  assert.match(persona.text ?? persona.texts?.[0] ?? '', /helpful assistant/)
 })
 
 test('writePreset 处理空提示词时 prompt-injector 结构完整', () => {

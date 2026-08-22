@@ -53,7 +53,11 @@ test('正常退出返回输出文本', async () => {
   assert.deepEqual(result, { text: 'hello' })
 })
 
-import { apply as applyRouterFirstTurn } from '../../../engine/router-first-turn.mjs'
+import { Context } from '@deepseek-ai/cordis'
+import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
+import { createScope } from '@deepseek-ai/dsh-scope'
+import { createPromptConfigs } from '../../../engine/schema.mjs'
+import { wireLayers } from '../../../engine/layers.mjs'
 
 const MAIN_PERSONA = [
   'You are a helpful assistant.',
@@ -62,82 +66,111 @@ const MAIN_PERSONA = [
   'Think deeply first, then produce.',
 ].join('\n')
 
-function makeStep({ events = [], delegationDepth = 0, model = 'deepseek-v4-pro-8013' } = {}) {
-  const listeners = new Map()
-  const ctx = { on(name, handler) { listeners.set(name, handler) } }
-  applyRouterFirstTurn(ctx, { mainPersona: MAIN_PERSONA, hideSectionPrefixes: ['mnemon:'] })
-  const handler = listeners.get('system-prompt/assemble')
-  assert.ok(handler)
-  const agent = { session: { id: 's1', header: { delegationDepth }, events }, options: { model } }
-  return async (assembled) => handler(undefined, { agent }, async () => assembled)
+/** 官方 registry + 一个第三方段（plan-mode），模拟真实宿主组装环境。 */
+async function harness() {
+  const ctx = new Context()
+  await ctx.plugin(SystemPrompt, {
+    includeHarnessIdentity: false,
+    persona: 'DEPLOYMENT PERSONA',
+  })
+  ctx.systemPrompt.section({ name: 'plan-mode', order: 10, text: 'PLAN TEXT' })
+  return ctx
 }
 
-test('Pro 首轮替换 persona，保留 plan 与第三方 section，隐藏 mnemon 段，contexts 交给 context-gate', async () => {
-  const step = makeStep()
-  const out = await step({
-    sections: [
-      { name: 'persona', text: 'OLD PERSONA', order: 0 },
-      { name: 'plan-mode', text: 'PLAN TEXT', order: 10 },
-      { name: 'mnemon:runtime-memory', text: 'MEMORY', order: 145 },
-    ],
-    contexts: [{ name: 'auto', text: 'AUTO' }],
-    tools: [{ name: 'bash' }],
-  })
-  assert.deepEqual(out.sections.map((s) => s.name), ['plan-mode', 'router-persona'])
-  assert.equal(out.sections.at(-1).text, 'You are a helpful software engineer assistant.')
-  assert.deepEqual(out.contexts, [{ name: 'auto', text: 'AUTO' }])
-  assert.deepEqual(out.tools, [{ name: 'bash' }])
-})
+/** 在 agent scope 挂载 persona 提示词配置（system-section → wireSystemSections 注册）。 */
+async function mountPersona(ctx, key, spec) {
+  await ctx.plugin(Object.assign((inner) => {
+    const scopeCtx = createScope(inner, key).ctx
+    wireLayers(scopeCtx, createPromptConfigs([spec]), () => {})
+  }, { inject: ['systemPrompt'] }))
+}
 
-test('Flash 主会话首轮使用 router 的 Flash 弱路由人设', async () => {
-  const step = makeStep({ model: 'deepseek-v4-flash-7013' })
-  const out = await step({
-    sections: [{ name: 'persona', text: 'OLD' }],
-    contexts: [],
-  })
-  const persona = out.sections.find((s) => s.name === 'router-persona')
-  assert.ok(persona)
-  assert.match(persona.text, /decide the task type \(build or fix\)/)
-  assert.match(persona.text, /Do not run environment checks/)
-  assert.match(persona.text, /Think deeply first, then produce\./)
-})
-
-test('晋升后恢复 contexts 与 mnemon 记忆段', async () => {
-  const step = makeStep({ events: [{ type: 'tool/call', seq: 1, time: 1, data: {} }] })
-  const out = await step({
-    sections: [{ name: 'persona', text: 'OLD' }, { name: 'mnemon:runtime-memory', text: 'MEMORY' }],
-    contexts: [{ name: 'auto', text: 'AUTO' }],
-  })
-  assert.deepEqual(out.contexts, [{ name: 'auto', text: 'AUTO' }])
-  assert.ok(out.sections.some((s) => s.name === 'mnemon:runtime-memory'))
-})
-
-test('首条 assistant 消息（无工具调用）也视为晋升并恢复 mnemon 段', async () => {
-  const step = makeStep({ events: [{ type: 'assistant/message', seq: 1, time: 1, data: { message: { content: [{ type: 'text', text: 'ok' }] } } }] })
-  const out = await step({
-    sections: [{ name: 'persona', text: 'OLD' }, { name: 'mnemon:runtime-memory', text: 'MEMORY' }],
-    contexts: [{ name: 'auto', text: 'AUTO' }],
-  })
-  assert.ok(out.sections.some((s) => s.name === 'mnemon:runtime-memory'))
-})
-
-test('子代理原样返回，不裁剪 section/context', async () => {
-  const step = makeStep({ delegationDepth: 1 })
-  const assembled = {
-    sections: [{ name: 'persona', text: 'OLD' }, { name: 'plan-mode', text: 'PLAN' }],
-    contexts: [{ name: 'auto', text: 'AUTO' }],
-    tools: [{ name: 'mnemon_recall' }],
+/** persona 模块规格（system-section + deployment:persona shadow）。 */
+function personaSpec(overrides = {}) {
+  return {
+    id: 'persona-main',
+    name: '主会话人设',
+    layer: 'system-section',
+    strategy: 'static',
+    order: 0,
+    text: MAIN_PERSONA,
+    params: { sectionName: 'deployment:persona' },
+    ...overrides,
   }
-  const out = await step(assembled)
-  assert.deepEqual(out, assembled)
+}
+
+/** 组装并返回 sections 摘要。 */
+async function sectionsOf(ctx, key) {
+  const assembly = await ctx.systemPrompt.assemble({ scope: key })
+  return assembly.sections.map((section) => `${section.name}=${section.text}`)
+}
+
+test('主会话首轮即用自定义人设（全模型通用），complete 独占（plan-mode 被清）', async () => {
+  const ctx = await harness()
+  const key = { agent: 'flash' }
+  await mountPersona(ctx, key, personaSpec({ params: { sectionName: 'deployment:persona', complete: true } }))
+  assert.deepEqual(await sectionsOf(ctx, key), [
+    'deployment:persona=' + MAIN_PERSONA,
+  ])
 })
 
-test('agent 缺失时原样返回', async () => {
-  const listeners = new Map()
-  applyRouterFirstTurn({ on: (name, handler) => listeners.set(name, handler) }, { mainPersona: MAIN_PERSONA })
-  const handler = listeners.get('system-prompt/assemble')
-  const out = await handler(undefined, {}, async () => ({ sections: [] }))
-  assert.deepEqual(out, { sections: [] })
+test('complete:false 时 shadow 生效但不独占（plan-mode 保留，standard 语义）', async () => {
+  const ctx = await harness()
+  const key = { agent: 'non-complete' }
+  await mountPersona(ctx, key, personaSpec({ params: { sectionName: 'deployment:persona', complete: false } }))
+  const sections = await sectionsOf(ctx, key)
+  assert.ok(sections.some((line) => line === 'deployment:persona=' + MAIN_PERSONA))
+  assert.ok(sections.some((line) => line === 'plan-mode=PLAN TEXT'))
+})
+
+test('sectionName 缺省时按配置 id 注册（非 shadow），不遮蔽全局 persona', async () => {
+  const ctx = await harness()
+  const key = { agent: 'unknown' }
+  await mountPersona(ctx, key, personaSpec({ id: 'custom-section', params: {} }))
+  const sections = await sectionsOf(ctx, key)
+  assert.ok(sections.some((line) => line === 'custom-section=' + MAIN_PERSONA))
+  assert.ok(sections.some((line) => line === 'deployment:persona=DEPLOYMENT PERSONA'), '全局 persona 未被遮蔽')
+})
+
+test('子代理 scope 不继承 shadow，使用全局 persona（放行语义）', async () => {
+  const ctx = await harness()
+  const parentKey = { agent: 'parent' }
+  await mountPersona(ctx, parentKey, personaSpec({ params: { sectionName: 'deployment:persona', complete: true } }))
+  const childKey = { agent: 'child' }
+  const child = { options: { model: 'deepseek-v4-flash-7013' }, session: { header: { delegationDepth: 1 } } }
+  const assembly = await ctx.systemPrompt.assemble({ scope: childKey, agent: child })
+  const persona = assembly.sections.find((section) => section.name === 'deployment:persona')
+  assert.equal(persona?.text, 'DEPLOYMENT PERSONA')
+})
+
+test('suppressRuntimeContext:true 抑制动态 context；默认保留', async () => {
+  const ctx = await harness()
+  ctx.systemPrompt.context({ name: 'policy', order: 1, text: 'POLICY' })
+  const key = { agent: 'ctx' }
+  await mountPersona(ctx, key, personaSpec({ params: { sectionName: 'deployment:persona', complete: true, suppressRuntimeContext: true } }))
+  const suppressed = await ctx.systemPrompt.assemble({ scope: key, agent: { options: { model: 'deepseek-v4-flash-7013' } } })
+  assert.deepEqual(suppressed.contexts, [])
+
+  const key2 = { agent: 'ctx2' }
+  await mountPersona(ctx, key2, personaSpec({ params: { sectionName: 'deployment:persona', complete: true } }))
+  const kept = await ctx.systemPrompt.assemble({ scope: key2, agent: { options: { model: 'deepseek-v4-flash-7013' } } })
+  assert.equal(kept.contexts[0]?.name, 'policy')
+})
+
+test('多个 complete 段 fail loud（官方语义，UI 互斥防呆）', async () => {
+  const ctx = await harness()
+  const key = { agent: 'dup' }
+  await ctx.plugin(Object.assign((inner) => {
+    const scopeCtx = createScope(inner, key).ctx
+    wireLayers(scopeCtx, createPromptConfigs([
+      personaSpec({ id: 'p1', params: { sectionName: 'deployment:persona', complete: true } }),
+      personaSpec({ id: 'p2', params: { sectionName: 'other', complete: true } }),
+    ]), () => {})
+  }, { inject: ['systemPrompt'] }))
+  await assert.rejects(
+    () => ctx.systemPrompt.assemble({ scope: key }),
+    /multiple complete prompt sections/,
+  )
 })
 
 import {

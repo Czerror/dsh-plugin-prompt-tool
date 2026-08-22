@@ -47,7 +47,6 @@ export interface Fields {
   subagentReasoningEffort: string
   subagentTemperature: string
   subagentMaxTokens: string
-  mainPersona: string
   subagentPersona: string
   toolFilterAllow: string
   toolFilterDeny: string
@@ -113,7 +112,6 @@ export const EMPTY_FIELDS: Fields = {
   subagentReasoningEffort: '',
   subagentTemperature: '',
   subagentMaxTokens: '',
-  mainPersona: '',
   subagentPersona: '',
   toolFilterAllow: '',
   toolFilterDeny: '',
@@ -251,9 +249,8 @@ export function fieldsFromView(res: BridgeResult<BridgeSettingsView>): Fields {
     subagentReasoningEffort: readString(value, 'subagentReasoningEffort') ?? readString(base, 'subagentReasoningEffort') ?? '',
     subagentTemperature: readString(value, 'subagentTemperature') ?? readString(base, 'subagentTemperature') ?? '',
     subagentMaxTokens: readString(value, 'subagentMaxTokens') ?? readString(base, 'subagentMaxTokens') ?? '',
-    // 预设级参数（mainPersona/subagentPersona/toolFilterAllow/toolFilterDeny/maxDepth/allowKinds/firstTurnWord）
+    // 预设级参数（subagentPersona/toolFilterAllow/toolFilterDeny/maxDepth/allowKinds/firstTurnWord）
     // 不进 settings namespace：默认空，由 /param-overrides 读回后填充（store.load paramPatch）。
-    mainPersona: '',
     subagentPersona: '',
     toolFilterAllow: '',
     toolFilterDeny: '',

@@ -4,7 +4,6 @@ description: 功能完整的编码 Agent，支持文件编辑、Shell、文件�
 version: 1.0.0
 engineCompat: ">=0.4.2"
 modules:
-  - persona
   - official-agent-instructions
   - official-tool-bash
   - tool-pwsh
@@ -22,7 +21,6 @@ modules:
   - tool-web
   - context-gate
   - tool-bootstrap
-  - router-first-turn
   - prompt-config-engine
   - run-code-env
   - custom-bash
@@ -30,7 +28,6 @@ modules:
 params:
   usePtcMode: true
   bootstrapMaxTokens: 0
-  mainPersona: "You are a helpful assistant. Before acting, decide the task type (build or fix) and adopt the matching style: build → hands-on production; fix → inspect-and-plan. Before acting, briefly review what you have already done in this session and continue from where you left off; do not repeat completed steps. Do not run environment checks (echo, whoami, uname, node --version, date) or exhaustive grep/glob scans. Think deeply first, then produce."
   allowKinds: "[skill-invocation, near-anchor, router-guide]"
   # 模型路由与委派 · 主对话与子代理通用（缺省 = 官方默认 / 继承宿主）
   modelProvider: ""
@@ -47,3 +44,12 @@ params:
   toolFilterAllow: []
   toolFilterDeny: []
   maxDepth: ""
+promptConfigs:
+  - id: persona-main
+    name: 主会话人设
+    layer: system-section
+    strategy: static
+    order: 0
+    params:
+      sectionName: deployment:persona
+    text: "You are a coding agent powered by the {{model}} model. Your working directory is {{cwd}}."

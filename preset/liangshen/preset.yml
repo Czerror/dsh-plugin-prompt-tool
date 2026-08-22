@@ -12,7 +12,6 @@ meta:
   order: 4
 modules:
   - context-gate
-  - persona
   - tool-bootstrap
   - official-agent-instructions
   - persistent-shell
@@ -31,8 +30,6 @@ modules:
   - tool-todo
   - tool-web
 moduleConfigs:
-  persona:
-    text: You are a helpful software engineer assistant.
   tool-bootstrap:
     bootstrapTools: [bash, str_replace_editor]
     includeSubagents: true
@@ -49,6 +46,7 @@ moduleConfigs:
     deferredSources: [agent-instructions, skill-catalog]
     deferredGraceSteps: 1
     instructionHint: true
+params:
 promptConfigs:
   # 晋升后注入 preset.md 内容（custom-fallback 策略：自定义锚定词命中后注入一次）。
   # phase-1 由 context-gate 的 messageSources 白名单拦截，晋升后随普通注入恢复。
@@ -64,3 +62,11 @@ promptConfigs:
     dedupe: session
     promotion: main
     sourceKind: plugin
+  - id: persona-main
+    name: 主会话人设
+    layer: system-section
+    strategy: static
+    order: 0
+    params:
+      sectionName: deployment:persona
+    text: "You are a helpful assistant. Before acting, decide the task type (build or fix) and adopt the matching style: build → hands-on production; fix → inspect-and-plan. Before acting, briefly review what you have already done in this session and continue from where you left off; do not repeat completed steps. Do not run environment checks (echo, whoami, uname, node --version, date) or exhaustive grep/glob scans. Think deeply first, then produce."

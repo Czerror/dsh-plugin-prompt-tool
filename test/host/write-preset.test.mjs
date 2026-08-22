@@ -30,6 +30,16 @@ function makeOptions(presetDir) {
   }
 }
 
+/** 读取生成目录的 persona-main 提示词配置（文件名前缀随模板默认配置数量变化）。 */
+function readPersonaConfig(presetDir, template) {
+  const dir = join(presetDir, template, 'prompt-configs')
+  const file = readdirSync(dir).find((name) => name.endsWith('-persona-main.yml'))
+  assert.ok(file, `${template}: 应生成 persona-main 配置`)
+  const parsed = parseYaml(readFileSync(join(dir, file), 'utf8'))
+  // renderPromptConfigYaml 把 text 归一为 texts 数组。
+  return { ...parsed, text: parsed.text ?? parsed.texts?.[0] ?? '' }
+}
+
 test('writePreset 共享引擎 .engine：预设目录不复制 engine，组合引用 ../.engine', () => {
   const dir = join(tmpdir(), `prompt-tool-wp-${process.pid}-${Date.now()}`)
   const presetDir = join(dir, 'preset')
@@ -272,7 +282,29 @@ test('writePreset 官方导入预设（standard/minimal/ptc/creative）渲染组
       const rows = parseYaml(agent)
       assert.ok(rows.some((row) => row?.id === 'prompt-config-engine'), `${template}: 应含 prompt-config-engine 行`)
       assert.ok(!/__[A-Z0-9_]+__/.test(agent), `${template}: 不应残留未解析 token`)
-      assert.ok(rows.length >= 10, `${template}: 组合行数异常（${rows.length}）`)
+      assert.ok(rows.length >= 8, `${template}: 组合行数异常（${rows.length}）`)
+      if (template === 'creative') {
+        // creative = 官方 cordis（创造模式）：人设为 promptConfigs 的 persona 模块
+        // （system-section + sectionName: deployment:persona），创意文本含 {{model}}/{{cwd}}；
+        // 配套 cordis 创作 skills 随预设复制进生成目录。
+        const persona = readPersonaConfig(presetDir, 'creative')
+        assert.ok(persona.params.sectionName === 'deployment:persona', 'creative 人设段应为 deployment:persona shadow')
+        assert.ok(persona.text.includes('{{model}}'), 'creative 人设应保留 {{model}} 变量')
+        assert.ok(persona.text.includes('editing-cordis-compositions'), 'creative 人设应引用创作 skill')
+        assert.ok(existsSync(join(presetDir, 'creative', 'skills', 'editing-cordis-compositions', 'SKILL.md')), 'editing-cordis-compositions skill 应随预设复制')
+        assert.ok(existsSync(join(presetDir, 'creative', 'skills', 'cordis-plugin-development', 'SKILL.md')), 'cordis-plugin-development skill 应随预设复制')
+      } else if (template === 'standard' || template === 'ptc') {
+        // standard / ptc 人设对齐官方 standard / code 预设原文（{{model}}/{{cwd}}，非独占）。
+        const persona = readPersonaConfig(presetDir, template)
+        assert.equal(persona.text, 'You are a coding agent powered by the {{model}} model. Your working directory is {{cwd}}.', `${template}: 人设应对齐官方原文`)
+        assert.equal(persona.params?.complete, undefined, `${template}: 非独占（无 complete）`)
+      } else if (template === 'minimal') {
+        // minimal 人设对齐官方 minimal 预设原文（RL 句）。
+        const persona = readPersonaConfig(presetDir, 'minimal')
+        assert.equal(persona.text, 'You are a helpful software engineer assistant.', 'minimal: 人设应对齐官方原文')
+        assert.equal(persona.params?.complete, true, 'minimal: 人设独占（complete）')
+        assert.equal(persona.params?.suppressRuntimeContext, true, 'minimal: 抑制 runtime context')
+      }
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }

@@ -50,7 +50,7 @@ dsh --profile prompt-tool                                          # 首次启�
 | PTC/门控 | `usePtcMode` `bootstrapMaxTokens` `injectPrompt` `allowKinds` |
 | 主对话模型 | `modelProvider` `modelName` `modelReasoningEffort` `modelTemperature` `modelMaxTokens` |
 | 子代理模型 | `subagentModelProvider` `subagentModelName` `subagentReasoningEffort` `subagentTemperature` `subagentMaxTokens` |
-| 人设 | `mainPersona`（主对话 Flash 档）`subagentPersona`（子代理，回退 `mainPersona` → 继承主会话） |
+| 人设 | 模块列表的 `persona-main`（system-section + `deployment:persona`，complete 互斥 + suppressRuntimeContext）；`subagentPersona`（子代理显式，缺省经 scope 链继承主会话） |
 | 工具集 | `toolFilterAllow` `toolFilterDeny`（子代理 toolFilter；主对话 tool-filter 模块共用） |
 | 深度 | `maxDepth`（0 禁止委派 / `provider-managed` / 正整数） |
 

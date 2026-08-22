@@ -91,7 +91,6 @@ function applyPatches(id, text, source) {
 const MODULES = [
   { id: 'context-gate', from: 'local' },
   { id: 'tool-bootstrap', from: 'local' },
-  { id: 'router-first-turn', from: 'local' },
   { id: 'prompt-config-engine', from: 'local' },
   { id: 'run-code-env', from: 'local' },
   { id: 'persona', from: 'minimal' },

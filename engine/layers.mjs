@@ -72,6 +72,11 @@ function wireSystemSections(ctx, configs, warnOnce) {
         text,
         ...(base.params?.complete === true ? { complete: true } : {}),
       }), `${name}: section ${base.id}`)
+      // persona 语义透传：suppressRuntimeContext 抑制该 scope 的动态 runtime-context
+      // 快照（官方 dsh-persona includeRuntimeContext:false 等价；多段重复调用幂等）。
+      if (base.params?.suppressRuntimeContext === true) {
+        keepDisposer(ctx, systemPrompt.suppressRuntimeContext(), `${name}: suppressRuntimeContext ${base.id}`)
+      }
     } catch (error) {
       warnOnce(`${name}: system-section config ${base.id} failed: ${String(error?.message ?? error)}`)
     }

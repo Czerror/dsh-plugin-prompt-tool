@@ -158,7 +158,6 @@ export function apply(ctx: Context, configIn: Config): void {
       : 0
     runtime.usePtcMode = params.usePtcMode !== false
     runtime.injectPrompt = params.injectPrompt !== false
-    runtime.mainPersona = asString(params.mainPersona) || undefined
     runtime.subagentPersona = asString(params.subagentPersona) || undefined
     runtime.toolFilterAllow = params.toolFilterAllow as string[] | string | undefined
     runtime.toolFilterDeny = params.toolFilterDeny as string[] | string | undefined
@@ -194,7 +193,6 @@ export function apply(ctx: Context, configIn: Config): void {
         subagentReasoningEffort: runtime.subagentReasoningEffort,
         subagentTemperature: runtime.subagentTemperature,
         subagentMaxTokens: runtime.subagentMaxTokens,
-        mainPersona: runtime.mainPersona,
         subagentPersona: runtime.subagentPersona,
         toolFilterAllow: runtime.toolFilterAllow,
         toolFilterDeny: runtime.toolFilterDeny,
@@ -282,10 +280,6 @@ export function apply(ctx: Context, configIn: Config): void {
     if (typeof overrides.subagentReasoningEffort === 'string') runtime.subagentReasoningEffort = overrides.subagentReasoningEffort
     if (typeof overrides.subagentTemperature === 'string') runtime.subagentTemperature = overrides.subagentTemperature
     if (typeof overrides.subagentMaxTokens === 'string') runtime.subagentMaxTokens = overrides.subagentMaxTokens
-    // mainPersona 引擎必需非空：历史 overrides 里的空串直接忽略（保留模板默认）。
-    if (typeof overrides.mainPersona === 'string' && overrides.mainPersona.trim().length > 0) {
-      runtime.mainPersona = overrides.mainPersona
-    }
     if (typeof overrides.subagentPersona === 'string') runtime.subagentPersona = overrides.subagentPersona
     if (typeof overrides.firstTurnWord === 'string') runtime.firstTurnWord = overrides.firstTurnWord
     if (typeof overrides.bootstrapMaxTokens === 'number') runtime.bootstrapMaxTokens = overrides.bootstrapMaxTokens
@@ -525,7 +519,6 @@ export function apply(ctx: Context, configIn: Config): void {
       ? initialParams.bootstrapMaxTokens as number
       : 0,
     usePtcMode: initialParams.usePtcMode !== false,
-    mainPersona: asString(initialParams.mainPersona) || undefined,
     subagentPersona: asString(initialParams.subagentPersona) || undefined,
     toolFilterAllow: initialParams.toolFilterAllow as string[] | string | undefined,
     toolFilterDeny: initialParams.toolFilterDeny as string[] | string | undefined,
@@ -641,7 +634,6 @@ registerTuiCommand(
       modelName: '',
       subagentModelProvider: '',
       subagentModelName: '',
-      mainPersona: '',
       subagentPersona: '',
       injectAgentsPrompt: false,
       bootstrapMaxTokens: 0,

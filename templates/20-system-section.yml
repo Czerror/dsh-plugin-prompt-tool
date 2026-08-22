@@ -1,5 +1,9 @@
 # 模板：system-section 静态 system 段（缓存友好，静态内容优先放这里）
 # order 参考：-100 身份 / 0 persona / 100-199 工具引导。
+# 人设用法：params.sectionName = deployment:persona 时注册为主会话人设段
+# （同名 shadow 全局 persona，模块列表显示「人设」徽标；子代理经 scope 链继承）。
+#   - complete: true 独占整个 system prompt（预设内互斥，UI 自动收敛，手写冲突官方 fail loud）
+#   - suppressRuntimeContext: true 抑制动态运行时快照（等价官方 includeRuntimeContext:false）
 id: example-system-section
 name: 示例：system 静态段
 layer: system-section
@@ -11,4 +15,5 @@ text: |-
 variables: {}
 params:
   complete: false
+  suppressRuntimeContext: false
   sectionName: ''

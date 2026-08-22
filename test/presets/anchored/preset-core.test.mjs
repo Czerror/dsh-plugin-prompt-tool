@@ -20,9 +20,8 @@ test('buildCordis 生成合法 YAML：prompt-config-engine 指向提示词配置
   assert.ok(row)
   assert.equal(row.name, './engine/prompt-config-engine.mjs')
   assert.equal(row.config.configsDir, '../prompt-configs')
-  const rft = doc.find((entry) => entry?.id === 'router-first-turn')
-  assert.ok(rft)
-  assert.equal(rft.name, './engine/router-first-turn.mjs')
+  // 人设已模块化：组合不再含 router-first-turn 行。
+  assert.equal(doc.some((entry) => entry?.id === 'router-first-turn'), false)
 })
 
 test('buildCordis 恒生成 run-code-env 行（PTC env 提示词配置）', () => {
@@ -58,6 +57,7 @@ test('buildCordis 设置子代理模型服务商与模型名时给 subagent/suba
   const out = buildCordis('PROMPT', {
     subagentModelProvider: 'my-provider',
     subagentModelName: 'deepseek-v4-flash-7013',
+    subagentPersona: '子代理专属人设',
   })
   const doc = parse(out, { logLevel: 'silent' })
   const rows = findAllRows(doc, new Set(['tool-subagent', 'tool-subagent-fork']))
@@ -65,9 +65,7 @@ test('buildCordis 设置子代理模型服务商与模型名时给 subagent/suba
   for (const row of rows) {
     assert.equal(row.config.agentOptions.provider, 'my-provider')
     assert.equal(row.config.agentOptions.model, 'deepseek-v4-flash-7013')
-    assert.match(row.config.persona, /decide the task type \(build or fix\)/)
-    assert.match(row.config.persona, /Do not run environment checks/)
-    assert.match(row.config.persona, /Think deeply first, then produce\./)
+    assert.equal(row.config.persona, '子代理专属人设', '显式 subagentPersona 渲染（缺省不再回退，scope 链继承主会话）')
   }
 })
 

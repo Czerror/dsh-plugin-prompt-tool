@@ -141,12 +141,25 @@ function ParamInput(props: { label: string; hint?: string; value: string; onChan
  *   placeholder / instruction-hint → fill 模板参数（text/envKeys/limit/fields/providers/emptyBehavior/emptyText）；
  * 无固定字段的策略回退 JSON 编辑（保留任意 params 能力）。
  */
-export function StrategyParamsFields(props: { strategy: string; params: Record<string, unknown> | undefined; onPatch: (params: Record<string, unknown>) => void }): ReactNode {
-  const { strategy, params, onPatch } = props
+export function StrategyParamsFields(props: { strategy: string; layer?: string; params: Record<string, unknown> | undefined; onPatch: (params: Record<string, unknown>) => void }): ReactNode {
+  const { strategy, layer, params, onPatch } = props
   const value = params ?? {}
   const str = (key: string): string => (typeof value[key] === 'string' ? value[key] as string : '')
   const bool = (key: string): boolean => value[key] === true
   const set = (key: string, next: unknown): void => onPatch({ ...value, [key]: next })
+  if (layer === 'system-section') {
+    // system-section 层参数：sectionName（注册名；deployment:persona = 人设 shadow）、
+    // complete（独占 system prompt，预设内互斥）、suppressRuntimeContext（抑制动态快照）。
+    return (
+      <>
+        <ParamInput label="sectionName（注册段名）" hint="deployment:persona = 人设段（同名 shadow 全局 persona）" value={str('sectionName')} onChange={(next) => set('sectionName', next)} />
+        <ParamToggle label="complete（独占 system prompt）" hint="开启后 assembly 只保留本段；预设内互斥（多个 complete 官方 fail loud）"
+          checked={bool('complete')} onChange={(next) => set('complete', next)} />
+        <ParamToggle label="suppressRuntimeContext（抑制动态上下文）" hint="等价官方 dsh-persona includeRuntimeContext:false"
+          checked={bool('suppressRuntimeContext')} onChange={(next) => set('suppressRuntimeContext', next)} />
+      </>
+    )
+  }
   if (strategy === 'first-turn-anchor') {
     return (
       <>
@@ -338,7 +351,7 @@ export function PromptConfigForm(props: {
         <textarea className={styles.configTextarea} aria-label="多段内容块（texts，每行一段；text 为空时生效）" value={(config.texts ?? []).join('\n')} spellCheck={false} onChange={(e) => { autoResizeTextarea(e); onPatch({ texts: e.target.value.split('\n').filter((line) => line.length > 0) }) }} />
       </span>
       <VariablesEditor value={config.variables} onChange={(value) => onPatch({ variables: value })} />
-      <StrategyParamsFields strategy={strategy} params={config.params} onPatch={(value) => onPatch({ params: value })} />
+      <StrategyParamsFields strategy={strategy} layer={config.layer} params={config.params} onPatch={(value) => onPatch({ params: value })} />
       <IdentityFields identity={config.identity} onPatch={(value) => onPatch({ identity: value })} />
     </div>
   )
@@ -379,6 +392,9 @@ export function PromptConfigCard(props: {
         <button type="button" className={styles.configToggle} aria-expanded={props.expanded} onClick={props.onToggleExpanded}>
           <span className={styles.configTitle}>
             <span className={styles.configName}>{config.name && config.name !== config.id ? `${config.id} · ${config.name}` : config.id}</span>
+            {config.layer === 'system-section' && config.params?.sectionName === 'deployment:persona' && (
+              <span className={styles.configChip} title="deployment:persona 同名 shadow：主会话人设（子代理经 scope 链继承）">人设</span>
+            )}
             <span className={styles.configMeta}>{chips.join(' · ')}</span>
           </span>
           <IconChevronDownOutline14 className={clsx(styles.chevron, props.expanded && styles.chevronOpen)} />

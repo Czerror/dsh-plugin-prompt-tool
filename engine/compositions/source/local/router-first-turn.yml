@@ -1,5 +1,0 @@
-- id: router-first-turn
-  name: ./engine/router-first-turn.mjs
-  config:
-    mainPersona: "__MAIN_PERSONA__"
-    hideSectionPrefixes: [mnemon:]

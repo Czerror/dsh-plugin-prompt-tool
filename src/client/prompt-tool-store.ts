@@ -409,7 +409,6 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
         if (typeof o.subagentMaxTokens === 'string') paramPatch.subagentMaxTokens = o.subagentMaxTokens
         if (typeof o.usePtcMode === 'boolean') paramPatch.usePtcMode = o.usePtcMode
         if (typeof o.injectPrompt === 'boolean') paramPatch.injectPrompt = o.injectPrompt
-        if (typeof o.mainPersona === 'string') paramPatch.mainPersona = o.mainPersona
         if (typeof o.subagentPersona === 'string') paramPatch.subagentPersona = o.subagentPersona
         if (Array.isArray(o.toolFilterAllow)) paramPatch.toolFilterAllow = o.toolFilterAllow.join(', ')
         else if (typeof o.toolFilterAllow === 'string') paramPatch.toolFilterAllow = o.toolFilterAllow
@@ -472,7 +471,22 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
   }, [settings])
 
   const patch = useCallback((partial: Partial<Fields>) => {
-    const next = { ...fieldsRef.current, ...partial }
+    let next = { ...fieldsRef.current, ...partial }
+    // complete 互斥：system-section/persona 共用官方 complete 语义（预设内仅一个），
+    // 开启任一配置的 complete 时自动关闭其他配置（手写冲突仍由官方 fail loud 兜底）。
+    if (Array.isArray(next.promptConfigs)) {
+      const enabledComplete = next.promptConfigs.some((config) => config.params?.complete === true)
+      if (enabledComplete) {
+        const kept = next.promptConfigs.findIndex((config) => config.params?.complete === true)
+        next = {
+          ...next,
+          promptConfigs: next.promptConfigs.map((config, index) =>
+            index === kept
+              ? config
+              : { ...config, params: { ...config.params, complete: false } }),
+        }
+      }
+    }
     fieldsRef.current = next
     setFields(next)
   }, [])
@@ -519,8 +533,7 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
   const persistParamOverrides = useCallback(async () => {
     const f = fieldsRef.current
     const splitList = (value: string): string[] => value.split(',').map((item) => item.trim()).filter((item) => item.length > 0)
-    // 空值不写键：保留 preset.yml 模板默认。mainPersona 引擎必需非空；
-    // allowKinds 空数组 = 白名单全拦（危险）；maxDepth '' = 不设置。
+    // 空值不写键：保留 preset.yml 模板默认。allowKinds 空数组 = 白名单全拦（危险）；maxDepth '' = 不设置。
     const res = await bridgePost<{ overrides: unknown }>('/param-overrides', {
       overrides: {
         firstTurnAnchor: f.firstTurnAnchor,
@@ -540,7 +553,6 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
         ...(f.subagentReasoningEffort.trim().length > 0 ? { subagentReasoningEffort: f.subagentReasoningEffort } : {}),
         ...(f.subagentTemperature.trim().length > 0 ? { subagentTemperature: f.subagentTemperature } : {}),
         ...(f.subagentMaxTokens.trim().length > 0 ? { subagentMaxTokens: f.subagentMaxTokens } : {}),
-        ...(f.mainPersona.trim().length > 0 ? { mainPersona: f.mainPersona } : {}),
         ...(f.subagentPersona.trim().length > 0 ? { subagentPersona: f.subagentPersona } : {}),
         toolFilterAllow: splitList(f.toolFilterAllow),
         toolFilterDeny: splitList(f.toolFilterDeny),
