@@ -7,4 +7,4 @@
 - id: str-replace-editor
   name: '@deepseek-ai/dsh-tool-str-replace-editor'
   config:
-    maxOutputChars: __STR_REPLACE_EDITOR_MAX_OUTPUT_CHARS__
+    maxOutputChars: __strReplaceEditorMaxOutputChars__

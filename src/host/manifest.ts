@@ -378,11 +378,6 @@ export function normalizeParam(value: unknown): unknown {
   return value
 }
 
-/** camelCase → SCREAMING_SNAKE_CASE(usePtcMode → USE_PTC_MODE)。 */
-function upperKey(key: string): string {
-  return key.replace(/([a-z0-9])([A-Z])/g, '$1_$2').toUpperCase()
-}
-
 /** 预设 params(默认参数)与运行时 settings 合并;settings 值优先。 */
 export function resolvePresetParams(spec: PresetSpec, runtime: Record<string, unknown>): Record<string, unknown> {
   const params: Record<string, unknown> = {}
@@ -395,16 +390,12 @@ export function resolvePresetParams(spec: PresetSpec, runtime: Record<string, un
   if (typeof params.promptText !== 'string' || params.promptText.length === 0) {
     params.promptText = typeof runtime.promptText === 'string' ? runtime.promptText : ''
   }
-  // SCREAMING_SNAKE_CASE 别名供引擎组合模块 token 使用(引擎内部约定)。
-  for (const key of Object.keys(params)) {
-    params[upperKey(key)] = params[key]
-  }
   return params
 }
 
-/** {{key}} 嵌套插值(块模板内引用 params)。 */
+/** {{key}} 嵌套插值(块模板内引用 params)；键正则与引擎插值及 processStText 中文变量支持一致。 */
 function interpolateNested(text: string, scope: Record<string, unknown>): string {
-  return text.replace(/\{\{([A-Za-z0-9_.-]+)\}\}/g, (whole, key: string, offset: number) => {
+  return text.replace(/\{\{([A-Za-z0-9_.\u4e00-\u9fff-]+)\}\}/g, (whole, key: string, offset: number) => {
     if (!Object.prototype.hasOwnProperty.call(scope, key)) return whole
     const value = asString(scope[key])
     if (!value.includes('\n')) return value
@@ -482,22 +473,24 @@ export function renderEngineTokens(params: Record<string, unknown>): Record<stri
     ? String(params.strReplaceEditorMaxOutputChars)
     : '16000'
   return {
-    USE_PTC_MODE: params.usePtcMode === true ? 'true' : 'false',
-    BOOTSTRAP_MAX_TOKENS: bootstrap,
-    SUBAGENT_CONFIG: subagentConfigBlock,
+    // 未声明 = 空串 → 空值行删除 → 引擎 tool-bootstrap 默认（true）生效；
+    // 显式 true/false 才写行（对齐引擎 booleanOption 默认 true，手写模板不会被强制 false）。
+    usePtcMode: params.usePtcMode === undefined ? '' : (params.usePtcMode === true ? 'true' : 'false'),
+    bootstrapMaxTokens: bootstrap,
+    subagentConfig: subagentConfigBlock,
     // 引擎默认与 context-gate 的 DEFAULT_ALLOW_KINDS 一致（单一默认源）；
     // 需要放行更多 kind 的预设（anchored）在 preset.yml 显式声明 allowKinds。
     // allowKinds 未声明 = 不写行 → context-gate 走官方 pre-step 行为（不过滤）；
     // 显式声明（anchored）才启用白名单门控。兼容数组与字符串写法。
-    ALLOW_KINDS: params.allowKinds === undefined
+    allowKinds: params.allowKinds === undefined
       ? ''
       : Array.isArray(params.allowKinds)
         ? `[${params.allowKinds.map((item) => String(item)).join(', ')}]`
         : asString(params.allowKinds),
-    STR_REPLACE_EDITOR_MAX_OUTPUT_CHARS: editorMaxOutputChars,
-    MAIN_TOOL_FILTER_ALLOW: mainFilterAllowLine,
-    MAIN_TOOL_FILTER_DENY: mainFilterDenyLine,
-    MAIN_TOOL_FILTER_SUBAGENTS: String(mainFilterSubagents),
+    strReplaceEditorMaxOutputChars: editorMaxOutputChars,
+    mainToolFilterAllow: mainFilterAllowLine,
+    mainToolFilterDeny: mainFilterDenyLine,
+    mainToolFilterSubagents: String(mainFilterSubagents),
   }
 }
 
@@ -629,7 +622,7 @@ export function renderComposition(spec: PresetSpec, runtime: Record<string, unkn
 
 /** 组合文本基础校验（模板无关）：无未解析 token，且必须是 YAML 数组。 */
 export function assertCompositionArray(raw: string, spec: PresetSpec): unknown[] {
-  const unresolved = raw.match(/__[A-Z0-9_]+__/g)
+  const unresolved = raw.match(/__[A-Za-z0-9_]+__/g)
   if (unresolved !== null) throw new Error(`generated agent.cordis.yml has unresolved variables: ${unresolved.join(', ')}`)
   const parsed = parseYaml(raw, { logLevel: 'silent' })
   if (!Array.isArray(parsed)) throw new Error(`generated agent.cordis.yml is not a YAML array (preset ${spec.id})`)
@@ -644,9 +637,9 @@ export function assertCompositionArray(raw: string, spec: PresetSpec): unknown[]
 export function renderTemplateVariables(raw: string, variables: Record<string, string>): string {
   // 空值 token 独立成行（含 key: 前缀，如 `allowKinds: __ALLOW_KINDS__`）时先删除
   // 整行，避免 YAML 空值残留（allowKinds 未声明时不得产生 `allowKinds:` null）。
-  let text = raw.replace(/^[ \t]*(?:[A-Za-z0-9_.-]+:[ \t]*)?__([A-Z0-9_]+)__[ \t]*\r?\n/gm, (whole: string, key: string): string =>
+  let text = raw.replace(/^[ \t]*(?:[A-Za-z0-9_.-]+:[ \t]*)?__([A-Za-z0-9_]+)__[ \t]*\r?\n/gm, (whole: string, key: string): string =>
     Object.prototype.hasOwnProperty.call(variables, key) && variables[key] === '' ? '' : whole)
-  return text.replace(/__([A-Z0-9_]+)__/g, (whole: string, key: string, offset: number): string => {
+  return text.replace(/__([A-Za-z0-9_]+)__/g, (whole: string, key: string, offset: number): string => {
     if (!Object.prototype.hasOwnProperty.call(variables, key)) return whole
     const value = variables[key]!
     if (value === '') return ''

@@ -90,7 +90,7 @@ test('writePreset 输出不包含未解析的 __VARIABLE__ 残留', () => {
   try {
     writePreset('PROMPT', makeOptions(presetDir))
     const agent = readFileSync(join(presetDir, 'anchored', 'agent.cordis.yml'), 'utf8')
-    assert.doesNotMatch(agent, /__[A-Z0-9_]+__/g)
+    assert.doesNotMatch(agent, /__[A-Za-z0-9_]+__/g)
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
@@ -281,7 +281,7 @@ test('writePreset 官方导入预设（standard/minimal/ptc/creative）渲染组
       const agent = readFileSync(join(presetDir, template, 'agent.cordis.yml'), 'utf8')
       const rows = parseYaml(agent)
       assert.ok(rows.some((row) => row?.id === 'prompt-config-engine'), `${template}: 应含 prompt-config-engine 行`)
-      assert.ok(!/__[A-Z0-9_]+__/.test(agent), `${template}: 不应残留未解析 token`)
+      assert.ok(!/__[A-Za-z0-9_]+__/.test(agent), `${template}: 不应残留未解析 token`)
       assert.ok(rows.length >= 8, `${template}: 组合行数异常（${rows.length}）`)
       if (template === 'creative') {
         // creative = 官方 cordis（创造模式）：人设为 promptConfigs 的 persona 模块
@@ -326,7 +326,7 @@ test('writePreset 自定义预设（custom，所有参数为空）渲染安全',
     const agent = readFileSync(join(presetDir, 'custom', 'agent.cordis.yml'), 'utf8')
     const rows = parseYaml(agent)
     assert.ok(Array.isArray(rows) && rows.length >= 5, `自定义预设组合应含引擎骨架（${rows.length}）`)
-    assert.ok(!/__[A-Z0-9_]+__/.test(agent), '不应残留未解析 token')
+    assert.ok(!/__[A-Za-z0-9_]+__/.test(agent), '不应残留未解析 token')
     const promptConfigs = readdirSync(join(presetDir, 'custom', 'prompt-configs'))
     assert.equal(promptConfigs.length, 0, '自定义预设 promptConfigs 应为空')
     assert.equal(existsSync(join(presetDir, 'custom', 'engine')), false, '子预设不复制 engine（共享于容器根）')

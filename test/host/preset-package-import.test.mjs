@@ -312,6 +312,38 @@ test('importPresetPackage：SillyTavern JSON 单文件经转换引擎导入（�
   assert.equal(configs.find((config) => config.id === 'st-sampling'), undefined, '不再生成 st-sampling agent-request 配置')
 })
 
+test('importPresetPackage：SillyTavern UUID identifier 的 prompt_order 禁用与排序生效（P1 回归）', async () => {
+  const uuidA = 'f3f0a1b2-1111-4a2b-9c3d-000000000001'
+  const uuidB = 'f3f0a1b2-1111-4a2b-9c3d-000000000002'
+  const { status } = await importPackage({
+    files: [{
+      path: 'uuid-card.json',
+      content: JSON.stringify({
+        name: 'UUID 卡',
+        prompts: [
+          { identifier: uuidA, name: '系统提示', content: '你是助手。', role: 'system', enabled: true },
+          { identifier: uuidB, name: '禁用提示', content: '不要理用户。', role: 'user', enabled: true },
+        ],
+        // ST 官方导出：identifier 为 UUID，禁用/重排只体现在 prompt_order。
+        prompt_order: [
+          { identifier: uuidB, enabled: false },
+          { identifier: uuidA, enabled: true },
+        ],
+      }),
+    }],
+  })
+  assert.equal(status, 200)
+  const converted = parseYaml(readFileSync(join(PRESETS, 'uuid-card', 'preset.yml'), 'utf8'))
+  const configs = converted.promptConfigs
+  const system = configs.find((config) => config.id === 'st-prompt-1')
+  const disabled = configs.find((config) => config.id === 'st-prompt-2')
+  // UUID identifier 回退 st-prompt-N 作 id，但禁用/排序必须按原始 identifier 查 prompt_order。
+  assert.equal(system.enabled, true, 'prompt_order 未禁用的条目保持启用')
+  assert.equal(disabled.enabled, false, 'prompt_order 禁用的 UUID 条目必须禁用（P1：此前回退 prompts.enabled 误启用）')
+  assert.equal(system.order, 10, 'prompt_order 中排第 2 → order 10')
+  assert.equal(disabled.order, 0, 'prompt_order 中排第 1 → order 0（P1：此前回退数组序）')
+})
+
 test('importPresetPackage：SillyTavern JSON 非法内容返回 400 且不落盘', async () => {
   const { status, payload } = await importPackage({
     files: [{ path: 'broken.json', content: '{not-json' }],

@@ -29,13 +29,13 @@ test('模块来源可追溯:官方切块带 provenance,本地附加模块单独�
 
 test('官方源码重建后的本地参数化补丁仍存在', () => {
     const bootstrap = read('engine/compositions/library/tool-bootstrap.yml')
-    assert.ok(bootstrap.includes('usePtcMode: __USE_PTC_MODE__'))
-    assert.ok(bootstrap.includes('__BOOTSTRAP_MAX_TOKENS__'))
+    assert.ok(bootstrap.includes('usePtcMode: __usePtcMode__'))
+    assert.ok(bootstrap.includes('__bootstrapMaxTokens__'))
     // 官方 str-replace-editor 行参数化：maxOutputChars 走 params（默认官方值 16000）。
     const editor = read('engine/compositions/library/str-replace-editor.yml')
-    assert.ok(editor.includes('maxOutputChars: __STR_REPLACE_EDITOR_MAX_OUTPUT_CHARS__'))
+    assert.ok(editor.includes('maxOutputChars: __strReplaceEditorMaxOutputChars__'))
   const delegation = read('engine/compositions/library/delegation.yml')
-  assert.equal((delegation.match(/__SUBAGENT_CONFIG__/g) ?? []).length, 2)
+  assert.equal((delegation.match(/__subagentConfig__/g) ?? []).length, 2)
   const bash = read('engine/compositions/library/tool-bash.yml')
   assert.ok(bash.includes('disabled: true'))
   const filesystem = read('engine/compositions/library/bootstrap-filesystem.yml')

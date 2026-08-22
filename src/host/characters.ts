@@ -261,8 +261,9 @@ export function removeCharacterFromPreset(
       })
       doc.setIn(['promptConfigs'], kept)
       // 删除该卡声明的 params 键（若曾覆盖预设原值无法恢复——文档说明）。
-      for (const key of Object.keys(spec?.params ?? {})) {
-        doc.deleteIn(['params', key])
+      // 现值判断：仅当当前值仍等于卡声明值才删——用户手改过或他卡同键覆盖过的值不误删。
+      for (const [key, value] of Object.entries(spec?.params ?? {})) {
+        if (doc.getIn(['params', key]) === value) doc.deleteIn(['params', key])
       }
       const list = Array.isArray(current.meta?.importedCharacters) ? current.meta.importedCharacters : []
       doc.setIn(['meta', 'importedCharacters'], list.filter((entry) => String(entry) !== cardId))

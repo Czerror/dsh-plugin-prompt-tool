@@ -856,7 +856,9 @@ export function registerSettingsBridge(
               const path = typeof f.path === 'string' && f.path.length > 0 ? f.path : ''
               const content = typeof f.content === 'string' ? f.content : ''
               if (path.length === 0) return []
-              if (path.includes('..') || /^[a-zA-Z]:/.test(path) || path.startsWith('/') || path.startsWith('\\')) return []
+              // 逐段校验防穿越：拒绝 .. 路径段与绝对路径；合法文件名含 '..'（如 a..b.json）不误伤。
+              if (/^[a-zA-Z]:/.test(path) || path.startsWith('/') || path.startsWith('\\')) return []
+              if (path.split(/[\\/]/).some((segment) => segment === '..')) return []
               return [{ path, content }]
             })
             if (normalized.length === 0) {

@@ -22,15 +22,24 @@ function latin1(bytes: Uint8Array): string {
   return text
 }
 
-function decodeBase64(text: string): string {
+async function decodeBase64(text: string): Promise<string> {
   const binary = atob(text)
   const bytes = new Uint8Array(binary.length)
   for (let index = 0; index < binary.length; index++) bytes[index] = binary.charCodeAt(index)
-  return new TextDecoder('utf-8').decode(bytes)
+  // V1：明文 base64(JSON)；V2：base64(zlib(JSON))——明文 JSON 解析失败时 inflate 回退
+  // （对齐官方 character-card-parser read() 与 scripts/extract-st-character.mjs 的 parseChara）。
+  const plain = new TextDecoder('utf-8').decode(bytes)
+  try {
+    JSON.parse(plain)
+    return plain
+  } catch {
+    const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('deflate'))
+    return new TextDecoder('utf-8').decode(await new Response(stream).arrayBuffer())
+  }
 }
 
 /** 解析角色卡 PNG：返回角色卡 JSON + 原图 base64。非 PNG / 无角色卡 chunk 抛错。 */
-export function parseCharacterCardPng(buffer: ArrayBuffer, fileName: string): CharacterCardData {
+export async function parseCharacterCardPng(buffer: ArrayBuffer, fileName: string): Promise<CharacterCardData> {
   const bytes = new Uint8Array(buffer)
   if (bytes.length < 24 || bytes[0] !== 0x89 || bytes[1] !== 0x50 || bytes[2] !== 0x4e || bytes[3] !== 0x47) {
     throw new Error('不是有效的 PNG 文件')
@@ -57,7 +66,7 @@ export function parseCharacterCardPng(buffer: ArrayBuffer, fileName: string): Ch
   if (card === undefined) {
     throw new Error('PNG 不含角色卡数据（无 chara/ccv3 tEXt chunk）')
   }
-  const jsonText = decodeBase64(card.text)
+  const jsonText = await decodeBase64(card.text)
   let name = ''
   try {
     const parsed = JSON.parse(jsonText) as { name?: unknown; data?: { name?: unknown } }

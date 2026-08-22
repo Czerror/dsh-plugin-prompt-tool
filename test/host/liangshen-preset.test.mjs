@@ -31,7 +31,7 @@ test('preset/liangshen 渲染：模块清单 + moduleConfigs 表达两阶段锚�
     })
 
     const cordis = readFileSync(join(gen, 'liangshen', 'agent.cordis.yml'), 'utf8')
-    assert.ok(!/__[A-Z0-9_]+__/.test(cordis), '无未解析 token')
+    assert.ok(!/__[A-Za-z0-9_]+__/.test(cordis), '无未解析 token')
     const rows = parseYaml(cordis)
     assert.ok(Array.isArray(rows), '组合必须是 YAML 数组')
 

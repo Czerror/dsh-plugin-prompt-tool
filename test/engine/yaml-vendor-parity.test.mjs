@@ -29,7 +29,7 @@ function collectCorpus() {
     ...readdirSync(join(root, 'engine', 'compositions', 'library'))
       .filter((name) => name.endsWith('.yml'))
       // 这三个文件带 __TOKEN__ 占位符，物化前不是合法 YAML；运行时由 renderTemplateVariables 先替换。
-      .filter((name) => !/__[A-Z0-9_]+__/.test(readFileSync(join(root, 'engine', 'compositions', 'library', name), 'utf8')))
+      .filter((name) => !/__[A-Za-z0-9_]+__/.test(readFileSync(join(root, 'engine', 'compositions', 'library', name), 'utf8')))
       .map((name) => join('engine', 'compositions', 'library', name)),
   ]
   return files

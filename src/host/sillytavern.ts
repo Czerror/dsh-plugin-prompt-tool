@@ -27,20 +27,22 @@ const ST_DIRECTIVE = /\{\{(setvar|getvar|ERA|trim|\/\/)[^}]*\}\}/gi
  *   {{user}}/{{char}}       → 替换占位符。
  */
 export function processStText(text: string, cardName: string, params: Record<string, unknown>): string {
-  // 顺序敏感：先改写 getvar / 收集 setvar，最后才剥离残留指令——
+  // 顺序敏感：先收集 setvar（同文本后续 getvar 可读到），再改写 getvar，最后剥离残留指令——
   // 否则 ST_DIRECTIVE 会先把 setvar/getvar 整段剥掉，收集正则匹配不到。
-  // getvar 带默认值（fallback）：{{getvar::k::default}} → {{k}} + params.k ??= default。
-  let cleaned = text.replace(/\{\{getvar::([A-Za-z0-9_.\u4e00-\u9fff-]+)::([^}]*)\}\}/g, (_whole, key: string, fallback: string) => {
-    if (!(key in params) && fallback.length > 0) params[key] = fallback
-    return `{{${key}}}`
-  })
-  // getvar 无默认：{{getvar::k}} → {{k}}（引擎按 params 插值，无值保留原样）。
-  cleaned = cleaned.replace(/\{\{getvar::([A-Za-z0-9_.\u4e00-\u9fff-]+)\}\}/g, (_whole, key: string) => `{{${key}}}`)
   // setvar：{{setvar::k::v}} → 收集 k=v（会话变量初始值 = fallback 基准），指令剥离。
-  cleaned = cleaned.replace(/\{\{setvar::([A-Za-z0-9_.\u4e00-\u9fff-]+)::([^}]*)\}\}/g, (_whole, key: string, value: string) => {
+  let cleaned = text.replace(/\{\{setvar::([A-Za-z0-9_.\u4e00-\u9fff-]+)::([^}]*)\}\}/g, (_whole, key: string, value: string) => {
     params[key] = value
     return ''
   })
+  // getvar 带默认值（fallback）：{{getvar::k::default}} → {{k}} + params.k ??= default。
+  cleaned = cleaned.replace(/\{\{getvar::([A-Za-z0-9_.\u4e00-\u9fff-]+)::([^}]*)\}\}/g, (_whole, key: string, fallback: string) => {
+    // 仅检查自有属性（ST 变量名来自外部文本，避开 constructor/__proto__ 等原型链键）。
+    if (!Object.prototype.hasOwnProperty.call(params, key) && fallback.length > 0) params[key] = fallback
+    return `{{${key}}}`
+  })
+  // getvar 无默认：{{getvar::k}} → 有值 {{k}}（引擎按 params 插值），无值空串（ST 语义）。
+  cleaned = cleaned.replace(/\{\{getvar::([A-Za-z0-9_.\u4e00-\u9fff-]+)\}\}/g, (_whole, key: string) =>
+    Object.prototype.hasOwnProperty.call(params, key) ? `{{${key}}}` : '')
   // 剥离残留运行时指令与注释（trim/ERA/注释；顺序在收集之后）。
   cleaned = cleaned.replace(ST_DIRECTIVE, '')
   cleaned = cleaned
@@ -60,6 +62,8 @@ export function mergeStPresets(specs: PresetSpec[]): PresetSpec {
       if (config === null || typeof config !== 'object' || Array.isArray(config)) continue
       const entry = config as Record<string, unknown>
       const base = String(entry.id ?? '')
+      // 防御：无 id 配置（异常输入）跳过，避免合并出空 id / -2 后缀的垃圾条目。
+      if (base.length === 0) continue
       let id = base
       for (let suffix = 2; seen.has(id); suffix++) id = `${base}-${suffix}`
       seen.add(id)
@@ -259,11 +263,12 @@ export function convertStToPreset(card: unknown, baseName: string): PresetSpec {
       id,
       name: typeof prompt.name === 'string' && prompt.name.length > 0 ? prompt.name : id,
       // 保留 SillyTavern 启用状态：prompt_order 禁用标记优先，其次 prompts 内 enabled。
-      enabled: orderDisabled.has(id) ? false : prompt.enabled !== false,
+      // 注意用原始 identifier 查表（UUID 会被 id 生成规则替换为 st-prompt-N，查生成 id 永远 miss）。
+      enabled: orderDisabled.has(rawId) ? false : prompt.enabled !== false,
       strategy: 'static',
       // RELATIVE 注入顺序 = prompt_order 数组顺序（ST 忽略 injection_order）；
       // 无映射时按数组索引，保持 ST 预设内相对顺序。
-      order: (orderIndex.get(id) ?? index) * 10,
+      order: ((rawId.length > 0 ? orderIndex.get(rawId) : undefined) ?? index) * 10,
       text: content,
     }
     if (role === 'system') {

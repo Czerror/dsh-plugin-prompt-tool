@@ -87,7 +87,7 @@ test('anchored buildCordis 集成：moduleConfigs 合并与 token 渲染共存',
   // 子代理相位两行显式一致（tool-bootstrap 与 context-gate 保持同步）。
   assert.equal(bootstrap.config.includeSubagents, false)
   assert.equal(gate.config.includeSubagents, false)
-  assert.ok(!/__[A-Z0-9_]+__/.test(buildCordis('P')), '生成文本不应残留未解析 token')
+  assert.ok(!/__[A-Za-z0-9_]+__/.test(buildCordis('P')), '生成文本不应残留未解析 token')
 })
 
 test('子代理模型路由与委派完整自定义：persona + toolFilter + maxDepth 渲染（官方 tool-subagent Config）', () => {

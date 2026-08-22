@@ -90,8 +90,9 @@ function characterToPresetCard(card) {
 try {
   const buf = readFileSync(input)
   const texts = readTextChunks(buf)
-  const entry = texts.find(([key]) => key === 'chara')
-  if (!entry) throw new Error('PNG 中未找到 chara 文本块（不是 SillyTavern 角色卡）')
+  // V3 卡写 ccv3 chunk，V1/V2 写 chara：与浏览器端 character-card.ts 一致，ccv3 优先。
+  const entry = texts.find(([key]) => key === 'ccv3') ?? texts.find(([key]) => key === 'chara')
+  if (!entry) throw new Error('PNG 中未找到 chara/ccv3 文本块（不是 SillyTavern 角色卡）')
   const card = parseChara(entry[1])
   const result = toPreset ? characterToPresetCard(card) : card
   const out = output ?? input.replace(/\.png$/i, toPreset ? '-preset.json' : '.json')

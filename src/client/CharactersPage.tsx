@@ -42,7 +42,7 @@ export function CharactersPage(props: { store: PromptToolStore }): ReactNode {
       for (const file of Array.from(files)) {
         if (/\.png$/i.test(file.name)) {
           const buffer = await file.arrayBuffer()
-          const card = parseCharacterCardPng(buffer, file.name)
+          const card = await parseCharacterCardPng(buffer, file.name)
           const res = await bridgePost<{ id: string; name: string }>('/characters-import', {
             files: [
               { path: 'avatar.png', content: card.imageBase64 },

@@ -67,11 +67,11 @@ const PATCHES = {
     { from: 'backgroundMode: one-shot', to: 'enableRunInBackground: false' },
     {
       from: '        toolName: subagent\n        backgroundMode: continuable\n',
-      to: '        toolName: subagent\n        backgroundMode: continuable\n        __SUBAGENT_FLASH__\n',
+      to: '        toolName: subagent\n        backgroundMode: continuable\n        __subagentConfig__\n',
     },
     {
       from: '        toolName: subagent_fork\n        backgroundMode: continuable\n',
-      to: '        toolName: subagent_fork\n        backgroundMode: continuable\n        __SUBAGENT_FLASH__\n',
+      to: '        toolName: subagent_fork\n        backgroundMode: continuable\n        __subagentConfig__\n',
     },
   ],
 }

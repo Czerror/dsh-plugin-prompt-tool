@@ -7,6 +7,6 @@
 - id: tool-filter
   name: ./engine/tool-filter.mjs
   config:
-    allow: __MAIN_TOOL_FILTER_ALLOW__
-    deny: __MAIN_TOOL_FILTER_DENY__
-    includeSubagents: __MAIN_TOOL_FILTER_SUBAGENTS__
+    allow: __mainToolFilterAllow__
+    deny: __mainToolFilterDeny__
+    includeSubagents: __mainToolFilterSubagents__

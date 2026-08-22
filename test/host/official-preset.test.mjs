@@ -48,7 +48,7 @@ test('官方格式预设：无 id 回退目录名，无 modules/composition 回�
       })
       const cordis = readFileSync(join(gen, 'official-demo', 'agent.cordis.yml'), 'utf8')
       if (!cordis.includes('demo-row')) throw new Error('组合未回退 agent.cordis.yml')
-      if (/__[A-Z0-9_]+__/.test(cordis)) throw new Error('存在未解析 token')
+      if (/__[A-Za-z0-9_]+__/.test(cordis)) throw new Error('存在未解析 token')
       if (!existsSync(join(gen, 'official-demo', 'demo-local.mjs'))) throw new Error('模板目录本地模块未复制到生成目录')
       console.log('OK')
     `
@@ -95,7 +95,7 @@ test('官方 str-replace-editor 行：params 覆盖 maxOutputChars 渲染生效'
       })
       const cordis = readFileSync(join(gen, 'editor-param', 'agent.cordis.yml'), 'utf8')
       if (!cordis.includes('maxOutputChars: 32000')) throw new Error('params 覆盖未生效: ' + cordis)
-      if (/__[A-Z0-9_]+__/.test(cordis)) throw new Error('存在未解析 token')
+      if (/__[A-Za-z0-9_]+__/.test(cordis)) throw new Error('存在未解析 token')
       console.log('OK')
     `
     const res = spawnSync(process.execPath, ['--input-type=module', '-e', script], {
@@ -109,4 +109,3 @@ test('官方 str-replace-editor 行：params 覆盖 maxOutputChars 渲染生效'
     rmSync(home, { recursive: true, force: true })
   }
 })
-
