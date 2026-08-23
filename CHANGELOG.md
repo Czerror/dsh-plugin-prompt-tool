@@ -14,6 +14,13 @@
 
 ## [Unreleased]
 
+### 自定义宏自动登记 + 会话变量工具（ST getvar/setvar 语义落地）（2026-08-23）
+
+- **转换登记**：ST 转换时扫描卡内文本，未定义的 `{{自定义宏}}`（非内置/非运行时宏）自动登记为预设 `variables` 空值占位——插值替换为空不留字面，模板变量卡片可编辑默认值。
+- **会话变量引擎**（`engine/session-vars.mjs`）：变量挂在 session 对象（`SESSION_VARS_KEY` 字符串常量）——.engine 引擎实例与插件进程工具实例（不同模块副本）操作同一会话即共享数据，无跨实例同步问题；插值优先级 `resolved > 会话变量 > params > 配置 variables（含预设）`（executor 合并）。
+- **会话变量工具**（`session_var`，ctx.tools 注册）：`list / get / set / clear`——模型可维护角色状态（{{心情}}、{{接受值}} 等），对应 ST `/var` 命令 + 正则/STscript 更新语义。
+- **测试**：session-vars 单测、pre-step 会话变量注入集成、转换登记（空值占位/不登记运行时宏与内置）（287 pass/0 fail）。
+
 ### ST 运行时宏支持（修复两个预设的未解析参数）（2026-08-23）
 
 - **隔离分析**（`D:\AI\workspase\_temp\analyze-st-unresolved.mjs`）：夏瑾 beta-2-42 与 明月秋青 v5-0 各发现 2 个未解析参数——均为 ST 运行时宏：`{{lastusermessage}}` / `{{lastcharmessage}}`（大小写变体）与 `{{charIfNotGroup}}`。

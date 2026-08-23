@@ -379,6 +379,24 @@ test('importPresetPackage：TavernHelper 扩展注入物剥离（JS 脚本不进
     '扩展注入物（TavernHelper 脚本/正则）不进转换产物')
 })
 
+test('importPresetPackage：未定义自定义宏自动登记为预设 variables 空值占位', async () => {
+  const { status } = await importPackage({
+    files: [{ path: 'custom-macro.json', content: JSON.stringify({
+      name: '宏测试卡',
+      prompts: [
+        { identifier: 'main', name: '主提示', content: '今天{{日期}}，心情{{心情Emoji}}，学生{{student_name}}', role: 'user', enabled: true },
+      ],
+    }) }],
+  })
+  assert.equal(status, 200)
+  const converted = parseYaml(readFileSync(join(PRESETS, 'custom-macro', 'preset.yml'), 'utf8'))
+  assert.equal(converted.variables?.['日期'], '', '未定义宏登记空值（不留字面）')
+  assert.equal(converted.variables?.['心情Emoji'], '')
+  assert.equal(converted.variables?.['student_name'], '')
+  assert.equal(converted.variables?.['lastusermessage'], undefined, '运行时宏不登记')
+  assert.equal(converted.variables?.['DSH_HOME'], undefined, '内置变量不登记')
+})
+
 test('importPresetPackage：SillyTavern enable_web_search=true 时组装 tool-web 并启用 fetch', async () => {
   const { status } = await importPackage({
     files: [{ path: 'web.json', content: JSON.stringify({

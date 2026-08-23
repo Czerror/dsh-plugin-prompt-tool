@@ -320,6 +320,32 @@ export function convertStToPreset(card: unknown, baseName: string): PresetSpec {
   }
 
   const presetId = stPresetId(baseName)
+  // 未定义自定义宏登记：卡内文本引用了但无变量源的 {{key}}（非内置 / 非运行时宏）
+  // → 预设 variables 空值占位——插值替换为空不留字面；模板变量卡片可编辑默认值；
+  // 会话变量工具（session_var）可运行时覆盖（对应 ST 正则/STscript 更新语义）。
+  const RUNTIME_MACROS = new Set(['lastusermessage', 'lastcharmessage', 'charifnotgroup'])
+  const BUILTIN_KEYS = new Set(['DSH_HOME', 'WORKSPACE', 'CWD'])
+  const MACRO_RE = /\{\{([A-Za-z0-9_.\u4e00-\u9fff-]+)\}\}/g
+  const knownKeys = new Set(Object.keys(variables).map((key) => key.toLowerCase()))
+  for (const config of configs) {
+    const configRecord = config as { params?: { text?: unknown } }
+    const texts = [
+      ...(typeof config.text === 'string' && config.text.length > 0 ? [config.text] : []),
+      ...(Array.isArray(config.texts) ? config.texts : []),
+      ...(typeof configRecord.params?.text === 'string' ? [configRecord.params.text] : []),
+    ]
+    for (const raw of texts) {
+      const text = String(raw)
+      MACRO_RE.lastIndex = 0
+      for (const match of text.matchAll(MACRO_RE)) {
+        const key = match[1]!
+        const lower = key.toLowerCase()
+        if (knownKeys.has(lower) || RUNTIME_MACROS.has(lower) || BUILTIN_KEYS.has(key)) continue
+        knownKeys.add(lower)
+        variables[key] = ''
+      }
+    }
+  }
   // 预设名优先取卡片 name 字段；缺失/空白时回退文件名（去 .json 的 baseName）。
   return {
     id: presetId,

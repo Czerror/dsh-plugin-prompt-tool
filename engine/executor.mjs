@@ -14,6 +14,7 @@ import {
 import { interpolateVariables } from './interpolate.mjs'
 import { createEpochPromotion } from './compaction-epoch.mjs'
 import { wireLayers } from './layers.mjs'
+import { sessionVarsSnapshot } from './session-vars.mjs'
 
 const name = 'prompt-config-engine'
 
@@ -169,7 +170,13 @@ export function applyPromptConfigs(ctx, configs, options = {}) {
           const patched = { ...resolved }
           // params 并入插值变量：ST 变量（setvar/getvar 收集 + 预设参数）顶层 key 直接可插值
           //（含中文 key 如 {{接受值}}——引擎正则已支持 Unicode 字母）。
-          const mergedVars = { ...config.variables, ...config.params, ...(resolved.variables !== null && typeof resolved.variables === 'object' ? resolved.variables : {}) }
+          // 会话变量（session_var 工具维护）覆盖配置/预设默认：resolved > 会话 > params > 配置。
+          const mergedVars = {
+            ...config.variables,
+            ...config.params,
+            ...sessionVarsSnapshot(session),
+            ...(resolved.variables !== null && typeof resolved.variables === 'object' ? resolved.variables : {}),
+          }
           if (typeof patched.text === 'string') {
             // 提示词配置级模板变量 + filler 变量 + 内置环境变量插值。
             patched.text = interpolateVariables(patched.text, mergedVars, session)

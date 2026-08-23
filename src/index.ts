@@ -31,6 +31,7 @@ import type { ModelDetection } from './runtime/models.ts'
 import { registerSettingsBridge } from './runtime/settings-bridge.ts'
 import { registerCharacterTools } from './runtime/character-tools.ts'
 import { registerWorldBookTools } from './runtime/world-book-tools.ts'
+import { registerSessionVarTools } from './runtime/session-var-tools.ts'
 import { registerTuiCommand } from './runtime/tui.ts'
 import { ensureSettingsRegistered } from './runtime/settings-registration.ts'
 import { removeResidentAgentsBlock, writeAgents } from './runtime/agents-file.ts'
@@ -780,6 +781,8 @@ registerTuiCommand(
       }
     },
   })
+  // 会话变量工具：模型维护 ST getvar/setvar 语义的会话状态（{{key}} 运行时覆盖）。
+  registerSessionVarTools(ctx)
 
   // settings 注册 base 与运行时快照同源（单一组装，避免双份字段漂移）。
   const settingsEntry: PromptSettings = currentSource()

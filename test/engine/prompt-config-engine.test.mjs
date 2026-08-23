@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { applyPromptConfigs, createPromptConfigs as createPromptConfigsCore, inject, loadPromptConfigFiles, parsePromptConfigYaml } from '../../engine/prompt-config-engine.mjs'
 import { extractText } from '../../engine/shared.mjs'
+import { setSessionVar } from '../../engine/session-vars.mjs'
 
 /** 引擎测试夹具使用包内 engine 目录作为自定义策略探测目录;内置策略不依赖 strategyDir。 */
 const STRATEGY_DIR = new URL('../../engine/', import.meta.url).href
@@ -781,4 +782,31 @@ test('world-book selectiveLogic：all 副键全中 / not 排除 / any 任一命�
   assert.ok((await run(['盾牌'])).includes('NOT'), 'not：副键未命中注入')
   assert.ok((await run(['弓'])).includes('ANY'), 'any：主键命中注入')
   assert.ok(!(await run(['无关'])).includes('ALL'), '无命中不注入')
+})
+
+test('会话变量：session_var 设置后 pre-step 注入 {{key}} 替换为会话值（覆盖预设默认）', async () => {
+  const { step } = makeHarness(createPromptConfigs([
+    { id: 'var-probe', strategy: 'static', layer: 'pre-step', position: 'before-all', texts: ['心情：{{心情}}｜接受值：{{接受值}}'] },
+  ]))
+  const stub = agent()
+  const session = stub.session
+  const run = async () => {
+    const decision = await step(stub)
+    return decision.messages.map((message) => extractText(message)).join('|')
+  }
+  assert.ok((await run()).includes('心情：{{心情}}'), '无会话变量且无预设值 → 保留字面（宽容语义）')
+  setSessionVar(session, '心情', '😊')
+  setSessionVar(session, '接受值', '42')
+  const injected = await run()
+  assert.ok(injected.includes('心情：😊'), '会话变量替换注入')
+  assert.ok(injected.includes('接受值：42'))
+  // 配置自身 variables 优先于会话变量（显式配置值胜）。
+  const { step: step2 } = makeHarness(createPromptConfigs([
+    { id: 'var-own', strategy: 'static', layer: 'pre-step', position: 'before-all', texts: ['{{心情}}'], variables: { 心情: '配置值' } },
+  ]))
+  const stub2 = agent()
+  setSessionVar(stub2.session, '心情', '会话值')
+  const decision2 = await step2(stub2)
+  const injected2 = decision2.messages.map((message) => extractText(message)).join('|')
+  assert.ok(injected2.includes('会话值'), '会话变量覆盖配置 variables（配置自身不高于会话）')
 })
