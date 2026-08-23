@@ -14,6 +14,14 @@
 
 ## [0.6.0] - 2026-08-23
 
+### 子代理状态/记忆维护模板（ST 智能特性委派落地）（2026-08-23）
+
+- **新模板 `templates/70-subagent-maintenance.yml`**（audience=subagent，pre-step，默认关闭）：把 ST 的「角色状态跟踪 + 关系记忆」委派给子代理——引擎保持确定性（插值/匹配/注入），智能判断（何时更新/更新成什么）交给委派子代理，写入经确定性工具边界（`session_var` 会话状态 / `world_book note` 持久记忆，含 chara- 前缀归属）。
+- 模板选择器「消息批层」插入，`stateKeys` 变量可配（默认 心情/接受值/关系进度）。
+- 模板库 15→16（templates 测试同步）。
+
+### 动态宏补齐（ST 宏扩展：roll/random/pick/chance/time/date 等）（2026-08-23）
+
 ### 动态宏补齐（ST 宏扩展：roll/random/pick/chance/time/date 等）（2026-08-23）
 
 - **插值引擎扩展**（interpolate.mjs）：支持带参数宏 `{{name::arg}}`——`{{roll::2d6+3}}`（骰子表达式，非法原样）、`{{random::a,b,c}}` / `{{pick::a,b,c}}`（列表随机选）、`{{chance::50}}`（百分比概率 → true/false）、`{{time}}`（HH:MM）、`{{date}}`（YYYY-MM-DD）、`{{weekday}}`、`{{isotime}}`/`{{isodate}}`、`{{newline}}`/`{{pipe}}` 字面宏；大小写不敏感，无会话上下文（system-section 注册期）同样可用。

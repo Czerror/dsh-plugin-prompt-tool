@@ -5,7 +5,7 @@ import { loadPromptTemplates, validatePromptConfigs } from '../../lib/index.mjs'
 
 test('loadPromptTemplates：按文件名数字前缀顺序返回包内模板库', () => {
   const templates = loadPromptTemplates()
-  assert.equal(templates.length, 15)
+  assert.equal(templates.length, 16)
   assert.deepEqual(templates.map((template) => template.file), [
     '10-pre-step.yml',
     '11-merged-a.yml',
@@ -22,6 +22,7 @@ test('loadPromptTemplates：按文件名数字前缀顺序返回包内模板库'
     '40-agent-request.yml',
     '50-llm-stream.yml',
     '60-tool-pipeline.yml',
+    '70-subagent-maintenance.yml',
   ])
 })
 

@@ -1,0 +1,38 @@
+# 模板：子代理状态 / 记忆维护（audience=subagent 专用注入）
+# 用途：把 ST 的「角色状态跟踪 + 关系记忆」委派给子代理完成——引擎保持确定性
+#       （插值/匹配/注入），智能判断（何时更新、更新成什么）交给委派子代理，
+#       写入经确定性工具边界（session_var 会话状态 / world_book note 持久记忆）。
+# 接入：模板选择器「消息批层」插入；默认关闭，插入后启用并按需改 stateKeys。
+id: subagent-maintenance
+name: 子代理状态/记忆维护
+enabled: false
+layer: pre-step
+strategy: static
+position: after-user
+dedupe: none
+promotion: none
+audience: subagent
+modelScope: all
+configKind: ordered
+order: 2000
+role: user
+mergeMode: merged
+sourceKind: ''
+form: hint
+summary: ''
+identity:
+  field: plugin
+  value: subagent-maintenance
+text: |-
+  你是本会话的「状态与记忆维护者」，与创作类子代理职责互补：
+  - 状态（本会话临时，模板变量注入用）：观察互动中明确的角色状态变化
+    （心情、态度、接受度等），用 session_var 工具 set 更新——变量名见下方
+    「状态变量」清单；状态未变化时不要重复写入。
+  - 记忆（跨会话持久）：有人际关系进展或重要事实时，用 world_book_upsert
+    的 note 参数写入来源角色卡记忆（条目 id 带 chara- 前缀 → 角色卡
+    memory.md，跨会话跟随角色卡）；无归属条目写入预设记忆。
+  - 克制：仅在状态确实变化时更新；不确定时保留原值；不编造未发生的内容。
+  状态变量清单：{{stateKeys}}
+variables:
+  stateKeys: 心情, 接受值, 关系进度
+params: {}
