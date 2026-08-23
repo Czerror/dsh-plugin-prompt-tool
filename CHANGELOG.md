@@ -1,135 +1,90 @@
 # Changelog
 
-## [0.5.0] - 2026-08-22
+## [0.6.1] - 2026-08-23
 
-### 角色卡 / 世界书 / ST 变量（SillyTavern 全链路）
+### 动态宏补齐（ST 宏扩展：roll/random/pick/chance/time/date 等）
 
-- **角色卡库**：SillyTavern 角色卡（PNG tEXt chunk `ccv3`/`chara` 或 chara_card JSON）导入独立库 `~/.dsh/.agent-presets/.characters/<id>/`（原图 / 原始 JSON / 转换参数 / 角色记忆），按需「导入到当前预设」（`chara-<卡>-` 前缀合并、幂等可移除）；多文件（角色卡 × 响应预设）自动合并；中文 id 支持
-- **角色记忆**：`memory.md` 跟随角色卡跨预设，应用时合并为 world-book constant 配置注入；世界书工具 `note` 参数按 id 前缀归属写入卡记忆
-- **世界书回归模块体系**：`character_book` 转 world-book 策略配置（`keys` 命中触发 / `constant` 常驻 / `useRegex` 正则 / `caseSensitive` / `wholeWords`），与普通模块同一存储与编辑；模块列表「世界书」过滤 + 批量启用/禁用；旧 `worldBook` 段自动迁移
-- **ST 变量 fallback**：`setvar` 收集进 params、`getvar`（含默认值）改写 `{{key}}` 由引擎插值兜底（key 支持中文）；`trim`/注释/ERA 剥离、`{{user}}`/`{{char}}` 替换、TavernHelper 扩展注入物剥离
-- **模型工具 8 个**：`character_import/apply/remove/delete/list` + `world_book_list/upsert/delete`（会话中直接管理角色卡与世界书）
-- **UI**：角色管理页（方块卡片）、模块列表合并过滤下拉（全部/世界书/层级）+ 批量开关、备用开场白、TavernHelper 剥离
-- **依赖**：新增 `@deepseek-ai/dsh-tools`（模型工具注册）；`.gitattributes` 统一 LF
+- **插值引擎扩展**（interpolate.mjs）：支持带参数宏 {{name::arg}}——{{roll::2d6+3}}（骰子表达式，非法原样）、{{random::a,b,c}} / {{pick::a,b,c}}（列表随机选）、{{chance::50}}（百分比概率）、{{time}}/{{date}}/{{weekday}}/{{isotime}}/{{isodate}}、{{newline}}/{{pipe}} 字面宏；大小写不敏感，system-section 注册期同样可用。
+
+### 子代理状态/记忆维护模板（ST 智能特性委派落地）
+
+- **新模板 templates/70-subagent-maintenance.yml**（audience=subagent，pre-step，默认关闭）：ST 角色状态跟踪 + 关系记忆委派给子代理——引擎确定性（插值/匹配/注入）+ 子代理智能判断 + 确定性工具边界写入（session_var / world_book note 含 chara- 归属）。模板库 15→16。
+
+### promptConfigs 模板合并进 preset.yml（单一来源）
+
+- 删除 promptConfigs.template.yml（与根 preset.yml 的 promptConfigs 段重复）；preset.yml 补全：通用字段全参考（group/exclusive/templateFile/dedup 等）、world-book selectiveLogic、策略参数参考（first-turn-anchor/guide-auto/custom-fallback）。parity 语料清理。
 
 ## [0.6.0] - 2026-08-23
-
-### 子代理状态/记忆维护模板（ST 智能特性委派落地）（2026-08-23）
-
-- **新模板 `templates/70-subagent-maintenance.yml`**（audience=subagent，pre-step，默认关闭）：把 ST 的「角色状态跟踪 + 关系记忆」委派给子代理——引擎保持确定性（插值/匹配/注入），智能判断（何时更新/更新成什么）交给委派子代理，写入经确定性工具边界（`session_var` 会话状态 / `world_book note` 持久记忆，含 chara- 前缀归属）。
-- 模板选择器「消息批层」插入，`stateKeys` 变量可配（默认 心情/接受值/关系进度）。
-- 模板库 15→16（templates 测试同步）。
-
-### 动态宏补齐（ST 宏扩展：roll/random/pick/chance/time/date 等）（2026-08-23）
-
-### 动态宏补齐（ST 宏扩展：roll/random/pick/chance/time/date 等）（2026-08-23）
-
-- **插值引擎扩展**（interpolate.mjs）：支持带参数宏 `{{name::arg}}`——`{{roll::2d6+3}}`（骰子表达式，非法原样）、`{{random::a,b,c}}` / `{{pick::a,b,c}}`（列表随机选）、`{{chance::50}}`（百分比概率 → true/false）、`{{time}}`（HH:MM）、`{{date}}`（YYYY-MM-DD）、`{{weekday}}`、`{{isotime}}`/`{{isodate}}`、`{{newline}}`/`{{pipe}}` 字面宏；大小写不敏感，无会话上下文（system-section 注册期）同样可用。
-- **测试**：动态宏单元（骰子范围/修正/非法原样、列表随机、概率确定性、时间格式、字面）（288 pass/0 fail）。
-
 ### 自定义宏自动登记 + 会话变量工具（ST getvar/setvar 语义落地）（2026-08-23）
-
-### 自定义宏自动登记 + 会话变量工具（ST getvar/setvar 语义落地）（2026-08-23）
-
 - **转换登记**：ST 转换时扫描卡内文本，未定义的 `{{自定义宏}}`（非内置/非运行时宏）自动登记为预设 `variables` 空值占位——插值替换为空不留字面，模板变量卡片可编辑默认值。
 - **会话变量引擎**（`engine/session-vars.mjs`）：变量挂在 session 对象（`SESSION_VARS_KEY` 字符串常量）——.engine 引擎实例与插件进程工具实例（不同模块副本）操作同一会话即共享数据，无跨实例同步问题；插值优先级 `resolved > 会话变量 > params > 配置 variables（含预设）`（executor 合并）。
 - **会话变量工具**（`session_var`，ctx.tools 注册）：`list / get / set / clear`——模型可维护角色状态（{{心情}}、{{接受值}} 等），对应 ST `/var` 命令 + 正则/STscript 更新语义。
 - **测试**：session-vars 单测、pre-step 会话变量注入集成、转换登记（空值占位/不登记运行时宏与内置）（287 pass/0 fail）。
-
 ### ST 运行时宏支持（修复两个预设的未解析参数）（2026-08-23）
-
 - **隔离分析**（`D:\AI\workspase\_temp\analyze-st-unresolved.mjs`）：夏瑾 beta-2-42 与 明月秋青 v5-0 各发现 2 个未解析参数——均为 ST 运行时宏：`{{lastusermessage}}` / `{{lastcharmessage}}`（大小写变体）与 `{{charIfNotGroup}}`。
 - **插值引擎扩展**（interpolate.mjs）：ST 运行时宏（大小写不敏感）——`lastusermessage` → 会话最后 user/message 事件文本、`lastcharmessage` → 最后 assistant/message、`charIfNotGroup` → 空串（dsh 会话 header 无角色名，单角色会话统一空，不残留字面）。`interpolateVariables` 从 session.events 提取；`interpolateStatic`（system-section 注册期无会话）替换为空串——不残留、不触发官方 unknown variable。
 - **测试**：动态宏提取（最后消息/大小写变体/变量优先）+ 无会话空替换（284 pass/0 fail）。
-
 ### 插值引擎拆分为独立 interpolate.mjs（shared 瘦身）（2026-08-23）
-
 - **拆分**：`interpolateVariables` / `interpolateStatic` 从 shared 迁出为 `engine/interpolate.mjs`（纯函数、无依赖，与 anchor-match 同级纯能力包）；`shared` 保留上下文/文本/配置工具（12 个导出）。
 - **消费方**：`layers.mjs` / `executor.mjs` import 源改为 interpolate（依赖方向不变，无环）。
 - **测试**：新增 `test/engine/interpolate.test.mjs`（variables 优先 / 内置 DSH_HOME/WORKSPACE/CWD 兜底 / 未注册保留字面 / 中文键）（282 pass/0 fail）。
-
 ### world-book 卡片 selectiveLogic 下拉 + useRegex 开关（2026-08-23）
-
 - **UI**：world-book 策略参数补全——`selectiveLogic` 下拉（0 任一 / 1 副键全排除 / 2 部分排除 / 3 副键全包含，对齐 ST `world_info_logic`）与 `useRegex` 开关（此前仅转换层支持，UI 未暴露）。
 - **引擎**：`MATCH_LOGIC` 细分 `NOT_ANY`（主键命中且至少一个副键未中）——ST 2 号语义此前与 1 号合并为 not，现精确区分；resolver 映射 0→any / 1→not / 2→notAny / 3→all。
 - **测试**：notAny 单元用例（279 pass/0 fail）。
-
 ### 锚定匹配引擎（anchor-match）：拆解 fallback，world-book 选择性触发落地（2026-08-23）
-
 - **新引擎 `engine/anchor-match.mjs`**（纯函数、无依赖）：主/副键、大小写、整词、正则、组合逻辑（`any`/`all`/`not` 对齐 ST `world_info_logic` AND_ANY/AND_ALL/NOT_ALL）、匹配模式（`scan` 全文 / `prefix` 开头锚定）。
 - **custom-fallback 拆解**：`matchesAnchorWord` 迁移为 matcher prefix 模式（`{ keys: [firstTurnWord] }`）——锚定能力成为引擎能力，行为不变（回归测试通过）。
 - **world-book selective 落地**：`selectiveLogic`（ST 0/1/2/3）→ `any`/`not`/`all`；转换层不再丢弃 `selectiveLogic`（写入配置 params）；无键/constant 恒注入语义保留。
 - **测试**：anchor-match 单元（any/all/not × 选项 × prefix）+ world-book 集成（副键全中/排除/任一）（278 pass/0 fail）。
 - **未做**：scan_depth 递归扫描（引擎无条目间递归概念，需要时再加深度选项）。
-
 ### 合并 text / texts 编辑框为单一内容框（对齐官方 text 单字符串语义）（2026-08-23）
-
 - **依据**：dsh 官方（`packages/core/system-prompt/src/index.ts` L67/L84）prompt 条目 `text` 为单字符串（或函数 provider），多段靠多条 section（order 拼接）——无 `texts` 数组概念；`texts` 是我们引擎的自研扩展。
 - **合并**：模块卡片表单的 text / texts 两个编辑框合并为「内容（注入文本；空 = 不注入；变量 {{key}} 插值）」单框——普通配置保存统一写 `texts: [整块]`（单段，对齐官方语义；变量为空只留空位不整段消失）；`text` 字段保留兼容读取，编辑后归一。
 - **内容资产兼容**：prompt-injector / instruction-hint（`config.id` / `fill` 判定）编辑仍写 `text`（生成目录文件通道 params.text，行为不变）。
 - 验证：typecheck / lint / test 全绿（272 pass/0 fail）。
-
 ### 修复 Variables 卡片「删除（清空）」失效（2026-08-23）
-
 - **根因**：`clearAll` 先 `setTemplateVariables({})` 再调 `saveTemplateVariables()`——React setState 异步，保存闭包里的 state 还是旧值，后端写回旧变量，卡片清不掉。
 - **修复**：`saveTemplateVariables(next?)` 支持显式传入下一份值；清空场景传 `{}`（后端清 variables 段 + 重建），与 setState 解耦。
 - 验证：typecheck / lint / test 全绿（272 pass/0 fail）。
-
 ### 模块「新建」增加 Variables 入口（2026-08-23）
-
 - **新建 → Variables**：模板选择弹窗（新建）顶部新增固定「变量 / Variables」入口——点击展开模块列表顶部的模板变量卡片（受控展开）并添加一个待编辑空行，不插入提示词配置。
 - 模板变量卡片展开状态提升为受控（`PromptConfigsEditor` 管理），清空/折叠联动。
 - 验证：typecheck / lint / test 全绿（272 pass/0 fail）。
-
 ### 模块列表增加拖拽排序（2026-08-23）
-
 - **拖拽**：模块卡片 header 新增拖拽手柄（⠿），HTML5 DnD 拖到目标卡片上/下半区（落点指示线：上缘/下缘高亮）松手即移动；复用显示视图移动（`moveToView`：按显示相邻逐步交换 order 与数组位置，与连续点按钮等价，跨层正确）。
 - **交互隔离**：`draggable` 只设在手柄上（整卡不参与拖拽），展开表单的输入/文本选择不受干扰；拖拽源卡片半透明（data-dragging）。
 - 样式：configCard 新增 `data-dragging` / `data-drop-before` / `data-drop-after`。
 - 验证：typecheck / lint / test 全绿（272 pass/0 fail）。
-
 ### 修复模块列表上移/下移失效（2026-08-23）
-
 - **根因**：`moveWithinLayer` 按**数组相邻**交换，而列表显示顺序是 `(层序, order, 声明序)` 排序——跨层配置混合时（ST 转换产物正是如此）数组顺序 ≠ 显示顺序，上移/下移交换的是"数组邻居"而非"显示邻居"，视觉上不移动甚至错乱（跨层跳位）。
 - **修复**：移动基于显示视图（`viewOrderedIds`：层序/order/声明序）找显示相邻项，交换两者的 order 与数组位置——显示顺序与引擎注入顺序（数组序）同步变化；按钮可用状态（canMoveUp/canMoveDown）同步按显示视图计算。
 - 验证：跨层场景（`[P1(pre), S1(ss), P2(pre)]` 中 P2 上移 → `[S1, P2, P1]`）正确；typecheck / lint / test 全绿（272 pass/0 fail）。
 - **说明**：模块列表为按钮式排序（无拖拽）；技能列表拖拽是独立功能（PromptWorkspace），本次未涉及。
-
 ### 模板变量卡片：移除保存按钮，失焦自动保存；「添加变量」改名「添加」（2026-08-23）
-
 - **自动保存**：删除「保存模板变量」按钮——焦点离开卡片容器（编辑完点别处/收起/切换开关/点击删除）即自动持久化（`/preset-variables` + 重建）；保存成功静默、失败提示。
 - **文案**：`VariablesEditor`「添加变量」按钮统一改名「添加」（配置卡片与模板变量卡片共用组件，同步生效）。
 - 验证：typecheck / lint / test 全绿（272 pass/0 fail）。
-
 ### 停用模板变量时自动剥离配置中的 {{key}} 引用（2026-08-23）
-
 - **行为**：`variablesEnabled=false`（开关停用）时，`writePreset` 除不生成 `variables.yml` 外，还把每条配置文本（`texts`/`text`/`params.text`）中的**预设变量引用** `{{key}}` 剥离为空——不再有字面残留，也不触发官方 `unknown prompt variable` 渲染报错。
 - **保留**：内置变量（`{{DSH_HOME}}`/`{{WORKSPACE}}`/`{{CWD}}`）与配置自身 variables 的引用不受影响（剥离只针对预设变量键）。
 - **测试**：停用时 `剧情{{wordsCloud}}字 {{DSH_HOME}}` → `剧情字 {{DSH_HOME}}`；启用后引用保留（引擎插值）（272 pass/0 fail）。
-
 ### 模板变量卡片增加插值开关（与其他模块卡片一致）（2026-08-23）
-
 - **开关**：卡片 header 新增启用/停用 toggle（configEnable 样式，与其他模块卡片一致），控制"模板变量插值"——存 preset.yml 顶层 `variablesEnabled`（缺省 true），切换即时持久化 + 重建。
 - **停用语义**：`writePreset` 不再生成 `variables.yml`——`{{key}}` 不再被替换（引擎无预设变量源）；展开态显示停用提示。注意：system-section 配置若文本残留 `{{key}}`，官方渲染会抛 unknown variable（用户主动停用时的已知行为，卡片 title 有提示）。
 - **端点**：`/preset-variables` 读写增加 `enabled` 字段；`savePresetParams` 新增 `variablesEnabled` 参数（true = 删除键即缺省，false = 显式停用）。
 - **测试**：停用不生成 variables.yml / 启用恢复（272 pass/0 fail）。
-
 ### 模板变量卡片彻底归类到配置列表下（可折叠 / 可删除 / 可新建）（2026-08-23）
-
 - **位置**：模板变量卡片经 `PromptConfigList.beforeCards` 插槽渲染在配置列表区域内（列表头部之后、配置卡片之前），随页面滚动，不再独立于列表上方。
 - **交互对齐配置卡片**：可折叠（chevron 展开/收起，默认收起）；可删除（header「删除 → 确认清空」，清空全部变量并持久化）；可新建（展开后 VariablesEditor「添加变量」）。
 - 语义不变：非 promptConfig，保存仍走 `/preset-variables` 写 preset.yml 顶层 `variables` 段。
 - 验证：typecheck / lint / test 全绿（271 pass/0 fail）。
-
 ### 模板变量编辑入口并入模块列表（B 方案）（2026-08-23）
-
 - **调整**：「模板变量」从工作台独立卡片（ModelToolCards 下方）移入提示词配置模块列表（PromptConfigsEditor）顶部——与 world-book、人设、各提示词模块并列管理，样式统一（configCard）。
 - 语义保持：预设级数据（非 promptConfig，不进配置列表保存路径），保存仍走 `/preset-variables` 写 preset.yml 顶层 `variables` 段。
 - `PromptConfigsEditor` props 扩展（templateVariables / setTemplateVariables / saveTemplateVariables）；`PromptWorkspace` 移除旧独立卡片组件。
 - 验证：typecheck / lint / test 全绿（271 pass/0 fail）。
-
 ### 预设级模板变量迁移到 preset.yml 顶层 variables 段（2026-08-23）
-
 - **设计**：`params` 混着两类语义（引擎行为参数 + 模板变量）——模板变量迁移到顶层 `variables:` 段（对齐官方"变量表"概念），`params` 只留引擎行为参数（PARAM_KEYS）。
 - **转换**：`convertStToPreset` 的 setvar/getvar 收集改写入顶层 `variables`（不再进 params）。
 - **写入**：`savePresetParams` 新增 `variables` 参数——写顶层 `variables` 段 + 清理 params 同名旧键（保存即迁移）；params 空 key 跳过。
@@ -137,51 +92,47 @@
 - **端点**：`/preset-variables` 读 = 顶层 variables + 旧 params 内容键合并（顶层优先）；写 = 顶层段。
 - **测试**：writePreset variables.yml 断言更新（顶层优先 + 旧键兼容 + runtime 排除）；savePresetParams variables 写入（271 pass/0 fail）。
 - **环境**：`beta-2-42` 预设已迁移（19 内容变量 → 顶层 variables，params 剩 14 个 UI 键，备份 `.bak-pt-vars-top-*`）。
-
 ### 修复 VariablesEditor「添加变量」失效（2026-08-23）
-
 - **根因**：`VariablesEditor.commit` 过滤空 key 行——「添加变量」新增的 `['', '']` 待编辑行被立即丢弃，按钮点击无效果（配置卡片与模板变量卡片共用，均受影响）。
 - **修复**：编辑器保留空 key 行（新增行可继续输入）；空 key 由保存端统一清理——`savePresetParams`（params 空 key 跳过 + promptConfigs 逐条清理 variables 空 key）、模板变量卡片保存前本地过滤。
 - **测试**：`savePresetParams` 空 key 清理回归断言（271 pass/0 fail）。
-
 ### 模板变量单一编辑入口：variables.yml + 工作台「模板变量」卡片（2026-08-23）
-
 - **问题**：writePreset 把预设级内容变量展开进每条配置的 `variables`，每个模块卡片的「variables（模板变量 {{key}} 插值）」重复显示同一批变量。
 - **数据流重构**：预设级内容变量（非 `PARAM_KEYS` 的非空 string 键）→ 生成 `prompt-configs/variables.yml`（单一文件）；引擎 `loadPromptConfigFiles` 读入后合并进每条配置 variables（配置自身优先）；生成目录每条配置 yml 保持干净（卡片 VariablesEditor 只显示配置自身变量）。
 - **UI**：工作台主会话页新增「模板变量」卡片（复用 `VariablesEditor` key-value 行编辑，ST 对应物 = 宏系统变量管理 `public/scripts/variables.js`），保存走新端点 `/preset-variables`（写激活预设 preset.yml 内容变量 + 重建）。
 - **桥端点**：`BRIDGE_ENDPOINTS` 22→23（`presetVariables`），契约测试同步。
 - **host 加载**：`prompt-configs.ts loadPromptConfigFiles` 跳过 `variables.yml`（非配置）。
 - **测试**：引擎合并断言（变量文件不入配置列表、配置自身优先）、writePreset 生成 variables.yml、liangshen/custom 目录断言过滤变量文件（270 pass/0 fail）。
-
 ### 预设级内容变量展开进 variables（官方插值机制；修复 {{key}} 注入失败）（2026-08-23）
-
 - **根因**：writePreset 把预设级内容变量合并进 `config.params`，但引擎插值（`interpolateVariables`/`interpolateStatic`）只读 `config.variables`——`{{JailbreakPrompt}}`/`{{wordsCloud}}`/`{{getvar::k}}→{{k}}` 不被替换；且 system-section 文本注册进官方 `ctx.systemPrompt` 后，残留 `{{key}}` 触发官方 `unknown prompt variable` 抛错 → **该段注入失败**（warn 静默）。
 - **修复**：合并层从 `params` 改为 `variables`——预设级内容变量（非 `PARAM_KEYS` 的 string 键）展开进每条配置的 `variables`（官方插值源，配置自身优先）；`params` 只保留配置自身策略参数（strategies.mjs 消费）。
 - **UI**：`StrategyParamsFields` JSON 回退分支在 params 为空时不再渲染「params（高级参数 JSON）」框，提示"本策略无高级参数；模板变量见上方 variables"——内容变量由既有 `VariablesEditor` 结构化编辑。
 - **测试**：write-preset 断言内容变量进 variables（params 不含）、UI 管理键双不落（269 pass/0 fail）；实测 `{{JailbreakPrompt}}` 经 variables 插值成功。
-
 ### 配置 params 合并排除 UI 已管理键（JSON 高级参数框只留内容变量）（2026-08-23）
-
 - **问题**：writePreset 把整包预设级 params 合并进每条 promptConfig 的 params（供 `{{key}}` 插值），模型设置/工具与深度/开关等 **UI 已有专门编辑入口**的键（`PARAM_KEYS`）也一并出现——「params（高级参数 JSON；本策略无固定字段）」框里冗余回写这些参数。
 - **修复**：`PARAM_KEYS` 移至 `src/shared/param-keys.ts`（host 层不 import config 的分层纪律，单一来源）；`writePreset` 合并预设级 params 时排除 `PARAM_KEYS`，配置自身策略参数（第二层 `...config.params`）不受影响。
 - **测试**：`write-preset.test.mjs` 新增断言——生成配置 params 不含 `firstTurnAnchor/modelProvider/guideText/usePtcMode/...` 等 UI 管理键、内容变量（如 `promptText`）保留合并（269 pass/0 fail）。
-
 ### ST 转换剥离采样参数（模型参数统一归「模型设置」UI）（2026-08-23）
-
 - **根因**：convertStToPreset 把 ST 卡采样参数（`temperature` / `openai_max_tokens` / `reasoning_effort`）固化为顶层 `params.model*`，与「模型设置」UI 编辑的是同一份预设级参数——ST 卡固化值会在导入/重建时覆盖用户在模型设置里的设置。
 - **剥离**：转换引擎不再写入 `modelTemperature` / `modelMaxTokens` / `modelReasoningEffort`（ST 源码对照：这三者是 ST 请求层采样参数，属会话运行时设置，非预设内容）；模型参数完全由模型设置 UI / 宿主默认管理。
 - **测试**：`preset-package-import` 用例改为断言转换产物不含三键（268 pass/0 fail）。
 - **环境配套**：已导入预设 `xiajin-tianqin-beta-2-42/preset.yml` 顶层 params 三键剥离（yaml 保留注释写回 + 备份），生成目录旧 `00-model-params.yml` 删除（writePreset 重建时会清空 prompt-configs 目录，无残留路径）。
-
 ### 预设 id 官方命名约束（修复官方客户端 resume 报 preset not found）（2026-08-23）
-
 - **根因**：ST 导入预设 id 保留中文字符（`\u4e00-\u9fff`），目录建在官方 `USER_PRESET_DIR` 后被宿主 discovery 的 `PRESET_ID`（`/^[a-z0-9][a-z0-9-]*$/`）静默跳过；插件又把宿主 `agent-presets.default` 同步为该 id → 官方客户端 resume 会话报 `agent-presets: preset "夏瑾-天琴座-beta-2-42" not found`。
 - **`stPresetId`**：ST 导入 id 生成抽为独立函数并导出——文件名 slug 化（去中文，满足官方 `^[a-z0-9][a-z0-9-]*$`）；纯中文名退化为 `st-<文件名短哈希>`（唯一且合法）；显示名 `name` 保留中文原名。
 - **writePreset 校验收紧**：`presetTemplate` 从「可含中文的目录名」收紧为官方 agent-presets id（`^[a-z0-9][a-z0-9-]*$`），非法 id fail loud，防止再生成官方不可见目录。
 - **宿主 default 同步防护**：`syncHostDefault` 同步前校验 id 合法，不合法 warn 跳过（不再写坏宿主 settings）。
 - **测试**：新增 `test/host/sillytavern.test.mjs`（中文名 slug / 纯中文 hash / 英文 slug）；write-preset 拒绝中文/大写 templateName；`preset-package-import` 中文文件名用例同步新 id 形态。
 - **注意**：已导入的中文 id 预设（如 `夏瑾-天琴座-beta-2-42`）需手动改名为合法 id 并同步 `settings.yaml`（`agent-presets.default` / `prompt-tool.presetTemplate`），否则插件重启后 writePreset fail loud。
-
+## [0.5.0] - 2026-08-22
+### 角色卡 / 世界书 / ST 变量（SillyTavern 全链路）
+- **角色卡库**：SillyTavern 角色卡（PNG tEXt chunk `ccv3`/`chara` 或 chara_card JSON）导入独立库 `~/.dsh/.agent-presets/.characters/<id>/`（原图 / 原始 JSON / 转换参数 / 角色记忆），按需「导入到当前预设」（`chara-<卡>-` 前缀合并、幂等可移除）；多文件（角色卡 × 响应预设）自动合并；中文 id 支持
+- **角色记忆**：`memory.md` 跟随角色卡跨预设，应用时合并为 world-book constant 配置注入；世界书工具 `note` 参数按 id 前缀归属写入卡记忆
+- **世界书回归模块体系**：`character_book` 转 world-book 策略配置（`keys` 命中触发 / `constant` 常驻 / `useRegex` 正则 / `caseSensitive` / `wholeWords`），与普通模块同一存储与编辑；模块列表「世界书」过滤 + 批量启用/禁用；旧 `worldBook` 段自动迁移
+- **ST 变量 fallback**：`setvar` 收集进 params、`getvar`（含默认值）改写 `{{key}}` 由引擎插值兜底（key 支持中文）；`trim`/注释/ERA 剥离、`{{user}}`/`{{char}}` 替换、TavernHelper 扩展注入物剥离
+- **模型工具 8 个**：`character_import/apply/remove/delete/list` + `world_book_list/upsert/delete`（会话中直接管理角色卡与世界书）
+- **UI**：角色管理页（方块卡片）、模块列表合并过滤下拉（全部/世界书/层级）+ 批量开关、备用开场白、TavernHelper 剥离
+- **依赖**：新增 `@deepseek-ai/dsh-tools`（模型工具注册）；`.gitattributes` 统一 LF
 ### persona 注册层重构：router-first-turn 接管人设（2026-08-22）
 
 - **token 参数名直观化**：组合模板占位符从 SCREAMING_SNAKE_CASE（`__USE_PTC_MODE__` 等）改为 camelCase（`__usePtcMode__` 等），与 `params` 键逐字对应（`USE_PTC_MODE`↔`usePtcMode` 心智映射消除）；`renderTemplateVariables` / `assertCompositionArray` / 测试检测正则统一支持大小写；`resolvePresetParams` 删除 SCREAMING_SNAKE 别名生成（`upperKey` 移除）；`__SUBAGENT_FLASH__`（rebuild 脚本旧名）同步为 `__subagentConfig__`。

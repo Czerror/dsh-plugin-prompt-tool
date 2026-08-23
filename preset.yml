@@ -106,6 +106,38 @@ params:
 # instruction-hint（指令文件提示）/ placeholder（动态填充：env-facts 等）/
 # world-book（世界书条目，见下方专项说明）。
 # 六个 layer 全覆盖：pre-step（下方默认四条）、system-section / runtime-context /
+# ── promptConfigs：注入提示词配置（全部通用字段参考）────────────────────────
+# 每条配置的通用字段（除 id 外全部可选，缺省见注释）：
+#   id             唯一 id，必填；同名覆盖默认配置
+#   name           显示名，默认等于 id（UI 使用）
+#   enabled        总开关，默认 true
+#   layer          注入层级：pre-step（默认）/ system-section / runtime-context /
+#                  agent-request / llm-stream / tool-pipeline
+#   strategy       内容策略：static（默认）/ first-turn-anchor / guide-auto /
+#                  custom-fallback / world-book / placeholder / instruction-hint
+#   position       插入位置（pre-step）：after-user（默认）/ before-all / after-all
+#   dedupe         幂等：none（默认）/ session（每会话一次）/ batch（当批去重）
+#   promotion      晋升门槛：none（默认）/ main / include-subagents
+#   audience       消息受众：缺省=公用（主会话+子代理都注入）；main=仅主会话；
+#                  subagent=仅子代理（委派子代理专用）
+#   modelScope     模型范围：all（默认）/ pro / flash
+#   configKind     排序类型：ordered（按 order 升序，默认）/ anchor（固定文件序排最前）
+#   order          同层排序权重（同时决定 merged 拼接顺序），默认 0
+#   role           注入消息角色：user（默认）/ assistant
+#   mergeMode      同位置多条：separate（默认，独立消息）/ merged（拼接为一条）
+#   group          互斥组名：同 group 且 exclusive=true 时只执行排序后第一个 enabled
+#   exclusive      互斥开关（需配合 group），默认 false
+#   sourceKind     注入消息 source.kind，默认等于 id
+#   form           source.form：notice（默认）/ hint
+#   summary        source.summary，默认空
+#   templateFile   外部 yml/json/纯文本内容模板（text 优先）
+#   identity       持久幂等匹配字段，默认 {field: plugin, value: id}
+#   text / texts   注入内容（都写时 text 在前 texts 追加；空 = 不注入）
+#   variables      模板变量（配置级），{{key}} 插值优先于预设 variables
+#   params         策略参数（static 无；各策略见下方对应层的参数说明）
+# 插值：{{key}} = 配置/预设 variables > 会话变量（session_var 工具）> 运行时宏
+# （lastusermessage 等）> 动态宏（roll/random/pick/time/date）> 内置
+# （DSH_HOME/WORKSPACE/CWD）> 字面保留。
 # agent-request / llm-stream / tool-pipeline 的参数说明与示例见本段下方各块。
 # 默认四条（子代理默认全部放行/跟随；如需仅主会话/仅子代理，显式写
 # subagents: none / only 即可）：
@@ -160,6 +192,23 @@ promptConfigs:
     form: hint
     fill: instruction-hint
 
+# ── 策略参数参考（strategy 专用 params，除下方各层注释外）───────────────────
+# first-turn-anchor（首轮任务锚点）：
+#   useCustom            true=固定使用 firstTurnText；false=按正则自动选引导句
+#   firstTurnText       自定义锚文本（useCustom=true 时注入）
+#   buildPattern        构建任务正则（命中用 firstTurnBuild）
+#   complexPattern      复杂任务正则（命中用 firstTurnDeep）
+#   firstTurnBuild      构建引导句 / firstTurnInspect 排查引导句 / firstTurnDeep 复杂设计引导句
+# guide-auto（每轮路由引导）：
+#   useCustom            true=固定使用 text；false=按任务自动选强弱引导
+#   text                自定义引导文本（useCustom=true 时注入）
+#   guideComplexPattern 复杂任务正则
+#   guideWeak           简单任务自动引导 / guideDeep 复杂任务自动引导
+# custom-fallback（自定义锚定词，prompt-injector 晋升确认）：
+#   firstTurnWord       锚定词（首轮 reasoning 开头命中即注入；ASCII 词边界 / 非 ASCII 直前缀，
+#                       锚定匹配经 anchor-match 引擎 prefix 模式）
+#   text                注入内容（晋升确认后注入一次）
+
 # ── world-book 策略（世界书条目，SillyTavern character_book 转换落点）───────
 # 策略 strategy: world-book，按关键字触发的上下文条目，全部字段与普通配置一致
 # （layer / position / order / enabled / dedupe…），关键参数在 params：
@@ -169,6 +218,9 @@ promptConfigs:
 #   params.caseSensitive  true=关键字区分大小写（默认不区分）
 #   params.wholeWords     true=整词匹配（默认子串包含；中文无词边界，对英文生效）
 #   params.useRegex       true=keys 按正则表达式匹配（SillyTavern use_regex 透传）
+#   params.selectiveLogic ST world_info_logic（选择性触发组合逻辑）：
+#                         0=主/副键任一命中（默认）/ 3=副键全中才注入 /
+#                         1=副键全不中才注入 / 2=至少一个副键未中才注入
 # 注入语义：constant=true 恒注入；有 keys 命中才注入；无 keys 且非常驻 = 全局条目
 # 每轮注入（对齐 dsh-tavern 语义）。管理入口：模块列表下拉「世界书」过滤
 # （完整模块卡片编辑 + 批量启用/禁用）；模型工具（会话中直接维护，写入本段

@@ -24,7 +24,6 @@ function assertSameParse(raw) {
 function collectCorpus() {
   const files = [
     'preset/anchored/preset.yml',
-    'promptConfigs.template.yml',
     ...readdirSync(join(root, 'templates')).sort().map((name) => join('templates', name)),
     ...readdirSync(join(root, 'engine', 'compositions', 'library'))
       .filter((name) => name.endsWith('.yml'))
