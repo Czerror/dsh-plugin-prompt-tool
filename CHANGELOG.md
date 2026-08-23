@@ -14,6 +14,13 @@
 
 ## [Unreleased]
 
+### 预设级内容变量展开进 variables（官方插值机制；修复 {{key}} 注入失败）（2026-08-23）
+
+- **根因**：writePreset 把预设级内容变量合并进 `config.params`，但引擎插值（`interpolateVariables`/`interpolateStatic`）只读 `config.variables`——`{{JailbreakPrompt}}`/`{{wordsCloud}}`/`{{getvar::k}}→{{k}}` 不被替换；且 system-section 文本注册进官方 `ctx.systemPrompt` 后，残留 `{{key}}` 触发官方 `unknown prompt variable` 抛错 → **该段注入失败**（warn 静默）。
+- **修复**：合并层从 `params` 改为 `variables`——预设级内容变量（非 `PARAM_KEYS` 的 string 键）展开进每条配置的 `variables`（官方插值源，配置自身优先）；`params` 只保留配置自身策略参数（strategies.mjs 消费）。
+- **UI**：`StrategyParamsFields` JSON 回退分支在 params 为空时不再渲染「params（高级参数 JSON）」框，提示"本策略无高级参数；模板变量见上方 variables"——内容变量由既有 `VariablesEditor` 结构化编辑。
+- **测试**：write-preset 断言内容变量进 variables（params 不含）、UI 管理键双不落（269 pass/0 fail）；实测 `{{JailbreakPrompt}}` 经 variables 插值成功。
+
 ### 配置 params 合并排除 UI 已管理键（JSON 高级参数框只留内容变量）（2026-08-23）
 
 - **问题**：writePreset 把整包预设级 params 合并进每条 promptConfig 的 params（供 `{{key}}` 插值），模型设置/工具与深度/开关等 **UI 已有专门编辑入口**的键（`PARAM_KEYS`）也一并出现——「params（高级参数 JSON；本策略无固定字段）」框里冗余回写这些参数。

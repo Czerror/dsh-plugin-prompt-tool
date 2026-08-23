@@ -233,6 +233,11 @@ export function StrategyParamsFields(props: { strategy: string; layer?: string; 
       </>
     )
   }
+  // 无策略参数的配置（static 等）：预设级内容变量已展开进 variables（官方插值
+  // 机制，由上方 VariablesEditor 结构化编辑），params 为空时不再渲染 JSON 框。
+  if (Object.keys(value).length === 0) {
+    return <p className={styles.configFieldHint}>本策略无高级参数；模板变量见上方「variables」。</p>
+  }
   return <JsonField label="params（高级参数 JSON；本策略无固定字段）" value={value} onChange={(next) => { if (next !== undefined) onPatch(next) }} />
 }
 
