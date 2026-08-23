@@ -148,11 +148,18 @@ export function StrategyParamsFields(props: { strategy: string; layer?: string; 
   const bool = (key: string): boolean => value[key] === true
   const set = (key: string, next: unknown): void => onPatch({ ...value, [key]: next })
   if (layer === 'system-section') {
-    // system-section 层参数：sectionName（注册名；deployment:persona = 人设 shadow）、
-    // complete（独占 system prompt，预设内互斥）、suppressRuntimeContext（抑制动态快照）。
+    // system-section 层参数：人设段开关（开 = sectionName=deployment:persona 官方 shadow；
+    // 关 = 可选自定义段名，空则引擎回退 id 注册为普通段）、complete（独占 system prompt，
+    // 预设内互斥）、suppressRuntimeContext（抑制动态快照）。
+    const isPersona = str('sectionName') === 'deployment:persona' || str('sectionName') === 'persona'
     return (
       <>
-        <ParamInput label="sectionName（注册段名）" hint="deployment:persona = 人设段（同名 shadow 全局 persona）" value={str('sectionName')} onChange={(next) => set('sectionName', next)} />
+        <ParamToggle label="人设段" hint="开启 = 注册为全局 persona（sectionName=deployment:persona，同名 shadow；触发人设徽标/相位先行/子代理继承）"
+          checked={isPersona}
+          onChange={(next) => set('sectionName', next ? 'deployment:persona' : '')} />
+        {!isPersona && (
+          <ParamInput label="sectionName（自定义注册段名）" hint="可选；空 = 引擎回退用 id 注册为普通段。同名段会 shadow 合并/覆盖官方段。" value={str('sectionName')} onChange={(next) => set('sectionName', next)} />
+        )}
         <ParamToggle label="complete（独占 system prompt）" hint="开启后 assembly 只保留本段；预设内互斥（多个 complete 官方 fail loud）"
           checked={bool('complete')} onChange={(next) => set('complete', next)} />
         <ParamToggle label="suppressRuntimeContext（抑制动态上下文）" hint="等价官方 dsh-persona includeRuntimeContext:false"

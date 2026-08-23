@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### system-section 人设段开关化（A 方案，2026-08-24）
+
+- **PromptConfigCard**：system-section 层 `sectionName` 文本输入改为「人设段」开关（开 = sectionName=deployment:persona 官方 shadow，触发人设徽标/相位先行/子代理继承；关 = 可选自定义段名输入，空则引擎回退 id 注册为普通段）——消除「删了 sectionName 人设失效」的坑，语义与 complete/suppressRuntimeContext 开关统一。
+- **测试**：315 pass/0 fail。
+
 ### 补「主会话人设」模板 + 人设功能定位核查（2026-08-24）
 
 - **定位**：主会话人设功能在 `41db0da`（人设彻底模块化）从 `params.mainPersona` 迁移为 `promptConfigs.persona-main`（system-section 段，sectionName=deployment:persona）——编辑入口 = 模块列表「主会话人设」卡，非独立参数。根 preset.yml 的 `mainPersona` 注释为迁移残留（已确认引擎/参数桥/UI 均不消费）。
