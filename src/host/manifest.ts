@@ -31,6 +31,10 @@ export interface PresetSpec {
   composition?: string
   /** 扁平参数:全部直读(true/false、数字、字符串),on/off 作为兼容写法。 */
   params?: Record<string, unknown>
+  /** 顶层模型段（主对话，官方 agent-default-model 同构）：provider/name/reasoningEffort/temperature/maxTokens。 */
+  model?: Record<string, unknown>
+  /** 顶层子代理模型段：provider/name/reasoningEffort/temperature/maxTokens。 */
+  subagentModel?: Record<string, unknown>
   /** 预设级模板变量（{{key}} 插值源；与引擎行为参数 params 分离，顶层 variables 段）。 */
   variables?: Record<string, string>
   /** 模板变量插值开关（缺省 true = 启用；false = 停用，writePreset 不生成变量文件）。 */
@@ -87,6 +91,26 @@ export function loadPresetSpec(dir: string): PresetSpec {
   if (typeof parsed.id !== 'string' || parsed.id.length === 0) {
     parsed.id = basename(dir)
   }
+  // 顶层模型段（model / subagentModel，官方 agent-default-model 同构）→ 展平进
+  // params 扁平键（消费方统一读 params.modelProvider 等）。双读：段优先，扁平键兜底。
+  const flattenModelGroup = (source: unknown, mapping: Record<string, string>): void => {
+    if (source === null || typeof source !== 'object' || Array.isArray(source)) return
+    if (parsed.params === null || typeof parsed.params !== 'object' || Array.isArray(parsed.params)) {
+      parsed.params = {}
+    }
+    for (const [segmentKey, flatKey] of Object.entries(mapping)) {
+      const value = (source as Record<string, unknown>)[segmentKey]
+      if (value !== undefined) parsed.params[flatKey] = value
+    }
+  }
+  flattenModelGroup(parsed.model, {
+    provider: 'modelProvider', name: 'modelName', reasoningEffort: 'modelReasoningEffort',
+    temperature: 'modelTemperature', maxTokens: 'modelMaxTokens',
+  })
+  flattenModelGroup(parsed.subagentModel, {
+    provider: 'subagentModelProvider', name: 'subagentModelName', reasoningEffort: 'subagentReasoningEffort',
+    temperature: 'subagentTemperature', maxTokens: 'subagentMaxTokens',
+  })
   return parsed as PresetSpec
 }
 
@@ -367,6 +391,20 @@ export function savePresetParams(
   variables?: Record<string, string>,
   variablesEnabled?: boolean,
 ): void {
+  // 模型参数写入顶层段（model / subagentModel，官方 agent-default-model 同构）：
+  // params 旧扁平键同步清理（保存即迁移）。
+  const MODEL_KEY_MAP: Record<string, [string, string]> = {
+    modelProvider: ['model', 'provider'],
+    modelName: ['model', 'name'],
+    modelReasoningEffort: ['model', 'reasoningEffort'],
+    modelTemperature: ['model', 'temperature'],
+    modelMaxTokens: ['model', 'maxTokens'],
+    subagentModelProvider: ['subagentModel', 'provider'],
+    subagentModelName: ['subagentModel', 'name'],
+    subagentReasoningEffort: ['subagentModel', 'reasoningEffort'],
+    subagentTemperature: ['subagentModel', 'temperature'],
+    subagentMaxTokens: ['subagentModel', 'maxTokens'],
+  }
   const file = join(presetRoot, templateName, 'preset.yml')
   if (!existsSync(file)) throw new Error(`preset ${templateName} 无 preset.yml`)
   const doc = parseDocument(readFileSync(file, 'utf8'), { logLevel: 'silent' })
@@ -374,7 +412,13 @@ export function savePresetParams(
     for (const [key, value] of Object.entries(params)) {
       // 空 key（VariablesEditor 待编辑行）与空值不写入，保留模板默认。
       if (value === undefined || value === null || key.trim().length === 0) continue
-      doc.setIn(['params', key], value)
+      const segment = MODEL_KEY_MAP[key]
+      if (segment !== undefined) {
+        doc.setIn([segment[0], segment[1]], value)
+        doc.deleteIn(['params', key])
+      } else {
+        doc.setIn(['params', key], value)
+      }
     }
   }
   if (promptConfigs !== undefined) {

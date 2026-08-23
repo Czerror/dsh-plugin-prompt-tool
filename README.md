@@ -50,11 +50,18 @@ dsh --profile prompt-tool                                          # 首次启�
 | 锚定 | `firstTurnAnchor` `firstTurnCustom` `firstTurnText` `firstTurnWord` `firstTurnBuild` `firstTurnInspect` `firstTurnDeep` |
 | 引导 | `guideCustom` `guideText` `guideComplexPattern` `guideWeak` `guideDeep` `buildPattern` `complexPattern` |
 | PTC/门控 | `usePtcMode` `bootstrapMaxTokens` `injectPrompt` `allowKinds` |
-| 主对话模型 | `modelProvider` `modelName` `modelReasoningEffort` `modelTemperature` `modelMaxTokens` |
-| 子代理模型 | `subagentModelProvider` `subagentModelName` `subagentReasoningEffort` `subagentTemperature` `subagentMaxTokens` |
 | 人设 | 模块列表的 `persona-main`（system-section + `deployment:persona`，complete 互斥 + suppressRuntimeContext）；`subagentPersona`（子代理显式，缺省经 scope 链继承主会话） |
 | 工具集 | `toolFilterAllow` `toolFilterDeny`（子代理 toolFilter；主对话 tool-filter 模块共用） |
 | 深度 | `maxDepth`（0 禁止委派 / `provider-managed` / 正整数） |
+
+模型参数在 **preset.yml 顶层 `model` / `subagentModel` 段**（官方 `agent-default-model` 同构）：
+
+| 段 | 键 |
+|---|---|
+| `model`（主对话） | `provider` `name` `reasoningEffort` `temperature` `maxTokens` |
+| `subagentModel`（子代理固定路由） | `provider` `name` `reasoningEffort` `temperature` `maxTokens` |
+
+读取时顶层段展平进 params 扁平键（`modelProvider` 等），旧扁平键双读兼容；保存时写顶层段并清理旧键（保存即迁移）。
 
 > 根目录 **`preset.yml`** 是配置参数齐全、逐项注释的完整模板，复制即得自定义预设起点。
 

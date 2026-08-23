@@ -10,7 +10,7 @@ import { parse as parseYaml, parseDocument } from 'yaml'
 // 真实用户环境 .agent-presets/<id> 会遮蔽包内模板，测试必须隔离。
 const home = mkdtempSync(join(tmpdir(), 'pt-wp-home-'))
 process.env.DSH_HOME = home
-const { writePreset, savePresetParams } = await import('../../lib/index.mjs')
+const { writePreset, savePresetParams, loadPresetSpec } = await import('../../lib/index.mjs')
 
 function makeOptions(presetDir) {
   return {
@@ -477,6 +477,41 @@ test('savePresetParams 清理空 key（VariablesEditor 待编辑行不落盘）'
     assert.equal(doc.params?.wordsCloud, 'v', '有效 params 正常写入')
     assert.equal(doc.promptConfigs[0]?.variables?.[''], undefined, '配置 variables 空 key 不写入')
     assert.equal(doc.promptConfigs[0]?.variables?.keep, '1', '有效变量保留')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('顶层 model/subagentModel 段：读取展平进 params + 保存写顶层段（旧扁平键迁移）', () => {
+  const dir = join(tmpdir(), `prompt-tool-modelseg-${process.pid}-${Date.now()}`)
+  const presetDir = join(dir, 'preset')
+  try {
+    mkdirSync(join(presetDir, 'mseg'), { recursive: true })
+    writeFileSync(join(presetDir, 'mseg', 'preset.yml'), [
+      'id: mseg',
+      'model:',
+      '  provider: deepseek-official',
+      '  name: deepseek-v4-pro',
+      '  maxTokens: "32000"',
+      'subagentModel:',
+      '  provider: p2',
+      'params:',
+      '  firstTurnAnchor: true',
+      'promptConfigs: []',
+    ].join('\n') + '\n', 'utf8')
+    // 读取：顶层段展平进 params 扁平键（消费方统一读 modelProvider 等）。
+    const spec = loadPresetSpec(join(presetDir, 'mseg'))
+    assert.equal(spec.params?.modelProvider, 'deepseek-official', 'model.provider → modelProvider')
+    assert.equal(spec.params?.modelName, 'deepseek-v4-pro')
+    assert.equal(spec.params?.modelMaxTokens, '32000')
+    assert.equal(spec.params?.subagentModelProvider, 'p2')
+    assert.equal(spec.params?.firstTurnAnchor, true, '非模型键保留')
+    // 保存：模型键写顶层段 + params 旧扁平键清理（保存即迁移）。
+    savePresetParams(presetDir, 'mseg', { modelTemperature: '0.8', firstTurnAnchor: false }, undefined)
+    const doc = parseYaml(readFileSync(join(presetDir, 'mseg', 'preset.yml'), 'utf8'))
+    assert.equal(doc.model?.temperature, '0.8', '模型键写顶层 model 段')
+    assert.equal(doc.params?.modelTemperature, undefined, 'params 旧扁平键清理')
+    assert.equal(doc.params?.firstTurnAnchor, false, '非模型键仍写 params')
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }

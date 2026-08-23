@@ -40,7 +40,24 @@ content:
     1. 思维链使用简体中文。
     2. 回答内容使用简体中文。
 
-# ── params：引擎行为参数（33 键，全部可选，缺省 = 官方默认）──────────────────
+# ── model / subagentModel：模型参数（顶层段，官方 agent-default-model 同构）──
+# 模型参数独立于 params（引擎行为参数）——对齐官方范式（模型设置独立 namespace）。
+# 读取：顶层段优先展平进 params 扁平键（modelProvider 等），扁平旧键兜底；
+# 写入：savePresetParams 写顶层段并清理 params 旧扁平键（保存即迁移）。
+model:                           # 主对话模型（新会话默认；空=继承宿主 agent-default-model）
+  provider: ""                   # 模型服务商
+  name: ""                       # 模型名（空=继承宿主）
+  reasoningEffort: ""            # 思维程度（''=不设置；off/low/high/max）
+  temperature: ""                # 采样温度（''=不设置）
+  maxTokens: ""                  # 输出上限（''=不设置）
+subagentModel:                   # 子代理模型（固定路由；空=继承主会话）
+  provider: ""                   # 子代理模型服务商（tool-subagent agentOptions.provider）
+  name: ""                       # 子代理模型名（空=继承主会话）
+  reasoningEffort: ""            # 子代理思维程度（''=不设置）
+  temperature: ""                # 子代理采样温度（''=不设置）
+  maxTokens: ""                  # 子代理输出上限（''=不设置）
+
+# ── params：引擎行为参数（23 键，全部可选，缺省 = 官方默认）──────────────────
 params:
   # ── 锚定（首轮任务类型判定）──
   firstTurnAnchor: true          # true=首轮启用任务锚定（判定 build/fix/deep）
@@ -65,20 +82,6 @@ params:
   bootstrapMaxTokens: 0          # 首轮工具目录引导的 maxTokens 上限；0=不封顶
   injectPrompt: true             # true=we 确认后注入 preset.md 一次
   allowKinds: "[skill-invocation, near-anchor, router-guide]"  # 注入 kind 白名单（context-gate 门控；空=白名单全拦，危险）
-
-  # ── 主对话模型（agentOptions 由 dsh 全局配置，此处仅 preset 默认）──
-  modelProvider: ""              # 主对话新会话默认模型服务商（agent-default-model）
-  modelName: ""                  # 主对话新会话默认模型名（空=继承宿主）
-  modelReasoningEffort: ""       # 主对话思维程度（''=不设置）
-  modelTemperature: ""           # 主对话采样温度（''=不设置）
-  modelMaxTokens: ""             # 主对话输出上限（''=不设置）
-
-  # ── 子代理模型（固定路由）──
-  subagentModelProvider: ""      # 子代理模型服务商（tool-subagent agentOptions.provider）
-  subagentModelName: ""          # 子代理模型名（空=继承主会话）
-  subagentReasoningEffort: ""    # 子代理思维程度（''=不设置）
-  subagentTemperature: ""        # 子代理采样温度（''=不设置）
-  subagentMaxTokens: ""          # 子代理输出上限（''=不设置）
 
   # ── 人设 ──
   # 主对话自定义模型人设：主对话命中快速模型（Flash 档）时替换人设；
