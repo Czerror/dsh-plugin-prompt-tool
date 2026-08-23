@@ -5,20 +5,15 @@ import { loadPromptTemplates, validatePromptConfigs } from '../../lib/index.mjs'
 
 test('loadPromptTemplates：按文件名数字前缀顺序返回包内模板库', () => {
   const templates = loadPromptTemplates()
-  assert.equal(templates.length, 16)
+  assert.equal(templates.length, 11)
   assert.deepEqual(templates.map((template) => template.file), [
     '10-pre-step.yml',
-    '11-merged-a.yml',
-    '13-anchor.yml',
     '14-first-turn-anchor.yml',
     '15-guide-auto.yml',
     '16-custom-fallback.yml',
-    '17-instruction-hint.yml',
     '18-placeholder-env-facts.yml',
-    '19-placeholder-skill-catalog.yml',
     '20-system-section.yml',
     '30-runtime-context.yml',
-    '31-runtime-context-placeholder.yml',
     '40-agent-request.yml',
     '50-llm-stream.yml',
     '60-tool-pipeline.yml',
@@ -45,15 +40,13 @@ test('模板库覆盖六个注入层级与两个 placeholder 数据源', () => {
   assert.equal(byId.get('example-llm-stream').layer, 'llm-stream')
   assert.equal(byId.get('example-tool-pipeline').layer, 'tool-pipeline')
   assert.equal(byId.get('example-placeholder').fill, 'env-facts')
-  assert.equal(byId.get('example-skill-catalog').fill, 'skill-catalog')
 })
 
-test('merged 模板参数完整：mergeMode + position + order', () => {
+test('pre-step 通用模板覆盖字段变体：mergeMode / configKind 可切换', () => {
   const specs = loadPromptTemplates().map((template) => template.spec)
-  const a = specs.find((spec) => spec.id === 'example-merged-a')
-  assert.equal(a.mergeMode, 'merged')
-  assert.equal(a.position, 'before-all')
-  assert.equal(a.order, 0)
+  const a = specs.find((spec) => spec.id === 'example-pre-step')
+  assert.equal(a.mergeMode, 'separate')
+  assert.equal(a.configKind, 'ordered')
 })
 
 test('模板库全部条目通过引擎权威校验（模板即合法配置）', async () => {

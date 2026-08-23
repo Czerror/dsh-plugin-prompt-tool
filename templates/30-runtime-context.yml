@@ -1,4 +1,7 @@
 # 模板：runtime-context 动态运行时快照（随会话变化的内容放这里，不要进 system）
+# strategy 可切换：static（静态快照）/ placeholder（动态填充，原 31 号模板——
+#   fill=skill-catalog 时演示运行时技能目录；runtime-context 是除 pre-step 外唯一
+#   支持 placeholder 的层级）。
 id: example-runtime-context
 layer: runtime-context
 strategy: static

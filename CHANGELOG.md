@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### 模板归一：16 → 11 个（2026-08-24）
+
+- **A 组 pre-step 通用**：10-pre-step 合并 11-merged-a（mergeMode）与 13-anchor（configKind）——插入后改字段即可，注释说明两种变体；删除 11/13。
+- **B 组 placeholder**：18-placeholder-env-facts 合并 17-instruction-hint 与 19-skill-catalog——fill 下拉可切换三种数据源（env-facts / skill-catalog / instruction-hint），参数合并（envKeys + limit/fields/providers + emptyBehavior/emptyText + text）；删除 17/19。
+- **C 组 runtime-context**：30-runtime-context 合并 31-placeholder——strategy 可切 static/placeholder（fill=skill-catalog 演示）；删除 31。
+- **保留**：三种 strategy 模板（first-turn-anchor/guide-auto/custom-fallback，params 有专门编辑区）、system-section、agent-request、llm-stream、tool-pipeline、subagent-maintenance（真实功能模板）。
+- **测试**：templates.test.mjs 16→11（文件名列表 + merged/configKind 断言 + placeholder fill 断言更新）；315 pass/0 fail。
+
 ### 移除「主会话人设」模板（2026-08-24）
 
 - **templates/21-persona-main.yml 移除**：人设段开关化后（system-section 卡内「人设段」开关）无需专用模板——新建 system-section 卡开开关即得人设段；templates.test.mjs 回退 17→16 并移除 persona-main 断言。

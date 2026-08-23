@@ -1,4 +1,7 @@
 # 模板：pre-step 消息批注入（完整通用字段示例）
+# 本模板覆盖三种字段变体，插入后改字段即可：
+#   - mergeMode=merged + texts 多块 → 同 position 配置拼接为一条消息（原 11-merged-a）
+#   - configKind=anchor → 固定锚点序，按模块文件相对顺序排所有 ordered 之前（原 13-anchor）
 # 接入：复制本文件到 promptConfigsDir 目录，或把对象写入 settings.promptConfigs 数组。
 # 保存前可 POST /api/prompt-tool/settings/configs-validate 做权威校验。
 # audience 为配置项（缺省=公用；main=仅主会话；subagent=仅子代理），模板不锁定。
