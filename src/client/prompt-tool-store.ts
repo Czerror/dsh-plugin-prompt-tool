@@ -16,6 +16,7 @@ import {
   type BridgeSettingsView,
   type Fields,
   type HostDefaultModel,
+  type StageDraft,
 } from './prompt-tool-bridge.ts'
 
 /** rc8 ui-settings 共享镜像传输面：标准字段经官方 settingsScope 读写。 */
@@ -47,6 +48,26 @@ export interface SwitchSnapshot {
   subagentMaxTokens: string
   bootstrapMaxTokens: number
   usePtcMode: boolean
+  stages: StageDraft[]
+  stagePreUnlock: number
+  stageAdvanceTool: string
+  stageSectionTemplate: string
+  promoteGate: boolean
+  promoteAfterFirstResponse: boolean
+  maxPromoteSteps: number
+  bootstrapTools: string
+  compactionTools: string
+  personaSectionsOnly: boolean
+  workspaceLine: boolean
+  instructionHint: boolean
+  messageSources: string
+  deferredSources: string
+  deferredGraceSteps: number
+  pageCheckBrowserPath: string
+  pageCheckTimeoutMs: number
+  pageCheckLite: boolean
+  pageCheckRetry: boolean
+  deliveryRequireSmoke: boolean
   injectPrompt: boolean
   skillSwitches: Record<string, boolean>
   skillOrder: string[]
@@ -79,6 +100,26 @@ const EMPTY_SWITCHES: SwitchSnapshot = {
   subagentMaxTokens: '',
   bootstrapMaxTokens: 0,
   usePtcMode: false,
+  stages: [],
+  stagePreUnlock: 0,
+  stageAdvanceTool: '',
+  stageSectionTemplate: '',
+  promoteGate: false,
+  promoteAfterFirstResponse: false,
+  maxPromoteSteps: 0,
+  bootstrapTools: '',
+  compactionTools: '',
+  personaSectionsOnly: false,
+  workspaceLine: false,
+  instructionHint: false,
+  messageSources: '',
+  deferredSources: '',
+  deferredGraceSteps: 0,
+  pageCheckBrowserPath: '',
+  pageCheckTimeoutMs: 0,
+  pageCheckLite: false,
+  pageCheckRetry: true,
+  deliveryRequireSmoke: true,
   injectPrompt: true,
   skillSwitches: {},
   skillOrder: [],
@@ -139,6 +180,26 @@ export const snapshotSwitches = (fields: Fields): SwitchSnapshot => ({
   subagentMaxTokens: fields.subagentMaxTokens,
   bootstrapMaxTokens: fields.bootstrapMaxTokens,
   usePtcMode: fields.usePtcMode,
+  stages: fields.stages.map((stage) => ({ ...stage })),
+  stagePreUnlock: fields.stagePreUnlock,
+  stageAdvanceTool: fields.stageAdvanceTool,
+  stageSectionTemplate: fields.stageSectionTemplate,
+  promoteGate: fields.promoteGate,
+  promoteAfterFirstResponse: fields.promoteAfterFirstResponse,
+  maxPromoteSteps: fields.maxPromoteSteps,
+  bootstrapTools: fields.bootstrapTools,
+  compactionTools: fields.compactionTools,
+  personaSectionsOnly: fields.personaSectionsOnly,
+  workspaceLine: fields.workspaceLine,
+  instructionHint: fields.instructionHint,
+  messageSources: fields.messageSources,
+  deferredSources: fields.deferredSources,
+  deferredGraceSteps: fields.deferredGraceSteps,
+  pageCheckBrowserPath: fields.pageCheckBrowserPath,
+  pageCheckTimeoutMs: fields.pageCheckTimeoutMs,
+  pageCheckLite: fields.pageCheckLite,
+  pageCheckRetry: fields.pageCheckRetry,
+  deliveryRequireSmoke: fields.deliveryRequireSmoke,
   injectPrompt: fields.injectPrompt,
   skillSwitches: { ...fields.skillSwitches },
   skillOrder: [...fields.skillOrder],
@@ -183,10 +244,10 @@ const switchesEqual = (a: SwitchSnapshot, b: SwitchSnapshot): boolean =>
   && a.writeAgents === b.writeAgents
   && a.writePreset === b.writePreset
 
-export type SwitchKey = 'injectAgentsPrompt' | 'firstTurnAnchor' | 'firstTurnCustom' | 'guideCustom' | 'injectPrompt' | 'usePtcMode' | 'writeAgents' | 'writePreset'
+export type SwitchKey = 'injectAgentsPrompt' | 'firstTurnAnchor' | 'firstTurnCustom' | 'guideCustom' | 'injectPrompt' | 'usePtcMode' | 'promoteGate' | 'promoteAfterFirstResponse' | 'personaSectionsOnly' | 'workspaceLine' | 'instructionHint' | 'pageCheckLite' | 'pageCheckRetry' | 'deliveryRequireSmoke' | 'writeAgents' | 'writePreset'
 
 /** 参数类布尔开关：写激活预设 preset.yml（settings 只留全局开关）。 */
-const PARAM_SWITCH_KEYS: ReadonlySet<SwitchKey> = new Set(['firstTurnAnchor', 'firstTurnCustom', 'guideCustom', 'injectPrompt', 'usePtcMode'])
+const PARAM_SWITCH_KEYS: ReadonlySet<SwitchKey> = new Set(['firstTurnAnchor', 'firstTurnCustom', 'guideCustom', 'injectPrompt', 'usePtcMode', 'promoteGate', 'promoteAfterFirstResponse', 'personaSectionsOnly', 'workspaceLine', 'instructionHint', 'pageCheckLite', 'pageCheckRetry', 'deliveryRequireSmoke'])
 
 export interface PromptToolStore {
   fields: Fields
@@ -225,6 +286,10 @@ export interface PromptToolStore {
   setPresetTemplate: (id: string) => void
   setBootstrapTokensDraft: (value: string) => void
   commitBootstrapTokensDraft: () => void
+  /** 门控回退步数草稿（数字输入，失焦提交；0 = 引擎默认 4）。 */
+  gateStepsDraft: string
+  setGateStepsDraft: (value: string) => void
+  commitGateStepsDraft: () => void
   setSkillsDirDraft: (value: string) => void
   /** 追加技能目录（按添加顺序；重复路径拒绝）。 */
   addSkillsDir: (dir: string) => void
@@ -302,6 +367,7 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
   const [fields, setFields] = useState<Fields>(EMPTY_FIELDS)
   const [meta, setMeta] = useState<EngineMeta>(EMPTY_META)
   const [bootstrapTokensDraft, setBootstrapTokensDraft] = useState(DEFAULT_BOOTSTRAP_DISPLAY)
+  const [gateStepsDraft, setGateStepsDraft] = useState('4')
   const [skillsDirDraft, setSkillsDirDraft] = useState('')
   const [templatePreStepCount, setTemplatePreStepCount] = useState(0)
   const [savedSwitches, setSavedSwitches] = useState<SwitchSnapshot>(EMPTY_SWITCHES)
@@ -366,6 +432,7 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
     fieldsRef.current = next
     setFields(next)
     setBootstrapTokensDraft(next.bootstrapMaxTokens > 0 ? String(next.bootstrapMaxTokens) : DEFAULT_BOOTSTRAP_DISPLAY)
+    setGateStepsDraft(next.maxPromoteSteps > 0 ? String(next.maxPromoteSteps) : '4')
     setSkillsDirDraft('')
     setSavedSwitches(snapshotSwitches(next))
     setSavedConfigs(next.promptConfigs)
@@ -431,6 +498,44 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
         else if (typeof o.allowKinds === 'string') paramPatch.allowKinds = o.allowKinds
         if (typeof o.firstTurnWord === 'string') paramPatch.firstTurnWord = o.firstTurnWord
         if (typeof o.bootstrapMaxTokens === 'number') paramPatch.bootstrapMaxTokens = o.bootstrapMaxTokens
+        // 晋升门控（tool-bootstrap 参数桥）。
+        if (typeof o.promoteGate === 'boolean') paramPatch.promoteGate = o.promoteGate
+        if (typeof o.promoteAfterFirstResponse === 'boolean') paramPatch.promoteAfterFirstResponse = o.promoteAfterFirstResponse
+        if (typeof o.maxPromoteSteps === 'number') paramPatch.maxPromoteSteps = o.maxPromoteSteps
+        if (Array.isArray(o.bootstrapTools)) paramPatch.bootstrapTools = o.bootstrapTools.join(', ')
+        else if (typeof o.bootstrapTools === 'string') paramPatch.bootstrapTools = o.bootstrapTools
+        if (Array.isArray(o.compactionTools)) paramPatch.compactionTools = o.compactionTools.join(', ')
+        else if (typeof o.compactionTools === 'string') paramPatch.compactionTools = o.compactionTools
+        // 渐进披露（stages 模式）：引擎形态 [{name, tools: string[]}] → UI 草稿。
+        if (Array.isArray(o.stages)) {
+          paramPatch.stages = o.stages
+            .filter((stage): stage is { name?: unknown; tools?: unknown } =>
+              stage !== null && typeof stage === 'object')
+            .map((stage) => ({
+              name: typeof stage.name === 'string' ? stage.name : '',
+              tools: Array.isArray(stage.tools)
+                ? stage.tools.filter((item): item is string => typeof item === 'string').join(', ')
+                : '',
+            }))
+        }
+        if (typeof o.stagePreUnlock === 'number') paramPatch.stagePreUnlock = o.stagePreUnlock
+        if (typeof o.stageAdvanceTool === 'string') paramPatch.stageAdvanceTool = o.stageAdvanceTool
+        if (typeof o.stageSectionTemplate === 'string') paramPatch.stageSectionTemplate = o.stageSectionTemplate
+        if (typeof o.personaSectionsOnly === 'boolean') paramPatch.personaSectionsOnly = o.personaSectionsOnly
+        if (typeof o.workspaceLine === 'boolean') paramPatch.workspaceLine = o.workspaceLine
+        if (typeof o.instructionHint === 'boolean') paramPatch.instructionHint = o.instructionHint
+        // context-gate 注入门控。
+        if (Array.isArray(o.messageSources)) paramPatch.messageSources = o.messageSources.join(', ')
+        else if (typeof o.messageSources === 'string') paramPatch.messageSources = o.messageSources
+        if (Array.isArray(o.deferredSources)) paramPatch.deferredSources = o.deferredSources.join(', ')
+        else if (typeof o.deferredSources === 'string') paramPatch.deferredSources = o.deferredSources
+        if (typeof o.deferredGraceSteps === 'number') paramPatch.deferredGraceSteps = o.deferredGraceSteps
+        // 验证工具（page-check / delivery-gate）。
+        if (typeof o.pageCheckBrowserPath === 'string') paramPatch.pageCheckBrowserPath = o.pageCheckBrowserPath
+        if (typeof o.pageCheckTimeoutMs === 'number') paramPatch.pageCheckTimeoutMs = o.pageCheckTimeoutMs
+        if (typeof o.pageCheckLite === 'boolean') paramPatch.pageCheckLite = o.pageCheckLite
+        if (typeof o.pageCheckRetry === 'boolean') paramPatch.pageCheckRetry = o.pageCheckRetry
+        if (typeof o.deliveryRequireSmoke === 'boolean') paramPatch.deliveryRequireSmoke = o.deliveryRequireSmoke
         if (Object.keys(paramPatch).length > 0) {
           const next = { ...fieldsRef.current, ...paramPatch }
           fieldsRef.current = next
@@ -581,6 +686,39 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
         ...(splitList(f.allowKinds).length > 0 ? { allowKinds: splitList(f.allowKinds) } : {}),
         ...(f.firstTurnWord.trim().length > 0 ? { firstTurnWord: f.firstTurnWord } : {}),
         bootstrapMaxTokens: f.bootstrapMaxTokens,
+        // 晋升门控（tool-bootstrap 参数桥；空值不写，保留模板/引擎默认）。
+        ...(f.promoteGate ? { promoteGate: true } : {}),
+        ...(f.promoteAfterFirstResponse ? { promoteAfterFirstResponse: true } : {}),
+        ...(f.maxPromoteSteps > 0 ? { maxPromoteSteps: f.maxPromoteSteps } : {}),
+        ...(f.bootstrapTools.trim().length > 0 ? { bootstrapTools: splitList(f.bootstrapTools) } : {}),
+        ...(f.compactionTools.trim().length > 0 ? { compactionTools: splitList(f.compactionTools) } : {}),
+        // 渐进披露（stages 模式）：UI 草稿 → 引擎形态；空 = 不声明（两相窄化，保留模板默认）。
+        ...(f.stages.some((stage) => stage.name.trim().length > 0 || stage.tools.trim().length > 0)
+          ? {
+              stages: f.stages
+                .map((stage) => ({
+                  name: stage.name.trim(),
+                  tools: splitList(stage.tools),
+                }))
+                .filter((stage) => stage.name.length > 0 && stage.tools.length > 0),
+            }
+          : {}),
+        ...(f.stagePreUnlock > 0 ? { stagePreUnlock: f.stagePreUnlock } : {}),
+        ...(f.stageAdvanceTool.trim().length > 0 ? { stageAdvanceTool: f.stageAdvanceTool } : {}),
+        ...(f.stageSectionTemplate.trim().length > 0 ? { stageSectionTemplate: f.stageSectionTemplate } : {}),
+        ...(f.personaSectionsOnly ? { personaSectionsOnly: true } : {}),
+        ...(f.workspaceLine ? { workspaceLine: true } : {}),
+        ...(f.instructionHint ? { instructionHint: true } : {}),
+        // context-gate 注入门控。
+        ...(f.messageSources.trim().length > 0 ? { messageSources: splitList(f.messageSources) } : {}),
+        ...(f.deferredSources.trim().length > 0 ? { deferredSources: splitList(f.deferredSources) } : {}),
+        ...(f.deferredGraceSteps > 0 ? { deferredGraceSteps: f.deferredGraceSteps } : {}),
+        // 验证工具（page-check / delivery-gate）。
+        ...(f.pageCheckBrowserPath.trim().length > 0 ? { pageCheckBrowserPath: f.pageCheckBrowserPath } : {}),
+        ...(f.pageCheckTimeoutMs > 0 ? { pageCheckTimeoutMs: f.pageCheckTimeoutMs } : {}),
+        ...(f.pageCheckLite ? { pageCheckLite: true } : {}),
+        ...(f.pageCheckRetry === false ? { pageCheckRetry: false } : {}),
+        ...(f.deliveryRequireSmoke === false ? { deliveryRequireSmoke: false } : {}),
       },
     })
     if (res.ok) {
@@ -670,6 +808,18 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
     }
     void persistParamOverrides()
   }, [bootstrapTokensDraft, patch, persistParamOverrides])
+
+  /** 门控回退步数提交：0 = 引擎默认 4（不写 params）。 */
+  const commitGateStepsDraft = useCallback(() => {
+    const parsed = Number(gateStepsDraft)
+    if (!Number.isSafeInteger(parsed) || parsed < 0) {
+      setGateStepsDraft(String(fieldsRef.current.maxPromoteSteps > 0 ? fieldsRef.current.maxPromoteSteps : 4))
+      return
+    }
+    patch({ maxPromoteSteps: parsed })
+    setGateStepsDraft(String(parsed))
+    void persistParamOverrides()
+  }, [gateStepsDraft, patch, persistParamOverrides])
 
   const addSkillsDir = useCallback((dir: string) => {
     const next = dir.trim()
@@ -786,6 +936,9 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
     setPresetTemplate,
     setBootstrapTokensDraft,
     commitBootstrapTokensDraft,
+    gateStepsDraft,
+    setGateStepsDraft,
+    commitGateStepsDraft,
     setSkillsDirDraft,
     addSkillsDir,
     removeSkillsDir,

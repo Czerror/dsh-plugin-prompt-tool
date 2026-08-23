@@ -1166,9 +1166,12 @@
 .configToggle { flex: 1; min-width: 160px; appearance: none; border: 0; background: none; font: inherit; color: inherit; text-align: left; cursor: pointer; display: flex; align-items: center; gap: 8px; padding: 4px 0; }
 .configToggle:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary); outline-offset: 2px; }
 .configTitle { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.configTitleRow { display: flex; align-items: center; gap: 6px; min-width: 0; flex-wrap: wrap; }
 .configName { font-size: 13px; font-weight: 600; line-height: 1.5; color: var(--dsw-alias-label-primary); overflow-wrap: anywhere; letter-spacing: -.005em; }
 .configMeta { font-size: 12px; line-height: 1.5; color: var(--dsw-alias-label-tertiary); overflow-wrap: anywhere; }
-.configChip { margin-left: 8px; padding: 1px 8px; border-radius: 999px; font-size: 11px; line-height: 1.6; color: var(--dsw-alias-label-brand, #3b82f6); background: color-mix(in srgb, var(--dsw-alias-label-brand, #3b82f6) 12%, transparent); }
+.configChip { padding: 1px 8px; border-radius: 999px; font-size: 11px; line-height: 1.6; color: var(--dsw-alias-label-brand, #3b82f6); background: color-mix(in srgb, var(--dsw-alias-label-brand, #3b82f6) 12%, transparent); }
+.configSectionTitle { margin: 12px 0 4px; padding-top: 10px; border-top: 1px solid var(--dsw-alias-border-l2); font-size: 11px; font-weight: 600; line-height: 1.4; color: var(--dsw-alias-label-tertiary); letter-spacing: .02em; }
+.configSectionTitle:first-child { margin-top: 0; padding-top: 0; border-top: 0; }
 .chevron { flex: none; color: var(--dsw-alias-label-tertiary); transition: transform .18s cubic-bezier(.22, 1, .36, 1); }
 .chevronOpen { transform: rotate(180deg); color: var(--pt-accent); }
 

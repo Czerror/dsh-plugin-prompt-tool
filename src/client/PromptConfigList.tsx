@@ -23,6 +23,9 @@ export interface PromptConfigListProps {
   extraActions?: ReactNode
   /** 列表头部之后、配置卡片之前渲染的固定卡片（如模板变量——归类于配置列表下）。 */
   beforeCards?: ReactNode
+  /** 受控层筛选（全部/世界书/层级）；未传时内部 state 兜底（子代理页等独立实例）。 */
+  viewFilter?: string
+  onViewFilterChange?: (value: string) => void
   /** 空状态追加提示（如「当前预设模板该层无配置」）。 */
   emptyHint?: string
   onPatchConfigs: (configs: PromptConfigDraft[]) => void
@@ -119,7 +122,7 @@ function moveToView(
 
 /** 共享的提示词配置列表：校验、保存、脏检测、复制、删除、层内移动。 */
 export function PromptConfigList(props: PromptConfigListProps): ReactNode {
-  const { meta, configs, savedConfigs, layer, scope, extraActions, beforeCards, emptyHint, onPatchConfigs, onSaveConfigs, onNotice } = props
+  const { meta, configs, savedConfigs, layer, scope, extraActions, beforeCards, viewFilter: viewFilterProp, onViewFilterChange, emptyHint, onPatchConfigs, onSaveConfigs, onNotice } = props
   const [expanded, setExpanded] = useState<string | undefined>(undefined)
   const [errors, setErrors] = useState<ValidationErrorEntry[]>([])
   const [validating, setValidating] = useState(false)
@@ -129,7 +132,12 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
   const [dragId, setDragId] = useState<string | undefined>(undefined)
   const [dropTarget, setDropTarget] = useState<{ id: string; before: boolean } | undefined>(undefined)
   /** 合并过滤下拉：全部 / 世界书（策略）/ 各注入层级。外部 layer prop 传入时固定该层。 */
-  const [viewFilter, setViewFilter] = useState<string>('all')
+  const [innerViewFilter, setInnerViewFilter] = useState<string>('all')
+  const viewFilter = viewFilterProp ?? innerViewFilter
+  const changeViewFilter = (value: string): void => {
+    if (onViewFilterChange !== undefined) onViewFilterChange(value)
+    else setInnerViewFilter(value)
+  }
 
   const effectiveLayer = layer ?? (viewFilter !== 'all' && viewFilter !== 'world-book' ? viewFilter : undefined)
   const visible = effectiveLayer === undefined
@@ -304,38 +312,36 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
         </div>
       </div>
 
-      {scoped.length > 0 && (
-        <div className={styles.listFilterRow}>
-          <input
+      <div className={styles.listFilterRow}>
+        <input
+          className={styles.listFilter}
+          value={filter}
+          aria-label="过滤模块列表"
+          placeholder="过滤：按 id / 名称…"
+          spellCheck={false}
+          onChange={(event) => setFilter(event.target.value)}
+        />
+        {layer === undefined && (
+          <select
             className={styles.listFilter}
-            value={filter}
-            aria-label="过滤模块列表"
-            placeholder="过滤：按 id / 名称…"
-            spellCheck={false}
-            onChange={(event) => setFilter(event.target.value)}
-          />
-          {layer === undefined && (
-            <select
-              className={styles.listFilter}
-              value={viewFilter}
-              aria-label="按层级或策略过滤"
-              onChange={(event) => setViewFilter(event.target.value)}
-            >
-              <option value="all">全部</option>
-              <option value="world-book">世界书</option>
-              {meta.layers.map((item) => (
-                <option key={item} value={item}>层级：{item}</option>
-              ))}
-            </select>
-          )}
-          <span className={styles.batchControls}>
-            <button type="button" className={styles.pillButton} disabled={ordered.length === 0}
-              onClick={() => batchSetEnabled(true)}>启用</button>
-            <button type="button" className={styles.pillButton} disabled={ordered.length === 0}
-              onClick={() => batchSetEnabled(false)}>禁用</button>
-          </span>
-        </div>
-      )}
+            value={viewFilter}
+            aria-label="按层级或策略过滤"
+            onChange={(event) => changeViewFilter(event.target.value)}
+          >
+            <option value="all">全部</option>
+            <option value="world-book">世界书</option>
+            {meta.layers.map((item) => (
+              <option key={item} value={item}>层级：{item}</option>
+            ))}
+          </select>
+        )}
+        <span className={styles.batchControls}>
+          <button type="button" className={styles.pillButton} disabled={ordered.length === 0}
+            onClick={() => batchSetEnabled(true)}>启用</button>
+          <button type="button" className={styles.pillButton} disabled={ordered.length === 0}
+            onClick={() => batchSetEnabled(false)}>禁用</button>
+        </span>
+      </div>
 
       {errors.length > 0 && (
         <div className={styles.configErrorBox}>
@@ -349,7 +355,7 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
       {beforeCards}
 
       {scoped.length === 0 ? (
-        <div className={styles.emptyState}><span className={styles.emptyGlyph} aria-hidden="true">⌁</span><div><h3>{scope === 'subagent' ? '还没有子代理可见的配置' : layer === undefined ? '还没有自定义配置' : '本层还没有自定义配置'}</h3><p>{scope === 'subagent' ? '从上方「新建」插入一条（插入后可在卡片「消息受众」下拉自由切换仅主会话/公用/仅子代理），或到主设置「配置」从目录导入。' : layer === undefined ? '从上方模板插入一条，或从本地目录导入；默认四条内置配置不受影响。' : '请到主设置「配置」从模板插入或从目录导入。'}</p>{emptyHint !== undefined && <p className={styles.readOnly}>{emptyHint}</p>}</div></div>
+        <div className={styles.emptyState}><span className={styles.emptyGlyph} aria-hidden="true">⌁</span><div><h3>{scope === 'subagent' ? '还没有子代理可见的配置' : effectiveLayer === undefined ? '还没有自定义配置' : '本层还没有自定义配置'}</h3><p>{scope === 'subagent' ? '从上方「新建」插入一条（插入后可在卡片「消息受众」下拉自由切换仅主会话/公用/仅子代理），或到主设置「配置」从目录导入。' : effectiveLayer === undefined ? '从上方模板插入一条，或从本地目录导入；默认四条内置配置不受影响。' : '请到主设置「配置」从模板插入或从目录导入。'}</p>{emptyHint !== undefined && <p className={styles.readOnly}>{emptyHint}</p>}</div></div>
       ) : filtered.length === 0 ? (
         <p className={styles.readOnly} role="status">没有匹配「{filter.trim()}」的配置。</p>
       ) : (

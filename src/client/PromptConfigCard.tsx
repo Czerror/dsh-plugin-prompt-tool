@@ -455,10 +455,12 @@ export function PromptConfigCard(props: {
         )}
         <button type="button" className={styles.configToggle} aria-expanded={props.expanded} onClick={props.onToggleExpanded}>
           <span className={styles.configTitle}>
-            <span className={styles.configName}>{config.name && config.name !== config.id ? `${config.id} · ${config.name}` : config.id}</span>
-            {config.layer === 'system-section' && config.params?.sectionName === 'deployment:persona' && (
-              <span className={styles.configChip} title="deployment:persona 同名 shadow：主会话人设（子代理经 scope 链继承）">人设</span>
-            )}
+            <span className={styles.configTitleRow}>
+              <span className={styles.configName}>{config.name && config.name !== config.id ? `${config.id} · ${config.name}` : config.id}</span>
+              {config.layer === 'system-section' && config.params?.sectionName === 'deployment:persona' && (
+                <span className={styles.configChip} title="deployment:persona 同名 shadow：主会话人设（子代理经 scope 链继承）">人设</span>
+              )}
+            </span>
             <span className={styles.configMeta}>{chips.join(' · ')}</span>
           </span>
           <IconChevronDownOutline14 className={clsx(styles.chevron, props.expanded && styles.chevronOpen)} />

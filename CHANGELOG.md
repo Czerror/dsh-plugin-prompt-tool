@@ -2,6 +2,77 @@
 
 ## [Unreleased]
 
+### 引擎模块卡移到模块列表上方独立区块（2026-08-24）
+
+- **PromptConfigsEditor**：模型路由 / tool-bootstrap / context-gate / 工具管线从模块列表 `beforeCards`（列表内部）移到**上方独立「引擎模块」区块**（sectionHeading + configList 容器），与注入内容配置（模块列表）明确分层；模板变量卡保留在模块列表内。
+- **测试**：315 pass/0 fail。
+
+### tool-pipeline 层 5 卡合并为「工具管线」大卡（2026-08-24）
+
+- **合并**：code-presentation / delivery-gate / tool-filter / delegation / page-check 五张 tool-pipeline 层卡合并为一张「工具管线」卡（layer chip = tool-pipeline），内部分区标题（configSectionTitle）：呈现（usePtcMode）/ 过滤（白/黑名单）/ 委派（递归深度）/ 验证（page-check + delivery-gate）。
+- **说明**：合并原因是五者本质都是工具设置（tool-pipeline 层）；分区标题保留模块名便于定位。topSwitch compact 模式保留（供未来单开关卡复用）。
+- **测试**：315 pass/0 fail。
+
+### 纯开关卡开关置顶——不折叠（2026-08-24）
+
+- **EngineModuleCard 支持 `topSwitch`**：纯开关卡（code-presentation / delivery-gate）开关直接渲染在 header 顶层右侧（configHeaderActions，同模板卡启用开关位），不再需要展开/折叠；卡片无 chevron、无 configForm。
+- **测试**：315 pass/0 fail。
+
+### 排版：卡片 header 两行化 + 纯开关卡并排（2026-08-24）
+
+- **header 三行 → 两行**：新增 `configTitleRow`（name + 层 chip 同行），`configMeta` 独立下行——EngineModuleCards 全部卡 + PromptConfigCard（含人设 chip）统一；`configChip` 去 margin-left（间距由 row gap 承担）。
+- **纯开关卡并排**：新增 `configCardRow`（flex 均分）——code-presentation（usePtcMode）与 delivery-gate（requireSmoke）两张纯开关卡并排一行，缩窄各占 50%；其余多字段卡保持整行。
+- **测试**：315 pass/0 fail。
+
+### 模型路由/工具与深度全部模块卡化——无独立固定卡片（2026-08-24）
+
+- **ModelRouteModuleCard**（新，EngineModuleCards.tsx 导出）：模型路由（官方 agent-default-model 层）从 CollapsibleCard 固定卡改为**模块卡形态**（configCard + chevron，scope 参数）——主会话页并入 PromptConfigsEditor `beforeCards`（EngineModuleCards 前），子代理页并入子代理配置列表头部。
+- **DelegationToolsModuleCard**（新，EngineModuleCards.tsx 导出）：工具与深度（toolFilter 白/黑名单 + allowKinds + maxDepth）模块卡化——子代理页并入配置列表头部（同一 params 桥扁平键，与主会话引擎模块卡同一来源）。
+- **PromptWorkspace**：删除 ModelRouteCard / SubagentSettings 固定卡组件；FeatureSettings 只保留路由状态 chips；ConfigListWithTemplates 支持 beforeCards 透传。
+- **测试**：315 pass/0 fail。
+
+### 修复：层筛选下拉后卡片全消失（2026-08-24）
+
+- **PromptConfigList**：过滤行（关键字输入 + 层下拉 + 批量开关）不再依赖 `scoped.length > 0`——选中层无配置时下拉仍可见（此前整个过滤行消失，无法切回「全部」）；空状态文案按 `effectiveLayer` 判定（选层后显示「本层还没有自定义配置」而非「还没有自定义配置」）。
+- **EngineModuleCards**：选中无引擎模块的层（runtime-context / agent-request / llm-stream / world-book）时显示提示行（引擎模块分布在 pre-step / system-section / tool-pipeline），不再静默全消失。
+- **测试**：315 pass/0 fail。
+
+### L2-B：渐进披露（stages）编辑器——tool-bootstrap 卡内嵌阶段编排（2026-08-24）
+
+- **UI 全链路补全**（此前引擎/参数桥/PARAM_KEYS 已支持，UI 层缺失）：bridge Fields +4（`stages: StageDraft[]`（name + tools 逗号分隔草稿）/ `stagePreUnlock` / `stageAdvanceTool` / `stageSectionTemplate`）；store load（引擎形态 `[{name, tools: string[]}]` → 草稿）+ persist（草稿 → 引擎形态；空 = 不声明，保留模板默认两相窄化）+ SwitchSnapshot/EMPTY 同步。
+- **tool-bootstrap 卡内新增「渐进披露」编辑区**（system-section 层）：阶段列表（名称输入 + 工具 TagInput + 上移/下移/删除 + 「+ 添加阶段」，空名称或空工具集的行不写入）、预放档数（0 = 默认 1）、推进工具名（空 = phase_advance）、阶段状态模板（`{{stage}}/{{stageName}}/{{unlocked}}/{{total}}`，空 = 不注入）。
+- **测试**：P1 回归扩展 stages 数组参数桥断言（tool-bootstrap 行含阶段名/工具集/预放档）；315 pass/0 fail。
+
+### 引擎模块卡归类 6 层注入层级 + 固定卡片去重并入模块列表（2026-08-24）
+
+- **引擎模块卡归类 6 层**：EngineModuleCards 每张卡标注注入层级 chip（configChip）——context-gate → pre-step（注入门控）、tool-bootstrap → system-section（装配相位）、code-presentation / tool-filter / delegation / page-check / delivery-gate → tool-pipeline（工具管线/呈现/委派/验证）。
+- **层筛选联动**：模块列表层筛选（viewFilter）从 PromptConfigList 提升为受控（未传时内部 state 兜底，子代理页独立实例不受影响）；选中层时模块列表只显示该层配置 + 该层引擎模块卡（'all' 显示全部、'world-book' 不显示引擎卡）。
+- **固定卡片去重删除**：主会话页「工具与深度」固定卡退役——工具集白/黑名单 → 新增 **tool-filter 模块卡**（tool-pipeline 层）、递归深度 → 新增 **delegation 模块卡**（tool-pipeline 层）、allowKinds 去重（context-gate 卡已有，原固定卡与模块卡双入口消除）；`ModelToolCards` 拆出 `ModelRouteCard`（模型路由卡，官方 agent-default-model 层保留独立固定卡，scope 参数供主会话/子代理共用）。子代理页保留工具与深度卡（子代理作用域配置）。
+- **默认折叠**：引擎模块卡全部默认折叠（tool-bootstrap 不再 defaultExpanded），降低初始高度。
+- **测试**：315 pass/0 fail。
+
+### 参数 UI 可编辑性补齐：PARAM_KEYS 补全 + 晋升门控卡片（2026-08-24）
+
+- **P1 修复**：`PARAM_KEYS` 补全 25 个参数键（门控/渐进披露/验证工具 + strReplaceEditorMaxOutputChars/toolFilterSubagents）——此前新增参数不在集合内会被 write-preset 当作**模板变量**混入 variables.yml 污染注入，且 /param-overrides 读取不返回；回归测试断言新增键不进 variables.yml/配置 params、参数桥正确合并进组合行。
+- **L2-A：晋升门控 UI**——管线参数卡片新增两卡：①晋升门控（promoteGate / promoteAfterFirstResponse / personaSectionsOnly / workspaceLine / instructionHint 开关 + maxPromoteSteps 数字草稿，0=引擎默认 4）；②首轮工具集（bootstrapTools / compactionTools 标签输入）。store fields/paramPatch/保存体 + bridge Fields/EMPTY 全链路同步。
+- **测试**：315 pass/0 fail（+1 P1 回归）。
+
+### 引擎模块卡片组：管线参数卡片退役，模块 config 统一卡片管理（2026-08-24）
+
+- **EngineModuleCards**（合并入模块列表：PromptConfigList `beforeCards`，与模板变量卡同款**可折叠模块卡**——configCard + configToggle + chevron，点击展开 configForm）：tool-bootstrap / code-presentation / context-gate / page-check / delivery-gate 五卡，moduleConfigs 的 UI 化，字段全部经 params 参数桥扁平键落 preset.yml（后端零改动）。
+- **tool-bootstrap 卡**：bootstrapMaxTokens（数字+开关）、promoteGate / promoteAfterFirstResponse / personaSectionsOnly / workspaceLine（开关）、maxPromoteSteps（数字）、bootstrapTools / compactionTools（标签输入）。
+- **code-presentation 卡**：usePtcMode 开关；**context-gate 卡**：allowKinds / messageSources / deferredSources（标签输入）+ deferredGraceSteps（数字）+ instructionHint 开关；**page-check 卡**：browserPath / timeoutMs / lite / retry；**delivery-gate 卡**：requireSmoke。
+- **退役**：旧 PipelineStatusCards 杂项区删除；固定大卡版引擎模块组删除，改同列表可折叠卡片。
+- **测试**：315 pass/0 fail。
+
+### 参考 dsh-router-standard 新建验证/交付/渐进披露模块（2026-08-24）
+
+- **page-check**（engine/page-check.mjs + 可选行）：headless Chrome 页面验证——截图（会话工作区 .dsh-shots）+ DOM smoke + console/pageerror 提取 + title/selector + `{js:}` 本地 VM 引擎；单飞锁 + 强制树杀（win32 taskkill / POSIX kill 组）+ 自动重试降分辨率（router v1.9.1/v1.14 实弹教训）；config 全参数化（browserPath/timeoutMs/lite/retry/description）。
+- **delivery-gate**（engine/delivery-gate.mjs + 可选行）：交付 gate——file-exists/nonempty/utf8 + headless smoke（复用 page-check）+ evidence 清单校验（kind ∈ file/page/image/run/test/text/external，visual 必须 reviewed）；requireSmoke 默认 true。
+- **tool-bootstrap stages 模式**（渐进披露）：`stages: [{name, tools}]` 声明激活多级阶段窄化——当前阶段 + 预放（stagePreUnlock）；phase_advance 推进（工具名参数化）；调用更高阶段工具 = 直达；阶段状态 durable tool/call 推导（无文件、resume/reload 恢复、compaction 不重置）；阶段文案 stageSectionTemplate 参数化（引导类内容一律 promptConfigs，引擎只注入动态 stage-status section）。
+- **参数化原则落实**：验证工具描述/阈值、阶段定义/文案全部 params 桥 + moduleConfigs 可配；不新增硬编码工具模块（gitbash 由既有 custom-bash 覆盖，不做）。
+- **测试**：314 pass/0 fail（+18：page-check 纯函数/沙箱/URL/注册、delivery-gate 校验矩阵、stages 窄化/推进/直达/冷启动/compaction 保持/参数化）。
+
 ### 参数桥取代组合 token + PTC 呈现拆独立模块（2026-08-24）
 
 - **参数桥**：`buildModuleConfigsFromParams` 取代 `renderEngineTokens` / `renderTemplateVariables` 的 `__TOKEN__` 文本渲染——params 扁平键直接构造模块行 config 对象合并（无占位符、无文本往返、类型直达）；组合库全部文件去 token（str-replace-editor 行默认 16000 显式化、delegation 组按子行 id 嵌套合并、tool-filter 行默认不过滤）；合并优先级 `moduleConfigs > params 参数桥 > 行默认`。

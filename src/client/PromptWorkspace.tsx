@@ -15,10 +15,9 @@ import { PresetsPage } from './PresetsPage.tsx'
 import { CharactersPage } from './CharactersPage.tsx'
 import { TemplatePicker } from './TemplatePicker.tsx'
 import { useTemplatePicker } from './useTemplatePicker.ts'
-import { TagInput } from './TagInput.tsx'
+import { DelegationToolsModuleCard, ModelRouteModuleCard } from './EngineModuleCards.tsx'
 import { CollapsibleCard } from './CollapsibleCard.tsx'
 import { SettingInputRow } from './SettingInputRow.tsx'
-import { autoResizeTextarea } from './textarea-resize.ts'
 import ui from './PromptUi.module.css'
 import css from './PromptWorkspace.module.css'
 
@@ -43,274 +42,6 @@ function PageHeader(props: { title: string; description: string; meta?: string }
       <div><h2>{props.title}</h2><p>{props.description}</p></div>
       {props.meta !== undefined && <div className={css.pageHeaderMeta}><code>{props.meta}</code></div>}
     </div>
-  )
-}
-
-/** 管线参数卡片（与主会话其他卡片同样式）：首轮输出封顶 + PTC 模式。
- *  两者是模块装配参数（渲染进 agent.cordis.yml 组合行 config，非提示词配置），
- *  模块库无对应可编辑项，故保留独立开关。 */
-function PipelineStatusCards(props: { store: PromptToolStore }): ReactNode {
-  const { store } = props
-  const fields = store.fields
-  const capped = fields.bootstrapMaxTokens > 0
-  return (
-    <div className={ui.configCardPair}>
-      <article className={ui.configCard}>
-        <header className={ui.configHeader}>
-          <span className={ui.configTitle}>
-            <span className={ui.configName}>首轮输出封顶</span>
-            <span className={ui.configMeta}>{capped ? `调用配置层 · 首轮 maxTokens ${fields.bootstrapMaxTokens}` : '调用配置层 · 默认 256000（不设上限）'}</span>
-          </span>
-          <span className={ui.configHeaderActions}>
-            <input
-              className={ui.configInput}
-              type="number"
-              min={1}
-              step={1}
-              value={store.bootstrapTokensDraft}
-              disabled={!fields.writePreset || !capped}
-              title="首轮请求 #1 的 maxTokens（正整数，失焦保存）"
-              aria-label="首轮输出封顶数值"
-              onChange={(event) => store.setBootstrapTokensDraft(event.target.value)}
-              onBlur={store.commitBootstrapTokensDraft}
-            />
-            <label className={ui.configEnable} htmlFor="pt-bootstrap-tokens">
-              <input id="pt-bootstrap-tokens" type="checkbox" checked={capped} disabled={!fields.writePreset} aria-label="首轮输出封顶" onChange={store.toggleBootstrapMaxTokens} />
-              <span className={ui.switch} aria-hidden="true"><i /></span>
-            </label>
-          </span>
-        </header>
-      </article>
-      <article className={ui.configCard}>
-        <header className={ui.configHeader}>
-          <span className={ui.configTitle}>
-            <span className={ui.configName}>使用 PTC 模式</span>
-            <span className={ui.configMeta}>{fields.usePtcMode ? '工具管线层 · Code Mode（run_code）' : '工具管线层 · 原生完整工具目录'}</span>
-          </span>
-          <span className={ui.configHeaderActions}>
-            <label className={ui.configEnable} htmlFor="pt-use-ptc">
-              <input id="pt-use-ptc" type="checkbox" checked={fields.usePtcMode} disabled={!fields.writePreset} aria-label="使用 PTC 模式" onChange={() => store.toggle('usePtcMode')} />
-              <span className={ui.switch} aria-hidden="true"><i /></span>
-            </label>
-          </span>
-        </header>
-      </article>
-    </div>
-  )
-}
-
-/** 模型与委派参数卡片（模型设置 + 工具与深度）：主对话页与子代理页共用同一配置源（缺省继承宿主默认）；模型路由与人设按作用域完全分离（main=主对话模型、subagent=子代理模型，参数各自独立），工具与深度两页通用。 */
-function ModelToolCards(props: { store: PromptToolStore; scope: 'main' | 'subagent' }): ReactNode {
-  const { store } = props
-  const fields = store.fields
-  const host = store.hostDefaultModel
-  // 宿主默认模型回显：插件参数未设置（空 = 继承宿主）时，下拉可见宿主当前
-  // agent-default-model 的可选项（模型目录查询失败/未公布时也能选择与回显）。
-  const providerOptions = [...new Set([...store.providers, ...(host?.provider !== undefined && host.provider.length > 0 ? [host.provider] : [])])]
-  const provider = props.scope === 'main' ? fields.modelProvider : fields.subagentModelProvider
-  const modelName = props.scope === 'main' ? fields.modelName : fields.subagentModelName
-  const modelOptions = [...new Set([
-    ...(store.modelCatalog[provider] ?? []),
-    ...(host?.model !== undefined && host.model.length > 0 ? [host.model] : []),
-  ])]
-  const maxDepthOptions = ['', 'provider-managed', '0', '1', '2', '3', '5']
-  const reasoningEffortOptions = ['', 'off', 'low', 'high', 'max']
-  // 宿主默认思维程度回显（agent-default-model settings reasoningEffort；官方档位同源）。
-  const hostEffort = host?.reasoningEffort !== undefined && host.reasoningEffort.length > 0
-    ? host.reasoningEffort
-    : undefined
-  const withCurrent = (options: string[], current: string): string[] =>
-    current.length > 0 && !options.includes(current) ? [...options, current] : options
-  const active = provider.length > 0 && modelName.length > 0
-  const reasoningEffort = props.scope === 'main' ? fields.modelReasoningEffort : fields.subagentReasoningEffort
-  const temperature = props.scope === 'main' ? fields.modelTemperature : fields.subagentTemperature
-  const maxTokens = props.scope === 'main' ? fields.modelMaxTokens : fields.subagentMaxTokens
-  const patchModelParam = (key: 'modelReasoningEffort' | 'modelTemperature' | 'modelMaxTokens' | 'subagentReasoningEffort' | 'subagentTemperature' | 'subagentMaxTokens', value: string): void => {
-    store.patch({ [key]: value } as Partial<typeof fields>)
-    void store.persistParamOverrides()
-  }
-  const scopeMeta = props.scope === 'main'
-    ? { title: '主对话模型', idle: '未设置：继承宿主默认模型', active: '固定模型路由已设置（新会话默认模型）' }
-    : { title: '子代理模型', idle: '未设置：继承主会话模型', active: '子代理固定模型路由已设置' }
-  // 主对话卡片：宿主默认模型名回显（子代理默认继承主会话，不回显宿主）。
-  const idleMeta = props.scope === 'main' && host?.model !== undefined && host.model.length > 0
-    ? `未设置：继承宿主默认（${host.model}）`
-    : scopeMeta.idle
-  return (
-    <>
-      <CollapsibleCard id={props.scope === 'main' ? 'pt-main-model' : 'pt-subagent-model'} title={scopeMeta.title} meta={active ? scopeMeta.active : idleMeta}>
-        <div className={ui.rowGroup}>
-          <div className={ui.settingRowStack}>
-            <span className={ui.settingCopy}>
-              <strong>模型服务商</strong>
-              <small>{props.scope === 'main'
-                ? '主对话新会话默认模型（agent-default-model）；调用方未显式指定时自动补入。检测到的服务商可直接选择。'
-                : '子代理固定模型路由（agentOptions 注入 tool-subagent，经预设参数传递）；调用方显式模型优先。检测到的服务商可直接选择。'}</small>
-            </span>
-            <select
-              className={ui.configInput}
-              aria-label="模型服务商"
-              value={provider}
-              disabled={!fields.writePreset}
-              onChange={(event) => {
-                store.patch(props.scope === 'main' ? { modelProvider: event.target.value } : { subagentModelProvider: event.target.value })
-                void store.persistParamOverrides()
-              }}
-            >
-              {withCurrent(providerOptions, provider).map((item) => (
-                <option key={item} value={item}>{item}</option>
-              ))}
-            </select>
-          </div>
-        </div>
-        <div className={ui.rowGroup}>
-          <div className={ui.settingRowStack}>
-            <span className={ui.settingCopy}>
-              <strong>模型名</strong>
-              <small>{props.scope === 'main'
-                ? '与模型服务商同时非空时生效（主对话新会话默认模型），例如 deepseek-v4-flash。'
-                : '与子代理模型服务商同时非空时生效（子代理固定路由），例如 deepseek-v4-flash。'}</small>
-            </span>
-            <select
-              className={ui.configInput}
-              aria-label="模型名"
-              value={modelName}
-              disabled={!fields.writePreset}
-              onChange={(event) => {
-                store.patch(props.scope === 'main' ? { modelName: event.target.value } : { subagentModelName: event.target.value })
-                void store.persistParamOverrides()
-              }}
-            >
-              {withCurrent(modelOptions, modelName).map((item) => (
-                <option key={item} value={item}>{item}</option>
-              ))}
-            </select>
-          </div>
-        </div>
-        <div className={ui.rowGroup}>
-          <div className={ui.settingRowStack}>
-            <span className={ui.settingCopy}>
-              <strong>思维程度</strong>
-              <small>reasoningEffort（agent-request patch）；官方档位 off / low / high / max；{reasoningEffort.length === 0 && hostEffort !== undefined
-                ? `留空 = 继承宿主默认（${hostEffort}）。`
-                : '留空 = 不设置（模型默认）。'}选择即保存。</small>
-            </span>
-            <select
-              className={ui.configInput}
-              aria-label="思维程度"
-              value={reasoningEffort}
-              disabled={!fields.writePreset}
-              onChange={(event) => patchModelParam(
-                props.scope === 'main' ? 'modelReasoningEffort' : 'subagentReasoningEffort',
-                event.target.value,
-              )}
-            >
-              {withCurrent(hostEffort !== undefined ? [...new Set([...reasoningEffortOptions, hostEffort])] : reasoningEffortOptions, reasoningEffort).map((item) => (
-                <option key={item} value={item}>{item.length === 0 ? '（不设置）' : item}</option>
-              ))}
-            </select>
-          </div>
-        </div>
-        <div className={ui.rowGroup}>
-          <div className={ui.settingRowStack}>
-            <span className={ui.settingCopy}>
-              <strong>采样温度</strong>
-              <small>temperature（agent-request patch）；数字 0–2，留空 = 不设置（模型默认）。失焦保存。</small>
-            </span>
-            <input
-              className={ui.configInput}
-              type="number"
-              min={0}
-              max={2}
-              step={0.1}
-              aria-label="采样温度"
-              value={temperature}
-              disabled={!fields.writePreset}
-              placeholder="不设置"
-              onChange={(event) => patchModelParam(
-                props.scope === 'main' ? 'modelTemperature' : 'subagentTemperature',
-                event.target.value,
-              )}
-              onBlur={() => void store.persistParamOverrides()}
-            />
-          </div>
-        </div>
-        <div className={ui.rowGroup}>
-          <div className={ui.settingRowStack}>
-            <span className={ui.settingCopy}>
-              <strong>输出上限</strong>
-              <small>maxTokens（agent-request patch）；正整数，留空 = 不设置（模型默认）。失焦保存。</small>
-            </span>
-            <input
-              className={ui.configInput}
-              type="number"
-              min={1}
-              step={1}
-              aria-label="输出上限"
-              value={maxTokens}
-              disabled={!fields.writePreset}
-              placeholder="不设置"
-              onChange={(event) => patchModelParam(
-                props.scope === 'main' ? 'modelMaxTokens' : 'subagentMaxTokens',
-                event.target.value,
-              )}
-              onBlur={() => void store.persistParamOverrides()}
-            />
-          </div>
-        </div>
-        {props.scope === 'subagent' && (
-          <div className={ui.rowGroup}>
-            <label className={ui.textBlock}>
-              <span className={ui.settingCopy}><strong>子代理自定义模型人设</strong><small>subagentPersona（per-child shadow）；留空 = 固定模型路由时回退主对话自定义模型人设，两者都空 = 继承主会话。失焦保存。</small></span>
-              <textarea
-                className={ui.firstTurnInput}
-                value={fields.subagentPersona}
-                disabled={!fields.writePreset}
-                onChange={(event) => { autoResizeTextarea(event); store.patch({ subagentPersona: event.target.value }) }}
-                onBlur={() => void store.persistParamOverrides()}
-                spellCheck={false}
-              />
-            </label>
-          </div>
-        )}
-      </CollapsibleCard>
-<CollapsibleCard id="pt-delegation-tools" title="工具与深度" meta="工具集白名单/黑名单（主会话+子代理） + 注入 kind 白名单 + 递归深度">
-<TagInput id="pt-tool-filter-allow" label="工具集白名单" hint="toolFilter.allow：主会话常驻过滤（tool-filter 模块，作用于任意注册工具含自定义插件）+ 委派子代理 toolFilter；回车或逗号添加标签，× 移除；留空 = 不限制。每次增删立即保存。"
-          value={fields.toolFilterAllow} placeholder="read, write, glob" disabled={!fields.writePreset}
-          onChange={(value) => store.patch({ toolFilterAllow: value })}
-          onCommit={() => void store.persistParamOverrides()} />
-<TagInput id="pt-tool-filter-deny" label="工具集黑名单" hint="toolFilter.deny：主会话常驻过滤（tool-filter 模块）+ 委派子代理 toolFilter；回车或逗号添加标签，× 移除；留空 = 不限制。每次增删立即保存。"
-          value={fields.toolFilterDeny} placeholder="bash, run_code" disabled={!fields.writePreset}
-          onChange={(value) => store.patch({ toolFilterDeny: value })}
-          onCommit={() => void store.persistParamOverrides()} />
-        <TagInput id="pt-allow-kinds" label="注入 kind 白名单" hint="context-gate allowKinds（注入门控）；回车或逗号添加标签，× 移除，例如 skill-invocation、near-anchor、router-guide；留空 = 官方默认（不过滤）。每次增删立即保存。"
-          value={fields.allowKinds} placeholder="skill-invocation, near-anchor, router-guide" disabled={!fields.writePreset}
-          onChange={(value) => store.patch({ allowKinds: value })}
-          onCommit={() => void store.persistParamOverrides()} />
-        <div className={ui.rowGroup}>
-          <div className={ui.settingRowStack}>
-            <span className={ui.settingCopy}>
-              <strong>递归深度</strong>
-              <small>委派 maxDepth：0 禁止委派；provider-managed 由服务商管理；正整数限制递归层数；不设置 = 官方默认。选择即保存。</small>
-            </span>
-            <select
-              className={ui.configInput}
-              aria-label="递归深度"
-              value={fields.maxDepth}
-              disabled={!fields.writePreset}
-              onChange={(event) => {
-                store.patch({ maxDepth: event.target.value })
-                void store.persistParamOverrides()
-              }}
-            >
-              {maxDepthOptions.map((item) => (
-                <option key={item} value={item}>{item === '' ? '（不设置）' : item}</option>
-              ))}
-            </select>
-          </div>
-        </div>
-      </CollapsibleCard>
-    </>
   )
 }
 
@@ -339,17 +70,6 @@ function ModelRouteStatus(props: { store: PromptToolStore }): ReactNode {
   )
 }
 
-/** 子代理设置页：路由状态 + 子代理参数卡片（模型 / 工具与深度）。 */
-function SubagentSettings(props: { store: PromptToolStore }): ReactNode {
-  const { store } = props
-  return (
-    <section className={ui.section} aria-label="子代理">
-      <ModelRouteStatus store={store} />
-      <ModelToolCards store={store} scope="subagent" />
-    </section>
-  )
-}
-
 /** 主会话页：主对话参数 + Preset/AGENTS 内容 + 管线状态卡 + 模块库（层筛选）。
  *  注入层 tab 已并入本页（层专属开关与内容资产卡片），模块库按层级下拉筛选浏览。 */
 function FeatureSettings(props: { store: PromptToolStore }): ReactNode {
@@ -358,8 +78,6 @@ function FeatureSettings(props: { store: PromptToolStore }): ReactNode {
   return (
     <section className={ui.section} aria-label="主会话与全局">
       <ModelRouteStatus store={store} />
-      <ModelToolCards store={store} scope="main" />
-      <PipelineStatusCards store={store} />
       <PromptConfigsEditor
         meta={store.meta}
         configs={fields.promptConfigs}
@@ -372,14 +90,15 @@ function FeatureSettings(props: { store: PromptToolStore }): ReactNode {
         templateVariablesEnabled={store.templateVariablesEnabled}
         setTemplateVariablesEnabled={store.setTemplateVariablesEnabled}
         saveTemplateVariables={store.saveTemplateVariables}
+        store={store}
       />
     </section>
   )
 }
 
 /** 配置列表 + 新建模板：六层页按 layer 过滤，子代理页按 scope 过滤（subagent 只列子代理可见模板）。 */
-function ConfigListWithTemplates(props: { store: PromptToolStore; layer?: string; scope?: 'main' | 'subagent' }): ReactNode {
-  const { store, layer, scope } = props
+function ConfigListWithTemplates(props: { store: PromptToolStore; layer?: string; scope?: 'main' | 'subagent'; beforeCards?: ReactNode }): ReactNode {
+  const { store, layer, scope, beforeCards } = props
   // 当前预设模板消息批层无配置时，pre-step 层空状态追加提示（列表仍可自定义：
   // 新建配置作为 settings 覆盖层保存，切换预设后保留）。
   const preStepEmpty = store.templatePreStepCount === 0 && (layer === undefined || layer === 'pre-step')
@@ -396,6 +115,7 @@ function ConfigListWithTemplates(props: { store: PromptToolStore; layer?: string
         savedConfigs={store.savedConfigs}
         layer={layer}
         scope={scope}
+        beforeCards={beforeCards}
         emptyHint={preStepEmpty ? '当前预设模板消息批层无配置；可新建自定义配置（作为 settings 覆盖层，切换预设后仍保留）。' : undefined}
         extraActions={
           <button type="button" className={ui.primaryPill} onClick={templatePicker.openPicker}>新建</button>
@@ -411,14 +131,21 @@ function ConfigListWithTemplates(props: { store: PromptToolStore; layer?: string
   )
 }
 
-/** 子代理设置页：子代理参数 + 子代理提示词配置（audience != main，即公用或仅子代理）。 */
+/** 子代理页：路由状态 + 子代理配置列表（模型/工具与深度模块卡并入列表头部，audience != main 即公用或仅子代理）。 */
 function SubagentPage(props: { store: PromptToolStore }): ReactNode {
   const { store } = props
   return (
     <>
-      <SubagentSettings store={store} />
+      <section className={ui.section} aria-label="子代理">
+        <ModelRouteStatus store={store} />
+      </section>
       <div className={ui.subagentConfigs}>
-        <ConfigListWithTemplates store={store} scope="subagent" />
+        <ConfigListWithTemplates store={store} scope="subagent" beforeCards={
+          <>
+            <ModelRouteModuleCard store={store} scope="subagent" />
+            <DelegationToolsModuleCard store={store} />
+          </>
+        } />
       </div>
     </>
   )

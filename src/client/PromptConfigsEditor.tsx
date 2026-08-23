@@ -5,9 +5,11 @@ import { PromptConfigList } from './PromptConfigList.tsx'
 import { TemplatePicker } from './TemplatePicker.tsx'
 import { useTemplatePicker } from './useTemplatePicker.ts'
 import { VariablesEditor } from './PromptConfigCard.tsx'
+import { EngineModuleCards, ModelRouteModuleCard } from './EngineModuleCards.tsx'
 import styles from './PromptUi.module.css'
 
 import type { EngineMeta, PromptConfigDraft } from './prompt-tool-types.ts'
+import type { PromptToolStore } from './prompt-tool-store.ts'
 
 export type { PromptConfigDraft, LayerFieldPolicy } from './prompt-tool-types.ts'
 export type { ValidationErrorEntry } from './prompt-tool-types.ts'
@@ -28,6 +30,8 @@ export interface PromptConfigsEditorProps {
   templateVariablesEnabled: boolean
   setTemplateVariablesEnabled: (value: boolean) => void
   saveTemplateVariables: (next?: Record<string, string>) => Promise<void>
+  /** 引擎模块配置（tool-bootstrap 等组合行 config 卡片，同模块列表形态）。 */
+  store: PromptToolStore
 }
 
 /** 预设级模板变量模块卡片（归类于配置列表下）：{{key}} 插值源，非 promptConfig——
@@ -109,6 +113,8 @@ function TemplateVariablesModuleCard(props: {
 /** 提示词配置编辑器：配置列表（层级/策略过滤已并入列表）+ 模板插入 + 保存前权威校验。 */
 export function PromptConfigsEditor(props: PromptConfigsEditorProps): ReactNode {
   const [templateVarsExpanded, setTemplateVarsExpanded] = useState(false)
+  /** 层筛选状态（模块列表下拉联动引擎模块卡：选中层只显示该层引擎模块）。 */
+  const [layerFilter, setLayerFilter] = useState('all')
   const templatePicker = useTemplatePicker(
     props.configs,
     (config) => props.onPatchConfigs([...props.configs, config]),
@@ -122,21 +128,29 @@ export function PromptConfigsEditor(props: PromptConfigsEditorProps): ReactNode 
   }
   return (
     <section className={styles.page} aria-label="提示词配置">
+      <div className={styles.configList}>
+        <ModelRouteModuleCard store={props.store} scope="main" />
+        <EngineModuleCards store={props.store} layerFilter={layerFilter} />
+      </div>
       <PromptConfigList
         meta={props.meta}
         configs={props.configs}
         savedConfigs={props.savedConfigs}
+        viewFilter={layerFilter}
+        onViewFilterChange={setLayerFilter}
         extraActions={<button type="button" className={styles.primaryPill} onClick={templatePicker.openPicker}>新建</button>}
         beforeCards={
-          <TemplateVariablesModuleCard
-            templateVariables={props.templateVariables}
-            setTemplateVariables={props.setTemplateVariables}
-            templateVariablesEnabled={props.templateVariablesEnabled}
-            setTemplateVariablesEnabled={props.setTemplateVariablesEnabled}
-            saveTemplateVariables={props.saveTemplateVariables}
-            expanded={templateVarsExpanded}
-            onToggleExpanded={() => setTemplateVarsExpanded(!templateVarsExpanded)}
-          />
+          <>
+            <TemplateVariablesModuleCard
+              templateVariables={props.templateVariables}
+              setTemplateVariables={props.setTemplateVariables}
+              templateVariablesEnabled={props.templateVariablesEnabled}
+              setTemplateVariablesEnabled={props.setTemplateVariablesEnabled}
+              saveTemplateVariables={props.saveTemplateVariables}
+              expanded={templateVarsExpanded}
+              onToggleExpanded={() => setTemplateVarsExpanded(!templateVarsExpanded)}
+            />
+          </>
         }
         onPatchConfigs={props.onPatchConfigs}
         onSaveConfigs={props.onSaveConfigs}

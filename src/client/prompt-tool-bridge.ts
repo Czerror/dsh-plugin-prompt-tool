@@ -55,6 +55,46 @@ export interface Fields {
   firstTurnWord: string
   bootstrapMaxTokens: number
   usePtcMode: boolean
+  /** 门控晋升：首段 reasoning minimal-like + 工具调用才晋升（tool-bootstrap 参数桥）。 */
+  promoteGate: boolean
+  /** 无工具首响应 / 首轮 turn/end 即晋升。 */
+  promoteAfterFirstResponse: boolean
+  /** 门控回退步数上限（0 = 引擎默认 4）。 */
+  maxPromoteSteps: number
+  /** 首轮工具窄化集（逗号分隔；覆盖行默认）。 */
+  bootstrapTools: string
+  /** 压缩后恢复工具集（逗号分隔）。 */
+  compactionTools: string
+  /** 渐进披露阶段定义（UI 草稿形态：tools 逗号分隔字符串；非空 = 激活多级阶段窄化）。 */
+  stages: StageDraft[]
+  /** 预放档数（0 = 引擎默认 1）。 */
+  stagePreUnlock: number
+  /** 阶段推进工具名（空 = 默认 phase_advance）。 */
+  stageAdvanceTool: string
+  /** 阶段状态 section 模板（{{stage}}/{{stageName}}/{{unlocked}}/{{total}}；空 = 不注入）。 */
+  stageSectionTemplate: string
+  /** phase-1 提示词段只留 persona。 */
+  personaSectionsOnly: boolean
+  /** 晋升后 persona 附加工作目录行。 */
+  workspaceLine: boolean
+  /** 晋升后 agent-instructions 全文 → 一次性 hint（context-gate）。 */
+  instructionHint: boolean
+  /** context-gate phase-1 消息源白名单（逗号分隔；空 = 不启用）。 */
+  messageSources: string
+  /** 晋升后延迟注入的 source kind（逗号分隔）。 */
+  deferredSources: string
+  /** 延迟注入宽限步数（0 = 不延迟）。 */
+  deferredGraceSteps: number
+  /** 验证工具：显式浏览器路径（page-check）。 */
+  pageCheckBrowserPath: string
+  /** 页面检查硬超时（ms；0 = 默认 20000）。 */
+  pageCheckTimeoutMs: number
+  /** 单帧低分辨率模式（重页）。 */
+  pageCheckLite: boolean
+  /** 自动重试。 */
+  pageCheckRetry: boolean
+  /** 非页面交付物跳过 headless smoke（delivery-gate）。 */
+  deliveryRequireSmoke: boolean
   injectPrompt: boolean
   skillSwitches: Record<string, boolean>
   skillOrder: string[]
@@ -74,6 +114,12 @@ export interface Fields {
   writePreset: boolean
   presetTemplate: string
   promptConfigs: PromptConfigDraft[]
+}
+
+/** 渐进披露阶段草稿（UI 编辑形态；persist 时转引擎形态 [{name, tools: string[]}]）。 */
+export interface StageDraft {
+  name: string
+  tools: string
 }
 
 export const EMPTY_META: EngineMeta = {
@@ -120,6 +166,26 @@ export const EMPTY_FIELDS: Fields = {
   firstTurnWord: '',
   bootstrapMaxTokens: 0,
   usePtcMode: false,
+  stages: [],
+  stagePreUnlock: 0,
+  stageAdvanceTool: '',
+  stageSectionTemplate: '',
+  promoteGate: false,
+  promoteAfterFirstResponse: false,
+  maxPromoteSteps: 0,
+  bootstrapTools: '',
+  compactionTools: '',
+  personaSectionsOnly: false,
+  workspaceLine: false,
+  instructionHint: false,
+  messageSources: '',
+  deferredSources: '',
+  deferredGraceSteps: 0,
+  pageCheckBrowserPath: '',
+  pageCheckTimeoutMs: 0,
+  pageCheckLite: false,
+  pageCheckRetry: true,
+  deliveryRequireSmoke: true,
   injectPrompt: true,
   skillSwitches: {},
   skillOrder: [],
@@ -259,6 +325,29 @@ export function fieldsFromView(res: BridgeResult<BridgeSettingsView>): Fields {
     firstTurnWord: '',
     bootstrapMaxTokens: readNumber(value, 'bootstrapMaxTokens', readNumber(base, 'bootstrapMaxTokens', 0)),
     usePtcMode: readBoolean(value, 'usePtcMode', readBoolean(base, 'usePtcMode', false)),
+    // 渐进披露（stages 模式）：预设级参数，由 /param-overrides 读回后填充。
+    stages: [],
+    stagePreUnlock: 0,
+    stageAdvanceTool: '',
+    stageSectionTemplate: '',
+    // 晋升门控（tool-bootstrap 参数桥）：预设级参数，由 /param-overrides + presetParams 填充。
+    promoteGate: false,
+    promoteAfterFirstResponse: false,
+    maxPromoteSteps: 0,
+    bootstrapTools: '',
+    compactionTools: '',
+    personaSectionsOnly: false,
+    workspaceLine: false,
+    instructionHint: false,
+    // context-gate 注入门控 + 验证工具（预设级参数，由 /param-overrides 填充）。
+    messageSources: '',
+    deferredSources: '',
+    deferredGraceSteps: 0,
+    pageCheckBrowserPath: '',
+    pageCheckTimeoutMs: 0,
+    pageCheckLite: false,
+    pageCheckRetry: true,
+    deliveryRequireSmoke: true,
     injectPrompt: readBoolean(value, 'injectPrompt', readBoolean(base, 'injectPrompt', true)),
     skillSwitches: value.skillSwitches !== undefined || base.skillSwitches !== undefined
       ? { ...readSkillSwitches(base, 'skillSwitches'), ...readSkillSwitches(value, 'skillSwitches') }
