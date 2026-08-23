@@ -13,9 +13,9 @@
 | SillyTavern 字段 | 本项目落点 | 规则 |
 |---|---|---|
 | `prompts[]` | `promptConfigs[]` | 逐条转换，见下节 |
-| `temperature` | `params.modelTemperature` | 数字 → 字符串（主对话采样温度，agent-request patch audience=main） |
-| `openai_max_tokens` | `params.modelMaxTokens` | 仅 `> 0` 的数字（主对话输出上限） |
-| `reasoning_effort` | `params.modelReasoningEffort` | 任意非空字符串透传（档位由模型适配器决定）；非字符串/空值丢弃 |
+| 采样参数（`temperature` / `openai_max_tokens` / `reasoning_effort`） | **剥离** | 模型参数由「模型设置」UI / 宿主默认管理——ST 卡固化值会覆盖用户在模型设置里的设置，转换不携带 |
+| `{{setvar::k::v}}` / `{{getvar::k::default}}` | 顶层 `variables`（`k`） | 变量收集进预设级模板变量段（非 params），由引擎插值 |
+| 未定义自定义宏（`{{日期}}` 等） | 顶层 `variables` 空值占位 | 卡内引用了但无变量源的 `{{key}}` 自动登记为空值——插值替换为空不留字面；模板变量卡片可编辑默认值；会话变量工具（`session_var`）可运行时覆盖 |
 | `enable_web_search: true` | `modules` + `tool-web` | 组装 `tool-web`，`moduleConfigs.tool-web.fetch: true` |
 | `enable_web_search: false` | `modules` + `tool-filter` | 不组装 tool-web，改加 `moduleConfigs.tool-filter.deny: [web_search, web_fetch]`（即使宿主装配了 web 工具也不暴露） |
 
@@ -48,7 +48,7 @@
 
 | 字段 | 规则 |
 |---|---|
-| `id` | 文件名（去 `.json`）转小写 slug（非字母数字 → `-`，去首尾 `-`）；结果为空则 `sillytavern` |
+| `id` | 文件名（去 `.json`）转小写 slug（非字母数字 → `-`，去首尾 `-`，**中文字符不保留**——官方 agent-presets 只认 `^[a-z0-9][a-z0-9-]*$`）；结果为空则 `st-<文件名短哈希>` |
 | `name` | 卡片 `name` 字段（非空白）优先；缺失/空白时回退文件名（去 `.json`），统一加「（SillyTavern 转换）」后缀 |
 | `version` / `engineCompat` | `1.0.0` / `">=0.4.2"` |
 
@@ -102,10 +102,7 @@ id: roleplay-assistant
 name: Roleplay Assistant（SillyTavern 转换）  # 卡片 name 字段优先；空白时回退文件名
 version: 1.0.0
 engineCompat: ">=0.4.2"
-params:
-  modelTemperature: "0.7"
-  modelMaxTokens: "2048"
-  modelReasoningEffort: low
+# 采样参数不转换（模型设置 UI 管理）；setvar/getvar 变量收集进顶层 variables（本例无变量）
 modules:
   - persona          # system-section 注入需要 persona 服务
   - prompt-config-engine
@@ -171,7 +168,7 @@ promptConfigs:
 | `alternate_greetings[]` | → `first-mes-2/3…` 备用开场白（默认禁用，UI 可切换启用） |
 | `description` + `personality` + `scenario` | → `character-definition` 角色设定（system-section，拼接） |
 | `system_prompt` / `post_history_instructions` | → `system-prompt` / `post-history-instructions`（system-section） |
-| 采样参数（`temperature` 等） | → `params.model*`（与响应预设同规则） |
+| 采样参数（`temperature` 等） | **剥离**（模型参数归「模型设置」UI / 宿主默认） |
 | `extensions.*`（TavernHelper 脚本 / regex_scripts） | **剥离**——ST 扩展注入物，不进转换产物 |
 
 ## 应用到当前预设 / 移除
@@ -204,6 +201,7 @@ promptConfigs:
 | `constant: true` | `params.constant: true`（恒注入，不依赖关键字） |
 | `case_sensitive` / `match_whole_words` | `params.caseSensitive` / `params.wholeWords` |
 | `use_regex: true` | `params.useRegex`（keys 按正则匹配） |
+| `selectiveLogic`（0/1/2/3） | `params.selectiveLogic`——选择性触发组合逻辑（0=任一命中 / 3=副键全中 / 1=副键全不中 / 2=至少一个副键未中），由锚定匹配引擎（anchor-match）消费 |
 | `insertion_order` | `order`（层内升序） |
 | `enabled` | `enabled`（原样保留） |
 
@@ -225,18 +223,34 @@ promptConfigs:
 
 ---
 
-# ST 变量规则（fallback 语义）
+# ST 变量规则（variables 插值 + 会话变量）
 
-ST 变量系统本质 = **变量读取 + 默认值兜底**，由引擎 `interpolateVariables` 的 params
-插值 fallback 承载（`{{key}}` 有值替换、无值保留原样；key 支持中文）。
+ST 变量系统 = **变量读取 + 默认值兜底**，由引擎 `interpolate` 承载：预设级顶层
+`variables`（writePreset 展开进生成目录 `variables.yml`，引擎合并进每条配置）+
+会话变量（`session_var` 工具，会话级覆盖）。
 
 | ST 语法 | 处理 |
 |---|---|
-| `{{setvar::k::v}}` | 收集 `k=v` 进预设 `params`（会话变量初始值 = fallback 基准），指令剥离 |
-| `{{getvar::k::default}}` | 改写 `{{k}}`，`params.k` 缺省时写入 `default`（兜底落 params） |
-| `{{getvar::k}}` | 改写 `{{k}}`（引擎按 params 插值） |
+| `{{setvar::k::v}}` | 收集 `k=v` 进顶层 `variables`（预设变量初始值 = fallback 基准），指令剥离 |
+| `{{getvar::k::default}}` | 改写 `{{k}}`，`variables.k` 缺省时写入 `default`（兜底落 variables） |
+| `{{getvar::k}}` | 改写 `{{k}}`（引擎按 variables 插值） |
 | `{{trim}}` / `{{//注释}}` / `{{ERA:...}}` | 剥离（格式化指令 / 注释 / 第三方运行时） |
 | `{{user}}` / `{{char}}` | 替换为「用户」/ 角色名 |
+| `{{lastusermessage}}` / `{{lastcharmessage}}`（大小写不敏感） | 运行时宏：会话最后一条用户 / 角色消息（引擎从 session 事件提取） |
+| `{{charIfNotGroup}}` | 空串（dsh 会话 header 无角色名；不残留字面） |
+
+插值优先级：**resolved 运行时 > 会话变量（session_var） > 配置 variables > 预设 variables > 运行时宏 > 内置（DSH_HOME/WORKSPACE/CWD） > 字面保留**。
+
+会话变量工具（模型可调用）：
+
+```
+session_var list                 → 当前会话全部变量
+session_var get <key>            → 读取
+session_var set <key> <value>    → 设置（{{key}} 后续注入替换；会话结束即失）
+session_var clear <key> | 全部    → 清除
+```
+
+跨会话长期记忆用 `world_book` 工具的 `note` 参数（持久 memory.md，跟随角色卡）。
 
 纯指令 prompt（setvar/注释无正文）剥离后自动过滤；TavernHelper 扩展注入物（JS 脚本）不执行、不进转换产物。
     strategy: static
@@ -252,8 +266,8 @@ ST 变量系统本质 = **变量读取 + 默认值兜底**，由引擎 `interpol
 ## 边界与注意
 
 - 空 `content` 的提示词整条跳过（不生成 promptConfigs 项）。
-- 采样参数只映射三个：`temperature` / `openai_max_tokens` / `reasoning_effort`；其余 ST 参数（如 top_p、presence_penalty）不转换。
-- 转换后的 `params.model*` 走主对话统一参数体系，由 writePreset 渲染为 `agent-request` patch（audience=main）。
+- 采样参数（`temperature` / `openai_max_tokens` / `reasoning_effort`）**不转换**——模型参数统一由「模型设置」UI / 宿主默认管理，ST 卡固化值不再覆盖用户设置。
+- 未定义自定义宏自动登记为顶层 `variables` 空值占位（不留字面；模板变量卡片可编辑默认值）。
 - 导入端点有路径穿越防护（仅接受扁平相对路径，拒绝 `..` / 盘符 / 绝对路径）。
 - JSON 解析失败或转换异常 → 导入返回 400 `preset-package-invalid`，不会静默产生坏预设。
 
@@ -277,7 +291,7 @@ node scripts/extract-st-character.mjs --preset card.png  # 转本插件预设 JS
 | `description` + `personality` + `scenario` | 合并为 `role: user` | `pre-step`（角色设定） |
 | `first_mes` | `role: assistant` | `pre-step`（开场白） |
 | `post_history_instructions` | `role: user` | `pre-step`（历史后指令） |
-| `extensions.sampling.temperature` / `max_tokens` | 顶层 `temperature` / `openai_max_tokens` | `params.model*` |
+| `extensions.sampling.temperature` / `max_tokens` | 顶层 `temperature` / `openai_max_tokens` | 剥离（模型参数归「模型设置」UI） |
 
 > 角色卡 ≠ 预设卡：角色卡描述「角色是谁」，预设卡描述「注入什么、注入到哪一层」；
 > PNG 提取转换后是后者，可在工作台预设切换器中直接使用。

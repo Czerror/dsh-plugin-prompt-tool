@@ -12,7 +12,7 @@
 - **UI**：角色管理页（方块卡片）、模块列表合并过滤下拉（全部/世界书/层级）+ 批量开关、备用开场白、TavernHelper 剥离
 - **依赖**：新增 `@deepseek-ai/dsh-tools`（模型工具注册）；`.gitattributes` 统一 LF
 
-## [Unreleased]
+## [0.6.0] - 2026-08-23
 
 ### 自定义宏自动登记 + 会话变量工具（ST getvar/setvar 语义落地）（2026-08-23）
 

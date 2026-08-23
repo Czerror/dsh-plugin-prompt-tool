@@ -1,11 +1,12 @@
-# promptConfigs 完整模板（复制到 cordis.patch.yml 的 config 下，或参考此结构写入 settings）
+# promptConfigs 完整模板（参考此结构写入预设 preset.yml 的 promptConfigs 段）
 # 拆分的独立模板见 templates/ 目录（每个文件一条配置，可直接复制或经 /templates 端点读取）。
 
 # 说明：本文件是模板示例，放在仓库根目录，不会被引擎直接扫描；
-#       引擎实际读取的目录是生成后的 preset/prompt-configs/。
-# 合并优先级：默认四条配置 < promptConfigsDir（目录文件） < promptConfigs（settings 数组）。
-# 同名 id 覆盖默认配置并保留顺序；新 id 追加在末尾。
+#       引擎实际读取的目录是生成后的 ~/.dsh/.agent-presets/<预设>/prompt-configs/
+#       （writePreset 按 preset.yml 的 promptConfigs + 模板默认渲染生成）。
+# 合并优先级：引擎默认（按 params 生成）< 模板默认 promptConfigs < 预设 promptConfigs（同名 id 覆盖）。
 # 内容为空一律不注入；未知枚举值会在挂载时 fail loud。
+# 预设级模板变量放 preset.yml 顶层 variables 段（{{key}} 插值源；工作台「模板变量」卡片编辑）。
 
 promptConfigs:
   # ── 1. pre-step：消息批注入（默认层，完整通用字段示例） ─────────────────
@@ -32,7 +33,8 @@ promptConfigs:
     text: |                         # 注入文本；与 texts 二选一，text 优先；空 = 不注入
       这是注入到用户消息后的提示词内容。
       支持 {{WORKSPACE}} / {{CWD}} / {{DSH_HOME}} 与下方 variables。
-    # texts:                        # 单配置多段文本（多个 text 内容块），text 为空时生效
+      # texts:                        # 多段文本数组（text 与 texts 都生效：text 在前、texts 追加；
+      #                               # UI 编辑统一写 texts 单段整块，text 兼容读取）
     #   - 第一段
     #   - 第二段
     # templateFile: ''              # 外部 yml/json/纯文本内容模板，text 优先于模板
