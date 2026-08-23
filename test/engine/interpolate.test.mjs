@@ -25,3 +25,26 @@ test('interpolateVariables：variables 优先，内置 DSH_HOME/WORKSPACE/CWD �
 test('interpolateStatic：中文键替换', () => {
   assert.equal(interpolateStatic('{{词汇}}', { 词汇: '中文' }), '中文')
 })
+
+test('interpolateStatic：ST 运行时宏无会话上下文时替换为空（不残留字面）', () => {
+  assert.equal(interpolateStatic('用户：{{lastusermessage}}', {}), '用户：')
+  assert.equal(interpolateStatic('{{lastusermessage}}', { lastusermessage: '覆盖' }), '覆盖', 'variables 优先')
+})
+
+test('interpolateVariables：ST 运行时宏（大小写不敏感）从会话事件提取', () => {
+  const session = {
+    header: { cwd: '/cwd' },
+    events: [
+      { type: 'user/message', data: { message: { content: [{ type: 'text', text: '第一条用户' }] } } },
+      { type: 'assistant/message', data: { message: { content: [{ type: 'text', text: '角色回复' }] } } },
+      { type: 'user/message', data: { message: { content: [{ type: 'text', text: '最新用户' }] } } },
+    ],
+  }
+  assert.equal(interpolateVariables('{{lastusermessage}}', {}, session), '最新用户', '取最后用户消息')
+  assert.equal(interpolateVariables('{{lastUserMessage}}', {}, session), '最新用户', '大小写变体')
+  assert.equal(interpolateVariables('{{lastcharmessage}}', {}, session), '角色回复', '取最后角色消息')
+  assert.equal(interpolateVariables('{{lastCharMessage}}', {}, session), '角色回复', '大小写变体')
+  assert.equal(interpolateVariables('{{charIfNotGroup}}', {}, session), '', '无角色名来源 → 空串')
+  // 配置 variables 优先于运行时宏。
+  assert.equal(interpolateVariables('{{lastusermessage}}', { lastusermessage: '覆盖' }, session), '覆盖')
+})

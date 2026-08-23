@@ -14,6 +14,12 @@
 
 ## [Unreleased]
 
+### ST 运行时宏支持（修复两个预设的未解析参数）（2026-08-23）
+
+- **隔离分析**（`D:\AI\workspase\_temp\analyze-st-unresolved.mjs`）：夏瑾 beta-2-42 与 明月秋青 v5-0 各发现 2 个未解析参数——均为 ST 运行时宏：`{{lastusermessage}}` / `{{lastcharmessage}}`（大小写变体）与 `{{charIfNotGroup}}`。
+- **插值引擎扩展**（interpolate.mjs）：ST 运行时宏（大小写不敏感）——`lastusermessage` → 会话最后 user/message 事件文本、`lastcharmessage` → 最后 assistant/message、`charIfNotGroup` → 空串（dsh 会话 header 无角色名，单角色会话统一空，不残留字面）。`interpolateVariables` 从 session.events 提取；`interpolateStatic`（system-section 注册期无会话）替换为空串——不残留、不触发官方 unknown variable。
+- **测试**：动态宏提取（最后消息/大小写变体/变量优先）+ 无会话空替换（284 pass/0 fail）。
+
 ### 插值引擎拆分为独立 interpolate.mjs（shared 瘦身）（2026-08-23）
 
 - **拆分**：`interpolateVariables` / `interpolateStatic` 从 shared 迁出为 `engine/interpolate.mjs`（纯函数、无依赖，与 anchor-match 同级纯能力包）；`shared` 保留上下文/文本/配置工具（12 个导出）。
