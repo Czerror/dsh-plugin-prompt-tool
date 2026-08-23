@@ -411,6 +411,36 @@ test('writePreset 拒绝非法 presetTemplate（路径穿越防护）', () => {
   }
 })
 
+test('writePreset 合并 params 排除 UI 已管理键（PARAM_KEYS 不回写配置 params）', () => {
+  const dir = join(tmpdir(), `prompt-tool-uikeys-${process.pid}-${Date.now()}`)
+  const presetDir = join(dir, 'preset')
+  try {
+    writePreset('PROMPT', {
+      ...makeOptions(presetDir),
+      firstTurnAnchor: true,
+      firstTurnText: 'go',
+      modelProvider: 'provider-x',
+      modelName: 'model-y',
+      guideText: 'guide',
+      usePtcMode: true,
+      injectPrompt: true,
+      bootstrapMaxTokens: 4096,
+    })
+    const pcDir = join(presetDir, 'anchored', 'prompt-configs')
+    const file = readdirSync(pcDir).find((name) => name.endsWith('-persona-main.yml'))
+    assert.ok(file, 'persona-main 配置存在')
+    const parsed = parseYaml(readFileSync(join(pcDir, file), 'utf8'))
+    for (const key of ['firstTurnAnchor', 'firstTurnText', 'modelProvider', 'modelName',
+      'guideText', 'usePtcMode', 'injectPrompt', 'bootstrapMaxTokens', 'toolFilterAllow']) {
+      assert.equal(parsed.params?.[key], undefined, `配置 params 不得含 UI 管理键 ${key}`)
+    }
+    // 非 UI 键（内容变量）仍合并进配置 params 供 {{key}} 插值。
+    assert.equal(parsed.params?.promptText, 'PROMPT', '内容变量保留合并')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
 test.after(() => {
   rmSync(home, { recursive: true, force: true })
 })

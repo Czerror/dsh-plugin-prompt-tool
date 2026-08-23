@@ -12,6 +12,7 @@ import { writeFileSync, mkdirSync, rmSync, cpSync, mkdtempSync, renameSync, exis
 import { join } from 'node:path'
 import { parseDocument, stringify as stringifyYaml } from 'yaml'
 import { DEFAULT_PRESET_DIR } from './paths.ts'
+import { PARAM_KEYS } from '../shared/param-keys.ts'
 import {
   mergePromptConfigs,
   renderPromptConfigYaml,
@@ -426,7 +427,15 @@ export function writePreset(prompt: string, options: WritePresetOptions): void {
     // 解析后 params（模板默认 + runtime/ST 变量收集）并入配置 params：world-book
     // 条目与提示词文本的 {{key}} 插值可读到预设级变量（fallback 基准）。配置自身
     // params 覆盖同名键（策略参数优先），prompt-injector 等特殊配置后续覆盖不受影响。
-    config.params = { ...params, ...config.params }
+    // 预设级 params 全量并入配置 params 供 {{key}} 模板插值（world-book 条目与
+    // 提示词文本可读预设级变量）；但 UI 已管理键（PARAM_KEYS：模型设置/工具与
+    // 深度/开关）排除——它们在 UI 有专门编辑入口，「params（高级参数 JSON）」框
+    // 只保留内容变量与配置自身策略参数，避免冗余回写。
+    const mergedParams: Record<string, unknown> = {}
+    for (const [key, value] of Object.entries(params)) {
+      if (!PARAM_KEYS.has(key)) mergedParams[key] = value
+    }
+    config.params = { ...mergedParams, ...config.params }
     // 内容资产单一事实源（大文本存生成目录文件，settings 覆盖层只保留轻字段）：
     // prompt-injector 的注入文本永远来自 preset.md（presetPrompt），settings 条目即使带 text 也强制清空，
     // 避免「settings 覆盖层整体替换模板条目」时把渲染产物 params.text 挤掉。

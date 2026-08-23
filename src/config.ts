@@ -12,23 +12,8 @@ import {
 
 export const NS: SettingsNamespace = settingsNamespace('prompt-tool')
 
-/**
- * 引擎行为参数键（按预设存储：激活预设 preset.yml 的 params + promptConfigs）。
- * 不进 Config schema、不进 settings namespace——每预设一份，随预设走（官方范式：
- * Config = 部署轴，引擎行为在预设文件）。
- */
-export const PARAM_KEYS: ReadonlySet<string> = new Set([
-  'firstTurnAnchor', 'firstTurnText', 'firstTurnCustom',
-  'guideText', 'guideCustom',
-  'modelProvider', 'modelName',
-  'subagentModelProvider', 'subagentModelName',
-  'modelReasoningEffort', 'modelTemperature', 'modelMaxTokens',
-  'subagentReasoningEffort', 'subagentTemperature', 'subagentMaxTokens',
-  'subagentPersona',
-  'toolFilterAllow', 'toolFilterDeny', 'maxDepth', 'allowKinds', 'firstTurnWord',
-  'bootstrapMaxTokens', 'usePtcMode', 'injectPrompt',
-  'promptConfigs',
-])
+/** 引擎行为参数键：定义见 shared/param-keys.ts（write-preset 合并过滤共用）。 */
+export { PARAM_KEYS } from './shared/param-keys.ts'
 
 export interface Config {
   /** 是否用 AGENTS.md 内容替换本地 instruction-hint 的默认提示文本（默认关闭）。 */
