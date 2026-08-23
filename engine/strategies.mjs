@@ -6,14 +6,10 @@
  */
 
 import { extractText } from './shared.mjs'
+import { MATCH_LOGIC, createAnchorMatcher } from './anchor-match.mjs'
 import { createInstructionHintResolver, createPlaceholderResolver } from './fillers.mjs'
 
 const name = 'prompt-config-engine'
-
-/** 锚定词正则转义。 */
-function escapeRegExp(text) {
-  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-}
 
 /**
  * first-turn-anchor:首条真实用户消息后的一次性任务锚点。
@@ -74,16 +70,6 @@ function createGuideAutoResolver(config) {
   }
 }
 
-/** 判断 reasoning 开头是否命中自定义锚定词:ASCII 词按词边界匹配,其他按前缀匹配。 */
-function matchesAnchorWord(raw, firstTurnWord) {
-  const text = String(raw ?? '').trim()
-  if (text.length === 0 || firstTurnWord.length === 0) return false
-  if (/^[\x20-\x7E]+$/.test(firstTurnWord)) {
-    return new RegExp(`^${escapeRegExp(firstTurnWord.toLowerCase())}\\b`, 'i').test(text)
-  }
-  return text.startsWith(firstTurnWord)
-}
-
 /**
  * custom-fallback:自定义锚定词命中后注入一次，未命中最多两轮兜底。
  * 参数全部来自 config.params（由 preset.yml 单一配置源下发）。
@@ -95,6 +81,8 @@ function createCustomFallbackResolver(config) {
   const firstTurnWord = typeof config.params?.firstTurnWord === 'string' && config.params.firstTurnWord.length > 0
     ? config.params.firstTurnWord
     : 'we'
+  // 锚定匹配经 anchor-match 引擎（prefix 模式：首轮 reasoning 开头命中锚定词）。
+  const anchor = createAnchorMatcher({ keys: [firstTurnWord], mode: 'prefix' })
 
   const anchorScanned = new Map()
 
@@ -106,7 +94,7 @@ function createCustomFallbackResolver(config) {
     if (first === undefined) return false
     const content = first.data?.message?.content ?? []
     const reasoning = content.find((block) => block.type === 'reasoning')
-    const confirmed = reasoning !== undefined && matchesAnchorWord(reasoning.text, firstTurnWord)
+    const confirmed = reasoning !== undefined && anchor.scan(String(reasoning.text ?? '')).active
     anchorScanned.set(session.id, confirmed)
     return confirmed
   }
@@ -135,41 +123,42 @@ function createCustomFallbackResolver(config) {
 
 /**
  * world-book:世界书条目(角色卡 lorebook)。constant=true 恒注入(不扫 keys);
- * selective 条目扫描当前消息批文本,keys/secondaryKeys 任一命中即注入。
- * 大小写/整词匹配可配(caseSensitive / wholeWords);未命中返回 null(不注入)。
+ * selective 条目扫描当前消息批文本,keys/secondaryKeys 按 selectiveLogic 组合
+ * (any=任一命中 / all=副键全中 / not=副键全不中)。匹配经 anchor-match 引擎。
  */
 function createWorldBookResolver(config) {
   const constant = config.params?.constant === true
-  const caseSensitive = config.params?.caseSensitive === true
-  const wholeWords = config.params?.wholeWords === true
-  const useRegex = config.params?.useRegex === true
-  const rawKeys = Array.isArray(config.params?.keys) ? config.params.keys : []
-  const rawSecondary = Array.isArray(config.params?.secondaryKeys) ? config.params.secondaryKeys : []
-  const keys = [...rawKeys, ...rawSecondary]
-    .map((key) => String(key).trim())
-    .filter((key) => key.length > 0)
-  const needle = keys.length > 0
-    ? (useRegex
-      // ST use_regex=true：keys 为正则表达式（原样拼接，模型提示词作者负责合法性）。
-      ? new RegExp(keys.join('|'), caseSensitive ? '' : 'i')
-      : (wholeWords
-      ? new RegExp(`(^|[^\\p{L}\\p{N}])(${keys.map((key) => escapeRegExp(key)).join('|')})(?![\\p{L}\\p{N}])`, `${caseSensitive ? '' : 'i'}u`)
-      : new RegExp(keys.map((key) => escapeRegExp(key)).join('|'), caseSensitive ? '' : 'i'))
-    )
-    : undefined
+  // selectiveLogic：ST world_info_logic 0=AND_ANY 1=NOT_ALL 2=NOT_ANY 3=AND_ALL；
+  // 映射 any / not / all（1、2 均为排除语义，统一 not）。
+  const rawLogic = config.params?.selectiveLogic
+  const logic = rawLogic === 3
+    ? MATCH_LOGIC.ALL
+    : (rawLogic === 1 || rawLogic === 2 ? MATCH_LOGIC.NOT : MATCH_LOGIC.ANY)
+  const matcher = createAnchorMatcher({
+    keys: Array.isArray(config.params?.keys) ? config.params.keys : [],
+    secondaryKeys: Array.isArray(config.params?.secondaryKeys) ? config.params.secondaryKeys : [],
+    caseSensitive: config.params?.caseSensitive === true,
+    wholeWords: config.params?.wholeWords === true,
+    useRegex: config.params?.useRegex === true,
+    logic,
+  })
+  // ST 语义：constant 或无任何键的条目恒注入（always active）。
+  const hasAnyKey = (Array.isArray(config.params?.keys) ? config.params.keys : [])
+      .some((key) => String(key).trim().length > 0)
+    || (Array.isArray(config.params?.secondaryKeys) ? config.params.secondaryKeys : [])
+      .some((key) => String(key).trim().length > 0)
   const promptText = config.texts.length > 0
     ? config.texts.join('\n\n')
     : (typeof config.params?.text === 'string' && config.params.text.length > 0 ? config.params.text : undefined)
   return ({ messages }) => {
     if (promptText === undefined) return null
-    if (constant || needle === undefined) return { text: promptText }
+    if (constant || !hasAnyKey) return { text: promptText }
     const haystack = (Array.isArray(messages) ? messages : [])
       .map((message) => extractText(message))
       .filter((text) => text.length > 0)
       .join('\n')
     if (haystack.length === 0) return null
-    needle.lastIndex = 0
-    return needle.test(haystack) ? { text: promptText } : null
+    return matcher.scan(haystack).active ? { text: promptText } : null
   }
 }
 

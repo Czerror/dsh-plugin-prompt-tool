@@ -217,6 +217,11 @@ export function convertStToPreset(card: unknown, baseName: string): PresetSpec {
           ...((entry.case_sensitive ?? entry.caseSensitive) === true ? { caseSensitive: true } : {}),
           ...((entry.match_whole_words ?? entry.matchWholeWords) === true ? { wholeWords: true } : {}),
           ...((entry.use_regex ?? entry.useRegex) === true ? { useRegex: true } : {}),
+          // selectiveLogic（ST world_info_logic 0/1/2/3）：选择性触发组合逻辑，
+          // 由 anchor-match 引擎消费（any/all/not）。保留不再丢弃。
+          ...(typeof entry.selectiveLogic === 'number'
+            ? { selectiveLogic: entry.selectiveLogic }
+            : (typeof entry.selective_logic === 'number' ? { selectiveLogic: entry.selective_logic } : {})),
         },
       })
     }

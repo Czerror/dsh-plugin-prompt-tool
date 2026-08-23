@@ -14,6 +14,14 @@
 
 ## [Unreleased]
 
+### 锚定匹配引擎（anchor-match）：拆解 fallback，world-book 选择性触发落地（2026-08-23）
+
+- **新引擎 `engine/anchor-match.mjs`**（纯函数、无依赖）：主/副键、大小写、整词、正则、组合逻辑（`any`/`all`/`not` 对齐 ST `world_info_logic` AND_ANY/AND_ALL/NOT_ALL）、匹配模式（`scan` 全文 / `prefix` 开头锚定）。
+- **custom-fallback 拆解**：`matchesAnchorWord` 迁移为 matcher prefix 模式（`{ keys: [firstTurnWord] }`）——锚定能力成为引擎能力，行为不变（回归测试通过）。
+- **world-book selective 落地**：`selectiveLogic`（ST 0/1/2/3）→ `any`/`not`/`all`；转换层不再丢弃 `selectiveLogic`（写入配置 params）；无键/constant 恒注入语义保留。
+- **测试**：anchor-match 单元（any/all/not × 选项 × prefix）+ world-book 集成（副键全中/排除/任一）（278 pass/0 fail）。
+- **未做**：scan_depth 递归扫描（引擎无条目间递归概念，需要时再加深度选项）。
+
 ### 合并 text / texts 编辑框为单一内容框（对齐官方 text 单字符串语义）（2026-08-23）
 
 - **依据**：dsh 官方（`packages/core/system-prompt/src/index.ts` L67/L84）prompt 条目 `text` 为单字符串（或函数 provider），多段靠多条 section（order 拼接）——无 `texts` 数组概念；`texts` 是我们引擎的自研扩展。

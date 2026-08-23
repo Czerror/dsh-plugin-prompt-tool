@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { applyPromptConfigs, createPromptConfigs as createPromptConfigsCore, inject, loadPromptConfigFiles, parsePromptConfigYaml } from '../../engine/prompt-config-engine.mjs'
+import { extractText } from '../../engine/shared.mjs'
 
 /** 引擎测试夹具使用包内 engine 目录作为自定义策略探测目录;内置策略不依赖 strategyDir。 */
 const STRATEGY_DIR = new URL('../../engine/', import.meta.url).href
@@ -757,4 +758,27 @@ test('vendored yaml 完整解析：支持列表、行尾注释与引号转义', 
   assert.equal(doc.text, 'line one # 不是注释\nline "two"')
   assert.deepEqual(doc.texts, ['第一段', '第二段'])
   assert.deepEqual(doc.params.patch, { maxTokens: 4096, temperature: 0.3 })
+})
+
+test('world-book selectiveLogic：all 副键全中 / not 排除 / any 任一命中（anchor-match 引擎）', async () => {
+  const { step } = makeHarness(createPromptConfigs([
+    { id: 'lore-all', strategy: 'world-book', layer: 'pre-step', position: 'before-all', texts: ['ALL'], params: { keys: ['剑'], secondaryKeys: ['鞘', '刃'], selectiveLogic: 3 } },
+    { id: 'lore-not', strategy: 'world-book', layer: 'pre-step', position: 'before-all', texts: ['NOT'], params: { keys: ['盾'], secondaryKeys: ['破'], selectiveLogic: 1 } },
+    { id: 'lore-any', strategy: 'world-book', layer: 'pre-step', position: 'before-all', texts: ['ANY'], params: { keys: ['弓'], secondaryKeys: ['矢'] } },
+  ]))
+  const stub = agent()
+  const run = async (texts) => {
+    const messages = texts.map((text, index) => ({
+      id: `m-${index}`, role: 'user',
+      content: [{ type: 'text', text }], source: { kind: 'user' },
+    }))
+    const decision = await step(stub, messages)
+    return decision.messages.map((message) => extractText(message)).join('|')
+  }
+  assert.ok((await run(['剑与鞘刃'])).includes('ALL'), 'all：副键全中注入')
+  assert.ok(!(await run(['剑与鞘'])).includes('ALL'), 'all：缺副键不注入')
+  assert.ok(!(await run(['破盾'])).includes('NOT'), 'not：副键命中排除')
+  assert.ok((await run(['盾牌'])).includes('NOT'), 'not：副键未命中注入')
+  assert.ok((await run(['弓'])).includes('ANY'), 'any：主键命中注入')
+  assert.ok(!(await run(['无关'])).includes('ALL'), '无命中不注入')
 })
