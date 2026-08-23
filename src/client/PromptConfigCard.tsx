@@ -211,6 +211,22 @@ export function StrategyParamsFields(props: { strategy: string; layer?: string; 
           checked={bool('caseSensitive')} onChange={(next) => set('caseSensitive', next)} />
         <ParamToggle label="wholeWords（整词匹配）" hint="true = 关键字必须整词出现（词边界），false = 子串包含即命中"
           checked={bool('wholeWords')} onChange={(next) => set('wholeWords', next)} />
+        <ParamToggle label="useRegex（键为正则）" hint="true = keys / secondaryKeys 按正则表达式匹配（作者负责合法性）"
+          checked={bool('useRegex')} onChange={(next) => set('useRegex', next)} />
+        <OptionField
+          label="selectiveLogic（触发逻辑）"
+          hint="ST world_info_logic：0 = 主/副键任一命中；3 = 副键全中才注入；1 = 副键全不中才注入；2 = 至少一个副键未中才注入"
+          value={value['selectiveLogic'] !== undefined ? String(value['selectiveLogic']) : '0'}
+          options={['0', '1', '2', '3']}
+          fallback="0"
+          labels={{
+            '0': '0 · 任一命中（默认）',
+            '1': '1 · 副键全排除',
+            '2': '2 · 部分排除',
+            '3': '3 · 副键全包含',
+          }}
+          onChange={(next) => set('selectiveLogic', Number(next))}
+        />
       </>
     )
   }

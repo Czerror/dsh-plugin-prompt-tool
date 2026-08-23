@@ -128,12 +128,13 @@ function createCustomFallbackResolver(config) {
  */
 function createWorldBookResolver(config) {
   const constant = config.params?.constant === true
-  // selectiveLogic：ST world_info_logic 0=AND_ANY 1=NOT_ALL 2=NOT_ANY 3=AND_ALL；
-  // 映射 any / not / all（1、2 均为排除语义，统一 not）。
+  // selectiveLogic：ST world_info_logic 0=AND_ANY 1=NOT_ALL 2=NOT_ANY 3=AND_ALL。
   const rawLogic = config.params?.selectiveLogic
   const logic = rawLogic === 3
     ? MATCH_LOGIC.ALL
-    : (rawLogic === 1 || rawLogic === 2 ? MATCH_LOGIC.NOT : MATCH_LOGIC.ANY)
+    : (rawLogic === 1
+      ? MATCH_LOGIC.NOT
+      : (rawLogic === 2 ? MATCH_LOGIC.NOT_ANY : MATCH_LOGIC.ANY))
   const matcher = createAnchorMatcher({
     keys: Array.isArray(config.params?.keys) ? config.params.keys : [],
     secondaryKeys: Array.isArray(config.params?.secondaryKeys) ? config.params.secondaryKeys : [],

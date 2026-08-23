@@ -14,6 +14,12 @@
 
 ## [Unreleased]
 
+### world-book 卡片 selectiveLogic 下拉 + useRegex 开关（2026-08-23）
+
+- **UI**：world-book 策略参数补全——`selectiveLogic` 下拉（0 任一 / 1 副键全排除 / 2 部分排除 / 3 副键全包含，对齐 ST `world_info_logic`）与 `useRegex` 开关（此前仅转换层支持，UI 未暴露）。
+- **引擎**：`MATCH_LOGIC` 细分 `NOT_ANY`（主键命中且至少一个副键未中）——ST 2 号语义此前与 1 号合并为 not，现精确区分；resolver 映射 0→any / 1→not / 2→notAny / 3→all。
+- **测试**：notAny 单元用例（279 pass/0 fail）。
+
 ### 锚定匹配引擎（anchor-match）：拆解 fallback，world-book 选择性触发落地（2026-08-23）
 
 - **新引擎 `engine/anchor-match.mjs`**（纯函数、无依赖）：主/副键、大小写、整词、正则、组合逻辑（`any`/`all`/`not` 对齐 ST `world_info_logic` AND_ANY/AND_ALL/NOT_ALL）、匹配模式（`scan` 全文 / `prefix` 开头锚定）。

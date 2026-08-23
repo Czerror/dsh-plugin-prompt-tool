@@ -22,6 +22,13 @@ test('anchor-match not：主键命中且副键全部未命中（ST NOT_ALL/NOT_A
   assert.equal(m.scan('破盾').active, false, '副键命中 → 排除')
 })
 
+test('anchor-match notAny：主键命中且至少一个副键未命中（ST NOT_ANY）', () => {
+  const m = createAnchorMatcher({ keys: ['盾'], secondaryKeys: ['破', '裂'], logic: MATCH_LOGIC.NOT_ANY })
+  assert.equal(m.scan('盾牌').active, true, '副键全未中')
+  assert.equal(m.scan('破盾').active, true, '部分副键命中（仍有一个未中）')
+  assert.equal(m.scan('破盾裂').active, false, '副键全中 → 排除')
+})
+
 test('anchor-match 选项：caseSensitive / wholeWords / useRegex', () => {
   const cs = createAnchorMatcher({ keys: ['Sword'], caseSensitive: true })
   assert.equal(cs.scan('sword').active, false, '大小写敏感')

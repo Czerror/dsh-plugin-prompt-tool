@@ -6,8 +6,9 @@
  *
  * 逻辑对齐 ST world_info_logic：
  *   any  = AND_ANY(0)：主键或副键任一命中即激活（world-book 默认 / custom-fallback 单锚）；
- *   all  = AND_ALL(3)：主键命中且副键全部命中；
- *   not  = NOT_ALL(1)/NOT_ANY(2)：主键命中且副键全部未命中（排除）。
+ *   all     = AND_ALL(3)：主键命中且副键全部命中；
+ *   not     = NOT_ALL(1)：主键命中且副键全部未命中（排除）；
+ *   notAny  = NOT_ANY(2)：主键命中且至少一个副键未命中（部分排除）。
  *
  * 模式：
  *   scan   = 全文扫描（world-book 消息批匹配）；
@@ -20,6 +21,7 @@ export const MATCH_LOGIC = {
   ANY: 'any',
   ALL: 'all',
   NOT: 'not',
+  NOT_ANY: 'notAny',
 }
 
 /** 正则转义（关键词原样匹配时用）。 */
@@ -56,7 +58,7 @@ function compileKeyList(list, options) {
  * @param {boolean} [options.caseSensitive]
  * @param {boolean} [options.wholeWords]
  * @param {boolean} [options.useRegex]
- * @param {'any'|'all'|'not'} [options.logic] 组合逻辑（缺省 any）
+ * @param {'any'|'all'|'not'|'notAny'} [options.logic] 组合逻辑（缺省 any）
  * @param {'scan'|'prefix'} [options.mode] 匹配模式（缺省 scan）
  * @returns {{ scan: (text: string) => { primary: number, secondary: number, active: boolean } }}
  */
@@ -103,6 +105,8 @@ export function createAnchorMatcher(options = {}) {
       active = primary > 0 && (secondaryList.length === 0 || secondary === secondaryList.length)
     } else if (logic === MATCH_LOGIC.NOT) {
       active = primary > 0 && secondary === 0
+    } else if (logic === MATCH_LOGIC.NOT_ANY) {
+      active = primary > 0 && secondaryList.length > 0 && secondary < secondaryList.length
     } else {
       active = primary > 0 || secondary > 0
     }
