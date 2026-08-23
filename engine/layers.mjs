@@ -5,13 +5,12 @@
 
 import {
   getService,
-  interpolateVariables,
-  interpolateStatic,
   isDelegated,
   keepDisposer,
   matchesModel,
   parseToolNames,
 } from './shared.mjs'
+import { interpolateVariables, interpolateStatic } from './interpolate.mjs'
 
 const name = 'prompt-config-engine'
 

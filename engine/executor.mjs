@@ -7,11 +7,11 @@
 import {
   PROMOTE_EVENTS,
   createWarnOnce,
-  interpolateVariables,
   isDelegated,
   matchesModel,
   newMessageId,
 } from './shared.mjs'
+import { interpolateVariables } from './interpolate.mjs'
 import { createEpochPromotion } from './compaction-epoch.mjs'
 import { wireLayers } from './layers.mjs'
 

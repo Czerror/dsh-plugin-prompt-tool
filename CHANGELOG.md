@@ -14,6 +14,12 @@
 
 ## [Unreleased]
 
+### 插值引擎拆分为独立 interpolate.mjs（shared 瘦身）（2026-08-23）
+
+- **拆分**：`interpolateVariables` / `interpolateStatic` 从 shared 迁出为 `engine/interpolate.mjs`（纯函数、无依赖，与 anchor-match 同级纯能力包）；`shared` 保留上下文/文本/配置工具（12 个导出）。
+- **消费方**：`layers.mjs` / `executor.mjs` import 源改为 interpolate（依赖方向不变，无环）。
+- **测试**：新增 `test/engine/interpolate.test.mjs`（variables 优先 / 内置 DSH_HOME/WORKSPACE/CWD 兜底 / 未注册保留字面 / 中文键）（282 pass/0 fail）。
+
 ### world-book 卡片 selectiveLogic 下拉 + useRegex 开关（2026-08-23）
 
 - **UI**：world-book 策略参数补全——`selectiveLogic` 下拉（0 任一 / 1 副键全排除 / 2 部分排除 / 3 副键全包含，对齐 ST `world_info_logic`）与 `useRegex` 开关（此前仅转换层支持，UI 未暴露）。
