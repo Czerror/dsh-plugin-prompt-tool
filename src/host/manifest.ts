@@ -4,9 +4,10 @@
  * 一个预设 = 一个 preset.yml:
  *   - modules/params/content/meta 全部是直读参数,无模板语法;
  *   - 默认提示词配置由引擎按 params 生成(见 write-preset),promptConfigs 仅为可选覆盖;
- *   - 组合模块中的 __TOKEN__ 由引擎内部 renderEngineTokens 按 params 生成,
- *     不再暴露到参数文件。
- * 本模块负责参数归一化与引擎 token 渲染;所有 anchored 专属行为都在引擎内部。
+ *   - 组合模块的行级 config 由参数桥 buildModuleConfigsFromParams 按 params
+ *     构造对象合并（取代旧 __TOKEN__ 文本渲染，无占位符、无文本往返），
+ *     moduleConfigs（预设作者锁定）优先于 params（UI/基础层）。
+ * 本模块负责参数归一化与引擎模块配置装配;所有 anchored 专属行为都在引擎内部。
  */
 
 import { readFileSync, existsSync, readdirSync, mkdirSync, rmSync, writeFileSync, cpSync, renameSync } from 'node:fs'
@@ -522,18 +523,6 @@ export function resolvePresetParams(spec: PresetSpec, runtime: Record<string, un
   return params
 }
 
-/** {{key}} 嵌套插值(块模板内引用 params)；键正则与引擎插值及 processStText 中文变量支持一致。 */
-function interpolateNested(text: string, scope: Record<string, unknown>): string {
-  return text.replace(/\{\{([A-Za-z0-9_.\u4e00-\u9fff-]+)\}\}/g, (whole, key: string, offset: number) => {
-    if (!Object.prototype.hasOwnProperty.call(scope, key)) return whole
-    const value = asString(scope[key])
-    if (!value.includes('\n')) return value
-    const lineStart = text.lastIndexOf('\n', offset) + 1
-    const prefix = text.slice(lineStart, offset)
-    return value.split('\n').map((line, at) => (at === 0 ? line : (line.length > 0 ? prefix + line : ''))).join('\n')
-  })
-}
-
 /** 逗号分隔 / YAML flow 数组 / 空格分隔的字符串列表 → 字符串数组。 */
 function parseListParam(value: unknown): string[] {
   if (Array.isArray(value)) return value.map((item) => String(item)).filter((item) => item.length > 0)
@@ -545,93 +534,107 @@ function parseListParam(value: unknown): string[] {
 }
 
 /**
- * 引擎内部 token 渲染:把直读参数变成组合模块里的 __TOKEN__ 值。
- * anchored 的全部组合行为(usePtcMode/bootstrapMaxTokens/模型路由与委派完整自定义)
- * 在这里完成参数化,用户参数文件不需要任何模板语法。
+ * 参数桥：params 扁平键 → 引擎模块行 config 对象（取代旧 __TOKEN__ 文本渲染）。
+ *
+ * 原则：
+ *  - 未声明的键不合并（composition 行默认 / 引擎默认生效），与旧"空值删行"语义等价；
+ *  - 值类型直达（布尔/数字/数组不再字符串化再解析）；
+ *  - 合并优先级：moduleConfigs（预设作者锁定）> 参数桥（UI/基础层）> 行默认。
  * 模型路由/委派参数统一扁平键（modelProvider/subagentModelProvider/toolFilterAllow/maxDepth 等），
  * 与官方 AgentOptions{provider,model} / toolFilter{allow,deny} / maxDepth 对齐。
  */
-export function renderEngineTokens(params: Record<string, unknown>): Record<string, string> {
-  // 子代理模型路由与委派完整自定义（官方 tool-subagent Config 参数化）：
-  //   subagentModelProvider/subagentModelName → agentOptions{provider,model}（子代理固定模型路由）；
-  //   subagentPersona → persona（per-child shadow，显式优先；缺省不渲染——
-  //     子代理经 scope 链（composeFrom → standing）继承主会话 persona 模块，官方行为）；
-  //   toolFilterAllow/Deny → toolFilter{allow,deny}（委派工具集白/黑名单）；
-  //   maxDepth → maxDepth（0 禁止委派 / provider-managed / 正整数）。
-  // 任一字段非空即渲染对应行，全部缺省 = 官方默认（继承主会话）。
-  const provider = asString(params.subagentModelProvider, '')
-  const model = asString(params.subagentModelName, '')
-  const subagentPersona = asString(params.subagentPersona)
-  const toolFilterAllow = parseListParam(params.toolFilterAllow)
-  const toolFilterDeny = parseListParam(params.toolFilterDeny)
-  // 主会话工具过滤（tool-filter 模块）：与子代理 toolFilter 共用同一扁平键，
-  // 作用于任意注册工具（含第三方插件工具）。空列表 = 不过滤（不写行）。
-  const mainFilterAllow = parseListParam(params.toolFilterAllow)
-  const mainFilterDeny = parseListParam(params.toolFilterDeny)
-  const mainFilterSubagents = params.toolFilterSubagents === true
-  const mainFilterAllowLine = mainFilterAllow.length > 0 ? `[${mainFilterAllow.join(', ')}]` : ''
-  const mainFilterDenyLine = mainFilterDeny.length > 0 ? `[${mainFilterDeny.join(', ')}]` : ''
-  const rawMaxDepth = params.maxDepth
-  const subagentMaxDepth = rawMaxDepth === 'provider-managed'
-    ? 'provider-managed'
-    : Number.isSafeInteger(rawMaxDepth) && (rawMaxDepth as number) >= 0
-      ? String(rawMaxDepth)
-      : ''
-  const subagentLines: string[] = []
-  if (provider.length > 0 && model.length > 0) {
-    subagentLines.push('agentOptions:', `  provider: ${provider}`, `  model: ${model}`)
+export function buildModuleConfigsFromParams(params: Record<string, unknown>): Record<string, Record<string, unknown>> {
+  const out: Record<string, Record<string, unknown>> = {}
+  const merge = (module: string, cfg: Record<string, unknown>): void => {
+    if (Object.keys(cfg).length === 0) return
+    out[module] = { ...out[module], ...cfg }
   }
-  if (subagentPersona.length > 0) {
-    subagentLines.push(interpolateNested('persona: |-\n  {{subagentPersona}}', { subagentPersona }))
+
+  // tool-bootstrap：首轮工具目录相位（窄化/封顶/门控/压缩恢复集/人设窄化）。
+  const bootstrap: Record<string, unknown> = {}
+  if (typeof params.bootstrapMaxTokens === 'number' && params.bootstrapMaxTokens > 0) {
+    bootstrap.bootstrapMaxTokens = params.bootstrapMaxTokens
   }
-  if (toolFilterAllow.length > 0 || toolFilterDeny.length > 0) {
-    subagentLines.push('toolFilter:')
-    if (toolFilterAllow.length > 0) subagentLines.push(`  allow: [${toolFilterAllow.join(', ')}]`)
-    if (toolFilterDeny.length > 0) subagentLines.push(`  deny: [${toolFilterDeny.join(', ')}]`)
+  if (params.bootstrapTools !== undefined) bootstrap.bootstrapTools = parseListParam(params.bootstrapTools)
+  if (params.promoteGate !== undefined) bootstrap.promoteGate = params.promoteGate === true
+  if (params.promoteAfterFirstResponse !== undefined) {
+    bootstrap.promoteAfterFirstResponse = params.promoteAfterFirstResponse === true
   }
-  if (subagentMaxDepth.length > 0) subagentLines.push(`maxDepth: ${subagentMaxDepth}`)
-  const subagentConfigBlock = subagentLines.join('\n')
-  const bootstrap = typeof params.bootstrapMaxTokens === 'number' && params.bootstrapMaxTokens > 0
-    ? `bootstrapMaxTokens: ${params.bootstrapMaxTokens}`
-    : ''
-  // 官方 minimal 的 str-replace-editor 默认 maxOutputChars=16000；
-  // params.strReplaceEditorMaxOutputChars 可调（token 默认渲染官方值）。
-  const editorMaxOutputChars = typeof params.strReplaceEditorMaxOutputChars === 'number'
+  if (params.maxPromoteSteps !== undefined && Number.isSafeInteger(params.maxPromoteSteps)) {
+    bootstrap.maxPromoteSteps = params.maxPromoteSteps
+  }
+  if (params.compactionTools !== undefined) bootstrap.compactionTools = parseListParam(params.compactionTools)
+  if (params.personaSectionsOnly !== undefined) bootstrap.personaSectionsOnly = params.personaSectionsOnly === true
+  if (params.workspaceLine !== undefined) bootstrap.workspaceLine = params.workspaceLine === true
+  if (typeof params.phase1FirstCallInstruction === 'string' && params.phase1FirstCallInstruction.length > 0) {
+    bootstrap.phase1FirstCallInstruction = params.phase1FirstCallInstruction
+  }
+  merge('tool-bootstrap', bootstrap)
+
+  // context-gate：注入门控（kind 白名单 / 晋升后延迟注入 / instruction-hint 转换）。
+  const gate: Record<string, unknown> = {}
+  if (params.allowKinds !== undefined) gate.allowKinds = parseListParam(params.allowKinds)
+  if (params.messageSources !== undefined) gate.messageSources = parseListParam(params.messageSources)
+  if (params.deferredSources !== undefined) gate.deferredSources = parseListParam(params.deferredSources)
+  if (params.deferredGraceSteps !== undefined && Number.isSafeInteger(params.deferredGraceSteps)) {
+    gate.deferredGraceSteps = params.deferredGraceSteps
+  }
+  if (params.instructionHint !== undefined) gate.instructionHint = params.instructionHint === true
+  merge('context-gate', gate)
+
+  // code-presentation：晋升后 Code Mode (PTC) wire 呈现（独立于目录窄化）。
+  const presentation: Record<string, unknown> = {}
+  if (params.usePtcMode !== undefined) presentation.usePtcMode = params.usePtcMode === true
+  merge('code-presentation', presentation)
+
+  // str-replace-editor：官方 minimal 行（默认官方值 16000，params 显式覆盖）。
+  const editor: Record<string, unknown> = {}
+  editor.maxOutputChars = typeof params.strReplaceEditorMaxOutputChars === 'number'
     && Number.isSafeInteger(params.strReplaceEditorMaxOutputChars)
     && params.strReplaceEditorMaxOutputChars > 0
-    ? String(params.strReplaceEditorMaxOutputChars)
-    : '16000'
-  return {
-    // 未声明 = 空串 → 空值行删除 → 引擎 tool-bootstrap 默认（true）生效；
-    // 显式 true/false 才写行（对齐引擎 booleanOption 默认 true，手写模板不会被强制 false）。
-    usePtcMode: params.usePtcMode === undefined ? '' : (params.usePtcMode === true ? 'true' : 'false'),
-    bootstrapMaxTokens: bootstrap,
-    subagentConfig: subagentConfigBlock,
-    // 引擎默认与 context-gate 的 DEFAULT_ALLOW_KINDS 一致（单一默认源）；
-    // 需要放行更多 kind 的预设（anchored）在 preset.yml 显式声明 allowKinds。
-    // allowKinds 未声明 = 不写行 → context-gate 走官方 pre-step 行为（不过滤）；
-    // 显式声明（anchored）才启用白名单门控。兼容数组与字符串写法。
-    allowKinds: params.allowKinds === undefined
-      ? ''
-      : Array.isArray(params.allowKinds)
-        ? `[${params.allowKinds.map((item) => String(item)).join(', ')}]`
-        : asString(params.allowKinds),
-    strReplaceEditorMaxOutputChars: editorMaxOutputChars,
-    mainToolFilterAllow: mainFilterAllowLine,
-    mainToolFilterDeny: mainFilterDenyLine,
-    mainToolFilterSubagents: String(mainFilterSubagents),
-  }
-}
+    ? params.strReplaceEditorMaxOutputChars
+    : 16000
+  merge('str-replace-editor', editor)
 
-/** 预设 params + runtime → 组合 token 渲染(便捷入口)。 */
-export function resolvePresetTokens(spec: PresetSpec, runtime: Record<string, unknown>): Record<string, string> {
-  return renderEngineTokens(resolvePresetParams(spec, runtime))
+  // tool-filter：主会话常驻工具掩码（空列表 = 不过滤，不写键）。
+  const filter: Record<string, unknown> = {}
+  const mainAllow = parseListParam(params.toolFilterAllow)
+  const mainDeny = parseListParam(params.toolFilterDeny)
+  if (mainAllow.length > 0) filter.allow = mainAllow
+  if (mainDeny.length > 0) filter.deny = mainDeny
+  if (params.toolFilterSubagents === true) filter.includeSubagents = true
+  merge('tool-filter', filter)
+
+  // delegation 组：子代理模型路由/人设/工具集/深度（spawn 与 fork 两行同配置，
+  // 由 applyModuleConfigs 的嵌套合并按子行 id 落位）。
+  const subagent: Record<string, unknown> = {}
+  const provider = asString(params.subagentModelProvider, '')
+  const model = asString(params.subagentModelName, '')
+  if (provider.length > 0 && model.length > 0) subagent.agentOptions = { provider, model }
+  const subagentPersona = asString(params.subagentPersona)
+  if (subagentPersona.length > 0) subagent.persona = subagentPersona
+  const subAllow = parseListParam(params.toolFilterAllow)
+  const subDeny = parseListParam(params.toolFilterDeny)
+  if (subAllow.length > 0 || subDeny.length > 0) {
+    subagent.toolFilter = {
+      ...(subAllow.length > 0 ? { allow: subAllow } : {}),
+      ...(subDeny.length > 0 ? { deny: subDeny } : {}),
+    }
+  }
+  const rawMaxDepth = params.maxDepth
+  if (rawMaxDepth === 'provider-managed') subagent.maxDepth = 'provider-managed'
+  else if (Number.isSafeInteger(rawMaxDepth) && (rawMaxDepth as number) >= 0) subagent.maxDepth = rawMaxDepth
+  if (Object.keys(subagent).length > 0) {
+    out['tool-subagent'] = subagent
+    out['tool-subagent-fork'] = subagent
+  }
+  return out
 }
 
 /** 按参数文件的 modules 清单从引擎模块库装配组合文本。 */
 /** 空模块清单兜底骨架（自定义预设空白起点：模块集与 minimal 一致，参数/配置全空）。 */
 const FALLBACK_MODULES = ['official-persistent-shell', 'bootstrap-filesystem',
-  'context-gate', 'tool-bootstrap', 'prompt-config-engine',
+  'context-gate', 'tool-bootstrap', 'code-presentation', 'prompt-config-engine',
   'run-code-env', 'custom-bash', 'skill-search']
 
 function assembleModules(spec: PresetSpec, library: string): string {
@@ -656,8 +659,8 @@ function assembleModules(spec: PresetSpec, library: string): string {
  */
 /**
  * 行级 config 合并(moduleConfigs):仅支持 map 型 config 浅合并;
- * 数组型 config(如 compaction)与未声明模块原样保留。
- * 未声明 moduleConfigs 时返回原文(零开销);parseDocument 往返保留注释与 __TOKEN__。
+ * 数组型 config(如 delegation 组)按子行 id 嵌套合并;未声明模块原样保留。
+ * 未声明 moduleConfigs 时返回原文(零开销);parseDocument 往返保留注释。
  */
 export function applyModuleConfigs(raw: string, configs: Record<string, Record<string, unknown>> | undefined): string {
   if (configs === undefined || Object.keys(configs).length === 0) return raw
@@ -665,29 +668,48 @@ export function applyModuleConfigs(raw: string, configs: Record<string, Record<s
   if (!(doc.contents instanceof YAMLSeq)) return raw
   const rows = doc.contents
   let changed = false
-  for (const item of rows.items) {
-    if (!(item instanceof YAMLMap)) continue
-    const idNode = item.get('id', true)
-    const id = idNode !== null && typeof idNode === 'object' && 'value' in idNode ? String(idNode.value) : undefined
-    if (id === undefined || !Object.prototype.hasOwnProperty.call(configs, id)) continue
+  /** 把 cfg 的键写入一个 config 节点（无 config 时创建）。 */
+  const mergeInto = (item: YAMLMap, cfg: Record<string, unknown>): boolean => {
     const existingConfig = item.get('config', true)
     let configNode: YAMLMap
     if (existingConfig instanceof YAMLMap) {
       configNode = existingConfig
     } else if (existingConfig === null || existingConfig === undefined) {
-      // 行无 config 时按 moduleConfigs 声明创建（官方行如 skill-filesystem 只有 name）。
       configNode = new YAMLMap()
       // Parsed 行节点的 set 约束 key/value 为 ParsedNode；新建节点运行时合法，
       // 类型断言绕过 Parsed 泛型（构造节点无 range 元数据）。
       item.items.push(new Pair(new Scalar('config'), configNode) as never)
-      changed = true
     } else {
-      continue
+      return false
     }
-    for (const [key, value] of Object.entries(configs[id]!)) {
+    for (const [key, value] of Object.entries(cfg)) {
       configNode.set(key, value)
     }
-    changed = true
+    return true
+  }
+  /** 从行节点读 id（ParsedNode 值包装兼容）。 */
+  const rowId = (item: YAMLMap): string | undefined => {
+    const idNode = item.get('id', true)
+    return idNode !== null && typeof idNode === 'object' && 'value' in idNode
+      ? String((idNode as { value: unknown }).value)
+      : undefined
+  }
+  for (const item of rows.items) {
+    if (!(item instanceof YAMLMap)) continue
+    const id = rowId(item)
+    const existingConfig = item.get('config', true)
+    if (existingConfig instanceof YAMLSeq && id !== undefined && !Object.prototype.hasOwnProperty.call(configs, id)) {
+      // 数组型 config（delegation 组）：按子行 id 嵌套合并。
+      for (const child of existingConfig.items) {
+        if (!(child instanceof YAMLMap)) continue
+        const childId = rowId(child)
+        if (childId === undefined || !Object.prototype.hasOwnProperty.call(configs, childId)) continue
+        if (mergeInto(child, configs[childId]!)) changed = true
+      }
+      continue
+    }
+    if (id === undefined || !Object.prototype.hasOwnProperty.call(configs, id)) continue
+    if (mergeInto(item, configs[id]!)) changed = true
   }
   return changed ? doc.toString() : raw
 }
@@ -740,13 +762,16 @@ export function loadCompositionText(spec: PresetSpec, templateDir?: string): str
 }
 
 /**
- * 预设组合渲染完整链路:token 渲染 → moduleConfigs 行级合并。
- * 合并必须发生在 token 渲染之后(独立行 token 在渲染前是非法 YAML,
- * 如 __SUBAGENT_CONFIG__ / __BOOTSTRAP_MAX_TOKENS__)。
+ * 预设组合渲染完整链路:模块装配 → 参数桥(moduleConfigs + params)行级合并。
+ * 合并优先级:moduleConfigs(预设作者锁定) > 参数桥(params/UI 基础层) > 行默认。
  */
 export function renderComposition(spec: PresetSpec, runtime: Record<string, unknown>, templateDir?: string): string {
-  const tokens = resolvePresetTokens(spec, runtime)
-  return applyModuleConfigs(renderTemplateVariables(loadCompositionText(spec, templateDir), tokens), spec.moduleConfigs)
+  const params = resolvePresetParams(spec, runtime)
+  const merged: Record<string, Record<string, unknown>> = buildModuleConfigsFromParams(params)
+  for (const [id, cfg] of Object.entries(spec.moduleConfigs ?? {})) {
+    merged[id] = { ...merged[id], ...cfg }
+  }
+  return applyModuleConfigs(loadCompositionText(spec, templateDir), merged)
 }
 
 /** 组合文本基础校验（模板无关）：无未解析 token，且必须是 YAML 数组。 */
@@ -756,32 +781,4 @@ export function assertCompositionArray(raw: string, spec: PresetSpec): unknown[]
   const parsed = parseYaml(raw, { logLevel: 'silent' })
   if (!Array.isArray(parsed)) throw new Error(`generated agent.cordis.yml is not a YAML array (preset ${spec.id})`)
   return parsed
-}
-
-/**
- * 文本 token 替换:
- *   - token 独立成行时,替换块按该行缩进前缀(用于 line/block);
- *   - token 内联时直接替换(用于布尔/字符串标量)。
- */
-export function renderTemplateVariables(raw: string, variables: Record<string, string>): string {
-  // 空值 token 独立成行（含 key: 前缀，如 `allowKinds: __ALLOW_KINDS__`）时先删除
-  // 整行，避免 YAML 空值残留（allowKinds 未声明时不得产生 `allowKinds:` null）。
-  let text = raw.replace(/^[ \t]*(?:[A-Za-z0-9_.-]+:[ \t]*)?__([A-Za-z0-9_]+)__[ \t]*\r?\n/gm, (whole: string, key: string): string =>
-    Object.prototype.hasOwnProperty.call(variables, key) && variables[key] === '' ? '' : whole)
-  return text.replace(/__([A-Za-z0-9_]+)__/g, (whole: string, key: string, offset: number): string => {
-    if (!Object.prototype.hasOwnProperty.call(variables, key)) return whole
-    const value = variables[key]!
-    if (value === '') return ''
-    // 注意：偏移量相对当前文本（空值行已删），行定位必须用同一文本。
-    const lineStart = text.lastIndexOf('\n', offset) + 1
-    const lineEndRaw = text.indexOf('\n', offset)
-    const lineEnd = lineEndRaw < 0 ? text.length : lineEndRaw
-    const prefix = text.slice(lineStart, offset)
-    const rest = text.slice(offset + whole.length, lineEnd)
-    if (prefix.trim() === '' && rest.trim() === '') {
-      // token 前的缩进仍保留在原文中,首行不再叠加;后续行按该缩进对齐。
-      return value.split('\n').map((line, at) => (at === 0 ? line : (line.length > 0 ? prefix + line : ''))).join('\n')
-    }
-    return value
-  })
 }

@@ -55,13 +55,20 @@ test('preset/liangshen 渲染：模块清单 + moduleConfigs 表达两阶段锚�
     assert.equal(bootstrap.config.promoteAfterFirstResponse, true)
     assert.equal(bootstrap.config.bootstrapMaxTokens, 1024)
     assert.equal(bootstrap.config.includeSubagents, true, 'liangshen 源：子代理跟随两阶段相位')
-    assert.equal(bootstrap.config.usePtcMode, true)
     assert.equal(bootstrap.config.personaSectionsOnly, true)
     assert.equal(bootstrap.config.workspaceLine, true)
     assert.deepEqual(
       bootstrap.config.compactionTools,
       ['read', 'write', 'edit', 'glob', 'grep', 'todo_write', 'ask_user_question'],
     )
+
+    // PTC 呈现拆出独立行：code-presentation（liangshen 显式 moduleConfigs.usePtcMode: true）。
+    const presentation = byId.get('code-presentation')
+    assert.ok(presentation, '应含 code-presentation 行（PTC 呈现拆出）')
+    assert.equal(presentation.name, '../.engine/code-presentation.mjs', '指向预设根共享引擎模块')
+    assert.equal(presentation.config.usePtcMode, true, 'liangshen 显式开启 PTC 呈现')
+    // 拆行后 tool-bootstrap 不再接受 usePtcMode（unknown key 会 fail loud）。
+    assert.equal(bootstrap.config.usePtcMode, undefined, 'tool-bootstrap 行不含 usePtcMode')
 
     // persona 已模块化：组合不再含 router-first-turn 行，人设由 promptConfigs 的
     // persona-main（system-section + deployment:persona）承担，非独占。
@@ -76,6 +83,7 @@ test('preset/liangshen 渲染：模块清单 + moduleConfigs 表达两阶段锚�
     // 行序：context-gate 必须 FIRST（waterfall 外层）。
     assert.equal(rows[0].id, 'context-gate', 'context-gate 必须为组合首行')
     assert.equal(rows[1].id, 'tool-bootstrap')
+    assert.equal(rows[2].id, 'code-presentation')
 
     // 其余官方工具行齐全。
     for (const id of ['agent-instructions', 'persistent-shell', 'custom-bash', 'tool-fs-search', 'tool-jobs', 'skill-filesystem', 'tool-skill', 'tool-goal', 'planning', 'compaction', 'delegation', 'tool-ask-user', 'tool-todo', 'tool-web']) {

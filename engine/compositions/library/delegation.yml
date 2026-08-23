@@ -37,7 +37,6 @@
         provider: spawn
         toolName: subagent
         backgroundMode: continuable
-        __subagentConfig__
 
     - id: tool-subagent-fork
       name: '@deepseek-ai/dsh-tool-subagent'
@@ -45,7 +44,6 @@
         provider: fork
         toolName: subagent_fork
         backgroundMode: continuable
-        __subagentConfig__
 
     # Production dsh does not install these optional providers. An opting-in
     # Profile mounts each provider once on the host plane; copy this preset,

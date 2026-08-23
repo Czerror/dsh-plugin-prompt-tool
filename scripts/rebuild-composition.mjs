@@ -65,14 +65,6 @@ const PATCHES = {
   ],
   delegation: [
     { from: 'backgroundMode: one-shot', to: 'enableRunInBackground: false' },
-    {
-      from: '        toolName: subagent\n        backgroundMode: continuable\n',
-      to: '        toolName: subagent\n        backgroundMode: continuable\n        __subagentConfig__\n',
-    },
-    {
-      from: '        toolName: subagent_fork\n        backgroundMode: continuable\n',
-      to: '        toolName: subagent_fork\n        backgroundMode: continuable\n        __subagentConfig__\n',
-    },
   ],
 }
 
@@ -91,6 +83,7 @@ function applyPatches(id, text, source) {
 const MODULES = [
   { id: 'context-gate', from: 'local' },
   { id: 'tool-bootstrap', from: 'local' },
+  { id: 'code-presentation', from: 'local' },
   { id: 'prompt-config-engine', from: 'local' },
   { id: 'run-code-env', from: 'local' },
   { id: 'persona', from: 'minimal' },
@@ -100,7 +93,9 @@ const MODULES = [
   { id: 'custom-bash', from: 'local' },
   { id: 'tool-fs', from: 'standard' },
   { id: 'tool-fs-search', from: 'standard' },
+  { id: 'str-replace-editor', from: 'local' },
   { id: 'bootstrap-filesystem', from: 'minimal', sourceId: 'filesystem' },
+  { id: 'tool-filter', from: 'local' },
   { id: 'tool-jobs', from: 'standard' },
   { id: 'skill-filesystem', from: 'standard' },
   { id: 'skill-search', from: 'local' },

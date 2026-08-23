@@ -1,5 +1,17 @@
 # Changelog
 
+## [Unreleased]
+
+### 参数桥取代组合 token + PTC 呈现拆独立模块（2026-08-24）
+
+- **参数桥**：`buildModuleConfigsFromParams` 取代 `renderEngineTokens` / `renderTemplateVariables` 的 `__TOKEN__` 文本渲染——params 扁平键直接构造模块行 config 对象合并（无占位符、无文本往返、类型直达）；组合库全部文件去 token（str-replace-editor 行默认 16000 显式化、delegation 组按子行 id 嵌套合并、tool-filter 行默认不过滤）；合并优先级 `moduleConfigs > params 参数桥 > 行默认`。
+- **PTC 呈现拆出**：`engine/code-presentation.mjs` 独立模块行（晋升后 `tools.presentAs('code')`，compaction/end 释放）——「只要 PTC 不要 bootstrap」= modules 只挂 `code-presentation`；tool-bootstrap 专注目录窄化/封顶/门控；6 预设 modules 加 code-presentation 行。
+- **门控参数全可自定义**：`promoteGate` / `promoteAfterFirstResponse` / `maxPromoteSteps` / `bootstrapTools` / `compactionTools` / `personaSectionsOnly` / `workspaceLine` / `messageSources` / `deferredSources` / `deferredGraceSteps` / `instructionHint` 全部支持 params 扁平键（参数桥直达模块行）；`BuildCordisOptions` 同步。
+- **注释收敛**：内置预设去参数注释，统一在根 preset.yml 示范模板逐项注释。
+- **文档**：docs/engine-reuse.md（引擎复制协议 + 晋升门控模块配置参考）。
+- **usePtcMode 默认 false（opt-in）**：PTC (Code Mode) 呈现不再默认开启——引擎 `code-presentation` 默认 false；src 层（writePreset/buildCordis/apply/TUI/UI store/bridge）全部透传 undefined 由模板/引擎默认兜底（不再强制 true）；**预设内设置保持原本**（ptc/standard/minimal/anchored 显式 true、creative false、liangshen 经 moduleConfigs true）；liangshen 修复拆行漏网——`moduleConfigs.tool-bootstrap.usePtcMode`（失效键会 fail loud）移至 `moduleConfigs.code-presentation`。
+- **测试**：296 pass/0 fail（参数桥断言、code-presentation 呈现/释放/子代理/默认 false 零注册、组合库无 token、liangshen 行序与 usePtcMode 归属、buildCordis 默认关闭/显式开关）。
+
 ## [0.6.2] - 2026-08-23
 
 ### 模型参数提取到 preset.yml 顶层 model / subagentModel 段（2026-08-23）

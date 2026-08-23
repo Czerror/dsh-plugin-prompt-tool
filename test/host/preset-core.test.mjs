@@ -27,13 +27,19 @@ test('无 frontmatter 时返回空 data 与原文本', () => {
   assert.equal(body, text)
 })
 
-test('engine/tool-bootstrap.mjs 已是含共享工具与 PTC 逻辑的引擎模块', () => {
+test('engine/tool-bootstrap.mjs 是含共享工具的目录相位引擎模块（PTC 已拆出）', () => {
   const source = read('engine/tool-bootstrap.mjs')
   assert.ok(source.includes("from './shared.mjs'"))
-  assert.ok(source.includes("tools.presentAs('code')"))
-  assert.ok(source.includes('if (usePtcMode) applyCodePresentation(agent)'))
+  assert.ok(!source.includes("tools.presentAs('code')"), 'PTC 呈现已拆到 code-presentation.mjs')
   assert.ok(!source.includes('dev_tool_search'))
   assert.ok(!source.includes('RESIDENT_DISCOVERY_TOOLS'))
+})
+
+test('engine/code-presentation.mjs 承担晋升后 Code Mode (PTC) 呈现', () => {
+  const source = read('engine/code-presentation.mjs')
+  assert.ok(source.includes("tools.presentAs('code')"))
+  assert.ok(source.includes("from './compaction-epoch.mjs'"))
+  assert.ok(source.includes("from './shared.mjs'"))
 })
 
 test('preset/shared.mjs 提供公共晋升解析与消息工具', () => {

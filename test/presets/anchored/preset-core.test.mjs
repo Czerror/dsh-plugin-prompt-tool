@@ -109,20 +109,28 @@ test('buildCordis 未设置模型服务商/模型名时子代理行不出现 age
   assert.equal(row.config.agentOptions, undefined)
 })
 
-test('buildCordis 默认开启使用 PTC 模式', () => {
+test('buildCordis 默认开启使用 PTC 模式（anchored 模板显式 true，预设设置保持）', () => {
   const out = buildCordis('PROMPT')
   const doc = parse(out, { logLevel: 'silent' })
-  const bootstrap = doc.find((entry) => entry?.id === 'tool-bootstrap')
+  const presentation = doc.find((entry) => entry?.id === 'code-presentation')
   const search = doc.find((entry) => entry?.id === 'dev-tool-search')
-  assert.ok(bootstrap)
-  assert.equal(bootstrap.config.usePtcMode, true)
+  assert.ok(presentation, 'PTC 呈现独立行（code-presentation）')
+  assert.equal(presentation.config.usePtcMode, true)
   assert.equal(search, undefined)
 })
 
-test('buildCordis 可显式关闭使用 PTC 模式：恢复原生完整目录', () => {
+test('buildCordis 可显式关闭使用 PTC 模式（运行时覆盖模板）', () => {
   const out = buildCordis('PROMPT', { usePtcMode: false })
   const doc = parse(out, { logLevel: 'silent' })
-  const bootstrap = doc.find((entry) => entry?.id === 'tool-bootstrap')
-  assert.ok(bootstrap)
-  assert.equal(bootstrap.config.usePtcMode, false)
+  const presentation = doc.find((entry) => entry?.id === 'code-presentation')
+  assert.ok(presentation)
+  assert.equal(presentation.config.usePtcMode, false)
+})
+
+test('buildCordis 可显式开启使用 PTC 模式', () => {
+  const out = buildCordis('PROMPT', { usePtcMode: true })
+  const doc = parse(out, { logLevel: 'silent' })
+  const presentation = doc.find((entry) => entry?.id === 'code-presentation')
+  assert.ok(presentation)
+  assert.equal(presentation.config.usePtcMode, true)
 })

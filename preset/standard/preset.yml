@@ -21,6 +21,7 @@ modules:
   - tool-web
   - context-gate
   - tool-bootstrap
+  - code-presentation
   - prompt-config-engine
   - run-code-env
   - custom-bash
@@ -29,7 +30,6 @@ params:
   usePtcMode: true
   bootstrapMaxTokens: 0
   allowKinds: "[skill-invocation, near-anchor, router-guide]"
-  # 模型路由与委派 · 主对话与子代理通用（缺省 = 官方默认 / 继承宿主）
   modelProvider: ""
   modelName: ""
   subagentModelProvider: ""

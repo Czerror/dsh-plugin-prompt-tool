@@ -3,7 +3,6 @@
   config:
     promoteOn: either
     includeSubagents: false
-    allowKinds: __allowKinds__
 
 # ── bootstrap ───────────────────────────────────────────────────────────────
 

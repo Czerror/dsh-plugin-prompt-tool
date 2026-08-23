@@ -7,6 +7,7 @@ import {
 } from '../../engine/compaction-epoch.mjs'
 import { apply as applyToolBootstrap } from '../../engine/tool-bootstrap.mjs'
 import { apply as applyContextGate } from '../../engine/context-gate.mjs'
+import { apply as applyCodePresentation } from '../../engine/code-presentation.mjs'
 
 /** 收集 ctx.on 注册的监听器（按注册顺序）。 */
 function makeCtx() {
@@ -224,6 +225,67 @@ test('tool-bootstrap：includeSubagents=true 子代理与主会话同相位（�
   const out = await assembleThrough(listeners, subagent, assembled())
   assert.deepEqual(out.tools.map((t) => t.name), ['bash', 'str_replace_editor'], '子代理首轮裁剪到 bootstrap 对')
   assert.deepEqual(out.sections.map((s) => s.name), ['deployment:persona'], '子代理 sections 过滤生效')
+})
+
+// ── code-presentation：晋升后 Code Mode (PTC) 呈现（从 tool-bootstrap 拆出） ──
+
+test('code-presentation：晋升后应用 presentAs("code")，compaction/end 释放', async () => {
+  const { ctx, listeners } = makeCtx()
+  const presented = []
+  let disposed = 0
+  const agentWithTools = (session) => ({
+    session,
+    ctx: { tools: { presentAs: (mode) => { presented.push(mode); return () => { disposed += 1 } } } },
+  })
+  applyCodePresentation(ctx, { usePtcMode: true })
+  const session = makeSession([{ type: 'tool/call', seq: 1 }])
+  const agent = agentWithTools(session)
+  const handler = listeners.get('system-prompt/assemble')?.[0]?.handler
+  assert.ok(handler, '应注册 system-prompt/assemble')
+  await handler(null, { agent }, async () => assembled())
+  assert.deepEqual(presented, ['code'], '晋升后应用 Code Mode 呈现')
+  // compaction/end 释放（回到受控相位）。
+  const eventHandlers = listeners.get('session/event') ?? []
+  for (const { handler: h } of eventHandlers) h(session, { type: 'compaction/end', seq: 2 })
+  assert.equal(disposed, 1, 'compaction/end 释放呈现')
+  // 新晋升信号（压缩边界后的 tool/call）后再次应用。
+  for (const { handler: h } of eventHandlers) h(session, { type: 'tool/call', seq: 3 })
+  await handler(null, { agent }, async () => assembled())
+  assert.equal(presented.length, 2, '重新晋升后再次应用')
+})
+
+test('code-presentation：usePtcMode=false 不注册任何监听（只 bootstrap 预设）', () => {
+  const { ctx, listeners } = makeCtx()
+  applyCodePresentation(ctx, { usePtcMode: false })
+  assert.equal(listeners.size, 0, 'usePtcMode=false 时不注册监听')
+})
+
+test('code-presentation：默认 usePtcMode=false（opt-in，未声明不注册）', () => {
+  const { ctx, listeners } = makeCtx()
+  applyCodePresentation(ctx, {})
+  assert.equal(listeners.size, 0, '默认不启用 PTC 呈现')
+})
+
+test('code-presentation：未晋升不应用，子代理（默认）直接应用', async () => {
+  const { ctx, listeners } = makeCtx()
+  const presented = []
+  const agentWithTools = (session) => ({
+    session,
+    ctx: { tools: { presentAs: (mode) => { presented.push(mode); return () => {} } } },
+  })
+  applyCodePresentation(ctx, { usePtcMode: true })
+  const handler = listeners.get('system-prompt/assemble')?.[0]?.handler
+  assert.ok(handler)
+  // 主会话未晋升：不应用。
+  await handler(null, { agent: agentWithTools(makeSession([])) }, async () => assembled())
+  assert.equal(presented.length, 0, '未晋升不应用')
+  // 子代理（delegationDepth=1，默认 includeSubagents=false）：直接应用。
+  const subagent = {
+    session: { id: `s-${Math.random()}`, header: { cwd: '/workspace', delegationDepth: 1 }, events: [] },
+    ctx: { tools: { presentAs: (mode) => { presented.push(mode); return () => {} } } },
+  }
+  await handler(null, { agent: subagent }, async () => assembled())
+  assert.deepEqual(presented, ['code'], '子代理默认直接应用呈现')
 })
 
 // ── context-gate：messageSources / deferredSources / instructionHint ───────

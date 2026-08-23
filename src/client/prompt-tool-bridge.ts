@@ -119,7 +119,7 @@ export const EMPTY_FIELDS: Fields = {
   allowKinds: '',
   firstTurnWord: '',
   bootstrapMaxTokens: 0,
-  usePtcMode: true,
+  usePtcMode: false,
   injectPrompt: true,
   skillSwitches: {},
   skillOrder: [],
@@ -258,7 +258,7 @@ export function fieldsFromView(res: BridgeResult<BridgeSettingsView>): Fields {
     allowKinds: '',
     firstTurnWord: '',
     bootstrapMaxTokens: readNumber(value, 'bootstrapMaxTokens', readNumber(base, 'bootstrapMaxTokens', 0)),
-    usePtcMode: readBoolean(value, 'usePtcMode', readBoolean(base, 'usePtcMode', true)),
+    usePtcMode: readBoolean(value, 'usePtcMode', readBoolean(base, 'usePtcMode', false)),
     injectPrompt: readBoolean(value, 'injectPrompt', readBoolean(base, 'injectPrompt', true)),
     skillSwitches: value.skillSwitches !== undefined || base.skillSwitches !== undefined
       ? { ...readSkillSwitches(base, 'skillSwitches'), ...readSkillSwitches(value, 'skillSwitches') }

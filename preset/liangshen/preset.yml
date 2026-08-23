@@ -1,7 +1,7 @@
 # liangshen（梁神模式）—— 官方 dsh-web-ui @linxin666/dsh-liangshen 预设的
 # 本插件单文件化拆解：两阶段锚定（首轮 Minimal 双工具 + promoteGate 门控晋升）
 # + PTC 单 run_code 呈现 + 晋升后延迟注入（deferredSources）+ instruction-hint 转换。
-# 全部机制已参数化到引擎模块（tool-bootstrap / context-gate），无本地 .mjs。
+# 全部机制已参数化到引擎模块（tool-bootstrap / context-gate / code-presentation），无本地 .mjs。
 id: liangshen
 name: 梁神模式
 version: 1.0.0
@@ -13,6 +13,7 @@ meta:
 modules:
   - context-gate
   - tool-bootstrap
+  - code-presentation
   - official-agent-instructions
   - persistent-shell
   - custom-bash
@@ -38,9 +39,10 @@ moduleConfigs:
     promoteAfterFirstResponse: true
     bootstrapMaxTokens: 1024
     compactionTools: [read, write, edit, glob, grep, todo_write, ask_user_question]
-    usePtcMode: true
     personaSectionsOnly: true
     workspaceLine: true
+  code-presentation:
+    usePtcMode: true
   context-gate:
     messageSources: [user, goal]
     deferredSources: [agent-instructions, skill-catalog]
@@ -48,8 +50,6 @@ moduleConfigs:
     instructionHint: true
 params:
 promptConfigs:
-  # 晋升后注入 preset.md 内容（custom-fallback 策略：自定义锚定词命中后注入一次）。
-  # phase-1 由 context-gate 的 messageSources 白名单拦截，晋升后随普通注入恢复。
   - id: prompt-injector
     name: preset.md 注入
     enabled: true

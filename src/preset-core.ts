@@ -32,7 +32,7 @@ export function buildCordis(prompt: string, options: BuildCordisOptions = {}): s
     guideCustom: options.guideCustom === true,
     guideText: typeof options.guideText === 'string' ? options.guideText : '',
     injectPrompt: options.injectPrompt !== false,
-    usePtcMode: options.usePtcMode !== false,
+    usePtcMode: typeof options.usePtcMode === 'boolean' ? options.usePtcMode : undefined,
     bootstrapMaxTokens: Number.isSafeInteger(options.bootstrapMaxTokens) && (options.bootstrapMaxTokens ?? 0) > 0
       ? options.bootstrapMaxTokens
       : 0,
@@ -61,6 +61,17 @@ export function buildCordis(prompt: string, options: BuildCordisOptions = {}): s
     toolFilterDeny: options.toolFilterDeny,
     maxDepth: options.maxDepth,
     allowKinds: options.allowKinds,
+    promoteGate: options.promoteGate,
+    promoteAfterFirstResponse: options.promoteAfterFirstResponse,
+    maxPromoteSteps: options.maxPromoteSteps,
+    bootstrapTools: options.bootstrapTools,
+    compactionTools: options.compactionTools,
+    personaSectionsOnly: options.personaSectionsOnly,
+    workspaceLine: options.workspaceLine,
+    messageSources: options.messageSources,
+    deferredSources: options.deferredSources,
+    deferredGraceSteps: options.deferredGraceSteps,
+    instructionHint: options.instructionHint,
     firstTurnWord: typeof options.firstTurnWord === 'string' && options.firstTurnWord.length > 0
       ? options.firstTurnWord
       : undefined,

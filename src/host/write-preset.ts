@@ -98,7 +98,8 @@ export interface WritePresetOptions {
   /** 是否注入 agents.md 内容到 instruction-hint（false 时 instruction-hint 走引擎默认提示/动态探测）。 */
   injectAgentsPrompt?: boolean
   bootstrapMaxTokens: number
-  usePtcMode: boolean
+  /** PTC (Code Mode) 呈现开关；undefined = 模板 preset.yml params / 引擎默认（false）。 */
+  usePtcMode: boolean | undefined
   /** 写入 agents-instruction.txt 供 instruction-hint 配置读取;不传则使用本地默认 hint。 */
   agentsInstructionText?: string
   presetDir: string
@@ -132,7 +133,8 @@ function runtimeOf(options: WritePresetOptions, prompt: string): Record<string, 
     guideCustom: options.guideCustom === true,
     guideText: typeof options.guideText === 'string' ? options.guideText : '',
     injectPrompt: options.injectPrompt !== false,
-    usePtcMode: options.usePtcMode !== false,
+    // 透传：未声明 = 模板 preset.yml params / 引擎默认（false）兜底，不再强制 true。
+    usePtcMode: typeof options.usePtcMode === 'boolean' ? options.usePtcMode : undefined,
     bootstrapMaxTokens: Number.isSafeInteger(options.bootstrapMaxTokens) ? options.bootstrapMaxTokens : 0,
     modelProvider: typeof options.modelProvider === 'string' && options.modelProvider.length > 0
       ? options.modelProvider

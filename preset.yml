@@ -78,10 +78,24 @@ params:
   complexPattern: "架构|重构|设计|系统|全面|深度|迁移|兼容|审查|architecture|refactor|comprehensive|design|system|migrate|review"
 
   # ── PTC 模式 / 门控 ──
-  usePtcMode: true               # true=使用 PTC 模式（子代理 prompt-config-engine 行）
+  # 晋升门控与状态机参数（参数桥扁平键，直达 tool-bootstrap / context-gate /
+  # code-presentation 模块行 config；缺省 = 引擎默认，moduleConfigs 声明时优先）：
+  usePtcMode: false              # false=默认关闭；true=晋升后 Code Mode (PTC) 呈现（code-presentation 行，opt-in）
   bootstrapMaxTokens: 0          # 首轮工具目录引导的 maxTokens 上限；0=不封顶
   injectPrompt: true             # true=we 确认后注入 preset.md 一次
   allowKinds: "[skill-invocation, near-anchor, router-guide]"  # 注入 kind 白名单（context-gate 门控；空=白名单全拦，危险）
+  # promoteGate: false            # 门控晋升：首段 reasoning minimal-like + 工具调用才晋升
+  # promoteAfterFirstResponse: false  # 无工具首响应 / 首轮 turn/end 即晋升
+  # maxPromoteSteps: 4            # 门控回退：步数达上限强制晋升
+  # bootstrapTools: [bash, str_replace_editor]  # 首轮工具窄化集（必须非空；"只要 PTC" = 不挂 tool-bootstrap 行）
+  # compactionTools: []           # 压缩后恢复集（模型中途继续工作的核心工具）
+  # personaSectionsOnly: false    # phase-1 提示词段只留 persona
+  # workspaceLine: false          # 晋升后 persona 附加工作目录行
+  # phase1FirstCallInstruction: ""  # phase-1 persona 追加的首次调用指令行
+  # messageSources: []            # context-gate phase-1 消息源白名单（空 = 不启用）
+  # deferredSources: []           # 晋升后延迟注入的 source kind
+  # deferredGraceSteps: 0         # 延迟注入宽限步数
+  # instructionHint: false        # 晋升后 agent-instructions 全文 → 一次性 hint
 
   # ── 人设 ──
   # 主对话自定义模型人设：主对话命中快速模型（Flash 档）时替换人设；
@@ -357,17 +371,18 @@ promptConfigs:
 #     denyReason: 本预设禁用 web 工具
 
 # ── modules：引擎行/组模块装配顺序（增删即改装配）───────────────────────────
-# 24 个可用模块：context-gate / tool-filter / tool-bootstrap /
-# router-first-turn / prompt-config-engine / run-code-env / persona /
-# tool-bash / tool-pwsh / persistent-shell / custom-bash / tool-fs /
-# tool-fs-search / bootstrap-filesystem / tool-jobs / skill-filesystem /
-# skill-search / tool-goal / planning / compaction / delegation /
-# tool-ask-user / tool-todo / tool-web
+# 25 个可用模块：context-gate / tool-filter / tool-bootstrap / code-presentation /
+# prompt-config-engine / run-code-env / persona / tool-bash / tool-pwsh /
+# persistent-shell / custom-bash / tool-fs / tool-fs-search / str-replace-editor /
+# bootstrap-filesystem / tool-jobs / skill-filesystem / skill-search / tool-goal /
+# planning / compaction / delegation / tool-ask-user / tool-todo / tool-web
+# 晋升门控三件套：context-gate（注入门控）+ tool-bootstrap（目录相位）+
+# code-presentation（PTC 呈现；「只要 PTC」= 只挂本行）。
 modules:
   - context-gate                 # 上下文门控（晋升后才放行注入）
   - tool-filter                  # 主对话工具过滤
   - tool-bootstrap               # 工具目录引导
-  - router-first-turn            # 首轮任务分类路由
+  - code-presentation            # 晋升后 Code Mode (PTC) 呈现
   - prompt-config-engine         # 提示词注入引擎（必需行，勿删）
   - run-code-env                 # 代码运行环境变量注入
   - persona                      # 人设组装
@@ -377,6 +392,7 @@ modules:
   - custom-bash                  # 自定义 bash（超时/输出上限）
   - tool-fs                      # 文件系统工具
   - tool-fs-search               # 文件搜索工具
+  - str-replace-editor           # 精确字符串编辑工具
   - bootstrap-filesystem         # 引导期文件系统
   - tool-jobs                    # 任务面板
   - skill-filesystem             # 技能文件系统
@@ -401,9 +417,8 @@ moduleConfigs:
   tool-bootstrap:
     includeSubagents: false      # true=子代理工具目录跟随 bootstrap→晋升
     promoteOn: either            # 晋升触发：either / main / subagent
-  router-first-turn:
-    hideSectionPrefixes: ["mnemon:"]  # 隐藏这些前缀的 system 段
-    includeSubagents: false      # true=子代理首轮也做任务分类
+  code-presentation:
+    usePtcMode: false            # false=默认关闭；true=显式开启晋升后 Code Mode (PTC) 呈现
   run-code-env:
     envKeys: [PATH, PATHEXT, HOME, USERPROFILE, USERNAME, COMPUTERNAME, OS, TEMP, TMP, SystemRoot, ProgramFiles, ProgramFiles(x86), LOCALAPPDATA, APPDATA]  # 注入的环境变量白名单
   context-gate:

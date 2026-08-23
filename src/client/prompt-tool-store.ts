@@ -78,7 +78,7 @@ const EMPTY_SWITCHES: SwitchSnapshot = {
   subagentTemperature: '',
   subagentMaxTokens: '',
   bootstrapMaxTokens: 0,
-  usePtcMode: true,
+  usePtcMode: false,
   injectPrompt: true,
   skillSwitches: {},
   skillOrder: [],

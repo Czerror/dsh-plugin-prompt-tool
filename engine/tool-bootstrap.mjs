@@ -2,9 +2,9 @@
  * Anchored tool bootstrap — keep the FIRST model request on the Minimal
  * preset's REAL tool schema (persistent `bash` + `str_replace_editor`), then
  * keep the assembled catalog once the session has produced its first durable
- * promotion signal; `usePtcMode` optionally switches the wire presentation to
- * Code Mode (PTC). Injected-context control lives in the companion
- * `context-gate` plugin, not here.
+ * promotion signal. Code Mode (PTC) wire presentation lives in the companion
+ * `code-presentation` plugin (mounted as a separate row), not here.
+ * Injected-context control lives in the companion `context-gate` plugin.
  *
  * GATE MODE (liangshen stabilize 扩展, source: xiaobright/dsh-anchored-standard
  * MIT + phase-1 quarantine): `promoteGate: true` gates the promotion on the
@@ -70,10 +70,8 @@
  * context-gate row's flag when both rows are present.
  *
  * POST-PROMOTION CATALOG (prompt-tool patch): after promotion both modes
- * keep the assembled catalog. `usePtcMode` switches the wire presentation
- * to Code Mode (PTC, single run_code) instead of narrowing the resident set.
- * The controlled phase below still narrows the catalog before promotion and
- * after compaction.
+ * keep the assembled catalog (no narrowing). The controlled phase below
+ * still narrows the catalog before promotion and after compaction.
  * COMPACTION (local addition): a compaction rewrites the whole surface, so the
  * first post-compaction request is a "second first request". Promotion is
  * epoch-aware (see compaction-epoch.mjs): after `compaction/end` the session
@@ -114,7 +112,7 @@ export const inject = []
 /** Every config key this plugin accepts — anything else is a typo. */
 const ALLOWED_KEYS = new Set([
   'bootstrapTools', 'promoteOn', 'bootstrapMaxTokens', 'compactionTools',
-  'includeSubagents', 'usePtcMode',
+  'includeSubagents',
   'promoteGate', 'maxPromoteSteps', 'promoteAfterFirstResponse',
   'personaSectionsOnly', 'workspaceLine', 'phase1FirstCallInstruction',
 ])
@@ -167,7 +165,6 @@ export function apply(ctx, config) {
   const promoteEvents = parsePromoteOn(name, source.promoteOn)
   const bootstrapMaxTokens = optionalPositiveInt(source.bootstrapMaxTokens, 'bootstrapMaxTokens')
   const includeSubagents = booleanOption(name, source.includeSubagents, 'includeSubagents', false)
-  const usePtcMode = booleanOption(name, source.usePtcMode, 'usePtcMode', true)
   const personaSectionsOnly = booleanOption(name, source.personaSectionsOnly, 'personaSectionsOnly', false)
   const workspaceLine = booleanOption(name, source.workspaceLine, 'workspaceLine', false)
   const phase1FirstCallInstruction = typeof source.phase1FirstCallInstruction === 'string'
@@ -185,48 +182,7 @@ export function apply(ctx, config) {
     maxPromoteSteps: source.maxPromoteSteps,
   })
 
-  // prompt-tool patch: optional Code Mode (PTC) wire presentation after promotion.
-  const presentationBySession = new WeakMap()
-  const agentBySession = new WeakMap()
-  const presentationState = (session) => {
-    let state = presentationBySession.get(session)
-    if (state === undefined) {
-      state = { applied: false, disposer: undefined }
-      presentationBySession.set(session, state)
-    }
-    return state
-  }
-  const applyCodePresentation = (agent) => {
-    const session = agent?.session
-    if (session === undefined) return
-    const state = presentationState(session)
-    if (state.applied) return
-    const tools = agent.ctx?.tools
-    if (tools === undefined || typeof tools.presentAs !== 'function') return
-    state.disposer = tools.presentAs('code')
-    state.applied = true
-  }
-  const releaseCodePresentation = (session) => {
-    const state = presentationBySession.get(session)
-    if (state === undefined) return
-    if (typeof state.disposer === 'function') {
-      try { state.disposer() } catch { /* never brick the session */ }
-    }
-    state.disposer = undefined
-    state.applied = false
-  }
   ctx.on('session/event', (session, event) => promotion.observe(session, event))
-
-  ctx.on('session/event', (session, event) => {
-    if (!usePtcMode) return
-    if (event.type === 'compaction/end') {
-      releaseCodePresentation(session)
-      return
-    }
-    if (event.type !== 'step/end' && event.type !== 'turn/end') return
-    const agent = agentBySession.get(session)
-    if (agent !== undefined && promotion.status(agent).promoted) applyCodePresentation(agent)
-  })
 
   const warnOnce = createWarnOnce(ctx, name)
 
@@ -273,18 +229,15 @@ export function apply(ctx, config) {
       const agent = context.agent
       if (agent === undefined) return assembled
       if (agent.session === undefined) return assembled
-      agentBySession.set(agent.session, agent)
       if ((agent.session?.header?.delegationDepth ?? 0) > 0 && !includeSubagents) {
         // 默认：子代理继承完整目录（历史 prompt-tool 默认）；
         // includeSubagents=true 时落到下方正常相位逻辑（首轮裁剪 + 晋升）。
-        if (usePtcMode) applyCodePresentation(agent)
         return assembled
       }
       const status = promotion.status(agent)
       if (status.promoted) {
-        // prompt-tool patch: both modes keep the assembled catalog after promotion.
-        // usePtcMode switches the wire presentation instead of narrowing resident tools.
-        if (usePtcMode) applyCodePresentation(agent)
+        // prompt-tool patch: keep the assembled catalog after promotion
+        // (Code Mode presentation is the companion code-presentation row's job).
         return workspaceLine ? withWorkspaceLine(assembled, agent) : assembled
       }
       // Controlled phase: the bootstrap pair; after a compaction, plus the

@@ -3,9 +3,7 @@
   config:
     bootstrapTools: [bash, str_replace_editor]
     promoteOn: either
-    includeSubagents: true
-    usePtcMode: __usePtcMode__
-    __bootstrapMaxTokens__
+    includeSubagents: false
     # Post-compaction core work set: the model is mid-task and needs to keep
     # working, but faces a small catalog instead of the full Standard set.
     compactionTools: [read, write, edit, glob, grep, todo_write, ask_user_question]

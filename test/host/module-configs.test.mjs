@@ -132,3 +132,40 @@ test('buildCordis 透传 allowKinds 覆盖模板默认', () => {
   const defaultGate = defaults.find((row) => row?.id === 'context-gate')
   assert.deepEqual(defaultGate.config.allowKinds, ['skill-invocation', 'near-anchor', 'router-guide'])
 })
+
+test('参数桥：门控/状态机扁平键直达模块行 config（不 token 化）', () => {
+  const rows = parseYaml(buildCordis('P', {
+    promoteGate: true,
+    maxPromoteSteps: 6,
+    promoteAfterFirstResponse: true,
+    messageSources: ['user', 'goal'],
+    deferredSources: ['agent-instructions'],
+    deferredGraceSteps: 2,
+    instructionHint: true,
+    personaSectionsOnly: true,
+    workspaceLine: true,
+    compactionTools: ['read', 'write'],
+    bootstrapMaxTokens: 2048,
+    usePtcMode: false,
+  }))
+  const bootstrap = rows.find((row) => row?.id === 'tool-bootstrap')
+  assert.equal(bootstrap.config.promoteGate, true)
+  assert.equal(bootstrap.config.maxPromoteSteps, 6)
+  assert.equal(bootstrap.config.promoteAfterFirstResponse, true)
+  assert.equal(bootstrap.config.personaSectionsOnly, true)
+  assert.equal(bootstrap.config.workspaceLine, true)
+  assert.equal(bootstrap.config.bootstrapMaxTokens, 2048)
+  assert.deepEqual(bootstrap.config.compactionTools, ['read', 'write'])
+  const gate = rows.find((row) => row?.id === 'context-gate')
+  assert.deepEqual(gate.config.messageSources, ['user', 'goal'])
+  assert.deepEqual(gate.config.deferredSources, ['agent-instructions'])
+  assert.equal(gate.config.deferredGraceSteps, 2)
+  assert.equal(gate.config.instructionHint, true)
+  const presentation = rows.find((row) => row?.id === 'code-presentation')
+  assert.equal(presentation.config.usePtcMode, false, 'usePtcMode=false 直达 code-presentation 行')
+  // 未声明的门控键不合并（行默认 / 引擎默认生效）。
+  const defaults = parseYaml(buildCordis('P'))
+  const defaultBootstrap = defaults.find((row) => row?.id === 'tool-bootstrap')
+  assert.equal(defaultBootstrap.config.promoteGate, undefined, '未声明不合并')
+  assert.equal(defaultBootstrap.config.bootstrapMaxTokens, undefined, 'bootstrapMaxTokens 0/未声明不合并')
+})

@@ -157,7 +157,8 @@ export function apply(ctx: Context, configIn: Config): void {
     runtime.bootstrapMaxTokens = Number.isSafeInteger(params.bootstrapMaxTokens) && (params.bootstrapMaxTokens as number) >= 0
       ? params.bootstrapMaxTokens as number
       : 0
-    runtime.usePtcMode = params.usePtcMode !== false
+    // 透传：未声明 = 模板 preset.yml params / 引擎默认（false）兜底。
+    runtime.usePtcMode = typeof params.usePtcMode === 'boolean' ? params.usePtcMode : undefined
     runtime.injectPrompt = params.injectPrompt !== false
     runtime.subagentPersona = asString(params.subagentPersona) || undefined
     runtime.toolFilterAllow = params.toolFilterAllow as string[] | string | undefined
@@ -530,7 +531,7 @@ export function apply(ctx: Context, configIn: Config): void {
     bootstrapMaxTokens: Number.isSafeInteger(initialParams.bootstrapMaxTokens) && (initialParams.bootstrapMaxTokens as number) >= 0
       ? initialParams.bootstrapMaxTokens as number
       : 0,
-    usePtcMode: initialParams.usePtcMode !== false,
+    usePtcMode: typeof initialParams.usePtcMode === 'boolean' ? initialParams.usePtcMode : undefined,
     subagentPersona: asString(initialParams.subagentPersona) || undefined,
     toolFilterAllow: initialParams.toolFilterAllow as string[] | string | undefined,
     toolFilterDeny: initialParams.toolFilterDeny as string[] | string | undefined,

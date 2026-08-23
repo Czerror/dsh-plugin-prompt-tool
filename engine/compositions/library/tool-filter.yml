@@ -6,7 +6,5 @@
 
 - id: tool-filter
   name: ./engine/tool-filter.mjs
-  config:
-    allow: __mainToolFilterAllow__
-    deny: __mainToolFilterDeny__
-    includeSubagents: __mainToolFilterSubagents__
+  # config 由参数桥按 params.toolFilterAllow/Deny/Subagents 合并；
+  # 未声明 = 不过滤（官方默认），见 tool-filter.mjs。

@@ -178,7 +178,8 @@ export interface RuntimeOptions {
   guideText: string
   guideCustom: boolean
   bootstrapMaxTokens: number
-  usePtcMode: boolean
+  /** PTC (Code Mode) 呈现开关；undefined = 模板/引擎默认（false，opt-in）。 */
+  usePtcMode: boolean | undefined
   /** 技能候选排序基数。 */
   skillRankBase: number
   /** 常驻规则文件目标路径。 */

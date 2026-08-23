@@ -101,6 +101,28 @@ export interface BuildCordisOptions {
   bootstrapMaxTokens?: number
   /** 使用 PTC 模式：默认 true。 */
   usePtcMode?: boolean
+  /** 门控晋升：首段 reasoning minimal-like + 工具调用才晋升（tool-bootstrap 参数桥扁平键）。 */
+  promoteGate?: boolean
+  /** 无工具首响应 / 首轮 turn/end 即晋升。 */
+  promoteAfterFirstResponse?: boolean
+  /** 门控回退：步数达上限强制晋升（默认 4）。 */
+  maxPromoteSteps?: number
+  /** 首轮工具窄化集（覆盖行默认 [bash, str_replace_editor]；必须非空）。 */
+  bootstrapTools?: string[] | string
+  /** 压缩后恢复工具集（模型中途继续工作的核心工具）。 */
+  compactionTools?: string[] | string
+  /** phase-1 提示词段只留 persona。 */
+  personaSectionsOnly?: boolean
+  /** 晋升后 persona 附加工作目录行。 */
+  workspaceLine?: boolean
+  /** context-gate phase-1 消息源白名单（空 = 不启用）。 */
+  messageSources?: string[] | string
+  /** 晋升后延迟注入的 source kind。 */
+  deferredSources?: string[] | string
+  /** 延迟注入宽限步数。 */
+  deferredGraceSteps?: number
+  /** 晋升后 agent-instructions 全文 → 一次性 hint。 */
+  instructionHint?: boolean
 }
 
 /** 文本块缩进 n 个空格（YAML block scalar）。 */
