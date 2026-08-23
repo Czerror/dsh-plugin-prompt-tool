@@ -349,12 +349,25 @@ export function PromptConfigForm(props: {
         </Field>
       </div>
       <span className={styles.configFieldStack}>
-        <span className={styles.configFieldLabel}>text（注入文本；空 = 不注入）</span>
-        <textarea className={styles.configTextarea} aria-label="注入文本（text，空 = 不注入）" value={config.text ?? ''} spellCheck={false} onChange={(e) => { autoResizeTextarea(e); onPatch({ text: e.target.value }) }} />
-      </span>
-      <span className={styles.configFieldStack}>
-        <span className={styles.configFieldLabel}>texts（多段内容块，每行一段；text 为空时生效）</span>
-        <textarea className={styles.configTextarea} aria-label="多段内容块（texts，每行一段；text 为空时生效）" value={(config.texts ?? []).join('\n')} spellCheck={false} onChange={(e) => { autoResizeTextarea(e); onPatch({ texts: e.target.value.split('\n').filter((line) => line.length > 0) }) }} />
+        <span className={styles.configFieldLabel}>{'内容（注入文本；空 = 不注入；变量 {{key}} 插值）'}</span>
+        <textarea
+          className={styles.configTextarea}
+          aria-label="注入内容（空 = 不注入）"
+          value={[config.text ?? '', ...(config.texts ?? [])].filter((item) => item.length > 0).join('\n')}
+          spellCheck={false}
+          onChange={(e) => {
+            autoResizeTextarea(e)
+            const next = e.target.value
+            // 内容资产（prompt-injector / instruction-hint）走生成目录文件通道（text →
+            // params.text）；普通配置保存统一写 texts 单段整块（对齐官方 text 单字符串
+            // 语义；text 字段兼容读取，编辑后归一）。
+            if (config.id === 'prompt-injector' || config.fill === 'instruction-hint') {
+              onPatch({ text: next, texts: [] })
+            } else {
+              onPatch({ text: undefined, texts: next.trim().length > 0 ? [next] : [] })
+            }
+          }}
+        />
       </span>
       <VariablesEditor value={config.variables} onChange={(value) => onPatch({ variables: value })} />
       <StrategyParamsFields strategy={strategy} layer={config.layer} params={config.params} onPatch={(value) => onPatch({ params: value })} />

@@ -14,6 +14,13 @@
 
 ## [Unreleased]
 
+### 合并 text / texts 编辑框为单一内容框（对齐官方 text 单字符串语义）（2026-08-23）
+
+- **依据**：dsh 官方（`packages/core/system-prompt/src/index.ts` L67/L84）prompt 条目 `text` 为单字符串（或函数 provider），多段靠多条 section（order 拼接）——无 `texts` 数组概念；`texts` 是我们引擎的自研扩展。
+- **合并**：模块卡片表单的 text / texts 两个编辑框合并为「内容（注入文本；空 = 不注入；变量 {{key}} 插值）」单框——普通配置保存统一写 `texts: [整块]`（单段，对齐官方语义；变量为空只留空位不整段消失）；`text` 字段保留兼容读取，编辑后归一。
+- **内容资产兼容**：prompt-injector / instruction-hint（`config.id` / `fill` 判定）编辑仍写 `text`（生成目录文件通道 params.text，行为不变）。
+- 验证：typecheck / lint / test 全绿（272 pass/0 fail）。
+
 ### 修复 Variables 卡片「删除（清空）」失效（2026-08-23）
 
 - **根因**：`clearAll` 先 `setTemplateVariables({})` 再调 `saveTemplateVariables()`——React setState 异步，保存闭包里的 state 还是旧值，后端写回旧变量，卡片清不掉。
