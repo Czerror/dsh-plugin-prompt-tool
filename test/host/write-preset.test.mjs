@@ -395,6 +395,16 @@ test('writePreset 拒绝非法 presetTemplate（路径穿越防护）', () => {
       () => writePreset('PROMPT', { ...makeOptions(presetDir), presetTemplate: 'a/b' }),
       /invalid presetTemplate/,
     )
+    // 官方 agent-presets id 约束（PRESET_ID /^[a-z0-9][a-z0-9-]*$/）：中文/大写
+    // 目录名会被宿主 discovery 静默跳过（会话 resume 报 preset not found），必须 fail loud。
+    assert.throws(
+      () => writePreset('PROMPT', { ...makeOptions(presetDir), presetTemplate: '夏瑾-天琴座-beta-2-42' }),
+      /invalid presetTemplate/,
+    )
+    assert.throws(
+      () => writePreset('PROMPT', { ...makeOptions(presetDir), presetTemplate: 'Anchored' }),
+      /invalid presetTemplate/,
+    )
     assert.ok(!existsSync(join(dir, 'escape')), '不得写入容器根之外')
   } finally {
     rmSync(dir, { recursive: true, force: true })

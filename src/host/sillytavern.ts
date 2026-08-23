@@ -13,6 +13,7 @@
  *   - modules 按需组装：prompt-config-engine 始终，system-section 注入需要
  *     persona（complete: false 允许 system-section 生效）。
  */
+import { createHash } from 'node:crypto'
 import type { PresetSpec } from './manifest.ts'
 
 /** ST 运行时指令（渲染时执行、不发送给模型）：setvar/getvar/ERA/trim/注释 → 剥离。 */
@@ -323,9 +324,7 @@ export function convertStToPreset(card: unknown, baseName: string): PresetSpec {
     moduleConfigs['tool-filter'] = { includeSubagents: false, deny: ['web_search', 'web_fetch'] }
   }
 
-  // 清洗保留中文（角色卡文件名常为中文）：全中文名不再兜底成固定 sillytavern
-  // （多张中文卡会撞 id 互相覆盖），而是直接以中文为 id（目录名/宿主发现均支持）。
-  const presetId = baseName.toLowerCase().replace(/[^a-z0-9\u4e00-\u9fff]+/g, '-').replace(/^-+|-+$/g, '') || 'sillytavern'
+  const presetId = stPresetId(baseName)
   // 预设名优先取卡片 name 字段；缺失/空白时回退文件名（去 .json 的 baseName）。
   return {
     id: presetId,
@@ -339,4 +338,13 @@ export function convertStToPreset(card: unknown, baseName: string): PresetSpec {
     moduleConfigs,
     promptConfigs: configs,
   }
+}
+
+/** ST 导入预设 id：必须是官方 agent-presets 可发现的目录名（PRESET_ID =
+ *  /^[a-z0-9][a-z0-9-]*$/——含中文的目录会被宿主 discovery 静默跳过，会话
+ *  resume 报 preset not found）。文件名 slug 化（去中文）；纯中文名退化为
+ *  st-<文件名短哈希>（唯一且合法）；显示名 name 仍保留中文原名。 */
+export function stPresetId(baseName: string): string {
+  const slug = baseName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
+  return slug || `st-${createHash('sha1').update(baseName).digest('hex').slice(0, 6)}`
 }

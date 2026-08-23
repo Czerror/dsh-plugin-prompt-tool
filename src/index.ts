@@ -553,6 +553,12 @@ export function apply(ctx: Context, configIn: Config): void {
     const s = hostSettingsService
     if (s === undefined) return
     const template = runtime.presetTemplate
+    // 官方 agent-presets discovery 只认 /^[a-z0-9][a-z0-9-]*$/ 目录名：非法 id
+    // （如含中文）同步进宿主 default 会让官方会话 resume 报 preset not found。
+    if (!/^[a-z0-9][a-z0-9-]*$/.test(template)) {
+      warn(ctx, `prompt-tool: 预设 id ${JSON.stringify(template)} 不符合官方 agent-presets 命名（^[a-z0-9][a-z0-9-]*$），跳过宿主 default 同步；请将预设目录改名为合法 id`)
+      return
+    }
     if (reason === 'switch' && lastSyncedHostDefault === template) return
     lastSyncedHostDefault = template
     try {
@@ -905,6 +911,7 @@ registerTuiCommand(
 // 公共 API：宿主与测试复用 settings schema 与提示词配置权威校验。
 export { Config, PromptSettingsSchema } from './config.ts'
 export { writePreset } from './host/write-preset.ts'
+export { stPresetId } from './host/sillytavern.ts'
 export { applyModuleConfigs, savePresetParams } from './host/manifest.ts'
 export { loadPresetSpec, resolvePresetParams } from './host/manifest.ts'
 export type { PresetSpec } from './host/manifest.ts'

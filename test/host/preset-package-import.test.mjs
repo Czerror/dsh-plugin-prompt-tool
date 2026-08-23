@@ -9,7 +9,7 @@ import { parse as parseYaml } from 'yaml'
 // 因此本文件用动态 import 加载 lib，避免污染真实用户预设目录。
 const home = mkdtempSync(join(tmpdir(), 'pt-package-import-'))
 process.env.DSH_HOME = home
-const { registerSettingsBridge } = await import('../../lib/index.mjs')
+const { registerSettingsBridge, stPresetId } = await import('../../lib/index.mjs')
 
 const PREFIX = '/api/prompt-tool/settings'
 const PRESETS = join(home, '.agent-presets')
@@ -369,7 +369,10 @@ test('importPresetPackage：TavernHelper 扩展注入物剥离（JS 脚本不进
     }) }],
   })
   assert.equal(status, 200)
-  const presetFile = join(PRESETS, '带扩展角色', 'preset.yml')
+  // 纯中文文件名 → id 退化为 st-<hash>（官方 agent-presets 不接受中文目录名）。
+  const presetId = stPresetId('带扩展角色')
+  assert.match(presetId, /^st-[0-9a-f]{6}$/)
+  const presetFile = join(PRESETS, presetId, 'preset.yml')
   const content = readFileSync(presetFile, 'utf8')
   assert.ok(!content.includes('opencc') && !content.includes('tavern_helper') && !content.includes('regex_scripts'),
     '扩展注入物（TavernHelper 脚本/正则）不进转换产物')

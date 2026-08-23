@@ -213,11 +213,12 @@ export function writePreset(prompt: string, options: WritePresetOptions): void {
   const templateName = typeof options.presetTemplate === 'string' && options.presetTemplate.trim().length > 0
     ? options.presetTemplate.trim()
     : 'anchored'
-  // 安全边界：templateName 现在是写入路径段（presetDir/<template>/），只允许
-  // 目录名形态（含中文：角色卡/预设导入的 id 可含中文），拒绝路径分隔符与 ..
-  // （防穿越写入预设根之外）。
-  if (!/^[a-zA-Z0-9\u4e00-\u9fff_-]+$/.test(templateName)) {
-    throw new Error(`invalid presetTemplate ${JSON.stringify(templateName)}: must be a bare directory name`)
+  // 安全边界：templateName 现在是写入路径段（presetDir/<template>/），同时必须是
+  // 官方 agent-presets 可发现的预设 id（PRESET_ID = /^[a-z0-9][a-z0-9-]*$/）——
+  // 含中文等非法 id 会被宿主 discovery 静默跳过（会话 resume 报 preset not found），
+  // 这里 fail loud 拒绝，防止生成官方不可见目录。
+  if (!/^[a-z0-9][a-z0-9-]*$/.test(templateName)) {
+    throw new Error(`invalid presetTemplate ${JSON.stringify(templateName)}: must match official agent-presets id /^[a-z0-9][a-z0-9-]*$/`)
   }
   const templateDir = resolvePresetDir(templateName)
   const spec = loadPresetSpec(templateDir)
