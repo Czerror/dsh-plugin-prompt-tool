@@ -569,6 +569,17 @@ export function buildModuleConfigsFromParams(params: Record<string, unknown>): R
   if (typeof params.phase1FirstCallInstruction === 'string' && params.phase1FirstCallInstruction.length > 0) {
     bootstrap.phase1FirstCallInstruction = params.phase1FirstCallInstruction
   }
+  // 渐进披露（stages 模式）：阶段定义/预放/推进工具/阶段文案全部参数化。
+  if (params.stages !== undefined) bootstrap.stages = params.stages
+  if (params.stagePreUnlock !== undefined && Number.isSafeInteger(params.stagePreUnlock)) {
+    bootstrap.stagePreUnlock = params.stagePreUnlock
+  }
+  if (typeof params.stageAdvanceTool === 'string' && params.stageAdvanceTool.length > 0) {
+    bootstrap.stageAdvanceTool = params.stageAdvanceTool
+  }
+  if (typeof params.stageSectionTemplate === 'string' && params.stageSectionTemplate.length > 0) {
+    bootstrap.stageSectionTemplate = params.stageSectionTemplate
+  }
   merge('tool-bootstrap', bootstrap)
 
   // context-gate：注入门控（kind 白名单 / 晋升后延迟注入 / instruction-hint 转换）。
@@ -586,6 +597,27 @@ export function buildModuleConfigsFromParams(params: Record<string, unknown>): R
   const presentation: Record<string, unknown> = {}
   if (params.usePtcMode !== undefined) presentation.usePtcMode = params.usePtcMode === true
   merge('code-presentation', presentation)
+
+  // page-check / delivery-gate：验证工具模块（可选挂载；config 参数化）。
+  const pageCheck: Record<string, unknown> = {}
+  if (typeof params.pageCheckBrowserPath === 'string' && params.pageCheckBrowserPath.length > 0) {
+    pageCheck.browserPath = params.pageCheckBrowserPath
+  }
+  if (params.pageCheckTimeoutMs !== undefined && Number.isSafeInteger(params.pageCheckTimeoutMs)) {
+    pageCheck.timeoutMs = params.pageCheckTimeoutMs
+  }
+  if (params.pageCheckLite !== undefined) pageCheck.lite = params.pageCheckLite === true
+  if (params.pageCheckRetry !== undefined) pageCheck.retry = params.pageCheckRetry === true
+  if (typeof params.pageCheckDescription === 'string' && params.pageCheckDescription.length > 0) {
+    pageCheck.description = params.pageCheckDescription
+  }
+  merge('page-check', pageCheck)
+  const deliveryGate: Record<string, unknown> = {}
+  if (params.deliveryRequireSmoke !== undefined) deliveryGate.requireSmoke = params.deliveryRequireSmoke === true
+  if (typeof params.deliveryDescription === 'string' && params.deliveryDescription.length > 0) {
+    deliveryGate.description = params.deliveryDescription
+  }
+  merge('delivery-gate', deliveryGate)
 
   // str-replace-editor：官方 minimal 行（默认官方值 16000，params 显式覆盖）。
   const editor: Record<string, unknown> = {}

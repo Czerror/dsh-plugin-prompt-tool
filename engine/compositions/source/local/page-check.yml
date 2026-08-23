@@ -1,0 +1,8 @@
+# module: page-check
+# source: engine/compositions/source/local/page-check.yml (本地附加,非官方模块)
+# headless Chrome 页面验证工具（参考 dsh-router-standard dev_page_check 自写）：
+# 截图 + DOM smoke + console/pageerror + title/selector + {js:} 本地引擎。
+# 可选模块：默认不挂载，预设 modules 声明即用；config 参数见 page-check.mjs。
+
+- id: page-check
+  name: ./engine/page-check.mjs

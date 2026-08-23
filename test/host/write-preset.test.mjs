@@ -482,6 +482,60 @@ test('savePresetParams 清理空 key（VariablesEditor 待编辑行不落盘）'
   }
 })
 
+test('P1 回归：晋升门控/渐进披露/验证工具参数键不进 variables.yml（PARAM_KEYS 覆盖）', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'pt-wp-paramkeys-'))
+  try {
+    // 复制 anchored 模板，params 加新增参数键（模拟用户手写/UI 保存）。
+    const homePresetDir = join(home, '.agent-presets')
+    cpSync(join(process.cwd(), 'preset', 'anchored'), join(homePresetDir, 'anchored'), { recursive: true })
+    const presetFile = join(homePresetDir, 'anchored', 'preset.yml')
+    const doc = parseDocument(readFileSync(presetFile, 'utf8'))
+    doc.setIn(['params', 'promoteGate'], true)
+    doc.setIn(['params', 'maxPromoteSteps'], 6)
+    doc.setIn(['params', 'bootstrapTools'], ['bash', 'read'])
+    doc.setIn(['params', 'messageSources'], ['user', 'goal'])
+    doc.setIn(['params', 'stagePreUnlock'], 2)
+    doc.setIn(['params', 'stages'], [
+      { name: '了解', tools: ['read', 'glob', 'grep'] },
+      { name: '开发', tools: ['write', 'edit'] },
+    ])
+    doc.setIn(['params', 'pageCheckTimeoutMs'], 30000)
+    doc.setIn(['params', 'deliveryRequireSmoke'], false)
+    writeFileSync(presetFile, doc.toString(), 'utf8')
+
+    writePreset('PROMPT', makeOptions(dir))
+
+    const pcDir = join(dir, 'anchored', 'prompt-configs')
+    const varsFile = join(pcDir, 'variables.yml')
+    const vars = parseYaml(readFileSync(varsFile, 'utf8'))
+    // 新增参数键必须被 PARAM_KEYS 排除：不得当作内容变量混入 variables.yml。
+    for (const key of ['promoteGate', 'maxPromoteSteps', 'bootstrapTools', 'messageSources',
+      'stagePreUnlock', 'pageCheckTimeoutMs', 'deliveryRequireSmoke']) {
+      assert.equal(vars[key], undefined, `variables.yml 不得含参数键 ${key}`)
+    }
+    // 配置 params 同样不含。
+    const configs = readdirSync(pcDir).filter((name) => name.endsWith('.yml') && name !== 'variables.yml')
+    for (const name of configs) {
+      const parsed = parseYaml(readFileSync(join(pcDir, name), 'utf8'))
+      for (const key of ['promoteGate', 'messageSources', 'stagePreUnlock', 'pageCheckTimeoutMs']) {
+        assert.equal(parsed.params?.[key], undefined, `配置 params 不得含 ${key}`)
+      }
+    }
+    // 参数桥落点：生成组合的 tool-bootstrap 行应含 promoteGate 等（params 声明生效）。
+    const cordis = readFileSync(join(dir, 'anchored', 'agent.cordis.yml'), 'utf8')
+    assert.ok(cordis.includes('promoteGate: true'), '参数桥把 promoteGate 合并进 tool-bootstrap 行')
+    assert.ok(cordis.includes('maxPromoteSteps: 6'))
+    assert.ok(cordis.includes('messageSources'), 'context-gate 行含 messageSources')
+    assert.ok(cordis.includes('stagePreUnlock: 2'), 'tool-bootstrap 行含 stagePreUnlock')
+    assert.ok(cordis.includes('name: 了解'), 'tool-bootstrap 行含 stages 阶段名')
+    assert.ok(cordis.includes('- read'), 'tool-bootstrap 行含 stages 工具集')
+    // page-check/delivery-gate 未挂载（anchored modules 无此行）：参数桥无行可合并，不产生残留。
+    assert.ok(!cordis.includes('pageCheckTimeoutMs'), '未挂载模块不产生 config 行')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
 test('顶层 model/subagentModel 段：读取展平进 params + 保存写顶层段（旧扁平键迁移）', () => {
   const dir = join(tmpdir(), `prompt-tool-modelseg-${process.pid}-${Date.now()}`)
   const presetDir = join(dir, 'preset')

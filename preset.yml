@@ -113,6 +113,21 @@ params:
   # ── 委派深度 ──
   maxDepth: ""                   # 子代理递归深度：0=禁止委派 / provider-managed / 正整数；空=官方默认
 
+  # ── 渐进披露（可选，tool-bootstrap stages 模式；不声明 = 两相窄化）──
+  # stages:                        # 阶段定义 [{name, tools}]；声明即激活多级阶段窄化
+  #   - { name: 了解, tools: [read, glob, grep] }
+  #   - { name: 开发, tools: [write, edit] }
+  #   - { name: 验证, tools: [pwsh, bash] }
+  # stagePreUnlock: 1              # 预放档数（调用预放工具 = 直达其档）
+  # stageAdvanceTool: phase_advance  # 阶段推进工具名
+  # stageSectionTemplate: ""       # 阶段状态 section 模板（{{stage}}/{{stageName}}/{{unlocked}}/{{total}}；空=不注入）
+  # ── 验证工具（可选模块 page-check / delivery-gate；modules 声明才挂载）──
+  # pageCheckBrowserPath: ""       # 显式浏览器路径（缺省探测 DSH_PAGE_RUNNER → Chrome/Edge）
+  # pageCheckTimeoutMs: 20000      # 页面检查硬超时
+  # pageCheckLite: false           # true=单帧低分辨率模式（重页）
+  # pageCheckRetry: true           # false=关闭自动重试
+  # deliveryRequireSmoke: true     # false=非页面交付物跳过 headless smoke
+
 # ── promptConfigs：注入提示词配置（三源合并：默认 < 目录 < 本段）──────────────
 # 每条配置的字段全开放：id / name / enabled / layer / strategy / position /
 # dedupe / promotion / subagents / modelScope / configKind / order / role /

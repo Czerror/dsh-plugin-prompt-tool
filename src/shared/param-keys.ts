@@ -18,5 +18,18 @@ export const PARAM_KEYS: ReadonlySet<string> = new Set([
   'subagentPersona',
   'toolFilterAllow', 'toolFilterDeny', 'maxDepth', 'allowKinds', 'firstTurnWord',
   'bootstrapMaxTokens', 'usePtcMode', 'injectPrompt',
+  // 晋升门控（tool-bootstrap 参数桥）。
+  'promoteGate', 'promoteAfterFirstResponse', 'maxPromoteSteps',
+  'bootstrapTools', 'compactionTools', 'personaSectionsOnly', 'workspaceLine',
+  'phase1FirstCallInstruction',
+  // context-gate 注入门控。
+  'messageSources', 'deferredSources', 'deferredGraceSteps', 'instructionHint',
+  // 渐进披露（stages 模式）。
+  'stages', 'stagePreUnlock', 'stageAdvanceTool', 'stageSectionTemplate',
+  // 验证工具（page-check / delivery-gate）。
+  'pageCheckBrowserPath', 'pageCheckTimeoutMs', 'pageCheckLite', 'pageCheckRetry',
+  'pageCheckDescription', 'deliveryRequireSmoke', 'deliveryDescription',
+  // 历史遗留（参数桥支持，UI 无专卡——高级参数 JSON 可编辑）。
+  'strReplaceEditorMaxOutputChars', 'toolFilterSubagents',
   'promptConfigs',
 ])

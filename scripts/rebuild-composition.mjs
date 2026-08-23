@@ -84,6 +84,8 @@ const MODULES = [
   { id: 'context-gate', from: 'local' },
   { id: 'tool-bootstrap', from: 'local' },
   { id: 'code-presentation', from: 'local' },
+  { id: 'page-check', from: 'local' },
+  { id: 'delivery-gate', from: 'local' },
   { id: 'prompt-config-engine', from: 'local' },
   { id: 'run-code-env', from: 'local' },
   { id: 'persona', from: 'minimal' },

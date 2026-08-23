@@ -19,6 +19,15 @@
  * appended to the phase-1 persona (test builds, issue #274) — unset keeps
  * the exact one-line Minimal anchor.
  *
+ * STAGES MODE (渐进披露, 参考 dsh-router-standard progressive disclosure 自写,
+ * MIT): `stages: [{ name, tools }]` 声明时激活多级阶段窄化——目录 = 当前阶段
+ * 工具 + 预放（stagePreUnlock 档，默认 1）；`stageAdvanceTool`（默认
+ * phase_advance）推进阶段；调用更高阶段工具 = 直达（自动跳到其档）；阶段
+ * 状态由 durable tool/call 事件推导（resume/reload 自动恢复，无文件），
+ * compaction 不重置（阶段是会话级进度）。阶段文案经 `stageSectionTemplate`
+ * 参数化（引擎只提供动态状态，不写死引导文本）。stages 与 promoteOn 门控
+ * 互不影响：阶段窄化从首轮开始，晋升/compaction 仍由 context-gate 管注入。
+ *
  * The phase is derived from durable session events, so resume and reload
  * preserve it. By default (`promoteOn: 'either'`) a session promotes after the
  * first `tool/call` OR the first `assistant/message`, whichever comes first:
@@ -115,6 +124,7 @@ const ALLOWED_KEYS = new Set([
   'includeSubagents',
   'promoteGate', 'maxPromoteSteps', 'promoteAfterFirstResponse',
   'personaSectionsOnly', 'workspaceLine', 'phase1FirstCallInstruction',
+  'stages', 'stagePreUnlock', 'stageAdvanceTool', 'stageAdvanceDescription', 'stageSectionTemplate',
 ])
 
 /** 预设 persona section 名（官方注册名 + 旧名）。 */
@@ -135,6 +145,25 @@ function stringList(value, field) {
 function stringListOrEmpty(value, field) {
   if (value === undefined) return []
   return stringList(value, field)
+}
+
+/** 阶段定义校验：非空数组，每项 { name: string, tools: 非空字符串数组 }。 */
+function stageDefs(value, field) {
+  if (value === undefined) return undefined
+  if (!Array.isArray(value) || value.length === 0) {
+    throw new TypeError(`${name}: ${field} must be a non-empty array of { name, tools }`)
+  }
+  return value.map((stage, index) => {
+    const label = `${field}[${index}]`
+    if (stage === null || typeof stage !== 'object' || Array.isArray(stage)) {
+      throw new TypeError(`${name}: ${label} must be an object`)
+    }
+    if (typeof stage.name !== 'string' || stage.name.length === 0) {
+      throw new TypeError(`${name}: ${label}.name must be a non-empty string`)
+    }
+    const tools = stringList(stage.tools, `${label}.tools`)
+    return { name: stage.name, tools }
+  })
 }
 
 
@@ -170,6 +199,73 @@ export function apply(ctx, config) {
   const phase1FirstCallInstruction = typeof source.phase1FirstCallInstruction === 'string'
     ? source.phase1FirstCallInstruction
     : ''
+  // 渐进披露（stages 模式）：声明时激活多级阶段窄化，替代"两相"窄化语义。
+  const stages = stageDefs(source.stages, 'stages')
+  const stagePreUnlock = source.stagePreUnlock === undefined
+    ? 1
+    : Number.isSafeInteger(source.stagePreUnlock) && source.stagePreUnlock >= 0
+      ? source.stagePreUnlock
+      : (() => { throw new TypeError(`${name}: stagePreUnlock must be an integer >= 0`) })()
+  const stageAdvanceTool = typeof source.stageAdvanceTool === 'string' && source.stageAdvanceTool.length > 0
+    ? source.stageAdvanceTool
+    : 'phase_advance'
+  const stageAdvanceDescription = typeof source.stageAdvanceDescription === 'string' && source.stageAdvanceDescription.length > 0
+    ? source.stageAdvanceDescription
+    : 'Declare the current stage complete and advance to the next stage (unlocks more tools). Call only when the current stage is genuinely done. Pre-unlocked tools are directly callable — using one jumps straight to its stage.'
+  const stageSectionTemplate = source.stageSectionTemplate === undefined
+    ? 'Stage {{stageName}} ({{stage}}/{{total}}). Unlocked tools: {{unlocked}}. Advance via {{advanceTool}} when the current stage is done.'
+    : (typeof source.stageSectionTemplate === 'string' ? source.stageSectionTemplate : '')
+  // 工具名 → 阶段索引（直达语义查询表）。
+  const toolStage = new Map()
+  if (stages !== undefined) {
+    stages.forEach((stage, index) => {
+      for (const tool of stage.tools) toolStage.set(tool, index)
+    })
+  }
+  /** sessionId -> 当前阶段（durable 推导；compaction 不重置）。 */
+  const stageBySession = new Map()
+  /** 从 tool/call 事件提取工具名（兼容 source.tool / toolName / name 形状）。 */
+  const toolNameOf = (event) => {
+    const data = event?.data
+    if (data === null || typeof data !== 'object') return ''
+    const message = data.message !== null && typeof data.message === 'object' ? data.message : data
+    if (message === null || typeof message !== 'object') return ''
+    if (typeof message?.source?.tool === 'string') return message.source.tool
+    if (typeof message?.toolName === 'string') return message.toolName
+    if (typeof message?.name === 'string') return message.name
+    return ''
+  }
+  const advanceStage = (sessionId, toolName) => {
+    if (stages === undefined) return
+    const current = stageBySession.get(sessionId) ?? 0
+    if (toolName === stageAdvanceTool) {
+      stageBySession.set(sessionId, Math.min(current + 1, stages.length - 1))
+      return
+    }
+    const owned = toolStage.get(toolName)
+    if (owned !== undefined && owned > current) stageBySession.set(sessionId, owned)
+  }
+  /** 冷启动：从 durable log 重建阶段（resume/reload 同相位）。 */
+  const scanStage = (session) => {
+    let stage = 0
+    for (const event of session.events) {
+      if (event?.type !== 'tool/call') continue
+      const toolName = toolNameOf(event)
+      if (toolName === stageAdvanceTool) stage = Math.min(stage + 1, stages.length - 1)
+      else {
+        const owned = toolStage.get(toolName)
+        if (owned !== undefined && owned > stage) stage = owned
+      }
+    }
+    stageBySession.set(session.id, stage)
+    return stage
+  }
+  const currentStage = (session) => {
+    if (stages === undefined) return 0
+    if (session === undefined) return 0
+    const entry = stageBySession.get(session.id)
+    return entry === undefined ? scanStage(session) : entry
+  }
   // Core work set exposed after a compaction, before re-promotion. Empty
   // means "no compaction recovery catalog": the session stays on the
   // bootstrap pair until a new promotion signal.
@@ -183,6 +279,13 @@ export function apply(ctx, config) {
   })
 
   ctx.on('session/event', (session, event) => promotion.observe(session, event))
+  // 渐进披露：阶段推进/直达（stages 模式；durable 推导，compaction 不重置）。
+  if (stages !== undefined) {
+    ctx.on('session/event', (session, event) => {
+      if (event?.type !== 'tool/call') return
+      advanceStage(session.id, toolNameOf(event))
+    })
+  }
 
   const warnOnce = createWarnOnce(ctx, name)
 
@@ -233,6 +336,35 @@ export function apply(ctx, config) {
         // 默认：子代理继承完整目录（历史 prompt-tool 默认）；
         // includeSubagents=true 时落到下方正常相位逻辑（首轮裁剪 + 晋升）。
         return assembled
+      }
+      if (stages !== undefined) {
+        // 渐进披露：目录 = 当前阶段 + 预放档工具；阶段 section 按模板注入（文案参数化）。
+        const stage = currentStage(agent.session)
+        const keep = new Set()
+        const upper = Math.min(stage + stagePreUnlock, stages.length - 1)
+        for (let i = 0; i <= upper; i += 1) {
+          for (const toolName of stages[i].tools) keep.add(toolName)
+        }
+        let next = keepTools(assembled, keep, true)
+        if (stageSectionTemplate.length > 0) {
+          const unlocked = stages
+            .slice(0, upper + 1)
+            .flatMap((s) => s.tools)
+            .join(', ')
+          const text = stageSectionTemplate
+            .replaceAll('{{stage}}', String(stage + 1))
+            .replaceAll('{{stageName}}', stages[stage].name)
+            .replaceAll('{{unlocked}}', unlocked)
+            .replaceAll('{{total}}', String(stages.length))
+            .replaceAll('{{advanceTool}}', stageAdvanceTool)
+          next = {
+            ...next,
+            sections: Array.isArray(next.sections)
+              ? [...next.sections, { name: 'stage-status', text }]
+              : [{ name: 'stage-status', text }],
+          }
+        }
+        return next
       }
       const status = promotion.status(agent)
       if (status.promoted) {
@@ -299,5 +431,36 @@ export function apply(ctx, config) {
         maxTokens: bootstrapMaxTokens,
       }
     }, { prepend: true })
+  }
+
+  // 渐进披露：阶段推进工具（stages 模式）。推进状态由事件流推导（observe），
+  // 本工具只返回推进结果文案——绝不手改 state（durable 单一真相）。
+  if (stages !== undefined) {
+    ctx.tools.register({
+      name: stageAdvanceTool,
+      description: stageAdvanceDescription,
+      parameters: { type: 'object', properties: {}, additionalProperties: false },
+      output: {
+        schema: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            text: { type: 'string' },
+          },
+          required: ['text'],
+        },
+        render: (_args, value) => [{ type: 'text', text: value.text }],
+      },
+      async execute(_args, exec) {
+        const session = exec?.agent?.session
+        if (session === undefined) return { text: 'phase_advance: no session context' }
+        const stage = currentStage(session)
+        const next = Math.min(stage + 1, stages.length - 1)
+        const text = stage >= stages.length - 1
+          ? `Already at the final stage (${stages[stage].name}) — all tools unlocked.`
+          : `Advanced to stage ${next + 1}/${stages.length} (${stages[next].name}). Unlocked: ${stages[next].tools.join(', ')}.`
+        return { text }
+      },
+    })
   }
 }

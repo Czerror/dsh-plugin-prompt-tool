@@ -14,6 +14,7 @@ function makeCtx() {
   const listeners = new Map()
   const ctx = {
     logger: { warn: () => {} },
+    tools: { register: () => {} },
     on(type, handler, opts) {
       const list = listeners.get(type) ?? []
       list.push({ handler, opts })
@@ -365,4 +366,104 @@ test('context-gate：显式 allowKinds 白名单门控（只放行声明 kind）
   const agent = makeAgent(session)
   const decision = await preStepThrough(listeners, agent, [msg('skill-invocation', 'skill'), msg('agent-instructions', 'dump')])
   assert.deepEqual(decision.messages.map((m) => m.source.kind), ['skill-invocation'])
+})
+
+// ── stages 模式（渐进披露，参考 dsh-router-standard 自写）──────────────────
+
+const STAGES = [
+  { name: '了解', tools: ['read', 'glob', 'grep'] },
+  { name: '开发', tools: ['write', 'edit'] },
+  { name: '验证', tools: ['pwsh', 'bash'] },
+]
+
+const toolCall = (tool, seq) => ({ type: 'tool/call', seq, data: { message: { source: { tool } } } })
+
+/** stages 测试专用装配输入：含全部阶段工具 + 干扰工具（窄化过滤可见）。 */
+const stageAssembled = () => ({
+  tools: [
+    { name: 'bash' }, { name: 'str_replace_editor' },
+    { name: 'read' }, { name: 'glob' }, { name: 'grep' },
+    { name: 'write' }, { name: 'edit' },
+    { name: 'pwsh' }, { name: 'web_search' },
+  ],
+  sections: [],
+  contexts: [],
+})
+
+test('tool-bootstrap stages：首轮窄化到阶段 0 + 预放档（默认 1）', async () => {
+  const { ctx, listeners } = makeCtx()
+  applyToolBootstrap(ctx, { bootstrapTools: ['bash'], stages: STAGES })
+  const out = await assembleThrough(listeners, makeAgent(makeSession([])), stageAssembled())
+  assert.deepEqual(out.tools.map((t) => t.name), ['read', 'glob', 'grep', 'write', 'edit'], '阶段 0 + 预放开发档')
+})
+
+test('tool-bootstrap stages：phase_advance 推进 + stage section 注入 + compaction 不重置', async () => {
+  const { ctx, listeners } = makeCtx()
+  applyToolBootstrap(ctx, { bootstrapTools: ['bash'], stages: STAGES, stageSectionTemplate: 'Stage {{stageName}} ({{stage}}/{{total}}). Unlocked: {{unlocked}}.' })
+  const session = makeSession([])
+  const agent = makeAgent(session)
+  const handlers = listeners.get('session/event') ?? []
+  // 推进到阶段 1（开发）。
+  for (const { handler: h } of handlers) h(session, toolCall('phase_advance', 1))
+  const out = await assembleThrough(listeners, agent, stageAssembled())
+  assert.deepEqual(out.tools.map((t) => t.name), ['bash', 'read', 'glob', 'grep', 'write', 'edit', 'pwsh'], '阶段 1 + 预放验证档')
+  const stageSection = out.sections.find((s) => s.name === 'stage-status')
+  assert.ok(stageSection, '应注入 stage-status section')
+  assert.equal(stageSection.text, 'Stage 开发 (2/3). Unlocked: read, glob, grep, write, edit, pwsh, bash.')
+  // compaction 不重置阶段（会话级进度）。
+  for (const { handler: h } of handlers) h(session, { type: 'compaction/end', seq: 2 })
+  const after = await assembleThrough(listeners, agent, stageAssembled())
+  assert.deepEqual(after.tools.map((t) => t.name), ['bash', 'read', 'glob', 'grep', 'write', 'edit', 'pwsh'], '压缩后阶段保持')
+})
+
+test('tool-bootstrap stages：直达语义（调用更高阶段工具自动跳档）+ 冷启动重建', async () => {
+  const { ctx, listeners } = makeCtx()
+  applyToolBootstrap(ctx, { bootstrapTools: ['bash'], stages: STAGES })
+  const session = makeSession([])
+  const agent = makeAgent(session)
+  const handlers = listeners.get('session/event') ?? []
+  // 直达：直接调用验证档工具 pwsh → 跳到阶段 2。
+  for (const { handler: h } of handlers) h(session, toolCall('pwsh', 1))
+  const out = await assembleThrough(listeners, agent, stageAssembled())
+  assert.deepEqual(out.tools.map((t) => t.name), ['bash', 'read', 'glob', 'grep', 'write', 'edit', 'pwsh'], '直达验证档')
+  // 冷启动：同一 durable log 重建同相位（stage 由 tool/call 推导）。
+  const cold = makeAgent({ id: session.id, header: { cwd: '/workspace', delegationDepth: 0 }, events: [toolCall('pwsh', 1)] })
+  const coldOut = await assembleThrough(listeners, cold, stageAssembled())
+  assert.deepEqual(coldOut.tools.map((t) => t.name), ['bash', 'read', 'glob', 'grep', 'write', 'edit', 'pwsh'], '冷启动恢复直达后的阶段')
+})
+
+test('tool-bootstrap stages：stagePreUnlock=0 + 自定义推进工具名 + 工具注册', async () => {
+  const { ctx, listeners } = makeCtx()
+  const registered = []
+  const ctxWithTools = {
+    logger: { warn: () => {} },
+    on: ctx.on,
+    tools: { register: (tool) => registered.push(tool) },
+  }
+  applyToolBootstrap(ctxWithTools, { bootstrapTools: ['bash'], stages: STAGES, stagePreUnlock: 0, stageAdvanceTool: 'level_up' })
+  assert.equal(registered.length, 1)
+  assert.equal(registered[0].name, 'level_up', '推进工具名参数化')
+  const out = await assembleThrough(listeners, makeAgent(makeSession([])), stageAssembled())
+  assert.deepEqual(out.tools.map((t) => t.name), ['read', 'glob', 'grep'], 'stagePreUnlock=0 不预放')
+  // 自定义推进工具事件同样推进。
+  const session = makeSession([])
+  const agent = makeAgent(session)
+  const handlers = listeners.get('session/event') ?? []
+  for (const { handler: h } of handlers) h(session, toolCall('level_up', 1))
+  const after = await assembleThrough(listeners, agent, stageAssembled())
+  assert.deepEqual(after.tools.map((t) => t.name), ['read', 'glob', 'grep', 'write', 'edit'], 'level_up 推进到阶段 1')
+})
+
+test('tool-bootstrap stages：stageSectionTemplate 空 = 不注入 section（文案参数化）', async () => {
+  const { ctx, listeners } = makeCtx()
+  applyToolBootstrap(ctx, { bootstrapTools: ['bash'], stages: STAGES, stageSectionTemplate: '' })
+  const out = await assembleThrough(listeners, makeAgent(makeSession([])), stageAssembled())
+  assert.equal(out.sections.some((s) => s.name === 'stage-status'), false, '空模板不注入')
+})
+
+test('tool-bootstrap stages：config 校验 fail loud', () => {
+  const base = { bootstrapTools: ['bash'] }
+  assert.throws(() => applyToolBootstrap(makeCtx().ctx, { ...base, stages: [] }), /stages must be a non-empty array/)
+  assert.throws(() => applyToolBootstrap(makeCtx().ctx, { ...base, stages: [{ name: 'x' }] }), /tools must be a non-empty array/)
+  assert.throws(() => applyToolBootstrap(makeCtx().ctx, { ...base, stages: STAGES, stagePreUnlock: -1 }), /stagePreUnlock/)
 })

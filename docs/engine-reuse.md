@@ -28,6 +28,8 @@
 | `prompt-config-engine` | engine/prompt-config-engine.mjs | 提示词配置执行器（per-config `promotion: main / include-subagents` 门控） |
 | `compaction-epoch` | engine/compaction-epoch.mjs | 晋升状态机（被上面各模块共用；非插件行） |
 | `tool-filter` | engine/tool-filter.mjs | 常驻工具白名单/黑名单（与晋升无关的常量掩码） |
+| `page-check` | engine/page-check.mjs | headless Chrome 页面验证（截图/DOM smoke/console/selector + `{js:}` 本地引擎）——参考 dsh-router-standard dev_page_check 自写 |
+| `delivery-gate` | engine/delivery-gate.mjs | 交付 gate（file/UTF-8 + headless smoke + evidence 清单）——参考 dsh-router-standard delivery_check 自写 |
 
 ## 晋升语义（epoch-aware）
 
@@ -58,6 +60,23 @@
 | `deferredSources` | context-gate.deferredSources | 不延迟 |
 | `deferredGraceSteps` | context-gate.deferredGraceSteps | 0 |
 | `instructionHint` | context-gate.instructionHint | false |
+| `stages` | tool-bootstrap.stages（`[{name, tools}]`） | 未声明（两相窄化） |
+| `stagePreUnlock` | tool-bootstrap.stagePreUnlock | 1 |
+| `stageAdvanceTool` | tool-bootstrap.stageAdvanceTool | phase_advance |
+| `stageSectionTemplate` | tool-bootstrap.stageSectionTemplate | 默认模板（`{{stage}}/{{stageName}}/{{unlocked}}/{{total}}/{{advanceTool}}`；空 = 不注入） |
+| `pageCheckBrowserPath` | page-check.browserPath | 探测（DSH_PAGE_RUNNER → Chrome/Edge） |
+| `pageCheckTimeoutMs` / `pageCheckLite` / `pageCheckRetry` | page-check.* | 20000 / false / true |
+| `deliveryRequireSmoke` | delivery-gate.requireSmoke | true |
+
+## 渐进披露（stages 模式）
+
+`tool-bootstrap` 声明 `stages` 时激活多级阶段窄化（参考 dsh-router-standard
+progressive disclosure 自写）：目录 = 当前阶段工具 + 预放（`stagePreUnlock`
+档）；`phase_advance`（名字可配）推进阶段；调用更高阶段工具 = 直达（自动
+跳到其档）；阶段状态由 durable tool/call 事件推导（resume/reload 自动恢复，
+无文件），compaction 不重置；阶段文案经 `stageSectionTemplate` 参数化
+（引擎只注入动态状态 section `stage-status`，不写死引导文本——引导类内容
+一律 promptConfigs 参数化）。
 
 ## 组合示例
 
@@ -80,6 +99,24 @@ moduleConfigs:
     bootstrapTools: [bash, str_replace_editor]
   code-presentation:
     usePtcMode: true             # PTC 呈现默认 false，这里显式开启
+```
+
+渐进披露示例：
+
+```yaml
+modules:
+  - tool-bootstrap
+  - page-check
+  - delivery-gate
+moduleConfigs:
+  tool-bootstrap:
+    stages:
+      - { name: 了解, tools: [read, glob, grep] }
+      - { name: 开发, tools: [write, edit] }
+      - { name: 验证, tools: [pwsh, bash] }
+    stagePreUnlock: 1
+  delivery-gate:
+    requireSmoke: true
 ```
 
 liangshen 全量门控（完整示例见 `preset/liangshen/preset.yml`）：
