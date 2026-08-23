@@ -52,6 +52,12 @@ function engineFingerprint(): string {
 
 const ENGINE_FINGERPRINT_MARKER = '.pt-engine-fingerprint'
 
+/** 剥离文本中的预设级变量引用（{{key}} → 空串）；内置变量（{{DSH_HOME}} 等）保留。
+ *  模板变量插值停用时由 writePreset 调用，避免 {{key}} 残留导致官方渲染 unknown variable。 */
+function stripVariableRefs(text: string, keys: ReadonlySet<string>): string {
+  return text.replace(/\{\{([A-Za-z0-9_.\u4e00-\u9fff-]+)\}\}/g, (whole, key: string) => keys.has(key) ? '' : whole)
+}
+
 export interface WritePresetOptions {
   firstTurnAnchor: boolean
   firstTurnText: string
@@ -427,20 +433,21 @@ export function writePreset(prompt: string, options: WritePresetOptions): void {
   // 每条配置 variables（官方插值源，配置自身优先）。来源 = preset.yml 顶层
   // variables 段（新）优先 + params 内容键（旧布局兼容）；UI 已管理键（PARAM_KEYS）
   // 与 runtime 参数（promptText 等）不进变量文件。variablesEnabled=false（卡片
-  // 开关停用）时不生成变量文件——{{key}} 不再被插值（用户主动停用）。
-  if (spec.variablesEnabled !== false) {
-    const presetVariables: Record<string, string> = {}
-    for (const [key, value] of Object.entries(spec.params ?? {})) {
-      if (PARAM_KEYS.has(key)) continue
-      const text = String(value)
-      if (text.length > 0) presetVariables[key] = text
-    }
-    for (const [key, value] of Object.entries(spec.variables ?? {})) {
-      if (typeof value === 'string' && value.length > 0) presetVariables[key] = value
-    }
-    if (Object.keys(presetVariables).length > 0) {
-      writeFileSync(join(promptConfigsDir, 'variables.yml'), stringifyYaml(presetVariables), 'utf8')
-    }
+  // 开关停用）时不生成变量文件，并把配置文本中的预设变量引用 {{key}} 剥离
+  //（避免字面残留与官方 unknown variable 报错）。
+  const presetVariables: Record<string, string> = {}
+  for (const [key, value] of Object.entries(spec.params ?? {})) {
+    if (PARAM_KEYS.has(key)) continue
+    const text = String(value)
+    if (text.length > 0) presetVariables[key] = text
+  }
+  for (const [key, value] of Object.entries(spec.variables ?? {})) {
+    if (typeof value === 'string' && value.length > 0) presetVariables[key] = value
+  }
+  const variablesEnabled = spec.variablesEnabled !== false
+  const presetVariableKeys = new Set(Object.keys(presetVariables))
+  if (variablesEnabled && presetVariableKeys.size > 0) {
+    writeFileSync(join(promptConfigsDir, 'variables.yml'), stringifyYaml(presetVariables), 'utf8')
   }
   for (const [index, config] of merged.entries()) {
     // 内容资产单一事实源（大文本存生成目录文件，settings 覆盖层只保留轻字段）：
@@ -465,6 +472,16 @@ export function writePreset(prompt: string, options: WritePresetOptions): void {
         ...config.params,
         agentsInstructionPath: `../${templateName}/agents-instruction.md`,
         ...(options.injectAgentsPrompt === true ? { text: asString(options.agentsInstructionText) } : {}),
+      }
+    }
+    // 停用模板变量插值：剥离配置文本（texts/text/params.text）中的预设变量引用，
+    // 内置变量（{{DSH_HOME}}/{{WORKSPACE}}/{{CWD}}）保留。
+    if (!variablesEnabled && presetVariableKeys.size > 0) {
+      const strip = (item: string): string => stripVariableRefs(item, presetVariableKeys)
+      config.texts = (config.texts ?? []).map(strip)
+      if (typeof config.text === 'string') config.text = strip(config.text)
+      if (typeof config.params?.text === 'string') {
+        config.params = { ...config.params, text: strip(config.params.text as string) }
       }
     }
     writeFileSync(join(promptConfigsDir, `${String(index * 10).padStart(2, '0')}-${config.id}.yml`), renderPromptConfigYaml(config), 'utf8')

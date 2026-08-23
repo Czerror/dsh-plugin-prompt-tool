@@ -482,22 +482,36 @@ test('savePresetParams 清理空 key（VariablesEditor 待编辑行不落盘）'
   }
 })
 
-test('模板变量插值开关：variablesEnabled=false 时不生成 variables.yml', () => {
+test('模板变量插值开关：停用不生成 variables.yml 且剥离配置中的 {{key}} 引用（内置变量保留）', () => {
   const dir = join(tmpdir(), `prompt-tool-vars-off-${process.pid}-${Date.now()}`)
   const presetDir = join(dir, 'preset')
   const homePresetDir = join(home, '.agent-presets')
+  const varConfig = () => [{
+    id: 'var-test',
+    layer: 'pre-step',
+    strategy: 'static',
+    order: 999,
+    texts: ['剧情{{wordsCloud}}字 {{DSH_HOME}}'],
+  }]
   try {
     cpSync(join(process.cwd(), 'preset', 'anchored'), join(homePresetDir, 'anchored'), { recursive: true })
     savePresetParams(homePresetDir, 'anchored', undefined, undefined, { wordsCloud: '1500字' }, false)
-    writePreset('PROMPT', makeOptions(presetDir))
-    const varsFile = join(presetDir, 'anchored', 'prompt-configs', 'variables.yml')
+    const pcDir = join(presetDir, 'anchored', 'prompt-configs')
+    writePreset('PROMPT', { ...makeOptions(presetDir), promptConfigs: varConfig() })
+    const varsFile = join(pcDir, 'variables.yml')
     assert.equal(existsSync(varsFile), false, '停用时 variables.yml 不生成')
+    const file = readdirSync(pcDir).find((name) => name.endsWith('-var-test.yml'))
+    assert.ok(file, 'var-test 配置生成')
+    const parsed = parseYaml(readFileSync(join(pcDir, file), 'utf8'))
+    assert.equal(parsed.texts[0], '剧情字 {{DSH_HOME}}', '预设变量引用剥离、内置变量保留')
     // 重新启用：true = 删除开关键（缺省启用），变量文件恢复。
     savePresetParams(homePresetDir, 'anchored', undefined, undefined, { wordsCloud: '1500字' }, true)
-    writePreset('PROMPT', makeOptions(presetDir))
+    writePreset('PROMPT', { ...makeOptions(presetDir), promptConfigs: varConfig() })
     assert.ok(existsSync(varsFile), '启用后 variables.yml 恢复生成')
     const vars = parseYaml(readFileSync(varsFile, 'utf8'))
     assert.equal(vars.wordsCloud, '1500字')
+    const reParsed = parseYaml(readFileSync(join(pcDir, file), 'utf8'))
+    assert.equal(reParsed.texts[0], '剧情{{wordsCloud}}字 {{DSH_HOME}}', '启用后配置文本保留引用（引擎插值）')
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }

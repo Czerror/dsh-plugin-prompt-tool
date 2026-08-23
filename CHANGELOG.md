@@ -14,6 +14,12 @@
 
 ## [Unreleased]
 
+### 停用模板变量时自动剥离配置中的 {{key}} 引用（2026-08-23）
+
+- **行为**：`variablesEnabled=false`（开关停用）时，`writePreset` 除不生成 `variables.yml` 外，还把每条配置文本（`texts`/`text`/`params.text`）中的**预设变量引用** `{{key}}` 剥离为空——不再有字面残留，也不触发官方 `unknown prompt variable` 渲染报错。
+- **保留**：内置变量（`{{DSH_HOME}}`/`{{WORKSPACE}}`/`{{CWD}}`）与配置自身 variables 的引用不受影响（剥离只针对预设变量键）。
+- **测试**：停用时 `剧情{{wordsCloud}}字 {{DSH_HOME}}` → `剧情字 {{DSH_HOME}}`；启用后引用保留（引擎插值）（272 pass/0 fail）。
+
 ### 模板变量卡片增加插值开关（与其他模块卡片一致）（2026-08-23）
 
 - **开关**：卡片 header 新增启用/停用 toggle（configEnable 样式，与其他模块卡片一致），控制"模板变量插值"——存 preset.yml 顶层 `variablesEnabled`（缺省 true），切换即时持久化 + 重建。
