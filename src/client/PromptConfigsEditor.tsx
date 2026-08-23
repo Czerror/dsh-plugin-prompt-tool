@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react'
+import { useRef, useState, type FocusEvent, type ReactNode } from 'react'
 import clsx from 'clsx'
 import { IconChevronDownOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { PromptConfigList } from './PromptConfigList.tsx'
@@ -42,6 +42,7 @@ function TemplateVariablesModuleCard(props: {
 }): ReactNode {
   const [expanded, setExpanded] = useState(false)
   const [confirmingDelete, setConfirmingDelete] = useState(false)
+  const cardRef = useRef<HTMLElement>(null)
   const count = Object.keys(props.templateVariables).length
   const enabled = props.templateVariablesEnabled
   const clearAll = (): void => {
@@ -50,8 +51,15 @@ function TemplateVariablesModuleCard(props: {
     setConfirmingDelete(false)
     setExpanded(false)
   }
+  /** 失焦自动保存：焦点离开卡片容器（含收起/切换开关/点击删除）即持久化。 */
+  const autoSaveOnBlur = (event: FocusEvent<HTMLElement>): void => {
+    const next = event.relatedTarget
+    if (next === null || !cardRef.current?.contains(next as Node)) {
+      void props.saveTemplateVariables()
+    }
+  }
   return (
-    <article className={styles.configCard}>
+    <article ref={cardRef} className={styles.configCard} onBlur={autoSaveOnBlur}>
       <header className={styles.configHeader}>
         <button type="button" className={styles.configToggle} aria-expanded={expanded} onClick={() => setExpanded(!expanded)}>
           <span className={styles.configTitle}>
@@ -89,9 +97,6 @@ function TemplateVariablesModuleCard(props: {
         <div className={styles.configForm}>
           {!enabled && <p className={styles.configFieldHint}>{'模板变量插值已停用：{{key}} 将不再被替换（预设级变量文件不生成）。'}</p>}
           <VariablesEditor value={props.templateVariables} onChange={(next) => props.setTemplateVariables(next ?? {})} />
-          <span>
-            <button type="button" className={styles.pillButton} onClick={() => void props.saveTemplateVariables()}>保存模板变量</button>
-          </span>
         </div>
       )}
     </article>

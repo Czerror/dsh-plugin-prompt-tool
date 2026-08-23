@@ -267,7 +267,7 @@ export function VariablesEditor(props: { value: Record<string, string> | undefin
         </span>
       ))}
       <span>
-        <button type="button" className={styles.pillButton} onClick={() => commit([...entries, ['', '']])}>添加变量</button>
+        <button type="button" className={styles.pillButton} onClick={() => commit([...entries, ['', '']])}>添加</button>
       </span>
     </span>
   )

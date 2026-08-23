@@ -14,6 +14,12 @@
 
 ## [Unreleased]
 
+### 模板变量卡片：移除保存按钮，失焦自动保存；「添加变量」改名「添加」（2026-08-23）
+
+- **自动保存**：删除「保存模板变量」按钮——焦点离开卡片容器（编辑完点别处/收起/切换开关/点击删除）即自动持久化（`/preset-variables` + 重建）；保存成功静默、失败提示。
+- **文案**：`VariablesEditor`「添加变量」按钮统一改名「添加」（配置卡片与模板变量卡片共用组件，同步生效）。
+- 验证：typecheck / lint / test 全绿（272 pass/0 fail）。
+
 ### 停用模板变量时自动剥离配置中的 {{key}} 引用（2026-08-23）
 
 - **行为**：`variablesEnabled=false`（开关停用）时，`writePreset` 除不生成 `variables.yml` 外，还把每条配置文本（`texts`/`text`/`params.text`）中的**预设变量引用** `{{key}}` 剥离为空——不再有字面残留，也不触发官方 `unknown prompt variable` 渲染报错。

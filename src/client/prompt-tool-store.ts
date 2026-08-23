@@ -631,7 +631,6 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
       return
     }
     setTemplateVariables(cleaned)
-    showNotice('ok', '模板变量已保存（重建后生效）')
   }, [templateVariables, templateVariablesEnabled, showNotice])
 
   const toggle = useCallback((key: SwitchKey) => {
