@@ -372,11 +372,23 @@ export interface PromptConfigCardActions {
   onDelete: () => void
 }
 
+/** 模块卡片拖拽排序（HTML5 DnD；移动逻辑在 PromptConfigList 显示视图层）。 */
+export interface PromptConfigCardDrag {
+  dragging: boolean
+  dropBefore: boolean
+  dropAfter: boolean
+  onDragStart: (event: React.DragEvent<HTMLElement>) => void
+  onDragOver: (event: React.DragEvent<HTMLElement>) => void
+  onDrop: (event: React.DragEvent<HTMLElement>) => void
+  onDragEnd: () => void
+}
+
 /** 列表卡片：开关按钮 + 4 个操作按钮 + 可展开编辑表单。 */
 export function PromptConfigCard(props: {
   meta: EngineMeta
   config: PromptConfigDraft
   expanded: boolean
+  drag?: PromptConfigCardDrag
   onToggleExpanded: () => void
   onToggleEnabled: (enabled: boolean) => void
   onPatch: (patch: Partial<PromptConfigDraft>) => void
@@ -393,8 +405,25 @@ export function PromptConfigCard(props: {
   if ((config.order ?? 0) !== 0) chips.push(`order=${config.order}`)
   if (config.group) chips.push(config.exclusive === true ? `exclusive:${config.group}` : `group:${config.group}`)
   return (
-    <article className={clsx(styles.configCard, props.expanded && styles.configCardOpen)}>
+    <article
+      className={clsx(styles.configCard, props.expanded && styles.configCardOpen)}
+      data-dragging={props.drag?.dragging ? '' : undefined}
+      data-drop-before={props.drag?.dropBefore ? '' : undefined}
+      data-drop-after={props.drag?.dropAfter ? '' : undefined}
+      onDragOver={props.drag?.onDragOver}
+      onDrop={props.drag?.onDrop}
+      onDragEnd={props.drag?.onDragEnd}
+    >
       <header className={styles.configHeader}>
+        {props.drag !== undefined && (
+          <span
+            className={styles.dragHandle}
+            title="拖动调整顺序"
+            aria-hidden="true"
+            draggable
+            onDragStart={props.drag.onDragStart}
+          >⠿</span>
+        )}
         <button type="button" className={styles.configToggle} aria-expanded={props.expanded} onClick={props.onToggleExpanded}>
           <span className={styles.configTitle}>
             <span className={styles.configName}>{config.name && config.name !== config.id ? `${config.id} · ${config.name}` : config.id}</span>

@@ -88,6 +88,35 @@ function moveWithinLayer(
   return next
 }
 
+/** 拖拽移动到目标显示位置：把 source 移到 target 前/后，用显示视图相邻交换逐步到位
+ *  （order 链式交换，与连续点击上移/下移等价）。 */
+function moveToView(
+  all: PromptConfigDraft[],
+  sourceId: string,
+  targetId: string,
+  before: boolean,
+  layer?: string,
+  layers?: readonly string[],
+): PromptConfigDraft[] {
+  const view = viewOrderedIds(all, layer, layers ?? [])
+  const sourceIndex = view.indexOf(sourceId)
+  if (sourceIndex < 0) return all
+  const rest = view.filter((id) => id !== sourceId)
+  const targetIndex = rest.indexOf(targetId)
+  if (targetIndex < 0) return all
+  const targetViewIndex = targetIndex + (before ? 0 : 1)
+  if (targetViewIndex === sourceIndex) return all
+  const steps = targetViewIndex - sourceIndex
+  const delta: -1 | 1 = steps > 0 ? 1 : -1
+  let current = all
+  for (let step = 0; step < Math.abs(steps); step++) {
+    const globalIndex = current.findIndex((config) => config.id === sourceId)
+    if (globalIndex < 0) break
+    current = moveWithinLayer(current, globalIndex, delta, layer, layers)
+  }
+  return current
+}
+
 /** 共享的提示词配置列表：校验、保存、脏检测、复制、删除、层内移动。 */
 export function PromptConfigList(props: PromptConfigListProps): ReactNode {
   const { meta, configs, savedConfigs, layer, scope, extraActions, beforeCards, emptyHint, onPatchConfigs, onSaveConfigs, onNotice } = props
@@ -96,6 +125,9 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
   const [validating, setValidating] = useState(false)
   const [saving, setSaving] = useState(false)
   const [filter, setFilter] = useState('')
+  /** 拖拽排序状态：源卡片 id + 落点（目标 id + 前/后）。 */
+  const [dragId, setDragId] = useState<string | undefined>(undefined)
+  const [dropTarget, setDropTarget] = useState<{ id: string; before: boolean } | undefined>(undefined)
   /** 合并过滤下拉：全部 / 世界书（策略）/ 各注入层级。外部 layer prop 传入时固定该层。 */
   const [viewFilter, setViewFilter] = useState<string>('all')
 
@@ -216,6 +248,34 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
         meta={meta}
         config={config}
         expanded={isOpen}
+        drag={{
+          dragging: dragId === config.id,
+          dropBefore: dropTarget?.id === config.id && dropTarget.before,
+          dropAfter: dropTarget?.id === config.id && !dropTarget.before,
+          onDragStart: (event) => {
+            setDragId(config.id)
+            event.dataTransfer.effectAllowed = 'move'
+          },
+          onDragOver: (event) => {
+            event.preventDefault()
+            if (dragId === undefined || dragId === config.id) return
+            const rect = event.currentTarget.getBoundingClientRect()
+            setDropTarget({ id: config.id, before: event.clientY < rect.top + rect.height / 2 })
+          },
+          onDrop: (event) => {
+            event.preventDefault()
+            const target = dropTarget
+            if (dragId !== undefined && target !== undefined && dragId !== config.id) {
+              onPatchConfigs(moveToView(configs, dragId, target.id, target.before, layer, meta.layers))
+            }
+            setDragId(undefined)
+            setDropTarget(undefined)
+          },
+          onDragEnd: () => {
+            setDragId(undefined)
+            setDropTarget(undefined)
+          },
+        }}
         onToggleExpanded={() => {
           setExpanded(isOpen ? undefined : config.id)
         }}
