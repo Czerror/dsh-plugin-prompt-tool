@@ -46,6 +46,8 @@ function TemplateVariablesModuleCard(props: {
   const cardRef = useRef<HTMLElement>(null)
   const count = Object.keys(props.templateVariables).length
   const enabled = props.templateVariablesEnabled
+  // 无变量时不显示卡片（模块列表恢复干净；「新建 → Variables」添加空行后自动出现）。
+  if (count === 0) return null
   const clearAll = (): void => {
     props.setTemplateVariables({})
     void props.saveTemplateVariables()
