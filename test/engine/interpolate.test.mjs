@@ -31,6 +31,31 @@ test('interpolateStatic：ST 运行时宏无会话上下文时替换为空（不
   assert.equal(interpolateStatic('{{lastusermessage}}', { lastusermessage: '覆盖' }), '覆盖', 'variables 优先')
 })
 
+test('interpolateStatic：动态宏（roll/random/pick/chance/time/date）', () => {
+  // roll：骰子范围 + 修正值。
+  for (let i = 0; i < 20; i++) {
+    const value = Number(interpolateStatic('{{roll::1d6}}', {}))
+    assert.ok(value >= 1 && value <= 6, `1d6 应在 1-6：${value}`)
+  }
+  assert.ok(/^\d+$/.test(interpolateStatic('{{roll::2d6+3}}', {})), '2d6+3 为数字')
+  assert.equal(interpolateStatic('{{roll::非法}}', {}), '非法', '非法表达式原样')
+  // pick / random：从列表选一个。
+  for (let i = 0; i < 10; i++) {
+    assert.ok(['a', 'b', 'c'].includes(interpolateStatic('{{pick::a,b,c}}', {})), 'pick 列表内')
+    assert.ok(['1', '2', '3'].includes(interpolateStatic('{{random::1,2,3}}', {})), 'random 列表内')
+  }
+  // chance：0 恒 false，100 恒 true。
+  assert.equal(interpolateStatic('{{chance::0}}', {}), 'false')
+  assert.equal(interpolateStatic('{{chance::100}}', {}), 'true')
+  // time/date 格式。
+  assert.match(interpolateStatic('{{time}}', {}), /^\d{2}:\d{2}$/)
+  assert.match(interpolateStatic('{{date}}', {}), /^\d{4}-\d{2}-\d{2}$/)
+  assert.match(interpolateStatic('{{weekday}}', {}), /^星期[日一二三四五六]$/)
+  // 字面宏。
+  assert.equal(interpolateStatic('a{{newline}}b', {}), 'a\nb')
+  assert.equal(interpolateStatic('{{pipe}}', {}), '|')
+})
+
 test('interpolateVariables：ST 运行时宏（大小写不敏感）从会话事件提取', () => {
   const session = {
     header: { cwd: '/cwd' },
