@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### 移除「主会话人设」模板（2026-08-24）
+
+- **templates/21-persona-main.yml 移除**：人设段开关化后（system-section 卡内「人设段」开关）无需专用模板——新建 system-section 卡开开关即得人设段；templates.test.mjs 回退 17→16 并移除 persona-main 断言。
+- **测试**：315 pass/0 fail。
+
 ### system-section 人设段开关化（A 方案，2026-08-24）
 
 - **PromptConfigCard**：system-section 层 `sectionName` 文本输入改为「人设段」开关（开 = sectionName=deployment:persona 官方 shadow，触发人设徽标/相位先行/子代理继承；关 = 可选自定义段名输入，空则引擎回退 id 注册为普通段）——消除「删了 sectionName 人设失效」的坑，语义与 complete/suppressRuntimeContext 开关统一。
