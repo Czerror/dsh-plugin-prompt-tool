@@ -241,8 +241,8 @@ export function StrategyParamsFields(props: { strategy: string; layer?: string; 
   return <JsonField label="params（高级参数 JSON；本策略无固定字段）" value={value} onChange={(next) => { if (next !== undefined) onPatch(next) }} />
 }
 
-/** 模板变量键值对编辑器（替代 JSON）：每行 key + value，可增删。 */
-function VariablesEditor(props: { value: Record<string, string> | undefined; onChange: (value: Record<string, string> | undefined) => void }): ReactNode {
+/** 模板变量键值对编辑器（替代 JSON）：每行 key + value，可增删。工作台「模板变量」卡片复用。 */
+export function VariablesEditor(props: { value: Record<string, string> | undefined; onChange: (value: Record<string, string> | undefined) => void }): ReactNode {
   const entries = Object.entries(props.value ?? {})
   const commit = (next: Array<[string, string]>) => {
     const cleaned = next.filter(([key]) => key.trim().length > 0)

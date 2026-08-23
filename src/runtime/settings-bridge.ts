@@ -545,6 +545,55 @@ export function registerSettingsBridge(
         }),
         sctx.webServer.register({
           kind: 'exact',
+          path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.presetVariables,
+          handler: async (req, res) => {
+            if (!guard(req, res)) return
+            const dir = getPresetConfigsDir?.() ?? ''
+            if (dir.length === 0) {
+              writeBridgeJson(res, 400, { ok: false, code: 'preset-dir-unavailable', message: 'presetDir 未配置' })
+              return
+            }
+            // 预设级模板变量（非 PARAM_KEYS 的内容变量）：写激活预设 preset.yml
+            // params；writePreset 渲染时展开进 prompt-configs/variables.yml，
+            // 引擎加载合并进每条配置 variables（官方插值源）。配置卡片 variables
+            // 只显示配置自身，模板变量统一在本卡片编辑。
+            const presetRoot = dirname(dir)
+            const templateName = basename(dir)
+            const { body } = await readBridgeBody(req)
+            const record = (body ?? {}) as Record<string, unknown>
+            // 无载荷 = 读取（preset.yml params 内容变量子集）。
+            if (record.variables === undefined) {
+              try {
+                const spec = loadPresetSpec(dir)
+                const variables: Record<string, string> = {}
+                for (const [key, value] of Object.entries(spec.params ?? {})) {
+                  if (!PARAM_KEYS.has(key) && typeof value === 'string') variables[key] = value
+                }
+                writeBridgeJson(res, 200, { ok: true, value: { variables } })
+              } catch {
+                writeBridgeJson(res, 200, { ok: true, value: { variables: {} } })
+              }
+              return
+            }
+            try {
+              savePresetParams(
+                presetRoot,
+                templateName,
+                record.variables !== null && typeof record.variables === 'object' && !Array.isArray(record.variables)
+                  ? record.variables as Record<string, unknown>
+                  : undefined,
+                undefined,
+              )
+              afterOverridesChange?.()
+              writeBridgeJson(res, 200, { ok: true, value: { variables: record.variables } })
+            } catch (error) {
+              const message = error instanceof Error ? error.message : String(error)
+              writeBridgeJson(res, 409, { ok: false, code: 'preset-variables-rejected', message: `模板变量保存失败：${message}` })
+            }
+          },
+        }),
+        sctx.webServer.register({
+          kind: 'exact',
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.importPresetPackage,
           handler: async (req, res) => {
             if (!guard(req, res)) return

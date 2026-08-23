@@ -70,11 +70,22 @@ export function loadPromptConfigFiles(dirUrl) {
   } catch (error) {
     throw new TypeError(`${name}: configsDir ${String(dirUrl)} is not readable: ${String(error?.message ?? error)}`)
   }
+  // 预设级模板变量（writePreset 生成 variables.yml）：读入后合并进每条配置
+  // variables（配置自身优先）；variables.yml 本身不当作配置解析。缺失或损坏
+  // 时为空变量源，不阻断加载。
+  let presetVariables = {}
+  try {
+    const parsed = parseYaml(readFileSync(new URL('variables.yml', dirUrl), 'utf8'))
+    if (parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)) presetVariables = parsed
+  } catch {
+    // 无 variables.yml（旧产物/手写目录）或解析失败：保持空变量源。
+  }
   const specs = []
   const files = entries
     .filter((entry) => entry.isFile() && /\.(ya?ml|json)$/i.test(entry.name))
     .sort((a, b) => a.name.localeCompare(b.name))
   for (const entry of files) {
+    if (entry.name === 'variables.yml') continue
     const url = new URL(entry.name, dirUrl)
     const raw = readFileSync(url, 'utf8')
     if (/\.json$/i.test(entry.name)) {
@@ -82,6 +93,13 @@ export function loadPromptConfigFiles(dirUrl) {
     } else {
       specs.push(parsePromptConfigYaml(raw))
     }
+  }
+  for (const spec of specs) {
+    if (spec === null || typeof spec !== 'object' || Array.isArray(spec)) continue
+    const own = spec.variables !== null && typeof spec.variables === 'object' && !Array.isArray(spec.variables)
+      ? spec.variables
+      : {}
+    spec.variables = { ...presetVariables, ...own }
   }
   return specs
 }

@@ -423,18 +423,20 @@ export function writePreset(prompt: string, options: WritePresetOptions): void {
   }
   // 模型参数（agent-request）作为引擎默认级注入，优先级低于模板与 settings。
   const merged = mergePromptConfigs(modelRequestConfigs(params), templateDefaults, options.promptConfigs)
+  // 预设级内容变量（非 PARAM_KEYS）→ prompt-configs/variables.yml（单一文件）：
+  // 引擎加载时合并进每条配置 variables（官方插值源，配置自身优先）。不再逐条
+  // 展开——配置卡片 variables 只显示配置自身，模板变量由工作台「模板变量」卡片
+  // 统一编辑。UI 已管理键（PARAM_KEYS：模型设置/工具与深度/开关）不进变量文件。
+  const presetVariables: Record<string, string> = {}
+  for (const [key, value] of Object.entries(params)) {
+    if (PARAM_KEYS.has(key)) continue
+    const text = String(value)
+    if (text.length > 0) presetVariables[key] = text
+  }
+  if (Object.keys(presetVariables).length > 0) {
+    writeFileSync(join(promptConfigsDir, 'variables.yml'), stringifyYaml(presetVariables), 'utf8')
+  }
   for (const [index, config] of merged.entries()) {
-    // 预设级内容变量（非 PARAM_KEYS）展开进配置 variables——引擎官方插值源
-    // （interpolateVariables/interpolateStatic 只读 variables，params 合并层引擎
-    // 不读；且 {{key}} 残留会让官方 systemPrompt 渲染抛 unknown variable、
-    // 该段注入失败）。配置自身 variables 覆盖同名键（后者胜），prompt-injector
-    // 等特殊配置的 params 后续覆盖不受影响。UI 已管理键（PARAM_KEYS：模型设置/
-    // 工具与深度/开关）不进 variables——它们在 UI 有专门编辑入口。
-    const mergedVariables: Record<string, string> = {}
-    for (const [key, value] of Object.entries(params)) {
-      if (!PARAM_KEYS.has(key)) mergedVariables[key] = String(value)
-    }
-    config.variables = { ...mergedVariables, ...config.variables }
     // 内容资产单一事实源（大文本存生成目录文件，settings 覆盖层只保留轻字段）：
     // prompt-injector 的注入文本永远来自 preset.md（presetPrompt），settings 条目即使带 text 也强制清空，
     // 避免「settings 覆盖层整体替换模板条目」时把渲染产物 params.text 挤掉。

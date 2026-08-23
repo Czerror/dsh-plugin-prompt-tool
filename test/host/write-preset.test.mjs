@@ -411,7 +411,7 @@ test('writePreset 拒绝非法 presetTemplate（路径穿越防护）', () => {
   }
 })
 
-test('writePreset 预设级内容变量展开进 variables（官方插值源）；UI 已管理键不落配置', () => {
+test('writePreset 预设级内容变量生成 variables.yml（单一文件）；UI 已管理键不落配置', () => {
   const dir = join(tmpdir(), `prompt-tool-uikeys-${process.pid}-${Date.now()}`)
   const presetDir = join(dir, 'preset')
   try {
@@ -435,8 +435,12 @@ test('writePreset 预设级内容变量展开进 variables（官方插值源）�
       assert.equal(parsed.params?.[key], undefined, `配置 params 不得含 UI 管理键 ${key}`)
       assert.equal(parsed.variables?.[key], undefined, `配置 variables 不得含 UI 管理键 ${key}`)
     }
-    // 非 UI 键（内容变量）展开进 variables（引擎插值只读 variables，params 不参与）。
-    assert.equal(parsed.variables?.promptText, 'PROMPT', '内容变量展开进 variables')
+    // 非 UI 键（内容变量）进单一文件 variables.yml（引擎加载时合并，配置文件保持干净）。
+    const varsFile = join(pcDir, 'variables.yml')
+    assert.ok(existsSync(varsFile), 'variables.yml 生成')
+    const vars = parseYaml(readFileSync(varsFile, 'utf8'))
+    assert.equal(vars.promptText, 'PROMPT', '内容变量进 variables.yml')
+    assert.equal(parsed.variables?.['promptText'], undefined, '配置文件不再逐条展开内容变量')
     assert.equal(parsed.params?.promptText, undefined, '内容变量不再进 params')
   } finally {
     rmSync(dir, { recursive: true, force: true })

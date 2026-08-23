@@ -19,6 +19,7 @@ export const BRIDGE_ENDPOINTS = {
   presetContent: '/preset-content',
   importPreset: '/import-preset',
   paramOverrides: '/param-overrides',
+  presetVariables: '/preset-variables',
   importPresetPackage: '/import-preset-package',
   exportPreset: '/export-preset',
   presetDelete: '/preset-delete',

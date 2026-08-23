@@ -212,6 +212,10 @@ export interface PromptToolStore {
   persistSwitches: () => void
   persistParamOverrides: () => Promise<void>
   persistConfigs: (configs: PromptConfigDraft[]) => void
+  /** 预设级模板变量（preset.yml 内容变量；writePreset 展开进 variables.yml，引擎合并进每条配置）。 */
+  templateVariables: Record<string, string>
+  setTemplateVariables: (value: Record<string, string>) => void
+  saveTemplateVariables: () => Promise<void>
   toggle: (key: SwitchKey) => void
   toggleBootstrapMaxTokens: () => void
   setPresetTemplate: (id: string) => void
@@ -298,6 +302,7 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
   const [templatePreStepCount, setTemplatePreStepCount] = useState(0)
   const [savedSwitches, setSavedSwitches] = useState<SwitchSnapshot>(EMPTY_SWITCHES)
   const [savedConfigs, setSavedConfigs] = useState<PromptConfigDraft[]>([])
+  const [templateVariables, setTemplateVariables] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(false)
   const [savingSkillsDir, setSavingSkillsDir] = useState(false)
   const [fixingSkill, setFixingSkill] = useState<string | undefined>(undefined)
@@ -427,6 +432,12 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
           setFields(next)
           setSavedSwitches(snapshotSwitches(next))
         }
+      }
+      // 预设级模板变量（preset.yml 内容变量；失败不阻断主流程）。
+      const varsRes = await bridgePost<{ variables: Record<string, string> }>('/preset-variables', {})
+      if (seq !== loadSeqRef.current) return EMPTY_FIELDS
+      if (varsRes.ok && varsRes.value.variables !== null && typeof varsRes.value.variables === 'object') {
+        setTemplateVariables(varsRes.value.variables)
       }
       // 实际生效配置（引擎从生成目录加载；settings.promptConfigs 仅为覆盖层，
       // 默认为空不代表无配置）。非空时以实际配置为准，并同步已保存快照避免误判 dirty。
@@ -600,6 +611,16 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
     })()
   }, [load, showNotice])
 
+  /** 模板变量：写激活预设 preset.yml 内容变量（后端 savePresetParams + afterOverridesChange 触发重建）。 */
+  const saveTemplateVariables = useCallback(async () => {
+    const res = await bridgePost<{ variables: unknown }>('/preset-variables', { variables: templateVariables })
+    if (!res.ok) {
+      showNotice('error', `模板变量保存失败：${res.message ?? '未知错误'}`)
+      return
+    }
+    showNotice('ok', '模板变量已保存（重建后生效）')
+  }, [templateVariables, showNotice])
+
   const toggle = useCallback((key: SwitchKey) => {
     patch({ [key]: !fieldsRef.current[key] })
     if (PARAM_SWITCH_KEYS.has(key)) void persistParamOverrides()
@@ -742,6 +763,9 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
     persistSwitches,
     persistParamOverrides,
     persistConfigs,
+    templateVariables,
+    setTemplateVariables,
+    saveTemplateVariables,
     toggle,
     toggleBootstrapMaxTokens,
     setPresetTemplate,

@@ -14,6 +14,15 @@
 
 ## [Unreleased]
 
+### 模板变量单一编辑入口：variables.yml + 工作台「模板变量」卡片（2026-08-23）
+
+- **问题**：writePreset 把预设级内容变量展开进每条配置的 `variables`，每个模块卡片的「variables（模板变量 {{key}} 插值）」重复显示同一批变量。
+- **数据流重构**：预设级内容变量（非 `PARAM_KEYS` 的非空 string 键）→ 生成 `prompt-configs/variables.yml`（单一文件）；引擎 `loadPromptConfigFiles` 读入后合并进每条配置 variables（配置自身优先）；生成目录每条配置 yml 保持干净（卡片 VariablesEditor 只显示配置自身变量）。
+- **UI**：工作台主会话页新增「模板变量」卡片（复用 `VariablesEditor` key-value 行编辑，ST 对应物 = 宏系统变量管理 `public/scripts/variables.js`），保存走新端点 `/preset-variables`（写激活预设 preset.yml 内容变量 + 重建）。
+- **桥端点**：`BRIDGE_ENDPOINTS` 22→23（`presetVariables`），契约测试同步。
+- **host 加载**：`prompt-configs.ts loadPromptConfigFiles` 跳过 `variables.yml`（非配置）。
+- **测试**：引擎合并断言（变量文件不入配置列表、配置自身优先）、writePreset 生成 variables.yml、liangshen/custom 目录断言过滤变量文件（270 pass/0 fail）。
+
 ### 预设级内容变量展开进 variables（官方插值机制；修复 {{key}} 注入失败）（2026-08-23）
 
 - **根因**：writePreset 把预设级内容变量合并进 `config.params`，但引擎插值（`interpolateVariables`/`interpolateStatic`）只读 `config.variables`——`{{JailbreakPrompt}}`/`{{wordsCloud}}`/`{{getvar::k}}→{{k}}` 不被替换；且 system-section 文本注册进官方 `ctx.systemPrompt` 后，残留 `{{key}}` 触发官方 `unknown prompt variable` 抛错 → **该段注入失败**（warn 静默）。

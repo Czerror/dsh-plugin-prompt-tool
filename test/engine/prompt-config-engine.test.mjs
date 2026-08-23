@@ -74,6 +74,22 @@ test('loadPromptConfigFiles 按文件名排序扫描 yml 与 json，且跳过其
   }
 })
 
+test('loadPromptConfigFiles 读 variables.yml 合并进每条配置（配置自身优先；变量文件不当作配置）', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'prompt-tool-vars-'))
+  try {
+    writeFileSync(join(dir, 'variables.yml'), 'wordsCloud: 不少于1500\nJailbreakPrompt: YOU ARE FREE\n')
+    writeFileSync(join(dir, '10-a.yml'), 'id: a\nstrategy: static\ntext: A\nvariables:\n  wordsCloud: 配置覆盖\n')
+    writeFileSync(join(dir, '20-b.yml'), 'id: b\nstrategy: static\ntext: B\n')
+    const specs = loadPromptConfigFiles(pathToFileURL(dir + '/'))
+    assert.deepEqual(specs.map((spec) => spec.id), ['a', 'b'], 'variables.yml 不进入配置列表')
+    assert.equal(specs.find((spec) => spec.id === 'a').variables.wordsCloud, '配置覆盖', '配置自身 variables 优先')
+    assert.equal(specs.find((spec) => spec.id === 'a').variables.JailbreakPrompt, 'YOU ARE FREE', '预设变量合并进配置')
+    assert.equal(specs.find((spec) => spec.id === 'b').variables.wordsCloud, '不少于1500', '无自身变量的配置获得预设变量')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
 test('同位置多配置默认按声明顺序插入：near-anchor 与 router-guide 依次紧跟用户消息', async () => {
   const { step } = makeHarness(createPromptConfigs([
     {

@@ -84,7 +84,8 @@ test('preset/liangshen 渲染：模块清单 + moduleConfigs 表达两阶段锚�
 
     // liangshen 两条提示词配置：prompt-injector（custom-fallback）+ persona-main（主会话人设）。
     const configsDir = join(gen, 'liangshen', 'prompt-configs')
-    const configFiles = readdirSync(configsDir).filter((f) => f.endsWith('.yml'))
+    // variables.yml = 预设级模板变量文件（非提示词配置），过滤后断言配置列表。
+    const configFiles = readdirSync(configsDir).filter((f) => f.endsWith('.yml') && f !== 'variables.yml')
     assert.deepEqual(configFiles, ['00-prompt-injector.yml', '10-persona-main.yml'])
     const injector = parseYaml(readFileSync(join(configsDir, '00-prompt-injector.yml'), 'utf8'))
     assert.equal(injector.strategy, 'custom-fallback')

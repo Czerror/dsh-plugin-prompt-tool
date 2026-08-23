@@ -215,6 +215,8 @@ export function loadPromptConfigFiles(dir: string): PromptConfigSpec[] {
     .filter((entry) => entry.isFile() && /\.(ya?ml|json)$/i.test(entry.name))
     .sort((a, b) => a.name.localeCompare(b.name))
   for (const entry of files) {
+    // 预设级模板变量文件（writePreset 生成）：非提示词配置，UI 由「模板变量」卡片管理。
+    if (entry.name === 'variables.yml') continue
     const raw = readFileSync(join(dir, entry.name), 'utf8')
     const parsed = /\.json$/i.test(entry.name) ? JSON.parse(raw) : parseYaml(raw, { logLevel: 'silent' })
     if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
