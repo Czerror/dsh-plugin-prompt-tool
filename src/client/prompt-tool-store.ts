@@ -218,7 +218,8 @@ export interface PromptToolStore {
   /** 模板变量插值开关（preset.yml 顶层 variablesEnabled，缺省 true）。 */
   templateVariablesEnabled: boolean
   setTemplateVariablesEnabled: (value: boolean) => void
-  saveTemplateVariables: () => Promise<void>
+  /** 保存模板变量；可显式传入下一份值（如清空场景，避免 setState 未生效时的旧闭包）。 */
+  saveTemplateVariables: (next?: Record<string, string>) => Promise<void>
   toggle: (key: SwitchKey) => void
   toggleBootstrapMaxTokens: () => void
   setPresetTemplate: (id: string) => void
@@ -617,10 +618,10 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
   }, [load, showNotice])
 
   /** 模板变量：写激活预设 preset.yml 内容变量（后端 savePresetParams + afterOverridesChange 触发重建）。 */
-  const saveTemplateVariables = useCallback(async () => {
+  const saveTemplateVariables = useCallback(async (next?: Record<string, string>) => {
     // 空 key 行（待编辑）不落盘；本地同步清理保持显示一致。
     const cleaned = Object.fromEntries(
-      Object.entries(templateVariables).filter(([key]) => key.trim().length > 0),
+      Object.entries(next ?? templateVariables).filter(([key]) => key.trim().length > 0),
     )
     const res = await bridgePost<{ variables: unknown }>('/preset-variables', {
       variables: cleaned,

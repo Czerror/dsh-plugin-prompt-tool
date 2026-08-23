@@ -14,6 +14,12 @@
 
 ## [Unreleased]
 
+### 修复 Variables 卡片「删除（清空）」失效（2026-08-23）
+
+- **根因**：`clearAll` 先 `setTemplateVariables({})` 再调 `saveTemplateVariables()`——React setState 异步，保存闭包里的 state 还是旧值，后端写回旧变量，卡片清不掉。
+- **修复**：`saveTemplateVariables(next?)` 支持显式传入下一份值；清空场景传 `{}`（后端清 variables 段 + 重建），与 setState 解耦。
+- 验证：typecheck / lint / test 全绿（272 pass/0 fail）。
+
 ### 模块「新建」增加 Variables 入口（2026-08-23）
 
 - **新建 → Variables**：模板选择弹窗（新建）顶部新增固定「变量 / Variables」入口——点击展开模块列表顶部的模板变量卡片（受控展开）并添加一个待编辑空行，不插入提示词配置。

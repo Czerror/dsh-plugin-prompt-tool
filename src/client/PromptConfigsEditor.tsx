@@ -27,7 +27,7 @@ export interface PromptConfigsEditorProps {
   setTemplateVariables: (value: Record<string, string>) => void
   templateVariablesEnabled: boolean
   setTemplateVariablesEnabled: (value: boolean) => void
-  saveTemplateVariables: () => Promise<void>
+  saveTemplateVariables: (next?: Record<string, string>) => Promise<void>
 }
 
 /** 预设级模板变量模块卡片（归类于配置列表下）：{{key}} 插值源，非 promptConfig——
@@ -38,7 +38,7 @@ function TemplateVariablesModuleCard(props: {
   setTemplateVariables: (value: Record<string, string>) => void
   templateVariablesEnabled: boolean
   setTemplateVariablesEnabled: (value: boolean) => void
-  saveTemplateVariables: () => Promise<void>
+  saveTemplateVariables: (next?: Record<string, string>) => Promise<void>
   expanded: boolean
   onToggleExpanded: () => void
 }): ReactNode {
@@ -50,7 +50,7 @@ function TemplateVariablesModuleCard(props: {
   if (count === 0) return null
   const clearAll = (): void => {
     props.setTemplateVariables({})
-    void props.saveTemplateVariables()
+    void props.saveTemplateVariables({})
     setConfirmingDelete(false)
     if (props.expanded) props.onToggleExpanded()
   }
