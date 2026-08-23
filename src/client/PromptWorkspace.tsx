@@ -10,7 +10,6 @@ import {
 import type { SkillCatalogEntry } from './prompt-tool-bridge.ts'
 import { PromptConfigList } from './PromptConfigList.tsx'
 import { PromptConfigsEditor } from './PromptConfigsEditor.tsx'
-import { VariablesEditor } from './PromptConfigCard.tsx'
 import type { PromptToolWorkspaceController } from './workspace-controller.ts'
 import { PresetsPage } from './PresetsPage.tsx'
 import { CharactersPage } from './CharactersPage.tsx'
@@ -351,22 +350,6 @@ function SubagentSettings(props: { store: PromptToolStore }): ReactNode {
   )
 }
 
-/** 模板变量卡片：编辑激活预设的预设级内容变量（preset.yml params 非 PARAM_KEYS 键；
- *  writePreset 展开进 prompt-configs/variables.yml，引擎加载合并进每条配置 variables
- *  供 {{key}} 插值——ST 对应物为宏系统变量管理（public/scripts/variables.js）。 */
-function TemplateVariablesCard(props: { store: PromptToolStore }): ReactNode {
-  const { store } = props
-  const count = Object.keys(store.templateVariables).length
-  return (
-    <CollapsibleCard id="pt-template-variables" title="模板变量" meta={`{{key}} 插值 · ${count} 个变量`}>
-      <VariablesEditor value={store.templateVariables} onChange={(next) => store.setTemplateVariables(next ?? {})} />
-      <div className={ui.presetCardFooter}>
-        <button type="button" className={ui.pillButton} onClick={() => void store.saveTemplateVariables()}>保存模板变量</button>
-      </div>
-    </CollapsibleCard>
-  )
-}
-
 /** 主会话页：主对话参数 + Preset/AGENTS 内容 + 管线状态卡 + 模块库（层筛选）。
  *  注入层 tab 已并入本页（层专属开关与内容资产卡片），模块库按层级下拉筛选浏览。 */
 function FeatureSettings(props: { store: PromptToolStore }): ReactNode {
@@ -376,7 +359,6 @@ function FeatureSettings(props: { store: PromptToolStore }): ReactNode {
     <section className={ui.section} aria-label="主会话与全局">
       <ModelRouteStatus store={store} />
       <ModelToolCards store={store} scope="main" />
-      <TemplateVariablesCard store={store} />
       <PipelineStatusCards store={store} />
       <PromptConfigsEditor
         meta={store.meta}
@@ -385,6 +367,9 @@ function FeatureSettings(props: { store: PromptToolStore }): ReactNode {
         onPatchConfigs={(configs) => store.patch({ promptConfigs: configs })}
         onSaveConfigs={(configs) => store.persistConfigs(configs)}
         onNotice={store.showNotice}
+        templateVariables={store.templateVariables}
+        setTemplateVariables={store.setTemplateVariables}
+        saveTemplateVariables={store.saveTemplateVariables}
       />
     </section>
   )

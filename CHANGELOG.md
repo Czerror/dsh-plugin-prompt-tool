@@ -14,6 +14,13 @@
 
 ## [Unreleased]
 
+### 模板变量编辑入口并入模块列表（B 方案）（2026-08-23）
+
+- **调整**：「模板变量」从工作台独立卡片（ModelToolCards 下方）移入提示词配置模块列表（PromptConfigsEditor）顶部——与 world-book、人设、各提示词模块并列管理，样式统一（configCard）。
+- 语义保持：预设级数据（非 promptConfig，不进配置列表保存路径），保存仍走 `/preset-variables` 写 preset.yml 顶层 `variables` 段。
+- `PromptConfigsEditor` props 扩展（templateVariables / setTemplateVariables / saveTemplateVariables）；`PromptWorkspace` 移除旧独立卡片组件。
+- 验证：typecheck / lint / test 全绿（271 pass/0 fail）。
+
 ### 预设级模板变量迁移到 preset.yml 顶层 variables 段（2026-08-23）
 
 - **设计**：`params` 混着两类语义（引擎行为参数 + 模板变量）——模板变量迁移到顶层 `variables:` 段（对齐官方"变量表"概念），`params` 只留引擎行为参数（PARAM_KEYS）。
