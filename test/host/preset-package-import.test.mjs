@@ -292,7 +292,7 @@ test('importPresetPackage：SillyTavern JSON 单文件经转换引擎导入（�
   assert.equal(converted.modules.includes('tool-web'), false, 'enable_web_search: false 不组装 tool-web')
   assert.deepEqual(converted.moduleConfigs['tool-filter'], { includeSubagents: false, deny: ['web_search', 'web_fetch'] }, 'false 时 tool-filter deny web 工具')
   const configs = converted.promptConfigs
-  assert.equal(configs.length, 2, '采样参数归一到顶层 params 后不再生成 agent-request 配置')
+  assert.equal(configs.length, 2)
   const main = configs.find((config) => config.id === 'main')
   assert.deepEqual(main, {
     // RELATIVE 注入顺序 = prompt_order / 数组顺序（ST 忽略 injection_order）。
@@ -305,10 +305,11 @@ test('importPresetPackage：SillyTavern JSON 单文件经转换引擎导入（�
   assert.equal(nsfw.role, 'user')
   assert.equal(nsfw.position, 'after-user')
   assert.equal(nsfw.order, 10, 'in-chat 注入同样按数组顺序排（本项目无深度注入）')
-  // 采样参数 → 顶层 params.model*（主对话统一参数体系，字符串与 Config schema 对齐）。
-  assert.equal(converted.params.modelTemperature, '0.8')
-  assert.equal(converted.params.modelMaxTokens, '2048')
-  assert.equal(converted.params.modelReasoningEffort, 'low')
+  // 采样参数剥离：模型参数由「模型设置」UI 管理，ST 卡固化值不写入转换产物
+  //（避免覆盖用户在模型设置里的设置）。
+  for (const key of ['modelTemperature', 'modelMaxTokens', 'modelReasoningEffort']) {
+    assert.equal(converted.params?.[key], undefined, `采样参数剥离：params.${key} 不得出现`)
+  }
   assert.equal(configs.find((config) => config.id === 'st-sampling'), undefined, '不再生成 st-sampling agent-request 配置')
 })
 

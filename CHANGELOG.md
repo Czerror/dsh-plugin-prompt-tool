@@ -14,6 +14,13 @@
 
 ## [Unreleased]
 
+### ST 转换剥离采样参数（模型参数统一归「模型设置」UI）（2026-08-23）
+
+- **根因**：convertStToPreset 把 ST 卡采样参数（`temperature` / `openai_max_tokens` / `reasoning_effort`）固化为顶层 `params.model*`，与「模型设置」UI 编辑的是同一份预设级参数——ST 卡固化值会在导入/重建时覆盖用户在模型设置里的设置。
+- **剥离**：转换引擎不再写入 `modelTemperature` / `modelMaxTokens` / `modelReasoningEffort`（ST 源码对照：这三者是 ST 请求层采样参数，属会话运行时设置，非预设内容）；模型参数完全由模型设置 UI / 宿主默认管理。
+- **测试**：`preset-package-import` 用例改为断言转换产物不含三键（268 pass/0 fail）。
+- **环境配套**：已导入预设 `xiajin-tianqin-beta-2-42/preset.yml` 顶层 params 三键剥离（yaml 保留注释写回 + 备份），生成目录旧 `00-model-params.yml` 删除（writePreset 重建时会清空 prompt-configs 目录，无残留路径）。
+
 ### 预设 id 官方命名约束（修复官方客户端 resume 报 preset not found）（2026-08-23）
 
 - **根因**：ST 导入预设 id 保留中文字符（`\u4e00-\u9fff`），目录建在官方 `USER_PRESET_DIR` 后被宿主 discovery 的 `PRESET_ID`（`/^[a-z0-9][a-z0-9-]*$/`）静默跳过；插件又把宿主 `agent-presets.default` 同步为该 id → 官方客户端 resume 会话报 `agent-presets: preset "夏瑾-天琴座-beta-2-42" not found`。

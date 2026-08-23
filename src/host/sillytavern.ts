@@ -8,8 +8,9 @@
  *     description/personality/scenario 拼接为「角色设定」system-section，
  *     system_prompt / post_history_instructions → system-section，
  *     first_mes → pre-step 开场白（dedupe=session 每会话一次）；
- *   - 采样参数 → 顶层 params.model*（主对话统一参数体系；经 mergePresetDefaults
- *     合并进 Config，由 writePreset 渲染为 agent-request patch，audience=main）；
+ *   - 采样参数（temperature/openai_max_tokens/reasoning_effort）**不转译**：
+ *     模型参数由「模型设置」UI 统一管理（预设级 params.model*，writePreset 渲染
+ *     agent-request patch），ST 卡固化值会覆盖用户在模型设置里的设置，故剥离；
  *   - modules 按需组装：prompt-config-engine 始终，system-section 注入需要
  *     persona（complete: false 允许 system-section 生效）。
  */
@@ -289,18 +290,6 @@ export function convertStToPreset(card: unknown, baseName: string): PresetSpec {
         dedupe: 'none',
       })
     }
-  }
-
-  // 采样参数 → 顶层 params.model*（本项目主对话统一参数体系，字符串与 Config schema 对齐；
-  // 由 writePreset 的 modelRequestConfigs 渲染为 agent-request patch，audience=main）。
-  if (typeof record.temperature === 'number') params.modelTemperature = String(record.temperature)
-  if (typeof record.openai_max_tokens === 'number' && record.openai_max_tokens > 0) {
-    params.modelMaxTokens = String(record.openai_max_tokens)
-  }
-  // reasoning_effort 透传任意非空字符串：官方 ReasoningEffortId 是不透明标识
-  // （适配器拥有，无校验），档位由模型适配器决定；仅丢弃非字符串/空值。
-  if (typeof record.reasoning_effort === 'string' && record.reasoning_effort.trim().length > 0) {
-    params.modelReasoningEffort = record.reasoning_effort.trim()
   }
 
   // modules 按需组装：prompt-config-engine 始终；system-section 注入需要 persona 服务。
