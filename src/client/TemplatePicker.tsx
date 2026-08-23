@@ -17,9 +17,11 @@ export function TemplatePicker(props: {
   /** 传入 layer 时只显示该层模板（无分组标题）；不传按层分组展示全部。 */
   layer?: string
   onPick: (entry: PromptConfigTemplateEntry) => void
+  /** 可选：「模板变量（Variables）」固定入口——点击不插入配置，由宿主展开模板变量卡片。 */
+  onPickVariables?: () => void
   onClose: () => void
 }): ReactNode {
-  const { templates, layer, onPick, onClose } = props
+  const { templates, layer, onPick, onPickVariables, onClose } = props
   const dialogRef = useRef<HTMLDivElement>(null)
   const restoreRef = useRef<HTMLElement | null>(null)
 
@@ -84,6 +86,15 @@ export function TemplatePicker(props: {
           <button type="button" className={styles.pillButton} aria-label="关闭模板选择" onClick={onClose}>×</button>
         </div>
         <div className={styles.templateModalList}>
+          {onPickVariables !== undefined && (
+            <div className={styles.templateGroup}>
+              <strong className={styles.templateGroupTitle}>变量</strong>
+              <button type="button" className={styles.templateModalItem} onClick={onPickVariables}>
+                <strong>Variables</strong>
+                <small>{'模板变量（预设级 {{key}} 插值）'}</small>
+              </button>
+            </div>
+          )}
           {visible.length === 0 && <p className={styles.configFieldHint}>本层暂无内置模板。</p>}
           {[...groups.entries()].map(([groupLayer, items]) => (
             <div key={groupLayer} className={styles.templateGroup}>

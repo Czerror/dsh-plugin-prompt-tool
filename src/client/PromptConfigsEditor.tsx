@@ -39,8 +39,9 @@ function TemplateVariablesModuleCard(props: {
   templateVariablesEnabled: boolean
   setTemplateVariablesEnabled: (value: boolean) => void
   saveTemplateVariables: () => Promise<void>
+  expanded: boolean
+  onToggleExpanded: () => void
 }): ReactNode {
-  const [expanded, setExpanded] = useState(false)
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const cardRef = useRef<HTMLElement>(null)
   const count = Object.keys(props.templateVariables).length
@@ -49,7 +50,7 @@ function TemplateVariablesModuleCard(props: {
     props.setTemplateVariables({})
     void props.saveTemplateVariables()
     setConfirmingDelete(false)
-    setExpanded(false)
+    if (props.expanded) props.onToggleExpanded()
   }
   /** 失焦自动保存：焦点离开卡片容器（含收起/切换开关/点击删除）即持久化。 */
   const autoSaveOnBlur = (event: FocusEvent<HTMLElement>): void => {
@@ -61,12 +62,12 @@ function TemplateVariablesModuleCard(props: {
   return (
     <article ref={cardRef} className={styles.configCard} onBlur={autoSaveOnBlur}>
       <header className={styles.configHeader}>
-        <button type="button" className={styles.configToggle} aria-expanded={expanded} onClick={() => setExpanded(!expanded)}>
+        <button type="button" className={styles.configToggle} aria-expanded={props.expanded} onClick={props.onToggleExpanded}>
           <span className={styles.configTitle}>
             <span className={styles.configName}>模板变量</span>
             <span className={styles.configMeta}>{`预设级 {{key}} 插值 · ${count} 个变量`}</span>
           </span>
-          <IconChevronDownOutline14 className={clsx(styles.chevron, expanded && styles.chevronOpen)} />
+          <IconChevronDownOutline14 className={clsx(styles.chevron, props.expanded && styles.chevronOpen)} />
         </button>
         <span className={styles.configHeaderActions}>
           <label className={styles.configEnable} title={enabled ? '点击停用模板变量插值' : '点击启用模板变量插值'}>
@@ -93,7 +94,7 @@ function TemplateVariablesModuleCard(props: {
           </span>
         </span>
       </header>
-      {expanded && (
+      {props.expanded && (
         <div className={styles.configForm}>
           {!enabled && <p className={styles.configFieldHint}>{'模板变量插值已停用：{{key}} 将不再被替换（预设级变量文件不生成）。'}</p>}
           <VariablesEditor value={props.templateVariables} onChange={(next) => props.setTemplateVariables(next ?? {})} />
@@ -105,11 +106,18 @@ function TemplateVariablesModuleCard(props: {
 
 /** 提示词配置编辑器：配置列表（层级/策略过滤已并入列表）+ 模板插入 + 保存前权威校验。 */
 export function PromptConfigsEditor(props: PromptConfigsEditorProps): ReactNode {
+  const [templateVarsExpanded, setTemplateVarsExpanded] = useState(false)
   const templatePicker = useTemplatePicker(
     props.configs,
     (config) => props.onPatchConfigs([...props.configs, config]),
     props.onNotice,
   )
+  /** 「新建 → Variables」：展开模板变量卡片并添加一个待编辑空行。 */
+  const pickVariables = (): void => {
+    props.setTemplateVariables({ ...props.templateVariables, '': '' })
+    setTemplateVarsExpanded(true)
+    templatePicker.closePicker()
+  }
   return (
     <section className={styles.page} aria-label="提示词配置">
       <PromptConfigList
@@ -124,6 +132,8 @@ export function PromptConfigsEditor(props: PromptConfigsEditorProps): ReactNode 
             templateVariablesEnabled={props.templateVariablesEnabled}
             setTemplateVariablesEnabled={props.setTemplateVariablesEnabled}
             saveTemplateVariables={props.saveTemplateVariables}
+            expanded={templateVarsExpanded}
+            onToggleExpanded={() => setTemplateVarsExpanded(!templateVarsExpanded)}
           />
         }
         onPatchConfigs={props.onPatchConfigs}
@@ -132,7 +142,12 @@ export function PromptConfigsEditor(props: PromptConfigsEditorProps): ReactNode 
       />
 
       {templatePicker.open && (
-        <TemplatePicker templates={templatePicker.templates} onPick={templatePicker.pickTemplate} onClose={templatePicker.closePicker} />
+        <TemplatePicker
+          templates={templatePicker.templates}
+          onPick={templatePicker.pickTemplate}
+          onPickVariables={pickVariables}
+          onClose={templatePicker.closePicker}
+        />
       )}
 
       <p className={styles.settingsNote}>提示词配置写入 <code>settings.promptConfigs</code>；外部提示词配置可经「预设配置 → 导入预设」引入。</p>
