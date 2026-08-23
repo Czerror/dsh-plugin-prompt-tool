@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.6.2] - 2026-08-23
+
+### 模型参数提取到 preset.yml 顶层 model / subagentModel 段（2026-08-23）
+
+- **设计**：params 中 10 个模型键（`modelProvider`…`subagentMaxTokens`）提取为顶层 `model` / `subagentModel` 段（`provider/name/reasoningEffort/temperature/maxTokens`，官方 `agent-default-model` 同构）——params 瘦身 33→23 键（锚定/引导/开关可读性恢复），模型设置 UI 卡片与顶层段一一对应。
+- **读取**：`loadPresetSpec` 顶层段展平进 params 扁平键（消费方统一读 `modelProvider` 等，writePreset/端点/UI 零改动）；双读（段优先 + 扁平键兜底）。
+- **写入**：`savePresetParams` 模型键写顶层段 + 清理 params 旧扁平键（保存即迁移）。
+- **模板/文档**：preset.yml 顶层段注释；README params 一览更新。
+- **测试**：读取展平 + 保存迁移断言（289 pass/0 fail）。
+
 ## [0.6.1] - 2026-08-23
 
 ### 模型参数提取到 preset.yml 顶层 model / subagentModel 段（2026-08-23）
