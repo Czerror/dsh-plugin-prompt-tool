@@ -96,11 +96,11 @@ export function ModelRouteModuleCard(props: { store: PromptToolStore; scope: 'ma
     void store.persistParamOverrides()
   }
   const scopeMeta = props.scope === 'main'
-    ? { title: '模型路由', idle: '未设置：继承宿主默认模型', active: '固定模型路由已设置（新会话默认模型）' }
-    : { title: '子代理模型', idle: '未设置：继承主会话模型', active: '子代理固定模型路由已设置' }
+    ? { title: '模型路由', idle: '未设置：展开选择模型（留空 = 继承宿主默认）', active: '固定模型路由已设置（新会话默认模型）' }
+    : { title: '子代理模型', idle: '未设置：展开选择模型（留空 = 继承主会话）', active: '子代理固定模型路由已设置' }
   // 主对话卡片：宿主默认模型名回显（子代理默认继承主会话，不回显宿主）。
   const idleMeta = props.scope === 'main' && host?.model !== undefined && host.model.length > 0
-    ? `未设置：继承宿主默认（${host.model}）`
+    ? `未设置：展开选择模型（当前继承宿主默认 ${host.model}）`
     : scopeMeta.idle
   return (
     <EngineModuleCard store={store} name={scopeMeta.title} meta={active ? scopeMeta.active : idleMeta}>

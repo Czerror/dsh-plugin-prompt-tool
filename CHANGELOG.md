@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### 补「主会话人设」模板 + 人设功能定位核查（2026-08-24）
+
+- **定位**：主会话人设功能在 `41db0da`（人设彻底模块化）从 `params.mainPersona` 迁移为 `promptConfigs.persona-main`（system-section 段，sectionName=deployment:persona）——编辑入口 = 模块列表「主会话人设」卡，非独立参数。根 preset.yml 的 `mainPersona` 注释为迁移残留（已确认引擎/参数桥/UI 均不消费）。
+- **补模板**：新增 `templates/21-persona-main.yml`（主会话人设模板：sectionName=deployment:persona + complete + suppressRuntimeContext），此前模板库只有通用 system-section 模板，无法「新建」人设卡。
+- **模型路由卡 meta 文案**：状态描述改为操作引导（「未设置：展开选择模型（当前继承宿主默认 X）」）。
+- **测试**：templates.test.mjs 模板数 16→17 + persona-main 断言；315 pass/0 fail。
+
 ### 引擎模块卡移到模块列表上方独立区块（2026-08-24）
 
 - **PromptConfigsEditor**：模型路由 / tool-bootstrap / context-gate / 工具管线从模块列表 `beforeCards`（列表内部）移到**上方独立「引擎模块」区块**（sectionHeading + configList 容器），与注入内容配置（模块列表）明确分层；模板变量卡保留在模块列表内。

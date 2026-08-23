@@ -5,7 +5,7 @@ import { loadPromptTemplates, validatePromptConfigs } from '../../lib/index.mjs'
 
 test('loadPromptTemplates：按文件名数字前缀顺序返回包内模板库', () => {
   const templates = loadPromptTemplates()
-  assert.equal(templates.length, 16)
+  assert.equal(templates.length, 17)
   assert.deepEqual(templates.map((template) => template.file), [
     '10-pre-step.yml',
     '11-merged-a.yml',
@@ -17,6 +17,7 @@ test('loadPromptTemplates：按文件名数字前缀顺序返回包内模板库'
     '18-placeholder-env-facts.yml',
     '19-placeholder-skill-catalog.yml',
     '20-system-section.yml',
+    '21-persona-main.yml',
     '30-runtime-context.yml',
     '31-runtime-context-placeholder.yml',
     '40-agent-request.yml',
@@ -44,6 +45,7 @@ test('模板库覆盖六个注入层级与两个 placeholder 数据源', () => {
   assert.equal(byId.get('example-agent-request').layer, 'agent-request')
   assert.equal(byId.get('example-llm-stream').layer, 'llm-stream')
   assert.equal(byId.get('example-tool-pipeline').layer, 'tool-pipeline')
+  assert.equal(byId.get('persona-main').params.sectionName, 'deployment:persona')
   assert.equal(byId.get('example-placeholder').fill, 'env-facts')
   assert.equal(byId.get('example-skill-catalog').fill, 'skill-catalog')
 })
