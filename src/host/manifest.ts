@@ -31,6 +31,8 @@ export interface PresetSpec {
   composition?: string
   /** 扁平参数:全部直读(true/false、数字、字符串),on/off 作为兼容写法。 */
   params?: Record<string, unknown>
+  /** 预设级模板变量（{{key}} 插值源；与引擎行为参数 params 分离，顶层 variables 段）。 */
+  variables?: Record<string, string>
   /** 宿主层默认值(唯一入口):apply 时合并进 Config,settings 仍可覆盖。 */
   hostDefaults?: Record<string, unknown>
   /** 可选:模板自定义提示词配置覆盖(纯数据,不使用模板语法)。 */
@@ -360,6 +362,7 @@ export function savePresetParams(
   templateName: string,
   params: Record<string, unknown> | undefined,
   promptConfigs: unknown[] | undefined,
+  variables?: Record<string, string>,
 ): void {
   const file = join(presetRoot, templateName, 'preset.yml')
   if (!existsSync(file)) throw new Error(`preset ${templateName} 无 preset.yml`)
@@ -386,6 +389,22 @@ export function savePresetParams(
       return next
     })
     doc.setIn(['promptConfigs'], cleaned)
+  }
+  if (variables !== undefined) {
+    // 预设级模板变量写顶层 variables 段（与引擎行为参数 params 分离）；
+    // 旧布局（变量混在 params 内容键）同名键一并清理（保存即迁移）。
+    const kept = Object.fromEntries(
+      Object.entries(variables).filter(([key, value]) => key.trim().length > 0 && typeof value === 'string'),
+    )
+    if (Object.keys(kept).length > 0) {
+      doc.setIn(['variables'], kept)
+    } else {
+      doc.deleteIn(['variables'])
+    }
+    for (const [key, value] of Object.entries(variables)) {
+      if (typeof value !== 'string') continue
+      doc.deleteIn(['params', key])
+    }
   }
   writeFileSync(file, doc.toString(), 'utf8')
   rmSync(join(presetRoot, templateName, 'prompt-tool.overrides.yml'), { force: true })

@@ -1,10 +1,10 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { parse as parseYaml } from 'yaml'
+import { parse as parseYaml, parseDocument } from 'yaml'
 
 // 隔离 DSH_HOME：writePreset 的模板解析（resolvePresetDir）用户预设优先——
 // 真实用户环境 .agent-presets/<id> 会遮蔽包内模板，测试必须隔离。
@@ -411,10 +411,21 @@ test('writePreset 拒绝非法 presetTemplate（路径穿越防护）', () => {
   }
 })
 
-test('writePreset 预设级内容变量生成 variables.yml（单一文件）；UI 已管理键不落配置', () => {
+test('writePreset 预设级模板变量生成 variables.yml（顶层 variables 段优先 + 旧 params 兼容）；UI 已管理键不落配置', () => {
   const dir = join(tmpdir(), `prompt-tool-uikeys-${process.pid}-${Date.now()}`)
   const presetDir = join(dir, 'preset')
   try {
+    // 先写入预设级模板变量（顶层 variables 段）+ 旧布局 params 内容键（兼容层）。
+    // writePreset 的 spec 经 resolvePresetDir 读取（用户预设根优先）：
+    // 复制包内完整 anchored 模板到 DSH_HOME 用户根，再写入顶层 variables 与
+    // 旧布局 params 内容键（兼容层），模拟真实用户预设。
+    const homePresetDir = join(home, '.agent-presets')
+    cpSync(join(process.cwd(), 'preset', 'anchored'), join(homePresetDir, 'anchored'), { recursive: true })
+    const presetFile = join(homePresetDir, 'anchored', 'preset.yml')
+    const doc = parseDocument(readFileSync(presetFile, 'utf8'))
+    doc.setIn(['params', 'legacyVar'], '旧值')
+    writeFileSync(presetFile, doc.toString(), 'utf8')
+    savePresetParams(homePresetDir, 'anchored', undefined, undefined, { wordsCloud: '1500字' })
     writePreset('PROMPT', {
       ...makeOptions(presetDir),
       firstTurnAnchor: true,
@@ -439,9 +450,11 @@ test('writePreset 预设级内容变量生成 variables.yml（单一文件）；
     const varsFile = join(pcDir, 'variables.yml')
     assert.ok(existsSync(varsFile), 'variables.yml 生成')
     const vars = parseYaml(readFileSync(varsFile, 'utf8'))
-    assert.equal(vars.promptText, 'PROMPT', '内容变量进 variables.yml')
-    assert.equal(parsed.variables?.['promptText'], undefined, '配置文件不再逐条展开内容变量')
-    assert.equal(parsed.params?.promptText, undefined, '内容变量不再进 params')
+    assert.equal(vars.wordsCloud, '1500字', '顶层 variables 段进 variables.yml')
+    assert.equal(vars.legacyVar, '旧值', '旧布局 params 内容键兼容进 variables.yml')
+    assert.equal(vars.promptText, undefined, 'runtime 参数（promptText）不进变量文件')
+    assert.equal(parsed.variables?.['wordsCloud'], undefined, '配置文件不再逐条展开内容变量')
+    assert.equal(parsed.params?.wordsCloud, undefined, '内容变量不再进 params')
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }

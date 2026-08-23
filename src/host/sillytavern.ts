@@ -24,27 +24,27 @@ const ST_DIRECTIVE = /\{\{(setvar|getvar|ERA|trim|\/\/)[^}]*\}\}/gi
  * 处理 SillyTavern 文本，ST 变量语义 → 本项目 params fallback 插值：
  *   {{setvar::k::v}}        → 收集 k=v 进 params（会话变量初始值 = fallback 基准），指令剥离；
  *   {{getvar::k}}           → 改写为 {{k}}（引擎按 params 插值，无值保留原样）；
- *   {{getvar::k::default}}  → 改写为 {{k}} 且 params 缺 k 时写入 default（fallback 落 params）；
+ *   {{getvar::k::default}}  → 改写为 {{k}} 且 variables 缺 k 时写入 default（fallback 落顶层 variables）；
  *   {{trim}}/{{//注释}}/{{ERA:...}} → 剥离（格式化/注释/第三方运行时）；
  *   {{user}}/{{char}}       → 替换占位符。
  */
-export function processStText(text: string, cardName: string, params: Record<string, unknown>): string {
+export function processStText(text: string, cardName: string, variables: Record<string, string>): string {
   // 顺序敏感：先收集 setvar（同文本后续 getvar 可读到），再改写 getvar，最后剥离残留指令——
   // 否则 ST_DIRECTIVE 会先把 setvar/getvar 整段剥掉，收集正则匹配不到。
   // setvar：{{setvar::k::v}} → 收集 k=v（会话变量初始值 = fallback 基准），指令剥离。
   let cleaned = text.replace(/\{\{setvar::([A-Za-z0-9_.\u4e00-\u9fff-]+)::([^}]*)\}\}/g, (_whole, key: string, value: string) => {
-    params[key] = value
+    variables[key] = value
     return ''
   })
   // getvar 带默认值（fallback）：{{getvar::k::default}} → {{k}} + params.k ??= default。
   cleaned = cleaned.replace(/\{\{getvar::([A-Za-z0-9_.\u4e00-\u9fff-]+)::([^}]*)\}\}/g, (_whole, key: string, fallback: string) => {
     // 仅检查自有属性（ST 变量名来自外部文本，避开 constructor/__proto__ 等原型链键）。
-    if (!Object.prototype.hasOwnProperty.call(params, key) && fallback.length > 0) params[key] = fallback
+    if (!Object.prototype.hasOwnProperty.call(variables, key) && fallback.length > 0) variables[key] = fallback
     return `{{${key}}}`
   })
-  // getvar 无默认：{{getvar::k}} → 有值 {{k}}（引擎按 params 插值），无值空串（ST 语义）。
+  // getvar 无默认：{{getvar::k}} → 有值 {{k}}（引擎按 variables 插值），无值空串（ST 语义）。
   cleaned = cleaned.replace(/\{\{getvar::([A-Za-z0-9_.\u4e00-\u9fff-]+)\}\}/g, (_whole, key: string) =>
-    Object.prototype.hasOwnProperty.call(params, key) ? `{{${key}}}` : '')
+    Object.prototype.hasOwnProperty.call(variables, key) ? `{{${key}}}` : '')
   // 剥离残留运行时指令与注释（trim/ERA/注释；顺序在收集之后）。
   cleaned = cleaned.replace(ST_DIRECTIVE, '')
   cleaned = cleaned
@@ -141,9 +141,10 @@ export function convertStToPreset(card: unknown, baseName: string): PresetSpec {
   const bodyText = (key: string): string => typeof body[key] === 'string' ? (body[key] as string).trim() : ''
   const cardName = (typeof record.name === 'string' && record.name.trim().length > 0 ? record.name.trim()
     : typeof body.name === 'string' && body.name.trim().length > 0 ? (body.name as string).trim() : '')
-  // 采样参数 + ST 变量初始值（setvar/getvar fallback）统一进 params（预设参数 = fallback 基准）。
-  const params: Record<string, unknown> = {}
-  const clean = (text: string): string => processStText(text, cardName, params)
+  // ST 变量初始值（setvar/getvar fallback）进顶层 variables（{{key}} 插值源；
+  // 与引擎行为参数 params 分离，写 preset.yml 顶层 variables 段）。
+  const variables: Record<string, string> = {}
+  const clean = (text: string): string => processStText(text, cardName, variables)
   // 角色卡正文 → 提示词配置：角色设定（描述/性格/场景）拼接、系统提示、后续指令、开场白。
   // order 取负值使角色卡内容排在响应预设 prompts（order≥100）之前。
   const characterDefinition = [bodyText('description'), bodyText('personality'), bodyText('scenario')]
@@ -322,7 +323,7 @@ export function convertStToPreset(card: unknown, baseName: string): PresetSpec {
     engineCompat: '>=0.4.2',
     // 来源标记：角色管理页据此列出「从 SillyTavern 导入的预设」。
     meta: { source: 'sillytavern' },
-    ...(Object.keys(params).length > 0 ? { params } : {}),
+    ...(Object.keys(variables).length > 0 ? { variables } : {}),
     modules,
     moduleConfigs,
     promptConfigs: configs,

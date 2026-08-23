@@ -14,6 +14,16 @@
 
 ## [Unreleased]
 
+### 预设级模板变量迁移到 preset.yml 顶层 variables 段（2026-08-23）
+
+- **设计**：`params` 混着两类语义（引擎行为参数 + 模板变量）——模板变量迁移到顶层 `variables:` 段（对齐官方"变量表"概念），`params` 只留引擎行为参数（PARAM_KEYS）。
+- **转换**：`convertStToPreset` 的 setvar/getvar 收集改写入顶层 `variables`（不再进 params）。
+- **写入**：`savePresetParams` 新增 `variables` 参数——写顶层 `variables` 段 + 清理 params 同名旧键（保存即迁移）；params 空 key 跳过。
+- **渲染**：`writePreset` 的 variables.yml 来源 = 顶层 `variables`（优先）+ 旧布局 params 内容键（兼容）；runtime 参数（promptText 等）不再进变量文件。
+- **端点**：`/preset-variables` 读 = 顶层 variables + 旧 params 内容键合并（顶层优先）；写 = 顶层段。
+- **测试**：writePreset variables.yml 断言更新（顶层优先 + 旧键兼容 + runtime 排除）；savePresetParams variables 写入（271 pass/0 fail）。
+- **环境**：`beta-2-42` 预设已迁移（19 内容变量 → 顶层 variables，params 剩 14 个 UI 键，备份 `.bak-pt-vars-top-*`）。
+
 ### 修复 VariablesEditor「添加变量」失效（2026-08-23）
 
 - **根因**：`VariablesEditor.commit` 过滤空 key 行——「添加变量」新增的 `['', '']` 待编辑行被立即丢弃，按钮点击无效果（配置卡片与模板变量卡片共用，均受影响）。

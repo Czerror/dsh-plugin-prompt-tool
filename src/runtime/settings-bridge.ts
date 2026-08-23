@@ -554,7 +554,7 @@ export function registerSettingsBridge(
               return
             }
             // 预设级模板变量（非 PARAM_KEYS 的内容变量）：写激活预设 preset.yml
-            // params；writePreset 渲染时展开进 prompt-configs/variables.yml，
+            // 顶层 variables 段；writePreset 渲染时展开进 prompt-configs/variables.yml，
             // 引擎加载合并进每条配置 variables（官方插值源）。配置卡片 variables
             // 只显示配置自身，模板变量统一在本卡片编辑。
             const presetRoot = dirname(dir)
@@ -566,8 +566,13 @@ export function registerSettingsBridge(
               try {
                 const spec = loadPresetSpec(dir)
                 const variables: Record<string, string> = {}
+                // 旧布局兼容：params 内容键（非 PARAM_KEYS）仍视为变量源。
                 for (const [key, value] of Object.entries(spec.params ?? {})) {
                   if (!PARAM_KEYS.has(key) && typeof value === 'string') variables[key] = value
+                }
+                // 顶层 variables 段优先（新布局）。
+                for (const [key, value] of Object.entries(spec.variables ?? {})) {
+                  if (typeof value === 'string') variables[key] = value
                 }
                 writeBridgeJson(res, 200, { ok: true, value: { variables } })
               } catch {
@@ -579,10 +584,11 @@ export function registerSettingsBridge(
               savePresetParams(
                 presetRoot,
                 templateName,
-                record.variables !== null && typeof record.variables === 'object' && !Array.isArray(record.variables)
-                  ? record.variables as Record<string, unknown>
-                  : undefined,
                 undefined,
+                undefined,
+                record.variables !== null && typeof record.variables === 'object' && !Array.isArray(record.variables)
+                  ? record.variables as Record<string, string>
+                  : undefined,
               )
               afterOverridesChange?.()
               writeBridgeJson(res, 200, { ok: true, value: { variables: record.variables } })

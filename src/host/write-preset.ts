@@ -423,15 +423,18 @@ export function writePreset(prompt: string, options: WritePresetOptions): void {
   }
   // 模型参数（agent-request）作为引擎默认级注入，优先级低于模板与 settings。
   const merged = mergePromptConfigs(modelRequestConfigs(params), templateDefaults, options.promptConfigs)
-  // 预设级内容变量（非 PARAM_KEYS）→ prompt-configs/variables.yml（单一文件）：
-  // 引擎加载时合并进每条配置 variables（官方插值源，配置自身优先）。不再逐条
-  // 展开——配置卡片 variables 只显示配置自身，模板变量由工作台「模板变量」卡片
-  // 统一编辑。UI 已管理键（PARAM_KEYS：模型设置/工具与深度/开关）不进变量文件。
+  // 预设级模板变量 → prompt-configs/variables.yml（单一文件）：引擎加载时合并进
+  // 每条配置 variables（官方插值源，配置自身优先）。来源 = preset.yml 顶层
+  // variables 段（新）优先 + params 内容键（旧布局兼容）；UI 已管理键（PARAM_KEYS）
+  // 与 runtime 参数（promptText 等）不进变量文件。
   const presetVariables: Record<string, string> = {}
-  for (const [key, value] of Object.entries(params)) {
+  for (const [key, value] of Object.entries(spec.params ?? {})) {
     if (PARAM_KEYS.has(key)) continue
     const text = String(value)
     if (text.length > 0) presetVariables[key] = text
+  }
+  for (const [key, value] of Object.entries(spec.variables ?? {})) {
+    if (typeof value === 'string' && value.length > 0) presetVariables[key] = value
   }
   if (Object.keys(presetVariables).length > 0) {
     writeFileSync(join(promptConfigsDir, 'variables.yml'), stringifyYaml(presetVariables), 'utf8')
