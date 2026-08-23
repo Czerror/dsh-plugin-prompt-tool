@@ -613,11 +613,16 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
 
   /** 模板变量：写激活预设 preset.yml 内容变量（后端 savePresetParams + afterOverridesChange 触发重建）。 */
   const saveTemplateVariables = useCallback(async () => {
-    const res = await bridgePost<{ variables: unknown }>('/preset-variables', { variables: templateVariables })
+    // 空 key 行（待编辑）不落盘；本地同步清理保持显示一致。
+    const cleaned = Object.fromEntries(
+      Object.entries(templateVariables).filter(([key]) => key.trim().length > 0),
+    )
+    const res = await bridgePost<{ variables: unknown }>('/preset-variables', { variables: cleaned })
     if (!res.ok) {
       showNotice('error', `模板变量保存失败：${res.message ?? '未知错误'}`)
       return
     }
+    setTemplateVariables(cleaned)
     showNotice('ok', '模板变量已保存（重建后生效）')
   }, [templateVariables, showNotice])
 

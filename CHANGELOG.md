@@ -14,6 +14,12 @@
 
 ## [Unreleased]
 
+### 修复 VariablesEditor「添加变量」失效（2026-08-23）
+
+- **根因**：`VariablesEditor.commit` 过滤空 key 行——「添加变量」新增的 `['', '']` 待编辑行被立即丢弃，按钮点击无效果（配置卡片与模板变量卡片共用，均受影响）。
+- **修复**：编辑器保留空 key 行（新增行可继续输入）；空 key 由保存端统一清理——`savePresetParams`（params 空 key 跳过 + promptConfigs 逐条清理 variables 空 key）、模板变量卡片保存前本地过滤。
+- **测试**：`savePresetParams` 空 key 清理回归断言（271 pass/0 fail）。
+
 ### 模板变量单一编辑入口：variables.yml + 工作台「模板变量」卡片（2026-08-23）
 
 - **问题**：writePreset 把预设级内容变量展开进每条配置的 `variables`，每个模块卡片的「variables（模板变量 {{key}} 插值）」重复显示同一批变量。

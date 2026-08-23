@@ -10,7 +10,7 @@ import { parse as parseYaml } from 'yaml'
 // 真实用户环境 .agent-presets/<id> 会遮蔽包内模板，测试必须隔离。
 const home = mkdtempSync(join(tmpdir(), 'pt-wp-home-'))
 process.env.DSH_HOME = home
-const { writePreset } = await import('../../lib/index.mjs')
+const { writePreset, savePresetParams } = await import('../../lib/index.mjs')
 
 function makeOptions(presetDir) {
   return {
@@ -442,6 +442,28 @@ test('writePreset 预设级内容变量生成 variables.yml（单一文件）；
     assert.equal(vars.promptText, 'PROMPT', '内容变量进 variables.yml')
     assert.equal(parsed.variables?.['promptText'], undefined, '配置文件不再逐条展开内容变量')
     assert.equal(parsed.params?.promptText, undefined, '内容变量不再进 params')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('savePresetParams 清理空 key（VariablesEditor 待编辑行不落盘）', () => {
+  const dir = join(tmpdir(), `prompt-tool-emptyk-${process.pid}-${Date.now()}`)
+  const presetDir = join(dir, 'preset')
+  try {
+    mkdirSync(join(presetDir, 'anchored'), { recursive: true })
+    writeFileSync(join(presetDir, 'anchored', 'preset.yml'), 'id: anchored\nparams: {}\n', 'utf8')
+    savePresetParams(
+      presetDir,
+      'anchored',
+      { '': 'x', wordsCloud: 'v' },
+      [{ id: 'a', variables: { '': '', keep: '1' } }],
+    )
+    const doc = parseYaml(readFileSync(join(presetDir, 'anchored', 'preset.yml'), 'utf8'))
+    assert.equal(doc.params?.[''], undefined, 'params 空 key 不写入')
+    assert.equal(doc.params?.wordsCloud, 'v', '有效 params 正常写入')
+    assert.equal(doc.promptConfigs[0]?.variables?.[''], undefined, '配置 variables 空 key 不写入')
+    assert.equal(doc.promptConfigs[0]?.variables?.keep, '1', '有效变量保留')
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }

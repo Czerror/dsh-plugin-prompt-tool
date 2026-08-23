@@ -245,8 +245,9 @@ export function StrategyParamsFields(props: { strategy: string; layer?: string; 
 export function VariablesEditor(props: { value: Record<string, string> | undefined; onChange: (value: Record<string, string> | undefined) => void }): ReactNode {
   const entries = Object.entries(props.value ?? {})
   const commit = (next: Array<[string, string]>) => {
-    const cleaned = next.filter(([key]) => key.trim().length > 0)
-    props.onChange(cleaned.length > 0 ? Object.fromEntries(cleaned) : undefined)
+    // 保留空 key 行（「添加变量」新增的待编辑行）；空 key 由保存端（savePresetParams）
+    // 统一清理，避免新增行被立即过滤导致按钮失效。
+    props.onChange(next.length > 0 ? Object.fromEntries(next) : undefined)
   }
   const setEntry = (index: number, key: string, value: string) => {
     commit(entries.map((entry, at): [string, string] => at === index ? [key, value] : entry))

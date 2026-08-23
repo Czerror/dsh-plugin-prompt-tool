@@ -366,12 +366,26 @@ export function savePresetParams(
   const doc = parseDocument(readFileSync(file, 'utf8'), { logLevel: 'silent' })
   if (params !== undefined) {
     for (const [key, value] of Object.entries(params)) {
-      if (value === undefined || value === null) continue
+      // 空 key（VariablesEditor 待编辑行）与空值不写入，保留模板默认。
+      if (value === undefined || value === null || key.trim().length === 0) continue
       doc.setIn(['params', key], value)
     }
   }
   if (promptConfigs !== undefined) {
-    doc.setIn(['promptConfigs'], promptConfigs)
+    // 逐条清理 variables 空 key（待编辑行），避免脏数据落盘。
+    const cleaned = (promptConfigs as Array<Record<string, unknown>>).map((config) => {
+      if (config === null || typeof config !== 'object' || Array.isArray(config)) return config
+      const vars = config.variables
+      if (vars === null || typeof vars !== 'object' || Array.isArray(vars)) return config
+      const kept = Object.fromEntries(
+        Object.entries(vars as Record<string, string>).filter(([key]) => key.trim().length > 0),
+      )
+      const next = { ...config }
+      if (Object.keys(kept).length > 0) next.variables = kept
+      else delete next.variables
+      return next
+    })
+    doc.setIn(['promptConfigs'], cleaned)
   }
   writeFileSync(file, doc.toString(), 'utf8')
   rmSync(join(presetRoot, templateName, 'prompt-tool.overrides.yml'), { force: true })
