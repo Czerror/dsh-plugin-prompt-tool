@@ -33,6 +33,8 @@ export interface PresetSpec {
   params?: Record<string, unknown>
   /** 预设级模板变量（{{key}} 插值源；与引擎行为参数 params 分离，顶层 variables 段）。 */
   variables?: Record<string, string>
+  /** 模板变量插值开关（缺省 true = 启用；false = 停用，writePreset 不生成变量文件）。 */
+  variablesEnabled?: boolean
   /** 宿主层默认值(唯一入口):apply 时合并进 Config,settings 仍可覆盖。 */
   hostDefaults?: Record<string, unknown>
   /** 可选:模板自定义提示词配置覆盖(纯数据,不使用模板语法)。 */
@@ -363,6 +365,7 @@ export function savePresetParams(
   params: Record<string, unknown> | undefined,
   promptConfigs: unknown[] | undefined,
   variables?: Record<string, string>,
+  variablesEnabled?: boolean,
 ): void {
   const file = join(presetRoot, templateName, 'preset.yml')
   if (!existsSync(file)) throw new Error(`preset ${templateName} 无 preset.yml`)
@@ -404,6 +407,14 @@ export function savePresetParams(
     for (const [key, value] of Object.entries(variables)) {
       if (typeof value !== 'string') continue
       doc.deleteIn(['params', key])
+    }
+  }
+  if (variablesEnabled !== undefined) {
+    // 模板变量插值开关：true = 缺省（删除键）；false = 显式停用。
+    if (variablesEnabled) {
+      doc.deleteIn(['variablesEnabled'])
+    } else {
+      doc.setIn(['variablesEnabled'], false)
     }
   }
   writeFileSync(file, doc.toString(), 'utf8')

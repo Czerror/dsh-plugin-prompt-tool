@@ -369,6 +369,8 @@ function FeatureSettings(props: { store: PromptToolStore }): ReactNode {
         onNotice={store.showNotice}
         templateVariables={store.templateVariables}
         setTemplateVariables={store.setTemplateVariables}
+        templateVariablesEnabled={store.templateVariablesEnabled}
+        setTemplateVariablesEnabled={store.setTemplateVariablesEnabled}
         saveTemplateVariables={store.saveTemplateVariables}
       />
     </section>

@@ -426,18 +426,21 @@ export function writePreset(prompt: string, options: WritePresetOptions): void {
   // 预设级模板变量 → prompt-configs/variables.yml（单一文件）：引擎加载时合并进
   // 每条配置 variables（官方插值源，配置自身优先）。来源 = preset.yml 顶层
   // variables 段（新）优先 + params 内容键（旧布局兼容）；UI 已管理键（PARAM_KEYS）
-  // 与 runtime 参数（promptText 等）不进变量文件。
-  const presetVariables: Record<string, string> = {}
-  for (const [key, value] of Object.entries(spec.params ?? {})) {
-    if (PARAM_KEYS.has(key)) continue
-    const text = String(value)
-    if (text.length > 0) presetVariables[key] = text
-  }
-  for (const [key, value] of Object.entries(spec.variables ?? {})) {
-    if (typeof value === 'string' && value.length > 0) presetVariables[key] = value
-  }
-  if (Object.keys(presetVariables).length > 0) {
-    writeFileSync(join(promptConfigsDir, 'variables.yml'), stringifyYaml(presetVariables), 'utf8')
+  // 与 runtime 参数（promptText 等）不进变量文件。variablesEnabled=false（卡片
+  // 开关停用）时不生成变量文件——{{key}} 不再被插值（用户主动停用）。
+  if (spec.variablesEnabled !== false) {
+    const presetVariables: Record<string, string> = {}
+    for (const [key, value] of Object.entries(spec.params ?? {})) {
+      if (PARAM_KEYS.has(key)) continue
+      const text = String(value)
+      if (text.length > 0) presetVariables[key] = text
+    }
+    for (const [key, value] of Object.entries(spec.variables ?? {})) {
+      if (typeof value === 'string' && value.length > 0) presetVariables[key] = value
+    }
+    if (Object.keys(presetVariables).length > 0) {
+      writeFileSync(join(promptConfigsDir, 'variables.yml'), stringifyYaml(presetVariables), 'utf8')
+    }
   }
   for (const [index, config] of merged.entries()) {
     // 内容资产单一事实源（大文本存生成目录文件，settings 覆盖层只保留轻字段）：

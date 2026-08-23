@@ -561,8 +561,8 @@ export function registerSettingsBridge(
             const templateName = basename(dir)
             const { body } = await readBridgeBody(req)
             const record = (body ?? {}) as Record<string, unknown>
-            // 无载荷 = 读取（preset.yml params 内容变量子集）。
-            if (record.variables === undefined) {
+            // 无载荷 = 读取（preset.yml 顶层 variables + 插值开关）。
+            if (record.variables === undefined && record.enabled === undefined) {
               try {
                 const spec = loadPresetSpec(dir)
                 const variables: Record<string, string> = {}
@@ -574,9 +574,12 @@ export function registerSettingsBridge(
                 for (const [key, value] of Object.entries(spec.variables ?? {})) {
                   if (typeof value === 'string') variables[key] = value
                 }
-                writeBridgeJson(res, 200, { ok: true, value: { variables } })
+                writeBridgeJson(res, 200, {
+                  ok: true,
+                  value: { variables, enabled: spec.variablesEnabled !== false },
+                })
               } catch {
-                writeBridgeJson(res, 200, { ok: true, value: { variables: {} } })
+                writeBridgeJson(res, 200, { ok: true, value: { variables: {}, enabled: true } })
               }
               return
             }
@@ -589,6 +592,7 @@ export function registerSettingsBridge(
                 record.variables !== null && typeof record.variables === 'object' && !Array.isArray(record.variables)
                   ? record.variables as Record<string, string>
                   : undefined,
+                typeof record.enabled === 'boolean' ? record.enabled : undefined,
               )
               afterOverridesChange?.()
               writeBridgeJson(res, 200, { ok: true, value: { variables: record.variables } })

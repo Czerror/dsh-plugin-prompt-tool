@@ -25,6 +25,8 @@ export interface PromptConfigsEditorProps {
   /** 预设级模板变量（preset.yml 顶层 variables 段；编辑入口与模块列表统一）。 */
   templateVariables: Record<string, string>
   setTemplateVariables: (value: Record<string, string>) => void
+  templateVariablesEnabled: boolean
+  setTemplateVariablesEnabled: (value: boolean) => void
   saveTemplateVariables: () => Promise<void>
 }
 
@@ -34,11 +36,14 @@ export interface PromptConfigsEditorProps {
 function TemplateVariablesModuleCard(props: {
   templateVariables: Record<string, string>
   setTemplateVariables: (value: Record<string, string>) => void
+  templateVariablesEnabled: boolean
+  setTemplateVariablesEnabled: (value: boolean) => void
   saveTemplateVariables: () => Promise<void>
 }): ReactNode {
   const [expanded, setExpanded] = useState(false)
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const count = Object.keys(props.templateVariables).length
+  const enabled = props.templateVariablesEnabled
   const clearAll = (): void => {
     props.setTemplateVariables({})
     void props.saveTemplateVariables()
@@ -56,6 +61,18 @@ function TemplateVariablesModuleCard(props: {
           <IconChevronDownOutline14 className={clsx(styles.chevron, expanded && styles.chevronOpen)} />
         </button>
         <span className={styles.configHeaderActions}>
+          <label className={styles.configEnable} title={enabled ? '点击停用模板变量插值' : '点击启用模板变量插值'}>
+            <input
+              type="checkbox"
+              aria-label="启用模板变量插值"
+              checked={enabled}
+              onChange={(e) => {
+                props.setTemplateVariablesEnabled(e.target.checked)
+                void props.saveTemplateVariables()
+              }}
+            />
+            <span className={styles.switch} aria-hidden="true"><i /></span>
+          </label>
           <span className={styles.configActions}>
             {confirmingDelete ? (
               <>
@@ -70,6 +87,7 @@ function TemplateVariablesModuleCard(props: {
       </header>
       {expanded && (
         <div className={styles.configForm}>
+          {!enabled && <p className={styles.configFieldHint}>{'模板变量插值已停用：{{key}} 将不再被替换（预设级变量文件不生成）。'}</p>}
           <VariablesEditor value={props.templateVariables} onChange={(next) => props.setTemplateVariables(next ?? {})} />
           <span>
             <button type="button" className={styles.pillButton} onClick={() => void props.saveTemplateVariables()}>保存模板变量</button>
@@ -98,6 +116,8 @@ export function PromptConfigsEditor(props: PromptConfigsEditorProps): ReactNode 
           <TemplateVariablesModuleCard
             templateVariables={props.templateVariables}
             setTemplateVariables={props.setTemplateVariables}
+            templateVariablesEnabled={props.templateVariablesEnabled}
+            setTemplateVariablesEnabled={props.setTemplateVariablesEnabled}
             saveTemplateVariables={props.saveTemplateVariables}
           />
         }

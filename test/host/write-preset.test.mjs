@@ -482,6 +482,27 @@ test('savePresetParams 清理空 key（VariablesEditor 待编辑行不落盘）'
   }
 })
 
+test('模板变量插值开关：variablesEnabled=false 时不生成 variables.yml', () => {
+  const dir = join(tmpdir(), `prompt-tool-vars-off-${process.pid}-${Date.now()}`)
+  const presetDir = join(dir, 'preset')
+  const homePresetDir = join(home, '.agent-presets')
+  try {
+    cpSync(join(process.cwd(), 'preset', 'anchored'), join(homePresetDir, 'anchored'), { recursive: true })
+    savePresetParams(homePresetDir, 'anchored', undefined, undefined, { wordsCloud: '1500字' }, false)
+    writePreset('PROMPT', makeOptions(presetDir))
+    const varsFile = join(presetDir, 'anchored', 'prompt-configs', 'variables.yml')
+    assert.equal(existsSync(varsFile), false, '停用时 variables.yml 不生成')
+    // 重新启用：true = 删除开关键（缺省启用），变量文件恢复。
+    savePresetParams(homePresetDir, 'anchored', undefined, undefined, { wordsCloud: '1500字' }, true)
+    writePreset('PROMPT', makeOptions(presetDir))
+    assert.ok(existsSync(varsFile), '启用后 variables.yml 恢复生成')
+    const vars = parseYaml(readFileSync(varsFile, 'utf8'))
+    assert.equal(vars.wordsCloud, '1500字')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
 test.after(() => {
   rmSync(home, { recursive: true, force: true })
 })

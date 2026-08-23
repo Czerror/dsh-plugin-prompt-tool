@@ -14,6 +14,13 @@
 
 ## [Unreleased]
 
+### 模板变量卡片增加插值开关（与其他模块卡片一致）（2026-08-23）
+
+- **开关**：卡片 header 新增启用/停用 toggle（configEnable 样式，与其他模块卡片一致），控制"模板变量插值"——存 preset.yml 顶层 `variablesEnabled`（缺省 true），切换即时持久化 + 重建。
+- **停用语义**：`writePreset` 不再生成 `variables.yml`——`{{key}}` 不再被替换（引擎无预设变量源）；展开态显示停用提示。注意：system-section 配置若文本残留 `{{key}}`，官方渲染会抛 unknown variable（用户主动停用时的已知行为，卡片 title 有提示）。
+- **端点**：`/preset-variables` 读写增加 `enabled` 字段；`savePresetParams` 新增 `variablesEnabled` 参数（true = 删除键即缺省，false = 显式停用）。
+- **测试**：停用不生成 variables.yml / 启用恢复（272 pass/0 fail）。
+
 ### 模板变量卡片彻底归类到配置列表下（可折叠 / 可删除 / 可新建）（2026-08-23）
 
 - **位置**：模板变量卡片经 `PromptConfigList.beforeCards` 插槽渲染在配置列表区域内（列表头部之后、配置卡片之前），随页面滚动，不再独立于列表上方。
