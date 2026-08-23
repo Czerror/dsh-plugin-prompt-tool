@@ -14,6 +14,13 @@
 
 ## [Unreleased]
 
+### 模板变量卡片彻底归类到配置列表下（可折叠 / 可删除 / 可新建）（2026-08-23）
+
+- **位置**：模板变量卡片经 `PromptConfigList.beforeCards` 插槽渲染在配置列表区域内（列表头部之后、配置卡片之前），随页面滚动，不再独立于列表上方。
+- **交互对齐配置卡片**：可折叠（chevron 展开/收起，默认收起）；可删除（header「删除 → 确认清空」，清空全部变量并持久化）；可新建（展开后 VariablesEditor「添加变量」）。
+- 语义不变：非 promptConfig，保存仍走 `/preset-variables` 写 preset.yml 顶层 `variables` 段。
+- 验证：typecheck / lint / test 全绿（271 pass/0 fail）。
+
 ### 模板变量编辑入口并入模块列表（B 方案）（2026-08-23）
 
 - **调整**：「模板变量」从工作台独立卡片（ModelToolCards 下方）移入提示词配置模块列表（PromptConfigsEditor）顶部——与 world-book、人设、各提示词模块并列管理，样式统一（configCard）。

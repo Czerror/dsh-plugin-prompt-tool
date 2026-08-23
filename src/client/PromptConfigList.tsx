@@ -21,6 +21,8 @@ export interface PromptConfigListProps {
   scope?: 'main' | 'subagent'
   /** 列表工具栏追加操作（如「新建模板」）。 */
   extraActions?: ReactNode
+  /** 列表头部之后、配置卡片之前渲染的固定卡片（如模板变量——归类于配置列表下）。 */
+  beforeCards?: ReactNode
   /** 空状态追加提示（如「当前预设模板该层无配置」）。 */
   emptyHint?: string
   onPatchConfigs: (configs: PromptConfigDraft[]) => void
@@ -57,7 +59,7 @@ function moveWithinLayer(
 
 /** 共享的提示词配置列表：校验、保存、脏检测、复制、删除、层内移动。 */
 export function PromptConfigList(props: PromptConfigListProps): ReactNode {
-  const { meta, configs, savedConfigs, layer, scope, extraActions, emptyHint, onPatchConfigs, onSaveConfigs, onNotice } = props
+  const { meta, configs, savedConfigs, layer, scope, extraActions, beforeCards, emptyHint, onPatchConfigs, onSaveConfigs, onNotice } = props
   const [expanded, setExpanded] = useState<string | undefined>(undefined)
   const [errors, setErrors] = useState<ValidationErrorEntry[]>([])
   const [validating, setValidating] = useState(false)
@@ -253,6 +255,9 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
           ))}
         </div>
       )}
+
+      {/* 归类于配置列表下的固定卡片（模板变量：可折叠 / 可删除 / 可新建）。 */}
+      {beforeCards}
 
       {scoped.length === 0 ? (
         <div className={styles.emptyState}><span className={styles.emptyGlyph} aria-hidden="true">⌁</span><div><h3>{scope === 'subagent' ? '还没有子代理可见的配置' : layer === undefined ? '还没有自定义配置' : '本层还没有自定义配置'}</h3><p>{scope === 'subagent' ? '从上方「新建」插入一条（插入后可在卡片「消息受众」下拉自由切换仅主会话/公用/仅子代理），或到主设置「配置」从目录导入。' : layer === undefined ? '从上方模板插入一条，或从本地目录导入；默认四条内置配置不受影响。' : '请到主设置「配置」从模板插入或从目录导入。'}</p>{emptyHint !== undefined && <p className={styles.readOnly}>{emptyHint}</p>}</div></div>

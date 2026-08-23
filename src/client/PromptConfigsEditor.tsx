@@ -1,4 +1,6 @@
-import { type ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
+import clsx from 'clsx'
+import { IconChevronDownOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { PromptConfigList } from './PromptConfigList.tsx'
 import { TemplatePicker } from './TemplatePicker.tsx'
 import { useTemplatePicker } from './useTemplatePicker.ts'
@@ -26,28 +28,54 @@ export interface PromptConfigsEditorProps {
   saveTemplateVariables: () => Promise<void>
 }
 
-/** 预设级模板变量模块卡片：{{key}} 插值源（非 promptConfig——不进配置列表保存路径，
- *  保存走 /preset-variables 写 preset.yml 顶层 variables 段）。 */
+/** 预设级模板变量模块卡片（归类于配置列表下）：{{key}} 插值源，非 promptConfig——
+ *  不进配置保存路径，保存走 /preset-variables 写 preset.yml 顶层 variables 段。
+ *  可折叠（chevron）/ 可删除（清空全部变量，两段式确认）/ 可新建（VariablesEditor 添加变量）。 */
 function TemplateVariablesModuleCard(props: {
   templateVariables: Record<string, string>
   setTemplateVariables: (value: Record<string, string>) => void
   saveTemplateVariables: () => Promise<void>
 }): ReactNode {
+  const [expanded, setExpanded] = useState(false)
+  const [confirmingDelete, setConfirmingDelete] = useState(false)
   const count = Object.keys(props.templateVariables).length
+  const clearAll = (): void => {
+    props.setTemplateVariables({})
+    void props.saveTemplateVariables()
+    setConfirmingDelete(false)
+    setExpanded(false)
+  }
   return (
     <article className={styles.configCard}>
       <header className={styles.configHeader}>
-        <span className={styles.configTitle}>
-          <span className={styles.configName}>模板变量</span>
-          <span className={styles.configMeta}>{`预设级 {{key}} 插值 · ${count} 个变量`}</span>
+        <button type="button" className={styles.configToggle} aria-expanded={expanded} onClick={() => setExpanded(!expanded)}>
+          <span className={styles.configTitle}>
+            <span className={styles.configName}>模板变量</span>
+            <span className={styles.configMeta}>{`预设级 {{key}} 插值 · ${count} 个变量`}</span>
+          </span>
+          <IconChevronDownOutline14 className={clsx(styles.chevron, expanded && styles.chevronOpen)} />
+        </button>
+        <span className={styles.configHeaderActions}>
+          <span className={styles.configActions}>
+            {confirmingDelete ? (
+              <>
+                <button type="button" className={styles.pillButton} data-danger onClick={clearAll}>确认清空</button>
+                <button type="button" className={styles.pillButton} data-variant="secondary" onClick={() => setConfirmingDelete(false)}>取消</button>
+              </>
+            ) : (
+              <button type="button" className={styles.pillButton} data-danger onClick={() => setConfirmingDelete(true)}>删除</button>
+            )}
+          </span>
         </span>
       </header>
-      <div className={styles.configForm}>
-        <VariablesEditor value={props.templateVariables} onChange={(next) => props.setTemplateVariables(next ?? {})} />
-        <span>
-          <button type="button" className={styles.pillButton} onClick={() => void props.saveTemplateVariables()}>保存模板变量</button>
-        </span>
-      </div>
+      {expanded && (
+        <div className={styles.configForm}>
+          <VariablesEditor value={props.templateVariables} onChange={(next) => props.setTemplateVariables(next ?? {})} />
+          <span>
+            <button type="button" className={styles.pillButton} onClick={() => void props.saveTemplateVariables()}>保存模板变量</button>
+          </span>
+        </div>
+      )}
     </article>
   )
 }
@@ -61,16 +89,18 @@ export function PromptConfigsEditor(props: PromptConfigsEditorProps): ReactNode 
   )
   return (
     <section className={styles.page} aria-label="提示词配置">
-      <TemplateVariablesModuleCard
-        templateVariables={props.templateVariables}
-        setTemplateVariables={props.setTemplateVariables}
-        saveTemplateVariables={props.saveTemplateVariables}
-      />
       <PromptConfigList
         meta={props.meta}
         configs={props.configs}
         savedConfigs={props.savedConfigs}
         extraActions={<button type="button" className={styles.primaryPill} onClick={templatePicker.openPicker}>新建</button>}
+        beforeCards={
+          <TemplateVariablesModuleCard
+            templateVariables={props.templateVariables}
+            setTemplateVariables={props.setTemplateVariables}
+            saveTemplateVariables={props.saveTemplateVariables}
+          />
+        }
         onPatchConfigs={props.onPatchConfigs}
         onSaveConfigs={props.onSaveConfigs}
         onNotice={props.onNotice}
