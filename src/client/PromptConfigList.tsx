@@ -32,27 +32,58 @@ export interface PromptConfigListProps {
 
 const layerOf = (config: PromptConfigDraft): string => config.layer ?? 'pre-step'
 
-/** 在全局数组中按同层位置交换；未指定 layer 时也保持“同层内移动”语义。 */
+/** 与列表一致的显示视图排序：按（层序, order, 声明序）稳定排序，返回排序后 id 序列。 */
+function viewOrderedIds(
+  all: PromptConfigDraft[],
+  layer: string | undefined,
+  layers: readonly string[],
+): string[] {
+  const layerRank = (config: PromptConfigDraft): number => {
+    const index = layers.indexOf(layerOf(config))
+    return index < 0 ? layers.length : index
+  }
+  return all
+    .map((config, index) => ({ config, index }))
+    .filter((entry) => layer === undefined || layerOf(entry.config) === layer)
+    .sort((a, b) => {
+      const byLayer = layerRank(a.config) - layerRank(b.config)
+      if (byLayer !== 0) return byLayer
+      const byOrder = (a.config.order ?? 0) - (b.config.order ?? 0)
+      if (byOrder !== 0) return byOrder
+      return a.index - b.index
+    })
+    .map((entry) => entry.config.id)
+}
+
+/**
+ * 在显示视图中向上/向下移动：目标 = 当前项的显示相邻项（层序/order/声明序），
+ * 交换两者的 order 与数组位置——显示顺序与引擎注入顺序（数组序）同步变化。
+ * 修复：此前按数组相邻交换，跨层配置混合时数组顺序 ≠ 显示顺序，上移/下移视觉失效。
+ */
 function moveWithinLayer(
   all: PromptConfigDraft[],
   globalIndex: number,
   delta: -1 | 1,
   layer?: string,
+  layers?: readonly string[],
 ): PromptConfigDraft[] {
-  const layerIndices = all.flatMap((config, index) =>
-    (layer === undefined || layerOf(config) === layer) ? [index] : [],
-  )
-  const position = layerIndices.indexOf(globalIndex)
-  const target = position + delta
-  if (position < 0 || target < 0 || target >= layerIndices.length) return all
-  const targetIndex = layerIndices[target]!
+  const currentId = all[globalIndex]?.id
+  if (currentId === undefined) return all
+  const view = viewOrderedIds(all, layer, layers ?? [])
+  const viewIndex = view.indexOf(currentId)
+  const targetViewIndex = viewIndex + delta
+  if (viewIndex < 0 || targetViewIndex < 0 || targetViewIndex >= view.length) return all
+  const targetId = view[targetViewIndex]!
+  const currentIndex = all.findIndex((config) => config.id === currentId)
+  const targetIndex = all.findIndex((config) => config.id === targetId)
+  if (currentIndex < 0 || targetIndex < 0) return all
   const next = [...all]
-  const current = next[globalIndex]
+  const current = next[currentIndex]
   const targetCard = next[targetIndex]
   // 引擎按 order 升序渲染（executor pre-step / layers 同规则）：层内移动必须同步
   // 交换 order，否则拖拽后实际注入顺序不变（显示与引擎脱节 = 排序混乱）。
   if (current === undefined || targetCard === undefined) return all
-  next[globalIndex] = { ...targetCard, order: current.order ?? 0 }
+  next[currentIndex] = { ...targetCard, order: current.order ?? 0 }
   next[targetIndex] = { ...current, order: targetCard.order ?? 0 }
   return next
 }
@@ -176,10 +207,8 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
 
   const renderCard = (config: PromptConfigDraft) => {
     const globalIndex = configs.indexOf(config)
-    const layerIndices = configs.flatMap((candidate, index) =>
-      (layer === undefined || layerOf(candidate) === layer) ? [index] : [],
-    )
-    const position = layerIndices.indexOf(globalIndex)
+    const view = viewOrderedIds(configs, layer, meta.layers)
+    const position = view.indexOf(config.id)
     const isOpen = expanded === config.id
     return (
       <PromptConfigCard
@@ -194,9 +223,9 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
         onPatch={(patch) => patchAt(globalIndex, patch)}
         actions={{
           canMoveUp: position > 0,
-          canMoveDown: position >= 0 && position < layerIndices.length - 1,
-          onMoveUp: () => onPatchConfigs(moveWithinLayer(configs, globalIndex, -1, layer)),
-          onMoveDown: () => onPatchConfigs(moveWithinLayer(configs, globalIndex, 1, layer)),
+          canMoveDown: position >= 0 && position < view.length - 1,
+          onMoveUp: () => onPatchConfigs(moveWithinLayer(configs, globalIndex, -1, layer, meta.layers)),
+          onMoveDown: () => onPatchConfigs(moveWithinLayer(configs, globalIndex, 1, layer, meta.layers)),
           onDuplicate: () => duplicateAt(globalIndex),
           onDelete: () => removeAt(globalIndex),
         }}
