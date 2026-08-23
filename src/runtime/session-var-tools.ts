@@ -18,7 +18,8 @@ export function registerSessionVarTools(ctx: Context): void {
       name: 'session_var',
       description: '会话变量管理（SillyTavern setvar/getvar 语义）：list 查看当前会话全部变量、'
         + 'get 读取、set 设置、clear 清除。提示词/世界书文本中的 {{变量名}} 会在注入时替换为'
-        + '会话变量值（会话级覆盖预设默认值）；适合维护角色状态（如 {{心情}}、{{接受度}} 等）。',
+        + '会话变量值（会话级覆盖预设默认值）；适合维护角色状态（如 {{心情}}、{{接受度}} 等）。'
+        + '注意：会话变量仅存于当前会话（结束即失）；跨会话长期记忆请用 world_book 工具的 note 参数写入角色卡记忆（持久，跟随角色卡）。',
       parameters: {
         action: {
           type: 'string',

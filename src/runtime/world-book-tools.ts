@@ -125,8 +125,8 @@ export function registerWorldBookTools(ctx: Context, host: WorldBookToolHost): v
       name: 'world_book_upsert',
       description: '新增或更新当前预设的一条世界书条目（world-book 策略配置）：按 id 更新（不存在则新增，'
         + 'id 自动生成 lore-<n>）。constant=true 常驻注入；否则命中 keys（或 secondaryKeys）任一关键字注入；'
-        + '无 keys 条目按全局每次注入。note 可选：写入来源角色卡的本地记忆（memory.md，条目 id 带 chara-<卡>- 前缀时）'
-        + '或预设记忆。写盘后立即重建生成目录。',
+        + '无 keys 条目按全局每次注入。note 可选：写入来源角色卡的持久记忆（memory.md，条目 id 带 chara-<卡>- 前缀时）'
+        + '或预设记忆——持久记忆跨会话跟随角色卡（与 session_var 会话变量的临时状态不同，适合长期关系记录）。写盘后立即重建生成目录。',
       parameters: {
         id: { type: 'string', description: '条目 id（更新时必填；world_book_list 返回）。' },
         name: { type: 'string', required: true, description: '条目名称/注释（如「气味描写」）。' },
@@ -136,7 +136,7 @@ export function registerWorldBookTools(ctx: Context, host: WorldBookToolHost): v
         constant: { type: 'boolean', description: 'true = 常驻注入，不依赖关键字。' },
         enabled: { type: 'boolean', description: '缺省保持当前值/新增默认启用。' },
         order: { type: 'integer', description: '注入顺序（同位置升序），缺省 100。' },
-        note: { type: 'string', description: '可选：操作笔记，写入来源角色卡记忆或预设记忆。' },
+        note: { type: 'string', description: '可选：操作笔记，写入来源角色卡持久记忆（memory.md，跨会话跟随角色卡）或预设记忆。' },
       },
       output: {
         schema: {
@@ -182,10 +182,10 @@ export function registerWorldBookTools(ctx: Context, host: WorldBookToolHost): v
     toolsCtx.tools.register(defineTool({
       name: 'world_book_delete',
       description: '删除当前预设的一条世界书条目（world_book_list 获取 id）。'
-        + 'note 可选：写入来源角色卡记忆或预设记忆。删除后立即重建生成目录。',
+        + 'note 可选：写入来源角色卡持久记忆（memory.md，跨会话跟随角色卡）或预设记忆。删除后立即重建生成目录。',
       parameters: {
         id: { type: 'string', required: true, description: '世界书条目 id（world_book_list 返回）。' },
-        note: { type: 'string', description: '可选：操作笔记。' },
+        note: { type: 'string', description: '可选：操作笔记，写入来源角色卡持久记忆（memory.md）或预设记忆。' },
       },
       output: {
         schema: {
