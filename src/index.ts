@@ -950,6 +950,7 @@ export {
   removeCharacterFromPreset,
   syncImportedCharacterMemory,
 } from './host/characters.ts'
+export { deleteWorldBookEntry, listWorldBookEntries, upsertWorldBookEntry } from './host/worldbook.ts'
 export type { PromptConfigValidationError, PromptConfigValidationResult } from './runtime/configs-validate.ts'
 export { loadPromptTemplates } from './host/templates.ts'
 export type { PromptConfigTemplate } from './host/templates.ts'

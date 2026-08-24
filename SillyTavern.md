@@ -202,7 +202,7 @@ promptConfigs:
 | `case_sensitive` / `match_whole_words` | `params.caseSensitive` / `params.wholeWords` |
 | 正则形态键（`/regex/` 包裹或含正则特殊字符） | 原样保留，`anchor-match` 自动按正则匹配（对齐 ST `parseRegexFromString`；ST 无 `use_regex` 字段） |
 | `selectiveLogic`（0/1/2/3） | `params.selectiveLogic`——选择性触发组合逻辑（0=任一命中 / 3=副键全中 / 1=副键全不中 / 2=至少一个副键未中），由锚定匹配引擎（anchor-match）消费 |
-| `insertion_order` | `order`（层内升序） |
+| `insertion_order` | `order` **取反**（ST 大优先 → 本项目层内升序，保持相对顺序） |
 | `enabled` | `enabled`（原样保留） |
 
 ## 注入语义

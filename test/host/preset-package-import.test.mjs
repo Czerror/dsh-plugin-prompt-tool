@@ -481,7 +481,7 @@ test('importPresetPackage：世界书 ST 编辑器内部格式（key/keysecondar
   assert.deepEqual(bar.params.secondaryKeys, ['酒保'], 'keysecondary 应收敛为 secondaryKeys')
   assert.equal(bar.params.constant, false, '关键词条目不常驻')
   assert.equal(bar.enabled, true, 'disable: false → 启用')
-  assert.equal(bar.order, 50, 'order 应取用（编辑器格式无 insertion_order）')
+  assert.equal(bar.order, -50, 'order 取反（ST 大优先 → 引擎升序；编辑器格式无 insertion_order 时用 order）')
   const banned = configs.find((config) => config.id === 'lore-11')
   assert.equal(banned.enabled, false, 'disable: true → 禁用')
   const castle = configs.find((config) => config.id === 'lore-12')

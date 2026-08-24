@@ -50,3 +50,24 @@ test('convertStToPreset：世界书正则键保留原样且不写幽灵字段 us
   assert.equal('useRegex' in lore[0].params, false, '不写幽灵字段 useRegex')
   assert.equal('useRegex' in lore[1].params, false)
 })
+
+test('convertStToPreset：世界书 order 取反（ST 大优先 → 引擎升序）', () => {
+  const card = {
+    name: '排序卡',
+    data: {
+      character_book: {
+        entries: [
+          { keys: ['A'], content: 'a', comment: 'a', insertion_order: 10 },
+          { keys: ['B'], content: 'b', comment: 'b', insertion_order: 200 },
+        ],
+      },
+    },
+  }
+  const spec = convertStToPreset(card, 'order-card')
+  const lore = spec.promptConfigs
+    .filter((config) => config.strategy === 'world-book')
+    .sort((x, y) => Number(x.order) - Number(y.order))
+  assert.equal(lore.length, 2)
+  assert.equal(lore[0].order, -200, '大 insertion_order 取反后最前（引擎先注入）')
+  assert.equal(lore[1].order, -10)
+})

@@ -198,15 +198,18 @@ export function convertStToPreset(card: unknown, baseName: string): PresetSpec {
       const constant = entry.constant === true || entry.add_always === true
       // 启用兼容：disable 是 ST 编辑器内部格式（disable=true 禁用），enabled 是角色卡格式。
       const enabled = entry.disable !== undefined ? entry.disable !== true : entry.enabled !== false
+      // ST 世界书 order 大优先（world-info.js sortFn = b.order - a.order）；
+      // 本项目引擎按 order 升序注入（层内小优先），取反保持 ST 相对顺序（大 order 先注入）。
+      const stOrder = typeof entry.insertion_order === 'number'
+        ? entry.insertion_order
+        : (typeof entry.order === 'number' ? entry.order : 100)
       configs.push({
         id: `lore-${String(entry.id ?? entry.uid ?? index)}`,
         name: comment,
         // ST 启用状态保留；无 keys 条目由 resolver 按全局（constant 语义）每次注入。
         enabled,
         strategy: 'world-book',
-        order: typeof entry.insertion_order === 'number'
-          ? entry.insertion_order
-          : (typeof entry.order === 'number' ? entry.order : 100),
+        order: -stOrder,
         text: content,
         layer: 'pre-step',
         position: 'before-all',
