@@ -1,4 +1,4 @@
-import { useRef, useState, type FocusEvent, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type FocusEvent, type ReactNode } from 'react'
 import clsx from 'clsx'
 import { IconChevronDownOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { PromptConfigList } from './PromptConfigList.tsx'
@@ -118,6 +118,10 @@ export function PromptConfigsEditor(props: PromptConfigsEditorProps): ReactNode 
   const [customToolsExpanded, setCustomToolsExpanded] = useState(false)
   /** 层筛选状态（模块列表下拉联动引擎模块卡：选中层只显示该层引擎模块）。 */
   const [layerFilter, setLayerFilter] = useState('all')
+  // 进入 tool-pipeline 层时自动展开工具管理（工具域视图）。
+  useEffect(() => {
+    if (layerFilter === 'tool-pipeline') setCustomToolsExpanded(true)
+  }, [layerFilter])
   const templatePicker = useTemplatePicker(
     props.configs,
     (config) => props.onPatchConfigs([...props.configs, config]),
@@ -144,11 +148,13 @@ export function PromptConfigsEditor(props: PromptConfigsEditorProps): ReactNode 
         extraActions={<button type="button" className={styles.primaryPill} onClick={templatePicker.openPicker}>新建</button>}
         beforeCards={
           <>
-            <CustomToolsModuleCard
-              expanded={customToolsExpanded}
-              onToggleExpanded={() => setCustomToolsExpanded(!customToolsExpanded)}
-              onNotice={props.onNotice}
-            />
+            {layerFilter === 'tool-pipeline' && (
+              <CustomToolsModuleCard
+                expanded={customToolsExpanded}
+                onToggleExpanded={() => setCustomToolsExpanded(!customToolsExpanded)}
+                onNotice={props.onNotice}
+              />
+            )}
             <TemplateVariablesModuleCard
               templateVariables={props.templateVariables}
               setTemplateVariables={props.setTemplateVariables}

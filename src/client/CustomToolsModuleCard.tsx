@@ -1,6 +1,6 @@
-/** 自定义工具模块卡片体系：区块 + 工具卡片 + 参数行式编辑（模块列表管理模式）。
+/** 工具管理（tool-pipeline 层）：自定义工具定义 + 内置工具注册 + 第三方策略入口。
  *  数据源 preset.yml customTools 段（/custom-tools）+ builtinTools 段（/builtin-tools）；
- *  工具卡片表单化编辑（kind 专属字段），parameters 行式编辑替代 JSON。 */
+ *  工具卡片表单化编辑（kind 专属字段），parameters 行式编辑，builtinTools 开关/名称/描述表单。 */
 import { useEffect, useState, type ReactNode } from 'react'
 import clsx from 'clsx'
 import { IconChevronDownOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -16,6 +16,13 @@ const FS_ACTIONS = ['read', 'write', 'append', 'list', 'delete'] as const
 const HTTP_METHODS = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'] as const
 const SHELLS = ['pwsh', 'powershell', 'cmd', 'sh', 'bash'] as const
 const SCHEMA_TYPES = ['string', 'number', 'integer', 'boolean', 'array', 'object', 'json'] as const
+
+/** 内置工具组（builtinTools 表单化编辑）。 */
+const BUILTIN_GROUPS = [
+  { key: 'character', label: '角色卡工具', hint: 'character_list / import / apply / remove / delete' },
+  { key: 'world_book', label: '世界书工具', hint: 'world_book_list / upsert / delete' },
+  { key: 'session_var', label: '会话变量工具', hint: 'session_var' },
+] as const
 
 type ToolDraft = Record<string, unknown>
 
@@ -223,14 +230,14 @@ function CustomToolCard(props: {
   )
 }
 
-/** 自定义工具区块：标题 + 从模板新建 + 工具卡片列表 + 保存（含 builtinTools JSON 编辑）。 */
+/** 工具管理区块（tool-pipeline 层可见）：标题 + 工具卡片列表 + 内置工具注册表单。 */
 export function CustomToolsModuleCard(props: {
   expanded: boolean
   onToggleExpanded: () => void
   onNotice: (kind: 'ok' | 'error', message: string) => void
 }): ReactNode {
   const [tools, setTools] = useState<ToolDraft[]>([])
-  const [builtinDraft, setBuiltinDraft] = useState('{}')
+  const [builtin, setBuiltin] = useState<Record<string, { enabled?: boolean; name?: string; description?: string }>>({})
   const [toolTemplates, setToolTemplates] = useState<Array<{ file: string; spec: ToolDraft }>>([])
   const [showTemplates, setShowTemplates] = useState(false)
   const [expandedCards, setExpandedCards] = useState<Set<number>>(new Set())
@@ -245,27 +252,36 @@ export function CustomToolsModuleCard(props: {
         bridgePost<{ toolTemplates?: Array<{ file: string; spec: ToolDraft }> }>('/templates', {}),
       ])
       setTools((customResult.ok ? customResult.value?.customTools ?? [] : []).map((tool) => asRecord(tool)))
-      setBuiltinDraft(JSON.stringify(builtinResult.ok ? builtinResult.value?.builtinTools ?? {} : {}, null, 2))
+      const rawBuiltin = builtinResult.ok ? builtinResult.value?.builtinTools ?? {} : {}
+      const normalized: Record<string, { enabled?: boolean; name?: string; description?: string }> = {}
+      for (const [key, value] of Object.entries(rawBuiltin)) {
+        if (value !== null && typeof value === 'object') {
+          normalized[key] = {
+            ...(typeof (value as Record<string, unknown>).enabled === 'boolean' ? { enabled: (value as Record<string, unknown>).enabled as boolean } : {}),
+            ...(typeof (value as Record<string, unknown>).name === 'string' ? { name: (value as Record<string, unknown>).name as string } : {}),
+            ...(typeof (value as Record<string, unknown>).description === 'string' ? { description: (value as Record<string, unknown>).description as string } : {}),
+          }
+        }
+      }
+      setBuiltin(normalized)
       setToolTemplates(templatesResult.ok ? templatesResult.value?.toolTemplates ?? [] : [])
       setLoaded(true)
     })()
   }, [props.expanded, loaded])
   const save = (): void => {
-    let builtinParsed: unknown
-    try {
-      builtinParsed = JSON.parse(builtinDraft)
-    } catch (error) {
-      props.onNotice('error', `内置工具配置 JSON 解析失败：${error instanceof Error ? error.message : String(error)}`)
-      return
-    }
-    if (builtinParsed === null || typeof builtinParsed !== 'object' || Array.isArray(builtinParsed)) {
-      props.onNotice('error', '内置工具配置必须是对象')
-      return
+    // builtinTools 序列化：仅保留有内容的组（enabled=false 或 name/description 非空）。
+    const builtinOut: Record<string, unknown> = {}
+    for (const [key, value] of Object.entries(builtin)) {
+      const group: Record<string, unknown> = {}
+      if (value.enabled === false) group.enabled = false
+      if (value.name !== undefined && value.name.trim().length > 0) group.name = value.name
+      if (value.description !== undefined && value.description.trim().length > 0) group.description = value.description
+      if (Object.keys(group).length > 0) builtinOut[key] = group
     }
     setSaving(true)
     void Promise.all([
       bridgePost<{ customTools?: unknown[] }>('/custom-tools', { customTools: tools }),
-      bridgePost<{ builtinTools?: Record<string, unknown> }>('/builtin-tools', { builtinTools: builtinParsed }),
+      bridgePost<{ builtinTools?: Record<string, unknown> }>('/builtin-tools', { builtinTools: builtinOut }),
     ]).then(([customResult, builtinResult]) => {
       setSaving(false)
       if (customResult.ok && builtinResult.ok) {
@@ -306,7 +322,7 @@ export function CustomToolsModuleCard(props: {
               <IconChevronDownOutline14 className={clsx(styles.chevron, props.expanded && styles.chevronOpen)} />
             </button>
           </h2>
-          <p>{`${tools.length} 个工具 · tool-config-engine（preset.yml customTools 段）`}</p>
+          <p>{`工具管理（tool-pipeline 层）：${tools.length} 个自定义工具 · 内置工具注册 · 第三方策略见模块列表`}</p>
         </div>
         <span className={styles.configActions}>
           <button type="button" className={styles.pillButton} onClick={() => setShowTemplates(!showTemplates)}>
@@ -354,10 +370,33 @@ export function CustomToolsModuleCard(props: {
             </ul>
           )}
           <span className={styles.configFieldStack}>
-            <span className={styles.configFieldLabel}>builtinTools（内置工具注册配置：enabled / name 前缀 / description）</span>
-            <textarea className={styles.configTextarea} rows={4} value={builtinDraft} spellCheck={false}
-              aria-label="内置工具注册配置 JSON"
-              onChange={(event) => setBuiltinDraft(event.target.value)} />
+            <span className={styles.configFieldLabel}>内置工具注册（enabled=false 不注册；name 覆盖组前缀；description 覆盖整组描述）</span>
+            {BUILTIN_GROUPS.map((group) => {
+              const config = builtin[group.key] ?? {}
+              const patchGroup = (patch: Partial<{ enabled?: boolean; name?: string; description?: string }>): void => {
+                setBuiltin({ ...builtin, [group.key]: { ...config, ...patch } })
+              }
+              return (
+                <span key={group.key} className={styles.configCard} style={{ padding: '8px 12px' }}>
+                  <span className={styles.variableRow}>
+                    <label className={styles.configEnable} title={config.enabled === false ? '点击启用' : '点击停用'}>
+                      <input type="checkbox" aria-label={`启用${group.label}`}
+                        checked={config.enabled !== false}
+                        onChange={(e) => patchGroup({ enabled: !e.target.checked })} />
+                      <span className={styles.switch} aria-hidden="true"><i /></span>
+                    </label>
+                    <span className={styles.configName}>{group.label}</span>
+                    <input className={styles.configInput} aria-label={`${group.label}名称前缀`} spellCheck={false}
+                      placeholder="名称前缀（可选）" value={config.name ?? ''}
+                      onChange={(e) => patchGroup({ name: e.target.value })} />
+                    <input className={styles.configInput} aria-label={`${group.label}描述`} spellCheck={false}
+                      placeholder="描述覆盖（可选）" value={config.description ?? ''}
+                      onChange={(e) => patchGroup({ description: e.target.value })} />
+                  </span>
+                  <span className={styles.configMeta}>{group.hint}</span>
+                </span>
+              )
+            })}
           </span>
         </div>
       )}
