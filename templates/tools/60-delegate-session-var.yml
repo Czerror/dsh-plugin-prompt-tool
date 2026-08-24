@@ -1,0 +1,15 @@
+# 自定义工具模板：委托内置 session_var（隐藏原工具 + 自定义名称/描述）。
+# 配合 preset.yml builtinTools.session_var.enabled=false 使用，避免双份暴露。
+id: delegate-session-var
+name: my_session_var
+description: 会话变量管理（委托内置工具）
+output:
+  schema:
+    type: object
+    additionalProperties: true
+    properties:
+      ok: { type: boolean }
+      value: { type: json }
+execute:
+  kind: delegate
+  tool: session_var

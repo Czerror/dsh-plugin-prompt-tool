@@ -1,0 +1,15 @@
+# 自定义工具模板：委托内置 world_book_list（隐藏原工具 + 自定义名称/描述）。
+# 配合 preset.yml builtinTools.world_book.enabled=false 使用，避免双份暴露。
+id: delegate-worldbook-list
+name: my_worldbook_list
+description: 查看当前预设的世界书条目（委托内置工具）
+output:
+  schema:
+    type: object
+    additionalProperties: true
+    properties:
+      ok: { type: boolean }
+      value: { type: json }
+execute:
+  kind: delegate
+  tool: world_book_list
