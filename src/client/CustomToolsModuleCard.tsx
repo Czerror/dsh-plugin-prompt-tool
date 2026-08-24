@@ -430,7 +430,7 @@ export function CustomToolsModuleCard(props: {
                     <label className={styles.configEnable} title={config.enabled === false ? '点击启用' : '点击停用'}>
                       <input type="checkbox" aria-label={`启用${group.label}`}
                         checked={config.enabled !== false}
-                        onChange={(e) => patchGroup({ enabled: !e.target.checked })} />
+                        onChange={(e) => patchGroup({ enabled: e.target.checked })} />
                       <span className={styles.switch} aria-hidden="true"><i /></span>
                     </label>
                     <span className={styles.configName}>{group.label}</span>
