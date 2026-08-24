@@ -47,7 +47,8 @@ function ParameterRowsEditor(props: { value: ToolDraft | undefined; onChange: (v
   const commit = (next: Array<{ key: string; type: string; required: boolean; description: string }>): void => {
     const out: ToolDraft = {}
     for (const row of next) {
-      if (row.key.trim().length === 0) continue
+      // 保留空 key 行（「添加参数」新增的待编辑行）；空 key 由保存端（save）统一清理，
+      // 与 VariablesEditor 同语义——否则添加/清空 key 瞬间行被过滤，按钮失效。
       out[row.key] = {
         type: row.type,
         ...(row.required ? { required: true } : {}),
@@ -300,6 +301,19 @@ export function CustomToolsModuleCard(props: {
     })()
   }, [props.expanded, loaded])
   const save = (): void => {
+    // 保存前清理：工具 parameters 的空 key 待编辑行（与 presetVariables 保存端清理对齐）。
+    const cleanTools = tools.map((tool) => {
+      const params = asRecord(tool.parameters)
+      const clean: ToolDraft = {}
+      for (const [key, value] of Object.entries(params)) {
+        if (key.trim().length === 0) continue
+        clean[key] = value
+      }
+      const next = { ...tool }
+      if (Object.keys(clean).length > 0) next.parameters = clean
+      else delete next.parameters
+      return next
+    })
     // builtinTools 序列化：仅保留有内容的组（enabled=false 或 name/description 非空）。
     const builtinOut: Record<string, unknown> = {}
     for (const [key, value] of Object.entries(builtin)) {
@@ -311,7 +325,7 @@ export function CustomToolsModuleCard(props: {
     }
     setSaving(true)
     void Promise.all([
-      bridgePost<{ customTools?: unknown[] }>('/custom-tools', { customTools: tools }),
+      bridgePost<{ customTools?: unknown[] }>('/custom-tools', { customTools: cleanTools }),
       bridgePost<{ builtinTools?: Record<string, unknown> }>('/builtin-tools', { builtinTools: builtinOut }),
     ]).then(([customResult, builtinResult]) => {
       setSaving(false)
