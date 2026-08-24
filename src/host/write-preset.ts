@@ -13,6 +13,7 @@ import { join } from 'node:path'
 import { parseDocument, stringify as stringifyYaml } from 'yaml'
 import { DEFAULT_PRESET_DIR } from './paths.ts'
 import { PARAM_KEYS } from '../shared/param-keys.ts'
+import type { PresetWriterParams } from '../shared/engine-params.ts'
 import {
   mergePromptConfigs,
   renderPromptConfigYaml,
@@ -58,48 +59,14 @@ function stripVariableRefs(text: string, keys: ReadonlySet<string>): string {
   return text.replace(/\{\{([A-Za-z0-9_.\u4e00-\u9fff-]+)\}\}/g, (whole, key: string) => keys.has(key) ? '' : whole)
 }
 
-export interface WritePresetOptions {
-  firstTurnAnchor: boolean
-  firstTurnText: string
-  firstTurnCustom: boolean
-  guideText: string
-  guideCustom: boolean
-  injectPrompt: boolean
-  modelProvider: string
-  modelName: string
-  /** 子代理固定模型路由 provider（agentOptions 注入 tool-subagent）。 */
-  subagentModelProvider: string
-  /** 子代理固定模型名。 */
-  subagentModelName: string
-  /** 主对话思维程度（agent-request patch reasoningEffort；''=不设置，官方档位 off/low/high/max）。 */
-  modelReasoningEffort?: string
-  /** 主对话采样温度（agent-request patch temperature；''=不设置）。 */
-  modelTemperature?: string
-  /** 主对话输出上限（agent-request patch maxTokens；''=不设置）。 */
-  modelMaxTokens?: string
-  /** 子代理思维程度（agent-request patch，audience=subagent；''=不设置）。 */
-  subagentReasoningEffort?: string
-  /** 子代理采样温度（agent-request patch，audience=subagent；''=不设置）。 */
-  subagentTemperature?: string
-  /** 子代理输出上限（agent-request patch，audience=subagent；''=不设置）。 */
-  subagentMaxTokens?: string
-  /** 子代理自定义模型人设（per-child shadow；缺省 = 经 scope 链继承主会话 persona 模块）。 */
-  subagentPersona?: string
-  /** 委派工具集白名单（toolFilter.allow；支持数组或逗号/空格分隔字符串）。 */
-  toolFilterAllow?: string[] | string
-  /** 委派工具集黑名单（toolFilter.deny）。 */
-  toolFilterDeny?: string[] | string
-  /** 委派递归深度上限（0 禁止委派 / provider-managed / 正整数）。 */
-  maxDepth?: number | 'provider-managed' | string
-  /** 注入 kind 白名单（context-gate allowKinds；数组或逗号分隔字符串）。 */
-  allowKinds?: string[] | string
-  /** custom-fallback 锚定词（prompt-injector params.firstTurnWord）。 */
-  firstTurnWord?: string
+/**
+ * 把任意单一参数预设模板物化到生成目录（writePreset）的写入态选项。
+ * 引擎参数契约来自 shared/engine-params.ts（PresetWriterParams：runtimeOf 透传子集），
+ * 此处只保留 writePreset 专属字段——加引擎参数只需改一处契约，漏透传变成编译错误。
+ */
+export interface WritePresetOptions extends PresetWriterParams {
   /** 是否注入 agents.md 内容到 instruction-hint（false 时 instruction-hint 走引擎默认提示/动态探测）。 */
   injectAgentsPrompt?: boolean
-  bootstrapMaxTokens: number
-  /** PTC (Code Mode) 呈现开关；undefined = 模板 preset.yml params / 引擎默认（false）。 */
-  usePtcMode: boolean | undefined
   /** 写入 agents-instruction.txt 供 instruction-hint 配置读取;不传则使用本地默认 hint。 */
   agentsInstructionText?: string
   presetDir: string

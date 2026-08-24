@@ -9,6 +9,7 @@ import {
   DEFAULT_RESIDENT_AGENTS_PATH,
   DEFAULT_SKILL_RANK_BASE,
 } from './host/paths.ts'
+import type { PresetWriterParams } from './shared/engine-params.ts'
 
 export const NS: SettingsNamespace = settingsNamespace('prompt-tool')
 
@@ -161,25 +162,23 @@ export const PromptSettingsSchema: z<PromptSettings> = z.object({
   presetTemplate: z.string().default('anchored'),
 })
 
-export interface RuntimeOptions {
+/**
+ * 运行时装配态：settings 轴 + 引擎参数（契约来自 shared/engine-params.ts）。
+ * 引擎参数统一从 PresetWriterParams 继承（可选），此处仅对「schema 默认值保证必有值」
+ * 的首层参数做必填重声明——TS 强制与契约类型兼容，签名漂移变成编译错误。
+ * 可选尾（subagentPersona / toolFilterAllow / toolFilterDeny / maxDepth / allowKinds /
+ * firstTurnWord）由 PresetWriterParams 继承，不再逐字段手写。
+ */
+export interface RuntimeOptions extends PresetWriterParams {
   writeAgents: boolean
   writePreset: boolean
   presetTemplate: string
   injectAgentsPrompt: boolean
-  injectPrompt: boolean
   skillSwitches: Record<string, boolean>
   /** 技能展示顺序（目录名数组）。 */
   skillOrder: string[]
   /** 用户自定义技能目录列表（按添加顺序）；空 = 自动使用 profile skills 副本。 */
   skillsDirs: string[]
-  firstTurnAnchor: boolean
-  firstTurnText: string
-  firstTurnCustom: boolean
-  guideText: string
-  guideCustom: boolean
-  bootstrapMaxTokens: number
-  /** PTC (Code Mode) 呈现开关；undefined = 模板/引擎默认（false，opt-in）。 */
-  usePtcMode: boolean | undefined
   /** 技能候选排序基数。 */
   skillRankBase: number
   /** 常驻规则文件目标路径。 */
@@ -190,6 +189,15 @@ export interface RuntimeOptions {
   presetOrder: number
   /** preset.md 缺失或不可读时使用的文本。 */
   fallbackText: string
+  injectPrompt: boolean
+  firstTurnAnchor: boolean
+  firstTurnText: string
+  firstTurnCustom: boolean
+  guideText: string
+  guideCustom: boolean
+  bootstrapMaxTokens: number
+  /** PTC (Code Mode) 呈现开关；undefined = 模板/引擎默认（false，opt-in）。 */
+  usePtcMode: boolean | undefined
   /** 模型路由 provider（主对话直派子代理与委派子代理通用）；与模型名同时非空时生效。 */
   modelProvider: string
   /** 模型名；与 provider 同时非空时生效。 */
@@ -210,18 +218,6 @@ export interface RuntimeOptions {
   subagentTemperature: string
   /** 子代理输出上限（agent-request patch，audience=subagent；''=不设置）。 */
   subagentMaxTokens: string
-  /** 子代理自定义模型人设（经 overrides 覆盖，不写入 settings）。 */
-  subagentPersona?: string
-  /** 委派工具集白名单（经 overrides 覆盖，不写入 settings）。 */
-  toolFilterAllow?: string[] | string
-  /** 委派工具集黑名单（经 overrides 覆盖，不写入 settings）。 */
-  toolFilterDeny?: string[] | string
-  /** 委派递归深度（经 overrides 覆盖，不写入 settings）。 */
-  maxDepth?: number | 'provider-managed' | string
-  /** 注入 kind 白名单（经 overrides 覆盖，不写入 settings）。 */
-  allowKinds?: string[] | string
-  /** custom-fallback 锚定词（经 overrides 覆盖，不写入 settings）。 */
-  firstTurnWord?: string
   /** 用户自定义提示词配置（settings 数组）。 */
   promptConfigs: PromptConfigSpec[]
 }
