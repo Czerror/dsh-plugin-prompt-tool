@@ -216,7 +216,7 @@ export function ModelRouteModuleCard(props: { store: PromptToolStore; scope: 'ma
       {props.scope === 'subagent' && (
         <div className={styles.settingRowStack}>
           <label className={styles.configFieldStack}>
-            <span className={styles.settingCopy}><strong>子代理自定义模型人设</strong><small>subagentPersona（per-child shadow）；留空 = 固定模型路由时回退主对话自定义模型人设，两者都空 = 继承主会话。失焦保存。</small></span>
+            <span className={styles.settingCopy}><strong>子代理自定义模型人设</strong><small>subagentPersona（per-child shadow）；留空 = 继承主会话人设（模块列表 persona-main 卡，scope 链继承）。失焦保存。</small></span>
             <textarea
               className={styles.firstTurnInput}
               value={fields.subagentPersona}

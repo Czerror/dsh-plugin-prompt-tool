@@ -1,8 +1,14 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { buildCordis } from '../../lib/preset-core.mjs'
-import { applyModuleConfigs, loadPresetSpec, renderComposition, resolvePresetDir, resolvePresetParams } from '../../lib/index.mjs'
 import { parse as parseYaml } from 'yaml'
+import { mkdtempSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+
+// 隔离 DSH_HOME：真实用户预设（如 liangshen 官方格式）会遮蔽包内模板。
+process.env.DSH_HOME = mkdtempSync(join(tmpdir(), 'pt-mc-home-'))
+const { buildCordis } = await import('../../lib/preset-core.mjs')
+const { applyModuleConfigs, loadPresetSpec, renderComposition, resolvePresetDir, resolvePresetParams } = await import('../../lib/index.mjs')
 
 /** 递归收集指定 id 的嵌套行（delegation 组内工具行）。 */
 function findAllNested(rows, idSet) {
@@ -236,4 +242,18 @@ test('参数桥优先于 moduleConfigs 直写：UI 开关不被行级直写覆�
   const rows2 = parseYaml(renderComposition(withDirect, {}))
   const tf2 = rows2.find((r) => r?.id === 'tool-filter')
   assert.equal(tf2.config.includeSubagents, false, '桥未覆盖时 moduleConfigs 直写生效')
+})
+
+test('参数桥不覆盖未声明键：liangshen 模板 moduleConfigs 默认在 UI 未保存时保留（persist 条件发送回归）', () => {
+  // 回归：persistParamOverrides 曾「总是发送」UI 默认值（usePtcMode/promoteGate=false），
+  // 首次保存即固化进 preset.yml params，参数桥优先后覆盖 liangshen moduleConfigs 默认
+  // （promoteGate=true/usePtcMode=true）。条件发送修复后未改动键不写入——本测试锁定
+  // 「params 无键时 moduleConfigs 默认必须保留」。
+  const spec = loadPresetSpec(resolvePresetDir('liangshen'))
+  const rows = parseYaml(renderComposition(spec, {}))
+  const tb = rows.find((r) => r?.id === 'tool-bootstrap')
+  const cp = rows.find((r) => r?.id === 'code-presentation')
+  assert.equal(tb.config.promoteGate, true, 'UI 未保存时 moduleConfigs promoteGate=true 保留')
+  assert.equal(tb.config.maxPromoteSteps, 4, 'moduleConfigs maxPromoteSteps 保留')
+  assert.equal(cp.config.usePtcMode, true, 'moduleConfigs usePtcMode=true 保留')
 })

@@ -383,6 +383,9 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
   const revisionRef = useRef<number | undefined>(undefined)
   const saveQueueRef = useRef<Promise<void>>(Promise.resolve())
   const loadSeqRef = useRef(0)
+  /** 最近一次 load 时 preset.yml params 现有键集：persist 只发送「已有键或已改动」，
+   *  未动过的键不写——避免 UI 默认值固化覆盖模板 moduleConfigs 默认（liangshen 等）。 */
+  const loadedKeysRef = useRef<Set<string>>(new Set())
 
   const showNotice = useCallback((kind: 'ok' | 'error', message: string) => {
     setNotice(message)
@@ -465,6 +468,7 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
       if (seq !== loadSeqRef.current) return EMPTY_FIELDS
       if (overridesRes.ok) {
         const o = overridesRes.value.overrides
+        loadedKeysRef.current = new Set(Object.keys(o))
         const paramPatch: Partial<Fields> = {}
         if (typeof o.firstTurnAnchor === 'boolean') paramPatch.firstTurnAnchor = o.firstTurnAnchor
         if (typeof o.firstTurnText === 'string') paramPatch.firstTurnText = o.firstTurnText
@@ -657,64 +661,68 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
   const persistParamOverrides = useCallback(async () => {
     const f = fieldsRef.current
     const splitList = (value: string): string[] => value.split(',').map((item) => item.trim()).filter((item) => item.length > 0)
-    // 参数总是发送（含空串/空数组）：让 savePresetParams 覆盖写空——「从有值改回
-    // 留空」必须清掉 preset.yml 旧值，否则渲染残留旧档位（reasoningEffort 等
-    // 空串渲染层跳过 = 继承宿主/模板默认）。数组/深度等空值渲染层有守卫。
+    const loadedKeys = loadedKeysRef.current
+    // 条件发送：preset.yml 已有该键（含模板默认键）或字段值 != UI 默认 → 发送；
+    // 未动过的键不写——既保留「改回留空清旧值」（已有键总是发送空值删键），
+    // 又避免 UI 默认值固化覆盖模板 moduleConfigs 默认（liangshen promoteGate=true
+    // 等被首次保存的 false 静默改写——参数桥优先后的回归）。
+    const emit = (key: string, value: unknown, empty: unknown): Record<string, unknown> =>
+      loadedKeys.has(key) || JSON.stringify(value) !== JSON.stringify(empty) ? { [key]: value } : {}
     const res = await bridgePost<{ overrides: unknown }>('/param-overrides', {
       overrides: {
-        firstTurnAnchor: f.firstTurnAnchor,
-        firstTurnText: f.firstTurnText,
-        firstTurnCustom: f.firstTurnCustom,
-        guideText: f.guideText,
-        guideCustom: f.guideCustom,
-        usePtcMode: f.usePtcMode,
-        injectPrompt: f.injectPrompt,
-        modelProvider: f.modelProvider,
-        modelName: f.modelName,
-        subagentModelProvider: f.subagentModelProvider,
-        subagentModelName: f.subagentModelName,
-        modelReasoningEffort: f.modelReasoningEffort,
-        modelTemperature: f.modelTemperature,
-        modelMaxTokens: f.modelMaxTokens,
-        subagentReasoningEffort: f.subagentReasoningEffort,
-        subagentTemperature: f.subagentTemperature,
-        subagentMaxTokens: f.subagentMaxTokens,
-        subagentPersona: f.subagentPersona,
-        toolFilterAllow: splitList(f.toolFilterAllow),
-        toolFilterDeny: splitList(f.toolFilterDeny),
-        maxDepth: f.maxDepth === '' ? '' : f.maxDepth === 'provider-managed' ? 'provider-managed' : Number(f.maxDepth),
-        allowKinds: splitList(f.allowKinds),
-        firstTurnWord: f.firstTurnWord,
-        bootstrapMaxTokens: f.bootstrapMaxTokens,
-        // 晋升门控/渐进披露/验证工具：全部总是发送（空值由 savePresetParams
-        // 删键回落到模板/引擎默认；false/0 引擎布尔归一或默认等价）。
-        promoteGate: f.promoteGate,
-        promoteAfterFirstResponse: f.promoteAfterFirstResponse,
-        maxPromoteSteps: f.maxPromoteSteps,
-        bootstrapTools: splitList(f.bootstrapTools),
-        compactionTools: splitList(f.compactionTools),
-        stages: f.stages
+        ...emit('firstTurnAnchor', f.firstTurnAnchor, false),
+        ...emit('firstTurnText', f.firstTurnText, ''),
+        ...emit('firstTurnCustom', f.firstTurnCustom, false),
+        ...emit('guideText', f.guideText, ''),
+        ...emit('guideCustom', f.guideCustom, false),
+        ...emit('usePtcMode', f.usePtcMode, false),
+        ...emit('injectPrompt', f.injectPrompt, true),
+        ...emit('modelProvider', f.modelProvider, ''),
+        ...emit('modelName', f.modelName, ''),
+        ...emit('subagentModelProvider', f.subagentModelProvider, ''),
+        ...emit('subagentModelName', f.subagentModelName, ''),
+        ...emit('modelReasoningEffort', f.modelReasoningEffort, ''),
+        ...emit('modelTemperature', f.modelTemperature, ''),
+        ...emit('modelMaxTokens', f.modelMaxTokens, ''),
+        ...emit('subagentReasoningEffort', f.subagentReasoningEffort, ''),
+        ...emit('subagentTemperature', f.subagentTemperature, ''),
+        ...emit('subagentMaxTokens', f.subagentMaxTokens, ''),
+        ...emit('subagentPersona', f.subagentPersona, ''),
+        ...emit('toolFilterAllow', splitList(f.toolFilterAllow), []),
+        ...emit('toolFilterDeny', splitList(f.toolFilterDeny), []),
+        ...emit('maxDepth', f.maxDepth === '' ? '' : f.maxDepth === 'provider-managed' ? 'provider-managed' : Number(f.maxDepth), ''),
+        ...emit('allowKinds', splitList(f.allowKinds), []),
+        ...emit('firstTurnWord', f.firstTurnWord, ''),
+        ...emit('bootstrapMaxTokens', f.bootstrapMaxTokens, 0),
+        // 晋升门控/渐进披露/验证工具：已有键或已改动才发送；空值由 savePresetParams
+        // 删键回落模板/引擎默认；false/0 引擎布尔归一或默认等价。
+        ...emit('promoteGate', f.promoteGate, false),
+        ...emit('promoteAfterFirstResponse', f.promoteAfterFirstResponse, false),
+        ...emit('maxPromoteSteps', f.maxPromoteSteps, 0),
+        ...emit('bootstrapTools', splitList(f.bootstrapTools), []),
+        ...emit('compactionTools', splitList(f.compactionTools), []),
+        ...emit('stages', f.stages
           .map((stage) => ({
             name: stage.name.trim(),
             tools: splitList(stage.tools),
           }))
-          .filter((stage) => stage.name.length > 0 && stage.tools.length > 0),
-        stagePreUnlock: f.stagePreUnlock,
-        stageAdvanceTool: f.stageAdvanceTool,
-        stageSectionTemplate: f.stageSectionTemplate,
-        personaSectionsOnly: f.personaSectionsOnly,
-        workspaceLine: f.workspaceLine,
-        instructionHint: f.instructionHint,
+          .filter((stage) => stage.name.length > 0 && stage.tools.length > 0), []),
+        ...emit('stagePreUnlock', f.stagePreUnlock, 0),
+        ...emit('stageAdvanceTool', f.stageAdvanceTool, ''),
+        ...emit('stageSectionTemplate', f.stageSectionTemplate, ''),
+        ...emit('personaSectionsOnly', f.personaSectionsOnly, false),
+        ...emit('workspaceLine', f.workspaceLine, false),
+        ...emit('instructionHint', f.instructionHint, false),
         // context-gate 注入门控。
-        messageSources: splitList(f.messageSources),
-        deferredSources: splitList(f.deferredSources),
-        deferredGraceSteps: f.deferredGraceSteps,
+        ...emit('messageSources', splitList(f.messageSources), []),
+        ...emit('deferredSources', splitList(f.deferredSources), []),
+        ...emit('deferredGraceSteps', f.deferredGraceSteps, 0),
         // 验证工具（page-check / delivery-gate）。
-        pageCheckBrowserPath: f.pageCheckBrowserPath,
-        pageCheckTimeoutMs: f.pageCheckTimeoutMs,
-        pageCheckLite: f.pageCheckLite,
-        pageCheckRetry: f.pageCheckRetry,
-        deliveryRequireSmoke: f.deliveryRequireSmoke,
+        ...emit('pageCheckBrowserPath', f.pageCheckBrowserPath, ''),
+        ...emit('pageCheckTimeoutMs', f.pageCheckTimeoutMs, 0),
+        ...emit('pageCheckLite', f.pageCheckLite, false),
+        ...emit('pageCheckRetry', f.pageCheckRetry, true),
+        ...emit('deliveryRequireSmoke', f.deliveryRequireSmoke, true),
       },
     })
     if (res.ok) {
