@@ -75,6 +75,8 @@ export interface WritePresetOptions extends PresetWriterParams {
   promptConfigs: PromptConfigSpec[]
   /** 预设模板名(preset/<name>);默认 anchored(兼容期)。 */
   presetTemplate?: string
+  /** 输出目录/预设 id 覆盖（旧容器 id 兼容别名，如 prompt-tool）；缺省 = presetTemplate 同名输出。 */
+  outputId?: string
   /** 目录加载失败等非致命告警回调。 */
   warn?: (message: string) => void
 }
@@ -196,6 +198,13 @@ export function writePreset(prompt: string, options: WritePresetOptions): void {
   if (!/^[a-z0-9][a-z0-9-]*$/.test(templateName)) {
     throw new Error(`invalid presetTemplate ${JSON.stringify(templateName)}: must match official agent-presets id /^[a-z0-9][a-z0-9-]*$/`)
   }
+  // 输出 id 覆盖：兼容别名（旧容器 id prompt-tool）与模板分离渲染——同一渲染输出到别名目录。
+  const outputId = typeof options.outputId === 'string' && options.outputId.trim().length > 0
+    ? options.outputId.trim()
+    : templateName
+  if (!/^[a-z0-9][a-z0-9-]*$/.test(outputId)) {
+    throw new Error(`invalid outputId ${JSON.stringify(outputId)}: must match official agent-presets id /^[a-z0-9][a-z0-9-]*$/`)
+  }
   const templateDir = resolvePresetDir(templateName)
   const spec = loadPresetSpec(templateDir)
   // 世界书旧存储段一次性迁移：旧版 preset.yml 顶层 worldBook 段（injectMode + entries）
@@ -257,9 +266,9 @@ export function writePreset(prompt: string, options: WritePresetOptions): void {
   // 官方对齐布局：presetDir 是预设根（官方 USER_PRESET_DIR），每个预设一个
   // 官方预设目录 presetDir/<template>/（agent.cordis.yml 组合本体直接可挂载），
   // 共享引擎物化一份于 presetDir/.engine（点前缀，官方 discovery 跳过）。
-  const targetDir = join(presetDir, templateName)
+  const targetDir = join(presetDir, outputId)
   mkdirSync(presetDir, { recursive: true })
-  const tmpDir = mkdtempSync(join(presetDir, `.${templateName}.tmp-`))
+  const tmpDir = mkdtempSync(join(presetDir, `.${outputId}.tmp-`))
   const outDir = tmpDir
   try {
   // 0) 保留用户参数覆盖文件（重建/升级不丢用户修改；随子预设隔离）。
@@ -276,7 +285,7 @@ export function writePreset(prompt: string, options: WritePresetOptions): void {
   // 引擎文件（.engine/）解析 → ../<template>/prompt-configs（指向本预设目录）。
   const subComposition = composition
     .replaceAll('./engine/', '../.engine/')
-    .replaceAll('../prompt-configs', `../${templateName}/prompt-configs`)
+    .replaceAll('../prompt-configs', `../${outputId}/prompt-configs`)
   writeFileSync(join(outDir, 'agent.cordis.yml'), subComposition, 'utf8')
 
   // 2) 宿主预设元数据：新布局 preset.yml = 参数 + 元数据一体。
@@ -443,7 +452,7 @@ export function writePreset(prompt: string, options: WritePresetOptions): void {
     if (config.fill === 'instruction-hint') {
       config.params = {
         ...config.params,
-        agentsInstructionPath: `../${templateName}/agents-instruction.md`,
+    agentsInstructionPath: `../${outputId}/agents-instruction.md`,
         ...(options.injectAgentsPrompt === true ? { text: asString(options.agentsInstructionText) } : {}),
       }
     }

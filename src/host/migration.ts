@@ -14,7 +14,7 @@
  *   3) 迁移完成后把旧容器根与旧用户预设目录 rename 为 .bak-<ts> 归档
  *      （保留安全网，不删除；7 天后可人工清理）。
  */
-import { cpSync, existsSync, mkdirSync, readdirSync, renameSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, readdirSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 export function migrateLegacyLayout(presetRoot: string, legacyUserPresets: string): boolean {
@@ -65,6 +65,9 @@ export function migrateLegacyLayout(presetRoot: string, legacyUserPresets: strin
   const stamp = Date.now().toString(36)
   if (existsSync(sharedEngine) && existsSync(legacyContainer)) {
     try {
+      // 旧容器 id 兼容标记：容器存在过 = 该时代会话可能 committed 'prompt-tool'，
+      // 插件启动据此物化 prompt-tool 兼容预设，旧会话 resume 不丢（宿主无回退）。
+      writeFileSync(join(presetRoot, '.pt-legacy-container'), stamp, 'utf8')
       renameSync(legacyContainer, join(presetRoot, `prompt-tool.bak-${stamp}`))
       migrated = true
     } catch {

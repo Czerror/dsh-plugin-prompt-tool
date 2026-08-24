@@ -228,6 +228,18 @@ export function apply(ctx: Context, configIn: Config): void {
         }
       }
       writePreset(presetPrompt, options)
+      // 旧容器 id 兼容：存在 .pt-legacy-container 标记时，物化 prompt-tool 别名预设
+      // （渲染自激活模板），使旧时代 committed 'prompt-tool' 的会话可 resume
+      // （dsh agent-presets 无回退，UnknownPresetError 直接 fail）。
+      try {
+        const legacyMarker = join(runtime.presetDir, '.pt-legacy-container')
+        if (existsSync(legacyMarker) && !existsSync(join(runtime.presetDir, 'prompt-tool', 'agent.cordis.yml'))) {
+          writePreset(presetPrompt, { ...options, outputId: 'prompt-tool' })
+          warn(ctx, 'prompt-tool: 已物化旧容器 id 兼容预设 prompt-tool（镜像激活模板），旧会话可恢复')
+        }
+      } catch (error) {
+        warn(ctx, `prompt-tool: 物化旧容器 id 兼容预设失败（下次启动重试）：${error instanceof Error ? error.message : String(error)}`)
+      }
     } else {
       // writePreset 关闭时移除各预设目录的生成物（agent.cordis.yml / prompt-configs /
       // 内容资产），保留 preset.yml 参数源与预设根本身——宿主以 agent.cordis.yml

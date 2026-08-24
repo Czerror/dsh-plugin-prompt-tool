@@ -176,6 +176,9 @@ export function listPresets(): Array<{ id: string; name: string; user: boolean; 
     try {
       return readdirSync(dir, { withFileTypes: true })
         .filter((entry) => entry.isDirectory() && !entry.name.startsWith('.'))
+        // 旧容器 id 兼容别名：镜像激活模板的隐藏预设，dsh roster 可见（旧会话 resume），
+        // 插件 UI/切换器不展示（非用户预设）。
+        .filter((entry) => entry.name !== 'prompt-tool')
         .flatMap((entry) => {
           try {
             const spec = loadPresetSpec(join(dir, entry.name))
