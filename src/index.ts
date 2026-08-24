@@ -915,7 +915,7 @@ registerTuiCommand(
 // 公共 API：宿主与测试复用 settings schema 与提示词配置权威校验。
 export { Config, PromptSettingsSchema } from './config.ts'
 export { writePreset } from './host/write-preset.ts'
-export { convertStToPreset, mergeStPresets, stPresetId } from './host/sillytavern.ts'
+export { convertStToPreset, mergeStPresets, processStText, stPresetId } from './host/sillytavern.ts'
 export { applyModuleConfigs, savePresetParams } from './host/manifest.ts'
 export { loadPresetSpec, resolvePresetParams } from './host/manifest.ts'
 export type { PresetSpec } from './host/manifest.ts'
