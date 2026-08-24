@@ -6,6 +6,7 @@ import clsx from 'clsx'
 import { IconChevronDownOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { bridgePost } from './prompt-tool-bridge.ts'
 import { Field } from './PromptConfigCard.tsx'
+import { TemplatePicker } from './TemplatePicker.tsx'
 import styles from './PromptUi.module.css'
 
 /** 内置工具名（delegate 提示）。 */
@@ -269,7 +270,7 @@ export function CustomToolsModuleCard(props: {
   const [tools, setTools] = useState<ToolDraft[]>([])
   const [builtin, setBuiltin] = useState<Record<string, { enabled?: boolean; name?: string; description?: string }>>({})
   const [toolTemplates, setToolTemplates] = useState<Array<{ file: string; spec: ToolDraft }>>([])
-  const [showTemplates, setShowTemplates] = useState(false)
+  const [pickerOpen, setPickerOpen] = useState(false)
   const [expandedCards, setExpandedCards] = useState<Set<number>>(new Set())
   const [loaded, setLoaded] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -331,7 +332,7 @@ export function CustomToolsModuleCard(props: {
     setTools([...tools, clone])
     setExpandedCards(new Set([...expandedCards, tools.length]))
     props.onNotice('ok', `已插入工具模板 ${String(spec.id)}（保存后生效）`)
-    setShowTemplates(false)
+    setPickerOpen(false)
   }
   const patchTool = (index: number, patch: Partial<ToolDraft>): void => {
     setTools(tools.map((tool, at) => at === index ? { ...tool, ...patch } : tool))
@@ -355,9 +356,7 @@ export function CustomToolsModuleCard(props: {
           <p>{`工具管理（tool-pipeline 层）：${tools.length} 个自定义工具 · 内置工具注册 · 第三方策略见模块列表`}</p>
         </div>
         <span className={styles.configActions}>
-          <button type="button" className={styles.pillButton} onClick={() => setShowTemplates(!showTemplates)}>
-            从模板新建
-          </button>
+          <button type="button" className={styles.pillButton} onClick={() => setPickerOpen(true)}>从模板新建</button>
           <button type="button" className={styles.pillButton}
             onClick={() => setTools([...tools, {
               id: `tool-${tools.length + 1}`,
@@ -404,18 +403,6 @@ export function CustomToolsModuleCard(props: {
             />
           ))}
           {tools.length === 0 && <p className={styles.configFieldHint}>{'无自定义工具；从模板新建或直接添加。'}</p>}
-          {showTemplates && (
-            <ul className={styles.configActions} style={{ flexDirection: 'column', alignItems: 'stretch', gap: 4 }}>
-              {toolTemplates.length === 0 && <li className={styles.configFieldHint}>模板库为空</li>}
-              {toolTemplates.map((template) => (
-                <li key={template.file}>
-                  <button type="button" className={styles.pillButton} onClick={() => insertTemplate(template.spec)}>
-                    {template.file.replace(/\.ya?ml$/i, '')}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
           <span className={styles.configFieldStack}>
             <span className={styles.configFieldLabel}>内置工具注册（enabled=false 不注册；name 覆盖组前缀；description 覆盖整组描述）</span>
             {BUILTIN_GROUPS.map((group) => {
@@ -446,6 +433,15 @@ export function CustomToolsModuleCard(props: {
             })}
           </span>
         </div>
+      )}
+      {pickerOpen && (
+        <TemplatePicker
+          templates={[]}
+          toolTemplates={toolTemplates}
+          onPick={() => {}}
+          onPickTool={insertTemplate}
+          onClose={() => setPickerOpen(false)}
+        />
       )}
     </section>
   )
