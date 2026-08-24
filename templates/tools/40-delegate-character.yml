@@ -1,5 +1,5 @@
-# 自定义工具模板：委托内置 character_list（隐藏原工具 + 自定义名称/描述）。
-# 配合 preset.yml builtinTools.character.enabled=false 使用，避免双份暴露。
+# 自定义工具模板：委托内置 character_list（自定义名称/描述/参数面；
+# 内置工具为插件固有注册，原工具仍可用）。
 id: delegate-character-list
 name: my_character_list
 description: 查看角色卡库（委托内置工具）

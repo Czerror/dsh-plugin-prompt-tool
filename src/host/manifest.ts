@@ -40,8 +40,6 @@ export interface PresetSpec {
   variables?: Record<string, string>
   /** 自定义工具定义（tool-config-engine 渲染进 custom-tools/ 后运行时注册）。 */
   customTools?: unknown[]
-  /** 内置工具注册配置（character/world_book/session_var；enabled=false 不注册，name/description 覆盖模型可见面）。 */
-  builtinTools?: Record<string, BuiltinToolConfig>
   /** 模板变量插值开关（缺省 true = 启用；false = 停用，writePreset 不生成变量文件）。 */
   variablesEnabled?: boolean
   /** 宿主层默认值(唯一入口):apply 时合并进 Config,settings 仍可覆盖。 */
@@ -57,16 +55,6 @@ export interface PresetSpec {
   }
   legacyCleanup?: string[]
   upstream?: Record<string, unknown>
-}
-
-/** 内置工具注册配置（preset.yml 顶层 builtinTools 段）。 */
-export interface BuiltinToolConfig {
-  /** false = 该组工具不注册（模型工具目录收敛）。缺省 true。 */
-  enabled?: boolean
-  /** 模型可见工具名前缀覆盖（组内工具名 = name + 原后缀，如 character_list → my_list）。 */
-  name?: string
-  /** 模型可见描述覆盖（整组统一）。 */
-  description?: string
 }
 
 /** 包根 preset/ 目录(配置/模板文件夹):兼容源码运行(src/host)与打包运行(lib/)。 */

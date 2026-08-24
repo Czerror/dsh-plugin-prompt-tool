@@ -21,7 +21,7 @@ import {
   resolvePresetParams,
   savePresetParams,
 } from './host/manifest.ts'
-import type { BuiltinToolConfig, PresetSpec } from './host/manifest.ts'
+import type { PresetSpec } from './host/manifest.ts'
 import type { PromptConfigSpec } from './host/prompt-configs.ts'
 import { createCachedSkillsReader, mergeSkillDirs } from './runtime/skills-provider.ts'
 import { ensureWebSurface } from './web-surface.ts'
@@ -757,23 +757,17 @@ registerTuiCommand(
     rebuildPreset()
     if (presetTemplateChanged) {
       syncHostDefault('switch')
-      // 内置工具随预设配置重挂（builtinTools 段：enabled/name/description 覆盖）。
+  // 内置工具随预设切换重挂（disposer 机制保留；自定义面走 delegate 模板包装）。
       applyBuiltinTools()
     }
   }
 
-  // 内置工具注册（character/world_book/session_var）：随激活预设 builtinTools
-  // 配置（enabled=false 不注册；name/description 覆盖模型可见面），预设切换重挂。
+  // 内置工具注册（character/world_book/session_var）：插件固有注册（自定义面走
+  // delegate 模板包装），disposer 保留供未来按预设切换重挂。
   let disposeBuiltinTools: Array<() => void> = []
   const applyBuiltinTools = (): void => {
     for (const dispose of disposeBuiltinTools) dispose()
     disposeBuiltinTools = []
-    let builtinTools: Record<string, BuiltinToolConfig> = {}
-    try {
-      builtinTools = loadPresetSpec(activePresetDir()).builtinTools ?? {}
-    } catch {
-      // 预设不可读 = 默认全开
-    }
     const push = (dispose: () => void): void => {
       if (typeof dispose === 'function') disposeBuiltinTools.push(dispose)
     }
@@ -787,7 +781,7 @@ registerTuiCommand(
           warn(ctx, `prompt-tool: character tool rebuild failed: ${String(error)}`)
         }
       },
-    }, builtinTools.character))
+    }))
     push(registerWorldBookTools(ctx, {
       activeDir: () => activePresetDir(),
       presetRoot: () => dirname(activePresetDir()),
@@ -798,8 +792,8 @@ registerTuiCommand(
           warn(ctx, `prompt-tool: world-book tool rebuild failed: ${String(error)}`)
         }
       },
-    }, builtinTools.world_book))
-    push(registerSessionVarTools(ctx, builtinTools.session_var))
+    }))
+    push(registerSessionVarTools(ctx))
   }
   applyBuiltinTools()
 
