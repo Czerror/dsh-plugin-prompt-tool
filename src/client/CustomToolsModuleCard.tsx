@@ -297,20 +297,38 @@ export function CustomToolsModuleCard(props: {
     setExpandedCards(next)
   }
   return (
-    <section className={styles.configList}>
-      <header className={styles.configHeader}>
-        <button type="button" className={styles.configToggle} aria-expanded={props.expanded} onClick={props.onToggleExpanded}>
-          <span className={styles.configTitle}>
-            <span className={styles.configTitleRow}>
+    <section aria-label="自定义工具">
+      <div className={styles.sectionHeading}>
+        <div>
+          <h2>
+            <button type="button" className={styles.configToggle} aria-expanded={props.expanded} onClick={props.onToggleExpanded}>
               <span className={styles.configName}>自定义工具</span>
-              <span className={styles.configMeta}>{`${tools.length} 个工具 · tool-config-engine`}</span>
-            </span>
-          </span>
-          <IconChevronDownOutline14 className={clsx(styles.chevron, props.expanded && styles.chevronOpen)} />
-        </button>
-      </header>
+              <IconChevronDownOutline14 className={clsx(styles.chevron, props.expanded && styles.chevronOpen)} />
+            </button>
+          </h2>
+          <p>{`${tools.length} 个工具 · tool-config-engine（preset.yml customTools 段）`}</p>
+        </div>
+        <span className={styles.configActions}>
+          <button type="button" className={styles.pillButton} onClick={() => setShowTemplates(!showTemplates)}>
+            从模板新建
+          </button>
+          <button type="button" className={styles.pillButton}
+            onClick={() => setTools([...tools, {
+              id: `tool-${tools.length + 1}`,
+              name: 'my_tool',
+              description: '',
+              output: { schema: { type: 'object', additionalProperties: true } },
+              execute: { kind: 'shell', command: '' },
+            }])}>
+            添加工具
+          </button>
+          <button type="button" className={styles.primaryPill} disabled={saving} onClick={save}>
+            {saving ? '保存中…' : '保存'}
+          </button>
+        </span>
+      </div>
       {props.expanded && (
-        <div className={styles.configForm}>
+        <div className={styles.configList}>
           {tools.map((tool, index) => (
             <CustomToolCard
               key={`${String(tool.id ?? '')}-${index}`}
@@ -323,24 +341,6 @@ export function CustomToolsModuleCard(props: {
             />
           ))}
           {tools.length === 0 && <p className={styles.configFieldHint}>{'无自定义工具；从模板新建或直接添加。'}</p>}
-          <span className={styles.configActions}>
-            <button type="button" className={styles.pillButton} onClick={() => setShowTemplates(!showTemplates)}>
-              从模板新建
-            </button>
-            <button type="button" className={styles.pillButton}
-              onClick={() => setTools([...tools, {
-                id: `tool-${tools.length + 1}`,
-                name: 'my_tool',
-                description: '',
-                output: { schema: { type: 'object', additionalProperties: true } },
-                execute: { kind: 'shell', command: '' },
-              }])}>
-              添加工具
-            </button>
-            <button type="button" className={styles.primaryPill} disabled={saving} onClick={save}>
-              {saving ? '保存中…' : '保存'}
-            </button>
-          </span>
           {showTemplates && (
             <ul className={styles.configActions} style={{ flexDirection: 'column', alignItems: 'stretch', gap: 4 }}>
               {toolTemplates.length === 0 && <li className={styles.configFieldHint}>模板库为空</li>}
