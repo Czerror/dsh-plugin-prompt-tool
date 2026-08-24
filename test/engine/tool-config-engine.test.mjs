@@ -330,3 +330,30 @@ execute:
   assert.deepEqual(registered.map((tool) => tool.name), ['my_ok'], '仅合法工具注册')
   assert.equal(warns.length, 3, '三条非法定义各有跳过告警')
 })
+
+test('tool-config-engine：enabled=false 的工具不注册（模块卡片开关语义）', () => {
+  const dir = writeToolDir({
+    '01-on.yml': `id: on
+name: my_on
+description: 启用
+output:
+  schema: { type: object, additionalProperties: true }
+execute:
+  kind: shell
+  command: 'x'
+`,
+    '02-off.yml': `id: off
+name: my_off
+description: 停用
+enabled: false
+output:
+  schema: { type: object, additionalProperties: true }
+execute:
+  kind: shell
+  command: 'x'
+`,
+  })
+  const { ctx, registered } = makeCtx()
+  applyToolConfigEngine(ctx, { configsDir: dir })
+  assert.deepEqual(registered.map((tool) => tool.name), ['my_on'], 'enabled=false 跳过注册')
+})

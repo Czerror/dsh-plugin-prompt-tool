@@ -136,6 +136,9 @@ function validateDefinition(def) {
   if (def.scope !== undefined && !['main', 'subagent', 'both'].includes(def.scope)) {
     throw new TypeError(`tool ${def.id}: scope must be main/subagent/both`)
   }
+  if (def.enabled !== undefined && typeof def.enabled !== 'boolean') {
+    throw new TypeError(`tool ${def.id}: enabled must be a boolean`)
+  }
 }
 
 /** approval 门：requireApproval 含该 kind 时先请求批准；无 approval 服务拒绝。 */
@@ -371,6 +374,10 @@ export function apply(ctx, config) {
   for (const def of definitions) {
     try {
       validateDefinition(def)
+      if (def.enabled === false) {
+        ctx.logger?.info(`${name}: skipping disabled tool ${JSON.stringify(def.name)}`)
+        continue
+      }
       const tool = compileTool(ctx, def, requireApproval)
       ctx.effect(() => ctx.tools.register(tool), `${name}: ${def.name}`)
       ctx.logger?.info(`${name}: registered custom tool ${def.name} (${def.execute.kind})`)

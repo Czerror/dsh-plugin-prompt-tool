@@ -5,6 +5,7 @@ import { useEffect, useState, type ReactNode } from 'react'
 import clsx from 'clsx'
 import { IconChevronDownOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { bridgePost } from './prompt-tool-bridge.ts'
+import { Field } from './PromptConfigCard.tsx'
 import styles from './PromptUi.module.css'
 
 /** 内置工具名（delegate 提示）。 */
@@ -89,21 +90,33 @@ function ParameterRowsEditor(props: { value: ToolDraft | undefined; onChange: (v
   )
 }
 
-/** 单张工具卡片（configCard 形态）：header（name + meta chip）+ 表单（kind 专属字段）。 */
+/** 单张工具卡片（对齐模块列表卡片形态）：header（enabled 开关 + chips + 上移/下移/复制/两段式删除）+ Field 表单。 */
 function CustomToolCard(props: {
   tool: ToolDraft
   index: number
   expanded: boolean
   onToggleExpanded: () => void
   onPatch: (patch: Partial<ToolDraft>) => void
+  onToggleEnabled: (enabled: boolean) => void
+  onMoveUp: () => void
+  onMoveDown: () => void
+  onDuplicate: () => void
   onRemove: () => void
+  canMoveUp: boolean
+  canMoveDown: boolean
 }): ReactNode {
   const { tool, index } = props
+  const [confirmingDelete, setConfirmingDelete] = useState(false)
   const execute = asRecord(tool.execute)
   const kind = typeof execute.kind === 'string' ? execute.kind : 'shell'
   const name = typeof tool.name === 'string' ? tool.name : ''
   const id = typeof tool.id === 'string' ? tool.id : `tool-${index + 1}`
   const description = typeof tool.description === 'string' ? tool.description : ''
+  const enabled = tool.enabled !== false
+  const paramCount = Object.keys(asRecord(tool.parameters)).length
+  const chips = [kind]
+  if (paramCount > 0) chips.push(`${paramCount} 参数`)
+  if (Number.isSafeInteger(tool.timeoutMs) && (tool.timeoutMs as number) > 0) chips.push(`timeout=${tool.timeoutMs}`)
   const patchExecute = (patch: Record<string, unknown>): void => {
     props.onPatch({ execute: { ...execute, ...patch } })
   }
@@ -119,103 +132,112 @@ function CustomToolCard(props: {
               <span className={styles.configName}>{name.length > 0 ? `${id} · ${name}` : id}</span>
               <span className={styles.configChip}>{kind}</span>
             </span>
-            <span className={styles.configMeta}>{description || '（无描述）'}</span>
+            <span className={styles.configMeta}>{description || '（无描述）'}{chips.length > 1 && ` · ${chips.slice(1).join(' · ')}`}</span>
           </span>
           <IconChevronDownOutline14 className={clsx(styles.chevron, props.expanded && styles.chevronOpen)} />
         </button>
         <span className={styles.configHeaderActions}>
+          <label className={styles.configEnable} title={enabled ? '点击停用（enabled=false 不注册）' : '点击启用'}>
+            <input type="checkbox" aria-label={`启用工具 ${id}`} checked={enabled}
+              onChange={(e) => props.onToggleEnabled(e.target.checked)} />
+            <span className={styles.switch} aria-hidden="true"><i /></span>
+          </label>
           <span className={styles.configActions}>
-            <button type="button" className={styles.pillButton} data-danger onClick={props.onRemove}>删除</button>
+            <button type="button" className={styles.pillButton} disabled={!props.canMoveUp} onClick={props.onMoveUp}>上移</button>
+            <button type="button" className={styles.pillButton} disabled={!props.canMoveDown} onClick={props.onMoveDown}>下移</button>
+            <button type="button" className={styles.pillButton} onClick={props.onDuplicate}>复制</button>
+            {confirmingDelete ? (
+              <>
+                <button type="button" className={styles.pillButton} data-danger onClick={props.onRemove}>确认删除</button>
+                <button type="button" className={styles.pillButton} data-variant="secondary" onClick={() => setConfirmingDelete(false)}>取消</button>
+              </>
+            ) : (
+              <button type="button" className={styles.pillButton} data-danger onClick={() => setConfirmingDelete(true)}>删除</button>
+            )}
           </span>
         </span>
       </header>
       {props.expanded && (
         <div className={styles.configForm}>
-          <span className={styles.configFieldStack}>
-            <span className={styles.configFieldLabel}>id / name（模型可见名 ^[a-z][a-z0-9_]*$）</span>
-            <span className={styles.variableRow}>
+          <span className={styles.variableRow}>
+            <Field label="id（文件标识）">
               <input className={styles.configInput} aria-label="工具 id" value={id} spellCheck={false}
                 onChange={(e) => props.onPatch({ id: e.target.value })} />
+            </Field>
+            <Field label="name（模型可见名）">
               <input className={styles.configInput} aria-label="工具名" value={name} spellCheck={false} placeholder="my_tool"
                 onChange={(e) => props.onPatch({ name: e.target.value })} />
-            </span>
+            </Field>
+          </span>
+          <Field label="description（模型可见描述）">
             <textarea className={styles.configTextarea} rows={2} aria-label="工具描述" value={description} spellCheck={false}
               placeholder="描述该工具给模型看"
               onChange={(e) => props.onPatch({ description: e.target.value })} />
-            <span className={styles.configFieldLabel}>execute.kind（执行器）</span>
+          </Field>
+          <Field label="execute.kind（执行器）" hint="shell=命令；http=请求；delegate=委托内置/已注册工具；fs=工作区文件；ask-user=询问用户">
             <select className={styles.configInput} aria-label="执行器" value={kind}
               onChange={(e) => patchExecute({ kind: e.target.value })}>
               {KIND_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
             </select>
-          </span>
-
+          </Field>
           {kind === 'shell' && (
-            <span className={styles.configFieldStack}>
-              <span className={styles.configFieldLabel}>{'command（{{args.x}} 参数插值；env 白名单；cwd=会话工作区）'}</span>
+            <Field label="command" hint={'{{args.x}} 参数插值；env 白名单；cwd=会话工作区'}>
               <textarea className={styles.configTextarea} rows={3} aria-label="shell 命令" spellCheck={false}
                 value={typeof execute.command === 'string' ? execute.command : ''} placeholder="Write-Output {{args.x}}"
                 onChange={(e) => patchExecute({ command: e.target.value })} />
-              <span className={styles.variableRow}>
-                <span className={styles.configFieldLabel}>shell</span>
-                <select className={styles.configInput} aria-label="shell" value={typeof execute.shell === 'string' ? execute.shell : 'pwsh'}
-                  onChange={(e) => patchExecute({ shell: e.target.value })}>
-                  {SHELLS.map((shell) => <option key={shell} value={shell}>{shell}</option>)}
-                </select>
-              </span>
-            </span>
+            </Field>
           )}
           {kind === 'http' && (
-            <span className={styles.configFieldStack}>
-              <input className={styles.configInput} aria-label="请求 URL" spellCheck={false}
-                value={typeof execute.url === 'string' ? execute.url : ''} placeholder="https://…/{{args.q}}"
-                onChange={(e) => patchExecute({ url: e.target.value })} />
-              <span className={styles.variableRow}>
-                <span className={styles.configFieldLabel}>method</span>
+            <>
+              <Field label="url" hint={'{{args.x}} 参数插值'}>
+                <input className={styles.configInput} aria-label="请求 URL" spellCheck={false}
+                  value={typeof execute.url === 'string' ? execute.url : ''} placeholder="https://…/{{args.q}}"
+                  onChange={(e) => patchExecute({ url: e.target.value })} />
+              </Field>
+              <Field label="method">
                 <select className={styles.configInput} aria-label="请求方法"
                   value={typeof execute.method === 'string' ? execute.method : 'GET'}
                   onChange={(e) => patchExecute({ method: e.target.value })}>
                   {HTTP_METHODS.map((method) => <option key={method} value={method}>{method}</option>)}
                 </select>
-              </span>
-            </span>
+              </Field>
+            </>
           )}
           {kind === 'delegate' && (
-            <span className={styles.configFieldStack}>
-              <span className={styles.configFieldLabel}>tool（委托目标；内置工具：{BUILTIN_TOOL_NAMES.join(' / ')}）</span>
+            <Field label="tool（委托目标）" hint={`内置工具：${BUILTIN_TOOL_NAMES.join(' / ')}`}>
               <input className={styles.configInput} aria-label="委托目标工具" spellCheck={false}
                 value={typeof execute.tool === 'string' ? execute.tool : ''} placeholder="world_book_upsert"
                 onChange={(e) => patchExecute({ tool: e.target.value })} />
-            </span>
+            </Field>
           )}
           {kind === 'fs' && (
-            <span className={styles.configFieldStack}>
-              <span className={styles.variableRow}>
-                <span className={styles.configFieldLabel}>action</span>
+            <>
+              <Field label="action">
                 <select className={styles.configInput} aria-label="fs 动作"
                   value={typeof execute.action === 'string' && (FS_ACTIONS as readonly string[]).includes(execute.action) ? execute.action : 'read'}
                   onChange={(e) => patchExecute({ action: e.target.value })}>
                   {FS_ACTIONS.map((action) => <option key={action} value={action}>{action}</option>)}
                 </select>
+              </Field>
+              <Field label="path" hint="相对工作区路径；越界拒绝">
                 <input className={styles.configInput} aria-label="文件路径" spellCheck={false}
-                  value={typeof execute.path === 'string' ? execute.path : ''} placeholder="相对工作区路径 {{args.path}}"
+                  value={typeof execute.path === 'string' ? execute.path : ''} placeholder="data/{{args.name}}.json"
                   onChange={(e) => patchExecute({ path: e.target.value })} />
-              </span>
-            </span>
+              </Field>
+            </>
           )}
           {kind === 'ask-user' && (
-            <span className={styles.configFieldStack}>
+            <Field label="question（向用户确认的问题）">
               <input className={styles.configInput} aria-label="询问问题" spellCheck={false}
-                value={typeof execute.question === 'string' ? execute.question : ''} placeholder="向用户确认的问题"
+                value={typeof execute.question === 'string' ? execute.question : ''} placeholder="是否继续执行该操作？"
                 onChange={(e) => patchExecute({ question: e.target.value })} />
-            </span>
+            </Field>
           )}
-
           <ParameterRowsEditor
             value={asRecord(tool.parameters)}
             onChange={(next) => props.onPatch({ parameters: next })}
           />
-          <span className={styles.configFieldStack}>
-            <span className={styles.configFieldLabel}>output.schema（JSON；默认开放对象）</span>
+          <Field label="output.schema（JSON；默认开放对象）">
             <textarea className={styles.configTextarea} rows={4} aria-label="输出 schema JSON" spellCheck={false}
               value={JSON.stringify(asRecord(tool.output), null, 2) === '{}' ? '' : JSON.stringify(asRecord(tool.output), null, 2)}
               onChange={(e) => {
@@ -223,13 +245,12 @@ function CustomToolCard(props: {
                 if (text.length === 0) { props.onPatch({ output: { schema: { type: 'object', additionalProperties: true } } }); return }
                 try { patchJson('output', JSON.parse(text) as ToolDraft) } catch { /* 解析失败不落盘 */ }
               }} />
-          </span>
+          </Field>
         </div>
       )}
     </article>
   )
 }
-
 /** 工具管理区块（tool-pipeline 层可见）：标题 + 工具卡片列表 + 内置工具注册表单。 */
 export function CustomToolsModuleCard(props: {
   expanded: boolean
@@ -353,7 +374,24 @@ export function CustomToolsModuleCard(props: {
               expanded={expandedCards.has(index)}
               onToggleExpanded={() => toggleCard(index)}
               onPatch={(patch) => patchTool(index, patch)}
+              onToggleEnabled={(enabled) => patchTool(index, { enabled })}
+              onMoveUp={() => setTools(tools.map((item, at) => {
+                if (at === index) return tools[index - 1]!
+                if (at === index - 1) return tools[index]!
+                return item
+              }))}
+              onMoveDown={() => setTools(tools.map((item, at) => {
+                if (at === index) return tools[index + 1]!
+                if (at === index + 1) return tools[index]!
+                return item
+              }))}
+              onDuplicate={() => setTools([...tools.slice(0, index + 1), {
+                ...JSON.parse(JSON.stringify(tool)) as ToolDraft,
+                id: `${String(tool.id ?? 'tool')}-copy`,
+              }, ...tools.slice(index + 1)])}
               onRemove={() => setTools(tools.filter((_, at) => at !== index))}
+              canMoveUp={index > 0}
+              canMoveDown={index < tools.length - 1}
             />
           ))}
           {tools.length === 0 && <p className={styles.configFieldHint}>{'无自定义工具；从模板新建或直接添加。'}</p>}
