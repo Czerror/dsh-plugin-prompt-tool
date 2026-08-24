@@ -60,7 +60,7 @@ subagentModel:                   # 子代理模型（固定路由；空=继承�
   temperature: ""                # 子代理采样温度（''=不设置）
   maxTokens: ""                  # 子代理输出上限（''=不设置）
 
-# ── params：引擎行为参数（23 键，全部可选，缺省 = 官方默认）──────────────────
+# ── params：引擎行为参数（全部可选，缺省 = 模板/引擎默认）────────────────────
 params:
   # ── 锚定（首轮任务类型判定）──
   firstTurnAnchor: true          # true=首轮启用任务锚定（判定 build/fix/deep）
@@ -74,6 +74,7 @@ params:
   # ── 引导（每轮路由引导）──
   guideCustom: false             # true=用 guideText 替代内置引导
   guideText: ""                  # 自定义引导文本（guideCustom=true 时生效）
+  # guideEnabled: true           # 每轮引导独立开关；不声明 = 跟随 firstTurnAnchor（关锚定 = 关引导）
   # 复杂任务判定 fallback 复用上方 complexPattern（引导与锚定共用分类器）。
   guideWeak: "Router: classify this task (build or fix) now, then adopt the matching style — build: direct production; fix: inspect-first. Think deeply first, then commit and act."
   guideDeep: "Router: classify this task (build or fix) now, then adopt the matching style — build: direct production; fix: inspect-first. Think deeply about the architecture, edge cases, and integration points. Do not spend reasoning on the environment or tooling. Produce when your information is complete. End each reasoning block with a decision or an information need."
@@ -82,11 +83,11 @@ params:
 
   # ── PTC 模式 / 门控 ──
   # 晋升门控与状态机参数（参数桥扁平键，直达 tool-bootstrap / context-gate /
-  # code-presentation 模块行 config；缺省 = 引擎默认，moduleConfigs 声明时优先）：
+  # code-presentation 模块行 config；缺省 = 引擎默认，参数桥优先于 moduleConfigs）：
   usePtcMode: false              # false=默认关闭；true=晋升后 Code Mode (PTC) 呈现（code-presentation 行，opt-in）
   bootstrapMaxTokens: 0          # 首轮工具目录引导的 maxTokens 上限；0=不封顶
-  injectPrompt: true             # true=we 确认后注入 preset.md 一次
-  allowKinds: "[skill-invocation, near-anchor, router-guide]"  # 注入 kind 白名单（context-gate 门控；空=白名单全拦，危险）
+  injectPrompt: true             # true=锚定确认后注入 preset.md 一次（确认词自动从锚句派生）
+  allowKinds: "[skill-invocation, near-anchor, router-guide]"  # 注入 kind 白名单（context-gate 门控；不声明 = 不过滤，显式空数组 = 全拦注入，危险）
   # promoteGate: false            # 门控晋升：首段 reasoning minimal-like + 工具调用才晋升
   # promoteAfterFirstResponse: false  # 无工具首响应 / 首轮 turn/end 即晋升
   # maxPromoteSteps: 4            # 门控回退：步数达上限强制晋升
@@ -102,6 +103,7 @@ params:
 
   # ── 人设（子代理）──
   subagentPersona: ""            # 子代理独立人设（显式 = per-child shadow；留空 = scope 链继承主会话 persona-main 模块）
+  mainPersona: ""                # 主会话人设（persona-main 配置覆盖；空 = 模板默认人设）
 
   # ── 工具集（子代理 toolFilter；主对话 tool-filter 模块共用同一扁平键）──
   toolFilterAllow: []            # 子代理工具白名单（数组或逗号/空格字符串；空=不过滤）
@@ -115,8 +117,9 @@ params:
   #   - { name: 了解, tools: [read, glob, grep] }
   #   - { name: 开发, tools: [write, edit] }
   #   - { name: 验证, tools: [pwsh, bash] }
-  # stagePreUnlock: 1              # 预放档数（调用预放工具 = 直达其档）
+  # stagePreUnlock: 1              # 预放档数（调用预放工具 = 直达其档；0 = 删键回落默认 1）
   # stageAdvanceTool: phase_advance  # 阶段推进工具名
+  # stageAdvanceDescription: ""    # 阶段推进工具描述
   # stageSectionTemplate: ""       # 阶段状态 section 模板（{{stage}}/{{stageName}}/{{unlocked}}/{{total}}；空=不注入）
   # ── 验证工具（可选模块 page-check / delivery-gate；modules 声明才挂载）──
   # pageCheckBrowserPath: ""       # 显式浏览器路径（缺省探测 DSH_PAGE_RUNNER → Chrome/Edge）
@@ -126,16 +129,7 @@ params:
   # deliveryRequireSmoke: true     # false=非页面交付物跳过 headless smoke
 
 # ── promptConfigs：注入提示词配置（三源合并：默认 < 目录 < 本段）──────────────
-# 每条配置的字段全开放：id / name / enabled / layer / strategy / position /
-# dedupe / promotion / subagents / modelScope / configKind / order / role /
-# text / texts / templateFile / fill / variables / params / identity /
-# mergeMode / group / exclusive。
-# strategy 七种：static（静态文本）/ first-turn-anchor（首轮任务锚定）/
-# guide-auto（每轮路由引导）/ custom-fallback（锚定词兜底注入）/
-# instruction-hint（指令文件提示）/ placeholder（动态填充：env-facts 等）/
-# world-book（世界书条目，见下方专项说明）。
-# 六个 layer 全覆盖：pre-step（下方默认四条）、system-section / runtime-context /
-# ── promptConfigs：注入提示词配置（全部通用字段参考）────────────────────────
+# 每条配置的通用字段（除 id 外全部可选，缺省见注释）：
 # 每条配置的通用字段（除 id 外全部可选，缺省见注释）：
 #   id             唯一 id，必填；同名覆盖默认配置
 #   name           显示名，默认等于 id（UI 使用）
@@ -169,7 +163,7 @@ params:
 # （DSH_HOME/WORKSPACE/CWD）> 字面保留。
 # agent-request / llm-stream / tool-pipeline 的参数说明与示例见本段下方各块。
 # 默认四条（子代理默认全部放行/跟随；如需仅主会话/仅子代理，显式写
-# subagents: none / only 即可）：
+# audience: main / subagent 即可）：
 promptConfigs:
   - id: near-anchor              # 首句任务锚点（首轮注入一次）
     name: 首句锚点
@@ -194,7 +188,7 @@ promptConfigs:
     dedupe: batch
     promotion: main
     modelScope: flash
-  - id: prompt-injector          # we 确认后注入 preset.md 一次
+  - id: prompt-injector          # 锚定确认后注入 preset.md 一次
     name: preset.md 注入
     enabled: true
     strategy: custom-fallback
@@ -223,15 +217,15 @@ promptConfigs:
 
 # ── 策略参数参考（strategy 专用 params，除下方各层注释外）───────────────────
 # first-turn-anchor（首轮任务锚点）：
-#   useCustom            true=固定使用 firstTurnText；false=按正则自动选引导句
-#   firstTurnText       自定义锚文本（useCustom=true 时注入）
+#   useCustom            true=固定使用 text；false=按正则自动选引导句
+#   text                自定义锚文本（useCustom=true 时注入；writePreset 从 params.firstTurnText 映射）
 #   buildPattern        构建任务正则（命中用 firstTurnBuild）
 #   complexPattern      复杂任务正则（命中用 firstTurnDeep）
 #   firstTurnBuild      构建引导句 / firstTurnInspect 排查引导句 / firstTurnDeep 复杂设计引导句
 # guide-auto（每轮路由引导）：
 #   useCustom            true=固定使用 text；false=按任务自动选强弱引导
 #   text                自定义引导文本（useCustom=true 时注入）
-#   guideComplexPattern 复杂任务正则
+#   complexPattern      复杂任务正则（fallback 复用锚定分类器；旧 guideComplexPattern 已移除）
 #   guideWeak           简单任务自动引导 / guideDeep 复杂任务自动引导
 # custom-fallback（自定义锚定词，prompt-injector 晋升确认）：
 #   firstTurnWord       锚定确认词（首轮 reasoning 开头命中即注入；空 = 自动从锚句派生确认词集合；ASCII 词边界 / 非 ASCII 直前缀，
