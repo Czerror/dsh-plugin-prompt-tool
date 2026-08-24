@@ -330,11 +330,13 @@ export function CustomToolsModuleCard(props: {
         <div>
           <h2>
             <button type="button" className={styles.configToggle} aria-expanded={props.expanded} onClick={props.onToggleExpanded}>
-              <span className={styles.configName}>自定义工具</span>
+              <span className={styles.configTitleRow}>
+                <span className={styles.configName}>自定义工具</span>
+                <span className={styles.configMeta}>{`${tools.length} 个自定义工具 · 第三方策略见下方模块卡片`}</span>
+              </span>
               <IconChevronDownOutline14 className={clsx(styles.chevron, props.expanded && styles.chevronOpen)} />
             </button>
           </h2>
-          <p>{`${tools.length} 个自定义工具 · 第三方策略见下方模块卡片`}</p>
         </div>
         <span className={styles.configActions}>
           <button type="button" className={styles.pillButton} onClick={() => setPickerOpen(true)}>从模板新建</button>
