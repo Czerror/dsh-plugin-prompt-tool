@@ -238,14 +238,39 @@ export function applyCharacterToPreset(
   presetRoot: string,
   templateName: string,
   cardId: string,
-): { ok: true; count: number } | { ok: false; message: string } {
+): { ok: true; count: number; personaOpened?: boolean } | { ok: false; message: string } {
   if (!validCardId(cardId)) return { ok: false, message: `非法角色卡 id：${cardId}` }
   const spec = loadConverted(cardDir(presetRoot, cardId))
   if (spec === undefined) return { ok: false, message: `角色卡 ${cardId} 不存在或参数损坏` }
   const prefix = `chara-${cardId}-`
+  // ST system-section 开放：导入卡含 system-section 段（角色设定/系统提示/后续指令）
+  // 时，激活预设 persona-main complete: true 会在 assembly 抑制这些段（官方 complete
+  // 只保留 persona 段）——自动置 complete: false 开放（与 ST 转换自身的
+  // moduleConfigs.persona = { complete: false } 语义对齐）。
+  const hasSystemSections = (spec.promptConfigs ?? []).some((config) =>
+    config !== null && typeof config === 'object' && !Array.isArray(config)
+    && (config as Record<string, unknown>).layer === 'system-section')
+  let personaOpened = false
   try {
     withPresetDoc(join(presetRoot, templateName), (doc) => {
       const current = doc.toJS() as { promptConfigs?: unknown[]; meta?: { importedCharacters?: unknown[] } }
+      if (hasSystemSections) {
+        const configs = Array.isArray(current.promptConfigs) ? current.promptConfigs : []
+        const personaIdx = configs.findIndex((config) => {
+          if (config === null || typeof config !== 'object' || Array.isArray(config)) return false
+          const entry = config as Record<string, unknown>
+          const params = entry.params as Record<string, unknown> | undefined
+          return entry.id === 'persona-main' || params?.sectionName === 'deployment:persona'
+        })
+        if (personaIdx >= 0) {
+          const persona = configs[personaIdx] as Record<string, unknown> | undefined
+          const complete = (persona?.params as Record<string, unknown> | undefined)?.complete
+          if (complete === true) {
+            doc.setIn(['promptConfigs', personaIdx, 'params', 'complete'], false)
+            personaOpened = true
+          }
+        }
+      }
       const existing = Array.isArray(current.promptConfigs)
         ? (current.promptConfigs as Array<Record<string, unknown>>).filter((config) => {
           return config !== null && typeof config === 'object' && !String(config.id ?? '').startsWith(prefix)
@@ -265,17 +290,34 @@ export function applyCharacterToPreset(
       const memory = readCharacterMemory(presetRoot, cardId)
       const memoryId = `${prefix}memory`
       const memoryEntry = buildCharacterMemoryEntry(spec, memory)
-      if (memoryEntry !== undefined) {
-        doc.setIn(['promptConfigs'], sortConfigs([...existing, ...added, { ...memoryEntry, id: memoryId }]))
-      } else {
-        // 合并后按（层序, order）排序写盘：UI 列表与引擎注入顺序一致。
-        doc.setIn(['promptConfigs'], sortConfigs([...existing, ...added]))
+      // 合并后按（层序, order）排序写盘：UI 列表与引擎注入顺序一致。
+      const merged = sortConfigs([
+        ...existing,
+        ...added,
+        ...(memoryEntry !== undefined ? [{ ...memoryEntry, id: memoryId }] : []),
+      ])
+      // ST system-section 开放：最终数组上应用（避免被整体写盘覆盖）——导入卡含
+      // system-section 段且激活预设 persona-main complete: true（会抑制 ST 的
+      // system prompt 段）时，置 complete: false 开放。
+      if (hasSystemSections) {
+        const persona = merged.find((config) => {
+          if (config === null || typeof config !== 'object' || Array.isArray(config)) return false
+          const entry = config as Record<string, unknown>
+          const params = entry.params as Record<string, unknown> | undefined
+          return entry.id === 'persona-main' || params?.sectionName === 'deployment:persona'
+        }) as Record<string, unknown> | undefined
+        const complete = (persona?.params as Record<string, unknown> | undefined)?.complete
+        if (complete === true && persona !== undefined) {
+          ;(persona.params as Record<string, unknown>).complete = false
+          personaOpened = true
+        }
       }
+      doc.setIn(['promptConfigs'], merged)
       const list = Array.isArray(current.meta?.importedCharacters) ? current.meta.importedCharacters : []
       if (!list.map(String).includes(cardId)) list.push(cardId)
       doc.setIn(['meta', 'importedCharacters'], list)
     })
-    return { ok: true, count: (spec.promptConfigs ?? []).length }
+    return { ok: true, count: (spec.promptConfigs ?? []).length, ...(personaOpened ? { personaOpened: true } : {}) }
   } catch (error) {
     return { ok: false, message: `导入失败：${error instanceof Error ? error.message : String(error)}` }
   }

@@ -130,6 +130,17 @@ wholeWords/selectiveLogic）单一权威。两个写入端共用：
   空值 = 模板默认（空值删键语义已有），模块卡仍为底层编辑入口；
 - UI：模型路由卡（主对话）人设输入，persist 条件发送 + 读回。
 
+### 角色卡导入的 persona 开放（2026-08-25）
+
+ST 转换（convertStToPreset）自带人设开放处理（`moduleConfigs.persona = { complete: false }`，
+注释「complete: false 允许 system-section 生效」）——但角色卡**导入激活预设**（applyCharacterToPreset）
+此前未处理：激活预设 persona-main `complete: true` 会在 assembly 抑制导入的 ST
+system-section 段（character-definition / system-prompt / post-history）。
+
+修复：导入卡含 system-section 段且激活预设 persona-main complete: true 时，自动置
+`complete: false`（开放，返回 `personaOpened: true`）；幂等（已开放不再改）；纯世界书卡
+（无 system-section）不触碰。
+
 ## 7. 契约测试
 
 - `test/host/param-contract.test.mjs`：PARAM_KEYS 派生一致性；每个 ENGINE_PARAM_KEYS 键有装配消费；MODEL_SEGMENT_MAP 段目标唯一。

@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### 角色卡导入自动开放 persona complete（2026-08-25）
+
+- **修复**：applyCharacterToPreset 导入含 system-section 段的 ST 卡时，自动将激活预设
+  persona-main `complete: true` 置 `false`（开放）——此前官方 complete 会抑制导入的
+  character-definition / system-prompt / post-history 段（ST system prompt 层级开放
+  需求；ST 转换自身已有 `moduleConfigs.persona = { complete: false }`，导入路径漏处理）。
+- **语义**：返回 `personaOpened: true`（幂等，已开放不重复）；纯世界书卡不触碰；
+  suppressRuntimeContext 不受影响。
+- **测试**：+1（开放/幂等/纯世界书反向三场景）；355 pass/0 fail。
+- **验证**：typecheck/lint 通过，全量测试通过。
+
 ### 主会话人设参数化：mainPersona 直接设置（2026-08-25）
 
 - **能力恢复**：`mainPersona?: string`（41db0da 迁移后不消费的参数重新参数化）——writePreset

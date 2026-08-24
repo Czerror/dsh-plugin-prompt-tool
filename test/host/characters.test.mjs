@@ -75,6 +75,64 @@ test('importCharacterCard + applyCharacterToPreset：卡入库并导入预设（
   assert.equal(listed[0].imported, true)
 })
 
+test('applyCharacterToPreset：导入含 system-section 的卡自动开放 persona-main complete（ST system prompt 层级开放）', () => {
+  // 预建含 persona-main complete: true 的激活预设。
+  const dir = mkdtempSync(join(tmpdir(), 'pt-chara-open-'))
+  const template = 'anchored'
+  const presetDir = join(dir, template)
+  mkdirSync(presetDir, { recursive: true })
+  writeFileSync(join(presetDir, 'preset.yml'), [
+    'id: anchored',
+    'name: 测试预设',
+    'version: 1.0.0',
+    'engineCompat: ">=0.4.2"',
+    'meta:',
+    '  order: 1',
+    'promptConfigs:',
+    '  - id: persona-main',
+    '    name: 主会话人设',
+    '    layer: system-section',
+    '    strategy: static',
+    '    order: 0',
+    '    text: 默认人设',
+    '    params:',
+    '      sectionName: deployment:persona',
+    '      complete: true',
+    '      suppressRuntimeContext: true',
+    '',
+  ].join('\n'), 'utf8')
+
+  // 卡含 system-section 段（description → character-definition）。
+  const imported = importCharacterCard(dir, [{ path: '开放卡.json', content: cardJson }])
+  const cardId = imported.ok ? imported.id : ''
+  const applied = applyCharacterToPreset(dir, template, cardId)
+  assert.equal(applied.ok, true)
+  assert.equal(applied.personaOpened, true, '导入 system-section 卡应报告 persona 开放')
+  const preset = parseYaml(readFileSync(join(presetDir, 'preset.yml'), 'utf8'))
+  const persona = preset.promptConfigs.find((config) => config.id === 'persona-main')
+  assert.equal(persona.params.complete, false, 'persona-main complete 置 false（开放 ST system prompt）')
+  assert.equal(persona.params.suppressRuntimeContext, true, 'suppressRuntimeContext 不受影响')
+  // 幂等：再次导入不再报告开放（complete 已 false）。
+  const again = applyCharacterToPreset(dir, template, cardId)
+  assert.equal(again.personaOpened, undefined, '重复导入不再开放（已开放）')
+
+  // 反向：persona-main complete: true + 纯世界书卡（无 system-section）→ 不开放。
+  const loreOnly = JSON.stringify({
+    spec: 'chara_card_v3',
+    name: '纯世界书',
+    data: {
+      name: '纯世界书',
+      character_book: { entries: [{ keys: ['剑'], content: '剑术高超。', comment: '剑术', insertion_order: 10 }] },
+    },
+  })
+  const importedLore = importCharacterCard(dir, [{ path: '纯世界书.json', content: loreOnly }])
+  const loreId = importedLore.ok ? importedLore.id : ''
+  const appliedLore = applyCharacterToPreset(dir, template, loreId)
+  assert.equal(appliedLore.personaOpened, undefined, '纯世界书卡（无 system-section）不触碰 persona complete')
+  const preset2 = parseYaml(readFileSync(join(presetDir, 'preset.yml'), 'utf8'))
+  assert.equal(preset2.promptConfigs.find((config) => config.id === 'persona-main').params.complete, false, '仍保持已开放状态')
+})
+
 test('syncImportedCharacterMemory：追加记忆后同步刷新已导入预设的条目', () => {
   const cardId = listCharacterCards(root, template)[0].id
   appendCharacterMemory(root, cardId, '她的剑叫霜雪。')
