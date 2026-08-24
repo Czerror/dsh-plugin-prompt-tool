@@ -11,6 +11,10 @@
 export const PARAM_KEYS: ReadonlySet<string> = new Set([
   'firstTurnAnchor', 'firstTurnText', 'firstTurnCustom',
   'guideText', 'guideCustom',
+  // 锚定/引导内容键：writePreset 映射进 near-anchor/router-guide 的 promptConfig
+  // params（策略消费），须排除出 variables.yml（避免同一键双落盘为模板变量）。
+  'buildPattern', 'complexPattern', 'firstTurnBuild', 'firstTurnInspect', 'firstTurnDeep',
+  'guideComplexPattern', 'guideWeak', 'guideDeep',
   'modelProvider', 'modelName',
   'subagentModelProvider', 'subagentModelName',
   'modelReasoningEffort', 'modelTemperature', 'modelMaxTokens',
@@ -25,7 +29,7 @@ export const PARAM_KEYS: ReadonlySet<string> = new Set([
   // context-gate 注入门控。
   'messageSources', 'deferredSources', 'deferredGraceSteps', 'instructionHint',
   // 渐进披露（stages 模式）。
-  'stages', 'stagePreUnlock', 'stageAdvanceTool', 'stageSectionTemplate',
+  'stages', 'stagePreUnlock', 'stageAdvanceTool', 'stageAdvanceDescription', 'stageSectionTemplate',
   // 验证工具（page-check / delivery-gate）。
   'pageCheckBrowserPath', 'pageCheckTimeoutMs', 'pageCheckLite', 'pageCheckRetry',
   'pageCheckDescription', 'deliveryRequireSmoke', 'deliveryDescription',

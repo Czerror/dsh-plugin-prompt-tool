@@ -169,3 +169,57 @@ test('参数桥：门控/状态机扁平键直达模块行 config（不 token �
   assert.equal(defaultBootstrap.config.promoteGate, undefined, '未声明不合并')
   assert.equal(defaultBootstrap.config.bootstrapMaxTokens, undefined, 'bootstrapMaxTokens 0/未声明不合并')
 })
+
+test('参数桥完整性：本地模块行 config 键 ⊆ ALLOWED_KEYS；stageAdvanceDescription 桥接落点', () => {
+  // 镜像 engine/*.mjs 的 ALLOWED_KEYS（本地模块；官方模块行不在此列）。
+  const ALLOWED = {
+    'tool-bootstrap': new Set(['bootstrapTools', 'promoteOn', 'bootstrapMaxTokens', 'compactionTools',
+      'includeSubagents', 'promoteGate', 'maxPromoteSteps', 'promoteAfterFirstResponse',
+      'personaSectionsOnly', 'workspaceLine', 'phase1FirstCallInstruction',
+      'stages', 'stagePreUnlock', 'stageAdvanceTool', 'stageAdvanceDescription', 'stageSectionTemplate']),
+    'context-gate': new Set(['promoteOn', 'includeSubagents', 'enabled', 'allowKinds',
+      'messageSources', 'deferredSources', 'deferredGraceSteps', 'instructionHint']),
+    'code-presentation': new Set(['usePtcMode', 'includeSubagents', 'promoteOn']),
+    'tool-filter': new Set(['allow', 'deny', 'includeSubagents', 'enabled']),
+    'page-check': new Set(['browserPath', 'timeoutMs', 'lite', 'retry', 'description']),
+    'delivery-gate': new Set(['requireSmoke', 'description']),
+  }
+  const rows = parseYaml(buildCordis('P', {
+    stages: [{ name: '了解', tools: ['read', 'glob'] }],
+    stagePreUnlock: 1,
+    stageAdvanceTool: 'phase_advance',
+    stageAdvanceDescription: '推进到下一阶段（解锁更多工具）',
+    stageSectionTemplate: 'Stage {{stageName}}',
+    promoteGate: true,
+    maxPromoteSteps: 6,
+    promoteAfterFirstResponse: true,
+    messageSources: ['user', 'goal'],
+    deferredSources: ['agent-instructions'],
+    deferredGraceSteps: 2,
+    instructionHint: true,
+    personaSectionsOnly: true,
+    workspaceLine: true,
+    compactionTools: ['read', 'write'],
+    bootstrapMaxTokens: 2048,
+    usePtcMode: true,
+    pageCheckBrowserPath: 'C:/chrome.exe',
+    pageCheckTimeoutMs: 30000,
+    pageCheckLite: true,
+    pageCheckRetry: false,
+    pageCheckDescription: '页面验证',
+    deliveryRequireSmoke: true,
+    deliveryDescription: '交付验证',
+    toolFilterAllow: ['read'],
+    toolFilterDeny: ['bash'],
+    toolFilterSubagents: true,
+  }))
+  for (const [module, allow] of Object.entries(ALLOWED)) {
+    const row = rows.find((r) => r?.id === module)
+    if (row === undefined) continue // 未挂载模块（page-check/delivery-gate 不在 anchored）
+    for (const key of Object.keys(row.config ?? {})) {
+      assert.ok(allow.has(key), `${module} 行 config 键 ${key} 必须在 ALLOWED_KEYS 中（参数桥漏注册或行默认漂移）`)
+    }
+  }
+  const bootstrap = rows.find((r) => r?.id === 'tool-bootstrap')
+  assert.equal(bootstrap.config.stageAdvanceDescription, '推进到下一阶段（解锁更多工具）', 'stageAdvanceDescription 经参数桥直达 tool-bootstrap 行')
+})

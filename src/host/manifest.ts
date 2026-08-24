@@ -42,8 +42,6 @@ export interface PresetSpec {
   customTools?: unknown[]
   /** 模板变量插值开关（缺省 true = 启用；false = 停用，writePreset 不生成变量文件）。 */
   variablesEnabled?: boolean
-  /** 宿主层默认值(唯一入口):apply 时合并进 Config,settings 仍可覆盖。 */
-  hostDefaults?: Record<string, unknown>
   /** 可选:模板自定义提示词配置覆盖(纯数据,不使用模板语法)。 */
   promptConfigs?: unknown[]
   /** 可选:引擎组合模块行参数覆盖(行级 map config 浅合并,preset 优先)。 */
@@ -589,6 +587,9 @@ export function buildModuleConfigsFromParams(params: Record<string, unknown>): R
   }
   if (typeof params.stageAdvanceTool === 'string' && params.stageAdvanceTool.length > 0) {
     bootstrap.stageAdvanceTool = params.stageAdvanceTool
+  }
+  if (typeof params.stageAdvanceDescription === 'string' && params.stageAdvanceDescription.length > 0) {
+    bootstrap.stageAdvanceDescription = params.stageAdvanceDescription
   }
   if (typeof params.stageSectionTemplate === 'string' && params.stageSectionTemplate.length > 0) {
     bootstrap.stageSectionTemplate = params.stageSectionTemplate

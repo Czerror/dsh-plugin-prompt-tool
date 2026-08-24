@@ -123,6 +123,34 @@ export interface BuildCordisOptions {
   deferredGraceSteps?: number
   /** 晋升后 agent-instructions 全文 → 一次性 hint。 */
   instructionHint?: boolean
+  /** phase-1 persona 追加的首次调用指令行。 */
+  phase1FirstCallInstruction?: string
+  /** 渐进披露阶段定义 [{ name, tools }]；声明即激活多级阶段窄化。 */
+  stages?: Array<{ name: string; tools: string[] }>
+  /** 阶段预放档数（默认 1）。 */
+  stagePreUnlock?: number
+  /** 阶段推进工具名（默认 phase_advance）。 */
+  stageAdvanceTool?: string
+  /** 阶段推进工具描述。 */
+  stageAdvanceDescription?: string
+  /** 阶段状态 section 模板（{{stage}}/{{stageName}}/{{unlocked}}/{{total}}；空 = 不注入）。 */
+  stageSectionTemplate?: string
+  /** 显式浏览器路径（page-check；缺省探测 DSH_PAGE_RUNNER → Chrome/Edge）。 */
+  pageCheckBrowserPath?: string
+  /** 页面检查硬超时（ms）。 */
+  pageCheckTimeoutMs?: number
+  /** 单帧低分辨率模式（重页）。 */
+  pageCheckLite?: boolean
+  /** 自动重试开关。 */
+  pageCheckRetry?: boolean
+  /** 页面验证工具描述。 */
+  pageCheckDescription?: string
+  /** 非页面交付物跳过 headless smoke。 */
+  deliveryRequireSmoke?: boolean
+  /** 交付验证工具描述。 */
+  deliveryDescription?: string
+  /** 子代理也启用主对话工具过滤。 */
+  toolFilterSubagents?: boolean
 }
 
 /** 文本块缩进 n 个空格（YAML block scalar）。 */

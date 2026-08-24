@@ -141,8 +141,8 @@ function ParamInput(props: { label: string; hint?: string; value: string; onChan
  *   placeholder / instruction-hint → fill 模板参数（text/envKeys/limit/fields/providers/emptyBehavior/emptyText）；
  * 无固定字段的策略回退 JSON 编辑（保留任意 params 能力）。
  */
-export function StrategyParamsFields(props: { strategy: string; layer?: string; params: Record<string, unknown> | undefined; onPatch: (params: Record<string, unknown>) => void }): ReactNode {
-  const { strategy, layer, params, onPatch } = props
+export function StrategyParamsFields(props: { strategy: string; layer?: string; params: Record<string, unknown> | undefined; onPatch: (params: Record<string, unknown>) => void; id?: string }): ReactNode {
+  const { strategy, layer, params, onPatch, id } = props
   const value = params ?? {}
   const str = (key: string): string => (typeof value[key] === 'string' ? value[key] as string : '')
   const bool = (key: string): boolean => value[key] === true
@@ -168,28 +168,46 @@ export function StrategyParamsFields(props: { strategy: string; layer?: string; 
     )
   }
   if (strategy === 'first-turn-anchor') {
+    // writePreset 按 id 把顶层 params（firstTurnCustom/firstTurnText/…）统一写入
+    // 这两个模板配置的 params——这里的编辑会被重建覆盖，隐藏以避免假入口。
+    const managed = id === 'near-anchor'
     return (
       <>
-        <ParamToggle label="useCustom（自定义锚文本）" hint="true = 固定使用 firstTurnText；false = 按 buildPattern/complexPattern 自动选择引导句"
-          checked={bool('useCustom')} onChange={(next) => set('useCustom', next)} />
-        <ParamTextarea label="firstTurnText（自定义锚文本）" hint="useCustom=true 时固定注入" value={str('firstTurnText')} onChange={(next) => set('firstTurnText', next)} />
-        <ParamInput label="buildPattern（构建任务正则）" hint="命中即用 firstTurnBuild 引导句" value={str('buildPattern')} onChange={(next) => set('buildPattern', next)} />
-        <ParamInput label="complexPattern（复杂任务正则）" hint="命中即用 firstTurnDeep 引导句" value={str('complexPattern')} onChange={(next) => set('complexPattern', next)} />
-        <ParamTextarea label="firstTurnBuild（构建引导句）" value={str('firstTurnBuild')} onChange={(next) => set('firstTurnBuild', next)} />
-        <ParamTextarea label="firstTurnInspect（排查引导句）" value={str('firstTurnInspect')} onChange={(next) => set('firstTurnInspect', next)} />
-        <ParamTextarea label="firstTurnDeep（复杂设计引导句）" value={str('firstTurnDeep')} onChange={(next) => set('firstTurnDeep', next)} />
+        {managed && (
+          <p className={styles.configFieldHint}>锚定开关与文本由设置页「锚定」管理（writePreset 重建时统一写入本配置），此处编辑会被覆盖。</p>
+        )}
+        {!managed && (
+          <>
+            <ParamToggle label="useCustom（自定义锚文本）" hint="true = 固定使用 firstTurnText；false = 按 buildPattern/complexPattern 自动选择引导句"
+              checked={bool('useCustom')} onChange={(next) => set('useCustom', next)} />
+            <ParamTextarea label="firstTurnText（自定义锚文本）" hint="useCustom=true 时固定注入" value={str('firstTurnText')} onChange={(next) => set('firstTurnText', next)} />
+            <ParamInput label="buildPattern（构建任务正则）" hint="命中即用 firstTurnBuild 引导句" value={str('buildPattern')} onChange={(next) => set('buildPattern', next)} />
+            <ParamInput label="complexPattern（复杂任务正则）" hint="命中即用 firstTurnDeep 引导句" value={str('complexPattern')} onChange={(next) => set('complexPattern', next)} />
+            <ParamTextarea label="firstTurnBuild（构建引导句）" value={str('firstTurnBuild')} onChange={(next) => set('firstTurnBuild', next)} />
+            <ParamTextarea label="firstTurnInspect（排查引导句）" value={str('firstTurnInspect')} onChange={(next) => set('firstTurnInspect', next)} />
+            <ParamTextarea label="firstTurnDeep（复杂设计引导句）" value={str('firstTurnDeep')} onChange={(next) => set('firstTurnDeep', next)} />
+          </>
+        )}
       </>
     )
   }
   if (strategy === 'guide-auto') {
+    const managed = id === 'router-guide'
     return (
       <>
-        <ParamToggle label="useCustom（自定义每轮引导）" hint="true = 固定使用 text；false = 按任务自动选择强弱引导"
-          checked={bool('useCustom')} onChange={(next) => set('useCustom', next)} />
-        <ParamTextarea label="text（自定义引导文本）" hint="useCustom=true 时固定注入" value={str('text')} onChange={(next) => set('text', next)} />
-        <ParamInput label="guideComplexPattern（复杂任务正则）" value={str('guideComplexPattern')} onChange={(next) => set('guideComplexPattern', next)} />
-        <ParamTextarea label="guideWeak（简单任务自动引导）" value={str('guideWeak')} onChange={(next) => set('guideWeak', next)} />
-        <ParamTextarea label="guideDeep（复杂任务自动引导）" value={str('guideDeep')} onChange={(next) => set('guideDeep', next)} />
+        {managed && (
+          <p className={styles.configFieldHint}>引导开关与文本由设置页「引导」管理（writePreset 重建时统一写入本配置），此处编辑会被覆盖。</p>
+        )}
+        {!managed && (
+          <>
+            <ParamToggle label="useCustom（自定义每轮引导）" hint="true = 固定使用 text；false = 按任务自动选择强弱引导"
+              checked={bool('useCustom')} onChange={(next) => set('useCustom', next)} />
+            <ParamTextarea label="text（自定义引导文本）" hint="useCustom=true 时固定注入" value={str('text')} onChange={(next) => set('text', next)} />
+            <ParamInput label="guideComplexPattern（复杂任务正则）" value={str('guideComplexPattern')} onChange={(next) => set('guideComplexPattern', next)} />
+            <ParamTextarea label="guideWeak（简单任务自动引导）" value={str('guideWeak')} onChange={(next) => set('guideWeak', next)} />
+            <ParamTextarea label="guideDeep（复杂任务自动引导）" value={str('guideDeep')} onChange={(next) => set('guideDeep', next)} />
+          </>
+        )}
       </>
     )
   }
@@ -393,7 +411,7 @@ export function PromptConfigForm(props: {
         />
       </span>
       <VariablesEditor value={config.variables} onChange={(value) => onPatch({ variables: value })} />
-      <StrategyParamsFields strategy={strategy} layer={config.layer} params={config.params} onPatch={(value) => onPatch({ params: value })} />
+              <StrategyParamsFields strategy={strategy} layer={config.layer} params={config.params} id={config.id} onPatch={(value) => onPatch({ params: value })} />
       <IdentityFields identity={config.identity} onPatch={(value) => onPatch({ identity: value })} />
     </div>
   )

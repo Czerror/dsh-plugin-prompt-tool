@@ -544,10 +544,14 @@ test('P1 回归：晋升门控/渐进披露/验证工具参数键不进 variable
 
     const pcDir = join(dir, 'anchored', 'prompt-configs')
     const varsFile = join(pcDir, 'variables.yml')
-    const vars = parseYaml(readFileSync(varsFile, 'utf8'))
+    // 无内容变量（顶层 variables 段为空）时不生成 variables.yml；生成时不得含参数键。
+    const vars = existsSync(varsFile) ? parseYaml(readFileSync(varsFile, 'utf8')) : {}
     // 新增参数键必须被 PARAM_KEYS 排除：不得当作内容变量混入 variables.yml。
     for (const key of ['promoteGate', 'maxPromoteSteps', 'bootstrapTools', 'messageSources',
-      'stagePreUnlock', 'pageCheckTimeoutMs', 'deliveryRequireSmoke']) {
+      'stagePreUnlock', 'pageCheckTimeoutMs', 'deliveryRequireSmoke',
+      // 锚定/引导内容键：writePreset 映射进 promptConfig.params，不得双落盘 variables.yml。
+      'buildPattern', 'complexPattern', 'firstTurnBuild', 'firstTurnInspect', 'firstTurnDeep',
+      'guideComplexPattern', 'guideWeak', 'guideDeep']) {
       assert.equal(vars[key], undefined, `variables.yml 不得含参数键 ${key}`)
     }
     // 配置 params 同样不含。

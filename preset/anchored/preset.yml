@@ -303,16 +303,3 @@ moduleConfigs:
     includeSubagents: false
   tool-filter:
     includeSubagents: false
-hostDefaults:
-  writePreset: true
-  writeAgents: true
-  injectAgentsPrompt: false
-  skillsDir: ""
-  skillRankBase: 250
-  residentAgentsPath: ~/.dsh/AGENTS.md
-  presetDir: ~/.dsh/.agent-presets/prompt-tool
-  presetOrder: 5
-  fallbackText: ""
-  promptConfigs: []
-  skillSwitches: {}
-  skillOrder: []

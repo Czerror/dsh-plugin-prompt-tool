@@ -42,6 +42,8 @@ content:
 
 # ── model / subagentModel：模型参数（顶层段，官方 agent-default-model 同构）──
 # 模型参数独立于 params（引擎行为参数）——对齐官方范式（模型设置独立 namespace）。
+# 新写/编辑一律用本顶层段；params 扁平键（modelProvider 等）仅旧布局读取兼容，
+# 保存时 savePresetParams 自动迁移（写顶层段 + 清理扁平键），无需手工维护。
 # 读取：顶层段优先展平进 params 扁平键（modelProvider 等），扁平旧键兜底；
 # 写入：savePresetParams 写顶层段并清理 params 旧扁平键（保存即迁移）。
 model:                           # 主对话模型（新会话默认；空=继承宿主 agent-default-model）
@@ -97,14 +99,8 @@ params:
   # deferredGraceSteps: 0         # 延迟注入宽限步数
   # instructionHint: false        # 晋升后 agent-instructions 全文 → 一次性 hint
 
-  # ── 人设 ──
-  # 主对话自定义模型人设：主对话命中快速模型（Flash 档）时替换人设；
-  # 子代理（subagentPersona）未设置时回退使用。
-  mainPersona: >                 # 主对话 Flash 档人设（多行文本）
-    You are a helpful assistant.
-
-    Think deeply first, then produce.
-  subagentPersona: ""            # 子代理独立人设（显式 → 回退 mainPersona → 继承主会话）
+  # ── 人设（子代理）──
+  subagentPersona: ""            # 子代理独立人设（显式 = per-child shadow；留空 = scope 链继承主会话 persona-main 模块）
 
   # ── 工具集（子代理 toolFilter；主对话 tool-filter 模块共用同一扁平键）──
   toolFilterAllow: []            # 子代理工具白名单（数组或逗号/空格字符串；空=不过滤）
@@ -448,21 +444,6 @@ moduleConfigs:
     includeSubagents: false      # true=子代理也做上下文门控
   tool-filter:
     includeSubagents: false      # true=子代理也启用主对话工具过滤
-
-# ── hostDefaults：settings 层默认值（被用户 settings 覆盖）──────────────────
-hostDefaults:
-  writePreset: true              # 启动时写入 preset.md 到生成目录
-  writeAgents: true              # 启动时写入 AGENTS.md 到生成目录
-  injectAgentsPrompt: false      # true=AGENTS.md 内容也注入 system
-  skillsDir: ""                  # skills 目录（空=插件自带 skills/）
-  skillRankBase: 250             # 技能排序基础值
-  residentAgentsPath: ~/.dsh/AGENTS.md  # 常驻 AGENTS.md 路径
-  presetDir: ~/.dsh/.agent-presets/prompt-tool  # 预设生成目录
-  presetOrder: 5                 # 预设排序
-  fallbackText: ""               # 兜底注入文本（空=不注入）
-  promptConfigs: []              # settings 数组提示词配置（优先级最高）
-  skillSwitches: {}              # 技能开关（id -> true/false）
-  skillOrder: []                 # 技能排序
 
 # ── 清理与上游（可选）───────────────────────────────────────────────────────
 legacyCleanup: []                # 历史残留文件清理列表

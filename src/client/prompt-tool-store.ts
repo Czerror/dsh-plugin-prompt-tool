@@ -256,6 +256,8 @@ export interface PromptToolStore {
   providers: string[]
   modelCatalog: Record<string, string[]>
   hostDefaultModel?: HostDefaultModel
+  /** 预设作者锁定的模块行配置（moduleConfigs，/describe 回传）：UI 对锁定键显示提示（moduleConfigs 优先于 params 桥）。 */
+  moduleConfigs: Record<string, Record<string, unknown>>
   bootstrapTokensDraft: string
   /** 新技能目录路径输入（多目录卡片：输入路径添加）。 */
   skillsDirDraft: string
@@ -364,6 +366,7 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
   const [providers, setProviders] = useState<string[]>([])
   const [modelCatalog, setModelCatalog] = useState<Record<string, string[]>>({})
   const [hostDefaultModel, setHostDefaultModel] = useState<HostDefaultModel | undefined>(undefined)
+  const [moduleConfigs, setModuleConfigs] = useState<Record<string, Record<string, unknown>>>({})
   const [fields, setFields] = useState<Fields>(EMPTY_FIELDS)
   const [meta, setMeta] = useState<EngineMeta>(EMPTY_META)
   const [bootstrapTokensDraft, setBootstrapTokensDraft] = useState(DEFAULT_BOOTSTRAP_DISPLAY)
@@ -400,6 +403,7 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
     setProviders(res.ok ? res.providers ?? [] : [])
     setModelCatalog(res.ok ? res.modelCatalog ?? {} : {})
     setHostDefaultModel(res.ok ? res.hostDefaultModel : undefined)
+    setModuleConfigs(res.ok ? res.moduleConfigs ?? {} : {})
     const next = fieldsFromView(res)
     // 引擎参数按预设存储（激活预设 preset.yml）：settings 不再承载，
     // 参数键由 /describe 的 presetParams 合并（类型匹配键覆盖，其余保持）。
@@ -911,6 +915,7 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
     providers,
     modelCatalog,
     hostDefaultModel,
+    moduleConfigs,
     bootstrapTokensDraft,
     skillsDirDraft,
     templatePreStepCount,

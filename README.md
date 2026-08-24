@@ -39,7 +39,6 @@ dsh --profile prompt-tool                                          # 首次启�
 
 | 层 | 职责 |
 |---|---|
-| `hostDefaults` | settings 层默认值（开关/路径），被用户 settings 覆盖 |
 | `params` | 引擎行为默认（锚定/引导/PTC/门控/模型/工具），被运行时 settings 覆盖 |
 | `moduleConfigs` | 引擎组合行级 config（persona 文本/超时/白名单） |
 | `promptConfigs` | 注入提示词配置（策略/层/位置/时机），与目录、settings 三源合并 |
@@ -54,6 +53,8 @@ dsh --profile prompt-tool                                          # 首次启�
 | 人设 | 模块列表的 `persona-main`（system-section + `deployment:persona`，complete 互斥 + suppressRuntimeContext）；`subagentPersona`（子代理显式，缺省经 scope 链继承主会话） |
 | 工具集 | `toolFilterAllow` `toolFilterDeny`（子代理 toolFilter；主对话 tool-filter 模块共用） |
 | 深度 | `maxDepth`（0 禁止委派 / `provider-managed` / 正整数） |
+
+> 注：`injectPrompt`（params）= 锚定确认后注入 preset.md 的开关；`injectAgentsPrompt`（settings）= 把 AGENTS.md 内容作为 instruction-hint 提示文本的开关。两者功能不同，勿混淆。
 
 模型参数在 **preset.yml 顶层 `model` / `subagentModel` 段**（官方 `agent-default-model` 同构）：
 

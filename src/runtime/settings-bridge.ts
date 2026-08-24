@@ -238,6 +238,9 @@ export function registerSettingsBridge(
             // 引擎参数按预设存储：/describe 附带激活预设参数（settings 已不承载；
             // 客户端 fields 参数键由此合并，promptConfigs 仍以 /prompt-configs 实际配置为准）。
             let presetParams: Record<string, unknown> = {}
+            // 预设作者锁定的模块行配置（moduleConfigs 声明优先于参数桥/UI）：
+            // 原样回传，客户端对锁定键显示「预设锁定」提示（显示与生效一致）。
+            let presetModuleConfigs: Record<string, Record<string, unknown>> = {}
             // 当前预设模板消息批层（pre-step）配置数：UI 消息批层入口开关联动——
             // 模板无 pre-step 配置（layer 缺省即 pre-step）时开关关闭且禁编辑。
             let templatePreStepCount = 0
@@ -253,6 +256,9 @@ export function registerSettingsBridge(
               if (Array.isArray(spec.promptConfigs)) {
                 presetParams.promptConfigs = spec.promptConfigs
               }
+              if (spec.moduleConfigs !== undefined && spec.moduleConfigs !== null) {
+                presetModuleConfigs = spec.moduleConfigs
+              }
               templatePreStepCount = (spec.promptConfigs ?? []).filter((config) => {
                 const layer = (config as { layer?: string }).layer
                 return layer === undefined || layer === 'pre-step'
@@ -264,6 +270,7 @@ export function registerSettingsBridge(
               ok: true,
               value: descriptor,
               presetParams,
+              moduleConfigs: presetModuleConfigs,
               hostDefaultModel,
               templatePreStepCount,
               modelsAvailable: detection.available,
