@@ -4,10 +4,10 @@
  *  记忆（.characters/<cardId>/memory.md，跟随角色卡跨预设），无前缀回退预设 memory.md。 */
 import type { Context } from '@deepseek-ai/cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
-import { mkdirSync, existsSync, appendFileSync, readdirSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
-import { readFileSync } from 'node:fs'
-import { parseDocument } from 'yaml'
+import { readdirSync } from 'node:fs'
+import { basename, join } from 'node:path'
+import { loadPresetSpec, withPresetDoc } from '../host/manifest.ts'
+import { appendMemoryFile, syncImportedCharacterMemory } from '../host/characters.ts'
 
 export interface WorldBookToolHost {
   /** 当前激活预设目录（preset.yml 所在目录）。 */
@@ -20,29 +20,12 @@ export interface WorldBookToolHost {
 
 const text = (text: string): Array<{ type: 'text'; text: string }> => [{ type: 'text', text }]
 
-function readConfigs(dir: string): Array<Record<string, unknown>> {
-  const file = join(dir, 'preset.yml')
-  const doc = parseDocument(readFileSync(file, 'utf8'), { logLevel: 'silent' })
-  const current = doc.toJS() as { promptConfigs?: unknown[] }
-  return Array.isArray(current.promptConfigs) ? current.promptConfigs as Array<Record<string, unknown>> : []
-}
-
-function writeConfigs(dir: string, configs: Array<Record<string, unknown>>): void {
-  const file = join(dir, 'preset.yml')
-  const doc = parseDocument(readFileSync(file, 'utf8'), { logLevel: 'silent' })
-  doc.setIn(['promptConfigs'], configs)
-  writeFileSync(file, doc.toString(), 'utf8')
-}
-
-/** 追加记忆文件（角色卡 memory.md 或预设 memory.md）。 */
-function appendMemory(file: string, note: string): void {
-  const content = note.trim()
-  if (content.length === 0) return
-  mkdirSync(join(file, '..'), { recursive: true })
-  const stamp = new Date().toISOString().slice(0, 19).replace('T', ' ')
-  const line = `\n- [${stamp}] ${content}\n`
-  if (existsSync(file)) appendFileSync(file, line, 'utf8')
-  else writeFileSync(file, `# 本地记忆\n${line}`, 'utf8')
+/** 当前预设的 world-book 配置列表。 */
+function worldBookConfigs(dir: string): Array<Record<string, unknown>> {
+  const spec = loadPresetSpec(dir)
+  return Array.isArray(spec.promptConfigs)
+    ? (spec.promptConfigs as Array<Record<string, unknown>>).filter((config) => config !== null && typeof config === 'object')
+    : []
 }
 
 /** 从条目 id 解析来源角色卡（chara-<cardId>- 前缀，cardId 可含连字符：遍历库目录取最长匹配）。 */
@@ -70,9 +53,15 @@ export function registerWorldBookTools(ctx: Context, host: WorldBookToolHost): v
       if (note === undefined || note.trim().length === 0) return
       const cardId = entryId !== undefined ? sourceCardId(host.presetRoot(), entryId) : undefined
       if (cardId !== undefined) {
-        appendMemory(join(host.presetRoot(), '.characters', cardId, 'memory.md'), note)
+        appendMemoryFile(join(host.presetRoot(), '.characters', cardId, 'memory.md'), note, '# 角色记忆')
+        // 该卡已导入当前预设时同步刷新 chara-<id>-memory 注入条目（跨会话记忆即刻生效）。
+        try {
+          syncImportedCharacterMemory(host.presetRoot(), basename(host.activeDir()), cardId)
+        } catch {
+          // 同步失败不阻断 note 写入（下次 apply 仍会重建条目）。
+        }
       } else {
-        appendMemory(join(host.activeDir(), 'memory.md'), note)
+        appendMemoryFile(join(host.activeDir(), 'memory.md'), note, '# 本地记忆')
       }
     }
 
@@ -107,7 +96,7 @@ export function registerWorldBookTools(ctx: Context, host: WorldBookToolHost): v
         render: (_args, value) => text(JSON.stringify(value.entries)),
       },
       execute: async () => {
-        const entries = readConfigs(host.activeDir())
+        const entries = worldBookConfigs(host.activeDir())
           .filter((config) => config.strategy === 'world-book')
           .map((config) => ({
             id: String(config.id ?? ''),
@@ -151,7 +140,6 @@ export function registerWorldBookTools(ctx: Context, host: WorldBookToolHost): v
       },
       execute: async (args) => {
         const dir = host.activeDir()
-        const configs = readConfigs(dir)
         const targetId = args.id !== undefined && args.id.length > 0 ? args.id : `lore-${Date.now().toString(36)}`
         const params: Record<string, unknown> = {
           constant: args.constant === true,
@@ -169,13 +157,21 @@ export function registerWorldBookTools(ctx: Context, host: WorldBookToolHost): v
           params,
         }
         if (args.enabled === false) entry.enabled = false
-        const existing = configs.findIndex((config) => String(config.id ?? '') === targetId)
-        if (existing >= 0) configs[existing] = entry
-        else configs.push(entry)
-        writeConfigs(dir, configs)
+        let count = 0
+        withPresetDoc(dir, (doc) => {
+          const current = doc.toJS() as { promptConfigs?: unknown[] }
+          const configs = Array.isArray(current.promptConfigs)
+            ? current.promptConfigs as Array<Record<string, unknown>>
+            : []
+          const existing = configs.findIndex((config) => String(config.id ?? '') === targetId)
+          if (existing >= 0) configs[existing] = entry
+          else configs.push(entry)
+          doc.setIn(['promptConfigs'], configs)
+          count = configs.filter((config) => config.strategy === 'world-book').length
+        })
         writeNote(targetId, typeof args.note === 'string' ? args.note : '')
         host.rebuild()
-        return { id: targetId, count: configs.filter((config) => config.strategy === 'world-book').length }
+        return { id: targetId, count }
       },
     }))
 
@@ -200,13 +196,22 @@ export function registerWorldBookTools(ctx: Context, host: WorldBookToolHost): v
       },
       execute: async (args) => {
         const dir = host.activeDir()
-        const configs = readConfigs(dir)
-        const kept = configs.filter((config) => !(config.strategy === 'world-book' && String(config.id ?? '') === args.id))
-        if (kept.length === configs.length) throw new Error(`世界书条目 ${args.id} 不存在`)
-        writeConfigs(dir, kept)
+        let keptCount = 0
+        let removed = false
+        withPresetDoc(dir, (doc) => {
+          const current = doc.toJS() as { promptConfigs?: unknown[] }
+          const configs = Array.isArray(current.promptConfigs)
+            ? current.promptConfigs as Array<Record<string, unknown>>
+            : []
+          const kept = configs.filter((config) => !(config.strategy === 'world-book' && String(config.id ?? '') === args.id))
+          removed = kept.length !== configs.length
+          doc.setIn(['promptConfigs'], kept)
+          keptCount = kept.filter((config) => config.strategy === 'world-book').length
+        })
+        if (!removed) throw new Error(`世界书条目 ${args.id} 不存在`)
         writeNote(args.id, typeof args.note === 'string' ? args.note : '')
         host.rebuild()
-        return { id: args.id, count: kept.filter((config) => config.strategy === 'world-book').length }
+        return { id: args.id, count: keptCount }
       },
     }))
   })

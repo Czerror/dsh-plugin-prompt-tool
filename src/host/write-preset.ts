@@ -264,7 +264,8 @@ export function writePreset(prompt: string, options: WritePresetOptions): void {
           ...(secondaryKeys.length > 0 ? { secondaryKeys } : {}),
           ...(entry.caseSensitive === true ? { caseSensitive: true } : {}),
           ...(entry.wholeWords === true ? { wholeWords: true } : {}),
-          ...(entry.useRegex === true ? { useRegex: true } : {}),
+          // useRegex 不迁移：正则形态键由 anchor-match 自动检测（ST 语义），
+          // 旧 useRegex=true 的条目其正则键同样命中，无需显式标记。
         },
       } satisfies PromptConfigSpec)
     }

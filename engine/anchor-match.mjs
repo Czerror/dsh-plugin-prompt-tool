@@ -29,12 +29,34 @@ export function escapeRegExp(text) {
   return String(text).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
-/** 单键正则编译（逐键匹配：any/all/not 需要精确的命中键数，捕获组会干扰 match 计数）。 */
+/** ST 正则键检测（对齐 world-info.js parseRegexFromString 语义）：
+ *  /regex/ 包裹（含 flags）或含正则特殊字符的键按正则匹配，其余按字面。 */
+export function isRegexKey(key) {
+  return /^\/[\s\S]+\/[gimsuy]*$/u.test(key) || /[\\^$.*+?()[\]{}|]/u.test(key)
+}
+
+/** 键 → RegExp（正则形态时）；普通字面键返回 undefined。 */
+export function parseRegexFromString(key) {
+  if (!isRegexKey(key)) return undefined
+  try {
+    const m = /^\/([\s\S]+)\/([gimsuy]*)$/u.exec(key)
+    return m ? new RegExp(m[1], m[2]) : new RegExp(key)
+  } catch {
+    return undefined
+  }
+}
+
+/** 单键正则编译（逐键匹配：any/all/not 需要精确的命中键数，捕获组会干扰 match 计数）。
+ *  useRegex 三态：true=强制正则；false=强制字面；缺省=ST 语义自动检测。 */
 function compileSingle(key, { caseSensitive, wholeWords, useRegex }) {
   const flags = caseSensitive ? '' : 'i'
-  if (useRegex) {
+  if (useRegex === true) {
     // ST use_regex=true：键原样作为正则（作者负责合法性）。
     return new RegExp(key, flags)
+  }
+  if (useRegex === undefined) {
+    const auto = parseRegexFromString(key)
+    if (auto !== undefined) return auto
   }
   if (wholeWords) {
     return new RegExp(`(^|[^\\p{L}\\p{N}])(${escapeRegExp(key)})(?![\\p{L}\\p{N}])`, `${flags}u`)
@@ -57,7 +79,7 @@ function compileKeyList(list, options) {
  * @param {string[]} [options.secondaryKeys] 副键
  * @param {boolean} [options.caseSensitive]
  * @param {boolean} [options.wholeWords]
- * @param {boolean} [options.useRegex]
+ * @param {boolean} [options.useRegex] 三态：true=强制正则 / false=强制字面 / 缺省=自动检测（ST 语义）
  * @param {'any'|'all'|'not'|'notAny'} [options.logic] 组合逻辑（缺省 any）
  * @param {'scan'|'prefix'} [options.mode] 匹配模式（缺省 scan）
  * @returns {{ scan: (text: string) => { primary: number, secondary: number, active: boolean } }}
@@ -68,7 +90,7 @@ export function createAnchorMatcher(options = {}) {
     secondaryKeys = [],
     caseSensitive = false,
     wholeWords = false,
-    useRegex = false,
+    useRegex = undefined,
     logic = MATCH_LOGIC.ANY,
     mode = 'scan',
   } = options

@@ -154,7 +154,7 @@ promptConfigs:
   └── memory.md       # 角色本地记忆（跟随角色卡跨预设）
 ```
 
-## PNG 解析（对齐官方 character-card-parser.js）
+## PNG 解析（对齐官方 public/scripts/utils.js extractDataFromPng）
 
 - tEXt chunk 关键字：**ccv3 优先 / chara 兜底**，值为 base64 编码的角色卡 JSON
 - 客户端字节流解析（无第三方依赖），原图提取为 `avatar.png`
@@ -200,7 +200,7 @@ promptConfigs:
 | `keys[]` / `secondary_keys[]` | `params.keys` / `params.secondaryKeys`（合并匹配，任一命中即注入） |
 | `constant: true` | `params.constant: true`（恒注入，不依赖关键字） |
 | `case_sensitive` / `match_whole_words` | `params.caseSensitive` / `params.wholeWords` |
-| `use_regex: true` | `params.useRegex`（keys 按正则匹配） |
+| 正则形态键（`/regex/` 包裹或含正则特殊字符） | 原样保留，`anchor-match` 自动按正则匹配（对齐 ST `parseRegexFromString`；ST 无 `use_regex` 字段） |
 | `selectiveLogic`（0/1/2/3） | `params.selectiveLogic`——选择性触发组合逻辑（0=任一命中 / 3=副键全中 / 1=副键全不中 / 2=至少一个副键未中），由锚定匹配引擎（anchor-match）消费 |
 | `insertion_order` | `order`（层内升序） |
 | `enabled` | `enabled`（原样保留） |
@@ -210,7 +210,8 @@ promptConfigs:
 - `constant: true` → 每轮恒注入（不扫描关键字）
 - 有 `keys` → 命中当前消息批文本（`extractText`）任一关键字即注入，未命中不注入
 - 无 `keys` 且非常驻 → **全局条目，每轮注入**（对齐 dsh-tavern 语义）
-- 注入形态：pre-step `before-all` 独立消息；`useRegex` / `caseSensitive` / `wholeWords` 控制匹配方式
+- 注入形态：pre-step `before-all` 独立消息；`caseSensitive` / `wholeWords` 显式开关，
+  正则形态键（`/regex/` 或含特殊字符）自动检测；存量 `params.useRegex` 显式 true/false 仍可强制覆盖
 
 ## 管理方式（与模块体系统一）
 
@@ -279,19 +280,12 @@ V1 = `base64(明文 JSON)`，V2 = `base64(zlib 压缩 JSON)`。项目提供提�
 
 ```sh
 node scripts/extract-st-character.mjs card.png           # 提取角色卡 JSON → card.json
-node scripts/extract-st-character.mjs --preset card.png  # 转本插件预设 JSON → card-preset.json
 ```
 
-`--preset` 模式把角色卡字段映射为预设卡 JSON（`prompts[]` 结构，工作台「预设配置」页
-直接导入，走与预设卡相同的转换链路）：
-
-| 角色卡字段 | 预设 JSON prompts[] | 转换后注入层 |
-|---|---|---|
-| `system_prompt` | `role: system` + `system_prompt: true` | `system-section`（系统静态段） |
-| `description` + `personality` + `scenario` | 合并为 `role: user` | `pre-step`（角色设定） |
-| `first_mes` | `role: assistant` | `pre-step`（开场白） |
-| `post_history_instructions` | `role: user` | `pre-step`（历史后指令） |
-| `extensions.sampling.temperature` / `max_tokens` | 顶层 `temperature` / `openai_max_tokens` | 剥离（模型参数归「模型设置」UI） |
+提取出的角色卡 JSON 直接在工作台「预设配置」页导入——单 JSON 导入自动走
+`convertStToPreset` 完整转换链路（角色设定 / 系统提示 / 开场白 / 备用开场白 /
+世界书 / setvar-getvar 变量 / 模块装配），比旧 `--preset` 简化映射更完整
+（旧模式会丢失世界书与变量，已移除）。
 
 > 角色卡 ≠ 预设卡：角色卡描述「角色是谁」，预设卡描述「注入什么、注入到哪一层」；
-> PNG 提取转换后是后者，可在工作台预设切换器中直接使用。
+> PNG 提取 + 工作台导入后即为普通预设，可在工作台预设切换器中直接使用。

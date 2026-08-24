@@ -41,6 +41,22 @@ test('anchor-match 选项：caseSensitive / wholeWords / useRegex', () => {
   assert.equal(rx.scan('剑abc').active, false)
 })
 
+test('anchor-match 正则键自动检测（ST parseRegexFromString 语义，无 useRegex 字段）', () => {
+  const wrapped = createAnchorMatcher({ keys: ['/^剑\\d+$/'] })
+  assert.equal(wrapped.scan('剑123').active, true, '/包裹正则命中')
+  assert.equal(wrapped.scan('剑abc').active, false, '/包裹正则未命中')
+  const special = createAnchorMatcher({ keys: ['剑\\d+'] })
+  assert.equal(special.scan('剑123').active, true, '含正则特殊字符自动按正则')
+  const literal = createAnchorMatcher({ keys: ['剑·刃'] })
+  assert.equal(literal.scan('剑·刃').active, true, '无特殊字符按字面')
+  assert.equal(literal.scan('剑').active, false, '字面键不误判')
+  const forcedLiteral = createAnchorMatcher({ keys: ['a+b'], useRegex: false })
+  assert.equal(forcedLiteral.scan('a+b').active, true, 'useRegex=false 强制字面')
+  assert.equal(forcedLiteral.scan('aaab').active, false, '强制字面不按正则')
+  const forcedRx = createAnchorMatcher({ keys: ['a+b'], useRegex: true })
+  assert.equal(forcedRx.scan('aaab').active, true, 'useRegex=true 强制正则')
+})
+
 test('anchor-match prefix：custom-fallback 锚定确认语义（开头匹配）', () => {
   const en = createAnchorMatcher({ keys: ['we'], mode: 'prefix' })
   assert.equal(en.scan('we need to...').active, true, 'ASCII 词边界前缀')

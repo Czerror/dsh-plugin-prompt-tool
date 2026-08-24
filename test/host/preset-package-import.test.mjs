@@ -465,8 +465,8 @@ test('importPresetPackage：世界书 ST 编辑器内部格式（key/keysecondar
             { uid: 10, key: ['酒吧'], keysecondary: ['酒保'], content: '酒吧设定', add_always: false, disable: false, order: 50 },
             // 禁用条目：disable: true → enabled: false。
             { uid: 11, key: ['禁词'], content: '禁用设定', add_always: false, disable: true, order: 60 },
-            // 匹配开关 camelCase 形态（编辑器内部格式）。
-            { uid: 12, key: ['城堡'], content: '城堡设定', add_always: false, disable: false, order: 70, caseSensitive: true, matchWholeWords: true, useRegex: true },
+            // 匹配开关 camelCase 形态 + 正则形态键（ST 无 useRegex 字段：正则键自动检测）。
+            { uid: 12, key: ['/城堡\\d+/'], content: '城堡设定', add_always: false, disable: false, order: 70, caseSensitive: true, matchWholeWords: true },
           ],
         },
       },
@@ -487,7 +487,8 @@ test('importPresetPackage：世界书 ST 编辑器内部格式（key/keysecondar
   const castle = configs.find((config) => config.id === 'lore-12')
   assert.equal(castle.params.caseSensitive, true)
   assert.equal(castle.params.wholeWords, true)
-  assert.equal(castle.params.useRegex, true)
+  assert.deepEqual(castle.params.keys, ['/城堡\\d+/'], '正则形态键原样保留')
+  assert.equal('useRegex' in castle.params, false, '不写幽灵字段 useRegex（正则键由 anchor-match 自动检测）')
 })
 
 test('importPresetPackage：世界书 entries 为对象（键为字符串序数）时形态兼容', async () => {

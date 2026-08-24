@@ -140,7 +140,9 @@ function createWorldBookResolver(config) {
     secondaryKeys: Array.isArray(config.params?.secondaryKeys) ? config.params.secondaryKeys : [],
     caseSensitive: config.params?.caseSensitive === true,
     wholeWords: config.params?.wholeWords === true,
-    useRegex: config.params?.useRegex === true,
+    // 三态透传：undefined=ST 语义自动检测（/regex/ 或含特殊字符键按正则）；
+    // 存量配置显式 true/false 仍强制对应行为。
+    useRegex: config.params?.useRegex,
     logic,
   })
   // ST 语义：constant 或无任何键的条目恒注入（always active）。

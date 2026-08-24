@@ -915,7 +915,7 @@ registerTuiCommand(
 // 公共 API：宿主与测试复用 settings schema 与提示词配置权威校验。
 export { Config, PromptSettingsSchema } from './config.ts'
 export { writePreset } from './host/write-preset.ts'
-export { stPresetId } from './host/sillytavern.ts'
+export { convertStToPreset, mergeStPresets, stPresetId } from './host/sillytavern.ts'
 export { applyModuleConfigs, savePresetParams } from './host/manifest.ts'
 export { loadPresetSpec, resolvePresetParams } from './host/manifest.ts'
 export type { PresetSpec } from './host/manifest.ts'
@@ -939,6 +939,17 @@ export { validatePromptConfigs } from './runtime/configs-validate.ts'
 export { registerSettingsBridge } from './runtime/settings-bridge.ts'
 export { registerCharacterTools } from './runtime/character-tools.ts'
 export { registerWorldBookTools } from './runtime/world-book-tools.ts'
+export {
+  appendCharacterMemory,
+  appendMemoryFile,
+  applyCharacterToPreset,
+  deleteCharacterCard,
+  importCharacterCard,
+  listCharacterCards,
+  readCharacterMemory,
+  removeCharacterFromPreset,
+  syncImportedCharacterMemory,
+} from './host/characters.ts'
 export type { PromptConfigValidationError, PromptConfigValidationResult } from './runtime/configs-validate.ts'
 export { loadPromptTemplates } from './host/templates.ts'
 export type { PromptConfigTemplate } from './host/templates.ts'

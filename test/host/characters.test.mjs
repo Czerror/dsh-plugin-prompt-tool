@@ -1,0 +1,113 @@
+import { test } from 'node:test'
+import assert from 'node:assert/strict'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { parse as parseYaml } from 'yaml'
+
+// 隔离 DSH_HOME：角色卡库操作全部走显式 presetRoot 参数。
+const home = mkdtempSync(join(tmpdir(), 'pt-chara-home-'))
+process.env.DSH_HOME = home
+const {
+  appendCharacterMemory,
+  appendMemoryFile,
+  applyCharacterToPreset,
+  importCharacterCard,
+  listCharacterCards,
+  syncImportedCharacterMemory,
+} = await import('../../lib/index.mjs')
+
+const root = mkdtempSync(join(tmpdir(), 'pt-chara-root-'))
+const template = 'anchored'
+const presetDir = join(root, template)
+
+// 预建激活预设（applyCharacterToPreset 只更新不创建）。
+mkdirSync(presetDir, { recursive: true })
+writeFileSync(join(presetDir, 'preset.yml'), [
+  'id: anchored',
+  'name: 测试预设',
+  'version: 1.0.0',
+  'engineCompat: ">=0.4.2"',
+  'meta:',
+  '  order: 1',
+  'promptConfigs: []',
+  '',
+].join('\n'), 'utf8')
+
+/** 最小角色卡 JSON（chara_card_v3：内容在 data 内层）。 */
+const cardJson = JSON.stringify({
+  spec: 'chara_card_v3',
+  name: '测试角色',
+  data: {
+    name: '测试角色',
+    description: '一位测试角色。',
+    personality: '冷静。',
+    first_mes: '你好。',
+    character_book: {
+      entries: [
+        { keys: ['剑'], content: '剑术高超。', comment: '剑术', insertion_order: 10 },
+      ],
+    },
+  },
+})
+
+test('importCharacterCard + applyCharacterToPreset：卡入库并导入预设（含记忆条目）', () => {
+  const imported = importCharacterCard(root, [{ path: '测试角色.json', content: cardJson }])
+  assert.equal(imported.ok, true)
+  // 中文卡 id = st-<hash>（stPresetId 退化规则）；后续操作一律用返回 id。
+  const cardId = imported.ok ? imported.id : ''
+  assert.match(cardId, /^st-[0-9a-f]{6}$/)
+
+  // 追加角色记忆后再导入 → 记忆条目随之合并。
+  appendCharacterMemory(root, cardId, '她喜欢下雨天。')
+  const applied = applyCharacterToPreset(root, template, cardId)
+  assert.equal(applied.ok, true)
+
+  const preset = parseYaml(readFileSync(join(presetDir, 'preset.yml'), 'utf8'))
+  const memoryEntry = preset.promptConfigs.find((config) => config.id === `chara-${cardId}-memory`)
+  assert.ok(memoryEntry, '记忆条目存在')
+  assert.match(memoryEntry.text, /喜欢下雨天/, '记忆文本已合并')
+  assert.equal(memoryEntry.params.constant, true, '记忆条目为 world-book constant')
+  assert.deepEqual(preset.meta.importedCharacters, [cardId])
+
+  const listed = listCharacterCards(root, template)
+  assert.equal(listed.length, 1)
+  assert.equal(listed[0].imported, true)
+})
+
+test('syncImportedCharacterMemory：追加记忆后同步刷新已导入预设的条目', () => {
+  const cardId = listCharacterCards(root, template)[0].id
+  appendCharacterMemory(root, cardId, '她的剑叫霜雪。')
+  const synced = syncImportedCharacterMemory(root, template, cardId)
+  assert.equal(synced.ok, true)
+  assert.equal(synced.ok && synced.synced, true, '已导入卡应同步')
+
+  const preset = parseYaml(readFileSync(join(presetDir, 'preset.yml'), 'utf8'))
+  const memoryEntry = preset.promptConfigs.find((config) => config.id === `chara-${cardId}-memory`)
+  assert.ok(memoryEntry, '记忆条目仍在')
+  assert.match(memoryEntry.text, /霜雪/, '新记忆已同步进条目')
+  assert.match(memoryEntry.text, /喜欢下雨天/, '旧记忆保留')
+})
+
+test('syncImportedCharacterMemory：未导入当前预设的卡返回 synced=false 且不动预设', () => {
+  const imported = importCharacterCard(root, [{ path: '未导入卡.json', content: JSON.stringify({
+    spec: 'chara_card_v3', name: '未导入卡', data: { name: '未导入卡', description: '不入库即不导入。' },
+  }) }])
+  const cardId = imported.ok ? imported.id : ''
+  const before = readFileSync(join(presetDir, 'preset.yml'), 'utf8')
+  const synced = syncImportedCharacterMemory(root, template, cardId)
+  assert.equal(synced.ok, true)
+  assert.equal(synced.ok && synced.synced, false, '未导入卡无需同步')
+  assert.equal(readFileSync(join(presetDir, 'preset.yml'), 'utf8'), before, '预设文件不变')
+})
+
+test('appendMemoryFile：统一追加格式（时间戳列表），header 区分来源', () => {
+  const file = join(root, '.characters', listCharacterCards(root, template)[0].id, 'memory.md')
+  appendMemoryFile(file, '第一条', '# 角色记忆')
+  appendMemoryFile(file, '第二条', '# 角色记忆')
+  const text = readFileSync(file, 'utf8')
+  assert.match(text, /^# 角色记忆\n/, 'header 正确')
+  assert.match(text, /- \[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\] 第一条/, '时间戳格式')
+  assert.match(text, /第二条/, '追加保留')
+  assert.ok(existsSync(file), '文件已创建')
+})

@@ -249,7 +249,7 @@ promptConfigs:
 #   params.secondaryKeys  次级关键字（与 keys 合并匹配，任一命中即注入）
 #   params.caseSensitive  true=关键字区分大小写（默认不区分）
 #   params.wholeWords     true=整词匹配（默认子串包含；中文无词边界，对英文生效）
-#   params.useRegex       true=keys 按正则表达式匹配（SillyTavern use_regex 透传）
+#   正则形态键自动检测：/regex/ 包裹或含正则特殊字符的 keys 按正则匹配（ST 语义，无 use_regex 字段）
 #   params.selectiveLogic ST world_info_logic（选择性触发组合逻辑）：
 #                         0=主/副键任一命中（默认）/ 3=副键全中才注入 /
 #                         1=副键全不中才注入 / 2=至少一个副键未中才注入

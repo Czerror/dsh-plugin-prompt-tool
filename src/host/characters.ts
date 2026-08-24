@@ -4,9 +4,10 @@
  *  chara-<cardId>- 前缀防冲突，params 合并，meta.importedCharacters 记录来源），
  *  并可一键移除。 */
 import { readFileSync, writeFileSync, mkdirSync, rmSync, existsSync, readdirSync, appendFileSync } from 'node:fs'
-import { join, basename } from 'node:path'
+import { join, basename, dirname } from 'node:path'
 import { parse as parseYaml, parseDocument, stringify as stringifyYaml } from 'yaml'
 import { convertStToPreset, mergeStPresets } from './sillytavern.ts'
+import { withPresetDoc } from './manifest.ts'
 import type { PresetSpec } from './manifest.ts'
 
 /** 引擎六层注入顺序（与 schema 层序一致）：合并写盘时按此排序，数组序 = 引擎序。 */
@@ -22,6 +23,67 @@ function sortConfigs(configs: Array<Record<string, unknown>>): Array<Record<stri
     if (byLayer !== 0) return byLayer
     return (Number(a.order) || 0) - (Number(b.order) || 0)
   })
+}
+
+/** 角色卡记忆条目字段（不含 id；id 由调用方加 chara-<卡>- 前缀）。 */
+function buildCharacterMemoryEntry(spec: PresetSpec, memory: string): Record<string, unknown> | undefined {
+  if (memory.trim().length === 0) return undefined
+  return {
+    name: '角色记忆',
+    strategy: 'world-book',
+    layer: 'pre-step',
+    position: 'before-all',
+    enabled: true,
+    order: 1000,
+    text: `【${spec.name} 的关系记忆】\n${memory}`,
+    params: { constant: true },
+  }
+}
+
+/** 角色卡记忆变更后同步已导入预设的 chara-<id>-memory 注入条目
+ *  （world_book note 写入卡记忆后调用；未导入当前预设的卡返回 synced=false）。 */
+export function syncImportedCharacterMemory(
+  presetRoot: string,
+  templateName: string,
+  cardId: string,
+): { ok: true; synced: boolean } | { ok: false; message: string } {
+  if (!validCardId(cardId)) return { ok: false, message: `非法角色卡 id：${cardId}` }
+  const spec = loadConverted(cardDir(presetRoot, cardId))
+  if (spec === undefined) return { ok: false, message: `角色卡 ${cardId} 不存在或参数损坏` }
+  const memory = readCharacterMemory(presetRoot, cardId)
+  const memoryId = `chara-${cardId}-memory`
+  let synced = false
+  try {
+    withPresetDoc(join(presetRoot, templateName), (doc) => {
+      const current = doc.toJS() as { promptConfigs?: unknown[]; meta?: { importedCharacters?: unknown[] } }
+      const imported = Array.isArray(current.meta?.importedCharacters)
+        ? current.meta.importedCharacters.map(String)
+        : []
+      if (!imported.includes(cardId)) return // 卡未导入当前预设，无需同步
+      const configs = Array.isArray(current.promptConfigs)
+        ? current.promptConfigs as Array<Record<string, unknown>>
+        : []
+      const entry = buildCharacterMemoryEntry(spec, memory)
+      const at = configs.findIndex((config) => config !== null && typeof config === 'object'
+        && String(config.id ?? '') === memoryId)
+      if (entry === undefined) {
+        if (at >= 0) {
+          configs.splice(at, 1)
+          synced = true
+        }
+      } else if (at >= 0) {
+        configs[at] = { ...entry, id: memoryId }
+        synced = true
+      } else {
+        configs.push({ ...entry, id: memoryId })
+        synced = true
+      }
+      if (synced) doc.setIn(['promptConfigs'], sortConfigs(configs))
+    })
+    return { ok: true, synced }
+  } catch (error) {
+    return { ok: false, message: `同步失败：${error instanceof Error ? error.message : String(error)}` }
+  }
 }
 
 /** 角色卡库根：预设根下的点前缀目录（官方 roster 扫描跳过，与 .engine 同机制）。 */
@@ -48,15 +110,18 @@ function loadConverted(dir: string): PresetSpec | undefined {
 
 /** 追加角色卡本地记忆（.characters/<id>/memory.md，跟随角色卡跨预设）。 */
 export function appendCharacterMemory(presetRoot: string, cardId: string, note: string): void {
+  appendMemoryFile(join(cardDir(presetRoot, cardId), 'memory.md'), note, '# 角色记忆')
+}
+
+/** 追加记忆文件（时间戳列表格式；header 标注文件类型）。世界书工具与角色卡共用。 */
+export function appendMemoryFile(file: string, note: string, header = '# 本地记忆'): void {
   const content = note.trim()
   if (content.length === 0) return
-  const dir = cardDir(presetRoot, cardId)
-  mkdirSync(dir, { recursive: true })
-  const file = join(dir, 'memory.md')
+  mkdirSync(dirname(file), { recursive: true })
   const stamp = new Date().toISOString().slice(0, 19).replace('T', ' ')
   const line = `\n- [${stamp}] ${content}\n`
   if (existsSync(file)) appendFileSync(file, line, 'utf8')
-  else writeFileSync(file, `# 角色记忆\n${line}`, 'utf8')
+  else writeFileSync(file, `${header}\n${line}`, 'utf8')
 }
 
 /** 读角色卡本地记忆文本（无记忆返回空串）。 */
@@ -168,18 +233,6 @@ export function deleteCharacterCard(presetRoot: string, id: string): { ok: true 
   }
 }
 
-function withPresetDoc(
-  presetRoot: string,
-  templateName: string,
-  mutate: (doc: ReturnType<typeof parseDocument>) => void,
-): void {
-  const file = join(presetRoot, templateName, 'preset.yml')
-  if (!existsSync(file)) throw new Error(`当前预设 ${templateName} 无 preset.yml`)
-  const doc = parseDocument(readFileSync(file, 'utf8'), { logLevel: 'silent' })
-  mutate(doc)
-  writeFileSync(file, doc.toString(), 'utf8')
-}
-
 /** 角色卡参数导入当前预设：promptConfigs 合并（chara-<id>- 前缀防冲突）、
  *  params 合并（角色卡覆盖同键）、meta.importedCharacters 记录来源。 */
 export function applyCharacterToPreset(
@@ -192,7 +245,7 @@ export function applyCharacterToPreset(
   if (spec === undefined) return { ok: false, message: `角色卡 ${cardId} 不存在或参数损坏` }
   const prefix = `chara-${cardId}-`
   try {
-    withPresetDoc(presetRoot, templateName, (doc) => {
+    withPresetDoc(join(presetRoot, templateName), (doc) => {
       const current = doc.toJS() as { promptConfigs?: unknown[]; meta?: { importedCharacters?: unknown[] } }
       const existing = Array.isArray(current.promptConfigs)
         ? (current.promptConfigs as Array<Record<string, unknown>>).filter((config) => {
@@ -212,19 +265,9 @@ export function applyCharacterToPreset(
       // 角色卡本地记忆（memory.md）合并为 world-book constant 配置（chara-<卡>-memory）。
       const memory = readCharacterMemory(presetRoot, cardId)
       const memoryId = `${prefix}memory`
-      if (memory.length > 0) {
-        const memoryEntry: Record<string, unknown> = {
-          id: memoryId,
-          name: '角色记忆',
-          strategy: 'world-book',
-          layer: 'pre-step',
-          position: 'before-all',
-          enabled: true,
-          order: 1000,
-          text: `【${spec.name} 的关系记忆】\n${memory}`,
-          params: { constant: true },
-        }
-        doc.setIn(['promptConfigs'], sortConfigs([...existing, ...added, memoryEntry]))
+      const memoryEntry = buildCharacterMemoryEntry(spec, memory)
+      if (memoryEntry !== undefined) {
+        doc.setIn(['promptConfigs'], sortConfigs([...existing, ...added, { ...memoryEntry, id: memoryId }]))
       } else {
         // 合并后按（层序, order）排序写盘：UI 列表与引擎注入顺序一致。
         doc.setIn(['promptConfigs'], sortConfigs([...existing, ...added]))
@@ -251,7 +294,7 @@ export function removeCharacterFromPreset(
   const prefix = `chara-${cardId}-`
   try {
     let removed = 0
-    withPresetDoc(presetRoot, templateName, (doc) => {
+    withPresetDoc(join(presetRoot, templateName), (doc) => {
       const current = doc.toJS() as { promptConfigs?: unknown[]; meta?: { importedCharacters?: unknown[] } }
       const kept = (Array.isArray(current.promptConfigs) ? current.promptConfigs as Array<Record<string, unknown>> : []).filter((config) => {
         const isCard = config !== null && typeof config === 'object'

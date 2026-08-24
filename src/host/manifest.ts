@@ -466,6 +466,17 @@ export function savePresetParams(
   rmSync(join(presetRoot, templateName, 'prompt-tool.overrides.yml'), { force: true })
 }
 
+/** 预设文件读-改-写（parseDocument 保留注释与未知键；mutate 内 setIn/deleteIn）。
+ *  角色卡库（characters）与世界书工具（world-book-tools）共用此入口，避免
+ *  各自实现 parseDocument 往返。 */
+export function withPresetDoc(presetDir: string, mutate: (doc: ReturnType<typeof parseDocument>) => void): void {
+  const file = join(presetDir, 'preset.yml')
+  if (!existsSync(file)) throw new Error(`${presetDir} 无 preset.yml`)
+  const doc = parseDocument(readFileSync(file, 'utf8'), { logLevel: 'silent' })
+  mutate(doc)
+  writeFileSync(file, doc.toString(), 'utf8')
+}
+
 /** 删除预设目录（预设根/<id>；含同名导入的 .bak-* 备份目录）。
  *  仅作用于预设根（官方 USER_PRESET_DIR），包内置模板天然不受影响；路径越界与非法 id 拒绝。
  *  删除后宿主 agent-presets 目录列表自然不再出现该预设（官方 roster 即目录列表）。 */

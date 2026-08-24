@@ -1,6 +1,8 @@
-/** SillyTavern 角色卡 PNG 解析（对齐官方 src/character-card-parser.js read()）：
+/** SillyTavern 角色卡 PNG 解析（对齐官方 public/scripts/utils.js extractDataFromPng）：
  *  PNG tEXt chunk，关键字 ccv3（v3 优先）/ chara（v2 兜底），值为 base64 编码的
- *  角色卡 JSON。浏览器端解析字节流，不依赖第三方库。 */
+ *  角色卡 JSON。官方仅解 V1 明文（JSON.parse(atob(...))）；本实现增加 V2
+ *  （base64(zlib(JSON))）deflate 回退，为官方实现的超集扩展。
+ *  浏览器端解析字节流，不依赖第三方库。 */
 
 export interface CharacterCardData {
   /** 角色卡 JSON 文本（chara_card_v2/v3，含 data 内层正文）。 */
@@ -27,7 +29,7 @@ async function decodeBase64(text: string): Promise<string> {
   const bytes = new Uint8Array(binary.length)
   for (let index = 0; index < binary.length; index++) bytes[index] = binary.charCodeAt(index)
   // V1：明文 base64(JSON)；V2：base64(zlib(JSON))——明文 JSON 解析失败时 inflate 回退
-  // （对齐官方 character-card-parser read() 与 scripts/extract-st-character.mjs 的 parseChara）。
+  // （对齐官方 utils.js extractDataFromPng 并扩展 V2；与 scripts/extract-st-character.mjs 的 parseChara 同法）。
   const plain = new TextDecoder('utf-8').decode(bytes)
   try {
     JSON.parse(plain)

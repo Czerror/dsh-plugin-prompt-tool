@@ -7,7 +7,7 @@ import { join } from 'node:path'
 // 隔离 DSH_HOME：与 host 层其他测试一致（转换引擎虽无 IO，保底隔离）。
 const home = mkdtempSync(join(tmpdir(), 'pt-st-home-'))
 process.env.DSH_HOME = home
-const { stPresetId } = await import('../../lib/index.mjs')
+const { convertStToPreset, stPresetId } = await import('../../lib/index.mjs')
 
 /** 官方 agent-presets discovery 的目录名校验（lib/index.js PRESET_ID）。 */
 const PRESET_ID = /^[a-z0-9][a-z0-9-]*$/
@@ -29,4 +29,24 @@ test('stPresetId：纯中文文件名退化为 st-<hash>（唯一且合法）', 
 
 test('stPresetId：英文文件名保持 slug', () => {
   assert.equal(stPresetId('My Card v2'), 'my-card-v2')
+})
+
+test('convertStToPreset：世界书正则键保留原样且不写幽灵字段 useRegex', () => {
+  const card = {
+    name: '测试卡',
+    data: {
+      character_book: {
+        entries: [
+          { keys: ['/^剑\\d+$/'], content: '剑术规则', comment: '剑术', insertion_order: 10 },
+          { keys: ['普通词'], content: '普通条目', comment: '普通', insertion_order: 20 },
+        ],
+      },
+    },
+  }
+  const spec = convertStToPreset(card, 'test-card')
+  const lore = spec.promptConfigs.filter((config) => config.strategy === 'world-book')
+  assert.equal(lore.length, 2, '两条世界书条目都转换')
+  assert.equal(lore[0].params.keys[0], '/^剑\\d+$/')
+  assert.equal('useRegex' in lore[0].params, false, '不写幽灵字段 useRegex')
+  assert.equal('useRegex' in lore[1].params, false)
 })

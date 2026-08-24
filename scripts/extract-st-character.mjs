@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * SillyTavern 角色卡 PNG → JSON 提取 / 转预设参数 JSON。
+ * SillyTavern 角色卡 PNG → JSON 提取。
  *
  * 角色卡 PNG 的 JSON 藏在 tEXt chunk（键 chara）里：
  *   V1：chara = base64(明文 JSON)
@@ -8,9 +8,11 @@
  *
  * 用法:
  *   node scripts/extract-st-character.mjs <card.png> [out.json]   # 提取角色卡 JSON
- *   node scripts/extract-st-character.mjs --preset <card.png> [out.json]
- *                                 # 提取并转换为本插件可导入的预设参数 JSON
- *                                 # （角色卡字段 → prompts[] 结构，工作台「预设配置」页直接导入）
+ *
+ * 提取出的角色卡 JSON 直接在工作台「预设配置」页导入——单 JSON 导入自动走
+ * convertStToPreset 完整转换链路（角色设定/系统提示/开场白/备用开场白/世界书/
+ * setvar-getvar 变量/模块装配），无需脚本侧二次转换。
+ * （旧 --preset 简化映射会丢失世界书/变量，已移除。）
  *
  * 前置: 无依赖（Node 内置 zlib / fs）。
  */
@@ -18,12 +20,11 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import { inflateSync } from 'node:zlib'
 
 const args = process.argv.slice(2)
-const toPreset = args[0] === '--preset'
-const input = toPreset ? args[1] : args[0]
-const output = toPreset ? args[2] : args[1]
+const input = args[0]
+const output = args[1]
 
 if (!input) {
-  console.error('用法: node scripts/extract-st-character.mjs [--preset] <card.png> [out.json]')
+  console.error('用法: node scripts/extract-st-character.mjs <card.png> [out.json]')
   process.exit(1)
 }
 
@@ -54,39 +55,6 @@ function parseChara(value) {
   return JSON.parse(value) // 极少数明文变体
 }
 
-/** 角色卡 JSON → 本插件预设卡 JSON（convertStToPreset 输入结构）。 */
-function characterToPresetCard(card) {
-  const prompts = []
-  const push = (identifier, name, content, role, systemPrompt) => {
-    if (typeof content !== 'string' || content.trim().length === 0) return
-    prompts.push({
-      identifier,
-      name,
-      content,
-      role,
-      ...(systemPrompt ? { system_prompt: true } : {}),
-      injection_order: prompts.length + 1,
-      enabled: true,
-    })
-  }
-  // 字段 → 注入层映射（与项目六层语义对齐）：
-  //   system_prompt        → system-section（system 静态段）
-  //   description/personality/scenario → pre-step 角色设定（user）
-  //   first_mes            → pre-step 开场白（assistant）
-  //   post_history_instructions → pre-step 尾部指令（user）
-  push('character-system', '角色系统提示', card.system_prompt, 'system', true)
-  push('character-lore', '角色设定', [card.description, card.personality, card.scenario].filter(Boolean).join('\n\n'), 'user', false)
-  push('character-greeting', '开场白', card.first_mes, 'assistant', false)
-  push('character-post', '历史后指令', card.post_history_instructions, 'user', false)
-
-  const preset = { name: card.name ?? '', prompts }
-  // V2 角色卡采样参数在 extensions.sampling（与预设卡顶层字段对齐）。
-  const sampling = card.extensions?.sampling ?? {}
-  if (typeof sampling.temperature === 'number') preset.temperature = sampling.temperature
-  if (typeof sampling.max_tokens === 'number' && sampling.max_tokens > 0) preset.openai_max_tokens = sampling.max_tokens
-  return preset
-}
-
 try {
   const buf = readFileSync(input)
   const texts = readTextChunks(buf)
@@ -94,11 +62,10 @@ try {
   const entry = texts.find(([key]) => key === 'ccv3') ?? texts.find(([key]) => key === 'chara')
   if (!entry) throw new Error('PNG 中未找到 chara/ccv3 文本块（不是 SillyTavern 角色卡）')
   const card = parseChara(entry[1])
-  const result = toPreset ? characterToPresetCard(card) : card
-  const out = output ?? input.replace(/\.png$/i, toPreset ? '-preset.json' : '.json')
-  writeFileSync(out, JSON.stringify(result, null, 2))
+  const out = output ?? input.replace(/\.png$/i, '.json')
+  writeFileSync(out, JSON.stringify(card, null, 2))
   console.log(`已写入 ${out}`)
-  console.log(`角色: ${card.name ?? '(无名称)'} | spec: ${card.spec ?? 'v1'} | prompts: ${(result.prompts ?? []).length} 条`)
+  console.log(`角色: ${card.name ?? '(无名称)'} | spec: ${card.spec ?? 'v1'} | 在工作台「预设配置」页导入该 JSON 走完整转换链路`)
 } catch (error) {
   console.error(`提取失败: ${error.message}`)
   process.exit(1)

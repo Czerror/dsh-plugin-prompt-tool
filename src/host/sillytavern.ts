@@ -216,7 +216,8 @@ export function convertStToPreset(card: unknown, baseName: string): PresetSpec {
           ...(secondaryKeys.length > 0 ? { secondaryKeys } : {}),
           ...((entry.case_sensitive ?? entry.caseSensitive) === true ? { caseSensitive: true } : {}),
           ...((entry.match_whole_words ?? entry.matchWholeWords) === true ? { wholeWords: true } : {}),
-          ...((entry.use_regex ?? entry.useRegex) === true ? { useRegex: true } : {}),
+          // 正则键不写 useRegex：ST 无该字段，正则形态由 anchor-match 自动检测
+          // （/regex/ 包裹或含正则特殊字符的键按正则匹配，其余按字面）。
           // selectiveLogic（ST world_info_logic 0/1/2/3）：选择性触发组合逻辑，
           // 由 anchor-match 引擎消费（any/all/not）。保留不再丢弃。
           ...(typeof entry.selectiveLogic === 'number'
