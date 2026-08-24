@@ -326,12 +326,12 @@ export function CustomToolsModuleCard(props: {
   }
   return (
     <section aria-label="自定义工具">
-      <div className={styles.sectionHeading}>
+      <div className={clsx(styles.sectionHeading, styles.toolHeading)}>
         <div>
           <h2>
             <button type="button" className={styles.configToggle} aria-expanded={props.expanded} onClick={props.onToggleExpanded}>
               <span className={styles.configTitleRow}>
-                <span className={styles.configName}>自定义工具</span>
+                <span className={styles.configName}>自定义工具<span className={styles.toolHeadingDot} aria-hidden="true" /></span>
                 <span className={styles.configMeta}>{`${tools.length} 个自定义工具 · 第三方策略见下方模块卡片`}</span>
               </span>
               <IconChevronDownOutline14 className={clsx(styles.chevron, props.expanded && styles.chevronOpen)} />
