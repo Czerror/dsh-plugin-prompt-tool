@@ -330,13 +330,11 @@ export function CustomToolsModuleCard(props: {
         <div>
           <h2>
             <button type="button" className={styles.configToggle} aria-expanded={props.expanded} onClick={props.onToggleExpanded}>
-              <span className={styles.configTitleRow}>
-                <span className={styles.configName}>自定义工具<span className={styles.toolHeadingDot} aria-hidden="true" /></span>
-                <span className={styles.configMeta}>{`${tools.length} 个自定义工具 · 第三方策略见下方模块卡片`}</span>
-              </span>
+              <span className={styles.configName}>自定义工具<span className={styles.toolHeadingDot} aria-hidden="true" /></span>
               <IconChevronDownOutline14 className={clsx(styles.chevron, props.expanded && styles.chevronOpen)} />
             </button>
           </h2>
+          <p>{`${tools.length} 个自定义工具 · 第三方策略见下方模块卡片`}</p>
         </div>
         <span className={styles.configActions}>
           <button type="button" className={styles.pillButton} onClick={() => setPickerOpen(true)}>从模板新建</button>
@@ -356,7 +354,7 @@ export function CustomToolsModuleCard(props: {
         </span>
       </div>
       {props.expanded && (
-        <div className={styles.configList}>
+        <div className={styles.configList} style={{ marginTop: 10 }}>
           {tools.map((tool, index) => (
             <CustomToolCard
               key={`${String(tool.id ?? '')}-${index}`}
