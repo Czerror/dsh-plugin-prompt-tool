@@ -29,18 +29,21 @@ export function escapeRegExp(text) {
   return String(text).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
-/** ST 正则键检测（对齐 world-info.js parseRegexFromString 语义）：
- *  /regex/ 包裹（含 flags）或含正则特殊字符的键按正则匹配，其余按字面。 */
+/** ST 正则键检测（对齐 world-info.js parseRegexFromString）：
+ *  仅 /pattern/flags 显式包裹的键按正则匹配，其余一律字面（含 {{user}} 等
+ *  含花括号/正则特殊字符的普通键——ST 不做特殊字符自动检测）。 */
 export function isRegexKey(key) {
-  return /^\/[\s\S]+\/[gimsuy]*$/u.test(key) || /[\\^$.*+?()[\]{}|]/u.test(key)
+  return parseRegexFromString(key) !== undefined
 }
 
-/** 键 → RegExp（正则形态时）；普通字面键返回 undefined。 */
+/** 键 → RegExp（仅 /pattern/flags 形态，模式内未转义 / 分隔符视为非法）；否则 undefined。 */
 export function parseRegexFromString(key) {
-  if (!isRegexKey(key)) return undefined
+  const m = /^\/([\s\S]+?)\/([gimsuy]*)$/u.exec(key)
+  if (m === null) return undefined
+  // ST 官方：模式内未转义的 / 分隔符非法（其它引擎无法解析该正则）。
+  if (/(^|[^\\])\//.test(m[1])) return undefined
   try {
-    const m = /^\/([\s\S]+)\/([gimsuy]*)$/u.exec(key)
-    return m ? new RegExp(m[1], m[2]) : new RegExp(key)
+    return new RegExp(m[1].replaceAll('\\/', '/'), m[2])
   } catch {
     return undefined
   }
