@@ -2,6 +2,7 @@
  *  与 UI 角色管理页共用 host/characters.ts 同一套库与合并逻辑。 */
 import type { Context } from '@deepseek-ai/cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
+import type { BuiltinToolConfig } from '../host/manifest.ts'
 import {
   applyCharacterToPreset,
   deleteCharacterCard,
@@ -22,12 +23,22 @@ export interface CharacterToolHost {
 
 const text = (text: string): Array<{ type: 'text'; text: string }> => [{ type: 'text', text }]
 
-export function registerCharacterTools(ctx: Context, host: CharacterToolHost): void {
-  ctx.inject(['tools'], (toolsCtx) => {
-    toolsCtx.tools.register(defineTool({
-      name: 'character_list',
-      description: '列出 SillyTavern 角色卡库：每张卡（id / 名称 / 描述 / 是否已导入当前预设）。'
-        + '导入角色卡、应用到当前预设或移除前先调用本工具获取 id。',
+/** 名称/描述覆盖（整组统一）：name 覆盖组前缀（character_list → <name>_list）。 */
+function overrides(config: BuiltinToolConfig | undefined, name: string, description: string): { name: string; description: string } {
+  return {
+    name: config?.name !== undefined && config.name.length > 0 ? `${config.name}_${name}` : name,
+    description: config?.description !== undefined && config.description.length > 0 ? config.description : description,
+  }
+}
+
+/** 注册角色卡库模型工具；返回 disposer（预设切换重挂用）。enabled=false 返回空操作。 */
+export function registerCharacterTools(ctx: Context, host: CharacterToolHost, config?: BuiltinToolConfig): () => void {
+  if (config?.enabled === false) return () => {}
+  const fiber = ctx.inject(['tools'], (toolsCtx) => {
+    const disposers: Array<() => void> = []
+    disposers.push(toolsCtx.tools.register(defineTool({
+      ...overrides(config, 'list', '列出 SillyTavern 角色卡库：每张卡（id / 名称 / 描述 / 是否已导入当前预设）。'
+        + '导入角色卡、应用到当前预设或移除前先调用本工具获取 id。'),
       parameters: {},
       output: {
         schema: {
@@ -55,12 +66,11 @@ export function registerCharacterTools(ctx: Context, host: CharacterToolHost): v
       execute: async () => ({
         characters: listCharacterCards(host.presetRoot(), host.templateName()),
       }),
-    }))
+    })))
 
-    toolsCtx.tools.register(defineTool({
-      name: 'character_import',
-      description: '导入 SillyTavern 角色卡（chara_card_v2/v3 JSON）到角色卡库：接收角色卡 JSON 文本内容'
-        + '（可先读取文件）。PNG 角色卡请让用户从 UI 角色管理页导入。导入后需调用 character_apply 应用到当前预设。',
+    disposers.push(toolsCtx.tools.register(defineTool({
+      ...overrides(config, 'import', '导入 SillyTavern 角色卡（chara_card_v2/v3 JSON）到角色卡库：接收角色卡 JSON 文本内容'
+        + '（可先读取文件）。PNG 角色卡请让用户从 UI 角色管理页导入。导入后需调用 character_apply 应用到当前预设。'),
       parameters: {
         name: {
           type: 'string',
@@ -89,13 +99,12 @@ export function registerCharacterTools(ctx: Context, host: CharacterToolHost): v
         if (!result.ok) throw new Error(result.message)
         return { id: result.id, name: result.name }
       },
-    }))
+    })))
 
-    toolsCtx.tools.register(defineTool({
-      name: 'character_apply',
-      description: '把角色卡库中一张角色卡的参数（角色设定 / 系统提示 / 开场白 / 世界书 / 提示词库 / 采样参数）'
+    disposers.push(toolsCtx.tools.register(defineTool({
+      ...overrides(config, 'apply', '把角色卡库中一张角色卡的参数（角色设定 / 系统提示 / 开场白 / 世界书 / 提示词库 / 采样参数）'
         + '合并进当前激活预设（promptConfigs 带 chara-<id>- 前缀防冲突，params 合并，meta.importedCharacters 记录），'
-        + '并立即重建生成目录。重复应用幂等。',
+        + '并立即重建生成目录。重复应用幂等。'),
       parameters: {
         id: {
           type: 'string',
@@ -120,12 +129,11 @@ export function registerCharacterTools(ctx: Context, host: CharacterToolHost): v
         host.rebuild()
         return { id: args.id, count: result.count }
       },
-    }))
+    })))
 
-    toolsCtx.tools.register(defineTool({
-      name: 'character_remove',
-      description: '从当前激活预设移除一张已导入角色卡的参数（删 chara-<id>- 前缀配置、该卡声明的 params 键、'
-        + 'meta.importedCharacters 除名），并立即重建生成目录。角色卡库条目不受影响。',
+    disposers.push(toolsCtx.tools.register(defineTool({
+      ...overrides(config, 'remove', '从当前激活预设移除一张已导入角色卡的参数（删 chara-<id>- 前缀配置、该卡声明的 params 键、'
+        + 'meta.importedCharacters 除名），并立即重建生成目录。角色卡库条目不受影响。'),
       parameters: {
         id: {
           type: 'string',
@@ -150,12 +158,11 @@ export function registerCharacterTools(ctx: Context, host: CharacterToolHost): v
         host.rebuild()
         return { id: args.id, count: result.count }
       },
-    }))
+    })))
 
-    toolsCtx.tools.register(defineTool({
-      name: 'character_delete',
-      description: '从角色卡库删除一张角色卡（含其转换参数与头像）。已导入当前预设的参数不受影响'
-        + '（如需清理请先调用 character_remove）。',
+    disposers.push(toolsCtx.tools.register(defineTool({
+      ...overrides(config, 'delete', '从角色卡库删除一张角色卡（含其转换参数与头像）。已导入当前预设的参数不受影响'
+        + '（如需清理请先调用 character_remove）。'),
       parameters: {
         id: {
           type: 'string',
@@ -178,6 +185,8 @@ export function registerCharacterTools(ctx: Context, host: CharacterToolHost): v
         if (!result.ok) throw new Error(result.message)
         return { id: args.id }
       },
-    }))
+    })))
+    return () => { for (const dispose of disposers) dispose() }
   })
+  return () => { void fiber.dispose() }
 }

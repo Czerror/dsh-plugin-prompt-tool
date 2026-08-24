@@ -24,7 +24,14 @@ function assertSameParse(raw) {
 function collectCorpus() {
   const files = [
     'preset/anchored/preset.yml',
-    ...readdirSync(join(root, 'templates')).sort().map((name) => join('templates', name)),
+    ...readdirSync(join(root, 'templates'), { withFileTypes: true })
+      .filter((entry) => entry.isFile() && /\.ya?ml$/i.test(entry.name))
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map((entry) => join('templates', entry.name)),
+    ...readdirSync(join(root, 'templates', 'tools'), { withFileTypes: true })
+      .filter((entry) => entry.isFile() && /\.ya?ml$/i.test(entry.name))
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map((entry) => join('templates', 'tools', entry.name)),
     ...readdirSync(join(root, 'engine', 'compositions', 'library'))
       .filter((name) => name.endsWith('.yml'))
       // 参数桥取代 __TOKEN__ 后组合库全部是合法 YAML；保留过滤防御未来引入占位符。

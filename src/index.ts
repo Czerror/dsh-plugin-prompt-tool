@@ -21,7 +21,7 @@ import {
   resolvePresetParams,
   savePresetParams,
 } from './host/manifest.ts'
-import type { PresetSpec } from './host/manifest.ts'
+import type { BuiltinToolConfig, PresetSpec } from './host/manifest.ts'
 import type { PromptConfigSpec } from './host/prompt-configs.ts'
 import { createCachedSkillsReader, mergeSkillDirs } from './runtime/skills-provider.ts'
 import { ensureWebSurface } from './web-surface.ts'
@@ -755,35 +755,53 @@ registerTuiCommand(
       }
     }
     rebuildPreset()
-    if (presetTemplateChanged) syncHostDefault('switch')
+    if (presetTemplateChanged) {
+      syncHostDefault('switch')
+      // 内置工具随预设配置重挂（builtinTools 段：enabled/name/description 覆盖）。
+      applyBuiltinTools()
+    }
   }
 
-  // 角色卡库模型工具：会话中直接导入/应用/移除角色卡（与 UI 角色管理页同源）。
-  registerCharacterTools(ctx, {
-    presetRoot: () => dirname(activePresetDir()),
-    templateName: () => basename(activePresetDir()),
-    rebuild: () => {
-      try {
-        rebuildPreset()
-      } catch (error) {
-        warn(ctx, `prompt-tool: character tool rebuild failed: ${String(error)}`)
-      }
-    },
-  })
-  // 世界书条目级工具：当前预设 world-book 配置的增删改。
-  registerWorldBookTools(ctx, {
-    activeDir: () => activePresetDir(),
-    presetRoot: () => dirname(activePresetDir()),
-    rebuild: () => {
-      try {
-        rebuildPreset()
-      } catch (error) {
-        warn(ctx, `prompt-tool: world-book tool rebuild failed: ${String(error)}`)
-      }
-    },
-  })
-  // 会话变量工具：模型维护 ST getvar/setvar 语义的会话状态（{{key}} 运行时覆盖）。
-  registerSessionVarTools(ctx)
+  // 内置工具注册（character/world_book/session_var）：随激活预设 builtinTools
+  // 配置（enabled=false 不注册；name/description 覆盖模型可见面），预设切换重挂。
+  let disposeBuiltinTools: Array<() => void> = []
+  const applyBuiltinTools = (): void => {
+    for (const dispose of disposeBuiltinTools) dispose()
+    disposeBuiltinTools = []
+    let builtinTools: Record<string, BuiltinToolConfig> = {}
+    try {
+      builtinTools = loadPresetSpec(activePresetDir()).builtinTools ?? {}
+    } catch {
+      // 预设不可读 = 默认全开
+    }
+    const push = (dispose: () => void): void => {
+      if (typeof dispose === 'function') disposeBuiltinTools.push(dispose)
+    }
+    push(registerCharacterTools(ctx, {
+      presetRoot: () => dirname(activePresetDir()),
+      templateName: () => basename(activePresetDir()),
+      rebuild: () => {
+        try {
+          rebuildPreset()
+        } catch (error) {
+          warn(ctx, `prompt-tool: character tool rebuild failed: ${String(error)}`)
+        }
+      },
+    }, builtinTools.character))
+    push(registerWorldBookTools(ctx, {
+      activeDir: () => activePresetDir(),
+      presetRoot: () => dirname(activePresetDir()),
+      rebuild: () => {
+        try {
+          rebuildPreset()
+        } catch (error) {
+          warn(ctx, `prompt-tool: world-book tool rebuild failed: ${String(error)}`)
+        }
+      },
+    }, builtinTools.world_book))
+    push(registerSessionVarTools(ctx, builtinTools.session_var))
+  }
+  applyBuiltinTools()
 
   // settings 注册 base 与运行时快照同源（单一组装，避免双份字段漂移）。
   const settingsEntry: PromptSettings = currentSource()
@@ -952,8 +970,8 @@ export {
 } from './host/characters.ts'
 export { deleteWorldBookEntry, listWorldBookEntries, upsertWorldBookEntry } from './host/worldbook.ts'
 export type { PromptConfigValidationError, PromptConfigValidationResult } from './runtime/configs-validate.ts'
-export { loadPromptTemplates } from './host/templates.ts'
-export type { PromptConfigTemplate } from './host/templates.ts'
+export { loadPromptTemplates, loadToolTemplates } from './host/templates.ts'
+export type { PromptConfigTemplate, ToolTemplate } from './host/templates.ts'
 export { registerTuiCommand } from './runtime/tui.ts'
 export { ensureSettingsRegistered } from './runtime/settings-registration.ts'
 export type { SettingsRegistrationHooks } from './runtime/settings-registration.ts'

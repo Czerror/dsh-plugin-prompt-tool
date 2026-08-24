@@ -10,7 +10,7 @@ import { listAdvertisedModels, peekModelCatalog, type ModelDetection } from './m
 import type { SkillCatalogEntry } from '../config.ts'
 import { loadPromptConfigFiles } from '../host/prompt-configs.ts'
 import { validatePromptConfigs } from './configs-validate.ts'
-import { loadPromptTemplates } from '../host/templates.ts'
+import { loadPromptTemplates, loadToolTemplates } from '../host/templates.ts'
 import { fixSkillEntry } from './skill-fix.ts'
 import {
   assertCompositionArray,
@@ -413,7 +413,8 @@ export function registerSettingsBridge(
             if (!guard(req, res)) return
             try {
               const templates = loadPromptTemplates()
-              writeBridgeJson(res, 200, { ok: true, value: { templates } })
+              const toolTemplates = loadToolTemplates()
+              writeBridgeJson(res, 200, { ok: true, value: { templates, toolTemplates } })
             } catch (error) {
               const message = error instanceof Error ? error.message : String(error)
               writeBridgeJson(res, 500, { ok: false, code: 'templates-unavailable', message })
@@ -600,6 +601,49 @@ export function registerSettingsBridge(
             } catch (error) {
               const message = error instanceof Error ? error.message : String(error)
               writeBridgeJson(res, 409, { ok: false, code: 'preset-variables-rejected', message: `模板变量保存失败：${message}` })
+            }
+          },
+        }),
+        sctx.webServer.register({
+          kind: 'exact',
+          path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.builtinTools,
+          handler: async (req, res) => {
+            if (!guard(req, res)) return
+            const dir = getPresetConfigsDir?.() ?? ''
+            if (dir.length === 0) {
+              writeBridgeJson(res, 400, { ok: false, code: 'preset-dir-unavailable', message: 'presetDir 未配置' })
+              return
+            }
+            const { body } = await readBridgeBody(req)
+            const record = (body ?? {}) as Record<string, unknown>
+            // 无载荷 = 读取（preset.yml 顶层 builtinTools 段）。
+            if (record.builtinTools === undefined) {
+              try {
+                const spec = loadPresetSpec(dir)
+                const builtinTools = spec.builtinTools !== null && typeof spec.builtinTools === 'object'
+                  ? spec.builtinTools
+                  : {}
+                writeBridgeJson(res, 200, { ok: true, value: { builtinTools } })
+              } catch {
+                writeBridgeJson(res, 200, { ok: true, value: { builtinTools: {} } })
+              }
+              return
+            }
+            try {
+              const builtinTools = record.builtinTools
+              if (builtinTools === null || typeof builtinTools !== 'object' || Array.isArray(builtinTools)) {
+                writeBridgeJson(res, 400, { ok: false, code: 'builtin-tools-invalid', message: 'builtinTools 必须是对象' })
+                return
+              }
+              withPresetDoc(dir, (doc) => {
+                if (Object.keys(builtinTools as Record<string, unknown>).length === 0) doc.deleteIn(['builtinTools'])
+                else doc.setIn(['builtinTools'], builtinTools)
+              })
+              afterOverridesChange?.()
+              writeBridgeJson(res, 200, { ok: true, value: { builtinTools } })
+            } catch (error) {
+              const message = error instanceof Error ? error.message : String(error)
+              writeBridgeJson(res, 409, { ok: false, code: 'builtin-tools-rejected', message: `内置工具配置保存失败：${message}` })
             }
           },
         }),

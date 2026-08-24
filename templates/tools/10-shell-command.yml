@@ -1,0 +1,20 @@
+# 自定义工具模板：shell 命令执行器（{{args.x}} 参数插值；env 白名单；cwd=会话工作区）。
+id: shell-command
+name: my_shell
+description: 执行 shell 命令（参数经 {{args.*}} 插值）
+parameters:
+  command:
+    type: string
+    required: true
+    description: 要执行的命令
+output:
+  schema:
+    type: object
+    additionalProperties: true
+    properties:
+      exitCode: { type: integer }
+      stdout: { type: string }
+      stderr: { type: string }
+execute:
+  kind: shell
+  command: '{{args.command}}'

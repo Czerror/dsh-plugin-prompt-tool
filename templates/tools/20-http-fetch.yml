@@ -1,0 +1,24 @@
+# 自定义工具模板：HTTP 请求执行器（method/url/headers/body；{{args.x}} 插值）。
+id: http-fetch
+name: my_fetch
+description: 发起 HTTP 请求并返回响应
+parameters:
+  url:
+    type: string
+    required: true
+    description: 请求 URL
+  method:
+    type: string
+    description: 请求方法（默认 GET）
+output:
+  schema:
+    type: object
+    additionalProperties: true
+    properties:
+      status: { type: integer }
+      ok: { type: boolean }
+      body: { type: string }
+execute:
+  kind: http
+  url: '{{args.url}}'
+  method: '{{args.method}}'

@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { parse } from 'yaml'
-import { loadPromptTemplates, validatePromptConfigs } from '../../lib/index.mjs'
+import { loadPromptTemplates, loadToolTemplates, validatePromptConfigs } from '../../lib/index.mjs'
 
 test('loadPromptTemplates：按文件名数字前缀顺序返回包内模板库', () => {
   const templates = loadPromptTemplates()
@@ -27,6 +27,18 @@ test('loadPromptTemplates：content 是合法单对象 YAML 且与解析后的 s
     assert.deepEqual(doc, template.spec, template.file)
     assert.equal(typeof template.spec.id, 'string')
     assert.ok(template.spec.id.length > 0, template.file)
+  }
+})
+
+test('loadToolTemplates：返回工具模板库（id/name/execute.kind 合法）', () => {
+  const templates = loadToolTemplates()
+  assert.equal(templates.length, 4, '预置 4 个工具模板')
+  const kinds = templates.map((template) => template.spec.execute.kind)
+  assert.deepEqual(kinds, ['shell', 'http', 'fs', 'delegate'])
+  for (const template of templates) {
+    assert.equal(typeof template.spec.id, 'string')
+    assert.equal(typeof template.spec.name, 'string')
+    assert.match(String(template.spec.name), /^[a-z][a-z0-9_]*$/, `${template.file} 工具名合法`)
   }
 })
 

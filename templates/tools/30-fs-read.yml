@@ -1,0 +1,20 @@
+# 自定义工具模板：工作区内文件读取（路径越界拒绝）。
+id: fs-read
+name: my_read
+description: 读取工作区内文件内容
+parameters:
+  path:
+    type: string
+    required: true
+    description: 相对工作区的文件路径
+output:
+  schema:
+    type: object
+    additionalProperties: true
+    properties:
+      ok: { type: boolean }
+      content: { type: string }
+execute:
+  kind: fs
+  action: read
+  path: '{{args.path}}'
