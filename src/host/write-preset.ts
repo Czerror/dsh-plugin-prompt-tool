@@ -493,6 +493,26 @@ export function writePreset(prompt: string, options: WritePresetOptions): void {
     writeFileSync(join(promptConfigsDir, `${String(index * 10).padStart(2, '0')}-${config.id}.yml`), renderPromptConfigYaml(config), 'utf8')
   }
 
+  // 4.5) 自定义工具（preset.yml 顶层 customTools 段）→ custom-tools/<n>-<id>.yml：
+  //      tool-config-engine 引擎行按 configsDir 加载并运行时注册。结构坏条目跳过。
+  const customToolsDir = join(outDir, 'custom-tools')
+  rmSync(customToolsDir, { recursive: true, force: true })
+  mkdirSync(customToolsDir, { recursive: true })
+  const customTools = Array.isArray(spec.customTools) ? spec.customTools : []
+  for (const [index, tool] of customTools.entries()) {
+    if (tool === null || typeof tool !== 'object' || Array.isArray(tool)
+      || typeof (tool as Record<string, unknown>).id !== 'string'
+      || String((tool as Record<string, unknown>).id).length === 0) {
+      continue
+    }
+    const toolId = String((tool as Record<string, unknown>).id)
+    writeFileSync(
+      join(customToolsDir, `${String(index + 1).padStart(2, '0')}-${toolId}.yml`),
+      stringifyYaml(tool, { lineWidth: 0 }),
+      'utf8',
+    )
+  }
+
   // 5) 历史残留清理(模板参数声明,writer 只执行)。
   for (const legacy of spec.legacyCleanup ?? []) {
     rmSync(join(outDir, legacy), { force: true })

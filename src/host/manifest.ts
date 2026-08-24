@@ -38,6 +38,8 @@ export interface PresetSpec {
   subagentModel?: Record<string, unknown>
   /** 预设级模板变量（{{key}} 插值源；与引擎行为参数 params 分离，顶层 variables 段）。 */
   variables?: Record<string, string>
+  /** 自定义工具定义（tool-config-engine 渲染进 custom-tools/ 后运行时注册）。 */
+  customTools?: unknown[]
   /** 模板变量插值开关（缺省 true = 启用；false = 停用，writePreset 不生成变量文件）。 */
   variablesEnabled?: boolean
   /** 宿主层默认值(唯一入口):apply 时合并进 Config,settings 仍可覆盖。 */

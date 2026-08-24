@@ -463,6 +463,40 @@ test('writePreset 预设级模板变量生成 variables.yml（顶层 variables �
   }
 })
 
+test('writePreset 自定义工具渲染 custom-tools/<n>-<id>.yml（源 = preset.yml 顶层 customTools 段）', () => {
+  const dir = join(tmpdir(), `prompt-tool-ctools-${process.pid}-${Date.now()}`)
+  const presetDir = join(dir, 'preset')
+  try {
+    const homePresetDir = join(home, '.agent-presets')
+    cpSync(join(process.cwd(), 'preset', 'anchored'), join(homePresetDir, 'anchored'), { recursive: true })
+    const presetFile = join(homePresetDir, 'anchored', 'preset.yml')
+    const doc = parseDocument(readFileSync(presetFile, 'utf8'))
+    doc.setIn(['customTools'], [
+      {
+        id: 'greet',
+        name: 'my_greet',
+        description: '打招呼',
+        parameters: { who: { type: 'string', required: true, description: '对象' } },
+        output: { schema: { type: 'object', additionalProperties: true } },
+        execute: { kind: 'shell', command: 'Write-Output "hi {{args.who}}"' },
+      },
+      { id: 'bad', name: 'no execute' },
+    ])
+    writeFileSync(presetFile, doc.toString(), 'utf8')
+    writePreset('PROMPT', makeOptions(presetDir))
+    const customToolsDir = join(presetDir, 'anchored', 'custom-tools')
+    assert.ok(existsSync(customToolsDir), 'custom-tools 目录生成')
+    const files = readdirSync(customToolsDir).sort()
+    assert.deepEqual(files, ['01-greet.yml', '02-bad.yml'], '结构合法条目逐份落盘（坏条目保留待引擎跳过）')
+    const parsed = parseYaml(readFileSync(join(customToolsDir, '01-greet.yml'), 'utf8'))
+    assert.equal(parsed.name, 'my_greet')
+    assert.equal(parsed.execute.kind, 'shell')
+    assert.equal(parsed.parameters.who.required, true)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
 test('savePresetParams 清理空 key（VariablesEditor 待编辑行不落盘）', () => {
   const dir = join(tmpdir(), `prompt-tool-emptyk-${process.pid}-${Date.now()}`)
   const presetDir = join(dir, 'preset')

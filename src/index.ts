@@ -236,7 +236,7 @@ export function apply(ctx: Context, configIn: Config): void {
       let cleaned = 0
       for (const preset of listPresets()) {
         const dir = join(runtime.presetDir, preset.id)
-        for (const name of ['agent.cordis.yml', 'prompt-configs', 'preset.md', 'agents.md', 'agents-instruction.md', 'engine']) {
+        for (const name of ['agent.cordis.yml', 'prompt-configs', 'custom-tools', 'preset.md', 'agents.md', 'agents-instruction.md', 'engine']) {
           try {
             rmSync(join(dir, name), { recursive: true, force: true })
           } catch {
