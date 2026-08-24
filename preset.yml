@@ -66,7 +66,7 @@ params:
   firstTurnAnchor: true          # true=首轮启用任务锚定（判定 build/fix/deep）
   firstTurnCustom: false         # true=用 firstTurnText 替代内置锚定句
   firstTurnText: ""              # 自定义锚定句（firstTurnCustom=true 时生效）
-  firstTurnWord: we              # 自定义锚定词（custom-fallback 命中词，默认 we）
+  firstTurnWord: ""              # 锚定确认词（custom-fallback 命中词；空 = 自动从锚句派生，非空 = 显式覆盖）
   firstTurnBuild: "Start your reasoning with the exact sentence: We need to build it directly and verify it."
   firstTurnInspect: "Start your reasoning with the exact sentence: We need to inspect the code first."
   firstTurnDeep: "Start your reasoning with the exact sentence: Let me think through the design before changing anything."
@@ -234,7 +234,7 @@ promptConfigs:
 #   guideComplexPattern 复杂任务正则
 #   guideWeak           简单任务自动引导 / guideDeep 复杂任务自动引导
 # custom-fallback（自定义锚定词，prompt-injector 晋升确认）：
-#   firstTurnWord       锚定词（首轮 reasoning 开头命中即注入；ASCII 词边界 / 非 ASCII 直前缀，
+#   firstTurnWord       锚定确认词（首轮 reasoning 开头命中即注入；空 = 自动从锚句派生确认词集合；ASCII 词边界 / 非 ASCII 直前缀，
 #                       锚定匹配经 anchor-match 引擎 prefix 模式）
 #   text                注入内容（晋升确认后注入一次）
 

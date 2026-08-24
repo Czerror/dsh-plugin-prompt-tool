@@ -184,7 +184,7 @@ params:
   firstTurnBuild: "Start your reasoning with the exact sentence: We need to build it directly and verify it."
   firstTurnInspect: "Start your reasoning with the exact sentence: We need to inspect the code first."
   firstTurnDeep: "Start your reasoning with the exact sentence: Let me think through the design before changing anything."
-  firstTurnWord: we
+  firstTurnWord: ""              # 锚定确认词（空 = 自动从锚句派生——We/Let/自定义首词都命中；非空 = 显式覆盖）
   allowKinds: "[skill-invocation, near-anchor, router-guide]"
   subagentPersona: ""
   toolFilterAllow: []

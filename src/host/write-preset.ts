@@ -449,10 +449,29 @@ export function writePreset(prompt: string, options: WritePresetOptions): void {
       config.texts = []
       // 无注入内容（空白预设）时禁用，避免注入空消息。
       config.enabled = params.injectPrompt !== false && prompt.trim().length > 0
+      // 锚定确认词归一：默认从锚句文本自动派生（firstTurnWord 空 = 派生；非空 = 显式覆盖）。
+      // 确认词 = 锚句要求的 reasoning 开头信号（内置格式 the exact sentence: X → X 首词；
+      // 无格式 → 文本首词，小写去重）——deep 档（Let…）与自定义锚句不再因固定确认词
+      // we 而确认失败（旧缺陷：锚句要求 We/Let，确认词恒 we）。
+      const explicitWord = asString(config.params?.firstTurnWord ?? params.firstTurnWord, '')
+      const signalWord = (text: string): string | undefined => {
+        const sentence = /the exact sentence:\s*([A-Za-z]+)/i.exec(text)
+        if (sentence !== null && sentence[1] !== undefined) return sentence[1].toLowerCase()
+        const first = /^\P{L}*([\p{L}]+)/u.exec(text.trim())
+        return first !== null && first[1] !== undefined ? first[1].toLowerCase() : undefined
+      }
+      const derivedWords = [...new Set([
+        signalWord(asString(params.firstTurnText)),
+        signalWord(asString(params.firstTurnBuild)),
+        signalWord(asString(params.firstTurnInspect)),
+        signalWord(asString(params.firstTurnDeep)),
+      ].filter((word): word is string => word !== undefined))]
+      const anchorWords = explicitWord.length > 0 ? [explicitWord] : derivedWords
       config.params = {
         ...config.params,
         text: prompt,
-        firstTurnWord: asString(config.params?.firstTurnWord ?? params.firstTurnWord, 'we'),
+        firstTurnWord: explicitWord.length > 0 ? explicitWord : (anchorWords[0] ?? 'we'),
+        anchorWords,
       }
     }
     // instruction-hint：agents.md 内容经 injectAgentsPrompt 开关注入 params.text

@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+### 锚定确认词归一：确认词 = 锚句派生属性（2026-08-25）
+
+- **同功能归一**：`firstTurnText`/`firstTurnBuild/Inspect/Deep`（锚句）与 `firstTurnWord`（确认词）
+  本质同功能——确认词是锚句的派生属性。writePreset 渲染 prompt-injector 时自动派生确认词集合
+  `anchorWords`（锚句信号词，小写去重）；`firstTurnWord` 降级为显式覆盖（非空优先，旧预设兼容），
+  模板默认改空。
+- **缺陷修复**：deep 档锚句（Let me think…）与自定义锚句（非 we 开头）此前因固定确认词 we
+  确认失败退化为兜底注入——派生后按锚句实际信号词确认。
+- **引擎**：anchor-match prefix 模式从「仅首词」改为「确认词集合任一前缀命中」（any 语义，
+  world-book 不受影响）。
+- **测试**：+2（writePreset 派生/覆盖断言、引擎多词确认行为含 deep/自定义/不匹配三场景）；
+  352 pass/0 fail。
+- **验证**：typecheck/lint 通过，全量测试通过。
+
 ### 世界书条目归一补全：角色卡记忆条目同源（2026-08-25）
 
 - **第三处手写收敛**：`characters.ts` 的 `buildCharacterMemoryEntry`（角色卡导入/记忆同步的

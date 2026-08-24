@@ -110,6 +110,16 @@ wholeWords/selectiveLogic）单一权威。两个写入端共用：
 
 契约测试断言：ST 转换产物与工厂同参数构造完全一致（两通道同构）。
 
+### 锚定确认词归一（2026-08-25）
+
+`firstTurnText`（锚定句）与 `firstTurnWord`（确认词）本质同功能——确认词是锚句的派生属性
+（模型按锚句要求以某词开头，确认机制就该匹配该开头）：
+- **自动派生**：writePreset 渲染 prompt-injector 时从锚句文本提取信号词集合 `anchorWords`
+  （内置格式 `the exact sentence: X` → X 首词；无格式 → 文本首词；小写去重）——deep 档
+  （Let…）与自定义锚句不再因固定确认词 we 而确认失败（旧缺陷）；
+- **多词确认**：`anchor-match` prefix 模式从「仅首词」改为「任一确认词前缀命中」（any 语义）；
+- **显式覆盖**：`firstTurnWord` 非空时优先（旧预设 `we` 行为不变）；空 = 自动派生（模板默认）。
+
 ## 7. 契约测试
 
 - `test/host/param-contract.test.mjs`：PARAM_KEYS 派生一致性；每个 ENGINE_PARAM_KEYS 键有装配消费；MODEL_SEGMENT_MAP 段目标唯一。

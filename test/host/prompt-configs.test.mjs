@@ -27,6 +27,7 @@ function generatedConfigs(options = {}, prompt = 'PROMPT') {
       firstTurnAnchor: options.firstTurnAnchor === true,
       firstTurnText: options.firstTurnText ?? '',
       firstTurnCustom: options.firstTurnCustom === true,
+      firstTurnWord: typeof options.firstTurnWord === 'string' ? options.firstTurnWord : undefined,
       guideText: options.guideText ?? '',
       guideCustom: options.guideCustom === true,
       guideEnabled: typeof options.guideEnabled === 'boolean' ? options.guideEnabled : undefined,
@@ -151,6 +152,19 @@ test('writePreset 开启 firstTurnCustom 时 near-anchor 固定使用自定义�
 test('writePreset 开启 firstTurnAnchor 且空锚点文本时生成自动模式配置', () => {
   const { byId } = generatedConfigs({ firstTurnAnchor: true, firstTurnText: '' })
   assert.equal(byId['near-anchor'].params.text, '')
+})
+
+test('writePreset 确认词自动派生：锚句信号词进 anchorWords；显式 firstTurnWord 覆盖', () => {
+  const { byId } = generatedConfigs({ firstTurnAnchor: true })
+  const words = byId['prompt-injector'].params.anchorWords
+  assert.ok(Array.isArray(words) && words.includes('we'), 'build/fix 锚句信号词 we 派生')
+  assert.ok(words.includes('let'), 'deep 锚句信号词 let 派生（旧缺陷修复：deep 档确认不再失败）')
+  // 自定义锚句 → 首词进确认集合。
+  const { byId: custom } = generatedConfigs({ firstTurnAnchor: true, firstTurnText: 'Focus on the core problem' })
+  assert.ok(custom['prompt-injector'].params.anchorWords.includes('focus'), '自定义锚句首词派生')
+  // 显式 firstTurnWord → 覆盖派生集合。
+  const { byId: explicit } = generatedConfigs({ firstTurnAnchor: true, firstTurnWord: 'marker' })
+  assert.deepEqual(explicit['prompt-injector'].params.anchorWords, ['marker'], '显式确认词覆盖派生')
 })
 
 test('writePreset 关闭 injectPrompt 时 prompt-injector 禁用（引擎仍扫描四个模块）', () => {

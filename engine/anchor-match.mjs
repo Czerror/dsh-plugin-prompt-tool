@@ -12,8 +12,8 @@
  *
  * 模式：
  *   scan   = 全文扫描（world-book 消息批匹配）；
- *   prefix = 文本开头匹配（custom-fallback 首轮 reasoning 锚定确认：ASCII 词边界前缀，
- *            非 ASCII 直 prefix）。
+ *   prefix = 文本开头匹配（custom-fallback 首轮 reasoning 锚定确认：确认词集合任一
+ *            前缀命中——ASCII 词边界前缀，非 ASCII 直 prefix）。
  */
 
 /** 组合逻辑（ST world_info_logic 映射）。 */
@@ -103,13 +103,14 @@ export function createAnchorMatcher(options = {}) {
   const scan = (raw) => {
     const text = String(raw ?? '')
     if (mode === 'prefix') {
-      // custom-fallback 锚定确认：仅主键首词，文本开头匹配。
-      const word = (Array.isArray(keys) ? keys : []).map((key) => String(key).trim())
-        .find((key) => key.length > 0)
-      if (word === undefined || text.length === 0) return { primary: 0, secondary: 0, active: false }
-      const hit = /^[\x20-\x7E]+$/.test(word)
+      // custom-fallback 锚定确认：确认词集合任一前缀命中（any 语义——deep 档
+      // Let…/build 档 We…/自定义锚句首词都可作为确认信号）。
+      const words = (Array.isArray(keys) ? keys : []).map((key) => String(key).trim())
+        .filter((key) => key.length > 0)
+      if (words.length === 0 || text.length === 0) return { primary: 0, secondary: 0, active: false }
+      const hit = words.some((word) => /^[\x20-\x7E]+$/.test(word)
         ? new RegExp(`^${escapeRegExp(word.toLowerCase())}\\b`, 'i').test(text)
-        : text.startsWith(word)
+        : text.startsWith(word))
       return { primary: hit ? 1 : 0, secondary: 0, active: hit }
     }
     if (primaryList.length === 0 && secondaryList.length === 0) {

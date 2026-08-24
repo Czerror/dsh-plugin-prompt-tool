@@ -85,8 +85,13 @@ function createCustomFallbackResolver(config) {
   const firstTurnWord = typeof config.params?.firstTurnWord === 'string' && config.params.firstTurnWord.length > 0
     ? config.params.firstTurnWord
     : 'we'
-  // 锚定匹配经 anchor-match 引擎（prefix 模式：首轮 reasoning 开头命中锚定词）。
-  const anchor = createAnchorMatcher({ keys: [firstTurnWord], mode: 'prefix' })
+  // 确认词集合：writePreset 派生的 anchorWords 优先（锚句信号词多词 prefix，任一命中即
+  // 确认——deep 档 Let…/自定义锚句首词都覆盖）；旧产物无 anchorWords 时回退 firstTurnWord 单词。
+  const anchorWords = Array.isArray(config.params?.anchorWords) && config.params.anchorWords.length > 0
+    ? config.params.anchorWords.map(String).filter((word) => word.length > 0)
+    : [firstTurnWord]
+  // 锚定匹配经 anchor-match 引擎（prefix 模式：首轮 reasoning 开头命中任一确认词）。
+  const anchor = createAnchorMatcher({ keys: anchorWords, mode: 'prefix' })
 
   const anchorScanned = new Map()
 

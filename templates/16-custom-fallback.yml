@@ -1,5 +1,6 @@
 # 模板：自定义锚词兜底注入（strategy=custom-fallback）
-# 首轮推理命中锚词（firstTurnWord）后注入一次；未命中最多两轮兜底。
+# 首轮推理命中锚定确认词后注入一次；未命中最多两轮兜底。确认词集合 anchorWords 由
+# writePreset 从锚句自动派生（firstTurnWord 空时）；显式 firstTurnWord 覆盖派生。
 # 提示：把本文件放入 promptConfigsDir 目录，或把对象写入 settings.promptConfigs 数组。
 id: example-custom-fallback
 name: 示例：自定义锚词兜底注入
@@ -18,4 +19,4 @@ sourceKind: plugin
 form: notice
 params:
   text: ""          # 注入文本（如 preset.md 内容）；留空 = 不注入
-  firstTurnWord: "" # 锚定词；命中后注入（示例：we）
+  firstTurnWord: "" # 锚定确认词（显式覆盖；空 = 自动派生）

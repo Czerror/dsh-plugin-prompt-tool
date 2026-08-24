@@ -151,6 +151,35 @@ test('order 决定同位置插入顺序与 merged 拼接顺序', async () => {
   assert.deepEqual(merged.content.map((block) => block.text), ['A', 'B'])
 })
 
+test('custom-fallback 多词确认：reasoning 以派生确认词任一开头即注入（deep 档 Let…）', async () => {
+  const { step } = makeHarness(createPromptConfigs([{
+    id: 'prompt-injector',
+    enabled: true,
+    strategy: 'custom-fallback',
+    position: 'before-all',
+    dedupe: 'session',
+    promotion: 'none',
+    modelScope: 'all',
+    params: { text: 'PRESET', anchorWords: ['we', 'let'] },
+  }]))
+  const sessionWith = (id, text) => agent({ session: {
+    id,
+    header: { delegationDepth: 0 },
+    events: [{ type: 'assistant/message', data: { message: { content: [{ type: 'reasoning', text }] } } }],
+  } })
+  // deep 锚句信号（Let… 开头）→ 确认注入。
+  const withLet = await step(sessionWith('s-cf-let', 'Let me think through the design before changing anything'))
+  assert.equal(withLet.messages.length, 2, '确认后注入一条')
+  assert.equal(withLet.messages[0].content[0].text, 'PRESET', '注入消息在 before-all 位置')
+  // build/fix 锚句信号（We… 开头）→ 同样命中。
+  const withWe = await step(sessionWith('s-cf-we', 'We need to build it directly and verify it'))
+  assert.equal(withWe.messages.length, 2)
+  assert.equal(withWe.messages[0].content[0].text, 'PRESET')
+  // 不匹配开头 → 未确认且仅一轮 → 不注入（两轮兜底前）。
+  const noMatch = await step(sessionWith('s-cf-no', 'Hmm, let me consider the options'))
+  assert.equal(noMatch.messages.length, 1, '未确认首轮不注入')
+})
+
 test('单条提示词配置 resolve 抛错时只跳过该提示词配置，其他提示词配置照常注入', async () => {
   const okConfigs = createPromptConfigs([{
     id: 'ok', enabled: true, strategy: 'static', position: 'after-all', text: 'OK',
