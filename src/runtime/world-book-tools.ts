@@ -7,7 +7,7 @@ import { defineTool } from '@deepseek-ai/dsh-tools'
 import { readdirSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import { appendMemoryFile, syncImportedCharacterMemory } from '../host/characters.ts'
-import { deleteWorldBookEntry, listWorldBookEntries, upsertWorldBookEntry } from '../host/worldbook.ts'
+import { buildWorldBookEntry, deleteWorldBookEntry, listWorldBookEntries, upsertWorldBookEntry } from '../host/worldbook.ts'
 
 export interface WorldBookToolHost {
   /** 当前激活预设目录（preset.yml 所在目录）。 */
@@ -134,22 +134,16 @@ export function registerWorldBookTools(ctx: Context, host: WorldBookToolHost): (
       execute: async (args) => {
         const dir = host.activeDir()
         const targetId = args.id !== undefined && args.id.length > 0 ? args.id : `lore-${Date.now().toString(36)}`
-        const params: Record<string, unknown> = {
-          constant: args.constant === true,
-          ...(Array.isArray(args.keys) && args.keys.length > 0 ? { keys: args.keys } : {}),
-          ...(Array.isArray(args.secondaryKeys) && args.secondaryKeys.length > 0 ? { secondaryKeys: args.secondaryKeys } : {}),
-        }
-        const entry: Record<string, unknown> = {
+        const entry = buildWorldBookEntry({
           id: targetId,
           name: args.name,
-          strategy: 'world-book',
-          order: typeof args.order === 'number' ? args.order : 100,
           text: args.content,
-          layer: 'pre-step',
-          position: 'before-all',
-          params,
-        }
-        if (args.enabled === false) entry.enabled = false
+          order: typeof args.order === 'number' ? args.order : undefined,
+          enabled: args.enabled === false ? false : undefined,
+          constant: args.constant === true,
+          keys: Array.isArray(args.keys) && args.keys.length > 0 ? args.keys : undefined,
+          secondaryKeys: Array.isArray(args.secondaryKeys) && args.secondaryKeys.length > 0 ? args.secondaryKeys : undefined,
+        })
         const count = upsertWorldBookEntry(dir, { ...entry, id: targetId })
         writeNote(targetId, typeof args.note === 'string' ? args.note : '')
         host.rebuild()

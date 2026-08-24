@@ -16,6 +16,7 @@
  */
 import { createHash } from 'node:crypto'
 import type { PresetSpec } from './manifest.ts'
+import { buildWorldBookEntry } from './worldbook.ts'
 
 /** ST 运行时指令（渲染时执行、不发送给模型）：setvar/getvar/ERA/trim/注释 → 剥离。 */
 const ST_DIRECTIVE = /\{\{(setvar|getvar|ERA|trim|\/\/)[^}]*\}\}/gi
@@ -203,31 +204,24 @@ export function convertStToPreset(card: unknown, baseName: string): PresetSpec {
       const stOrder = typeof entry.insertion_order === 'number'
         ? entry.insertion_order
         : (typeof entry.order === 'number' ? entry.order : 100)
-      configs.push({
+      configs.push(buildWorldBookEntry({
         id: `lore-${String(entry.id ?? entry.uid ?? index)}`,
         name: comment,
         // ST 启用状态保留；无 keys 条目由 resolver 按全局（constant 语义）每次注入。
         enabled,
-        strategy: 'world-book',
         order: -stOrder,
         text: content,
-        layer: 'pre-step',
-        position: 'before-all',
-        params: {
-          constant,
-          ...(keys.length > 0 ? { keys } : {}),
-          ...(secondaryKeys.length > 0 ? { secondaryKeys } : {}),
-          ...((entry.case_sensitive ?? entry.caseSensitive) === true ? { caseSensitive: true } : {}),
-          ...((entry.match_whole_words ?? entry.matchWholeWords) === true ? { wholeWords: true } : {}),
-          // 正则键不写 useRegex：ST 无该字段，正则形态由 anchor-match 自动检测
-          // （/regex/ 包裹或含正则特殊字符的键按正则匹配，其余按字面）。
-          // selectiveLogic（ST world_info_logic 0/1/2/3）：选择性触发组合逻辑，
-          // 由 anchor-match 引擎消费（any/all/not）。保留不再丢弃。
-          ...(typeof entry.selectiveLogic === 'number'
-            ? { selectiveLogic: entry.selectiveLogic }
-            : (typeof entry.selective_logic === 'number' ? { selectiveLogic: entry.selective_logic } : {})),
-        },
-      })
+        constant,
+        keys: keys.length > 0 ? keys : undefined,
+        secondaryKeys: secondaryKeys.length > 0 ? secondaryKeys : undefined,
+        ...((entry.case_sensitive ?? entry.caseSensitive) === true ? { caseSensitive: true } : {}),
+        ...((entry.match_whole_words ?? entry.matchWholeWords) === true ? { wholeWords: true } : {}),
+        // selectiveLogic（ST world_info_logic 0/1/2/3）：选择性触发组合逻辑，
+        // 由 anchor-match 引擎消费（any/all/not）。保留不再丢弃。
+        ...(typeof entry.selectiveLogic === 'number'
+          ? { selectiveLogic: entry.selectiveLogic }
+          : (typeof entry.selective_logic === 'number' ? { selectiveLogic: entry.selective_logic } : {})),
+      }))
     }
   }
   const firstMes = clean(bodyText('first_mes'))

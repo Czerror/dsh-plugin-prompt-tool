@@ -6,6 +6,51 @@ import { loadPresetSpec, withPresetDoc } from './manifest.ts'
 
 export type WorldBookEntry = Record<string, unknown>
 
+/** buildWorldBookEntry 输入（两通道共用：ST 导入转换与模型 world_book_upsert 工具）。 */
+export interface WorldBookEntryInput {
+  id: string
+  name: string
+  text: string
+  /** 注入顺序（层内升序）；缺省 100。 */
+  order?: number
+  /** 启用状态；缺省不写（引擎默认启用）。 */
+  enabled?: boolean
+  /** 常驻注入（不依赖关键字）。 */
+  constant: boolean
+  keys?: string[]
+  secondaryKeys?: string[]
+  caseSensitive?: boolean
+  wholeWords?: boolean
+  /** ST selectiveLogic（0/1/2/3 → anchor-match any/all/not/notAny）。 */
+  selectiveLogic?: number
+}
+
+/**
+ * 世界书条目结构工厂（能力归一）。
+ * strategy/layer/position 固定值与 params 键集单一权威——ST 导入（sillytavern.ts）
+ * 与模型工具（world_book_upsert）共用，不再各自手写条目结构。
+ */
+export function buildWorldBookEntry(input: WorldBookEntryInput): WorldBookEntry {
+  return {
+    id: input.id,
+    name: input.name,
+    strategy: 'world-book',
+    order: typeof input.order === 'number' ? input.order : 100,
+    text: input.text,
+    layer: 'pre-step',
+    position: 'before-all',
+    ...(input.enabled !== undefined ? { enabled: input.enabled } : {}),
+    params: {
+      constant: input.constant,
+      ...(input.keys !== undefined && input.keys.length > 0 ? { keys: input.keys } : {}),
+      ...(input.secondaryKeys !== undefined && input.secondaryKeys.length > 0 ? { secondaryKeys: input.secondaryKeys } : {}),
+      ...(input.caseSensitive === true ? { caseSensitive: true } : {}),
+      ...(input.wholeWords === true ? { wholeWords: true } : {}),
+      ...(typeof input.selectiveLogic === 'number' ? { selectiveLogic: input.selectiveLogic } : {}),
+    },
+  }
+}
+
 const isWorldBook = (config: unknown): config is WorldBookEntry =>
   config !== null && typeof config === 'object' && !Array.isArray(config)
   && (config as WorldBookEntry).strategy === 'world-book'

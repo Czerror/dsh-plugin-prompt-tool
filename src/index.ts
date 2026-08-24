@@ -959,6 +959,7 @@ export {
   userPresetsDir,
   writePluginState,
 } from './host/manifest.ts'
+export { buildWorldBookEntry } from './host/worldbook.ts'
 export { ensureWebSurface, resolveProfileDir } from './web-surface.ts'
 export { resolveProfileSkillsDir } from './profile-skills.ts'
 export { migrateLegacyLayout, normalizePresetRootDir } from './host/migration.ts'

@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### 世界书条目结构归一：ST 导入与模型工具共用工厂（2026-08-25）
+
+- **能力归一**：`host/worldbook.ts` 新增 `buildWorldBookEntry(input)` 条目结构工厂——`strategy/layer/position`
+  固定值与 params 键集单一权威；ST 导入（sillytavern.ts）与模型工具（world_book_upsert）改调工厂，
+  删除双处手写条目结构。
+- **测试**：+3（工厂字段权威 / 工具形态 / ST 转换同构断言）；350 pass/0 fail。
+- **验证**：typecheck/lint 通过，全量测试通过。
+
 ### 内容策略模块化：能力归一 + 边界清晰（2026-08-25）
 
 - **任务分类器归一**：新增 `engine/classify-task.mjs`（`createTaskClassifier`：ready/classify/isComplex）——锚定三档判定与引导复杂判定共用，删除 strategies.mjs 双处内联正则实现。

@@ -96,6 +96,18 @@ moduleConfigs 仅补充参数桥未覆盖的键（如 ST 导入 tool-web.fetch�
 - **自定义文本契约统一**：锚定/引导策略统一读 `config.params.text`（`useCustom + text` 契约形态），
   `firstTurnText` 仅作存储键保留（writePreset 映射 `text: params.firstTurnText`，引擎兼容回退读旧键）。
 
+### 世界书条目结构归一（2026-08-25）
+
+`host/worldbook.ts` 的 `buildWorldBookEntry(input)` 是世界书条目结构工厂（能力归一）：
+`strategy/layer/position` 固定值与 params 键集（constant/keys/secondaryKeys/caseSensitive/
+wholeWords/selectiveLogic）单一权威。两个写入端共用：
+- **ST 导入**（`sillytavern.ts` convertStToPreset）：ST 字段别名收敛（keys/key、constant/add_always、
+  disable/enabled、insertion_order/order、case_sensitive/caseSensitive 等）保留在转换层，结构构造下沉工厂；
+- **模型工具**（`world-book-tools.ts` world_book_upsert）：模型参数直接经工厂构造——工具后续暴露
+  wholeWords 等字段时两通道自动一致。
+
+契约测试断言：ST 转换产物与工厂同参数构造完全一致（两通道同构）。
+
 ## 7. 契约测试
 
 - `test/host/param-contract.test.mjs`：PARAM_KEYS 派生一致性；每个 ENGINE_PARAM_KEYS 键有装配消费；MODEL_SEGMENT_MAP 段目标唯一。

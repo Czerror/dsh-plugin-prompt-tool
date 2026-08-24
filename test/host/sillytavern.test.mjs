@@ -7,7 +7,7 @@ import { join } from 'node:path'
 // 隔离 DSH_HOME：与 host 层其他测试一致（转换引擎虽无 IO，保底隔离）。
 const home = mkdtempSync(join(tmpdir(), 'pt-st-home-'))
 process.env.DSH_HOME = home
-const { convertStToPreset, stPresetId } = await import('../../lib/index.mjs')
+const { buildWorldBookEntry, convertStToPreset, stPresetId } = await import('../../lib/index.mjs')
 
 /** 官方 agent-presets discovery 的目录名校验（lib/index.js PRESET_ID）。 */
 const PRESET_ID = /^[a-z0-9][a-z0-9-]*$/
@@ -70,4 +70,42 @@ test('convertStToPreset：世界书 order 取反（ST 大优先 → 引擎升序
   assert.equal(lore.length, 2)
   assert.equal(lore[0].order, -200, '大 insertion_order 取反后最前（引擎先注入）')
   assert.equal(lore[1].order, -10)
+})
+
+test('convertStToPreset：世界书条目结构 = buildWorldBookEntry 工厂同参数产物（两通道同构）', () => {
+  const card = {
+    name: '同构卡',
+    data: {
+      character_book: {
+        entries: [
+          {
+            keys: ['气味'],
+            secondary_keys: ['香水'],
+            content: '空气中弥漫着…',
+            comment: '气味描写',
+            insertion_order: 10,
+            constant: true,
+            case_sensitive: true,
+            match_whole_words: true,
+          },
+        ],
+      },
+    },
+  }
+  const spec = convertStToPreset(card, 'iso-card')
+  const lore = spec.promptConfigs.filter((config) => config.strategy === 'world-book')
+  assert.equal(lore.length, 1)
+  const expected = buildWorldBookEntry({
+    id: lore[0].id,
+    name: lore[0].name,
+    text: lore[0].text,
+    order: lore[0].order,
+    enabled: lore[0].enabled,
+    constant: lore[0].params.constant,
+    keys: lore[0].params.keys,
+    secondaryKeys: lore[0].params.secondaryKeys,
+    caseSensitive: lore[0].params.caseSensitive,
+    wholeWords: lore[0].params.wholeWords,
+  })
+  assert.deepEqual(lore[0], expected, 'ST 转换产物与工厂同参数构造完全一致')
 })

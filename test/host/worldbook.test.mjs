@@ -8,7 +8,7 @@ import { parse as parseYaml } from 'yaml'
 // 隔离 DSH_HOME：host 层测试惯例。
 const home = mkdtempSync(join(tmpdir(), 'pt-wb-home-'))
 process.env.DSH_HOME = home
-const { deleteWorldBookEntry, listWorldBookEntries, upsertWorldBookEntry } = await import('../../lib/index.mjs')
+const { buildWorldBookEntry, deleteWorldBookEntry, listWorldBookEntries, upsertWorldBookEntry } = await import('../../lib/index.mjs')
 
 const dir = mkdtempSync(join(tmpdir(), 'pt-wb-preset-'))
 writeFileSync(join(dir, 'preset.yml'), [
@@ -36,6 +36,51 @@ test('worldbook list：只返回 world-book 策略配置', () => {
   const entries = listWorldBookEntries(dir)
   assert.equal(entries.length, 1)
   assert.equal(entries[0].id, 'lore-1')
+})
+
+test('buildWorldBookEntry 结构工厂：固定字段与 params 键集单一权威', () => {
+  const entry = buildWorldBookEntry({
+    id: 'lore-x',
+    name: '气味描写',
+    text: '空气中弥漫着…',
+    constant: false,
+    keys: ['气味', 'smell'],
+    secondaryKeys: ['香水'],
+    caseSensitive: true,
+    wholeWords: true,
+    selectiveLogic: 1,
+  })
+  assert.equal(entry.strategy, 'world-book')
+  assert.equal(entry.layer, 'pre-step')
+  assert.equal(entry.position, 'before-all')
+  assert.equal(entry.order, 100, 'order 缺省 100')
+  assert.deepEqual(entry.params, {
+    constant: false,
+    keys: ['气味', 'smell'],
+    secondaryKeys: ['香水'],
+    caseSensitive: true,
+    wholeWords: true,
+    selectiveLogic: 1,
+  })
+  // 空列表/缺省不写键（与 ST/工具通道历史产物一致）。
+  const minimal = buildWorldBookEntry({ id: 'lore-y', name: '全局', text: 't', constant: true })
+  assert.deepEqual(minimal.params, { constant: true })
+  assert.equal(minimal.enabled, undefined, 'enabled 缺省不写')
+})
+
+test('buildWorldBookEntry 两通道同构：模型工具参数形态 = 工厂直接构造', () => {
+  const viaTool = buildWorldBookEntry({
+    id: 'lore-a',
+    name: '条目',
+    text: '内容',
+    constant: true,
+    keys: ['k1'],
+  })
+  assert.equal(viaTool.enabled, undefined)
+  assert.deepEqual(viaTool.params, { constant: true, keys: ['k1'] })
+  // 工具 enabled=false 显式关闭。
+  const disabled = buildWorldBookEntry({ id: 'lore-b', name: 'n', text: 't', constant: false, enabled: false })
+  assert.equal(disabled.enabled, false)
 })
 
 test('worldbook upsert：新增与更新（按 id），count 只统计世界书条目', () => {
