@@ -27,20 +27,22 @@ modules:
   - run-code-env
   - custom-bash
   - skill-search
+model:
+  provider: ""
+  name: ""
+  reasoningEffort: ""
+  temperature: ""
+  maxTokens: ""
+subagentModel:
+  provider: ""
+  name: ""
+  reasoningEffort: ""
+  temperature: ""
+  maxTokens: ""
 params:
   usePtcMode: true
   bootstrapMaxTokens: 0
   allowKinds: "[skill-invocation, near-anchor, router-guide]"
-  modelProvider: ""
-  modelName: ""
-  subagentModelProvider: ""
-  subagentModelName: ""
-  modelReasoningEffort: ""
-  modelTemperature: ""
-  modelMaxTokens: ""
-  subagentReasoningEffort: ""
-  subagentTemperature: ""
-  subagentMaxTokens: ""
   subagentPersona: ""
   toolFilterAllow: []
   toolFilterDeny: []

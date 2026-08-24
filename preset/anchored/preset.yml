@@ -155,6 +155,18 @@ content:
 
     1. 你的思考过程（思维链 / thinking）必须全部使用简体中文。
     2. 你的回答内容必须使用简体中文。
+model:
+  provider: ""
+  name: ""
+  reasoningEffort: ""
+  temperature: ""
+  maxTokens: ""
+subagentModel:
+  provider: ""
+  name: ""
+  reasoningEffort: ""
+  temperature: ""
+  maxTokens: ""
 params:
   firstTurnAnchor: false
   firstTurnCustom: false
@@ -174,16 +186,6 @@ params:
   firstTurnDeep: "Start your reasoning with the exact sentence: Let me think through the design before changing anything."
   firstTurnWord: we
   allowKinds: "[skill-invocation, near-anchor, router-guide]"
-  modelProvider: ""
-  modelName: ""
-  subagentModelProvider: ""
-  subagentModelName: ""
-  modelReasoningEffort: ""
-  modelTemperature: ""
-  modelMaxTokens: ""
-  subagentReasoningEffort: ""
-  subagentTemperature: ""
-  subagentMaxTokens: ""
   subagentPersona: ""
   toolFilterAllow: []
   toolFilterDeny: []
