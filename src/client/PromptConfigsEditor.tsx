@@ -148,7 +148,6 @@ function CustomToolsModuleCard(props: {
   }, [props.expanded, loaded])
   const count = customTools.length
   const builtinCount = Object.keys(builtinTools).length
-  if (count === 0 && builtinCount === 0 && !props.expanded) return null
   const save = (): void => {
     let parsed: unknown
     try {
