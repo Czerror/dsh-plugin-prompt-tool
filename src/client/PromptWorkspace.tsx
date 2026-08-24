@@ -131,21 +131,23 @@ function ConfigListWithTemplates(props: { store: PromptToolStore; layer?: string
   )
 }
 
-/** 子代理页：路由状态 + 子代理配置列表（模型/工具与深度模块卡并入列表头部，audience != main 即公用或仅子代理）。 */
+/** 子代理页：路由状态 + 子代理引擎模块区块（列表上方，与主会话同构）+ 子代理配置列表
+ *  （audience != main 即公用或仅子代理）。子代理独有：子代理模型（含 subagentPersona）、
+ *  工具与深度（toolFilter / allowKinds / maxDepth）；主会话引擎模块（tool-bootstrap /
+ *  context-gate / 工具管线）不在此重复（避免双入口）。 */
 function SubagentPage(props: { store: PromptToolStore }): ReactNode {
   const { store } = props
   return (
     <>
       <section className={ui.section} aria-label="子代理">
         <ModelRouteStatus store={store} />
+        <div className={ui.configList}>
+          <ModelRouteModuleCard store={store} scope="subagent" />
+          <DelegationToolsModuleCard store={store} />
+        </div>
       </section>
       <div className={ui.subagentConfigs}>
-        <ConfigListWithTemplates store={store} scope="subagent" beforeCards={
-          <>
-            <ModelRouteModuleCard store={store} scope="subagent" />
-            <DelegationToolsModuleCard store={store} />
-          </>
-        } />
+        <ConfigListWithTemplates store={store} scope="subagent" />
       </div>
     </>
   )

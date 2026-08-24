@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### 子代理页 UI 同步主会话结构（2026-08-24）
+
+- **SubagentPage**：子代理引擎模块卡（子代理模型 + 工具与深度）从配置列表 beforeCards（列表内部）移到**列表上方独立区块**（configList 容器，与主会话 PromptConfigsEditor 同构）。
+- **子代理独有保留**：子代理模型卡（含 subagentPersona）、工具与深度卡（toolFilter / allowKinds / maxDepth）；主会话引擎模块（tool-bootstrap / context-gate / 工具管线）不在此重复（避免双入口）。
+- **测试**：315 pass/0 fail。
+
 ### 模板归一：16 → 11 个（2026-08-24）
 
 - **A 组 pre-step 通用**：10-pre-step 合并 11-merged-a（mergeMode）与 13-anchor（configKind）——插入后改字段即可，注释说明两种变体；删除 11/13。
