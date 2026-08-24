@@ -181,11 +181,20 @@ function CustomToolCard(props: {
             </select>
           </Field>
           {kind === 'shell' && (
-            <Field label="command" hint={'{{args.x}} 参数插值；env 白名单；cwd=会话工作区'}>
-              <textarea className={styles.configTextarea} rows={3} aria-label="shell 命令" spellCheck={false}
-                value={typeof execute.command === 'string' ? execute.command : ''} placeholder="Write-Output {{args.x}}"
-                onChange={(e) => patchExecute({ command: e.target.value })} />
-            </Field>
+            <>
+              <Field label="command" hint={'{{args.x}} 参数插值；env 白名单；cwd=会话工作区'}>
+                <textarea className={styles.configTextarea} rows={3} aria-label="shell 命令" spellCheck={false}
+                  value={typeof execute.command === 'string' ? execute.command : ''} placeholder="Write-Output {{args.x}}"
+                  onChange={(e) => patchExecute({ command: e.target.value })} />
+              </Field>
+              <Field label="shell" hint="pwsh 强制 UTF-8 输出（中文不乱码）">
+                <select className={styles.configInput} aria-label="shell"
+                  value={typeof execute.shell === 'string' ? execute.shell : 'pwsh'}
+                  onChange={(e) => patchExecute({ shell: e.target.value })}>
+                  {SHELLS.map((shell) => <option key={shell} value={shell}>{shell}</option>)}
+                </select>
+              </Field>
+            </>
           )}
           {kind === 'http' && (
             <>
