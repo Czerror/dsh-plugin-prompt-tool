@@ -148,6 +148,21 @@ export function ModelRouteModuleCard(props: { store: PromptToolStore; scope: 'ma
           ))}
         </select>
       </div>
+      {props.scope === 'main' && (
+        <div className={styles.settingRowStack}>
+          <label className={styles.configFieldStack}>
+            <span className={styles.settingCopy}><strong>主会话人设</strong><small>mainPersona（persona-main 配置覆盖）；留空 = 模板默认人设。失焦保存。</small></span>
+            <textarea
+              className={styles.firstTurnInput}
+              value={fields.mainPersona}
+              disabled={!fields.writePreset}
+              onChange={(event) => { autoResizeTextarea(event); store.patch({ mainPersona: event.target.value }) }}
+              onBlur={() => void store.persistParamOverrides()}
+              spellCheck={false}
+            />
+          </label>
+        </div>
+      )}
       <div className={styles.settingRowStack}>
         <span className={styles.settingCopy}>
           <strong>思维程度</strong>

@@ -37,6 +37,7 @@ export interface Fields {
   firstTurnCustom: boolean
   guideText: string
   guideCustom: boolean
+  mainPersona: string
   modelProvider: string
   modelName: string
   subagentModelProvider: string
@@ -148,6 +149,7 @@ export const EMPTY_FIELDS: Fields = {
   firstTurnCustom: false,
   guideText: '',
   guideCustom: false,
+  mainPersona: '',
   modelProvider: '',
   modelName: '',
   subagentModelProvider: '',
@@ -305,6 +307,7 @@ export function fieldsFromView(res: BridgeResult<BridgeSettingsView>): Fields {
     firstTurnCustom: readBoolean(value, 'firstTurnCustom', readBoolean(base, 'firstTurnCustom', false)),
     guideText: readString(value, 'guideText') ?? readString(base, 'guideText') ?? '',
     guideCustom: readBoolean(value, 'guideCustom', readBoolean(base, 'guideCustom', false)),
+    mainPersona: readString(value, 'mainPersona') ?? readString(base, 'mainPersona') ?? '',
     modelProvider: readString(value, 'modelProvider') ?? readString(base, 'modelProvider') ?? '',
     modelName: readString(value, 'modelName') ?? readString(base, 'modelName') ?? '',
     subagentModelProvider: readString(value, 'subagentModelProvider') ?? readString(base, 'subagentModelProvider') ?? '',

@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### 主会话人设参数化：mainPersona 直接设置（2026-08-25）
+
+- **能力恢复**：`mainPersona?: string`（41db0da 迁移后不消费的参数重新参数化）——writePreset
+  渲染 persona-main 配置时非空覆盖 text；与子代理 `subagentPersona` 对称；空值 = 模板默认。
+- **链路**：ENGINE_PARAM_KEYS/WRITER_PARAM_KEYS 完整透传（runtimeOf/index/preset-core/
+  reloadPresetParams/initialRuntime）+ store/bridge fields + 模型路由卡（主对话）人设输入
+  （persist 条件发送 + 读回）。
+- **测试**：+1（persona-main text 覆盖/空值保留）；354 pass/0 fail。
+- **验证**：typecheck/lint 通过，全量测试通过。
+
 ### 锚定确认词归一：确认词 = 锚句派生属性（2026-08-25）
 
 - **同功能归一**：`firstTurnText`/`firstTurnBuild/Inspect/Deep`（锚句）与 `firstTurnWord`（确认词）

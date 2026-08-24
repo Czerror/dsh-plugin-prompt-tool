@@ -103,6 +103,10 @@ function runtimeOf(options: WritePresetOptions, prompt: string): Record<string, 
     guideText: typeof options.guideText === 'string' ? options.guideText : '',
     // 每轮引导独立开关：undefined = 跟随 firstTurnAnchor（兼容旧行为）。
     guideEnabled: typeof options.guideEnabled === 'boolean' ? options.guideEnabled : undefined,
+    // 主会话人设：非空覆盖 persona-main 配置 text；空 = 模板默认（undefined 不覆盖 spec.params）。
+    mainPersona: typeof options.mainPersona === 'string' && options.mainPersona.length > 0
+      ? options.mainPersona
+      : undefined,
     injectPrompt: options.injectPrompt !== false,
     // 透传：未声明 = 模板 preset.yml params / 引擎默认（false）兜底，不再强制 true。
     usePtcMode: typeof options.usePtcMode === 'boolean' ? options.usePtcMode : undefined,
@@ -407,6 +411,11 @@ export function writePreset(prompt: string, options: WritePresetOptions): void {
           guideWeak: asString(params.guideWeak),
           guideDeep: asString(params.guideDeep),
         }
+      } else if (next.id === 'persona-main') {
+        // 主会话人设参数化：params.mainPersona 非空时覆盖模板默认人设文本
+        //（与子代理 subagentPersona 对称；空值 = 模板默认，不写键）。
+        const persona = asString(params.mainPersona)
+        if (persona.length > 0) next.text = persona
       }
       return next
     })

@@ -32,6 +32,9 @@ export function buildCordis(prompt: string, options: BuildCordisOptions = {}): s
     guideCustom: options.guideCustom === true,
     guideText: typeof options.guideText === 'string' ? options.guideText : '',
     guideEnabled: typeof options.guideEnabled === 'boolean' ? options.guideEnabled : undefined,
+    mainPersona: typeof options.mainPersona === 'string' && options.mainPersona.length > 0
+      ? options.mainPersona
+      : undefined,
     injectPrompt: options.injectPrompt !== false,
     usePtcMode: typeof options.usePtcMode === 'boolean' ? options.usePtcMode : undefined,
     bootstrapMaxTokens: Number.isSafeInteger(options.bootstrapMaxTokens) && (options.bootstrapMaxTokens ?? 0) > 0

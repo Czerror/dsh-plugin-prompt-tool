@@ -120,6 +120,16 @@ wholeWords/selectiveLogic）单一权威。两个写入端共用：
 - **多词确认**：`anchor-match` prefix 模式从「仅首词」改为「任一确认词前缀命中」（any 语义）；
 - **显式覆盖**：`firstTurnWord` 非空时优先（旧预设 `we` 行为不变）；空 = 自动派生（模板默认）。
 
+### 主会话人设参数化（2026-08-25）
+
+`mainPersona?: string`——主会话人设（persona-main 配置）参数直接设置，与子代理
+`subagentPersona` 对称：
+- 存储/契约：`ENGINE_PARAM_KEYS` + `WRITER_PARAM_KEYS` 完整透传（runtimeOf / index /
+  preset-core / reloadPresetParams / initialRuntime）；
+- 渲染：writePreset templateDefaults 对 persona-main 配置覆盖 `text`（非空时）；
+  空值 = 模板默认（空值删键语义已有），模块卡仍为底层编辑入口；
+- UI：模型路由卡（主对话）人设输入，persist 条件发送 + 读回。
+
 ## 7. 契约测试
 
 - `test/host/param-contract.test.mjs`：PARAM_KEYS 派生一致性；每个 ENGINE_PARAM_KEYS 键有装配消费；MODEL_SEGMENT_MAP 段目标唯一。

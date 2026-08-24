@@ -26,6 +26,8 @@ export interface EngineParams {
   guideCustom?: boolean
   /** 每轮引导独立开关；undefined = 兼容旧行为：跟随 firstTurnAnchor（关锚定 = 关引导）。 */
   guideEnabled?: boolean
+  /** 主会话人设文本（persona-main 配置覆盖；空 = 模板默认人设）。 */
+  mainPersona?: string
   /** 锚定确认后注入 preset.md；关闭时仍保留工具引导，但不生成 prompt-injector 提示词配置内容。 */
   injectPrompt?: boolean
   /** 模型路由 provider；与模型名同时非空时给 subagent/subagent_fork 行加 agentOptions（主对话直派子代理与委派子代理通用）。 */
@@ -126,7 +128,7 @@ export interface EngineParams {
 export const ENGINE_PARAM_KEYS = [
   // 锚定/引导/注入。
   'firstTurnAnchor', 'firstTurnText', 'firstTurnCustom',
-  'guideText', 'guideCustom', 'guideEnabled', 'injectPrompt',
+  'guideText', 'guideCustom', 'guideEnabled', 'mainPersona', 'injectPrompt',
   // 模型路由与模型参数（agent-request patch）。
   'modelProvider', 'modelName',
   'subagentModelProvider', 'subagentModelName',
@@ -168,7 +170,7 @@ const _assertEngineParamsKeys: AssertKeysEqual<keyof EngineParams, EngineParamKe
  */
 export type PresetWriterParams = Pick<EngineParams,
   | 'firstTurnAnchor' | 'firstTurnText' | 'firstTurnCustom'
-  | 'guideText' | 'guideCustom' | 'guideEnabled' | 'injectPrompt'
+  | 'guideText' | 'guideCustom' | 'guideEnabled' | 'mainPersona' | 'injectPrompt'
   | 'modelProvider' | 'modelName' | 'subagentModelProvider' | 'subagentModelName'
   | 'modelReasoningEffort' | 'modelTemperature' | 'modelMaxTokens'
   | 'subagentReasoningEffort' | 'subagentTemperature' | 'subagentMaxTokens'
@@ -178,7 +180,7 @@ export type PresetWriterParams = Pick<EngineParams,
 /** writePreset.runtimeOf 实际透传键（与 PresetWriterParams 双向相等断言，防 Pick 漏键）。 */
 export const WRITER_PARAM_KEYS = [
   'firstTurnAnchor', 'firstTurnText', 'firstTurnCustom',
-  'guideText', 'guideCustom', 'guideEnabled', 'injectPrompt',
+  'guideText', 'guideCustom', 'guideEnabled', 'mainPersona', 'injectPrompt',
   'modelProvider', 'modelName', 'subagentModelProvider', 'subagentModelName',
   'modelReasoningEffort', 'modelTemperature', 'modelMaxTokens',
   'subagentReasoningEffort', 'subagentTemperature', 'subagentMaxTokens',

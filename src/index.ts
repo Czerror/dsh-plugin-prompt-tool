@@ -145,6 +145,7 @@ export function apply(ctx: Context, configIn: Config): void {
     runtime.guideText = asString(params.guideText)
     runtime.guideCustom = params.guideCustom === true
     runtime.guideEnabled = typeof params.guideEnabled === 'boolean' ? params.guideEnabled : undefined
+    runtime.mainPersona = asString(params.mainPersona) || undefined
     runtime.modelProvider = asString(params.modelProvider)
     runtime.modelName = asString(params.modelName)
     runtime.subagentModelProvider = asString(params.subagentModelProvider)
@@ -186,6 +187,7 @@ export function apply(ctx: Context, configIn: Config): void {
         guideText: runtime.guideText,
         guideCustom: runtime.guideCustom,
         guideEnabled: runtime.guideEnabled,
+        mainPersona: runtime.mainPersona,
         injectPrompt: runtime.injectPrompt,
         modelProvider: runtime.modelProvider,
         modelName: runtime.modelName,
@@ -533,6 +535,7 @@ export function apply(ctx: Context, configIn: Config): void {
     guideText: asString(initialParams.guideText),
     guideCustom: initialParams.guideCustom === true,
     guideEnabled: typeof initialParams.guideEnabled === 'boolean' ? initialParams.guideEnabled : undefined,
+    mainPersona: asString(initialParams.mainPersona) || undefined,
     injectPrompt: initialParams.injectPrompt !== false,
     modelProvider: asString(initialParams.modelProvider),
     modelName: asString(initialParams.modelName),
