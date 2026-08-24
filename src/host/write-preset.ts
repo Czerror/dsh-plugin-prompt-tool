@@ -441,11 +441,14 @@ export function writePreset(prompt: string, options: WritePresetOptions): void {
   const presetVariables: Record<string, string> = {}
   for (const [key, value] of Object.entries(spec.params ?? {})) {
     if (PARAM_KEYS.has(key)) continue
+    if (value === undefined || value === null) continue
     const text = String(value)
-    if (text.length > 0) presetVariables[key] = text
+    presetVariables[key] = text
   }
   for (const [key, value] of Object.entries(spec.variables ?? {})) {
-    if (typeof value === 'string' && value.length > 0) presetVariables[key] = value
+    // 空值占位键也写入（ST 未定义宏登记的变量）：引擎插值时 hasOwnProperty
+    // 命中即替换为空串，不留 {{key}} 字面；UI 模板变量卡可编辑默认值覆盖。
+    if (typeof value === 'string') presetVariables[key] = value
   }
   const variablesEnabled = spec.variablesEnabled !== false
   const presetVariableKeys = new Set(Object.keys(presetVariables))

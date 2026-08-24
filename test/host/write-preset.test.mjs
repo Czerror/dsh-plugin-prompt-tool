@@ -424,8 +424,9 @@ test('writePreset 预设级模板变量生成 variables.yml（顶层 variables �
     const presetFile = join(homePresetDir, 'anchored', 'preset.yml')
     const doc = parseDocument(readFileSync(presetFile, 'utf8'))
     doc.setIn(['params', 'legacyVar'], '旧值')
+    doc.setIn(['params', 'legacyEmpty'], '')
     writeFileSync(presetFile, doc.toString(), 'utf8')
-    savePresetParams(homePresetDir, 'anchored', undefined, undefined, { wordsCloud: '1500字' })
+    savePresetParams(homePresetDir, 'anchored', undefined, undefined, { wordsCloud: '1500字', 日期: '' })
     writePreset('PROMPT', {
       ...makeOptions(presetDir),
       firstTurnAnchor: true,
@@ -452,6 +453,8 @@ test('writePreset 预设级模板变量生成 variables.yml（顶层 variables �
     const vars = parseYaml(readFileSync(varsFile, 'utf8'))
     assert.equal(vars.wordsCloud, '1500字', '顶层 variables 段进 variables.yml')
     assert.equal(vars.legacyVar, '旧值', '旧布局 params 内容键兼容进 variables.yml')
+    assert.equal(vars['日期'], '', '空值占位变量（ST 未定义宏登记）进 variables.yml')
+    assert.equal(vars.legacyEmpty, '', '旧布局 params 空值内容键也保留')
     assert.equal(vars.promptText, undefined, 'runtime 参数（promptText）不进变量文件')
     assert.equal(parsed.variables?.['wordsCloud'], undefined, '配置文件不再逐条展开内容变量')
     assert.equal(parsed.params?.wordsCloud, undefined, '内容变量不再进 params')

@@ -27,6 +27,8 @@ test('interpolateStatic：中文键替换', () => {
 })
 
 test('interpolateStatic：ST 运行时宏无会话上下文时替换为空（不残留字面）', () => {
+  assert.equal(interpolateStatic('{{日期}} 的事', { 日期: '' }), ' 的事', '空值占位变量替换为空串不留字面')
+  assert.equal(interpolateStatic('{{日期}}', {}), '{{日期}}', '未登记键保留字面')
   assert.equal(interpolateStatic('用户：{{lastusermessage}}', {}), '用户：')
   assert.equal(interpolateStatic('{{lastusermessage}}', { lastusermessage: '覆盖' }), '覆盖', 'variables 优先')
 })
