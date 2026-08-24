@@ -32,11 +32,11 @@ test('loadPromptTemplates：content 是合法单对象 YAML 且与解析后的 s
 
 test('loadToolTemplates：返回工具模板库（id/name/execute.kind 合法）', () => {
   const templates = loadToolTemplates()
-  assert.equal(templates.length, 6, '预置 6 个工具模板')
+  assert.equal(templates.length, 7, '预置 7 个工具模板')
   const kinds = templates.map((template) => template.spec.execute.kind)
-  assert.deepEqual(kinds, ['shell', 'http', 'fs', 'delegate', 'delegate', 'delegate'])
+  assert.deepEqual(kinds, ['shell', 'http', 'fs', 'delegate', 'delegate', 'delegate', 'delegate'])
   const delegated = templates.filter((template) => template.spec.execute.kind === 'delegate')
-  assert.deepEqual(delegated.map((template) => template.spec.execute.tool), ['character_list', 'world_book_list', 'session_var'])
+  assert.deepEqual(delegated.map((template) => template.spec.execute.tool), ['character_list', 'world_book_list', 'session_var', 'world_book_upsert'])
   for (const template of templates) {
     assert.equal(typeof template.spec.id, 'string')
     assert.equal(typeof template.spec.name, 'string')

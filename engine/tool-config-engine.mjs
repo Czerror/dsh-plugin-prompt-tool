@@ -225,8 +225,33 @@ function createExecute(ctx, def, requireApproval) {
         return { ok: false, error: `delegated tool ${exec.tool} is not registered` }
       }
       // 高级用法：透传参数直接调用目标 execute（不经 registry 校验管线）。
+      // args 映射：完整引用（{{args.x}}）透传原始类型（数组/数字/布尔不字符串化）；
+      // 部分引用（前缀-{{args.x}}）插值为字符串；非插值值原样。
+      const FULL_REF_RE = /^\{\{args\.([A-Za-z0-9_.]+)\}\}$/
+      const mapDelegateArg = (value) => {
+        if (Array.isArray(value)) return value.map(mapDelegateArg)
+        if (value !== null && typeof value === 'object') {
+          return Object.fromEntries(Object.entries(value).map(([key, child]) => [key, mapDelegateArg(child)]))
+        }
+        if (typeof value === 'string') {
+          const ref = FULL_REF_RE.exec(value)
+          if (ref !== null) {
+            let resolved = args
+            for (const part of ref[1].split('.')) {
+              if (resolved === null || typeof resolved !== 'object') {
+                resolved = undefined
+                break
+              }
+              resolved = resolved[part]
+            }
+            return resolved === undefined ? value : resolved
+          }
+          return interpolateArgs(value, args)
+        }
+        return value
+      }
       const delegatedArgs = exec.args !== undefined && exec.args !== null && typeof exec.args === 'object'
-        ? Object.fromEntries(Object.entries(exec.args).map(([key, value]) => [key, interpolateArgs(String(value), args)]))
+        ? Object.fromEntries(Object.entries(exec.args).map(([key, value]) => [key, mapDelegateArg(value)]))
         : args
       const minimalExec = {
         name: def.name,

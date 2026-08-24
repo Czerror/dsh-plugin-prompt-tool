@@ -211,6 +211,45 @@ execute:
   assert.equal(result.value.doubled, 42)
 })
 
+test('tool-config-engine：delegate args 映射（完整引用透传类型 + 部分引用插值 + 固定值）', async () => {
+  const delegated = {
+    name: 'upsert_tool',
+    execute: async (targetArgs) => targetArgs,
+  }
+  const dir = writeToolDir({
+    '01-delegate-args.yml': `id: del
+name: my_del
+description: 委托
+parameters:
+  keys: { type: array, items: { type: string } }
+  content: { type: string, required: true }
+  order: { type: integer }
+output:
+  schema: { type: object, additionalProperties: true }
+execute:
+  kind: delegate
+  tool: upsert_tool
+  args:
+    name: '条目-{{args.content}}'
+    content: '{{args.content}}'
+    keys: '{{args.keys}}'
+    constant: true
+    order: '{{args.order}}'
+`,
+  })
+  const { ctx } = makeCtx({ delegatedTool: delegated })
+  applyToolConfigEngine(ctx, { configsDir: dir })
+  const result = await ctx.tools.get('my_del').execute({ keys: ['剑', '刃'], content: '剑术', order: 100 }, runOf())
+  assert.equal(result.ok, true)
+  assert.deepEqual(result.value, {
+    name: '条目-剑术',
+    content: '剑术',
+    keys: ['剑', '刃'],
+    constant: true,
+    order: 100,
+  }, '完整引用透传数组/数字类型，部分引用插值，固定值原样')
+})
+
 test('tool-config-engine：ask-user 执行器（approval 结果文本化）', async () => {
   const dir = writeToolDir({
     '01-ask.yml': `id: ask

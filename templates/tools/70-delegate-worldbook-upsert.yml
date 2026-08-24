@@ -1,0 +1,36 @@
+# 自定义工具模板：委托内置 world_book_upsert（有参包装示例）。
+# 模型只见本模板声明的参数（name/content/keys），其余字段走 execute.args 固定映射：
+# constant/order/layer/position 由模板锁定——参数面 = 官方工具定义的 parameters 定制。
+# 配合 preset.yml builtinTools.world_book.enabled=false 使用，避免双份暴露。
+id: delegate-worldbook-upsert
+name: my_worldbook_upsert
+description: 新增/更新一条世界书条目（委托内置工具，常驻注入）
+parameters:
+  name:
+    type: string
+    required: true
+    description: 条目名称/注释
+  content:
+    type: string
+    required: true
+    description: 条目内容（命中后注入）
+  keys:
+    type: array
+    items: { type: string }
+    description: 触发关键字
+output:
+  schema:
+    type: object
+    additionalProperties: true
+    properties:
+      ok: { type: boolean }
+      value: { type: json }
+execute:
+  kind: delegate
+  tool: world_book_upsert
+  args:
+    name: '{{args.name}}'
+    content: '{{args.content}}'
+    keys: '{{args.keys}}'
+    constant: true
+    order: 100
