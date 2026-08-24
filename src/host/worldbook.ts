@@ -8,7 +8,8 @@ export type WorldBookEntry = Record<string, unknown>
 
 /** buildWorldBookEntry 输入（两通道共用：ST 导入转换与模型 world_book_upsert 工具）。 */
 export interface WorldBookEntryInput {
-  id: string
+  /** 条目 id；缺省不写（调用方自行加前缀时用，如角色卡 chara-<卡>- 前缀）。 */
+  id?: string
   name: string
   text: string
   /** 注入顺序（层内升序）；缺省 100。 */
@@ -32,7 +33,7 @@ export interface WorldBookEntryInput {
  */
 export function buildWorldBookEntry(input: WorldBookEntryInput): WorldBookEntry {
   return {
-    id: input.id,
+    ...(input.id !== undefined ? { id: input.id } : {}),
     name: input.name,
     strategy: 'world-book',
     order: typeof input.order === 'number' ? input.order : 100,

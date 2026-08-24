@@ -105,6 +105,8 @@ wholeWords/selectiveLogic）单一权威。两个写入端共用：
   disable/enabled、insertion_order/order、case_sensitive/caseSensitive 等）保留在转换层，结构构造下沉工厂；
 - **模型工具**（`world-book-tools.ts` world_book_upsert）：模型参数直接经工厂构造——工具后续暴露
   wholeWords 等字段时两通道自动一致。
+- **角色卡记忆**（`characters.ts` buildCharacterMemoryEntry）：角色卡导入/记忆同步的 world-book 记忆
+  条目同源构造（id 由调用方加 chara-<卡>- 前缀，工厂 id 缺省不写）。
 
 契约测试断言：ST 转换产物与工厂同参数构造完全一致（两通道同构）。
 

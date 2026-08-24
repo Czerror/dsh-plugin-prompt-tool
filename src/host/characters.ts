@@ -8,6 +8,7 @@ import { join, basename, dirname } from 'node:path'
 import { parse as parseYaml, parseDocument, stringify as stringifyYaml } from 'yaml'
 import { convertStToPreset, mergeStPresets } from './sillytavern.ts'
 import { withPresetDoc } from './manifest.ts'
+import { buildWorldBookEntry } from './worldbook.ts'
 import type { PresetSpec } from './manifest.ts'
 
 /** 引擎六层注入顺序（与 schema 层序一致）：合并写盘时按此排序，数组序 = 引擎序。 */
@@ -28,16 +29,14 @@ function sortConfigs(configs: Array<Record<string, unknown>>): Array<Record<stri
 /** 角色卡记忆条目字段（不含 id；id 由调用方加 chara-<卡>- 前缀）。 */
 function buildCharacterMemoryEntry(spec: PresetSpec, memory: string): Record<string, unknown> | undefined {
   if (memory.trim().length === 0) return undefined
-  return {
+  // 结构经世界书条目工厂（与 ST 导入/模型工具同源，strategy/layer/position 单一权威）。
+  return buildWorldBookEntry({
     name: '角色记忆',
-    strategy: 'world-book',
-    layer: 'pre-step',
-    position: 'before-all',
     enabled: true,
     order: 1000,
     text: `【${spec.name} 的关系记忆】\n${memory}`,
-    params: { constant: true },
-  }
+    constant: true,
+  })
 }
 
 /** 角色卡记忆变更后同步已导入预设的 chara-<id>-memory 注入条目

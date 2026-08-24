@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### 世界书条目归一补全：角色卡记忆条目同源（2026-08-25）
+
+- **第三处手写收敛**：`characters.ts` 的 `buildCharacterMemoryEntry`（角色卡导入/记忆同步的
+  world-book 记忆条目）改调 `buildWorldBookEntry`——工厂 id 缺省不写，id 仍由调用方加
+  chara-<卡>- 前缀。ST 导入 / 模型工具 / 角色卡记忆三通道结构同源。
+- **验证**：350 pass/0 fail，typecheck/lint 干净。
+
 ### 世界书条目结构归一：ST 导入与模型工具共用工厂（2026-08-25）
 
 - **能力归一**：`host/worldbook.ts` 新增 `buildWorldBookEntry(input)` 条目结构工厂——`strategy/layer/position`
