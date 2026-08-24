@@ -1,4 +1,4 @@
-import { useRef, useState, type FocusEvent, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type FocusEvent, type ReactNode } from 'react'
 import clsx from 'clsx'
 import { IconChevronDownOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { PromptConfigList } from './PromptConfigList.tsx'
@@ -6,6 +6,7 @@ import { TemplatePicker } from './TemplatePicker.tsx'
 import { useTemplatePicker } from './useTemplatePicker.ts'
 import { VariablesEditor } from './PromptConfigCard.tsx'
 import { EngineModuleCards, ModelRouteModuleCard } from './EngineModuleCards.tsx'
+import { bridgePost } from './prompt-tool-bridge.ts'
 import styles from './PromptUi.module.css'
 
 import type { EngineMeta, PromptConfigDraft } from './prompt-tool-types.ts'
@@ -110,9 +111,92 @@ function TemplateVariablesModuleCard(props: {
   )
 }
 
+/** 自定义工具模块卡片（归类于配置列表下）：preset.yml 顶层 customTools 段。
+ *  自管理读写（/custom-tools）：展开时加载，JSON 编辑整个定义数组后保存，
+ *  写盘触发重建（tool-config-engine 渲染 custom-tools/ 并运行时注册）。 */
+function CustomToolsModuleCard(props: {
+  expanded: boolean
+  onToggleExpanded: () => void
+  onNotice: (kind: 'ok' | 'error', message: string) => void
+}): ReactNode {
+  const [customTools, setCustomTools] = useState<unknown[]>([])
+  const [draft, setDraft] = useState('')
+  const [loaded, setLoaded] = useState(false)
+  const [saving, setSaving] = useState(false)
+  useEffect(() => {
+    if (loaded || !props.expanded) return
+    void (async () => {
+      const result = await bridgePost<{ customTools?: unknown[] }>('/custom-tools', {})
+      const list = result.ok ? result.value?.customTools ?? [] : []
+      setCustomTools(list)
+      setDraft(JSON.stringify(list, null, 2))
+      setLoaded(true)
+    })()
+  }, [props.expanded, loaded])
+  const count = customTools.length
+  if (count === 0 && !props.expanded) return null
+  const save = (): void => {
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(draft)
+    } catch (error) {
+      props.onNotice('error', `自定义工具 JSON 解析失败：${error instanceof Error ? error.message : String(error)}`)
+      return
+    }
+    if (!Array.isArray(parsed)) {
+      props.onNotice('error', '自定义工具必须是数组')
+      return
+    }
+    setSaving(true)
+    void bridgePost<{ customTools?: unknown[] }>('/custom-tools', { customTools: parsed }).then((result) => {
+      setSaving(false)
+      if (result.ok) {
+        setCustomTools(parsed)
+        props.onNotice('ok', `已保存 ${parsed.length} 个自定义工具（生成目录已重建）`)
+      } else {
+        props.onNotice('error', result.message ?? '自定义工具保存失败')
+      }
+    })
+  }
+  return (
+    <article className={styles.configCard}>
+      <header className={styles.configHeader}>
+        <button type="button" className={styles.configToggle} aria-expanded={props.expanded} onClick={props.onToggleExpanded}>
+          <span className={styles.configTitle}>
+            <span className={styles.configName}>自定义工具</span>
+            <span className={styles.configMeta}>{count > 0 ? `${count} 个工具` : '未定义（tool-config-engine）'}</span>
+          </span>
+          <IconChevronDownOutline14 className={clsx(styles.chevron, props.expanded && styles.chevronOpen)} />
+        </button>
+      </header>
+      {props.expanded && (
+        <div className={styles.configForm}>
+          <p className={styles.configFieldHint}>
+            {'preset.yml 顶层 customTools 段；执行器 shell / http / delegate / fs / ask-user，参数引用 {{args.x}}。坏定义引擎跳过并告警。'}
+          </p>
+          <textarea
+            className={styles.configTextarea}
+            rows={12}
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            aria-label="自定义工具定义 JSON"
+            spellCheck={false}
+          />
+          <div className={styles.configActions}>
+            <button type="button" className={styles.primaryPill} disabled={saving} onClick={save}>
+              {saving ? '保存中…' : '保存'}
+            </button>
+          </div>
+        </div>
+      )}
+    </article>
+  )
+}
+
 /** 提示词配置编辑器：配置列表（层级/策略过滤已并入列表）+ 模板插入 + 保存前权威校验。 */
 export function PromptConfigsEditor(props: PromptConfigsEditorProps): ReactNode {
   const [templateVarsExpanded, setTemplateVarsExpanded] = useState(false)
+  const [customToolsExpanded, setCustomToolsExpanded] = useState(false)
   /** 层筛选状态（模块列表下拉联动引擎模块卡：选中层只显示该层引擎模块）。 */
   const [layerFilter, setLayerFilter] = useState('all')
   const templatePicker = useTemplatePicker(
@@ -141,6 +225,11 @@ export function PromptConfigsEditor(props: PromptConfigsEditorProps): ReactNode 
         extraActions={<button type="button" className={styles.primaryPill} onClick={templatePicker.openPicker}>新建</button>}
         beforeCards={
           <>
+            <CustomToolsModuleCard
+              expanded={customToolsExpanded}
+              onToggleExpanded={() => setCustomToolsExpanded(!customToolsExpanded)}
+              onNotice={props.onNotice}
+            />
             <TemplateVariablesModuleCard
               templateVariables={props.templateVariables}
               setTemplateVariables={props.setTemplateVariables}

@@ -27,6 +27,7 @@ import {
   resolvePresetDir,
   savePresetParams,
   userPresetsDir,
+  withPresetDoc,
 } from '../host/manifest.ts'
 import type { PresetSpec } from '../host/manifest.ts'
 import {
@@ -599,6 +600,47 @@ export function registerSettingsBridge(
             } catch (error) {
               const message = error instanceof Error ? error.message : String(error)
               writeBridgeJson(res, 409, { ok: false, code: 'preset-variables-rejected', message: `模板变量保存失败：${message}` })
+            }
+          },
+        }),
+        sctx.webServer.register({
+          kind: 'exact',
+          path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.customTools,
+          handler: async (req, res) => {
+            if (!guard(req, res)) return
+            const dir = getPresetConfigsDir?.() ?? ''
+            if (dir.length === 0) {
+              writeBridgeJson(res, 400, { ok: false, code: 'preset-dir-unavailable', message: 'presetDir 未配置' })
+              return
+            }
+            const { body } = await readBridgeBody(req)
+            const record = (body ?? {}) as Record<string, unknown>
+            // 无载荷 = 读取（preset.yml 顶层 customTools 段）。
+            if (record.customTools === undefined) {
+              try {
+                const spec = loadPresetSpec(dir)
+                const customTools = Array.isArray(spec.customTools) ? spec.customTools : []
+                writeBridgeJson(res, 200, { ok: true, value: { customTools } })
+              } catch {
+                writeBridgeJson(res, 200, { ok: true, value: { customTools: [] } })
+              }
+              return
+            }
+            try {
+              const customTools = record.customTools
+              if (!Array.isArray(customTools)) {
+                writeBridgeJson(res, 400, { ok: false, code: 'custom-tools-invalid', message: 'customTools 必须是数组' })
+                return
+              }
+              withPresetDoc(dir, (doc) => {
+                if (customTools.length === 0) doc.deleteIn(['customTools'])
+                else doc.setIn(['customTools'], customTools)
+              })
+              afterOverridesChange?.()
+              writeBridgeJson(res, 200, { ok: true, value: { customTools } })
+            } catch (error) {
+              const message = error instanceof Error ? error.message : String(error)
+              writeBridgeJson(res, 409, { ok: false, code: 'custom-tools-rejected', message: `自定义工具保存失败：${message}` })
             }
           },
         }),

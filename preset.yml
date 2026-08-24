@@ -257,6 +257,13 @@ promptConfigs:
 # 每轮注入（对齐 dsh-tavern 语义）。管理入口：模块列表下拉「世界书」过滤
 # （完整模块卡片编辑 + 批量启用/禁用）；模型工具（会话中直接维护，写入本段
 # promptConfigs）：world_book_list（列出条目）/ world_book_upsert（新增或更新，
+# 自定义工具（顶层 customTools 段，tool-config-engine 加载渲染并运行时注册）：
+#   声明式定义模型工具：id（文件标识）/ name（模型可见 ^[a-z][a-z0-9_]*$）/
+#   description / parameters（dsh-tools schema 形态）/ output.schema / execute：
+#   kind 执行器 shell（命令，{{args.x}} 插值，env 白名单）/ http（fetch）/
+#   delegate（委托已注册工具）/ fs（read/write/append/list/delete，路径限定工作区）/
+#   ask-user（approval 通道）。坏定义引擎跳过并告警；行 requireApproval 可列
+#   执行器强制 approval 门。管理入口：模块列表「自定义工具」卡片（JSON 编辑）。
 # note 参数可选写入角色卡记忆 .characters/<卡>/memory.md）/ world_book_delete
 # （删除条目，note 同）。
 # 示例（取消注释即可启用）：
