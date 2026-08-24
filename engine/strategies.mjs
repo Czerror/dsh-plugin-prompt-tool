@@ -7,6 +7,7 @@
 
 import { extractText } from './shared.mjs'
 import { MATCH_LOGIC, createAnchorMatcher } from './anchor-match.mjs'
+import { createTaskClassifier } from './classify-task.mjs'
 import { createInstructionHintResolver, createPlaceholderResolver } from './fillers.mjs'
 
 const name = 'prompt-config-engine'
@@ -17,30 +18,30 @@ const name = 'prompt-config-engine'
  */
 function createFirstTurnAnchorResolver(config) {
   const useCustom = config.params?.useCustom === true
-  const customText = typeof config.params?.firstTurnText === 'string' ? config.params.firstTurnText : ''
+  // 自定义文本统一读 text（与 guide-auto 同契约）；firstTurnText 旧键兼容。
+  const customText = typeof config.params?.text === 'string'
+    ? config.params.text
+    : (typeof config.params?.firstTurnText === 'string' ? config.params.firstTurnText : '')
   const buildPattern = typeof config.params?.buildPattern === 'string' ? config.params.buildPattern : ''
   const complexPattern = typeof config.params?.complexPattern === 'string' ? config.params.complexPattern : ''
   const firstTurnBuild = typeof config.params?.firstTurnBuild === 'string' ? config.params.firstTurnBuild : ''
   const firstTurnInspect = typeof config.params?.firstTurnInspect === 'string' ? config.params.firstTurnInspect : ''
   const firstTurnDeep = typeof config.params?.firstTurnDeep === 'string' ? config.params.firstTurnDeep : ''
-  const buildRe = buildPattern.length > 0 ? new RegExp(buildPattern, 'i') : undefined
-  const complexRe = complexPattern.length > 0 ? new RegExp(complexPattern, 'i') : undefined
+  const classifier = createTaskClassifier({ buildPattern, complexPattern })
   return ({ messages }) => {
     if (useCustom) {
       const text = customText.trim()
       return text.length > 0 ? { text } : null
     }
-    if (buildRe === undefined || complexRe === undefined || (firstTurnBuild.length === 0 && firstTurnInspect.length === 0 && firstTurnDeep.length === 0)) {
+    if (!classifier.ready || (firstTurnBuild.length === 0 && firstTurnInspect.length === 0 && firstTurnDeep.length === 0)) {
       return null
     }
     const userIndex = messages.findIndex((message) => message?.source?.kind === 'user')
     if (userIndex < 0) return null
     const taskText = extractText(messages[userIndex])
     if (taskText.length === 0) return null
-    let anchor
-    if (complexRe.test(taskText)) anchor = firstTurnDeep
-    else if (buildRe.test(taskText)) anchor = firstTurnBuild
-    else anchor = firstTurnInspect
+    const kind = classifier.classify(taskText)
+    const anchor = kind === 'complex' ? firstTurnDeep : kind === 'build' ? firstTurnBuild : firstTurnInspect
     return anchor.length > 0 ? { text: anchor } : null
   }
 }
@@ -48,14 +49,17 @@ function createFirstTurnAnchorResolver(config) {
 /**
  * guide-auto:晋升后每轮用户消息后的弱/深度引导。
  * 正则与引导文本全部来自 config.params（由 preset.yml 单一配置源下发）。
+ * 复杂任务判定 fallback 复用锚定功能的 complexPattern（guideComplexPattern
+ * 冗余副本已移除）——锚定与引导是独立功能，仅分类器共用。
  */
 function createGuideAutoResolver(config) {
   const useCustom = config.params?.useCustom === true
   const customText = typeof config.params?.text === 'string' ? config.params.text : ''
-  const guideComplexPattern = typeof config.params?.guideComplexPattern === 'string' ? config.params.guideComplexPattern : ''
+  const complexPattern = typeof config.params?.complexPattern === 'string' ? config.params.complexPattern : ''
   const guideWeak = typeof config.params?.guideWeak === 'string' ? config.params.guideWeak : ''
   const guideDeep = typeof config.params?.guideDeep === 'string' ? config.params.guideDeep : ''
-  const guideComplexRe = guideComplexPattern.length > 0 ? new RegExp(guideComplexPattern, 'i') : undefined
+  // 复杂判定 fallback 复用锚定分类器（buildPattern 不参与引导判定）。
+  const classifier = createTaskClassifier({ complexPattern })
   return ({ messages }) => {
     const userIndex = messages.findIndex((message) => message?.source?.kind === 'user')
     if (userIndex < 0) return null
@@ -66,7 +70,7 @@ function createGuideAutoResolver(config) {
       return guide.length > 0 ? { text: guide } : null
     }
     if (guideWeak.length === 0 && guideDeep.length === 0) return null
-    return { text: (text.length > 120 || (guideComplexRe !== undefined && guideComplexRe.test(text))) ? guideDeep : guideWeak }
+    return { text: (text.length > 120 || classifier.isComplex(text)) ? guideDeep : guideWeak }
   }
 }
 

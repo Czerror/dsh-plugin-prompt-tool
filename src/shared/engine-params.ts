@@ -7,8 +7,8 @@
  *
  * 分层约定：
  *  - 本文件 = 引擎参数「契约层」（类型）：参数桥/模板/UI 可配置的键与类型；
- *  - shared/param-keys.ts（PARAM_KEYS）= 引擎参数「运行时键集合」：variables.yml
- *    排除集、settings mutate 拦截集、/param-overrides 读回遍历共用；
+ *  - ENGINE_PARAM_KEYS = 引擎参数「运行时键唯一权威」（数组字面量）；EngineParams
+ *    接口与它双向相等断言（漏改任一侧 typecheck 报错），PARAM_KEYS 从这里派生；
  *  - 模型段 ↔ 扁平键的存储翻译唯二入口：loadPresetSpec 展平 / savePresetParams 迁移。
  *
  * 全部字段可选：缺省 = 模板 preset.yml params / 引擎默认，符合「一切皆可自定义」。
@@ -24,6 +24,8 @@ export interface EngineParams {
   guideText?: string
   /** 自定义每轮引导开关：true 固定使用 guideText；false 按任务自动选择。 */
   guideCustom?: boolean
+  /** 每轮引导独立开关；undefined = 兼容旧行为：跟随 firstTurnAnchor（关锚定 = 关引导）。 */
+  guideEnabled?: boolean
   /** 锚定确认后注入 preset.md；关闭时仍保留工具引导，但不生成 prompt-injector 提示词配置内容。 */
   injectPrompt?: boolean
   /** 模型路由 provider；与模型名同时非空时给 subagent/subagent_fork 行加 agentOptions（主对话直派子代理与委派子代理通用）。 */
@@ -112,7 +114,52 @@ export interface EngineParams {
   deliveryDescription?: string
   /** 子代理也启用主对话工具过滤。 */
   toolFilterSubagents?: boolean
+  /** str-replace-editor 最大输出字符数（参数桥默认官方值 16000；UI 无专卡，高级参数 JSON 可编辑）。 */
+  strReplaceEditorMaxOutputChars?: number
 }
+
+/**
+ * 引擎行为参数键唯一权威（数组字面量 = 运行时事实）。
+ * 与 EngineParams 接口双向相等断言：新增参数必须同时改接口与列表，漏改任一侧
+ * typecheck 失败（防历史事故：PARAM_KEYS 漏 25 键混入 variables.yml 污染注入）。
+ */
+export const ENGINE_PARAM_KEYS = [
+  // 锚定/引导/注入。
+  'firstTurnAnchor', 'firstTurnText', 'firstTurnCustom',
+  'guideText', 'guideCustom', 'guideEnabled', 'injectPrompt',
+  // 模型路由与模型参数（agent-request patch）。
+  'modelProvider', 'modelName',
+  'subagentModelProvider', 'subagentModelName',
+  'modelReasoningEffort', 'modelTemperature', 'modelMaxTokens',
+  'subagentReasoningEffort', 'subagentTemperature', 'subagentMaxTokens',
+  // 委派与工具过滤。
+  'subagentPersona', 'toolFilterAllow', 'toolFilterDeny', 'maxDepth',
+  'allowKinds', 'firstTurnWord', 'bootstrapMaxTokens', 'usePtcMode',
+  // 晋升门控（tool-bootstrap 参数桥）。
+  'promoteGate', 'promoteAfterFirstResponse', 'maxPromoteSteps',
+  'bootstrapTools', 'compactionTools', 'personaSectionsOnly', 'workspaceLine',
+  'phase1FirstCallInstruction',
+  // context-gate 注入门控。
+  'messageSources', 'deferredSources', 'deferredGraceSteps', 'instructionHint',
+  // 渐进披露（stages 模式）。
+  'stages', 'stagePreUnlock', 'stageAdvanceTool', 'stageAdvanceDescription', 'stageSectionTemplate',
+  // 验证工具（page-check / delivery-gate）。
+  'pageCheckBrowserPath', 'pageCheckTimeoutMs', 'pageCheckLite', 'pageCheckRetry',
+  'pageCheckDescription', 'deliveryRequireSmoke', 'deliveryDescription',
+  // 工具行级参数。
+  'toolFilterSubagents', 'strReplaceEditorMaxOutputChars',
+] as const
+
+export type EngineParamKey = typeof ENGINE_PARAM_KEYS[number]
+
+/** 双向相等断言工具：两字符串集合完全一致 → true，否则 false。 */
+type AssertKeysEqual<A extends string, B extends string> =
+  Exclude<A, B> extends never
+    ? Exclude<B, A> extends never ? true : false
+    : false
+
+/** 编译期断言：EngineParams 接口键与 ENGINE_PARAM_KEYS 必须完全一致（多/漏任一键 → 编译错误）。 */
+const _assertEngineParamsKeys: AssertKeysEqual<keyof EngineParams, EngineParamKey> = true
 
 /**
  * writePreset.runtimeOf 实际透传进运行时 params 的引擎参数子集。
@@ -121,9 +168,23 @@ export interface EngineParams {
  */
 export type PresetWriterParams = Pick<EngineParams,
   | 'firstTurnAnchor' | 'firstTurnText' | 'firstTurnCustom'
-  | 'guideText' | 'guideCustom' | 'injectPrompt'
+  | 'guideText' | 'guideCustom' | 'guideEnabled' | 'injectPrompt'
   | 'modelProvider' | 'modelName' | 'subagentModelProvider' | 'subagentModelName'
   | 'modelReasoningEffort' | 'modelTemperature' | 'modelMaxTokens'
   | 'subagentReasoningEffort' | 'subagentTemperature' | 'subagentMaxTokens'
   | 'subagentPersona' | 'toolFilterAllow' | 'toolFilterDeny' | 'maxDepth'
   | 'allowKinds' | 'firstTurnWord' | 'bootstrapMaxTokens' | 'usePtcMode'>
+
+/** writePreset.runtimeOf 实际透传键（与 PresetWriterParams 双向相等断言，防 Pick 漏键）。 */
+export const WRITER_PARAM_KEYS = [
+  'firstTurnAnchor', 'firstTurnText', 'firstTurnCustom',
+  'guideText', 'guideCustom', 'guideEnabled', 'injectPrompt',
+  'modelProvider', 'modelName', 'subagentModelProvider', 'subagentModelName',
+  'modelReasoningEffort', 'modelTemperature', 'modelMaxTokens',
+  'subagentReasoningEffort', 'subagentTemperature', 'subagentMaxTokens',
+  'subagentPersona', 'toolFilterAllow', 'toolFilterDeny', 'maxDepth',
+  'allowKinds', 'firstTurnWord', 'bootstrapMaxTokens', 'usePtcMode',
+] as const
+
+/** 编译期断言：WRITER_PARAM_KEYS 与 PresetWriterParams 键必须一致（Pick 漏键 → 编译错误）。 */
+const _assertWriterParamsKeys: AssertKeysEqual<typeof WRITER_PARAM_KEYS[number], keyof PresetWriterParams> = true

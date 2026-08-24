@@ -20,6 +20,7 @@ const TUI_GLOBAL_SWITCHES: ReadonlyArray<readonly [key: string, label: string]> 
 const TUI_PARAM_SWITCHES: ReadonlyArray<readonly [key: string, label: string]> = [
   ['injectPrompt', '锚定确认后注入 preset.md'],
   ['firstTurnAnchor', '追加任务引导'],
+  ['guideEnabled', '每轮引导（独立开关；缺省跟随锚定）'],
   ['firstTurnCustom', '使用自定义引导（首句）'],
   ['guideCustom', '使用自定义引导（每轮）'],
   ['usePtcMode', '使用 PTC 模式'],

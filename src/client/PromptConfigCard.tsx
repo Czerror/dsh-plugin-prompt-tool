@@ -178,9 +178,9 @@ export function StrategyParamsFields(props: { strategy: string; layer?: string; 
         )}
         {!managed && (
           <>
-            <ParamToggle label="useCustom（自定义锚文本）" hint="true = 固定使用 firstTurnText；false = 按 buildPattern/complexPattern 自动选择引导句"
+            <ParamToggle label="useCustom（自定义锚文本）" hint="true = 固定使用 text；false = 按 buildPattern/complexPattern 自动选择引导句"
               checked={bool('useCustom')} onChange={(next) => set('useCustom', next)} />
-            <ParamTextarea label="firstTurnText（自定义锚文本）" hint="useCustom=true 时固定注入" value={str('firstTurnText')} onChange={(next) => set('firstTurnText', next)} />
+            <ParamTextarea label="text（自定义锚文本）" hint="useCustom=true 时固定注入" value={str('text')} onChange={(next) => set('text', next)} />
             <ParamInput label="buildPattern（构建任务正则）" hint="命中即用 firstTurnBuild 引导句" value={str('buildPattern')} onChange={(next) => set('buildPattern', next)} />
             <ParamInput label="complexPattern（复杂任务正则）" hint="命中即用 firstTurnDeep 引导句" value={str('complexPattern')} onChange={(next) => set('complexPattern', next)} />
             <ParamTextarea label="firstTurnBuild（构建引导句）" value={str('firstTurnBuild')} onChange={(next) => set('firstTurnBuild', next)} />
@@ -203,7 +203,7 @@ export function StrategyParamsFields(props: { strategy: string; layer?: string; 
             <ParamToggle label="useCustom（自定义每轮引导）" hint="true = 固定使用 text；false = 按任务自动选择强弱引导"
               checked={bool('useCustom')} onChange={(next) => set('useCustom', next)} />
             <ParamTextarea label="text（自定义引导文本）" hint="useCustom=true 时固定注入" value={str('text')} onChange={(next) => set('text', next)} />
-            <ParamInput label="guideComplexPattern（复杂任务正则）" value={str('guideComplexPattern')} onChange={(next) => set('guideComplexPattern', next)} />
+            <p className={styles.configFieldHint}>复杂任务判定复用锚定卡的 complexPattern（引导 fallback 共用分类器）。</p>
             <ParamTextarea label="guideWeak（简单任务自动引导）" value={str('guideWeak')} onChange={(next) => set('guideWeak', next)} />
             <ParamTextarea label="guideDeep（复杂任务自动引导）" value={str('guideDeep')} onChange={(next) => set('guideDeep', next)} />
           </>

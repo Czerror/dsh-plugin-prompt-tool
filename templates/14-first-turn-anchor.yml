@@ -19,7 +19,7 @@ sourceKind: ''
 form: notice
 params:
   useCustom: false
-  firstTurnText: ""
+  text: ""                  # 自定义锚文本（useCustom=true 时固定注入）
   buildPattern: ""      # 构建任务正则；留空 = 该分类不生效
   complexPattern: ""    # 复杂任务正则；留空 = 该分类不生效
   firstTurnBuild: ""    # 构建任务锚句（示例见 anchored preset.yml params.firstTurnBuild）

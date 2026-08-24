@@ -3,37 +3,24 @@
  * 不进 Config schema、不进 settings namespace——每预设一份，随预设走（官方范式：
  * Config = 部署轴，引擎行为在预设文件）。
  *
- * 这些键在 UI 有专门编辑入口（模型设置 / 工具与深度 / 开关），writePreset 把
- * 预设级 params 合并进每条 promptConfig 的 params 时排除——「params（高级参数
- * JSON）」框只保留内容变量与配置自身策略参数，避免 UI 已管理的参数冗余回写。
+ * 派生自 ENGINE_PARAM_KEYS（唯一权威）+ 少量附加键：
+ *  - 锚定/引导内容键：writePreset 映射进 near-anchor/router-guide 的 promptConfig
+ *    params（策略消费），须排除出 variables.yml（避免同一键双落盘为模板变量）；
+ *  - promptConfigs：settings 提示词配置数组键。
+ * 注意：variables.yml 的占位键（spec.variables 空值登记，供世界书条目 {{key}} 动态
+ * 引用）走另一套通道，不属于 PARAM_KEYS——两套体系不互串。
  * 放 shared：host（write-preset）与 config/settings-bridge 共用，单一来源。
  */
-export const PARAM_KEYS: ReadonlySet<string> = new Set([
-  'firstTurnAnchor', 'firstTurnText', 'firstTurnCustom',
-  'guideText', 'guideCustom',
+import { ENGINE_PARAM_KEYS } from './engine-params.ts'
+
+const EXTRA_PARAM_KEYS = [
   // 锚定/引导内容键：writePreset 映射进 near-anchor/router-guide 的 promptConfig
   // params（策略消费），须排除出 variables.yml（避免同一键双落盘为模板变量）。
   'buildPattern', 'complexPattern', 'firstTurnBuild', 'firstTurnInspect', 'firstTurnDeep',
+  // guideComplexPattern：旧布局键（引导 fallback 复用 complexPattern 后仅作
+  // 兼容排除——旧预设 params 残留该键时不混入 variables.yml；新预设不再写入）。
   'guideComplexPattern', 'guideWeak', 'guideDeep',
-  'modelProvider', 'modelName',
-  'subagentModelProvider', 'subagentModelName',
-  'modelReasoningEffort', 'modelTemperature', 'modelMaxTokens',
-  'subagentReasoningEffort', 'subagentTemperature', 'subagentMaxTokens',
-  'subagentPersona',
-  'toolFilterAllow', 'toolFilterDeny', 'maxDepth', 'allowKinds', 'firstTurnWord',
-  'bootstrapMaxTokens', 'usePtcMode', 'injectPrompt',
-  // 晋升门控（tool-bootstrap 参数桥）。
-  'promoteGate', 'promoteAfterFirstResponse', 'maxPromoteSteps',
-  'bootstrapTools', 'compactionTools', 'personaSectionsOnly', 'workspaceLine',
-  'phase1FirstCallInstruction',
-  // context-gate 注入门控。
-  'messageSources', 'deferredSources', 'deferredGraceSteps', 'instructionHint',
-  // 渐进披露（stages 模式）。
-  'stages', 'stagePreUnlock', 'stageAdvanceTool', 'stageAdvanceDescription', 'stageSectionTemplate',
-  // 验证工具（page-check / delivery-gate）。
-  'pageCheckBrowserPath', 'pageCheckTimeoutMs', 'pageCheckLite', 'pageCheckRetry',
-  'pageCheckDescription', 'deliveryRequireSmoke', 'deliveryDescription',
-  // 历史遗留（参数桥支持，UI 无专卡——高级参数 JSON 可编辑）。
-  'strReplaceEditorMaxOutputChars', 'toolFilterSubagents',
   'promptConfigs',
-])
+] as const
+
+export const PARAM_KEYS: ReadonlySet<string> = new Set([...ENGINE_PARAM_KEYS, ...EXTRA_PARAM_KEYS])

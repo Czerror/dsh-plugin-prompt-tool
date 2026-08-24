@@ -29,6 +29,7 @@ function generatedConfigs(options = {}, prompt = 'PROMPT') {
       firstTurnCustom: options.firstTurnCustom === true,
       guideText: options.guideText ?? '',
       guideCustom: options.guideCustom === true,
+      guideEnabled: typeof options.guideEnabled === 'boolean' ? options.guideEnabled : undefined,
       injectPrompt: options.injectPrompt !== false,
       modelProvider: '', subagentModelProvider: '', subagentModelName: '',
       modelName: '',
@@ -138,18 +139,18 @@ test('writePreset 开启 firstTurnAnchor 时 near-anchor 启用并携带自定�
   assert.equal(byId['near-anchor'].strategy, 'first-turn-anchor')
   assert.equal(byId['near-anchor'].position, 'after-user')
   assert.equal(byId['near-anchor'].params.useCustom, false)
-  assert.equal(byId['near-anchor'].params.firstTurnText, 'ANCHOR SENTENCE')
+  assert.equal(byId['near-anchor'].params.text, 'ANCHOR SENTENCE', '自定义锚文本统一写 text 契约键')
 })
 
 test('writePreset 开启 firstTurnCustom 时 near-anchor 固定使用自定义文本', () => {
   const { byId } = generatedConfigs({ firstTurnAnchor: true, firstTurnText: 'CUSTOM', firstTurnCustom: true })
   assert.equal(byId['near-anchor'].params.useCustom, true)
-  assert.equal(byId['near-anchor'].params.firstTurnText, 'CUSTOM')
+  assert.equal(byId['near-anchor'].params.text, 'CUSTOM')
 })
 
 test('writePreset 开启 firstTurnAnchor 且空锚点文本时生成自动模式配置', () => {
   const { byId } = generatedConfigs({ firstTurnAnchor: true, firstTurnText: '' })
-  assert.equal(byId['near-anchor'].params.firstTurnText, '')
+  assert.equal(byId['near-anchor'].params.text, '')
 })
 
 test('writePreset 关闭 injectPrompt 时 prompt-injector 禁用（引擎仍扫描四个模块）', () => {
@@ -163,6 +164,14 @@ test('writePreset 默认 router-guide 关闭（firstTurnAnchor=false），自动
   assert.equal(byId['router-guide'].modelScope, 'flash')
   assert.equal(byId['router-guide'].params.useCustom, false)
   assert.equal(byId['router-guide'].params.text, '')
+})
+
+test('writePreset 引导开关独立：guideEnabled=true 时锚定关闭仍启用引导', () => {
+  const { byId } = generatedConfigs({ firstTurnAnchor: false, guideEnabled: true })
+  assert.equal(byId['router-guide'].enabled, true, 'guideEnabled=true 时引导独立启用')
+  assert.equal(byId['near-anchor'].enabled, false, '锚定仍关闭（两功能独立）')
+  const { byId: fallback } = generatedConfigs({ firstTurnAnchor: false })
+  assert.equal(fallback['router-guide'].enabled, false, 'guideEnabled 缺省跟随锚定开关')
 })
 
 test('writePreset 开启 firstTurnAnchor 时 router-guide 启用', () => {

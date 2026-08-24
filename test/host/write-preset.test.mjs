@@ -140,6 +140,57 @@ test('writePreset 模型参数全部留空 = 不生成 agent-request 配置', ()
   }
 })
 
+test('模型参数改回留空：空串删除 preset.yml 旧键（渲染层空值跳过 = 继承宿主默认）', () => {
+  const dir = join(tmpdir(), `prompt-tool-clear-${process.pid}-${Date.now()}`)
+  const presetDir = join(dir, 'preset')
+  try {
+    cpSync(join(process.cwd(), 'preset', 'anchored'), join(presetDir, 'anchored'), { recursive: true })
+    // 1) 先设置 high。
+    savePresetParams(presetDir, 'anchored', { modelReasoningEffort: 'high' }, undefined)
+    assert.equal(loadPresetSpec(join(presetDir, 'anchored')).params.modelReasoningEffort, 'high', '设置 high 写入预设参数')
+    // 2) 改回留空（UI 总是发送空串键）：preset.yml 旧键被删除，渲染不生成 patch。
+    savePresetParams(presetDir, 'anchored', { modelReasoningEffort: '' }, undefined)
+    assert.equal(loadPresetSpec(join(presetDir, 'anchored')).params.modelReasoningEffort, undefined, '改回留空删除旧键（渲染层无 patch）')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('savePresetParams 空值删键：空数组/0 不回落到模板默认之外的残留（bootstrapTools/messageSources/stagePreUnlock）', () => {
+  const dir = join(tmpdir(), `prompt-tool-empty-${process.pid}-${Date.now()}`)
+  const presetDir = join(dir, 'preset')
+  try {
+    cpSync(join(process.cwd(), 'preset', 'anchored'), join(presetDir, 'anchored'), { recursive: true })
+    // 1) 设置有值：bootstrapTools / messageSources / stagePreUnlock / maxPromoteSteps。
+    savePresetParams(presetDir, 'anchored', {
+      bootstrapTools: ['bash'],
+      messageSources: ['user'],
+      stagePreUnlock: 2,
+      maxPromoteSteps: 6,
+    }, undefined)
+    let spec = loadPresetSpec(join(presetDir, 'anchored'))
+    assert.deepEqual(spec.params.bootstrapTools, ['bash'], 'bootstrapTools 写入')
+    assert.deepEqual(spec.params.messageSources, ['user'], 'messageSources 写入')
+    assert.equal(spec.params.stagePreUnlock, 2, 'stagePreUnlock 写入')
+    assert.equal(spec.params.maxPromoteSteps, 6, 'maxPromoteSteps 写入')
+    // 2) 改回空：空数组/0 删除键（引擎 fail loud 或语义不等价的键不能写空值）。
+    savePresetParams(presetDir, 'anchored', {
+      bootstrapTools: [],
+      messageSources: [],
+      stagePreUnlock: 0,
+      maxPromoteSteps: 0,
+    }, undefined)
+    spec = loadPresetSpec(join(presetDir, 'anchored'))
+    assert.equal(spec.params.bootstrapTools, undefined, 'bootstrapTools 空数组删键（引擎 stringList 空数组 fail）')
+    assert.equal(spec.params.messageSources, undefined, 'messageSources 空数组删键（空列表 = 全拦注入）')
+    assert.equal(spec.params.stagePreUnlock, undefined, 'stagePreUnlock 0 删键（引擎 undefined→1，0 是合法档位）')
+    // maxPromoteSteps 0 写入（引擎 createEpochPromotion 0/undefined 都落默认 4，等价）。
+    assert.equal(spec.params.maxPromoteSteps, 0, 'maxPromoteSteps 0 照常写入（引擎 0→默认 4）')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
 test('writePreset 生成 agent.cordis.yml 注入 allowKinds', () => {
   const dir = join(tmpdir(), `prompt-tool-wp-${process.pid}-${Date.now()}`)
   const presetDir = join(dir, 'preset')
@@ -164,7 +215,7 @@ test('writePreset 将 preset.yml 的锚点/引导参数写入提示词配置', (
     const guide = readFileSync(join(presetDir, 'anchored', 'prompt-configs', '10-router-guide.yml'), 'utf8')
     assert.ok(near.includes('buildPattern'))
     assert.ok(near.includes('firstTurnBuild'))
-    assert.ok(guide.includes('guideComplexPattern'))
+    assert.ok(guide.includes('complexPattern'))
     assert.ok(guide.includes('guideWeak'))
   } finally {
     rmSync(dir, { recursive: true, force: true })
@@ -308,6 +359,22 @@ test('writePreset 官方导入预设（standard/minimal/ptc/creative）渲染组
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
+  }
+})
+
+test('writePreset outputId 覆盖：别名目录独立渲染（旧容器 id 兼容物化路径）', () => {
+  const dir = join(tmpdir(), `prompt-tool-alias-${process.pid}-${Date.now()}`)
+  const presetDir = join(dir, 'preset')
+  try {
+    writePreset('ALIAS PROMPT', { ...makeOptions(presetDir), presetTemplate: 'anchored', outputId: 'prompt-tool' })
+    assert.ok(existsSync(join(presetDir, 'prompt-tool', 'agent.cordis.yml')), '别名目录组合本体生成')
+    assert.ok(existsSync(join(presetDir, 'prompt-tool', 'preset.md')), '别名目录内容资产生成')
+    assert.equal(existsSync(join(presetDir, 'anchored', 'preset.md')), false, '模板同名目录不受别名渲染影响')
+    const sub = readFileSync(join(presetDir, 'prompt-tool', 'agent.cordis.yml'), 'utf8')
+    assert.match(sub, /configsDir: \.\.\/prompt-tool\/prompt-configs/, '组合 configsDir 重写到别名目录')
+    assert.match(sub, /name: \.\.\/\.engine\/prompt-config-engine\.mjs/, '引擎引用共享 .engine')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
   }
 })
 

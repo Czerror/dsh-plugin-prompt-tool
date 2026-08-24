@@ -1,0 +1,102 @@
+# 后端参数框架（架构说明）
+
+> 适用范围：dsh-plugin-prompt-tool 的引擎行为参数（按预设存储、随预设走）全链路。
+> 相关代码：`src/shared/engine-params.ts`、`src/shared/param-keys.ts`、`src/host/manifest.ts`、
+> `src/host/write-preset.ts`、`src/index.ts`（reloadPresetParams / applyParamOverrides / rebuildPreset）、
+> `src/runtime/settings-bridge.ts`（/param-overrides）、`src/client/prompt-tool-store.ts`（fields / persist）。
+
+## 1. 分层与职责
+
+| 层 | 文件 | 职责 |
+|---|---|---|
+| 契约层 | `shared/engine-params.ts` | `EngineParams`（类型权威）+ `ENGINE_PARAM_KEYS`（运行时键唯一权威，与接口双向相等断言）+ `WRITER_PARAM_KEYS`（writePreset 透传键） |
+| 键集合 | `shared/param-keys.ts` | `PARAM_KEYS` = `ENGINE_PARAM_KEYS` 派生 + 锚定内容键 + `promptConfigs`；variables.yml 排除集 / mutate 拦截 / 读回遍历共用 |
+| 存储层 | `host/manifest.ts` | `loadPresetSpec`（顶层 model/subagentModel 段 → 扁平键，`MODEL_SEGMENT_MAP`）、`savePresetParams`（扁平键 → 段，同源映射；空值删键）、`buildModuleConfigsFromParams`（参数桥）、`renderComposition`（参数桥 > moduleConfigs > 行默认） |
+| 物化层 | `host/write-preset.ts` | `writePreset`：参数 + 内容资产 → 官方预设目录（agent.cordis.yml / prompt-configs / variables.yml）；`runtimeOf` 透传、`modelRequestConfigs` 模型 patch |
+| 装配层 | `index.ts` | `reloadPresetParams`（preset.yml → runtime）、`applyParamOverrides`（旧 overrides.yml 通道）、`rebuildPreset`（写入触发） |
+| 接线层 | `runtime/settings-bridge.ts` | `/param-overrides` GET（读回）/ POST（保存到激活预设 preset.yml） |
+| 消费端 | `client/prompt-tool-store.ts` | fields（UI 态）/ `persistParamOverrides`（总是发送，含空值）/ `paramPatch`（读回） |
+
+## 2. 参数流链路（保存 → 生效）
+
+```
+UI fields
+  → persistParamOverrides（所有键总是发送，含 '' / [] / false / 0）
+    → /param-overrides POST（settings-bridge）
+      → savePresetParams（写 preset.yml：model 顶层段 / params；空值删键）
+        → reloadPresetParams + applyParamOverrides（runtime 态）
+          → rebuildPreset → writePreset
+            → runtimeOf（透传 WRITER_PARAM_KEYS）
+            → resolvePresetParams（spec.params + runtime 合并）
+            → buildModuleConfigsFromParams（参数桥 → 行级 config）
+            → renderComposition（参数桥 > moduleConfigs > 行默认）
+              → agent.cordis.yml（宿主挂载生效）
+```
+
+## 3. 空值语义（统一规则）
+
+`savePresetParams` 对空值统一处理（2026-08-25 起）：
+
+| 值 | 处理 | 原因 |
+|---|---|---|
+| `''`（字符串清空） | **删键** | 回落模板/引擎默认（如 reasoningEffort 留空 = 继承宿主） |
+| `[]`（列表清空） | **删键** | 引擎对空数组 fail loud（bootstrapTools/stages）或全拦注入（messageSources/allowKinds） |
+| `0`（`stagePreUnlock`） | **删键** | 引擎 `undefined → 1`，`0` 是合法档位，二者不等价 |
+| `0`（其余数字） | **写 0** | 引擎 `|| 默认` 等价（maxPromoteSteps 0→4、pageCheckTimeoutMs 0→默认、deferredGraceSteps 0→无延迟） |
+| `false`（布尔） | **写 false** | 引擎 `=== true` 归一，false = 显式关闭（与默认等价或明确） |
+
+UI 侧 `persistParamOverrides` **总是发送全部键**（含空值），否则「从有值改回留空」会残留旧键（历史 bug）。
+
+## 4. variables 双通道（两套体系，不互串）
+
+1. **引擎行为参数**：`PARAM_KEYS`（派生自 `ENGINE_PARAM_KEYS`）——UI 有编辑入口，writePreset 合并时**排除出 variables.yml**。
+2. **内容占位变量**：`spec.variables` 段（preset.yml 顶层 variables）→ `variables.yml`——空值占位键也写入：
+   - 引擎插值（`engine/interpolate.mjs`）`hasOwnProperty` 命中 → 替换（空串不留字面）；
+   - 用途：模型经 `world_book_upsert` 写世界书条目，内容引用 `{{key}}` 占位；ST 未定义宏登记；
+   - UI 模板变量卡（VariablesEditor）可编辑默认值覆盖。
+
+新增参数时必须明确归属：引擎行为参数 → `ENGINE_PARAM_KEYS`（自动进 PARAM_KEYS 排除集）；内容占位 → `spec.variables` 段。二者不互串。
+
+## 5. 新增参数 checklist（引擎行为参数）
+
+1. `shared/engine-params.ts`：`EngineParams` 加字段 + `ENGINE_PARAM_KEYS` 加键（双向断言强制，漏改任一侧 typecheck 报错）。
+2. 若需 writePreset 透传：`PresetWriterParams` Pick 加键 + `WRITER_PARAM_KEYS` 加键（断言强制）。
+3. `host/manifest.ts`：`buildModuleConfigsFromParams` 加装配（否则契约测试「无装配消费」报错）。
+4. 存储：若走 model/subagentModel 顶层段 → `MODEL_SEGMENT_MAP` 加映射（展平/迁移共用）；否则 params 段。
+5. UI：`prompt-tool-store.ts` fields / paramPatch / persistParamOverrides / EMPTY 同步；组件加编辑入口。
+6. 测试：`test/host/param-contract.test.mjs` 的 BRIDGE_SAMPLES 加样本值（若为参数桥消费键）。
+7. `docs/architecture-params.md` 如有语义变更同步；CHANGELOG 记条目。
+
+## 6. 合并优先级（组合行 config）
+
+`renderComposition`：**参数桥（params/UI）> moduleConfigs（模板/ST 行级直写）> 行默认**。
+moduleConfigs 仅补充参数桥未覆盖的键（如 ST 导入 tool-web.fetch），不再锁定覆盖 UI 可管理参数（2026-08-25 翻转）。
+
+## 7. 内容策略三功能与参数归属
+
+`engine/strategies.mjs` 三个内容策略是**独立功能**，仅分类器在 fallback 层共用：
+
+| 策略 | 功能 | 消费参数 | 注入时机 |
+|---|---|---|---|
+| `first-turn-anchor`（near-anchor） | 锚定：首轮任务分类 → 一次性锚句 | `buildPattern` `complexPattern` `firstTurnBuild/Inspect/Deep` `firstTurnCustom` `firstTurnText` | 首条用户消息后一次 |
+| `guide-auto`（router-guide） | 引导：每轮路由强弱引导 | `guideWeak` `guideDeep` `guideCustom` `guideText` + **fallback 复用 `complexPattern`** | 晋升后每轮 |
+| `custom-fallback`（prompt-injector） | 兜底注入：锚定词确认后注入 preset.md | `firstTurnWord`（锚定确认词）+ `promptText` | 确认后一次 / 未确认两轮兜底 |
+
+复用点：`guideComplexPattern` 冗余副本已移除（2026-08-25）——引导的复杂判定 fallback 复用锚定的
+`complexPattern`（旧预设残留键经 writePreset 回退读取，PARAM_KEYS 保留兼容排除）。
+锚定与引导**不合并**：锚定句（reasoning 开头句，首轮一次性）与引导句（路由引导，每轮）注入位不同。
+
+### 模块化视图（2026-08-25）
+
+- **任务分类器单一能力**：`engine/classify-task.mjs` 的 `createTaskClassifier({ buildPattern, complexPattern })`
+  提供 `ready` / `classify`（complex > build > fix）/ `isComplex`——锚定三档判定与引导复杂判定共用，
+  正则构建与判定逻辑不再双处内联。
+- **引导开关独立**：`guideEnabled?: boolean`——显式声明优先；`undefined` = 兼容旧行为（跟随
+  `firstTurnAnchor`，关锚定 = 关引导）。TUI `/prompt-tool toggle guideEnabled` 可独立控制。
+- **自定义文本契约统一**：锚定/引导策略统一读 `config.params.text`（`useCustom + text` 契约形态），
+  `firstTurnText` 仅作存储键保留（writePreset 映射 `text: params.firstTurnText`，引擎兼容回退读旧键）。
+
+## 7. 契约测试
+
+- `test/host/param-contract.test.mjs`：PARAM_KEYS 派生一致性；每个 ENGINE_PARAM_KEYS 键有装配消费；MODEL_SEGMENT_MAP 段目标唯一。
+- `test/host/write-preset.test.mjs`：模型参数 patch 生成/留空跳过；空值删键（''/[]/0）；PARAM_KEYS 不进 variables.yml。

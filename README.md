@@ -48,7 +48,7 @@ dsh --profile prompt-tool                                          # 首次启�
 | 分类 | 键 |
 |---|---|
 | 锚定 | `firstTurnAnchor` `firstTurnCustom` `firstTurnText` `firstTurnWord` `firstTurnBuild` `firstTurnInspect` `firstTurnDeep` |
-| 引导 | `guideCustom` `guideText` `guideComplexPattern` `guideWeak` `guideDeep` `buildPattern` `complexPattern` |
+| 引导 | `guideCustom` `guideText` `guideWeak` `guideDeep`（复杂判定 fallback 复用锚定的 `complexPattern`） |
 | PTC/门控 | `usePtcMode` `bootstrapMaxTokens` `injectPrompt` `allowKinds` |
 | 人设 | 模块列表的 `persona-main`（system-section + `deployment:persona`，complete 互斥 + suppressRuntimeContext）；`subagentPersona`（子代理显式，缺省经 scope 链继承主会话） |
 | 工具集 | `toolFilterAllow` `toolFilterDeny`（子代理 toolFilter；主对话 tool-filter 模块共用） |

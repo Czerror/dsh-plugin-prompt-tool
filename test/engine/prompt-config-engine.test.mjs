@@ -120,7 +120,7 @@ test('同位置多配置默认按声明顺序插入：near-anchor 与 router-gui
       audience: 'main',
       modelScope: 'flash',
       params: {
-        guideComplexPattern: 'complex',
+        complexPattern: 'complex',
         guideWeak: 'WEAK',
         guideDeep: 'DEEP',
       },

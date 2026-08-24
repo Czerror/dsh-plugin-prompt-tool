@@ -2,6 +2,23 @@
 
 ## [Unreleased]
 
+### 内容策略模块化：能力归一 + 边界清晰（2026-08-25）
+
+- **任务分类器归一**：新增 `engine/classify-task.mjs`（`createTaskClassifier`：ready/classify/isComplex）——锚定三档判定与引导复杂判定共用，删除 strategies.mjs 双处内联正则实现。
+- **引导开关独立**：新增 `guideEnabled`（undefined = 兼容跟随 `firstTurnAnchor`）；`router-guide.enabled` 与 useCustom 不再硬绑锚定开关；TUI 可独立 toggle。
+- **自定义文本契约统一**：锚定策略与引导策略统一读 `config.params.text`（useCustom + text 契约）；`firstTurnText` 保留为存储键，writePreset 映射 `text: params.firstTurnText`，引擎兼容回退。
+- **测试**：+1（引导开关独立用例）、prompt-configs 断言改 text 契约键；347 pass/0 fail。
+- **验证**：typecheck/lint 通过，全量测试通过。
+
+### 后端参数框架：契约单一来源 + 文档化（2026-08-25）
+
+- **契约收敛**：新增 `ENGINE_PARAM_KEYS`（引擎参数键唯一权威数组）+ 与 `EngineParams` 接口的双向相等断言（多/漏任一键 typecheck 报错）；`PARAM_KEYS` 改为从 `ENGINE_PARAM_KEYS` 派生（+ 锚定内容键 + promptConfigs），消除手动同步漂移（历史事故：漏 25 键混入 variables.yml）；`strReplaceEditorMaxOutputChars` 并入契约层。
+- **映射收敛**：`MODEL_SEGMENT_MAP` 单一来源——`loadPresetSpec` 展平与 `savePresetParams` 迁移共用，删除双处字面量。
+- **透传防护**：`WRITER_PARAM_KEYS` 与 `PresetWriterParams` 双向相等断言（防 Pick 漏键，历史事故：stageAdvanceDescription）。
+- **契约测试**：新增 `test/host/param-contract.test.mjs`——PARAM_KEYS 派生一致性 / 每个引擎参数键有装配消费（防「加键没装配」）/ MODEL_SEGMENT_MAP 段目标唯一。
+- **文档**：新增 `docs/architecture-params.md`——分层、参数流、空值语义规则表、variables 双通道（PARAM_KEYS 排除 vs 世界书占位登记）、新增参数 checklist。
+- **验证**：typecheck/lint 通过，全量测试通过。
+
 ### 参数桥优先：移除 moduleConfigs 作者锁定（2026-08-25）
 
 - **语义变更**：`renderComposition` 合并优先级从「moduleConfigs（预设作者锁定）> 参数桥」翻转为「**参数桥（params/UI）> moduleConfigs > 行默认**」。moduleConfigs 降级为「参数桥未覆盖键的行级直写通道」（ST 导入等仍可用），不再锁定覆盖 UI 可管理参数。

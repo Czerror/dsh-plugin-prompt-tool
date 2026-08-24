@@ -144,6 +144,7 @@ export function apply(ctx: Context, configIn: Config): void {
     runtime.firstTurnCustom = params.firstTurnCustom === true
     runtime.guideText = asString(params.guideText)
     runtime.guideCustom = params.guideCustom === true
+    runtime.guideEnabled = typeof params.guideEnabled === 'boolean' ? params.guideEnabled : undefined
     runtime.modelProvider = asString(params.modelProvider)
     runtime.modelName = asString(params.modelName)
     runtime.subagentModelProvider = asString(params.subagentModelProvider)
@@ -184,6 +185,7 @@ export function apply(ctx: Context, configIn: Config): void {
         firstTurnCustom: runtime.firstTurnCustom,
         guideText: runtime.guideText,
         guideCustom: runtime.guideCustom,
+        guideEnabled: runtime.guideEnabled,
         injectPrompt: runtime.injectPrompt,
         modelProvider: runtime.modelProvider,
         modelName: runtime.modelName,
@@ -228,12 +230,13 @@ export function apply(ctx: Context, configIn: Config): void {
         }
       }
       writePreset(presetPrompt, options)
-      // 旧容器 id 兼容：存在 .pt-legacy-container 标记时，物化 prompt-tool 别名预设
-      // （渲染自激活模板），使旧时代 committed 'prompt-tool' 的会话可 resume
-      // （dsh agent-presets 无回退，UnknownPresetError 直接 fail）。
+      // 旧容器 id 兼容：物化 prompt-tool 别名预设（渲染自激活模板），使旧时代
+      // committed 'prompt-tool' 的会话可 resume（dsh agent-presets 无回退，
+      // UnknownPresetError 直接 fail）。触发不依赖迁移标记——历史版本迁移或
+      // 手动清理后标记/.bak 归档可能已不存在，只要别名目录缺失就物化（幂等：
+      // 目录已存在即跳过，不随 settings 变更重复渲染）。
       try {
-        const legacyMarker = join(runtime.presetDir, '.pt-legacy-container')
-        if (existsSync(legacyMarker) && !existsSync(join(runtime.presetDir, 'prompt-tool', 'agent.cordis.yml'))) {
+        if (!existsSync(join(runtime.presetDir, 'prompt-tool', 'agent.cordis.yml'))) {
           writePreset(presetPrompt, { ...options, outputId: 'prompt-tool' })
           warn(ctx, 'prompt-tool: 已物化旧容器 id 兼容预设 prompt-tool（镜像激活模板），旧会话可恢复')
         }
@@ -529,6 +532,7 @@ export function apply(ctx: Context, configIn: Config): void {
     firstTurnCustom: initialParams.firstTurnCustom === true,
     guideText: asString(initialParams.guideText),
     guideCustom: initialParams.guideCustom === true,
+    guideEnabled: typeof initialParams.guideEnabled === 'boolean' ? initialParams.guideEnabled : undefined,
     injectPrompt: initialParams.injectPrompt !== false,
     modelProvider: asString(initialParams.modelProvider),
     modelName: asString(initialParams.modelName),
@@ -940,8 +944,9 @@ registerTuiCommand(
 export { Config, PromptSettingsSchema } from './config.ts'
 export { writePreset } from './host/write-preset.ts'
 export { convertStToPreset, mergeStPresets, processStText, stPresetId } from './host/sillytavern.ts'
-export { applyModuleConfigs, buildModuleConfigsFromParams, savePresetParams } from './host/manifest.ts'
+export { applyModuleConfigs, buildModuleConfigsFromParams, savePresetParams, MODEL_SEGMENT_MAP } from './host/manifest.ts'
 export { loadPresetSpec, renderComposition, resolvePresetParams } from './host/manifest.ts'
+export { ENGINE_PARAM_KEYS, WRITER_PARAM_KEYS } from './shared/engine-params.ts'
 export type { PresetSpec } from './host/manifest.ts'
 export {
   cloneBuiltinPreset,

@@ -94,6 +94,7 @@ export function loadPresetSpec(dir: string): PresetSpec {
   }
   // 顶层模型段（model / subagentModel，官方 agent-default-model 同构）→ 展平进
   // params 扁平键（消费方统一读 params.modelProvider 等）。双读：段优先，扁平键兜底。
+  // 映射来源 = MODEL_SEGMENT_MAP（与 savePresetParams 迁移共用，单一来源）。
   const flattenModelGroup = (source: unknown, mapping: Record<string, string>): void => {
     if (source === null || typeof source !== 'object' || Array.isArray(source)) return
     if (parsed.params === null || typeof parsed.params !== 'object' || Array.isArray(parsed.params)) {
@@ -104,14 +105,15 @@ export function loadPresetSpec(dir: string): PresetSpec {
       if (value !== undefined) parsed.params[flatKey] = value
     }
   }
-  flattenModelGroup(parsed.model, {
-    provider: 'modelProvider', name: 'modelName', reasoningEffort: 'modelReasoningEffort',
-    temperature: 'modelTemperature', maxTokens: 'modelMaxTokens',
-  })
-  flattenModelGroup(parsed.subagentModel, {
-    provider: 'subagentModelProvider', name: 'subagentModelName', reasoningEffort: 'subagentReasoningEffort',
-    temperature: 'subagentTemperature', maxTokens: 'subagentMaxTokens',
-  })
+  const flattenMapping = (segmentName: 'model' | 'subagentModel'): Record<string, string> => {
+    const mapping: Record<string, string> = {}
+    for (const [flatKey, [segment, segmentKey]] of Object.entries(MODEL_SEGMENT_MAP)) {
+      if (segment === segmentName) mapping[segmentKey] = flatKey
+    }
+    return mapping
+  }
+  flattenModelGroup(parsed.model, flattenMapping('model'))
+  flattenModelGroup(parsed.subagentModel, flattenMapping('subagentModel'))
   return parsed as PresetSpec
 }
 
@@ -133,6 +135,24 @@ export const asString = (value: unknown, fallback = ''): string => {
   if (typeof value === 'string') return value
   if (value === undefined || value === null) return fallback
   return String(value)
+}
+
+/**
+ * 顶层模型段 ↔ 扁平参数键双向映射（单一来源）。
+ * loadPresetSpec 展平（段 → 扁平键）与 savePresetParams 迁移（扁平键 → 段）
+ * 共用本常量，杜绝两处字面量漂移。段结构 = 官方 agent-default-model 同构。
+ */
+export const MODEL_SEGMENT_MAP: Record<string, [string, string]> = {
+  modelProvider: ['model', 'provider'],
+  modelName: ['model', 'name'],
+  modelReasoningEffort: ['model', 'reasoningEffort'],
+  modelTemperature: ['model', 'temperature'],
+  modelMaxTokens: ['model', 'maxTokens'],
+  subagentModelProvider: ['subagentModel', 'provider'],
+  subagentModelName: ['subagentModel', 'name'],
+  subagentReasoningEffort: ['subagentModel', 'reasoningEffort'],
+  subagentTemperature: ['subagentModel', 'temperature'],
+  subagentMaxTokens: ['subagentModel', 'maxTokens'],
 }
 
 /** 预设根：官方 USER_PRESET_DIR（~/.dsh/.agent-presets），导入/新建/种子化的预设都放这里。 */
@@ -396,29 +416,28 @@ export function savePresetParams(
   variablesEnabled?: boolean,
 ): void {
   // 模型参数写入顶层段（model / subagentModel，官方 agent-default-model 同构）：
-  // params 旧扁平键同步清理（保存即迁移）。
-  const MODEL_KEY_MAP: Record<string, [string, string]> = {
-    modelProvider: ['model', 'provider'],
-    modelName: ['model', 'name'],
-    modelReasoningEffort: ['model', 'reasoningEffort'],
-    modelTemperature: ['model', 'temperature'],
-    modelMaxTokens: ['model', 'maxTokens'],
-    subagentModelProvider: ['subagentModel', 'provider'],
-    subagentModelName: ['subagentModel', 'name'],
-    subagentReasoningEffort: ['subagentModel', 'reasoningEffort'],
-    subagentTemperature: ['subagentModel', 'temperature'],
-    subagentMaxTokens: ['subagentModel', 'maxTokens'],
-  }
+  // params 旧扁平键同步清理（保存即迁移）。映射 = MODEL_SEGMENT_MAP（与展平共用）。
   const file = join(presetRoot, templateName, 'preset.yml')
   if (!existsSync(file)) throw new Error(`preset ${templateName} 无 preset.yml`)
   const doc = parseDocument(readFileSync(file, 'utf8'), { logLevel: 'silent' })
+  // 空值 = 删除键（回落模板/引擎默认）：''（字符串清空）、[]（列表清空）、
+  // 以及 ZERO_DELETE_KEYS 的 0（引擎对 0 与未设置不等价，如 stagePreUnlock:
+  // undefined→1 而 0 是合法档位）。其余 0/false 照常写入（引擎布尔归一或
+  // `|| 默认` 等价，如 maxPromoteSteps 0→4、pageCheckTimeoutMs 0→默认）。
+  const ZERO_DELETE_KEYS = new Set(['stagePreUnlock'])
   if (params !== undefined) {
     for (const [key, value] of Object.entries(params)) {
-      // 空 key（VariablesEditor 待编辑行）与空值不写入，保留模板默认。
+      // 仅跳过 undefined/null 与空 key 名；空串/空数组照常写入——
+      // 「从有值改回留空」依赖空值清掉旧键（渲染层空值跳过 = 继承模板/宿主默认）。
       if (value === undefined || value === null || key.trim().length === 0) continue
-      const segment = MODEL_KEY_MAP[key]
+      const isEmpty = value === '' || (Array.isArray(value) && value.length === 0)
+        || (ZERO_DELETE_KEYS.has(key) && value === 0)
+      const segment = MODEL_SEGMENT_MAP[key]
       if (segment !== undefined) {
-        doc.setIn([segment[0], segment[1]], value)
+        if (isEmpty) doc.deleteIn([segment[0], segment[1]])
+        else doc.setIn([segment[0], segment[1]], value)
+        doc.deleteIn(['params', key])
+      } else if (isEmpty) {
         doc.deleteIn(['params', key])
       } else {
         doc.setIn(['params', key], value)

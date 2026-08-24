@@ -20,6 +20,6 @@ form: notice
 params:
   useCustom: false
   text: ""
-  guideComplexPattern: ""   # 复杂任务正则；留空 = 仅按文本长度 120 判定深/弱
+  # 复杂任务判定 fallback 复用锚定卡的 complexPattern；留空 = 仅按文本长度 120 判定深/弱
   guideWeak: ""             # 简单任务自动引导句（示例见 anchored preset.yml params.guideWeak）
   guideDeep: ""             # 复杂任务自动引导句（示例见 anchored preset.yml params.guideDeep）

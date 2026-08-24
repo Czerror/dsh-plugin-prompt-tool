@@ -195,6 +195,8 @@ export interface RuntimeOptions extends PresetWriterParams {
   firstTurnCustom: boolean
   guideText: string
   guideCustom: boolean
+  /** 每轮引导独立开关（undefined = 跟随 firstTurnAnchor）。 */
+  guideEnabled?: boolean
   bootstrapMaxTokens: number
   /** PTC (Code Mode) 呈现开关；undefined = 模板/引擎默认（false，opt-in）。 */
   usePtcMode: boolean | undefined

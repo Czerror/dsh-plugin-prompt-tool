@@ -657,7 +657,9 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
   const persistParamOverrides = useCallback(async () => {
     const f = fieldsRef.current
     const splitList = (value: string): string[] => value.split(',').map((item) => item.trim()).filter((item) => item.length > 0)
-    // 空值不写键：保留 preset.yml 模板默认。allowKinds 空数组 = 白名单全拦（危险）；maxDepth '' = 不设置。
+    // 参数总是发送（含空串/空数组）：让 savePresetParams 覆盖写空——「从有值改回
+    // 留空」必须清掉 preset.yml 旧值，否则渲染残留旧档位（reasoningEffort 等
+    // 空串渲染层跳过 = 继承宿主/模板默认）。数组/深度等空值渲染层有守卫。
     const res = await bridgePost<{ overrides: unknown }>('/param-overrides', {
       overrides: {
         firstTurnAnchor: f.firstTurnAnchor,
@@ -671,54 +673,48 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
         modelName: f.modelName,
         subagentModelProvider: f.subagentModelProvider,
         subagentModelName: f.subagentModelName,
-        ...(f.modelReasoningEffort.trim().length > 0 ? { modelReasoningEffort: f.modelReasoningEffort } : {}),
-        ...(f.modelTemperature.trim().length > 0 ? { modelTemperature: f.modelTemperature } : {}),
-        ...(f.modelMaxTokens.trim().length > 0 ? { modelMaxTokens: f.modelMaxTokens } : {}),
-        ...(f.subagentReasoningEffort.trim().length > 0 ? { subagentReasoningEffort: f.subagentReasoningEffort } : {}),
-        ...(f.subagentTemperature.trim().length > 0 ? { subagentTemperature: f.subagentTemperature } : {}),
-        ...(f.subagentMaxTokens.trim().length > 0 ? { subagentMaxTokens: f.subagentMaxTokens } : {}),
-        ...(f.subagentPersona.trim().length > 0 ? { subagentPersona: f.subagentPersona } : {}),
+        modelReasoningEffort: f.modelReasoningEffort,
+        modelTemperature: f.modelTemperature,
+        modelMaxTokens: f.modelMaxTokens,
+        subagentReasoningEffort: f.subagentReasoningEffort,
+        subagentTemperature: f.subagentTemperature,
+        subagentMaxTokens: f.subagentMaxTokens,
+        subagentPersona: f.subagentPersona,
         toolFilterAllow: splitList(f.toolFilterAllow),
         toolFilterDeny: splitList(f.toolFilterDeny),
-        ...(f.maxDepth !== ''
-          ? { maxDepth: f.maxDepth === 'provider-managed' ? 'provider-managed' : Number(f.maxDepth) }
-          : {}),
-        ...(splitList(f.allowKinds).length > 0 ? { allowKinds: splitList(f.allowKinds) } : {}),
-        ...(f.firstTurnWord.trim().length > 0 ? { firstTurnWord: f.firstTurnWord } : {}),
+        maxDepth: f.maxDepth === '' ? '' : f.maxDepth === 'provider-managed' ? 'provider-managed' : Number(f.maxDepth),
+        allowKinds: splitList(f.allowKinds),
+        firstTurnWord: f.firstTurnWord,
         bootstrapMaxTokens: f.bootstrapMaxTokens,
-        // 晋升门控（tool-bootstrap 参数桥；空值不写，保留模板/引擎默认）。
-        ...(f.promoteGate ? { promoteGate: true } : {}),
-        ...(f.promoteAfterFirstResponse ? { promoteAfterFirstResponse: true } : {}),
-        ...(f.maxPromoteSteps > 0 ? { maxPromoteSteps: f.maxPromoteSteps } : {}),
-        ...(f.bootstrapTools.trim().length > 0 ? { bootstrapTools: splitList(f.bootstrapTools) } : {}),
-        ...(f.compactionTools.trim().length > 0 ? { compactionTools: splitList(f.compactionTools) } : {}),
-        // 渐进披露（stages 模式）：UI 草稿 → 引擎形态；空 = 不声明（两相窄化，保留模板默认）。
-        ...(f.stages.some((stage) => stage.name.trim().length > 0 || stage.tools.trim().length > 0)
-          ? {
-              stages: f.stages
-                .map((stage) => ({
-                  name: stage.name.trim(),
-                  tools: splitList(stage.tools),
-                }))
-                .filter((stage) => stage.name.length > 0 && stage.tools.length > 0),
-            }
-          : {}),
-        ...(f.stagePreUnlock > 0 ? { stagePreUnlock: f.stagePreUnlock } : {}),
-        ...(f.stageAdvanceTool.trim().length > 0 ? { stageAdvanceTool: f.stageAdvanceTool } : {}),
-        ...(f.stageSectionTemplate.trim().length > 0 ? { stageSectionTemplate: f.stageSectionTemplate } : {}),
-        ...(f.personaSectionsOnly ? { personaSectionsOnly: true } : {}),
-        ...(f.workspaceLine ? { workspaceLine: true } : {}),
-        ...(f.instructionHint ? { instructionHint: true } : {}),
+        // 晋升门控/渐进披露/验证工具：全部总是发送（空值由 savePresetParams
+        // 删键回落到模板/引擎默认；false/0 引擎布尔归一或默认等价）。
+        promoteGate: f.promoteGate,
+        promoteAfterFirstResponse: f.promoteAfterFirstResponse,
+        maxPromoteSteps: f.maxPromoteSteps,
+        bootstrapTools: splitList(f.bootstrapTools),
+        compactionTools: splitList(f.compactionTools),
+        stages: f.stages
+          .map((stage) => ({
+            name: stage.name.trim(),
+            tools: splitList(stage.tools),
+          }))
+          .filter((stage) => stage.name.length > 0 && stage.tools.length > 0),
+        stagePreUnlock: f.stagePreUnlock,
+        stageAdvanceTool: f.stageAdvanceTool,
+        stageSectionTemplate: f.stageSectionTemplate,
+        personaSectionsOnly: f.personaSectionsOnly,
+        workspaceLine: f.workspaceLine,
+        instructionHint: f.instructionHint,
         // context-gate 注入门控。
-        ...(f.messageSources.trim().length > 0 ? { messageSources: splitList(f.messageSources) } : {}),
-        ...(f.deferredSources.trim().length > 0 ? { deferredSources: splitList(f.deferredSources) } : {}),
-        ...(f.deferredGraceSteps > 0 ? { deferredGraceSteps: f.deferredGraceSteps } : {}),
+        messageSources: splitList(f.messageSources),
+        deferredSources: splitList(f.deferredSources),
+        deferredGraceSteps: f.deferredGraceSteps,
         // 验证工具（page-check / delivery-gate）。
-        ...(f.pageCheckBrowserPath.trim().length > 0 ? { pageCheckBrowserPath: f.pageCheckBrowserPath } : {}),
-        ...(f.pageCheckTimeoutMs > 0 ? { pageCheckTimeoutMs: f.pageCheckTimeoutMs } : {}),
-        ...(f.pageCheckLite ? { pageCheckLite: true } : {}),
-        ...(f.pageCheckRetry === false ? { pageCheckRetry: false } : {}),
-        ...(f.deliveryRequireSmoke === false ? { deliveryRequireSmoke: false } : {}),
+        pageCheckBrowserPath: f.pageCheckBrowserPath,
+        pageCheckTimeoutMs: f.pageCheckTimeoutMs,
+        pageCheckLite: f.pageCheckLite,
+        pageCheckRetry: f.pageCheckRetry,
+        deliveryRequireSmoke: f.deliveryRequireSmoke,
       },
     })
     if (res.ok) {

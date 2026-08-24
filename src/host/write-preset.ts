@@ -101,6 +101,8 @@ function runtimeOf(options: WritePresetOptions, prompt: string): Record<string, 
     firstTurnText: typeof options.firstTurnText === 'string' ? options.firstTurnText : '',
     guideCustom: options.guideCustom === true,
     guideText: typeof options.guideText === 'string' ? options.guideText : '',
+    // 每轮引导独立开关：undefined = 跟随 firstTurnAnchor（兼容旧行为）。
+    guideEnabled: typeof options.guideEnabled === 'boolean' ? options.guideEnabled : undefined,
     injectPrompt: options.injectPrompt !== false,
     // 透传：未声明 = 模板 preset.yml params / 引擎默认（false）兜底，不再强制 true。
     usePtcMode: typeof options.usePtcMode === 'boolean' ? options.usePtcMode : undefined,
@@ -378,7 +380,8 @@ export function writePreset(prompt: string, options: WritePresetOptions): void {
         next.params = {
           ...next.params,
           useCustom: params.firstTurnCustom === true,
-          firstTurnText: asString(params.firstTurnText),
+          // 自定义文本契约统一为 text（与 router-guide 同构）；存储键 firstTurnText 保留。
+          text: asString(params.firstTurnText),
           buildPattern: asString(params.buildPattern),
           complexPattern: asString(params.complexPattern),
           firstTurnBuild: asString(params.firstTurnBuild),
@@ -386,15 +389,21 @@ export function writePreset(prompt: string, options: WritePresetOptions): void {
           firstTurnDeep: asString(params.firstTurnDeep),
         }
       } else if (next.id === 'router-guide') {
-        next.enabled = params.firstTurnAnchor === true
+        // 引导开关独立：guideEnabled 显式声明优先；undefined = 兼容跟随锚定开关。
+        const guideEnabled = params.guideEnabled === undefined
+          ? params.firstTurnAnchor === true
+          : params.guideEnabled === true
+        next.enabled = guideEnabled
         // 自定义引导对所有模型注入（Pro/Flash），自动引导只服务 Flash 家族。
-        const useCustom = params.firstTurnAnchor === true && params.guideCustom === true
+        const useCustom = guideEnabled && params.guideCustom === true
         next.modelScope = useCustom ? 'all' : 'flash'
+        // 复杂任务判定 fallback 复用锚定的 complexPattern；guideComplexPattern
+        // 旧键回退读取（旧预设平滑，不混入 variables.yml）。
         next.params = {
           ...next.params,
           useCustom,
           text: asString(params.guideText),
-          guideComplexPattern: asString(params.guideComplexPattern),
+          complexPattern: asString(params.complexPattern) || asString(params.guideComplexPattern),
           guideWeak: asString(params.guideWeak),
           guideDeep: asString(params.guideDeep),
         }
