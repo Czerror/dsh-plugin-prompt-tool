@@ -1,0 +1,9 @@
+# module: tool-config-engine
+# source: 本地新增（自定义工具引擎：preset.yml customTools 段 → 渲染 custom-tools/ → 运行时注册）
+# 工具定义在预设目录 custom-tools/*.yml；执行器 shell/http/delegate/fs/ask-user。
+# requireApproval 数组可列出需 approval 门的执行器（默认空 = 不要求）。
+
+- id: tool-config-engine
+  name: ./engine/tool-config-engine.mjs
+  config:
+    configsDir: ../custom-tools
