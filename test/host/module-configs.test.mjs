@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { buildCordis } from '../../lib/preset-core.mjs'
-import { applyModuleConfigs, resolvePresetParams } from '../../lib/index.mjs'
+import { applyModuleConfigs, loadPresetSpec, renderComposition, resolvePresetDir, resolvePresetParams } from '../../lib/index.mjs'
 import { parse as parseYaml } from 'yaml'
 
 /** 递归收集指定 id 的嵌套行（delegation 组内工具行）。 */
@@ -222,4 +222,18 @@ test('参数桥完整性：本地模块行 config 键 ⊆ ALLOWED_KEYS；stageAd
   }
   const bootstrap = rows.find((r) => r?.id === 'tool-bootstrap')
   assert.equal(bootstrap.config.stageAdvanceDescription, '推进到下一阶段（解锁更多工具）', 'stageAdvanceDescription 经参数桥直达 tool-bootstrap 行')
+})
+
+test('参数桥优先于 moduleConfigs 直写：UI 开关不被行级直写覆盖（旧作者锁定语义移除）', () => {
+  const spec = loadPresetSpec(resolvePresetDir('anchored'))
+  // 模拟模板/ST 直写 tool-filter.includeSubagents（旧锁定语义会覆盖 UI，导致开关失效）。
+  const withDirect = { ...spec, moduleConfigs: { 'tool-filter': { includeSubagents: false } } }
+  // 1) 参数桥打开 toolFilterSubagents → 桥优先，直写不覆盖。
+  const rows = parseYaml(renderComposition(withDirect, { toolFilterSubagents: true }))
+  const tf = rows.find((r) => r?.id === 'tool-filter')
+  assert.equal(tf.config.includeSubagents, true, '参数桥（UI）优先于 moduleConfigs 直写，开关必须生效')
+  // 2) 参数桥未设置 → moduleConfigs 直写仍生效（桥未覆盖的键照常合并）。
+  const rows2 = parseYaml(renderComposition(withDirect, {}))
+  const tf2 = rows2.find((r) => r?.id === 'tool-filter')
+  assert.equal(tf2.config.includeSubagents, false, '桥未覆盖时 moduleConfigs 直写生效')
 })

@@ -6,10 +6,11 @@
 # 或 preset/<预设名>/preset.yml 即可作为自定义预设起点。
 # 完整可用示例见 preset/anchored/preset.yml（含真实 prompt 文本）。
 #
-# 四层默认值体系（职责不重叠）：
-#   hostDefaults  → settings 层默认值（开关/路径），被用户 settings 覆盖
-#   params        → 引擎行为默认（锚定/引导/PTC/门控/模型/工具），被运行时 settings 覆盖
-#   moduleConfigs → 引擎组合行级 config（persona 文本/超时/白名单）
+# 默认值体系（职责不重叠）：
+#   params        → 引擎行为参数（锚定/引导/PTC/门控/模型/工具），经参数桥落位组合行；
+#                    UI 可管理（PARAM_KEYS），优先级最高
+#   moduleConfigs → 行级 config 直写通道（参数桥未覆盖的键：超时/环境白名单/ST 导入等），
+#                    不锁定覆盖 UI 可管理参数
 #   promptConfigs → 注入提示词配置（策略/层/位置/时机），与目录、settings 三源合并
 # =============================================================================
 
@@ -423,27 +424,15 @@ modules:
   - tool-todo                    # todo 工具
   - tool-web                     # web 搜索
 
-# ── moduleConfigs：引擎组合行级 config（覆盖行默认值）───────────────────────
-moduleConfigs:
-  persona:
-    text: You are a helpful software engineer assistant.  # 人设文本
-    complete: true               # true=minimal 完整 persona（plan-mode/Flash 路由人设被抑制）；false=standard 语义
-    includeRuntimeContext: false # false=永久抑制运行时上下文；true=由 context-gate 动态控制
-  custom-bash:
-    timeoutMs: 120000            # 自定义 bash 超时（ms）
-    maxOutputBytes: 64000        # 自定义 bash 输出上限（bytes）
-  tool-bootstrap:
-    includeSubagents: false      # true=子代理工具目录跟随 bootstrap→晋升
-    promoteOn: either            # 晋升触发：either / main / subagent
-  code-presentation:
-    usePtcMode: false            # false=默认关闭；true=显式开启晋升后 Code Mode (PTC) 呈现
-  run-code-env:
-    envKeys: [PATH, PATHEXT, HOME, USERPROFILE, USERNAME, COMPUTERNAME, OS, TEMP, TMP, SystemRoot, ProgramFiles, ProgramFiles(x86), LOCALAPPDATA, APPDATA]  # 注入的环境变量白名单
-  context-gate:
-    promoteOn: either            # 晋升触发
-    includeSubagents: false      # true=子代理也做上下文门控
-  tool-filter:
-    includeSubagents: false      # true=子代理也启用主对话工具过滤
+# ── moduleConfigs（可选）：行级 config 直写通道 ──────────────────────────────
+# 仅用于参数桥未覆盖的行级 config（ST 导入等直写 tool-web.fetch / tool-filter.deny）。
+# 合并优先级：参数桥（params/UI）> moduleConfigs > 行默认；moduleConfigs 不再锁定覆盖
+# UI 可管理参数。库行默认值见 engine/compositions/library/*.yml，模板一般无需声明本段。
+# 示例（覆盖库行默认的模块 config 时）：
+#   moduleConfigs:
+#     custom-bash:
+#       timeoutMs: 120000
+# persona 文本覆盖走 promptConfigs（persona-main / system-section），不写 moduleConfigs.persona。
 
 # ── 清理与上游（可选）───────────────────────────────────────────────────────
 legacyCleanup: []                # 历史残留文件清理列表

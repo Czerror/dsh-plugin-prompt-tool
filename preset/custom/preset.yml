@@ -7,7 +7,6 @@ description: 空白起点：所有参数为空，按需从 UI 配置。
 version: 1.0.0
 engineCompat: ">=0.4.2"
 modules: []
-moduleConfigs: {}
 params: {}
 promptConfigs: []
 legacyCleanup: []

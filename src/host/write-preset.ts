@@ -301,7 +301,7 @@ export function writePreset(prompt: string, options: WritePresetOptions): void {
     cpSync(overridesSrc, join(outDir, 'prompt-tool.overrides.yml'), { force: true })
   }
 
-  // 1) 组合文件:modules 模块库装配 + token 渲染 + moduleConfigs 行级合并 + YAML 校验。
+  // 1) 组合文件:modules 模块库装配 + 参数桥行级合并 + YAML 校验。
   const composition = renderComposition(spec, runtime, templateDir)
   assertCompositionArray(composition, spec)
   // 共享引擎路径重写（引擎只物化一份于预设根 .engine）：组合的引擎引用

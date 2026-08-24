@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### 参数桥优先：移除 moduleConfigs 作者锁定（2026-08-25）
+
+- **语义变更**：`renderComposition` 合并优先级从「moduleConfigs（预设作者锁定）> 参数桥」翻转为「**参数桥（params/UI）> moduleConfigs > 行默认**」。moduleConfigs 降级为「参数桥未覆盖键的行级直写通道」（ST 导入等仍可用），不再锁定覆盖 UI 可管理参数。
+- **修复**：`toolFilterSubagents` UI 开关被模板 `moduleConfigs.tool-filter.includeSubagents: false` 静默覆盖（实测确认开关无效）——桥优先后开关生效，新增契约测试防再犯。
+- **清理**：anchored/custom 模板删 `moduleConfigs` 段（值 = 库行默认，行为等价）；根模板段改注释说明；`/describe` 不再回传 moduleConfigs，客户端删除「预设锁定」提示（EngineModuleCards / store / bridge）。
+- **保留**：liangshen 模板 moduleConfigs（真实覆盖，非库默认）；sillytavern.ts ST 导入直写通道。
+- **验证**：typecheck/lint 通过，全量测试通过。
+
 ### 子代理页 UI 同步主会话结构（2026-08-24）
 
 - **SubagentPage**：子代理引擎模块卡（子代理模型 + 工具与深度）从配置列表 beforeCards（列表内部）移到**列表上方独立区块**（configList 容器，与主会话 PromptConfigsEditor 同构）。

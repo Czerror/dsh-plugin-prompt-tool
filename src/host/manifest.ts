@@ -6,7 +6,7 @@
  *   - 默认提示词配置由引擎按 params 生成(见 write-preset),promptConfigs 仅为可选覆盖;
  *   - 组合模块的行级 config 由参数桥 buildModuleConfigsFromParams 按 params
  *     构造对象合并（取代旧 __TOKEN__ 文本渲染，无占位符、无文本往返），
- *     moduleConfigs（预设作者锁定）优先于 params（UI/基础层）。
+ *     params（UI/基础层）优先于 moduleConfigs 行级直写（旧作者锁定语义已移除）。
  * 本模块负责参数归一化与引擎模块配置装配;所有 anchored 专属行为都在引擎内部。
  */
 
@@ -44,7 +44,7 @@ export interface PresetSpec {
   variablesEnabled?: boolean
   /** 可选:模板自定义提示词配置覆盖(纯数据,不使用模板语法)。 */
   promptConfigs?: unknown[]
-  /** 可选:引擎组合模块行参数覆盖(行级 map config 浅合并,preset 优先)。 */
+  /** 可选:引擎组合模块行参数直写(行级 map config 浅合并;参数桥未覆盖的键生效,参数桥优先)。 */
   moduleConfigs?: Record<string, Record<string, unknown>>
   /** 世界书（独立存储段，不进 promptConfigs）：injectMode + 条目。 */
   worldBook?: {
@@ -550,7 +550,7 @@ function parseListParam(value: unknown): string[] {
  * 原则：
  *  - 未声明的键不合并（composition 行默认 / 引擎默认生效），与旧"空值删行"语义等价；
  *  - 值类型直达（布尔/数字/数组不再字符串化再解析）；
- *  - 合并优先级：moduleConfigs（预设作者锁定）> 参数桥（UI/基础层）> 行默认。
+ *  - 合并优先级：参数桥（UI/基础层）> moduleConfigs（模板/ST 行级直写）> 行默认。
  * 模型路由/委派参数统一扁平键（modelProvider/subagentModelProvider/toolFilterAllow/maxDepth 等），
  * 与官方 AgentOptions{provider,model} / toolFilter{allow,deny} / maxDepth 对齐。
  */
@@ -704,9 +704,10 @@ function assembleModules(spec: PresetSpec, library: string): string {
  *   2. 兼容 `composition:` 内联文本或组合清单名。
  */
 /**
- * 行级 config 合并(moduleConfigs):仅支持 map 型 config 浅合并;
+ * 行级 config 合并:仅支持 map 型 config 浅合并;
  * 数组型 config(如 delegation 组)按子行 id 嵌套合并;未声明模块原样保留。
- * 未声明 moduleConfigs 时返回原文(零开销);parseDocument 往返保留注释。
+ * 未声明 configs 时返回原文(零开销);parseDocument 往返保留注释。
+ * 本函数是参数桥产物落位组合行的唯一机制(含 delegation 组子行嵌套),不是预设覆盖通道。
  */
 export function applyModuleConfigs(raw: string, configs: Record<string, Record<string, unknown>> | undefined): string {
   if (configs === undefined || Object.keys(configs).length === 0) return raw
@@ -809,13 +810,16 @@ export function loadCompositionText(spec: PresetSpec, templateDir?: string): str
 
 /**
  * 预设组合渲染完整链路:模块装配 → 参数桥(moduleConfigs + params)行级合并。
- * 合并优先级:moduleConfigs(预设作者锁定) > 参数桥(params/UI 基础层) > 行默认。
+ * 合并优先级:参数桥(params/UI 基础层) > moduleConfigs(模板/ST 行级直写) > 行默认。
+ * moduleConfigs 仅补充参数桥未覆盖的行级 config(如 ST 导入的 tool-web.fetch),
+ * 不再锁定覆盖 UI 可管理参数(旧作者锁定语义已移除)。
  */
 export function renderComposition(spec: PresetSpec, runtime: Record<string, unknown>, templateDir?: string): string {
   const params = resolvePresetParams(spec, runtime)
   const merged: Record<string, Record<string, unknown>> = buildModuleConfigsFromParams(params)
   for (const [id, cfg] of Object.entries(spec.moduleConfigs ?? {})) {
-    merged[id] = { ...merged[id], ...cfg }
+    // 参数桥优先：UI/运行时参数不被模板或 ST 直写覆盖。
+    merged[id] = { ...cfg, ...merged[id] }
   }
   return applyModuleConfigs(loadCompositionText(spec, templateDir), merged)
 }

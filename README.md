@@ -39,8 +39,8 @@ dsh --profile prompt-tool                                          # 首次启�
 
 | 层 | 职责 |
 |---|---|
-| `params` | 引擎行为默认（锚定/引导/PTC/门控/模型/工具），被运行时 settings 覆盖 |
-| `moduleConfigs` | 引擎组合行级 config（persona 文本/超时/白名单） |
+| `params` | 引擎行为参数（锚定/引导/PTC/门控/模型/工具），经参数桥落位组合行；UI 可管理，优先级最高 |
+| `moduleConfigs` | 行级 config 直写通道（参数桥未覆盖的键：超时/环境白名单/ST 导入等），不锁定覆盖 UI 可管理参数 |
 | `promptConfigs` | 注入提示词配置（策略/层/位置/时机），与目录、settings 三源合并 |
 
 ### params 一览（全部可选，缺省 = 官方默认）

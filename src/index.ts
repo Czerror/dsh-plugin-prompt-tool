@@ -928,8 +928,8 @@ registerTuiCommand(
 export { Config, PromptSettingsSchema } from './config.ts'
 export { writePreset } from './host/write-preset.ts'
 export { convertStToPreset, mergeStPresets, processStText, stPresetId } from './host/sillytavern.ts'
-export { applyModuleConfigs, savePresetParams } from './host/manifest.ts'
-export { loadPresetSpec, resolvePresetParams } from './host/manifest.ts'
+export { applyModuleConfigs, buildModuleConfigsFromParams, savePresetParams } from './host/manifest.ts'
+export { loadPresetSpec, renderComposition, resolvePresetParams } from './host/manifest.ts'
 export type { PresetSpec } from './host/manifest.ts'
 export {
   cloneBuiltinPreset,

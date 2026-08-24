@@ -279,34 +279,13 @@ export function DelegationToolsModuleCard(props: { store: PromptToolStore }): Re
  *  tool-bootstrap（system-section）/ context-gate（pre-step）/
  *  code-presentation · tool-filter · delegation · page-check · delivery-gate
  *  （tool-pipeline）各一张可折叠模块卡。
- *  语义 = moduleConfigs 的 UI 化；保存走 params 桥 /param-overrides。
+ *  语义 = 参数桥扁平键的 UI 化；保存走 params 桥 /param-overrides。
  *  layerFilter：模块列表层筛选联动（'all' 显示全部；指定层只显示该层；
  *  'world-book' 不显示引擎卡）。 */
 export function EngineModuleCards(props: { store: PromptToolStore; layerFilter?: string }): ReactNode {
   const { store } = props
   const fields = store.fields
   const layerFilter = props.layerFilter ?? 'all'
-  /** 参数桥扁平键 → 模块行 config 键的异名映射（moduleConfigs 声明的是行级 config 键）。 */
-  const CONFIG_KEY_OF: Record<string, string> = {
-    pageCheckBrowserPath: 'browserPath',
-    pageCheckTimeoutMs: 'timeoutMs',
-    pageCheckLite: 'lite',
-    pageCheckRetry: 'retry',
-    pageCheckDescription: 'description',
-    deliveryRequireSmoke: 'requireSmoke',
-    deliveryDescription: 'description',
-    toolFilterAllow: 'allow',
-    toolFilterDeny: 'deny',
-    toolFilterSubagents: 'includeSubagents',
-  }
-  /** 扁平参数键是否被 moduleConfigs（预设作者锁定）声明；返回锁定模块名。 */
-  const lockedBy = (key: string): string | undefined => {
-    const configKey = CONFIG_KEY_OF[key] ?? key
-    for (const [module, cfg] of Object.entries(store.moduleConfigs ?? {})) {
-      if (cfg !== null && typeof cfg === 'object' && Object.prototype.hasOwnProperty.call(cfg, configKey)) return module
-    }
-    return undefined
-  }
   const visible = (layer?: string): boolean =>
     layerFilter === 'all' || (layer !== undefined && layerFilter === layer)
   // 选中层无引擎模块卡时给出提示（引擎模块分布在 pre-step / system-section / tool-pipeline）。
@@ -318,7 +297,7 @@ export function EngineModuleCards(props: { store: PromptToolStore; layerFilter?:
     <div className={styles.settingRowStack}>
       <span className={styles.settingCopy}>
         <strong>{label}</strong>
-        <small>{hint}{lockedBy(key) !== undefined && ` ⚠ 预设 moduleConfigs.${lockedBy(key)} 已锁定该参数（优先于 UI），修改不生效。`}</small>
+        <small>{hint}</small>
       </span>
       <label className={styles.configEnable} htmlFor={id}>
         <input id={id} type="checkbox" checked={fields[key]} disabled={!fields.writePreset} aria-label={label} onChange={() => store.toggle(key)} />
@@ -376,9 +355,6 @@ export function EngineModuleCards(props: { store: PromptToolStore; layerFilter?:
             <input id="pt-bootstrap-tokens" type="checkbox" checked={capped} disabled={!fields.writePreset} aria-label="首轮输出封顶" onChange={store.toggleBootstrapMaxTokens} />
             <span className={styles.switch} aria-hidden="true"><i /></span>
           </label>
-          {lockedBy('bootstrapMaxTokens') !== undefined && (
-            <small className={styles.settingsNote}>⚠ 预设 moduleConfigs.{lockedBy('bootstrapMaxTokens')} 已锁定首轮输出封顶（优先于 UI）。</small>
-          )}
         </div>
         {gateRow('pt-promote-gate', '门控晋升', 'promoteGate：首段 reasoning minimal-like（we 无 let me）+ 工具调用才晋升', 'promoteGate')}
         {gateRow('pt-promote-after', '首响应即晋升', 'promoteAfterFirstResponse：无工具首响应 / 首轮 turn/end 即晋升', 'promoteAfterFirstResponse')}
