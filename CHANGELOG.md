@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### 修复 liangshen 预设缺 prompt-config-engine 行（2026-08-26）
+
+- **根因**：liangshen modules 缺 `prompt-config-engine`（promptConfigs 执行器行）——
+  persona-main 配置文件正常生成（10-persona-main.yml 在盘），但组合内无执行器装配
+  → 人设段不注册、人设卡不生效。其余 5 个预设（anchored/standard/minimal/ptc/creative）
+  均含该行，仅 liangshen/custom 遗漏（custom 无 promptConfigs 无影响）。
+- **修复**：liangshen modules 补 `prompt-config-engine`（code-presentation 后，与
+  anchored 同序）；writePreset 路径重写自动生效（name=../.engine/…、
+  configsDir=../liangshen/prompt-configs）。
+- **防回归**：liangshen 测试补断言（执行器行存在 + name/configsDir 重写正确）。
+- **验证**：typecheck/lint 通过，351 测试通过。
+
 ### 子代理独立人设 = 配置卡（system-section + audience=subagent，替换主会话人设）（2026-08-26）
 
 - **源码定稿**：`assembleContextFor(agent)` 注入 `{ agent, scope: agent }`——

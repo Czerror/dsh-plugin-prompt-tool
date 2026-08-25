@@ -84,6 +84,11 @@ test('preset/liangshen 渲染：模块清单 + moduleConfigs 表达两阶段锚�
     assert.equal(rows[0].id, 'context-gate', 'context-gate 必须为组合首行')
     assert.equal(rows[1].id, 'tool-bootstrap')
     assert.equal(rows[2].id, 'code-presentation')
+    // promptConfigs 执行器行：persona-main 等提示词配置必须被装配（缺行 = 人设卡不生效）。
+    const pce = byId.get('prompt-config-engine')
+    assert.ok(pce, '应含 prompt-config-engine 行（promptConfigs 执行器，缺行则人设卡不装配）')
+    assert.equal(pce.name, '../.engine/prompt-config-engine.mjs', '指向预设根共享引擎')
+    assert.equal(pce.config.configsDir, '../liangshen/prompt-configs', 'configsDir 相对 .engine 指向本预设 prompt-configs')
 
     // 其余官方工具行齐全。
     for (const id of ['agent-instructions', 'persistent-shell', 'custom-bash', 'tool-fs-search', 'tool-jobs', 'skill-filesystem', 'tool-skill', 'tool-goal', 'planning', 'compaction', 'delegation', 'tool-ask-user', 'tool-todo', 'tool-web']) {
