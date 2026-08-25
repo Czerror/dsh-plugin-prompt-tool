@@ -122,13 +122,19 @@ wholeWords/selectiveLogic）单一权威。两个写入端共用：
 
 ### 主会话人设参数化（2026-08-25）
 
-`mainPersona?: string`——主会话人设（persona-main 配置）参数直接设置，与子代理
-`subagentPersona` 对称：
 - 存储/契约：`ENGINE_PARAM_KEYS` + `WRITER_PARAM_KEYS` 完整透传（runtimeOf / index /
   preset-core / reloadPresetParams / initialRuntime）；
 - 渲染：writePreset templateDefaults 对 persona-main 配置覆盖 `text`（非空时）；
   空值 = 模板默认（空值删键语义已有），模块卡仍为底层编辑入口；
 - UI：模型路由卡（主对话）人设输入，persist 条件发送 + 读回。
+
+### 人设参数桥移除（2026-08-26）
+
+- `mainPersona` / `subagentPersona` 参数桥与 UI 输入框整体删除，人设一律由
+  promptConfigs 配置卡承载：主会话 = persona-main 卡 text（唯一入口，无覆盖层）；
+  子代理独立人设 = 新建配置卡（layer=pre-step + audience=subagent，继承主会话
+  persona 并追加专属段；无子代理卡 = scope 链继承，行为不变）。
+- 子代理 persona 语义变化：per-child shadow 整体替换 → 继承 + 追加。
 
 ### 角色卡导入的 persona 开放（2026-08-25）
 

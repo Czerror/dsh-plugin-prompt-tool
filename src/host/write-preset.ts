@@ -103,10 +103,6 @@ function runtimeOf(options: WritePresetOptions, prompt: string): Record<string, 
     guideText: typeof options.guideText === 'string' ? options.guideText : '',
     // 每轮引导独立开关：undefined = 跟随 firstTurnAnchor（兼容旧行为）。
     guideEnabled: typeof options.guideEnabled === 'boolean' ? options.guideEnabled : undefined,
-    // 主会话人设：非空覆盖 persona-main 配置 text；空 = 模板默认（undefined 不覆盖 spec.params）。
-    mainPersona: typeof options.mainPersona === 'string' && options.mainPersona.length > 0
-      ? options.mainPersona
-      : undefined,
     injectPrompt: options.injectPrompt !== false,
     // 透传：未声明 = 模板 preset.yml params / 引擎默认（false）兜底，不再强制 true。
     usePtcMode: typeof options.usePtcMode === 'boolean' ? options.usePtcMode : undefined,
@@ -142,9 +138,6 @@ function runtimeOf(options: WritePresetOptions, prompt: string): Record<string, 
     subagentMaxTokens: typeof options.subagentMaxTokens === 'string' && options.subagentMaxTokens.length > 0
       ? options.subagentMaxTokens
       : undefined,
-    subagentPersona: typeof options.subagentPersona === 'string' && options.subagentPersona.length > 0
-      ? options.subagentPersona
-      : '',
     // 工具过滤空值不覆盖：spec.params（预设模板默认）保留，settings/overrides 显式值优先。
     toolFilterAllow: options.toolFilterAllow !== undefined
       && (Array.isArray(options.toolFilterAllow) ? options.toolFilterAllow.length > 0 : String(options.toolFilterAllow).trim().length > 0)
@@ -411,11 +404,6 @@ export function writePreset(prompt: string, options: WritePresetOptions): void {
           guideWeak: asString(params.guideWeak),
           guideDeep: asString(params.guideDeep),
         }
-      } else if (next.id === 'persona-main') {
-        // 主会话人设参数化：params.mainPersona 非空时覆盖模板默认人设文本
-        //（与子代理 subagentPersona 对称；空值 = 模板默认，不写键）。
-        const persona = asString(params.mainPersona)
-        if (persona.length > 0) next.text = persona
       }
       return next
     })

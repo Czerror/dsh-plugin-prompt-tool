@@ -2,7 +2,6 @@ import { useState, type ReactNode } from 'react'
 import clsx from 'clsx'
 import { IconChevronDownOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { TagInput } from './TagInput.tsx'
-import { autoResizeTextarea } from './textarea-resize.ts'
 import styles from './PromptUi.module.css'
 
 import type { PromptToolStore } from './prompt-tool-store.ts'
@@ -148,21 +147,6 @@ export function ModelRouteModuleCard(props: { store: PromptToolStore; scope: 'ma
           ))}
         </select>
       </div>
-      {props.scope === 'main' && (
-        <div className={styles.settingRowStack}>
-          <label className={styles.configFieldStack}>
-            <span className={styles.settingCopy}><strong>主会话人设</strong><small>mainPersona（persona-main 配置覆盖）；留空 = 模板默认人设。失焦保存。</small></span>
-            <textarea
-              className={styles.firstTurnInput}
-              value={fields.mainPersona}
-              disabled={!fields.writePreset}
-              onChange={(event) => { autoResizeTextarea(event); store.patch({ mainPersona: event.target.value }) }}
-              onBlur={() => void store.persistParamOverrides()}
-              spellCheck={false}
-            />
-          </label>
-        </div>
-      )}
       <div className={styles.settingRowStack}>
         <span className={styles.settingCopy}>
           <strong>思维程度</strong>
@@ -228,21 +212,6 @@ export function ModelRouteModuleCard(props: { store: PromptToolStore; scope: 'ma
           onBlur={() => void store.persistParamOverrides()}
         />
       </div>
-      {props.scope === 'subagent' && (
-        <div className={styles.settingRowStack}>
-          <label className={styles.configFieldStack}>
-            <span className={styles.settingCopy}><strong>子代理自定义模型人设</strong><small>subagentPersona（per-child shadow）；留空 = 继承主会话人设（模块列表 persona-main 卡，scope 链继承）。失焦保存。</small></span>
-            <textarea
-              className={styles.firstTurnInput}
-              value={fields.subagentPersona}
-              disabled={!fields.writePreset}
-              onChange={(event) => { autoResizeTextarea(event); store.patch({ subagentPersona: event.target.value }) }}
-              onBlur={() => void store.persistParamOverrides()}
-              spellCheck={false}
-            />
-          </label>
-        </div>
-      )}
     </EngineModuleCard>
   )
 }

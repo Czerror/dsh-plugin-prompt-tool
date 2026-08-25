@@ -28,7 +28,6 @@ function generatedConfigs(options = {}, prompt = 'PROMPT') {
       firstTurnText: options.firstTurnText ?? '',
       firstTurnCustom: options.firstTurnCustom === true,
       firstTurnWord: typeof options.firstTurnWord === 'string' ? options.firstTurnWord : undefined,
-      mainPersona: typeof options.mainPersona === 'string' ? options.mainPersona : undefined,
       guideText: options.guideText ?? '',
       guideCustom: options.guideCustom === true,
       guideEnabled: typeof options.guideEnabled === 'boolean' ? options.guideEnabled : undefined,
@@ -166,17 +165,6 @@ test('writePreset 确认词自动派生：锚句信号词进 anchorWords；显�
   // 显式 firstTurnWord → 覆盖派生集合。
   const { byId: explicit } = generatedConfigs({ firstTurnAnchor: true, firstTurnWord: 'marker' })
   assert.deepEqual(explicit['prompt-injector'].params.anchorWords, ['marker'], '显式确认词覆盖派生')
-})
-
-test('writePreset 主会话人设参数化：mainPersona 覆盖 persona-main text；空值保留模板默认', () => {
-  const { byId } = generatedConfigs({ mainPersona: '你是专注于 dsh 插件的助手。' })
-  const text = byId['persona-main'].text ?? byId['persona-main'].texts?.join(' ')
-  assert.ok(text.includes('你是专注于 dsh 插件的助手'), 'mainPersona 覆盖 persona-main text')
-  assert.equal(byId['persona-main'].params.sectionName, 'deployment:persona', '人设段身份保留')
-  // 空值 = 模板默认人设（不覆盖）。
-  const { byId: empty } = generatedConfigs({ mainPersona: '' })
-  const emptyText = empty['persona-main'].text ?? empty['persona-main'].texts?.join(' ')
-  assert.ok(!emptyText.includes('你是专注于 dsh 插件的助手'), '空 mainPersona 不覆盖模板默认')
 })
 
 test('writePreset 关闭 injectPrompt 时 prompt-injector 禁用（引擎仍扫描四个模块）', () => {

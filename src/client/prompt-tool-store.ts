@@ -36,7 +36,6 @@ export interface SwitchSnapshot {
   firstTurnCustom: boolean
   guideText: string
   guideCustom: boolean
-  mainPersona: string
   modelProvider: string
   modelName: string
   subagentModelProvider: string
@@ -84,7 +83,6 @@ const EMPTY_SWITCHES: SwitchSnapshot = {
   firstTurnCustom: false,
   guideText: '',
   guideCustom: false,
-  mainPersona: '',
   modelProvider: '',
   modelName: '',
   subagentModelProvider: '',
@@ -160,7 +158,6 @@ export const snapshotSwitches = (fields: Fields): SwitchSnapshot => ({
   firstTurnCustom: fields.firstTurnCustom,
   guideText: fields.guideText,
   guideCustom: fields.guideCustom,
-  mainPersona: fields.mainPersona,
   modelProvider: fields.modelProvider,
   modelName: fields.modelName,
   subagentModelProvider: fields.subagentModelProvider,
@@ -208,7 +205,6 @@ const switchesEqual = (a: SwitchSnapshot, b: SwitchSnapshot): boolean =>
   && a.firstTurnCustom === b.firstTurnCustom
   && a.guideText === b.guideText
   && a.guideCustom === b.guideCustom
-  && a.mainPersona === b.mainPersona
   && a.modelProvider === b.modelProvider
   && a.modelName === b.modelName
   && a.subagentModelProvider === b.subagentModelProvider
@@ -465,7 +461,6 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
         if (typeof o.firstTurnCustom === 'boolean') paramPatch.firstTurnCustom = o.firstTurnCustom
         if (typeof o.guideText === 'string') paramPatch.guideText = o.guideText
         if (typeof o.guideCustom === 'boolean') paramPatch.guideCustom = o.guideCustom
-        if (typeof o.mainPersona === 'string') paramPatch.mainPersona = o.mainPersona
         if (typeof o.modelProvider === 'string') paramPatch.modelProvider = o.modelProvider
         if (typeof o.modelName === 'string') paramPatch.modelName = o.modelName
         if (typeof o.subagentModelProvider === 'string') paramPatch.subagentModelProvider = o.subagentModelProvider
@@ -481,7 +476,6 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
         if (typeof o.subagentMaxTokens === 'string') paramPatch.subagentMaxTokens = o.subagentMaxTokens
         if (typeof o.usePtcMode === 'boolean') paramPatch.usePtcMode = o.usePtcMode
         if (typeof o.injectPrompt === 'boolean') paramPatch.injectPrompt = o.injectPrompt
-        if (typeof o.subagentPersona === 'string') paramPatch.subagentPersona = o.subagentPersona
         if (Array.isArray(o.toolFilterAllow)) paramPatch.toolFilterAllow = o.toolFilterAllow.join(', ')
         else if (typeof o.toolFilterAllow === 'string') paramPatch.toolFilterAllow = o.toolFilterAllow
         if (Array.isArray(o.toolFilterDeny)) paramPatch.toolFilterDeny = o.toolFilterDeny.join(', ')
@@ -660,7 +654,6 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
         ...emit('firstTurnCustom', f.firstTurnCustom, false),
         ...emit('guideText', f.guideText, ''),
         ...emit('guideCustom', f.guideCustom, false),
-        ...emit('mainPersona', f.mainPersona, ''),
         ...emit('usePtcMode', f.usePtcMode, false),
         ...emit('injectPrompt', f.injectPrompt, true),
         ...emit('modelProvider', f.modelProvider, ''),
@@ -673,7 +666,6 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
         ...emit('subagentReasoningEffort', f.subagentReasoningEffort, ''),
         ...emit('subagentTemperature', f.subagentTemperature, ''),
         ...emit('subagentMaxTokens', f.subagentMaxTokens, ''),
-        ...emit('subagentPersona', f.subagentPersona, ''),
         ...emit('toolFilterAllow', splitList(f.toolFilterAllow), []),
         ...emit('toolFilterDeny', splitList(f.toolFilterDeny), []),
         ...emit('maxDepth', f.maxDepth === '' ? '' : f.maxDepth === 'provider-managed' ? 'provider-managed' : Number(f.maxDepth), ''),

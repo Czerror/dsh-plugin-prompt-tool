@@ -26,8 +26,6 @@ export interface EngineParams {
   guideCustom?: boolean
   /** 每轮引导独立开关；undefined = 兼容旧行为：跟随 firstTurnAnchor（关锚定 = 关引导）。 */
   guideEnabled?: boolean
-  /** 主会话人设文本（persona-main 配置覆盖；空 = 模板默认人设）。 */
-  mainPersona?: string
   /** 锚定确认后注入 preset.md；关闭时仍保留工具引导，但不生成 prompt-injector 提示词配置内容。 */
   injectPrompt?: boolean
   /** 模型路由 provider；与模型名同时非空时给 subagent/subagent_fork 行加 agentOptions（主对话直派子代理与委派子代理通用）。 */
@@ -50,8 +48,6 @@ export interface EngineParams {
   subagentTemperature?: string
   /** 子代理输出上限（agent-request patch，audience=subagent；''=不设置）。 */
   subagentMaxTokens?: string
-  /** 子代理自定义模型人设（per-child shadow；缺省 = 经 scope 链继承主会话 persona 模块）。 */
-  subagentPersona?: string
   /** 委派工具集白名单（toolFilter.allow；支持数组或逗号/空格分隔字符串）。 */
   toolFilterAllow?: string[] | string
   /** 委派工具集黑名单（toolFilter.deny）。 */
@@ -114,14 +110,14 @@ export interface EngineParams {
 export const ENGINE_PARAM_KEYS = [
   // 锚定/引导/注入。
   'firstTurnAnchor', 'firstTurnText', 'firstTurnCustom',
-  'guideText', 'guideCustom', 'guideEnabled', 'mainPersona', 'injectPrompt',
+  'guideText', 'guideCustom', 'guideEnabled', 'injectPrompt',
   // 模型路由与模型参数（agent-request patch）。
   'modelProvider', 'modelName',
   'subagentModelProvider', 'subagentModelName',
   'modelReasoningEffort', 'modelTemperature', 'modelMaxTokens',
   'subagentReasoningEffort', 'subagentTemperature', 'subagentMaxTokens',
   // 委派与工具过滤。
-  'subagentPersona', 'toolFilterAllow', 'toolFilterDeny', 'maxDepth',
+  'toolFilterAllow', 'toolFilterDeny', 'maxDepth',
   'allowKinds', 'firstTurnWord', 'bootstrapMaxTokens', 'usePtcMode',
   // 晋升门控（tool-bootstrap 参数桥）。
   'promoteGate', 'promoteAfterFirstResponse', 'maxPromoteSteps',
@@ -153,21 +149,21 @@ const _assertEngineParamsKeys: AssertKeysEqual<keyof EngineParams, EngineParamKe
  */
 export type PresetWriterParams = Pick<EngineParams,
   | 'firstTurnAnchor' | 'firstTurnText' | 'firstTurnCustom'
-  | 'guideText' | 'guideCustom' | 'guideEnabled' | 'mainPersona' | 'injectPrompt'
+  | 'guideText' | 'guideCustom' | 'guideEnabled' | 'injectPrompt'
   | 'modelProvider' | 'modelName' | 'subagentModelProvider' | 'subagentModelName'
   | 'modelReasoningEffort' | 'modelTemperature' | 'modelMaxTokens'
   | 'subagentReasoningEffort' | 'subagentTemperature' | 'subagentMaxTokens'
-  | 'subagentPersona' | 'toolFilterAllow' | 'toolFilterDeny' | 'maxDepth'
+  | 'toolFilterAllow' | 'toolFilterDeny' | 'maxDepth'
   | 'allowKinds' | 'firstTurnWord' | 'bootstrapMaxTokens' | 'usePtcMode'>
 
 /** writePreset.runtimeOf 实际透传键（与 PresetWriterParams 双向相等断言，防 Pick 漏键）。 */
 export const WRITER_PARAM_KEYS = [
   'firstTurnAnchor', 'firstTurnText', 'firstTurnCustom',
-  'guideText', 'guideCustom', 'guideEnabled', 'mainPersona', 'injectPrompt',
+  'guideText', 'guideCustom', 'guideEnabled', 'injectPrompt',
   'modelProvider', 'modelName', 'subagentModelProvider', 'subagentModelName',
   'modelReasoningEffort', 'modelTemperature', 'modelMaxTokens',
   'subagentReasoningEffort', 'subagentTemperature', 'subagentMaxTokens',
-  'subagentPersona', 'toolFilterAllow', 'toolFilterDeny', 'maxDepth',
+  'toolFilterAllow', 'toolFilterDeny', 'maxDepth',
   'allowKinds', 'firstTurnWord', 'bootstrapMaxTokens', 'usePtcMode',
 ] as const
 

@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+### 人设参数桥移除：主会话 + 子代理一律配置卡模式（2026-08-26）
+
+- **删除**：`mainPersona` / `subagentPersona` 参数桥与 UI 输入框全链移除（契约
+  ENGINE_PARAM_KEYS/WRITER_PARAM_KEYS、writePreset 覆盖分支、manifest delegation
+  persona 渲染、index runtime 透传、store/bridge 字段、模型路由卡两个输入框、
+  preset.yml 与 5 个预设键、测试 2 条、README/docs）。
+- **配置卡模式**：主会话人设 = persona-main 卡 text（唯一入口，无覆盖层）；子代理
+  独立人设 = 新建配置卡（layer=pre-step + audience=subagent，继承主会话 persona 并
+  追加专属段；无子代理卡 = scope 链继承，行为不变）。子代理 persona 语义变化：
+  per-child shadow 整体替换 → 继承 + 追加。
+- **验证**：typecheck/lint 通过，347 测试通过（-2：mainPersona 覆盖 + 子代理
+  persona 渲染测试删除；audience=subagent 装配过滤已有测试覆盖）。
+
 ### 引擎模块审查修复：timer 清理 + config 校验一致化 + skill-search 测试（2026-08-26）
 
 - **修复**（tool-config-engine）：shell 执行器 kill timer 无 clearTimeout——正常完成后 timer 残留到超时点；保存句柄 + 回调清理。

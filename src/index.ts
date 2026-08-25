@@ -145,7 +145,6 @@ export function apply(ctx: Context, configIn: Config): void {
     runtime.guideText = asString(params.guideText)
     runtime.guideCustom = params.guideCustom === true
     runtime.guideEnabled = typeof params.guideEnabled === 'boolean' ? params.guideEnabled : undefined
-    runtime.mainPersona = asString(params.mainPersona) || undefined
     runtime.modelProvider = asString(params.modelProvider)
     runtime.modelName = asString(params.modelName)
     runtime.subagentModelProvider = asString(params.subagentModelProvider)
@@ -162,7 +161,6 @@ export function apply(ctx: Context, configIn: Config): void {
     // 透传：未声明 = 模板 preset.yml params / 引擎默认（false）兜底。
     runtime.usePtcMode = typeof params.usePtcMode === 'boolean' ? params.usePtcMode : undefined
     runtime.injectPrompt = params.injectPrompt !== false
-    runtime.subagentPersona = asString(params.subagentPersona) || undefined
     runtime.toolFilterAllow = params.toolFilterAllow as string[] | string | undefined
     runtime.toolFilterDeny = params.toolFilterDeny as string[] | string | undefined
     runtime.maxDepth = params.maxDepth as RuntimeOptions['maxDepth']
@@ -187,7 +185,6 @@ export function apply(ctx: Context, configIn: Config): void {
         guideText: runtime.guideText,
         guideCustom: runtime.guideCustom,
         guideEnabled: runtime.guideEnabled,
-        mainPersona: runtime.mainPersona,
         injectPrompt: runtime.injectPrompt,
         modelProvider: runtime.modelProvider,
         modelName: runtime.modelName,
@@ -199,7 +196,6 @@ export function apply(ctx: Context, configIn: Config): void {
         subagentReasoningEffort: runtime.subagentReasoningEffort,
         subagentTemperature: runtime.subagentTemperature,
         subagentMaxTokens: runtime.subagentMaxTokens,
-        subagentPersona: runtime.subagentPersona,
         toolFilterAllow: runtime.toolFilterAllow,
         toolFilterDeny: runtime.toolFilterDeny,
         maxDepth: runtime.maxDepth,
@@ -310,7 +306,6 @@ export function apply(ctx: Context, configIn: Config): void {
     if (typeof overrides.subagentReasoningEffort === 'string') runtime.subagentReasoningEffort = overrides.subagentReasoningEffort
     if (typeof overrides.subagentTemperature === 'string') runtime.subagentTemperature = overrides.subagentTemperature
     if (typeof overrides.subagentMaxTokens === 'string') runtime.subagentMaxTokens = overrides.subagentMaxTokens
-    if (typeof overrides.subagentPersona === 'string') runtime.subagentPersona = overrides.subagentPersona
     if (typeof overrides.firstTurnWord === 'string') runtime.firstTurnWord = overrides.firstTurnWord
     if (typeof overrides.bootstrapMaxTokens === 'number') runtime.bootstrapMaxTokens = overrides.bootstrapMaxTokens
     // 列表/枚举类参数：类型守卫收窄（overrides YAML 可能是数组或字符串）。
@@ -535,7 +530,6 @@ export function apply(ctx: Context, configIn: Config): void {
     guideText: asString(initialParams.guideText),
     guideCustom: initialParams.guideCustom === true,
     guideEnabled: typeof initialParams.guideEnabled === 'boolean' ? initialParams.guideEnabled : undefined,
-    mainPersona: asString(initialParams.mainPersona) || undefined,
     injectPrompt: initialParams.injectPrompt !== false,
     modelProvider: asString(initialParams.modelProvider),
     modelName: asString(initialParams.modelName),
@@ -551,7 +545,6 @@ export function apply(ctx: Context, configIn: Config): void {
       ? initialParams.bootstrapMaxTokens as number
       : 0,
     usePtcMode: typeof initialParams.usePtcMode === 'boolean' ? initialParams.usePtcMode : undefined,
-    subagentPersona: asString(initialParams.subagentPersona) || undefined,
     toolFilterAllow: initialParams.toolFilterAllow as string[] | string | undefined,
     toolFilterDeny: initialParams.toolFilterDeny as string[] | string | undefined,
     maxDepth: initialParams.maxDepth as RuntimeOptions['maxDepth'],
@@ -672,7 +665,6 @@ registerTuiCommand(
       modelName: '',
       subagentModelProvider: '',
       subagentModelName: '',
-      subagentPersona: '',
       injectAgentsPrompt: false,
       bootstrapMaxTokens: 0,
       usePtcMode: false,

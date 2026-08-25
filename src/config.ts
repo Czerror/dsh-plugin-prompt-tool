@@ -166,7 +166,7 @@ export const PromptSettingsSchema: z<PromptSettings> = z.object({
  * 运行时装配态：settings 轴 + 引擎参数（契约来自 shared/engine-params.ts）。
  * 引擎参数统一从 PresetWriterParams 继承（可选），此处仅对「schema 默认值保证必有值」
  * 的首层参数做必填重声明——TS 强制与契约类型兼容，签名漂移变成编译错误。
- * 可选尾（subagentPersona / toolFilterAllow / toolFilterDeny / maxDepth / allowKinds /
+ * 可选尾（toolFilterAllow / toolFilterDeny / maxDepth / allowKinds /
  * firstTurnWord）由 PresetWriterParams 继承，不再逐字段手写。
  */
 export interface RuntimeOptions extends PresetWriterParams {

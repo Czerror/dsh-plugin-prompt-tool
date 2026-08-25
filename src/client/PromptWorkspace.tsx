@@ -132,8 +132,8 @@ function ConfigListWithTemplates(props: { store: PromptToolStore; layer?: string
 }
 
 /** 子代理页：路由状态 + 子代理引擎模块区块（列表上方，与主会话同构）+ 子代理配置列表
- *  （audience != main 即公用或仅子代理）。子代理独有：子代理模型（含 subagentPersona）、
- *  工具与深度（toolFilter / allowKinds / maxDepth）；主会话引擎模块（tool-bootstrap /
+ *  （audience != main 即公用或仅子代理）。子代理独有：子代理模型、工具与深度
+ *  （toolFilter / allowKinds / maxDepth）；主会话引擎模块（tool-bootstrap /
  *  context-gate / 工具管线）不在此重复（避免双入口）。 */
 function SubagentPage(props: { store: PromptToolStore }): ReactNode {
   const { store } = props
@@ -587,7 +587,7 @@ export function PromptWorkspace(props: PromptWorkspaceProps): ReactNode {
         ? '统一管理预设模板（切换/导入）与提示词配置（六层列表/模板插入/配置目录）。'
         : page === 'characters'
           ? '导入 SillyTavern 角色卡（PNG / JSON）并管理转换出的角色卡预设模块（角色设定 / 系统提示 / 开场白 / 提示词库）。'
-          : '子代理作用域参数（模型/人设/工具集/深度）与子代理提示词配置（audience 非仅主会话）。'
+          : '子代理作用域参数（模型/工具集/深度）与子代理提示词配置（audience 非仅主会话；独立人设 = 新建配置卡：layer=pre-step + audience=subagent，继承主会话 persona 并追加专属段）。'
   // 已加载过数据时保留旧内容（顶部状态点显示「读取中」），避免切换/保存触发整区骨架屏闪烁。
   const hasData = store.meta.layers.length > 0
     || store.fields.skillCatalog.length > 0
