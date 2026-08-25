@@ -740,9 +740,9 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
     }
   }, [load, showNotice])
 
-  const persistConfigs = useCallback((configs: PromptConfigDraft[]) => {
+  const persistConfigs = useCallback((configs: PromptConfigDraft[]): Promise<void> => {
     const contentEntries = configs.filter(isContentAsset)
-    void (async () => {
+    return (async () => {
       // 内容资产：text 先写生成目录文件（afterPresetImport 触发重建，渲染产物 params.text 更新）。
       for (const config of contentEntries) {
         const scope = config.id === 'prompt-injector' ? 'preset' : 'agents'
@@ -798,15 +798,21 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
     void persistParamOverrides()
   }, [patch, persistParamOverrides])
 
-  const setPresetTemplate = useCallback((id: string) => {
+  const setPresetTemplate = useCallback(async (id: string) => {
     if (fieldsRef.current.presetTemplate === id) return
+    // 切换即保存：模块列表有未保存的提示词配置修改时先提交（写当前激活预设），
+    // 避免切换后 load() 重置 fields 丢失修改。已保存/无修改则直接切换。
+    const dirtyConfigs = JSON.stringify(fieldsRef.current.promptConfigs) !== JSON.stringify(savedConfigs)
+    if (dirtyConfigs) {
+      await persistConfigs(fieldsRef.current.promptConfigs)
+    }
     patch({ presetTemplate: id })
     enqueueSave(
       [{ op: 'set', path: ['presetTemplate'], value: id }],
       `已切换预设模板：${id}`,
       () => { void load() },
     )
-  }, [enqueueSave, load, patch])
+  }, [enqueueSave, load, patch, persistConfigs, savedConfigs])
 
   const commitBootstrapTokensDraft = useCallback(() => {
     const parsed = Number(bootstrapTokensDraft)

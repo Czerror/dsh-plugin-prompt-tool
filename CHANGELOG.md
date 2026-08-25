@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### 预设切换即保存：模块列表未保存修改自动提交（2026-08-25）
+
+- **修复**：切换预设（setPresetTemplate）前若模块列表有未保存的提示词配置修改
+  （fields.promptConfigs ≠ savedConfigs），先 await persistConfigs 提交到当前激活预设，
+  再执行切换——此前直接切换导致 load() 重置 fields、未保存修改丢失（UI 提示
+  「有未保存修改 / 放弃修改 / 保存全部」但切换不联动保存）。
+- **实现**：persistConfigs 返回 Promise（可等待）；setPresetTemplate 转 async +
+  dirty 检测；已保存/无修改路径行为不变。
+- **验证**：typecheck/lint 通过，355 测试通过。
+
 ### 角色卡导入自动开放 persona complete（2026-08-25）
 
 - **修复**：applyCharacterToPreset 导入含 system-section 段的 ST 卡时，自动将激活预设
