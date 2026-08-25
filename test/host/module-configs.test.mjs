@@ -187,8 +187,6 @@ test('参数桥完整性：本地模块行 config 键 ⊆ ALLOWED_KEYS；stageAd
       'messageSources', 'deferredSources', 'deferredGraceSteps', 'instructionHint']),
     'code-presentation': new Set(['usePtcMode', 'includeSubagents', 'promoteOn']),
     'tool-filter': new Set(['allow', 'deny', 'includeSubagents', 'enabled']),
-    'page-check': new Set(['browserPath', 'timeoutMs', 'lite', 'retry', 'description']),
-    'delivery-gate': new Set(['requireSmoke', 'description']),
   }
   const rows = parseYaml(buildCordis('P', {
     stages: [{ name: '了解', tools: ['read', 'glob'] }],
@@ -208,20 +206,13 @@ test('参数桥完整性：本地模块行 config 键 ⊆ ALLOWED_KEYS；stageAd
     compactionTools: ['read', 'write'],
     bootstrapMaxTokens: 2048,
     usePtcMode: true,
-    pageCheckBrowserPath: 'C:/chrome.exe',
-    pageCheckTimeoutMs: 30000,
-    pageCheckLite: true,
-    pageCheckRetry: false,
-    pageCheckDescription: '页面验证',
-    deliveryRequireSmoke: true,
-    deliveryDescription: '交付验证',
     toolFilterAllow: ['read'],
     toolFilterDeny: ['bash'],
     toolFilterSubagents: true,
   }))
   for (const [module, allow] of Object.entries(ALLOWED)) {
     const row = rows.find((r) => r?.id === module)
-    if (row === undefined) continue // 未挂载模块（page-check/delivery-gate 不在 anchored）
+    if (row === undefined) continue // 未挂载模块（anchored modules 无此行）
     for (const key of Object.keys(row.config ?? {})) {
       assert.ok(allow.has(key), `${module} 行 config 键 ${key} 必须在 ALLOWED_KEYS 中（参数桥漏注册或行默认漂移）`)
     }

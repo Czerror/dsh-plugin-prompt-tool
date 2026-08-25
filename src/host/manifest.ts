@@ -423,7 +423,7 @@ export function savePresetParams(
   // 空值 = 删除键（回落模板/引擎默认）：''（字符串清空）、[]（列表清空）、
   // 以及 ZERO_DELETE_KEYS 的 0（引擎对 0 与未设置不等价，如 stagePreUnlock:
   // undefined→1 而 0 是合法档位）。其余 0/false 照常写入（引擎布尔归一或
-  // `|| 默认` 等价，如 maxPromoteSteps 0→4、pageCheckTimeoutMs 0→默认）。
+  // `|| 默认` 等价，如 maxPromoteSteps 0→4）。
   const ZERO_DELETE_KEYS = new Set(['stagePreUnlock'])
   if (params !== undefined) {
     for (const [key, value] of Object.entries(params)) {
@@ -633,27 +633,6 @@ export function buildModuleConfigsFromParams(params: Record<string, unknown>): R
   const presentation: Record<string, unknown> = {}
   if (params.usePtcMode !== undefined) presentation.usePtcMode = params.usePtcMode === true
   merge('code-presentation', presentation)
-
-  // page-check / delivery-gate：验证工具模块（可选挂载；config 参数化）。
-  const pageCheck: Record<string, unknown> = {}
-  if (typeof params.pageCheckBrowserPath === 'string' && params.pageCheckBrowserPath.length > 0) {
-    pageCheck.browserPath = params.pageCheckBrowserPath
-  }
-  if (params.pageCheckTimeoutMs !== undefined && Number.isSafeInteger(params.pageCheckTimeoutMs)) {
-    pageCheck.timeoutMs = params.pageCheckTimeoutMs
-  }
-  if (params.pageCheckLite !== undefined) pageCheck.lite = params.pageCheckLite === true
-  if (params.pageCheckRetry !== undefined) pageCheck.retry = params.pageCheckRetry === true
-  if (typeof params.pageCheckDescription === 'string' && params.pageCheckDescription.length > 0) {
-    pageCheck.description = params.pageCheckDescription
-  }
-  merge('page-check', pageCheck)
-  const deliveryGate: Record<string, unknown> = {}
-  if (params.deliveryRequireSmoke !== undefined) deliveryGate.requireSmoke = params.deliveryRequireSmoke === true
-  if (typeof params.deliveryDescription === 'string' && params.deliveryDescription.length > 0) {
-    deliveryGate.description = params.deliveryDescription
-  }
-  merge('delivery-gate', deliveryGate)
 
   // str-replace-editor：官方 minimal 行（默认官方值 16000，params 显式覆盖）。
   const editor: Record<string, unknown> = {}

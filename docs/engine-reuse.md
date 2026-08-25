@@ -29,8 +29,6 @@
 | `tool-config-engine` | engine/tool-config-engine.mjs | 自定义工具引擎：preset.yml `customTools` 段 → 渲染 `custom-tools/*.yml` → 运行时 `ctx.tools.register`（执行器 shell/http/delegate/fs/ask-user；行 `requireApproval` 门） |
 | `compaction-epoch` | engine/compaction-epoch.mjs | 晋升状态机（被上面各模块共用；非插件行） |
 | `tool-filter` | engine/tool-filter.mjs | 常驻工具白名单/黑名单（与晋升无关的常量掩码） |
-| `page-check` | engine/page-check.mjs | headless Chrome 页面验证（截图/DOM smoke/console/selector + `{js:}` 本地引擎）——参考 dsh-router-standard dev_page_check 自写 |
-| `delivery-gate` | engine/delivery-gate.mjs | 交付 gate（file/UTF-8 + headless smoke + evidence 清单）——参考 dsh-router-standard delivery_check 自写 |
 
 ## 晋升语义（epoch-aware）
 
@@ -65,9 +63,6 @@
 | `stagePreUnlock` | tool-bootstrap.stagePreUnlock | 1 |
 | `stageAdvanceTool` | tool-bootstrap.stageAdvanceTool | phase_advance |
 | `stageSectionTemplate` | tool-bootstrap.stageSectionTemplate | 默认模板（`{{stage}}/{{stageName}}/{{unlocked}}/{{total}}/{{advanceTool}}`；空 = 不注入） |
-| `pageCheckBrowserPath` | page-check.browserPath | 探测（DSH_PAGE_RUNNER → Chrome/Edge） |
-| `pageCheckTimeoutMs` / `pageCheckLite` / `pageCheckRetry` | page-check.* | 20000 / false / true |
-| `deliveryRequireSmoke` | delivery-gate.requireSmoke | true |
 
 ## 渐进披露（stages 模式）
 
@@ -107,8 +102,6 @@ moduleConfigs:
 ```yaml
 modules:
   - tool-bootstrap
-  - page-check
-  - delivery-gate
 moduleConfigs:
   tool-bootstrap:
     stages:
@@ -116,8 +109,6 @@ moduleConfigs:
       - { name: 开发, tools: [write, edit] }
       - { name: 验证, tools: [pwsh, bash] }
     stagePreUnlock: 1
-  delivery-gate:
-    requireSmoke: true
 ```
 
 liangshen 全量门控（完整示例见 `preset/liangshen/preset.yml`）：

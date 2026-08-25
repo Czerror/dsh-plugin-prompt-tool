@@ -292,7 +292,7 @@ export function DelegationToolsModuleCard(props: { store: PromptToolStore }): Re
 
 /** 引擎模块卡片组（模块列表顶部，按 6 层注入层级归类）：
  *  tool-bootstrap（system-section）/ context-gate（pre-step）/
- *  code-presentation · tool-filter · delegation · page-check · delivery-gate
+ *  code-presentation · tool-filter · delegation
  *  （tool-pipeline）各一张可折叠模块卡。
  *  语义 = 参数桥扁平键的 UI 化；保存走 params 桥 /param-overrides。
  *  layerFilter：模块列表层筛选联动（'all' 显示全部；指定层只显示该层；
@@ -308,7 +308,7 @@ export function EngineModuleCards(props: { store: PromptToolStore; layerFilter?:
     || layerFilter === 'system-section' || layerFilter === 'tool-pipeline'
   const capped = fields.bootstrapMaxTokens > 0
   const maxDepthOptions = ['', 'provider-managed', '0', '1', '2', '3', '5']
-  const gateRow = (id: string, label: string, hint: string, key: 'usePtcMode' | 'promoteGate' | 'promoteAfterFirstResponse' | 'personaSectionsOnly' | 'workspaceLine' | 'instructionHint' | 'pageCheckLite' | 'pageCheckRetry' | 'deliveryRequireSmoke'): ReactNode => (
+  const gateRow = (id: string, label: string, hint: string, key: 'usePtcMode' | 'promoteGate' | 'promoteAfterFirstResponse' | 'personaSectionsOnly' | 'workspaceLine' | 'instructionHint'): ReactNode => (
     <div className={styles.settingRowStack}>
       <span className={styles.settingCopy}>
         <strong>{label}</strong>
@@ -558,31 +558,11 @@ export function EngineModuleCards(props: { store: PromptToolStore; layerFilter?:
           </select>
         </div>
 
-        <div className={styles.configSectionTitle}>验证（page-check / delivery-gate，可选模块）</div>
-        <div className={styles.settingRowStack}>
-          <span className={styles.settingCopy}>
-            <strong>浏览器路径</strong>
-            <small>pageCheckBrowserPath：显式 Chrome/Edge 路径；空 = 探测（DSH_PAGE_RUNNER → 常见安装目录）。失焦保存。</small>
-          </span>
-          <input
-            className={styles.configInput}
-            type="text"
-            value={fields.pageCheckBrowserPath}
-            disabled={!fields.writePreset}
-            aria-label="浏览器路径"
-            onChange={(event) => store.patch({ pageCheckBrowserPath: event.target.value })}
-            onBlur={() => void store.persistParamOverrides()}
-          />
-        </div>
-        {numberRow('pt-page-timeout', '硬超时（ms）', 'pageCheckTimeoutMs：页面检查硬超时；0 = 默认 20000。', fields.pageCheckTimeoutMs, (next) => store.patch({ pageCheckTimeoutMs: next }))}
-        {gateRow('pt-page-lite', '单帧降级', 'pageCheckLite：重页单帧低分辨率模式（960x640，~15s）', 'pageCheckLite')}
-        {gateRow('pt-page-retry', '自动重试', 'pageCheckRetry：可重试型失败自动重试一次（降分辨率）', 'pageCheckRetry')}
-        {gateRow('pt-delivery-smoke', '强制页面 smoke', 'deliveryRequireSmoke：页面交付物必须 headless smoke（传 url）；false = 非页面产物可跳过', 'deliveryRequireSmoke')}
       </EngineModuleCard>
       )}
       {!hasVisibleCard && (
         <p className={styles.configFieldHint} role="status">
-          该层无引擎模块卡：引擎模块分布在 pre-step（context-gate）/ system-section（tool-bootstrap）/ tool-pipeline（code-presentation · tool-filter · delegation · page-check · delivery-gate）。
+          该层无引擎模块卡：引擎模块分布在 pre-step（context-gate）/ system-section（tool-bootstrap）/ tool-pipeline（code-presentation · tool-filter · delegation）。
         </p>
       )}
     </>

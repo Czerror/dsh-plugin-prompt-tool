@@ -82,13 +82,6 @@ export function buildCordis(prompt: string, options: BuildCordisOptions = {}): s
     stageAdvanceTool: options.stageAdvanceTool,
     stageAdvanceDescription: options.stageAdvanceDescription,
     stageSectionTemplate: options.stageSectionTemplate,
-    pageCheckBrowserPath: options.pageCheckBrowserPath,
-    pageCheckTimeoutMs: options.pageCheckTimeoutMs,
-    pageCheckLite: options.pageCheckLite,
-    pageCheckRetry: options.pageCheckRetry,
-    pageCheckDescription: options.pageCheckDescription,
-    deliveryRequireSmoke: options.deliveryRequireSmoke,
-    deliveryDescription: options.deliveryDescription,
     toolFilterSubagents: options.toolFilterSubagents,
     firstTurnWord: typeof options.firstTurnWord === 'string' && options.firstTurnWord.length > 0
       ? options.firstTurnWord

@@ -603,8 +603,6 @@ test('P1 回归：晋升门控/渐进披露/验证工具参数键不进 variable
       { name: '了解', tools: ['read', 'glob', 'grep'] },
       { name: '开发', tools: ['write', 'edit'] },
     ])
-    doc.setIn(['params', 'pageCheckTimeoutMs'], 30000)
-    doc.setIn(['params', 'deliveryRequireSmoke'], false)
     writeFileSync(presetFile, doc.toString(), 'utf8')
 
     writePreset('PROMPT', makeOptions(dir))
@@ -615,7 +613,7 @@ test('P1 回归：晋升门控/渐进披露/验证工具参数键不进 variable
     const vars = existsSync(varsFile) ? parseYaml(readFileSync(varsFile, 'utf8')) : {}
     // 新增参数键必须被 PARAM_KEYS 排除：不得当作内容变量混入 variables.yml。
     for (const key of ['promoteGate', 'maxPromoteSteps', 'bootstrapTools', 'messageSources',
-      'stagePreUnlock', 'pageCheckTimeoutMs', 'deliveryRequireSmoke',
+      'stagePreUnlock',
       // 锚定/引导内容键：writePreset 映射进 promptConfig.params，不得双落盘 variables.yml。
       'buildPattern', 'complexPattern', 'firstTurnBuild', 'firstTurnInspect', 'firstTurnDeep',
       'guideComplexPattern', 'guideWeak', 'guideDeep']) {
@@ -625,7 +623,7 @@ test('P1 回归：晋升门控/渐进披露/验证工具参数键不进 variable
     const configs = readdirSync(pcDir).filter((name) => name.endsWith('.yml') && name !== 'variables.yml')
     for (const name of configs) {
       const parsed = parseYaml(readFileSync(join(pcDir, name), 'utf8'))
-      for (const key of ['promoteGate', 'messageSources', 'stagePreUnlock', 'pageCheckTimeoutMs']) {
+      for (const key of ['promoteGate', 'messageSources', 'stagePreUnlock']) {
         assert.equal(parsed.params?.[key], undefined, `配置 params 不得含 ${key}`)
       }
     }
@@ -637,8 +635,6 @@ test('P1 回归：晋升门控/渐进披露/验证工具参数键不进 variable
     assert.ok(cordis.includes('stagePreUnlock: 2'), 'tool-bootstrap 行含 stagePreUnlock')
     assert.ok(cordis.includes('name: 了解'), 'tool-bootstrap 行含 stages 阶段名')
     assert.ok(cordis.includes('- read'), 'tool-bootstrap 行含 stages 工具集')
-    // page-check/delivery-gate 未挂载（anchored modules 无此行）：参数桥无行可合并，不产生残留。
-    assert.ok(!cordis.includes('pageCheckTimeoutMs'), '未挂载模块不产生 config 行')
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }

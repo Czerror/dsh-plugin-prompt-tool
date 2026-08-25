@@ -100,20 +100,6 @@ export interface EngineParams {
   stageAdvanceDescription?: string
   /** 阶段状态 section 模板（{{stage}}/{{stageName}}/{{unlocked}}/{{total}}；空 = 不注入）。 */
   stageSectionTemplate?: string
-  /** 显式浏览器路径（page-check；缺省探测 DSH_PAGE_RUNNER → Chrome/Edge）。 */
-  pageCheckBrowserPath?: string
-  /** 页面检查硬超时（ms）。 */
-  pageCheckTimeoutMs?: number
-  /** 单帧低分辨率模式（重页）。 */
-  pageCheckLite?: boolean
-  /** 自动重试开关。 */
-  pageCheckRetry?: boolean
-  /** 页面验证工具描述。 */
-  pageCheckDescription?: string
-  /** 非页面交付物跳过 headless smoke。 */
-  deliveryRequireSmoke?: boolean
-  /** 交付验证工具描述。 */
-  deliveryDescription?: string
   /** 子代理也启用主对话工具过滤。 */
   toolFilterSubagents?: boolean
   /** str-replace-editor 最大输出字符数（参数桥默认官方值 16000；UI 无专卡，高级参数 JSON 可编辑）。 */
@@ -145,9 +131,6 @@ export const ENGINE_PARAM_KEYS = [
   'messageSources', 'deferredSources', 'deferredGraceSteps', 'instructionHint',
   // 渐进披露（stages 模式）。
   'stages', 'stagePreUnlock', 'stageAdvanceTool', 'stageAdvanceDescription', 'stageSectionTemplate',
-  // 验证工具（page-check / delivery-gate）。
-  'pageCheckBrowserPath', 'pageCheckTimeoutMs', 'pageCheckLite', 'pageCheckRetry',
-  'pageCheckDescription', 'deliveryRequireSmoke', 'deliveryDescription',
   // 工具行级参数。
   'toolFilterSubagents', 'strReplaceEditorMaxOutputChars',
 ] as const

@@ -42,7 +42,7 @@ UI fields
 | `''`（字符串清空） | **删键** | 回落模板/引擎默认（如 reasoningEffort 留空 = 继承宿主） |
 | `[]`（列表清空） | **删键** | 引擎对空数组 fail loud（bootstrapTools/stages）或全拦注入（messageSources/allowKinds） |
 | `0`（`stagePreUnlock`） | **删键** | 引擎 `undefined → 1`，`0` 是合法档位，二者不等价 |
-| `0`（其余数字） | **写 0** | 引擎 `|| 默认` 等价（maxPromoteSteps 0→4、pageCheckTimeoutMs 0→默认、deferredGraceSteps 0→无延迟） |
+| `0`（其余数字） | **写 0** | 引擎 `|| 默认` 等价（maxPromoteSteps 0→4、deferredGraceSteps 0→无延迟） |
 | `false`（布尔） | **写 false** | 引擎 `=== true` 归一，false = 显式关闭（与默认等价或明确） |
 
 UI 侧 `persistParamOverrides` **总是发送全部键**（含空值），否则「从有值改回留空」会残留旧键（历史 bug）。

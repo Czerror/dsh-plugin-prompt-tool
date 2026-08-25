@@ -1,8 +1,0 @@
-# module: delivery-gate
-# source: engine/compositions/source/local/delivery-gate.yml (本地附加,非官方模块)
-# 交付 gate 工具（参考 dsh-router-standard delivery_check 自写）：
-# file/UTF-8 + headless smoke（复用 page-check）+ evidence 清单校验。
-# 可选模块：默认不挂载；依赖 page-check（同组合挂载即可，懒取 subprocess）。
-
-- id: delivery-gate
-  name: ./engine/delivery-gate.mjs

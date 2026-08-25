@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### 移除浏览器验证模块：page-check / delivery-gate（2026-08-26）
+
+- **删除**：`engine/page-check.mjs`（headless Chrome 页面验证：截图/DOM smoke/console/selector + `{js:}` 本地引擎）与 `engine/delivery-gate.mjs`（交付 gate：file/UTF-8 + headless smoke 复用 page-check + evidence 清单）及组合行（library/source/local 各 2 个 yml）、引擎测试 2 个。delivery-gate 代码级依赖 page-check（`import { pageCheckRun }`），故整链移除。
+- **参数桥**：`pageCheckBrowserPath / pageCheckTimeoutMs / pageCheckLite / pageCheckRetry / pageCheckDescription / deliveryRequireSmoke / deliveryDescription` 7 个引擎参数键从契约（engine-params.ts）、装配（manifest.ts / preset-core.ts）、UI（EngineModuleCards 验证分区）、store/bridge、preset.yml 注释、docs（engine-reuse / architecture-params）全链移除；rebuild-composition MODULES 清单同步。
+- **验证**：typecheck/lint 通过，343 测试通过（-12：page-check 8 + delivery-gate 4）。
+
 ### 保存后静默刷新：不再闪 loading / 滚动跳动（2026-08-25）
 
 - **修复**：所有保存路径（参数失焦保存 / 模块列表自动与手动保存 / 开关保存 / 技能目录 /

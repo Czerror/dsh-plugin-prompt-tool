@@ -64,11 +64,6 @@ export interface SwitchSnapshot {
   messageSources: string
   deferredSources: string
   deferredGraceSteps: number
-  pageCheckBrowserPath: string
-  pageCheckTimeoutMs: number
-  pageCheckLite: boolean
-  pageCheckRetry: boolean
-  deliveryRequireSmoke: boolean
   injectPrompt: boolean
   skillSwitches: Record<string, boolean>
   skillOrder: string[]
@@ -117,11 +112,6 @@ const EMPTY_SWITCHES: SwitchSnapshot = {
   messageSources: '',
   deferredSources: '',
   deferredGraceSteps: 0,
-  pageCheckBrowserPath: '',
-  pageCheckTimeoutMs: 0,
-  pageCheckLite: false,
-  pageCheckRetry: true,
-  deliveryRequireSmoke: true,
   injectPrompt: true,
   skillSwitches: {},
   skillOrder: [],
@@ -198,11 +188,6 @@ export const snapshotSwitches = (fields: Fields): SwitchSnapshot => ({
   messageSources: fields.messageSources,
   deferredSources: fields.deferredSources,
   deferredGraceSteps: fields.deferredGraceSteps,
-  pageCheckBrowserPath: fields.pageCheckBrowserPath,
-  pageCheckTimeoutMs: fields.pageCheckTimeoutMs,
-  pageCheckLite: fields.pageCheckLite,
-  pageCheckRetry: fields.pageCheckRetry,
-  deliveryRequireSmoke: fields.deliveryRequireSmoke,
   injectPrompt: fields.injectPrompt,
   skillSwitches: { ...fields.skillSwitches },
   skillOrder: [...fields.skillOrder],
@@ -248,10 +233,10 @@ const switchesEqual = (a: SwitchSnapshot, b: SwitchSnapshot): boolean =>
   && a.writeAgents === b.writeAgents
   && a.writePreset === b.writePreset
 
-export type SwitchKey = 'injectAgentsPrompt' | 'firstTurnAnchor' | 'firstTurnCustom' | 'guideCustom' | 'injectPrompt' | 'usePtcMode' | 'promoteGate' | 'promoteAfterFirstResponse' | 'personaSectionsOnly' | 'workspaceLine' | 'instructionHint' | 'pageCheckLite' | 'pageCheckRetry' | 'deliveryRequireSmoke' | 'writeAgents' | 'writePreset'
+export type SwitchKey = 'injectAgentsPrompt' | 'firstTurnAnchor' | 'firstTurnCustom' | 'guideCustom' | 'injectPrompt' | 'usePtcMode' | 'promoteGate' | 'promoteAfterFirstResponse' | 'personaSectionsOnly' | 'workspaceLine' | 'instructionHint' | 'writeAgents' | 'writePreset'
 
 /** 参数类布尔开关：写激活预设 preset.yml（settings 只留全局开关）。 */
-const PARAM_SWITCH_KEYS: ReadonlySet<SwitchKey> = new Set(['firstTurnAnchor', 'firstTurnCustom', 'guideCustom', 'injectPrompt', 'usePtcMode', 'promoteGate', 'promoteAfterFirstResponse', 'personaSectionsOnly', 'workspaceLine', 'instructionHint', 'pageCheckLite', 'pageCheckRetry', 'deliveryRequireSmoke'])
+const PARAM_SWITCH_KEYS: ReadonlySet<SwitchKey> = new Set(['firstTurnAnchor', 'firstTurnCustom', 'guideCustom', 'injectPrompt', 'usePtcMode', 'promoteGate', 'promoteAfterFirstResponse', 'personaSectionsOnly', 'workspaceLine', 'instructionHint'])
 
 export interface PromptToolStore {
   fields: Fields
@@ -540,12 +525,6 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
         if (Array.isArray(o.deferredSources)) paramPatch.deferredSources = o.deferredSources.join(', ')
         else if (typeof o.deferredSources === 'string') paramPatch.deferredSources = o.deferredSources
         if (typeof o.deferredGraceSteps === 'number') paramPatch.deferredGraceSteps = o.deferredGraceSteps
-        // 验证工具（page-check / delivery-gate）。
-        if (typeof o.pageCheckBrowserPath === 'string') paramPatch.pageCheckBrowserPath = o.pageCheckBrowserPath
-        if (typeof o.pageCheckTimeoutMs === 'number') paramPatch.pageCheckTimeoutMs = o.pageCheckTimeoutMs
-        if (typeof o.pageCheckLite === 'boolean') paramPatch.pageCheckLite = o.pageCheckLite
-        if (typeof o.pageCheckRetry === 'boolean') paramPatch.pageCheckRetry = o.pageCheckRetry
-        if (typeof o.deliveryRequireSmoke === 'boolean') paramPatch.deliveryRequireSmoke = o.deliveryRequireSmoke
         if (Object.keys(paramPatch).length > 0) {
           const next = { ...fieldsRef.current, ...paramPatch }
           fieldsRef.current = next
@@ -724,12 +703,6 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
         ...emit('messageSources', splitList(f.messageSources), []),
         ...emit('deferredSources', splitList(f.deferredSources), []),
         ...emit('deferredGraceSteps', f.deferredGraceSteps, 0),
-        // 验证工具（page-check / delivery-gate）。
-        ...emit('pageCheckBrowserPath', f.pageCheckBrowserPath, ''),
-        ...emit('pageCheckTimeoutMs', f.pageCheckTimeoutMs, 0),
-        ...emit('pageCheckLite', f.pageCheckLite, false),
-        ...emit('pageCheckRetry', f.pageCheckRetry, true),
-        ...emit('deliveryRequireSmoke', f.deliveryRequireSmoke, true),
       },
     })
     if (res.ok) {

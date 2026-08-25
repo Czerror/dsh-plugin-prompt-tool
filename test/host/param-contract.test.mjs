@@ -34,13 +34,6 @@ const BRIDGE_SAMPLES = {
   stageAdvanceTool: 'x',
   stageAdvanceDescription: 'x',
   stageSectionTemplate: 'x',
-  pageCheckBrowserPath: 'x',
-  pageCheckTimeoutMs: 5000,
-  pageCheckLite: true,
-  pageCheckRetry: true,
-  pageCheckDescription: 'x',
-  deliveryRequireSmoke: false,
-  deliveryDescription: 'x',
   toolFilterSubagents: true,
   strReplaceEditorMaxOutputChars: 20000,
 }
@@ -72,8 +65,8 @@ test('ENGINE_PARAM_KEYS 每个非 writer 键都有参数桥装配消费（防「
     assert.ok(Object.keys(configs).length > 0, `${key} 应被参数桥消费（产出组合行 config）`)
     for (const id of Object.keys(configs)) bridgeConsumed.add(id)
   }
-  assert.ok(bridgeConsumed.has('tool-bootstrap') && bridgeConsumed.has('context-gate')
-    && bridgeConsumed.has('page-check'), '参数桥应覆盖核心引擎行')
+  assert.ok(bridgeConsumed.has('tool-bootstrap') && bridgeConsumed.has('context-gate'),
+    '参数桥应覆盖核心引擎行')
 })
 
 test('MODEL_SEGMENT_MAP 双向一致：展平读回 = 保存写回（段目标唯一）', () => {

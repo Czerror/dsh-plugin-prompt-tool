@@ -121,13 +121,6 @@ params:
   # stageAdvanceTool: phase_advance  # 阶段推进工具名
   # stageAdvanceDescription: ""    # 阶段推进工具描述
   # stageSectionTemplate: ""       # 阶段状态 section 模板（{{stage}}/{{stageName}}/{{unlocked}}/{{total}}；空=不注入）
-  # ── 验证工具（可选模块 page-check / delivery-gate；modules 声明才挂载）──
-  # pageCheckBrowserPath: ""       # 显式浏览器路径（缺省探测 DSH_PAGE_RUNNER → Chrome/Edge）
-  # pageCheckTimeoutMs: 20000      # 页面检查硬超时
-  # pageCheckLite: false           # true=单帧低分辨率模式（重页）
-  # pageCheckRetry: true           # false=关闭自动重试
-  # deliveryRequireSmoke: true     # false=非页面交付物跳过 headless smoke
-
 # ── promptConfigs：注入提示词配置（三源合并：默认 < 目录 < 本段）──────────────
 # 每条配置的通用字段（除 id 外全部可选，缺省见注释）：
 # 每条配置的通用字段（除 id 外全部可选，缺省见注释）：

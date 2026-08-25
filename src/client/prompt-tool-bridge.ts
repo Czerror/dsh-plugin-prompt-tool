@@ -86,16 +86,6 @@ export interface Fields {
   deferredSources: string
   /** 延迟注入宽限步数（0 = 不延迟）。 */
   deferredGraceSteps: number
-  /** 验证工具：显式浏览器路径（page-check）。 */
-  pageCheckBrowserPath: string
-  /** 页面检查硬超时（ms；0 = 默认 20000）。 */
-  pageCheckTimeoutMs: number
-  /** 单帧低分辨率模式（重页）。 */
-  pageCheckLite: boolean
-  /** 自动重试。 */
-  pageCheckRetry: boolean
-  /** 非页面交付物跳过 headless smoke（delivery-gate）。 */
-  deliveryRequireSmoke: boolean
   injectPrompt: boolean
   skillSwitches: Record<string, boolean>
   skillOrder: string[]
@@ -183,11 +173,6 @@ export const EMPTY_FIELDS: Fields = {
   messageSources: '',
   deferredSources: '',
   deferredGraceSteps: 0,
-  pageCheckBrowserPath: '',
-  pageCheckTimeoutMs: 0,
-  pageCheckLite: false,
-  pageCheckRetry: true,
-  deliveryRequireSmoke: true,
   injectPrompt: true,
   skillSwitches: {},
   skillOrder: [],
@@ -342,15 +327,10 @@ export function fieldsFromView(res: BridgeResult<BridgeSettingsView>): Fields {
     personaSectionsOnly: false,
     workspaceLine: false,
     instructionHint: false,
-    // context-gate 注入门控 + 验证工具（预设级参数，由 /param-overrides 填充）。
+    // context-gate 注入门控（预设级参数，由 /param-overrides 填充）。
     messageSources: '',
     deferredSources: '',
     deferredGraceSteps: 0,
-    pageCheckBrowserPath: '',
-    pageCheckTimeoutMs: 0,
-    pageCheckLite: false,
-    pageCheckRetry: true,
-    deliveryRequireSmoke: true,
     injectPrompt: readBoolean(value, 'injectPrompt', readBoolean(base, 'injectPrompt', true)),
     skillSwitches: value.skillSwitches !== undefined || base.skillSwitches !== undefined
       ? { ...readSkillSwitches(base, 'skillSwitches'), ...readSkillSwitches(value, 'skillSwitches') }
