@@ -447,10 +447,11 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
     return next
   }, [])
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (options?: { silent?: boolean }) => {
     // 并发保护：慢的旧请求不得覆盖新请求（last-good 语义保留旧数据）。
     const seq = ++loadSeqRef.current
-    setLoading(true)
+    // silent：保存后静默刷新（不闪 loading、避免重渲染风暴与滚动跳动）；失败仍报错。
+    if (!options?.silent) setLoading(true)
     try {
       const metaRes = await bridgePost<{ meta: EngineMeta }>('/meta', {})
       if (seq !== loadSeqRef.current) return EMPTY_FIELDS
@@ -582,7 +583,7 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
       showNotice('error', '读取失败：' + errorMessage(error))
       return EMPTY_FIELDS
     } finally {
-      if (seq === loadSeqRef.current) setLoading(false)
+      if (seq === loadSeqRef.current && !options?.silent) setLoading(false)
     }
   }, [applyView, settings, showNotice])
 
@@ -734,7 +735,7 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
     if (res.ok) {
       setSavedSwitches(snapshotSwitches(fieldsRef.current))
       // 参数已写激活预设 preset.yml：服务端重建后刷新（模型参数配置等随预设变化）。
-      void load()
+      void load({ silent: true })
     } else {
       showNotice('error', '参数保存失败：' + (res.message ?? 'settings bridge unavailable'))
     }
@@ -758,7 +759,7 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
       })
       if (res.ok) {
         setSavedConfigs(configs)
-        void load()
+        void load({ silent: true })
       } else {
         showNotice('error', '提示词配置保存失败：' + (res.message ?? 'settings bridge unavailable'))
       }
@@ -787,7 +788,7 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
     if (PARAM_SWITCH_KEYS.has(key)) void persistParamOverrides()
     // writePreset 关闭/开启会重建或移除生成目录：保存后必须重新加载，
     // 否则模块卡片仍显示旧配置（不刷新）。
-    else if (key === 'writePreset') persistSwitches(() => { void load() })
+    else if (key === 'writePreset') persistSwitches(() => { void load({ silent: true }) })
     else persistSwitches()
   }, [patch, persistParamOverrides, persistSwitches, load])
 
@@ -810,7 +811,7 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
     enqueueSave(
       [{ op: 'set', path: ['presetTemplate'], value: id }],
       `已切换预设模板：${id}`,
-      () => { void load() },
+      () => { void load({ silent: true }) },
     )
   }, [enqueueSave, load, patch, persistConfigs, savedConfigs])
 
@@ -852,7 +853,7 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
       `技能目录已添加：${next}`,
       () => {
         setSavedSwitches(snapshotSwitches(fieldsRef.current))
-        void load()
+        void load({ silent: true })
       },
       setSavingSkillsDir,
     )
@@ -866,7 +867,7 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
       `已移除技能目录引用：${dir}`,
       () => {
         setSavedSwitches(snapshotSwitches(fieldsRef.current))
-        void load()
+        void load({ silent: true })
       },
       setSavingSkillsDir,
     )
