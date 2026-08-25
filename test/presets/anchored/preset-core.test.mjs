@@ -57,6 +57,7 @@ test('buildCordis 设置子代理模型服务商与模型名时给 subagent/suba
   const out = buildCordis('PROMPT', {
     subagentModelProvider: 'my-provider',
     subagentModelName: 'deepseek-v4-flash-7013',
+    subagentPersona: '子代理专属人设',
   })
   const doc = parse(out, { logLevel: 'silent' })
   const rows = findAllRows(doc, new Set(['tool-subagent', 'tool-subagent-fork']))
@@ -64,6 +65,7 @@ test('buildCordis 设置子代理模型服务商与模型名时给 subagent/suba
   for (const row of rows) {
     assert.equal(row.config.agentOptions.provider, 'my-provider')
     assert.equal(row.config.agentOptions.model, 'deepseek-v4-flash-7013')
+    assert.equal(row.config.persona, '子代理专属人设', '显式 subagentPersona 渲染（缺省不再回退，scope 链继承主会话）')
   }
 })
 

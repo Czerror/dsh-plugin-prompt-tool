@@ -55,6 +55,9 @@ export function buildCordis(prompt: string, options: BuildCordisOptions = {}): s
     subagentReasoningEffort: typeof options.subagentReasoningEffort === 'string' ? options.subagentReasoningEffort : '',
     subagentTemperature: typeof options.subagentTemperature === 'string' ? options.subagentTemperature : '',
     subagentMaxTokens: typeof options.subagentMaxTokens === 'string' ? options.subagentMaxTokens : '',
+    subagentPersona: typeof options.subagentPersona === 'string' && options.subagentPersona.length > 0
+      ? options.subagentPersona
+      : '',
     toolFilterAllow: options.toolFilterAllow,
     toolFilterDeny: options.toolFilterDeny,
     maxDepth: options.maxDepth,

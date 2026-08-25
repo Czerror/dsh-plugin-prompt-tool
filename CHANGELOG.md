@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### 子代理 persona 恢复官方 per-child shadow（2026-08-26）
+
+- **源码核实**（E:\Documents\GitHub\deepseek-harness）：`tool-subagent` 行
+  `config.persona` = 官方 per-child persona（子代理 scope 同名 `deployment:persona`
+  段 shadow 全局）；`PromptSection` 无 audience、同名段重复注册抛错、AssembleContext
+  仅不透明 ScopeKey——promptConfigs 配置卡无法承载 per-scope persona shadow，
+  上一条"子代理 = pre-step 配置卡（继承+追加）"修正作废。
+- **恢复**：`subagentPersona` 参数桥 + 子代理模型卡文本域（官方 shadow 机制，
+  替换语义，自由编辑）；主会话仍为 persona-main 配置卡（mainPersona 删除有效）。
+- **验证**：typecheck/lint/test 三连（347 + 恢复断言）。
+
 ### 人设参数桥移除：主会话 + 子代理一律配置卡模式（2026-08-26）
 
 - **删除**：`mainPersona` / `subagentPersona` 参数桥与 UI 输入框全链移除（契约

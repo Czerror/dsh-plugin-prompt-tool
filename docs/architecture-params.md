@@ -136,6 +136,16 @@ wholeWords/selectiveLogic）单一权威。两个写入端共用：
   persona 并追加专属段；无子代理卡 = scope 链继承，行为不变）。
 - 子代理 persona 语义变化：per-child shadow 整体替换 → 继承 + 追加。
 
+### 子代理 persona 恢复官方 per-child shadow（2026-08-26，官方源码确认后修正）
+
+- deepseek-harness 官方机制核实：`tool-subagent` 行 `config.persona` = per-child
+  persona（子代理 scope 注册 `deployment:persona` 同名段 shadow 全局）；`PromptSection`
+  无 audience 概念、同名段重复注册抛错、`AssembleContext` 仅不透明 ScopeKey——
+  promptConfigs 配置卡无法做 per-scope persona shadow，上一条"pre-step 配置卡"
+  结论作废。
+- 修正：`subagentPersona` 参数桥恢复（写 delegation 行 config.persona），UI 在
+  子代理模型卡自由编辑；主会话保持 persona-main 配置卡。`mainPersona` 删除有效。
+
 ### 角色卡导入的 persona 开放（2026-08-25）
 
 ST 转换（convertStToPreset）自带人设开放处理（`moduleConfigs.persona = { complete: false }`，

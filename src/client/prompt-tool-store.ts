@@ -474,6 +474,7 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
         if (typeof o.subagentReasoningEffort === 'string') paramPatch.subagentReasoningEffort = o.subagentReasoningEffort
         if (typeof o.subagentTemperature === 'string') paramPatch.subagentTemperature = o.subagentTemperature
         if (typeof o.subagentMaxTokens === 'string') paramPatch.subagentMaxTokens = o.subagentMaxTokens
+        if (typeof o.subagentPersona === 'string') paramPatch.subagentPersona = o.subagentPersona
         if (typeof o.usePtcMode === 'boolean') paramPatch.usePtcMode = o.usePtcMode
         if (typeof o.injectPrompt === 'boolean') paramPatch.injectPrompt = o.injectPrompt
         if (Array.isArray(o.toolFilterAllow)) paramPatch.toolFilterAllow = o.toolFilterAllow.join(', ')
@@ -666,6 +667,7 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
         ...emit('subagentReasoningEffort', f.subagentReasoningEffort, ''),
         ...emit('subagentTemperature', f.subagentTemperature, ''),
         ...emit('subagentMaxTokens', f.subagentMaxTokens, ''),
+        ...emit('subagentPersona', f.subagentPersona, ''),
         ...emit('toolFilterAllow', splitList(f.toolFilterAllow), []),
         ...emit('toolFilterDeny', splitList(f.toolFilterDeny), []),
         ...emit('maxDepth', f.maxDepth === '' ? '' : f.maxDepth === 'provider-managed' ? 'provider-managed' : Number(f.maxDepth), ''),

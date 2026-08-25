@@ -43,6 +43,7 @@ params:
   usePtcMode: false
   bootstrapMaxTokens: 0
   allowKinds: "[skill-invocation, near-anchor, router-guide]"
+  subagentPersona: ""
   toolFilterAllow: []
   toolFilterDeny: []
   maxDepth: ""

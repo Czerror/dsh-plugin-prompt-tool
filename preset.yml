@@ -101,6 +101,9 @@ params:
   # deferredGraceSteps: 0         # 延迟注入宽限步数
   # instructionHint: false        # 晋升后 agent-instructions 全文 → 一次性 hint
 
+  # ── 人设（子代理）──
+  subagentPersona: ""            # 子代理独立人设（官方 per-child shadow：tool-subagent 行 config.persona；留空 = scope 链继承主会话 persona-main 模块）
+
   # ── 工具集（子代理 toolFilter；主对话 tool-filter 模块共用同一扁平键）──
   toolFilterAllow: []            # 子代理工具白名单（数组或逗号/空格字符串；空=不过滤）
   toolFilterDeny: []             # 子代理工具黑名单（数组或逗号/空格字符串；空=不过滤）

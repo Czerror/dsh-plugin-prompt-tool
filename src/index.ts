@@ -149,6 +149,7 @@ export function apply(ctx: Context, configIn: Config): void {
     runtime.modelName = asString(params.modelName)
     runtime.subagentModelProvider = asString(params.subagentModelProvider)
     runtime.subagentModelName = asString(params.subagentModelName)
+    runtime.subagentPersona = asString(params.subagentPersona) || undefined
     runtime.modelReasoningEffort = asString(params.modelReasoningEffort)
     runtime.modelTemperature = asString(params.modelTemperature)
     runtime.modelMaxTokens = asString(params.modelMaxTokens)
@@ -190,6 +191,7 @@ export function apply(ctx: Context, configIn: Config): void {
         modelName: runtime.modelName,
         subagentModelProvider: runtime.subagentModelProvider,
         subagentModelName: runtime.subagentModelName,
+        subagentPersona: runtime.subagentPersona,
         modelReasoningEffort: runtime.modelReasoningEffort,
         modelTemperature: runtime.modelTemperature,
         modelMaxTokens: runtime.modelMaxTokens,
@@ -300,6 +302,7 @@ export function apply(ctx: Context, configIn: Config): void {
     if (typeof overrides.modelName === 'string') runtime.modelName = overrides.modelName
     if (typeof overrides.subagentModelProvider === 'string') runtime.subagentModelProvider = overrides.subagentModelProvider
     if (typeof overrides.subagentModelName === 'string') runtime.subagentModelName = overrides.subagentModelName
+    if (typeof overrides.subagentPersona === 'string') runtime.subagentPersona = overrides.subagentPersona
     if (typeof overrides.modelReasoningEffort === 'string') runtime.modelReasoningEffort = overrides.modelReasoningEffort
     if (typeof overrides.modelTemperature === 'string') runtime.modelTemperature = overrides.modelTemperature
     if (typeof overrides.modelMaxTokens === 'string') runtime.modelMaxTokens = overrides.modelMaxTokens
@@ -535,6 +538,7 @@ export function apply(ctx: Context, configIn: Config): void {
     modelName: asString(initialParams.modelName),
     subagentModelProvider: asString(initialParams.subagentModelProvider),
     subagentModelName: asString(initialParams.subagentModelName),
+    subagentPersona: asString(initialParams.subagentPersona) || undefined,
     modelReasoningEffort: asString(initialParams.modelReasoningEffort),
     modelTemperature: asString(initialParams.modelTemperature),
     modelMaxTokens: asString(initialParams.modelMaxTokens),
