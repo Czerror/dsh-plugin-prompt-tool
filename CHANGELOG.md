@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### 引擎模块审查修复：timer 清理 + config 校验一致化 + skill-search 测试（2026-08-26）
+
+- **修复**（tool-config-engine）：shell 执行器 kill timer 无 clearTimeout——正常完成后 timer 残留到超时点；保存句柄 + 回调清理。
+- **一致化**（custom-bash / run-code-env）：补 validateConfig + ALLOWED_KEYS，未知 config 键 fail loud（与其余 6 个引擎模块对齐）。
+- **测试**（skill-search）：新增 6 用例覆盖 skill_search 匹配/截断/降级与 skill_load 注入/空 body/缺失分支（此前零直接测试）。
+- **验证**：typecheck/lint 通过，349 测试通过（+6）。
+
 ### 移除浏览器验证模块：page-check / delivery-gate（2026-08-26）
 
 - **删除**：`engine/page-check.mjs`（headless Chrome 页面验证：截图/DOM smoke/console/selector + `{js:}` 本地引擎）与 `engine/delivery-gate.mjs`（交付 gate：file/UTF-8 + headless smoke 复用 page-check + evidence 清单）及组合行（library/source/local 各 2 个 yml）、引擎测试 2 个。delivery-gate 代码级依赖 page-check（`import { pageCheckRun }`），故整链移除。

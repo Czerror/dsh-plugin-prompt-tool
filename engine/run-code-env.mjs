@@ -18,8 +18,13 @@
  * native 模式自动空转。
  */
 
+import { validateConfig } from './shared.mjs'
+
 /** Cordis 插件名，供 loader 诊断使用。 */
 export const name = 'run-code-env'
+
+/** Every config key this plugin accepts — anything else is a typo. */
+const ALLOWED_KEYS = new Set(['enabled', 'envKeys'])
 
 /** 需要 tools 视图与 systemPrompt 段。shellEnv 为机会型读取，不写进 inject。 */
 export const inject = ['tools', 'systemPrompt']
@@ -166,7 +171,7 @@ export function patchRunCodeTool(tool, ctx, keys) {
 
 /** 注册 PTC env 注入：只在目标 scope 出现 run_code 时生效。 */
 export function apply(ctx, config) {
-  const source = config === undefined ? {} : config
+  const source = validateConfig(name, config, ALLOWED_KEYS)
   const enabled = source.enabled !== false
   const keys = normalizeEnvKeys(source.envKeys)
 

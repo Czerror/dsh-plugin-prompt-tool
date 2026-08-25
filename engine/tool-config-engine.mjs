@@ -191,7 +191,9 @@ function createExecute(ctx, def, requireApproval) {
             : ['-c', command]
       const env = { ...Object.fromEntries(ENV_ALLOWLIST.filter((key) => process.env[key] !== undefined).map((key) => [key, process.env[key]])), ...(exec.env ?? {}) }
       const output = await new Promise((resolvePromise) => {
+        let killTimer
         const child = execFile(shell, argv, { cwd, env, windowsHide: true }, (error, stdout, stderr) => {
+          clearTimeout(killTimer)
           resolvePromise({
             exitCode: error === null ? 0 : (typeof error.code === 'number' ? error.code : 1),
             stdout: String(stdout ?? ''),
@@ -201,7 +203,7 @@ function createExecute(ctx, def, requireApproval) {
         })
         const timeout = def.timeoutMs
         if (timeout !== undefined && Number.isSafeInteger(timeout) && timeout > 0) {
-          setTimeout(() => child.kill(), timeout)
+          killTimer = setTimeout(() => child.kill(), timeout)
         }
       })
       return output
