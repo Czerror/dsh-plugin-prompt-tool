@@ -120,7 +120,7 @@ export const KNOWN_FILLS = new Set(['instruction-hint', 'env-facts', 'skill-cata
 /** 层能力矩阵：每个字段只在对应注入层生效。客户端表单据此动态渲染。 */
 export const LAYER_FIELD_POLICIES = {
   'pre-step': { position: true, dedupe: true, promotion: true, audience: true, modelScope: true, merge: true, order: true, role: true, placeholder: true },
-  'system-section': { position: false, dedupe: false, promotion: false, audience: false, modelScope: false, merge: true, order: true, role: false, placeholder: false },
+  'system-section': { position: false, dedupe: false, promotion: false, audience: true, modelScope: false, merge: true, order: true, role: false, placeholder: false },
   'runtime-context': { position: false, dedupe: false, promotion: false, audience: false, modelScope: false, merge: true, order: true, role: false, placeholder: true },
   'agent-request': { position: false, dedupe: false, promotion: false, audience: true, modelScope: true, merge: false, order: true, role: false, placeholder: false },
   'llm-stream': { position: false, dedupe: false, promotion: false, audience: false, modelScope: true, merge: false, order: true, role: false, placeholder: false },

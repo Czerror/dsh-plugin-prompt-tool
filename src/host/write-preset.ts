@@ -138,9 +138,6 @@ function runtimeOf(options: WritePresetOptions, prompt: string): Record<string, 
     subagentMaxTokens: typeof options.subagentMaxTokens === 'string' && options.subagentMaxTokens.length > 0
       ? options.subagentMaxTokens
       : undefined,
-    subagentPersona: typeof options.subagentPersona === 'string' && options.subagentPersona.length > 0
-      ? options.subagentPersona
-      : '',
     // 工具过滤空值不覆盖：spec.params（预设模板默认）保留，settings/overrides 显式值优先。
     toolFilterAllow: options.toolFilterAllow !== undefined
       && (Array.isArray(options.toolFilterAllow) ? options.toolFilterAllow.length > 0 : String(options.toolFilterAllow).trim().length > 0)

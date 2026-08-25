@@ -50,7 +50,7 @@ dsh --profile prompt-tool                                          # 首次启�
 | 锚定 | `firstTurnAnchor` `firstTurnCustom` `firstTurnText` `firstTurnWord`（空 = 自动从锚句派生确认词）`firstTurnBuild` `firstTurnInspect` `firstTurnDeep` |
 | 引导 | `guideCustom` `guideText` `guideWeak` `guideDeep`（复杂判定 fallback 复用锚定的 `complexPattern`） |
 | PTC/门控 | `usePtcMode` `bootstrapMaxTokens` `injectPrompt` `allowKinds` |
-| 人设 | 主会话 = 模块列表 `persona-main` 卡（system-section + `deployment:persona`，complete 互斥 + suppressRuntimeContext）；子代理独立人设 = 子代理模型卡 `subagentPersona`（官方 per-child shadow：tool-subagent 行 config.persona 覆盖 deployment:persona；留空 = scope 链继承主会话） |
+| 人设 | 配置卡：主会话 = `persona-main` 卡（system-section + `deployment:persona`，complete 互斥 + suppressRuntimeContext）；子代理独立人设 = 新建配置卡（system-section + `audience=subagent` + 人设段），装配时替换主会话人设（不继承）；无子代理卡 = scope 链继承主会话 |
 | 工具集 | `toolFilterAllow` `toolFilterDeny`（子代理 toolFilter；主对话 tool-filter 模块共用） |
 | 深度 | `maxDepth`（0 禁止委派 / `provider-managed` / 正整数） |
 

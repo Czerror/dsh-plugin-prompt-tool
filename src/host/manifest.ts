@@ -658,8 +658,6 @@ export function buildModuleConfigsFromParams(params: Record<string, unknown>): R
   const provider = asString(params.subagentModelProvider, '')
   const model = asString(params.subagentModelName, '')
   if (provider.length > 0 && model.length > 0) subagent.agentOptions = { provider, model }
-  const subagentPersona = asString(params.subagentPersona)
-  if (subagentPersona.length > 0) subagent.persona = subagentPersona
   const subAllow = parseListParam(params.toolFilterAllow)
   const subDeny = parseListParam(params.toolFilterDeny)
   if (subAllow.length > 0 || subDeny.length > 0) {

@@ -59,10 +59,9 @@ test('moduleConfigs 未声明时返回原文（零开销）', () => {
 })
 
 test('resolvePresetParams 模型路由/委派参数全扁平（preset.yml params 与运行时扁平键等价）', () => {
-  const flat = resolvePresetParams({ id: 't', params: { modelProvider: 'deepseek', modelName: 'deepseek-v4-flash-7013', subagentPersona: '子代理路由人设', toolFilterAllow: ['read', 'glob'], toolFilterDeny: ['bash'], maxDepth: 2 } }, {})
+  const flat = resolvePresetParams({ id: 't', params: { modelProvider: 'deepseek', modelName: 'deepseek-v4-flash-7013', toolFilterAllow: ['read', 'glob'], toolFilterDeny: ['bash'], maxDepth: 2 } }, {})
   assert.equal(flat.modelProvider, 'deepseek')
   assert.equal(flat.modelName, 'deepseek-v4-flash-7013')
-  assert.equal(flat.subagentPersona, '子代理路由人设')
   assert.deepEqual(flat.toolFilterAllow, ['read', 'glob'])
   assert.deepEqual(flat.toolFilterDeny, ['bash'])
   assert.equal(flat.maxDepth, 2)
@@ -71,7 +70,7 @@ test('resolvePresetParams 模型路由/委派参数全扁平（preset.yml params
   assert.equal(overridden.modelProvider, 'runtime-wins')
   assert.equal(overridden.modelName, 'm1')
   // 空默认值不渲染（renderEngineTokens 对空串/空数组跳过）。
-  const empty = resolvePresetParams({ id: 't', params: { modelProvider: '', modelName: '', subagentPersona: '', toolFilterAllow: [], toolFilterDeny: [], maxDepth: '' } }, {})
+  const empty = resolvePresetParams({ id: 't', params: { modelProvider: '', modelName: '', toolFilterAllow: [], toolFilterDeny: [], maxDepth: '' } }, {})
   assert.equal(empty.modelProvider, '')
   assert.deepEqual(empty.toolFilterAllow, [])
   assert.equal(empty.maxDepth, '')
@@ -95,11 +94,10 @@ test('anchored buildCordis 集成：moduleConfigs 合并与 token 渲染共存',
   assert.ok(!/__[A-Za-z0-9_]+__/.test(buildCordis('P')), '生成文本不应残留未解析 token')
 })
 
-test('子代理模型路由与委派完整自定义：persona + toolFilter + maxDepth 渲染（官方 tool-subagent Config）', () => {
+test('子代理模型路由与委派完整自定义：toolFilter + maxDepth 渲染（官方 tool-subagent Config）', () => {
   const rows = parseYaml(buildCordis('P', {
     subagentModelProvider: 'my-provider',
     subagentModelName: 'deepseek-v4-flash-7013',
-    subagentPersona: '你是审查子代理，只读不改。',
     toolFilterAllow: ['read', 'write', 'glob'],
     toolFilterDeny: 'bash, run_code',
     maxDepth: 1,
@@ -109,22 +107,9 @@ test('子代理模型路由与委派完整自定义：persona + toolFilter + max
   for (const row of subs) {
     assert.equal(row.config.agentOptions.provider, 'my-provider')
     assert.equal(row.config.agentOptions.model, 'deepseek-v4-flash-7013')
-    assert.equal(row.config.persona, '你是审查子代理，只读不改。')
     assert.deepEqual(row.config.toolFilter, { allow: ['read', 'write', 'glob'], deny: ['bash', 'run_code'] })
     assert.equal(row.config.maxDepth, 1)
   }
-})
-
-test('子代理 persona：仅显式 subagentPersona 渲染；缺省不渲染（scope 链继承主会话 persona）', () => {
-  const routed = parseYaml(buildCordis('P', { subagentModelProvider: 'p', subagentModelName: 'm' }))
-  const routedRow = findAllNested(routed, new Set(['tool-subagent']))[0]
-  assert.equal(routedRow.config.persona, undefined, '无 subagentPersona 不渲染（继承主会话 persona 模块）')
-  assert.equal(routedRow.config.toolFilter, undefined, '未配置 toolFilter 不渲染')
-  assert.equal(routedRow.config.maxDepth, undefined, '未配置 maxDepth 不渲染（官方默认 3）')
-
-  const explicit = parseYaml(buildCordis('P', { subagentModelProvider: 'p', subagentModelName: 'm', subagentPersona: '子代理专属人设' }))
-  const explicitRow = findAllNested(explicit, new Set(['tool-subagent']))[0]
-  assert.equal(explicitRow.config.persona, '子代理专属人设', '显式 subagentPersona 渲染')
 })
 
 test('buildCordis 透传 allowKinds 覆盖模板默认', () => {

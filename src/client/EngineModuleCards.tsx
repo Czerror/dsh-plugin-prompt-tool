@@ -2,7 +2,6 @@ import { useState, type ReactNode } from 'react'
 import clsx from 'clsx'
 import { IconChevronDownOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { TagInput } from './TagInput.tsx'
-import { autoResizeTextarea } from './textarea-resize.ts'
 import styles from './PromptUi.module.css'
 
 import type { PromptToolStore } from './prompt-tool-store.ts'
@@ -213,21 +212,6 @@ export function ModelRouteModuleCard(props: { store: PromptToolStore; scope: 'ma
           onBlur={() => void store.persistParamOverrides()}
         />
       </div>
-      {props.scope === 'subagent' && (
-        <div className={styles.settingRowStack}>
-          <label className={styles.configFieldStack}>
-            <span className={styles.settingCopy}><strong>子代理独立人设</strong><small>subagentPersona（官方 per-child shadow：tool-subagent 行 config.persona，子代理 scope 覆盖 deployment:persona）；留空 = scope 链继承主会话人设（persona-main 卡）。失焦保存。</small></span>
-            <textarea
-              className={styles.firstTurnInput}
-              value={fields.subagentPersona}
-              disabled={!fields.writePreset}
-              onChange={(event) => { autoResizeTextarea(event); store.patch({ subagentPersona: event.target.value }) }}
-              onBlur={() => void store.persistParamOverrides()}
-              spellCheck={false}
-            />
-          </label>
-        </div>
-      )}
     </EngineModuleCard>
   )
 }

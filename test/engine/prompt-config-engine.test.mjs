@@ -288,6 +288,55 @@ test('system-section 与 runtime-context 注册到 systemPrompt 服务', () => {
   assert.deepEqual(disposed, ['sys', 'ctx'])
 })
 
+test('system-section + audience 放行（层能力矩阵开放）；子代理 persona 卡不独立注册', () => {
+  const configs = createPromptConfigs([
+    { id: 'sub-persona', layer: 'system-section', strategy: 'static', text: 'SUB', audience: 'subagent', params: { sectionName: 'deployment:persona' } },
+  ])
+  assert.equal(configs[0].audience, 'subagent')
+  const sections = []
+  makeWiredHarness([
+    { id: 'sub-persona', layer: 'system-section', strategy: 'static', text: 'SUB', audience: 'subagent', params: { sectionName: 'deployment:persona' } },
+  ], { systemPrompt: { section: (def) => { sections.push(def); return () => {} } } })
+  assert.equal(sections.length, 0, '无主 persona 段时子代理 persona 卡不独立注册（避免同名冲突）')
+})
+
+test('system-section 子代理 persona：装配时替换主会话人设，主会话不受影响', () => {
+  const sections = []
+  makeWiredHarness([
+    { id: 'persona-main', layer: 'system-section', strategy: 'static', text: 'MAIN', order: 0, params: { sectionName: 'deployment:persona', complete: true } },
+    { id: 'sub-persona', layer: 'system-section', strategy: 'static', text: 'SUB-PERSONA', order: 0, audience: 'subagent', params: { sectionName: 'deployment:persona' } },
+  ], { systemPrompt: { section: (def) => { sections.push(def); return () => {} } } })
+  // 只注册一个段（子卡合并进主 persona 段，规避同名冲突）；complete 透传保持。
+  assert.equal(sections.length, 1)
+  assert.equal(sections[0].name, 'deployment:persona')
+  assert.equal(sections[0].complete, true)
+  const mainCtx = { agent: { session: { header: { delegationDepth: 0 } }, options: { model: 'x' } } }
+  const subCtx = { agent: { session: { header: { delegationDepth: 1 } }, options: { model: 'x' } } }
+  assert.equal(sections[0].text(mainCtx), 'MAIN', '主会话 = 主 persona')
+  assert.equal(sections[0].text(subCtx), 'SUB-PERSONA', '子代理 = 子 persona（不继承主会话）')
+})
+
+test('system-section 无子代理 persona 卡：persona 段保持静态文本（继承语义不变）', () => {
+  const sections = []
+  makeWiredHarness([
+    { id: 'persona-main', layer: 'system-section', strategy: 'static', text: 'MAIN', order: 0, params: { sectionName: 'deployment:persona' } },
+  ], { systemPrompt: { section: (def) => { sections.push(def); return () => {} } } })
+  assert.equal(sections.length, 1)
+  assert.equal(sections[0].text, 'MAIN', '无子代理卡 = 静态文本（子代理经 scope 链继承主会话）')
+})
+
+test('system-section 非 persona audience 段：text 函数按 agent scope 过滤', () => {
+  const sections = []
+  makeWiredHarness([
+    { id: 'sub-tools', layer: 'system-section', strategy: 'static', text: 'SUB-TOOLS', order: 10, audience: 'subagent' },
+  ], { systemPrompt: { section: (def) => { sections.push(def); return () => {} } } })
+  assert.equal(sections.length, 1)
+  const mainCtx = { agent: { session: { header: { delegationDepth: 0 } }, options: { model: 'x' } } }
+  const subCtx = { agent: { session: { header: { delegationDepth: 1 } }, options: { model: 'x' } } }
+  assert.equal(sections[0].text(mainCtx), '', '主会话不注入')
+  assert.equal(sections[0].text(subCtx), 'SUB-TOOLS', '子代理注入')
+})
+
 test('agent-request 提示词配置浅合并 LlmCallConfig，并遵守 modelScope', async () => {
   const { listeners } = makeWiredHarness([
     { id: 'patch', layer: 'agent-request', strategy: 'static', params: { patch: { maxTokens: 2048, temperature: 0.5 } } },

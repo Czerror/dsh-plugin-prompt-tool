@@ -48,8 +48,6 @@ export interface EngineParams {
   subagentTemperature?: string
   /** 子代理输出上限（agent-request patch，audience=subagent；''=不设置）。 */
   subagentMaxTokens?: string
-  /** 子代理自定义模型人设（per-child shadow，官方 tool-subagent config.persona；缺省 = 经 scope 链继承主会话 persona 模块）。 */
-  subagentPersona?: string
   /** 委派工具集白名单（toolFilter.allow；支持数组或逗号/空格分隔字符串）。 */
   toolFilterAllow?: string[] | string
   /** 委派工具集黑名单（toolFilter.deny）。 */
@@ -119,7 +117,7 @@ export const ENGINE_PARAM_KEYS = [
   'modelReasoningEffort', 'modelTemperature', 'modelMaxTokens',
   'subagentReasoningEffort', 'subagentTemperature', 'subagentMaxTokens',
   // 委派与工具过滤。
-  'subagentPersona', 'toolFilterAllow', 'toolFilterDeny', 'maxDepth',
+  'toolFilterAllow', 'toolFilterDeny', 'maxDepth',
   'allowKinds', 'firstTurnWord', 'bootstrapMaxTokens', 'usePtcMode',
   // 晋升门控（tool-bootstrap 参数桥）。
   'promoteGate', 'promoteAfterFirstResponse', 'maxPromoteSteps',
@@ -155,7 +153,7 @@ export type PresetWriterParams = Pick<EngineParams,
   | 'modelProvider' | 'modelName' | 'subagentModelProvider' | 'subagentModelName'
   | 'modelReasoningEffort' | 'modelTemperature' | 'modelMaxTokens'
   | 'subagentReasoningEffort' | 'subagentTemperature' | 'subagentMaxTokens'
-  | 'subagentPersona' | 'toolFilterAllow' | 'toolFilterDeny' | 'maxDepth'
+  | 'toolFilterAllow' | 'toolFilterDeny' | 'maxDepth'
   | 'allowKinds' | 'firstTurnWord' | 'bootstrapMaxTokens' | 'usePtcMode'>
 
 /** writePreset.runtimeOf 实际透传键（与 PresetWriterParams 双向相等断言，防 Pick 漏键）。 */
@@ -165,7 +163,7 @@ export const WRITER_PARAM_KEYS = [
   'modelProvider', 'modelName', 'subagentModelProvider', 'subagentModelName',
   'modelReasoningEffort', 'modelTemperature', 'modelMaxTokens',
   'subagentReasoningEffort', 'subagentTemperature', 'subagentMaxTokens',
-  'subagentPersona', 'toolFilterAllow', 'toolFilterDeny', 'maxDepth',
+  'toolFilterAllow', 'toolFilterDeny', 'maxDepth',
   'allowKinds', 'firstTurnWord', 'bootstrapMaxTokens', 'usePtcMode',
 ] as const
 

@@ -146,6 +146,17 @@ wholeWords/selectiveLogic）单一权威。两个写入端共用：
 - 修正：`subagentPersona` 参数桥恢复（写 delegation 行 config.persona），UI 在
   子代理模型卡自由编辑；主会话保持 persona-main 配置卡。`mainPersona` 删除有效。
 
+### 子代理 persona 配置卡替换方案（2026-08-26，AssembleContext.agent 发现后定稿）
+
+- 决定性源码发现：`assembleContextFor(agent)` 返回 `{ agent, scope: agent }`——
+  `AssembleContext.agent` 运行时存在（官方类型仅声明 scope/signal），systemPrompt
+  section 的 text 函数可判定当前装配 agent，`isDelegated(agent.session)` 可区分子代理。
+- 定稿：子代理独立人设 = **配置卡**（system-section + `audience=subagent` +
+  params.sectionName=deployment:persona），**不独立注册**（同名段冲突规避），作为
+  persona-main 段的子代理分支：主会话 = 主 persona 文本；子代理 = 子卡文本（**替换，
+  不继承**）；无子代理卡 = 继承（persona 段保持静态）。complete/suppressRuntimeContext
+  透传不变。`subagentPersona` 参数桥再次删除（配置卡为唯一入口）。
+
 ### 角色卡导入的 persona 开放（2026-08-25）
 
 ST 转换（convertStToPreset）自带人设开放处理（`moduleConfigs.persona = { complete: false }`，

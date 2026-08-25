@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### 子代理独立人设 = 配置卡（system-section + audience=subagent，替换主会话人设）（2026-08-26）
+
+- **源码定稿**：`assembleContextFor(agent)` 注入 `{ agent, scope: agent }`——
+  `AssembleContext.agent` 运行时可用，section text 函数可按 agent 判定子代理。
+- **实现**：schema system-section 开放 audience；wireSystemSections 识别子代理
+  persona 卡（audience=subagent + 人设段标记）并入 persona-main 段 text 分支——
+  子代理装配 = 子卡文本（替换，不继承）；无子卡 = 静态文本（继承）。同名段不
+  重复注册，complete/suppressRuntimeContext 透传不变。
+- **删除**：`subagentPersona` 参数桥（4493fd7 恢复内容逆操作），配置卡为唯一入口。
+- **验证**：typecheck/lint + 349 测试（+4：audience 放行/替换分支/继承/scope 过滤）。
+
 ### 子代理 persona 恢复官方 per-child shadow（2026-08-26）
 
 - **源码核实**（E:\Documents\GitHub\deepseek-harness）：`tool-subagent` 行
