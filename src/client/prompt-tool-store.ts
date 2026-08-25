@@ -920,6 +920,16 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
   const dirtyConfigs = JSON.stringify(fields.promptConfigs) !== JSON.stringify(savedConfigs)
   const dirty = dirtySwitches || dirtyConfigs
 
+  // 任意 UI 修改自动保存：模块列表的提示词配置修改（顶端总开关/卡片字段/增删/排序，
+  // 全部经 patch({ promptConfigs }) 落 fields）debounce 后统一走 persistConfigs——
+  // 与手动「保存」共用同一写盘逻辑（跳过校验：编辑中间态直存，后端容错；
+  // 手动保存按钮仍保留校验路径）。保存成功 load() 更新 savedConfigs → dirty 消失自愈。
+  useEffect(() => {
+    if (!dirtyConfigs) return
+    const timer = setTimeout(() => { void persistConfigs(fields.promptConfigs) }, 800)
+    return () => clearTimeout(timer)
+  }, [dirtyConfigs, fields.promptConfigs, persistConfigs])
+
   return {
     fields,
     meta,
