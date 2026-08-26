@@ -1,7 +1,11 @@
 # module: persona
-# source: deepseek-harness official standard agent preset (persona)
-# persona 差异（creative/minimal/anchored）由 preset.yml moduleConfigs 参数传递。
+# source: E:\Documents\GitHub\deepseek-harness/apps/cli/config/agent-presets/standard/agent.cordis.yml
+# local patches: 0
 
+# ── identity ────────────────────────────────────────────────────────────────
+
+# The preset's own persona, shadowing the deployment default for this agent.
+# `{{model}}` and `{{cwd}}` resolve from the agent's own route and workspace.
 - id: persona
   name: '@deepseek-ai/dsh-persona'
   config:

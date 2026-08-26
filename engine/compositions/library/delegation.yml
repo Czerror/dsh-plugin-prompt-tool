@@ -1,6 +1,6 @@
 # module: delegation
 # source: E:\Documents\GitHub\deepseek-harness/apps/cli/config/agent-presets/standard/agent.cordis.yml
-# local patches: 2（SUBAGENT-CONFIG token ×2：子代理完整配置（模型/人设/工具集/深度），随预设参数渲染）
+# local patches: 1
 
 # ── delegation and workflows ────────────────────────────────────────────────
 
@@ -45,16 +45,17 @@
         toolName: subagent_fork
         backgroundMode: continuable
 
-    # Production dsh does not install these optional providers. An opting-in
-    # Profile mounts each provider once on the host plane; copy this preset,
-    # then remove `disabled` from the matching tool row.
+    # Production dsh does not install these optional providers. Install the
+    # matching Bundle in this Profile and restart the Host, then copy this
+    # preset and remove `disabled` from the matching tool row. Host availability
+    # alone grants no tool.
     - id: tool-subagent-codex
       name: '@deepseek-ai/dsh-tool-subagent'
       disabled: true
       config:
         provider: codex
         toolName: subagent_codex
-        backgroundMode: one-shot
+        enableRunInBackground: false
         maxDepth: provider-managed
 
     - id: tool-subagent-claude-code
@@ -63,7 +64,7 @@
       config:
         provider: claude-code
         toolName: subagent_claude_code
-        backgroundMode: one-shot
+        enableRunInBackground: false
         maxDepth: provider-managed
 
     - id: workflow-worker-thread

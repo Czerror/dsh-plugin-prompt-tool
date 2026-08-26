@@ -1,5 +1,5 @@
 # module: context-gate
-# source: preset/engine/compositions/source/local/context-gate.yml (本地附加,非官方模块)
+# source: engine/compositions/source/local/context-gate.yml (本地附加,非官方模块)
 
 - id: context-gate
   name: ./engine/context-gate.mjs

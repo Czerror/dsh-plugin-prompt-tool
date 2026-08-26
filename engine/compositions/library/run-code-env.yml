@@ -1,5 +1,5 @@
 # module: run-code-env
-# source: preset/engine/compositions/source/local/run-code-env.yml (本地附加,非官方模块)
+# source: engine/compositions/source/local/run-code-env.yml (本地附加,非官方模块)
 
 - id: run-code-env
   name: ./engine/run-code-env.mjs

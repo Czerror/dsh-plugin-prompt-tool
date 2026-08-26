@@ -1,5 +1,5 @@
 # module: tool-bootstrap
-# source: preset/engine/compositions/source/local/tool-bootstrap.yml (本地附加,非官方模块)
+# source: engine/compositions/source/local/tool-bootstrap.yml (本地附加,非官方模块)
 
 - id: tool-bootstrap
   name: ./engine/tool-bootstrap.mjs

@@ -53,12 +53,11 @@ const PATCHES = {
   'tool-bash': [
     { from: 'disabled: !!js process.platform === \'win32\'', to: 'disabled: true' },
   ],
+  // 上游已内置 per-row 平台分派（terminal-bash/persistent-bash 在 win32 禁用，
+  // pwsh 行在 POSIX 禁用）——shellPath 探测补丁随上游取消（bash 行不再在
+  // Windows 挂载，探测无意义）。本地仅保留整组 win32 禁用（Windows 用 tool-pwsh）。
   'persistent-shell': [
     { from: '  group: true\n', to: '  group: true\n  disabled: !!js process.platform === \'win32\'\n' },
-    {
-      from: "    - id: terminal-bash\n      name: '@deepseek-ai/dsh-terminal-bash'\n      config:\n",
-      to: "    - id: terminal-bash\n      name: '@deepseek-ai/dsh-terminal-bash'\n      config:\n        shellPath: !!js \"process.getBuiltinModule?.('node:fs')?.existsSync('/bin/bash') ? '/bin/bash' : 'bash'\"\n",
-    },
   ],
   'bootstrap-filesystem': [
     { from: '- id: filesystem\n', to: '- id: bootstrap-filesystem\n' },
@@ -87,7 +86,7 @@ const MODULES = [
   { id: 'tool-config-engine', from: 'local' },
   { id: 'prompt-config-engine', from: 'local' },
   { id: 'run-code-env', from: 'local' },
-  { id: 'persona', from: 'minimal' },
+  { id: 'persona', from: 'standard' },
   { id: 'tool-bash', from: 'standard' },
   { id: 'tool-pwsh', from: 'standard' },
   { id: 'persistent-shell', from: 'minimal' },
@@ -132,7 +131,10 @@ try {
     let provenance
     if (from === 'local') {
       body = readFileSync(join(localDir, `${id}.yml`), 'utf8')
-      provenance = `# module: ${id}\n# source: engine/compositions/source/local/${id}.yml (本地附加,非官方模块)\n\n`
+      // 源文件自带 `# module:` 头则逐字复制（保留其说明文字），否则补统一头。
+      provenance = body.startsWith('# module:')
+        ? ''
+        : `# module: ${id}\n# source: engine/compositions/source/local/${id}.yml (本地附加,非官方模块)\n\n`
     } else {
       const map = from === 'minimal' ? minimal : standard
       const section = map.get(sourceId ?? id)
