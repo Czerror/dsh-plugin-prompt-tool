@@ -449,7 +449,7 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
         return EMPTY_FIELDS
       }
       applyView(res)
-      // 用户参数覆盖（生成目录 prompt-tool.overrides.yml；settings 不再承载参数）。
+      // 用户参数覆盖（激活预设 preset.yml params；settings 不再承载参数）。
       const overridesRes = await bridgePost<{ overrides: Record<string, unknown> }>('/param-overrides', {})
       if (seq !== loadSeqRef.current) return EMPTY_FIELDS
       if (overridesRes.ok) {
@@ -636,7 +636,7 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
     },
   ), [enqueueSave])
 
-  /** 参数类设置：写入生成目录 prompt-tool.overrides.yml（随预设隔离，重建保留）。 */
+  /** 参数类设置：写入激活预设 preset.yml（savePresetParams；随预设隔离）。 */
   const persistParamOverrides = useCallback(async () => {
     const f = fieldsRef.current
     const splitList = (value: string): string[] => value.split(',').map((item) => item.trim()).filter((item) => item.length > 0)

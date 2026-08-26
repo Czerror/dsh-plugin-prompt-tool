@@ -12,7 +12,7 @@
 //   3. 本地新增模块从 source/local/ 逐字复制;
 //   4. 写出 library/*.yml 与 anchored-standard.yml 组合清单。
 // 用法:node scripts/rebuild-composition.mjs [deepseek-harness 仓库路径]
-import { readFileSync, writeFileSync, readdirSync, mkdirSync, rmSync } from 'node:fs'
+import { readFileSync, writeFileSync, readdirSync, mkdirSync, rmSync, renameSync, existsSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parse as parseYaml } from 'yaml'
@@ -109,36 +109,70 @@ const MODULES = [
   { id: 'tool-web', from: 'standard' },
 ]
 
-rmSync(libraryDir, { recursive: true, force: true })
-mkdirSync(libraryDir, { recursive: true })
-
-for (const { id, from, sourceId } of MODULES) {
-  let body
-  let provenance
-  if (from === 'local') {
-    body = readFileSync(join(localDir, `${id}.yml`), 'utf8')
-    provenance = `# module: ${id}\n# source: engine/compositions/source/local/${id}.yml (本地附加,非官方模块)\n\n`
-  } else {
-    const map = from === 'minimal' ? minimal : standard
-    const section = map.get(sourceId ?? id)
-    if (section === undefined) throw new Error(`${id}: official ${from} preset has no top-level row ${sourceId ?? id}`)
-    body = applyPatches(id, section, `${from}/agent.cordis.yml`)
-    const patches = PATCHES[id]?.length ?? 0
-    provenance = `# module: ${id}\n# source: ${repo}/apps/cli/config/agent-presets/${from}/agent.cordis.yml\n# local patches: ${patches}\n\n`
-  }
-  writeFileSync(join(libraryDir, `${id}.yml`), provenance + body)
+// official-* 模块为手工保留的独立文件(差异无法参数化,不参与重建)——
+// 快照 MODULES 之外的全部现有模块,重建后原样写回(全量清库会误删它们,
+// 导致 standard/creative 等预设 modules 断链)。
+const rebuiltIds = new Set(MODULES.map((entry) => entry.id))
+const preservedModules = new Map()
+for (const file of readdirSync(libraryDir)) {
+  if (!file.endsWith('.yml')) continue
+  const id = file.slice(0, -4)
+  if (!rebuiltIds.has(id)) preservedModules.set(id, readFileSync(join(libraryDir, file), 'utf8'))
 }
 
-// 模块清单由参数文件 preset/anchored/preset.yml 决定:rebuild 只重建库并校验清单。
-const presetFile = join(root, 'preset', 'anchored', 'preset.yml')
-const presetSpec = parseYaml(readFileSync(presetFile, 'utf8'))
-const declared = Array.isArray(presetSpec.modules) ? presetSpec.modules : []
-for (const name of declared) {
-  if (!readFileSync(join(libraryDir, `${name}.yml`), 'utf8').includes('- id:')) {
-    throw new Error(`preset modules: ${name} is missing from rebuilt library`)
-  }
-}
+// 原子重建:先构建到临时目录,全部成功后 rename 替换 libraryDir。
+// 任何一步失败(如上游 patch 标记漂移)library 保持原样,不留半成品库。
+const tmpDir = `${libraryDir}.rebuild-tmp`
+rmSync(tmpDir, { recursive: true, force: true })
+mkdirSync(tmpDir, { recursive: true })
 
-console.log(`rebuilt ${MODULES.length} modules from official source at ${repo}`)
-console.log(`preset modules declared by ${presetFile}: ${declared.length}`)
-console.log(`local modules: ${readdirSync(localDir).sort().join(', ')}`)
+try {
+  for (const { id, from, sourceId } of MODULES) {
+    let body
+    let provenance
+    if (from === 'local') {
+      body = readFileSync(join(localDir, `${id}.yml`), 'utf8')
+      provenance = `# module: ${id}\n# source: engine/compositions/source/local/${id}.yml (本地附加,非官方模块)\n\n`
+    } else {
+      const map = from === 'minimal' ? minimal : standard
+      const section = map.get(sourceId ?? id)
+      if (section === undefined) throw new Error(`${id}: official ${from} preset has no top-level row ${sourceId ?? id}`)
+      body = applyPatches(id, section, `${from}/agent.cordis.yml`)
+      const patches = PATCHES[id]?.length ?? 0
+      provenance = `# module: ${id}\n# source: ${repo}/apps/cli/config/agent-presets/${from}/agent.cordis.yml\n# local patches: ${patches}\n\n`
+    }
+    writeFileSync(join(tmpDir, `${id}.yml`), provenance + body)
+  }
+
+  for (const [id, content] of preservedModules) {
+    writeFileSync(join(tmpDir, `${id}.yml`), content)
+  }
+
+  // 校验全部包内预设的 modules 清单在重建库中齐全(anchored + 官方格式预设 +
+  // 本地模板),防止 rebuild 漂移导致预设组合断链(assembleModules fail loud)。
+  const presetRoot = join(root, 'preset')
+  const checked = []
+  for (const entry of readdirSync(presetRoot, { withFileTypes: true })) {
+    if (!entry.isDirectory() || entry.name.startsWith('.')) continue
+    const specFile = join(presetRoot, entry.name, 'preset.yml')
+    if (!existsSync(specFile)) continue
+    const spec = parseYaml(readFileSync(specFile, 'utf8'))
+    for (const name of Array.isArray(spec.modules) ? spec.modules : []) {
+      const moduleFile = join(tmpDir, `${name}.yml`)
+      if (!existsSync(moduleFile) || !readFileSync(moduleFile, 'utf8').includes('- id:')) {
+        throw new Error(`preset ${entry.name}: module ${name} is missing from rebuilt library`)
+      }
+    }
+    checked.push(entry.name)
+  }
+
+  rmSync(libraryDir, { recursive: true, force: true })
+  renameSync(tmpDir, libraryDir)
+  console.log(`rebuilt ${MODULES.length} modules from official source at ${repo}`)
+  console.log(`preserved modules: ${[...preservedModules.keys()].sort().join(', ')}`)
+  console.log(`preset modules checked: ${checked.join(', ')}`)
+  console.log(`local modules: ${readdirSync(localDir).sort().join(', ')}`)
+} catch (error) {
+  rmSync(tmpDir, { recursive: true, force: true })
+  throw error
+}

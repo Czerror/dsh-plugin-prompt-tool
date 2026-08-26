@@ -14,8 +14,11 @@
  *   3) 迁移完成后把旧容器根与旧用户预设目录 rename 为 .bak-<ts> 归档
  *      （保留安全网，不删除；7 天后可人工清理）。
  */
-import { cpSync, existsSync, mkdirSync, readdirSync, renameSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
+import { parse as parseYaml } from 'yaml'
+import { savePresetParams } from './manifest.ts'
+import { PARAM_KEYS } from '../config.ts'
 
 export function migrateLegacyLayout(presetRoot: string, legacyUserPresets: string): boolean {
   const legacyContainer = join(presetRoot, 'prompt-tool')
@@ -87,4 +90,46 @@ export function normalizePresetRootDir(presetDir: string, presetRoot: string, le
   if (presetDir === legacyContainer || presetDir === join(presetRoot, 'prompt-tool')) return presetRoot
   if (presetDir.endsWith('/prompt-tool') || presetDir.endsWith('\\prompt-tool')) return presetRoot
   return presetDir
+}
+/**
+ * 旧版参数覆盖文件（prompt-tool.overrides.yml）→ 激活预设 preset.yml 一次性退役迁移。
+ * 旧写入路径（阶段 1）把引擎参数写进该文件；阶段 2 收敛为 savePresetParams 直接写
+ * preset.yml 并删除覆盖文件。本函数仅处理存量升级场景：
+ *   - 键白名单 = PARAM_KEYS（含 guideEnabled/injectPrompt/usePtcMode，补上旧手写列表
+ *     缺失的 3 键；promptConfigs 不走覆盖文件，排除）；
+ *   - 空值键按 savePresetParams 语义删除（回落模板/引擎默认）；
+ *   - 成功 = preset.yml 已写入且覆盖文件已删（savePresetParams 删除）；失败（preset.yml
+ *     缺失等）抛错且覆盖文件保留，调用方下次重建重试。
+ * 返回 true = 已迁移（调用方需重读参数）；false = 无文件/解析失败/无有效键（文件已尽力清理）。
+ */
+export function migrateParamOverridesFile(presetRoot: string, templateName: string): boolean {
+  const file = join(presetRoot, templateName, 'prompt-tool.overrides.yml')
+  let raw: string
+  try {
+    raw = readFileSync(file, 'utf8')
+  } catch {
+    return false
+  }
+  if (raw.trim().length === 0) {
+    rmSync(file, { force: true })
+    return false
+  }
+  let parsed: unknown
+  try {
+    parsed = parseYaml(raw, { logLevel: 'silent' })
+  } catch {
+    return false
+  }
+  const overrides = parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)
+    ? parsed as Record<string, unknown>
+    : {}
+  const valid = Object.fromEntries(
+    Object.entries(overrides).filter(([key]) => PARAM_KEYS.has(key) && key !== 'promptConfigs'),
+  )
+  if (Object.keys(valid).length === 0) {
+    rmSync(file, { force: true })
+    return false
+  }
+  savePresetParams(presetRoot, templateName, valid, undefined)
+  return true
 }

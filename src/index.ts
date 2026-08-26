@@ -10,7 +10,6 @@ import type {
 } from '@deepseek-ai/dsh-skill'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs'
-import { parse as parseYaml } from 'yaml'
 import { createSkillsWatcher } from './runtime/skills-watcher.ts'
 import { basename, dirname, join } from 'node:path'
 import {
@@ -54,7 +53,7 @@ import {
   LEGACY_CONTAINER_DIR,
   LEGACY_USER_PRESETS_DIR,
 } from './host/paths.ts'
-import { migrateLegacyLayout, normalizePresetRootDir } from './host/migration.ts'
+import { migrateLegacyLayout, migrateParamOverridesFile, normalizePresetRootDir } from './host/migration.ts'
 
 export const name = 'prompt-tool'
 // 内容走 user 层（AGENTS.md 常驻层 + skill 按需层），
@@ -278,56 +277,18 @@ export function apply(ctx: Context, configIn: Config): void {
     }
   }
 
-  /** 用户参数覆盖（生成目录 prompt-tool.overrides.yml；settings 不再承载参数）。 */
+  /** 旧版参数覆盖文件（prompt-tool.overrides.yml）一次性退役迁移：白名单
+   *  （PARAM_KEYS，含 guideEnabled/injectPrompt/usePtcMode）过滤后并入 preset.yml。
+   *  实现收敛到 migrateParamOverridesFile（migration.ts 单一权威）。 */
   const applyParamOverrides = (): void => {
-    const raw = readGeneratedContent(activePresetDir(), 'prompt-tool.overrides.yml')
-    if (raw.length === 0) return
-    let overrides: Record<string, unknown>
     try {
-      const parsed = parseYaml(raw, { logLevel: 'silent' })
-      overrides = parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)
-        ? parsed as Record<string, unknown>
-        : {}
+      if (migrateParamOverridesFile(runtime.presetDir, runtime.presetTemplate)) reloadPresetParams()
     } catch {
-      return
+      // preset.yml 缺失等失败保留覆盖文件，下次重建重试；旧值不生效也不阻断启动。
+      warn(ctx, 'prompt-tool: prompt-tool.overrides.yml 迁移到 preset.yml 失败（下次重建重试）')
     }
-    if (typeof overrides.firstTurnAnchor === 'boolean') runtime.firstTurnAnchor = overrides.firstTurnAnchor
-    if (typeof overrides.firstTurnCustom === 'boolean') runtime.firstTurnCustom = overrides.firstTurnCustom
-    if (typeof overrides.firstTurnText === 'string') runtime.firstTurnText = overrides.firstTurnText
-    if (typeof overrides.guideCustom === 'boolean') runtime.guideCustom = overrides.guideCustom
-    if (typeof overrides.guideText === 'string') runtime.guideText = overrides.guideText
-    if (typeof overrides.modelProvider === 'string') runtime.modelProvider = overrides.modelProvider
-    if (typeof overrides.modelName === 'string') runtime.modelName = overrides.modelName
-    if (typeof overrides.subagentModelProvider === 'string') runtime.subagentModelProvider = overrides.subagentModelProvider
-    if (typeof overrides.subagentModelName === 'string') runtime.subagentModelName = overrides.subagentModelName
-    if (typeof overrides.modelReasoningEffort === 'string') runtime.modelReasoningEffort = overrides.modelReasoningEffort
-    if (typeof overrides.modelTemperature === 'string') runtime.modelTemperature = overrides.modelTemperature
-    if (typeof overrides.modelMaxTokens === 'string') runtime.modelMaxTokens = overrides.modelMaxTokens
-    if (typeof overrides.subagentReasoningEffort === 'string') runtime.subagentReasoningEffort = overrides.subagentReasoningEffort
-    if (typeof overrides.subagentTemperature === 'string') runtime.subagentTemperature = overrides.subagentTemperature
-    if (typeof overrides.subagentMaxTokens === 'string') runtime.subagentMaxTokens = overrides.subagentMaxTokens
-    if (typeof overrides.firstTurnWord === 'string') runtime.firstTurnWord = overrides.firstTurnWord
-    if (typeof overrides.bootstrapMaxTokens === 'number') runtime.bootstrapMaxTokens = overrides.bootstrapMaxTokens
-    // 列表/枚举类参数：类型守卫收窄（overrides YAML 可能是数组或字符串）。
-    const listOf = (value: unknown): string[] | string | undefined => {
-      if (typeof value === 'string') return value
-      if (Array.isArray(value)) return value.filter((item): item is string => typeof item === 'string')
-      return undefined
-    }
-    const tfAllow = listOf(overrides.toolFilterAllow)
-    if (tfAllow !== undefined) runtime.toolFilterAllow = tfAllow
-    const tfDeny = listOf(overrides.toolFilterDeny)
-    if (tfDeny !== undefined) runtime.toolFilterDeny = tfDeny
-    const kinds = listOf(overrides.allowKinds)
-    // allowKinds 空值 = 跳过（保留官方不过滤）；空数组白名单会全拦注入，禁止写入。
-    if (kinds !== undefined && (typeof kinds === 'string' ? kinds.trim().length > 0 : kinds.length > 0)) {
-      runtime.allowKinds = kinds
-    }
-    const depth = overrides.maxDepth
-    if (depth === 'provider-managed') runtime.maxDepth = 'provider-managed'
-    else if (typeof depth === 'number' && Number.isSafeInteger(depth) && depth >= 0) runtime.maxDepth = depth
-    else if (typeof depth === 'string' && depth.length > 0) runtime.maxDepth = depth
   }
+
   // 首次启动把包内 skills/ 增量复制到 $DSH_HOME/profiles/<profile>/skills，
   // 并优先使用 profile 副本；已有同名文件不覆盖，用户编辑会保留。
   // 显式配置了其他技能目录时尊重用户选择，不做复制。

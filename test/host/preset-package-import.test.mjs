@@ -356,7 +356,7 @@ test('importPresetPackage：SillyTavern JSON 非法内容返回 400 且不落盘
 })
 
 test('importPresetPackage：TavernHelper 扩展注入物剥离（JS 脚本不进入转换产物）', async () => {
-  const { status, payload } = await importPackage({
+  const { status } = await importPackage({
     files: [{ path: '带扩展角色.json', content: JSON.stringify({
       spec: 'chara_card_v3', spec_version: '3.0', name: '带扩展角色',
       first_mes: '你好',
