@@ -56,9 +56,7 @@ const PATCHES = {
   // 上游已内置 per-row 平台分派（terminal-bash/persistent-bash 在 win32 禁用，
   // pwsh 行在 POSIX 禁用）——shellPath 探测补丁随上游取消（bash 行不再在
   // Windows 挂载，探测无意义）。本地仅保留整组 win32 禁用（Windows 用 tool-pwsh）。
-  'persistent-shell': [
-    { from: '  group: true\n', to: '  group: true\n  disabled: !!js process.platform === \'win32\'\n' },
-  ],
+
   'bootstrap-filesystem': [
     { from: '- id: filesystem\n', to: '- id: bootstrap-filesystem\n' },
   ],

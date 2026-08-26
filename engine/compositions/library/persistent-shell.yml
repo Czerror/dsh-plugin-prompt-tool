@@ -1,11 +1,10 @@
 # module: persistent-shell
 # source: E:\Documents\GitHub\deepseek-harness/apps/cli/config/agent-presets/minimal/agent.cordis.yml
-# local patches: 1
+# local patches: 0
 
 - id: persistent-shell
   name: cordis:group
   group: true
-  disabled: !!js process.platform === 'win32'
   isolate:
     terminals: true
   config:
