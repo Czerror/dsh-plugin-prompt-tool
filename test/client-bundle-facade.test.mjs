@@ -33,6 +33,7 @@ function createRequireStub() {
     createElement: (type, props, ...children) => ({ type, props: { ...props, children } }),
     useCallback: (fn) => fn,
     useEffect: () => {},
+    memo: (fn) => fn,
     useMemo: (fn) => fn(),
     useRef: (value) => ({ current: value }),
     useState: (value) => [value, () => {}],

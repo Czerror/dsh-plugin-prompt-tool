@@ -10,7 +10,7 @@
  * 本模块负责参数归一化与引擎模块配置装配;所有 anchored 专属行为都在引擎内部。
  */
 
-import { readFileSync, existsSync, readdirSync, mkdirSync, rmSync, writeFileSync, cpSync, renameSync } from 'node:fs'
+import { readFileSync, existsSync, readdirSync, mkdirSync, rmSync, writeFileSync, cpSync, renameSync, statSync } from 'node:fs'
 import { spawn } from 'node:child_process'
 import { basename, dirname, join, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -81,9 +81,25 @@ export function packageEngineDir(): string {
   throw new Error('prompt-tool: cannot locate package engine/ directory')
 }
 
+/**
+ * preset.yml 读缓存：按 mtime+size 签名失效。load()/describe/param-overrides 等
+ * 每次请求读盘解析，加缓存后同一文件只解析一次；写盘路径（savePresetParams /
+ * withPresetDoc）与外部编辑（stat 签名变化）都会正确失效。
+ */
+const presetSpecCache = new Map<string, { mtimeMs: number; size: number; spec: PresetSpec }>()
+
+/** 写盘后失效缓存（调用方在写完 preset.yml 后调用；不调用也安全——stat 签名兜底）。 */
+export function invalidatePresetSpec(dir: string): void {
+  presetSpecCache.delete(join(dir, 'preset.yml'))
+}
+
 /** 加载某个预设模板的单一参数文件 preset/<name>/preset.yml。 */
 export function loadPresetSpec(dir: string): PresetSpec {
-  const raw = readFileSync(join(dir, 'preset.yml'), 'utf8')
+  const file = join(dir, 'preset.yml')
+  const stat = statSync(file)
+  const cached = presetSpecCache.get(file)
+  if (cached !== undefined && cached.mtimeMs === stat.mtimeMs && cached.size === stat.size) return cached.spec
+  const raw = readFileSync(file, 'utf8')
   const parsed = parseYaml(raw, { logLevel: 'silent' }) as Partial<PresetSpec> | null
   if (parsed === null || typeof parsed !== 'object') {
     throw new Error(`preset ${join(dir, 'preset.yml')} is not a YAML map`)
@@ -114,6 +130,7 @@ export function loadPresetSpec(dir: string): PresetSpec {
   }
   flattenModelGroup(parsed.model, flattenMapping('model'))
   flattenModelGroup(parsed.subagentModel, flattenMapping('subagentModel'))
+  presetSpecCache.set(file, { mtimeMs: stat.mtimeMs, size: stat.size, spec: parsed as PresetSpec })
   return parsed as PresetSpec
 }
 
@@ -485,6 +502,7 @@ export function savePresetParams(
     }
   }
   writeFileSync(file, doc.toString(), 'utf8')
+  invalidatePresetSpec(join(presetRoot, templateName))
   rmSync(join(presetRoot, templateName, 'prompt-tool.overrides.yml'), { force: true })
 }
 
@@ -497,6 +515,7 @@ export function withPresetDoc(presetDir: string, mutate: (doc: ReturnType<typeof
   const doc = parseDocument(readFileSync(file, 'utf8'), { logLevel: 'silent' })
   mutate(doc)
   writeFileSync(file, doc.toString(), 'utf8')
+  invalidatePresetSpec(presetDir)
 }
 
 /** 删除预设目录（预设根/<id>；含同名导入的 .bak-* 备份目录）。

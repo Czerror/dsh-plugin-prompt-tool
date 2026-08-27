@@ -2,7 +2,7 @@
  *  库中角色卡不直接生成预设——点击「导入到当前预设」把角色卡参数
  *  （角色设定 / 系统提示 / 开场白 / 提示词库 / 采样参数）合并进当前激活预设，
  *  已导入的角色卡显示状态并可一键移除。 */
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { memo, useEffect, useRef, useState, type ReactNode } from 'react'
 import { IconFolderOpenOutline16, IconTrashOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { bridgePost } from './prompt-tool-bridge.ts'
 import { parseCharacterCardPng } from './character-card.ts'
@@ -17,7 +17,7 @@ interface CharacterCardItem {
   imported: boolean
 }
 
-export function CharactersPage(props: { store: PromptToolStore }): ReactNode {
+export const CharactersPage = memo(function CharactersPage(props: { store: PromptToolStore }): ReactNode {
   const { store } = props
   const [importing, setImporting] = useState(false)
   const [confirmingDelete, setConfirmingDelete] = useState<string | undefined>(undefined)
@@ -219,4 +219,4 @@ export function CharactersPage(props: { store: PromptToolStore }): ReactNode {
       )}
     </section>
   )
-}
+})

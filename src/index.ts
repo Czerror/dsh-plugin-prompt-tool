@@ -439,10 +439,12 @@ export function apply(ctx: Context, configIn: Config): void {
     },
     // 激活预设目录：内容资产/提示词配置按预设隔离在 presetDir/<template>/。
     () => activePresetDir(),
-    (scope) => {
-      // 内容导入后：更新运行时文本并重建生成目录。
-      if (scope === 'preset') current = readGeneratedContent(activePresetDir(), 'preset.md')
-      else currentAgents = readGeneratedContent(activePresetDir(), 'agents.md')
+    (scopes) => {
+      // 内容导入后：批量更新运行时文本，单次重建生成目录（一次自动保存只重建一次）。
+      for (const scope of scopes) {
+        if (scope === 'preset') current = readGeneratedContent(activePresetDir(), 'preset.md')
+        else currentAgents = readGeneratedContent(activePresetDir(), 'agents.md')
+      }
       try {
         rebuildPreset()
       } catch (error) {

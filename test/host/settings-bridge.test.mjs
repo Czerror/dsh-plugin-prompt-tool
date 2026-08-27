@@ -133,7 +133,7 @@ test('settings bridge /prompt-configs 返回生成目录实际生效配置', asy
 
 test('settings bridge /import-preset 写入生成目录并触发回调；/preset-content 读回', async () => {
   const { ctx, handlers } = makeHarness()
-  let importedScope
+  let importedScopes
   const dir = join(tmpdir(), `prompt-tool-bridge-${process.pid}-${Date.now()}`)
   try {
     registerSettingsBridge(
@@ -145,7 +145,7 @@ test('settings bridge /import-preset 写入生成目录并触发回调；/preset
       () => true,
       undefined,
       () => dir,
-      (scope) => { importedScope = scope },
+      (scopes) => { importedScopes = scopes },
     )
     const write = handlers.get(`${PREFIX}/import-preset`)
     const read = handlers.get(`${PREFIX}/preset-content`)
@@ -156,7 +156,7 @@ test('settings bridge /import-preset 写入生成目录并触发回调；/preset
       yield Buffer.from(JSON.stringify({ scope: 'preset', content: 'HELLO PRESET' }))
     } }), wres)
     assert.equal(wres.status, 200)
-    assert.equal(importedScope, 'preset')
+    assert.deepEqual(importedScopes, ['preset'])
     // 读回
     const rres = fakeRes()
     await read(fakeReq({ body: undefined, [Symbol.asyncIterator]: async function* () {

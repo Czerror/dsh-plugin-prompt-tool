@@ -242,9 +242,9 @@ const switchesEqual = (a: SwitchSnapshot, b: SwitchSnapshot): boolean =>
   && a.bootstrapMaxTokens === b.bootstrapMaxTokens
   && a.usePtcMode === b.usePtcMode
   && a.injectPrompt === b.injectPrompt
-  && JSON.stringify(a.skillSwitches) === JSON.stringify(b.skillSwitches)
-  && JSON.stringify(a.skillOrder) === JSON.stringify(b.skillOrder)
-  && JSON.stringify(a.skillsDirs) === JSON.stringify(b.skillsDirs)
+  && (a.skillSwitches === b.skillSwitches || JSON.stringify(a.skillSwitches) === JSON.stringify(b.skillSwitches))
+  && (a.skillOrder === b.skillOrder || JSON.stringify(a.skillOrder) === JSON.stringify(b.skillOrder))
+  && (a.skillsDirs === b.skillsDirs || JSON.stringify(a.skillsDirs) === JSON.stringify(b.skillsDirs))
   && a.skillRankBase === b.skillRankBase
   && a.residentAgentsPath === b.residentAgentsPath
   && a.presetDir === b.presetDir
@@ -260,6 +260,10 @@ const PARAM_SWITCH_KEYS: ReadonlySet<SwitchKey> = new Set(['firstTurnAnchor', 'f
 
 export interface PromptToolStore {
   fields: Fields
+  /** fields 外部订阅通道（usePromptToolFields）：patch/load 变更后通知。
+   *  getFields 返回引用稳定快照，selector 化的组件据此跳过无关重渲染。 */
+  getFields: () => Fields
+  subscribeFields: (listener: () => void) => () => void
   meta: EngineMeta
   loading: boolean
   providers: string[]
@@ -389,6 +393,19 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
   const [notice, setNotice] = useState('')
   const [noticeKind, setNoticeKind] = useState<'ok' | 'error'>('ok')
   const fieldsRef = useRef<Fields>(EMPTY_FIELDS)
+  /** fields 订阅者集合：patch/load 每次产生新 fields 引用时广播。
+   *  ponytail: 单订阅通道（无 selector 缓存层），selector 在消费侧 useRef 缓存。 */
+  const fieldsListenersRef = useRef(new Set<() => void>())
+  const publishFields = useCallback((next: Fields) => {
+    fieldsRef.current = next
+    setFields(next)
+    for (const listener of fieldsListenersRef.current) listener()
+  }, [])
+  const getFields = useCallback(() => fieldsRef.current, [])
+  const subscribeFields = useCallback((listener: () => void) => {
+    fieldsListenersRef.current.add(listener)
+    return () => { fieldsListenersRef.current.delete(listener) }
+  }, [])
   const revisionRef = useRef<number | undefined>(undefined)
   const saveQueueRef = useRef<Promise<void>>(Promise.resolve())
   const loadSeqRef = useRef(0)
@@ -441,8 +458,7 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
     if (res.ok && next.subagentModelProvider === '' && (res.providers?.length ?? 0) > 0) {
       next.subagentModelProvider = res.providers![0]!
     }
-    fieldsRef.current = next
-    setFields(next)
+    publishFields(next)
     setBootstrapTokensDraft(next.bootstrapMaxTokens > 0 ? String(next.bootstrapMaxTokens) : DEFAULT_BOOTSTRAP_DISPLAY)
     setGateStepsDraft(next.maxPromoteSteps > 0 ? String(next.maxPromoteSteps) : '4')
     setSkillsDirDraft('')
@@ -458,15 +474,15 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
     // silent：保存后静默刷新（不闪 loading、避免重渲染风暴与滚动跳动）；失败仍报错。
     if (!options?.silent) setLoading(true)
     try {
-      const metaRes = await bridgePost<{ meta: EngineMeta }>('/meta', {})
+      // /bootstrap 聚合读取：meta + describe runtime facts + 参数覆盖 + 模板变量 +
+      // 实际生效配置一次取回（此前 5 端点串行，preset.yml 每端点读盘解析）。
+      const boot = await bridgePost<BridgeSettingsView>('/bootstrap', {})
       if (seq !== loadSeqRef.current) return EMPTY_FIELDS
-      if (metaRes.ok) setMeta(metaRes.value.meta)
-      // 自定义 /describe 只用于拿到 live runtime facts（DeepSeek 检测、技能目录快照），
-      // 标准 settings 分层数据来自 rc8 共享 describe mirror 的 scope。
-      const runtime = await bridgePost<BridgeSettingsView>('/describe', {})
+      if (boot.ok && boot.meta !== undefined) setMeta(boot.meta.meta)
+      // 标准 settings 分层数据仍来自 rc8 共享 describe mirror 的 scope。
       await settings.ensure()
       const snapshot = await waitForScope(settings.scope)
-      const res = bridgeViewFromScope(snapshot, runtime)
+      const res = bridgeViewFromScope(snapshot, boot)
       if (seq !== loadSeqRef.current) return EMPTY_FIELDS
       if (!res.ok) {
         showNotice('error', '读取配置失败：' + (res.message ?? ''))
@@ -474,10 +490,8 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
       }
       applyView(res)
       // 用户参数覆盖（激活预设 preset.yml params；settings 不再承载参数）。
-      const overridesRes = await bridgePost<{ overrides: Record<string, unknown> }>('/param-overrides', {})
-      if (seq !== loadSeqRef.current) return EMPTY_FIELDS
-      if (overridesRes.ok) {
-        const o = overridesRes.value.overrides
+      if (boot.ok && boot.overrides !== undefined) {
+        const o = boot.overrides.overrides
         loadedKeysRef.current = new Set(Object.keys(o))
         const paramPatch: Partial<Fields> = {}
         if (typeof o.firstTurnAnchor === 'boolean') paramPatch.firstTurnAnchor = o.firstTurnAnchor
@@ -554,33 +568,28 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
         if (typeof o.cotDripMaxPerTurn === 'number') paramPatch.cotDripMaxPerTurn = o.cotDripMaxPerTurn
         if (Object.keys(paramPatch).length > 0) {
           const next = { ...fieldsRef.current, ...paramPatch }
-          fieldsRef.current = next
-          setFields(next)
+          publishFields(next)
           setSavedSwitches(snapshotSwitches(next))
         }
       }
       // 预设级模板变量（preset.yml 内容变量；失败不阻断主流程）。
-      const varsRes = await bridgePost<{ variables: Record<string, string>; enabled: boolean }>('/preset-variables', {})
-      if (seq !== loadSeqRef.current) return EMPTY_FIELDS
-      if (varsRes.ok && varsRes.value.variables !== null && typeof varsRes.value.variables === 'object') {
-        setTemplateVariables(varsRes.value.variables)
-        setTemplateVariablesEnabled(varsRes.value.enabled !== false)
+      if (boot.ok && boot.variables !== undefined) {
+        setTemplateVariables(boot.variables.variables)
+        setTemplateVariablesEnabled(boot.variables.enabled !== false)
       }
       // 实际生效配置（引擎从生成目录加载；settings.promptConfigs 仅为覆盖层，
       // 默认为空不代表无配置）。非空时以实际配置为准，并同步已保存快照避免误判 dirty。
-      const configsRes = await bridgePost<{ promptConfigs: PromptConfigDraft[] }>('/prompt-configs', {})
-      if (seq !== loadSeqRef.current) return EMPTY_FIELDS
-      if (configsRes.ok && Array.isArray(configsRes.value.promptConfigs) && configsRes.value.promptConfigs.length > 0) {
+      if (boot.ok && boot.promptConfigs !== undefined
+        && Array.isArray(boot.promptConfigs.promptConfigs) && boot.promptConfigs.promptConfigs.length > 0) {
         // 引擎自动生成的模型参数配置（model-params / subagent-model-params）由
         // 「模型设置」卡片管理，不进入模块列表（避免重复编辑入口）。
         const engineGenerated = new Set(['model-params', 'subagent-model-params'])
-        const userConfigs = configsRes.value.promptConfigs.filter((config) => !engineGenerated.has(config.id))
+        const userConfigs = boot.promptConfigs.promptConfigs.filter((config) => !engineGenerated.has(config.id))
         // 内容资产条目（prompt-injector / instruction-hint）：params.text（生成目录文件渲染产物）
         // 提升到 text 框显示，编辑入口统一为模块卡片。
         const actual = userConfigs.map(liftContentText)
         const next = { ...fieldsRef.current, promptConfigs: actual }
-        fieldsRef.current = next
-        setFields(next)
+        publishFields(next)
         setSavedConfigs(actual)
       }
       setNotice('')
@@ -627,9 +636,8 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
         }
       }
     }
-    fieldsRef.current = next
-    setFields(next)
-  }, [])
+    publishFields(next)
+  }, [publishFields])
 
   const enqueueSave = useCallback((ops: SettingsPathOpView[], okMessage: string | undefined, onSaved: () => void, setBusy?: (busy: boolean) => void) => {
     setBusy?.(true)
@@ -751,12 +759,16 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
   const persistConfigs = useCallback((configs: PromptConfigDraft[]): Promise<void> => {
     const contentEntries = configs.filter(isContentAsset)
     return (async () => {
-      // 内容资产：text 先写生成目录文件（afterPresetImport 触发重建，渲染产物 params.text 更新）。
-      for (const config of contentEntries) {
-        const scope = config.id === 'prompt-injector' ? 'preset' : 'agents'
-        const res = await bridgePost<{ scope: string }>('/import-preset', { scope, content: config.text ?? '' })
+      // 内容资产：text 先写生成目录文件。合并为单次 /import-preset（批量载荷），
+      // 服务端只触发一次重建——此前逐条请求每条各重建一次（多次写盘+recomposition）。
+      if (contentEntries.length > 0) {
+        const contents = contentEntries.map((config) => ({
+          scope: config.id === 'prompt-injector' ? 'preset' as const : 'agents' as const,
+          content: config.text ?? '',
+        }))
+        const res = await bridgePost<{ scopes: Array<'preset' | 'agents'> }>('/import-preset', { contents })
         if (!res.ok) {
-          showNotice('error', `${scope === 'preset' ? 'preset.md' : 'agents.md'} 保存失败：` + (res.message ?? 'settings bridge unavailable'))
+          showNotice('error', 'preset.md/agents.md 保存失败：' + (res.message ?? 'settings bridge unavailable'))
           return
         }
       }
@@ -810,7 +822,7 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
     if (fieldsRef.current.presetTemplate === id) return
     // 切换即保存：模块列表有未保存的提示词配置修改时先提交（写当前激活预设），
     // 避免切换后 load() 重置 fields 丢失修改。已保存/无修改则直接切换。
-    const dirtyConfigs = JSON.stringify(fieldsRef.current.promptConfigs) !== JSON.stringify(savedConfigs)
+    const dirtyConfigs = fieldsRef.current.promptConfigs !== savedConfigs
     if (dirtyConfigs) {
       await persistConfigs(fieldsRef.current.promptConfigs)
     }
@@ -925,7 +937,7 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
 
   const currentSwitches = snapshotSwitches(fields)
   const dirtySwitches = !switchesEqual(currentSwitches, savedSwitches)
-  const dirtyConfigs = JSON.stringify(fields.promptConfigs) !== JSON.stringify(savedConfigs)
+  const dirtyConfigs = fields.promptConfigs !== savedConfigs
   const dirty = dirtySwitches || dirtyConfigs
 
   // 任意 UI 修改自动保存：模块列表的提示词配置修改（顶端总开关/卡片字段/增删/排序，
@@ -938,8 +950,13 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
     return () => clearTimeout(timer)
   }, [dirtyConfigs, fields.promptConfigs, persistConfigs])
 
-  return {
+  // 返回引用稳定化：memo 子组件以 props.store 同一性跳过父级重渲染（订阅式 selector
+  // 化依赖稳定 store 引用）；每次渲染重建内容对象但复用 ref 外壳。
+  const storeRef = useRef<PromptToolStore>()
+  storeRef.current = {
     fields,
+    getFields,
+    subscribeFields,
     meta,
     loading,
     providers,
@@ -984,4 +1001,5 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
     dirtyConfigs,
     dirty,
   }
+  return storeRef.current
 }

@@ -24,6 +24,7 @@ function register() {
   const { ctx, handlers } = makeHarness()
   registerSettingsBridge(
     ctx,
+    'prompt-tool',
     () => ({ available: true, providers: ['deepseek-official'] }),
     () => ({ activeSkillsDirs: [], skillCatalog: [] }),
     () => '',
@@ -61,13 +62,30 @@ test('契约：client 前缀与 server 注册前缀同源', () => {
   assert.ok(SETTINGS_BRIDGE_PREFIX.startsWith('/api/'))
 })
 
-test('契约：24 个端点路径全部注册且无多余', () => {
+test('契约：25 个端点路径全部注册且无多余', () => {
   const handlers = register()
   const expected = Object.values(BRIDGE_ENDPOINTS)
-  assert.equal(expected.length, 24, 'BRIDGE_ENDPOINTS 应恰好 24 个端点')
+  assert.equal(expected.length, 25, 'BRIDGE_ENDPOINTS 应恰好 25 个端点')
   const registered = [...handlers.keys()].sort()
   const wanted = expected.map((p) => SETTINGS_BRIDGE_PREFIX + p).sort()
   assert.deepEqual(registered, wanted)
+})
+
+test('契约：/bootstrap 聚合 meta + overrides + variables + promptConfigs 供客户端单请求消费', async () => {
+  const handlers = register()
+  const handler = handlers.get(SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.bootstrap)
+  assert.ok(handler, '/bootstrap 端点未注册')
+  const res = fakeRes()
+  await handler(fakeReq(), res)
+  assert.equal(res.status, 200)
+  const payload = JSON.parse(res.body)
+  assert.equal(payload.ok, true)
+  // 客户端 load() 消费路径：meta.meta / overrides.overrides / variables.variables /
+  // promptConfigs.promptConfigs 全部存在（空值兜底形状，非 undefined）。
+  assert.ok(payload.meta !== undefined && payload.meta.meta !== undefined)
+  assert.ok(Array.isArray(payload.overrides.overrides) || typeof payload.overrides.overrides === 'object')
+  assert.ok(typeof payload.variables.variables === 'object' && typeof payload.variables.enabled === 'boolean')
+  assert.ok(Array.isArray(payload.promptConfigs.promptConfigs))
 })
 
 test('契约：成功载荷统一为 { ok: true, value }', async () => {

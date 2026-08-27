@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
 import { bridgePost, errorMessage } from './prompt-tool-bridge.ts'
 import { PromptConfigCard } from './PromptConfigCard.tsx'
 import type { EngineMeta, PromptConfigDraft, ValidationErrorEntry } from './prompt-tool-types.ts'
@@ -179,7 +179,8 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
     onPatchConfigs(configs.map((config) => visibleIds.has(config.id) ? { ...config, enabled } : config))
   }
 
-  const dirty = JSON.stringify(configs) !== JSON.stringify(savedConfigs)
+  // patch 路径从不原地 mutate（均生成新数组），引用比较即可判断脏；省掉每次渲染全量序列化大数组。
+  const dirty = configs !== savedConfigs
 
   const runValidate = async (target: PromptConfigDraft[]): Promise<boolean> => {
     setValidating(true)
@@ -245,10 +246,14 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
     onNotice('ok', '已复制')
   }
 
+  // 显示顺序（层序/order/声明序）一次计算：position map 供每张卡判断上移/下移，
+  // 此前每张卡各自调 viewOrderedIds（O(n log n) × n）。
+  const viewIds = useMemo(() => viewOrderedIds(configs, layer, meta.layers), [configs, layer, meta.layers])
+  const positionOf = useMemo(() => new Map(viewIds.map((id, at) => [id, at])), [viewIds])
+
   const renderCard = (config: PromptConfigDraft) => {
     const globalIndex = configs.indexOf(config)
-    const view = viewOrderedIds(configs, layer, meta.layers)
-    const position = view.indexOf(config.id)
+    const position = positionOf.get(config.id) ?? -1
     const isOpen = expanded === config.id
     return (
       <PromptConfigCard
@@ -291,7 +296,7 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
         onPatch={(patch) => patchAt(globalIndex, patch)}
         actions={{
           canMoveUp: position > 0,
-          canMoveDown: position >= 0 && position < view.length - 1,
+          canMoveDown: position >= 0 && position < viewIds.length - 1,
           onMoveUp: () => onPatchConfigs(moveWithinLayer(configs, globalIndex, -1, layer, meta.layers)),
           onMoveDown: () => onPatchConfigs(moveWithinLayer(configs, globalIndex, 1, layer, meta.layers)),
           onDuplicate: () => duplicateAt(globalIndex),

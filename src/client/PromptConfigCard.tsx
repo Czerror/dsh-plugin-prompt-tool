@@ -2,7 +2,7 @@
  * 单条提示词配置卡片 + 编辑表单（独立文件：
  * 打破 PromptConfigsEditor ⇄ PromptConfigList 的循环 import）。
  */
-import { cloneElement, isValidElement, useEffect, useId, useState, type ReactElement, type ReactNode } from 'react'
+import { cloneElement, isValidElement, useEffect, useId, useMemo, useState, type ReactElement, type ReactNode } from 'react'
 import clsx from 'clsx'
 import { IconChevronDownOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
 import styles from './PromptUi.module.css'
@@ -63,10 +63,13 @@ function selectValue(options: readonly string[], value: string | undefined, fall
 export function JsonField(props: { label: string; value: Record<string, unknown> | undefined; onChange: (value: Record<string, unknown> | undefined) => void }): ReactNode {
   const [text, setText] = useState(JSON.stringify(props.value ?? {}, null, 2))
   const [error, setError] = useState('')
+  // 依赖序列化结果而非对象引用：父级 patch 会让 params 产生新引用（即使内容未变），
+  // 旧写法会把用户未提交的编辑重置；引用不变时 useMemo 不再重复序列化。
+  const serialized = useMemo(() => JSON.stringify(props.value ?? {}, null, 2), [props.value])
   useEffect(() => {
-    setText(JSON.stringify(props.value ?? {}, null, 2))
+    setText(serialized)
     setError('')
-  }, [props.value])
+  }, [serialized])
   const commit = () => {
     try {
       const parsed = JSON.parse(text) as unknown

@@ -141,8 +141,8 @@ export function registerSettingsBridge(
   afterSkillFix?: () => void,
   /** 生成目录（presetDir）：读取实际生效的提示词配置（引擎加载源）。 */
   getPresetConfigsDir?: () => string,
-  /** 内容导入完成回调（更新运行时文本并重建预设）。 */
-  afterPresetImport?: (scope: 'preset' | 'agents') => void,
+  /** 内容导入完成回调：批量 scope 只触发一次重建（更新运行时文本并重建预设）。 */
+  afterPresetImport?: (scopes: Array<'preset' | 'agents'>) => void,
   /** 参数覆盖写入回调（重建预设使参数生效）。 */
   afterOverridesChange?: () => void,
   /** 预设包导入完成回调（物化导入预设：组合/配置目录/共享引擎落盘，宿主 discovery 可见）。 */
@@ -183,19 +183,168 @@ export function registerSettingsBridge(
         }
         return true
       }
+      /** 引擎能力矩阵（meta 端点与 /bootstrap 共用）：动态 import 引擎 schema。 */
+      const loadEngineMeta = async (): Promise<Record<string, unknown>> => {
+        const engineMetaUrl = new URL('../engine/schema.mjs', import.meta.url)
+        const { getEngineMeta } = await import(engineMetaUrl.href) as {
+          getEngineMeta: () => Record<string, unknown>
+        }
+        const meta = getEngineMeta() as Record<string, unknown>
+        meta.presets = listPresets()
+        meta.builtinTemplates = listBuiltinTemplates()
+        return meta
+      }
+
+      /** describe 运行时事实（describe 端点与 /bootstrap 共用）：检测状态、技能快照、
+       *  宿主默认模型、模型目录缓存、激活预设参数。不触网（模型目录只读 10min 缓存）。 */
+      const collectDescribeExtras = (descriptor: SettingsDescriptor): Record<string, unknown> => {
+        const detection = getModelsState()
+        const skillsState = getSkillsState()
+        // 宿主默认模型（agent-default-model settings：主对话新会话默认）：
+        // 插件参数未设置（空 = 继承宿主）时回显给客户端（模型名下拉候选/状态行）。
+        let hostDefaultModel: { provider?: string; model?: string; reasoningEffort?: string } | undefined
+        try {
+          const selection = sctx.settings.get(settingsNamespace('agent-default-model')) as
+            { provider?: unknown; model?: unknown; reasoningEffort?: unknown } | undefined
+          if (selection !== null && typeof selection === 'object') {
+            const record = selection as Record<string, unknown>
+            hostDefaultModel = {
+              ...(typeof record.provider === 'string' && record.provider.length > 0 ? { provider: record.provider } : {}),
+              ...(typeof record.model === 'string' && record.model.length > 0 ? { model: record.model } : {}),
+              ...(typeof record.reasoningEffort === 'string' && record.reasoningEffort.length > 0
+                ? { reasoningEffort: record.reasoningEffort }
+                : {}),
+            }
+            if (Object.keys(hostDefaultModel).length === 0) hostDefaultModel = undefined
+          }
+        } catch {
+          // 宿主未装配 agent-default-model 时忽略。
+        }
+        // 模型目录移出关键路径：/describe 只读缓存（未命中返回空），
+        // 查询由独立 /models 端点触发（客户端惰性加载，不阻塞工作台）。
+        const modelCatalog = peekModelCatalog()
+        // 引擎参数按预设存储：/describe 附带激活预设参数（settings 已不承载；
+        // 客户端 fields 参数键由此合并，promptConfigs 仍以 /prompt-configs 实际配置为准）。
+        let presetParams: Record<string, unknown> = {}
+        // 当前预设模板消息批层（pre-step）配置数：UI 消息批层入口开关联动——
+        // 模板无 pre-step 配置（layer 缺省即 pre-step）时开关关闭且禁编辑。
+        let templatePreStepCount = 0
+        try {
+          const settingsValue = descriptor.value !== null && typeof descriptor.value === 'object'
+            ? descriptor.value as Record<string, unknown>
+            : {}
+          const templateName = typeof settingsValue.presetTemplate === 'string' && (settingsValue.presetTemplate as string).length > 0
+            ? settingsValue.presetTemplate as string
+            : 'anchored'
+          const spec = loadPresetSpec(resolvePresetDir(templateName))
+          presetParams = resolvePresetParams(spec, {})
+          if (Array.isArray(spec.promptConfigs)) {
+            presetParams.promptConfigs = spec.promptConfigs
+          }
+          templatePreStepCount = (spec.promptConfigs ?? []).filter((config) => {
+            const layer = (config as { layer?: string }).layer
+            return layer === undefined || layer === 'pre-step'
+          }).length
+        } catch {
+          templatePreStepCount = 0
+        }
+        return {
+          presetParams,
+          hostDefaultModel,
+          templatePreStepCount,
+          modelsAvailable: detection.available,
+          providers: detection.providers,
+          modelCatalog,
+          modelsError: detection.error,
+          activeSkillsDirs: skillsState.activeSkillsDirs,
+          skillsDirExists: Object.fromEntries(skillsState.activeSkillsDirs.map((dir) => [dir, existsSync(dir)])),
+          skillCatalog: skillsState.skillCatalog,
+        }
+      }
+
+      /** 激活预设的引擎参数子集（/param-overrides 读取；preset.yml 按 mtime 缓存）。 */
+      const readParamOverrides = (dir: string): Record<string, unknown> => {
+        try {
+          const spec = loadPresetSpec(dir)
+          const params: Record<string, unknown> = {}
+          for (const key of PARAM_KEYS) {
+            if (key === 'promptConfigs') continue
+            if (spec.params !== null && typeof spec.params === 'object' && key in spec.params) {
+              params[key] = spec.params[key]
+            }
+          }
+          return params
+        } catch {
+          return {}
+        }
+      }
+
+      /** 预设级模板变量（/preset-variables 读取）。 */
+      const readPresetVariables = (dir: string): { variables: Record<string, string>; enabled: boolean } => {
+        try {
+          const spec = loadPresetSpec(dir)
+          const variables: Record<string, string> = {}
+          for (const [key, value] of Object.entries(spec.params ?? {})) {
+            if (!PARAM_KEYS.has(key) && typeof value === 'string') variables[key] = value
+          }
+          for (const [key, value] of Object.entries(spec.variables ?? {})) {
+            if (typeof value === 'string') variables[key] = value
+          }
+          return { variables, enabled: spec.variablesEnabled !== false }
+        } catch {
+          return { variables: {}, enabled: true }
+        }
+      }
+
+      /** 生成目录实际生效配置（/prompt-configs 读取）。 */
+      const readPromptConfigs = (dir: string): unknown[] => {
+        try {
+          return dir.length > 0 ? loadPromptConfigFiles(join(dir, 'prompt-configs')) : []
+        } catch {
+          return []
+        }
+      }
+
       const disposers = [
+        sctx.webServer.register({
+          kind: 'exact',
+          path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.bootstrap,
+          handler: async (req, res) => {
+            if (!guard(req, res)) return
+            ensureRegistered(sctx)
+            const descriptor = findDescriptor()
+            if (descriptor === undefined) {
+              writeBridgeJson(res, 404, { ok: false, code: 'settings-not-exposed', message: 'prompt-tool settings namespace is not registered' })
+              return
+            }
+            // 工作台首屏/保存后刷新的聚合读取：meta + describe 事实 + 参数覆盖 +
+            // 模板变量 + 实际生效配置。此前客户端串行 5 个端点（每端点独立读盘
+            // parse preset.yml）；聚合后单请求、preset.yml 命中 mtime 缓存仅解析一次。
+            try {
+              const meta = await loadEngineMeta()
+              const dir = getPresetConfigsDir?.() ?? ''
+              const extras = collectDescribeExtras(descriptor)
+              writeBridgeJson(res, 200, {
+                ok: true,
+                value: descriptor,
+                meta: { meta },
+                overrides: { overrides: dir.length > 0 ? readParamOverrides(dir) : {} },
+                variables: dir.length > 0 ? readPresetVariables(dir) : { variables: {}, enabled: true },
+                promptConfigs: { promptConfigs: readPromptConfigs(dir) },
+                ...extras,
+              })
+            } catch (error) {
+              const message = error instanceof Error ? error.message : String(error)
+              writeBridgeJson(res, 500, { ok: false, code: 'bootstrap-failed', message })
+            }
+          },
+        }),
         sctx.webServer.register({
           kind: 'exact',
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.meta,
           handler: async (req, res) => {
             if (!guard(req, res)) return
-            const engineMetaUrl = new URL('../engine/schema.mjs', import.meta.url)
-            const { getEngineMeta } = await import(engineMetaUrl.href) as {
-              getEngineMeta: () => Record<string, unknown>
-            }
-            const meta = getEngineMeta() as Record<string, unknown>
-            meta.presets = listPresets()
-            meta.builtinTemplates = listBuiltinTemplates()
+            const meta = await loadEngineMeta()
             writeBridgeJson(res, 200, { ok: true, value: { meta } })
           },
         }),
@@ -210,70 +359,7 @@ export function registerSettingsBridge(
               writeBridgeJson(res, 404, { ok: false, code: 'settings-not-exposed', message: 'prompt-tool settings namespace is not registered' })
               return
             }
-            const detection = getModelsState()
-            const skillsState = getSkillsState()
-            // 宿主默认模型（agent-default-model settings：主对话新会话默认）：
-            // 插件参数未设置（空 = 继承宿主）时回显给客户端（模型名下拉候选/状态行）。
-            let hostDefaultModel: { provider?: string; model?: string; reasoningEffort?: string } | undefined
-            try {
-              const selection = sctx.settings.get(settingsNamespace('agent-default-model')) as
-                { provider?: unknown; model?: unknown; reasoningEffort?: unknown } | undefined
-              if (selection !== null && typeof selection === 'object') {
-                const record = selection as Record<string, unknown>
-                hostDefaultModel = {
-                  ...(typeof record.provider === 'string' && record.provider.length > 0 ? { provider: record.provider } : {}),
-                  ...(typeof record.model === 'string' && record.model.length > 0 ? { model: record.model } : {}),
-                  ...(typeof record.reasoningEffort === 'string' && record.reasoningEffort.length > 0
-                    ? { reasoningEffort: record.reasoningEffort }
-                    : {}),
-                }
-                if (Object.keys(hostDefaultModel).length === 0) hostDefaultModel = undefined
-              }
-            } catch {
-              // 宿主未装配 agent-default-model 时忽略。
-            }
-            // 模型目录移出关键路径：/describe 只读缓存（未命中返回空），
-            // 查询由独立 /models 端点触发（客户端惰性加载，不阻塞工作台）。
-            const modelCatalog = peekModelCatalog()
-            // 引擎参数按预设存储：/describe 附带激活预设参数（settings 已不承载；
-            // 客户端 fields 参数键由此合并，promptConfigs 仍以 /prompt-configs 实际配置为准）。
-            let presetParams: Record<string, unknown> = {}
-            // 当前预设模板消息批层（pre-step）配置数：UI 消息批层入口开关联动——
-            // 模板无 pre-step 配置（layer 缺省即 pre-step）时开关关闭且禁编辑。
-            let templatePreStepCount = 0
-            try {
-              const settingsValue = descriptor.value !== null && typeof descriptor.value === 'object'
-                ? descriptor.value as Record<string, unknown>
-                : {}
-              const templateName = typeof settingsValue.presetTemplate === 'string' && (settingsValue.presetTemplate as string).length > 0
-                ? settingsValue.presetTemplate as string
-                : 'anchored'
-              const spec = loadPresetSpec(resolvePresetDir(templateName))
-              presetParams = resolvePresetParams(spec, {})
-              if (Array.isArray(spec.promptConfigs)) {
-                presetParams.promptConfigs = spec.promptConfigs
-              }
-              templatePreStepCount = (spec.promptConfigs ?? []).filter((config) => {
-                const layer = (config as { layer?: string }).layer
-                return layer === undefined || layer === 'pre-step'
-              }).length
-            } catch {
-              templatePreStepCount = 0
-            }
-            writeBridgeJson(res, 200, {
-              ok: true,
-              value: descriptor,
-              presetParams,
-              hostDefaultModel,
-              templatePreStepCount,
-              modelsAvailable: detection.available,
-              providers: detection.providers,
-              modelCatalog,
-              modelsError: detection.error,
-              activeSkillsDirs: skillsState.activeSkillsDirs,
-              skillsDirExists: Object.fromEntries(skillsState.activeSkillsDirs.map((dir) => [dir, existsSync(dir)])),
-              skillCatalog: skillsState.skillCatalog,
-            })
+            writeBridgeJson(res, 200, { ok: true, value: descriptor, ...collectDescribeExtras(descriptor) })
           },
         }),
         sctx.webServer.register({
@@ -426,16 +512,10 @@ export function registerSettingsBridge(
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.promptConfigs,
           handler: async (req, res) => {
             if (!guard(req, res)) return
-            try {
-              // 实际生效配置 = 生成目录 prompt-configs/（引擎加载源）；
-              // settings.promptConfigs 仅是用户覆盖层，默认为空不代表无配置。
-              const dir = join(getPresetConfigsDir?.() ?? '', 'prompt-configs')
-              const promptConfigs = dir.length > 0 ? loadPromptConfigFiles(dir) : []
-              writeBridgeJson(res, 200, { ok: true, value: { promptConfigs } })
-            } catch {
-              // 生成目录缺失/未生成时降级为空（settings 覆盖层仍可编辑）。
-              writeBridgeJson(res, 200, { ok: true, value: { promptConfigs: [] } })
-            }
+            // 实际生效配置 = 生成目录 prompt-configs/（引擎加载源）；
+            // settings.promptConfigs 仅是用户覆盖层，默认为空不代表无配置。
+            const dir = getPresetConfigsDir?.() ?? ''
+            writeBridgeJson(res, 200, { ok: true, value: { promptConfigs: readPromptConfigs(dir) } })
           },
         }),
         sctx.webServer.register({
@@ -469,8 +549,28 @@ export function registerSettingsBridge(
               return
             }
             const record = body as Record<string, unknown>
-            const scope = record.scope === 'agents' ? 'agents' : 'preset'
-            const content = typeof record.content === 'string' ? record.content : ''
+            // 批量载荷 { contents: [{scope, content}] }：一次请求写多个内容资产、只触发
+            // 一次重建（此前逐条请求每条各重建一次）。旧单条形状 {scope, content} 兼容保留。
+            const contents: Array<{ scope: 'preset' | 'agents'; content: string }> = []
+            if (Array.isArray(record.contents)) {
+              for (const entry of record.contents) {
+                if (entry === null || typeof entry !== 'object') continue
+                const item = entry as Record<string, unknown>
+                contents.push({
+                  scope: item.scope === 'agents' ? 'agents' : 'preset',
+                  content: typeof item.content === 'string' ? item.content : '',
+                })
+              }
+            } else {
+              contents.push({
+                scope: record.scope === 'agents' ? 'agents' : 'preset',
+                content: typeof record.content === 'string' ? record.content : '',
+              })
+            }
+            if (contents.length === 0) {
+              writeBridgeJson(res, 400, { ok: false, code: 'settings-rejected', message: 'unreadable JSON body' })
+              return
+            }
             const dir = getPresetConfigsDir?.() ?? ''
             if (dir.length === 0) {
               writeBridgeJson(res, 400, { ok: false, code: 'preset-dir-unavailable', message: 'presetDir 未配置' })
@@ -478,9 +578,11 @@ export function registerSettingsBridge(
             }
             try {
               mkdirSync(dir, { recursive: true })
-              writeFileSync(join(dir, scope === 'preset' ? 'preset.md' : 'agents.md'), content, 'utf8')
-              afterPresetImport?.(scope)
-              writeBridgeJson(res, 200, { ok: true, value: { scope } })
+              for (const entry of contents) {
+                writeFileSync(join(dir, entry.scope === 'preset' ? 'preset.md' : 'agents.md'), entry.content, 'utf8')
+              }
+              afterPresetImport?.(contents.map((entry) => entry.scope))
+              writeBridgeJson(res, 200, { ok: true, value: { scopes: contents.map((entry) => entry.scope) } })
             } catch (error) {
               const message = error instanceof Error ? error.message : String(error)
               writeBridgeJson(res, 500, { ok: false, code: 'preset-import-failed', message })
@@ -504,22 +606,7 @@ export function registerSettingsBridge(
             const record = (body ?? {}) as Record<string, unknown>
             // 无载荷 = 读取（preset.yml params 子集，兼容旧读回）。
             if (record.overrides === undefined && record.promptConfigs === undefined) {
-              try {
-                const spec = loadPresetSpec(dir)
-                const params: Record<string, unknown> = {}
-                for (const key of PARAM_KEYS) {
-                  if (key === 'promptConfigs') continue
-                  if (spec.params !== null && typeof spec.params === 'object' && key in spec.params) {
-                    params[key] = spec.params[key]
-                  }
-                }
-                writeBridgeJson(res, 200, {
-                  ok: true,
-                  value: { overrides: params },
-                })
-              } catch {
-                writeBridgeJson(res, 200, { ok: true, value: { overrides: {} } })
-              }
+              writeBridgeJson(res, 200, { ok: true, value: { overrides: readParamOverrides(dir) } })
               return
             }
             try {
@@ -565,24 +652,7 @@ export function registerSettingsBridge(
             const record = (body ?? {}) as Record<string, unknown>
             // 无载荷 = 读取（preset.yml 顶层 variables + 插值开关）。
             if (record.variables === undefined && record.enabled === undefined) {
-              try {
-                const spec = loadPresetSpec(dir)
-                const variables: Record<string, string> = {}
-                // 旧布局兼容：params 内容键（非 PARAM_KEYS）仍视为变量源。
-                for (const [key, value] of Object.entries(spec.params ?? {})) {
-                  if (!PARAM_KEYS.has(key) && typeof value === 'string') variables[key] = value
-                }
-                // 顶层 variables 段优先（新布局）。
-                for (const [key, value] of Object.entries(spec.variables ?? {})) {
-                  if (typeof value === 'string') variables[key] = value
-                }
-                writeBridgeJson(res, 200, {
-                  ok: true,
-                  value: { variables, enabled: spec.variablesEnabled !== false },
-                })
-              } catch {
-                writeBridgeJson(res, 200, { ok: true, value: { variables: {}, enabled: true } })
-              }
+              writeBridgeJson(res, 200, { ok: true, value: readPresetVariables(dir) })
               return
             }
             try {

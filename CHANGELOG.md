@@ -2,6 +2,30 @@
 
 ## [Unreleased]
 
+### UI 框架设计与性能修复（L1/L2/L3，2026-08-28）
+
+- **L1 热路径修复**：dirty 检测弃用每渲染 JSON.stringify 大数组，改引用比较
+  （patch 路径从不原地 mutate）；JsonField 同步 effect 依赖序列化结果而非对象
+  引用（父级 patch 不再重置未提交 JSON 草稿）；PromptConfigList 显示顺序
+  viewOrderedIds 由每卡 O(n log n) 收敛为列表顶层一次计算 position map
+  （O(n log n) 总计）；内容资产（preset.md/agents.md）自动保存从逐条
+  /import-preset 合并为单次批量请求（服务端只触发一次重建，此前每次保存 2-3 次
+  rebuildPreset）。
+- **L2 读取聚合**：新增 `/bootstrap` 端点（25 个端点），工作台加载/保存后刷新由
+  5 个串行请求（/meta、/describe、/param-overrides、/preset-variables、
+  /prompt-configs）合并为 1 个聚合请求；describe/meta/overrides/variables/
+  prompt-configs 各端点保留供 TUI 与测试复用共享实现；`loadPresetSpec` 增加
+  mtime+size 缓存（写盘路径与外部编辑均正确失效）。
+- **L3 订阅式 selector 化**：store 返回引用稳定化 + `getFields/subscribeFields`
+  订阅通道；新增 `usePromptToolFields`（useSyncExternalStore + 消费侧 ref 缓存）；
+  页面组件（FeatureSettings/ConfigListWithTemplates/SubagentPage/PresetsPage/
+  PresetSwitcher/CharactersPage）memo 化并订阅 fields 引用，父级 loading/notice/
+  page 变化不再级联重渲染；技能设置页拆分为 SkillsSettings.tsx + SkillRow memo
+  组件（开关/筛选/拖拽 hover 只重渲染受影响行）；PromptWorkspace.tsx 由 646 行
+  收敛至 ~250 行。
+- **验证**：typecheck/lint 全绿，367 测试通过（含 /bootstrap 契约测试与批量
+  /import-preset 回调断言）。
+
 ### 修复 liangshen 预设缺 prompt-config-engine 行（2026-08-26）
 
 - **根因**：liangshen modules 缺 `prompt-config-engine`（promptConfigs 执行器行）——
