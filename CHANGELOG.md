@@ -13,6 +13,18 @@
   同源，消除旧值残留。
 - 验证：typecheck/lint 全绿，369 测试通过（新增 /configs-validate >64KB 回归）。
 
+### 修复切换预设后配置卡出现慢 20+ 秒（2026-08-28）
+
+- **根因**：客户端 `load()` 每次工作台加载都 `settings.ensure()` 触发宿主全量
+  describe mirror RPC（官方遍历所有 settings namespace + 深度克隆 + schema
+  序列化，插件多时十几秒），切换预设后配置卡要等这条 RPC 才出现。服务端写路径
+  （writePreset 渲染 129 卡）实测仅 62ms，参数桥不慢。
+- **修复**：`/bootstrap` 响应本就携带 settings descriptor（value/base/revision），
+  客户端直接用它作 fields 主源，`load()` 不再 await 宿主 describe mirror；
+  revision 只在首次建立、之后由 mutate 应答维护（避免 30s descriptor 缓存把
+  revision 倒退导致下次保存 409）。
+- 验证：typecheck/lint 全绿，369 测试通过。
+
 ### 修复 64KB 桥上限：大预设保存静默失败与切换卡顿（2026-08-28）
 
 - **根因**：beta-2-42 实测 129 张配置卡，`promptConfigs` 序列化 70.2KB > 64KB

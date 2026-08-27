@@ -343,33 +343,26 @@ function waitForScope(scope: SettingsScope<Record<string, unknown>>): Promise<Se
   })
 }
 
-/** 把 rc8 scope 快照 + 自定义 /describe 的 runtime facts 组装成旧 BridgeResult 视图。 */
-function bridgeViewFromScope(
-  snapshot: SettingsScopeSnapshot<Record<string, unknown>>,
-  runtime: BridgeResult<BridgeSettingsView>,
-): BridgeResult<BridgeSettingsView> {
-  if (snapshot.status !== 'ready' || snapshot.value === undefined) {
-    return {
-      ok: false,
-      message: snapshot.status === 'unavailable'
-        ? 'settings namespace "prompt-tool" is not exposed'
-        : 'settings namespace "prompt-tool" is not ready',
-    }
-  }
+/** 把 /bootstrap 响应（value=服务端 settings descriptor）直接组装成旧 BridgeResult 视图。
+ *  不再走 rc8 共享 mirror：宿主全量 describe 在插件多时是秒级 RPC，切换预设后
+ *  settings.ensure() 会让配置卡延迟十几秒出现；/bootstrap 已携带同源 descriptor。 */
+function bridgeViewFromBoot(boot: BridgeResult<BridgeSettingsView>): BridgeResult<BridgeSettingsView> {
+  if (!boot.ok) return boot
   return {
     ok: true,
     value: {
       ns: 'prompt-tool',
-      value: snapshot.value,
-      base: snapshot.base,
-      revision: snapshot.revision ?? 0,
+      value: boot.value.value,
+      base: boot.value.base,
+      revision: boot.value.revision,
     },
-    providers: runtime.ok ? runtime.providers : undefined,
-    modelCatalog: runtime.ok ? runtime.modelCatalog : undefined,
-    activeSkillsDirs: runtime.ok ? runtime.activeSkillsDirs : undefined,
-    skillCatalog: runtime.ok ? runtime.skillCatalog : undefined,
-    templatePreStepCount: runtime.ok ? runtime.templatePreStepCount : undefined,
-    hostDefaultModel: runtime.ok ? runtime.hostDefaultModel : undefined,
+    providers: boot.providers,
+    modelCatalog: boot.modelCatalog,
+    activeSkillsDirs: boot.activeSkillsDirs,
+    skillCatalog: boot.skillCatalog,
+    templatePreStepCount: boot.templatePreStepCount,
+    presetParams: boot.presetParams,
+    hostDefaultModel: boot.hostDefaultModel,
   }
 }
 
@@ -464,7 +457,9 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
     setSkillsDirDraft('')
     setSavedSwitches(snapshotSwitches(next))
     setSavedConfigs(next.promptConfigs)
-    if (res.ok) revisionRef.current = res.value.revision
+    // revision 只在首次建立，后续由 enqueueSave 的 mutate 应答维护——/bootstrap 的
+    // descriptor 有 30s 服务端缓存，用其 revision 倒退会导致下一次保存 409。
+    if (res.ok && revisionRef.current === undefined) revisionRef.current = res.value.revision
     return next
   }, [])
 
@@ -478,16 +473,15 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
       // 实际生效配置一次取回（此前 5 端点串行，preset.yml 每端点读盘解析）。
       const boot = await bridgePost<BridgeSettingsView>('/bootstrap', {})
       if (seq !== loadSeqRef.current) return EMPTY_FIELDS
-      if (boot.ok && boot.meta !== undefined) setMeta(boot.meta.meta)
-      // 标准 settings 分层数据仍来自 rc8 共享 describe mirror 的 scope。
-      await settings.ensure()
-      const snapshot = await waitForScope(settings.scope)
-      const res = bridgeViewFromScope(snapshot, boot)
-      if (seq !== loadSeqRef.current) return EMPTY_FIELDS
-      if (!res.ok) {
-        showNotice('error', '读取配置失败：' + (res.message ?? ''))
+      if (!boot.ok) {
+        showNotice('error', '读取配置失败：' + (boot.message ?? 'bootstrap unavailable'))
         return EMPTY_FIELDS
       }
+      if (boot.meta !== undefined) setMeta(boot.meta.meta)
+      // /bootstrap 已携带 settings descriptor（value/base/revision）：直接作为 fields
+      // 主源，不再 await settings.ensure()——宿主全量 describe mirror 是切换预设后
+      // 配置卡十几秒才出现的瓶颈。
+      const res = bridgeViewFromBoot(boot)
       applyView(res)
       // 用户参数覆盖（激活预设 preset.yml params；settings 不再承载参数）。
       if (boot.ok && boot.overrides !== undefined) {
