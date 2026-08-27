@@ -2,7 +2,7 @@
  * 单条提示词配置卡片 + 编辑表单（独立文件：
  * 打破 PromptConfigsEditor ⇄ PromptConfigList 的循环 import）。
  */
-import { cloneElement, isValidElement, useEffect, useId, useMemo, useState, type ReactElement, type ReactNode } from 'react'
+import { cloneElement, isValidElement, memo, useEffect, useId, useMemo, useState, type ReactElement, type ReactNode } from 'react'
 import clsx from 'clsx'
 import { IconChevronDownOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
 import styles from './PromptUi.module.css'
@@ -420,38 +420,30 @@ export function PromptConfigForm(props: {
   )
 }
 
-export interface PromptConfigCardActions {
-  canMoveUp: boolean
-  canMoveDown: boolean
-  onMoveUp: () => void
-  onMoveDown: () => void
-  onDuplicate: () => void
-  onDelete: () => void
-}
-
-/** 模块卡片拖拽排序（HTML5 DnD；移动逻辑在 PromptConfigList 显示视图层）。 */
-export interface PromptConfigCardDrag {
-  dragging: boolean
-  dropBefore: boolean
-  dropAfter: boolean
-  onDragStart: (event: React.DragEvent<HTMLElement>) => void
-  onDragOver: (event: React.DragEvent<HTMLElement>) => void
-  onDrop: (event: React.DragEvent<HTMLElement>) => void
-  onDragEnd: () => void
-}
-
-/** 列表卡片：开关按钮 + 4 个操作按钮 + 可展开编辑表单。 */
-export function PromptConfigCard(props: {
+/** 列表卡片（memo 化）：props 全部为数据或稳定回调——config 引用变化才重渲染该卡，
+ *  129 卡列表编辑/拖拽 hover 时不再整列表级联渲染。 */
+export const PromptConfigCard = memo(function PromptConfigCard(props: {
   meta: EngineMeta
   config: PromptConfigDraft
   expanded: boolean
-  drag?: PromptConfigCardDrag
-  onToggleExpanded: () => void
-  onToggleEnabled: (enabled: boolean) => void
-  onPatch: (patch: Partial<PromptConfigDraft>) => void
-  actions: PromptConfigCardActions
+  canMoveUp: boolean
+  canMoveDown: boolean
+  dragging?: boolean
+  dropBefore?: boolean
+  dropAfter?: boolean
+  onToggleExpanded: (id: string) => void
+  onToggleEnabled: (id: string, enabled: boolean) => void
+  onPatch: (id: string, patch: Partial<PromptConfigDraft>) => void
+  onMoveUp: (id: string) => void
+  onMoveDown: (id: string) => void
+  onDuplicate: (id: string) => void
+  onDelete: (id: string) => void
+  onDragStart?: (id: string, event: React.DragEvent<HTMLElement>) => void
+  onDragOver?: (id: string, event: React.DragEvent<HTMLElement>) => void
+  onDrop?: (id: string, event: React.DragEvent<HTMLElement>) => void
+  onDragEnd?: () => void
 }): ReactNode {
-  const { meta, config, actions } = props
+  const { meta, config } = props
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const enabled = config.enabled !== false
   const policy = fieldPolicyFor(meta, config.layer)
@@ -464,24 +456,24 @@ export function PromptConfigCard(props: {
   return (
     <article
       className={clsx(styles.configCard, props.expanded && styles.configCardOpen)}
-      data-dragging={props.drag?.dragging ? '' : undefined}
-      data-drop-before={props.drag?.dropBefore ? '' : undefined}
-      data-drop-after={props.drag?.dropAfter ? '' : undefined}
-      onDragOver={props.drag?.onDragOver}
-      onDrop={props.drag?.onDrop}
-      onDragEnd={props.drag?.onDragEnd}
+      data-dragging={props.dragging ? '' : undefined}
+      data-drop-before={props.dropBefore ? '' : undefined}
+      data-drop-after={props.dropAfter ? '' : undefined}
+      onDragOver={props.onDragOver === undefined ? undefined : (event) => props.onDragOver!(config.id, event)}
+      onDrop={props.onDrop === undefined ? undefined : (event) => props.onDrop!(config.id, event)}
+      onDragEnd={props.onDragEnd}
     >
       <header className={styles.configHeader}>
-        {props.drag !== undefined && (
+        {props.onDragStart !== undefined && (
           <span
             className={styles.dragHandle}
             title="拖动调整顺序"
             aria-hidden="true"
             draggable
-            onDragStart={props.drag.onDragStart}
+            onDragStart={(event) => props.onDragStart!(config.id, event)}
           >⠿</span>
         )}
-        <button type="button" className={styles.configToggle} aria-expanded={props.expanded} onClick={props.onToggleExpanded}>
+        <button type="button" className={styles.configToggle} aria-expanded={props.expanded} onClick={() => props.onToggleExpanded(config.id)}>
           <span className={styles.configTitle}>
             <span className={styles.configTitleRow}>
               <span className={styles.configName}>{config.name && config.name !== config.id ? `${config.id} · ${config.name}` : config.id}</span>
@@ -495,16 +487,16 @@ export function PromptConfigCard(props: {
         </button>
         <span className={styles.configHeaderActions}>
           <label className={styles.configEnable} title={enabled ? '点击关闭' : '点击启用'}>
-            <input type="checkbox" checked={enabled} aria-label={`启用 ${config.name ?? config.id}`} onChange={(e) => props.onToggleEnabled(e.target.checked)} />
+            <input type="checkbox" checked={enabled} aria-label={`启用 ${config.name ?? config.id}`} onChange={(e) => props.onToggleEnabled(config.id, e.target.checked)} />
             <span className={styles.switch} aria-hidden="true"><i /></span>
           </label>
           <span className={styles.configActions}>
-            <button type="button" className={styles.pillButton} disabled={!actions.canMoveUp} onClick={actions.onMoveUp}>上移</button>
-            <button type="button" className={styles.pillButton} disabled={!actions.canMoveDown} onClick={actions.onMoveDown}>下移</button>
-            <button type="button" className={styles.pillButton} onClick={actions.onDuplicate}>复制</button>
+            <button type="button" className={styles.pillButton} disabled={!props.canMoveUp} onClick={() => props.onMoveUp(config.id)}>上移</button>
+            <button type="button" className={styles.pillButton} disabled={!props.canMoveDown} onClick={() => props.onMoveDown(config.id)}>下移</button>
+            <button type="button" className={styles.pillButton} onClick={() => props.onDuplicate(config.id)}>复制</button>
             {confirmingDelete ? (
               <>
-                <button type="button" className={styles.pillButton} data-danger onClick={actions.onDelete}>确认删除</button>
+                <button type="button" className={styles.pillButton} data-danger onClick={() => props.onDelete(config.id)}>确认删除</button>
                 <button type="button" className={styles.pillButton} data-variant="secondary" onClick={() => setConfirmingDelete(false)}>取消</button>
               </>
             ) : (
@@ -513,7 +505,7 @@ export function PromptConfigCard(props: {
           </span>
         </span>
       </header>
-      {props.expanded && <PromptConfigForm meta={meta} config={config} onPatch={props.onPatch} />}
+      {props.expanded && <PromptConfigForm meta={meta} config={config} onPatch={(patch) => props.onPatch(config.id, patch)} />}
     </article>
   )
-}
+})

@@ -756,7 +756,9 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
     }
   }, [load, showNotice])
 
-  const persistConfigs = useCallback((configs: PromptConfigDraft[]): Promise<void> => {
+  /** 保存后是否静默重载。切换预设时传 false（随后的 settings.mutate 回调会统一 load，
+   *  避免一次切换触发两次全量读取）。 */
+  const persistConfigs = useCallback((configs: PromptConfigDraft[], options?: { reload?: boolean }): Promise<void> => {
     const contentEntries = configs.filter(isContentAsset)
     return (async () => {
       // 内容资产：text 先写生成目录文件。合并为单次 /import-preset（批量载荷），
@@ -778,7 +780,7 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
       })
       if (res.ok) {
         setSavedConfigs(configs)
-        void load({ silent: true })
+        if (options?.reload !== false) void load({ silent: true })
       } else {
         showNotice('error', '提示词配置保存失败：' + (res.message ?? 'settings bridge unavailable'))
       }
@@ -824,7 +826,8 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
     // 避免切换后 load() 重置 fields 丢失修改。已保存/无修改则直接切换。
     const dirtyConfigs = fieldsRef.current.promptConfigs !== savedConfigs
     if (dirtyConfigs) {
-      await persistConfigs(fieldsRef.current.promptConfigs)
+      // 免双 load：保存成功后由下方 enqueueSave 的 onSaved 统一静默重载。
+      await persistConfigs(fieldsRef.current.promptConfigs, { reload: false })
     }
     patch({ presetTemplate: id })
     enqueueSave(

@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from 'react'
+import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react'
 import { bridgePost, errorMessage } from './prompt-tool-bridge.ts'
 import { PromptConfigCard } from './PromptConfigCard.tsx'
 import type { EngineMeta, PromptConfigDraft, ValidationErrorEntry } from './prompt-tool-types.ts'
@@ -217,91 +217,103 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
     setExpanded(undefined)
   }
 
-  const patchAt = (globalIndex: number, patch: Partial<PromptConfigDraft>) => {
-    onPatchConfigs(configs.map((config, index) => index === globalIndex ? { ...config, ...patch } : config))
-  }
-
-  const removeAt = (globalIndex: number) => {
-    const removedId = configs[globalIndex]?.id
-    if (removedId === undefined) return
-    // 删除确认由卡片头部「删除 → 确认删除」两段式承担（宿主 webview 禁 window.confirm，不依赖原生弹窗）。
-    onPatchConfigs(configs.filter((_, index) => index !== globalIndex))
-    if (expanded === removedId) setExpanded(undefined)
-    onNotice('ok', '已删除')
-  }
-
-  const duplicateAt = (globalIndex: number) => {
-    const source = configs[globalIndex]
-    if (source === undefined) return
-    let id = `${source.id}-copy`
-    let suffix = 2
-    while (configs.some((config) => config.id === id)) {
-      id = `${source.id}-copy${suffix}`
-      suffix += 1
-    }
-    const clone = JSON.parse(JSON.stringify(source)) as PromptConfigDraft
-    clone.id = id
-    onPatchConfigs([...configs, clone])
-    setExpanded(id)
-    onNotice('ok', '已复制')
-  }
-
   // 显示顺序（层序/order/声明序）一次计算：position map 供每张卡判断上移/下移，
   // 此前每张卡各自调 viewOrderedIds（O(n log n) × n）。
   const viewIds = useMemo(() => viewOrderedIds(configs, layer, meta.layers), [configs, layer, meta.layers])
   const positionOf = useMemo(() => new Map(viewIds.map((id, at) => [id, at])), [viewIds])
 
+  /** 卡片稳定回调（memo 生效前提）：经 liveRef 读最新列表状态，回调引用跨渲染不变。 */
+  const liveRef = useRef({ configs, layer, metaLayers: meta.layers, dragId, dropTarget })
+  liveRef.current = { configs, layer, metaLayers: meta.layers, dragId, dropTarget }
+  const handleToggleExpanded = useCallback((id: string) => {
+    setExpanded((current) => current === id ? undefined : id)
+  }, [])
+  const handleToggleEnabled = useCallback((id: string, enabled: boolean) => {
+    const index = liveRef.current.configs.findIndex((item) => item.id === id)
+    if (index >= 0) onPatchConfigs(liveRef.current.configs.map((item, at) => at === index ? { ...item, enabled } : item))
+  }, [onPatchConfigs])
+  const handlePatch = useCallback((id: string, patch: Partial<PromptConfigDraft>) => {
+    const index = liveRef.current.configs.findIndex((item) => item.id === id)
+    if (index >= 0) onPatchConfigs(liveRef.current.configs.map((item, at) => at === index ? { ...item, ...patch } : item))
+  }, [onPatchConfigs])
+  const handleMove = useCallback((id: string, delta: -1 | 1) => {
+    const { configs: current, layer: currentLayer, metaLayers } = liveRef.current
+    const index = current.findIndex((item) => item.id === id)
+    if (index >= 0) onPatchConfigs(moveWithinLayer(current, index, delta, currentLayer, metaLayers))
+  }, [onPatchConfigs])
+  const handleDuplicate = useCallback((id: string) => {
+    const current = liveRef.current.configs
+    const source = current.find((item) => item.id === id)
+    if (source === undefined) return
+    let nextId = `${source.id}-copy`
+    let suffix = 2
+    while (current.some((item) => item.id === nextId)) {
+      nextId = `${source.id}-copy${suffix}`
+      suffix += 1
+    }
+    const clone = JSON.parse(JSON.stringify(source)) as PromptConfigDraft
+    clone.id = nextId
+    onPatchConfigs([...current, clone])
+    setExpanded(nextId)
+    onNotice('ok', '已复制')
+  }, [onNotice, onPatchConfigs])
+  const handleDelete = useCallback((id: string) => {
+    const current = liveRef.current.configs
+    onPatchConfigs(current.filter((item) => item.id !== id))
+    setExpanded((value) => value === id ? undefined : value)
+    onNotice('ok', '已删除')
+  }, [onNotice, onPatchConfigs])
+  const handleDragStart = useCallback((id: string, event: React.DragEvent<HTMLElement>) => {
+    setDragId(id)
+    event.dataTransfer.effectAllowed = 'move'
+  }, [])
+  const handleDragOver = useCallback((id: string, event: React.DragEvent<HTMLElement>) => {
+    event.preventDefault()
+    const { dragId: currentDrag } = liveRef.current
+    if (currentDrag === undefined || currentDrag === id) return
+    const rect = event.currentTarget.getBoundingClientRect()
+    setDropTarget({ id, before: event.clientY < rect.top + rect.height / 2 })
+  }, [])
+  const handleDrop = useCallback((id: string, event: React.DragEvent<HTMLElement>) => {
+    event.preventDefault()
+    const { configs: current, layer: currentLayer, metaLayers, dragId: source, dropTarget: target } = liveRef.current
+    if (source !== undefined && target !== undefined && source !== id) {
+      onPatchConfigs(moveToView(current, source, target.id, target.before, currentLayer, metaLayers))
+    }
+    setDragId(undefined)
+    setDropTarget(undefined)
+  }, [onPatchConfigs])
+  const handleDragEnd = useCallback(() => {
+    setDragId(undefined)
+    setDropTarget(undefined)
+  }, [])
+  const handleMoveUp = useCallback((id: string) => handleMove(id, -1), [handleMove])
+  const handleMoveDown = useCallback((id: string) => handleMove(id, 1), [handleMove])
+
   const renderCard = (config: PromptConfigDraft) => {
-    const globalIndex = configs.indexOf(config)
     const position = positionOf.get(config.id) ?? -1
-    const isOpen = expanded === config.id
     return (
       <PromptConfigCard
         key={config.id}
         meta={meta}
         config={config}
-        expanded={isOpen}
-        drag={{
-          dragging: dragId === config.id,
-          dropBefore: dropTarget?.id === config.id && dropTarget.before,
-          dropAfter: dropTarget?.id === config.id && !dropTarget.before,
-          onDragStart: (event) => {
-            setDragId(config.id)
-            event.dataTransfer.effectAllowed = 'move'
-          },
-          onDragOver: (event) => {
-            event.preventDefault()
-            if (dragId === undefined || dragId === config.id) return
-            const rect = event.currentTarget.getBoundingClientRect()
-            setDropTarget({ id: config.id, before: event.clientY < rect.top + rect.height / 2 })
-          },
-          onDrop: (event) => {
-            event.preventDefault()
-            const target = dropTarget
-            if (dragId !== undefined && target !== undefined && dragId !== config.id) {
-              onPatchConfigs(moveToView(configs, dragId, target.id, target.before, layer, meta.layers))
-            }
-            setDragId(undefined)
-            setDropTarget(undefined)
-          },
-          onDragEnd: () => {
-            setDragId(undefined)
-            setDropTarget(undefined)
-          },
-        }}
-        onToggleExpanded={() => {
-          setExpanded(isOpen ? undefined : config.id)
-        }}
-        onToggleEnabled={(enabled) => patchAt(globalIndex, { enabled })}
-        onPatch={(patch) => patchAt(globalIndex, patch)}
-        actions={{
-          canMoveUp: position > 0,
-          canMoveDown: position >= 0 && position < viewIds.length - 1,
-          onMoveUp: () => onPatchConfigs(moveWithinLayer(configs, globalIndex, -1, layer, meta.layers)),
-          onMoveDown: () => onPatchConfigs(moveWithinLayer(configs, globalIndex, 1, layer, meta.layers)),
-          onDuplicate: () => duplicateAt(globalIndex),
-          onDelete: () => removeAt(globalIndex),
-        }}
+        expanded={expanded === config.id}
+        canMoveUp={position > 0}
+        canMoveDown={position >= 0 && position < viewIds.length - 1}
+        dragging={dragId === config.id}
+        dropBefore={dropTarget?.id === config.id && dropTarget.before}
+        dropAfter={dropTarget?.id === config.id && !dropTarget.before}
+        onToggleExpanded={handleToggleExpanded}
+        onToggleEnabled={handleToggleEnabled}
+        onPatch={handlePatch}
+        onMoveUp={handleMoveUp}
+        onMoveDown={handleMoveDown}
+        onDuplicate={handleDuplicate}
+        onDelete={handleDelete}
+        onDragStart={handleDragStart}
+        onDragOver={handleDragOver}
+        onDrop={handleDrop}
+        onDragEnd={handleDragEnd}
       />
     )
   }

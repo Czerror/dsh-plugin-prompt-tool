@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { rmSync } from 'node:fs'
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { BRIDGE_ENDPOINTS, registerSettingsBridge } from '../../lib/index.mjs'
 
 const PREFIX = '/api/prompt-tool/settings'
@@ -164,6 +164,43 @@ test('settings bridge /import-preset 写入生成目录并触发回调；/preset
     } }), rres)
     assert.equal(rres.status, 200)
     assert.equal(JSON.parse(rres.body).value.content, 'HELLO PRESET')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('settings bridge /param-overrides 接受 >64KB promptConfigs 载荷（不再静默截断为读取）', async () => {
+  const { ctx, handlers } = makeHarness()
+  // handler 写路径 = dirname(getPresetConfigsDir())/basename(...)/preset.yml：
+  // 激活预设目录就是 preset.yml 所在目录，fixture 直接建在 dir 下。
+  const dir = join(tmpdir(), `pt-overrides-big-${process.pid}-${Date.now()}`)
+  mkdirSync(dir, { recursive: true })
+  writeFileSync(join(dir, 'preset.yml'), 'id: beta\n', 'utf8')
+  try {
+    registerSettingsBridge(
+      ctx,
+      'prompt-tool',
+      () => ({ available: true, providers: [] }),
+      () => ({ activeSkillsDirs: [], skillCatalog: [] }),
+      () => '',
+      () => true,
+      undefined,
+      () => dir,
+    )
+    const write = handlers.get(`${PREFIX}${BRIDGE_ENDPOINTS.paramOverrides}`)
+    assert.ok(write, '/param-overrides 端点应注册')
+    // 129 卡实测 70KB：用 80KB 单卡模拟超旧 64KB 上限的载荷。
+    const big = { promptConfigs: [{ id: 'big-card', name: 'big', layer: 'pre-step', text: 'x'.repeat(80 * 1024) }] }
+    const wres = fakeRes()
+    await write(fakeReq({ [Symbol.asyncIterator]: async function* () {
+      yield Buffer.from(JSON.stringify(big))
+    } }), wres)
+    assert.equal(wres.status, 200)
+    const payload = JSON.parse(wres.body)
+    assert.equal(payload.ok, true)
+    // 写分支成功形状 = 回显 promptConfigs；读取分支形状 = { overrides }。
+    assert.ok(payload.value.promptConfigs !== undefined, '应为写分支回显，而非被截断成读取分支')
+    assert.ok(readFileSync(join(dir, 'preset.yml'), 'utf8').includes('big-card'), 'promptConfigs 应真实落盘')
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }

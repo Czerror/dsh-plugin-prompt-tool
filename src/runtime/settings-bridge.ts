@@ -543,7 +543,15 @@ export function registerSettingsBridge(
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.importPreset,
           handler: async (req, res) => {
             if (!guard(req, res)) return
-            const { body } = await readBridgeBody(req)
+            const { body, tooLarge } = await readBridgeBody(req, PRESET_PACKAGE_MAX_BYTES)
+            if (tooLarge) {
+              writeBridgeJson(res, 413, {
+                ok: false,
+                code: 'preset-import-too-large',
+                message: `内容资产超过 ${Math.round(PRESET_PACKAGE_MAX_BYTES / 1024 / 1024)}MB 上限`,
+              })
+              return
+            }
             if (body === null || body === undefined || typeof body !== 'object') {
               writeBridgeJson(res, 400, { ok: false, code: 'settings-rejected', message: 'unreadable JSON body' })
               return
@@ -602,7 +610,18 @@ export function registerSettingsBridge(
             // 阶段 2：参数按预设存储——读写激活预设 preset.yml 的 params（+ promptConfigs）。
             const presetRoot = dirname(dir)
             const templateName = basename(dir)
-            const { body } = await readBridgeBody(req)
+            // promptConfigs 全量数组随配置卡数量增长（实测 129 卡 70KB），远超默认
+            // 64KB 端点上限——写分支用预设包级上限（8MB），避免大载荷被静默截断成
+            // “无载荷读取”导致保存静默失败。
+            const { body, tooLarge } = await readBridgeBody(req, PRESET_PACKAGE_MAX_BYTES)
+            if (tooLarge) {
+              writeBridgeJson(res, 413, {
+                ok: false,
+                code: 'overrides-too-large',
+                message: `参数载荷超过 ${Math.round(PRESET_PACKAGE_MAX_BYTES / 1024 / 1024)}MB 上限`,
+              })
+              return
+            }
             const record = (body ?? {}) as Record<string, unknown>
             // 无载荷 = 读取（preset.yml params 子集，兼容旧读回）。
             if (record.overrides === undefined && record.promptConfigs === undefined) {

@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+### 修复 64KB 桥上限：大预设保存静默失败与切换卡顿（2026-08-28）
+
+- **根因**：beta-2-42 实测 129 张配置卡，`promptConfigs` 序列化 70.2KB > 64KB
+  默认桥上限。`readBridgeBody` 超限返回 `body: undefined`，`/param-overrides`
+  handler 把写请求误判为「无载荷=读取」→ 保存静默失败，`load()` 回滚后 UI
+  闪回，表现为切换预设/创建配置卡缓慢卡顿。
+- **修复**：`/param-overrides` 与 `/import-preset` 写分支改用预设包级上限
+  （8MB）+ 超限显式 413；客户端保存失败可被正确报告而非静默截断。
+- **性能配套**：切换预设时 `persistConfigs({ reload: false })` 免双次全量
+  load（保存后由 settings.mutate 回调统一静默刷新）；`PromptConfigCard` 全面
+  memo 化 + `PromptConfigList` 稳定回调（编辑/拖拽 hover 只重渲受影响卡片）。
+- **验证**：typecheck/lint 全绿，368 测试通过（新增 >64KB 载荷落盘回归测试）。
+
 ### UI 框架设计与性能修复（L1/L2/L3，2026-08-28）
 
 - **L1 热路径修复**：dirty 检测弃用每渲染 JSON.stringify 大数组，改引用比较

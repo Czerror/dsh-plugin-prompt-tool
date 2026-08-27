@@ -1,4 +1,4 @@
-import { memo, useEffect, useState, useSyncExternalStore, type ReactNode } from 'react'
+import { memo, useCallback, useEffect, useState, useSyncExternalStore, type ReactNode } from 'react'
 import clsx from 'clsx'
 import type { IApiClient } from '@deepseek-ai/dsh-client-connection/client'
 import { tabKeyHandler } from './tab-key.ts'
@@ -60,6 +60,13 @@ const FeatureSettings = memo(function FeatureSettings(props: { store: PromptTool
   const { store } = props
   // L3 selector 化：fields 引用变化才重渲染（父级 loading/notice/page 变化不再级联）。
   const fields = usePromptToolFields(store, (value) => value)
+  // 稳定回调：卡片 memo 的生效前提（store 引用已稳定）。
+  const patchConfigs = useCallback((configs: PromptToolStore['fields']['promptConfigs']) => {
+    store.patch({ promptConfigs: configs })
+  }, [store])
+  const saveConfigs = useCallback((configs: PromptToolStore['fields']['promptConfigs']) => {
+    void store.persistConfigs(configs)
+  }, [store])
   return (
     <section className={ui.section} aria-label="主会话与全局">
       <ModelRouteStatus store={store} />
@@ -67,8 +74,8 @@ const FeatureSettings = memo(function FeatureSettings(props: { store: PromptTool
         meta={store.meta}
         configs={fields.promptConfigs}
         savedConfigs={store.savedConfigs}
-        onPatchConfigs={(configs) => store.patch({ promptConfigs: configs })}
-        onSaveConfigs={(configs) => store.persistConfigs(configs)}
+        onPatchConfigs={patchConfigs}
+        onSaveConfigs={saveConfigs}
         onNotice={store.showNotice}
         templateVariables={store.templateVariables}
         setTemplateVariables={store.setTemplateVariables}
@@ -85,6 +92,13 @@ const FeatureSettings = memo(function FeatureSettings(props: { store: PromptTool
 const ConfigListWithTemplates = memo(function ConfigListWithTemplates(props: { store: PromptToolStore; layer?: string; scope?: 'main' | 'subagent'; beforeCards?: ReactNode }): ReactNode {
   const { store, layer, scope, beforeCards } = props
   const fields = usePromptToolFields(store, (value) => value)
+  // 稳定回调：卡片 memo 的生效前提（store 引用已稳定）。
+  const patchConfigs = useCallback((configs: PromptToolStore['fields']['promptConfigs']) => {
+    store.patch({ promptConfigs: configs })
+  }, [store])
+  const saveConfigs = useCallback((configs: PromptToolStore['fields']['promptConfigs']) => {
+    void store.persistConfigs(configs)
+  }, [store])
   // 当前预设模板消息批层无配置时，pre-step 层空状态追加提示（列表仍可自定义：
   // 新建配置作为 settings 覆盖层保存，切换预设后保留）。
   const preStepEmpty = store.templatePreStepCount === 0 && (layer === undefined || layer === 'pre-step')
@@ -106,8 +120,8 @@ const ConfigListWithTemplates = memo(function ConfigListWithTemplates(props: { s
         extraActions={
           <button type="button" className={ui.primaryPill} onClick={templatePicker.openPicker}>新建</button>
         }
-        onPatchConfigs={(configs) => store.patch({ promptConfigs: configs })}
-        onSaveConfigs={(configs) => store.persistConfigs(configs)}
+        onPatchConfigs={patchConfigs}
+        onSaveConfigs={saveConfigs}
         onNotice={store.showNotice}
       />
       {templatePicker.open && (
