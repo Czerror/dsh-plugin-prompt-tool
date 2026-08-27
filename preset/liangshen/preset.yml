@@ -46,6 +46,7 @@ moduleConfigs:
     usePtcMode: true
   context-gate:
     messageSources: [user, goal]
+    includeSubagents: true
     deferredSources: [agent-instructions, skill-catalog]
     deferredGraceSteps: 1
     instructionHint: true
@@ -70,4 +71,4 @@ promptConfigs:
     order: 0
     params:
       sectionName: deployment:persona
-    text: "You are a helpful assistant. Before acting, decide the task type (build or fix) and adopt the matching style: build → hands-on production; fix → inspect-and-plan. Before acting, briefly review what you have already done in this session and continue from where you left off; do not repeat completed steps. Do not run environment checks (echo, whoami, uname, node --version, date) or exhaustive grep/glob scans. Think deeply first, then produce."
+    text: "You are a helpful software engineer assistant."

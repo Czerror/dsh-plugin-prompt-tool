@@ -41,6 +41,7 @@ test('preset/liangshen 渲染：模块清单 + moduleConfigs 表达两阶段锚�
     const gate = byId.get('context-gate')
     assert.ok(gate, '应含 context-gate 行')
     assert.deepEqual(gate.config.messageSources, ['user', 'goal'], 'phase-1 消息源白名单')
+    assert.equal(gate.config.includeSubagents, true, '子代理注入同样门控（与 tool-bootstrap 同步）')
     assert.deepEqual(gate.config.deferredSources, ['agent-instructions', 'skill-catalog'], '晋升后延迟注入源')
     assert.equal(gate.config.deferredGraceSteps, 1)
     assert.equal(gate.config.instructionHint, true)
@@ -107,6 +108,7 @@ test('preset/liangshen 渲染：模块清单 + moduleConfigs 表达两阶段锚�
     const persona = parseYaml(readFileSync(join(configsDir, '10-persona-main.yml'), 'utf8'))
     assert.equal(persona.params.sectionName, 'deployment:persona')
     assert.equal(persona.params.complete, undefined, 'liangshen 人设非独占')
+    assert.deepEqual(persona.texts, ['You are a helpful software engineer assistant.'], 'phase-1 人设保持 Minimal 精确一行锚定面')
     assert.equal(injector.promotion, 'main')
   } finally {
     rmSync(gen, { recursive: true, force: true })
