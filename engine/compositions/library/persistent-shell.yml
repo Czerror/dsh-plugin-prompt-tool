@@ -1,6 +1,6 @@
 # module: persistent-shell
 # source: E:\Documents\GitHub\deepseek-harness/apps/cli/config/agent-presets/minimal/agent.cordis.yml
-# local patches: 0
+# local patches: 1
 
 - id: persistent-shell
   name: cordis:group
@@ -15,6 +15,7 @@
       name: '@deepseek-ai/dsh-terminal-bash'
       disabled: !!js process.platform === 'win32'
       config:
+        shellPath: !!js "process.getBuiltinModule?.('node:fs')?.existsSync('/bin/bash') ? '/bin/bash' : 'bash'"
         timeoutMs: 300000
 
     - id: persistent-bash

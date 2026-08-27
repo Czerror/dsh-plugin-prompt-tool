@@ -60,6 +60,14 @@ const PATCHES = {
   'bootstrap-filesystem': [
     { from: '- id: filesystem\n', to: '- id: bootstrap-filesystem\n' },
   ],
+  // 上游 anchored-standard 补丁（issue #44）：/bin/bash 不存在的主机（NixOS 等）
+  // 用裸 bash 走同一 scrubbed PATH 解析，避免 PTY 启动期 execvp 失败。
+  'persistent-shell': [
+    {
+      from: "- id: terminal-bash\n      name: '@deepseek-ai/dsh-terminal-bash'\n      disabled: !!js process.platform === 'win32'\n      config:\n        timeoutMs: 300000",
+      to: "- id: terminal-bash\n      name: '@deepseek-ai/dsh-terminal-bash'\n      disabled: !!js process.platform === 'win32'\n      config:\n        shellPath: !!js \"process.getBuiltinModule?.('node:fs')?.existsSync('/bin/bash') ? '/bin/bash' : 'bash'\"\n        timeoutMs: 300000",
+    },
+  ],
   delegation: [
     { from: 'backgroundMode: one-shot', to: 'enableRunInBackground: false' },
   ],
