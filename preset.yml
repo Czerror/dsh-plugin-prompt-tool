@@ -91,7 +91,8 @@ params:
   # promoteGate: false            # 门控晋升：首段 reasoning minimal-like + 工具调用才晋升
   # promoteAfterFirstResponse: false  # 无工具首响应 / 首轮 turn/end 即晋升
   # maxPromoteSteps: 4            # 门控回退：步数达上限强制晋升
-  # bootstrapTools: [bash, str_replace_editor]  # 首轮工具窄化集（必须非空；"只要 PTC" = 不挂 tool-bootstrap 行）
+  # bootstrapTools: [bash, str_replace_editor]  # 首轮工具窄化集；清空 [] = 零工具模式（首请求空工具面产生最深
+  #                                              # "we" 轨迹，assistant/message 后晋升；compaction 回退自动补 shell）
   # compactionTools: []           # 压缩后恢复集（模型中途继续工作的核心工具）
   # personaSectionsOnly: false    # phase-1 提示词段只留 persona
   # workspaceLine: false          # 晋升后 persona 附加工作目录行
@@ -100,6 +101,21 @@ params:
   # deferredSources: []           # 晋升后延迟注入的 source kind
   # deferredGraceSteps: 0         # 延迟注入宽限步数
   # instructionHint: false        # 晋升后 agent-instructions 全文 → 一次性 hint
+
+  # ── 锚定/深思可选模块（上游 dsh-anchored-standard 移植，全部 opt-in）──
+  # 对应 library 行默认 enabled: false（挂载即禁用，行为不变）；UI 开关打开
+  # （或本段置 true）即写行 config.enabled: true 生效。前提：modules 已挂对应行。
+  # anchorTurn: false             # 前置锚定轮（anchor-turn 行）：用户首条真实消息前 prepend 合成锚定轮，
+  #                                # 配合 bootstrapTools: [] = 空工具面锚定（真实消息顺延一轮，届时已晋升）
+  # anchorTurnText: ""            # 锚定轮自定义文本（如「你是谁」）；空 = 引擎默认 "This round is a test…"
+  # deliberationGate: false       # 轨迹深度门（deliberation-gate 行）：首工具调用前流式深思 < 下限时
+  #                                # deny 一次（规划式提示，非工具失败）；retry 带强制深思进历史
+  # deliberationMinChars: 400     # 深思下限（字符数）；0 = 回落行默认 400；minChars: 0 禁用由行配置直写
+  # deliberationMaxGatesPerTurn: 1  # 每轮最大 deny 次数；0 = 回落行默认 1
+  # cotDrip: false                # 深思维持节拍（cot-drip 行）：每 N 次工具结果滴入一条 "We…" 重申提醒
+  #                                # （additionalContexts，永不阻塞）；长工具循环防深思衰减
+  # cotDripEvery: 4               # 节拍间隔（工具结果数）；0 = 回落行默认 4
+  # cotDripMaxPerTurn: 1          # 每轮最大提醒条数；0 = 回落行默认 1
 
   # ── 工具集（子代理 toolFilter；主对话 tool-filter 模块共用同一扁平键）──
   toolFilterAllow: []            # 子代理工具白名单（数组或逗号/空格字符串；空=不过滤）
@@ -373,11 +389,12 @@ promptConfigs:
 #     denyReason: 本预设禁用 web 工具
 
 # ── modules：引擎行/组模块装配顺序（增删即改装配）───────────────────────────
-# 25 个可用模块：context-gate / tool-filter / tool-bootstrap / code-presentation /
+# 28 个可用模块：context-gate / tool-filter / tool-bootstrap / code-presentation /
 # prompt-config-engine / run-code-env / persona / tool-bash / tool-pwsh /
 # persistent-shell / custom-bash / tool-fs / tool-fs-search / str-replace-editor /
 # bootstrap-filesystem / tool-jobs / skill-filesystem / skill-search / tool-goal /
-# planning / compaction / delegation / tool-ask-user / tool-todo / tool-web
+# planning / compaction / delegation / tool-ask-user / tool-todo / tool-web /
+# anchor-turn / deliberation-gate / cot-drip
 # 晋升门控三件套：context-gate（注入门控）+ tool-bootstrap（目录相位）+
 # code-presentation（PTC 呈现；「只要 PTC」= 只挂本行）。
 modules:
@@ -406,6 +423,9 @@ modules:
   - tool-ask-user                # 提问工具
   - tool-todo                    # todo 工具
   - tool-web                     # web 搜索
+  # - anchor-turn                # 前置锚定轮（上游移植；行默认 enabled: false，开关见 params.anchorTurn）
+  # - deliberation-gate          # 轨迹深度门（上游移植；行默认 enabled: false，开关见 params.deliberationGate）
+  # - cot-drip                   # 深思维持节拍（上游移植；行默认 enabled: false，开关见 params.cotDrip）
 
 # ── moduleConfigs（可选）：行级 config 直写通道 ──────────────────────────────
 # 仅用于参数桥未覆盖的行级 config（ST 导入等直写 tool-web.fetch / tool-filter.deny）。
