@@ -63,6 +63,14 @@ export interface SwitchSnapshot {
   messageSources: string
   deferredSources: string
   deferredGraceSteps: number
+  anchorTurn: boolean
+  anchorTurnText: string
+  deliberationGate: boolean
+  deliberationMinChars: number
+  deliberationMaxGatesPerTurn: number
+  cotDrip: boolean
+  cotDripEvery: number
+  cotDripMaxPerTurn: number
   injectPrompt: boolean
   skillSwitches: Record<string, boolean>
   skillOrder: string[]
@@ -110,6 +118,14 @@ const EMPTY_SWITCHES: SwitchSnapshot = {
   messageSources: '',
   deferredSources: '',
   deferredGraceSteps: 0,
+  anchorTurn: false,
+  anchorTurnText: '',
+  deliberationGate: false,
+  deliberationMinChars: 0,
+  deliberationMaxGatesPerTurn: 0,
+  cotDrip: false,
+  cotDripEvery: 0,
+  cotDripMaxPerTurn: 0,
   injectPrompt: true,
   skillSwitches: {},
   skillOrder: [],
@@ -185,6 +201,14 @@ export const snapshotSwitches = (fields: Fields): SwitchSnapshot => ({
   messageSources: fields.messageSources,
   deferredSources: fields.deferredSources,
   deferredGraceSteps: fields.deferredGraceSteps,
+  anchorTurn: fields.anchorTurn,
+  anchorTurnText: fields.anchorTurnText,
+  deliberationGate: fields.deliberationGate,
+  deliberationMinChars: fields.deliberationMinChars,
+  deliberationMaxGatesPerTurn: fields.deliberationMaxGatesPerTurn,
+  cotDrip: fields.cotDrip,
+  cotDripEvery: fields.cotDripEvery,
+  cotDripMaxPerTurn: fields.cotDripMaxPerTurn,
   injectPrompt: fields.injectPrompt,
   skillSwitches: { ...fields.skillSwitches },
   skillOrder: [...fields.skillOrder],
@@ -229,10 +253,10 @@ const switchesEqual = (a: SwitchSnapshot, b: SwitchSnapshot): boolean =>
   && a.writeAgents === b.writeAgents
   && a.writePreset === b.writePreset
 
-export type SwitchKey = 'injectAgentsPrompt' | 'firstTurnAnchor' | 'firstTurnCustom' | 'guideCustom' | 'injectPrompt' | 'usePtcMode' | 'promoteGate' | 'promoteAfterFirstResponse' | 'personaSectionsOnly' | 'workspaceLine' | 'instructionHint' | 'writeAgents' | 'writePreset'
+export type SwitchKey = 'injectAgentsPrompt' | 'firstTurnAnchor' | 'firstTurnCustom' | 'guideCustom' | 'injectPrompt' | 'usePtcMode' | 'promoteGate' | 'promoteAfterFirstResponse' | 'personaSectionsOnly' | 'workspaceLine' | 'instructionHint' | 'anchorTurn' | 'deliberationGate' | 'cotDrip' | 'writeAgents' | 'writePreset'
 
 /** 参数类布尔开关：写激活预设 preset.yml（settings 只留全局开关）。 */
-const PARAM_SWITCH_KEYS: ReadonlySet<SwitchKey> = new Set(['firstTurnAnchor', 'firstTurnCustom', 'guideCustom', 'injectPrompt', 'usePtcMode', 'promoteGate', 'promoteAfterFirstResponse', 'personaSectionsOnly', 'workspaceLine', 'instructionHint'])
+const PARAM_SWITCH_KEYS: ReadonlySet<SwitchKey> = new Set(['firstTurnAnchor', 'firstTurnCustom', 'guideCustom', 'injectPrompt', 'usePtcMode', 'promoteGate', 'promoteAfterFirstResponse', 'personaSectionsOnly', 'workspaceLine', 'instructionHint', 'anchorTurn', 'deliberationGate', 'cotDrip'])
 
 export interface PromptToolStore {
   fields: Fields
@@ -519,6 +543,15 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
         if (Array.isArray(o.deferredSources)) paramPatch.deferredSources = o.deferredSources.join(', ')
         else if (typeof o.deferredSources === 'string') paramPatch.deferredSources = o.deferredSources
         if (typeof o.deferredGraceSteps === 'number') paramPatch.deferredGraceSteps = o.deferredGraceSteps
+        // 锚定/深思可选模块（anchor-turn / deliberation-gate / cot-drip 参数桥）。
+        if (typeof o.anchorTurn === 'boolean') paramPatch.anchorTurn = o.anchorTurn
+        if (typeof o.anchorTurnText === 'string') paramPatch.anchorTurnText = o.anchorTurnText
+        if (typeof o.deliberationGate === 'boolean') paramPatch.deliberationGate = o.deliberationGate
+        if (typeof o.deliberationMinChars === 'number') paramPatch.deliberationMinChars = o.deliberationMinChars
+        if (typeof o.deliberationMaxGatesPerTurn === 'number') paramPatch.deliberationMaxGatesPerTurn = o.deliberationMaxGatesPerTurn
+        if (typeof o.cotDrip === 'boolean') paramPatch.cotDrip = o.cotDrip
+        if (typeof o.cotDripEvery === 'number') paramPatch.cotDripEvery = o.cotDripEvery
+        if (typeof o.cotDripMaxPerTurn === 'number') paramPatch.cotDripMaxPerTurn = o.cotDripMaxPerTurn
         if (Object.keys(paramPatch).length > 0) {
           const next = { ...fieldsRef.current, ...paramPatch }
           fieldsRef.current = next
@@ -695,6 +728,15 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
         ...emit('messageSources', splitList(f.messageSources), []),
         ...emit('deferredSources', splitList(f.deferredSources), []),
         ...emit('deferredGraceSteps', f.deferredGraceSteps, 0),
+        // 锚定/深思可选模块：已有键或已改动才发送；false/0 引擎布尔归一或默认等价。
+        ...emit('anchorTurn', f.anchorTurn, false),
+        ...emit('anchorTurnText', f.anchorTurnText, ''),
+        ...emit('deliberationGate', f.deliberationGate, false),
+        ...emit('deliberationMinChars', f.deliberationMinChars, 0),
+        ...emit('deliberationMaxGatesPerTurn', f.deliberationMaxGatesPerTurn, 0),
+        ...emit('cotDrip', f.cotDrip, false),
+        ...emit('cotDripEvery', f.cotDripEvery, 0),
+        ...emit('cotDripMaxPerTurn', f.cotDripMaxPerTurn, 0),
       },
     })
     if (res.ok) {

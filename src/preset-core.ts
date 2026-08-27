@@ -77,6 +77,14 @@ export function buildCordis(prompt: string, options: BuildCordisOptions = {}): s
     stageAdvanceDescription: options.stageAdvanceDescription,
     stageSectionTemplate: options.stageSectionTemplate,
     toolFilterSubagents: options.toolFilterSubagents,
+    anchorTurn: options.anchorTurn,
+    anchorTurnText: options.anchorTurnText,
+    deliberationGate: options.deliberationGate,
+    deliberationMinChars: options.deliberationMinChars,
+    deliberationMaxGatesPerTurn: options.deliberationMaxGatesPerTurn,
+    cotDrip: options.cotDrip,
+    cotDripEvery: options.cotDripEvery,
+    cotDripMaxPerTurn: options.cotDripMaxPerTurn,
     firstTurnWord: typeof options.firstTurnWord === 'string' && options.firstTurnWord.length > 0
       ? options.firstTurnWord
       : undefined,

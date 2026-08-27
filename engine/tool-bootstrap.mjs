@@ -135,8 +135,8 @@ const WORKSPACE_LINE_PREFIX = '\n\nYour working directory is '
 
 
 /** Non-empty string list config validator. */
-function stringList(value, field) {
-  if (!Array.isArray(value) || value.length === 0 || value.some((item) => typeof item !== 'string' || item.length === 0)) {
+function stringList(value, field, allowEmpty = false) {
+  if (!Array.isArray(value) || (value.length === 0 && !allowEmpty) || value.some((item) => typeof item !== 'string' || item.length === 0)) {
     throw new TypeError(`${name}: ${field} must be a non-empty array of non-empty strings`)
   }
   return [...new Set(value)]
@@ -190,7 +190,9 @@ export function apply(ctx, config) {
     && source.promoteOn !== undefined && source.promoteOn !== 'either') {
     throw new TypeError(`${name}: promoteGate/promoteAfterFirstResponse 门控模式固定 either 晋升语义，promoteOn 必须省略或为 "either"`)
   }
-  const bootstrapTools = stringList(source.bootstrapTools, 'bootstrapTools')
+  // bootstrapTools 允许空数组 = 零工具模式（上游 zero-tool-bootstrap 等价：
+  // 首请求 tools: [] 产生最深 "we" 轨迹，assistant/message 后晋升）。
+  const bootstrapTools = stringList(source.bootstrapTools, 'bootstrapTools', true)
   const promoteEvents = parsePromoteOn(name, source.promoteOn)
   const bootstrapMaxTokens = optionalPositiveInt(source.bootstrapMaxTokens, 'bootstrapMaxTokens')
   const includeSubagents = booleanOption(name, source.includeSubagents, 'includeSubagents', false)
@@ -378,7 +380,15 @@ export function apply(ctx, config) {
       // note), so this filter touches only the tool catalog.
       const { boundary } = status
       const keep = new Set(bootstrapTools)
-      if (boundary >= 0) for (const toolName of compactionTools) keep.add(toolName)
+      if (boundary >= 0) {
+        for (const toolName of compactionTools) keep.add(toolName)
+        // 零工具模式：compaction 回退补 shell（对齐上游 zero-tool-bootstrap），
+        // 否则 mid-task 模型无 shell 可用。
+        if (bootstrapTools.length === 0) {
+          const available = new Set(assembled.tools.map((tool) => tool.name))
+          for (const toolName of ['bash', 'pwsh']) if (available.has(toolName)) keep.add(toolName)
+        }
+      }
       let next = keepTools(assembled, keep, true)
       if (personaSectionsOnly) {
         // Phase-1 提示词段只留 persona（plan-mode 策略等晋升后才恢复）。

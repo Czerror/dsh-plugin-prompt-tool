@@ -634,6 +634,37 @@ export function buildModuleConfigsFromParams(params: Record<string, unknown>): R
   if (params.usePtcMode !== undefined) presentation.usePtcMode = params.usePtcMode === true
   merge('code-presentation', presentation)
 
+  // anchor-turn：前置锚定轮（用户首条真实消息前 prepend 合成锚定轮）。
+  // 默认不写键 → 行默认（enabled 未声明 = 挂载即启用）；params 显式 false 关。
+  const anchorTurn: Record<string, unknown> = {}
+  if (params.anchorTurn !== undefined) anchorTurn.enabled = params.anchorTurn === true
+  if (typeof params.anchorTurnText === 'string' && params.anchorTurnText.length > 0) {
+    anchorTurn.text = params.anchorTurnText
+  }
+  merge('anchor-turn', anchorTurn)
+
+  // deliberation-gate：轨迹深度门（首工具调用前深思 < 下限 → deny 一次）。
+  const gate2: Record<string, unknown> = {}
+  if (params.deliberationGate !== undefined) gate2.enabled = params.deliberationGate === true
+  if (typeof params.deliberationMinChars === 'number' && params.deliberationMinChars > 0) {
+    gate2.minChars = params.deliberationMinChars
+  }
+  if (typeof params.deliberationMaxGatesPerTurn === 'number' && params.deliberationMaxGatesPerTurn > 0) {
+    gate2.maxGatesPerTurn = params.deliberationMaxGatesPerTurn
+  }
+  merge('deliberation-gate', gate2)
+
+  // cot-drip：深思维持节拍（每 N 次工具结果滴入 "We…" 重申）。
+  const drip: Record<string, unknown> = {}
+  if (params.cotDrip !== undefined) drip.enabled = params.cotDrip === true
+  if (typeof params.cotDripEvery === 'number' && params.cotDripEvery > 0) {
+    drip.every = params.cotDripEvery
+  }
+  if (typeof params.cotDripMaxPerTurn === 'number' && params.cotDripMaxPerTurn > 0) {
+    drip.maxPerTurn = params.cotDripMaxPerTurn
+  }
+  merge('cot-drip', drip)
+
   // str-replace-editor：官方 minimal 行（默认官方值 16000，params 显式覆盖）。
   const editor: Record<string, unknown> = {}
   editor.maxOutputChars = typeof params.strReplaceEditorMaxOutputChars === 'number'

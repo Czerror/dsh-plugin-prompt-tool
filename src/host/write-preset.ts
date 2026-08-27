@@ -153,6 +153,17 @@ function runtimeOf(options: WritePresetOptions, prompt: string): Record<string, 
     firstTurnWord: typeof options.firstTurnWord === 'string' && options.firstTurnWord.length > 0
       ? options.firstTurnWord
       : undefined,
+    // 锚定/深思可选模块（anchor-turn / deliberation-gate / cot-drip 参数桥）。
+    anchorTurn: typeof options.anchorTurn === 'boolean' ? options.anchorTurn : undefined,
+    anchorTurnText: typeof options.anchorTurnText === 'string' ? options.anchorTurnText : undefined,
+    deliberationGate: typeof options.deliberationGate === 'boolean' ? options.deliberationGate : undefined,
+    deliberationMinChars: Number.isSafeInteger(options.deliberationMinChars) ? options.deliberationMinChars : undefined,
+    deliberationMaxGatesPerTurn: Number.isSafeInteger(options.deliberationMaxGatesPerTurn)
+      ? options.deliberationMaxGatesPerTurn
+      : undefined,
+    cotDrip: typeof options.cotDrip === 'boolean' ? options.cotDrip : undefined,
+    cotDripEvery: Number.isSafeInteger(options.cotDripEvery) ? options.cotDripEvery : undefined,
+    cotDripMaxPerTurn: Number.isSafeInteger(options.cotDripMaxPerTurn) ? options.cotDripMaxPerTurn : undefined,
   }
 }
 

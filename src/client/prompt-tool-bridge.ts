@@ -84,6 +84,22 @@ export interface Fields {
   deferredSources: string
   /** 延迟注入宽限步数（0 = 不延迟）。 */
   deferredGraceSteps: number
+  /** 前置锚定轮（anchor-turn 行；需模块列表已挂行）。 */
+  anchorTurn: boolean
+  /** 前置锚定轮自定义锚定文本（空 = 引擎默认）。 */
+  anchorTurnText: string
+  /** 轨迹深度门（deliberation-gate 行；需模块列表已挂行）。 */
+  deliberationGate: boolean
+  /** 深思下限字符数（0 = 回落行默认 400）。 */
+  deliberationMinChars: number
+  /** 每轮最大门控次数（0 = 回落行默认 1）。 */
+  deliberationMaxGatesPerTurn: number
+  /** 深思维持节拍（cot-drip 行；需模块列表已挂行）。 */
+  cotDrip: boolean
+  /** 节拍间隔工具结果数（0 = 回落行默认 4）。 */
+  cotDripEvery: number
+  /** 每轮最大提醒条数（0 = 回落行默认 1）。 */
+  cotDripMaxPerTurn: number
   injectPrompt: boolean
   skillSwitches: Record<string, boolean>
   skillOrder: string[]
@@ -169,6 +185,14 @@ export const EMPTY_FIELDS: Fields = {
   messageSources: '',
   deferredSources: '',
   deferredGraceSteps: 0,
+  anchorTurn: false,
+  anchorTurnText: '',
+  deliberationGate: false,
+  deliberationMinChars: 0,
+  deliberationMaxGatesPerTurn: 0,
+  cotDrip: false,
+  cotDripEvery: 0,
+  cotDripMaxPerTurn: 0,
   injectPrompt: true,
   skillSwitches: {},
   skillOrder: [],
@@ -325,6 +349,15 @@ export function fieldsFromView(res: BridgeResult<BridgeSettingsView>): Fields {
     messageSources: '',
     deferredSources: '',
     deferredGraceSteps: 0,
+    // 锚定/深思可选模块（anchor-turn / deliberation-gate / cot-drip 参数桥）。
+    anchorTurn: readBoolean(value, 'anchorTurn', readBoolean(base, 'anchorTurn', false)),
+    anchorTurnText: readString(value, 'anchorTurnText') ?? readString(base, 'anchorTurnText') ?? '',
+    deliberationGate: readBoolean(value, 'deliberationGate', readBoolean(base, 'deliberationGate', false)),
+    deliberationMinChars: readNumber(value, 'deliberationMinChars', readNumber(base, 'deliberationMinChars', 0)),
+    deliberationMaxGatesPerTurn: readNumber(value, 'deliberationMaxGatesPerTurn', readNumber(base, 'deliberationMaxGatesPerTurn', 0)),
+    cotDrip: readBoolean(value, 'cotDrip', readBoolean(base, 'cotDrip', false)),
+    cotDripEvery: readNumber(value, 'cotDripEvery', readNumber(base, 'cotDripEvery', 0)),
+    cotDripMaxPerTurn: readNumber(value, 'cotDripMaxPerTurn', readNumber(base, 'cotDripMaxPerTurn', 0)),
     injectPrompt: readBoolean(value, 'injectPrompt', readBoolean(base, 'injectPrompt', true)),
     skillSwitches: value.skillSwitches !== undefined || base.skillSwitches !== undefined
       ? { ...readSkillSwitches(base, 'skillSwitches'), ...readSkillSwitches(value, 'skillSwitches') }

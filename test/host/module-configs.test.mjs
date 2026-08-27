@@ -123,6 +123,43 @@ test('buildCordis 透传 allowKinds 覆盖模板默认', () => {
   assert.deepEqual(defaultGate.config.allowKinds, ['skill-invocation', 'near-anchor', 'router-guide'])
 })
 
+test('参数桥：anchor-turn / deliberation-gate / cot-drip 行级配置映射', () => {
+  const rows = parseYaml(buildCordis('P', {
+    anchorTurn: true,
+    anchorTurnText: '你是谁',
+    deliberationGate: true,
+    deliberationMinChars: 600,
+    deliberationMaxGatesPerTurn: 2,
+    cotDrip: true,
+    cotDripEvery: 3,
+    cotDripMaxPerTurn: 2,
+  }))
+  const anchor = rows.find((row) => row?.id === 'anchor-turn')
+  assert.ok(anchor, '应含 anchor-turn 行')
+  assert.equal(anchor.config.enabled, true)
+  assert.equal(anchor.config.text, '你是谁')
+
+  const gate = rows.find((row) => row?.id === 'deliberation-gate')
+  assert.ok(gate, '应含 deliberation-gate 行')
+  assert.equal(gate.config.enabled, true)
+  assert.equal(gate.config.minChars, 600)
+  assert.equal(gate.config.maxGatesPerTurn, 2)
+
+  const drip = rows.find((row) => row?.id === 'cot-drip')
+  assert.ok(drip, '应含 cot-drip 行')
+  assert.equal(drip.config.enabled, true)
+  assert.equal(drip.config.every, 3)
+  assert.equal(drip.config.maxPerTurn, 2)
+
+  // 关闭：enabled: false；数字 0 = 回落行默认（不写键）。
+  const off = parseYaml(buildCordis('P', { anchorTurn: false, deliberationGate: false, cotDrip: false, deliberationMinChars: 0, cotDripEvery: 0 }))
+  assert.equal(off.find((row) => row?.id === 'anchor-turn').config.enabled, false)
+  assert.equal(off.find((row) => row?.id === 'deliberation-gate').config.enabled, false)
+  assert.equal(off.find((row) => row?.id === 'cot-drip').config.enabled, false)
+  assert.equal(off.find((row) => row?.id === 'deliberation-gate').config.minChars, 400, '0 不写键 → 回落行默认 400')
+  assert.equal(off.find((row) => row?.id === 'cot-drip').config.every, 4, '0 不写键 → 回落行默认 4')
+})
+
 test('参数桥：门控/状态机扁平键直达模块行 config（不 token 化）', () => {
   const rows = parseYaml(buildCordis('P', {
     promoteGate: true,

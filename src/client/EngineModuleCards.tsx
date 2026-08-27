@@ -277,7 +277,7 @@ export function EngineModuleCards(props: { store: PromptToolStore; layerFilter?:
     || layerFilter === 'system-section' || layerFilter === 'tool-pipeline'
   const capped = fields.bootstrapMaxTokens > 0
   const maxDepthOptions = ['', 'provider-managed', '0', '1', '2', '3', '5']
-  const gateRow = (id: string, label: string, hint: string, key: 'usePtcMode' | 'promoteGate' | 'promoteAfterFirstResponse' | 'personaSectionsOnly' | 'workspaceLine' | 'instructionHint'): ReactNode => (
+  const gateRow = (id: string, label: string, hint: string, key: 'usePtcMode' | 'promoteGate' | 'promoteAfterFirstResponse' | 'personaSectionsOnly' | 'workspaceLine' | 'instructionHint' | 'anchorTurn' | 'deliberationGate' | 'cotDrip'): ReactNode => (
     <div className={styles.settingRowStack}>
       <span className={styles.settingCopy}>
         <strong>{label}</strong>
@@ -361,10 +361,28 @@ export function EngineModuleCards(props: { store: PromptToolStore; layerFilter?:
             onBlur={store.commitGateStepsDraft}
           />
         </div>
-        <TagInput id="pt-bootstrap-tools" label="首轮窄化集" hint="bootstrapTools：首轮模型可见工具（必须非空；「只要 PTC」= 不挂 tool-bootstrap 行）。回车或逗号添加，× 移除。"
+        <TagInput id="pt-bootstrap-tools" label="首轮窄化集" hint="bootstrapTools：首轮模型可见工具；清空 = 零工具模式（首请求空工具面，assistant/message 后晋升）。回车或逗号添加，× 移除。"
           value={fields.bootstrapTools} placeholder="bash, str_replace_editor" disabled={!fields.writePreset}
           onChange={(value) => store.patch({ bootstrapTools: value })}
           onCommit={() => void store.persistParamOverrides()} />
+        <div className={styles.configSectionTitle}>前置锚定轮（anchor-turn 模块）</div>
+        {gateRow('pt-anchor-turn', '前置锚定轮', 'anchorTurn：用户首条真实消息前 prepend 合成锚定轮（配合零工具模式 = 空工具面锚定）；需模块列表已挂 anchor-turn 行。', 'anchorTurn')}
+        <div className={styles.settingRowStack}>
+          <span className={styles.settingCopy}>
+            <strong>锚定文本</strong>
+            <small>anchorTurnText：合成锚定轮文本（如「你是谁」）；空 = 引擎默认 "This round is a test…"。失焦保存。</small>
+          </span>
+          <input
+            className={styles.configInput}
+            type="text"
+            value={fields.anchorTurnText}
+            disabled={!fields.writePreset}
+            aria-label="锚定文本"
+            placeholder="This round is a test. Tools are not open yet…"
+            onChange={(event) => store.patch({ anchorTurnText: event.target.value })}
+            onBlur={() => void store.persistParamOverrides()}
+          />
+        </div>
         <TagInput id="pt-compaction-tools" label="压缩后恢复集" hint="compactionTools：压缩后回到受控相位时的核心工作集（模型中途继续工作）。回车或逗号添加，× 移除。"
           value={fields.compactionTools} placeholder="read, write, edit, glob, grep" disabled={!fields.writePreset}
           onChange={(value) => store.patch({ compactionTools: value })}
@@ -527,6 +545,13 @@ export function EngineModuleCards(props: { store: PromptToolStore; layerFilter?:
           </select>
         </div>
 
+        <div className={styles.configSectionTitle}>深思门控（deliberation-gate / cot-drip 模块）</div>
+        {gateRow('pt-deliberation-gate', '轨迹深度门', 'deliberationGate：首工具调用前流式深思 < 下限时 deny 一次（规划式提示）；需模块列表已挂 deliberation-gate 行。', 'deliberationGate')}
+        {numberRow('pt-delib-min-chars', '深思下限', 'deliberationMinChars：首工具调用前的流式深思字符数下限；0 = 引擎默认 400。', fields.deliberationMinChars, (next) => store.patch({ deliberationMinChars: next }))}
+        {numberRow('pt-delib-max-gates', '每轮最大门控', 'deliberationMaxGatesPerTurn：每轮最多 deny 次数；0 = 引擎默认 1。', fields.deliberationMaxGatesPerTurn, (next) => store.patch({ deliberationMaxGatesPerTurn: next }))}
+        {gateRow('pt-cot-drip', '深思维持节拍', 'cotDrip：每 N 次工具结果滴入一条 "We…" 重申提醒（additionalContexts）；需模块列表已挂 cot-drip 行。', 'cotDrip')}
+        {numberRow('pt-cot-every', '节拍间隔', 'cotDripEvery：每几次工具结果滴入一条；0 = 引擎默认 4（0 禁用由引擎 every:0 语义处理）。', fields.cotDripEvery, (next) => store.patch({ cotDripEvery: next }))}
+        {numberRow('pt-cot-max', '每轮最大提醒', 'cotDripMaxPerTurn：每轮最多提醒条数；0 = 引擎默认 1。', fields.cotDripMaxPerTurn, (next) => store.patch({ cotDripMaxPerTurn: next }))}
       </EngineModuleCard>
       )}
       {!hasVisibleCard && (

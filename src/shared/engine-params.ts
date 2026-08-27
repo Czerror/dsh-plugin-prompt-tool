@@ -100,6 +100,22 @@ export interface EngineParams {
   toolFilterSubagents?: boolean
   /** str-replace-editor 最大输出字符数（参数桥默认官方值 16000；UI 无专卡，高级参数 JSON 可编辑）。 */
   strReplaceEditorMaxOutputChars?: number
+  /** 前置锚定轮（anchor-turn 行）：用户首条真实消息前 prepend 合成锚定轮；false = 行挂载但禁用。 */
+  anchorTurn?: boolean
+  /** 前置锚定轮自定义锚定文本（空 = 引擎默认 "This round is a test…"）。 */
+  anchorTurnText?: string
+  /** 轨迹深度门（deliberation-gate 行）：首工具调用前流式深思 < 下限时 deny 一次；false = 行挂载但禁用。 */
+  deliberationGate?: boolean
+  /** 轨迹深度门深思下限（字符数；默认 400）。 */
+  deliberationMinChars?: number
+  /** 轨迹深度门每轮最大 deny 次数（默认 1）。 */
+  deliberationMaxGatesPerTurn?: number
+  /** 深思维持节拍（cot-drip 行）：每 N 次工具结果滴入一条 "We…" 重申；false = 行挂载但禁用。 */
+  cotDrip?: boolean
+  /** 深思维持节拍间隔（工具结果数；默认 4；0 = 禁用滴入）。 */
+  cotDripEvery?: number
+  /** 深思维持节拍每轮最大提醒条数（默认 1）。 */
+  cotDripMaxPerTurn?: number
 }
 
 /**
@@ -129,6 +145,10 @@ export const ENGINE_PARAM_KEYS = [
   'stages', 'stagePreUnlock', 'stageAdvanceTool', 'stageAdvanceDescription', 'stageSectionTemplate',
   // 工具行级参数。
   'toolFilterSubagents', 'strReplaceEditorMaxOutputChars',
+  // 锚定/深思可选模块（anchor-turn / deliberation-gate / cot-drip 行）。
+  'anchorTurn', 'anchorTurnText',
+  'deliberationGate', 'deliberationMinChars', 'deliberationMaxGatesPerTurn',
+  'cotDrip', 'cotDripEvery', 'cotDripMaxPerTurn',
 ] as const
 
 export type EngineParamKey = typeof ENGINE_PARAM_KEYS[number]
@@ -154,7 +174,10 @@ export type PresetWriterParams = Pick<EngineParams,
   | 'modelReasoningEffort' | 'modelTemperature' | 'modelMaxTokens'
   | 'subagentReasoningEffort' | 'subagentTemperature' | 'subagentMaxTokens'
   | 'toolFilterAllow' | 'toolFilterDeny' | 'maxDepth'
-  | 'allowKinds' | 'firstTurnWord' | 'bootstrapMaxTokens' | 'usePtcMode'>
+  | 'allowKinds' | 'firstTurnWord' | 'bootstrapMaxTokens' | 'usePtcMode'
+  | 'anchorTurn' | 'anchorTurnText'
+  | 'deliberationGate' | 'deliberationMinChars' | 'deliberationMaxGatesPerTurn'
+  | 'cotDrip' | 'cotDripEvery' | 'cotDripMaxPerTurn'>
 
 /** writePreset.runtimeOf 实际透传键（与 PresetWriterParams 双向相等断言，防 Pick 漏键）。 */
 export const WRITER_PARAM_KEYS = [
@@ -165,6 +188,9 @@ export const WRITER_PARAM_KEYS = [
   'subagentReasoningEffort', 'subagentTemperature', 'subagentMaxTokens',
   'toolFilterAllow', 'toolFilterDeny', 'maxDepth',
   'allowKinds', 'firstTurnWord', 'bootstrapMaxTokens', 'usePtcMode',
+  'anchorTurn', 'anchorTurnText',
+  'deliberationGate', 'deliberationMinChars', 'deliberationMaxGatesPerTurn',
+  'cotDrip', 'cotDripEvery', 'cotDripMaxPerTurn',
 ] as const
 
 /** 编译期断言：WRITER_PARAM_KEYS 与 PresetWriterParams 键必须一致（Pick 漏键 → 编译错误）。 */

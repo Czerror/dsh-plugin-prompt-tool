@@ -228,6 +228,61 @@ test('tool-bootstrap：includeSubagents=true 子代理与主会话同相位（�
   assert.deepEqual(out.sections.map((s) => s.name), ['deployment:persona'], '子代理 sections 过滤生效')
 })
 
+// ── zero-tool 模式（bootstrapTools: []）────────────────────────────────────
+
+test('tool-bootstrap：bootstrapTools 空数组 = 零工具首轮（上游 zero-tool 等价）', async () => {
+  const { ctx, listeners } = makeCtx()
+  applyToolBootstrap(ctx, { bootstrapTools: [], promoteOn: 'assistant-message' })
+  const assemble = listeners.get('system-prompt/assemble')[0].handler
+  const session = makeSession([])
+  const agent = makeAgent(session)
+
+  const first = await assemble({ tools: [{ name: 'bash' }, { name: 'str_replace_editor' }, { name: 'read' }] }, { agent }, async () => ({
+    tools: [{ name: 'bash' }, { name: 'str_replace_editor' }, { name: 'read' }],
+    sections: [],
+    contexts: [],
+  }))
+  assert.deepEqual(first.tools, [], '首请求零工具')
+
+  // assistant/message 晋升后：恢复完整目录（本仓库 POST-PROMOTION 语义）。
+  for (const entry of listeners.get('session/event')) {
+    entry.handler(session, { type: 'assistant/message', seq: 1, data: { message: { content: [{ type: 'text', text: 'ok' }] } } })
+  }
+  const promoted = await assemble({ tools: [{ name: 'bash' }, { name: 'read' }] }, { agent }, async () => ({
+    tools: [{ name: 'bash' }, { name: 'read' }],
+    sections: [],
+    contexts: [],
+  }))
+  assert.deepEqual(promoted.tools.map((t) => t.name).sort(), ['bash', 'read'], '晋升后完整目录')
+})
+
+test('tool-bootstrap：零工具模式 compaction 回退补 shell（对齐上游 zero-tool-bootstrap）', async () => {
+  const { ctx, listeners } = makeCtx()
+  applyToolBootstrap(ctx, { bootstrapTools: [], compactionTools: ['read', 'write'] })
+  const assemble = listeners.get('system-prompt/assemble')[0].handler
+  const session = makeSession([])
+  const agent = makeAgent(session)
+
+  // 首请求零工具。
+  const first = await assemble({ tools: [{ name: 'bash' }, { name: 'read' }] }, { agent }, async () => ({
+    tools: [{ name: 'bash' }, { name: 'read' }],
+    sections: [],
+    contexts: [],
+  }))
+  assert.deepEqual(first.tools, [], '首请求零工具')
+
+  // compaction/end → 受控相位：shell + compactionTools。
+  for (const entry of listeners.get('session/event')) {
+    entry.handler(session, { type: 'compaction/end', seq: 1 })
+  }
+  const after = await assemble({ tools: [{ name: 'bash' }, { name: 'read' }, { name: 'write' }] }, { agent }, async () => ({
+    tools: [{ name: 'bash' }, { name: 'read' }, { name: 'write' }],
+    sections: [],
+    contexts: [],
+  }))
+  assert.deepEqual(after.tools.map((t) => t.name).sort(), ['bash', 'read', 'write'], 'compaction 回退 = shell + 核心工具集')
+})
+
 // ── code-presentation：晋升后 Code Mode (PTC) 呈现（从 tool-bootstrap 拆出） ──
 
 test('code-presentation：晋升后应用 presentAs("code")，compaction/end 释放', async () => {

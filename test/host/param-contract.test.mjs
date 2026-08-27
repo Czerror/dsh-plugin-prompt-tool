@@ -36,6 +36,14 @@ const BRIDGE_SAMPLES = {
   stageSectionTemplate: 'x',
   toolFilterSubagents: true,
   strReplaceEditorMaxOutputChars: 20000,
+  anchorTurn: true,
+  anchorTurnText: 'x',
+  deliberationGate: true,
+  deliberationMinChars: 500,
+  deliberationMaxGatesPerTurn: 2,
+  cotDrip: true,
+  cotDripEvery: 3,
+  cotDripMaxPerTurn: 2,
 }
 
 test('PARAM_KEYS 派生一致性：= ENGINE_PARAM_KEYS + 锚定内容键 + promptConfigs', () => {

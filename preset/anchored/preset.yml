@@ -268,6 +268,9 @@ upstream:
   sync: pnpm sync:anchored
 modules:
   - context-gate
+  - anchor-turn
+  - deliberation-gate
+  - cot-drip
   - tool-filter
   - tool-bootstrap
   - code-presentation
