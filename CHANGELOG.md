@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### 修复 /configs-validate 64KB 上限与切换后参数源不同步（2026-08-28）
+
+- `/configs-validate` 同样承载全量 promptConfigs（129 卡实测 70KB），此前沿用默认
+  64KB 上限被静默截断为 400「unreadable JSON body」——保存按钮的权威校验在
+  beta-2-42 上必失败。改为 8MB 预设包级上限 + 超限显式 413。
+- `/bootstrap` 与 `/describe` 的激活预设参数源收敛到服务端 runtime 目录
+  （getPresetConfigsDir），不再从 30s TTL 的 descriptor 缓存读 presetTemplate——
+  切换预设后参数（presetParams）与配置列表/参数覆盖（promptConfigs/overrides）
+  同源，消除旧值残留。
+- 验证：typecheck/lint 全绿，369 测试通过（新增 /configs-validate >64KB 回归）。
+
 ### 修复 64KB 桥上限：大预设保存静默失败与切换卡顿（2026-08-28）
 
 - **根因**：beta-2-42 实测 129 张配置卡，`promptConfigs` 序列化 70.2KB > 64KB

@@ -197,7 +197,7 @@ export function registerSettingsBridge(
 
       /** describe 运行时事实（describe 端点与 /bootstrap 共用）：检测状态、技能快照、
        *  宿主默认模型、模型目录缓存、激活预设参数。不触网（模型目录只读 10min 缓存）。 */
-      const collectDescribeExtras = (descriptor: SettingsDescriptor): Record<string, unknown> => {
+      const collectDescribeExtras = (): Record<string, unknown> => {
         const detection = getModelsState()
         const skillsState = getSkillsState()
         // 宿主默认模型（agent-default-model settings：主对话新会话默认）：
@@ -230,13 +230,12 @@ export function registerSettingsBridge(
         // 模板无 pre-step 配置（layer 缺省即 pre-step）时开关关闭且禁编辑。
         let templatePreStepCount = 0
         try {
-          const settingsValue = descriptor.value !== null && typeof descriptor.value === 'object'
-            ? descriptor.value as Record<string, unknown>
-            : {}
-          const templateName = typeof settingsValue.presetTemplate === 'string' && (settingsValue.presetTemplate as string).length > 0
-            ? settingsValue.presetTemplate as string
-            : 'anchored'
-          const spec = loadPresetSpec(resolvePresetDir(templateName))
+          // 激活预设目录以服务端 runtime 为准（getPresetConfigsDir），而不是 descriptor
+          // 缓存里的 presetTemplate——descriptor 有 30s TTL，切换预设后若缓存未失效，
+          // 这里会读旧预设参数，与下方 readParamOverrides/readPromptConfigs(新目录) 不同源。
+          const activeDir = getPresetConfigsDir?.() ?? ''
+          const templateName = activeDir.length > 0 ? basename(activeDir) : 'anchored'
+          const spec = loadPresetSpec(activeDir.length > 0 ? activeDir : resolvePresetDir(templateName))
           presetParams = resolvePresetParams(spec, {})
           if (Array.isArray(spec.promptConfigs)) {
             presetParams.promptConfigs = spec.promptConfigs
@@ -323,7 +322,7 @@ export function registerSettingsBridge(
             try {
               const meta = await loadEngineMeta()
               const dir = getPresetConfigsDir?.() ?? ''
-              const extras = collectDescribeExtras(descriptor)
+              const extras = collectDescribeExtras()
               writeBridgeJson(res, 200, {
                 ok: true,
                 value: descriptor,
@@ -359,7 +358,7 @@ export function registerSettingsBridge(
               writeBridgeJson(res, 404, { ok: false, code: 'settings-not-exposed', message: 'prompt-tool settings namespace is not registered' })
               return
             }
-            writeBridgeJson(res, 200, { ok: true, value: descriptor, ...collectDescribeExtras(descriptor) })
+            writeBridgeJson(res, 200, { ok: true, value: descriptor, ...collectDescribeExtras() })
           },
         }),
         sctx.webServer.register({
@@ -420,7 +419,17 @@ export function registerSettingsBridge(
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.configsValidate,
           handler: async (req, res) => {
             if (!guard(req, res)) return
-            const { body } = await readBridgeBody(req)
+            // 校验载荷承载全量 promptConfigs（实测 129 卡 70KB），同样用预设包级上限，
+            // 否则超限被静默截断为 400 unreadable JSON body（保存按钮的权威校验失败）。
+            const { body, tooLarge } = await readBridgeBody(req, PRESET_PACKAGE_MAX_BYTES)
+            if (tooLarge) {
+              writeBridgeJson(res, 413, {
+                ok: false,
+                code: 'configs-too-large',
+                message: `配置载荷超过 ${Math.round(PRESET_PACKAGE_MAX_BYTES / 1024 / 1024)}MB 上限`,
+              })
+              return
+            }
             if (body === null || body === undefined || typeof body !== 'object') {
               writeBridgeJson(res, 400, { ok: false, code: 'settings-rejected', message: 'unreadable JSON body' })
               return

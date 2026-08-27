@@ -205,3 +205,26 @@ test('settings bridge /param-overrides 接受 >64KB promptConfigs 载荷（不�
     rmSync(dir, { recursive: true, force: true })
   }
 })
+
+test('settings bridge /configs-validate 接受 >64KB promptConfigs 载荷（不再 400 unreadable JSON body）', async () => {
+  const { ctx, handlers } = makeHarness()
+  registerSettingsBridge(
+    ctx,
+    'prompt-tool',
+    () => ({ available: true, providers: [] }),
+    () => ({ activeSkillsDirs: [], skillCatalog: [] }),
+    () => '',
+    () => true,
+  )
+  const handler = handlers.get(`${PREFIX}${BRIDGE_ENDPOINTS.configsValidate}`)
+  assert.ok(handler, '/configs-validate 端点应注册')
+  const big = { promptConfigs: [{ id: 'big-validate', layer: 'pre-step', strategy: 'static', text: 'x'.repeat(80 * 1024) }] }
+  const res = fakeRes()
+  await handler(fakeReq({ [Symbol.asyncIterator]: async function* () {
+    yield Buffer.from(JSON.stringify(big))
+  } }), res)
+  assert.equal(res.status, 200)
+  const payload = JSON.parse(res.body)
+  assert.equal(payload.ok, true)
+  assert.ok(payload.value !== undefined, '应进入校验分支而非 400 截断')
+})
