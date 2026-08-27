@@ -147,6 +147,15 @@ const DEFAULT_BOOTSTRAP_DISPLAY = '256000'
 const isContentAsset = (config: PromptConfigDraft): boolean =>
   config.id === 'prompt-injector' || config.fill === 'instruction-hint'
 
+/**
+ * promptConfigs 脏检测：引用比较为主，但两个空数组内容相同必须判「不脏」。
+ * store 初始化时 fields=EMPTY_FIELDS.promptConfigs（模块级常量 []）而
+ * savedConfigs 是 useState([]) 新字面量，引用不同——纯引用比较会误判脏，
+ * 挂载 800ms 后把空数组自动保存进 preset.yml，清空大预设的全部配置卡。
+ */
+const promptConfigsDirty = (current: PromptConfigDraft[], saved: PromptConfigDraft[]): boolean =>
+  current !== saved && !(current.length === 0 && saved.length === 0)
+
 /** 剥离内容资产的 text（顶层 + params.text）：settings 载荷不承载大文本。 */
 const stripContentText = (config: PromptConfigDraft): PromptConfigDraft => {
   const next: PromptConfigDraft = { ...config }
@@ -642,8 +651,24 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
         onSaved()
         if (okMessage) showNotice('ok', okMessage)
       } catch (error) {
-        await refreshRevision()
-        showNotice('error', '保存失败：' + errorMessage(error) + '（已刷新配置版本，可重试）')
+        // settings 注册重建（fiber reload）会把 namespace revision 归零，客户端
+        // 持有的版本号随即过期：冲突时重试一次不带 expectedRevision（官方语义 =
+        // 不检查并发，last-write-wins），全局开关不会再被过期版本号卡死。
+        const message = errorMessage(error)
+        if (/expected revision|changed since it was read/i.test(message)) {
+          try {
+            const view = await settings.mutate(ops)
+            revisionRef.current = view.revision
+            onSaved()
+            if (okMessage) showNotice('ok', okMessage)
+          } catch (retryError) {
+            await refreshRevision()
+            showNotice('error', '保存失败：' + errorMessage(retryError) + '（已刷新配置版本，可重试）')
+          }
+        } else {
+          await refreshRevision()
+          showNotice('error', '保存失败：' + message + '（已刷新配置版本，可重试）')
+        }
       } finally {
         setBusy?.(false)
       }
@@ -769,6 +794,9 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
         }
       }
       // promptConfigs 按预设存储：写激活预设 preset.yml（settings 不再承载）。
+      // 防御：空数组（且无内容资产）绝不覆盖服务端 promptConfigs——历史教训是
+      // 初始化期的空数组自动保存把 beta-2-42 的 129 张配置卡一次清空。
+      if (configs.length === 0) return
       const res = await bridgePost<{ promptConfigs: unknown }>('/param-overrides', {
         promptConfigs: configs.map(stripContentText),
       })
@@ -818,7 +846,7 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
     if (fieldsRef.current.presetTemplate === id) return
     // 切换即保存：模块列表有未保存的提示词配置修改时先提交（写当前激活预设），
     // 避免切换后 load() 重置 fields 丢失修改。已保存/无修改则直接切换。
-    const dirtyConfigs = fieldsRef.current.promptConfigs !== savedConfigs
+    const dirtyConfigs = promptConfigsDirty(fieldsRef.current.promptConfigs, savedConfigs)
     if (dirtyConfigs) {
       // 免双 load：保存成功后由下方 enqueueSave 的 onSaved 统一静默重载。
       await persistConfigs(fieldsRef.current.promptConfigs, { reload: false })
@@ -934,7 +962,7 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
 
   const currentSwitches = snapshotSwitches(fields)
   const dirtySwitches = !switchesEqual(currentSwitches, savedSwitches)
-  const dirtyConfigs = fields.promptConfigs !== savedConfigs
+  const dirtyConfigs = promptConfigsDirty(fields.promptConfigs, savedConfigs)
   const dirty = dirtySwitches || dirtyConfigs
 
   // 任意 UI 修改自动保存：模块列表的提示词配置修改（顶端总开关/卡片字段/增删/排序，

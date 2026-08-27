@@ -13,6 +13,22 @@
   同源，消除旧值残留。
 - 验证：typecheck/lint 全绿，369 测试通过（新增 /configs-validate >64KB 回归）。
 
+### 修复自动保存空数组清空大预设配置卡 + 内置预设不恢复 + 开关 revision 冲突（2026-08-28）
+
+- **数据摧毁根因**：L1 把 dirtyConfigs 从 JSON.stringify 比较改成引用比较后，
+  store 初始化时 fields=EMPTY_FIELDS.promptConfigs（模块级常量 []）与
+  savedConfigs=useState([]) 是两个引用不同的空数组 → 误判 dirty=true →
+  挂载 800ms 后自动保存把空 promptConfigs 写进 preset.yml，beta-2-42 的
+  129 张配置卡被一次清空。修复：promptConfigsDirty 对「两个空数组」判不脏，
+  persistConfigs 对空数组（且无内容资产）直接跳过写盘双保险。
+- **内置预设永不恢复**：ensurePresetSeed 此前 `seeded=true` 即 return，误删的
+  内置预设永久消失。改为每次启动幂等补建缺失内置模板（existsSync 跳过），
+  .pt-seeded 只作旧标记迁移。
+- **全局开关打不开**：settings 注册重建（fiber reload）会把 namespace revision
+  归零，客户端旧 revision 触发 settings-conflict。enqueueSave 冲突时自动重试
+  一次不带 expectedRevision（官方语义 = last-write-wins），不再卡死需手动重试。
+- 验证：typecheck/lint 全绿，369 测试通过（更新种子化/删除恢复行为断言）。
+
 ### 修复切换预设后配置卡出现慢 20+ 秒（2026-08-28）
 
 - **根因**：客户端 `load()` 每次工作台加载都 `settings.ensure()` 触发宿主全量

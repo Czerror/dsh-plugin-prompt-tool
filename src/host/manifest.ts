@@ -298,16 +298,16 @@ export function ensurePresetSeed(): { created: string[] } {
   const root = userPresetsDir()
   const legacyMark = join(root, '.pt-seeded')
   const state = readPluginState()
-  if (state.seeded === true || existsSync(legacyMark)) {
-    if (existsSync(legacyMark)) {
-      try {
-        writePluginState({ ...state, seeded: true })
-        rmSync(legacyMark, { force: true })
-      } catch {
-        // 旧标记迁移失败不阻断（下次启动重试）。
-      }
+  // 旧标记迁移：.pt-seeded 只迁移进状态文件，不再作为「已种子化即永不补建」的闸门——
+  // 用户/迁移误删某个内置预设目录后，seeded=true 会让它永久消失；补建幂等
+  // （existsSync 跳过），每次都补齐缺失项无副作用。
+  if (existsSync(legacyMark)) {
+    try {
+      writePluginState({ ...state, seeded: true })
+      rmSync(legacyMark, { force: true })
+    } catch {
+      // 旧标记迁移失败不阻断（下次启动重试）。
     }
-    return { created: [] }
   }
   const created: string[] = []
   try {

@@ -42,27 +42,27 @@ test('removeUserPreset：非法 id 与路径越界拒绝', () => {
   assert.equal(removeUserPreset('..\\..\\temp').ok, false)
 })
 
-test('ensurePresetSeed：首次种子化全部内置模板，.seeded 后不重复且删除不复活', () => {
+test('ensurePresetSeed：首次种子化全部内置模板，删除后自动补建恢复', () => {
   const first = ensurePresetSeed()
   assert.ok(first.created.length >= BUILTIN_IDS.length, `首次应复制全部内置（实际 ${first.created.length}）`)
   for (const id of [...BUILTIN_IDS, 'custom']) {
     assert.ok(existsSync(join(PRESETS_DIR, id, 'preset.yml')), `${id} 应种子化`)
   }
-  // 二次调用不重复复制。
+  // 二次调用幂等：全部存在时不重复复制。
   assert.deepEqual(ensurePresetSeed().created, [])
-  // 用户删除后不自动复活（种子化只在首次执行）。
+  // 用户/迁移误删后：下次种子化自动补建（幂等恢复，不再永久消失）。
   assert.deepEqual(removeUserPreset('ptc'), { ok: true })
-  ensurePresetSeed()
-  assert.equal(existsSync(join(PRESETS_DIR, 'ptc')), false, '删除后种子化不应自动复活')
+  const restored = ensurePresetSeed()
+  assert.ok(restored.created.includes('ptc'), '删除的 ptc 应被补建恢复')
+  assert.ok(existsSync(join(PRESETS_DIR, 'ptc', 'preset.yml')), 'ptc 应已恢复')
 })
 
 test('listPresets：全部来自用户目录（种子化后内置模板即为用户预设）', () => {
   const presets = listPresets()
-  for (const id of ['anchored', 'creative', 'liangshen', 'minimal', 'standard']) {
+  for (const id of ['anchored', 'creative', 'liangshen', 'minimal', 'ptc', 'standard']) {
     const preset = presets.find((entry) => entry.id === id)
     assert.ok(preset !== undefined && preset.user === true, `${id} 应为用户目录预设`)
   }
-  assert.ok(!presets.some((preset) => preset.id === 'ptc'), 'ptc 已删除不应列出')
   assert.ok(!presets.some((preset) => preset.id.startsWith('.')), '点前缀目录（.engine/.bak）不列出')
 })
 
@@ -73,6 +73,8 @@ test('cloneBuiltinPreset：非内置/非法 id/用户目录已存在同名拒绝
 })
 
 test('cloneBuiltinPreset：删除后可新建还原', () => {
+  // 前一个测试把 ptc 补建回来了，先删再验还原路径。
+  removeUserPreset('ptc')
   assert.equal(existsSync(join(PRESETS_DIR, 'ptc')), false)
   const cloned = cloneBuiltinPreset('ptc')
   assert.equal(cloned.ok, true)

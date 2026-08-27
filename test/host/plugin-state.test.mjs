@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -29,13 +29,18 @@ test('readPluginState：文件缺失/损坏返回空对象（按未标记处理�
   assert.deepEqual(readPluginState(), {})
 })
 
-test('ensurePresetSeed：状态文件标记后不再种子化，删除不复活', () => {
+test('ensurePresetSeed：状态文件标记兼容保留，删除后自动补建恢复', () => {
   const first = ensurePresetSeed()
   assert.ok(first.created.length > 0, '首次应复制内置模板')
   assert.deepEqual(readPluginState().seeded, true, '种子化后应写状态文件')
   assert.equal(existsSync(join(PRESETS_DIR, '.pt-seeded')), false, '预设根内不再写 .pt-seeded')
-  // 二次调用：状态已标记，不重复。
+  // 二次调用幂等：全部存在时不重复复制。
   assert.deepEqual(ensurePresetSeed().created, [])
+  // 删除某个内置预设后，种子化自动补建（seeded 标记不再是「永不恢复」闸门）。
+  const id = first.created[0]
+  assert.ok(typeof id === 'string' && id.length > 0)
+  rmSync(join(PRESETS_DIR, id), { recursive: true, force: true })
+  assert.ok(ensurePresetSeed().created.includes(id), '删除的内置预设应被补建恢复')
 })
 
 test('ensurePresetSeed：兼容旧版预设根 .pt-seeded 标记（迁入状态文件并删除）', () => {

@@ -71,7 +71,13 @@ test('writePreset 关闭时只清理各预设目录生成物，保留 preset.yml
   assert.equal(existsSync(join(presetDir, 'anchored', 'prompt-configs')), false, 'prompt-configs 应被清理')
   // 参数源与预设根保留——绝不删除整个用户预设目录。
   assert.equal(existsSync(join(presetDir, 'anchored', 'preset.yml')), true, 'preset.yml 参数必须保留')
-  assert.deepEqual(readdirSync(presetDir).sort(), ['anchored'], '预设根只应保留预设目录（状态已移出）')
+  // 状态文件已移出预设根；ensurePresetSeed 会幂等补建全部内置预设目录，
+  // 清理必须逐个保留其 preset.yml，不能删预设目录本身（防误删回归）。
+  const dirs = readdirSync(presetDir).filter((name) => !name.startsWith('.')).sort()
+  assert.deepEqual(dirs, ['anchored', 'creative', 'custom', 'liangshen', 'minimal', 'ptc', 'standard'].sort())
+  for (const dir of dirs) {
+    assert.equal(existsSync(join(presetDir, dir, 'preset.yml')), true, `${dir} 的 preset.yml 必须保留`)
+  }
 })
 
 test('writePreset 开启时不受影响：预设目录正常生成', () => {
