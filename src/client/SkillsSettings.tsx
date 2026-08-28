@@ -3,9 +3,9 @@
  *  memo 组件——开关/筛选/拖拽 hover 只重渲染受影响行，不再全列表级联。 */
 import { memo, useCallback, useMemo, useState, type ReactNode } from 'react'
 import clsx from 'clsx'
-import type { IApiClient } from '@deepseek-ai/dsh-client-connection/client'
 import type { SkillCatalogEntry } from './prompt-tool-bridge.ts'
 import type { PromptToolStore } from './prompt-tool-store.ts'
+import type { PromptToolHostApi } from './prompt-tool-types.ts'
 import { usePromptToolFields } from './use-prompt-tool-fields.ts'
 import { tabKeyHandler } from './tab-key.ts'
 import { CollapsibleCard } from './CollapsibleCard.tsx'
@@ -119,7 +119,7 @@ const SkillRow = memo(function SkillRow(props: SkillRowProps): ReactNode {
   )
 })
 
-export const SkillsSettings = memo(function SkillsSettings(props: { store: PromptToolStore; api: IApiClient }): ReactNode {
+export const SkillsSettings = memo(function SkillsSettings(props: { store: PromptToolStore; api: PromptToolHostApi }): ReactNode {
   const { store, api } = props
   const fields = usePromptToolFields(store, (value) => value)
   const [pickingDir, setPickingDir] = useState(false)
@@ -246,13 +246,8 @@ export const SkillsSettings = memo(function SkillsSettings(props: { store: Promp
     if (pickingDir) return
     setPickingDir(true)
     try {
-      const picked = await api.host.pickDirectory({})
-      if (!picked.result.ok) {
-        store.showNotice('error', '选择目录失败：' + (picked.result.error?.message ?? 'host.pickDirectory 不可用'))
-        return
-      }
-      const path = picked.result.value?.path
-      if (!path) return
+      const path = await api.pickDirectory()
+      if (path === null) return
       store.addSkillsDir(path)
     } catch (error) {
       store.showNotice('error', '选择目录失败：' + (error instanceof Error ? error.message : String(error)))

@@ -33,7 +33,8 @@ function buildCharacterMemoryEntry(spec: PresetSpec, memory: string): Record<str
   return buildWorldBookEntry({
     name: '角色记忆',
     enabled: true,
-    order: 1000,
+    // alpha.1 官方工具提示占用 1000-2900；角色素材放工具后、SDK 前。
+    order: 3000,
     text: `【${spec.name} 的关系记忆】\n${memory}`,
     constant: true,
   })

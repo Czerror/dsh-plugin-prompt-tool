@@ -12,6 +12,7 @@ modules:
   - tool-jobs
   - official-skill-filesystem-cordis
   - official-tool-skill
+  - command-goal
   - tool-goal
   - planning
   - compaction

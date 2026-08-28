@@ -1,7 +1,7 @@
 import { createRoot, type Root } from 'react-dom/client'
-import type { IApiClient } from '@deepseek-ai/dsh-client-connection/client'
 import { PromptWorkspace } from './PromptWorkspace.tsx'
 import type { PromptToolSettingsTransport } from './prompt-tool-store.ts'
+import type { PromptToolHostApi } from './prompt-tool-types.ts'
 import css from './PromptWorkspace.module.css'
 import { mountPromptToolSidebarEntry } from './sidebar-entry.ts'
 import { PromptToolWorkspaceController } from './workspace-controller.ts'
@@ -14,7 +14,7 @@ const TASKBOARD_ACTIVE_ATTR = 'data-dsh-taskboard-active'
 const SSH_ACTIVE_ATTR = 'data-dsh-ssh-active'
 const ACTIVATE_EVENT = 'dsh-panel-activate'
 
-function mountPanel(controller: PromptToolWorkspaceController, api: IApiClient, settings: PromptToolSettingsTransport): () => void {
+function mountPanel(controller: PromptToolWorkspaceController, api: PromptToolHostApi, settings: PromptToolSettingsTransport): () => void {
   let root: Root | undefined
   let container: HTMLDivElement | undefined
 
@@ -108,7 +108,7 @@ function mountPanel(controller: PromptToolWorkspaceController, api: IApiClient, 
 }
 
 /** 挂载侧边栏入口与中央列工作台（同一单元，随插件卸载整体回收）。 */
-export function mountPromptToolWorkspace(api: IApiClient, settings: PromptToolSettingsTransport): () => void {
+export function mountPromptToolWorkspace(api: PromptToolHostApi, settings: PromptToolSettingsTransport): () => void {
   if (typeof document === 'undefined' || typeof window === 'undefined') return () => {}
   const controller = new PromptToolWorkspaceController()
   const disposeEntry = mountPromptToolSidebarEntry(controller)

@@ -1,11 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type {
-  IApiClient,
-  SettingsNamespaceView,
-  SettingsPathOpView,
-} from '@deepseek-ai/dsh-client-connection/client'
-import type { SettingsScope, SettingsScopeSnapshot } from '@deepseek-ai/dsh-client-runtime/client'
-import type { EngineMeta, PromptConfigDraft } from './prompt-tool-types.ts'
+import type { SettingsPathOpView } from '@deepseek-ai/dsh-api-remotes/client'
+import type { SettingsScope, SettingsScopeSnapshot } from '@deepseek-ai/dsh-client-ui-settings/client'
+import type { EngineMeta, PromptConfigDraft, PromptToolHostApi } from './prompt-tool-types.ts'
 import {
   EMPTY_FIELDS,
   EMPTY_META,
@@ -25,8 +21,8 @@ export interface PromptToolSettingsTransport {
   scope: SettingsScope<Record<string, unknown>>
   /** 触发一次共享 describe mirror 读取（idle 时才真正发 RPC）。 */
   ensure: () => Promise<void>
-  /** 批量 path-op 写入；成功后已把应答 fold 回共享 mirror。 */
-  mutate: (ops: SettingsPathOpView[], expectedRevision?: number) => Promise<SettingsNamespaceView>
+  /** 批量 path-op 写入；成功后 scope 快照已 fold 最新 revision。 */
+  mutate: (ops: SettingsPathOpView[], expectedRevision?: number) => Promise<void>
 }
 
 export interface SwitchSnapshot {
@@ -386,7 +382,7 @@ function bridgeViewFromBoot(boot: BridgeResult<BridgeSettingsView>): BridgeResul
   }
 }
 
-export function usePromptToolStore(api: IApiClient, settings: PromptToolSettingsTransport): PromptToolStore {
+export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolSettingsTransport): PromptToolStore {
   const [providers, setProviders] = useState<string[]>([])
   const [modelCatalog, setModelCatalog] = useState<Record<string, string[]>>({})
   const [hostDefaultModel, setHostDefaultModel] = useState<HostDefaultModel | undefined>(undefined)
@@ -679,8 +675,8 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
     setBusy?.(true)
     saveQueueRef.current = saveQueueRef.current.then(async () => {
       try {
-        const view = await settings.mutate(ops, revisionRef.current)
-        revisionRef.current = view.revision
+        await settings.mutate(ops, revisionRef.current)
+        revisionRef.current = settings.scope.getSnapshot().revision
         onSaved()
         if (okMessage) showNotice('ok', okMessage)
       } catch (error) {
@@ -690,8 +686,8 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
         const message = errorMessage(error)
         if (/expected revision|changed since it was read/i.test(message)) {
           try {
-            const view = await settings.mutate(ops)
-            revisionRef.current = view.revision
+            await settings.mutate(ops)
+            revisionRef.current = settings.scope.getSnapshot().revision
             onSaved()
             if (okMessage) showNotice('ok', okMessage)
           } catch (retryError) {
@@ -1010,9 +1006,8 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
     const target = path ?? fieldsRef.current.activeSkillsDirs[0] ?? ''
     if (!target) { showNotice('error', '技能目录路径未知，请先重新读取配置'); return }
     try {
-      const res = await api.host.openPath({ path: target })
-      if (res.result.ok) showNotice('ok', '已打开技能目录：' + target)
-      else showNotice('error', '打开失败：' + (res.result.error?.message ?? ''))
+      await api.openPath(target)
+      showNotice('ok', '已打开技能目录：' + target)
     } catch (error) {
       showNotice('error', '打开失败：' + errorMessage(error))
     }

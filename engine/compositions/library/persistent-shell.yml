@@ -1,5 +1,5 @@
 # module: persistent-shell
-# source: E:\Documents\GitHub\deepseek-harness/apps/cli/config/agent-presets/minimal/agent.cordis.yml
+# source: D:\AI\GitHub\deepseek-harness/packages/preset/agent-presets/presets/minimal/agent.cordis.yml
 # local patches: 1
 
 - id: persistent-shell

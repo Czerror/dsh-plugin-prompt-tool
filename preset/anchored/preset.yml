@@ -286,6 +286,7 @@ modules:
   - tool-jobs
   - skill-filesystem
   - skill-search
+  - command-goal
   - tool-goal
   - planning
   - compaction

@@ -1,8 +1,8 @@
 // rebuild-composition.mjs — 从官方 deepseek-harness 内置预设源码重建 anchored-standard 组合模块。
 //
 // 数据来源(官方):
-//   <repo>/apps/cli/config/agent-presets/standard/agent.cordis.yml
-//   <repo>/apps/cli/config/agent-presets/minimal/agent.cordis.yml
+//   <repo>/packages/preset/agent-presets/presets/standard/agent.cordis.yml
+//   <repo>/packages/preset/agent-presets/presets/minimal/agent.cordis.yml
 // 官方契约:预设目录 = agent.cordis.yml(顶层 Cordis 行列表,entryListSchema 解析 `!!js`)
 //          + preset.yml(仅展示元数据)。
 //
@@ -19,7 +19,7 @@ import { parse as parseYaml } from 'yaml'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 const repo = resolve(process.argv[2] ?? process.env.DSH_HARNESS_REPO ?? join(root, '..', 'deepseek-harness'))
-const presetsDir = join(repo, 'apps', 'cli', 'config', 'agent-presets')
+const presetsDir = join(repo, 'packages', 'preset', 'agent-presets', 'presets')
 const compositionDir = join(root, 'engine', 'compositions')
 const libraryDir = join(compositionDir, 'library')
 const localDir = join(compositionDir, 'source', 'local')
@@ -68,9 +68,8 @@ const PATCHES = {
       to: "- id: terminal-bash\n      name: '@deepseek-ai/dsh-terminal-bash'\n      disabled: !!js process.platform === 'win32'\n      config:\n        shellPath: !!js \"process.getBuiltinModule?.('node:fs')?.existsSync('/bin/bash') ? '/bin/bash' : 'bash'\"\n        timeoutMs: 300000",
     },
   ],
-  delegation: [
-    { from: 'backgroundMode: one-shot', to: 'enableRunInBackground: false' },
-  ],
+  // alpha.1 起官方 delegation 已采用 backgroundMode: continuable/one-shot 契约，
+  // 旧的 enableRunInBackground: false 降级补丁已删除。
 }
 
 function applyPatches(id, text, source) {
@@ -105,6 +104,7 @@ const MODULES = [
   { id: 'tool-jobs', from: 'standard' },
   { id: 'skill-filesystem', from: 'standard' },
   { id: 'skill-search', from: 'local' },
+  { id: 'command-goal', from: 'standard' },
   { id: 'tool-goal', from: 'standard' },
   { id: 'planning', from: 'standard' },
   { id: 'compaction', from: 'standard' },
@@ -147,7 +147,7 @@ try {
       if (section === undefined) throw new Error(`${id}: official ${from} preset has no top-level row ${sourceId ?? id}`)
       body = applyPatches(id, section, `${from}/agent.cordis.yml`)
       const patches = PATCHES[id]?.length ?? 0
-      provenance = `# module: ${id}\n# source: ${repo}/apps/cli/config/agent-presets/${from}/agent.cordis.yml\n# local patches: ${patches}\n\n`
+      provenance = `# module: ${id}\n# source: ${repo}/packages/preset/agent-presets/presets/${from}/agent.cordis.yml\n# local patches: ${patches}\n\n`
     }
     writeFileSync(join(tmpDir, `${id}.yml`), provenance + body)
   }

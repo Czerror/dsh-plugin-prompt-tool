@@ -24,7 +24,7 @@
 |---|---|---|
 | `context-gate` | engine/context-gate.mjs | 注入门控：未晋升时清空运行时上下文 + pre-step kind 白名单；晋升后 deferredSources 延迟注入 / instructionHint 一次性提示 |
 | `tool-bootstrap` | engine/tool-bootstrap.mjs | 首轮工具目录窄化（bootstrap 对）→ 晋升后恢复完整目录；bootstrapMaxTokens 封顶；promoteGate 门控；personaSectionsOnly / workspaceLine |
-| `code-presentation` | engine/code-presentation.mjs | 晋升后 Code Mode (PTC) 呈现（`tools.presentAs('code')`），compaction/end 释放 |
+| `code-presentation` | engine/code-presentation.mjs | 晋升后 PTC mode 呈现（`tools.presentAs('ptc')`），compaction/end 释放 |
 | `prompt-config-engine` | engine/prompt-config-engine.mjs | 提示词配置执行器（per-config `promotion: main / include-subagents` 门控） |
 | `tool-config-engine` | engine/tool-config-engine.mjs | 自定义工具引擎：preset.yml `customTools` 段 → 渲染 `custom-tools/*.yml` → 运行时 `ctx.tools.register`（执行器 shell/http/delegate/fs/ask-user；行 `requireApproval` 门） |
 | `compaction-epoch` | engine/compaction-epoch.mjs | 晋升状态机（被上面各模块共用；非插件行） |

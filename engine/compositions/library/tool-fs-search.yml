@@ -1,5 +1,5 @@
 # module: tool-fs-search
-# source: E:\Documents\GitHub\deepseek-harness/apps/cli/config/agent-presets/standard/agent.cordis.yml
+# source: D:\AI\GitHub\deepseek-harness/packages/preset/agent-presets/presets/standard/agent.cordis.yml
 # local patches: 0
 
 - id: tool-fs-search

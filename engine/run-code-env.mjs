@@ -202,7 +202,8 @@ export function apply(ctx, config) {
   if (enabled) {
     ctx.systemPrompt.section({
       name: 'tools:run-code-env',
-      order: 160,
+      // alpha.1 官方 SDK 提示段固定在 5000；对齐保留在 per-tool 指导之后。
+      order: 5000,
       text: (context) => {
         const schemas = ctx.tools.schemas(context?.scope)
         if (!Array.isArray(schemas) || !schemas.some((schema) => schema?.name === 'run_code')) return ''

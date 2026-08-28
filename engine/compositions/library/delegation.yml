@@ -1,6 +1,6 @@
 # module: delegation
-# source: E:\Documents\GitHub\deepseek-harness/apps/cli/config/agent-presets/standard/agent.cordis.yml
-# local patches: 1
+# source: D:\AI\GitHub\deepseek-harness/packages/preset/agent-presets/presets/standard/agent.cordis.yml
+# local patches: 0
 
 # ── delegation and workflows ────────────────────────────────────────────────
 
@@ -36,8 +36,13 @@
       config:
         provider: spawn
         toolName: subagent
+        modelSelectionSettings: true
         backgroundMode: continuable
 
+    # Fork omits model selection so provider/model stay equal to the parent and
+    # the inherited history remains eligible for KV Cache reuse. This preset
+    # keeps fork continuable and accepts its child-scoped `report` additions invalidating
+    # that prefix; issue #2124 tracks cache-preserving continuable fork.
     - id: tool-subagent-fork
       name: '@deepseek-ai/dsh-tool-subagent'
       config:
@@ -55,7 +60,7 @@
       config:
         provider: codex
         toolName: subagent_codex
-        enableRunInBackground: false
+        backgroundMode: one-shot
         maxDepth: provider-managed
 
     - id: tool-subagent-claude-code
@@ -64,7 +69,7 @@
       config:
         provider: claude-code
         toolName: subagent_claude_code
-        enableRunInBackground: false
+        backgroundMode: one-shot
         maxDepth: provider-managed
 
     - id: workflow-worker-thread

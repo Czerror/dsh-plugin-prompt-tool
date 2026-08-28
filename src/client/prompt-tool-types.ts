@@ -1,5 +1,13 @@
 /** 客户端共享类型：提示词配置草稿、层能力矩阵与引擎 /meta 载荷。 */
 
+/** alpha.1 @Remote 客户端的最小宿主能力面：替代已删除的 IApiClient。 */
+export interface PromptToolHostApi {
+  /** 官方 uiWorkspace 目录选择；取消时返回 null。 */
+  pickDirectory(): Promise<string | null>
+  /** 官方 session remote 打开 Host 桌面路径。 */
+  openPath(path: string): Promise<void>
+}
+
 /** 客户端侧的提示词配置草稿：与宿主 PromptConfigSpec 同构，字段全部宽松。 */
 export interface PromptConfigDraft {
   id: string

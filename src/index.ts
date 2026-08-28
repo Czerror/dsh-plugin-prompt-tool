@@ -538,12 +538,13 @@ export function apply(ctx: Context, configIn: Config): void {
     }
     if (reason === 'switch' && lastSyncedHostDefault === template) return
     lastSyncedHostDefault = template
-    try {
-      s.mutate(settingsNamespace('agent-presets'), [{ op: 'set', path: ['default'], value: template }])
-    } catch (error) {
-      // 宿主未装配 agent-presets（或文档被锁定）时忽略：插件预设仍可经官方 UI 手动选择。
-      warn(ctx, `prompt-tool: 同步宿主 agent-presets default 失败：${error instanceof Error ? error.message : String(error)}`)
-    }
+    // settings.mutate 是 async：未 await 时 try/catch 接不住 rejection，
+    // 未处理拒绝会直接变成 fatal（宿主未装配 agent-presets 时尤其常见）。
+    void s.mutate(settingsNamespace('agent-presets'), [{ op: 'set', path: ['default'], value: template }])
+      .catch((error: unknown) => {
+        // 宿主未装配 agent-presets（或文档被锁定）时忽略：插件预设仍可经官方 UI 手动选择。
+        warn(ctx, `prompt-tool: 同步宿主 agent-presets default 失败：${error instanceof Error ? error.message : String(error)}`)
+      })
   }
 
   // 模型路由（主对话直派子代理与委派子代理通用）：

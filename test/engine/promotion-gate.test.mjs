@@ -283,9 +283,9 @@ test('tool-bootstrap：零工具模式 compaction 回退补 shell（对齐上游
   assert.deepEqual(after.tools.map((t) => t.name).sort(), ['bash', 'read', 'write'], 'compaction 回退 = shell + 核心工具集')
 })
 
-// ── code-presentation：晋升后 Code Mode (PTC) 呈现（从 tool-bootstrap 拆出） ──
+// ── code-presentation：晋升后 PTC mode 呈现（从 tool-bootstrap 拆出） ──
 
-test('code-presentation：晋升后应用 presentAs("code")，compaction/end 释放', async () => {
+test('code-presentation：晋升后应用 presentAs("ptc")，compaction/end 释放', async () => {
   const { ctx, listeners } = makeCtx()
   const presented = []
   let disposed = 0
@@ -299,7 +299,7 @@ test('code-presentation：晋升后应用 presentAs("code")，compaction/end 释
   const handler = listeners.get('system-prompt/assemble')?.[0]?.handler
   assert.ok(handler, '应注册 system-prompt/assemble')
   await handler(null, { agent }, async () => assembled())
-  assert.deepEqual(presented, ['code'], '晋升后应用 Code Mode 呈现')
+  assert.deepEqual(presented, ['ptc'], '晋升后应用 PTC mode 呈现')
   // compaction/end 释放（回到受控相位）。
   const eventHandlers = listeners.get('session/event') ?? []
   for (const { handler: h } of eventHandlers) h(session, { type: 'compaction/end', seq: 2 })
@@ -341,7 +341,7 @@ test('code-presentation：未晋升不应用，子代理（默认）直接应用
     ctx: { tools: { presentAs: (mode) => { presented.push(mode); return () => {} } } },
   }
   await handler(null, { agent: subagent }, async () => assembled())
-  assert.deepEqual(presented, ['code'], '子代理默认直接应用呈现')
+  assert.deepEqual(presented, ['ptc'], '子代理默认直接应用呈现')
 })
 
 // ── context-gate：messageSources / deferredSources / instructionHint ───────

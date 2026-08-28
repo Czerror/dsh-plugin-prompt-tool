@@ -1,0 +1,11 @@
+# module: command-goal
+# source: D:\AI\GitHub\deepseek-harness/packages/preset/agent-presets/presets/standard/agent.cordis.yml
+# local patches: 0
+
+# ── goals ───────────────────────────────────────────────────────────────────
+
+# The goal service and session driver stay on the host plane, where the Gateway
+# can resolve them. The human command and model-facing tool register into this
+# preset's scoped layers.
+- id: command-goal
+  name: '@deepseek-ai/dsh-command-goal'

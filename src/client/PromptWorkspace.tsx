@@ -1,12 +1,12 @@
 import { memo, useCallback, useEffect, useState, useSyncExternalStore, type ReactNode } from 'react'
 import clsx from 'clsx'
-import type { IApiClient } from '@deepseek-ai/dsh-client-connection/client'
 import { tabKeyHandler } from './tab-key.ts'
 import {
   type PromptToolStore,
   type PromptToolSettingsTransport,
   usePromptToolStore,
 } from './prompt-tool-store.ts'
+import type { PromptToolHostApi } from './prompt-tool-types.ts'
 import { PromptConfigList } from './PromptConfigList.tsx'
 import { PromptConfigsEditor } from './PromptConfigsEditor.tsx'
 import type { PromptToolWorkspaceController } from './workspace-controller.ts'
@@ -157,7 +157,7 @@ const SubagentPage = memo(function SubagentPage(props: { store: PromptToolStore 
 
 /** 技能状态筛选维度（统计条与列表联动）。 */
 export interface PromptWorkspaceProps {
-  api: IApiClient
+  api: PromptToolHostApi
   settings: PromptToolSettingsTransport
   controller: PromptToolWorkspaceController
   onClose: () => void

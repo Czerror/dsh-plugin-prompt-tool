@@ -8,11 +8,12 @@ import { parse } from 'yaml'
 const root = fileURLToPath(new URL('../..', import.meta.url))
 const read = (path) => readFileSync(join(root, path), 'utf8')
 
-test('模块清单由参数文件决定:preset/anchored/preset.yml 声明 26 个模块,且全部存在', () => {
+test('模块清单由参数文件决定:preset/anchored/preset.yml 声明 27 个模块,且全部存在', () => {
   const preset = parse(read('preset/anchored/preset.yml'))
   const modules = preset.modules
   assert.ok(Array.isArray(modules))
-  assert.equal(modules.length, 26)
+  assert.equal(modules.length, 27)
+  assert.ok(modules.includes('command-goal'), 'alpha.1 官方 standard 系预设应接入 command-goal')
   for (const name of modules) {
     const file = `engine/compositions/library/${name}.yml`
     assert.ok(existsSync(join(root, file)), `missing module ${file}`)
@@ -22,7 +23,7 @@ test('模块清单由参数文件决定:preset/anchored/preset.yml 声明 26 个
 
 test('模块来源可追溯:官方切块带 provenance,本地附加模块单独标记', () => {
   const official = read('engine/compositions/library/persona.yml')
-  assert.match(official, /# source: .*agent-presets\/standard\/agent\.cordis\.yml/)
+  assert.match(official, /# source: .*agent-presets\/presets\/standard\/agent\.cordis\.yml/)
   const local = read('engine/compositions/library/context-gate.yml')
   assert.match(local, /本地附加/)
 })

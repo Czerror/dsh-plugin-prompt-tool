@@ -1,14 +1,14 @@
 /**
- * code-presentation — 晋升后 Code Mode (PTC) wire 呈现。
+ * code-presentation - 晋升后 PTC mode wire 呈现。
  *
  * 从 tool-bootstrap 拆出的独立关注点：bootstrap 负责首轮工具目录窄化，
- * 本模块只负责晋升后把工具呈现切换为 Code Mode（单 run_code，由
- * tools.presentAs('code') 提供）。"只要 PTC 不要 bootstrap" = 组合只挂本行；
+ * 本模块只负责晋升后把工具呈现切换为 PTC mode（单 run_code，由
+ * tools.presentAs('ptc') 提供）。"只要 PTC 不要 bootstrap" = 组合只挂本行；
  * PTC+bootstrap = 同时挂两行（行序：tool-bootstrap 在前，本行在后）。
  *
  * 相位与 tool-bootstrap / context-gate 同源：epoch-aware promotion
  * （compaction-epoch.mjs）。晋升后（tool/call 或 assistant/message，按
- * promoteOn，默认 either）应用 Code Mode；compaction/end 释放（压缩后回到
+ * promoteOn，默认 either）应用 PTC mode；compaction/end 释放（压缩后回到
  * 受控相位，重新晋升再应用）。
  *
  * SUBAGENTS: includeSubagents=false（默认）时子代理（delegationDepth > 0）
@@ -33,7 +33,7 @@ const ALLOWED_KEYS = new Set(['usePtcMode', 'includeSubagents', 'promoteOn'])
 /** Register the post-promotion Code Mode presentation. */
 export function apply(ctx, config) {
   const source = validateConfig(name, config, ALLOWED_KEYS)
-  // 默认 false：PTC (Code Mode) 呈现是 opt-in，未声明 = 原生完整工具目录。
+  // 默认 false：PTC mode 呈现是 opt-in，未声明 = 原生完整工具目录。
   const usePtcMode = booleanOption(name, source.usePtcMode, 'usePtcMode', false)
   if (!usePtcMode) return
   const includeSubagents = booleanOption(name, source.includeSubagents, 'includeSubagents', false)
@@ -57,7 +57,7 @@ export function apply(ctx, config) {
     if (state.applied) return
     const tools = agent.ctx?.tools
     if (tools === undefined || typeof tools.presentAs !== 'function') return
-    state.disposer = tools.presentAs('code')
+    state.disposer = tools.presentAs('ptc')
     state.applied = true
   }
   const releaseCodePresentation = (session) => {

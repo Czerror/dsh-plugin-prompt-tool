@@ -24,6 +24,7 @@ modules:
   - tool-jobs
   - skill-filesystem
   - official-tool-skill
+  - command-goal
   - tool-goal
   - planning
   - compaction

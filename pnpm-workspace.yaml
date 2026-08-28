@@ -61,3 +61,69 @@ minimumReleaseAgeExclude:
   - '@deepseek-ai/dsh-sandbox@0.1.1-rc.1'
   - '@deepseek-ai/dsh-shell@0.1.1-rc.1'
   - '@deepseek-ai/dsh-subprocess@0.1.1-rc.1'
+
+overrides:
+  '@deepseek-ai/cordis': link:../deepseek-harness/vendor/cordis
+  '@deepseek-ai/schemastery': link:../deepseek-harness/vendor/schemastery
+  '@deepseek-ai/dsh-agent': link:../deepseek-harness/packages/core/agent
+  '@deepseek-ai/dsh-agent-default-model': link:../deepseek-harness/packages/core/agent-default-model
+  '@deepseek-ai/dsh-agent-presets': link:../deepseek-harness/packages/preset/agent-presets
+  '@deepseek-ai/dsh-api-gateway': link:../deepseek-harness/packages/api/gateway
+  '@deepseek-ai/dsh-api-remotes': link:../deepseek-harness/packages/api/remotes
+  '@deepseek-ai/dsh-atomic-write': link:../deepseek-harness/packages/util/atomic-write
+  '@deepseek-ai/dsh-attachment': link:../deepseek-harness/packages/attachment/attachment
+  '@deepseek-ai/dsh-brand': link:../deepseek-harness/packages/util/brand
+  '@deepseek-ai/dsh-client-connection': link:../deepseek-harness/packages/client/connection
+  '@deepseek-ai/dsh-client-ui-workspace': link:../deepseek-harness/packages/client/ui-workspace
+  '@deepseek-ai/dsh-client-locale': link:../deepseek-harness/packages/client/locale
+  '@deepseek-ai/dsh-client-ui-primitives': link:../deepseek-harness/packages/client/ui-primitives
+  '@deepseek-ai/dsh-client-ui-settings': link:../deepseek-harness/packages/client/ui-settings
+  '@deepseek-ai/dsh-client-ui-settings-plugins': link:../deepseek-harness/packages/client/ui-settings-plugins
+  '@deepseek-ai/dsh-client-ui-slots': link:../deepseek-harness/packages/client/ui-slots
+  '@deepseek-ai/dsh-code-runtime': link:../deepseek-harness/packages/code-runtime/code-runtime
+  '@deepseek-ai/dsh-commands': link:../deepseek-harness/packages/interaction/commands
+  '@deepseek-ai/dsh-compaction': link:../deepseek-harness/packages/compaction/compaction
+  '@deepseek-ai/dsh-cordis-host-runner': link:../deepseek-harness/packages/extensions/cordis-host-runner
+  '@deepseek-ai/dsh-credentials': link:../deepseek-harness/packages/credentials/credentials
+  '@deepseek-ai/dsh-file-reference': link:../deepseek-harness/packages/context/file-reference
+  '@deepseek-ai/dsh-goal': link:../deepseek-harness/packages/goal/goal
+  '@deepseek-ai/dsh-home-paths': link:../deepseek-harness/packages/util/home-paths
+  '@deepseek-ai/dsh-host-directory-picker': link:../deepseek-harness/packages/host/directory-picker
+  '@deepseek-ai/dsh-host-plugin-inventory': link:../deepseek-harness/packages/host/plugin-inventory
+  '@deepseek-ai/dsh-host-webserver': link:../deepseek-harness/packages/host/webserver
+  '@deepseek-ai/dsh-invariants': link:../deepseek-harness/packages/runtime-diagnostics/invariants
+  '@deepseek-ai/dsh-jobs': link:../deepseek-harness/packages/jobs/jobs
+  '@deepseek-ai/dsh-llm': link:../deepseek-harness/packages/llm/llm
+  '@deepseek-ai/dsh-llm-retry': link:../deepseek-harness/packages/llm/llm-retry
+  '@deepseek-ai/dsh-message-feedback': link:../deepseek-harness/packages/feedback/message-feedback
+  '@deepseek-ai/dsh-native-command': link:../deepseek-harness/packages/util/native-command
+  '@deepseek-ai/dsh-output-retention': link:../deepseek-harness/packages/util/output-retention
+  '@deepseek-ai/dsh-permission-presets': link:../deepseek-harness/packages/interaction/permission-presets
+  '@deepseek-ai/dsh-sandbox': link:../deepseek-harness/packages/sandbox/sandbox
+  '@deepseek-ai/dsh-sandbox-policy': link:../deepseek-harness/packages/sandbox/sandbox-policy
+  '@deepseek-ai/dsh-scope': link:../deepseek-harness/packages/core/scope
+  '@deepseek-ai/dsh-session': link:../deepseek-harness/packages/core/session
+  '@deepseek-ai/dsh-session-persistence': link:../deepseek-harness/packages/session/session-persistence
+  '@deepseek-ai/dsh-session-projection': link:../deepseek-harness/packages/session/session-projection
+  '@deepseek-ai/dsh-session-projection-cache': link:../deepseek-harness/packages/session/session-projection-cache
+  '@deepseek-ai/dsh-session-query': link:../deepseek-harness/packages/session-query/session-query
+  '@deepseek-ai/dsh-session-reference': link:../deepseek-harness/packages/context/session-reference
+  '@deepseek-ai/dsh-session-title': link:../deepseek-harness/packages/session/session-title
+  '@deepseek-ai/dsh-settings': link:../deepseek-harness/packages/settings/settings
+  '@deepseek-ai/dsh-shell': link:../deepseek-harness/packages/shell/shell
+  '@deepseek-ai/dsh-skill': link:../deepseek-harness/packages/skill/skill
+  '@deepseek-ai/dsh-storage': link:../deepseek-harness/packages/storage/storage
+  '@deepseek-ai/dsh-storage-domain': link:../deepseek-harness/packages/storage/storage-domain
+  '@deepseek-ai/dsh-subagent': link:../deepseek-harness/packages/subagent/subagent
+  '@deepseek-ai/dsh-subprocess': link:../deepseek-harness/packages/subprocess/subprocess
+  '@deepseek-ai/dsh-system-prompt': link:../deepseek-harness/packages/core/system-prompt
+  '@deepseek-ai/dsh-timeout': link:../deepseek-harness/packages/util/timeout
+  '@deepseek-ai/dsh-tools': link:../deepseek-harness/packages/core/tools
+  '@deepseek-ai/dsh-typert-protocol': link:../deepseek-harness/packages/typert/protocol
+  '@deepseek-ai/dsh-typert-registry': link:../deepseek-harness/packages/typert/registry
+  '@deepseek-ai/dsh-user-approval': link:../deepseek-harness/packages/interaction/user-approval
+  '@deepseek-ai/dsh-user-questions': link:../deepseek-harness/packages/interaction/user-questions
+  '@deepseek-ai/dsh-workspace': link:../deepseek-harness/packages/workspace/workspace
+
+
+

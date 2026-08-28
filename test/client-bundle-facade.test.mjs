@@ -1,5 +1,5 @@
 /**
- * 验证 lib/client.js 与 rc8 client-modules 的 queue/live facade 契约：
+ * 验证 lib/client.js 与 client-modules 的 queue/live facade 契约：
  * 1. 脚本执行阶段只调用 window.__ModuleLoader__.load({ id, factory })，不物化模块；
  * 2. Host facade 在 create() 时从 queue 切到 live 并排空登记；
  * 3. factory 物化后暴露 { apply, inject }，且仅 require baseline 模块表条目。
@@ -11,6 +11,7 @@ import vm from 'node:vm'
 
 const PLUGIN_ID = 'dsh-plugin-prompt-tool'
 const bundleSource = readFileSync(new URL('../lib/client.js', import.meta.url), 'utf8')
+const manifest = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
 
 function createDocumentStub() {
   return {
@@ -53,7 +54,7 @@ function createRequireStub() {
   }
 }
 
-test('client bundle registers through rc8 queue/live facade', () => {
+test('client bundle registers through queue/live facade', () => {
   const facade = {
     mode: 'queue',
     pendingQueue: [],
@@ -91,5 +92,13 @@ test('client bundle registers through rc8 queue/live facade', () => {
 
   const exports = facade.registry[0].factory(createRequireStub())
   assert.equal(typeof exports.apply, 'function')
-  assert.deepEqual([...exports.inject], ['slots', 'connection', 'settingsScope'])
+  assert.deepEqual([...exports.inject], ['settingsScope', 'uiWorkspace', 'remote'])
+  // alpha.1 后 dsh-client-runtime 已删除：装配边不得再引用，且需声明新依赖面。
+  assert.ok(!manifest.dsh.client.inject.includes('@deepseek-ai/dsh-client-runtime'))
+  for (const dependency of [
+    '@deepseek-ai/dsh-client-connection',
+    '@deepseek-ai/dsh-client-ui-settings',
+    '@deepseek-ai/dsh-client-ui-workspace',
+    '@deepseek-ai/dsh-api-remotes',
+  ]) assert.ok(manifest.dsh.client.inject.includes(dependency), `${dependency} missing from dsh.client.inject`)
 })
