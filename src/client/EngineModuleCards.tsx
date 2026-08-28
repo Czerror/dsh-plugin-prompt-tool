@@ -277,7 +277,7 @@ export function EngineModuleCards(props: { store: PromptToolStore; layerFilter?:
     || layerFilter === 'system-section' || layerFilter === 'tool-pipeline'
   const capped = fields.bootstrapMaxTokens > 0
   const maxDepthOptions = ['', 'provider-managed', '0', '1', '2', '3', '5']
-  const gateRow = (id: string, label: string, hint: string, key: 'usePtcMode' | 'promoteGate' | 'promoteAfterFirstResponse' | 'personaSectionsOnly' | 'workspaceLine' | 'instructionHint' | 'anchorTurn' | 'deliberationGate' | 'cotDrip'): ReactNode => (
+  const gateRow = (id: string, label: string, hint: string, key: 'usePtcMode' | 'promoteGate' | 'promoteAfterFirstResponse' | 'personaSectionsOnly' | 'workspaceLine' | 'toolFilterSubagents' | 'instructionHint' | 'anchorTurn' | 'deliberationGate' | 'cotDrip'): ReactNode => (
     <div className={styles.settingRowStack}>
       <span className={styles.settingCopy}>
         <strong>{label}</strong>
@@ -289,7 +289,7 @@ export function EngineModuleCards(props: { store: PromptToolStore; layerFilter?:
       </label>
     </div>
   )
-  const numberRow = (id: string, label: string, hint: string, value: number, onCommit: (next: number) => void): ReactNode => (
+  const numberRow = (id: string, label: string, hint: string, value: number, onCommit: (next: number) => void, min = 0): ReactNode => (
     <div className={styles.settingRowStack}>
       <span className={styles.settingCopy}>
         <strong>{label}</strong>
@@ -298,10 +298,10 @@ export function EngineModuleCards(props: { store: PromptToolStore; layerFilter?:
       <input
         className={styles.configInput}
         type="number"
-        min={0}
+        min={min}
         step={1}
-        value={value > 0 ? String(value) : ''}
-        placeholder="0（默认）"
+        value={String(value)}
+        placeholder="1（默认）"
         disabled={!fields.writePreset}
         aria-label={label}
         onChange={(event) => {
@@ -344,6 +344,22 @@ export function EngineModuleCards(props: { store: PromptToolStore; layerFilter?:
         {gateRow('pt-promote-after', '首响应即晋升', 'promoteAfterFirstResponse：无工具首响应 / 首轮 turn/end 即晋升', 'promoteAfterFirstResponse')}
         {gateRow('pt-persona-only', '首轮只留人设', 'personaSectionsOnly：phase-1 提示词段只留 persona（plan-mode 等晋升后恢复）', 'personaSectionsOnly')}
         {gateRow('pt-workspace-line', '工作目录行', 'workspaceLine：晋升后 persona 附加工作目录行', 'workspaceLine')}
+        <div className={styles.settingRowStack}>
+          <span className={styles.settingCopy}>
+            <strong>首次调用指令</strong>
+            <small>phase1FirstCallInstruction：phase-1 persona 追加的首次工具调用指令；空 = 不追加。失焦保存。</small>
+          </span>
+          <input
+            className={styles.configInput}
+            type="text"
+            value={fields.phase1FirstCallInstruction}
+            disabled={!fields.writePreset}
+            aria-label="首次调用指令"
+            placeholder="After your first reasoning block, make one tool call."
+            onChange={(event) => store.patch({ phase1FirstCallInstruction: event.target.value })}
+            onBlur={() => void store.persistParamOverrides()}
+          />
+        </div>
         <div className={styles.settingRowStack}>
           <span className={styles.settingCopy}>
             <strong>门控回退步数</strong>
@@ -455,7 +471,7 @@ export function EngineModuleCards(props: { store: PromptToolStore; layerFilter?:
               void store.persistParamOverrides()
             }}>+ 添加阶段</button>
         </div>
-        {numberRow('pt-stage-pre-unlock', '预放档数', 'stagePreUnlock：调用预放档工具 = 直达其档；0 = 引擎默认 1。', fields.stagePreUnlock, (next) => store.patch({ stagePreUnlock: next }))}
+        {numberRow('pt-stage-pre-unlock', '预放档数', 'stagePreUnlock：调用预放档工具 = 直达其档；0 = 不预放，未设置 = 引擎默认 1。', fields.stagePreUnlock, (next) => store.patch({ stagePreUnlock: next }))}
         <div className={styles.settingRowStack}>
           <span className={styles.settingCopy}>
             <strong>推进工具名</strong>
@@ -469,6 +485,22 @@ export function EngineModuleCards(props: { store: PromptToolStore; layerFilter?:
             aria-label="推进工具名"
             placeholder="phase_advance"
             onChange={(event) => store.patch({ stageAdvanceTool: event.target.value })}
+            onBlur={() => void store.persistParamOverrides()}
+          />
+        </div>
+        <div className={styles.settingRowStack}>
+          <span className={styles.settingCopy}>
+            <strong>推进工具描述</strong>
+            <small>stageAdvanceDescription：阶段推进工具的模型可见描述；空 = 引擎默认。失焦保存。</small>
+          </span>
+          <input
+            className={styles.configInput}
+            type="text"
+            value={fields.stageAdvanceDescription}
+            disabled={!fields.writePreset}
+            aria-label="推进工具描述"
+            placeholder="Advance to the next stage."
+            onChange={(event) => store.patch({ stageAdvanceDescription: event.target.value })}
             onBlur={() => void store.persistParamOverrides()}
           />
         </div>
@@ -522,6 +554,8 @@ export function EngineModuleCards(props: { store: PromptToolStore; layerFilter?:
           value={fields.toolFilterDeny} placeholder="bash, run_code" disabled={!fields.writePreset}
           onChange={(value) => store.patch({ toolFilterDeny: value })}
           onCommit={() => void store.persistParamOverrides()} />
+        {gateRow('pt-tool-filter-subagents', '子代理同过滤', 'toolFilterSubagents：主会话 tool-filter 也作用于子代理；false/未设置 = 子代理不受主会话过滤限制。', 'toolFilterSubagents')}
+        {numberRow('pt-editor-max-output', '编辑器输出上限', 'strReplaceEditorMaxOutputChars：str_replace_editor 单次输出字符上限；16000 = 官方默认。', fields.strReplaceEditorMaxOutputChars, (next) => store.patch({ strReplaceEditorMaxOutputChars: next }), 1)}
 
         <div className={styles.configSectionTitle}>委派（delegation）</div>
         <div className={styles.settingRowStack}>

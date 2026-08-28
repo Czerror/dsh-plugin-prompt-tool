@@ -156,7 +156,7 @@ test('模型参数改回留空：空串删除 preset.yml 旧键（渲染层空�
   }
 })
 
-test('savePresetParams 空值删键：空数组/0 不回落到模板默认之外的残留（bootstrapTools/messageSources/stagePreUnlock）', () => {
+test('savePresetParams 空值删键：空数组删除，stagePreUnlock=0 是合法档位必须保留', () => {
   const dir = join(tmpdir(), `prompt-tool-empty-${process.pid}-${Date.now()}`)
   const presetDir = join(dir, 'preset')
   try {
@@ -173,7 +173,7 @@ test('savePresetParams 空值删键：空数组/0 不回落到模板默认之外
     assert.deepEqual(spec.params.messageSources, ['user'], 'messageSources 写入')
     assert.equal(spec.params.stagePreUnlock, 2, 'stagePreUnlock 写入')
     assert.equal(spec.params.maxPromoteSteps, 6, 'maxPromoteSteps 写入')
-    // 2) 改回空：空数组/0 删除键（引擎 fail loud 或语义不等价的键不能写空值）。
+    // 2) 改回空：空数组删除键；stagePreUnlock=0 是合法档位，不是空值。
     savePresetParams(presetDir, 'anchored', {
       bootstrapTools: [],
       messageSources: [],
@@ -183,7 +183,7 @@ test('savePresetParams 空值删键：空数组/0 不回落到模板默认之外
     spec = loadPresetSpec(join(presetDir, 'anchored'))
     assert.equal(spec.params.bootstrapTools, undefined, 'bootstrapTools 空数组删键（引擎 stringList 空数组 fail）')
     assert.equal(spec.params.messageSources, undefined, 'messageSources 空数组删键（空列表 = 全拦注入）')
-    assert.equal(spec.params.stagePreUnlock, undefined, 'stagePreUnlock 0 删键（引擎 undefined→1，0 是合法档位）')
+    assert.equal(spec.params.stagePreUnlock, 0, 'stagePreUnlock 0 保留（与 undefined->1 语义不同）')
     // maxPromoteSteps 0 写入（引擎 createEpochPromotion 0/undefined 都落默认 4，等价）。
     assert.equal(spec.params.maxPromoteSteps, 0, 'maxPromoteSteps 0 照常写入（引擎 0→默认 4）')
   } finally {

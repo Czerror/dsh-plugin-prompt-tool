@@ -1,5 +1,6 @@
 /** settings bridge 客户端传输与载荷解析层（无 react 依赖；UI 状态见 prompt-tool-store）。 */
 import type { PromptConfigDraft, EngineMeta } from './prompt-tool-types.ts'
+import type { EngineParamKey } from '../shared/engine-params.ts'
 import { SETTINGS_BRIDGE_PREFIX, type BridgeErrorPayload } from '../shared/bridge-contract.ts'
 
 export interface BridgeSettingsView { ns: string; value: unknown; base?: unknown; revision: number }
@@ -37,6 +38,8 @@ export interface Fields {
   firstTurnCustom: boolean
   guideText: string
   guideCustom: boolean
+  /** 每轮引导独立开关；undefined = 跟随 firstTurnAnchor。 */
+  guideEnabled: boolean | undefined
   modelProvider: string
   modelName: string
   subagentModelProvider: string
@@ -49,6 +52,8 @@ export interface Fields {
   subagentMaxTokens: string
   toolFilterAllow: string
   toolFilterDeny: string
+  /** 子代理也启用主对话工具过滤。 */
+  toolFilterSubagents: boolean
   maxDepth: string
   allowKinds: string
   firstTurnWord: string
@@ -70,12 +75,16 @@ export interface Fields {
   stagePreUnlock: number
   /** 阶段推进工具名（空 = 默认 phase_advance）。 */
   stageAdvanceTool: string
+  /** 阶段推进工具描述。 */
+  stageAdvanceDescription: string
   /** 阶段状态 section 模板（{{stage}}/{{stageName}}/{{unlocked}}/{{total}}；空 = 不注入）。 */
   stageSectionTemplate: string
   /** phase-1 提示词段只留 persona。 */
   personaSectionsOnly: boolean
   /** 晋升后 persona 附加工作目录行。 */
   workspaceLine: boolean
+  /** phase-1 persona 追加的首次调用指令行。 */
+  phase1FirstCallInstruction: string
   /** 晋升后 agent-instructions 全文 → 一次性 hint（context-gate）。 */
   instructionHint: boolean
   /** context-gate phase-1 消息源白名单（逗号分隔；空 = 不启用）。 */
@@ -100,6 +109,8 @@ export interface Fields {
   cotDripEvery: number
   /** 每轮最大提醒条数（0 = 回落行默认 1）。 */
   cotDripMaxPerTurn: number
+  /** str-replace-editor 最大输出字符数；16000 = 官方默认。 */
+  strReplaceEditorMaxOutputChars: number
   injectPrompt: boolean
   skillSwitches: Record<string, boolean>
   skillOrder: string[]
@@ -153,6 +164,7 @@ export const EMPTY_FIELDS: Fields = {
   firstTurnCustom: false,
   guideText: '',
   guideCustom: false,
+  guideEnabled: undefined,
   modelProvider: '',
   modelName: '',
   subagentModelProvider: '',
@@ -165,14 +177,16 @@ export const EMPTY_FIELDS: Fields = {
   subagentMaxTokens: '',
   toolFilterAllow: '',
   toolFilterDeny: '',
+  toolFilterSubagents: false,
   maxDepth: '',
   allowKinds: '',
   firstTurnWord: '',
   bootstrapMaxTokens: 0,
   usePtcMode: false,
   stages: [],
-  stagePreUnlock: 0,
+  stagePreUnlock: 1,
   stageAdvanceTool: '',
+  stageAdvanceDescription: '',
   stageSectionTemplate: '',
   promoteGate: false,
   promoteAfterFirstResponse: false,
@@ -181,6 +195,7 @@ export const EMPTY_FIELDS: Fields = {
   compactionTools: '',
   personaSectionsOnly: false,
   workspaceLine: false,
+  phase1FirstCallInstruction: '',
   instructionHint: false,
   messageSources: '',
   deferredSources: '',
@@ -193,6 +208,7 @@ export const EMPTY_FIELDS: Fields = {
   cotDrip: false,
   cotDripEvery: 0,
   cotDripMaxPerTurn: 0,
+  strReplaceEditorMaxOutputChars: 16000,
   injectPrompt: true,
   skillSwitches: {},
   skillOrder: [],
@@ -282,6 +298,13 @@ const readPromptConfigs = (source: Record<string, unknown>, key: string): Prompt
 
 export const errorMessage = (error: unknown): string => error instanceof Error ? error.message : String(error)
 
+const isBridgeResultPayload = (payload: unknown): payload is BridgeResult<unknown> => {
+  if (payload === null || typeof payload !== 'object' || Array.isArray(payload)) return false
+  const record = payload as Record<string, unknown>
+  if (typeof record.ok !== 'boolean') return false
+  return !record.ok || 'value' in record
+}
+
 export async function bridgePost<T>(path: string, body: unknown): Promise<BridgeResult<T>> {
   try {
     const response = await fetch(SETTINGS_BRIDGE_PREFIX + path, {
@@ -290,8 +313,8 @@ export async function bridgePost<T>(path: string, body: unknown): Promise<Bridge
       body: JSON.stringify(body),
     })
     const payload = await response.json() as unknown
-    if (payload !== null && typeof payload === 'object') return payload as BridgeResult<T>
-    return { ok: false, message: 'settings bridge unavailable' }
+    if (isBridgeResultPayload(payload)) return payload as BridgeResult<T>
+    return { ok: false, message: `invalid settings bridge payload (HTTP ${response.status})` }
   } catch (error) {
     return { ok: false, message: errorMessage(error) }
   }
@@ -312,6 +335,9 @@ export function fieldsFromView(res: BridgeResult<BridgeSettingsView>): Fields {
     firstTurnCustom: readBoolean(value, 'firstTurnCustom', readBoolean(base, 'firstTurnCustom', false)),
     guideText: readString(value, 'guideText') ?? readString(base, 'guideText') ?? '',
     guideCustom: readBoolean(value, 'guideCustom', readBoolean(base, 'guideCustom', false)),
+    guideEnabled: typeof value.guideEnabled === 'boolean' ? value.guideEnabled
+      : typeof base.guideEnabled === 'boolean' ? base.guideEnabled
+      : undefined,
     modelProvider: readString(value, 'modelProvider') ?? readString(base, 'modelProvider') ?? '',
     modelName: readString(value, 'modelName') ?? readString(base, 'modelName') ?? '',
     subagentModelProvider: readString(value, 'subagentModelProvider') ?? readString(base, 'subagentModelProvider') ?? '',
@@ -326,6 +352,7 @@ export function fieldsFromView(res: BridgeResult<BridgeSettingsView>): Fields {
     // 不进 settings namespace：默认空，由 /param-overrides 读回后填充（store.load paramPatch）。
     toolFilterAllow: '',
     toolFilterDeny: '',
+    toolFilterSubagents: false,
     maxDepth: '',
     allowKinds: '',
     firstTurnWord: '',
@@ -333,8 +360,9 @@ export function fieldsFromView(res: BridgeResult<BridgeSettingsView>): Fields {
     usePtcMode: readBoolean(value, 'usePtcMode', readBoolean(base, 'usePtcMode', false)),
     // 渐进披露（stages 模式）：预设级参数，由 /param-overrides 读回后填充。
     stages: [],
-    stagePreUnlock: 0,
+    stagePreUnlock: 1,
     stageAdvanceTool: '',
+    stageAdvanceDescription: '',
     stageSectionTemplate: '',
     // 晋升门控（tool-bootstrap 参数桥）：预设级参数，由 /param-overrides + presetParams 填充。
     promoteGate: false,
@@ -344,6 +372,7 @@ export function fieldsFromView(res: BridgeResult<BridgeSettingsView>): Fields {
     compactionTools: '',
     personaSectionsOnly: false,
     workspaceLine: false,
+    phase1FirstCallInstruction: '',
     instructionHint: false,
     // context-gate 注入门控（预设级参数，由 /param-overrides 填充）。
     messageSources: '',
@@ -358,6 +387,8 @@ export function fieldsFromView(res: BridgeResult<BridgeSettingsView>): Fields {
     cotDrip: readBoolean(value, 'cotDrip', readBoolean(base, 'cotDrip', false)),
     cotDripEvery: readNumber(value, 'cotDripEvery', readNumber(base, 'cotDripEvery', 0)),
     cotDripMaxPerTurn: readNumber(value, 'cotDripMaxPerTurn', readNumber(base, 'cotDripMaxPerTurn', 0)),
+    strReplaceEditorMaxOutputChars: readNumber(value, 'strReplaceEditorMaxOutputChars',
+      readNumber(base, 'strReplaceEditorMaxOutputChars', 16000)),
     injectPrompt: readBoolean(value, 'injectPrompt', readBoolean(base, 'injectPrompt', true)),
     skillSwitches: value.skillSwitches !== undefined || base.skillSwitches !== undefined
       ? { ...readSkillSwitches(base, 'skillSwitches'), ...readSkillSwitches(value, 'skillSwitches') }
@@ -405,3 +436,7 @@ export function fieldsFromView(res: BridgeResult<BridgeSettingsView>): Fields {
   }
   return next
 }
+
+/** 编译期契约：所有引擎参数键都必须进入 Fields，防止 host 契约新增键后 client 静默丢弃。 */
+type MissingEngineParamKeys = Exclude<EngineParamKey, keyof Fields>
+const _assertEngineParamsInFields: MissingEngineParamKeys[] = []

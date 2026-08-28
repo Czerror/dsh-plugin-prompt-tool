@@ -15,7 +15,7 @@
 | 物化层 | `host/write-preset.ts` | `writePreset`：参数 + 内容资产 → 官方预设目录（agent.cordis.yml / prompt-configs / variables.yml）；`runtimeOf` 透传、`modelRequestConfigs` 模型 patch |
 | 装配层 | `index.ts` | `reloadPresetParams`（preset.yml → runtime）、`applyParamOverrides`（旧 overrides.yml 通道）、`rebuildPreset`（写入触发） |
 | 接线层 | `runtime/settings-bridge.ts` | `/param-overrides` GET（读回）/ POST（保存到激活预设 preset.yml） |
-| 消费端 | `client/prompt-tool-store.ts` | fields（UI 态）/ `persistParamOverrides`（总是发送，含空值）/ `paramPatch`（读回） |
+| 消费端 | `client/prompt-tool-store.ts` | fields（UI 态）/ `persistParamOverrides`（条件发送：已有键或已改动键）/ `paramPatch`（读回） |
 
 ## 2. 参数流链路（保存 → 生效）
 
@@ -45,7 +45,15 @@ UI fields
 | `0`（其余数字） | **写 0** | 引擎 `|| 默认` 等价（maxPromoteSteps 0→4、deferredGraceSteps 0→无延迟） |
 | `false`（布尔） | **写 false** | 引擎 `=== true` 归一，false = 显式关闭（与默认等价或明确） |
 
-UI 侧 `persistParamOverrides` **总是发送全部键**（含空值），否则「从有值改回留空」会残留旧键（历史 bug）。
+UI 侧 `persistParamOverrides` **条件发送**：
+
+- `load` 时记录 preset.yml 已存在的参数键；
+- 已有键即使被改成 `''` / `[]` / `false` 也发送，由保存层删除键；`stagePreUnlock: 0` 是合法档位，会照常写入；
+- 未改动且 preset.yml 未声明的 UI 默认值不发送，避免把 UI 默认固化成覆盖模板 `moduleConfigs` 的 params；
+- 用户把值改到与 UI 默认不同即发送。
+
+> 这里的「空值删键」只适用于引擎行为参数，不适用于内容占位变量。`variables` 的空字符串占位键是有意设计，必须继续写入 `variables.yml`。
+
 
 ## 4. variables 双通道（两套体系，不互串）
 
@@ -63,16 +71,28 @@ UI 侧 `persistParamOverrides` **总是发送全部键**（含空值），否则
 2. 若需 writePreset 透传：`PresetWriterParams` Pick 加键 + `WRITER_PARAM_KEYS` 加键（断言强制）。
 3. `host/manifest.ts`：`buildModuleConfigsFromParams` 加装配（否则契约测试「无装配消费」报错）。
 4. 存储：若走 model/subagentModel 顶层段 → `MODEL_SEGMENT_MAP` 加映射（展平/迁移共用）；否则 params 段。
-5. UI：`prompt-tool-store.ts` fields / paramPatch / persistParamOverrides / EMPTY 同步；组件加编辑入口。
+5. UI：`prompt-tool-bridge.ts` 的 Fields 必须覆盖全部 `EngineParamKey`（编译期断言），`prompt-tool-store.ts` 读回 / 快照 / persist 与组件编辑入口同步。
 6. 测试：`test/host/param-contract.test.mjs` 的 BRIDGE_SAMPLES 加样本值（若为参数桥消费键）。
 7. `docs/architecture-params.md` 如有语义变更同步；CHANGELOG 记条目。
 
-## 6. 合并优先级（组合行 config）
+## 6. 保存状态机（防保存期间编辑丢失）
+
+`persistParamOverrides` 不直接把“当前 fields”当作保存结果：
+
+1. 请求进入参数专用队列，串行化多次失焦/开关保存；
+2. 队列执行时生成 `savedSnapshot`，请求载荷与成功后的已保存基线都来自该快照；
+3. 请求成功后只把 `savedSnapshot` 写入 saved 基线；若用户在请求期间继续编辑，当前 fields 与快照不等，仍保持 dirty；
+4. 只有当前 fields 与快照一致时才触发静默 `load()`；读取期间草稿版本再次变化时，`load()` 放弃应用服务端快照，避免旧磁盘状态覆盖新草稿；
+5. provider 自动预选只是显示兜底：preset 未声明 provider 且模型名为空时不写入 params，防止 UI convenience default 被固化成用户覆盖。
+
+`SwitchSnapshot` 的 dirty 比较为全字段结构化深比较（数组/record 均参与），新增参数只要进入 snapshot 即自动参与脏检测。客户端 `Fields` 与 `EngineParamKey` 有编译期覆盖断言，防止 host 新增参数后 client 静默丢弃；`bridgePost` 对桥载荷做 runtime shape guard，异常 JSON 不再被直接当作成功结果消费。
+
+## 7. 合并优先级（组合行 config）
 
 `renderComposition`：**参数桥（params/UI）> moduleConfigs（模板/ST 行级直写）> 行默认**。
 moduleConfigs 仅补充参数桥未覆盖的键（如 ST 导入 tool-web.fetch），不再锁定覆盖 UI 可管理参数（2026-08-25 翻转）。
 
-## 7. 内容策略三功能与参数归属
+## 8. 内容策略三功能与参数归属
 
 `engine/strategies.mjs` 三个内容策略是**独立功能**，仅分类器在 fallback 层共用：
 
@@ -168,7 +188,7 @@ system-section 段（character-definition / system-prompt / post-history）。
 `complete: false`（开放，返回 `personaOpened: true`）；幂等（已开放不再改）；纯世界书卡
 （无 system-section）不触碰。
 
-## 7. 契约测试
+## 9. 契约测试
 
 - `test/host/param-contract.test.mjs`：PARAM_KEYS 派生一致性；每个 ENGINE_PARAM_KEYS 键有装配消费；MODEL_SEGMENT_MAP 段目标唯一。
-- `test/host/write-preset.test.mjs`：模型参数 patch 生成/留空跳过；空值删键（''/[]/0）；PARAM_KEYS 不进 variables.yml。
+- `test/host/write-preset.test.mjs`：模型参数 patch 生成/留空跳过；空值删键（''/[]，stagePreUnlock=0 保留）；PARAM_KEYS 不进 variables.yml，variables 空占位键保留。

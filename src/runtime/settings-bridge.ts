@@ -637,13 +637,26 @@ export function registerSettingsBridge(
               writeBridgeJson(res, 200, { ok: true, value: { overrides: readParamOverrides(dir) } })
               return
             }
+            const rawOverrides = record.overrides !== null && typeof record.overrides === 'object' && !Array.isArray(record.overrides)
+              ? record.overrides as Record<string, unknown>
+              : undefined
+            // 参数键白名单：未知键 fail loud，避免写入「读回/参数桥都不消费」的死键。
+            if (rawOverrides !== undefined) {
+              const unknownKeys = Object.keys(rawOverrides).filter((key) => key === 'promptConfigs' || !PARAM_KEYS.has(key))
+              if (unknownKeys.length > 0) {
+                writeBridgeJson(res, 400, {
+                  ok: false,
+                  code: 'overrides-unknown-key',
+                  message: `未知引擎参数键：${unknownKeys.join(', ')}`,
+                })
+                return
+              }
+            }
             try {
               savePresetParams(
                 presetRoot,
                 templateName,
-                record.overrides !== null && typeof record.overrides === 'object' && !Array.isArray(record.overrides)
-                  ? record.overrides as Record<string, unknown>
-                  : undefined,
+                rawOverrides,
                 Array.isArray(record.promptConfigs) ? record.promptConfigs as unknown[] : undefined,
               )
               afterOverridesChange?.()

@@ -2,6 +2,26 @@
 
 ## [Unreleased]
 
+### 修复引擎参数 0 值、保存竞态与未知键落盘（2026-08-28）
+
+- `stagePreUnlock: 0` 修正为合法档位并保留落盘；UI 未设置默认显示 1，与引擎
+  `undefined -> 1` 语义区分。`variables` 空字符串占位键保持原设计，继续写入
+  `variables.yml`，不受引擎参数空值删键规则影响。
+- 参数保存改为专用队列 + 发起时快照：成功后只标记该快照为已保存；请求期间继续
+  编辑不会把新草稿误标为已保存，也不会被保存后的静默 reload 覆盖。脏检测改为
+  SwitchSnapshot 全字段结构化深比较，修复大量参数键漏比较。
+- `/param-overrides` 增加引擎参数键白名单，未知键与 `overrides.promptConfigs`
+  误用 fail loud，避免写入读回/参数桥都不消费的死键。provider 自动预选不再在
+  无模型名时被固化写入 preset.yml。
+- `bridgePost` 增加桥载荷 runtime guard：成功必须包含 `value`，失败必须为
+  `ok:false`，异常形状不再被直接 cast 成成功类型。
+- 客户端 `Fields` 增加编译期 `EngineParamKey` 覆盖断言，并补齐
+  `phase1FirstCallInstruction` / `stageAdvanceDescription` /
+  `toolFilterSubagents` / `strReplaceEditorMaxOutputChars` 的读回、保存与 UI
+  编辑入口；`guideEnabled` 保留 undefined 跟随语义。
+- 验证：typecheck/lint 全绿，370 测试通过（新增未知参数键拒绝回归，更新
+  stagePreUnlock=0 保留回归）。
+
 ### 修复 /configs-validate 64KB 上限与切换后参数源不同步（2026-08-28）
 
 - `/configs-validate` 同样承载全量 promptConfigs（129 卡实测 70KB），此前沿用默认

@@ -437,18 +437,15 @@ export function savePresetParams(
   const file = join(presetRoot, templateName, 'preset.yml')
   if (!existsSync(file)) throw new Error(`preset ${templateName} 无 preset.yml`)
   const doc = parseDocument(readFileSync(file, 'utf8'), { logLevel: 'silent' })
-  // 空值 = 删除键（回落模板/引擎默认）：''（字符串清空）、[]（列表清空）、
-  // 以及 ZERO_DELETE_KEYS 的 0（引擎对 0 与未设置不等价，如 stagePreUnlock:
-  // undefined→1 而 0 是合法档位）。其余 0/false 照常写入（引擎布尔归一或
-  // `|| 默认` 等价，如 maxPromoteSteps 0→4）。
-  const ZERO_DELETE_KEYS = new Set(['stagePreUnlock'])
+  // 空值 = 删除键（回落模板/引擎默认）：''（字符串清空）、[]（列表清空）。
+  // 其余 0/false 照常写入：stagePreUnlock 的 0 是合法档位（undefined 才回落
+  // 引擎默认 1），maxPromoteSteps 0 由引擎归一为默认 4。
   if (params !== undefined) {
     for (const [key, value] of Object.entries(params)) {
       // 仅跳过 undefined/null 与空 key 名；空串/空数组照常写入——
       // 「从有值改回留空」依赖空值清掉旧键（渲染层空值跳过 = 继承模板/宿主默认）。
       if (value === undefined || value === null || key.trim().length === 0) continue
       const isEmpty = value === '' || (Array.isArray(value) && value.length === 0)
-        || (ZERO_DELETE_KEYS.has(key) && value === 0)
       const segment = MODEL_SEGMENT_MAP[key]
       if (segment !== undefined) {
         if (isEmpty) doc.deleteIn([segment[0], segment[1]])

@@ -36,6 +36,7 @@ export interface SwitchSnapshot {
   firstTurnCustom: boolean
   guideText: string
   guideCustom: boolean
+  guideEnabled: boolean | undefined
   modelProvider: string
   modelName: string
   subagentModelProvider: string
@@ -51,6 +52,7 @@ export interface SwitchSnapshot {
   stages: StageDraft[]
   stagePreUnlock: number
   stageAdvanceTool: string
+  stageAdvanceDescription: string
   stageSectionTemplate: string
   promoteGate: boolean
   promoteAfterFirstResponse: boolean
@@ -59,6 +61,7 @@ export interface SwitchSnapshot {
   compactionTools: string
   personaSectionsOnly: boolean
   workspaceLine: boolean
+  phase1FirstCallInstruction: string
   instructionHint: boolean
   messageSources: string
   deferredSources: string
@@ -71,6 +74,7 @@ export interface SwitchSnapshot {
   cotDrip: boolean
   cotDripEvery: number
   cotDripMaxPerTurn: number
+  strReplaceEditorMaxOutputChars: number
   injectPrompt: boolean
   skillSwitches: Record<string, boolean>
   skillOrder: string[]
@@ -91,6 +95,7 @@ const EMPTY_SWITCHES: SwitchSnapshot = {
   firstTurnCustom: false,
   guideText: '',
   guideCustom: false,
+  guideEnabled: undefined,
   modelProvider: '',
   modelName: '',
   subagentModelProvider: '',
@@ -104,8 +109,9 @@ const EMPTY_SWITCHES: SwitchSnapshot = {
   bootstrapMaxTokens: 0,
   usePtcMode: false,
   stages: [],
-  stagePreUnlock: 0,
+  stagePreUnlock: 1,
   stageAdvanceTool: '',
+  stageAdvanceDescription: '',
   stageSectionTemplate: '',
   promoteGate: false,
   promoteAfterFirstResponse: false,
@@ -114,6 +120,7 @@ const EMPTY_SWITCHES: SwitchSnapshot = {
   compactionTools: '',
   personaSectionsOnly: false,
   workspaceLine: false,
+  phase1FirstCallInstruction: '',
   instructionHint: false,
   messageSources: '',
   deferredSources: '',
@@ -126,6 +133,7 @@ const EMPTY_SWITCHES: SwitchSnapshot = {
   cotDrip: false,
   cotDripEvery: 0,
   cotDripMaxPerTurn: 0,
+  strReplaceEditorMaxOutputChars: 16000,
   injectPrompt: true,
   skillSwitches: {},
   skillOrder: [],
@@ -183,6 +191,7 @@ export const snapshotSwitches = (fields: Fields): SwitchSnapshot => ({
   firstTurnCustom: fields.firstTurnCustom,
   guideText: fields.guideText,
   guideCustom: fields.guideCustom,
+  guideEnabled: fields.guideEnabled,
   modelProvider: fields.modelProvider,
   modelName: fields.modelName,
   subagentModelProvider: fields.subagentModelProvider,
@@ -198,6 +207,7 @@ export const snapshotSwitches = (fields: Fields): SwitchSnapshot => ({
   stages: fields.stages.map((stage) => ({ ...stage })),
   stagePreUnlock: fields.stagePreUnlock,
   stageAdvanceTool: fields.stageAdvanceTool,
+  stageAdvanceDescription: fields.stageAdvanceDescription,
   stageSectionTemplate: fields.stageSectionTemplate,
   promoteGate: fields.promoteGate,
   promoteAfterFirstResponse: fields.promoteAfterFirstResponse,
@@ -206,6 +216,7 @@ export const snapshotSwitches = (fields: Fields): SwitchSnapshot => ({
   compactionTools: fields.compactionTools,
   personaSectionsOnly: fields.personaSectionsOnly,
   workspaceLine: fields.workspaceLine,
+  phase1FirstCallInstruction: fields.phase1FirstCallInstruction,
   instructionHint: fields.instructionHint,
   messageSources: fields.messageSources,
   deferredSources: fields.deferredSources,
@@ -218,6 +229,7 @@ export const snapshotSwitches = (fields: Fields): SwitchSnapshot => ({
   cotDrip: fields.cotDrip,
   cotDripEvery: fields.cotDripEvery,
   cotDripMaxPerTurn: fields.cotDripMaxPerTurn,
+  strReplaceEditorMaxOutputChars: fields.strReplaceEditorMaxOutputChars,
   injectPrompt: fields.injectPrompt,
   skillSwitches: { ...fields.skillSwitches },
   skillOrder: [...fields.skillOrder],
@@ -231,41 +243,40 @@ export const snapshotSwitches = (fields: Fields): SwitchSnapshot => ({
   writePreset: fields.writePreset,
 })
 
-const switchesEqual = (a: SwitchSnapshot, b: SwitchSnapshot): boolean =>
-  a.injectAgentsPrompt === b.injectAgentsPrompt
-  && a.firstTurnAnchor === b.firstTurnAnchor
-  && a.firstTurnText === b.firstTurnText
-  && a.firstTurnCustom === b.firstTurnCustom
-  && a.guideText === b.guideText
-  && a.guideCustom === b.guideCustom
-  && a.modelProvider === b.modelProvider
-  && a.modelName === b.modelName
-  && a.subagentModelProvider === b.subagentModelProvider
-  && a.subagentModelName === b.subagentModelName
-  && a.modelReasoningEffort === b.modelReasoningEffort
-  && a.modelTemperature === b.modelTemperature
-  && a.modelMaxTokens === b.modelMaxTokens
-  && a.subagentReasoningEffort === b.subagentReasoningEffort
-  && a.subagentTemperature === b.subagentTemperature
-  && a.subagentMaxTokens === b.subagentMaxTokens
-  && a.bootstrapMaxTokens === b.bootstrapMaxTokens
-  && a.usePtcMode === b.usePtcMode
-  && a.injectPrompt === b.injectPrompt
-  && (a.skillSwitches === b.skillSwitches || JSON.stringify(a.skillSwitches) === JSON.stringify(b.skillSwitches))
-  && (a.skillOrder === b.skillOrder || JSON.stringify(a.skillOrder) === JSON.stringify(b.skillOrder))
-  && (a.skillsDirs === b.skillsDirs || JSON.stringify(a.skillsDirs) === JSON.stringify(b.skillsDirs))
-  && a.skillRankBase === b.skillRankBase
-  && a.residentAgentsPath === b.residentAgentsPath
-  && a.presetDir === b.presetDir
-  && a.presetOrder === b.presetOrder
-  && a.fallbackText === b.fallbackText
-  && a.writeAgents === b.writeAgents
-  && a.writePreset === b.writePreset
+const isPlainRecord = (value: unknown): value is Record<string, unknown> =>
+  value !== null && typeof value === 'object' && !Array.isArray(value)
 
-export type SwitchKey = 'injectAgentsPrompt' | 'firstTurnAnchor' | 'firstTurnCustom' | 'guideCustom' | 'injectPrompt' | 'usePtcMode' | 'promoteGate' | 'promoteAfterFirstResponse' | 'personaSectionsOnly' | 'workspaceLine' | 'instructionHint' | 'anchorTurn' | 'deliberationGate' | 'cotDrip' | 'writeAgents' | 'writePreset'
+/** 深比较 snapshot 内的数组/record；不使用 JSON.stringify，避免键顺序影响脏检测。 */
+const deepEqual = (a: unknown, b: unknown): boolean => {
+  if (a === b) return true
+  if (Array.isArray(a) || Array.isArray(b)) {
+    if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false
+    return a.every((item, index) => deepEqual(item, b[index]))
+  }
+  if (isPlainRecord(a) || isPlainRecord(b)) {
+    if (!isPlainRecord(a) || !isPlainRecord(b)) return false
+    const keys = new Set([...Object.keys(a), ...Object.keys(b)])
+    for (const key of keys) {
+      if (!deepEqual(a[key], b[key])) return false
+    }
+    return true
+  }
+  return false
+}
+
+/** 全字段结构化比较：SwitchSnapshot 声明的每个键都参与，防止新增参数漏比较。 */
+const switchesEqual = (a: SwitchSnapshot, b: SwitchSnapshot): boolean => {
+  const keys = new Set([...Object.keys(a), ...Object.keys(b)])
+  for (const key of keys) {
+    if (!deepEqual(a[key as keyof SwitchSnapshot], b[key as keyof SwitchSnapshot])) return false
+  }
+  return true
+}
+
+export type SwitchKey = 'injectAgentsPrompt' | 'firstTurnAnchor' | 'firstTurnCustom' | 'guideCustom' | 'toolFilterSubagents' | 'injectPrompt' | 'usePtcMode' | 'promoteGate' | 'promoteAfterFirstResponse' | 'personaSectionsOnly' | 'workspaceLine' | 'instructionHint' | 'anchorTurn' | 'deliberationGate' | 'cotDrip' | 'writeAgents' | 'writePreset'
 
 /** 参数类布尔开关：写激活预设 preset.yml（settings 只留全局开关）。 */
-const PARAM_SWITCH_KEYS: ReadonlySet<SwitchKey> = new Set(['firstTurnAnchor', 'firstTurnCustom', 'guideCustom', 'injectPrompt', 'usePtcMode', 'promoteGate', 'promoteAfterFirstResponse', 'personaSectionsOnly', 'workspaceLine', 'instructionHint', 'anchorTurn', 'deliberationGate', 'cotDrip'])
+const PARAM_SWITCH_KEYS: ReadonlySet<SwitchKey> = new Set(['firstTurnAnchor', 'firstTurnCustom', 'guideCustom', 'toolFilterSubagents', 'injectPrompt', 'usePtcMode', 'promoteGate', 'promoteAfterFirstResponse', 'personaSectionsOnly', 'workspaceLine', 'instructionHint', 'anchorTurn', 'deliberationGate', 'cotDrip'])
 
 export interface PromptToolStore {
   fields: Fields
@@ -410,7 +421,14 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
   }, [])
   const revisionRef = useRef<number | undefined>(undefined)
   const saveQueueRef = useRef<Promise<void>>(Promise.resolve())
+  const paramSaveQueueRef = useRef<Promise<void>>(Promise.resolve())
   const loadSeqRef = useRef(0)
+  /** 用户草稿版本：patch 时递增。load 应答返回时若版本变化，跳过覆盖，避免
+   *  保存后的静默刷新吞掉用户在读取期间的编辑。 */
+  const draftVersionRef = useRef(0)
+  /** applyView 自动预选的 provider：无模型名时不作为用户显式参数落盘。 */
+  const autoModelProviderRef = useRef<string | undefined>(undefined)
+  const autoSubagentModelProviderRef = useRef<string | undefined>(undefined)
   /** 最近一次 load 时 preset.yml params 现有键集：persist 只发送「已有键或已改动」，
    *  未动过的键不写——避免 UI 默认值固化覆盖模板 moduleConfigs 默认（liangshen 等）。 */
   const loadedKeysRef = useRef<Set<string>>(new Set())
@@ -442,7 +460,9 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
         if (value === undefined || value === null || key === 'promptConfigs') continue
         const current = nextRecord[key]
         if (current === undefined) continue
-        if (typeof current === 'boolean' && typeof value === 'boolean') {
+        if (key === 'guideEnabled' && typeof value === 'boolean') {
+          nextRecord[key] = value
+        } else if (typeof current === 'boolean' && typeof value === 'boolean') {
           nextRecord[key] = value
         } else if (typeof current === 'number' && typeof value === 'number') {
           nextRecord[key] = value
@@ -453,12 +473,17 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
     }
     // 检测到 DeepSeek 路由且用户未设置服务商时，直接预选第一个检测到的 provider
     // （模型名为空则路由不激活，继承主会话语义不变；用户后续选择模型名即生效）。
+    // 自动预选值记录到 ref：它只是显示兜底，不作为用户显式参数写进 preset.yml。
+    autoModelProviderRef.current = undefined
     if (res.ok && next.modelProvider === '' && (res.providers?.length ?? 0) > 0) {
-      next.modelProvider = res.providers![0]!
+      autoModelProviderRef.current = res.providers![0]!
+      next.modelProvider = autoModelProviderRef.current
     }
     // 子代理服务商同样预选：模型名为空则固定路由不激活（继承主会话），仅让模型名下拉有候选。
+    autoSubagentModelProviderRef.current = undefined
     if (res.ok && next.subagentModelProvider === '' && (res.providers?.length ?? 0) > 0) {
-      next.subagentModelProvider = res.providers![0]!
+      autoSubagentModelProviderRef.current = res.providers![0]!
+      next.subagentModelProvider = autoSubagentModelProviderRef.current
     }
     publishFields(next)
     setBootstrapTokensDraft(next.bootstrapMaxTokens > 0 ? String(next.bootstrapMaxTokens) : DEFAULT_BOOTSTRAP_DISPLAY)
@@ -475,6 +500,7 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
   const load = useCallback(async (options?: { silent?: boolean }) => {
     // 并发保护：慢的旧请求不得覆盖新请求（last-good 语义保留旧数据）。
     const seq = ++loadSeqRef.current
+    const draftVersion = draftVersionRef.current
     // silent：保存后静默刷新（不闪 loading、避免重渲染风暴与滚动跳动）；失败仍报错。
     if (!options?.silent) setLoading(true)
     try {
@@ -482,6 +508,8 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
       // 实际生效配置一次取回（此前 5 端点串行，preset.yml 每端点读盘解析）。
       const boot = await bridgePost<BridgeSettingsView>('/bootstrap', {})
       if (seq !== loadSeqRef.current) return EMPTY_FIELDS
+      // 读取期间用户已修改草稿：不应用服务端快照覆盖，保留草稿；后续保存/读取再同步。
+      if (draftVersionRef.current !== draftVersion) return fieldsRef.current
       if (!boot.ok) {
         showNotice('error', '读取配置失败：' + (boot.message ?? 'bootstrap unavailable'))
         return EMPTY_FIELDS
@@ -502,6 +530,7 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
         if (typeof o.firstTurnCustom === 'boolean') paramPatch.firstTurnCustom = o.firstTurnCustom
         if (typeof o.guideText === 'string') paramPatch.guideText = o.guideText
         if (typeof o.guideCustom === 'boolean') paramPatch.guideCustom = o.guideCustom
+        if (typeof o.guideEnabled === 'boolean') paramPatch.guideEnabled = o.guideEnabled
         if (typeof o.modelProvider === 'string') paramPatch.modelProvider = o.modelProvider
         if (typeof o.modelName === 'string') paramPatch.modelName = o.modelName
         if (typeof o.subagentModelProvider === 'string') paramPatch.subagentModelProvider = o.subagentModelProvider
@@ -550,9 +579,11 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
         }
         if (typeof o.stagePreUnlock === 'number') paramPatch.stagePreUnlock = o.stagePreUnlock
         if (typeof o.stageAdvanceTool === 'string') paramPatch.stageAdvanceTool = o.stageAdvanceTool
+        if (typeof o.stageAdvanceDescription === 'string') paramPatch.stageAdvanceDescription = o.stageAdvanceDescription
         if (typeof o.stageSectionTemplate === 'string') paramPatch.stageSectionTemplate = o.stageSectionTemplate
         if (typeof o.personaSectionsOnly === 'boolean') paramPatch.personaSectionsOnly = o.personaSectionsOnly
         if (typeof o.workspaceLine === 'boolean') paramPatch.workspaceLine = o.workspaceLine
+        if (typeof o.phase1FirstCallInstruction === 'string') paramPatch.phase1FirstCallInstruction = o.phase1FirstCallInstruction
         if (typeof o.instructionHint === 'boolean') paramPatch.instructionHint = o.instructionHint
         // context-gate 注入门控。
         if (Array.isArray(o.messageSources)) paramPatch.messageSources = o.messageSources.join(', ')
@@ -569,6 +600,7 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
         if (typeof o.cotDrip === 'boolean') paramPatch.cotDrip = o.cotDrip
         if (typeof o.cotDripEvery === 'number') paramPatch.cotDripEvery = o.cotDripEvery
         if (typeof o.cotDripMaxPerTurn === 'number') paramPatch.cotDripMaxPerTurn = o.cotDripMaxPerTurn
+        if (typeof o.strReplaceEditorMaxOutputChars === 'number') paramPatch.strReplaceEditorMaxOutputChars = o.strReplaceEditorMaxOutputChars
         if (Object.keys(paramPatch).length > 0) {
           const next = { ...fieldsRef.current, ...paramPatch }
           publishFields(next)
@@ -621,6 +653,7 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
   }, [settings])
 
   const patch = useCallback((partial: Partial<Fields>) => {
+    draftVersionRef.current += 1
     let next = { ...fieldsRef.current, ...partial }
     // complete 互斥：system-section/persona 共用官方 complete 语义（预设内仅一个），
     // 开启任一 enabled 配置的 complete 时自动关闭其他 enabled 配置的 complete。
@@ -675,45 +708,55 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
     }).catch(() => {})
   }, [refreshRevision, settings, showNotice])
 
-  const persistSwitches = useCallback((onSaved?: () => void) => enqueueSave(
-    [
-      { op: 'set', path: ['injectAgentsPrompt'], value: fieldsRef.current.injectAgentsPrompt },
-      { op: 'set', path: ['skillSwitches'], value: fieldsRef.current.skillSwitches },
-      { op: 'set', path: ['skillOrder'], value: fieldsRef.current.skillOrder },
-      { op: 'set', path: ['skillsDirs'], value: fieldsRef.current.skillsDirs },
-      { op: 'set', path: ['skillRankBase'], value: fieldsRef.current.skillRankBase },
-      { op: 'set', path: ['residentAgentsPath'], value: fieldsRef.current.residentAgentsPath },
-      { op: 'set', path: ['presetDir'], value: fieldsRef.current.presetDir },
-      { op: 'set', path: ['presetOrder'], value: fieldsRef.current.presetOrder },
-      { op: 'set', path: ['fallbackText'], value: fieldsRef.current.fallbackText },
-      { op: 'set', path: ['writeAgents'], value: fieldsRef.current.writeAgents },
-      { op: 'set', path: ['writePreset'], value: fieldsRef.current.writePreset },
-    ],
-    undefined,
-    () => {
-      setSavedSwitches(snapshotSwitches(fieldsRef.current))
-      onSaved?.()
-    },
-  ), [enqueueSave])
+  const persistSwitches = useCallback((onSaved?: () => void) => {
+    const savedSnapshot = snapshotSwitches(fieldsRef.current)
+    return enqueueSave(
+      [
+        { op: 'set', path: ['injectAgentsPrompt'], value: fieldsRef.current.injectAgentsPrompt },
+        { op: 'set', path: ['skillSwitches'], value: fieldsRef.current.skillSwitches },
+        { op: 'set', path: ['skillOrder'], value: fieldsRef.current.skillOrder },
+        { op: 'set', path: ['skillsDirs'], value: fieldsRef.current.skillsDirs },
+        { op: 'set', path: ['skillRankBase'], value: fieldsRef.current.skillRankBase },
+        { op: 'set', path: ['residentAgentsPath'], value: fieldsRef.current.residentAgentsPath },
+        { op: 'set', path: ['presetDir'], value: fieldsRef.current.presetDir },
+        { op: 'set', path: ['presetOrder'], value: fieldsRef.current.presetOrder },
+        { op: 'set', path: ['fallbackText'], value: fieldsRef.current.fallbackText },
+        { op: 'set', path: ['writeAgents'], value: fieldsRef.current.writeAgents },
+        { op: 'set', path: ['writePreset'], value: fieldsRef.current.writePreset },
+      ],
+      undefined,
+      () => {
+        setSavedSwitches(savedSnapshot)
+        onSaved?.()
+      },
+    )
+  }, [enqueueSave])
 
-  /** 参数类设置：写入激活预设 preset.yml（savePresetParams；随预设隔离）。 */
+  /** 参数类设置：写入激活预设 preset.yml（savePresetParams；随预设隔离）。
+   *  保存进独立队列；请求成功只把「发起时快照」标记为已保存。若用户在请求期间
+   *  继续编辑，则跳过静默重载，避免磁盘旧快照覆盖未保存草稿。 */
   const persistParamOverrides = useCallback(async () => {
-    const f = fieldsRef.current
-    const splitList = (value: string): string[] => value.split(',').map((item) => item.trim()).filter((item) => item.length > 0)
-    const loadedKeys = loadedKeysRef.current
-    // 条件发送：preset.yml 已有该键（含模板默认键）或字段值 != UI 默认 → 发送；
-    // 未动过的键不写——既保留「改回留空清旧值」（已有键总是发送空值删键），
-    // 又避免 UI 默认值固化覆盖模板 moduleConfigs 默认（liangshen promoteGate=true
-    // 等被首次保存的 false 静默改写——参数桥优先后的回归）。
-    const emit = (key: string, value: unknown, empty: unknown): Record<string, unknown> =>
-      loadedKeys.has(key) || JSON.stringify(value) !== JSON.stringify(empty) ? { [key]: value } : {}
-    const res = await bridgePost<{ overrides: unknown }>('/param-overrides', {
-      overrides: {
+    const run = async (): Promise<void> => {
+      const f = fieldsRef.current
+      const savedSnapshot = snapshotSwitches(f)
+      const splitList = (value: string): string[] => value.split(',').map((item) => item.trim()).filter((item) => item.length > 0)
+      const loadedKeys = loadedKeysRef.current
+      // 条件发送：preset.yml 已有该键（含模板默认键）或字段值 != UI 默认 -> 发送；
+      // 未动过的键不写--既保留「改回留空清旧值」（已有键总是发送空值删键），
+      // 又避免 UI 默认值固化覆盖模板 moduleConfigs 默认（liangshen promoteGate=true
+      // 等被首次保存的 false 静默改写--参数桥优先后的回归）。
+      const emit = (key: string, value: unknown, empty: unknown): Record<string, unknown> =>
+        loadedKeys.has(key) || !deepEqual(value, empty) ? { [key]: value } : {}
+      // provider 自动预选只是显示兜底：preset 未声明且模型名为空时不落盘。
+      const providerShouldPersist = (key: 'modelProvider' | 'subagentModelProvider', value: string, auto: string | undefined, modelName: string): boolean =>
+        loadedKeys.has(key) || modelName.length > 0 || value !== auto
+      const overrides: Record<string, unknown> = {
         ...emit('firstTurnAnchor', f.firstTurnAnchor, false),
         ...emit('firstTurnText', f.firstTurnText, ''),
         ...emit('firstTurnCustom', f.firstTurnCustom, false),
         ...emit('guideText', f.guideText, ''),
         ...emit('guideCustom', f.guideCustom, false),
+        ...emit('guideEnabled', f.guideEnabled, undefined),
         ...emit('usePtcMode', f.usePtcMode, false),
         ...emit('injectPrompt', f.injectPrompt, true),
         ...emit('modelProvider', f.modelProvider, ''),
@@ -728,6 +771,7 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
         ...emit('subagentMaxTokens', f.subagentMaxTokens, ''),
         ...emit('toolFilterAllow', splitList(f.toolFilterAllow), []),
         ...emit('toolFilterDeny', splitList(f.toolFilterDeny), []),
+        ...emit('toolFilterSubagents', f.toolFilterSubagents, false),
         ...emit('maxDepth', f.maxDepth === '' ? '' : f.maxDepth === 'provider-managed' ? 'provider-managed' : Number(f.maxDepth), ''),
         ...emit('allowKinds', splitList(f.allowKinds), []),
         ...emit('firstTurnWord', f.firstTurnWord, ''),
@@ -745,11 +789,14 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
             tools: splitList(stage.tools),
           }))
           .filter((stage) => stage.name.length > 0 && stage.tools.length > 0), []),
-        ...emit('stagePreUnlock', f.stagePreUnlock, 0),
+        // 未设置 = 1（引擎默认）；0 是合法档位，必须能发送并落盘。
+        ...emit('stagePreUnlock', f.stagePreUnlock, 1),
         ...emit('stageAdvanceTool', f.stageAdvanceTool, ''),
+        ...emit('stageAdvanceDescription', f.stageAdvanceDescription, ''),
         ...emit('stageSectionTemplate', f.stageSectionTemplate, ''),
         ...emit('personaSectionsOnly', f.personaSectionsOnly, false),
         ...emit('workspaceLine', f.workspaceLine, false),
+        ...emit('phase1FirstCallInstruction', f.phase1FirstCallInstruction, ''),
         ...emit('instructionHint', f.instructionHint, false),
         // context-gate 注入门控。
         ...emit('messageSources', splitList(f.messageSources), []),
@@ -764,15 +811,26 @@ export function usePromptToolStore(api: IApiClient, settings: PromptToolSettings
         ...emit('cotDrip', f.cotDrip, false),
         ...emit('cotDripEvery', f.cotDripEvery, 0),
         ...emit('cotDripMaxPerTurn', f.cotDripMaxPerTurn, 0),
-      },
-    })
-    if (res.ok) {
-      setSavedSwitches(snapshotSwitches(fieldsRef.current))
-      // 参数已写激活预设 preset.yml：服务端重建后刷新（模型参数配置等随预设变化）。
-      void load({ silent: true })
-    } else {
-      showNotice('error', '参数保存失败：' + (res.message ?? 'settings bridge unavailable'))
+        ...emit('strReplaceEditorMaxOutputChars', f.strReplaceEditorMaxOutputChars, 16000),
+      }
+      // 自动预选 provider 不落盘：从条件发送结果中剔除，除非用户改选或填写模型名。
+      if (!providerShouldPersist('modelProvider', f.modelProvider, autoModelProviderRef.current, f.modelName)) delete overrides.modelProvider
+      if (!providerShouldPersist('subagentModelProvider', f.subagentModelProvider, autoSubagentModelProviderRef.current, f.subagentModelName)) delete overrides.subagentModelProvider
+      const res = await bridgePost<{ overrides: unknown }>('/param-overrides', { overrides })
+      if (res.ok) {
+        // 只标记发起时快照；若期间有新编辑，当前 fields 仍保持 dirty。
+        setSavedSwitches(savedSnapshot)
+        const currentSnapshot = snapshotSwitches(fieldsRef.current)
+        if (switchesEqual(currentSnapshot, savedSnapshot)) {
+          // 参数已写激活预设 preset.yml：服务端重建后刷新（模型参数配置等随预设变化）。
+          void load({ silent: true })
+        }
+      } else {
+        showNotice('error', '参数保存失败：' + (res.message ?? 'settings bridge unavailable'))
+      }
     }
+    paramSaveQueueRef.current = paramSaveQueueRef.current.then(run).catch(() => {})
+    await paramSaveQueueRef.current
   }, [load, showNotice])
 
   /** 保存后是否静默重载。切换预设时传 false（随后的 settings.mutate 回调会统一 load，
