@@ -21,6 +21,12 @@ writeFileSync(join(tuiDir, 'preset.yml'), [
   '    strategy: static',
   '    text: 注入文本',
   '    params: { maxTokens: 4096 }',
+  '  - id: has space',
+  '    name: 带空格配置',
+  '    enabled: true',
+  '    layer: pre-step',
+  '    strategy: static',
+  '    text: 空格 ID',
   '  - id: sys',
   '    enabled: false',
   '    layer: system-section',
@@ -28,7 +34,7 @@ writeFileSync(join(tuiDir, 'preset.yml'), [
   '',
 ].join('\n'), 'utf8')
 
-function makeTui() {
+function makeTui({ failSave = false, skillCatalog = [] } = {}) {
   const commands = []
   const mutations = []
   const savedParams = []
@@ -40,7 +46,7 @@ function makeTui() {
   const source = () => ({
     modelsAvailable: true,
     activeSkillsDirs: ['D:/skills'],
-    skillCatalog: [],
+    skillCatalog,
     skillSwitches: {},
     ...Object.fromEntries([
       'writeAgents', 'writePreset', 'injectAgentsPrompt',
@@ -53,7 +59,10 @@ function makeTui() {
     () => ({ available: true, providers: ['deepseek-official'] }),
     () => Promise.resolve({ 'deepseek-official': ['deepseek-v4-flash', 'deepseek-v4-pro'] }),
     () => tuiDir,
-    (key, value) => savedParams.push([key, value]),
+    (key, value) => {
+      if (failSave) throw new Error('disk full')
+      savedParams.push([key, value])
+    },
   )
   const handler = commands[0].handler
   return {
@@ -125,6 +134,37 @@ test('TUI：未知 id 与缺 id 分别给出错误与用法', async () => {
   const usage = await run('config')
   assert.equal(usage.kind, 'error')
   assert.match(usage.text, /\/prompt-tool config <id>/)
+  assert.match(usage.text, /guideEnabled/)
+  assert.match(usage.text, /config <id> on\|off\|toggle/)
+})
+
+test('TUI：/prompt-tool skill 支持带空格的技能目录名', async () => {
+  const { run, mutations } = makeTui({
+    skillCatalog: [{ folder: 'web ui', name: 'Web UI', valid: true, modelInvocable: true }],
+  })
+  const result = await run('skill web ui on')
+  assert.equal(result.kind, 'success')
+  assert.match(result.text, /已把技能 web ui 设为 开/)
+  assert.deepEqual(mutations[0][0].path, ['skillSwitches', 'web ui'])
+})
+
+test('TUI：/prompt-tool config 支持带空格的 id', async () => {
+  const { run, savedParams } = makeTui()
+  const result = await run('config has space off')
+  assert.equal(result.kind, 'success')
+  assert.match(result.text, /已把提示词配置 has space 设为 关/)
+  assert.equal(savedParams[0][0], 'promptConfigs')
+  const nextConfigs = savedParams[0][1]
+  assert.equal(nextConfigs.find((config) => config.id === 'has space').enabled, false)
+})
+
+test('TUI：预设参数保存失败时返回错误而不是成功', async () => {
+  const { run, mutations, savedParams } = makeTui({ failSave: true })
+  const result = await run('toggle firstTurnAnchor')
+  assert.equal(result.kind, 'error')
+  assert.match(result.text, /保存 firstTurnAnchor 失败：disk full/)
+  assert.equal(mutations.length, 0)
+  assert.equal(savedParams.length, 0)
 })
 
 test('TUI：参数开关切换走 savePresetParam 回调，全局开关仍走 settings mutate', async () => {

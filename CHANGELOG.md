@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### 修复 /prompt-tool 命令标识符与保存失败反馈（2026-08-30）
+
+- `skill` 与 `config` 子命令支持带空格的技能目录名 / 提示词配置 id：动作固定
+  取最后一个 `on|off|toggle` token，内置 `web ui` 技能不再落入 usage error。
+- 预设参数保存失败不再吞错后返回 success：`savePresetParam` 失败会传播到
+  `CommandResult:error`，用户能看到具体写入/重建失败原因。
+- usage 补齐 `guideEnabled`，并标注技能目录名与配置 id 可含空格。
+- 新增 3 个回归测试（带空格 skill、带空格 config、保存失败返回错误）。
+- 验证：typecheck / lint / build 全绿，375 测试通过。
+
 ### 对齐侧边栏入口家族样式（2026-08-30）
 
 - 「提示词工具」侧边栏入口与任务看板、记忆系统家族统一：36px 行高、

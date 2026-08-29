@@ -159,6 +159,36 @@ function parseTuiBoolean(token: string | undefined, current: boolean): boolean |
   return undefined
 }
 
+type CommandAction = 'on' | 'off' | 'toggle'
+
+function asCommandAction(token: string): CommandAction | undefined {
+  return token === 'on' || token === 'off' || token === 'toggle' ? token : undefined
+}
+
+/**
+ * 解析可含空格的标识符与末尾动作。
+ *
+ * 斜杠命令没有 shell 引号语义，因此动作只认“最后一个独立 token”。config 的
+ * 详情形态没有动作；只有去掉末尾动作后的候选 id 已存在时才把末尾 token 视为
+ * 动作，避免把普通 id 误拆。
+ */
+function parseIdentifierAndAction(
+  tokens: readonly string[],
+  exists: (id: string) => boolean,
+): { id: string; action?: CommandAction } {
+  if (tokens.length === 0) return { id: '' }
+  const last = tokens[tokens.length - 1]
+  const action = asCommandAction(last ?? '')
+  if (action !== undefined && tokens.length >= 2) {
+    const id = tokens.slice(0, -1).join(' ')
+    if (exists(id)) return { id, action }
+  }
+  return { id: tokens.join(' ') }
+}
+
+/** 参数保存回调：写激活预设 preset.yml；失败必须抛给命令层渲染为错误。 */
+export type SavePresetParam = (key: string, value: unknown) => void | Promise<void>
+
 /** 通过 DSH 命令注册表暴露 /prompt-tool，Web 与 dsh-tui 都能执行。 */
 export function registerTuiCommand(
   ctx: Context,
@@ -167,24 +197,34 @@ export function registerTuiCommand(
   getModelsState: () => ModelDetection,
   getModelCatalog: () => Promise<Record<string, string[]>>,
   getPresetConfigsDir?: () => string,
-  /** 参数保存回调（写激活预设 preset.yml；key='promptConfigs' 时 value 为数组）。 */
-  savePresetParam?: (key: string, value: unknown) => void,
+  savePresetParam?: SavePresetParam,
 ): void {
   ctx.inject(['settings'], (sctx: Context) => {
     return sctx.commands.register({
       name: 'prompt-tool',
       description: '提示词工具：查看或切换本插件开关',
-      input: { hint: 'status | on/off/toggle <开关> | skill <目录名> on/off | config <id> [on/off/toggle]' },
+      input: { hint: 'status | on/off/toggle <开关> | skill <目录名> on/off/toggle | config <id> [on/off/toggle]' },
       handler: async (invocation): Promise<CommandResult> => {
         const usage = (): CommandResult => ({
           kind: 'error',
           text: '用法：/prompt-tool status\n' +
-            '      /prompt-tool on|off|toggle <writeAgents|writePreset|injectPrompt|injectAgentsPrompt|firstTurnAnchor|firstTurnCustom|guideCustom|usePtcMode>\n' +
-            '      /prompt-tool skill <技能目录名> on|off|toggle\n' +
-            '      /prompt-tool config <id>\n' +
+            '      /prompt-tool on|off|toggle <writeAgents|writePreset|injectPrompt|injectAgentsPrompt|firstTurnAnchor|firstTurnCustom|guideEnabled|guideCustom|usePtcMode>\n' +
+            '      /prompt-tool skill <技能目录名> on|off|toggle（目录名可含空格）\n' +
+            '      /prompt-tool config <id>（id 可含空格）\n' +
             '      /prompt-tool config <id> on|off|toggle\n' +
             '      /prompt-tool bootstrapMaxTokens <正整数|0（关闭）>',
         })
+        const persistPresetParam = async (key: string, value: unknown): Promise<CommandResult | undefined> => {
+          if (savePresetParam === undefined) {
+            return { kind: 'error', text: `无法保存 ${key}：预设参数保存回调不可用` }
+          }
+          try {
+            await savePresetParam(key, value)
+            return undefined
+          } catch (error) {
+            return { kind: 'error', text: `保存 ${key} 失败：${error instanceof Error ? error.message : String(error)}` }
+          }
+        }
         const tokens = invocation.rawInput.trim().split(/\s+/).filter((token) => token.length > 0)
         const source = getSource()
         const presetDir = getPresetConfigsDir?.()
@@ -203,10 +243,10 @@ export function registerTuiCommand(
           return { kind: 'success', text: renderTuiStatus(source, params, promptConfigs) + '\n' + providersLine + '\n' + modelsLine }
         }
         if (tokens[0] === 'skill') {
-          const folder = tokens[1]
-          if (folder === undefined) return usage()
+          const { id: folder, action } = parseIdentifierAndAction(tokens.slice(1), () => true)
+          if (folder.length === 0) return usage()
           const current = source.skillSwitches[folder] !== false
-          const next = parseTuiBoolean(tokens[2], current)
+          const next = parseTuiBoolean(action, current)
           if (next === undefined) return usage()
           await sctx.settings.mutate(ns, [{ op: 'set', path: ['skillSwitches', folder], value: next }])
           return { kind: 'success', text: `已把技能 ${folder} 设为 ${next ? '开' : '关'}
@@ -214,19 +254,22 @@ export function registerTuiCommand(
 ${renderTuiStatus(getSource(), readPresetParams(getPresetConfigsDir?.()), resolvePromptConfigs(getPresetConfigsDir?.(), []))}` }
         }
         if (tokens[0] === 'config') {
-          const id = tokens[1]
-          if (id === undefined) return usage()
+          const { id, action } = parseIdentifierAndAction(
+            tokens.slice(1),
+            (candidate) => promptConfigs.some((config) => config.id === candidate),
+          )
+          if (id.length === 0) return usage()
           const current = promptConfigs.find((config) => config.id === id)
           if (current === undefined) {
             return { kind: 'error', text: `未找到提示词配置 ${id}；用 /prompt-tool status 查看全部 id。` }
           }
-          const action = tokens[2]
           if (action === undefined) return { kind: 'success', text: renderConfigDetail(source, id, promptConfigs) }
           const next = parseTuiBoolean(action, current.enabled !== false)
           if (next === undefined) return usage()
           const nextConfigs = promptConfigs.map((config) => config.id === id ? { ...config, enabled: next } : config)
-          // promptConfigs 按预设存储：写激活预设 preset.yml。
-          savePresetParam?.('promptConfigs', nextConfigs)
+          // promptConfigs 按预设存储：写激活预设 preset.yml；失败时不再报告成功。
+          const failure = await persistPresetParam('promptConfigs', nextConfigs)
+          if (failure !== undefined) return failure
           return { kind: 'success', text: `已把提示词配置 ${id} 设为 ${next ? '开' : '关'}
 
 ${renderConfigDetail(getSource(), id, resolvePromptConfigs(getPresetConfigsDir?.(), []))}` }
@@ -238,7 +281,8 @@ ${renderConfigDetail(getSource(), id, resolvePromptConfigs(getPresetConfigsDir?.
             return { kind: 'error', text: 'bootstrapMaxTokens 需要非负整数：0 关闭封顶，正整数设置首轮 maxTokens。' }
           }
           // bootstrapMaxTokens 按预设存储：写激活预设 preset.yml。
-          savePresetParam?.('bootstrapMaxTokens', value)
+          const failure = await persistPresetParam('bootstrapMaxTokens', value)
+          if (failure !== undefined) return failure
           return { kind: 'success', text: `已把 bootstrapMaxTokens 设为 ${value === 0 ? '关闭（不设封顶）' : String(value)}
 
 ${renderTuiStatus(getSource(), readPresetParams(getPresetConfigsDir?.()), resolvePromptConfigs(getPresetConfigsDir?.(), []))}` }
@@ -262,7 +306,8 @@ ${renderTuiStatus(getSource(), readPresetParams(getPresetConfigsDir?.()), resolv
           await sctx.settings.mutate(ns, [{ op: 'set', path: [key], value: next }])
         } else {
           // 参数开关：写激活预设 preset.yml（settings 不再承载引擎参数）。
-          savePresetParam?.(key, next)
+          const failure = await persistPresetParam(key, next)
+          if (failure !== undefined) return failure
         }
         return { kind: 'success', text: `已把 ${key} 设为 ${next ? '开' : '关'}
 

@@ -594,18 +594,15 @@ registerTuiCommand(
   () => listAdvertisedModels(ctx),
   () => activePresetDir(),
   // TUI 参数开关：写激活预设 preset.yml（settings 不再承载引擎参数）。
+  // 保存/重建失败直接抛给命令层，由 CommandResult:error 呈现给用户。
   (key, value) => {
-    try {
-      if (key === 'promptConfigs') {
-        savePresetParams(runtime.presetDir, runtime.presetTemplate, undefined, Array.isArray(value) ? value as unknown[] : undefined)
-      } else {
-        savePresetParams(runtime.presetDir, runtime.presetTemplate, { [key]: value }, undefined)
-      }
-      reloadPresetParams()
-      rebuildPreset()
-    } catch (error) {
-      warn(ctx, `prompt-tool: TUI 参数保存失败：${error instanceof Error ? error.message : String(error)}`)
+    if (key === 'promptConfigs') {
+      savePresetParams(runtime.presetDir, runtime.presetTemplate, undefined, Array.isArray(value) ? value as unknown[] : undefined)
+    } else {
+      savePresetParams(runtime.presetDir, runtime.presetTemplate, { [key]: value }, undefined)
     }
+    reloadPresetParams()
+    rebuildPreset()
   },
 )
 
