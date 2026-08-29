@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### 对齐侧边栏入口家族样式（2026-08-30）
+
+- 「提示词工具」侧边栏入口与任务看板、记忆系统家族统一：36px 行高、
+  24×24 图标盒、18×18 图标与 1.5 描边；hover / active 改用通用
+  `--dsw-alias-interactive-bg-*` token；折叠侧边栏时渲染为 36px 圆形按钮。
+- 入口补齐 L2 语义属性 `data-dsh-plugin="prompt-tool"` 与
+  `data-dsh-part="sidebar-entry"`，便于皮肤与插件面板统一识别。
+- 新增静态回归测试，锁定家族几何、token 与折叠态样式，防止后续漂移。
+- 验证：typecheck / lint 全绿，372 测试通过。
+
 ### 修复预设官方切换与切换前双重建（2026-08-29）
 
 - 客户端补齐 alpha.1 官方 `agentPresets.select(sessionId, presetId)` 通道：

@@ -12,7 +12,7 @@ function createIcon(): SVGSVGElement {
   icon.setAttribute('height', '18')
   icon.setAttribute('fill', 'none')
   icon.setAttribute('stroke', 'currentColor')
-  icon.setAttribute('stroke-width', '1.3')
+  icon.setAttribute('stroke-width', '1.5')
   icon.setAttribute('stroke-linecap', 'round')
   icon.setAttribute('stroke-linejoin', 'round')
   icon.setAttribute('aria-hidden', 'true')
@@ -26,6 +26,8 @@ function createEntry(controller: PromptToolWorkspaceController): { entry: HTMLBu
   const entry = document.createElement('button')
   entry.type = 'button'
   entry.dataset.dshPromptToolEntry = ''
+  entry.dataset.dshPlugin = 'prompt-tool'
+  entry.dataset.dshPart = 'sidebar-entry'
   entry.className = css.entry ?? ''
   const icon = document.createElement('span')
   icon.className = css.entryIcon ?? ''
