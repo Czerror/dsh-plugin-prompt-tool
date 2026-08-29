@@ -8,8 +8,8 @@ function createIcon(): SVGSVGElement {
   const namespace = 'http://www.w3.org/2000/svg'
   const icon = document.createElementNS(namespace, 'svg')
   icon.setAttribute('viewBox', '0 0 16 16')
-  icon.setAttribute('width', '14')
-  icon.setAttribute('height', '14')
+  icon.setAttribute('width', '18')
+  icon.setAttribute('height', '18')
   icon.setAttribute('fill', 'none')
   icon.setAttribute('stroke', 'currentColor')
   icon.setAttribute('stroke-width', '1.3')

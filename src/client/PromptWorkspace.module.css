@@ -78,9 +78,17 @@ html[data-dsh-prompt-tool-active]:not([data-dsh-taskboard-active]):not([data-dsh
 .entryIcon {
   display: inline-flex;
   flex: none;
+  width: 24px;
+  height: 24px;
   align-items: center;
   justify-content: center;
   transition: color .14s ease, transform .14s ease;
+}
+
+.entryIcon svg {
+  display: block;
+  width: 18px;
+  height: 18px;
 }
 
 .entry:hover .entryIcon,
