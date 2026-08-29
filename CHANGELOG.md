@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+### 修复预设官方切换与切换前双重建（2026-08-29）
+
+- 客户端补齐 alpha.1 官方 `agentPresets.select(sessionId, presetId)` 通道：
+  当前会话为空时立即按官方 API 重组；会话已有内容时保留官方拒绝原因，并只更新
+  后续会话默认预设，不再误报「当前已切换」。
+- 声明 `remote.agentPresets` / `remote.session` / `sessions` 服务注入边，修复真机点击
+  切换时 `cannot get property "remote.agentPresets" without inject`。
+- 切换前保存当前未落盘配置卡时，`/param-overrides` 新增 `rebuild:false`：
+  只写 preset.yml，不立即重建；settings 切换目标预设后再统一重建，消除切换前
+  “保存当前预设 + 切换目标预设”的连续两次全量重建延迟。
+- 验证：typecheck / lint 全绿，371 测试通过；Edge DevTools 真机确认
+  `/api/agentPresets/select` 200、切换后 `/settings/mutate` 与 `/bootstrap` 正常。
+
 ### 修复引擎参数 0 值、保存竞态与未知键落盘（2026-08-28）
 
 - `stagePreUnlock: 0` 修正为合法档位并保留落盘；UI 未设置默认显示 1，与引擎

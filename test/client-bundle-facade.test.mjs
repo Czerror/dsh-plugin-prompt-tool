@@ -92,7 +92,14 @@ test('client bundle registers through queue/live facade', () => {
 
   const exports = facade.registry[0].factory(createRequireStub())
   assert.equal(typeof exports.apply, 'function')
-  assert.deepEqual([...exports.inject], ['settingsScope', 'uiWorkspace', 'remote'])
+  assert.deepEqual([...exports.inject], [
+    'settingsScope',
+    'uiWorkspace',
+    'remote',
+    'remote.agentPresets',
+    'remote.session',
+    'sessions',
+  ])
   // alpha.1 后 dsh-client-runtime 已删除：装配边不得再引用，且需声明新依赖面。
   assert.ok(!manifest.dsh.client.inject.includes('@deepseek-ai/dsh-client-runtime'))
   for (const dependency of [
@@ -100,5 +107,6 @@ test('client bundle registers through queue/live facade', () => {
     '@deepseek-ai/dsh-client-ui-settings',
     '@deepseek-ai/dsh-client-ui-workspace',
     '@deepseek-ai/dsh-api-remotes',
+    '@deepseek-ai/dsh-api-session-controller',
   ]) assert.ok(manifest.dsh.client.inject.includes(dependency), `${dependency} missing from dsh.client.inject`)
 })

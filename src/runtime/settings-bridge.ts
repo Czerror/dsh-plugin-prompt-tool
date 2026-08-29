@@ -147,7 +147,8 @@ export function registerSettingsBridge(
   afterOverridesChange?: () => void,
   /** 预设包导入完成回调（物化导入预设：组合/配置目录/共享引擎落盘，宿主 discovery 可见）。 */
   afterPresetPackageImport?: (id: string) => void,
-): void {
+): { invalidateDescriptor: () => void } {
+  let invalidateCachedDescriptor: () => void = () => {}
   // 动态等待 webServer：webServer 由 @deepseek-ai/dsh-web-app 提供。
   // profile 首次缺少该 bundle 时，本子插件先 pending 但不阻塞启动审计；
   // ensureWebSurface 会把 bundle 补进 manifest，重启后本子插件自动激活。
@@ -172,6 +173,7 @@ export function registerSettingsBridge(
       const invalidateDescriptor = (): void => {
         cachedDescriptor = undefined
       }
+      invalidateCachedDescriptor = invalidateDescriptor
       const guard = (req: IncomingMessage, res: ServerResponse): boolean => {
         if (!isLoopbackRequest(req)) {
           writeBridgeJson(res, 403, { ok: false, code: 'settings-not-exposed', message: 'loopback requests only' })
@@ -659,7 +661,9 @@ export function registerSettingsBridge(
                 rawOverrides,
                 Array.isArray(record.promptConfigs) ? record.promptConfigs as unknown[] : undefined,
               )
-              afterOverridesChange?.()
+              // 预设切换前保存当前配置卡时只需落盘，不立即重建；
+              // 后续 settings presetTemplate 变更会让目标预设完成唯一一次重建。
+              if (record.rebuild !== false) afterOverridesChange?.()
               writeBridgeJson(res, 200, {
                 ok: true,
                 value: {
@@ -1183,4 +1187,5 @@ export function registerSettingsBridge(
       }
     }, 'prompt-tool: settings bridge')
   })
+  return { invalidateDescriptor: () => invalidateCachedDescriptor() }
 }

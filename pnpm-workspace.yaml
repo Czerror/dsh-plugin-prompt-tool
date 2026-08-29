@@ -70,6 +70,7 @@ overrides:
   '@deepseek-ai/dsh-agent-presets': link:../deepseek-harness/packages/preset/agent-presets
   '@deepseek-ai/dsh-api-gateway': link:../deepseek-harness/packages/api/gateway
   '@deepseek-ai/dsh-api-remotes': link:../deepseek-harness/packages/api/remotes
+  '@deepseek-ai/dsh-api-session-controller': link:../deepseek-harness/packages/api/session-controller
   '@deepseek-ai/dsh-atomic-write': link:../deepseek-harness/packages/util/atomic-write
   '@deepseek-ai/dsh-attachment': link:../deepseek-harness/packages/attachment/attachment
   '@deepseek-ai/dsh-brand': link:../deepseek-harness/packages/util/brand

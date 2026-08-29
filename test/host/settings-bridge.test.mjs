@@ -261,3 +261,37 @@ test('settings bridge /configs-validate 接受 >64KB promptConfigs 载荷（不�
   assert.equal(payload.ok, true)
   assert.ok(payload.value !== undefined, '应进入校验分支而非 400 截断')
 })
+
+test('settings bridge /param-overrides rebuild=false 只落盘不重建（预设切换免双重建）', async () => {
+  const { ctx, handlers } = makeHarness()
+  const dir = join(tmpdir(), `pt-overrides-no-rebuild-${process.pid}-${Date.now()}`)
+  mkdirSync(dir, { recursive: true })
+  writeFileSync(join(dir, 'preset.yml'), 'id: beta\n', 'utf8')
+  let rebuildCount = 0
+  try {
+    registerSettingsBridge(
+      ctx,
+      'prompt-tool',
+      () => ({ available: true, providers: [] }),
+      () => ({ activeSkillsDirs: [], skillCatalog: [] }),
+      () => '',
+      () => true,
+      undefined,
+      () => dir,
+      undefined,
+      () => { rebuildCount += 1 },
+    )
+    const write = handlers.get(`${PREFIX}${BRIDGE_ENDPOINTS.paramOverrides}`)
+    assert.ok(write, '/param-overrides 端点应注册')
+    const res = fakeRes()
+    await write(fakeReq({ [Symbol.asyncIterator]: async function* () {
+      yield Buffer.from(JSON.stringify({ promptConfigs: [{ id: 'deferred-card' }], rebuild: false }))
+    } }), res)
+    assert.equal(res.status, 200)
+    assert.equal(JSON.parse(res.body).ok, true)
+    assert.equal(rebuildCount, 0, '切换前保存不应立即重建')
+    assert.ok(readFileSync(join(dir, 'preset.yml'), 'utf8').includes('deferred-card'), '配置应真实落盘')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})

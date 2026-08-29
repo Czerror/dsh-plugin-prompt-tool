@@ -831,7 +831,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
 
   /** 保存后是否静默重载。切换预设时传 false（随后的 settings.mutate 回调会统一 load，
    *  避免一次切换触发两次全量读取）。 */
-  const persistConfigs = useCallback((configs: PromptConfigDraft[], options?: { reload?: boolean }): Promise<void> => {
+  const persistConfigs = useCallback((configs: PromptConfigDraft[], options?: { reload?: boolean; rebuild?: boolean }): Promise<void> => {
     const contentEntries = configs.filter(isContentAsset)
     return (async () => {
       // 内容资产：text 先写生成目录文件。合并为单次 /import-preset（批量载荷），
@@ -853,6 +853,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
       if (configs.length === 0) return
       const res = await bridgePost<{ promptConfigs: unknown }>('/param-overrides', {
         promptConfigs: configs.map(stripContentText),
+        ...(options?.rebuild === false ? { rebuild: false } : {}),
       })
       if (res.ok) {
         setSavedConfigs(configs)
@@ -903,13 +904,22 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     const dirtyConfigs = promptConfigsDirty(fieldsRef.current.promptConfigs, savedConfigs)
     if (dirtyConfigs) {
       // 免双 load：保存成功后由下方 enqueueSave 的 onSaved 统一静默重载。
-      await persistConfigs(fieldsRef.current.promptConfigs, { reload: false })
+      // 切换前只落盘当前预设，不重建；settings 切换后目标预设只重建一次。
+      await persistConfigs(fieldsRef.current.promptConfigs, { reload: false, rebuild: false })
     }
+    const switchResult = await api.switchPreset(id)
     patch({ presetTemplate: id })
     enqueueSave(
       [{ op: 'set', path: ['presetTemplate'], value: id }],
-      `已切换预设模板：${id}`,
-      () => { void load({ silent: true }) },
+      switchResult.applied
+        ? `已切换预设模板：${id}（当前空会话已重组）`
+        : `已切换默认预设模板：${id}`,
+      () => {
+        void load({ silent: true })
+        if (switchResult.message !== undefined) {
+          showNotice('error', switchResult.message)
+        }
+      },
     )
   }, [enqueueSave, load, patch, persistConfigs, savedConfigs])
 

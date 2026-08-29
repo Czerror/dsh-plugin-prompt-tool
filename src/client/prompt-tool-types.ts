@@ -6,6 +6,19 @@ export interface PromptToolHostApi {
   pickDirectory(): Promise<string | null>
   /** 官方 session remote 打开 Host 桌面路径。 */
   openPath(path: string): Promise<void>
+  /**
+   * 官方 agentPresets.select：空会话立即换到目标预设。
+   * 官方拒绝（例如会话已有 turn）时返回原因，调用方继续更新默认值。
+   */
+  switchPreset(id: string): Promise<PromptToolPresetSwitchResult>
+}
+
+/** 官方 preset 切换结果。 */
+export interface PromptToolPresetSwitchResult {
+  /** true = 当前空会话已按官方 API 重组。 */
+  applied: boolean
+  /** 官方拒绝原因；applied=false 且无 message = 当前没有可切换的会话。 */
+  message?: string
 }
 
 /** 客户端侧的提示词配置草稿：与宿主 PromptConfigSpec 同构，字段全部宽松。 */

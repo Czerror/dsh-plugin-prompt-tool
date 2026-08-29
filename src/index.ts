@@ -424,7 +424,7 @@ export function apply(ctx: Context, configIn: Config): void {
 
   // 在线编辑不再经 ctx.llm 暴露 settings namespace：改为自建 loopback bridge，
   // 这样模型设置页不会出现「提示词工具」目录条目。
-  registerSettingsBridge(
+  const settingsBridge = registerSettingsBridge(
     ctx,
     NS,
     getModelsState,
@@ -784,6 +784,10 @@ registerTuiCommand(
     onRegistered: (scope) => {
       currentSource = () => scope.get()
       scope.watch(() => {
+        // 官方 SettingsScope.mutate 直写不经过桥 /mutate 端点，桥的 30s descriptor
+        // 缓存不会自动失效——必须在这里先失效，否则切换预设后的 /bootstrap
+        // 会读回旧 presetTemplate，UI 闪回原设置。
+        settingsBridge.invalidateDescriptor()
         try {
           applyState()
         } catch (error) {
