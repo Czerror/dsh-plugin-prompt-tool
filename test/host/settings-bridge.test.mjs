@@ -239,6 +239,52 @@ test('settings bridge /param-overrides 拒绝未知引擎参数键（防死键�
   }
 })
 
+test('settings bridge /param-overrides 数值参数保存前校验（temperature/maxTokens 响亮失败）', async () => {
+  const { ctx, handlers } = makeHarness()
+  const dir = join(tmpdir(), 'pt-overrides-invalid-' + process.pid + '-' + Date.now())
+  mkdirSync(dir, { recursive: true })
+  writeFileSync(join(dir, 'preset.yml'), 'id: beta\n', 'utf8')
+  try {
+    registerSettingsBridge(
+      ctx,
+      'prompt-tool',
+      () => ({ available: true, providers: [] }),
+      () => ({ activeSkillsDirs: [], skillCatalog: [] }),
+      () => '',
+      () => true,
+      undefined,
+      () => dir,
+    )
+    const write = handlers.get(PREFIX + BRIDGE_ENDPOINTS.paramOverrides)
+    assert.ok(write, '/param-overrides 端点应注册')
+
+    // 非法值：temperature 非数字、maxTokens 非正整数 -> 400 逐字段错误，不落盘。
+    const res = fakeRes()
+    await write(fakeReq({ [Symbol.asyncIterator]: async function* () {
+      yield Buffer.from(JSON.stringify({ overrides: { modelTemperature: 'abc', modelMaxTokens: '-5', subagentTemperature: '   ', subagentMaxTokens: true } }))
+    } }), res)
+    assert.equal(res.status, 400)
+    const payload = JSON.parse(res.body)
+    assert.equal(payload.ok, false)
+    assert.equal(payload.code, 'overrides-invalid-value')
+    assert.match(payload.message, /modelTemperature/)
+    assert.match(payload.message, /modelMaxTokens/)
+    assert.match(payload.message, /subagentTemperature/)
+    assert.match(payload.message, /subagentMaxTokens/)
+    assert.equal(readFileSync(join(dir, 'preset.yml'), 'utf8'), 'id: beta\n', '非法值不得写入 preset.yml')
+
+    // 合法值（含空串 = 删键回落、number 直写两通道）照常 200。
+    const res2 = fakeRes()
+    await write(fakeReq({ [Symbol.asyncIterator]: async function* () {
+      yield Buffer.from(JSON.stringify({ overrides: { modelTemperature: '0.7', modelMaxTokens: '8192', subagentTemperature: '', subagentMaxTokens: 4096 } }))
+    } }), res2)
+    assert.equal(res2.status, 200)
+    assert.equal(JSON.parse(res2.body).ok, true)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
 test('settings bridge /configs-validate 接受 >64KB promptConfigs 载荷（不再 400 unreadable JSON body）', async () => {
   const { ctx, handlers } = makeHarness()
   registerSettingsBridge(

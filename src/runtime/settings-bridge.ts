@@ -39,6 +39,7 @@ import {
 } from '../host/characters.ts'
 import { convertStToPreset, mergeStPresets } from '../host/sillytavern.ts'
 import { BRIDGE_ENDPOINTS, SETTINGS_BRIDGE_PREFIX } from '../shared/bridge-contract.ts'
+import { validateEngineParamValues } from '../shared/engine-params.ts'
 import { DEFAULT_PRESET_DIR } from '../host/paths.ts'
 
 const MAX_SETTINGS_BRIDGE_BODY = 64 * 1024
@@ -653,6 +654,17 @@ export function registerSettingsBridge(
                 })
                 return
               }
+            }
+            // 数值参数保存前校验（契约层同源规则）：temperature 有限数 / maxTokens 正整数。
+            // 渲染层保持宽容（never-brick），保存层响亮失败直达 UI notice。
+            const valueErrors = rawOverrides !== undefined ? validateEngineParamValues(rawOverrides) : []
+            if (valueErrors.length > 0) {
+              writeBridgeJson(res, 400, {
+                ok: false,
+                code: 'overrides-invalid-value',
+                message: valueErrors.map((item) => item.message).join('; '),
+              })
+              return
             }
             try {
               savePresetParams(

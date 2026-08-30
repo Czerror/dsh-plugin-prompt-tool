@@ -41,9 +41,17 @@ UI fields
 |---|---|---|
 | `''`（字符串清空） | **删键** | 回落模板/引擎默认（如 reasoningEffort 留空 = 继承宿主） |
 | `[]`（列表清空） | **删键** | 引擎对空数组 fail loud（bootstrapTools/stages）或全拦注入（messageSources/allowKinds） |
-| `0`（`stagePreUnlock`） | **删键** | 引擎 `undefined → 1`，`0` 是合法档位，二者不等价 |
+| `0`（`stagePreUnlock`） | **写 0（保留）** | 引擎 `undefined → 1`，`0` 是合法档位，二者不等价 |
 | `0`（其余数字） | **写 0** | 引擎 `|| 默认` 等价（maxPromoteSteps 0→4、deferredGraceSteps 0→无延迟） |
 | `false`（布尔） | **写 false** | 引擎 `=== true` 归一，false = 显式关闭（与默认等价或明确） |
+
+
+**保存前数值校验（2026-08-30）**：`/param-overrides` 写分支在落盘前调用
+`validateEngineParamValues()`（契约层与渲染消费同源）：
+`modelTemperature` / `subagentTemperature` 必须是有限数字，`modelMaxTokens` /
+`subagentMaxTokens` 必须是正安全整数；UI 字符串与 preset.yml 手写 number 两通道统一。
+空字符串仍是合法删键值；非法值返回 `400 overrides-invalid-value`（逐字段错误），不写
+preset.yml。渲染层保持宽容（never-brick），配置错误只在保存期响亮失败。
 
 UI 侧 `persistParamOverrides` **条件发送**：
 
@@ -52,7 +60,7 @@ UI 侧 `persistParamOverrides` **条件发送**：
 - 未改动且 preset.yml 未声明的 UI 默认值不发送，避免把 UI 默认固化成覆盖模板 `moduleConfigs` 的 params；
 - 用户把值改到与 UI 默认不同即发送。
 
-> 这里的「空值删键」只适用于引擎行为参数，不适用于内容占位变量。`variables` 的空字符串占位键是有意设计，必须继续写入 `variables.yml`。
+> 这里的「空值删键」只适用于引擎行为参数，不适用于内容占位变量。`variables` 的空字符串占位键是有意设计，必须继续写入 `variables.yml`，供内部世界书工具（`world_book_upsert`）动态登记与调整，不参与引擎参数校验。
 
 
 ## 4. variables 双通道（两套体系，不互串）

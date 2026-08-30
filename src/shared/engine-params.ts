@@ -195,3 +195,62 @@ export const WRITER_PARAM_KEYS = [
 
 /** 编译期断言：WRITER_PARAM_KEYS 与 PresetWriterParams 键必须一致（Pick 漏键 → 编译错误）。 */
 const _assertWriterParamsKeys: AssertKeysEqual<typeof WRITER_PARAM_KEYS[number], keyof PresetWriterParams> = true
+
+/**
+ * 数值型引擎参数保存前校验（与 write-preset.modelRequestConfigs 消费规则同源）。
+ * 保存层响亮失败（400 逐字段错误），渲染层保持宽容（never-brick）：
+ *   - temperature：'' = 合法（删键回落默认）；非空必须可解析为有限数字；
+ *   - maxTokens：'' = 合法（删键回落默认）；非空必须是正整数；
+ *   - number 类型直接校验（preset.yml 手写数字 / UI string 两通道统一）。
+ * 注意：内容占位变量（variables）的空字符串是合理设计（世界书动态引用），
+ * 本函数只校验引擎行为参数，绝不碰 variables 通道。
+ */
+export interface EngineParamValueError {
+  key: string
+  message: string
+}
+
+const NUMERIC_PARAM_RULES: Record<string, (value: number) => string | undefined> = {
+  modelTemperature: validateTemperature,
+  subagentTemperature: validateTemperature,
+  modelMaxTokens: validateMaxTokens,
+  subagentMaxTokens: validateMaxTokens,
+}
+
+function validateTemperature(value: number): string | undefined {
+  return Number.isFinite(value) ? undefined : '必须是有限数字'
+}
+
+function validateMaxTokens(value: number): string | undefined {
+  return Number.isSafeInteger(value) && value > 0 ? undefined : '必须是正整数'
+}
+
+/**
+ * 校验参数键值（键集合合法性由调用方白名单先行校验）。返回逐字段错误；空数组 = 通过。
+ * 类型收窄：只接受 number（preset.yml 手写数字）与 string（UI 字符串标量）；
+ * '' 是合法删键值，其余空白串/非数字串/越界值在保存层响亮失败。
+ */
+export function validateEngineParamValues(overrides: Record<string, unknown>): EngineParamValueError[] {
+  const errors: EngineParamValueError[] = []
+  for (const [key, value] of Object.entries(overrides)) {
+    const rule = NUMERIC_PARAM_RULES[key]
+    if (rule === undefined) continue
+    // undefined/null 由保存层跳过；'' 是合法删键值（留空 = 不设置）。
+    if (value === undefined || value === null || value === '') continue
+    if (typeof value !== 'number' && typeof value !== 'string') {
+      errors.push({ key, message: `${key}: 必须是数字或数字字符串（留空 = 不设置）` })
+      continue
+    }
+    const text = typeof value === 'string' ? value.trim() : String(value)
+    if (text.length === 0) {
+      errors.push({ key, message: `${key}: 必须是数字（留空 = 不设置）` })
+      continue
+    }
+    const numeric = Number(text)
+    const reason = Number.isNaN(numeric) ? '必须是数字' : rule(numeric)
+    if (reason !== undefined) {
+      errors.push({ key, message: `${key}: ${reason}（留空 = 不设置）` })
+    }
+  }
+  return errors
+}

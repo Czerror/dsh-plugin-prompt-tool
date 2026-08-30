@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+### 修复模型数值参数保存反馈与参数文档漂移（2026-08-30）
+
+- `/param-overrides` 写盘前新增契约层数值校验：主/子代理 `temperature` 必须是有限
+  数字，`maxTokens` 必须是正安全整数；UI 字符串与 preset.yml 手写 number 两通道统一。
+  留空仍表示删键回落默认；空白串、非数字串、布尔误填与越界值返回
+  `400 overrides-invalid-value` 并逐字段提示，不再静默丢弃。渲染层保持宽容，
+  不会因配置错误阻断 preset 物化。
+- `savePresetParams` 修复极简 preset.yml（无 `params` / 模型段）时保存模型参数的
+  YAML `deleteIn` 异常：旧扁平键与空值模型段清理改为存在性守卫，500 变为正常落盘。
+- 参数文档同步：桥端点数修正为 25；`stagePreUnlock: 0` 明确为保留合法档位；
+  `savePresetParams` JSDoc 与空值删键实现一致；`variables` 空字符串占位键保持
+  有意设计，继续写入 `variables.yml`，供内部世界书工具动态登记与调整。
+- 新增 `/param-overrides` 数值参数回归测试（非法值不落盘 + 合法 string/number 双通道）。
+- 验证：typecheck / lint 全绿，376 测试通过（全部在 `D:\AI\workspase\_temp` junction 下执行）。
+
 ### 修复 /prompt-tool 命令标识符与保存失败反馈（2026-08-30）
 
 - `skill` 与 `config` 子命令支持带空格的技能目录名 / 提示词配置 id：动作固定

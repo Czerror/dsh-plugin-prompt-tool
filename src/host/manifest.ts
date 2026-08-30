@@ -418,10 +418,20 @@ export function openPresetLocation(id: string, presetRoot = userPresetsDir()): {
   }
 }
 
+/** 删除 yaml 两级键；父集合缺失时不触发 deleteIn 对不存在集合的异常。 */
+function deleteYamlPath(doc: ReturnType<typeof parseDocument>, path: [string, string]): void {
+  if (doc.hasIn(path)) doc.deleteIn(path)
+}
+
+/** 删除扁平 params 键。 */
+function deleteFlatParam(doc: ReturnType<typeof parseDocument>, key: string): void {
+  deleteYamlPath(doc, ['params', key])
+}
+
 /**
  * 保存预设参数：写激活预设目录 preset.yml 的 params（merge）/ promptConfigs（整体替换）。
- * parseDocument 保留注释与未知键（preset.yml 模板含大量注释）；空值键跳过
- * （保留 preset.yml 模板默认）。写入后删除 prompt-tool.overrides.yml（旧参数覆盖
+ * parseDocument 保留注释与未知键（preset.yml 模板含大量注释）；空值键删除（'' / []，
+ * 回落模板/引擎默认；0 与 false 照常写入--语义与函数内注释、docs §3 一致）。写入后删除 prompt-tool.overrides.yml（旧参数覆盖
  * 通道残留——参数已并入 preset.yml，避免旧值覆盖新值）。
  */
 export function savePresetParams(
@@ -448,11 +458,11 @@ export function savePresetParams(
       const isEmpty = value === '' || (Array.isArray(value) && value.length === 0)
       const segment = MODEL_SEGMENT_MAP[key]
       if (segment !== undefined) {
-        if (isEmpty) doc.deleteIn([segment[0], segment[1]])
+        if (isEmpty) deleteYamlPath(doc, [segment[0], segment[1]])
         else doc.setIn([segment[0], segment[1]], value)
-        doc.deleteIn(['params', key])
+        deleteFlatParam(doc, key)
       } else if (isEmpty) {
-        doc.deleteIn(['params', key])
+        deleteFlatParam(doc, key)
       } else {
         doc.setIn(['params', key], value)
       }
@@ -487,7 +497,7 @@ export function savePresetParams(
     }
     for (const [key, value] of Object.entries(variables)) {
       if (typeof value !== 'string') continue
-      doc.deleteIn(['params', key])
+      deleteFlatParam(doc, key)
     }
   }
   if (variablesEnabled !== undefined) {
