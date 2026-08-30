@@ -46,6 +46,12 @@ test('组合库无 __TOKEN__ 残留：参数桥模块齐备且行默认可解析
   assert.ok(!delegation.includes('__subagentConfig__'))
   const bash = read('engine/compositions/library/tool-bash.yml')
   assert.ok(bash.includes('disabled: true'))
+  const pwsh = read('engine/compositions/library/tool-pwsh.yml')
+  assert.match(pwsh, /disabled: !!js process\.platform !== 'win32'/, '普通 pwsh 只在 Windows 启用')
+  const persistentShell = read('engine/compositions/library/persistent-shell.yml')
+  assert.match(persistentShell, /- id: persistent-shell[\s\S]*?group: true\s+disabled: !!js process\.platform === 'win32'\s+isolate:/,
+    'persistent-shell 整组必须在 Windows 禁用，避免与普通 tool-pwsh 重复注册 pwsh')
+  assert.match(persistentShell, /name: '@deepseek-ai\/dsh-tool-pwsh-persistent'/, 'POSIX 仍保留持久 pwsh 行（由整组平台守卫隔离）')
   const filesystem = read('engine/compositions/library/bootstrap-filesystem.yml')
   assert.ok(filesystem.includes('- id: bootstrap-filesystem'))
 })

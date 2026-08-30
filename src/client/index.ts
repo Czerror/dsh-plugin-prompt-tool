@@ -2,12 +2,15 @@ import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-api-session-controller/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
+import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import type { PromptToolSettingsTransport } from './prompt-tool-store.ts'
-import { mountPromptToolWorkspace } from './workspace-mount.tsx'
+import { PromptToolWorkspaceController } from './workspace-controller.ts'
+import { registerWorkbenchSlots, type PromptToolWorkbenchFace } from './slot-workbench.tsx'
 import type { PromptToolHostApi } from './prompt-tool-types.ts'
 
 export const inject = [
+  'slots',
   'settingsScope',
   'uiWorkspace',
   'remote',
@@ -56,6 +59,11 @@ export function apply(ctx: ClientContext): void {
     },
   }
 
-  // 侧边栏独立工作台：新建会话行下方入口 + 中央列面板。
-  ctx.effect(() => mountPromptToolWorkspace(hostApi, settings), 'prompt-tool: sidebar workspace')
+  // 官方 slot 工作台：shell.overlay 顶层悬浮按钮 + 右侧抽屉；sidebar.footer.action
+  // 仅提供可拉伸侧边栏的几何探针；settings.plugins.tab 基础设置共享同一 controller。
+  // 注册全部走 SlotRegistry 的 inject()（等声明就绪）+ ctx.effect 生命周期，
+  // 不手工挂载 DOM。
+  const controller = new PromptToolWorkspaceController()
+  const face: PromptToolWorkbenchFace = { controller, api: hostApi, settings }
+  registerWorkbenchSlots(ctx, face)
 }

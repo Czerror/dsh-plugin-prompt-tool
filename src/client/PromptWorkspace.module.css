@@ -1,109 +1,101 @@
-/* 侧边栏独立工作台：DSH 面板接管模式 + 顶部标签页，外观对齐 dsh-mnemon。 */
+/* 官方 slot 工作台：shell.overlay 左上角悬浮按钮 + 右侧抽屉。 */
 
 :root {
-  /* 面板 z-index：与 taskboard / ssh 面板共用 60 档，靠 data-*-active 属性互斥显隐。 */
-  --pt-panel-z: 60;
-  /* Logo 渐变深色端点：与 --dsw-alias-state-business-primary 配对的固定阴影色。 */
+  /* Logo 渐变深色端点。 */
   --pt-logo-shade: #062b4f;
+  --pt-drawer-width: min(920px, 100vw);
+  --pt-drawer-shade: color-mix(in srgb, #0b1220 52%, transparent);
 }
 
-[data-pane='conversation'] {
-  position: relative;
-}
-
-/* 宿主结构依赖：与 src/client/host-surface.ts 的
- * CONVERSATION_COLUMN_SELECTOR / OFFICIAL_WORKSPACE_SLOT_SELECTOR 一一对应；
- * 宿主改版时优先改 host-surface.ts，再同步这里的选择器。 */
-[data-dsh-prompt-tool-view] {
+.drawerLayer {
   position: absolute;
-  z-index: var(--pt-panel-z);
   inset: 0;
-  display: none;
+  z-index: 20;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.drawerLayer[data-open] { visibility: visible; }
+
+.drawerBackdrop {
+  position: absolute;
+  inset: 0;
+  pointer-events: auto;
+  opacity: 0;
+  background: var(--pt-drawer-shade);
+  transition: opacity .22s ease;
+}
+
+.drawerLayer:not([data-open]) .drawerBackdrop { pointer-events: none; }
+.drawerLayer[data-open] .drawerBackdrop { opacity: 1; }
+
+.drawerPanel {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: var(--pt-drawer-width);
   min-width: 0;
   min-height: 0;
   overflow: hidden;
-  background: var(--dsw-alias-bg-base);
+  pointer-events: auto;
+  transform: translateX(100%);
+  box-shadow: -24px 0 64px -32px rgb(0 0 0 / .45);
+  transition: transform .26s cubic-bezier(.22, 1, .36, 1);
 }
 
-.panelView {
-  isolation: isolate;
-}
+.drawerLayer[data-open] .drawerPanel { transform: translateX(0); }
 
-html[data-dsh-prompt-tool-active]:not([data-dsh-taskboard-active]):not([data-dsh-ssh-active]) [data-dsh-prompt-tool-view] {
-  display: block;
-  animation: pt-panel-in .26s cubic-bezier(.22, 1, .36, 1) both;
-}
-
-@keyframes pt-panel-in {
-  from { opacity: 0; transform: translateY(10px) scale(.996); }
-  to { opacity: 1; transform: translateY(0) scale(1); }
-}
-
-html[data-dsh-prompt-tool-active]:not([data-dsh-taskboard-active]):not([data-dsh-ssh-active]) [data-pane='conversation'] > :not([data-dsh-prompt-tool-view]),
-html[data-dsh-prompt-tool-active]:not([data-dsh-taskboard-active]):not([data-dsh-ssh-active]) [class*='centerCol'] > :not([data-dsh-prompt-tool-view]) {
-  /* !important：面板接管中央列时隐藏宿主对话内容，须压过宿主自身规则。 */
-  display: none !important;
-}
-
-/* 侧边栏入口：挂在新建会话行下方，与 task-board / ssh / mnemon 家族几何一致。 */
-.entry {
-  box-sizing: border-box;
+.floatingTriggerLayer {
+  position: fixed;
+  top: calc(3px + env(safe-area-inset-top));
+  /* 初始值按 264px 最小侧边栏 + 10px 间距回退；渲染后由官方 sidebar slot 探针覆盖。 */
+  left: var(--pt-sidebar-edge, 274px);
+  z-index: 60;
   display: flex;
-  width: 100%;
-  min-height: 36px;
+  pointer-events: auto;
+}
+
+:global(body[data-dsh-title-bar-compat]) .floatingTriggerLayer {
+  top: calc(var(--dsh-title-bar-strip, 40px) + 3px + env(safe-area-inset-top));
+}
+
+.floatingTrigger {
+  position: static;
+  display: flex;
+  width: 28px;
+  height: 28px;
   align-items: center;
-  gap: 10px;
+  justify-content: center;
   border: none;
-  border-radius: 8px;
-  padding: 0 10px;
-  color: var(--dsw-alias-label-secondary);
-  background: transparent;
-  font-size: 13px;
-  white-space: nowrap;
-  cursor: pointer;
-}
-
-.entry:hover {
-  color: var(--dsw-alias-label-primary);
-  background: var(--dsw-alias-interactive-bg-hover);
-}
-
-.entry[data-active] {
-  color: var(--dsw-alias-label-primary);
-  background: var(--dsw-alias-interactive-bg-active);
-  font-weight: 600;
-}
-
-.entryIcon {
-  display: inline-flex;
-  flex: none;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-}
-
-.entryIcon svg {
-  display: block;
-  width: 18px;
-  height: 18px;
-}
-
-.entryLabel {
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-[data-dsh-frame][data-sidebar-collapsed] .entry {
-  width: 36px;
-  min-height: 36px;
-  justify-content: center;
-  margin: 0 auto 12px;
-  padding: 0;
   border-radius: 50%;
+  padding: 0;
+  pointer-events: auto;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+  transition:
+    background var(--ds-transition-duration-slow, .18s) var(--ds-ease-in-out, ease),
+    color var(--ds-transition-duration-slow, .18s) var(--ds-ease-in-out, ease);
 }
 
-[data-dsh-frame][data-sidebar-collapsed] .entryLabel {
+.floatingTrigger:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.floatingTrigger[data-open] {
+  background: var(--dsw-alias-interactive-bg-active);
+  color: var(--dsw-alias-label-primary);
+}
+
+.floatingTrigger:focus-visible {
+  outline: 2px solid var(--dsw-alias-state-business-primary);
+  outline-offset: 2px;
+}
+
+/* Geometry-only official sidebar slot occupant; the visible control is body-portaled. */
+.sidebarEdgeProbe {
   display: none;
 }
 
@@ -451,16 +443,16 @@ html[data-dsh-prompt-tool-active]:not([data-dsh-taskboard-active]):not([data-dsh
   .brand h1 { font-size: 16px; }
   .brandLogo { width: 26px; height: 26px; }
   .statusCluster { display: none; }
-  /* 触控热区：入口与返回按钮提升到接近 44px 命中区。 */
-  .entry { height: 40px; }
+  /* 触控热区：悬浮按钮与返回按钮提升到接近 44px 命中区。 */
+  .floatingTrigger { width: 40px; height: 40px; }
   .backButton { min-height: 40px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .backButton,
-  .entry,
+  .floatingTrigger,
   .nav button,
   .memoryTabs button { transition: none; }
-  html[data-dsh-prompt-tool-active] [data-dsh-prompt-tool-view],
+  .drawerPanel,
   .statusDot[data-state='online'] { animation: none; }
 }

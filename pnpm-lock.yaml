@@ -18,6 +18,9 @@ overrides:
   '@deepseek-ai/dsh-brand': link:../deepseek-harness/packages/util/brand
   '@deepseek-ai/dsh-client-connection': link:../deepseek-harness/packages/client/connection
   '@deepseek-ai/dsh-client-ui-workspace': link:../deepseek-harness/packages/client/ui-workspace
+  '@deepseek-ai/dsh-client-ui-renderer': link:../deepseek-harness/packages/client/ui-renderer
+  '@deepseek-ai/dsh-client-ui-layout': link:../deepseek-harness/packages/client/ui-layout
+  '@deepseek-ai/dsh-client-ui-sidebar': link:../deepseek-harness/packages/client/ui-sidebar
   '@deepseek-ai/dsh-client-locale': link:../deepseek-harness/packages/client/locale
   '@deepseek-ai/dsh-client-ui-primitives': link:../deepseek-harness/packages/client/ui-primitives
   '@deepseek-ai/dsh-client-ui-settings': link:../deepseek-harness/packages/client/ui-settings
@@ -84,12 +87,24 @@ importers:
       '@deepseek-ai/dsh-client-connection':
         specifier: link:../deepseek-harness/packages/client/connection
         version: link:../deepseek-harness/packages/client/connection
+      '@deepseek-ai/dsh-client-ui-layout':
+        specifier: link:../deepseek-harness/packages/client/ui-layout
+        version: link:../deepseek-harness/packages/client/ui-layout
       '@deepseek-ai/dsh-client-ui-primitives':
         specifier: link:../deepseek-harness/packages/client/ui-primitives
         version: link:../deepseek-harness/packages/client/ui-primitives
+      '@deepseek-ai/dsh-client-ui-renderer':
+        specifier: link:../deepseek-harness/packages/client/ui-renderer
+        version: link:../deepseek-harness/packages/client/ui-renderer
       '@deepseek-ai/dsh-client-ui-settings':
         specifier: link:../deepseek-harness/packages/client/ui-settings
         version: link:../deepseek-harness/packages/client/ui-settings
+      '@deepseek-ai/dsh-client-ui-settings-plugins':
+        specifier: link:../deepseek-harness/packages/client/ui-settings-plugins
+        version: link:../deepseek-harness/packages/client/ui-settings-plugins
+      '@deepseek-ai/dsh-client-ui-sidebar':
+        specifier: link:../deepseek-harness/packages/client/ui-sidebar
+        version: link:../deepseek-harness/packages/client/ui-sidebar
       '@deepseek-ai/dsh-client-ui-workspace':
         specifier: link:../deepseek-harness/packages/client/ui-workspace
         version: link:../deepseek-harness/packages/client/ui-workspace

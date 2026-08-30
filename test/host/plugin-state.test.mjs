@@ -17,8 +17,8 @@ const STATE_FILE = join(home, '.prompt-tool-state.json')
 const PRESETS_DIR = join(home, '.agent-presets')
 
 test('writePluginState/readPluginState：原子写（tmp+rename）往返一致', () => {
-  writePluginState({ seeded: true, paramsMigrated: false })
-  assert.deepEqual(readPluginState(), { seeded: true, paramsMigrated: false })
+  writePluginState({ seeded: true, paramsMigrated: false, legacyAliasHandled: true })
+  assert.deepEqual(readPluginState(), { seeded: true, paramsMigrated: false, legacyAliasHandled: true })
   assert.equal(existsSync(`${STATE_FILE}.tmp`), false, '临时文件不应残留')
 })
 

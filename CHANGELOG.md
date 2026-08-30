@@ -1,6 +1,100 @@
 # Changelog
 
-## [Unreleased]
+## [0.7.0] - 2026-08-30
+
+### 工作台入口改为左上角悬浮按钮（2026-08-30）
+
+- `shell.overlay` 继续负责工作台生命周期，但可见触发器通过 `createPortal(..., document.body)` 落在对话界面层，避开 AppFrame/工作台侧边栏的裁剪；`sidebar.footer.action` 只渲染自有几何探针。
+- body portal 浮层容器的纵向位置对齐 DSH-better-sidebar 展开按钮：默认 `top: calc(3px + env(safe-area-inset-top))`，标题栏兼容态跟随 `--dsh-title-bar-strip`；按钮本体保持 28×28px。
+- `ResizeObserver` 读取真实侧边栏边缘，跟随 264px 起步宽度、用户拉伸及 56px 折叠 rail；浮层使用 `position: fixed`、动态 left 加 10px 间距与 `z-index: 60`，保留 token 驱动的 hover / active / focus 样式。
+- 右侧抽屉、Escape / 背板关闭、与 taskboard/ssh 的互斥事件以及设置页 tab 保持不变。
+- 契约测试锁定 `sidebar.footer.action`、`settings.plugins.tab` 与 `shell.overlay` 三条官方注册边，并验证几何探针与顶层触发器。
+
+### 官方 Agent 预设设置与提示词工具双向同步（2026-08-30）
+
+- 补齐此前缺失的反向通道：监听 Host `settings/updated`，当官方
+  `agent-presets.default` 变化时，回写 `prompt-tool.presetTemplate`；随后复用现有
+  SettingsScope watcher 执行内容重读、目标预设物化、内置工具重挂与 Web descriptor
+  失效。官方设置菜单切换后，提示词工具的预设状态现在会同步跟随。
+- 正向同步增加权威当前值比较：`prompt-tool.presetTemplate` 与
+  `agent-presets.default` 已相同时不再写入，避免双向事件回环和重复 rebuild。
+- 正常 settings attach 时以官方 default 为共享事实反向对齐；旧布局迁移时仍由插件
+  修复已失效的旧 `prompt-tool` default，两条路径互斥，避免启动期异步写竞态。
+- 对官方设置中本项目无法解析/编辑的 shipped 或第三方预设保持不跟随，并输出明确
+  warning，避免把无效 `presetTemplate` 写入后导致生成失败。
+- 新增行为测试：官方 default 从 anchored 切到 creative 时仅回写一次本项目设置，
+  相同值重复通知不重复写入，反向同步后不再正向写回官方 namespace。
+- 验证：typecheck / lint / test 385 pass 全绿；真机完成 `beta-2-42 → creative → beta-2-42` 双向切换，兼容快照 10 个文件零改写。
+
+### 修复 Windows 切换 Anchored 时 pwsh 重复注册（2026-08-30）
+
+- 根因：Anchored 同时装载普通 `tool-pwsh` 与 Minimal 的 `persistent-shell`；重建脚本
+  注释声称保留 `persistent-shell` 的 Windows 整组禁用，但实际 PATCHES 只加入了
+  `shellPath` 补丁，导致 `persistent-pwsh` 在同一 tools scope 再次注册 `pwsh`。
+- `rebuild-composition.mjs` 为 `persistent-shell` 补回组级
+  `disabled: !!js process.platform === 'win32'`，并从官方源重建组合库；Windows 只启用
+  普通 `tool-pwsh`，POSIX 继续使用持久 shell。
+- 已原地修复当前 `DSH_HOME/.agent-presets/anchored` 与 `prompt-tool` 生成物；官方
+  `ensureStanding()` 在挂载失败时会删除 standing cache 并 dispose 半挂载 scope，下一次
+  切换会重新读取修复后的文件，无需重启。
+- 新增组合互斥回归断言，锁定普通 pwsh 与 persistent-shell 的平台守卫。
+- 验证：typecheck / lint / test 381 pass 全绿。
+
+### 旧会话兼容预设改为一次性快照（2026-08-30）
+
+- 移除日常 `rebuildPreset()` 热路径中的 `prompt-tool` 别名同步：普通预设切换只重建
+  当前目标，不再创建、更新或复活旧会话兼容目录。
+- 兼容快照仅在检测到真正旧容器（目录无根 `preset.yml`）的升级场景处理一次；
+  `.prompt-tool-state.json` 写入 `legacyAliasHandled: true` 后永久结束兼容创建，
+  用户删除快照后不会自动恢复。
+- 迁移器改用结构判定：无根 `preset.yml` = 旧容器；有根 `preset.yml` = 已生成的
+  兼容快照，不得归档为 `prompt-tool.bak-*`。
+- `listPresets()` 继续隐藏 `prompt-tool`，它只用于历史会话按旧 id resolve，不进入
+  普通预设下拉或补建循环。
+- 保留 `writePreset({ aliasOf: true })` 作为一次性快照生成器：复制源 `preset.yml`
+  参数源并写入固定 id/name，日常切换不调用。
+- 新增回归：兼容快照不被迁移器归档、普通列表隐藏、已处理状态下初始加载/官方
+  默认切换均不创建或复活 `prompt-tool`。
+- 验证：typecheck / lint / test 385 pass 全绿；启动与两次官方设置切换期间兼容快照 10 个文件的 SHA-256、长度、时间戳零变化。
+
+### 官方 slot 工作台全面迁移（2026-08-30）
+
+- 客户端 UI 从「自建 React root + MutationObserver + 宿主 CSS 选择器」整体迁移到官方
+  SlotRegistry：`sidebar.footer.action` 侧边栏入口、`shell.overlay` 右侧抽屉工作台、
+  `settings.plugins.tab` 基础设置页三个注册共享同一 controller。
+- 删除 `workspace-mount.tsx` / `sidebar-entry.ts` / `host-surface.ts` 及全部宿主 DOM
+  选择器（`centerCol` / `logoRow` / `data-pane` / `data-dsh-workspace-slot`）；焦点、
+  显隐、卸载回收全部由官方 slot 生命周期接管。
+- 抽屉常驻挂载（CSS 显隐），store 状态跨开关保留；Escape 关闭 + 背板点击关闭 +
+  与 taskboard/ssh 的 `dsh-panel-activate` 兼容互斥保留。
+- `settings.plugins.tab` 提供基础开关（writePreset / writeAgents / injectAgentsPrompt /
+  presetTemplate）直读直写官方 SettingsScope；预设下拉数据来自 `/meta`。
+- `dsh.client.inject` 新增 ui-renderer / ui-layout / ui-sidebar / ui-settings-plugins
+  四个声明包；代码 inject 新增 `slots` 服务。
+- 新增 slot 契约测试（三槽位注册、无宿主 DOM 依赖守护）与 facade inject 边更新；
+  验证 typecheck / lint / test 379 pass 全绿。
+
+### 前端迁移官方 slot 系统（2026-08-30）
+
+- UI 挂载全面迁移到官方 SlotRegistry：`sidebar.footer.action`（Settings 旁侧边栏
+  入口）+ `shell.overlay`（右侧抽屉工作台，接受浮层/抽屉形态）+
+  `settings.plugins.tab`（官方设置面板插件 tab：writePreset / writeAgents /
+  injectAgentsPrompt / presetTemplate 基础开关）。三个注册共享同一个
+  `PromptToolWorkspaceController`，生命周期由 `ctx.slots.inject` + `ctx.effect`
+  接管，HMR / 卸载自动回收。
+- 删除自建 DOM 挂载层：`workspace-mount.tsx`（createRoot + MutationObserver +
+  CSS 选择器）、`sidebar-entry.ts`（DOM 自愈插入）、`host-surface.ts`（全部宿主
+  选择器集中层）。官方 skill 文档明确禁止操作 `document.body` 与硬编码宿主选择
+  器，本次迁移彻底消除该违规。
+- 新增 `slot-workbench.tsx`：抽屉面板常驻挂载（CSS 显隐 + transform 动画），
+  store 状态跨开关保留；Escape 关闭 + taskboard/ssh 兼容互斥事件保留。
+- 依赖边扩展：`dsh.client.inject` + peerDeps + devDeps 增加
+  `dsh-client-ui-renderer` / `ui-layout` / `ui-sidebar` / `ui-settings-plugins`
+  （pnpm workspace link 本地官方仓库，版本 0.1.2-alpha.1）。
+- 测试更新：新增 slot 契约测试（三槽位注册 / 无 DOM 挂载 / 入口家族几何 /
+  抽屉样式 / 依赖边）+ `no-host-dom.test.mjs`（客户端装配层无宿主 DOM 依赖守护）；
+  删除 `sidebar-entry-layout.test.mjs` / `host-surface-centralized.test.mjs`。
+- 验证：typecheck / lint / test 379 pass 0 fail（_temp junction 下执行）。
 
 ### 修复模型数值参数保存反馈与参数文档漂移（2026-08-30）
 

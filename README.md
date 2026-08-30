@@ -23,7 +23,7 @@ dsh --profile prompt-tool                                          # 首次启�
 - 🧑‍🤝‍🧑 **子代理三态**：`subagents: none / inherit / only`，身份类提示词可只注入子代理
 - 🗂️ **内容与执行分离**：每条提示词配置渲染为 `~/.dsh/.agent-presets/<预设>/prompt-configs/` 下的 yml，引擎按文件名数字前缀顺序扫描
 - 🧩 **三层合并**：引擎默认（按 params 生成）< 模板默认 promptConfigs < 预设 promptConfigs，同名 `id` 覆盖
-- 🖥️ **独立工作台**：侧边栏「提示词工具」入口（主会话/子代理/注入层/技能设置/预设配置五页）+ 设置面板提示词配置页（列表/表单/模板插入/保存前校验）
+- 🖥️ **官方 slot 工作台**：`shell.overlay` 驱动的左上角悬浮按钮通过 body portal 落在对话界面层，右侧抽屉（主会话/子代理/技能设置/预设配置/角色管理五页）仍由官方 slot 承载；`settings.plugins.tab` 提供基础设置，`sidebar.footer.action` 几何探针跟随 264px 起步、可拉伸及 56px 折叠宽度，UI 挂载全部交给官方 SlotRegistry，无宿主 DOM 选择器
 - 🧪 **七种内容策略**：`static / first-turn-anchor / guide-auto / custom-fallback / instruction-hint / placeholder / world-book`（world-book 支持 ST selectiveLogic 选择性触发：任一/副键全中/排除）
 - 🛡️ **失败不伤会话**：单条失败跳过 + `warnOnce`；配置错误挂载时 fail loud；`dedupe: session` 持久幂等
 - 🎭 **SillyTavern 导入**：JSON 预设卡片一键转换为本地预设——`prompts[]` 映射提示词配置、setvar/getvar 收集进顶层 `variables`（未定义自定义宏自动登记空值占位）、`enable_web_search` 按开关装配工具；采样参数剥离（模型设置 UI 管理）

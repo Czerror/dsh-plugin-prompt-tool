@@ -42,11 +42,12 @@ function createRequireStub() {
   }
   const runtime = { jsx: react.createElement, jsxs: react.createElement, Fragment: react.Fragment }
   const primitives = { IconChevronDownOutline14: () => null }
-  const dom = { createRoot: () => ({ render: () => {}, unmount: () => {} }) }
+  const dom = { createRoot: () => ({ render: () => {}, unmount: () => {} }), createPortal: (children) => children }
   return (specifier) => {
     switch (specifier) {
       case 'react': return react
       case 'react/jsx-runtime': return runtime
+      case 'react-dom': return dom
       case 'react-dom/client': return dom
       case '@deepseek-ai/dsh-client-ui-primitives': return primitives
       default: throw new Error('unexpected baseline require: ' + specifier)
@@ -93,6 +94,7 @@ test('client bundle registers through queue/live facade', () => {
   const exports = facade.registry[0].factory(createRequireStub())
   assert.equal(typeof exports.apply, 'function')
   assert.deepEqual([...exports.inject], [
+    'slots',
     'settingsScope',
     'uiWorkspace',
     'remote',
@@ -104,6 +106,10 @@ test('client bundle registers through queue/live facade', () => {
   assert.ok(!manifest.dsh.client.inject.includes('@deepseek-ai/dsh-client-runtime'))
   for (const dependency of [
     '@deepseek-ai/dsh-client-connection',
+    '@deepseek-ai/dsh-client-ui-renderer',
+    '@deepseek-ai/dsh-client-ui-layout',
+    '@deepseek-ai/dsh-client-ui-sidebar',
+    '@deepseek-ai/dsh-client-ui-settings-plugins',
     '@deepseek-ai/dsh-client-ui-settings',
     '@deepseek-ai/dsh-client-ui-workspace',
     '@deepseek-ai/dsh-api-remotes',

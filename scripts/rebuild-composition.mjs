@@ -64,6 +64,12 @@ const PATCHES = {
   // 用裸 bash 走同一 scrubbed PATH 解析，避免 PTY 启动期 execvp 失败。
   'persistent-shell': [
     {
+      // Anchored Standard 同时装普通 tool-pwsh；Windows 必须整组关闭 persistent-shell，
+      // 否则 persistent-pwsh 会在同一 tools scope 再注册一次 "pwsh"。
+      from: "- id: persistent-shell\n  name: cordis:group\n  group: true\n  isolate:",
+      to: "- id: persistent-shell\n  name: cordis:group\n  group: true\n  disabled: !!js process.platform === 'win32'\n  isolate:",
+    },
+    {
       from: "- id: terminal-bash\n      name: '@deepseek-ai/dsh-terminal-bash'\n      disabled: !!js process.platform === 'win32'\n      config:\n        timeoutMs: 300000",
       to: "- id: terminal-bash\n      name: '@deepseek-ai/dsh-terminal-bash'\n      disabled: !!js process.platform === 'win32'\n      config:\n        shellPath: !!js \"process.getBuiltinModule?.('node:fs')?.existsSync('/bin/bash') ? '/bin/bash' : 'bash'\"\n        timeoutMs: 300000",
     },

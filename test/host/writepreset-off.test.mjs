@@ -17,12 +17,14 @@ function makeCtx(settingsValue) {
         try { opts.base() } catch { /* mock 环境无宿主上下文 */ }
         return { get: () => settingsValue, watch: (cb) => cb(settingsValue) }
       },
+      get: () => undefined,
       mutate: async () => {},
     },
     webServer: { register: () => () => {} },
     commands: { register: () => () => {} },
     tools: { register: () => () => {} },
-    effect: (fn) => { fn(); return () => {} },
+    effect: (fn) => { const dispose = fn(); return typeof dispose === 'function' ? dispose : () => {} },
+    on: () => () => {},
     get: () => undefined,
   })
   return {

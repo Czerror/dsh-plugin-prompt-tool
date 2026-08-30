@@ -378,6 +378,30 @@ test('writePreset outputId 覆盖：别名目录独立渲染（旧容器 id 兼�
   }
 })
 
+test('writePreset aliasOf（方案 E）：别名目录带完整参数源 + name 兼容标记 + 随源同步更新', () => {
+  const dir = join(tmpdir(), `prompt-tool-alias-e-${process.pid}-${Date.now()}`)
+  const presetDir = join(dir, 'preset')
+  try {
+    // 源预设目录先建参数源（模拟真实场景：种子化/新建后的 preset.yml）。
+    mkdirSync(join(presetDir, 'anchored'), { recursive: true })
+    writeFileSync(join(presetDir, 'anchored', 'preset.yml'),
+      'id: anchored\nname: Anchored\nmodules: [prompt-config-engine, tool-bash]\nparams:\n  firstTurnAnchor: true\n', 'utf8')
+    writePreset('SOURCE PROMPT', { ...makeOptions(presetDir), presetTemplate: 'anchored' })
+    // 别名物化（aliasOf: true）：preset.yml 应为源参数完整拷贝 + name 兼容标记。
+    writePreset('SOURCE PROMPT', { ...makeOptions(presetDir), presetTemplate: 'anchored', outputId: 'prompt-tool', aliasOf: true })
+    assert.ok(existsSync(join(presetDir, 'prompt-tool', 'preset.yml')), '别名目录必须有参数源 preset.yml')
+    const spec = parseYaml(readFileSync(join(presetDir, 'prompt-tool', 'preset.yml'), 'utf8'))
+    assert.equal(spec.id, 'prompt-tool', '别名 id = outputId')
+    assert.match(String(spec.name), /旧会话兼容/, '别名 name 带兼容标记')
+    assert.ok(Array.isArray(spec.modules) && spec.modules.length > 0, '参数源完整（modules 复制）')
+    // 同步更新：源渲染变化后再写别名，组合内容跟随（不再一次性冻结）。
+    writePreset('CHANGED PROMPT', { ...makeOptions(presetDir), presetTemplate: 'anchored', outputId: 'prompt-tool', aliasOf: true })
+    const agent = readFileSync(join(presetDir, 'prompt-tool', 'agent.cordis.yml'), 'utf8')
+    assert.ok(!agent.includes('SOURCE PROMPT') || agent.includes('CHANGED PROMPT'), '别名组合随源同步')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
 test('writePreset 自定义预设（custom，所有参数为空）渲染安全', () => {
   const dir = join(tmpdir(), `prompt-tool-custom-${process.pid}-${Date.now()}`)
   const presetDir = join(dir, 'preset')

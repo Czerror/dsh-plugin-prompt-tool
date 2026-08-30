@@ -23,11 +23,14 @@ import { PARAM_KEYS } from '../config.ts'
 export function migrateLegacyLayout(presetRoot: string, legacyUserPresets: string): boolean {
   const legacyContainer = join(presetRoot, 'prompt-tool')
   const sharedEngine = join(presetRoot, '.engine')
+  // 旧容器没有根 preset.yml；方案 E 的一次性兼容预设有完整根 preset.yml。
+  // 两者目录名相同，必须靠结构判定，不能见 prompt-tool 目录就归档。
+  const isLegacyContainer = existsSync(legacyContainer) && !existsSync(join(legacyContainer, 'preset.yml'))
   let migrated = false
 
   // 1) 共享引擎：旧容器根 engine/ → 预设根 .engine/。
   const legacyEngine = join(legacyContainer, 'engine')
-  if (existsSync(legacyEngine) && !existsSync(sharedEngine)) {
+  if (isLegacyContainer && existsSync(legacyEngine) && !existsSync(sharedEngine)) {
     try {
       mkdirSync(presetRoot, { recursive: true })
       renameSync(legacyEngine, sharedEngine)
@@ -66,7 +69,7 @@ export function migrateLegacyLayout(presetRoot: string, legacyUserPresets: strin
     }
   })()
   const stamp = Date.now().toString(36)
-  if (existsSync(sharedEngine) && existsSync(legacyContainer)) {
+  if (isLegacyContainer && existsSync(sharedEngine) && existsSync(legacyContainer)) {
     try {
       renameSync(legacyContainer, join(presetRoot, `prompt-tool.bak-${stamp}`))
       migrated = true

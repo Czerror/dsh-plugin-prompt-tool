@@ -66,6 +66,13 @@ test('listPresets：全部来自用户目录（种子化后内置模板即为用
   assert.ok(!presets.some((preset) => preset.id.startsWith('.')), '点前缀目录（.engine/.bak）不列出')
 })
 
+test('listPresets：prompt-tool 兼容快照仅供旧会话 resolve，不进入普通选择列表', () => {
+  mkdirSync(join(PRESETS_DIR, 'prompt-tool'), { recursive: true })
+  writeFileSync(join(PRESETS_DIR, 'prompt-tool', 'preset.yml'),
+    'id: prompt-tool\nname: Anchored（旧会话兼容）\n', 'utf8')
+  assert.ok(!listPresets().some((preset) => preset.id === 'prompt-tool'))
+})
+
 test('cloneBuiltinPreset：非内置/非法 id/用户目录已存在同名拒绝', () => {
   assert.equal(cloneBuiltinPreset('not-a-builtin').ok, false)
   assert.equal(cloneBuiltinPreset('a/b').ok, false)

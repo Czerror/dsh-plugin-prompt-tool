@@ -92,6 +92,9 @@ function warn(ctx: Context, message: string): void {
 
 export function apply(ctx: Context, configIn: Config): void {
   // 旧布局 → 官方对齐布局一次性迁移（幂等；旧目录归档 .bak 保留安全网）。
+  // 旧容器没有根 preset.yml；带根 preset.yml 的 prompt-tool 是一次性兼容快照。
+  const hadLegacyContainer = existsSync(join(DEFAULT_PRESET_DIR, 'prompt-tool'))
+    && !existsSync(join(DEFAULT_PRESET_DIR, 'prompt-tool', 'preset.yml'))
   let legacyMigrated = false
   try {
     legacyMigrated = migrateLegacyLayout(DEFAULT_PRESET_DIR, LEGACY_USER_PRESETS_DIR)
@@ -170,6 +173,26 @@ export function apply(ctx: Context, configIn: Config): void {
       : []
   }
 
+  // 旧会话兼容快照只处理一次：直接升级且存在旧容器时创建；现有快照只登记状态。
+  // 状态一旦写入，用户删除快照后不再自动复活；日常预设切换绝不触碰它。
+  let legacyAliasHandledThisRun = readPluginState().legacyAliasHandled === true
+  const ensureLegacyAliasOnce = (presetPrompt: string, options: WritePresetOptions): void => {
+    if (legacyAliasHandledThisRun) return
+    legacyAliasHandledThisRun = true
+    const aliasFile = join(runtime.presetDir, 'prompt-tool', 'preset.yml')
+    try {
+      if (!existsSync(aliasFile) && hadLegacyContainer) {
+        writePreset(presetPrompt, { ...options, outputId: 'prompt-tool', aliasOf: true })
+        warn(ctx, 'prompt-tool: 已创建一次性旧会话兼容快照 prompt-tool；日常切换不再重建')
+      }
+      writePluginState({ ...readPluginState(), legacyAliasHandled: true })
+    } catch (error) {
+      // 仅失败时允许下次 rebuild 重试；成功/无旧容器均永久结束兼容处理。
+      legacyAliasHandledThisRun = false
+      warn(ctx, `prompt-tool: 创建旧会话兼容快照失败（下次重建重试）：${error instanceof Error ? error.message : String(error)}`)
+    }
+  }
+
   /** 重建生成目录（文本/组合/引擎/提示词配置）；writePreset 关闭时移除旧目录。 */
   const rebuildPreset = (): void => {
     // 先重读激活预设参数（/param-overrides 保存、TUI 开关、预设切换后生效）。
@@ -227,19 +250,7 @@ export function apply(ctx: Context, configIn: Config): void {
         }
       }
       writePreset(presetPrompt, options)
-      // 旧容器 id 兼容：物化 prompt-tool 别名预设（渲染自激活模板），使旧时代
-      // committed 'prompt-tool' 的会话可 resume（dsh agent-presets 无回退，
-      // UnknownPresetError 直接 fail）。触发不依赖迁移标记——历史版本迁移或
-      // 手动清理后标记/.bak 归档可能已不存在，只要别名目录缺失就物化（幂等：
-      // 目录已存在即跳过，不随 settings 变更重复渲染）。
-      try {
-        if (!existsSync(join(runtime.presetDir, 'prompt-tool', 'agent.cordis.yml'))) {
-          writePreset(presetPrompt, { ...options, outputId: 'prompt-tool' })
-          warn(ctx, 'prompt-tool: 已物化旧容器 id 兼容预设 prompt-tool（镜像激活模板），旧会话可恢复')
-        }
-      } catch (error) {
-        warn(ctx, `prompt-tool: 物化旧容器 id 兼容预设失败（下次启动重试）：${error instanceof Error ? error.message : String(error)}`)
-      }
+      ensureLegacyAliasOnce(presetPrompt, options)
     } else {
       // writePreset 关闭时移除各预设目录的生成物（agent.cordis.yml / prompt-configs /
       // 内容资产），保留 preset.yml 参数源与预设根本身——宿主以 agent.cordis.yml
@@ -521,12 +532,23 @@ export function apply(ctx: Context, configIn: Config): void {
     promptConfigs: Array.isArray(initialSpec?.promptConfigs) ? initialSpec.promptConfigs as PromptConfigSpec[] : [],
   }
 
-  // 宿主 agent-presets settings `default` 同步：插件 UI 切换预设时把宿主默认预设
-  // 设为激活预设（官方机制：新会话按 default 挂载），让插件预设选择真正生效。
-  // 迁移场景（旧布局升级）强制同步一次（修复宿主 default 指向已删除的 prompt-tool 容器）。
+  // 与官方 agent-presets.default 双向同步：无论从提示词工具还是官方 Agent 预设设置切换，
+  // 两个设置面最终收敛到同一个预设。比较权威当前值后才写，避免双向事件回环。
+  const agentPresetsNs = settingsNamespace('agent-presets')
   let hostSettingsService: SettingsService | undefined
-  let lastSyncedHostDefault: string | undefined
-  const syncHostDefault = (reason: 'migrate' | 'switch'): void => {
+  const readHostDefault = (value: unknown): string | undefined => {
+    if (value === null || typeof value !== 'object') return undefined
+    const candidate = (value as { default?: unknown }).default
+    return typeof candidate === 'string' && candidate.length > 0 ? candidate : undefined
+  }
+  const managedPresetExists = (id: string): boolean => {
+    try {
+      return listPresets().some(preset => preset.id === id)
+    } catch {
+      return false
+    }
+  }
+  const syncHostDefault = (_reason: 'migrate' | 'switch'): void => {
     const s = hostSettingsService
     if (s === undefined) return
     const template = runtime.presetTemplate
@@ -536,14 +558,27 @@ export function apply(ctx: Context, configIn: Config): void {
       warn(ctx, `prompt-tool: 预设 id ${JSON.stringify(template)} 不符合官方 agent-presets 命名（^[a-z0-9][a-z0-9-]*$），跳过宿主 default 同步；请将预设目录改名为合法 id`)
       return
     }
-    if (reason === 'switch' && lastSyncedHostDefault === template) return
-    lastSyncedHostDefault = template
-    // settings.mutate 是 async：未 await 时 try/catch 接不住 rejection，
-    // 未处理拒绝会直接变成 fatal（宿主未装配 agent-presets 时尤其常见）。
-    void s.mutate(settingsNamespace('agent-presets'), [{ op: 'set', path: ['default'], value: template }])
+    if (readHostDefault(s.get(agentPresetsNs)) === template) return
+    // settings.mutate 是 async：未 await 时 try/catch 接不住 rejection。
+    void s.mutate(agentPresetsNs, [{ op: 'set', path: ['default'], value: template }])
       .catch((error: unknown) => {
-        // 宿主未装配 agent-presets（或文档被锁定）时忽略：插件预设仍可经官方 UI 手动选择。
         warn(ctx, `prompt-tool: 同步宿主 agent-presets default 失败：${error instanceof Error ? error.message : String(error)}`)
+      })
+  }
+  const syncTemplateFromHostDefault = (value?: unknown): void => {
+    const s = hostSettingsService
+    if (s === undefined) return
+    const template = readHostDefault(value ?? s.get(agentPresetsNs))
+    if (template === undefined || template === runtime.presetTemplate) return
+    // 官方设置可列出插件未管理的 shipped/第三方预设；只跟随本项目能解析/编辑的预设，
+    // 避免把不存在的 presetTemplate 写进本插件后导致 writePreset 失败。
+    if (!managedPresetExists(template)) {
+      warn(ctx, `prompt-tool: 官方 agent-presets default 已切换为 ${JSON.stringify(template)}，但该预设不在提示词工具管理目录中，跳过反向同步`)
+      return
+    }
+    void s.mutate(NS, [{ op: 'set', path: ['presetTemplate'], value: template }])
+      .catch((error: unknown) => {
+        warn(ctx, `prompt-tool: 跟随官方 agent-presets default 失败：${error instanceof Error ? error.message : String(error)}`)
       })
   }
 
@@ -880,11 +915,25 @@ registerTuiCommand(
     }
   }
 
+  // 启动顺序兜底：agent-presets 注册自身 settings namespace 时不会发 settings/updated。
+  // 若本插件先 attach settings，首次读取会得到 undefined；等 agentPresets 服务就绪后再对齐一次。
+  ctx.inject(['settings', 'agentPresets'], () => {
+    syncTemplateFromHostDefault()
+  })
   ctx.inject(['settings'], (sctx: Context) => {
     hostSettingsService = sctx.settings
+    // 官方 Agent 预设设置页与提示词工具共用同一默认预设事实：
+    // agent-presets.default 变化时反向写入 prompt-tool.presetTemplate；后者的 scope.watch
+    // 会走 applyState → 重读内容资产 / 重建生成物 / 刷新 Web descriptor。
+    sctx.effect(() => sctx.on('settings/updated', (ns, next) => {
+      if (String(ns) !== String(agentPresetsNs)) return
+      syncTemplateFromHostDefault(next)
+    }), 'prompt-tool: follow agent-presets default')
     ensureRegistered(sctx)
-    // 旧布局迁移完成（或宿主 default 指向已删除的 prompt-tool 容器）时同步宿主默认预设。
+    // 旧布局迁移时 prompt-tool 旧容器 id 已失效，由插件修正官方 default；
+    // 正常 attach 则以官方 default 为共享事实反向对齐本插件。二者互斥，避免异步写竞态。
     if (legacyMigrated) syncHostDefault('migrate')
+    else syncTemplateFromHostDefault()
     // 阶段 2 迁移：旧全局 settings 参数 → 激活预设 preset.yml。
     migrateSettingsParamsToPreset(sctx)
     // settings 服务 detach 时回退到 cordis config 构造的 entry，

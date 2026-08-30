@@ -213,8 +213,7 @@ export function listPresets(): Array<{ id: string; name: string; user: boolean; 
     try {
       return readdirSync(dir, { withFileTypes: true })
         .filter((entry) => entry.isDirectory() && !entry.name.startsWith('.'))
-        // 旧容器 id 兼容别名：镜像激活模板的隐藏预设，dsh roster 可见（旧会话 resume），
-        // 插件 UI/切换器不展示（非用户预设）。
+        // 旧容器 id 兼容快照仅供历史会话 resolve，不参与普通预设选择/重建。
         .filter((entry) => entry.name !== 'prompt-tool')
         .flatMap((entry) => {
           try {
@@ -271,6 +270,8 @@ export function stateFilePath(): string {
 export interface PromptToolState {
   seeded?: boolean
   paramsMigrated?: boolean
+  /** 旧容器 id 兼容快照已处理；删除后不再自动复活。 */
+  legacyAliasHandled?: boolean
 }
 
 /** 读插件状态；文件缺失/损坏返回空对象（按未标记处理，触发首次动作）。 */

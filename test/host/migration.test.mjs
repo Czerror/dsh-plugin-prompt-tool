@@ -50,6 +50,25 @@ test('migrateLegacyLayout：旧布局 → 官方对齐布局（引擎/用户预�
   }
 })
 
+test('migrateLegacyLayout：带根 preset.yml 的 prompt-tool 兼容快照不归档', () => {
+  const root = join(tmpdir(), `prompt-tool-migration-alias-${process.pid}-${Date.now()}`)
+  const presetRoot = join(root, '.agent-presets')
+  const alias = join(presetRoot, 'prompt-tool')
+  mkdirSync(join(presetRoot, '.engine'), { recursive: true })
+  mkdirSync(alias, { recursive: true })
+  writeFileSync(join(alias, 'preset.yml'), 'id: prompt-tool\nname: Legacy Alias\n', 'utf8')
+  writeFileSync(join(alias, 'agent.cordis.yml'), '- id: alias\n', 'utf8')
+  try {
+    assert.equal(migrateLegacyLayout(presetRoot, join(root, 'presets')), false,
+      '兼容快照不是旧容器，不应报告迁移')
+    assert.ok(existsSync(join(alias, 'preset.yml')), '兼容快照必须保留')
+    assert.ok(!readdirSync(presetRoot).some((name) => name.startsWith('prompt-tool.bak-')),
+      '不得把兼容快照归档为旧容器 backup')
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
 test('migrateLegacyLayout：无旧布局时零操作', () => {
   const root = join(tmpdir(), `prompt-tool-migration-none-${process.pid}-${Date.now()}`)
   mkdirSync(join(root, '.agent-presets'), { recursive: true })

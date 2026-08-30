@@ -77,6 +77,8 @@ export interface WritePresetOptions extends PresetWriterParams {
   presetTemplate?: string
   /** 输出目录/预设 id 覆盖（旧容器 id 兼容别名，如 prompt-tool）；缺省 = presetTemplate 同名输出。 */
   outputId?: string
+  /** 兼容别名标记：输出目录是源预设的镜像（preset.yml name 加后缀，UI 可识别展示）。 */
+  aliasOf?: boolean
   /** 目录加载失败等非致命告警回调。 */
   warn?: (message: string) => void
 }
@@ -301,21 +303,34 @@ export function writePreset(prompt: string, options: WritePresetOptions): void {
   // 2) 宿主预设元数据：新布局 preset.yml = 参数 + 元数据一体。
   //    已存在参数文件（种子化/新建复制）时只合并元数据键（name/description/order/meta），
   //    保留 params/modules/promptConfigs/content——不得整体覆盖（会摧毁参数源）。
+  // 别名预设：name 追加兼容标记，UI 据此识别展示；id 由目录名（outputId）决定。
+  const aliasSuffix = '（旧会话兼容）'
+  const aliasName = options.aliasOf === true
+    ? (typeof spec.name === 'string' && spec.name.length > 0 ? spec.name : outputId)
+    : undefined
+  const displayName = aliasName !== undefined && !aliasName.endsWith(aliasSuffix) ? aliasName + aliasSuffix : aliasName
   const meta = spec.meta !== null && typeof spec.meta === 'object' ? spec.meta as Record<string, unknown> : {}
-  const existingPresetYaml = existsSync(join(targetDir, 'preset.yml'))
-    ? readFileSync(join(targetDir, 'preset.yml'), 'utf8')
+  // 别名物化：existing 参数源读**源预设目录**（targetDir = 别名目录自身，首次为空），
+  // 复制源 preset.yml 作为参数基础（params/promptConfigs/content 全量镜像），
+  // 再叠加元数据（name 兼容标记 / order / meta）。
+  const sourceYamlPath = options.aliasOf === true
+    ? join(presetDir, templateName, 'preset.yml')
+    : join(targetDir, 'preset.yml')
+  const existingPresetYaml = existsSync(sourceYamlPath)
+    ? readFileSync(sourceYamlPath, 'utf8')
     : undefined
   if (existingPresetYaml !== undefined && existingPresetYaml.trim().length > 0) {
     const doc = parseDocument(existingPresetYaml, { logLevel: 'silent' })
     doc.setIn(['order'], options.presetOrder)
-    if (typeof spec.name === 'string' && spec.name.length > 0) doc.setIn(['name'], spec.name)
+    if (typeof spec.name === 'string' && spec.name.length > 0) doc.setIn(['name'], displayName ?? spec.name)
+    if (options.aliasOf === true) doc.setIn(['id'], outputId)
     if (typeof spec.description === 'string' && spec.description.length > 0) {
       doc.setIn(['description'], spec.description)
     }
     if (Object.keys(meta).length > 0) doc.setIn(['meta'], meta)
     writeFileSync(join(outDir, 'preset.yml'), doc.toString(), 'utf8')
   } else {
-    writeFileSync(join(outDir, 'preset.yml'), stringifyYaml({ ...meta, order: options.presetOrder }) + '\n', 'utf8')
+    writeFileSync(join(outDir, 'preset.yml'), stringifyYaml(displayName !== undefined ? { ...meta, id: outputId, name: displayName, order: options.presetOrder } : { ...meta, order: options.presetOrder }) + '\n', 'utf8')
   }
 
   // 2.5) 内容资产:preset.md / agents.md(与组合文件同层;大文本存文件而非 settings)。
