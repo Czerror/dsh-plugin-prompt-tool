@@ -1,5 +1,4 @@
 import type { Context } from '@deepseek-ai/cordis'
-import { settingsNamespace } from '@deepseek-ai/dsh-settings'
 import type SettingsService from '@deepseek-ai/dsh-settings'
 import type {
   SkillCandidate,
@@ -32,7 +31,6 @@ import { registerCharacterTools } from './runtime/character-tools.ts'
 import { registerWorldBookTools } from './runtime/world-book-tools.ts'
 import { registerSessionVarTools } from './runtime/session-var-tools.ts'
 import { registerTuiCommand } from './runtime/tui.ts'
-import { ensureSettingsRegistered } from './runtime/settings-registration.ts'
 import { removeResidentAgentsBlock, writeAgents } from './runtime/agents-file.ts'
 import { writePreset } from './host/write-preset.ts'
 import type { WritePresetOptions } from './host/write-preset.ts'
@@ -442,7 +440,6 @@ export function apply(ctx: Context, configIn: Config): void {
     () => ({ activeSkillsDirs, skillCatalog }),
     // 模板专属策略目录：当前 anchored 策略为引擎内置，自定义模板可经此注入。
     () => '',
-    (sctx: Context) => ensureRegistered(sctx),
     () => {
       // 一键修复后立即重扫目录并失效官方 registry 缓存。
       skillCatalog = catalogOf(readAllSkillsChecked())
@@ -534,7 +531,7 @@ export function apply(ctx: Context, configIn: Config): void {
 
   // 与官方 agent-presets.default 双向同步：无论从提示词工具还是官方 Agent 预设设置切换，
   // 两个设置面最终收敛到同一个预设。比较权威当前值后才写，避免双向事件回环。
-  const agentPresetsNs = settingsNamespace('agent-presets')
+  const agentPresetsNs = 'agent-presets' as const
   let hostSettingsService: SettingsService | undefined
   const readHostDefault = (value: unknown): string | undefined => {
     if (value === null || typeof value !== 'object') return undefined
@@ -807,35 +804,6 @@ registerTuiCommand(
   // settings 注册 base 与运行时快照同源（单一组装，避免双份字段漂移）。
   const settingsEntry: PromptSettings = currentSource()
 
-  // 幂等注册 + 自愈：settings 服务实例被替换（provider fiber reload）时，
-  // 官方 installSettingsSection 的一次性 inject 回调不会重跑，注册随之丢失，
-  // Web 保存报「settings namespace "prompt-tool" is not registered」。
-  // bridge 每次请求前经此兜底自愈，坏数据修复后的下次请求同样自动恢复。
-  const ensureRegistered = (sctx: Context): boolean => ensureSettingsRegistered(sctx, NS, PromptSettingsSchema, {
-    base: () => settingsEntry,
-    onRegistered: (scope) => {
-      currentSource = () => scope.get()
-      scope.watch(() => {
-        // 官方 SettingsScope.mutate 直写不经过桥 /mutate 端点，桥的 30s descriptor
-        // 缓存不会自动失效——必须在这里先失效，否则切换预设后的 /bootstrap
-        // 会读回旧 presetTemplate，UI 闪回原设置。
-        settingsBridge.invalidateDescriptor()
-        try {
-          applyState()
-        } catch (error) {
-          warn(ctx, `prompt-tool: applyState failed: ${error instanceof Error ? error.message : String(error)}`)
-        }
-      })
-      // 注册后立即用 settings 解析值触发一次初始写入（settings 优先于 cordis config）。
-      try {
-        applyState()
-      } catch (error) {
-        warn(ctx, `prompt-tool: applyState failed: ${error instanceof Error ? error.message : String(error)}`)
-      }
-    },
-    onError: (message) => warn(ctx, `prompt-tool: settings register failed: ${message}`),
-  })
-
   /** 阶段 2 迁移：旧全局 settings 引擎参数 → 激活预设 preset.yml（一次性，state.paramsMigrated 后跳过）。
    *  兼容旧版预设根内 .pt-params-migrated 标记：存在即视为已迁移，并迁入状态文件后删除。 */
   const migrateSettingsParamsToPreset = (sctx: Context): void => {
@@ -929,23 +897,23 @@ registerTuiCommand(
       if (String(ns) !== String(agentPresetsNs)) return
       syncTemplateFromHostDefault(next)
     }), 'prompt-tool: follow agent-presets default')
-    ensureRegistered(sctx)
+    sctx.settings.installSection(ctx, NS, PromptSettingsSchema, settingsEntry, {
+      setSource: current => { currentSource = current },
+      onChange: () => {
+        settingsBridge.invalidateDescriptor()
+        try {
+          applyState()
+        } catch (error) {
+          warn(ctx, `prompt-tool: applyState failed: ${error instanceof Error ? error.message : String(error)}`)
+        }
+      },
+    })
     // 旧布局迁移时 prompt-tool 旧容器 id 已失效，由插件修正官方 default；
     // 正常 attach 则以官方 default 为共享事实反向对齐本插件。二者互斥，避免异步写竞态。
     if (legacyMigrated) syncHostDefault('migrate')
     else syncTemplateFromHostDefault()
     // 阶段 2 迁移：旧全局 settings 参数 → 激活预设 preset.yml。
     migrateSettingsParamsToPreset(sctx)
-    // settings 服务 detach 时回退到 cordis config 构造的 entry，
-    // 并重判派生状态（等价 installSettingsSection 的 fallback 语义）。
-    sctx.effect(() => () => {
-      currentSource = () => settingsEntry
-      try {
-        applyState()
-      } catch (error) {
-        warn(ctx, `prompt-tool: applyState failed: ${error instanceof Error ? error.message : String(error)}`)
-      }
-    })
   })
 }
 
@@ -994,8 +962,6 @@ export type { PromptConfigValidationError, PromptConfigValidationResult } from '
 export { loadPromptTemplates, loadToolTemplates } from './host/templates.ts'
 export type { PromptConfigTemplate, ToolTemplate } from './host/templates.ts'
 export { registerTuiCommand } from './runtime/tui.ts'
-export { ensureSettingsRegistered } from './runtime/settings-registration.ts'
-export type { SettingsRegistrationHooks } from './runtime/settings-registration.ts'
 export { createCachedSkillsReader, readSkills, mergeSkillDirs, listSkillFolders, isValidSkill, validSkills, SKILL_NAME_RE } from './runtime/skills-provider.ts'
 export type { CachedSkillsReader } from './runtime/skills-provider.ts'
 export { fixSkillEntry, toKebabName } from './runtime/skill-fix.ts'

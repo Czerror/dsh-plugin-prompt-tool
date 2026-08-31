@@ -37,7 +37,6 @@ function register() {
     () => ({ available: true, providers: [] }),
     () => ({ activeSkillsDirs: [], skillCatalog: [] }),
     () => '',
-    () => true,
   )
   return handlers
 }

@@ -34,7 +34,6 @@ test('settings bridge /describe 返回宿主默认模型（agent-default-model �
     () => ({ available: true, providers: ['deepseek-official'] }),
     () => ({ activeSkillsDirs: [], skillCatalog: [] }),
     () => '',
-    () => true,
   )
   const handler = handlers.get(PREFIX + BRIDGE_ENDPOINTS.describe)
   assert.ok(handler, 'describe 端点应注册')
@@ -79,7 +78,6 @@ test('settings bridge /meta 返回引擎能力矩阵', async () => {
     () => ({ available: true, providers: [] }),
     () => ({ activeSkillsDirs: [], skillCatalog: [] }),
     () => '',
-    () => true,
   )
   const handler = handlers.get(`${PREFIX}/meta`)
   assert.ok(handler)
@@ -99,7 +97,6 @@ test('settings bridge 拒绝非 loopback 请求', async () => {
     () => ({ available: true, providers: [] }),
     () => ({ activeSkillsDirs: [], skillCatalog: [] }),
     () => '',
-    () => true,
   )
   const handler = handlers.get(`${PREFIX}/meta`)
   const res = fakeRes()
@@ -115,7 +112,6 @@ test('settings bridge /prompt-configs 返回生成目录实际生效配置', asy
     () => ({ available: true, providers: [] }),
     () => ({ activeSkillsDirs: [], skillCatalog: [] }),
     () => '',
-    () => true,
     undefined,
     // 指向真实的生成目录（本仓库构建产物，writePreset 测试已生成）。
     () => join(tmpdir(), 'prompt-tool-preset-not-exist'),
@@ -142,8 +138,7 @@ test('settings bridge /import-preset 写入生成目录并触发回调；/preset
       () => ({ available: true, providers: [] }),
       () => ({ activeSkillsDirs: [], skillCatalog: [] }),
       () => '',
-      () => true,
-      undefined,
+        undefined,
       () => dir,
       (scopes) => { importedScopes = scopes },
     )
@@ -183,8 +178,7 @@ test('settings bridge /param-overrides 接受 >64KB promptConfigs 载荷（不�
       () => ({ available: true, providers: [] }),
       () => ({ activeSkillsDirs: [], skillCatalog: [] }),
       () => '',
-      () => true,
-      undefined,
+        undefined,
       () => dir,
     )
     const write = handlers.get(`${PREFIX}${BRIDGE_ENDPOINTS.paramOverrides}`)
@@ -218,8 +212,7 @@ test('settings bridge /param-overrides 拒绝未知引擎参数键（防死键�
       () => ({ available: true, providers: [] }),
       () => ({ activeSkillsDirs: [], skillCatalog: [] }),
       () => '',
-      () => true,
-      undefined,
+        undefined,
       () => dir,
     )
     const write = handlers.get(`${PREFIX}${BRIDGE_ENDPOINTS.paramOverrides}`)
@@ -251,8 +244,7 @@ test('settings bridge /param-overrides 数值参数保存前校验（temperature
       () => ({ available: true, providers: [] }),
       () => ({ activeSkillsDirs: [], skillCatalog: [] }),
       () => '',
-      () => true,
-      undefined,
+        undefined,
       () => dir,
     )
     const write = handlers.get(PREFIX + BRIDGE_ENDPOINTS.paramOverrides)
@@ -293,7 +285,6 @@ test('settings bridge /configs-validate 接受 >64KB promptConfigs 载荷（不�
     () => ({ available: true, providers: [] }),
     () => ({ activeSkillsDirs: [], skillCatalog: [] }),
     () => '',
-    () => true,
   )
   const handler = handlers.get(`${PREFIX}${BRIDGE_ENDPOINTS.configsValidate}`)
   assert.ok(handler, '/configs-validate 端点应注册')
@@ -321,8 +312,7 @@ test('settings bridge /param-overrides rebuild=false 只落盘不重建（预设
       () => ({ available: true, providers: [] }),
       () => ({ activeSkillsDirs: [], skillCatalog: [] }),
       () => '',
-      () => true,
-      undefined,
+        undefined,
       () => dir,
       undefined,
       () => { rebuildCount += 1 },

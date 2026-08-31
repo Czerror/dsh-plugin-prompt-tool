@@ -28,6 +28,15 @@ function makeHarness(initial) {
       get: () => promptState,
       watch: (callback) => { promptWatcher = callback; return () => { promptWatcher = undefined } },
     }),
+    installSection: (_owner, _ns, _schema, _entry, hooks) => {
+      hooks.setSource(() => promptState)
+      hooks.onChange()
+      promptWatcher = (next, _previous) => {
+        promptState = next
+        hooks.setSource(() => promptState)
+        hooks.onChange()
+      }
+    },
     get: (ns) => String(ns) === 'agent-presets' ? { default: hostDefault } : promptState,
     mutate: async (ns, ops) => {
       mutations.push({ ns: String(ns), ops })

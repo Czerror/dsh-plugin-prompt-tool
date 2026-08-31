@@ -1,7 +1,6 @@
 /** /prompt-tool TUI 命令：查看或切换开关（UI 编辑器最后做，命令只读提示词配置数据入口）。 */
 import type { Context } from '@deepseek-ai/cordis'
 import type { CommandResult } from '@deepseek-ai/dsh-commands'
-import type { SettingsNamespace } from '@deepseek-ai/dsh-settings'
 import { join } from 'node:path'
 import type { ModelDetection } from './models.ts'
 import type { PromptSettings } from '../config.ts'
@@ -192,7 +191,7 @@ export type SavePresetParam = (key: string, value: unknown) => void | Promise<vo
 /** 通过 DSH 命令注册表暴露 /prompt-tool，Web 与 dsh-tui 都能执行。 */
 export function registerTuiCommand(
   ctx: Context,
-  ns: SettingsNamespace,
+  ns: 'prompt-tool',
   getSource: () => PromptSettings,
   getModelsState: () => ModelDetection,
   getModelCatalog: () => Promise<Record<string, string[]>>,

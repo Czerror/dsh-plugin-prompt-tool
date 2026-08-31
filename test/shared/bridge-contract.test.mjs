@@ -28,7 +28,6 @@ function register() {
     () => ({ available: true, providers: ['deepseek-official'] }),
     () => ({ activeSkillsDirs: [], skillCatalog: [] }),
     () => '',
-    () => true,
   )
   return handlers
 }

@@ -4,7 +4,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import { basename, dirname, join } from 'node:path'
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml'
-import { settingsNamespace, type SettingsDescriptor, type SettingsNamespace, type SettingsPathOp } from '@deepseek-ai/dsh-settings'
+import type { SettingsDescriptor, SettingsPathOp } from '@deepseek-ai/dsh-settings'
 import { PARAM_KEYS } from '../config.ts'
 import { listAdvertisedModels, peekModelCatalog, type ModelDetection } from './models.ts'
 import type { SkillCatalogEntry } from '../config.ts'
@@ -134,11 +134,10 @@ function restorePresetImport(targetDir: string, backupDir: string | undefined): 
 /** 自建 loopback settings bridge：替代 registerConfigurableProviders，避免模型设置区出现插件条目。 */
 export function registerSettingsBridge(
   ctx: Context,
-  ns: SettingsNamespace,
+  ns: string,
   getModelsState: () => ModelDetection,
   getSkillsState: () => SkillsBridgeState,
   getEngineStrategyDir: () => string,
-  ensureRegistered: (sctx: Context) => boolean,
   afterSkillFix?: () => void,
   /** 生成目录（presetDir）：读取实际生效的提示词配置（引擎加载源）。 */
   getPresetConfigsDir?: () => string,
@@ -207,7 +206,7 @@ export function registerSettingsBridge(
         // 插件参数未设置（空 = 继承宿主）时回显给客户端（模型名下拉候选/状态行）。
         let hostDefaultModel: { provider?: string; model?: string; reasoningEffort?: string } | undefined
         try {
-          const selection = sctx.settings.get(settingsNamespace('agent-default-model')) as
+          const selection = sctx.settings.get('agent-default-model') as
             { provider?: unknown; model?: unknown; reasoningEffort?: unknown } | undefined
           if (selection !== null && typeof selection === 'object') {
             const record = selection as Record<string, unknown>
@@ -313,7 +312,6 @@ export function registerSettingsBridge(
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.bootstrap,
           handler: async (req, res) => {
             if (!guard(req, res)) return
-            ensureRegistered(sctx)
             const descriptor = findDescriptor()
             if (descriptor === undefined) {
               writeBridgeJson(res, 404, { ok: false, code: 'settings-not-exposed', message: 'prompt-tool settings namespace is not registered' })
@@ -355,7 +353,6 @@ export function registerSettingsBridge(
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.describe,
           handler: async (req, res) => {
             if (!guard(req, res)) return
-            ensureRegistered(sctx)
             const descriptor = findDescriptor()
             if (descriptor === undefined) {
               writeBridgeJson(res, 404, { ok: false, code: 'settings-not-exposed', message: 'prompt-tool settings namespace is not registered' })
@@ -369,7 +366,6 @@ export function registerSettingsBridge(
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.models,
           handler: async (req, res) => {
             if (!guard(req, res)) return
-            ensureRegistered(sctx)
             const modelCatalog = await listAdvertisedModels(sctx)
             writeBridgeJson(res, 200, { ok: true, value: { modelCatalog } })
           },
@@ -379,7 +375,6 @@ export function registerSettingsBridge(
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.mutate,
           handler: async (req, res) => {
             if (!guard(req, res)) return
-            ensureRegistered(sctx)
             const { body } = await readBridgeBody(req)
             if (body === null || body === undefined || typeof body !== 'object') {
               writeBridgeJson(res, 400, { ok: false, code: 'settings-rejected', message: 'unreadable JSON body' })
@@ -447,7 +442,6 @@ export function registerSettingsBridge(
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.skillFix,
           handler: async (req, res) => {
             if (!guard(req, res)) return
-            ensureRegistered(sctx)
             const { body } = await readBridgeBody(req)
             if (body === null || body === undefined || typeof body !== 'object') {
               writeBridgeJson(res, 400, { ok: false, code: 'settings-rejected', message: 'unreadable JSON body' })
@@ -948,7 +942,6 @@ export function registerSettingsBridge(
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.presetDelete,
           handler: async (req, res) => {
             if (!guard(req, res)) return
-            ensureRegistered(sctx)
             const { body } = await readBridgeBody(req)
             const record = (body ?? {}) as Record<string, unknown>
             const id = typeof record.id === 'string' ? record.id.trim() : ''
@@ -985,7 +978,6 @@ export function registerSettingsBridge(
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.presetClone,
           handler: async (req, res) => {
             if (!guard(req, res)) return
-            ensureRegistered(sctx)
             const { body } = await readBridgeBody(req)
             const record = (body ?? {}) as Record<string, unknown>
             const id = typeof record.id === 'string' ? record.id.trim() : ''
@@ -1006,7 +998,6 @@ export function registerSettingsBridge(
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.presetDuplicate,
           handler: async (req, res) => {
             if (!guard(req, res)) return
-            ensureRegistered(sctx)
             const { body } = await readBridgeBody(req)
             const record = (body ?? {}) as Record<string, unknown>
             const id = typeof record.id === 'string' ? record.id.trim() : ''
@@ -1034,7 +1025,6 @@ export function registerSettingsBridge(
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.presetOpen,
           handler: async (req, res) => {
             if (!guard(req, res)) return
-            ensureRegistered(sctx)
             const { body } = await readBridgeBody(req)
             const record = (body ?? {}) as Record<string, unknown>
             const id = typeof record.id === 'string' ? record.id.trim() : ''

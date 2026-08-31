@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.7.1] - 2026-08-31
+
+### 迁移 DSH 0.1.2-alpha.2
+
+- 官方 DSH peerDependencies 与 devDependencies 升级到 0.1.2-alpha.2。
+- 使用静态 settings namespace 字面量，移除对已删除的 `settingsNamespace()` 运行时导出的依赖。
+- 使用官方 `ctx.settings.installSection()` 接管 settings 注册、配置来源切换与 provider detach 回退。
+- 删除重复的 settings 注册自愈层，并同步更新 Host 测试桩与 bridge 调用。
 ## [0.7.0] - 2026-08-30
 
 ### 工作台入口改为左上角悬浮按钮（2026-08-30）

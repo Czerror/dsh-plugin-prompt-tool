@@ -1,7 +1,5 @@
 /** 插件配置、settings 数据模型与默认常量（settings 接口层）。 */
 import z from '@deepseek-ai/schemastery'
-import { settingsNamespace } from '@deepseek-ai/dsh-settings'
-import type { SettingsNamespace } from '@deepseek-ai/dsh-settings'
 import type { PromptConfigSpec } from './host/prompt-configs.ts'
 import {
   DEFAULT_PRESET_DIR,
@@ -11,7 +9,7 @@ import {
 } from './host/paths.ts'
 import type { PresetWriterParams } from './shared/engine-params.ts'
 
-export const NS: SettingsNamespace = settingsNamespace('prompt-tool')
+export const NS = 'prompt-tool' as const
 
 /** 引擎行为参数键：定义见 shared/param-keys.ts（write-preset 合并过滤共用）。 */
 export { PARAM_KEYS } from './shared/param-keys.ts'

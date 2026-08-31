@@ -17,6 +17,10 @@ function makeCtx(settingsValue) {
         try { opts.base() } catch { /* mock 环境无宿主上下文 */ }
         return { get: () => settingsValue, watch: (cb) => cb(settingsValue) }
       },
+      installSection: (_owner, _ns, _schema, _entry, hooks) => {
+        hooks.setSource(() => settingsValue)
+        hooks.onChange()
+      },
       get: () => undefined,
       mutate: async () => {},
     },
