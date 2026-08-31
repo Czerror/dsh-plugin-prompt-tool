@@ -2,8 +2,9 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { BRIDGE_ENDPOINTS, registerSettingsBridge } from '../../lib/index.mjs'
+import { Readable } from 'node:stream'
+import { mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { BRIDGE_ENDPOINTS, MAX_BRIDGE_BODY_BYTES, MAX_CHARACTER_CARD_STREAM_BYTES, registerSettingsBridge } from '../../lib/index.mjs'
 
 const PREFIX = '/api/prompt-tool/settings'
 
@@ -329,5 +330,121 @@ test('settings bridge /param-overrides rebuild=false 只落盘不重建（预设
     assert.ok(readFileSync(join(dir, 'preset.yml'), 'utf8').includes('deferred-card'), '配置应真实落盘')
   } finally {
     rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+function makePngCharacterCard() {
+  const card = JSON.stringify({
+    spec: 'chara_card_v3',
+    name: '流式测试卡',
+    data: { name: '流式测试卡', first_mes: '你好。', character_book: { entries: [] } },
+  })
+  const makeChunk = (type, data) => {
+    const header = Buffer.alloc(4)
+    header.writeUInt32BE(data.length, 0)
+    return Buffer.concat([header, Buffer.from(type, 'ascii'), data, Buffer.alloc(4)])
+  }
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    makeChunk('tEXt', Buffer.from('ccv3\0' + Buffer.from(card, 'utf8').toString('base64'), 'latin1')),
+    makeChunk('IEND', Buffer.alloc(0)),
+  ])
+}
+
+test('settings bridge：所有 JSON 端点统一 32 MiB 上限并返回明确 413', async () => {
+  assert.equal(MAX_BRIDGE_BODY_BYTES, 32 * 1024 * 1024)
+  assert.equal(MAX_CHARACTER_CARD_STREAM_BYTES, 32 * 1024 * 1024)
+  const { ctx, handlers } = makeHarness()
+  registerSettingsBridge(
+    ctx,
+    'prompt-tool',
+    () => ({ available: true, providers: [] }),
+    () => ({ activeSkillsDirs: [], skillCatalog: [] }),
+    () => '',
+  )
+  const handler = handlers.get(PREFIX + BRIDGE_ENDPOINTS.mutate)
+  assert.ok(handler, '/mutate 端点应注册')
+  const oneMiB = Buffer.alloc(1024 * 1024, 0x78)
+  const res = fakeRes()
+  await handler(fakeReq({ [Symbol.asyncIterator]: async function* () {
+    for (let index = 0; index < 33; index += 1) yield oneMiB
+  } }), res)
+  assert.equal(res.status, 413)
+  const payload = JSON.parse(res.body)
+  assert.equal(payload.ok, false)
+  assert.equal(payload.code, 'bridge-body-too-large')
+  assert.match(payload.message, /32MB/)
+})
+
+test('settings bridge：角色卡原始文件流支持扩展名错误的 PNG 并清理临时文件', async () => {
+  const { ctx, handlers } = makeHarness()
+  const root = join(tmpdir(), 'pt-character-stream-' + process.pid + '-' + Date.now())
+  const activeDir = join(root, 'anchored')
+  mkdirSync(activeDir, { recursive: true })
+  try {
+    registerSettingsBridge(
+      ctx,
+      'prompt-tool',
+      () => ({ available: true, providers: [] }),
+      () => ({ activeSkillsDirs: [], skillCatalog: [] }),
+      () => '',
+      undefined,
+      () => activeDir,
+    )
+    const handler = handlers.get(PREFIX + BRIDGE_ENDPOINTS.charactersImportStream)
+    assert.ok(handler, '角色卡流式端点应注册')
+    const png = makePngCharacterCard()
+    const req = Readable.from([png])
+    req.method = 'POST'
+    req.socket = { remoteAddress: '127.0.0.1' }
+    req.headers = { host: 'localhost', 'x-file-name': encodeURIComponent('card.jpg') }
+    const res = fakeRes()
+    await handler(req, res)
+    assert.equal(res.status, 200)
+    const payload = JSON.parse(res.body)
+    assert.equal(payload.ok, true)
+    assert.equal(payload.value.receivedBytes, png.length)
+    const cardDir = join(root, '.characters', payload.value.id)
+    assert.equal(statSync(join(cardDir, 'avatar.png')).size, png.length)
+    assert.equal(JSON.parse(readFileSync(join(cardDir, 'card.json'), 'utf8')).name, '流式测试卡')
+    assert.deepEqual(readdirSync(root).filter((name) => name.startsWith('.characters-upload-')), [])
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+test('settings bridge：角色卡流式导入超过 32 MiB 返回 413 并清理临时文件', async () => {
+  const { ctx, handlers } = makeHarness()
+  const root = join(tmpdir(), 'pt-character-stream-limit-' + process.pid + '-' + Date.now())
+  const activeDir = join(root, 'anchored')
+  mkdirSync(activeDir, { recursive: true })
+  try {
+    registerSettingsBridge(
+      ctx,
+      'prompt-tool',
+      () => ({ available: true, providers: [] }),
+      () => ({ activeSkillsDirs: [], skillCatalog: [] }),
+      () => '',
+      undefined,
+      () => activeDir,
+    )
+    const handler = handlers.get(PREFIX + BRIDGE_ENDPOINTS.charactersImportStream)
+    assert.ok(handler, '角色卡流式端点应注册')
+    const chunk = Buffer.alloc(1024 * 1024, 0x78)
+    const req = Readable.from((async function* () {
+      for (let index = 0; index < 33; index += 1) yield chunk
+    })())
+    req.method = 'POST'
+    req.socket = { remoteAddress: '127.0.0.1' }
+    req.headers = { host: 'localhost', 'x-file-name': 'too-large.png' }
+    const res = fakeRes()
+    await handler(req, res)
+    assert.equal(res.status, 413)
+    const payload = JSON.parse(res.body)
+    assert.equal(payload.ok, false)
+    assert.equal(payload.code, 'character-stream-too-large')
+    assert.match(payload.message, /32MB/)
+    assert.deepEqual(readdirSync(root).filter((name) => name.startsWith('.characters-upload-')), [])
+  } finally {
+    rmSync(root, { recursive: true, force: true })
   }
 })

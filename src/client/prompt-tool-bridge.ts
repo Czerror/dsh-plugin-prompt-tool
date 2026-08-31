@@ -1,7 +1,7 @@
 /** settings bridge 客户端传输与载荷解析层（无 react 依赖；UI 状态见 prompt-tool-store）。 */
 import type { PromptConfigDraft, EngineMeta } from './prompt-tool-types.ts'
 import type { EngineParamKey } from '../shared/engine-params.ts'
-import { SETTINGS_BRIDGE_PREFIX, type BridgeErrorPayload } from '../shared/bridge-contract.ts'
+import { MAX_BRIDGE_BODY_BYTES, SETTINGS_BRIDGE_PREFIX, type BridgeErrorPayload } from '../shared/bridge-contract.ts'
 
 export interface BridgeSettingsView { ns: string; value: unknown; base?: unknown; revision: number }
 export type BridgeResult<T> = { ok: true; value: T; providers?: string[]; modelCatalog?: Record<string, string[]>; activeSkillsDirs?: string[]; skillCatalog?: SkillCatalogEntry[]; templatePreStepCount?: number; presetParams?: Record<string, unknown>; hostDefaultModel?: { provider?: string; model?: string; reasoningEffort?: string }; meta?: { meta: EngineMeta }; overrides?: { overrides: Record<string, unknown> }; variables?: { variables: Record<string, string>; enabled: boolean }; promptConfigs?: { promptConfigs: PromptConfigDraft[] } } | BridgeErrorPayload
@@ -305,6 +305,12 @@ const isBridgeResultPayload = (payload: unknown): payload is BridgeResult<unknow
   return !record.ok || 'value' in record
 }
 
+async function readBridgeResponse<T>(response: Response): Promise<BridgeResult<T>> {
+  const payload = await response.json() as unknown
+  if (isBridgeResultPayload(payload)) return payload as BridgeResult<T>
+  return { ok: false, message: `invalid settings bridge payload (HTTP ${response.status})` }
+}
+
 export async function bridgePost<T>(path: string, body: unknown): Promise<BridgeResult<T>> {
   try {
     const response = await fetch(SETTINGS_BRIDGE_PREFIX + path, {
@@ -312,12 +318,32 @@ export async function bridgePost<T>(path: string, body: unknown): Promise<Bridge
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(body),
     })
-    const payload = await response.json() as unknown
-    if (isBridgeResultPayload(payload)) return payload as BridgeResult<T>
-    return { ok: false, message: `invalid settings bridge payload (HTTP ${response.status})` }
+    return await readBridgeResponse<T>(response)
   } catch (error) {
     return { ok: false, message: errorMessage(error) }
   }
+}
+
+/** 原始文件流上传；用于避开 JSON/base64 的额外膨胀。 */
+export async function bridgeUpload<T>(path: string, file: Blob, fileName: string): Promise<BridgeResult<T>> {
+  try {
+    const response = await fetch(SETTINGS_BRIDGE_PREFIX + path, {
+      method: 'POST',
+      headers: {
+        'content-type': file.type || 'application/octet-stream',
+        'x-file-name': encodeURIComponent(fileName),
+      },
+      body: file,
+    })
+    return await readBridgeResponse<T>(response)
+  } catch (error) {
+    return { ok: false, message: errorMessage(error) }
+  }
+}
+
+/** JSON 包装字段和少量路径元数据预留 4KiB，避免临界文件刚好超限。 */
+export function shouldStreamJsonFile(file: Blob): boolean {
+  return file.size >= MAX_BRIDGE_BODY_BYTES - 4 * 1024
 }
 
 export function fieldsFromView(res: BridgeResult<BridgeSettingsView>): Fields {

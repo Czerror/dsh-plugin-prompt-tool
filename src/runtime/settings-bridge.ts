@@ -2,7 +2,9 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { basename, dirname, join } from 'node:path'
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { createWriteStream, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { Transform } from 'node:stream'
+import { pipeline } from 'node:stream/promises'
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml'
 import type { SettingsDescriptor, SettingsPathOp } from '@deepseek-ai/dsh-settings'
 import { PARAM_KEYS } from '../config.ts'
@@ -34,17 +36,15 @@ import {
   applyCharacterToPreset,
   deleteCharacterCard,
   importCharacterCard,
+  importCharacterCardFile,
   listCharacterCards,
   removeCharacterFromPreset,
 } from '../host/characters.ts'
 import { convertStToPreset, mergeStPresets } from '../host/sillytavern.ts'
-import { BRIDGE_ENDPOINTS, SETTINGS_BRIDGE_PREFIX } from '../shared/bridge-contract.ts'
+import { BRIDGE_ENDPOINTS, MAX_BRIDGE_BODY_BYTES, MAX_CHARACTER_CARD_STREAM_BYTES, SETTINGS_BRIDGE_PREFIX } from '../shared/bridge-contract.ts'
 import { validateEngineParamValues } from '../shared/engine-params.ts'
 import { DEFAULT_PRESET_DIR } from '../host/paths.ts'
 
-const MAX_SETTINGS_BRIDGE_BODY = 64 * 1024
-/** 预设包导入独立上限（含 .mjs 模块的官方预设可远超 64KB 设置桥上限；8MB 足够）。 */
-const PRESET_PACKAGE_MAX_BYTES = 8 * 1024 * 1024
 
 export interface SkillsBridgeState {
   activeSkillsDirs: string[]
@@ -87,11 +87,11 @@ function writeBridgeJson(res: ServerResponse, status: number, body: unknown): vo
 const asRecord = (value: unknown): Record<string, unknown> =>
   value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
 
-/** 读取桥请求体；超限时返回 tooLarge 标记（由调用方决定状态码与错误信息）。 */
+/** 读取 JSON bridge 请求体；所有 JSON 端点统一使用 32 MiB 内存上限。 */
 async function readBridgeBody(
   req: IncomingMessage,
-  maxBytes = MAX_SETTINGS_BRIDGE_BODY,
-): Promise<{ body: unknown; tooLarge: boolean }> {
+): Promise<{ body: unknown; tooLarge: boolean; receivedBytes: number }> {
+  const maxBytes = MAX_BRIDGE_BODY_BYTES
   const chunks: Buffer[] = []
   let size = 0
   let overflow = false
@@ -107,11 +107,70 @@ async function readBridgeBody(
     }
     chunks.push(buffer)
   }
-  if (overflow) return { body: undefined, tooLarge: true }
+  if (overflow) return { body: undefined, tooLarge: true, receivedBytes: size }
   try {
-    return { body: JSON.parse(Buffer.concat(chunks).toString('utf8')) as unknown, tooLarge: false }
+    return { body: JSON.parse(Buffer.concat(chunks).toString('utf8')) as unknown, tooLarge: false, receivedBytes: size }
   } catch {
-    return { body: undefined, tooLarge: false }
+    return { body: undefined, tooLarge: false, receivedBytes: size }
+  }
+}
+
+function writeBridgeBodyTooLarge(res: ServerResponse, receivedBytes: number): void {
+  writeBridgeJson(res, 413, {
+    ok: false,
+    code: 'bridge-body-too-large',
+    message: `请求载荷超过 ${Math.round(MAX_BRIDGE_BODY_BYTES / 1024 / 1024)}MB 上限（已收到 ${receivedBytes} 字节）`,
+  })
+}
+
+async function readBridgeBodyForHandler(req: IncomingMessage, res: ServerResponse): Promise<{ body: unknown } | undefined> {
+  const result = await readBridgeBody(req)
+  if (result.tooLarge) {
+    writeBridgeBodyTooLarge(res, result.receivedBytes)
+    return undefined
+  }
+  return { body: result.body }
+}
+
+class StreamBodyTooLargeError extends Error {
+  constructor(
+    readonly receivedBytes: number,
+    readonly maxBytes: number,
+  ) {
+    super(`stream body exceeds ${maxBytes} bytes`)
+    this.name = 'StreamBodyTooLargeError'
+  }
+}
+
+async function writeStreamBody(
+  req: IncomingMessage,
+  filePath: string,
+  maxBytes: number,
+): Promise<number> {
+  let receivedBytes = 0
+  const limiter = new Transform({
+    transform(chunk, _encoding, callback) {
+      const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
+      receivedBytes += buffer.length
+      if (receivedBytes > maxBytes) {
+        callback(new StreamBodyTooLargeError(receivedBytes, maxBytes))
+        return
+      }
+      callback(null, buffer)
+    },
+  })
+  await pipeline(req, limiter, createWriteStream(filePath, { flags: 'wx' }))
+  return receivedBytes
+}
+
+function uploadFileName(req: IncomingMessage): string {
+  const value = req.headers['x-file-name']
+  const raw = Array.isArray(value) ? value[0] : value
+  if (typeof raw !== 'string' || raw.length === 0) return 'character-card.bin'
+  try {
+    return decodeURIComponent(raw)
+  } catch {
+    return raw
   }
 }
 
@@ -375,7 +434,9 @@ export function registerSettingsBridge(
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.mutate,
           handler: async (req, res) => {
             if (!guard(req, res)) return
-            const { body } = await readBridgeBody(req)
+            const parsedBody = await readBridgeBodyForHandler(req, res)
+            if (parsedBody === undefined) return
+            const { body } = parsedBody
             if (body === null || body === undefined || typeof body !== 'object') {
               writeBridgeJson(res, 400, { ok: false, code: 'settings-rejected', message: 'unreadable JSON body' })
               return
@@ -417,17 +478,11 @@ export function registerSettingsBridge(
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.configsValidate,
           handler: async (req, res) => {
             if (!guard(req, res)) return
-            // 校验载荷承载全量 promptConfigs（实测 129 卡 70KB），同样用预设包级上限，
-            // 否则超限被静默截断为 400 unreadable JSON body（保存按钮的权威校验失败）。
-            const { body, tooLarge } = await readBridgeBody(req, PRESET_PACKAGE_MAX_BYTES)
-            if (tooLarge) {
-              writeBridgeJson(res, 413, {
-                ok: false,
-                code: 'configs-too-large',
-                message: `配置载荷超过 ${Math.round(PRESET_PACKAGE_MAX_BYTES / 1024 / 1024)}MB 上限`,
-              })
-              return
-            }
+            // 校验载荷承载全量 promptConfigs（实测 129 卡 70KB），使用统一 32 MiB JSON 上限，
+            // 超限由共享读取器明确返回 413，避免保存按钮收到误导性的 unreadable JSON body。
+            const parsedBody = await readBridgeBodyForHandler(req, res)
+            if (parsedBody === undefined) return
+            const { body } = parsedBody
             if (body === null || body === undefined || typeof body !== 'object') {
               writeBridgeJson(res, 400, { ok: false, code: 'settings-rejected', message: 'unreadable JSON body' })
               return
@@ -442,7 +497,9 @@ export function registerSettingsBridge(
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.skillFix,
           handler: async (req, res) => {
             if (!guard(req, res)) return
-            const { body } = await readBridgeBody(req)
+            const parsedBody = await readBridgeBodyForHandler(req, res)
+            if (parsedBody === undefined) return
+            const { body } = parsedBody
             if (body === null || body === undefined || typeof body !== 'object') {
               writeBridgeJson(res, 400, { ok: false, code: 'settings-rejected', message: 'unreadable JSON body' })
               return
@@ -529,7 +586,9 @@ export function registerSettingsBridge(
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.presetContent,
           handler: async (req, res) => {
             if (!guard(req, res)) return
-            const { body } = await readBridgeBody(req)
+            const parsedBody = await readBridgeBodyForHandler(req, res)
+            if (parsedBody === undefined) return
+            const { body } = parsedBody
             const record = (body ?? {}) as Record<string, unknown>
             const scope = record.scope === 'agents' ? 'agents' : 'preset'
             try {
@@ -549,15 +608,9 @@ export function registerSettingsBridge(
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.importPreset,
           handler: async (req, res) => {
             if (!guard(req, res)) return
-            const { body, tooLarge } = await readBridgeBody(req, PRESET_PACKAGE_MAX_BYTES)
-            if (tooLarge) {
-              writeBridgeJson(res, 413, {
-                ok: false,
-                code: 'preset-import-too-large',
-                message: `内容资产超过 ${Math.round(PRESET_PACKAGE_MAX_BYTES / 1024 / 1024)}MB 上限`,
-              })
-              return
-            }
+            const parsedBody = await readBridgeBodyForHandler(req, res)
+            if (parsedBody === undefined) return
+            const { body } = parsedBody
             if (body === null || body === undefined || typeof body !== 'object') {
               writeBridgeJson(res, 400, { ok: false, code: 'settings-rejected', message: 'unreadable JSON body' })
               return
@@ -616,18 +669,11 @@ export function registerSettingsBridge(
             // 阶段 2：参数按预设存储——读写激活预设 preset.yml 的 params（+ promptConfigs）。
             const presetRoot = dirname(dir)
             const templateName = basename(dir)
-            // promptConfigs 全量数组随配置卡数量增长（实测 129 卡 70KB），远超默认
-            // 64KB 端点上限——写分支用预设包级上限（8MB），避免大载荷被静默截断成
-            // “无载荷读取”导致保存静默失败。
-            const { body, tooLarge } = await readBridgeBody(req, PRESET_PACKAGE_MAX_BYTES)
-            if (tooLarge) {
-              writeBridgeJson(res, 413, {
-                ok: false,
-                code: 'overrides-too-large',
-                message: `参数载荷超过 ${Math.round(PRESET_PACKAGE_MAX_BYTES / 1024 / 1024)}MB 上限`,
-              })
-              return
-            }
+            // promptConfigs 全量数组随配置卡数量增长；所有 JSON bridge 端点统一使用 32 MiB
+            // 内存缓冲上限，超过后由调用方收到明确 413，不再静默降级为读取分支。
+            const parsedBody = await readBridgeBodyForHandler(req, res)
+            if (parsedBody === undefined) return
+            const { body } = parsedBody
             const record = (body ?? {}) as Record<string, unknown>
             // 无载荷 = 读取（preset.yml params 子集，兼容旧读回）。
             if (record.overrides === undefined && record.promptConfigs === undefined) {
@@ -699,7 +745,9 @@ export function registerSettingsBridge(
             // 只显示配置自身，模板变量统一在本卡片编辑。
             const presetRoot = dirname(dir)
             const templateName = basename(dir)
-            const { body } = await readBridgeBody(req)
+            const parsedBody = await readBridgeBodyForHandler(req, res)
+            if (parsedBody === undefined) return
+            const { body } = parsedBody
             const record = (body ?? {}) as Record<string, unknown>
             // 无载荷 = 读取（preset.yml 顶层 variables + 插值开关）。
             if (record.variables === undefined && record.enabled === undefined) {
@@ -735,7 +783,9 @@ export function registerSettingsBridge(
               writeBridgeJson(res, 400, { ok: false, code: 'preset-dir-unavailable', message: 'presetDir 未配置' })
               return
             }
-            const { body } = await readBridgeBody(req)
+            const parsedBody = await readBridgeBodyForHandler(req, res)
+            if (parsedBody === undefined) return
+            const { body } = parsedBody
             const record = (body ?? {}) as Record<string, unknown>
             // 无载荷 = 读取（preset.yml 顶层 customTools 段）。
             if (record.customTools === undefined) {
@@ -771,15 +821,9 @@ export function registerSettingsBridge(
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.importPresetPackage,
           handler: async (req, res) => {
             if (!guard(req, res)) return
-            const { body, tooLarge } = await readBridgeBody(req, PRESET_PACKAGE_MAX_BYTES)
-            if (tooLarge) {
-              writeBridgeJson(res, 413, {
-                ok: false,
-                code: 'preset-package-too-large',
-                message: `预设包超过 ${Math.round(PRESET_PACKAGE_MAX_BYTES / 1024 / 1024)}MB 上限`,
-              })
-              return
-            }
+            const parsedBody = await readBridgeBodyForHandler(req, res)
+            if (parsedBody === undefined) return
+            const { body } = parsedBody
             if (body === null || body === undefined || typeof body !== 'object') {
               writeBridgeJson(res, 400, { ok: false, code: 'settings-rejected', message: 'unreadable JSON body' })
               return
@@ -914,7 +958,9 @@ export function registerSettingsBridge(
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.exportPreset,
           handler: async (req, res) => {
             if (!guard(req, res)) return
-            const { body } = await readBridgeBody(req)
+            const parsedBody = await readBridgeBodyForHandler(req, res)
+            if (parsedBody === undefined) return
+            const { body } = parsedBody
             const record = (body ?? {}) as Record<string, unknown>
             const id = typeof record.id === 'string' && record.id.trim().length > 0 ? record.id.trim() : 'anchored'
             try {
@@ -942,7 +988,9 @@ export function registerSettingsBridge(
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.presetDelete,
           handler: async (req, res) => {
             if (!guard(req, res)) return
-            const { body } = await readBridgeBody(req)
+            const parsedBody = await readBridgeBodyForHandler(req, res)
+            if (parsedBody === undefined) return
+            const { body } = parsedBody
             const record = (body ?? {}) as Record<string, unknown>
             const id = typeof record.id === 'string' ? record.id.trim() : ''
             if (id.length === 0) {
@@ -978,7 +1026,9 @@ export function registerSettingsBridge(
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.presetClone,
           handler: async (req, res) => {
             if (!guard(req, res)) return
-            const { body } = await readBridgeBody(req)
+            const parsedBody = await readBridgeBodyForHandler(req, res)
+            if (parsedBody === undefined) return
+            const { body } = parsedBody
             const record = (body ?? {}) as Record<string, unknown>
             const id = typeof record.id === 'string' ? record.id.trim() : ''
             if (id.length === 0) {
@@ -998,7 +1048,9 @@ export function registerSettingsBridge(
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.presetDuplicate,
           handler: async (req, res) => {
             if (!guard(req, res)) return
-            const { body } = await readBridgeBody(req)
+            const parsedBody = await readBridgeBodyForHandler(req, res)
+            if (parsedBody === undefined) return
+            const { body } = parsedBody
             const record = (body ?? {}) as Record<string, unknown>
             const id = typeof record.id === 'string' ? record.id.trim() : ''
             if (id.length === 0) {
@@ -1025,7 +1077,9 @@ export function registerSettingsBridge(
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.presetOpen,
           handler: async (req, res) => {
             if (!guard(req, res)) return
-            const { body } = await readBridgeBody(req)
+            const parsedBody = await readBridgeBodyForHandler(req, res)
+            if (parsedBody === undefined) return
+            const { body } = parsedBody
             const record = (body ?? {}) as Record<string, unknown>
             const id = typeof record.id === 'string' ? record.id.trim() : ''
             if (id.length === 0) {
@@ -1058,11 +1112,9 @@ export function registerSettingsBridge(
               writeBridgeJson(res, 400, { ok: false, code: 'preset-dir-unavailable', message: 'presetDir 未配置' })
               return
             }
-            const { body, tooLarge } = await readBridgeBody(req, PRESET_PACKAGE_MAX_BYTES)
-            if (tooLarge) {
-              writeBridgeJson(res, 413, { ok: false, code: 'preset-package-too-large', message: '角色卡文件超过 8MB 上限' })
-              return
-            }
+            const parsedBody = await readBridgeBodyForHandler(req, res)
+            if (parsedBody === undefined) return
+            const { body } = parsedBody
             if (body === null || typeof body !== 'object') {
               writeBridgeJson(res, 400, { ok: false, code: 'settings-rejected', message: 'unreadable JSON body' })
               return
@@ -1094,6 +1146,52 @@ export function registerSettingsBridge(
         }),
         sctx.webServer.register({
           kind: 'exact',
+          path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.charactersImportStream,
+          handler: async (req, res) => {
+            if (!guard(req, res)) return
+            const dir = getPresetConfigsDir?.() ?? ''
+            if (dir.length === 0) {
+              writeBridgeJson(res, 400, { ok: false, code: 'preset-dir-unavailable', message: 'presetDir 未配置' })
+              return
+            }
+            const presetRoot = dirname(dir)
+            mkdirSync(presetRoot, { recursive: true })
+            const tempRoot = mkdtempSync(join(presetRoot, '.characters-upload-'))
+            const tempFile = join(tempRoot, 'upload.bin')
+            try {
+              let receivedBytes = 0
+              try {
+                receivedBytes = await writeStreamBody(req, tempFile, MAX_CHARACTER_CARD_STREAM_BYTES)
+              } catch (error) {
+                if (error instanceof StreamBodyTooLargeError) {
+                  writeBridgeJson(res, 413, {
+                    ok: false,
+                    code: 'character-stream-too-large',
+                    message: `角色卡文件超过 ${Math.round(error.maxBytes / 1024 / 1024)}MB 流式上限（已收到 ${error.receivedBytes} 字节）`,
+                  })
+                  return
+                }
+                throw error
+              }
+              const result = importCharacterCardFile(presetRoot, tempFile, uploadFileName(req))
+              if (!result.ok) {
+                writeBridgeJson(res, 400, { ok: false, code: 'characters-rejected', message: result.message })
+                return
+              }
+              writeBridgeJson(res, 200, {
+                ok: true,
+                value: { id: result.id, name: result.name, receivedBytes },
+              })
+            } catch (error) {
+              const message = error instanceof Error ? error.message : String(error)
+              writeBridgeJson(res, 500, { ok: false, code: 'characters-stream-failed', message: `角色卡流式导入失败：${message}` })
+            } finally {
+              rmSync(tempRoot, { recursive: true, force: true })
+            }
+          },
+        }),
+        sctx.webServer.register({
+          kind: 'exact',
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.charactersList,
           handler: async (req, res) => {
             if (!guard(req, res)) return
@@ -1116,7 +1214,9 @@ export function registerSettingsBridge(
               writeBridgeJson(res, 400, { ok: false, code: 'preset-dir-unavailable', message: 'presetDir 未配置' })
               return
             }
-            const { body } = await readBridgeBody(req)
+            const parsedBody = await readBridgeBodyForHandler(req, res)
+            if (parsedBody === undefined) return
+            const { body } = parsedBody
             const record = (body ?? {}) as Record<string, unknown>
             const id = typeof record.id === 'string' ? record.id.trim() : ''
             if (id.length === 0) {
@@ -1141,7 +1241,9 @@ export function registerSettingsBridge(
               writeBridgeJson(res, 400, { ok: false, code: 'preset-dir-unavailable', message: 'presetDir 未配置' })
               return
             }
-            const { body } = await readBridgeBody(req)
+            const parsedBody = await readBridgeBodyForHandler(req, res)
+            if (parsedBody === undefined) return
+            const { body } = parsedBody
             const record = (body ?? {}) as Record<string, unknown>
             const id = typeof record.id === 'string' ? record.id.trim() : ''
             if (id.length === 0) {
@@ -1167,7 +1269,9 @@ export function registerSettingsBridge(
               writeBridgeJson(res, 400, { ok: false, code: 'preset-dir-unavailable', message: 'presetDir 未配置' })
               return
             }
-            const { body } = await readBridgeBody(req)
+            const parsedBody = await readBridgeBodyForHandler(req, res)
+            if (parsedBody === undefined) return
+            const { body } = parsedBody
             const record = (body ?? {}) as Record<string, unknown>
             const id = typeof record.id === 'string' ? record.id.trim() : ''
             if (id.length === 0) {

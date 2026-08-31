@@ -4,8 +4,8 @@
  *  已导入的角色卡显示状态并可一键移除。 */
 import { memo, useEffect, useRef, useState, type ReactNode } from 'react'
 import { IconFolderOpenOutline16, IconTrashOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
-import { bridgePost } from './prompt-tool-bridge.ts'
-import { parseCharacterCardPng } from './character-card.ts'
+import { bridgePost, bridgeUpload, shouldStreamJsonFile } from './prompt-tool-bridge.ts'
+import { isPngSignature } from './character-card.ts'
 import type { PromptToolStore } from './prompt-tool-store.ts'
 import ui from './PromptUi.module.css'
 
@@ -34,32 +34,34 @@ export const CharactersPage = memo(function CharactersPage(props: { store: Promp
     void loadCharacters()
   }, [])
 
-  /** 导入角色卡入库（PNG 解析出 JSON + 原图，JSON 直传）。 */
+  /** 导入角色卡：PNG 图片按魔数识别并走原始文件流，大 JSON 也走流式端点。 */
   const importCard = async (files: FileList | null): Promise<void> => {
     if (files === null || files.length === 0) return
     setImporting(true)
     try {
       for (const file of Array.from(files)) {
-        if (/\.png$/i.test(file.name)) {
-          const buffer = await file.arrayBuffer()
-          const card = await parseCharacterCardPng(buffer, file.name)
-          const res = await bridgePost<{ id: string; name: string }>('/characters-import', {
-            files: [
-              { path: 'avatar.png', content: card.imageBase64 },
-              { path: `${card.name}.json`, content: card.jsonText },
-            ],
-          })
+        const header = await file.slice(0, 8).arrayBuffer()
+        if (isPngSignature(header)) {
+          const res = await bridgeUpload<{ id: string; name: string }>(
+            '/characters-import-stream',
+            file,
+            file.name,
+          )
           if (res.ok) store.showNotice('ok', `角色卡「${res.value.name}」已入库`)
           else store.showNotice('error', '角色卡入库失败：' + (res.message ?? 'settings bridge unavailable'))
-        } else if (/\.json$/i.test(file.name)) {
-          const res = await bridgePost<{ id: string; name: string }>('/characters-import', {
-            files: [{ path: file.name, content: await file.text() }],
-          })
-          if (res.ok) store.showNotice('ok', `角色卡「${res.value.name}」已入库`)
-          else store.showNotice('error', '角色卡入库失败：' + (res.message ?? 'settings bridge unavailable'))
-        } else {
-          store.showNotice('error', `不支持的文件类型：${file.name}（仅 .png / .json）`)
+          continue
         }
+        if (/\.json$/i.test(file.name)) {
+          const res = shouldStreamJsonFile(file)
+            ? await bridgeUpload<{ id: string; name: string }>('/characters-import-stream', file, file.name)
+            : await bridgePost<{ id: string; name: string }>('/characters-import', {
+              files: [{ path: file.name, content: await file.text() }],
+            })
+          if (res.ok) store.showNotice('ok', `角色卡「${res.value.name}」已入库`)
+          else store.showNotice('error', '角色卡入库失败：' + (res.message ?? 'settings bridge unavailable'))
+          continue
+        }
+        store.showNotice('error', `不支持的文件类型：${file.name}（仅 PNG 角色卡或 JSON）`)
       }
       await loadCharacters()
     } catch (error) {
@@ -132,10 +134,10 @@ export const CharactersPage = memo(function CharactersPage(props: { store: Promp
             <input
               ref={pngRef}
               type="file"
-              accept=".png"
+              accept=".png,.jpg,.jpeg,image/png,image/jpeg"
               multiple
               className={ui.visuallyHidden}
-              aria-label="选择 SillyTavern 角色卡 PNG"
+              aria-label="选择 SillyTavern 角色卡图片"
               onChange={(event) => { void importCard(event.target.files); event.target.value = '' }}
             />
             <input
@@ -148,7 +150,7 @@ export const CharactersPage = memo(function CharactersPage(props: { store: Promp
               onChange={(event) => { void importCard(event.target.files); event.target.value = '' }}
             />
             <button type="button" className={ui.primaryPill} disabled={importing} onClick={() => pngRef.current?.click()}>
-              {importing ? '导入中…' : '导入角色卡 PNG'}
+              {importing ? '导入中…' : '导入角色卡图片'}
             </button>
             <button type="button" className={ui.pillButton} disabled={importing} onClick={() => jsonRef.current?.click()}>
               导入角色卡 JSON

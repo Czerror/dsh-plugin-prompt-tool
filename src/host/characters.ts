@@ -6,6 +6,7 @@
 import { readFileSync, writeFileSync, mkdirSync, rmSync, existsSync, readdirSync, appendFileSync } from 'node:fs'
 import { join, basename, dirname } from 'node:path'
 import { parse as parseYaml, parseDocument, stringify as stringifyYaml } from 'yaml'
+import { inflateSync } from 'node:zlib'
 import { convertStToPreset, mergeStPresets } from './sillytavern.ts'
 import { withPresetDoc } from './manifest.ts'
 import { buildWorldBookEntry } from './worldbook.ts'
@@ -140,33 +141,139 @@ function validCardId(id: string): boolean {
     && !id.includes('/') && !id.includes('\\') && !id.startsWith('.')
 }
 
+interface CharacterImportFile {
+  path: string
+  content: string
+}
+
+function cardNameFromJson(jsonText: string, fallback: string): string {
+  try {
+    const parsed = JSON.parse(jsonText) as { name?: unknown; data?: { name?: unknown } }
+    if (typeof parsed.name === 'string' && parsed.name.trim().length > 0) return parsed.name.trim()
+    if (parsed.data !== null && typeof parsed.data === 'object'
+      && typeof parsed.data.name === 'string' && parsed.data.name.trim().length > 0) {
+      return parsed.data.name.trim()
+    }
+  } catch {
+    // 转换阶段会返回带上下文的 JSON 错误，这里只负责生成稳定的 fallback 名称。
+  }
+  return fallback
+}
+
+function convertCharacterJsons(jsons: CharacterImportFile[]): { converted: PresetSpec; jsonText: string } {
+  const converted = jsons.length > 1
+    ? mergeStPresets(jsons.map((entry) => {
+      const baseName = basename(entry.path).replace(/\.json$/i, '') || 'character'
+      return convertStToPreset(JSON.parse(entry.content), baseName)
+    }))
+    : convertStToPreset(
+      JSON.parse(jsons[0]!.content),
+      basename(jsons[0]!.path).replace(/\.json$/i, '') || 'character',
+    )
+  return { converted, jsonText: jsons[0]!.content }
+}
+
+function persistCharacterCard(
+  presetRoot: string,
+  converted: PresetSpec,
+  jsonText: string,
+  avatar?: Buffer,
+): { ok: true; id: string; name: string } | { ok: false; message: string } {
+  if (!validCardId(converted.id)) return { ok: false, message: `非法角色卡 id：${converted.id}` }
+  const dir = cardDir(presetRoot, converted.id)
+  mkdirSync(dir, { recursive: true })
+  if (avatar !== undefined) writeFileSync(join(dir, 'avatar.png'), avatar)
+  writeFileSync(join(dir, 'card.json'), jsonText, 'utf8')
+  writeFileSync(join(dir, 'converted.yml'), stringifyYaml(converted, { lineWidth: 0 }), 'utf8')
+  return { ok: true, id: converted.id, name: converted.name }
+}
+
+const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]
+
+function isPngBuffer(buffer: Buffer): boolean {
+  return buffer.length >= PNG_SIGNATURE.length && PNG_SIGNATURE.every((value, index) => buffer[index] === value)
+}
+
+function decodePngCharacterCard(buffer: Buffer): { jsonText: string; avatar: Buffer } {
+  if (!isPngBuffer(buffer)) throw new Error('不是有效的 PNG 文件')
+  const chunks: Array<{ keyword: string; text: string }> = []
+  let offset = PNG_SIGNATURE.length
+  while (offset + 12 <= buffer.length) {
+    const length = buffer.readUInt32BE(offset)
+    const dataStart = offset + 8
+    const dataEnd = dataStart + length
+    const next = dataEnd + 4
+    if (dataEnd > buffer.length || next > buffer.length) throw new Error('PNG chunk 越界')
+    const type = buffer.toString('latin1', offset + 4, offset + 8)
+    if (type === 'tEXt') {
+      let separator = dataStart
+      while (separator < dataEnd && buffer[separator] !== 0) separator += 1
+      if (separator < dataEnd && separator > dataStart) {
+        chunks.push({
+          keyword: buffer.toString('latin1', dataStart, separator).toLowerCase(),
+          text: buffer.toString('latin1', separator + 1, dataEnd),
+        })
+      }
+    }
+    if (type === 'IEND') break
+    offset = next
+  }
+  const card = chunks.find((chunk) => chunk.keyword === 'ccv3') ?? chunks.find((chunk) => chunk.keyword === 'chara')
+  if (card === undefined) throw new Error('PNG 不含角色卡数据（无 chara/ccv3 tEXt chunk）')
+  const encoded = Buffer.from(card.text, 'base64')
+  try {
+    const jsonText = inflateSync(encoded).toString('utf8')
+    JSON.parse(jsonText)
+    return { jsonText, avatar: buffer }
+  } catch {
+    const jsonText = encoded.toString('utf8')
+    JSON.parse(jsonText)
+    return { jsonText, avatar: buffer }
+  }
+}
+
 /** 角色卡入库：PNG 原图（可选）+ 角色卡 JSON → 转换参数存 converted.yml。 */
 export function importCharacterCard(
   presetRoot: string,
-  files: Array<{ path: string; content: string }>,
+  files: CharacterImportFile[],
 ): { ok: true; id: string; name: string } | { ok: false; message: string } {
   const jsons = files.filter((entry) => /\.json$/i.test(entry.path))
   if (jsons.length === 0) {
     return { ok: false, message: '缺少角色卡 JSON（PNG 导入需同时携带解析出的角色卡 JSON）' }
   }
   try {
-    const converted = jsons.length > 1
-      ? mergeStPresets(jsons.map((entry) => {
-        const baseName = basename(entry.path).replace(/\.json$/i, '') || 'character'
-        return convertStToPreset(JSON.parse(entry.content), baseName)
-      }))
-      : convertStToPreset(JSON.parse(jsons[0]!.content), basename(jsons[0]!.path).replace(/\.json$/i, '') || 'character')
-    if (!validCardId(converted.id)) {
-      return { ok: false, message: `非法角色卡 id：${converted.id}` }
-    }
-    const dir = cardDir(presetRoot, converted.id)
-    mkdirSync(dir, { recursive: true })
-    // 原图落盘为 avatar.png（客户端已 base64），角色卡原始 JSON 存档 card.json。
+    const { converted, jsonText } = convertCharacterJsons(jsons)
     const avatar = files.find((entry) => /^avatar\.png$/i.test(entry.path))
-    if (avatar !== undefined) writeFileSync(join(dir, 'avatar.png'), Buffer.from(avatar.content, 'base64'))
-    writeFileSync(join(dir, 'card.json'), jsons[0]!.content, 'utf8')
-    writeFileSync(join(dir, 'converted.yml'), stringifyYaml(converted, { lineWidth: 0 }), 'utf8')
-    return { ok: true, id: converted.id, name: converted.name }
+    return persistCharacterCard(
+      presetRoot,
+      converted,
+      jsonText,
+      avatar === undefined ? undefined : Buffer.from(avatar.content, 'base64'),
+    )
+  } catch (error) {
+    return { ok: false, message: `角色卡转换失败：${error instanceof Error ? error.message : String(error)}` }
+  }
+}
+
+/** 原始文件流导入：识别 PNG 魔数后在 host 侧提取角色卡，避免客户端 base64 膨胀 JSON。 */
+export function importCharacterCardFile(
+  presetRoot: string,
+  filePath: string,
+  fileName = basename(filePath),
+): { ok: true; id: string; name: string } | { ok: false; message: string } {
+  try {
+    const buffer = readFileSync(filePath)
+    if (isPngBuffer(buffer)) {
+      const { jsonText, avatar } = decodePngCharacterCard(buffer)
+      const fallback = basename(fileName).replace(/\.[^.]+$/, '') || 'character'
+      const baseName = cardNameFromJson(jsonText, fallback)
+      const { converted } = convertCharacterJsons([{ path: `${baseName}.json`, content: jsonText }])
+      return persistCharacterCard(presetRoot, converted, jsonText, avatar)
+    }
+    const jsonText = buffer.toString('utf8')
+    const fallback = basename(fileName).replace(/\.[^.]+$/, '') || 'character'
+    const { converted } = convertCharacterJsons([{ path: `${fallback}.json`, content: jsonText }])
+    return persistCharacterCard(presetRoot, converted, jsonText)
   } catch (error) {
     return { ok: false, message: `角色卡转换失败：${error instanceof Error ? error.message : String(error)}` }
   }

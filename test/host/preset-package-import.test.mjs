@@ -9,7 +9,7 @@ import { parse as parseYaml } from 'yaml'
 // 因此本文件用动态 import 加载 lib，避免污染真实用户预设目录。
 const home = mkdtempSync(join(tmpdir(), 'pt-package-import-'))
 process.env.DSH_HOME = home
-const { registerSettingsBridge, stPresetId } = await import('../../lib/index.mjs')
+const { MAX_BRIDGE_BODY_BYTES, registerSettingsBridge, stPresetId } = await import('../../lib/index.mjs')
 
 const PREFIX = '/api/prompt-tool/settings'
 const PRESETS = join(home, '.agent-presets')
@@ -95,16 +95,16 @@ test('importPresetPackage：文件夹导入保留子目录（服务端为唯一�
   assert.ok(existsSync(join(PRESETS, 'demo', 'agent.cordis.yml')), '顶层组合文件应落在预设根目录')
 })
 
-test('importPresetPackage：超过 8MB 上限返回 413 明确错误', async () => {
+test('importPresetPackage：超过 32MB 上限返回 413 明确错误', async () => {
   const { status, payload } = await importPackage({
-    files: [{ path: 'big/preset.yml', content: 'id: big\n' + 'x'.repeat(9 * 1024 * 1024) }],
+    files: [{ path: 'big/preset.yml', content: 'id: big\n' + 'x'.repeat(MAX_BRIDGE_BODY_BYTES) }],
   })
   assert.equal(status, 413)
-  assert.equal(payload.code, 'preset-package-too-large')
+  assert.equal(payload.code, 'bridge-body-too-large')
   assert.ok(!existsSync(join(PRESETS, 'big')), '超限包不得写入')
 })
 
-test('importPresetPackage：64KB~8MB 之间的大包（如含 .mjs 模块的官方预设）正常导入', async () => {
+test('importPresetPackage：32MB 以内的大包（如含 .mjs 模块的官方预设）正常导入', async () => {
   const { status, payload } = await importPackage({
     files: [
       { path: 'large/preset.yml', content: 'id: large\nname: 大包预设\n' },

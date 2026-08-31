@@ -13,6 +13,13 @@ export interface CharacterCardData {
   imageBase64: string
 }
 
+const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]
+
+export function isPngSignature(buffer: ArrayBuffer | Uint8Array): boolean {
+  const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer)
+  return bytes.length >= PNG_SIGNATURE.length && PNG_SIGNATURE.every((value, index) => bytes[index] === value)
+}
+
 function readU32(bytes: Uint8Array, offset: number): number {
   return ((bytes[offset]! << 24) >>> 0) + (bytes[offset + 1]! << 16) + (bytes[offset + 2]! << 8) + bytes[offset + 3]!
 }
@@ -43,7 +50,7 @@ async function decodeBase64(text: string): Promise<string> {
 /** 解析角色卡 PNG：返回角色卡 JSON + 原图 base64。非 PNG / 无角色卡 chunk 抛错。 */
 export async function parseCharacterCardPng(buffer: ArrayBuffer, fileName: string): Promise<CharacterCardData> {
   const bytes = new Uint8Array(buffer)
-  if (bytes.length < 24 || bytes[0] !== 0x89 || bytes[1] !== 0x50 || bytes[2] !== 0x4e || bytes[3] !== 0x47) {
+  if (bytes.length < 24 || !isPngSignature(bytes)) {
     throw new Error('不是有效的 PNG 文件')
   }
   const chunks: Array<{ keyword: string; text: string }> = []

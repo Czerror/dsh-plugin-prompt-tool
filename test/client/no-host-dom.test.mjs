@@ -20,3 +20,13 @@ test('客户端装配层不自建 root 或观察宿主 DOM（官方 slot + body 
   assert.ok(!css.includes('centerCol'), 'CSS 不应依赖宿主中央列结构')
   assert.ok(!css.includes('data-dsh-workspace-slot'), 'CSS 不应探测官方 workspace DOM 槽位')
 })
+
+test('角色卡导入按 PNG 魔数与载荷大小分流', () => {
+  const page = read('src/client/CharactersPage.tsx')
+  const bridge = read('src/client/prompt-tool-bridge.ts')
+  assert.match(page, /isPngSignature/)
+  assert.match(page, /characters-import-stream/)
+  assert.match(page, /\.jpg,\.jpeg/)
+  assert.match(bridge, /export async function bridgeUpload/)
+  assert.match(bridge, /export function shouldStreamJsonFile/)
+})
