@@ -1,0 +1,374 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "dsh-plugin-prompt-tool 项目架构",
+    "locale": "zh-CN",
+    "output": "artifacts/project-architecture.html",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/Czerror/dsh-plugin-prompt-tool.git",
+      "revision": "f2b38e4029543b68dbec6ab1794b49dbbd060302"
+    },
+    "views": [
+      {
+        "id": "runtime-path",
+        "label": "运行时主链路",
+        "focus": [
+          "operator",
+          "workbench",
+          "bridge",
+          "runtime",
+          "compiler",
+          "engine",
+          "host"
+        ],
+        "note": "从工作台操作经过 loopback bridge，到预设物化、引擎装配和 DSH 执行。"
+      },
+      {
+        "id": "config-persistence",
+        "label": "配置与物化",
+        "focus": [
+          "workbench",
+          "bridge",
+          "runtime",
+          "compiler",
+          "engine"
+        ],
+        "note": "preset.yml 经 manifest 与 writePreset 生成 agent.cordis.yml 及配置资产。"
+      },
+      {
+        "id": "extensions",
+        "label": "技能与导入扩展",
+        "focus": [
+          "runtime",
+          "extensions",
+          "compiler",
+          "host"
+        ],
+        "note": "Skills、SillyTavern、角色卡、世界书和会话变量共用插件运行时。"
+      },
+      {
+        "id": "engine-execution",
+        "label": "引擎执行面",
+        "focus": [
+          "compiler",
+          "extensions",
+          "engine",
+          "host"
+        ],
+        "note": "engine/ 组合行接入六个官方注入层、晋升门控和模型工具生态。"
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "operator",
+      "type": "external",
+      "label": "使用者",
+      "sublabel": "edit · import · switch",
+      "pos": [
+        40,
+        90
+      ],
+      "size": [
+        160,
+        68
+      ],
+      "tag": "local"
+    },
+    {
+      "id": "workbench",
+      "type": "frontend",
+      "label": "React 工作台",
+      "sublabel": "React · SlotRegistry · SettingsScope",
+      "pos": [
+        270,
+        90
+      ],
+      "size": [
+        220,
+        82
+      ],
+      "sources": [
+        {
+          "path": "src/client/PromptWorkspace.tsx",
+          "label": "five pages"
+        },
+        {
+          "path": "src/client/index.ts",
+          "label": "client apply"
+        },
+        {
+          "path": "src/client/slot-workbench.tsx",
+          "label": "official slots"
+        }
+      ]
+    },
+    {
+      "id": "bridge",
+      "type": "security",
+      "label": "Loopback Bridge",
+      "sublabel": "/api/prompt-tool/settings/*",
+      "pos": [
+        550,
+        90
+      ],
+      "size": [
+        230,
+        82
+      ],
+      "tag": "127.0.0.1 only",
+      "sources": [
+        {
+          "path": "src/runtime/settings-bridge.ts",
+          "label": "HTTP routes"
+        },
+        {
+          "path": "src/shared/bridge-contract.ts",
+          "label": "25 endpoint contract"
+        }
+      ]
+    },
+    {
+      "id": "runtime",
+      "type": "backend",
+      "label": "Plugin Runtime",
+      "sublabel": "apply · settings · rebuild · tools",
+      "pos": [
+        850,
+        90
+      ],
+      "size": [
+        240,
+        88
+      ],
+      "tag": "prompt-tool",
+      "sources": [
+        {
+          "path": "src/index.ts",
+          "label": "Cordis entry"
+        },
+        {
+          "path": "src/config.ts",
+          "label": "settings schema"
+        },
+        {
+          "path": "src/web-surface.ts",
+          "label": "web surface"
+        }
+      ]
+    },
+    {
+      "id": "host",
+      "type": "cloud",
+      "label": "DSH Host",
+      "sublabel": "Cordis · llm · tools · subagents",
+      "pos": [
+        40,
+        370
+      ],
+      "size": [
+        250,
+        88
+      ],
+      "sources": [
+        {
+          "path": "package.json",
+          "label": "peer contracts"
+        },
+        {
+          "path": "src/runtime/models.ts",
+          "label": "model routes"
+        },
+        {
+          "path": "cordis.patch.yml",
+          "label": "bundle patch"
+        }
+      ]
+    },
+    {
+      "id": "engine",
+      "type": "backend",
+      "label": "Engine & Composition",
+      "sublabel": "engine/*.mjs · six layers · gates",
+      "pos": [
+        320,
+        370
+      ],
+      "size": [
+        240,
+        88
+      ],
+      "tag": "generated agent.cordis.yml",
+      "sources": [
+        {
+          "path": "engine/prompt-config-engine.mjs",
+          "label": "prompt executor"
+        },
+        {
+          "path": "engine/context-gate.mjs",
+          "label": "promotion gate"
+        },
+        {
+          "path": "engine/tool-config-engine.mjs",
+          "label": "custom tools"
+        }
+      ]
+    },
+    {
+      "id": "compiler",
+      "type": "backend",
+      "label": "Preset Compiler",
+      "sublabel": "manifest · writePreset · profile files",
+      "pos": [
+        850,
+        370
+      ],
+      "size": [
+        250,
+        88
+      ],
+      "tag": "preset.yml → generated",
+      "sources": [
+        {
+          "path": "src/host/manifest.ts",
+          "label": "load / merge / render"
+        },
+        {
+          "path": "src/host/write-preset.ts",
+          "label": "materialize assets"
+        },
+        {
+          "path": "src/host/paths.ts",
+          "label": "~/.dsh paths"
+        }
+      ]
+    },
+    {
+      "id": "extensions",
+      "type": "backend",
+      "label": "Skills & Domain Extensions",
+      "sublabel": "skills · ST · characters · world-book",
+      "pos": [
+        850,
+        610
+      ],
+      "size": [
+        240,
+        88
+      ],
+      "tag": "watch · import · register",
+      "sources": [
+        {
+          "path": "src/runtime/skills-provider.ts",
+          "label": "catalog / cache"
+        },
+        {
+          "path": "src/host/sillytavern.ts",
+          "label": "ST conversion"
+        },
+        {
+          "path": "src/runtime/world-book-tools.ts",
+          "label": "world-book tools"
+        }
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "operator-workbench",
+      "from": "operator",
+      "to": "workbench",
+      "label": "edit / import",
+      "variant": "emphasis"
+    },
+    {
+      "id": "workbench-bridge",
+      "from": "workbench",
+      "to": "bridge",
+      "label": "bridgePost"
+    },
+    {
+      "id": "bridge-runtime",
+      "from": "bridge",
+      "to": "runtime",
+      "label": "loopback API",
+      "variant": "security"
+    },
+    {
+      "id": "runtime-compiler",
+      "from": "runtime",
+      "to": "compiler",
+      "label": "load / save / rebuild",
+      "variant": "emphasis",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelDx": -180.0
+    },
+    {
+      "id": "extensions-compiler",
+      "from": "extensions",
+      "to": "compiler",
+      "label": "import / entries",
+      "variant": "dashed",
+      "fromSide": "top",
+      "toSide": "bottom",
+      "labelDx": 170.0
+    },
+    {
+      "id": "compiler-engine",
+      "from": "compiler",
+      "to": "engine",
+      "label": "agent.cordis.yml",
+      "variant": "emphasis",
+      "labelDy": -38.0
+    },
+    {
+      "id": "engine-host",
+      "from": "engine",
+      "to": "host",
+      "label": "six layers / tools",
+      "variant": "emphasis",
+      "labelDy": -38.0
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "主链路",
+      "items": [
+        "DSH 通过 Cordis apply() 加载 Plugin Runtime；客户端由官方 SlotRegistry 承载。",
+        "工作台的业务读写经 loopback bridge，标准开关仍走 SettingsScope。",
+        "重建后的 agent.cordis.yml 进入 DSH Host，最终连接 llm、tools 和 subagents。"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "配置与持久化",
+      "items": [
+        "preset.yml 是单一配置源：params、model、promptConfigs、variables、customTools。",
+        "manifest.ts 负责参数桥和合并优先级；write-preset.ts 物化预设目录。",
+        "生成资产包括 agent.cordis.yml、prompt-configs、variables.yml、custom-tools。"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "扩展能力",
+      "items": [
+        "Skills provider / watcher 提供目录、缓存、排序、解析和失效通知。",
+        "SillyTavern 预设、PNG/JSON 角色卡与 character_book 进入统一转换路径。",
+        "character、world_book、session_var 工具在运行时注册并可触发重建。"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "引擎与工程",
+      "items": [
+        "prompt-config-engine 接线 pre-step、system-section、runtime-context、agent-request、llm-stream、tool-pipeline。",
+        "context-gate、tool-bootstrap、code-presentation、tool-filter 等模块共享 epoch 晋升语义。",
+        "package.json 脚本覆盖 build、typecheck、lint、test、同步和组合重建。"
+      ]
+    }
+  ]
+}

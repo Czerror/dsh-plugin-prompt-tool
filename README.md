@@ -34,6 +34,18 @@ dsh --profile prompt-tool                                          # 首次启�
 - 🧩 **模板变量**：预设级 `variables` 段（`{{key}}` 插值源）——模块列表顶部「模板变量」卡片统一编辑（可折叠/清空/停用/失焦自动保存）；锚定匹配引擎（anchor-match）统一 custom-fallback 与 world-book 的匹配语义
 - 💬 **会话变量工具**：`session_var`（list/get/set/clear）——模型维护角色状态（`{{心情}}` 等），会话级覆盖预设默认；ST 运行时宏（`{{lastusermessage}}` / `{{lastcharmessage}}`）从会话事件提取
 
+## 项目架构
+
+本项目的 Archify 交互式架构图保存在 [`project-architecture/`](project-architecture/)：覆盖 React 工作台、loopback settings bridge、Plugin Runtime、Preset Compiler、Engine & Composition、Skills 与领域扩展以及 DSH Host 的运行链路。
+
+- [打开最终交互式架构图（v2）](project-architecture/project-architecture-v2.html)
+- [查看 Archify JSON 源规格](project-architecture/project-architecture-v2.json)
+- [查看桌面浅色/深色视觉验证](project-architecture/project-architecture-v2.visual-check.html)
+
+`v2` 是通过 showcase 9/9 校验与桌面 containment 检查的最终版本；无 `v2` 后缀的文件保留为首轮构图记录。
+
+![dsh-plugin-prompt-tool 项目架构](project-architecture/project-architecture-v2.visual-check.1440x900.light.png)
+
 ## 预设参数体系
 
 预设行为由一份 `preset.yml` 单一配置源下发，共四层默认值，各层职责不重叠：

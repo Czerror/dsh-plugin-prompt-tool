@@ -1,2 +1,4 @@
 # 统一 LF 换行：vendor 同步文件与测试断言依赖逐字节一致，Windows 检出不得转 CRLF。
 * text=auto eol=lf
+# Archify 收据绑定精确字节；架构产物不得做换行归一化。
+project-architecture/** binary
