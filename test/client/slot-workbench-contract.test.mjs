@@ -21,7 +21,7 @@ test('workbench registers official slots and a sidebar geometry bridge', () => {
   assert.doesNotMatch(source, /class\*|data-pane|centerCol|logoRow|newSession/)
 })
 
-test('floating trigger keeps the DSH-better-sidebar button contract', () => {
+test('floating trigger position stays independent from third-party title-bar settings', () => {
   assert.match(source, /strokeWidth="1\.5"/)
   assert.match(source, /data-dsh-plugin="prompt-tool"/)
   assert.match(source, /data-dsh-part="floating-trigger"/)
@@ -30,9 +30,10 @@ test('floating trigger keeps the DSH-better-sidebar button contract', () => {
   assert.match(source, /floatingTriggerLayer/)
   const layer = css.match(/\.floatingTriggerLayer\s*\{([^}]*)\}/s)?.[1] ?? ''
   assert.match(layer, /position:\s*fixed/)
-  assert.match(layer, /top:\s*calc\(3px \+ env\(safe-area-inset-top\)/, '浮层 top 必须与 DSH-better-sidebar 展开按钮对齐')
-  assert.match(css, /:global\(body\[data-dsh-title-bar-compat\]\) \.floatingTriggerLayer\s*\{[^}]*var\(--dsh-title-bar-strip, 40px\) \+ 3px/s)
-  assert.match(layer, /left:\s*var\(--pt-sidebar-edge, 274px\)/, '浮层必须使用真实 sidebar 边缘变量并保留 274px 回退')
+  assert.match(layer, /top:\s*calc\(3px \+ env\(safe-area-inset-top\)/, '浮层保持自己的固定纵向位置')
+  assert.doesNotMatch(css, /data-dsh-title-bar-compat|--dsh-title-bar-strip/, '浮层不得读取第三方标题栏位置契约')
+  assert.match(layer, /left:\s*var\(--pt-sidebar-edge, 284px\)/, '浮层必须使用真实 sidebar 边缘变量并额外右移 10px')
+  assert.match(source, /const FLOATING_TRIGGER_GAP = 20/, '动态 sidebar 几何同样必须额外右移 10px')
   assert.match(layer, /z-index:\s*60/, '浮层必须位于 shell.overlay 及抽屉背板之上')
   assert.match(layer, /pointer-events:\s*auto/)
   const trigger = css.match(/\.floatingTrigger\s*\{([^}]*)\}/s)?.[1] ?? ''

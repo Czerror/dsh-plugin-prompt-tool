@@ -58,7 +58,7 @@ function FloatingTrigger(props: { controller: PromptToolWorkspaceController }): 
 
 const SIDEBAR_WIDE_PADDING = 12
 const SIDEBAR_COLLAPSED_WIDTH = 56
-const FLOATING_TRIGGER_GAP = 10
+const FLOATING_TRIGGER_GAP = 20
 const FLOATING_TRIGGER_LEFT_PROPERTY = '--pt-sidebar-edge'
 
 /**

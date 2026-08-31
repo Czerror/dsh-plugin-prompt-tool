@@ -49,15 +49,11 @@
 .floatingTriggerLayer {
   position: fixed;
   top: calc(3px + env(safe-area-inset-top));
-  /* 初始值按 264px 最小侧边栏 + 10px 间距回退；渲染后由官方 sidebar slot 探针覆盖。 */
-  left: var(--pt-sidebar-edge, 274px);
+  /* 初始值按 264px 最小侧边栏 + 20px 间距回退；渲染后由官方 sidebar slot 探针覆盖。 */
+  left: var(--pt-sidebar-edge, 284px);
   z-index: 60;
   display: flex;
   pointer-events: auto;
-}
-
-:global(body[data-dsh-title-bar-compat]) .floatingTriggerLayer {
-  top: calc(var(--dsh-title-bar-strip, 40px) + 3px + env(safe-area-inset-top));
 }
 
 .floatingTrigger {
