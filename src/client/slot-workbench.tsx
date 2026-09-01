@@ -149,15 +149,21 @@ function WorkbenchDrawerSlot(props: OverlayProps): ReactNode {
     if (wasOpen && !open) triggerRef.current?.focus()
   }, [open])
   const trigger = <FloatingTrigger controller={controller} triggerRef={triggerRef} />
+  // 抽屉同样 body portal + fixed 顶层：宿主「对话/轨迹」顶部导航栏处于更高层级，
+  // 只挂在 shell.overlay slot 内会被导航栏遮挡（不是最顶层）；portal 到 body 后
+  // 用高 z-index 保证抽屉背板/面板与悬浮按钮始终在导航栏之上。
+  const drawer = (
+    <div className={css.drawerLayer} data-open={open ? '' : undefined}>
+      <div className={css.drawerBackdrop} onClick={() => controller.close()} aria-hidden="true" />
+      <section className={css.drawerPanel} role="dialog" aria-modal="true" aria-label="提示词工具">
+        <PromptWorkspace api={api} settings={settings} controller={controller} onClose={() => controller.close()} />
+      </section>
+    </div>
+  )
   return (
     <>
       {typeof document === 'undefined' || document.body === null ? trigger : createPortal(trigger, document.body)}
-      <div className={css.drawerLayer} data-open={open ? '' : undefined}>
-        <div className={css.drawerBackdrop} onClick={() => controller.close()} aria-hidden="true" />
-        <section className={css.drawerPanel} role="dialog" aria-modal="true" aria-label="提示词工具">
-          <PromptWorkspace api={api} settings={settings} controller={controller} onClose={() => controller.close()} />
-        </section>
-      </div>
+      {typeof document === 'undefined' || document.body === null ? drawer : createPortal(drawer, document.body)}
     </>
   )
 }

@@ -7,10 +7,12 @@
   --pt-drawer-shade: color-mix(in srgb, #0b1220 52%, transparent);
 }
 
+/* body portal 顶层抽屉：z-index 高于宿主「对话/轨迹」顶部导航栏，
+   背板与面板始终盖在导航之上，不被遮挡。 */
 .drawerLayer {
-  position: absolute;
+  position: fixed;
   inset: 0;
-  z-index: 20;
+  z-index: 1000;
   visibility: hidden;
   pointer-events: none;
 }
@@ -51,7 +53,8 @@
   top: calc(3px + env(safe-area-inset-top));
   /* 初始值按 264px 最小侧边栏 + 20px 间距回退；渲染后由官方 sidebar slot 探针覆盖。 */
   left: var(--pt-sidebar-edge, 284px);
-  z-index: 60;
+  /* 悬浮按钮高于抽屉（1000），抽屉打开时仍可点击关闭。 */
+  z-index: 1100;
   display: flex;
   pointer-events: auto;
 }

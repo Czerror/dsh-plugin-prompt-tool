@@ -17,6 +17,7 @@ test('workbench registers official slots and a sidebar geometry bridge', () => {
   assert.doesNotMatch(source, /createRoot|MutationObserver|querySelector/)
   assert.match(source, /createPortal/)
   assert.match(source, /createPortal\(trigger, document\.body\)/)
+  assert.match(source, /createPortal\(drawer, document\.body\)/, '抽屉必须 body portal 到导航栏之上')
   assert.match(source, /body portal/)
   assert.doesNotMatch(source, /class\*|data-pane|centerCol|logoRow|newSession/)
 })
@@ -34,7 +35,7 @@ test('floating trigger position stays independent from third-party title-bar set
   assert.doesNotMatch(css, /data-dsh-title-bar-compat|--dsh-title-bar-strip/, '浮层不得读取第三方标题栏位置契约')
   assert.match(layer, /left:\s*var\(--pt-sidebar-edge, 284px\)/, '浮层必须使用真实 sidebar 边缘变量并额外右移 10px')
   assert.match(source, /const FLOATING_TRIGGER_GAP = 20/, '动态 sidebar 几何同样必须额外右移 10px')
-  assert.match(layer, /z-index:\s*60/, '浮层必须位于 shell.overlay 及抽屉背板之上')
+  assert.match(layer, /z-index:\s*1100/, '悬浮按钮必须高于宿主导航栏与抽屉背板（1100）')
   assert.match(layer, /pointer-events:\s*auto/)
   const trigger = css.match(/\.floatingTrigger\s*\{([^}]*)\}/s)?.[1] ?? ''
   assert.match(trigger, /width:\s*28px/)
@@ -54,7 +55,7 @@ test('floating trigger position stays independent from third-party title-bar set
 })
 
 test('shell.overlay drawer is styled as an official overlay child', () => {
-  assert.match(css, /\.drawerLayer\s*\{[^}]*position:\s*absolute;[^}]*z-index:\s*20;[^}]*visibility:\s*hidden/s)
+  assert.match(css, /\.drawerLayer\s*\{[^}]*position:\s*fixed;[^}]*z-index:\s*1000;[^}]*visibility:\s*hidden/s)
   assert.match(css, /\.drawerLayer\[data-open\]\s*\{[^}]*visibility:\s*visible/s)
   assert.match(css, /\.drawerBackdrop\s*\{[^}]*pointer-events:\s*auto/s)
   assert.match(css, /\.drawerPanel\s*\{[^}]*transform:\s*translateX\(100%\)/s)
