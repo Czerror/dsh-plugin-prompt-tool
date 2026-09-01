@@ -1,10 +1,12 @@
 # dsh-plugin-prompt-tool 仓库指令
 
-本仓库是 DeepSeek Harness（DSH）的提示词工具插件。核心产品边界是「位置、时机与受众可配置的提示词注入引擎」：`promptConfigs` 驱动六个官方注入层，预设负责组合具体行为。PTC、首轮锚定、router-guide、Flash 路由与其他模型能力增强都属于可选模块或预设，不得硬编码成项目主线或新增全局默认；新实验能力保持 opt-in，并用确定性行为测试验收。
+本仓库是 DeepSeek Harness（DSH）的提示词工具插件。核心产品边界是「位置、时机与受众可配置的提示词注入引擎」：`promptConfigs` 按每条配置声明的官方插入点按需注册，预设负责组合具体行为；不同插入点没有插件自定义的全局顺序。PTC、首轮锚定、router-guide、Flash 路由与其他模型能力增强都属于可选模块或预设，不得硬编码成项目主线或新增全局默认；新实验能力保持 opt-in，并用确定性行为测试验收。
 
 不要修改 DeepSeek Harness 源码仓库。插件只通过本仓库的 `cordis.patch.yml`、`package.json#dsh`、官方 `@deepseek-ai/*` 包和 DSH profile 装配。
 
 修改参数、预设存储或生成链路前，先读 [docs/architecture-params.md](docs/architecture-params.md)。修改 `engine/`、晋升门控或组合模块前，先读 [docs/engine-reuse.md](docs/engine-reuse.md)；编辑 Cordis 组合时同时参考 [preset/creative/skills/editing-cordis-compositions/SKILL.md](preset/creative/skills/editing-cordis-compositions/SKILL.md)。修改 SillyTavern、角色卡或世界书转换前，先读 [SillyTavern.md](SillyTavern.md)。
+
+官方 DeepSeek Harness 准则：本地文档 `D:\AI\GitHub\deepseek-harness\docs`；在线镜像 `https://github.com/deepseek-ai/deepseek-harness/tree/master/docs`。涉及宿主 API、Cordis 生命周期、Settings、Slot 或预设契约时，先核对官方文档并以其为准。
 
 ## 仓库布局
 
@@ -13,7 +15,7 @@
 - `src/runtime/`：settings bridge、模型路由、Skills、TUI、角色卡/世界书/session_var 模型工具等宿主运行时适配。
 - `src/host/`：`preset.yml` 数据层、迁移、SillyTavern/角色卡/世界书转换和 `writePreset` 物化逻辑。
 - `src/shared/`：host/client 共用契约；参数键和 bridge 路径必须在这里保持单一来源。
-- `engine/`：生成预设运行时使用的自包含 ESM 引擎；`compositions/source/local/` 是本地组合源，`compositions/library/` 是重建产物。
+- `engine/`：生成预设运行时使用的共享 ESM 引擎；`compositions/source/local/` 是本地组合源，`compositions/library/` 是重建产物。
 - `preset/`：内置预设模板；用户运行时预设位于 `$DSH_HOME/.agent-presets/<id>/`，用户预设优先于同名包内模板。
 - `templates/`：提示词配置与自定义工具模板。
 - `skills/`：随 npm 包发布的 Skills；`skills/manifest.json` 是目录清单。
@@ -48,7 +50,7 @@ pnpm --dir $Repo rebuild:composition
 
 - `src/index.ts` 保持编排入口，不把 host、转换或 UI 细节继续堆入其中；已有能力优先落到对应的 `host/`、`runtime/`、`client/` 或 `shared/` 模块。
 - `inject` 只使用字符串数组。可选或晚到服务通过 `ctx.inject([...], callback)` 动态等待。
-- `webServer` 不进入宿主入口的静态 `inject`：首次 profile 可能尚未安装 `@deepseek-ai/dsh-web-app`。`ensureWebSurface()` 只修复当前 profile 的 bundles，并提示下次启动生效。
+- 官方 `agentPresets` 用于会话预设切换与双向同步；`webServer` 仍不进入宿主入口的静态 `inject`，首次 profile 可能尚未安装 `@deepseek-ai/dsh-web-app`，由 `ensureWebSurface()` 处理。
 - 监听器、工具、watcher 和动态服务统一挂在 `ctx.effect` / disposer 生命周期；重挂前先释放旧实例。
 - 仅使用已发布的 `@deepseek-ai/*` 包和 `node_modules` 类型。相对 TypeScript import 保留显式 `.ts`，纯类型依赖使用 `import type`。
 
@@ -56,19 +58,16 @@ pnpm --dir $Repo rebuild:composition
 
 - UI 只通过官方 SlotRegistry 挂载：`shell.overlay`、`settings.plugins.tab`、`sidebar.footer.action` 等现有插槽优先复用。
 - 不使用宿主 DOM 选择器，不手工创建独立 React root，不依赖宿主内部 class 名或页面结构。
-- 标准 settings 字段走 `SettingsScope`；复杂数据、导入导出和预设 CRUD 走 loopback settings bridge；会话预设切换走官方 `remote.agentPresets`。
+- 标准 settings 字段走 `SettingsScope`；复杂数据、导入导出和预设 CRUD 走 loopback settings bridge；会话预设切换走官方 `remote.agentPresets`，并与插件预设状态双向同步。
 - Client/host 共用字段、路径和载荷先更新 `src/shared/` 契约，再更新两端与契约测试。
 
 ### Settings 与 preset.yml
 
 - `Config` / `PromptSettings` 只承载部署轴：写入开关、预设选择、Skills 目录与开关、路径、顺序和 fallback。引擎行为参数不回填全局 settings。
-- 激活预设的 `preset.yml` 是行为配置单一来源：
-  - `model` / `subagentModel`：模型路由与采样参数；
-  - `params`：引擎行为参数；
-  - `promptConfigs`：六层提示词配置；
-  - `variables` / `variablesEnabled`：内容模板变量；
-  - `customTools`：声明式工具；
-  - `moduleConfigs`：参数桥未覆盖的行级配置。
+- 预设依旧由本插件管理：插件负责内置模板、用户预设物化、导入导出、复制和删除；官方 `ctx.agentPresets` 用于会话切换、默认值和 roster 双向同步，不独占 roster、roots、trust、resolve、copy、remove 与 default。
+- 每个可发现 preset 目录必须已有 `agent.cordis.yml`；插件包内 `preset/` 是内置模板源，用户预设由插件物化到 `$DSH_HOME/.agent-presets/<id>/`。
+- 具体预设目录的 `preset.yml` 是插件行为配置单一来源：`model` / `subagentModel`、`params`、`promptConfigs`、`variables` / `variablesEnabled`、`customTools` 和 `moduleConfigs` 均从该文件读取。
+- 预设根旁的 `.engine` 是允许保留的跨预设共享运行时依赖；writer/copy/import 必须保证它可解析。
 - 组合配置优先级固定为：参数桥（`params` / UI） > `moduleConfigs` > 组合行默认值。
 - `PARAM_KEYS`、`ENGINE_PARAM_KEYS`、`WRITER_PARAM_KEYS` 与 `MODEL_SEGMENT_MAP` 必须保持单一来源和编译期/契约测试一致。
 - 引擎参数空字符串或空数组表示删键并回落默认；`variables` 的空字符串是合法占位值，不能复用参数删键语义。
@@ -76,16 +75,16 @@ pnpm --dir $Repo rebuild:composition
 
 ### 预设物化与文件安全
 
-- 每个预设直接物化到 `$DSH_HOME/.agent-presets/<id>/`；共享运行时复制到 `.agent-presets/.engine/`，角色卡库存于 `.agent-presets/.characters/`。
+- 内置模板留在包内 `preset/<id>/`；用户预设由插件物化到 `$DSH_HOME/.agent-presets/<id>/`。共享运行时保留在对应预设根旁的 `.engine/`，角色卡库存于该 user root 的 `.characters/`。
 - 插件状态只写 `$DSH_HOME/.prompt-tool-state.json`；引擎指纹留在 `.engine/.pt-engine-fingerprint`。不得修改或清理 `$DSH_HOME` 下其他用户/官方文件。
-- `writePreset()` 必须先在临时目录完整生成，再以 rename 原子替换；失败时恢复旧目录或保留备份现场。
-- `preset.yml` 是源文件，不是生成物。`writePreset()` 只能合并必要元数据，不得覆盖 params、promptConfigs、variables、customTools 或用户注释。
+- `writePreset()` 接收具体 user/system 预设目录；必须先在临时目录完整生成，再以 rename 原子替换；system 目录保持只读。
+- `preset.yml` 是源文件，不是生成物。`writePreset()` 只复制它并生成 agent.cordis.yml/config 产物，不覆盖 params、promptConfigs、variables、customTools 或用户注释。
 - `AGENTS.md` 常驻规则只操作 `# === prompt-tool managed block begin/end ===` 包围的受管块，保留文件其余内容。
 - 测试和脚本必须使用临时 `DSH_HOME`；真实用户预设会遮蔽包内同名模板，任何测试都不得读写真实 `~/.dsh`。
 
 ### Engine 与组合模块
 
-- 六层顺序保持：`pre-step`、`system-section`、`runtime-context`、`agent-request`、`llm-stream`、`tool-pipeline`。
+- 插入点按需：配置声明哪个官方 seam 就只注册哪个 seam；`order` 只在同一 seam 内解释，不能建立六点全局顺序。
 - 通用过滤、插值、模型范围、主/子代理受众、幂等和晋升语义集中在 `engine/` 共享模块，不在每种 strategy 重复实现。
 - `compaction/end` 是 epoch 边界；修改 context-gate、tool-bootstrap、code-presentation 或 prompt-config-engine 时同步验证主会话、子代理、压缩后重晋升与 disposer 行为。
 - 本地组合源改 `engine/compositions/source/local/*.yml`；官方切块和本地源经 `pnpm rebuild:composition` 生成 `engine/compositions/library/`，不得直接修补 library 产物。
