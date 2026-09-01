@@ -39,6 +39,10 @@
   侧栏右缘相切贴靠（GAP 0：命中区贴线，可见图标因居中偏移与侧栏保持 5px
   微呼吸），CSS 回退 56px（折叠 rail 宽）首帧即折叠态相切位置；transitionend
   兜底轨道过渡结束重读。
+- 修复展开态按钮不跟随：几何锚点原用官方折叠标记属性——它是条件属性
+  （展开态被 React 移除），爬链落空后 update 直接跳过。锚点改为官方布局根
+  的恒定特征 inline grid-template-columns（折叠/展开/拖拽全形态都写，永不
+  缺省）；契约测试加防回归断言（禁止条件属性作锚点）。
 - 新增离线迁移脚本 `pnpm migrate:presets`：旧 worldBook → promptConfigs、旧扁平模型键 →
   顶层段、旧覆盖文件并入 params；dry-run / 备份 / 失败非零。
 - `rebuild-composition` 改为备份 + rename 的失败安全替换。

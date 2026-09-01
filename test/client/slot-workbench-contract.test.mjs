@@ -39,10 +39,12 @@ test('floating trigger position stays independent from third-party title-bar set
   assert.doesNotMatch(css, /data-dsh-title-bar-compat|--dsh-title-bar-strip/, '浮层不得读取第三方标题栏位置契约')
   assert.match(layer, /left:\s*var\(--pt-sidebar-edge, 56px\)/, '回退 56px = 折叠 rail 宽（首帧即折叠态相切贴靠位置）')
   assert.match(source, /const FLOATING_TRIGGER_GAP = 0/, '按钮圆缘与侧栏右缘相切贴靠（间距 0，图标 5px 微呼吸）')
-  // 轨道口径：读官方 .frame 的 inline grid-template-columns 第一段（实时几何），
-  // 锚点 = 官方公开的 data-sidebar-collapsed 属性（不 querySelector 宿主、不假设层级）。
-  assert.match(source, /dataset\.sidebarCollapsed/, '几何锚点 = 官方 data-sidebar-collapsed 契约属性')
-  assert.match(source, /gridTemplateColumns/, '轨道宽度读 computed grid-template-columns')
+  // 轨道口径：锚点 = 官方布局根的 inline grid-template-columns 恒定特征（折叠/
+  // 展开/拖拽全形态都写，永不缺省）。不得用官方折叠标记属性作锚点——它是条件
+  // 属性，展开态被 React 移除，爬链落空致按钮不跟随展开（上一版 bug 根因）。
+  assert.match(source, /style\.gridTemplateColumns !== ''/, '锚点 = inline grid-template-columns 恒定特征')
+  assert.doesNotMatch(source, /dataset\.sidebarCollapsed/, '不得用条件属性（展开态不存在）作几何锚点')
+  assert.match(source, /getComputedStyle\(frame\)\.gridTemplateColumns/, '轨道宽度读 computed grid-template-columns')
   assert.doesNotMatch(source, /SIDEBAR_COLLAPSED_WIDTH|SIDEBAR_WIDE_PADDING/, '不得残留侧栏几何死常量（旧 36 误判 rail 控制盒为列宽）')
   assert.match(layer, /z-index:\s*1100/, '悬浮按钮必须高于宿主导航栏与抽屉背板（1100）')
   assert.match(layer, /pointer-events:\s*auto/)

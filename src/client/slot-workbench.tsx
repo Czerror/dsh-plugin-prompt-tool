@@ -79,13 +79,16 @@ function SidebarGeometryProbe(props: SidebarGeometryProps): ReactNode {
     const setLeft = (left: number): void => {
       document.documentElement.style.setProperty(FLOATING_TRIGGER_LEFT_PROPERTY, String(Math.round(left)) + 'px')
     }
-    // 官方 AppFrame 把折叠态契约写在布局根上（data-sidebar-collapsed）；
-    // 从探针向上爬链找到它（只消费自身 DOM 位置关系，不选择宿主节点、不假设
-    // 层级）——侧栏轨道宽度就在同一元素的 inline grid-template-columns 第一段。
+    // 官方 AppFrame 布局根的恒定特征：inline grid-template-columns（折叠 56 /
+    // 展开 264–420 / 拖拽 pointer cadence 全形态都写，永不缺省）。注意不得用
+    // 官方折叠标记属性作锚点——它是条件属性（展开态被 React 移除），展开后
+    // 爬链落空、按钮不跟随（上一版 bug 的根因）。从探针向上爬链找到它（只
+    // 消费自身 DOM 位置关系，不选择宿主节点、不假设层级），侧栏轨道宽度就
+    // 在同一元素的 computed grid-template-columns 第一段。
     const frameAnchor = (): HTMLElement | undefined => {
       let node = probe.parentElement
       while (node !== null) {
-        if (node.dataset.sidebarCollapsed !== undefined) return node
+        if (node.style.gridTemplateColumns !== '') return node
         node = node.parentElement
       }
       return undefined
