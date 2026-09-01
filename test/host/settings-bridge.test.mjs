@@ -448,3 +448,25 @@ test('settings bridge：角色卡流式导入超过 32 MiB 返回 413 并清理�
     rmSync(root, { recursive: true, force: true })
   }
 })
+
+test('settings bridge Origin 完整校验 scheme/host/port（端口不匹配拒绝）', async () => {
+  const { ctx, handlers } = makeHarness()
+  registerSettingsBridge(ctx, () => ({ available: true, providers: [] }), () => ({ activeSkillsDirs: [], skillCatalog: [] }), () => '')
+  const handler = handlers.get(`${PREFIX}/meta`)
+  // 同源（loopback + 端口一致）放行。
+  const okRes = fakeRes()
+  await handler(fakeReq({ headers: { host: 'localhost:3080', origin: 'http://localhost:3080' } }), okRes)
+  assert.equal(okRes.status, 200)
+  // 端口不匹配（本地另一端口服务伪造 loopback hostname）拒绝。
+  const badPortRes = fakeRes()
+  await handler(fakeReq({ headers: { host: 'localhost:3080', origin: 'http://localhost:9999' } }), badPortRes)
+  assert.equal(badPortRes.status, 403)
+  // 非法 scheme 拒绝。
+  const badSchemeRes = fakeRes()
+  await handler(fakeReq({ headers: { host: 'localhost:3080', origin: 'ftp://localhost:3080' } }), badSchemeRes)
+  assert.equal(badSchemeRes.status, 403)
+  // 非 loopback hostname 拒绝。
+  const badHostRes = fakeRes()
+  await handler(fakeReq({ headers: { host: 'localhost:3080', origin: 'http://evil.com:3080' } }), badHostRes)
+  assert.equal(badHostRes.status, 403)
+})

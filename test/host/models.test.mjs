@@ -84,3 +84,22 @@ test('installDefaultModelRoute：agent-default-model 服务缺失时静默跳过
   apply()
   assert.ok(true, '服务缺失不应抛异常')
 })
+
+test('installDefaultModelRoute：saveSelection 返回被拒 Promise 不产生 unhandledRejection', async () => {
+  const rejections = []
+  const onUnhandled = (reason) => rejections.push(reason)
+  process.on('unhandledRejection', onUnhandled)
+  const ctx = {
+    get: (name) => name === 'agentDefaultModel'
+      ? { saveSelection: () => Promise.reject(new Error('save failed')) }
+      : undefined,
+  }
+  try {
+    installDefaultModelRoute(ctx, () => true, () => 'p', () => 'm', () => 'high')
+    // 给拒绝传播一个宏任务窗口。
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    assert.deepEqual(rejections, [], '被拒 Promise 必须被捕获，不得触发 unhandledRejection')
+  } finally {
+    process.off('unhandledRejection', onUnhandled)
+  }
+})

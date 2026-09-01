@@ -19,7 +19,9 @@ export function createSkillsWatcher(dirs: () => string[], onRefresh: () => void)
     close()
     for (const dir of dirs()) {
       try {
-        const watcher = watch(dir, { persistent: false }, () => {
+        // recursive: true 监听嵌套技能目录（skills/<skill>/SKILL.md 等深层变更），
+        // 与 skills-provider 的扫描结果一致；不可递归 watch 的平台抛错时跳过该目录。
+        const watcher = watch(dir, { persistent: false, recursive: true }, () => {
           if (timer !== undefined) clearTimeout(timer)
           timer = setTimeout(() => {
             timer = undefined
@@ -34,3 +36,4 @@ export function createSkillsWatcher(dirs: () => string[], onRefresh: () => void)
   }
   return { watch: watchDirs, close }
 }
+

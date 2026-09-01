@@ -66,11 +66,19 @@ function isLoopbackRequest(req: IncomingMessage): boolean {
   // 浏览器跨站盲请求（字符串 body 的 POST 是 CORS 简单请求，text/plain 不触发预检）
   // 可绕过上面的 socket/Host 检查直接到达本桥；校验 Origin 拦截跨站来源。
   // 非浏览器客户端（curl 等）不带 Origin，放行。
+  // 完整校验 scheme/host/port：Origin 必须与本桥自身的 Host 头端口一致，
+  // 防「本地其他端口服务」伪造 loopback hostname 跨站（仅比 hostname 不够）。
   const origin = req.headers.origin
   if (origin !== undefined) {
     try {
-      const originHost = new URL(origin).hostname
+      const originUrl = new URL(origin)
+      if (originUrl.protocol !== 'http:' && originUrl.protocol !== 'https:') return false
+      const originHost = originUrl.hostname
       if (originHost !== '127.0.0.1' && originHost !== 'localhost' && originHost !== '[::1]') return false
+      const originPort = originUrl.port.length > 0 ? originUrl.port : (originUrl.protocol === 'https:' ? '443' : '80')
+      const hostUrl = new URL('http://' + host)
+      const hostPort = hostUrl.port.length > 0 ? hostUrl.port : '80'
+      if (originPort !== hostPort) return false
     } catch {
       return false
     }
@@ -1295,3 +1303,4 @@ export function registerSettingsBridge(
   })
   return { invalidateDescriptor: () => invalidateCachedDescriptor() }
 }
+

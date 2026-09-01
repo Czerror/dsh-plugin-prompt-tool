@@ -20,7 +20,7 @@
  *
  * 失败只降级为日志告警，绝不阻断启动。
  */
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { Context } from '@deepseek-ai/cordis'
@@ -82,11 +82,14 @@ function readManifest(packagePath: string, warn: (message: string) => void): Pro
 
 function writeManifest(packagePath: string, manifest: ProfileManifest, warn: (message: string) => void): boolean {
   try {
-    // 写前备份当前 manifest，自愈失败时保留现场。
+    // 写前备份当前 manifest，自愈失败时保留现场；随后 tmp + rename 原子替换，
+    // 半写/写失败时原 manifest 与 .bak 均保留，下次启动自愈重试。
     if (existsSync(packagePath)) {
       writeFileSync(`${packagePath}.bak`, readFileSync(packagePath, 'utf8'), 'utf8')
     }
-    writeFileSync(packagePath, JSON.stringify(manifest, null, 2) + '\n', 'utf8')
+    const tmp = `${packagePath}.tmp-${process.pid}-${Date.now().toString(36)}`
+    writeFileSync(tmp, JSON.stringify(manifest, null, 2) + '\n', 'utf8')
+    renameSync(tmp, packagePath)
     return true
   } catch (error) {
     warn(`prompt-tool: cannot update profile manifest ${packagePath}: ${error instanceof Error ? error.message : String(error)}`)
@@ -144,3 +147,4 @@ export function ensureWebSurface(ctx: Context, warn: (message: string) => void):
     notify('prompt-tool: please restart the app for the repaired profile to take effect')
   }
 }
+

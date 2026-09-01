@@ -1,5 +1,5 @@
 /** AGENTS.md 常驻规则的受管块读写（保留文件其余内容）。 */
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs'
+import { readFileSync, writeFileSync, mkdirSync, existsSync, renameSync } from 'node:fs'
 import { join } from 'node:path'
 
 const RESIDENT_AGENTS_BEGIN = '# === prompt-tool managed block begin ==='
@@ -10,6 +10,13 @@ interface ManagedBlockEdit {
   body: string
   /** 是否确实删除了一个完整的受管块。 */
   found: boolean
+}
+
+/** 原子写文件（tmp + rename）：受管块写盘防截断与半写，失败保留旧文件。 */
+function atomicWriteTextFile(file: string, content: string): void {
+  const tmp = `${file}.tmp-${process.pid}-${Date.now().toString(36)}`
+  writeFileSync(tmp, content, 'utf8')
+  renameSync(tmp, file)
 }
 
 /** 从正文中删除成对的受管标记块；标记不成对时保持原样，避免误删。 */
@@ -42,14 +49,14 @@ export function writeAgents(text: string, targetPath: string): boolean {
     if (content.length === 0) {
       // 关闭或空内容：只删除受管块；本来没有块时不做任何写入。
       if (!stripped.found) return true
-      writeFileSync(targetPath, stripped.body, 'utf8')
+      atomicWriteTextFile(targetPath, stripped.body)
       return true
     }
     const rest = stripped.body.replace(/^[\r\n]+/, '')
     const managed = buildManagedBlock(content, eol)
     const next = rest.length > 0 ? managed + eol + rest : managed + eol
     if (next === existing) return true
-    writeFileSync(targetPath, next, 'utf8')
+    atomicWriteTextFile(targetPath, next)
     return true
   } catch {
     return false
@@ -63,9 +70,10 @@ export function removeResidentAgentsBlock(targetPath: string): boolean {
     const existing = readFileSync(targetPath, 'utf8')
     const stripped = stripManagedBlock(existing)
     if (!stripped.found) return true
-    writeFileSync(targetPath, stripped.body, 'utf8')
+    atomicWriteTextFile(targetPath, stripped.body)
     return true
   } catch {
     return false
   }
 }
+

@@ -3,7 +3,7 @@
  *  由用户按需「导入到当前预设」合并进激活预设 preset.yml（promptConfigs 带
  *  chara-<cardId>- 前缀防冲突，params 合并，meta.importedCharacters 记录来源），
  *  并可一键移除。 */
-import { readFileSync, writeFileSync, mkdirSync, rmSync, existsSync, readdirSync, appendFileSync } from 'node:fs'
+import { readFileSync, writeFileSync, mkdirSync, mkdtempSync, renameSync, rmSync, existsSync, readdirSync, appendFileSync } from 'node:fs'
 import { join, basename, dirname } from 'node:path'
 import { parse as parseYaml, parseDocument, stringify as stringifyYaml } from 'yaml'
 import { inflateSync } from 'node:zlib'
@@ -180,12 +180,36 @@ function persistCharacterCard(
   avatar?: Buffer,
 ): { ok: true; id: string; name: string } | { ok: false; message: string } {
   if (!validCardId(converted.id)) return { ok: false, message: `非法角色卡 id：${converted.id}` }
+  const parent = charactersDir(presetRoot)
   const dir = cardDir(presetRoot, converted.id)
-  mkdirSync(dir, { recursive: true })
-  if (avatar !== undefined) writeFileSync(join(dir, 'avatar.png'), avatar)
-  writeFileSync(join(dir, 'card.json'), jsonText, 'utf8')
-  writeFileSync(join(dir, 'converted.yml'), stringifyYaml(converted, { lineWidth: 0 }), 'utf8')
-  return { ok: true, id: converted.id, name: converted.name }
+  mkdirSync(parent, { recursive: true })
+  // 三文件（avatar.png / card.json / converted.yml）先在临时目录完整写好后
+  // 整目录原子 rename 替换；失败恢复旧目录并清理临时目录，防部分写。
+  const tmp = mkdtempSync(join(parent, `.${converted.id}.tmp-`))
+  try {
+    if (avatar !== undefined) writeFileSync(join(tmp, 'avatar.png'), avatar)
+    writeFileSync(join(tmp, 'card.json'), jsonText, 'utf8')
+    writeFileSync(join(tmp, 'converted.yml'), stringifyYaml(converted, { lineWidth: 0 }), 'utf8')
+    const backup = join(parent, `.${converted.id}.bak-${Date.now().toString(36)}`)
+    let hadOld = false
+    if (existsSync(dir)) {
+      renameSync(dir, backup)
+      hadOld = true
+    }
+    try {
+      renameSync(tmp, dir)
+    } catch (error) {
+      if (hadOld) {
+        try { renameSync(backup, dir) } catch { /* 恢复失败保留 backup 供人工处理 */ }
+      }
+      throw error
+    }
+    if (hadOld) rmSync(backup, { recursive: true, force: true })
+    return { ok: true, id: converted.id, name: converted.name }
+  } catch (error) {
+    rmSync(tmp, { recursive: true, force: true })
+    return { ok: false, message: `角色卡写入失败：${error instanceof Error ? error.message : String(error)}` }
+  }
 }
 
 const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]
@@ -193,6 +217,9 @@ const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]
 function isPngBuffer(buffer: Buffer): boolean {
   return buffer.length >= PNG_SIGNATURE.length && PNG_SIGNATURE.every((value, index) => buffer[index] === value)
 }
+
+/** PNG 角色卡解压输出大小上限（防 zip bomb 膨胀内存）。 */
+const MAX_PNG_CARD_DECOMPRESSED_BYTES = 16 * 1024 * 1024
 
 function decodePngCharacterCard(buffer: Buffer): { jsonText: string; avatar: Buffer } {
   if (!isPngBuffer(buffer)) throw new Error('不是有效的 PNG 文件')
@@ -222,10 +249,12 @@ function decodePngCharacterCard(buffer: Buffer): { jsonText: string; avatar: Buf
   if (card === undefined) throw new Error('PNG 不含角色卡数据（无 chara/ccv3 tEXt chunk）')
   const encoded = Buffer.from(card.text, 'base64')
   try {
-    const jsonText = inflateSync(encoded).toString('utf8')
+    const jsonText = inflateSync(encoded, { maxOutputLength: MAX_PNG_CARD_DECOMPRESSED_BYTES }).toString('utf8')
     JSON.parse(jsonText)
     return { jsonText, avatar: buffer }
   } catch {
+    // 非压缩（原始 utf8）卡片：inflate 失败回落直接解析；解压超限（zip bomb）
+    // 时 inflate 抛错、raw 解析失败同样干净报错，不膨胀内存。
     const jsonText = encoded.toString('utf8')
     JSON.parse(jsonText)
     return { jsonText, avatar: buffer }
@@ -465,3 +494,4 @@ export function removeCharacterFromPreset(
     return { ok: false, message: `移除失败：${error instanceof Error ? error.message : String(error)}` }
   }
 }
+

@@ -45,3 +45,78 @@ export type BridgeEndpoint = (typeof BRIDGE_ENDPOINTS)[keyof typeof BRIDGE_ENDPO
 
 /** 失败载荷：两端共用。 */
 export type BridgeErrorPayload = { ok: false; code?: string; message?: string }
+
+/**
+ * 端点级请求体契约（body 形状；无请求体端点 = undefined）。
+ * 与 BRIDGE_ENDPOINTS 一一对应：新增端点必须同时补请求/响应映射，否则编译期断言失败。
+ * 载荷仍统一走 { ok, value } 包装（见 BridgeResult），这里收敛每端的 value 具体形状。
+ */
+export interface BridgeRequestMap {
+  meta: undefined
+  bootstrap: undefined
+  describe: undefined
+  models: undefined
+  mutate: { ops: unknown[]; expectedRevision?: number }
+  configsValidate: { promptConfigs?: unknown; strategyDir?: string }
+  skillFix: { folder: string }
+  templates: undefined
+  promptConfigs: undefined
+  presetContent: undefined
+  importPreset: { contents: Array<{ scope: 'preset' | 'agents'; content: string }> }
+  paramOverrides: { overrides?: Record<string, unknown>; promptConfigs?: unknown; rebuild?: boolean }
+  presetVariables: { variables?: Record<string, string>; enabled?: boolean }
+  customTools: undefined
+  importPresetPackage: { files: Array<{ path?: string; name?: string; content?: string }> }
+  exportPreset: { id: string }
+  presetDelete: { id: string }
+  presetClone: { id: string }
+  presetDuplicate: { id: string }
+  presetOpen: { id: string }
+  charactersImport: { files?: Array<{ path: string; content: string }> }
+  charactersImportStream: undefined
+  charactersList: undefined
+  charactersDelete: { id: string }
+  charactersApply: { id: string }
+  charactersRemove: { id: string }
+}
+
+/** 端点级响应 value 契约（value 字段形状；扩展字段仍以 value 旁可选字段出现）。 */
+export interface BridgeValueMap {
+  meta: { meta: unknown }
+  bootstrap: Record<string, unknown>
+  describe: Record<string, unknown>
+  models: { catalog: Record<string, string[]> }
+  mutate: Record<string, unknown>
+  configsValidate: { valid: boolean; errors: unknown[]; configs?: unknown[]; files?: unknown[] }
+  skillFix: Record<string, unknown>
+  templates: Record<string, unknown>
+  promptConfigs: { promptConfigs: unknown[] }
+  presetContent: Record<string, unknown>
+  importPreset: { scopes: Array<'preset' | 'agents'> }
+  paramOverrides: Record<string, unknown>
+  presetVariables: { variables: Record<string, string>; enabled: boolean }
+  customTools: Record<string, unknown>
+  importPresetPackage: { id: string }
+  exportPreset: { content: string }
+  presetDelete: Record<string, unknown>
+  presetClone: { id: string }
+  presetDuplicate: { id: string }
+  presetOpen: { path: string }
+  charactersImport: { id: string; name: string }
+  charactersImportStream: { id: string; name: string }
+  charactersList: { cards: unknown[] }
+  charactersDelete: Record<string, unknown>
+  charactersApply: { count: number }
+  charactersRemove: { count: number }
+}
+
+/** 编译期断言：请求/响应映射与 BRIDGE_ENDPOINTS 键集合完全一致（漏改任一侧 typecheck 失败）。 */
+type AssertCoverage<K extends string, M extends object> =
+  Exclude<K, keyof M> extends never
+    ? Exclude<keyof M, K> extends never ? true : false
+    : false
+type _requestCoverage = AssertCoverage<keyof typeof BRIDGE_ENDPOINTS, BridgeRequestMap>
+type _responseCoverage = AssertCoverage<keyof typeof BRIDGE_ENDPOINTS, BridgeValueMap>
+
+
+

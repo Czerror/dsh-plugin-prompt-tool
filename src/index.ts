@@ -971,7 +971,8 @@ export type { SkillFixResult } from './runtime/skill-fix.ts'
 export { PARAM_KEYS } from './config.ts'
 export type { SkillEntry, SkillCatalogEntry } from './config.ts'
 export { BRIDGE_ENDPOINTS, MAX_BRIDGE_BODY_BYTES, MAX_CHARACTER_CARD_STREAM_BYTES, SETTINGS_BRIDGE_PREFIX } from './shared/bridge-contract.ts'
-export type { BridgeEndpoint, BridgeErrorPayload } from './shared/bridge-contract.ts'
+export type { BridgeEndpoint, BridgeErrorPayload, BridgeRequestMap, BridgeValueMap } from './shared/bridge-contract.ts'
 export { parseFrontmatter } from './runtime/skills-parse.ts'
 export type { SkillFrontmatter } from './runtime/skills-parse.ts'
+
 

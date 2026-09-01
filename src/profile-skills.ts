@@ -15,7 +15,7 @@
  *  - 副本中用户新增/修改且不在包内清单的技能目录保持不动；
  *  - 没有 manifest 时回退到旧行为：只补缺失、绝不覆盖。
  */
-import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import { resolveProfileDir } from './web-surface.ts'
@@ -43,8 +43,11 @@ function readManifest(file: string): SkillsManifest | undefined {
   }
 }
 
+/** 原子写 manifest（tmp + rename）：失败保留旧副本状态。 */
 function writeManifest(file: string, manifest: SkillsManifest): void {
-  writeFileSync(file, JSON.stringify(manifest, null, 2) + '\n', 'utf8')
+  const tmp = `${file}.tmp-${process.pid}-${Date.now().toString(36)}`
+  writeFileSync(tmp, JSON.stringify(manifest, null, 2) + '\n', 'utf8')
+  renameSync(tmp, file)
 }
 
 /** 递归把 src 中缺失的目录/文件补到 dst，已有项保持不动（无 manifest 时的兼容路径）。 */
@@ -72,15 +75,38 @@ function syncSkillsByManifest(sourceDir: string, targetDir: string): void {
   mkdirSync(targetDir, { recursive: true })
   const targetManifest = readManifest(join(targetDir, TARGET_MANIFEST)) ?? { version: 0, skills: {} }
 
+  // 需部署（缺失或版本升级）的技能先整体复制到暂存目录，避免逐个直接写目标
+  // 造成「进程中断 = 技能半写」；暂存完成后逐技能 tmp+rename 原子替换，失败
+  // 恢复旧目录。用户自定义技能（不在包内清单或同版本未改）保持不动。
+  const pending: Array<{ folder: string; staged: string }> = []
   for (const [folder, version] of Object.entries(sourceManifest.skills)) {
     const sourceEntry = join(sourceDir, folder)
     if (!existsSync(sourceEntry)) continue
     const targetEntry = join(targetDir, folder)
     const deployed = targetManifest.skills[folder] ?? 0
-    if (!existsSync(targetEntry) || version > deployed) {
-      rmSync(targetEntry, { recursive: true, force: true })
-      cpSync(sourceEntry, targetEntry, { recursive: true })
+    if (existsSync(targetEntry) && version <= deployed) continue
+    const staged = join(targetDir, `.skills-sync-${process.pid}-${Date.now().toString(36)}-${folder}`)
+    cpSync(sourceEntry, staged, { recursive: true })
+    pending.push({ folder, staged })
+  }
+  try {
+    for (const { folder, staged } of pending) {
+      const targetEntry = join(targetDir, folder)
+      const backup = join(targetDir, `.skills-${folder}.bak-${Date.now().toString(36)}`)
+      const hadOld = existsSync(targetEntry)
+      if (hadOld) renameSync(targetEntry, backup)
+      try {
+        renameSync(staged, targetEntry)
+      } catch (error) {
+        if (hadOld) {
+          try { renameSync(backup, targetEntry) } catch { /* 恢复失败保留 backup 供人工处理 */ }
+        }
+        throw error
+      }
+      if (hadOld) rmSync(backup, { recursive: true, force: true })
     }
+  } finally {
+    for (const { staged } of pending) rmSync(staged, { recursive: true, force: true })
   }
 
   writeManifest(join(targetDir, TARGET_MANIFEST), {
@@ -116,3 +142,4 @@ export function resolveProfileSkillsDir(ctx: Context, sourceDir: string, warn: (
     return sourceDir
   }
 }
+

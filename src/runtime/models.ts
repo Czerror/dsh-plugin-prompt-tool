@@ -42,10 +42,18 @@ const CATALOG_TTL_MS = 600_000
 /** 单 provider 模型查询超时：远端 listModels 慢/挂起时快速降级，不拖垮整个目录。 */
 const MODEL_QUERY_TIMEOUT_MS = 1500
 
+/** 查询超时：AbortSignal.timeout 驱动竞速，超时解析 undefined 降级（不拖垮目录）。 */
 function withModelTimeout<T>(promise: Promise<T>, ms: number): Promise<T | undefined> {
+  const signal = AbortSignal.timeout(ms)
   return Promise.race([
     promise,
-    new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), ms)),
+    new Promise<undefined>((resolve) => {
+      if (signal.aborted) {
+        resolve(undefined)
+        return
+      }
+      signal.addEventListener('abort', () => resolve(undefined), { once: true })
+    }),
   ])
 }
 
@@ -103,18 +111,24 @@ export function installDefaultModelRoute(
   const apply = (): void => {
     try {
       const service = ctx.get('agentDefaultModel') as {
-        saveSelection?: (selection: { provider: string; model: string; reasoningEffort?: string }) => void
+        saveSelection?: (selection: { provider: string; model: string; reasoningEffort?: string }) => void | Promise<void>
       } | undefined
       if (service?.saveSelection === undefined) return
       if (isEnabled()) {
         // 官方 AgentDefaultModelSettings 含 reasoningEffort：插件思维程度设置非空时一并写入
         // 宿主默认（saveSelection 整体替换语义；插件 agent-request patch 仍按会话生效）。
         const effort = getReasoningEffort?.() ?? ''
-        service.saveSelection({
+        const result = service.saveSelection({
           provider: provider(),
           model: model(),
           ...(effort.trim().length > 0 ? { reasoningEffort: effort.trim() } : {}),
         })
+        // 官方 saveSelection 可能返回 Promise：拒绝必须捕获，避免 unhandledRejection。
+        if (result !== null && typeof result === 'object' && typeof (result as Promise<void>).then === 'function') {
+          (result as Promise<void>).catch(() => {
+            // 异步保存失败不阻断插件（宿主默认未写入，下次设置变更重试）。
+          })
+        }
       }
     } catch {
       // agent-default-model 服务缺失（core 未装配）时静默跳过，不阻断插件。
@@ -146,3 +160,4 @@ export function installSubagentModelRoute(ctx: Context, isEnabled: () => boolean
     }
   })
 }
+
