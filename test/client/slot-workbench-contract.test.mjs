@@ -22,10 +22,10 @@ test('workbench registers official slots and a sidebar geometry bridge', () => {
   assert.doesNotMatch(source, /class\*|data-pane|centerCol|logoRow|newSession/)
 })
 
-// 契约锚点（6ada119 定稿）：顶部 40px 避开宿主顶条、探针生效前左缘 10px 初始
-// 回退、侧栏间距 GAP 15、折叠窄栏 36px。改悬浮触发器几何必须同步本测试、
-// README「官方 slot 工作台」概览与 CSS 注释——该提交曾只改样式漏更测试，
-// 契约断言红了一个提交周期。
+// 契约锚点：几何 = 官方 AppFrame 侧栏轨道实读（grid-template-columns 第一段，
+// 覆盖折叠 56 / 拖拽 264–420 / 断点自动折叠全部形态），28px 按钮圆缘贴靠侧栏
+// 右缘 + GAP 10（= 官方 rail 侧 padding，对称节奏）。改几何必须同步本测试、
+// README「官方 slot 工作台」概览与 CSS 注释三处。
 test('floating trigger position stays independent from third-party title-bar settings', () => {
   assert.match(source, /strokeWidth="1\.5"/)
   assert.match(source, /data-dsh-plugin="prompt-tool"/)
@@ -37,9 +37,13 @@ test('floating trigger position stays independent from third-party title-bar set
   assert.match(layer, /position:\s*fixed/)
   assert.match(layer, /top:\s*calc\(40px \+ env\(safe-area-inset-top\)/, '浮层保持自己的固定纵向位置（40px，避开宿主顶部条）')
   assert.doesNotMatch(css, /data-dsh-title-bar-compat|--dsh-title-bar-strip/, '浮层不得读取第三方标题栏位置契约')
-  assert.match(layer, /left:\s*var\(--pt-sidebar-edge, 10px\)/, '探针生效前贴左缘 10px 初始回退（探针覆盖为侧栏右缘）')
-  assert.match(source, /const FLOATING_TRIGGER_GAP = 15/, '动态 sidebar 几何间距 15px')
-  assert.match(source, /const SIDEBAR_COLLAPSED_WIDTH = 36/, '折叠态 36px 窄栏几何（探针回退宽度）')
+  assert.match(layer, /left:\s*var\(--pt-sidebar-edge, 66px\)/, '回退 66px = 折叠 rail 56 + 贴靠间距 10（首帧即折叠态正确位置）')
+  assert.match(source, /const FLOATING_TRIGGER_GAP = 10/, '按钮圆缘贴靠侧栏右缘 + 10px（= 官方 rail 侧 padding 对称）')
+  // 轨道口径：读官方 .frame 的 inline grid-template-columns 第一段（实时几何），
+  // 锚点 = 官方公开的 data-sidebar-collapsed 属性（不 querySelector 宿主、不假设层级）。
+  assert.match(source, /dataset\.sidebarCollapsed/, '几何锚点 = 官方 data-sidebar-collapsed 契约属性')
+  assert.match(source, /gridTemplateColumns/, '轨道宽度读 computed grid-template-columns')
+  assert.doesNotMatch(source, /SIDEBAR_COLLAPSED_WIDTH|SIDEBAR_WIDE_PADDING/, '不得残留侧栏几何死常量（旧 36 误判 rail 控制盒为列宽）')
   assert.match(layer, /z-index:\s*1100/, '悬浮按钮必须高于宿主导航栏与抽屉背板（1100）')
   assert.match(layer, /pointer-events:\s*auto/)
   const trigger = css.match(/\.floatingTrigger\s*\{([^}]*)\}/s)?.[1] ?? ''
@@ -49,6 +53,7 @@ test('floating trigger position stays independent from third-party title-bar set
   assert.match(trigger, /pointer-events:\s*auto/)
   assert.match(css, /\.sidebarEdgeProbe\s*\{[^}]*display:\s*none/s)
   assert.match(source, /ResizeObserver/)
+  assert.match(source, /transitionend/, '轨道 transition 结束兜底重读（容器未必随之再变）')
   assert.match(source, /document\.documentElement\.style\.setProperty/)
   // 几何探针不假设宿主父节点层级：向上查找第一个有实际尺寸的祖先。
   assert.match(source, /measuredAncestor/)

@@ -31,9 +31,13 @@
 - engine 各 session Map 增加上限（4096 会话清空防无界增长），保持 epoch / waterfall 语义。
 - 前端：允许主动清空全部 `promptConfigs`（初始化期空数组仍受守卫）；世界书筛选视图的
   移动/排序只作用于可见集合；抽屉关闭焦点还给触发器；几何探针不假设宿主父节点层级。
-- 悬浮触发器几何调整：顶部 40px（避开宿主顶条）、探针生效前左缘 10px 初始回退、
-  侧栏间距 15px、折叠窄栏 36px；契约测试与 README 概览同步对齐（原提交漏更测试
-  致契约断言过期失败）。
+- 悬浮触发器几何真动态：探针直读官方 AppFrame 侧栏轨道（inline
+  grid-template-columns 第一段，锚点 = 官方公开 data-sidebar-collapsed 属性，
+  不 querySelector 宿主），覆盖折叠 56px rail / 拖拽 264–420px / 断点自动折叠
+  全部形态；删除侧栏几何死常量（旧 36 系误判 rail 控制盒为列宽——折叠态按钮
+  实际压进 rail 5px，12 系 footerActions 容器口径补偿）；28px 按钮圆缘贴靠
+  侧栏右缘 + 10px（= 官方 rail 侧 padding 对称节奏），CSS 回退 66px（56+10）
+  首帧即折叠态正确位置；transitionend 兜底轨道过渡结束重读。
 - 新增离线迁移脚本 `pnpm migrate:presets`：旧 worldBook → promptConfigs、旧扁平模型键 →
   顶层段、旧覆盖文件并入 params；dry-run / 备份 / 失败非零。
 - `rebuild-composition` 改为备份 + rename 的失败安全替换。

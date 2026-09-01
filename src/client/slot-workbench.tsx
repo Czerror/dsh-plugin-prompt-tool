@@ -57,15 +57,20 @@ function FloatingTrigger(props: { controller: PromptToolWorkspaceController; tri
   )
 }
 
-const SIDEBAR_WIDE_PADDING = 12
-const SIDEBAR_COLLAPSED_WIDTH = 36
-const FLOATING_TRIGGER_GAP = 15
+/** 悬浮触发器（28px 按钮）左缘与侧栏轨道右缘的设计间距（px）——按钮圆缘
+ *  贴靠侧栏（不是图标中心悬浮）。数值 = 官方折叠 rail 的侧 padding（10px，
+ *  rail 几何契约 [10px][36px 控制盒][10px]）：按钮空隙与 rail 侧 padding 精确
+ *  对称，按钮如 rail 几何的延伸；展开态侧栏内容 padding 12px，按钮 10px
+ *  略紧半格体现贴靠语义。 */
+const FLOATING_TRIGGER_GAP = 10
 const FLOATING_TRIGGER_LEFT_PROPERTY = '--pt-sidebar-edge'
 
 /**
- * Official sidebar slot geometry bridge. The visible trigger is portaled to body
- * from the frame-wide overlay; this element only measures the real, resizable sidebar
- * edge, including the collapsed 36px rail.
+ * Official sidebar geometry bridge. The visible trigger is portaled to body
+ * from the frame-wide overlay; this probe reads the sidebar track width
+ * straight from the layout frame's inline grid-template-columns — the single
+ * live truth covering every form: collapsed 56px rail, 264–420px drag range,
+ * mid-drag pointer cadence, and the <1024px auto-collapse breakpoint.
  */
 function SidebarGeometryProbe(props: SidebarGeometryProps): ReactNode {
   const { wide } = props
@@ -76,6 +81,31 @@ function SidebarGeometryProbe(props: SidebarGeometryProps): ReactNode {
     const setLeft = (left: number): void => {
       document.documentElement.style.setProperty(FLOATING_TRIGGER_LEFT_PROPERTY, String(Math.round(left)) + 'px')
     }
+    // 官方 AppFrame 把折叠态契约写在布局根上（data-sidebar-collapsed）；
+    // 从探针向上爬链找到它（只消费自身 DOM 位置关系，不选择宿主节点、不假设
+    // 层级）——侧栏轨道宽度就在同一元素的 inline grid-template-columns 第一段。
+    const frameAnchor = (): HTMLElement | undefined => {
+      let node = probe.parentElement
+      while (node !== null) {
+        if (node.dataset.sidebarCollapsed !== undefined) return node
+        node = node.parentElement
+      }
+      return undefined
+    }
+    // 侧栏轨道实时宽（px）：computed grid-template-columns 的第一段 used value
+    // （折叠 56 / 展开 264–420 / 拖拽与轨道过渡中的中间值）。解析失败保持旧值。
+    const sidebarTrack = (frame: HTMLElement): number | undefined => {
+      const first = getComputedStyle(frame).gridTemplateColumns.split(' ')[0] ?? ''
+      const px = Number.parseFloat(first)
+      return Number.isFinite(px) && px > 0 ? px : undefined
+    }
+    const update = (): void => {
+      const frame = frameAnchor()
+      if (frame === undefined) return
+      const track = sidebarTrack(frame)
+      if (track !== undefined) setLeft(track + FLOATING_TRIGGER_GAP)
+    }
+    update()
     // 向上查找第一个有实际布局尺寸的祖先：渲染锚点是 display:contents（0 尺寸），
     // 不假设宿主父节点层级（SidebarRoot footerActions 容器位置随版本变化）。
     const measuredAncestor = (): HTMLElement | undefined => {
@@ -87,23 +117,19 @@ function SidebarGeometryProbe(props: SidebarGeometryProps): ReactNode {
       }
       return undefined
     }
-    const update = (): void => {
-      if (!wide) {
-        setLeft(SIDEBAR_COLLAPSED_WIDTH + FLOATING_TRIGGER_GAP)
-        return
-      }
-      const target = measuredAncestor()
-      if (target === undefined) return
-      const rect = target.getBoundingClientRect()
-      setLeft(rect.right + SIDEBAR_WIDE_PADDING + FLOATING_TRIGGER_GAP)
-    }
-    update()
+    // 轨道变化跟随三路：① footerActions 容器尺寸随轨道变（展开态 width:100%
+    // 跟随拖拽 pointer cadence、折叠 settle 时跳变）→ ResizeObserver 重读轨道；
+    // ② 轨道自身 transition（slow 曲线）结束时容器未必再变 → transitionend 兜底；
+    // ③ 窗口尺寸变化（断点自动折叠）→ resize 兜底。全部幂等重读。
     const observer = typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(update)
-    const measured = wide ? measuredAncestor() : undefined
+    const measured = measuredAncestor()
     if (measured !== undefined) observer?.observe(measured)
+    const frame = frameAnchor()
+    frame?.addEventListener('transitionend', update)
     window.addEventListener('resize', update)
     return () => {
       observer?.disconnect()
+      frame?.removeEventListener('transitionend', update)
       window.removeEventListener('resize', update)
       document.documentElement.style.removeProperty(FLOATING_TRIGGER_LEFT_PROPERTY)
     }

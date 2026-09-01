@@ -51,8 +51,9 @@
 .floatingTriggerLayer {
   position: fixed;
   top: calc(40px + env(safe-area-inset-top));
-  /* 探针生效前贴左缘 10px 初始回退；渲染后由官方 sidebar slot 探针覆盖为侧栏右缘 + 15px 间距。 */
-  left: var(--pt-sidebar-edge, 10px);
+  /* 回退 66px = 折叠 rail 56 + 按钮贴靠间距 10（探针生效前首帧即折叠态正确位置）；
+     渲染后由官方 sidebar slot 探针覆盖为实时侧栏轨道右缘 + 10px。 */
+  left: var(--pt-sidebar-edge, 66px);
   /* 悬浮按钮高于抽屉（1000），抽屉打开时仍可点击关闭。 */
   z-index: 1100;
   display: flex;
