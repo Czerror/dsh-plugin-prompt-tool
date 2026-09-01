@@ -1,4 +1,4 @@
-/* 共享 UI chrome：对齐 dsh-mnemon 主设置卡片（开关按钮 / 区块标题 / 药丸按钮 / 保存条）。 */
+/* 共享 UI chrome。 */
 
 :root {
   --pt-accent: var(--dsw-alias-state-business-primary, #1783ff);
