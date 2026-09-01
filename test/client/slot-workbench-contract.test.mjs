@@ -23,9 +23,9 @@ test('workbench registers official slots and a sidebar geometry bridge', () => {
 })
 
 // 契约锚点：几何 = 官方 AppFrame 侧栏轨道实读（grid-template-columns 第一段，
-// 覆盖折叠 56 / 拖拽 264–420 / 断点自动折叠全部形态），28px 按钮圆缘贴靠侧栏
-// 右缘 + GAP 10（= 官方 rail 侧 padding，对称节奏）。改几何必须同步本测试、
-// README「官方 slot 工作台」概览与 CSS 注释三处。
+// 覆盖折叠 56 / 拖拽 264–420 / 断点自动折叠全部形态），28px 按钮圆缘与侧栏右缘
+// 相切贴靠（GAP 0：命中区贴线，可见图标因居中偏移与侧栏保持 5px 微呼吸）。
+// 改几何必须同步本测试、README「官方 slot 工作台」概览与 CSS 注释三处。
 test('floating trigger position stays independent from third-party title-bar settings', () => {
   assert.match(source, /strokeWidth="1\.5"/)
   assert.match(source, /data-dsh-plugin="prompt-tool"/)
@@ -37,8 +37,8 @@ test('floating trigger position stays independent from third-party title-bar set
   assert.match(layer, /position:\s*fixed/)
   assert.match(layer, /top:\s*calc\(40px \+ env\(safe-area-inset-top\)/, '浮层保持自己的固定纵向位置（40px，避开宿主顶部条）')
   assert.doesNotMatch(css, /data-dsh-title-bar-compat|--dsh-title-bar-strip/, '浮层不得读取第三方标题栏位置契约')
-  assert.match(layer, /left:\s*var\(--pt-sidebar-edge, 66px\)/, '回退 66px = 折叠 rail 56 + 贴靠间距 10（首帧即折叠态正确位置）')
-  assert.match(source, /const FLOATING_TRIGGER_GAP = 10/, '按钮圆缘贴靠侧栏右缘 + 10px（= 官方 rail 侧 padding 对称）')
+  assert.match(layer, /left:\s*var\(--pt-sidebar-edge, 56px\)/, '回退 56px = 折叠 rail 宽（首帧即折叠态相切贴靠位置）')
+  assert.match(source, /const FLOATING_TRIGGER_GAP = 0/, '按钮圆缘与侧栏右缘相切贴靠（间距 0，图标 5px 微呼吸）')
   // 轨道口径：读官方 .frame 的 inline grid-template-columns 第一段（实时几何），
   // 锚点 = 官方公开的 data-sidebar-collapsed 属性（不 querySelector 宿主、不假设层级）。
   assert.match(source, /dataset\.sidebarCollapsed/, '几何锚点 = 官方 data-sidebar-collapsed 契约属性')

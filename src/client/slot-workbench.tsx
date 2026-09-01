@@ -57,12 +57,10 @@ function FloatingTrigger(props: { controller: PromptToolWorkspaceController; tri
   )
 }
 
-/** 悬浮触发器（28px 按钮）左缘与侧栏轨道右缘的设计间距（px）——按钮圆缘
- *  贴靠侧栏（不是图标中心悬浮）。数值 = 官方折叠 rail 的侧 padding（10px，
- *  rail 几何契约 [10px][36px 控制盒][10px]）：按钮空隙与 rail 侧 padding 精确
- *  对称，按钮如 rail 几何的延伸；展开态侧栏内容 padding 12px，按钮 10px
- *  略紧半格体现贴靠语义。 */
-const FLOATING_TRIGGER_GAP = 10
+/** 悬浮触发器（28px 按钮）左缘与侧栏轨道右缘的设计间距（px）= 0：按钮圆缘
+ *  与侧栏边缘线相切（真·边缘贴靠，不留空隙）。可见图标（18px 居中）因此与
+ *  侧栏保持 5px 微呼吸——命中区贴线、笔画不压线。 */
+const FLOATING_TRIGGER_GAP = 0
 const FLOATING_TRIGGER_LEFT_PROPERTY = '--pt-sidebar-edge'
 
 /**
