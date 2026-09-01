@@ -58,14 +58,14 @@ function FloatingTrigger(props: { controller: PromptToolWorkspaceController; tri
 }
 
 const SIDEBAR_WIDE_PADDING = 12
-const SIDEBAR_COLLAPSED_WIDTH = 56
-const FLOATING_TRIGGER_GAP = 20
+const SIDEBAR_COLLAPSED_WIDTH = 36
+const FLOATING_TRIGGER_GAP = 15
 const FLOATING_TRIGGER_LEFT_PROPERTY = '--pt-sidebar-edge'
 
 /**
  * Official sidebar slot geometry bridge. The visible trigger is portaled to body
  * from the frame-wide overlay; this element only measures the real, resizable sidebar
- * edge, including the collapsed 56px rail.
+ * edge, including the collapsed 36px rail.
  */
 function SidebarGeometryProbe(props: SidebarGeometryProps): ReactNode {
   const { wide } = props

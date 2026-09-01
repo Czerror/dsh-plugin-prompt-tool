@@ -50,9 +50,9 @@
 
 .floatingTriggerLayer {
   position: fixed;
-  top: calc(3px + env(safe-area-inset-top));
-  /* 初始值按 264px 最小侧边栏 + 20px 间距回退；渲染后由官方 sidebar slot 探针覆盖。 */
-  left: var(--pt-sidebar-edge, 284px);
+  top: calc(40px + env(safe-area-inset-top));
+  /* 初始值按 264px 最小侧边栏 间距回退；渲染后由官方 sidebar slot 探针覆盖。 */
+  left: var(--pt-sidebar-edge, 10px);
   /* 悬浮按钮高于抽屉（1000），抽屉打开时仍可点击关闭。 */
   z-index: 1100;
   display: flex;
@@ -325,7 +325,7 @@
 
 .nav button[data-active] small { color: var(--dsw-alias-state-business-primary); }
 
-/* pre-step 层的第二级标签页（对齐记忆系统「总览/搜索/内容/实体」模式）。 */
+/* pre-step 层的第二级标签页。 */
 .memoryNavigation {
   display: flex;
   min-width: 0;
