@@ -53,6 +53,40 @@
    - 迁移脚本只处理旧参数、旧 worldBook、旧覆盖文件。
    - 不做运行时自动兼容，不改 preset 目录管理。
 
+### 2.1 Canonical preset.yml 参数布局（保留）
+
+~~~yaml
+id: <目录名>
+name: <显示名>
+description: <可选说明>
+version: <版本>
+engineCompat: <兼容范围>
+meta: <显示/来源元数据>
+content: <模板初始内容，可选>
+model: <主模型段>
+subagentModel: <子代理模型段>
+params: <canonical EngineParams>
+variables: <模板变量；空字符串合法>
+variablesEnabled: <可选>
+modules: <组合模块清单>
+moduleConfigs: <行级配置补充>
+promptConfigs: <注入配置数组>
+customTools: <声明式工具数组>
+~~~
+
+约束：
+
+- id 只作为校验字段，必须等于目录名，不作为可编辑身份。
+- meta 只放来源、标签、作者等附加信息，不与 name / description / version 重复。
+- content 只承载模板初始内容；大文本继续拆到 preset.md / agents.md。
+- model / subagentModel 为顶层 canonical 模型段，不再回填扁平模型键。
+- params 只承载引擎行为参数；空字符串和空数组表示删键并回落默认。
+- variables 独立于 params；空字符串是合法 worldBook 动态占位值。
+- variablesEnabled 只控制插值，不删除 variables 源数据。
+- modules 决定装配哪些组合模块，moduleConfigs 只做行级补充，不得覆盖参数桥结果。
+- promptConfigs / customTools 保持数组语义，按数组顺序和固定宽度文件名稳定排序。
+- 旧参数兼容只保留为显式离线迁移，不做运行时自动兼容。
+
 ## 三、已确认问题清单
 
 ### P1 数据完整性与安全
