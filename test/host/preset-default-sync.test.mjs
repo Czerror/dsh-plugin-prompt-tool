@@ -74,6 +74,7 @@ function makeHarness(initial) {
     effect: (factory) => { const dispose = factory(); return typeof dispose === 'function' ? dispose : () => {} },
     skills: { registerProvider: () => {} },
     get: (name) => name === 'webServer' ? {} : undefined,
+    provide: () => () => {},
     baseUrl: 'http://localhost:3000',
     inject: (_deps, callback) => { callback(sctx); return () => {} },
   }

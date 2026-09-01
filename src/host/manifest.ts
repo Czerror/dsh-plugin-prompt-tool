@@ -40,6 +40,8 @@ export interface PresetSpec {
   variables?: Record<string, string>
   /** 自定义工具定义（tool-config-engine 渲染进 custom-tools/ 后运行时注册）。 */
   customTools?: unknown[]
+  /** 内置模型工具面（character/worldBook/sessionVar 三组；缺省全开，与旧行为兼容）。 */
+  builtinTools?: Record<string, unknown>
   /** 模板变量插值开关（缺省 true = 启用；false = 停用，writePreset 不生成变量文件）。 */
   variablesEnabled?: boolean
   /** 可选:模板自定义提示词配置覆盖(纯数据,不使用模板语法)。 */
@@ -65,6 +67,29 @@ export function packagePresetDir(): string {
     if (existsSync(dir)) return dir
   }
   throw new Error('prompt-tool: cannot locate package preset/ directory')
+}
+
+/** 内置模型工具面归一结果（三组独立开关）。 */
+export interface BuiltinToolsFace {
+  character: boolean
+  worldBook: boolean
+  sessionVar: boolean
+}
+
+/**
+ * preset.yml 顶层 builtinTools 段归一：缺段/坏值回落全开（与旧版全局注册行为兼容，
+ * 已物化用户预设无段时不丢工具）；显式 false 才关闭对应组。
+ */
+export function resolveBuiltinTools(spec: PresetSpec | undefined): BuiltinToolsFace {
+  const raw = spec?.builtinTools
+  const face = raw !== null && typeof raw === 'object' && !Array.isArray(raw)
+    ? raw as Record<string, unknown>
+    : {}
+  return {
+    character: face.character !== false,
+    worldBook: face.worldBook !== false,
+    sessionVar: face.sessionVar !== false,
+  }
 }
 
 /** 包根 engine/ 目录(插件引擎,与配置文件夹分离):兼容源码与打包运行。 */

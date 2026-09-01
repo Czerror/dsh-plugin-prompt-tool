@@ -238,7 +238,7 @@ export const PresetSwitcher = memo(function PresetSwitcher(props: { store: Promp
     return (
       <div key={preset.id} className={clsx(styles.presetCard, active && styles.presetCardActive, blocked && styles.presetCardBlocked)}
         data-active={active ? '' : undefined}>
-        <button type="button" className={styles.presetCardMain} disabled={!fields.writePreset || blocked}
+        <button type="button" className={styles.presetCardMain} disabled={blocked}
           title={blocked
             ? '预设不可渲染（缺模块清单/组合文件）：可删除后经「新建预设」从内置模板还原，或检查 preset.yml'
             : active ? '当前预设模板' : `切换到 ${preset.name}`}

@@ -6,6 +6,11 @@ name: 自定义预设
 description: 空白起点：所有参数为空，按需从 UI 配置。
 version: 1.0.0
 engineCompat: ">=0.4.2"
+# 内置模型工具面：空白起点全关（需要时把 false 改 true 或删段恢复默认全开）。
+builtinTools:
+  character: false
+  worldBook: false
+  sessionVar: false
 modules: []
 params: {}
 promptConfigs: []

@@ -33,6 +33,7 @@ dsh --profile prompt-tool                                          # 首次启�
 - 🛠️ **自定义工具**：preset.yml `customTools` 段声明式定义模型工具（执行器 shell/http/delegate/fs/ask-user，`{{args.x}}` 参数插值），`tool-config-engine` 引擎行运行时注册；模块列表「自定义工具」卡片 JSON 编辑
 - 🧩 **模板变量**：预设级 `variables` 段（`{{key}}` 插值源）——模块列表顶部「模板变量」卡片统一编辑（可折叠/清空/停用/失焦自动保存）；锚定匹配引擎（anchor-match）统一 custom-fallback 与 world-book 的匹配语义
 - 💬 **会话变量工具**：`session_var`（list/get/set/clear）——模型维护角色状态（`{{心情}}` 等），会话级覆盖预设默认；ST 运行时宏（`{{lastusermessage}}` / `{{lastcharmessage}}`）从会话事件提取
+- 🧰 **预设级内置工具面**：preset.yml#builtinTools 分组控制角色卡、世界书与会话变量工具；工具随预设组合行按会话挂载，关闭预设生成时以空组合保持预设可切换并停止全部注入
 
 ## 项目架构
 
@@ -145,7 +146,7 @@ UI / 写盘展示顺序固定为 `pre-step → system-section → runtime-contex
 
 ```sh
 pnpm install && pnpm build
-pnpm test          # 407 单测：参数契约/注入装配/六插入点/生成链路/引擎语义/安全边界
+pnpm test          # 419 单测：参数契约/注入装配/六插入点/生成链路/引擎语义/安全边界
 pnpm typecheck && pnpm lint
 pnpm sync:anchored       # 刷新 upstream/dsh-anchored-standard 内联快照
 pnpm sync:yaml           # 刷新 engine/vendor/yaml（生成目录运行时 YAML 解析器）

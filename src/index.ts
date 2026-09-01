@@ -8,7 +8,7 @@ import type {
   SkillProviderControl,
 } from '@deepseek-ai/dsh-skill'
 import type {} from '@deepseek-ai/dsh-host-webserver'
-import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createSkillsWatcher } from './runtime/skills-watcher.ts'
 import { basename, dirname, join } from 'node:path'
 import {
@@ -250,23 +250,31 @@ export function apply(ctx: Context, configIn: Config): void {
       writePreset(presetPrompt, options)
       ensureLegacyAliasOnce(presetPrompt, options)
     } else {
-      // writePreset 关闭时移除各预设目录的生成物（agent.cordis.yml / prompt-configs /
-      // 内容资产），保留 preset.yml 参数源与预设根本身——宿主以 agent.cordis.yml
-      // 为准挂载，删除组合本体即停止注入；绝不删除整个用户预设目录
-      // （旧版误删 presetDir 根：用户全部预设、种子标记 .pt-seeded、共享 .engine 一并清空）。
+      // writePreset 关闭时清空各预设目录的生成物，保留 preset.yml 参数源与预设根本身。
+      // agent.cordis.yml 改写为空组合而非删除：官方 discovery 对缺组合文件的目录
+      // 仍占用 id 并判 broken（挂载抛 agent-preset/invalid、picker 丢弃该行），
+      // 会导致 default 预设无法新建会话、全部预设无法切换；空组合零行可正常
+      // 挂载，等价「停止注入」语义，重新开启后由重建恢复完整组合。
+      // 绝不删除整个用户预设目录（旧版误删 presetDir 根：用户全部预设、
+      // 种子标记 .pt-seeded、共享 .engine 一并清空）。
       let cleaned = 0
       for (const preset of listPresets()) {
         const dir = join(runtime.presetDir, preset.id)
-        for (const name of ['agent.cordis.yml', 'prompt-configs', 'custom-tools', 'preset.md', 'agents.md', 'agents-instruction.md', 'engine']) {
+        for (const name of ['prompt-configs', 'custom-tools', 'preset.md', 'agents.md', 'agents-instruction.md', 'engine']) {
           try {
             rmSync(join(dir, name), { recursive: true, force: true })
           } catch {
             // Windows 瞬时锁：残留无害（下次重建/清理重试）。
           }
         }
+        try {
+          writeFileSync(join(dir, 'agent.cordis.yml'), '# prompt-tool writePreset disabled\n[]\n', 'utf8')
+        } catch {
+          // 写失败保留旧组合：注入未停止，下次重建重试；preset.yml 参数不受影响。
+        }
         cleaned += 1
       }
-      warn(ctx, `prompt-tool: writePreset 已关闭，清理 ${cleaned} 个预设目录的生成物（preset.yml 参数保留）`)
+      warn(ctx, `prompt-tool: writePreset 已关闭，清空 ${cleaned} 个预设目录的组合（preset.yml 参数保留）`)
     }
   }
 
@@ -761,45 +769,55 @@ registerTuiCommand(
     rebuildPreset()
     if (presetTemplateChanged) {
       syncHostDefault('switch')
-  // 内置工具随预设切换重挂（disposer 机制保留；自定义面走 delegate 模板包装）。
-      applyBuiltinTools()
+      // 内置工具面随组合行走（per-session 挂载），无需宿主平面重挂。
     }
   }
 
-  // 内置工具注册（character/world_book/session_var）：插件固有注册（自定义面走
-  // delegate 模板包装），disposer 保留供未来按预设切换重挂。
-  let disposeBuiltinTools: Array<() => void> = []
-  const applyBuiltinTools = (): void => {
-    for (const dispose of disposeBuiltinTools) dispose()
-    disposeBuiltinTools = []
-    const push = (dispose: () => void): void => {
-      if (typeof dispose === 'function') disposeBuiltinTools.push(dispose)
-    }
-    push(registerCharacterTools(ctx, {
-      presetRoot: () => dirname(activePresetDir()),
-      templateName: () => basename(activePresetDir()),
-      rebuild: () => {
-        try {
-          rebuildPreset()
-        } catch (error) {
-          warn(ctx, `prompt-tool: character tool rebuild failed: ${String(error)}`)
-        }
-      },
-    }))
-    push(registerWorldBookTools(ctx, {
-      activeDir: () => activePresetDir(),
-      presetRoot: () => dirname(activePresetDir()),
-      rebuild: () => {
-        try {
-          rebuildPreset()
-        } catch (error) {
-          warn(ctx, `prompt-tool: world-book tool rebuild failed: ${String(error)}`)
-        }
-      },
-    }))
-    push(registerSessionVarTools(ctx))
-  }
-  applyBuiltinTools()
+  // 内置模型工具桥接服务：组合行 pt-builtin-tools（writePreset 按 preset.yml
+  // builtinTools 段渲染）挂载时在本行 scope 上调用 mount 注册 character /
+  // world_book / session_var 工具——官方 tools.register 在组合行 ctx 调用即仅
+  // 挂载该预设的会话可见，宿主平面不再无条件全局注册（此前所有会话无条件可见，
+  // 且 writePreset 关闭后工具仍注入）。工具 execute 仍操作插件当前激活预设。
+  ctx.provide('pt-builtin-tools', {
+    mount: (scopeCtx: Context, config: Record<string, unknown>): (() => void) => {
+      const disposers: Array<() => void> = []
+      const push = (dispose: unknown): void => {
+        if (typeof dispose === 'function') disposers.push(dispose as () => void)
+      }
+      if (config.character !== false) {
+        push(registerCharacterTools(scopeCtx, {
+          presetRoot: () => dirname(activePresetDir()),
+          templateName: () => basename(activePresetDir()),
+          rebuild: () => {
+            try {
+              rebuildPreset()
+            } catch (error) {
+              warn(ctx, `prompt-tool: character tool rebuild failed: ${String(error)}`)
+            }
+          },
+        }))
+      }
+      if (config.worldBook !== false) {
+        push(registerWorldBookTools(scopeCtx, {
+          activeDir: () => activePresetDir(),
+          presetRoot: () => dirname(activePresetDir()),
+          rebuild: () => {
+            try {
+              rebuildPreset()
+            } catch (error) {
+              warn(ctx, `prompt-tool: world-book tool rebuild failed: ${String(error)}`)
+            }
+          },
+        }))
+      }
+      if (config.sessionVar !== false) {
+        push(registerSessionVarTools(scopeCtx))
+      }
+      return () => {
+        for (const dispose of disposers) dispose()
+      }
+    },
+  })
 
   // settings 注册 base 与运行时快照同源（单一组装，避免双份字段漂移）。
   const settingsEntry: PromptSettings = currentSource()

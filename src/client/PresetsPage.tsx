@@ -15,7 +15,7 @@ export const PresetsPage = memo(function PresetsPage(props: { store: PromptToolS
     <>
       <section className={ui.section} aria-label="全局开关">
         <div className={ui.rowGroup}>
-          <ToggleRow id="pt-write-preset" label="全局开关" hint="预设生成总开关，作用于全部六个层级：开启时生成并刷新生成目录；关闭时移除生成目录。关闭/开启后自动重新加载模块卡片。"
+          <ToggleRow id="pt-write-preset" label="全局开关" hint="预设生成总开关，作用于全部六个层级：开启时生成并刷新生成目录；关闭时清空各预设组合为空（预设保持可用，仅停止注入，工具注入随之关闭）。关闭/开启后自动重新加载模块卡片。"
             checked={fields.writePreset} onChange={() => store.toggle('writePreset')} />
         </div>
       </section>

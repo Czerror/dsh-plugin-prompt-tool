@@ -812,3 +812,45 @@ test('writePreset 禁用大条目瘦身：enabled=false 超阈值正文不落产
     rmSync(dir, { recursive: true, force: true })
   }
 })
+
+test('writePreset builtinTools 段 → pt-builtin-tools 组合行（缺省全开 / 按组控制 / 全关不渲染）', () => {
+  const dir = join(tmpdir(), `prompt-tool-bt-${process.pid}-${Date.now()}`)
+  const presetDir = join(dir, 'preset')
+  // 临时用户预设模板（用户副本优先于包内模板）：独立控制 spec，不污染共享 anchored。
+  const userTemplateDir = join(home, '.agent-presets', 'bt-face')
+  try {
+    const writeSpec = (builtinYaml) => {
+      mkdirSync(userTemplateDir, { recursive: true })
+      writeFileSync(join(userTemplateDir, 'preset.yml'),
+        `id: bt-face\nname: BT Face\nversion: 1.0.0\nengineCompat: ">=0.4.2"\nmodules: []\n${builtinYaml}`, 'utf8')
+    }
+    const readToolRow = () => {
+      const rows = parseYaml(readFileSync(join(presetDir, 'bt-face', 'agent.cordis.yml'), 'utf8'))
+      return rows.find((entry) => entry?.id === 'pt-builtin-tools')
+    }
+    // 1) 无段（已物化的旧用户预设）：缺省全开——与旧版全局注册行为兼容，工具不丢。
+    writeSpec('')
+    writePreset('PROMPT', { ...makeOptions(presetDir), presetTemplate: 'bt-face' })
+    let row = readToolRow()
+    assert.ok(row, '缺省应渲染 pt-builtin-tools 行（旧行为兼容）')
+    assert.equal(row.name, '../.engine/pt-builtin-tools.mjs', '桥接行指向共享引擎（相对预设目录）')
+    assert.deepEqual(row.config, { character: true, worldBook: true, sessionVar: true }, '缺省三组全开')
+    // 2) 按组关闭：config 如实反映（组合行 scope 注册时按组过滤）。
+    writeSpec('builtinTools:\n  character: false\n  worldBook: true\n  sessionVar: false\n')
+    writePreset('PROMPT', { ...makeOptions(presetDir), presetTemplate: 'bt-face' })
+    row = readToolRow()
+    assert.deepEqual(row.config, { character: false, worldBook: true, sessionVar: false }, '按组控制 config')
+    // 3) 全关：不渲染行（挂载该预设的会话没有内置工具注入）。
+    writeSpec('builtinTools:\n  character: false\n  worldBook: false\n  sessionVar: false\n')
+    writePreset('PROMPT', { ...makeOptions(presetDir), presetTemplate: 'bt-face' })
+    assert.equal(readToolRow(), undefined, '全关不应渲染行')
+    // 4) 坏值（段不是 map）：归一回落全开，不 fail loud。
+    writeSpec('builtinTools: oops\n')
+    writePreset('PROMPT', { ...makeOptions(presetDir), presetTemplate: 'bt-face' })
+    row = readToolRow()
+    assert.deepEqual(row.config, { character: true, worldBook: true, sessionVar: true }, '坏值回落全开（渲染层宽容）')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+    rmSync(userTemplateDir, { recursive: true, force: true })
+  }
+})
