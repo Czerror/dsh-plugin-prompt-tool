@@ -229,18 +229,24 @@ export const PresetSwitcher = memo(function PresetSwitcher(props: { store: Promp
     </div>
   )
 
-  function renderCard(preset: { id: string; name: string; description?: string }): ReactNode {
+  function renderCard(preset: { id: string; name: string; description?: string; renderable?: boolean }): ReactNode {
     const active = fields.presetTemplate === preset.id
     const confirming = confirmingDelete === preset.id
+    // 不可渲染（缺 modules/组合文件，包内也无同名模板可回退）：灰显禁切换，
+    // 提示还原路径——避免点击后宿主挂载失败的哑弹。
+    const blocked = preset.renderable === false
     return (
-      <div key={preset.id} className={clsx(styles.presetCard, active && styles.presetCardActive)}
+      <div key={preset.id} className={clsx(styles.presetCard, active && styles.presetCardActive, blocked && styles.presetCardBlocked)}
         data-active={active ? '' : undefined}>
-        <button type="button" className={styles.presetCardMain} disabled={!fields.writePreset}
-          title={active ? '当前预设模板' : `切换到 ${preset.name}`}
+        <button type="button" className={styles.presetCardMain} disabled={!fields.writePreset || blocked}
+          title={blocked
+            ? '预设不可渲染（缺模块清单/组合文件）：可删除后经「新建预设」从内置模板还原，或检查 preset.yml'
+            : active ? '当前预设模板' : `切换到 ${preset.name}`}
           onClick={() => store.setPresetTemplate(preset.id)}>
           <span className={styles.presetCardHead}>
             <strong className={styles.presetCardName}>{preset.name}</strong>
             {active && <span className={styles.presetInUse}>使用中</span>}
+            {blocked && <span className={styles.presetBlocked}>不可用</span>}
           </span>
           {preset.description !== undefined && preset.description.length > 0
             && <p className={styles.presetCardDesc}>{preset.description}</p>}

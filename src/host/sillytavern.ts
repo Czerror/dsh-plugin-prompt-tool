@@ -21,6 +21,11 @@ import { buildWorldBookEntry } from './worldbook.ts'
 /** ST 运行时指令（渲染时执行、不发送给模型）：setvar/getvar/ERA/trim/注释 → 剥离。 */
 const ST_DIRECTIVE = /\{\{(setvar|getvar|ERA|trim|\/\/)[^}]*\}\}/gi
 
+/** ST marker prompts（marker: true）：content 不发送给模型（仅标记注入位置，ST
+ *  以运行时内容填充该位置）；SPresetSettings 是旧版 ST 的预设设置 dump（正则
+ *  脚本/扩展配置/ToolBindings，动辄数百 KB）。两者转换时整体丢弃并计数进
+ *  meta.stDroppedMarkers——防止设置 dump 与位置占位污染 promptConfigs 与注入。 */
+
 /**
  * 处理 SillyTavern 文本，ST 变量语义 → 本项目 params fallback 插值：
  *   {{setvar::k::v}}        → 收集 k=v 进 params（会话变量初始值 = fallback 基准），指令剥离；
@@ -125,6 +130,7 @@ export function convertStToPreset(card: unknown, baseName: string): PresetSpec {
     }
   }
   const configs: Array<Record<string, unknown>> = []
+  const droppedMarkers: string[] = []
   let systemSectionCount = 0
   // 角色卡正文：chara_card_v3 实际内容在 data 内层（顶层为同步冗余），旧版顶层直存。
   const body = (record.data !== null && typeof record.data === 'object' ? record.data as Record<string, unknown> : record) as Record<string, unknown>
@@ -254,9 +260,20 @@ export function convertStToPreset(card: unknown, baseName: string): PresetSpec {
   }
 
   for (const [index, prompt] of prompts.entries()) {
+    const rawId = typeof prompt.identifier === 'string' ? prompt.identifier : ''
+    // ST 系统/标记条目丢弃（计数供 meta 审计）：
+    //  - marker: true = ST 权威位置标记信号，content 不发送给模型（ST 以运行时
+    //    内容填充该位置）——marker 标志优先于 identifier 判定；
+    //  - SPresetSettings = 旧版 ST 预设设置 dump（正则脚本/扩展配置），无论
+    //    marker 标志整体丢弃；
+    //  - 非 marker 的 main/nsfw 等同名条目保留——社区预设存在借名装真实
+    //    提示词的合法用法（enabled 状态照常转换）。
+    if (prompt.marker === true || rawId === 'SPresetSettings') {
+      if (rawId.length > 0) droppedMarkers.push(rawId)
+      continue
+    }
     const content = clean(typeof prompt.content === 'string' ? prompt.content : '')
     if (content.length === 0) continue
-    const rawId = typeof prompt.identifier === 'string' ? prompt.identifier : ''
     const id = rawId.length > 0 && !/^[0-9a-f-]{36}$/i.test(rawId) ? rawId : `st-prompt-${index + 1}`
     // ST 角色：system=系统消息（进 system-section 层，pre-step 无 system 角色）；
     // user/assistant 进 pre-step；'model'（第三方扩展角色，ST 官方枚举外）按
@@ -350,8 +367,12 @@ export function convertStToPreset(card: unknown, baseName: string): PresetSpec {
     name: `${cardName || baseName}（SillyTavern 转换）`,
     version: '1.0.0',
     engineCompat: '>=0.4.2',
-    // 来源标记：角色管理页据此列出「从 SillyTavern 导入的预设」。
-    meta: { source: 'sillytavern' },
+    // 来源标记：角色管理页据此列出「从 SillyTavern 导入的预设」；
+    // stDroppedMarkers 审计丢弃的系统/标记条目（SPresetSettings 等）。
+    meta: {
+      source: 'sillytavern',
+      ...(droppedMarkers.length > 0 ? { stDroppedMarkers: droppedMarkers } : {}),
+    },
     ...(Object.keys(variables).length > 0 ? { variables } : {}),
     modules,
     moduleConfigs,

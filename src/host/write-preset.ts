@@ -10,7 +10,7 @@
 
 import { writeFileSync, mkdirSync, rmSync, cpSync, mkdtempSync, renameSync, existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
-import { parseDocument, stringify as stringifyYaml } from 'yaml'
+import { parse as parseYaml, parseDocument, stringify as stringifyYaml } from 'yaml'
 import { DEFAULT_PRESET_DIR } from './paths.ts'
 import { PARAM_KEYS } from '../shared/param-keys.ts'
 import type { PresetWriterParams } from '../shared/engine-params.ts'
@@ -25,9 +25,9 @@ import {
   asString,
   loadPresetSpec,
   packageEngineDir,
-  resolvePresetDir,
   renderComposition,
   resolvePresetParams,
+  resolveRenderablePresetDir,
 } from './manifest.ts'
 
 const ENGINE_DIR = packageEngineDir()
@@ -58,6 +58,33 @@ const ENGINE_FINGERPRINT_MARKER = '.pt-engine-fingerprint'
  *  模板变量插值停用时由 writePreset 调用，避免 {{key}} 残留导致官方渲染 unknown variable。 */
 function stripVariableRefs(text: string, keys: ReadonlySet<string>): string {
   return text.replace(/\{\{([A-Za-z0-9_.\u4e00-\u9fff-]+)\}\}/g, (whole, key: string) => keys.has(key) ? '' : whole)
+}
+
+/** 禁用条目物化瘦身阈值（字符数）：超过则渲染产物只保留元数据不落正文。
+ *  ST 导入的设置 dump（SPresetSettings 等）动辄数百 KB 且 enabled=false——
+ *  注入与展示都不需要正文，全量落盘只拖慢 rebuild 与引擎启动扫描。 */
+const DISABLED_TEXT_SLIM_THRESHOLD = 32 * 1024
+
+/** 参数性段落键：任一存在即视为用户配置过（非纯元数据种子副本）。 */
+const SUBSTANTIVE_PRESET_KEYS = [
+  'params', 'modules', 'composition', 'promptConfigs', 'content', 'variables',
+  'customTools', 'worldBook', 'moduleConfigs', 'model', 'subagentModel',
+  'variablesEnabled', 'legacyCleanup',
+] as const
+
+/** 判定 preset.yml 文本是否为纯元数据（仅 name/description/version/order 等展示
+ *  字段，无任何参数性段落）——旧版种子副本形态（ensurePresetSeed 复制的旧模板）。
+ *  解析失败按非纯元数据处理（保守不升级，走回退渲染保命）。 */
+function isMetadataOnlyPresetYaml(text: string): boolean {
+  let parsed: unknown
+  try {
+    parsed = parseYaml(text, { logLevel: 'silent' })
+  } catch {
+    return false
+  }
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return false
+  const record = parsed as Record<string, unknown>
+  return !SUBSTANTIVE_PRESET_KEYS.some((key) => key in record)
 }
 
 /**
@@ -219,7 +246,14 @@ export function writePreset(prompt: string, options: WritePresetOptions): void {
   if (!/^[a-z0-9][a-z0-9-]*$/.test(outputId)) {
     throw new Error(`invalid outputId ${JSON.stringify(outputId)}: must match official agent-presets id /^[a-z0-9][a-z0-9-]*$/`)
   }
-  const templateDir = resolvePresetDir(templateName)
+  // 可渲染性回退：旧版种子副本（仅元数据 + 本地 .mjs，无 modules/composition/
+  // agent.cordis.yml）遮蔽包内新版模板时，直接物化必失败——回退包内模板渲染并
+  // warn；纯元数据参数源在第 2 步升级为包内新版（闭环后不再回退）。
+  const resolvedTemplate = resolveRenderablePresetDir(templateName)
+  const templateDir = resolvedTemplate.dir
+  if (resolvedTemplate.fallback) {
+    options.warn?.(`prompt-tool: 预设 ${templateName} 用户副本缺组合源（modules/agent.cordis.yml），已回退包内模板渲染`)
+  }
   const spec = loadPresetSpec(templateDir)
   // 世界书旧存储段一次性迁移：旧版 preset.yml 顶层 worldBook 段（injectMode + entries）
   // → world-book 策略配置并入 spec.promptConfigs（模块体系），并删除段写回。
@@ -318,18 +352,44 @@ export function writePreset(prompt: string, options: WritePresetOptions): void {
   const sourceYamlPath = options.aliasOf === true
     ? join(presetDir, templateName, 'preset.yml')
     : join(targetDir, 'preset.yml')
-  const existingPresetYaml = existsSync(sourceYamlPath)
+  let existingPresetYaml = existsSync(sourceYamlPath)
     ? readFileSync(sourceYamlPath, 'utf8')
     : undefined
+  // 种子升级（仅回退场景）：用户 preset.yml 是纯元数据（无任何参数性段落）时，以
+  // 包内模板 preset.yml 为基础升级——旧值只保留元数据键（name/description/meta
+  // 旧值优先，保持用户命名），参数段落全部来自包内新版。非纯元数据（用户配置过）
+  // 不升级，仅回退渲染（组合可用，参数保持用户旧值）。
+  if (resolvedTemplate.fallback && existingPresetYaml !== undefined
+    && existingPresetYaml.trim().length > 0 && isMetadataOnlyPresetYaml(existingPresetYaml)) {
+    const builtinYaml = readFileSync(join(templateDir, 'preset.yml'), 'utf8')
+    const upgraded = parseDocument(builtinYaml, { logLevel: 'silent' })
+    const legacy = parseDocument(existingPresetYaml, { logLevel: 'silent' })
+    for (const key of ['name', 'description', 'meta'] as const) {
+      const legacyNode = legacy.get(key)
+      if (legacyNode !== undefined && legacyNode !== null) upgraded.setIn([key], legacyNode)
+    }
+    existingPresetYaml = upgraded.toString()
+    options.warn?.(`prompt-tool: 预设 ${templateName} 参数源为纯元数据旧版，已升级为包内模板（模块清单/默认参数已更新）`)
+  }
   if (existingPresetYaml !== undefined && existingPresetYaml.trim().length > 0) {
     const doc = parseDocument(existingPresetYaml, { logLevel: 'silent' })
     doc.setIn(['order'], options.presetOrder)
-    if (typeof spec.name === 'string' && spec.name.length > 0) doc.setIn(['name'], displayName ?? spec.name)
-    if (options.aliasOf === true) doc.setIn(['id'], outputId)
-    if (typeof spec.description === 'string' && spec.description.length > 0) {
-      doc.setIn(['description'], spec.description)
+    // 元数据合并：参数源已有值优先——正常场景 spec 与 existing 同源（写回同值
+    // 幂等）；回退/种子升级场景 spec 来自包内模板，不得覆盖用户命名与 meta。
+    // 空值（缺失/空白）才由模板值兜底；aliasOf 的 displayName 仍强制（兼容标记）。
+    const ensureMetaKey = (key: string, value: unknown): void => {
+      if (value === undefined || value === null) return
+      const current = doc.get(key)
+      if (current === undefined || current === null
+        || (typeof current === 'string' && current.trim().length === 0)) {
+        doc.setIn([key], value)
+      }
     }
-    if (Object.keys(meta).length > 0) doc.setIn(['meta'], meta)
+    if (displayName !== undefined) doc.setIn(['name'], displayName)
+    else ensureMetaKey('name', typeof spec.name === 'string' && spec.name.length > 0 ? spec.name : undefined)
+    if (options.aliasOf === true) doc.setIn(['id'], outputId)
+    ensureMetaKey('description', typeof spec.description === 'string' && spec.description.length > 0 ? spec.description : undefined)
+    ensureMetaKey('meta', Object.keys(meta).length > 0 ? meta : undefined)
     writeFileSync(join(outDir, 'preset.yml'), doc.toString(), 'utf8')
   } else {
     writeFileSync(join(outDir, 'preset.yml'), stringifyYaml(displayName !== undefined ? { ...meta, id: outputId, name: displayName, order: options.presetOrder } : { ...meta, order: options.presetOrder }) + '\n', 'utf8')
@@ -465,7 +525,14 @@ export function writePreset(prompt: string, options: WritePresetOptions): void {
   if (variablesEnabled && presetVariableKeys.size > 0) {
     writeFileSync(join(promptConfigsDir, 'variables.yml'), stringifyYaml(presetVariables), 'utf8')
   }
-  for (const [index, config] of merged.entries()) {
+  for (const [index, source] of merged.entries()) {
+    // 浅克隆：merged 元素可能是 settings 层/模板 spec 的引用（mergePromptConfigs
+    // 不拷贝），循环内的变异（prompt-injector 参数桥/变量剥离/瘦身）不得污染
+    // 参数源与 presetSpecCache 缓存。
+    const config: PromptConfigSpec = {
+      ...source,
+      params: source.params !== undefined && source.params !== null ? { ...source.params } : source.params,
+    }
     // 内容资产单一事实源（大文本存生成目录文件，settings 覆盖层只保留轻字段）：
     // prompt-injector 的注入文本永远来自 preset.md（presetPrompt），settings 条目即使带 text 也强制清空，
     // 避免「settings 覆盖层整体替换模板条目」时把渲染产物 params.text 挤掉。
@@ -518,6 +585,16 @@ export function writePreset(prompt: string, options: WritePresetOptions): void {
       if (typeof config.params?.text === 'string') {
         config.params = { ...config.params, text: strip(config.params.text as string) }
       }
+    }
+    // 禁用大条目瘦身：enabled=false 且正文超阈值时产物不落正文（参数源 preset.yml
+    // 原文保留，重新启用后下次物化恢复全文）——只省 IO 与解析，不动注入语义。
+    const textVolume = (typeof config.text === 'string' ? config.text.length : 0)
+      + (Array.isArray(config.texts)
+        ? config.texts.reduce((sum, item) => sum + (typeof item === 'string' ? item.length : 0), 0)
+        : 0)
+    if (config.enabled === false && textVolume > DISABLED_TEXT_SLIM_THRESHOLD) {
+      delete config.text
+      config.texts = []
     }
     writeFileSync(join(promptConfigsDir, configFileName(index * 10, config.id)), renderPromptConfigYaml(config), 'utf8')
   }

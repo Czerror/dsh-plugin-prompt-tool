@@ -114,3 +114,23 @@ test.after(() => {
   rmSync(root, { recursive: true, force: true })
   delete process.env.DSH_HOME
 })
+
+test('listPresets：不可渲染预设标记 renderable=false；包内同名可回退则 true', () => {
+  ensurePresetSeed()
+  // 纯元数据 + 无组合文件 + 包内无同名模板 → 真不可用
+  const broken = join(PRESETS_DIR, 'my-broken-preset')
+  mkdirSync(broken, { recursive: true })
+  writeFileSync(join(broken, 'preset.yml'), 'id: my-broken-preset\nname: 坏预设\n', 'utf8')
+  try {
+    const presets = listPresets()
+    const bad = presets.find((preset) => preset.id === 'my-broken-preset')
+    assert.ok(bad, '坏预设仍可列出（UI 展示并灰显，不再哑弹）')
+    assert.equal(bad.renderable, false, '无组合源且包内无同名 → 不可渲染')
+    // 种子化 liangshen 副本可渲染；即使副本损坏，包内同名模板可回退 → 仍可用
+    const liangshen = presets.find((preset) => preset.id === 'liangshen')
+    assert.ok(liangshen, '种子化 liangshen 在列表')
+    assert.equal(liangshen.renderable, true, '包内同名模板可回退 → 可渲染')
+  } finally {
+    rmSync(broken, { recursive: true, force: true })
+  }
+})

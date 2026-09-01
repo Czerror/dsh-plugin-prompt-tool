@@ -738,3 +738,77 @@ test.after(() => {
   rmSync(home, { recursive: true, force: true })
 })
 
+
+test('writePreset 旧版种子副本回退：纯元数据遮蔽包内模板 → 回退渲染 + 参数源升级', () => {
+  // 模拟真实布局：presetDir 即隔离 DSH_HOME 的 .agent-presets（参数源与目标同目录，升级闭环）
+  const presetDir = join(home, '.agent-presets')
+  const userLiangshen = join(presetDir, 'liangshen')
+  try {
+    mkdirSync(userLiangshen, { recursive: true })
+    // 旧版种子副本：纯元数据（无 modules/params/promptConfigs，目录无 agent.cordis.yml）
+    writeFileSync(join(userLiangshen, 'preset.yml'), 'name: 梁神模式\ndescription: 旧版种子副本\norder: 4\n', 'utf8')
+    const warnings = []
+    writePreset('PROMPT', { ...makeOptions(presetDir), presetTemplate: 'liangshen', warn: (message) => warnings.push(message) })
+    // 回退包内模板渲染成功：组合指向共享引擎模块（包内新版参数化形态）
+    const cordis = readFileSync(join(presetDir, 'liangshen', 'agent.cordis.yml'), 'utf8')
+    assert.ok(cordis.includes('../.engine/tool-bootstrap.mjs'), '组合来自包内新版模板（引擎模块而非本地 .mjs）')
+    // 参数源升级：preset.yml 获得包内 modules 段，保留旧元数据命名
+    const spec = parseYaml(readFileSync(join(presetDir, 'liangshen', 'preset.yml'), 'utf8'))
+    assert.ok(Array.isArray(spec.modules) && spec.modules.length > 0, '参数源升级为包内 modules 清单')
+    assert.equal(spec.name, '梁神模式', '旧 name 保留（用户命名不丢）')
+    assert.equal(spec.description, '旧版种子副本', '旧 description 保留')
+    assert.ok(warnings.some((message) => message.includes('回退')), '回退发生时 warn')
+    // 闭环：升级后的参数源可渲染，再次物化不再回退
+    const warnings2 = []
+    writePreset('PROMPT', { ...makeOptions(presetDir), presetTemplate: 'liangshen', warn: (message) => warnings2.push(message) })
+    assert.ok(!warnings2.some((message) => message.includes('回退')), '升级闭环后不再回退')
+  } finally {
+    rmSync(userLiangshen, { recursive: true, force: true })
+  }
+})
+
+test('writePreset 非纯元数据副本不升级：仅回退渲染，参数源保持用户旧值', () => {
+  const presetDir = join(home, '.agent-presets')
+  const userPtc = join(presetDir, 'ptc')
+  try {
+    mkdirSync(userPtc, { recursive: true })
+    // 用户配置过（有 params 段）但不可渲染的副本
+    writeFileSync(join(userPtc, 'preset.yml'), 'id: ptc\nname: 用户改过的PTC\nparams:\n  injectPrompt: false\n', 'utf8')
+    writePreset('PROMPT', { ...makeOptions(presetDir), presetTemplate: 'ptc' })
+    // 参数源未被包内模板覆盖（保留用户 params）
+    const spec = parseYaml(readFileSync(join(presetDir, 'ptc', 'preset.yml'), 'utf8'))
+    assert.equal(spec.name, '用户改过的PTC', '用户命名保留')
+    assert.equal(spec.params?.injectPrompt, false, '用户参数保留（不升级不覆盖）')
+    assert.ok(existsSync(join(presetDir, 'ptc', 'agent.cordis.yml')), '回退渲染仍产出组合')
+  } finally {
+    rmSync(userPtc, { recursive: true, force: true })
+  }
+})
+
+test('writePreset 禁用大条目瘦身：enabled=false 超阈值正文不落产物', () => {
+  const dir = join(tmpdir(), `prompt-tool-slim-${process.pid}-${Date.now()}`)
+  const presetDir = join(dir, 'preset')
+  try {
+    const bigText = 'x'.repeat(40 * 1024)
+    writePreset('PROMPT', { ...makeOptions(presetDir), promptConfigs: [
+      { id: 'st-dump', name: '设置dump', enabled: false, strategy: 'static', layer: 'system-section', order: 100, text: bigText },
+      { id: 'normal-off', name: '普通禁用', enabled: false, strategy: 'static', layer: 'system-section', order: 110, text: '小段文本' },
+      { id: 'normal-on', name: '启用大条目', enabled: true, strategy: 'static', layer: 'system-section', order: 120, text: bigText },
+    ] })
+    const configsDir = join(presetDir, 'anchored', 'prompt-configs')
+    const read = (id) => {
+      const file = readdirSync(configsDir).find((name) => name.endsWith(`-${id}.yml`))
+      assert.ok(file, `应生成 ${id}`)
+      return parseYaml(readFileSync(join(configsDir, file), 'utf8'))
+    }
+    const dump = read('st-dump')
+    assert.equal(dump.enabled, false)
+    assert.equal(dump.texts, undefined, '禁用大条目产物不落正文')
+    const smallOff = read('normal-off')
+    assert.deepEqual(smallOff.texts, ['小段文本'], '阈值内禁用条目保留正文')
+    const bigOn = read('normal-on')
+    assert.equal(bigOn.texts[0].length, 40 * 1024, '启用条目不受瘦身影响')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})

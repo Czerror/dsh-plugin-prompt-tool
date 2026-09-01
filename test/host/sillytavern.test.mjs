@@ -109,3 +109,38 @@ test('convertStToPreset：世界书条目结构 = buildWorldBookEntry 工厂同�
   })
   assert.deepEqual(lore[0], expected, 'ST 转换产物与工厂同参数构造完全一致')
 })
+
+test('convertStToPreset：marker 条目与 SPresetSettings 设置 dump 整体丢弃', () => {
+  const card = {
+    name: '标记卡',
+    prompts: [
+      { identifier: 'main', name: '主提示', marker: true, content: 'MARKER_PLACEHOLDER', role: 'system', enabled: true },
+      { identifier: 'SPresetSettings', name: 'SPreset配置', content: '{"RegexBinding":{"regexes":[]}}', enabled: false },
+      { identifier: 'e5f4a3b2-1111-2222-3333-444455556666', name: '真实提示', content: '你是助手。', role: 'system', enabled: true },
+    ],
+  }
+  const spec = convertStToPreset(card, 'marker-card')
+  const ids = spec.promptConfigs.map((config) => config.id)
+  assert.ok(!ids.includes('main'), 'marker: true 条目丢弃（ST 不发送其 content）')
+  assert.ok(!ids.includes('SPresetSettings'), 'SPresetSettings 设置 dump 丢弃')
+  assert.equal(spec.promptConfigs.length, 1, '仅保留真实提示词条目')
+  assert.equal(spec.promptConfigs[0].text, '你是助手。')
+  assert.deepEqual([...spec.meta.stDroppedMarkers].sort(), ['SPresetSettings', 'main'], '丢弃计数进 meta 审计')
+  // 无丢弃时不写审计键
+  const clean = convertStToPreset({ name: '净卡', prompts: [] }, 'clean-card')
+  assert.equal(clean.meta.stDroppedMarkers, undefined, '无丢弃不写审计键')
+})
+
+test('convertStToPreset：非 marker 的 main 同名条目保留（借名装真实提示词）', () => {
+  const card = {
+    name: '借名卡',
+    prompts: [
+      { identifier: 'main', name: '主提示', content: '你是助手。', role: 'system', enabled: true },
+    ],
+  }
+  const spec = convertStToPreset(card, 'borrowed-main')
+  const main = spec.promptConfigs.find((config) => config.id === 'main')
+  assert.ok(main, '非 marker 的 main 条目保留')
+  assert.equal(main.text, '你是助手。')
+  assert.equal(main.enabled, true)
+})

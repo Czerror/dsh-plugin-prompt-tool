@@ -75,7 +75,7 @@ export interface LayerFieldPolicy {
 /** settings bridge /meta 返回的引擎能力矩阵。 */
 export interface EngineMeta {
   /** 可用预设模板清单（UI 预设切换器）。 */
-  presets?: Array<{ id: string; name: string; user?: boolean; description?: string; meta?: Record<string, unknown> }>
+  presets?: Array<{ id: string; name: string; user?: boolean; renderable?: boolean; description?: string; meta?: Record<string, unknown> }>
   /** 插件目录内置模板清单（「新建预设」选择器数据源）。 */
   builtinTemplates?: Array<{ id: string; name: string }>
   layers: string[]

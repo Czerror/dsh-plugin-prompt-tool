@@ -95,7 +95,14 @@ export function invalidatePresetSpec(dir: string): void {
 /** 加载某个预设模板的单一参数文件 preset/<name>/preset.yml。 */
 export function loadPresetSpec(dir: string): PresetSpec {
   const file = join(dir, 'preset.yml')
-  const stat = statSync(file)
+  let stat: ReturnType<typeof statSync>
+  try {
+    stat = statSync(file)
+  } catch {
+    // 兜底路径（resolvePresetDir 未命中时 join(packagePresetDir, template) 可能不存在）
+    // 不让裸 ENOENT 冒给调用方；findPresetDir 等扫描方 catch 任意错误不受影响。
+    throw new Error(`preset.yml not found in ${dir}（预设模板不存在或目录不完整）`)
+  }
   const cached = presetSpecCache.get(file)
   if (cached !== undefined && cached.mtimeMs === stat.mtimeMs && cached.size === stat.size) return cached.spec
   const raw = readFileSync(file, 'utf8')
@@ -210,10 +217,39 @@ export function resolvePresetDir(template: string): string {
   return found ?? join(packagePresetDir(), template)
 }
 
+/** 预设目录是否含可渲染组合源：modules 清单 / composition 声明 / 同目录
+ *  agent.cordis.yml（官方用户预设约定）三者其一。旧版种子副本可能三者皆无
+ *  （仅元数据 + 本地 .mjs），物化必失败——用于回退判定与 UI 可用性探测。 */
+export function isRenderablePresetDir(dir: string): boolean {
+  try {
+    const spec = loadPresetSpec(dir)
+    if (Array.isArray(spec.modules)) return true
+    if (typeof spec.composition === 'string' && spec.composition.length > 0) return true
+  } catch {
+    return false
+  }
+  return existsSync(join(dir, 'agent.cordis.yml'))
+}
+
+/**
+ * 解析可渲染预设目录（writePreset 专用）：用户副本优先；用户副本不可渲染
+ * 且包内存在同名可渲染模板时回退包内——修复旧版种子副本（ensurePresetSeed
+ * 幂等跳过导致模板升级无法到达用户目录）遮蔽包内新版模板的死路。
+ * 返回 fallback=true 表示发生了包内回退，调用方负责 warn 与参数源升级判定。
+ */
+export function resolveRenderablePresetDir(template: string): { dir: string; fallback: boolean } {
+  const userDir = findPresetDir(userPresetsDir(), template)
+  if (userDir === undefined) return { dir: resolvePresetDir(template), fallback: false }
+  if (isRenderablePresetDir(userDir)) return { dir: userDir, fallback: false }
+  const builtin = findPresetDir(packagePresetDir(), template)
+  if (builtin !== undefined && isRenderablePresetDir(builtin)) return { dir: builtin, fallback: true }
+  return { dir: userDir, fallback: false }
+}
+
 /** 可用预设清单：全部来自预设根 ~/.dsh/.agent-presets（官方预设目录，含 agent.cordis.yml
  *  即被宿主挂载；点前缀目录与无 preset.yml 的官方目录跳过，不占本插件列表）。 */
-export function listPresets(): Array<{ id: string; name: string; user: boolean; description?: string; meta?: Record<string, unknown> }> {
-  const scan = (dir: string): Array<{ id: string; name: string; user: boolean; description?: string; meta?: Record<string, unknown> }> => {
+export function listPresets(): Array<{ id: string; name: string; user: boolean; renderable: boolean; description?: string; meta?: Record<string, unknown> }> {
+  const scan = (dir: string): Array<{ id: string; name: string; user: boolean; renderable: boolean; description?: string; meta?: Record<string, unknown> }> => {
     try {
       return readdirSync(dir, { withFileTypes: true })
         .filter((entry) => entry.isDirectory() && !entry.name.startsWith('.'))
@@ -224,10 +260,14 @@ export function listPresets(): Array<{ id: string; name: string; user: boolean; 
             const spec = loadPresetSpec(join(dir, entry.name))
             if (typeof spec.id !== 'string' || spec.id.length === 0) return []
             // 切换值用目录名（与 resolvePresetDir 路径一致）；name 保持 spec.name 契约。
+            // 可渲染性：用户副本缺组合源时，包内同名模板可回退渲染（writePreset
+            // 回退链）也算可用；两者皆无 = 真不可用，UI 灰显并给出原因。
             return [{
               id: entry.name,
               name: spec.name,
               user: true,
+              renderable: isRenderablePresetDir(join(dir, entry.name))
+                || isRenderablePresetDir(join(packagePresetDir(), entry.name)),
               ...(typeof spec.description === 'string' && spec.description.length > 0 ? { description: spec.description } : {}),
               ...(spec.meta !== undefined && spec.meta !== null ? { meta: spec.meta } : {}),
             }]
@@ -239,7 +279,7 @@ export function listPresets(): Array<{ id: string; name: string; user: boolean; 
       return []
     }
   }
-  const byId = new Map<string, { id: string; name: string; user: boolean }>()
+  const byId = new Map<string, { id: string; name: string; user: boolean; renderable: boolean }>()
   for (const preset of scan(userPresetsDir())) byId.set(preset.id, preset)
   return [...byId.values()].sort((a, b) => a.id.localeCompare(b.id))
 }
