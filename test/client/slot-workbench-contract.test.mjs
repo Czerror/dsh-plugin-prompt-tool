@@ -22,6 +22,10 @@ test('workbench registers official slots and a sidebar geometry bridge', () => {
   assert.doesNotMatch(source, /class\*|data-pane|centerCol|logoRow|newSession/)
 })
 
+// 契约锚点（6ada119 定稿）：顶部 40px 避开宿主顶条、探针生效前左缘 10px 初始
+// 回退、侧栏间距 GAP 15、折叠窄栏 36px。改悬浮触发器几何必须同步本测试、
+// README「官方 slot 工作台」概览与 CSS 注释——该提交曾只改样式漏更测试，
+// 契约断言红了一个提交周期。
 test('floating trigger position stays independent from third-party title-bar settings', () => {
   assert.match(source, /strokeWidth="1\.5"/)
   assert.match(source, /data-dsh-plugin="prompt-tool"/)
@@ -31,10 +35,11 @@ test('floating trigger position stays independent from third-party title-bar set
   assert.match(source, /floatingTriggerLayer/)
   const layer = css.match(/\.floatingTriggerLayer\s*\{([^}]*)\}/s)?.[1] ?? ''
   assert.match(layer, /position:\s*fixed/)
-  assert.match(layer, /top:\s*calc\(3px \+ env\(safe-area-inset-top\)/, '浮层保持自己的固定纵向位置')
+  assert.match(layer, /top:\s*calc\(40px \+ env\(safe-area-inset-top\)/, '浮层保持自己的固定纵向位置（40px，避开宿主顶部条）')
   assert.doesNotMatch(css, /data-dsh-title-bar-compat|--dsh-title-bar-strip/, '浮层不得读取第三方标题栏位置契约')
-  assert.match(layer, /left:\s*var\(--pt-sidebar-edge, 284px\)/, '浮层必须使用真实 sidebar 边缘变量并额外右移 10px')
-  assert.match(source, /const FLOATING_TRIGGER_GAP = 20/, '动态 sidebar 几何同样必须额外右移 10px')
+  assert.match(layer, /left:\s*var\(--pt-sidebar-edge, 10px\)/, '探针生效前贴左缘 10px 初始回退（探针覆盖为侧栏右缘）')
+  assert.match(source, /const FLOATING_TRIGGER_GAP = 15/, '动态 sidebar 几何间距 15px')
+  assert.match(source, /const SIDEBAR_COLLAPSED_WIDTH = 36/, '折叠态 36px 窄栏几何（探针回退宽度）')
   assert.match(layer, /z-index:\s*1100/, '悬浮按钮必须高于宿主导航栏与抽屉背板（1100）')
   assert.match(layer, /pointer-events:\s*auto/)
   const trigger = css.match(/\.floatingTrigger\s*\{([^}]*)\}/s)?.[1] ?? ''
@@ -50,7 +55,6 @@ test('floating trigger position stays independent from third-party title-bar set
   assert.doesNotMatch(source, /parentElement\?\.parentElement/, '不得硬编码宿主父节点层级')
   // 关闭后焦点还给触发器（经 ref，不 querySelector 宿主 DOM）。
   assert.match(source, /triggerRef\.current\?\.focus\(\)/)
-  assert.match(source, /SIDEBAR_COLLAPSED_WIDTH/)
   assert.doesNotMatch(css, /\.entry(?:Icon|Label)?(?:\[data-rail\])?\s*\{/)
 })
 
