@@ -18,9 +18,13 @@ export function registerSessionVarTools(ctx: Context): () => void {
     const disposers: Array<() => void> = []
     disposers.push(toolsCtx.tools.register(defineTool({
       name: 'session_var',
+      // 注意：description 会进入宿主 tools:sdk 段，宿主对该段做 {{var}} 变量校验
+      //（变量名须匹配 [a-z][a-z0-9_]* 且已注册），文本中不得出现双花括号字面量；
+      // 占位符示例一律用单花括号 {变量名} 示意，真实语法为双花括号包裹变量名。
       description: '会话变量管理（SillyTavern setvar/getvar 语义）：list 查看当前会话全部变量、'
-          + 'get 读取、set 设置、clear 清除。提示词/世界书文本中的 {{变量名}} 会在注入时替换为'
-          + '会话变量值（会话级覆盖预设默认值）；适合维护角色状态（如 {{心情}}、{{接受度}} 等）。'
+          + 'get 读取、set 设置、clear 清除。提示词/世界书文本中的模板占位符（形如 {变量名}，'
+          + '即双花括号包裹变量名）会在注入时替换为会话变量值（会话级覆盖预设默认值）；'
+          + '适合维护角色状态（如 {心情}、{接受度} 等）。'
           + '注意：会话变量仅存于当前会话（结束即失）；跨会话长期记忆请用 world_book 工具的 note 参数写入角色卡记忆（持久，跟随角色卡）。',
       parameters: {
         action: {

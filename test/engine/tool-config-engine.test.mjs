@@ -101,6 +101,33 @@ execute:
   assert.equal(warns.length, 0, '无跳过告警')
 })
 
+test('tool-config-engine：description 双花括号字面量消毒（{{x}} → {x}，防宿主 tools:sdk 变量校验炸整轮）', async () => {
+  const dir = writeToolDir({
+    '01-braces.yml': `id: braces
+name: my_braces
+description: 模板占位符 {{变量名}} 与 {{args.*}} 插值示例
+parameters:
+  key: { type: string, description: 变量名 }
+output:
+  schema: { type: object, additionalProperties: true }
+execute:
+  kind: shell
+  command: 'Write-Output "{{args.key}}"'
+`,
+  })
+  const { ctx, registered } = makeCtx({})
+  applyToolConfigEngine(ctx, { configsDir: dir })
+  assert.equal(registered.length, 1, '工具正常注册')
+  const tool = registered[0]
+  assert.match(tool.description, /\{变量名\}/)
+  assert.match(tool.description, /\{args\.\*\}/)
+  assert.ok(!tool.description.includes('{{'), 'description 不得残留双花括号字面量')
+  // execute.command 的 {{args.key}} 是引擎自有插值语法，不受消毒影响。
+  const result = await tool.execute({ key: 'hello' }, runOf())
+  assert.equal(result.exitCode, 0)
+  assert.equal(result.stdout.trim(), 'hello')
+})
+
 test('tool-config-engine：shell 执行器（pwsh，env 白名单，cwd=会话工作区）', async () => {
   const dir = writeToolDir({
     '01-echo.yml': `id: echo

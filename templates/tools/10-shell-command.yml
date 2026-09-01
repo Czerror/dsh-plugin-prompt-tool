@@ -1,7 +1,7 @@
 # 自定义工具模板：shell 命令执行器（{{args.x}} 参数插值；env 白名单；cwd=会话工作区）。
 id: shell-command
 name: my_shell
-description: 执行 shell 命令（参数经 {{args.*}} 插值）
+description: 执行 shell 命令（command 支持 {args.x} 模板插值）
 parameters:
   command:
     type: string

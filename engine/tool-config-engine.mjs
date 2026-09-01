@@ -324,11 +324,19 @@ function createExecute(ctx, def, requireApproval) {
   }
 }
 
+/** 宿主 system-prompt 对 section 文本做 {{var}} 变量校验（变量名须匹配 [a-z][a-z0-9_]* 且已注册），
+ *  工具 description 进入 tools:sdk 段；description 中的双花括号字面量会炸掉整轮提示词组装
+ *  （malformed / unknown prompt variable reference）。把配对的 {{...}} 统一降级为单花括号
+ *  示意（{...}），其余字面保留；不配对的 {{ 宿主按字面处理，无需处理。 */
+function sanitizeDescription(text) {
+  return text.replace(/\{\{([^{}]*)\}\}/g, '{$1}')
+}
+
 /** 单份工具定义文件 → 编译为 ToolDefinition 结构（不含 id）。 */
 function compileTool(ctx, def, requireApproval) {
   return {
     name: def.name,
-    description: def.description,
+    description: sanitizeDescription(def.description),
     ...(def.parameters !== undefined && Object.keys(def.parameters).length > 0 ? { parameters: def.parameters } : {}),
     output: {
       schema: def.output.schema,
