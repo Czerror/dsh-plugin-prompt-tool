@@ -116,3 +116,17 @@ export function keepDisposer(ctx, disposer, label) {
     // 极简测试桩没有 effect:保持注册随进程,测试自行隔离。
   }
 }
+/** 会话态 Map 上限：session 数超出后整体清空防无界增长
+ *  （进程内快路径，真相在 durable 事件流，清空仅触发一次冷扫重建）。 */
+export const MAX_TRACKED_SESSIONS = 4096
+
+/** 按会话 key 取 Map 条目；超限时清空后重建（防 session 数无界增长）。 */
+export function sessionMapGet(map, key, create) {
+  let entry = map.get(key)
+  if (entry === undefined) {
+    if (map.size >= MAX_TRACKED_SESSIONS) map.clear()
+    entry = create()
+    map.set(key, entry)
+  }
+  return entry
+}

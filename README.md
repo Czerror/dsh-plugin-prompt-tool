@@ -76,7 +76,7 @@ dsh --profile prompt-tool                                          # 首次启�
 | `model`（主对话） | `provider` `name` `reasoningEffort` `temperature` `maxTokens` |
 | `subagentModel`（子代理固定路由） | `provider` `name` `reasoningEffort` `temperature` `maxTokens` |
 
-读取时顶层段展平进 params 扁平键（`modelProvider` 等），旧扁平键双读兼容；保存时写顶层段并清理旧键（保存即迁移）。
+读取时顶层段展平进 params 扁平键（`modelProvider` 等）；保存时写顶层段并清理旧键。旧扁平键不再运行时兼容（参数只走 canonical 键），旧数据经 `pnpm migrate:presets` 离线一次性迁移。
 
 > 根目录 **`preset.yml`** 是配置参数齐全、逐项注释的完整模板，复制即得自定义预设起点。
 
@@ -145,11 +145,12 @@ UI / 写盘展示顺序固定为 `pre-step → system-section → runtime-contex
 
 ```sh
 pnpm install && pnpm build
-pnpm test          # 287 单测：渲染/合并/六插入点接线/preset 生成/锚定匹配/插值/会话变量
+pnpm test          # 407 单测：参数契约/注入装配/六插入点/生成链路/引擎语义/安全边界
 pnpm typecheck && pnpm lint
 pnpm sync:anchored       # 刷新 upstream/dsh-anchored-standard 内联快照
 pnpm sync:yaml           # 刷新 engine/vendor/yaml（生成目录运行时 YAML 解析器）
-pnpm rebuild:composition # 从官方内置预设源码重建组合模块
+pnpm rebuild:composition # 从官方内置预设源码重建组合模块（失败安全：备份 + rename）
+pnpm migrate:presets     # 离线一次性参数迁移（旧 worldBook/扁平模型键/旧覆盖文件；--dry-run 预览）
 ```
 
 ## 许可

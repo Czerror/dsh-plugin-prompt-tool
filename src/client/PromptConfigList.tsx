@@ -35,11 +35,13 @@ export interface PromptConfigListProps {
 
 const layerOf = (config: PromptConfigDraft): string => config.layer ?? 'pre-step'
 
-/** 与列表一致的显示视图排序：按（层序, order, 声明序）稳定排序，返回排序后 id 序列。 */
+/** 与列表一致的显示视图排序：按（层序, order, 声明序）稳定排序，返回排序后 id 序列。
+ *  strategy 传入时（世界书筛选视图）只在该策略子集内移动/排序，避免与不可见配置交换。 */
 function viewOrderedIds(
   all: PromptConfigDraft[],
   layer: string | undefined,
   layers: readonly string[],
+  strategy?: string,
 ): string[] {
   const layerRank = (config: PromptConfigDraft): number => {
     const index = layers.indexOf(layerOf(config))
@@ -48,6 +50,7 @@ function viewOrderedIds(
   return all
     .map((config, index) => ({ config, index }))
     .filter((entry) => layer === undefined || layerOf(entry.config) === layer)
+    .filter((entry) => strategy === undefined || entry.config.strategy === strategy)
     .sort((a, b) => {
       const byLayer = layerRank(a.config) - layerRank(b.config)
       if (byLayer !== 0) return byLayer
@@ -69,10 +72,11 @@ function moveWithinLayer(
   delta: -1 | 1,
   layer?: string,
   layers?: readonly string[],
+  strategy?: string,
 ): PromptConfigDraft[] {
   const currentId = all[globalIndex]?.id
   if (currentId === undefined) return all
-  const view = viewOrderedIds(all, layer, layers ?? [])
+  const view = viewOrderedIds(all, layer, layers ?? [], strategy)
   const viewIndex = view.indexOf(currentId)
   const targetViewIndex = viewIndex + delta
   if (viewIndex < 0 || targetViewIndex < 0 || targetViewIndex >= view.length) return all
@@ -100,8 +104,9 @@ function moveToView(
   before: boolean,
   layer?: string,
   layers?: readonly string[],
+  strategy?: string,
 ): PromptConfigDraft[] {
-  const view = viewOrderedIds(all, layer, layers ?? [])
+  const view = viewOrderedIds(all, layer, layers ?? [], strategy)
   const sourceIndex = view.indexOf(sourceId)
   if (sourceIndex < 0) return all
   const rest = view.filter((id) => id !== sourceId)
@@ -115,7 +120,7 @@ function moveToView(
   for (let step = 0; step < Math.abs(steps); step++) {
     const globalIndex = current.findIndex((config) => config.id === sourceId)
     if (globalIndex < 0) break
-    current = moveWithinLayer(current, globalIndex, delta, layer, layers)
+    current = moveWithinLayer(current, globalIndex, delta, layer, layers, strategy)
   }
   return current
 }
@@ -219,12 +224,18 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
 
   // 显示顺序（层序/order/声明序）一次计算：position map 供每张卡判断上移/下移，
   // 此前每张卡各自调 viewOrderedIds（O(n log n) × n）。
-  const viewIds = useMemo(() => viewOrderedIds(configs, layer, meta.layers), [configs, layer, meta.layers])
+  // 世界书筛选视图：移动/排序只作用于可见子集（strategy=world-book），
+  // 避免与不可见配置交换顺序。
+  const viewStrategy = viewFilter === 'world-book' ? 'world-book' : undefined
+  const viewIds = useMemo(
+    () => viewOrderedIds(configs, layer, meta.layers, viewStrategy),
+    [configs, layer, meta.layers, viewStrategy],
+  )
   const positionOf = useMemo(() => new Map(viewIds.map((id, at) => [id, at])), [viewIds])
 
   /** 卡片稳定回调（memo 生效前提）：经 liveRef 读最新列表状态，回调引用跨渲染不变。 */
-  const liveRef = useRef({ configs, layer, metaLayers: meta.layers, dragId, dropTarget })
-  liveRef.current = { configs, layer, metaLayers: meta.layers, dragId, dropTarget }
+  const liveRef = useRef({ configs, layer, metaLayers: meta.layers, strategy: viewStrategy, dragId, dropTarget })
+  liveRef.current = { configs, layer, metaLayers: meta.layers, strategy: viewStrategy, dragId, dropTarget }
   const handleToggleExpanded = useCallback((id: string) => {
     setExpanded((current) => current === id ? undefined : id)
   }, [])
@@ -237,9 +248,9 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
     if (index >= 0) onPatchConfigs(liveRef.current.configs.map((item, at) => at === index ? { ...item, ...patch } : item))
   }, [onPatchConfigs])
   const handleMove = useCallback((id: string, delta: -1 | 1) => {
-    const { configs: current, layer: currentLayer, metaLayers } = liveRef.current
+    const { configs: current, layer: currentLayer, metaLayers, strategy } = liveRef.current
     const index = current.findIndex((item) => item.id === id)
-    if (index >= 0) onPatchConfigs(moveWithinLayer(current, index, delta, currentLayer, metaLayers))
+    if (index >= 0) onPatchConfigs(moveWithinLayer(current, index, delta, currentLayer, metaLayers, strategy))
   }, [onPatchConfigs])
   const handleDuplicate = useCallback((id: string) => {
     const current = liveRef.current.configs
@@ -276,9 +287,9 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
   }, [])
   const handleDrop = useCallback((id: string, event: React.DragEvent<HTMLElement>) => {
     event.preventDefault()
-    const { configs: current, layer: currentLayer, metaLayers, dragId: source, dropTarget: target } = liveRef.current
+    const { configs: current, layer: currentLayer, metaLayers, strategy, dragId: source, dropTarget: target } = liveRef.current
     if (source !== undefined && target !== undefined && source !== id) {
-      onPatchConfigs(moveToView(current, source, target.id, target.before, currentLayer, metaLayers))
+      onPatchConfigs(moveToView(current, source, target.id, target.before, currentLayer, metaLayers, strategy))
     }
     setDragId(undefined)
     setDropTarget(undefined)

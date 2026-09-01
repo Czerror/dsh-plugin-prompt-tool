@@ -357,3 +357,32 @@ execute:
   applyToolConfigEngine(ctx, { configsDir: dir })
   assert.deepEqual(registered.map((tool) => tool.name), ['my_on'], 'enabled=false 跳过注册')
 })
+
+test('tool-config-engine：13+ 工具按 4 位零填充文件名稳定排序注册', () => {
+  const files = {}
+  for (let index = 0; index < 13; index += 1) {
+    const prefix = String(index).padStart(4, '0')
+    files[`${prefix}-tool-${index}.yml`] = `id: tool-${index}
+name: tool_${index}
+description: 工具 ${index}
+output:
+  schema: { type: object, additionalProperties: true }
+execute:
+  kind: fs
+  action: read
+  path: '.'
+`
+  }
+  const dir = writeToolDir(files)
+  const { ctx, registered } = makeCtx()
+  applyToolConfigEngine(ctx, { configsDir: dir })
+  assert.equal(registered.length, 13)
+  // 字典序 = 数值序：第 13 个工具（tool_12）落在最后，00/10 前缀不串位。
+  assert.deepEqual(registered.map((tool) => tool.name), Array.from({ length: 13 }, (_, index) => `tool_${index}`))
+})
+
+test('tool-config-engine：相对 configsDir 越出预设根 fail loud', () => {
+  const { ctx, warns } = makeCtx()
+  applyToolConfigEngine(ctx, { configsDir: '../../../../outside' })
+  assert.ok(warns.some((message) => message.includes('escapes preset root')), '越界相对目录应被拒绝')
+})

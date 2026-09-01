@@ -113,7 +113,8 @@
     "link:profile": "node scripts/link-profile.mjs",
     "sync:anchored": "node scripts/sync-anchored.mjs",
     "sync:yaml": "node scripts/sync-yaml-vendor.mjs",
-    "rebuild:composition": "node scripts/rebuild-composition.mjs"
+    "rebuild:composition": "node scripts/rebuild-composition.mjs",
+    "migrate:presets": "node scripts/migrate-presets.mjs"
   },
   "dependencies": {
     "yaml": "^2.9.0"

@@ -1,5 +1,42 @@
 # Changelog
 
+## [0.8.0] - 2026-09-01
+
+### L2 参数、Bridge 与 Engine 重构
+
+**参数契约与路径安全（Wave 1）**
+- 参数保存前**全量校验**：`validateEngineParamValues` 覆盖全部 `ENGINE_PARAM_KEYS`
+  （布尔/数值/字符串/列表/maxDepth/stages），未知键（旧内容别名等）保存期响亮失败，
+  不再运行时自动兼容旧参数。
+- 移除旧内容参数别名 `guideComplexPattern`（PARAM_KEYS 与 writePreset 回退读取一并删除）。
+- 生成文件名统一 **4 位零填充前缀（`0000-`）**：prompt-configs / custom-tools / 校验预览，
+  超过 10 条后字典序仍稳定。
+- 提示词配置 / 自定义工具 ID 做**安全文件名校验**（禁路径分隔符 / Windows 保留字符），
+  物化前 fail loud，防越出生成目录。
+- `manifest.ts` 严格 YAML 解析（带文件上下文）、composition / 模块路径 containment、
+  `preset.yml` 增量写原子化（tmp + rename）。
+
+**Bridge、存储与异步安全（Wave 2）**
+- loopback Origin 校验补全 scheme/host/port：Origin 端口必须与本桥 Host 端口一致，
+  防本地其他端口服务跨站。
+- `installDefaultModelRoute` 支持 `saveSelection` 返回 Promise 并捕获拒绝（不再
+  unhandledRejection）；模型查询超时改用 AbortSignal。
+- AGENTS.md 受管块 / profile manifest / skills 副本全部原子写（tmp + rename），失败保留旧文件。
+- 角色卡 PNG 解压设置输出大小上限（16 MiB 防 zip bomb）；三文件（avatar/card/converted）
+  临时目录整目录原子替换。
+- skills-watcher 递归监听嵌套技能目录；bridge-contract 增加端点级请求/响应类型映射。
+
+**Engine / 前端 / 脚本 / 文档（Wave 3）**
+- `createPromptConfigs` 拒绝重复 ID；`templateFile` / 相对 configsDir 只允许预设根内。
+- engine 各 session Map 增加上限（4096 会话清空防无界增长），保持 epoch / waterfall 语义。
+- 前端：允许主动清空全部 `promptConfigs`（初始化期空数组仍受守卫）；世界书筛选视图的
+  移动/排序只作用于可见集合；抽屉关闭焦点还给触发器；几何探针不假设宿主父节点层级。
+- 新增离线迁移脚本 `pnpm migrate:presets`：旧 worldBook → promptConfigs、旧扁平模型键 →
+  顶层段、旧覆盖文件并入 params；dry-run / 备份 / 失败非零。
+- `rebuild-composition` 改为备份 + rename 的失败安全替换。
+
+**不再自动兼容旧参数**：旧参数（`guideComplexPattern` 等）、旧 `worldBook` 段、
+旧覆盖文件统一走 `pnpm migrate:presets` 一次性离线迁移；运行时不读写旧结构。
 ## [0.7.2] - 2026-08-31
 
 ### 统一中文发布说明

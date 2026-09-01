@@ -103,7 +103,7 @@
  */
 
 import { createEpochPromotion } from './compaction-epoch.mjs'
-import { booleanOption, createWarnOnce, parsePromoteOn, validateConfig } from './shared.mjs'
+import { MAX_TRACKED_SESSIONS, booleanOption, createWarnOnce, parsePromoteOn, validateConfig } from './shared.mjs'
 
 /** Cordis plugin name used by loader diagnostics. */
 export const name = 'anchored-tool-bootstrap'
@@ -237,15 +237,22 @@ export function apply(ctx, config) {
     if (typeof message?.name === 'string') return message.name
     return ''
   }
+  const capStageBySession = () => {
+    if (stageBySession.size >= MAX_TRACKED_SESSIONS) stageBySession.clear()
+  }
   const advanceStage = (sessionId, toolName) => {
     if (stages === undefined) return
     const current = stageBySession.get(sessionId) ?? 0
     if (toolName === stageAdvanceTool) {
+      capStageBySession()
       stageBySession.set(sessionId, Math.min(current + 1, stages.length - 1))
       return
     }
     const owned = toolStage.get(toolName)
-    if (owned !== undefined && owned > current) stageBySession.set(sessionId, owned)
+    if (owned !== undefined && owned > current) {
+      capStageBySession()
+      stageBySession.set(sessionId, owned)
+    }
   }
   /** 冷启动：从 durable log 重建阶段（resume/reload 同相位）。 */
   const scanStage = (session) => {
@@ -259,6 +266,7 @@ export function apply(ctx, config) {
         if (owned !== undefined && owned > stage) stage = owned
       }
     }
+    capStageBySession()
     stageBySession.set(session.id, stage)
     return stage
   }

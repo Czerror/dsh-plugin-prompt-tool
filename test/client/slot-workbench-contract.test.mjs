@@ -44,7 +44,11 @@ test('floating trigger position stays independent from third-party title-bar set
   assert.match(css, /\.sidebarEdgeProbe\s*\{[^}]*display:\s*none/s)
   assert.match(source, /ResizeObserver/)
   assert.match(source, /document\.documentElement\.style\.setProperty/)
-  assert.match(source, /probe\.parentElement\?\.parentElement/)
+  // 几何探针不假设宿主父节点层级：向上查找第一个有实际尺寸的祖先。
+  assert.match(source, /measuredAncestor/)
+  assert.doesNotMatch(source, /parentElement\?\.parentElement/, '不得硬编码宿主父节点层级')
+  // 关闭后焦点还给触发器（经 ref，不 querySelector 宿主 DOM）。
+  assert.match(source, /triggerRef\.current\?\.focus\(\)/)
   assert.match(source, /SIDEBAR_COLLAPSED_WIDTH/)
   assert.doesNotMatch(css, /\.entry(?:Icon|Label)?(?:\[data-rail\])?\s*\{/)
 })

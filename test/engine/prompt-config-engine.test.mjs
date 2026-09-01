@@ -888,3 +888,44 @@ test('会话变量：session_var 设置后 pre-step 注入 {{key}} 替换为会�
   const injected2 = decision2.messages.map((message) => extractText(message)).join('|')
   assert.ok(injected2.includes('会话值'), '会话变量覆盖配置 variables（配置自身不高于会话）')
 })
+
+test('createPromptConfigs：重复 ID 挂载前 fail loud（后者覆盖前者会静默丢卡）', () => {
+  assert.throws(
+    () => createPromptConfigs([
+      { id: 'dup', strategy: 'static', text: 'A' },
+      { id: 'other', strategy: 'static', text: 'B' },
+      { id: 'dup', strategy: 'static', text: 'A2' },
+    ]),
+    /duplicate prompt config id "dup"/,
+  )
+})
+
+test('createPromptConfigs：templateFile 越出预设根 fail loud（防任意文件进入模型上下文）', () => {
+  assert.throws(
+    () => createPromptConfigs([{ id: 'bad', strategy: 'static', templateFile: 'D:/Windows/win.ini' }]),
+    /escapes preset root/,
+  )
+  assert.throws(
+    () => createPromptConfigs([{ id: 'bad', strategy: 'static', templateFile: '../../../etc/passwd' }]),
+    /escapes preset root/,
+  )
+})
+
+test('wireLayers 只装配实际声明的插入点：未声明 seam 无监听器', () => {
+  // 只声明 pre-step：applyPromptConfigs 应只注册 pre-step 相关监听，
+  // 其余五个非 pre-step 层级（agent/request / llm/stream / tools/* / system-prompt）无监听器。
+  const listeners = []
+  const ctx = {
+    on(name) { listeners.push(name) },
+    get() { return undefined },
+    logger: { warn() {} },
+  }
+  applyPromptConfigs(ctx, createPromptConfigs([
+    { id: 'pre', strategy: 'static', layer: 'pre-step', text: 'A' },
+  ]), { prepend: true })
+  const declared = new Set(listeners)
+  assert.ok(declared.has('agent/pre-step'), 'pre-step 应注册')
+  for (const seam of ['agent/request', 'llm/stream', 'tools/pre-execute', 'tools/post-execute', 'system-prompt/assemble']) {
+    assert.equal(declared.has(seam), false, `${seam} 未声明时不应有监听器`)
+  }
+})

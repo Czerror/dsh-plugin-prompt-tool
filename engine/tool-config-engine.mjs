@@ -346,6 +346,14 @@ function loadToolFiles(dirUrl) {
     : dirUrl
   const dir = new URL(resolved.endsWith('/') ? resolved : `${resolved}/`, import.meta.url)
   const localDir = fileURLToPath(dir)
+  // 相对 configsDir 只允许解析到引擎父目录（预设根）内：防组合行声明越界目录；
+  // 绝对路径（显式配置/测试桩）保持允许。
+  if (!isAbsolute(dirUrl)) {
+    const presetRoot = fileURLToPath(new URL('../..', import.meta.url)).replace(/[\\\\/]$/, '')
+    if (localDir !== presetRoot && !localDir.startsWith(presetRoot + sep)) {
+      throw new Error(`${name}: configsDir ${JSON.stringify(dirUrl)} escapes preset root`)
+    }
+  }
   const files = readdirSync(localDir, { withFileTypes: true })
     .filter((entry) => entry.isFile() && /\.(ya?ml|json)$/i.test(entry.name))
     .sort((a, b) => a.name.localeCompare(b.name))

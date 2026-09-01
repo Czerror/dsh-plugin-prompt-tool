@@ -32,6 +32,8 @@
  * Non-gate mode keeps the original event-set semantics byte-for-byte.
  */
 
+import { MAX_TRACKED_SESSIONS } from './shared.mjs'
+
 /** 首段 reasoning 块分类（liangshen 移植）：we 且无 let me = minimal-like。 */
 export function classifyReasoning(text) {
   const trimmed = String(text ?? '').trim()
@@ -107,6 +109,7 @@ export function createEpochPromotion(promoteEvents, options = {}) {
   const scan = (session) => {
     let entry = freshEntry(-1)
     for (const event of session.events) entry = applyEvent(entry, event)
+    if (state.size >= MAX_TRACKED_SESSIONS) state.clear()
     state.set(session.id, entry)
     return entry
   }
@@ -133,7 +136,10 @@ export function createEpochPromotion(promoteEvents, options = {}) {
       const entry = state.get(session.id)
       if (entry === undefined) return
       const next = applyEvent(entry, event)
-      if (next !== entry) state.set(session.id, next)
+      if (next !== entry) {
+        if (state.size >= MAX_TRACKED_SESSIONS) state.clear()
+        state.set(session.id, next)
+      }
     },
   }
 }

@@ -17,7 +17,7 @@
  * session 全局）；子代理默认不滴（brief 即计划）。
  */
 
-import { booleanOption, validateConfig } from './shared.mjs'
+import { MAX_TRACKED_SESSIONS, booleanOption, validateConfig } from './shared.mjs'
 
 /** Cordis plugin name used by loader diagnostics. */
 export const name = 'cot-drip'
@@ -53,6 +53,7 @@ export function apply(ctx, config) {
   const countersOf = (sessionId) => {
     let entry = state.get(sessionId)
     if (entry === undefined) {
+      if (state.size >= MAX_TRACKED_SESSIONS) state.clear()
       entry = { results: 0, drips: 0, lastTurn: undefined }
       state.set(sessionId, entry)
     }

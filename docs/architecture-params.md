@@ -46,12 +46,15 @@ UI fields
 | `false`（布尔） | **写 false** | 引擎 `=== true` 归一，false = 显式关闭（与默认等价或明确） |
 
 
-**保存前数值校验（2026-08-30）**：`/param-overrides` 写分支在落盘前调用
-`validateEngineParamValues()`（契约层与渲染消费同源）：
-`modelTemperature` / `subagentTemperature` 必须是有限数字，`modelMaxTokens` /
-`subagentMaxTokens` 必须是正安全整数；UI 字符串与 preset.yml 手写 number 两通道统一。
-空字符串仍是合法删键值；非法值返回 `400 overrides-invalid-value`（逐字段错误），不写
-preset.yml。渲染层保持宽容（never-brick），配置错误只在保存期响亮失败。
+**保存前全量参数校验（2026-09-01）**：`/param-overrides` 写分支在落盘前调用
+`validateEngineParamValues()`（契约层与渲染消费同源）——覆盖全部 `ENGINE_PARAM_KEYS`：
+布尔键必须是 boolean；数值键（temperature/maxTokens/步数/字符数）按各自约束（有限数 /
+正整数 / 非负整数）；字符串键必须是 string；列表键（工具集/白名单/来源）必须是 string 或
+string[]；`maxDepth` 接受 `''`/`provider-managed`/非负整数/字符串标量；`stages` 必须是
+`{ name, tools }` 数组。未知键（旧内容别名等不兼容键）在保存期响亮失败
+（`400 overrides-unknown-key` / `400 overrides-invalid-value`），不做运行时自动兼容。
+UI 字符串与 preset.yml 手写 number 两通道统一；空字符串仍是合法删键值。
+渲染层保持宽容（never-brick），配置错误只在保存期响亮失败。
 
 UI 侧 `persistParamOverrides` **条件发送**：
 
@@ -110,8 +113,9 @@ moduleConfigs 仅补充参数桥未覆盖的键（如 ST 导入 tool-web.fetch�
 | `guide-auto`（router-guide） | 引导：每轮路由强弱引导 | `guideWeak` `guideDeep` `guideCustom` `guideText` + **fallback 复用 `complexPattern`** | 晋升后每轮 |
 | `custom-fallback`（prompt-injector） | 兜底注入：锚定词确认后注入 preset.md | `firstTurnWord`（锚定确认词）+ `promptText` | 确认后一次 / 未确认两轮兜底 |
 
-复用点：`guideComplexPattern` 冗余副本已移除（2026-08-25）——引导的复杂判定 fallback 复用锚定的
-`complexPattern`（旧预设残留键经 writePreset 回退读取，PARAM_KEYS 保留兼容排除）。
+复用点：`guideComplexPattern` 冗余副本已移除——引导的复杂判定 fallback 复用锚定的
+`complexPattern`。旧预设 params 残留的 `guideComplexPattern` 不再运行时兼容（已从
+PARAM_KEYS 移除），由 `pnpm migrate:presets` 离线一次性清理。
 锚定与引导**不合并**：锚定句（reasoning 开头句，首轮一次性）与引导句（路由引导，每轮）注入位不同。
 
 ### 模块化视图（2026-08-25）

@@ -245,7 +245,8 @@ pnpm --dir $Repo pack --dry-run --json
 
 - [x] 合并两份方案。
 - [x] 移除预设管理重构内容。
-- [ ] Wave 1：参数契约与路径安全。
-- [ ] Wave 2：Bridge、存储与异步安全。
-- [ ] Wave 3：前端、Engine、脚本与文档。
-- [ ] 最终验证、提交、推送 `origin/dev`。
+- [x] Wave 1：参数契约与路径安全（提交 aaddd4d）。
+- [x] Wave 2：Bridge、存储与异步安全（提交 6a0762e）。
+- [x] Wave 3：前端、Engine、脚本与文档。
+- [x] 最终验证：typecheck / lint / test（407 pass）/ build / pack 全部通过。
+- [x] 提交并推送 `origin/dev`。

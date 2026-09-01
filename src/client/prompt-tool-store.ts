@@ -827,7 +827,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     }
     paramSaveQueueRef.current = paramSaveQueueRef.current.then(run).catch(() => {})
     await paramSaveQueueRef.current
-  }, [load, showNotice])
+  }, [load, savedConfigs, showNotice])
 
   /** 保存后是否静默重载。切换预设时传 false（随后的 settings.mutate 回调会统一 load，
    *  避免一次切换触发两次全量读取）。 */
@@ -848,9 +848,9 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
         }
       }
       // promptConfigs 按预设存储：写激活预设 preset.yml（settings 不再承载）。
-      // 防御：空数组（且无内容资产）绝不覆盖服务端 promptConfigs——历史教训是
-      // 初始化期的空数组自动保存把 beta-2-42 的 129 张配置卡一次清空。
-      if (configs.length === 0) return
+      // 防御：初始化期空数组自动保存不得覆盖服务端已有配置（历史教训：beta-2-42
+      // 的 129 张配置卡被一次清空）；用户主动清空（此前已加载非空配置）允许落盘空数组。
+      if (configs.length === 0 && savedConfigs.length === 0) return
       const res = await bridgePost<{ promptConfigs: unknown }>('/param-overrides', {
         promptConfigs: configs.map(stripContentText),
         ...(options?.rebuild === false ? { rebuild: false } : {}),

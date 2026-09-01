@@ -5,7 +5,7 @@
  * 仍支持 strategyDir 懒加载自定义模板策略。
  */
 
-import { extractText } from './shared.mjs'
+import { MAX_TRACKED_SESSIONS, extractText } from './shared.mjs'
 import { MATCH_LOGIC, createAnchorMatcher } from './anchor-match.mjs'
 import { createTaskClassifier } from './classify-task.mjs'
 import { createInstructionHintResolver, createPlaceholderResolver } from './fillers.mjs'
@@ -104,6 +104,7 @@ function createCustomFallbackResolver(config) {
     const content = first.data?.message?.content ?? []
     const reasoning = content.find((block) => block.type === 'reasoning')
     const confirmed = reasoning !== undefined && anchor.scan(String(reasoning.text ?? '')).active
+    if (anchorScanned.size >= MAX_TRACKED_SESSIONS) anchorScanned.clear()
     anchorScanned.set(session.id, confirmed)
     return confirmed
   }

@@ -180,8 +180,23 @@ try {
     checked.push(entry.name)
   }
 
-  rmSync(libraryDir, { recursive: true, force: true })
-  renameSync(tmpDir, libraryDir)
+  // 失败安全替换：旧 library 先改名备份，新库 rename 到位；替换失败恢复备份，
+  // 绝不先删后建（rm 后 rename 失败 = library 永久丢失）。
+  const backupDir = `${libraryDir}.bak-${Date.now().toString(36)}`
+  let hadOld = false
+  if (existsSync(libraryDir)) {
+    renameSync(libraryDir, backupDir)
+    hadOld = true
+  }
+  try {
+    renameSync(tmpDir, libraryDir)
+  } catch (error) {
+    if (hadOld) {
+      try { renameSync(backupDir, libraryDir) } catch { /* 恢复失败保留 backup 供人工处理 */ }
+    }
+    throw error
+  }
+  if (hadOld) rmSync(backupDir, { recursive: true, force: true })
   console.log(`rebuilt ${MODULES.length} modules from official source at ${repo}`)
   console.log(`preserved modules: ${[...preservedModules.keys()].sort().join(', ')}`)
   console.log(`preset modules checked: ${checked.join(', ')}`)

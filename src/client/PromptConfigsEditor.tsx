@@ -180,7 +180,8 @@ export function PromptConfigsEditor(props: PromptConfigsEditorProps): ReactNode 
         />
       )}
 
-      <p className={styles.settingsNote}>提示词配置写入 <code>settings.promptConfigs</code>；外部提示词配置可经「预设配置 → 导入预设」引入。</p>
+      <p className={styles.settingsNote}>提示词配置写入激活预设的 <code>preset.yml</code>（随预设存储，不占用 settings）；外部提示词配置可经「预设配置 → 导入预设」引入。</p>
+<p className={styles.settingsNote}>{'模板变量空字符串是合法占位值（{{key}} 动态引用），不会被当作「删键」处理。'}</p>
     </section>
   )
 }

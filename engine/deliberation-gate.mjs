@@ -16,7 +16,7 @@
  *  - 子代理默认不门控（brief 即计划）；includeSubagents: true 同门控。
  */
 
-import { booleanOption, validateConfig } from './shared.mjs'
+import { MAX_TRACKED_SESSIONS, booleanOption, validateConfig } from './shared.mjs'
 
 /** Cordis plugin name used by loader diagnostics. */
 export const name = 'deliberation-gate'
@@ -61,6 +61,7 @@ export function apply(ctx, config) {
   const observeChunk = (sessionId, turn, textLength) => {
     let entry = state.get(sessionId)
     if (entry === undefined) {
+      if (state.size >= MAX_TRACKED_SESSIONS) state.clear()
       entry = { turns: new Map(), lastTurn: turn }
       state.set(sessionId, entry)
     }
@@ -82,6 +83,7 @@ export function apply(ctx, config) {
   const depthOf = (session) => {
     let entry = state.get(session.id)
     if (entry === undefined) {
+      if (state.size >= MAX_TRACKED_SESSIONS) state.clear()
       entry = { turns: new Map(), lastTurn: -1 }
       if (Array.isArray(session.events)) {
         for (const event of session.events) {

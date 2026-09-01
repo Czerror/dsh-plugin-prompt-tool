@@ -32,12 +32,13 @@ type OverlayProps = PropsRuntime<'shell.overlay'> & InjectFace<PromptToolWorkben
 type SidebarGeometryProps = PropsRuntime<'sidebar.footer.action'>
 
 /** 左上角悬浮触发器：透过 body portal 落在对话界面层。 */
-function FloatingTrigger(props: { controller: PromptToolWorkspaceController }): ReactNode {
-  const { controller } = props
+function FloatingTrigger(props: { controller: PromptToolWorkspaceController; triggerRef?: React.RefObject<HTMLButtonElement> }): ReactNode {
+  const { controller, triggerRef } = props
   const open = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot).open
   return (
     <div className={css.floatingTriggerLayer} data-dsh-part="floating-trigger-layer">
       <button
+        ref={triggerRef}
         type="button"
         className={css.floatingTrigger}
         data-open={open ? '' : undefined}
@@ -75,20 +76,31 @@ function SidebarGeometryProbe(props: SidebarGeometryProps): ReactNode {
     const setLeft = (left: number): void => {
       document.documentElement.style.setProperty(FLOATING_TRIGGER_LEFT_PROPERTY, String(Math.round(left)) + 'px')
     }
+    // 向上查找第一个有实际布局尺寸的祖先：渲染锚点是 display:contents（0 尺寸），
+    // 不假设宿主父节点层级（SidebarRoot footerActions 容器位置随版本变化）。
+    const measuredAncestor = (): HTMLElement | undefined => {
+      let node = probe.parentElement
+      while (node !== null) {
+        const rect = node.getBoundingClientRect()
+        if (rect.width > 0 || rect.height > 0) return node
+        node = node.parentElement
+      }
+      return undefined
+    }
     const update = (): void => {
       if (!wide) {
         setLeft(SIDEBAR_COLLAPSED_WIDTH + FLOATING_TRIGGER_GAP)
         return
       }
-      // The first parent is the renderer's display:contents slot anchor;
-      // the second is the official SidebarRoot footerActions container.
-      const rect = probe.parentElement?.parentElement?.getBoundingClientRect()
-      if (rect === undefined || (rect.width === 0 && rect.height === 0)) return
+      const target = measuredAncestor()
+      if (target === undefined) return
+      const rect = target.getBoundingClientRect()
       setLeft(rect.right + SIDEBAR_WIDE_PADDING + FLOATING_TRIGGER_GAP)
     }
     update()
     const observer = typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(update)
-    if (wide) observer?.observe(probe.parentElement?.parentElement ?? probe)
+    const measured = wide ? measuredAncestor() : undefined
+    if (measured !== undefined) observer?.observe(measured)
     window.addEventListener('resize', update)
     return () => {
       observer?.disconnect()
@@ -127,7 +139,16 @@ function WorkbenchDrawerSlot(props: OverlayProps): ReactNode {
       document.removeEventListener('dsh-panel-activate', onOther)
     }
   }, [open, controller])
-  const trigger = <FloatingTrigger controller={controller} />
+  // 关闭后焦点还给触发器（可访问性：焦点不得悬空在 body 上；经 ref 拿自己的按钮，
+  // 只拿自己的按钮 ref，不触达宿主 DOM 结构。
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  const prevOpenRef = useRef(open)
+  useEffect(() => {
+    const wasOpen = prevOpenRef.current
+    prevOpenRef.current = open
+    if (wasOpen && !open) triggerRef.current?.focus()
+  }, [open])
+  const trigger = <FloatingTrigger controller={controller} triggerRef={triggerRef} />
   return (
     <>
       {typeof document === 'undefined' || document.body === null ? trigger : createPortal(trigger, document.body)}

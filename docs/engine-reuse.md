@@ -49,7 +49,8 @@
 
 ## 配置参考（params 扁平键 ↔ 模块行 config）
 
-优先级：`moduleConfigs`（预设作者锁定）> params 参数桥 > 行默认。
+优先级：参数桥（params / UI）> `moduleConfigs`（模板/ST 行级直写）> 行默认。
+moduleConfigs 只补充参数桥未覆盖的键，不再锁定覆盖 UI 可管理参数。
 
 | params 键 | 落点（config 键） | 默认 |
 |---|---|---|

@@ -4,6 +4,8 @@
  */
 
 import { readFileSync, readdirSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
+import { sep } from 'node:path'
 import { parse as parseYaml } from './vendor/yaml/index.js'
 import { bindResolver } from './strategies.mjs'
 
@@ -20,8 +22,22 @@ function readTextFile(url) {
   return readFileSync(url, 'utf8')
 }
 
+/** 预设根：引擎目录（.engine 或包内 engine/）的父目录；templateFile 只允许解析到其内。 */
+const PRESET_ROOT = fileURLToPath(new URL('../..', import.meta.url)).replace(/[\\\\/]$/, '')
+
 function loadTemplate(file) {
   if (typeof file !== 'string' || file.length === 0) return undefined
+  // templateFile 只允许 canonical 预设目录（引擎父目录）内：防配置声明任意
+  // 本地路径把文件内容带进模型上下文。非 file: 协议（绝对盘符被解析为 scheme）同样拒绝。
+  let resolved
+  try {
+    resolved = fileURLToPath(new URL(file, import.meta.url))
+  } catch {
+    throw new TypeError(`${name}: templateFile ${JSON.stringify(file)} escapes preset root`)
+  }
+  if (resolved !== PRESET_ROOT && !resolved.startsWith(PRESET_ROOT + sep)) {
+    throw new TypeError(`${name}: templateFile ${JSON.stringify(file)} escapes preset root`)
+  }
   let raw
   try {
     raw = readTextFile(new URL(file, import.meta.url))
@@ -160,6 +176,16 @@ export function getEngineMeta() {
 export function createPromptConfigs(specs, options = {}) {
   if (specs === undefined) return []
   if (!Array.isArray(specs)) throw new TypeError(`${name}: config.configs must be an array`)
+  // 重复 ID 拒绝：后者覆盖前者会静默丢卡，挂载前 fail loud。
+  const seenIds = new Set()
+  for (const spec of specs) {
+    if (spec === null || typeof spec !== 'object' || Array.isArray(spec)) continue
+    const id = spec.id
+    if (typeof id === 'string' && id.length > 0 && seenIds.has(id)) {
+      throw new TypeError(`${name}: duplicate prompt config id ${JSON.stringify(id)}`)
+    }
+    if (typeof id === 'string' && id.length > 0) seenIds.add(id)
+  }
   const configs = specs.map((spec, index) => {
     const label = `configs[${index}]`
     if (spec === null || typeof spec !== 'object' || Array.isArray(spec)) {
