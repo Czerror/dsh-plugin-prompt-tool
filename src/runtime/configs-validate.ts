@@ -11,7 +11,7 @@
  * 保存前反复调用。
  */
 import type { PromptConfigFile, PromptConfigSpec } from '../host/prompt-configs.ts'
-import { renderPromptConfigYaml } from '../host/prompt-configs.ts'
+import { configFileName, renderPromptConfigYaml } from '../host/prompt-configs.ts'
 
 export interface PromptConfigValidationError {
   /** 数组下标；结构层整组错误为 -1。 */
@@ -37,6 +37,7 @@ function shapeErrors(value: unknown): PromptConfigValidationError[] {
     return [{ index: -1, id: '', message: 'promptConfigs must be an array' }]
   }
   const errors: PromptConfigValidationError[] = []
+  const seenIds = new Set<string>()
   for (let index = 0; index < value.length; index += 1) {
     const item = value[index]
     const label = `configs[${index}]`
@@ -48,6 +49,10 @@ function shapeErrors(value: unknown): PromptConfigValidationError[] {
     const id = record.id
     if (typeof id !== 'string' || id.length === 0) {
       errors.push({ index, id: typeof id === 'string' ? id : '', message: `${label}.id must be a non-empty string` })
+    } else if (seenIds.has(id)) {
+      errors.push({ index, id, message: `${label} duplicate id ${JSON.stringify(id)} (后者覆盖前者会静默丢卡)` })
+    } else {
+      seenIds.add(id)
     }
   }
   return errors
@@ -83,8 +88,9 @@ export async function validatePromptConfigs(value: unknown, options: { strategyD
   }
   if (errors.length > 0) return { valid: false, errors }
   const files: PromptConfigFile[] = specs.map((spec, index) => ({
-    file: `${String(index * 10).padStart(2, '0')}-${spec.id}.yml`,
+    file: configFileName(index * 10, spec.id),
     content: renderPromptConfigYaml(spec),
   }))
   return { valid: true, errors: [], configs: specs, files }
 }
+

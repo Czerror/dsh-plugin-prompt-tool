@@ -15,6 +15,7 @@ import { DEFAULT_PRESET_DIR } from './paths.ts'
 import { PARAM_KEYS } from '../shared/param-keys.ts'
 import type { PresetWriterParams } from '../shared/engine-params.ts'
 import {
+  configFileName,
   mergePromptConfigs,
   renderPromptConfigYaml,
 } from './prompt-configs.ts'
@@ -178,10 +179,11 @@ function modelRequestConfigs(params: Record<string, unknown>): PromptConfigSpec[
     const temperature = params[`${prefix}Temperature`]
     const maxTokens = params[`${prefix}MaxTokens`]
     if (typeof effort === 'string' && effort.trim().length > 0) patch.reasoningEffort = effort.trim()
-    const temp = typeof temperature === 'string' ? Number(temperature) : NaN
-    if (typeof temperature === 'string' && temperature.trim().length > 0 && Number.isFinite(temp)) patch.temperature = temp
-    const tokens = typeof maxTokens === 'string' ? Number(maxTokens) : NaN
-    if (typeof maxTokens === 'string' && maxTokens.trim().length > 0 && Number.isSafeInteger(tokens) && tokens > 0) patch.maxTokens = tokens
+    // 字符串（UI）与 number（preset.yml 手写数字）两通道统一：空值不产生 patch。
+    const temp = typeof temperature === 'string' ? Number(temperature.trim()) : temperature
+    if (typeof temp === 'number' && Number.isFinite(temp) && String(temperature).trim().length > 0) patch.temperature = temp
+    const tokens = typeof maxTokens === 'string' ? Number(maxTokens.trim()) : maxTokens
+    if (typeof tokens === 'number' && Number.isSafeInteger(tokens) && tokens > 0 && String(maxTokens).trim().length > 0) patch.maxTokens = tokens
     return patch
   }
   const configs: PromptConfigSpec[] = []
@@ -426,7 +428,7 @@ export function writePreset(prompt: string, options: WritePresetOptions): void {
           ...next.params,
           useCustom,
           text: asString(params.guideText),
-          complexPattern: asString(params.complexPattern) || asString(params.guideComplexPattern),
+          complexPattern: asString(params.complexPattern),
           guideWeak: asString(params.guideWeak),
           guideDeep: asString(params.guideDeep),
         }
@@ -517,7 +519,7 @@ export function writePreset(prompt: string, options: WritePresetOptions): void {
         config.params = { ...config.params, text: strip(config.params.text as string) }
       }
     }
-    writeFileSync(join(promptConfigsDir, `${String(index * 10).padStart(2, '0')}-${config.id}.yml`), renderPromptConfigYaml(config), 'utf8')
+    writeFileSync(join(promptConfigsDir, configFileName(index * 10, config.id)), renderPromptConfigYaml(config), 'utf8')
   }
 
   // 4.5) 自定义工具（preset.yml 顶层 customTools 段）→ custom-tools/<n>-<id>.yml：
@@ -534,16 +536,12 @@ export function writePreset(prompt: string, options: WritePresetOptions): void {
     }
     const toolId = String((tool as Record<string, unknown>).id)
     writeFileSync(
-      join(customToolsDir, `${String(index + 1).padStart(2, '0')}-${toolId}.yml`),
+      join(customToolsDir, configFileName(index + 1, toolId)),
       stringifyYaml(tool, { lineWidth: 0 }),
       'utf8',
     )
   }
 
-  // 5) 历史残留清理(模板参数声明,writer 只执行)。
-  for (const legacy of spec.legacyCleanup ?? []) {
-    rmSync(join(outDir, legacy), { force: true })
-  }
 
   // 6) agents-instruction.md(模板内容资产经 settings 覆盖时写入；清旧 .txt 残留)。
   const agentsInstructionPath = join(outDir, 'agents-instruction.md')
@@ -579,3 +577,4 @@ export function writePreset(prompt: string, options: WritePresetOptions): void {
     throw error
   }
 }
+

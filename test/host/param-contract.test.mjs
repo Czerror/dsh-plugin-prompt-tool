@@ -48,7 +48,7 @@ const BRIDGE_SAMPLES = {
 
 test('PARAM_KEYS 派生一致性：= ENGINE_PARAM_KEYS + 锚定内容键 + promptConfigs', () => {
   const EXTRA = new Set(['buildPattern', 'complexPattern', 'firstTurnBuild', 'firstTurnInspect', 'firstTurnDeep',
-    'guideComplexPattern', 'guideWeak', 'guideDeep', 'promptConfigs'])
+    'guideWeak', 'guideDeep', 'promptConfigs'])
   const engineKeys = new Set(ENGINE_PARAM_KEYS)
   for (const key of PARAM_KEYS) {
     assert.ok(engineKeys.has(key) || EXTRA.has(key), `${key} 应属于 ENGINE_PARAM_KEYS 或附加键`)
@@ -89,3 +89,4 @@ test('MODEL_SEGMENT_MAP 双向一致：展平读回 = 保存写回（段目标�
 })
 
 rmSync(home, { recursive: true, force: true })
+

@@ -45,6 +45,38 @@ export interface PromptConfigSpec {
   params?: Record<string, unknown>
 }
 
+/**
+ * 提示词配置 / 自定义工具 ID 的安全文件名段校验：ID 直接拼进生成文件名
+ * （prompt-configs/<n>-<id>.yml / custom-tools/<n>-<id>.yml），含路径分隔符
+ * 或 Windows 非法字符会越出生成目录或写盘失败，保存/物化前 fail loud 拒绝。
+ * 允许 [a-zA-Z0-9._-] 与常见中文/多字节字符（ST 导入 id 含中文），
+ * 仅拒绝分隔符、控制字符、点目录与 Windows 保留字符。
+ */
+export function assertSafeConfigId(id: string): void {
+  if (typeof id !== 'string' || id.length === 0) {
+    throw new TypeError('config id must be a non-empty string')
+  }
+  if (id === '.' || id === '..') {
+    throw new TypeError(`config id ${JSON.stringify(id)} must not be a dot directory`)
+  }
+  const reserved = '/\\\0:*?"<>|'
+  for (const char of reserved) {
+    if (id.includes(char)) {
+      throw new TypeError(`config id ${JSON.stringify(id)} contains path separators or reserved filename characters`)
+    }
+  }
+  for (let index = 0; index < id.length; index += 1) {
+    if (id.charCodeAt(index) < 0x20) {
+      throw new TypeError(`config id ${JSON.stringify(id)} contains control characters`)
+    }
+  }
+}
+
+/** 生成文件名统一 4 位零填充前缀（0000-…），超过 10 条后字典序仍稳定。 */
+export function configFileName(index: number, id: string): string {
+  assertSafeConfigId(id)
+  return `${String(index).padStart(4, '0')}-${id}.yml`
+}
 export interface PromptConfigFile {
   /** 模块文件夹内文件名（数字前缀决定引擎执行顺序）。 */
   file: string
@@ -141,10 +173,16 @@ export function mergePromptConfigs(...sources: Array<PromptConfigSpec[] | undefi
   const ordered: PromptConfigSpec[] = []
   const byId = new Map<string, number>()
   for (const source of sources) {
+    const seen = new Set<string>()
     for (const spec of source ?? []) {
       if (spec === null || typeof spec !== 'object' || typeof spec.id !== 'string' || spec.id.length === 0) {
         throw new TypeError('every prompt config must have a non-empty string id')
       }
+      // 单源数组内重复 ID：后条覆盖前条会造成静默丢卡，合并前拒绝（跨源覆盖保留）。
+      if (seen.has(spec.id)) {
+        throw new TypeError(`duplicate prompt config id ${JSON.stringify(spec.id)} within a single source`)
+      }
+      seen.add(spec.id)
       const existing = byId.get(spec.id)
       if (existing === undefined) {
         byId.set(spec.id, ordered.length)
@@ -185,3 +223,5 @@ export function loadPromptConfigFiles(dir: string): PromptConfigSpec[] {
   }
   return specs
 }
+
+

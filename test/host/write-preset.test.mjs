@@ -211,8 +211,8 @@ test('writePreset 将 preset.yml 的锚点/引导参数写入提示词配置', (
   const presetDir = join(dir, 'preset')
   try {
     writePreset('PROMPT', makeOptions(presetDir))
-    const near = readFileSync(join(presetDir, 'anchored', 'prompt-configs', '00-near-anchor.yml'), 'utf8')
-    const guide = readFileSync(join(presetDir, 'anchored', 'prompt-configs', '10-router-guide.yml'), 'utf8')
+    const near = readFileSync(join(presetDir, 'anchored', 'prompt-configs', '0000-near-anchor.yml'), 'utf8')
+    const guide = readFileSync(join(presetDir, 'anchored', 'prompt-configs', '0010-router-guide.yml'), 'utf8')
     assert.ok(near.includes('buildPattern'))
     assert.ok(near.includes('firstTurnBuild'))
     assert.ok(guide.includes('complexPattern'))
@@ -227,12 +227,12 @@ test('writePreset 透传 firstTurnWord 覆盖到 prompt-injector 配置', () => 
   const presetDir = join(dir, 'preset')
   try {
     writePreset('PROMPT', { ...makeOptions(presetDir), firstTurnWord: '开始' })
-    const injector = readFileSync(join(presetDir, 'anchored', 'prompt-configs', '20-prompt-injector.yml'), 'utf8')
+    const injector = readFileSync(join(presetDir, 'anchored', 'prompt-configs', '0020-prompt-injector.yml'), 'utf8')
     assert.ok(injector.includes('firstTurnWord: |-') && injector.includes('开始'), injector)
     // 未传 firstTurnWord 时回退 preset.yml 模板默认（we），不写空值覆盖。
     const dir2 = join(dir, 'preset2')
     writePreset('PROMPT', makeOptions(dir2))
-    const injector2 = readFileSync(join(dir2, 'anchored', 'prompt-configs', '20-prompt-injector.yml'), 'utf8')
+    const injector2 = readFileSync(join(dir2, 'anchored', 'prompt-configs', '0020-prompt-injector.yml'), 'utf8')
     assert.ok(injector2.includes('firstTurnWord: |-') && injector2.includes('we'), injector2)
   } finally {
     rmSync(dir, { recursive: true, force: true })
@@ -249,7 +249,7 @@ test('writePreset 内容资产单一事实源：settings 覆盖层带 text 也�
         { id: 'prompt-injector', name: '用户覆盖', enabled: true, strategy: 'custom-fallback', text: 'SETTINGS TEXT' },
       ],
     })
-    const injector = readFileSync(join(presetDir, 'anchored', 'prompt-configs', '20-prompt-injector.yml'), 'utf8')
+    const injector = readFileSync(join(presetDir, 'anchored', 'prompt-configs', '0020-prompt-injector.yml'), 'utf8')
     assert.ok(injector.includes('text: |-') && injector.includes('FILE CONTENT'), injector)
     assert.ok(!injector.includes('SETTINGS TEXT'), injector)
     assert.ok(!injector.includes('texts:'), injector)
@@ -275,7 +275,7 @@ test('writePreset injectAgentsPrompt 注入 agents 内容到 instruction-hint pa
   const presetDir = join(dir, 'preset')
   try {
     writePreset('PROMPT', { ...makeOptions(presetDir), agentsInstructionText: 'AGENTS CONTENT', injectAgentsPrompt: true })
-    const hint = readFileSync(join(presetDir, 'anchored', 'prompt-configs', '30-instruction-hint.yml'), 'utf8')
+    const hint = readFileSync(join(presetDir, 'anchored', 'prompt-configs', '0030-instruction-hint.yml'), 'utf8')
     assert.ok(hint.includes('AGENTS CONTENT'), hint)
     assert.ok(hint.includes('agentsInstructionPath: |-') && hint.includes('../anchored/agents-instruction.md'), hint)
     assert.ok(existsSync(join(presetDir, 'anchored', 'agents-instruction.md')), 'agents-instruction.md 应写入')
@@ -283,7 +283,7 @@ test('writePreset injectAgentsPrompt 注入 agents 内容到 instruction-hint pa
     // 关闭时不注入：instruction-hint 保持无 params.text（引擎回退 agents-instruction.md / 动态探测）。
     const dir2 = join(dir, 'preset2')
     writePreset('PROMPT', { ...makeOptions(dir2), agentsInstructionText: 'AGENTS CONTENT', injectAgentsPrompt: false })
-    const hint2 = readFileSync(join(dir2, 'anchored', 'prompt-configs', '30-instruction-hint.yml'), 'utf8')
+    const hint2 = readFileSync(join(dir2, 'anchored', 'prompt-configs', '0030-instruction-hint.yml'), 'utf8')
     assert.ok(!hint2.includes('AGENTS CONTENT'), hint2)
   } finally {
     rmSync(dir, { recursive: true, force: true })
@@ -302,7 +302,7 @@ test('writePreset 空 prompt/agents 不生成空内容资产，prompt-injector �
     assert.equal(existsSync(join(presetDir, 'anchored', 'preset.md')), false, '空内容不生成 preset.md')
     assert.equal(existsSync(join(presetDir, 'anchored', 'agents.md')), false, '空内容不生成 agents.md')
     assert.equal(existsSync(join(presetDir, 'anchored', 'agents-instruction.md')), false, '空内容不生成 agents-instruction.md')
-    const injector = readFileSync(join(presetDir, 'anchored', 'prompt-configs', '20-prompt-injector.yml'), 'utf8')
+    const injector = readFileSync(join(presetDir, 'anchored', 'prompt-configs', '0020-prompt-injector.yml'), 'utf8')
     const parsed = parseYaml(injector)
     assert.equal(parsed.enabled, false, '空内容时 prompt-injector 应禁用（无内容可注入）')
   } finally {
@@ -578,8 +578,8 @@ test('writePreset 自定义工具渲染 custom-tools/<n>-<id>.yml（源 = preset
     const customToolsDir = join(presetDir, 'anchored', 'custom-tools')
     assert.ok(existsSync(customToolsDir), 'custom-tools 目录生成')
     const files = readdirSync(customToolsDir).sort()
-    assert.deepEqual(files, ['01-greet.yml', '02-bad.yml'], '结构合法条目逐份落盘（坏条目保留待引擎跳过）')
-    const parsed = parseYaml(readFileSync(join(customToolsDir, '01-greet.yml'), 'utf8'))
+    assert.deepEqual(files, ['0001-greet.yml', '0002-bad.yml'], '结构合法条目逐份落盘（坏条目保留待引擎跳过）')
+    const parsed = parseYaml(readFileSync(join(customToolsDir, '0001-greet.yml'), 'utf8'))
     assert.equal(parsed.name, 'my_greet')
     assert.equal(parsed.execute.kind, 'shell')
     assert.equal(parsed.parameters.who.required, true)
@@ -640,7 +640,7 @@ test('P1 回归：晋升门控/渐进披露/验证工具参数键不进 variable
       'stagePreUnlock',
       // 锚定/引导内容键：writePreset 映射进 promptConfig.params，不得双落盘 variables.yml。
       'buildPattern', 'complexPattern', 'firstTurnBuild', 'firstTurnInspect', 'firstTurnDeep',
-      'guideComplexPattern', 'guideWeak', 'guideDeep']) {
+      'guideWeak', 'guideDeep']) {
       assert.equal(vars[key], undefined, `variables.yml 不得含参数键 ${key}`)
     }
     // 配置 params 同样不含。
@@ -737,3 +737,4 @@ test('模板变量插值开关：停用不生成 variables.yml 且剥离配置�
 test.after(() => {
   rmSync(home, { recursive: true, force: true })
 })
+

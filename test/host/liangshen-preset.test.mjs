@@ -100,12 +100,12 @@ test('preset/liangshen 渲染：模块清单 + moduleConfigs 表达两阶段锚�
     const configsDir = join(gen, 'liangshen', 'prompt-configs')
     // variables.yml = 预设级模板变量文件（非提示词配置），过滤后断言配置列表。
     const configFiles = readdirSync(configsDir).filter((f) => f.endsWith('.yml') && f !== 'variables.yml')
-    assert.deepEqual(configFiles, ['00-prompt-injector.yml', '10-persona-main.yml'])
-    const injector = parseYaml(readFileSync(join(configsDir, '00-prompt-injector.yml'), 'utf8'))
+    assert.deepEqual(configFiles, ['0000-prompt-injector.yml', '0010-persona-main.yml'])
+    const injector = parseYaml(readFileSync(join(configsDir, '0000-prompt-injector.yml'), 'utf8'))
     assert.equal(injector.strategy, 'custom-fallback')
     assert.equal(injector.params.firstTurnWord, 'we')
     assert.equal(injector.enabled, true)
-    const persona = parseYaml(readFileSync(join(configsDir, '10-persona-main.yml'), 'utf8'))
+    const persona = parseYaml(readFileSync(join(configsDir, '0010-persona-main.yml'), 'utf8'))
     assert.equal(persona.params.sectionName, 'deployment:persona')
     assert.equal(persona.params.complete, undefined, 'liangshen 人设非独占')
     assert.deepEqual(persona.texts, ['You are a helpful software engineer assistant.'], 'phase-1 人设保持 Minimal 精确一行锚定面')
@@ -118,3 +118,4 @@ test('preset/liangshen 渲染：模块清单 + moduleConfigs 表达两阶段锚�
 test.after(() => {
   rmSync(home, { recursive: true, force: true })
 })
+

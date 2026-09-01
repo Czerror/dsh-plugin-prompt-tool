@@ -17,10 +17,9 @@ const EXTRA_PARAM_KEYS = [
   // 锚定/引导内容键：writePreset 映射进 near-anchor/router-guide 的 promptConfig
   // params（策略消费），须排除出 variables.yml（避免同一键双落盘为模板变量）。
   'buildPattern', 'complexPattern', 'firstTurnBuild', 'firstTurnInspect', 'firstTurnDeep',
-  // guideComplexPattern：旧布局键（引导 fallback 复用 complexPattern 后仅作
-  // 兼容排除——旧预设 params 残留该键时不混入 variables.yml；新预设不再写入）。
-  'guideComplexPattern', 'guideWeak', 'guideDeep',
+  'guideWeak', 'guideDeep',
   'promptConfigs',
 ] as const
 
 export const PARAM_KEYS: ReadonlySet<string> = new Set([...ENGINE_PARAM_KEYS, ...EXTRA_PARAM_KEYS])
+

@@ -14,7 +14,7 @@ test('validatePromptConfigs：合法数组返回 valid=true、回显输入并渲
   assert.deepEqual(result.errors, [])
   assert.equal(result.configs.length, 2)
   assert.equal(result.files.length, 2)
-  assert.equal(result.files[0].file, '00-sys.yml')
+  assert.equal(result.files[0].file, '0000-sys.yml')
   const doc = parse(result.files[1].content)
   assert.equal(doc.id, 'extra')
   assert.equal(doc.layer, 'pre-step')
@@ -90,4 +90,25 @@ test('Config / PromptSettingsSchema：引擎参数（promptConfigs 等）按预�
   assert.equal('promptConfigs' in settings, false)
   assert.equal('firstTurnAnchor' in settings, false)
   assert.equal('promptText' in settings, false)
+})
+
+test('validatePromptConfigs：重复 ID 逐条定位错误（后者覆盖前者会静默丢卡）', async () => {
+  const result = await validatePromptConfigs([
+    { id: 'dup', strategy: 'static', text: 'A' },
+    { id: 'other', strategy: 'static', text: 'B' },
+    { id: 'dup', strategy: 'static', text: 'A2' },
+  ])
+  assert.equal(result.valid, false)
+  assert.equal(result.errors.length, 1)
+  assert.equal(result.errors[0].index, 2)
+  assert.equal(result.errors[0].id, 'dup')
+  assert.match(result.errors[0].message, /duplicate id/)
+})
+
+test('validatePromptConfigs：预览文件名统一 4 位零填充前缀', async () => {
+  const many = Array.from({ length: 11 }, (_, index) => ({ id: `c${index}`, strategy: 'static', text: 'x' }))
+  const result = await validatePromptConfigs(many)
+  assert.equal(result.valid, true)
+  assert.match(result.files[0].file, /^0000-/)
+  assert.match(result.files[10].file, /^0100-/)
 })

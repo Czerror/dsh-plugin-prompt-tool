@@ -51,7 +51,6 @@ export interface PresetSpec {
     injectMode?: 'full' | 'keyword'
     entries: Array<Record<string, unknown>>
   }
-  legacyCleanup?: string[]
   upstream?: Record<string, unknown>
 }
 
@@ -100,7 +99,12 @@ export function loadPresetSpec(dir: string): PresetSpec {
   const cached = presetSpecCache.get(file)
   if (cached !== undefined && cached.mtimeMs === stat.mtimeMs && cached.size === stat.size) return cached.spec
   const raw = readFileSync(file, 'utf8')
-  const parsed = parseYaml(raw, { logLevel: 'silent' }) as Partial<PresetSpec> | null
+  let parsed: Partial<PresetSpec> | null
+  try {
+    parsed = parseYaml(raw, { logLevel: 'silent' }) as Partial<PresetSpec> | null
+  } catch (error) {
+    throw new Error(`preset ${file} YAML 解析失败: ${String((error as Error).message ?? error)}`)
+  }
   if (parsed === null || typeof parsed !== 'object') {
     throw new Error(`preset ${join(dir, 'preset.yml')} is not a YAML map`)
   }
@@ -509,20 +513,27 @@ export function savePresetParams(
       doc.setIn(['variablesEnabled'], false)
     }
   }
-  writeFileSync(file, doc.toString(), 'utf8')
+  atomicWriteTextFile(file, doc.toString())
   invalidatePresetSpec(join(presetRoot, templateName))
   rmSync(join(presetRoot, templateName, 'prompt-tool.overrides.yml'), { force: true })
 }
 
+/** 原子写文件（tmp + rename）：preset.yml 增量写路径防截断与半写。 */
+export function atomicWriteTextFile(file: string, content: string): void {
+  const tmp = `${file}.tmp-${process.pid}-${Date.now().toString(36)}`
+  writeFileSync(tmp, content, 'utf8')
+  renameSync(tmp, file)
+}
+
 /** 预设文件读-改-写（parseDocument 保留注释与未知键；mutate 内 setIn/deleteIn）。
  *  角色卡库（characters）与世界书工具（world-book-tools）共用此入口，避免
- *  各自实现 parseDocument 往返。 */
+ *  各自实现 parseDocument 往返。写盘走原子替换，失败保留旧文件。 */
 export function withPresetDoc(presetDir: string, mutate: (doc: ReturnType<typeof parseDocument>) => void): void {
   const file = join(presetDir, 'preset.yml')
   if (!existsSync(file)) throw new Error(`${presetDir} 无 preset.yml`)
   const doc = parseDocument(readFileSync(file, 'utf8'), { logLevel: 'silent' })
   mutate(doc)
-  writeFileSync(file, doc.toString(), 'utf8')
+  atomicWriteTextFile(file, doc.toString())
   invalidatePresetSpec(presetDir)
 }
 
@@ -746,6 +757,11 @@ function assembleModules(spec: PresetSpec, library: string): string {
     if (typeof name !== 'string' || name.length === 0) {
       throw new Error(`preset ${spec.id}: modules must be non-empty strings`)
     }
+    // 模块名 containment：只允许裸库名（禁路径分隔符 / .. / 点目录），
+    // 否则 join(library, name) 可越出引擎组合库读取任意文件。
+    if (name.includes('/') || name.includes('\\') || name === '.' || name === '..' || name.includes('..')) {
+      throw new Error(`preset ${spec.id}: module name ${JSON.stringify(name)} must be a bare library name`)
+    }
     try {
       parts.push(readFileSync(join(library, `${name}.yml`), 'utf8'))
     } catch (error) {
@@ -838,10 +854,17 @@ export function loadCompositionText(spec: PresetSpec, templateDir?: string): str
       if (templateDir === undefined) {
         throw new Error(`preset ${spec.id}: composition relative path needs a templateDir (${JSON.stringify(name)})`)
       }
+      // containment：解析后的组合文件必须仍位于模板目录内（防 ../../ 越界读取）。
+      const file = join(templateDir, name.slice(2))
+      const rootResolved = resolve(templateDir)
+      const fileResolved = resolve(file)
+      if (fileResolved !== rootResolved && !fileResolved.startsWith(rootResolved + sep)) {
+        throw new Error(`preset ${spec.id}: composition path escapes template dir (${JSON.stringify(name)})`)
+      }
       try {
-        raw = readFileSync(join(templateDir, name.slice(2)), 'utf8')
+        raw = readFileSync(file, 'utf8')
       } catch (error) {
-        throw new Error(`preset ${spec.id}: composition file not found (${join(templateDir, name.slice(2))}): ${String((error as Error).message ?? error)}`)
+        throw new Error(`preset ${spec.id}: composition file not found (${file}): ${String((error as Error).message ?? error)}`)
       }
     }
     else if (name.length > 0) {
@@ -889,3 +912,5 @@ export function assertCompositionArray(raw: string, spec: PresetSpec): unknown[]
   if (!Array.isArray(parsed)) throw new Error(`generated agent.cordis.yml is not a YAML array (preset ${spec.id})`)
   return parsed
 }
+
+

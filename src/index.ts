@@ -923,7 +923,8 @@ export { writePreset } from './host/write-preset.ts'
 export { convertStToPreset, mergeStPresets, processStText, stPresetId } from './host/sillytavern.ts'
 export { applyModuleConfigs, buildModuleConfigsFromParams, savePresetParams, MODEL_SEGMENT_MAP } from './host/manifest.ts'
 export { loadPresetSpec, renderComposition, resolvePresetParams } from './host/manifest.ts'
-export { ENGINE_PARAM_KEYS, WRITER_PARAM_KEYS } from './shared/engine-params.ts'
+export { ENGINE_PARAM_KEYS, WRITER_PARAM_KEYS, validateEngineParamValues } from './shared/engine-params.ts'
+export { assertSafeConfigId, configFileName } from './host/prompt-configs.ts'
 export type { PresetSpec } from './host/manifest.ts'
 export {
   cloneBuiltinPreset,
@@ -973,3 +974,4 @@ export { BRIDGE_ENDPOINTS, MAX_BRIDGE_BODY_BYTES, MAX_CHARACTER_CARD_STREAM_BYTE
 export type { BridgeEndpoint, BridgeErrorPayload } from './shared/bridge-contract.ts'
 export { parseFrontmatter } from './runtime/skills-parse.ts'
 export type { SkillFrontmatter } from './runtime/skills-parse.ts'
+
