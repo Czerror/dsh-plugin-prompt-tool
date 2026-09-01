@@ -30,6 +30,14 @@
 | `compaction-epoch` | engine/compaction-epoch.mjs | 晋升状态机（被上面各模块共用；非插件行） |
 | `tool-filter` | engine/tool-filter.mjs | 常驻工具白名单/黑名单（与晋升无关的常量掩码） |
 
+## 提示词配置插入点与顺序
+
+- 六个插入点彼此独立，没有跨层全局运行顺序。
+- `order` 只在同一插入点内生效。
+- UI / 写盘展示顺序固定为 `pre-step → system-section → runtime-context → agent-request → llm-stream → tool-pipeline`；这是展示与写盘顺序，不是运行时优先级。
+- 模型实际收到的提示词文本顺序更接近 `system-section → runtime-context → pre-step`；`agent-request` / `llm-stream` / `tool-pipeline` 是控制通道，不构成提示词文本优先级。
+- 生成文件名使用 4 位零填充前缀（`0000-`），避免大角色卡 / 大预设超过 10 条后字典序错乱。
+
 ## 晋升语义（epoch-aware）
 
 - 晋升信号：`tool/call` 和/或 `assistant/message`（`promoteOn`，默认 either）；

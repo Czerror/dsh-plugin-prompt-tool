@@ -1,6 +1,6 @@
 # dsh-plugin-prompt-tool 仓库指令
 
-本仓库是 DeepSeek Harness（DSH）的提示词工具插件。核心产品边界是「位置、时机与受众可配置的提示词注入引擎」：`promptConfigs` 按每条配置声明的官方插入点按需注册，预设负责组合具体行为；不同插入点没有插件自定义的全局顺序。PTC、首轮锚定、router-guide、Flash 路由与其他模型能力增强都属于可选模块或预设，不得硬编码成项目主线或新增全局默认；新实验能力保持 opt-in，并用确定性行为测试验收。
+本仓库是 DeepSeek Harness（DSH）的提示词工具插件。核心产品边界是「位置、时机与受众可配置的提示词注入引擎」：`promptConfigs` 按每条配置声明的官方插入点按需注册，预设负责组合具体行为；不同插入点没有插件自定义的全局运行顺序。PTC、首轮锚定、router-guide、Flash 路由与其他模型能力增强都属于可选模块或预设，不得硬编码成项目主线或新增全局默认；新实验能力保持 opt-in，并用确定性行为测试验收。
 
 不要修改 DeepSeek Harness 源码仓库。插件只通过本仓库的 `cordis.patch.yml`、`package.json#dsh`、官方 `@deepseek-ai/*` 包和 DSH profile 装配。
 
@@ -84,7 +84,10 @@ pnpm --dir $Repo rebuild:composition
 
 ### Engine 与组合模块
 
-- 插入点按需：配置声明哪个官方 seam 就只注册哪个 seam；`order` 只在同一 seam 内解释，不能建立六点全局顺序。
+- 插入点按需：配置声明哪个官方 seam 就只注册哪个 seam；`order` 只在同一 seam 内解释，不能建立六个插入点的全局运行顺序。
+- UI / 写盘展示顺序固定为 `pre-step → system-section → runtime-context → agent-request → llm-stream → tool-pipeline`；这是展示与写盘顺序，不是运行时优先级。
+- 模型实际收到的提示词文本顺序更接近 `system-section → runtime-context → pre-step`；`agent-request` / `llm-stream` / `tool-pipeline` 是控制通道，不构成提示词文本优先级。
+- 生成文件名使用 4 位零填充前缀（`0000-`），避免大角色卡 / 大预设超过 10 条后字典序错乱。
 - 通用过滤、插值、模型范围、主/子代理受众、幂等和晋升语义集中在 `engine/` 共享模块，不在每种 strategy 重复实现。
 - `compaction/end` 是 epoch 边界；修改 context-gate、tool-bootstrap、code-presentation 或 prompt-config-engine 时同步验证主会话、子代理、压缩后重晋升与 disposer 行为。
 - 本地组合源改 `engine/compositions/source/local/*.yml`；官方切块和本地源经 `pnpm rebuild:composition` 生成 `engine/compositions/library/`，不得直接修补 library 产物。

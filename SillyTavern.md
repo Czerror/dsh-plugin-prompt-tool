@@ -35,6 +35,8 @@
 | 其他 position | → `pre-step` + `position: after-user` |
 | 非 system 全部 | → `strategy: static` + `dedupe: none` |
 
+重构后，导出的 `prompt-configs` 文件名统一使用 4 位零填充前缀（`0000-`），大角色卡超过 10 条提示词后仍保持稳定排序。
+
 ## modules / moduleConfigs 组装
 
 | 条件 | modules | moduleConfigs |

@@ -46,6 +46,8 @@
    - 只装配配置实际声明的插入点。
    - `order` 只在同一插入点内生效。
    - 不同插入点之间没有插件自定义的全局顺序。
+   - UI / 写盘展示顺序固定为 `pre-step → system-section → runtime-context → agent-request → llm-stream → tool-pipeline`；该顺序仅为展示与写盘约定，不是运行时优先级。
+   - 生成文件名统一使用 4 位零填充前缀（`0000-`），避免大角色卡 / 大预设超过 10 条后排序错乱。
 6. **安全边界前移**
    - 所有文件路径写入前做 canonical containment。
    - 所有信任边界输入先校验类型、范围、枚举，再落盘。
@@ -123,7 +125,7 @@ customTools: <声明式工具数组>
    - 手写数字模型参数不会生成 model patch。
    - 空数组无法清除 `moduleConfigs` 旧值。
 4. 生成文件排序：
-   - 两位数字前缀 + 字典序读取，超过 10 条后顺序错误。
+   - 两位数字前缀 + 字典序读取，超过 10 条后顺序错误；目标改为 4 位零填充前缀（`0000-`）。
 5. Engine 层级：
    - 需要按实际声明插入点分组注册。
    - 未声明的插入点不应挂监听器。
@@ -147,8 +149,8 @@ customTools: <声明式工具数组>
 | `src/shared/engine-params.ts` | 补齐全量参数校验；模型字段 canonical 化；不兼容旧键 | 保存期 fail loud | 参数类型 / 空值 / 枚举测试 |
 | `src/shared/param-keys.ts` | 删除旧内容参数别名，只保留 canonical 键 | 键集唯一来源 | 契约测试 |
 | `src/host/manifest.ts` | 严格 YAML 解析；统一路径 containment；导出 ID 校验 | 防路径穿越和半接受 | 坏 YAML / 路径反例 |
-| `src/host/write-preset.ts` | 安全文件名；固定宽度序号；数字模型参数；原子物化；删除 `legacyCleanup` | 防越界与数据丢失 | 13+ 配置 / 恶意 ID / 迁移产物 |
-| `src/host/prompt-configs.ts` | 统一固定宽度排序；重复 ID 在合并前拒绝 | Host / Engine 顺序一致 | 13 条 / 重复 ID |
+| `src/host/write-preset.ts` | 安全文件名；4 位零填充序号（`0000-`）；数字模型参数；原子物化；删除 `legacyCleanup` | 防越界与数据丢失 | 13+ 配置 / 恶意 ID / 迁移产物 |
+| `src/host/prompt-configs.ts` | 统一 4 位零填充排序（`0000-`）；重复 ID 在合并前拒绝 | Host / Engine 顺序一致 | 13 条 / 重复 ID |
 
 ### Wave 2：Bridge、存储与异步安全
 
@@ -175,7 +177,7 @@ customTools: <声明式工具数组>
 | `engine/schema.mjs` | 按实际声明插入点返回能力；`templateFile` 只允许 canonical 预设目录；统一排序；严格 schema | 执行契约唯一 | engine tests |
 | `engine/layers.mjs` | 按配置首次出现的插入点分组注册，只装配实际声明的 seam | 按需插入 | 未声明 seam 无监听器测试 |
 | `engine/executor.mjs` | 同插入点内按 order / 文件顺序执行；不同插入点不做全局排序 | 语义一致 | order / seam 回归 |
-| `engine/tool-config-engine.mjs` | 统一固定宽度文件排序；验证工具文件来源 | 顺序一致 | 13+ tools 测试 |
+| `engine/tool-config-engine.mjs` | 统一 4 位零填充文件排序（`0000-`）；验证工具文件来源 | 顺序一致 | 13+ tools 测试 |
 | `engine/*.mjs` | session Map 增加清理 / 上限；保持 epoch / waterfall 既有语义 | 长运行稳定 | session lifecycle tests |
 | `scripts/migrate-presets.mjs` | 离线一次性参数迁移：旧参数、旧 worldBook、旧覆盖文件；dry-run、备份、失败非零 | 替代运行时兼容 | 临时 DSH_HOME fixtures |
 | `scripts/rebuild-composition.mjs` | 临时目录完成后用备份 + rename 的失败安全替换 | 防 library 丢失 | 故障路径测试 |
@@ -215,6 +217,8 @@ customTools: <声明式工具数组>
 - [ ] 不同插入点之间没有全局排序。
 - [ ] 同一插入点内 `order` 与文件顺序稳定。
 - [ ] 超过 10 条配置 / 工具时排序仍正确。
+- [ ] UI / 写盘展示顺序统一为 `pre-step → system-section → runtime-context → agent-request → llm-stream → tool-pipeline`。
+- [ ] `prompt-configs` / `custom-tools` 文件名使用 4 位零填充前缀（`0000-`），超过 10 条后仍稳定。
 
 ## 六、验证命令
 

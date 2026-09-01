@@ -2,7 +2,7 @@
 
 > 一切皆可注入：把 DSH 官方开放的全部注入层级收敛为一个可配置提示词注入引擎——注入什么、注入到哪一层、何时注入，全由提示词配置决定。
 
-DSH 生态的提示词注入标准层：一个 `prompt-config-engine.mjs` 接线官方六个注入层级（`agent/pre-step`、`systemPrompt.section`、`systemPrompt.context`、`agent/request`、`llm/stream`、`tools/*`），内置 anchored 默认预设，开箱即用。
+DSH 生态的提示词注入标准层：一个 `prompt-config-engine.mjs` 接线官方六个插入点（`agent/pre-step`、`systemPrompt.section`、`systemPrompt.context`、`agent/request`、`llm/stream`、`tools/*`），内置 anchored 默认预设，开箱即用。
 
 > 策略来源：工具目录锚定 [dsh-anchored-standard](https://github.com/xiaobright/dsh-anchored-standard)、近距离引导 [dsh-router-standard](https://github.com/yjh051108/dsh-router-standard)、缓存铁律 [dsh-super-injector](https://github.com/yjh051108/dsh-super-injector)。
 
@@ -18,7 +18,7 @@ dsh --profile prompt-tool                                          # 首次启�
 
 ## 特性
 
-- 🔌 **六层一次接线**：一个引擎注册全部可注入层级，共享同一套过滤与降级语义
+- 🔌 **六个官方插入点一次接线**：一个引擎注册全部可注入层级，共享同一套过滤与降级语义
 - ✍️ **一切皆可配置**：`layer / strategy / position / promotion / subagents / modelScope / mergeMode / order / text / texts / fill / variables / params` 全开放
 - 🧑‍🤝‍🧑 **子代理三态**：`subagents: none / inherit / only`，身份类提示词可只注入子代理
 - 🗂️ **内容与执行分离**：每条提示词配置渲染为 `~/.dsh/.agent-presets/<预设>/prompt-configs/` 下的 yml，引擎按文件名数字前缀顺序扫描
@@ -80,7 +80,7 @@ dsh --profile prompt-tool                                          # 首次启�
 
 > 根目录 **`preset.yml`** 是配置参数齐全、逐项注释的完整模板，复制即得自定义预设起点。
 
-## 提示词配置（六层全家桶）
+## 提示词配置（六个官方插入点）
 
 | `layer` | 官方通道 | 关键参数 |
 |---|---|---|
@@ -90,6 +90,10 @@ dsh --profile prompt-tool                                          # 首次启�
 | `agent-request` | `agent/request`（LlmCallConfig） | `params.patch`（浅合并）/ `params.replace`（整体替换） |
 | `llm-stream` | `llm/stream`（流包装） | `params.mode=pass\|replace` |
 | `tool-pipeline` | `tools/*`（pre/execute/post） | `params.toolNames`、`preDecision=allow\|deny\|ask`、`postAction=accept\|replace\|block` |
+
+六个插入点彼此独立，没有跨层全局运行顺序；`order` 只在同一插入点内生效。
+UI / 写盘展示顺序固定为 `pre-step → system-section → runtime-context → agent-request → llm-stream → tool-pipeline`；这是展示与写盘顺序，不是模型提示词优先级。
+模型实际收到的提示词文本顺序更接近 `system-section → runtime-context → pre-step`；`agent-request` / `llm-stream` / `tool-pipeline` 是控制通道。
 
 默认四条：`00-near-anchor`（首句锚点）、`10-router-guide`（每轮引导）、`20-prompt-injector`（we 确认后注入 preset.md 一次）、`30-instruction-hint`（指令文件提示）。
 
@@ -141,7 +145,7 @@ dsh --profile prompt-tool                                          # 首次启�
 
 ```sh
 pnpm install && pnpm build
-pnpm test          # 287 单测：渲染/合并/六层接线/preset 生成/锚定匹配/插值/会话变量
+pnpm test          # 287 单测：渲染/合并/六插入点接线/preset 生成/锚定匹配/插值/会话变量
 pnpm typecheck && pnpm lint
 pnpm sync:anchored       # 刷新 upstream/dsh-anchored-standard 内联快照
 pnpm sync:yaml           # 刷新 engine/vendor/yaml（生成目录运行时 YAML 解析器）
