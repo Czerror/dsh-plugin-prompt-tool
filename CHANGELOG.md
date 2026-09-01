@@ -31,6 +31,8 @@
 - engine 各 session Map 增加上限（4096 会话清空防无界增长），保持 epoch / waterfall 语义。
 - 前端：允许主动清空全部 `promptConfigs`（初始化期空数组仍受守卫）；世界书筛选视图的
   移动/排序只作用于可见集合；抽屉关闭焦点还给触发器；几何探针不假设宿主父节点层级。
+- 技能设置「目录与来源」以 `skillsDirs` 完整配置列表为展示源；仅空配置时展示 profile
+  默认副本，新增目录不再因 `activeSkillsDirs` 尚未刷新而漏显。
 - 悬浮触发器几何真动态：探针直读官方 AppFrame 侧栏轨道（inline
   grid-template-columns 第一段，锚点 = 官方公开 data-sidebar-collapsed 属性，
   不 querySelector 宿主），覆盖折叠 56px rail / 拖拽 264–420px / 断点自动折叠

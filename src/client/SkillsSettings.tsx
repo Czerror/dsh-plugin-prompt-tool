@@ -184,6 +184,8 @@ export const SkillsSettings = memo(function SkillsSettings(props: { store: Promp
   }
   const dirSkillCount = (dir: string): number =>
     fields.skillCatalog.filter((skill) => skill.dir === dir).length
+  /** 配置列表是 UI 单一来源；仅空配置时展示实际生效的默认副本。 */
+  const displaySkillsDirs = fields.skillsDirs.length > 0 ? fields.skillsDirs : fields.activeSkillsDirs
   /** 空配置 = 默认副本兜底（只读，不可移除）。 */
   const isDefaultDir = (dir: string): boolean =>
     fields.skillsDirs.length === 0 && fields.activeSkillsDirs[0] === dir
@@ -377,7 +379,7 @@ export const SkillsSettings = memo(function SkillsSettings(props: { store: Promp
       )}
 
       <CollapsibleCard id="pt-skills-dirs" title="目录与来源"
-        meta={`${fields.activeSkillsDirs.length} 个目录 · 添加 / 移除引用`}>
+        meta={`${displaySkillsDirs.length} 个目录 · 添加 / 移除引用`}>
         <div className={ui.dirAddBar}>
           <button type="button" className={ui.primaryPill} disabled={pickingDir} onClick={() => void pickSkillsDir()}>
             {pickingDir && <span className={ui.spinner} aria-hidden="true" />}
@@ -412,11 +414,11 @@ export const SkillsSettings = memo(function SkillsSettings(props: { store: Promp
             </button>
           </div>
         </div>
-        {fields.activeSkillsDirs.length === 0 ? (
+        {displaySkillsDirs.length === 0 ? (
           <p className={ui.readOnly} role="status">技能目录列表为空。</p>
         ) : (
           <div className={ui.dirCardList}>
-            {fields.activeSkillsDirs.map((dir, index) => {
+            {displaySkillsDirs.map((dir, index) => {
               const exists = fields.skillsDirExists[dir] === true
               const count = dirSkillCount(dir)
               const isDefault = isDefaultDir(dir)
