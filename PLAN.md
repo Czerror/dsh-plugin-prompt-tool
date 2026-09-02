@@ -1,252 +1,365 @@
-# dsh-plugin-prompt-tool L2 参数、Bridge 与 Engine 重构计划
+# dsh-plugin-prompt-tool 工具契约与预设工具面计划
 
-> 日期：2026-09-01
+> 日期：2026-09-02
 > 分支：`dev`
-> 基线：`5cc1b0f`
-> 范围：参数链路、Settings Bridge、Client 存储、Engine 装配、脚本安全与文档一致性。
-> 明确排除：预设管理本身。当前 `agent-presets` / preset root / seed / copy / remove / open 已经可用，本计划不再修改这些链路。
+> 基线：`e3433da`
+> 状态：待实施
+> 替代：原《L2 参数、Bridge 与 Engine 重构计划》已全部落地，本文件整体取代旧计划。
+> 参考：`D:\AI\GitHub\dsh-plugins@05c50f3`、`D:\AI\GitHub\deepseek-harness@4e84901`（DSH `0.1.2-alpha.4`）。
 
-## 一、范围与结论
+## 一、结论与范围
 
-本次重构只处理以下三类问题：
+本轮只处理工具契约和工具面可观测性，不重做现有预设编译器。
 
-1. **参数与行为契约**
-   - 参数校验、空值语义、模型参数、`promptConfigs` 合并顺序、重复 ID、旧字段兼容。
-2. **Bridge 与存储安全**
-   - 请求解析、Origin 校验、路径越界、原子写、异步失败、PNG 解压上限。
-3. **Engine 与前端一致性**
-   - 实际插入点按需装配、同插入点内排序、session 清理、UI 保存队列、文档漂移。
+优先级固定为：
 
-不再包含以下内容：
+1. **P0：修复自定义工具定义契约**
+   - `customTools.parameters` / `output.schema` 必须经官方 `dsh-tools` DSL 转为标准 JSON Schema。
+   - 无参数工具也必须提供合法的空对象参数 Schema。
+   - 真实 `ToolRuntime` 必须能够执行并投影所有生成工具。
+2. **P0：修复 delegate 执行链路**
+   - delegate 必须经 `ctx.tools.execute()` 做嵌套调度。
+   - 不再直接调用目标工具的 `execute()`。
+3. **P1：增加当前会话实际工具面预览**
+   - UI 只读展示当前 Agent scope 最终可见的工具名与描述。
+   - 不挂载未激活预设，不提供任意 `agent.cordis.yml` 通用编辑器。
+4. **P2：收紧未实现契约**
+   - 当前未实际消费的 `customTools.scope` 改为显式拒绝，避免静默忽略。
+   - 真正的 main/subagent/both 作用域另立计划，不在本轮做半套实现。
 
-- `agent-presets` 所有权、roots、system/user 信任、默认预设。
-- preset root、preset ID、preset seed、copy、remove、open。
-- `preset.yml` 的目录布局或预设管理迁移。
-- `cordis.patch.yml` 对 `agent-presets` 的 patch。
-- `.engine` 作为预设根级共享目录的布局调整。
+明确排除：
 
-## 二、目标不变量
+- 不修改 DeepSeek Harness 源码。
+- 不替换 `preset.yml → modules/moduleConfigs/params → agent.cordis.yml` 编译链。
+- 不把行为源迁移到官方 `agentPresets` Remote。
+- 不复制 `dsh-plugins/preset-builder` 的旧 `agentPresets.mutate` API。
+- 不增加 PTY、持久 stdin、后台 Job 或定时任务执行器。
+- 不新增工具并发配置；未声明 `isConcurrencySafe` 时保持官方默认独占执行。
+- 不增加跨标签页 revision fencing；出现真实并发编辑需求后再做。
 
-1. **预设管理保持现状**
-   - 不改 `ctx.agentPresets` 的 roster / discovery / copy / remove / open。
-   - 不改 `$DSH_HOME/.agent-presets` 的目录结构和 seed 逻辑。
-   - 不引入新的 preset root，不调整 system/user 信任。
-2. **参数与变量分离**
-   - `params` 中 `''` / `[]` 表示删键并回落默认。
-   - `variables: { key: '' }` 是合法占位值，必须原样保留。
-   - `variablesEnabled: false` 只停用插值，不删除源数据。
-3. **行为源保持单一**
-   - `preset.yml` 继续作为参数与提示词配置的行为源。
-   - 不把行为源迁移到 `agent.cordis.yml` 或新增 preset 管理文件。
-4. **Bridge 契约严格**
-   - 成功载荷 `{ ok: true, value }`。
-   - 失败载荷 `{ ok: false, code?, message? }`。
-   - 每个端点有明确请求/响应类型，不复用宽泛 union。
-5. **Engine 按声明装配**
-   - 只装配配置实际声明的插入点。
-   - `order` 只在同一插入点内生效。
-   - 不同插入点之间没有插件自定义的全局顺序。
-   - UI / 写盘展示顺序固定为 `pre-step → system-section → runtime-context → agent-request → llm-stream → tool-pipeline`；该顺序仅为展示与写盘约定，不是运行时优先级。
-   - 生成文件名统一使用 4 位零填充前缀（`0000-`），避免大角色卡 / 大预设超过 10 条后排序错乱。
-6. **安全边界前移**
-   - 所有文件路径写入前做 canonical containment。
-   - 所有信任边界输入先校验类型、范围、枚举，再落盘。
-7. **旧数据只走显式迁移**
-   - 迁移脚本只处理旧参数、旧 worldBook、旧覆盖文件。
-   - 不做运行时自动兼容，不改 preset 目录管理。
+## 二、已确认事实
 
-### 2.1 Canonical preset.yml 参数布局（保留）
+### 2.1 当前自定义工具没有生成合法 ToolDefinition
 
-~~~yaml
-id: <目录名>
-name: <显示名>
-description: <可选说明>
-version: <版本>
-engineCompat: <兼容范围>
-meta: <显示/来源元数据>
-content: <模板初始内容，可选>
-model: <主模型段>
-subagentModel: <子代理模型段>
-params: <canonical EngineParams>
-variables: <模板变量；空字符串合法>
-variablesEnabled: <可选>
-modules: <组合模块清单>
-moduleConfigs: <行级配置补充>
-promptConfigs: <注入配置数组>
-customTools: <声明式工具数组>
-~~~
+`engine/tool-config-engine.mjs` 当前直接把配置 DSL 注册到 `ctx.tools.register()`：
+
+- 有参数工具把 `{ text: { type: string, required: true } }` 原样暴露给模型，而不是 JSON Schema object。
+- 无参数工具省略 `parameters`，真实 `ctx.tools.schemas()` 会报错。
+- `output.schema` 同样绕过官方 ValueSchemaSpec 转换，嵌套 required 语义不能保证正确。
+
+已在 `D:\AI\workspase\_temp` 使用真实 `Context + SystemPrompt + ToolRuntime` 验证：
+
+```text
+tool "no_args" parameters must be lossless JSON before schema projection
+```
+
+因此现有 mock 只捕获“对象是否注册”，不足以证明工具能进入真实模型目录。
+
+### 2.2 delegate 绕过官方工具管线
+
+当前 delegate 路径通过：
+
+```js
+const target = tools.get(name)
+await target.execute(args, minimalExec)
+```
+
+直接执行目标实现，绕过：
+
+- 参数 Schema 校验；
+- allow/deny/ask 与 approval；
+- `tools/pre-execute` / `tools/execute` / `tools/post-execute`；
+- timeout policy；
+- 嵌套调用 token、rootCallId 与 durable result；
+- additionalContexts 与 concludesTurn 传播。
+
+复合工具必须使用官方 registry 作为唯一执行入口。
+
+### 2.3 `scope` 目前只是死字段
+
+`customTools.scope` 仅校验 `main | subagent | both`，注册逻辑没有读取它，UI 也没有入口。
+
+本轮不为一个尚未开放的字段引入 `agent/created`、root/subagent 判断和多套 disposer。先显式拒绝该字段；未来确有需求时参考 `dsh-plugins/loop` 的 agent-scoped 注册模式完整实现。
+
+### 2.4 `preset-builder` 只能参考 UI 概念
+
+`dsh-plugins/preset-builder` 的“预设组成 + 最终工具列表”信息架构有参考价值，但代码基于旧接口：
+
+- 依赖 `@deepseek-ai/dsh-client-runtime` / `connection.api`；
+- 假定 `agentPresets.read()` 返回 `plugins`、`tools`、`revision`；
+- 假定存在 `set-disabled` / `set-config` mutation。
+
+当前 DSH `0.1.2-alpha.4` 的 `readDocument()` 只返回 composition 文本、trust 和展示元数据；`pluginInventory` 也是只读组合清单。因此本项目继续使用当前 `remote`、`settingsScope` 和受控 loopback bridge。
+
+## 三、架构决策
+
+### 3.1 `preset.yml` 继续是唯一行为源
+
+保持现有链路：
+
+```text
+preset.yml customTools
+        ↓ writePreset
+custom-tools/*.yml
+        ↓ tool-config-engine
+官方 ToolDefinition
+        ↓ ctx.tools registry
+Agent 实际工具面
+```
 
 约束：
 
-- id 只作为校验字段，必须等于目录名，不作为可编辑身份。
-- meta 只放来源、标签、作者等附加信息，不与 name / description / version 重复。
-- content 只承载模板初始内容；大文本继续拆到 preset.md / agents.md。
-- model / subagentModel 为顶层 canonical 模型段，不再回填扁平模型键。
-- params 只承载引擎行为参数；空字符串和空数组表示删键并回落默认。
-- variables 独立于 params；空字符串是合法 worldBook 动态占位值。
-- variablesEnabled 只控制插值，不删除 variables 源数据。
-- modules 决定装配哪些组合模块，moduleConfigs 只做行级补充，不得覆盖参数桥结果。
-- promptConfigs / customTools 保持数组语义，按数组顺序和固定宽度文件名稳定排序。
-- 旧参数兼容只保留为显式离线迁移，不做运行时自动兼容。
+- `custom-tools/*.yml` 是生成物，不成为第二个可编辑源。
+- `agent.cordis.yml` 仍由模块编译器生成，不增加通用原始 YAML 写入入口。
+- 保存自定义 delegate 工具时，现有 `customToolModules()` 继续自动补齐角色卡、世界书和 session-var 模块。
 
-## 三、已确认问题清单
+### 3.2 官方 schema 转换必须复用，不自造第二套
 
-### P1 数据完整性与安全
+优先从运行中的 DSH 入口解析同一份 `@deepseek-ai/dsh-tools`，复用：
 
-1. `src/host/manifest.ts`：
-   - `loadPresetSpec` 使用宽松 YAML parse，不检查解析错误。
-   - 导出 ID 未做统一校验。
-   - 组合文件与模块相对路径缺少统一 containment 校验。
-2. `src/host/write-preset.ts`：
-   - prompt config / custom tool ID 直接拼接文件名，可能越出生成目录。
-   - `legacyCleanup` 可删除 `outDir` 外部文件。
-   - 多处增量写路径非原子。
-3. `engine/schema.mjs`：
-   - `templateFile` 可读取任意本地文件进入模型上下文。
-   - `/meta` 层级顺序与执行契约不一致。
-4. `src/runtime/settings-bridge.ts`：
-   - Origin 只比较 hostname，未比较 scheme 和 port。
-   - 导入 ID 与 writer 的合法 slug 规则不一致。
-   - 部分端点缺少严格请求解析。
-5. `src/host/characters.ts`：
-   - PNG `inflateSync` 无解压后大小上限。
-6. `src/runtime/models.ts`：
-   - 官方异步 `saveSelection()` 未 await / catch。
+- `defineTool()`；或
+- `parameterSchemaSpecToJsonSchema()` / `valueSchemaSpecToJsonSchema()`。
 
-### P1 参数与行为
+解析方式参考 `dsh-plugins/loop`：从 `process.argv[1]` 创建 `require`，避免生成目录或 link 路径加载出另一份 Host 依赖。
 
-1. `src/client/prompt-tool-store.ts`：
-   - 自动保存绕过权威校验。
-   - 空数组直接 return，用户无法清空全部 `promptConfigs`。
-   - 保存失败可能被吞掉但 Bridge 仍返回成功。
-2. `src/runtime/configs-validate.ts`、`engine/schema.mjs`：
-   - 重复 ID 不拒绝，最终后者覆盖前者。
-3. `src/host/write-preset.ts`：
-   - 手写数字模型参数不会生成 model patch。
-   - 空数组无法清除 `moduleConfigs` 旧值。
-4. 生成文件排序：
-   - 两位数字前缀 + 字典序读取，超过 10 条后顺序错误；目标改为 4 位零填充前缀（`0000-`）。
-5. Engine 层级：
-   - 需要按实际声明插入点分组注册。
-   - 未声明的插入点不应挂监听器。
-   - `order` 只在同一插入点内解释。
+若隔离 smoke 证明该解析方式在生成预设目录不可用，才把 Schema 转换移到 host 侧物化阶段；不复制官方转换器源码。
 
-### P2 维护与 UI
+### 3.3 delegate 是嵌套工具调用，不是本地函数调用
 
-1. 多个 engine session Map 缺少统一清理或上限。
-2. `skills-watcher` 不监听嵌套技能目录。
-3. 世界书筛选视图的移动逻辑使用全量配置视图。
-4. Bridge 成功载荷类型宽泛，缺少按端点契约。
-5. README、`docs/architecture-params.md`、`docs/engine-reuse.md` 已漂移。
-6. `scripts/rebuild-composition.mjs` 的 library 替换不是失败安全替换。
+嵌套调度必须携带：
 
-## 四、修改清单
+```text
+callId
+rootCallId
+name
+arguments
+agent
+parent = 当前 run.token
+signal
+```
 
-### Wave 1：参数契约与路径安全
+外层工具继续保持当前 `{ ok, value?, error? }` 输出契约，但必须：
 
-| 文件 | 修改 | 原因 | 验证 |
-|---|---|---|---|
-| `src/shared/engine-params.ts` | 补齐全量参数校验；模型字段 canonical 化；不兼容旧键 | 保存期 fail loud | 参数类型 / 空值 / 枚举测试 |
-| `src/shared/param-keys.ts` | 删除旧内容参数别名，只保留 canonical 键 | 键集唯一来源 | 契约测试 |
-| `src/host/manifest.ts` | 严格 YAML 解析；统一路径 containment；导出 ID 校验 | 防路径穿越和半接受 | 坏 YAML / 路径反例 |
-| `src/host/write-preset.ts` | 安全文件名；4 位零填充序号（`0000-`）；数字模型参数；原子物化；删除 `legacyCleanup` | 防越界与数据丢失 | 13+ 配置 / 恶意 ID / 迁移产物 |
-| `src/host/prompt-configs.ts` | 统一 4 位零填充排序（`0000-`）；重复 ID 在合并前拒绝 | Host / Engine 顺序一致 | 13 条 / 重复 ID |
+- 从标准 `ToolExecutionResult` 读取成功值或错误；
+- 将 nested result 的 additionalContexts 逐项交给 `run.deferContext()`；
+- nested result 标记 concludesTurn 时调用 `run.concludeTurn()`；
+- callId 使用当前调用可推导的稳定后缀，不使用 `Date.now()`。
 
-### Wave 2：Bridge、存储与异步安全
+### 3.4 工具面预览只展示真实运行态
 
-| 文件 | 修改 | 原因 | 验证 |
-|---|---|---|---|
-| `src/runtime/settings-bridge.ts` | 严格请求解析；完整 Origin 校验；导入/物化事务化；参数与 promptConfigs 同源校验 | 防假成功和越界 | 26 端点契约 / 异常请求 |
-| `src/shared/bridge-contract.ts` | 增加端点级请求/响应类型，保留统一 `{ok,value}` | 消除宽泛 union | 编译期 / 契约测试 |
-| `src/runtime/models.ts` | `saveSelection` 支持 Promise 并捕获拒绝；超时使用 AbortSignal | 避免 unhandled rejection | async reject / timeout 测试 |
-| `src/runtime/agents-file.ts` | 受管块安全处理；原子写；失败保留旧文件 | 防截断 | marker / 故障路径测试 |
-| `src/host/characters.ts` | PNG 解压大小上限；三文件临时目录 + 原子 rename；变量空值保持 | 防膨胀与部分写 | PNG / 失败回滚测试 |
-| `src/web-surface.ts` | profile manifest 原子写和备份恢复 | 自愈不损坏 profile | 写失败测试 |
-| `src/profile-skills.ts` | 同步副本临时目录 / 失败清理；不覆盖用户自定义技能 | 保资产完整 | manifest / 部分复制测试 |
-| `src/runtime/skills-watcher.ts` | 监听嵌套技能目录或按扫描结果重建 watcher | watcher 与扫描一致 | nested skill 变更测试 |
+第一版只展示当前会话 Agent scope 的实际工具面：
 
-### Wave 3：前端、Engine、脚本与文档
+```text
+Host 全局工具
++ 当前 preset 工具
++ agent-scoped 工具与 restriction
++ 当前 presentation/filter 状态
+= 当前会话实际工具面
+```
 
-| 文件 | 修改 | 原因 | 验证 |
-|---|---|---|---|
-| `src/client/prompt-tool-store.ts` | 自动保存走校验 / 统一队列；允许明确保存空数组；Promise 类型正确 | 修复 UI 数据丢失 | 清空 / 非法草稿 / 竞态测试 |
-| `src/client/prompt-tool-bridge.ts` | 严格 fields 与 endpoint payload 解析；空数组不与缺失混淆 | 保持设置语义 | bridge view 单测 |
-| `src/client/PromptConfigList.tsx` | 拒绝/提示重复 ID；世界书筛选移动使用实际可见集合；保存失败保留 dirty | 修复列表行为 | UI contract 测试 |
-| `src/client/PromptConfigsEditor.tsx` | 更新“写入 preset.yml”文案；变量空值说明 | 消除误导 | 文案检查 |
-| `src/client/slot-workbench.tsx` | 补 focus return；减少宿主父节点层级假设 | 可访问性 / 宿主升级稳定 | client contract + 浏览器 smoke |
-| `engine/schema.mjs` | 按实际声明插入点返回能力；`templateFile` 只允许 canonical 预设目录；统一排序；严格 schema | 执行契约唯一 | engine tests |
-| `engine/layers.mjs` | 按配置首次出现的插入点分组注册，只装配实际声明的 seam | 按需插入 | 未声明 seam 无监听器测试 |
-| `engine/executor.mjs` | 同插入点内按 order / 文件顺序执行；不同插入点不做全局排序 | 语义一致 | order / seam 回归 |
-| `engine/tool-config-engine.mjs` | 统一 4 位零填充文件排序（`0000-`）；验证工具文件来源 | 顺序一致 | 13+ tools 测试 |
-| `engine/*.mjs` | session Map 增加清理 / 上限；保持 epoch / waterfall 既有语义 | 长运行稳定 | session lifecycle tests |
-| `scripts/migrate-presets.mjs` | 离线一次性参数迁移：旧参数、旧 worldBook、旧覆盖文件；dry-run、备份、失败非零 | 替代运行时兼容 | 临时 DSH_HOME fixtures |
-| `scripts/rebuild-composition.mjs` | 临时目录完成后用备份 + rename 的失败安全替换 | 防 library 丢失 | 故障路径测试 |
-| `README.md` | 更新参数、变量、测试数、迁移命令 | 用户文档一致 | diff check |
-| `docs/architecture-params.md` | 重写参数/变量链路，删除旧兼容描述 | 架构单一事实源 | 文档核对 |
-| `docs/engine-reuse.md` | 修正参数优先级与插入点装配语义 | 消除旧契约 | grep / 人工核对 |
-| `SillyTavern.md` | 导入生成 canonical `promptConfigs` / `variables` | 转换契约一致 | ST fixture |
-| `CHANGELOG.md` | 增加参数迁移条目，注明不再自动兼容旧参数 | 发布可追溯 | 文案检查 |
+不尝试静态推导任意未挂载预设的“最终工具”，因为它还受 Host bundle、Agent scope、tool-filter、bootstrap/stage 和运行时代际影响。
 
-## 五、验收标准
+UI 行为：
 
-### 功能
+- 展示工具总数、名称、描述和文本搜索；
+- 无当前会话时显示明确空态；
+- 保存或重建后提示“既有会话保留原 generation”；
+- 只读，不提供插件启停或通用 JSON config 编辑。
 
-- [ ] 每个预设只读取自身 `preset.yml` 与自身生成目录。
-- [ ] 激活预设参数不会污染其他预设。
-- [ ] 旧 `worldBook` 一次迁移后，连续两次重建仍保留 `promptConfigs`。
-- [ ] 旧 flat model 参数迁移为顶层 `model/subagentModel`。
-- [ ] `variables: { key: '' }` 在保存、生成、worldBook 工具更新和读回中保持。
-- [ ] 用户主动删除全部 `promptConfigs` 后可保存空数组。
-- [ ] 重复 ID、非法参数类型和越界路径在保存前失败。
-- [ ] `order` 只影响同一插入点内的顺序。
+## 四、实施 Wave
 
-### 安全与可靠性
+### Wave 1：ToolDefinition 标准化（P0）
 
-- [ ] 所有生成文件路径 canonical containment 通过。
-- [ ] `legacyCleanup` 移除或只接受安全路径。
-- [ ] `templateFile` / composition 不能读取预设根外文件。
-- [ ] loopback Origin 校验 scheme/host/port。
-- [ ] 所有 `preset.yml`、`AGENTS`、profile manifest 增量写路径原子化。
-- [ ] 异步模型保存拒绝不产生 `unhandledRejection`。
-- [ ] PNG 解压存在输出大小上限。
-- [ ] Engine session Map 有清理或上限。
+修改目标：
 
-### Engine 语义
+- `engine/tool-config-engine.mjs`
+- `test/engine/tool-config-engine.test.mjs`
 
-- [ ] 未声明的插入点没有监听器。
-- [ ] 不同插入点之间没有全局排序。
-- [ ] 同一插入点内 `order` 与文件顺序稳定。
-- [ ] 超过 10 条配置 / 工具时排序仍正确。
-- [ ] UI / 写盘展示顺序统一为 `pre-step → system-section → runtime-context → agent-request → llm-stream → tool-pipeline`。
-- [ ] `prompt-configs` / `custom-tools` 文件名使用 4 位零填充前缀（`0000-`），超过 10 条后仍稳定。
+任务：
 
-## 六、验证命令
+1. 从运行中 DSH 解析官方 `dsh-tools` 导出，确保与 Host 使用同一份包。
+2. `compileTool()` 使用官方转换构造完整 ToolDefinition：
+   - `parameters: def.parameters ?? {}`；
+   - `output.schema` 经 ValueSchemaSpec 转换；
+   - 保留当前 JSON renderer、timeoutMs 与 execute 分发。
+3. 保留现有输入校验、description 消毒和按条跳过语义。
+4. `scope` 存在时明确报“不支持”，该条工具按现有 warn-and-skip 处理。
+5. 增加真实 registry 契约测试：
+   - 有参数工具生成标准 JSON Schema；
+   - 无参数工具生成空 object Schema；
+   - output required / array / oneOf 转换正确；
+   - `ctx.tools.schemas()` 不抛错；
+   - `ctx.tools.execute()` 能完成一次真实调用并校验输出。
+
+验收门：Wave 1 未通过前不进入 delegate 和 UI 工作。
+
+### Wave 2：delegate 统一走 ToolRuntime（P0）
+
+修改目标：
+
+- `engine/tool-config-engine.mjs`
+- `test/engine/tool-config-engine.test.mjs`
+
+任务：
+
+1. 删除 `tools.get(...).execute(...)` 与伪造 `minimalExec`。
+2. 使用 `ctx.tools.execute()` 发起 nested dispatch。
+3. 保留完整引用、部分插值和固定值的现有 args 映射语义。
+4. 转换标准成功/失败结果为外层 `{ ok, value?, error? }`。
+5. 传播 additionalContexts、concludesTurn 和 AbortSignal。
+6. 增加确定性测试：
+   - 目标参数非法时由真实 registry 拒绝；
+   - pre/post hook 能观察 nested call；
+   - approval/deny 不被绕过；
+   - 取消信号可到达目标工具；
+   - 不再出现直接 `.execute(` 调用目标定义的代码。
+
+### Wave 3：当前会话工具面预览（P1）
+
+修改目标：
+
+- `src/shared/bridge-contract.ts`
+- `src/runtime/settings-bridge.ts`
+- `src/client/prompt-tool-bridge.ts`
+- `src/client/prompt-tool-types.ts`
+- `src/client/index.ts`
+- `src/client/CustomToolsModuleCard.tsx`
+- `test/shared/bridge-contract.test.mjs`
+- `test/host/settings-bridge.test.mjs`
+- `test/client/no-host-dom.test.mjs` 或现有 slot/client contract 测试
+
+任务：
+
+1. 新增只读 bridge endpoint，例如 `/tool-surface`。
+2. Host 侧通过动态 `ctx.inject(['agents', 'tools'], ...)` 等待服务，不扩大静态 inject。
+3. 请求只接受当前 session id；校验长度、类型和存活 Agent。
+4. 从目标 Agent scope 获取 `tools.schemas(agent)`，响应只返回必要字段：
+
+```ts
+{
+  tools: Array<{ name: string; description: string }>
+}
+```
+
+5. Client 从官方 sessions snapshot 取得当前会话 id后请求；不把 session id 持久化进 settings。
+6. 在现有自定义工具区增加只读折叠面板，支持刷新和搜索。
+7. 保留 loopback、Host、Origin 和 body-size guard；无 Agent 或服务未就绪返回稳定错误码。
+
+### Wave 4：文档与契约收口（P2）
+
+修改目标：
+
+- `docs/engine-reuse.md`
+- `README.md`
+- `PLAN.md`
+- 受影响的模板注释
+
+任务：
+
+1. 记录 customTools 使用官方 Schema DSL，运行时转换为标准 ToolDefinition。
+2. 明确 delegate 经官方工具管线，不是目标函数别名。
+3. 删除“scope 已支持”的误导描述，标注为延期能力。
+4. 记录工具面预览只代表当前运行会话，不代表未挂载预设。
+5. 更新执行记录、测试数和最终提交信息。
+
+## 五、文件级变更矩阵
+
+| 文件 | 最小变更 | 验证 |
+|---|---|---|
+| `engine/tool-config-engine.mjs` | 官方 Schema 转换；delegate nested dispatch；显式拒绝 scope | 真实 ToolRuntime 契约测试 |
+| `test/engine/tool-config-engine.test.mjs` | 从对象捕获测试补到真实 registry/execute 测试 | Node test runner |
+| `src/shared/bridge-contract.ts` | 新增只读工具面端点常量与 payload 契约 | shared contract test |
+| `src/runtime/settings-bridge.ts` | 动态等待 agents/tools；按 session 返回 schemas 摘要 | guard/error/success tests |
+| `src/client/prompt-tool-bridge.ts` | 工具面响应解析 | 传输契约测试 |
+| `src/client/prompt-tool-types.ts` | 最小 ToolSurface 类型 | typecheck |
+| `src/client/index.ts` | 暴露当前 session id 或工具面读取能力 | client bundle contract |
+| `src/client/CustomToolsModuleCard.tsx` | 只读列表、搜索、刷新、空态 | client/no-host-DOM tests |
+| `README.md` / `docs/engine-reuse.md` | 更新工具定义、delegate 与运行态预览语义 | `git diff --check` |
+
+## 六、验收标准
+
+### ToolDefinition
+
+- [ ] 无参数工具可出现在 `ctx.tools.schemas()` 中。
+- [ ] 参数 DSL 被转换为标准 JSON Schema object。
+- [ ] output DSL 被转换为 registry 可校验的 JSON Schema。
+- [ ] 非法参数在执行前产生标准工具错误，工具实现不被调用。
+- [ ] 非法成功输出被 registry 拒绝。
+- [ ] 工具 disposer 随 preset/agent scope 生命周期撤销。
+
+### Delegate
+
+- [ ] 代码中不存在对目标 ToolDefinition 的直接 `execute()` 调用。
+- [ ] nested call 经过 pre/execute/post 管线。
+- [ ] approval、deny、timeout 和 cancellation 不被绕过。
+- [ ] rootCallId / parent token 保持嵌套关系。
+- [ ] additionalContexts / concludesTurn 能传回外层调用。
+- [ ] 现有参数映射模板行为不变。
+
+### 工具面预览
+
+- [ ] 只返回当前存活会话实际可见工具。
+- [ ] 不挂载或激活其他预设。
+- [ ] 不把完整参数 Schema、大文本或 secrets 送往客户端。
+- [ ] 无当前会话、未知 session、服务未就绪都有稳定错误载荷。
+- [ ] 搜索只在客户端过滤，不增加请求频率。
+- [ ] UI 仍只通过官方 SlotRegistry，不读取宿主 DOM。
+
+### 架构边界
+
+- [ ] `preset.yml` 仍是 customTools 单一来源。
+- [ ] `agent.cordis.yml` 和 `custom-tools/*.yml` 仍是生成物。
+- [ ] 不引入旧 `connection.api` / `dsh-client-runtime`。
+- [ ] 不新增通用 preset/plugin JSON mutation。
+- [ ] 不修改运行中的 DSH 服务或真实用户预设。
+
+## 七、验证命令
+
+所有测试 cwd 固定为 `D:\AI\workspase\_temp`：
 
 ```pwsh
 $Repo = 'D:\AI\GitHub\dsh-plugin-prompt-tool'
 Set-Location 'D:\AI\workspase\_temp'
+
 pnpm --dir $Repo typecheck
 pnpm --dir $Repo lint
 pnpm --dir $Repo test
 pnpm --dir $Repo build
-pnpm --dir $Repo pack --dry-run --json
 ```
 
-所有测试使用临时 `DSH_HOME`；不停止当前 DSH 服务，不修改真实用户预设。
+开发循环可先运行：
 
-## 七、回滚与中断点
+```pwsh
+node --test "$Repo/test/engine/tool-config-engine.test.mjs"
+node --test "$Repo/test/host/settings-bridge.test.mjs"
+node --test "$Repo/test/shared/bridge-contract.test.mjs"
+```
 
-- 每个 Wave 完成后运行完整验证并记录结果。
-- 任一 Wave 验证失败，保留工作树和错误证据，停止扩大范围。
-- 不对 `main` 做任何提交或推送；最终只提交并推送 `dev`。
-- 若迁移工具执行失败，返回非零并保留原参数与 `.bak`，不自动删除用户资产。
+最终仍运行完整 `pnpm --dir $Repo test`。
 
-## 八、执行记录
+## 八、实施顺序与中断条件
 
-- [x] 合并两份方案。
-- [x] 移除预设管理重构内容。
-- [x] Wave 1：参数契约与路径安全（提交 aaddd4d）。
-- [x] Wave 2：Bridge、存储与异步安全（提交 6a0762e）。
-- [x] Wave 3：前端、Engine、脚本与文档。
-- [x] 最终验证：typecheck / lint / test（407 pass）/ build / pack 全部通过。
-- [x] 提交并推送 `origin/dev`。
+1. Wave 1 先建立真实 ToolRuntime 红灯测试，再修定义转换。
+2. Wave 2 在标准 ToolDefinition 稳定后改 delegate。
+3. Wave 3 只读展示，不与 P0 修改交叉开发。
+4. Wave 4 最后更新长期文档。
+
+中断条件：
+
+- 从 DSH 运行入口解析官方 `dsh-tools` 失败：停止扩大修改，先在隔离 `DSH_HOME` 查明模块解析方式。
+- nested dispatch 无法完整传播上下文/终止语义：保留旧功能关闭 delegate 模板，不退回直接 execute。
+- 工具面 endpoint 需要挂载未激活预设才能回答：取消该能力，只保留当前会话视图。
+- 任一 Wave 破坏现有 preset 物化、主/子代理隔离或 disposer：停止后续 Wave，先修回归。
+
+## 九、执行记录
+
+- [x] 旧 L2 计划全部落地并从本文件移除。
+- [x] 分析 `dsh-plugins` 工具与预设实现。
+- [x] 对照 DSH `0.1.2-alpha.4` 当前 API。
+- [x] 用真实 ToolRuntime 复现 customTools Schema 问题。
+- [ ] Wave 1：ToolDefinition 标准化。
+- [ ] Wave 2：delegate 统一走 ToolRuntime。
+- [ ] Wave 3：当前会话工具面预览。
+- [ ] Wave 4：文档与契约收口。
+- [ ] 完整 typecheck / lint / test / build。
+- [ ] 提交并推送 `origin/dev`。
