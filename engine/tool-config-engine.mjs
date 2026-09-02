@@ -3,14 +3,17 @@
  *
  * 工具定义从 configsDir 目录加载（writePreset 渲染 custom-tools/*.yml，
  * 源 = preset.yml 顶层 customTools 段），每份一个工具定义：
- *   id / name / description / scope / timeoutMs / parameters（dsh-tools schema
- *   DSL 的 JSON 形态）/ output.schema / execute.{kind, ...}
+ *   id / name / description / timeoutMs / parameters（标准 JSON Schema
+ *   object，writePreset 已用官方 @deepseek-ai/dsh-tools 的
+ *   parameterSchemaSpecToJsonSchema / valueSchemaSpecToJsonSchema 把
+ *   preset.yml 的 dsh-tools DSL 转换）/ output.schema / execute.{kind, ...}
  *
  * 执行器（kind）：
  *   shell    — 命令执行（execFile 无 shell 解析，env 白名单，cwd=会话工作区）
  *   http     — fetch 请求（method/url/headers/body，{{args.x}} 插值）
- *   delegate — 委托已注册工具（ctx.tools.get + 透传参数，高级用法：
- *              目标工具 execute 直接调用，不经 registry 校验管线）
+ *   delegate — 委托已注册工具（经 ctx.tools.execute 的 nested dispatch 走
+ *              完整官方管线：参数/输出校验、allow/deny/ask、pre/execute/post
+ *              waterfall、timeout、nested token 与 durable result）
  *   fs       — 文件操作（read/write/append/list/delete，路径限定 cwd 内）
  *   ask-user — approval 通道询问用户（结果文本化）
  *
@@ -33,8 +36,8 @@ export const inject = ['tools']
 /** 工具名规范（模型可见，schemas() 白名单要求）。 */
 const TOOL_NAME_RE = /^[a-z][a-z0-9_]*$/
 
-/** 合法参数节点类型（dsh-tools ValueSchemaSpec 的 type 枚举）。 */
-const SCHEMA_TYPES = new Set(['string', 'number', 'integer', 'boolean', 'null', 'array', 'object', 'json', 'oneOf'])
+/** 受支持的 JSON Schema 节点类型（官方 enforced subset 的 scalar type 集合）。 */
+const JSON_SCHEMA_TYPES = new Set(['string', 'number', 'integer', 'boolean', 'null', 'array', 'object'])
 
 /** shell 执行器的 env 白名单（无凭据形态；与 run-code-env 同基调）。 */
 const ENV_ALLOWLIST = [
@@ -54,40 +57,120 @@ function interpolateArgs(text, args) {
   })
 }
 
-/** 递归校验 schema 节点（宽松：type 枚举 + object 必须声明 additionalProperties + required 必须 true）。 */
-function validateSchemaNode(node, path, seen) {
+/**
+ * 递归校验 JSON Schema 节点（结构层 sanity；官方 enforce 仍由 registry 的
+ * assertSupportedJsonSchema 兜底——register() 抛错时按单条 warn-and-skip）。
+ * 覆盖官方子集：object properties/required/additionalProperties、array items、
+ * scalar enum/const、oneOf。`type: 'json'` 是 dsh-tools DSL 形态，不是 JSON
+ * Schema，出现即视为未物化（writePreset 未转换），fail loud 拒绝。
+ */
+function validateJsonSchemaNode(node, path, seen) {
   if (node === null || typeof node !== 'object' || Array.isArray(node)) {
     throw new TypeError(`${path} must be an object`)
   }
   if (seen.has(node)) throw new TypeError(`${path} is circular`)
   seen.add(node)
   try {
-    if (typeof node.type !== 'string' || !SCHEMA_TYPES.has(node.type)) {
-      throw new TypeError(`${path}.type must be one of ${[...SCHEMA_TYPES].join('/')}`)
-    }
-    if (node.type === 'object' && typeof node.additionalProperties !== 'boolean') {
-      throw new TypeError(`${path}.additionalProperties must be explicitly true or false`)
-    }
-    if (node.required !== undefined && node.required !== true) {
-      throw new TypeError(`${path}.required must be true when present`)
-    }
-    if (node.type === 'object' && node.properties !== undefined) {
-      for (const [key, child] of Object.entries(node.properties)) {
-        validateSchemaNode(child, `${path}.properties.${key}`, seen)
+    const hasType = typeof node.type === 'string' && node.type.length > 0
+    if (hasType) {
+      if (!JSON_SCHEMA_TYPES.has(node.type)) {
+        throw new TypeError(`${path}.type must be one of ${[...JSON_SCHEMA_TYPES].join('/')} (dsh-tools DSL 形态 'json'/'oneOf' 未在物化时转换)`)
       }
-    }
-    if (node.type === 'array' && node.items !== undefined) {
-      validateSchemaNode(node.items, `${path}.items`, seen)
-    }
-    if (node.type === 'oneOf' && Array.isArray(node.oneOf)) {
+      if (node.type === 'object') {
+        if (node.properties !== undefined) {
+          if (node.properties === null || typeof node.properties !== 'object' || Array.isArray(node.properties)) {
+            throw new TypeError(`${path}.properties must be an object of schemas`)
+          }
+          for (const [key, child] of Object.entries(node.properties)) {
+            validateJsonSchemaNode(child, `${path}.properties.${key}`, seen)
+          }
+        }
+        if (node.required !== undefined) {
+          if (!Array.isArray(node.required) || node.required.some((item) => typeof item !== 'string')) {
+            throw new TypeError(`${path}.required must be an array of property names`)
+          }
+        }
+        if (node.additionalProperties !== undefined && typeof node.additionalProperties !== 'boolean') {
+          throw new TypeError(`${path}.additionalProperties must be a boolean`)
+        }
+      }
+      if (node.type === 'array' && node.items !== undefined) {
+        validateJsonSchemaNode(node.items, `${path}.items`, seen)
+      }
+    } else if (Array.isArray(node.oneOf)) {
       if (node.oneOf.length < 2) throw new TypeError(`${path}.oneOf needs at least two branches`)
       for (const [index, branch] of node.oneOf.entries()) {
-        validateSchemaNode(branch, `${path}.oneOf[${index}]`, seen)
+        validateJsonSchemaNode(branch, `${path}.oneOf[${index}]`, seen)
       }
+    } else {
+      throw new TypeError(`${path} must declare type or oneOf`)
     }
   } finally {
     seen.delete(node)
   }
+}
+
+/**
+ * 按 JSON Schema 子集校验参数值（引擎侧输入校验；官方 defineTool 的 validateArgs
+ * 同样校验——registry 对裸 register 工具不校验参数，引擎自持保证"非法参数在执行前
+ * 失败且实现不运行"）。object required/additionalProperties:false、array items、
+ * scalar type/enum/const、oneOf 覆盖；annotation-only（无 type）视为任意 JSON。
+ */
+function validateJsonSchemaValue(schema, value) {
+  const violations = []
+  const walk = (node, value, path) => {
+    if (node === null || typeof node !== 'object' || Array.isArray(node)) {
+      violations.push(path + ': invalid schema node')
+      return
+    }
+    if (Array.isArray(node.oneOf)) {
+      for (const branch of node.oneOf) {
+        const before = violations.length
+        walk(branch, value, path)
+        if (violations.length === before) return
+        violations.length = before
+      }
+      violations.push(path + ': does not match any oneOf branch')
+      return
+    }
+    const type = node.type
+    if (type === undefined) return // annotation-only = unconstrained
+    const actualType = Array.isArray(value) ? 'array' : value === null ? 'null' : typeof value
+    const matchesType = actualType === type
+      || (type === 'integer' && actualType === 'number' && Number.isInteger(value))
+    if (!matchesType) {
+      violations.push(path + ': expected ' + type + ', got ' + actualType)
+      return
+    }
+    if (node.enum !== undefined && !node.enum.some((item) => Object.is(item, value))) {
+      violations.push(path + ': value not in enum')
+    }
+    if (node.const !== undefined && !Object.is(node.const, value)) {
+      violations.push(path + ': value not equal to const')
+    }
+    if (type === 'array' && node.items !== undefined && Array.isArray(value)) {
+      value.forEach((item, index) => walk(node.items, item, path + '[' + index + ']'))
+    }
+    if (type === 'object' && typeof value === 'object' && value !== null && !Array.isArray(value)) {
+      if (Array.isArray(node.required)) {
+        for (const key of node.required) {
+          if (!(key in value)) violations.push(path + ': missing required property \"' + key + '\"')
+        }
+      }
+      if (node.properties !== undefined && typeof node.properties === 'object' && !Array.isArray(node.properties)) {
+        for (const [key, child] of Object.entries(node.properties)) {
+          if (key in value) walk(child, value[key], path + '.' + key)
+        }
+      }
+      if (node.additionalProperties === false && node.properties !== undefined) {
+        for (const key of Object.keys(value)) {
+          if (!(key in node.properties)) violations.push(path + ': unexpected property \"' + key + '\"')
+        }
+      }
+    }
+  }
+  walk(schema, value, 'arguments')
+  return violations
 }
 
 /** 工具定义轻校验（fail loud → 调用方 warnOnce 跳过该条）。 */
@@ -100,19 +183,17 @@ function validateDefinition(def) {
   if (typeof def.description !== 'string' || def.description.trim().length === 0) {
     throw new TypeError(`tool ${def.id}: description is required`)
   }
+  if (def.scope !== undefined) {
+    throw new TypeError(`tool ${def.id}: customTools.scope is not supported (subagent tool policy is configured via subagentToolPolicy, not per-tool scope)`)
+  }
   if (def.parameters !== undefined) {
-    if (def.parameters === null || typeof def.parameters !== 'object' || Array.isArray(def.parameters)) {
-      throw new TypeError(`tool ${def.id}: parameters must be an object map`)
-    }
-    for (const [key, child] of Object.entries(def.parameters)) {
-      validateSchemaNode(child, `parameters.${key}`, new Set())
-    }
+    validateJsonSchemaNode(def.parameters, `tool ${def.id}: parameters`, new Set())
   }
   const output = def.output
   if (output === null || typeof output !== 'object' || Array.isArray(output)) {
     throw new TypeError(`tool ${def.id}: output is required`)
   }
-  validateSchemaNode(output.schema, 'output.schema', new Set())
+  validateJsonSchemaNode(output.schema, `tool ${def.id}: output.schema`, new Set())
   const exec = def.execute
   if (exec === null || typeof exec !== 'object' || Array.isArray(exec)) {
     throw new TypeError(`tool ${def.id}: execute is required`)
@@ -133,14 +214,10 @@ function validateDefinition(def) {
     || (!['read', 'write', 'append', 'list', 'delete'].includes(exec.action) && !exec.action.includes('{{args.')))) {
     throw new TypeError(`tool ${def.id}: execute.action must be read/write/append/list/delete (or {{args.*}} template) for fs`)
   }
-  if (def.scope !== undefined && !['main', 'subagent', 'both'].includes(def.scope)) {
-    throw new TypeError(`tool ${def.id}: scope must be main/subagent/both`)
-  }
   if (def.enabled !== undefined && typeof def.enabled !== 'boolean') {
     throw new TypeError(`tool ${def.id}: enabled must be a boolean`)
   }
 }
-
 /** approval 门：requireApproval 含该 kind 时先请求批准；无 approval 服务拒绝。 */
 async function approvalGate(ctx, exec, kind, reason) {
   const approval = ctx.get('approval')
@@ -171,10 +248,47 @@ function withinCwd(cwd, target) {
   return resolved
 }
 
+/** delegate args 映射：完整引用（{{args.x}}）透传原始类型（数组/数字/布尔不字符串化）；
+ *  部分引用（前缀-{{args.x}}）插值为字符串；非插值值原样。 */
+function mapDelegateArgs(execArgs, args) {
+  const FULL_REF_RE = /^\{\{args\.([A-Za-z0-9_.]+)\}\}$/
+  const mapValue = (value) => {
+    if (Array.isArray(value)) return value.map(mapValue)
+    if (value !== null && typeof value === 'object') {
+      return Object.fromEntries(Object.entries(value).map(([key, child]) => [key, mapValue(child)]))
+    }
+    if (typeof value === 'string') {
+      const ref = FULL_REF_RE.exec(value)
+      if (ref !== null) {
+        let resolved = args
+        for (const part of ref[1].split('.')) {
+          if (resolved === null || typeof resolved !== 'object') {
+            resolved = undefined
+            break
+          }
+          resolved = resolved[part]
+        }
+        return resolved === undefined ? value : resolved
+      }
+      return interpolateArgs(value, args)
+    }
+    return value
+  }
+  return execArgs !== undefined && execArgs !== null && typeof execArgs === 'object'
+    ? Object.fromEntries(Object.entries(execArgs).map(([key, value]) => [key, mapValue(value)]))
+    : args
+}
+
 /** 执行器分发：返回成功值（registry 按 output.schema 校验）。 */
 function createExecute(ctx, def, requireApproval) {
   const exec = def.execute
   return async (args, run) => {
+    if (def.parameters !== undefined) {
+      const violations = validateJsonSchemaValue(def.parameters, args)
+      if (violations.length > 0) {
+        return { ok: false, error: 'invalid arguments: ' + violations.join('; ') }
+      }
+    }
     if (requireApproval.includes(exec.kind)) {
       const gate = await approvalGate(ctx, run, exec.kind, `custom tool ${def.name} (${exec.kind})`)
       if (!gate.ok) return { ok: false, error: gate.message }
@@ -198,7 +312,7 @@ function createExecute(ctx, def, requireApproval) {
             exitCode: error === null ? 0 : (typeof error.code === 'number' ? error.code : 1),
             stdout: String(stdout ?? ''),
             stderr: String(stderr ?? ''),
-            error: error === null ? undefined : String(error.message),
+            ...(error === null ? {} : { error: String(error.message) }),
           })
         })
         const timeout = def.timeoutMs
@@ -224,55 +338,31 @@ function createExecute(ctx, def, requireApproval) {
       return { status: response.status, ok: response.ok, body: text }
     }
     if (exec.kind === 'delegate') {
-      const tools = ctx.get('tools')
-      const target = tools?.get?.(exec.tool)
-      if (target === undefined || typeof target.execute !== 'function') {
-        return { ok: false, error: `delegated tool ${exec.tool} is not registered` }
+      const tools = ctx.tools ?? ctx.get('tools')
+      if (tools === undefined || typeof tools.execute !== 'function') {
+        return { ok: false, error: 'no tool runtime is available for delegate' }
       }
-      // 高级用法：透传参数直接调用目标 execute（不经 registry 校验管线）。
-      // args 映射：完整引用（{{args.x}}）透传原始类型（数组/数字/布尔不字符串化）；
-      // 部分引用（前缀-{{args.x}}）插值为字符串；非插值值原样。
-      const FULL_REF_RE = /^\{\{args\.([A-Za-z0-9_.]+)\}\}$/
-      const mapDelegateArg = (value) => {
-        if (Array.isArray(value)) return value.map(mapDelegateArg)
-        if (value !== null && typeof value === 'object') {
-          return Object.fromEntries(Object.entries(value).map(([key, child]) => [key, mapDelegateArg(child)]))
-        }
-        if (typeof value === 'string') {
-          const ref = FULL_REF_RE.exec(value)
-          if (ref !== null) {
-            let resolved = args
-            for (const part of ref[1].split('.')) {
-              if (resolved === null || typeof resolved !== 'object') {
-                resolved = undefined
-                break
-              }
-              resolved = resolved[part]
-            }
-            return resolved === undefined ? value : resolved
-          }
-          return interpolateArgs(value, args)
-        }
-        return value
-      }
-      const delegatedArgs = exec.args !== undefined && exec.args !== null && typeof exec.args === 'object'
-        ? Object.fromEntries(Object.entries(exec.args).map(([key, value]) => [key, mapDelegateArg(value)]))
-        : args
-      const minimalExec = {
-        name: def.name,
-        callId: `delegate-${def.name}-${Date.now().toString(36)}`,
+      const delegatedArgs = mapDelegateArgs(exec.args, args)
+      // nested dispatch：走完整官方管线（校验/allow-deny-ask/pre-execute/post/
+      // timeout/nested token/durable result），调用身份由外层 callId 稳定派生，
+      // 禁止 Date.now() 生成调用身份。
+      const result = await tools.execute({
+        callId: `${run.callId}:delegate:${exec.tool}`,
+        rootCallId: run.rootCallId,
+        name: exec.tool,
         agent: run.agent,
-        parent: run.parent,
-        signal: run.signal,
+        parent: run.token,
         arguments: delegatedArgs,
-        deferContext: () => {},
-        concludeTurn: () => {},
+        signal: run.signal,
+      })
+      if (result.isError) {
+        return { ok: false, error: String(result.error?.message ?? result.error ?? `delegated tool ${exec.tool} failed`) }
       }
-      try {
-        return { ok: true, value: await target.execute(delegatedArgs, minimalExec) }
-      } catch (error) {
-        return { ok: false, error: error instanceof Error ? error.message : String(error) }
+      for (const context of result.additionalContexts ?? []) {
+        run.deferContext(context)
       }
+      if (result.concludesTurn === true) run.concludeTurn()
+      return { ok: true, value: result.value }
     }
     if (exec.kind === 'fs') {
       const cwd = run.agent?.session?.header?.cwd ?? process.cwd()
@@ -332,12 +422,14 @@ function sanitizeDescription(text) {
   return text.replace(/\{\{([^{}]*)\}\}/g, '{$1}')
 }
 
-/** 单份工具定义文件 → 编译为 ToolDefinition 结构（不含 id）。 */
+/** 单份工具定义文件 → 编译为完整官方 ToolDefinition（不含 id）。
+ *  parameters/output.schema 已是 writePreset 物化的标准 JSON Schema；无参数
+ *  工具补空 object Schema（真实 ctx.tools.schemas() 需要 parameters 存在）。 */
 function compileTool(ctx, def, requireApproval) {
   return {
     name: def.name,
     description: sanitizeDescription(def.description),
-    ...(def.parameters !== undefined && Object.keys(def.parameters).length > 0 ? { parameters: def.parameters } : {}),
+    parameters: def.parameters ?? { type: 'object', properties: {} },
     output: {
       schema: def.output.schema,
       render: (_args, value) => [{ type: 'text', text: JSON.stringify(value, null, 2) }],

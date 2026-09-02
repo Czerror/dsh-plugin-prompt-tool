@@ -11,6 +11,7 @@
 import { writeFileSync, mkdirSync, rmSync, cpSync, mkdtempSync, renameSync, existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { parse as parseYaml, parseDocument, stringify as stringifyYaml } from 'yaml'
+import { parameterSchemaSpecToJsonSchema, valueSchemaSpecToJsonSchema } from '@deepseek-ai/dsh-tools'
 import { DEFAULT_PRESET_DIR } from './paths.ts'
 import { PARAM_KEYS } from '../shared/param-keys.ts'
 import type { PresetWriterParams } from '../shared/engine-params.ts'
@@ -223,6 +224,35 @@ function modelRequestConfigs(params: Record<string, unknown>): PromptConfigSpec[
     configs.push({ id: 'subagent-model-params', name: '模型参数（子代理）', layer: 'agent-request', audience: 'subagent', order: -100, params: { patch: subagentPatch } })
   }
   return configs
+}
+
+/** 自定义工具 DSL → 官方 JSON Schema 物化（Wave 1）：
+ *   preset.yml customTools 段是 DSL 单一来源，writePreset 用官方
+ *   parameterSchemaSpecToJsonSchema / valueSchemaSpecToJsonSchema 转换后写入
+ *   custom-tools/*.yml（生成物），tool-config-engine 运行时只透传标准 JSON Schema。
+ *   customTools.scope 不支持（显式拒绝）；单条转换失败按既有 warn-and-skip。 */
+function materializeCustomTool(tool: Record<string, unknown>, warn: (message: string) => void): Record<string, unknown> | undefined {
+  const id = String(tool.id)
+  if (tool.scope !== undefined) {
+    warn('customTools: ' + JSON.stringify(id) + ': customTools.scope is not supported (subagent tool policy is configured via subagentToolPolicy); skipped')
+    return undefined
+  }
+  try {
+    const next: Record<string, unknown> = { ...tool }
+    if (next.parameters !== undefined) {
+      next.parameters = parameterSchemaSpecToJsonSchema(next.parameters as never)
+    }
+    const output = next.output
+    if (output === null || typeof output !== 'object' || Array.isArray(output) || (output as { schema?: unknown }).schema === undefined) {
+      throw new TypeError('output.schema is required')
+    }
+    const outputRecord = output as { schema?: unknown; [key: string]: unknown }
+    next.output = { ...outputRecord, schema: valueSchemaSpecToJsonSchema(outputRecord.schema as never) }
+    return next
+  } catch (error) {
+    warn('customTools: ' + JSON.stringify(id) + ': ' + String((error as Error).message ?? error) + '; skipped')
+    return undefined
+  }
 }
 
 /** 把任意单一参数预设模板物化到生成目录;全部失败 fail loud。 */
@@ -606,6 +636,7 @@ export function writePreset(prompt: string, options: WritePresetOptions): void {
   rmSync(customToolsDir, { recursive: true, force: true })
   mkdirSync(customToolsDir, { recursive: true })
   const customTools = Array.isArray(spec.customTools) ? spec.customTools : []
+  const warn = options.warn ?? (() => {})
   for (const [index, tool] of customTools.entries()) {
     if (tool === null || typeof tool !== 'object' || Array.isArray(tool)
       || typeof (tool as Record<string, unknown>).id !== 'string'
@@ -613,9 +644,11 @@ export function writePreset(prompt: string, options: WritePresetOptions): void {
       continue
     }
     const toolId = String((tool as Record<string, unknown>).id)
+    const materialized = materializeCustomTool(tool as Record<string, unknown>, warn)
+    if (materialized === undefined) continue
     writeFileSync(
       join(customToolsDir, configFileName(index + 1, toolId)),
-      stringifyYaml(tool, { lineWidth: 0 }),
+      stringifyYaml(materialized, { lineWidth: 0 }),
       'utf8',
     )
   }
