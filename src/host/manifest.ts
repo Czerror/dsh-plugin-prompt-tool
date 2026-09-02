@@ -40,6 +40,8 @@ export interface PresetSpec {
   variables?: Record<string, string>
   /** 自定义工具定义（tool-config-engine 渲染进 custom-tools/ 后运行时注册）。 */
   customTools?: unknown[]
+  /** 子代理实例级工具策略（subagentToolPolicy 顶层领域段；缺省 = 官方 delegation 行为）。 */
+  subagentToolPolicy?: Record<string, unknown>
   /** 模板变量插值开关（缺省 true = 启用；false = 停用，writePreset 不生成变量文件）。 */
   variablesEnabled?: boolean
   /** 可选:模板自定义提示词配置覆盖(纯数据,不使用模板语法)。 */
@@ -672,7 +674,7 @@ function parseListParam(value: unknown): string[] {
  * 模型路由/委派参数统一扁平键（modelProvider/subagentModelProvider/toolFilterAllow/maxDepth 等），
  * 与官方 AgentOptions{provider,model} / toolFilter{allow,deny} / maxDepth 对齐。
  */
-export function buildModuleConfigsFromParams(params: Record<string, unknown>): Record<string, Record<string, unknown>> {
+export function buildModuleConfigsFromParams(params: Record<string, unknown>, options: { subagentPolicyEnabled?: boolean } = {}): Record<string, Record<string, unknown>> {
   const out: Record<string, Record<string, unknown>> = {}
   const merge = (module: string, cfg: Record<string, unknown>): void => {
     if (Object.keys(cfg).length === 0) return
@@ -785,12 +787,16 @@ export function buildModuleConfigsFromParams(params: Record<string, unknown>): R
   const provider = asString(params.subagentModelProvider, '')
   const model = asString(params.subagentModelName, '')
   if (provider.length > 0 && model.length > 0) subagent.agentOptions = { provider, model }
-  const subAllow = parseListParam(params.toolFilterAllow)
-  const subDeny = parseListParam(params.toolFilterDeny)
-  if (subAllow.length > 0 || subDeny.length > 0) {
-    subagent.toolFilter = {
-      ...(subAllow.length > 0 ? { allow: subAllow } : {}),
-      ...(subDeny.length > 0 ? { deny: subDeny } : {}),
+  // 子代理工具权限分离（Wave 3）：策略启用后参数桥不再把主代理列表写入
+  // delegation.toolFilter（子代理由 subagentToolPolicy 实例级解析授权，避免双重过滤）。
+  if (options.subagentPolicyEnabled !== true) {
+    const subAllow = parseListParam(params.toolFilterAllow)
+    const subDeny = parseListParam(params.toolFilterDeny)
+    if (subAllow.length > 0 || subDeny.length > 0) {
+      subagent.toolFilter = {
+        ...(subAllow.length > 0 ? { allow: subAllow } : {}),
+        ...(subDeny.length > 0 ? { deny: subDeny } : {}),
+      }
     }
   }
   const rawMaxDepth = params.maxDepth
@@ -972,7 +978,9 @@ export function loadCompositionText(spec: PresetSpec, templateDir?: string): str
  */
 export function renderComposition(spec: PresetSpec, runtime: Record<string, unknown>, templateDir?: string): string {
   const params = resolvePresetParams(spec, runtime)
-  const merged: Record<string, Record<string, unknown>> = buildModuleConfigsFromParams(params)
+  const merged: Record<string, Record<string, unknown>> = buildModuleConfigsFromParams(params, {
+    subagentPolicyEnabled: spec.subagentToolPolicy !== undefined && spec.subagentToolPolicy !== null,
+  })
   for (const [id, cfg] of Object.entries(spec.moduleConfigs ?? {})) {
     // 参数桥优先：UI/运行时参数不被模板或 ST 直写覆盖。
     merged[id] = { ...cfg, ...merged[id] }

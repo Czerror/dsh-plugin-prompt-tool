@@ -12,7 +12,13 @@ function makeHarness() {
       mutate: async () => {},
     },
     webServer: {
-      register: ({ path, handler }) => { handlers.set(path, handler) },
+      register: ({ path, handler }) => { handlers.set(path, handler); return () => {} },
+    },
+    agents: {
+      get: (id) => id === 'live-session' ? { id } : undefined,
+    },
+    tools: {
+      schemas: () => [{ name: 'bash', description: '运行命令' }],
     },
     effect: (fn) => fn(),
   }
@@ -33,15 +39,18 @@ function register() {
 }
 
 function fakeReq(overrides = {}) {
-  return {
+  const req = {
     method: 'POST',
     socket: { remoteAddress: '127.0.0.1' },
     headers: { host: 'localhost' },
-    [Symbol.asyncIterator]() {
-      return { next: async () => ({ done: true, value: undefined }) }
-    },
     ...overrides,
   }
+  req[Symbol.asyncIterator] = function* () {
+    const raw = req.body
+    if (raw !== undefined && raw !== null && raw !== '') yield Buffer.from(String(raw))
+    return { done: true }
+  }
+  return req
 }
 
 function fakeRes() {
@@ -64,7 +73,7 @@ test('契约：client 前缀与 server 注册前缀同源', () => {
 test('契约：26 个端点路径全部注册且无多余', () => {
   const handlers = register()
   const expected = Object.values(BRIDGE_ENDPOINTS)
-  assert.equal(expected.length, 26, 'BRIDGE_ENDPOINTS 应恰好 26 个端点')
+  assert.equal(expected.length, 29, 'BRIDGE_ENDPOINTS 应恰好 29 个端点')
   const registered = [...handlers.keys()].sort()
   const wanted = expected.map((p) => SETTINGS_BRIDGE_PREFIX + p).sort()
   assert.deepEqual(registered, wanted)
@@ -100,6 +109,24 @@ test('契约：成功载荷统一为 { ok: true, value }', async () => {
     assert.equal(payload.ok, true)
     assert.ok(payload.value !== undefined && payload.value !== null, `${path} 成功载荷必须带 value`)
   }
+})
+
+test('契约：/tool-surface 返回存活 Agent 的只读工具面摘要，未知 session 稳定错误', async () => {
+  const handlers = register()
+  const handler = handlers.get(SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.toolSurface)
+  assert.ok(handler, '/tool-surface 端点未注册')
+  const ok = fakeRes()
+  await handler(fakeReq({ body: JSON.stringify({ sessionId: 'live-session' }) }), ok)
+  assert.equal(ok.status, 200)
+  const payload = JSON.parse(ok.body)
+  assert.equal(payload.ok, true)
+  assert.deepEqual(payload.value.tools, [{ name: 'bash', description: '运行命令' }], '只返回 name/description')
+  const unknown = fakeRes()
+  await handler(fakeReq({ body: JSON.stringify({ sessionId: 'nope' }) }), unknown)
+  assert.equal(unknown.status, 404)
+  const unknownPayload = JSON.parse(unknown.body)
+  assert.equal(unknownPayload.ok, false)
+  assert.equal(unknownPayload.code, 'tool-surface-unknown-session')
 })
 
 test('契约：失败载荷统一为 { ok: false, code?, message? }', async () => {

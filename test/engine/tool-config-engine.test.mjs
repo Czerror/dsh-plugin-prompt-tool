@@ -669,16 +669,16 @@ execute:
   await ctx.fiber.dispose()
 })
 
-test('Wave2：delegate AbortSignal 到达目标工具（目标实现观察 run.signal）', async () => {
+test('Wave2：delegate AbortSignal 到达目标工具（目标实现观察 run.signal 同一实例）', async () => {
   const ctx = await makeRealCtx()
-  let seenAborted = false
+  let seenSignal
   ctx.tools.register({
     name: 'signal_tool',
     description: '信号工具',
     parameters: { type: 'object', properties: {}, additionalProperties: true },
     output: { schema: { type: 'object', additionalProperties: true }, render: () => [{ type: 'text', text: 'x' }] },
     execute: async (_args, run) => {
-      seenAborted = run.signal.aborted
+      seenSignal = run.signal
       return { ok: true }
     },
   })
@@ -695,9 +695,8 @@ execute:
   })
   applyToolConfigEngine(ctx, { configsDir: dir })
   const controller = new AbortController()
-  controller.abort()
   const result = await ctx.tools.execute({ callId: 's1', name: 'my_del', arguments: {}, signal: controller.signal })
-  // 取消可能使工具体未执行（ABORTED_BEFORE_DISPATCH）或已执行但结果被替换为 ABORTED。
-  assert.equal(result.isError, true, '已取消调用失败')
+  assert.equal(result.isError, false, '正常信号调用成功')
+  assert.equal(seenSignal, controller.signal, '目标工具收到与调用方同一 AbortSignal 实例')
   await ctx.fiber.dispose()
 })

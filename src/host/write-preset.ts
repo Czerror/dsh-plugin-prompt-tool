@@ -70,7 +70,7 @@ const DISABLED_TEXT_SLIM_THRESHOLD = 32 * 1024
 const SUBSTANTIVE_PRESET_KEYS = [
   'params', 'modules', 'composition', 'promptConfigs', 'content', 'variables',
   'customTools', 'worldBook', 'moduleConfigs', 'model', 'subagentModel',
-  'variablesEnabled', 'legacyCleanup',
+  'subagentToolPolicy', 'variablesEnabled', 'legacyCleanup',
 ] as const
 
 /** 判定 preset.yml 文本是否为纯元数据（仅 name/description/version/order 等展示
@@ -365,6 +365,7 @@ export function writePreset(prompt: string, options: WritePresetOptions): void {
     .replaceAll('./engine/', '../.engine/')
     .replaceAll('../prompt-configs', `../${outputId}/prompt-configs`)
     .replaceAll('../custom-tools', `../${outputId}/custom-tools`)
+    .replaceAll('../subagent-tools', `../${outputId}/subagent-tools`)
   writeFileSync(join(outDir, 'agent.cordis.yml'), subComposition, 'utf8')
 
   // 2) 宿主预设元数据：新布局 preset.yml = 参数 + 元数据一体。
@@ -653,6 +654,17 @@ export function writePreset(prompt: string, options: WritePresetOptions): void {
     )
   }
 
+
+  // 4.6) 子代理工具策略（preset.yml 顶层 subagentToolPolicy 段）→ subagent-tools/policy.yml：
+  //      策略经统一 resolver 校验（非法拒绝整次保存）；非空策略生成物 + 运行时模块自动装配。
+  // writePreset 只负责策略物化（策略在 bridge POST 已统一校验并自动追加运行时模块，
+  // 保持本函数同步与"preset.yml 单一来源"）；生成物 = subagent-tools/policy.yml。
+  const subagentToolsDir = join(outDir, 'subagent-tools')
+  rmSync(subagentToolsDir, { recursive: true, force: true })
+  if (spec.subagentToolPolicy !== undefined && spec.subagentToolPolicy !== null) {
+    mkdirSync(subagentToolsDir, { recursive: true })
+    writeFileSync(join(subagentToolsDir, 'policy.yml'), stringifyYaml(spec.subagentToolPolicy, { lineWidth: 0 }), 'utf8')
+  }
 
   // 6) agents-instruction.md(模板内容资产经 settings 覆盖时写入；清旧 .txt 残留)。
   const agentsInstructionPath = join(outDir, 'agents-instruction.md')

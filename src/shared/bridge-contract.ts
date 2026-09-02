@@ -39,6 +39,9 @@ export const BRIDGE_ENDPOINTS = {
   charactersDelete: '/characters-delete',
   charactersApply: '/characters-apply',
   charactersRemove: '/characters-remove',
+  subagentToolPolicy: '/subagent-tool-policy',
+  subagentToolPolicyPreview: '/subagent-tool-policy-preview',
+  toolSurface: '/tool-surface',
 } as const
 
 export type BridgeEndpoint = (typeof BRIDGE_ENDPOINTS)[keyof typeof BRIDGE_ENDPOINTS]
@@ -78,6 +81,9 @@ export interface BridgeRequestMap {
   charactersDelete: { id: string }
   charactersApply: { id: string }
   charactersRemove: { id: string }
+  subagentToolPolicy: { policy?: unknown } | undefined
+  subagentToolPolicyPreview: { tool?: string; description?: string; prompt?: string; tool_profile?: string; character_id?: string; task_type?: string; additional_tools?: string[]; restrict_tools?: string[] }
+  toolSurface: { sessionId: string }
 }
 
 /** 端点级响应 value 契约（value 字段形状；扩展字段仍以 value 旁可选字段出现）。 */
@@ -108,6 +114,9 @@ export interface BridgeValueMap {
   charactersDelete: Record<string, unknown>
   charactersApply: { count: number }
   charactersRemove: { count: number }
+  subagentToolPolicy: { policy: unknown; defaultProfile?: string; errors?: string[] }
+  subagentToolPolicyPreview: { result: unknown; errors?: string[] }
+  toolSurface: { tools: Array<{ name: string; description: string }> }
 }
 
 /** 编译期断言：请求/响应映射与 BRIDGE_ENDPOINTS 键集合完全一致（漏改任一侧 typecheck 失败）。 */

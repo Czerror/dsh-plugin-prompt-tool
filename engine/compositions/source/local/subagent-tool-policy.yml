@@ -1,0 +1,10 @@
+# module: subagent-tool-policy
+# source: 本地新增（子代理实例级工具策略：agent-scoped subagent/subagent_fork shadow）
+# 策略数据源 = 预设目录 subagent-tools/policy.yml（writePreset 从 preset.yml 顶层
+# subagentToolPolicy 物化）。策略启用时参数桥不再把主代理 toolFilter 写入
+# delegation.toolFilter；未启用策略的预设完全保持官方 delegation 行为。
+
+- id: subagent-tool-policy
+  name: ./engine/subagent-tool-policy.mjs
+  config:
+    policyFile: ../subagent-tools/policy.yml

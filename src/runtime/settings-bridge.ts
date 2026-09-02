@@ -1319,11 +1319,153 @@ export function registerSettingsBridge(
             writeBridgeJson(res, 200, { ok: true, value: { id, count: result.count } })
           },
         }),
+        sctx.webServer.register({
+          kind: 'exact',
+          path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.subagentToolPolicy,
+          handler: async (req, res) => {
+            if (!guard(req, res)) return
+            const dir = getPresetConfigsDir?.() ?? ''
+            if (dir.length === 0) {
+              writeBridgeJson(res, 400, { ok: false, code: 'preset-dir-unavailable', message: 'presetDir 未配置' })
+              return
+            }
+            const parsedBody = await readBridgeBodyForHandler(req, res)
+            if (parsedBody === undefined) return
+            const { body } = parsedBody
+            const record = (body ?? {}) as Record<string, unknown>
+            // 无 policy 载荷 = 读取（preset.yml 顶层 subagentToolPolicy 段）。
+            if (record.policy === undefined) {
+              try {
+                const spec = loadPresetSpec(dir)
+                const policy = spec.subagentToolPolicy ?? null
+                writeBridgeJson(res, 200, { ok: true, value: { policy } })
+              } catch {
+                writeBridgeJson(res, 200, { ok: true, value: { policy: null } })
+              }
+              return
+            }
+            try {
+              const policy = record.policy
+              const policyUrl = new URL('../engine/subagent-tool-policy-core.mjs', import.meta.url)
+              const core = await import(policyUrl.href) as {
+                validateSubagentToolPolicy: (raw: unknown) => string[]
+              }
+              const errors = core.validateSubagentToolPolicy(policy)
+              if (errors.length > 0) {
+                writeBridgeJson(res, 409, { ok: false, code: 'subagent-tool-policy-rejected', message: '策略校验失败：' + errors.join('; '), value: { errors } })
+                return
+              }
+              const isEmpty = policy === null || (typeof policy === 'object' && !Array.isArray(policy) && Object.keys(policy as Record<string, unknown>).length === 0)
+              withPresetDoc(dir, (doc) => {
+                if (isEmpty) {
+                  doc.deleteIn(['subagentToolPolicy'])
+                  const source = doc.toJS() as { modules?: unknown }
+                  if (Array.isArray(source.modules)) {
+                    doc.set('modules', source.modules.filter((item) => item !== 'subagent-tool-policy'))
+                  }
+                } else {
+                  doc.setIn(['subagentToolPolicy'], policy)
+                  appendPresetModules(doc, ['subagent-tool-policy'])
+                }
+              })
+              afterOverridesChange?.()
+              writeBridgeJson(res, 200, { ok: true, value: { policy, errors } })
+            } catch (error) {
+              const message = error instanceof Error ? error.message : String(error)
+              writeBridgeJson(res, 409, { ok: false, code: 'subagent-tool-policy-rejected', message: '子代理工具策略保存失败：' + message })
+            }
+          },
+        }),
+        sctx.webServer.register({
+          kind: 'exact',
+          path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.subagentToolPolicyPreview,
+          handler: async (req, res) => {
+            if (!guard(req, res)) return
+            const dir = getPresetConfigsDir?.() ?? ''
+            if (dir.length === 0) {
+              writeBridgeJson(res, 400, { ok: false, code: 'preset-dir-unavailable', message: 'presetDir 未配置' })
+              return
+            }
+            const parsedBody = await readBridgeBodyForHandler(req, res)
+            if (parsedBody === undefined) return
+            const { body } = parsedBody
+            const record = (body ?? {}) as Record<string, unknown>
+            try {
+              const spec = loadPresetSpec(dir)
+              if (spec.subagentToolPolicy === undefined || spec.subagentToolPolicy === null) {
+                writeBridgeJson(res, 400, { ok: false, code: 'subagent-tool-policy-missing', message: '当前预设未配置 subagentToolPolicy' })
+                return
+              }
+              const policyUrl = new URL('../engine/subagent-tool-policy-core.mjs', import.meta.url)
+              const core = await import(policyUrl.href) as {
+                compileSubagentToolPolicy: (raw: unknown) => unknown
+                resolveSubagentToolPolicy: (compiled: unknown, request: Record<string, unknown>, available: string[]) => unknown
+              }
+              const compiled = core.compileSubagentToolPolicy(spec.subagentToolPolicy)
+              // 预览用 ceiling 工具宇宙作为可用集（策略设计视图；运行时以实际可见工具为准，
+              // 统一走同一 resolveSubagentToolPolicy seam，不复制解析算法）。
+              const ceilingAllow = (spec.subagentToolPolicy.ceiling as { allow?: unknown })?.allow
+              const available = Array.isArray(ceilingAllow) ? ceilingAllow.map(String) : []
+              const result = core.resolveSubagentToolPolicy(compiled, record as Record<string, unknown>, available)
+              writeBridgeJson(res, 200, { ok: true, value: { result } })
+            } catch (error) {
+              const message = error instanceof Error ? error.message : String(error)
+              writeBridgeJson(res, 409, { ok: false, code: 'subagent-tool-policy-preview-failed', message: '策略预览失败：' + message })
+            }
+          },
+        }),
       ]
       return () => {
         for (const dispose of disposers) dispose()
       }
     }, 'prompt-tool: settings bridge')
+  })
+
+  // 工具面（/tool-surface）：只读运行态端点，独立动态等待 agents+tools，
+  // 不扩大 src/index.ts 静态 inject。只返回存活本地 Agent 实际可见工具
+  // 的 name/description 摘要，不挂载/激活其他预设，也不静态估算。
+  ctx.inject(['agents', 'tools', 'webServer'], (stx: Context) => {
+    stx.effect(() => {
+      const disposers: Array<() => void> = []
+      const register = (endpoint: string, handler: (req: IncomingMessage, res: ServerResponse) => Promise<void> | void): void => {
+        disposers.push(stx.webServer.register({ kind: 'exact', path: SETTINGS_BRIDGE_PREFIX + endpoint, handler }))
+      }
+      register(BRIDGE_ENDPOINTS.toolSurface, async (req, res) => {
+        if (!isLoopbackRequest(req)) {
+          writeBridgeJson(res, 403, { ok: false, code: 'settings-not-exposed', message: 'loopback requests only' })
+          return
+        }
+        if (req.method !== 'POST') {
+          writeBridgeJson(res, 405, { ok: false, code: 'settings-not-exposed', message: 'method not allowed: ' + (req.method ?? '') })
+          return
+        }
+        const parsedBody = await readBridgeBodyForHandler(req, res)
+        if (parsedBody === undefined) return
+        const { body } = parsedBody
+        const record = (body ?? {}) as Record<string, unknown>
+        const sessionId = typeof record.sessionId === 'string' ? record.sessionId.trim() : ''
+        if (sessionId.length === 0 || sessionId.length > 256) {
+          writeBridgeJson(res, 400, { ok: false, code: 'tool-surface-invalid', message: 'sessionId 必须是非空字符串' })
+          return
+        }
+        const agent = stx.agents.get(sessionId as never)
+        if (agent === undefined) {
+          writeBridgeJson(res, 404, { ok: false, code: 'tool-surface-unknown-session', message: '当前没有存活的本地 Agent 对应此 sessionId（冷态/远程子代理不支持）' })
+          return
+        }
+        try {
+          const schemas = stx.tools.schemas(agent)
+          const tools = schemas.map((schema) => ({ name: schema.name, description: schema.description }))
+          writeBridgeJson(res, 200, { ok: true, value: { tools } })
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error)
+          writeBridgeJson(res, 409, { ok: false, code: 'tool-surface-failed', message })
+        }
+      })
+      return () => {
+        for (const dispose of disposers) dispose()
+      }
+    }, 'prompt-tool: tool surface')
   })
   return { invalidateDescriptor: () => invalidateCachedDescriptor() }
 }
