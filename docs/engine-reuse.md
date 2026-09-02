@@ -1,8 +1,8 @@
 # engine 复用指南（晋升门控 / PTC 通用模块）
 
 本仓库的引擎（`engine/`）是**自包含**的通用模块库：晋升门控、上下文门控、
-工具目录相位、PTC（Code Mode）呈现、提示词注入引擎全部以 cordis 插件行 +
-声明式配置提供，任何 dsh 预设可自由装配。
+工具目录相位、PTC（Code Mode）呈现、指令文件提示与提示词注入引擎全部以
+共享 ESM 实现 + cordis 插件行/声明式配置提供，任何 dsh 预设可自由装配。
 
 ## 复制协议（跨项目复用）
 
@@ -22,7 +22,8 @@
 
 | 模块行 | 引擎文件 | 职责 |
 |---|---|---|
-| `context-gate` | engine/context-gate.mjs | 注入门控：未晋升时清空运行时上下文 + pre-step kind 白名单；晋升后 deferredSources 延迟注入 / instructionHint 一次性提示 |
+| `context-gate` | engine/context-gate.mjs | 注入门控：未晋升时清空运行时上下文 + pre-step kind 白名单；可选调用 instruction-hint 完成全文转换 |
+| `instruction-hint` | engine/instruction-hint.mjs | 通用指令文件探测、建议式 hint、物化 agents-instruction.md 读取与 agent-instructions 转换；prompt-config 与 context-gate 共用 |
 | `tool-bootstrap` | engine/tool-bootstrap.mjs | 首轮工具目录窄化（bootstrap 对）→ 晋升后恢复完整目录；bootstrapMaxTokens 封顶；promoteGate 门控；personaSectionsOnly / workspaceLine |
 | `code-presentation` | engine/code-presentation.mjs | 晋升后 PTC mode 呈现（`tools.presentAs('ptc')`），compaction/end 释放 |
 | `prompt-config-engine` | engine/prompt-config-engine.mjs | 提示词配置执行器（per-config `promotion: main / include-subagents` 门控） |
@@ -44,7 +45,7 @@
 - 晋升信号：`tool/call` 和/或 `assistant/message`（`promoteOn`，默认 either）；
 - `compaction/end` 为边界：压缩后回到受控相位（首轮条件重现），重新晋升再恢复；
 - 子代理：默认视为已晋升（继承完整上下文/目录）；`includeSubagents: true` 时跟随主会话相位；
-- 门控模式（liangshen 扩展）：`promoteGate: true` 要求首段 reasoning minimal-like
+- 严格门控模式（通用 opt-in 扩展）：`promoteGate: true` 要求首段 reasoning minimal-like
   （`we` 无 `let me`）+ 工具调用才晋升，`maxPromoteSteps`（默认 4）步数兜底，
   `promoteAfterFirstResponse: true` 无工具首响应/首轮结束即晋升。
 
@@ -121,7 +122,7 @@ moduleConfigs:
     stagePreUnlock: 1
 ```
 
-liangshen 全量门控（完整示例见 `preset/liangshen/preset.yml`）：
+严格两阶段门控示例：
 
 ```yaml
 moduleConfigs:
@@ -143,7 +144,7 @@ moduleConfigs:
 
 ## 重建与验证
 
-- 组合库重建：`pnpm rebuild:composition`（官方源码切块 + `source/local/` 本地模块）；
-- 本地新增模块放 `engine/compositions/source/local/<name>.yml`，并在
-  `scripts/rebuild-composition.mjs` 的 MODULES 清单登记；
+- 组合重建：`pnpm rebuild:composition`（只生成 `library/` 的官方切块/变体；`source/local/` 保持本地源文件，不复制）；
+- 本地新增模块放 `engine/compositions/source/local/<name>.yml`，重建脚本校验后直接装配；
+  官方行变体在 `OFFICIAL_MODULES` 显式登记并生成到 `library/`；两处同名会 fail loud；
 - 验证三连：`pnpm typecheck` + `pnpm lint` + `pnpm test`。

@@ -1,7 +1,13 @@
 # module: official-tool-presentation
-# source: deepseek-harness official code agent preset (tool-presentation)
+# source: deepseek-harness/packages/preset/agent-presets/presets/ptc/agent.cordis.yml
+# local patches: 0
 
+# ── presentation ────────────────────────────────────────────────────────────
+
+# PTC mode for this agent alone. The row waits for the host's `codeRuntime`
+# rather than assuming it: a deployment that composes no TypeScript runtime
+# fails this preset at mount, naming this id, instead of at the first request.
 - id: tool-presentation
   name: '@deepseek-ai/dsh-agent-tool-presentation'
   config:
-    mode: code
+    mode: ptc

@@ -1,11 +1,6 @@
 # module: tool-goal
-# source: ./deepseek-harness/packages/preset/agent-presets/presets/standard/agent.cordis.yml
+# source: deepseek-harness/packages/preset/agent-presets/presets/standard/agent.cordis.yml
 # local patches: 0
 
 - id: tool-goal
   name: '@deepseek-ai/dsh-tool-goal'
-
-# ── plan mode ───────────────────────────────────────────────────────────────
-
-# Plan state is per-agent by nature, so an entry-local realm is not a
-# workaround here — it is the correct lifetime.

@@ -6,7 +6,7 @@
  * `code-presentation` plugin (mounted as a separate row), not here.
  * Injected-context control lives in the companion `context-gate` plugin.
  *
- * GATE MODE (liangshen stabilize 扩展, source: xiaobright/dsh-anchored-standard
+ * GATE MODE (strict two-phase stabilization extension, source: xiaobright/dsh-anchored-standard
  * MIT + phase-1 quarantine): `promoteGate: true` gates the promotion on the
  * first reasoning block classifying minimal-like (`we` present, no `let me`),
  * `maxPromoteSteps` (default 4) is the gate fallback, and

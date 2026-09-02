@@ -1,6 +1,12 @@
 # module: official-persistent-shell
-# source: deepseek-harness official minimal agent preset (persistent-shell)
+# source: deepseek-harness/packages/preset/agent-presets/presets/minimal/agent.cordis.yml
+# local patches: 0
 
+# The PTY registry is an agent-owned service, so it lives in an entry-local
+# realm. The backend still consumes the host sandbox policy and subprocess
+# implementation, while the tool registers into this agent's scoped catalog.
+# Exactly one shell stack mounts per host: the bash stack gates off win32 and
+# its pwsh twin gates off POSIX, mirroring the one-shot shell rows.
 - id: persistent-shell
   name: cordis:group
   group: true
@@ -51,6 +57,3 @@
           * Use native Windows paths (C:\...) and $env:NAME variables; this is PowerShell, not bash.
           * Please avoid commands that may produce a very large amount of output.
           * Please run long lived commands in the background, e.g. 'Start-Job' or start a server with Start-Process.
-
-# The bare local filesystem shadows the host's sandboxed provider only for this
-# preset. The editor shares that realm and requires absolute paths.

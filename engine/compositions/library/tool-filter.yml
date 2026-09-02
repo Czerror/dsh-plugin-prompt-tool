@@ -1,8 +1,0 @@
-# module: tool-filter
-# source: engine/compositions/source/local/tool-filter.yml (本地附加,非官方模块)
-# 主会话常驻工具白名单/黑名单：作用于任意注册工具（含第三方插件工具）。
-# config 由参数桥按 params.toolFilterAllow/Deny/Subagents 合并；
-# 未声明 = 不过滤（官方默认），见 tool-filter.mjs。
-
-- id: tool-filter
-  name: ./engine/tool-filter.mjs

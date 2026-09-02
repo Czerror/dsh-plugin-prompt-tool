@@ -90,7 +90,7 @@ pnpm --dir $Repo rebuild:composition
 - 生成文件名使用 4 位零填充前缀（`0000-`），避免大角色卡 / 大预设超过 10 条后字典序错乱。
 - 通用过滤、插值、模型范围、主/子代理受众、幂等和晋升语义集中在 `engine/` 共享模块，不在每种 strategy 重复实现。
 - `compaction/end` 是 epoch 边界；修改 context-gate、tool-bootstrap、code-presentation 或 prompt-config-engine 时同步验证主会话、子代理、压缩后重晋升与 disposer 行为。
-- 本地组合源改 `engine/compositions/source/local/*.yml`；官方切块和本地源经 `pnpm rebuild:composition` 生成 `engine/compositions/library/`，不得直接修补 library 产物。
+- 本地组合模块只改 `engine/compositions/source/local/*.yml`；`engine/compositions/library/` 只存 `pnpm rebuild:composition` 生成的官方切块/变体。装配按 source/local 与 library 两处查找，同名重叠直接失败；不得把本地源复制回 library 或直接修补生成物。
 - YAML runtime vendor 由 `pnpm sync:yaml` 生成 `engine/vendor/yaml/`，不得手改 vendored 文件。
 - 上游 anchored 快照只通过 `pnpm sync:anchored` 更新。同步后保留本项目特有的子代理放行、上下文门控、Web/TUI、Skills 与预设生成语义，不做盲目覆盖。
 

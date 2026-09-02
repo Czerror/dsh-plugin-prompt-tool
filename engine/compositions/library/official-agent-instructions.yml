@@ -1,17 +1,8 @@
 # module: official-agent-instructions
-# source: deepseek-harness official standard agent preset (agent-instructions)
+# source: deepseek-harness/packages/preset/agent-presets/presets/standard/agent.cordis.yml
+# local patches: 0
 
 - id: agent-instructions
   name: '@deepseek-ai/dsh-agent-instructions'
   config:
     maxBytes: 65536
-
-# ── shell ───────────────────────────────────────────────────────────────────
-
-# `shell-env` stays in the HOST composition: `apps/cli/src/web.ts` injects it to
-# publish `DSH_WEB_URL`/`DSH_WEB_MODE`, and a host row that injects a service is
-# the criterion for host-plane ownership — injection resolves before any session
-# exists, so there is no agent to key by. Behind a preset realm those variables
-# never reached the model's shell at all. Both shell tools consume the host
-# registry from here; their executors (`bash-sandbox`/`pwsh-sandbox`) are
-# host-plane too.

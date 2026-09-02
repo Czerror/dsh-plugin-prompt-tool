@@ -4,7 +4,7 @@
  *
  * 用法：
  *   node scripts/export-preset.mjs <预设id> [目标目录]
- *   DSH_HOME="D:\AI\DeepSeek harness\.dsh" node scripts/export-preset.mjs liangshen ./out
+ *   DSH_HOME="D:\AI\DeepSeek harness\.dsh" node scripts/export-preset.mjs anchored ./out
  *
  * 目标目录缺省为 ./preset-export-<id>；完整目录拷贝（preset.yml / agent.cordis.yml /
  * engine / .mjs 本地模块等），与导入功能（importPresetPackage）互为逆操作。

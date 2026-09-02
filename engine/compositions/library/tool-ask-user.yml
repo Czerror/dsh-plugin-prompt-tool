@@ -1,5 +1,5 @@
 # module: tool-ask-user
-# source: ./deepseek-harness/packages/preset/agent-presets/presets/standard/agent.cordis.yml
+# source: deepseek-harness/packages/preset/agent-presets/presets/standard/agent.cordis.yml
 # local patches: 0
 
 # ── remaining model-facing rows ─────────────────────────────────────────────

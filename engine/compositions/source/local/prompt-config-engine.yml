@@ -1,13 +1,7 @@
+# module: prompt-config-engine
+# source: engine/compositions/source/local/prompt-config-engine.yml (本地附加,非官方模块)
+
 - id: prompt-config-engine
   name: ./engine/prompt-config-engine.mjs
   config:
     configsDir: ../prompt-configs
-
-# ── PTC run_code environment (prompt-tool local addition) ──────────────────
-#
-# Official Code Mode runs the model program in a worker with env={}; the
-# program cannot read system environment. This row patches the reserved
-# run_code transport so every program gets a frozen `env` global containing
-# the whitelisted non-secret host variables below plus managed DSH_* facts
-# and DSH_WORKSPACE. Add deployment-specific names to envKeys as needed.
-# Credential-shaped names (KEY/PASSWORD/SECRET/TOKEN) are always rejected.

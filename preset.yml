@@ -434,7 +434,8 @@ modules:
 # ── moduleConfigs（可选）：行级 config 直写通道 ──────────────────────────────
 # 仅用于参数桥未覆盖的行级 config（ST 导入等直写 tool-web.fetch / tool-filter.deny）。
 # 合并优先级：参数桥（params/UI）> moduleConfigs > 行默认；moduleConfigs 不再锁定覆盖
-# UI 可管理参数。库行默认值见 engine/compositions/library/*.yml，模板一般无需声明本段。
+# UI 可管理参数。行默认值来自 engine/compositions/source/local/*.yml（本地模块）或
+# engine/compositions/library/*.yml（官方切块/变体），模板一般无需声明本段。
 # 示例（覆盖库行默认的模块 config 时）：
 #   moduleConfigs:
 #     custom-bash:

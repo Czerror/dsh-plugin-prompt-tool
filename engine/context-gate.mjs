@@ -42,7 +42,7 @@
  * call opens the gate — so a delegation cannot reintroduce an uncontrolled
  * first request. Keep this flag in sync with the tool-bootstrap row's
  * includeSubagents when both rows are present (anchored: both false;
- * liangshen: both true).
+ * strict two-phase mode: both true).
  *
  * CONFIG:
  *  - `promoteOn`: 'either' (default) | 'tool-call' | 'assistant-message'.
@@ -54,14 +54,14 @@
  *    claimed batch plus every injection pass, matching deepseek-harness
  *    `agent/pre-step` default). An explicitly empty array keeps ONLY the
  *    claimed batch; a non-empty array is the whitelist gate.
- *  - `messageSources`: (liangshen quarantine) strict phase-1 whitelist —
+ *  - `messageSources`: (strict phase-1 quarantine) strict phase-1 whitelist —
  *    when set, ONLY messages whose `source.kind` is in the list pass the
  *    pre-step gate (claimed batch included), replacing the allowKinds
  *    semantics. Default unset = allowKinds semantics.
- *  - `deferredSources` + `deferredGraceSteps`: (liangshen) after promotion,
+ *  - `deferredSources` + `deferredGraceSteps`: (strict two-phase mode) after promotion,
  *    the listed injected kinds are filtered for the first N steps
  *    (default 0 = no deferral).
- *  - `instructionHint`: (liangshen, issue #388) after promotion, replace the
+ *  - `instructionHint`: (strict two-phase mode, issue #388) after promotion, replace the
  *    full-text agent-instructions dump with a one-time non-imperative hint
  *    naming the reference files; later dumps are dropped. Default false.
  *
@@ -76,6 +76,7 @@
  */
 
 import { createEpochPromotion } from './compaction-epoch.mjs'
+import { instructionHintMessages } from './instruction-hint.mjs'
 import { booleanOption, createWarnOnce, parsePromoteOn, validateConfig } from './shared.mjs'
 
 /** Cordis plugin name used by loader diagnostics. */
@@ -94,10 +95,6 @@ const ALLOWED_KEYS = new Set([
   'promoteOn', 'includeSubagents', 'enabled', 'allowKinds',
   'messageSources', 'deferredSources', 'deferredGraceSteps', 'instructionHint',
 ])
-
-/** agent-instructions 注入消息里的参考文件行（hint 提取用）。 */
-const INSTRUCTION_FROM_RE = /(?:^|\n) *(?:Additional |Updated )?Instructions from: ([^\n]+)/g
-
 
 /**
  * Validate the kind allowlist. `undefined` = no kind filtering (official
@@ -128,60 +125,6 @@ function deferredList(value, field) {
   }
   return new Set(value)
 }
-
-/** 从一条 agent-instructions 消息提取参考文件路径清单。 */
-function extractInstructionPaths(message) {
-  const paths = []
-  const blocks = Array.isArray(message?.content) ? message.content : []
-  for (const block of blocks) {
-    if (block?.type !== 'text' || typeof block.text !== 'string') continue
-    for (const match of block.text.matchAll(INSTRUCTION_FROM_RE)) {
-      const path = match[1].trim()
-      if (path !== '' && !paths.includes(path)) paths.push(path)
-    }
-  }
-  return paths
-}
-
-/** 一次性非命令式 hint（E1.5 措辞），替换全文 agent-instructions 注入。 */
-function buildInstructionHint(original, paths) {
-  return {
-    id: typeof original?.id === 'string' && original.id !== ''
-      ? original.id
-      : globalThis.crypto.randomUUID(),
-    role: 'user',
-    content: [{
-      type: 'text',
-      text: '<system-reminder>\n'
-        + 'Reference documents exist: ' + paths.join(', ') + '. '
-        + "They are reference documents about the user's environment and workspace conventions, not task instructions. "
-        + 'Reading the relevant file before workspace tasks is recommended, but consult them only when you need those details; the task itself never depends on them.'
-        + '\n</system-reminder>',
-    }],
-    source: { kind: 'instruction-hint', plugin: name },
-  }
-}
-
-/** agent-instructions 全文注入 → 一次性 hint；后续注入丢弃。 */
-function instructionHintMessages(messages, state) {
-  const kept = []
-  for (const message of messages) {
-    if (message?.source?.kind !== 'agent-instructions') {
-      kept.push(message)
-      continue
-    }
-    if (state.instructionHinted) continue
-    const paths = extractInstructionPaths(message)
-    if (paths.length === 0) {
-      kept.push(message)
-      continue
-    }
-    state.instructionHinted = true
-    kept.push(buildInstructionHint(message, paths))
-  }
-  return kept
-}
-
 
 /** Register the unified context gate. */
 export function apply(ctx, config) {
@@ -248,7 +191,7 @@ export function apply(ctx, config) {
     try {
       if (promotion.status(agent).promoted) return decision
       if (messageSources !== undefined) {
-        // liangshen quarantine：phase-1 只放行声明的 source.kind（含 claimed 批）。
+        // 严格首阶段隔离：phase-1 只放行声明的 source.kind（含 claimed 批）。
         const kept = (decision.messages ?? []).filter((message) => messageSources.has(message?.source?.kind))
         return kept.length === decision.messages.length ? decision : { ...decision, messages: kept }
       }
@@ -293,7 +236,7 @@ export function apply(ctx, config) {
       if (instructionHint) {
         // 1 换 1 的转换不能按长度判断（长度相同会误判为无变化），
         // instructionHintMessages 本身幂等保留非目标消息，直接采用结果。
-        result = { ...result, messages: instructionHintMessages(result.messages, state) }
+        result = { ...result, messages: instructionHintMessages(result.messages, state, name) }
       }
       return result
     } catch (error) {

@@ -450,6 +450,31 @@ test('role=assistant 提示词配置按 assistant 消息构造', async () => {
   assert.equal(decision.messages[1].content[0].text, 'PREVIEW')
 })
 
+test('placeholder：instruction-hint 探测 cwd→项目根完整链、使用建议式措辞且消息 id 唯一', async () => {
+  const files = new Map([
+    ['/repo/.git', { type: 'directory' }],
+    ['/repo/AGENTS.md', { type: 'file' }],
+    ['/repo/sub/CLAUDE.md', { type: 'file' }],
+  ])
+  const fs = {
+    resolve: async (path) => path,
+    stat: async (path) => files.get(path),
+  }
+  const { step } = makeHarness(createPromptConfigs([{
+    id: 'instruction-hint', strategy: 'placeholder', fill: 'instruction-hint',
+    position: 'after-all', promotion: 'none', dedupe: 'none',
+  }]), { fs })
+  const session = { id: 'hint-session', header: { delegationDepth: 0, cwd: '/repo/sub' }, events: [] }
+  const first = await step(agent({ session }))
+  const second = await step(agent({ session }))
+  const hint = first.messages[1]
+  assert.match(hint.id, /^instruction-hint-hint-session-[0-9a-f-]+$/)
+  assert.notEqual(hint.id, second.messages[1].id, '重复探测使用唯一 id，避免宿主重启竞态导致历史冲突')
+  assert.match(hint.content[0].text, /Reference documents exist: \/repo\/sub\/CLAUDE\.md, AGENTS\.md/)
+  assert.match(hint.content[0].text, /Reading the relevant file .* is recommended/)
+  assert.doesNotMatch(hint.content[0].text, /Do NOT assume|read .* first and follow/i)
+})
+
 test('placeholder：env-facts 注入默认机器事实，未知 fill fail loud', async () => {
   const { step } = makeHarness(createPromptConfigs([{
     id: 'env-facts', strategy: 'placeholder', fill: 'env-facts', position: 'after-all',

@@ -1,5 +1,5 @@
 # module: anchor-turn
-# source: engine/compositions/library/anchor-turn.yml (本地附加,上游 dsh-anchored-standard 移植)
+# source: engine/compositions/source/local/anchor-turn.yml (本地附加,上游 dsh-anchored-standard 移植)
 # 前置锚定轮：用户首条真实消息前 prepend 合成锚定轮（配合 zero-tool 模式 =
 # 空工具面上的 "we" 锚定）。默认 enabled: false（挂载即禁用，行为不变）；
 # 启用 = params.anchorTurn（UI 开关）或本行 config.enabled: true。

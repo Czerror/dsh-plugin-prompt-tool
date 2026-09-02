@@ -748,28 +748,29 @@ test.after(() => {
 test('writePreset 旧版种子副本回退：纯元数据遮蔽包内模板 → 回退渲染 + 参数源升级', () => {
   // 模拟真实布局：presetDir 即隔离 DSH_HOME 的 .agent-presets（参数源与目标同目录，升级闭环）
   const presetDir = join(home, '.agent-presets')
-  const userLiangshen = join(presetDir, 'liangshen')
+  const userMinimal = join(presetDir, 'minimal')
   try {
-    mkdirSync(userLiangshen, { recursive: true })
+    rmSync(userMinimal, { recursive: true, force: true })
+    mkdirSync(userMinimal, { recursive: true })
     // 旧版种子副本：纯元数据（无 modules/params/promptConfigs，目录无 agent.cordis.yml）
-    writeFileSync(join(userLiangshen, 'preset.yml'), 'name: 梁神模式\ndescription: 旧版种子副本\norder: 4\n', 'utf8')
+    writeFileSync(join(userMinimal, 'preset.yml'), 'name: 极简模式（旧）\ndescription: 旧版种子副本\norder: 3\n', 'utf8')
     const warnings = []
-    writePreset('PROMPT', { ...makeOptions(presetDir), presetTemplate: 'liangshen', warn: (message) => warnings.push(message) })
+    writePreset('PROMPT', { ...makeOptions(presetDir), presetTemplate: 'minimal', warn: (message) => warnings.push(message) })
     // 回退包内模板渲染成功：组合指向共享引擎模块（包内新版参数化形态）
-    const cordis = readFileSync(join(presetDir, 'liangshen', 'agent.cordis.yml'), 'utf8')
+    const cordis = readFileSync(join(presetDir, 'minimal', 'agent.cordis.yml'), 'utf8')
     assert.ok(cordis.includes('../.engine/tool-bootstrap.mjs'), '组合来自包内新版模板（引擎模块而非本地 .mjs）')
     // 参数源升级：preset.yml 获得包内 modules 段，保留旧元数据命名
-    const spec = parseYaml(readFileSync(join(presetDir, 'liangshen', 'preset.yml'), 'utf8'))
+    const spec = parseYaml(readFileSync(join(presetDir, 'minimal', 'preset.yml'), 'utf8'))
     assert.ok(Array.isArray(spec.modules) && spec.modules.length > 0, '参数源升级为包内 modules 清单')
-    assert.equal(spec.name, '梁神模式', '旧 name 保留（用户命名不丢）')
+    assert.equal(spec.name, '极简模式（旧）', '旧 name 保留（用户命名不丢）')
     assert.equal(spec.description, '旧版种子副本', '旧 description 保留')
     assert.ok(warnings.some((message) => message.includes('回退')), '回退发生时 warn')
     // 闭环：升级后的参数源可渲染，再次物化不再回退
     const warnings2 = []
-    writePreset('PROMPT', { ...makeOptions(presetDir), presetTemplate: 'liangshen', warn: (message) => warnings2.push(message) })
+    writePreset('PROMPT', { ...makeOptions(presetDir), presetTemplate: 'minimal', warn: (message) => warnings2.push(message) })
     assert.ok(!warnings2.some((message) => message.includes('回退')), '升级闭环后不再回退')
   } finally {
-    rmSync(userLiangshen, { recursive: true, force: true })
+    rmSync(userMinimal, { recursive: true, force: true })
   }
 })
 

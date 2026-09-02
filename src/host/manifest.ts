@@ -12,7 +12,7 @@
 
 import { readFileSync, existsSync, readdirSync, mkdirSync, rmSync, writeFileSync, cpSync, renameSync, statSync } from 'node:fs'
 import { spawn } from 'node:child_process'
-import { basename, dirname, join, resolve, sep } from 'node:path'
+import { basename, join, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Pair, Scalar, parse as parseYaml, parseDocument, YAMLMap, YAMLSeq } from 'yaml'
 import { DEFAULT_PRESET_DIR, DSH_HOME } from './paths.ts'
@@ -26,7 +26,7 @@ export interface PresetSpec {
   engineCompat: string
   meta?: Record<string, unknown>
   content?: { presetText?: string; agentsText?: string }
-  /** 模块清单(参数文件决定组合内容):按序装配 engine/compositions/library/<name>.yml。 */
+  /** 模块清单(参数文件决定组合内容):按序装配 source/local 与 library 中的唯一模块。 */
   modules?: string[]
   /** 兼容字段:内联组合文本或组合清单名。 */
   composition?: string
@@ -803,37 +803,57 @@ export function buildModuleConfigsFromParams(params: Record<string, unknown>): R
   return out
 }
 
-/** 按参数文件的 modules 清单从引擎模块库装配组合文本。 */
 /** 空模块清单兜底骨架（自定义预设空白起点：模块集与 minimal 一致，参数/配置全空）。 */
 const FALLBACK_MODULES = ['official-persistent-shell', 'bootstrap-filesystem',
   'context-gate', 'tool-bootstrap', 'code-presentation', 'prompt-config-engine',
   'run-code-env', 'custom-bash', 'skill-search']
 
-function assembleModules(spec: PresetSpec, library: string): string {
+/**
+ * 组合模块目录分工：
+ * - source/local：本项目自有模块的唯一源文件；
+ * - library：由 rebuild-composition 生成的官方切块与少量官方变体。
+ * 同名文件禁止同时存在，避免 source 与产物漂移。
+ */
+function compositionModuleDirs(): string[] {
+  const root = join(packageEngineDir(), 'compositions')
+  return [join(root, 'source', 'local'), join(root, 'library')]
+}
+
+function assertBareModuleName(name: string): void {
+  if (name.includes('/') || name.includes('\\') || name === '.' || name === '..' || name.includes('..')) {
+    throw new Error(`composition module name ${JSON.stringify(name)} must be a bare library name`)
+  }
+}
+
+function moduleFile(name: string): string {
+  assertBareModuleName(name)
+  const candidates = compositionModuleDirs().map((dir) => join(dir, `${name}.yml`))
+  const existing = candidates.filter((file) => existsSync(file))
+  if (existing.length > 1) {
+    throw new Error(`composition module ${name} is duplicated across source/local and library: ${existing.join(', ')}`)
+  }
+  if (existing.length === 0) {
+    throw new Error(`composition module ${name} not found in source/local or library`)
+  }
+  return existing[0]!
+}
+
+function assembleModules(spec: PresetSpec): string {
   const parts: string[] = []
   for (const name of spec.modules ?? []) {
     if (typeof name !== 'string' || name.length === 0) {
       throw new Error(`preset ${spec.id}: modules must be non-empty strings`)
     }
-    // 模块名 containment：只允许裸库名（禁路径分隔符 / .. / 点目录），
-    // 否则 join(library, name) 可越出引擎组合库读取任意文件。
-    if (name.includes('/') || name.includes('\\') || name === '.' || name === '..' || name.includes('..')) {
-      throw new Error(`preset ${spec.id}: module name ${JSON.stringify(name)} must be a bare library name`)
-    }
+    // 模块名 containment：只允许裸库名（禁路径分隔符 / .. / 点目录）。
     try {
-      parts.push(readFileSync(join(library, `${name}.yml`), 'utf8'))
+      parts.push(readFileSync(moduleFile(name), 'utf8'))
     } catch (error) {
-      throw new Error(`preset ${spec.id}: module ${name} not found in engine library: ${String((error as Error).message ?? error)}`)
+      throw new Error(`preset ${spec.id}: ${String((error as Error).message ?? error)}`)
     }
   }
   return parts.join('\n')
 }
 
-/**
- * 加载预设声明的组合:
- *   1. `modules:` 清单 → 引擎模块库按序装配(最终形态);
- *   2. 兼容 `composition:` 内联文本或组合清单名。
- */
 /**
  * 行级 config 合并:仅支持 map 型 config 浅合并;
  * 数组型 config(如 delegation 组)按子行 id 嵌套合并;未声明模块原样保留。
@@ -899,12 +919,11 @@ export function applyModuleConfigs(raw: string, configs: Record<string, Record<s
  *  - `composition:` 内联文本或组合清单名。
  */
 export function loadCompositionText(spec: PresetSpec, templateDir?: string): string {
-  const library = join(packageEngineDir(), 'compositions', 'library')
   let raw: string
   const modules = Array.isArray(spec.modules) && spec.modules.length === 0
     ? FALLBACK_MODULES
     : spec.modules
-  if (Array.isArray(modules)) raw = assembleModules({ ...spec, modules }, library)
+  if (Array.isArray(modules)) raw = assembleModules({ ...spec, modules })
   else {
     const name = typeof spec.composition === 'string' ? spec.composition : ''
     if (name.includes('\n')) raw = name
@@ -926,11 +945,10 @@ export function loadCompositionText(spec: PresetSpec, templateDir?: string): str
       }
     }
     else if (name.length > 0) {
-      const file = join(dirname(library), `${name}.yml`)
       try {
-        raw = readFileSync(file, 'utf8')
+        raw = readFileSync(moduleFile(name), 'utf8')
       } catch (error) {
-        throw new Error(`preset ${spec.id}: engine composition ${name} not found (${file}): ${String((error as Error).message ?? error)}`)
+        throw new Error(`preset ${spec.id}: ${String((error as Error).message ?? error)}`)
       }
     } else if (templateDir !== undefined) {
       // 官方用户预设约定：preset.yml 仅元数据时，组合文件为同目录 agent.cordis.yml。

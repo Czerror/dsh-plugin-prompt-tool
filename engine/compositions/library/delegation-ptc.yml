@@ -1,5 +1,5 @@
-# module: delegation
-# source: deepseek-harness/packages/preset/agent-presets/presets/standard/agent.cordis.yml
+# module: delegation-ptc
+# source: deepseek-harness/packages/preset/agent-presets/presets/ptc/agent.cordis.yml
 # local patches: 0
 
 # ── delegation and workflows ────────────────────────────────────────────────
@@ -73,6 +73,9 @@
 
     - id: tool-workflow
       name: '@deepseek-ai/dsh-tool-workflow'
+      # Keep the engine above for `ralph`, but do not publish a second
+      # model-authored orchestration surface beside `run_code` in PTC mode.
+      disabled: true
 
     - id: tool-ralph
       name: '@deepseek-ai/dsh-tool-ralph'

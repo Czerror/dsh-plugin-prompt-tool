@@ -11,7 +11,7 @@
 |---|---|---|
 | 契约层 | `shared/engine-params.ts` | `EngineParams`（类型权威）+ `ENGINE_PARAM_KEYS`（运行时键唯一权威，与接口双向相等断言）+ `WRITER_PARAM_KEYS`（writePreset 透传键） |
 | 键集合 | `shared/param-keys.ts` | `PARAM_KEYS` = `ENGINE_PARAM_KEYS` 派生 + 锚定内容键 + `promptConfigs`；variables.yml 排除集 / mutate 拦截 / 读回遍历共用 |
-| 存储层 | `host/manifest.ts` | `loadPresetSpec`（顶层 model/subagentModel 段 → 扁平键，`MODEL_SEGMENT_MAP`）、`savePresetParams`（扁平键 → 段，同源映射；空值删键）、`buildModuleConfigsFromParams`（参数桥）、`renderComposition`（参数桥 > moduleConfigs > 行默认） |
+| 存储层 | `host/manifest.ts` | `loadPresetSpec`（顶层 model/subagentModel 段 → 扁平键，`MODEL_SEGMENT_MAP`）、`savePresetParams`（扁平键 → 段，同源映射；空值删键）、`buildModuleConfigsFromParams`（参数桥）、`renderComposition`（参数桥 > moduleConfigs > 行默认；组合模块从 `source/local` 与 `library` 唯一查找） |
 | 物化层 | `host/write-preset.ts` | `writePreset`：参数 + 内容资产 → 官方预设目录（agent.cordis.yml / prompt-configs / variables.yml）；`runtimeOf` 透传、`modelRequestConfigs` 模型 patch |
 | 装配层 | `index.ts` | `reloadPresetParams`（preset.yml → runtime）、`applyParamOverrides`（旧 overrides.yml 通道）、`rebuildPreset`（写入触发） |
 | 接线层 | `runtime/settings-bridge.ts` | `/param-overrides` GET（读回）/ POST（保存到激活预设 preset.yml） |
@@ -100,10 +100,20 @@ UI 侧 `persistParamOverrides` **条件发送**：
 
 ## 7. 合并优先级（组合行 config）
 
+组合模块目录分工：`engine/compositions/source/local/` 是本项目自有模块的唯一源，
+`engine/compositions/library/` 只保存 `pnpm rebuild:composition` 从官方预设切出的行与
+确有语义差异的变体；`renderComposition` 跨目录发现同名模块时直接失败，避免源文件与
+生成产物漂移。
+
+
 `renderComposition`：**参数桥（params/UI）> moduleConfigs（模板/ST 行级直写）> 行默认**。
 moduleConfigs 仅补充参数桥未覆盖的键（如 ST 导入 tool-web.fetch），不再锁定覆盖 UI 可管理参数（2026-08-25 翻转）。
 
 ## 8. 内容策略三功能与参数归属
+
+`engine/instruction-hint.mjs` 是通用内置能力：`strategy: instruction-hint`、
+`placeholder + fill: instruction-hint` 与 `context-gate.instructionHint` 共用同一组
+文件探测、提示文本与转换函数；它不属于 anchored 预设专属模块。
 
 `engine/strategies.mjs` 三个内容策略是**独立功能**，仅分类器在 fallback 层共用：
 

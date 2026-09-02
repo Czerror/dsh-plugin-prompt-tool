@@ -1,5 +1,5 @@
 # module: deliberation-gate
-# source: engine/compositions/library/deliberation-gate.yml (本地附加,上游 dsh-anchored-standard 移植)
+# source: engine/compositions/source/local/deliberation-gate.yml (本地附加,上游 dsh-anchored-standard 移植)
 # 轨迹深度门：首工具调用前流式深思 < minChars 时 deny 一次（规划式提示）。
 # 默认 enabled: false（挂载即禁用）；启用 = params.deliberationGate（UI 开关）。
 

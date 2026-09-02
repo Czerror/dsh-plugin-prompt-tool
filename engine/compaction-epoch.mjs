@@ -21,7 +21,7 @@
  * to make subagents follow the same bootstrap/anchor phase as top-level
  * sessions.
  *
- * GATE MODE (liangshen 稳定化扩展, source: xiaobright/dsh-anchored-standard
+ * GATE MODE (strict two-phase stabilization extension, source: xiaobright/dsh-anchored-standard
  * MIT + phase-1 quarantine): `promoteGate: true` gates the promotion on the
  * first reasoning block classifying minimal-like (`we` present, no `let me`),
  * with a `maxPromoteSteps` (default 4) fallback; `promoteAfterFirstResponse:
@@ -34,7 +34,7 @@
 
 import { MAX_TRACKED_SESSIONS } from './shared.mjs'
 
-/** 首段 reasoning 块分类（liangshen 移植）：we 且无 let me = minimal-like。 */
+/** 首段 reasoning 块分类（严格门控扩展）：we 且无 let me = minimal-like。 */
 export function classifyReasoning(text) {
   const trimmed = String(text ?? '').trim()
   const we = [...trimmed.matchAll(/\bwe\b/gi)].length
@@ -75,7 +75,7 @@ export function createEpochPromotion(promoteEvents, options = {}) {
     steps: 0,
   })
 
-  /** 门控晋升判定（liangshen decidePromotion 移植）。 */
+  /** 门控晋升判定（严格门控扩展）。 */
   const decideGate = (entry) => {
     if (entry.promoted) return true
     if (entry.toolCalled && !promoteGate) return true

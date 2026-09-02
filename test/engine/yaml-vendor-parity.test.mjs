@@ -32,9 +32,12 @@ function collectCorpus() {
       .filter((entry) => entry.isFile() && /\.ya?ml$/i.test(entry.name))
       .sort((a, b) => a.name.localeCompare(b.name))
       .map((entry) => join('templates', 'tools', entry.name)),
+    ...readdirSync(join(root, 'engine', 'compositions', 'source', 'local'))
+      .filter((name) => name.endsWith('.yml'))
+      .map((name) => join('engine', 'compositions', 'source', 'local', name)),
     ...readdirSync(join(root, 'engine', 'compositions', 'library'))
       .filter((name) => name.endsWith('.yml'))
-      // 参数桥取代 __TOKEN__ 后组合库全部是合法 YAML；保留过滤防御未来引入占位符。
+      // 参数桥取代 __TOKEN__ 后组合模块全部是合法 YAML；保留过滤防御未来引入占位符。
       .filter((name) => !/__[A-Za-z0-9_]+__/.test(readFileSync(join(root, 'engine', 'compositions', 'library', name), 'utf8')))
       .map((name) => join('engine', 'compositions', 'library', name)),
   ]

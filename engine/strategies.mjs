@@ -8,7 +8,8 @@
 import { MAX_TRACKED_SESSIONS, extractText } from './shared.mjs'
 import { MATCH_LOGIC, createAnchorMatcher } from './anchor-match.mjs'
 import { createTaskClassifier } from './classify-task.mjs'
-import { createInstructionHintResolver, createPlaceholderResolver } from './fillers.mjs'
+import { createPlaceholderResolver } from './fillers.mjs'
+import { createInstructionHintResolver } from './instruction-hint.mjs'
 
 const name = 'prompt-config-engine'
 

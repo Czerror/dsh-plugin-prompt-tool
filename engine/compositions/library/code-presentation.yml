@@ -1,8 +1,0 @@
-# module: code-presentation
-# source: engine/compositions/source/local/code-presentation.yml (本地附加,非官方模块)
-# 晋升后 Code Mode (PTC) wire 呈现（从 tool-bootstrap 拆出，与目录窄化解耦）：
-# "只要 PTC 不要 bootstrap" = modules 只挂本行；PTC+bootstrap = 同时挂两行。
-# usePtcMode 默认 false（opt-in）；params.usePtcMode 显式覆盖（参数桥）。
-
-- id: code-presentation
-  name: ./engine/code-presentation.mjs

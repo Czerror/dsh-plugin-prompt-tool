@@ -1,10 +1,16 @@
 # module: official-skill-filesystem-cordis
-# source: deepseek-harness official cordis agent preset (skill-filesystem)
-# 差异含 !!js 表达式（代码类），无法经 moduleConfigs 参数化（YAML tag 不保真），保留独立文件。
+# source: deepseek-harness/packages/preset/agent-presets/presets/cordis/agent.cordis.yml
+# local patches: 0
 
+# The composition-authoring skill travels with this preset rather than living
+# in the user's skill root: it documents THIS deployment's two planes, and a
+# preset is the unit that gets copied and edited. `baseUrl` is the preset's
+# own directory, so the root resolves wherever the preset is installed.
+# Both rows register into THIS preset's layer of the host skill registry, so
+# they need no realm; the agent's merged catalog also carries whatever the
+# deployment registered globally (repository plugins).
 - id: skill-filesystem
   name: '@deepseek-ai/dsh-skill-filesystem'
   config:
     customSkillDirs:
       - !!js "process.getBuiltinModule('node:url').fileURLToPath(new URL('skills/', baseUrl))"
-

@@ -1,12 +1,7 @@
 # module: tool-pwsh
-# source: ./deepseek-harness/packages/preset/agent-presets/presets/standard/agent.cordis.yml
+# source: deepseek-harness/packages/preset/agent-presets/presets/standard/agent.cordis.yml
 # local patches: 0
 
 - id: tool-pwsh
   name: '@deepseek-ai/dsh-tool-pwsh'
   disabled: !!js process.platform !== 'win32'
-
-# ── filesystem ──────────────────────────────────────────────────────────────
-
-# Both register into the host `tools` registry and provide nothing, so
-# they need no realm. The `fs` service and its policy stay in the host.

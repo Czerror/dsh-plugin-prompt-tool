@@ -88,7 +88,7 @@ test('writePreset 关闭时清空组合为空数组，保留 preset.yml 与预�
   // 状态文件已移出预设根；ensurePresetSeed 会幂等补建全部内置预设目录，
   // 清理必须逐个保留其 preset.yml，不能删预设目录本身（防误删回归）。
   const dirs = readdirSync(presetDir).filter((name) => !name.startsWith('.')).sort()
-  assert.deepEqual(dirs, ['anchored', 'creative', 'custom', 'liangshen', 'minimal', 'ptc', 'standard'].sort())
+  assert.deepEqual(dirs, ['anchored', 'creative', 'custom', 'minimal', 'ptc', 'standard'].sort())
   for (const dir of dirs) {
     assert.equal(existsSync(join(presetDir, dir, 'preset.yml')), true, `${dir} 的 preset.yml 必须保留`)
     // 每个预设目录的组合都必须是空数组（关闭开关作用于全部预设，不只是激活预设）。

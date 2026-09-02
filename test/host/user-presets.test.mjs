@@ -16,7 +16,7 @@ const {
 } = await import('../../lib/index.mjs')
 
 const PRESETS_DIR = join(root, '.agent-presets')
-const BUILTIN_IDS = ['anchored', 'creative', 'liangshen', 'minimal', 'ptc', 'standard']
+const BUILTIN_IDS = ['anchored', 'creative', 'minimal', 'ptc', 'standard']
 
 test('removeUserPreset：删除用户预设目录', () => {
   mkdirSync(join(PRESETS_DIR, 'foo'), { recursive: true })
@@ -59,7 +59,7 @@ test('ensurePresetSeed：首次种子化全部内置模板，删除后自动补�
 
 test('listPresets：全部来自用户目录（种子化后内置模板即为用户预设）', () => {
   const presets = listPresets()
-  for (const id of ['anchored', 'creative', 'liangshen', 'minimal', 'ptc', 'standard']) {
+  for (const id of ['anchored', 'creative', 'minimal', 'ptc', 'standard']) {
     const preset = presets.find((entry) => entry.id === id)
     assert.ok(preset !== undefined && preset.user === true, `${id} 应为用户目录预设`)
   }
@@ -126,10 +126,10 @@ test('listPresets：不可渲染预设标记 renderable=false；包内同名可�
     const bad = presets.find((preset) => preset.id === 'my-broken-preset')
     assert.ok(bad, '坏预设仍可列出（UI 展示并灰显，不再哑弹）')
     assert.equal(bad.renderable, false, '无组合源且包内无同名 → 不可渲染')
-    // 种子化 liangshen 副本可渲染；即使副本损坏，包内同名模板可回退 → 仍可用
-    const liangshen = presets.find((preset) => preset.id === 'liangshen')
-    assert.ok(liangshen, '种子化 liangshen 在列表')
-    assert.equal(liangshen.renderable, true, '包内同名模板可回退 → 可渲染')
+    // 种子化 minimal 副本可渲染；包内同名模板可作为回退源。
+    const minimal = presets.find((preset) => preset.id === 'minimal')
+    assert.ok(minimal, '种子化 minimal 在列表')
+    assert.equal(minimal.renderable, true, '包内同名模板可回退 → 可渲染')
   } finally {
     rmSync(broken, { recursive: true, force: true })
   }

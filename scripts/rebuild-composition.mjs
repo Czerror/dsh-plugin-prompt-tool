@@ -1,16 +1,11 @@
-// rebuild-composition.mjs — 从官方 deepseek-harness 内置预设源码重建 anchored-standard 组合模块。
+// rebuild-composition.mjs — 从 DeepSeek Harness 官方内置预设重建共享组合模块。
 //
-// 数据来源(官方):
-//   <repo>/packages/preset/agent-presets/presets/standard/agent.cordis.yml
-//   <repo>/packages/preset/agent-presets/presets/minimal/agent.cordis.yml
-// 官方契约:预设目录 = agent.cordis.yml(顶层 Cordis 行列表,entryListSchema 解析 `!!js`)
-//          + preset.yml(仅展示元数据)。
+// 数据来源(官方):standard / minimal / ptc / cordis 的 agent.cordis.yml。
+// 本脚本只保留一份共享行；官方预设确有语义差异时才生成变体模块
+// （PTC delegation、Cordis skill-filesystem、Anchored shell 补丁等）。
+// 本地模块以 engine/compositions/source/local/*.yml 为唯一源，不复制到 library/；
+// library/ 只保留脚本从官方预设切出的行与确有语义差异的官方变体。
 //
-// 本脚本:
-//   1. 从官方 standard/minimal 按"顶层行 id + 段注释"切出模块;
-//   2. 叠加本项目声明的本地补丁(见 PATCHES 与 applyLocalPatches);
-//   3. 本地新增模块从 source/local/ 逐字复制;
-//   4. 写出 library/*.yml 与 anchored-standard.yml 组合清单。
 // 用法:node scripts/rebuild-composition.mjs [deepseek-harness 仓库路径]
 import { readFileSync, writeFileSync, readdirSync, mkdirSync, rmSync, renameSync, existsSync } from 'node:fs'
 import { basename, join, resolve } from 'node:path'
@@ -18,65 +13,85 @@ import { fileURLToPath } from 'node:url'
 import { parse as parseYaml } from 'yaml'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
-const repo = resolve(process.argv[2] ?? process.env.DSH_HARNESS_REPO ?? join(root, '..', 'deepseek-harness'))
+const repoArg = process.argv.slice(2).find((arg) => arg !== '--')
+const repo = resolve(repoArg ?? process.env.DSH_HARNESS_REPO ?? join(root, '..', 'deepseek-harness'))
 const presetsDir = join(repo, 'packages', 'preset', 'agent-presets', 'presets')
 const compositionDir = join(root, 'engine', 'compositions')
 const libraryDir = join(compositionDir, 'library')
 const localDir = join(compositionDir, 'source', 'local')
 const sourceRepo = basename(repo) || 'deepseek-harness'
+const OFFICIAL_PRESETS = ['standard', 'minimal', 'ptc', 'cordis']
 
-/** 按顶层行 id 切分官方组合文本;段注释归入其后第一个行模块。 */
-function sections(text) {
-  const lines = text.split('\n')
+/**
+ * 按顶层行切分官方组合文本。
+ * 每一行前紧邻的顶层注释/空行归该行；下一行的说明不再泄漏到上一模块。
+ */
+function sections(text, source) {
+  const lines = text.replaceAll('\r\n', '\n').split('\n')
   const rows = []
-  const markers = []
   for (let i = 0; i < lines.length; i += 1) {
     if (/^- id:/.test(lines[i])) rows.push(i)
-    if (/^# ──/.test(lines[i])) markers.push(i)
   }
+  const starts = rows.map((row, index) => {
+    const lower = index === 0 ? 0 : rows[index - 1] + 1
+    let start = row
+    while (start > lower) {
+      const previous = lines[start - 1]
+      if (previous.length !== 0 && !previous.startsWith('#')) break
+      start -= 1
+    }
+    if (index === 0) {
+      const marker = lines.findLastIndex((line, lineIndex) => lineIndex < row && /^# ──/.test(line))
+      if (marker >= 0) start = marker
+    }
+    return start
+  })
   const out = new Map()
-  for (let r = 0; r < rows.length; r += 1) {
-    const id = lines[rows[r]].replace(/^- id:\s*/, '').trim()
-    const prevRow = r === 0 ? -1 : rows[r - 1]
-    const ownMarkers = markers.filter((marker) => marker > prevRow && marker < rows[r])
-    const start = ownMarkers.length > 0 ? ownMarkers[ownMarkers.length - 1] : rows[r]
-    const end = r + 1 < rows.length ? rows[r + 1] : lines.length
-    out.set(id, lines.slice(start, end).join('\n').replace(/\n+$/, '\n'))
+  for (let index = 0; index < rows.length; index += 1) {
+    const id = lines[rows[index]].replace(/^- id:\s*/, '').trim()
+    const end = index + 1 < starts.length ? starts[index + 1] : lines.length
+    const body = lines.slice(starts[index], end).join('\n').replace(/^\n+/, '').replace(/\n*$/, '\n')
+    const parsed = parseYaml(body, { logLevel: 'silent' })
+    if (!Array.isArray(parsed) || parsed.length !== 1 || parsed[0]?.id !== id) {
+      throw new Error(`${source}: failed to split top-level row ${id}`)
+    }
+    out.set(id, body)
   }
   return out
 }
 
-const standard = sections(readFileSync(join(presetsDir, 'standard', 'agent.cordis.yml'), 'utf8'))
-const minimal = sections(readFileSync(join(presetsDir, 'minimal', 'agent.cordis.yml'), 'utf8'))
+const officialSections = new Map()
+const officialRows = new Map()
+for (const preset of OFFICIAL_PRESETS) {
+  const source = `${preset}/agent.cordis.yml`
+  const text = readFileSync(join(presetsDir, preset, 'agent.cordis.yml'), 'utf8')
+  officialSections.set(preset, sections(text, source))
+  const parsed = parseYaml(text, { logLevel: 'silent' })
+  if (!Array.isArray(parsed)) throw new Error(`${source}: composition must be a top-level row list`)
+  officialRows.set(preset, new Map(parsed.map((row) => [row.id, row])))
+}
 
-/** 本地补丁:模块 id → 对官方切块应用的字符串替换(全部幂等,缺失时 fail loud)。 */
+/** 本地补丁:输出模块 id → 对官方切块应用的字符串替换(全部幂等,缺失时 fail loud)。 */
 const PATCHES = {
+  // Anchored Standard 在 Windows 使用 custom-bash；普通 tool-bash 永久关闭。
   'tool-bash': [
     { from: 'disabled: !!js process.platform === \'win32\'', to: 'disabled: true' },
   ],
-  // 上游已内置 per-row 平台分派（terminal-bash/persistent-bash 在 win32 禁用，
-  // pwsh 行在 POSIX 禁用）——shellPath 探测补丁随上游取消（bash 行不再在
-  // Windows 挂载，探测无意义）。本地仅保留整组 win32 禁用（Windows 用 tool-pwsh）。
-
   'bootstrap-filesystem': [
     { from: '- id: filesystem\n', to: '- id: bootstrap-filesystem\n' },
   ],
-  // 上游 anchored-standard 补丁（issue #44）：/bin/bash 不存在的主机（NixOS 等）
-  // 用裸 bash 走同一 scrubbed PATH 解析，避免 PTY 启动期 execvp 失败。
   'persistent-shell': [
     {
-      // Anchored Standard 同时装普通 tool-pwsh；Windows 必须整组关闭 persistent-shell，
-      // 否则 persistent-pwsh 会在同一 tools scope 再注册一次 "pwsh"。
+      // Anchored 同时挂普通 tool-pwsh；Windows 整组关闭 persistent-shell，避免重复注册 pwsh。
       from: "- id: persistent-shell\n  name: cordis:group\n  group: true\n  isolate:",
       to: "- id: persistent-shell\n  name: cordis:group\n  group: true\n  disabled: !!js process.platform === 'win32'\n  isolate:",
     },
     {
+      // 对齐 dsh-anchored-standard issue #44：NixOS 等无 /bin/bash 时回退 PATH 中的 bash。
       from: "- id: terminal-bash\n      name: '@deepseek-ai/dsh-terminal-bash'\n      disabled: !!js process.platform === 'win32'\n      config:\n        timeoutMs: 300000",
       to: "- id: terminal-bash\n      name: '@deepseek-ai/dsh-terminal-bash'\n      disabled: !!js process.platform === 'win32'\n      config:\n        shellPath: !!js \"process.getBuiltinModule?.('node:fs')?.existsSync('/bin/bash') ? '/bin/bash' : 'bash'\"\n        timeoutMs: 300000",
     },
   ],
-  // alpha.1 起官方 delegation 已采用 backgroundMode: continuable/one-shot 契约，
-  // 旧的 enableRunInBackground: false 降级补丁已删除。
 }
 
 function applyPatches(id, text, source) {
@@ -90,84 +105,105 @@ function applyPatches(id, text, source) {
   return out
 }
 
-/** 模块清单:顺序即最终 agent.cordis.yml 的行序。 */
-const MODULES = [
-  { id: 'context-gate', from: 'local' },
-  { id: 'tool-bootstrap', from: 'local' },
-  { id: 'code-presentation', from: 'local' },
-  { id: 'tool-config-engine', from: 'local' },
-  { id: 'character-tools', from: 'local' },
-  { id: 'world-book-tools', from: 'local' },
-  { id: 'session-var-tools', from: 'local' },
-  { id: 'prompt-config-engine', from: 'local' },
-  { id: 'run-code-env', from: 'local' },
-  { id: 'persona', from: 'standard' },
-  { id: 'tool-bash', from: 'standard' },
-  { id: 'tool-pwsh', from: 'standard' },
-  { id: 'persistent-shell', from: 'minimal' },
-  { id: 'custom-bash', from: 'local' },
-  { id: 'tool-fs', from: 'standard' },
-  { id: 'tool-fs-search', from: 'standard' },
-  { id: 'str-replace-editor', from: 'local' },
-  { id: 'bootstrap-filesystem', from: 'minimal', sourceId: 'filesystem' },
-  { id: 'tool-filter', from: 'local' },
-  { id: 'tool-jobs', from: 'standard' },
-  { id: 'skill-filesystem', from: 'standard' },
-  { id: 'skill-search', from: 'local' },
-  { id: 'command-goal', from: 'standard' },
-  { id: 'tool-goal', from: 'standard' },
-  { id: 'planning', from: 'standard' },
-  { id: 'compaction', from: 'standard' },
-  { id: 'delegation', from: 'standard' },
-  { id: 'tool-ask-user', from: 'standard' },
-  { id: 'tool-todo', from: 'standard' },
-  { id: 'tool-web', from: 'standard' },
+/**
+ * 官方模块映射。相同语义只保留一份；确有差异的行使用独立文件名。
+ * persona 由各 preset.yml 的 system-section 配置卡表达，故不生成重复 Cordis persona 行。
+ */
+const OFFICIAL_MODULES = [
+  // 动态 ST/角色卡转换仍可显式装配 persona；内置预设自身使用 system-section 配置卡。
+  { id: 'persona', preset: 'standard' },
+  { id: 'official-agent-instructions', preset: 'standard', sourceId: 'agent-instructions' },
+  { id: 'official-tool-bash', preset: 'standard', sourceId: 'tool-bash' },
+  { id: 'tool-bash', preset: 'standard', sourceId: 'tool-bash' },
+  { id: 'tool-pwsh', preset: 'standard' },
+  { id: 'tool-fs', preset: 'standard' },
+  { id: 'tool-fs-search', preset: 'standard' },
+  { id: 'tool-jobs', preset: 'standard' },
+  { id: 'skill-filesystem', preset: 'standard' },
+  { id: 'official-tool-skill', preset: 'standard', sourceId: 'tool-skill' },
+  { id: 'command-goal', preset: 'standard' },
+  { id: 'tool-goal', preset: 'standard' },
+  { id: 'planning', preset: 'standard' },
+  { id: 'compaction', preset: 'standard' },
+  { id: 'delegation', preset: 'standard' },
+  { id: 'delegation-ptc', preset: 'ptc', sourceId: 'delegation' },
+  { id: 'tool-ask-user', preset: 'standard' },
+  { id: 'tool-todo', preset: 'standard' },
+  { id: 'tool-web', preset: 'standard' },
+  { id: 'official-tool-presentation', preset: 'ptc', sourceId: 'tool-presentation' },
+  { id: 'official-tool-cordis', preset: 'cordis', sourceId: 'tool-cordis' },
+  { id: 'official-skill-filesystem-cordis', preset: 'cordis', sourceId: 'skill-filesystem' },
+  { id: 'official-persistent-shell', preset: 'minimal', sourceId: 'persistent-shell' },
+  { id: 'persistent-shell', preset: 'minimal', sourceId: 'persistent-shell' },
+  { id: 'bootstrap-filesystem', preset: 'minimal', sourceId: 'filesystem' },
 ]
 
-// official-* 模块为手工保留的独立文件(差异无法参数化,不参与重建)——
-// 快照 MODULES 之外的全部现有模块,重建后原样写回(全量清库会误删它们,
-// 导致 standard/creative 等预设 modules 断链)。
-const rebuiltIds = new Set(MODULES.map((entry) => entry.id))
-const preservedModules = new Map()
-for (const file of readdirSync(libraryDir)) {
-  if (!file.endsWith('.yml')) continue
+const localFiles = readdirSync(localDir).filter((file) => file.endsWith('.yml')).sort()
+const localIds = new Set(localFiles.map((file) => file.slice(0, -4)))
+const officialIds = new Set()
+for (const { id } of OFFICIAL_MODULES) {
+  if (officialIds.has(id) || localIds.has(id)) throw new Error(`duplicate composition module id: ${id}`)
+  officialIds.add(id)
+}
+
+// source/local 是可直接装配的源文件；校验后原样保留，不生成 library 副本。
+for (const file of localFiles) {
   const id = file.slice(0, -4)
-  if (!rebuiltIds.has(id)) preservedModules.set(id, readFileSync(join(libraryDir, file), 'utf8'))
+  const parsed = parseYaml(readFileSync(join(localDir, file), 'utf8'), { logLevel: 'silent' })
+  if (!Array.isArray(parsed) || parsed.length !== 1 || parsed[0]?.id !== id) {
+    throw new Error(`source/local/${file}: local module must contain exactly one row whose id is ${id}`)
+  }
+}
+
+/** 稳定语义签名：用于验证四套官方预设的每个非 persona 行都有拆解来源。 */
+function stable(value) {
+  if (Array.isArray(value)) return value.map(stable)
+  if (value !== null && typeof value === 'object') {
+    return Object.fromEntries(Object.keys(value).sort().map((key) => [key, stable(value[key])]))
+  }
+  return value
+}
+const signature = (value) => JSON.stringify(stable(value))
+const coveredSignatures = new Set()
+for (const { preset, sourceId, id } of OFFICIAL_MODULES) {
+  const row = officialRows.get(preset)?.get(sourceId ?? id)
+  if (row === undefined) throw new Error(`${id}: official ${preset} preset has no top-level row ${sourceId ?? id}`)
+  coveredSignatures.add(signature(row))
+}
+for (const preset of OFFICIAL_PRESETS) {
+  for (const [id, row] of officialRows.get(preset)) {
+    if (id === 'persona') continue
+    if (!coveredSignatures.has(signature(row))) {
+      throw new Error(`official preset row not decomposed: ${preset}/${id}`)
+    }
+  }
 }
 
 // 原子重建:先构建到临时目录,全部成功后 rename 替换 libraryDir。
-// 任何一步失败(如上游 patch 标记漂移)library 保持原样,不留半成品库。
 const tmpDir = `${libraryDir}.rebuild-tmp`
 rmSync(tmpDir, { recursive: true, force: true })
 mkdirSync(tmpDir, { recursive: true })
 
 try {
-  for (const { id, from, sourceId } of MODULES) {
-    let body
-    let provenance
-    if (from === 'local') {
-      body = readFileSync(join(localDir, `${id}.yml`), 'utf8')
-      // 源文件自带 `# module:` 头则逐字复制（保留其说明文字），否则补统一头。
-      provenance = body.startsWith('# module:')
-        ? ''
-        : `# module: ${id}\n# source: engine/compositions/source/local/${id}.yml (本地附加,非官方模块)\n\n`
-    } else {
-      const map = from === 'minimal' ? minimal : standard
-      const section = map.get(sourceId ?? id)
-      if (section === undefined) throw new Error(`${id}: official ${from} preset has no top-level row ${sourceId ?? id}`)
-      body = applyPatches(id, section, `${from}/agent.cordis.yml`)
-      const patches = PATCHES[id]?.length ?? 0
-      provenance = `# module: ${id}\n# source: ${sourceRepo}/packages/preset/agent-presets/presets/${from}/agent.cordis.yml\n# local patches: ${patches}\n\n`
-    }
+  for (const { id, preset, sourceId } of OFFICIAL_MODULES) {
+    const rowId = sourceId ?? id
+    const section = officialSections.get(preset)?.get(rowId)
+    if (section === undefined) throw new Error(`${id}: official ${preset} preset has no top-level row ${rowId}`)
+    const body = applyPatches(id, section, `${preset}/agent.cordis.yml`)
+    const patches = PATCHES[id]?.length ?? 0
+    const provenance = `# module: ${id}\n# source: ${sourceRepo}/packages/preset/agent-presets/presets/${preset}/agent.cordis.yml\n# local patches: ${patches}\n\n`
     writeFileSync(join(tmpDir, `${id}.yml`), provenance + body)
   }
 
-  for (const [id, content] of preservedModules) {
-    writeFileSync(join(tmpDir, `${id}.yml`), content)
+  // 每个模块必须是且仅是一个顶层 Cordis 行；变体允许文件名与行 id 不同。
+  for (const file of readdirSync(tmpDir).filter((item) => item.endsWith('.yml')).sort()) {
+    const parsed = parseYaml(readFileSync(join(tmpDir, file), 'utf8'), { logLevel: 'silent' })
+    if (!Array.isArray(parsed) || parsed.length !== 1 || typeof parsed[0]?.id !== 'string') {
+      throw new Error(`${file}: generated module must contain exactly one top-level Cordis row`)
+    }
   }
 
-  // 校验全部包内预设的 modules 清单在重建库中齐全(anchored + 官方格式预设 +
-  // 本地模板),防止 rebuild 漂移导致预设组合断链(assembleModules fail loud)。
+  // 全部包内预设的 modules 清单必须在 source/local 或新 library 中齐全，且不能两处重叠。
   const presetRoot = join(root, 'preset')
   const checked = []
   for (const entry of readdirSync(presetRoot, { withFileTypes: true })) {
@@ -176,16 +212,15 @@ try {
     if (!existsSync(specFile)) continue
     const spec = parseYaml(readFileSync(specFile, 'utf8'))
     for (const name of Array.isArray(spec.modules) ? spec.modules : []) {
-      const moduleFile = join(tmpDir, `${name}.yml`)
-      if (!existsSync(moduleFile) || !readFileSync(moduleFile, 'utf8').includes('- id:')) {
-        throw new Error(`preset ${entry.name}: module ${name} is missing from rebuilt library`)
-      }
+      const inSource = localIds.has(name)
+      const inLibrary = existsSync(join(tmpDir, `${name}.yml`))
+      if (inSource && inLibrary) throw new Error(`preset ${entry.name}: module ${name} is duplicated across source/local and library`)
+      if (!inSource && !inLibrary) throw new Error(`preset ${entry.name}: module ${name} is missing from source/local and rebuilt library`)
     }
     checked.push(entry.name)
   }
 
-  // 失败安全替换：旧 library 先改名备份，新库 rename 到位；替换失败恢复备份，
-  // 绝不先删后建（rm 后 rename 失败 = library 永久丢失）。
+  // 失败安全替换：旧 library 先改名备份，新库 rename 到位；替换失败恢复备份。
   const backupDir = `${libraryDir}.bak-${Date.now().toString(36)}`
   let hadOld = false
   if (existsSync(libraryDir)) {
@@ -196,15 +231,14 @@ try {
     renameSync(tmpDir, libraryDir)
   } catch (error) {
     if (hadOld) {
-      try { renameSync(backupDir, libraryDir) } catch { /* 恢复失败保留 backup 供人工处理 */ }
+      try { renameSync(backupDir, libraryDir) } catch { /* 保留 backup 供人工恢复 */ }
     }
     throw error
   }
   if (hadOld) rmSync(backupDir, { recursive: true, force: true })
-  console.log(`rebuilt ${MODULES.length} modules from official source at ${repo}`)
-  console.log(`preserved modules: ${[...preservedModules.keys()].sort().join(', ')}`)
+  console.log(`rebuilt ${OFFICIAL_MODULES.length} official modules from ${repo}; ${localFiles.length} local source modules kept in source/local`)
+  console.log(`official presets covered: ${OFFICIAL_PRESETS.join(', ')}`)
   console.log(`preset modules checked: ${checked.join(', ')}`)
-  console.log(`local modules: ${readdirSync(localDir).sort().join(', ')}`)
 } catch (error) {
   rmSync(tmpDir, { recursive: true, force: true })
   throw error

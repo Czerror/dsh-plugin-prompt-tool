@@ -104,6 +104,13 @@ test('renderComposition：composition 相对路径越界模板目录 fail loud',
   }
 })
 
+test('renderComposition：命名组合只允许 source/local 或 library 的裸模块名', () => {
+  assert.throws(
+    () => renderComposition({ id: 'x', composition: '../outside' }, {}),
+    /bare library name/,
+  )
+})
+
 test('writePreset：恶意 promptConfigs id 物化前 fail loud，不留半成品目录', () => {
   const dir = mkdtempSync(join(tmpdir(), 'pt-w1-malid-'))
   try {

@@ -4,7 +4,8 @@
  * 本文件只做装配:
  *   - schema.mjs    提示词配置加载/归一化/权威校验
  *   - strategies.mjs 内置策略绑定 + 模板专属策略懒加载(strategyDir)
- *   - fillers.mjs   placeholder 动态填充器(instruction-hint / env-facts / skill-catalog)
+ *   - fillers.mjs   placeholder 动态填充器（instruction-hint / env-facts / skill-catalog）
+ *   - instruction-hint.mjs 通用指令文件提示实现（策略与 context-gate 共用）
  *   - layers.mjs    非 pre-step 五个官方层级接线
  *   - executor.mjs  pre-step 消息批执行器(过滤/去重/合并/落位)
  *

@@ -10,8 +10,6 @@ modules:
   - tool-fs
   - tool-fs-search
   - tool-jobs
-  - official-skill-filesystem-cordis
-  - official-tool-skill
   - command-goal
   - tool-goal
   - planning
@@ -21,6 +19,8 @@ modules:
   - tool-todo
   - tool-web
   - official-tool-cordis
+  - official-skill-filesystem-cordis
+  - official-tool-skill
   - context-gate
   - tool-bootstrap
   - code-presentation

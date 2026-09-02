@@ -9,10 +9,10 @@ test('buildCordis 生成合法 YAML：prompt-config-engine 指向提示词配置
 
   const bootstrap = out.indexOf('- id: tool-bootstrap\n')
   const engine = out.indexOf('- id: prompt-config-engine\n')
-  const identity = out.indexOf('# ── identity')
+  const runtime = out.indexOf('- id: run-code-env\n')
   assert.ok(bootstrap >= 0)
   assert.ok(bootstrap < engine)
-  assert.ok(engine < identity)
+  assert.ok(engine < runtime)
 
   const doc = parse(out, { logLevel: 'silent' })
   assert.ok(Array.isArray(doc))

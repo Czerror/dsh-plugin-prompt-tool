@@ -426,7 +426,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
   const autoModelProviderRef = useRef<string | undefined>(undefined)
   const autoSubagentModelProviderRef = useRef<string | undefined>(undefined)
   /** 最近一次 load 时 preset.yml params 现有键集：persist 只发送「已有键或已改动」，
-   *  未动过的键不写——避免 UI 默认值固化覆盖模板 moduleConfigs 默认（liangshen 等）。 */
+   *  未动过的键不写——避免 UI 默认值固化覆盖模板 moduleConfigs 默认。 */
   const loadedKeysRef = useRef<Set<string>>(new Set())
 
   const showNotice = useCallback((kind: 'ok' | 'error', message: string) => {
@@ -739,8 +739,8 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
       const loadedKeys = loadedKeysRef.current
       // 条件发送：preset.yml 已有该键（含模板默认键）或字段值 != UI 默认 -> 发送；
       // 未动过的键不写--既保留「改回留空清旧值」（已有键总是发送空值删键），
-      // 又避免 UI 默认值固化覆盖模板 moduleConfigs 默认（liangshen promoteGate=true
-      // 等被首次保存的 false 静默改写--参数桥优先后的回归）。
+      // 又避免 UI 默认值固化覆盖模板 moduleConfigs 默认（例如 promoteGate=true
+      // 被首次保存的 false 静默改写--参数桥优先后的回归）。
       const emit = (key: string, value: unknown, empty: unknown): Record<string, unknown> =>
         loadedKeys.has(key) || !deepEqual(value, empty) ? { [key]: value } : {}
       // provider 自动预选只是显示兜底：preset 未声明且模型名为空时不落盘。

@@ -16,6 +16,14 @@
  * set cannot do: the model should reach for dev_tool_search the moment a task
  * needs internet, delegation, workflows, goals, images, background jobs, or
  * multi-agent coordination — not try to work around them with bash.
+ *
+ * FIX (local): search matching was AND-over-all-tokens, so a long natural
+ * query ("file edit write replace script root permissions") matched NOTHING
+ * even against the full catalog. Now: exact name match wins, then tools
+ * matching at least one token ranked by hit count. The description also
+ * teaches the unlock path explicitly ("search empty ≠ tool absent — unlock
+ * by exact toolNames"), because models observed in the wild only search and
+ * never pass toolNames.
  */
 
 /** Cordis plugin name used by loader diagnostics. */
@@ -47,7 +55,7 @@ function toJsonSchema(spec) {
  */
 const UNLOCKABLE_INDEX = [
   'web_search — internet search and web retrieval',
-  'subagent / subagent_fork — delegate work to sub-agents',
+  'subagent / subagent_fork / list_subagent_models — delegate work to sub-agents and choose their LLM',
   'workflow — run multi-agent workflow scripts',
   'ralph — fresh-agent iterative loop',
   'create_goal / get_goal / update_goal — long-running goals',
@@ -71,6 +79,9 @@ export function apply(ctx) {
       ...UNLOCKABLE_INDEX.map((line) => `- ${line}`),
       '',
       'Usage: pass `query` to search the catalog (returns matching tool names + descriptions), then pass `toolNames` with exact names to unlock them. Unlocked tools appear from the next request on and stay unlocked for the session.',
+      '',
+      'Example: dev_tool_search({"query":"web","toolNames":["web_search"]}) — search AND unlock in one call.',
+      'IMPORTANT: an empty search result does NOT mean the tool does not exist — it only means no tool matched ALL of your keywords. If the task needs any tool listed above, unlock it directly by exact name: dev_tool_search({"toolNames":["web_search"]}). Prefer short 1-2 keyword queries.',
     ].join('\n'),
     parameters: toJsonSchema({
       query: { type: 'string', required: false, description: 'search keywords (e.g. "web", "subagent")' },
@@ -104,20 +115,35 @@ export function apply(ctx) {
         // harness's own code mode (`registry.schemas(exec.agent)`).
         const schemas = ctx.tools.schemas(exec?.agent)
         const wanted = query.toLowerCase().split(/[^a-z0-9_]+/).filter(Boolean)
-        const all = schemas.filter((schema) => {
-          const haystack = `${schema.name} ${schema.description ?? ''}`.toLowerCase()
-          return wanted.every((token) => haystack.includes(token))
-        })
-        const matches = all.slice(0, MAX_RESULTS)
-        if (all.length === 0) {
-          lines.push(`No tools match "${query}".`)
+        // FIX: score instead of AND-filter. Exact name match ranks first;
+        // otherwise every tool matching at least one token competes, ordered
+        // by hit count (desc) then name. A long natural-language query no
+        // longer returns an empty catalog.
+        const scored = schemas
+          .map((schema) => {
+            const haystack = `${schema.name} ${schema.description ?? ''}`.toLowerCase()
+            let score = 0
+            for (const token of wanted) if (haystack.includes(token)) score += 1
+            return {
+              schema,
+              score,
+              exact: wanted.includes(schema.name.toLowerCase()),
+            }
+          })
+          .filter((entry) => wanted.length > 0 && (entry.exact || entry.score >= 1))
+          .sort((a, b) => (b.exact - a.exact) || (b.score - a.score) || a.schema.name.localeCompare(b.schema.name))
+        const matches = scored.slice(0, MAX_RESULTS)
+        if (matches.length === 0) {
+          lines.push(
+            `No tools match "${query}". An empty result only means no tool matched ALL keywords — if you need a specific tool, unlock it directly by exact name, e.g. dev_tool_search({"toolNames":["web_search"]}).`,
+          )
         } else {
-          lines.push(`Matching tools (${matches.length}${all.length > MAX_RESULTS ? ` of ${all.length}` : ''}):`)
-          for (const schema of matches) {
+          lines.push(`Matching tools (${matches.length}${scored.length > MAX_RESULTS ? ` of ${scored.length}` : ''}):`)
+          for (const { schema, exact, score } of matches) {
             const desc = (schema.description || '').split('\n')[0].slice(0, 90)
-            lines.push(`- ${schema.name}: ${desc}`)
+            lines.push(`- ${schema.name}${exact ? ' (exact)' : ''}: ${desc}`)
           }
-          if (all.length > MAX_RESULTS) {
+          if (scored.length > MAX_RESULTS) {
             lines.push(`(truncated at ${MAX_RESULTS} — add tokens to narrow the query, e.g. "mcp browser" or "mcp tavily")`)
           }
           lines.push('Unlock with dev_tool_search({"toolNames": ["<exact name>"]}).')

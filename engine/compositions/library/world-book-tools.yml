@@ -1,5 +1,0 @@
-# module: world-book-tools
-# source: engine/compositions/source/local/world-book-tools.yml (本地附加,非官方模块)
-
-- id: world-book-tools
-  name: ./engine/world-book-tools.mjs

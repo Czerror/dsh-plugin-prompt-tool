@@ -26,6 +26,7 @@ dsh --profile prompt-tool                                          # 首次启�
 - 🖥️ **官方 slot 工作台**：`shell.overlay` 驱动的左上角悬浮按钮通过 body portal 落在对话界面层，右侧抽屉（主会话/子代理/技能设置/预设配置/角色管理五页）仍由官方 slot 承载；按钮纵向位置独立于其他插件，`sidebar.footer.action` 几何探针直接读取官方 AppFrame 侧栏轨道（覆盖 264px 起步、可拉伸、56px 折叠 rail 与断点自动折叠），悬浮按钮圆缘与侧栏右缘相切贴靠（间距 0，可见图标保持 5px 微呼吸）；UI 挂载全部交给官方 SlotRegistry，无宿主 DOM 选择器
 - 🧪 **七种内容策略**：`static / first-turn-anchor / guide-auto / custom-fallback / instruction-hint / placeholder / world-book`（world-book 支持 ST selectiveLogic 选择性触发：任一/副键全中/排除）
 - 🛡️ **失败不伤会话**：单条失败跳过 + `warnOnce`；配置错误挂载时 fail loud；`dedupe: session` 持久幂等
+- 🧭 **通用 instruction-hint 引擎**：所有预设都可通过 `strategy: instruction-hint` 或 `placeholder + fill: instruction-hint` 提示指令文件存在；实现位于 `engine/instruction-hint.mjs`，不绑定 anchored
 - 📦 **Bridge 载荷**：JSON 请求统一 32 MiB 硬上限并明确返回 413；角色卡原始图片走 64 MiB 流式通道，按 PNG 魔数识别。
 - 🎭 **SillyTavern 导入**：JSON 预设卡片一键转换为本地预设——`prompts[]` 映射提示词配置、setvar/getvar 收集进顶层 `variables`（未定义自定义宏自动登记空值占位）、`enable_web_search` 按开关装配工具；采样参数剥离（模型设置 UI 管理）
 - 🎴 **角色卡库**：SillyTavern 角色卡（PNG tEXt chunk `ccv3`/`chara`，或 chara_card JSON）导入独立库（`.characters/<id>/`，含原图/转换参数/角色记忆），按 PNG 魔数识别图片并经原始文件流上传，避免头像 base64 膨胀；按需「导入到当前预设」（`chara-<卡>-` 前缀合并、幂等可移除），多文件自动合并
@@ -147,11 +148,11 @@ UI / 写盘展示顺序固定为 `pre-step → system-section → runtime-contex
 
 ```sh
 pnpm install && pnpm build
-pnpm test          # 424 单测：参数契约/注入装配/六插入点/生成链路/引擎语义/安全边界
+pnpm test          # 437 单测：参数契约/注入装配/六插入点/生成链路/引擎语义/安全边界
 pnpm typecheck && pnpm lint
 pnpm sync:anchored       # 刷新 upstream/dsh-anchored-standard 内联快照
 pnpm sync:yaml           # 刷新 engine/vendor/yaml（生成目录运行时 YAML 解析器）
-pnpm rebuild:composition # 从官方内置预设源码重建组合模块（失败安全：备份 + rename）
+pnpm rebuild:composition # 只生成官方切块/变体；source/local 本地源不复制（失败安全）
 pnpm migrate:presets     # 离线一次性参数迁移（旧 worldBook/扁平模型键/旧覆盖文件；--dry-run 预览）
 ```
 

@@ -1,13 +1,10 @@
 # module: official-tool-cordis
-# source: deepseek-harness official cordis agent preset (tool-cordis)
+# source: deepseek-harness/packages/preset/agent-presets/presets/cordis/agent.cordis.yml
+# local patches: 0
 
+# ── self-modification ───────────────────────────────────────────────────────
+
+# Read the live runtime, mount a temporary plugin, unmount it. The toolset is a
+# trust boundary, not a sandbox — see this file's header.
 - id: tool-cordis
   name: '@deepseek-ai/dsh-tool-cordis'
-
-# The composition-authoring skill travels with this preset rather than living
-# in the user's skill root: it documents THIS deployment's two planes, and a
-# preset is the unit that gets copied and edited. `baseUrl` is the preset's
-# own directory, so the root resolves wherever the preset is installed.
-# Both rows register into THIS preset's layer of the host skill registry, so
-# they need no realm; the agent's merged catalog also carries whatever the
-# deployment registered globally (repository plugins).

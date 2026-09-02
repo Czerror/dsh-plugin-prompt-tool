@@ -1,5 +1,5 @@
 # module: cot-drip
-# source: engine/compositions/library/cot-drip.yml (本地附加,上游 dsh-anchored-standard 移植)
+# source: engine/compositions/source/local/cot-drip.yml (本地附加,上游 dsh-anchored-standard 移植)
 # 深思维持节拍：每 N 次工具结果滴入一条 "We …" 重申提醒（additionalContexts）。
 # 默认 enabled: false（挂载即禁用）；启用 = params.cotDrip（UI 开关）。
 

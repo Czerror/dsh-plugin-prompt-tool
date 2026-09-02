@@ -51,11 +51,15 @@ test('preset/shared.mjs 提供公共晋升解析与消息工具', () => {
   assert.ok(source.includes('export function isDelegated'))
 })
 
-test('engine/fillers.mjs 内置 instruction-hint 的 agents-instruction.md 读取逻辑', () => {
-  const source = read('engine/fillers.mjs')
+test('通用 instruction-hint 引擎读取 agents-instruction.md 并由两个调用方复用', () => {
+  const source = read('engine/instruction-hint.mjs')
   assert.ok(source.includes('new URL(path, import.meta.url)'), '共享引擎下路径经 params.agentsInstructionPath 注入')
-  assert.ok(source.includes("agentsInstructionPath"), 'fillers 支持显式路径参数')
+  assert.ok(source.includes('agentsInstructionPath'), '通用引擎支持显式路径参数')
   assert.ok(source.includes('agentsInstructionText.length > 0'))
+  const fillers = read('engine/fillers.mjs')
+  assert.ok(fillers.includes("from './instruction-hint.mjs'"), 'placeholder filler 复用通用引擎')
+  const gate = read('engine/context-gate.mjs')
+  assert.ok(gate.includes("from './instruction-hint.mjs'"), 'context-gate 转换复用通用引擎')
   const facade = read('engine/prompt-config-engine.mjs')
   assert.ok(facade.includes('configsDir'))
   assert.ok(facade.includes('loadPromptConfigFiles'))

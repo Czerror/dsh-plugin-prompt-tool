@@ -4,7 +4,7 @@ version: 1.0.0
 engineCompat: ">=0.4.2"
 meta:
   name: prompt-tool
-  description: 首轮锚定确认后注入 prompt-tool 提示词。
+  description: 首轮仅暴露 Minimal 双工具，首次持久工具调用或回复后恢复完整 Standard 工具目录，并注入 prompt-tool 配置。
   order: 5
 content:
   presetText: >
@@ -167,6 +167,17 @@ subagentModel:
   reasoningEffort: ""
   temperature: ""
   maxTokens: ""
+# dsh-anchored-standard 核心行级语义；本项目保留子代理首轮直通与 Web fetch。
+moduleConfigs:
+  context-gate:
+    promoteOn: either
+    includeSubagents: false
+  tool-bootstrap:
+    promoteOn: either
+    includeSubagents: false
+  tool-web:
+    fetch: true
+    searchTimeoutMs: 60000
 params:
   firstTurnAnchor: false
   firstTurnCustom: false
@@ -175,6 +186,8 @@ params:
   injectPrompt: true
   usePtcMode: true
   bootstrapMaxTokens: 0
+  bootstrapTools: [bash, str_replace_editor]
+  compactionTools: [read, write, edit, glob, grep, todo_write, ask_user_question]
   guideCustom: false
   # 复杂任务判定 fallback 复用下方 complexPattern（引导与锚定共用分类器）。
   guideWeak: "Router: classify this task (build or fix) now, then adopt the matching style — build: direct production; fix: inspect-first. Think deeply first, then commit and act."

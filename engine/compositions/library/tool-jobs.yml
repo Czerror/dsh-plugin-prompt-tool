@@ -1,5 +1,5 @@
 # module: tool-jobs
-# source: ./deepseek-harness/packages/preset/agent-presets/presets/standard/agent.cordis.yml
+# source: deepseek-harness/packages/preset/agent-presets/presets/standard/agent.cordis.yml
 # local patches: 0
 
 # ── background jobs ────────────────────────────────────────────────────────
@@ -13,11 +13,3 @@
 # chooses is whether its agent can collect and stop background work at all.
 - id: tool-jobs
   name: '@deepseek-ai/dsh-tool-jobs'
-
-# ── skills ──────────────────────────────────────────────────────────────────
-
-# The skill REGISTRY lives in the host composition and is layered per scope:
-# these rows register into THIS preset's layer of it, so they need no realm.
-# `skill-filesystem` contributes local-root discovery for agents on this preset, and
-# `tool-skill` gives them the catalog and loader; the merged catalog also
-# carries whatever the deployment registered globally (repository plugins).
