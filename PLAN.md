@@ -1,319 +1,786 @@
-# dsh-plugin-prompt-tool 工具契约与预设工具面计划
+# dsh-plugin-prompt-tool 工具契约、子代理工具策略与预设工具面计划
 
 > 日期：2026-09-02
 > 分支：`dev`
-> 基线：`e3433da`
+> 基线：`ececbd1`
 > 状态：待实施
-> 替代：原《L2 参数、Bridge 与 Engine 重构计划》已全部落地，本文件整体取代旧计划。
+> 替代：旧 L2 计划已全部落地；`ececbd1` 版工具计划由本文件扩展为完整子代理实例级工具策略计划。
 > 参考：`D:\AI\GitHub\dsh-plugins@05c50f3`、`D:\AI\GitHub\deepseek-harness@4e84901`（DSH `0.1.2-alpha.4`）。
 
-## 一、结论与范围
+## 一、最终目标
 
-本轮只处理工具契约和工具面可观测性，不重做现有预设编译器。
+本轮一次完成以下能力，不拆成互不兼容的临时版本：
 
-优先级固定为：
+1. **自定义工具标准化**
+   - `customTools` 生成完整、合法的官方 ToolDefinition。
+   - 参数和输出 Schema 经官方 `dsh-tools` 转换。
+   - delegate 经真实 ToolRuntime 嵌套调度。
+2. **主代理与子代理工具权限分离**
+   - 主代理继续使用现有 `toolFilterAllow` / `toolFilterDeny`。
+   - 子代理使用独立的实例级策略，不再复用主代理列表。
+3. **每个子代理实例单独配置**
+   - 每次 `subagent` / `subagent_fork` 调用独立解析角色、任务、工具档和附加工具。
+   - 实际 toolFilter 在子代理创建窗口冻结并生效。
+4. **按角色卡配置不同工具集**
+   - UI 将角色卡 id 绑定到工具档。
+   - 模型调用子代理时可选择已授权角色卡绑定。
+5. **按任务类型动态切换工具集**
+   - 支持显式 `task_type`。
+   - 未显式声明时按有序正则规则确定性分类。
+6. **模型可在调用子代理时自行扩大工具权限**
+   - 模型可请求 `additional_tools`。
+   - 扩权严格限制在用户配置的 ceiling 和 expansion allow-list 内。
+   - 可配置人工批准；无批准通道时 fail closed。
+7. **工具面可观测**
+   - UI 展示当前主会话实际工具面。
+   - UI 可预览每个子代理工具档和一次实例选择的最终工具集。
+   - 已创建的本地子代理可查询实际工具面。
 
-1. **P0：修复自定义工具定义契约**
-   - `customTools.parameters` / `output.schema` 必须经官方 `dsh-tools` DSL 转为标准 JSON Schema。
-   - 无参数工具也必须提供合法的空对象参数 Schema。
-   - 真实 `ToolRuntime` 必须能够执行并投影所有生成工具。
-2. **P0：修复 delegate 执行链路**
-   - delegate 必须经 `ctx.tools.execute()` 做嵌套调度。
-   - 不再直接调用目标工具的 `execute()`。
-3. **P1：增加当前会话实际工具面预览**
-   - UI 只读展示当前 Agent scope 最终可见的工具名与描述。
-   - 不挂载未激活预设，不提供任意 `agent.cordis.yml` 通用编辑器。
-4. **P2：收紧未实现契约**
-   - 当前未实际消费的 `customTools.scope` 改为显式拒绝，避免静默忽略。
-   - 真正的 main/subagent/both 作用域另立计划，不在本轮做半套实现。
+核心产品定义：
 
-明确排除：
+> `customTools` 是声明式工具构建器；`subagentToolPolicy` 是实例级工具授权策略；复杂能力仍通过 Cordis 模块接入。模型只能在用户给定的能力上限内选择和扩权，不能自行突破 Host、preset、provider 或 approval 边界。
+
+## 二、明确排除
 
 - 不修改 DeepSeek Harness 源码。
+- 不把任意 JavaScript 代码嵌入 YAML。
+- 不增加 `execute.kind: javascript` 或任意 npm import 逃生口。
 - 不替换 `preset.yml → modules/moduleConfigs/params → agent.cordis.yml` 编译链。
-- 不把行为源迁移到官方 `agentPresets` Remote。
-- 不复制 `dsh-plugins/preset-builder` 的旧 `agentPresets.mutate` API。
-- 不增加 PTY、持久 stdin、后台 Job 或定时任务执行器。
-- 不新增工具并发配置；未声明 `isConcurrencySafe` 时保持官方默认独占执行。
-- 不增加跨标签页 revision fencing；出现真实并发编辑需求后再做。
+- 不提供任意 `agent.cordis.yml` 通用编辑器。
+- 不复制旧 `dsh-plugins/preset-builder` 的 `connection.api` / `agentPresets.mutate` 接口。
+- 不让模型修改 ceiling、profile、角色绑定或任务规则。
+- 不允许运行中的子代理热增权；实例工具集在创建时冻结。需要更高权限时创建新实例。
+- 不承诺 ACP 等 `toolFilter: false` provider 支持实例工具策略；provider 不支持时 fail loud。
+- 不为本轮增加 PTY、持久 stdin、数据库连接池或后台 Job 自定义执行器。
+- 不开放工具并发配置；未声明 `isConcurrencySafe` 时保持官方独占执行。
 
-## 二、已确认事实
+## 三、已确认事实
 
-### 2.1 当前自定义工具没有生成合法 ToolDefinition
+### 3.1 当前 customTools 不是合法的完整 ToolDefinition
 
 `engine/tool-config-engine.mjs` 当前直接把配置 DSL 注册到 `ctx.tools.register()`：
 
 - 有参数工具把 `{ text: { type: string, required: true } }` 原样暴露给模型，而不是 JSON Schema object。
 - 无参数工具省略 `parameters`，真实 `ctx.tools.schemas()` 会报错。
-- `output.schema` 同样绕过官方 ValueSchemaSpec 转换，嵌套 required 语义不能保证正确。
+- `output.schema` 也绕过官方 ValueSchemaSpec 转换。
 
-已在 `D:\AI\workspase\_temp` 使用真实 `Context + SystemPrompt + ToolRuntime` 验证：
+已在隔离目录使用真实 `Context + SystemPrompt + ToolRuntime` 复现：
 
 ```text
 tool "no_args" parameters must be lossless JSON before schema projection
 ```
 
-因此现有 mock 只捕获“对象是否注册”，不足以证明工具能进入真实模型目录。
+### 3.2 当前 delegate 绕过官方工具管线
 
-### 2.2 delegate 绕过官方工具管线
+当前 delegate 通过 `tools.get(name).execute()` 直接调用目标实现，绕过：
 
-当前 delegate 路径通过：
-
-```js
-const target = tools.get(name)
-await target.execute(args, minimalExec)
-```
-
-直接执行目标实现，绕过：
-
-- 参数 Schema 校验；
-- allow/deny/ask 与 approval；
-- `tools/pre-execute` / `tools/execute` / `tools/post-execute`；
+- 参数与输出校验；
+- allow/deny/ask 和 approval；
+- pre/execute/post waterfall；
 - timeout policy；
-- 嵌套调用 token、rootCallId 与 durable result；
-- additionalContexts 与 concludesTurn 传播。
+- nested token、rootCallId 和 durable result；
+- additionalContexts 与 concludesTurn。
 
-复合工具必须使用官方 registry 作为唯一执行入口。
+### 3.3 当前主/子代理过滤实际上没有分离
 
-### 2.3 `scope` 目前只是死字段
-
-`customTools.scope` 仅校验 `main | subagent | both`，注册逻辑没有读取它，UI 也没有入口。
-
-本轮不为一个尚未开放的字段引入 `agent/created`、root/subagent 判断和多套 disposer。先显式拒绝该字段；未来确有需求时参考 `dsh-plugins/loop` 的 agent-scoped 注册模式完整实现。
-
-### 2.4 `preset-builder` 只能参考 UI 概念
-
-`dsh-plugins/preset-builder` 的“预设组成 + 最终工具列表”信息架构有参考价值，但代码基于旧接口：
-
-- 依赖 `@deepseek-ai/dsh-client-runtime` / `connection.api`；
-- 假定 `agentPresets.read()` 返回 `plugins`、`tools`、`revision`；
-- 假定存在 `set-disabled` / `set-config` mutation。
-
-当前 DSH `0.1.2-alpha.4` 的 `readDocument()` 只返回 composition 文本、trust 和展示元数据；`pluginInventory` 也是只读组合清单。因此本项目继续使用当前 `remote`、`settingsScope` 和受控 loopback bridge。
-
-## 三、架构决策
-
-### 3.1 `preset.yml` 继续是唯一行为源
-
-保持现有链路：
+现有参数桥把同一组：
 
 ```text
-preset.yml customTools
-        ↓ writePreset
-custom-tools/*.yml
-        ↓ tool-config-engine
-官方 ToolDefinition
-        ↓ ctx.tools registry
-Agent 实际工具面
+toolFilterAllow
+toolFilterDeny
+```
+
+同时写给：
+
+```text
+主代理 tool-filter
+子代理 delegation.toolFilter
+```
+
+`toolFilterSubagents` 只控制额外的 system-prompt assembly mask，但子代理的官方 `delegation.toolFilter` 已经使用主代理列表。因此当前“子代理同过滤”关闭并不等于子代理不受主代理列表影响。
+
+### 3.4 官方已经提供正确的 per-child 授权 seam
+
+DSH `SubagentStartRequest.toolFilter` 的契约是：
+
+- provider 必须声明 `capabilities.toolFilter`；
+- in-process provider 在子代理创建窗口调用 scoped `tools.restrict()`；
+- 被过滤工具同时从 prompt 消失并拒绝执行；
+- 未知工具名启动失败；
+- `spawn` / `fork` 支持，ACP 不支持。
+
+官方 `@deepseek-ai/dsh-tool-subagent` 当前只接受静态 `config.toolFilter`，模型参数没有 per-call toolFilter。因此本项目不能通过 config patch 实现实例级工具集，需要在 agent scope 注册一个同名 shadow 工具，并通过公开 `ctx.subagents` seam 创建子代理。
+
+### 3.5 角色卡和任务分类已有可复用基础
+
+- 角色卡库已有稳定 card id、名称、描述和 `/characters-list` 数据源。
+- 角色卡写入后已走现有 preset rebuild 路径。
+- `engine/classify-task.mjs` 已是任务分类单一来源，可扩展通用有序规则，不另建第二套正则分类器。
+
+## 四、目标配置契约
+
+新增 `preset.yml` 顶层领域段：
+
+```yaml
+subagentToolPolicy:
+  defaultProfile: base
+
+  # 用户定义的绝对能力上限；任何 profile、角色、任务和模型扩权都不能越界。
+  ceiling:
+    allow: [read, write, edit, glob, grep, bash, web_search]
+    deny: [dangerous_tool]
+
+  profiles:
+    - id: base
+      name: 基础
+      allow: [read, glob, grep]
+      deny: []
+      modelSelectable: false
+
+    - id: researcher
+      name: 研究
+      allow: [read, glob, grep, web_search]
+      deny: [write, bash]
+      modelSelectable: true
+
+    - id: coder
+      name: 编码
+      allow: [read, write, edit, glob, grep, bash]
+      deny: []
+      modelSelectable: true
+
+  characterBindings:
+    - characterId: analyst
+      profile: researcher
+      modelSelectable: true
+
+    - characterId: developer
+      profile: coder
+      modelSelectable: true
+
+  taskRules:
+    - id: research
+      name: 资料研究
+      pattern: '(research|调研|搜索|资料|文档)'
+      profile: researcher
+      order: 100
+      modelSelectable: true
+
+    - id: implementation
+      name: 编码实现
+      pattern: '(implement|build|实现|开发|修复)'
+      profile: coder
+      order: 200
+      modelSelectable: true
+
+  modelExpansion:
+    enabled: true
+    allow: [web_search, bash]
+    maxAdditionalTools: 2
+    requireApproval: true
 ```
 
 约束：
 
-- `custom-tools/*.yml` 是生成物，不成为第二个可编辑源。
-- `agent.cordis.yml` 仍由模块编译器生成，不增加通用原始 YAML 写入入口。
-- 保存自定义 delegate 工具时，现有 `customToolModules()` 继续自动补齐角色卡、世界书和 session-var 模块。
+- `defaultProfile` 必须存在。
+- profile / task / character id 唯一。
+- profile allow/deny、expansion allow 必须是 ceiling allow 的子集。
+- ceiling deny 永远优先，不能通过任何 selector 或 additional_tools 恢复。
+- `modelSelectable: false` 的 profile/角色/任务不进入模型工具 Schema enum。
+- `modelExpansion.enabled: false` 时工具参数中完全不出现 `additional_tools`。
+- `maxAdditionalTools` 为非负安全整数；0 等同关闭扩权参数。
+- 任务正则在保存时编译验证，非法规则拒绝整次保存。
+- 空 allow 是合法的零工具档；空 ceiling allow 非法。
+- `subagentToolPolicy` 缺失时完全保持官方 delegation 行为。
 
-### 3.2 官方 schema 转换必须复用，不自造第二套
+`subagentToolPolicy` 是复杂领域配置，不塞入扁平 `params`；`params` 继续只承载现有基础引擎参数。
 
-优先从运行中的 DSH 入口解析同一份 `@deepseek-ai/dsh-tools`，复用：
+## 五、实例级解析算法
 
-- `defineTool()`；或
-- `parameterSchemaSpecToJsonSchema()` / `valueSchemaSpecToJsonSchema()`。
-
-解析方式参考 `dsh-plugins/loop`：从 `process.argv[1]` 创建 `require`，避免生成目录或 link 路径加载出另一份 Host 依赖。
-
-若隔离 smoke 证明该解析方式在生成预设目录不可用，才把 Schema 转换移到 host 侧物化阶段；不复制官方转换器源码。
-
-### 3.3 delegate 是嵌套工具调用，不是本地函数调用
-
-嵌套调度必须携带：
+模型可见的扩展参数按策略动态生成：
 
 ```text
-callId
-rootCallId
-name
-arguments
-agent
-parent = 当前 run.token
-signal
+tool_profile      可选；只列出 modelSelectable profile
+character_id      可选；只列出 modelSelectable character binding
+task_type         可选；只列出 modelSelectable task rule
+additional_tools  可选；只在 modelExpansion 开启时出现
+restrict_tools    可选；模型始终可以进一步收紧本实例
 ```
 
-外层工具继续保持当前 `{ ok, value?, error? }` 输出契约，但必须：
-
-- 从标准 `ToolExecutionResult` 读取成功值或错误；
-- 将 nested result 的 additionalContexts 逐项交给 `run.deferContext()`；
-- nested result 标记 concludesTurn 时调用 `run.concludeTurn()`；
-- callId 使用当前调用可推导的稳定后缀，不使用 `Date.now()`。
-
-### 3.4 工具面预览只展示真实运行态
-
-第一版只展示当前会话 Agent scope 的实际工具面：
+固定选择优先级：
 
 ```text
-Host 全局工具
-+ 当前 preset 工具
-+ agent-scoped 工具与 restriction
-+ 当前 presentation/filter 状态
-= 当前会话实际工具面
+显式 tool_profile
+    > 显式 character_id 绑定
+    > 显式 task_type
+    > description + prompt 自动任务分类
+    > defaultProfile
 ```
 
-不尝试静态推导任意未挂载预设的“最终工具”，因为它还受 Host bundle、Agent scope、tool-filter、bootstrap/stage 和运行时代际影响。
+若同时传入多个 selector，按上述优先级取一个基础 profile，并在工具结果中回显被采用和被忽略的 selector，避免静默歧义。
 
-UI 行为：
+有效工具集算法：
 
-- 展示工具总数、名称、描述和文本搜索；
-- 无当前会话时显示明确空态；
-- 保存或重建后提示“既有会话保留原 generation”；
-- 只读，不提供插件启停或通用 JSON config 编辑。
+```text
+presetAvailable = 当前 preset scope 可解析的继承工具名
+baseAllow       = selectedProfile.allow
+requestedAdd    = additional_tools
+requestedDeny   = restrict_tools
 
-## 四、实施 Wave
+validatedAdd = requestedAdd
+  ∩ modelExpansion.allow
+  ∩ ceiling.allow
+  ∩ presetAvailable
 
-### Wave 1：ToolDefinition 标准化（P0）
+effectiveAllow = (baseAllow ∪ validatedAdd)
+  ∩ ceiling.allow
+  ∩ presetAvailable
+  - selectedProfile.deny
+  - requestedDeny
+  - ceiling.deny
+```
 
-修改目标：
-
-- `engine/tool-config-engine.mjs`
-- `test/engine/tool-config-engine.test.mjs`
-
-任务：
-
-1. 从运行中 DSH 解析官方 `dsh-tools` 导出，确保与 Host 使用同一份包。
-2. `compileTool()` 使用官方转换构造完整 ToolDefinition：
-   - `parameters: def.parameters ?? {}`；
-   - `output.schema` 经 ValueSchemaSpec 转换；
-   - 保留当前 JSON renderer、timeoutMs 与 execute 分发。
-3. 保留现有输入校验、description 消毒和按条跳过语义。
-4. `scope` 存在时明确报“不支持”，该条工具按现有 warn-and-skip 处理。
-5. 增加真实 registry 契约测试：
-   - 有参数工具生成标准 JSON Schema；
-   - 无参数工具生成空 object Schema；
-   - output required / array / oneOf 转换正确；
-   - `ctx.tools.schemas()` 不抛错；
-   - `ctx.tools.execute()` 能完成一次真实调用并校验输出。
-
-验收门：Wave 1 未通过前不进入 delegate 和 UI 工作。
-
-### Wave 2：delegate 统一走 ToolRuntime（P0）
-
-修改目标：
-
-- `engine/tool-config-engine.mjs`
-- `test/engine/tool-config-engine.test.mjs`
-
-任务：
-
-1. 删除 `tools.get(...).execute(...)` 与伪造 `minimalExec`。
-2. 使用 `ctx.tools.execute()` 发起 nested dispatch。
-3. 保留完整引用、部分插值和固定值的现有 args 映射语义。
-4. 转换标准成功/失败结果为外层 `{ ok, value?, error? }`。
-5. 传播 additionalContexts、concludesTurn 和 AbortSignal。
-6. 增加确定性测试：
-   - 目标参数非法时由真实 registry 拒绝；
-   - pre/post hook 能观察 nested call；
-   - approval/deny 不被绕过；
-   - 取消信号可到达目标工具；
-   - 不再出现直接 `.execute(` 调用目标定义的代码。
-
-### Wave 3：当前会话工具面预览（P1）
-
-修改目标：
-
-- `src/shared/bridge-contract.ts`
-- `src/runtime/settings-bridge.ts`
-- `src/client/prompt-tool-bridge.ts`
-- `src/client/prompt-tool-types.ts`
-- `src/client/index.ts`
-- `src/client/CustomToolsModuleCard.tsx`
-- `test/shared/bridge-contract.test.mjs`
-- `test/host/settings-bridge.test.mjs`
-- `test/client/no-host-dom.test.mjs` 或现有 slot/client contract 测试
-
-任务：
-
-1. 新增只读 bridge endpoint，例如 `/tool-surface`。
-2. Host 侧通过动态 `ctx.inject(['agents', 'tools'], ...)` 等待服务，不扩大静态 inject。
-3. 请求只接受当前 session id；校验长度、类型和存活 Agent。
-4. 从目标 Agent scope 获取 `tools.schemas(agent)`，响应只返回必要字段：
+最终传给官方 `SubagentStartRequest.toolFilter`：
 
 ```ts
+{ allow: effectiveAllow }
+```
+
+规则：
+
+- deny 永远优先。
+- 不把父代理当前可见集当作 ceiling；用户可以明确配置“主代理不可见、特定子代理可见”的工具。
+- ceiling 来自用户预设，是模型扩权的硬上限。
+- Host sandbox、approval、工具自身 policy 和 provider capability 继续拥有最终权威。
+- 子代理自身注册的报告/输出工具按官方 scope 语义保留，不由继承工具 allow-list错误删除。
+- 实例创建后不热更新 effectiveAllow；UI 修改只影响后续实例。
+
+## 六、运行时模块设计
+
+### 6.1 深模块：subagent tool policy resolver
+
+新增纯策略模块：
+
+```text
+engine/subagent-tool-policy-core.mjs
+```
+
+小接口：
+
+```js
+validateSubagentToolPolicy(rawPolicy, context)
+compileSubagentToolPolicy(rawPolicy)
+resolveSubagentToolPolicy(compiledPolicy, request, availableTools)
+buildSubagentToolParameters(compiledPolicy)
+```
+
+该模块隐藏：
+
+- 唯一性与引用校验；
+- ceiling 子集校验；
+- task regex 编译与稳定排序；
+- selector 优先级；
+- expansion/deny 合并；
+- 模型可见 enum 生成；
+- 预览与运行时结果同构。
+
+Host bridge、运行时工具和测试都跨同一 seam，禁止在 UI、bridge、tool execute 中复制解析算法。
+
+### 6.2 Agent-scoped shadow 工具
+
+新增：
+
+```text
+engine/subagent-tool-policy.mjs
+engine/compositions/source/local/subagent-tool-policy.yml
+```
+
+不删除官方 `delegation` / `delegation-ptc` 模块。新模块在使用该 preset 的每个 Agent scope 注册：
+
+```text
+subagent
+subagent_fork
+```
+
+同名 agent-local 工具 shadow 预设层官方工具；官方工具仍提供：
+
+- fallback；
+- `list_subagent_models`；
+- control/list-agents/send-message 等其他工具；
+- 未启用策略预设的原行为。
+
+生命周期：
+
+- 监听该 preset generation 下的 `agent/created`；
+- 在 `agent.ctx.effect` 注册同名工具；
+- 主代理和子代理均可获得 shadow，是否对模型可见仍受 effective toolFilter 与 maxDepth 控制；
+- Agent、preset generation 或插件卸载时自动释放；
+- 不能注册到 Host 全局层；
+- 两个不同 preset generation 的 policy 不得串用。
+
+### 6.3 模型工具参数
+
+保持官方参数并扩展：
+
+```text
+description
+prompt
+provider?            spawn 工具保留；fork 不开放
+model?               spawn 工具保留；fork 不开放
+reasoning_effort?     spawn 工具保留；fork 不开放
+run_in_background?
+tool_profile?
+character_id?
+task_type?
+additional_tools?
+restrict_tools?
+```
+
+参数 enum 和 maxItems 由 compiled policy 生成。未开启的能力不出现在 Schema 中，而不是运行时收到后忽略。
+
+### 6.4 子代理启动
+
+运行时只调用公开 seam：
+
+- foreground one-shot：`ctx.subagents.start(provider, request)`；
+- continuable background：`ctx.subagents.startContinuable({ provider, label, request })`；
+- one-shot background 仅在未来显式启用对应 provider 时接入 `ctx.jobs`，本轮内置 spawn/fork 继续 continuable；
+- request 携带 `toolFilter`、`agentOptions`、`maxDepth`、`parent` 和 `signal`。
+
+必须保持官方当前行为：
+
+- spawn 允许 provider/model/reasoning effort 选择并做 LLM route preflight；
+- fork 固定继承父路由，保持 KV Cache 语义；
+- `run_in_background` 默认与现有 continuable 工具一致；
+- foreground run 始终在 finally 中 dispose；
+- provider 不支持 toolFilter 时启动前失败；
+- maxDepth 继续由官方 subagent runtime 校验。
+
+### 6.5 模型扩权批准
+
+当 `additional_tools` 非空：
+
+1. 校验数量、enum、ceiling、presetAvailable。
+2. `requireApproval: true` 时调用 approval seam。
+3. approval reason 明确列出：
+   - parent session；
+   - selected profile；
+   - character/task selector；
+   - 请求增加的工具；
+   - 最终 effective allow。
+4. 无 approval 服务、拒绝或取消时不创建子代理。
+5. `requireApproval: false` 表示用户已通过 preset 预授权 expansion allow-list；仍不能越过 ceiling。
+
+选择 `modelSelectable` profile/角色/任务属于预授权，不重复 approval；只有 `additional_tools` 触发扩权批准。
+
+### 6.6 结果与审计
+
+工具结果保留官方 foreground/background 结果，并增加小型策略摘要：
+
+```json
 {
-  tools: Array<{ name: string; description: string }>
+  "kind": "continuable",
+  "subagentId": "session-...",
+  "policy": {
+    "profile": "researcher",
+    "characterId": "analyst",
+    "taskType": "research",
+    "additionalTools": ["web_search"],
+    "effectiveTools": ["read", "glob", "grep", "web_search"]
+  }
 }
 ```
 
-5. Client 从官方 sessions snapshot 取得当前会话 id后请求；不把 session id 持久化进 settings。
-6. 在现有自定义工具区增加只读折叠面板，支持刷新和搜索。
-7. 保留 loopback、Host、Origin 和 body-size guard；无 Agent 或服务未就绪返回稳定错误码。
+要求：
 
-### Wave 4：文档与契约收口（P2）
+- 不输出参数 Schema、prompt、角色卡正文或 secrets。
+- 摘要作为父会话 durable tool result 保存，供复盘和 UI 展示。
+- 实际本地子代理工具面仍以 `ctx.tools.schemas(childAgent)` 为权威。
 
-修改目标：
+## 七、角色卡与任务规则
 
-- `docs/engine-reuse.md`
-- `README.md`
-- `PLAN.md`
-- 受影响的模板注释
+### 7.1 角色卡绑定
+
+角色卡 JSON、`converted.yml` 和记忆文件保持不变。工具档绑定存储在当前 preset 的 `subagentToolPolicy.characterBindings`，因为相同角色卡在不同 preset 可以拥有不同权限。
+
+UI 使用现有角色卡列表：
+
+```text
+角色卡          工具档       模型可选择
+分析师 analyst   researcher   是
+开发者 developer coder        是
+```
+
+本轮角色绑定只决定工具 profile，不自动改变角色卡导入、persona 或世界书语义。需要 per-child persona 时继续使用官方 persona/config-card 能力，避免把角色卡转换规则复制进工具策略模块。
+
+### 7.2 任务类型
+
+扩展 `engine/classify-task.mjs`，在保留现有 `createTaskClassifier()` 的同时增加通用有序规则分类：
+
+```js
+createOrderedTaskClassifier(rules)
+```
+
+规则：
+
+- order 升序，同 order 按数组顺序；
+- 首个匹配获胜；
+- 输入固定为 `description + "\n" + prompt`；
+- 显式 `task_type` 优先于自动分类；
+- 无匹配回落 defaultProfile；
+- regex 不使用全局 `g` 状态；
+- 非法 pattern 保存时拒绝。
+
+## 八、UI 完整实现
+
+新增：
+
+```text
+src/client/SubagentToolPolicyCard.tsx
+```
+
+挂在现有“工具管线 → 委派”区域，包含五部分。
+
+### 8.1 策略总览
+
+- 启用/停用实例级策略；
+- defaultProfile；
+- ceiling allow/deny；
+- 当前策略校验状态；
+- “既有子代理不变，仅影响新实例”提示。
+
+### 8.2 工具档编辑器
+
+每个 profile 卡支持：
+
+- id、名称；
+- allow/deny；
+- modelSelectable；
+- 复制、删除、排序；
+- 当前工具目录勾选；
+- 手工 TagInput 兼容暂未挂载的第三方工具。
+
+删除被 default、角色或任务引用的 profile 必须拒绝并列出引用位置。
+
+### 8.3 角色卡绑定
+
+- 从现有角色卡库选择；
+- 选择 profile；
+- modelSelectable 开关；
+- 同一 characterId 不得重复；
+- 角色卡删除后显示失效绑定，保存前要求删除或改绑。
+
+### 8.4 任务规则
+
+- id、名称、pattern、order、profile；
+- modelSelectable 开关；
+- 即时正则校验；
+- 提供一段测试文本并展示匹配结果；
+- 不在客户端复制最终分类逻辑，测试请求调用 Host 预览 seam。
+
+### 8.5 模型扩权与实例预览
+
+扩权设置：
+
+- enabled；
+- expansion allow；
+- maxAdditionalTools；
+- requireApproval。
+
+实例预览输入：
+
+- tool（subagent / subagent_fork）；
+- description / prompt；
+- tool_profile；
+- character_id；
+- task_type；
+- additional_tools；
+- restrict_tools。
+
+预览输出：
+
+- selector 命中路径；
+- selected profile；
+- ceiling；
+- 增加/移除工具；
+- effective tools；
+- 是否会触发 approval；
+- provider capability 错误。
+
+UI 预览只读，不创建子代理。
+
+## 九、Bridge 与存储
+
+新增端点：
+
+```text
+/subagent-tool-policy          GET/POST
+/subagent-tool-policy-preview  POST
+/tool-surface                  POST
+```
+
+### 9.1 policy 读写
+
+- 数据源为激活预设 `preset.yml` 顶层 `subagentToolPolicy`。
+- 使用 YAML Document API 保留注释和未知字段。
+- POST 先经统一 resolver 校验，再原子写盘并触发 `rebuildPreset()`。
+- 空策略删除顶层键并移除 `subagent-tool-policy` 模块。
+- 非空策略自动追加模块且去重。
+- 不把策略写入全局 Settings。
+
+### 9.2 policy 物化
+
+`writePreset()` 生成：
+
+```text
+<user-preset>/subagent-tools/policy.yml
+```
+
+并复制/保证 `.engine/subagent-tool-policy*.mjs` 可解析。
+
+`SUBSTANTIVE_PRESET_KEYS` 增加 `subagentToolPolicy`；copy/import/export/duplicate 保留该段。
+
+### 9.3 预览
+
+Host 预览和 runtime execute 使用同一个 `resolveSubagentToolPolicy()`。
+
+预览请求只接受策略 selector 和测试文本，不接受任意文件路径。响应不包含角色卡正文、promptConfigs 或 secrets。
+
+### 9.4 工具面
+
+`/tool-surface` 支持：
+
+- 当前主会话 session id；
+- 当前本地子代理 session id；
+- 返回 `{ name, description }` 摘要；
+- 未知、冷态或远程子代理返回稳定错误，不自动 resume。
+
+## 十、兼容与迁移
+
+### 10.1 未启用策略的预设
+
+完全保持现状：
+
+- 继续使用官方 `@deepseek-ai/dsh-tool-subagent`；
+- 原 `toolFilterAllow/Deny` 参数桥行为不变；
+- 不注册 agent-scoped shadow；
+- 不生成 policy 文件。
+
+### 10.2 首次启用策略
+
+UI 提供一次性初始化：
+
+- default profile 从现有 `toolFilterAllow/Deny` 复制；
+- ceiling 初始值取当前工具面中允许用户勾选的工具；
+- 用户确认后才写入；
+- 不自动删除主代理 `toolFilterAllow/Deny`；
+- 策略启用后，参数桥不再把主代理列表写入 delegation.toolFilter，避免双重过滤。
+
+### 10.3 `toolFilterSubagents`
+
+- 策略未启用：保留旧行为。
+- 策略启用：该参数不参与子代理授权，并在 UI 标记 deprecated。
+- 新策略稳定后另立迁移删除计划，不在本轮静默改写历史 preset。
+
+### 10.4 customTools.scope
+
+仍按上一版计划处理：当前 UI 和 runtime 未实现该字段，出现时显式拒绝，不与本次 subagent policy 混为一套作用域系统。
+
+## 十一、实施 Wave
+
+### Wave 1：Custom ToolDefinition 标准化（P0）
+
+修改：
+
+- `engine/tool-config-engine.mjs`
+- `test/engine/tool-config-engine.test.mjs`
 
 任务：
 
-1. 记录 customTools 使用官方 Schema DSL，运行时转换为标准 ToolDefinition。
-2. 明确 delegate 经官方工具管线，不是目标函数别名。
-3. 删除“scope 已支持”的误导描述，标注为延期能力。
-4. 记录工具面预览只代表当前运行会话，不代表未挂载预设。
-5. 更新执行记录、测试数和最终提交信息。
+1. 从运行中的 DSH 入口解析同一份 `@deepseek-ai/dsh-tools`。
+2. 使用 `defineTool()` 或官方转换函数生成 parameters/output JSON Schema。
+3. 无参数工具生成空 object Schema。
+4. 保留 renderer、timeout、approval、description 消毒和逐条跳过。
+5. `customTools.scope` 显式拒绝。
+6. 增加真实 ToolRuntime schemas/execute 测试。
 
-## 五、文件级变更矩阵
+### Wave 2：delegate 统一走 ToolRuntime（P0）
 
-| 文件 | 最小变更 | 验证 |
+修改：
+
+- `engine/tool-config-engine.mjs`
+- `test/engine/tool-config-engine.test.mjs`
+
+任务：
+
+1. 删除目标 `ToolDefinition.execute()` 直调。
+2. 使用 `ctx.tools.execute()` nested dispatch。
+3. 传播 rootCallId、parent token、signal、additionalContexts、concludesTurn。
+4. 保留 args 映射。
+5. 测试 schema、policy、approval、timeout、取消和 hook。
+
+### Wave 3：Policy resolver 与物化链（P0/P1）
+
+新增/修改：
+
+- `engine/subagent-tool-policy-core.mjs`
+- `engine/classify-task.mjs`
+- `src/host/manifest.ts`
+- `src/host/write-preset.ts`
+- `src/runtime/settings-bridge.ts`
+- `src/shared/bridge-contract.ts`
+- `engine/compositions/source/local/subagent-tool-policy.yml`
+- `scripts/rebuild-composition.mjs`
+- 对应 host/engine/shared tests
+
+任务：
+
+1. 实现策略 schema、编译、解析和模型参数生成。
+2. 新增顶层 `PresetSpec.subagentToolPolicy`。
+3. 新增 policy GET/POST/preview endpoints。
+4. 物化 policy 文件和 engine 模块。
+5. 策略启用时停止把主代理 filter 写入 delegation.toolFilter。
+6. 保持未启用预设零行为变化。
+
+### Wave 4：Agent-scoped subagent shadow（P1）
+
+新增/修改：
+
+- `engine/subagent-tool-policy.mjs`
+- `engine/compositions/source/local/subagent-tool-policy.yml`
+- `test/engine/subagent-tool-policy.test.mjs`
+- `test/host/composition-modules.test.mjs`
+- `test/presets/*` 中需要的集成测试
+
+任务：
+
+1. 为当前 preset generation 的每个 Agent 注册 subagent/subagent_fork shadow。
+2. 按实例 selector 解析 effective toolFilter。
+3. 实现 spawn/fork、foreground/continuable、模型路由和 maxDepth parity。
+4. 实现 expansion approval。
+5. 输出 durable policy summary。
+6. 验证两个 preset generation、主/子代理、compaction 和 disposer 不串状态。
+
+### Wave 5：完整 UI（P1）
+
+新增/修改：
+
+- `src/client/SubagentToolPolicyCard.tsx`
+- `src/client/EngineModuleCards.tsx`
+- `src/client/prompt-tool-bridge.ts`
+- `src/client/prompt-tool-types.ts`
+- `src/client/prompt-tool-store.ts`
+- `src/client/index.ts`
+- `src/client/PromptUi.module.css`
+- client contract tests
+
+任务：
+
+1. 策略、profile、ceiling 编辑。
+2. 角色卡绑定。
+3. 任务规则与测试。
+4. 模型扩权配置。
+5. 实例解析预览。
+6. 当前主/子代理实际工具面查看。
+
+### Wave 6：文档、迁移与全量验收（P2）
+
+修改：
+
+- `README.md`
+- `docs/architecture-params.md`
+- `docs/engine-reuse.md`
+- `PLAN.md`
+- `preset.yml` 示例
+- 受影响模板与迁移脚本
+
+任务：
+
+1. 固化配置契约和授权上限。
+2. 说明“实例创建时冻结”。
+3. 说明 provider capability 差异。
+4. 更新旧 filter 迁移说明。
+5. 更新测试数和提交记录。
+
+## 十二、文件级变更矩阵
+
+| 文件 | 责任 | 验证 |
 |---|---|---|
-| `engine/tool-config-engine.mjs` | 官方 Schema 转换；delegate nested dispatch；显式拒绝 scope | 真实 ToolRuntime 契约测试 |
-| `test/engine/tool-config-engine.test.mjs` | 从对象捕获测试补到真实 registry/execute 测试 | Node test runner |
-| `src/shared/bridge-contract.ts` | 新增只读工具面端点常量与 payload 契约 | shared contract test |
-| `src/runtime/settings-bridge.ts` | 动态等待 agents/tools；按 session 返回 schemas 摘要 | guard/error/success tests |
-| `src/client/prompt-tool-bridge.ts` | 工具面响应解析 | 传输契约测试 |
-| `src/client/prompt-tool-types.ts` | 最小 ToolSurface 类型 | typecheck |
-| `src/client/index.ts` | 暴露当前 session id 或工具面读取能力 | client bundle contract |
-| `src/client/CustomToolsModuleCard.tsx` | 只读列表、搜索、刷新、空态 | client/no-host-DOM tests |
-| `README.md` / `docs/engine-reuse.md` | 更新工具定义、delegate 与运行态预览语义 | `git diff --check` |
+| `engine/tool-config-engine.mjs` | 标准 ToolDefinition、delegate nested dispatch | 真实 ToolRuntime tests |
+| `engine/subagent-tool-policy-core.mjs` | 策略校验、编译、解析、参数 Schema | pure resolver tests |
+| `engine/subagent-tool-policy.mjs` | agent-scoped shadow、subagent start、approval | integration tests |
+| `engine/classify-task.mjs` | 通用有序任务规则 | deterministic classifier tests |
+| `engine/compositions/source/local/subagent-tool-policy.yml` | opt-in runtime 行 | composition tests |
+| `src/host/manifest.ts` | PresetSpec、参数桥分流、模块自动装配 | param/module contract tests |
+| `src/host/write-preset.ts` | policy 文件与 engine 物化 | temp DSH_HOME tests |
+| `src/shared/bridge-contract.ts` | policy/preview/tool-surface endpoints | shared contract tests |
+| `src/runtime/settings-bridge.ts` | 受控读写、预览、实际工具面 | guard/error/rebuild tests |
+| `src/client/SubagentToolPolicyCard.tsx` | 完整策略 UI | client contract tests |
+| `src/client/EngineModuleCards.tsx` | 委派区装配 | render tests |
+| `src/client/prompt-tool-*` | transport、types、store | typecheck/client tests |
+| `scripts/rebuild-composition.mjs` | local module 清单/校验 | rebuild tests |
+| `README.md` / `docs/*` | 长期契约 | diff check |
 
-## 六、验收标准
+## 十三、验收标准
 
-### ToolDefinition
+### 13.1 Custom tools
 
-- [ ] 无参数工具可出现在 `ctx.tools.schemas()` 中。
-- [ ] 参数 DSL 被转换为标准 JSON Schema object。
-- [ ] output DSL 被转换为 registry 可校验的 JSON Schema。
-- [ ] 非法参数在执行前产生标准工具错误，工具实现不被调用。
-- [ ] 非法成功输出被 registry 拒绝。
-- [ ] 工具 disposer 随 preset/agent scope 生命周期撤销。
+- [ ] 无参数工具可进入 `ctx.tools.schemas()`。
+- [ ] parameters/output 均为标准 JSON Schema。
+- [ ] delegate 不直接调用目标 execute。
+- [ ] nested dispatch 经过完整 policy/hook/timeout/approval 管线。
 
-### Delegate
+### 13.2 策略解析
 
-- [ ] 代码中不存在对目标 ToolDefinition 的直接 `execute()` 调用。
-- [ ] nested call 经过 pre/execute/post 管线。
-- [ ] approval、deny、timeout 和 cancellation 不被绕过。
-- [ ] rootCallId / parent token 保持嵌套关系。
-- [ ] additionalContexts / concludesTurn 能传回外层调用。
-- [ ] 现有参数映射模板行为不变。
+- [ ] selector 优先级固定且测试覆盖。
+- [ ] task rules 按 order/数组顺序确定性匹配。
+- [ ] profile、角色、任务引用错误保存失败。
+- [ ] ceiling deny 永远不可恢复。
+- [ ] 模型不可选择 modelSelectable=false 条目。
+- [ ] additional_tools 不能越过 expansion allow、ceiling 或 maxAdditionalTools。
+- [ ] restrict_tools 只能收紧。
 
-### 工具面预览
+### 13.3 实例级权限
 
-- [ ] 只返回当前存活会话实际可见工具。
-- [ ] 不挂载或激活其他预设。
-- [ ] 不把完整参数 Schema、大文本或 secrets 送往客户端。
-- [ ] 无当前会话、未知 session、服务未就绪都有稳定错误载荷。
-- [ ] 搜索只在客户端过滤，不增加请求频率。
-- [ ] UI 仍只通过官方 SlotRegistry，不读取宿主 DOM。
+- [ ] 同一 parent 连续创建两个子代理可获得不同工具集。
+- [ ] role binding 能选择不同 profile。
+- [ ] explicit task_type 与自动 task rule 均能切换 profile。
+- [ ] 模型扩权在允许范围内成功，越界拒绝。
+- [ ] requireApproval=true 时批准前不创建子代理。
+- [ ] 无 approval 服务 fail closed。
+- [ ] 被隐藏工具不出现在 child prompt，也拒绝执行。
+- [ ] 主代理工具面不因子代理策略改变。
+- [ ] 子代理可比主代理拥有更多工具，但不能超过用户 ceiling。
+- [ ] 实例创建后 UI 改策略不改变已运行 child。
 
-### 架构边界
+### 13.4 Provider 与生命周期
 
-- [ ] `preset.yml` 仍是 customTools 单一来源。
-- [ ] `agent.cordis.yml` 和 `custom-tools/*.yml` 仍是生成物。
-- [ ] 不引入旧 `connection.api` / `dsh-client-runtime`。
-- [ ] 不新增通用 preset/plugin JSON mutation。
-- [ ] 不修改运行中的 DSH 服务或真实用户预设。
+- [ ] spawn/fork 支持 foreground 和 continuable。
+- [ ] fork 保持父模型路由和继承上下文语义。
+- [ ] ACP/remote provider 无 toolFilter capability 时 fail loud。
+- [ ] maxDepth 继续生效。
+- [ ] Agent dispose 后 shadow 工具与实例状态清理。
+- [ ] 两个 preset generation 的 policy 不串用。
+- [ ] compaction 不改变实例冻结的 toolFilter。
+- [ ] 冷恢复 continuable child 保持创建时工具限制。
 
-## 七、验证命令
+### 13.5 UI 与 Bridge
+
+- [ ] UI 可编辑 ceiling、profiles、角色绑定、任务规则和扩权。
+- [ ] UI 可预览一次实例解析结果。
+- [ ] UI 可查看当前本地主/子代理实际工具面。
+- [ ] 所有写入先验证后原子写盘并重建。
+- [ ] 不把策略或角色卡正文写入全局 Settings。
+- [ ] SlotRegistry/no-host-DOM 约束继续通过。
+
+### 13.6 回归边界
+
+- [ ] 未声明 `subagentToolPolicy` 的预设生成物与当前基线一致。
+- [ ] 官方 delegation control/workflow/ralph 工具不回归。
+- [ ] customTools、角色卡、世界书和 session_var 现有功能不回归。
+- [ ] 不修改真实用户 `~/.dsh`，测试只使用临时 DSH_HOME。
+
+## 十四、验证命令
 
 所有测试 cwd 固定为 `D:\AI\workspase\_temp`：
 
@@ -331,35 +798,37 @@ pnpm --dir $Repo build
 
 ```pwsh
 node --test "$Repo/test/engine/tool-config-engine.test.mjs"
+node --test "$Repo/test/engine/subagent-tool-policy.test.mjs"
 node --test "$Repo/test/host/settings-bridge.test.mjs"
+node --test "$Repo/test/host/write-preset.test.mjs"
 node --test "$Repo/test/shared/bridge-contract.test.mjs"
 ```
 
 最终仍运行完整 `pnpm --dir $Repo test`。
 
-## 八、实施顺序与中断条件
+## 十五、中断条件
 
-1. Wave 1 先建立真实 ToolRuntime 红灯测试，再修定义转换。
-2. Wave 2 在标准 ToolDefinition 稳定后改 delegate。
-3. Wave 3 只读展示，不与 P0 修改交叉开发。
-4. Wave 4 最后更新长期文档。
+- 无法在生成 `.engine` 中解析与 Host 相同的 `dsh-tools`：停止 Wave 1，先修模块解析，不复制官方转换器。
+- Agent scope 无法安全 shadow 官方 subagent 工具：停止 Wave 4，不退回全局重复注册，也不修改 Host。
+- provider 不能在创建窗口应用 toolFilter：该 provider 不开放实例策略，不做 prompt-only 假过滤。
+- expansion approval 无法在 child 创建前完成：关闭 additional_tools，不先创建后补批准。
+- 冷恢复无法保持 toolFilter：continuable 路径不得发布，先修持久语义。
+- UI 预览与 runtime resolver 产生不同结果：禁止发布，删除重复算法并统一 seam。
+- 任一 Wave 破坏未启用策略预设的生成结果：停止后续 Wave，先恢复零行为变化。
 
-中断条件：
+## 十六、执行记录
 
-- 从 DSH 运行入口解析官方 `dsh-tools` 失败：停止扩大修改，先在隔离 `DSH_HOME` 查明模块解析方式。
-- nested dispatch 无法完整传播上下文/终止语义：保留旧功能关闭 delegate 模板，不退回直接 execute。
-- 工具面 endpoint 需要挂载未激活预设才能回答：取消该能力，只保留当前会话视图。
-- 任一 Wave 破坏现有 preset 物化、主/子代理隔离或 disposer：停止后续 Wave，先修回归。
-
-## 九、执行记录
-
-- [x] 旧 L2 计划全部落地并从本文件移除。
+- [x] 旧 L2 计划全部落地。
 - [x] 分析 `dsh-plugins` 工具与预设实现。
-- [x] 对照 DSH `0.1.2-alpha.4` 当前 API。
-- [x] 用真实 ToolRuntime 复现 customTools Schema 问题。
-- [ ] Wave 1：ToolDefinition 标准化。
+- [x] 对照 DSH `0.1.2-alpha.4` ToolDefinition 与 SubagentStartRequest。
+- [x] 复现 customTools Schema 问题。
+- [x] 确认官方 static tool-subagent 不支持 per-call toolFilter。
+- [x] 确认 agent-local tool 可 shadow preset/global 同名工具。
+- [ ] Wave 1：Custom ToolDefinition 标准化。
 - [ ] Wave 2：delegate 统一走 ToolRuntime。
-- [ ] Wave 3：当前会话工具面预览。
-- [ ] Wave 4：文档与契约收口。
+- [ ] Wave 3：Policy resolver 与物化链。
+- [ ] Wave 4：Agent-scoped subagent shadow。
+- [ ] Wave 5：完整 UI。
+- [ ] Wave 6：文档、迁移与全量验收。
 - [ ] 完整 typecheck / lint / test / build。
 - [ ] 提交并推送 `origin/dev`。
