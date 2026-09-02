@@ -1,5 +1,5 @@
 # 自定义工具模板：委托内置 character_list（自定义名称/描述/参数面；
-# 内置工具为插件固有注册，原工具仍可用）。
+# 保存该模板时自动装配 character-tools，原工具仍可用）。
 id: delegate-character-list
 name: my_character_list
 description: 查看角色卡库（委托内置工具）

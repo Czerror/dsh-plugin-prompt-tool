@@ -1,6 +1,6 @@
 /** 工具管理（tool-pipeline 层）：自定义工具定义 + 第三方策略入口。
  *  数据源 preset.yml customTools 段（/custom-tools）；工具卡片表单化编辑
- *  （kind 专属字段），parameters 行式编辑。内置工具为插件固有注册，
+ *  （kind 专属字段），parameters 行式编辑。内置工具由对应 modules 按预设装配，
  *  自定义面走 delegate 模板包装（无需开关/描述配置）。 */
 import { useEffect, useState, type ReactNode } from 'react'
 import clsx from 'clsx'

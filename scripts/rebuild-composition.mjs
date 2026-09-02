@@ -13,7 +13,7 @@
 //   4. 写出 library/*.yml 与 anchored-standard.yml 组合清单。
 // 用法:node scripts/rebuild-composition.mjs [deepseek-harness 仓库路径]
 import { readFileSync, writeFileSync, readdirSync, mkdirSync, rmSync, renameSync, existsSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { basename, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parse as parseYaml } from 'yaml'
 
@@ -23,6 +23,7 @@ const presetsDir = join(repo, 'packages', 'preset', 'agent-presets', 'presets')
 const compositionDir = join(root, 'engine', 'compositions')
 const libraryDir = join(compositionDir, 'library')
 const localDir = join(compositionDir, 'source', 'local')
+const sourceRepo = basename(repo) || 'deepseek-harness'
 
 /** 按顶层行 id 切分官方组合文本;段注释归入其后第一个行模块。 */
 function sections(text) {
@@ -95,6 +96,9 @@ const MODULES = [
   { id: 'tool-bootstrap', from: 'local' },
   { id: 'code-presentation', from: 'local' },
   { id: 'tool-config-engine', from: 'local' },
+  { id: 'character-tools', from: 'local' },
+  { id: 'world-book-tools', from: 'local' },
+  { id: 'session-var-tools', from: 'local' },
   { id: 'prompt-config-engine', from: 'local' },
   { id: 'run-code-env', from: 'local' },
   { id: 'persona', from: 'standard' },
@@ -153,7 +157,7 @@ try {
       if (section === undefined) throw new Error(`${id}: official ${from} preset has no top-level row ${sourceId ?? id}`)
       body = applyPatches(id, section, `${from}/agent.cordis.yml`)
       const patches = PATCHES[id]?.length ?? 0
-      provenance = `# module: ${id}\n# source: ${repo}/packages/preset/agent-presets/presets/${from}/agent.cordis.yml\n# local patches: ${patches}\n\n`
+      provenance = `# module: ${id}\n# source: ${sourceRepo}/packages/preset/agent-presets/presets/${from}/agent.cordis.yml\n# local patches: ${patches}\n\n`
     }
     writeFileSync(join(tmpDir, `${id}.yml`), provenance + body)
   }

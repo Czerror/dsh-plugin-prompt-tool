@@ -15,6 +15,9 @@ modules:
   - tool-bootstrap
   - code-presentation
   - prompt-config-engine
+  - character-tools
+  - world-book-tools
+  - session-var-tools
   - official-agent-instructions
   - persistent-shell
   - custom-bash
@@ -51,11 +54,6 @@ moduleConfigs:
     deferredSources: [agent-instructions, skill-catalog]
     deferredGraceSteps: 1
     instructionHint: true
-# 内置模型工具面（组合行按预设挂载 per-session 注册；缺省全开，此段显式声明便于手编关闭）。
-builtinTools:
-  character: true
-  worldBook: true
-  sessionVar: true
 params:
 promptConfigs:
   - id: prompt-injector

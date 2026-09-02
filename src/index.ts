@@ -773,50 +773,35 @@ registerTuiCommand(
     }
   }
 
-  // 内置模型工具桥接服务：组合行 pt-builtin-tools（writePreset 按 preset.yml
-  // builtinTools 段渲染）挂载时在本行 scope 上调用 mount 注册 character /
-  // world_book / session_var 工具——官方 tools.register 在组合行 ctx 调用即仅
-  // 挂载该预设的会话可见，宿主平面不再无条件全局注册（此前所有会话无条件可见，
-  // 且 writePreset 关闭后工具仍注入）。工具 execute 仍操作插件当前激活预设。
-  ctx.provide('pt-builtin-tools', {
-    mount: (scopeCtx: Context, config: Record<string, unknown>): (() => void) => {
-      const disposers: Array<() => void> = []
-      const push = (dispose: unknown): void => {
-        if (typeof dispose === 'function') disposers.push(dispose as () => void)
-      }
-      if (config.character !== false) {
-        push(registerCharacterTools(scopeCtx, {
-          presetRoot: () => dirname(activePresetDir()),
-          templateName: () => basename(activePresetDir()),
-          rebuild: () => {
-            try {
-              rebuildPreset()
-            } catch (error) {
-              warn(ctx, `prompt-tool: character tool rebuild failed: ${String(error)}`)
-            }
-          },
-        }))
-      }
-      if (config.worldBook !== false) {
-        push(registerWorldBookTools(scopeCtx, {
-          activeDir: () => activePresetDir(),
-          presetRoot: () => dirname(activePresetDir()),
-          rebuild: () => {
-            try {
-              rebuildPreset()
-            } catch (error) {
-              warn(ctx, `prompt-tool: world-book tool rebuild failed: ${String(error)}`)
-            }
-          },
-        }))
-      }
-      if (config.sessionVar !== false) {
-        push(registerSessionVarTools(scopeCtx))
-      }
-      return () => {
-        for (const dispose of disposers) dispose()
-      }
-    },
+  // 内置模型工具由三个独立预设模块按需挂载；宿主只提供对应注册服务。
+  ctx.provide('pt-character-tools', {
+    mount: (scopeCtx: Context): (() => void) => registerCharacterTools(scopeCtx, {
+      presetRoot: () => dirname(activePresetDir()),
+      templateName: () => basename(activePresetDir()),
+      rebuild: () => {
+        try {
+          rebuildPreset()
+        } catch (error) {
+          warn(ctx, 'prompt-tool: character tool rebuild failed: ' + String(error))
+        }
+      },
+    }),
+  })
+  ctx.provide('pt-world-book-tools', {
+    mount: (scopeCtx: Context): (() => void) => registerWorldBookTools(scopeCtx, {
+      activeDir: () => activePresetDir(),
+      presetRoot: () => dirname(activePresetDir()),
+      rebuild: () => {
+        try {
+          rebuildPreset()
+        } catch (error) {
+          warn(ctx, 'prompt-tool: world-book tool rebuild failed: ' + String(error))
+        }
+      },
+    }),
+  })
+  ctx.provide('pt-session-var-tools', {
+    mount: (scopeCtx: Context): (() => void) => registerSessionVarTools(scopeCtx),
   })
 
   // settings 注册 base 与运行时快照同源（单一组装，避免双份字段漂移）。

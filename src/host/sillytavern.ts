@@ -12,7 +12,7 @@
  *     模型参数由「模型设置」UI 统一管理（预设级 params.model*，writePreset 渲染
  *     agent-request patch），ST 卡固化值会覆盖用户在模型设置里的设置，故剥离；
  *   - modules 按需组装：prompt-config-engine 始终，system-section 注入需要
- *     persona（complete: false 允许 system-section 生效）。
+ *     persona（complete: false 允许 system-section 生效），世界书条目需要 world-book-tools。
  */
 import { createHash } from 'node:crypto'
 import type { PresetSpec } from './manifest.ts'
@@ -86,6 +86,9 @@ export function mergeStPresets(specs: PresetSpec[]): PresetSpec {
       if (!modules.includes(name)) modules.push(name)
     }
   }
+  if (promptConfigs.some((config) => config.strategy === 'world-book') && !modules.includes('world-book-tools')) {
+    modules.push('world-book-tools')
+  }
   const moduleConfigs: Record<string, Record<string, unknown>> = {}
   for (const spec of specs) {
     for (const [key, value] of Object.entries(spec.moduleConfigs ?? {})) {
@@ -132,6 +135,7 @@ export function convertStToPreset(card: unknown, baseName: string): PresetSpec {
   const configs: Array<Record<string, unknown>> = []
   const droppedMarkers: string[] = []
   let systemSectionCount = 0
+  let hasWorldBook = false
   // 角色卡正文：chara_card_v3 实际内容在 data 内层（顶层为同步冗余），旧版顶层直存。
   const body = (record.data !== null && typeof record.data === 'object' ? record.data as Record<string, unknown> : record) as Record<string, unknown>
   // 扩展注入物剥离（TavernHelper 等 ST 扩展脚本/文档）：本引擎不执行 JS，
@@ -190,6 +194,7 @@ export function convertStToPreset(card: unknown, baseName: string): PresetSpec {
         ? Object.values(rawEntries as Record<string, unknown>)
           .filter((e): e is Record<string, unknown> => e !== null && typeof e === 'object' && !Array.isArray(e))
         : []
+    hasWorldBook = true
     for (const [index, entry] of entryList.entries()) {
       if (entry === null || typeof entry !== 'object') continue
       const content = clean(typeof entry.content === 'string' ? entry.content : '')
@@ -315,6 +320,7 @@ export function convertStToPreset(card: unknown, baseName: string): PresetSpec {
 
   // modules 按需组装：prompt-config-engine 始终；system-section 注入需要 persona 服务。
   const modules = ['prompt-config-engine']
+  if (hasWorldBook) modules.push('world-book-tools')
   const moduleConfigs: Record<string, Record<string, unknown>> = {}
   if (systemSectionCount > 0) {
     modules.unshift('persona')

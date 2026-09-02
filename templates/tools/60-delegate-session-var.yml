@@ -1,5 +1,5 @@
 # 自定义工具模板：委托内置 session_var（自定义名称/描述/参数面；
-# 内置工具为插件固有注册，原工具仍可用）。
+# 保存该模板时自动装配 session-var-tools，原工具仍可用）。
 id: delegate-session-var
 name: my_session_var
 description: 会话变量管理（委托内置工具）

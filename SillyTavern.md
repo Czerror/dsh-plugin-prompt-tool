@@ -45,6 +45,7 @@
 | 含 system-section | 前插 `persona` | `persona.complete: false`（standard 语义，允许 system-section 生效；text 不声明，不注入 anchored 内容） |
 | `enable_web_search: true` | 追加 `tool-web` | `tool-web.fetch: true` |
 | `enable_web_search: false` | 追加 `tool-filter` | `tool-filter.includeSubagents: false` + `deny: [web_search, web_fetch]` |
+| 含有效 `character_book` 条目 | 追加 `world-book-tools` | —（导入后可直接调用世界书管理工具） |
 
 ## 生成预设元数据
 
@@ -221,6 +222,7 @@ promptConfigs:
   完整模块卡片形态展示——可编辑任意字段（id/名称/层级/策略参数/排序/启用），可批量启用/禁用
 - **模型工具**：`world_book_list / world_book_upsert / world_book_delete`
   （读写 promptConfigs 的 world-book 配置；`note` 写入角色卡记忆）
+  该工具由 `world-book-tools` 模块提供；ST 预设含有效世界书条目时导入链路自动加入该模块。
 - **旧数据迁移**：旧版 preset.yml 顶层 `worldBook` 段在下次重建时自动迁移为
   world-book 配置并删除段（一次性、幂等）
 

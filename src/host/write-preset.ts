@@ -26,7 +26,6 @@ import {
   loadPresetSpec,
   packageEngineDir,
   renderComposition,
-  resolveBuiltinTools,
   resolvePresetParams,
   resolveRenderablePresetDir,
 } from './manifest.ts'
@@ -331,27 +330,11 @@ export function writePreset(prompt: string, options: WritePresetOptions): void {
   assertCompositionArray(composition, spec)
   // 共享引擎路径重写（引擎只物化一份于预设根 .engine）：组合的引擎引用
   // ./engine/ → ../.engine/（相对预设目录 = 预设根/.engine）；configsDir 相对
-  // 引擎文件（.engine/）解析 → ../<template>/prompt-configs（指向本预设目录）。
+  // 引擎文件（.engine/）解析 → ../<template>/{prompt-configs,custom-tools}（指向本预设目录）。
   let subComposition = composition
     .replaceAll('./engine/', '../.engine/')
     .replaceAll('../prompt-configs', `../${outputId}/prompt-configs`)
-  // 1.5) 内置模型工具行（preset.yml 顶层 builtinTools 段，缺省全开）：
-  // 桥接行挂载即在组合行 scope 上注册 character/world_book/session_var 工具
-  // （仅该预设会话可见；宿主平面不再无条件全局注册）。任一组启用才追加行，
-  // 行 config 直接写 ../.engine/ 终态路径（不经上面的批量重写）。
-  const builtin = resolveBuiltinTools(spec)
-  if (builtin.character || builtin.worldBook || builtin.sessionVar) {
-    const row = [
-      '- id: pt-builtin-tools',
-      '  name: ../.engine/pt-builtin-tools.mjs',
-      '  config:',
-      `    character: ${builtin.character}`,
-      `    worldBook: ${builtin.worldBook}`,
-      `    sessionVar: ${builtin.sessionVar}`,
-      '',
-    ].join('\n')
-    subComposition += subComposition.endsWith('\n') ? row : `\n${row}`
-  }
+    .replaceAll('../custom-tools', `../${outputId}/custom-tools`)
   writeFileSync(join(outDir, 'agent.cordis.yml'), subComposition, 'utf8')
 
   // 2) 宿主预设元数据：新布局 preset.yml = 参数 + 元数据一体。

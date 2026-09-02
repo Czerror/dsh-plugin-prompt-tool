@@ -38,7 +38,7 @@ function sourceCardId(presetRoot: string, entryId: string): string | undefined {
   return best
 }
 
-/** 注册世界书条目级模型工具；返回 disposer（预设切换重挂用）。enabled=false 返回空操作。 */
+/** 注册世界书条目级模型工具；返回 disposer，随 world-book-tools 预设模块生命周期清理。 */
 export function registerWorldBookTools(ctx: Context, host: WorldBookToolHost): () => void {
   const fiber = ctx.inject(['tools'], (toolsCtx) => {
     const disposers: Array<() => void> = []

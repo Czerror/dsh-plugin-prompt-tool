@@ -516,6 +516,7 @@ test('writePreset 预设级模板变量生成 variables.yml（顶层 variables �
     const doc = parseDocument(readFileSync(presetFile, 'utf8'))
     doc.setIn(['params', 'legacyVar'], '旧值')
     doc.setIn(['params', 'legacyEmpty'], '')
+    doc.get('modules', true).add('tool-config-engine')
     writeFileSync(presetFile, doc.toString(), 'utf8')
     savePresetParams(homePresetDir, 'anchored', undefined, undefined, { wordsCloud: '1500字', 日期: '' })
     writePreset('PROMPT', {
@@ -573,6 +574,7 @@ test('writePreset 自定义工具渲染 custom-tools/<n>-<id>.yml（源 = preset
       },
       { id: 'bad', name: 'no execute' },
     ])
+    doc.get('modules', true).add('tool-config-engine')
     writeFileSync(presetFile, doc.toString(), 'utf8')
     writePreset('PROMPT', makeOptions(presetDir))
     const customToolsDir = join(presetDir, 'anchored', 'custom-tools')
@@ -583,6 +585,9 @@ test('writePreset 自定义工具渲染 custom-tools/<n>-<id>.yml（源 = preset
     assert.equal(parsed.name, 'my_greet')
     assert.equal(parsed.execute.kind, 'shell')
     assert.equal(parsed.parameters.who.required, true)
+    const composition = parseYaml(readFileSync(join(presetDir, 'anchored', 'agent.cordis.yml'), 'utf8'))
+    const toolRow = composition.find((row) => row?.id === 'tool-config-engine')
+    assert.equal(toolRow.config.configsDir, '../anchored/custom-tools', 'custom-tools 路径应重写到当前预设')
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
@@ -627,6 +632,7 @@ test('P1 回归：晋升门控/渐进披露/验证工具参数键不进 variable
       { name: '了解', tools: ['read', 'glob', 'grep'] },
       { name: '开发', tools: ['write', 'edit'] },
     ])
+    doc.get('modules', true).add('tool-config-engine')
     writeFileSync(presetFile, doc.toString(), 'utf8')
 
     writePreset('PROMPT', makeOptions(dir))
@@ -813,44 +819,17 @@ test('writePreset 禁用大条目瘦身：enabled=false 超阈值正文不落产
   }
 })
 
-test('writePreset builtinTools 段 → pt-builtin-tools 组合行（缺省全开 / 按组控制 / 全关不渲染）', () => {
-  const dir = join(tmpdir(), `prompt-tool-bt-${process.pid}-${Date.now()}`)
+test('writePreset 模块清单直接装配内置工具模块' , () => {
+  const dir = join(tmpdir(), `prompt-tool-modules-${process.pid}-${Date.now()}`)
   const presetDir = join(dir, 'preset')
-  // 临时用户预设模板（用户副本优先于包内模板）：独立控制 spec，不污染共享 anchored。
-  const userTemplateDir = join(home, '.agent-presets', 'bt-face')
   try {
-    const writeSpec = (builtinYaml) => {
-      mkdirSync(userTemplateDir, { recursive: true })
-      writeFileSync(join(userTemplateDir, 'preset.yml'),
-        `id: bt-face\nname: BT Face\nversion: 1.0.0\nengineCompat: ">=0.4.2"\nmodules: []\n${builtinYaml}`, 'utf8')
-    }
-    const readToolRow = () => {
-      const rows = parseYaml(readFileSync(join(presetDir, 'bt-face', 'agent.cordis.yml'), 'utf8'))
-      return rows.find((entry) => entry?.id === 'pt-builtin-tools')
-    }
-    // 1) 无段（已物化的旧用户预设）：缺省全开——与旧版全局注册行为兼容，工具不丢。
-    writeSpec('')
-    writePreset('PROMPT', { ...makeOptions(presetDir), presetTemplate: 'bt-face' })
-    let row = readToolRow()
-    assert.ok(row, '缺省应渲染 pt-builtin-tools 行（旧行为兼容）')
-    assert.equal(row.name, '../.engine/pt-builtin-tools.mjs', '桥接行指向共享引擎（相对预设目录）')
-    assert.deepEqual(row.config, { character: true, worldBook: true, sessionVar: true }, '缺省三组全开')
-    // 2) 按组关闭：config 如实反映（组合行 scope 注册时按组过滤）。
-    writeSpec('builtinTools:\n  character: false\n  worldBook: true\n  sessionVar: false\n')
-    writePreset('PROMPT', { ...makeOptions(presetDir), presetTemplate: 'bt-face' })
-    row = readToolRow()
-    assert.deepEqual(row.config, { character: false, worldBook: true, sessionVar: false }, '按组控制 config')
-    // 3) 全关：不渲染行（挂载该预设的会话没有内置工具注入）。
-    writeSpec('builtinTools:\n  character: false\n  worldBook: false\n  sessionVar: false\n')
-    writePreset('PROMPT', { ...makeOptions(presetDir), presetTemplate: 'bt-face' })
-    assert.equal(readToolRow(), undefined, '全关不应渲染行')
-    // 4) 坏值（段不是 map）：归一回落全开，不 fail loud。
-    writeSpec('builtinTools: oops\n')
-    writePreset('PROMPT', { ...makeOptions(presetDir), presetTemplate: 'bt-face' })
-    row = readToolRow()
-    assert.deepEqual(row.config, { character: true, worldBook: true, sessionVar: true }, '坏值回落全开（渲染层宽容）')
+    writePreset('PROMPT', makeOptions(presetDir))
+    const rows = parseYaml(readFileSync(join(presetDir, 'anchored', 'agent.cordis.yml'), 'utf8'))
+    const ids = rows.map((row) => row?.id).filter(Boolean)
+    assert.ok(ids.includes('character-tools'), '角色卡工具模块应由 modules 装配')
+    assert.ok(ids.includes('world-book-tools'), '世界书工具模块应由 modules 装配')
+    assert.ok(ids.includes('session-var-tools'), '会话变量工具模块应由 modules 装配')
   } finally {
     rmSync(dir, { recursive: true, force: true })
-    rmSync(userTemplateDir, { recursive: true, force: true })
   }
 })

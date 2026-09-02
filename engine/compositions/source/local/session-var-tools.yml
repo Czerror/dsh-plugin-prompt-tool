@@ -1,0 +1,5 @@
+# module: session-var-tools
+# source: engine/compositions/source/local/session-var-tools.yml (本地附加,非官方模块)
+
+- id: session-var-tools
+  name: ./engine/session-var-tools.mjs

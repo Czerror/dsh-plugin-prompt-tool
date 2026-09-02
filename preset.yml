@@ -253,7 +253,7 @@ promptConfigs:
 # 每轮注入（对齐 dsh-tavern 语义）。管理入口：模块列表下拉「世界书」过滤
 # （完整模块卡片编辑 + 批量启用/禁用）；模型工具（会话中直接维护，写入本段
 # promptConfigs）：world_book_list（列出条目）/ world_book_upsert（新增或更新，
-# 自定义工具（顶层 customTools 段，tool-config-engine 加载渲染并运行时注册）：
+# 自定义工具（顶层 customTools 段；首次保存自动加入 tool-config-engine 模块，加载渲染并运行时注册）：
 #   声明式定义模型工具：id（文件标识）/ name（模型可见 ^[a-z][a-z0-9_]*$）/
 #   description / parameters（dsh-tools schema 形态）/ output.schema / execute：
 #   kind 执行器 shell（命令，{{args.x}} 插值，env 白名单）/ http（fetch）/
@@ -390,7 +390,7 @@ promptConfigs:
 
 # ── modules：引擎行/组模块装配顺序（增删即改装配）───────────────────────────
 # 28 个可用模块：context-gate / tool-filter / tool-bootstrap / code-presentation /
-# prompt-config-engine / run-code-env / persona / tool-bash / tool-pwsh /
+# prompt-config-engine / tool-config-engine / character-tools / world-book-tools / session-var-tools / run-code-env / persona /
 # persistent-shell / custom-bash / tool-fs / tool-fs-search / str-replace-editor /
 # bootstrap-filesystem / tool-jobs / skill-filesystem / skill-search / tool-goal /
 # planning / compaction / delegation / tool-ask-user / tool-todo / tool-web /
@@ -403,6 +403,9 @@ modules:
   - tool-bootstrap               # 工具目录引导
   - code-presentation            # 晋升后 Code Mode (PTC) 呈现
   - prompt-config-engine         # 提示词注入引擎（必需行，勿删）
+  - character-tools              # 角色卡模型工具
+  - world-book-tools             # 世界书模型工具
+  - session-var-tools            # 会话变量模型工具
   - run-code-env                 # 代码运行环境变量注入
   - persona                      # 人设组装
   - tool-bash                    # bash 工具
@@ -426,6 +429,7 @@ modules:
   # - anchor-turn                # 前置锚定轮（上游移植；行默认 enabled: false，开关见 params.anchorTurn）
   # - deliberation-gate          # 轨迹深度门（上游移植；行默认 enabled: false，开关见 params.deliberationGate）
   # - cot-drip                   # 深思维持节拍（上游移植；行默认 enabled: false，开关见 params.cotDrip）
+  # - tool-config-engine          # 自定义工具保存时自动加入；手动声明也可用
 
 # ── moduleConfigs（可选）：行级 config 直写通道 ──────────────────────────────
 # 仅用于参数桥未覆盖的行级 config（ST 导入等直写 tool-web.fetch / tool-filter.deny）。

@@ -44,6 +44,7 @@ test('convertStToPreset：世界书正则键保留原样且不写幽灵字段 us
     },
   }
   const spec = convertStToPreset(card, 'test-card')
+  assert.ok(spec.modules.includes('world-book-tools'), '含世界书时自动装配 world-book-tools 模块')
   const lore = spec.promptConfigs.filter((config) => config.strategy === 'world-book')
   assert.equal(lore.length, 2, '两条世界书条目都转换')
   assert.equal(lore[0].params.keys[0], '/^剑\\d+$/')

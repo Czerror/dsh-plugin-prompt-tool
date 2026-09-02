@@ -3,7 +3,8 @@ import assert from 'node:assert/strict'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { Readable } from 'node:stream'
-import { mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { parse as parseYaml } from 'yaml'
 import { BRIDGE_ENDPOINTS, MAX_BRIDGE_BODY_BYTES, MAX_CHARACTER_CARD_STREAM_BYTES, registerSettingsBridge } from '../../lib/index.mjs'
 
 const PREFIX = '/api/prompt-tool/settings'
@@ -469,4 +470,63 @@ test('settings bridge Origin 完整校验 scheme/host/port（端口不匹配拒�
   const badHostRes = fakeRes()
   await handler(fakeReq({ headers: { host: 'localhost:3080', origin: 'http://evil.com:3080' } }), badHostRes)
   assert.equal(badHostRes.status, 403)
+})
+
+test('settings bridge /custom-tools 保存时自动追加工具模块', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'pt-custom-tools-modules-'))
+  try {
+    writeFileSync(join(dir, 'preset.yml'), ['id: beta', 'modules: []', ''].join(String.fromCharCode(10)), 'utf8')
+    const { ctx, handlers } = makeHarness()
+    registerSettingsBridge(ctx, 'prompt-tool',
+      () => ({ available: true, providers: [] }),
+      () => ({ activeSkillsDirs: [], skillCatalog: [] }),
+      () => '',
+      undefined,
+      () => dir,
+      undefined,
+      undefined,
+      () => {},
+    )
+    const handler = handlers.get(PREFIX + BRIDGE_ENDPOINTS.customTools)
+    assert.ok(handler, '/custom-tools 端点应注册')
+    const payload = Buffer.from(JSON.stringify({ customTools: [
+      { id: 'shell', execute: { kind: 'shell' } },
+      { id: 'world', execute: { kind: 'delegate', tool: 'world_book_upsert' } },
+    ] }))
+    const res = fakeRes()
+    await handler(fakeReq({ [Symbol.asyncIterator]: async function* () { yield payload } }), res)
+    assert.equal(res.status, 200)
+    const parsed = parseYaml(readFileSync(join(dir, 'preset.yml'), 'utf8'))
+    assert.ok(parsed.modules.includes('tool-config-engine'), '保存自定义工具时自动装配 tool-config-engine')
+    assert.ok(parsed.modules.includes('world-book-tools'), '委托世界书工具时自动装配 world-book-tools')
+    assert.equal(new Set(parsed.modules).size, parsed.modules.length, '模块不应重复')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('settings bridge /custom-tools 拒绝缺少 modules 的预设', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'pt-custom-tools-no-modules-'))
+  try {
+    writeFileSync(join(dir, 'preset.yml'), 'id: plain' + String.fromCharCode(10), 'utf8')
+    const { ctx, handlers } = makeHarness()
+    registerSettingsBridge(ctx, 'prompt-tool',
+      () => ({ available: true, providers: [] }),
+      () => ({ activeSkillsDirs: [], skillCatalog: [] }),
+      () => '',
+      undefined,
+      () => dir,
+      undefined,
+      undefined,
+      () => {},
+    )
+    const handler = handlers.get(PREFIX + BRIDGE_ENDPOINTS.customTools)
+    const payload = Buffer.from(JSON.stringify({ customTools: [{ id: 'shell', execute: { kind: 'shell' } }] }))
+    const res = fakeRes()
+    await handler(fakeReq({ [Symbol.asyncIterator]: async function* () { yield payload } }), res)
+    assert.equal(res.status, 409)
+    assert.doesNotMatch(readFileSync(join(dir, 'preset.yml'), 'utf8'), /customTools|modules:/)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
 })

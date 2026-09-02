@@ -1,0 +1,5 @@
+# module: character-tools
+# source: engine/compositions/source/local/character-tools.yml (本地附加,非官方模块)
+
+- id: character-tools
+  name: ./engine/character-tools.mjs

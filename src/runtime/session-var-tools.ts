@@ -12,7 +12,7 @@ import { defineTool } from '@deepseek-ai/dsh-tools'
 
 const text = (value: string): Array<{ type: 'text'; text: string }> => [{ type: 'text', text: value }]
 
-/** 注册会话变量模型工具；返回 disposer（预设切换重挂用）。enabled=false 返回空操作。 */
+/** 注册会话变量模型工具；返回 disposer，随 session-var-tools 预设模块生命周期清理。 */
 export function registerSessionVarTools(ctx: Context): () => void {
   const fiber = ctx.inject(['tools'], (toolsCtx) => {
     const disposers: Array<() => void> = []

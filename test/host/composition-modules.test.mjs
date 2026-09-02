@@ -8,12 +8,15 @@ import { parse } from 'yaml'
 const root = fileURLToPath(new URL('../..', import.meta.url))
 const read = (path) => readFileSync(join(root, path), 'utf8')
 
-test('模块清单由参数文件决定:preset/anchored/preset.yml 声明 27 个模块,且全部存在', () => {
+test('模块清单由参数文件决定:preset/anchored/preset.yml 声明 30 个模块,且全部存在', () => {
   const preset = parse(read('preset/anchored/preset.yml'))
   const modules = preset.modules
   assert.ok(Array.isArray(modules))
-  assert.equal(modules.length, 27)
+  assert.equal(modules.length, 30)
   assert.ok(modules.includes('command-goal'), 'alpha.1 官方 standard 系预设应接入 command-goal')
+  assert.ok(modules.includes('character-tools'), '角色卡工具由独立模块装配')
+  assert.ok(modules.includes('world-book-tools'), '世界书工具由独立模块装配')
+  assert.ok(modules.includes('session-var-tools'), '会话变量工具由独立模块装配')
   for (const name of modules) {
     const file = `engine/compositions/library/${name}.yml`
     assert.ok(existsSync(join(root, file)), `missing module ${file}`)
@@ -32,6 +35,7 @@ test('组合库无 __TOKEN__ 残留：参数桥模块齐备且行默认可解析
   // 对象桥取代 token 后，library 全部文件都应是合法 YAML（无占位符）。
   const library = readdirSync(join(root, 'engine/compositions/library')).filter((f) => f.endsWith('.yml'))
   for (const file of library) {
+    assert.doesNotMatch(read(join('engine/compositions/library', file)), /^# source: (?:[A-Za-z]:[\\\\/]|\/)/m, file + ' 不得写入本机绝对 source 路径')
     assert.ok(!/__[A-Za-z0-9_]+__/.test(read(join('engine/compositions/library', file))), `${file} 不应含 __TOKEN__`)
   }
   // 参数桥模块：code-presentation（PTC 呈现拆出行）/ tool-filter（掩码）独立存在。

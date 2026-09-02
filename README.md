@@ -30,10 +30,10 @@ dsh --profile prompt-tool                                          # 首次启�
 - 🎭 **SillyTavern 导入**：JSON 预设卡片一键转换为本地预设——`prompts[]` 映射提示词配置、setvar/getvar 收集进顶层 `variables`（未定义自定义宏自动登记空值占位）、`enable_web_search` 按开关装配工具；采样参数剥离（模型设置 UI 管理）
 - 🎴 **角色卡库**：SillyTavern 角色卡（PNG tEXt chunk `ccv3`/`chara`，或 chara_card JSON）导入独立库（`.characters/<id>/`，含原图/转换参数/角色记忆），按 PNG 魔数识别图片并经原始文件流上传，避免头像 base64 膨胀；按需「导入到当前预设」（`chara-<卡>-` 前缀合并、幂等可移除），多文件自动合并
 - 📚 **世界书**：`character_book` 转 world-book 策略配置（`keys` 命中触发 / `constant` 常驻 / 正则键自动检测 / `selectiveLogic` 组合逻辑），与模块卡片同一存储与编辑（模块列表「世界书」过滤 + 批量启用/禁用）
-- 🛠️ **自定义工具**：preset.yml `customTools` 段声明式定义模型工具（执行器 shell/http/delegate/fs/ask-user，`{{args.x}}` 参数插值），`tool-config-engine` 引擎行运行时注册；模块列表「自定义工具」卡片 JSON 编辑
+- 🛠️ **自定义工具**：preset.yml `customTools` 段声明式定义模型工具（执行器 shell/http/delegate/fs/ask-user，`{{args.x}}` 参数插值）；首次保存自动把 `tool-config-engine` 加入 `modules`，模块列表「自定义工具」卡片 JSON 编辑
 - 🧩 **模板变量**：预设级 `variables` 段（`{{key}}` 插值源）——模块列表顶部「模板变量」卡片统一编辑（可折叠/清空/停用/失焦自动保存）；锚定匹配引擎（anchor-match）统一 custom-fallback 与 world-book 的匹配语义
 - 💬 **会话变量工具**：`session_var`（list/get/set/clear）——模型维护角色状态（`{{心情}}` 等），会话级覆盖预设默认；ST 运行时宏（`{{lastusermessage}}` / `{{lastcharmessage}}`）从会话事件提取
-- 🧰 **预设级内置工具面**：preset.yml#builtinTools 分组控制角色卡、世界书与会话变量工具；工具随预设组合行按会话挂载，关闭预设生成时以空组合保持预设可切换并停止全部注入
+- 🧩 **工具按模块装配**：角色卡、世界书、会话变量、自定义工具分别由 `character-tools` / `world-book-tools` / `session-var-tools` / `tool-config-engine` 模块提供；不再维护重复的顶层工具开关
 
 ## 项目架构
 
@@ -111,7 +111,8 @@ UI / 写盘展示顺序固定为 `pre-step → system-section → runtime-contex
 - 采样参数（`temperature` / `openai_max_tokens` / `reasoning_effort`）**剥离**——模型参数统一由「模型设置」UI / 宿主默认管理
 - ST 变量：`setvar`/`getvar`（含默认值）收集进顶层 `variables`；未定义自定义宏自动登记空值占位（不留字面）
 - `enable_web_search`：`true` → 组装 `tool-web`（fetch 启用）；`false` → 不组装，改加 `tool-filter` 黑名单 `web_search / web_fetch`
-- `modules` 按需装配：`prompt-config-engine` 始终；含 system-section 时补 `persona`（`complete: false` 允许 system 段生效）
+- 含有效 `character_book` 条目时自动追加 `world-book-tools` 模块，使导入预设可直接调用世界书管理工具
+- `modules` 按需装配：`prompt-config-engine` 始终；含 system-section 时补 `persona`（`complete: false` 允许 system 段生效）；含世界书条目时补 `world-book-tools`
 
 转换结果是一个普通预设（id 由文件名生成），可在工作台预设切换器中直接使用。字段级参数对照与完整示例见 [SillyTavern.md](SillyTavern.md)。
 
@@ -146,7 +147,7 @@ UI / 写盘展示顺序固定为 `pre-step → system-section → runtime-contex
 
 ```sh
 pnpm install && pnpm build
-pnpm test          # 419 单测：参数契约/注入装配/六插入点/生成链路/引擎语义/安全边界
+pnpm test          # 424 单测：参数契约/注入装配/六插入点/生成链路/引擎语义/安全边界
 pnpm typecheck && pnpm lint
 pnpm sync:anchored       # 刷新 upstream/dsh-anchored-standard 内联快照
 pnpm sync:yaml           # 刷新 engine/vendor/yaml（生成目录运行时 YAML 解析器）

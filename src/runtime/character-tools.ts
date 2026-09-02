@@ -22,7 +22,7 @@ export interface CharacterToolHost {
 
 const text = (text: string): Array<{ type: 'text'; text: string }> => [{ type: 'text', text }]
 
-/** 注册角色卡库模型工具；返回 disposer（预设切换重挂用）。enabled=false 返回空操作。 */
+/** 注册角色卡库模型工具；返回 disposer，随 character-tools 预设模块生命周期清理。 */
 export function registerCharacterTools(ctx: Context, host: CharacterToolHost): () => void {
   const fiber = ctx.inject(['tools'], (toolsCtx) => {
     const disposers: Array<() => void> = []

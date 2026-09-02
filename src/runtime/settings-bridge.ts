@@ -15,6 +15,7 @@ import { validatePromptConfigs } from './configs-validate.ts'
 import { loadPromptTemplates, loadToolTemplates } from '../host/templates.ts'
 import { fixSkillEntry } from './skill-fix.ts'
 import {
+  appendPresetModules,
   assertCompositionArray,
   cloneBuiltinPreset,
   duplicateUserPreset,
@@ -197,6 +198,26 @@ function restorePresetImport(targetDir: string, backupDir: string | undefined): 
     }
   }
 }
+
+/** 自定义工具声明需要的预设模块（模块缺失时保存动作自动补齐）。 */
+function customToolModules(tools: unknown[]): string[] {
+  const modules = new Set<string>()
+  if (tools.length > 0) modules.add('tool-config-engine')
+  for (const tool of tools) {
+    if (tool === null || typeof tool !== 'object' || Array.isArray(tool)) continue
+    const execute = (tool as Record<string, unknown>).execute
+    if (execute === null || typeof execute !== 'object' || Array.isArray(execute)) continue
+    const executeRecord = execute as Record<string, unknown>
+    if (executeRecord.kind !== 'delegate') continue
+    const target = executeRecord.tool
+    if (typeof target !== 'string') continue
+    if (target.startsWith('character_')) modules.add('character-tools')
+    else if (target.startsWith('world_book_')) modules.add('world-book-tools')
+    else if (target === 'session_var') modules.add('session-var-tools')
+  }
+  return [...modules]
+}
+
 
 /** 自建 loopback settings bridge：替代 registerConfigurableProviders，避免模型设置区出现插件条目。 */
 export function registerSettingsBridge(
@@ -814,7 +835,10 @@ export function registerSettingsBridge(
               }
               withPresetDoc(dir, (doc) => {
                 if (customTools.length === 0) doc.deleteIn(['customTools'])
-                else doc.setIn(['customTools'], customTools)
+                else {
+                  doc.setIn(['customTools'], customTools)
+                  appendPresetModules(doc, customToolModules(customTools))
+                }
               })
               afterOverridesChange?.()
               writeBridgeJson(res, 200, { ok: true, value: { customTools } })

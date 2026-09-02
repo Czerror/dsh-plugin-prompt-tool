@@ -40,8 +40,6 @@ export interface PresetSpec {
   variables?: Record<string, string>
   /** 自定义工具定义（tool-config-engine 渲染进 custom-tools/ 后运行时注册）。 */
   customTools?: unknown[]
-  /** 内置模型工具面（character/worldBook/sessionVar 三组；缺省全开，与旧行为兼容）。 */
-  builtinTools?: Record<string, unknown>
   /** 模板变量插值开关（缺省 true = 启用；false = 停用，writePreset 不生成变量文件）。 */
   variablesEnabled?: boolean
   /** 可选:模板自定义提示词配置覆盖(纯数据,不使用模板语法)。 */
@@ -67,29 +65,6 @@ export function packagePresetDir(): string {
     if (existsSync(dir)) return dir
   }
   throw new Error('prompt-tool: cannot locate package preset/ directory')
-}
-
-/** 内置模型工具面归一结果（三组独立开关）。 */
-export interface BuiltinToolsFace {
-  character: boolean
-  worldBook: boolean
-  sessionVar: boolean
-}
-
-/**
- * preset.yml 顶层 builtinTools 段归一：缺段/坏值回落全开（与旧版全局注册行为兼容，
- * 已物化用户预设无段时不丢工具）；显式 false 才关闭对应组。
- */
-export function resolveBuiltinTools(spec: PresetSpec | undefined): BuiltinToolsFace {
-  const raw = spec?.builtinTools
-  const face = raw !== null && typeof raw === 'object' && !Array.isArray(raw)
-    ? raw as Record<string, unknown>
-    : {}
-  return {
-    character: face.character !== false,
-    worldBook: face.worldBook !== false,
-    sessionVar: face.sessionVar !== false,
-  }
 }
 
 /** 包根 engine/ 目录(插件引擎,与配置文件夹分离):兼容源码与打包运行。 */
@@ -600,6 +575,24 @@ export function withPresetDoc(presetDir: string, mutate: (doc: ReturnType<typeof
   mutate(doc)
   atomicWriteTextFile(file, doc.toString())
   invalidatePresetSpec(presetDir)
+}
+
+/** 向 preset.yml 的 modules 追加功能模块；modules: [] 先展开为空白预设的默认骨架。 */
+export function appendPresetModules(
+  doc: ReturnType<typeof parseDocument>,
+  additions: readonly string[],
+): void {
+  if (additions.length === 0) return
+  const source = doc.toJS() as { modules?: unknown }
+  if (!Array.isArray(source.modules)) throw new Error('当前预设缺少 modules 数组，不能自动装配工具模块')
+  const current = source.modules.filter((item): item is string => typeof item === 'string' && item.length > 0)
+  const base = source.modules.length === 0 ? [...FALLBACK_MODULES] : current
+  const modules = [...base]
+  for (const module of additions) {
+    if (!/^[a-z0-9][a-z0-9-]*$/.test(module)) throw new Error('非法模块名：' + module)
+    if (!modules.includes(module)) modules.push(module)
+  }
+  doc.set('modules', modules)
 }
 
 /** 删除预设目录（预设根/<id>；含同名导入的 .bak-* 备份目录）。
