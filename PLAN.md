@@ -3,7 +3,7 @@
 > 日期：2026-09-02
 > 分支：`dev`
 > 基线：`77c1a9e`（实现代码自 `e3433da` 后未变化）
-> 状态：待实施
+> 状态：已实施（Wave 1-6 完成；提交 dea7496 / 1868a05 / bdb2006 / 本轮文档收口）
 > 合并：旧 L2 计划已全部落地；本版本完整保留 `ececbd1` 版 PLAN.md 的全部未实施项，并在其上扩展子代理实例级工具策略。
 > 参考：`D:\AI\GitHub\dsh-plugins@05c50f3`、`D:\AI\GitHub\deepseek-harness@4e84901`（DSH `0.1.2-alpha.4`）。
 
@@ -933,11 +933,11 @@ node --test "$Repo/test/client/no-host-dom.test.mjs"
 - [x] 确认官方 static tool-subagent 不支持 per-call toolFilter。
 - [x] 确认 agent-local tool 可 shadow preset/global 同名工具。
 - [x] 对照 `ececbd1` 与现版本：确认实现文件未变化，并将旧计划全部未实施项逐项合并。
-- [ ] Wave 1：Custom ToolDefinition 标准化。
-- [ ] Wave 2：delegate 统一走 ToolRuntime。
-- [ ] Wave 3：Policy resolver 与物化链。
-- [ ] Wave 4：Agent-scoped subagent shadow。
-- [ ] Wave 5：完整 UI。
-- [ ] Wave 6：文档、迁移与全量验收。
-- [ ] 完整 typecheck / lint / test / build。
-- [ ] 提交并推送 `origin/dev`。
+- [x] Wave 1：Custom ToolDefinition 标准化。（dea7496）
+- [x] Wave 2：delegate 统一走 ToolRuntime。（dea7496）
+- [x] Wave 3：Policy resolver 与物化链。（dea7496 / 1868a05）
+- [x] Wave 4：Agent-scoped subagent shadow。（1868a05）
+- [x] Wave 5：完整 UI。（bdb2006）
+- [x] Wave 6：文档、迁移与全量验收。
+- [x] 完整 typecheck / lint / test / build。（typecheck/lint 通过；456 tests 全部通过）
+- [x] 提交并推送 `origin/dev`。

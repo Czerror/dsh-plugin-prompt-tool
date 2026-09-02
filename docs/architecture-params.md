@@ -210,7 +210,45 @@ system-section 段（character-definition / system-prompt / post-history）。
 `complete: false`（开放，返回 `personaOpened: true`）；幂等（已开放不再改）；纯世界书卡
 （无 system-section）不触碰。
 
-## 9. 契约测试
+## 9. 子代理工具策略（subagentToolPolicy，2026-09-02）
+
+`subagentToolPolicy` 是 preset.yml 顶层领域段（非 params 键），声明子代理实例级工具授权：
+
+| 字段 | 职责 |
+|---|---|
+| `ceiling.allow` / `ceiling.deny` | 用户授权上限与永久禁用；deny 永远优先，任何 selector / additional_tools 不能恢复 |
+| `defaultProfile` | 未命中任何选择器时的工具档 |
+| `profiles[]` | 工具档（id/name/allow/deny/modelSelectable）；allow ⊆ ceiling.allow |
+| `characterBindings[]` | 角色卡 id → 工具档绑定（模型可选） |
+| `taskRules[]` | 有序正则任务规则（order 升序，首个命中生效；modelSelectable） |
+| `modelExpansion` | 模型扩权（enabled/allow/maxAdditionalTools/requireApproval） |
+
+### 分流规则
+
+- 策略未启用（段缺失）：参数桥照旧把 `toolFilterAllow/Deny` 同时写入主代理 `tool-filter` 与子代理 `delegation.toolFilter`（官方原行为）。
+- 策略启用（段非空）：参数桥只写主代理 `tool-filter`；子代理由 `subagent-tool-policy` 模块的 agent-local shadow 在创建窗口解析并冻结 toolFilter（不再热更新；需要更高权限时创建新实例）。
+- `subagent-tools/policy.yml` 是生成物（writePreset 从 preset.yml 顶层段物化）；preset.yml 仍是单一来源。
+- 保存链路：`/subagent-tool-policy` POST → `validateSubagentToolPolicy()` 校验 → 原子写盘 → 自动装配/移除 `subagent-tool-policy` 模块行。
+- 预览链路：`/subagent-tool-policy-preview` POST 与运行时 `resolveSubagentToolPolicy()` 同一 seam（不重复算法）；预览用 ceiling 工具宇宙。
+- 工具面：`/tool-surface` GET 只读返回当前存活本地 Agent 的 name/description 摘要（不含完整 Schema、大文本或 secrets）；只代表当前运行会话，不代表未挂载预设。
+
+### 边界
+
+- provider 不支持 toolFilter / agentOptions / depthLimit 时启动前 fail loud（不做 prompt-only 假过滤）。
+- `modelExpansion.requireApproval: true` 且无 approval 通道时 fail closed（拒绝创建）。
+- 扩权严格限制在 ceiling.allow ∩ modelExpansion.allow 内，`maxAdditionalTools` 上限数量。
+- 模型不能修改 ceiling、profile、角色绑定或任务规则；UI 保存走受控端点。
+
+### 纯模块接口（engine/subagent-tool-policy-core.mjs，单一 seam）
+
+```
+validateSubagentToolPolicy(raw)   → string[]（空 = 合法）
+compileSubagentToolPolicy(raw)    → Compiled（正则/Set/分类器）
+resolveSubagentToolPolicy(c, r)   → { selectedProfileId, toolFilter, ... }
+buildSubagentToolParameters(c)     → 模型可见扩展参数 Schema
+```
+
+## 10. 契约测试
 
 - `test/host/param-contract.test.mjs`：PARAM_KEYS 派生一致性；每个 ENGINE_PARAM_KEYS 键有装配消费；MODEL_SEGMENT_MAP 段目标唯一。
 - `test/host/write-preset.test.mjs`：模型参数 patch 生成/留空跳过；空值删键（''/[]，stagePreUnlock=0 保留）；PARAM_KEYS 不进 variables.yml，variables 空占位键保留。

@@ -117,10 +117,10 @@ params:
   # cotDripEvery: 4               # 节拍间隔（工具结果数）；0 = 回落行默认 4
   # cotDripMaxPerTurn: 1          # 每轮最大提醒条数；0 = 回落行默认 1
 
-  # ── 工具集（子代理 toolFilter；主对话 tool-filter 模块共用同一扁平键）──
-  toolFilterAllow: []            # 子代理工具白名单（数组或逗号/空格字符串；空=不过滤）
-  toolFilterDeny: []             # 子代理工具黑名单（数组或逗号/空格字符串；空=不过滤）
-
+  # ── 工具集（主对话 tool-filter；策略未启用时也写子代理 delegation.toolFilter）──
+  toolFilterAllow: []            # 主对话工具白名单（数组或逗号/空格字符串；空=不过滤；
+                                 # subagentToolPolicy 启用后子代理改由实例级策略解析授权，本键只作用于主对话）
+  toolFilterDeny: []             # 主对话工具黑名单（数组或逗号/空格字符串；空=不过滤）
   # ── 委派深度 ──
   maxDepth: ""                   # 子代理递归深度：0=禁止委派 / provider-managed / 正整数；空=官方默认
 
@@ -286,6 +286,47 @@ promptConfigs:
 #   params:
 #     keys: [酒馆, 旅店, tavern]
 
+# ── subagentToolPolicy：子代理实例级工具策略（顶层段，opt-in）──────────────
+# 启用后（写入非空对象）：
+#   1) 参数桥不再把主代理 toolFilterAllow/Deny 写入 delegation.toolFilter；
+#   2) subagent / subagent_fork 由 subagent-tool-policy 模块以 agent-local
+#      shadow 注册，模型可在调用时选择 tool_profile / character_id / task_type /
+#      additional_tools / restrict_tools；
+#   3) 实际 toolFilter 在子代理创建窗口冻结（不热更新；需要更高权限时创建新实例）。
+# 选择器优先级：tool_profile > character_id 绑定 > task_type > 自动分类 > default。
+# 有效工具集 = (profile.allow ∪ 已验证扩权) ∩ ceiling.allow ∩ presetAvailable
+#              − profile.deny − restrict_tools − ceiling.deny。
+# ceiling.deny 永远优先，任何 selector / additional_tools 都不能恢复。
+# modelExpansion 扩权严格限制在 ceiling.allow 与 expansion.allow 交集内；
+# requireApproval: true 且无批准通道时 fail closed（拒绝创建）。
+# provider 不支持 toolFilter / agentOptions / depthLimit 时启动前 fail loud。
+# 管理入口：模块列表「子代理工具策略」卡片（编辑/预览）；
+# 工具面预览只代表当前运行会话，不代表未挂载预设。
+# 示例（取消注释即可启用）：
+# subagentToolPolicy:
+#   defaultProfile: reader
+#   ceiling:
+#     allow: [read_file, search, shell_command]   # 用户授权上限（非空）
+#     deny: [shell_command]                      # 永久禁用（最高优先级）
+#   profiles:
+#     - id: reader
+#       name: 只读
+#       allow: [read_file, search]
+#       deny: []
+#       modelSelectable: true                     # 模型调用时可显式选择
+#     - id: writer
+#       name: 读写
+#       allow: [read_file, search, shell_command]
+#       deny: []
+#       modelSelectable: false
+#   characterBindings: []                         # { characterId, profile, modelSelectable }
+#   taskRules: []                                  # { id, name, pattern(正则), order, profile }，order 升序匹配
+#   modelExpansion:
+#     enabled: true
+#     allow: [search]                             # 扩权白名单（必须 ⊆ ceiling.allow）
+#     maxAdditionalTools: 2
+#     requireApproval: true                       # 无批准通道时 fail closed
+
 # ── system-section 层参数说明（官方 ctx.systemPrompt.section 静态段）─────────
 # 本层是唯一支持官方 {{variable}} 渲染的静态层（缓存友好，静态内容优先放这里），
 # 可用参数：
@@ -389,7 +430,7 @@ promptConfigs:
 #     denyReason: 本预设禁用 web 工具
 
 # ── modules：引擎行/组模块装配顺序（增删即改装配）───────────────────────────
-# 28 个可用模块：context-gate / tool-filter / tool-bootstrap / code-presentation /
+# 29 个可用模块：context-gate / tool-filter / tool-bootstrap / code-presentation /
 # prompt-config-engine / tool-config-engine / character-tools / world-book-tools / session-var-tools / run-code-env / persona /
 # persistent-shell / custom-bash / tool-fs / tool-fs-search / str-replace-editor /
 # bootstrap-filesystem / tool-jobs / skill-filesystem / skill-search / tool-goal /
@@ -423,6 +464,8 @@ modules:
   - planning                     # 规划
   - compaction                   # 压缩
   - delegation                   # 委派（subagent）
+  # - subagent-tool-policy     # 子代理实例级工具策略（opt-in；preset.yml 顶层 subagentToolPolicy 段非空时自动装配；
+  #                              # subagent/subagent_fork shadow + 创建窗口冻结 toolFilter；详见上方「子代理工具策略」段）
   - tool-ask-user                # 提问工具
   - tool-todo                    # todo 工具
   - tool-web                     # web 搜索

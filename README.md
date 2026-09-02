@@ -31,7 +31,8 @@ dsh --profile prompt-tool                                          # 首次启�
 - 🎭 **SillyTavern 导入**：JSON 预设卡片一键转换为本地预设——`prompts[]` 映射提示词配置、setvar/getvar 收集进顶层 `variables`（未定义自定义宏自动登记空值占位）、`enable_web_search` 按开关装配工具；采样参数剥离（模型设置 UI 管理）
 - 🎴 **角色卡库**：SillyTavern 角色卡（PNG tEXt chunk `ccv3`/`chara`，或 chara_card JSON）导入独立库（`.characters/<id>/`，含原图/转换参数/角色记忆），按 PNG 魔数识别图片并经原始文件流上传，避免头像 base64 膨胀；按需「导入到当前预设」（`chara-<卡>-` 前缀合并、幂等可移除），多文件自动合并
 - 📚 **世界书**：`character_book` 转 world-book 策略配置（`keys` 命中触发 / `constant` 常驻 / 正则键自动检测 / `selectiveLogic` 组合逻辑），与模块卡片同一存储与编辑（模块列表「世界书」过滤 + 批量启用/禁用）
-- 🛠️ **自定义工具**：preset.yml `customTools` 段声明式定义模型工具（执行器 shell/http/delegate/fs/ask-user，`{{args.x}}` 参数插值）；首次保存自动把 `tool-config-engine` 加入 `modules`，模块列表「自定义工具」卡片 JSON 编辑
+- 🛠️ **自定义工具**：preset.yml `customTools` 段声明式定义模型工具（执行器 shell/http/delegate/fs/ask-user，`{{args.x}}` 参数插值）；参数与输出经官方 `dsh-tools` 转换器物化为标准 JSON Schema（生成物 `custom-tools/*.yml`），delegate 经 `ctx.tools.execute` 嵌套调度走完整官方工具管线（参数/输出校验、allow/deny、approval、timeout、nested token）；`customTools.scope` 暂不支持（显式拒绝）；首次保存自动把 `tool-config-engine` 加入 `modules`，模块列表「自定义工具」卡片 JSON 编辑
+- 🛡️ **子代理工具策略**：preset.yml 顶层 `subagentToolPolicy` 段（opt-in）声明 ceiling（用户授权上限，deny 永远优先）、工具档 profiles、角色卡绑定 characterBindings、有序正则任务规则 taskRules 与模型扩权 modelExpansion；策略启用时 `subagent` / `subagent_fork` 以 agent-local shadow 注册并扩展实例级参数（`tool_profile` / `character_id` / `task_type` / `additional_tools` / `restrict_tools`），实际 toolFilter 在子代理创建窗口冻结；UI 可编辑策略并预览一次实例解析结果与当前存活会话工具面（`/tool-surface` 只读 name/description 摘要）
 - 🧩 **模板变量**：预设级 `variables` 段（`{{key}}` 插值源）——模块列表顶部「模板变量」卡片统一编辑（可折叠/清空/停用/失焦自动保存）；锚定匹配引擎（anchor-match）统一 custom-fallback 与 world-book 的匹配语义
 - 💬 **会话变量工具**：`session_var`（list/get/set/clear）——模型维护角色状态（`{{心情}}` 等），会话级覆盖预设默认；ST 运行时宏（`{{lastusermessage}}` / `{{lastcharmessage}}`）从会话事件提取
 - 🧩 **工具按模块装配**：角色卡、世界书、会话变量、自定义工具分别由 `character-tools` / `world-book-tools` / `session-var-tools` / `tool-config-engine` 模块提供；不再维护重复的顶层工具开关
@@ -66,7 +67,7 @@ dsh --profile prompt-tool                                          # 首次启�
 | 引导 | `guideCustom` `guideText` `guideWeak` `guideDeep`（复杂判定 fallback 复用锚定的 `complexPattern`） |
 | PTC/门控 | `usePtcMode` `bootstrapMaxTokens` `injectPrompt` `allowKinds` |
 | 人设 | 配置卡：主会话 = `persona-main` 卡（system-section + `deployment:persona`，complete 互斥 + suppressRuntimeContext）；子代理独立人设 = 新建配置卡（system-section + `audience=subagent` + 人设段），装配时替换主会话人设（不继承）；无子代理卡 = scope 链继承主会话 |
-| 工具集 | `toolFilterAllow` `toolFilterDeny`（子代理 toolFilter；主对话 tool-filter 模块共用） |
+| 工具集 | `toolFilterAllow` `toolFilterDeny`（主对话 tool-filter；策略未启用时也写入子代理 delegation.toolFilter——策略启用后子代理改由 `subagentToolPolicy` 实例级解析授权，主/子代理列表分离） |
 | 深度 | `maxDepth`（0 禁止委派 / `provider-managed` / 正整数） |
 
 > 注：`injectPrompt`（params）= 锚定确认后注入 preset.md 的开关；`injectAgentsPrompt`（settings）= 把 AGENTS.md 内容作为 instruction-hint 提示文本的开关。两者功能不同，勿混淆。
