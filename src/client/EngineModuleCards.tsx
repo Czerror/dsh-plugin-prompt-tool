@@ -2,6 +2,7 @@ import { useState, type ReactNode } from 'react'
 import clsx from 'clsx'
 import { IconChevronDownOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { TagInput } from './TagInput.tsx'
+import { SubagentToolPolicyCard } from './SubagentToolPolicyCard.tsx'
 import styles from './PromptUi.module.css'
 
 import type { PromptToolStore } from './prompt-tool-store.ts'
@@ -220,6 +221,7 @@ export function ModelRouteModuleCard(props: { store: PromptToolStore; scope: 'ma
 export function DelegationToolsModuleCard(props: { store: PromptToolStore }): ReactNode {
   const { store } = props
   const fields = store.fields
+  const [spExpanded, setSpExpanded] = useState(false)
   const maxDepthOptions = ['', 'provider-managed', '0', '1', '2', '3', '5']
   return (
     <EngineModuleCard store={store} name="工具与深度" meta="工具集白名单/黑名单 + 注入 kind 白名单 + 递归深度">
@@ -255,6 +257,12 @@ export function DelegationToolsModuleCard(props: { store: PromptToolStore }): Re
           ))}
         </select>
       </div>
+      <SubagentToolPolicyCard
+        expanded={spExpanded}
+        onToggleExpanded={() => setSpExpanded(!spExpanded)}
+        onNotice={(kind, message) => store.showNotice(kind, message)}
+        seedAllow={fields.toolFilterAllow}
+      />
     </EngineModuleCard>
   )
 }

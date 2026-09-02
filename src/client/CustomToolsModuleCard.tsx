@@ -8,6 +8,7 @@ import { IconChevronDownOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { bridgePost } from './prompt-tool-bridge.ts'
 import { Field } from './PromptConfigCard.tsx'
 import { TemplatePicker } from './TemplatePicker.tsx'
+import { ToolSurfaceView } from './ToolSurfaceView.tsx'
 import styles from './PromptUi.module.css'
 
 /** 内置工具名（delegate 提示）。 */
@@ -261,6 +262,8 @@ export function CustomToolsModuleCard(props: {
   expanded: boolean
   onToggleExpanded: () => void
   onNotice: (kind: 'ok' | 'error', message: string) => void
+  /** 当前主会话 session id（客户端从官方 sessions snapshot 取，不持久化；缺省 = 手动输入）。 */
+  sessionId?: string
 }): ReactNode {
   const [tools, setTools] = useState<ToolDraft[]>([])
   const [toolTemplates, setToolTemplates] = useState<Array<{ file: string; spec: ToolDraft }>>([])
@@ -268,6 +271,7 @@ export function CustomToolsModuleCard(props: {
   const [expandedCards, setExpandedCards] = useState<Set<number>>(new Set())
   const [loaded, setLoaded] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [surfaceSessionId, setSurfaceSessionId] = useState(props.sessionId ?? '')
   useEffect(() => {
     if (loaded || !props.expanded) return
     void (async () => {
@@ -355,6 +359,15 @@ export function CustomToolsModuleCard(props: {
       </div>
       {props.expanded && (
         <div className={styles.configList} style={{ marginTop: 10 }}>
+          <div className={styles.settingRowStack} style={{ border: '1px solid rgba(128,128,128,0.2)', borderRadius: 8, padding: 8 }}>
+            <span className={styles.settingCopy}>
+              <strong>当前主会话实际工具面（只读）</strong>
+              <small>来自 /tool-surface：只返回存活本地 Agent 的 name/description；无会话显示空态。</small>
+            </span>
+            <input className={styles.configInput} aria-label="主会话 session id" placeholder="session-…（留空 = 无会话）" value={surfaceSessionId}
+              onChange={(event) => setSurfaceSessionId(event.target.value.trim())} />
+            <ToolSurfaceView sessionId={surfaceSessionId} label="主会话" />
+          </div>
           {tools.map((tool, index) => (
             <CustomToolCard
               key={`${String(tool.id ?? '')}-${index}`}
