@@ -4,19 +4,23 @@ import { IconChevronDownOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { PromptConfigList } from './PromptConfigList.tsx'
 import { TemplatePicker } from './TemplatePicker.tsx'
 import { useTemplatePicker } from './useTemplatePicker.ts'
-import { VariablesEditor } from './PromptConfigCard.tsx'
-import { EngineModuleCards, ModelRouteModuleCard } from './EngineModuleCards.tsx'
-import { CustomToolsModuleCard } from './CustomToolsModuleCard.tsx'
-import styles from './PromptUi.module.css'
+import { VariablesEditor } from './PromptConfigFields.tsx'
+import { EngineModuleCards } from '../modules/EngineModuleList.tsx'
+import { ModelRouteModuleCard } from '../models/ModelRouteCard.tsx'
+import { CustomToolsModuleCard } from '../../CustomToolsModuleCard.tsx'
+import styles from '../../PromptUi.module.css'
 
-import type { EngineMeta, PromptConfigDraft } from './prompt-tool-types.ts'
-import type { PromptToolStore } from './data/use-prompt-tool-store.ts'
+import type { EngineMeta, PromptConfigDraft } from '../../prompt-tool-types.ts'
+import type { PromptToolStore } from '../../data/use-prompt-tool-store.ts'
 
-export type { PromptConfigDraft, LayerFieldPolicy } from './prompt-tool-types.ts'
-export type { ValidationErrorEntry } from './prompt-tool-types.ts'
-export { JsonField, PromptConfigCard, PromptConfigForm, SOURCE_FORMS, SOURCE_KINDS, fieldPolicyFor } from './PromptConfigCard.tsx'
+export type { PromptConfigDraft, LayerFieldPolicy } from '../../prompt-tool-types.ts'
+export type { ValidationErrorEntry } from '../../prompt-tool-types.ts'
+export { JsonField } from './PromptConfigFields.tsx'
+export { PromptConfigCard } from './PromptConfigCard.tsx'
+export { PromptConfigForm } from './PromptConfigForm.tsx'
+export { SOURCE_FORMS, SOURCE_KINDS, fieldPolicyFor } from './prompt-config-policy.ts'
 
-export type { PromptConfigTemplateEntry } from './prompt-tool-types.ts'
+export type { PromptConfigTemplateEntry } from '../../prompt-tool-types.ts'
 
 export interface PromptConfigsEditorProps {
   meta: EngineMeta

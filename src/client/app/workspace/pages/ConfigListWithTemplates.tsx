@@ -1,9 +1,9 @@
 import { memo, useCallback, type ReactNode } from 'react'
 import type { PromptToolStore } from '../../../data/use-prompt-tool-store.ts'
 import { usePromptToolFields } from '../../../data/use-prompt-tool-fields.ts'
-import { PromptConfigList } from '../../../PromptConfigList.tsx'
-import { TemplatePicker } from '../../../TemplatePicker.tsx'
-import { useTemplatePicker } from '../../../useTemplatePicker.ts'
+import { PromptConfigList } from '../../../features/prompts/PromptConfigList.tsx'
+import { TemplatePicker } from '../../../features/prompts/TemplatePicker.tsx'
+import { useTemplatePicker } from '../../../features/prompts/useTemplatePicker.ts'
 import ui from '../../../PromptUi.module.css'
 /** 配置列表 + 新建模板：六层页按 layer 过滤，子代理页按 scope 过滤（subagent 只列子代理可见模板）。 */
 export const ConfigListWithTemplates = memo(function ConfigListWithTemplates(props: { store: PromptToolStore; layer?: string; scope?: 'main' | 'subagent'; beforeCards?: ReactNode }): ReactNode {

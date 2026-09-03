@@ -13,7 +13,7 @@ test('dialog focus：只在越过边界或焦点位于弹窗外时循环', () =>
 })
 
 test('两个 picker 共用焦点模块，不再各自扫描 focusables', () => {
-  for (const path of ['../../src/client/TemplatePicker.tsx', '../../src/client/PresetSwitcher.tsx']) {
+  for (const path of ['../../src/client/features/prompts/TemplatePicker.tsx', '../../src/client/PresetSwitcher.tsx']) {
     const source = readFileSync(new URL(path, import.meta.url), 'utf8')
     assert.match(source, /useDialogFocus/)
     assert.doesNotMatch(source, /querySelectorAll<HTMLElement>/)

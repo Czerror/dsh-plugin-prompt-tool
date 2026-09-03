@@ -1,7 +1,7 @@
 /** 模板库加载 + 插入共享逻辑：PromptConfigsEditor 与各配置列表页（六层/子代理）共用。 */
 import { useState } from 'react'
-import { bridgeCall, errorMessage } from './data/bridge-client.ts'
-import type { PromptConfigDraft, PromptConfigTemplateEntry } from './prompt-tool-types.ts'
+import { bridgeCall, errorMessage } from '../../data/bridge-client.ts'
+import type { PromptConfigDraft, PromptConfigTemplateEntry } from '../../prompt-tool-types.ts'
 
 export function useTemplatePicker(
   configs: PromptConfigDraft[],

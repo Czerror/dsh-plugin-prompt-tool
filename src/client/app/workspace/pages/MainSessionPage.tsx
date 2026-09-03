@@ -1,7 +1,7 @@
 import { memo, useCallback, type ReactNode } from 'react'
 import type { PromptToolStore } from '../../../data/use-prompt-tool-store.ts'
 import { usePromptToolFields } from '../../../data/use-prompt-tool-fields.ts'
-import { PromptConfigsEditor } from '../../../PromptConfigsEditor.tsx'
+import { PromptConfigsEditor } from '../../../features/prompts/PromptConfigsEditor.tsx'
 import { ModelRouteStatus } from './ModelRouteStatus.tsx'
 import ui from '../../../PromptUi.module.css'
 /** 主会话页：主对话参数 + Preset/AGENTS 内容 + 管线状态卡 + 模块库（层筛选）。

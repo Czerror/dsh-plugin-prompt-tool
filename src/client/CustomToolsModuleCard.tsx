@@ -7,7 +7,7 @@ import clsx from 'clsx'
 import { IconChevronDownOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { bridgeCall } from './data/bridge-client.ts'
 import { FormField } from './ui/FormField.tsx'
-import { TemplatePicker } from './TemplatePicker.tsx'
+import { TemplatePicker } from './features/prompts/TemplatePicker.tsx'
 import { ToolSurfaceView } from './ToolSurfaceView.tsx'
 import styles from './PromptUi.module.css'
 
