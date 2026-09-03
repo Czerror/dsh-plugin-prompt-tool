@@ -1,6 +1,10 @@
 /** 提示词工具客户端状态模型与稳定默认值（无网络、无 React）。 */
 import type { EngineParamKey } from '../../shared/engine-params.ts'
 import type { EngineMeta, PromptConfigDraft } from '../prompt-tool-types.ts'
+
+/** 本项目默认不设上限时的显示值（adapter 默认 maxTokens）。 */
+export const DEFAULT_BOOTSTRAP_DISPLAY = '256000'
+
 /** 宿主默认模型回显（agent-default-model settings：provider/model/reasoningEffort；插件参数未设置 = 继承宿主）。 */
 export interface HostDefaultModel {
   provider?: string

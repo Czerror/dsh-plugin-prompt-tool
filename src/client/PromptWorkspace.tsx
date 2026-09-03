@@ -5,8 +5,8 @@ import {
   type PromptToolStore,
   type PromptToolSettingsTransport,
   usePromptToolStore,
-} from './prompt-tool-store.ts'
-import type { PromptToolHostApi } from './prompt-tool-types.ts'
+} from './data/use-prompt-tool-store.ts'
+import type { PromptToolHostApi } from './data/host-api.ts'
 import { PromptConfigList } from './PromptConfigList.tsx'
 import { PromptConfigsEditor } from './PromptConfigsEditor.tsx'
 import type { PromptToolWorkspaceController } from './workspace-controller.ts'
@@ -16,7 +16,7 @@ import { TemplatePicker } from './TemplatePicker.tsx'
 import { useTemplatePicker } from './useTemplatePicker.ts'
 import { DelegationToolsModuleCard, ModelRouteModuleCard } from './EngineModuleCards.tsx'
 import { SkillsSettings } from './SkillsSettings.tsx'
-import { usePromptToolFields } from './use-prompt-tool-fields.ts'
+import { usePromptToolFields } from './data/use-prompt-tool-fields.ts'
 import ui from './PromptUi.module.css'
 import css from './PromptWorkspace.module.css'
 

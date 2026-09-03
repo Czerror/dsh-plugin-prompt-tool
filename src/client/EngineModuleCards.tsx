@@ -5,7 +5,7 @@ import { TagInput } from './TagInput.tsx'
 import { SubagentToolPolicyCard } from './SubagentToolPolicyCard.tsx'
 import styles from './PromptUi.module.css'
 
-import type { PromptToolStore } from './prompt-tool-store.ts'
+import type { PromptToolStore } from './data/use-prompt-tool-store.ts'
 
 /** 引擎模块可折叠卡片：与模块列表（PromptConfigList）同款形态——
  *  configCard + configToggle + chevron，点击展开 configForm 编辑组合行 config

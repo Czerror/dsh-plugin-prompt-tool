@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { EMPTY_FIELDS, hasIncompleteStageDrafts } from '../../src/client/data/prompt-tool-fields.ts'
-import { shouldReloadAfterParamSave, snapshotSwitches } from '../../src/client/prompt-tool-store.ts'
+import { shouldReloadAfterParamSave, snapshotSwitches } from '../../src/client/data/dirty-state.ts'
 
 const cards = readFileSync(new URL('../../src/client/EngineModuleCards.tsx', import.meta.url), 'utf8')
 const snapshotWithStages = (stages) => snapshotSwitches({ ...EMPTY_FIELDS, stages })

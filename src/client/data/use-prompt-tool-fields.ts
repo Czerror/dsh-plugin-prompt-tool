@@ -4,8 +4,8 @@
  *  注意 selector 只在 fields 引用变化时执行一次，返回引用由组件 ref 缓存。
  */
 import { useRef, useSyncExternalStore } from 'react'
-import type { Fields } from './data/prompt-tool-fields.ts'
-import type { PromptToolStore } from './prompt-tool-store.ts'
+import type { Fields } from './prompt-tool-fields.ts'
+import type { PromptToolStore } from './use-prompt-tool-store.ts'
 
 export function usePromptToolFields<T>(store: PromptToolStore, selector: (fields: Fields) => T): T {
   const fields = useSyncExternalStore(store.subscribeFields, store.getFields, store.getFields)

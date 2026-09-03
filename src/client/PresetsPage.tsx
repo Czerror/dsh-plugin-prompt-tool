@@ -1,12 +1,12 @@
 /** 「预设和配置」页：全局开关 + 预设切换/导入 + 提示词配置列表统一管理。 */
 import { memo, type ReactNode } from 'react'
-import { usePromptToolFields } from './use-prompt-tool-fields.ts'
+import { usePromptToolFields } from './data/use-prompt-tool-fields.ts'
 import { PresetSwitcher } from './PresetSwitcher.tsx'
 import { ToggleRow } from './ToggleRow.tsx'
 import { CollapsibleCard } from './CollapsibleCard.tsx'
 import { SettingInputRow } from './SettingInputRow.tsx'
 import ui from './PromptUi.module.css'
-import type { PromptToolStore } from './prompt-tool-store.ts'
+import type { PromptToolStore } from './data/use-prompt-tool-store.ts'
 
 export const PresetsPage = memo(function PresetsPage(props: { store: PromptToolStore }): ReactNode {
   const { store } = props

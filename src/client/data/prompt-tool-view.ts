@@ -188,3 +188,38 @@ export function fieldsFromView(res: BridgeResult<BridgeSettingsView>): Fields {
   }
   return next
 }
+/** /bootstrap 已携带 descriptor；归一成 fieldsFromView 使用的结果形状。 */
+export function bridgeViewFromBoot(boot: BridgeResult<BridgeSettingsView>): BridgeResult<BridgeSettingsView> {
+  if (!boot.ok) return boot
+  return {
+    ok: true,
+    value: {
+      ns: 'prompt-tool',
+      value: boot.value.value,
+      base: boot.value.base,
+      revision: boot.value.revision,
+    },
+    providers: boot.providers,
+    modelCatalog: boot.modelCatalog,
+    activeSkillsDirs: boot.activeSkillsDirs,
+    skillCatalog: boot.skillCatalog,
+    templatePreStepCount: boot.templatePreStepCount,
+    presetParams: boot.presetParams,
+    hostDefaultModel: boot.hostDefaultModel,
+  }
+}
+
+/** 合并 preset.yml params；只接受与既有字段类型一致的值。 */
+export function mergePresetParams(fields: Fields, params: Record<string, unknown> | undefined): Fields {
+  if (params === undefined) return fields
+  const next = { ...fields }
+  const target = next as unknown as Record<string, unknown>
+  for (const [key, value] of Object.entries(params)) {
+    if (value === undefined || value === null || key === 'promptConfigs') continue
+    const current = target[key]
+    if (current === undefined) continue
+    if (key === 'guideEnabled' && typeof value === 'boolean') target[key] = value
+    else if (typeof current === typeof value && ['boolean', 'number', 'string'].includes(typeof current)) target[key] = value
+  }
+  return next
+}

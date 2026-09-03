@@ -11,7 +11,7 @@
  * 便于 node:test 以纯 mock 做确定性回归。
  */
 
-import type { SessionModelFace, SessionModelSnapshot } from './prompt-tool-types.ts'
+import type { SessionModelFace, SessionModelSnapshot } from './host-api.ts'
 
 /** 快照 Observable 的结构最小面（官方 ObservableSnapshot 同构）。 */
 interface SnapshotLike<T> {

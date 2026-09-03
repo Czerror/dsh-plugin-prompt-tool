@@ -1,17 +1,28 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { SettingsPathOpView } from '@deepseek-ai/dsh-api-remotes/client'
 import type { SettingsScope, SettingsScopeSnapshot } from '@deepseek-ai/dsh-client-ui-settings/client'
-import type { EngineMeta, PromptConfigDraft, PromptToolHostApi } from './prompt-tool-types.ts'
-import { bridgeCall, errorMessage, type BridgeResult, type BridgeSettingsView } from './data/bridge-client.ts'
+import type { EngineMeta, PromptConfigDraft } from '../prompt-tool-types.ts'
+import type { PromptToolHostApi } from './host-api.ts'
+import { bridgeCall, errorMessage, type BridgeResult, type BridgeSettingsView } from './bridge-client.ts'
 import {
+  DEFAULT_BOOTSTRAP_DISPLAY,
   EMPTY_FIELDS,
   EMPTY_META,
-  hasIncompleteStageDrafts,
   type Fields,
   type HostDefaultModel,
-  type StageDraft,
-} from './data/prompt-tool-fields.ts'
-import { fieldsFromView } from './data/prompt-tool-view.ts'
+} from './prompt-tool-fields.ts'
+import { bridgeViewFromBoot, fieldsFromView, mergePresetParams } from './prompt-tool-view.ts'
+import {
+  EMPTY_SWITCHES,
+  promptConfigsDirty,
+  shouldReloadAfterParamSave,
+  snapshotSwitches,
+  switchesEqual,
+  type SwitchSnapshot,
+} from './dirty-state.ts'
+import { isContentAsset, liftContentText, stripContentText } from './prompt-config-content.ts'
+import { buildParamOverrides, readParamOverridesPatch } from './param-overrides.ts'
+import { createSerialTaskQueue } from './save-queue.ts'
 
 /** rc8 ui-settings 共享镜像传输面：标准字段经官方 settingsScope 读写。 */
 export interface PromptToolSettingsTransport {
@@ -22,254 +33,6 @@ export interface PromptToolSettingsTransport {
   /** 批量 path-op 写入；成功后 scope 快照已 fold 最新 revision。 */
   mutate: (ops: SettingsPathOpView[], expectedRevision?: number) => Promise<void>
 }
-
-export interface SwitchSnapshot {
-  injectAgentsPrompt: boolean
-  firstTurnAnchor: boolean
-  firstTurnText: string
-  firstTurnCustom: boolean
-  guideText: string
-  guideCustom: boolean
-  guideEnabled: boolean | undefined
-  modelProvider: string
-  modelName: string
-  subagentModelProvider: string
-  subagentModelName: string
-  modelReasoningEffort: string
-  modelTemperature: string
-  modelMaxTokens: string
-  subagentReasoningEffort: string
-  subagentTemperature: string
-  subagentMaxTokens: string
-  bootstrapMaxTokens: number
-  usePtcMode: boolean
-  stages: StageDraft[]
-  stagePreUnlock: number
-  stageAdvanceTool: string
-  stageAdvanceDescription: string
-  stageSectionTemplate: string
-  promoteGate: boolean
-  promoteAfterFirstResponse: boolean
-  maxPromoteSteps: number
-  bootstrapTools: string
-  compactionTools: string
-  personaSectionsOnly: boolean
-  workspaceLine: boolean
-  phase1FirstCallInstruction: string
-  instructionHint: boolean
-  messageSources: string
-  deferredSources: string
-  deferredGraceSteps: number
-  anchorTurn: boolean
-  anchorTurnText: string
-  deliberationGate: boolean
-  deliberationMinChars: number
-  deliberationMaxGatesPerTurn: number
-  cotDrip: boolean
-  cotDripEvery: number
-  cotDripMaxPerTurn: number
-  strReplaceEditorMaxOutputChars: number
-  injectPrompt: boolean
-  skillSwitches: Record<string, boolean>
-  skillOrder: string[]
-  skillsDirs: string[]
-  skillRankBase: number
-  residentAgentsPath: string
-  presetDir: string
-  presetOrder: number
-  fallbackText: string
-  writeAgents: boolean
-  writePreset: boolean
-}
-
-const EMPTY_SWITCHES: SwitchSnapshot = {
-  injectAgentsPrompt: false,
-  firstTurnAnchor: false,
-  firstTurnText: '',
-  firstTurnCustom: false,
-  guideText: '',
-  guideCustom: false,
-  guideEnabled: undefined,
-  modelProvider: '',
-  modelName: '',
-  subagentModelProvider: '',
-  subagentModelName: '',
-  modelReasoningEffort: '',
-  modelTemperature: '',
-  modelMaxTokens: '',
-  subagentReasoningEffort: '',
-  subagentTemperature: '',
-  subagentMaxTokens: '',
-  bootstrapMaxTokens: 0,
-  usePtcMode: false,
-  stages: [],
-  stagePreUnlock: 1,
-  stageAdvanceTool: '',
-  stageAdvanceDescription: '',
-  stageSectionTemplate: '',
-  promoteGate: false,
-  promoteAfterFirstResponse: false,
-  maxPromoteSteps: 0,
-  bootstrapTools: '',
-  compactionTools: '',
-  personaSectionsOnly: false,
-  workspaceLine: false,
-  phase1FirstCallInstruction: '',
-  instructionHint: false,
-  messageSources: '',
-  deferredSources: '',
-  deferredGraceSteps: 0,
-  anchorTurn: false,
-  anchorTurnText: '',
-  deliberationGate: false,
-  deliberationMinChars: 0,
-  deliberationMaxGatesPerTurn: 0,
-  cotDrip: false,
-  cotDripEvery: 0,
-  cotDripMaxPerTurn: 0,
-  strReplaceEditorMaxOutputChars: 16000,
-  injectPrompt: true,
-  skillSwitches: {},
-  skillOrder: [],
-  skillsDirs: [],
-  skillRankBase: 250,
-  residentAgentsPath: '',
-  presetDir: '',
-  presetOrder: 5,
-  fallbackText: '',
-  writeAgents: true,
-  writePreset: true,
-}
-
-/** 本项目默认不设上限时的显示值（adapter 默认 maxTokens）。 */
-const DEFAULT_BOOTSTRAP_DISPLAY = '256000'
-
-/** 内容资产条目：preset.md（prompt-injector）/ agents.md（instruction-hint），
- *  text 走生成目录文件通道，settings 覆盖层只存轻字段。 */
-const isContentAsset = (config: PromptConfigDraft): boolean =>
-  config.id === 'prompt-injector' || config.fill === 'instruction-hint'
-
-/**
- * promptConfigs 脏检测：引用比较为主，但两个空数组内容相同必须判「不脏」。
- * store 初始化时 fields=EMPTY_FIELDS.promptConfigs（模块级常量 []）而
- * savedConfigs 是 useState([]) 新字面量，引用不同——纯引用比较会误判脏，
- * 挂载 800ms 后把空数组自动保存进 preset.yml，清空大预设的全部配置卡。
- */
-const promptConfigsDirty = (current: PromptConfigDraft[], saved: PromptConfigDraft[]): boolean =>
-  current !== saved && !(current.length === 0 && saved.length === 0)
-
-/** 剥离内容资产的 text（顶层 + params.text）：settings 载荷不承载大文本。 */
-const stripContentText = (config: PromptConfigDraft): PromptConfigDraft => {
-  const next: PromptConfigDraft = { ...config }
-  delete next.text
-  if (next.params !== undefined) {
-    const params = { ...next.params }
-    delete params.text
-    next.params = params
-  }
-  return next
-}
-
-/** 渲染产物 → 编辑草稿：内容资产条目的 params.text（生成目录文件内容）提升到 text 框显示。 */
-const liftContentText = (config: PromptConfigDraft): PromptConfigDraft => {
-  if (!isContentAsset(config)) return config
-  if ((config.text ?? '') !== '') return config
-  const text = typeof config.params?.text === 'string' ? config.params.text : ''
-  return text.length > 0 ? { ...config, text } : config
-}
-
-export const snapshotSwitches = (fields: Fields): SwitchSnapshot => ({
-  injectAgentsPrompt: fields.injectAgentsPrompt,
-  firstTurnAnchor: fields.firstTurnAnchor,
-  firstTurnText: fields.firstTurnText,
-  firstTurnCustom: fields.firstTurnCustom,
-  guideText: fields.guideText,
-  guideCustom: fields.guideCustom,
-  guideEnabled: fields.guideEnabled,
-  modelProvider: fields.modelProvider,
-  modelName: fields.modelName,
-  subagentModelProvider: fields.subagentModelProvider,
-  subagentModelName: fields.subagentModelName,
-  modelReasoningEffort: fields.modelReasoningEffort,
-  modelTemperature: fields.modelTemperature,
-  modelMaxTokens: fields.modelMaxTokens,
-  subagentReasoningEffort: fields.subagentReasoningEffort,
-  subagentTemperature: fields.subagentTemperature,
-  subagentMaxTokens: fields.subagentMaxTokens,
-  bootstrapMaxTokens: fields.bootstrapMaxTokens,
-  usePtcMode: fields.usePtcMode,
-  stages: fields.stages.map((stage) => ({ ...stage })),
-  stagePreUnlock: fields.stagePreUnlock,
-  stageAdvanceTool: fields.stageAdvanceTool,
-  stageAdvanceDescription: fields.stageAdvanceDescription,
-  stageSectionTemplate: fields.stageSectionTemplate,
-  promoteGate: fields.promoteGate,
-  promoteAfterFirstResponse: fields.promoteAfterFirstResponse,
-  maxPromoteSteps: fields.maxPromoteSteps,
-  bootstrapTools: fields.bootstrapTools,
-  compactionTools: fields.compactionTools,
-  personaSectionsOnly: fields.personaSectionsOnly,
-  workspaceLine: fields.workspaceLine,
-  phase1FirstCallInstruction: fields.phase1FirstCallInstruction,
-  instructionHint: fields.instructionHint,
-  messageSources: fields.messageSources,
-  deferredSources: fields.deferredSources,
-  deferredGraceSteps: fields.deferredGraceSteps,
-  anchorTurn: fields.anchorTurn,
-  anchorTurnText: fields.anchorTurnText,
-  deliberationGate: fields.deliberationGate,
-  deliberationMinChars: fields.deliberationMinChars,
-  deliberationMaxGatesPerTurn: fields.deliberationMaxGatesPerTurn,
-  cotDrip: fields.cotDrip,
-  cotDripEvery: fields.cotDripEvery,
-  cotDripMaxPerTurn: fields.cotDripMaxPerTurn,
-  strReplaceEditorMaxOutputChars: fields.strReplaceEditorMaxOutputChars,
-  injectPrompt: fields.injectPrompt,
-  skillSwitches: { ...fields.skillSwitches },
-  skillOrder: [...fields.skillOrder],
-  skillsDirs: [...fields.skillsDirs],
-  skillRankBase: fields.skillRankBase,
-  residentAgentsPath: fields.residentAgentsPath,
-  presetDir: fields.presetDir,
-  presetOrder: fields.presetOrder,
-  fallbackText: fields.fallbackText,
-  writeAgents: fields.writeAgents,
-  writePreset: fields.writePreset,
-})
-
-const isPlainRecord = (value: unknown): value is Record<string, unknown> =>
-  value !== null && typeof value === 'object' && !Array.isArray(value)
-
-/** 深比较 snapshot 内的数组/record；不使用 JSON.stringify，避免键顺序影响脏检测。 */
-const deepEqual = (a: unknown, b: unknown): boolean => {
-  if (a === b) return true
-  if (Array.isArray(a) || Array.isArray(b)) {
-    if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false
-    return a.every((item, index) => deepEqual(item, b[index]))
-  }
-  if (isPlainRecord(a) || isPlainRecord(b)) {
-    if (!isPlainRecord(a) || !isPlainRecord(b)) return false
-    const keys = new Set([...Object.keys(a), ...Object.keys(b)])
-    for (const key of keys) {
-      if (!deepEqual(a[key], b[key])) return false
-    }
-    return true
-  }
-  return false
-}
-
-/** 全字段结构化比较：SwitchSnapshot 声明的每个键都参与，防止新增参数漏比较。 */
-const switchesEqual = (a: SwitchSnapshot, b: SwitchSnapshot): boolean => {
-  const keys = new Set([...Object.keys(a), ...Object.keys(b)])
-  for (const key of keys) {
-    if (!deepEqual(a[key as keyof SwitchSnapshot], b[key as keyof SwitchSnapshot])) return false
-  }
-  return true
-}
-
-/** 参数保存后仅在草稿未继续变化且没有未完成阶段时重载。 */
-export const shouldReloadAfterParamSave = (current: SwitchSnapshot, saved: SwitchSnapshot): boolean =>
-  switchesEqual(current, saved) && !hasIncompleteStageDrafts(saved.stages)
 
 export type SwitchKey = 'injectAgentsPrompt' | 'firstTurnAnchor' | 'firstTurnCustom' | 'guideCustom' | 'toolFilterSubagents' | 'injectPrompt' | 'usePtcMode' | 'promoteGate' | 'promoteAfterFirstResponse' | 'personaSectionsOnly' | 'workspaceLine' | 'instructionHint' | 'anchorTurn' | 'deliberationGate' | 'cotDrip' | 'writeAgents' | 'writePreset'
 
@@ -362,29 +125,6 @@ function waitForScope(scope: SettingsScope<Record<string, unknown>>): Promise<Se
   })
 }
 
-/** 把 /bootstrap 响应（value=服务端 settings descriptor）直接组装成旧 BridgeResult 视图。
- *  不再走 rc8 共享 mirror：宿主全量 describe 在插件多时是秒级 RPC，切换预设后
- *  settings.ensure() 会让配置卡延迟十几秒出现；/bootstrap 已携带同源 descriptor。 */
-function bridgeViewFromBoot(boot: BridgeResult<BridgeSettingsView>): BridgeResult<BridgeSettingsView> {
-  if (!boot.ok) return boot
-  return {
-    ok: true,
-    value: {
-      ns: 'prompt-tool',
-      value: boot.value.value,
-      base: boot.value.base,
-      revision: boot.value.revision,
-    },
-    providers: boot.providers,
-    modelCatalog: boot.modelCatalog,
-    activeSkillsDirs: boot.activeSkillsDirs,
-    skillCatalog: boot.skillCatalog,
-    templatePreStepCount: boot.templatePreStepCount,
-    presetParams: boot.presetParams,
-    hostDefaultModel: boot.hostDefaultModel,
-  }
-}
-
 export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolSettingsTransport): PromptToolStore {
   const [providers, setProviders] = useState<string[]>([])
   const [modelCatalog, setModelCatalog] = useState<Record<string, string[]>>({})
@@ -419,8 +159,8 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     return () => { fieldsListenersRef.current.delete(listener) }
   }, [])
   const revisionRef = useRef<number | undefined>(undefined)
-  const saveQueueRef = useRef<Promise<void>>(Promise.resolve())
-  const paramSaveQueueRef = useRef<Promise<void>>(Promise.resolve())
+  const saveQueueRef = useRef(createSerialTaskQueue())
+  const paramSaveQueueRef = useRef(createSerialTaskQueue())
   const loadSeqRef = useRef(0)
   /** 用户草稿版本：patch 时递增。load 应答返回时若版本变化，跳过覆盖，避免
    *  保存后的静默刷新吞掉用户在读取期间的编辑。 */
@@ -448,28 +188,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     setProviders(res.ok ? res.providers ?? [] : [])
     setModelCatalog(res.ok ? res.modelCatalog ?? {} : {})
     setHostDefaultModel(res.ok ? res.hostDefaultModel : undefined)
-    const next = fieldsFromView(res)
-    // 引擎参数按预设存储（激活预设 preset.yml）：settings 不再承载，
-    // 参数键由 /describe 的 presetParams 合并（类型匹配键覆盖，其余保持）。
-    if (res.ok && res.presetParams !== undefined) {
-      const params = res.presetParams
-      const nextRecord = next as unknown as Record<string, unknown>
-      for (const key of Object.keys(params)) {
-        const value = params[key]
-        if (value === undefined || value === null || key === 'promptConfigs') continue
-        const current = nextRecord[key]
-        if (current === undefined) continue
-        if (key === 'guideEnabled' && typeof value === 'boolean') {
-          nextRecord[key] = value
-        } else if (typeof current === 'boolean' && typeof value === 'boolean') {
-          nextRecord[key] = value
-        } else if (typeof current === 'number' && typeof value === 'number') {
-          nextRecord[key] = value
-        } else if (typeof current === 'string' && typeof value === 'string') {
-          nextRecord[key] = value
-        }
-      }
-    }
+    const next = mergePresetParams(fieldsFromView(res), res.ok ? res.presetParams : undefined)
     // 检测到 DeepSeek 路由且用户未设置服务商时，直接预选第一个检测到的 provider
     // （模型名为空则路由不激活，继承主会话语义不变；用户后续选择模型名即生效）。
     // 自动预选值记录到 ref：它只是显示兜底，不作为用户显式参数写进 preset.yml。
@@ -523,90 +242,13 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
       if (boot.ok && boot.overrides !== undefined) {
         const o = boot.overrides.overrides
         loadedKeysRef.current = new Set(Object.keys(o))
-        const paramPatch: Partial<Fields> = {}
-        if (typeof o.firstTurnAnchor === 'boolean') paramPatch.firstTurnAnchor = o.firstTurnAnchor
-        if (typeof o.firstTurnText === 'string') paramPatch.firstTurnText = o.firstTurnText
-        if (typeof o.firstTurnCustom === 'boolean') paramPatch.firstTurnCustom = o.firstTurnCustom
-        if (typeof o.guideText === 'string') paramPatch.guideText = o.guideText
-        if (typeof o.guideCustom === 'boolean') paramPatch.guideCustom = o.guideCustom
-        if (typeof o.guideEnabled === 'boolean') paramPatch.guideEnabled = o.guideEnabled
-        if (typeof o.modelProvider === 'string') paramPatch.modelProvider = o.modelProvider
-        if (typeof o.modelName === 'string') paramPatch.modelName = o.modelName
-        if (typeof o.subagentModelProvider === 'string') paramPatch.subagentModelProvider = o.subagentModelProvider
-        if (typeof o.subagentModelName === 'string') paramPatch.subagentModelName = o.subagentModelName
-        // 模型参数三件套（主对话 + 子代理）：引擎按这些 params 生成 model-params
-        // 配置（agent-request patch），UI 侧统一在「模型设置」卡片编辑显示，
-        // 不依赖模块列表里的 model-params 卡片。
-        if (typeof o.modelReasoningEffort === 'string') paramPatch.modelReasoningEffort = o.modelReasoningEffort
-        if (typeof o.modelTemperature === 'string') paramPatch.modelTemperature = o.modelTemperature
-        if (typeof o.modelMaxTokens === 'string') paramPatch.modelMaxTokens = o.modelMaxTokens
-        if (typeof o.subagentReasoningEffort === 'string') paramPatch.subagentReasoningEffort = o.subagentReasoningEffort
-        if (typeof o.subagentTemperature === 'string') paramPatch.subagentTemperature = o.subagentTemperature
-        if (typeof o.subagentMaxTokens === 'string') paramPatch.subagentMaxTokens = o.subagentMaxTokens
-        if (typeof o.usePtcMode === 'boolean') paramPatch.usePtcMode = o.usePtcMode
-        if (typeof o.injectPrompt === 'boolean') paramPatch.injectPrompt = o.injectPrompt
-        if (Array.isArray(o.toolFilterAllow)) paramPatch.toolFilterAllow = o.toolFilterAllow.join(', ')
-        else if (typeof o.toolFilterAllow === 'string') paramPatch.toolFilterAllow = o.toolFilterAllow
-        if (Array.isArray(o.toolFilterDeny)) paramPatch.toolFilterDeny = o.toolFilterDeny.join(', ')
-        else if (typeof o.toolFilterDeny === 'string') paramPatch.toolFilterDeny = o.toolFilterDeny
-        if (o.maxDepth !== undefined && o.maxDepth !== null && o.maxDepth !== '') {
-          paramPatch.maxDepth = String(o.maxDepth)
-        }
-        if (Array.isArray(o.allowKinds)) paramPatch.allowKinds = o.allowKinds.join(', ')
-        else if (typeof o.allowKinds === 'string') paramPatch.allowKinds = o.allowKinds
-        if (typeof o.firstTurnWord === 'string') paramPatch.firstTurnWord = o.firstTurnWord
-        if (typeof o.bootstrapMaxTokens === 'number') paramPatch.bootstrapMaxTokens = o.bootstrapMaxTokens
-        // 晋升门控（tool-bootstrap 参数桥）。
-        if (typeof o.promoteGate === 'boolean') paramPatch.promoteGate = o.promoteGate
-        if (typeof o.promoteAfterFirstResponse === 'boolean') paramPatch.promoteAfterFirstResponse = o.promoteAfterFirstResponse
-        if (typeof o.maxPromoteSteps === 'number') paramPatch.maxPromoteSteps = o.maxPromoteSteps
-        if (Array.isArray(o.bootstrapTools)) paramPatch.bootstrapTools = o.bootstrapTools.join(', ')
-        else if (typeof o.bootstrapTools === 'string') paramPatch.bootstrapTools = o.bootstrapTools
-        if (Array.isArray(o.compactionTools)) paramPatch.compactionTools = o.compactionTools.join(', ')
-        else if (typeof o.compactionTools === 'string') paramPatch.compactionTools = o.compactionTools
-        // 渐进披露（stages 模式）：引擎形态 [{name, tools: string[]}] → UI 草稿。
-        if (Array.isArray(o.stages)) {
-          paramPatch.stages = o.stages
-            .filter((stage): stage is { name?: unknown; tools?: unknown } =>
-              stage !== null && typeof stage === 'object')
-            .map((stage) => ({
-              name: typeof stage.name === 'string' ? stage.name : '',
-              tools: Array.isArray(stage.tools)
-                ? stage.tools.filter((item): item is string => typeof item === 'string').join(', ')
-                : '',
-            }))
-        }
-        if (typeof o.stagePreUnlock === 'number') paramPatch.stagePreUnlock = o.stagePreUnlock
-        if (typeof o.stageAdvanceTool === 'string') paramPatch.stageAdvanceTool = o.stageAdvanceTool
-        if (typeof o.stageAdvanceDescription === 'string') paramPatch.stageAdvanceDescription = o.stageAdvanceDescription
-        if (typeof o.stageSectionTemplate === 'string') paramPatch.stageSectionTemplate = o.stageSectionTemplate
-        if (typeof o.personaSectionsOnly === 'boolean') paramPatch.personaSectionsOnly = o.personaSectionsOnly
-        if (typeof o.workspaceLine === 'boolean') paramPatch.workspaceLine = o.workspaceLine
-        if (typeof o.phase1FirstCallInstruction === 'string') paramPatch.phase1FirstCallInstruction = o.phase1FirstCallInstruction
-        if (typeof o.instructionHint === 'boolean') paramPatch.instructionHint = o.instructionHint
-        // context-gate 注入门控。
-        if (Array.isArray(o.messageSources)) paramPatch.messageSources = o.messageSources.join(', ')
-        else if (typeof o.messageSources === 'string') paramPatch.messageSources = o.messageSources
-        if (Array.isArray(o.deferredSources)) paramPatch.deferredSources = o.deferredSources.join(', ')
-        else if (typeof o.deferredSources === 'string') paramPatch.deferredSources = o.deferredSources
-        if (typeof o.deferredGraceSteps === 'number') paramPatch.deferredGraceSteps = o.deferredGraceSteps
-        // 锚定/深思可选模块（anchor-turn / deliberation-gate / cot-drip 参数桥）。
-        if (typeof o.anchorTurn === 'boolean') paramPatch.anchorTurn = o.anchorTurn
-        if (typeof o.anchorTurnText === 'string') paramPatch.anchorTurnText = o.anchorTurnText
-        if (typeof o.deliberationGate === 'boolean') paramPatch.deliberationGate = o.deliberationGate
-        if (typeof o.deliberationMinChars === 'number') paramPatch.deliberationMinChars = o.deliberationMinChars
-        if (typeof o.deliberationMaxGatesPerTurn === 'number') paramPatch.deliberationMaxGatesPerTurn = o.deliberationMaxGatesPerTurn
-        if (typeof o.cotDrip === 'boolean') paramPatch.cotDrip = o.cotDrip
-        if (typeof o.cotDripEvery === 'number') paramPatch.cotDripEvery = o.cotDripEvery
-        if (typeof o.cotDripMaxPerTurn === 'number') paramPatch.cotDripMaxPerTurn = o.cotDripMaxPerTurn
-        if (typeof o.strReplaceEditorMaxOutputChars === 'number') paramPatch.strReplaceEditorMaxOutputChars = o.strReplaceEditorMaxOutputChars
+        const paramPatch = readParamOverridesPatch(o)
         if (Object.keys(paramPatch).length > 0) {
           const next = { ...fieldsRef.current, ...paramPatch }
           publishFields(next)
           setSavedSwitches(snapshotSwitches(next))
         }
-      }
-      // 预设级模板变量（preset.yml 内容变量；失败不阻断主流程）。
+      }      // 预设级模板变量（preset.yml 内容变量；失败不阻断主流程）。
       if (boot.ok && boot.variables !== undefined) {
         setTemplateVariables(boot.variables.variables)
         setTemplateVariablesEnabled(boot.variables.enabled !== false)
@@ -676,7 +318,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
 
   const enqueueSave = useCallback((ops: SettingsPathOpView[], okMessage: string | undefined, onSaved: () => void, setBusy?: (busy: boolean) => void) => {
     setBusy?.(true)
-    saveQueueRef.current = saveQueueRef.current.then(async () => {
+    void saveQueueRef.current.enqueue(async () => {
       try {
         await settings.mutate(ops, revisionRef.current)
         revisionRef.current = settings.scope.getSnapshot().revision
@@ -704,7 +346,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
       } finally {
         setBusy?.(false)
       }
-    }).catch(() => {})
+    })
   }, [refreshRevision, settings, showNotice])
 
   const persistSwitches = useCallback((onSaved?: () => void) => {
@@ -738,83 +380,11 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     const run = async (): Promise<void> => {
       const f = fieldsRef.current
       const savedSnapshot = snapshotSwitches(f)
-      const splitList = (value: string): string[] => value.split(',').map((item) => item.trim()).filter((item) => item.length > 0)
-      const loadedKeys = loadedKeysRef.current
-      // 条件发送：preset.yml 已有该键（含模板默认键）或字段值 != UI 默认 -> 发送；
-      // 未动过的键不写--既保留「改回留空清旧值」（已有键总是发送空值删键），
-      // 又避免 UI 默认值固化覆盖模板 moduleConfigs 默认（例如 promoteGate=true
-      // 被首次保存的 false 静默改写--参数桥优先后的回归）。
-      const emit = (key: string, value: unknown, empty: unknown): Record<string, unknown> =>
-        loadedKeys.has(key) || !deepEqual(value, empty) ? { [key]: value } : {}
-      // provider 自动预选只是显示兜底：preset 未声明且模型名为空时不落盘。
-      const providerShouldPersist = (key: 'modelProvider' | 'subagentModelProvider', value: string, auto: string | undefined, modelName: string): boolean =>
-        loadedKeys.has(key) || modelName.length > 0 || value !== auto
-      const overrides: Record<string, unknown> = {
-        ...emit('firstTurnAnchor', f.firstTurnAnchor, false),
-        ...emit('firstTurnText', f.firstTurnText, ''),
-        ...emit('firstTurnCustom', f.firstTurnCustom, false),
-        ...emit('guideText', f.guideText, ''),
-        ...emit('guideCustom', f.guideCustom, false),
-        ...emit('guideEnabled', f.guideEnabled, undefined),
-        ...emit('usePtcMode', f.usePtcMode, false),
-        ...emit('injectPrompt', f.injectPrompt, true),
-        ...emit('modelProvider', f.modelProvider, ''),
-        ...emit('modelName', f.modelName, ''),
-        ...emit('subagentModelProvider', f.subagentModelProvider, ''),
-        ...emit('subagentModelName', f.subagentModelName, ''),
-        ...emit('modelReasoningEffort', f.modelReasoningEffort, ''),
-        ...emit('modelTemperature', f.modelTemperature, ''),
-        ...emit('modelMaxTokens', f.modelMaxTokens, ''),
-        ...emit('subagentReasoningEffort', f.subagentReasoningEffort, ''),
-        ...emit('subagentTemperature', f.subagentTemperature, ''),
-        ...emit('subagentMaxTokens', f.subagentMaxTokens, ''),
-        ...emit('toolFilterAllow', splitList(f.toolFilterAllow), []),
-        ...emit('toolFilterDeny', splitList(f.toolFilterDeny), []),
-        ...emit('toolFilterSubagents', f.toolFilterSubagents, false),
-        ...emit('maxDepth', f.maxDepth === '' ? '' : f.maxDepth === 'provider-managed' ? 'provider-managed' : Number(f.maxDepth), ''),
-        ...emit('allowKinds', splitList(f.allowKinds), []),
-        ...emit('firstTurnWord', f.firstTurnWord, ''),
-        ...emit('bootstrapMaxTokens', f.bootstrapMaxTokens, 0),
-        // 晋升门控/渐进披露/验证工具：已有键或已改动才发送；空值由 savePresetParams
-        // 删键回落模板/引擎默认；false/0 引擎布尔归一或默认等价。
-        ...emit('promoteGate', f.promoteGate, false),
-        ...emit('promoteAfterFirstResponse', f.promoteAfterFirstResponse, false),
-        ...emit('maxPromoteSteps', f.maxPromoteSteps, 0),
-        ...emit('bootstrapTools', splitList(f.bootstrapTools), []),
-        ...emit('compactionTools', splitList(f.compactionTools), []),
-        ...emit('stages', f.stages
-          .map((stage) => ({
-            name: stage.name.trim(),
-            tools: splitList(stage.tools),
-          }))
-          .filter((stage) => stage.name.length > 0 && stage.tools.length > 0), []),
-        // 未设置 = 1（引擎默认）；0 是合法档位，必须能发送并落盘。
-        ...emit('stagePreUnlock', f.stagePreUnlock, 1),
-        ...emit('stageAdvanceTool', f.stageAdvanceTool, ''),
-        ...emit('stageAdvanceDescription', f.stageAdvanceDescription, ''),
-        ...emit('stageSectionTemplate', f.stageSectionTemplate, ''),
-        ...emit('personaSectionsOnly', f.personaSectionsOnly, false),
-        ...emit('workspaceLine', f.workspaceLine, false),
-        ...emit('phase1FirstCallInstruction', f.phase1FirstCallInstruction, ''),
-        ...emit('instructionHint', f.instructionHint, false),
-        // context-gate 注入门控。
-        ...emit('messageSources', splitList(f.messageSources), []),
-        ...emit('deferredSources', splitList(f.deferredSources), []),
-        ...emit('deferredGraceSteps', f.deferredGraceSteps, 0),
-        // 锚定/深思可选模块：已有键或已改动才发送；false/0 引擎布尔归一或默认等价。
-        ...emit('anchorTurn', f.anchorTurn, false),
-        ...emit('anchorTurnText', f.anchorTurnText, ''),
-        ...emit('deliberationGate', f.deliberationGate, false),
-        ...emit('deliberationMinChars', f.deliberationMinChars, 0),
-        ...emit('deliberationMaxGatesPerTurn', f.deliberationMaxGatesPerTurn, 0),
-        ...emit('cotDrip', f.cotDrip, false),
-        ...emit('cotDripEvery', f.cotDripEvery, 0),
-        ...emit('cotDripMaxPerTurn', f.cotDripMaxPerTurn, 0),
-        ...emit('strReplaceEditorMaxOutputChars', f.strReplaceEditorMaxOutputChars, 16000),
-      }
-      // 自动预选 provider 不落盘：从条件发送结果中剔除，除非用户改选或填写模型名。
-      if (!providerShouldPersist('modelProvider', f.modelProvider, autoModelProviderRef.current, f.modelName)) delete overrides.modelProvider
-      if (!providerShouldPersist('subagentModelProvider', f.subagentModelProvider, autoSubagentModelProviderRef.current, f.subagentModelName)) delete overrides.subagentModelProvider
+      const overrides = buildParamOverrides(f, {
+        loadedKeys: loadedKeysRef.current,
+        autoModelProvider: autoModelProviderRef.current,
+        autoSubagentModelProvider: autoSubagentModelProviderRef.current,
+      })
       const res = await bridgeCall('paramOverrides', { overrides })
       if (res.ok) {
         // 只标记发起时快照；若期间有新编辑，当前 fields 仍保持 dirty。
@@ -829,8 +399,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
         showNotice('error', '参数保存失败：' + (res.message ?? 'settings bridge unavailable'))
       }
     }
-    paramSaveQueueRef.current = paramSaveQueueRef.current.then(run).catch(() => {})
-    await paramSaveQueueRef.current
+    await paramSaveQueueRef.current.enqueue(run)
   }, [load, savedConfigs, showNotice])
 
   /** 保存后是否静默重载。切换预设时传 false（随后的 settings.mutate 回调会统一 load，

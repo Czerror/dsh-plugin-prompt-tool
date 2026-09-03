@@ -10,7 +10,7 @@ import { CustomToolsModuleCard } from './CustomToolsModuleCard.tsx'
 import styles from './PromptUi.module.css'
 
 import type { EngineMeta, PromptConfigDraft } from './prompt-tool-types.ts'
-import type { PromptToolStore } from './prompt-tool-store.ts'
+import type { PromptToolStore } from './data/use-prompt-tool-store.ts'
 
 export type { PromptConfigDraft, LayerFieldPolicy } from './prompt-tool-types.ts'
 export type { ValidationErrorEntry } from './prompt-tool-types.ts'

@@ -1,10 +1,10 @@
 /** 预设切换器：预设全部在用户目录（首次启动种子化），列表点击切换；新建 = 从内置模板复制还原。 */
 import { memo, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
-import { usePromptToolFields } from './use-prompt-tool-fields.ts'
+import { usePromptToolFields } from './data/use-prompt-tool-fields.ts'
 import clsx from 'clsx'
 import { IconCopyOutline16, IconFolderOpenOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { bridgeCall } from './data/bridge-client.ts'
-import type { PromptToolStore } from './prompt-tool-store.ts'
+import type { PromptToolStore } from './data/use-prompt-tool-store.ts'
 import styles from './PromptUi.module.css'
 
 export const PresetSwitcher = memo(function PresetSwitcher(props: { store: PromptToolStore }): ReactNode {

@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 // lib/client.js 是宿主 ModuleLoader 注册格式（不可 import）；Node 26 直接类型剥离加载 .ts 源。
-import { createSessionModelFace } from '../../src/client/session-model-face.ts'
+import { createSessionModelFace } from '../../src/client/data/session-model-face.ts'
 
 /** 构造结构 mock：list 快照 + binding 投影 + 子代理地址 + selectModel 记录。 */
 function mockSessions() {
