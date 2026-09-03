@@ -2,9 +2,9 @@ import { useEffect, useState, useSyncExternalStore, type ReactNode } from 'react
 import type { PromptToolHostApi } from '../../data/host-api.ts'
 import { usePromptToolStore, type PromptToolSettingsTransport } from '../../data/use-prompt-tool-store.ts'
 import type { PromptToolWorkspaceController } from '../workbench/workspace-controller.ts'
-import { CharactersPage } from '../../CharactersPage.tsx'
-import { PresetsPage } from '../../PresetsPage.tsx'
-import { SkillsSettings } from '../../SkillsSettings.tsx'
+import { CharactersPage } from '../../features/characters/CharactersPage.tsx'
+import { PresetsPage } from '../../features/presets/PresetsPage.tsx'
+import { SkillsPage } from '../../features/skills/SkillsPage.tsx'
 import { MainSessionPage } from './pages/MainSessionPage.tsx'
 import { SubagentPage } from './pages/SubagentPage.tsx'
 import { WorkspaceFrame } from './WorkspaceFrame.tsx'
@@ -45,7 +45,7 @@ export function PromptWorkspace(props: PromptWorkspaceProps): ReactNode {
     : page === 'subagent'
       ? <SubagentPage store={store} />
       : page === 'skills'
-        ? <SkillsSettings store={store} api={props.api} />
+        ? <SkillsPage store={store} api={props.api} />
         : page === 'presets'
           ? <PresetsPage store={store} />
           : <CharactersPage store={store} />

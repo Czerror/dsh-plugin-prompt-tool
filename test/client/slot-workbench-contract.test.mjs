@@ -10,7 +10,7 @@ const triggerSource = read('src/client/app/workbench/FloatingTrigger.tsx')
 const settings = read('src/client/app/workbench/SettingsTab.tsx')
 const source = [register, overlay, geometry, triggerSource, settings].join('\n')
 const css = read('src/client/app/workbench/Workbench.module.css')
-const skillsSettings = read('src/client/SkillsSettings.tsx')
+const skillsSettings = read('src/client/features/skills/SkillsPage.tsx')
 const entry = read('src/client/index.ts')
 const manifest = JSON.parse(read('package.json'))
 

@@ -6,51 +6,20 @@
  *  switchGridItem 内联标签），与所属「工具与深度」模块卡同折叠、同风格。 */
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import clsx from 'clsx'
-import { bridgeCall } from './data/bridge-client.ts'
-import { TagInput } from './ui/TagInput.tsx'
-import { ToolSurfaceView } from './ToolSurfaceView.tsx'
-import styles from './PromptUi.module.css'
+import { bridgeCall } from '../../data/bridge-client.ts'
+import { TagInput } from '../../ui/TagInput.tsx'
+import { asBool, asList, asNum, createEmptyPolicy, splitList, type PolicyDraft } from './subagent-policy-draft.ts'
+import styles from '../../PromptUi.module.css'
 
 type Notice = (kind: 'ok' | 'error', message: string) => void
-
-interface PolicyDraft {
-  defaultProfile?: string
-  ceiling?: { allow?: string[]; deny?: string[] }
-  profiles?: Array<{ id: string; name?: string; allow?: string[]; deny?: string[]; modelSelectable?: boolean }>
-  characterBindings?: Array<{ characterId: string; profile: string; modelSelectable?: boolean }>
-  taskRules?: Array<{ id: string; name?: string; pattern: string; profile: string; order?: number; modelSelectable?: boolean }>
-  modelExpansion?: { enabled?: boolean; allow?: string[]; maxAdditionalTools?: number; requireApproval?: boolean }
-}
 interface CharacterItem { id: string; name: string }
-
-const asList = (value: unknown): string[] => Array.isArray(value) ? value.map(String) : []
-const asBool = (value: unknown): boolean => value === true
-const asNum = (value: unknown): number => Number.isSafeInteger(value) ? value as number : 0
-const splitList = (value: string): string[] => value.split(',').map((item) => item.trim()).filter((item) => item.length > 0)
-
-/** 空策略骨架（首次启用的一键初始化：default 从现有 toolFilterAllow 复制）。 */
-function emptyPolicy(seedAllow: string): PolicyDraft {
-  return {
-    defaultProfile: 'base',
-    ceiling: { allow: ['read', 'write', 'edit', 'glob', 'grep', 'bash', 'web_search'], deny: [] },
-    profiles: [{
-      id: 'base',
-      name: '基础',
-      allow: splitList(seedAllow),
-      deny: [],
-      modelSelectable: false,
-    }],
-    characterBindings: [],
-    taskRules: [],
-    modelExpansion: { enabled: false, allow: [], maxAdditionalTools: 2, requireApproval: true },
-  }
-}
 
 export function SubagentToolPolicyCard(props: {
   onNotice: Notice
   /** 现有 toolFilterAllow（首次启用时复制为 default profile 的 allow）。 */
   seedAllow?: string
   currentSessionId?: string
+  renderToolSurface: (sessionId: string, label: string) => ReactNode
 }): ReactNode {
   const { onNotice } = props
   const [policy, setPolicy] = useState<PolicyDraft | null>(null)
@@ -83,7 +52,7 @@ export function SubagentToolPolicyCard(props: {
   const patch = (next: PolicyDraft): void => { setPolicy(next); setDirty(true) }
   const toggleEnabled = (enabled: boolean): void => {
     if (enabled) {
-      if (policy === null) patch(emptyPolicy(props.seedAllow ?? ''))
+      if (policy === null) patch(createEmptyPolicy(props.seedAllow ?? ''))
       else patch(policy)
     } else {
       setPolicy(null)
@@ -360,14 +329,14 @@ export function SubagentToolPolicyCard(props: {
           </div>
           {/* 已运行本地子代理实际工具面（只读） */}
           <div className={styles.policyGroup}>
-            <ToolSurfaceView sessionId={props.currentSessionId ?? ''} label="主会话" />
+            {props.renderToolSurface(props.currentSessionId ?? '', '主会话')}
             <span className={styles.settingCopy}>
               <strong>已运行子代理工具面</strong>
               <small>输入本地子代理 session id 查询其创建时冻结的实际可见工具。</small>
             </span>
             <input className={styles.configInput} aria-label="子代理 session id" placeholder="session-…" value={childSessionId}
               onChange={(event) => setChildSessionId(event.target.value.trim())} />
-            <ToolSurfaceView sessionId={childSessionId} label="子代理" />
+            {props.renderToolSurface(childSessionId, '子代理')}
           </div>
         </>
       )}

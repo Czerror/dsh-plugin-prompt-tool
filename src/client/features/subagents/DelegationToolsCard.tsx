@@ -2,16 +2,19 @@ import clsx from 'clsx'
 import type { ReactNode } from 'react'
 import type { PromptToolStore } from '../../data/use-prompt-tool-store.ts'
 import { TagInput } from '../../ui/TagInput.tsx'
-import { SubagentToolPolicyCard } from '../../SubagentToolPolicyCard.tsx'
-import { EngineModuleCard } from '../modules/EngineModuleCard.tsx'
+import { SubagentToolPolicyCard } from './SubagentToolPolicyCard.tsx'
+import { EngineModuleCard } from '../../ui/EngineModuleCard.tsx'
 import styles from '../../PromptUi.module.css'
 /** 工具与深度模块卡（子代理作用域配置；参数经 params 桥扁平键，与主会话引擎模块卡同一来源）。 */
-export function DelegationToolsModuleCard(props: { store: PromptToolStore }): ReactNode {
+export function DelegationToolsModuleCard(props: {
+  store: PromptToolStore
+  renderToolSurface: (sessionId: string, label: string) => ReactNode
+}): ReactNode {
   const { store } = props
   const fields = store.fields
   const maxDepthOptions = ['', 'provider-managed', '0', '1', '2', '3', '5']
   return (
-    <EngineModuleCard store={store} name="工具与深度" meta="工具集白名单/黑名单 + 注入 kind 白名单 + 递归深度 + 子代理工具策略">
+    <EngineModuleCard name="工具与深度" meta="工具集白名单/黑名单 + 注入 kind 白名单 + 递归深度 + 子代理工具策略">
       <TagInput id="pt-tool-filter-allow" label="工具集白名单" hint="toolFilter.allow：主会话常驻过滤（tool-filter 模块，作用于任意注册工具含自定义插件）+ 委派子代理 toolFilter；留空 = 不限制。"
         value={fields.toolFilterAllow} placeholder="read, write, glob" disabled={!fields.writePreset}
         onChange={(value) => store.patch({ toolFilterAllow: value })}
@@ -50,6 +53,7 @@ export function DelegationToolsModuleCard(props: { store: PromptToolStore }): Re
         onNotice={(kind, message) => store.showNotice(kind, message)}
         seedAllow={fields.toolFilterAllow}
         currentSessionId={store.api.currentSessionId()}
+        renderToolSurface={props.renderToolSurface}
       />
     </EngineModuleCard>
   )

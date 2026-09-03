@@ -3,31 +3,16 @@
  *  memo 组件——开关/筛选/拖拽 hover 只重渲染受影响行，不再全列表级联。 */
 import { memo, useCallback, useMemo, useState, type ReactNode } from 'react'
 import clsx from 'clsx'
-import type { SkillCatalogEntry } from './data/prompt-tool-fields.ts'
-import type { PromptToolStore } from './data/use-prompt-tool-store.ts'
-import type { PromptToolHostApi } from './data/host-api.ts'
-import { usePromptToolFields } from './data/use-prompt-tool-fields.ts'
-import { tabKeyHandler } from './ui/tab-key.ts'
-import { CollapsibleCard } from './ui/CollapsibleCard.tsx'
-import { SettingInputRow } from './ui/SettingInputRow.tsx'
-import ui from './PromptUi.module.css'
+import type { SkillCatalogEntry } from '../../data/prompt-tool-fields.ts'
+import type { PromptToolStore } from '../../data/use-prompt-tool-store.ts'
+import type { PromptToolHostApi } from '../../data/host-api.ts'
+import { usePromptToolFields } from '../../data/use-prompt-tool-fields.ts'
+import { tabKeyHandler } from '../../ui/tab-key.ts'
+import { CollapsibleCard } from '../../ui/CollapsibleCard.tsx'
+import { SettingInputRow } from '../../ui/SettingInputRow.tsx'
+import { SkillRow } from './SkillRow.tsx'
+import ui from '../../PromptUi.module.css'
 
-/** 技能调用状态徽章：只保留模型可调用状态，开关关闭后立即变灰。 */
-function SkillStatusChips(props: { skill: SkillCatalogEntry; enabled: boolean }): ReactNode {
-  const { skill, enabled } = props
-  const callable = skill.valid && skill.modelInvocable && enabled
-  const status = skill.valid ? (callable ? '模型可调用' : '模型不可调用') : '未注册'
-  return (
-    <span className={ui.skillStatusRow} aria-label={`技能调用状态：${status}`}>
-      <span className={clsx(ui.skillStatusChip, skill.valid ? (callable ? ui.skillStatusModel : ui.skillStatusOff) : ui.skillStatusError)}>
-        <i className={ui.skillStatusDot} aria-hidden="true" />
-        {status}
-      </span>
-    </span>
-  )
-}
-
-/** 技能状态筛选维度（统计条与列表联动）。 */
 type SkillStatusTab = 'all' | 'callable' | 'invalid'
 
 const SKILL_STATUS_TABS: Array<{ id: SkillStatusTab; label: string }> = [
@@ -36,90 +21,7 @@ const SKILL_STATUS_TABS: Array<{ id: SkillStatusTab; label: string }> = [
   { id: 'invalid', label: '未注册' },
 ]
 
-interface SkillRowProps {
-  skill: SkillCatalogEntry
-  depth: number
-  primaryIndex: number
-  enabled: boolean
-  isSelected: boolean
-  dragging: boolean
-  dropBefore: boolean
-  dropAfter: boolean
-  fixing: boolean
-  canMoveUp: boolean
-  canMoveDown: boolean
-  onDragStart: (folder: string, event: React.DragEvent<HTMLDivElement>) => void
-  onDragOver: (folder: string, event: React.DragEvent<HTMLDivElement>) => void
-  onDrop: (folder: string, event: React.DragEvent<HTMLDivElement>) => void
-  onDragEnd: () => void
-  onToggleSelect: (folder: string) => void
-  onToggleSkill: (folder: string) => void
-  onFix: (folder: string) => void
-  onMoveUp: (folder: string) => void
-  onMoveDown: (folder: string) => void
-}
-
-/** 技能行 memo：props 全部为数据/稳定回调，单行变化只重渲染该行。 */
-const SkillRow = memo(function SkillRow(props: SkillRowProps): ReactNode {
-  const { skill, depth, primaryIndex, enabled, isSelected, dragging, dropBefore, dropAfter, fixing } = props
-  const nested = depth > 0
-  const hint = `${skill.dir ?? 'skills'}/${skill.folder}${skill.description ? ` · ${skill.description}` : ''}`
-  return (
-    <div
-      className={clsx(ui.skillCard, !skill.valid && ui.skillRowInvalid)}
-      data-nested={nested ? '' : undefined}
-      data-selected={isSelected ? '' : undefined}
-      data-dragging={dragging ? '' : undefined}
-      data-drop-before={dropBefore ? '' : undefined}
-      data-drop-after={dropAfter ? '' : undefined}
-      draggable={skill.valid && !nested}
-      onDragStart={(event) => props.onDragStart(skill.folder, event)}
-      onDragOver={(event) => props.onDragOver(skill.folder, event)}
-      onDrop={(event) => props.onDrop(skill.folder, event)}
-      onDragEnd={props.onDragEnd}
-    >
-      {/* 勾选框：只选择（职责分离——开关状态由行内 Switch 与上方批量按钮控制）。 */}
-      <label className={ui.skillSelect} aria-label={`选择 ${skill.name || skill.folder}`}>
-        <input type="checkbox" checked={isSelected} disabled={!skill.valid} onChange={() => props.onToggleSelect(skill.folder)} />
-      </label>
-      {nested
-        ? <span className={ui.skillNestedMark} aria-hidden="true" title="嵌套子技能（跟随主技能，不参与拖拽排序）">▸</span>
-        : (
-          <>
-            <span className={ui.dragHandle} title={`第 ${primaryIndex + 1} 位，拖动调整顺序`} aria-hidden="true">⠿</span>
-            <span className={ui.skillRankBadge} title={`第 ${primaryIndex + 1} 位`}>{primaryIndex + 1}</span>
-          </>
-        )}
-      <div className={ui.skillCardBody}>
-        <span className={ui.skillCardTitleRow}>
-          <strong>{skill.name || skill.folder}</strong>
-          {skill.duplicate === true && <span className={ui.duplicateBadge} title={`同名技能：来源目录 ${skill.dir ?? '未知'}`}>同名</span>}
-          <SkillStatusChips skill={skill} enabled={enabled} />
-        </span>
-        <small className={ui.skillCardMeta}>{hint}</small>
-        {!skill.valid && skill.issue && <span className={ui.skillIssue} role="note">{skill.issue}</span>}
-      </div>
-      {/* Switch：独立切换技能开关。 */}
-      <label className={ui.skillSwitch} htmlFor={`pt-skill-${skill.folder}`}>
-        <input id={`pt-skill-${skill.folder}`} type="checkbox" checked={enabled} disabled={!skill.valid} aria-label={`启用 ${skill.name || skill.folder}`} onChange={() => props.onToggleSkill(skill.folder)} />
-        <span className={ui.switch} aria-hidden="true"><i /></span>
-      </label>
-      {!skill.valid ? (
-        <button type="button" className={ui.pillButton} disabled={fixing} onClick={() => props.onFix(skill.folder)}>
-          {fixing && <span className={ui.spinner} aria-hidden="true" />}
-          {fixing ? '修复中…' : '修复'}
-        </button>
-      ) : !nested ? (
-        <span className={ui.skillOrderButtons}>
-          <button type="button" className={ui.pillButton} aria-label={`上移 ${skill.name || skill.folder}`} title="上移（键盘排序）" disabled={!props.canMoveUp} onClick={() => props.onMoveUp(skill.folder)}>↑</button>
-          <button type="button" className={ui.pillButton} aria-label={`下移 ${skill.name || skill.folder}`} title="下移（键盘排序）" disabled={!props.canMoveDown} onClick={() => props.onMoveDown(skill.folder)}>↓</button>
-        </span>
-      ) : null}
-    </div>
-  )
-})
-
-export const SkillsSettings = memo(function SkillsSettings(props: { store: PromptToolStore; api: PromptToolHostApi }): ReactNode {
+export const SkillsPage = memo(function SkillsPage(props: { store: PromptToolStore; api: PromptToolHostApi }): ReactNode {
   const { store, api } = props
   const fields = usePromptToolFields(store, (value) => value)
   const [pickingDir, setPickingDir] = useState(false)
@@ -366,8 +268,8 @@ export const SkillsSettings = memo(function SkillsSettings(props: { store: Promp
                   enabled={store.skillEnabled(skill.folder)}
                   isSelected={selected.has(skill.folder)}
                   dragging={dragFolder === skill.folder}
-                  dropBefore={dropTarget?.folder === skill.folder && dropTarget.before === true}
-                  dropAfter={dropTarget?.folder === skill.folder && dropTarget.before === false}
+                  dropBefore={dropTarget?.folder === skill.folder && dropTarget?.before === true}
+                  dropAfter={dropTarget?.folder === skill.folder && dropTarget?.before === false}
                   fixing={store.fixingSkill === skill.folder}
                   canMoveUp={depth === 0 && primaryIndex > 0}
                   canMoveDown={depth === 0 && primaryIndex < orderedPrimary.length - 1}

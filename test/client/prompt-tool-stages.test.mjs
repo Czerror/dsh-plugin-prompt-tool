@@ -9,7 +9,7 @@ const snapshotWithStages = (stages) => snapshotSwitches({ ...EMPTY_FIELDS, stage
 
 test('stages 添加按钮追加可编辑的空草稿行', () => {
   const start = cards.indexOf('<strong>渐进披露（stages）</strong>')
-  const end = cards.indexOf('<EngineModuleCard store={store} name="context-gate"')
+  const end = cards.indexOf('<EngineModuleCard name="context-gate"')
   assert.ok(start >= 0 && end > start, '应找到 stages UI 区块')
   const stagesUi = cards.slice(start, end)
   assert.ok(stagesUi.includes("store.patch({ stages: [...fields.stages, { name: '', tools: '' }] })"), '添加按钮应追加空阶段草稿行')

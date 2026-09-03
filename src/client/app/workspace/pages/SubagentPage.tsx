@@ -3,6 +3,7 @@ import type { PromptToolStore } from '../../../data/use-prompt-tool-store.ts'
 import { usePromptToolFields } from '../../../data/use-prompt-tool-fields.ts'
 import { ModelRouteModuleCard } from '../../../features/models/ModelRouteCard.tsx'
 import { DelegationToolsModuleCard } from '../../../features/subagents/DelegationToolsCard.tsx'
+import { ToolSurfaceView } from '../../../features/tools/ToolSurfaceView.tsx'
 import { ConfigListWithTemplates } from './ConfigListWithTemplates.tsx'
 import { ModelRouteStatus } from './ModelRouteStatus.tsx'
 import ui from '../../../PromptUi.module.css'
@@ -20,7 +21,7 @@ export const SubagentPage = memo(function SubagentPage(props: { store: PromptToo
         <ModelRouteStatus store={store} />
         <div className={ui.configList}>
           <ModelRouteModuleCard store={store} scope="subagent" />
-          <DelegationToolsModuleCard store={store} />
+          <DelegationToolsModuleCard store={store} renderToolSurface={(sessionId, label) => <ToolSurfaceView sessionId={sessionId} label={label} />} />
         </div>
       </section>
       <div className={ui.subagentConfigs}>

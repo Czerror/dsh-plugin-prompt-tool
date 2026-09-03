@@ -2,7 +2,7 @@ import { memo, useCallback, type ReactNode } from 'react'
 import type { PromptToolStore } from '../../../data/use-prompt-tool-store.ts'
 import { usePromptToolFields } from '../../../data/use-prompt-tool-fields.ts'
 import { PromptConfigList } from '../../../features/prompts/PromptConfigList.tsx'
-import { TemplatePicker } from '../../../features/prompts/TemplatePicker.tsx'
+import { TemplatePicker } from '../../../ui/TemplatePicker.tsx'
 import { useTemplatePicker } from '../../../features/prompts/useTemplatePicker.ts'
 import ui from '../../../PromptUi.module.css'
 /** 配置列表 + 新建模板：六层页按 layer 过滤，子代理页按 scope 过滤（subagent 只列子代理可见模板）。 */

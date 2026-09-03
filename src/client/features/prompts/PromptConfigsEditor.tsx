@@ -1,13 +1,10 @@
-import { useEffect, useRef, useState, type FocusEvent, type ReactNode } from 'react'
+import { useRef, useState, type FocusEvent, type ReactNode } from 'react'
 import clsx from 'clsx'
 import { IconChevronDownOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { PromptConfigList } from './PromptConfigList.tsx'
-import { TemplatePicker } from './TemplatePicker.tsx'
+import { TemplatePicker } from '../../ui/TemplatePicker.tsx'
 import { useTemplatePicker } from './useTemplatePicker.ts'
 import { VariablesEditor } from './PromptConfigFields.tsx'
-import { EngineModuleCards } from '../modules/EngineModuleList.tsx'
-import { ModelRouteModuleCard } from '../models/ModelRouteCard.tsx'
-import { CustomToolsModuleCard } from '../../CustomToolsModuleCard.tsx'
 import styles from '../../PromptUi.module.css'
 
 import type { EngineMeta, PromptConfigDraft } from '../../prompt-tool-types.ts'
@@ -37,8 +34,10 @@ export interface PromptConfigsEditorProps {
   saveTemplateVariables: (next?: Record<string, string>) => Promise<void>
   /** 引擎模块配置（tool-bootstrap 等组合行 config 卡片，同模块列表形态）。 */
   store: PromptToolStore
-  /** 官方 sessions snapshot 中的当前会话 id；仅供只读工具面。 */
-  currentSessionId?: string
+  viewFilter: string
+  onViewFilterChange: (value: string) => void
+  headerCards?: ReactNode
+  beforeCards?: ReactNode
 }
 
 /** 预设级模板变量模块卡片（归类于配置列表下）：{{key}} 插值源，非 promptConfig——
@@ -121,13 +120,6 @@ function TemplateVariablesModuleCard(props: {
 /** 提示词配置编辑器：配置列表（层级/策略过滤已并入列表）+ 模板插入 + 保存前权威校验。 */
 export function PromptConfigsEditor(props: PromptConfigsEditorProps): ReactNode {
   const [templateVarsExpanded, setTemplateVarsExpanded] = useState(false)
-  const [customToolsExpanded, setCustomToolsExpanded] = useState(false)
-  /** 层筛选状态（模块列表下拉联动引擎模块卡：选中层只显示该层引擎模块）。 */
-  const [layerFilter, setLayerFilter] = useState('all')
-  // 进入 tool-pipeline 层时自动展开工具管理（工具域视图）。
-  useEffect(() => {
-    if (layerFilter === 'tool-pipeline') setCustomToolsExpanded(true)
-  }, [layerFilter])
   const templatePicker = useTemplatePicker(
     props.configs,
     (config) => props.onPatchConfigs([...props.configs, config]),
@@ -141,27 +133,19 @@ export function PromptConfigsEditor(props: PromptConfigsEditorProps): ReactNode 
   }
   return (
     <section className={styles.page} aria-label="提示词配置">
-      <div className={styles.configList}>
-        <ModelRouteModuleCard store={props.store} scope="main" />
-        <EngineModuleCards store={props.store} layerFilter={layerFilter} />
-      </div>
+      {props.headerCards}
+
       <PromptConfigList
         meta={props.meta}
         configs={props.configs}
         savedConfigs={props.savedConfigs}
-        viewFilter={layerFilter}
-        onViewFilterChange={setLayerFilter}
+        viewFilter={props.viewFilter}
+        onViewFilterChange={props.onViewFilterChange}
         extraActions={<button type="button" className={styles.primaryPill} onClick={templatePicker.openPicker}>新建</button>}
         beforeCards={
           <>
-            {layerFilter === 'tool-pipeline' && (
-              <CustomToolsModuleCard
-                expanded={customToolsExpanded}
-                onToggleExpanded={() => setCustomToolsExpanded(!customToolsExpanded)}
-                onNotice={props.onNotice}
-                sessionId={props.currentSessionId}
-              />
-            )}
+            {props.beforeCards}
+
             <TemplateVariablesModuleCard
               templateVariables={props.templateVariables}
               setTemplateVariables={props.setTemplateVariables}

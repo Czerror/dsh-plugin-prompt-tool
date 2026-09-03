@@ -2,7 +2,7 @@ import clsx from 'clsx'
 import type { ReactNode } from 'react'
 import type { PromptToolStore } from '../../data/use-prompt-tool-store.ts'
 import { TagInput } from '../../ui/TagInput.tsx'
-import { EngineModuleCard } from './EngineModuleCard.tsx'
+import { EngineModuleCard } from '../../ui/EngineModuleCard.tsx'
 import styles from '../../PromptUi.module.css'
 /** 引擎模块卡片组（模块列表顶部，按 6 层注入层级归类）：
  *  tool-bootstrap（system-section）/ context-gate（pre-step）/
@@ -73,7 +73,7 @@ export function EngineModuleCards(props: { store: PromptToolStore; layerFilter?:
   return (
     <>
       {visible('system-section') && (
-      <EngineModuleCard store={store} name="tool-bootstrap" layer="system-section" meta="目录相位 · 首轮窄化 / 门控晋升 / 压缩恢复">
+      <EngineModuleCard name="tool-bootstrap" layer="system-section" meta="目录相位 · 首轮窄化 / 门控晋升 / 压缩恢复">
         <div className={styles.settingRowStack}>
           <div className={styles.sessionModelRow}>
             <span className={styles.switchGridItem} title="bootstrapMaxTokens：关闭 = 首轮不设输出上限">
@@ -217,7 +217,7 @@ export function EngineModuleCards(props: { store: PromptToolStore; layerFilter?:
       </EngineModuleCard>
       )}
       {visible('pre-step') && (
-      <EngineModuleCard store={store} name="context-gate" layer="pre-step" meta="注入门控 · 白名单 / 延迟注入 / 指令提示">
+      <EngineModuleCard name="context-gate" layer="pre-step" meta="注入门控 · 白名单 / 延迟注入 / 指令提示">
         <TagInput id="pt-allow-kinds" label="注入 kind 白名单" hint="allowKinds：context-gate 注入门控；空 = 官方 pre-step 行为（不过滤）。"
           value={fields.allowKinds} placeholder="skill-invocation, near-anchor, router-guide" disabled={!fields.writePreset}
           onChange={(value) => store.patch({ allowKinds: value })}
@@ -239,7 +239,7 @@ export function EngineModuleCards(props: { store: PromptToolStore; layerFilter?:
       </EngineModuleCard>
       )}
       {visible('tool-pipeline') && (
-      <EngineModuleCard store={store} name="工具管线" layer="tool-pipeline" meta="工具设置 · 呈现 / 过滤 / 委派 / 验证">
+      <EngineModuleCard name="工具管线" layer="tool-pipeline" meta="工具设置 · 呈现 / 过滤 / 委派 / 验证">
         <div className={styles.configSectionTitle}>呈现（code-presentation）</div>
         <div className={styles.settingRowStack}>
           <div className={styles.switchGrid}>

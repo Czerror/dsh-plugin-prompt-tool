@@ -2,8 +2,8 @@
  *  （name/description 摘要）。搜索仅客户端过滤，不增加请求频率。
  *  无会话/未知 session 显示明确空态或稳定错误，不自动 resume。 */
 import { useCallback, useEffect, useState, type ReactNode } from 'react'
-import { bridgeCall } from './data/bridge-client.ts'
-import styles from './PromptUi.module.css'
+import { bridgeCall } from '../../data/bridge-client.ts'
+import styles from '../../PromptUi.module.css'
 
 export interface ToolSurfaceEntry { name: string; description: string }
 

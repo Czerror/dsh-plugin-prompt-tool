@@ -4,10 +4,10 @@
  *  已导入的角色卡显示状态并可一键移除。 */
 import { memo, useEffect, useRef, useState, type ReactNode } from 'react'
 import { IconFolderOpenOutline16, IconTrashOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
-import { bridgeCall, bridgeUpload, shouldStreamJsonFile } from './data/bridge-client.ts'
+import { bridgeCall, bridgeUpload, shouldStreamJsonFile } from '../../data/bridge-client.ts'
 import { isPngSignature } from './character-card.ts'
-import type { PromptToolStore } from './data/use-prompt-tool-store.ts'
-import ui from './PromptUi.module.css'
+import type { PromptToolStore } from '../../data/use-prompt-tool-store.ts'
+import ui from '../../PromptUi.module.css'
 
 interface CharacterCardItem {
   id: string

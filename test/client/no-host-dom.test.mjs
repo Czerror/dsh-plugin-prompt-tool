@@ -28,7 +28,7 @@ test('客户端装配层不自建 root 或观察宿主 DOM（官方 slot + body 
 })
 
 test('角色卡导入按 PNG 魔数与载荷大小分流', () => {
-  const page = read('src/client/CharactersPage.tsx')
+  const page = read('src/client/features/characters/CharactersPage.tsx')
   const client = read('src/client/data/bridge-client.ts')
   const transport = read('src/client/data/bridge-transport.ts')
   assert.match(page, /isPngSignature/)

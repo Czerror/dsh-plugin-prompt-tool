@@ -1,6 +1,6 @@
 import { useState, useSyncExternalStore, type ReactNode } from 'react'
 import type { PromptToolStore } from '../../data/use-prompt-tool-store.ts'
-import { EngineModuleCard } from '../modules/EngineModuleCard.tsx'
+import { EngineModuleCard } from '../../ui/EngineModuleCard.tsx'
 import styles from '../../PromptUi.module.css'
 /** 模型路由模块卡（官方 agent-default-model 层，非引擎模块——归类配置列表下）：
  *  主对话/子代理共用同一配置源（缺省继承宿主默认）；模型路由与人设按作用域完全分离
@@ -70,7 +70,7 @@ export function ModelRouteModuleCard(props: { store: PromptToolStore; scope: 'ma
     ? `未设置：展开选择模型（当前继承宿主默认 ${host.model}）`
     : scopeMeta.idle
   return (
-    <EngineModuleCard store={store} name={scopeMeta.title} meta={active ? scopeMeta.active : idleMeta}>
+    <EngineModuleCard name={scopeMeta.title} meta={active ? scopeMeta.active : idleMeta}>
       {props.scope === 'main' && (
         <div className={styles.settingRowStack}>
           <span className={styles.settingCopy}>

@@ -1,15 +1,13 @@
 import { useState, type ReactNode } from 'react'
 import clsx from 'clsx'
 import { IconChevronDownOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { PromptToolStore } from '../../data/use-prompt-tool-store.ts'
-import styles from '../../PromptUi.module.css'
+import styles from '../PromptUi.module.css'
 /** 引擎模块可折叠卡片：与模块列表（PromptConfigList）同款形态——
  *  configCard + configToggle + chevron，点击展开 configForm 编辑组合行 config
  *  （经 params 参数桥扁平键落 preset.yml）。归类于配置列表下（beforeCards）。
  *  layer：6 层注入层级归类（pre-step / system-section / tool-pipeline），
  *  参与模块列表层筛选（layerFilter 联动）。 */
 export function EngineModuleCard(props: {
-  store: PromptToolStore
   name: string
   meta: string
   layer?: string

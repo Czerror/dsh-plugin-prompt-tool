@@ -15,7 +15,7 @@ test('工作台 tabs：roving tabindex 与 tab/tabpanel 关系完整', () => {
 })
 
 test('技能筛选 tabs：roving tabindex 与共享 panel 关系完整', () => {
-  const source = read('src/client/SkillsSettings.tsx')
+  const source = read('src/client/features/skills/SkillsPage.tsx')
   assert.match(source, /id=\{`pt-skills-tab-\$\{tab\.id\}`\}/)
   assert.match(source, /tabIndex=\{statusTab === tab\.id \? 0 : -1\}/)
   assert.match(source, /aria-controls="pt-skills-panel"/)
