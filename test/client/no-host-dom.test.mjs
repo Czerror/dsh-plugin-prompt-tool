@@ -23,10 +23,12 @@ test('客户端装配层不自建 root 或观察宿主 DOM（官方 slot + body 
 
 test('角色卡导入按 PNG 魔数与载荷大小分流', () => {
   const page = read('src/client/CharactersPage.tsx')
-  const bridge = read('src/client/prompt-tool-bridge.ts')
+  const client = read('src/client/data/bridge-client.ts')
+  const transport = read('src/client/data/bridge-transport.ts')
   assert.match(page, /isPngSignature/)
-  assert.match(page, /characters-import-stream/)
+  assert.match(page, /bridgeUpload\(file, file\.name\)/)
   assert.match(page, /\.jpg,\.jpeg/)
-  assert.match(bridge, /export async function bridgeUpload/)
-  assert.match(bridge, /export function shouldStreamJsonFile/)
+  assert.match(client, /BRIDGE_ENDPOINTS\.charactersImportStream/)
+  assert.match(transport, /export async function uploadBridge/)
+  assert.match(transport, /export function shouldStreamJsonFile/)
 })

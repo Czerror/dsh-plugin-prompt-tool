@@ -6,7 +6,7 @@
  *  switchGridItem 内联标签），与所属「工具与深度」模块卡同折叠、同风格。 */
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import clsx from 'clsx'
-import { bridgePost } from './prompt-tool-bridge.ts'
+import { bridgeCall } from './data/bridge-client.ts'
 import { TagInput } from './TagInput.tsx'
 import { ToolSurfaceView } from './ToolSurfaceView.tsx'
 import styles from './PromptUi.module.css'
@@ -63,7 +63,7 @@ export function SubagentToolPolicyCard(props: {
   const [characters, setCharacters] = useState<CharacterItem[]>([])
 
   const load = useCallback(() => {
-    void bridgePost<{ policy: unknown }>('/subagent-tool-policy', {}).then((result) => {
+    void bridgeCall('subagentToolPolicy', {}).then((result) => {
       if (result.ok && result.value.policy !== null) {
         setPolicy(result.value.policy as PolicyDraft)
       } else {
@@ -75,7 +75,7 @@ export function SubagentToolPolicyCard(props: {
 
   useEffect(() => { load() }, [load])
   useEffect(() => {
-    void bridgePost<{ characters: CharacterItem[] }>('/characters-list', {}).then((result) => {
+    void bridgeCall('charactersList').then((result) => {
       if (result.ok) setCharacters(result.value.characters)
     })
   }, [])
@@ -92,7 +92,7 @@ export function SubagentToolPolicyCard(props: {
   }
   const save = (): void => {
     setSaving(true)
-    void bridgePost<{ policy: unknown }>('/subagent-tool-policy', { policy }).then((result) => {
+    void bridgeCall('subagentToolPolicy', { policy }).then((result) => {
       setSaving(false)
       if (result.ok) {
         setDirty(false)
@@ -104,7 +104,7 @@ export function SubagentToolPolicyCard(props: {
     })
   }
   const runPreview = (): void => {
-    void bridgePost<{ result: unknown }>('/subagent-tool-policy-preview', previewInput).then((result) => {
+    void bridgeCall('subagentToolPolicyPreview', previewInput).then((result) => {
       if (result.ok) setPreview(result.value.result)
       else onNotice('error', ('message' in result ? result.message : undefined) ?? '预览失败')
     })

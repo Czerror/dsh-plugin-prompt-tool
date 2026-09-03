@@ -3,7 +3,7 @@ import { memo, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardE
 import { usePromptToolFields } from './use-prompt-tool-fields.ts'
 import clsx from 'clsx'
 import { IconCopyOutline16, IconFolderOpenOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
-import { bridgePost } from './prompt-tool-bridge.ts'
+import { bridgeCall } from './data/bridge-client.ts'
 import type { PromptToolStore } from './prompt-tool-store.ts'
 import styles from './PromptUi.module.css'
 
@@ -35,7 +35,7 @@ export const PresetSwitcher = memo(function PresetSwitcher(props: { store: Promp
     if (entries.length === 0) return
     setImporting(true)
     try {
-      const res = await bridgePost<{ id: string }>('/import-preset-package', { files: entries })
+      const res = await bridgeCall('importPresetPackage', { files: entries })
       if (res.ok) {
         store.showNotice('ok', `预设 ${res.value.id} 已导入，点击卡片即可切换`)
         await store.load()
@@ -70,7 +70,7 @@ export const PresetSwitcher = memo(function PresetSwitcher(props: { store: Promp
 
   /** 导出当前预设为单文件配置（浏览器下载，可保存到任意目录）。 */
   const exportPreset = async (): Promise<void> => {
-    const res = await bridgePost<{ id: string; name: string; content: string }>('/export-preset', { id: fields.presetTemplate })
+    const res = await bridgeCall('exportPreset', { id: fields.presetTemplate })
     if (!res.ok) {
       store.showNotice('error', '导出预设失败：' + (res.message ?? 'settings bridge unavailable'))
       return
@@ -87,7 +87,7 @@ export const PresetSwitcher = memo(function PresetSwitcher(props: { store: Promp
 
   /** 删除预设（物理删除用户目录副本；插件目录模板保留，可经「新建预设」还原）。 */
   const deletePreset = async (id: string): Promise<void> => {
-    const res = await bridgePost<{ id: string }>('/preset-delete', { id })
+    const res = await bridgeCall('presetDelete', { id })
     if (res.ok) {
       setConfirmingDelete(undefined)
       store.showNotice('ok', `预设 ${id} 已删除（可经「新建预设」从内置模板还原）`)
@@ -99,7 +99,7 @@ export const PresetSwitcher = memo(function PresetSwitcher(props: { store: Promp
 
   /** 复制预设：用户目录完整副本，id 自动递增（<id>-copy / <id>-copy-2 / …）。 */
   const duplicatePreset = async (id: string): Promise<void> => {
-    const res = await bridgePost<{ id: string }>('/preset-duplicate', { id })
+    const res = await bridgeCall('presetDuplicate', { id })
     if (res.ok) {
       store.showNotice('ok', `已复制为预设 ${res.value.id}`)
       await store.load()
@@ -110,7 +110,7 @@ export const PresetSwitcher = memo(function PresetSwitcher(props: { store: Promp
 
   /** 打开预设文件夹（宿主系统文件管理器；失败时提示路径）。 */
   const openLocation = async (id: string): Promise<void> => {
-    const res = await bridgePost<{ path: string }>('/preset-open', { id })
+    const res = await bridgeCall('presetOpen', { id })
     if (res.ok) {
       store.showNotice('ok', `已打开预设文件夹：${res.value.path}`)
     } else {
@@ -120,7 +120,7 @@ export const PresetSwitcher = memo(function PresetSwitcher(props: { store: Promp
 
   /** 新建：从插件目录模板复制到用户目录（还原/自定义起点）；自定义入口重名自动递增。 */
   const clonePreset = async (id: string, autoSuffix = false): Promise<void> => {
-    const res = await bridgePost<{ id: string }>('/preset-clone', { id, autoSuffix })
+    const res = await bridgeCall('presetClone', { id, autoSuffix })
     if (res.ok) {
       setPickerOpen(false)
       store.showNotice('ok', `已从内置模板新建预设 ${res.value.id}`)

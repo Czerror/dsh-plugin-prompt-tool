@@ -2,19 +2,16 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { SettingsPathOpView } from '@deepseek-ai/dsh-api-remotes/client'
 import type { SettingsScope, SettingsScopeSnapshot } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { EngineMeta, PromptConfigDraft, PromptToolHostApi } from './prompt-tool-types.ts'
+import { bridgeCall, errorMessage, type BridgeResult, type BridgeSettingsView } from './data/bridge-client.ts'
 import {
   EMPTY_FIELDS,
   EMPTY_META,
-  bridgePost,
-  errorMessage,
-  fieldsFromView,
   hasIncompleteStageDrafts,
-  type BridgeResult,
-  type BridgeSettingsView,
   type Fields,
   type HostDefaultModel,
   type StageDraft,
-} from './prompt-tool-bridge.ts'
+} from './data/prompt-tool-fields.ts'
+import { fieldsFromView } from './data/prompt-tool-view.ts'
 
 /** rc8 ui-settings 共享镜像传输面：标准字段经官方 settingsScope 读写。 */
 export interface PromptToolSettingsTransport {
@@ -442,7 +439,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
 
   /** 模型目录惰性加载：独立于主 load（/describe 不再阻塞等模型查询）。 */
   const loadModels = useCallback(async (): Promise<void> => {
-    const res = await bridgePost<{ modelCatalog: Record<string, string[]> }>('/models', {})
+    const res = await bridgeCall('models')
     if (res.ok) setModelCatalog(res.value.modelCatalog ?? {})
   }, [])
 
@@ -508,7 +505,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     try {
       // /bootstrap 聚合读取：meta + describe runtime facts + 参数覆盖 + 模板变量 +
       // 实际生效配置一次取回（此前 5 端点串行，preset.yml 每端点读盘解析）。
-      const boot = await bridgePost<BridgeSettingsView>('/bootstrap', {})
+      const boot = await bridgeCall('bootstrap')
       if (seq !== loadSeqRef.current) return EMPTY_FIELDS
       // 读取期间用户已修改草稿：不应用服务端快照覆盖，保留草稿；后续保存/读取再同步。
       if (draftVersionRef.current !== draftVersion) return fieldsRef.current
@@ -818,7 +815,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
       // 自动预选 provider 不落盘：从条件发送结果中剔除，除非用户改选或填写模型名。
       if (!providerShouldPersist('modelProvider', f.modelProvider, autoModelProviderRef.current, f.modelName)) delete overrides.modelProvider
       if (!providerShouldPersist('subagentModelProvider', f.subagentModelProvider, autoSubagentModelProviderRef.current, f.subagentModelName)) delete overrides.subagentModelProvider
-      const res = await bridgePost<{ overrides: unknown }>('/param-overrides', { overrides })
+      const res = await bridgeCall('paramOverrides', { overrides })
       if (res.ok) {
         // 只标记发起时快照；若期间有新编辑，当前 fields 仍保持 dirty。
         setSavedSwitches(savedSnapshot)
@@ -848,7 +845,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
           scope: config.id === 'prompt-injector' ? 'preset' as const : 'agents' as const,
           content: config.text ?? '',
         }))
-        const res = await bridgePost<{ scopes: Array<'preset' | 'agents'> }>('/import-preset', { contents })
+        const res = await bridgeCall('importPreset', { contents })
         if (!res.ok) {
           showNotice('error', 'preset.md/agents.md 保存失败：' + (res.message ?? 'settings bridge unavailable'))
           return
@@ -858,7 +855,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
       // 防御：初始化期空数组自动保存不得覆盖服务端已有配置（历史教训：beta-2-42
       // 的 129 张配置卡被一次清空）；用户主动清空（此前已加载非空配置）允许落盘空数组。
       if (configs.length === 0 && savedConfigs.length === 0) return
-      const res = await bridgePost<{ promptConfigs: unknown }>('/param-overrides', {
+      const res = await bridgeCall('paramOverrides', {
         promptConfigs: configs.map(stripContentText),
         ...(options?.rebuild === false ? { rebuild: false } : {}),
       })
@@ -877,7 +874,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     const cleaned = Object.fromEntries(
       Object.entries(next ?? templateVariables).filter(([key]) => key.trim().length > 0),
     )
-    const res = await bridgePost<{ variables: unknown }>('/preset-variables', {
+    const res = await bridgeCall('presetVariables', {
       variables: cleaned,
       enabled: templateVariablesEnabled,
     })
@@ -996,16 +993,10 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     persistSwitches()
   }, [patch, persistSwitches])
 
-  interface SkillFixValue {
-    folder: string
-    fixedFolder: string
-    name: string
-    actions: string[]
-  }
   const fixSkill = useCallback(async (folder: string) => {
     setFixingSkill(folder)
     try {
-      const res = await bridgePost<SkillFixValue>('/skill-fix', { folder })
+      const res = await bridgeCall('skillFix', { folder })
       if (res.ok) {
         showNotice('ok', `已修复技能 ${res.value.folder} → ${res.value.fixedFolder}：${res.value.actions.join('；') || '无需改动'}`)
         await load()

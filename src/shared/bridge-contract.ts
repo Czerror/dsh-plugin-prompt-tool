@@ -68,11 +68,11 @@ export interface BridgeRequestMap {
   importPreset: { contents: Array<{ scope: 'preset' | 'agents'; content: string }> }
   paramOverrides: { overrides?: Record<string, unknown>; promptConfigs?: unknown; rebuild?: boolean }
   presetVariables: { variables?: Record<string, string>; enabled?: boolean }
-  customTools: undefined
+  customTools: { customTools?: unknown[] } | undefined
   importPresetPackage: { files: Array<{ path?: string; name?: string; content?: string }> }
   exportPreset: { id: string }
   presetDelete: { id: string }
-  presetClone: { id: string }
+  presetClone: { id: string; autoSuffix?: boolean }
   presetDuplicate: { id: string }
   presetOpen: { id: string }
   charactersImport: { files?: Array<{ path: string; content: string }> }
@@ -86,39 +86,46 @@ export interface BridgeRequestMap {
   toolSurface: { sessionId: string }
 }
 
+/** settings descriptor 的跨端最小结构。 */
+export interface BridgeSettingsView {
+  ns: string
+  value: unknown
+  base?: unknown
+  revision: number
+}
+
 /** 端点级响应 value 契约（value 字段形状；扩展字段仍以 value 旁可选字段出现）。 */
 export interface BridgeValueMap {
-  meta: { meta: unknown }
-  bootstrap: Record<string, unknown>
-  describe: Record<string, unknown>
-  models: { catalog: Record<string, string[]> }
-  mutate: Record<string, unknown>
-  configsValidate: { valid: boolean; errors: unknown[]; configs?: unknown[]; files?: unknown[] }
-  skillFix: Record<string, unknown>
-  templates: Record<string, unknown>
+  meta: { meta: Record<string, unknown> }
+  bootstrap: BridgeSettingsView
+  describe: BridgeSettingsView
+  models: { modelCatalog: Record<string, string[]> }
+  mutate: BridgeSettingsView
+  configsValidate: { valid: boolean; errors: Array<{ index: number; id: string; message: string }>; configs?: unknown[]; files?: unknown[] }
+  skillFix: { folder: string; fixedFolder: string; name: string; actions: string[] }
+  templates: { templates?: unknown[]; toolTemplates?: unknown[] }
   promptConfigs: { promptConfigs: unknown[] }
   presetContent: Record<string, unknown>
   importPreset: { scopes: Array<'preset' | 'agents'> }
-  paramOverrides: Record<string, unknown>
+  paramOverrides: { overrides?: Record<string, unknown>; promptConfigs?: unknown[] }
   presetVariables: { variables: Record<string, string>; enabled: boolean }
-  customTools: Record<string, unknown>
+  customTools: { customTools?: unknown[] }
   importPresetPackage: { id: string }
-  exportPreset: { content: string }
-  presetDelete: Record<string, unknown>
+  exportPreset: { id: string; name: string; content: string }
+  presetDelete: { id: string }
   presetClone: { id: string }
   presetDuplicate: { id: string }
   presetOpen: { path: string }
   charactersImport: { id: string; name: string }
   charactersImportStream: { id: string; name: string }
-  charactersList: { cards: unknown[] }
-  charactersDelete: Record<string, unknown>
-  charactersApply: { count: number }
-  charactersRemove: { count: number }
+  charactersList: { characters: Array<{ id: string; name: string; description?: string; hasAvatar: boolean; imported: boolean }> }
+  charactersDelete: { id: string }
+  charactersApply: { id: string; count: number }
+  charactersRemove: { id: string; count: number }
   subagentToolPolicy: { policy: unknown; defaultProfile?: string; errors?: string[] }
   subagentToolPolicyPreview: { result: unknown; errors?: string[] }
   toolSurface: { tools: Array<{ name: string; description: string }> }
 }
-
 /** 编译期断言：请求/响应映射与 BRIDGE_ENDPOINTS 键集合完全一致（漏改任一侧 typecheck 失败）。 */
 type AssertCoverage<K extends string, M extends object> =
   Exclude<K, keyof M> extends never

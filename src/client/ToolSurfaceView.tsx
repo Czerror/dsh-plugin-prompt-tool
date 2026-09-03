@@ -2,7 +2,7 @@
  *  （name/description 摘要）。搜索仅客户端过滤，不增加请求频率。
  *  无会话/未知 session 显示明确空态或稳定错误，不自动 resume。 */
 import { useCallback, useEffect, useState, type ReactNode } from 'react'
-import { bridgePost } from './prompt-tool-bridge.ts'
+import { bridgeCall } from './data/bridge-client.ts'
 import styles from './PromptUi.module.css'
 
 export interface ToolSurfaceEntry { name: string; description: string }
@@ -27,7 +27,7 @@ export function ToolSurfaceView(props: {
     }
     setLoading(true)
     setError(undefined)
-    void bridgePost<{ tools: ToolSurfaceEntry[] }>('/tool-surface', { sessionId }).then((result) => {
+    void bridgeCall('toolSurface', { sessionId }).then((result) => {
       setLoading(false)
       if (result.ok) {
         setTools(result.value.tools)

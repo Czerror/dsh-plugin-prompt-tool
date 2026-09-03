@@ -1,15 +1,8 @@
 import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react'
-import { bridgePost, errorMessage } from './prompt-tool-bridge.ts'
+import { bridgeCall, errorMessage } from './data/bridge-client.ts'
 import { PromptConfigCard } from './PromptConfigCard.tsx'
 import type { EngineMeta, PromptConfigDraft, ValidationErrorEntry } from './prompt-tool-types.ts'
 import styles from './PromptUi.module.css'
-
-interface ValidateResult {
-  ok: boolean
-  valid: boolean
-  errors?: ValidationErrorEntry[]
-  message?: string
-}
 
 export interface PromptConfigListProps {
   meta: EngineMeta
@@ -190,7 +183,7 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
   const runValidate = async (target: PromptConfigDraft[]): Promise<boolean> => {
     setValidating(true)
     try {
-      const res = await bridgePost<ValidateResult>('/configs-validate', { promptConfigs: target })
+      const res = await bridgeCall('configsValidate', { promptConfigs: target })
       if (!res.ok) {
         onNotice('error', '校验请求失败：' + (res.message ?? 'settings bridge unavailable'))
         return false

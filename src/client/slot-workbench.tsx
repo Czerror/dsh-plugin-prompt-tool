@@ -17,7 +17,7 @@ import { PromptToolWorkspaceController } from './workspace-controller.ts'
 import type { PromptToolSettingsTransport } from './prompt-tool-store.ts'
 import type { PromptToolHostApi } from './prompt-tool-types.ts'
 import { ToggleRow } from './ToggleRow.tsx'
-import { bridgePost } from './prompt-tool-bridge.ts'
+import { bridgeCall } from './data/bridge-client.ts'
 import ui from './PromptUi.module.css'
 import css from './PromptWorkspace.module.css'
 
@@ -209,8 +209,12 @@ function SettingsTabSlot(props: TabProps): ReactNode {
   const [switchingPreset, setSwitchingPreset] = useState(false)
   const [presetNotice, setPresetNotice] = useState<{ kind: 'ok' | 'error'; message: string }>()
   useEffect(() => {
-    void bridgePost<{ meta?: { presets?: Array<{ id: string; name: string }> } }>('/meta', {})
-      .then((res) => { if (res.ok && res.value.meta?.presets !== undefined) setPresets(res.value.meta.presets) })
+    void bridgeCall('meta')
+      .then((res) => {
+        if (!res.ok) return
+        const meta = res.value.meta as { presets?: Array<{ id: string; name: string }> }
+        if (meta.presets !== undefined) setPresets(meta.presets)
+      })
       .catch(() => {})
   }, [])
   const set = (field: string, next: unknown): void => { void scope.set(field, next) }

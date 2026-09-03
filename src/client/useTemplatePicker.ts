@@ -1,13 +1,7 @@
 /** 模板库加载 + 插入共享逻辑：PromptConfigsEditor 与各配置列表页（六层/子代理）共用。 */
 import { useState } from 'react'
-import { bridgePost, errorMessage } from './prompt-tool-bridge.ts'
+import { bridgeCall, errorMessage } from './data/bridge-client.ts'
 import type { PromptConfigDraft, PromptConfigTemplateEntry } from './prompt-tool-types.ts'
-
-interface TemplatesResult {
-  ok: boolean
-  templates?: PromptConfigTemplateEntry[]
-  message?: string
-}
 
 export function useTemplatePicker(
   configs: PromptConfigDraft[],
@@ -26,7 +20,7 @@ export function useTemplatePicker(
   const loadTemplates = async (): Promise<void> => {
     if (templates.length > 0) return
     try {
-      const res = await bridgePost<TemplatesResult>('/templates', {})
+      const res = await bridgeCall('templates')
       if (!res.ok) {
         onNotice('error', '读取模板库失败：' + (res.message ?? 'settings bridge unavailable'))
         return
@@ -35,7 +29,7 @@ export function useTemplatePicker(
         onNotice('error', '读取模板库失败：模板列表为空')
         return
       }
-      setTemplates(res.value.templates)
+      setTemplates(res.value.templates as PromptConfigTemplateEntry[])
     } catch (error) {
       onNotice('error', '读取模板库失败：' + errorMessage(error))
     }

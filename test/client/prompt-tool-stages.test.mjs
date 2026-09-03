@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { EMPTY_FIELDS, hasIncompleteStageDrafts } from '../../src/client/prompt-tool-bridge.ts'
+import { EMPTY_FIELDS, hasIncompleteStageDrafts } from '../../src/client/data/prompt-tool-fields.ts'
 import { shouldReloadAfterParamSave, snapshotSwitches } from '../../src/client/prompt-tool-store.ts'
 
 const cards = readFileSync(new URL('../../src/client/EngineModuleCards.tsx', import.meta.url), 'utf8')

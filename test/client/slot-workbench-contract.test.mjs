@@ -89,7 +89,8 @@ test('client service and bundle injection edges cover the slot declarations', ()
 })
 
 test('/meta 预设下拉读 value.meta（不是顶层 meta 扩展字段）', () => {
-  assert.match(source, /res\.value\.meta\?\.presets/, '必须读 value.meta.presets（bridge 统一 {ok,value} 载荷）')
+  assert.match(source, /const meta = res\.value\.meta as/, '必须读 value.meta（bridge 统一 {ok,value} 载荷）')
+  assert.match(source, /meta\.presets/, '必须从 value.meta 读取 presets')
   assert.doesNotMatch(source, /res\.meta\?\.meta/, '顶层 meta 扩展字段仅 /describe 与 /bootstrap 携带，/meta 端点没有')
 })
 

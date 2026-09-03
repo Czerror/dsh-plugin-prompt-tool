@@ -6,17 +6,24 @@ import { BRIDGE_ENDPOINTS } from '../../src/shared/bridge-contract.ts'
 const clientDir = new URL('../../src/client/', import.meta.url)
 const read = (file) => readFileSync(new URL(file, clientDir), 'utf8')
 
-test('client bridge 字面路径全部属于共享契约', () => {
-  const valid = new Set(Object.values(BRIDGE_ENDPOINTS))
+function sourceFiles(dir, prefix = '') {
+  return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    const relative = prefix + entry.name
+    if (entry.isDirectory()) return sourceFiles(new URL(`${entry.name}/`, dir), `${relative}/`)
+    return /\.(?:ts|tsx)$/.test(entry.name) ? [relative] : []
+  })
+}
+
+test('client bridge 调用只使用共享契约 key，不出现字面路径', () => {
+  const validKeys = new Set(Object.keys(BRIDGE_ENDPOINTS))
   const calls = []
-  for (const file of readdirSync(clientDir).filter((name) => /\.(?:ts|tsx)$/.test(name))) {
-    for (const line of read(file).split(/\r?\n/)) {
-      const match = line.match(/bridge(?:Post|Upload)(?:<.*>)?\(\s*['"]([^'"]+)['"]/)
-      if (match !== null) calls.push({ file, path: match[1] })
-    }
+  for (const file of sourceFiles(clientDir)) {
+    const source = read(file)
+    assert.doesNotMatch(source, /bridge(?:Post|Upload)(?:<.*>)?\(\s*['"]\//, `${file} 不得调用字面 bridge 路径`)
+    for (const match of source.matchAll(/bridgeCall\(\s*['"]([^'"]+)['"]/g)) calls.push({ file, key: match[1] })
   }
-  assert.ok(calls.length > 0, '基线应发现 bridge 调用')
-  for (const call of calls) assert.ok(valid.has(call.path), `${call.file} 使用未声明路径 ${call.path}`)
+  assert.ok(calls.length > 0, '基线应发现类型化 bridge 调用')
+  for (const call of calls) assert.ok(validKeys.has(call.key), `${call.file} 使用未声明 endpoint key ${call.key}`)
 })
 
 test('工作台顶层页面 id 与顺序保持稳定', () => {

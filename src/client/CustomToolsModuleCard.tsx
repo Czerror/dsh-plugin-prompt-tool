@@ -5,7 +5,7 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import clsx from 'clsx'
 import { IconChevronDownOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
-import { bridgePost } from './prompt-tool-bridge.ts'
+import { bridgeCall } from './data/bridge-client.ts'
 import { Field } from './PromptConfigCard.tsx'
 import { TemplatePicker } from './TemplatePicker.tsx'
 import { ToolSurfaceView } from './ToolSurfaceView.tsx'
@@ -277,11 +277,11 @@ export function CustomToolsModuleCard(props: {
     if (loaded || !props.expanded) return
     void (async () => {
       const [customResult, templatesResult] = await Promise.all([
-        bridgePost<{ customTools?: unknown[] }>('/custom-tools', {}),
-        bridgePost<{ toolTemplates?: Array<{ file: string; spec: ToolDraft }> }>('/templates', {}),
+        bridgeCall('customTools', {}),
+        bridgeCall('templates'),
       ])
       setTools((customResult.ok ? customResult.value?.customTools ?? [] : []).map((tool) => asRecord(tool)))
-      setToolTemplates(templatesResult.ok ? templatesResult.value?.toolTemplates ?? [] : [])
+      setToolTemplates(templatesResult.ok ? (templatesResult.value.toolTemplates ?? []) as Array<{ file: string; spec: ToolDraft }> : [])
       setLoaded(true)
     })()
   }, [props.expanded, loaded])
@@ -300,7 +300,7 @@ export function CustomToolsModuleCard(props: {
       return next
     })
     setSaving(true)
-    void bridgePost<{ customTools?: unknown[] }>('/custom-tools', { customTools: cleanTools }).then((customResult) => {
+    void bridgeCall('customTools', { customTools: cleanTools }).then((customResult) => {
       setSaving(false)
       if (customResult.ok) {
         props.onNotice('ok', `已保存 ${tools.length} 个自定义工具（已重建）`)

@@ -98,7 +98,7 @@ test('契约：/bootstrap 聚合 meta + overrides + variables + promptConfigs �
 
 test('契约：成功载荷统一为 { ok: true, value }', async () => {
   const handlers = register()
-  // 抽样无需 settings/descriptor 依赖的端点，断言客户端 bridgePost 消费形状（res.value.*）。
+  // 抽样无需 settings/descriptor 依赖的端点，断言客户端 typed bridge 消费形状（res.value.*）。
   for (const path of [SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.meta, SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.templates]) {
     const handler = handlers.get(path)
     assert.ok(handler, `端点未注册: ${path}`)

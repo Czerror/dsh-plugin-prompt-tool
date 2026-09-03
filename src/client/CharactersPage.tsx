@@ -4,7 +4,7 @@
  *  已导入的角色卡显示状态并可一键移除。 */
 import { memo, useEffect, useRef, useState, type ReactNode } from 'react'
 import { IconFolderOpenOutline16, IconTrashOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
-import { bridgePost, bridgeUpload, shouldStreamJsonFile } from './prompt-tool-bridge.ts'
+import { bridgeCall, bridgeUpload, shouldStreamJsonFile } from './data/bridge-client.ts'
 import { isPngSignature } from './character-card.ts'
 import type { PromptToolStore } from './prompt-tool-store.ts'
 import ui from './PromptUi.module.css'
@@ -27,7 +27,7 @@ export const CharactersPage = memo(function CharactersPage(props: { store: Promp
   const jsonRef = useRef<HTMLInputElement>(null)
 
   const loadCharacters = async (): Promise<void> => {
-    const res = await bridgePost<{ characters: CharacterCardItem[] }>('/characters-list', {})
+    const res = await bridgeCall('charactersList')
     if (res.ok) setCharacters(res.value.characters)
   }
   useEffect(() => {
@@ -42,19 +42,15 @@ export const CharactersPage = memo(function CharactersPage(props: { store: Promp
       for (const file of Array.from(files)) {
         const header = await file.slice(0, 8).arrayBuffer()
         if (isPngSignature(header)) {
-          const res = await bridgeUpload<{ id: string; name: string }>(
-            '/characters-import-stream',
-            file,
-            file.name,
-          )
+          const res = await bridgeUpload(file, file.name)
           if (res.ok) store.showNotice('ok', `角色卡「${res.value.name}」已入库`)
           else store.showNotice('error', '角色卡入库失败：' + (res.message ?? 'settings bridge unavailable'))
           continue
         }
         if (/\.json$/i.test(file.name)) {
           const res = shouldStreamJsonFile(file)
-            ? await bridgeUpload<{ id: string; name: string }>('/characters-import-stream', file, file.name)
-            : await bridgePost<{ id: string; name: string }>('/characters-import', {
+            ? await bridgeUpload(file, file.name)
+            : await bridgeCall('charactersImport', {
               files: [{ path: file.name, content: await file.text() }],
             })
           if (res.ok) store.showNotice('ok', `角色卡「${res.value.name}」已入库`)
@@ -75,7 +71,7 @@ export const CharactersPage = memo(function CharactersPage(props: { store: Promp
   const applyCard = async (id: string): Promise<void> => {
     setBusy(id)
     try {
-      const res = await bridgePost<{ id: string; count: number }>('/characters-apply', { id })
+      const res = await bridgeCall('charactersApply', { id })
       if (res.ok) {
         store.showNotice('ok', `已导入到当前预设（${res.value.count} 条配置）`)
         await store.load()
@@ -92,7 +88,7 @@ export const CharactersPage = memo(function CharactersPage(props: { store: Promp
   const removeCard = async (id: string): Promise<void> => {
     setBusy(id)
     try {
-      const res = await bridgePost<{ id: string; count: number }>('/characters-remove', { id })
+      const res = await bridgeCall('charactersRemove', { id })
       if (res.ok) {
         store.showNotice('ok', `已从当前预设移除（${res.value.count} 条配置）`)
         await store.load()
@@ -106,7 +102,7 @@ export const CharactersPage = memo(function CharactersPage(props: { store: Promp
   }
 
   const deleteCard = async (id: string): Promise<void> => {
-    const res = await bridgePost<{ id: string }>('/characters-delete', { id })
+    const res = await bridgeCall('charactersDelete', { id })
     if (res.ok) {
       setConfirmingDelete(undefined)
       store.showNotice('ok', `角色卡 ${id} 已删除（已导入当前预设的参数不受影响）`)
@@ -117,7 +113,7 @@ export const CharactersPage = memo(function CharactersPage(props: { store: Promp
   }
 
   const openLocation = async (id: string): Promise<void> => {
-    const res = await bridgePost<{ path: string }>('/preset-open', { id: `/.characters/${id}` })
+    const res = await bridgeCall('presetOpen', { id: `/.characters/${id}` })
     if (res.ok) store.showNotice('ok', `已打开角色卡目录：${res.value.path}`)
     else store.showNotice('error', '打开目录失败：' + (res.message ?? 'settings bridge unavailable'))
   }

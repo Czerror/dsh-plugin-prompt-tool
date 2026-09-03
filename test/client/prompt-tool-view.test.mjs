@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { EMPTY_FIELDS, fieldsFromView } from '../../src/client/prompt-tool-bridge.ts'
+import { EMPTY_FIELDS } from '../../src/client/data/prompt-tool-fields.ts'
+import { fieldsFromView } from '../../src/client/data/prompt-tool-view.ts'
 
 test('fields view：当前值覆盖 base，缺省字段保留稳定默认', () => {
   const fields = fieldsFromView({

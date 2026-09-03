@@ -3,7 +3,7 @@
  *  memo 组件——开关/筛选/拖拽 hover 只重渲染受影响行，不再全列表级联。 */
 import { memo, useCallback, useMemo, useState, type ReactNode } from 'react'
 import clsx from 'clsx'
-import type { SkillCatalogEntry } from './prompt-tool-bridge.ts'
+import type { SkillCatalogEntry } from './data/prompt-tool-fields.ts'
 import type { PromptToolStore } from './prompt-tool-store.ts'
 import type { PromptToolHostApi } from './prompt-tool-types.ts'
 import { usePromptToolFields } from './use-prompt-tool-fields.ts'
