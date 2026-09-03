@@ -133,163 +133,145 @@ export function ModelRouteModuleCard(props: { store: PromptToolStore; scope: 'ma
     : scopeMeta.idle
   return (
     <EngineModuleCard store={store} name={scopeMeta.title} meta={active ? scopeMeta.active : idleMeta}>
+      {props.scope === 'main' && (
+        <div className={styles.settingRowStack}>
+          <span className={styles.settingCopy}>
+            <strong>当前会话</strong>
+            <small>{sessionView.sessionId === undefined
+              ? '无活动会话：打开会话后此处显示其模型选择并可切换。'
+              : sessionView.selectable
+                ? '与官方模型选择器同源（session.selectModel）：切换即对当前会话生效，并保存为宿主新会话默认。下方预设参数非空时按请求覆盖会话选择。'
+                : '子代理会话不支持会话级切换（走子代理固定路由）。'}</small>
+          </span>
+          <div className={styles.sessionModelRow}>
+            <select
+              className={styles.configInput}
+              aria-label="会话服务商"
+              value={sessionProvider}
+              disabled={!sessionView.selectable || selecting}
+              onChange={(event) => applySessionSelection({ provider: event.target.value })}
+            >
+              {sessionProvider.length === 0 && <option value="">（服务商）</option>}
+              {withCurrent(providerOptions, sessionProvider).filter((item) => item.length > 0).map((item) => (
+                <option key={item} value={item}>{item}</option>
+              ))}
+            </select>
+            <select
+              className={styles.configInput}
+              aria-label="会话模型"
+              value={sessionModelName}
+              disabled={!sessionView.selectable || selecting}
+              onChange={(event) => applySessionSelection({ model: event.target.value })}
+            >
+              {sessionModelName.length === 0 && <option value="">（模型）</option>}
+              {withCurrent([...new Set([...(store.modelCatalog[sessionProvider] ?? []), ...(host?.model !== undefined && host.model.length > 0 ? [host.model] : [])])], sessionModelName).filter((item) => item.length > 0).map((item) => (
+                <option key={item} value={item}>{item}</option>
+              ))}
+            </select>
+            <select
+              className={styles.configInput}
+              aria-label="会话思维程度"
+              value={sessionEffort}
+              disabled={!sessionView.selectable || selecting}
+              onChange={(event) => applySessionSelection({ reasoningEffort: event.target.value })}
+            >
+              {withCurrent(reasoningEffortOptions, sessionEffort).map((item) => (
+                <option key={item} value={item}>{item.length === 0 ? '（模型默认）' : item}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+      )}
       <div className={styles.settingRowStack}>
-        {props.scope === 'main' && (
-          <>
-            <span className={styles.settingCopy}>
-              <strong>当前会话</strong>
-              <small>{sessionView.sessionId === undefined
-                ? '无活动会话：打开会话后此处显示其模型选择并可切换。'
-                : sessionView.selectable
-                  ? '与官方模型选择器同源（session.selectModel）：切换即对当前会话生效，并保存为宿主新会话默认。下方预设参数非空时按请求覆盖会话选择。'
-                  : '子代理会话不支持会话级切换（走子代理固定路由）。'}</small>
-            </span>
-            <div className={styles.sessionModelRow}>
-              <select
-                className={styles.configInput}
-                aria-label="会话服务商"
-                value={sessionProvider}
-                disabled={!sessionView.selectable || selecting}
-                onChange={(event) => applySessionSelection({ provider: event.target.value })}
-              >
-                {sessionProvider.length === 0 && <option value="">（服务商）</option>}
-                {withCurrent(providerOptions, sessionProvider).filter((item) => item.length > 0).map((item) => (
-                  <option key={item} value={item}>{item}</option>
-                ))}
-              </select>
-              <select
-                className={styles.configInput}
-                aria-label="会话模型"
-                value={sessionModelName}
-                disabled={!sessionView.selectable || selecting}
-                onChange={(event) => applySessionSelection({ model: event.target.value })}
-              >
-                {sessionModelName.length === 0 && <option value="">（模型）</option>}
-                {withCurrent([...new Set([...(store.modelCatalog[sessionProvider] ?? []), ...(host?.model !== undefined && host.model.length > 0 ? [host.model] : [])])], sessionModelName).filter((item) => item.length > 0).map((item) => (
-                  <option key={item} value={item}>{item}</option>
-                ))}
-              </select>
-              <select
-                className={styles.configInput}
-                aria-label="会话思维程度"
-                value={sessionEffort}
-                disabled={!sessionView.selectable || selecting}
-                onChange={(event) => applySessionSelection({ reasoningEffort: event.target.value })}
-              >
-                {withCurrent(reasoningEffortOptions, sessionEffort).map((item) => (
-                  <option key={item} value={item}>{item.length === 0 ? '（模型默认）' : item}</option>
-                ))}
-              </select>
-            </div>
-          </>
-        )}
         <span className={styles.settingCopy}>
-          <strong>模型服务商</strong>
+          <strong>预设模型</strong>
           <small>{props.scope === 'main'
-            ? '主对话新会话默认模型（agent-default-model）；调用方未显式指定时自动补入。检测到的服务商可直接选择。'
-            : '子代理固定模型路由（agentOptions 注入 tool-subagent，经预设参数传递）；调用方显式模型优先。检测到的服务商可直接选择。'}</small>
+            ? `服务商与模型名同时非空时生效（新会话默认模型，agent-default-model）；思维程度官方档位 off / low / high / max，选择即保存并同步宿主新会话默认；留空 = 继承宿主默认${hostEffort !== undefined ? `（思维程度当前为 ${hostEffort}）` : ''}。`
+            : '子代理固定模型路由（agentOptions 注入 tool-subagent）：服务商与模型名同时非空时生效，调用方显式模型优先；思维程度官方档位 off / low / high / max，留空 = 不设置（模型默认）。'}</small>
         </span>
-        <select
-          className={styles.configInput}
-          aria-label="模型服务商"
-          value={provider}
-          disabled={!fields.writePreset}
-          onChange={(event) => {
-            store.patch(props.scope === 'main' ? { modelProvider: event.target.value } : { subagentModelProvider: event.target.value })
-            void store.persistParamOverrides()
-          }}
-        >
-          {withCurrent(providerOptions, provider).map((item) => (
-            <option key={item} value={item}>{item}</option>
-          ))}
-        </select>
+        <div className={styles.sessionModelRow}>
+          <select
+            className={styles.configInput}
+            aria-label="模型服务商"
+            value={provider}
+            disabled={!fields.writePreset}
+            onChange={(event) => {
+              store.patch(props.scope === 'main' ? { modelProvider: event.target.value } : { subagentModelProvider: event.target.value })
+              void store.persistParamOverrides()
+            }}
+          >
+            {withCurrent(providerOptions, provider).map((item) => (
+              <option key={item} value={item}>{item}</option>
+            ))}
+          </select>
+          <select
+            className={styles.configInput}
+            aria-label="模型名"
+            value={modelName}
+            disabled={!fields.writePreset}
+            onChange={(event) => {
+              store.patch(props.scope === 'main' ? { modelName: event.target.value } : { subagentModelName: event.target.value })
+              void store.persistParamOverrides()
+            }}
+          >
+            {withCurrent(modelOptions, modelName).map((item) => (
+              <option key={item} value={item}>{item}</option>
+            ))}
+          </select>
+          <select
+            className={styles.configInput}
+            aria-label="思维程度"
+            value={reasoningEffort}
+            disabled={!fields.writePreset}
+            onChange={(event) => patchModelParam(
+              props.scope === 'main' ? 'modelReasoningEffort' : 'subagentReasoningEffort',
+              event.target.value,
+            )}
+          >
+            {withCurrent(hostEffort !== undefined ? [...new Set([...reasoningEffortOptions, hostEffort])] : reasoningEffortOptions, reasoningEffort).map((item) => (
+              <option key={item} value={item}>{item.length === 0 ? '（不设置）' : item}</option>
+            ))}
+          </select>
+        </div>
       </div>
       <div className={styles.settingRowStack}>
         <span className={styles.settingCopy}>
-          <strong>模型名</strong>
-          <small>{props.scope === 'main'
-            ? '与模型服务商同时非空时生效（主对话新会话默认模型），例如 deepseek-v4-flash。'
-            : '与子代理模型服务商同时非空时生效（子代理固定路由），例如 deepseek-v4-flash。'}</small>
+          <strong>采样参数</strong>
+          <small>temperature（数字 0–2）与 maxTokens（正整数）经 agent-request patch 生效；留空 = 不设置（模型默认）。失焦保存。</small>
         </span>
-        <select
-          className={styles.configInput}
-          aria-label="模型名"
-          value={modelName}
-          disabled={!fields.writePreset}
-          onChange={(event) => {
-            store.patch(props.scope === 'main' ? { modelName: event.target.value } : { subagentModelName: event.target.value })
-            void store.persistParamOverrides()
-          }}
-        >
-          {withCurrent(modelOptions, modelName).map((item) => (
-            <option key={item} value={item}>{item}</option>
-          ))}
-        </select>
-      </div>
-      <div className={styles.settingRowStack}>
-        <span className={styles.settingCopy}>
-          <strong>思维程度</strong>
-          <small>reasoningEffort（agent-request patch）；官方档位 off / low / high / max；{reasoningEffort.length === 0 && hostEffort !== undefined
-            ? `留空 = 继承宿主默认（${hostEffort}）。`
-            : '留空 = 不设置（模型默认）。'}选择即保存{props.scope === 'main' ? '，非空时同步宿主新会话默认' : ''}。</small>
-        </span>
-        <select
-          className={styles.configInput}
-          aria-label="思维程度"
-          value={reasoningEffort}
-          disabled={!fields.writePreset}
-          onChange={(event) => patchModelParam(
-            props.scope === 'main' ? 'modelReasoningEffort' : 'subagentReasoningEffort',
-            event.target.value,
-          )}
-        >
-          {withCurrent(hostEffort !== undefined ? [...new Set([...reasoningEffortOptions, hostEffort])] : reasoningEffortOptions, reasoningEffort).map((item) => (
-            <option key={item} value={item}>{item.length === 0 ? '（不设置）' : item}</option>
-          ))}
-        </select>
-      </div>
-      <div className={styles.settingRowStack}>
-        <span className={styles.settingCopy}>
-          <strong>采样温度</strong>
-          <small>temperature（agent-request patch）；数字 0–2，留空 = 不设置（模型默认）。失焦保存。</small>
-        </span>
-        <input
-          className={styles.configInput}
-          type="number"
-          min={0}
-          max={2}
-          step={0.1}
-          aria-label="采样温度"
-          value={temperature}
-          disabled={!fields.writePreset}
-          placeholder="不设置"
-          onChange={(event) => patchModelParam(
-            props.scope === 'main' ? 'modelTemperature' : 'subagentTemperature',
-            event.target.value,
-          )}
-          onBlur={() => void store.persistParamOverrides()}
-        />
-      </div>
-      <div className={styles.settingRowStack}>
-        <span className={styles.settingCopy}>
-          <strong>输出上限</strong>
-          <small>maxTokens（agent-request patch）；正整数，留空 = 不设置（模型默认）。失焦保存。</small>
-        </span>
-        <input
-          className={styles.configInput}
-          type="number"
-          min={1}
-          step={1}
-          aria-label="输出上限"
-          value={maxTokens}
-          disabled={!fields.writePreset}
-          placeholder="不设置"
-          onChange={(event) => patchModelParam(
-            props.scope === 'main' ? 'modelMaxTokens' : 'subagentMaxTokens',
-            event.target.value,
-          )}
-          onBlur={() => void store.persistParamOverrides()}
-        />
+        <div className={styles.sessionModelRow}>
+          <input
+            className={styles.configInput}
+            type="number"
+            min={0}
+            max={2}
+            step={0.1}
+            aria-label="采样温度"
+            value={temperature}
+            disabled={!fields.writePreset}
+            placeholder="温度（不设置）"
+            onChange={(event) => patchModelParam(
+              props.scope === 'main' ? 'modelTemperature' : 'subagentTemperature',
+              event.target.value,
+            )}
+            onBlur={() => void store.persistParamOverrides()}
+          />
+          <input
+            className={styles.configInput}
+            type="number"
+            min={1}
+            step={1}
+            aria-label="输出上限"
+            value={maxTokens}
+            disabled={!fields.writePreset}
+            placeholder="输出上限（不设置）"
+            onChange={(event) => patchModelParam(
+              props.scope === 'main' ? 'modelMaxTokens' : 'subagentMaxTokens',
+              event.target.value,
+            )}
+            onBlur={() => void store.persistParamOverrides()}
+          />
+        </div>
       </div>
     </EngineModuleCard>
   )
