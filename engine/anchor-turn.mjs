@@ -20,7 +20,7 @@
  * Robustness：插件来源消息（含自身锚定）永不再次锚定。
  */
 
-import { booleanOption, validateConfig } from './shared.mjs'
+import { booleanOption, sessionEvents, validateConfig } from './shared.mjs'
 
 /** Cordis plugin name used by loader diagnostics. */
 export const name = 'anchor-turn'
@@ -34,7 +34,7 @@ const ALLOWED_KEYS = new Set(['enabled', 'text', 'includeSubagents'])
 /** 全新会话（无任何历史 user/message）才锚定。 */
 function isFreshSession(agent, includeSubagents = false) {
   if (!includeSubagents && (agent.session.header.delegationDepth ?? 0) > 0) return false
-  return !agent.session.events.some((event) => event.type === 'user/message')
+  return !sessionEvents(agent.session).some((event) => event.type === 'user/message')
 }
 
 /** 注册首消息锚定注入。 */

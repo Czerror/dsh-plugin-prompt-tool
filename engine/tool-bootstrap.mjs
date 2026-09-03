@@ -103,7 +103,7 @@
  */
 
 import { createEpochPromotion } from './compaction-epoch.mjs'
-import { MAX_TRACKED_SESSIONS, booleanOption, createWarnOnce, parsePromoteOn, validateConfig } from './shared.mjs'
+import { MAX_TRACKED_SESSIONS, booleanOption, createWarnOnce, parsePromoteOn, sessionEvents, validateConfig } from './shared.mjs'
 
 /** Cordis plugin name used by loader diagnostics. */
 export const name = 'anchored-tool-bootstrap'
@@ -257,7 +257,7 @@ export function apply(ctx, config) {
   /** 冷启动：从 durable log 重建阶段（resume/reload 同相位）。 */
   const scanStage = (session) => {
     let stage = 0
-    for (const event of session.events) {
+    for (const event of sessionEvents(session)) {
       if (event?.type !== 'tool/call') continue
       const toolName = toolNameOf(event)
       if (toolName === stageAdvanceTool) stage = Math.min(stage + 1, stages.length - 1)

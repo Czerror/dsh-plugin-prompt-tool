@@ -13,10 +13,11 @@
  *   - 键字符集：字母数字、下划线、点、中文、连字符（与 ST setvar/getvar 一致）。
  */
 
+import { sessionEvents } from './shared.mjs'
+
 /** 会话事件中最后一条指定类型消息的文本（事件倒序扫描；无则空串）。 */
 function lastMessageOf(session, type) {
-  const events = session?.events
-  if (!Array.isArray(events)) return ''
+  const events = sessionEvents(session)
   for (let index = events.length - 1; index >= 0; index--) {
     const event = events[index]
     if (event?.type !== type) continue

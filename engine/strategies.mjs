@@ -5,7 +5,7 @@
  * 仍支持 strategyDir 懒加载自定义模板策略。
  */
 
-import { MAX_TRACKED_SESSIONS, extractText } from './shared.mjs'
+import { MAX_TRACKED_SESSIONS, extractText, sessionEvents } from './shared.mjs'
 import { MATCH_LOGIC, createAnchorMatcher } from './anchor-match.mjs'
 import { createTaskClassifier } from './classify-task.mjs'
 import { createPlaceholderResolver } from './fillers.mjs'
@@ -100,7 +100,7 @@ function createCustomFallbackResolver(config) {
     const session = agent.session
     const cached = anchorScanned.get(session.id)
     if (cached !== undefined) return cached
-    const first = session.events.find((event) => event.type === 'assistant/message')
+    const first = sessionEvents(session).find((event) => event.type === 'assistant/message')
     if (first === undefined) return false
     const content = first.data?.message?.content ?? []
     const reasoning = content.find((block) => block.type === 'reasoning')
@@ -111,7 +111,7 @@ function createCustomFallbackResolver(config) {
   }
 
   const assistantRounds = (agent) =>
-    agent.session.events.filter((event) => event.type === 'assistant/message').length
+    sessionEvents(agent.session).filter((event) => event.type === 'assistant/message').length
 
   return ({ agent }) => {
     if (promptText === undefined) return null

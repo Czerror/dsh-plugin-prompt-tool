@@ -75,3 +75,9 @@ test('interpolateVariables：ST 运行时宏（大小写不敏感）从会话事
   // 配置 variables 优先于运行时宏。
   assert.equal(interpolateVariables('{{lastusermessage}}', { lastusermessage: '覆盖' }, session), '覆盖')
 })
+
+test('interpolateVariables：DSH alpha.5 snapshotEvents 替代已移除的 events 属性', () => {
+  const events = [{ type: 'user/message', data: { message: { content: [{ type: 'text', text: '快照消息' }] } } }]
+  const session = { header: { cwd: '/cwd' }, snapshotEvents: () => events }
+  assert.equal(interpolateVariables('{{lastusermessage}}', {}, session), '快照消息')
+})

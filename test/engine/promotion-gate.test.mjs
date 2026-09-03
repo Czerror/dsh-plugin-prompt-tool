@@ -134,6 +134,12 @@ test('门控冷启动：从 durable log 重建同一相位', () => {
   assert.equal(promo.status(makeAgent(session)).promoted, false, '冷启动按门控判定')
 })
 
+test('门控冷启动：DSH alpha.5 snapshotEvents API 重建相位', () => {
+  const promo = createEpochPromotion(['tool/call', 'assistant/message'], {})
+  const session = { id: 'snapshot-session', header: { cwd: '/workspace', delegationDepth: 0 }, snapshotEvents: () => [{ type: 'tool/call', seq: 1 }] }
+  assert.equal(promo.status(makeAgent(session)).promoted, true)
+})
+
 // ── tool-bootstrap：personaSectionsOnly / phase1FirstCallInstruction / workspaceLine ──
 
 const assembled = (extraSections = []) => ({

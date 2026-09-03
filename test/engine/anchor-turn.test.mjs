@@ -28,6 +28,17 @@ function makeAgent({ userMessages = 0, delegationDepth = 0 } = {}) {
   }
 }
 
+test('anchor-turn：DSH alpha.5 Session snapshotEvents API 可判定新会话', () => {
+  const { ctx, listeners } = makeCtx()
+  applyAnchorTurn(ctx, {})
+  const agent = makeAgent({})
+  const events = agent.session.events
+  delete agent.session.events
+  agent.session.snapshotEvents = () => events
+  listeners.get('agent/inbox/inserted')[0]({ agent, message: { source: { kind: 'user' } } })
+  assert.equal(agent.prepended.length, 1)
+})
+
 test('anchor-turn：全新会话首条用户消息前 prepend 锚定轮', () => {
   const { ctx, listeners } = makeCtx()
   applyAnchorTurn(ctx, {})

@@ -940,5 +940,6 @@ node --test "$Repo/test/client/no-host-dom.test.mjs"
 - [x] Wave 5：完整 UI。（bdb2006）
 - [x] Wave 6：文档、迁移与全量验收。
 - [x] 2026-09-03 复验修复：官方子代理 API、scope 隔离、策略停用/物化、完整 UI 与真实契约测试。
+- [x] 2026-09-03 运行态修复：DSH alpha.5 Session 日志读取迁移至官方 `snapshotEvents()`，消除首轮 `agent.session.events is not iterable`。
 - [x] 完整 typecheck / lint / test / build。（typecheck/lint 通过；461 tests 全部通过）
 - [x] 提交并推送 `origin/dev`。

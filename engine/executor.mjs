@@ -10,6 +10,7 @@ import {
   isDelegated,
   matchesModel,
   newMessageId,
+  sessionEvents,
 } from './shared.mjs'
 import { interpolateVariables } from './interpolate.mjs'
 import { createEpochPromotion } from './compaction-epoch.mjs'
@@ -34,7 +35,7 @@ function mergedIdentity(config) {
 
 function hasInjected(config, session) {
   const value = config.mergeMode === 'merged' ? mergedIdentity(config) : config.identity.value
-  return (Array.isArray(session.events) ? session.events : []).some((event) => {
+  return sessionEvents(session).some((event) => {
     const message = eventMessage(event)
     // 双通道去重：kind（外来/第三方消息，如 context-gate 的 instruction-hint）或
     // plugin（本引擎注入的命名空间，merged 组用 merged:<position>）。

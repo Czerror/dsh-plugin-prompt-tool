@@ -16,7 +16,7 @@
  *  - 子代理默认不门控（brief 即计划）；includeSubagents: true 同门控。
  */
 
-import { MAX_TRACKED_SESSIONS, booleanOption, validateConfig } from './shared.mjs'
+import { MAX_TRACKED_SESSIONS, booleanOption, sessionEvents, validateConfig } from './shared.mjs'
 
 /** Cordis plugin name used by loader diagnostics. */
 export const name = 'deliberation-gate'
@@ -85,8 +85,8 @@ export function apply(ctx, config) {
     if (entry === undefined) {
       if (state.size >= MAX_TRACKED_SESSIONS) state.clear()
       entry = { turns: new Map(), lastTurn: -1 }
-      if (Array.isArray(session.events)) {
-        for (const event of session.events) {
+      {
+        for (const event of sessionEvents(session)) {
           if (event.type !== 'assistant/chunk') continue
           const turn = event.data?.turn
           if (typeof turn !== 'number' || !Number.isFinite(turn)) continue
