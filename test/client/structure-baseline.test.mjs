@@ -11,7 +11,7 @@ test('client bridge 字面路径全部属于共享契约', () => {
   const calls = []
   for (const file of readdirSync(clientDir).filter((name) => /\.(?:ts|tsx)$/.test(name))) {
     for (const line of read(file).split(/\r?\n/)) {
-      const match = line.match(/bridge(?:Post|Upload)(?:<.*>)?\(\s*['"]([^'"]+)['"]/) 
+      const match = line.match(/bridge(?:Post|Upload)(?:<.*>)?\(\s*['"]([^'"]+)['"]/)
       if (match !== null) calls.push({ file, path: match[1] })
     }
   }
