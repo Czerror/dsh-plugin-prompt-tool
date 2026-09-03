@@ -400,6 +400,32 @@
   min-width: 0;
 }
 
+/* 合并行里需要更宽的长文本输入（指令/描述/模板）。 */
+.sessionModelRow > .sessionModelRowWide { flex: 3 1 220px; }
+
+/* 开关栅格：同卡多个布尔开关合并为一行（可换行），逐项说明收敛到 title 悬浮提示。 */
+.switchGrid {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  align-items: center;
+}
+
+.switchGridItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.switchGridLabel {
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px;
+  line-height: 20px;
+  overflow-wrap: anywhere;
+}
+
 .settingCopy { display: flex; min-width: 0; flex: 1; flex-direction: column; }
 .settingCopy strong { color: var(--dsw-alias-label-primary); font-size: 14px; font-weight: 500; line-height: 21px; }
 .settingCopy small { color: var(--dsw-alias-label-tertiary); font-size: 11px; line-height: 17px; }
