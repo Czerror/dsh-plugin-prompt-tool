@@ -1,0 +1,102 @@
+/* 官方 slot 工作台：shell.overlay 左上角悬浮按钮 + 右侧抽屉。 */
+/* body portal 顶层抽屉：z-index 高于宿主「对话/轨迹」顶部导航栏，
+   背板与面板始终盖在导航之上，不被遮挡。 */
+.drawerLayer {
+  --pt-drawer-width: min(920px, 100vw);
+  --pt-drawer-shade: color-mix(in srgb, #0b1220 52%, transparent);
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.drawerLayer[data-open] { visibility: visible; }
+
+.drawerBackdrop {
+  position: absolute;
+  inset: 0;
+  pointer-events: auto;
+  opacity: 0;
+  background: var(--pt-drawer-shade);
+  transition: opacity .22s ease;
+}
+
+.drawerLayer:not([data-open]) .drawerBackdrop { pointer-events: none; }
+.drawerLayer[data-open] .drawerBackdrop { opacity: 1; }
+
+.drawerPanel {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: var(--pt-drawer-width);
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  pointer-events: auto;
+  transform: translateX(100%);
+  box-shadow: -24px 0 64px -32px rgb(0 0 0 / .45);
+  transition: transform .26s cubic-bezier(.22, 1, .36, 1);
+}
+
+.drawerLayer[data-open] .drawerPanel { transform: translateX(0); }
+
+.floatingTriggerLayer {
+  position: fixed;
+  top: calc(40px + env(safe-area-inset-top));
+  /* 回退 56px = 折叠 rail 宽（探针生效前首帧即折叠态相切贴靠位置）；
+     渲染后由官方 sidebar slot 探针覆盖为实时侧栏轨道右缘（相切贴靠，间距 0）。 */
+  left: var(--pt-sidebar-edge, 56px);
+  /* 悬浮按钮高于抽屉（1000），抽屉打开时仍可点击关闭。 */
+  z-index: 1100;
+  display: flex;
+  pointer-events: auto;
+}
+
+.floatingTrigger {
+  position: static;
+  display: flex;
+  width: 28px;
+  height: 28px;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 50%;
+  padding: 0;
+  pointer-events: auto;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+  transition:
+    background var(--ds-transition-duration-slow, .18s) var(--ds-ease-in-out, ease),
+    color var(--ds-transition-duration-slow, .18s) var(--ds-ease-in-out, ease);
+}
+
+.floatingTrigger:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.floatingTrigger[data-open] {
+  background: var(--dsw-alias-interactive-bg-active);
+  color: var(--dsw-alias-label-primary);
+}
+
+.floatingTrigger:focus-visible {
+  outline: 2px solid var(--dsw-alias-state-business-primary);
+  outline-offset: 2px;
+}
+
+/* Geometry-only official sidebar slot occupant; the visible control is body-portaled. */
+.sidebarEdgeProbe {
+  display: none;
+}
+@media (max-width: 520px) {
+  .floatingTrigger { width: 40px; height: 40px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .floatingTrigger { transition: none; }
+  .drawerPanel { animation: none; }
+}

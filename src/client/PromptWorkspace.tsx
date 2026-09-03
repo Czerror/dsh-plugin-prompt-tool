@@ -9,7 +9,7 @@ import {
 import type { PromptToolHostApi } from './data/host-api.ts'
 import { PromptConfigList } from './PromptConfigList.tsx'
 import { PromptConfigsEditor } from './PromptConfigsEditor.tsx'
-import type { PromptToolWorkspaceController } from './workspace-controller.ts'
+import type { PromptToolWorkspaceController } from './app/workbench/workspace-controller.ts'
 import { PresetsPage } from './PresetsPage.tsx'
 import { CharactersPage } from './CharactersPage.tsx'
 import { TemplatePicker } from './TemplatePicker.tsx'

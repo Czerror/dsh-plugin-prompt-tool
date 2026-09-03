@@ -5,7 +5,13 @@ import { readFileSync } from 'node:fs'
 const read = (path) => readFileSync(new URL(`../../${path}`, import.meta.url), 'utf8')
 
 test('客户端装配层不自建 root 或观察宿主 DOM（官方 slot + body portal）', () => {
-  for (const file of ['src/client/index.ts', 'src/client/slot-workbench.tsx']) {
+  for (const file of [
+    'src/client/index.ts',
+    'src/client/app/workbench/register-workbench.tsx',
+    'src/client/app/workbench/WorkbenchOverlay.tsx',
+    'src/client/app/workbench/SidebarGeometryProbe.tsx',
+    'src/client/app/workbench/FloatingTrigger.tsx',
+  ]) {
     const source = read(file)
     assert.ok(!source.includes('MutationObserver'), `${file} 不应观察宿主 DOM`)
     assert.ok(!source.includes('createRoot'), `${file} 不应自建 React root`)
@@ -15,7 +21,7 @@ test('客户端装配层不自建 root 或观察宿主 DOM（官方 slot + body 
     assert.ok(!source.includes('logoRow'), `${file} 不应依赖宿主侧边栏结构`)
   }
 
-  const css = read('src/client/PromptWorkspace.module.css')
+  const css = [read('src/client/PromptWorkspace.module.css'), read('src/client/app/workbench/Workbench.module.css')].join('\\n')
   assert.ok(!css.includes('data-dsh-prompt-tool-active'), 'CSS 不应依赖宿主 html active 属性')
   assert.ok(!css.includes('centerCol'), 'CSS 不应依赖宿主中央列结构')
   assert.ok(!css.includes('data-dsh-workspace-slot'), 'CSS 不应探测官方 workspace DOM 槽位')

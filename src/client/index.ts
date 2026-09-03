@@ -6,8 +6,9 @@ import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import type { PromptToolSettingsTransport } from './data/use-prompt-tool-store.ts'
 import { createSessionModelFace } from './data/session-model-face.ts'
-import { PromptToolWorkspaceController } from './workspace-controller.ts'
-import { registerWorkbenchSlots, type PromptToolWorkbenchFace } from './slot-workbench.tsx'
+import { PromptToolWorkspaceController } from './app/workbench/workspace-controller.ts'
+import { registerWorkbenchSlots } from './app/workbench/register-workbench.tsx'
+import type { PromptToolWorkbenchFace } from './app/workbench/workbench-face.ts'
 import type { PromptToolHostApi } from './data/host-api.ts'
 
 export const inject = [
