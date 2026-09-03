@@ -8,6 +8,7 @@ import {
   bridgePost,
   errorMessage,
   fieldsFromView,
+  hasIncompleteStageDrafts,
   type BridgeResult,
   type BridgeSettingsView,
   type Fields,
@@ -268,6 +269,10 @@ const switchesEqual = (a: SwitchSnapshot, b: SwitchSnapshot): boolean => {
   }
   return true
 }
+
+/** 参数保存后仅在草稿未继续变化且没有未完成阶段时重载。 */
+export const shouldReloadAfterParamSave = (current: SwitchSnapshot, saved: SwitchSnapshot): boolean =>
+  switchesEqual(current, saved) && !hasIncompleteStageDrafts(saved.stages)
 
 export type SwitchKey = 'injectAgentsPrompt' | 'firstTurnAnchor' | 'firstTurnCustom' | 'guideCustom' | 'toolFilterSubagents' | 'injectPrompt' | 'usePtcMode' | 'promoteGate' | 'promoteAfterFirstResponse' | 'personaSectionsOnly' | 'workspaceLine' | 'instructionHint' | 'anchorTurn' | 'deliberationGate' | 'cotDrip' | 'writeAgents' | 'writePreset'
 
@@ -818,7 +823,8 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
         // 只标记发起时快照；若期间有新编辑，当前 fields 仍保持 dirty。
         setSavedSwitches(savedSnapshot)
         const currentSnapshot = snapshotSwitches(fieldsRef.current)
-        if (switchesEqual(currentSnapshot, savedSnapshot)) {
+        // 服务端会过滤未完成阶段；此时不重载，保留 UI 正在编辑的空草稿行。
+        if (shouldReloadAfterParamSave(currentSnapshot, savedSnapshot)) {
           // 参数已写激活预设 preset.yml：服务端重建后刷新（模型参数配置等随预设变化）。
           void load({ silent: true })
         }

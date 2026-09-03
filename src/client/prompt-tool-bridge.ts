@@ -138,6 +138,10 @@ export interface StageDraft {
   tools: string
 }
 
+/** 是否存在未填完的阶段草稿；保存后不能立即重载，否则空行会被服务端过滤并从 UI 消失。 */
+export const hasIncompleteStageDrafts = (stages: StageDraft[]): boolean =>
+  stages.some((stage) => stage.name.trim().length === 0 || stage.tools.trim().length === 0)
+
 export const EMPTY_META: EngineMeta = {
   layers: [],
   strategies: [],
