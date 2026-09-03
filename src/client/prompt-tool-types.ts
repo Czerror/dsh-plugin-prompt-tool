@@ -1,11 +1,33 @@
 /** 客户端共享类型：提示词配置草稿、层能力矩阵与引擎 /meta 载荷。 */
 
+/** 当前会话模型选择快照（uSES 兼容：引用稳定，值不变不换新引用）。 */
+export interface SessionModelSnapshot {
+  /** 当前会话 id；无活动会话时 undefined。 */
+  sessionId?: string
+  /** 是否可经官方 selectModel 切换（子代理会话 = false）。 */
+  selectable: boolean
+  /** 会话级有效选择（投影 next）；无投影时 undefined，调用方回退宿主默认。 */
+  selection?: { provider?: string; model?: string; reasoningEffort?: string }
+}
+
+/** 当前会话模型选择面：订阅 + 快照 + 官方 session.selectModel 写入通道。 */
+export interface SessionModelFace {
+  /** 订阅会话切换与 modelSelection 投影帧（宿主侧切换实时回流）。 */
+  subscribe(listener: () => void): () => void
+  /** 当前快照：显示 = 投影 next ?? 宿主默认（调用方回退）。 */
+  snapshot(): SessionModelSnapshot
+  /** 官方 session.selectModel：对当前会话生效，宿主侧同时保存为新会话默认。 */
+  select(selection: { provider: string; model: string; reasoningEffort?: string }): Promise<void>
+}
+
 /** alpha.1 @Remote 客户端的最小宿主能力面：替代已删除的 IApiClient。 */
 export interface PromptToolHostApi {
   /** 官方 uiWorkspace 目录选择；取消时返回 null。 */
   pickDirectory(): Promise<string | null>
   /** 官方 session remote 打开 Host 桌面路径。 */
   openPath(path: string): Promise<void>
+  /** 当前会话模型选择面（官方 session 投影 + selectModel 通道）。 */
+  sessionModel: SessionModelFace
   /**
    * 官方 agentPresets.select：空会话立即换到目标预设。
    * 官方拒绝（例如会话已有 turn）时返回原因，调用方继续更新默认值。

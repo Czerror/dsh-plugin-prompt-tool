@@ -386,6 +386,19 @@
   flex: 1 1 auto;
 }
 
+/* 当前会话模型选择：三选框横排，窄面板允许换行，各框均分不挤压文字。 */
+.sessionModelRow {
+  display: flex;
+  min-width: 0;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.sessionModelRow > select {
+  flex: 1 1 120px;
+  min-width: 0;
+}
+
 .settingCopy { display: flex; min-width: 0; flex: 1; flex-direction: column; }
 .settingCopy strong { color: var(--dsw-alias-label-primary); font-size: 14px; font-weight: 500; line-height: 21px; }
 .settingCopy small { color: var(--dsw-alias-label-tertiary); font-size: 11px; line-height: 17px; }

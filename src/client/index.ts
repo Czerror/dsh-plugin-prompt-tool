@@ -5,6 +5,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import type { PromptToolSettingsTransport } from './prompt-tool-store.ts'
+import { createSessionModelFace } from './session-model-face.ts'
 import { PromptToolWorkspaceController } from './workspace-controller.ts'
 import { registerWorkbenchSlots, type PromptToolWorkbenchFace } from './slot-workbench.tsx'
 import type { PromptToolHostApi } from './prompt-tool-types.ts'
@@ -40,6 +41,13 @@ export function apply(ctx: ClientContext): void {
       const result = await ctx.remote.session.openWorkspacePath({ path })
       if (!result.ok) throw new Error(result.error.message)
     },
+    // 当前会话模型选择：投影 modelSelection.next ?? 宿主默认（UI 回退）；
+    // 写入走官方 session.selectModel（对当前会话生效 + 宿主持久化为新会话默认）。
+    sessionModel: createSessionModelFace(
+      ctx.sessions,
+      // sessionId 是官方 brand 字符串：结构同源，按 selectModel 入参类型断言对齐。
+      (request) => ctx.remote.session.selectModel(request as Parameters<typeof ctx.remote.session.selectModel>[0]),
+    ),
     switchPreset: async (id) => {
       const list = ctx.sessions.list.getSnapshot()
       const session = list.current === undefined ? undefined : list.byId[list.current]

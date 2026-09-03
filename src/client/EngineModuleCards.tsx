@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react'
+import { useState, useSyncExternalStore, type ReactNode } from 'react'
 import clsx from 'clsx'
 import { IconChevronDownOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { TagInput } from './TagInput.tsx'
@@ -71,6 +71,14 @@ export function ModelRouteModuleCard(props: { store: PromptToolStore; scope: 'ma
   const { store } = props
   const fields = store.fields
   const host = store.hostDefaultModel
+  // 当前会话模型选择（官方 session 投影 + selectModel 通道）：会话切换即换显，
+  // 宿主侧切换经投影帧实时回流；投影缺省时回退宿主默认（对齐官方目录 current 语义）。
+  const sessionFace = store.api.sessionModel
+  const sessionView = useSyncExternalStore(sessionFace.subscribe, sessionFace.snapshot)
+  const [selecting, setSelecting] = useState(false)
+  const sessionProvider = sessionView.selection?.provider ?? host?.provider ?? ''
+  const sessionModelName = sessionView.selection?.model ?? host?.model ?? ''
+  const sessionEffort = sessionView.selection?.reasoningEffort ?? host?.reasoningEffort ?? ''
   // 宿主默认模型回显：插件参数未设置（空 = 继承宿主）时，下拉可见宿主当前
   // agent-default-model 的可选项（模型目录查询失败/未公布时也能选择与回显）。
   const providerOptions = [...new Set([...store.providers, ...(host?.provider !== undefined && host.provider.length > 0 ? [host.provider] : [])])]
@@ -95,6 +103,27 @@ export function ModelRouteModuleCard(props: { store: PromptToolStore; scope: 'ma
     store.patch({ [key]: value } as Partial<typeof fields>)
     void store.persistParamOverrides()
   }
+  // 会话级切换：官方 selectModel 需要完整 provider+model；单项改动与其余当前值合并提交。
+  const applySessionSelection = (patch: { provider?: string; model?: string; reasoningEffort?: string }): void => {
+    const nextProvider = patch.provider ?? sessionProvider
+    const nextModel = patch.model ?? sessionModelName
+    const nextEffort = patch.reasoningEffort ?? sessionEffort
+    if (nextProvider.length === 0 || nextModel.length === 0) {
+      store.showNotice('error', '会话模型切换需要服务商与模型名：当前会话尚无完整选择')
+      return
+    }
+    setSelecting(true)
+    void sessionFace.select({ provider: nextProvider, model: nextModel, ...(nextEffort.length > 0 ? { reasoningEffort: nextEffort } : {}) })
+      .then(() => {
+        store.showNotice('ok', '已切换当前会话模型选择（宿主默认同步更新）')
+        // 宿主默认已随 selectModel 更新：刷新桥回显（hostDefaultModel）。
+        void store.load()
+      })
+      .catch((error: unknown) => {
+        store.showNotice('error', '会话模型切换失败：' + (error instanceof Error ? error.message : String(error)))
+      })
+      .finally(() => setSelecting(false))
+  }
   const scopeMeta = props.scope === 'main'
     ? { title: '模型路由', idle: '未设置：展开选择模型（留空 = 继承宿主默认）', active: '固定模型路由已设置（新会话默认模型）' }
     : { title: '子代理模型', idle: '未设置：展开选择模型（留空 = 继承主会话）', active: '子代理固定模型路由已设置' }
@@ -105,6 +134,55 @@ export function ModelRouteModuleCard(props: { store: PromptToolStore; scope: 'ma
   return (
     <EngineModuleCard store={store} name={scopeMeta.title} meta={active ? scopeMeta.active : idleMeta}>
       <div className={styles.settingRowStack}>
+        {props.scope === 'main' && (
+          <>
+            <span className={styles.settingCopy}>
+              <strong>当前会话</strong>
+              <small>{sessionView.sessionId === undefined
+                ? '无活动会话：打开会话后此处显示其模型选择并可切换。'
+                : sessionView.selectable
+                  ? '与官方模型选择器同源（session.selectModel）：切换即对当前会话生效，并保存为宿主新会话默认。下方预设参数非空时按请求覆盖会话选择。'
+                  : '子代理会话不支持会话级切换（走子代理固定路由）。'}</small>
+            </span>
+            <div className={styles.sessionModelRow}>
+              <select
+                className={styles.configInput}
+                aria-label="会话服务商"
+                value={sessionProvider}
+                disabled={!sessionView.selectable || selecting}
+                onChange={(event) => applySessionSelection({ provider: event.target.value })}
+              >
+                {sessionProvider.length === 0 && <option value="">（服务商）</option>}
+                {withCurrent(providerOptions, sessionProvider).filter((item) => item.length > 0).map((item) => (
+                  <option key={item} value={item}>{item}</option>
+                ))}
+              </select>
+              <select
+                className={styles.configInput}
+                aria-label="会话模型"
+                value={sessionModelName}
+                disabled={!sessionView.selectable || selecting}
+                onChange={(event) => applySessionSelection({ model: event.target.value })}
+              >
+                {sessionModelName.length === 0 && <option value="">（模型）</option>}
+                {withCurrent([...new Set([...(store.modelCatalog[sessionProvider] ?? []), ...(host?.model !== undefined && host.model.length > 0 ? [host.model] : [])])], sessionModelName).filter((item) => item.length > 0).map((item) => (
+                  <option key={item} value={item}>{item}</option>
+                ))}
+              </select>
+              <select
+                className={styles.configInput}
+                aria-label="会话思维程度"
+                value={sessionEffort}
+                disabled={!sessionView.selectable || selecting}
+                onChange={(event) => applySessionSelection({ reasoningEffort: event.target.value })}
+              >
+                {withCurrent(reasoningEffortOptions, sessionEffort).map((item) => (
+                  <option key={item} value={item}>{item.length === 0 ? '（模型默认）' : item}</option>
+                ))}
+              </select>
+            </div>
+          </>
+        )}
         <span className={styles.settingCopy}>
           <strong>模型服务商</strong>
           <small>{props.scope === 'main'
