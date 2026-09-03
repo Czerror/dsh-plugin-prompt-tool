@@ -1,5 +1,15 @@
-/** ARIA tabs 键盘导航：左右切换、Home/End 跳首尾（顶层页、技能筛选、内容资产 tab 共用）。 */
+/** ARIA tabs 键盘导航：左右切换、Home/End 跳首尾（顶层页、技能筛选共用）。 */
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react'
+
+/** 纯索引算法：无效索引、空列表或非导航键均不产生目标。 */
+export function nextTabIndex(length: number, current: number, key: string): number | undefined {
+  if (length <= 0 || current < 0 || current >= length) return undefined
+  if (key === 'ArrowRight') return (current + 1) % length
+  if (key === 'ArrowLeft') return (current - 1 + length) % length
+  if (key === 'Home') return 0
+  if (key === 'End') return length - 1
+  return undefined
+}
 
 export function tabKeyHandler<T>(
   items: readonly T[],
@@ -7,13 +17,7 @@ export function tabKeyHandler<T>(
   onSelect: (item: T) => void,
 ): (event: ReactKeyboardEvent<HTMLElement>) => void {
   return (event) => {
-    const index = items.indexOf(current)
-    if (index < 0) return
-    let next: number | undefined
-    if (event.key === 'ArrowRight') next = (index + 1) % items.length
-    else if (event.key === 'ArrowLeft') next = (index - 1 + items.length) % items.length
-    else if (event.key === 'Home') next = 0
-    else if (event.key === 'End') next = items.length - 1
+    const next = nextTabIndex(items.length, items.indexOf(current), event.key)
     if (next === undefined) return
     event.preventDefault()
     onSelect(items[next]!)
