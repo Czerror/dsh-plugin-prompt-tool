@@ -597,10 +597,12 @@ export function apply(ctx: Context, configIn: Config): void {
     () => runtime.subagentModelName,
   )
   // 主对话默认模型控制：modelProvider + modelName 非空时写入官方 agent-default-model
-  // （新会话默认模型；任一为空 = 不干预，继承用户在宿主 web 的选择）。
+  // （新会话默认模型）；仅思维程度非空时与宿主当前选择合并、只同步思维程度；
+  // 三者皆空 = 不干预，继承用户在宿主 web 的选择。
   const applyDefaultModel = installDefaultModelRoute(
     ctx,
-    () => runtime.modelProvider.length > 0 && runtime.modelName.length > 0,
+    () => (runtime.modelProvider.length > 0 && runtime.modelName.length > 0)
+      || runtime.modelReasoningEffort.trim().length > 0,
     () => runtime.modelProvider,
     () => runtime.modelName,
     () => runtime.modelReasoningEffort,
@@ -977,5 +979,4 @@ export { BRIDGE_ENDPOINTS, MAX_BRIDGE_BODY_BYTES, MAX_CHARACTER_CARD_STREAM_BYTE
 export type { BridgeEndpoint, BridgeErrorPayload, BridgeRequestMap, BridgeValueMap } from './shared/bridge-contract.ts'
 export { parseFrontmatter } from './runtime/skills-parse.ts'
 export type { SkillFrontmatter } from './runtime/skills-parse.ts'
-
 

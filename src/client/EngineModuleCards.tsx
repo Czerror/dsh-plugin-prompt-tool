@@ -153,7 +153,7 @@ export function ModelRouteModuleCard(props: { store: PromptToolStore; scope: 'ma
           <strong>思维程度</strong>
           <small>reasoningEffort（agent-request patch）；官方档位 off / low / high / max；{reasoningEffort.length === 0 && hostEffort !== undefined
             ? `留空 = 继承宿主默认（${hostEffort}）。`
-            : '留空 = 不设置（模型默认）。'}选择即保存。</small>
+            : '留空 = 不设置（模型默认）。'}选择即保存{props.scope === 'main' ? '，非空时同步宿主新会话默认' : ''}。</small>
         </span>
         <select
           className={styles.configInput}

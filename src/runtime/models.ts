@@ -98,8 +98,9 @@ export async function listAdvertisedModels(ctx: Context): Promise<Record<string,
 /**
  * 主对话默认模型控制：modelProvider + modelName 同时非空时，经官方
  * `agentDefaultModel.saveSelection` 写入新会话默认模型（对齐官方 web 切换模型的
- * 默认级持久化；只影响新创建的 Agent，不干预已有会话）。任一为空 = 不干预
- * （继承用户在宿主 web 的选择）；agent-default-model 服务未装配时静默跳过。
+ * 默认级持久化；只影响新创建的 Agent，不干预已有会话）。任一为空时若思维程度非空，
+ * 则与宿主当前默认选择（currentSelection）合并、只同步思维程度而不劫持模型路由；
+ * 三者皆空 = 不干预（继承用户在宿主 web 的选择）；agent-default-model 服务未装配时静默跳过。
  */
 export function installDefaultModelRoute(
   ctx: Context,
@@ -111,24 +112,35 @@ export function installDefaultModelRoute(
   const apply = (): void => {
     try {
       const service = ctx.get('agentDefaultModel') as {
+        currentSelection?: () => { provider?: string; model?: string }
         saveSelection?: (selection: { provider: string; model: string; reasoningEffort?: string }) => void | Promise<void>
       } | undefined
       if (service?.saveSelection === undefined) return
-      if (isEnabled()) {
-        // 官方 AgentDefaultModelSettings 含 reasoningEffort：插件思维程度设置非空时一并写入
-        // 宿主默认（saveSelection 整体替换语义；插件 agent-request patch 仍按会话生效）。
-        const effort = getReasoningEffort?.() ?? ''
-        const result = service.saveSelection({
-          provider: provider(),
-          model: model(),
-          ...(effort.trim().length > 0 ? { reasoningEffort: effort.trim() } : {}),
+      if (!isEnabled()) return
+      // 官方 AgentDefaultModelSettings 含 reasoningEffort：插件思维程度设置非空时一并写入
+      // 宿主默认（saveSelection 整体替换语义；插件 agent-request patch 仍按会话生效）。
+      const effort = (getReasoningEffort?.() ?? '').trim()
+      let targetProvider = provider()
+      let targetModel = model()
+      if (targetProvider.length === 0 || targetModel.length === 0) {
+        // 未固定模型路由但设了思维程度：与宿主当前默认选择合并，只改思维程度不劫持模型/服务商。
+        if (effort.length === 0) return
+        const current = service.currentSelection?.()
+        if (typeof current?.provider !== 'string' || current.provider.length === 0
+          || typeof current?.model !== 'string' || current.model.length === 0) return
+        targetProvider = current.provider
+        targetModel = current.model
+      }
+      const result = service.saveSelection({
+        provider: targetProvider,
+        model: targetModel,
+        ...(effort.length > 0 ? { reasoningEffort: effort } : {}),
+      })
+      // 官方 saveSelection 可能返回 Promise：拒绝必须捕获，避免 unhandledRejection。
+      if (result !== null && typeof result === 'object' && typeof (result as Promise<void>).then === 'function') {
+        (result as Promise<void>).catch(() => {
+          // 异步保存失败不阻断插件（宿主默认未写入，下次设置变更重试）。
         })
-        // 官方 saveSelection 可能返回 Promise：拒绝必须捕获，避免 unhandledRejection。
-        if (result !== null && typeof result === 'object' && typeof (result as Promise<void>).then === 'function') {
-          (result as Promise<void>).catch(() => {
-            // 异步保存失败不阻断插件（宿主默认未写入，下次设置变更重试）。
-          })
-        }
       }
     } catch {
       // agent-default-model 服务缺失（core 未装配）时静默跳过，不阻断插件。

@@ -85,6 +85,32 @@ test('installDefaultModelRoute：agent-default-model 服务缺失时静默跳过
   assert.ok(true, '服务缺失不应抛异常')
 })
 
+test('installDefaultModelRoute：仅思维程度非空时与宿主当前选择合并写入（不劫持模型路由）', () => {
+  const saved = []
+  const ctx = {
+    get: (name) => name === 'agentDefaultModel'
+      ? {
+          currentSelection: () => ({ provider: 'host-p', model: 'host-m', reasoningEffort: 'low' }),
+          saveSelection: (selection) => { saved.push(selection) },
+        }
+      : undefined,
+  }
+  installDefaultModelRoute(ctx, () => true, () => '', () => '', () => 'high')
+  assert.deepEqual(saved, [{ provider: 'host-p', model: 'host-m', reasoningEffort: 'high' }],
+    '思维程度应合并宿主当前默认选择写入')
+})
+
+test('installDefaultModelRoute：仅思维程度但宿主无当前选择时不写盘', () => {
+  let called = false
+  const ctx = {
+    get: (name) => name === 'agentDefaultModel'
+      ? { currentSelection: () => ({}), saveSelection: () => { called = true } }
+      : undefined,
+  }
+  installDefaultModelRoute(ctx, () => true, () => '', () => '', () => 'high')
+  assert.equal(called, false, '宿主当前选择缺 provider/model 时跳过，不写非法选择')
+})
+
 test('installDefaultModelRoute：saveSelection 返回被拒 Promise 不产生 unhandledRejection', async () => {
   const rejections = []
   const onUnhandled = (reason) => rejections.push(reason)
