@@ -28,7 +28,7 @@
 | `code-presentation` | engine/code-presentation.mjs | 晋升后 PTC mode 呈现（`tools.presentAs('ptc')`），compaction/end 释放 |
 | `prompt-config-engine` | engine/prompt-config-engine.mjs | 提示词配置执行器（per-config `promotion: main / include-subagents` 门控） |
 | `tool-config-engine` | engine/tool-config-engine.mjs | 自定义工具引擎：preset.yml `customTools` 段 → 官方转换器物化标准 JSON Schema（`custom-tools/*.yml`）→ 运行时 `ctx.tools.register`（执行器 shell/http/delegate/fs/ask-user；行 `requireApproval` 门；delegate 经 `ctx.tools.execute` 嵌套调度走完整官方工具管线） |
-| `subagent-tool-policy` | engine/subagent-tool-policy.mjs | agent-scoped subagent/subagent_fork shadow：策略启用时按实例参数（tool_profile/character_id/task_type/additional_tools/restrict_tools）在创建窗口冻结 toolFilter；扩权经 approval 门；provider 无 toolFilter 能力 fail loud |
+| `subagent-tool-policy` | engine/subagent-tool-policy.mjs | generation-scoped subagent/subagent_fork shadow：只安装到当前预设后代；spawn/fork 分别绑定官方 provider，foreground 读取 `SubagentRun.result`，continuable 读取 `childId` 并传顶层 signal；实例参数在 body 前校验，扩权经 approval 门，provider 能力不足 fail loud |
 | （纯模块） | engine/subagent-tool-policy-core.mjs | 策略 validate/compile/resolve/buildParameters 单一 seam（纯模块：不 import dsh-tools、不写文件，.engine 与 host 两侧共用；bridge 预览与运行时同一 resolver） |
 | （纯模块） | engine/classify-task.mjs | `createOrderedTaskClassifier`：有序正则任务规则确定性分类（taskRules order 升序，首个命中生效） |
 | character-tools / world-book-tools / session-var-tools | engine/character-tools.mjs / engine/world-book-tools.mjs / engine/session-var-tools.mjs | 按预设模块分别挂载角色卡、世界书、会话变量模型工具；宿主只提供注册服务，工具随 agent scope 生命周期清理 |

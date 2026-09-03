@@ -482,9 +482,8 @@ execute:
   applyToolConfigEngine(ctx, { configsDir: dir })
   // 缺必填参数：引擎侧输入校验拒绝，执行器（fs write）不运行。
   const bad = await ctx.tools.execute({ callId: 'b1', name: 'my_write', arguments: {}, agent: { session: { header: { cwd: workdir } } }, signal: new AbortController().signal })
-  assert.equal(bad.isError, false, '载荷通过其自身 output schema（错误在 value 内）')
-  assert.equal(bad.value.ok, false, '缺必填参数被拒绝')
-  assert.match(String(bad.value.error), /missing required property/, '拒绝原因明确')
+  assert.equal(bad.isError, true, '非法参数产生标准工具错误')
+  assert.match(String(bad.error?.message), /missing required property/, '拒绝原因明确')
   assert.equal(existsSync(marker), false, '实现未运行（未写文件）')
   // 合法调用才运行执行器。
   const good = await ctx.tools.execute({ callId: 'g1', name: 'my_write', arguments: { path: marker }, agent: { session: { header: { cwd: workdir } } }, signal: new AbortController().signal })

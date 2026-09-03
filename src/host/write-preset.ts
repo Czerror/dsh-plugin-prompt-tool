@@ -12,6 +12,9 @@ import { writeFileSync, mkdirSync, rmSync, cpSync, mkdtempSync, renameSync, exis
 import { join } from 'node:path'
 import { parse as parseYaml, parseDocument, stringify as stringifyYaml } from 'yaml'
 import { parameterSchemaSpecToJsonSchema, valueSchemaSpecToJsonSchema } from '@deepseek-ai/dsh-tools'
+// 纯策略模块同时由 host writer 与生成运行时消费；保持校验算法单一来源。
+// @ts-expect-error 仓库根 ESM 引擎文件由 tsdown 作为源码依赖打包，无独立声明文件。
+import { validateSubagentToolPolicy } from '../../engine/subagent-tool-policy-core.mjs'
 import { DEFAULT_PRESET_DIR } from './paths.ts'
 import { PARAM_KEYS } from '../shared/param-keys.ts'
 import type { PresetWriterParams } from '../shared/engine-params.ts'
@@ -285,6 +288,12 @@ export function writePreset(prompt: string, options: WritePresetOptions): void {
     options.warn?.(`prompt-tool: 预设 ${templateName} 用户副本缺组合源（modules/agent.cordis.yml），已回退包内模板渲染`)
   }
   const spec = loadPresetSpec(templateDir)
+  if (spec.subagentToolPolicy !== undefined && spec.subagentToolPolicy !== null) {
+    const policyErrors = validateSubagentToolPolicy(spec.subagentToolPolicy)
+    if (policyErrors.length > 0) {
+      throw new Error(`invalid subagentToolPolicy: ${policyErrors.join('; ')}`)
+    }
+  }
   // 世界书旧存储段一次性迁移：旧版 preset.yml 顶层 worldBook 段（injectMode + entries）
   // → world-book 策略配置并入 spec.promptConfigs（模块体系），并删除段写回。
   // 必须在第 2 步 preset.yml 生成之前执行——否则 existingPresetYaml 读到未删段的
@@ -700,4 +709,3 @@ export function writePreset(prompt: string, options: WritePresetOptions): void {
     throw error
   }
 }
-

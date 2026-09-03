@@ -34,6 +34,7 @@ export function apply(ctx: ClientContext): void {
     },
   }
   const hostApi: PromptToolHostApi = {
+    currentSessionId: () => ctx.sessions.list.getSnapshot().current,
     pickDirectory: () => ctx.uiWorkspace.pickDirectory(),
     openPath: async (path) => {
       const result = await ctx.remote.session.openWorkspacePath({ path })

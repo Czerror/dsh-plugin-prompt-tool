@@ -248,41 +248,47 @@ export function resolveSubagentToolPolicy(compiled, request, availableTools) {
   let selectedProfileId = compiled.defaultProfileId
   let selectedCharacterId
   let selectedTaskType
+  let selected = false
   if (explicitProfile !== undefined) {
-    if (compiled.profileMap.has(explicitProfile)) {
+    if (compiled.modelSelectableProfiles.includes(explicitProfile)) {
       selectedProfileId = explicitProfile
       adopted.push('tool_profile')
+      selected = true
     } else {
-      ignored.push('tool_profile')
+      throw new Error(`tool_profile ${JSON.stringify(explicitProfile)} is not model-selectable`)
     }
   }
-  if (selectedProfileId === compiled.defaultProfileId && explicitCharacter !== undefined) {
-    const binding = compiled.characterBindings.find((item) => item.characterId === explicitCharacter)
+  if (selected && explicitCharacter !== undefined) ignored.push('character_id')
+  if (selected && explicitTask !== undefined) ignored.push('task_type')
+  if (!selected && explicitCharacter !== undefined) {
+    const binding = compiled.characterBindings.find((item) => item.characterId === explicitCharacter && item.modelSelectable)
     if (binding !== undefined) {
       selectedProfileId = binding.profile
       selectedCharacterId = explicitCharacter
       adopted.push('character_id')
+      selected = true
+      if (explicitTask !== undefined) ignored.push('task_type')
     } else {
-      ignored.push('character_id')
+      throw new Error(`character_id ${JSON.stringify(explicitCharacter)} is not model-selectable`)
     }
   }
-  if (selectedProfileId === compiled.defaultProfileId && explicitTask !== undefined) {
-    const rule = compiled.taskRules.find((item) => item.id === explicitTask)
+  if (!selected && explicitTask !== undefined) {
+    const rule = compiled.taskRules.find((item) => item.id === explicitTask && item.modelSelectable)
     if (rule !== undefined) {
       selectedProfileId = rule.profile
       selectedTaskType = explicitTask
       adopted.push('task_type')
+      selected = true
     } else {
-      ignored.push('task_type')
+      throw new Error(`task_type ${JSON.stringify(explicitTask)} is not model-selectable`)
     }
   }
-  if (selectedProfileId === compiled.defaultProfileId
-    && (explicitCharacter === undefined && explicitTask === undefined)) {
+  if (!selected) {
     // 未显式选择时按 description + prompt 自动分类。
     const autoText = [requestRecord.description, requestRecord.prompt].filter((item) => typeof item === 'string').join('\n')
     const autoRuleId = compiled.classify(autoText)
     const autoRule = autoRuleId !== undefined ? compiled.taskRules.find((rule) => rule.id === autoRuleId) : undefined
-    if (autoRule !== undefined && autoRule.profile !== compiled.defaultProfileId) {
+    if (autoRule !== undefined) {
       selectedProfileId = autoRule.profile
       selectedTaskType = autoRuleId
       adopted.push('auto-classify')
@@ -292,22 +298,39 @@ export function resolveSubagentToolPolicy(compiled, request, availableTools) {
   const baseAllow = profile?.allow ?? []
 
   // 扩权校验：requestedAdd ∩ modelExpansion.allow ∩ ceiling.allow ∩ presetAvailable。
+  if (requestRecord.additional_tools !== undefined && !Array.isArray(requestRecord.additional_tools)) {
+    throw new Error('additional_tools must be an array of tool names')
+  }
   const requestedAdd = Array.isArray(requestRecord.additional_tools) ? requestRecord.additional_tools : []
+  if (requestedAdd.some((tool) => typeof tool !== 'string' || tool.length === 0)) {
+    throw new Error('additional_tools must contain only non-empty tool names')
+  }
+  const uniqueRequestedAdd = [...new Set(requestedAdd)]
+  if (requestedAdd.length !== uniqueRequestedAdd.length) {
+    throw new Error('additional_tools must not contain duplicates')
+  }
+  if (uniqueRequestedAdd.length > 0 && (!compiled.expansion.enabled || compiled.expansion.maxAdditionalTools === 0)) {
+    throw new Error('additional_tools is disabled by subagentToolPolicy')
+  }
+  if (uniqueRequestedAdd.length > compiled.expansion.maxAdditionalTools) {
+    throw new Error(`additional_tools exceeds maxAdditionalTools (${compiled.expansion.maxAdditionalTools})`)
+  }
   const validatedAdd = []
-  if (compiled.expansion.enabled && compiled.expansion.maxAdditionalTools > 0 && requestedAdd.length > 0) {
-    const seen = new Set()
-    for (const tool of requestedAdd) {
-      if (typeof tool !== 'string' || tool.length === 0) continue
-      if (seen.has(tool)) continue
-      seen.add(tool)
-      if (!compiled.expansion.allow.includes(tool)) continue
-      if (!compiled.ceiling.allow.includes(tool)) continue
-      if (!presetAvailable.has(tool)) continue
+  if (uniqueRequestedAdd.length > 0) {
+    for (const tool of uniqueRequestedAdd) {
+      if (!compiled.expansion.allow.includes(tool)) throw new Error(`additional tool ${JSON.stringify(tool)} is not expansion-authorized`)
+      if (!compiled.ceiling.allow.includes(tool)) throw new Error(`additional tool ${JSON.stringify(tool)} exceeds ceiling.allow`)
+      if (!presetAvailable.has(tool)) throw new Error(`additional tool ${JSON.stringify(tool)} is not available in this preset`)
       validatedAdd.push(tool)
-      if (validatedAdd.length >= compiled.expansion.maxAdditionalTools) break
     }
   }
+  if (requestRecord.restrict_tools !== undefined && !Array.isArray(requestRecord.restrict_tools)) {
+    throw new Error('restrict_tools must be an array of tool names')
+  }
   const requestedDeny = Array.isArray(requestRecord.restrict_tools) ? requestRecord.restrict_tools : []
+  if (requestedDeny.some((tool) => typeof tool !== 'string' || tool.length === 0)) {
+    throw new Error('restrict_tools must contain only non-empty tool names')
+  }
 
   // 有效工具集 = (baseAllow ∪ validatedAdd) ∩ ceiling.allow ∩ presetAvailable − deny 三件套。
   const effective = new Set([...baseAllow, ...validatedAdd])

@@ -275,6 +275,7 @@ export type SwitchKey = 'injectAgentsPrompt' | 'firstTurnAnchor' | 'firstTurnCus
 const PARAM_SWITCH_KEYS: ReadonlySet<SwitchKey> = new Set(['firstTurnAnchor', 'firstTurnCustom', 'guideCustom', 'toolFilterSubagents', 'injectPrompt', 'usePtcMode', 'promoteGate', 'promoteAfterFirstResponse', 'personaSectionsOnly', 'workspaceLine', 'instructionHint', 'anchorTurn', 'deliberationGate', 'cotDrip'])
 
 export interface PromptToolStore {
+  api: PromptToolHostApi
   fields: Fields
   /** fields 外部订阅通道（usePromptToolFields）：patch/load 变更后通知。
    *  getFields 返回引用稳定快照，selector 化的组件据此跳过无关重渲染。 */
@@ -1042,6 +1043,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
   // 化依赖稳定 store 引用）；每次渲染重建内容对象但复用 ref 外壳。
   const storeRef = useRef<PromptToolStore>()
   storeRef.current = {
+    api,
     fields,
     getFields,
     subscribeFields,

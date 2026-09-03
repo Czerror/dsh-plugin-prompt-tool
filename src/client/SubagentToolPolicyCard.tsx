@@ -21,6 +21,7 @@ interface PolicyDraft {
   taskRules?: Array<{ id: string; name?: string; pattern: string; profile: string; order?: number; modelSelectable?: boolean }>
   modelExpansion?: { enabled?: boolean; allow?: string[]; maxAdditionalTools?: number; requireApproval?: boolean }
 }
+interface CharacterItem { id: string; name: string }
 
 const asList = (value: unknown): string[] => Array.isArray(value) ? value.map(String) : []
 const asBool = (value: unknown): boolean => value === true
@@ -50,6 +51,7 @@ export function SubagentToolPolicyCard(props: {
   onNotice: Notice
   /** 现有 toolFilterAllow（首次启用时复制为 default profile 的 allow）。 */
   seedAllow?: string
+  currentSessionId?: string
 }): ReactNode {
   const { expanded, onToggleExpanded, onNotice } = props
   const [policy, setPolicy] = useState<PolicyDraft | null>(null)
@@ -59,6 +61,7 @@ export function SubagentToolPolicyCard(props: {
   const [preview, setPreview] = useState<unknown>(null)
   const [previewInput, setPreviewInput] = useState<Record<string, string | string[]>>({})
   const [childSessionId, setChildSessionId] = useState('')
+  const [characters, setCharacters] = useState<CharacterItem[]>([])
 
   const load = useCallback(() => {
     void bridgePost<{ policy: unknown }>('/subagent-tool-policy', {}).then((result) => {
@@ -72,6 +75,11 @@ export function SubagentToolPolicyCard(props: {
   }, [])
 
   useEffect(() => { load() }, [load])
+  useEffect(() => {
+    void bridgePost<{ characters: CharacterItem[] }>('/characters-list', {}).then((result) => {
+      if (result.ok) setCharacters(result.value.characters)
+    })
+  }, [])
 
   const patch = (next: PolicyDraft): void => { setPolicy(next); setDirty(true) }
   const toggleEnabled = (enabled: boolean): void => {
@@ -106,6 +114,29 @@ export function SubagentToolPolicyCard(props: {
   const profiles = useMemo(() => policy?.profiles ?? [], [policy])
   const profileIds = profiles.map((profile) => profile.id)
   const ceilingAllow = asList(policy?.ceiling?.allow)
+  const invalidCharacterBindings = (policy?.characterBindings ?? []).filter((binding) =>
+    binding.characterId.length === 0 || !characters.some((item) => item.id === binding.characterId))
+  const moveProfile = (index: number, offset: -1 | 1): void => {
+    if (policy === null) return
+    const next = [...profiles]
+    const target = index + offset
+    if (target < 0 || target >= next.length) return
+    ;[next[index], next[target]] = [next[target]!, next[index]!]
+    patch({ ...policy, profiles: next })
+  }
+  const removeProfile = (id: string): void => {
+    if (policy === null) return
+    const refs = [
+      ...(policy.defaultProfile === id ? ['defaultProfile'] : []),
+      ...(policy.characterBindings ?? []).filter((item) => item.profile === id).map((item) => `角色 ${item.characterId}`),
+      ...(policy.taskRules ?? []).filter((item) => item.profile === id).map((item) => `任务 ${item.id}`),
+    ]
+    if (refs.length > 0) {
+      onNotice('error', `不能删除工具档 ${id}：仍被 ${refs.join('、')} 引用`)
+      return
+    }
+    patch({ ...policy, profiles: profiles.filter((item) => item.id !== id) })
+  }
 
   return (
     <section aria-label="子代理工具策略" style={{ marginTop: 12 }}>
@@ -120,7 +151,8 @@ export function SubagentToolPolicyCard(props: {
           <p>实例级工具授权（subagentToolPolicy）· 模型只能在用户能力上限内选择与扩权</p>
         </div>
         <span className={styles.configActions}>
-          <button type="button" className={styles.pillButton} onClick={save} disabled={saving || !dirty}>
+          {enabled && <button type="button" className={styles.pillButton} data-danger onClick={() => toggleEnabled(false)}>停用策略</button>}
+          <button type="button" className={styles.pillButton} onClick={save} disabled={saving || !dirty || invalidCharacterBindings.length > 0}>
             {saving ? '保存中…' : '保存'}
           </button>
         </span>
@@ -136,6 +168,7 @@ export function SubagentToolPolicyCard(props: {
           )}
           {loaded && enabled && policy !== null && (
             <>
+              {invalidCharacterBindings.length > 0 && <p className={styles.noticeError}>存在未选择或已失效的角色卡绑定，请删除或改绑后再保存。</p>}
               {/* 总览：default + ceiling */}
               <div className={styles.settingRowStack}>
                 <span className={styles.settingCopy}>
@@ -169,8 +202,11 @@ export function SubagentToolPolicyCard(props: {
                         onChange={(event) => patch({ ...policy, profiles: profiles.map((item, at) => at === index ? { ...item, modelSelectable: event.target.checked } : item) })} />
                       <span className={styles.switch} aria-hidden="true"><i /></span>
                     </label>
+                    <button type="button" className={styles.pillButton} disabled={index === 0} onClick={() => moveProfile(index, -1)}>上移</button>
+                    <button type="button" className={styles.pillButton} disabled={index === profiles.length - 1} onClick={() => moveProfile(index, 1)}>下移</button>
+                    <button type="button" className={styles.pillButton} onClick={() => patch({ ...policy, profiles: [...profiles, { ...structuredClone(profile), id: `${profile.id}-copy`, name: `${profile.name ?? profile.id} 副本` }] })}>复制</button>
                     <button type="button" className={styles.pillButton} data-danger aria-label={`删除 profile ${profile.id || index}`}
-                      onClick={() => patch({ ...policy, profiles: profiles.filter((_, at) => at !== index) })}>删除</button>
+                      onClick={() => removeProfile(profile.id)}>删除</button>
                   </span>
                   <TagInput id={`pt-sp-allow-${index}`} label="allow" hint="" value={asList(profile.allow).join(', ')} placeholder={ceilingAllow.join(', ')}
                     onChange={(value) => patch({ ...policy, profiles: profiles.map((item, at) => at === index ? { ...item, allow: value.split(',').map((item2) => item2.trim()).filter((item2) => item2.length > 0) } : item) })}
@@ -188,8 +224,12 @@ export function SubagentToolPolicyCard(props: {
               {(policy.characterBindings ?? []).map((binding, index) => (
                 <div key={`${binding.characterId}-${index}`} className={styles.settingRowStack} style={{ border: '1px solid rgba(128,128,128,0.2)', borderRadius: 8, padding: 8 }}>
                   <span style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                    <input className={styles.configInput} aria-label="角色卡 id" value={binding.characterId} placeholder="characterId" spellCheck={false}
-                      onChange={(event) => patch({ ...policy, characterBindings: (policy.characterBindings ?? []).map((item, at) => at === index ? { ...item, characterId: event.target.value } : item) })} />
+                    <select className={styles.configInput} aria-label="角色卡 id" value={binding.characterId}
+                      onChange={(event) => patch({ ...policy, characterBindings: (policy.characterBindings ?? []).map((item, at) => at === index ? { ...item, characterId: event.target.value } : item) })}>
+                      <option value="">（选择角色卡）</option>
+                      {!characters.some((item) => item.id === binding.characterId) && binding.characterId.length > 0 && <option value={binding.characterId}>失效：{binding.characterId}</option>}
+                      {characters.map((item) => <option key={item.id} value={item.id}>{item.name}（{item.id}）</option>)}
+                    </select>
                     <select className={styles.configInput} aria-label="绑定 profile" value={binding.profile}
                       onChange={(event) => patch({ ...policy, characterBindings: (policy.characterBindings ?? []).map((item, at) => at === index ? { ...item, profile: event.target.value } : item) })}>
                       {profileIds.map((id) => <option key={id} value={id}>{id}</option>)}
@@ -225,6 +265,12 @@ export function SubagentToolPolicyCard(props: {
                       onChange={(event) => patch({ ...policy, taskRules: (policy.taskRules ?? []).map((item, at) => at === index ? { ...item, profile: event.target.value } : item) })}>
                       {profileIds.map((id) => <option key={id} value={id}>{id}</option>)}
                     </select>
+                    <label className={styles.configEnable} title="模型可选择">
+                      <input type="checkbox" aria-label="任务规则模型可选择" checked={asBool(rule.modelSelectable)}
+                        onChange={(event) => patch({ ...policy, taskRules: (policy.taskRules ?? []).map((item, at) => at === index ? { ...item, modelSelectable: event.target.checked } : item) })} />
+                      <span className={styles.switch} aria-hidden="true"><i /></span>
+                    </label>
+                    {rule.pattern.length > 0 && (() => { try { new RegExp(rule.pattern); return null } catch { return <small className={styles.noticeError}>正则无效</small> } })()}
                     <button type="button" className={styles.pillButton} data-danger aria-label="删除规则"
                       onClick={() => patch({ ...policy, taskRules: (policy.taskRules ?? []).filter((_, at) => at !== index) })}>删除</button>
                   </span>
@@ -259,6 +305,11 @@ export function SubagentToolPolicyCard(props: {
               <div className={styles.settingRowStack} style={{ border: '1px solid rgba(128,128,128,0.2)', borderRadius: 8, padding: 8 }}>
                 <span className={styles.settingCopy}><strong>实例解析预览</strong><small>输入 description/prompt 与 selector，调用 host 同一 resolve seam 预览有效工具集；只读，不创建子代理。</small></span>
                 <span style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  <select className={styles.configInput} aria-label="预览工具" value={String(previewInput.tool ?? 'subagent')}
+                    onChange={(event) => setPreviewInput({ ...previewInput, tool: event.target.value })}>
+                    <option value="subagent">subagent</option>
+                    <option value="subagent_fork">subagent_fork</option>
+                  </select>
                   <input className={styles.configInput} aria-label="预览 description" placeholder="description" value={String(previewInput.description ?? '')} spellCheck={false}
                     onChange={(event) => setPreviewInput({ ...previewInput, description: event.target.value })} />
                   <input className={styles.configInput} aria-label="预览 prompt" placeholder="prompt" value={String(previewInput.prompt ?? '')} spellCheck={false}
@@ -268,8 +319,21 @@ export function SubagentToolPolicyCard(props: {
                     <option value="">（不指定 tool_profile）</option>
                     {profiles.filter((profile) => asBool(profile.modelSelectable)).map((profile) => <option key={profile.id} value={profile.id}>{profile.id}</option>)}
                   </select>
+                  <select className={styles.configInput} aria-label="预览 character_id" value={String(previewInput.character_id ?? '')}
+                    onChange={(event) => setPreviewInput({ ...previewInput, character_id: event.target.value })}>
+                    <option value="">（不指定 character_id）</option>
+                    {(policy.characterBindings ?? []).filter((item) => asBool(item.modelSelectable)).map((item) => <option key={item.characterId} value={item.characterId}>{item.characterId}</option>)}
+                  </select>
+                  <select className={styles.configInput} aria-label="预览 task_type" value={String(previewInput.task_type ?? '')}
+                    onChange={(event) => setPreviewInput({ ...previewInput, task_type: event.target.value })}>
+                    <option value="">（不指定 task_type）</option>
+                    {(policy.taskRules ?? []).filter((item) => asBool(item.modelSelectable)).map((item) => <option key={item.id} value={item.id}>{item.id}</option>)}
+                  </select>
                   <TagInput id="pt-sp-preview-add" label="additional_tools" hint="" value={Array.isArray(previewInput.additional_tools) ? previewInput.additional_tools.join(', ') : ''}
                     onChange={(value) => setPreviewInput({ ...previewInput, additional_tools: value.split(',').map((item) => item.trim()).filter((item) => item.length > 0) })}
+                    onCommit={() => {}} />
+                  <TagInput id="pt-sp-preview-restrict" label="restrict_tools" hint="" value={Array.isArray(previewInput.restrict_tools) ? previewInput.restrict_tools.join(', ') : ''}
+                    onChange={(value) => setPreviewInput({ ...previewInput, restrict_tools: value.split(',').map((item) => item.trim()).filter((item) => item.length > 0) })}
                     onCommit={() => {}} />
                   <button type="button" className={styles.primaryPill} onClick={runPreview}>预览</button>
                 </span>
@@ -279,6 +343,7 @@ export function SubagentToolPolicyCard(props: {
               </div>
               {/* 已运行本地子代理实际工具面（只读） */}
               <div className={styles.settingRowStack} style={{ border: '1px solid rgba(128,128,128,0.2)', borderRadius: 8, padding: 8 }}>
+                <ToolSurfaceView sessionId={props.currentSessionId ?? ''} label="主会话" />
                 <span className={styles.settingCopy}>
                   <strong>已运行子代理工具面</strong>
                   <small>输入本地子代理 session id 查询其创建时冻结的实际可见工具。</small>

@@ -806,6 +806,26 @@ export function buildModuleConfigsFromParams(params: Record<string, unknown>, op
     out['tool-subagent'] = subagent
     out['tool-subagent-fork'] = subagent
   }
+  if (options.subagentPolicyEnabled === true) {
+    const policy: Record<string, unknown> = {}
+    if (provider.length > 0 && model.length > 0) {
+      policy.agentOptions = {
+        provider,
+        model,
+        ...(typeof params.subagentReasoningEffort === 'string' && params.subagentReasoningEffort.length > 0
+          ? { reasoningEffort: params.subagentReasoningEffort }
+          : {}),
+        ...((): Record<string, number> => {
+          const raw = params.subagentMaxTokens
+          const maxTokens = typeof raw === 'string' ? Number(raw.trim()) : raw
+          return typeof maxTokens === 'number' && Number.isSafeInteger(maxTokens) && maxTokens > 0 ? { maxTokens } : {}
+        })(),
+      }
+    }
+    if (rawMaxDepth === 'provider-managed') policy.maxDepth = 'provider-managed'
+    else if (Number.isSafeInteger(rawMaxDepth) && (rawMaxDepth as number) >= 0) policy.maxDepth = rawMaxDepth
+    merge('subagent-tool-policy', policy)
+  }
   return out
 }
 
@@ -926,9 +946,13 @@ export function applyModuleConfigs(raw: string, configs: Record<string, Record<s
  */
 export function loadCompositionText(spec: PresetSpec, templateDir?: string): string {
   let raw: string
-  const modules = Array.isArray(spec.modules) && spec.modules.length === 0
+  let modules = Array.isArray(spec.modules) && spec.modules.length === 0
     ? FALLBACK_MODULES
     : spec.modules
+  if (Array.isArray(modules) && spec.subagentToolPolicy !== undefined && spec.subagentToolPolicy !== null
+    && !modules.includes('subagent-tool-policy')) {
+    modules = [...modules, 'subagent-tool-policy']
+  }
   if (Array.isArray(modules)) raw = assembleModules({ ...spec, modules })
   else {
     const name = typeof spec.composition === 'string' ? spec.composition : ''
@@ -996,5 +1020,3 @@ export function assertCompositionArray(raw: string, spec: PresetSpec): unknown[]
   if (!Array.isArray(parsed)) throw new Error(`generated agent.cordis.yml is not a YAML array (preset ${spec.id})`)
   return parsed
 }
-
-

@@ -272,6 +272,7 @@ export function CustomToolsModuleCard(props: {
   const [loaded, setLoaded] = useState(false)
   const [saving, setSaving] = useState(false)
   const [surfaceSessionId, setSurfaceSessionId] = useState(props.sessionId ?? '')
+  useEffect(() => { setSurfaceSessionId(props.sessionId ?? '') }, [props.sessionId])
   useEffect(() => {
     if (loaded || !props.expanded) return
     void (async () => {
@@ -364,8 +365,6 @@ export function CustomToolsModuleCard(props: {
               <strong>当前主会话实际工具面（只读）</strong>
               <small>来自 /tool-surface：只返回存活本地 Agent 的 name/description；无会话显示空态。</small>
             </span>
-            <input className={styles.configInput} aria-label="主会话 session id" placeholder="session-…（留空 = 无会话）" value={surfaceSessionId}
-              onChange={(event) => setSurfaceSessionId(event.target.value.trim())} />
             <ToolSurfaceView sessionId={surfaceSessionId} label="主会话" />
           </div>
           {tools.map((tool, index) => (

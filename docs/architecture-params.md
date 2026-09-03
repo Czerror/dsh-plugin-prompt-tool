@@ -229,6 +229,7 @@ system-section 段（character-definition / system-prompt / post-history）。
 - 策略启用（段非空）：参数桥只写主代理 `tool-filter`；子代理由 `subagent-tool-policy` 模块的 agent-local shadow 在创建窗口解析并冻结 toolFilter（不再热更新；需要更高权限时创建新实例）。
 - `subagent-tools/policy.yml` 是生成物（writePreset 从 preset.yml 顶层段物化）；preset.yml 仍是单一来源。
 - 保存链路：`/subagent-tool-policy` POST → `validateSubagentToolPolicy()` 校验 → 原子写盘 → 自动装配/移除 `subagent-tool-policy` 模块行。
+- writer 直接读取手写/导入的 `subagentToolPolicy` 时同样先校验，并自动装配运行时模块；策略启用后 `subagentModel` 路由、reasoningEffort、maxTokens 与 maxDepth 改写到策略模块，不再只落到被 shadow 的官方工具行。
 - 预览链路：`/subagent-tool-policy-preview` POST 与运行时 `resolveSubagentToolPolicy()` 同一 seam（不重复算法）；预览用 ceiling 工具宇宙。
 - 工具面：`/tool-surface` GET 只读返回当前存活本地 Agent 的 name/description 摘要（不含完整 Schema、大文本或 secrets）；只代表当前运行会话，不代表未挂载预设。
 

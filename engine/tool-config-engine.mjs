@@ -27,6 +27,13 @@ import { execFile } from 'node:child_process'
 import { isAbsolute, join, resolve, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { parse as parseYaml } from './vendor/yaml/index.js'
+import { createRequire } from 'node:module'
+
+const hostEntry = typeof process.argv[1] === 'string' && process.argv[1].length > 0
+  ? process.argv[1]
+  : fileURLToPath(import.meta.url)
+const hostRequire = createRequire(hostEntry)
+const { ToolArgsError } = await import(pathToFileURL(hostRequire.resolve('@deepseek-ai/dsh-tools')).href)
 
 /** Cordis 插件名，供 loader 诊断使用。 */
 export const name = 'tool-config-engine'
@@ -286,7 +293,7 @@ function createExecute(ctx, def, requireApproval) {
     if (def.parameters !== undefined) {
       const violations = validateJsonSchemaValue(def.parameters, args)
       if (violations.length > 0) {
-        return { ok: false, error: 'invalid arguments: ' + violations.join('; ') }
+        throw new ToolArgsError(violations)
       }
     }
     if (requireApproval.includes(exec.kind)) {

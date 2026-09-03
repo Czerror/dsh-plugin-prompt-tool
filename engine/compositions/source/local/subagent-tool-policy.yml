@@ -8,3 +8,6 @@
   name: ./engine/subagent-tool-policy.mjs
   config:
     policyFile: ../subagent-tools/policy.yml
+    spawnProvider: spawn
+    forkProvider: fork
+    maxDepth: 3

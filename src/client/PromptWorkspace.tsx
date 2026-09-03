@@ -83,6 +83,7 @@ const FeatureSettings = memo(function FeatureSettings(props: { store: PromptTool
         setTemplateVariablesEnabled={store.setTemplateVariablesEnabled}
         saveTemplateVariables={store.saveTemplateVariables}
         store={store}
+        currentSessionId={store.api.currentSessionId()}
       />
     </section>
   )

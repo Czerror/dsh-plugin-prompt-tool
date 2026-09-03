@@ -3,7 +3,7 @@
 > 日期：2026-09-02
 > 分支：`dev`
 > 基线：`77c1a9e`（实现代码自 `e3433da` 后未变化）
-> 状态：已实施（Wave 1-6 完成；提交 dea7496 / 1868a05 / bdb2006 / 本轮文档收口）
+> 状态：已实施并于 2026-09-03 完成复验修复（Wave 1-6 完成）
 > 合并：旧 L2 计划已全部落地；本版本完整保留 `ececbd1` 版 PLAN.md 的全部未实施项，并在其上扩展子代理实例级工具策略。
 > 参考：`D:\AI\GitHub\dsh-plugins@05c50f3`、`D:\AI\GitHub\deepseek-harness@4e84901`（DSH `0.1.2-alpha.4`）。
 
@@ -939,5 +939,6 @@ node --test "$Repo/test/client/no-host-dom.test.mjs"
 - [x] Wave 4：Agent-scoped subagent shadow。（1868a05）
 - [x] Wave 5：完整 UI。（bdb2006）
 - [x] Wave 6：文档、迁移与全量验收。
-- [x] 完整 typecheck / lint / test / build。（typecheck/lint 通过；456 tests 全部通过）
+- [x] 2026-09-03 复验修复：官方子代理 API、scope 隔离、策略停用/物化、完整 UI 与真实契约测试。
+- [x] 完整 typecheck / lint / test / build。（typecheck/lint 通过；461 tests 全部通过）
 - [x] 提交并推送 `origin/dev`。

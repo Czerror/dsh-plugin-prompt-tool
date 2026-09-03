@@ -48,7 +48,7 @@ export function ToolSurfaceView(props: {
     <div className={styles.settingRowStack} style={{ border: '1px solid rgba(128,128,128,0.2)', borderRadius: 8, padding: 8 }}>
       <span className={styles.settingCopy}>
         <strong>{label} 实际工具面（只读）</strong>
-        <small>当前存活会话的可见工具（name/description 摘要）；保存/重建后既有会话与子代理保留原 generation 与创建时冻结的工具集。</small>
+        <small>{tools === null ? '' : `${tools.length} 个工具 · `}当前存活会话的可见工具（name/description 摘要）；保存/重建后既有会话与子代理保留原 generation 与创建时冻结的工具集。</small>
       </span>
       {sessionId.length === 0
         ? <p className={styles.configFieldHint}>无当前会话上下文；工具面仅对存活本地 Agent 可用。</p>

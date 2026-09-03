@@ -33,6 +33,8 @@ export interface PromptConfigsEditorProps {
   saveTemplateVariables: (next?: Record<string, string>) => Promise<void>
   /** 引擎模块配置（tool-bootstrap 等组合行 config 卡片，同模块列表形态）。 */
   store: PromptToolStore
+  /** 官方 sessions snapshot 中的当前会话 id；仅供只读工具面。 */
+  currentSessionId?: string
 }
 
 /** 预设级模板变量模块卡片（归类于配置列表下）：{{key}} 插值源，非 promptConfig——
@@ -153,6 +155,7 @@ export function PromptConfigsEditor(props: PromptConfigsEditorProps): ReactNode 
                 expanded={customToolsExpanded}
                 onToggleExpanded={() => setCustomToolsExpanded(!customToolsExpanded)}
                 onNotice={props.onNotice}
+                sessionId={props.currentSessionId}
               />
             )}
             <TemplateVariablesModuleCard

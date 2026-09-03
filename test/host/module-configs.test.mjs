@@ -112,6 +112,25 @@ test('子代理模型路由与委派完整自定义：toolFilter + maxDepth 渲�
   }
 })
 
+test('实例策略启用后主过滤不下沉 delegation，模型路由与 maxDepth 转交策略模块', () => {
+  const base = loadPresetSpec(resolvePresetDir('minimal'))
+  const policy = {
+    defaultProfile: 'base', ceiling: { allow: ['read'], deny: [] },
+    profiles: [{ id: 'base', name: '基础', allow: ['read'], deny: [], modelSelectable: false }],
+  }
+  const rows = parseYaml(renderComposition({ ...base, subagentToolPolicy: policy }, {
+    subagentModelProvider: 'deepseek', subagentModelName: 'child',
+    subagentReasoningEffort: 'high', subagentMaxTokens: '4096',
+    toolFilterAllow: ['read'], toolFilterDeny: ['bash'], maxDepth: 2,
+  }))
+  const policyRow = rows.find((row) => row?.id === 'subagent-tool-policy')
+  assert.ok(policyRow, '策略段非空时自动装配模块')
+  assert.deepEqual(policyRow.config.agentOptions, { provider: 'deepseek', model: 'child', reasoningEffort: 'high', maxTokens: 4096 })
+  assert.equal(policyRow.config.maxDepth, 2)
+  const subs = findAllNested(rows, new Set(['tool-subagent', 'tool-subagent-fork']))
+  assert.ok(subs.every((row) => row.config.toolFilter === undefined), '旧主过滤不再写入官方 delegation')
+})
+
 test('buildCordis 透传 allowKinds 覆盖模板默认', () => {
   const rows = parseYaml(buildCordis('P', { allowKinds: ['skill-invocation'] }))
   const gate = rows.find((row) => row?.id === 'context-gate')

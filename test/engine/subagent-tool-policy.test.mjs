@@ -90,6 +90,10 @@ test('policy-core：resolve —— selector 优先级 tool_profile > character_i
   assert.equal(byProfile.profileId, 'coder')
   assert.deepEqual(byProfile.adopted, ['tool_profile'])
   assert.equal(byProfile.characterId, undefined)
+  const priority = resolveSubagentToolPolicy(compiled, { ...base, tool_profile: 'coder', character_id: 'analyst', task_type: 'research' }, AVAILABLE)
+  assert.equal(priority.profileId, 'coder')
+  assert.deepEqual(priority.adopted, ['tool_profile'])
+  assert.deepEqual(priority.ignored, ['character_id', 'task_type'])
   // character_id（无显式 profile）
   const byChar = resolveSubagentToolPolicy(compiled, { ...base, character_id: 'analyst' }, AVAILABLE)
   assert.equal(byChar.profileId, 'researcher')
@@ -110,29 +114,25 @@ test('policy-core：resolve —— selector 优先级 tool_profile > character_i
   assert.deepEqual(byDefault.adopted, [])
 })
 
-test('policy-core：resolve —— 无效 selector 被忽略并回显，不静默歧义', () => {
+test('policy-core：resolve —— 非模型可选或未知 selector 响亮拒绝', () => {
   const compiled = compileSubagentToolPolicy(SAMPLE)
-  const result = resolveSubagentToolPolicy(compiled, { tool_profile: 'ghost', character_id: 'ghost', task_type: 'ghost', description: '' }, AVAILABLE)
-  assert.equal(result.profileId, 'base')
-  assert.deepEqual(result.ignored, ['tool_profile', 'character_id', 'task_type'])
+  assert.throws(() => resolveSubagentToolPolicy(compiled, { tool_profile: 'ghost' }, AVAILABLE), /not model-selectable/)
+  assert.throws(() => resolveSubagentToolPolicy(compiled, { tool_profile: 'base' }, AVAILABLE), /not model-selectable/)
 })
 
 test('policy-core：resolve —— 扩权受 modelExpansion.allow ∩ ceiling.allow ∩ presetAvailable 约束，deny 永远优先', () => {
   const compiled = compileSubagentToolPolicy(SAMPLE)
-  // 非法扩权工具：不在 expansion.allow（edit）→ 拒绝
-  const r1 = resolveSubagentToolPolicy(compiled, { tool_profile: 'base', additional_tools: ['edit'] }, AVAILABLE)
-  assert.deepEqual(r1.additionalTools, [])
+  // 非法扩权工具：不在 expansion.allow（edit）→ 响亮拒绝
+  assert.throws(() => resolveSubagentToolPolicy(compiled, { additional_tools: ['edit'] }, AVAILABLE), /not expansion-authorized/)
   // 合法扩权：web_search 在 expansion.allow + ceiling + available
-  const r2 = resolveSubagentToolPolicy(compiled, { tool_profile: 'base', additional_tools: ['web_search'] }, AVAILABLE)
+  const r2 = resolveSubagentToolPolicy(compiled, { additional_tools: ['web_search'] }, AVAILABLE)
   assert.deepEqual(r2.additionalTools, ['web_search'])
   assert.ok(r2.effectiveTools.includes('web_search'))
   assert.equal(r2.requiresApproval, true)
   // maxAdditionalTools=2 截断
-  const r3 = resolveSubagentToolPolicy(compiled, { tool_profile: 'base', additional_tools: ['web_search', 'bash', 'web_search'] }, AVAILABLE)
-  assert.deepEqual(r3.additionalTools, ['web_search', 'bash'])
+  assert.throws(() => resolveSubagentToolPolicy(compiled, { additional_tools: ['web_search', 'bash', 'web_search'] }, AVAILABLE), /duplicates/)
   // ceiling.deny 永远优先：base + 扩权也不能得到 dangerous_tool
-  const r4 = resolveSubagentToolPolicy(compiled, { tool_profile: 'coder', additional_tools: ['dangerous_tool'] }, AVAILABLE)
-  assert.ok(!r4.effectiveTools.includes('dangerous_tool'))
+  assert.throws(() => resolveSubagentToolPolicy(compiled, { tool_profile: 'coder', additional_tools: ['dangerous_tool'] }, AVAILABLE), /not expansion-authorized/)
   // presetAvailable 之外的工具不可用
   const r5 = resolveSubagentToolPolicy(compiled, { tool_profile: 'coder' }, ['read', 'write'])
   assert.deepEqual(r5.effectiveTools, ['read', 'write'])

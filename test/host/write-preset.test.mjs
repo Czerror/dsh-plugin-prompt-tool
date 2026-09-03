@@ -593,6 +593,32 @@ test('writePreset 自定义工具渲染 custom-tools/<n>-<id>.yml（源 = preset
   }
 })
 
+test('writePreset 自动校验并装配 subagentToolPolicy，非法策略拒绝', () => {
+  const dir = join(tmpdir(), `prompt-tool-spolicy-${process.pid}-${Date.now()}`)
+  const presetDir = join(dir, 'preset')
+  try {
+    const homePresetDir = join(home, '.agent-presets')
+    cpSync(join(process.cwd(), 'preset', 'minimal'), join(homePresetDir, 'minimal'), { recursive: true })
+    const presetFile = join(homePresetDir, 'minimal', 'preset.yml')
+    const doc = parseDocument(readFileSync(presetFile, 'utf8'))
+    doc.setIn(['subagentToolPolicy'], {
+      defaultProfile: 'base', ceiling: { allow: ['read'], deny: [] },
+      profiles: [{ id: 'base', name: '基础', allow: ['read'], deny: [], modelSelectable: false }],
+      characterBindings: [], taskRules: [], modelExpansion: { enabled: false, allow: [], maxAdditionalTools: 0, requireApproval: true },
+    })
+    writeFileSync(presetFile, doc.toString(), 'utf8')
+    writePreset('P', { ...makeOptions(presetDir), presetTemplate: 'minimal' })
+    assert.ok(existsSync(join(presetDir, 'minimal', 'subagent-tools', 'policy.yml')))
+    const composition = readFileSync(join(presetDir, 'minimal', 'agent.cordis.yml'), 'utf8')
+    assert.match(composition, /id: subagent-tool-policy/)
+    doc.setIn(['subagentToolPolicy'], {})
+    writeFileSync(presetFile, doc.toString(), 'utf8')
+    assert.throws(() => writePreset('P', { ...makeOptions(presetDir), presetTemplate: 'minimal' }), /invalid subagentToolPolicy/)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
 test('savePresetParams 清理空 key（VariablesEditor 待编辑行不落盘）', () => {
   const dir = join(tmpdir(), `prompt-tool-emptyk-${process.pid}-${Date.now()}`)
   const presetDir = join(dir, 'preset')

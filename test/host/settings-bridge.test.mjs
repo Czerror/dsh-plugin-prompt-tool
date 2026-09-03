@@ -530,3 +530,39 @@ test('settings bridge /custom-tools 拒绝缺少 modules 的预设', async () =>
     rmSync(dir, { recursive: true, force: true })
   }
 })
+
+test('settings bridge /subagent-tool-policy 保存、停用与模块装配均为原子操作', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'pt-subagent-policy-'))
+  try {
+    writeFileSync(join(dir, 'preset.yml'), 'id: beta\nmodules: []\nunknown: keep\n', 'utf8')
+    const { ctx, handlers } = makeHarness()
+    let rebuilds = 0
+    registerSettingsBridge(ctx, 'prompt-tool', () => ({ available: true, providers: [] }),
+      () => ({ activeSkillsDirs: [], skillCatalog: [] }), () => '', undefined, () => dir,
+      undefined, () => { rebuilds += 1 })
+    const handler = handlers.get(PREFIX + BRIDGE_ENDPOINTS.subagentToolPolicy)
+    const policy = {
+      defaultProfile: 'base', ceiling: { allow: ['read'], deny: [] },
+      profiles: [{ id: 'base', name: '基础', allow: ['read'], deny: [], modelSelectable: false }],
+      characterBindings: [], taskRules: [],
+      modelExpansion: { enabled: false, allow: [], maxAdditionalTools: 0, requireApproval: true },
+    }
+    const save = fakeRes()
+    await handler(fakeReq({ [Symbol.asyncIterator]: async function* () { yield Buffer.from(JSON.stringify({ policy })) } }), save)
+    assert.equal(save.status, 200)
+    let parsed = parseYaml(readFileSync(join(dir, 'preset.yml'), 'utf8'))
+    assert.deepEqual(parsed.subagentToolPolicy, policy)
+    assert.ok(parsed.modules.includes('subagent-tool-policy'))
+    assert.equal(parsed.unknown, 'keep')
+    const disable = fakeRes()
+    await handler(fakeReq({ [Symbol.asyncIterator]: async function* () { yield Buffer.from(JSON.stringify({ policy: null })) } }), disable)
+    assert.equal(disable.status, 200)
+    parsed = parseYaml(readFileSync(join(dir, 'preset.yml'), 'utf8'))
+    assert.equal(parsed.subagentToolPolicy, undefined)
+    assert.ok(!parsed.modules.includes('subagent-tool-policy'))
+    assert.equal(parsed.unknown, 'keep')
+    assert.equal(rebuilds, 2)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})

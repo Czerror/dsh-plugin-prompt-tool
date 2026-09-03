@@ -1350,12 +1350,12 @@ export function registerSettingsBridge(
               const core = await import(policyUrl.href) as {
                 validateSubagentToolPolicy: (raw: unknown) => string[]
               }
-              const errors = core.validateSubagentToolPolicy(policy)
+              const isEmpty = policy === null || (typeof policy === 'object' && !Array.isArray(policy) && Object.keys(policy as Record<string, unknown>).length === 0)
+              const errors = isEmpty ? [] : core.validateSubagentToolPolicy(policy)
               if (errors.length > 0) {
                 writeBridgeJson(res, 409, { ok: false, code: 'subagent-tool-policy-rejected', message: '策略校验失败：' + errors.join('; '), value: { errors } })
                 return
               }
-              const isEmpty = policy === null || (typeof policy === 'object' && !Array.isArray(policy) && Object.keys(policy as Record<string, unknown>).length === 0)
               withPresetDoc(dir, (doc) => {
                 if (isEmpty) {
                   doc.deleteIn(['subagentToolPolicy'])
@@ -1407,7 +1407,9 @@ export function registerSettingsBridge(
               const ceilingAllow = (spec.subagentToolPolicy.ceiling as { allow?: unknown })?.allow
               const available = Array.isArray(ceilingAllow) ? ceilingAllow.map(String) : []
               const result = core.resolveSubagentToolPolicy(compiled, record as Record<string, unknown>, available)
-              writeBridgeJson(res, 200, { ok: true, value: { result } })
+              const tool = record.tool === 'subagent_fork' ? 'subagent_fork' : 'subagent'
+              const provider = tool === 'subagent_fork' ? 'fork' : 'spawn'
+              writeBridgeJson(res, 200, { ok: true, value: { result: { ...(result as Record<string, unknown>), tool, provider, providerCapability: '运行时创建前校验 toolFilter/continuable/depth/model-route' } } })
             } catch (error) {
               const message = error instanceof Error ? error.message : String(error)
               writeBridgeJson(res, 409, { ok: false, code: 'subagent-tool-policy-preview-failed', message: '策略预览失败：' + message })
@@ -1469,4 +1471,3 @@ export function registerSettingsBridge(
   })
   return { invalidateDescriptor: () => invalidateCachedDescriptor() }
 }
-

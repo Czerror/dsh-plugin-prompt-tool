@@ -11,6 +11,8 @@ export interface PromptToolHostApi {
    * 官方拒绝（例如会话已有 turn）时返回原因，调用方继续更新默认值。
    */
   switchPreset(id: string): Promise<PromptToolPresetSwitchResult>
+  /** 官方 sessions snapshot 中当前会话 id；只读且不持久化。 */
+  currentSessionId(): string | undefined
 }
 
 /** 官方 preset 切换结果。 */

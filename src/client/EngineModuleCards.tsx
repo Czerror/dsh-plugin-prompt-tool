@@ -262,6 +262,7 @@ export function DelegationToolsModuleCard(props: { store: PromptToolStore }): Re
         onToggleExpanded={() => setSpExpanded(!spExpanded)}
         onNotice={(kind, message) => store.showNotice(kind, message)}
         seedAllow={fields.toolFilterAllow}
+        currentSessionId={store.api.currentSessionId()}
       />
     </EngineModuleCard>
   )
