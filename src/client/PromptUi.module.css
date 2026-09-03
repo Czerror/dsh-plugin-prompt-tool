@@ -403,6 +403,15 @@
 /* 合并行里需要更宽的长文本输入（指令/描述/模板）。 */
 .sessionModelRow > .sessionModelRowWide { flex: 3 1 220px; }
 
+/* 密集行内联字段项：标签固定宽度，控件吃剩余空间（与 select/input 直挂同行兼容）。 */
+.sessionModelRow > .switchGridField { flex: 1 1 150px; }
+
+.switchGridItem > select,
+.switchGridItem > input {
+  flex: 1 1 72px;
+  min-width: 0;
+}
+
 /* 开关栅格：同卡多个布尔开关合并为一行（可换行），逐项说明收敛到 title 悬浮提示。 */
 .switchGrid {
   display: flex;

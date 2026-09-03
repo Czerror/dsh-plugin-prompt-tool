@@ -356,102 +356,95 @@ export function EngineModuleCards(props: { store: PromptToolStore; layerFilter?:
       </label>
     </span>
   )
-  // 合并行内的数字字段（无独立行）：placeholder = 字段名，说明收敛到 title；空 = 0 语义与原 numberRow 一致。
-  const numberField = (label: string, hint: string, value: number, onCommit: (next: number) => void, min = 0): ReactNode => (
-    <input
-      key={label}
-      className={styles.configInput}
-      type="number"
-      min={min}
-      step={1}
-      value={String(value)}
-      placeholder={label}
-      title={hint}
-      disabled={!fields.writePreset}
-      aria-label={label}
-      onChange={(event) => {
-        if (event.target.value.trim() === '') onCommit(0)
-        else {
-          const parsed = Number(event.target.value)
-          if (Number.isSafeInteger(parsed) && parsed >= 0) onCommit(parsed)
-        }
-      }}
-      onBlur={() => void store.persistParamOverrides()}
-    />
+  // 内联数字字段：标签 + 输入同一 flex 项（无独立行），说明收敛到 title；空 = 0 语义与原 numberRow 一致。
+  const inlineNumber = (label: string, hint: string, value: number, onCommit: (next: number) => void, min = 0): ReactNode => (
+    <span key={label} className={clsx(styles.switchGridItem, styles.switchGridField)} title={hint}>
+      <span className={styles.switchGridLabel}>{label}</span>
+      <input
+        className={styles.configInput}
+        type="number"
+        min={min}
+        step={1}
+        value={String(value)}
+        disabled={!fields.writePreset}
+        aria-label={label}
+        onChange={(event) => {
+          if (event.target.value.trim() === '') onCommit(0)
+          else {
+            const parsed = Number(event.target.value)
+            if (Number.isSafeInteger(parsed) && parsed >= 0) onCommit(parsed)
+          }
+        }}
+        onBlur={() => void store.persistParamOverrides()}
+      />
+    </span>
+  )
+  // 内联文本字段：标签 + 输入同一 flex 项；wide = 长文本吃更多宽度。
+  const inlineText = (label: string, hint: string, value: string, onChange: (next: string) => void, wide = false): ReactNode => (
+    <span key={label} className={clsx(styles.switchGridItem, styles.switchGridField, wide && styles.sessionModelRowWide)} title={hint}>
+      <span className={styles.switchGridLabel}>{label}</span>
+      <input
+        className={styles.configInput}
+        type="text"
+        value={value}
+        disabled={!fields.writePreset}
+        aria-label={label}
+        placeholder={label}
+        onChange={(event) => onChange(event.target.value)}
+        onBlur={() => void store.persistParamOverrides()}
+      />
+    </span>
   )
   return (
     <>
       {visible('system-section') && (
       <EngineModuleCard store={store} name="tool-bootstrap" layer="system-section" meta="目录相位 · 首轮窄化 / 门控晋升 / 压缩恢复">
         <div className={styles.settingRowStack}>
-          <span className={styles.settingCopy}>
-            <strong>首轮输出封顶</strong>
-            <small>bootstrapMaxTokens：首轮请求 #1 的 maxTokens（正整数，失焦保存）；开关关闭 = 不设上限。</small>
-          </span>
           <div className={styles.sessionModelRow}>
             <span className={styles.switchGridItem} title="bootstrapMaxTokens：关闭 = 首轮不设输出上限">
-              <span className={styles.switchGridLabel}>启用</span>
+              <span className={styles.switchGridLabel}>首轮输出封顶</span>
               <label className={styles.configEnable} htmlFor="pt-bootstrap-tokens">
                 <input id="pt-bootstrap-tokens" type="checkbox" checked={capped} disabled={!fields.writePreset} aria-label="首轮输出封顶" onChange={store.toggleBootstrapMaxTokens} />
                 <span className={styles.switch} aria-hidden="true"><i /></span>
               </label>
             </span>
-            <input
-              className={styles.configInput}
-              type="number"
-              min={1}
-              step={1}
-              value={store.bootstrapTokensDraft}
-              disabled={!fields.writePreset || !capped}
-              aria-label="首轮输出封顶数值"
-              placeholder="封顶数值"
-              onChange={(event) => store.setBootstrapTokensDraft(event.target.value)}
-              onBlur={store.commitBootstrapTokensDraft}
-            />
+            <span className={clsx(styles.switchGridItem, styles.switchGridField)} title="bootstrapMaxTokens：首轮请求 #1 的 maxTokens（正整数，失焦保存）">
+              <span className={styles.switchGridLabel}>数值</span>
+              <input
+                className={styles.configInput}
+                type="number"
+                min={1}
+                step={1}
+                value={store.bootstrapTokensDraft}
+                disabled={!fields.writePreset || !capped}
+                aria-label="首轮输出封顶数值"
+                onChange={(event) => store.setBootstrapTokensDraft(event.target.value)}
+                onBlur={store.commitBootstrapTokensDraft}
+              />
+            </span>
+            <span className={clsx(styles.switchGridItem, styles.switchGridField)} title="maxPromoteSteps：门控模式步数达上限强制晋升；0 = 引擎默认 4。失焦保存。">
+              <span className={styles.switchGridLabel}>门控回退步数</span>
+              <input
+                className={styles.configInput}
+                type="number"
+                min={0}
+                step={1}
+                value={store.gateStepsDraft}
+                disabled={!fields.writePreset}
+                aria-label="门控回退步数"
+                onChange={(event) => store.setGateStepsDraft(event.target.value)}
+                onBlur={store.commitGateStepsDraft}
+              />
+            </span>
+            {inlineText('首次调用指令', 'phase1FirstCallInstruction：phase-1 persona 追加的首次工具调用指令，例如 After your first reasoning block, make one tool call.；空 = 不追加。失焦保存。', fields.phase1FirstCallInstruction, (next) => store.patch({ phase1FirstCallInstruction: next }), true)}
           </div>
         </div>
         <div className={styles.settingRowStack}>
-          <span className={styles.settingCopy}>
-            <strong>晋升与首轮行为</strong>
-            <small>门控与首轮提示词行为的布尔开关；逐项说明见悬浮提示。</small>
-          </span>
           <div className={styles.switchGrid}>
             {gateChip('pt-promote-gate', '门控晋升', 'promoteGate：首段 reasoning minimal-like（we 无 let me）+ 工具调用才晋升', 'promoteGate')}
             {gateChip('pt-promote-after', '首响应即晋升', 'promoteAfterFirstResponse：无工具首响应 / 首轮 turn/end 即晋升', 'promoteAfterFirstResponse')}
             {gateChip('pt-persona-only', '首轮只留人设', 'personaSectionsOnly：phase-1 提示词段只留 persona（plan-mode 等晋升后恢复）', 'personaSectionsOnly')}
             {gateChip('pt-workspace-line', '工作目录行', 'workspaceLine：晋升后 persona 附加工作目录行', 'workspaceLine')}
-          </div>
-        </div>
-        <div className={styles.settingRowStack}>
-          <span className={styles.settingCopy}>
-            <strong>首次调用指令与门控回退</strong>
-            <small>phase1FirstCallInstruction：phase-1 persona 追加的首次工具调用指令（空 = 不追加）；maxPromoteSteps：门控步数达上限强制晋升（0 = 引擎默认 4）。失焦保存。</small>
-          </span>
-          <div className={styles.sessionModelRow}>
-            <input
-              className={clsx(styles.configInput, styles.sessionModelRowWide)}
-              type="text"
-              value={fields.phase1FirstCallInstruction}
-              disabled={!fields.writePreset}
-              aria-label="首次调用指令"
-              placeholder="首次调用指令（空 = 不追加）"
-              title="phase1FirstCallInstruction：phase-1 persona 追加的首次工具调用指令，例如 After your first reasoning block, make one tool call."
-              onChange={(event) => store.patch({ phase1FirstCallInstruction: event.target.value })}
-              onBlur={() => void store.persistParamOverrides()}
-            />
-            <input
-              className={styles.configInput}
-              type="number"
-              min={0}
-              step={1}
-              value={store.gateStepsDraft}
-              disabled={!fields.writePreset}
-              aria-label="门控回退步数"
-              placeholder="门控回退步数"
-              title="maxPromoteSteps：门控模式步数达上限强制晋升；0 = 引擎默认 4。失焦保存。"
-              onChange={(event) => store.setGateStepsDraft(event.target.value)}
-              onBlur={store.commitGateStepsDraft}
-            />
           </div>
         </div>
         <TagInput id="pt-bootstrap-tools" label="首轮窄化集" hint="bootstrapTools：首轮模型可见工具；清空 = 零工具模式（首请求空工具面，assistant/message 后晋升）。回车或逗号添加，× 移除。"
@@ -460,23 +453,9 @@ export function EngineModuleCards(props: { store: PromptToolStore; layerFilter?:
           onCommit={() => void store.persistParamOverrides()} />
         <div className={styles.configSectionTitle}>前置锚定轮（anchor-turn 模块）</div>
         <div className={styles.settingRowStack}>
-          <span className={styles.settingCopy}>
-            <strong>前置锚定轮</strong>
-            <small>anchorTurn：用户首条真实消息前 prepend 合成锚定轮（配合零工具模式 = 空工具面锚定，需模块列表已挂 anchor-turn 行）；anchorTurnText：锚定轮文本（空 = 引擎默认 &quot;This round is a test…&quot;）。失焦保存。</small>
-          </span>
           <div className={styles.sessionModelRow}>
-            {gateChip('pt-anchor-turn', '启用', 'anchorTurn：用户首条真实消息前 prepend 合成锚定轮（配合零工具模式 = 空工具面锚定）；需模块列表已挂 anchor-turn 行。', 'anchorTurn')}
-            <input
-              className={clsx(styles.configInput, styles.sessionModelRowWide)}
-              type="text"
-              value={fields.anchorTurnText}
-              disabled={!fields.writePreset}
-              aria-label="锚定文本"
-              placeholder="锚定文本（空 = 引擎默认）"
-              title="anchorTurnText：合成锚定轮文本，例如「你是谁」；空 = 引擎默认 This round is a test…。失焦保存。"
-              onChange={(event) => store.patch({ anchorTurnText: event.target.value })}
-              onBlur={() => void store.persistParamOverrides()}
-            />
+            {gateChip('pt-anchor-turn', '前置锚定轮', 'anchorTurn：用户首条真实消息前 prepend 合成锚定轮（配合零工具模式 = 空工具面锚定）；需模块列表已挂 anchor-turn 行。', 'anchorTurn')}
+            {inlineText('锚定文本', 'anchorTurnText：合成锚定轮文本，例如「你是谁」；空 = 引擎默认 This round is a test…。失焦保存。', fields.anchorTurnText, (next) => store.patch({ anchorTurnText: next }), true)}
           </div>
         </div>
         <TagInput id="pt-compaction-tools" label="压缩后恢复集" hint="compactionTools：压缩后回到受控相位时的核心工作集（模型中途继续工作）。回车或逗号添加，× 移除。"
@@ -488,25 +467,24 @@ export function EngineModuleCards(props: { store: PromptToolStore; layerFilter?:
         </div>
         {fields.stages.map((stage, index) => (
           <div key={`stage-${index}`} className={styles.settingRowStack}>
-            <span className={styles.settingCopy}>
-              <strong>{`阶段 ${index + 1}`}</strong>
-              <small>名称 + 本阶段工具集（空名称或空工具集的行不写入）；右侧按钮调整顺序或删除。</small>
-            </span>
             <div className={styles.sessionModelRow}>
-              <input
-                className={clsx(styles.configInput, styles.sessionModelRowWide)}
-                type="text"
-                value={stage.name}
-                disabled={!fields.writePreset}
-                aria-label={`阶段 ${index + 1} 名称`}
-                placeholder="阶段名（如 了解 / 开发 / 验证）"
-                onChange={(event) => {
-                  const next = [...fields.stages]
-                  next[index] = { ...stage, name: event.target.value }
-                  store.patch({ stages: next })
-                }}
-                onBlur={() => void store.persistParamOverrides()}
-              />
+              <span className={clsx(styles.switchGridItem, styles.switchGridField, styles.sessionModelRowWide)} title="阶段名称（空名称或空工具集的行不写入）。失焦保存。">
+                <span className={styles.switchGridLabel}>{`阶段 ${index + 1}`}</span>
+                <input
+                  className={styles.configInput}
+                  type="text"
+                  value={stage.name}
+                  disabled={!fields.writePreset}
+                  aria-label={`阶段 ${index + 1} 名称`}
+                  placeholder="阶段名（如 了解 / 开发 / 验证）"
+                  onChange={(event) => {
+                    const next = [...fields.stages]
+                    next[index] = { ...stage, name: event.target.value }
+                    store.patch({ stages: next })
+                  }}
+                  onBlur={() => void store.persistParamOverrides()}
+                />
+              </span>
               <span className={styles.configActions}>
                 <button type="button" className={styles.pillButton} aria-label={`上移阶段 ${index + 1}`} title="上移"
                   disabled={!fields.writePreset || index === 0} onClick={() => {
@@ -554,45 +532,11 @@ export function EngineModuleCards(props: { store: PromptToolStore; layerFilter?:
             }}>+ 添加阶段</button>
         </div>
         <div className={styles.settingRowStack}>
-          <span className={styles.settingCopy}>
-            <strong>阶段推进与状态</strong>
-            <small>{'预放档数 / 推进工具名（空 = phase_advance）/ 推进工具描述 / 阶段状态模板（{{stage}}/{{stageName}}/{{unlocked}}/{{total}}，空 = 不注入）；逐项说明见悬浮提示。失焦保存。'}</small>
-          </span>
           <div className={styles.sessionModelRow}>
-            {numberField('预放档数', 'stagePreUnlock：调用预放档工具 = 直达其档；0 = 不预放，未设置 = 引擎默认 1。', fields.stagePreUnlock, (next) => store.patch({ stagePreUnlock: next }))}
-            <input
-              className={styles.configInput}
-              type="text"
-              value={fields.stageAdvanceTool}
-              disabled={!fields.writePreset}
-              aria-label="推进工具名"
-              placeholder="推进工具名"
-              title="stageAdvanceTool：阶段推进工具（模型调用即进下一档）；空 = 默认 phase_advance。失焦保存。"
-              onChange={(event) => store.patch({ stageAdvanceTool: event.target.value })}
-              onBlur={() => void store.persistParamOverrides()}
-            />
-            <input
-              className={styles.configInput}
-              type="text"
-              value={fields.stageAdvanceDescription}
-              disabled={!fields.writePreset}
-              aria-label="推进工具描述"
-              placeholder="推进工具描述"
-              title="stageAdvanceDescription：阶段推进工具的模型可见描述，例如 Advance to the next stage.；空 = 引擎默认。失焦保存。"
-              onChange={(event) => store.patch({ stageAdvanceDescription: event.target.value })}
-              onBlur={() => void store.persistParamOverrides()}
-            />
-            <input
-              className={clsx(styles.configInput, styles.sessionModelRowWide)}
-              type="text"
-              value={fields.stageSectionTemplate}
-              disabled={!fields.writePreset}
-              aria-label="阶段状态模板"
-              placeholder="阶段状态模板"
-              title={'stageSectionTemplate：阶段状态 section 模板，例如 Stage {{stageName}} ({{stage}}/{{total}}). Unlocked: {{unlocked}}.；空 = 不注入。失焦保存。'}
-              onChange={(event) => store.patch({ stageSectionTemplate: event.target.value })}
-              onBlur={() => void store.persistParamOverrides()}
-            />
+            {inlineNumber('预放档数', 'stagePreUnlock：调用预放档工具 = 直达其档；0 = 不预放，未设置 = 引擎默认 1。', fields.stagePreUnlock, (next) => store.patch({ stagePreUnlock: next }))}
+            {inlineText('推进工具名', 'stageAdvanceTool：阶段推进工具（模型调用即进下一档）；空 = 默认 phase_advance。失焦保存。', fields.stageAdvanceTool, (next) => store.patch({ stageAdvanceTool: next }))}
+            {inlineText('推进工具描述', 'stageAdvanceDescription：阶段推进工具的模型可见描述，例如 Advance to the next stage.；空 = 引擎默认。失焦保存。', fields.stageAdvanceDescription, (next) => store.patch({ stageAdvanceDescription: next }))}
+            {inlineText('阶段状态模板', 'stageSectionTemplate：阶段状态 section 模板，例如 Stage {{stageName}} ({{stage}}/{{total}}). Unlocked: {{unlocked}}.；空 = 不注入。失焦保存。', fields.stageSectionTemplate, (next) => store.patch({ stageSectionTemplate: next }), true)}
           </div>
         </div>
       </EngineModuleCard>
@@ -612,13 +556,9 @@ export function EngineModuleCards(props: { store: PromptToolStore; layerFilter?:
           onChange={(value) => store.patch({ deferredSources: value })}
           onCommit={() => void store.persistParamOverrides()} />
         <div className={styles.settingRowStack}>
-          <span className={styles.settingCopy}>
-            <strong>延迟宽限与指令提示</strong>
-            <small>deferredGraceSteps：晋升后前 N 步过滤延迟注入源（0 = 不延迟）；instructionHint：晋升后 agent-instructions 全文 → 一次性引用提示。失焦保存。</small>
-          </span>
           <div className={styles.sessionModelRow}>
             {gateChip('pt-instr-hint', '指令提示转换', 'instructionHint：晋升后 agent-instructions 全文 → 一次性引用提示', 'instructionHint')}
-            {numberField('延迟宽限步数', 'deferredGraceSteps：晋升后前 N 步过滤延迟注入源；0 = 不延迟。', fields.deferredGraceSteps, (next) => store.patch({ deferredGraceSteps: next }))}
+            {inlineNumber('延迟宽限步数', 'deferredGraceSteps：晋升后前 N 步过滤延迟注入源；0 = 不延迟。失焦保存。', fields.deferredGraceSteps, (next) => store.patch({ deferredGraceSteps: next }))}
           </div>
         </div>
       </EngineModuleCard>
@@ -642,59 +582,42 @@ export function EngineModuleCards(props: { store: PromptToolStore; layerFilter?:
           onChange={(value) => store.patch({ toolFilterDeny: value })}
           onCommit={() => void store.persistParamOverrides()} />
         <div className={styles.settingRowStack}>
-          <span className={styles.settingCopy}>
-            <strong>子代理过滤与编辑器输出</strong>
-            <small>toolFilterSubagents：主会话过滤也作用于子代理（false/未设置 = 不受限）；strReplaceEditorMaxOutputChars：str_replace_editor 单次输出字符上限（16000 = 官方默认）。</small>
-          </span>
           <div className={styles.sessionModelRow}>
             {gateChip('pt-tool-filter-subagents', '子代理同过滤', 'toolFilterSubagents：主会话 tool-filter 也作用于子代理；false/未设置 = 子代理不受主会话过滤限制。', 'toolFilterSubagents')}
-            {numberField('编辑器输出上限', 'strReplaceEditorMaxOutputChars：str_replace_editor 单次输出字符上限；16000 = 官方默认。', fields.strReplaceEditorMaxOutputChars, (next) => store.patch({ strReplaceEditorMaxOutputChars: next }), 1)}
+            {inlineNumber('编辑器输出上限', 'strReplaceEditorMaxOutputChars：str_replace_editor 单次输出字符上限；16000 = 官方默认。失焦保存。', fields.strReplaceEditorMaxOutputChars, (next) => store.patch({ strReplaceEditorMaxOutputChars: next }), 1)}
           </div>
         </div>
 
-        <div className={styles.configSectionTitle}>委派（delegation）</div>
+        <div className={styles.configSectionTitle}>委派与深思门控（delegation · deliberation-gate · cot-drip）</div>
         <div className={styles.settingRowStack}>
-          <span className={styles.settingCopy}>
-            <strong>递归深度</strong>
-            <small>委派 maxDepth：0 禁止委派；provider-managed 由服务商管理；正整数限制递归层数；不设置 = 官方默认。选择即保存。</small>
-          </span>
-          <select
-            className={styles.configInput}
-            aria-label="递归深度"
-            value={fields.maxDepth}
-            disabled={!fields.writePreset}
-            onChange={(event) => {
-              store.patch({ maxDepth: event.target.value })
-              void store.persistParamOverrides()
-            }}
-          >
-            {maxDepthOptions.map((item) => (
-              <option key={item} value={item}>{item === '' ? '（不设置）' : item}</option>
-            ))}
-          </select>
-        </div>
-
-        <div className={styles.configSectionTitle}>深思门控（deliberation-gate / cot-drip 模块）</div>
-        <div className={styles.settingRowStack}>
-          <span className={styles.settingCopy}>
-            <strong>门控开关</strong>
-            <small>轨迹深度门 / 深思维持节拍；需模块列表已挂对应行。逐项说明见悬浮提示。</small>
-          </span>
           <div className={styles.switchGrid}>
+            <span className={clsx(styles.switchGridItem, styles.switchGridField)} title="委派 maxDepth：0 禁止委派；provider-managed 由服务商管理；正整数限制递归层数；不设置 = 官方默认。选择即保存。">
+              <span className={styles.switchGridLabel}>递归深度</span>
+              <select
+                className={styles.configInput}
+                aria-label="递归深度"
+                value={fields.maxDepth}
+                disabled={!fields.writePreset}
+                onChange={(event) => {
+                  store.patch({ maxDepth: event.target.value })
+                  void store.persistParamOverrides()
+                }}
+              >
+                {maxDepthOptions.map((item) => (
+                  <option key={item} value={item}>{item === '' ? '（不设置）' : item}</option>
+                ))}
+              </select>
+            </span>
             {gateChip('pt-deliberation-gate', '轨迹深度门', 'deliberationGate：首工具调用前流式深思 < 下限时 deny 一次（规划式提示）；需模块列表已挂 deliberation-gate 行。', 'deliberationGate')}
             {gateChip('pt-cot-drip', '深思维持节拍', 'cotDrip：每 N 次工具结果滴入一条 "We…" 重申提醒（additionalContexts）；需模块列表已挂 cot-drip 行。', 'cotDrip')}
           </div>
         </div>
         <div className={styles.settingRowStack}>
-          <span className={styles.settingCopy}>
-            <strong>门控与节拍参数</strong>
-            <small>深思下限（0 = 默认 400）/ 每轮最大门控（0 = 默认 1）/ 节拍间隔（0 = 默认 4）/ 每轮最大提醒（0 = 默认 1）；逐项说明见悬浮提示。失焦保存。</small>
-          </span>
           <div className={styles.sessionModelRow}>
-            {numberField('深思下限', 'deliberationMinChars：首工具调用前的流式深思字符数下限；0 = 引擎默认 400。', fields.deliberationMinChars, (next) => store.patch({ deliberationMinChars: next }))}
-            {numberField('每轮最大门控', 'deliberationMaxGatesPerTurn：每轮最多 deny 次数；0 = 引擎默认 1。', fields.deliberationMaxGatesPerTurn, (next) => store.patch({ deliberationMaxGatesPerTurn: next }))}
-            {numberField('节拍间隔', 'cotDripEvery：每几次工具结果滴入一条；0 = 引擎默认 4（0 禁用由引擎 every:0 语义处理）。', fields.cotDripEvery, (next) => store.patch({ cotDripEvery: next }))}
-            {numberField('每轮最大提醒', 'cotDripMaxPerTurn：每轮最多提醒条数；0 = 引擎默认 1。', fields.cotDripMaxPerTurn, (next) => store.patch({ cotDripMaxPerTurn: next }))}
+            {inlineNumber('深思下限', 'deliberationMinChars：首工具调用前的流式深思字符数下限；0 = 引擎默认 400。失焦保存。', fields.deliberationMinChars, (next) => store.patch({ deliberationMinChars: next }))}
+            {inlineNumber('每轮最大门控', 'deliberationMaxGatesPerTurn：每轮最多 deny 次数；0 = 引擎默认 1。失焦保存。', fields.deliberationMaxGatesPerTurn, (next) => store.patch({ deliberationMaxGatesPerTurn: next }))}
+            {inlineNumber('节拍间隔', 'cotDripEvery：每几次工具结果滴入一条；0 = 引擎默认 4（0 禁用由引擎 every:0 语义处理）。失焦保存。', fields.cotDripEvery, (next) => store.patch({ cotDripEvery: next }))}
+            {inlineNumber('每轮最大提醒', 'cotDripMaxPerTurn：每轮最多提醒条数；0 = 引擎默认 1。失焦保存。', fields.cotDripMaxPerTurn, (next) => store.patch({ cotDripMaxPerTurn: next }))}
           </div>
         </div>
       </EngineModuleCard>
