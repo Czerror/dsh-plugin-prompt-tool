@@ -27,8 +27,7 @@ test('client bridge 调用只使用共享契约 key，不出现字面路径', ()
 })
 
 test('工作台顶层页面 id 与顺序保持稳定', () => {
-  const source = read('PromptWorkspace.tsx')
-  const block = source.slice(source.indexOf('const TOP_PAGES'), source.indexOf('/** 侧边栏独立工作台'))
-  const ids = [...block.matchAll(/id: '([^']+)'/g)].map((match) => match[1])
+  const source = read('app/workspace/workspace-pages.ts')
+  const ids = [...source.matchAll(/id: '([^']+)'/g)].map((match) => match[1])
   assert.deepEqual(ids, ['features', 'subagent', 'skills', 'presets', 'characters'])
 })

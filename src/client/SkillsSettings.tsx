@@ -299,9 +299,12 @@ export const SkillsSettings = memo(function SkillsSettings(props: { store: Promp
               {SKILL_STATUS_TABS.map((tab) => (
                 <button
                   key={tab.id}
+                  id={`pt-skills-tab-${tab.id}`}
                   type="button"
                   role="tab"
+                  tabIndex={statusTab === tab.id ? 0 : -1}
                   aria-selected={statusTab === tab.id}
+                  aria-controls="pt-skills-panel"
                   data-active={statusTab === tab.id ? '' : undefined}
                   onClick={() => setStatusTab(tab.id)}
                   onKeyDown={tabKeyHandler(SKILL_STATUS_TABS.map((entry) => entry.id), statusTab, setStatusTab)}
@@ -338,6 +341,12 @@ export const SkillsSettings = memo(function SkillsSettings(props: { store: Promp
         </>
       )}
 
+      <div
+        id="pt-skills-panel"
+        role="tabpanel"
+        aria-labelledby={`pt-skills-tab-${statusTab}`}
+        tabIndex={0}
+      >
       {fields.skillCatalog.length === 0 ? (
         <div className={ui.emptyState}><span className={ui.emptyGlyph} aria-hidden="true">◇</span><div><h3>skills 目录下没有技能</h3><p>展开下方「目录与来源」选择目录导入，或确认技能目录路径后重新打开工作台。</p></div></div>
       ) : visibleSkills.length === 0 ? (
@@ -377,6 +386,7 @@ export const SkillsSettings = memo(function SkillsSettings(props: { store: Promp
           </div>
         </>
       )}
+      </div>
 
       <CollapsibleCard id="pt-skills-dirs" title="目录与来源"
         meta={`${displaySkillsDirs.length} 个目录 · 添加 / 移除引用`}>

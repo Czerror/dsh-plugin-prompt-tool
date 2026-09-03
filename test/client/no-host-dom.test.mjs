@@ -21,7 +21,7 @@ test('客户端装配层不自建 root 或观察宿主 DOM（官方 slot + body 
     assert.ok(!source.includes('logoRow'), `${file} 不应依赖宿主侧边栏结构`)
   }
 
-  const css = [read('src/client/PromptWorkspace.module.css'), read('src/client/app/workbench/Workbench.module.css')].join('\\n')
+  const css = [read('src/client/app/workspace/PromptWorkspace.module.css'), read('src/client/app/workbench/Workbench.module.css')].join('\\n')
   assert.ok(!css.includes('data-dsh-prompt-tool-active'), 'CSS 不应依赖宿主 html active 属性')
   assert.ok(!css.includes('centerCol'), 'CSS 不应依赖宿主中央列结构')
   assert.ok(!css.includes('data-dsh-workspace-slot'), 'CSS 不应探测官方 workspace DOM 槽位')

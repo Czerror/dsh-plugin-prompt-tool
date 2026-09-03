@@ -1,4 +1,4 @@
-/** ARIA tabs 键盘导航：左右切换、Home/End 跳首尾（顶层页、技能筛选共用）。 */
+/** ARIA tabs 键盘导航：左右切换、Home/End 跳首尾，并把焦点移到新 tab。 */
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react'
 
 /** 纯索引算法：无效索引、空列表或非导航键均不产生目标。 */
@@ -21,5 +21,6 @@ export function tabKeyHandler<T>(
     if (next === undefined) return
     event.preventDefault()
     onSelect(items[next]!)
+    event.currentTarget.parentElement?.querySelectorAll<HTMLElement>('[role="tab"]')[next]?.focus()
   }
 }
