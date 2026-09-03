@@ -2,9 +2,9 @@
 import { memo, type ReactNode } from 'react'
 import { usePromptToolFields } from './data/use-prompt-tool-fields.ts'
 import { PresetSwitcher } from './PresetSwitcher.tsx'
-import { ToggleRow } from './ToggleRow.tsx'
-import { CollapsibleCard } from './CollapsibleCard.tsx'
-import { SettingInputRow } from './SettingInputRow.tsx'
+import { ToggleRow } from './ui/ToggleRow.tsx'
+import { CollapsibleCard } from './ui/CollapsibleCard.tsx'
+import { SettingInputRow } from './ui/SettingInputRow.tsx'
 import ui from './PromptUi.module.css'
 import type { PromptToolStore } from './data/use-prompt-tool-store.ts'
 

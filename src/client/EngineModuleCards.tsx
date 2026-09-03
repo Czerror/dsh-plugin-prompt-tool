@@ -1,7 +1,7 @@
 import { useState, useSyncExternalStore, type ReactNode } from 'react'
 import clsx from 'clsx'
 import { IconChevronDownOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
-import { TagInput } from './TagInput.tsx'
+import { TagInput } from './ui/TagInput.tsx'
 import { SubagentToolPolicyCard } from './SubagentToolPolicyCard.tsx'
 import styles from './PromptUi.module.css'
 

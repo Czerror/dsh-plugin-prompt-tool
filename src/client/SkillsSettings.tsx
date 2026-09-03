@@ -7,9 +7,9 @@ import type { SkillCatalogEntry } from './data/prompt-tool-fields.ts'
 import type { PromptToolStore } from './data/use-prompt-tool-store.ts'
 import type { PromptToolHostApi } from './data/host-api.ts'
 import { usePromptToolFields } from './data/use-prompt-tool-fields.ts'
-import { tabKeyHandler } from './tab-key.ts'
-import { CollapsibleCard } from './CollapsibleCard.tsx'
-import { SettingInputRow } from './SettingInputRow.tsx'
+import { tabKeyHandler } from './ui/tab-key.ts'
+import { CollapsibleCard } from './ui/CollapsibleCard.tsx'
+import { SettingInputRow } from './ui/SettingInputRow.tsx'
 import ui from './PromptUi.module.css'
 
 /** 技能调用状态徽章：只保留模型可调用状态，开关关闭后立即变灰。 */

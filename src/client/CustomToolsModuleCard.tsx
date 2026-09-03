@@ -6,7 +6,7 @@ import { useEffect, useState, type ReactNode } from 'react'
 import clsx from 'clsx'
 import { IconChevronDownOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { bridgeCall } from './data/bridge-client.ts'
-import { Field } from './PromptConfigCard.tsx'
+import { FormField } from './ui/FormField.tsx'
 import { TemplatePicker } from './TemplatePicker.tsx'
 import { ToolSurfaceView } from './ToolSurfaceView.tsx'
 import styles from './PromptUi.module.css'
@@ -157,93 +157,93 @@ function CustomToolCard(props: {
       {props.expanded && (
         <div className={styles.configForm}>
           <span className={styles.variableRow}>
-            <Field label="id（文件标识）">
+            <FormField label="id（文件标识）">
               <input className={styles.configInput} aria-label="工具 id" value={id} spellCheck={false}
                 onChange={(e) => props.onPatch({ id: e.target.value })} />
-            </Field>
-            <Field label="name（模型可见名）">
+            </FormField>
+            <FormField label="name（模型可见名）">
               <input className={styles.configInput} aria-label="工具名" value={name} spellCheck={false} placeholder="my_tool"
                 onChange={(e) => props.onPatch({ name: e.target.value })} />
-            </Field>
+            </FormField>
           </span>
-          <Field label="description（模型可见描述）">
+          <FormField label="description（模型可见描述）">
             <textarea className={styles.configTextarea} rows={2} aria-label="工具描述" value={description} spellCheck={false}
               placeholder="描述该工具给模型看"
               onChange={(e) => props.onPatch({ description: e.target.value })} />
-          </Field>
-          <Field label="execute.kind（执行器）" hint="shell=命令；http=请求；delegate=委托内置/已注册工具；fs=工作区文件；ask-user=询问用户">
+          </FormField>
+          <FormField label="execute.kind（执行器）" hint="shell=命令；http=请求；delegate=委托内置/已注册工具；fs=工作区文件；ask-user=询问用户">
             <select className={styles.configInput} aria-label="执行器" value={kind}
               onChange={(e) => patchExecute({ kind: e.target.value })}>
               {KIND_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
             </select>
-          </Field>
+          </FormField>
           {kind === 'shell' && (
             <>
-              <Field label="command" hint={'{{args.x}} 参数插值；env 白名单；cwd=会话工作区'}>
+              <FormField label="command" hint={'{{args.x}} 参数插值；env 白名单；cwd=会话工作区'}>
                 <textarea className={styles.configTextarea} rows={3} aria-label="shell 命令" spellCheck={false}
                   value={typeof execute.command === 'string' ? execute.command : ''} placeholder="Write-Output {{args.x}}"
                   onChange={(e) => patchExecute({ command: e.target.value })} />
-              </Field>
-              <Field label="shell" hint="pwsh 强制 UTF-8 输出（中文不乱码）">
+              </FormField>
+              <FormField label="shell" hint="pwsh 强制 UTF-8 输出（中文不乱码）">
                 <select className={styles.configInput} aria-label="shell"
                   value={typeof execute.shell === 'string' ? execute.shell : 'pwsh'}
                   onChange={(e) => patchExecute({ shell: e.target.value })}>
                   {SHELLS.map((shell) => <option key={shell} value={shell}>{shell}</option>)}
                 </select>
-              </Field>
+              </FormField>
             </>
           )}
           {kind === 'http' && (
             <>
-              <Field label="url" hint={'{{args.x}} 参数插值'}>
+              <FormField label="url" hint={'{{args.x}} 参数插值'}>
                 <input className={styles.configInput} aria-label="请求 URL" spellCheck={false}
                   value={typeof execute.url === 'string' ? execute.url : ''} placeholder="https://…/{{args.q}}"
                   onChange={(e) => patchExecute({ url: e.target.value })} />
-              </Field>
-              <Field label="method">
+              </FormField>
+              <FormField label="method">
                 <select className={styles.configInput} aria-label="请求方法"
                   value={typeof execute.method === 'string' ? execute.method : 'GET'}
                   onChange={(e) => patchExecute({ method: e.target.value })}>
                   {HTTP_METHODS.map((method) => <option key={method} value={method}>{method}</option>)}
                 </select>
-              </Field>
+              </FormField>
             </>
           )}
           {kind === 'delegate' && (
-            <Field label="tool（委托目标）" hint={`内置工具：${BUILTIN_TOOL_NAMES.join(' / ')}`}>
+            <FormField label="tool（委托目标）" hint={`内置工具：${BUILTIN_TOOL_NAMES.join(' / ')}`}>
               <input className={styles.configInput} aria-label="委托目标工具" spellCheck={false}
                 value={typeof execute.tool === 'string' ? execute.tool : ''} placeholder="world_book_upsert"
                 onChange={(e) => patchExecute({ tool: e.target.value })} />
-            </Field>
+            </FormField>
           )}
           {kind === 'fs' && (
             <>
-              <Field label="action">
+              <FormField label="action">
                 <select className={styles.configInput} aria-label="fs 动作"
                   value={typeof execute.action === 'string' && (FS_ACTIONS as readonly string[]).includes(execute.action) ? execute.action : 'read'}
                   onChange={(e) => patchExecute({ action: e.target.value })}>
                   {FS_ACTIONS.map((action) => <option key={action} value={action}>{action}</option>)}
                 </select>
-              </Field>
-              <Field label="path" hint="相对工作区路径；越界拒绝">
+              </FormField>
+              <FormField label="path" hint="相对工作区路径；越界拒绝">
                 <input className={styles.configInput} aria-label="文件路径" spellCheck={false}
                   value={typeof execute.path === 'string' ? execute.path : ''} placeholder="data/{{args.name}}.json"
                   onChange={(e) => patchExecute({ path: e.target.value })} />
-              </Field>
+              </FormField>
             </>
           )}
           {kind === 'ask-user' && (
-            <Field label="question（向用户确认的问题）">
+            <FormField label="question（向用户确认的问题）">
               <input className={styles.configInput} aria-label="询问问题" spellCheck={false}
                 value={typeof execute.question === 'string' ? execute.question : ''} placeholder="是否继续执行该操作？"
                 onChange={(e) => patchExecute({ question: e.target.value })} />
-            </Field>
+            </FormField>
           )}
           <ParameterRowsEditor
             value={asRecord(tool.parameters)}
             onChange={(next) => props.onPatch({ parameters: next })}
           />
-          <Field label="output.schema（JSON；默认开放对象）">
+          <FormField label="output.schema（JSON；默认开放对象）">
             <textarea className={styles.configTextarea} rows={4} aria-label="输出 schema JSON" spellCheck={false}
               value={JSON.stringify(asRecord(tool.output), null, 2) === '{}' ? '' : JSON.stringify(asRecord(tool.output), null, 2)}
               onChange={(e) => {
@@ -251,7 +251,7 @@ function CustomToolCard(props: {
                 if (text.length === 0) { props.onPatch({ output: { schema: { type: 'object', additionalProperties: true } } }); return }
                 try { patchJson('output', JSON.parse(text) as ToolDraft) } catch { /* 解析失败不落盘 */ }
               }} />
-          </Field>
+          </FormField>
         </div>
       )}
     </article>

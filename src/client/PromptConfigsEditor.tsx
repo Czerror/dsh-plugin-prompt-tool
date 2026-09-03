@@ -14,7 +14,7 @@ import type { PromptToolStore } from './data/use-prompt-tool-store.ts'
 
 export type { PromptConfigDraft, LayerFieldPolicy } from './prompt-tool-types.ts'
 export type { ValidationErrorEntry } from './prompt-tool-types.ts'
-export { Field, JsonField, PromptConfigCard, PromptConfigForm, SOURCE_FORMS, SOURCE_KINDS, fieldPolicyFor } from './PromptConfigCard.tsx'
+export { JsonField, PromptConfigCard, PromptConfigForm, SOURCE_FORMS, SOURCE_KINDS, fieldPolicyFor } from './PromptConfigCard.tsx'
 
 export type { PromptConfigTemplateEntry } from './prompt-tool-types.ts'
 

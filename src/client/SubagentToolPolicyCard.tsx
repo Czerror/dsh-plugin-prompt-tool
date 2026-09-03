@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import clsx from 'clsx'
 import { bridgeCall } from './data/bridge-client.ts'
-import { TagInput } from './TagInput.tsx'
+import { TagInput } from './ui/TagInput.tsx'
 import { ToolSurfaceView } from './ToolSurfaceView.tsx'
 import styles from './PromptUi.module.css'
 

@@ -1,5 +1,6 @@
 /** 内置模板选择弹窗：按注入层分组展示；传入 layer 时只显示该层模板。 */
-import { useEffect, useRef, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
+import type { ReactNode } from 'react'
+import { useDialogFocus } from './ui/dialog-focus.ts'
 import styles from './PromptUi.module.css'
 import type { PromptConfigTemplateEntry } from './prompt-tool-types.ts'
 
@@ -25,43 +26,7 @@ export function TemplatePicker(props: {
   onClose: () => void
 }): ReactNode {
   const { templates, layer, onPick, toolTemplates, onPickTool, onPickVariables, onClose } = props
-  const dialogRef = useRef<HTMLDivElement>(null)
-  const restoreRef = useRef<HTMLElement | null>(null)
-
-  // 打开时记录触发元素并聚焦弹窗首控件；关闭时还原焦点（焦点陷阱闭环）。
-  useEffect(() => {
-    restoreRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
-    dialogRef.current?.querySelector<HTMLElement>('button')?.focus()
-    return () => { restoreRef.current?.focus() }
-  }, [])
-
-  const onDialogKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>): void => {
-    if (event.key === 'Escape') {
-      event.preventDefault()
-      event.stopPropagation()
-      onClose()
-      return
-    }
-    if (event.key !== 'Tab') return
-    const dialog = dialogRef.current
-    if (dialog === null) return
-    const focusables = [...dialog.querySelectorAll<HTMLElement>(
-      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
-    )].filter((element) => !element.hasAttribute('disabled'))
-    if (focusables.length === 0) return
-    const first = focusables[0]!
-    const last = focusables[focusables.length - 1]!
-    const active = document.activeElement
-    if (event.shiftKey) {
-      if (active === first || !dialog.contains(active)) {
-        event.preventDefault()
-        last.focus()
-      }
-    } else if (active === last || !dialog.contains(active)) {
-      event.preventDefault()
-      first.focus()
-    }
-  }
+  const { dialogRef, onDialogKeyDown } = useDialogFocus<HTMLDivElement>(true, onClose)
 
   const visible = layer === undefined
     ? templates

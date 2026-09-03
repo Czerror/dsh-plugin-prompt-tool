@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { nextTabIndex, tabKeyHandler } from '../../src/client/tab-key.ts'
+import { nextTabIndex, tabKeyHandler } from '../../src/client/ui/tab-key.ts'
 
 test('tab index：左右循环，Home/End 跳转，其他键不处理', () => {
   assert.equal(nextTabIndex(3, 0, 'ArrowRight'), 1)

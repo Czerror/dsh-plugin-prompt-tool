@@ -3,7 +3,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings-plugins/client'
 import type { InjectFace, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import { bridgeCall } from '../../data/bridge-client.ts'
-import { ToggleRow } from '../../ToggleRow.tsx'
+import { ToggleRow } from '../../ui/ToggleRow.tsx'
 import type { PromptToolWorkbenchFace } from './workbench-face.ts'
 import ui from '../../PromptUi.module.css'
 /** settings.plugins.tab：基础开关（settings 命名空间直读直写，官方 SettingsScope 通道）。 */

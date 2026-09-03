@@ -1,10 +1,11 @@
 /** 预设切换器：预设全部在用户目录（首次启动种子化），列表点击切换；新建 = 从内置模板复制还原。 */
-import { memo, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
+import { memo, useRef, useState, type ReactNode } from 'react'
 import { usePromptToolFields } from './data/use-prompt-tool-fields.ts'
 import clsx from 'clsx'
 import { IconCopyOutline16, IconFolderOpenOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { bridgeCall } from './data/bridge-client.ts'
 import type { PromptToolStore } from './data/use-prompt-tool-store.ts'
+import { useDialogFocus } from './ui/dialog-focus.ts'
 import styles from './PromptUi.module.css'
 
 export const PresetSwitcher = memo(function PresetSwitcher(props: { store: PromptToolStore }): ReactNode {
@@ -15,20 +16,10 @@ export const PresetSwitcher = memo(function PresetSwitcher(props: { store: Promp
   const [importing, setImporting] = useState(false)
   const [confirmingDelete, setConfirmingDelete] = useState<string | undefined>(undefined)
   const [pickerOpen, setPickerOpen] = useState(false)
-  const dialogRef = useRef<HTMLDivElement>(null)
   const yamlRef = useRef<HTMLInputElement>(null)
   const dirRef = useRef<HTMLInputElement>(null)
 
-  // 新建弹窗：聚焦首控件 + Esc 关闭。
-  useEffect(() => {
-    if (!pickerOpen) return
-    dialogRef.current?.querySelector<HTMLElement>('button')?.focus()
-    const onKeyDown = (event: globalThis.KeyboardEvent): void => {
-      if (event.key === 'Escape') setPickerOpen(false)
-    }
-    document.addEventListener('keydown', onKeyDown)
-    return () => document.removeEventListener('keydown', onKeyDown)
-  }, [pickerOpen])
+  const { dialogRef, onDialogKeyDown } = useDialogFocus<HTMLDivElement>(pickerOpen, () => setPickerOpen(false))
 
   /** 上传预设包：path 为相对路径（preset.yml 或文件夹内文件），服务端按 id 归入用户预设目录。 */
   const uploadPreset = async (entries: Array<{ path: string; content: string }>): Promise<void> => {
@@ -127,26 +118,6 @@ export const PresetSwitcher = memo(function PresetSwitcher(props: { store: Promp
       await store.load()
     } else {
       store.showNotice('error', '新建预设失败：' + (res.message ?? 'settings bridge unavailable'))
-    }
-  }
-
-  const onDialogKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>): void => {
-    if (event.key !== 'Tab' || dialogRef.current === null) return
-    const focusables = [...dialogRef.current.querySelectorAll<HTMLElement>(
-      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
-    )].filter((element) => !element.hasAttribute('disabled'))
-    if (focusables.length === 0) return
-    const first = focusables[0]!
-    const last = focusables[focusables.length - 1]!
-    const active = document.activeElement
-    if (event.shiftKey) {
-      if (active === first || !dialogRef.current.contains(active)) {
-        event.preventDefault()
-        last.focus()
-      }
-    } else if (active === last || !dialogRef.current.contains(active)) {
-      event.preventDefault()
-      first.focus()
     }
   }
 

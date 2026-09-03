@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { tabKeyHandler } from '../../tab-key.ts'
+import { tabKeyHandler } from '../../ui/tab-key.ts'
 import { WORKSPACE_PAGE_IDS, WORKSPACE_PAGES, type WorkspacePage } from './workspace-pages.ts'
 import css from './PromptWorkspace.module.css'
 
