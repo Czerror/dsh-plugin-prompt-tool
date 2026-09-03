@@ -281,8 +281,9 @@ export function ModelRouteModuleCard(props: { store: PromptToolStore; scope: 'ma
 export function DelegationToolsModuleCard(props: { store: PromptToolStore }): ReactNode {
   const { store } = props
   const fields = store.fields
+  const maxDepthOptions = ['', 'provider-managed', '0', '1', '2', '3', '5']
   return (
-    <EngineModuleCard store={store} name="工具与深度" meta="工具集白名单/黑名单 + 注入 kind 白名单 + 子代理工具策略">
+    <EngineModuleCard store={store} name="工具与深度" meta="工具集白名单/黑名单 + 注入 kind 白名单 + 递归深度 + 子代理工具策略">
       <TagInput id="pt-tool-filter-allow" label="工具集白名单" hint="toolFilter.allow：主会话常驻过滤（tool-filter 模块，作用于任意注册工具含自定义插件）+ 委派子代理 toolFilter；留空 = 不限制。"
         value={fields.toolFilterAllow} placeholder="read, write, glob" disabled={!fields.writePreset}
         onChange={(value) => store.patch({ toolFilterAllow: value })}
@@ -295,6 +296,27 @@ export function DelegationToolsModuleCard(props: { store: PromptToolStore }): Re
         value={fields.allowKinds} placeholder="skill-invocation, near-anchor, router-guide" disabled={!fields.writePreset}
         onChange={(value) => store.patch({ allowKinds: value })}
         onCommit={() => void store.persistParamOverrides()} />
+      <div className={styles.settingRowStack}>
+        <div className={styles.switchGrid}>
+          <span className={clsx(styles.switchGridItem, styles.switchGridField)} title="委派 maxDepth：0 禁止委派；provider-managed 由服务商管理；正整数限制递归层数；不设置 = 官方默认。选择即保存。">
+            <span className={styles.switchGridLabel}>递归深度</span>
+            <select
+              className={styles.configInput}
+              aria-label="递归深度"
+              value={fields.maxDepth}
+              disabled={!fields.writePreset}
+              onChange={(event) => {
+                store.patch({ maxDepth: event.target.value })
+                void store.persistParamOverrides()
+              }}
+            >
+              {maxDepthOptions.map((item) => (
+                <option key={item} value={item}>{item === '' ? '（不设置）' : item}</option>
+              ))}
+            </select>
+          </span>
+        </div>
+      </div>
       <div className={styles.configSectionTitle}>子代理工具策略（subagentToolPolicy · 实例级授权）</div>
       <SubagentToolPolicyCard
         onNotice={(kind, message) => store.showNotice(kind, message)}
@@ -322,7 +344,6 @@ export function EngineModuleCards(props: { store: PromptToolStore; layerFilter?:
   const hasVisibleCard = layerFilter === 'all' || layerFilter === 'pre-step'
     || layerFilter === 'system-section' || layerFilter === 'tool-pipeline'
   const capped = fields.bootstrapMaxTokens > 0
-  const maxDepthOptions = ['', 'provider-managed', '0', '1', '2', '3', '5']
   // 紧凑开关项（合并行/栅格内用）：标签文字 + 开关内联，逐项说明收敛到 title 悬浮提示。
   const gateChip = (id: string, label: string, hint: string, key: 'usePtcMode' | 'promoteGate' | 'promoteAfterFirstResponse' | 'personaSectionsOnly' | 'workspaceLine' | 'toolFilterSubagents' | 'instructionHint' | 'anchorTurn' | 'deliberationGate' | 'cotDrip'): ReactNode => (
     <span className={styles.switchGridItem} title={hint}>
@@ -568,23 +589,6 @@ export function EngineModuleCards(props: { store: PromptToolStore; layerFilter?:
         <div className={styles.configSectionTitle}>委派与深思门控（delegation · deliberation-gate · cot-drip）</div>
         <div className={styles.settingRowStack}>
           <div className={styles.switchGrid}>
-            <span className={clsx(styles.switchGridItem, styles.switchGridField)} title="委派 maxDepth：0 禁止委派；provider-managed 由服务商管理；正整数限制递归层数；不设置 = 官方默认。选择即保存。">
-              <span className={styles.switchGridLabel}>递归深度</span>
-              <select
-                className={styles.configInput}
-                aria-label="递归深度"
-                value={fields.maxDepth}
-                disabled={!fields.writePreset}
-                onChange={(event) => {
-                  store.patch({ maxDepth: event.target.value })
-                  void store.persistParamOverrides()
-                }}
-              >
-                {maxDepthOptions.map((item) => (
-                  <option key={item} value={item}>{item === '' ? '（不设置）' : item}</option>
-                ))}
-              </select>
-            </span>
             {gateChip('pt-deliberation-gate', '轨迹深度门', 'deliberationGate：首工具调用前流式深思 < 下限时 deny 一次（规划式提示）；需模块列表已挂 deliberation-gate 行。', 'deliberationGate')}
             {gateChip('pt-cot-drip', '深思维持节拍', 'cotDrip：每 N 次工具结果滴入一条 "We…" 重申提醒（additionalContexts）；需模块列表已挂 cot-drip 行。', 'cotDrip')}
           </div>

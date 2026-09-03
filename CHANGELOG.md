@@ -10,6 +10,10 @@
 - `rebuild-composition` 改为从 `standard/minimal/ptc/cordis` 全量重建：本地模块自动发现并只保留在 `source/local/`，官方切块/变体只生成到 `library/`；装配发现跨目录同名即失败，另加官方行语义覆盖校验、孤儿文件清理、失败安全替换，并清除模块间串入的下一段注释。
 - 新增内置预设顺序/变体、组合去重、source/local 与 library 分工、通用 instruction-hint 复用回归；完整测试 `437 pass / 0 fail`。
 
+### 子代理页入口回归修复
+
+- 工具与深度卡恢复 `maxDepth` 递归深度下拉，入口回归子代理页；主会话工具管线卡不再重复展示该参数，避免双入口。
+
 ## [0.8.0] - 2026-09-01
 
 ### L2 参数、Bridge 与 Engine 重构
