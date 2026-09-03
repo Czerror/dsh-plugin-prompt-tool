@@ -435,7 +435,26 @@
   overflow-wrap: anywhere;
 }
 
+/* 内联标签内的次级说明（策略状态等小字）。 */
+.switchGridHint {
+  display: block;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 16px;
+}
+
 .settingCopy { display: flex; min-width: 0; flex: 1; flex-direction: column; }
+
+/* 子代理工具策略编辑器分组（profile / 角色绑定 / 任务规则 / 预览）：细边框分组，内部纵向排布。 */
+.policyGroup {
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
 .settingCopy strong { color: var(--dsw-alias-label-primary); font-size: 14px; font-weight: 500; line-height: 21px; }
 .settingCopy small { color: var(--dsw-alias-label-tertiary); font-size: 11px; line-height: 17px; }
 .settingCopy code { font-family: var(--ds-font-family-code, ui-monospace, monospace); }

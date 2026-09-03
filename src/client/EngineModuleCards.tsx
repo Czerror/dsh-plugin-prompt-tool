@@ -281,10 +281,8 @@ export function ModelRouteModuleCard(props: { store: PromptToolStore; scope: 'ma
 export function DelegationToolsModuleCard(props: { store: PromptToolStore }): ReactNode {
   const { store } = props
   const fields = store.fields
-  const [spExpanded, setSpExpanded] = useState(false)
-  const maxDepthOptions = ['', 'provider-managed', '0', '1', '2', '3', '5']
   return (
-    <EngineModuleCard store={store} name="工具与深度" meta="工具集白名单/黑名单 + 注入 kind 白名单 + 递归深度">
+    <EngineModuleCard store={store} name="工具与深度" meta="工具集白名单/黑名单 + 注入 kind 白名单 + 子代理工具策略">
       <TagInput id="pt-tool-filter-allow" label="工具集白名单" hint="toolFilter.allow：主会话常驻过滤（tool-filter 模块，作用于任意注册工具含自定义插件）+ 委派子代理 toolFilter；留空 = 不限制。"
         value={fields.toolFilterAllow} placeholder="read, write, glob" disabled={!fields.writePreset}
         onChange={(value) => store.patch({ toolFilterAllow: value })}
@@ -297,29 +295,8 @@ export function DelegationToolsModuleCard(props: { store: PromptToolStore }): Re
         value={fields.allowKinds} placeholder="skill-invocation, near-anchor, router-guide" disabled={!fields.writePreset}
         onChange={(value) => store.patch({ allowKinds: value })}
         onCommit={() => void store.persistParamOverrides()} />
-      <div className={styles.settingRowStack}>
-        <span className={styles.settingCopy}>
-          <strong>递归深度</strong>
-          <small>委派 maxDepth：0 禁止委派；provider-managed 由服务商管理；正整数限制递归层数；不设置 = 官方默认。选择即保存。</small>
-        </span>
-        <select
-          className={styles.configInput}
-          aria-label="递归深度"
-          value={fields.maxDepth}
-          disabled={!fields.writePreset}
-          onChange={(event) => {
-            store.patch({ maxDepth: event.target.value })
-            void store.persistParamOverrides()
-          }}
-        >
-          {maxDepthOptions.map((item) => (
-            <option key={item} value={item}>{item === '' ? '（不设置）' : item}</option>
-          ))}
-        </select>
-      </div>
+      <div className={styles.configSectionTitle}>子代理工具策略（subagentToolPolicy · 实例级授权）</div>
       <SubagentToolPolicyCard
-        expanded={spExpanded}
-        onToggleExpanded={() => setSpExpanded(!spExpanded)}
         onNotice={(kind, message) => store.showNotice(kind, message)}
         seedAllow={fields.toolFilterAllow}
         currentSessionId={store.api.currentSessionId()}
