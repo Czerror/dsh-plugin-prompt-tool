@@ -3,7 +3,10 @@ import clsx from 'clsx'
 import { FormField } from '../../ui/FormField.tsx'
 import { TagInput } from '../../ui/TagInput.tsx'
 import { autoResizeTextarea } from './textarea-resize.ts'
-import styles from '../../PromptUi.module.css'
+import sharedCss from '../../ui/controls.module.css'
+import featureCss from './prompts.module.css'
+
+const styles = { ...sharedCss, ...featureCss }
 
 function selectOptions(options: readonly string[], value: string | undefined): Array<{ value: string; label: string }> {
   const current = value ?? ''

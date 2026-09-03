@@ -6,7 +6,10 @@ import { IconCopyOutline16, IconFolderOpenOutline16 } from '@deepseek-ai/dsh-cli
 import { bridgeCall } from '../../data/bridge-client.ts'
 import type { PromptToolStore } from '../../data/use-prompt-tool-store.ts'
 import { useDialogFocus } from '../../ui/dialog-focus.ts'
-import styles from '../../PromptUi.module.css'
+import sharedCss from '../../ui/controls.module.css'
+import featureCss from './presets.module.css'
+
+const styles = { ...sharedCss, ...featureCss }
 
 export const PresetSwitcher = memo(function PresetSwitcher(props: { store: PromptToolStore }): ReactNode {
   const { store } = props
@@ -207,7 +210,7 @@ export const PresetSwitcher = memo(function PresetSwitcher(props: { store: Promp
     // 提示还原路径——避免点击后宿主挂载失败的哑弹。
     const blocked = preset.renderable === false
     return (
-      <div key={preset.id} className={clsx(styles.presetCard, active && styles.presetCardActive, blocked && styles.presetCardBlocked)}
+      <div key={preset.id} className={clsx(styles.presetCard, blocked && styles.presetCardBlocked)}
         data-active={active ? '' : undefined}>
         <button type="button" className={styles.presetCardMain} disabled={blocked}
           title={blocked

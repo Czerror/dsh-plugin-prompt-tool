@@ -38,17 +38,29 @@ dsh --profile prompt-tool                                          # 首次启�
 - 💬 **会话变量工具**：`session_var`（list/get/set/clear）——模型维护角色状态（`{{心情}}` 等），会话级覆盖预设默认；ST 运行时宏（`{{lastusermessage}}` / `{{lastcharmessage}}`）从会话事件提取
 - 🧩 **工具按模块装配**：角色卡、世界书、会话变量、自定义工具分别由 `character-tools` / `world-book-tools` / `session-var-tools` / `tool-config-engine` 模块提供；不再维护重复的顶层工具开关
 
+## Web 客户端结构
+
+Web 客户端按四层组织：
+
+```text
+src/client/
+├─ app/       # SlotRegistry owner、工作台壳与五页组合
+├─ data/      # typed bridge、Fields、状态 facade、保存与脏检测纯逻辑
+├─ features/  # prompts / tools / subagents / skills / presets / characters
+└─ ui/        # 仅 props/callback 的共享交互与 CSS Modules
+```
+
+依赖方向固定为 `app → features → data/ui → shared contract`：跨领域组合只在 `app/workspace/pages/`，feature 不导入其他 feature 内部实现；标准控件优先复用 `@deepseek-ai/dsh-client-ui-primitives`。Client bridge 通过 `src/shared/bridge-contract.ts` 的 endpoint key 与 request/value map 调用，业务代码不拼接路径。样式按 owner 拆分，使用 DSH `--dsw-*` 语义 token，不定义插件级全局主题。
 ## 项目架构
 
 本项目的 Archify 交互式架构图保存在 [`project-architecture/`](project-architecture/)：覆盖 React 工作台、loopback settings bridge、Plugin Runtime、Preset Compiler、Engine & Composition、Skills 与领域扩展以及 DSH Host 的运行链路。
 
 - [打开最终交互式架构图（v2）](project-architecture/project-architecture-v2.html)
 - [查看 Archify JSON 源规格](project-architecture/project-architecture-v2.json)
-- [查看桌面浅色/深色视觉验证](project-architecture/project-architecture-v2.visual-check.html)
+- [查看本轮视觉检查收据](project-architecture/project-architecture-v2.visual-check.json)
 
-`v2` 是通过 showcase 9/9 校验与桌面 containment 检查的最终版本；无 `v2` 后缀的文件保留为首轮构图记录。
+`v2` 已按当前 `app / data / features / ui` 客户端结构更新，并通过 showcase 9/9 校验；无 `v2` 后缀的文件保留为首轮构图记录。当前环境未发现 Chrome/Chromium，因此本轮 visual-check 状态为 skipped，既有旧截图已移除，避免误作当前图证据。
 
-![dsh-plugin-prompt-tool 项目架构](project-architecture/project-architecture-v2.visual-check.1440x900.light.png)
 
 ## 预设参数体系
 

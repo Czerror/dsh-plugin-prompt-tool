@@ -8,7 +8,7 @@
     "quality_profile": "showcase",
     "repository": {
       "url": "https://github.com/Czerror/dsh-plugin-prompt-tool.git",
-      "revision": "f2b38e4029543b68dbec6ab1794b49dbbd060302"
+      "revision": "aaeb33bc143c1ebae2ef431c633abf2db113444b"
     },
     "views": [
       {
@@ -80,8 +80,8 @@
     {
       "id": "workbench",
       "type": "frontend",
-      "label": "React 工作台",
-      "sublabel": "React · SlotRegistry · SettingsScope",
+      "label": "Client UI 四层结构",
+      "sublabel": "app · data · features · ui",
       "pos": [
         230,
         70
@@ -92,24 +92,25 @@
       ],
       "sources": [
         {
-          "path": "src/client/PromptWorkspace.tsx",
-          "label": "five pages"
+          "path": "src/client/app/workspace/PromptWorkspace.tsx",
+          "label": "workspace app"
         },
         {
-          "path": "src/client/index.ts",
-          "label": "client apply"
+          "path": "src/client/data/use-prompt-tool-store.ts",
+          "label": "state facade"
         },
         {
-          "path": "src/client/slot-workbench.tsx",
-          "label": "official slots"
+          "path": "src/client/features/prompts/PromptConfigsEditor.tsx",
+          "label": "feature composition"
         }
-      ]
+      ],
+      "tag": "SlotRegistry · typed bridge"
     },
     {
       "id": "bridge",
       "type": "security",
       "label": "Loopback Bridge",
-      "sublabel": "/api/prompt-tool/settings/*",
+      "sublabel": "typed client · loopback",
       "pos": [
         480,
         70
@@ -121,12 +122,16 @@
       "tag": "127.0.0.1 only",
       "sources": [
         {
-          "path": "src/runtime/settings-bridge.ts",
-          "label": "HTTP routes"
+          "path": "src/client/data/bridge-client.ts",
+          "label": "typed client"
         },
         {
           "path": "src/shared/bridge-contract.ts",
-          "label": "endpoint contract"
+          "label": "request/value maps"
+        },
+        {
+          "path": "src/runtime/settings-bridge.ts",
+          "label": "loopback handlers"
         }
       ]
     },
@@ -288,7 +293,7 @@
       "id": "workbench-bridge",
       "from": "workbench",
       "to": "bridge",
-      "label": "bridgePost",
+      "label": "bridgeCall",
       "labelAt": [
         455.0,
         162.0
@@ -352,17 +357,17 @@
       "dot": "cyan",
       "title": "主链路",
       "items": [
-        "Cordis 加载 Plugin Runtime；React 工作台由官方 slots 承载。",
-        "业务读写走 loopback Bridge，标准开关走 SettingsScope。"
+        "Cordis 加载 Plugin Runtime；app/workbench 通过官方 slots 承载浮层与设置页。",
+        "app/workspace 组合五页；data 提供 typed bridge、状态 facade 与纯保存逻辑。"
       ]
     },
     {
       "dot": "emerald",
       "title": "配置与扩展",
       "items": [
-        "preset.yml 统一承载 params、model、promptConfigs、variables、customTools。",
-        "manifest + writePreset 生成 agent.cordis.yml、prompt-configs、variables.yml、custom-tools。",
-        "Skills、SillyTavern、角色卡、world-book、session_var 复用同一重建通道。"
+        "features 按 prompts、tools、subagents、skills、presets、characters 归位，跨领域组合只在 app。",
+        "ui 只保留 props/callback 交互；标准控件复用 DSH primitives，样式使用 CSS Modules 与 --dsw-* token。",
+        "preset.yml 仍统一承载 params、model、promptConfigs、variables、customTools。"
       ]
     },
     {
@@ -370,7 +375,7 @@
       "title": "引擎与验证",
       "items": [
         "prompt-config-engine 接线六个官方注入层；context-gate 等模块共享晋升语义。",
-        "DSH Host 最终连接 llm、tools、subagents；build / typecheck / lint / test 由 package.json 提供。"
+        "类型检查、lint、Node 回归与 CSS 所有权测试共同锁定重构边界。"
       ]
     }
   ]

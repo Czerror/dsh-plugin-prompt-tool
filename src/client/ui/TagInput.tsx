@@ -1,6 +1,6 @@
 /** 标签输入：chip 增删 + 回车/逗号添加；底层仍为逗号分隔字符串，零数据层改动。 */
 import { useState, type ReactNode } from 'react'
-import styles from '../PromptUi.module.css'
+import styles from './controls.module.css'
 
 export function TagInput(props: {
   id: string

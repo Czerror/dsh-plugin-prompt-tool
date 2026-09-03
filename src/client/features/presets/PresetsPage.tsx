@@ -5,7 +5,10 @@ import { PresetSwitcher } from './PresetSwitcher.tsx'
 import { ToggleRow } from '../../ui/ToggleRow.tsx'
 import { CollapsibleCard } from '../../ui/CollapsibleCard.tsx'
 import { SettingInputRow } from '../../ui/SettingInputRow.tsx'
-import ui from '../../PromptUi.module.css'
+import sharedCss from '../../ui/controls.module.css'
+import featureCss from './presets.module.css'
+
+const ui = { ...sharedCss, ...featureCss }
 import type { PromptToolStore } from '../../data/use-prompt-tool-store.ts'
 
 export const PresetsPage = memo(function PresetsPage(props: { store: PromptToolStore }): ReactNode {

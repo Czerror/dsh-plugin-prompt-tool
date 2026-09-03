@@ -1,0 +1,12 @@
+/* characters feature。 */
+
+/* 非交互卡片主体（角色卡等无点击语义）：与 presetCardMain 同布局，无按钮态。 */
+.presetCardBody {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px 12px;
+  border-radius: 12px 12px 0 0;
+}

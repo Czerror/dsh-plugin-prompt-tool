@@ -3,7 +3,7 @@ import type { ReactNode } from 'react'
 import type { PromptToolStore } from '../../data/use-prompt-tool-store.ts'
 import { WorkspaceNavigation } from './WorkspaceNavigation.tsx'
 import { WORKSPACE_PAGES, workspacePageMeta, type WorkspacePage } from './workspace-pages.ts'
-import ui from '../../PromptUi.module.css'
+import ui from '../../ui/controls.module.css'
 import css from './PromptWorkspace.module.css'
 
 function PageHeader(props: { title: string; description: string; meta: string }): ReactNode {

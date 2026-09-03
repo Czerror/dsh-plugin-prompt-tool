@@ -1,0 +1,46 @@
+/* presets feature。 */
+
+.presetCardMain {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px 12px;
+  border: 0;
+  border-radius: 12px 12px 0 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.presetCardMain:disabled { cursor: default; opacity: .6; }
+.presetCardMain:focus-visible {
+  outline: 2px solid var(--dsw-alias-brand-primary);
+  outline-offset: -2px;
+}
+.presetCardActions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.presetBlocked {
+  flex: none;
+  margin-left: auto;
+  border-radius: 999px;
+  corner-shape: round;
+  padding: 1px 8px;
+  background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 8%, transparent);
+  color: var(--dsw-alias-state-error-primary);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 17px;
+  white-space: nowrap;
+}
+.presetCardBlocked {
+  opacity: 0.62;
+}
+.presetCardBlocked .presetCardMain {
+  cursor: not-allowed;
+}

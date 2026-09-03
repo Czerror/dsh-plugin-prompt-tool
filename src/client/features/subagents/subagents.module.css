@@ -1,0 +1,20 @@
+/* subagents feature。 */
+
+/* 内联标签内的次级说明（策略状态等小字）。 */
+.switchGridHint {
+  display: block;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+/* 子代理工具策略编辑器分组（profile / 角色绑定 / 任务规则 / 预览）：细边框分组，内部纵向排布。 */
+.policyGroup {
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}

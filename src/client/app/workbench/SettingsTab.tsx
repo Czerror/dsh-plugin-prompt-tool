@@ -5,7 +5,7 @@ import type { InjectFace, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import { bridgeCall } from '../../data/bridge-client.ts'
 import { ToggleRow } from '../../ui/ToggleRow.tsx'
 import type { PromptToolWorkbenchFace } from './workbench-face.ts'
-import ui from '../../PromptUi.module.css'
+import ui from '../../ui/controls.module.css'
 /** settings.plugins.tab：基础开关（settings 命名空间直读直写，官方 SettingsScope 通道）。 */
 type TabProps = PropsRuntime<'settings.plugins.tab'> & InjectFace<PromptToolWorkbenchFace>
 

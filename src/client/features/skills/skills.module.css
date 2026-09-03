@@ -1,0 +1,181 @@
+/* skills feature。 */
+
+/* 嵌套子技能标记：替代序号徽章与拖拽手柄。 */
+.skillNestedMark {
+  display: grid;
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 50%;
+  corner-shape: round;
+  color: var(--dsw-alias-label-tertiary);
+  background: var(--dsw-alias-bg-layer-2);
+  font-size: 10px;
+  line-height: 1;
+}
+
+.duplicateBadge {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  border: 1px solid color-mix(in srgb, var(--dsw-alias-state-error-primary) 36%, var(--dsw-alias-border-l2));
+  border-radius: 999px;
+  corner-shape: round;
+  padding: 1px 8px;
+  color: var(--dsw-alias-state-error-primary);
+  background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 7%, transparent);
+  font-size: 10px;
+  font-weight: 650;
+  line-height: 16px;
+  white-space: nowrap;
+}
+
+/* 多目录卡片：路径 + 状态 + 计数 + 行操作。 */
+.dirCardList { display: flex; min-width: 0; flex-direction: column; gap: 8px; }
+.dirCard {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: 12px;
+  padding: 9px 12px;
+  background: var(--dsw-alias-bg-layer-3);
+  transition: border-color .16s ease;
+}
+.dirCard[data-invalid] { border-color: color-mix(in srgb, var(--dsw-alias-state-error-primary) 38%, var(--dsw-alias-border-l2)); }
+.dirCardBody { display: flex; min-width: 0; flex: 1; flex-direction: column; gap: 2px; }
+.dirCardTitle { display: flex; min-width: 0; align-items: center; gap: 8px; flex-wrap: wrap; }
+.dirPath {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--dsw-alias-label-primary);
+  font-family: var(--ds-font-family-code, ui-monospace, monospace);
+  font-size: 12px;
+  line-height: 1.5;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dirCardMeta { color: var(--dsw-alias-label-tertiary); font-size: 11px; line-height: 1.5; }
+
+/* 添加目录行：选择器主按钮 + 输入路径次要。 */
+.dirAddBar {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.skillRankBadge {
+  display: grid;
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 0.5px solid var(--dsw-alias-border-l1);
+  border-radius: 50%;
+  corner-shape: round;
+  color: var(--dsw-alias-label-secondary);
+  background: var(--dsw-alias-bg-layer-2);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.skillCardTitleRow { display: flex; min-width: 0; align-items: center; gap: 8px; flex-wrap: wrap; }
+.skillCardTitleRow strong { font-size: 13px; font-weight: 600; line-height: 1.5; color: var(--dsw-alias-label-primary); overflow-wrap: anywhere; }
+.skillCardMeta { color: var(--dsw-alias-label-tertiary); font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }
+
+/* 勾选框：只选择（职责分离——技能开关由 Switch 与批量按钮控制）。 */
+.skillSelect {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  cursor: pointer;
+}
+.skillSelect input {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  accent-color: var(--dsw-alias-state-business-primary);
+  cursor: pointer;
+}
+.skillSelect input:disabled { cursor: default; }
+
+/* 状态统计卡：点击即切筛选（兼作筛选 Tabs）。 */
+.skillStats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+.skillStatsRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.skillStatsRow .skillStats {
+  flex: 1;
+  min-width: 0;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.skillStatsRow > button {
+  flex: 0 0 auto;
+}
+.skillStats button {
+  appearance: none;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: 12px;
+  padding: 9px 11px;
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-bg-layer-2);
+  font: inherit;
+  cursor: pointer;
+  transition: border-color .16s ease, box-shadow .16s ease, transform .16s ease;
+}
+.skillStats button:hover { border-color: color-mix(in srgb, var(--dsw-alias-state-business-primary) 30%, var(--dsw-alias-border-l2)); transform: translateY(-1px); }
+.skillStats button[data-active] {
+  border-color: color-mix(in srgb, var(--dsw-alias-state-business-primary) 45%, var(--dsw-alias-border-l2));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--dsw-alias-state-business-primary) 18%, transparent);
+}
+.skillStats strong { font-size: 18px; font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.skillStats small { color: var(--dsw-alias-label-tertiary); font-size: 11px; line-height: 1.3; }
+.skillStatDot { width: 8px; height: 8px; margin-bottom: 1px; border-radius: 50%; corner-shape: round; background: var(--chip); }
+.skillStatAll { --chip: var(--dsw-alias-label-tertiary); }
+
+/* 已选计数（批量按钮旁）。 */
+.selectionCount {
+  flex: 0 0 auto;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+
+/* 卡片内部分隔（configForm 内的次级设置分区）。 */
+.cardDivider {
+  border-top: 0.5px solid var(--dsw-alias-border-l2);
+  margin: 2px 0 10px;
+  padding-top: 12px;
+}
+.skillStatusError { --chip: var(--dsw-alias-state-error-primary); }
+
+.skillIssue {
+  margin: 0;
+  padding-left: 2px;
+  overflow-wrap: anywhere;
+  color: var(--dsw-alias-state-error-primary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+@media (max-width: 620px) {
+  .skillStats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

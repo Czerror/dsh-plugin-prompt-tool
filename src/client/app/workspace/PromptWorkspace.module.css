@@ -2,7 +2,6 @@
 
 /* 面板内部。 */
 .shell {
-  --pt-logo-shade: #062b4f;
   box-sizing: border-box;
   display: flex;
   height: 100%;
@@ -75,9 +74,9 @@
   place-items: center;
   border: 1px solid color-mix(in srgb, var(--dsw-alias-state-business-primary) 40%, var(--dsw-alias-border-l1));
   border-radius: 9px;
-  color: var(--pt-on-chip, #fff);
-  background: linear-gradient(135deg, var(--dsw-alias-state-business-primary), color-mix(in srgb, var(--dsw-alias-state-business-primary) 55%, var(--pt-logo-shade)));
-  box-shadow: 0 6px 16px -10px color-mix(in srgb, var(--dsw-alias-state-business-primary) 80%, transparent), inset 0 1px 0 color-mix(in srgb, #fff 28%, transparent);
+  color: var(--dsw-alias-label-primary-foreground);
+  background: linear-gradient(135deg, var(--dsw-alias-state-business-primary), color-mix(in srgb, var(--dsw-alias-state-business-primary) 55%, var(--dsw-alias-bg-base)));
+  box-shadow: 0 6px 16px -10px color-mix(in srgb, var(--dsw-alias-state-business-primary) 80%, transparent), inset 0 1px 0 color-mix(in srgb, var(--dsw-alias-label-primary-foreground) 28%, transparent);
   font-size: 15px;
   font-weight: 700;
 }
@@ -117,7 +116,7 @@
   height: 6px;
   flex: 0 0 auto;
   border-radius: 50%;
-}
+  corner-shape: round;}
 
 .statusDot[data-state='online'] {
   background: var(--dsw-alias-state-success-primary);
@@ -144,6 +143,7 @@
   padding: 7px 16px;
   border: 1px solid color-mix(in srgb, var(--dsw-alias-state-business-primary) 40%, var(--dsw-alias-border-l1));
   border-radius: 999px;
+  corner-shape: round;
   color: var(--dsw-alias-label-secondary);
   background: transparent;
   cursor: pointer;
@@ -179,7 +179,7 @@
   overflow-x: auto;
   overscroll-behavior-inline: contain;
   scrollbar-width: none;
-  border-bottom: 1px solid var(--dsw-alias-border-l1);
+  border-bottom: 0.5px solid var(--dsw-alias-border-l1);
 }
 
 .nav::-webkit-scrollbar { display: none; }
@@ -228,64 +228,6 @@
 
 .nav button[data-active] small { color: var(--dsw-alias-state-business-primary); }
 
-/* pre-step 层的第二级标签页。 */
-.memoryNavigation {
-  display: flex;
-  min-width: 0;
-  flex: 0 0 auto;
-  align-items: flex-end;
-  gap: 12px;
-  padding: 8px 16px 0;
-  background: var(--dsw-alias-bg-base);
-}
-
-.memoryTabs {
-  display: flex;
-  min-width: 0;
-  flex: 1;
-  gap: 2px;
-  overflow-x: auto;
-  scrollbar-width: none;
-}
-
-/* 注入层级 + 消息批层子页两行堆叠时，第二行不再重复上边距。 */
-.memoryNavigation + .memoryNavigation { padding-top: 0; }
-
-.memoryTabs::-webkit-scrollbar { display: none; }
-
-.memoryTabs button {
-  position: relative;
-  min-width: max-content;
-  padding: 6px 12px;
-  border: 0;
-  border-bottom: 2px solid transparent;
-  border-radius: 6px 6px 0 0;
-  color: var(--dsw-alias-label-secondary);
-  background: transparent;
-  font-size: 13px;
-  cursor: pointer;
-  transition: color .16s ease, background-color .16s ease;
-}
-
-.memoryTabs button:hover { color: var(--dsw-alias-label-primary); background: var(--dsw-alias-interactive-bg-hover); }
-.memoryTabs button[data-active] {
-  border-bottom-color: transparent;
-  color: var(--dsw-alias-label-primary);
-  font-weight: 600;
-}
-
-.memoryTabs button[data-active]::after {
-  position: absolute;
-  right: 8px;
-  bottom: -1px;
-  left: 8px;
-  height: 2px;
-  border-radius: 2px 2px 0 0;
-  content: "";
-  background: linear-gradient(90deg, var(--dsw-alias-state-business-primary), color-mix(in srgb, var(--dsw-alias-state-business-primary) 40%, transparent));
-  box-shadow: 0 0 10px color-mix(in srgb, var(--dsw-alias-state-business-primary) 55%, transparent);
-}
-
 .canvas {
   min-width: 0;
   min-height: 0;
@@ -301,6 +243,7 @@
 .canvas::-webkit-scrollbar-thumb {
   border: 2px solid transparent;
   border-radius: 999px;
+  corner-shape: round;
   background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 35%, transparent);
   background-clip: padding-box;
 }
@@ -322,6 +265,7 @@
   padding: 6px 8px;
   border: 1px solid color-mix(in srgb, var(--dsw-alias-state-business-primary) 22%, var(--dsw-alias-border-l1));
   border-radius: 999px;
+  corner-shape: round;
   color: var(--dsw-alias-state-business-primary);
   background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 6%, var(--dsw-alias-bg-layer-1));
   font: 650 10px/1 var(--ds-font-family-code, ui-monospace, monospace);
@@ -334,9 +278,7 @@
   .masthead { min-height: 48px; padding: 8px 12px 4px; }
   .statusCluster > span:not(.statusDot) { display: none; }
   .topNavigation { padding: 0 12px; }
-  .memoryNavigation { padding-inline: 12px; }
   .nav button { padding: 7px 11px; }
-  .memoryTabs button { padding-inline: 10px; }
   .canvas > div { padding: 14px 12px calc(170px + env(safe-area-inset-bottom, 0px)); }
 }
 
@@ -351,7 +293,6 @@
 
 @media (prefers-reduced-motion: reduce) {
   .backButton,
-  .nav button,
-  .memoryTabs button { transition: none; }
+.nav button { transition: none; }
   .statusDot[data-state='online'] { animation: none; }
 }

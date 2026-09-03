@@ -7,7 +7,10 @@ import { IconFolderOpenOutline16, IconTrashOutline16 } from '@deepseek-ai/dsh-cl
 import { bridgeCall, bridgeUpload, shouldStreamJsonFile } from '../../data/bridge-client.ts'
 import { isPngSignature } from './character-card.ts'
 import type { PromptToolStore } from '../../data/use-prompt-tool-store.ts'
-import ui from '../../PromptUi.module.css'
+import sharedCss from '../../ui/controls.module.css'
+import featureCss from './characters.module.css'
+
+const ui = { ...sharedCss, ...featureCss }
 
 interface CharacterCardItem {
   id: string

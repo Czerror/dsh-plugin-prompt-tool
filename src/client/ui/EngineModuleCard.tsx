@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react'
 import clsx from 'clsx'
 import { IconChevronDownOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
-import styles from '../PromptUi.module.css'
+import styles from './controls.module.css'
 /** 引擎模块可折叠卡片：与模块列表（PromptConfigList）同款形态——
  *  configCard + configToggle + chevron，点击展开 configForm 编辑组合行 config
  *  （经 params 参数桥扁平键落 preset.yml）。归类于配置列表下（beforeCards）。

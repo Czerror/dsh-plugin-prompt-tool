@@ -1,7 +1,7 @@
 import clsx from 'clsx'
 import type { ReactNode } from 'react'
 import type { PromptToolStore } from '../../../data/use-prompt-tool-store.ts'
-import ui from '../../../PromptUi.module.css'
+import ui from '../../../ui/controls.module.css'
 /** 模型路由状态 chip：主对话页与子代理页共用（检测到 DeepSeek 路由时展示 provider 列表）。 */
 export function ModelRouteStatus(props: { store: PromptToolStore }): ReactNode {
   const { store } = props

@@ -1,6 +1,6 @@
 /** 开关行：label + hint + 可选 extra + checkbox。 */
 import type { ReactNode } from 'react'
-import styles from '../PromptUi.module.css'
+import styles from './controls.module.css'
 
 export function ToggleRow(props: { id: string; label: string; hint: string; checked: boolean; disabled?: boolean; extra?: ReactNode; onChange: (value: boolean) => void }): ReactNode {
   return (

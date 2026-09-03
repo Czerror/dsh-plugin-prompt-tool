@@ -11,7 +11,10 @@ import { tabKeyHandler } from '../../ui/tab-key.ts'
 import { CollapsibleCard } from '../../ui/CollapsibleCard.tsx'
 import { SettingInputRow } from '../../ui/SettingInputRow.tsx'
 import { SkillRow } from './SkillRow.tsx'
-import ui from '../../PromptUi.module.css'
+import sharedCss from '../../ui/controls.module.css'
+import featureCss from './skills.module.css'
+
+const ui = { ...sharedCss, ...featureCss }
 
 type SkillStatusTab = 'all' | 'callable' | 'invalid'
 

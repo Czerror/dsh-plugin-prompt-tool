@@ -3,7 +3,10 @@ import { bridgeCall, errorMessage } from '../../data/bridge-client.ts'
 import { PromptConfigCard } from './PromptConfigCard.tsx'
 import { moveToView, moveWithinLayer, promptConfigLayer, viewOrderedIds } from './prompt-config-order.ts'
 import type { EngineMeta, PromptConfigDraft, ValidationErrorEntry } from '../../prompt-tool-types.ts'
-import styles from '../../PromptUi.module.css'
+import sharedCss from '../../ui/controls.module.css'
+import featureCss from './prompts.module.css'
+
+const styles = { ...sharedCss, ...featureCss }
 
 export interface PromptConfigListProps {
   meta: EngineMeta

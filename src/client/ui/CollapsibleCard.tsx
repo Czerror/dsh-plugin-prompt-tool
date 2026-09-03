@@ -2,7 +2,7 @@
 import { useState, type ReactNode } from 'react'
 import clsx from 'clsx'
 import { IconChevronDownOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
-import styles from '../PromptUi.module.css'
+import styles from './controls.module.css'
 
 export function CollapsibleCard(props: {
   id: string

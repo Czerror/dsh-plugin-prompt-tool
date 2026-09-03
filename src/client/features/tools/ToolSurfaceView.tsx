@@ -3,7 +3,10 @@
  *  无会话/未知 session 显示明确空态或稳定错误，不自动 resume。 */
 import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import { bridgeCall } from '../../data/bridge-client.ts'
-import styles from '../../PromptUi.module.css'
+import sharedCss from '../../ui/controls.module.css'
+import featureCss from './tools.module.css'
+
+const styles = { ...sharedCss, ...featureCss }
 
 export interface ToolSurfaceEntry { name: string; description: string }
 

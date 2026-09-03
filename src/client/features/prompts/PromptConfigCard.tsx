@@ -4,7 +4,10 @@ import { IconChevronDownOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { EngineMeta, PromptConfigDraft } from '../../prompt-tool-types.ts'
 import { PromptConfigForm } from './PromptConfigForm.tsx'
 import { fieldPolicyFor } from './prompt-config-policy.ts'
-import styles from '../../PromptUi.module.css'
+import sharedCss from '../../ui/controls.module.css'
+import featureCss from './prompts.module.css'
+
+const styles = { ...sharedCss, ...featureCss }
 
 export type { PromptConfigDraft, LayerFieldPolicy } from '../../prompt-tool-types.ts'
 /** 列表卡片（memo 化）：props 全部为数据或稳定回调——config 引用变化才重渲染该卡，

@@ -1,5 +1,5 @@
 import { cloneElement, isValidElement, useId, type ReactElement, type ReactNode } from 'react'
-import styles from '../PromptUi.module.css'
+import styles from './controls.module.css'
 
 /** 共享表单字段：生成 label/id 关联并渲染可选说明。 */
 export function FormField(props: { label: string; hint?: string; children: ReactNode }): ReactNode {

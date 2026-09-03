@@ -9,7 +9,10 @@ import clsx from 'clsx'
 import { bridgeCall } from '../../data/bridge-client.ts'
 import { TagInput } from '../../ui/TagInput.tsx'
 import { asBool, asList, asNum, createEmptyPolicy, splitList, type PolicyDraft } from './subagent-policy-draft.ts'
-import styles from '../../PromptUi.module.css'
+import sharedCss from '../../ui/controls.module.css'
+import featureCss from './subagents.module.css'
+
+const styles = { ...sharedCss, ...featureCss }
 
 type Notice = (kind: 'ok' | 'error', message: string) => void
 interface CharacterItem { id: string; name: string }

@@ -6,7 +6,7 @@ import { DelegationToolsModuleCard } from '../../../features/subagents/Delegatio
 import { ToolSurfaceView } from '../../../features/tools/ToolSurfaceView.tsx'
 import { ConfigListWithTemplates } from './ConfigListWithTemplates.tsx'
 import { ModelRouteStatus } from './ModelRouteStatus.tsx'
-import ui from '../../../PromptUi.module.css'
+import ui from '../../../ui/controls.module.css'
 /** 子代理页：路由状态 + 子代理引擎模块区块（列表上方，与主会话同构）+ 子代理配置列表
  *  （audience != main 即公用或仅子代理）。子代理独有：子代理模型、工具与深度
  *  （toolFilter / allowKinds / maxDepth）；主会话引擎模块（tool-bootstrap /

@@ -1,6 +1,6 @@
 /** 设置输入行：编辑框失焦即保存（与 anchor 文本一致）。 */
 import type { ReactNode } from 'react'
-import ui from '../PromptUi.module.css'
+import ui from './controls.module.css'
 
 export function SettingInputRow(props: {
   id: string

@@ -4,7 +4,10 @@ import type { EngineMeta, PromptConfigDraft } from '../../prompt-tool-types.ts'
 import { OptionField, StrategyParamsFields, VariablesEditor } from './PromptConfigFields.tsx'
 import { autoResizeTextarea } from './textarea-resize.ts'
 import { AUDIENCE_LABELS, SOURCE_FORMS, SOURCE_KINDS, fieldPolicyFor } from './prompt-config-policy.ts'
-import styles from '../../PromptUi.module.css'
+import sharedCss from '../../ui/controls.module.css'
+import featureCss from './prompts.module.css'
+
+const styles = { ...sharedCss, ...featureCss }
 /** identity 结构化编辑（替代 JSON）：field 下拉 + value 输入；value 留空 = 使用默认（等于配置 id）。 */
 function IdentityFields(props: { identity: { field: string; value: string } | undefined; onPatch: (identity: { field: string; value: string } | undefined) => void }): ReactNode {
   const field = props.identity?.field ?? 'plugin'

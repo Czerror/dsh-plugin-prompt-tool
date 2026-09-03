@@ -2,7 +2,10 @@ import { useState, type ReactNode } from 'react'
 import clsx from 'clsx'
 import { IconChevronDownOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { FormField } from '../../ui/FormField.tsx'
-import styles from '../../PromptUi.module.css'
+import sharedCss from '../../ui/controls.module.css'
+import featureCss from './tools.module.css'
+
+const styles = { ...sharedCss, ...featureCss }
 /** 内置工具名（delegate 提示）。 */
 const BUILTIN_TOOL_NAMES = ['character_list', 'character_import', 'character_apply', 'character_remove', 'character_delete',
   'world_book_list', 'world_book_upsert', 'world_book_delete', 'session_var']

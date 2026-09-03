@@ -6,7 +6,10 @@ import { bridgeCall } from '../../data/bridge-client.ts'
 import { TemplatePicker } from '../../ui/TemplatePicker.tsx'
 import { CustomToolCard, asRecord, type ToolDraft } from './CustomToolEditor.tsx'
 import { ToolSurfaceView } from './ToolSurfaceView.tsx'
-import styles from '../../PromptUi.module.css'
+import sharedCss from '../../ui/controls.module.css'
+import featureCss from './tools.module.css'
+
+const styles = { ...sharedCss, ...featureCss }
 /** 工具管理区块（tool-pipeline 层可见）：标题 + 工具卡片列表。 */
 export function CustomToolsCard(props: {
   expanded: boolean

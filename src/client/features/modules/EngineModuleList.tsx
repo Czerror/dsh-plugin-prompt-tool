@@ -3,7 +3,7 @@ import type { ReactNode } from 'react'
 import type { PromptToolStore } from '../../data/use-prompt-tool-store.ts'
 import { TagInput } from '../../ui/TagInput.tsx'
 import { EngineModuleCard } from '../../ui/EngineModuleCard.tsx'
-import styles from '../../PromptUi.module.css'
+import styles from '../../ui/controls.module.css'
 /** 引擎模块卡片组（模块列表顶部，按 6 层注入层级归类）：
  *  tool-bootstrap（system-section）/ context-gate（pre-step）/
  *  code-presentation · tool-filter · delegation

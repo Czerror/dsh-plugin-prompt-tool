@@ -1,7 +1,7 @@
 /** 内置模板选择弹窗：按注入层分组展示；传入 layer 时只显示该层模板。 */
 import type { ReactNode } from 'react'
 import { useDialogFocus } from './dialog-focus.ts'
-import styles from '../PromptUi.module.css'
+import styles from './controls.module.css'
 import type { PromptConfigTemplateEntry } from '../prompt-tool-types.ts'
 
 export const TEMPLATE_LAYER_TITLES: Record<string, string> = {

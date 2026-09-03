@@ -4,7 +4,10 @@ import type { PromptToolStore } from '../../data/use-prompt-tool-store.ts'
 import { TagInput } from '../../ui/TagInput.tsx'
 import { SubagentToolPolicyCard } from './SubagentToolPolicyCard.tsx'
 import { EngineModuleCard } from '../../ui/EngineModuleCard.tsx'
-import styles from '../../PromptUi.module.css'
+import sharedCss from '../../ui/controls.module.css'
+import featureCss from './subagents.module.css'
+
+const styles = { ...sharedCss, ...featureCss }
 /** 工具与深度模块卡（子代理作用域配置；参数经 params 桥扁平键，与主会话引擎模块卡同一来源）。 */
 export function DelegationToolsModuleCard(props: {
   store: PromptToolStore

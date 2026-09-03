@@ -1,7 +1,10 @@
 import { memo, type ReactNode } from 'react'
 import clsx from 'clsx'
 import type { SkillCatalogEntry } from '../../data/prompt-tool-fields.ts'
-import ui from '../../PromptUi.module.css'
+import sharedCss from '../../ui/controls.module.css'
+import featureCss from './skills.module.css'
+
+const ui = { ...sharedCss, ...featureCss }
 /** 技能调用状态徽章：只保留模型可调用状态，开关关闭后立即变灰。 */
 function SkillStatusChips(props: { skill: SkillCatalogEntry; enabled: boolean }): ReactNode {
   const { skill, enabled } = props

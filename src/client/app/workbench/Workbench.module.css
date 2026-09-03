@@ -3,7 +3,6 @@
    背板与面板始终盖在导航之上，不被遮挡。 */
 .drawerLayer {
   --pt-drawer-width: min(920px, 100vw);
-  --pt-drawer-shade: color-mix(in srgb, #0b1220 52%, transparent);
   position: fixed;
   inset: 0;
   z-index: 1000;
@@ -18,7 +17,8 @@
   inset: 0;
   pointer-events: auto;
   opacity: 0;
-  background: var(--pt-drawer-shade);
+  background: var(--dsw-alias-bg-mask-1);
+  backdrop-filter: var(--dsw-mask-blur);
   transition: opacity .22s ease;
 }
 
@@ -36,7 +36,7 @@
   overflow: hidden;
   pointer-events: auto;
   transform: translateX(100%);
-  box-shadow: -24px 0 64px -32px rgb(0 0 0 / .45);
+  box-shadow: var(--dsw-elevation-prominent);
   transition: transform .26s cubic-bezier(.22, 1, .36, 1);
 }
 
@@ -63,6 +63,7 @@
   justify-content: center;
   border: none;
   border-radius: 50%;
+  corner-shape: round;
   padding: 0;
   pointer-events: auto;
   background: transparent;

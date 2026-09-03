@@ -5,7 +5,10 @@ import { PromptConfigList } from './PromptConfigList.tsx'
 import { TemplatePicker } from '../../ui/TemplatePicker.tsx'
 import { useTemplatePicker } from './useTemplatePicker.ts'
 import { VariablesEditor } from './PromptConfigFields.tsx'
-import styles from '../../PromptUi.module.css'
+import sharedCss from '../../ui/controls.module.css'
+import featureCss from './prompts.module.css'
+
+const styles = { ...sharedCss, ...featureCss }
 
 import type { EngineMeta, PromptConfigDraft } from '../../prompt-tool-types.ts'
 import type { PromptToolStore } from '../../data/use-prompt-tool-store.ts'
