@@ -36,7 +36,7 @@ const agent = (overrides = {}) => ({
   session: {
     id: 's1',
     header: { delegationDepth: 0 },
-    events: [],
+    snapshotEvents: () => [],
   },
   options: { model: 'deepseek-v4-flash-7013' },
   ...overrides,
@@ -129,7 +129,7 @@ test('同位置多配置默认按声明顺序插入：near-anchor 与 router-gui
   const decision = await step(agent({ session: {
     id: 's2',
     header: { delegationDepth: 0 },
-    events: [{ type: 'tool/call', seq: 1, time: 1, data: {} }],
+    snapshotEvents: () => [{ type: 'tool/call', seq: 1, time: 1, data: {} }],
   } }))
   assert.equal(decision.messages.length, 3)
   assert.equal(decision.messages[0].id, 'task-1')
@@ -165,7 +165,7 @@ test('custom-fallback 多词确认：reasoning 以派生确认词任一开头即
   const sessionWith = (id, text) => agent({ session: {
     id,
     header: { delegationDepth: 0 },
-    events: [{ type: 'assistant/message', data: { message: { content: [{ type: 'reasoning', text }] } } }],
+    snapshotEvents: () => [{ type: 'assistant/message', data: { message: { content: [{ type: 'reasoning', text }] } } }],
   } })
   // deep 锚句信号（Let… 开头）→ 确认注入。
   const withLet = await step(sessionWith('s-cf-let', 'Let me think through the design before changing anything'))
@@ -210,7 +210,7 @@ test('identity 归一：kind 维度去重由 sourceKind 承担（外来消息按
   const withEvent = agent({ session: {
     id: 's3',
     header: { delegationDepth: 0 },
-    events: [
+    snapshotEvents: () => [
       { type: 'tool/call', seq: 1, time: 1, data: {} },
       { type: 'user/message', data: { source: { kind: 'instruction-hint', form: 'hint' } } },
     ],
@@ -436,7 +436,7 @@ test('config.variables 与内置 {{WORKSPACE}} 变量在注入前插值', async 
     variables: { USER: '张三' }, position: 'after-all',
   }]))
   const decision = await step(agent({ session: {
-    id: 'v1', header: { delegationDepth: 0, cwd: 'D:/repo' }, events: [],
+    id: 'v1', header: { delegationDepth: 0, cwd: 'D:/repo' }, snapshotEvents: () => [],
   } }))
   assert.equal(decision.messages[1].content[0].text, '用户 张三 在工作区 D:/repo（cwd=D:/repo）')
 })
@@ -464,7 +464,7 @@ test('placeholder：instruction-hint 探测 cwd→项目根完整链、使用建
     id: 'instruction-hint', strategy: 'placeholder', fill: 'instruction-hint',
     position: 'after-all', promotion: 'none', dedupe: 'none',
   }]), { fs })
-  const session = { id: 'hint-session', header: { delegationDepth: 0, cwd: '/repo/sub' }, events: [] }
+  const session = { id: 'hint-session', header: { delegationDepth: 0, cwd: '/repo/sub' }, snapshotEvents: () => [] }
   const first = await step(agent({ session }))
   const second = await step(agent({ session }))
   const hint = first.messages[1]
@@ -492,7 +492,7 @@ test('placeholder：env-facts 支持 text 模板 + 变量完全自定义输出',
     text: '工作区={{WORKSPACE}}，cwd={{CWD}}',
   }]))
   const decision = await step(agent({ session: {
-    id: 'eft', header: { delegationDepth: 0, cwd: 'D:/repo' }, events: [],
+    id: 'eft', header: { delegationDepth: 0, cwd: 'D:/repo' }, snapshotEvents: () => [],
   } }))
   assert.equal(decision.messages[1].content[0].text, '工作区=D:/repo，cwd=D:/repo')
 })
@@ -570,7 +570,7 @@ test('placeholder：skill-catalog dedupe=session 每会话只注入一次', asyn
   const { step } = makeHarness(createPromptConfigs([
     { id: 'sk-dedupe', strategy: 'placeholder', fill: 'skill-catalog', position: 'after-all', dedupe: 'session' },
   ]), { skills: skillCatalogStub })
-  const session = { id: 'sk-session', header: { delegationDepth: 0 }, events: [] }
+  const session = { id: 'sk-session', header: { delegationDepth: 0 }, snapshotEvents: () => [] }
   const first = await step(agent({ session }))
   assert.equal(first.messages.length, 2)
   const second = await step(agent({ session }))
@@ -592,7 +592,7 @@ test('runtime-context placeholder：skill-catalog 每次 assembly 动态填充',
   })
   assert.equal(contexts.length, 1)
   assert.equal(typeof contexts[0].text, 'function')
-  const text = await contexts[0].text({ agent: agent({ session: { id: 'ctx2', header: { delegationDepth: 0, cwd: 'D:/repo' }, events: [] } }) })
+  const text = await contexts[0].text({ agent: agent({ session: { id: 'ctx2', header: { delegationDepth: 0, cwd: 'D:/repo' }, snapshotEvents: () => [] } }) })
   assert.equal(text, '技能=pdf')
 })
 
@@ -607,7 +607,7 @@ test('audience=subagent 的 pre-step 配置：仅子代理注入，主会话跳�
   const main = await step(agent())
   assert.equal(main.messages.length, 1)
   const delegated = await step(agent({ session: {
-    id: 'sub1', header: { delegationDepth: 1 }, events: [],
+    id: 'sub1', header: { delegationDepth: 1 }, snapshotEvents: () => [],
   } }))
   assert.equal(delegated.messages.length, 2)
   assert.equal(delegated.messages[1].content[0].text, 'SUB')
@@ -618,12 +618,12 @@ test('audience=main 的 pre-step 配置：仅主会话注入，子代理跳过',
     { id: 'main-only', strategy: 'static', text: 'MAIN', position: 'after-all', audience: 'main' },
   ]))
   const main = await step(agent({ session: {
-    id: 'm1', header: { delegationDepth: 0 }, events: [],
+    id: 'm1', header: { delegationDepth: 0 }, snapshotEvents: () => [],
   } }))
   assert.equal(main.messages.length, 2)
   assert.equal(main.messages[1].content[0].text, 'MAIN')
   const delegated = await step(agent({ session: {
-    id: 'sub2', header: { delegationDepth: 1 }, events: [],
+    id: 'sub2', header: { delegationDepth: 1 }, snapshotEvents: () => [],
   } }))
   assert.equal(delegated.messages.length, 1)
 })
@@ -700,7 +700,7 @@ test('custom-fallback 支持自定义锚定词：命中「我是xxx」立即注�
   }]))
   const decision = await step(agent({ session: {
     id: 'ac1', header: { delegationDepth: 0 },
-    events: [assistantReasoning('我是xxx，开始分析')],
+    snapshotEvents: () => [assistantReasoning('我是xxx，开始分析')],
   } }))
   assert.equal(decision.messages.length, 2)
   assert.equal(decision.messages[0].content[0].text, 'CONFIG_TEXT')
@@ -718,12 +718,12 @@ test('custom-fallback 自定义锚定词未命中时按两轮兜底', async () =
   }]))
   const oneRound = await step(agent({ session: {
     id: 'ac2', header: { delegationDepth: 0 },
-    events: [assistantReasoning('我是别的开头')],
+    snapshotEvents: () => [assistantReasoning('我是别的开头')],
   } }))
   assert.equal(oneRound.messages.length, 1)
   const twoRounds = await step(agent({ session: {
     id: 'ac3', header: { delegationDepth: 0 },
-    events: [assistantReasoning('我是别的开头'), assistantReasoning('第二轮回合')],
+    snapshotEvents: () => [assistantReasoning('我是别的开头'), assistantReasoning('第二轮回合')],
   } }))
   assert.equal(twoRounds.messages.length, 2)
   assert.equal(twoRounds.messages[0].content[0].text, 'FALLBACK_TEXT')
@@ -764,7 +764,7 @@ test('merged 持久幂等：事件流已有同位置合并消息时组内配置�
   ]))
   const withEvent = agent({ session: {
     id: 'mg1', header: { delegationDepth: 0 },
-    events: [{ type: 'user/message', data: { source: { kind: 'plugin', plugin: 'merged:after-all' } } }],
+    snapshotEvents: () => [{ type: 'user/message', data: { source: { kind: 'plugin', plugin: 'merged:after-all' } } }],
   } })
   const decision = await step(withEvent)
   assert.equal(decision.messages.length, 1)
@@ -836,7 +836,7 @@ test('runtime-context placeholder：注册函数 provider，assembly 时动态�
   })
   assert.equal(contexts.length, 1)
   assert.equal(typeof contexts[0].text, 'function')
-  const text = await contexts[0].text({ agent: agent({ session: { id: 'ctx1', header: { delegationDepth: 0, cwd: 'D:/repo' }, events: [] } }) })
+  const text = await contexts[0].text({ agent: agent({ session: { id: 'ctx1', header: { delegationDepth: 0, cwd: 'D:/repo' }, snapshotEvents: () => [] } }) })
   assert.equal(text, '工作区=D:/repo')
 })
 

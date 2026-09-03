@@ -25,7 +25,7 @@ function makeCtx() {
 }
 
 function makeSession(events = []) {
-  return { id: `s-${Math.random()}`, header: { cwd: '/workspace', delegationDepth: 0 }, events }
+  return { id: `s-${Math.random()}`, header: { cwd: '/workspace', delegationDepth: 0 }, snapshotEvents: () => events }
 }
 
 const makeAgent = (session) => ({ session, ctx: { tools: { presentAs: () => () => {} } } })
@@ -210,7 +210,7 @@ test('tool-bootstrap：includeSubagents=false（默认）子代理继承完整�
   const { ctx, listeners } = makeCtx()
   applyToolBootstrap(ctx, { bootstrapTools: ['bash', 'str_replace_editor'] })
   const subagent = {
-    session: { id: `s-${Math.random()}`, header: { cwd: '/workspace', delegationDepth: 1 }, events: [] },
+    session: { id: `s-${Math.random()}`, header: { cwd: '/workspace', delegationDepth: 1 }, snapshotEvents: () => [] },
     ctx: { tools: { presentAs: () => () => {} } },
   }
   const out = await assembleThrough(listeners, subagent, assembled())
@@ -226,7 +226,7 @@ test('tool-bootstrap：includeSubagents=true 子代理与主会话同相位（�
     personaSectionsOnly: true,
   })
   const subagent = {
-    session: { id: `s-${Math.random()}`, header: { cwd: '/workspace', delegationDepth: 1 }, events: [] },
+    session: { id: `s-${Math.random()}`, header: { cwd: '/workspace', delegationDepth: 1 }, snapshotEvents: () => [] },
     ctx: { tools: { presentAs: () => () => {} } },
   }
   const out = await assembleThrough(listeners, subagent, assembled())
@@ -343,7 +343,7 @@ test('code-presentation：未晋升不应用，子代理（默认）直接应用
   assert.equal(presented.length, 0, '未晋升不应用')
   // 子代理（delegationDepth=1，默认 includeSubagents=false）：直接应用。
   const subagent = {
-    session: { id: `s-${Math.random()}`, header: { cwd: '/workspace', delegationDepth: 1 }, events: [] },
+    session: { id: `s-${Math.random()}`, header: { cwd: '/workspace', delegationDepth: 1 }, snapshotEvents: () => [] },
     ctx: { tools: { presentAs: (mode) => { presented.push(mode); return () => {} } } },
   }
   await handler(null, { agent: subagent }, async () => assembled())
@@ -488,7 +488,7 @@ test('tool-bootstrap stages：直达语义（调用更高阶段工具自动跳�
   const out = await assembleThrough(listeners, agent, stageAssembled())
   assert.deepEqual(out.tools.map((t) => t.name), ['bash', 'read', 'glob', 'grep', 'write', 'edit', 'pwsh'], '直达验证档')
   // 冷启动：同一 durable log 重建同相位（stage 由 tool/call 推导）。
-  const cold = makeAgent({ id: session.id, header: { cwd: '/workspace', delegationDepth: 0 }, events: [toolCall('pwsh', 1)] })
+  const cold = makeAgent({ id: session.id, header: { cwd: '/workspace', delegationDepth: 0 }, snapshotEvents: () => [toolCall('pwsh', 1)] })
   const coldOut = await assembleThrough(listeners, cold, stageAssembled())
   assert.deepEqual(coldOut.tools.map((t) => t.name), ['bash', 'read', 'glob', 'grep', 'write', 'edit', 'pwsh'], '冷启动恢复直达后的阶段')
 })

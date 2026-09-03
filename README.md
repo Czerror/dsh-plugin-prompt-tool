@@ -33,7 +33,7 @@ dsh --profile prompt-tool                                          # 首次启�
 - 📚 **世界书**：`character_book` 转 world-book 策略配置（`keys` 命中触发 / `constant` 常驻 / 正则键自动检测 / `selectiveLogic` 组合逻辑），与模块卡片同一存储与编辑（模块列表「世界书」过滤 + 批量启用/禁用）
 - 🛠️ **自定义工具**：preset.yml `customTools` 段声明式定义模型工具（执行器 shell/http/delegate/fs/ask-user，`{{args.x}}` 参数插值）；参数与输出经官方 `dsh-tools` 转换器物化为标准 JSON Schema，非法参数产生标准工具错误，delegate 经 `ctx.tools.execute` 嵌套调度走完整官方工具管线；`customTools.scope` 暂不支持（显式拒绝）
 - 🛡️ **子代理工具策略**：preset.yml 顶层 `subagentToolPolicy` 段（opt-in）声明 ceiling、profiles、角色卡绑定、有序任务规则与受控模型扩权；`subagent` 固定走 spawn、`subagent_fork` 固定走 fork，按官方 `SubagentRun`/continuable 契约创建并在窗口内冻结 toolFilter；模型选择器和扩权参数在工具 body 前校验，模型路由经过 LLM preflight；UI 从官方 sessions snapshot 读取当前会话，并可编辑、停用、预览策略及查询存活 Agent 工具面
-- ♻️ **Session 日志兼容**：引擎冷启动与幂等扫描统一调用官方 `session.snapshotEvents()`；只为旧 Host 和确定性测试保留 `session.events` 数组回退。
+- ♻️ **Session 日志读取**：引擎冷启动与幂等扫描统一走官方 `session.snapshotEvents()`（DSH alpha.5+），不再读取已移除的 `session.events` 数组。
 - 🧩 **模板变量**：预设级 `variables` 段（`{{key}}` 插值源）——模块列表顶部「模板变量」卡片统一编辑（可折叠/清空/停用/失焦自动保存）；锚定匹配引擎（anchor-match）统一 custom-fallback 与 world-book 的匹配语义
 - 💬 **会话变量工具**：`session_var`（list/get/set/clear）——模型维护角色状态（`{{心情}}` 等），会话级覆盖预设默认；ST 运行时宏（`{{lastusermessage}}` / `{{lastcharmessage}}`）从会话事件提取
 - 🧩 **工具按模块装配**：角色卡、世界书、会话变量、自定义工具分别由 `character-tools` / `world-book-tools` / `session-var-tools` / `tool-config-engine` 模块提供；不再维护重复的顶层工具开关

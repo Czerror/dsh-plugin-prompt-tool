@@ -79,15 +79,11 @@ export function isDelegated(session) {
 
 /**
  * 读取当前 Session 的不可变事件快照。
- * DSH alpha.5 移除了公开 `session.events` 数组，正式 API 是 snapshotEvents()；
- * 数组回退只用于旧 Host 与现有确定性测试桩。
+ * 正式 API 是 snapshotEvents()（DSH alpha.5+）；宿主缺失该接口时按空日志处理，不再读取旧 events 数组。
  */
 export function sessionEvents(session) {
-  if (session !== null && typeof session === 'object' && typeof session.snapshotEvents === 'function') {
-    const snapshot = session.snapshotEvents()
-    return Array.isArray(snapshot) ? snapshot : []
-  }
-  return Array.isArray(session?.events) ? session.events : []
+  const snapshot = session?.snapshotEvents?.()
+  return Array.isArray(snapshot) ? snapshot : []
 }
 
 /** True when a model id looks like a Flash-family model. */

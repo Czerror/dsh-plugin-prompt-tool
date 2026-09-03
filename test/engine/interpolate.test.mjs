@@ -61,7 +61,7 @@ test('interpolateStatic：动态宏（roll/random/pick/chance/time/date）', () 
 test('interpolateVariables：ST 运行时宏（大小写不敏感）从会话事件提取', () => {
   const session = {
     header: { cwd: '/cwd' },
-    events: [
+    snapshotEvents: () => [
       { type: 'user/message', data: { message: { content: [{ type: 'text', text: '第一条用户' }] } } },
       { type: 'assistant/message', data: { message: { content: [{ type: 'text', text: '角色回复' }] } } },
       { type: 'user/message', data: { message: { content: [{ type: 'text', text: '最新用户' }] } } },
@@ -74,10 +74,4 @@ test('interpolateVariables：ST 运行时宏（大小写不敏感）从会话事
   assert.equal(interpolateVariables('{{charIfNotGroup}}', {}, session), '', '无角色名来源 → 空串')
   // 配置 variables 优先于运行时宏。
   assert.equal(interpolateVariables('{{lastusermessage}}', { lastusermessage: '覆盖' }, session), '覆盖')
-})
-
-test('interpolateVariables：DSH alpha.5 snapshotEvents 替代已移除的 events 属性', () => {
-  const events = [{ type: 'user/message', data: { message: { content: [{ type: 'text', text: '快照消息' }] } } }]
-  const session = { header: { cwd: '/cwd' }, snapshotEvents: () => events }
-  assert.equal(interpolateVariables('{{lastusermessage}}', {}, session), '快照消息')
 })

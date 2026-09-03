@@ -17,7 +17,7 @@ function makeCtx() {
   }
 }
 
-const makeSession = (events = []) => ({ id: `s-${Math.random()}`, header: { delegationDepth: 0 }, events })
+const makeSession = (events = []) => ({ id: `s-${Math.random()}`, header: { delegationDepth: 0 }, snapshotEvents: () => events })
 const makeExec = (session) => ({ agent: { session } })
 const chunk = (turn, text) => ({ type: 'assistant/chunk', data: { turn, chunk: { text } } })
 
