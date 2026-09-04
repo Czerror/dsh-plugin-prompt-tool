@@ -1005,7 +1005,7 @@ export function resolvePresetModuleFacts(
   editable = false,
 ): PresetModuleFacts {
   const declaredModules = Array.isArray(spec.modules)
-    ? spec.modules.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+    ? [...new Set(spec.modules.filter((item): item is string => typeof item === 'string' && item.trim().length > 0).map((item) => item.trim()))]
     : null
   const sourceMode: ModuleSourceMode = Array.isArray(spec.modules)
     ? spec.modules.length === 0 ? 'fallback' : 'explicit'

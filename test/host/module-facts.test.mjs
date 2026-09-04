@@ -25,6 +25,15 @@ test('能力事实覆盖 module key 与 nested/alias row id', () => {
   assert.ok(facts.rowIds.includes('str-replace-editor'))
 })
 
+test('显式模块清单稳定去重', () => {
+  const facts = resolvePresetModuleFacts({
+    id: 'duplicate', name: 'duplicate', version: '1', engineCompat: '>=0',
+    modules: ['context-gate', 'context-gate', 'tool-bootstrap'],
+  })
+  assert.deepEqual(facts.declaredModules, ['context-gate', 'tool-bootstrap'])
+  assert.deepEqual(facts.effectiveModules, ['context-gate', 'tool-bootstrap'])
+})
+
 test('params-only 不能伪造模块事实', () => {
   const facts = resolvePresetModuleFacts({
     id: 'params-only', name: 'params-only', version: '1', engineCompat: '>=0', params: { cotDrip: true },

@@ -400,12 +400,21 @@ export function registerSettingsBridge(
           const templateName = activeDir.length > 0 ? basename(activeDir) : 'anchored'
           const spec = loadPresetSpec(activeDir.length > 0 ? activeDir : resolvePresetDir(templateName))
           presetParams = resolvePresetParams(spec, {})
-          moduleFacts = resolvePresetModuleFacts(
+          const resolvedFacts = resolvePresetModuleFacts(
             spec,
             activeDir.length > 0 ? activeDir : undefined,
             isEditablePresetDir(activeDir.length > 0 ? activeDir : resolvePresetDir(templateName)),
           )
-          mergeModuleConfigFallbacks(presetParams, moduleFacts)
+          mergeModuleConfigFallbacks(presetParams, resolvedFacts)
+          // effectiveConfigs 只用于服务端把已存在的 moduleConfigs 回显到已知字段；
+          // 不把整份行级配置（可能含路径/未知字段）发送到浏览器。
+          moduleFacts = {
+            declaredModules: resolvedFacts.declaredModules,
+            effectiveModules: resolvedFacts.effectiveModules,
+            rowIds: resolvedFacts.rowIds,
+            sourceMode: resolvedFacts.sourceMode,
+            editable: resolvedFacts.editable,
+          }
           if (Array.isArray(spec.promptConfigs)) {
             presetParams.promptConfigs = spec.promptConfigs
           }

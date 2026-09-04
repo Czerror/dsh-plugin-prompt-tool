@@ -98,6 +98,7 @@ test('契约：/bootstrap 聚合 meta + overrides + variables + promptConfigs �
   assert.ok(Array.isArray(payload.overrides.overrides) || typeof payload.overrides.overrides === 'object')
   assert.ok(typeof payload.variables.variables === 'object' && typeof payload.variables.enabled === 'boolean')
   assert.ok(Array.isArray(payload.promptConfigs.promptConfigs))
+  assert.ok(payload.moduleFacts === undefined || payload.moduleFacts.effectiveConfigs === undefined, 'bootstrap 不应暴露完整行级配置')
 })
 
 test('契约：成功载荷统一为 { ok: true, value }', async () => {

@@ -350,7 +350,7 @@ export function EngineModuleCards(props: { store: PromptToolStore; layerFilter?:
       {store.moduleFacts === undefined && (
         <p className={styles.configFieldHint} role="status">正在读取当前预设模块事实…</p>
       )}
-      {!hasVisibleCard && (
+      {store.moduleFacts !== undefined && !hasVisibleCard && (
         <p className={styles.configFieldHint} role="status">
           该层无引擎模块卡：引擎模块分布在 pre-step、system-section 与 tool-pipeline。
         </p>

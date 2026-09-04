@@ -37,6 +37,7 @@ export function CustomToolsCard(props: {
       setHasPersistedTools(loadedTools.length > 0)
       setToolTemplates(templatesResult.ok ? (templatesResult.value.toolTemplates ?? []) as Array<{ file: string; spec: ToolDraft }> : [])
       setPresetOptions(presets)
+      setSelectedPresetId((current) => presets.some((preset) => preset.id === current) ? current : presets[0]?.id ?? '')
     })()
   }, [props.listAgentPresets])
   useEffect(() => {
