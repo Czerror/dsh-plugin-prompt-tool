@@ -134,7 +134,7 @@ UI / 写盘展示顺序固定为 `pre-step → system-section → runtime-contex
 - 含有效 `character_book` 条目时自动追加 `world-book-tools` 模块，使导入预设可直接调用世界书管理工具
 - `modules` 按需装配：`prompt-config-engine` 始终；含 system-section 时补 `persona`（`complete: false` 允许 system 段生效）；含世界书条目时补 `world-book-tools`
 
-转换结果是一个普通预设（id 由文件名生成），可在工作台预设切换器中直接使用。字段级参数对照与完整示例见 [SillyTavern.md](SillyTavern.md)。
+转换结果是一个普通预设（id 由文件名生成），可在工作台预设切换器中直接使用。字段级参数对照与完整示例见 [SillyTavern.md](docs/SillyTavern.md)。
 
 ### 角色卡（PNG / JSON）与角色卡库
 
@@ -161,7 +161,7 @@ UI / 写盘展示顺序固定为 `pre-step → system-section → runtime-contex
 - **会话变量**：`session_var` 工具（list/get/set/clear）维护角色状态（会话级覆盖预设默认，
   结束即失）；跨会话长期记忆用 `world_book` note（持久 memory.md 跟随角色卡）
 
-详细转换规则见 [SillyTavern.md](SillyTavern.md)。
+详细转换规则见 [SillyTavern.md](docs/SillyTavern.md)。
 
 ## 开发与验证
 

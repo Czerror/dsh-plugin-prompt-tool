@@ -19,7 +19,7 @@
 | 修改 src/client、SlotRegistry、SettingsScope、工作台、客户端 bridge、状态、共享 UI、CSS 或 UI 测试 | [docs/ui-architecture.md](docs/ui-architecture.md) |
 | 修改 params、preset.yml、预设存储、writePreset、迁移、空值或参数生成链路 | [docs/architecture-params.md](docs/architecture-params.md) |
 | 修改 engine、晋升门控、PTC、插入点、组合来源或重建 | [docs/engine-reuse.md](docs/engine-reuse.md)；组合编辑同时读 [preset/creative/skills/editing-cordis-compositions/SKILL.md](preset/creative/skills/editing-cordis-compositions/SKILL.md) |
-| 修改 SillyTavern、角色卡或世界书转换 | [SillyTavern.md](SillyTavern.md) |
+| 修改 SillyTavern、角色卡或世界书转换 | [docs/SillyTavern.md](docs/SillyTavern.md) |
 | 涉及宿主 API、Cordis 生命周期、Settings、Slot 或官方预设契约 | 先核对本地 DSH 文档 D:\AI\GitHub\deepseek-harness\docs；必要时核对在线镜像 https://github.com/deepseek-ai/deepseek-harness/tree/master/docs |
 
 ## 产品边界
@@ -115,7 +115,7 @@
 - docs/ui-architecture.md：客户端 UI 结构与框架细节。
 - docs/architecture-params.md：参数保存、合并、空值和生成链路。
 - docs/engine-reuse.md：engine 模块、晋升语义和组合复用。
-- SillyTavern.md：SillyTavern 预设、角色卡和世界书转换契约。
+- docs/SillyTavern.md：SillyTavern 预设、角色卡和世界书转换契约。
 - preset/creative/skills/：Cordis 组合编辑的按需工作流。
 
 每条规则只保留一个权威位置；本文件负责路由和硬约束，具体框架细节在对应文档维护。
