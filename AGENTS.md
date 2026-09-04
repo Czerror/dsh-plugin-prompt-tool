@@ -1,146 +1,121 @@
-# dsh-plugin-prompt-tool 仓库指令
+# dsh-plugin-prompt-tool 仓库规则
 
-本仓库是 DeepSeek Harness（DSH）的提示词工具插件。核心产品边界是「位置、时机与受众可配置的提示词注入引擎」：`promptConfigs` 按每条配置声明的官方插入点按需注册，预设负责组合具体行为；不同插入点没有插件自定义的全局运行顺序。PTC、首轮锚定、router-guide、Flash 路由与其他模型能力增强都属于可选模块或预设，不得硬编码成项目主线或新增全局默认；新实验能力保持 opt-in，并用确定性行为测试验收。
+本文件只保留跨任务的仓库边界、工具约束、验证和交付规则。具体框架说明按任务路由到对应文档，不在这里复制。
 
-不要修改 DeepSeek Harness 源码仓库。插件只通过本仓库的 `cordis.patch.yml`、`package.json#dsh`、官方 `@deepseek-ai/*` 包和 DSH profile 装配。
+## 全局规则
 
-修改参数、预设存储或生成链路前，先读 [docs/architecture-params.md](docs/architecture-params.md)。修改 `engine/`、晋升门控或组合模块前，先读 [docs/engine-reuse.md](docs/engine-reuse.md)；编辑 Cordis 组合时同时参考 [preset/creative/skills/editing-cordis-compositions/SKILL.md](preset/creative/skills/editing-cordis-compositions/SKILL.md)。修改 SillyTavern、角色卡或世界书转换前，先读 [SillyTavern.md](SillyTavern.md)。
+- 思维链和回答使用简体中文。
+- 所有 shell 指令使用 PowerShell 7：D:\App\PowerShell\7\pwsh.exe；禁止调用系统 Windows PowerShell 5.1。
+- 只能使用 Codex 内置编辑器直接编辑文件；禁止用脚本做文本替换。
+- 只有用户明确要求“查经验/recall/记一下/remember”等记忆操作时，才读取 mnemon 技能并执行记忆读写；不得保存 token、密码、密钥等秘密。
+- 不修改 DeepSeek Harness 源码仓库；插件只通过本仓库的 cordis.patch.yml、package.json#dsh、已发布的 @deepseek-ai/* 包和 DSH profile 装配。
 
-官方 DeepSeek Harness 准则：本地文档 `D:\AI\GitHub\deepseek-harness\docs`；在线镜像 `https://github.com/deepseek-ai/deepseek-harness/tree/master/docs`。涉及宿主 API、Cordis 生命周期、Settings、Slot 或预设契约时，先核对官方文档并以其为准。
+## 任务路由
+
+开始修改前，按触发条件读取唯一权威文档：
+
+| 触发条件 | 权威文档 |
+|---|---|
+| 修改 src/client、SlotRegistry、SettingsScope、工作台、客户端 bridge、状态、共享 UI、CSS 或 UI 测试 | [docs/ui-architecture.md](docs/ui-architecture.md) |
+| 修改 params、preset.yml、预设存储、writePreset、迁移、空值或参数生成链路 | [docs/architecture-params.md](docs/architecture-params.md) |
+| 修改 engine、晋升门控、PTC、插入点、组合来源或重建 | [docs/engine-reuse.md](docs/engine-reuse.md)；组合编辑同时读 [preset/creative/skills/editing-cordis-compositions/SKILL.md](preset/creative/skills/editing-cordis-compositions/SKILL.md) |
+| 修改 SillyTavern、角色卡或世界书转换 | [SillyTavern.md](SillyTavern.md) |
+| 涉及宿主 API、Cordis 生命周期、Settings、Slot 或官方预设契约 | 先核对本地 DSH 文档 D:\AI\GitHub\deepseek-harness\docs；必要时核对在线镜像 https://github.com/deepseek-ai/deepseek-harness/tree/master/docs |
+
+## 产品边界
+
+项目是位置、时机与受众可配置的提示词注入引擎。promptConfigs 按自身声明的官方插入点按需注册，预设组合行为；不同插入点没有插件自定义的全局运行顺序。PTC、首轮锚定、router-guide、Flash 路由及其他模型增强保持可选或 opt-in，并用位置、时机、次数、受众和 epoch 的确定性测试验收。
 
 ## 仓库布局
 
-- `src/index.ts`：宿主入口与总装配；负责迁移、预设切换、重建、模型路由、Skills provider、内置模型工具和 settings 生命周期。
-- `src/client/`：React Web 工作台；通过官方 SlotRegistry、SettingsScope、Remote 与 sessions 服务接入宿主。
-- `src/runtime/`：settings bridge、模型路由、Skills、TUI、角色卡/世界书/session_var 模型工具等宿主运行时适配。
-- `src/host/`：`preset.yml` 数据层、迁移、SillyTavern/角色卡/世界书转换和 `writePreset` 物化逻辑。
-- `src/shared/`：host/client 共用契约；参数键和 bridge 路径必须在这里保持单一来源。
-- `engine/`：生成预设运行时使用的共享 ESM 引擎；`compositions/source/local/` 是本地组合源，`compositions/library/` 是重建产物。
-- `preset/`：内置预设模板；用户运行时预设位于 `$DSH_HOME/.agent-presets/<id>/`，用户预设优先于同名包内模板。
-- `templates/`：提示词配置与自定义工具模板。
-- `skills/`：随 npm 包发布的 Skills；`skills/manifest.json` 是目录清单。
-- `scripts/`：profile 链接、上游快照同步、YAML vendor 同步和组合重建。
-- `test/`：Node test runner 契约与回归测试。
-- `lib/`：`tsdown` 生成且被 git 忽略；不得手工编辑。
+- src/index.ts：宿主入口、迁移、预设切换、重建和运行时总装配。
+- src/client/：React 工作台；结构与 owner 见 UI 架构文档。
+- src/runtime/：settings bridge、模型路由、Skills、TUI 和模型工具的宿主适配。
+- src/host/：preset.yml、迁移、导入转换和 writePreset。
+- src/shared/：host/client 共用契约；参数键、bridge 路径和载荷的单一来源。
+- engine/：共享 ESM 引擎；compositions/source/local/ 是本地源，compositions/library/ 是重建产物。
+- preset/、templates/、skills/：内置预设、模板和随包发布的 Skills。
+- scripts/、test/：维护脚本、Node test runner 契约与回归测试。
+- lib/：tsdown 生成且被 git 忽略；不得手工编辑或提交。
 
-## 环境与常用命令
+## 环境与验证
 
-所有 shell 命令使用 PowerShell 7：`D:\App\PowerShell\7\pwsh.exe`。测试 cwd 固定为 `D:\AI\workspase\_temp`，通过 `pnpm --dir` 指向仓库，不把仓库目录作为测试 cwd。
+测试和脚本从隔离 cwd 执行，不能把仓库目录作为测试 cwd：
 
-```pwsh
-$Repo = 'D:\AI\GitHub\dsh-plugin-prompt-tool'
-Set-Location 'D:\AI\workspase\_temp'
+    $Repo = 'D:\AI\GitHub\dsh-plugin-prompt-tool'
+    Set-Location 'D:\AI\workspase\_temp'
 
-pnpm --dir $Repo install
-pnpm --dir $Repo build
-pnpm --dir $Repo typecheck
-pnpm --dir $Repo lint
-pnpm --dir $Repo test
-pnpm --dir $Repo link:profile
-pnpm --dir $Repo sync:anchored
-pnpm --dir $Repo sync:yaml
-pnpm --dir $Repo rebuild:composition
-```
+常用命令以 package.json scripts 为准；交付前至少运行：
 
-实现改动交付前至少运行 `typecheck`、`lint`、`test`。只改文档时运行 `git -C $Repo diff --check` 并核对所有路径与命令。只运行受影响测试可用于开发循环，但最终验证仍运行完整 `pnpm --dir $Repo test`。
+    pnpm --dir $Repo typecheck
+    pnpm --dir $Repo lint
+    pnpm --dir $Repo test
+    pnpm --dir $Repo build
+    git -C $Repo diff --check
 
-## 架构规则
+只改文档时运行 git -C $Repo diff --check，并核对文档中的路径、链接和命令。需要安装、profile 链接、上游快照、YAML vendor 或组合重建时，使用 package.json 中对应的 pnpm 脚本。
 
-### Cordis 入口与生命周期
+## 仓库级硬约束
 
-- `src/index.ts` 保持编排入口，不把 host、转换或 UI 细节继续堆入其中；已有能力优先落到对应的 `host/`、`runtime/`、`client/` 或 `shared/` 模块。
-- `inject` 只使用字符串数组。可选或晚到服务通过 `ctx.inject([...], callback)` 动态等待。
-- 官方 `agentPresets` 用于会话预设切换与双向同步；`webServer` 仍不进入宿主入口的静态 `inject`，首次 profile 可能尚未安装 `@deepseek-ai/dsh-web-app`，由 `ensureWebSurface()` 处理。
-- 监听器、工具、watcher 和动态服务统一挂在 `ctx.effect` / disposer 生命周期；重挂前先释放旧实例。
-- 仅使用已发布的 `@deepseek-ai/*` 包和 `node_modules` 类型。相对 TypeScript import 保留显式 `.ts`，纯类型依赖使用 `import type`。
+### 入口与生命周期
+
+- src/index.ts 只做编排和宿主适配；host、runtime、client、shared 的细节放回所属模块。
+- inject 只使用字符串数组；可选或晚到服务用 ctx.inject([...], callback) 等待。
+- agentPresets 负责官方会话预设切换与同步；webServer 不放入静态入口 inject，按现有 ensureWebSurface() 路径处理。
+- 监听器、工具、watcher 和动态服务挂在 ctx.effect 或 disposer 上；重挂前释放旧实例。
+- 仅依赖已发布的官方包和 node_modules 类型；相对 TypeScript import 保留显式扩展名，纯类型依赖使用 import type。
+
+### 配置、写盘与安全
+
+- preset.yml 是具体预设行为的单一来源；settings 只承载部署轴，复杂数据和大文本走文件或 loopback bridge。
+- 所有 YAML 修改使用 yaml Document API 保留注释和未知字段；写盘先完整生成临时目录，再原子 rename，system 目录保持只读。
+- 只写 DSH_HOME 下本插件拥有的状态、生成目录、.engine 指纹和 .characters；不得清理其他用户或官方文件。
+- 生成到用户目录的 AGENTS.md 只更新受管块并保留其余内容；测试必须使用临时 DSH_HOME，不能读写真实用户预设。
+- bridge 路径和载荷先改 src/shared/bridge-contract.ts，再同步 host、client 和契约测试；成功/失败载荷保持统一包装，写入端点先做白名单、类型、数值和大小校验。
+- secrets、token 和大文本不进入 settings descriptor；保留 loopback、Host/Origin 校验和请求体上限。
+
+### Engine 与组合
+
+- 插入点按需注册；order 只在同一 seam 内解释，不能从 UI 展示顺序推导运行时顺序。
+- engine/compositions/source/local/ 只放本地组合源；library/ 和 engine/vendor/yaml/ 只由对应脚本生成，不直接编辑。
+- compaction/end 是 epoch 边界；修改共享门控、提示词引擎或组合时同时验证主会话、子代理、压缩后重晋升和 disposer。
+- Skills、SillyTavern、角色卡、世界书和自定义工具复用既有 provider、host 工厂和 rebuildPreset()，不在 UI 复制转换或热装配通道。
 
 ### Client UI
 
-- UI 只通过官方 SlotRegistry 挂载：`shell.overlay`、`settings.plugins.tab`、`sidebar.footer.action` 等现有插槽优先复用。
-- 不使用宿主 DOM 选择器，不手工创建独立 React root，不依赖宿主内部 class 名或页面结构。
-- 标准 settings 字段走 `SettingsScope`；复杂数据、导入导出和预设 CRUD 走 loopback settings bridge；会话预设切换走官方 `remote.agentPresets`，并与插件预设状态双向同步。
-- Client/host 共用字段、路径和载荷先更新 `src/shared/` 契约，再更新两端与契约测试。
-
-### Settings 与 preset.yml
-
-- `Config` / `PromptSettings` 只承载部署轴：写入开关、预设选择、Skills 目录与开关、路径、顺序和 fallback。引擎行为参数不回填全局 settings。
-- 预设依旧由本插件管理：插件负责内置模板、用户预设物化、导入导出、复制和删除；官方 `ctx.agentPresets` 用于会话切换、默认值和 roster 双向同步，不独占 roster、roots、trust、resolve、copy、remove 与 default。
-- 每个可发现 preset 目录必须已有 `agent.cordis.yml`；插件包内 `preset/` 是内置模板源，用户预设由插件物化到 `$DSH_HOME/.agent-presets/<id>/`。
-- 具体预设目录的 `preset.yml` 是插件行为配置单一来源：`model` / `subagentModel`、`params`、`promptConfigs`、`variables` / `variablesEnabled`、`customTools` 和 `moduleConfigs` 均从该文件读取。
-- 预设根旁的 `.engine` 是允许保留的跨预设共享运行时依赖；writer/copy/import 必须保证它可解析。
-- 组合配置优先级固定为：参数桥（`params` / UI） > `moduleConfigs` > 组合行默认值。
-- `PARAM_KEYS`、`ENGINE_PARAM_KEYS`、`WRITER_PARAM_KEYS` 与 `MODEL_SEGMENT_MAP` 必须保持单一来源和编译期/契约测试一致。
-- 引擎参数空字符串或空数组表示删键并回落默认；`variables` 的空字符串是合法占位值，不能复用参数删键语义。
-- 修改 YAML 时使用 `yaml` Document API 保留注释与未知字段；不得用对象整体 stringify 覆盖用户 `preset.yml`。
-
-### 预设物化与文件安全
-
-- 内置模板留在包内 `preset/<id>/`；用户预设由插件物化到 `$DSH_HOME/.agent-presets/<id>/`。共享运行时保留在对应预设根旁的 `.engine/`，角色卡库存于该 user root 的 `.characters/`。
-- 插件状态只写 `$DSH_HOME/.prompt-tool-state.json`；引擎指纹留在 `.engine/.pt-engine-fingerprint`。不得修改或清理 `$DSH_HOME` 下其他用户/官方文件。
-- `writePreset()` 接收具体 user/system 预设目录；必须先在临时目录完整生成，再以 rename 原子替换；system 目录保持只读。
-- `preset.yml` 是源文件，不是生成物。`writePreset()` 只复制它并生成 agent.cordis.yml/config 产物，不覆盖 params、promptConfigs、variables、customTools 或用户注释。
-- `AGENTS.md` 常驻规则只操作 `# === prompt-tool managed block begin/end ===` 包围的受管块，保留文件其余内容。
-- 测试和脚本必须使用临时 `DSH_HOME`；真实用户预设会遮蔽包内同名模板，任何测试都不得读写真实 `~/.dsh`。
-
-### Engine 与组合模块
-
-- 插入点按需：配置声明哪个官方 seam 就只注册哪个 seam；`order` 只在同一 seam 内解释，不能建立六个插入点的全局运行顺序。
-- UI / 写盘展示顺序固定为 `pre-step → system-section → runtime-context → agent-request → llm-stream → tool-pipeline`；这是展示与写盘顺序，不是运行时优先级。
-- 模型实际收到的提示词文本顺序更接近 `system-section → runtime-context → pre-step`；`agent-request` / `llm-stream` / `tool-pipeline` 是控制通道，不构成提示词文本优先级。
-- 生成文件名使用 4 位零填充前缀（`0000-`），避免大角色卡 / 大预设超过 10 条后字典序错乱。
-- 通用过滤、插值、模型范围、主/子代理受众、幂等和晋升语义集中在 `engine/` 共享模块，不在每种 strategy 重复实现。
-- `compaction/end` 是 epoch 边界；修改 context-gate、tool-bootstrap、code-presentation 或 prompt-config-engine 时同步验证主会话、子代理、压缩后重晋升与 disposer 行为。
-- 本地组合模块只改 `engine/compositions/source/local/*.yml`；`engine/compositions/library/` 只存 `pnpm rebuild:composition` 生成的官方切块/变体。装配按 source/local 与 library 两处查找，同名重叠直接失败；不得把本地源复制回 library 或直接修补生成物。
-- YAML runtime vendor 由 `pnpm sync:yaml` 生成 `engine/vendor/yaml/`，不得手改 vendored 文件。
-- 上游 anchored 快照只通过 `pnpm sync:anchored` 更新。同步后保留本项目特有的子代理放行、上下文门控、Web/TUI、Skills 与预设生成语义，不做盲目覆盖。
-
-### Settings bridge 与安全边界
-
-- Bridge 路径唯一来源是 `src/shared/bridge-contract.ts`。新增或改名端点时同步 host 注册、client 调用和 `test/shared/bridge-contract.test.mjs`。
-- 成功载荷保持 `{ ok: true, value }`，失败载荷保持 `{ ok: false, code?, message? }`。
-- 保留 loopback socket、Host、Origin 校验和请求体大小上限。新写入端点先做白名单、类型/数值校验，再落盘并触发必要重建。
-- 不把 secrets、token 或大文本放进 settings descriptor；大内容存文件，bridge 只传所需载荷。
-
-### Skills、导入与模型工具
-
-- 多 Skills 目录按配置顺序合并，首个目录优先；同名目录需保留 duplicate 标记和稳定排序。
-- Skills frontmatter 的解析、修复、缓存与 watcher 使用现有 provider 管线，不在 UI 重新实现文件扫描。
-- SillyTavern、角色卡和世界书转换复用 `host/` 工厂与排序语义；不要在 UI 或模型工具中复制转换规则。
-- 角色卡/世界书/自定义工具写盘后通过现有 `rebuildPreset()` 路径生效，避免第二套热装配通道。
-- 会话短期状态使用 `session_var`；跨会话角色记忆写角色卡 `memory.md` 并物化为 world-book 配置。
+- UI 只通过官方 SlotRegistry 挂载；不创建独立 React root，不查询宿主 class、id 或页面结构。
+- 标准控件优先使用官方 primitive；客户端四层、slot id/order、页面顺序、状态边界、无障碍、CSS owner 和性能规则统一以 [docs/ui-architecture.md](docs/ui-architecture.md) 为准。
 
 ## 测试规则
 
-- 非平凡分支、解析器、状态迁移、文件写入和安全边界必须留下最小确定性回归测试。
-- 测试使用 Node 内置 test runner 和现有 helper；没有明确收益时不引入新测试框架或依赖。
-- 文件系统测试创建独立临时目录并设置临时 `DSH_HOME`，结束后清理；禁止共享测试状态或依赖执行顺序。
-- 修改参数链路时覆盖保存、读回、空值语义、组合消费与生成文件；修改 bridge 时覆盖契约、guard、错误载荷和重建回调。
-- 修改 UI slot 时运行 client contract/no-host-DOM 测试；修改 engine 时运行对应 `test/engine/` 测试；修改预设或生成器时运行 `test/host/` 与 `test/presets/` 对应测试。
-- 验收以注入层、位置、时机、次数、受众和 epoch 的确定性断言为准，不使用模型措辞或 `we` / `let me` 分数作为通过标准。
+- 非平凡分支、解析器、状态迁移、文件写入和安全边界必须有最小确定性回归测试。
+- 使用 Node 内置 test runner 和现有 helper；无明确收益时不引入新框架或依赖。
+- 文件系统测试创建独立临时目录和临时 DSH_HOME，结束后清理；不得依赖共享状态或执行顺序。
+- 修改参数、bridge、UI slot、engine、预设或生成器时，运行对应的 shared/client/engine/host/presets 契约测试；最终交付仍执行完整 test。
+- 验收以注入层、位置、时机、次数、受众和 epoch 断言为准，不用模型措辞或分数代替行为测试。
 
 ## 运行中的 DSH 服务
 
-- 会话期间不停止、不重启当前运行的 `dsh` / `dsh web` 宿主，不终止其进程，也不抢占其端口启动替代实例。
-- `cordis.patch.yml`、bundle 行或 profile manifest 变化需要重启时，只在交付报告标注「需要用户重启 DSH 服务后生效」，由用户决定重启时间。
-- 页面刷新、只读 HTTP 探测和使用隔离 `DSH_HOME`、随机端口启动的独立 smoke 环境可以执行，但不得接触当前运行中的用户服务。
+- 会话期间不停止、重启或终止当前 dsh / dsh web，也不抢占其端口。
+- cordis.patch.yml、bundle 或 profile manifest 变化若需重启，只在交付说明标注“需要用户重启 DSH 服务后生效”，由用户决定。
+- 可以刷新页面、做只读 HTTP 探测，或用隔离 DSH_HOME 与随机端口启动独立 smoke 环境。
 
 ## Git 与交付
 
-- 远程仓库是 `https://github.com/Czerror/dsh-plugin-prompt-tool.git`。当前开发工作以 `dev` 分支为主；保留用户已有改动，不执行破坏性 reset/clean，不把其他仓库当作推送目标。
-- 每次修改完成并通过验证后，必须在同一轮落地为 Git 提交，并推送到 `origin/dev`，不得只把已完成改动留在工作树。
-- 未经用户明确要求，不切换到 `main`、不在 `main` 上提交、不推送 `origin/main`，也不创建 PR；`main` 仅由用户明确授权的发布或集成流程更新。
-- 所有交付说明、提交标题与提交正文统一使用简体中文。提交继续采用 Conventional Commits：类型使用 `feat`、`fix`、`docs`、`test`、`refactor`、`chore`，冒号后的主题使用简体中文。
-- 提交前检查 diff、验证结果和工作树状态，只暂存本次任务文件。只提交源文件和应跟踪的重建产物；`lib/`、`artifacts/`、`node_modules/`、压缩包和本地记忆不进入版本控制。
-- 行为变化同步更新 README 或所属文档；不要把短期调查记录堆进长期架构文档。
-- 推送因网络、认证或远端更新失败时，保留本地提交，不做破坏性历史重写；用简体中文明确报告失败原因和所需后续操作。
-- 最终结论使用简体中文说明修改内容、验证命令、提交 SHA 与推送分支；若需要用户重启 DSH、重新链接 profile 或重新生成预设，也在结论中明确标注。
+- 当前工作分支为 dev，远程为 https://github.com/Czerror/dsh-plugin-prompt-tool.git；保留用户已有改动，不执行 reset --hard、clean、checkout 覆盖或其他破坏性历史操作。
+- 每次完成修改并通过验证后，在同一轮创建中文 Conventional Commit，并推送 origin/dev；未经明确要求不切换或推送 main，不创建 PR。
+- 提交前只暂存本次任务文件，检查 diff、验证结果和工作树；不提交 lib/、artifacts/、node_modules/、压缩包或本地记忆。
+- 行为变化同步 README 或对应权威文档；短期调查不堆入长期架构文档。
+- 推送因网络、认证或远端更新失败时保留本地提交，不重写历史，并明确报告失败原因。
+- 交付结论用简体中文列出修改内容、验证命令、提交 SHA 和推送分支；若需重启 DSH、重新链接 profile 或重建预设，明确标注。
 
-## 指令层级
+## 文档层级
 
-- 本文件：仓库边界、架构不变量、验证与交付规则。
-- `docs/architecture-params.md`：参数保存、合并、空值与生成链路。
-- `docs/engine-reuse.md`：engine 模块、晋升语义和组合方式。
-- `SillyTavern.md`：SillyTavern 预设、角色卡、世界书转换契约。
-- `preset/creative/skills/`：Cordis 插件开发与组合编辑的按需工作流。
+- 本文件：跨仓库边界、工具、验证、服务和交付规则。
+- docs/ui-architecture.md：客户端 UI 结构与框架细节。
+- docs/architecture-params.md：参数保存、合并、空值和生成链路。
+- docs/engine-reuse.md：engine 模块、晋升语义和组合复用。
+- SillyTavern.md：SillyTavern 预设、角色卡和世界书转换契约。
+- preset/creative/skills/：Cordis 组合编辑的按需工作流。
 
-每条规则只保留一个权威位置；本文件写跨仓库约束，细节由对应文档承载。
+每条规则只保留一个权威位置；本文件负责路由和硬约束，具体框架细节在对应文档维护。

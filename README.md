@@ -52,6 +52,8 @@ src/client/
 ```
 
 依赖方向固定为 `app → features → data/ui → shared contract`：跨领域组合只在 `app/workspace/pages/`，feature 不导入其他 feature 内部实现；标准控件优先复用 `@deepseek-ai/dsh-client-ui-primitives`。Client bridge 通过 `src/shared/bridge-contract.ts` 的 endpoint key 与 request/value map 调用，业务代码不拼接路径。样式按 owner 拆分，使用 DSH `--dsw-*` 语义 token，不定义插件级全局主题。
+完整的当前目录、slot 生命周期、状态边界、可访问性和维护约束见 [Web 客户端 UI 结构框架](docs/ui-architecture.md)。
+
 ## 项目架构
 
 本项目的 Archify 交互式架构图保存在 [`project-architecture/`](project-architecture/)：覆盖 React 工作台、loopback settings bridge、Plugin Runtime、Preset Compiler、Engine & Composition、Skills 与领域扩展以及 DSH Host 的运行链路。
