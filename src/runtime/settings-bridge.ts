@@ -14,6 +14,7 @@ import { loadPromptConfigFiles } from '../host/prompt-configs.ts'
 import { validatePromptConfigs } from './configs-validate.ts'
 import { loadPromptTemplates, loadToolTemplates } from '../host/templates.ts'
 import { fixSkillEntry } from './skill-fix.ts'
+import { importSkillsPackage } from '../host/skills-import.ts'
 import {
   appendPresetModules,
   assertCompositionArray,
@@ -226,7 +227,7 @@ export function registerSettingsBridge(
   getModelsState: () => ModelDetection,
   getSkillsState: () => SkillsBridgeState,
   getEngineStrategyDir: () => string,
-  afterSkillFix?: () => void,
+  afterSkillsChange?: () => void,
   /** 生成目录（presetDir）：读取实际生效的提示词配置（引擎加载源）。 */
   getPresetConfigsDir?: () => string,
   /** 内容导入完成回调：批量 scope 只触发一次重建（更新运行时文本并重建预设）。 */
@@ -571,7 +572,7 @@ export function registerSettingsBridge(
                 }
               }
             }
-            afterSkillFix?.()
+            afterSkillsChange?.()
             writeBridgeJson(res, 200, {
               ok: true,
               value: {
@@ -582,6 +583,35 @@ export function registerSettingsBridge(
                 skillCatalog: getSkillsState().skillCatalog,
               },
             })
+          },
+        }),
+        sctx.webServer.register({
+          kind: 'exact',
+          path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.skillsImport,
+          handler: async (req, res) => {
+            if (!guard(req, res)) return
+            const parsedBody = await readBridgeBodyForHandler(req, res)
+            if (parsedBody === undefined) return
+            const { body } = parsedBody
+            if (body === null || body === undefined || typeof body !== 'object') {
+              writeBridgeJson(res, 400, { ok: false, code: 'settings-rejected', message: 'unreadable JSON body' })
+              return
+            }
+            const record = body as Record<string, unknown>
+            const files = Array.isArray(record.files) ? record.files : []
+            const state = getSkillsState()
+            const skillsDir = state.activeSkillsDirs[0]
+            if (skillsDir === undefined || skillsDir.length === 0) {
+              writeBridgeJson(res, 400, { ok: false, code: 'skills-import-rejected', message: '当前技能目录不可用' })
+              return
+            }
+            const result = importSkillsPackage(skillsDir, files)
+            if (!result.ok) {
+              writeBridgeJson(res, 400, { ok: false, code: 'skills-import-rejected', message: result.message })
+              return
+            }
+            afterSkillsChange?.()
+            writeBridgeJson(res, 200, { ok: true, value: result })
           },
         }),
         sctx.webServer.register({

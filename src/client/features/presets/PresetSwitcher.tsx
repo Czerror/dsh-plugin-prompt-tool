@@ -4,8 +4,10 @@ import { usePromptToolFields } from '../../data/use-prompt-tool-fields.ts'
 import clsx from 'clsx'
 import { IconCopyOutline16, IconFolderOpenOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { bridgeCall } from '../../data/bridge-client.ts'
+import { readImportFiles } from '../../data/import-files.ts'
 import type { PromptToolStore } from '../../data/use-prompt-tool-store.ts'
 import { DialogSurface } from '../../ui/DialogSurface.tsx'
+import { ImportFileButton } from '../../ui/ImportFileButton.tsx'
 import sharedCss from '../../ui/controls.module.css'
 import featureCss from './presets.module.css'
 
@@ -20,8 +22,6 @@ export const PresetSwitcher = memo(function PresetSwitcher(props: { store: Promp
   const [confirmingDelete, setConfirmingDelete] = useState<string | undefined>(undefined)
   const [pickerOpen, setPickerOpen] = useState(false)
   const pickerAnchorRef = useRef<HTMLButtonElement>(null)
-  const yamlRef = useRef<HTMLInputElement>(null)
-  const dirRef = useRef<HTMLInputElement>(null)
 
   /** 上传预设包：path 为相对路径（preset.yml 或文件夹内文件），服务端按 id 归入用户预设目录。 */
   const uploadPreset = async (entries: Array<{ path: string; content: string }>): Promise<void> => {
@@ -41,23 +41,21 @@ export const PresetSwitcher = memo(function PresetSwitcher(props: { store: Promp
   }
 
   /** 导入单个配置文件：preset.yml / 任意 *.yml/*.yaml / SillyTavern *.json（服务端按扩展名分流）。 */
-  const pickPresetYaml = (file: File | undefined): void => {
+  const pickPresetYaml = (files: File[]): void => {
+    const file = files[0]
     if (file === undefined) return
     void (async () => {
-      const path = /\.json$/i.test(file.name) ? file.name : 'preset.yml'
-      await uploadPreset([{ path, content: await file.text() }])
+      const [entry] = await readImportFiles([file], 'text')
+      if (entry === undefined) return
+      await uploadPreset([{ ...entry, path: /\.json$/i.test(entry.path) ? entry.path : 'preset.yml' }])
     })()
   }
 
   /** 导入整个预设文件夹（webkitdirectory；传原始相对路径，顶层目录段由服务端剥离）。 */
-  const pickPresetDir = (files: FileList | null): void => {
-    if (files === null || files.length === 0) return
+  const pickPresetDir = (files: File[]): void => {
+    if (files.length === 0) return
     void (async () => {
-      const entries: Array<{ path: string; content: string }> = []
-      for (const file of Array.from(files)) {
-        entries.push({ path: file.webkitRelativePath || file.name, content: await file.text() })
-      }
-      await uploadPreset(entries)
+      await uploadPreset(await readImportFiles(files, 'text'))
     })()
   }
 
@@ -131,30 +129,25 @@ export const PresetSwitcher = memo(function PresetSwitcher(props: { store: Promp
           <small>预设保存在用户目录（首次启动自动内置全部模板）；点击卡片即切换并按新模板重建生成目录。删除后可从内置模板「新建」还原；导入预设 = 选择 preset.yml / 任意 *.yml/*.yaml / SillyTavern *.json 配置文件，或整个预设文件夹。</small>
         </span>
         <span className={styles.inlineControls}>
-          <input
-            ref={yamlRef}
-            type="file"
-            accept=".yml,.yaml,.json"
-            className={styles.visuallyHidden}
-            aria-label="选择 preset.yml / SillyTavern JSON 配置文件"
-            onChange={(event) => { pickPresetYaml(event.target.files?.[0]); event.target.value = '' }}
-          />
-          <input
-            ref={dirRef}
-            type="file"
-            // @ts-expect-error webkitdirectory 为 Chromium 扩展属性（文件夹选择）。
-            webkitdirectory=""
-            className={styles.visuallyHidden}
-            aria-label="选择预设文件夹"
-            onChange={(event) => { pickPresetDir(event.target.files); event.target.value = '' }}
-          />
           <button ref={pickerAnchorRef} type="button" className={styles.primaryPill} onClick={() => setPickerOpen(true)}>新建预设</button>
-          <button type="button" className={styles.pillButton} disabled={importing} onClick={() => yamlRef.current?.click()}>
-            {importing ? '导入中…' : '导入预设'}
-          </button>
-          <button type="button" className={styles.pillButton} disabled={importing} onClick={() => dirRef.current?.click()}>
-            导入文件夹
-          </button>
+          <ImportFileButton
+            label="导入预设"
+            busyLabel="导入中…"
+            busy={importing}
+            accept=".yml,.yaml,.json"
+            ariaLabel="选择 preset.yml / SillyTavern JSON 配置文件"
+            className={styles.pillButton}
+            onFiles={pickPresetYaml}
+          />
+          <ImportFileButton
+            label="导入文件夹"
+            busyLabel="导入中…"
+            busy={importing}
+            directory
+            ariaLabel="选择预设文件夹"
+            className={styles.pillButton}
+            onFiles={pickPresetDir}
+          />
           <button type="button" className={styles.pillButton} onClick={() => void exportPreset()}>
             导出预设
           </button>

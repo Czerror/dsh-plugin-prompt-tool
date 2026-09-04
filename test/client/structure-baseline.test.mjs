@@ -31,3 +31,18 @@ test('工作台顶层页面 id 与顺序保持稳定', () => {
   const ids = [...source.matchAll(/id: '([^']+)'/g)].map((match) => match[1])
   assert.deepEqual(ids, ['features', 'subagent', 'skills', 'presets', 'characters'])
 })
+
+test('导入入口统一复用 ImportFileButton，不在业务页重复实现 file input', () => {
+  for (const file of [
+    'features/skills/SkillsPage.tsx',
+    'features/presets/PresetSwitcher.tsx',
+    'features/characters/CharactersPage.tsx',
+  ]) {
+    const source = read(file)
+    assert.match(source, /from ['"]\.\.\/\.\.\/ui\/ImportFileButton\.tsx['"]/, `${file} 应复用共享导入按钮`)
+    assert.doesNotMatch(source, /type="file"/, `${file} 不应手写 file input`)
+  }
+  const button = read('ui/ImportFileButton.tsx')
+  assert.match(button, /type="file"/, '共享导入按钮应保留唯一 file input')
+  assert.match(button, /webkitdirectory/, '共享导入按钮应支持目录模式')
+})

@@ -96,7 +96,6 @@ test('client bundle registers through queue/live facade', () => {
   assert.deepEqual([...exports.inject], [
     'slots',
     'settingsScope',
-    'uiWorkspace',
     'remote',
     'remote.agentPresets',
     'remote.session',
@@ -111,7 +110,6 @@ test('client bundle registers through queue/live facade', () => {
     '@deepseek-ai/dsh-client-ui-sidebar',
     '@deepseek-ai/dsh-client-ui-settings-plugins',
     '@deepseek-ai/dsh-client-ui-settings',
-    '@deepseek-ai/dsh-client-ui-workspace',
     '@deepseek-ai/dsh-api-remotes',
     '@deepseek-ai/dsh-api-session-controller',
   ]) assert.ok(manifest.dsh.client.inject.includes(dependency), `${dependency} missing from dsh.client.inject`)

@@ -2,10 +2,11 @@
  *  库中角色卡不直接生成预设——点击「导入到当前预设」把角色卡参数
  *  （角色设定 / 系统提示 / 开场白 / 提示词库 / 采样参数）合并进当前激活预设，
  *  已导入的角色卡显示状态并可一键移除。 */
-import { memo, useEffect, useRef, useState, type ReactNode } from 'react'
+import { memo, useEffect, useState, type ReactNode } from 'react'
 import { IconFolderOpenOutline16, IconTrashOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { bridgeCall, bridgeUpload, shouldStreamJsonFile } from '../../data/bridge-client.ts'
 import { isPngSignature } from './character-card.ts'
+import { ImportFileButton } from '../../ui/ImportFileButton.tsx'
 import type { PromptToolStore } from '../../data/use-prompt-tool-store.ts'
 import sharedCss from '../../ui/controls.module.css'
 import featureCss from './characters.module.css'
@@ -26,8 +27,6 @@ export const CharactersPage = memo(function CharactersPage(props: { store: Promp
   const [confirmingDelete, setConfirmingDelete] = useState<string | undefined>(undefined)
   const [busy, setBusy] = useState<string | undefined>(undefined)
   const [characters, setCharacters] = useState<CharacterCardItem[]>([])
-  const pngRef = useRef<HTMLInputElement>(null)
-  const jsonRef = useRef<HTMLInputElement>(null)
 
   const loadCharacters = async (): Promise<void> => {
     const res = await bridgeCall('charactersList')
@@ -38,8 +37,8 @@ export const CharactersPage = memo(function CharactersPage(props: { store: Promp
   }, [])
 
   /** 导入角色卡：PNG 图片按魔数识别并走原始文件流，大 JSON 也走流式端点。 */
-  const importCard = async (files: FileList | null): Promise<void> => {
-    if (files === null || files.length === 0) return
+  const importCard = async (files: File[]): Promise<void> => {
+    if (files.length === 0) return
     setImporting(true)
     try {
       for (const file of Array.from(files)) {
@@ -130,30 +129,26 @@ export const CharactersPage = memo(function CharactersPage(props: { store: Promp
             <small>导入 SillyTavern 角色卡（PNG tEXt chunk：ccv3 / chara，或 chara_card JSON）到独立库。角色卡参数不直接生成预设——点击「导入到当前预设」把角色设定 / 系统提示 / 开场白 / 提示词库合并进当前激活预设，可随时移除。</small>
           </span>
           <span className={ui.inlineControls}>
-            <input
-              ref={pngRef}
-              type="file"
+            <ImportFileButton
+              label="导入角色卡图片"
+              busyLabel="导入中…"
+              busy={importing}
               accept=".png,.jpg,.jpeg,image/png,image/jpeg"
               multiple
-              className={ui.visuallyHidden}
-              aria-label="选择 SillyTavern 角色卡图片"
-              onChange={(event) => { void importCard(event.target.files); event.target.value = '' }}
+              ariaLabel="选择 SillyTavern 角色卡图片"
+              className={ui.primaryPill}
+              onFiles={(files) => void importCard(files)}
             />
-            <input
-              ref={jsonRef}
-              type="file"
+            <ImportFileButton
+              label="导入角色卡 JSON"
+              busyLabel="导入中…"
+              busy={importing}
               accept=".json"
               multiple
-              className={ui.visuallyHidden}
-              aria-label="选择角色卡 JSON"
-              onChange={(event) => { void importCard(event.target.files); event.target.value = '' }}
+              ariaLabel="选择角色卡 JSON"
+              className={ui.pillButton}
+              onFiles={(files) => void importCard(files)}
             />
-            <button type="button" className={ui.primaryPill} disabled={importing} onClick={() => pngRef.current?.click()}>
-              {importing ? '导入中…' : '导入角色卡图片'}
-            </button>
-            <button type="button" className={ui.pillButton} disabled={importing} onClick={() => jsonRef.current?.click()}>
-              导入角色卡 JSON
-            </button>
           </span>
         </div>
       </div>

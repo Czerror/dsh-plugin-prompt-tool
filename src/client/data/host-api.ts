@@ -13,7 +13,6 @@ export interface SessionModelFace {
 }
 
 export interface PromptToolHostApi {
-  pickDirectory(): Promise<string | null>
   openPath(path: string): Promise<void>
   sessionModel: SessionModelFace
   switchPreset(id: string): Promise<PromptToolPresetSwitchResult>

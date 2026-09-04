@@ -5,12 +5,14 @@ import { memo, useCallback, useMemo, useState, type ReactNode } from 'react'
 import clsx from 'clsx'
 import type { SkillCatalogEntry } from '../../data/prompt-tool-fields.ts'
 import type { PromptToolStore } from '../../data/use-prompt-tool-store.ts'
-import type { PromptToolHostApi } from '../../data/host-api.ts'
+import { bridgeCall } from '../../data/bridge-client.ts'
+import { readImportFiles } from '../../data/import-files.ts'
 import { usePromptToolFields } from '../../data/use-prompt-tool-fields.ts'
 import { tabKeyHandler } from '../../ui/tab-key.ts'
 import { CollapsibleCard } from '../../ui/CollapsibleCard.tsx'
 import { SettingInputRow } from '../../ui/SettingInputRow.tsx'
 import { SkillRow } from './SkillRow.tsx'
+import { ImportFileButton } from '../../ui/ImportFileButton.tsx'
 import sharedCss from '../../ui/controls.module.css'
 import featureCss from './skills.module.css'
 
@@ -24,10 +26,10 @@ const SKILL_STATUS_TABS: Array<{ id: SkillStatusTab; label: string }> = [
   { id: 'invalid', label: '未注册' },
 ]
 
-export const SkillsPage = memo(function SkillsPage(props: { store: PromptToolStore; api: PromptToolHostApi }): ReactNode {
-  const { store, api } = props
+export const SkillsPage = memo(function SkillsPage(props: { store: PromptToolStore }): ReactNode {
+  const { store } = props
   const fields = usePromptToolFields(store, (value) => value)
-  const [pickingDir, setPickingDir] = useState(false)
+  const [importingDir, setImportingDir] = useState(false)
   const [dragFolder, setDragFolder] = useState<string | undefined>(undefined)
   const [dropTarget, setDropTarget] = useState<{ folder: string; before: boolean } | undefined>(undefined)
   const [skillFilter, setSkillFilter] = useState('')
@@ -149,17 +151,21 @@ export const SkillsPage = memo(function SkillsPage(props: { store: PromptToolSto
     store.persistSwitches()
   }
 
-  const pickSkillsDir = async () => {
-    if (pickingDir) return
-    setPickingDir(true)
+  const importSkillsDir = async (files: File[]): Promise<void> => {
+    if (files.length === 0) return
+    setImportingDir(true)
     try {
-      const path = await api.pickDirectory()
-      if (path === null) return
-      store.addSkillsDir(path)
+      const res = await bridgeCall('skillsImport', { files: await readImportFiles(files, 'base64') })
+      if (res.ok) {
+        store.showNotice('ok', `已导入 ${res.value.count} 个技能文件到 ${res.value.path}`)
+        await store.load()
+      } else {
+        store.showNotice('error', '导入技能目录失败：' + (res.message ?? 'settings bridge unavailable'))
+      }
     } catch (error) {
-      store.showNotice('error', '选择目录失败：' + (error instanceof Error ? error.message : String(error)))
+      store.showNotice('error', '导入技能目录失败：' + (error instanceof Error ? error.message : String(error)))
     } finally {
-      setPickingDir(false)
+      setImportingDir(false)
     }
   }
 
@@ -294,12 +300,18 @@ export const SkillsPage = memo(function SkillsPage(props: { store: PromptToolSto
       </div>
 
       <CollapsibleCard id="pt-skills-dirs" title="目录与来源"
-        meta={`${displaySkillsDirs.length} 个目录 · 添加 / 移除引用`}>
+        meta={`${displaySkillsDirs.length} 个目录 · 导入 / 添加 / 移除引用`}>
         <div className={ui.dirAddBar}>
-          <button type="button" className={ui.primaryPill} disabled={pickingDir} onClick={() => void pickSkillsDir()}>
-            {pickingDir && <span className={ui.spinner} aria-hidden="true" />}
-            {pickingDir ? '选择中…' : '从文件夹选择器添加'}
-          </button>
+          <ImportFileButton
+            label="从文件夹选择器添加"
+            busyLabel="导入中…"
+            busy={importingDir}
+            directory
+            ariaLabel="选择包含技能子目录的文件夹"
+            title="选择包含技能子目录的文件夹并导入到第一个当前生效技能目录"
+            className={ui.primaryPill}
+            onFiles={(files) => void importSkillsDir(files)}
+          />
           <div className={ui.dirAddInput}>
             <input
               className={ui.directoryInput}

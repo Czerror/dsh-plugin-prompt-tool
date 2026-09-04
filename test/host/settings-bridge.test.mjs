@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { Readable } from 'node:stream'
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { parse as parseYaml } from 'yaml'
 import { BRIDGE_ENDPOINTS, MAX_BRIDGE_BODY_BYTES, MAX_CHARACTER_CARD_STREAM_BYTES, registerSettingsBridge } from '../../lib/index.mjs'
 
@@ -105,6 +105,97 @@ test('settings bridge 拒绝非 loopback 请求', async () => {
   await handler(fakeReq({ socket: { remoteAddress: '203.0.113.1' } }), res)
   assert.equal(res.status, 403)
   assert.equal(JSON.parse(res.body).ok, false)
+})
+
+test('settings bridge /skills-import 写入技能文件并触发目录刷新回调', async () => {
+  const dir = mkdtempSync(join(tmpdir(), `pt-skills-import-${process.pid}-`))
+  let refreshes = 0
+  try {
+    const { ctx, handlers } = makeHarness()
+    registerSettingsBridge(
+      ctx,
+      'prompt-tool',
+      () => ({ available: true, providers: [] }),
+      () => ({ activeSkillsDirs: [dir], skillCatalog: [] }),
+      () => '',
+      () => { refreshes += 1 },
+    )
+    const handler = handlers.get(PREFIX + BRIDGE_ENDPOINTS.skillsImport)
+    assert.ok(handler, '/skills-import 端点应注册')
+    const body = JSON.stringify({
+      files: [{
+        path: 'bundle/demo/SKILL.md',
+        content: Buffer.from('---\nname: demo\ndescription: demo\n---\n').toString('base64'),
+      }],
+    })
+    const res = fakeRes()
+    await handler(fakeReq({ [Symbol.asyncIterator]: async function* () { yield Buffer.from(body) } }), res)
+    assert.equal(res.status, 200)
+    const payload = JSON.parse(res.body)
+    assert.equal(payload.ok, true)
+    assert.equal(payload.value.count, 1)
+    assert.equal(readFileSync(join(dir, 'demo', 'SKILL.md'), 'utf8'), '---\nname: demo\ndescription: demo\n---\n')
+    assert.equal(refreshes, 1)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('settings bridge /skills-import 拒绝空文件列表且不触发刷新', async () => {
+  const dir = mkdtempSync(join(tmpdir(), `pt-skills-import-empty-${process.pid}-`))
+  let refreshes = 0
+  try {
+    const { ctx, handlers } = makeHarness()
+    registerSettingsBridge(
+      ctx,
+      'prompt-tool',
+      () => ({ available: true, providers: [] }),
+      () => ({ activeSkillsDirs: [dir], skillCatalog: [] }),
+      () => '',
+      () => { refreshes += 1 },
+    )
+    const handler = handlers.get(PREFIX + BRIDGE_ENDPOINTS.skillsImport)
+    assert.ok(handler)
+    const res = fakeRes()
+    await handler(fakeReq({ [Symbol.asyncIterator]: async function* () {
+      yield Buffer.from(JSON.stringify({ files: [] }))
+    } }), res)
+    assert.equal(res.status, 400)
+    assert.equal(JSON.parse(res.body).code, 'skills-import-rejected')
+    assert.equal(refreshes, 0)
+    assert.deepEqual(readdirSync(dir), [])
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('settings bridge /skills-import 拒绝路径穿越且不触发刷新', async () => {
+  const dir = mkdtempSync(join(tmpdir(), `pt-skills-import-invalid-${process.pid}-`))
+  let refreshes = 0
+  try {
+    const { ctx, handlers } = makeHarness()
+    registerSettingsBridge(
+      ctx,
+      'prompt-tool',
+      () => ({ available: true, providers: [] }),
+      () => ({ activeSkillsDirs: [dir], skillCatalog: [] }),
+      () => '',
+      () => { refreshes += 1 },
+    )
+    const handler = handlers.get(PREFIX + BRIDGE_ENDPOINTS.skillsImport)
+    assert.ok(handler)
+    const res = fakeRes()
+    await handler(fakeReq({ [Symbol.asyncIterator]: async function* () {
+      yield Buffer.from(JSON.stringify({ files: [{ path: 'bundle/../../escape.txt', content: 'ZXZpbA==' }] }))
+    } }), res)
+    assert.equal(res.status, 400)
+    assert.equal(JSON.parse(res.body).code, 'skills-import-rejected')
+    assert.equal(refreshes, 0)
+    assert.equal(existsSync(join(dir, 'escape.txt')), false)
+    assert.deepEqual(readdirSync(dir), [])
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
 })
 
 test('settings bridge /prompt-configs 返回生成目录实际生效配置', async () => {

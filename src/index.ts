@@ -449,7 +449,7 @@ export function apply(ctx: Context, configIn: Config): void {
     // 模板专属策略目录：当前 anchored 策略为引擎内置，自定义模板可经此注入。
     () => '',
     () => {
-      // 一键修复后立即重扫目录并失效官方 registry 缓存。
+      // 技能目录变化后立即重扫目录并失效官方 registry 缓存。
       skillCatalog = catalogOf(readAllSkillsChecked())
       cachedSkills.invalidate(); invalidateSkills?.()
     },
@@ -945,6 +945,7 @@ export {
 export { buildWorldBookEntry } from './host/worldbook.ts'
 export { ensureWebSurface, resolveProfileDir } from './web-surface.ts'
 export { resolveProfileSkillsDir } from './profile-skills.ts'
+export { importSkillsPackage } from './host/skills-import.ts'
 export { migrateLegacyLayout, normalizePresetRootDir } from './host/migration.ts'
 export { detectModels, installDefaultModelRoute, listAdvertisedModels } from './runtime/models.ts'
 export type { WritePresetOptions } from './host/write-preset.ts'
@@ -979,4 +980,3 @@ export { BRIDGE_ENDPOINTS, MAX_BRIDGE_BODY_BYTES, MAX_CHARACTER_CARD_STREAM_BYTE
 export type { BridgeEndpoint, BridgeErrorPayload, BridgeRequestMap, BridgeValueMap } from './shared/bridge-contract.ts'
 export { parseFrontmatter } from './runtime/skills-parse.ts'
 export type { SkillFrontmatter } from './runtime/skills-parse.ts'
-
