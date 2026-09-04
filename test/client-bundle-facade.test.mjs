@@ -96,6 +96,7 @@ test('client bundle registers through queue/live facade', () => {
   assert.deepEqual([...exports.inject], [
     'slots',
     'settingsScope',
+    'uiWorkspace',
     'remote',
     'remote.agentPresets',
     'remote.session',
@@ -108,6 +109,7 @@ test('client bundle registers through queue/live facade', () => {
     '@deepseek-ai/dsh-client-ui-renderer',
     '@deepseek-ai/dsh-client-ui-layout',
     '@deepseek-ai/dsh-client-ui-sidebar',
+    '@deepseek-ai/dsh-client-ui-workspace',
     '@deepseek-ai/dsh-client-ui-settings-plugins',
     '@deepseek-ai/dsh-client-ui-settings',
     '@deepseek-ai/dsh-api-remotes',

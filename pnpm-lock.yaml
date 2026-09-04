@@ -105,6 +105,9 @@ importers:
       '@deepseek-ai/dsh-client-ui-sidebar':
         specifier: link:../deepseek-harness/packages/client/ui-sidebar
         version: link:../deepseek-harness/packages/client/ui-sidebar
+      '@deepseek-ai/dsh-client-ui-workspace':
+        specifier: link:../deepseek-harness/packages/client/ui-workspace
+        version: link:../deepseek-harness/packages/client/ui-workspace
       '@deepseek-ai/dsh-commands':
         specifier: link:../deepseek-harness/packages/interaction/commands
         version: link:../deepseek-harness/packages/interaction/commands

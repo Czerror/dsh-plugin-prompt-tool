@@ -36,6 +36,7 @@
         "@deepseek-ai/dsh-client-ui-renderer",
         "@deepseek-ai/dsh-client-ui-layout",
         "@deepseek-ai/dsh-client-ui-sidebar",
+        "@deepseek-ai/dsh-client-ui-workspace",
         "@deepseek-ai/dsh-api-remotes",
         "@deepseek-ai/dsh-api-session-controller"
       ],
@@ -53,6 +54,7 @@
     "@deepseek-ai/dsh-client-ui-layout": "^0.1.2-alpha.2",
     "@deepseek-ai/dsh-client-ui-sidebar": "^0.1.2-alpha.2",
     "@deepseek-ai/dsh-client-ui-renderer": "^0.1.2-alpha.2",
+    "@deepseek-ai/dsh-client-ui-workspace": "^0.1.2-alpha.2",
     "@deepseek-ai/dsh-commands": "^0.1.2-alpha.2",
     "@deepseek-ai/dsh-host-webserver": "^0.1.2-alpha.2",
     "@deepseek-ai/dsh-settings": "^0.1.2-alpha.2",
@@ -73,6 +75,7 @@
     "@deepseek-ai/dsh-client-ui-layout": "^0.1.2-alpha.2",
     "@deepseek-ai/dsh-client-ui-sidebar": "^0.1.2-alpha.2",
     "@deepseek-ai/dsh-client-ui-renderer": "^0.1.2-alpha.2",
+    "@deepseek-ai/dsh-client-ui-workspace": "^0.1.2-alpha.2",
     "@deepseek-ai/dsh-client-ui-slots": "^0.1.2-alpha.2",
     "@deepseek-ai/dsh-commands": "^0.1.2-alpha.2",
     "@deepseek-ai/dsh-host-webserver": "^0.1.2-alpha.2",

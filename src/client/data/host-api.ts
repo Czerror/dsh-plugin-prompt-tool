@@ -13,6 +13,8 @@ export interface SessionModelFace {
 }
 
 export interface PromptToolHostApi {
+  /** 选择宿主机目录并返回绝对路径；取消时返回 null。 */
+  pickDirectory(): Promise<string | null>
   openPath(path: string): Promise<void>
   sessionModel: SessionModelFace
   switchPreset(id: string): Promise<PromptToolPresetSwitchResult>

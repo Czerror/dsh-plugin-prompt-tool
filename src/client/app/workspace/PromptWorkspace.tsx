@@ -45,7 +45,7 @@ export function PromptWorkspace(props: PromptWorkspaceProps): ReactNode {
     : page === 'subagent'
       ? <SubagentPage store={store} />
       : page === 'skills'
-        ? <SkillsPage store={store} />
+        ? <SkillsPage store={store} api={props.api} />
         : page === 'presets'
           ? <PresetsPage store={store} />
           : <CharactersPage store={store} />

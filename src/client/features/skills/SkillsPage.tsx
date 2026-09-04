@@ -5,6 +5,7 @@ import { memo, useCallback, useMemo, useState, type ReactNode } from 'react'
 import clsx from 'clsx'
 import type { SkillCatalogEntry } from '../../data/prompt-tool-fields.ts'
 import type { PromptToolStore } from '../../data/use-prompt-tool-store.ts'
+import type { PromptToolHostApi } from '../../data/host-api.ts'
 import { bridgeCall } from '../../data/bridge-client.ts'
 import { readImportFiles } from '../../data/import-files.ts'
 import { usePromptToolFields } from '../../data/use-prompt-tool-fields.ts'
@@ -26,9 +27,10 @@ const SKILL_STATUS_TABS: Array<{ id: SkillStatusTab; label: string }> = [
   { id: 'invalid', label: '未注册' },
 ]
 
-export const SkillsPage = memo(function SkillsPage(props: { store: PromptToolStore }): ReactNode {
-  const { store } = props
+export const SkillsPage = memo(function SkillsPage(props: { store: PromptToolStore; api: PromptToolHostApi }): ReactNode {
+  const { store, api } = props
   const fields = usePromptToolFields(store, (value) => value)
+  const [pickingDir, setPickingDir] = useState(false)
   const [importingDir, setImportingDir] = useState(false)
   const [dragFolder, setDragFolder] = useState<string | undefined>(undefined)
   const [dropTarget, setDropTarget] = useState<{ folder: string; before: boolean } | undefined>(undefined)
@@ -151,6 +153,20 @@ export const SkillsPage = memo(function SkillsPage(props: { store: PromptToolSto
     store.persistSwitches()
   }
 
+  /** 选择并保存宿主机绝对路径；只保存引用，不复制目录内容。 */
+  const pickSkillsDir = async (): Promise<void> => {
+    if (pickingDir || importingDir || store.savingSkillsDir) return
+    setPickingDir(true)
+    try {
+      const path = await api.pickDirectory()
+      if (path !== null) store.addSkillsDir(path)
+    } catch (error) {
+      store.showNotice('error', '选择目录失败：' + (error instanceof Error ? error.message : String(error)))
+    } finally {
+      setPickingDir(false)
+    }
+  }
+
   const importSkillsDir = async (files: File[]): Promise<void> => {
     if (files.length === 0) return
     setImportingDir(true)
@@ -259,7 +275,7 @@ export const SkillsPage = memo(function SkillsPage(props: { store: PromptToolSto
         tabIndex={0}
       >
       {fields.skillCatalog.length === 0 ? (
-        <div className={ui.emptyState}><span className={ui.emptyGlyph} aria-hidden="true">◇</span><div><h3>skills 目录下没有技能</h3><p>展开下方「目录与来源」选择目录导入，或确认技能目录路径后重新打开工作台。</p></div></div>
+        <div className={ui.emptyState}><span className={ui.emptyGlyph} aria-hidden="true">◇</span><div><h3>skills 目录下没有技能</h3><p>展开下方「目录与来源」选择目录并添加引用，或导入文件夹内容；也可确认技能目录路径后重新打开工作台。</p></div></div>
       ) : visibleSkills.length === 0 ? (
         <p className={ui.readOnly} role="status">没有匹配当前筛选的技能。</p>
       ) : (
@@ -300,16 +316,27 @@ export const SkillsPage = memo(function SkillsPage(props: { store: PromptToolSto
       </div>
 
       <CollapsibleCard id="pt-skills-dirs" title="目录与来源"
-        meta={`${displaySkillsDirs.length} 个目录 · 导入 / 添加 / 移除引用`}>
+        meta={`${displaySkillsDirs.length} 个目录 · 选择引用 / 导入 / 移除`}>
         <div className={ui.dirAddBar}>
+          <button
+            type="button"
+            className={ui.primaryPill}
+            disabled={pickingDir || importingDir || store.savingSkillsDir}
+            title="选择宿主机目录并保存绝对路径引用，不会复制文件"
+            onClick={() => void pickSkillsDir()}
+          >
+            {pickingDir && <span className={ui.spinner} aria-hidden="true" />}
+            {pickingDir ? '选择中…' : '选择目录并添加引用'}
+          </button>
           <ImportFileButton
-            label="从文件夹选择器添加"
+            label="导入文件夹内容"
             busyLabel="导入中…"
             busy={importingDir}
+            disabled={pickingDir || store.savingSkillsDir}
             directory
             ariaLabel="选择包含技能子目录的文件夹"
-            title="选择包含技能子目录的文件夹并导入到第一个当前生效技能目录"
-            className={ui.primaryPill}
+            title="读取文件夹内容并复制到第一个当前生效技能目录"
+            className={ui.pillButton}
             onFiles={(files) => void importSkillsDir(files)}
           />
           <div className={ui.dirAddInput}>
@@ -317,7 +344,7 @@ export const SkillsPage = memo(function SkillsPage(props: { store: PromptToolSto
               className={ui.directoryInput}
               aria-label="按路径添加技能目录"
               value={store.skillsDirDraft}
-              placeholder="或输入目录路径后添加"
+              placeholder="或直接输入目录路径"
               spellCheck={false}
               onChange={(event) => store.setSkillsDirDraft(event.target.value)}
               onKeyDown={(event) => {

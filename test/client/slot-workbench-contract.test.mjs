@@ -79,6 +79,7 @@ test('client service and bundle injection edges cover the slot declarations', ()
     '@deepseek-ai/dsh-client-ui-layout',
     '@deepseek-ai/dsh-client-ui-settings-plugins',
     '@deepseek-ai/dsh-client-ui-sidebar',
+    '@deepseek-ai/dsh-client-ui-workspace',
   ]) {
     assert.ok(manifest.dsh.client.inject.includes(dependency), dependency + ' missing from dsh.client.inject')
     assert.ok(manifest.peerDependencies[dependency] !== undefined, dependency + ' missing from peerDependencies')
@@ -96,4 +97,11 @@ test('技能目录列表展示 skillsDirs 的全部配置项，空配置才使�
   assert.match(skillsSettings, /meta=\{`\$\{displaySkillsDirs\.length\} 个目录/)
   assert.match(skillsSettings, /\{displaySkillsDirs\.length === 0 \?/)
   assert.match(skillsSettings, /\{displaySkillsDirs\.map\(\(dir, index\) =>/)
+})
+
+test('技能目录同时提供绝对路径引用与文件夹内容导入', () => {
+  assert.match(skillsSettings, /api\.pickDirectory\(\)/)
+  assert.match(skillsSettings, /选择目录并添加引用/)
+  assert.match(skillsSettings, /label="导入文件夹内容"/)
+  assert.match(skillsSettings, /\bdirectory\b/, '技能页仍应保留文件夹导入入口')
 })

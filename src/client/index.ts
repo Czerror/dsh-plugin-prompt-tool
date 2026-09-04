@@ -1,6 +1,7 @@
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-api-session-controller/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
+import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import type { PromptToolSettingsTransport } from './data/use-prompt-tool-store.ts'
@@ -13,6 +14,7 @@ import type { PromptToolHostApi } from './data/host-api.ts'
 export const inject = [
   'slots',
   'settingsScope',
+  'uiWorkspace',
   'remote',
   'remote.agentPresets',
   'remote.session',
@@ -35,6 +37,7 @@ export function apply(ctx: ClientContext): void {
   }
   const hostApi: PromptToolHostApi = {
     currentSessionId: () => ctx.sessions.list.getSnapshot().current,
+    pickDirectory: () => ctx.uiWorkspace.pickDirectory(),
     openPath: async (path) => {
       const result = await ctx.remote.session.openWorkspacePath({ path })
       if (!result.ok) throw new Error(result.error.message)
