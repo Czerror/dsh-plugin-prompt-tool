@@ -11,6 +11,7 @@ interface BridgeSuccessExtras {
   providers?: string[]
   modelCatalog?: Record<string, string[]>
   activeSkillsDirs?: string[]
+  skillsDirExists?: Record<string, boolean>
   skillCatalog?: SkillCatalogEntry[]
   templatePreStepCount?: number
   presetParams?: Record<string, unknown>

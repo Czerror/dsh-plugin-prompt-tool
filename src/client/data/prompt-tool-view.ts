@@ -161,7 +161,7 @@ export function fieldsFromView(res: BridgeResult<BridgeSettingsView>): Fields {
       : readStringArray(base, 'activeSkillsDirs'),
     skillsDirExists: (() => {
       const merged: Record<string, boolean> = {}
-      for (const entry of [value, base]) {
+      for (const entry of [base, value, res.ok ? { skillsDirExists: res.skillsDirExists } : {}]) {
         const record = entry
         const exists = record.skillsDirExists
         if (exists !== null && typeof exists === 'object' && !Array.isArray(exists)) {
@@ -202,6 +202,7 @@ export function bridgeViewFromBoot(boot: BridgeResult<BridgeSettingsView>): Brid
     providers: boot.providers,
     modelCatalog: boot.modelCatalog,
     activeSkillsDirs: boot.activeSkillsDirs,
+    skillsDirExists: boot.skillsDirExists,
     skillCatalog: boot.skillCatalog,
     templatePreStepCount: boot.templatePreStepCount,
     presetParams: boot.presetParams,
