@@ -60,6 +60,8 @@ test('引擎参数 owner 不在委派卡重复编辑', () => {
 
 test('模块卡存在性经过 moduleFacts/能力目录，不由参数 truthy 推断', () => {
   assert.match(modules, /isEngineCapabilityPresent\(id, store\.moduleFacts\)/)
+  assert.match(modules, /engineCapability\(id\)\?\.displayLayer/)
+  assert.doesNotMatch(modules, /visibleCapability\('[^']+',\s*'(?:pre-step|system-section|tool-pipeline)'\)/)
   assert.match(moduleCapabilities, /facts\.sourceMode === 'unknown'/)
   assert.match(moduleCapabilities, /effectiveModules: string\[\] \| null/)
 })
