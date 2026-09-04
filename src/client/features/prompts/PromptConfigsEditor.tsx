@@ -6,6 +6,7 @@ import { TemplatePicker } from '../../ui/TemplatePicker.tsx'
 import { useTemplatePicker } from './useTemplatePicker.ts'
 import { VariablesEditor } from './PromptConfigFields.tsx'
 import { tabKeyHandler } from '../../ui/tab-key.ts'
+import { MenuSelect } from '../../ui/MenuSelect.tsx'
 import sharedCss from '../../ui/controls.module.css'
 import featureCss from './prompts.module.css'
 
@@ -168,6 +169,19 @@ export function PromptConfigsEditor(props: PromptConfigsEditorProps): ReactNode 
 
       {viewMode === 'capability' ? (
         <div id="pt-module-panel-capability" role="tabpanel" aria-labelledby="pt-module-view-capability" className={styles.capabilityPanel}>
+          <div className={styles.capabilityToolbar}>
+            <span className={styles.configFieldLabel}>能力层级</span>
+            <MenuSelect
+              ariaLabel="按能力层级过滤"
+              value={props.viewFilter}
+              options={[
+                { value: 'all', label: '全部' },
+                { value: 'world-book', label: '世界书' },
+                ...props.meta.layers.map((item) => ({ value: item, label: `层级：${item}` })),
+              ]}
+              onChange={props.onViewFilterChange}
+            />
+          </div>
           {props.headerCards}
           {props.beforeCards}
         </div>

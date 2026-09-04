@@ -2,9 +2,9 @@
 
 ## 状态
 
-- **当前阶段**：Wave 0/1/2/3 执行中，Wave 4 待最终验证。
+- **当前阶段**：Wave 0–4 已执行；视口 smoke 已通过，保留少量文档/业务限制。
 - **本轮目标**：把模块列表重构为按引擎能力归一的卡片；由预设模块事实决定卡片存在；官方预设按实际 `ToolSchema` 展开工具卡；能力/recipe 创建使用一次原子写盘；小控件紧凑而大文本/JSON 保持自适应。
-- **已完成前置**：`project-engine.md` 已重命名为本文件；`SillyTavern.md` 位于 `docs/`；第一版卡片拆分与官方 `Menu` 适配已落地，但以下 Wave 会修正其审查缺口。
+- **已完成前置**：`project-engine.md` 已重命名为本文件；`SillyTavern.md` 位于 `docs/`；卡片拆分、官方 `Menu`、模块事实、ToolSchema 预览和 recipe 创建已按下列 Wave 落地。
 
 ## 一、审查结论与修订动作
 
@@ -139,12 +139,14 @@ interface PresetModuleFacts {
 
 | Wave | 状态 | 证据 |
 |---|---|---|
-| Wave 0 | 待执行 | facts/identity/catalog Node tests |
-| Wave 1 | 部分已执行 | typecheck、lint、UI 静态契约；需 facts gate 与 CSS scope 行为测试 |
-| Wave 2 | 待执行 | bridge fake service + client contract |
-| Wave 3 | 待执行 | atomic write/rebuild/idempotency tests |
-| Wave 4 | 待执行 | 浏览器截图/DOM smoke + 全量命令 |
+| Wave 0 | 已完成 | `module-facts.test.mjs`、`engine-capability.test.mjs`；显式/fallback/嵌套/params-only/重复 identity |
+| Wave 1 | 已完成 | `engine-module-cards.test.mjs`、`menu-select.test.mjs`、ARIA tabs；typecheck/lint |
+| Wave 2 | 已完成 | `bridge-contract.test.mjs`、`bridge-client.test.mjs`；session/preset XOR、roster、排序、错误码 |
+| Wave 3 | 已完成 | `engine-capability.test.mjs`；一次写入、幂等、候选失败不改文件 |
+| Wave 4 | 已完成 | 隔离 DSH_HOME + 随机端口 Edge CDP smoke：1440×900/390×844、0 原生 select、无横溢出、无聚合卡 |
+
+对应提交点：`ad81b28`（卡片/工具面）、`0d43fde`（模块事实/视图）、`0973cb4`（边界/回显）；本次视图筛选和计划收口另行使用 `refactor:` 提交。
 
 ## 六、完成定义
 
-只有 Wave 0–4 的代码、行为测试、视口 smoke 和全量命令均通过后，才将状态改为“已完成”；任何未验证项必须保留在本表，不用静态源码扫描或设计文档替代运行证据。
+Wave 0–4 已完成。后续若要增加 schema 参数详情、能力删除或更复杂的 preset 归属，必须另开计划并补充对应 Host/bridge 回归；本计划不把这些未实现扩展算作当前交付。
