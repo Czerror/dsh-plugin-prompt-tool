@@ -638,12 +638,22 @@
 .skillStatusOff { --chip: var(--dsw-alias-label-secondary); }
 
 .skillStatusDot {
+  display: inline-block;
   width: 6px;
   height: 6px;
   flex: none;
   border-radius: 50%;
   corner-shape: round;
   background: currentColor;
+}
+
+.skillStatusDot[data-state='available'] {
+  background: var(--dsw-alias-state-success-primary);
+  box-shadow: 0 0 0 1px var(--dsw-alias-label-primary-foreground);
+}
+
+.skillStatusDot[data-state='error'] {
+  background: var(--dsw-alias-state-error-primary);
 }
 
 .dragHandle {

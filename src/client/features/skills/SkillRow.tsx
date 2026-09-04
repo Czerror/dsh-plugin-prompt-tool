@@ -21,7 +21,11 @@ function SkillStatusChips(props: { skill: SkillCatalogEntry; enabled: boolean })
   return (
     <span className={ui.skillStatusRow} aria-label={`技能调用状态：${status}`}>
       <span className={clsx(ui.skillStatusChip, tone)}>
-        <i className={clsx(ui.skillStatusDot, callable && ui.skillStatusCallable)} aria-hidden="true" />
+        <i
+          className={ui.skillStatusDot}
+          data-state={callable ? 'available' : skill.valid && !enabled ? 'error' : undefined}
+          aria-hidden="true"
+        />
         {status}
       </span>
     </span>

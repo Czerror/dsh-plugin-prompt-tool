@@ -30,7 +30,7 @@ export function ModelRouteStatus(props: { store: PromptToolStore; provider: stri
         className={clsx(ui.skillStatusChip, ui.modelStatusChip, hasModels ? ui.skillStatusModel : ui.skillStatusOff)}
         title={modelStatus}
       >
-        <i className={ui.skillStatusDot} aria-hidden="true" />
+        <i className={ui.skillStatusDot} data-state={hasModels ? 'available' : 'error'} aria-hidden="true" />
         <span className={ui.modelStatusText}>{modelStatus}</span>
       </span>
     </div>
