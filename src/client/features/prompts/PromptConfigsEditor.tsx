@@ -144,7 +144,7 @@ export function PromptConfigsEditor(props: PromptConfigsEditorProps): ReactNode 
         savedConfigs={props.savedConfigs}
         viewFilter={props.viewFilter}
         onViewFilterChange={props.onViewFilterChange}
-        extraActions={<button type="button" className={styles.primaryPill} onClick={templatePicker.openPicker}>新建</button>}
+        extraActions={<button ref={templatePicker.anchorRef} type="button" className={styles.primaryPill} onClick={templatePicker.openPicker}>新建</button>}
         beforeCards={
           <>
             {props.beforeCards}
@@ -167,6 +167,7 @@ export function PromptConfigsEditor(props: PromptConfigsEditorProps): ReactNode 
 
       {templatePicker.open && (
         <TemplatePicker
+          anchorRef={templatePicker.anchorRef}
           templates={templatePicker.templates}
           onPick={templatePicker.pickTemplate}
           onPickVariables={pickVariables}

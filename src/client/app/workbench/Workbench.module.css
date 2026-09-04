@@ -93,11 +93,15 @@
 .sidebarEdgeProbe {
   display: none;
 }
+@media (max-width: 920px) {
+  /* 抽屉已占满视口时隐藏重复入口；焦点由 WorkbenchOverlay 移入 drawerPanel。 */
+  .floatingTrigger[data-open] { visibility: hidden; pointer-events: none; }
+}
 @media (max-width: 520px) {
   .floatingTrigger { width: 40px; height: 40px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .floatingTrigger { transition: none; }
-  .drawerPanel { animation: none; }
+  .drawerPanel { transition: none; animation: none; }
 }

@@ -33,10 +33,12 @@ export function WorkbenchOverlay(props: OverlayProps): ReactNode {
   // 关闭后焦点还给触发器（可访问性：焦点不得悬空在 body 上；经 ref 拿自己的按钮，
   // 只拿自己的按钮 ref，不触达宿主 DOM 结构。
   const triggerRef = useRef<HTMLButtonElement>(null)
+  const drawerRef = useRef<HTMLElement>(null)
   const prevOpenRef = useRef(open)
   useEffect(() => {
     const wasOpen = prevOpenRef.current
     prevOpenRef.current = open
+    if (!wasOpen && open) drawerRef.current?.focus()
     if (wasOpen && !open) triggerRef.current?.focus()
   }, [open])
   const trigger = <FloatingTrigger controller={controller} triggerRef={triggerRef} />
@@ -46,7 +48,7 @@ export function WorkbenchOverlay(props: OverlayProps): ReactNode {
   const drawer = (
     <div className={css.drawerLayer} data-open={open ? '' : undefined}>
       <div className={css.drawerBackdrop} onClick={() => controller.close()} aria-hidden="true" />
-      <section className={css.drawerPanel} role="dialog" aria-modal="true" aria-label="提示词工具">
+      <section ref={drawerRef} className={css.drawerPanel} data-dsh-part="workspace-drawer" role="dialog" aria-modal="true" aria-label="提示词工具" tabIndex={-1}>
         <PromptWorkspace api={api} settings={settings} controller={controller} onClose={() => controller.close()} />
       </section>
     </div>

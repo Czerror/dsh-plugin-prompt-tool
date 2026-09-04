@@ -41,7 +41,7 @@ function createRequireStub() {
     useSyncExternalStore: () => null,
   }
   const runtime = { jsx: react.createElement, jsxs: react.createElement, Fragment: react.Fragment }
-  const primitives = { IconChevronDownOutline14: () => null }
+  const primitives = { Button: (props) => react.createElement('button', props), IconChevronDownOutline14: () => null, useAnchoredPosition: () => null, useDismissOnOutsidePointer: () => {} }
   const dom = { createRoot: () => ({ render: () => {}, unmount: () => {} }), createPortal: (children) => children }
   return (specifier) => {
     switch (specifier) {

@@ -5,7 +5,7 @@ import clsx from 'clsx'
 import { IconCopyOutline16, IconFolderOpenOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { bridgeCall } from '../../data/bridge-client.ts'
 import type { PromptToolStore } from '../../data/use-prompt-tool-store.ts'
-import { useDialogFocus } from '../../ui/dialog-focus.ts'
+import { DialogSurface } from '../../ui/DialogSurface.tsx'
 import sharedCss from '../../ui/controls.module.css'
 import featureCss from './presets.module.css'
 
@@ -19,10 +19,9 @@ export const PresetSwitcher = memo(function PresetSwitcher(props: { store: Promp
   const [importing, setImporting] = useState(false)
   const [confirmingDelete, setConfirmingDelete] = useState<string | undefined>(undefined)
   const [pickerOpen, setPickerOpen] = useState(false)
+  const pickerAnchorRef = useRef<HTMLButtonElement>(null)
   const yamlRef = useRef<HTMLInputElement>(null)
   const dirRef = useRef<HTMLInputElement>(null)
-
-  const { dialogRef, onDialogKeyDown } = useDialogFocus<HTMLDivElement>(pickerOpen, () => setPickerOpen(false))
 
   /** 上传预设包：path 为相对路径（preset.yml 或文件夹内文件），服务端按 id 归入用户预设目录。 */
   const uploadPreset = async (entries: Array<{ path: string; content: string }>): Promise<void> => {
@@ -149,7 +148,7 @@ export const PresetSwitcher = memo(function PresetSwitcher(props: { store: Promp
             aria-label="选择预设文件夹"
             onChange={(event) => { pickPresetDir(event.target.files); event.target.value = '' }}
           />
-          <button type="button" className={styles.primaryPill} onClick={() => setPickerOpen(true)}>新建预设</button>
+          <button ref={pickerAnchorRef} type="button" className={styles.primaryPill} onClick={() => setPickerOpen(true)}>新建预设</button>
           <button type="button" className={styles.pillButton} disabled={importing} onClick={() => yamlRef.current?.click()}>
             {importing ? '导入中…' : '导入预设'}
           </button>
@@ -167,38 +166,22 @@ export const PresetSwitcher = memo(function PresetSwitcher(props: { store: Promp
         ) : presets.map((preset) => renderCard(preset))}
       </div>
       {pickerOpen && (
-        <div className={styles.modalBackdrop} onClick={() => setPickerOpen(false)}>
-          <div
-            ref={dialogRef}
-            className={styles.templateModal}
-            role="dialog"
-            aria-modal="true"
-            aria-label="从内置模板新建预设"
-            onClick={(event) => event.stopPropagation()}
-            onKeyDown={onDialogKeyDown}
-          >
-            <div className={styles.templateModalHead}>
-              <strong>从内置模板新建预设</strong>
-              <button type="button" className={styles.pillButton} aria-label="关闭模板选择" onClick={() => setPickerOpen(false)}>×</button>
-            </div>
-            <div className={styles.templateModalList}>
-              {templates.length === 0 && <p className={styles.configFieldHint}>插件目录无内置模板。</p>}
-              <button type="button" className={styles.templateModalItem} data-custom
-                title="新建一份所有参数为空的自定义预设（重名自动加序号）"
-                onClick={() => void clonePreset('custom', true)}>
-                <strong>自定义预设</strong>
-                <small>custom · 所有参数为空（空白起点，重名自动加序号）</small>
-              </button>
-              {templates.map((template) => (
-                <button key={template.id} type="button" className={styles.templateModalItem}
-                  title={`新建到用户目录：${template.id}`} onClick={() => void clonePreset(template.id)}>
-                  <strong>{template.name}</strong>
-                  <small>{template.id}</small>
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
+        <DialogSurface title="从内置模板新建预设" closeLabel="关闭新建预设" anchorRef={pickerAnchorRef} onClose={() => setPickerOpen(false)}>
+          {templates.length === 0 && <p className={styles.configFieldHint}>插件目录无内置模板。</p>}
+          <button type="button" className={styles.templateModalItem} data-custom
+            title="新建一份所有参数为空的自定义预设（重名自动加序号）"
+            onClick={() => void clonePreset('custom', true)}>
+            <strong>自定义预设</strong>
+            <small>custom · 所有参数为空（空白起点，重名自动加序号）</small>
+          </button>
+          {templates.map((template) => (
+            <button key={template.id} type="button" className={styles.templateModalItem}
+              title={`新建到用户目录：${template.id}`} onClick={() => void clonePreset(template.id)}>
+              <strong>{template.name}</strong>
+              <small>{template.id}</small>
+            </button>
+          ))}
+        </DialogSurface>
       )}
     </div>
   )

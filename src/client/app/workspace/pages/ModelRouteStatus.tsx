@@ -1,27 +1,37 @@
 import clsx from 'clsx'
 import type { ReactNode } from 'react'
 import type { PromptToolStore } from '../../../data/use-prompt-tool-store.ts'
+import { resolveProviderModels } from './model-route-status.ts'
 import ui from '../../../ui/controls.module.css'
-/** 模型路由状态 chip：主对话页与子代理页共用（检测到 DeepSeek 路由时展示 provider 列表）。 */
-export function ModelRouteStatus(props: { store: PromptToolStore }): ReactNode {
+
+/** 模型路由状态：服务商展示检测结果，模型只展示当前选中服务商的目录。 */
+export function ModelRouteStatus(props: { store: PromptToolStore; provider: string }): ReactNode {
   const { store } = props
   const detected = store.providers.length > 0
-  const catalog = store.modelCatalog
-  const catalogEntries = Object.entries(catalog)
-  const hostModel = store.hostDefaultModel?.model
+  const { provider, models } = resolveProviderModels(
+    store.modelCatalog,
+    props.provider,
+    store.providers,
+    store.hostDefaultModel,
+  )
+  const hasModels = models.length > 0
+  const modelStatus = hasModels
+    ? `已检测到模型名（${provider}）：${models.join('、')}`
+    : provider.length > 0
+      ? `未检测到 ${provider} 的模型名`
+      : '未检测到模型名'
   return (
     <div className={ui.skillStatusRow} aria-label="模型服务商状态">
       <span className={clsx(ui.skillStatusChip, detected ? ui.skillStatusModel : ui.skillStatusOff)}>
         <i className={ui.skillStatusDot} aria-hidden="true" />
         {detected ? `已检测到模型服务商：${store.providers.join('、')}` : '未检测到模型服务商'}
       </span>
-      <span className={clsx(ui.skillStatusChip, catalogEntries.length > 0 ? ui.skillStatusModel : ui.skillStatusOff)}>
+      <span
+        className={clsx(ui.skillStatusChip, ui.modelStatusChip, hasModels ? ui.skillStatusModel : ui.skillStatusOff)}
+        title={modelStatus}
+      >
         <i className={ui.skillStatusDot} aria-hidden="true" />
-        {catalogEntries.length > 0
-          ? `已检测到模型名：${catalogEntries.map(([provider, models]) => `${provider} → ${models.join('、')}`).join('；')}`
-          : hostModel !== undefined && hostModel.length > 0
-            ? `模型名：继承宿主默认（${hostModel}）`
-            : '未检测到模型名'}
+        <span className={ui.modelStatusText}>{modelStatus}</span>
       </span>
     </div>
   )

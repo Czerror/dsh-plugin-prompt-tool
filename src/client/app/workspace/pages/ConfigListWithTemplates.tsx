@@ -35,14 +35,14 @@ export const ConfigListWithTemplates = memo(function ConfigListWithTemplates(pro
         beforeCards={beforeCards}
         emptyHint={preStepEmpty ? '当前预设模板消息批层无配置；可新建自定义配置（作为 settings 覆盖层，切换预设后仍保留）。' : undefined}
         extraActions={
-          <button type="button" className={ui.primaryPill} onClick={templatePicker.openPicker}>新建</button>
+          <button ref={templatePicker.anchorRef} type="button" className={ui.primaryPill} onClick={templatePicker.openPicker}>新建</button>
         }
         onPatchConfigs={patchConfigs}
         onSaveConfigs={saveConfigs}
         onNotice={store.showNotice}
       />
       {templatePicker.open && (
-        <TemplatePicker templates={templatePicker.templates} layer={layer} onPick={templatePicker.pickTemplate} onClose={templatePicker.closePicker} />
+        <TemplatePicker anchorRef={templatePicker.anchorRef} templates={templatePicker.templates} layer={layer} onPick={templatePicker.pickTemplate} onClose={templatePicker.closePicker} />
       )}
     </>
   )

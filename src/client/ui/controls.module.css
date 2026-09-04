@@ -132,6 +132,19 @@
   box-shadow: var(--dsw-elevation-prominent);
 }
 
+.templatePopover {
+  position: fixed;
+  z-index: 1200;
+  display: flex;
+  width: min(440px, calc(100vw - 24px));
+  max-height: min(72vh, calc(100vh - 24px));
+  flex-direction: column;
+  overflow: hidden;
+  border: 0;
+  border-radius: 14px;
+  background: var(--dsw-alias-bg-layer-2);
+  box-shadow: var(--dsw-elevation-prominent);
+}
 .templateModalHead {
   display: flex;
   align-items: center;
@@ -141,6 +154,13 @@
   border-bottom: 0.5px solid var(--dsw-alias-border-l1);
 }
 
+.dialogClose {
+  width: 28px;
+  min-width: 28px;
+  padding: 0;
+  font-size: 18px;
+  line-height: 1;
+}
 .templateModalList {
   display: grid;
   gap: 8px;
@@ -603,6 +623,17 @@
 }
 
 /* 实底深色 + 白字，保证浅色/深色宿主主题下都清晰。 */
+.modelStatusChip {
+  min-width: 0;
+  max-width: min(100%, 560px);
+}
+
+.modelStatusText {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .skillStatusModel { --chip: var(--dsw-alias-state-business-primary); }
 .skillStatusOff { --chip: var(--dsw-alias-label-secondary); }
 

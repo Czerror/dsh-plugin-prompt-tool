@@ -59,7 +59,7 @@ src/client/
 - [查看 Archify JSON 源规格](project-architecture/project-architecture-v2.json)
 - [查看本轮视觉检查收据](project-architecture/project-architecture-v2.visual-check.json)
 
-`v2` 已按当前 `app / data / features / ui` 客户端结构更新，并通过 showcase 9/9 校验；无 `v2` 后缀的文件保留为首轮构图记录。当前环境未发现 Chrome/Chromium，因此本轮 visual-check 状态为 skipped，既有旧截图已移除，避免误作当前图证据。
+`v2` 已按当前 `app / data / features / ui` 客户端结构更新，并通过 showcase 9/9 校验；无 `v2` 后缀的文件保留为首轮构图记录。本轮已使用 Microsoft Edge 完成 visual-check：containment/captures 均通过，保留 1440×900 与 2048×1320 的明暗截图及联系页；自动收据的 `visualReview` 仍为 `pending`，仅表示需要人工查看截图，不代表渲染失败。
 
 
 ## 预设参数体系

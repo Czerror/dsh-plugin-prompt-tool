@@ -28,7 +28,7 @@ export const MainSessionPage = memo(function MainSessionPage(props: { store: Pro
   }, [store])
   return (
     <section className={ui.section} aria-label="主会话与全局">
-      <ModelRouteStatus store={store} />
+      <ModelRouteStatus store={store} provider={fields.modelProvider} />
       <PromptConfigsEditor
         meta={store.meta}
         configs={fields.promptConfigs}

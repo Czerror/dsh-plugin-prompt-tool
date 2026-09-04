@@ -4,7 +4,7 @@
 > 仓库基线：`cd9c64e`
 > DSH 宿主基线：`76fda729`
 > 策略级别：L3 结构重构，按可独立回滚的小 Wave 实施
-> 当前状态：**已于 2026-09-03 完成 Wave 0-8，Wave 9 全量验收进行中**
+> 当前状态：**已于 2026-09-04 完成 Wave 0-9，客户端结构、模型状态与顶层锚定浮层验收通过**
 
 ## 一、目标
 
@@ -931,14 +931,29 @@ features/*/*.module.css
 
 退出条件：无全局样式污染、明暗主题一致、窄宽度与侧栏拉伸 smoke 通过。
 
-### Wave 9：全量验收与交付
+### Wave 9：全量验收与交付（已完成，2026-09-04）
 
-- 完整 typecheck/lint/test/build。
-- 检查 bundle external 和 client facade。
-- 隔离 DSH_HOME + 随机端口执行浏览器 smoke。
-- 检查工作树和生成物。
-- 分 Wave 提交均已推送 `origin/dev`。
-- 若只有源码/client bundle 变化，报告用户按实际加载方式刷新；不由本轮重启当前 DSH。
+- [x] 完整 typecheck/lint/test/build。
+- [x] 检查 bundle external 和 client facade。
+- [x] 隔离 DSH_HOME + Edge/Playwright 执行浏览器 smoke。
+- [x] 检查工作树和生成物。
+- [x] 分 Wave 提交均已推送 `origin/dev`。
+- [x] 若只有源码/client bundle 变化，报告用户按实际加载方式刷新；不由本轮重启当前 DSH。
+- [x] 模型状态只展示当前选中服务商的模型，长文本单行省略并保留 title 完整信息。
+- [x] 模块列表、自定义工具和新建预设浮层统一 body portal、fixed 定位、高层级，并在锚点滚动后继续跟随。
+- [x] `新建预设` 在按钮下方打开；空间不足时限制高度并改为向上展开，不再被 drawer/overflow 截断。
+- [x] 完成 1440×900 / 2048×1320 明暗架构图 visual-check；containment/captures 通过，截图与联系页已恢复。
+
+Wave 9 验证记录：
+
+```text
+pnpm --dir D:\AI\GitHub\dsh-plugin-prompt-tool typecheck  通过
+pnpm --dir D:\AI\GitHub\dsh-plugin-prompt-tool lint       通过
+pnpm --dir D:\AI\GitHub\dsh-plugin-prompt-tool test       514 pass / 0 fail（2026-09-04 最终全量结果）
+pnpm --dir D:\AI\GitHub\dsh-plugin-prompt-tool build      通过
+Edge isolated smoke：新建预设 parent=document.body、position=fixed、z-index=1200、左缘差 0px、按钮下方间距约 8px；滚动后仍跟随；无 console/page error
+Archify visual-check：status=pass，containment=pass，captures=pass，showcase 9/9，visualReview=pending
+```
 
 ---
 
@@ -1122,31 +1137,31 @@ git -C $Repo diff --check
 
 ### 19.2 行为
 
-- [ ] 五页入口、顺序、默认页和 settings tab 行为不变。
-- [ ] 三个官方 slot 的 id/order/inject/disposer 不变。
-- [ ] 保存队列、revision、草稿保护不变。
-- [ ] preset/params/variables/promptConfigs 空值和优先级不变。
-- [ ] 预设切换和会话模型仍走官方 API。
-- [ ] 无额外首屏 bridge 请求。
-- [ ] 未启用可选模块的预设生成结果不变。
+- [x] 五页入口、顺序、默认页和 settings tab 行为不变。
+- [x] 三个官方 slot 的 id/order/inject/disposer 不变。
+- [x] 保存队列、revision、草稿保护不变。
+- [x] preset/params/variables/promptConfigs 空值和优先级不变。
+- [x] 预设切换和会话模型仍走官方 API。
+- [x] 无额外首屏 bridge 请求。
+- [x] 未启用可选模块的预设生成结果不变。
 
 ### 19.3 UI
 
-- [ ] 所有标准按钮优先消费宿主 primitive，新代码无本地 Button wrapper。
-- [ ] Tabs 具备完整键盘和 ARIA 关系。
-- [ ] Dialog 具备首焦点、循环、Escape、backdrop 与焦点恢复。
-- [ ] 拖拽流程保留键盘替代。
-- [ ] 明暗主题、窄布局、reduced motion 正常。
-- [ ] 无宿主全局样式污染。
+- [x] 所有标准按钮优先消费宿主 primitive，新代码无本地 Button wrapper。
+- [x] Tabs 具备完整键盘和 ARIA 关系。
+- [x] Dialog 具备首焦点、循环、Escape、backdrop 与焦点恢复。
+- [x] 拖拽流程保留键盘替代。
+- [x] 明暗主题、窄布局、reduced motion 正常。
+- [x] 无宿主全局样式污染。
 
 ### 19.4 测试与交付
 
-- [ ] typecheck、lint、test、build 全部通过。
-- [ ] isolated browser smoke 通过。
-- [ ] 每 Wave 一个中文 Conventional Commit。
-- [ ] 每 Wave 推送 `origin/dev`。
-- [ ] README 与架构图反映最终结构。
-- [ ] 未停止或重启用户当前 DSH 服务。
+- [x] typecheck、lint、test、build 全部通过。
+- [x] isolated browser smoke 通过。
+- [x] 每 Wave 一个中文 Conventional Commit。
+- [x] 每 Wave 推送 `origin/dev`。
+- [x] README 与架构图反映最终结构。
+- [x] 未停止或重启用户当前 DSH 服务。
 
 ---
 
@@ -1204,4 +1219,4 @@ docs: 更新 UI 架构与验收记录
 2. **保持现有五页信息架构，不在结构重构中重做产品导航。**
 3. **采用 A′ 组件策略：宿主 primitive 优先，不建立本地 Button/Card/Tabs 脚手架。**
 
-执行记录：Wave 0-8 已分别通过 typecheck/lint/test 并提交到 `origin/dev`；最终结果见 Wave 9 交付记录。
+执行记录：Wave 0-9 已分别通过 typecheck/lint/test 并提交到 `origin/dev`；Wave 9 额外完成模型状态过滤、body 顶层锚定浮层、按钮跟随与隔离浏览器回归，最终结果见上方交付记录。

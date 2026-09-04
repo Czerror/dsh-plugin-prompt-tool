@@ -14,11 +14,11 @@ import ui from '../../../ui/controls.module.css'
 export const SubagentPage = memo(function SubagentPage(props: { store: PromptToolStore }): ReactNode {
   const { store } = props
   // 订阅 fields：memo 后 props 不变，靠订阅通道随 fields 变化重渲（子代理模型/工具卡数据源）。
-  usePromptToolFields(store, (value) => value)
+  const fields = usePromptToolFields(store, (value) => value)
   return (
     <>
       <section className={ui.section} aria-label="子代理">
-        <ModelRouteStatus store={store} />
+        <ModelRouteStatus store={store} provider={fields.subagentModelProvider} />
         <div className={ui.configList}>
           <ModelRouteModuleCard store={store} scope="subagent" />
           <DelegationToolsModuleCard store={store} renderToolSurface={(sessionId, label) => <ToolSurfaceView sessionId={sessionId} label={label} />} />

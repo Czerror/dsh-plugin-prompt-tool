@@ -58,7 +58,9 @@ test('floating trigger position stays independent from third-party title-bar set
   assert.match(geometry, /document\.documentElement\.style\.setProperty/)
   assert.match(geometry, /measuredAncestor/)
   assert.doesNotMatch(geometry, /parentElement\?\.parentElement/)
-  assert.match(overlay, /triggerRef\.current\?\.focus\(\)/)
+  assert.match(overlay, /drawerRef\.current\?\.focus\(\)/, '打开后焦点进入抽屉')
+  assert.match(overlay, /triggerRef\.current\?\.focus\(\)/, '关闭后焦点返回入口')
+  assert.match(css, /@media \(max-width: 920px\)[\s\S]*\.floatingTrigger\[data-open\][^}]*visibility:\s*hidden/, '全屏抽屉隐藏重复悬浮入口')
 })
 
 test('shell.overlay drawer is styled as an official overlay child', () => {

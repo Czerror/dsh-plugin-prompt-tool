@@ -1,5 +1,5 @@
 /** 工具管理（tool-pipeline 层）：自定义工具定义与实际工具面。 */
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import clsx from 'clsx'
 import { IconChevronDownOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { bridgeCall } from '../../data/bridge-client.ts'
@@ -18,6 +18,7 @@ export function CustomToolsCard(props: {
   /** 当前主会话 session id（客户端从官方 sessions snapshot 取，不持久化；缺省 = 手动输入）。 */
   sessionId?: string
 }): ReactNode {
+  const templateAnchorRef = useRef<HTMLButtonElement>(null)
   const [tools, setTools] = useState<ToolDraft[]>([])
   const [toolTemplates, setToolTemplates] = useState<Array<{ file: string; spec: ToolDraft }>>([])
   const [pickerOpen, setPickerOpen] = useState(false)
@@ -95,7 +96,7 @@ export function CustomToolsCard(props: {
           <p>{`${tools.length} 个自定义工具 · 第三方策略见下方模块卡片`}</p>
         </div>
         <span className={styles.configActions}>
-          <button type="button" className={styles.pillButton} onClick={() => setPickerOpen(true)}>从模板新建</button>
+          <button ref={templateAnchorRef} type="button" className={styles.pillButton} onClick={() => setPickerOpen(true)}>从模板新建</button>
           <button type="button" className={styles.pillButton}
             onClick={() => setTools([...tools, {
               id: `tool-${tools.length + 1}`,
@@ -153,6 +154,7 @@ export function CustomToolsCard(props: {
       )}
       {pickerOpen && (
         <TemplatePicker
+          anchorRef={templateAnchorRef}
           templates={[]}
           toolTemplates={toolTemplates}
           onPick={() => {}}

@@ -1,5 +1,5 @@
 /** 模板库加载 + 插入共享逻辑：PromptConfigsEditor 与各配置列表页（六层/子代理）共用。 */
-import { useState } from 'react'
+import { useRef, useState, type RefObject } from 'react'
 import { bridgeCall, errorMessage } from '../../data/bridge-client.ts'
 import type { PromptConfigDraft, PromptConfigTemplateEntry } from '../../prompt-tool-types.ts'
 
@@ -8,12 +8,14 @@ export function useTemplatePicker(
   onPickConfig: (config: PromptConfigDraft) => void,
   onNotice: (kind: 'ok' | 'error', message: string) => void,
 ): {
+  anchorRef: RefObject<HTMLButtonElement>
   templates: PromptConfigTemplateEntry[]
   open: boolean
   openPicker: () => void
   closePicker: () => void
   pickTemplate: (entry: PromptConfigTemplateEntry) => void
 } {
+  const anchorRef = useRef<HTMLButtonElement>(null)
   const [templates, setTemplates] = useState<PromptConfigTemplateEntry[]>([])
   const [open, setOpen] = useState(false)
 
@@ -53,5 +55,5 @@ export function useTemplatePicker(
     setOpen(false)
   }
 
-  return { templates, open, openPicker, closePicker, pickTemplate }
+  return { anchorRef, templates, open, openPicker, closePicker, pickTemplate }
 }
