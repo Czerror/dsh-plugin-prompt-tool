@@ -145,7 +145,7 @@ interface PresetModuleFacts {
 | Wave 3 | 已完成 | `engine-capability.test.mjs`；一次写入、幂等、候选失败不改文件 |
 | Wave 4 | 已完成 | 隔离 DSH_HOME + 随机端口 Edge CDP smoke：1440×900/390×844、0 原生 select、无横溢出、无聚合卡 |
 
-对应提交点：`ad81b28`（卡片/工具面）、`0d43fde`（模块事实/视图）、`0973cb4`（边界/回显）；本次视图筛选和计划收口另行使用 `refactor:` 提交。
+对应提交点：`ad81b28`（卡片/工具面）、`0d43fde`（模块事实/视图）、`0973cb4`（边界/回显）、`6539dbb`（能力视图/计划收口）、`3bfe537`（事实回显/最终边界）；每个落地阶段均使用中文 `refactor:` 提交。
 
 ## 六、完成定义
 
