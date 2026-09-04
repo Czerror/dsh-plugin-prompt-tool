@@ -119,6 +119,46 @@ function projectToolSchemas(schemas: readonly ToolSchemaLike[]): Array<{ name: s
   return [...unique.values()].sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0)
 }
 
+/** 将 moduleConfigs/行默认投影为 UI 字段兜底；显式 params 永远优先。 */
+function mergeModuleConfigFallbacks(params: Record<string, unknown>, facts: PresetModuleFacts): void {
+  const configs = facts.effectiveConfigs ?? {}
+  const mappings: Array<[string, string, string, 'list' | 'scalar']> = [
+    ['tool-bootstrap', 'bootstrapMaxTokens', 'bootstrapMaxTokens', 'scalar'],
+    ['tool-bootstrap', 'bootstrapTools', 'bootstrapTools', 'list'],
+    ['tool-bootstrap', 'compactionTools', 'compactionTools', 'list'],
+    ['tool-bootstrap', 'promoteGate', 'promoteGate', 'scalar'],
+    ['tool-bootstrap', 'promoteAfterFirstResponse', 'promoteAfterFirstResponse', 'scalar'],
+    ['tool-bootstrap', 'maxPromoteSteps', 'maxPromoteSteps', 'scalar'],
+    ['tool-bootstrap', 'personaSectionsOnly', 'personaSectionsOnly', 'scalar'],
+    ['tool-bootstrap', 'workspaceLine', 'workspaceLine', 'scalar'],
+    ['tool-bootstrap', 'phase1FirstCallInstruction', 'phase1FirstCallInstruction', 'scalar'],
+    ['tool-bootstrap', 'stagePreUnlock', 'stagePreUnlock', 'scalar'],
+    ['tool-bootstrap', 'stageAdvanceTool', 'stageAdvanceTool', 'scalar'],
+    ['tool-bootstrap', 'stageAdvanceDescription', 'stageAdvanceDescription', 'scalar'],
+    ['tool-bootstrap', 'stageSectionTemplate', 'stageSectionTemplate', 'scalar'],
+    ['context-gate', 'instructionHint', 'instructionHint', 'scalar'],
+    ['anchor-turn', 'enabled', 'anchorTurn', 'scalar'],
+    ['anchor-turn', 'text', 'anchorTurnText', 'scalar'],
+    ['code-presentation', 'usePtcMode', 'usePtcMode', 'scalar'],
+    ['tool-filter', 'allow', 'toolFilterAllow', 'list'],
+    ['tool-filter', 'deny', 'toolFilterDeny', 'list'],
+    ['tool-filter', 'includeSubagents', 'toolFilterSubagents', 'scalar'],
+    ['deliberation-gate', 'enabled', 'deliberationGate', 'scalar'],
+    ['deliberation-gate', 'minChars', 'deliberationMinChars', 'scalar'],
+    ['deliberation-gate', 'maxGatesPerTurn', 'deliberationMaxGatesPerTurn', 'scalar'],
+    ['cot-drip', 'enabled', 'cotDrip', 'scalar'],
+    ['cot-drip', 'every', 'cotDripEvery', 'scalar'],
+    ['cot-drip', 'maxPerTurn', 'cotDripMaxPerTurn', 'scalar'],
+    ['str-replace-editor', 'maxOutputChars', 'strReplaceEditorMaxOutputChars', 'scalar'],
+  ]
+  for (const [rowId, configKey, paramKey, kind] of mappings) {
+    if (Object.prototype.hasOwnProperty.call(params, paramKey)) continue
+    const value = configs[rowId]?.[configKey]
+    if (value === undefined) continue
+    params[paramKey] = kind === 'list' && Array.isArray(value) ? value.map(String).join(', ') : value
+  }
+}
+
 /** 读取 JSON bridge 请求体；所有 JSON 端点统一使用 32 MiB 内存上限。 */
 async function readBridgeBody(
   req: IncomingMessage,
@@ -359,6 +399,7 @@ export function registerSettingsBridge(
             activeDir.length > 0 ? activeDir : undefined,
             listPresets().some((preset) => preset.id === templateName && preset.user),
           )
+          mergeModuleConfigFallbacks(presetParams, moduleFacts)
           if (Array.isArray(spec.promptConfigs)) {
             presetParams.promptConfigs = spec.promptConfigs
           }

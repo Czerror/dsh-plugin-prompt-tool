@@ -748,7 +748,11 @@
 
 /* 模块/工具卡内布尔项使用紧凑开关；普通卡保留标准触控尺寸。 */
 .moduleCard .configEnable,
-.toolCard .configEnable { gap: 6px; }
+.toolCard .configEnable {
+  min-height: 28px;
+  gap: 6px;
+  padding: 5px 0;
+}
 .moduleCard .switch,
 .toolCard .switch {
   width: 32px;
