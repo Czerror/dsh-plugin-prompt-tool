@@ -9,9 +9,9 @@
 原始设想是按六个官方注入点组织模块与设置界面：
 
     engine/
+    ├─ pre-step/
     ├─ system-section/
     ├─ runtime-context/
-    ├─ pre-step/
     ├─ agent-request/
     ├─ llm-stream/
     └─ tool-pipeline/
@@ -151,7 +151,8 @@ common 展示当前 layer 下零到多条 PromptConfigDraft，继续使用现有
 
 - 模块持久化 ID 使用稳定键，如 tool-bootstrap、context-gate、code-presentation。
 - prompt config ID 独立于模块 ID 和 layer；不要用 layer 前缀重命名已有配置。
-- 展示标签可以写成“工具目录 · tool-bootstrap”，但不把标签作为配置键。
+- 展示标签可以写成“system-section:tool-bootstrap”或“工具目录 · tool-bootstrap”，
+  但不把它作为文件名或配置键；冒号在 Windows 文件名中也不可用。
 - order 只在同一官方 seam 内解释；跨 seam 的卡片排序只是 UI 排序。
 - 保存仍走 params/moduleConfigs/promptConfigs 各自的现有 bridge 与 writer，不新增第二个状态源。
 
@@ -160,6 +161,15 @@ common 展示当前 layer 下零到多条 PromptConfigDraft，继续使用现有
 ### 阶段一：只改展示
 
 在现有 features/modules/EngineModuleList.tsx 上补一份最小静态元数据：
+
+    const LAYER_VIEW_ORDER = [
+      "pre-step",
+      "system-section",
+      "runtime-context",
+      "agent-request",
+      "llm-stream",
+      "tool-pipeline",
+    ]
 
     const MODULE_UI_META = {
       "tool-bootstrap": {
@@ -174,6 +184,10 @@ common 展示当前 layer 下零到多条 PromptConfigDraft，继续使用现有
 
 元数据只用于过滤、徽章和分组，不参与 engine 装配。验收保持现有
 module card、prompt config ordering、bridge 和 preset 生成测试全通过。
+
+当前 getEngineMeta().layers 对集合调用 sort()，得到的是字母序，不能作为上述产品
+顺序的依据。正式实现前应让引擎 meta 返回显式顺序，并继续由它作为客户端唯一来源；
+不要在 host、client 和文档分别维护三份顺序常量。
 
 ### 阶段二：拆卡片内的编辑面
 
