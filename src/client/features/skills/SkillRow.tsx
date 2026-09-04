@@ -3,16 +3,23 @@ import clsx from 'clsx'
 import type { SkillCatalogEntry } from '../../data/prompt-tool-fields.ts'
 import sharedCss from '../../ui/controls.module.css'
 import featureCss from './skills.module.css'
+import { skillStatusLabel } from './skill-status.ts'
 
 const ui = { ...sharedCss, ...featureCss }
-/** 技能调用状态徽章：只保留模型可调用状态，开关关闭后立即变灰。 */
+/** 技能调用状态徽章：展示模型/用户调用权限及当前开关状态。 */
 function SkillStatusChips(props: { skill: SkillCatalogEntry; enabled: boolean }): ReactNode {
   const { skill, enabled } = props
-  const callable = skill.valid && skill.modelInvocable && enabled
-  const status = skill.valid ? (callable ? '模型可调用' : '模型不可调用') : '未注册'
+  const status = skillStatusLabel(skill, enabled)
+  const tone = !skill.valid
+    ? ui.skillStatusError
+    : !enabled || (!skill.modelInvocable && !skill.userInvocable)
+      ? ui.skillStatusOff
+      : !skill.modelInvocable
+        ? ui.skillStatusUser
+        : ui.skillStatusModel
   return (
     <span className={ui.skillStatusRow} aria-label={`技能调用状态：${status}`}>
-      <span className={clsx(ui.skillStatusChip, skill.valid ? (callable ? ui.skillStatusModel : ui.skillStatusOff) : ui.skillStatusError)}>
+      <span className={clsx(ui.skillStatusChip, tone)}>
         <i className={ui.skillStatusDot} aria-hidden="true" />
         {status}
       </span>

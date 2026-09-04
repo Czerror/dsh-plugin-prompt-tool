@@ -16,15 +16,15 @@ import { SkillRow } from './SkillRow.tsx'
 import { ImportFileButton } from '../../ui/ImportFileButton.tsx'
 import sharedCss from '../../ui/controls.module.css'
 import featureCss from './skills.module.css'
+import { matchesSkillStatus, type SkillStatusTab } from './skill-status.ts'
 
 const ui = { ...sharedCss, ...featureCss }
 
-type SkillStatusTab = 'all' | 'callable' | 'invalid'
-
 const SKILL_STATUS_TABS: Array<{ id: SkillStatusTab; label: string }> = [
   { id: 'all', label: '全部' },
-  { id: 'callable', label: '模型可调用' },
-  { id: 'invalid', label: '未注册' },
+  { id: 'model', label: '模型' },
+  { id: 'user', label: '用户' },
+  { id: 'disabled', label: '已禁用' },
 ]
 
 export const SkillsPage = memo(function SkillsPage(props: { store: PromptToolStore; api: PromptToolHostApi }): ReactNode {
@@ -58,18 +58,16 @@ export const SkillsPage = memo(function SkillsPage(props: { store: PromptToolSto
       && JSON.stringify(fields.skillsDirs) !== JSON.stringify(store.savedSwitches.skillsDirs))
     || store.skillsDirDraft.trim().length > 0
 
-  const callableCount = orderedSkills.filter((skill) => skill.valid && skill.modelInvocable && store.skillEnabled(skill.folder)).length
-  const invalidCount = orderedSkills.filter((skill) => !skill.valid).length
   const tabCounts: Record<SkillStatusTab, number> = {
     all: orderedSkills.length,
-    callable: callableCount,
-    invalid: invalidCount,
+    model: orderedSkills.filter((skill) => matchesSkillStatus(skill, store.skillEnabled(skill.folder), 'model')).length,
+    user: orderedSkills.filter((skill) => matchesSkillStatus(skill, store.skillEnabled(skill.folder), 'user')).length,
+    disabled: orderedSkills.filter((skill) => matchesSkillStatus(skill, store.skillEnabled(skill.folder), 'disabled')).length,
   }
 
   const keyword = skillFilter.trim().toLowerCase()
   const visibleSkills = orderedSkills.filter((skill) => {
-    if (statusTab === 'callable' && !(skill.valid && skill.modelInvocable && store.skillEnabled(skill.folder))) return false
-    if (statusTab === 'invalid' && skill.valid) return false
+    if (!matchesSkillStatus(skill, store.skillEnabled(skill.folder), statusTab)) return false
     return keyword.length === 0
       || [skill.folder, skill.name ?? '', skill.description ?? ''].join(' ').toLowerCase().includes(keyword)
   })
@@ -236,9 +234,10 @@ export const SkillsPage = memo(function SkillsPage(props: { store: PromptToolSto
                 onKeyDown={tabKeyHandler(SKILL_STATUS_TABS.map((entry) => entry.id), statusTab, setStatusTab)}
               >
                 <i className={clsx(ui.skillStatDot,
-                  tab.id === 'invalid' ? ui.skillStatusError
-                    : tab.id === 'callable' ? ui.skillStatusModel
-                      : ui.skillStatAll)} aria-hidden="true" />
+                  tab.id === 'model' ? ui.skillStatusModel
+                    : tab.id === 'user' ? ui.skillStatusUser
+                      : tab.id === 'disabled' ? ui.skillStatusOff
+                        : ui.skillStatAll)} aria-hidden="true" />
                 <strong>{tabCounts[tab.id]}</strong>
                 <small>{tab.label}</small>
               </button>

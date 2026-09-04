@@ -21,6 +21,8 @@ test('技能筛选 tabs：roving tabindex 与共享 panel 关系完整', () => {
   assert.match(source, /aria-controls="pt-skills-panel"/)
   assert.match(source, /id="pt-skills-panel"/)
   assert.match(source, /aria-labelledby=\{`pt-skills-tab-\$\{statusTab\}`\}/)
+  for (const label of ['全部', '模型', '用户', '已禁用']) assert.match(source, new RegExp(`label: '${label}'`))
+  assert.doesNotMatch(source, /label: '模型可调用'|label: '未注册'/)
 })
 
 test('技能目录与来源卡片位于过滤编辑框上方', () => {

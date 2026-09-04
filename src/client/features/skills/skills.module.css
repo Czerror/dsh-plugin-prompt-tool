@@ -119,7 +119,7 @@
 .skillStatsRow .skillStats {
   flex: 1;
   min-width: 0;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 .skillStatsRow > button {
   flex: 0 0 auto;
@@ -166,6 +166,7 @@
   padding-top: 12px;
 }
 .skillStatusError { --chip: var(--dsw-alias-state-error-primary); }
+.skillStatusUser { --chip: var(--dsw-alias-state-success-primary); }
 
 .skillIssue {
   margin: 0;
@@ -177,5 +178,5 @@
 }
 
 @media (max-width: 620px) {
-  .skillStats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .skillStatsRow .skillStats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
