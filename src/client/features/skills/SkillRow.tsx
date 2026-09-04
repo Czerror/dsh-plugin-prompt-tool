@@ -10,6 +10,7 @@ const ui = { ...sharedCss, ...featureCss }
 function SkillStatusChips(props: { skill: SkillCatalogEntry; enabled: boolean }): ReactNode {
   const { skill, enabled } = props
   const status = skillStatusLabel(skill, enabled)
+  const callable = skill.valid && enabled && (skill.modelInvocable || skill.userInvocable)
   const tone = !skill.valid
     ? ui.skillStatusError
     : !enabled || (!skill.modelInvocable && !skill.userInvocable)
@@ -20,7 +21,7 @@ function SkillStatusChips(props: { skill: SkillCatalogEntry; enabled: boolean })
   return (
     <span className={ui.skillStatusRow} aria-label={`技能调用状态：${status}`}>
       <span className={clsx(ui.skillStatusChip, tone)}>
-        <i className={ui.skillStatusDot} aria-hidden="true" />
+        <i className={clsx(ui.skillStatusDot, callable && ui.skillStatusCallable)} aria-hidden="true" />
         {status}
       </span>
     </span>

@@ -167,6 +167,7 @@
 }
 .skillStatusError { --chip: var(--dsw-alias-state-error-primary); }
 .skillStatusUser { --chip: var(--dsw-alias-state-success-primary); }
+.skillStatusDot.skillStatusCallable { background: var(--dsw-alias-state-success-primary); }
 
 .skillIssue {
   margin: 0;
