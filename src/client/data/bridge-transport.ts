@@ -1,6 +1,7 @@
 /** settings bridge 的底层 HTTP/文件传输与统一结果解析。 */
 import type { EngineMeta, PromptConfigDraft } from '../prompt-tool-types.ts'
 import type { HostDefaultModel, SkillCatalogEntry } from './prompt-tool-fields.ts'
+import type { PresetModuleFacts } from '../../shared/engine-capabilities.ts'
 import {
   MAX_BRIDGE_BODY_BYTES,
   SETTINGS_BRIDGE_PREFIX,
@@ -16,6 +17,7 @@ interface BridgeSuccessExtras {
   templatePreStepCount?: number
   presetParams?: Record<string, unknown>
   hostDefaultModel?: HostDefaultModel
+  moduleFacts?: PresetModuleFacts
   meta?: { meta: EngineMeta }
   overrides?: { overrides: Record<string, unknown> }
   variables?: { variables: Record<string, string>; enabled: boolean }

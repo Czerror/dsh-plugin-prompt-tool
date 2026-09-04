@@ -1,6 +1,6 @@
 /**
  * settings bridge 跨端契约（host 注册 / client 消费的唯一来源）。
- * 铁律：30 个端点载荷统一成功 `{ ok: true, value }`、失败 `{ ok: false, code?, message? }`；
+ * 铁律：所有端点载荷统一成功 `{ ok: true, value }`、失败 `{ ok: false, code?, message? }`；
  * 端点附加字段只能以 value 旁的可选扩展字段出现（describe）。
  * 改路径或载荷形状必须同步更新 test/shared/bridge-contract.test.mjs。
  */
@@ -43,6 +43,7 @@ export const BRIDGE_ENDPOINTS = {
   subagentToolPolicy: '/subagent-tool-policy',
   subagentToolPolicyPreview: '/subagent-tool-policy-preview',
   toolSurface: '/tool-surface',
+  engineCapability: '/engine-capability',
 } as const
 
 export type BridgeEndpoint = (typeof BRIDGE_ENDPOINTS)[keyof typeof BRIDGE_ENDPOINTS]
@@ -85,7 +86,8 @@ export interface BridgeRequestMap {
   charactersRemove: { id: string }
   subagentToolPolicy: { policy?: unknown } | undefined
   subagentToolPolicyPreview: { tool?: string; description?: string; prompt?: string; tool_profile?: string; character_id?: string; task_type?: string; additional_tools?: string[]; restrict_tools?: string[] }
-  toolSurface: { sessionId: string }
+  toolSurface: { sessionId: string; presetId?: never } | { presetId: string; sessionId?: never }
+  engineCapability: { action: 'create'; capabilityId: string } | { action: 'create-recipe'; recipeId: string }
 }
 
 /** settings descriptor 的跨端最小结构。 */
@@ -127,7 +129,13 @@ export interface BridgeValueMap {
   charactersRemove: { id: string; count: number }
   subagentToolPolicy: { policy: unknown; defaultProfile?: string; errors?: string[] }
   subagentToolPolicyPreview: { result: unknown; errors?: string[] }
-  toolSurface: { tools: Array<{ name: string; description: string }> }
+  toolSurface: {
+    source: 'session' | 'preset'
+    sessionId?: string
+    presetId?: string
+    tools: Array<{ name: string; description: string }>
+  }
+  engineCapability: { changed: boolean; addedModules: string[]; capabilityIds: string[] }
 }
 /** 编译期断言：请求/响应映射与 BRIDGE_ENDPOINTS 键集合完全一致（漏改任一侧 typecheck 失败）。 */
 type AssertCoverage<K extends string, M extends object> =

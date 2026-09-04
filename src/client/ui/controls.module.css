@@ -296,7 +296,7 @@
   flex-wrap: wrap;
 }
 
-.sessionModelRow > select,
+.sessionModelRow > .menuSelect,
 .sessionModelRow > input {
   flex: 1 1 120px;
   min-width: 0;
@@ -305,10 +305,10 @@
 /* 合并行里需要更宽的长文本输入（指令/描述/模板）。 */
 .sessionModelRow > .sessionModelRowWide { flex: 3 1 220px; }
 
-/* 密集行内联字段项：标签固定宽度，控件吃剩余空间（与 select/input 直挂同行兼容）。 */
+/* 密集行内联字段项：标签固定宽度，控件吃剩余空间（与菜单/input 直挂同行兼容）。 */
 .sessionModelRow > .switchGridField { flex: 1 1 150px; }
 
-.switchGridItem > select,
+.switchGridItem > .menuSelect,
 .switchGridItem > input {
   flex: 1 1 72px;
   min-width: 0;
@@ -746,6 +746,25 @@
 .configEnable > input:checked + .switch i,
 .skillSwitch input:checked + .switch i { transform: translateX(16px); }
 
+/* 模块/工具卡内布尔项使用紧凑开关；普通卡保留标准触控尺寸。 */
+.moduleCard .configEnable,
+.toolCard .configEnable { gap: 6px; }
+.moduleCard .switch,
+.toolCard .switch {
+  width: 32px;
+  height: 18px;
+  border-radius: 9px;
+}
+.moduleCard .switch i,
+.toolCard .switch i {
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+}
+.moduleCard .configEnable > input:checked + .switch i,
+.toolCard .configEnable > input:checked + .switch i { transform: translateX(14px); }
+
 /* 标签输入：chip 增删 + 输入框；底层仍为逗号分隔字符串。 */
 .tagInput {
   display: flex;
@@ -890,6 +909,8 @@
 }
 .configInput:focus-visible { border-color: var(--dsw-alias-state-business-primary); outline: none; }
 .configInput:disabled { color: var(--dsw-alias-label-tertiary); cursor: default; }
+.moduleCard .configInput,
+.toolCard .configInput { height: 28px; border-radius: 7px; padding: 0 7px; }
 .configTextarea {
   width: 100%;
   min-height: 72px;
@@ -971,7 +992,72 @@
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--dsw-alias-state-business-primary) 20%, transparent);
 }
 .listFilter::placeholder { color: var(--dsw-alias-label-caption); }
-.listFilterRow select.listFilter { flex: 0 0 auto; width: auto; max-width: none; }
+.listFilterRow .menuSelect.listFilter { flex: 0 0 auto; width: auto; max-width: none; }
+
+/* 官方 Settings Menu 选择器：卡片内使用紧凑触发器，菜单由 primitive portal 渲染。 */
+.menuSelect {
+  display: inline-flex;
+  min-width: 0;
+}
+
+.menuSelectCompact { height: 28px; }
+.menuSelectStandard { height: 36px; }
+
+.menuSelect.configInput,
+.menuSelect.directoryInput,
+.menuSelect.listFilter {
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  background: transparent;
+}
+
+.menuSelectTrigger {
+  display: inline-flex;
+  width: 100%;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  border: 0;
+  background: var(--dsw-alias-bg-module-platform);
+  color: var(--dsw-alias-label-primary);
+  cursor: pointer;
+  font: inherit;
+}
+
+.menuSelectTriggerCompact {
+  height: 28px;
+  gap: 8px;
+  padding: 0 10px;
+  border-radius: 14px;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.menuSelectTriggerStandard {
+  height: 36px;
+  gap: 12px;
+  padding: 0 14px;
+  border-radius: 18px;
+  font-size: 14px;
+  line-height: 22px;
+}
+
+.menuSelectTrigger:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover); }
+.menuSelectTrigger:disabled { cursor: default; opacity: .46; }
+.menuSelectTrigger:focus-visible {
+  outline: 2px solid var(--dsw-alias-state-business-primary);
+  outline-offset: 2px;
+}
+
+.menuSelectLabel {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.menuSelectChevron { flex: none; }
 /* 批量启用/禁用按钮组：过滤行右侧，按过滤后可见配置一次性开关。 */
 .batchControls {
   display: flex;

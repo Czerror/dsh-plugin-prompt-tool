@@ -7,6 +7,7 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import clsx from 'clsx'
 import { bridgeCall } from '../../data/bridge-client.ts'
+import { MenuSelect } from '../../ui/MenuSelect.tsx'
 import { TagInput } from '../../ui/TagInput.tsx'
 import { asBool, asList, asNum, createEmptyPolicy, splitList, type PolicyDraft } from './subagent-policy-draft.ts'
 import sharedCss from '../../ui/controls.module.css'
@@ -160,10 +161,9 @@ export function SubagentToolPolicyCard(props: {
           <div className={styles.settingRowStack}>
             <div className={styles.sessionModelRow}>
               {inlineField('默认工具档', '未命中任何 selector 时使用的 profile；须引用已存在 profile。', (
-                <select className={styles.configInput} aria-label="默认工具档" value={policy.defaultProfile ?? ''}
-                  onChange={(event) => patch({ ...policy, defaultProfile: event.target.value })}>
-                  {profileIds.map((id) => <option key={id} value={id}>{id}</option>)}
-                </select>
+                  <MenuSelect className={styles.configInput} compact ariaLabel="默认工具档" value={policy.defaultProfile ?? ''}
+                  options={profileIds.map((id) => ({ value: id, label: id }))}
+                  onChange={(value) => patch({ ...policy, defaultProfile: value })} />
               ))}
             </div>
           </div>
@@ -214,18 +214,20 @@ export function SubagentToolPolicyCard(props: {
             <div key={`${binding.characterId}-${index}`} className={styles.policyGroup}>
               <div className={styles.sessionModelRow}>
                 {inlineField('角色卡', '绑定角色卡 id；失效绑定须删除或改绑后才能保存。', (
-                  <select className={styles.configInput} aria-label="角色卡 id" value={binding.characterId}
-                    onChange={(event) => patch({ ...policy, characterBindings: (policy.characterBindings ?? []).map((item, at) => at === index ? { ...item, characterId: event.target.value } : item) })}>
-                    <option value="">（选择角色卡）</option>
-                    {!characters.some((item) => item.id === binding.characterId) && binding.characterId.length > 0 && <option value={binding.characterId}>失效：{binding.characterId}</option>}
-                    {characters.map((item) => <option key={item.id} value={item.id}>{item.name}（{item.id}）</option>)}
-                  </select>
+                  <MenuSelect className={styles.configInput} compact ariaLabel="角色卡 id" value={binding.characterId}
+                    options={[
+                      { value: '', label: '（选择角色卡）' },
+                      ...(!characters.some((item) => item.id === binding.characterId) && binding.characterId.length > 0
+                        ? [{ value: binding.characterId, label: `失效：${binding.characterId}` }]
+                        : []),
+                      ...characters.map((item) => ({ value: item.id, label: `${item.name}（${item.id}）` })),
+                    ]}
+                    onChange={(value) => patch({ ...policy, characterBindings: (policy.characterBindings ?? []).map((item, at) => at === index ? { ...item, characterId: value } : item) })} />
                 ), true)}
                 {inlineField('工具档', '该角色卡使用的 profile。', (
-                  <select className={styles.configInput} aria-label="绑定 profile" value={binding.profile}
-                    onChange={(event) => patch({ ...policy, characterBindings: (policy.characterBindings ?? []).map((item, at) => at === index ? { ...item, profile: event.target.value } : item) })}>
-                    {profileIds.map((id) => <option key={id} value={id}>{id}</option>)}
-                  </select>
+                  <MenuSelect className={styles.configInput} compact ariaLabel="绑定 profile" value={binding.profile}
+                    options={profileIds.map((id) => ({ value: id, label: id }))}
+                    onChange={(value) => patch({ ...policy, characterBindings: (policy.characterBindings ?? []).map((item, at) => at === index ? { ...item, profile: value } : item) })} />
                 ))}
                 {policyChip('模型可选', '模型可选择该角色绑定。', asBool(binding.modelSelectable), (next) => patch({ ...policy, characterBindings: (policy.characterBindings ?? []).map((item, at) => at === index ? { ...item, modelSelectable: next } : item) }), '角色绑定模型可选择')}
                 <button type="button" className={styles.pillButton} data-danger aria-label="删除绑定" title="删除"
@@ -259,10 +261,9 @@ export function SubagentToolPolicyCard(props: {
                     onChange={(event) => patch({ ...policy, taskRules: (policy.taskRules ?? []).map((item, at) => at === index ? { ...item, order: Number(event.target.value) } : item) })} />
                 ))}
                 {inlineField('工具档', '命中后使用的 profile。', (
-                  <select className={styles.configInput} aria-label="规则 profile" value={rule.profile}
-                    onChange={(event) => patch({ ...policy, taskRules: (policy.taskRules ?? []).map((item, at) => at === index ? { ...item, profile: event.target.value } : item) })}>
-                    {profileIds.map((id) => <option key={id} value={id}>{id}</option>)}
-                  </select>
+                  <MenuSelect className={styles.configInput} compact ariaLabel="规则 profile" value={rule.profile}
+                    options={profileIds.map((id) => ({ value: id, label: id }))}
+                    onChange={(value) => patch({ ...policy, taskRules: (policy.taskRules ?? []).map((item, at) => at === index ? { ...item, profile: value } : item) })} />
                 ))}
                 {policyChip('模型可选', '模型可选择该任务类型。', asBool(rule.modelSelectable), (next) => patch({ ...policy, taskRules: (policy.taskRules ?? []).map((item, at) => at === index ? { ...item, modelSelectable: next } : item) }), '任务规则模型可选择')}
                 {rule.pattern.length > 0 && (() => { try { new RegExp(rule.pattern); return null } catch { return <small className={styles.noticeError}>正则无效</small> } })()}
@@ -294,30 +295,34 @@ export function SubagentToolPolicyCard(props: {
           <div className={styles.policyGroup}>
             <span className={styles.settingCopy}><strong>实例解析预览</strong><small>输入 description/prompt 与 selector，调用 host 同一 resolve seam 预览有效工具集；只读，不创建子代理。</small></span>
             <div className={styles.sessionModelRow}>
-              <select className={styles.configInput} aria-label="预览工具" value={String(previewInput.tool ?? 'subagent')}
-                onChange={(event) => setPreviewInput({ ...previewInput, tool: event.target.value })}>
-                <option value="subagent">subagent</option>
-                <option value="subagent_fork">subagent_fork</option>
-              </select>
+              <MenuSelect className={styles.configInput} compact ariaLabel="预览工具" value={String(previewInput.tool ?? 'subagent')}
+                options={[
+                  { value: 'subagent', label: 'subagent' },
+                  { value: 'subagent_fork', label: 'subagent_fork' },
+                ]}
+                onChange={(value) => setPreviewInput({ ...previewInput, tool: value })} />
               <input className={styles.configInput} aria-label="预览 description" placeholder="description" value={String(previewInput.description ?? '')} spellCheck={false}
                 onChange={(event) => setPreviewInput({ ...previewInput, description: event.target.value })} />
               <input className={styles.configInput} aria-label="预览 prompt" placeholder="prompt" value={String(previewInput.prompt ?? '')} spellCheck={false}
                 onChange={(event) => setPreviewInput({ ...previewInput, prompt: event.target.value })} />
-              <select className={styles.configInput} aria-label="预览 tool_profile" value={String(previewInput.tool_profile ?? '')}
-                onChange={(event) => setPreviewInput({ ...previewInput, tool_profile: event.target.value })}>
-                <option value="">（不指定 tool_profile）</option>
-                {profiles.filter((profile) => asBool(profile.modelSelectable)).map((profile) => <option key={profile.id} value={profile.id}>{profile.id}</option>)}
-              </select>
-              <select className={styles.configInput} aria-label="预览 character_id" value={String(previewInput.character_id ?? '')}
-                onChange={(event) => setPreviewInput({ ...previewInput, character_id: event.target.value })}>
-                <option value="">（不指定 character_id）</option>
-                {(policy.characterBindings ?? []).filter((item) => asBool(item.modelSelectable)).map((item) => <option key={item.characterId} value={item.characterId}>{item.characterId}</option>)}
-              </select>
-              <select className={styles.configInput} aria-label="预览 task_type" value={String(previewInput.task_type ?? '')}
-                onChange={(event) => setPreviewInput({ ...previewInput, task_type: event.target.value })}>
-                <option value="">（不指定 task_type）</option>
-                {(policy.taskRules ?? []).filter((item) => asBool(item.modelSelectable)).map((item) => <option key={item.id} value={item.id}>{item.id}</option>)}
-              </select>
+              <MenuSelect className={styles.configInput} compact ariaLabel="预览 tool_profile" value={String(previewInput.tool_profile ?? '')}
+                options={[
+                  { value: '', label: '（不指定 tool_profile）' },
+                  ...profiles.filter((profile) => asBool(profile.modelSelectable)).map((profile) => ({ value: profile.id, label: profile.id })),
+                ]}
+                onChange={(value) => setPreviewInput({ ...previewInput, tool_profile: value })} />
+              <MenuSelect className={styles.configInput} compact ariaLabel="预览 character_id" value={String(previewInput.character_id ?? '')}
+                options={[
+                  { value: '', label: '（不指定 character_id）' },
+                  ...(policy.characterBindings ?? []).filter((item) => asBool(item.modelSelectable)).map((item) => ({ value: item.characterId, label: item.characterId })),
+                ]}
+                onChange={(value) => setPreviewInput({ ...previewInput, character_id: value })} />
+              <MenuSelect className={styles.configInput} compact ariaLabel="预览 task_type" value={String(previewInput.task_type ?? '')}
+                options={[
+                  { value: '', label: '（不指定 task_type）' },
+                  ...(policy.taskRules ?? []).filter((item) => asBool(item.modelSelectable)).map((item) => ({ value: item.id, label: item.id })),
+                ]}
+                onChange={(value) => setPreviewInput({ ...previewInput, task_type: value })} />
               <TagInput id="pt-sp-preview-add" label="additional_tools" hint="" value={Array.isArray(previewInput.additional_tools) ? previewInput.additional_tools.join(', ') : ''}
                 onChange={(value) => setPreviewInput({ ...previewInput, additional_tools: splitList(value) })}
                 onCommit={() => {}} />

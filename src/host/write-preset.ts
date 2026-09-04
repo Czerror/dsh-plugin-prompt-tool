@@ -16,6 +16,7 @@ import { parameterSchemaSpecToJsonSchema, valueSchemaSpecToJsonSchema } from '@d
 // @ts-expect-error 仓库根 ESM 引擎文件由 tsdown 作为源码依赖打包，无独立声明文件。
 import { validateSubagentToolPolicy } from '../../engine/subagent-tool-policy-core.mjs'
 import { DEFAULT_PRESET_DIR } from './paths.ts'
+import { validateCustomToolIdentities } from '../shared/engine-capabilities.ts'
 import { PARAM_KEYS } from '../shared/param-keys.ts'
 import type { PresetWriterParams } from '../shared/engine-params.ts'
 import {
@@ -646,6 +647,8 @@ export function writePreset(prompt: string, options: WritePresetOptions): void {
   rmSync(customToolsDir, { recursive: true, force: true })
   mkdirSync(customToolsDir, { recursive: true })
   const customTools = Array.isArray(spec.customTools) ? spec.customTools : []
+  const identityErrors = validateCustomToolIdentities(customTools)
+  if (identityErrors.length > 0) throw new Error(identityErrors.join('; '))
   const warn = options.warn ?? (() => {})
   for (const [index, tool] of customTools.entries()) {
     if (tool === null || typeof tool !== 'object' || Array.isArray(tool)

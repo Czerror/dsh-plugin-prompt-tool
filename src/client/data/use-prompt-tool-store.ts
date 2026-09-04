@@ -3,6 +3,7 @@ import type { SettingsPathOpView } from '@deepseek-ai/dsh-api-remotes/client'
 import type { SettingsScope, SettingsScopeSnapshot } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { EngineMeta, PromptConfigDraft } from '../prompt-tool-types.ts'
 import type { PromptToolHostApi } from './host-api.ts'
+import type { PresetModuleFacts } from '../../shared/engine-capabilities.ts'
 import { bridgeCall, errorMessage, type BridgeResult, type BridgeSettingsView } from './bridge-client.ts'
 import {
   DEFAULT_BOOTSTRAP_DISPLAY,
@@ -51,6 +52,7 @@ export interface PromptToolStore {
   providers: string[]
   modelCatalog: Record<string, string[]>
   hostDefaultModel?: HostDefaultModel
+  moduleFacts?: PresetModuleFacts
   bootstrapTokensDraft: string
   /** 新技能目录路径输入（多目录卡片：输入路径添加）。 */
   skillsDirDraft: string
@@ -79,6 +81,7 @@ export interface PromptToolStore {
   toggle: (key: SwitchKey) => void
   toggleBootstrapMaxTokens: () => void
   setPresetTemplate: (id: string) => void
+  createEngineCapability: (action: 'create' | 'create-recipe', id: string) => Promise<void>
   setBootstrapTokensDraft: (value: string) => void
   commitBootstrapTokensDraft: () => void
   /** 门控回退步数草稿（数字输入，失焦提交；0 = 引擎默认 4）。 */
@@ -129,6 +132,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
   const [providers, setProviders] = useState<string[]>([])
   const [modelCatalog, setModelCatalog] = useState<Record<string, string[]>>({})
   const [hostDefaultModel, setHostDefaultModel] = useState<HostDefaultModel | undefined>(undefined)
+  const [moduleFacts, setModuleFacts] = useState<PresetModuleFacts | undefined>(undefined)
   const [fields, setFields] = useState<Fields>(EMPTY_FIELDS)
   const [meta, setMeta] = useState<EngineMeta>(EMPTY_META)
   const [bootstrapTokensDraft, setBootstrapTokensDraft] = useState(DEFAULT_BOOTSTRAP_DISPLAY)
@@ -188,6 +192,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     setProviders(res.ok ? res.providers ?? [] : [])
     setModelCatalog(res.ok ? res.modelCatalog ?? {} : {})
     setHostDefaultModel(res.ok ? res.hostDefaultModel : undefined)
+    setModuleFacts(res.ok ? res.moduleFacts : undefined)
     const next = mergePresetParams(fieldsFromView(res), res.ok ? res.presetParams : undefined)
     // 检测到 DeepSeek 路由且用户未设置服务商时，直接预选第一个检测到的 provider
     // （模型名为空则路由不激活，继承主会话语义不变；用户后续选择模型名即生效）。
@@ -496,6 +501,17 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     )
   }, [enqueueSave, load, patch, persistConfigs, savedConfigs])
 
+  const createEngineCapability = useCallback(async (action: 'create' | 'create-recipe', id: string): Promise<void> => {
+    const request = action === 'create' ? { action: 'create' as const, capabilityId: id } : { action: 'create-recipe' as const, recipeId: id }
+    const result = await bridgeCall('engineCapability', request)
+    if (!result.ok) {
+      showNotice('error', '引擎能力创建失败：' + (result.message ?? 'settings bridge unavailable'))
+      return
+    }
+    showNotice('ok', result.value.changed ? `已创建引擎能力：${id}` : `引擎能力已存在：${id}`)
+    await load({ silent: true })
+  }, [load, showNotice])
+
   const commitBootstrapTokensDraft = useCallback(() => {
     const parsed = Number(bootstrapTokensDraft)
     if (!Number.isSafeInteger(parsed) || parsed <= 0) {
@@ -618,6 +634,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     providers,
     modelCatalog,
     hostDefaultModel,
+    moduleFacts,
     bootstrapTokensDraft,
     skillsDirDraft,
     templatePreStepCount,
@@ -641,6 +658,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     toggle,
     toggleBootstrapMaxTokens,
     setPresetTemplate,
+    createEngineCapability,
     setBootstrapTokensDraft,
     commitBootstrapTokensDraft,
     gateStepsDraft,

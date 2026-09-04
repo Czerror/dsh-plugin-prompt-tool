@@ -207,6 +207,7 @@ export function bridgeViewFromBoot(boot: BridgeResult<BridgeSettingsView>): Brid
     templatePreStepCount: boot.templatePreStepCount,
     presetParams: boot.presetParams,
     hostDefaultModel: boot.hostDefaultModel,
+    moduleFacts: boot.moduleFacts,
   }
 }
 

@@ -1,13 +1,53 @@
 import clsx from 'clsx'
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
+import { IconChevronDownOutline14, Menu } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PromptToolStore } from '../../data/use-prompt-tool-store.ts'
 import { TagInput } from '../../ui/TagInput.tsx'
 import { EngineModuleCard } from '../../ui/EngineModuleCard.tsx'
+import { ENGINE_CAPABILITIES, ENGINE_RECIPES, isEngineCapabilityPresent } from '../../../shared/engine-capabilities.ts'
 import styles from '../../ui/controls.module.css'
+
+function EngineCapabilityCreateMenu(props: { store: PromptToolStore }): ReactNode {
+  const [open, setOpen] = useState(false)
+  const facts = props.store.moduleFacts
+  if (!props.store.fields.writePreset || facts === undefined || facts.editable === false) return null
+  const capabilities = ENGINE_CAPABILITIES.filter((item) => !isEngineCapabilityPresent(item.id, facts))
+  const items = [
+    ...capabilities.map((item) => ({ id: `cap:${item.id}`, label: `新建能力 · ${item.id}` })),
+    ...ENGINE_RECIPES.map((item) => ({ id: `recipe:${item.id}`, label: `连锁创建 · ${item.id}` })),
+  ]
+  if (items.length === 0) return null
+  return (
+    <Menu
+      open={open}
+      onClose={() => setOpen(false)}
+      items={items}
+      onSelect={(id) => {
+        setOpen(false)
+        const [kind, value] = id.split(':', 2)
+        if (value !== undefined) void props.store.createEngineCapability(kind === 'recipe' ? 'create-recipe' : 'create', value)
+      }}
+      align="end"
+      portal
+      compact
+      anchor={(
+        <button
+          type="button"
+          className={styles.pillButton}
+          aria-haspopup="menu"
+          aria-expanded={open}
+          onClick={() => setOpen((value) => !value)}
+        >
+          新建引擎能力
+          <IconChevronDownOutline14 />
+        </button>
+      )}
+    />
+  )
+}
+
 /** 引擎模块卡片组（模块列表顶部，按 6 层注入层级归类）：
- *  tool-bootstrap（system-section）/ context-gate（pre-step）/
- *  code-presentation · tool-filter · delegation
- *  （tool-pipeline）各一张可折叠模块卡。
+ *  一项引擎能力一张卡，卡片内只编辑该模块拥有的参数。
  *  语义 = 参数桥扁平键的 UI 化；保存走 params 桥 /param-overrides。
  *  layerFilter：模块列表层筛选联动（'all' 显示全部；指定层只显示该层；
  *  'world-book' 不显示引擎卡）。 */
@@ -17,9 +57,13 @@ export function EngineModuleCards(props: { store: PromptToolStore; layerFilter?:
   const layerFilter = props.layerFilter ?? 'all'
   const visible = (layer?: string): boolean =>
     layerFilter === 'all' || (layer !== undefined && layerFilter === layer)
+  const visibleCapability = (id: string, layer: string): boolean =>
+    visible(layer) && isEngineCapabilityPresent(id, store.moduleFacts)
   // 选中层无引擎模块卡时给出提示（引擎模块分布在 pre-step / system-section / tool-pipeline）。
-  const hasVisibleCard = layerFilter === 'all' || layerFilter === 'pre-step'
-    || layerFilter === 'system-section' || layerFilter === 'tool-pipeline'
+  const hasVisibleCard = (store.moduleFacts !== undefined && [
+    'tool-bootstrap', 'context-gate', 'anchor-turn', 'code-presentation', 'tool-filter',
+    'str-replace-editor', 'deliberation-gate', 'cot-drip',
+  ].some((id) => visibleCapability(id, id === 'tool-bootstrap' ? 'system-section' : id === 'context-gate' || id === 'anchor-turn' ? 'pre-step' : 'tool-pipeline')))
   const capped = fields.bootstrapMaxTokens > 0
   // 紧凑开关项（合并行/栅格内用）：标签文字 + 开关内联，逐项说明收敛到 title 悬浮提示。
   const gateChip = (id: string, label: string, hint: string, key: 'usePtcMode' | 'promoteGate' | 'promoteAfterFirstResponse' | 'personaSectionsOnly' | 'workspaceLine' | 'toolFilterSubagents' | 'instructionHint' | 'anchorTurn' | 'deliberationGate' | 'cotDrip'): ReactNode => (
@@ -72,7 +116,10 @@ export function EngineModuleCards(props: { store: PromptToolStore; layerFilter?:
   )
   return (
     <>
-      {visible('system-section') && (
+      <div className={styles.configActions}>
+        <EngineCapabilityCreateMenu store={store} />
+      </div>
+      {visibleCapability('tool-bootstrap', 'system-section') && (
       <EngineModuleCard name="tool-bootstrap" layer="system-section" meta="目录相位 · 首轮窄化 / 门控晋升 / 压缩恢复">
         <div className={styles.settingRowStack}>
           <div className={styles.sessionModelRow}>
@@ -126,13 +173,6 @@ export function EngineModuleCards(props: { store: PromptToolStore; layerFilter?:
           value={fields.bootstrapTools} placeholder="bash, str_replace_editor" disabled={!fields.writePreset}
           onChange={(value) => store.patch({ bootstrapTools: value })}
           onCommit={() => void store.persistParamOverrides()} />
-        <div className={styles.configSectionTitle}>前置锚定轮（anchor-turn 模块）</div>
-        <div className={styles.settingRowStack}>
-          <div className={styles.sessionModelRow}>
-            {gateChip('pt-anchor-turn', '前置锚定轮', 'anchorTurn：用户首条真实消息前 prepend 合成锚定轮（配合零工具模式 = 空工具面锚定）；需模块列表已挂 anchor-turn 行。', 'anchorTurn')}
-            {inlineText('锚定文本', 'anchorTurnText：合成锚定轮文本，例如「你是谁」；空 = 引擎默认 This round is a test…。失焦保存。', fields.anchorTurnText, (next) => store.patch({ anchorTurnText: next }), true)}
-          </div>
-        </div>
         <TagInput id="pt-compaction-tools" label="压缩后恢复集" hint="compactionTools：压缩后回到受控相位时的核心工作集（模型中途继续工作）。回车或逗号添加，× 移除。"
           value={fields.compactionTools} placeholder="read, write, edit, glob, grep" disabled={!fields.writePreset}
           onChange={(value) => store.patch({ compactionTools: value })}
@@ -216,73 +256,103 @@ export function EngineModuleCards(props: { store: PromptToolStore; layerFilter?:
         </div>
       </EngineModuleCard>
       )}
-      {visible('pre-step') && (
-      <EngineModuleCard name="context-gate" layer="pre-step" meta="注入门控 · 白名单 / 延迟注入 / 指令提示">
-        <TagInput id="pt-allow-kinds" label="注入 kind 白名单" hint="allowKinds：context-gate 注入门控；空 = 官方 pre-step 行为（不过滤）。"
-          value={fields.allowKinds} placeholder="skill-invocation, near-anchor, router-guide" disabled={!fields.writePreset}
-          onChange={(value) => store.patch({ allowKinds: value })}
-          onCommit={() => void store.persistParamOverrides()} />
-        <TagInput id="pt-message-sources" label="消息源白名单" hint="messageSources：phase-1 只放行声明的 source.kind（含 claimed 批）；空 = 不启用。"
-          value={fields.messageSources} placeholder="user, goal" disabled={!fields.writePreset}
-          onChange={(value) => store.patch({ messageSources: value })}
-          onCommit={() => void store.persistParamOverrides()} />
-        <TagInput id="pt-deferred-sources" label="晋升后延迟注入" hint="deferredSources：晋升后延迟 N 步注入的 source kind；空 = 不延迟。"
-          value={fields.deferredSources} placeholder="agent-instructions, skill-catalog" disabled={!fields.writePreset}
-          onChange={(value) => store.patch({ deferredSources: value })}
-          onCommit={() => void store.persistParamOverrides()} />
-        <div className={styles.settingRowStack}>
-          <div className={styles.sessionModelRow}>
-            {gateChip('pt-instr-hint', '指令提示转换', 'instructionHint：晋升后 agent-instructions 全文 → 一次性引用提示', 'instructionHint')}
-            {inlineNumber('延迟宽限步数', 'deferredGraceSteps：晋升后前 N 步过滤延迟注入源；0 = 不延迟。失焦保存。', fields.deferredGraceSteps, (next) => store.patch({ deferredGraceSteps: next }))}
+      {(visibleCapability('context-gate', 'pre-step') || visibleCapability('anchor-turn', 'pre-step')) && (
+      <>
+        {visibleCapability('context-gate', 'pre-step') && <EngineModuleCard name="context-gate" layer="pre-step" meta="注入门控 · 白名单 / 延迟注入 / 指令提示">
+          <TagInput id="pt-allow-kinds" label="注入 kind 白名单" hint="allowKinds：context-gate 注入门控；空 = 官方 pre-step 行为（不过滤）。"
+            value={fields.allowKinds} placeholder="skill-invocation, near-anchor, router-guide" disabled={!fields.writePreset}
+            onChange={(value) => store.patch({ allowKinds: value })}
+            onCommit={() => void store.persistParamOverrides()} />
+          <TagInput id="pt-message-sources" label="消息源白名单" hint="messageSources：phase-1 只放行声明的 source.kind（含 claimed 批）；空 = 不启用。"
+            value={fields.messageSources} placeholder="user, goal" disabled={!fields.writePreset}
+            onChange={(value) => store.patch({ messageSources: value })}
+            onCommit={() => void store.persistParamOverrides()} />
+          <TagInput id="pt-deferred-sources" label="晋升后延迟注入" hint="deferredSources：晋升后延迟 N 步注入的 source kind；空 = 不延迟。"
+            value={fields.deferredSources} placeholder="agent-instructions, skill-catalog" disabled={!fields.writePreset}
+            onChange={(value) => store.patch({ deferredSources: value })}
+            onCommit={() => void store.persistParamOverrides()} />
+          <div className={styles.settingRowStack}>
+            <div className={styles.sessionModelRow}>
+              {gateChip('pt-instr-hint', '指令提示转换', 'instructionHint：晋升后 agent-instructions 全文 → 一次性引用提示', 'instructionHint')}
+              {inlineNumber('延迟宽限步数', 'deferredGraceSteps：晋升后前 N 步过滤延迟注入源；0 = 不延迟。失焦保存。', fields.deferredGraceSteps, (next) => store.patch({ deferredGraceSteps: next }))}
+            </div>
           </div>
-        </div>
-      </EngineModuleCard>
+        </EngineModuleCard>}
+        {visibleCapability('anchor-turn', 'pre-step') && <EngineModuleCard name="anchor-turn" layer="pre-step" meta="前置锚定轮 · 首条用户消息">
+          <div className={styles.settingRowStack}>
+            <div className={styles.sessionModelRow}>
+              {gateChip('pt-anchor-turn', '前置锚定轮', 'anchorTurn：用户首条真实消息前 prepend 合成锚定轮（配合零工具模式 = 空工具面锚定）；需模块列表已挂 anchor-turn 行。', 'anchorTurn')}
+              {inlineText('锚定文本', 'anchorTurnText：合成锚定轮文本，例如「你是谁」；空 = 引擎默认 This round is a test…。失焦保存。', fields.anchorTurnText, (next) => store.patch({ anchorTurnText: next }), true)}
+            </div>
+          </div>
+        </EngineModuleCard>}
+      </>
       )}
-      {visible('tool-pipeline') && (
-      <EngineModuleCard name="工具管线" layer="tool-pipeline" meta="工具设置 · 呈现 / 过滤 / 委派 / 验证">
-        <div className={styles.configSectionTitle}>呈现（code-presentation）</div>
-        <div className={styles.settingRowStack}>
-          <div className={styles.switchGrid}>
-            {gateChip('pt-use-ptc', '使用 PTC 模式', 'usePtcMode：晋升后 Code Mode (PTC) 呈现（默认 false，opt-in）；false = 原生完整工具目录', 'usePtcMode')}
+      {visibleCapability('code-presentation', 'tool-pipeline') || visibleCapability('tool-filter', 'tool-pipeline') || visibleCapability('str-replace-editor', 'tool-pipeline') || visibleCapability('deliberation-gate', 'tool-pipeline') || visibleCapability('cot-drip', 'tool-pipeline') ? (
+      <>
+        {visibleCapability('code-presentation', 'tool-pipeline') && <EngineModuleCard name="code-presentation" layer="tool-pipeline" meta="晋升后 Code Mode (PTC) 呈现">
+          <div className={styles.settingRowStack}>
+            <div className={styles.switchGrid}>
+              {gateChip('pt-use-ptc', '使用 PTC 模式', 'usePtcMode：晋升后 Code Mode (PTC) 呈现（默认 false，opt-in）；false = 原生完整工具目录', 'usePtcMode')}
+            </div>
           </div>
-        </div>
-
-        <div className={styles.configSectionTitle}>过滤（tool-filter）</div>
-        <TagInput id="pt-tool-filter-allow" label="工具集白名单" hint="toolFilter.allow：主会话常驻过滤（tool-filter 模块，作用于任意注册工具含自定义插件）+ 委派子代理 toolFilter；留空 = 不限制。"
-          value={fields.toolFilterAllow} placeholder="read, write, glob" disabled={!fields.writePreset}
-          onChange={(value) => store.patch({ toolFilterAllow: value })}
-          onCommit={() => void store.persistParamOverrides()} />
-        <TagInput id="pt-tool-filter-deny" label="工具集黑名单" hint="toolFilter.deny：主会话常驻过滤（tool-filter 模块）+ 委派子代理 toolFilter；留空 = 不限制。"
-          value={fields.toolFilterDeny} placeholder="bash, run_code" disabled={!fields.writePreset}
-          onChange={(value) => store.patch({ toolFilterDeny: value })}
-          onCommit={() => void store.persistParamOverrides()} />
-        <div className={styles.settingRowStack}>
-          <div className={styles.sessionModelRow}>
-            {gateChip('pt-tool-filter-subagents', '子代理同过滤', 'toolFilterSubagents：主会话 tool-filter 也作用于子代理；false/未设置 = 子代理不受主会话过滤限制。', 'toolFilterSubagents')}
-            {inlineNumber('编辑器输出上限', 'strReplaceEditorMaxOutputChars：str_replace_editor 单次输出字符上限；16000 = 官方默认。失焦保存。', fields.strReplaceEditorMaxOutputChars, (next) => store.patch({ strReplaceEditorMaxOutputChars: next }), 1)}
+        </EngineModuleCard>}
+        {visibleCapability('tool-filter', 'tool-pipeline') && <EngineModuleCard name="tool-filter" layer="tool-pipeline" meta="常驻白名单 / 黑名单 / 子代理">
+          <TagInput id="pt-tool-filter-allow" label="工具集白名单" hint="toolFilter.allow：主会话常驻过滤（tool-filter 模块，作用于任意注册工具含自定义插件）+ 委派子代理 toolFilter；留空 = 不限制。"
+            value={fields.toolFilterAllow} placeholder="read, write, glob" disabled={!fields.writePreset}
+            onChange={(value) => store.patch({ toolFilterAllow: value })}
+            onCommit={() => void store.persistParamOverrides()} />
+          <TagInput id="pt-tool-filter-deny" label="工具集黑名单" hint="toolFilter.deny：主会话常驻过滤（tool-filter 模块）+ 委派子代理 toolFilter；留空 = 不限制。"
+            value={fields.toolFilterDeny} placeholder="bash, run_code" disabled={!fields.writePreset}
+            onChange={(value) => store.patch({ toolFilterDeny: value })}
+            onCommit={() => void store.persistParamOverrides()} />
+          <div className={styles.settingRowStack}>
+            <div className={styles.sessionModelRow}>
+              {gateChip('pt-tool-filter-subagents', '子代理同过滤', 'toolFilterSubagents：主会话 tool-filter 也作用于子代理；false/未设置 = 子代理不受主会话过滤限制。', 'toolFilterSubagents')}
+            </div>
           </div>
-        </div>
-
-        <div className={styles.configSectionTitle}>委派与深思门控（delegation · deliberation-gate · cot-drip）</div>
-        <div className={styles.settingRowStack}>
-          <div className={styles.switchGrid}>
-            {gateChip('pt-deliberation-gate', '轨迹深度门', 'deliberationGate：首工具调用前流式深思 < 下限时 deny 一次（规划式提示）；需模块列表已挂 deliberation-gate 行。', 'deliberationGate')}
-            {gateChip('pt-cot-drip', '深思维持节拍', 'cotDrip：每 N 次工具结果滴入一条 "We…" 重申提醒（additionalContexts）；需模块列表已挂 cot-drip 行。', 'cotDrip')}
+        </EngineModuleCard>}
+        {visibleCapability('str-replace-editor', 'tool-pipeline') && <EngineModuleCard name="str-replace-editor" layer="tool-pipeline" meta="编辑工具 · 单次输出上限">
+          <div className={styles.settingRowStack}>
+            <div className={styles.sessionModelRow}>
+              {inlineNumber('编辑器输出上限', 'strReplaceEditorMaxOutputChars：str_replace_editor 单次输出字符上限；16000 = 官方默认。失焦保存。', fields.strReplaceEditorMaxOutputChars, (next) => store.patch({ strReplaceEditorMaxOutputChars: next }), 1)}
+            </div>
           </div>
-        </div>
-        <div className={styles.settingRowStack}>
-          <div className={styles.sessionModelRow}>
-            {inlineNumber('深思下限', 'deliberationMinChars：首工具调用前的流式深思字符数下限；0 = 引擎默认 400。失焦保存。', fields.deliberationMinChars, (next) => store.patch({ deliberationMinChars: next }))}
-            {inlineNumber('每轮最大门控', 'deliberationMaxGatesPerTurn：每轮最多 deny 次数；0 = 引擎默认 1。失焦保存。', fields.deliberationMaxGatesPerTurn, (next) => store.patch({ deliberationMaxGatesPerTurn: next }))}
-            {inlineNumber('节拍间隔', 'cotDripEvery：每几次工具结果滴入一条；0 = 引擎默认 4（0 禁用由引擎 every:0 语义处理）。失焦保存。', fields.cotDripEvery, (next) => store.patch({ cotDripEvery: next }))}
-            {inlineNumber('每轮最大提醒', 'cotDripMaxPerTurn：每轮最多提醒条数；0 = 引擎默认 1。失焦保存。', fields.cotDripMaxPerTurn, (next) => store.patch({ cotDripMaxPerTurn: next }))}
+        </EngineModuleCard>}
+        {visibleCapability('deliberation-gate', 'tool-pipeline') && <EngineModuleCard name="deliberation-gate" layer="tool-pipeline" meta="首工具调用前 · 轨迹深度门">
+          <div className={styles.settingRowStack}>
+            <div className={styles.switchGrid}>
+              {gateChip('pt-deliberation-gate', '轨迹深度门', 'deliberationGate：首工具调用前流式深思 < 下限时 deny 一次（规划式提示）；需模块列表已挂 deliberation-gate 行。', 'deliberationGate')}
+            </div>
           </div>
-        </div>
-      </EngineModuleCard>
+          <div className={styles.settingRowStack}>
+            <div className={styles.sessionModelRow}>
+              {inlineNumber('深思下限', 'deliberationMinChars：首工具调用前的流式深思字符数下限；0 = 引擎默认 400。失焦保存。', fields.deliberationMinChars, (next) => store.patch({ deliberationMinChars: next }))}
+              {inlineNumber('每轮最大门控', 'deliberationMaxGatesPerTurn：每轮最多 deny 次数；0 = 引擎默认 1。失焦保存。', fields.deliberationMaxGatesPerTurn, (next) => store.patch({ deliberationMaxGatesPerTurn: next }))}
+            </div>
+          </div>
+        </EngineModuleCard>}
+        {visibleCapability('cot-drip', 'tool-pipeline') && <EngineModuleCard name="cot-drip" layer="tool-pipeline" meta="工具结果后 · 深思维持节拍">
+          <div className={styles.settingRowStack}>
+            <div className={styles.switchGrid}>
+              {gateChip('pt-cot-drip', '深思维持节拍', 'cotDrip：每 N 次工具结果滴入一条 "We…" 重申提醒（additionalContexts）；需模块列表已挂 cot-drip 行。', 'cotDrip')}
+            </div>
+          </div>
+          <div className={styles.settingRowStack}>
+            <div className={styles.sessionModelRow}>
+              {inlineNumber('节拍间隔', 'cotDripEvery：每几次工具结果滴入一条；0 = 引擎默认 4（0 禁用由引擎 every:0 语义处理）。失焦保存。', fields.cotDripEvery, (next) => store.patch({ cotDripEvery: next }))}
+              {inlineNumber('每轮最大提醒', 'cotDripMaxPerTurn：每轮最多提醒条数；0 = 引擎默认 1。失焦保存。', fields.cotDripMaxPerTurn, (next) => store.patch({ cotDripMaxPerTurn: next }))}
+            </div>
+          </div>
+        </EngineModuleCard>}
+      </>
+      ) : null}
+      {store.moduleFacts === undefined && (
+        <p className={styles.configFieldHint} role="status">正在读取当前预设模块事实…</p>
       )}
       {!hasVisibleCard && (
         <p className={styles.configFieldHint} role="status">
-          该层无引擎模块卡：引擎模块分布在 pre-step（context-gate）/ system-section（tool-bootstrap）/ tool-pipeline（code-presentation · tool-filter · delegation）。
+          该层无引擎模块卡：引擎模块分布在 pre-step、system-section 与 tool-pipeline。
         </p>
       )}
     </>

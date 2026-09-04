@@ -5,6 +5,7 @@ import { PromptConfigList } from './PromptConfigList.tsx'
 import { TemplatePicker } from '../../ui/TemplatePicker.tsx'
 import { useTemplatePicker } from './useTemplatePicker.ts'
 import { VariablesEditor } from './PromptConfigFields.tsx'
+import { tabKeyHandler } from '../../ui/tab-key.ts'
 import sharedCss from '../../ui/controls.module.css'
 import featureCss from './prompts.module.css'
 
@@ -41,6 +42,8 @@ export interface PromptConfigsEditorProps {
   onViewFilterChange: (value: string) => void
   headerCards?: ReactNode
   beforeCards?: ReactNode
+  viewMode?: 'general' | 'capability'
+  onViewModeChange?: (mode: 'general' | 'capability') => void
 }
 
 /** 预设级模板变量模块卡片（归类于配置列表下）：{{key}} 插值源，非 promptConfig——
@@ -122,6 +125,8 @@ function TemplateVariablesModuleCard(props: {
 
 /** 提示词配置编辑器：配置列表（层级/策略过滤已并入列表）+ 模板插入 + 保存前权威校验。 */
 export function PromptConfigsEditor(props: PromptConfigsEditorProps): ReactNode {
+  const viewMode = props.viewMode ?? 'general'
+  const onViewModeChange = props.onViewModeChange ?? (() => {})
   const [templateVarsExpanded, setTemplateVarsExpanded] = useState(false)
   const templatePicker = useTemplatePicker(
     props.configs,
@@ -136,36 +141,64 @@ export function PromptConfigsEditor(props: PromptConfigsEditorProps): ReactNode 
   }
   return (
     <section className={styles.page} aria-label="提示词配置">
-      {props.headerCards}
+      <div className={styles.viewModeTabs} role="tablist" aria-label="模块列表视图">
+        {([
+          ['general', '通用设置'],
+          ['capability', '引擎能力设置'],
+        ] as const).map(([id, label]) => {
+          const active = viewMode === id
+          return (
+            <button
+              key={id}
+              id={`pt-module-view-${id}`}
+              type="button"
+              role="tab"
+              tabIndex={active ? 0 : -1}
+              aria-selected={active}
+              aria-controls={`pt-module-panel-${id}`}
+              data-active={active ? '' : undefined}
+              onClick={() => onViewModeChange(id)}
+              onKeyDown={tabKeyHandler(['general', 'capability'], viewMode, onViewModeChange)}
+            >
+              <span>{label}</span>
+            </button>
+          )
+        })}
+      </div>
 
-      <PromptConfigList
-        meta={props.meta}
-        configs={props.configs}
-        savedConfigs={props.savedConfigs}
-        viewFilter={props.viewFilter}
-        onViewFilterChange={props.onViewFilterChange}
-        extraActions={<button ref={templatePicker.anchorRef} type="button" className={styles.primaryPill} onClick={templatePicker.openPicker}>新建</button>}
-        beforeCards={
-          <>
-            {props.beforeCards}
+      {viewMode === 'capability' ? (
+        <div id="pt-module-panel-capability" role="tabpanel" aria-labelledby="pt-module-view-capability" className={styles.capabilityPanel}>
+          {props.headerCards}
+          {props.beforeCards}
+        </div>
+      ) : (
+        <div id="pt-module-panel-general" role="tabpanel" aria-labelledby="pt-module-view-general">
+          <PromptConfigList
+            meta={props.meta}
+            configs={props.configs}
+            savedConfigs={props.savedConfigs}
+            viewFilter={props.viewFilter}
+            onViewFilterChange={props.onViewFilterChange}
+            extraActions={<button ref={templatePicker.anchorRef} type="button" className={styles.primaryPill} onClick={templatePicker.openPicker}>新建</button>}
+            beforeCards={
+              <TemplateVariablesModuleCard
+                templateVariables={props.templateVariables}
+                setTemplateVariables={props.setTemplateVariables}
+                templateVariablesEnabled={props.templateVariablesEnabled}
+                setTemplateVariablesEnabled={props.setTemplateVariablesEnabled}
+                saveTemplateVariables={props.saveTemplateVariables}
+                expanded={templateVarsExpanded}
+                onToggleExpanded={() => setTemplateVarsExpanded(!templateVarsExpanded)}
+              />
+            }
+            onPatchConfigs={props.onPatchConfigs}
+            onSaveConfigs={props.onSaveConfigs}
+            onNotice={props.onNotice}
+          />
+        </div>
+      )}
 
-            <TemplateVariablesModuleCard
-              templateVariables={props.templateVariables}
-              setTemplateVariables={props.setTemplateVariables}
-              templateVariablesEnabled={props.templateVariablesEnabled}
-              setTemplateVariablesEnabled={props.setTemplateVariablesEnabled}
-              saveTemplateVariables={props.saveTemplateVariables}
-              expanded={templateVarsExpanded}
-              onToggleExpanded={() => setTemplateVarsExpanded(!templateVarsExpanded)}
-            />
-          </>
-        }
-        onPatchConfigs={props.onPatchConfigs}
-        onSaveConfigs={props.onSaveConfigs}
-        onNotice={props.onNotice}
-      />
-
-      {templatePicker.open && (
+      {viewMode === 'general' && templatePicker.open && (
         <TemplatePicker
           anchorRef={templatePicker.anchorRef}
           templates={templatePicker.templates}

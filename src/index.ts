@@ -484,6 +484,10 @@ export function apply(ctx: Context, configIn: Config): void {
         warn(ctx, `prompt-tool: imported preset materialize failed: ${String(error)}`)
       }
     },
+    () => {
+      rebuildPreset()
+      applyDefaultModel()
+    },
   )
 
   // 首次以 base-only profile 启动时自动补 @deepseek-ai/dsh-web-app：
@@ -927,10 +931,10 @@ export { Config, PromptSettingsSchema } from './config.ts'
 export { writePreset } from './host/write-preset.ts'
 export { convertStToPreset, mergeStPresets, processStText, stPresetId } from './host/sillytavern.ts'
 export { applyModuleConfigs, buildModuleConfigsFromParams, savePresetParams, MODEL_SEGMENT_MAP } from './host/manifest.ts'
-export { loadPresetSpec, renderComposition, resolvePresetParams } from './host/manifest.ts'
+export { FALLBACK_MODULES, createEngineCapabilityInPreset, loadPresetSpec, renderComposition, resolvePresetModuleFacts, resolvePresetParams } from './host/manifest.ts'
 export { ENGINE_PARAM_KEYS, WRITER_PARAM_KEYS, validateEngineParamValues } from './shared/engine-params.ts'
 export { assertSafeConfigId, configFileName } from './host/prompt-configs.ts'
-export type { PresetSpec } from './host/manifest.ts'
+export type { EngineCapabilityCreateRequest, EngineCapabilityCreateResult, PresetSpec } from './host/manifest.ts'
 export {
   cloneBuiltinPreset,
   ensurePresetSeed,
@@ -978,5 +982,7 @@ export { PARAM_KEYS } from './config.ts'
 export type { SkillEntry, SkillCatalogEntry } from './config.ts'
 export { BRIDGE_ENDPOINTS, MAX_BRIDGE_BODY_BYTES, MAX_CHARACTER_CARD_STREAM_BYTES, SETTINGS_BRIDGE_PREFIX } from './shared/bridge-contract.ts'
 export type { BridgeEndpoint, BridgeErrorPayload, BridgeRequestMap, BridgeValueMap } from './shared/bridge-contract.ts'
+export { ENGINE_CAPABILITIES, ENGINE_RECIPES, engineCapability, engineRecipe, isEngineCapabilityPresent, validateCustomToolIdentities } from './shared/engine-capabilities.ts'
+export type { EngineCapability, ModuleSourceMode, PresetModuleFacts } from './shared/engine-capabilities.ts'
 export { parseFrontmatter } from './runtime/skills-parse.ts'
 export type { SkillFrontmatter } from './runtime/skills-parse.ts'

@@ -17,17 +17,21 @@ import { fixSkillEntry } from './skill-fix.ts'
 import { importSkillsPackage } from '../host/skills-import.ts'
 import {
   appendPresetModules,
+  atomicWriteTextFile,
   assertCompositionArray,
   cloneBuiltinPreset,
+  createEngineCapabilityInPreset,
   duplicateUserPreset,
   listBuiltinTemplates,
   listPresets,
   loadPresetSpec,
+  invalidatePresetSpec,
   openPresetLocation,
   parseImportedPresetId,
   removeUserPreset,
   renderComposition,
   resolvePresetParams,
+  resolvePresetModuleFacts,
   resolvePresetDir,
   savePresetParams,
   userPresetsDir,
@@ -46,6 +50,8 @@ import { convertStToPreset, mergeStPresets } from '../host/sillytavern.ts'
 import { BRIDGE_ENDPOINTS, MAX_BRIDGE_BODY_BYTES, MAX_CHARACTER_CARD_STREAM_BYTES, SETTINGS_BRIDGE_PREFIX } from '../shared/bridge-contract.ts'
 import { validateEngineParamValues } from '../shared/engine-params.ts'
 import { DEFAULT_PRESET_DIR } from '../host/paths.ts'
+import type { PresetModuleFacts } from '../shared/engine-capabilities.ts'
+import { validateCustomToolIdentities } from '../shared/engine-capabilities.ts'
 
 
 export interface SkillsBridgeState {
@@ -96,6 +102,22 @@ function writeBridgeJson(res: ServerResponse, status: number, body: unknown): vo
 
 const asRecord = (value: unknown): Record<string, unknown> =>
   value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
+
+type ToolSchemaLike = { name?: unknown; description?: unknown }
+
+/** 只投影模型可见的稳定摘要；不把完整 parameters/执行实现送进浏览器。 */
+function projectToolSchemas(schemas: readonly ToolSchemaLike[]): Array<{ name: string; description: string }> {
+  const unique = new Map<string, { name: string; description: string }>()
+  for (const schema of schemas) {
+    const name = typeof schema.name === 'string' ? schema.name.trim() : ''
+    if (name.length === 0 || unique.has(name)) continue
+    unique.set(name, {
+      name,
+      description: typeof schema.description === 'string' ? schema.description : '',
+    })
+  }
+  return [...unique.values()].sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0)
+}
 
 /** 读取 JSON bridge 请求体；所有 JSON 端点统一使用 32 MiB 内存上限。 */
 async function readBridgeBody(
@@ -236,8 +258,11 @@ export function registerSettingsBridge(
   afterOverridesChange?: () => void,
   /** 预设包导入完成回调（物化导入预设：组合/配置目录/共享引擎落盘，宿主 discovery 可见）。 */
   afterPresetPackageImport?: (id: string) => void,
+  /** 能力/recipe 原子创建后重建回调；抛错时调用方恢复 preset.yml。 */
+  afterCapabilityChange?: () => void,
 ): { invalidateDescriptor: () => void } {
   let invalidateCachedDescriptor: () => void = () => {}
+  let capabilityQueue: Promise<void> = Promise.resolve()
   // 动态等待 webServer：webServer 由 @deepseek-ai/dsh-web-app 提供。
   // profile 首次缺少该 bundle 时，本子插件先 pending 但不阻塞启动审计；
   // ensureWebSurface 会把 bundle 补进 manifest，重启后本子插件自动激活。
@@ -317,6 +342,7 @@ export function registerSettingsBridge(
         // 引擎参数按预设存储：/describe 附带激活预设参数（settings 已不承载；
         // 客户端 fields 参数键由此合并，promptConfigs 仍以 /prompt-configs 实际配置为准）。
         let presetParams: Record<string, unknown> = {}
+        let moduleFacts: PresetModuleFacts | undefined
         // 当前预设模板消息批层（pre-step）配置数：UI 消息批层入口开关联动——
         // 模板无 pre-step 配置（layer 缺省即 pre-step）时开关关闭且禁编辑。
         let templatePreStepCount = 0
@@ -328,6 +354,11 @@ export function registerSettingsBridge(
           const templateName = activeDir.length > 0 ? basename(activeDir) : 'anchored'
           const spec = loadPresetSpec(activeDir.length > 0 ? activeDir : resolvePresetDir(templateName))
           presetParams = resolvePresetParams(spec, {})
+          moduleFacts = resolvePresetModuleFacts(
+            spec,
+            activeDir.length > 0 ? activeDir : undefined,
+            listPresets().some((preset) => preset.id === templateName && preset.user),
+          )
           if (Array.isArray(spec.promptConfigs)) {
             presetParams.promptConfigs = spec.promptConfigs
           }
@@ -340,6 +371,7 @@ export function registerSettingsBridge(
         }
         return {
           presetParams,
+          moduleFacts,
           hostDefaultModel,
           templatePreStepCount,
           modelsAvailable: detection.available,
@@ -861,6 +893,11 @@ export function registerSettingsBridge(
               const customTools = record.customTools
               if (!Array.isArray(customTools)) {
                 writeBridgeJson(res, 400, { ok: false, code: 'custom-tools-invalid', message: 'customTools 必须是数组' })
+                return
+              }
+              const identityErrors = validateCustomToolIdentities(customTools)
+              if (identityErrors.length > 0) {
+                writeBridgeJson(res, 400, { ok: false, code: 'custom-tools-invalid', message: identityErrors.join('; ') })
                 return
               }
               withPresetDoc(dir, (doc) => {
@@ -1446,6 +1483,57 @@ export function registerSettingsBridge(
             }
           },
         }),
+        sctx.webServer.register({
+          kind: 'exact',
+          path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.engineCapability,
+          handler: async (req, res) => {
+            if (!guard(req, res)) return
+            const dir = getPresetConfigsDir?.() ?? ''
+            if (dir.length === 0) {
+              writeBridgeJson(res, 400, { ok: false, code: 'preset-dir-unavailable', message: 'presetDir 未配置' })
+              return
+            }
+            const parsedBody = await readBridgeBodyForHandler(req, res)
+            if (parsedBody === undefined) return
+            const body = asRecord(parsedBody.body)
+            const action = body.action
+            const id = action === 'create' ? body.capabilityId : action === 'create-recipe' ? body.recipeId : undefined
+            if ((action !== 'create' && action !== 'create-recipe') || typeof id !== 'string' || id.trim().length === 0 || id.length > 128) {
+              writeBridgeJson(res, 400, { ok: false, code: 'engine-capability-invalid', message: '能力或 recipe 请求格式无效' })
+              return
+            }
+            const activeId = basename(dir)
+            if (!listPresets().some((preset) => preset.id === activeId && preset.user)) {
+              writeBridgeJson(res, 403, { ok: false, code: 'engine-capability-readonly', message: 'system preset 只读，请先复制为用户预设' })
+              return
+            }
+            const request = action === 'create'
+              ? { action: 'create' as const, capabilityId: id.trim() }
+              : { action: 'create-recipe' as const, recipeId: id.trim() }
+            const run = capabilityQueue.then(async () => {
+              const file = join(dir, 'preset.yml')
+              let original: string | undefined
+              try {
+                original = readFileSync(file, 'utf8')
+                const result = createEngineCapabilityInPreset(dir, request)
+                if (result.changed) afterCapabilityChange?.()
+                writeBridgeJson(res, 200, { ok: true, value: result })
+              } catch (error) {
+                // 候选校验或重建失败：恢复原 preset.yml；生成目录由 writePreset 自身保留旧版。
+                if (original !== undefined) {
+                  try {
+                    atomicWriteTextFile(file, original)
+                    invalidatePresetSpec(dir)
+                  } catch { /* 保留错误响应，备份由上层写盘策略处理 */ }
+                }
+                const message = error instanceof Error ? error.message : String(error)
+                writeBridgeJson(res, 409, { ok: false, code: 'engine-capability-rejected', message: `引擎能力创建失败：${message}` })
+              }
+            })
+            capabilityQueue = run.then(() => undefined, () => undefined)
+            await run
+          },
+        }),
       ]
       return () => {
         for (const dispose of disposers) dispose()
@@ -1475,23 +1563,71 @@ export function registerSettingsBridge(
         if (parsedBody === undefined) return
         const { body } = parsedBody
         const record = (body ?? {}) as Record<string, unknown>
-        const sessionId = typeof record.sessionId === 'string' ? record.sessionId.trim() : ''
-        if (sessionId.length === 0 || sessionId.length > 256) {
-          writeBridgeJson(res, 400, { ok: false, code: 'tool-surface-invalid', message: 'sessionId 必须是非空字符串' })
+        const hasSessionId = Object.prototype.hasOwnProperty.call(record, 'sessionId')
+        const hasPresetId = Object.prototype.hasOwnProperty.call(record, 'presetId')
+        const sessionId = hasSessionId && typeof record.sessionId === 'string' ? record.sessionId.trim() : undefined
+        const presetId = hasPresetId && typeof record.presetId === 'string' ? record.presetId.trim() : undefined
+        if ((hasSessionId && sessionId === undefined) || (hasPresetId && presetId === undefined)
+          || (sessionId === '' || presetId === '')) {
+          writeBridgeJson(res, 400, { ok: false, code: 'tool-surface-invalid', message: 'sessionId/presetId 必须是非空字符串' })
           return
         }
-        const agent = stx.agents.get(sessionId as never)
-        if (agent === undefined) {
-          writeBridgeJson(res, 404, { ok: false, code: 'tool-surface-unknown-session', message: '当前没有存活的本地 Agent 对应此 sessionId（冷态/远程子代理不支持）' })
+        if ((sessionId === undefined) === (presetId === undefined)) {
+          writeBridgeJson(res, 400, { ok: false, code: 'tool-surface-invalid', message: 'sessionId 与 presetId 必须且只能提供一个非空字符串' })
+          return
+        }
+        if ((sessionId ?? presetId ?? '').length > 256) {
+          writeBridgeJson(res, 400, { ok: false, code: 'tool-surface-invalid', message: 'sessionId/presetId 长度不能超过 256' })
+          return
+        }
+        if (sessionId !== undefined) {
+          const agent = stx.agents.get(sessionId as never)
+          if (agent === undefined) {
+            writeBridgeJson(res, 404, { ok: false, code: 'tool-surface-unknown-session', message: '当前没有存活的本地 Agent 对应此 sessionId（冷态/远程子代理不支持）' })
+            return
+          }
+          try {
+            const tools = projectToolSchemas(stx.tools.schemas(agent))
+            writeBridgeJson(res, 200, { ok: true, value: { source: 'session', sessionId, tools } })
+          } catch (error) {
+            const message = error instanceof Error ? error.message : String(error)
+            writeBridgeJson(res, 409, { ok: false, code: 'tool-surface-failed', message })
+          }
+          return
+        }
+        const agentPresets = (stx as Context & {
+          agentPresets?: {
+            list: () => Promise<readonly { id?: unknown }[]>
+            standingKeyFor: (id: string) => Promise<unknown>
+          }
+          get?: (name: string) => unknown
+        }).agentPresets ?? ((stx as Context & { get?: (name: string) => unknown }).get?.('agentPresets') as {
+          list: () => Promise<readonly { id?: unknown }[]>
+          standingKeyFor: (id: string) => Promise<unknown>
+        } | undefined)
+        if (agentPresets === undefined) {
+          writeBridgeJson(res, 503, { ok: false, code: 'tool-surface-unavailable', message: 'agentPresets 服务尚未就绪' })
+          return
+        }
+        let roster: readonly { id?: unknown }[]
+        try {
+          roster = await agentPresets.list()
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error)
+          writeBridgeJson(res, 503, { ok: false, code: 'tool-surface-unavailable', message: `官方预设 roster 读取失败：${message}` })
+          return
+        }
+        if (!roster.some((preset) => preset.id === presetId)) {
+          writeBridgeJson(res, 404, { ok: false, code: 'tool-surface-unknown-preset', message: `未知官方预设：${presetId}` })
           return
         }
         try {
-          const schemas = stx.tools.schemas(agent)
-          const tools = schemas.map((schema) => ({ name: schema.name, description: schema.description }))
-          writeBridgeJson(res, 200, { ok: true, value: { tools } })
+          const scope = await agentPresets.standingKeyFor(presetId!)
+          const tools = projectToolSchemas(stx.tools.schemas(scope as object))
+          writeBridgeJson(res, 200, { ok: true, value: { source: 'preset', presetId, tools } })
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error)
-          writeBridgeJson(res, 409, { ok: false, code: 'tool-surface-failed', message })
+          writeBridgeJson(res, 409, { ok: false, code: 'tool-surface-preset-failed', message })
         }
       })
       return () => {

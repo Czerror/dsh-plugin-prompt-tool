@@ -14,10 +14,9 @@ export const MainSessionPage = memo(function MainSessionPage(props: { store: Pro
   // L3 selector 化：fields 引用变化才重渲染（父级 loading/notice/page 变化不再级联）。
   const fields = usePromptToolFields(store, (value) => value)
   const [layerFilter, setLayerFilter] = useState('all')
-  const [customToolsExpanded, setCustomToolsExpanded] = useState(false)
+  const [viewMode, setViewMode] = useState<'general' | 'capability'>('general')
   const changeLayerFilter = useCallback((value: string) => {
     setLayerFilter(value)
-    if (value === 'tool-pipeline') setCustomToolsExpanded(true)
   }, [])
   // 稳定回调：卡片 memo 的生效前提（store 引用已稳定）。
   const patchConfigs = useCallback((configs: PromptToolStore['fields']['promptConfigs']) => {
@@ -44,18 +43,20 @@ export const MainSessionPage = memo(function MainSessionPage(props: { store: Pro
         store={store}
         viewFilter={layerFilter}
         onViewFilterChange={changeLayerFilter}
+        viewMode={viewMode}
+        onViewModeChange={setViewMode}
         headerCards={
           <div className={ui.configList}>
             <ModelRouteModuleCard store={store} scope="main" />
             <EngineModuleCards store={store} layerFilter={layerFilter} />
           </div>
         }
-        beforeCards={layerFilter === 'tool-pipeline' ? (
+        beforeCards={layerFilter === 'all' || layerFilter === 'tool-pipeline' ? (
           <CustomToolsCard
-            expanded={customToolsExpanded}
-            onToggleExpanded={() => setCustomToolsExpanded((value) => !value)}
             onNotice={store.showNotice}
             sessionId={store.api.currentSessionId()}
+            presetId={fields.presetTemplate}
+            listAgentPresets={store.api.listAgentPresets}
           />
         ) : undefined}
       />

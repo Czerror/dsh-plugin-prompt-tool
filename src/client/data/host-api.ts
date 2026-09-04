@@ -19,6 +19,8 @@ export interface PromptToolHostApi {
   sessionModel: SessionModelFace
   switchPreset(id: string): Promise<PromptToolPresetSwitchResult>
   currentSessionId(): string | undefined
+  /** 读取官方 agent-presets roster，供预设工具能力选择器使用。 */
+  listAgentPresets(): Promise<Array<{ id: string; name?: string; description?: string; trust?: 'system' | 'user' }>>
 }
 
 export interface PromptToolPresetSwitchResult {

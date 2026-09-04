@@ -1,6 +1,7 @@
 import { useEffect, useId, useMemo, useState, type ReactNode } from 'react'
 import clsx from 'clsx'
 import { FormField } from '../../ui/FormField.tsx'
+import { MenuSelect } from '../../ui/MenuSelect.tsx'
 import { TagInput } from '../../ui/TagInput.tsx'
 import { autoResizeTextarea } from './textarea-resize.ts'
 import sharedCss from '../../ui/controls.module.css'
@@ -24,9 +25,15 @@ export function OptionField(props: { label: string; hint?: string; value: string
   const options = props.keepCurrent === true ? selectOptions(props.options, props.value) : props.options.map((item) => ({ value: item, label: item }))
   return (
     <FormField label={props.label} hint={props.hint}>
-      <select className={styles.configInput} value={selectValue(props.options, props.value, props.fallback)} onChange={(event) => props.onChange(event.target.value)}>
-        {options.map((item) => <option key={item.value} value={item.value}>{props.labels?.[item.value] ?? item.label}</option>)}
-      </select>
+      <MenuSelect
+        className={styles.configInput}
+        ariaLabel={props.label}
+        value={props.keepCurrent === true
+          ? (props.value ?? props.fallback)
+          : selectValue(props.options, props.value, props.fallback)}
+        options={options.map((item) => ({ ...item, label: props.labels?.[item.value] ?? item.label }))}
+        onChange={props.onChange}
+      />
     </FormField>
   )
 }

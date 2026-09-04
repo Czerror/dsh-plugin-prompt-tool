@@ -231,7 +231,14 @@ system-section 段（character-definition / system-prompt / post-history）。
 - 保存链路：`/subagent-tool-policy` POST → `validateSubagentToolPolicy()` 校验 → 原子写盘 → 自动装配/移除 `subagent-tool-policy` 模块行。
 - writer 直接读取手写/导入的 `subagentToolPolicy` 时同样先校验，并自动装配运行时模块；策略启用后 `subagentModel` 路由、reasoningEffort、maxTokens 与 maxDepth 改写到策略模块，不再只落到被 shadow 的官方工具行。
 - 预览链路：`/subagent-tool-policy-preview` POST 与运行时 `resolveSubagentToolPolicy()` 同一 seam（不重复算法）；预览用 ceiling 工具宇宙。
-- 工具面：`/tool-surface` GET 只读返回当前存活本地 Agent 的 name/description 摘要（不含完整 Schema、大文本或 secrets）；只代表当前运行会话，不代表未挂载预设。
+- 工具面：`/tool-surface` POST 接受互斥的 `{ sessionId }` 或 `{ presetId }`。前者只读返回当前存活本地 Agent 的 name/description 摘要；后者仅在用户明确选择预设时，经官方 `agentPresets.list()` 白名单、`standingKeyFor()` 和 `tools.schemas(scope)` 懒加载预设有效能力。两者均不下发完整 Schema、大文本或 secrets；PTC 下“预设工具能力”不等于模型 wire 直连工具。
+
+### 模块事实与能力卡（2026-09-05）
+
+- `/bootstrap` 附带 `moduleFacts`：`declaredModules`（缺失为 `null`）、`effectiveModules`（`modules: []` 仍展开既有 `FALLBACK_MODULES`）、递归 `rowIds`、`sourceMode` 和 `editable`。
+- 能力卡存在性只由 `moduleKeys` 或解析后的 `rowIds` 决定，不能由 params 非空推断；`moduleConfigs` 回显优先级保持 `params > moduleConfigs > 行默认`。
+- `tool-filter`、`context-gate` 等参数各有唯一 UI owner；子代理委派卡只编辑 `maxDepth` 与 `subagentToolPolicy`，避免跨页失焦保存互相覆盖。
+- `engineCapability` bridge 只接受服务端白名单能力/recipe；recipe 不作为持久化实体，但展开结果一次写入目标 preset.yml，候选组合校验通过后才重建。
 
 ### 边界
 

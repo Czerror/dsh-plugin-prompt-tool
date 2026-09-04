@@ -2,6 +2,7 @@ import { useState, type ReactNode } from 'react'
 import clsx from 'clsx'
 import { IconChevronDownOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { FormField } from '../../ui/FormField.tsx'
+import { MenuSelect } from '../../ui/MenuSelect.tsx'
 import sharedCss from '../../ui/controls.module.css'
 import featureCss from './tools.module.css'
 
@@ -58,10 +59,9 @@ function ParameterRowsEditor(props: { value: ToolDraft | undefined; onChange: (v
         <span key={`${row.key}-${index}`} className={styles.variableRow}>
           <input className={styles.configInput} aria-label="参数名" value={row.key} spellCheck={false} placeholder="参数名"
             onChange={(e) => setRow(index, { key: e.target.value })} />
-          <select className={styles.configInput} aria-label="参数类型" value={row.type}
-            onChange={(e) => setRow(index, { type: e.target.value })}>
-            {SCHEMA_TYPES.map((type) => <option key={type} value={type}>{type}</option>)}
-          </select>
+          <MenuSelect className={styles.configInput} compact ariaLabel="参数类型" value={row.type}
+            options={SCHEMA_TYPES.map((type) => ({ value: type, label: type }))}
+            onChange={(type) => setRow(index, { type })} />
           <label className={styles.configEnable} title="required">
             <input type="checkbox" aria-label="必填" checked={row.required}
               onChange={(e) => setRow(index, { required: e.target.checked })} />
@@ -116,7 +116,7 @@ export function CustomToolCard(props: {
     props.onPatch({ [field]: value ?? {} })
   }
   return (
-    <article className={clsx(styles.configCard, props.expanded && styles.configCardOpen)}>
+    <article className={clsx(styles.configCard, styles.toolCard, props.expanded && styles.configCardOpen)} data-tool-card="true">
       <header className={styles.configHeader}>
         <button type="button" className={styles.configToggle} aria-expanded={props.expanded} onClick={props.onToggleExpanded}>
           <span className={styles.configTitle}>
@@ -167,10 +167,9 @@ export function CustomToolCard(props: {
               onChange={(e) => props.onPatch({ description: e.target.value })} />
           </FormField>
           <FormField label="execute.kind（执行器）" hint="shell=命令；http=请求；delegate=委托内置/已注册工具；fs=工作区文件；ask-user=询问用户">
-            <select className={styles.configInput} aria-label="执行器" value={kind}
-              onChange={(e) => patchExecute({ kind: e.target.value })}>
-              {KIND_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
-            </select>
+            <MenuSelect className={styles.configInput} compact ariaLabel="执行器" value={kind}
+              options={KIND_OPTIONS.map((option) => ({ value: option, label: option }))}
+              onChange={(value) => patchExecute({ kind: value })} />
           </FormField>
           {kind === 'shell' && (
             <>
@@ -180,11 +179,10 @@ export function CustomToolCard(props: {
                   onChange={(e) => patchExecute({ command: e.target.value })} />
               </FormField>
               <FormField label="shell" hint="pwsh 强制 UTF-8 输出（中文不乱码）">
-                <select className={styles.configInput} aria-label="shell"
+                <MenuSelect className={styles.configInput} compact ariaLabel="shell"
                   value={typeof execute.shell === 'string' ? execute.shell : 'pwsh'}
-                  onChange={(e) => patchExecute({ shell: e.target.value })}>
-                  {SHELLS.map((shell) => <option key={shell} value={shell}>{shell}</option>)}
-                </select>
+                  options={SHELLS.map((shell) => ({ value: shell, label: shell }))}
+                  onChange={(value) => patchExecute({ shell: value })} />
               </FormField>
             </>
           )}
@@ -196,11 +194,10 @@ export function CustomToolCard(props: {
                   onChange={(e) => patchExecute({ url: e.target.value })} />
               </FormField>
               <FormField label="method">
-                <select className={styles.configInput} aria-label="请求方法"
+                <MenuSelect className={styles.configInput} compact ariaLabel="请求方法"
                   value={typeof execute.method === 'string' ? execute.method : 'GET'}
-                  onChange={(e) => patchExecute({ method: e.target.value })}>
-                  {HTTP_METHODS.map((method) => <option key={method} value={method}>{method}</option>)}
-                </select>
+                  options={HTTP_METHODS.map((method) => ({ value: method, label: method }))}
+                  onChange={(value) => patchExecute({ method: value })} />
               </FormField>
             </>
           )}
@@ -214,11 +211,10 @@ export function CustomToolCard(props: {
           {kind === 'fs' && (
             <>
               <FormField label="action">
-                <select className={styles.configInput} aria-label="fs 动作"
+                <MenuSelect className={styles.configInput} compact ariaLabel="fs 动作"
                   value={typeof execute.action === 'string' && (FS_ACTIONS as readonly string[]).includes(execute.action) ? execute.action : 'read'}
-                  onChange={(e) => patchExecute({ action: e.target.value })}>
-                  {FS_ACTIONS.map((action) => <option key={action} value={action}>{action}</option>)}
-                </select>
+                  options={FS_ACTIONS.map((action) => ({ value: action, label: action }))}
+                  onChange={(value) => patchExecute({ action: value })} />
               </FormField>
               <FormField label="path" hint="相对工作区路径；越界拒绝">
                 <input className={styles.configInput} aria-label="文件路径" spellCheck={false}

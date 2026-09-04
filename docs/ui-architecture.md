@@ -148,6 +148,7 @@
        ├─ EngineModuleCard.tsx
        ├─ FormField.tsx
        ├─ ImportFileButton.tsx
+       ├─ MenuSelect.tsx
        ├─ SettingInputRow.tsx
        ├─ tab-key.ts
        ├─ TagInput.tsx
@@ -223,7 +224,7 @@ workspace-pages.ts 是页面元数据的唯一来源。默认页为 features，�
 
 | id | 标题 | 主要组合 |
 |---|---|---|
-| features | 主会话 | ModelRouteStatus、主会话 ModelRouteCard、EngineModuleList、PromptConfigsEditor、CustomToolsCard |
+| features | 主会话 | ModelRouteStatus、主会话 ModelRouteCard、PromptConfigsEditor（通用/引擎能力双视图）、按能力拆分的 EngineModuleList、直接工具卡列表 |
 | subagent | 子代理 | 子代理 ModelRouteStatus、ModelRouteCard、DelegationToolsCard、ToolSurfaceView、ConfigListWithTemplates |
 | skills | 技能设置 | 目录与来源、状态筛选、SkillRow、目录引用/导入/排序 |
 | presets | 预设配置 | 全局生成开关、AGENTS/生成目录设置、PresetSwitcher 与预设 CRUD |
@@ -324,7 +325,7 @@ feature 只拥有自己的视图、瞬时状态、领域纯 helper 和 CSS：
 |---|---|
 | prompts | 六层配置卡、字段策略、排序、模板插入、变量编辑和内容配置 |
 | models | 当前预设的主/子代理模型路由卡 |
-| modules | 引擎模块列表与层级筛选；卡片形态由 ui/EngineModuleCard.tsx 提供 |
+| modules | 引擎能力列表与层级筛选；一项能力一张卡，存在性由 `/bootstrap.moduleFacts` 决定，卡片形态由 ui/EngineModuleCard.tsx 提供 |
 | subagents | 委派工具、实例级工具策略草稿、策略预览和工具面入口 |
 | tools | 自定义工具编辑/保存、参数模板和存活 Agent 工具面 |
 | skills | 技能目录引用/导入、状态筛选、排序、开关、修复和打开目录 |
@@ -341,13 +342,20 @@ ui/ 只接收 props/callback，当前真实共享 seam 包括：
 
 - FormField：label、hint、error 与 aria-describedby 配对。
 - SettingInputRow、ToggleRow、TagInput：设置和字段编辑形态。
+- MenuSelect：直接封装官方 Menu 的单选胶囊；标准设置使用 36px，模块卡内使用 28px 紧凑形态，浮层统一 portal。
 - CollapsibleCard、EngineModuleCard：具体可复用的折叠/模块卡形态，不是万能 Card。
 - ImportFileButton：隐藏原生 file input 的导入入口。
 - TemplatePicker、DialogSurface：模板和预设操作的 portal 浮层。
 - anchored-popover.ts / anchored-popover-fit.ts：锚点位置和窄视口适配。
 - tab-key.ts、dialog-focus.ts：纯键盘索引及弹窗焦点行为。
 
-原生 input、select、textarea、details 能解决的场景继续使用原生元素。新按钮优先使用官方 Button/Pill/icon primitive，不创建本地 Button wrapper。
+单行 input 与 textarea 继续使用原生元素；下拉单选统一使用官方 Menu，经 MenuSelect 保持触发器、浮层和 ARIA 一致。新按钮优先使用官方 Button/Pill/icon primitive，不创建本地 Button wrapper。
+
+模块卡内的选择器、开关及小型文本/数字输入使用紧凑尺寸；大文本和 JSON 编辑器保留 `field-sizing: content`、手动纵向缩放与现有自动测高，不随紧凑控件一起压缩。
+
+主会话模块列表提供两个互斥 sibling view：`general` 展示当前 seam 的 promptConfigs，`capability` 展示模型路由、引擎能力卡和 tool-pipeline 工具卡。`layerFilter` 在两个 view 间保持独立；view 切换不改变 dirty 快照、参数保存队列或模块事实。
+
+`ToolSurfaceView` 的 `sessionId` 分支表示当前存活 Agent；`presetId` 分支表示官方预设后续 generation 的只读能力。预设分支只在能力视图显式挂载时请求，不在 bootstrap 遍历所有预设。
 
 ### 9.2 Tabs
 
@@ -451,4 +459,4 @@ ui/ 只接收 props/callback，当前真实共享 seam 包括：
 6. 新 selector 必须有明确 CSS owner；新交互必须同时考虑键盘、焦点、错误和 reduced-motion。
 7. 完成 typecheck、lint、test、build 和 diff --check 后再提交；不要停止或重启当前 DSH 服务。
 
-本文取代根目录 PLAN.md 的“计划”角色；历史实施细节保留在 Git 提交记录中，后续维护以本文和对应领域文档为准。
+本文是客户端结构的长期权威文档；根目录 [PLAN.md](../PLAN.md) 仅跟踪当前引擎能力卡重构，完成后将状态沉淀回本文及对应领域文档。

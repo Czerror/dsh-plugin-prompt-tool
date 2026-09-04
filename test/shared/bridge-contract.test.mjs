@@ -20,6 +20,10 @@ function makeHarness() {
     tools: {
       schemas: () => [{ name: 'bash', description: '运行命令' }],
     },
+    agentPresets: {
+      list: async () => [{ id: 'official', trust: 'system' }],
+      standingKeyFor: async (id) => ({ id }),
+    },
     effect: (fn) => fn(),
   }
   const ctx = { inject: (_deps, cb) => cb(sctx) }
@@ -70,10 +74,10 @@ test('契约：client 前缀与 server 注册前缀同源', () => {
   assert.ok(SETTINGS_BRIDGE_PREFIX.startsWith('/api/'))
 })
 
-test('契约：30 个端点路径全部注册且无多余', () => {
+test('契约：所有端点路径全部注册且无多余', () => {
   const handlers = register()
   const expected = Object.values(BRIDGE_ENDPOINTS)
-  assert.equal(expected.length, 30, 'BRIDGE_ENDPOINTS 应恰好 30 个端点')
+  assert.equal(expected.length, 31, 'BRIDGE_ENDPOINTS 应包含当前登记的 31 个端点')
   const registered = [...handlers.keys()].sort()
   const wanted = expected.map((p) => SETTINGS_BRIDGE_PREFIX + p).sort()
   assert.deepEqual(registered, wanted)
@@ -121,12 +125,30 @@ test('契约：/tool-surface 返回存活 Agent 的只读工具面摘要，未�
   const payload = JSON.parse(ok.body)
   assert.equal(payload.ok, true)
   assert.deepEqual(payload.value.tools, [{ name: 'bash', description: '运行命令' }], '只返回 name/description')
+  assert.equal(payload.value.source, 'session')
   const unknown = fakeRes()
   await handler(fakeReq({ body: JSON.stringify({ sessionId: 'nope' }) }), unknown)
   assert.equal(unknown.status, 404)
   const unknownPayload = JSON.parse(unknown.body)
   assert.equal(unknownPayload.ok, false)
   assert.equal(unknownPayload.code, 'tool-surface-unknown-session')
+})
+
+test('契约：/tool-surface 支持官方 preset scope 且只读有效 schema', async () => {
+  const handlers = register()
+  const handler = handlers.get(SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.toolSurface)
+  const ok = fakeRes()
+  await handler(fakeReq({ body: JSON.stringify({ presetId: 'official' }) }), ok)
+  assert.equal(ok.status, 200)
+  const payload = JSON.parse(ok.body)
+  assert.equal(payload.value.source, 'preset')
+  assert.equal(payload.value.presetId, 'official')
+  assert.deepEqual(payload.value.tools, [{ name: 'bash', description: '运行命令' }])
+
+  const invalid = fakeRes()
+  await handler(fakeReq({ body: JSON.stringify({ sessionId: 'live-session', presetId: 'official' }) }), invalid)
+  assert.equal(invalid.status, 400)
+  assert.equal(JSON.parse(invalid.body).code, 'tool-surface-invalid')
 })
 
 test('契约：失败载荷统一为 { ok: false, code?, message? }', async () => {

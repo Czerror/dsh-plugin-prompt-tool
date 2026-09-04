@@ -16,6 +16,7 @@ import { basename, join, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Pair, Scalar, parse as parseYaml, parseDocument, YAMLMap, YAMLSeq } from 'yaml'
 import { DEFAULT_PRESET_DIR, DSH_HOME } from './paths.ts'
+import { engineCapability, engineRecipe, isEngineCapabilityPresent, type ModuleSourceMode, type PresetModuleFacts } from '../shared/engine-capabilities.ts'
 
 export interface PresetSpec {
   id: string
@@ -830,7 +831,7 @@ export function buildModuleConfigsFromParams(params: Record<string, unknown>, op
 }
 
 /** 空模块清单兜底骨架（自定义预设空白起点：模块集与 minimal 一致，参数/配置全空）。 */
-const FALLBACK_MODULES = ['official-persistent-shell', 'bootstrap-filesystem',
+export const FALLBACK_MODULES = ['official-persistent-shell', 'bootstrap-filesystem',
   'context-gate', 'tool-bootstrap', 'code-presentation', 'prompt-config-engine',
   'run-code-env', 'custom-bash', 'skill-search']
 
@@ -992,6 +993,154 @@ export function loadCompositionText(spec: PresetSpec, templateDir?: string): str
     }
   }
   return raw
+}
+
+/**
+ * 解析预设的模块事实，供 UI 卡片存在性和受控创建共用。
+ * 这里不从 params truthy 值猜能力；模块清单/组合行才是装配事实。
+ */
+export function resolvePresetModuleFacts(
+  spec: PresetSpec,
+  templateDir?: string,
+  editable = false,
+): PresetModuleFacts {
+  const declaredModules = Array.isArray(spec.modules)
+    ? spec.modules.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+    : null
+  const sourceMode: ModuleSourceMode = Array.isArray(spec.modules)
+    ? spec.modules.length === 0 ? 'fallback' : 'explicit'
+    : typeof spec.composition === 'string' && spec.composition.trim().length > 0
+      ? 'composition'
+      : templateDir !== undefined && existsSync(join(templateDir, 'agent.cordis.yml'))
+        ? 'official'
+        : 'unknown'
+  const effectiveModules = sourceMode === 'fallback'
+    ? [...FALLBACK_MODULES]
+    : sourceMode === 'explicit'
+      ? [...(declaredModules ?? [])]
+      : null
+  if (effectiveModules !== null && spec.subagentToolPolicy !== undefined && spec.subagentToolPolicy !== null
+    && !effectiveModules.includes('subagent-tool-policy')) {
+    effectiveModules.push('subagent-tool-policy')
+  }
+  if (sourceMode === 'unknown') {
+    return { declaredModules, effectiveModules: null, rowIds: [], sourceMode, editable }
+  }
+
+  let raw: string
+  try {
+    raw = loadCompositionText(spec, templateDir)
+  } catch {
+    return { declaredModules, effectiveModules: null, rowIds: [], sourceMode: 'unknown', editable }
+  }
+  const rowIds: string[] = []
+  const seenRows = new Set<string>()
+  const defaults = new Map<string, Record<string, unknown>>()
+  const visit = (value: unknown): void => {
+    if (Array.isArray(value)) {
+      for (const item of value) visit(item)
+      return
+    }
+    if (value === null || typeof value !== 'object') return
+    const record = value as Record<string, unknown>
+    if (typeof record.id === 'string' && record.id.length > 0) {
+      if (!seenRows.has(record.id)) {
+        seenRows.add(record.id)
+        rowIds.push(record.id)
+      }
+      if (record.config !== null && typeof record.config === 'object' && !Array.isArray(record.config)) {
+        defaults.set(record.id, { ...(record.config as Record<string, unknown>) })
+      }
+    }
+    for (const child of Object.values(record)) visit(child)
+  }
+  try {
+    visit(parseYaml(raw, { logLevel: 'silent' }))
+  } catch {
+    return { declaredModules, effectiveModules: null, rowIds: [], sourceMode: 'unknown', editable }
+  }
+  const effectiveConfigs: Record<string, Record<string, unknown>> = {}
+  for (const [id, config] of defaults) effectiveConfigs[id] = config
+  for (const [id, config] of Object.entries(spec.moduleConfigs ?? {})) {
+    effectiveConfigs[id] = { ...(effectiveConfigs[id] ?? {}), ...config }
+  }
+  const generated = buildModuleConfigsFromParams(resolvePresetParams(spec, {}), {
+    subagentPolicyEnabled: spec.subagentToolPolicy !== undefined && spec.subagentToolPolicy !== null,
+  })
+  for (const [id, config] of Object.entries(generated)) {
+    effectiveConfigs[id] = { ...(effectiveConfigs[id] ?? {}), ...config }
+  }
+  return { declaredModules, effectiveModules, rowIds, sourceMode, editable, effectiveConfigs }
+}
+
+export type EngineCapabilityCreateRequest =
+  | { action: 'create'; capabilityId: string }
+  | { action: 'create-recipe'; recipeId: string }
+
+export interface EngineCapabilityCreateResult {
+  changed: boolean
+  addedModules: string[]
+  capabilityIds: string[]
+}
+
+/** 在内存候选文档中展开能力/recipe，校验成功后一次原子替换 preset.yml。 */
+export function createEngineCapabilityInPreset(
+  presetDir: string,
+  request: EngineCapabilityCreateRequest,
+): EngineCapabilityCreateResult {
+  const file = join(presetDir, 'preset.yml')
+  if (!existsSync(file)) throw new Error(`预设目录缺少 preset.yml：${presetDir}`)
+  const original = readFileSync(file, 'utf8')
+  const doc = parseDocument(original, { logLevel: 'silent' })
+  const source = doc.toJS() as PresetSpec
+  if (!Array.isArray(source.modules)) throw new Error('当前预设没有可编辑的 modules 数组；请先复制为插件用户预设')
+  const capabilityIds = request.action === 'create'
+    ? [request.capabilityId]
+    : (engineRecipe(request.recipeId)?.capabilities ? [...engineRecipe(request.recipeId)!.capabilities] : [])
+  if (capabilityIds.length === 0 || capabilityIds.some((id) => engineCapability(id) === undefined)) {
+    throw new Error(`未知引擎能力或 recipe：${request.action === 'create' ? request.capabilityId : request.recipeId}`)
+  }
+  const currentFacts = resolvePresetModuleFacts(source, presetDir, true)
+  const additions = capabilityIds
+    .filter((id) => !isEngineCapabilityPresent(id, currentFacts))
+    .flatMap((id) => engineCapability(id)?.moduleKeys.slice(0, 1) ?? [])
+  const base = source.modules.length === 0 ? [...FALLBACK_MODULES] : source.modules.filter((item): item is string => typeof item === 'string' && item.length > 0)
+  const modules = [...base]
+  const addedModules: string[] = []
+  for (const module of additions) {
+    if (!modules.includes(module)) {
+      modules.push(module)
+      addedModules.push(module)
+    }
+  }
+  doc.set('modules', modules)
+  const recipe = request.action === 'create-recipe' ? engineRecipe(request.recipeId) : undefined
+  for (const [key, value] of Object.entries(recipe?.initialParams ?? {})) {
+    if (!Object.prototype.hasOwnProperty.call(source.params ?? {}, key)) doc.setIn(['params', key], value)
+  }
+  const candidate = doc.toJS() as PresetSpec
+  const rendered = renderComposition(candidate, {}, presetDir)
+  const rows = assertCompositionArray(rendered, candidate)
+  const rowIds = new Set<string>()
+  const visit = (value: unknown): void => {
+    if (Array.isArray(value)) { for (const item of value) visit(item); return }
+    if (value === null || typeof value !== 'object') return
+    const record = value as Record<string, unknown>
+    if (typeof record.id === 'string') rowIds.add(record.id)
+    for (const child of Object.values(record)) visit(child)
+  }
+  visit(rows)
+  for (const id of capabilityIds) {
+    const capability = engineCapability(id)!
+    if (!capability.rowIds.some((rowId) => rowIds.has(rowId))) throw new Error(`能力 ${id} 的组合缺少预期 row`)
+  }
+  if (addedModules.length === 0 && recipe === undefined) return { changed: false, addedModules, capabilityIds }
+  if (addedModules.length === 0 && recipe !== undefined && Object.entries(recipe.initialParams ?? {}).every(([key]) => Object.prototype.hasOwnProperty.call(source.params ?? {}, key))) {
+    return { changed: false, addedModules, capabilityIds }
+  }
+  atomicWriteTextFile(file, doc.toString())
+  invalidatePresetSpec(presetDir)
+  return { changed: true, addedModules, capabilityIds }
 }
 
 /**

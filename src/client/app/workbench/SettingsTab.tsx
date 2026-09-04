@@ -3,6 +3,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings-plugins/client'
 import type { InjectFace, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import { bridgeCall } from '../../data/bridge-client.ts'
+import { MenuSelect } from '../../ui/MenuSelect.tsx'
 import { ToggleRow } from '../../ui/ToggleRow.tsx'
 import type { PromptToolWorkbenchFace } from './workbench-face.ts'
 import ui from '../../ui/controls.module.css'
@@ -60,12 +61,12 @@ export function SettingsTab(props: TabProps): ReactNode {
       <div className={ui.rowGroup}>
         <div className={ui.settingRowStack}>
           <span className={ui.settingCopy}><strong>预设模板</strong><small>新会话默认挂载的预设；完整预设管理与提示词配置请使用左上角悬浮按钮打开工作台。</small></span>
-          <select className={ui.directoryInput} aria-label="预设模板"
+          <MenuSelect className={ui.directoryInput} ariaLabel="预设模板"
             value={typeof value.presetTemplate === 'string' ? value.presetTemplate : ''}
             disabled={!snapshot.writable || switchingPreset}
-            onChange={(event) => { void switchPreset(event.target.value) }}>
-            {presets.map((preset) => <option key={preset.id} value={preset.id}>{preset.name}</option>)}
-          </select>
+            compact={false}
+            options={presets.map((preset) => ({ value: preset.id, label: preset.name }))}
+            onChange={(id) => { void switchPreset(id) }} />
           {presetNotice !== undefined && (
             <p className={presetNotice.kind === 'error' ? ui.noticeError : ui.notice} role="status">
               {presetNotice.message}

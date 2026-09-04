@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react'
 import { bridgeCall, errorMessage } from '../../data/bridge-client.ts'
+import { MenuSelect } from '../../ui/MenuSelect.tsx'
 import { PromptConfigCard } from './PromptConfigCard.tsx'
 import { moveToView, moveWithinLayer, promptConfigLayer, viewOrderedIds } from './prompt-config-order.ts'
 import type { EngineMeta, PromptConfigDraft, ValidationErrorEntry } from '../../prompt-tool-types.ts'
@@ -255,18 +256,17 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
           onChange={(event) => setFilter(event.target.value)}
         />
         {layer === undefined && (
-          <select
+          <MenuSelect
             className={styles.listFilter}
             value={viewFilter}
-            aria-label="按层级或策略过滤"
-            onChange={(event) => changeViewFilter(event.target.value)}
-          >
-            <option value="all">全部</option>
-            <option value="world-book">世界书</option>
-            {meta.layers.map((item) => (
-              <option key={item} value={item}>层级：{item}</option>
-            ))}
-          </select>
+            ariaLabel="按层级或策略过滤"
+            options={[
+              { value: 'all', label: '全部' },
+              { value: 'world-book', label: '世界书' },
+              ...meta.layers.map((item) => ({ value: item, label: `层级：${item}` })),
+            ]}
+            onChange={changeViewFilter}
+          />
         )}
         <span className={styles.batchControls}>
           <button type="button" className={styles.pillButton} disabled={ordered.length === 0}

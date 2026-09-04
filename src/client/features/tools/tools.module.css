@@ -12,3 +12,27 @@
   background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 70%, transparent);
   box-shadow: 0 0 8px color-mix(in srgb, var(--dsw-alias-state-business-primary) 55%, transparent);
 }
+
+.toolSurfaceCards {
+  display: grid;
+  max-height: 220px;
+  gap: 6px;
+  overflow-y: auto;
+}
+
+.toolSurfaceCard {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: 7px;
+  padding: 6px 8px;
+  background: var(--dsw-alias-bg-layer-3);
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.toolSurfaceCard strong { color: var(--dsw-alias-label-primary); }
+.toolSurfaceCard span { overflow-wrap: anywhere; }

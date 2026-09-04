@@ -1,44 +1,47 @@
-/** 工具管理（tool-pipeline 层）：自定义工具定义与实际工具面。 */
+/** 工具管理（tool-pipeline 层）：自定义工具定义。 */
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import clsx from 'clsx'
-import { IconChevronDownOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { bridgeCall } from '../../data/bridge-client.ts'
 import { TemplatePicker } from '../../ui/TemplatePicker.tsx'
+import { MenuSelect } from '../../ui/MenuSelect.tsx'
 import { CustomToolCard, asRecord, type ToolDraft } from './CustomToolEditor.tsx'
 import { ToolSurfaceView } from './ToolSurfaceView.tsx'
 import sharedCss from '../../ui/controls.module.css'
-import featureCss from './tools.module.css'
 
-const styles = { ...sharedCss, ...featureCss }
-/** 工具管理区块（tool-pipeline 层可见）：标题 + 工具卡片列表。 */
+const styles = sharedCss
+/** 自定义工具编辑器：命令栏 + 一工具一卡，不再增加聚合卡片。 */
 export function CustomToolsCard(props: {
-  expanded: boolean
-  onToggleExpanded: () => void
   onNotice: (kind: 'ok' | 'error', message: string) => void
-  /** 当前主会话 session id（客户端从官方 sessions snapshot 取，不持久化；缺省 = 手动输入）。 */
+  /** 当前主会话 session id（客户端从官方 sessions snapshot 取，不持久化）。 */
   sessionId?: string
+  presetId?: string
+  listAgentPresets?: () => Promise<Array<{ id: string; name?: string; description?: string; trust?: 'system' | 'user' }>>
 }): ReactNode {
   const templateAnchorRef = useRef<HTMLButtonElement>(null)
   const [tools, setTools] = useState<ToolDraft[]>([])
   const [toolTemplates, setToolTemplates] = useState<Array<{ file: string; spec: ToolDraft }>>([])
   const [pickerOpen, setPickerOpen] = useState(false)
   const [expandedCards, setExpandedCards] = useState<Set<number>>(new Set())
-  const [loaded, setLoaded] = useState(false)
+  const [hasPersistedTools, setHasPersistedTools] = useState(false)
   const [saving, setSaving] = useState(false)
-  const [surfaceSessionId, setSurfaceSessionId] = useState(props.sessionId ?? '')
-  useEffect(() => { setSurfaceSessionId(props.sessionId ?? '') }, [props.sessionId])
+  const [presetOptions, setPresetOptions] = useState<Array<{ id: string; name?: string; description?: string; trust?: 'system' | 'user' }>>([])
+  const [selectedPresetId, setSelectedPresetId] = useState(props.presetId ?? '')
   useEffect(() => {
-    if (loaded || !props.expanded) return
     void (async () => {
-      const [customResult, templatesResult] = await Promise.all([
+      const [customResult, templatesResult, presets] = await Promise.all([
         bridgeCall('customTools', {}),
         bridgeCall('templates'),
+        props.listAgentPresets?.() ?? Promise.resolve([]),
       ])
-      setTools((customResult.ok ? customResult.value?.customTools ?? [] : []).map((tool) => asRecord(tool)))
+      const loadedTools = (customResult.ok ? customResult.value?.customTools ?? [] : []).map((tool) => asRecord(tool))
+      setTools(loadedTools)
+      setHasPersistedTools(loadedTools.length > 0)
       setToolTemplates(templatesResult.ok ? (templatesResult.value.toolTemplates ?? []) as Array<{ file: string; spec: ToolDraft }> : [])
-      setLoaded(true)
+      setPresetOptions(presets)
     })()
-  }, [props.expanded, loaded])
+  }, [props.listAgentPresets])
+  useEffect(() => {
+    if (props.presetId !== undefined) setSelectedPresetId(props.presetId)
+  }, [props.presetId])
   const save = (): void => {
     // 保存前清理：工具 parameters 的空 key 待编辑行（与 presetVariables 保存端清理对齐）。
     const cleanTools = tools.map((tool) => {
@@ -57,6 +60,7 @@ export function CustomToolsCard(props: {
     void bridgeCall('customTools', { customTools: cleanTools }).then((customResult) => {
       setSaving(false)
       if (customResult.ok) {
+        setHasPersistedTools(cleanTools.length > 0)
         props.onNotice('ok', `已保存 ${tools.length} 个自定义工具（已重建）`)
       } else {
         props.onNotice('error', ('message' in customResult ? customResult.message : undefined) ?? '保存失败')
@@ -83,44 +87,53 @@ export function CustomToolsCard(props: {
     else next.add(index)
     setExpandedCards(next)
   }
+  const customNames = tools.map((tool) => {
+    const id = typeof tool.id === 'string' ? tool.id : ''
+    return typeof tool.name === 'string' && tool.name.trim().length > 0 ? tool.name.trim() : id
+  }).filter((name) => name.length > 0)
   return (
-    <section aria-label="自定义工具">
-      <div className={clsx(styles.sectionHeading, styles.toolHeading)}>
-        <div>
-          <h2>
-            <button type="button" className={styles.configToggle} aria-expanded={props.expanded} onClick={props.onToggleExpanded}>
-              <span className={styles.configName}>自定义工具<span className={styles.toolHeadingDot} aria-hidden="true" /></span>
-              <IconChevronDownOutline14 className={clsx(styles.chevron, props.expanded && styles.chevronOpen)} />
-            </button>
-          </h2>
-          <p>{`${tools.length} 个自定义工具 · 第三方策略见下方模块卡片`}</p>
+    <section aria-label="工具管线">
+      <ToolSurfaceView sessionId={props.sessionId ?? ''} label="当前会话工具" hiddenNames={customNames} />
+      <div className={styles.settingRowStack}>
+        <span className={styles.settingCopy}>
+          <strong>预设工具能力</strong>
+          <small>官方 roster + standing composition 的只读预览；同名自定义工具以编辑卡为准。</small>
+        </span>
+        <div className={styles.sessionModelRow}>
+          <MenuSelect
+            ariaLabel="预设工具能力来源"
+            value={selectedPresetId}
+            disabled={presetOptions.length === 0}
+            options={presetOptions.map((preset) => ({
+              value: preset.id,
+              label: `${preset.name ?? preset.id}${preset.trust === undefined ? '' : ` · ${preset.trust}`}`,
+            }))}
+            onChange={setSelectedPresetId}
+          />
         </div>
-        <span className={styles.configActions}>
-          <button ref={templateAnchorRef} type="button" className={styles.pillButton} onClick={() => setPickerOpen(true)}>从模板新建</button>
-          <button type="button" className={styles.pillButton}
-            onClick={() => setTools([...tools, {
-              id: `tool-${tools.length + 1}`,
-              name: 'my_tool',
-              description: '',
-              output: { schema: { type: 'object', additionalProperties: true } },
-              execute: { kind: 'shell', command: '' },
-            }])}>
-            添加工具
-          </button>
+        {selectedPresetId.length > 0 && <ToolSurfaceView presetId={selectedPresetId} label="预设工具能力" hiddenNames={customNames} />}
+        {presetOptions.length === 0 && <p className={styles.configFieldHint}>官方预设 roster 不可用或尚未就绪。</p>}
+      </div>
+      <div className={styles.configActions}>
+        <button ref={templateAnchorRef} type="button" className={styles.pillButton} onClick={() => setPickerOpen(true)}>从模板新建</button>
+        <button type="button" className={styles.pillButton}
+          onClick={() => setTools([...tools, {
+            id: `tool-${tools.length + 1}`,
+            name: 'my_tool',
+            description: '',
+            output: { schema: { type: 'object', additionalProperties: true } },
+            execute: { kind: 'shell', command: '' },
+          }])}>
+          新建工具
+        </button>
+        {(tools.length > 0 || hasPersistedTools) && (
           <button type="button" className={styles.primaryPill} disabled={saving} onClick={save}>
             {saving ? '保存中…' : '保存'}
           </button>
-        </span>
+        )}
       </div>
-      {props.expanded && (
+      {tools.length > 0 && (
         <div className={styles.configList} style={{ marginTop: 10 }}>
-          <div className={styles.settingRowStack} style={{ border: '1px solid rgba(128,128,128,0.2)', borderRadius: 8, padding: 8 }}>
-            <span className={styles.settingCopy}>
-              <strong>当前主会话实际工具面（只读）</strong>
-              <small>来自 /tool-surface：只返回存活本地 Agent 的 name/description；无会话显示空态。</small>
-            </span>
-            <ToolSurfaceView sessionId={surfaceSessionId} label="主会话" />
-          </div>
           {tools.map((tool, index) => (
             <CustomToolCard
               key={`${String(tool.id ?? '')}-${index}`}
@@ -149,7 +162,6 @@ export function CustomToolsCard(props: {
               canMoveDown={index < tools.length - 1}
             />
           ))}
-          {tools.length === 0 && <p className={styles.configFieldHint}>{'无自定义工具；从模板新建或直接添加。'}</p>}
         </div>
       )}
       {pickerOpen && (

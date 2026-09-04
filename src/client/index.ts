@@ -37,6 +37,17 @@ export function apply(ctx: ClientContext): void {
   }
   const hostApi: PromptToolHostApi = {
     currentSessionId: () => ctx.sessions.list.getSnapshot().current,
+    listAgentPresets: async () => {
+      const result = await ctx.remote.agentPresets.list()
+      if (!result.ok) return []
+      const presets = (result.value as { presets?: readonly { id: string; name?: string; description?: string; trust?: 'system' | 'user'; broken?: string }[] }).presets
+      return (presets ?? []).filter((preset) => preset.broken === undefined).map(({ id, name, description, trust }) => ({
+        id,
+        ...(name === undefined ? {} : { name }),
+        ...(description === undefined ? {} : { description }),
+        ...(trust === undefined ? {} : { trust }),
+      }))
+    },
     pickDirectory: () => ctx.uiWorkspace.pickDirectory(),
     openPath: async (path) => {
       const result = await ctx.remote.session.openWorkspacePath({ path })

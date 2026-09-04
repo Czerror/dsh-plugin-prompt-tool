@@ -36,3 +36,19 @@ test('typed bridge client：无请求体 endpoint 发送空对象', async () => 
     globalThis.fetch = originalFetch
   }
 })
+
+test('typed bridge client：toolSurface 支持 presetId 联合请求', async () => {
+  const originalFetch = globalThis.fetch
+  let body
+  globalThis.fetch = async (_url, init) => {
+    body = init.body
+    return new Response(JSON.stringify({ ok: true, value: { source: 'preset', presetId: 'official', tools: [] } }), { status: 200 })
+  }
+  try {
+    const result = await bridgeCall('toolSurface', { presetId: 'official' })
+    assert.equal(result.ok, true)
+    assert.deepEqual(JSON.parse(body), { presetId: 'official' })
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})

@@ -1,6 +1,7 @@
 import { useState, useSyncExternalStore, type ReactNode } from 'react'
 import type { PromptToolStore } from '../../data/use-prompt-tool-store.ts'
 import { EngineModuleCard } from '../../ui/EngineModuleCard.tsx'
+import { MenuSelect } from '../../ui/MenuSelect.tsx'
 import styles from '../../ui/controls.module.css'
 /** 模型路由模块卡（官方 agent-default-model 层，非引擎模块——归类配置列表下）：
  *  主对话/子代理共用同一配置源（缺省继承宿主默认）；模型路由与人设按作用域完全分离
@@ -82,41 +83,39 @@ export function ModelRouteModuleCard(props: { store: PromptToolStore; scope: 'ma
                 : '子代理会话不支持会话级切换（走子代理固定路由）。'}</small>
           </span>
           <div className={styles.sessionModelRow}>
-            <select
+            <MenuSelect
               className={styles.configInput}
-              aria-label="会话服务商"
+              compact
+              ariaLabel="会话服务商"
               value={sessionProvider}
               disabled={!sessionView.selectable || selecting}
-              onChange={(event) => applySessionSelection({ provider: event.target.value })}
-            >
-              {sessionProvider.length === 0 && <option value="">（服务商）</option>}
-              {withCurrent(providerOptions, sessionProvider).filter((item) => item.length > 0).map((item) => (
-                <option key={item} value={item}>{item}</option>
-              ))}
-            </select>
-            <select
+              options={[
+                ...(sessionProvider.length === 0 ? [{ value: '', label: '（服务商）' }] : []),
+                ...withCurrent(providerOptions, sessionProvider).filter((item) => item.length > 0).map((item) => ({ value: item, label: item })),
+              ]}
+              onChange={(provider) => applySessionSelection({ provider })}
+            />
+            <MenuSelect
               className={styles.configInput}
-              aria-label="会话模型"
+              compact
+              ariaLabel="会话模型"
               value={sessionModelName}
               disabled={!sessionView.selectable || selecting}
-              onChange={(event) => applySessionSelection({ model: event.target.value })}
-            >
-              {sessionModelName.length === 0 && <option value="">（模型）</option>}
-              {withCurrent([...new Set([...(store.modelCatalog[sessionProvider] ?? []), ...(host?.model !== undefined && host.model.length > 0 ? [host.model] : [])])], sessionModelName).filter((item) => item.length > 0).map((item) => (
-                <option key={item} value={item}>{item}</option>
-              ))}
-            </select>
-            <select
+              options={[
+                ...(sessionModelName.length === 0 ? [{ value: '', label: '（模型）' }] : []),
+                ...withCurrent([...new Set([...(store.modelCatalog[sessionProvider] ?? []), ...(host?.model !== undefined && host.model.length > 0 ? [host.model] : [])])], sessionModelName).filter((item) => item.length > 0).map((item) => ({ value: item, label: item })),
+              ]}
+              onChange={(model) => applySessionSelection({ model })}
+            />
+            <MenuSelect
               className={styles.configInput}
-              aria-label="会话思维程度"
+              compact
+              ariaLabel="会话思维程度"
               value={sessionEffort}
               disabled={!sessionView.selectable || selecting}
-              onChange={(event) => applySessionSelection({ reasoningEffort: event.target.value })}
-            >
-              {withCurrent(reasoningEffortOptions, sessionEffort).map((item) => (
-                <option key={item} value={item}>{item.length === 0 ? '（模型默认）' : item}</option>
-              ))}
-            </select>
+              options={withCurrent(reasoningEffortOptions, sessionEffort).map((item) => ({ value: item, label: item.length === 0 ? '（模型默认）' : item }))}
+              onChange={(reasoningEffort) => applySessionSelection({ reasoningEffort })}
+            />
           </div>
         </div>
       )}
@@ -128,48 +127,42 @@ export function ModelRouteModuleCard(props: { store: PromptToolStore; scope: 'ma
             : '子代理固定模型路由（agentOptions 注入 tool-subagent）：服务商与模型名同时非空时生效，调用方显式模型优先；思维程度官方档位 off / low / high / max，留空 = 不设置（模型默认）。'}</small>
         </span>
         <div className={styles.sessionModelRow}>
-          <select
+          <MenuSelect
             className={styles.configInput}
-            aria-label="模型服务商"
+            compact
+            ariaLabel="模型服务商"
             value={provider}
             disabled={!fields.writePreset}
-            onChange={(event) => {
-              store.patch(props.scope === 'main' ? { modelProvider: event.target.value } : { subagentModelProvider: event.target.value })
+            options={withCurrent(providerOptions, provider).map((item) => ({ value: item, label: item }))}
+            onChange={(value) => {
+              store.patch(props.scope === 'main' ? { modelProvider: value } : { subagentModelProvider: value })
               void store.persistParamOverrides()
             }}
-          >
-            {withCurrent(providerOptions, provider).map((item) => (
-              <option key={item} value={item}>{item}</option>
-            ))}
-          </select>
-          <select
+          />
+          <MenuSelect
             className={styles.configInput}
-            aria-label="模型名"
+            compact
+            ariaLabel="模型名"
             value={modelName}
             disabled={!fields.writePreset}
-            onChange={(event) => {
-              store.patch(props.scope === 'main' ? { modelName: event.target.value } : { subagentModelName: event.target.value })
+            options={withCurrent(modelOptions, modelName).map((item) => ({ value: item, label: item }))}
+            onChange={(value) => {
+              store.patch(props.scope === 'main' ? { modelName: value } : { subagentModelName: value })
               void store.persistParamOverrides()
             }}
-          >
-            {withCurrent(modelOptions, modelName).map((item) => (
-              <option key={item} value={item}>{item}</option>
-            ))}
-          </select>
-          <select
+          />
+          <MenuSelect
             className={styles.configInput}
-            aria-label="思维程度"
+            compact
+            ariaLabel="思维程度"
             value={reasoningEffort}
             disabled={!fields.writePreset}
-            onChange={(event) => patchModelParam(
+            options={withCurrent(hostEffort !== undefined ? [...new Set([...reasoningEffortOptions, hostEffort])] : reasoningEffortOptions, reasoningEffort).map((item) => ({ value: item, label: item.length === 0 ? '（不设置）' : item }))}
+            onChange={(value) => patchModelParam(
               props.scope === 'main' ? 'modelReasoningEffort' : 'subagentReasoningEffort',
-              event.target.value,
+              value,
             )}
-          >
-            {withCurrent(hostEffort !== undefined ? [...new Set([...reasoningEffortOptions, hostEffort])] : reasoningEffortOptions, reasoningEffort).map((item) => (
-              <option key={item} value={item}>{item.length === 0 ? '（不设置）' : item}</option>
-            ))}
-          </select>
+          />
         </div>
       </div>
       <div className={styles.settingRowStack}>

@@ -10,27 +10,32 @@ const styles = { ...sharedCss, ...featureCss }
 
 export interface ToolSurfaceEntry { name: string; description: string }
 
-export function ToolSurfaceView(props: {
-  /** 当前主会话或子代理 session id（客户端从官方 sessions snapshot 取，不持久化）。 */
-  sessionId: string
-  /** 视角标题（主会话 / 子代理）。 */
+type ToolSurfaceProps = {
+  /** 视角标题（当前会话 / 预设工具能力）。 */
   label: string
-}): ReactNode {
-  const { sessionId, label } = props
+  /** 已由可编辑自定义工具卡呈现的名称，避免同一有效 schema 重复显示。 */
+  hiddenNames?: readonly string[]
+} & ({ sessionId: string; presetId?: never } | { presetId: string; sessionId?: never })
+
+export function ToolSurfaceView(props: ToolSurfaceProps): ReactNode {
+  const sessionId = 'sessionId' in props ? props.sessionId : undefined
+  const presetId = 'presetId' in props ? props.presetId : undefined
+  const { label } = props
   const [tools, setTools] = useState<ToolSurfaceEntry[] | null>(null)
   const [error, setError] = useState<string | undefined>(undefined)
   const [loading, setLoading] = useState(false)
   const [filter, setFilter] = useState('')
 
   const load = useCallback(() => {
-    if (sessionId.length === 0) {
+    if ((sessionId ?? presetId ?? '').length === 0) {
       setTools(null)
       setError(undefined)
       return
     }
     setLoading(true)
     setError(undefined)
-    void bridgeCall('toolSurface', { sessionId }).then((result) => {
+    const request = sessionId !== undefined ? { sessionId } : { presetId: presetId! }
+    void bridgeCall('toolSurface', request).then((result) => {
       setLoading(false)
       if (result.ok) {
         setTools(result.value.tools)
@@ -39,22 +44,25 @@ export function ToolSurfaceView(props: {
         setError(('message' in result ? result.message : undefined) ?? '工具面读取失败')
       }
     })
-  }, [sessionId])
+  }, [presetId, sessionId])
 
   useEffect(() => { load() }, [load])
 
   const keyword = filter.trim().toLowerCase()
-  const visible = (tools ?? []).filter((entry) =>
-    keyword.length === 0 || entry.name.toLowerCase().includes(keyword) || entry.description.toLowerCase().includes(keyword))
+  const hiddenNames = new Set(props.hiddenNames ?? [])
+  const visible = (tools ?? []).filter((entry) => !hiddenNames.has(entry.name) &&
+    (keyword.length === 0 || entry.name.toLowerCase().includes(keyword) || entry.description.toLowerCase().includes(keyword)))
 
   return (
     <div className={styles.settingRowStack} style={{ border: '1px solid rgba(128,128,128,0.2)', borderRadius: 8, padding: 8 }}>
       <span className={styles.settingCopy}>
-        <strong>{label} 实际工具面（只读）</strong>
-        <small>{tools === null ? '' : `${tools.length} 个工具 · `}当前存活会话的可见工具（name/description 摘要）；保存/重建后既有会话与子代理保留原 generation 与创建时冻结的工具集。</small>
+        <strong>{label}（只读）</strong>
+        <small>{tools === null ? '' : `${visible.length} 个工具 · `}{presetId !== undefined
+          ? '来自官方预设后续 generation 的有效工具能力（name/description 摘要）；仅在选择预设时懒加载。'
+          : '来自当前存活会话的有效工具面（name/description 摘要）；既有会话保留创建时冻结的 generation。'}</small>
       </span>
-      {sessionId.length === 0
-        ? <p className={styles.configFieldHint}>无当前会话上下文；工具面仅对存活本地 Agent 可用。</p>
+      {(sessionId ?? presetId ?? '').length === 0
+        ? <p className={styles.configFieldHint}>未选择工具面来源。</p>
         : (
           <span style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
             <input className={styles.configInput} aria-label="工具面搜索" placeholder="搜索工具名/描述（客户端过滤）" value={filter}
@@ -64,15 +72,18 @@ export function ToolSurfaceView(props: {
         )}
       {loading && <p className={styles.configFieldHint}>加载中…</p>}
       {!loading && error !== undefined && <p className={styles.configFieldHint}>{error}</p>}
-      {!loading && error === undefined && sessionId.length > 0 && tools !== null && (
+      {!loading && error === undefined && (sessionId ?? presetId ?? '').length > 0 && tools !== null && (
         visible.length === 0
           ? <p className={styles.configFieldHint}>{tools.length === 0 ? '该 Agent 当前无可见工具。' : '无匹配工具。'}</p>
           : (
-            <ul style={{ maxHeight: 180, overflowY: 'auto', margin: 0, paddingLeft: 18 }}>
+            <div className={styles.toolSurfaceCards}>
               {visible.map((entry) => (
-                <li key={entry.name}><code>{entry.name}</code> — {entry.description}</li>
+                <article key={entry.name} className={styles.toolSurfaceCard} data-tool-card="true">
+                  <strong><code>{entry.name}</code></strong>
+                  <span>{entry.description || '（无描述）'}</span>
+                </article>
               ))}
-            </ul>
+            </div>
           )
       )}
     </div>
