@@ -1,7 +1,7 @@
 /** 自建 loopback settings bridge：Web 设置页数据通道（提示词配置数组经此输出到 UI）。 */
 import type { Context } from '@deepseek-ai/cordis'
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { basename, dirname, join } from 'node:path'
+import { basename, dirname, join, resolve, sep } from 'node:path'
 import { createWriteStream, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { Transform } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
@@ -117,6 +117,12 @@ function projectToolSchemas(schemas: readonly ToolSchemaLike[]): Array<{ name: s
     })
   }
   return [...unique.values()].sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0)
+}
+
+function isEditablePresetDir(dir: string): boolean {
+  const root = resolve(userPresetsDir())
+  const target = resolve(dir)
+  return target !== root && target.startsWith(root + sep)
 }
 
 /** 将 moduleConfigs/行默认投影为 UI 字段兜底；显式 params 永远优先。 */
@@ -397,7 +403,7 @@ export function registerSettingsBridge(
           moduleFacts = resolvePresetModuleFacts(
             spec,
             activeDir.length > 0 ? activeDir : undefined,
-            listPresets().some((preset) => preset.id === templateName && preset.user),
+            isEditablePresetDir(activeDir.length > 0 ? activeDir : resolvePresetDir(templateName)),
           )
           mergeModuleConfigFallbacks(presetParams, moduleFacts)
           if (Array.isArray(spec.promptConfigs)) {
@@ -1543,8 +1549,7 @@ export function registerSettingsBridge(
               writeBridgeJson(res, 400, { ok: false, code: 'engine-capability-invalid', message: '能力或 recipe 请求格式无效' })
               return
             }
-            const activeId = basename(dir)
-            if (!listPresets().some((preset) => preset.id === activeId && preset.user)) {
+            if (!isEditablePresetDir(dir)) {
               writeBridgeJson(res, 403, { ok: false, code: 'engine-capability-readonly', message: 'system preset 只读，请先复制为用户预设' })
               return
             }
@@ -1636,16 +1641,14 @@ export function registerSettingsBridge(
           }
           return
         }
-        const agentPresets = (stx as Context & {
-          agentPresets?: {
-            list: () => Promise<readonly { id?: unknown }[]>
-            standingKeyFor: (id: string) => Promise<unknown>
-          }
-          get?: (name: string) => unknown
-        }).agentPresets ?? ((stx as Context & { get?: (name: string) => unknown }).get?.('agentPresets') as {
+        type AgentPresetsLike = {
           list: () => Promise<readonly { id?: unknown }[]>
           standingKeyFor: (id: string) => Promise<unknown>
-        } | undefined)
+        }
+        let agentPresets = (stx as Context & { agentPresets?: AgentPresetsLike }).agentPresets
+        if (agentPresets === undefined) {
+          try { agentPresets = (stx as Context & { get?: (name: string) => unknown }).get?.('agentPresets') as AgentPresetsLike | undefined } catch { /* optional service */ }
+        }
         if (agentPresets === undefined) {
           writeBridgeJson(res, 503, { ok: false, code: 'tool-surface-unavailable', message: 'agentPresets 服务尚未就绪' })
           return

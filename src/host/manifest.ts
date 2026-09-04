@@ -1062,13 +1062,13 @@ export function resolvePresetModuleFacts(
   const effectiveConfigs: Record<string, Record<string, unknown>> = {}
   for (const [id, config] of defaults) effectiveConfigs[id] = config
   for (const [id, config] of Object.entries(spec.moduleConfigs ?? {})) {
-    effectiveConfigs[id] = { ...(effectiveConfigs[id] ?? {}), ...config }
+    effectiveConfigs[id] = { ...effectiveConfigs[id], ...config }
   }
   const generated = buildModuleConfigsFromParams(resolvePresetParams(spec, {}), {
     subagentPolicyEnabled: spec.subagentToolPolicy !== undefined && spec.subagentToolPolicy !== null,
   })
   for (const [id, config] of Object.entries(generated)) {
-    effectiveConfigs[id] = { ...(effectiveConfigs[id] ?? {}), ...config }
+    effectiveConfigs[id] = { ...effectiveConfigs[id], ...config }
   }
   return { declaredModules, effectiveModules, rowIds, sourceMode, editable, effectiveConfigs }
 }
