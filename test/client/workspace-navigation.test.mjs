@@ -22,3 +22,8 @@ test('技能筛选 tabs：roving tabindex 与共享 panel 关系完整', () => {
   assert.match(source, /id="pt-skills-panel"/)
   assert.match(source, /aria-labelledby=\{`pt-skills-tab-\$\{statusTab\}`\}/)
 })
+
+test('技能目录与来源卡片位于过滤编辑框上方', () => {
+  const source = read('src/client/features/skills/SkillsPage.tsx')
+  assert.ok(source.indexOf('id="pt-skills-dirs"') < source.indexOf('className={ui.listFilterRow}'))
+})
