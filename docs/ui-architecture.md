@@ -324,7 +324,7 @@ feature 只拥有自己的视图、瞬时状态、领域纯 helper 和 CSS：
 | feature | 责任边界 |
 |---|---|
 | prompts | 六层配置卡、字段策略、排序、模板插入、变量编辑和内容配置 |
-| models | 当前预设的主/子代理模型路由卡 |
+| models | 当前预设的主/子代理模型路由卡；模型下拉展示完整目录并按服务商分组，选择模型时内部回写 provider + model，不提供独立服务商选择控件 |
 | modules | 引擎能力列表与层级筛选；一项显式装配能力一张卡，存在性由 `/bootstrap.moduleFacts.declaredModules` 决定，卡片形态由 ui/EngineModuleCard.tsx 提供 |
 | subagents | 委派工具、实例级工具策略草稿、策略预览和工具面入口 |
 | tools | 自定义工具编辑/保存、参数模板和存活 Agent 工具面 |
@@ -342,7 +342,7 @@ ui/ 只接收 props/callback，当前真实共享 seam 包括：
 
 - FormField：label、hint、error 与 aria-describedby 配对。
 - SettingInputRow、ToggleRow、TagInput：设置和字段编辑形态。
-- MenuSelect：直接封装官方 Menu 的单选胶囊；标准设置使用 36px，模块卡内使用 28px 紧凑形态，浮层统一 portal。
+- MenuSelect：直接封装官方 Menu 的单选胶囊；支持连续选项的 `group` 分组标题。标准设置使用 36px，模块卡内使用 28px 紧凑形态，浮层统一 portal。
 - CollapsibleCard、EngineModuleCard：具体可复用的折叠/模块卡形态，不是万能 Card。
 - ImportFileButton：隐藏原生 file input 的导入入口。
 - TemplatePicker、DialogSurface：模板和预设操作的 portal 浮层。

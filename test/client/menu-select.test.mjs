@@ -22,6 +22,8 @@ test('客户端单选统一复用官方 Menu 选择器', () => {
   assert.match(source, /portal/)
   assert.match(source, /compact=\{compact\}/)
   assert.match(source, /aria-haspopup="menu"/)
+  assert.match(source, /type: 'label'/)
+  assert.match(source, /group\?: string/)
 })
 
 test('模块控件紧凑且长文本继续自适应', () => {

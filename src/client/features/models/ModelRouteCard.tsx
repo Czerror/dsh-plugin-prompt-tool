@@ -3,6 +3,7 @@ import type { PromptToolStore } from '../../data/use-prompt-tool-store.ts'
 import { EngineModuleCard } from '../../ui/EngineModuleCard.tsx'
 import { MenuSelect } from '../../ui/MenuSelect.tsx'
 import styles from '../../ui/controls.module.css'
+import { buildModelOptions, modelChoiceValue, parseModelChoice } from './model-options.ts'
 /** 模型路由模块卡（官方 agent-default-model 层，非引擎模块——归类配置列表下）：
  *  主对话/子代理共用同一配置源（缺省继承宿主默认）；模型路由与人设按作用域完全分离
  *  （main=主对话模型、subagent=子代理模型，参数各自独立）。 */
@@ -20,13 +21,8 @@ export function ModelRouteModuleCard(props: { store: PromptToolStore; scope: 'ma
   const sessionEffort = sessionView.selection?.reasoningEffort ?? host?.reasoningEffort ?? ''
   // 宿主默认模型回显：插件参数未设置（空 = 继承宿主）时，下拉可见宿主当前
   // agent-default-model 的可选项（模型目录查询失败/未公布时也能选择与回显）。
-  const providerOptions = [...new Set([...store.providers, ...(host?.provider !== undefined && host.provider.length > 0 ? [host.provider] : [])])]
   const provider = props.scope === 'main' ? fields.modelProvider : fields.subagentModelProvider
   const modelName = props.scope === 'main' ? fields.modelName : fields.subagentModelName
-  const modelOptions = [...new Set([
-    ...(store.modelCatalog[provider] ?? []),
-    ...(host?.model !== undefined && host.model.length > 0 ? [host.model] : []),
-  ])]
   const reasoningEffortOptions = ['', 'off', 'low', 'high', 'max']
   // 宿主默认思维程度回显（agent-default-model settings reasoningEffort；官方档位同源）。
   const hostEffort = host?.reasoningEffort !== undefined && host.reasoningEffort.length > 0
@@ -35,6 +31,20 @@ export function ModelRouteModuleCard(props: { store: PromptToolStore; scope: 'ma
   const withCurrent = (options: string[], current: string): string[] =>
     current.length > 0 && !options.includes(current) ? [...options, current] : options
   const active = provider.length > 0 && modelName.length > 0
+  const modelOptions = buildModelOptions(store.modelCatalog, [
+    ...(provider.length > 0 && modelName.length > 0 ? [{ provider, model: modelName }] : []),
+    ...(host?.provider !== undefined && host.provider.length > 0 && host.model !== undefined && host.model.length > 0
+      ? [{ provider: host.provider, model: host.model }]
+      : []),
+  ])
+  const sessionModelOptions = buildModelOptions(store.modelCatalog, [
+    ...(sessionProvider.length > 0 && sessionModelName.length > 0
+      ? [{ provider: sessionProvider, model: sessionModelName }]
+      : []),
+    ...(host?.provider !== undefined && host.provider.length > 0 && host.model !== undefined && host.model.length > 0
+      ? [{ provider: host.provider, model: host.model }]
+      : []),
+  ]).filter((option) => option.value.length > 0)
   const reasoningEffort = props.scope === 'main' ? fields.modelReasoningEffort : fields.subagentReasoningEffort
   const temperature = props.scope === 'main' ? fields.modelTemperature : fields.subagentTemperature
   const maxTokens = props.scope === 'main' ? fields.modelMaxTokens : fields.subagentMaxTokens
@@ -86,26 +96,14 @@ export function ModelRouteModuleCard(props: { store: PromptToolStore; scope: 'ma
             <MenuSelect
               className={styles.configInput}
               compact
-              ariaLabel="会话服务商"
-              value={sessionProvider}
-              disabled={!sessionView.selectable || selecting}
-              options={[
-                ...(sessionProvider.length === 0 ? [{ value: '', label: '（服务商）' }] : []),
-                ...withCurrent(providerOptions, sessionProvider).filter((item) => item.length > 0).map((item) => ({ value: item, label: item })),
-              ]}
-              onChange={(provider) => applySessionSelection({ provider })}
-            />
-            <MenuSelect
-              className={styles.configInput}
-              compact
               ariaLabel="会话模型"
-              value={sessionModelName}
+              value={sessionProvider.length > 0 && sessionModelName.length > 0 ? modelChoiceValue(sessionProvider, sessionModelName) : ''}
               disabled={!sessionView.selectable || selecting}
-              options={[
-                ...(sessionModelName.length === 0 ? [{ value: '', label: '（模型）' }] : []),
-                ...withCurrent([...new Set([...(store.modelCatalog[sessionProvider] ?? []), ...(host?.model !== undefined && host.model.length > 0 ? [host.model] : [])])], sessionModelName).filter((item) => item.length > 0).map((item) => ({ value: item, label: item })),
-              ]}
-              onChange={(model) => applySessionSelection({ model })}
+              options={sessionModelOptions}
+              onChange={(value) => {
+                const selection = parseModelChoice(value)
+                if (selection !== undefined) applySessionSelection(selection)
+              }}
             />
             <MenuSelect
               className={styles.configInput}
@@ -123,31 +121,25 @@ export function ModelRouteModuleCard(props: { store: PromptToolStore; scope: 'ma
         <span className={styles.settingCopy}>
           <strong>预设模型</strong>
           <small>{props.scope === 'main'
-            ? `服务商与模型名同时非空时生效（新会话默认模型，agent-default-model）；思维程度官方档位 off / low / high / max，选择即保存并同步宿主新会话默认；留空 = 继承宿主默认${hostEffort !== undefined ? `（思维程度当前为 ${hostEffort}）` : ''}。`
-            : '子代理固定模型路由（agentOptions 注入 tool-subagent）：服务商与模型名同时非空时生效，调用方显式模型优先；思维程度官方档位 off / low / high / max，留空 = 不设置（模型默认）。'}</small>
+            ? `选择模型后自动绑定对应服务商（新会话默认模型，agent-default-model）；思维程度官方档位 off / low / high / max，选择即保存并同步宿主新会话默认；留空 = 继承宿主默认${hostEffort !== undefined ? `（思维程度当前为 ${hostEffort}）` : ''}。`
+            : '选择模型后自动绑定对应服务商（agentOptions 注入 tool-subagent），调用方显式模型优先；思维程度官方档位 off / low / high / max，留空 = 不设置（模型默认）。'}</small>
         </span>
         <div className={styles.sessionModelRow}>
           <MenuSelect
             className={styles.configInput}
             compact
-            ariaLabel="模型服务商"
-            value={provider}
+            ariaLabel="预设模型"
+            value={active ? modelChoiceValue(provider, modelName) : ''}
             disabled={!fields.writePreset}
-            options={withCurrent(providerOptions, provider).map((item) => ({ value: item, label: item }))}
+            options={modelOptions}
             onChange={(value) => {
-              store.patch(props.scope === 'main' ? { modelProvider: value } : { subagentModelProvider: value })
-              void store.persistParamOverrides()
-            }}
-          />
-          <MenuSelect
-            className={styles.configInput}
-            compact
-            ariaLabel="模型名"
-            value={modelName}
-            disabled={!fields.writePreset}
-            options={withCurrent(modelOptions, modelName).map((item) => ({ value: item, label: item }))}
-            onChange={(value) => {
-              store.patch(props.scope === 'main' ? { modelName: value } : { subagentModelName: value })
+              const selection = parseModelChoice(value)
+              const patch = selection === undefined
+                ? (props.scope === 'main' ? { modelProvider: '', modelName: '' } : { subagentModelProvider: '', subagentModelName: '' })
+                : (props.scope === 'main'
+                  ? { modelProvider: selection.provider, modelName: selection.model }
+                  : { subagentModelProvider: selection.provider, subagentModelName: selection.model })
+              store.patch(patch)
               void store.persistParamOverrides()
             }}
           />

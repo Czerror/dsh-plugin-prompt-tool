@@ -2,6 +2,10 @@
 
 ## [未发布] - 2026-09-03
 
+### 模型路由选择器
+
+- UI 移除独立服务商下拉，仅保留模型选择；模型目录按服务商分组展示，选中项内部同步 `provider` 与 `model`，主会话和子代理路由共用同一完整目录。
+
 ### 内置预设与组合库对齐
 
 - Anchored Standard 同步 `dsh-anchored-standard` 到 `7e2a195`：核心双工具/晋升配置显式收敛到 `preset/anchored/preset.yml`；通用 `instruction-hint` 引擎补齐 cwd→项目根完整探测、建议式措辞和随机 UUID，避免宿主重启竞态下确定性消息 ID 冲突。

@@ -1,12 +1,14 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import clsx from 'clsx'
-import { IconChevronDownOutline14, Menu } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconChevronDownOutline14, Menu, type MenuEntry } from '@deepseek-ai/dsh-client-ui-primitives'
 import styles from './controls.module.css'
 
 export interface MenuSelectOption {
   value: string
   label: string
   disabled?: boolean
+  /** 连续相同 group 的选项会在官方 Menu 中显示分组标题。 */
+  group?: string
 }
 
 /** 官方 Menu 外观的紧凑单选控件。 */
@@ -25,6 +27,20 @@ export function MenuSelect(props: {
   const disabled = props.disabled === true
   const compact = props.compact === true
   const selected = props.options.find((option) => option.value === props.value)
+  let previousGroup: string | undefined
+  const items: MenuEntry[] = props.options.flatMap((option, index) => {
+    const entries: MenuEntry[] = []
+    if (option.group !== undefined && option.group.length > 0 && option.group !== previousGroup) {
+      entries.push({ type: 'label', id: `group-${index}`, text: option.group })
+    }
+    previousGroup = option.group
+    entries.push({
+      id: option.value,
+      label: option.label,
+      ...(option.disabled !== undefined ? { disabled: option.disabled } : {}),
+    })
+    return entries
+  })
 
   useEffect(() => {
     if (disabled) setOpen(false)
@@ -37,11 +53,7 @@ export function MenuSelect(props: {
       portal
       align={props.align ?? 'end'}
       className={clsx(styles.menuSelect, compact ? styles.menuSelectCompact : styles.menuSelectStandard, props.className)}
-      items={props.options.map((option) => ({
-        id: option.value,
-        label: option.label,
-        ...(option.disabled !== undefined ? { disabled: option.disabled } : {}),
-      }))}
+      items={items}
       selectedId={props.value}
       onClose={() => setOpen(false)}
       onSelect={(value) => {
