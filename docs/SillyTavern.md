@@ -16,8 +16,8 @@
 | 采样参数（`temperature` / `openai_max_tokens` / `reasoning_effort`） | **剥离** | 模型参数由「模型设置」UI / 宿主默认管理——ST 卡固化值会覆盖用户在模型设置里的设置，转换不携带 |
 | `{{setvar::k::v}}` / `{{getvar::k::default}}` | 顶层 `variables`（`k`） | 变量收集进预设级模板变量段（非 params），由引擎插值 |
 | 未定义自定义宏（`{{日期}}` 等） | 顶层 `variables` 空值占位 | 卡内引用了但无变量源的 `{{key}}` 自动登记为空值——插值替换为空不留字面；模板变量卡片可编辑默认值；会话变量工具（`session_var`）可运行时覆盖 |
-| `enable_web_search: true` | `modules` + `tool-web` | 组装 `tool-web`，`moduleConfigs.tool-web.fetch: true` |
-| `enable_web_search: false` | `modules` + `tool-filter` | 不组装 tool-web，改加 `moduleConfigs.tool-filter.deny: [web_search, web_fetch]`（即使宿主装配了 web 工具也不暴露） |
+| `enable_web_search: true` | `modules` + `tool-web` | 在常驻 `tool-filter` 外组装 `tool-web`，`moduleConfigs.tool-web.fetch: true` |
+| `enable_web_search: false` | `moduleConfigs.tool-filter` | 不组装 tool-web，写入 `deny: [web_search, web_fetch]`（即使宿主装配了 web 工具也不暴露） |
 
 ## prompts[] 逐字段映射
 
@@ -41,10 +41,10 @@
 
 | 条件 | modules | moduleConfigs |
 |---|---|---|
-| 始终 | `prompt-config-engine` | — |
+| 始终 | `prompt-config-engine` + `character-tools` + `session-var-tools` + `tool-config-engine` + `tool-filter` | `tool-filter` 缺省为空操作；其余提供 ST 配置与管理工具链 |
 | 含 system-section | 前插 `persona` | `persona.complete: false`（standard 语义，允许 system-section 生效；text 不声明，不注入 anchored 内容） |
 | `enable_web_search: true` | 追加 `tool-web` | `tool-web.fetch: true` |
-| `enable_web_search: false` | 追加 `tool-filter` | `tool-filter.includeSubagents: false` + `deny: [web_search, web_fetch]` |
+| `enable_web_search: false` | 不追加模块（复用常驻 `tool-filter`） | `tool-filter.includeSubagents: false` + `deny: [web_search, web_fetch]` |
 | 含有效 `character_book` 条目 | 追加 `world-book-tools` | —（导入后可直接调用世界书管理工具） |
 
 ## 生成预设元数据
@@ -109,6 +109,10 @@ engineCompat: ">=0.4.2"
 modules:
   - persona          # system-section 注入需要 persona 服务
   - prompt-config-engine
+  - character-tools
+  - session-var-tools
+  - tool-config-engine
+  - tool-filter
   - tool-web         # enable_web_search: true
 moduleConfigs:
   persona:

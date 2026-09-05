@@ -1,11 +1,15 @@
-import { test } from 'node:test'
+import { after, test } from 'node:test'
 import assert from 'node:assert/strict'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { Readable } from 'node:stream'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { parse as parseYaml } from 'yaml'
-import { BRIDGE_ENDPOINTS, MAX_BRIDGE_BODY_BYTES, MAX_CHARACTER_CARD_STREAM_BYTES, registerSettingsBridge } from '../../lib/index.mjs'
+
+const bridgeHome = mkdtempSync(join(tmpdir(), 'pt-settings-bridge-home-'))
+process.env.DSH_HOME = bridgeHome
+const { BRIDGE_ENDPOINTS, MAX_BRIDGE_BODY_BYTES, MAX_CHARACTER_CARD_STREAM_BYTES, registerSettingsBridge } = await import('../../lib/index.mjs')
+after(() => rmSync(bridgeHome, { recursive: true, force: true }))
 
 const PREFIX = '/api/prompt-tool/settings'
 
@@ -588,9 +592,7 @@ test('settings bridge /custom-tools 保存时自动追加工具模块', async ()
     await handler(fakeReq({ [Symbol.asyncIterator]: async function* () { yield payload } }), res)
     assert.equal(res.status, 200)
     const parsed = parseYaml(readFileSync(join(dir, 'preset.yml'), 'utf8'))
-    assert.ok(parsed.modules.includes('tool-config-engine'), '保存自定义工具时自动装配 tool-config-engine')
-    assert.ok(parsed.modules.includes('world-book-tools'), '委托世界书工具时自动装配 world-book-tools')
-    assert.equal(new Set(parsed.modules).size, parsed.modules.length, '模块不应重复')
+    assert.deepEqual(parsed.modules, ['tool-config-engine', 'world-book-tools'], '只装配自定义工具实际依赖的模块')
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
@@ -622,6 +624,43 @@ test('settings bridge /custom-tools 拒绝缺少 modules 的预设', async () =>
   }
 })
 
+test('settings bridge /engine-capability 删除显式能力并只重建一次', async () => {
+  const presetRoot = join(bridgeHome, '.agent-presets')
+  mkdirSync(presetRoot, { recursive: true })
+  const dir = mkdtempSync(join(presetRoot, 'pt-engine-capability-bridge-'))
+  try {
+    writeFileSync(join(dir, 'preset.yml'), 'id: beta\nname: beta\nversion: "1"\nengineCompat: ">=0"\nmodules: [context-gate, tool-filter]\n', 'utf8')
+    const { ctx, handlers } = makeHarness()
+    let rebuilds = 0
+    registerSettingsBridge(ctx, 'prompt-tool',
+      () => ({ available: true, providers: [] }),
+      () => ({ activeSkillsDirs: [], skillCatalog: [] }),
+      () => '',
+      undefined,
+      () => dir,
+      undefined,
+      undefined,
+      undefined,
+      () => { rebuilds += 1 },
+    )
+    const handler = handlers.get(PREFIX + BRIDGE_ENDPOINTS.engineCapability)
+    const request = Buffer.from(JSON.stringify({ action: 'remove', capabilityId: 'tool-filter' }))
+    const res = fakeRes()
+    await handler(fakeReq({ [Symbol.asyncIterator]: async function* () { yield request } }), res)
+    assert.equal(res.status, 200)
+    assert.deepEqual(JSON.parse(res.body).value.removedModules, ['tool-filter'])
+    assert.deepEqual(parseYaml(readFileSync(join(dir, 'preset.yml'), 'utf8')).modules, ['context-gate'])
+    assert.equal(rebuilds, 1)
+
+    const again = fakeRes()
+    await handler(fakeReq({ [Symbol.asyncIterator]: async function* () { yield request } }), again)
+    assert.equal(JSON.parse(again.body).value.changed, false)
+    assert.equal(rebuilds, 1, '幂等删除不重复重建')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
 test('settings bridge /subagent-tool-policy 保存、停用与模块装配均为原子操作', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'pt-subagent-policy-'))
   try {
@@ -643,7 +682,7 @@ test('settings bridge /subagent-tool-policy 保存、停用与模块装配均为
     assert.equal(save.status, 200)
     let parsed = parseYaml(readFileSync(join(dir, 'preset.yml'), 'utf8'))
     assert.deepEqual(parsed.subagentToolPolicy, policy)
-    assert.ok(parsed.modules.includes('subagent-tool-policy'))
+    assert.deepEqual(parsed.modules, ['subagent-tool-policy'], '空白预设只装配子代理策略模块')
     assert.equal(parsed.unknown, 'keep')
     const disable = fakeRes()
     await handler(fakeReq({ [Symbol.asyncIterator]: async function* () { yield Buffer.from(JSON.stringify({ policy: null })) } }), disable)

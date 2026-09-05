@@ -2,7 +2,7 @@
 
 ## 状态
 
-- **当前阶段**：Wave 0–4 已执行；视口 smoke 已通过，保留少量文档/业务限制。
+- **当前阶段**：Wave 0–4 与按需装配修复已执行；`modules: []` 为显式空组合，能力创建/删除均走受控原子写盘。
 - **本轮目标**：把模块列表重构为按引擎能力归一的卡片；由预设模块事实决定卡片存在；官方预设按实际 `ToolSchema` 展开工具卡；能力/recipe 创建使用一次原子写盘；小控件紧凑而大文本/JSON 保持自适应。
 - **已完成前置**：`project-engine.md` 已重命名为本文件；`SillyTavern.md` 位于 `docs/`；卡片拆分、官方 `Menu`、模块事实、ToolSchema 预览和 recipe 创建已按下列 Wave 落地。
 
@@ -11,7 +11,7 @@
 | 编号 | 问题 | 修订动作 |
 |---|---|---|
 | P1 | 静态八卡造成未装配能力的幻影卡 | Wave 0 先返回模块事实，Wave 1 只按能力满足规则渲染 |
-| P1 | `effectiveModules` 未定义空数组、composition、嵌套行和别名 | 统一 `declaredModules/effectiveModules/rowIds/sourceMode/editable`，能力目录用 `moduleKeys + rowIds` |
+| P1 | `effectiveModules` 未定义空数组、composition、嵌套行和别名 | 统一 `declaredModules/effectiveModules/rowIds/sourceMode/editable`；能力存在性只认显式 `moduleKeys` |
 | P1 | 通用设置/引擎能力视图在重写中丢失 | Wave 1 增加 `general/capability` 正交视图，layer filter 保持独立 |
 | P1 | `toolFilter*`、`allowKinds` 在主页面和子代理卡重复编辑 | 只保留引擎模块卡 owner；Delegation 只编辑 `maxDepth` 和策略 |
 | P1 | 官方工具来源不应使用 `pluginInventory` 或本插件目录 | Wave 2 使用 `agentPresets.list()` 白名单 + `standingKeyFor()` + `tools.schemas(scope)` |
@@ -39,9 +39,9 @@
 ```ts
 interface PresetModuleFacts {
   declaredModules: string[] | null // 缺少 modules = null；不把缺失当空数组
-  effectiveModules: string[] | null // modules:[] 展开 FALLBACK；composition 以 null 表示无模块清单
+  effectiveModules: string[] | null // modules:[] = []；composition/official 以 null 表示无插件模块清单
   rowIds: string[] // 顶层及嵌套 config 行的稳定 id，去重保序
-  sourceMode: 'explicit' | 'fallback' | 'composition' | 'official' | 'unknown'
+  sourceMode: 'explicit' | 'composition' | 'official' | 'unknown'
   editable: boolean
 }
 ```
@@ -49,7 +49,7 @@ interface PresetModuleFacts {
 规则：
 
 1. `modules` 非空：`sourceMode=explicit`，`effectiveModules` 为清理后的模块名。
-2. `modules: []`：`sourceMode=fallback`，`effectiveModules` 为引擎现有 `FALLBACK_MODULES`；不改变运行时兼容语义。
+2. `modules: []`：`sourceMode=explicit`，`effectiveModules=[]`，渲染为合法空组合；不得隐式装配默认能力。
 3. 无 `modules` 但有 `composition`：解析内联/相对文件/组合名的所有行 id，`sourceMode=composition`。
 4. 无法解析组合或非本插件官方预设：`sourceMode=unknown`，UI 不猜测、不创建能力卡。
 5. `rowIds` 递归包含 group 的 `config` 子行，覆盖 `official-persistent-shell → persistent-shell`、`bootstrap-filesystem → str-replace-editor`、`delegation-ptc → delegation` 等别名/嵌套情况。
@@ -66,11 +66,11 @@ interface PresetModuleFacts {
 | `anchor-turn` | `anchor-turn` | `anchor-turn` | `pre-step` | EngineModuleList |
 | `code-presentation` | `code-presentation` | `code-presentation` | `tool-pipeline` | EngineModuleList |
 | `tool-filter` | `tool-filter` | `tool-filter` | `tool-pipeline` | EngineModuleList |
-| `str-replace-editor` | `str-replace-editor`, `bootstrap-filesystem` | `str-replace-editor` | `tool-pipeline` | EngineModuleList |
+| `str-replace-editor` | `str-replace-editor` | `str-replace-editor` | `tool-pipeline` | EngineModuleList |
 | `deliberation-gate` | `deliberation-gate` | `deliberation-gate` | `tool-pipeline` | EngineModuleList |
 | `cot-drip` | `cot-drip` | `cot-drip` | `tool-pipeline` | EngineModuleList |
 
-满足条件是 `moduleKeys` 或 `rowIds` 任一命中；facts 为 `unknown/null` 时不显示可编辑卡。
+满足条件仅为显式 `modules` 命中 `moduleKeys`；`rowIds` 保留作运行事实与候选校验，不生成插件能力卡。
 
 ## 三、Wave 执行清单
 
@@ -79,7 +79,7 @@ interface PresetModuleFacts {
 **目标**：提供可测试的 facts/capability/identity 纯函数，不改 UI。
 
 - 在 `src/shared/engine-capabilities.ts` 定义 facts、能力目录、满足判断、recipe 定义和自定义工具 identity 校验。
-- 在 `src/host/manifest.ts` 暴露 `resolvePresetModuleFacts()`；复用现有 `FALLBACK_MODULES`、`moduleFile()` 和 YAML parser，递归收集 row id。
+- 在 `src/host/manifest.ts` 暴露 `resolvePresetModuleFacts()`；复用 `moduleFile()` 和 YAML parser，递归收集 row id。
 - `/bootstrap` 返回 `moduleFacts`；客户端 store 保留该事实。
 - 自定义工具 identity：`id` 唯一、运行时 `name`（缺省回落 id）唯一；空/重复在写盘前 fail loud。
 
@@ -96,7 +96,7 @@ interface PresetModuleFacts {
 - `MenuSelect` 标准触发器 36px、模块/工具卡紧凑触发器 28px；普通 `.configInput` 34px；模块/工具卡单行输入 28px；标准开关保留 40×24，模块/工具卡视觉开关 32×18 且 label 保留可点击热区。
 - `configTextarea`、JSON `autoResizeTextarea`、`field-sizing: content`、`max-height` 不改。
 
-**验收**：只装配 `context-gate` 的预设不出现其他能力卡；`modules:[]` 仅显示 fallback 满足的卡；双视图切换可逆；每个引擎参数只有一个 UI owner；普通卡和模块卡尺寸 scope 正确。
+**验收**：只装配 `context-gate` 的预设不出现其他能力卡；`modules:[]` 不显示能力卡；官方组合行不伪装成插件能力；双视图切换可逆；每个引擎参数只有一个 UI owner；普通卡和模块卡尺寸 scope 正确。
 
 ### Wave 2：官方预设 ToolSchema 卡
 
@@ -118,7 +118,7 @@ interface PresetModuleFacts {
 - 展开 recipe 得到有序去重 module keys；先在内存 YAML Document 合并 `modules`、不覆盖已有 params/moduleConfigs。
 - 候选文档执行 render/assert 与 row path 检查，全部通过后原子替换 `preset.yml`，再调用一次 `rebuildPreset()`。
 - recipe 不作为持久化实体；展开结果必须写入目标 preset.yml。写盘/重建失败时 preset.yml 与生成目录均保持原样；串行队列/expectedRevision 防并发丢写。
-- system preset 先复制为 user preset；首期不做删除（避免反向依赖与 dormant 参数误删）。
+- system preset 先复制为 user preset；删除只移除显式 module，保留 dormant 参数与 moduleConfigs，并沿用候选校验、原子写盘和单次重建。
 
 **验收**：重复创建幂等、一次写盘/一次 rebuild、失败零写入、既有参数不覆盖、依赖循环拒绝、system 只读。
 
@@ -132,14 +132,14 @@ interface PresetModuleFacts {
 
 - 不移动或复制 `engine/` 文件，不改变六个 seam 的运行顺序、epoch、disposer 或参数优先级。
 - 不把 `pluginInventory` 当工具 schema 来源，不使用静态 knownTools/provider 猜测归属。
-- 不支持同一模块多实例；不在本轮实现能力删除。
+- 不支持同一模块多实例；官方组合不改写为本插件 modules，因而不提供插件能力增删。
 - 每个 Wave 结束保留可回滚提交点；bridge/schema 失败时先回退该 Wave，不覆盖用户 preset；UI 失败只回退客户端文件和测试。
 
 ## 五、验证证据登记
 
 | Wave | 状态 | 证据 |
 |---|---|---|
-| Wave 0 | 已完成 | `module-facts.test.mjs`、`engine-capability.test.mjs`；显式/fallback/嵌套/params-only/重复 identity |
+| Wave 0 | 已完成 | `module-facts.test.mjs`、`engine-capability.test.mjs`；显式空装配/官方隔离/嵌套/params-only/重复 identity |
 | Wave 1 | 已完成 | `engine-module-cards.test.mjs`、`menu-select.test.mjs`、ARIA tabs；typecheck/lint |
 | Wave 2 | 已完成 | `bridge-contract.test.mjs`、`bridge-client.test.mjs`；session/preset XOR、roster、排序、错误码 |
 | Wave 3 | 已完成 | `engine-capability.test.mjs`；一次写入、幂等、候选失败不改文件 |

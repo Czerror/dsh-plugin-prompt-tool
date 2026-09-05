@@ -28,6 +28,7 @@ import {
   invalidatePresetSpec,
   openPresetLocation,
   parseImportedPresetId,
+  removeEngineCapabilityFromPreset,
   removeUserPreset,
   renderComposition,
   resolvePresetParams,
@@ -1553,8 +1554,8 @@ export function registerSettingsBridge(
             if (parsedBody === undefined) return
             const body = asRecord(parsedBody.body)
             const action = body.action
-            const id = action === 'create' ? body.capabilityId : action === 'create-recipe' ? body.recipeId : undefined
-            if ((action !== 'create' && action !== 'create-recipe') || typeof id !== 'string' || id.trim().length === 0 || id.length > 128) {
+            const id = action === 'create' || action === 'remove' ? body.capabilityId : action === 'create-recipe' ? body.recipeId : undefined
+            if ((action !== 'create' && action !== 'remove' && action !== 'create-recipe') || typeof id !== 'string' || id.trim().length === 0 || id.length > 128) {
               writeBridgeJson(res, 400, { ok: false, code: 'engine-capability-invalid', message: '能力或 recipe 请求格式无效' })
               return
             }
@@ -1562,15 +1563,16 @@ export function registerSettingsBridge(
               writeBridgeJson(res, 403, { ok: false, code: 'engine-capability-readonly', message: 'system preset 只读，请先复制为用户预设' })
               return
             }
-            const request = action === 'create'
-              ? { action: 'create' as const, capabilityId: id.trim() }
-              : { action: 'create-recipe' as const, recipeId: id.trim() }
             const run = capabilityQueue.then(async () => {
               const file = join(dir, 'preset.yml')
               let original: string | undefined
               try {
                 original = readFileSync(file, 'utf8')
-                const result = createEngineCapabilityInPreset(dir, request)
+                const result = action === 'remove'
+                  ? removeEngineCapabilityFromPreset(dir, id.trim())
+                  : createEngineCapabilityInPreset(dir, action === 'create'
+                    ? { action: 'create', capabilityId: id.trim() }
+                    : { action: 'create-recipe', recipeId: id.trim() })
                 if (result.changed) afterCapabilityChange?.()
                 writeBridgeJson(res, 200, { ok: true, value: result })
               } catch (error) {
@@ -1582,7 +1584,7 @@ export function registerSettingsBridge(
                   } catch { /* 保留错误响应，备份由上层写盘策略处理 */ }
                 }
                 const message = error instanceof Error ? error.message : String(error)
-                writeBridgeJson(res, 409, { ok: false, code: 'engine-capability-rejected', message: `引擎能力创建失败：${message}` })
+                writeBridgeJson(res, 409, { ok: false, code: 'engine-capability-rejected', message: `引擎能力变更失败：${message}` })
               }
             })
             capabilityQueue = run.then(() => undefined, () => undefined)

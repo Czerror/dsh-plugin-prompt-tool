@@ -60,6 +60,7 @@ export function EngineModuleCards(props: { store: PromptToolStore; layerFilter?:
   const capabilityLayer = (id: string): string | undefined => engineCapability(id)?.displayLayer
   const visibleCapability = (id: string): boolean =>
     visible(capabilityLayer(id)) && isEngineCapabilityPresent(id, store.moduleFacts)
+  const canEditCapabilities = fields.writePreset && store.moduleFacts?.editable === true
   // 选中层无引擎模块卡时给出提示（引擎模块分布在 pre-step / system-section / tool-pipeline）。
   const hasVisibleCard = (store.moduleFacts !== undefined && [
     'tool-bootstrap', 'context-gate', 'anchor-turn', 'code-presentation', 'tool-filter',
@@ -121,7 +122,8 @@ export function EngineModuleCards(props: { store: PromptToolStore; layerFilter?:
         <EngineCapabilityCreateMenu store={store} />
       </div>
       {visibleCapability('tool-bootstrap') && (
-      <EngineModuleCard name="tool-bootstrap" layer={capabilityLayer('tool-bootstrap')} meta="目录相位 · 首轮窄化 / 门控晋升 / 压缩恢复">
+      <EngineModuleCard name="tool-bootstrap" layer={capabilityLayer('tool-bootstrap')} meta="目录相位 · 首轮窄化 / 门控晋升 / 压缩恢复"
+        onDelete={canEditCapabilities ? () => void store.removeEngineCapability('tool-bootstrap') : undefined}>
         <div className={styles.settingRowStack}>
           <div className={styles.sessionModelRow}>
             <span className={styles.switchGridItem} title="bootstrapMaxTokens：关闭 = 首轮不设输出上限">
@@ -259,7 +261,8 @@ export function EngineModuleCards(props: { store: PromptToolStore; layerFilter?:
       )}
       {(visibleCapability('context-gate') || visibleCapability('anchor-turn')) && (
       <>
-        {visibleCapability('context-gate') && <EngineModuleCard name="context-gate" layer={capabilityLayer('context-gate')} meta="注入门控 · 白名单 / 延迟注入 / 指令提示">
+        {visibleCapability('context-gate') && <EngineModuleCard name="context-gate" layer={capabilityLayer('context-gate')} meta="注入门控 · 白名单 / 延迟注入 / 指令提示"
+          onDelete={canEditCapabilities ? () => void store.removeEngineCapability('context-gate') : undefined}>
           <TagInput id="pt-allow-kinds" label="注入 kind 白名单" hint="allowKinds：context-gate 注入门控；空 = 官方 pre-step 行为（不过滤）。"
             value={fields.allowKinds} placeholder="skill-invocation, near-anchor, router-guide" disabled={!fields.writePreset}
             onChange={(value) => store.patch({ allowKinds: value })}
@@ -279,7 +282,8 @@ export function EngineModuleCards(props: { store: PromptToolStore; layerFilter?:
             </div>
           </div>
         </EngineModuleCard>}
-        {visibleCapability('anchor-turn') && <EngineModuleCard name="anchor-turn" layer={capabilityLayer('anchor-turn')} meta="前置锚定轮 · 首条用户消息">
+        {visibleCapability('anchor-turn') && <EngineModuleCard name="anchor-turn" layer={capabilityLayer('anchor-turn')} meta="前置锚定轮 · 首条用户消息"
+          onDelete={canEditCapabilities ? () => void store.removeEngineCapability('anchor-turn') : undefined}>
           <div className={styles.settingRowStack}>
             <div className={styles.sessionModelRow}>
               {gateChip('pt-anchor-turn', '前置锚定轮', 'anchorTurn：用户首条真实消息前 prepend 合成锚定轮（配合零工具模式 = 空工具面锚定）；需模块列表已挂 anchor-turn 行。', 'anchorTurn')}
@@ -291,14 +295,16 @@ export function EngineModuleCards(props: { store: PromptToolStore; layerFilter?:
       )}
       {visibleCapability('code-presentation') || visibleCapability('tool-filter') || visibleCapability('str-replace-editor') || visibleCapability('deliberation-gate') || visibleCapability('cot-drip') ? (
       <>
-        {visibleCapability('code-presentation') && <EngineModuleCard name="code-presentation" layer={capabilityLayer('code-presentation')} meta="晋升后 Code Mode (PTC) 呈现">
+        {visibleCapability('code-presentation') && <EngineModuleCard name="code-presentation" layer={capabilityLayer('code-presentation')} meta="晋升后 Code Mode (PTC) 呈现"
+          onDelete={canEditCapabilities ? () => void store.removeEngineCapability('code-presentation') : undefined}>
           <div className={styles.settingRowStack}>
             <div className={styles.switchGrid}>
               {gateChip('pt-use-ptc', '使用 PTC 模式', 'usePtcMode：晋升后 Code Mode (PTC) 呈现（默认 false，opt-in）；false = 原生完整工具目录', 'usePtcMode')}
             </div>
           </div>
         </EngineModuleCard>}
-        {visibleCapability('tool-filter') && <EngineModuleCard name="tool-filter" layer={capabilityLayer('tool-filter')} meta="常驻白名单 / 黑名单 / 子代理">
+        {visibleCapability('tool-filter') && <EngineModuleCard name="tool-filter" layer={capabilityLayer('tool-filter')} meta="常驻白名单 / 黑名单 / 子代理"
+          onDelete={canEditCapabilities ? () => void store.removeEngineCapability('tool-filter') : undefined}>
           <TagInput id="pt-tool-filter-allow" label="工具集白名单" hint="toolFilter.allow：主会话常驻过滤（tool-filter 模块，作用于任意注册工具含自定义插件）+ 委派子代理 toolFilter；留空 = 不限制。"
             value={fields.toolFilterAllow} placeholder="read, write, glob" disabled={!fields.writePreset}
             onChange={(value) => store.patch({ toolFilterAllow: value })}
@@ -313,14 +319,16 @@ export function EngineModuleCards(props: { store: PromptToolStore; layerFilter?:
             </div>
           </div>
         </EngineModuleCard>}
-        {visibleCapability('str-replace-editor') && <EngineModuleCard name="str-replace-editor" layer={capabilityLayer('str-replace-editor')} meta="编辑工具 · 单次输出上限">
+        {visibleCapability('str-replace-editor') && <EngineModuleCard name="str-replace-editor" layer={capabilityLayer('str-replace-editor')} meta="编辑工具 · 单次输出上限"
+          onDelete={canEditCapabilities ? () => void store.removeEngineCapability('str-replace-editor') : undefined}>
           <div className={styles.settingRowStack}>
             <div className={styles.sessionModelRow}>
               {inlineNumber('编辑器输出上限', 'strReplaceEditorMaxOutputChars：str_replace_editor 单次输出字符上限；16000 = 官方默认。失焦保存。', fields.strReplaceEditorMaxOutputChars, (next) => store.patch({ strReplaceEditorMaxOutputChars: next }), 1)}
             </div>
           </div>
         </EngineModuleCard>}
-        {visibleCapability('deliberation-gate') && <EngineModuleCard name="deliberation-gate" layer={capabilityLayer('deliberation-gate')} meta="首工具调用前 · 轨迹深度门">
+        {visibleCapability('deliberation-gate') && <EngineModuleCard name="deliberation-gate" layer={capabilityLayer('deliberation-gate')} meta="首工具调用前 · 轨迹深度门"
+          onDelete={canEditCapabilities ? () => void store.removeEngineCapability('deliberation-gate') : undefined}>
           <div className={styles.settingRowStack}>
             <div className={styles.switchGrid}>
               {gateChip('pt-deliberation-gate', '轨迹深度门', 'deliberationGate：首工具调用前流式深思 < 下限时 deny 一次（规划式提示）；需模块列表已挂 deliberation-gate 行。', 'deliberationGate')}
@@ -333,7 +341,8 @@ export function EngineModuleCards(props: { store: PromptToolStore; layerFilter?:
             </div>
           </div>
         </EngineModuleCard>}
-        {visibleCapability('cot-drip') && <EngineModuleCard name="cot-drip" layer={capabilityLayer('cot-drip')} meta="工具结果后 · 深思维持节拍">
+        {visibleCapability('cot-drip') && <EngineModuleCard name="cot-drip" layer={capabilityLayer('cot-drip')} meta="工具结果后 · 深思维持节拍"
+          onDelete={canEditCapabilities ? () => void store.removeEngineCapability('cot-drip') : undefined}>
           <div className={styles.settingRowStack}>
             <div className={styles.switchGrid}>
               {gateChip('pt-cot-drip', '深思维持节拍', 'cotDrip：每 N 次工具结果滴入一条 "We…" 重申提醒（additionalContexts）；需模块列表已挂 cot-drip 行。', 'cotDrip')}

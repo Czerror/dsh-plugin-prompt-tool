@@ -288,9 +288,6 @@ modules:
   - tool-bootstrap
   - code-presentation
   - prompt-config-engine
-  - character-tools
-  - world-book-tools
-  - session-var-tools
   - run-code-env
   - tool-bash
   - tool-pwsh

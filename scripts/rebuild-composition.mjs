@@ -21,6 +21,12 @@ const libraryDir = join(compositionDir, 'library')
 const localDir = join(compositionDir, 'source', 'local')
 const sourceRepo = basename(repo) || 'deepseek-harness'
 const OFFICIAL_PRESETS = ['standard', 'minimal', 'ptc', 'cordis']
+const OFFICIAL_PRESET_TARGETS = new Map([
+  ['standard', 'standard'],
+  ['minimal', 'minimal'],
+  ['ptc', 'ptc'],
+  ['cordis', 'creative'],
+])
 
 /**
  * 按顶层行切分官方组合文本。
@@ -107,10 +113,10 @@ function applyPatches(id, text, source) {
 
 /**
  * 官方模块映射。相同语义只保留一份；确有差异的行使用独立文件名。
- * persona 由各 preset.yml 的 system-section 配置卡表达，故不生成重复 Cordis persona 行。
+ * persona 由各 preset.yml 的 system-section 配置卡等价表达，不重复生成 Cordis 行。
  */
 const OFFICIAL_MODULES = [
-  // 动态 ST/角色卡转换仍可显式装配 persona；内置预设自身使用 system-section 配置卡。
+  // 动态 ST/角色卡转换仍可显式装配标准 persona。
   { id: 'persona', preset: 'standard' },
   { id: 'official-agent-instructions', preset: 'standard', sourceId: 'agent-instructions' },
   { id: 'official-tool-bash', preset: 'standard', sourceId: 'tool-bash' },
@@ -164,6 +170,18 @@ function stable(value) {
   return value
 }
 const signature = (value) => JSON.stringify(stable(value))
+for (const [sourcePreset, targetPreset] of OFFICIAL_PRESET_TARGETS) {
+  const spec = parseYaml(readFileSync(join(root, 'preset', targetPreset, 'preset.yml'), 'utf8'))
+  const persona = spec.promptConfigs?.find((config) => config?.id === 'persona-main')
+  const params = persona?.params ?? {}
+  const mapped = {
+    text: persona?.text,
+    ...(params.complete !== undefined ? { complete: params.complete } : {}),
+    ...(params.suppressRuntimeContext !== undefined ? { includeRuntimeContext: !params.suppressRuntimeContext } : {}),
+  }
+  const expected = officialRows.get(sourcePreset)?.get('persona')?.config
+  if (signature(mapped) !== signature(expected)) throw new Error(`${targetPreset}: persona-main does not match official ${sourcePreset} persona`)
+}
 const coveredSignatures = new Set()
 for (const { preset, sourceId, id } of OFFICIAL_MODULES) {
   const row = officialRows.get(preset)?.get(sourceId ?? id)

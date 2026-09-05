@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs'
 
 const delegation = readFileSync(new URL('../../src/client/features/subagents/DelegationToolsCard.tsx', import.meta.url), 'utf8')
 const modules = readFileSync(new URL('../../src/client/features/modules/EngineModuleList.tsx', import.meta.url), 'utf8')
+const moduleCard = readFileSync(new URL('../../src/client/ui/EngineModuleCard.tsx', import.meta.url), 'utf8')
 const customTools = readFileSync(new URL('../../src/client/features/tools/CustomToolsCard.tsx', import.meta.url), 'utf8')
 const moduleCapabilities = readFileSync(new URL('../../src/shared/engine-capabilities.ts', import.meta.url), 'utf8')
 
@@ -62,6 +63,13 @@ test('模块卡存在性经过 moduleFacts/能力目录，不由参数 truthy �
   assert.match(modules, /isEngineCapabilityPresent\(id, store\.moduleFacts\)/)
   assert.match(modules, /engineCapability\(id\)\?\.displayLayer/)
   assert.doesNotMatch(modules, /visibleCapability\('[^']+',\s*'(?:pre-step|system-section|tool-pipeline)'\)/)
-  assert.match(moduleCapabilities, /facts\.sourceMode === 'unknown'/)
+  assert.match(moduleCapabilities, /facts\.sourceMode !== 'explicit'/)
   assert.match(moduleCapabilities, /effectiveModules: string\[\] \| null/)
+})
+
+test('可编辑引擎能力卡提供二次确认删除链路', () => {
+  assert.match(moduleCard, /onDelete\?: \(\) => void/)
+  assert.match(moduleCard, /确认删除/)
+  assert.match(modules, /store\.removeEngineCapability\('tool-bootstrap'\)/)
+  assert.match(modules, /store\.removeEngineCapability\('tool-filter'\)/)
 })

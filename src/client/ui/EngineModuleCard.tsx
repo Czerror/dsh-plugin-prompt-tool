@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from 'react'
 import clsx from 'clsx'
-import { IconChevronDownOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconChevronDownOutline14, IconTrashOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import styles from './controls.module.css'
 /** 引擎模块可折叠卡片：与模块列表（PromptConfigList）同款形态——
  *  configCard + configToggle + chevron，点击展开 configForm 编辑组合行 config
@@ -12,6 +12,7 @@ export function EngineModuleCard(props: {
   meta: string
   layer?: string
   children?: ReactNode
+  onDelete?: () => void
   /** 纯开关卡：开关直接渲染在 header 顶层（右侧），卡片不展开、不折叠。 */
   topSwitch?: {
     id: string
@@ -23,6 +24,7 @@ export function EngineModuleCard(props: {
   }
 }): ReactNode {
   const [expanded, setExpanded] = useState(false)
+  const [confirmingDelete, setConfirmingDelete] = useState(false)
   const compact = props.topSwitch !== undefined
   return (
     <article className={clsx(styles.configCard, styles.moduleCard)} data-module-card="true">
@@ -37,9 +39,9 @@ export function EngineModuleCard(props: {
           </span>
           {!compact && <IconChevronDownOutline14 className={clsx(styles.chevron, expanded && styles.chevronOpen)} />}
         </button>
-        {props.topSwitch !== undefined && (
+        {(props.topSwitch !== undefined || props.onDelete !== undefined) && (
           <span className={styles.configHeaderActions}>
-            <label className={styles.configEnable} htmlFor={props.topSwitch.id} title={props.topSwitch.hint}>
+            {props.topSwitch !== undefined && <label className={styles.configEnable} htmlFor={props.topSwitch.id} title={props.topSwitch.hint}>
               <input
                 id={props.topSwitch.id}
                 type="checkbox"
@@ -49,7 +51,16 @@ export function EngineModuleCard(props: {
                 onChange={props.topSwitch.onToggle}
               />
               <span className={styles.switch} aria-hidden="true"><i /></span>
-            </label>
+            </label>}
+            {props.onDelete !== undefined && (confirmingDelete ? (
+              <>
+                <button type="button" className={styles.pillButton} data-danger onClick={props.onDelete}>确认删除</button>
+                <button type="button" className={styles.pillButton} data-variant="secondary" onClick={() => setConfirmingDelete(false)}>取消</button>
+              </>
+            ) : (
+              <button type="button" className={styles.pillButton} data-danger title={`删除 ${props.name}`} aria-label={`删除引擎能力 ${props.name}`}
+                onClick={() => setConfirmingDelete(true)}><IconTrashOutline16 /></button>
+            ))}
           </span>
         )}
       </header>

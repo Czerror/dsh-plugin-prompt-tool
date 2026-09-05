@@ -325,7 +325,7 @@ feature 只拥有自己的视图、瞬时状态、领域纯 helper 和 CSS：
 |---|---|
 | prompts | 六层配置卡、字段策略、排序、模板插入、变量编辑和内容配置 |
 | models | 当前预设的主/子代理模型路由卡 |
-| modules | 引擎能力列表与层级筛选；一项能力一张卡，存在性由 `/bootstrap.moduleFacts` 决定，卡片形态由 ui/EngineModuleCard.tsx 提供 |
+| modules | 引擎能力列表与层级筛选；一项显式装配能力一张卡，存在性由 `/bootstrap.moduleFacts.declaredModules` 决定，卡片形态由 ui/EngineModuleCard.tsx 提供 |
 | subagents | 委派工具、实例级工具策略草稿、策略预览和工具面入口 |
 | tools | 自定义工具编辑/保存、参数模板和存活 Agent 工具面 |
 | skills | 技能目录引用/导入、状态筛选、排序、开关、修复和打开目录 |
@@ -354,6 +354,8 @@ ui/ 只接收 props/callback，当前真实共享 seam 包括：
 模块卡内的选择器、开关及小型文本/数字输入使用紧凑尺寸；大文本和 JSON 编辑器保留 `field-sizing: content`、手动纵向缩放与现有自动测高，不随紧凑控件一起压缩。
 
 主会话模块列表提供两个互斥 sibling view：`general` 展示当前 seam 的 promptConfigs，`capability` 展示模型路由、引擎能力卡和 tool-pipeline 工具卡。`layerFilter` 在两个 view 间保持独立；view 切换不改变 dirty 快照、参数保存队列或模块事实。
+
+引擎能力卡只展示当前预设 `modules` 显式声明的能力；`modules: []` 不展开默认骨架，官方组合行不生成插件能力卡。可编辑卡提供局部二次确认删除，删除只移除模块声明并保留 dormant 参数，成功后重建一次并刷新模块事实。
 
 `ToolSurfaceView` 的 `sessionId` 分支表示当前存活 Agent；`presetId` 分支表示官方预设后续 generation 的只读能力。预设分支只在能力视图显式挂载时请求，不在 bootstrap 遍历所有预设。
 

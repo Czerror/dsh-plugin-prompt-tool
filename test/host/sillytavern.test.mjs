@@ -44,12 +44,26 @@ test('convertStToPreset：世界书正则键保留原样且不写幽灵字段 us
     },
   }
   const spec = convertStToPreset(card, 'test-card')
-  assert.ok(spec.modules.includes('world-book-tools'), '含世界书时自动装配 world-book-tools 模块')
+  assert.deepEqual(spec.modules, [
+    'prompt-config-engine', 'character-tools', 'world-book-tools',
+    'session-var-tools', 'tool-config-engine', 'tool-filter',
+  ], 'ST 只装配提示词执行与管理工具模块')
   const lore = spec.promptConfigs.filter((config) => config.strategy === 'world-book')
   assert.equal(lore.length, 2, '两条世界书条目都转换')
   assert.equal(lore[0].params.keys[0], '/^剑\\d+$/')
   assert.equal('useRegex' in lore[0].params, false, '不写幽灵字段 useRegex')
   assert.equal('useRegex' in lore[1].params, false)
+})
+
+test('convertStToPreset：空世界书不装工具，tool-filter 仍按需就绪', () => {
+  const spec = convertStToPreset({
+    name: '空卡',
+    data: { character_book: { entries: [{ content: '   ' }] } },
+  }, 'empty-card')
+  assert.deepEqual(spec.modules, [
+    'prompt-config-engine', 'character-tools', 'session-var-tools', 'tool-config-engine', 'tool-filter',
+  ])
+  assert.equal(spec.moduleConfigs['tool-filter'], undefined, '字段缺省时过滤器为空操作')
 })
 
 test('convertStToPreset：世界书 order 取反（ST 大优先 → 引擎升序）', () => {

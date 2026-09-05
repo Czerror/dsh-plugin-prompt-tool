@@ -275,9 +275,7 @@ test('参数桥优先于 moduleConfigs 直写：UI 开关不被行级直写覆�
   assert.equal(tf2.config.includeSubagents, false, '桥未覆盖时 moduleConfigs 直写生效')
 })
 
-test('参数桥不覆盖未声明键：moduleConfigs 默认在 UI 未保存时保留（persist 条件发送回归）', () => {
-  // 回归：persistParamOverrides 曾「总是发送」UI 默认值，首次保存即固化进 params，
-  // 再由参数桥覆盖模板 moduleConfigs。这里用 custom 的空参数骨架锁定未声明键语义。
+test('空白预设的 dormant moduleConfigs 不会隐式装配引擎能力', () => {
   const base = loadPresetSpec(resolvePresetDir('custom'))
   const spec = {
     ...base,
@@ -287,9 +285,5 @@ test('参数桥不覆盖未声明键：moduleConfigs 默认在 UI 未保存时�
     },
   }
   const rows = parseYaml(renderComposition(spec, {}))
-  const tb = rows.find((r) => r?.id === 'tool-bootstrap')
-  const cp = rows.find((r) => r?.id === 'code-presentation')
-  assert.equal(tb.config.promoteGate, true, 'UI 未保存时 moduleConfigs promoteGate=true 保留')
-  assert.equal(tb.config.maxPromoteSteps, 4, 'moduleConfigs maxPromoteSteps 保留')
-  assert.equal(cp.config.usePtcMode, true, 'moduleConfigs usePtcMode=true 保留')
+  assert.deepEqual(rows, [], '只有 modules 显式声明才允许装配能力')
 })

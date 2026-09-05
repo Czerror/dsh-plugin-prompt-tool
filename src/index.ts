@@ -931,10 +931,10 @@ export { Config, PromptSettingsSchema } from './config.ts'
 export { writePreset } from './host/write-preset.ts'
 export { convertStToPreset, mergeStPresets, processStText, stPresetId } from './host/sillytavern.ts'
 export { applyModuleConfigs, buildModuleConfigsFromParams, savePresetParams, MODEL_SEGMENT_MAP } from './host/manifest.ts'
-export { FALLBACK_MODULES, createEngineCapabilityInPreset, loadPresetSpec, renderComposition, resolvePresetModuleFacts, resolvePresetParams } from './host/manifest.ts'
+export { createEngineCapabilityInPreset, loadPresetSpec, removeEngineCapabilityFromPreset, renderComposition, resolvePresetModuleFacts, resolvePresetParams } from './host/manifest.ts'
 export { ENGINE_PARAM_KEYS, WRITER_PARAM_KEYS, validateEngineParamValues } from './shared/engine-params.ts'
 export { assertSafeConfigId, configFileName } from './host/prompt-configs.ts'
-export type { EngineCapabilityCreateRequest, EngineCapabilityCreateResult, PresetSpec } from './host/manifest.ts'
+export type { EngineCapabilityCreateRequest, EngineCapabilityCreateResult, EngineCapabilityRemoveResult, PresetSpec } from './host/manifest.ts'
 export {
   cloneBuiltinPreset,
   ensurePresetSeed,

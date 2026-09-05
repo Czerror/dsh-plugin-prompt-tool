@@ -580,7 +580,7 @@ export function withPresetDoc(presetDir: string, mutate: (doc: ReturnType<typeof
   invalidatePresetSpec(presetDir)
 }
 
-/** 向 preset.yml 的 modules 追加功能模块；modules: [] 先展开为空白预设的默认骨架。 */
+/** 向 preset.yml 的 modules 追加功能模块；空数组保持按需装配语义。 */
 export function appendPresetModules(
   doc: ReturnType<typeof parseDocument>,
   additions: readonly string[],
@@ -589,8 +589,7 @@ export function appendPresetModules(
   const source = doc.toJS() as { modules?: unknown }
   if (!Array.isArray(source.modules)) throw new Error('当前预设缺少 modules 数组，不能自动装配工具模块')
   const current = source.modules.filter((item): item is string => typeof item === 'string' && item.length > 0)
-  const base = source.modules.length === 0 ? [...FALLBACK_MODULES] : current
-  const modules = [...base]
+  const modules = [...current]
   for (const module of additions) {
     if (!/^[a-z0-9][a-z0-9-]*$/.test(module)) throw new Error('非法模块名：' + module)
     if (!modules.includes(module)) modules.push(module)
@@ -830,11 +829,6 @@ export function buildModuleConfigsFromParams(params: Record<string, unknown>, op
   return out
 }
 
-/** 空模块清单兜底骨架（自定义预设空白起点：模块集与 minimal 一致，参数/配置全空）。 */
-export const FALLBACK_MODULES = ['official-persistent-shell', 'bootstrap-filesystem',
-  'context-gate', 'tool-bootstrap', 'code-presentation', 'prompt-config-engine',
-  'run-code-env', 'custom-bash', 'skill-search']
-
 /**
  * 组合模块目录分工：
  * - source/local：本项目自有模块的唯一源文件；
@@ -878,7 +872,7 @@ function assembleModules(spec: PresetSpec): string {
       throw new Error(`preset ${spec.id}: ${String((error as Error).message ?? error)}`)
     }
   }
-  return parts.join('\n')
+  return parts.length > 0 ? parts.join('\n') : '[]\n'
 }
 
 /**
@@ -947,9 +941,7 @@ export function applyModuleConfigs(raw: string, configs: Record<string, Record<s
  */
 export function loadCompositionText(spec: PresetSpec, templateDir?: string): string {
   let raw: string
-  let modules = Array.isArray(spec.modules) && spec.modules.length === 0
-    ? FALLBACK_MODULES
-    : spec.modules
+  let modules = spec.modules
   if (Array.isArray(modules) && spec.subagentToolPolicy !== undefined && spec.subagentToolPolicy !== null
     && !modules.includes('subagent-tool-policy')) {
     modules = [...modules, 'subagent-tool-policy']
@@ -997,7 +989,7 @@ export function loadCompositionText(spec: PresetSpec, templateDir?: string): str
 
 /**
  * 解析预设的模块事实，供 UI 卡片存在性和受控创建共用。
- * 这里不从 params truthy 值猜能力；模块清单/组合行才是装配事实。
+ * 只有显式 modules 是可编辑插件能力；组合 row 仅保留为运行事实。
  */
 export function resolvePresetModuleFacts(
   spec: PresetSpec,
@@ -1008,30 +1000,28 @@ export function resolvePresetModuleFacts(
     ? [...new Set(spec.modules.filter((item): item is string => typeof item === 'string' && item.trim().length > 0).map((item) => item.trim()))]
     : null
   const sourceMode: ModuleSourceMode = Array.isArray(spec.modules)
-    ? spec.modules.length === 0 ? 'fallback' : 'explicit'
+    ? 'explicit'
     : typeof spec.composition === 'string' && spec.composition.trim().length > 0
       ? 'composition'
       : templateDir !== undefined && existsSync(join(templateDir, 'agent.cordis.yml'))
         ? 'official'
         : 'unknown'
-  const effectiveModules = sourceMode === 'fallback'
-    ? [...FALLBACK_MODULES]
-    : sourceMode === 'explicit'
-      ? [...(declaredModules ?? [])]
-      : null
+  const effectiveModules = sourceMode === 'explicit'
+    ? [...(declaredModules ?? [])]
+    : null
   if (effectiveModules !== null && spec.subagentToolPolicy !== undefined && spec.subagentToolPolicy !== null
     && !effectiveModules.includes('subagent-tool-policy')) {
     effectiveModules.push('subagent-tool-policy')
   }
   if (sourceMode === 'unknown') {
-    return { declaredModules, effectiveModules: null, rowIds: [], sourceMode, editable }
+    return { declaredModules, effectiveModules: null, rowIds: [], sourceMode, editable: false }
   }
 
   let raw: string
   try {
     raw = loadCompositionText(spec, templateDir)
   } catch {
-    return { declaredModules, effectiveModules: null, rowIds: [], sourceMode: 'unknown', editable }
+    return { declaredModules, effectiveModules: null, rowIds: [], sourceMode: 'unknown', editable: false }
   }
   const rowIds: string[] = []
   const seenRows = new Set<string>()
@@ -1057,7 +1047,7 @@ export function resolvePresetModuleFacts(
   try {
     visit(parseYaml(raw, { logLevel: 'silent' }))
   } catch {
-    return { declaredModules, effectiveModules: null, rowIds: [], sourceMode: 'unknown', editable }
+    return { declaredModules, effectiveModules: null, rowIds: [], sourceMode: 'unknown', editable: false }
   }
   const effectiveConfigs: Record<string, Record<string, unknown>> = {}
   for (const [id, config] of defaults) effectiveConfigs[id] = config
@@ -1070,7 +1060,7 @@ export function resolvePresetModuleFacts(
   for (const [id, config] of Object.entries(generated)) {
     effectiveConfigs[id] = { ...effectiveConfigs[id], ...config }
   }
-  return { declaredModules, effectiveModules, rowIds, sourceMode, editable, effectiveConfigs }
+  return { declaredModules, effectiveModules, rowIds, sourceMode, editable: editable && sourceMode === 'explicit', effectiveConfigs }
 }
 
 export type EngineCapabilityCreateRequest =
@@ -1080,6 +1070,12 @@ export type EngineCapabilityCreateRequest =
 export interface EngineCapabilityCreateResult {
   changed: boolean
   addedModules: string[]
+  capabilityIds: string[]
+}
+
+export interface EngineCapabilityRemoveResult {
+  changed: boolean
+  removedModules: string[]
   capabilityIds: string[]
 }
 
@@ -1104,8 +1100,7 @@ export function createEngineCapabilityInPreset(
   const additions = capabilityIds
     .filter((id) => !isEngineCapabilityPresent(id, currentFacts))
     .flatMap((id) => engineCapability(id)?.moduleKeys.slice(0, 1) ?? [])
-  const base = source.modules.length === 0 ? [...FALLBACK_MODULES] : source.modules.filter((item): item is string => typeof item === 'string' && item.length > 0)
-  const modules = [...base]
+  const modules = source.modules.filter((item): item is string => typeof item === 'string' && item.length > 0)
   const addedModules: string[] = []
   for (const module of additions) {
     if (!modules.includes(module)) {
@@ -1141,6 +1136,29 @@ export function createEngineCapabilityInPreset(
   atomicWriteTextFile(file, doc.toString())
   invalidatePresetSpec(presetDir)
   return { changed: true, addedModules, capabilityIds }
+}
+
+/** 删除显式装配的能力模块；参数和 moduleConfigs 保留为 dormant 配置。 */
+export function removeEngineCapabilityFromPreset(
+  presetDir: string,
+  capabilityId: string,
+): EngineCapabilityRemoveResult {
+  const file = join(presetDir, 'preset.yml')
+  if (!existsSync(file)) throw new Error(`预设目录缺少 preset.yml：${presetDir}`)
+  const doc = parseDocument(readFileSync(file, 'utf8'), { logLevel: 'silent' })
+  const source = doc.toJS() as PresetSpec
+  if (!Array.isArray(source.modules)) throw new Error('当前预设没有可编辑的 modules 数组；官方组合不支持删除插件能力')
+  const capability = engineCapability(capabilityId)
+  if (capability === undefined) throw new Error(`未知引擎能力：${capabilityId}`)
+  const modules = source.modules.filter((item): item is string => typeof item === 'string' && item.length > 0)
+  const removedModules = modules.filter((module) => capability.moduleKeys.includes(module))
+  if (removedModules.length === 0) return { changed: false, removedModules, capabilityIds: [capabilityId] }
+  doc.set('modules', modules.filter((module) => !capability.moduleKeys.includes(module)))
+  const candidate = doc.toJS() as PresetSpec
+  assertCompositionArray(renderComposition(candidate, {}, presetDir), candidate)
+  atomicWriteTextFile(file, doc.toString())
+  invalidatePresetSpec(presetDir)
+  return { changed: true, removedModules, capabilityIds: [capabilityId] }
 }
 
 /**

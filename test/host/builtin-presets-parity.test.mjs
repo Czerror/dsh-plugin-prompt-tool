@@ -16,10 +16,6 @@ function rowsOf(id) {
 
 const idsOf = (rows) => rows.map((row) => row.id)
 
-function assertPrefix(actual, expected, label) {
-  assert.deepEqual(actual.slice(0, expected.length), expected, `${label} 官方基础行顺序漂移`)
-}
-
 test('内置预设集合移除 liangshen，保留 anchored + 四个官方基型 + custom', () => {
   const dirs = readdirSync(join(root, 'preset'), { withFileTypes: true })
     .filter((entry) => entry.isDirectory())
@@ -29,26 +25,24 @@ test('内置预设集合移除 liangshen，保留 anchored + 四个官方基型 
   assert.equal(existsSync(join(root, 'preset', 'liangshen')), false)
 })
 
-test('standard 基础行顺序对齐官方 Standard，再追加 prompt-tool 模块', () => {
+test('standard 对齐官方 Standard，仅以 prompt-config-engine 承载等价 persona', () => {
   const ids = idsOf(rowsOf('standard'))
-  assertPrefix(ids, [
+  assert.deepEqual(ids, [
     'agent-instructions', 'tool-bash', 'tool-pwsh', 'tool-fs', 'tool-fs-search',
     'tool-jobs', 'skill-filesystem', 'tool-skill', 'command-goal', 'tool-goal',
-    'planning', 'compaction', 'delegation', 'tool-ask-user', 'tool-todo', 'tool-web',
-  ], 'standard')
-  assert.ok(ids.includes('prompt-config-engine'))
-  assert.ok(ids.includes('code-presentation'), 'standard 保留 prompt-tool 晋升后 PTC opt-in 行')
+    'planning', 'compaction', 'delegation', 'tool-ask-user', 'tool-todo', 'tool-web', 'prompt-config-engine',
+  ])
 })
 
 test('ptc 使用官方 alpha.4 呈现与 delegation 变体，不重复挂 code-presentation', () => {
   const rows = rowsOf('ptc')
   const ids = idsOf(rows)
-  assertPrefix(ids, [
+  assert.deepEqual(ids, [
     'agent-instructions', 'tool-bash', 'tool-pwsh', 'tool-fs', 'tool-fs-search',
     'tool-jobs', 'skill-filesystem', 'tool-skill', 'command-goal', 'tool-goal',
     'planning', 'compaction', 'delegation', 'tool-ask-user', 'tool-todo', 'tool-web',
-    'tool-presentation',
-  ], 'ptc')
+    'tool-presentation', 'prompt-config-engine',
+  ])
   const presentation = rows.find((row) => row.id === 'tool-presentation')
   assert.equal(presentation.config.mode, 'ptc')
   assert.equal(ids.includes('code-presentation'), false, '官方 tool-presentation 已承担 PTC 呈现，不重复注册')
@@ -58,20 +52,19 @@ test('ptc 使用官方 alpha.4 呈现与 delegation 变体，不重复挂 code-p
 
 test('creative 基础行顺序对齐官方 Cordis，创作技能位于 tool-cordis 之后', () => {
   const ids = idsOf(rowsOf('creative'))
-  assertPrefix(ids, [
+  assert.deepEqual(ids, [
     'agent-instructions', 'tool-bash', 'tool-pwsh', 'tool-fs', 'tool-fs-search',
     'tool-jobs', 'command-goal', 'tool-goal', 'planning', 'compaction', 'delegation',
-    'tool-ask-user', 'tool-todo', 'tool-web', 'tool-cordis', 'skill-filesystem', 'tool-skill',
-  ], 'creative')
+    'tool-ask-user', 'tool-todo', 'tool-web', 'tool-cordis', 'skill-filesystem', 'tool-skill', 'prompt-config-engine',
+  ])
   const skill = readFileSync(join(root, 'preset/creative/skills/editing-cordis-compositions/SKILL.md'), 'utf8')
   assert.match(skill, /supplies `standard`, `ptc`, `minimal`, and `cordis`/)
   assert.doesNotMatch(skill, /supplies `standard`, `code`, `minimal`/)
 })
 
-test('minimal 基础行对齐官方 Minimal；persona 继续由单文件配置卡表达', () => {
+test('minimal 复用官方 shell 与独立编辑器，以 prompt-config-engine 承载等价 persona', () => {
   const ids = idsOf(rowsOf('minimal'))
-  assert.deepEqual(ids.slice(0, 2), ['persistent-shell', 'bootstrap-filesystem'])
-  assert.equal(ids.includes('persona'), false)
+  assert.deepEqual(ids, ['persistent-shell', 'str-replace-editor', 'prompt-config-engine'])
   const spec = loadPresetSpec(join(root, 'preset', 'minimal'))
   const persona = spec.promptConfigs.find((config) => config.id === 'persona-main')
   assert.equal(persona.text, 'You are a helpful software engineer assistant.')
@@ -81,6 +74,7 @@ test('minimal 基础行对齐官方 Minimal；persona 继续由单文件配置�
 
 test('anchored 单文件显式声明上游核心与本项目保留差异', () => {
   const rows = rowsOf('anchored')
+  const ids = idsOf(rows)
   const gate = rows.find((row) => row.id === 'context-gate')
   const bootstrap = rows.find((row) => row.id === 'tool-bootstrap')
   const delegation = rows.find((row) => row.id === 'delegation')
@@ -93,4 +87,7 @@ test('anchored 单文件显式声明上游核心与本项目保留差异', () =>
   assert.equal(delegation.config.find((row) => row.id === 'tool-subagent').config.modelSelectionSettings, true)
   assert.equal(delegation.config.find((row) => row.id === 'tool-subagent-codex').config.backgroundMode, 'one-shot')
   assert.equal(web.config.fetch, true, '本项目保留 Web fetch 能力')
+  for (const id of ['character-tools', 'world-book-tools', 'session-var-tools', 'tool-config-engine']) {
+    assert.equal(ids.includes(id), false, `anchored 不应默认装配 ST 工具 ${id}`)
+  }
 })

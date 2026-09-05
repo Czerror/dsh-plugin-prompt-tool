@@ -86,9 +86,14 @@ export function mergeStPresets(specs: PresetSpec[]): PresetSpec {
       if (!modules.includes(name)) modules.push(name)
     }
   }
-  if (promptConfigs.some((config) => config.strategy === 'world-book') && !modules.includes('world-book-tools')) {
-    modules.push('world-book-tools')
-  }
+  const managementModules = [
+    'character-tools',
+    ...(promptConfigs.some((config) => config.strategy === 'world-book') ? ['world-book-tools'] : []),
+    'session-var-tools',
+    'tool-config-engine',
+    'tool-filter',
+  ]
+  for (const name of managementModules) if (!modules.includes(name)) modules.push(name)
   const moduleConfigs: Record<string, Record<string, unknown>> = {}
   for (const spec of specs) {
     for (const [key, value] of Object.entries(spec.moduleConfigs ?? {})) {
@@ -135,7 +140,6 @@ export function convertStToPreset(card: unknown, baseName: string): PresetSpec {
   const configs: Array<Record<string, unknown>> = []
   const droppedMarkers: string[] = []
   let systemSectionCount = 0
-  let hasWorldBook = false
   // 角色卡正文：chara_card_v3 实际内容在 data 内层（顶层为同步冗余），旧版顶层直存。
   const body = (record.data !== null && typeof record.data === 'object' ? record.data as Record<string, unknown> : record) as Record<string, unknown>
   // 扩展注入物剥离（TavernHelper 等 ST 扩展脚本/文档）：本引擎不执行 JS，
@@ -194,7 +198,6 @@ export function convertStToPreset(card: unknown, baseName: string): PresetSpec {
         ? Object.values(rawEntries as Record<string, unknown>)
           .filter((e): e is Record<string, unknown> => e !== null && typeof e === 'object' && !Array.isArray(e))
         : []
-    hasWorldBook = true
     for (const [index, entry] of entryList.entries()) {
       if (entry === null || typeof entry !== 'object') continue
       const content = clean(typeof entry.content === 'string' ? entry.content : '')
@@ -319,8 +322,9 @@ export function convertStToPreset(card: unknown, baseName: string): PresetSpec {
   }
 
   // modules 按需组装：prompt-config-engine 始终；system-section 注入需要 persona 服务。
-  const modules = ['prompt-config-engine']
-  if (hasWorldBook) modules.push('world-book-tools')
+  const modules = ['prompt-config-engine', 'character-tools']
+  if (configs.some((config) => config.strategy === 'world-book')) modules.push('world-book-tools')
+  modules.push('session-var-tools', 'tool-config-engine', 'tool-filter')
   const moduleConfigs: Record<string, Record<string, unknown>> = {}
   if (systemSectionCount > 0) {
     modules.unshift('persona')
@@ -328,15 +332,14 @@ export function convertStToPreset(card: unknown, baseName: string): PresetSpec {
     // text/includeRuntimeContext 不声明（用引擎模块库默认，不注入 anchored 内容）。
     moduleConfigs.persona = { complete: false }
   }
-  // enable_web_search → 按原 JSON 开关装配：
-  //   true  → 组装 tool-web（fetch: true 启用）；
-  //   false → 不组装 tool-web，改加 tool-filter 黑名单（deny web_search/web_fetch），
+  // tool-filter 始终装配，enable_web_search 按原 JSON 开关配置：
+  //   true  → 同时组装 tool-web（fetch: true 启用）；
+  //   false → 不组装 tool-web，写入黑名单（deny web_search/web_fetch），
   //           即使宿主/其他模块装配了 tool-web，本预设会话也不暴露 web 工具。
   if (record.enable_web_search === true) {
     modules.push('tool-web')
     moduleConfigs['tool-web'] = { fetch: true }
   } else if (record.enable_web_search === false) {
-    modules.push('tool-filter')
     moduleConfigs['tool-filter'] = { includeSubagents: false, deny: ['web_search', 'web_fetch'] }
   }
 

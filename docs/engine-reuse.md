@@ -4,6 +4,11 @@
 工具目录相位、PTC（Code Mode）呈现、指令文件提示与提示词注入引擎全部以
 共享 ESM 实现 + cordis 插件行/声明式配置提供，任何 dsh 预设可自由装配。
 
+装配遵循显式按需语义：`modules: []` 生成合法空组合，只有列入 `modules` 的插件能力才会挂载；
+四个官方基型保留上游工具能力，仅用 `prompt-config-engine` + 既有 `persona-main` 配置等价替代
+官方 persona 行；Minimal 复用独立 `str-replace-editor`，Anchored 才使用带隔离文件系统的
+`bootstrap-filesystem`。官方 `agent.cordis.yml` 中同名 row 不作为可编辑插件能力。
+
 ## 复制协议（跨项目复用）
 
 1. 把 `engine/` 整个目录复制到你的项目（自包含 + vendor yaml，无外部依赖）；

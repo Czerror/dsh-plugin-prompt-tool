@@ -18,15 +18,15 @@ const modulePath = (name) => {
 }
 const moduleText = (name) => readFileSync(modulePath(name), 'utf8')
 
- test('模块清单由参数文件决定:preset/anchored/preset.yml 声明 30 个模块,且全部存在', () => {
+test('anchored 显式声明 27 个非 ST 默认模块，且全部存在', () => {
   const preset = parse(read('preset/anchored/preset.yml'))
   const modules = preset.modules
   assert.ok(Array.isArray(modules))
-  assert.equal(modules.length, 30)
+  assert.equal(modules.length, 27)
   assert.ok(modules.includes('command-goal'), '官方 standard 系预设应接入 command-goal')
-  assert.ok(modules.includes('character-tools'), '角色卡工具由独立模块装配')
-  assert.ok(modules.includes('world-book-tools'), '世界书工具由独立模块装配')
-  assert.ok(modules.includes('session-var-tools'), '会话变量工具由独立模块装配')
+  for (const name of ['character-tools', 'world-book-tools', 'session-var-tools', 'tool-config-engine']) {
+    assert.equal(modules.includes(name), false, `${name} 只由 ST 转换按需装配`)
+  }
   for (const name of modules) {
     const file = modulePath(name)
     assert.match(readFileSync(file, 'utf8'), /^- id:/m, `${name} must be a top-level entry-list module`)
@@ -78,6 +78,9 @@ test('官方行变体仅保留确有语义差异的重复行', () => {
     'skill-filesystem': ['official-skill-filesystem-cordis', 'skill-filesystem'],
     'tool-bash': ['official-tool-bash', 'tool-bash'],
   })
+  for (const name of ['official-filesystem', 'persona-cordis', 'persona-minimal']) {
+    assert.equal(existsSync(join(libraryDir, `${name}.yml`)), false, `${name} 不应重复切分官方基型已有行`)
+  }
 })
 
 test('组合库无 __TOKEN__ 残留：参数桥模块齐备且官方 alpha.4 变体已更新', () => {

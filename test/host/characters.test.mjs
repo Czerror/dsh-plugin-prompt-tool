@@ -32,6 +32,7 @@ writeFileSync(join(presetDir, 'preset.yml'), [
   'engineCompat: ">=0.4.2"',
   'meta:',
   '  order: 1',
+  'modules: [prompt-config-engine]',
   'promptConfigs: []',
   '',
 ].join('\n'), 'utf8')
@@ -71,6 +72,10 @@ test('importCharacterCard + applyCharacterToPreset：卡入库并导入预设（
   assert.match(memoryEntry.text, /喜欢下雨天/, '记忆文本已合并')
   assert.equal(memoryEntry.params.constant, true, '记忆条目为 world-book constant')
   assert.deepEqual(preset.meta.importedCharacters, [cardId])
+  assert.deepEqual(preset.modules, [
+    'prompt-config-engine', 'character-tools', 'world-book-tools',
+    'session-var-tools', 'tool-config-engine', 'tool-filter',
+  ], '角色卡应用只补 ST 管理工具，不带入其他引擎能力')
 
   const listed = listCharacterCards(root, template)
   assert.equal(listed.length, 1)
@@ -90,6 +95,7 @@ test('applyCharacterToPreset：导入含 system-section 的卡自动开放 perso
     'engineCompat: ">=0.4.2"',
     'meta:',
     '  order: 1',
+    'modules: [prompt-config-engine]',
     'promptConfigs:',
     '  - id: persona-main',
     '    name: 主会话人设',

@@ -235,8 +235,8 @@ system-section 段（character-definition / system-prompt / post-history）。
 
 ### 模块事实与能力卡（2026-09-05）
 
-- `/bootstrap` 附带 `moduleFacts`：`declaredModules`（缺失为 `null`）、`effectiveModules`（`modules: []` 仍展开既有 `FALLBACK_MODULES`）、递归 `rowIds`、`sourceMode` 和 `editable`。
-- 能力卡存在性只由 `moduleKeys` 或解析后的 `rowIds` 决定，不能由 params 非空推断；`moduleConfigs` 回显优先级保持 `params > moduleConfigs > 行默认`。
+- `/bootstrap` 附带 `moduleFacts`：`declaredModules`（缺失为 `null`）、`effectiveModules`（`modules: []` 保持显式空装配）、递归 `rowIds`、`sourceMode` 和 `editable`；官方 `agent.cordis.yml` 行只作运行事实，不伪装成可编辑的插件能力。
+- 能力卡存在性只由显式 `modules` 命中 `moduleKeys` 决定，不能由 params 或官方组合 `rowIds` 推断；`moduleConfigs` 回显优先级保持 `params > moduleConfigs > 行默认`。
 - `tool-filter`、`context-gate` 等参数各有唯一 UI owner；子代理委派卡只编辑 `maxDepth` 与 `subagentToolPolicy`，避免跨页失焦保存互相覆盖。
 - `engineCapability` bridge 只接受服务端白名单能力/recipe；recipe 不作为持久化实体，但展开结果一次写入目标 preset.yml，候选组合校验通过后才重建。
 

@@ -87,7 +87,7 @@ export interface BridgeRequestMap {
   subagentToolPolicy: { policy?: unknown } | undefined
   subagentToolPolicyPreview: { tool?: string; description?: string; prompt?: string; tool_profile?: string; character_id?: string; task_type?: string; additional_tools?: string[]; restrict_tools?: string[] }
   toolSurface: { sessionId: string; presetId?: never } | { presetId: string; sessionId?: never }
-  engineCapability: { action: 'create'; capabilityId: string } | { action: 'create-recipe'; recipeId: string }
+  engineCapability: { action: 'create' | 'remove'; capabilityId: string } | { action: 'create-recipe'; recipeId: string }
 }
 
 /** settings descriptor 的跨端最小结构。 */
@@ -135,7 +135,7 @@ export interface BridgeValueMap {
     presetId?: string
     tools: Array<{ name: string; description: string }>
   }
-  engineCapability: { changed: boolean; addedModules: string[]; capabilityIds: string[] }
+  engineCapability: { changed: boolean; addedModules?: string[]; removedModules?: string[]; capabilityIds: string[] }
 }
 /** 编译期断言：请求/响应映射与 BRIDGE_ENDPOINTS 键集合完全一致（漏改任一侧 typecheck 失败）。 */
 type AssertCoverage<K extends string, M extends object> =

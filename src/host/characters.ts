@@ -8,7 +8,7 @@ import { join, basename, dirname } from 'node:path'
 import { parse as parseYaml, parseDocument, stringify as stringifyYaml } from 'yaml'
 import { inflateSync } from 'node:zlib'
 import { convertStToPreset, mergeStPresets } from './sillytavern.ts'
-import { withPresetDoc } from './manifest.ts'
+import { appendPresetModules, withPresetDoc } from './manifest.ts'
 import { buildWorldBookEntry } from './worldbook.ts'
 import type { PresetSpec } from './manifest.ts'
 
@@ -449,6 +449,13 @@ export function applyCharacterToPreset(
           personaOpened = true
         }
       }
+      appendPresetModules(doc, [
+        'character-tools',
+        ...(merged.some((config) => config.strategy === 'world-book') ? ['world-book-tools'] : []),
+        'session-var-tools',
+        'tool-config-engine',
+        'tool-filter',
+      ])
       doc.setIn(['promptConfigs'], merged)
       const list = Array.isArray(current.meta?.importedCharacters) ? current.meta.importedCharacters : []
       if (!list.map(String).includes(cardId)) list.push(cardId)
@@ -494,4 +501,3 @@ export function removeCharacterFromPreset(
     return { ok: false, message: `移除失败：${error instanceof Error ? error.message : String(error)}` }
   }
 }
-

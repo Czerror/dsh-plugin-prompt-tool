@@ -21,16 +21,7 @@ modules:
   - official-tool-cordis
   - official-skill-filesystem-cordis
   - official-tool-skill
-  - context-gate
-  - tool-bootstrap
-  - code-presentation
   - prompt-config-engine
-  - character-tools
-  - world-book-tools
-  - session-var-tools
-  - run-code-env
-  - custom-bash
-  - skill-search
 model:
   provider: ""
   name: ""
@@ -44,11 +35,6 @@ subagentModel:
   temperature: ""
   maxTokens: ""
 params:
-  usePtcMode: false
-  bootstrapMaxTokens: 0
-  allowKinds: "[skill-invocation, near-anchor, router-guide]"
-  toolFilterAllow: []
-  toolFilterDeny: []
   maxDepth: ""
 promptConfigs:
   - id: persona-main
@@ -58,7 +44,7 @@ promptConfigs:
     order: 0
     params:
       sectionName: deployment:persona
-    text: >-
+    text: |-
       You are a coding agent powered by the {{model}} model, running on the DeepSeek Harness. Your working directory is {{cwd}}.
 
       You can read and modify the harness you run on. Its composition is Cordis: every capability is a plugin row in a `cordis.yml`, and an agent preset is one such file mounted for a single session.

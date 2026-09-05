@@ -82,6 +82,7 @@ export interface PromptToolStore {
   toggleBootstrapMaxTokens: () => void
   setPresetTemplate: (id: string) => void
   createEngineCapability: (action: 'create' | 'create-recipe', id: string) => Promise<void>
+  removeEngineCapability: (id: string) => Promise<void>
   setBootstrapTokensDraft: (value: string) => void
   commitBootstrapTokensDraft: () => void
   /** 门控回退步数草稿（数字输入，失焦提交；0 = 引擎默认 4）。 */
@@ -512,6 +513,16 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     await load({ silent: true })
   }, [load, showNotice])
 
+  const removeEngineCapability = useCallback(async (id: string): Promise<void> => {
+    const result = await bridgeCall('engineCapability', { action: 'remove', capabilityId: id })
+    if (!result.ok) {
+      showNotice('error', '引擎能力删除失败：' + (result.message ?? 'settings bridge unavailable'))
+      return
+    }
+    showNotice('ok', result.value.changed ? `已删除引擎能力：${id}` : `引擎能力不存在：${id}`)
+    await load({ silent: true })
+  }, [load, showNotice])
+
   const commitBootstrapTokensDraft = useCallback(() => {
     const parsed = Number(bootstrapTokensDraft)
     if (!Number.isSafeInteger(parsed) || parsed <= 0) {
@@ -659,6 +670,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     toggleBootstrapMaxTokens,
     setPresetTemplate,
     createEngineCapability,
+    removeEngineCapability,
     setBootstrapTokensDraft,
     commitBootstrapTokensDraft,
     gateStepsDraft,

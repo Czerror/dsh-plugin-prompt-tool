@@ -36,7 +36,6 @@ function readPersonaConfig(presetDir, template) {
   const file = readdirSync(dir).find((name) => name.endsWith('-persona-main.yml'))
   assert.ok(file, `${template}: 应生成 persona-main 配置`)
   const parsed = parseYaml(readFileSync(join(dir, file), 'utf8'))
-  // renderPromptConfigYaml 把 text 归一为 texts 数组。
   return { ...parsed, text: parsed.text ?? parsed.texts?.[0] ?? '' }
 }
 
@@ -310,7 +309,7 @@ test('writePreset 空 prompt/agents 不生成空内容资产，prompt-injector �
   }
 })
 
-test('writePreset 官方导入预设（standard/minimal/ptc/creative）渲染组合且含 prompt-tool 引擎行', () => {
+test('writePreset 四个官方基型只用 prompt-config-engine 等价承载 persona', () => {
   for (const template of ['standard', 'minimal', 'ptc', 'creative']) {
     const dir = join(tmpdir(), `prompt-tool-${template}-${process.pid}-${Date.now()}`)
     const presetDir = join(dir, 'preset')
@@ -331,13 +330,13 @@ test('writePreset 官方导入预设（standard/minimal/ptc/creative）渲染组
       })
       const agent = readFileSync(join(presetDir, template, 'agent.cordis.yml'), 'utf8')
       const rows = parseYaml(agent)
-      assert.ok(rows.some((row) => row?.id === 'prompt-config-engine'), `${template}: 应含 prompt-config-engine 行`)
+      assert.equal(rows.filter((row) => row?.id === 'prompt-config-engine').length, 1, `${template}: persona 配置执行器应且仅应装配一次`)
+      for (const id of ['context-gate', 'tool-bootstrap', 'code-presentation']) {
+        assert.equal(rows.some((row) => row?.id === id), false, `${template}: 不应追加 ${id}`)
+      }
       assert.ok(!/__[A-Za-z0-9_]+__/.test(agent), `${template}: 不应残留未解析 token`)
-      assert.ok(rows.length >= 8, `${template}: 组合行数异常（${rows.length}）`)
+      assert.ok(rows.length >= 2, `${template}: 组合行数异常（${rows.length}）`)
       if (template === 'creative') {
-        // creative = 官方 cordis（创造模式）：人设为 promptConfigs 的 persona 模块
-        // （system-section + sectionName: deployment:persona），创意文本含 {{model}}/{{cwd}}；
-        // 配套 cordis 创作 skills 随预设复制进生成目录。
         const persona = readPersonaConfig(presetDir, 'creative')
         assert.ok(persona.params.sectionName === 'deployment:persona', 'creative 人设段应为 deployment:persona shadow')
         assert.ok(persona.text.includes('{{model}}'), 'creative 人设应保留 {{model}} 变量')
@@ -345,12 +344,10 @@ test('writePreset 官方导入预设（standard/minimal/ptc/creative）渲染组
         assert.ok(existsSync(join(presetDir, 'creative', 'skills', 'editing-cordis-compositions', 'SKILL.md')), 'editing-cordis-compositions skill 应随预设复制')
         assert.ok(existsSync(join(presetDir, 'creative', 'skills', 'cordis-plugin-development', 'SKILL.md')), 'cordis-plugin-development skill 应随预设复制')
       } else if (template === 'standard' || template === 'ptc') {
-        // standard / ptc 人设对齐官方 standard / code 预设原文（{{model}}/{{cwd}}，非独占）。
         const persona = readPersonaConfig(presetDir, template)
         assert.equal(persona.text, 'You are a coding agent powered by the {{model}} model. Your working directory is {{cwd}}.', `${template}: 人设应对齐官方原文`)
         assert.equal(persona.params?.complete, undefined, `${template}: 非独占（无 complete）`)
       } else if (template === 'minimal') {
-        // minimal 人设对齐官方 minimal 预设原文（RL 句）。
         const persona = readPersonaConfig(presetDir, 'minimal')
         assert.equal(persona.text, 'You are a helpful software engineer assistant.', 'minimal: 人设应对齐官方原文')
         assert.equal(persona.params?.complete, true, 'minimal: 人设独占（complete）')
@@ -402,7 +399,7 @@ test('writePreset aliasOf（方案 E）：别名目录带完整参数源 + name 
     rmSync(dir, { recursive: true, force: true })
   }
 })
-test('writePreset 自定义预设（custom，所有参数为空）渲染安全', () => {
+test('writePreset 自定义预设（custom）保持显式空组合', () => {
   const dir = join(tmpdir(), `prompt-tool-custom-${process.pid}-${Date.now()}`)
   const presetDir = join(dir, 'preset')
   try {
@@ -416,7 +413,7 @@ test('writePreset 自定义预设（custom，所有参数为空）渲染安全',
     })
     const agent = readFileSync(join(presetDir, 'custom', 'agent.cordis.yml'), 'utf8')
     const rows = parseYaml(agent)
-    assert.ok(Array.isArray(rows) && rows.length >= 5, `自定义预设组合应含引擎骨架（${rows.length}）`)
+    assert.deepEqual(rows, [], '空白预设不应隐式装配引擎能力')
     assert.ok(!/__[A-Za-z0-9_]+__/.test(agent), '不应残留未解析 token')
     const promptConfigs = readdirSync(join(presetDir, 'custom', 'prompt-configs'))
     assert.equal(promptConfigs.length, 0, '自定义预设 promptConfigs 应为空')
@@ -782,9 +779,9 @@ test('writePreset 旧版种子副本回退：纯元数据遮蔽包内模板 → 
     writeFileSync(join(userMinimal, 'preset.yml'), 'name: 极简模式（旧）\ndescription: 旧版种子副本\norder: 3\n', 'utf8')
     const warnings = []
     writePreset('PROMPT', { ...makeOptions(presetDir), presetTemplate: 'minimal', warn: (message) => warnings.push(message) })
-    // 回退包内模板渲染成功：组合指向共享引擎模块（包内新版参数化形态）
+    // 回退包内模板渲染成功：组合精确对齐官方 Minimal 基型。
     const cordis = readFileSync(join(presetDir, 'minimal', 'agent.cordis.yml'), 'utf8')
-    assert.ok(cordis.includes('../.engine/tool-bootstrap.mjs'), '组合来自包内新版模板（引擎模块而非本地 .mjs）')
+    assert.deepEqual(parseYaml(cordis).map((row) => row.id), ['persistent-shell', 'str-replace-editor', 'prompt-config-engine'])
     // 参数源升级：preset.yml 获得包内 modules 段，保留旧元数据命名
     const spec = parseYaml(readFileSync(join(presetDir, 'minimal', 'preset.yml'), 'utf8'))
     assert.ok(Array.isArray(spec.modules) && spec.modules.length > 0, '参数源升级为包内 modules 清单')
@@ -846,16 +843,16 @@ test('writePreset 禁用大条目瘦身：enabled=false 超阈值正文不落产
   }
 })
 
-test('writePreset 模块清单直接装配内置工具模块' , () => {
+test('writePreset anchored 不默认装配 ST 管理工具模块' , () => {
   const dir = join(tmpdir(), `prompt-tool-modules-${process.pid}-${Date.now()}`)
   const presetDir = join(dir, 'preset')
   try {
     writePreset('PROMPT', makeOptions(presetDir))
     const rows = parseYaml(readFileSync(join(presetDir, 'anchored', 'agent.cordis.yml'), 'utf8'))
     const ids = rows.map((row) => row?.id).filter(Boolean)
-    assert.ok(ids.includes('character-tools'), '角色卡工具模块应由 modules 装配')
-    assert.ok(ids.includes('world-book-tools'), '世界书工具模块应由 modules 装配')
-    assert.ok(ids.includes('session-var-tools'), '会话变量工具模块应由 modules 装配')
+    for (const id of ['character-tools', 'world-book-tools', 'session-var-tools', 'tool-config-engine']) {
+      assert.equal(ids.includes(id), false, `${id} 应由 ST 转换按需装配`)
+    }
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }

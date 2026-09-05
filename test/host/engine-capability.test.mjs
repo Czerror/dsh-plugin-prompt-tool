@@ -4,7 +4,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { parse as parseYaml } from 'yaml'
-import { createEngineCapabilityInPreset } from '../../lib/index.mjs'
+import { createEngineCapabilityInPreset, removeEngineCapabilityFromPreset } from '../../lib/index.mjs'
 
 test('能力创建一次写入 modules/初始参数并保持幂等', () => {
   const dir = mkdtempSync(join(tmpdir(), 'pt-engine-capability-'))
@@ -39,6 +39,56 @@ test('能力候选校验失败时不写入 preset.yml', () => {
     const before = readFileSync(file, 'utf8')
     assert.throws(() => createEngineCapabilityInPreset(dir, { action: 'create', capabilityId: 'tool-filter' }))
     assert.equal(readFileSync(file, 'utf8'), before)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('空白预设只装配用户新建的单项能力', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'pt-engine-capability-blank-'))
+  try {
+    const file = join(dir, 'preset.yml')
+    writeFileSync(file, 'id: blank\nname: blank\nversion: "1"\nengineCompat: ">=0"\nmodules: []\n', 'utf8')
+    const result = createEngineCapabilityInPreset(dir, { action: 'create', capabilityId: 'tool-filter' })
+    assert.equal(result.changed, true)
+    assert.deepEqual(parseYaml(readFileSync(file, 'utf8')).modules, ['tool-filter'])
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('删除能力只移除显式模块，保留 dormant 参数与未知字段', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'pt-engine-capability-remove-'))
+  try {
+    const file = join(dir, 'preset.yml')
+    writeFileSync(file, [
+      'id: demo', 'name: demo', 'version: "1"', 'engineCompat: ">=0"',
+      'modules: [context-gate, tool-bootstrap]',
+      'params: { bootstrapMaxTokens: 1024, customKeep: true }',
+      'moduleConfigs:', '  tool-bootstrap:', '    promoteGate: true',
+      'unknown: keep', '',
+    ].join('\n'), 'utf8')
+    const first = removeEngineCapabilityFromPreset(dir, 'tool-bootstrap')
+    assert.deepEqual(first, { changed: true, removedModules: ['tool-bootstrap'], capabilityIds: ['tool-bootstrap'] })
+    const parsed = parseYaml(readFileSync(file, 'utf8'))
+    assert.deepEqual(parsed.modules, ['context-gate'])
+    assert.equal(parsed.params.bootstrapMaxTokens, 1024, '参数保留为 dormant 配置')
+    assert.equal(parsed.moduleConfigs['tool-bootstrap'].promoteGate, true, '行配置保留为 dormant 配置')
+    assert.equal(parsed.unknown, 'keep')
+    assert.equal(removeEngineCapabilityFromPreset(dir, 'tool-bootstrap').changed, false, '重复删除幂等')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('删除最后一项能力后保持显式空组合', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'pt-engine-capability-remove-last-'))
+  try {
+    const file = join(dir, 'preset.yml')
+    writeFileSync(file, 'id: blank\nname: blank\nversion: "1"\nengineCompat: ">=0"\nmodules: [tool-filter]\n', 'utf8')
+    const result = removeEngineCapabilityFromPreset(dir, 'tool-filter')
+    assert.equal(result.changed, true)
+    assert.deepEqual(parseYaml(readFileSync(file, 'utf8')).modules, [])
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }

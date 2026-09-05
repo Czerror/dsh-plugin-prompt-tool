@@ -38,6 +38,7 @@ dsh --profile prompt-tool                                          # 首次启�
 - 🧩 **模板变量**：预设级 `variables` 段（`{{key}}` 插值源）——模块列表顶部「模板变量」卡片统一编辑（可折叠/清空/停用/失焦自动保存）；锚定匹配引擎（anchor-match）统一 custom-fallback 与 world-book 的匹配语义
 - 💬 **会话变量工具**：`session_var`（list/get/set/clear）——模型维护角色状态（`{{心情}}` 等），会话级覆盖预设默认；ST 运行时宏（`{{lastusermessage}}` / `{{lastcharmessage}}`）从会话事件提取
 - 🧩 **工具按模块装配**：角色卡、世界书、会话变量、自定义工具分别由 `character-tools` / `world-book-tools` / `session-var-tools` / `tool-config-engine` 模块提供；不再维护重复的顶层工具开关
+- 📐 **显式按需装配**：`modules: []` 保持空组合；四个官方基型只用 `prompt-config-engine` 承载等价 persona，不附加其他增强模块；Anchored 不预装 ST 管理工具
 
 ## Web 客户端结构
 
@@ -130,9 +131,10 @@ UI / 写盘展示顺序固定为 `pre-step → system-section → runtime-contex
 - `prompts[]` → `promptConfigs`：`system_prompt + role=system` → `system-section`（多条可 `mergeMode: merged` 拼接）；其余 → `pre-step`（`injection_position=0` → `before-all`，否则 `after-user`）；OFF 状态与 `injection_order` 原样保留
 - 采样参数（`temperature` / `openai_max_tokens` / `reasoning_effort`）**剥离**——模型参数统一由「模型设置」UI / 宿主默认管理
 - ST 变量：`setvar`/`getvar`（含默认值）收集进顶层 `variables`；未定义自定义宏自动登记空值占位（不留字面）
-- `enable_web_search`：`true` → 组装 `tool-web`（fetch 启用）；`false` → 不组装，改加 `tool-filter` 黑名单 `web_search / web_fetch`
+- ST 管理工具：始终装配 `character-tools`、`session-var-tools`、`tool-config-engine` 与空操作默认的 `tool-filter`
+- `enable_web_search`：`true` → 额外组装 `tool-web`（fetch 启用）；`false` → 复用 `tool-filter` 黑名单 `web_search / web_fetch`
 - 含有效 `character_book` 条目时自动追加 `world-book-tools` 模块，使导入预设可直接调用世界书管理工具
-- `modules` 按需装配：`prompt-config-engine` 始终；含 system-section 时补 `persona`（`complete: false` 允许 system 段生效）；含世界书条目时补 `world-book-tools`
+- `modules` 按需装配：`prompt-config-engine` 与上述 ST 管理工具始终存在；含 system-section 时补 `persona`（`complete: false` 允许 system 段生效）；含有效世界书条目时补 `world-book-tools`
 
 转换结果是一个普通预设（id 由文件名生成），可在工作台预设切换器中直接使用。字段级参数对照与完整示例见 [SillyTavern.md](docs/SillyTavern.md)。
 

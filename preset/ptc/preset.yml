@@ -21,15 +21,7 @@ modules:
   - tool-todo
   - tool-web
   - official-tool-presentation
-  - context-gate
-  - tool-bootstrap
   - prompt-config-engine
-  - character-tools
-  - world-book-tools
-  - session-var-tools
-  - run-code-env
-  - custom-bash
-  - skill-search
 model:
   provider: ""
   name: ""
@@ -43,10 +35,6 @@ subagentModel:
   temperature: ""
   maxTokens: ""
 params:
-  bootstrapMaxTokens: 0
-  allowKinds: "[skill-invocation, near-anchor, router-guide]"
-  toolFilterAllow: []
-  toolFilterDeny: []
   maxDepth: ""
 promptConfigs:
   - id: persona-main

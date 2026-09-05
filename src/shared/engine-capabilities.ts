@@ -1,6 +1,6 @@
 /** 引擎能力目录：把 UI capability id 与 preset module/row 实际事实解耦。 */
 
-export type ModuleSourceMode = 'explicit' | 'fallback' | 'composition' | 'official' | 'unknown'
+export type ModuleSourceMode = 'explicit' | 'composition' | 'official' | 'unknown'
 
 export interface PresetModuleFacts {
   declaredModules: string[] | null
@@ -25,7 +25,7 @@ export const ENGINE_CAPABILITIES: readonly EngineCapability[] = [
   { id: 'anchor-turn', moduleKeys: ['anchor-turn'], rowIds: ['anchor-turn'], displayLayer: 'pre-step' },
   { id: 'code-presentation', moduleKeys: ['code-presentation'], rowIds: ['code-presentation'], displayLayer: 'tool-pipeline' },
   { id: 'tool-filter', moduleKeys: ['tool-filter'], rowIds: ['tool-filter'], displayLayer: 'tool-pipeline' },
-  { id: 'str-replace-editor', moduleKeys: ['str-replace-editor', 'bootstrap-filesystem'], rowIds: ['str-replace-editor'], displayLayer: 'tool-pipeline' },
+  { id: 'str-replace-editor', moduleKeys: ['str-replace-editor'], rowIds: ['str-replace-editor'], displayLayer: 'tool-pipeline' },
   { id: 'deliberation-gate', moduleKeys: ['deliberation-gate'], rowIds: ['deliberation-gate'], displayLayer: 'tool-pipeline' },
   { id: 'cot-drip', moduleKeys: ['cot-drip'], rowIds: ['cot-drip'], displayLayer: 'tool-pipeline' },
 ] as const
@@ -51,14 +51,13 @@ export function engineRecipe(id: string): EngineRecipe | undefined {
   return ENGINE_RECIPES.find((recipe) => recipe.id === id)
 }
 
-/** facts 未知时宁可不显示卡，也不把参数草稿误报为已装配能力。 */
+/** 只有显式 modules 才代表本插件按需装配的能力；官方组合行只作运行事实。 */
 export function isEngineCapabilityPresent(id: string, facts: PresetModuleFacts | undefined): boolean {
-  if (facts === undefined || facts.sourceMode === 'unknown') return false
+  if (facts === undefined || facts.sourceMode !== 'explicit' || facts.effectiveModules === null) return false
   const capability = engineCapability(id)
   if (capability === undefined) return false
   const modules = new Set(facts.effectiveModules ?? [])
-  const rows = new Set(facts.rowIds)
-  return capability.moduleKeys.some((key) => modules.has(key)) || capability.rowIds.some((key) => rows.has(key))
+  return capability.moduleKeys.some((key) => modules.has(key))
 }
 
 export interface CustomToolIdentity {
