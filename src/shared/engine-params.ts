@@ -98,7 +98,7 @@ export interface EngineParams {
   stageSectionTemplate?: string
   /** 子代理也启用主对话工具过滤。 */
   toolFilterSubagents?: boolean
-  /** str-replace-editor 最大输出字符数（参数桥默认官方值 16000；UI 无专卡，高级参数 JSON 可编辑）。 */
+  /** str-replace-editor 最大输出字符数（参数桥默认官方值 16000；由引擎能力卡编辑）。 */
   strReplaceEditorMaxOutputChars?: number
   /** 前置锚定轮（anchor-turn 行）：用户首条真实消息前 prepend 合成锚定轮；false = 行挂载但禁用。 */
   anchorTurn?: boolean

@@ -564,8 +564,13 @@ export function savePresetParams(
 /** 原子写文件（tmp + rename）：preset.yml 增量写路径防截断与半写。 */
 export function atomicWriteTextFile(file: string, content: string): void {
   const tmp = `${file}.tmp-${process.pid}-${Date.now().toString(36)}`
-  writeFileSync(tmp, content, 'utf8')
-  renameSync(tmp, file)
+  try {
+    writeFileSync(tmp, content, 'utf8')
+    renameSync(tmp, file)
+  } catch (error) {
+    rmSync(tmp, { force: true })
+    throw error
+  }
 }
 
 /** 预设文件读-改-写（parseDocument 保留注释与未知键；mutate 内 setIn/deleteIn）。
@@ -763,7 +768,7 @@ export function buildModuleConfigsFromParams(params: Record<string, unknown>, op
   }
   merge('cot-drip', drip)
 
-  // str-replace-editor：官方 minimal 行（默认官方值 16000，params 显式覆盖）。
+  // str-replace-editor：bootstrap-filesystem 内嵌的官方 minimal 行（默认 16000，params 可覆盖）。
   const editor: Record<string, unknown> = {}
   editor.maxOutputChars = typeof params.strReplaceEditorMaxOutputChars === 'number'
     && Number.isSafeInteger(params.strReplaceEditorMaxOutputChars)
@@ -840,6 +845,15 @@ function compositionModuleDirs(): string[] {
   return [join(root, 'source', 'local'), join(root, 'library')]
 }
 
+/** 已发布版本中的旧模块名：Minimal 现在统一使用官方 filesystem 组合。 */
+const COMPOSITION_MODULE_ALIASES: Readonly<Record<string, string>> = {
+  'str-replace-editor': 'bootstrap-filesystem',
+}
+
+function canonicalCompositionModule(name: string): string {
+  return COMPOSITION_MODULE_ALIASES[name] ?? name
+}
+
 function assertBareModuleName(name: string): void {
   if (name.includes('/') || name.includes('\\') || name === '.' || name === '..' || name.includes('..')) {
     throw new Error(`composition module name ${JSON.stringify(name)} must be a bare library name`)
@@ -848,10 +862,11 @@ function assertBareModuleName(name: string): void {
 
 function moduleFile(name: string): string {
   assertBareModuleName(name)
-  const candidates = compositionModuleDirs().map((dir) => join(dir, `${name}.yml`))
+  const canonical = canonicalCompositionModule(name)
+  const candidates = compositionModuleDirs().map((dir) => join(dir, `${canonical}.yml`))
   const existing = candidates.filter((file) => existsSync(file))
   if (existing.length > 1) {
-    throw new Error(`composition module ${name} is duplicated across source/local and library: ${existing.join(', ')}`)
+    throw new Error(`composition module ${canonical} is duplicated across source/local and library: ${existing.join(', ')}`)
   }
   if (existing.length === 0) {
     throw new Error(`composition module ${name} not found in source/local or library`)
@@ -861,13 +876,19 @@ function moduleFile(name: string): string {
 
 function assembleModules(spec: PresetSpec): string {
   const parts: string[] = []
+  const seen = new Set<string>()
   for (const name of spec.modules ?? []) {
     if (typeof name !== 'string' || name.length === 0) {
       throw new Error(`preset ${spec.id}: modules must be non-empty strings`)
     }
+    const canonical = canonicalCompositionModule(name)
+    if (seen.has(canonical)) {
+      throw new Error(`preset ${spec.id}: duplicate composition module ${JSON.stringify(name)} (canonical ${JSON.stringify(canonical)})`)
+    }
+    seen.add(canonical)
     // 模块名 containment：只允许裸库名（禁路径分隔符 / .. / 点目录）。
     try {
-      parts.push(readFileSync(moduleFile(name), 'utf8'))
+      parts.push(readFileSync(moduleFile(canonical), 'utf8'))
     } catch (error) {
       throw new Error(`preset ${spec.id}: ${String((error as Error).message ?? error)}`)
     }
@@ -1019,7 +1040,12 @@ export function resolvePresetModuleFacts(
 
   let raw: string
   try {
-    raw = loadCompositionText(spec, templateDir)
+    // 事实展示对重复声明采用稳定去重；真正写入/渲染路径仍由
+    // assembleModules 拒绝重复项。这样 UI 不会因旧重复清单丢失全部事实。
+    const factsSpec = sourceMode === 'explicit' && declaredModules !== null
+      ? { ...spec, modules: declaredModules }
+      : spec
+    raw = loadCompositionText(factsSpec, templateDir)
   } catch {
     return { declaredModules, effectiveModules: null, rowIds: [], sourceMode: 'unknown', editable: false }
   }
@@ -1116,18 +1142,27 @@ export function createEngineCapabilityInPreset(
   const candidate = doc.toJS() as PresetSpec
   const rendered = renderComposition(candidate, {}, presetDir)
   const rows = assertCompositionArray(rendered, candidate)
-  const rowIds = new Set<string>()
-  const visit = (value: unknown): void => {
-    if (Array.isArray(value)) { for (const item of value) visit(item); return }
+  const rowPaths = new Map<string, string>()
+  const visit = (value: unknown, path: string): void => {
+    if (Array.isArray(value)) {
+      value.forEach((item, index) => visit(item, `${path}[${index}]`))
+      return
+    }
     if (value === null || typeof value !== 'object') return
     const record = value as Record<string, unknown>
-    if (typeof record.id === 'string') rowIds.add(record.id)
-    for (const child of Object.values(record)) visit(child)
+    if (typeof record.id === 'string' && record.id.length > 0) {
+      const firstPath = rowPaths.get(record.id)
+      if (firstPath !== undefined) {
+        throw new Error(`预设 ${candidate.id} 的组合包含重复 row id ${JSON.stringify(record.id)}（${firstPath} 与 ${path}）`)
+      }
+      rowPaths.set(record.id, path)
+    }
+    for (const [key, child] of Object.entries(record)) visit(child, `${path}.${key}`)
   }
-  visit(rows)
+  visit(rows, 'rows')
   for (const id of capabilityIds) {
     const capability = engineCapability(id)!
-    if (!capability.rowIds.some((rowId) => rowIds.has(rowId))) throw new Error(`能力 ${id} 的组合缺少预期 row`)
+    if (!capability.rowIds.some((rowId) => rowPaths.has(rowId))) throw new Error(`能力 ${id} 的组合缺少预期 row`)
   }
   if (addedModules.length === 0 && recipe === undefined) return { changed: false, addedModules, capabilityIds }
   if (addedModules.length === 0 && recipe !== undefined && Object.entries(recipe.initialParams ?? {}).every(([key]) => Object.prototype.hasOwnProperty.call(source.params ?? {}, key))) {

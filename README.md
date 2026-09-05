@@ -38,7 +38,7 @@ dsh --profile prompt-tool                                          # 首次启�
 - 🧩 **模板变量**：预设级 `variables` 段（`{{key}}` 插值源）——模块列表顶部「模板变量」卡片统一编辑（可折叠/清空/停用/失焦自动保存）；锚定匹配引擎（anchor-match）统一 custom-fallback 与 world-book 的匹配语义
 - 💬 **会话变量工具**：`session_var`（list/get/set/clear）——模型维护角色状态（`{{心情}}` 等），会话级覆盖预设默认；ST 运行时宏（`{{lastusermessage}}` / `{{lastcharmessage}}`）从会话事件提取
 - 🧩 **工具按模块装配**：角色卡、世界书、会话变量、自定义工具分别由 `character-tools` / `world-book-tools` / `session-var-tools` / `tool-config-engine` 模块提供；不再维护重复的顶层工具开关
-- 📐 **显式按需装配**：`modules: []` 保持空组合；四个官方基型只用 `prompt-config-engine` 承载等价 persona，不附加其他增强模块；Anchored 不预装 ST 管理工具
+- 📐 **显式按需装配**：`modules: []` 保持空组合；四个官方基型只用 `prompt-config-engine` 承载等价 persona，不附加其他增强模块；Minimal 与 Anchored 共用官方 `bootstrap-filesystem`（`fs-local` + `str-replace-editor` 同隔离域）；Anchored 不预装 ST 管理工具
 
 ## Web 客户端结构
 
@@ -174,7 +174,7 @@ pnpm typecheck && pnpm lint
 pnpm sync:anchored       # 刷新 upstream/dsh-anchored-standard 内联快照
 pnpm sync:yaml           # 刷新 engine/vendor/yaml（生成目录运行时 YAML 解析器）
 pnpm rebuild:composition # 只生成官方切块/变体；source/local 本地源不复制（失败安全）
-pnpm migrate:presets     # 离线一次性参数迁移（旧 worldBook/扁平模型键/旧覆盖文件；--dry-run 预览）
+pnpm migrate:presets     # 离线一次性参数迁移（旧 worldBook/扁平模型键/模块别名/旧覆盖文件；--dry-run 预览）
 ```
 
 ## 许可

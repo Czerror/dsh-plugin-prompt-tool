@@ -64,8 +64,8 @@ test('官方格式预设：无 id 回退目录名，无 modules/composition 回�
   }
 })
 
-/** str-replace-editor 参数化：params.strReplaceEditorMaxOutputChars 覆盖官方默认 16000。 */
-test('官方 str-replace-editor 行：params 覆盖 maxOutputChars 渲染生效', () => {
+/** bootstrap-filesystem 内嵌编辑器参数化：params 覆盖官方默认 16000。 */
+test('官方 bootstrap-filesystem 行：params 覆盖嵌套编辑器 maxOutputChars', () => {
   const home = mkdtempSync(join(tmpdir(), 'pt-editor-param-'))
   try {
     const presetDir = join(home, '.agent-presets', 'editor-param')
@@ -74,7 +74,7 @@ test('官方 str-replace-editor 行：params 覆盖 maxOutputChars 渲染生效'
       'id: editor-param',
       'name: 编辑器参数覆盖',
       'modules:',
-      '  - str-replace-editor',
+      '  - bootstrap-filesystem',
       'params:',
       '  strReplaceEditorMaxOutputChars: 32000',
       '',
@@ -96,6 +96,54 @@ test('官方 str-replace-editor 行：params 覆盖 maxOutputChars 渲染生效'
       const cordis = readFileSync(join(gen, 'editor-param', 'agent.cordis.yml'), 'utf8')
       if (!cordis.includes('maxOutputChars: 32000')) throw new Error('params 覆盖未生效: ' + cordis)
       if (/__[A-Za-z0-9_]+__/.test(cordis)) throw new Error('存在未解析 token')
+      console.log('OK')
+    `
+    const res = spawnSync(process.execPath, ['--input-type=module', '-e', script], {
+      cwd: rootDir,
+      env: { ...process.env, DSH_HOME: home },
+      encoding: 'utf8',
+    })
+    if (res.status !== 0) throw new Error(`probe failed: ${res.stderr || res.stdout}`)
+    assert.match(res.stdout, /OK/)
+  } finally {
+    rmSync(home, { recursive: true, force: true })
+  }
+})
+
+test('旧 str-replace-editor 模块名运行时归一到 bootstrap-filesystem', () => {
+  const home = mkdtempSync(join(tmpdir(), 'pt-editor-alias-'))
+  try {
+    const presetDir = join(home, '.agent-presets', 'editor-alias')
+    mkdirSync(presetDir, { recursive: true })
+    writeFileSync(join(presetDir, 'preset.yml'), [
+      'id: editor-alias',
+      'name: 旧编辑器别名',
+      'modules:',
+      '  - str-replace-editor',
+      '  - prompt-config-engine',
+      '',
+    ].join('\n'), 'utf8')
+
+    const script = `
+      import { readFileSync } from 'node:fs'
+      import { join } from 'node:path'
+      import { parse } from 'yaml'
+      const { writePreset } = await import('./lib/index.mjs')
+      const gen = join(process.env.DSH_HOME, '.agent-presets')
+      writePreset('PROMPT', {
+        presetDir: gen, presetTemplate: 'editor-alias', presetOrder: 1,
+        firstTurnAnchor: false, firstTurnText: '', firstTurnCustom: false,
+        guideText: '', guideCustom: false, injectPrompt: true,
+        modelProvider: '', subagentModelProvider: '', subagentModelName: '', modelName: '',
+        bootstrapMaxTokens: 0, usePtcMode: true, promptConfigs: [],
+      })
+      const rows = parse(readFileSync(join(gen, 'editor-alias', 'agent.cordis.yml'), 'utf8'))
+      if (rows.map((row) => row.id).join(',') !== 'bootstrap-filesystem,prompt-config-engine') {
+        throw new Error('旧模块别名未归一: ' + rows.map((row) => row.id).join(','))
+      }
+      if (rows[0].config.map((row) => row.id).join(',') !== 'fs-local,str-replace-editor') {
+        throw new Error('filesystem 子行不完整')
+      }
       console.log('OK')
     `
     const res = spawnSync(process.execPath, ['--input-type=module', '-e', script], {

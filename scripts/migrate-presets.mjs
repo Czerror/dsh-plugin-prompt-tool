@@ -6,12 +6,13 @@
 //   1. 旧 worldBook 段（injectMode + entries）→ promptConfigs（world-book 策略）；
 //   2. 旧扁平模型键（params.modelProvider 等）→ 顶层 model / subagentModel 段；
 //   3. 旧内容参数别名（params.guideComplexPattern）删除（运行时兼容已移除）；
-//   4. 旧参数覆盖文件 prompt-tool.overrides.yml → 并入 preset.yml params 后归档 .bak。
+//   4. 旧参数覆盖文件 prompt-tool.overrides.yml → 并入 preset.yml params 后归档 .bak；
+//   5. 旧 str-replace-editor 模块名 → 官方 bootstrap-filesystem 组合。
 // 安全：dry-run（--dry-run / -n）只报告不写盘；写盘前每份 preset.yml 备份 .bak；
 // 解析失败 fail loud（非零退出），不动用户资产。
 //
 // 用法：node scripts/migrate-presets.mjs [--dry-run]
-import { readFileSync, writeFileSync, renameSync, existsSync, readdirSync } from 'node:fs'
+import { readFileSync, writeFileSync, renameSync, existsSync, readdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { parseDocument } from 'yaml'
 
@@ -71,7 +72,7 @@ function worldBookToConfigs(worldBook) {
 /** 迁移单个预设目录；返回 { changed, summary }。 */
 function migratePresetDir(presetDir) {
   const presetFile = join(presetDir, 'preset.yml')
-  const summary = { worldBook: 0, flatModel: 0, oldParam: 0, overrides: false }
+  const summary = { worldBook: 0, flatModel: 0, oldParam: 0, moduleAlias: false, overrides: false }
   if (!existsSync(presetFile)) return { changed: false, summary }
   let doc
   try {
@@ -87,9 +88,16 @@ function migratePresetDir(presetDir) {
     // Document API 返回 YAML 节点：toJS(doc) 转普通对象再迁移（节点 toJS 需文档参数）。
     const configs = worldBookToConfigs(typeof worldBook.toJS === 'function' ? worldBook.toJS(doc) : worldBook)
     if (configs.length > 0) {
-      const existing = doc.get('promptConfigs')
-      if (existing === null || !Array.isArray(existing)) doc.set('promptConfigs', configs)
-      else doc.set('promptConfigs', [...existing, ...configs])
+      const current = doc.toJS()
+      const existingConfigs = Array.isArray(current?.promptConfigs) ? current.promptConfigs : []
+      const ids = new Set(existingConfigs
+        .filter((item) => item !== null && typeof item === 'object' && typeof item.id === 'string')
+        .map((item) => item.id))
+      doc.set('promptConfigs', [...existingConfigs, ...configs.filter((item) => {
+        if (ids.has(item.id)) return false
+        ids.add(item.id)
+        return true
+      })])
       summary.worldBook = configs.length
       changed = true
     }
@@ -115,7 +123,20 @@ function migratePresetDir(presetDir) {
     changed = true
   }
 
-  // 4) 旧参数覆盖文件并入 params（随后归档 .bak）。
+  // 4) 旧 Minimal 拆分模块迁移到官方 filesystem 组合；若两者同时存在，
+  // 保留一个 canonical 模块，避免生成重复 Loader row。
+  const modulesNode = doc.get('modules')
+  const modules = modulesNode !== null && modulesNode !== undefined && typeof modulesNode.toJS === 'function'
+    ? modulesNode.toJS(doc)
+    : modulesNode
+  if (Array.isArray(modules) && modules.includes('str-replace-editor')) {
+    const canonical = [...new Set(modules.map((name) => name === 'str-replace-editor' ? 'bootstrap-filesystem' : name))]
+    doc.set('modules', canonical)
+    summary.moduleAlias = true
+    changed = true
+  }
+
+  // 5) 旧参数覆盖文件并入 params（随后归档 .bak）。
   const overridesFile = join(presetDir, 'prompt-tool.overrides.yml')
   if (existsSync(overridesFile)) {
     const overrides = parseDocument(readFileSync(overridesFile, 'utf8'), { logLevel: 'silent' })
@@ -132,13 +153,22 @@ function migratePresetDir(presetDir) {
   // 写盘前备份 preset.yml（.bak-<时间戳>），失败非零并保留原文件。
   const backup = `${presetFile}.bak-${Date.now().toString(36)}`
   if (DRY_RUN) {
-    console.log(`[dry-run] ${presetDir}: worldBook=${summary.worldBook} flatModel=${summary.flatModel} oldParam=${summary.oldParam} overrides=${summary.overrides}`)
+    console.log(`[dry-run] ${presetDir}: worldBook=${summary.worldBook} flatModel=${summary.flatModel} oldParam=${summary.oldParam} moduleAlias=${summary.moduleAlias} overrides=${summary.overrides}`)
     return { changed: true, summary }
   }
+  const migratedText = doc.toString()
   writeFileSync(backup, readFileSync(presetFile, 'utf8'), 'utf8')
-  writeFileSync(presetFile, doc.toString(), 'utf8')
+  // 先写同目录临时文件，再 rename；迁移过程中进程中断不会留下截断的 preset.yml。
+  const temporary = `${presetFile}.tmp-${process.pid}-${Date.now().toString(36)}`
+  try {
+    writeFileSync(temporary, migratedText, 'utf8')
+    renameSync(temporary, presetFile)
+  } catch (error) {
+    rmSync(temporary, { force: true })
+    throw new Error(`preset ${presetFile} 写盘失败：${String(error?.message ?? error)}`)
+  }
   if (summary.overrides) renameSync(overridesFile, `${overridesFile}.bak-${Date.now().toString(36)}`)
-  console.log(`migrated ${presetDir}: worldBook=${summary.worldBook} flatModel=${summary.flatModel} oldParam=${summary.oldParam} overrides=${summary.overrides} (backup ${backup})`)
+  console.log(`migrated ${presetDir}: worldBook=${summary.worldBook} flatModel=${summary.flatModel} oldParam=${summary.oldParam} moduleAlias=${summary.moduleAlias} overrides=${summary.overrides} (backup ${backup})`)
   return { changed: true, summary }
 }
 

@@ -22,12 +22,16 @@ test('migrate-presets：旧 worldBook/扁平模型键/旧参数别名/覆盖文�
     const before = [
       'id: beta',
       'name: Beta',
+      'modules: [str-replace-editor, bootstrap-filesystem, str-replace-editor]',
       'params:',
       '  modelProvider: deepseek-official',
       '  modelName: deepseek-v4-pro',
       '  modelTemperature: "0.7"',
       '  guideComplexPattern: "old"',
       '  keepMe: v',
+      'promptConfigs:',
+      '  - id: keep-config',
+      '    text: keep',
       'worldBook:',
       '  injectMode: keyword',
       '  entries:',
@@ -53,10 +57,14 @@ test('migrate-presets：旧 worldBook/扁平模型键/旧参数别名/覆盖文�
     // worldBook 段删除并转为 promptConfigs。
     assert.doesNotMatch(doc, /worldBook:/)
     assert.match(doc, /strategy: world-book/)
+    assert.match(doc, /id: keep-config/, '已有 promptConfigs 应保留')
     // 覆盖文件并入后归档 .bak。
     assert.match(doc, /firstTurnAnchor: true/)
+    assert.match(doc, /modules:\n\s+- bootstrap-filesystem/)
+    assert.doesNotMatch(doc, /str-replace-editor/)
     assert.equal(existsSync(join(dir, 'prompt-tool.overrides.yml')), false, '覆盖文件已归档')
     assert.ok(readdirSync(dir).some((name) => name.startsWith('preset.yml.bak-')), 'preset.yml 写盘前有备份')
+    assert.equal(readdirSync(dir).some((name) => name.includes('.tmp-')), false, '原子写盘临时文件应清理')
   } finally {
     rmSync(home, { recursive: true, force: true })
   }

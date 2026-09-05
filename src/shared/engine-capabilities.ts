@@ -25,7 +25,9 @@ export const ENGINE_CAPABILITIES: readonly EngineCapability[] = [
   { id: 'anchor-turn', moduleKeys: ['anchor-turn'], rowIds: ['anchor-turn'], displayLayer: 'pre-step' },
   { id: 'code-presentation', moduleKeys: ['code-presentation'], rowIds: ['code-presentation'], displayLayer: 'tool-pipeline' },
   { id: 'tool-filter', moduleKeys: ['tool-filter'], rowIds: ['tool-filter'], displayLayer: 'tool-pipeline' },
-  { id: 'str-replace-editor', moduleKeys: ['str-replace-editor'], rowIds: ['str-replace-editor'], displayLayer: 'tool-pipeline' },
+  // bootstrap-filesystem 同时提供 fs-local 与 str-replace-editor，二者必须同域；
+  // 保留旧模块名作迁移别名，创建时只追加 canonical 模块。
+  { id: 'str-replace-editor', moduleKeys: ['bootstrap-filesystem', 'str-replace-editor'], rowIds: ['str-replace-editor'], displayLayer: 'tool-pipeline' },
   { id: 'deliberation-gate', moduleKeys: ['deliberation-gate'], rowIds: ['deliberation-gate'], displayLayer: 'tool-pipeline' },
   { id: 'cot-drip', moduleKeys: ['cot-drip'], rowIds: ['cot-drip'], displayLayer: 'tool-pipeline' },
 ] as const

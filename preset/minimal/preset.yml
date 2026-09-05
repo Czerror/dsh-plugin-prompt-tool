@@ -5,7 +5,7 @@ version: 1.0.0
 engineCompat: ">=0.4.2"
 modules:
   - official-persistent-shell
-  - str-replace-editor
+  - bootstrap-filesystem
   - prompt-config-engine
 model:
   provider: ""

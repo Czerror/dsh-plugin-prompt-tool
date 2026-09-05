@@ -20,13 +20,41 @@ const compositionDir = join(root, 'engine', 'compositions')
 const libraryDir = join(compositionDir, 'library')
 const localDir = join(compositionDir, 'source', 'local')
 const sourceRepo = basename(repo) || 'deepseek-harness'
-const OFFICIAL_PRESETS = ['standard', 'minimal', 'ptc', 'cordis']
-const OFFICIAL_PRESET_TARGETS = new Map([
-  ['standard', 'standard'],
-  ['minimal', 'minimal'],
-  ['ptc', 'ptc'],
-  ['cordis', 'creative'],
-])
+
+/**
+ * Discover the upstream preset set instead of silently assuming a fixed list.
+ * The four shipped targets below are the only known semantic mappings; a new
+ * upstream preset therefore fails loudly until a matching local target exists.
+ */
+function discoverOfficialPresets() {
+  if (!existsSync(presetsDir)) throw new Error(`official preset directory not found: ${presetsDir}`)
+  const directories = readdirSync(presetsDir, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() && !entry.name.startsWith('.'))
+  for (const entry of directories) {
+    if (!existsSync(join(presetsDir, entry.name, 'agent.cordis.yml'))) {
+      throw new Error(`official preset ${entry.name} is missing agent.cordis.yml`)
+    }
+  }
+  return directories.map((entry) => entry.name).sort()
+}
+
+const OFFICIAL_PRESETS = discoverOfficialPresets()
+if (OFFICIAL_PRESETS.length === 0) throw new Error(`no official presets with agent.cordis.yml found in ${presetsDir}`)
+const TARGET_PRESET_OVERRIDES = new Map([['cordis', 'creative']])
+const OFFICIAL_PRESET_TARGETS = new Map(
+  OFFICIAL_PRESETS.map((preset) => [preset, TARGET_PRESET_OVERRIDES.get(preset) ?? preset]),
+)
+const targetOwners = new Map()
+for (const [sourcePreset, targetPreset] of OFFICIAL_PRESET_TARGETS) {
+  const previous = targetOwners.get(targetPreset)
+  if (previous !== undefined) {
+    throw new Error(`official presets ${previous} and ${sourcePreset} map to the same target ${targetPreset}`)
+  }
+  targetOwners.set(targetPreset, sourcePreset)
+  if (!existsSync(join(root, 'preset', targetPreset, 'preset.yml'))) {
+    throw new Error(`official preset ${sourcePreset} has no local target preset/${targetPreset}/preset.yml`)
+  }
+}
 
 /**
  * 按顶层行切分官方组合文本。
@@ -61,6 +89,7 @@ function sections(text, source) {
     if (!Array.isArray(parsed) || parsed.length !== 1 || parsed[0]?.id !== id) {
       throw new Error(`${source}: failed to split top-level row ${id}`)
     }
+    if (out.has(id)) throw new Error(`${source}: duplicate top-level row id ${id}`)
     out.set(id, body)
   }
   return out
@@ -74,6 +103,14 @@ for (const preset of OFFICIAL_PRESETS) {
   officialSections.set(preset, sections(text, source))
   const parsed = parseYaml(text, { logLevel: 'silent' })
   if (!Array.isArray(parsed)) throw new Error(`${source}: composition must be a top-level row list`)
+  const ids = []
+  for (const [index, row] of parsed.entries()) {
+    const id = row !== null && typeof row === 'object' && !Array.isArray(row) ? row.id : undefined
+    if (typeof id !== 'string' || id.length === 0) throw new Error(`${source}: row ${index + 1} must declare a non-empty id`)
+    ids.push(id)
+  }
+  const duplicate = ids.find((id, index) => ids.indexOf(id) !== index)
+  if (duplicate !== undefined) throw new Error(`${source}: duplicate top-level row id ${duplicate}`)
   officialRows.set(preset, new Map(parsed.map((row) => [row.id, row])))
 }
 
@@ -103,10 +140,14 @@ const PATCHES = {
 function applyPatches(id, text, source) {
   let out = text
   for (const patch of PATCHES[id] ?? []) {
-    if (!out.includes(patch.from)) {
+    const occurrences = out.split(patch.from).length - 1
+    if (occurrences === 0) {
       throw new Error(`${id}: official patch marker missing in ${source}:\n${patch.from}`)
     }
-    out = out.replaceAll(patch.from, patch.to)
+    if (occurrences !== 1) {
+      throw new Error(`${id}: official patch marker occurs ${occurrences} times in ${source}; expected exactly once`)
+    }
+    out = out.replace(patch.from, patch.to)
   }
   return out
 }
@@ -144,6 +185,39 @@ const OFFICIAL_MODULES = [
   { id: 'bootstrap-filesystem', preset: 'minimal', sourceId: 'filesystem' },
 ]
 
+/**
+ * Target preset module names in official row order. Most rows keep their id;
+ * these aliases are the deliberate local split/variant names. The generated
+ * prompt-config-engine is a local module appended to every official target.
+ */
+const TARGET_MODULE_OVERRIDES = {
+  standard: {
+    'agent-instructions': 'official-agent-instructions',
+    'tool-bash': 'official-tool-bash',
+    'tool-skill': 'official-tool-skill',
+  },
+  minimal: {
+    'persistent-shell': 'official-persistent-shell',
+    // Minimal keeps the upstream filesystem group (including its editor).
+    filesystem: 'bootstrap-filesystem',
+  },
+  ptc: {
+    'agent-instructions': 'official-agent-instructions',
+    'tool-bash': 'official-tool-bash',
+    'tool-skill': 'official-tool-skill',
+    delegation: 'delegation-ptc',
+    'tool-presentation': 'official-tool-presentation',
+  },
+  cordis: {
+    'agent-instructions': 'official-agent-instructions',
+    'tool-bash': 'official-tool-bash',
+    'tool-skill': 'official-tool-skill',
+    'tool-cordis': 'official-tool-cordis',
+    'skill-filesystem': 'official-skill-filesystem-cordis',
+  },
+}
+const TARGET_EXTRA_MODULES = ['prompt-config-engine']
+
 const localFiles = readdirSync(localDir).filter((file) => file.endsWith('.yml')).sort()
 const localIds = new Set(localFiles.map((file) => file.slice(0, -4)))
 const officialIds = new Set()
@@ -161,6 +235,98 @@ for (const file of localFiles) {
   }
 }
 
+function duplicateValues(values) {
+  const seen = new Set()
+  const duplicates = new Set()
+  for (const value of values) {
+    if (seen.has(value)) duplicates.add(value)
+    else seen.add(value)
+  }
+  return [...duplicates]
+}
+
+/** Derive the exact target module sequence from the discovered official rows. */
+function expectedTargetModules(sourcePreset) {
+  const rows = officialRows.get(sourcePreset)
+  if (rows === undefined) throw new Error(`official preset ${sourcePreset} was not loaded`)
+  const overrides = TARGET_MODULE_OVERRIDES[sourcePreset] ?? {}
+  const expected = []
+  for (const id of rows.keys()) {
+    // The local prompt-config-engine/persona-main pair is the persona carrier;
+    // do not duplicate the upstream Cordis persona row in a target composition.
+    if (id === 'persona') continue
+    expected.push(overrides[id] ?? id)
+  }
+  expected.push(...TARGET_EXTRA_MODULES)
+  return expected
+}
+
+function listFiles(dir, prefix = '') {
+  const files = []
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const relative = prefix.length > 0 ? join(prefix, entry.name) : entry.name
+    if (entry.isDirectory()) files.push(...listFiles(join(dir, entry.name), relative))
+    else if (entry.isFile()) files.push(relative)
+  }
+  return files
+}
+
+/** Required non-definition assets (currently Cordis skills) must stay in sync. */
+function assertTargetAssets(sourcePreset, targetPreset) {
+  const sourceDir = join(presetsDir, sourcePreset)
+  const targetDir = join(root, 'preset', targetPreset)
+  for (const relative of listFiles(sourceDir)) {
+    if (relative === 'preset.yml' || relative === 'agent.cordis.yml') continue
+    const sourceFile = join(sourceDir, relative)
+    const targetFile = join(targetDir, relative)
+    if (!existsSync(targetFile)) {
+      throw new Error(`${targetPreset}: required asset missing (${relative}) for official ${sourcePreset}`)
+    }
+    let sourceBytes
+    let targetBytes
+    try {
+      sourceBytes = readFileSync(sourceFile)
+      targetBytes = readFileSync(targetFile)
+    } catch (error) {
+      throw new Error(`${targetPreset}: required asset unreadable (${relative}): ${String(error?.message ?? error)}`)
+    }
+    if (!sourceBytes.equals(targetBytes)) {
+      throw new Error(`${targetPreset}: required asset differs from official ${sourcePreset} (${relative})`)
+    }
+  }
+}
+
+function assertTargetModules(sourcePreset, targetPreset, tmpDir) {
+  const specFile = join(root, 'preset', targetPreset, 'preset.yml')
+  let spec
+  try {
+    spec = parseYaml(readFileSync(specFile, 'utf8'), { logLevel: 'silent' })
+  } catch (error) {
+    throw new Error(`${targetPreset}: preset.yml cannot be parsed: ${String(error?.message ?? error)}`)
+  }
+  if (spec === null || typeof spec !== 'object' || Array.isArray(spec)) {
+    throw new Error(`${targetPreset}: preset.yml must contain a mapping`)
+  }
+  const actual = spec.modules
+  if (!Array.isArray(actual) || actual.some((name) => typeof name !== 'string' || name.length === 0)) {
+    throw new Error(`${targetPreset}: modules must be a non-empty-string array`)
+  }
+  const duplicate = duplicateValues(actual)
+  if (duplicate.length > 0) {
+    throw new Error(`${targetPreset}: duplicate modules: ${duplicate.join(', ')}`)
+  }
+  const expected = expectedTargetModules(sourcePreset)
+  if (actual.length !== expected.length || actual.some((name, index) => name !== expected[index])) {
+    throw new Error(`${targetPreset}: modules do not match official ${sourcePreset} order (expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)})`)
+  }
+  for (const name of actual) {
+    if (!localIds.has(name) && !existsSync(join(tmpDir, `${name}.yml`))) {
+      throw new Error(`${targetPreset}: module ${name} is missing from source/local and rebuilt library`)
+    }
+  }
+  assertTargetAssets(sourcePreset, targetPreset)
+}
+
 /** 稳定语义签名：用于验证四套官方预设的每个非 persona 行都有拆解来源。 */
 function stable(value) {
   if (Array.isArray(value)) return value.map(stable)
@@ -172,7 +338,14 @@ function stable(value) {
 const signature = (value) => JSON.stringify(stable(value))
 for (const [sourcePreset, targetPreset] of OFFICIAL_PRESET_TARGETS) {
   const spec = parseYaml(readFileSync(join(root, 'preset', targetPreset, 'preset.yml'), 'utf8'))
-  const persona = spec.promptConfigs?.find((config) => config?.id === 'persona-main')
+  const personas = Array.isArray(spec?.promptConfigs)
+    ? spec.promptConfigs.filter((config) => config?.id === 'persona-main')
+    : []
+  if (personas.length !== 1) throw new Error(`${targetPreset}: expected exactly one promptConfigs persona-main entry`)
+  const persona = personas[0]
+  if (persona.layer !== 'system-section' || persona.strategy !== 'static' || persona.params?.sectionName !== 'deployment:persona') {
+    throw new Error(`${targetPreset}: persona-main must use system-section/static deployment:persona`)
+  }
   const params = persona?.params ?? {}
   const mapped = {
     text: persona?.text,
@@ -221,7 +394,13 @@ try {
     }
   }
 
-  // 全部包内预设的 modules 清单必须在 source/local 或新 library 中齐全，且不能两处重叠。
+  // 官方目标预设必须完整复刻上游行序（含本地别名/附加模块），并校验
+  // Cordis 预设携带的 skills 等必要资产；不能只检查文件是否存在。
+  for (const [sourcePreset, targetPreset] of OFFICIAL_PRESET_TARGETS) {
+    assertTargetModules(sourcePreset, targetPreset, tmpDir)
+  }
+
+  // 其余包内预设也至少拒绝重复 modules，并确保每项有唯一来源。
   const presetRoot = join(root, 'preset')
   const checked = []
   for (const entry of readdirSync(presetRoot, { withFileTypes: true })) {
@@ -229,7 +408,13 @@ try {
     const specFile = join(presetRoot, entry.name, 'preset.yml')
     if (!existsSync(specFile)) continue
     const spec = parseYaml(readFileSync(specFile, 'utf8'))
-    for (const name of Array.isArray(spec.modules) ? spec.modules : []) {
+    const modules = Array.isArray(spec.modules) ? spec.modules : []
+    const duplicate = duplicateValues(modules)
+    if (duplicate.length > 0) throw new Error(`preset ${entry.name}: duplicate modules: ${duplicate.join(', ')}`)
+    for (const name of modules) {
+      if (typeof name !== 'string' || name.length === 0) {
+        throw new Error(`preset ${entry.name}: modules must contain non-empty strings`)
+      }
       const inSource = localIds.has(name)
       const inLibrary = existsSync(join(tmpDir, `${name}.yml`))
       if (inSource && inLibrary) throw new Error(`preset ${entry.name}: module ${name} is duplicated across source/local and library`)

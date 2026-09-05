@@ -31,13 +31,14 @@ test('modules: [] 是显式空装配，不再展开默认引擎能力', () => {
   assert.deepEqual(JSON.parse(renderComposition(blank, {})), [])
 })
 
-test('能力事实覆盖 module key 与 nested/alias row id', () => {
+test('能力事实覆盖 filesystem module 与 nested row id', () => {
   const dir = fileURLToPath(new URL('../../preset/minimal/', import.meta.url))
   const facts = resolvePresetModuleFacts(preset('minimal'), dir, true)
   assert.equal(facts.sourceMode, 'explicit')
-  assert.ok(facts.effectiveModules.includes('str-replace-editor'))
+  assert.ok(facts.effectiveModules.includes('bootstrap-filesystem'))
   assert.equal(facts.editable, true)
   assert.ok(facts.rowIds.includes('persistent-shell'))
+  assert.ok(facts.rowIds.includes('fs-local'))
   assert.ok(facts.rowIds.includes('str-replace-editor'))
   assert.equal(isEngineCapabilityPresent('str-replace-editor', facts), true)
 })

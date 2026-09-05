@@ -3,13 +3,14 @@ import assert from 'node:assert/strict'
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { pathToFileURL } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { parse as parseYaml, parseDocument } from 'yaml'
 
 // 隔离 DSH_HOME：writePreset 的模板解析（resolvePresetDir）用户预设优先——
 // 真实用户环境 .agent-presets/<id> 会遮蔽包内模板，测试必须隔离。
 const home = mkdtempSync(join(tmpdir(), 'pt-wp-home-'))
 process.env.DSH_HOME = home
+const ROOT = fileURLToPath(new URL('../..', import.meta.url))
 const { writePreset, savePresetParams, loadPresetSpec } = await import('../../lib/index.mjs')
 
 function makeOptions(presetDir) {
@@ -143,7 +144,7 @@ test('模型参数改回留空：空串删除 preset.yml 旧键（渲染层空�
   const dir = join(tmpdir(), `prompt-tool-clear-${process.pid}-${Date.now()}`)
   const presetDir = join(dir, 'preset')
   try {
-    cpSync(join(process.cwd(), 'preset', 'anchored'), join(presetDir, 'anchored'), { recursive: true })
+    cpSync(join(ROOT, 'preset', 'anchored'), join(presetDir, 'anchored'), { recursive: true })
     // 1) 先设置 high。
     savePresetParams(presetDir, 'anchored', { modelReasoningEffort: 'high' }, undefined)
     assert.equal(loadPresetSpec(join(presetDir, 'anchored')).params.modelReasoningEffort, 'high', '设置 high 写入预设参数')
@@ -159,7 +160,7 @@ test('savePresetParams 空值删键：空数组删除，stagePreUnlock=0 是合�
   const dir = join(tmpdir(), `prompt-tool-empty-${process.pid}-${Date.now()}`)
   const presetDir = join(dir, 'preset')
   try {
-    cpSync(join(process.cwd(), 'preset', 'anchored'), join(presetDir, 'anchored'), { recursive: true })
+    cpSync(join(ROOT, 'preset', 'anchored'), join(presetDir, 'anchored'), { recursive: true })
     // 1) 设置有值：bootstrapTools / messageSources / stagePreUnlock / maxPromoteSteps。
     savePresetParams(presetDir, 'anchored', {
       bootstrapTools: ['bash'],
@@ -471,6 +472,38 @@ test('writePreset 预设隔离：多模板并存，overrides 随子预设互不�
   }
 })
 
+test('writePreset worldBook 迁移持久化 promptConfigs，第二次重建不丢条目', () => {
+  const presetDir = join(home, '.agent-presets')
+  const userTemplate = join(presetDir, 'anchored')
+  try {
+    rmSync(userTemplate, { recursive: true, force: true })
+    cpSync(join(ROOT, 'preset', 'anchored'), userTemplate, { recursive: true })
+    const presetFile = join(userTemplate, 'preset.yml')
+    const doc = parseDocument(readFileSync(presetFile, 'utf8'))
+    doc.setIn(['worldBook'], {
+      injectMode: 'keyword',
+      entries: [{ id: 'runtime-wb', name: '运行时条目', text: '迁移内容', keys: ['runtime'] }],
+    })
+    writeFileSync(presetFile, doc.toString(), 'utf8')
+
+    writePreset('PROMPT', { ...makeOptions(presetDir), presetTemplate: 'anchored' })
+    const migrated = parseYaml(readFileSync(presetFile, 'utf8'))
+    assert.equal(migrated.worldBook, undefined, '旧 worldBook 段应删除')
+    assert.equal(migrated.promptConfigs.filter((item) => item.id === 'runtime-wb').length, 1,
+      '迁移后的 promptConfigs 应写回参数源')
+
+    writePreset('PROMPT', { ...makeOptions(presetDir), presetTemplate: 'anchored' })
+    const persisted = parseYaml(readFileSync(presetFile, 'utf8'))
+    assert.equal(persisted.promptConfigs.filter((item) => item.id === 'runtime-wb').length, 1,
+      '第二次重建应保留且不重复迁移条目')
+    const generatedDir = join(presetDir, 'anchored', 'prompt-configs')
+    const generated = readdirSync(generatedDir).filter((name) => name.endsWith('-runtime-wb.yml'))
+    assert.equal(generated.length, 1, '迁移条目应继续物化')
+  } finally {
+    rmSync(userTemplate, { recursive: true, force: true })
+  }
+})
+
 test('writePreset 拒绝非法 presetTemplate（路径穿越防护）', () => {
   const dir = join(tmpdir(), `prompt-tool-sec-${process.pid}-${Date.now()}`)
   const presetDir = join(dir, 'preset')
@@ -508,7 +541,7 @@ test('writePreset 预设级模板变量生成 variables.yml（顶层 variables �
     // 复制包内完整 anchored 模板到 DSH_HOME 用户根，再写入顶层 variables 与
     // 旧布局 params 内容键（兼容层），模拟真实用户预设。
     const homePresetDir = join(home, '.agent-presets')
-    cpSync(join(process.cwd(), 'preset', 'anchored'), join(homePresetDir, 'anchored'), { recursive: true })
+    cpSync(join(ROOT, 'preset', 'anchored'), join(homePresetDir, 'anchored'), { recursive: true })
     const presetFile = join(homePresetDir, 'anchored', 'preset.yml')
     const doc = parseDocument(readFileSync(presetFile, 'utf8'))
     doc.setIn(['params', 'legacyVar'], '旧值')
@@ -557,7 +590,7 @@ test('writePreset 自定义工具渲染 custom-tools/<n>-<id>.yml（源 = preset
   const presetDir = join(dir, 'preset')
   try {
     const homePresetDir = join(home, '.agent-presets')
-    cpSync(join(process.cwd(), 'preset', 'anchored'), join(homePresetDir, 'anchored'), { recursive: true })
+    cpSync(join(ROOT, 'preset', 'anchored'), join(homePresetDir, 'anchored'), { recursive: true })
     const presetFile = join(homePresetDir, 'anchored', 'preset.yml')
     const doc = parseDocument(readFileSync(presetFile, 'utf8'))
     doc.setIn(['customTools'], [
@@ -595,7 +628,7 @@ test('writePreset 自动校验并装配 subagentToolPolicy，非法策略拒绝'
   const presetDir = join(dir, 'preset')
   try {
     const homePresetDir = join(home, '.agent-presets')
-    cpSync(join(process.cwd(), 'preset', 'minimal'), join(homePresetDir, 'minimal'), { recursive: true })
+    cpSync(join(ROOT, 'preset', 'minimal'), join(homePresetDir, 'minimal'), { recursive: true })
     const presetFile = join(homePresetDir, 'minimal', 'preset.yml')
     const doc = parseDocument(readFileSync(presetFile, 'utf8'))
     doc.setIn(['subagentToolPolicy'], {
@@ -643,7 +676,7 @@ test('P1 回归：晋升门控/渐进披露/验证工具参数键不进 variable
   try {
     // 复制 anchored 模板，params 加新增参数键（模拟用户手写/UI 保存）。
     const homePresetDir = join(home, '.agent-presets')
-    cpSync(join(process.cwd(), 'preset', 'anchored'), join(homePresetDir, 'anchored'), { recursive: true })
+    cpSync(join(ROOT, 'preset', 'anchored'), join(homePresetDir, 'anchored'), { recursive: true })
     const presetFile = join(homePresetDir, 'anchored', 'preset.yml')
     const doc = parseDocument(readFileSync(presetFile, 'utf8'))
     doc.setIn(['params', 'promoteGate'], true)
@@ -740,7 +773,7 @@ test('模板变量插值开关：停用不生成 variables.yml 且剥离配置�
     texts: ['剧情{{wordsCloud}}字 {{DSH_HOME}}'],
   }]
   try {
-    cpSync(join(process.cwd(), 'preset', 'anchored'), join(homePresetDir, 'anchored'), { recursive: true })
+    cpSync(join(ROOT, 'preset', 'anchored'), join(homePresetDir, 'anchored'), { recursive: true })
     savePresetParams(homePresetDir, 'anchored', undefined, undefined, { wordsCloud: '1500字' }, false)
     const pcDir = join(presetDir, 'anchored', 'prompt-configs')
     writePreset('PROMPT', { ...makeOptions(presetDir), promptConfigs: varConfig() })
@@ -781,7 +814,7 @@ test('writePreset 旧版种子副本回退：纯元数据遮蔽包内模板 → 
     writePreset('PROMPT', { ...makeOptions(presetDir), presetTemplate: 'minimal', warn: (message) => warnings.push(message) })
     // 回退包内模板渲染成功：组合精确对齐官方 Minimal 基型。
     const cordis = readFileSync(join(presetDir, 'minimal', 'agent.cordis.yml'), 'utf8')
-    assert.deepEqual(parseYaml(cordis).map((row) => row.id), ['persistent-shell', 'str-replace-editor', 'prompt-config-engine'])
+    assert.deepEqual(parseYaml(cordis).map((row) => row.id), ['persistent-shell', 'bootstrap-filesystem', 'prompt-config-engine'])
     // 参数源升级：preset.yml 获得包内 modules 段，保留旧元数据命名
     const spec = parseYaml(readFileSync(join(presetDir, 'minimal', 'preset.yml'), 'utf8'))
     assert.ok(Array.isArray(spec.modules) && spec.modules.length > 0, '参数源升级为包内 modules 清单')

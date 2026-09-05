@@ -44,6 +44,50 @@ test('能力候选校验失败时不写入 preset.yml', () => {
   }
 })
 
+test('filesystem 组合已满足编辑器能力时不追加独立模块', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'pt-engine-capability-nested-'))
+  try {
+    const file = join(dir, 'preset.yml')
+    writeFileSync(file, 'id: nested\nname: nested\nversion: "1"\nengineCompat: ">=0"\nmodules: [bootstrap-filesystem]\n', 'utf8')
+    const before = readFileSync(file, 'utf8')
+    const result = createEngineCapabilityInPreset(dir, { action: 'create', capabilityId: 'str-replace-editor' })
+    assert.equal(result.changed, false)
+    assert.deepEqual(result.addedModules, [])
+    assert.equal(readFileSync(file, 'utf8'), before)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('能力候选校验拒绝重复 Loader row 且不写盘', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'pt-engine-capability-duplicate-row-'))
+  try {
+    const file = join(dir, 'preset.yml')
+    writeFileSync(file, 'id: duplicate-row\nname: duplicate-row\nversion: "1"\nengineCompat: ">=0"\nmodules: [delegation, delegation-ptc]\n', 'utf8')
+    const before = readFileSync(file, 'utf8')
+    assert.throws(
+      () => createEngineCapabilityInPreset(dir, { action: 'create', capabilityId: 'tool-filter' }),
+      /重复 row id[\s\S]*delegation/,
+    )
+    assert.equal(readFileSync(file, 'utf8'), before)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('删除编辑器能力移除 bootstrap-filesystem 组合', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'pt-engine-capability-remove-editor-'))
+  try {
+    const file = join(dir, 'preset.yml')
+    writeFileSync(file, 'id: remove-editor\nname: remove-editor\nversion: "1"\nengineCompat: ">=0"\nmodules: [bootstrap-filesystem, prompt-config-engine]\n', 'utf8')
+    const result = removeEngineCapabilityFromPreset(dir, 'str-replace-editor')
+    assert.deepEqual(result, { changed: true, removedModules: ['bootstrap-filesystem'], capabilityIds: ['str-replace-editor'] })
+    assert.deepEqual(parseYaml(readFileSync(file, 'utf8')).modules, ['prompt-config-engine'])
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
 test('空白预设只装配用户新建的单项能力', () => {
   const dir = mkdtempSync(join(tmpdir(), 'pt-engine-capability-blank-'))
   try {

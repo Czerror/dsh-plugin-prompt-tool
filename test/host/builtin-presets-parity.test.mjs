@@ -62,9 +62,9 @@ test('creative 基础行顺序对齐官方 Cordis，创作技能位于 tool-cord
   assert.doesNotMatch(skill, /supplies `standard`, `code`, `minimal`/)
 })
 
-test('minimal 复用官方 shell 与独立编辑器，以 prompt-config-engine 承载等价 persona', () => {
+test('minimal 复用官方 shell 与 filesystem 组合，以 prompt-config-engine 承载等价 persona', () => {
   const ids = idsOf(rowsOf('minimal'))
-  assert.deepEqual(ids, ['persistent-shell', 'str-replace-editor', 'prompt-config-engine'])
+  assert.deepEqual(ids, ['persistent-shell', 'bootstrap-filesystem', 'prompt-config-engine'])
   const spec = loadPresetSpec(join(root, 'preset', 'minimal'))
   const persona = spec.promptConfigs.find((config) => config.id === 'persona-main')
   assert.equal(persona.text, 'You are a helpful software engineer assistant.')

@@ -9,7 +9,7 @@
  */
 
 import { writeFileSync, mkdirSync, rmSync, cpSync, mkdtempSync, renameSync, existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
-import { join } from 'node:path'
+import { isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { parse as parseYaml, parseDocument, stringify as stringifyYaml } from 'yaml'
 import { parameterSchemaSpecToJsonSchema, valueSchemaSpecToJsonSchema } from '@deepseek-ai/dsh-tools'
 // 纯策略模块同时由 host writer 与生成运行时消费；保持校验算法单一来源。
@@ -28,7 +28,9 @@ import type { PromptConfigSpec } from './prompt-configs.ts'
 import {
   assertCompositionArray,
   asString,
+  atomicWriteTextFile,
   loadPresetSpec,
+  invalidatePresetSpec,
   packageEngineDir,
   renderComposition,
   resolvePresetParams,
@@ -36,6 +38,14 @@ import {
 } from './manifest.ts'
 
 const ENGINE_DIR = packageEngineDir()
+
+/** 只允许把运行时迁移写回用户预设，绝不改包内 shipped 模板。 */
+function userPresetFile(templateName: string, presetDir: string): string | undefined {
+  const file = join(presetDir, templateName, 'preset.yml')
+  const rel = relative(resolve(presetDir), resolve(file))
+  if (rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) return undefined
+  return existsSync(file) ? file : undefined
+}
 
 /** 包内引擎指纹（相对路径 + size）：引擎文件未变时共享引擎不重刷。
  *  每次 settings 变更都会 rebuildPreset → writePreset，引擎重刷（130 文件复制 +
@@ -288,7 +298,7 @@ export function writePreset(prompt: string, options: WritePresetOptions): void {
   if (resolvedTemplate.fallback) {
     options.warn?.(`prompt-tool: 预设 ${templateName} 用户副本缺组合源（modules/agent.cordis.yml），已回退包内模板渲染`)
   }
-  const spec = loadPresetSpec(templateDir)
+  let spec = loadPresetSpec(templateDir)
   if (spec.subagentToolPolicy !== undefined && spec.subagentToolPolicy !== null) {
     const policyErrors = validateSubagentToolPolicy(spec.subagentToolPolicy)
     if (policyErrors.length > 0) {
@@ -333,18 +343,32 @@ export function writePreset(prompt: string, options: WritePresetOptions): void {
         },
       } satisfies PromptConfigSpec)
     }
-    if (migrated.length > 0) {
-      spec.promptConfigs = [...(Array.isArray(spec.promptConfigs) ? spec.promptConfigs : []), ...migrated]
-      // 删除段并写回（一次性迁移；模板 preset.yml 无段时零开销跳过）。
-      const presetYamlPath = join(presetDir, templateName, 'preset.yml')
-      if (existsSync(presetYamlPath)) {
-        try {
-          const doc = parseDocument(readFileSync(presetYamlPath, 'utf8'), { logLevel: 'silent' })
-          doc.deleteIn(['worldBook'])
-          writeFileSync(presetYamlPath, doc.toString(), 'utf8')
-        } catch {
-          // 迁移写回失败不阻断（下次写入重试）；组合渲染用迁移后的 spec。
-        }
+    // 不直接修改 loadPresetSpec 的缓存对象：写回失败时不能把未落盘的迁移
+    // 结果留在缓存里，否则下一次重建会读到“幽灵”配置。
+    const existingConfigs = Array.isArray(spec.promptConfigs) ? spec.promptConfigs as PromptConfigSpec[] : []
+    const existingIds = new Set(existingConfigs
+      .filter((config): config is PromptConfigSpec => config !== null && typeof config === 'object'
+        && !Array.isArray(config) && typeof (config as PromptConfigSpec).id === 'string')
+      .map((config) => config.id))
+    const additions = migrated.filter((config) => {
+      if (existingIds.has(config.id)) return false
+      existingIds.add(config.id)
+      return true
+    })
+    spec = { ...spec, promptConfigs: [...existingConfigs, ...additions] }
+
+    // 删除旧段并把合并后的 promptConfigs 一并写回（一次性迁移）。只写用户
+    // 预设；包内模板即使意外带旧段也保持只读，当前渲染仍使用内存迁移结果。
+    const presetYamlPath = userPresetFile(templateName, presetDir)
+    if (presetYamlPath !== undefined) {
+      try {
+        const doc = parseDocument(readFileSync(presetYamlPath, 'utf8'), { logLevel: 'silent' })
+        doc.setIn(['promptConfigs'], spec.promptConfigs)
+        doc.deleteIn(['worldBook'])
+        atomicWriteTextFile(presetYamlPath, doc.toString())
+        invalidatePresetSpec(join(presetDir, templateName))
+      } catch (error) {
+        throw new Error(`worldBook 迁移写回失败（${presetYamlPath}）：${String((error as Error).message ?? error)}`)
       }
     }
   }
@@ -473,15 +497,36 @@ export function writePreset(prompt: string, options: WritePresetOptions): void {
     // 无标记 = 首次写入或旧版布局，重刷。
   }
   if (currentMarker !== fingerprint) {
-    withLockRetry(() => {
-      rmSync(sharedEngine, { recursive: true, force: true })
-      mkdirSync(sharedEngine, { recursive: true })
+    // 先在同一父目录构建完整引擎，再交换目录；复制失败时保留旧引擎，
+    // 避免先 rmSync 造成全局半成品（所有预设共用此目录）。
+    const stagedEngine = mkdtempSync(join(presetDir, '.engine.tmp-'))
+    let committed = false
+    try {
       for (const entry of readdirSync(ENGINE_DIR, { withFileTypes: true })) {
         if (entry.name === 'compositions') continue
-        cpSync(join(ENGINE_DIR, entry.name), join(sharedEngine, entry.name), { recursive: true, force: true })
+        cpSync(join(ENGINE_DIR, entry.name), join(stagedEngine, entry.name), { recursive: true, force: true })
       }
-    })
-    writeFileSync(join(sharedEngine, ENGINE_FINGERPRINT_MARKER), fingerprint, 'utf8')
+      writeFileSync(join(stagedEngine, ENGINE_FINGERPRINT_MARKER), fingerprint, 'utf8')
+
+      const engineBackup = join(presetDir, `.engine.bak-${Date.now().toString(36)}`)
+      let oldMoved = false
+      if (existsSync(sharedEngine)) {
+        withLockRetry(() => renameSync(sharedEngine, engineBackup))
+        oldMoved = true
+      }
+      try {
+        withLockRetry(() => renameSync(stagedEngine, sharedEngine))
+      } catch (error) {
+        if (oldMoved) {
+          try { withLockRetry(() => renameSync(engineBackup, sharedEngine)) } catch { /* 保留 backup 供人工恢复 */ }
+        }
+        throw error
+      }
+      committed = true
+      if (oldMoved) rmSync(engineBackup, { recursive: true, force: true })
+    } finally {
+      if (!committed) rmSync(stagedEngine, { recursive: true, force: true })
+    }
   }
   for (const entry of readdirSync(presetDir, { withFileTypes: true })) {
     if (!entry.isDirectory() || entry.name === 'engine' || entry.name.startsWith('.')) continue

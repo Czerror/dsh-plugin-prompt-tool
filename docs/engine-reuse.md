@@ -6,8 +6,18 @@
 
 装配遵循显式按需语义：`modules: []` 生成合法空组合，只有列入 `modules` 的插件能力才会挂载；
 四个官方基型保留上游工具能力，仅用 `prompt-config-engine` + 既有 `persona-main` 配置等价替代
-官方 persona 行；Minimal 复用独立 `str-replace-editor`，Anchored 才使用带隔离文件系统的
-`bootstrap-filesystem`。官方 `agent.cordis.yml` 中同名 row 不作为可编辑插件能力。
+官方 persona 行；Minimal 与 Anchored 均复用带隔离文件系统的 `bootstrap-filesystem`，其
+`fs-local` 与 `str-replace-editor` 嵌套行同属一个 `fs` 隔离域。官方 `agent.cordis.yml` 中
+同名 row 不作为可编辑插件能力；同一预设内仍禁止重复 row，跨预设的 `official-*` 文件仅保留
+确有语义差异的变体。
+
+当前保留的变体包括 `tool-bash`、`persistent-shell`、`delegation` 和
+`skill-filesystem`：它们分别承载平台禁用、shell 回退、PTC workflow 开关或 Cordis
+技能路径差异，不能仅按 row id 合并。真正重复的嵌套拆分（如旧版独立
+`str-replace-editor`）统一回收到所属官方 group。
+
+旧版 `str-replace-editor` 模块名在离线迁移或运行时装配时归一到
+`bootstrap-filesystem`，避免升级后预设失效。
 
 ## 复制协议（跨项目复用）
 

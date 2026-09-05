@@ -430,10 +430,10 @@ promptConfigs:
 #     denyReason: 本预设禁用 web 工具
 
 # ── modules：引擎行/组模块装配顺序（增删即改装配）───────────────────────────
-# 29 个可用模块：context-gate / tool-filter / tool-bootstrap / code-presentation /
+# 可用模块：context-gate / tool-filter / tool-bootstrap / code-presentation /
 # prompt-config-engine / tool-config-engine / character-tools / world-book-tools / session-var-tools / run-code-env / persona /
-# persistent-shell / custom-bash / tool-fs / tool-fs-search / str-replace-editor /
-# bootstrap-filesystem / tool-jobs / skill-filesystem / skill-search / tool-goal /
+# persistent-shell / custom-bash / tool-fs / tool-fs-search / bootstrap-filesystem /
+# tool-jobs / skill-filesystem / skill-search / tool-goal /
 # planning / compaction / delegation / tool-ask-user / tool-todo / tool-web /
 # anchor-turn / deliberation-gate / cot-drip
 # 晋升门控三件套：context-gate（注入门控）+ tool-bootstrap（目录相位）+
@@ -455,8 +455,7 @@ modules:
   - custom-bash                  # 自定义 bash（超时/输出上限）
   - tool-fs                      # 文件系统工具
   - tool-fs-search               # 文件搜索工具
-  - str-replace-editor           # 精确字符串编辑工具
-  - bootstrap-filesystem         # 引导期文件系统
+  - bootstrap-filesystem         # 引导期文件系统（fs-local + str-replace-editor 同隔离域）
   - tool-jobs                    # 任务面板
   - skill-filesystem             # 技能文件系统
   - skill-search                 # 技能搜索

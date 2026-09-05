@@ -228,7 +228,7 @@ promptConfigs:
   （读写 promptConfigs 的 world-book 配置；`note` 写入角色卡记忆）
   该工具由 `world-book-tools` 模块提供；ST 预设含有效世界书条目时导入链路自动加入该模块。
 - **旧数据迁移**：旧版 preset.yml 顶层 `worldBook` 段在下次重建时自动迁移为
-  world-book 配置并删除段（一次性、幂等）
+  `promptConfigs` 中的 world-book 配置，并通过同目录临时文件原子写回后删除旧段（一次性、幂等）。
 
 ---
 
