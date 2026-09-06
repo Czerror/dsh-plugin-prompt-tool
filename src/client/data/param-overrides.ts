@@ -62,6 +62,14 @@ export interface ParamOverrideBuildOptions {
   autoSubagentModelProvider?: string
 }
 
+/** 将一次成功写入折叠到已存键集合，供后续请求正确发送删键值。 */
+export function updateLoadedParamKeys(loadedKeys: Set<string>, overrides: Readonly<Record<string, unknown>>): void {
+  for (const [key, value] of Object.entries(overrides)) {
+    if (value === '' || (Array.isArray(value) && value.length === 0)) loadedKeys.delete(key)
+    else if (value !== undefined && value !== null) loadedKeys.add(key)
+  }
+}
+
 /** UI 草稿按“已有键或偏离默认值”规则生成 params 写入载荷。 */
 export function buildParamOverrides(fields: Fields, options: ParamOverrideBuildOptions): Record<string, unknown> {
   const emit = (key: string, value: unknown, empty: unknown): Record<string, unknown> =>

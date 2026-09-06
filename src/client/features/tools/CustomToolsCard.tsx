@@ -6,8 +6,9 @@ import { MenuSelect } from '../../ui/MenuSelect.tsx'
 import { CustomToolCard, asRecord, type ToolDraft } from './CustomToolEditor.tsx'
 import { ToolSurfaceView } from './ToolSurfaceView.tsx'
 import sharedCss from '../../ui/controls.module.css'
+import featureCss from './tools.module.css'
 
-const styles = sharedCss
+const styles = { ...sharedCss, ...featureCss }
 /** 自定义工具编辑器：命令栏 + 一工具一卡，不再增加聚合卡片。 */
 export function CustomToolsCard(props: {
   onNotice: (kind: 'ok' | 'error', message: string) => void
@@ -134,7 +135,7 @@ export function CustomToolsCard(props: {
         )}
       </div>
       {tools.length > 0 && (
-        <div className={styles.configList} style={{ marginTop: 10 }}>
+        <div className={`${styles.configList} ${styles.customToolList}`}>
           {tools.map((tool, index) => (
             <CustomToolCard
               key={`${String(tool.id ?? '')}-${index}`}

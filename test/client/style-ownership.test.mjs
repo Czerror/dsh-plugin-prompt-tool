@@ -40,6 +40,13 @@ test('旧 PromptUi 样式入口已删除且源码不再引用', () => {
     assert.doesNotMatch(readFileSync(file, 'utf8'), /PromptUi\.module\.css/, file)
   }
 })
+
+test('tools feature 布局与中性边框只由 CSS Modules 持有', () => {
+  for (const file of sourceFiles(join(root, 'features', 'tools'))) {
+    assert.doesNotMatch(readFileSync(file, 'utf8'), /style=\{\{/, `${file} 不得内联布局或边框样式`)
+  }
+})
+
 test('样式遵循宿主 token、发丝边框与圆角契约', () => {
   const cssFiles = readdirSync(root, { withFileTypes: true }).flatMap(function collect(entry) {
     const path = join(root, entry.name)

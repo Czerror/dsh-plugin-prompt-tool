@@ -9,7 +9,7 @@ export const SETTINGS_BRIDGE_PREFIX = '/api/prompt-tool/settings'
 /** JSON bridge 的统一内存缓冲上限；超过后改用原始文件流端点。 */
 export const MAX_BRIDGE_BODY_BYTES = 32 * 1024 * 1024
 /** 角色卡原始文件流上限；独立于 JSON bridge，避免 base64 膨胀。 */
-export const MAX_CHARACTER_CARD_STREAM_BYTES = 32 * 1024 * 1024
+export const MAX_CHARACTER_CARD_STREAM_BYTES = 64 * 1024 * 1024
 
 /** 桥端点路径（相对前缀）。新增端点必须同时登记到契约测试。 */
 export const BRIDGE_ENDPOINTS = {
@@ -62,14 +62,14 @@ export interface BridgeRequestMap {
   describe: undefined
   models: undefined
   mutate: { ops: unknown[]; expectedRevision?: number }
-  configsValidate: { promptConfigs?: unknown; strategyDir?: string }
+  configsValidate: { promptConfigs: unknown[]; strategyDir?: string }
   skillFix: { folder: string }
   skillsImport: { files: Array<{ path: string; content: string }> }
   templates: undefined
   promptConfigs: undefined
   presetContent: undefined
   importPreset: { contents: Array<{ scope: 'preset' | 'agents'; content: string }> }
-  paramOverrides: { overrides?: Record<string, unknown>; promptConfigs?: unknown; rebuild?: boolean }
+  paramOverrides: { overrides?: Record<string, unknown>; promptConfigs?: unknown[]; rebuild?: boolean }
   presetVariables: { variables?: Record<string, string>; enabled?: boolean }
   customTools: { customTools?: unknown[] } | undefined
   importPresetPackage: { files: Array<{ path?: string; name?: string; content?: string }> }

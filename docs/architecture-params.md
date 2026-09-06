@@ -21,7 +21,7 @@
 
 ```
 UI fields
-  → persistParamOverrides（所有键总是发送，含 '' / [] / false / 0）
+  → persistParamOverrides（只发送已存键或用户已改动键；含需清除的 '' / [] 与合法的 false / 0）
     → /param-overrides POST（settings-bridge）
       → savePresetParams（写 preset.yml：model 顶层段 / params；空值删键）
         → reloadPresetParams + applyParamOverrides（runtime 态）
@@ -56,6 +56,10 @@ string[]；`maxDepth` 接受 `''`/`provider-managed`/非负整数/字符串标�
 UI 字符串与 preset.yml 手写 number 两通道统一；空字符串仍是合法删键值。
 渲染层保持宽容（never-brick），配置错误只在保存期响亮失败。
 
+Bridge 读取器区分空请求体与畸形 JSON；非对象 `overrides`、非数组 `promptConfigs`、
+非字符串值的 `variables` 均返回 `400`，不会退化为读取或空操作。所有依赖当前预设的
+写端点共用 system 预设只读守卫，只有当前配置的 `presetDir` 可写。
+
 UI 侧 `persistParamOverrides` **条件发送**：
 
 - `load` 时记录 preset.yml 已存在的参数键；
@@ -88,12 +92,12 @@ UI 侧 `persistParamOverrides` **条件发送**：
 
 ## 6. 保存状态机（防保存期间编辑丢失）
 
-`persistParamOverrides` 不直接把“当前 fields”当作保存结果：
+`persistParamOverrides` 与 `persistConfigs` 不直接把“当前 fields”当作保存结果：
 
-1. 请求进入参数专用队列，串行化多次失焦/开关保存；
-2. 队列执行时生成 `savedSnapshot`，请求载荷与成功后的已保存基线都来自该快照；
-3. 请求成功后只把 `savedSnapshot` 写入 saved 基线；若用户在请求期间继续编辑，当前 fields 与快照不等，仍保持 dirty；
-4. 只有当前 fields 与快照一致时才触发静默 `load()`；读取期间草稿版本再次变化时，`load()` 放弃应用服务端快照，避免旧磁盘状态覆盖新草稿；
+1. 参数与提示词配置请求进入同一个预设保存队列，跨通道严格串行；失败任务不阻断后续任务；
+2. 入队时生成请求快照，载荷与成功后的已保存基线都来自该快照；
+3. 请求成功后只确认该快照；若用户在请求期间继续编辑，当前 fields 与快照不等，仍保持 dirty；
+4. 只有全局草稿版本未变化、其他保存通道无待存草稿，且对应草稿与请求快照一致时，才在队列内执行静默 `load()`；参数草稿还须不存在未完成阶段；
 5. provider 自动预选只是显示兜底：preset 未声明 provider 且模型名为空时不写入 params，防止 UI convenience default 被固化成用户覆盖。
 
 `SwitchSnapshot` 的 dirty 比较为全字段结构化深比较（数组/record 均参与），新增参数只要进入 snapshot 即自动参与脏检测。客户端 `Fields` 与 `EngineParamKey` 有编译期覆盖断言，防止 host 新增参数后 client 静默丢弃；`bridgePost` 对桥载荷做 runtime shape guard，异常 JSON 不再被直接当作成功结果消费。

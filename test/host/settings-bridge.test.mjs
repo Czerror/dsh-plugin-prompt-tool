@@ -12,6 +12,12 @@ const { BRIDGE_ENDPOINTS, MAX_BRIDGE_BODY_BYTES, MAX_CHARACTER_CARD_STREAM_BYTES
 after(() => rmSync(bridgeHome, { recursive: true, force: true }))
 
 const PREFIX = '/api/prompt-tool/settings'
+const userPresetRoot = join(bridgeHome, '.agent-presets')
+
+function makeUserPresetDir(prefix) {
+  mkdirSync(userPresetRoot, { recursive: true })
+  return mkdtempSync(join(userPresetRoot, prefix))
+}
 
 function makeHarness() {
   const handlers = new Map()
@@ -227,7 +233,7 @@ test('settings bridge /prompt-configs 返回生成目录实际生效配置', asy
 test('settings bridge /import-preset 写入生成目录并触发回调；/preset-content 读回', async () => {
   const { ctx, handlers } = makeHarness()
   let importedScopes
-  const dir = join(tmpdir(), `prompt-tool-bridge-${process.pid}-${Date.now()}`)
+  const dir = makeUserPresetDir('pt-content-')
   try {
     registerSettingsBridge(
       ctx,
@@ -265,8 +271,7 @@ test('settings bridge /param-overrides 接受 >64KB promptConfigs 载荷（不�
   const { ctx, handlers } = makeHarness()
   // handler 写路径 = dirname(getPresetConfigsDir())/basename(...)/preset.yml：
   // 激活预设目录就是 preset.yml 所在目录，fixture 直接建在 dir 下。
-  const dir = join(tmpdir(), `pt-overrides-big-${process.pid}-${Date.now()}`)
-  mkdirSync(dir, { recursive: true })
+  const dir = makeUserPresetDir('pt-overrides-big-')
   writeFileSync(join(dir, 'preset.yml'), 'id: beta\n', 'utf8')
   try {
     registerSettingsBridge(
@@ -299,8 +304,7 @@ test('settings bridge /param-overrides 接受 >64KB promptConfigs 载荷（不�
 
 test('settings bridge /param-overrides 拒绝未知引擎参数键（防死键落盘）', async () => {
   const { ctx, handlers } = makeHarness()
-  const dir = join(tmpdir(), `pt-overrides-unknown-${process.pid}-${Date.now()}`)
-  mkdirSync(dir, { recursive: true })
+  const dir = makeUserPresetDir('pt-overrides-unknown-')
   writeFileSync(join(dir, 'preset.yml'), 'id: beta\n', 'utf8')
   try {
     registerSettingsBridge(
@@ -331,8 +335,7 @@ test('settings bridge /param-overrides 拒绝未知引擎参数键（防死键�
 
 test('settings bridge /param-overrides 数值参数保存前校验（temperature/maxTokens 响亮失败）', async () => {
   const { ctx, handlers } = makeHarness()
-  const dir = join(tmpdir(), 'pt-overrides-invalid-' + process.pid + '-' + Date.now())
-  mkdirSync(dir, { recursive: true })
+  const dir = makeUserPresetDir('pt-overrides-invalid-')
   writeFileSync(join(dir, 'preset.yml'), 'id: beta\n', 'utf8')
   try {
     registerSettingsBridge(
@@ -396,10 +399,111 @@ test('settings bridge /configs-validate 接受 >64KB promptConfigs 载荷（不�
   assert.ok(payload.value !== undefined, '应进入校验分支而非 400 截断')
 })
 
+test('settings bridge：非法 JSON 与错误写入结构返回 400 且不落盘', async () => {
+  const dir = makeUserPresetDir('pt-invalid-body-')
+  const presetFile = join(dir, 'preset.yml')
+  const original = 'id: beta\nparams:\n  firstTurnAnchor: false\n'
+  writeFileSync(presetFile, original, 'utf8')
+  try {
+    const { ctx, handlers } = makeHarness()
+    registerSettingsBridge(ctx, 'prompt-tool',
+      () => ({ available: true, providers: [] }),
+      () => ({ activeSkillsDirs: [], skillCatalog: [] }),
+      () => '', undefined, () => dir)
+    const cases = [
+      ['畸形 JSON', BRIDGE_ENDPOINTS.paramOverrides, '{"overrides":'],
+      ['非对象参数', BRIDGE_ENDPOINTS.paramOverrides, JSON.stringify({ overrides: [] })],
+      ['保存端非数组提示词配置', BRIDGE_ENDPOINTS.paramOverrides, JSON.stringify({ promptConfigs: {} })],
+      ['非法 rebuild', BRIDGE_ENDPOINTS.paramOverrides, JSON.stringify({ rebuild: 'bad' })],
+      ['校验端非数组提示词配置', BRIDGE_ENDPOINTS.configsValidate, JSON.stringify({ promptConfigs: {} })],
+      ['非法变量结构', BRIDGE_ENDPOINTS.presetVariables, JSON.stringify({ variables: { bad: 1 } })],
+    ]
+    for (const [label, endpoint, raw] of cases) {
+      const handler = handlers.get(PREFIX + endpoint)
+      assert.ok(handler, `${endpoint} 端点应注册`)
+      const res = fakeRes()
+      await handler(fakeReq({ [Symbol.asyncIterator]: async function* () { yield Buffer.from(raw) } }), res)
+      assert.equal(res.status, 400, label)
+      assert.equal(JSON.parse(res.body).ok, false, label)
+      assert.equal(readFileSync(presetFile, 'utf8'), original, `${label} 不得落盘`)
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('settings bridge：system 预设拒绝全部当前预设写入', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'pt-system-readonly-'))
+  const presetFile = join(dir, 'preset.yml')
+  const original = 'id: system\nmodules: []\n'
+  writeFileSync(presetFile, original, 'utf8')
+  try {
+    const { ctx, handlers } = makeHarness()
+    registerSettingsBridge(ctx, 'prompt-tool',
+      () => ({ available: true, providers: [] }),
+      () => ({ activeSkillsDirs: [], skillCatalog: [] }),
+      () => '', undefined, () => dir)
+    const cases = [
+      [BRIDGE_ENDPOINTS.paramOverrides, { overrides: { firstTurnAnchor: true } }],
+      [BRIDGE_ENDPOINTS.paramOverrides, { promptConfigs: [] }],
+      [BRIDGE_ENDPOINTS.presetVariables, { variables: { empty: '' }, enabled: true }],
+      [BRIDGE_ENDPOINTS.importPreset, { contents: [{ scope: 'preset', content: 'changed' }] }],
+      [BRIDGE_ENDPOINTS.customTools, { customTools: [] }],
+      [BRIDGE_ENDPOINTS.charactersImport, { files: [{ path: 'card.json', content: '{}' }] }],
+      [BRIDGE_ENDPOINTS.charactersImportStream, 'raw'],
+      [BRIDGE_ENDPOINTS.charactersDelete, { id: 'card' }],
+      [BRIDGE_ENDPOINTS.charactersApply, { id: 'card' }],
+      [BRIDGE_ENDPOINTS.charactersRemove, { id: 'card' }],
+      [BRIDGE_ENDPOINTS.subagentToolPolicy, { policy: null }],
+      [BRIDGE_ENDPOINTS.engineCapability, { action: 'create', capabilityId: 'context-gate' }],
+    ]
+    for (const [endpoint, body] of cases) {
+      const handler = handlers.get(PREFIX + endpoint)
+      assert.ok(handler, `${endpoint} 端点应注册`)
+      const res = fakeRes()
+      await handler(fakeReq({ [Symbol.asyncIterator]: async function* () {
+        yield Buffer.from(typeof body === 'string' ? body : JSON.stringify(body))
+      } }), res)
+      assert.equal(res.status, 403, endpoint)
+      assert.equal(JSON.parse(res.body).code, 'preset-readonly', endpoint)
+      assert.equal(readFileSync(presetFile, 'utf8'), original, `${endpoint} 不得修改 system 预设`)
+      assert.deepEqual(readdirSync(dir), ['preset.yml'], `${endpoint} 不得创建 system 预设文件`)
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('settings bridge：自定义 presetDir 内的用户预设允许写入', async () => {
+  const presetRoot = mkdtempSync(join(tmpdir(), 'pt-custom-preset-root-'))
+  const dir = join(presetRoot, 'custom')
+  mkdirSync(dir)
+  writeFileSync(join(dir, 'preset.yml'), 'id: custom\nmodules: []\n', 'utf8')
+  try {
+    const { ctx, handlers } = makeHarness()
+    registerSettingsBridge(ctx, 'prompt-tool',
+      () => ({ available: true, providers: [] }),
+      () => ({ activeSkillsDirs: [], skillCatalog: [] }),
+      () => '', undefined, () => dir, undefined, undefined, undefined, undefined, () => presetRoot)
+    const handler = handlers.get(PREFIX + BRIDGE_ENDPOINTS.paramOverrides)
+    const res = fakeRes()
+    await handler(fakeReq({ [Symbol.asyncIterator]: async function* () {
+      yield Buffer.from(JSON.stringify({ overrides: { firstTurnAnchor: true } }))
+    } }), res)
+    assert.equal(res.status, 200)
+    assert.equal(parseYaml(readFileSync(join(dir, 'preset.yml'), 'utf8')).params.firstTurnAnchor, true)
+    const describe = handlers.get(PREFIX + BRIDGE_ENDPOINTS.describe)
+    const describeRes = fakeRes()
+    await describe(fakeReq(), describeRes)
+    assert.equal(JSON.parse(describeRes.body).moduleFacts.editable, true)
+  } finally {
+    rmSync(presetRoot, { recursive: true, force: true })
+  }
+})
+
 test('settings bridge /param-overrides rebuild=false 只落盘不重建（预设切换免双重建）', async () => {
   const { ctx, handlers } = makeHarness()
-  const dir = join(tmpdir(), `pt-overrides-no-rebuild-${process.pid}-${Date.now()}`)
-  mkdirSync(dir, { recursive: true })
+  const dir = makeUserPresetDir('pt-overrides-no-rebuild-')
   writeFileSync(join(dir, 'preset.yml'), 'id: beta\n', 'utf8')
   let rebuildCount = 0
   try {
@@ -447,9 +551,9 @@ function makePngCharacterCard() {
   ])
 }
 
-test('settings bridge：所有 JSON 端点统一 32 MiB 上限并返回明确 413', async () => {
+test('settings bridge：JSON 端点限制 32 MiB，角色卡原始流限制 64 MiB', async () => {
   assert.equal(MAX_BRIDGE_BODY_BYTES, 32 * 1024 * 1024)
-  assert.equal(MAX_CHARACTER_CARD_STREAM_BYTES, 32 * 1024 * 1024)
+  assert.equal(MAX_CHARACTER_CARD_STREAM_BYTES, 64 * 1024 * 1024)
   const { ctx, handlers } = makeHarness()
   registerSettingsBridge(
     ctx,
@@ -472,9 +576,9 @@ test('settings bridge：所有 JSON 端点统一 32 MiB 上限并返回明确 41
   assert.match(payload.message, /32MB/)
 })
 
-test('settings bridge：角色卡原始文件流支持扩展名错误的 PNG 并清理临时文件', async () => {
+test('settings bridge：角色卡原始文件流接受 64 MiB 边界 PNG 并清理临时文件', async () => {
   const { ctx, handlers } = makeHarness()
-  const root = join(tmpdir(), 'pt-character-stream-' + process.pid + '-' + Date.now())
+  const root = makeUserPresetDir('pt-character-stream-')
   const activeDir = join(root, 'anchored')
   mkdirSync(activeDir, { recursive: true })
   try {
@@ -490,7 +594,7 @@ test('settings bridge：角色卡原始文件流支持扩展名错误的 PNG 并
     const handler = handlers.get(PREFIX + BRIDGE_ENDPOINTS.charactersImportStream)
     assert.ok(handler, '角色卡流式端点应注册')
     const png = makePngCharacterCard()
-    const req = Readable.from([png])
+    const req = Readable.from([png, Buffer.alloc(MAX_CHARACTER_CARD_STREAM_BYTES - png.length)])
     req.method = 'POST'
     req.socket = { remoteAddress: '127.0.0.1' }
     req.headers = { host: 'localhost', 'x-file-name': encodeURIComponent('card.jpg') }
@@ -499,18 +603,18 @@ test('settings bridge：角色卡原始文件流支持扩展名错误的 PNG 并
     assert.equal(res.status, 200)
     const payload = JSON.parse(res.body)
     assert.equal(payload.ok, true)
-    assert.equal(payload.value.receivedBytes, png.length)
+    assert.equal(payload.value.receivedBytes, MAX_CHARACTER_CARD_STREAM_BYTES)
     const cardDir = join(root, '.characters', payload.value.id)
-    assert.equal(statSync(join(cardDir, 'avatar.png')).size, png.length)
+    assert.equal(statSync(join(cardDir, 'avatar.png')).size, MAX_CHARACTER_CARD_STREAM_BYTES)
     assert.equal(JSON.parse(readFileSync(join(cardDir, 'card.json'), 'utf8')).name, '流式测试卡')
     assert.deepEqual(readdirSync(root).filter((name) => name.startsWith('.characters-upload-')), [])
   } finally {
     rmSync(root, { recursive: true, force: true })
   }
 })
-test('settings bridge：角色卡流式导入超过 32 MiB 返回 413 并清理临时文件', async () => {
+test('settings bridge：角色卡流式导入超过 64 MiB 返回 413 并清理临时文件', async () => {
   const { ctx, handlers } = makeHarness()
-  const root = join(tmpdir(), 'pt-character-stream-limit-' + process.pid + '-' + Date.now())
+  const root = makeUserPresetDir('pt-character-stream-limit-')
   const activeDir = join(root, 'anchored')
   mkdirSync(activeDir, { recursive: true })
   try {
@@ -527,7 +631,7 @@ test('settings bridge：角色卡流式导入超过 32 MiB 返回 413 并清理�
     assert.ok(handler, '角色卡流式端点应注册')
     const chunk = Buffer.alloc(1024 * 1024, 0x78)
     const req = Readable.from((async function* () {
-      for (let index = 0; index < 33; index += 1) yield chunk
+      for (let index = 0; index < 65; index += 1) yield chunk
     })())
     req.method = 'POST'
     req.socket = { remoteAddress: '127.0.0.1' }
@@ -538,7 +642,7 @@ test('settings bridge：角色卡流式导入超过 32 MiB 返回 413 并清理�
     const payload = JSON.parse(res.body)
     assert.equal(payload.ok, false)
     assert.equal(payload.code, 'character-stream-too-large')
-    assert.match(payload.message, /32MB/)
+    assert.match(payload.message, /64MB/)
     assert.deepEqual(readdirSync(root).filter((name) => name.startsWith('.characters-upload-')), [])
   } finally {
     rmSync(root, { recursive: true, force: true })
@@ -568,7 +672,7 @@ test('settings bridge Origin 完整校验 scheme/host/port（端口不匹配拒�
 })
 
 test('settings bridge /custom-tools 保存时自动追加工具模块', async () => {
-  const dir = mkdtempSync(join(tmpdir(), 'pt-custom-tools-modules-'))
+  const dir = makeUserPresetDir('pt-custom-tools-modules-')
   try {
     writeFileSync(join(dir, 'preset.yml'), ['id: beta', 'modules: []', ''].join(String.fromCharCode(10)), 'utf8')
     const { ctx, handlers } = makeHarness()
@@ -599,7 +703,7 @@ test('settings bridge /custom-tools 保存时自动追加工具模块', async ()
 })
 
 test('settings bridge /custom-tools 拒绝缺少 modules 的预设', async () => {
-  const dir = mkdtempSync(join(tmpdir(), 'pt-custom-tools-no-modules-'))
+  const dir = makeUserPresetDir('pt-custom-tools-no-modules-')
   try {
     writeFileSync(join(dir, 'preset.yml'), 'id: plain' + String.fromCharCode(10), 'utf8')
     const { ctx, handlers } = makeHarness()
@@ -662,7 +766,7 @@ test('settings bridge /engine-capability 删除显式能力并只重建一次', 
 })
 
 test('settings bridge /subagent-tool-policy 保存、停用与模块装配均为原子操作', async () => {
-  const dir = mkdtempSync(join(tmpdir(), 'pt-subagent-policy-'))
+  const dir = makeUserPresetDir('pt-subagent-policy-')
   try {
     writeFileSync(join(dir, 'preset.yml'), 'id: beta\nmodules: []\nunknown: keep\n', 'utf8')
     const { ctx, handlers } = makeHarness()

@@ -54,7 +54,7 @@ export function ToolSurfaceView(props: ToolSurfaceProps): ReactNode {
     (keyword.length === 0 || entry.name.toLowerCase().includes(keyword) || entry.description.toLowerCase().includes(keyword)))
 
   return (
-    <div className={styles.settingRowStack} style={{ border: '1px solid rgba(128,128,128,0.2)', borderRadius: 8, padding: 8 }}>
+    <div className={`${styles.settingRowStack} ${styles.toolSurface}`}>
       <span className={styles.settingCopy}>
         <strong>{label}（只读）</strong>
         <small>{tools === null ? '' : `${visible.length} 个工具 · `}{presetId !== undefined
@@ -64,7 +64,7 @@ export function ToolSurfaceView(props: ToolSurfaceProps): ReactNode {
       {(sessionId ?? presetId ?? '').length === 0
         ? <p className={styles.configFieldHint}>未选择工具面来源。</p>
         : (
-          <span style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          <span className={styles.toolSurfaceControls}>
             <input className={styles.configInput} aria-label="工具面搜索" placeholder="搜索工具名/描述（客户端过滤）" value={filter}
               onChange={(event) => setFilter(event.target.value)} />
             <button type="button" className={styles.pillButton} onClick={load} disabled={loading}>刷新</button>

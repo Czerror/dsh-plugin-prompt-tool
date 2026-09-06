@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { EMPTY_FIELDS } from '../../src/client/data/prompt-tool-fields.ts'
-import { buildParamOverrides, readParamOverridesPatch } from '../../src/client/data/param-overrides.ts'
+import { buildParamOverrides, readParamOverridesPatch, updateLoadedParamKeys } from '../../src/client/data/param-overrides.ts'
 
 test('param overrides：列表与 stages 读回为 UI 草稿', () => {
   assert.deepEqual(readParamOverridesPatch({
@@ -35,4 +35,14 @@ test('param overrides：自动预选 provider 在模型为空时不落盘', () =
     autoModelProvider: 'deepseek',
   })
   assert.equal(explicit.modelProvider, 'deepseek')
+})
+
+test('param overrides：成功保存后推进已存键，后续默认值能删除刚写入键', () => {
+  const loadedKeys = new Set()
+  updateLoadedParamKeys(loadedKeys, { firstTurnText: 'hello', guideText: '' })
+  assert.deepEqual([...loadedKeys], ['firstTurnText'])
+  const clear = buildParamOverrides({ ...EMPTY_FIELDS }, { loadedKeys })
+  assert.equal(clear.firstTurnText, '')
+  updateLoadedParamKeys(loadedKeys, clear)
+  assert.equal(loadedKeys.has('firstTurnText'), false)
 })

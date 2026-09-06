@@ -101,8 +101,10 @@ function writeBridgeJson(res: ServerResponse, status: number, body: unknown): vo
   res.end(payload)
 }
 
-const asRecord = (value: unknown): Record<string, unknown> =>
-  value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  value !== null && typeof value === 'object' && !Array.isArray(value)
+
+const asRecord = (value: unknown): Record<string, unknown> => isRecord(value) ? value : {}
 
 type ToolSchemaLike = { name?: unknown; description?: unknown }
 
@@ -120,10 +122,16 @@ function projectToolSchemas(schemas: readonly ToolSchemaLike[]): Array<{ name: s
   return [...unique.values()].sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0)
 }
 
-function isEditablePresetDir(dir: string): boolean {
-  const root = resolve(userPresetsDir())
+function isEditablePresetDir(dir: string, presetRoot = userPresetsDir()): boolean {
+  const root = resolve(presetRoot)
   const target = resolve(dir)
   return target !== root && target.startsWith(root + sep)
+}
+
+function guardEditablePresetDir(dir: string, presetRoot: string, res: ServerResponse): boolean {
+  if (isEditablePresetDir(dir, presetRoot)) return true
+  writeBridgeJson(res, 403, { ok: false, code: 'preset-readonly', message: 'system preset 只读，请先复制为用户预设' })
+  return false
 }
 
 /** 将 moduleConfigs/行默认投影为 UI 字段兜底；显式 params 永远优先。 */
@@ -169,7 +177,7 @@ function mergeModuleConfigFallbacks(params: Record<string, unknown>, facts: Pres
 /** 读取 JSON bridge 请求体；所有 JSON 端点统一使用 32 MiB 内存上限。 */
 async function readBridgeBody(
   req: IncomingMessage,
-): Promise<{ body: unknown; tooLarge: boolean; receivedBytes: number }> {
+): Promise<{ body: unknown; tooLarge: boolean; invalidJson: boolean; receivedBytes: number }> {
   const maxBytes = MAX_BRIDGE_BODY_BYTES
   const chunks: Buffer[] = []
   let size = 0
@@ -186,11 +194,12 @@ async function readBridgeBody(
     }
     chunks.push(buffer)
   }
-  if (overflow) return { body: undefined, tooLarge: true, receivedBytes: size }
+  if (overflow) return { body: undefined, tooLarge: true, invalidJson: false, receivedBytes: size }
+  if (size === 0) return { body: undefined, tooLarge: false, invalidJson: false, receivedBytes: 0 }
   try {
-    return { body: JSON.parse(Buffer.concat(chunks).toString('utf8')) as unknown, tooLarge: false, receivedBytes: size }
+    return { body: JSON.parse(Buffer.concat(chunks).toString('utf8')) as unknown, tooLarge: false, invalidJson: false, receivedBytes: size }
   } catch {
-    return { body: undefined, tooLarge: false, receivedBytes: size }
+    return { body: undefined, tooLarge: false, invalidJson: true, receivedBytes: size }
   }
 }
 
@@ -206,6 +215,14 @@ async function readBridgeBodyForHandler(req: IncomingMessage, res: ServerRespons
   const result = await readBridgeBody(req)
   if (result.tooLarge) {
     writeBridgeBodyTooLarge(res, result.receivedBytes)
+    return undefined
+  }
+  if (result.invalidJson) {
+    writeBridgeJson(res, 400, { ok: false, code: 'bridge-request-invalid', message: 'malformed JSON body' })
+    return undefined
+  }
+  if (result.body !== undefined && !isRecord(result.body)) {
+    writeBridgeJson(res, 400, { ok: false, code: 'bridge-request-invalid', message: 'request body must be an object' })
     return undefined
   }
   return { body: result.body }
@@ -307,6 +324,8 @@ export function registerSettingsBridge(
   afterPresetPackageImport?: (id: string) => void,
   /** 能力/recipe 原子创建后重建回调；抛错时调用方恢复 preset.yml。 */
   afterCapabilityChange?: () => void,
+  /** 当前可写预设根；支持 settings 配置的自定义 presetDir。 */
+  getPresetRootDir?: () => string,
 ): { invalidateDescriptor: () => void } {
   let invalidateCachedDescriptor: () => void = () => {}
   let capabilityQueue: Promise<void> = Promise.resolve()
@@ -346,6 +365,8 @@ export function registerSettingsBridge(
         }
         return true
       }
+      const guardPresetWrite = (dir: string, res: ServerResponse): boolean =>
+        guardEditablePresetDir(dir, getPresetRootDir?.() ?? userPresetsDir(), res)
       /** 引擎能力矩阵（meta 端点与 /bootstrap 共用）：动态 import 引擎 schema。 */
       const loadEngineMeta = async (): Promise<Record<string, unknown>> => {
         const engineMetaUrl = new URL('../engine/schema.mjs', import.meta.url)
@@ -404,7 +425,10 @@ export function registerSettingsBridge(
           const resolvedFacts = resolvePresetModuleFacts(
             spec,
             activeDir.length > 0 ? activeDir : undefined,
-            isEditablePresetDir(activeDir.length > 0 ? activeDir : resolvePresetDir(templateName)),
+            isEditablePresetDir(
+              activeDir.length > 0 ? activeDir : resolvePresetDir(templateName),
+              getPresetRootDir?.() ?? userPresetsDir(),
+            ),
           )
           mergeModuleConfigFallbacks(presetParams, resolvedFacts)
           // effectiveConfigs 只用于服务端把已存在的 moduleConfigs 回显到已知字段；
@@ -607,6 +631,10 @@ export function registerSettingsBridge(
               return
             }
             const record = body as Record<string, unknown>
+            if (!Array.isArray(record.promptConfigs)) {
+              writeBridgeJson(res, 400, { ok: false, code: 'prompt-configs-invalid', message: 'promptConfigs must be an array' })
+              return
+            }
             const result = await validatePromptConfigs(record.promptConfigs, { strategyDir: getEngineStrategyDir() })
             writeBridgeJson(res, 200, { ok: true, value: result })
           },
@@ -791,6 +819,7 @@ export function registerSettingsBridge(
               writeBridgeJson(res, 400, { ok: false, code: 'preset-dir-unavailable', message: 'presetDir 未配置' })
               return
             }
+            if (!guardPresetWrite(dir, res)) return
             try {
               mkdirSync(dir, { recursive: true })
               for (const entry of contents) {
@@ -823,14 +852,29 @@ export function registerSettingsBridge(
             if (parsedBody === undefined) return
             const { body } = parsedBody
             const record = (body ?? {}) as Record<string, unknown>
+            if (record.rebuild !== undefined && typeof record.rebuild !== 'boolean') {
+              writeBridgeJson(res, 400, { ok: false, code: 'overrides-invalid-shape', message: 'rebuild must be a boolean' })
+              return
+            }
             // 无载荷 = 读取（preset.yml params 子集，兼容旧读回）。
             if (record.overrides === undefined && record.promptConfigs === undefined) {
+              if (record.rebuild !== undefined) {
+                writeBridgeJson(res, 400, { ok: false, code: 'overrides-invalid-shape', message: 'rebuild requires overrides or promptConfigs' })
+                return
+              }
               writeBridgeJson(res, 200, { ok: true, value: { overrides: readParamOverrides(dir) } })
               return
             }
-            const rawOverrides = record.overrides !== null && typeof record.overrides === 'object' && !Array.isArray(record.overrides)
-              ? record.overrides as Record<string, unknown>
-              : undefined
+            if (record.overrides !== undefined && !isRecord(record.overrides)) {
+              writeBridgeJson(res, 400, { ok: false, code: 'overrides-invalid-shape', message: 'overrides must be an object' })
+              return
+            }
+            if (record.promptConfigs !== undefined && !Array.isArray(record.promptConfigs)) {
+              writeBridgeJson(res, 400, { ok: false, code: 'prompt-configs-invalid', message: 'promptConfigs must be an array' })
+              return
+            }
+            if (!guardPresetWrite(dir, res)) return
+            const rawOverrides = record.overrides as Record<string, unknown> | undefined
             // 参数键白名单：未知键 fail loud，避免写入「读回/参数桥都不消费」的死键。
             if (rawOverrides !== undefined) {
               const unknownKeys = Object.keys(rawOverrides).filter((key) => key === 'promptConfigs' || !PARAM_KEYS.has(key))
@@ -859,7 +903,7 @@ export function registerSettingsBridge(
                 presetRoot,
                 templateName,
                 rawOverrides,
-                Array.isArray(record.promptConfigs) ? record.promptConfigs as unknown[] : undefined,
+                record.promptConfigs as unknown[] | undefined,
               )
               // 预设切换前保存当前配置卡时只需落盘，不立即重建；
               // 后续 settings presetTemplate 变更会让目标预设完成唯一一次重建。
@@ -902,16 +946,24 @@ export function registerSettingsBridge(
               writeBridgeJson(res, 200, { ok: true, value: readPresetVariables(dir) })
               return
             }
+            if (record.variables !== undefined
+              && (!isRecord(record.variables) || Object.values(record.variables).some((value) => typeof value !== 'string'))) {
+              writeBridgeJson(res, 400, { ok: false, code: 'preset-variables-invalid', message: 'variables must be an object with string values' })
+              return
+            }
+            if (record.enabled !== undefined && typeof record.enabled !== 'boolean') {
+              writeBridgeJson(res, 400, { ok: false, code: 'preset-variables-invalid', message: 'enabled must be a boolean' })
+              return
+            }
+            if (!guardPresetWrite(dir, res)) return
             try {
               savePresetParams(
                 presetRoot,
                 templateName,
                 undefined,
                 undefined,
-                record.variables !== null && typeof record.variables === 'object' && !Array.isArray(record.variables)
-                  ? record.variables as Record<string, string>
-                  : undefined,
-                typeof record.enabled === 'boolean' ? record.enabled : undefined,
+                record.variables as Record<string, string> | undefined,
+                record.enabled as boolean | undefined,
               )
               afterOverridesChange?.()
               writeBridgeJson(res, 200, { ok: true, value: { variables: record.variables } })
@@ -957,6 +1009,7 @@ export function registerSettingsBridge(
                 writeBridgeJson(res, 400, { ok: false, code: 'custom-tools-invalid', message: identityErrors.join('; ') })
                 return
               }
+              if (!guardPresetWrite(dir, res)) return
               withPresetDoc(dir, (doc) => {
                 if (customTools.length === 0) doc.deleteIn(['customTools'])
                 else {
@@ -1292,6 +1345,7 @@ export function registerSettingsBridge(
               writeBridgeJson(res, 400, { ok: false, code: 'characters-rejected', message: '未收到角色卡文件' })
               return
             }
+            if (!guardPresetWrite(dir, res)) return
             const result = importCharacterCard(dirname(dir), normalized)
             if (!result.ok) {
               writeBridgeJson(res, 400, { ok: false, code: 'characters-rejected', message: result.message })
@@ -1310,6 +1364,7 @@ export function registerSettingsBridge(
               writeBridgeJson(res, 400, { ok: false, code: 'preset-dir-unavailable', message: 'presetDir 未配置' })
               return
             }
+            if (!guardPresetWrite(dir, res)) return
             const presetRoot = dirname(dir)
             mkdirSync(presetRoot, { recursive: true })
             const tempRoot = mkdtempSync(join(presetRoot, '.characters-upload-'))
@@ -1379,6 +1434,7 @@ export function registerSettingsBridge(
               writeBridgeJson(res, 400, { ok: false, code: 'characters-rejected', message: '缺少角色卡 id' })
               return
             }
+            if (!guardPresetWrite(dir, res)) return
             const result = deleteCharacterCard(dirname(dir), id)
             if (!result.ok) {
               writeBridgeJson(res, 400, { ok: false, code: 'characters-rejected', message: result.message })
@@ -1406,6 +1462,7 @@ export function registerSettingsBridge(
               writeBridgeJson(res, 400, { ok: false, code: 'characters-rejected', message: '缺少角色卡 id' })
               return
             }
+            if (!guardPresetWrite(dir, res)) return
             const result = applyCharacterToPreset(dirname(dir), basename(dir), id)
             if (!result.ok) {
               writeBridgeJson(res, 400, { ok: false, code: 'characters-rejected', message: result.message })
@@ -1434,6 +1491,7 @@ export function registerSettingsBridge(
               writeBridgeJson(res, 400, { ok: false, code: 'characters-rejected', message: '缺少角色卡 id' })
               return
             }
+            if (!guardPresetWrite(dir, res)) return
             const result = removeCharacterFromPreset(dirname(dir), basename(dir), id)
             if (!result.ok) {
               writeBridgeJson(res, 400, { ok: false, code: 'characters-rejected', message: result.message })
@@ -1468,6 +1526,7 @@ export function registerSettingsBridge(
               }
               return
             }
+            if (!guardPresetWrite(dir, res)) return
             try {
               const policy = record.policy
               const policyUrl = new URL('../engine/subagent-tool-policy-core.mjs', import.meta.url)
@@ -1559,10 +1618,7 @@ export function registerSettingsBridge(
               writeBridgeJson(res, 400, { ok: false, code: 'engine-capability-invalid', message: '能力或 recipe 请求格式无效' })
               return
             }
-            if (!isEditablePresetDir(dir)) {
-              writeBridgeJson(res, 403, { ok: false, code: 'engine-capability-readonly', message: 'system preset 只读，请先复制为用户预设' })
-              return
-            }
+            if (!guardPresetWrite(dir, res)) return
             const run = capabilityQueue.then(async () => {
               const file = join(dir, 'preset.yml')
               let original: string | undefined

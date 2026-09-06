@@ -142,7 +142,7 @@ UI / 写盘展示顺序固定为 `pre-step → system-section → runtime-contex
 
 工作台「角色管理」页导入角色卡到**角色卡库**（`~/.dsh/.agent-presets/.characters/<id>/`）：
 
-- **PNG**：tEXt chunk（`ccv3` 优先 / `chara` 兜底）base64 解析；图片按 PNG 魔数识别，原始文件走流式导入（单文件 32 MiB 上限），避免头像 base64 膨胀 JSON bridge
+- **PNG**：tEXt chunk（`ccv3` 优先 / `chara` 兜底）base64 解析；图片按 PNG 魔数识别，原始文件走流式导入（单文件 64 MiB 上限），避免头像 base64 膨胀 JSON bridge
 - **JSON**：chara_card_v2/v3 直接转换；小于 32 MiB 的载荷走 JSON bridge，接近上限时改走原始文件流；多文件（角色卡 × 响应预设）自动合并
 - 正文映射：`first_mes` → 开场白（`dedupe: session`）、`alternate_greetings` → 备用开场白、
   `description/personality/scenario` → 角色设定；采样参数剥离（模型设置 UI 管理）

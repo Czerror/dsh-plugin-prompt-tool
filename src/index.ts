@@ -488,6 +488,7 @@ export function apply(ctx: Context, configIn: Config): void {
       rebuildPreset()
       applyDefaultModel()
     },
+    () => runtime.presetDir,
   )
 
   // 首次以 base-only profile 启动时自动补 @deepseek-ai/dsh-web-app：

@@ -306,14 +306,14 @@ bridge-transport.ts 只负责 HTTP/Blob 传输和结果 shape guard：
     成功：{ ok: true, value, ...可选扩展 }
     失败：{ ok: false, code?, message? }
 
-JSON bridge 的统一上限为 32 MiB；角色卡接近上限时走原始文件流，避免 base64 膨胀。transport 不解析 feature 数据，也不拥有 Fields。
+JSON bridge 的统一上限为 32 MiB；角色卡原始文件流独立限制为 64 MiB，避免 base64 膨胀。transport 不解析 feature 数据，也不拥有 Fields。
 
 ### 7.3 保存保护
 
-1. 参数、设置和配置保存进入串行队列，避免失焦/自动保存并发覆盖。
+1. 全局 settings 保存使用独立队列；参数与 promptConfigs 共享预设保存队列，跨通道严格串行。
 2. 请求使用保存时的 snapshot；成功后只更新该 snapshot 的 saved 基线。
 3. 请求期间继续编辑时，当前 fields 与 saved snapshot 不同，dirty 保持为真。
-4. 成功后的静默 load 只有在草稿版本未变化且没有未完成阶段草稿时才应用。
+4. 成功后的静默 load 留在预设队列内，且只在全局草稿版本未变化、其他通道无待存草稿、对应草稿仍等于请求快照时执行；参数还要求没有未完成阶段草稿。
 5. promptConfigs 自动保存使用 debounce；手动保存仍经过配置校验。
 6. 参数空字符串/空数组沿用删除键语义；variables 的空字符串仍是合法占位值。详细参数规则见 [architecture-params.md](architecture-params.md)。
 

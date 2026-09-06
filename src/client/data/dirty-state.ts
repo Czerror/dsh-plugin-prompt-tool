@@ -220,3 +220,10 @@ export const switchesEqual = (a: SwitchSnapshot, b: SwitchSnapshot): boolean => 
 /** 参数保存后仅在草稿未继续变化且没有未完成阶段时重载。 */
 export const shouldReloadAfterParamSave = (current: SwitchSnapshot, saved: SwitchSnapshot): boolean =>
   switchesEqual(current, saved) && !hasIncompleteStageDrafts(saved.stages)
+
+/** 任一通道出现新草稿时，旧保存响应不得触发全量重载。 */
+export const shouldReloadAfterPresetSave = (
+  savedDraftVersion: number,
+  currentDraftVersion: number,
+  otherDraftsClean: boolean,
+): boolean => savedDraftVersion === currentDraftVersion && otherDraftsClean

@@ -17,12 +17,13 @@ import {
   EMPTY_SWITCHES,
   promptConfigsDirty,
   shouldReloadAfterParamSave,
+  shouldReloadAfterPresetSave,
   snapshotSwitches,
   switchesEqual,
   type SwitchSnapshot,
 } from './dirty-state.ts'
 import { isContentAsset, liftContentText, stripContentText } from './prompt-config-content.ts'
-import { buildParamOverrides, readParamOverridesPatch } from './param-overrides.ts'
+import { buildParamOverrides, readParamOverridesPatch, updateLoadedParamKeys } from './param-overrides.ts'
 import { createSerialTaskQueue } from './save-queue.ts'
 
 /** rc8 ui-settings 共享镜像传输面：标准字段经官方 settingsScope 读写。 */
@@ -165,7 +166,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
   }, [])
   const revisionRef = useRef<number | undefined>(undefined)
   const saveQueueRef = useRef(createSerialTaskQueue())
-  const paramSaveQueueRef = useRef(createSerialTaskQueue())
+  const presetSaveQueueRef = useRef(createSerialTaskQueue())
   const loadSeqRef = useRef(0)
   /** 用户草稿版本：patch 时递增。load 应答返回时若版本变化，跳过覆盖，避免
    *  保存后的静默刷新吞掉用户在读取期间的编辑。 */
@@ -380,39 +381,49 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
   }, [enqueueSave])
 
   /** 参数类设置：写入激活预设 preset.yml（savePresetParams；随预设隔离）。
-   *  保存进独立队列；请求成功只把「发起时快照」标记为已保存。若用户在请求期间
+   *  与提示词配置共用预设队列；请求成功只把「发起时快照」标记为已保存。若用户在请求期间
    *  继续编辑，则跳过静默重载，避免磁盘旧快照覆盖未保存草稿。 */
   const persistParamOverrides = useCallback(async () => {
-    const run = async (): Promise<void> => {
-      const f = fieldsRef.current
-      const savedSnapshot = snapshotSwitches(f)
+    const f = fieldsRef.current
+    const savedSnapshot = snapshotSwitches(f)
+    const draftVersion = draftVersionRef.current
+    const configsWereClean = !promptConfigsDirty(f.promptConfigs, savedConfigs)
+    const autoModelProvider = autoModelProviderRef.current
+    const autoSubagentModelProvider = autoSubagentModelProviderRef.current
+    await presetSaveQueueRef.current.enqueue(async () => {
       const overrides = buildParamOverrides(f, {
         loadedKeys: loadedKeysRef.current,
-        autoModelProvider: autoModelProviderRef.current,
-        autoSubagentModelProvider: autoSubagentModelProviderRef.current,
+        autoModelProvider,
+        autoSubagentModelProvider,
       })
       const res = await bridgeCall('paramOverrides', { overrides })
       if (res.ok) {
+        updateLoadedParamKeys(loadedKeysRef.current, overrides)
         // 只标记发起时快照；若期间有新编辑，当前 fields 仍保持 dirty。
         setSavedSwitches(savedSnapshot)
         const currentSnapshot = snapshotSwitches(fieldsRef.current)
         // 服务端会过滤未完成阶段；此时不重载，保留 UI 正在编辑的空草稿行。
-        if (shouldReloadAfterParamSave(currentSnapshot, savedSnapshot)) {
+        if (shouldReloadAfterPresetSave(
+          draftVersion,
+          draftVersionRef.current,
+          configsWereClean && shouldReloadAfterParamSave(currentSnapshot, savedSnapshot),
+        )) {
           // 参数已写激活预设 preset.yml：服务端重建后刷新（模型参数配置等随预设变化）。
-          void load({ silent: true })
+          await load({ silent: true })
         }
       } else {
         showNotice('error', '参数保存失败：' + (res.message ?? 'settings bridge unavailable'))
       }
-    }
-    await paramSaveQueueRef.current.enqueue(run)
+    })
   }, [load, savedConfigs, showNotice])
 
   /** 保存后是否静默重载。切换预设时传 false（随后的 settings.mutate 回调会统一 load，
    *  避免一次切换触发两次全量读取）。 */
   const persistConfigs = useCallback((configs: PromptConfigDraft[], options?: { reload?: boolean; rebuild?: boolean }): Promise<void> => {
     const contentEntries = configs.filter(isContentAsset)
-    return (async () => {
+    const draftVersion = draftVersionRef.current
+    const switchesWereClean = switchesEqual(snapshotSwitches(fieldsRef.current), savedSwitches)
+    return presetSaveQueueRef.current.enqueue(async () => {
       // 内容资产：text 先写生成目录文件。合并为单次 /import-preset（批量载荷），
       // 服务端只触发一次重建——此前逐条请求每条各重建一次（多次写盘+recomposition）。
       if (contentEntries.length > 0) {
@@ -436,12 +447,18 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
       })
       if (res.ok) {
         setSavedConfigs(configs)
-        if (options?.reload !== false) void load({ silent: true })
+        if (options?.reload !== false && shouldReloadAfterPresetSave(
+          draftVersion,
+          draftVersionRef.current,
+          switchesWereClean && !promptConfigsDirty(fieldsRef.current.promptConfigs, configs),
+        )) {
+          await load({ silent: true })
+        }
       } else {
         showNotice('error', '提示词配置保存失败：' + (res.message ?? 'settings bridge unavailable'))
       }
-    })()
-  }, [load, showNotice])
+    })
+  }, [load, savedConfigs, savedSwitches, showNotice])
 
   /** 模板变量：写激活预设 preset.yml 内容变量（后端 savePresetParams + afterOverridesChange 触发重建）。 */
   const saveTemplateVariables = useCallback(async (next?: Record<string, string>) => {

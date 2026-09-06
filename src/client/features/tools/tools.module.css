@@ -20,6 +20,20 @@
   overflow-y: auto;
 }
 
+.toolSurface {
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  padding: 8px;
+}
+
+.toolSurfaceControls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.customToolList { margin-top: 10px; }
+
 .toolSurfaceCard {
   display: flex;
   min-width: 0;
