@@ -35,6 +35,7 @@
   min-height: 0;
   overflow: hidden;
   pointer-events: auto;
+  background: var(--dsw-alias-bg-layer-2);
   transform: translateX(100%);
   box-shadow: var(--dsw-elevation-prominent);
   transition: transform .26s cubic-bezier(.22, 1, .36, 1);
