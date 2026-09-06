@@ -24,8 +24,13 @@ function makeCtx() {
   return { ctx, listeners }
 }
 
-function makeSession(events = []) {
-  return { id: `s-${Math.random()}`, header: { cwd: '/workspace', delegationDepth: 0 }, snapshotEvents: () => events }
+function makeSession(events = [], visibleMessages) {
+  return {
+    id: `s-${Math.random()}`,
+    header: { cwd: '/workspace', delegationDepth: 0 },
+    snapshotEvents: () => events,
+    ...(visibleMessages === undefined ? {} : { deriveMessages: () => visibleMessages }),
+  }
 }
 
 const makeAgent = (session) => ({ session, ctx: { tools: { presentAs: () => () => {} } } })
@@ -107,7 +112,7 @@ test('promoteGate + promoteAfterFirstResponse：turn/end 释放门控会话', ()
   assert.equal(promo.status(agent).promoted, true, '首轮结束后释放')
 })
 
-test('compaction/end 重置门控状态，边界前事件不重新晋升', () => {
+test('成功 compaction/end 重置门控状态，边界前事件不重新晋升', () => {
   const promo = createEpochPromotion([], { promoteGate: true, maxPromoteSteps: 4 })
   const session = makeSession([])
   const agent = makeAgent(session)
@@ -124,6 +129,16 @@ test('compaction/end 重置门控状态，边界前事件不重新晋升', () =>
   assert.equal(promo.status(agent).promoted, true)
 })
 
+test('失败的 compaction/end 不开启新 epoch', () => {
+  const promo = createEpochPromotion(['tool/call', 'assistant/message'], {})
+  const session = makeSession([{ type: 'tool/call', seq: 1 }])
+  const agent = makeAgent(session)
+  assert.equal(promo.status(agent).promoted, true)
+  promo.observe(session, { type: 'compaction/end', seq: 2, data: { error: 'provider failed' } })
+  assert.equal(promo.status(agent).boundary, -1)
+  assert.equal(promo.status(agent).promoted, true)
+})
+
 test('门控冷启动：从 durable log 重建同一相位', () => {
   const promo = createEpochPromotion([], { promoteGate: true, maxPromoteSteps: 4 })
   const session = makeSession([
@@ -134,7 +149,7 @@ test('门控冷启动：从 durable log 重建同一相位', () => {
   assert.equal(promo.status(makeAgent(session)).promoted, false, '冷启动按门控判定')
 })
 
-test('门控冷启动：DSH alpha.5 snapshotEvents API 重建相位', () => {
+test('门控冷启动：DSH 0.1.2-alpha.4 snapshotEvents API 重建相位', () => {
   const promo = createEpochPromotion(['tool/call', 'assistant/message'], {})
   const session = { id: 'snapshot-session', header: { cwd: '/workspace', delegationDepth: 0 }, snapshotEvents: () => [{ type: 'tool/call', seq: 1 }] }
   assert.equal(promo.status(makeAgent(session)).promoted, true)
@@ -291,7 +306,7 @@ test('tool-bootstrap：零工具模式 compaction 回退补 shell（对齐上游
 
 // ── code-presentation：晋升后 PTC mode 呈现（从 tool-bootstrap 拆出） ──
 
-test('code-presentation：晋升后应用 presentAs("ptc")，compaction/end 释放', async () => {
+test('code-presentation：晋升后应用 PTC，失败压缩保留、成功压缩释放', async () => {
   const { ctx, listeners } = makeCtx()
   const presented = []
   let disposed = 0
@@ -306,12 +321,15 @@ test('code-presentation：晋升后应用 presentAs("ptc")，compaction/end 释�
   assert.ok(handler, '应注册 system-prompt/assemble')
   await handler(null, { agent }, async () => assembled())
   assert.deepEqual(presented, ['ptc'], '晋升后应用 PTC mode 呈现')
-  // compaction/end 释放（回到受控相位）。
+  // 失败压缩未改写 surface，不释放呈现。
   const eventHandlers = listeners.get('session/event') ?? []
-  for (const { handler: h } of eventHandlers) h(session, { type: 'compaction/end', seq: 2 })
+  for (const { handler: h } of eventHandlers) h(session, { type: 'compaction/end', seq: 2, data: { error: 'provider failed' } })
+  assert.equal(disposed, 0, '失败压缩保持 PTC 呈现')
+  // 成功 compaction/end 释放（回到受控相位）。
+  for (const { handler: h } of eventHandlers) h(session, { type: 'compaction/end', seq: 3, data: {} })
   assert.equal(disposed, 1, 'compaction/end 释放呈现')
   // 新晋升信号（压缩边界后的 tool/call）后再次应用。
-  for (const { handler: h } of eventHandlers) h(session, { type: 'tool/call', seq: 3 })
+  for (const { handler: h } of eventHandlers) h(session, { type: 'tool/call', seq: 4 })
   await handler(null, { agent }, async () => assembled())
   assert.equal(presented.length, 2, '重新晋升后再次应用')
 })
@@ -397,7 +415,8 @@ test('context-gate：deferredSources 晋升后延迟 N 步过滤', async () => {
 test('context-gate：instructionHint 晋升后全文 dump 替换为一次性 hint', async () => {
   const { ctx, listeners } = makeCtx()
   applyContextGate(ctx, { instructionHint: true })
-  const session = makeSession([{ type: 'tool/call', seq: 1 }])
+  const visibleMessages = []
+  const session = makeSession([{ type: 'tool/call', seq: 1 }], visibleMessages)
   const agent = makeAgent(session)
   const first = await preStepThrough(listeners, agent, [
     msg('user', 'hi'),
@@ -407,8 +426,47 @@ test('context-gate：instructionHint 晋升后全文 dump 替换为一次性 hin
   assert.deepEqual(kinds, ['user', 'instruction-hint'], 'dump 替换为 hint')
   const hint = first.messages.find((m) => m.source.kind === 'instruction-hint')
   assert.match(hint.content[0].text, /Reference documents exist: \/ref\/A\.md, \/ref\/B\.md/)
+  visibleMessages.push(hint)
   const second = await preStepThrough(listeners, agent, [msg('user', 'hi2'), msg('agent-instructions', 'dump2')])
   assert.deepEqual(second.messages.map((m) => m.source.kind), ['user'], '后续 dump 静默丢弃')
+})
+
+test('context-gate：instructionHint 按模型可见 surface 去重与重新武装', async () => {
+  const run = async (events, visibleMessages) => {
+    const { ctx, listeners } = makeCtx()
+    applyContextGate(ctx, { instructionHint: true })
+    return preStepThrough(listeners, makeAgent(makeSession(events, visibleMessages)), [
+      msg('user', 'hi'),
+      { ...msg('agent-instructions', 'dump'), content: [{ type: 'text', text: 'Instructions from: /ref/A.md\nbody' }] },
+    ])
+  }
+  const hint = { ...msg('instruction-hint', 'hint'), source: { kind: 'instruction-hint', form: 'hint' } }
+  const durableHint = {
+    type: 'user/message',
+    seq: 2,
+    data: hint,
+  }
+
+  const resumed = await run([{ type: 'tool/call', seq: 1 }, durableHint], [hint])
+  assert.deepEqual(resumed.messages.map((m) => m.source.kind), ['user'], '重挂后不重复仍可见的 hint')
+
+  const shadowed = await run([
+    { type: 'tool/call', seq: 1 }, durableHint,
+    { type: 'compaction/end', seq: 3, data: {} }, { type: 'tool/call', seq: 4 },
+  ], [])
+  assert.deepEqual(shadowed.messages.map((m) => m.source.kind), ['user', 'instruction-hint'], 'hint 离开 surface 后重新提示')
+
+  const retained = await run([
+    { type: 'tool/call', seq: 1 }, durableHint,
+    { type: 'compaction/end', seq: 3, data: {} }, { type: 'tool/call', seq: 4 },
+  ], [hint])
+  assert.deepEqual(retained.messages.map((m) => m.source.kind), ['user'], '压缩未覆盖 hint 时不重复')
+
+  const failed = await run([
+    { type: 'tool/call', seq: 1 }, durableHint,
+    { type: 'compaction/end', seq: 3, data: { error: 'provider failed' } },
+  ], [hint])
+  assert.deepEqual(failed.messages.map((m) => m.source.kind), ['user'], '压缩失败时不重复且保持晋升')
 })
 
 test('context-gate：allowKinds 未声明时不过滤（对齐官方 pre-step 行为）', async () => {

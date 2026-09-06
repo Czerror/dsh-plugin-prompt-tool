@@ -79,7 +79,7 @@ export function isDelegated(session) {
 
 /**
  * 读取当前 Session 的不可变事件快照。
- * 正式 API 是 snapshotEvents()（DSH alpha.5+）；宿主缺失该接口时按空日志处理，不再读取旧 events 数组。
+ * 正式 API 是 snapshotEvents()（DSH 0.1.2-alpha.4+）；宿主缺失该接口时按空日志处理，不再读取旧 events 数组。
  */
 export function sessionEvents(session) {
   const snapshot = session?.snapshotEvents?.()

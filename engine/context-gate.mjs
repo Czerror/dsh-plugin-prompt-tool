@@ -32,7 +32,7 @@
  * The phase is the same epoch-aware promotion machine the anchored presets
  * use (see compaction-epoch.mjs): a durable `tool/call` and/or
  * `assistant/message` (per `promoteOn`, default `either`) promotes, and a
- * `compaction/end` boundary demotes again — the first post-compaction request
+ * successful `compaction/end` boundary demotes again — the first post-compaction request
  * is a "second first request" and is gated the same way. Derived from durable
  * events, so resume and reload preserve it.
  *
@@ -75,7 +75,7 @@
  * config fails at apply time, i.e. at preset mount, where it is visible.
  */
 
-import { createEpochPromotion } from './compaction-epoch.mjs'
+import { createEpochPromotion, isSuccessfulCompactionEnd } from './compaction-epoch.mjs'
 import { instructionHintMessages } from './instruction-hint.mjs'
 import { booleanOption, createWarnOnce, parsePromoteOn, validateConfig } from './shared.mjs'
 
@@ -126,6 +126,12 @@ function deferredList(value, field) {
   return new Set(value)
 }
 
+/** The visible surface, not the append-only log, owns hint lifetime. */
+function hasVisibleInstructionHint(session) {
+  const messages = session?.deriveMessages?.()
+  return Array.isArray(messages) && messages.some((message) => message?.source?.kind === 'instruction-hint')
+}
+
 /** Register the unified context gate. */
 export function apply(ctx, config) {
   const source = validateConfig(name, config, ALLOWED_KEYS)
@@ -143,19 +149,19 @@ export function apply(ctx, config) {
   const instructionHint = booleanOption(name, source.instructionHint, 'instructionHint', false)
 
   const promotion = createEpochPromotion(promoteEvents, { includeSubagents })
-  /** sessionId -> { steps, instructionHinted }（晋升后延迟/转换状态）。 */
+  /** Session -> { steps }（晋升后的延迟状态）。 */
   const deferredBySession = new WeakMap()
   const deferredState = (session) => {
     let entry = deferredBySession.get(session)
     if (entry === undefined) {
-      entry = { steps: 0, instructionHinted: false }
+      entry = { steps: 0 }
       deferredBySession.set(session, entry)
     }
     return entry
   }
   ctx.on('session/event', (session, event) => promotion.observe(session, event))
   ctx.on('session/event', (session, event) => {
-    if (event.type === 'compaction/end') deferredBySession.delete(session)
+    if (isSuccessfulCompactionEnd(event)) deferredBySession.delete(session)
   })
 
   const warnOnce = createWarnOnce(ctx, name)
@@ -236,7 +242,8 @@ export function apply(ctx, config) {
       if (instructionHint) {
         // 1 换 1 的转换不能按长度判断（长度相同会误判为无变化），
         // instructionHintMessages 本身幂等保留非目标消息，直接采用结果。
-        result = { ...result, messages: instructionHintMessages(result.messages, state, name) }
+        const hintState = { instructionHinted: hasVisibleInstructionHint(agent.session) }
+        result = { ...result, messages: instructionHintMessages(result.messages, hintState, name) }
       }
       return result
     } catch (error) {

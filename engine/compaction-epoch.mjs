@@ -2,14 +2,14 @@
  * Epoch-aware promotion tracker shared by the bootstrap and baseline-gate
  * plugins of the anchored presets.
  *
- * A compaction rewrites the model-visible surface: the pre-compaction
+ * A successful compaction rewrites the model-visible surface: the pre-compaction
  * conversation collapses into one synthetic summary message, and the
  * workspace-instruction baseline is re-injected from scratch. The first
  * post-compaction request is therefore a "second first request" — the same
  * first-token conditions the anchored presets exist to control. Promotion is
  * epoch-aware: only a durable promotion signal (`tool/call` and/or
  * `assistant/message`, per the caller's `promoteEvents`) recorded AFTER the
- * last `compaction/end` boundary counts as promoted. Before any compaction
+ * last successful `compaction/end` boundary counts as promoted. Before any compaction
  * the boundary is -1, which preserves the original one-shot semantics.
  *
  * State is memoized per session id and maintained incrementally through
@@ -52,6 +52,11 @@ export function hasAnchoredReasoning(content) {
   return first !== undefined && classifyReasoning(first.text).label === 'minimal-like'
 }
 
+/** True only when compaction completed and changed the model-visible surface. */
+export function isSuccessfulCompactionEnd(event) {
+  return event?.type === 'compaction/end' && event.data?.error === undefined
+}
+
 /** Build one epoch-aware promotion tracker. */
 export function createEpochPromotion(promoteEvents, options = {}) {
   const includeSubagents = options.includeSubagents === true
@@ -85,10 +90,10 @@ export function createEpochPromotion(promoteEvents, options = {}) {
     return false
   }
 
-  /** 应用一个事件；compaction/end 返回新 entry（旧状态清零、boundary 前推）。 */
+  /** 应用一个事件；成功 compaction/end 返回新 entry（旧状态清零、boundary 前推）。 */
   const applyEvent = (entry, event) => {
     const seq = event.seq ?? 0
-    if (event.type === 'compaction/end') return freshEntry(seq)
+    if (isSuccessfulCompactionEnd(event)) return freshEntry(seq)
     if (seq <= entry.boundary) return entry
     if (gated) {
       if (event.type === 'tool/call') entry.toolCalled = true
@@ -118,7 +123,7 @@ export function createEpochPromotion(promoteEvents, options = {}) {
     /**
      * Current phase of the agent's session.
      * @param agent - the assembly/pre-step agent, or undefined outside an agent.
-     * @returns { boundary, promoted } — `boundary` is the last compaction/end
+     * @returns { boundary, promoted } — `boundary` is the last successful compaction/end
      *   seq (-1 before any compaction); `promoted` is true when a durable
      *   promotion signal exists after that boundary.
      */

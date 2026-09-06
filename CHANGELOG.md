@@ -15,7 +15,9 @@
 
 ### 内置预设与组合库对齐
 
-- Anchored Standard 同步 `dsh-anchored-standard` 到 `7e2a195`：核心双工具/晋升配置显式收敛到 `preset/anchored/preset.yml`；通用 `instruction-hint` 引擎补齐 cwd→项目根完整探测、建议式措辞和随机 UUID，避免宿主重启竞态下确定性消息 ID 冲突。
+- Anchored Standard 内联快照同步到 `180184c`：核心双工具/晋升配置显式收敛到 `preset/anchored/preset.yml`；通用 `instruction-hint` 引擎补齐 cwd→项目根完整探测、建议式措辞和随机 UUID，避免宿主重启竞态下确定性消息 ID 冲突。
+- DSH 最低运行版本统一为 `0.1.2-alpha.4`，依赖范围同时接受当前 `0.1.3-alpha.1`；会话历史读取继续只走正式 `snapshotEvents()` API。
+- `context-gate.instructionHint` 改按 `session.deriveMessages()` 的模型可见 surface 去重：重挂不重复，压缩未覆盖或失败时保持，确被遮蔽后重新提示；晋升与 PTC 仅在成功 `compaction/end` 后重置。
 - 删除内置 `preset/liangshen` 与专属回归；严格门控、延迟注入等通用引擎参数继续保留为用户预设 opt-in 能力。
 - 对齐 DeepSeek Harness `0.1.2-alpha.4` 四套官方预设：PTC 使用 `mode: ptc` 与禁用 `tool-workflow` 的 delegation 变体；Creative 恢复 Cordis 官方行顺序并更新内置编辑技能。
 - `rebuild-composition` 改为从 `standard/minimal/ptc/cordis` 全量重建：本地模块自动发现并只保留在 `source/local/`，官方切块/变体只生成到 `library/`；装配发现跨目录同名即失败，另加官方行语义覆盖校验、孤儿文件清理、失败安全替换，并清除模块间串入的下一段注释。

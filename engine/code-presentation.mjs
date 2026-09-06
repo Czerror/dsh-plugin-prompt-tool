@@ -8,7 +8,7 @@
  *
  * 相位与 tool-bootstrap / context-gate 同源：epoch-aware promotion
  * （compaction-epoch.mjs）。晋升后（tool/call 或 assistant/message，按
- * promoteOn，默认 either）应用 PTC mode；compaction/end 释放（压缩后回到
+ * promoteOn，默认 either）应用 PTC mode；成功 compaction/end 释放（压缩后回到
  * 受控相位，重新晋升再应用）。
  *
  * SUBAGENTS: includeSubagents=false（默认）时子代理（delegationDepth > 0）
@@ -18,7 +18,7 @@
  * apply time，即 preset 挂载处可见可修。
  */
 
-import { createEpochPromotion } from './compaction-epoch.mjs'
+import { createEpochPromotion, isSuccessfulCompactionEnd } from './compaction-epoch.mjs'
 import { booleanOption, parsePromoteOn, validateConfig } from './shared.mjs'
 
 /** Cordis plugin name used by loader diagnostics. */
@@ -72,7 +72,7 @@ export function apply(ctx, config) {
 
   ctx.on('session/event', (session, event) => promotion.observe(session, event))
   ctx.on('session/event', (session, event) => {
-    if (event.type === 'compaction/end') {
+    if (isSuccessfulCompactionEnd(event)) {
       releaseCodePresentation(session)
       return
     }

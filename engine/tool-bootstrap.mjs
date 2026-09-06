@@ -81,9 +81,9 @@
  * POST-PROMOTION CATALOG (prompt-tool patch): after promotion both modes
  * keep the assembled catalog (no narrowing). The controlled phase below
  * still narrows the catalog before promotion and after compaction.
- * COMPACTION (local addition): a compaction rewrites the whole surface, so the
+ * COMPACTION (local addition): a successful compaction rewrites the whole surface, so the
  * first post-compaction request is a "second first request". Promotion is
- * epoch-aware (see compaction-epoch.mjs): after `compaction/end` the session
+ * epoch-aware (see compaction-epoch.mjs): after a successful `compaction/end` the session
  * falls back to the controlled phase — the bootstrap pair plus
  * `compactionTools` (a core work set, default none) — until a NEW durable
  * promotion signal exists past that boundary. The model is mid-task and needs
