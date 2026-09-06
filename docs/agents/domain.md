@@ -1,27 +1,13 @@
 # Domain Docs
 
-工程技能探索代码库前，应按以下规则读取领域文档。
+布局：single-context，使用根目录 `CONTEXT.md` 和 `docs/adr/`。
 
 ## 探索前读取
 
 - 根目录的 `CONTEXT.md`
-- 若根目录存在 `CONTEXT-MAP.md`，读取其中指向且与任务相关的 `CONTEXT.md`
 - `docs/adr/` 中与当前工作相关的 ADR
 
-文件不存在时静默继续，不预先建议创建。领域术语或决策实际形成后，再由 `/domain-modeling` 按需创建。
-
-## 文件布局
-
-本仓库采用 single-context：
-
-```text
-/
-├── CONTEXT.md
-├── docs/adr/
-│   ├── 0001-example-decision.md
-│   └── 0002-another-decision.md
-└── src/
-```
+完成标准：已读取所有存在且与任务相关的上述文档；文件不存在时静默继续。领域术语或决策实际形成后，再由 `/domain-modeling` 按需创建。
 
 ## 使用术语表中的词汇
 

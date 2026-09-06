@@ -19,8 +19,8 @@ dsh --profile prompt-tool                                          # 首次启�
 ## 特性
 
 - 🔌 **六个官方插入点一次接线**：一个引擎注册全部可注入层级，共享同一套过滤与降级语义
-- ✍️ **一切皆可配置**：`layer / strategy / position / promotion / subagents / modelScope / mergeMode / order / text / texts / fill / variables / params` 全开放
-- 🧑‍🤝‍🧑 **子代理三态**：`subagents: none / inherit / only`，身份类提示词可只注入子代理
+- ✍️ **一切皆可配置**：`layer / strategy / position / promotion / audience / modelScope / mergeMode / order / text / texts / fill / variables / params` 全开放
+- 🧑‍🤝‍🧑 **消息受众三态**：`audience: main / subagent`，省略 `audience` 表示公用；身份类提示词可只注入子代理
 - 🗂️ **内容与执行分离**：每条提示词配置渲染为 `~/.dsh/.agent-presets/<预设>/prompt-configs/` 下的 yml，引擎按文件名数字前缀顺序扫描
 - 🧩 **三层合并**：引擎默认（按 params 生成）< 模板默认 promptConfigs < 预设 promptConfigs，同名 `id` 覆盖
 - 🖥️ **官方 slot 工作台**：`shell.overlay` 驱动的左上角悬浮按钮通过 body portal 落在对话界面层，右侧抽屉（主会话/子代理/技能设置/预设配置/角色管理五页）仍由官方 slot 承载；按钮纵向位置独立于其他插件，`sidebar.footer.action` 几何探针直接读取官方 AppFrame 侧栏轨道（覆盖 264px 起步、可拉伸、56px 折叠 rail 与断点自动折叠），悬浮按钮圆缘与侧栏右缘相切贴靠（间距 0，可见图标保持 5px 微呼吸）；UI 挂载全部交给官方 SlotRegistry，无宿主 DOM 选择器
@@ -106,7 +106,7 @@ src/client/
 
 | `layer` | 官方通道 | 关键参数 |
 |---|---|---|
-| `pre-step` | `agent/pre-step` 消息批（默认层） | `position / dedupe / promotion / subagents / modelScope / strategy` |
+| `pre-step` | `agent/pre-step` 消息批（默认层） | `position / dedupe / promotion / audience / modelScope / strategy` |
 | `system-section` | `ctx.systemPrompt.section` 静态段 | `order / text / templateFile / variables / params.complete / params.sectionName` |
 | `runtime-context` | `ctx.systemPrompt.context` 动态快照 | `order / text / variables / params.contextName` |
 | `agent-request` | `agent/request`（LlmCallConfig） | `params.patch`（浅合并）/ `params.replace`（整体替换） |
