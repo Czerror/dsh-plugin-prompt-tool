@@ -119,3 +119,17 @@
 - preset/creative/skills/：Cordis 组合编辑的按需工作流。
 
 每条规则只保留一个权威位置；本文件负责路由和硬约束，具体框架细节在对应文档维护。
+
+## Agent skills
+
+### Issue tracker
+
+Issue 使用 `.scratch/<feature>/` 下的本地 Markdown 文件管理。详见 `docs/agents/issue-tracker.md`。
+
+### Triage labels
+
+使用五个默认 triage 标签。详见 `docs/agents/triage-labels.md`。
+
+### Domain docs
+
+采用 single-context 布局：根目录 `CONTEXT.md` 与 `docs/adr/`。详见 `docs/agents/domain.md`。
