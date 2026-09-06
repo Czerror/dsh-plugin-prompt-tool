@@ -50,7 +50,6 @@ export interface PromptToolStore {
   subscribeFields: (listener: () => void) => () => void
   meta: EngineMeta
   loading: boolean
-  providers: string[]
   modelCatalog: Record<string, string[]>
   hostDefaultModel?: HostDefaultModel
   moduleFacts?: PresetModuleFacts
@@ -131,7 +130,6 @@ function waitForScope(scope: SettingsScope<Record<string, unknown>>): Promise<Se
 }
 
 export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolSettingsTransport): PromptToolStore {
-  const [providers, setProviders] = useState<string[]>([])
   const [modelCatalog, setModelCatalog] = useState<Record<string, string[]>>({})
   const [hostDefaultModel, setHostDefaultModel] = useState<HostDefaultModel | undefined>(undefined)
   const [moduleFacts, setModuleFacts] = useState<PresetModuleFacts | undefined>(undefined)
@@ -191,7 +189,6 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
 
   const applyView = useCallback((res: BridgeResult<BridgeSettingsView>): Fields => {
     setTemplatePreStepCount(res.ok && typeof res.templatePreStepCount === 'number' ? res.templatePreStepCount : 0)
-    setProviders(res.ok ? res.providers ?? [] : [])
     setModelCatalog(res.ok ? res.modelCatalog ?? {} : {})
     setHostDefaultModel(res.ok ? res.hostDefaultModel : undefined)
     setModuleFacts(res.ok ? res.moduleFacts : undefined)
@@ -659,7 +656,6 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     subscribeFields,
     meta,
     loading,
-    providers,
     modelCatalog,
     hostDefaultModel,
     moduleFacts,

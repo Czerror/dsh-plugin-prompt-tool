@@ -82,9 +82,7 @@
     │     └─ pages/
     │        ├─ ConfigListWithTemplates.tsx
     │        ├─ MainSessionPage.tsx
-    │        ├─ ModelRouteStatus.tsx
-    │        ├─ SubagentPage.tsx
-    │        └─ model-route-status.ts
+    │        └─ SubagentPage.tsx
     ├─ data/
     │  ├─ bridge-client.ts
     │  ├─ bridge-transport.ts
@@ -224,8 +222,8 @@ workspace-pages.ts 是页面元数据的唯一来源。默认页为 features，�
 
 | id | 标题 | 主要组合 |
 |---|---|---|
-| features | 主会话 | ModelRouteStatus、主会话 ModelRouteCard、PromptConfigsEditor（通用/引擎能力双视图）、按能力拆分的 EngineModuleList、直接工具卡列表 |
-| subagent | 子代理 | 子代理 ModelRouteStatus、ModelRouteCard、DelegationToolsCard、ToolSurfaceView、ConfigListWithTemplates |
+| features | 主会话 | 主会话 ModelRouteCard、PromptConfigsEditor（通用/引擎能力双视图）、按能力拆分的 EngineModuleList、直接工具卡列表 |
+| subagent | 子代理 | ModelRouteCard、DelegationToolsCard、ToolSurfaceView、ConfigListWithTemplates |
 | skills | 技能设置 | 目录与来源、状态筛选、SkillRow、目录引用/导入/排序 |
 | presets | 预设配置 | 全局生成开关、AGENTS/生成目录设置、PresetSwitcher 与预设 CRUD |
 | characters | 角色管理 | PNG/JSON 导入、角色卡库、应用/移除/删除与目录打开 |
@@ -248,7 +246,7 @@ workspace-pages.ts 是页面元数据的唯一来源。默认页为 features，�
 |---|---|---|
 | 工作台 open | PromptToolWorkspaceController | client 插件生命周期；无 React 依赖 |
 | 当前顶层页 | PromptWorkspace | 工作台挂载期；不写 URL 或 localStorage |
-| fields、meta、providers、catalog | usePromptToolStore | 工作台挂载期；打开时重新同步 |
+| fields、meta、catalog | usePromptToolStore | 工作台挂载期；打开时重新同步 |
 | 标准设置值 | 官方 SettingsScope | 宿主 mirror 生命周期 |
 | 当前会话模型 | session-model-face | 官方 sessions projection 生命周期 |
 | filter、search、展开、确认 | 对应 feature | 页面或 feature 局部生命周期 |
@@ -423,7 +421,7 @@ ui/ 只接收 props/callback，当前真实共享 seam 包括：
 - prompt-tool-view、dirty-state、param-overrides、save-queue、session-model-face：映射、快照、空值、队列和引用稳定；
 - tab-key、workspace-navigation、dialog-focus、anchored-popover：键盘、ARIA、焦点和锚点行为；
 - style-ownership：CSS Modules、token、0.5px、reduced-motion 和全局污染边界；
-- prompt-config-order、skill-status、subagent-policy-draft、model-route-status：领域纯逻辑。
+- prompt-config-order、skill-status、subagent-policy-draft：领域纯逻辑。
 
 交互 DOM 行为由纯 helper、静态契约和隔离浏览器 smoke 共同覆盖，不新增 Jest、Vitest、jsdom 或 happy-dom。
 

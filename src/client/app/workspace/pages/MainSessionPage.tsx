@@ -5,7 +5,6 @@ import { PromptConfigsEditor } from '../../../features/prompts/PromptConfigsEdit
 import { ModelRouteModuleCard } from '../../../features/models/ModelRouteCard.tsx'
 import { EngineModuleCards } from '../../../features/modules/EngineModuleList.tsx'
 import { CustomToolsCard } from '../../../features/tools/CustomToolsCard.tsx'
-import { ModelRouteStatus } from './ModelRouteStatus.tsx'
 import ui from '../../../ui/controls.module.css'
 /** 主会话页：主对话参数 + Preset/AGENTS 内容 + 管线状态卡 + 模块库（层筛选）。
  *  注入层 tab 已并入本页（层专属开关与内容资产卡片），模块库按层级下拉筛选浏览。 */
@@ -27,7 +26,6 @@ export const MainSessionPage = memo(function MainSessionPage(props: { store: Pro
   }, [store])
   return (
     <section className={ui.section} aria-label="主会话与全局">
-      <ModelRouteStatus store={store} provider={fields.modelProvider} />
       <PromptConfigsEditor
         meta={store.meta}
         configs={fields.promptConfigs}
