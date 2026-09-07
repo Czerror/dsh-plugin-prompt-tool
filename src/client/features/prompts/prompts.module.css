@@ -28,7 +28,90 @@
   justify-content: flex-end;
   margin-left: auto;
 }
-.configGrid { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: flex-end; }
+.configFormLayout { container-type: inline-size; }
+.configGrid {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 10px 14px;
+  align-items: start;
+}
+.strategyGrid > * { min-width: 0; grid-column: 1 / -1; }
+.fieldSpan2,
+.fieldSpan3,
+.fieldSpan4,
+.fieldSpan5,
+.fieldSpan6,
+.fieldSpan8,
+.fieldSpan9 { min-width: 0; }
+.fieldSpan2 { grid-column: span 2; }
+.fieldSpan3 { grid-column: span 3; }
+.fieldSpan4 { grid-column: span 4; }
+.fieldSpan5 { grid-column: span 5; }
+.fieldSpan6 { grid-column: span 6; }
+.fieldSpan8 { grid-column: span 8; }
+.fieldSpan9 { grid-column: span 9; }
+.fieldControl { width: 100%; }
+.fieldFull { min-width: 0; grid-column: 1 / -1; }
+.configToggleField { min-width: 0; flex-direction: column; align-items: flex-start; gap: 4px; }
+.configAdvanced {
+  border-top: 0.5px solid var(--dsw-alias-border-l2);
+  padding-top: 10px;
+}
+.configAdvancedSummary {
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.4;
+  letter-spacing: .02em;
+}
+.configAdvancedSummary::marker { color: var(--dsw-alias-label-tertiary); }
+.configAdvanced[open] > .configAdvancedSummary { margin-bottom: 10px; }
+.variableHeader {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.variableHeaderCopy { display: flex; min-width: 0; flex-direction: column; gap: 2px; }
+
+@container (min-width: 640px) {
+  .configGrid { grid-template-columns: repeat(12, minmax(0, 1fr)); }
+}
+
+@container (min-width: 960px) {
+  .configGrid { grid-template-columns: repeat(12, minmax(0, 1fr)); }
+  .fieldSpan2 { grid-column: span 2; }
+  .fieldSpan3 { grid-column: span 3; }
+  .fieldSpan4 { grid-column: span 4; }
+  .fieldSpan5 { grid-column: span 5; }
+  .fieldSpan6 { grid-column: span 6; }
+  .fieldSpan9 { grid-column: span 9; }
+}
+
+/* 容器查询不可用时，按视口保留同一套紧凑布局。 */
+@media (max-width: 959px) {
+  .configGrid { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+  .fieldSpan2,
+  .fieldSpan3,
+  .fieldSpan4,
+  .fieldSpan5 { grid-column: span 3; }
+  .fieldSpan6,
+  .fieldSpan8,
+  .fieldSpan9 { grid-column: span 6; }
+}
+
+@media (max-width: 620px) {
+  .configGrid { grid-template-columns: minmax(0, 1fr); }
+  .fieldSpan2,
+  .fieldSpan3,
+  .fieldSpan4,
+  .fieldSpan5,
+  .fieldSpan6,
+  .fieldSpan8,
+  .fieldSpan9 { grid-column: 1 / -1; }
+}
 .configInputError { /* !important：错误态必须压过 :focus-visible 边框。 */ border-color: var(--dsw-alias-label-error) !important; }
 .configJsonInput { min-height: 88px; }
 .configJsonError { color: var(--dsw-alias-state-error-primary); font-weight: 400; }

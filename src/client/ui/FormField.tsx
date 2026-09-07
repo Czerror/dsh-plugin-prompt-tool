@@ -2,10 +2,10 @@ import { cloneElement, isValidElement, useId, type ReactElement, type ReactNode 
 import styles from './controls.module.css'
 
 /** 共享表单字段：生成 label/id 关联并渲染可选说明。 */
-export function FormField(props: { label: string; hint?: string; children: ReactNode }): ReactNode {
+export function FormField(props: { label: string; hint?: string; className?: string; children: ReactNode }): ReactNode {
   const id = useId()
   return (
-    <div className={styles.configField}>
+    <div className={props.className === undefined ? styles.configField : `${styles.configField} ${props.className}`}>
       <label className={styles.configFieldLabel} htmlFor={id}>{props.label}</label>
       {isValidElement(props.children) ? cloneElement(props.children as ReactElement<{ id?: string }>, { id }) : props.children}
       {props.hint && <p className={styles.configFieldHint}>{props.hint}</p>}

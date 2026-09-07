@@ -351,6 +351,8 @@ ui/ 只接收 props/callback，当前真实共享 seam 包括：
 
 模块卡内的选择器、开关及小型文本/数字输入使用紧凑尺寸；大文本和 JSON 编辑器保留 `field-sizing: content`、手动纵向缩放与现有自动测高，不随紧凑控件一起压缩。
 
+promptConfigs 模块卡展开区按基础信息、注入规则、作用范围、内容、策略参数和高级元数据分区；短字段使用基于卡片宽度的容器网格，高级 source/identity 元数据使用原生 details 收纳。布局变化不得改变字段默认值、未知枚举兼容或保存载荷。
+
 主会话模块列表提供两个互斥 sibling view：`general` 展示当前 seam 的 promptConfigs，`capability` 展示模型路由、引擎能力卡和 tool-pipeline 工具卡。`layerFilter` 在两个 view 间保持独立；view 切换不改变 dirty 快照、参数保存队列或模块事实。
 
 引擎能力卡只展示当前预设 `modules` 显式声明的能力；`modules: []` 不展开默认骨架，官方组合行不生成插件能力卡。可编辑卡提供局部二次确认删除，删除只移除模块声明并保留 dormant 参数，成功后重建一次并刷新模块事实。
