@@ -1,9 +1,11 @@
 import { useEffect, useId, useMemo, useState, type ReactNode } from 'react'
 import clsx from 'clsx'
+import { Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
 import { FormField } from '../../ui/FormField.tsx'
 import { MenuSelect } from '../../ui/MenuSelect.tsx'
 import { TagInput } from '../../ui/TagInput.tsx'
 import { autoResizeTextarea } from './textarea-resize.ts'
+import { EMPTY_BEHAVIOR_LABELS } from './prompt-config-policy.ts'
 import sharedCss from '../../ui/controls.module.css'
 import featureCss from './prompts.module.css'
 
@@ -24,7 +26,7 @@ function selectValue(options: readonly string[], value: string | undefined, fall
 export function OptionField(props: { label: string; hint?: string; className?: string; value: string | undefined; options: readonly string[]; fallback: string; onChange: (value: string) => void; keepCurrent?: boolean; labels?: Record<string, string> }): ReactNode {
   const options = props.keepCurrent === true ? selectOptions(props.options, props.value) : props.options.map((item) => ({ value: item, label: item }))
   return (
-    <FormField label={props.label} hint={props.hint} className={props.className}>
+    <FormField label={props.label} hint={props.hint} hintMode="tooltip" className={props.className}>
       <MenuSelect
         className={clsx(styles.configInput, styles.fieldControl)}
         ariaLabel={props.label}
@@ -78,21 +80,22 @@ export function JsonField(props: { label: string; value: Record<string, unknown>
 
 /** 布尔开关行（params 结构化编辑用）。 */
 function ParamToggle(props: { label: string; hint?: string; className?: string; checked: boolean; onChange: (checked: boolean) => void }): ReactNode {
-  return (
-    <label className={clsx(styles.configEnable, props.className)} title={props.checked ? '点击关闭' : '点击开启'}>
+  const field = (
+    <label className={clsx(styles.configEnable, props.className)}>
       <span className={styles.configFieldLabel}>{props.label}</span>
       <input type="checkbox" aria-label={props.label} checked={props.checked} onChange={(e) => props.onChange(e.target.checked)} />
       <span className={styles.switch} aria-hidden="true"><i /></span>
-      {props.hint && <span className={styles.configFieldHint}>{props.hint}</span>}
     </label>
   )
+  return props.hint === undefined
+    ? field
+    : <Tooltip label={props.hint} side="right" delayMs={500} maxWidth={360}>{field}</Tooltip>
 }
 
 /** params 文本域（结构化编辑用）：失焦写入草稿 params。 */
 function ParamTextarea(props: { label: string; hint?: string; className?: string; value: string; onChange: (value: string) => void }): ReactNode {
   return (
-    <span className={clsx(styles.configFieldStack, props.className)}>
-      <span className={styles.configFieldLabel}>{props.label}</span>
+    <FormField label={props.label} hint={props.hint} hintMode="tooltip" className={props.className}>
       <textarea
         className={styles.configTextarea}
         aria-label={props.label}
@@ -100,15 +103,14 @@ function ParamTextarea(props: { label: string; hint?: string; className?: string
         spellCheck={false}
         onChange={(e) => { autoResizeTextarea(e); props.onChange(e.target.value) }}
       />
-      {props.hint && <p className={styles.configFieldHint}>{props.hint}</p>}
-    </span>
+    </FormField>
   )
 }
 
 /** params 单行文本域（结构化编辑用）。 */
 function ParamInput(props: { label: string; hint?: string; className?: string; value: string; onChange: (value: string) => void }): ReactNode {
   return (
-    <FormField label={props.label} hint={props.hint} className={props.className}>
+    <FormField label={props.label} hint={props.hint} hintMode="tooltip" className={props.className}>
       <input className={clsx(styles.configInput, styles.fieldControl)} value={props.value} spellCheck={false} onChange={(e) => props.onChange(e.target.value)} />
     </FormField>
   )
@@ -135,15 +137,15 @@ export function StrategyParamsFields(props: { strategy: string; layer?: string; 
     const isPersona = str('sectionName') === 'deployment:persona' || str('sectionName') === 'persona'
     return (
       <>
-        <ParamToggle className={styles.fieldSpan4} label="人设段" hint="开启 = 注册为全局 persona（sectionName=deployment:persona，同名 shadow；触发人设徽标/相位先行/子代理继承）"
+        <ParamToggle className={styles.fieldSpan4} label="人设" hint="开启后注册为全局人设；同名人设会覆盖，子代理继承"
           checked={isPersona}
           onChange={(next) => set('sectionName', next ? 'deployment:persona' : '')} />
         {!isPersona && (
-          <ParamInput className={styles.fieldSpan8} label="sectionName（自定义注册段名）" hint="可选；空 = 引擎回退用 id 注册为普通段。同名段会 shadow 合并/覆盖官方段。" value={str('sectionName')} onChange={(next) => set('sectionName', next)} />
+          <ParamInput className={styles.fieldSpan8} label="段名" hint="留空时使用配置标识；同名段会覆盖已有段" value={str('sectionName')} onChange={(next) => set('sectionName', next)} />
         )}
-        <ParamToggle className={styles.fieldSpan4} label="complete（独占 system prompt）" hint="开启后 assembly 只保留本段；预设内互斥（多个 complete 官方 fail loud）"
+        <ParamToggle className={styles.fieldSpan4} label="独占" hint="开启后系统提示只保留本段；同一预设只能启用一个"
           checked={bool('complete')} onChange={(next) => set('complete', next)} />
-        <ParamToggle className={styles.fieldSpan4} label="suppressRuntimeContext（抑制动态上下文）" hint="等价官方 dsh-persona includeRuntimeContext:false"
+        <ParamToggle className={styles.fieldSpan4} label="动态抑制" hint="开启后不附加运行时上下文"
           checked={bool('suppressRuntimeContext')} onChange={(next) => set('suppressRuntimeContext', next)} />
       </>
     )
@@ -155,18 +157,18 @@ export function StrategyParamsFields(props: { strategy: string; layer?: string; 
     return (
       <>
         {managed && (
-          <p className={clsx(styles.configFieldHint, styles.fieldFull)}>锚定开关与文本由设置页「锚定」管理（writePreset 重建时统一写入本配置），此处编辑会被覆盖。</p>
+          <p className={clsx(styles.configFieldHint, styles.fieldFull)}>锚定开关与文本由设置页「锚定」管理；重建预设会覆盖此处。</p>
         )}
         {!managed && (
           <>
-            <ParamToggle className={styles.fieldSpan4} label="useCustom（自定义锚文本）" hint="true = 固定使用 text；false = 按 buildPattern/complexPattern 自动选择引导句"
+            <ParamToggle className={styles.fieldSpan4} label="自定义" hint="开启后固定使用自定义锚文本；关闭后按任务自动选择"
               checked={bool('useCustom')} onChange={(next) => set('useCustom', next)} />
-            <ParamTextarea className={styles.fieldFull} label="text（自定义锚文本）" hint="useCustom=true 时固定注入" value={str('text')} onChange={(next) => set('text', next)} />
-            <ParamInput className={styles.fieldSpan6} label="buildPattern（构建任务正则）" hint="命中即用 firstTurnBuild 引导句" value={str('buildPattern')} onChange={(next) => set('buildPattern', next)} />
-            <ParamInput className={styles.fieldSpan6} label="complexPattern（复杂任务正则）" hint="命中即用 firstTurnDeep 引导句" value={str('complexPattern')} onChange={(next) => set('complexPattern', next)} />
-            <ParamTextarea className={styles.fieldFull} label="firstTurnBuild（构建引导句）" value={str('firstTurnBuild')} onChange={(next) => set('firstTurnBuild', next)} />
-            <ParamTextarea className={styles.fieldFull} label="firstTurnInspect（排查引导句）" value={str('firstTurnInspect')} onChange={(next) => set('firstTurnInspect', next)} />
-            <ParamTextarea className={styles.fieldFull} label="firstTurnDeep（复杂设计引导句）" value={str('firstTurnDeep')} onChange={(next) => set('firstTurnDeep', next)} />
+            <ParamTextarea className={styles.fieldFull} label="自定义锚文本" hint="启用自定义时固定注入此文本" value={str('text')} onChange={(next) => set('text', next)} />
+            <ParamInput className={styles.fieldSpan6} label="构建任务规则" hint="命中后使用构建引导" value={str('buildPattern')} onChange={(next) => set('buildPattern', next)} />
+            <ParamInput className={styles.fieldSpan6} label="复杂任务规则" hint="命中后使用深度引导" value={str('complexPattern')} onChange={(next) => set('complexPattern', next)} />
+            <ParamTextarea className={styles.fieldFull} label="构建引导" value={str('firstTurnBuild')} onChange={(next) => set('firstTurnBuild', next)} />
+            <ParamTextarea className={styles.fieldFull} label="排查引导" value={str('firstTurnInspect')} onChange={(next) => set('firstTurnInspect', next)} />
+            <ParamTextarea className={styles.fieldFull} label="深度引导" value={str('firstTurnDeep')} onChange={(next) => set('firstTurnDeep', next)} />
           </>
         )}
       </>
@@ -177,16 +179,16 @@ export function StrategyParamsFields(props: { strategy: string; layer?: string; 
     return (
       <>
         {managed && (
-          <p className={clsx(styles.configFieldHint, styles.fieldFull)}>引导开关与文本由设置页「引导」管理（writePreset 重建时统一写入本配置），此处编辑会被覆盖。</p>
+          <p className={clsx(styles.configFieldHint, styles.fieldFull)}>引导开关与文本由设置页「引导」管理；重建预设会覆盖此处。</p>
         )}
         {!managed && (
           <>
-            <ParamToggle className={styles.fieldSpan4} label="useCustom（自定义每轮引导）" hint="true = 固定使用 text；false = 按任务自动选择强弱引导"
+            <ParamToggle className={styles.fieldSpan4} label="自定义" hint="开启后固定使用自定义引导；关闭后按任务自动选择"
               checked={bool('useCustom')} onChange={(next) => set('useCustom', next)} />
-            <ParamTextarea className={styles.fieldFull} label="text（自定义引导文本）" hint="useCustom=true 时固定注入" value={str('text')} onChange={(next) => set('text', next)} />
-            <p className={clsx(styles.configFieldHint, styles.fieldFull)}>复杂任务判定复用锚定卡的 complexPattern（引导 fallback 共用分类器）。</p>
-            <ParamTextarea className={styles.fieldFull} label="guideWeak（简单任务自动引导）" value={str('guideWeak')} onChange={(next) => set('guideWeak', next)} />
-            <ParamTextarea className={styles.fieldFull} label="guideDeep（复杂任务自动引导）" value={str('guideDeep')} onChange={(next) => set('guideDeep', next)} />
+            <ParamTextarea className={styles.fieldFull} label="自定义引导" hint="启用自定义时固定注入此文本" value={str('text')} onChange={(next) => set('text', next)} />
+            <p className={clsx(styles.configFieldHint, styles.fieldFull)}>复杂任务沿用锚定模块的复杂任务规则。</p>
+            <ParamTextarea className={styles.fieldFull} label="简短引导" value={str('guideWeak')} onChange={(next) => set('guideWeak', next)} />
+            <ParamTextarea className={styles.fieldFull} label="深度引导" value={str('guideDeep')} onChange={(next) => set('guideDeep', next)} />
           </>
         )}
       </>
@@ -195,7 +197,7 @@ export function StrategyParamsFields(props: { strategy: string; layer?: string; 
   if (strategy === 'custom-fallback') {
     return (
       <>
-        <ParamInput className={styles.fieldSpan6} label="firstTurnWord（锚定词）" hint="晋升后首个 reasoning 命中该词即注入；任意自定义文本"
+        <ParamInput className={styles.fieldSpan6} label="触发词" hint="晋升后的首个推理内容命中此词时注入"
           value={str('firstTurnWord')} onChange={(next) => set('firstTurnWord', next)} />
       </>
     )
@@ -207,22 +209,22 @@ export function StrategyParamsFields(props: { strategy: string; layer?: string; 
     const setList = (key: string, next: string): void => set(key, next.split(',').map((item) => item.trim()).filter((item) => item.length > 0))
     return (
       <>
-        <ParamToggle className={styles.fieldSpan3} label="constant（常驻注入）" hint="true = 不依赖关键字，每轮恒注入；false = 命中 keys 才注入"
+        <ParamToggle className={styles.fieldSpan3} label="常驻" hint="开启后每轮注入；关闭后仅关键词命中时注入"
           checked={bool('constant')} onChange={(next) => set('constant', next)} />
-        <div className={styles.fieldSpan6}><TagInput id={`${keyId}-keys`} label="keys（触发关键字）" hint="命中消息文本中的任一关键字即注入；逗号分隔" onCommit={() => {}}
+        <div className={styles.fieldSpan6}><TagInput id={`${keyId}-keys`} label="主关键词" hint="消息命中任一关键词时注入" hintMode="tooltip" onCommit={() => {}}
           value={list('keys')} placeholder="关键字，回车添加" onChange={(next) => setList('keys', next)} /></div>
-        <div className={styles.fieldSpan6}><TagInput id={`${keyId}-secondary-keys`} label="secondaryKeys（次级关键字）" hint="与 keys 合并匹配（任一命中即注入）；逗号分隔" onCommit={() => {}}
+        <div className={styles.fieldSpan6}><TagInput id={`${keyId}-secondary-keys`} label="次关键词" hint="与主关键词共同参与触发判断" hintMode="tooltip" onCommit={() => {}}
           value={list('secondaryKeys')} placeholder="次级关键字，回车添加" onChange={(next) => setList('secondaryKeys', next)} /></div>
-        <ParamToggle className={styles.fieldSpan3} label="caseSensitive（区分大小写）" hint="true = 关键字精确大小写匹配"
+        <ParamToggle className={styles.fieldSpan3} label="区分大小写" hint="开启后关键词必须匹配大小写"
           checked={bool('caseSensitive')} onChange={(next) => set('caseSensitive', next)} />
-        <ParamToggle className={styles.fieldSpan3} label="wholeWords（整词匹配）" hint="true = 关键字必须整词出现（词边界），false = 子串包含即命中"
+        <ParamToggle className={styles.fieldSpan3} label="整词匹配" hint="开启后关键词必须作为完整词出现"
           checked={bool('wholeWords')} onChange={(next) => set('wholeWords', next)} />
-        <ParamToggle className={styles.fieldSpan3} label="useRegex（键为正则）" hint="true = keys / secondaryKeys 按正则表达式匹配（作者负责合法性）"
+        <ParamToggle className={styles.fieldSpan3} label="正则匹配" hint="开启后主次关键词按正则表达式匹配"
           checked={bool('useRegex')} onChange={(next) => set('useRegex', next)} />
         <OptionField
           className={styles.fieldSpan6}
-          label="selectiveLogic（触发逻辑）"
-          hint="ST world_info_logic：0 = 主/副键任一命中；3 = 副键全中才注入；1 = 副键全不中才注入；2 = 至少一个副键未中才注入"
+          label="触发逻辑"
+          hint="控制主关键词与次关键词的组合判断方式"
           value={value['selectiveLogic'] !== undefined ? String(value['selectiveLogic']) : '0'}
           options={['0', '1', '2', '3']}
           fallback="0"
@@ -241,20 +243,20 @@ export function StrategyParamsFields(props: { strategy: string; layer?: string; 
     const emptyBehavior = str('emptyBehavior') || 'skip'
     return (
       <>
-        <ParamTextarea className={styles.fieldFull} label="text（自定义提示文本）" hint="覆盖文件与动态探测的提示文本；留空 = 默认"
+        <ParamTextarea className={styles.fieldFull} label="自定义提示" hint="覆盖文件和动态探测内容；留空时使用默认值"
           value={str('text')} onChange={(next) => set('text', next)} />
-        <ParamInput className={styles.fieldSpan5} label="envKeys（env-facts 环境变量白名单）" hint="逗号分隔；留空 = 默认 DSH_HOME,DSH_WORKSPACE"
+        <ParamInput className={styles.fieldSpan5} label="环境变量" hint="允许读取的环境变量；逗号分隔，留空时使用默认值"
           value={str('envKeys')} onChange={(next) => set('envKeys', next)} />
-        <ParamInput className={styles.fieldSpan2} label="limit（skill-catalog 数量上限）" hint="正整数；留空 = 不限制"
+        <ParamInput className={styles.fieldSpan2} label="数量上限" hint="填写正整数；留空时不限制"
           value={str('limit')} onChange={(next) => set('limit', next === '' ? '' : Number(next))} />
-        <ParamInput className={styles.fieldSpan5} label="fields（skill-catalog 字段）" hint="逗号分隔；默认 name,description"
+        <ParamInput className={styles.fieldSpan5} label="返回字段" hint="技能目录返回的字段；逗号分隔"
           value={str('fields')} onChange={(next) => set('fields', next)} />
-        <ParamInput className={styles.fieldSpan6} label="providers（skill-catalog provider 白名单）" hint="逗号分隔；留空 = 全部"
+        <ParamInput className={styles.fieldSpan6} label="来源白名单" hint="允许使用的技能来源；逗号分隔，留空时允许全部"
           value={str('providers')} onChange={(next) => set('providers', next)} />
-        <OptionField className={styles.fieldSpan3} label="emptyBehavior（空结果行为）" hint="skip = 不注入；text = 注入 emptyText"
-          value={emptyBehavior} options={['skip', 'text']} fallback="skip" onChange={(next) => set('emptyBehavior', next)} />
+        <OptionField className={styles.fieldSpan3} label="空结果处理" hint="无内容时选择跳过或注入提示文本"
+          value={emptyBehavior} options={['skip', 'text']} fallback="skip" labels={EMPTY_BEHAVIOR_LABELS} onChange={(next) => set('emptyBehavior', next)} />
         {emptyBehavior === 'text' && (
-          <ParamTextarea className={styles.fieldFull} label="emptyText（空结果提示文本）" value={str('emptyText')} onChange={(next) => set('emptyText', next)} />
+          <ParamTextarea className={styles.fieldFull} label="空结果提示" value={str('emptyText')} onChange={(next) => set('emptyText', next)} />
         )}
       </>
     )
@@ -262,9 +264,9 @@ export function StrategyParamsFields(props: { strategy: string; layer?: string; 
   // 无策略参数的配置（static 等）：预设级内容变量已展开进 variables（官方插值
   // 机制，由上方 VariablesEditor 结构化编辑），params 为空时不再渲染 JSON 框。
   if (Object.keys(value).length === 0) {
-    return <p className={styles.configFieldHint}>本策略无高级参数；模板变量见上方「variables」。</p>
+    return <p className={styles.configFieldHint}>本策略无额外参数；模板变量可在上方编辑。</p>
   }
-  return <JsonField label="params（高级参数 JSON；本策略无固定字段）" value={value} onChange={(next) => { if (next !== undefined) onPatch(next) }} />
+  return <JsonField label="高级参数（JSON）" value={value} onChange={(next) => { if (next !== undefined) onPatch(next) }} />
 }
 
 /** 模板变量键值对编辑器（替代 JSON）：每行 key + value，可增删。工作台「模板变量」卡片复用。 */
@@ -282,8 +284,8 @@ export function VariablesEditor(props: { value: Record<string, string> | undefin
     <span className={styles.configFieldStack}>
       <span className={styles.variableHeader}>
         <span className={styles.variableHeaderCopy}>
-          <span className={styles.configFieldLabel}>{'variables（模板变量 {{key}} 插值）'}</span>
-          {entries.length === 0 && <span className={styles.configFieldHint}>{'无模板变量；注入文本中的 {{key}} 会被替换。'}</span>}
+          <span className={styles.configFieldLabel}>模板变量</span>
+          {entries.length === 0 && <span className={styles.configFieldHint}>{'暂无变量；可使用 {{key}} 引用。'}</span>}
         </span>
         <button type="button" className={styles.pillButton} onClick={() => commit([...entries, ['', '']])}>添加</button>
       </span>

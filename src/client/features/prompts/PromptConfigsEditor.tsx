@@ -7,6 +7,7 @@ import { useTemplatePicker } from './useTemplatePicker.ts'
 import { VariablesEditor } from './PromptConfigFields.tsx'
 import { tabKeyHandler } from '../../ui/tab-key.ts'
 import { MenuSelect } from '../../ui/MenuSelect.tsx'
+import { LAYER_LABELS } from './prompt-config-policy.ts'
 import sharedCss from '../../ui/controls.module.css'
 import featureCss from './prompts.module.css'
 
@@ -177,7 +178,7 @@ export function PromptConfigsEditor(props: PromptConfigsEditorProps): ReactNode 
               options={[
                 { value: 'all', label: '全部' },
                 { value: 'world-book', label: '世界书' },
-                ...props.meta.layers.map((item) => ({ value: item, label: `层级：${item}` })),
+                ...props.meta.layers.map((item) => ({ value: item, label: `层级：${LAYER_LABELS[item] ?? item}` })),
               ]}
               onChange={props.onViewFilterChange}
             />

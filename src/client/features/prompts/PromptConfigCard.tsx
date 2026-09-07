@@ -3,7 +3,7 @@ import clsx from 'clsx'
 import { IconChevronDownOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { EngineMeta, PromptConfigDraft } from '../../prompt-tool-types.ts'
 import { PromptConfigForm } from './PromptConfigForm.tsx'
-import { fieldPolicyFor } from './prompt-config-policy.ts'
+import { FILL_LABELS, LAYER_LABELS, POSITION_LABELS, STRATEGY_LABELS, fieldPolicyFor } from './prompt-config-policy.ts'
 import sharedCss from '../../ui/controls.module.css'
 import featureCss from './prompts.module.css'
 
@@ -37,12 +37,17 @@ export const PromptConfigCard = memo(function PromptConfigCard(props: {
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const enabled = config.enabled !== false
   const policy = fieldPolicyFor(meta, config.layer)
-  const chips = [config.layer ?? 'pre-step', config.strategy ?? 'static']
-  if (config.fill) chips.push(config.fill)
-  if (policy.position) chips.push(`pos=${config.position ?? 'after-user'}`)
-  if (config.mergeMode === 'merged') chips.push('merged')
-  if ((config.order ?? 0) !== 0) chips.push(`order=${config.order}`)
-  if (config.group) chips.push(config.exclusive === true ? `exclusive:${config.group}` : `group:${config.group}`)
+  const layer = config.layer ?? 'pre-step'
+  const strategy = config.strategy ?? 'static'
+  const chips = [LAYER_LABELS[layer] ?? layer, STRATEGY_LABELS[strategy] ?? strategy]
+  if (config.fill) chips.push(FILL_LABELS[config.fill] ?? config.fill)
+  if (policy.position) {
+    const position = config.position ?? 'after-user'
+    chips.push(`位置：${POSITION_LABELS[position] ?? position}`)
+  }
+  if (config.mergeMode === 'merged') chips.push('合并发送')
+  if ((config.order ?? 0) !== 0) chips.push(`顺序：${config.order}`)
+  if (config.group) chips.push(`${config.exclusive === true ? '互斥组' : '分组'}：${config.group}`)
   return (
     <article
       className={clsx(styles.configCard, props.expanded && styles.configCardOpen)}
@@ -68,7 +73,7 @@ export const PromptConfigCard = memo(function PromptConfigCard(props: {
             <span className={styles.configTitleRow}>
               <span className={styles.configName}>{config.name && config.name !== config.id ? `${config.id} · ${config.name}` : config.id}</span>
               {config.layer === 'system-section' && config.params?.sectionName === 'deployment:persona' && (
-                <span className={styles.configChip} title="deployment:persona 同名 shadow：主会话人设（子代理经 scope 链继承）">人设</span>
+                <span className={styles.configChip} title="主会话人设；同名配置会覆盖，子代理继承">人设</span>
               )}
             </span>
             <span className={styles.configMeta}>{chips.join(' · ')}</span>

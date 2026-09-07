@@ -338,7 +338,7 @@ feature 只拥有自己的视图、瞬时状态、领域纯 helper 和 CSS：
 
 ui/ 只接收 props/callback，当前真实共享 seam 包括：
 
-- FormField：label、hint、error 与 aria-describedby 配对。
+- FormField：label/id 配对；hint 可内联，也可复用官方 Tooltip 在悬停或聚焦时显示。
 - SettingInputRow、ToggleRow、TagInput：设置和字段编辑形态。
 - MenuSelect：直接封装官方 Menu 的单选胶囊；支持连续选项的 `group` 分组标题。标准设置使用 36px，模块卡内使用 28px 紧凑形态，浮层统一 portal。
 - CollapsibleCard、EngineModuleCard：具体可复用的折叠/模块卡形态，不是万能 Card。
@@ -351,7 +351,7 @@ ui/ 只接收 props/callback，当前真实共享 seam 包括：
 
 模块卡内的选择器、开关及小型文本/数字输入使用紧凑尺寸；大文本和 JSON 编辑器保留 `field-sizing: content`、手动纵向缩放与现有自动测高，不随紧凑控件一起压缩。
 
-promptConfigs 模块卡展开区按基础信息、注入规则、作用范围、内容、策略参数和高级元数据分区；短字段使用基于卡片宽度的容器网格，高级 source/identity 元数据使用原生 details 收纳。布局变化不得改变字段默认值、未知枚举兼容或保存载荷。
+promptConfigs 模块卡展开区按基础信息、注入规则、作用范围、内容、策略参数和高级元数据分区；短字段使用基于卡片宽度的容器网格，高级来源/幂等元数据使用原生 details 收纳。字段说明统一复用官方 Tooltip，在悬停或聚焦时显示；模块卡只通过局部语义 token 提高提示背景不透明度，不复制官方 Tooltip 实现。布局变化不得改变字段默认值、未知枚举兼容或保存载荷。
 
 主会话模块列表提供两个互斥 sibling view：`general` 展示当前 seam 的 promptConfigs，`capability` 展示模型路由、引擎能力卡和 tool-pipeline 工具卡。`layerFilter` 在两个 view 间保持独立；view 切换不改变 dirty 快照、参数保存队列或模块事实。
 

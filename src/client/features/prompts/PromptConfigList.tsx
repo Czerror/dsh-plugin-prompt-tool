@@ -3,6 +3,7 @@ import { bridgeCall, errorMessage } from '../../data/bridge-client.ts'
 import { MenuSelect } from '../../ui/MenuSelect.tsx'
 import { PromptConfigCard } from './PromptConfigCard.tsx'
 import { moveToView, moveWithinLayer, promptConfigLayer, viewOrderedIds } from './prompt-config-order.ts'
+import { LAYER_LABELS } from './prompt-config-policy.ts'
 import type { EngineMeta, PromptConfigDraft, ValidationErrorEntry } from '../../prompt-tool-types.ts'
 import sharedCss from '../../ui/controls.module.css'
 import featureCss from './prompts.module.css'
@@ -251,7 +252,7 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
           className={styles.listFilter}
           value={filter}
           aria-label="过滤模块列表"
-          placeholder="过滤：按 id / 名称…"
+          placeholder="过滤：按标识 / 名称…"
           spellCheck={false}
           onChange={(event) => setFilter(event.target.value)}
         />
@@ -263,7 +264,7 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
             options={[
               { value: 'all', label: '全部' },
               { value: 'world-book', label: '世界书' },
-              ...meta.layers.map((item) => ({ value: item, label: `层级：${item}` })),
+              ...meta.layers.map((item) => ({ value: item, label: `层级：${LAYER_LABELS[item] ?? item}` })),
             ]}
             onChange={changeViewFilter}
           />
