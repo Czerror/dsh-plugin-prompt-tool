@@ -4,16 +4,14 @@ import { readFileSync } from 'node:fs'
 
 const read = (path) => readFileSync(new URL(`../../${path}`, import.meta.url), 'utf8')
 
-test('三处模板入口把按钮 ref 传给顶层浮层', () => {
-  const prompts = read('src/client/features/prompts/PromptConfigsEditor.tsx')
+test('模板入口把按钮 ref 传给顶层浮层', () => {
+  const main = read('src/client/app/workspace/pages/MainSessionPage.tsx')
+  const menu = read('src/client/features/modules/EngineModuleList.tsx')
   const scoped = read('src/client/app/workspace/pages/ConfigListWithTemplates.tsx')
-  const tools = read('src/client/features/tools/CustomToolsCard.tsx')
-  assert.match(prompts, /ref=\{templatePicker\.anchorRef\}/)
-  assert.match(prompts, /anchorRef=\{templatePicker\.anchorRef\}/)
+  assert.match(main, /anchorRef=\{picker\.anchorRef\}/)
+  assert.match(menu, /ref=\{anchorRef\}/)
   assert.match(scoped, /ref=\{templatePicker\.anchorRef\}/)
   assert.match(scoped, /anchorRef=\{templatePicker\.anchorRef\}/)
-  assert.match(tools, /ref=\{templateAnchorRef\}/)
-  assert.match(tools, /anchorRef=\{templateAnchorRef\}/)
 })
 
 test('锚定浮层层级高于工作台抽屉', () => {

@@ -135,17 +135,7 @@
 .settingsNote { margin: -14px 0 0; color: var(--dsw-alias-label-tertiary); font-size: 10px; line-height: 16px; }
 .settingsNote code { color: var(--dsw-alias-label-secondary); font-family: var(--ds-font-family-code, ui-monospace, monospace); }
 
-.commonCards,
-.layerSections,
-.layerSection { display: flex; min-width: 0; flex-direction: column; gap: 12px; }
-.commonCards { gap: 10px; }
-.layerSection {
-  border-top: 0.5px solid var(--dsw-alias-border-l2);
-  padding-top: 14px;
-}
-.layerHeading { display: flex; min-width: 0; align-items: flex-start; justify-content: space-between; gap: 12px; }
-.layerHeading h3 { margin: 0; color: var(--dsw-alias-label-primary); font-size: 13px; line-height: 18px; }
-.layerHeading p { margin: 2px 0 0; color: var(--dsw-alias-label-tertiary); font-size: 11px; line-height: 16px; }
+.commonCards { display: flex; min-width: 0; flex-direction: column; gap: 10px; }
 
 @media (max-width: 620px) {
   .page { gap: 24px; }

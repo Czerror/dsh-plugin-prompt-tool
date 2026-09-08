@@ -85,10 +85,11 @@ test('递归深度和专用模型卡保留，过滤字段不重复出现在委�
 })
 
 test('自定义工具编辑入口保留，能力删除仍需二次确认', () => {
-  const custom = read('features/tools/CustomToolsCard.tsx')
-  assert.match(custom, /从模板新建/)
-  assert.match(custom, /新建工具/)
-  assert.match(custom, /<CustomToolCard/)
+  const page = read('app/workspace/pages/MainSessionPage.tsx')
+  assert.match(page, /create:template/)
+  assert.match(page, /create:blank-tool/)
+  assert.match(page, /<CustomToolsCard/)
+  assert.match(read('features/tools/CustomToolsCard.tsx'), /<CustomToolCard/)
   assert.match(read('ui/EngineModuleCard.tsx'), /确认删除/)
   assert.match(read('features/modules/EngineModuleList.tsx'), /store\.removeEngineCapability\(capability\.id\)/)
 })
@@ -102,7 +103,7 @@ test('插入点顺序恒为六层，公共默认值不伪装成 pre-step 能力'
   assert.match(editor, /aria-label="公共配置"/)
 })
 
-test('统一列表按插入点分组，空分类不渲染，anchor-turn 只在 pre-step 分类出现', () => {
+test('统一列表平铺渲染配置与能力卡，不再有插入点分类区块', () => {
   const configs = [{ id: 'persona-main', layer: 'system-section', strategy: 'static' }]
   const meta = {
     layers: ['pre-step', 'system-section', 'runtime-context', 'agent-request', 'llm-stream', 'tool-pipeline'],
@@ -110,37 +111,21 @@ test('统一列表按插入点分组，空分类不渲染，anchor-turn 只在 p
     layerFieldPolicies: {}, layerLabels: {},
   }
   const active = { ...store, moduleFacts: { ...store.moduleFacts, effectiveModules: ['anchor-turn'] } }
-  // 与 MainSessionPage 同口径：该层无已装配能力卡时返回 null。
-  const layerCards = (layer) => layer === 'pre-step'
-    ? createElement(EngineModuleCards, { store: active, layerFilter: layer, showActions: false, showPromptDefaults: false, showStatus: false })
-    : null
-  const html = render(PromptConfigList, {
+  const props = {
     meta,
     configs,
     savedConfigs: configs,
     viewFilter: 'all',
     onViewFilterChange() {},
-    layerCards,
+    afterCards: createElement(EngineModuleCards, { store: active, showActions: false, showPromptDefaults: false, showStatus: false }),
     onPatchConfigs() {},
     onSaveConfigs() {},
     onNotice() {},
-  })
-  // 仅 pre-step（能力卡）与 system-section（提示词配置）有内容，其余空分类不渲染。
-  assert.equal((html.match(/data-insertion-point=/g) ?? []).length, 2)
-  const preStep = html.slice(html.indexOf('data-insertion-point="pre-step"'), html.indexOf('data-insertion-point="system-section"'))
-  const systemSection = html.slice(html.indexOf('data-insertion-point="system-section"'))
-  assert.match(preStep, /class="configName">anchor-turn</)
-  assert.doesNotMatch(systemSection, /anchor-turn/)
-  const worldBook = render(PromptConfigList, {
-    meta,
-    configs,
-    savedConfigs: configs,
-    viewFilter: 'world-book',
-    onViewFilterChange() {},
-    layerCards,
-    onPatchConfigs() {},
-    onSaveConfigs() {},
-    onNotice() {},
-  })
-  assert.doesNotMatch(worldBook, /anchor-turn/)
+  }
+  const html = render(PromptConfigList, props)
+  assert.doesNotMatch(html, /data-insertion-point/)
+  assert.match(html, /persona-main/)
+  assert.match(html, /class="configName">anchor-turn</)
+  // 世界书视图只留世界书配置，能力卡不混入。
+  assert.doesNotMatch(render(PromptConfigList, { ...props, viewFilter: 'world-book' }), /anchor-turn/)
 })

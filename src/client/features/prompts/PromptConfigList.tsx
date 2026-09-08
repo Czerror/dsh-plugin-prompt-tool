@@ -3,7 +3,7 @@ import { bridgeCall, errorMessage } from '../../data/bridge-client.ts'
 import { MenuSelect } from '../../ui/MenuSelect.tsx'
 import { PromptConfigCard } from './PromptConfigCard.tsx'
 import { moveToView, moveWithinLayer, promptConfigLayer, viewOrderedIds } from './prompt-config-order.ts'
-import { displayLayers, LAYER_LABELS } from './prompt-config-policy.ts'
+import { displayLayers } from './prompt-config-policy.ts'
 import type { EngineMeta, PromptConfigDraft, ValidationErrorEntry } from '../../prompt-tool-types.ts'
 import sharedCss from '../../ui/controls.module.css'
 import featureCss from './prompts.module.css'
@@ -22,9 +22,8 @@ export interface PromptConfigListProps {
   extraActions?: ReactNode
   /** 列表头部之后、配置卡片之前渲染的固定卡片（如模板变量——归类于配置列表下）。 */
   beforeCards?: ReactNode
-  /** 按行为分类插入能力卡；返回 null 表示该分类无能力卡（无配置且无卡的空分类不渲染）。
-   *  不会改变提示词配置的保存与排序模型。 */
-  layerCards?: (layer: string) => ReactNode
+  /** 列表尾部的附加卡片（能力模块、自定义工具等）；世界书视图不渲染。 */
+  afterCards?: ReactNode
   /** 工具栏中的非提示词配置操作（如能力创建）。 */
   toolbarActions?: ReactNode
   /** 受控层筛选（全部/世界书/层级）；未传时内部 state 兜底（子代理页等独立实例）。 */
@@ -39,7 +38,7 @@ export interface PromptConfigListProps {
 
 /** 共享的提示词配置列表：校验、保存、脏检测、复制、删除、层内移动。 */
 export function PromptConfigList(props: PromptConfigListProps): ReactNode {
-  const { meta, configs, savedConfigs, layer, scope, extraActions, beforeCards, layerCards, toolbarActions, viewFilter: viewFilterProp, onViewFilterChange, emptyHint, onPatchConfigs, onSaveConfigs, onNotice } = props
+  const { meta, configs, savedConfigs, layer, scope, extraActions, beforeCards, afterCards, toolbarActions, viewFilter: viewFilterProp, onViewFilterChange, emptyHint, onPatchConfigs, onSaveConfigs, onNotice } = props
   const [expanded, setExpanded] = useState<string | undefined>(undefined)
   const [errors, setErrors] = useState<ValidationErrorEntry[]>([])
   const [validating, setValidating] = useState(false)
@@ -48,7 +47,7 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
   /** 拖拽排序状态：源卡片 id + 落点（目标 id + 前/后）。 */
   const [dragId, setDragId] = useState<string | undefined>(undefined)
   const [dropTarget, setDropTarget] = useState<{ id: string; before: boolean } | undefined>(undefined)
-  /** 合并过滤下拉：全部 / 世界书（策略）/ 各注入层级。外部 layer prop 传入时固定该层。 */
+  /** 过滤下拉：全部 / 世界书（策略）。外部 layer prop 传入时固定该层。 */
   const [innerViewFilter, setInnerViewFilter] = useState<string>('all')
   const viewFilter = viewFilterProp ?? innerViewFilter
   const changeViewFilter = (value: string): void => {
@@ -58,10 +57,6 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
 
   const effectiveLayer = layer ?? (viewFilter !== 'all' && viewFilter !== 'world-book' ? viewFilter : undefined)
   const allLayers = displayLayers([...meta.layers, ...configs.map(promptConfigLayer)])
-  /** 每层能力卡只渲染一次：null 表示该层无能力卡，与提示词配置共同决定分类是否渲染。 */
-  const layerCardViews = layerCards === undefined || viewFilter === 'world-book'
-    ? undefined
-    : new Map(allLayers.map((name) => [name, layerCards(name) ?? null]))
   const visible = effectiveLayer === undefined
     ? configs
     : configs.filter((config) => promptConfigLayer(config) === effectiveLayer)
@@ -74,12 +69,6 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
   const byStrategy = viewFilter !== 'world-book'
     ? scoped
     : scoped.filter((config) => config.strategy === 'world-book')
-  // 空分类（无提示词配置且无能力卡）不渲染；显式筛选的层保留空状态。
-  const layerHasContent = (name: string): boolean =>
-    layerCardViews?.get(name) != null || byStrategy.some((config) => promptConfigLayer(config) === name)
-  const layers = layer !== undefined
-    ? [layer]
-    : allLayers.filter((name) => name === effectiveLayer || layerHasContent(name))
   const keyword = filter.trim().toLowerCase()
   const filtered = keyword.length === 0
     ? byStrategy
@@ -252,33 +241,6 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
     )
   }
 
-  const renderLayer = (layerName: string): ReactNode => {
-    const layerConfigs = ordered.filter((config) => promptConfigLayer(config) === layerName)
-    const layerCardsView = layerCardViews?.get(layerName) ?? undefined
-    const headingId = `pt-layer-heading-${layerName}`
-    return (
-      <section key={layerName} className={styles.layerSection} aria-labelledby={headingId} data-insertion-point={layerName}
-        hidden={effectiveLayer !== undefined && effectiveLayer !== layerName}>
-        <div className={styles.layerHeading}>
-          <div>
-            <h3 id={headingId}>{LAYER_LABELS[layerName] ?? layerName}</h3>
-            <p>{layerConfigs.length} 条提示词配置{layerCards !== undefined && viewFilter !== 'world-book' ? ' · 能力模块按当前预设装配显示' : ''}</p>
-          </div>
-        </div>
-        {layerCardsView}
-        {layerConfigs.length > 0 ? (
-          <div className={styles.configList}>
-            {layerConfigs.map((config) => renderCard(config))}
-          </div>
-        ) : (
-          <p className={styles.readOnly} role="status">
-            {layerCards !== undefined && viewFilter !== 'world-book' ? '当前分类暂无提示词配置；如有已装配能力模块，将显示在此处。' : '当前分类暂无提示词配置。'}
-          </p>
-        )}
-      </section>
-    )
-  }
-
   return (
     <section className={styles.section} aria-labelledby="prompt-tool-configs-heading">
       <div className={styles.sectionHeading}>
@@ -304,11 +266,10 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
           <MenuSelect
             className={styles.listFilter}
             value={viewFilter}
-            ariaLabel="按层级或策略过滤"
+            ariaLabel="按策略过滤"
             options={[
               { value: 'all', label: '全部' },
               { value: 'world-book', label: '世界书' },
-              ...layers.map((item) => ({ value: item, label: `层级：${LAYER_LABELS[item] ?? item}` })),
             ]}
             onChange={changeViewFilter}
           />
@@ -332,7 +293,7 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
       {/* 归类于配置列表下的固定卡片（模板变量：可折叠 / 可删除 / 可新建）。 */}
       {beforeCards}
 
-      {layerCards === undefined ? (
+      {afterCards === undefined ? (
         scoped.length === 0 ? (
           <div className={styles.emptyState}><span className={styles.emptyGlyph} aria-hidden="true">⌁</span><div><h3>{scope === 'subagent' ? '还没有子代理可见的配置' : effectiveLayer === undefined ? '还没有自定义配置' : '本层还没有自定义配置'}</h3><p>{scope === 'subagent' ? '从上方「新建」插入一条（插入后可在卡片「消息受众」下拉自由切换仅主会话/公用/仅子代理），或到主设置「配置」从目录导入。' : effectiveLayer === undefined ? '从上方模板插入一条，或从本地目录导入；默认四条内置配置不受影响。' : '请到主设置「配置」从模板插入或从目录导入。'}</p>{emptyHint !== undefined && <p className={styles.readOnly}>{emptyHint}</p>}</div></div>
         ) : filtered.length === 0 && keyword.length > 0 ? (
@@ -345,8 +306,9 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
       ) : (
         <>
           {filtered.length === 0 && keyword.length > 0 && <p className={styles.readOnly} role="status">没有匹配「{filter.trim()}」的提示词配置；能力模块不受此搜索影响。</p>}
-          <div className={styles.layerSections}>
-            {layers.map(renderLayer)}
+          <div className={styles.configList}>
+            {ordered.map((config) => renderCard(config))}
+            {viewFilter !== 'world-book' && afterCards}
           </div>
         </>
       )}

@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react'
+import { useState, type ReactNode, type RefObject } from 'react'
 import { IconChevronDownOutline14, Menu } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PromptToolStore } from '../../data/use-prompt-tool-store.ts'
 import { EngineModuleCard } from '../../ui/EngineModuleCard.tsx'
@@ -6,27 +6,54 @@ import { ENGINE_CAPABILITIES, ENGINE_RECIPES, isEngineCapabilityPresent } from '
 import { EngineParamFields } from './EngineParamFields.tsx'
 import styles from '../../ui/controls.module.css'
 
-export function EngineCapabilityCreateMenu({ store }: { store: PromptToolStore }): ReactNode {
+/** 合并进「添加能力 / 工具模块」菜单的创建项（提示词配置、自定义工具）。 */
+export interface ModuleCreateItem {
+  id: string
+  label: string
+}
+
+export function EngineCapabilityCreateMenu(props: {
+  store: PromptToolStore
+  /** 菜单按钮 ref：模板浮层锚定到该按钮。 */
+  anchorRef?: RefObject<HTMLButtonElement>
+  /** 合并入口：排在能力模块项之前的创建项。 */
+  extraItems?: readonly ModuleCreateItem[]
+  onExtraSelect?: (id: string) => void
+}): ReactNode {
+  const { store, anchorRef, extraItems = [], onExtraSelect } = props
   const [open, setOpen] = useState(false)
-  if (!store.fields.writePreset || store.moduleFacts?.editable !== true) return null
+  const editable = store.fields.writePreset && store.moduleFacts?.editable === true
+  if (!editable && extraItems.length === 0) return null
   const items = [
-    ...ENGINE_CAPABILITIES.filter(({ id }) => !isEngineCapabilityPresent(id, store.moduleFacts))
-      .map(({ id }) => ({ id: `cap:${id}`, label: `添加模块 · ${id}` })),
-    ...ENGINE_RECIPES.map(({ id }) => ({ id: `recipe:${id}`, label: `连锁创建 · ${id}` })),
+    ...extraItems,
+    ...(editable
+      ? [
+        ...ENGINE_CAPABILITIES.filter(({ id }) => !isEngineCapabilityPresent(id, store.moduleFacts))
+          .map(({ id }) => ({ id: `cap:${id}`, label: `添加模块 · ${id}` })),
+        ...ENGINE_RECIPES.map(({ id }) => ({ id: `recipe:${id}`, label: `连锁创建 · ${id}` })),
+      ]
+      : []),
   ]
   return <Menu open={open} onClose={() => setOpen(false)} items={items} align="end" portal compact
     onSelect={(id) => {
       setOpen(false)
       const [kind, value] = id.split(':', 2)
-      if (value !== undefined) void store.createEngineCapability(kind === 'recipe' ? 'create-recipe' : 'create', value)
+      if (kind === 'cap' || kind === 'recipe') {
+        if (value !== undefined) void store.createEngineCapability(kind === 'recipe' ? 'create-recipe' : 'create', value)
+      } else onExtraSelect?.(id)
     }}
-    anchor={<button type="button" className={styles.pillButton} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(!open)}>
+    anchor={<button ref={anchorRef} type="button" className={styles.pillButton} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(!open)}>
       添加能力 / 工具模块<IconChevronDownOutline14 />
     </button>} />
 }
 
-export function EngineModuleActions({ store }: { store: PromptToolStore }): ReactNode {
-  return <div className={styles.configActions}><EngineCapabilityCreateMenu store={store} /></div>
+export function EngineModuleActions(props: {
+  store: PromptToolStore
+  anchorRef?: RefObject<HTMLButtonElement>
+  extraItems?: readonly ModuleCreateItem[]
+  onExtraSelect?: (id: string) => void
+}): ReactNode {
+  return <div className={styles.configActions}><EngineCapabilityCreateMenu {...props} /></div>
 }
 
 export function EnginePromptDefaultsCard({ store }: { store: PromptToolStore }): ReactNode {

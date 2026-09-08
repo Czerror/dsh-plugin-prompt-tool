@@ -1,22 +1,26 @@
 /** 工具管理（tool-pipeline 层）：自定义工具定义。 */
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { bridgeCall } from '../../data/bridge-client.ts'
-import { TemplatePicker } from '../../ui/TemplatePicker.tsx'
 import { CustomToolCard, asRecord, type ToolDraft } from './CustomToolEditor.tsx'
 import sharedCss from '../../ui/controls.module.css'
 import featureCss from './tools.module.css'
 
 const styles = { ...sharedCss, ...featureCss }
+
+/** 「添加能力 / 工具模块」菜单下发的创建意图；每次请求一个新对象，消费后由页面清空。 */
+export type ToolCreateIntent = { kind: 'blank' | 'template'; spec?: ToolDraft }
+
 /** 自定义工具编辑器：命令栏 + 一工具一卡，不再增加聚合卡片。 */
 export function CustomToolsCard(props: {
   onNotice: (kind: 'ok' | 'error', message: string) => void
   disabled?: boolean
   presetId?: string
+  /** 工具栏合并菜单的新建意图：空白工具 / 模板插入。 */
+  createIntent?: ToolCreateIntent
+  /** 意图已消费：页面清空状态，避免预设切换重挂载后重放旧意图。 */
+  onIntentConsumed?: () => void
 }): ReactNode {
-  const templateAnchorRef = useRef<HTMLButtonElement>(null)
   const [tools, setTools] = useState<ToolDraft[]>([])
-  const [toolTemplates, setToolTemplates] = useState<Array<{ file: string; spec: ToolDraft }>>([])
-  const [pickerOpen, setPickerOpen] = useState(false)
   const [expandedCards, setExpandedCards] = useState<Set<number>>(new Set())
   const [hasPersistedTools, setHasPersistedTools] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -29,10 +33,7 @@ export function CustomToolsCard(props: {
     setLoading(true)
     setLoadError('')
     void (async () => {
-      const [customResult, templatesResult] = await Promise.all([
-        bridgeCall('customTools', { expectedPresetId: props.presetId }),
-        bridgeCall('templates'),
-      ])
+      const customResult = await bridgeCall('customTools', { expectedPresetId: props.presetId })
       if (!active) return
       if (!customResult.ok) {
         setLoadError(customResult.message ?? '自定义工具读取失败')
@@ -42,7 +43,6 @@ export function CustomToolsCard(props: {
       const loadedTools = (customResult.ok ? customResult.value?.customTools ?? [] : []).map((tool) => asRecord(tool))
       setTools(loadedTools)
       setHasPersistedTools(loadedTools.length > 0)
-      setToolTemplates(templatesResult.ok ? (templatesResult.value.toolTemplates ?? []) as Array<{ file: string; spec: ToolDraft }> : [])
       setLoading(false)
     })()
     return () => { active = false }
@@ -76,18 +76,6 @@ export function CustomToolsCard(props: {
       }
     })
   }
-  const insertTemplate = (spec: ToolDraft): void => {
-    if (disabled) return
-    if (tools.some((tool) => tool.id === spec.id)) {
-      props.onNotice('error', `工具 id 已存在：${String(spec.id)}`)
-      return
-    }
-    const clone = JSON.parse(JSON.stringify(spec)) as ToolDraft
-    updateTools([...tools, clone])
-    setExpandedCards(new Set([...expandedCards, tools.length]))
-    props.onNotice('ok', `已插入工具模板 ${String(spec.id)}（保存后生效）`)
-    setPickerOpen(false)
-  }
   const patchTool = (index: number, patch: Partial<ToolDraft>): void => {
     updateTools(tools.map((tool, at) => at === index ? { ...tool, ...patch } : tool))
   }
@@ -97,26 +85,43 @@ export function CustomToolsCard(props: {
     else next.add(index)
     setExpandedCards(next)
   }
+  /** 菜单创建意图：同一对象只消费一次；工具草稿仍只经受保护的 updateTools 更新。 */
+  const handledIntentRef = useRef<ToolCreateIntent | undefined>(undefined)
+  useEffect(() => {
+    const intent = props.createIntent
+    if (intent === undefined || intent === handledIntentRef.current) return
+    if (disabled) return
+    handledIntentRef.current = intent
+    props.onIntentConsumed?.()
+    if (intent.kind === 'template' && intent.spec !== undefined) {
+      const spec = intent.spec
+      if (tools.some((tool) => tool.id === spec.id)) {
+        props.onNotice('error', `工具 id 已存在：${String(spec.id)}`)
+        return
+      }
+      const clone = JSON.parse(JSON.stringify(spec)) as ToolDraft
+      updateTools([...tools, clone])
+      setExpandedCards(new Set([...expandedCards, tools.length]))
+      props.onNotice('ok', `已插入工具模板 ${String(spec.id)}（保存后生效）`)
+      return
+    }
+    updateTools([...tools, {
+      id: `tool-${tools.length + 1}`,
+      name: 'my_tool',
+      description: '',
+      output: { schema: { type: 'object', additionalProperties: true } },
+      execute: { kind: 'shell', command: '' },
+    }])
+  }, [disabled, expandedCards, props, tools])
   return (
     <section aria-label="自定义工具编辑">
-      <p className={styles.configFieldHint}>在此添加和编辑自定义工具；模型可见工具请到顶层「工具预览」查看。</p>
+      <p className={styles.configFieldHint}>经顶部「添加能力 / 工具模块」新建或从模板插入工具；模型可见工具请到顶层「工具预览」查看。</p>
       {props.disabled && <p className={styles.configFieldHint} role="status">当前预设工具只读；system 预设或未启用预设写入时不能编辑或保存。</p>}
       {loading && <p className={styles.configFieldHint} role="status">正在读取自定义工具…</p>}
       {loadError && <p role="alert">{loadError} <button type="button" className={styles.pillButton} onClick={() => setRevision((value) => value + 1)}>重试读取</button></p>}
       {/* 只读切换重挂子树，释放已打开的 portal 菜单；无需给编辑器逐字段增加接口。 */}
       <fieldset key={disabled ? 'readonly' : 'editable'} className={styles.customToolsFields} disabled={disabled} aria-label="自定义工具配置">
         <div className={styles.configActions}>
-          <button ref={templateAnchorRef} type="button" className={styles.pillButton} disabled={disabled} onClick={() => setPickerOpen(true)}>从模板新建</button>
-          <button type="button" className={styles.pillButton} disabled={disabled}
-            onClick={() => updateTools([...tools, {
-              id: `tool-${tools.length + 1}`,
-              name: 'my_tool',
-              description: '',
-              output: { schema: { type: 'object', additionalProperties: true } },
-              execute: { kind: 'shell', command: '' },
-            }])}>
-            新建工具
-          </button>
           {(tools.length > 0 || hasPersistedTools) && (
             <button type="button" className={styles.primaryPill} disabled={disabled || saving} onClick={save}>
               {saving ? '保存中…' : '保存'}
@@ -156,16 +161,6 @@ export function CustomToolsCard(props: {
           </div>
         )}
       </fieldset>
-      {pickerOpen && !disabled && (
-        <TemplatePicker
-          anchorRef={templateAnchorRef}
-          templates={[]}
-          toolTemplates={toolTemplates}
-          onPick={() => {}}
-          onPickTool={insertTemplate}
-          onClose={() => setPickerOpen(false)}
-        />
-      )}
     </section>
   )
 }

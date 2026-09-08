@@ -1,7 +1,10 @@
-/** 模板库加载 + 插入共享逻辑：PromptConfigsEditor 与各配置列表页（六层/子代理）共用。 */
+/** 模板库加载 + 插入共享逻辑：主会话合并创建菜单与各配置列表页（子代理）共用。 */
 import { useRef, useState, type RefObject } from 'react'
 import { bridgeCall, errorMessage } from '../../data/bridge-client.ts'
 import type { PromptConfigDraft, PromptConfigTemplateEntry } from '../../prompt-tool-types.ts'
+
+/** 自定义工具模板条目：与提示词模板同一次 /templates 返回。 */
+export type ToolTemplateEntry = { file: string; spec: Record<string, unknown> }
 
 export function useTemplatePicker(
   configs: PromptConfigDraft[],
@@ -10,6 +13,7 @@ export function useTemplatePicker(
 ): {
   anchorRef: RefObject<HTMLButtonElement>
   templates: PromptConfigTemplateEntry[]
+  toolTemplates: ToolTemplateEntry[]
   open: boolean
   openPicker: () => void
   closePicker: () => void
@@ -17,6 +21,7 @@ export function useTemplatePicker(
 } {
   const anchorRef = useRef<HTMLButtonElement>(null)
   const [templates, setTemplates] = useState<PromptConfigTemplateEntry[]>([])
+  const [toolTemplates, setToolTemplates] = useState<ToolTemplateEntry[]>([])
   const [open, setOpen] = useState(false)
 
   const loadTemplates = async (): Promise<void> => {
@@ -32,6 +37,7 @@ export function useTemplatePicker(
         return
       }
       setTemplates(res.value.templates as PromptConfigTemplateEntry[])
+      setToolTemplates((res.value.toolTemplates ?? []) as ToolTemplateEntry[])
     } catch (error) {
       onNotice('error', '读取模板库失败：' + errorMessage(error))
     }
@@ -55,5 +61,5 @@ export function useTemplatePicker(
     setOpen(false)
   }
 
-  return { anchorRef, templates, open, openPicker, closePicker, pickTemplate }
+  return { anchorRef, templates, toolTemplates, open, openPicker, closePicker, pickTemplate }
 }

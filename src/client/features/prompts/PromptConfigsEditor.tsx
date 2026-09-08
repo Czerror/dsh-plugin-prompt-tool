@@ -3,8 +3,6 @@ import clsx from 'clsx'
 import { IconChevronDownOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { PromptConfigList } from './PromptConfigList.tsx'
 import { HintTooltip } from '../../ui/HintTooltip.tsx'
-import { TemplatePicker } from '../../ui/TemplatePicker.tsx'
-import { useTemplatePicker } from './useTemplatePicker.ts'
 import { VariablesEditor } from './PromptConfigFields.tsx'
 import sharedCss from '../../ui/controls.module.css'
 import featureCss from './prompts.module.css'
@@ -37,11 +35,14 @@ export interface PromptConfigsEditorProps {
   saveTemplateVariables: (next?: Record<string, string>) => Promise<void>
   viewFilter: string
   onViewFilterChange: (value: string) => void
+  /** 模板变量卡片展开态由页面持有：合并创建菜单的「从模板新建」需要展开它。 */
+  variablesExpanded: boolean
+  onVariablesExpandedChange: (value: boolean) => void
   /** 公共配置：模型、模板变量以外的预设级默认值等，不属于任何插入点。 */
   commonCards?: ReactNode
-  /** 按插入点渲染能力模块和领域卡片。 */
-  layerCards?: (layer: string) => ReactNode
-  /** 模块列表工具栏中的能力创建等操作。 */
+  /** 列表尾部的附加卡片（能力模块、自定义工具等）。 */
+  afterCards?: ReactNode
+  /** 模块列表工具栏中的合并创建菜单。 */
   toolbarActions?: ReactNode
 }
 
@@ -124,20 +125,8 @@ function TemplateVariablesModuleCard(props: {
 }
 
 
-/** 提示词配置编辑器：配置列表（层级/策略过滤已并入列表）+ 模板插入 + 保存前权威校验。 */
+/** 提示词配置编辑器：配置列表（策略过滤已并入列表）+ 公共配置卡 + 保存前权威校验。 */
 export function PromptConfigsEditor(props: PromptConfigsEditorProps): ReactNode {
-  const [templateVarsExpanded, setTemplateVarsExpanded] = useState(false)
-  const templatePicker = useTemplatePicker(
-    props.configs,
-    (config) => props.onPatchConfigs([...props.configs, config]),
-    props.onNotice,
-  )
-  /** 「新建 → Variables」：展开模板变量卡片并添加一个待编辑空行。 */
-  const pickVariables = (): void => {
-    props.setTemplateVariables({ ...props.templateVariables, '': '' })
-    setTemplateVarsExpanded(true)
-    templatePicker.closePicker()
-  }
   return (
     <section className={styles.page} aria-label="主会话模块列表" data-module-list="true">
       <div className={styles.commonCards} aria-label="公共配置" data-module-category="common">
@@ -148,8 +137,8 @@ export function PromptConfigsEditor(props: PromptConfigsEditorProps): ReactNode 
           templateVariablesEnabled={props.templateVariablesEnabled}
           setTemplateVariablesEnabled={props.setTemplateVariablesEnabled}
           saveTemplateVariables={props.saveTemplateVariables}
-          expanded={templateVarsExpanded}
-          onToggleExpanded={() => setTemplateVarsExpanded(!templateVarsExpanded)}
+          expanded={props.variablesExpanded}
+          onToggleExpanded={() => props.onVariablesExpandedChange(!props.variablesExpanded)}
         />
       </div>
       <PromptConfigList
@@ -158,23 +147,12 @@ export function PromptConfigsEditor(props: PromptConfigsEditorProps): ReactNode 
         savedConfigs={props.savedConfigs}
         viewFilter={props.viewFilter}
         onViewFilterChange={props.onViewFilterChange}
-        extraActions={<button ref={templatePicker.anchorRef} type="button" className={styles.primaryPill} onClick={templatePicker.openPicker}>新建</button>}
         toolbarActions={props.toolbarActions}
-        layerCards={props.layerCards}
+        afterCards={props.afterCards}
         onPatchConfigs={props.onPatchConfigs}
         onSaveConfigs={props.onSaveConfigs}
         onNotice={props.onNotice}
       />
-
-      {templatePicker.open && (
-        <TemplatePicker
-          anchorRef={templatePicker.anchorRef}
-          templates={templatePicker.templates}
-          onPick={templatePicker.pickTemplate}
-          onPickVariables={pickVariables}
-          onClose={templatePicker.closePicker}
-        />
-      )}
 
       <p className={styles.settingsNote}>提示词配置写入激活预设的 <code>preset.yml</code>（随预设存储，不占用 settings）；外部提示词配置可经「预设配置 → 导入预设」引入。</p>
       <p className={styles.settingsNote}>{'模板变量空字符串是合法占位值（{{key}} 动态引用），不会被当作「删键」处理。'}</p>
