@@ -37,12 +37,18 @@ test('模块控件紧凑且长文本继续自适应', () => {
   assert.match(read('features/prompts/PromptConfigFields.tsx'), /autoResizeTextarea/)
 })
 
-test('通用/能力视图使用 ARIA tabs 且状态正交', () => {
+test('主会话使用单一模块列表，插入点筛选与能力卡共用入口', () => {
   const editor = read('features/prompts/PromptConfigsEditor.tsx')
   const page = read('app/workspace/pages/MainSessionPage.tsx')
-  assert.match(editor, /viewMode\?: 'general' \| 'capability'/)
-  assert.match(editor, /role="tablist"/)
-  assert.match(editor, /role="tabpanel"/)
-  assert.match(page, /useState<'general' \| 'capability'>\('general'\)/)
+  const list = read('features/prompts/PromptConfigList.tsx')
+  assert.doesNotMatch(editor, /viewMode|通用设置|引擎能力设置/)
+  assert.doesNotMatch(page, /viewMode|onViewModeChange/)
+  assert.match(editor, /layerCards\?: \(layer: string\) => ReactNode/)
+  assert.match(list, /layers\.map\(renderLayer\)/)
+  assert.match(list, /allLayers\.map\(\(item\) =>/)
+  assert.match(list, /保存提示词配置/)
+  assert.match(list, /能力模块不受此搜索影响/)
+  assert.match(page, /commonCards=/)
+  assert.match(page, /layerFilter=\{layer\}/)
   assert.match(page, /viewFilter=\{layerFilter\}/)
 })

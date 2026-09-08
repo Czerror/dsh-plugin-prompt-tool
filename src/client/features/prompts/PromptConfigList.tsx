@@ -3,7 +3,7 @@ import { bridgeCall, errorMessage } from '../../data/bridge-client.ts'
 import { MenuSelect } from '../../ui/MenuSelect.tsx'
 import { PromptConfigCard } from './PromptConfigCard.tsx'
 import { moveToView, moveWithinLayer, promptConfigLayer, viewOrderedIds } from './prompt-config-order.ts'
-import { LAYER_LABELS } from './prompt-config-policy.ts'
+import { displayLayers, LAYER_LABELS } from './prompt-config-policy.ts'
 import type { EngineMeta, PromptConfigDraft, ValidationErrorEntry } from '../../prompt-tool-types.ts'
 import sharedCss from '../../ui/controls.module.css'
 import featureCss from './prompts.module.css'
@@ -22,6 +22,10 @@ export interface PromptConfigListProps {
   extraActions?: ReactNode
   /** 列表头部之后、配置卡片之前渲染的固定卡片（如模板变量——归类于配置列表下）。 */
   beforeCards?: ReactNode
+  /** 按行为分类插入能力卡；不会改变提示词配置的保存与排序模型。 */
+  layerCards?: (layer: string) => ReactNode
+  /** 工具栏中的非提示词配置操作（如能力创建）。 */
+  toolbarActions?: ReactNode
   /** 受控层筛选（全部/世界书/层级）；未传时内部 state 兜底（子代理页等独立实例）。 */
   viewFilter?: string
   onViewFilterChange?: (value: string) => void
@@ -34,7 +38,7 @@ export interface PromptConfigListProps {
 
 /** 共享的提示词配置列表：校验、保存、脏检测、复制、删除、层内移动。 */
 export function PromptConfigList(props: PromptConfigListProps): ReactNode {
-  const { meta, configs, savedConfigs, layer, scope, extraActions, beforeCards, viewFilter: viewFilterProp, onViewFilterChange, emptyHint, onPatchConfigs, onSaveConfigs, onNotice } = props
+  const { meta, configs, savedConfigs, layer, scope, extraActions, beforeCards, layerCards, toolbarActions, viewFilter: viewFilterProp, onViewFilterChange, emptyHint, onPatchConfigs, onSaveConfigs, onNotice } = props
   const [expanded, setExpanded] = useState<string | undefined>(undefined)
   const [errors, setErrors] = useState<ValidationErrorEntry[]>([])
   const [validating, setValidating] = useState(false)
@@ -52,6 +56,10 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
   }
 
   const effectiveLayer = layer ?? (viewFilter !== 'all' && viewFilter !== 'world-book' ? viewFilter : undefined)
+  const allLayers = displayLayers([...meta.layers, ...configs.map(promptConfigLayer)])
+  const layers = layer !== undefined
+    ? [layer]
+    : allLayers
   const visible = effectiveLayer === undefined
     ? configs
     : configs.filter((config) => promptConfigLayer(config) === effectiveLayer)
@@ -72,8 +80,8 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
   // 显示顺序 = 引擎注入顺序：按（层序, order, 声明序）稳定排序，跨层全量视图
   // 也一致；order 相同时保持数组原序（同值稳定）。
   const layerRank = (config: PromptConfigDraft): number => {
-    const index = meta.layers.indexOf(promptConfigLayer(config))
-    return index < 0 ? meta.layers.length : index
+    const index = allLayers.indexOf(promptConfigLayer(config))
+    return index < 0 ? allLayers.length : index
   }
   const ordered = filtered
     .map((config, index) => ({ config, index }))
@@ -118,7 +126,7 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
     if (valid) {
       setErrors([])
       onSaveConfigs(configs)
-      onNotice('ok', `已校验并保存（${configs.length} 条）`)
+      onNotice('ok', `已校验并保存（${configs.length} 条提示词配置）`)
     }
     setSaving(false)
   }
@@ -135,14 +143,14 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
   // 避免与不可见配置交换顺序。
   const viewStrategy = viewFilter === 'world-book' ? 'world-book' : undefined
   const viewIds = useMemo(
-    () => viewOrderedIds(configs, layer, meta.layers, viewStrategy),
-    [configs, layer, meta.layers, viewStrategy],
+    () => viewOrderedIds(configs, effectiveLayer, allLayers, viewStrategy),
+    [configs, effectiveLayer, allLayers, viewStrategy],
   )
   const positionOf = useMemo(() => new Map(viewIds.map((id, at) => [id, at])), [viewIds])
 
   /** 卡片稳定回调（memo 生效前提）：经 liveRef 读最新列表状态，回调引用跨渲染不变。 */
-  const liveRef = useRef({ configs, layer, metaLayers: meta.layers, strategy: viewStrategy, dragId, dropTarget })
-  liveRef.current = { configs, layer, metaLayers: meta.layers, strategy: viewStrategy, dragId, dropTarget }
+  const liveRef = useRef({ configs, layer: effectiveLayer, metaLayers: allLayers, strategy: viewStrategy, dragId, dropTarget })
+  liveRef.current = { configs, layer: effectiveLayer, metaLayers: allLayers, strategy: viewStrategy, dragId, dropTarget }
   const handleToggleExpanded = useCallback((id: string) => {
     setExpanded((current) => current === id ? undefined : id)
   }, [])
@@ -236,12 +244,40 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
     )
   }
 
+  const renderLayer = (layerName: string): ReactNode => {
+    const layerConfigs = ordered.filter((config) => promptConfigLayer(config) === layerName)
+    const layerCardsView = viewFilter === 'world-book' ? undefined : layerCards?.(layerName)
+    const headingId = `pt-layer-heading-${layerName}`
+    return (
+      <section key={layerName} className={styles.layerSection} aria-labelledby={headingId} data-insertion-point={layerName}
+        hidden={effectiveLayer !== undefined && effectiveLayer !== layerName}>
+        <div className={styles.layerHeading}>
+          <div>
+            <h3 id={headingId}>{LAYER_LABELS[layerName] ?? layerName}</h3>
+            <p>{layerConfigs.length} 条提示词配置{layerCards !== undefined && viewFilter !== 'world-book' ? ' · 能力模块按当前预设装配显示' : ''}</p>
+          </div>
+        </div>
+        {layerCardsView}
+        {layerConfigs.length > 0 ? (
+          <div className={styles.configList}>
+            {layerConfigs.map((config) => renderCard(config))}
+          </div>
+        ) : (
+          <p className={styles.readOnly} role="status">
+            {layerCards !== undefined && viewFilter !== 'world-book' ? '当前分类暂无提示词配置；如有已装配能力模块，将显示在此处。' : '当前分类暂无提示词配置。'}
+          </p>
+        )}
+      </section>
+    )
+  }
+
   return (
     <section className={styles.section} aria-labelledby="prompt-tool-configs-heading">
       <div className={styles.sectionHeading}>
       <div><h2 id="prompt-tool-configs-heading">{layer === undefined ? '模块列表' : '本层配置'}</h2><p>{scoped.length} 条配置 · {scoped.filter((config) => config.enabled !== false).length} 条启用；上下移动控制同层顺序。</p></div>
-        <div className={styles.sectionActions}>
+        <div className={styles.sectionActions} data-module-toolbar="true">
           {extraActions}
+          {toolbarActions}
           <button type="button" className={styles.pillButton} disabled={validating} onClick={() => void runValidate(configs)}>{validating && <span className={styles.spinner} aria-hidden="true" />}{validating ? '校验中…' : '校验'}</button>
           <button type="button" className={styles.primaryPill} disabled={saving || validating} onClick={() => void save()}>{saving && <span className={styles.spinner} aria-hidden="true" />}{saving ? '保存中…' : '保存'}</button>
         </div>
@@ -251,8 +287,8 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
         <input
           className={styles.listFilter}
           value={filter}
-          aria-label="过滤模块列表"
-          placeholder="过滤：按标识 / 名称…"
+          aria-label="过滤提示词配置"
+          placeholder="过滤提示词配置：按标识 / 名称…"
           spellCheck={false}
           onChange={(event) => setFilter(event.target.value)}
         />
@@ -264,7 +300,7 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
             options={[
               { value: 'all', label: '全部' },
               { value: 'world-book', label: '世界书' },
-              ...meta.layers.map((item) => ({ value: item, label: `层级：${LAYER_LABELS[item] ?? item}` })),
+              ...allLayers.map((item) => ({ value: item, label: `层级：${LAYER_LABELS[item] ?? item}` })),
             ]}
             onChange={changeViewFilter}
           />
@@ -288,25 +324,34 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
       {/* 归类于配置列表下的固定卡片（模板变量：可折叠 / 可删除 / 可新建）。 */}
       {beforeCards}
 
-      {scoped.length === 0 ? (
-        <div className={styles.emptyState}><span className={styles.emptyGlyph} aria-hidden="true">⌁</span><div><h3>{scope === 'subagent' ? '还没有子代理可见的配置' : effectiveLayer === undefined ? '还没有自定义配置' : '本层还没有自定义配置'}</h3><p>{scope === 'subagent' ? '从上方「新建」插入一条（插入后可在卡片「消息受众」下拉自由切换仅主会话/公用/仅子代理），或到主设置「配置」从目录导入。' : effectiveLayer === undefined ? '从上方模板插入一条，或从本地目录导入；默认四条内置配置不受影响。' : '请到主设置「配置」从模板插入或从目录导入。'}</p>{emptyHint !== undefined && <p className={styles.readOnly}>{emptyHint}</p>}</div></div>
-      ) : filtered.length === 0 ? (
-        <p className={styles.readOnly} role="status">没有匹配「{filter.trim()}」的配置。</p>
+      {layerCards === undefined ? (
+        scoped.length === 0 ? (
+          <div className={styles.emptyState}><span className={styles.emptyGlyph} aria-hidden="true">⌁</span><div><h3>{scope === 'subagent' ? '还没有子代理可见的配置' : effectiveLayer === undefined ? '还没有自定义配置' : '本层还没有自定义配置'}</h3><p>{scope === 'subagent' ? '从上方「新建」插入一条（插入后可在卡片「消息受众」下拉自由切换仅主会话/公用/仅子代理），或到主设置「配置」从目录导入。' : effectiveLayer === undefined ? '从上方模板插入一条，或从本地目录导入；默认四条内置配置不受影响。' : '请到主设置「配置」从模板插入或从目录导入。'}</p>{emptyHint !== undefined && <p className={styles.readOnly}>{emptyHint}</p>}</div></div>
+        ) : filtered.length === 0 && keyword.length > 0 ? (
+          <p className={styles.readOnly} role="status">没有匹配「{filter.trim()}」的配置。</p>
+        ) : (
+          <div className={styles.configList}>
+            {ordered.map((config) => renderCard(config))}
+          </div>
+        )
       ) : (
-        <div className={styles.configList}>
-          {ordered.map((config) => renderCard(config))}
-        </div>
+        <>
+          {filtered.length === 0 && keyword.length > 0 && <p className={styles.readOnly} role="status">没有匹配「{filter.trim()}」的提示词配置；能力模块不受此搜索影响。</p>}
+          <div className={styles.layerSections}>
+            {layers.map(renderLayer)}
+          </div>
+        </>
       )}
 
       <div className={styles.feedback} aria-live="polite">
-        {dirty && <p className={styles.readOnly}>模块列表有未保存修改。</p>}
+        {dirty && <p className={styles.readOnly}>提示词配置有未保存修改。</p>}
       </div>
 
       <footer className={`${styles.actions} ${dirty ? styles.actionsVisible : ''}`} aria-live="polite">
-        <span>{dirty ? '有未保存修改' : ''}</span>
+        <span>{dirty ? '有未保存提示词配置修改' : ''}</span>
         <div>
           <button type="button" className={styles.pillButton} data-variant="secondary" disabled={saving || !dirty} onClick={discard}>放弃修改</button>
-          <button type="button" className={styles.save} disabled={saving || validating || !dirty} onClick={() => void save()}>{saving && <span className={styles.spinner} aria-hidden="true" />}{saving ? '保存中…' : '保存全部'}</button>
+          <button type="button" className={styles.save} disabled={saving || validating || !dirty} onClick={() => void save()}>{saving && <span className={styles.spinner} aria-hidden="true" />}{saving ? '保存中…' : '保存提示词配置'}</button>
         </div>
       </footer>
     </section>

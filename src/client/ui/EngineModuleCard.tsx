@@ -6,8 +6,8 @@ import styles from './controls.module.css'
 /** 引擎模块可折叠卡片：与模块列表（PromptConfigList）同款形态——
  *  configCard + configToggle + chevron，点击展开 configForm 编辑组合行 config
  *  （经 params 参数桥扁平键落 preset.yml）。归类于配置列表下（beforeCards）。
- *  layer：6 层注入层级归类（pre-step / system-section / tool-pipeline），
- *  参与模块列表层筛选（layerFilter 联动）。 */
+ *  layer：能力影响的 UI 行为分类（pre-step / system-section / tool-pipeline），
+ *  由统一模块列表按插入点组合展示；不参与运行时 hook 排序。 */
 export function EngineModuleCard(props: {
   name: string
   meta: string

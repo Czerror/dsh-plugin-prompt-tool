@@ -3,6 +3,20 @@ import type { EngineMeta, LayerFieldPolicy } from '../../prompt-tool-types.ts'
 export const SOURCE_KINDS = ['', 'plugin', 'instruction-hint', 'skill-catalog', 'env-facts'] as const
 export const SOURCE_FORMS = ['notice', 'hint', ''] as const
 
+/** UI 始终提供六个官方插入点；meta 额外返回的层仍保留在末尾，避免丢失未知配置。 */
+export const INSERTION_LAYERS = [
+  'pre-step',
+  'system-section',
+  'runtime-context',
+  'agent-request',
+  'llm-stream',
+  'tool-pipeline',
+] as const
+
+export function displayLayers(layers: readonly string[]): string[] {
+  return [...INSERTION_LAYERS, ...layers.filter((layer) => !(INSERTION_LAYERS as readonly string[]).includes(layer))]
+}
+
 /** audience 的 UI 中文标签：空值=公用（缺省，通用参数默认）；main=仅主会话；subagent=仅子代理。 */
 export const AUDIENCE_LABELS: Record<string, string> = { '': '公用（缺省）', main: '仅主会话', subagent: '仅子代理' }
 export const LAYER_LABELS: Record<string, string> = {

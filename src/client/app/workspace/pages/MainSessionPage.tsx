@@ -3,17 +3,15 @@ import type { PromptToolStore } from '../../../data/use-prompt-tool-store.ts'
 import { usePromptToolFields } from '../../../data/use-prompt-tool-fields.ts'
 import { PromptConfigsEditor } from '../../../features/prompts/PromptConfigsEditor.tsx'
 import { ModelRouteModuleCard } from '../../../features/models/ModelRouteCard.tsx'
-import { EngineModuleCards } from '../../../features/modules/EngineModuleList.tsx'
+import { EngineModuleActions, EngineModuleCards, EnginePromptDefaultsCard } from '../../../features/modules/EngineModuleList.tsx'
 import { CustomToolsCard } from '../../../features/tools/CustomToolsCard.tsx'
 import ui from '../../../ui/controls.module.css'
-/** 主会话页：主对话参数 + Preset/AGENTS 内容 + 管线状态卡 + 模块库（层筛选）。
- *  注入层 tab 已并入本页（层专属开关与内容资产卡片），模块库按层级下拉筛选浏览。 */
+/** 主会话页：公共配置与按六个插入点归类的统一模块列表。 */
 export const MainSessionPage = memo(function MainSessionPage(props: { store: PromptToolStore }): ReactNode {
   const { store } = props
   // L3 selector 化：fields 引用变化才重渲染（父级 loading/notice/page 变化不再级联）。
   const fields = usePromptToolFields(store, (value) => value)
   const [layerFilter, setLayerFilter] = useState('all')
-  const [viewMode, setViewMode] = useState<'general' | 'capability'>('general')
   const changeLayerFilter = useCallback((value: string) => {
     setLayerFilter(value)
   }, [])
@@ -24,6 +22,19 @@ export const MainSessionPage = memo(function MainSessionPage(props: { store: Pro
   const saveConfigs = useCallback((configs: PromptToolStore['fields']['promptConfigs']) => {
     void store.persistConfigs(configs)
   }, [store])
+  const renderLayerCards = useCallback((layer: string): ReactNode => (
+    <>
+      <EngineModuleCards store={store} layerFilter={layer} showActions={false} showPromptDefaults={false} showStatus={false} />
+      {layer === 'tool-pipeline' && (
+        <CustomToolsCard
+          key={fields.presetTemplate}
+          presetId={fields.presetTemplate}
+          onNotice={store.showNotice}
+          disabled={store.moduleFacts?.editable !== true || !fields.writePreset}
+        />
+      )}
+    </>
+  ), [fields.presetTemplate, fields.writePreset, store, store.moduleFacts?.editable])
   return (
     <section className={ui.section} aria-label="主会话与全局">
       <PromptConfigsEditor
@@ -38,25 +49,16 @@ export const MainSessionPage = memo(function MainSessionPage(props: { store: Pro
         templateVariablesEnabled={store.templateVariablesEnabled}
         setTemplateVariablesEnabled={store.setTemplateVariablesEnabled}
         saveTemplateVariables={store.saveTemplateVariables}
-        store={store}
         viewFilter={layerFilter}
         onViewFilterChange={changeLayerFilter}
-        viewMode={viewMode}
-        onViewModeChange={setViewMode}
-        headerCards={
+        commonCards={
           <div className={ui.configList}>
             <ModelRouteModuleCard store={store} scope="main" />
-            <EngineModuleCards store={store} layerFilter={layerFilter} />
+            <EnginePromptDefaultsCard store={store} />
           </div>
         }
-        beforeCards={layerFilter === 'all' || layerFilter === 'tool-pipeline' ? (
-          <CustomToolsCard
-            key={fields.presetTemplate}
-            presetId={fields.presetTemplate}
-            onNotice={store.showNotice}
-            disabled={store.moduleFacts?.editable !== true || !fields.writePreset}
-          />
-        ) : undefined}
+        toolbarActions={<EngineModuleActions store={store} />}
+        layerCards={renderLayerCards}
       />
     </section>
   )

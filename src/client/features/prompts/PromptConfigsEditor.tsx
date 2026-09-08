@@ -6,16 +6,12 @@ import { HintTooltip } from '../../ui/HintTooltip.tsx'
 import { TemplatePicker } from '../../ui/TemplatePicker.tsx'
 import { useTemplatePicker } from './useTemplatePicker.ts'
 import { VariablesEditor } from './PromptConfigFields.tsx'
-import { tabKeyHandler } from '../../ui/tab-key.ts'
-import { MenuSelect } from '../../ui/MenuSelect.tsx'
-import { LAYER_LABELS } from './prompt-config-policy.ts'
 import sharedCss from '../../ui/controls.module.css'
 import featureCss from './prompts.module.css'
 
 const styles = { ...sharedCss, ...featureCss }
 
 import type { EngineMeta, PromptConfigDraft } from '../../prompt-tool-types.ts'
-import type { PromptToolStore } from '../../data/use-prompt-tool-store.ts'
 
 export type { PromptConfigDraft, LayerFieldPolicy } from '../../prompt-tool-types.ts'
 export type { ValidationErrorEntry } from '../../prompt-tool-types.ts'
@@ -39,14 +35,14 @@ export interface PromptConfigsEditorProps {
   templateVariablesEnabled: boolean
   setTemplateVariablesEnabled: (value: boolean) => void
   saveTemplateVariables: (next?: Record<string, string>) => Promise<void>
-  /** 引擎模块配置（tool-bootstrap 等组合行 config 卡片，同模块列表形态）。 */
-  store: PromptToolStore
   viewFilter: string
   onViewFilterChange: (value: string) => void
-  headerCards?: ReactNode
-  beforeCards?: ReactNode
-  viewMode?: 'general' | 'capability'
-  onViewModeChange?: (mode: 'general' | 'capability') => void
+  /** 公共配置：模型、模板变量以外的预设级默认值等，不属于任何插入点。 */
+  commonCards?: ReactNode
+  /** 按插入点渲染能力模块和领域卡片。 */
+  layerCards?: (layer: string) => ReactNode
+  /** 模块列表工具栏中的能力创建等操作。 */
+  toolbarActions?: ReactNode
 }
 
 /** 预设级模板变量模块卡片（归类于配置列表下）：{{key}} 插值源，非 promptConfig——
@@ -130,8 +126,6 @@ function TemplateVariablesModuleCard(props: {
 
 /** 提示词配置编辑器：配置列表（层级/策略过滤已并入列表）+ 模板插入 + 保存前权威校验。 */
 export function PromptConfigsEditor(props: PromptConfigsEditorProps): ReactNode {
-  const viewMode = props.viewMode ?? 'general'
-  const onViewModeChange = props.onViewModeChange ?? (() => {})
   const [templateVarsExpanded, setTemplateVarsExpanded] = useState(false)
   const templatePicker = useTemplatePicker(
     props.configs,
@@ -145,78 +139,34 @@ export function PromptConfigsEditor(props: PromptConfigsEditorProps): ReactNode 
     templatePicker.closePicker()
   }
   return (
-    <section className={styles.page} aria-label="提示词配置">
-      <div className={styles.viewModeTabs} role="tablist" aria-label="模块列表视图">
-        {([
-          ['general', '通用设置'],
-          ['capability', '引擎能力设置'],
-        ] as const).map(([id, label]) => {
-          const active = viewMode === id
-          return (
-            <button
-              key={id}
-              id={`pt-module-view-${id}`}
-              type="button"
-              role="tab"
-              tabIndex={active ? 0 : -1}
-              aria-selected={active}
-              aria-controls={`pt-module-panel-${id}`}
-              data-active={active ? '' : undefined}
-              onClick={() => onViewModeChange(id)}
-              onKeyDown={tabKeyHandler(['general', 'capability'], viewMode, onViewModeChange)}
-            >
-              <span>{label}</span>
-            </button>
-          )
-        })}
+    <section className={styles.page} aria-label="主会话模块列表" data-module-list="true">
+      <div className={styles.commonCards} aria-label="公共配置" data-module-category="common">
+        {props.commonCards}
+        <TemplateVariablesModuleCard
+          templateVariables={props.templateVariables}
+          setTemplateVariables={props.setTemplateVariables}
+          templateVariablesEnabled={props.templateVariablesEnabled}
+          setTemplateVariablesEnabled={props.setTemplateVariablesEnabled}
+          saveTemplateVariables={props.saveTemplateVariables}
+          expanded={templateVarsExpanded}
+          onToggleExpanded={() => setTemplateVarsExpanded(!templateVarsExpanded)}
+        />
       </div>
+      <PromptConfigList
+        meta={props.meta}
+        configs={props.configs}
+        savedConfigs={props.savedConfigs}
+        viewFilter={props.viewFilter}
+        onViewFilterChange={props.onViewFilterChange}
+        extraActions={<button ref={templatePicker.anchorRef} type="button" className={styles.primaryPill} onClick={templatePicker.openPicker}>新建</button>}
+        toolbarActions={props.toolbarActions}
+        layerCards={props.layerCards}
+        onPatchConfigs={props.onPatchConfigs}
+        onSaveConfigs={props.onSaveConfigs}
+        onNotice={props.onNotice}
+      />
 
-      {viewMode === 'capability' ? (
-        <div id="pt-module-panel-capability" role="tabpanel" aria-labelledby="pt-module-view-capability" className={styles.capabilityPanel}>
-          <div className={styles.capabilityToolbar}>
-            <span className={styles.configFieldLabel}>能力层级</span>
-            <MenuSelect
-              ariaLabel="按能力层级过滤"
-              value={props.viewFilter}
-              options={[
-                { value: 'all', label: '全部' },
-                { value: 'world-book', label: '世界书' },
-                ...props.meta.layers.map((item) => ({ value: item, label: `层级：${LAYER_LABELS[item] ?? item}` })),
-              ]}
-              onChange={props.onViewFilterChange}
-            />
-          </div>
-          {props.headerCards}
-          {props.beforeCards}
-        </div>
-      ) : (
-        <div id="pt-module-panel-general" role="tabpanel" aria-labelledby="pt-module-view-general">
-          <PromptConfigList
-            meta={props.meta}
-            configs={props.configs}
-            savedConfigs={props.savedConfigs}
-            viewFilter={props.viewFilter}
-            onViewFilterChange={props.onViewFilterChange}
-            extraActions={<button ref={templatePicker.anchorRef} type="button" className={styles.primaryPill} onClick={templatePicker.openPicker}>新建</button>}
-            beforeCards={
-              <TemplateVariablesModuleCard
-                templateVariables={props.templateVariables}
-                setTemplateVariables={props.setTemplateVariables}
-                templateVariablesEnabled={props.templateVariablesEnabled}
-                setTemplateVariablesEnabled={props.setTemplateVariablesEnabled}
-                saveTemplateVariables={props.saveTemplateVariables}
-                expanded={templateVarsExpanded}
-                onToggleExpanded={() => setTemplateVarsExpanded(!templateVarsExpanded)}
-              />
-            }
-            onPatchConfigs={props.onPatchConfigs}
-            onSaveConfigs={props.onSaveConfigs}
-            onNotice={props.onNotice}
-          />
-        </div>
-      )}
-
-      {viewMode === 'general' && templatePicker.open && (
+      {templatePicker.open && (
         <TemplatePicker
           anchorRef={templatePicker.anchorRef}
           templates={templatePicker.templates}
@@ -227,7 +177,7 @@ export function PromptConfigsEditor(props: PromptConfigsEditorProps): ReactNode 
       )}
 
       <p className={styles.settingsNote}>提示词配置写入激活预设的 <code>preset.yml</code>（随预设存储，不占用 settings）；外部提示词配置可经「预设配置 → 导入预设」引入。</p>
-<p className={styles.settingsNote}>{'模板变量空字符串是合法占位值（{{key}} 动态引用），不会被当作「删键」处理。'}</p>
+      <p className={styles.settingsNote}>{'模板变量空字符串是合法占位值（{{key}} 动态引用），不会被当作「删键」处理。'}</p>
     </section>
   )
 }

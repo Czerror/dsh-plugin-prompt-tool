@@ -226,7 +226,7 @@ workspace-pages.ts 是页面元数据的唯一来源。默认页为 features，�
 
 | id | 标题 | 主要组合 |
 |---|---|---|
-| features | 主会话 | 主会话 ModelRouteCard、PromptConfigsEditor（通用/引擎能力双视图）、按能力拆分的 EngineModuleList、直接工具卡列表 |
+| features | 主会话 | 主会话 ModelRouteCard、公共配置、按六个插入点分组的 PromptConfigList 与 EngineModuleList、tool-pipeline 自定义工具卡 |
 | subagent | 子代理 | ModelRouteCard、DelegationToolsCard、ConfigListWithTemplates |
 | tools | 工具预览 | 顶置统一搜索；当前会话／所选预设两个可折叠分组，预设选择位于分组标题右侧；双列展开详情卡，680px 以下单列 |
 | skills | 技能设置 | 目录与来源、状态筛选、SkillRow、目录引用/导入/排序 |
@@ -335,7 +335,7 @@ feature 只拥有自己的视图、瞬时状态、领域纯 helper 和 CSS：
 |---|---|
 | prompts | 六层配置卡、字段策略、排序、模板插入、变量编辑和内容配置 |
 | models | 当前预设的主/子代理模型路由卡；模型下拉展示完整目录并按服务商分组，选择模型时内部回写 provider + model，不提供独立服务商选择控件 |
-| modules | 引擎能力列表与层级筛选；一项显式装配能力一张卡，存在性由 `/bootstrap.moduleFacts.declaredModules` 决定，卡片形态由 ui/EngineModuleCard.tsx 提供 |
+| modules | 引擎能力身份、存在性与参数卡；一项显式装配能力一张卡，存在性由 `/bootstrap.moduleFacts.declaredModules` 决定，统一列表的行为分类由工作区组合，卡片形态由 ui/EngineModuleCard.tsx 提供 |
 | subagents | 委派工具、实例级工具策略草稿及策略解析预览；不重复嵌入工具面 |
 | tools | 自定义工具编辑/保存、参数模板；独立工具预览页与只读工具面 |
 | skills | 技能目录引用/导入、状态筛选、排序、开关、修复和打开目录 |
@@ -365,11 +365,13 @@ ui/ 只接收 props/callback，当前真实共享 seam 包括：
 
 promptConfigs 模块卡展开区按基础信息、注入规则、作用范围、内容、策略参数和高级元数据分区；短字段使用基于卡片宽度的容器网格，高级来源/幂等元数据使用原生 details 收纳。字段说明统一使用 HintTooltip；视觉沿用宿主 Tooltip，定位由本插件处理。布局变化不得改变字段默认值、未知枚举兼容或保存载荷。
 
-主会话模块列表提供两个互斥 sibling view：`general` 展示当前 seam 的 promptConfigs，`capability` 展示模型路由、引擎能力卡和 tool-pipeline 工具卡。`layerFilter` 在两个 view 间保持独立；view 切换不改变 dirty 快照、参数保存队列或模块事实。
+主会话使用单一模块列表：公共配置（当前会话模型、模板变量和提示词生成默认值）位于列表顶部，工具栏提供插入点筛选、提示词配置操作和能力创建；六个插入点按行为分类显示提示词配置与已装配能力卡。`anchor-turn` 归入 `pre-step`，展示分类不改变其实际 hook。能力卡与提示词配置保留各自保存、排序和删除语义，不建立第二份字段状态。
+
+插入点筛选通过隐藏非选中分类保留能力卡挂载，避免数字或阶段草稿因筛选重挂丢失；世界书是提示词策略筛选，能力卡不混入该视图。提示词搜索只作用于提示词配置，计数、批量启停和保存按钮不操作能力卡。
 
 引擎能力卡只展示当前预设 `modules` 显式声明的能力；`modules: []` 不展开默认骨架，官方组合行不生成插件能力卡。可编辑卡提供局部二次确认删除，删除只移除模块声明并保留 dormant 参数，成功后重建一次并刷新模块事实。
 
-`ToolSurfaceView` 的 `sessionId` 分支表示当前存活 Agent；`presetId` 分支表示官方预设后续 generation 的只读能力。预设分支只在能力视图显式挂载时请求，不在 bootstrap 遍历所有预设。
+`ToolSurfaceView` 的 `sessionId` 分支表示当前存活 Agent；`presetId` 分支表示官方预设后续 generation 的只读能力。工具预览保持独立只读页面，只有用户显式打开时请求，不因主会话模块列表的筛选或渲染遍历所有预设。
 
 ### 9.2 Tabs
 

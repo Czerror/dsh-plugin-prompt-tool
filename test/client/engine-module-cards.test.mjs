@@ -7,6 +7,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import ts from 'typescript'
 import { ENGINE_CAPABILITIES } from '../../src/shared/engine-capabilities.ts'
 import { ENGINE_PARAM_DEFINITIONS, ENGINE_PARAM_KEYS } from '../../src/shared/engine-params.ts'
+import { displayLayers } from '../../src/client/features/prompts/prompt-config-policy.ts'
 import { EMPTY_FIELDS } from '../../src/client/data/prompt-tool-fields.ts'
 
 const read = (path) => readFileSync(new URL(`../../src/client/${path}`, import.meta.url), 'utf8')
@@ -25,6 +26,7 @@ const loader = registerHooks({
 })
 const { EngineParamFields } = await import('../../src/client/features/modules/EngineParamFields.tsx')
 const { EngineModuleCards } = await import('../../src/client/features/modules/EngineModuleList.tsx')
+const { PromptConfigList } = await import('../../src/client/features/prompts/PromptConfigList.tsx')
 loader.deregister()
 const render = (component, props) => renderToStaticMarkup(createElement(component, props))
 const store = {
@@ -55,6 +57,9 @@ test('卡片存在性来自装配事实，bootstrap-filesystem 显示为编辑�
   const filtered = render(EngineModuleCards, { store: active, layerFilter: 'pre-step' })
   assert.doesNotMatch(filtered, /class="configName">tool-bootstrap</)
   assert.doesNotMatch(filtered, /class="configName">str-replace-editor</)
+  const anchored = render(EngineModuleCards, { store: { ...store, moduleFacts: { ...store.moduleFacts, effectiveModules: ['anchor-turn'] } }, layerFilter: 'pre-step' })
+  assert.match(anchored, /class="configName">anchor-turn</)
+  assert.doesNotMatch(render(EngineModuleCards, { store: { ...store, moduleFacts: { ...store.moduleFacts, effectiveModules: ['anchor-turn'] } }, layerFilter: 'system-section' }), /class="configName">anchor-turn</)
   const official = render(EngineModuleCards, { store: { ...active, moduleFacts: { ...active.moduleFacts, sourceMode: 'official' } } })
   assert.doesNotMatch(official, /class="configName">tool-bootstrap</)
 })
@@ -86,4 +91,51 @@ test('自定义工具编辑入口保留，能力删除仍需二次确认', () =>
   assert.match(custom, /<CustomToolCard/)
   assert.match(read('ui/EngineModuleCard.tsx'), /确认删除/)
   assert.match(read('features/modules/EngineModuleList.tsx'), /store\.removeEngineCapability\(capability\.id\)/)
+})
+
+test('统一列表始终暴露六个插入点，公共默认值不伪装成 pre-step 能力', () => {
+  assert.deepEqual(displayLayers([]), ['pre-step', 'system-section', 'runtime-context', 'agent-request', 'llm-stream', 'tool-pipeline'])
+  const list = read('features/modules/EngineModuleList.tsx')
+  assert.match(list, /EnginePromptDefaultsCard/)
+  assert.doesNotMatch(list, /name="提示词生成默认值" layer="pre-step"/)
+  const editor = read('features/prompts/PromptConfigsEditor.tsx')
+  assert.match(editor, /aria-label="公共配置"/)
+})
+
+test('统一列表按插入点分组，anchor-turn 只在 pre-step 分类出现', () => {
+  const configs = []
+  const meta = {
+    layers: ['pre-step', 'system-section', 'runtime-context', 'agent-request', 'llm-stream', 'tool-pipeline'],
+    strategies: [], slotKinds: [], positions: [], dedupes: [], promotions: [], audienceModes: [], modelScopes: [], roles: [], mergeModes: [], fills: [],
+    layerFieldPolicies: {}, layerLabels: {},
+  }
+  const active = { ...store, moduleFacts: { ...store.moduleFacts, effectiveModules: ['anchor-turn'] } }
+  const html = render(PromptConfigList, {
+    meta,
+    configs,
+    savedConfigs: configs,
+    viewFilter: 'all',
+    onViewFilterChange() {},
+    layerCards: (layer) => createElement(EngineModuleCards, { store: active, layerFilter: layer, showActions: false, showPromptDefaults: false, showStatus: false }),
+    onPatchConfigs() {},
+    onSaveConfigs() {},
+    onNotice() {},
+  })
+  assert.equal((html.match(/data-insertion-point=/g) ?? []).length, 6)
+  const preStep = html.slice(html.indexOf('data-insertion-point="pre-step"'), html.indexOf('data-insertion-point="system-section"'))
+  const systemSection = html.slice(html.indexOf('data-insertion-point="system-section"'), html.indexOf('data-insertion-point="runtime-context"'))
+  assert.match(preStep, /class="configName">anchor-turn</)
+  assert.doesNotMatch(systemSection, /anchor-turn/)
+  const worldBook = render(PromptConfigList, {
+    meta,
+    configs,
+    savedConfigs: configs,
+    viewFilter: 'world-book',
+    onViewFilterChange() {},
+    layerCards: (layer) => createElement(EngineModuleCards, { store: active, layerFilter: layer, showActions: false, showPromptDefaults: false, showStatus: false }),
+    onPatchConfigs() {},
+    onSaveConfigs() {},
+    onNotice() {},
+  })
+  assert.doesNotMatch(worldBook, /anchor-turn/)
 })

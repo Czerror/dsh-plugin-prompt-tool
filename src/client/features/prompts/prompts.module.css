@@ -135,40 +135,17 @@
 .settingsNote { margin: -14px 0 0; color: var(--dsw-alias-label-tertiary); font-size: 10px; line-height: 16px; }
 .settingsNote code { color: var(--dsw-alias-label-secondary); font-family: var(--ds-font-family-code, ui-monospace, monospace); }
 
-.viewModeTabs {
-  display: flex;
-  align-items: flex-end;
-  gap: 18px;
-  border-bottom: 0.5px solid var(--dsw-alias-border-l2);
+.commonCards,
+.layerSections,
+.layerSection { display: flex; min-width: 0; flex-direction: column; gap: 12px; }
+.commonCards { gap: 10px; }
+.layerSection {
+  border-top: 0.5px solid var(--dsw-alias-border-l2);
+  padding-top: 14px;
 }
-
-.viewModeTabs button {
-  position: relative;
-  min-height: 36px;
-  border: 0;
-  padding: 0 2px;
-  color: var(--dsw-alias-label-tertiary);
-  background: transparent;
-  cursor: pointer;
-  font: inherit;
-  font-size: 13px;
-}
-
-.viewModeTabs button:hover,
-.viewModeTabs button[data-active] { color: var(--dsw-alias-label-primary); }
-.viewModeTabs button[data-active]::after {
-  position: absolute;
-  right: 0;
-  bottom: -1px;
-  left: 0;
-  height: 2px;
-  border-radius: 2px;
-  background: var(--dsw-alias-state-business-primary);
-  content: '';
-}
-.viewModeTabs button:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary); outline-offset: 2px; }
-.capabilityPanel { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
-.capabilityToolbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-width: 0; }
+.layerHeading { display: flex; min-width: 0; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.layerHeading h3 { margin: 0; color: var(--dsw-alias-label-primary); font-size: 13px; line-height: 18px; }
+.layerHeading p { margin: 2px 0 0; color: var(--dsw-alias-label-tertiary); font-size: 11px; line-height: 16px; }
 
 @media (max-width: 620px) {
   .page { gap: 24px; }
