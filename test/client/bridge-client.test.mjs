@@ -52,3 +52,29 @@ test('typed bridge client：toolSurface 支持 presetId 联合请求', async () 
     globalThis.fetch = originalFetch
   }
 })
+
+test('typed bridge client：空响应体转为可诊断的桥接错误', async () => {
+  const originalFetch = globalThis.fetch
+  globalThis.fetch = async () => new Response(null, { status: 405 })
+  try {
+    const result = await bridgeCall('toolSurface', { sessionId: 's1' })
+    assert.equal(result.ok, false)
+    assert.match(result.message, /空响应/)
+    assert.match(result.message, /405/)
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+test('typed bridge client：非 JSON 响应体保留状态码与内容摘要', async () => {
+  const originalFetch = globalThis.fetch
+  globalThis.fetch = async () => new Response('unauthorized', { status: 401 })
+  try {
+    const result = await bridgeCall('toolSurface', { sessionId: 's1' })
+    assert.equal(result.ok, false)
+    assert.match(result.message, /401/)
+    assert.match(result.message, /unauthorized/)
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})

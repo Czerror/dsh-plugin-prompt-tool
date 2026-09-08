@@ -322,6 +322,8 @@ bridge-transport.ts 只负责 HTTP/Blob 传输和结果 shape guard：
 
 JSON bridge 的统一上限为 32 MiB；角色卡原始文件流独立限制为 64 MiB，避免 base64 膨胀。transport 不解析 feature 数据，也不拥有 Fields。
 
+宿主尚未就绪或路由未注册时，HTTP 层可能返回空体或非 JSON 响应；transport 统一转成 `ok: false` 的可诊断桥接错误（含 HTTP 状态码），不把原生 `response.json()` 异常透传给 UI。
+
 ### 7.3 保存保护
 
 1. 全局 settings 保存使用独立队列；参数与 promptConfigs 共享预设保存队列，跨通道严格串行。

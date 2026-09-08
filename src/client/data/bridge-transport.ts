@@ -37,8 +37,22 @@ const isBridgeResultPayload = (payload: unknown): payload is BridgeResult<unknow
   return !record.ok || 'value' in record
 }
 
+/**
+ * 宿主尚未就绪或路由未注册时，HTTP 层可能返回空体/非 JSON 响应；
+ * 统一转成可诊断的桥接错误，不把原生 response.json() 异常透传给 UI。
+ */
 async function readBridgeResponse<T>(response: Response): Promise<BridgeResult<T>> {
-  const payload = await response.json() as unknown
+  const text = await response.text()
+  if (text.trim().length === 0) {
+    return { ok: false, message: `桥接接口返回空响应（HTTP ${response.status}）` }
+  }
+  let payload: unknown
+  try {
+    payload = JSON.parse(text) as unknown
+  } catch {
+    const preview = text.trim().replace(/\s+/g, ' ').slice(0, 80)
+    return { ok: false, message: `桥接接口返回非 JSON 响应（HTTP ${response.status}：${preview}）` }
+  }
   if (isBridgeResultPayload(payload)) return payload as BridgeResult<T>
   return { ok: false, message: `invalid settings bridge payload (HTTP ${response.status})` }
 }
