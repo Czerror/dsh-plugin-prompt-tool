@@ -6,6 +6,7 @@ import { MenuSelect } from '../../ui/MenuSelect.tsx'
 import { TagInput } from '../../ui/TagInput.tsx'
 import { autoResizeTextarea } from './textarea-resize.ts'
 import { EMPTY_BEHAVIOR_LABELS } from './prompt-config-policy.ts'
+import { isPersonaSectionName } from '../../../shared/persona-section.ts'
 import sharedCss from '../../ui/controls.module.css'
 import featureCss from './prompts.module.css'
 
@@ -133,16 +134,16 @@ export function StrategyParamsFields(props: { strategy: string; layer?: string; 
   const bool = (key: string): boolean => value[key] === true
   const set = (key: string, next: unknown): void => onPatch({ ...value, [key]: next })
   if (layer === 'system-section') {
-    // system-section 层参数：人设段开关（开 = sectionName=deployment:persona 官方 shadow；
+    // system-section 层参数：人设段开关（开 = sectionName=deployment:persona-prefix 官方 shadow；
     // 关 = 可选自定义段名，空则引擎回退 id 注册为普通段）、complete（独占 system prompt，
     // 预设内互斥）、suppressRuntimeContext（抑制动态快照）。
-    const isPersona = str('sectionName') === 'deployment:persona' || str('sectionName') === 'persona'
+    const isPersona = isPersonaSectionName(str('sectionName'))
     const toggleSpan = isPersona ? styles.fieldSpan4 : styles.fieldSpan3
     return (
       <>
         <ParamToggle className={toggleSpan} label="人设" hint="开启后注册为全局人设；同名人设会覆盖，子代理继承"
           checked={isPersona}
-          onChange={(next) => set('sectionName', next ? 'deployment:persona' : '')} />
+          onChange={(next) => set('sectionName', next ? 'deployment:persona-prefix' : '')} />
         {!isPersona && (
           <ParamInput className={styles.fieldSpan3} label="段名" hint="留空时使用配置标识；同名段会覆盖已有段" value={str('sectionName')} onChange={(next) => set('sectionName', next)} />
         )}

@@ -128,7 +128,7 @@ const ALLOWED_KEYS = new Set([
 ])
 
 /** 预设 persona section 名（官方注册名 + 旧名）。 */
-const PERSONA_SECTION_NAMES = new Set(['deployment:persona', 'persona'])
+const PERSONA_SECTION_NAMES = new Set(['deployment:persona-prefix', 'deployment:persona-suffix', 'deployment:persona', 'persona'])
 
 /** 晋升后 persona 附加的工作目录行前缀。 */
 const WORKSPACE_LINE_PREFIX = '\n\nYour working directory is '

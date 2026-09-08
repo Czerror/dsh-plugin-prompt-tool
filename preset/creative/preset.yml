@@ -18,7 +18,6 @@ modules:
   - tool-ask-user
   - tool-todo
   - tool-web
-  - official-tool-cordis
   - official-skill-filesystem-cordis
   - official-tool-skill
   - prompt-config-engine
@@ -43,7 +42,7 @@ promptConfigs:
     strategy: static
     order: 0
     params:
-      sectionName: deployment:persona
+      sectionName: deployment:persona-prefix
     text: |-
       You are a coding agent powered by the {{model}} model, running on the DeepSeek Harness. Your working directory is {{cwd}}.
 

@@ -120,7 +120,7 @@ test('writePreset 生成 anchored 提示词配置模块（含 persona-main 人�
   }
   const persona = specs.find((spec) => spec.id === 'persona-main')
   assert.equal(persona.layer, 'system-section')
-  assert.equal(persona.params.sectionName, 'deployment:persona')
+  assert.equal(persona.params.sectionName, 'deployment:persona-prefix')
   assert.equal(persona.params.complete, true)
   assert.equal(persona.params.suppressRuntimeContext, true)
   assert.match(persona.text ?? persona.texts?.[0] ?? '', /helpful assistant/)

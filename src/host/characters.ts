@@ -10,6 +10,7 @@ import { inflateSync } from 'node:zlib'
 import { convertStToPreset, mergeStPresets } from './sillytavern.ts'
 import { appendPresetModules, withPresetDoc } from './manifest.ts'
 import { buildWorldBookEntry } from './worldbook.ts'
+import { isPersonaSectionName } from '../shared/persona-section.ts'
 import type { PresetSpec } from './manifest.ts'
 
 /** 引擎六层注入顺序（与 schema 层序一致）：合并写盘时按此排序，数组序 = 引擎序。 */
@@ -397,7 +398,7 @@ export function applyCharacterToPreset(
           if (config === null || typeof config !== 'object' || Array.isArray(config)) return false
           const entry = config as Record<string, unknown>
           const params = entry.params as Record<string, unknown> | undefined
-          return entry.id === 'persona-main' || params?.sectionName === 'deployment:persona'
+          return entry.id === 'persona-main' || isPersonaSectionName(params?.sectionName)
         })
         if (personaIdx >= 0) {
           const persona = configs[personaIdx] as Record<string, unknown> | undefined
@@ -441,7 +442,7 @@ export function applyCharacterToPreset(
           if (config === null || typeof config !== 'object' || Array.isArray(config)) return false
           const entry = config as Record<string, unknown>
           const params = entry.params as Record<string, unknown> | undefined
-          return entry.id === 'persona-main' || params?.sectionName === 'deployment:persona'
+          return entry.id === 'persona-main' || isPersonaSectionName(params?.sectionName)
         }) as Record<string, unknown> | undefined
         const complete = (persona?.params as Record<string, unknown> | undefined)?.complete
         if (complete === true && persona !== undefined) {

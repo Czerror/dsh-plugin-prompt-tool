@@ -90,7 +90,7 @@ src/client/
 | 锚定 | `firstTurnAnchor` `firstTurnCustom` `firstTurnText` `firstTurnWord`（空 = 自动从锚句派生确认词）`firstTurnBuild` `firstTurnInspect` `firstTurnDeep` |
 | 引导 | `guideCustom` `guideText` `guideWeak` `guideDeep`（复杂判定 fallback 复用锚定的 `complexPattern`） |
 | PTC/门控 | `usePtcMode` `bootstrapMaxTokens` `injectPrompt` `allowKinds` |
-| 人设 | 配置卡：主会话 = `persona-main` 卡（system-section + `deployment:persona`，complete 互斥 + suppressRuntimeContext）；子代理独立人设 = 新建配置卡（system-section + `audience=subagent` + 人设段），装配时替换主会话人设（不继承）；无子代理卡 = scope 链继承主会话 |
+| 人设 | 配置卡：主会话 = `persona-main` 卡（system-section + `deployment:persona-prefix`，complete 互斥 + suppressRuntimeContext）；子代理独立人设 = 新建配置卡（system-section + `audience=subagent` + 人设段），装配时替换主会话人设（不继承）；无子代理卡 = scope 链继承主会话 |
 | 工具集 | `toolFilterAllow` `toolFilterDeny`（主对话 tool-filter；策略未启用时也写入子代理 delegation.toolFilter——策略启用后子代理改由 `subagentToolPolicy` 实例级解析授权，主/子代理列表分离） |
 | 深度 | `maxDepth`（0 禁止委派 / `provider-managed` / 正整数） |
 

@@ -2,6 +2,14 @@
 
 ## [未发布] - 2026-09-06
 
+### 官方宿主契约对齐修复（2026-09-09）
+
+- 对齐官方 `dsh-persona` 契约升级：`config.text` → required `config.prefix`（+ 可选 `suffix`），系统提示段名 `deployment:persona` 拆为 `deployment:persona-prefix` / `deployment:persona-suffix`。`engine/compositions/library/persona.yml`、五个内置预设的 `persona-main` 卡、层识别与 UI/角色卡判定同步更新，旧段名保留兼容。
+- 新增 `migratePersonaLoaderConfig`：渲染路径与启动重建都会把用户目录旧 `text:` 的 `dsh-persona` 行就地迁移为 `prefix:`，手写或旧产物预设无需逐个手动切换。
+- 组合产物写入 `# prompt-tool:render v2` 契约标记；启动重建据此重刷用户目录旧产物（仅 `modules`/`params` 格式预设，手写预设不覆盖）。
+- 修复全局 junction 安装（`npm-global/@deepseek-ai/dsh` → 真实包目录）下 `Cannot find module '@deepseek-ai/dsh-tools'`：宿主包解析改为 realpath 优先（`engine/host-package.mjs`），`tool-config-engine` 与 `subagent-tool-policy` 共用。
+- Creative 不再复制 `tool-cordis`：该行注册进程全局 `cordisInspect` provider（id `Service`），与官方 shipped「创造模式」(`cordis`) 预设同时挂载会重复注册；该能力由官方预设提供。
+
 ### 框架验收缺口修复
 
 - 参数流程文档改为条件发送语义；参数与提示词配置保存共用预设队列，旧响应不再重载覆盖新草稿。

@@ -96,6 +96,25 @@ export function invalidatePresetSpec(dir: string): void {
   presetSpecCache.delete(join(dir, 'preset.yml'))
 }
 
+/**
+ * 从预设 preset.yml 的 modules 清单移除一个模块 id（YAML Document 保留注释
+ * 与其余字段）。返回是否发生修改；文件缺失或没有该模块时返回 false。
+ */
+export function removePresetModule(dir: string, moduleId: string): boolean {
+  const file = join(dir, 'preset.yml')
+  if (!existsSync(file)) return false
+  const doc = parseDocument(readFileSync(file, 'utf8'), { logLevel: 'silent' })
+  if (doc.errors.length > 0) return false
+  const modules = doc.getIn(['modules'])
+  if (!(modules instanceof YAMLSeq)) return false
+  const kept = modules.items.filter((item) => !(item instanceof Scalar) || item.value !== moduleId)
+  if (kept.length === modules.items.length) return false
+  modules.items = kept
+  atomicWriteTextFile(file, doc.toString())
+  invalidatePresetSpec(dir)
+  return true
+}
+
 /** 加载某个预设模板的单一参数文件 preset/<name>/preset.yml。 */
 export function loadPresetSpec(dir: string): PresetSpec {
   const file = join(dir, 'preset.yml')
@@ -1106,7 +1125,41 @@ export function renderComposition(spec: PresetSpec, runtime: Record<string, unkn
     // 参数桥优先：UI/运行时参数不被模板或 ST 直写覆盖。
     merged[id] = { ...cfg, ...merged[id] }
   }
-  return applyModuleConfigs(loadCompositionText(spec, templateDir), merged)
+  return migratePersonaLoaderConfig(applyModuleConfigs(loadCompositionText(spec, templateDir), merged))
+}
+
+/**
+ * 官方 dsh-persona 契约迁移：新版 config 用 required `prefix`（+可选 `suffix`）
+ * 替代旧 `text`；旧组合（SillyTavern 转换 / 用户手写）直接挂载会报
+ * `$.prefix missing required value`。就地改名保留注释与其余字段，无变化返回原文。
+ */
+export function migratePersonaLoaderConfig(raw: string): string {
+  if (!raw.includes('@deepseek-ai/dsh-persona')) return raw
+  const doc = parseDocument(raw, { logLevel: 'silent' })
+  // 解析失败的组合原样返回：后续 assertCompositionArray 会给出更准确的报错。
+  if (doc.errors.length > 0) return raw
+  const seq = doc.contents
+  if (!(seq instanceof YAMLSeq)) return raw
+  /** 读标量值（Parsed 节点值包装兼容，与 applyModuleConfigs.rowId 同模式）。 */
+  const scalarText = (node: unknown): string | undefined =>
+    node !== null && typeof node === 'object' && 'value' in node
+      ? String((node as { value: unknown }).value)
+      : undefined
+  let changed = false
+  for (const item of seq.items) {
+    if (!(item instanceof YAMLMap)) continue
+    if (scalarText(item.get('name', true)) !== '@deepseek-ai/dsh-persona') continue
+    const config = item.get('config', true)
+    if (!(config instanceof YAMLMap)) continue
+    // keepScalar 保留块标量等样式；已有 prefix 的行不动。
+    const legacy = config.get('text', true)
+    if (legacy === null || legacy === undefined) continue
+    // Parsed 行节点的 set 约束 value 为 ParsedNode；节点运行时合法，断言绕过泛型。
+    config.set('prefix', legacy as never)
+    config.delete('text')
+    changed = true
+  }
+  return changed ? doc.toString() : raw
 }
 
 /** 组合文本基础校验（模板无关）：无未解析 token，且必须是 YAML 数组。 */

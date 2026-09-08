@@ -5,11 +5,10 @@
  * 加载第二份 registry 类型。每个 shadow 只安装到当前 preset generation 的
  * descendant Agent；实例权限在 SubagentStartRequest 创建窗口冻结。
  */
-import { createRequire } from 'node:module'
 import { readFileSync } from 'node:fs'
-import { dirname } from 'node:path'
-import { fileURLToPath, pathToFileURL } from 'node:url'
+import { fileURLToPath } from 'node:url'
 import { parse as parseYaml } from './vendor/yaml/index.js'
+import { importHostPackage } from './host-package.mjs'
 import {
   buildSubagentToolParameters,
   compileSubagentToolPolicy,
@@ -19,14 +18,6 @@ import {
 export const name = 'subagent-tool-policy'
 export const inject = ['agents', 'subagents', 'tools']
 
-const hostEntry = typeof process.argv[1] === 'string' && process.argv[1].length > 0
-  ? process.argv[1]
-  : fileURLToPath(import.meta.url)
-const hostRequire = createRequire(hostEntry)
-async function importHostPackage(id) {
-  const resolved = hostRequire.resolve(id)
-  return import(pathToFileURL(resolved).href)
-}
 const [{ ToolArgsError }, { scopeChainOf, scopeOf }] = await Promise.all([
   importHostPackage('@deepseek-ai/dsh-tools'),
   importHostPackage('@deepseek-ai/dsh-scope'),

@@ -27,14 +27,10 @@ import { execFile } from 'node:child_process'
 import { isAbsolute, join, resolve, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { parse as parseYaml } from './vendor/yaml/index.js'
-import { createRequire } from 'node:module'
+import { importHostPackage } from './host-package.mjs'
 import { validateDefinition } from './tool-definition.mjs'
 
-const hostEntry = typeof process.argv[1] === 'string' && process.argv[1].length > 0
-  ? process.argv[1]
-  : fileURLToPath(import.meta.url)
-const hostRequire = createRequire(hostEntry)
-const { ToolArgsError } = await import(pathToFileURL(hostRequire.resolve('@deepseek-ai/dsh-tools')).href)
+const { ToolArgsError } = await importHostPackage('@deepseek-ai/dsh-tools')
 
 /** Cordis 插件名，供 loader 诊断使用。 */
 export const name = 'tool-config-engine'

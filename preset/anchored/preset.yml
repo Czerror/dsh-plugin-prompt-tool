@@ -258,7 +258,7 @@ promptConfigs:
     strategy: static
     order: 0
     params:
-      sectionName: deployment:persona
+      sectionName: deployment:persona-prefix
       complete: true
       suppressRuntimeContext: true
     text: >-

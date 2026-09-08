@@ -336,10 +336,11 @@ test('writePreset 四个官方基型只用 prompt-config-engine 等价承载 per
         assert.equal(rows.some((row) => row?.id === id), false, `${template}: 不应追加 ${id}`)
       }
       assert.ok(!/__[A-Za-z0-9_]+__/.test(agent), `${template}: 不应残留未解析 token`)
+      assert.match(agent, /^# prompt-tool:render v\d+$/m, `${template}: 组合应带渲染契约版本标记`)
       assert.ok(rows.length >= 2, `${template}: 组合行数异常（${rows.length}）`)
       if (template === 'creative') {
         const persona = readPersonaConfig(presetDir, 'creative')
-        assert.ok(persona.params.sectionName === 'deployment:persona', 'creative 人设段应为 deployment:persona shadow')
+        assert.ok(persona.params.sectionName === 'deployment:persona-prefix', 'creative 人设段应为 deployment:persona-prefix shadow')
         assert.ok(persona.text.includes('{{model}}'), 'creative 人设应保留 {{model}} 变量')
         assert.ok(persona.text.includes('editing-cordis-compositions'), 'creative 人设应引用创作 skill')
         assert.ok(existsSync(join(presetDir, 'creative', 'skills', 'editing-cordis-compositions', 'SKILL.md')), 'editing-cordis-compositions skill 应随预设复制')

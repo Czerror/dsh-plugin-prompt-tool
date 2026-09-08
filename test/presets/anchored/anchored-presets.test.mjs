@@ -71,7 +71,7 @@ async function harness() {
   const ctx = new Context()
   await ctx.plugin(SystemPrompt, {
     includeHarnessIdentity: false,
-    persona: 'DEPLOYMENT PERSONA',
+    personaPrefix: 'DEPLOYMENT PERSONA',
   })
   ctx.systemPrompt.section({ name: 'plan-mode', order: 10, text: 'PLAN TEXT' })
   return ctx
@@ -85,7 +85,7 @@ async function mountPersona(ctx, key, spec) {
   }, { inject: ['systemPrompt'] }))
 }
 
-/** persona 模块规格（system-section + deployment:persona shadow）。 */
+/** persona 模块规格（system-section + deployment:persona-prefix shadow）。 */
 function personaSpec(overrides = {}) {
   return {
     id: 'persona-main',
@@ -94,7 +94,7 @@ function personaSpec(overrides = {}) {
     strategy: 'static',
     order: 0,
     text: MAIN_PERSONA,
-    params: { sectionName: 'deployment:persona' },
+    params: { sectionName: 'deployment:persona-prefix' },
     ...overrides,
   }
 }
@@ -108,18 +108,18 @@ async function sectionsOf(ctx, key) {
 test('主会话首轮即用自定义人设（全模型通用），complete 独占（plan-mode 被清）', async () => {
   const ctx = await harness()
   const key = { agent: 'flash' }
-  await mountPersona(ctx, key, personaSpec({ params: { sectionName: 'deployment:persona', complete: true } }))
+  await mountPersona(ctx, key, personaSpec({ params: { sectionName: 'deployment:persona-prefix', complete: true } }))
   assert.deepEqual(await sectionsOf(ctx, key), [
-    'deployment:persona=' + MAIN_PERSONA,
+    'deployment:persona-prefix=' + MAIN_PERSONA,
   ])
 })
 
 test('complete:false 时 shadow 生效但不独占（plan-mode 保留，standard 语义）', async () => {
   const ctx = await harness()
   const key = { agent: 'non-complete' }
-  await mountPersona(ctx, key, personaSpec({ params: { sectionName: 'deployment:persona', complete: false } }))
+  await mountPersona(ctx, key, personaSpec({ params: { sectionName: 'deployment:persona-prefix', complete: false } }))
   const sections = await sectionsOf(ctx, key)
-  assert.ok(sections.some((line) => line === 'deployment:persona=' + MAIN_PERSONA))
+  assert.ok(sections.some((line) => line === 'deployment:persona-prefix=' + MAIN_PERSONA))
   assert.ok(sections.some((line) => line === 'plan-mode=PLAN TEXT'))
 })
 
@@ -129,17 +129,17 @@ test('sectionName 缺省时按配置 id 注册（非 shadow），不遮蔽全局
   await mountPersona(ctx, key, personaSpec({ id: 'custom-section', params: {} }))
   const sections = await sectionsOf(ctx, key)
   assert.ok(sections.some((line) => line === 'custom-section=' + MAIN_PERSONA))
-  assert.ok(sections.some((line) => line === 'deployment:persona=DEPLOYMENT PERSONA'), '全局 persona 未被遮蔽')
+  assert.ok(sections.some((line) => line === 'deployment:persona-prefix=DEPLOYMENT PERSONA'), '全局 persona 未被遮蔽')
 })
 
 test('子代理 scope 不继承 shadow，使用全局 persona（放行语义）', async () => {
   const ctx = await harness()
   const parentKey = { agent: 'parent' }
-  await mountPersona(ctx, parentKey, personaSpec({ params: { sectionName: 'deployment:persona', complete: true } }))
+  await mountPersona(ctx, parentKey, personaSpec({ params: { sectionName: 'deployment:persona-prefix', complete: true } }))
   const childKey = { agent: 'child' }
   const child = { options: { model: 'deepseek-v4-flash-7013' }, session: { header: { delegationDepth: 1 } } }
   const assembly = await ctx.systemPrompt.assemble({ scope: childKey, agent: child })
-  const persona = assembly.sections.find((section) => section.name === 'deployment:persona')
+  const persona = assembly.sections.find((section) => section.name === 'deployment:persona-prefix')
   assert.equal(persona?.text, 'DEPLOYMENT PERSONA')
 })
 
@@ -147,12 +147,12 @@ test('suppressRuntimeContext:true 抑制动态 context；默认保留', async ()
   const ctx = await harness()
   ctx.systemPrompt.context({ name: 'policy', order: 1, text: 'POLICY' })
   const key = { agent: 'ctx' }
-  await mountPersona(ctx, key, personaSpec({ params: { sectionName: 'deployment:persona', complete: true, suppressRuntimeContext: true } }))
+  await mountPersona(ctx, key, personaSpec({ params: { sectionName: 'deployment:persona-prefix', complete: true, suppressRuntimeContext: true } }))
   const suppressed = await ctx.systemPrompt.assemble({ scope: key, agent: { options: { model: 'deepseek-v4-flash-7013' } } })
   assert.deepEqual(suppressed.contexts, [])
 
   const key2 = { agent: 'ctx2' }
-  await mountPersona(ctx, key2, personaSpec({ params: { sectionName: 'deployment:persona', complete: true } }))
+  await mountPersona(ctx, key2, personaSpec({ params: { sectionName: 'deployment:persona-prefix', complete: true } }))
   const kept = await ctx.systemPrompt.assemble({ scope: key2, agent: { options: { model: 'deepseek-v4-flash-7013' } } })
   assert.equal(kept.contexts[0]?.name, 'policy')
 })
@@ -163,7 +163,7 @@ test('多个 complete 段 fail loud（官方语义，UI 互斥防呆）', async 
   await ctx.plugin(Object.assign((inner) => {
     const scopeCtx = createScope(inner, key).ctx
     wireLayers(scopeCtx, createPromptConfigs([
-      personaSpec({ id: 'p1', params: { sectionName: 'deployment:persona', complete: true } }),
+      personaSpec({ id: 'p1', params: { sectionName: 'deployment:persona-prefix', complete: true } }),
       personaSpec({ id: 'p2', params: { sectionName: 'other', complete: true } }),
     ]), () => {})
   }, { inject: ['systemPrompt'] }))

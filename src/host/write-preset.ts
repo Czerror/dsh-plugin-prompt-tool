@@ -39,6 +39,14 @@ import {
 
 const ENGINE_DIR = packageEngineDir()
 
+/**
+ * 渲染契约版本：包内预设模板/引擎契约变化（modules 清单、persona 段名与
+ * dsh-persona loader 字段等）时 +1。启动重建据此重刷用户目录旧产物——
+ * 否则旧产物只会在用户手动切换该预设时才会重新渲染。
+ */
+export const RENDER_VERSION = 2
+export const RENDER_STAMP = `# prompt-tool:render v${RENDER_VERSION}`
+
 /** 只允许把运行时迁移写回用户预设，绝不改包内 shipped 模板。 */
 function userPresetFile(templateName: string, presetDir: string): string | undefined {
   const file = join(presetDir, templateName, 'preset.yml')
@@ -383,7 +391,7 @@ export function writePreset(prompt: string, options: WritePresetOptions): void {
     .replaceAll('../prompt-configs', `../${outputId}/prompt-configs`)
     .replaceAll('../custom-tools', `../${outputId}/custom-tools`)
     .replaceAll('../subagent-tools', `../${outputId}/subagent-tools`)
-  writeFileSync(join(outDir, 'agent.cordis.yml'), subComposition, 'utf8')
+  writeFileSync(join(outDir, 'agent.cordis.yml'), `${RENDER_STAMP}\n${subComposition}`, 'utf8')
 
   // 2) 宿主预设元数据：新布局 preset.yml = 参数 + 元数据一体。
   //    已存在参数文件（种子化/新建复制）时只合并元数据键（name/description/order/meta），

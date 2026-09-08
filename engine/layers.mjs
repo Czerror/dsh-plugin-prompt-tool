@@ -53,10 +53,15 @@ function textLayerGroups(configs) {
   return groups
 }
 
-/** persona 段标记（官方 deployment:persona + 旧名 persona）。 */
+/** persona 段标记（官方 deployment:persona-prefix/suffix + 旧版 deployment:persona/persona 兼容）。 */
+const PERSONA_SECTION_NAMES = new Set([
+  'deployment:persona-prefix',
+  'deployment:persona-suffix',
+  'deployment:persona',
+  'persona',
+])
 function isPersonaSection(config) {
-  const sectionName = config?.params?.sectionName
-  return sectionName === 'deployment:persona' || sectionName === 'persona'
+  return PERSONA_SECTION_NAMES.has(config?.params?.sectionName)
 }
 
 /** system-section:注册静态 system prompt 段(支持官方 {{variable}} 渲染与 merged 拼接)。 */

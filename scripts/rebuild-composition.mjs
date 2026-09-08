@@ -245,16 +245,25 @@ function duplicateValues(values) {
   return [...duplicates]
 }
 
+/**
+ * 目标预设显式跳过的官方行：tool-cordis 注册进程全局的 cordisInspect
+ * provider（id "Service"），与官方 shipped「创造模式」(cordis) 预设同时
+ * 挂载必然重复注册；该能力由官方预设提供，本地 creative 不再复制。
+ */
+const TARGET_SKIPPED_ROWS = { cordis: new Set(['tool-cordis']) }
+
 /** Derive the exact target module sequence from the discovered official rows. */
 function expectedTargetModules(sourcePreset) {
   const rows = officialRows.get(sourcePreset)
   if (rows === undefined) throw new Error(`official preset ${sourcePreset} was not loaded`)
   const overrides = TARGET_MODULE_OVERRIDES[sourcePreset] ?? {}
+  const skipped = TARGET_SKIPPED_ROWS[sourcePreset] ?? new Set()
   const expected = []
   for (const id of rows.keys()) {
     // The local prompt-config-engine/persona-main pair is the persona carrier;
     // do not duplicate the upstream Cordis persona row in a target composition.
     if (id === 'persona') continue
+    if (skipped.has(id)) continue
     expected.push(overrides[id] ?? id)
   }
   expected.push(...TARGET_EXTRA_MODULES)
@@ -336,6 +345,12 @@ function stable(value) {
   return value
 }
 const signature = (value) => JSON.stringify(stable(value))
+/** 空白归一化：官方 persona 已拆 prefix/suffix 两段，本地 persona-main 单卡承载合并文本。 */
+const normalizePersonaText = (value) => String(value ?? '').replace(/\s+/g, ' ').trim()
+const personaSegments = (value) => String(value ?? '')
+  .split(/\n\s*\n/)
+  .map((part) => normalizePersonaText(part))
+  .filter((part) => part.length > 0)
 for (const [sourcePreset, targetPreset] of OFFICIAL_PRESET_TARGETS) {
   const spec = parseYaml(readFileSync(join(root, 'preset', targetPreset, 'preset.yml'), 'utf8'))
   const personas = Array.isArray(spec?.promptConfigs)
@@ -343,17 +358,25 @@ for (const [sourcePreset, targetPreset] of OFFICIAL_PRESET_TARGETS) {
     : []
   if (personas.length !== 1) throw new Error(`${targetPreset}: expected exactly one promptConfigs persona-main entry`)
   const persona = personas[0]
-  if (persona.layer !== 'system-section' || persona.strategy !== 'static' || persona.params?.sectionName !== 'deployment:persona') {
-    throw new Error(`${targetPreset}: persona-main must use system-section/static deployment:persona`)
+  if (persona.layer !== 'system-section' || persona.strategy !== 'static' || persona.params?.sectionName !== 'deployment:persona-prefix') {
+    throw new Error(`${targetPreset}: persona-main must use system-section/static deployment:persona-prefix`)
   }
   const params = persona?.params ?? {}
-  const mapped = {
-    text: persona?.text,
-    ...(params.complete !== undefined ? { complete: params.complete } : {}),
-    ...(params.suppressRuntimeContext !== undefined ? { includeRuntimeContext: !params.suppressRuntimeContext } : {}),
+  const expected = officialRows.get(sourcePreset)?.get('persona')?.config ?? {}
+  const text = normalizePersonaText(persona?.text)
+  for (const [label, part] of [['prefix', expected.prefix], ['suffix', expected.suffix]]) {
+    for (const segment of personaSegments(part)) {
+      if (!text.includes(segment)) {
+        throw new Error(`${targetPreset}: persona-main text is missing official ${sourcePreset} ${label} segment: ${segment.slice(0, 60)}...`)
+      }
+    }
   }
-  const expected = officialRows.get(sourcePreset)?.get('persona')?.config
-  if (signature(mapped) !== signature(expected)) throw new Error(`${targetPreset}: persona-main does not match official ${sourcePreset} persona`)
+  if ((params.complete === true) !== (expected.complete === true)) {
+    throw new Error(`${targetPreset}: persona-main complete does not match official ${sourcePreset} persona`)
+  }
+  if ((params.suppressRuntimeContext === true) !== (expected.includeRuntimeContext === false)) {
+    throw new Error(`${targetPreset}: persona-main suppressRuntimeContext does not match official ${sourcePreset} persona`)
+  }
 }
 const coveredSignatures = new Set()
 for (const { preset, sourceId, id } of OFFICIAL_MODULES) {

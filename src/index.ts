@@ -32,10 +32,18 @@ import { registerWorldBookTools } from './runtime/world-book-tools.ts'
 import { registerSessionVarTools } from './runtime/session-var-tools.ts'
 import { registerTuiCommand } from './runtime/tui.ts'
 import { removeResidentAgentsBlock, writeAgents } from './runtime/agents-file.ts'
-import { writePreset } from './host/write-preset.ts'
+import { RENDER_STAMP, writePreset } from './host/write-preset.ts'
 import type { WritePresetOptions } from './host/write-preset.ts'
 import { ENGINE_PARAM_KEYS } from './shared/engine-params.ts'
-import { ensurePresetSeed, listPresets, readPluginState, writePluginState } from './host/manifest.ts'
+import {
+  atomicWriteTextFile,
+  ensurePresetSeed,
+  listPresets,
+  migratePersonaLoaderConfig,
+  readPluginState,
+  removePresetModule,
+  writePluginState,
+} from './host/manifest.ts'
 import {
   Config,
   NS,
@@ -193,8 +201,45 @@ export function apply(ctx: Context, configIn: Config): void {
     }
   }
 
+  /**
+   * 官方 dsh-persona 契约升级（config.text → required prefix）就地迁移各预设组合：
+   * 旧产物/手写预设不必等用户逐个切换一次，重建时即修正。
+   */
+  const migrateStalePersonaCompositions = (): void => {
+    for (const preset of listPresets()) {
+      const file = join(runtime.presetDir, preset.id, 'agent.cordis.yml')
+      if (!existsSync(file)) continue
+      try {
+        const raw = readFileSync(file, 'utf8')
+        const migrated = migratePersonaLoaderConfig(raw)
+        if (migrated !== raw) atomicWriteTextFile(file, migrated)
+      } catch {
+        // 单个预设迁移失败不阻断其余；下次重建重试。
+      }
+    }
+  }
+
+  /**
+   * 官方 shipped「创造模式」(cordis) 已提供 tool-cordis；用户副本（本插件
+   * creative 种子）里的同模块会让进程全局 cordisInspect provider 重复注册。
+   * 重建时从 preset.yml 移除该模块，随后按渲染契约版本重刷组合。
+   */
+  const migrateLegacyToolCordisModules = (): void => {
+    for (const preset of listPresets()) {
+      try {
+        if (removePresetModule(join(runtime.presetDir, preset.id), 'official-tool-cordis')) {
+          warn(ctx, `prompt-tool: 预设 ${preset.id} 已移除重复的 official-tool-cordis 模块（该能力由官方「创造模式」提供）`)
+        }
+      } catch {
+        // 单个预设失败不阻断其余；下次重建重试。
+      }
+    }
+  }
+
   /** 重建生成目录（文本/组合/引擎/提示词配置）；writePreset 关闭时移除旧目录。 */
   const rebuildPreset = (): void => {
+    migrateLegacyToolCordisModules()
+    migrateStalePersonaCompositions()
     // 先重读激活预设参数（/param-overrides 保存、TUI 开关、预设切换后生效）。
     reloadPresetParams()
     applyParamOverrides()
@@ -240,6 +285,15 @@ export function apply(ctx: Context, configIn: Config): void {
         if (preset.id === runtime.presetTemplate) continue
         const targetDir = join(runtime.presetDir, preset.id)
         if (!needsPresetRender(targetDir)) continue
+        // 手写/官方格式预设（无 modules/params）不自动重渲染：参数桥无从下手，
+        // 重渲染只会覆盖用户手写组合；其 persona 契约由就地迁移修正。
+        try {
+          const spec = loadPresetSpec(resolvePresetDir(preset.id))
+          const pluginFormat = Array.isArray(spec.modules) || (spec.params !== null && typeof spec.params === 'object')
+          if (!pluginFormat && existsSync(join(targetDir, 'agent.cordis.yml'))) continue
+        } catch {
+          // 读取失败按缺失处理：writePreset 会给出明确报错。
+        }
         try {
           writePreset(readPromptFile(preset.id, runtime.fallbackText), {
             ...options,
@@ -285,13 +339,14 @@ export function apply(ctx: Context, configIn: Config): void {
   const activePresetDir = (): string =>
     join(runtime.presetDir, /^[a-zA-Z0-9\u4e00-\u9fff_-]+$/.test(runtime.presetTemplate) ? runtime.presetTemplate : 'anchored')
 
-  /** 预设目录是否需要（重新）渲染：agent.cordis.yml 缺失，或仍是旧布局组合（../engine 引用）。 */
+  /** 预设目录是否需要（重新）渲染：组合缺失、旧布局（../engine 引用），或渲染契约版本过期。 */
   const needsPresetRender = (targetDir: string): boolean => {
     const compositionFile = join(targetDir, 'agent.cordis.yml')
     if (!existsSync(compositionFile)) return true
     try {
       const raw = readFileSync(compositionFile, 'utf8')
-      return raw.includes('../engine/') || raw.includes('./engine/')
+      if (raw.includes('../engine/') || raw.includes('./engine/')) return true
+      return !raw.includes(RENDER_STAMP)
     } catch {
       return true
     }
@@ -935,7 +990,7 @@ registerTuiCommand(
 export { Config, PromptSettingsSchema } from './config.ts'
 export { writePreset } from './host/write-preset.ts'
 export { convertStToPreset, mergeStPresets, processStText, stPresetId } from './host/sillytavern.ts'
-export { applyModuleConfigs, buildModuleConfigsFromParams, savePresetParams, MODEL_SEGMENT_MAP } from './host/manifest.ts'
+export { applyModuleConfigs, buildModuleConfigsFromParams, migratePersonaLoaderConfig, removePresetModule, savePresetParams, MODEL_SEGMENT_MAP } from './host/manifest.ts'
 export { createEngineCapabilityInPreset, loadPresetSpec, removeEngineCapabilityFromPreset, renderComposition, resolvePresetModuleFacts, resolvePresetParams } from './host/manifest.ts'
 export { ENGINE_PARAM_KEYS, WRITER_PARAM_KEYS, validateEngineParamValues } from './shared/engine-params.ts'
 export { assertSafeConfigId, configFileName } from './host/prompt-configs.ts'
