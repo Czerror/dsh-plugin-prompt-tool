@@ -1,4 +1,4 @@
-import { useLayoutEffect, useState, type CSSProperties, type RefObject } from 'react'
+import { useLayoutEffect, useRef, useState, type CSSProperties, type RefObject } from 'react'
 import { useAnchoredPosition } from '@deepseek-ai/dsh-client-ui-primitives'
 import { resolveAnchoredPopoverFit } from './anchored-popover-fit.ts'
 import type { AnchoredPopoverFit } from './anchored-popover-fit.ts'
@@ -14,9 +14,12 @@ export function useAnchoredPopoverStyle(options: {
 }): CSSProperties | null {
   const { open, anchorRef, panelRef, gap = 8, margin = 12, maxViewportRatio = 0.72 } = options
   const [fit, setFit] = useState<AnchoredPopoverFit | null>(null)
+  /** 最近一次测量：内容异步变化时补测（见下方第二次 useLayoutEffect）。 */
+  const measureRef = useRef<() => void>(() => {})
 
   useLayoutEffect(() => {
     if (!open) {
+      measureRef.current = () => {}
       setFit(null)
       return
     }
@@ -36,6 +39,7 @@ export function useAnchoredPopoverStyle(options: {
       })
       setFit((current) => current?.side === next.side && current.maxHeight === next.maxHeight ? current : next)
     }
+    measureRef.current = measure
     measure()
     window.addEventListener('scroll', measure, true)
     window.addEventListener('resize', measure)
@@ -48,6 +52,12 @@ export function useAnchoredPopoverStyle(options: {
       window.removeEventListener('resize', measure)
     }
   }, [open, anchorRef, panelRef, gap, margin, maxViewportRatio])
+
+  // 面板被 max-height 锁住后，异步内容变高不会改变元素尺寸，ResizeObserver 不再触发
+  // （模板列表首次打开为空、随后加载即此场景）；每次渲染补测一次，让 scrollHeight 重新参与计算。
+  useLayoutEffect(() => {
+    measureRef.current()
+  })
 
   const position = useAnchoredPosition({
     open: open && fit !== null,

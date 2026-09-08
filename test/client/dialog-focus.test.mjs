@@ -32,4 +32,7 @@ test('新建预设使用可锚定的 body-portaled DialogSurface', () => {
   assert.match(surface, /createPortal\(surface, document\.body\)/)
   assert.match(geometry, /useAnchoredPosition/)
   assert.ok(geometry.includes("{ visibility: 'hidden', maxHeight: fit.maxHeight }"))
+  // 异步内容（模板列表）加载后补测：面板被 max-height 锁住时 ResizeObserver 不再触发。
+  assert.match(geometry, /measureRef\.current = measure/)
+  assert.match(geometry, /measureRef\.current\(\)/)
 })
