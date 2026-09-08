@@ -5,6 +5,7 @@ import { PromptConfigsEditor } from '../../../features/prompts/PromptConfigsEdit
 import { ModelRouteModuleCard } from '../../../features/models/ModelRouteCard.tsx'
 import { EngineModuleActions, EngineModuleCards, EnginePromptDefaultsCard } from '../../../features/modules/EngineModuleList.tsx'
 import { CustomToolsCard } from '../../../features/tools/CustomToolsCard.tsx'
+import { ENGINE_CAPABILITIES, isEngineCapabilityPresent } from '../../../../shared/engine-capabilities.ts'
 import ui from '../../../ui/controls.module.css'
 /** 主会话页：公共配置与按六个插入点归类的统一模块列表。 */
 export const MainSessionPage = memo(function MainSessionPage(props: { store: PromptToolStore }): ReactNode {
@@ -22,19 +23,25 @@ export const MainSessionPage = memo(function MainSessionPage(props: { store: Pro
   const saveConfigs = useCallback((configs: PromptToolStore['fields']['promptConfigs']) => {
     void store.persistConfigs(configs)
   }, [store])
-  const renderLayerCards = useCallback((layer: string): ReactNode => (
-    <>
-      <EngineModuleCards store={store} layerFilter={layer} showActions={false} showPromptDefaults={false} showStatus={false} />
-      {layer === 'tool-pipeline' && (
-        <CustomToolsCard
-          key={fields.presetTemplate}
-          presetId={fields.presetTemplate}
-          onNotice={store.showNotice}
-          disabled={store.moduleFacts?.editable !== true || !fields.writePreset}
-        />
-      )}
-    </>
-  ), [fields.presetTemplate, fields.writePreset, store, store.moduleFacts?.editable])
+  // 无已装配能力时返回 null：列表据此隐藏空分类；tool-pipeline 恒有自定义工具卡。
+  const renderLayerCards = useCallback((layer: string): ReactNode => {
+    const hasCapability = ENGINE_CAPABILITIES.some(({ id, displayLayer }) =>
+      displayLayer === layer && isEngineCapabilityPresent(id, store.moduleFacts))
+    if (!hasCapability && layer !== 'tool-pipeline') return null
+    return (
+      <>
+        <EngineModuleCards store={store} layerFilter={layer} showActions={false} showPromptDefaults={false} showStatus={false} />
+        {layer === 'tool-pipeline' && (
+          <CustomToolsCard
+            key={fields.presetTemplate}
+            presetId={fields.presetTemplate}
+            onNotice={store.showNotice}
+            disabled={store.moduleFacts?.editable !== true || !fields.writePreset}
+          />
+        )}
+      </>
+    )
+  }, [fields.presetTemplate, fields.writePreset, store, store.moduleFacts])
   return (
     <section className={ui.section} aria-label="主会话与全局">
       <PromptConfigsEditor

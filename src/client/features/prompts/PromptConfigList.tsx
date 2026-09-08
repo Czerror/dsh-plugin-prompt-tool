@@ -22,7 +22,8 @@ export interface PromptConfigListProps {
   extraActions?: ReactNode
   /** 列表头部之后、配置卡片之前渲染的固定卡片（如模板变量——归类于配置列表下）。 */
   beforeCards?: ReactNode
-  /** 按行为分类插入能力卡；不会改变提示词配置的保存与排序模型。 */
+  /** 按行为分类插入能力卡；返回 null 表示该分类无能力卡（无配置且无卡的空分类不渲染）。
+   *  不会改变提示词配置的保存与排序模型。 */
   layerCards?: (layer: string) => ReactNode
   /** 工具栏中的非提示词配置操作（如能力创建）。 */
   toolbarActions?: ReactNode
@@ -57,9 +58,10 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
 
   const effectiveLayer = layer ?? (viewFilter !== 'all' && viewFilter !== 'world-book' ? viewFilter : undefined)
   const allLayers = displayLayers([...meta.layers, ...configs.map(promptConfigLayer)])
-  const layers = layer !== undefined
-    ? [layer]
-    : allLayers
+  /** 每层能力卡只渲染一次：null 表示该层无能力卡，与提示词配置共同决定分类是否渲染。 */
+  const layerCardViews = layerCards === undefined || viewFilter === 'world-book'
+    ? undefined
+    : new Map(allLayers.map((name) => [name, layerCards(name) ?? null]))
   const visible = effectiveLayer === undefined
     ? configs
     : configs.filter((config) => promptConfigLayer(config) === effectiveLayer)
@@ -72,6 +74,12 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
   const byStrategy = viewFilter !== 'world-book'
     ? scoped
     : scoped.filter((config) => config.strategy === 'world-book')
+  // 空分类（无提示词配置且无能力卡）不渲染；显式筛选的层保留空状态。
+  const layerHasContent = (name: string): boolean =>
+    layerCardViews?.get(name) != null || byStrategy.some((config) => promptConfigLayer(config) === name)
+  const layers = layer !== undefined
+    ? [layer]
+    : allLayers.filter((name) => name === effectiveLayer || layerHasContent(name))
   const keyword = filter.trim().toLowerCase()
   const filtered = keyword.length === 0
     ? byStrategy
@@ -246,7 +254,7 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
 
   const renderLayer = (layerName: string): ReactNode => {
     const layerConfigs = ordered.filter((config) => promptConfigLayer(config) === layerName)
-    const layerCardsView = viewFilter === 'world-book' ? undefined : layerCards?.(layerName)
+    const layerCardsView = layerCardViews?.get(layerName) ?? undefined
     const headingId = `pt-layer-heading-${layerName}`
     return (
       <section key={layerName} className={styles.layerSection} aria-labelledby={headingId} data-insertion-point={layerName}
@@ -300,7 +308,7 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
             options={[
               { value: 'all', label: '全部' },
               { value: 'world-book', label: '世界书' },
-              ...allLayers.map((item) => ({ value: item, label: `层级：${LAYER_LABELS[item] ?? item}` })),
+              ...layers.map((item) => ({ value: item, label: `层级：${LAYER_LABELS[item] ?? item}` })),
             ]}
             onChange={changeViewFilter}
           />

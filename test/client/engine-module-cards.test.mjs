@@ -93,7 +93,7 @@ test('自定义工具编辑入口保留，能力删除仍需二次确认', () =>
   assert.match(read('features/modules/EngineModuleList.tsx'), /store\.removeEngineCapability\(capability\.id\)/)
 })
 
-test('统一列表始终暴露六个插入点，公共默认值不伪装成 pre-step 能力', () => {
+test('插入点顺序恒为六层，公共默认值不伪装成 pre-step 能力', () => {
   assert.deepEqual(displayLayers([]), ['pre-step', 'system-section', 'runtime-context', 'agent-request', 'llm-stream', 'tool-pipeline'])
   const list = read('features/modules/EngineModuleList.tsx')
   assert.match(list, /EnginePromptDefaultsCard/)
@@ -102,28 +102,33 @@ test('统一列表始终暴露六个插入点，公共默认值不伪装成 pre-
   assert.match(editor, /aria-label="公共配置"/)
 })
 
-test('统一列表按插入点分组，anchor-turn 只在 pre-step 分类出现', () => {
-  const configs = []
+test('统一列表按插入点分组，空分类不渲染，anchor-turn 只在 pre-step 分类出现', () => {
+  const configs = [{ id: 'persona-main', layer: 'system-section', strategy: 'static' }]
   const meta = {
     layers: ['pre-step', 'system-section', 'runtime-context', 'agent-request', 'llm-stream', 'tool-pipeline'],
     strategies: [], slotKinds: [], positions: [], dedupes: [], promotions: [], audienceModes: [], modelScopes: [], roles: [], mergeModes: [], fills: [],
     layerFieldPolicies: {}, layerLabels: {},
   }
   const active = { ...store, moduleFacts: { ...store.moduleFacts, effectiveModules: ['anchor-turn'] } }
+  // 与 MainSessionPage 同口径：该层无已装配能力卡时返回 null。
+  const layerCards = (layer) => layer === 'pre-step'
+    ? createElement(EngineModuleCards, { store: active, layerFilter: layer, showActions: false, showPromptDefaults: false, showStatus: false })
+    : null
   const html = render(PromptConfigList, {
     meta,
     configs,
     savedConfigs: configs,
     viewFilter: 'all',
     onViewFilterChange() {},
-    layerCards: (layer) => createElement(EngineModuleCards, { store: active, layerFilter: layer, showActions: false, showPromptDefaults: false, showStatus: false }),
+    layerCards,
     onPatchConfigs() {},
     onSaveConfigs() {},
     onNotice() {},
   })
-  assert.equal((html.match(/data-insertion-point=/g) ?? []).length, 6)
+  // 仅 pre-step（能力卡）与 system-section（提示词配置）有内容，其余空分类不渲染。
+  assert.equal((html.match(/data-insertion-point=/g) ?? []).length, 2)
   const preStep = html.slice(html.indexOf('data-insertion-point="pre-step"'), html.indexOf('data-insertion-point="system-section"'))
-  const systemSection = html.slice(html.indexOf('data-insertion-point="system-section"'), html.indexOf('data-insertion-point="runtime-context"'))
+  const systemSection = html.slice(html.indexOf('data-insertion-point="system-section"'))
   assert.match(preStep, /class="configName">anchor-turn</)
   assert.doesNotMatch(systemSection, /anchor-turn/)
   const worldBook = render(PromptConfigList, {
@@ -132,7 +137,7 @@ test('统一列表按插入点分组，anchor-turn 只在 pre-step 分类出现'
     savedConfigs: configs,
     viewFilter: 'world-book',
     onViewFilterChange() {},
-    layerCards: (layer) => createElement(EngineModuleCards, { store: active, layerFilter: layer, showActions: false, showPromptDefaults: false, showStatus: false }),
+    layerCards,
     onPatchConfigs() {},
     onSaveConfigs() {},
     onNotice() {},

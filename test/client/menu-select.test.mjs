@@ -45,7 +45,7 @@ test('主会话使用单一模块列表，插入点筛选与能力卡共用入�
   assert.doesNotMatch(page, /viewMode|onViewModeChange/)
   assert.match(editor, /layerCards\?: \(layer: string\) => ReactNode/)
   assert.match(list, /layers\.map\(renderLayer\)/)
-  assert.match(list, /allLayers\.map\(\(item\) =>/)
+  assert.match(list, /layers\.map\(\(item\) =>/)
   assert.match(list, /保存提示词配置/)
   assert.match(list, /能力模块不受此搜索影响/)
   assert.match(page, /commonCards=/)
