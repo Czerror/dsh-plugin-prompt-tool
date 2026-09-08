@@ -1,60 +1,270 @@
-# 计划问题修复记录
+# 模块列表与引擎设置归一重构计划
 
-## 状态
+## 1. 状态与目标
 
-本轮审查中发现的 P1/P2 问题已修复。`PLAN.md` 只记录修复结果与仍然有效的边界，不再把旧审查报告当作当前状态。
+- 更新日期：2026-09-08。
+- 状态：设计原则已确认，代码待实施；本次只重建计划文档。
+- 目标：将前端引擎设置归入“模块列表”下六个插入点对应的模块卡，按能力影响的行为组织编辑入口，移除“通用设置／引擎能力设置”双视图。
+- 完成条件：单一列表可访问原有提示词配置与能力设置，分类正确、字段不重复、保存不串预设，运行时行为保持不变。
+- 本计划替换过期修复记录，不重新执行或撤销旧修复；已有实现与历史由 Git 保留。
 
-## 修复项
+## 2. 已确认的设计原则
 
-| 问题 | 修复 | 回归覆盖 |
+1. **按行为归类，不按监听事件归类。** 六个插入点在 UI 中组织能力的行为归属，不是底层 hook 的目录。
+2. **`anchor-turn` 归入 `pre-step` 卡内设置。** 它监听 `agent/inbox/inserted`，但改变前置行为能力；实际事件不构成 UI 分类限制，不因此移入公共配置或改写监听事件。
+3. **统一入口，不合并运行时模型。** 提示词配置仍为 `promptConfigs`；能力模块仍由模块事实决定存在性，参数沿用所属预设的保存链路。
+4. **一项能力一个参数归属。** 跨插入点影响可用说明表达，不拆散能力、不复制可写字段、不重复装配。
+5. **复用现有字段体系。** 不增加第二份字段清单、默认值、校验、参数映射或状态库。
+6. **六个插入点保持独立。** UI 分组和筛选不产生全局执行顺序，也不改变模块实际注册的 hook。
+
+这些原则遵循 [领域词汇](CONTEXT.md)、[预设定义权威 ADR](docs/adr/0001-preset-definition-is-authoritative.md) 和 [插入点独立 ADR](docs/adr/0002-insertion-points-remain-independent.md)，不替代两项 ADR。
+
+## 3. 当前实现与复用位置
+
+| 当前职责 | 已有文件 | 本次处理 |
 |---|---|---|
-| 能力创建可能生成重复 Loader row | `str-replace-editor` 能力以 `bootstrap-filesystem` 为唯一装配模块；候选组合递归记录 row 路径，重复 id 在写盘前直接失败 | `test/host/engine-capability.test.mjs` |
-| 组合重建脚本缺少目标完整性校验，可能假绿 | 从上游目录动态发现预设；按官方行序校验目标 `modules` 集合、顺序、类型和重复；校验 persona 契约、必要技能资产、补丁命中次数和新增上游预设 | `test/host/rebuild-composition.test.mjs` |
-| worldBook 运行时迁移二次重建丢条目 | 合并后的 `promptConfigs` 与 `worldBook` 删除通过 YAML Document 一起原子写回用户预设；失效缓存并避免重复 id；包内模板保持只读 | `test/host/write-preset.test.mjs`（两次重建） |
-| 共享 `.engine` 刷新先删后拷贝 | 先在同目录 staging 完整复制并写入指纹，再 rename 交换；复制或交换失败保留旧引擎 | `test/host/write-preset.test.mjs` |
-| 离线迁移可能截断 `preset.yml` | `scripts/migrate-presets.mjs` 改为同目录临时文件 + rename，失败清理临时文件并保留原文件；同时迁移旧 `str-replace-editor` 模块名 | `test/host/migrate-presets.test.mjs` |
+| 主会话维护插入点筛选和双视图状态 | `src/client/app/workspace/pages/MainSessionPage.tsx` | 移除双视图状态，保留单一筛选与 store |
+| 通用／能力两个面板互斥挂载 | `src/client/features/prompts/PromptConfigsEditor.tsx` | 收敛为一个模块列表，不保留第二套引擎设置面板 |
+| 提示词配置筛选、草稿、排序、批量操作和保存 | `src/client/features/prompts/PromptConfigList.tsx` | 保留操作所有权，组合能力卡时不把能力当作提示词配置 |
+| 能力身份、装配事实、显示分类与创建配方 | `src/shared/engine-capabilities.ts` | 复用现有定义，仅在有实际消费者时补展示元数据 |
+| 能力卡过滤、展开与删除 | `src/client/features/modules/EngineModuleList.tsx` | 并入统一列表，删除旧双视图专用编排 |
+| 参数目录与字段渲染 | `src/shared/engine-params.ts`、`src/client/features/modules/EngineParamFields.tsx` | 保留类型、默认值、校验、字段归属及参数桥 |
+| 通用折叠卡形态 | `src/client/ui/EngineModuleCard.tsx` | 继续复用，不新建万能配置卡 |
+| 模型与自定义工具专用编辑器 | `src/client/features/models/ModelRouteCard.tsx`、`src/client/features/tools/CustomToolsCard.tsx` | 调整所在区域，保留领域接口与保存方式 |
 
-## Minimal 与组合来源决策
+当前 [UI 权威文档](docs/ui-architecture.md) 仍描述双视图，这是待替换的展示契约。本计划记录目标态；实施时同步更新文档，不能把写入计划当作功能完成。
 
-`engine/compositions/library/bootstrap-filesystem.yml` 是官方 `filesystem` group 的完整切块，包含：
+## 4. 目标界面与行为分类
 
-- `fs-local`；
-- `str-replace-editor`；
-- 同一个 `isolate: fs` 服务域。
+### 4.1 单列表信息架构
 
-因此 Minimal 直接装配 `bootstrap-filesystem`，不再维护
-`engine/compositions/source/local/str-replace-editor.yml`。把 `fs-local` 和编辑器拆成两个独立模块会破坏同域服务解析，增加重复注册风险。
+```text
+主会话
+  模块列表
+    公共配置：模型选择、模板变量、预设生成默认值
+    工具栏：插入点筛选、提示词配置操作、能力创建入口
+    前置步骤 pre-step
+      本插入点提示词配置卡、对应能力模块卡及卡内设置
+    系统提示段 system-section
+      本插入点提示词配置卡、对应能力模块卡及卡内设置
+    运行上下文 runtime-context
+      本插入点提示词配置卡
+    代理请求 agent-request
+      本插入点提示词配置卡
+    模型流 llm-stream
+      本插入点提示词配置卡
+    工具链 tool-pipeline
+      本插入点提示词配置卡、对应能力模块卡、自定义工具卡
+```
 
-`library/` 中的 `official-*` 与同名文件是不同官方预设的语义变体（例如平台禁用、PTC delegation、Cordis 技能路径），不是同一预设内的重复 row；脚本和候选校验仍禁止同一组合出现重复 Loader id。
+- “全部”按行为分类组织卡片；选中一个插入点时，只展示该分类的提示词配置和能力卡。
+- 每项能力一张卡，参数在卡内展开；不把不同能力揉成整层万能表单，也不留下独立“引擎设置”页。
+- 六个插入点始终可筛选。空分类有明确空状态，不为填充界面新增或默认启用能力。
+- 提示词配置与能力模块保留不同操作语义，只统一入口、布局与行为分类。
+- 当前会话模型选择、模板变量和预设生成默认值保留单一公共入口，不复制到六个分类。部署设置仍在基础设置。
+- 公共区域不是第七个插入点，不能仅因能力监听多个 hook 或监听六类以外的事件而将其移入公共区域。
+- 保留现有提示词模板、变量、能力及配方创建入口；不要求将不同领域操作改造成一个后台创建接口。
+- 保留世界书策略筛选；世界书不是第七个插入点，该筛选不混入无关能力卡。
+- 保留提示词配置搜索，明确其作用对象；本次不新增参数全文搜索或搜索服务。
+- 计数、空状态、排序、批量启停和保存文案必须明确对象；有能力卡时不能因提示词为空就宣称“没有模块”。
 
-官方行覆盖仍按上游四个基型核对：
+### 4.2 首版能力归属
 
-| 预设 | 本地目标 | 说明 |
+首版沿用现有主显示分类，用能力影响的行为解释归属。这张表不表示实际 hook、覆盖的全部事件或运行先后。
+
+| UI 行为分类 | 现有能力或配置 | 归类说明 |
 |---|---|---|
-| standard | `preset/standard` | 官方行按序拆分，persona 由 `prompt-config-engine` + `persona-main` 承载 |
-| minimal | `preset/minimal` | `persistent-shell` + 官方 `bootstrap-filesystem`（含 `fs-local` 和编辑器） |
-| ptc | `preset/ptc` | 使用 PTC presentation 与 delegation 变体 |
-| cordis | `preset/creative` | 保留 Cordis 工具与随包技能资产 |
+| `pre-step` | `anchor-turn`、`context-gate`、本插入点提示词配置 | 前置锚定、上下文放行及前置消息行为；`anchor-turn` 的实际监听事件不妨碍归类 |
+| `system-section` | `tool-bootstrap`、本插入点提示词配置 | 保留该能力的主显示归属；首轮工具窄化、晋升与阶段字段仍在同一能力卡，不因跨行为影响拆分 |
+| `runtime-context` | 本插入点提示词配置 | 当前没有独立登记到此分类的能力卡；不复制 `context-gate` 参数制造另一份设置 |
+| `agent-request` | 本插入点提示词配置 | 保持请求补丁编辑，不把当前会话模型选择转换为提示词配置 |
+| `llm-stream` | 本插入点提示词配置 | 保持流控制配置与字段策略，不新增流处理能力 |
+| `tool-pipeline` | `code-presentation`、`tool-filter`、`str-replace-editor`、`deliberation-gate`、`cot-drip`、`tool-config-engine`、自定义工具及本插入点提示词配置 | 工具呈现、过滤、执行及结果行为；不要求实际只监听 `tools/*` |
 
-## 现行边界
+- 表内登记不等于默认装配；卡片仍由当前预设实际模块事实决定是否出现。
+- `str-replace-editor` 沿用 `bootstrap-filesystem` 的现有映射与隔离服务域，不恢复单独装配编辑器的旧实现。
+- 跨分类说明引用同一能力，不创建第二份参数或独立开关；“全部”视图不重复显示同一能力。
+- 展示分类不写入预设成为新的调度指令，卡片移动不改变运行时注入位置。
 
-- `source/local/` 只放本项目自有模块；`library/` 只由 `pnpm rebuild:composition` 生成官方切块和确有语义差异的变体。
-- 官方 persona 行由 `prompt-config-engine` + `persona-main` 配置卡等价承载，不重复注册官方 `persona` row。
-- `modules: []` 保持显式空组合；能力卡只由显式模块事实决定，官方组合 row 不伪装成可编辑能力。
-- Minimal 与 Anchored 都使用带隔离文件系统的 `bootstrap-filesystem`；参数桥仍可通过 `strReplaceEditorMaxOutputChars` 配置嵌套编辑器。
+## 5. 数据、状态与操作契约
 
-## 验证
+### 5.1 字段与保存
 
-所有命令从隔离 cwd `D:\AI\workspase\_temp` 执行：
+- `ENGINE_PARAM_DEFINITIONS` 继续统一参数归属、默认值、类型、校验和组合映射；普通引擎字段复用 `EngineParamFields`。
+- 参数、提示词配置、模板变量、模型选择与自定义工具沿用各自的领域入口，不统一为一种载荷或一个全局事务。
+- 不新增 bridge endpoint，不修改响应封装、YAML 字段或预设存储格式，不执行数据迁移。
+- 保留参数桥、`moduleConfigs`、行默认的优先级，以及空值回落、合法 `0`、显式 `false` 与空模板变量的区别。
+- 未声明且未修改的 UI 默认值不固化为预设覆盖；卡片改位置不改变读回与保存映射。
+- 原有自动／显式保存语义不变。“保存全部”若只保存提示词配置，需明确标注范围，不能暗示全模块事务。
+- 保存保持串行；失败不阻塞后续任务，成功只确认请求快照，不能覆盖请求期间产生的新编辑。
 
-```powershell
+### 5.2 草稿与预设隔离
+
+- 六个分类复用同一工作台状态所有者，不复制 store、保存队列或参数快照。
+- 筛选或折叠不能静默丢失未提交数字、阶段草稿或错误，不能因重新挂载把已编辑值回填为默认值。
+- 卡片身份按预设和领域实体稳定区分；若发现局部输入随筛选销毁，只修复对应状态归属，不引入第二套状态框架。
+- 预设切换沿用现有切换与保存协调机制；旧预设异步响应不得覆盖新预设，写入仍校验目标预设。
+- 保留加载、system 只读和生成关闭时对预设写入的保护；当前会话模型仍按宿主自身权限与选择契约操作，不能把会话选择误当成预设写入。
+
+### 5.3 卡片操作
+
+- 提示词配置保留启停、复制、删除、层内排序和批量操作；这些动作不修改能力模块声明或参数。
+- 能力卡保留显式创建、已有配方和局部确认删除；删除声明后保留 dormant 参数，并沿用原重建与模块事实刷新链路。
+- `modules: []` 保持空组合；残留参数、官方组合行或仅有默认值不能制造可编辑能力卡。
+- 自定义工具继续一工具一卡，保持参数校验、审批和原保存方式；合并入口本身不创建或注册工具能力。
+- 模板变量保持预设级资产语义；当前会话模型经官方选择通道更新，不与预设模型参数混成一次写入。
+
+### 5.4 生命周期与按需加载
+
+- 分类仅影响展示，不改监听事件、注册次数、插入位置、时机、消息受众、晋升、epoch 或 disposer。
+- 工具预览保持独立只读入口，用户显式打开时才请求；主会话合并列表不触发预设工具预览或全预设扫描。
+- 自定义工具数据沿用编辑面自身的加载与取消机制，不扩大成所有预设的启动预加载。
+- 保留工作台 slot、打开／关闭、侧栏几何与公共 store 生命周期；不为本次列表重构改宿主接入。
+
+## 6. 影响范围与非目标
+
+### 必要修改范围
+
+- 页面编排：`src/client/app/workspace/pages/MainSessionPage.tsx`。
+- 列表编排：`src/client/features/prompts/PromptConfigsEditor.tsx`、`src/client/features/prompts/PromptConfigList.tsx`。
+- 能力组合：`src/client/features/modules/EngineModuleList.tsx`。
+- 旧双视图样式清理与必要分组布局：`src/client/features/prompts/prompts.module.css`，继续使用 CSS Modules 与宿主语义 token。
+- 契约测试：优先扩展 `test/client/engine-module-cards.test.mjs`，按影响补充现有参数、草稿、保存与工具预览测试。
+- 落地时同步 [UI 权威文档](docs/ui-architecture.md) 与 [框架 spec](.scratch/prompt-tool-framework/spec.md) 的布局、按需请求和验收描述；本次不同时改写 spec。
+
+### 仅在验证证明需要时修改
+
+- `src/shared/engine-capabilities.ts`：补充有实际用途的展示元数据，不建立新能力注册框架。
+- `src/client/features/modules/EngineParamFields.tsx`：仅修复归一暴露的字段身份或未完成草稿丢失，不重写所有控件。
+- `src/client/ui/EngineModuleCard.tsx`、`src/client/ui/controls.module.css`：仅处理复用卡片所需的局部布局，不造万能 Card。
+- `src/client/features/tools/CustomToolsCard.tsx`：仅处理工具卡嵌入后的必要展示，不复制转换、注册和热装配逻辑。
+
+### 不做
+
+- 不重写引擎、参数桥、保存队列、host 工厂或预设生成器。
+- 不改 DeepSeek Harness 源码、已安装官方包、slot 契约、profile 或 `cordis.patch.yml`。
+- 不把能力参数转成 `promptConfigs`，不添加假的注入层、可拖动的运行顺序或全局能力开关。
+- 不按实际 hook 拆分或排除 `anchor-turn` 等能力，不把六层扩成监听事件列表。
+- 不新增能力、模板、后台 API、状态库、测试框架、通用配置注册器或可视化引擎。
+- 不重做子代理、技能、角色管理和工具预览页面；只回归共享契约。
+- 不处理无关历史问题，不重新执行旧计划的迁移与组合修复。
+
+## 7. 实施阶段
+
+代码实施尚未开始。阶段按依赖顺序推进；每阶段先形成可运行验收，再做最小修改，分别记录原有失败与本次引入的失败。
+
+### 阶段一：分类与回归基线
+
+- [ ] 读取本计划引用的 UI、参数和引擎权威文档，复核目标文件、调用方与工作树。
+- [ ] 记录六个插入点、显式能力、空组合、system 预设和保存行为的基线。
+- [ ] 在现有 client 测试体系补充单列表与 `anchor-turn` 归入 `pre-step` 的验收，确认新要求能暴露当前双视图缺口。
+- [ ] 固定全部／单分类／空分类／世界书筛选预期；不从 hook 名推导分类。
+
+退出条件：新验收准确指出待改行为，现有字段归属、能力存在性与保存测试提供可信基线。
+
+### 阶段二：合并模块列表
+
+- [ ] 删除双视图状态、对应 props、互斥面板、切换控件及无消费者样式。
+- [ ] 保留一份插入点筛选，按行为分类组合提示词配置与能力卡。
+- [ ] 公共入口保留模型、变量和生成默认值；工具链区域展示自定义工具。
+- [ ] 复用现有卡片和列表组合接口；如需分组接口，只增加实际调用方所需的最小能力，不复制六套保存逻辑。
+- [ ] 明确搜索、计数、批量操作、保存与空状态的对象。
+
+退出条件：无需第二视图即可访问原有设置；`anchor-turn` 在 `pre-step` 卡内可配置，无重复字段或虚构能力。
+
+### 阶段三：状态与兼容性回归
+
+- [ ] 验证筛选、折叠、未完成数字／阶段草稿及保存期间继续编辑，不因挂载变化丢值。
+- [ ] 验证预设切换、旧响应、保存失败、合法零值、空值回落、system 只读与生成关闭。
+- [ ] 验证提示词排序／批量动作与能力创建／删除互不污染；空组合和 dormant 参数不隐式启用能力。
+- [ ] 验证工具预览按需请求，以及主会话、子代理和共享组件的既有契约。
+- [ ] 仅在回归证明有缺口时调整局部状态或接口，不扩展后端设计。
+
+退出条件：编辑入口合并后，各领域载荷、校验、草稿与运行行为仍符合原契约。
+
+### 阶段四：验收与交付
+
+- [ ] 完成第 8 节全部验收项和第 9 节完整验证命令。
+- [ ] 验证明暗主题、窄屏和键盘操作，保留截图及操作步骤；未完成项明确披露。
+- [ ] 同步 UI 权威文档与框架 spec，不以文档更新替代运行证据。
+- [ ] 检查 diff、生成目录和工作树；只提交本次文件，中文 Conventional Commit 推送 `origin/dev`。
+
+退出条件：验收、代码和文档一致；剩余限制已披露，不把后续美化或其它功能并入本轮。
+
+## 8. 可观察验收清单
+
+以公开输入、渲染结果、用户操作和保存载荷验证行为；源码字符串删除、组件改名或模型措辞都不能代替行为断言。
+
+| ID | 给定与操作 | 必须观察到的结果 |
+|---|---|---|
+| U-01 | 含提示词配置与显式能力的预设，打开主会话 | 单一模块列表可达两类设置，无通用／引擎能力切换；展开所属能力卡即可编辑 |
+| U-02 | 依次筛选全部、六个插入点和空分类 | 对应两类卡片准确显示；六类始终可选，空分类不生成模块，全部视图无重复能力 |
+| U-03 | 世界书筛选、提示词搜索、混合列表计数与空状态 | 世界书仍为策略筛选；搜索和计数范围明确，能力不当作提示词，也不因提示词为空宣称列表无模块 |
+| U-04 | 装配 `anchor-turn`，筛选 `pre-step` 并展开 | 卡内可编辑锚定开关与文本；仍监听 `agent/inbox/inserted`，不为展示修改 hook 或移入公共区 |
+| U-05 | 跨行为能力、空组合、仅有 dormant 参数和官方组合分别打开列表 | 显式能力只有一份可写字段；未装配能力不出现，不因参数或官方行制造能力卡 |
+| U-06 | 排序、批量启停和保存提示词，再创建与确认删除能力 | 提示词操作不改能力声明／参数；能力仍走原链路，删除保留 dormant 参数，无重复注册 |
+| U-07 | 编辑字段、数字和阶段草稿后筛选或折叠 | 未提交输入及错误不被静默丢弃，草稿不回退默认值，不创建第二份状态 |
+| U-08 | 保存中继续编辑或按原流程切换预设，并使一个请求失败 | 保存串行，旧响应不覆盖新草稿或新预设；失败不阻塞后续保存，错误与 dirty 状态准确 |
+| U-09 | 提交合法 `0`、`false`、空参数、空模板变量及非法数字 | 载荷、回落和校验沿用原契约；未改默认不固化，“保存全部”文案不扩大实际保存范围 |
+| U-10 | 在 system 预设、生成关闭或加载时尝试预设写入 | 原有禁写及 host 校验保持；会话模型选择与预设写入边界未混淆 |
+| U-11 | 浏览／筛选模块列表，再显式打开工具预览 | 前者不触发预设工具预览或全预设扫描，后者才请求只读工具面；自定义工具沿用自身数据入口 |
+| U-12 | 同一预设重构前后运行主会话、子代理、成功／失败压缩及释放／重挂 | 插入点、位置、时机、次数、受众和 epoch 断言一致；失败压缩不重置，成功压缩后重晋升，disposer 不残留重复实例 |
+| U-13 | 明暗主题、窄屏、reduced-motion 与键盘操作 | 标签、说明、焦点、展开与确认删除仍可用；无悬空 ARIA 关联，不污染宿主样式 |
+| U-14 | 在公共入口编辑模型、变量和生成默认值，并查看基础设置 | 公共配置不重复到六类，会话模型仍走官方通道，部署设置独立；公共区不是第七插入点 |
+
+优先复用的测试：
+
+- `test/client/engine-module-cards.test.mjs`：能力存在性、字段唯一归属、类型、只读和分类展示。
+- `test/client/dirty-state.test.mjs`、`test/client/save-queue.test.mjs`、`test/client/param-overrides.test.mjs`、`test/client/prompt-tool-stages.test.mjs`：草稿、排队、参数和阶段。
+- `test/client/prompt-config-order.test.mjs`、`test/client/tools-preview.test.mjs`、`test/client/custom-tool-editor.test.mjs`：提示词操作与工具编辑／预览边界。
+- `test/client/feature-boundary.test.mjs`、`test/client/style-ownership.test.mjs`、`test/client/slot-workbench-contract.test.mjs`：依赖、样式和宿主生命周期。
+- `test/shared/engine-param-schema.test.mjs`、`test/host/engine-capability.test.mjs`、`test/host/module-configs.test.mjs`：参数、模块与装配契约。
+- 现有 `test/engine` 测试：主会话、子代理、晋升、压缩和 disposer；最终仍跑完整测试。
+
+仅补充现有验收面无法覆盖的行为，不新建测试框架，不把每个内部函数都变成独立测试目标。
+
+## 9. 验证环境与命令
+
+所有 shell 使用 `D:\App\PowerShell\7\pwsh.exe`。测试和脚本从 `D:\AI\workspase\_temp` 执行，不以仓库为测试 cwd；文件系统测试使用独立临时目录与临时 `DSH_HOME`。
+
+聚焦验证示例，按依赖需要先生成产物：
+
+```pwsh
 $Repo = 'D:\AI\GitHub\dsh-plugin-prompt-tool'
 Set-Location 'D:\AI\workspase\_temp'
-pnpm --dir $Repo rebuild:composition
+pnpm --dir $Repo build
+node --test "$Repo/test/client/engine-module-cards.test.mjs"
+```
+
+代码交付前完整验证：
+
+```pwsh
+$Repo = 'D:\AI\GitHub\dsh-plugin-prompt-tool'
+Set-Location 'D:\AI\workspase\_temp'
 pnpm --dir $Repo typecheck
 pnpm --dir $Repo lint
 pnpm --dir $Repo test
+pnpm --dir $Repo build
 git -C $Repo diff --check
 ```
 
-本轮验证结果：`rebuild:composition`、`typecheck`、`lint`、`test`（556 pass / 0 fail）和 `git diff --check` 均通过。交付前以命令实际输出为准，不在计划中固定易变的测试数量。变更不修改 DeepSeek Harness 源码，不停止运行中的 DSH 服务；若 `cordis.patch.yml`、bundle 或 profile manifest 后续变化需要重启，由用户决定。
+逐条检查退出码；前一命令失败不能用后一命令成功掩盖。交付记录实际命令、退出码、结果与 UI 证据，不固定易变的测试数量。
+
+本次仅更新计划，运行 `git diff --check` 并核对路径、链接、脚本名和验收 ID；不运行或宣称代码与 UI 验收已经通过。
+
+## 10. 风险、回退与交付边界
+
+| 风险 | 控制方式 |
+|---|---|
+| 再次混淆行为分类与实现 hook | U-04 固定 `anchor-turn` 的 `pre-step` 归属，展示元数据不改接线 |
+| 把混合列表当成一种配置模型 | 保留领域卡片和保存接口，计数／排序／批量操作明确对象 |
+| 筛选重挂导致输入丢失 | 保留单一状态所有者与稳定实体身份，通过 U-07／U-08 验证交互而不只看静态渲染 |
+| 多余请求或隐式装配 | 保留模块事实与工具预览按需加载，覆盖空组合和 dormant 参数 |
+| 为统一外观过度抽象 | 复用现有列表、字段目录和卡片，只增加真实调用需要的接口 |
+
+- 本次无存储格式变更和数据迁移。UI 回归通过修复提交或经确认的 revert 恢复展示，不覆盖用户预设或改写已有历史。
+- 不停止、重启或终止运行中的 DSH，不抢占端口；必要 smoke 使用隔离 `DSH_HOME` 与随机端口。
+- 不手工编辑或提交 `lib/`、`engine/compositions/library/`、`engine/vendor/yaml/`；只用既有 scripts 生成。
+- 只提交本轮文件，中文 Conventional Commit 推送 `origin/dev`；不切换或推送 `main`，不创建 PR。
+- 预期不需要 profile、bundle 或 patch 变更；若发现必须扩大边界，先说明原因及方案。需要服务重载时只标注“需要用户重启 DSH 服务后生效”，不代用户重启。
+- 只有实施阶段完成、U-01 至 U-14 有证据、完整验证通过并同步文档，才能宣布重构完成。计划交付不代表功能交付。
