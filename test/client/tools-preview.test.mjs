@@ -146,7 +146,7 @@ test('完整显示所有工具：同名自定义、第三方、空描述与长�
   assert.match(expanded, /<dl class="toolFacts">/)
   assert.match(expanded, /完整名称/)
   assert.match(expanded, /模型可见/)
-  assert.match(expanded, /class="badge"[\s\S]*?class="dot" data-tone="success"[\s\S]*?class="tag" data-tone="success">模型可见</)
+  assert.match(expanded, /class="badge"[\s\S]*?class="dot" data-state="done"[\s\S]*?class="tag" data-tone="success">模型可见</)
   assert.match(expanded, /session-a/)
   assert.doesNotMatch(expanded, /运行中|已启用|配置状态|fiberPhase/)
   assert.match(render(ToolSurfaceList, { tools, filter: '', expandedName: 'empty_description' }), /（无描述）/)
@@ -169,7 +169,8 @@ test('工具卡双列网格、窄屏单列与键盘展开属性参照官方 inve
 
 test('技能卡与工具卡共用 StatusBadge：圆点 + 官方 Tag', () => {
   const badge = read('src/client/ui/StatusBadge.tsx')
-  assert.match(badge, /import \{ Tag \} from '@deepseek-ai\/dsh-client-ui-primitives'/)
+  assert.match(badge, /import \{ StateDot, Tag, type StateDotState \} from '@deepseek-ai\/dsh-client-ui-primitives'/)
+  assert.match(badge, /<StateDot state=\{DOT_STATE\[props\.tone\]\} size=\{8\} \/>/)
   assert.match(badge, /<Tag tone=\{props\.tone\}>\{props\.label\}<\/Tag>/)
   for (const path of ['src/client/features/tools/ToolSurfaceView.tsx', 'src/client/features/skills/SkillRow.tsx']) {
     assert.match(read(path), /from '\.\.\/\.\.\/ui\/StatusBadge\.tsx'/, `${path} 应复用共享状态徽章`)

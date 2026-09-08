@@ -43,6 +43,6 @@ test('技能状态徽章色调随注册、开关与调用范围变化', () => {
   assert.equal(skillStatusTone(skill(), false), 'neutral')
   assert.equal(skillStatusTone(skill({ modelInvocable: false, userInvocable: false }), true), 'neutral')
   assert.equal(skillStatusTone(skill({ modelInvocable: false }), true), 'success')
-  assert.equal(skillStatusTone(skill({ userInvocable: false }), true), 'info')
-  assert.equal(skillStatusTone(skill(), true), 'info')
+  assert.equal(skillStatusTone(skill({ userInvocable: false }), true), 'success')
+  assert.equal(skillStatusTone(skill(), true), 'success')
 })
