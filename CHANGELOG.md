@@ -2,9 +2,17 @@
 
 ## [未发布] - 2026-09-06
 
+### 0.1.5-alpha.1 全量对齐（2026-09-09）
+
+- 依赖声明统一为 `^0.1.5-alpha.1`（peer + dev），新增 `@deepseek-ai/dsh-client-ui-sidebar-right` 与 `@deepseek-ai/dsh-client-ui-slots` 依赖边；`dsh.client.inject` 改声明右侧栏包，移除已无引用的 `dsh-client-ui-sidebar`。
+- 工作台从自建 `shell.overlay` 抽屉迁移到官方右侧栏：`ctx.sidebarRightTabs.register`（tab type + guide 入口盒）+ keyed `sidebar.right.pane.tab`（body）；删除 FloatingTrigger / SidebarGeometryProbe / WorkbenchOverlay / workspace-controller / Workbench.module.css，不再自建 portal、几何探针或面板互斥事件。
+- `ToggleRow` 改用官方 `Switch`，删除自建 checkbox 与配套 CSS 开关样式。
+- 新增 `test/host-contract.test.mjs`：锁定客户端 slot 面、版本声明、非 pre-step 五层注入时序与已移除宿主 API（`conversation.details.tool`、`session.events`、`tool/code-dispatch`）。
+- P3 评估：`openPath` 已走宿主原生打开器；`ctx.workspaceFiles` 与 DSH_HOME 路径域不匹配；`client-resources` 资源 tab 暂不采用（详见 [docs/ui-architecture.md](docs/ui-architecture.md) §4.4）。
+
 ### 官方宿主契约对齐修复（2026-09-09）
 
-- 对齐官方 `dsh-persona` 契约升级：`config.text` → required `config.prefix`（+ 可选 `suffix`），系统提示段名 `deployment:persona` 拆为 `deployment:persona-prefix` / `deployment:persona-suffix`。`engine/compositions/library/persona.yml`、五个内置预设的 `persona-main` 卡、层识别与 UI/角色卡判定同步更新，旧段名保留兼容。
+- 对齐官方 `dsh-persona` 契约升级：`config.text` → required `config.prefix`（+ 可选 `suffix`），系统提示段名 `deployment:persona` 拆为 `deployment:persona-prefix` / `deployment:persona-suffix`。`engine/compositions/library/persona.yml`、五个内置预设的 `persona-main` 卡、层识别与 UI/角色卡判定同步更新；旧段名由 `scripts/migrate-presets.mjs` 离线迁移，不保留运行时兼容。
 - 新增 `migratePersonaLoaderConfig`：渲染路径与启动重建都会把用户目录旧 `text:` 的 `dsh-persona` 行就地迁移为 `prefix:`，手写或旧产物预设无需逐个手动切换。
 - 组合产物写入 `# prompt-tool:render v2` 契约标记；启动重建据此重刷用户目录旧产物（仅 `modules`/`params` 格式预设，手写预设不覆盖）。
 - 修复全局 junction 安装（`npm-global/@deepseek-ai/dsh` → 真实包目录）下 `Cannot find module '@deepseek-ai/dsh-tools'`：宿主包解析改为 realpath 优先（`engine/host-package.mjs`），`tool-config-engine` 与 `subagent-tool-policy` 共用。

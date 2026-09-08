@@ -60,7 +60,7 @@ export function SettingsTab(props: TabProps): ReactNode {
       <ToggleRow id="pt-injectAgentsPrompt" label="注入 AGENTS 内容到提示词" hint="用 AGENTS.md 内容替换本地 instruction-hint 的默认提示文本。" checked={value.injectAgentsPrompt === true} onChange={(v) => set('injectAgentsPrompt', v)} />
       <div className={ui.rowGroup}>
         <div className={ui.settingRowStack}>
-          <span className={ui.settingCopy}><strong>预设模板</strong><small>新会话默认挂载的预设；完整预设管理与提示词配置请使用左上角悬浮按钮打开工作台。</small></span>
+          <span className={ui.settingCopy}><strong>预设模板</strong><small>新会话默认挂载的预设；完整预设管理与提示词配置请从会话右上角的右侧栏展开按钮打开「提示词工具」工作台。</small></span>
           <MenuSelect className={ui.directoryInput} ariaLabel="预设模板"
             value={typeof value.presetTemplate === 'string' ? value.presetTemplate : ''}
             disabled={!snapshot.writable || switchingPreset}

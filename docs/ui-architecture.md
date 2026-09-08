@@ -65,14 +65,10 @@
     ├─ prompt-tool-types.ts
     ├─ app/
     │  ├─ workbench/
-    │  │  ├─ FloatingTrigger.tsx
+    │  │  ├─ PromptToolTab.tsx
     │  │  ├─ register-workbench.tsx
     │  │  ├─ SettingsTab.tsx
-    │  │  ├─ SidebarGeometryProbe.tsx
-    │  │  ├─ Workbench.module.css
-    │  │  ├─ WorkbenchOverlay.tsx
-    │  │  ├─ workbench-face.ts
-    │  │  └─ workspace-controller.ts
+    │  │  └─ workbench-face.ts
     │  └─ workspace/
     │     ├─ PromptWorkspace.module.css
     │     ├─ PromptWorkspace.tsx
@@ -176,34 +172,40 @@ src/client/index.ts 的 inject 列表是：
     remote.agentPresets
     remote.session
     sessions
+    sidebarRightTabs
 
 apply(ctx) 依次构造：
 
 1. prompt-tool SettingsScope transport，用于标准部署设置的 mirror、ensure 和 mutate。
 2. PromptToolHostApi，封装目录选择、打开路径、预设切换和当前会话模型选择。
 3. session-model-face，读取官方 sessions projection，并经 remote.session.selectModel 写回。
-4. PromptToolWorkspaceController 与 PromptToolWorkbenchFace。
-5. registerWorkbenchSlots(ctx, face)，唯一负责三处 slot 注册。
+4. PromptToolWorkbenchFace。
+5. registerWorkbenchSlots(ctx, face)，唯一负责右侧栏 tab type/body 与 settings.plugins.tab 的注册。
 
 入口不直接导入页面、bridge endpoint 或业务卡片；需要新宿主能力时先扩展 data/host-api.ts 或 shared 契约。
 
 ### 4.2 Slot 契约
 
-| 官方 slot | id | order | owner | 作用 |
-|---|---|---:|---|---|
-| sidebar.footer.action | prompt-tool-floating-geometry | 40 | SidebarGeometryProbe | 仅提供侧栏轨道几何，不渲染第二个可见入口 |
-| settings.plugins.tab | prompt-tool | 40 | SettingsTab | 部署开关、AGENTS 写入/注入和默认预设 |
-| shell.overlay | prompt-tool-workbench | 50 | WorkbenchOverlay | 悬浮触发器、顶层抽屉和完整五页工作台 |
+| 官方注册面 | id / key | 位置 | owner | 作用 |
+|---|---|---|---|---|
+| ctx.sidebarRightTabs.register | dsh-plugin-prompt-tool/workbench（kind: prompt-tool） | — | register-workbench | tab type：标题与 guide 入口盒 |
+| sidebar.right.pane.tab | 同上 id | keyed / session | PromptToolTab | 六页工作台 body |
+| settings.plugins.tab | prompt-tool | order 40 | SettingsTab | 部署开关、AGENTS 写入/注入和默认预设 |
 
-三处都使用 ctx.slots.inject() 等待官方槽位声明，再调用 ctx.slots.register()；返回的 disposer 在 register-workbench.tsx 中统一释放。不要添加第二个注册入口，也不要改变 id、order 或 inject face 的形状。
+两处 slot 都使用 ctx.slots.inject() 等待官方槽位声明，再调用 ctx.slots.register()；tab type 走官方 ctx.sidebarRightTabs.register()。返回的 disposer 在 register-workbench.tsx 中统一释放。不要添加第二个注册入口，也不要改变 id、kind 或 inject face 的形状。
 
-### 4.3 浮层、侧栏与关闭行为
+### 4.3 右侧栏与关闭行为
 
-- WorkbenchOverlay 将自己的 trigger 和 drawer 通过 body portal 挂载，避免被对话导航栏或 drawer overflow 截断。
-- drawer 使用 fixed 高层定位、backdrop、Escape 和自身焦点恢复；关闭后焦点回到触发按钮。
-- 打开工作台会发出本插件的面板激活事件，与仍在 DOM 中的其他面板保持互斥；事件处理只消费约定的自有事件，不查询宿主 class。
-- SidebarGeometryProbe 从官方布局轨道读取 grid-template-columns 第一轨，写入 --pt-sidebar-edge；ResizeObserver、transitionend 和 window resize 共同覆盖折叠、拖拽和断点变化。
-- probe 是 geometry-only occupant。禁止用宿主选择器、固定层级或条件折叠属性作为可见按钮锚点。
+- 工作台是官方 `@deepseek-ai/dsh-client-ui-sidebar-right` 的 tab 类型；入口是会话右上角的官方展开按钮与右侧栏 guide 页的入口盒，打开动作由官方 tab actions 完成。
+- PromptToolTab 复用 PromptWorkspace，挂载时执行一次 store.load()；关闭走 tab.actions.close()，焦点、Escape、停靠、浮动与全屏由官方右侧栏壳接管。
+- 不再有自建 portal、backdrop、z-index 或与其他面板的互斥事件；插件不持久化工作台开关，右侧栏状态是官方 per-session 内存态，刷新回落。
+
+### 4.4 0.1.5 新能力采用面
+
+- 采用：右侧栏 tab 两段注册、guide 入口盒、官方 Switch / Tag、官方 tab actions 关闭。
+- 已满足、无需接入：`host-open-in-app`。`PromptToolHostApi.openPath` 走 `remote.session.openWorkspacePath`，其契约就是宿主交给原生打开器；官方 `ui-open-in-app` 客户端包不提供跨插件服务，只是会话头部的分割按钮。
+- 不适用：`ctx.workspaceFiles` 只覆盖 workspace 根，插件的读写路径域是 DSH_HOME（预设、技能、角色卡）。
+- 暂不采用：`client-resources` 资源 tab 需要自建 provider 与第二个 tab 类型，而工作台已在右侧栏内就地编辑这些文件，重复呈现没有收益。
 
 ## 5. 工作台与页面信息架构
 
@@ -212,7 +214,7 @@ apply(ctx) 依次构造：
     settings.plugins.tab
       └─ 基础设置：部署开关 + 默认预设
 
-    shell.overlay
+    sidebar.right.pane.tab（kind: prompt-tool）
       └─ 完整工作台
           ├─ 主会话
           ├─ 子代理
@@ -260,7 +262,7 @@ workspace-pages.ts 是页面元数据的唯一来源。默认页为 features，�
 
 | 状态 | Owner | 生命周期/规则 |
 |---|---|---|
-| 工作台 open | PromptToolWorkspaceController | client 插件生命周期；无 React 依赖 |
+| 工作台 tab 开关 | 官方 sidebarRight store | 官方 per-session 内存态；刷新回落 |
 | 当前顶层页 | PromptWorkspace | 工作台挂载期；不写 URL 或 localStorage |
 | fields、meta、catalog | usePromptToolStore | 工作台挂载期；打开时重新同步 |
 | 标准设置值 | 官方 SettingsScope | 宿主 mirror 生命周期 |
@@ -273,7 +275,7 @@ workspace-pages.ts 是页面元数据的唯一来源。默认页为 features，�
 
 ### 6.2 首屏读取与更新
 
-    打开 shell.overlay
+    打开右侧栏「提示词工具」tab
       -> PromptWorkspace.store.load()
       -> bridgeCall("bootstrap") 聚合 descriptor、meta、变量和 promptConfigs
       -> fieldsFromView() 合并 value/base 与 presetParams
@@ -358,7 +360,7 @@ feature 只拥有自己的视图、瞬时状态、领域纯 helper 和 CSS：
 ui/ 只接收 props/callback，当前真实共享 seam 包括：
 
 - FormField：label/id 配对；hint 可内联，也可通过 HintTooltip 在悬停或聚焦时显示。
-- SettingInputRow、ToggleRow、TagInput：设置和字段编辑形态。
+- SettingInputRow、ToggleRow、TagInput：设置和字段编辑形态；ToggleRow 的开关使用官方 Switch。
 - MenuSelect：直接封装官方 Menu 的单选胶囊；支持连续选项的 `group` 分组标题。标准设置使用 36px，模块卡内使用 28px 紧凑形态，浮层统一 portal。
 - CollapsibleCard、EngineModuleCard：具体可复用的折叠/模块卡形态，不是万能 Card。
 - StatusDot：6px 实心核心 + 3px 同色光晕的状态圆点，与工作台顶部「N 配置 · M 启用」在线指示同款；`pulse` 仅用于该在线指示。
@@ -415,7 +417,6 @@ promptConfigs 模块卡展开区按基础信息、注入规则、作用范围、
 
 样式使用 CSS Modules 和 DSH 语义 token，当前 owner 为：
 
-    app/workbench/Workbench.module.css
     app/workspace/PromptWorkspace.module.css
     ui/controls.module.css
     ui/HintTooltip.module.css
@@ -433,7 +434,7 @@ promptConfigs 模块卡展开区按基础信息、注入规则、作用范围、
 - 组件移动时同步移动其独占 selector；共享 selector 必须对应稳定的真实共享形态。
 - 使用 --dsw-* / --dsw-alias-* 语义 token，不复制静态色板，不写 :root 主题。
 - feature CSS 不选择宿主 class、id 或页面结构。
-- 中性平面边框使用 0.5px；高层浮层使用 DSH elevation token，z-index 由 workbench CSS 集中管理，不叠加无意义的中性 border。
+- 中性平面边框使用 0.5px；高层浮层使用 DSH elevation token，z-index 由官方右侧栏壳集中管理，不叠加无意义的中性 border。
 - 圆形和胶囊与 corner-shape: round 配对。
 - 动画提供 prefers-reduced-motion 分支；不新增组件专用全局滚动条规则。
 - 不为减少文件数把不相关领域重新合并，也不先复制旧 selector 再长期双写。
@@ -455,7 +456,8 @@ promptConfigs 模块卡展开区按基础信息、注入规则、作用范围、
 客户端测试仍按 test/client/*.test.mjs 平铺维护，重点包括：
 
 - structure-baseline、feature-boundary、ui-boundary：目录、依赖方向和入口边界；
-- slot-workbench-contract、no-host-dom：slot id/order、portal、disposer 和无宿主 DOM 操作；
+- slot-workbench-contract、no-host-dom：右侧栏两段注册、tab 关闭、disposer 和无宿主 DOM 操作；
+- host-contract：0.1.5 版本声明、客户端 slot 面、非 pre-step 五层注入时序与已移除宿主 API；
 - bridge-client 与 test/shared/bridge-contract：前缀、端点映射、统一载荷和 bootstrap 聚合；
 - prompt-tool-view、dirty-state、param-overrides、save-queue、session-model-face：映射、快照、空值、队列和引用稳定；
 - tab-key、workspace-navigation、dialog-focus、anchored-popover：键盘、ARIA、焦点和锚点行为；
@@ -477,7 +479,7 @@ promptConfigs 模块卡展开区按基础信息、注入规则、作用范围、
     pnpm --dir $Repo build
     git -C $Repo diff --check
 
-浏览器 smoke 使用隔离 DSH_HOME 和随机端口，不接触当前运行中的 DSH 服务；覆盖侧栏折叠/拉伸、drawer Escape/焦点、五页切换、明暗主题、窄宽度、reduced-motion、预设/配置/技能/角色卡高风险流程。
+浏览器 smoke 使用隔离 DSH_HOME 和随机端口，不接触当前运行中的 DSH 服务；覆盖右侧栏展开/停靠/全屏、六页切换、明暗主题、窄宽度、reduced-motion、预设/配置/技能/角色卡高风险流程。
 
 ### 12.3 已完成记录
 
@@ -485,6 +487,7 @@ promptConfigs 模块卡展开区按基础信息、注入规则、作用范围、
 - typecheck、lint、test、build 均已通过；后续改动以当前命令重新取得测试数量，不在本文固定易变的计数。
 - Edge 隔离 smoke 已验证新建预设浮层的 body parent、fixed 定位、层级、按钮锚定和滚动跟随，且无 console/page error。
 - Archify 1440×900 与 2048×1320 明暗图的 containment、captures、showcase 均通过；自动收据 visualReview=pending 仍表示需要人工查看截图，不等同于渲染失败。
+- 2026-09-09：工作台迁移到官方右侧栏（DSH 0.1.5-alpha.1 两段注册），删除自建 overlay、几何探针与面板互斥事件；ToggleRow 改用官方 Switch。
 
 ## 13. 维护清单
 

@@ -366,9 +366,7 @@
 
 .rowGroup { border-bottom: 0.5px solid var(--dsw-alias-border-l2); }
 .section > .rowGroup + .rowGroup .toggleRow:first-child { border-top: 0; }
-.toggleRow { cursor: pointer; }
 .toggleRow:first-child { border-top: 0.5px solid var(--dsw-alias-border-l2); }
-.toggleRow:has(input:disabled) { cursor: default; opacity: .46; }
 
 /* 技能管理卡片：选择框 + 手柄 + 序号 + 主体 + 开关 + 行操作。 */
 .skillCardList { display: flex; min-width: 0; flex-direction: column; gap: 8px; }
@@ -594,7 +592,6 @@
   cursor: pointer;
 }
 
-.toggleRow input[type='checkbox'],
 .configEnable > input,
 .skillSwitch input {
   position: absolute;
@@ -641,13 +638,10 @@
 }
 
 .configEnable:hover .switch,
-.toggleRow:hover .switch,
 .skillSwitch:hover .switch { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--dsw-alias-state-business-primary) 45%, var(--dsw-alias-border-l2)); }
 
-.toggleRow input:checked + .switch,
 .configEnable > input:checked + .switch,
 .skillSwitch input:checked + .switch { background: var(--dsw-alias-state-business-primary); box-shadow: none; }
-.toggleRow input:checked + .switch i,
 .configEnable > input:checked + .switch i,
 .skillSwitch input:checked + .switch i { transform: translateX(16px); }
 
@@ -1017,7 +1011,6 @@
 .pillButton:focus-visible,
 .primaryPill:focus-visible,
 .directoryInput:focus-visible,
-.toggleRow input:focus-visible + .switch,
 .configEnable > input:focus-visible + .switch,
 .skillSwitch input:focus-visible + .switch {
   outline: none;
