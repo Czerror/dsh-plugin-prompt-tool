@@ -14,6 +14,7 @@ import {
 import { bridgeViewFromBoot, fieldsFromView, mergePresetParams } from './prompt-tool-view.ts'
 import {
   EMPTY_SWITCHES,
+  hasPendingVariableRows,
   promptConfigsDirty,
   shouldReloadAfterParamSave,
   shouldReloadAfterPresetSave,
@@ -374,7 +375,9 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     const f = fieldsRef.current
     const savedSnapshot = snapshotSwitches(f)
     const draftVersion = draftVersionRef.current
+    // 待编辑变量行（空 key）不落盘；此时不重载，避免服务端状态覆盖草稿使编辑行消失。
     const configsWereClean = !promptConfigsDirty(f.promptConfigs, savedConfigs)
+      && !hasPendingVariableRows(f.promptConfigs)
     const autoModelProvider = autoModelProviderRef.current
     const autoSubagentModelProvider = autoSubagentModelProviderRef.current
     await presetSaveQueueRef.current.enqueue(async () => {
@@ -418,6 +421,9 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     const contentEntries = configs.filter(isContentAsset)
     const draftVersion = draftVersionRef.current
     const switchesWereClean = switchesEqual(snapshotSwitches(fieldsRef.current), savedSwitches)
+    // 待编辑变量行（空 key）不落盘（服务端 savePresetParams 清理）；此时跳过保存后静默重载，
+    // 否则服务端状态覆盖草稿，刚点开的变量编辑行立即消失。
+    const pendingVariableRows = hasPendingVariableRows(configs)
     return presetSaveQueueRef.current.enqueue(async () => {
       if (expectedPresetId !== fieldsRef.current.presetTemplate) {
         showNotice('error', '预设已切换，旧提示词草稿未写入')
@@ -449,7 +455,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
       if (expectedPresetId !== fieldsRef.current.presetTemplate) return
       if (res.ok) {
         setSavedConfigs(configs)
-        if (options?.reload !== false && shouldReloadAfterPresetSave(
+        if (options?.reload !== false && !pendingVariableRows && shouldReloadAfterPresetSave(
           draftVersion,
           draftVersionRef.current,
           switchesWereClean && !promptConfigsDirty(fieldsRef.current.promptConfigs, configs),

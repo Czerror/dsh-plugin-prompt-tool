@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { EMPTY_FIELDS } from '../../src/client/data/prompt-tool-fields.ts'
-import { deepEqual, promptConfigsDirty, snapshotSwitches, switchesEqual } from '../../src/client/data/dirty-state.ts'
+import { deepEqual, hasPendingVariableRows, promptConfigsDirty, snapshotSwitches, switchesEqual } from '../../src/client/data/dirty-state.ts'
 
 test('dirty state：record 键序不影响比较，数组顺序仍有意义', () => {
   assert.equal(deepEqual({ a: 1, b: [2, 3] }, { b: [2, 3], a: 1 }), true)
@@ -22,4 +22,12 @@ test('dirty state：snapshot 深拷贝可变集合并比较全字段', () => {
   assert.deepEqual(snapshot.stages, [{ name: 'a', tools: 'read' }])
   assert.deepEqual(snapshot.skillOrder, ['a'])
   assert.equal(switchesEqual(snapshot, snapshotSwitches({ ...EMPTY_FIELDS, stages: [{ name: 'a', tools: 'read' }], skillOrder: ['a'] })), true)
+})
+
+test('dirty state：空 key 变量待编辑行单独识别（保存后不静默重载）', () => {
+  assert.equal(hasPendingVariableRows([{ id: 'a' }]), false)
+  assert.equal(hasPendingVariableRows([{ id: 'a', variables: {} }]), false)
+  assert.equal(hasPendingVariableRows([{ id: 'a', variables: { key: 'v' } }]), false)
+  assert.equal(hasPendingVariableRows([{ id: 'a', variables: { '': '' } }]), true)
+  assert.equal(hasPendingVariableRows([{ id: 'a', variables: { '  ': 'v', key: 'v' } }]), true)
 })

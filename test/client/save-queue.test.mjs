@@ -59,4 +59,7 @@ test('store：参数与提示词配置保存共用预设队列，旧响应不重
   assert.match(configSave, /shouldReloadAfterPresetSave/)
   assert.match(paramSave, /await load\(\{ silent: true \}\)/)
   assert.match(configSave, /await load\(\{ silent: true \}\)/)
+  // 待编辑变量行（空 key）不落盘：保存后不得静默重载，否则服务端状态覆盖草稿使编辑行消失。
+  assert.match(paramSave, /!hasPendingVariableRows\(f\.promptConfigs\)/)
+  assert.match(configSave, /!pendingVariableRows && shouldReloadAfterPresetSave/)
 })

@@ -21,6 +21,11 @@ export const EMPTY_SWITCHES = snapshotSwitches(EMPTY_FIELDS)
 export const promptConfigsDirty = (current: PromptConfigDraft[], saved: PromptConfigDraft[]): boolean =>
   current !== saved && !(current.length === 0 && saved.length === 0)
 
+/** 配置卡内未填写变量名的「待编辑行」（空 key）。这类行由保存端（savePresetParams）清理、
+ *  不落盘；保存后静默重载会用服务端状态覆盖草稿，使刚点开的编辑行立即消失——重载前先排除。 */
+export const hasPendingVariableRows = (configs: PromptConfigDraft[]): boolean =>
+  configs.some((config) => Object.keys(config.variables ?? {}).some((key) => key.trim().length === 0))
+
 const isPlainRecord = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === 'object' && !Array.isArray(value)
 
