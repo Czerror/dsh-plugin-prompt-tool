@@ -50,6 +50,9 @@ test('说明浮窗只复用宿主视觉，并自行跟随指针或聚焦控件',
   assert.match(hintTooltip, /createPortal\(/)
   assert.match(hintTooltip, /event\.clientX/)
   assert.match(hintTooltip, /getBoundingClientRect\(\)/)
+  // 鼠标点击按钮也会聚焦：只在键盘聚焦时锁定说明，失焦后回到悬停延迟。
+  assert.match(hintTooltip, /shouldLockFocus\(\{ element: event\.currentTarget/)
+  assert.match(hintTooltip, /HOVER_DELAY_MS/)
   assert.match(hintCss, /position:\s*fixed/)
   assert.match(hintCss, /var\(--dsw-alias-tooltip-bg\)/)
   assert.match(read('src/client/ui/FormField.tsx'), /configFieldControlAnchor/)

@@ -147,6 +147,7 @@
        ├─ FormField.tsx
        ├─ HintTooltip.module.css
        ├─ HintTooltip.tsx
+       ├─ hint-tooltip-focus.ts
        ├─ hint-tooltip-position.ts
        ├─ ImportFileButton.tsx
        ├─ MenuSelect.tsx
@@ -397,7 +398,7 @@ promptConfigs 模块卡展开区按基础信息、注入规则、作用范围、
 - 内部键和值、bridge 载荷和 preset.yml 保持英文契约；下拉选项通过中文映射展示，未知旧值仍回显原值，不能因汉化丢失编辑能力。
 - 布尔参数使用正向短名称，例如「人设」「独占」「动态抑制」「互斥」；名称位于开关上方，与输入框和选择框保持相同字段节奏。
 - 字段说明统一经 `ui/HintTooltip.tsx`。组件只复用宿主 Tooltip 的视觉 token、内边距、圆角、字号与淡入效果，不调用宿主 Tooltip 的定位实现。
-- HintTooltip 通过 `body` portal 与 `position: fixed` 定位：鼠标悬停延迟 500ms 后在指针附近显示并随指针移动；键盘聚焦即时读取控件 `getBoundingClientRect()`，紧邻控件显示；视口边缘自动翻转或收敛。
+- HintTooltip 通过 `body` portal 与 `position: fixed` 定位：鼠标悬停延迟 500ms 后在指针附近显示并随指针移动；键盘聚焦即时读取控件 `getBoundingClientRect()`，紧邻控件显示（鼠标点击产生的聚焦不锁定说明，失焦后回到悬停延迟）；视口边缘自动翻转或收敛。
 - `HintTooltip.module.css` 使用宿主 `--dsw-alias-tooltip-bg` 和静态前景 token，并与宿主尺寸一致；背景混入工作台底色以降低透明度。业务组件不得再使用原生 `title` 或自制 `data-tip` 伪元素。
 - 字段错误、只读警告、保存状态和空状态不是帮助说明，继续就地显示，不藏入 Tooltip。
 - 系统提示段中，人设开启时三个开关各占四格；人设关闭时「人设、段名、独占、动态抑制」各占三格。720px 以上卡片保持同一行，620px 以下改为单列。

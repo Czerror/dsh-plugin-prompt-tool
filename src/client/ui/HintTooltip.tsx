@@ -1,13 +1,18 @@
-import { cloneElement, useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type FocusEventHandler, type MouseEventHandler, type MutableRefObject, type ReactElement, type ReactNode, type Ref } from 'react'
+import { cloneElement, useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type FocusEventHandler, type MouseEventHandler, type MutableRefObject, type PointerEventHandler, type ReactElement, type ReactNode, type Ref } from 'react'
 import { createPortal } from 'react-dom'
 import css from './HintTooltip.module.css'
 import { fitHintTooltipPosition, type HintTooltipPosition } from './hint-tooltip-position.ts'
+import { shouldLockFocus } from './hint-tooltip-focus.ts'
+
+/** 悬停延迟：与 pointer 模式保持一致，失焦回到悬停时复用同一节奏。 */
+const HOVER_DELAY_MS = 500
 
 interface HintAnchorProps {
   ref?: Ref<HTMLElement>
   onMouseEnter?: MouseEventHandler
   onMouseMove?: MouseEventHandler
   onMouseLeave?: MouseEventHandler
+  onPointerDown?: PointerEventHandler
   onFocus?: FocusEventHandler
   onBlur?: FocusEventHandler
   'aria-describedby'?: string
@@ -20,6 +25,7 @@ export function HintTooltip(props: { label: string; children: ReactElement<HintA
   const bubble = useRef<HTMLSpanElement | null>(null)
   const showTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const pointer = useRef({ x: 0, y: 0 })
+  const pointerDownAt = useRef(0)
   const triggers = useRef({ hover: false, focus: false })
   const [position, setPosition] = useState<HintTooltipPosition | null>(null)
   const childRef = (props.children as ReactElement<HintAnchorProps> & { ref?: Ref<HTMLElement> }).ref
@@ -40,7 +46,15 @@ export function HintTooltip(props: { label: string; children: ReactElement<HintA
   }, [])
   const hideAfterBlur = useCallback(() => {
     cancelShow()
-    setPosition(triggers.current.hover ? { kind: 'pointer', ...pointer.current } : null)
+    if (!triggers.current.hover) {
+      setPosition(null)
+      return
+    }
+    // 鼠标仍悬停时不要立刻弹出：点击后按钮失焦会瞬间闪一次；回到悬停延迟。
+    showTimer.current = setTimeout(() => {
+      showTimer.current = null
+      setPosition({ kind: 'pointer', ...pointer.current })
+    }, HOVER_DELAY_MS)
   }, [cancelShow])
 
   useEffect(() => cancelShow, [cancelShow])
@@ -78,7 +92,7 @@ export function HintTooltip(props: { label: string; children: ReactElement<HintA
       showTimer.current = setTimeout(() => {
         showTimer.current = null
         setPosition({ kind: 'pointer', ...pointer.current })
-      }, 500)
+      }, HOVER_DELAY_MS)
     },
     onMouseMove: (event) => {
       props.children.props.onMouseMove?.(event)
@@ -91,11 +105,18 @@ export function HintTooltip(props: { label: string; children: ReactElement<HintA
       cancelShow()
       if (!triggers.current.focus) setPosition(null)
     },
+    onPointerDown: (event) => {
+      props.children.props.onPointerDown?.(event)
+      pointerDownAt.current = Date.now()
+    },
     onFocus: (event) => {
       props.children.props.onFocus?.(event)
-      triggers.current.focus = true
+      // 鼠标点击也会触发 focus（checkbox 等控件点击后同样匹配 :focus-visible）：
+      // 只有键盘聚焦才锁定聚焦说明，否则点击按钮后它失焦或卸载会让浮窗在旁边闪一次。
+      const keyboard = shouldLockFocus({ element: event.currentTarget, pointerDownAt: pointerDownAt.current, now: Date.now() })
+      triggers.current.focus = keyboard
       cancelShow()
-      showAtFocus()
+      if (keyboard) showAtFocus()
     },
     onBlur: (event) => {
       props.children.props.onBlur?.(event)
