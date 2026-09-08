@@ -37,6 +37,7 @@ const { ToolSurfaceList, ToolSurfaceView } = await import('../../src/client/feat
 const { ToolsPreviewPage } = await import('../../src/client/features/tools/ToolsPreviewPage.tsx')
 const { CustomToolsCard } = await import('../../src/client/features/tools/CustomToolsCard.tsx')
 const { WorkspaceNavigation } = await import('../../src/client/app/workspace/WorkspaceNavigation.tsx')
+const { StatusBadge } = await import('../../src/client/ui/StatusBadge.tsx')
 loader.deregister()
 
 const render = (component, props) => renderToStaticMarkup(createElement(component, props))
@@ -167,7 +168,7 @@ test('工具卡双列网格、窄屏单列与键盘展开属性参照官方 inve
   assert.match(open, /<dl/)
 })
 
-test('技能卡与工具卡共用 StatusBadge：StatusDot + 官方 Tag', () => {
+test('状态胶囊统一复用 StatusBadge：StatusDot + 官方 Tag', () => {
   const dot = read('src/client/ui/StatusDot.tsx')
   assert.match(dot, /data-tone=\{props\.tone\}/)
   assert.match(read('src/client/ui/StatusDot.module.css'), /box-shadow: 0 0 0 3px color-mix\(in srgb, var\(--status-dot\) 15%, transparent\)/)
@@ -175,9 +176,18 @@ test('技能卡与工具卡共用 StatusBadge：StatusDot + 官方 Tag', () => {
   assert.match(badge, /import \{ StatusDot, type StatusDotTone \} from '\.\/StatusDot\.tsx'/)
   assert.match(badge, /<StatusDot tone=\{props\.tone\} \/>/)
   assert.match(badge, /<Tag tone=\{props\.tone\}>\{props\.label\}<\/Tag>/)
-  for (const path of ['src/client/features/tools/ToolSurfaceView.tsx', 'src/client/features/skills/SkillRow.tsx']) {
+  assert.match(render(StatusBadge, { tone: 'success', label: '使用中', className: 'slot' }), /class="badge slot"[\s\S]*?class="dot" data-tone="success"[\s\S]*?class="tag" data-tone="success">使用中</)
+  for (const path of [
+    'src/client/features/tools/ToolSurfaceView.tsx',
+    'src/client/features/skills/SkillRow.tsx',
+    'src/client/features/presets/PresetSwitcher.tsx',
+    'src/client/features/characters/CharactersPage.tsx',
+  ]) {
     assert.match(read(path), /from '\.\.\/\.\.\/ui\/StatusBadge\.tsx'/, `${path} 应复用共享状态徽章`)
   }
+  assert.match(read('src/client/features/presets/PresetSwitcher.tsx'), /<StatusBadge className=\{styles\.presetHeadBadge\} tone="success" label="使用中" \/>/)
+  assert.match(read('src/client/features/characters/CharactersPage.tsx'), /<StatusBadge className=\{ui\.presetHeadBadge\} tone="success" label="已导入当前预设" \/>/)
+  assert.doesNotMatch(read('src/client/ui/controls.module.css'), /presetInUse/)
   assert.match(read('src/client/app/workspace/WorkspaceFrame.tsx'), /<StatusDot tone=\{store\.loading \? 'neutral' : 'success'\} pulse=\{!store\.loading\} \/>/)
   assert.doesNotMatch(read('src/client/app/workspace/PromptWorkspace.module.css'), /\.statusDot|pt-pulse/)
   assert.doesNotMatch(read('src/client/features/tools/tools.module.css'), /toolVisibleDot/)

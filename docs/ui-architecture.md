@@ -360,7 +360,7 @@ ui/ 只接收 props/callback，当前真实共享 seam 包括：
 - MenuSelect：直接封装官方 Menu 的单选胶囊；支持连续选项的 `group` 分组标题。标准设置使用 36px，模块卡内使用 28px 紧凑形态，浮层统一 portal。
 - CollapsibleCard、EngineModuleCard：具体可复用的折叠/模块卡形态，不是万能 Card。
 - StatusDot：6px 实心核心 + 3px 同色光晕的状态圆点，与工作台顶部「N 配置 · M 启用」在线指示同款；`pulse` 仅用于该在线指示。
-- StatusBadge：只读状态徽章，StatusDot + 官方 Tag 胶囊；tone 同时驱动两者颜色，技能卡与工具预览共用。
+- StatusBadge：只读状态徽章，StatusDot + 官方 Tag 胶囊；tone 同时驱动两者颜色，技能卡、工具预览、预设「使用中」与角色卡「已导入当前预设」共用。
 - ImportFileButton：隐藏原生 file input 的导入入口。
 - TemplatePicker、DialogSurface：模板和预设操作的 portal 浮层。
 - anchored-popover.ts / anchored-popover-fit.ts：锚点位置和窄视口适配。

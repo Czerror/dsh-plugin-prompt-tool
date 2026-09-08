@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import clsx from 'clsx'
 import { Tag } from '@deepseek-ai/dsh-client-ui-primitives'
 import { StatusDot, type StatusDotTone } from './StatusDot.tsx'
 import css from './StatusBadge.module.css'
@@ -7,9 +8,14 @@ import css from './StatusBadge.module.css'
 export type StatusBadgeTone = StatusDotTone
 
 /** 只读状态徽章：共享 StatusDot + 官方 Tag，跨 feature 复用的唯一状态呈现形态。 */
-export function StatusBadge(props: { tone: StatusBadgeTone; label: ReactNode; ariaLabel?: string }): ReactNode {
+export function StatusBadge(props: {
+  tone: StatusBadgeTone
+  label: ReactNode
+  ariaLabel?: string
+  className?: string
+}): ReactNode {
   return (
-    <span className={css.badge} aria-label={props.ariaLabel}>
+    <span className={clsx(css.badge, props.className)} aria-label={props.ariaLabel}>
       <StatusDot tone={props.tone} />
       <Tag tone={props.tone}>{props.label}</Tag>
     </span>

@@ -9,6 +9,7 @@ import type { PromptToolStore } from '../../data/use-prompt-tool-store.ts'
 import { DialogSurface } from '../../ui/DialogSurface.tsx'
 import { HintTooltip } from '../../ui/HintTooltip.tsx'
 import { ImportFileButton } from '../../ui/ImportFileButton.tsx'
+import { StatusBadge } from '../../ui/StatusBadge.tsx'
 import sharedCss from '../../ui/controls.module.css'
 import featureCss from './presets.module.css'
 
@@ -198,7 +199,7 @@ export const PresetSwitcher = memo(function PresetSwitcher(props: { store: Promp
             onClick={() => store.setPresetTemplate(preset.id)}>
             <span className={styles.presetCardHead}>
               <strong className={styles.presetCardName}>{preset.name}</strong>
-              {active && <span className={styles.presetInUse}>使用中</span>}
+              {active && <StatusBadge className={styles.presetHeadBadge} tone="success" label="使用中" />}
               {blocked && <span className={styles.presetBlocked}>不可用</span>}
             </span>
             {preset.description !== undefined && preset.description.length > 0

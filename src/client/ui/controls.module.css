@@ -487,19 +487,8 @@
   padding: 6px 10px;
   border-top: 0.5px solid var(--dsw-alias-border-l2);
 }
-.presetInUse {
-  flex: none;
-  margin-left: auto;
-  border-radius: 999px;
-  corner-shape: round;
-  padding: 1px 8px;
-  background: var(--dsw-alias-state-business-primary);
-  color: var(--dsw-alias-label-primary-foreground);
-  font-size: 11px;
-  font-weight: 500;
-  line-height: 17px;
-  white-space: nowrap;
-}
+/* 卡片标题行右侧状态徽章槽位（胶囊外观由 StatusBadge 提供）。 */
+.presetHeadBadge { flex: none; margin-left: auto; }
 .presetCardFooter .pillButton {
   height: 28px;
   padding: 0 10px;

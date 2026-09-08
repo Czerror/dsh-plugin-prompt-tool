@@ -8,6 +8,7 @@ import { bridgeCall, bridgeUpload, shouldStreamJsonFile } from '../../data/bridg
 import { isPngSignature } from './character-card.ts'
 import { ImportFileButton } from '../../ui/ImportFileButton.tsx'
 import { HintTooltip } from '../../ui/HintTooltip.tsx'
+import { StatusBadge } from '../../ui/StatusBadge.tsx'
 import type { PromptToolStore } from '../../data/use-prompt-tool-store.ts'
 import sharedCss from '../../ui/controls.module.css'
 import featureCss from './characters.module.css'
@@ -171,7 +172,7 @@ export const CharactersPage = memo(function CharactersPage(props: { store: Promp
                 <div className={ui.presetCardBody}>
                   <span className={ui.presetCardHead}>
                     <strong className={ui.presetCardName}>{card.name}</strong>
-                    {card.imported && <span className={ui.presetInUse}>已导入当前预设</span>}
+                    {card.imported && <StatusBadge className={ui.presetHeadBadge} tone="success" label="已导入当前预设" />}
                   </span>
                   {card.description !== undefined && card.description.length > 0
                     && <p className={ui.presetCardDesc}>{card.description}</p>}
