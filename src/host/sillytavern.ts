@@ -329,7 +329,7 @@ export function convertStToPreset(card: unknown, baseName: string): PresetSpec {
   if (systemSectionCount > 0) {
     modules.unshift('persona')
     // 只覆盖转换必需的键：complete: false 允许 system-section 生效；
-    // text/includeRuntimeContext 不声明（用引擎模块库默认，不注入 anchored 内容）。
+    // prefix/includeRuntimeContext 不声明（沿用引擎模块库 persona 行的默认人设）。
     moduleConfigs.persona = { complete: false }
   }
   // tool-filter 始终装配，enable_web_search 按原 JSON 开关配置：

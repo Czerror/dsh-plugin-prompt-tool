@@ -37,7 +37,6 @@ test('client service and bundle injection edges cover the sidebar-right declarat
   assert.match(entry, /'sidebarRightTabs'/)
   for (const dependency of [
     '@deepseek-ai/dsh-client-ui-renderer',
-    '@deepseek-ai/dsh-client-ui-layout',
     '@deepseek-ai/dsh-client-ui-settings-plugins',
     '@deepseek-ai/dsh-client-ui-sidebar-right',
     '@deepseek-ai/dsh-client-ui-workspace',

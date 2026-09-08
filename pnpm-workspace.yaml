@@ -73,8 +73,6 @@ overrides:
   '@deepseek-ai/dsh-client-connection': link:../deepseek-harness/packages/client/connection
   '@deepseek-ai/dsh-client-ui-workspace': link:../deepseek-harness/packages/client/ui-workspace
   '@deepseek-ai/dsh-client-ui-renderer': link:../deepseek-harness/packages/client/ui-renderer
-  '@deepseek-ai/dsh-client-ui-layout': link:../deepseek-harness/packages/client/ui-layout
-  '@deepseek-ai/dsh-client-ui-sidebar': link:../deepseek-harness/packages/client/ui-sidebar
   '@deepseek-ai/dsh-client-ui-sidebar-right': link:../deepseek-harness/packages/client/ui-sidebar-right
   '@deepseek-ai/dsh-client-locale': link:../deepseek-harness/packages/client/locale
   '@deepseek-ai/dsh-client-ui-primitives': link:../deepseek-harness/packages/client/ui-primitives
@@ -125,5 +123,4 @@ overrides:
   '@deepseek-ai/dsh-user-approval': link:../deepseek-harness/packages/interaction/user-approval
   '@deepseek-ai/dsh-user-questions': link:../deepseek-harness/packages/interaction/user-questions
   '@deepseek-ai/dsh-workspace': link:../deepseek-harness/packages/workspace/workspace
-
 

@@ -42,7 +42,7 @@
 | 条件 | modules | moduleConfigs |
 |---|---|---|
 | 始终 | `prompt-config-engine` + `character-tools` + `session-var-tools` + `tool-config-engine` + `tool-filter` | `tool-filter` 缺省为空操作；其余提供 ST 配置与管理工具链 |
-| 含 system-section | 前插 `persona` | `persona.complete: false`（standard 语义，允许 system-section 生效；text 不声明，不注入 anchored 内容） |
+| 含 system-section | 前插 `persona` | `persona.complete: false`（standard 语义，允许 system-section 生效；prefix 不声明，沿用模块库 persona 行的默认人设） |
 | `enable_web_search: true` | 追加 `tool-web` | `tool-web.fetch: true` |
 | `enable_web_search: false` | 不追加模块（复用常驻 `tool-filter`） | `tool-filter.includeSubagents: false` + `deny: [web_search, web_fetch]` |
 | 含有效 `character_book` 条目 | 追加 `world-book-tools` | —（导入后可直接调用世界书管理工具） |

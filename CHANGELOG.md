@@ -9,6 +9,7 @@
 - `ToggleRow` 改用官方 `Switch`，删除自建 checkbox 与配套 CSS 开关样式。
 - 新增 `test/host-contract.test.mjs`：锁定客户端 slot 面、版本声明、非 pre-step 五层注入时序与已移除宿主 API（`conversation.details.tool`、`session.events`、`tool/code-dispatch`）。
 - P3 评估：`openPath` 已走宿主原生打开器；`ctx.workspaceFiles` 与 DSH_HOME 路径域不匹配；`client-resources` 资源 tab 暂不采用（详见 [docs/ui-architecture.md](docs/ui-architecture.md) §4.4）。
+- 清理右侧栏迁移残留：`dsh.client.inject` 与 peer/dev 依赖移除已无引用的 `@deepseek-ai/dsh-client-ui-layout`（原 `shell.overlay` 抽屉的宿主包），`pnpm-workspace.yaml` / `pnpm-lock.yaml` 同步删除 `ui-layout`、`ui-sidebar` 两条死 override；SillyTavern 转换的注释与文档同步 `dsh-persona` 新字段名（`prefix`）。
 
 ### 官方宿主契约对齐修复（2026-09-09）
 
