@@ -28,6 +28,7 @@ import { isAbsolute, join, resolve, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { parse as parseYaml } from './vendor/yaml/index.js'
 import { createRequire } from 'node:module'
+import { validateDefinition } from './tool-definition.mjs'
 
 const hostEntry = typeof process.argv[1] === 'string' && process.argv[1].length > 0
   ? process.argv[1]
@@ -39,12 +40,6 @@ const { ToolArgsError } = await import(pathToFileURL(hostRequire.resolve('@deeps
 export const name = 'tool-config-engine'
 
 export const inject = ['tools']
-
-/** 工具名规范（模型可见，schemas() 白名单要求）。 */
-const TOOL_NAME_RE = /^[a-z][a-z0-9_]*$/
-
-/** 受支持的 JSON Schema 节点类型（官方 enforced subset 的 scalar type 集合）。 */
-const JSON_SCHEMA_TYPES = new Set(['string', 'number', 'integer', 'boolean', 'null', 'array', 'object'])
 
 /** shell 执行器的 env 白名单（无凭据形态；与 run-code-env 同基调）。 */
 const ENV_ALLOWLIST = [
@@ -62,59 +57,6 @@ function interpolateArgs(text, args) {
     }
     return value === undefined || value === null ? _whole : String(value)
   })
-}
-
-/**
- * 递归校验 JSON Schema 节点（结构层 sanity；官方 enforce 仍由 registry 的
- * assertSupportedJsonSchema 兜底——register() 抛错时按单条 warn-and-skip）。
- * 覆盖官方子集：object properties/required/additionalProperties、array items、
- * scalar enum/const、oneOf。`type: 'json'` 是 dsh-tools DSL 形态，不是 JSON
- * Schema，出现即视为未物化（writePreset 未转换），fail loud 拒绝。
- */
-function validateJsonSchemaNode(node, path, seen) {
-  if (node === null || typeof node !== 'object' || Array.isArray(node)) {
-    throw new TypeError(`${path} must be an object`)
-  }
-  if (seen.has(node)) throw new TypeError(`${path} is circular`)
-  seen.add(node)
-  try {
-    const hasType = typeof node.type === 'string' && node.type.length > 0
-    if (hasType) {
-      if (!JSON_SCHEMA_TYPES.has(node.type)) {
-        throw new TypeError(`${path}.type must be one of ${[...JSON_SCHEMA_TYPES].join('/')} (dsh-tools DSL 形态 'json'/'oneOf' 未在物化时转换)`)
-      }
-      if (node.type === 'object') {
-        if (node.properties !== undefined) {
-          if (node.properties === null || typeof node.properties !== 'object' || Array.isArray(node.properties)) {
-            throw new TypeError(`${path}.properties must be an object of schemas`)
-          }
-          for (const [key, child] of Object.entries(node.properties)) {
-            validateJsonSchemaNode(child, `${path}.properties.${key}`, seen)
-          }
-        }
-        if (node.required !== undefined) {
-          if (!Array.isArray(node.required) || node.required.some((item) => typeof item !== 'string')) {
-            throw new TypeError(`${path}.required must be an array of property names`)
-          }
-        }
-        if (node.additionalProperties !== undefined && typeof node.additionalProperties !== 'boolean') {
-          throw new TypeError(`${path}.additionalProperties must be a boolean`)
-        }
-      }
-      if (node.type === 'array' && node.items !== undefined) {
-        validateJsonSchemaNode(node.items, `${path}.items`, seen)
-      }
-    } else if (Array.isArray(node.oneOf)) {
-      if (node.oneOf.length < 2) throw new TypeError(`${path}.oneOf needs at least two branches`)
-      for (const [index, branch] of node.oneOf.entries()) {
-        validateJsonSchemaNode(branch, `${path}.oneOf[${index}]`, seen)
-      }
-    } else {
-      throw new TypeError(`${path} must declare type or oneOf`)
-    }
-  } finally {
-    seen.delete(node)
-  }
 }
 
 /**
@@ -180,51 +122,6 @@ function validateJsonSchemaValue(schema, value) {
   return violations
 }
 
-/** 工具定义轻校验（fail loud → 调用方 warnOnce 跳过该条）。 */
-function validateDefinition(def) {
-  if (def === null || typeof def !== 'object' || Array.isArray(def)) throw new TypeError('tool definition must be an object')
-  if (typeof def.id !== 'string' || def.id.length === 0) throw new TypeError('tool definition needs a non-empty string id')
-  if (typeof def.name !== 'string' || !TOOL_NAME_RE.test(def.name)) {
-    throw new TypeError(`tool name ${JSON.stringify(def.name)} must match ${TOOL_NAME_RE}`)
-  }
-  if (typeof def.description !== 'string' || def.description.trim().length === 0) {
-    throw new TypeError(`tool ${def.id}: description is required`)
-  }
-  if (def.scope !== undefined) {
-    throw new TypeError(`tool ${def.id}: customTools.scope is not supported (subagent tool policy is configured via subagentToolPolicy, not per-tool scope)`)
-  }
-  if (def.parameters !== undefined) {
-    validateJsonSchemaNode(def.parameters, `tool ${def.id}: parameters`, new Set())
-  }
-  const output = def.output
-  if (output === null || typeof output !== 'object' || Array.isArray(output)) {
-    throw new TypeError(`tool ${def.id}: output is required`)
-  }
-  validateJsonSchemaNode(output.schema, `tool ${def.id}: output.schema`, new Set())
-  const exec = def.execute
-  if (exec === null || typeof exec !== 'object' || Array.isArray(exec)) {
-    throw new TypeError(`tool ${def.id}: execute is required`)
-  }
-  if (typeof exec.kind !== 'string' || !['shell', 'http', 'delegate', 'fs', 'ask-user'].includes(exec.kind)) {
-    throw new TypeError(`tool ${def.id}: execute.kind must be shell/http/delegate/fs/ask-user`)
-  }
-  if (exec.kind === 'shell' && (typeof exec.command !== 'string' || exec.command.trim().length === 0)) {
-    throw new TypeError(`tool ${def.id}: execute.command is required for shell`)
-  }
-  if (exec.kind === 'http' && (typeof exec.url !== 'string' || exec.url.trim().length === 0)) {
-    throw new TypeError(`tool ${def.id}: execute.url is required for http`)
-  }
-  if (exec.kind === 'delegate' && (typeof exec.tool !== 'string' || exec.tool.length === 0)) {
-    throw new TypeError(`tool ${def.id}: execute.tool is required for delegate`)
-  }
-  if (exec.kind === 'fs' && (typeof exec.action !== 'string'
-    || (!['read', 'write', 'append', 'list', 'delete'].includes(exec.action) && !exec.action.includes('{{args.')))) {
-    throw new TypeError(`tool ${def.id}: execute.action must be read/write/append/list/delete (or {{args.*}} template) for fs`)
-  }
-  if (def.enabled !== undefined && typeof def.enabled !== 'boolean') {
-    throw new TypeError(`tool ${def.id}: enabled must be a boolean`)
-  }
-}
 /** approval 门：requireApproval 含该 kind 时先请求批准；无 approval 服务拒绝。 */
 async function approvalGate(ctx, exec, kind, reason) {
   const approval = ctx.get('approval')

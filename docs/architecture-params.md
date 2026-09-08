@@ -3,19 +3,23 @@
 > 适用范围：dsh-plugin-prompt-tool 的引擎行为参数（按预设存储、随预设走）全链路。
 > 相关代码：`src/shared/engine-params.ts`、`src/shared/param-keys.ts`、`src/host/manifest.ts`、
 > `src/host/write-preset.ts`、`src/index.ts`（reloadPresetParams / applyParamOverrides / rebuildPreset）、
-> `src/runtime/settings-bridge.ts`（/param-overrides）、`src/client/prompt-tool-store.ts`（fields / persist）。
+> `src/runtime/settings-bridge.ts`（/param-overrides）、`src/client/data/use-prompt-tool-store.ts`（fields / persist）。
 
 ## 1. 分层与职责
 
 | 层 | 文件 | 职责 |
 |---|---|---|
-| 契约层 | `shared/engine-params.ts` | `EngineParams`（类型权威）+ `ENGINE_PARAM_KEYS`（运行时键唯一权威，与接口双向相等断言）+ `WRITER_PARAM_KEYS`（writePreset 透传键） |
+| 契约层 | `shared/engine-params.ts` | `EngineParams` + 完整覆盖其键的 `ENGINE_PARAM_DEFINITIONS`（类型规则、卡片归属、标签、默认草稿、枚举、组合行映射）；`ENGINE_PARAM_KEYS` 与 `WRITER_PARAM_KEYS` 从目录派生 |
 | 键集合 | `shared/param-keys.ts` | `PARAM_KEYS` = `ENGINE_PARAM_KEYS` 派生 + 锚定内容键 + `promptConfigs`；variables.yml 排除集 / mutate 拦截 / 读回遍历共用 |
 | 存储层 | `host/manifest.ts` | `loadPresetSpec`（顶层 model/subagentModel 段 → 扁平键，`MODEL_SEGMENT_MAP`）、`savePresetParams`（扁平键 → 段，同源映射；空值删键）、`buildModuleConfigsFromParams`（参数桥）、`renderComposition`（参数桥 > moduleConfigs > 行默认；组合模块从 `source/local` 与 `library` 唯一查找） |
 | 物化层 | `host/write-preset.ts` | `writePreset`：参数 + 内容资产 → 官方预设目录（agent.cordis.yml / prompt-configs / variables.yml）；`runtimeOf` 透传、`modelRequestConfigs` 模型 patch |
 | 装配层 | `index.ts` | `reloadPresetParams`（preset.yml → runtime）、`applyParamOverrides`（旧 overrides.yml 通道）、`rebuildPreset`（写入触发） |
 | 接线层 | `runtime/settings-bridge.ts` | `/param-overrides` GET（读回）/ POST（保存到激活预设 preset.yml） |
-| 消费端 | `client/prompt-tool-store.ts` | fields（UI 态）/ `persistParamOverrides`（条件发送：已有键或已改动键）/ `paramPatch`（读回） |
+| 消费端 | `client/data/param-overrides.ts`、`prompt-tool-fields.ts`、`dirty-state.ts` | 从共享定义派生 Fields、默认值、读回、序列化及全参数保存快照；store 保留保存队列和宿主适配 |
+
+`buildEngineModuleParams()` 与 `moduleParamFallbacks()` 使用同一字段映射正向装配、反向回显；仅投影白名单参数，不把任意 `moduleConfigs` 或内部路径发送到浏览器。复杂的子代理模型路由／授权关系仍由 `buildModuleConfigsFromParams()` 处理，不伪装成简单字段映射。
+
+`EngineParamFields` 按定义渲染现有能力配置卡，阶段使用结构化编辑；全部公开引擎配置键（受众、晋升信号、开关、文本等）由覆盖测试约束。模型路由、子代理策略、自定义工具保留专用编辑器；不将它们塞进 `promptConfigs`。
 
 ## 2. 参数流链路（保存 → 生效）
 
@@ -64,8 +68,10 @@ UI 侧 `persistParamOverrides` **条件发送**：
 
 - `load` 时记录 preset.yml 已存在的参数键；
 - 已有键即使被改成 `''` / `[]` / `false` 也发送，由保存层删除键；`stagePreUnlock: 0` 是合法档位，会照常写入；
-- 未改动且 preset.yml 未声明的 UI 默认值不发送，避免把 UI 默认固化成覆盖模板 `moduleConfigs` 的 params；
-- 用户把值改到与 UI 默认不同即发送。
+- 未改动且 preset.yml 未声明的值不发送；比较基线是最近读回／保存的有效草稿，避免把组合行默认值固化进 params；
+- 用户把值改到与已加载基线不同即发送，包括从行级 true 改为 false；
+- `guideEnabled` 可恢复继承：发送空字符串删除显式开关；`false` 仍是显式关闭，不当作空值；
+- YAML 数值模型参数转换成编辑器字符串，列表和阶段完整投影，不再因为草稿类型不同而漏回显。
 
 > 这里的「空值删键」只适用于引擎行为参数，不适用于内容占位变量。`variables` 的空字符串占位键是有意设计，必须继续写入 `variables.yml`，供内部世界书工具（`world_book_upsert`）动态登记与调整，不参与引擎参数校验。
 
@@ -82,11 +88,11 @@ UI 侧 `persistParamOverrides` **条件发送**：
 
 ## 5. 新增参数 checklist（引擎行为参数）
 
-1. `shared/engine-params.ts`：`EngineParams` 加字段 + `ENGINE_PARAM_KEYS` 加键（双向断言强制，漏改任一侧 typecheck 报错）。
+1. `shared/engine-params.ts`：`EngineParams` 加字段，并在 `ENGINE_PARAM_DEFINITIONS` 登记规则、默认草稿、卡片和组合映射；键集、默认值、普通字段渲染、读写和保存快照自动派生。
 2. 若需 writePreset 透传：`PresetWriterParams` Pick 加键 + `WRITER_PARAM_KEYS` 加键（断言强制）。
-3. `host/manifest.ts`：`buildModuleConfigsFromParams` 加装配（否则契约测试「无装配消费」报错）。
+3. 只有跨字段的模型／授权关系才修改 `host/manifest.ts`；普通模块参数不再额外手写双向映射。
 4. 存储：若走 model/subagentModel 顶层段 → `MODEL_SEGMENT_MAP` 加映射（展平/迁移共用）；否则 params 段。
-5. UI：`prompt-tool-bridge.ts` 的 Fields 必须覆盖全部 `EngineParamKey`（编译期断言），`prompt-tool-store.ts` 读回 / 快照 / persist 与组件编辑入口同步。
+5. UI：现有模块普通字段自动渲染；新增特殊交互才扩展专用编辑器，禁止增加第二份参数清单。
 6. 测试：`test/host/param-contract.test.mjs` 的 BRIDGE_SAMPLES 加样本值（若为参数桥消费键）。
 7. `docs/architecture-params.md` 如有语义变更同步；CHANGELOG 记条目。
 
@@ -100,7 +106,21 @@ UI 侧 `persistParamOverrides` **条件发送**：
 4. 只有全局草稿版本未变化、其他保存通道无待存草稿，且对应草稿与请求快照一致时，才在队列内执行静默 `load()`；参数草稿还须不存在未完成阶段；
 5. provider 自动预选只是显示兜底：preset 未声明 provider 且模型名为空时不写入 params，防止 UI convenience default 被固化成用户覆盖。
 
-`SwitchSnapshot` 的 dirty 比较为全字段结构化深比较（数组/record 均参与），新增参数只要进入 snapshot 即自动参与脏检测。客户端 `Fields` 与 `EngineParamKey` 有编译期覆盖断言，防止 host 新增参数后 client 静默丢弃；`bridgePost` 对桥载荷做 runtime shape guard，异常 JSON 不再被直接当作成功结果消费。
+参数、提示词资产、模板变量、自定义工具、子代理策略及能力变更请求携带可选 `expectedPresetId`。服务端只用该 ID 校验当前预设一致性，不据此构造目录；旧草稿或请求体读取期间切换返回 `409 preset-changed`，不写盘。客户端切换先等待参数队列，排队草稿和保存响应均检查预设身份。
+
+首轮输出封顶的未设置与显式 `0` 分开：未设置继承组合默认，`0` 在组合合并时删除封顶键，确保不会被 `moduleConfigs` 旧限额回填。晋升信号与门控的互斥关系按候选有效配置在写盘前校验。
+
+`SwitchSnapshot` 的参数键从目录派生，使用结构化克隆隔离数组和对象；全部参数自动参与脏检测。客户端 `Fields` 从 `EngineParams` 派生草稿类型；bridge transport 保留响应 shape guard。
+
+## 自定义模型工具
+
+`customTools` 仍是预设顶层资产，不进入扁平参数。`host/custom-tools.ts` 的 `compileCustomTool()` 使用官方 DSL 转换函数，随后调用与运行时共用的 `engine/tool-definition.mjs` 校验。`validateCustomTools()` 先检查 ID／工具名称冲突，再完整编译每条定义；失败在 bridge 返回 `400 custom-tools-invalid`，不写盘、不重建。
+
+合法保存保留原始 DSL，通过现有 `withPresetDoc`、自动补齐依赖模块、`rebuildPreset()` 和 `writePreset()` 物化；运行时仍由 `ctx.effect` 注册和清理。手写／导入预设中的单条坏定义仍告警跳过，避免破坏恢复路径。自定义工具支持 shell、HTTP、已有工具委托、文件操作和用户询问；本功能不管理外部 MCP 或插件安装。
+
+工具卡同时提供参数行编辑与高级 JSON，修改名称／描述／必填不丢弃嵌套 `properties/items/oneOf/enum`。文件写入／追加显式编辑内容；超时为 `1–2147483647` 毫秒，单工具定义上限 1 MiB，执行器字段在保存前按类型校验。
+
+`customToolRequireApproval` 映射到 `tool-config-engine.requireApproval`，仅允许现有五种执行器名称；内部 `configsDir` 仍由生成器管理，不向配置卡开放。
 
 ## 7. 合并优先级（组合行 config）
 

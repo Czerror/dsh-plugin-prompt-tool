@@ -12,7 +12,6 @@ const styles = { ...sharedCss, ...featureCss }
 /** 工具与深度模块卡（子代理作用域配置；参数经 params 桥扁平键，与主会话引擎模块卡同一来源）。 */
 export function DelegationToolsModuleCard(props: {
   store: PromptToolStore
-  renderToolSurface: (sessionId: string, label: string) => ReactNode
 }): ReactNode {
   const { store } = props
   const fields = store.fields
@@ -43,10 +42,10 @@ export function DelegationToolsModuleCard(props: {
       </div>
       <div className={styles.configSectionTitle}>子代理工具策略（subagentToolPolicy · 实例级授权）</div>
       <SubagentToolPolicyCard
+        key={fields.presetTemplate}
+        presetId={fields.presetTemplate}
         onNotice={(kind, message) => store.showNotice(kind, message)}
         seedAllow={fields.toolFilterAllow}
-        currentSessionId={store.api.currentSessionId()}
-        renderToolSurface={props.renderToolSurface}
       />
     </EngineModuleCard>
   )

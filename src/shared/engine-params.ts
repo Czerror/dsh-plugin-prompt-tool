@@ -7,8 +7,8 @@
  *
  * 分层约定：
  *  - 本文件 = 引擎参数「契约层」（类型）：参数桥/模板/UI 可配置的键与类型；
- *  - ENGINE_PARAM_KEYS = 引擎参数「运行时键唯一权威」（数组字面量）；EngineParams
- *    接口与它双向相等断言（漏改任一侧 typecheck 报错），PARAM_KEYS 从这里派生；
+ *  - ENGINE_PARAM_DEFINITIONS 统一键、校验、卡片、默认草稿与组合映射；
+ *    Record<keyof EngineParams, ...> 强制完整覆盖，ENGINE_PARAM_KEYS 与 PARAM_KEYS 从其派生；
  *  - 模型段 ↔ 扁平键的存储翻译唯二入口：loadPresetSpec 展平 / savePresetParams 迁移。
  *
  * 全部字段可选：缺省 = 模板 preset.yml params / 引擎默认，符合「一切皆可自定义」。
@@ -116,42 +116,25 @@ export interface EngineParams {
   cotDripEvery?: number
   /** 深思维持节拍每轮最大提醒条数（默认 1）。 */
   cotDripMaxPerTurn?: number
+  /** 各能力的受众/晋升信号独立配置，不建立跨模块全局顺序。 */
+  bootstrapSubagents?: boolean
+  bootstrapPromoteOn?: string
+  contextGateEnabled?: boolean
+  contextGateSubagents?: boolean
+  contextGatePromoteOn?: string
+  ptcSubagents?: boolean
+  ptcPromoteOn?: string
+  toolFilterEnabled?: boolean
+  anchorTurnSubagents?: boolean
+  deliberationSubagents?: boolean
+  deliberationGateText?: string
+  cotDripSubagents?: boolean
+  cotDripText?: string
+  /** 自定义模型工具在执行前需用户批准的执行器种类。 */
+  customToolRequireApproval?: string[] | string
 }
 
-/**
- * 引擎行为参数键唯一权威（数组字面量 = 运行时事实）。
- * 与 EngineParams 接口双向相等断言：新增参数必须同时改接口与列表，漏改任一侧
- * typecheck 失败（防历史事故：PARAM_KEYS 漏 25 键混入 variables.yml 污染注入）。
- */
-export const ENGINE_PARAM_KEYS = [
-  // 锚定/引导/注入。
-  'firstTurnAnchor', 'firstTurnText', 'firstTurnCustom',
-  'guideText', 'guideCustom', 'guideEnabled', 'injectPrompt',
-  // 模型路由与模型参数（agent-request patch）。
-  'modelProvider', 'modelName',
-  'subagentModelProvider', 'subagentModelName',
-  'modelReasoningEffort', 'modelTemperature', 'modelMaxTokens',
-  'subagentReasoningEffort', 'subagentTemperature', 'subagentMaxTokens',
-  // 委派与工具过滤。
-  'toolFilterAllow', 'toolFilterDeny', 'maxDepth',
-  'allowKinds', 'firstTurnWord', 'bootstrapMaxTokens', 'usePtcMode',
-  // 晋升门控（tool-bootstrap 参数桥）。
-  'promoteGate', 'promoteAfterFirstResponse', 'maxPromoteSteps',
-  'bootstrapTools', 'compactionTools', 'personaSectionsOnly', 'workspaceLine',
-  'phase1FirstCallInstruction',
-  // context-gate 注入门控。
-  'messageSources', 'deferredSources', 'deferredGraceSteps', 'instructionHint',
-  // 渐进披露（stages 模式）。
-  'stages', 'stagePreUnlock', 'stageAdvanceTool', 'stageAdvanceDescription', 'stageSectionTemplate',
-  // 工具行级参数。
-  'toolFilterSubagents', 'strReplaceEditorMaxOutputChars',
-  // 锚定/深思可选模块（anchor-turn / deliberation-gate / cot-drip 行）。
-  'anchorTurn', 'anchorTurnText',
-  'deliberationGate', 'deliberationMinChars', 'deliberationMaxGatesPerTurn',
-  'cotDrip', 'cotDripEvery', 'cotDripMaxPerTurn',
-] as const
-
-export type EngineParamKey = typeof ENGINE_PARAM_KEYS[number]
+export type EngineParamKey = keyof EngineParams
 
 /** 双向相等断言工具：两字符串集合完全一致 → true，否则 false。 */
 type AssertKeysEqual<A extends string, B extends string> =
@@ -159,43 +142,12 @@ type AssertKeysEqual<A extends string, B extends string> =
     ? Exclude<B, A> extends never ? true : false
     : false
 
-/** 编译期断言：EngineParams 接口键与 ENGINE_PARAM_KEYS 必须完全一致（多/漏任一键 → 编译错误）。 */
-const _assertEngineParamsKeys: AssertKeysEqual<keyof EngineParams, EngineParamKey> = true
-
 /**
  * writePreset.runtimeOf 实际透传进运行时 params 的引擎参数子集。
  * RuntimeOptions（装配态）与 WritePresetOptions（写入态）都从这里派生，
  * 防止「加参数只改一处、writePreset 忘透传」的静默漂移（如 stageAdvanceDescription 历史事故）。
  */
-export type PresetWriterParams = Pick<EngineParams,
-  | 'firstTurnAnchor' | 'firstTurnText' | 'firstTurnCustom'
-  | 'guideText' | 'guideCustom' | 'guideEnabled' | 'injectPrompt'
-  | 'modelProvider' | 'modelName' | 'subagentModelProvider' | 'subagentModelName'
-  | 'modelReasoningEffort' | 'modelTemperature' | 'modelMaxTokens'
-  | 'subagentReasoningEffort' | 'subagentTemperature' | 'subagentMaxTokens'
-  | 'toolFilterAllow' | 'toolFilterDeny' | 'maxDepth'
-  | 'allowKinds' | 'firstTurnWord' | 'bootstrapMaxTokens' | 'usePtcMode'
-  | 'anchorTurn' | 'anchorTurnText'
-  | 'deliberationGate' | 'deliberationMinChars' | 'deliberationMaxGatesPerTurn'
-  | 'cotDrip' | 'cotDripEvery' | 'cotDripMaxPerTurn'>
-
-/** writePreset.runtimeOf 实际透传键（与 PresetWriterParams 双向相等断言，防 Pick 漏键）。 */
-export const WRITER_PARAM_KEYS = [
-  'firstTurnAnchor', 'firstTurnText', 'firstTurnCustom',
-  'guideText', 'guideCustom', 'guideEnabled', 'injectPrompt',
-  'modelProvider', 'modelName', 'subagentModelProvider', 'subagentModelName',
-  'modelReasoningEffort', 'modelTemperature', 'modelMaxTokens',
-  'subagentReasoningEffort', 'subagentTemperature', 'subagentMaxTokens',
-  'toolFilterAllow', 'toolFilterDeny', 'maxDepth',
-  'allowKinds', 'firstTurnWord', 'bootstrapMaxTokens', 'usePtcMode',
-  'anchorTurn', 'anchorTurnText',
-  'deliberationGate', 'deliberationMinChars', 'deliberationMaxGatesPerTurn',
-  'cotDrip', 'cotDripEvery', 'cotDripMaxPerTurn',
-] as const
-
-/** 编译期断言：WRITER_PARAM_KEYS 与 PresetWriterParams 键必须一致（Pick 漏键 → 编译错误）。 */
-const _assertWriterParamsKeys: AssertKeysEqual<typeof WRITER_PARAM_KEYS[number], keyof PresetWriterParams> = true
-
+export type PresetWriterParams = Partial<EngineParams>
 
 /**
  * 数值型引擎参数保存前校验（与 write-preset.modelRequestConfigs 消费规则同源）。
@@ -219,8 +171,8 @@ export interface EngineParamValueError {
 type ParamRule =
   | { kind: 'boolean' }
   | { kind: 'number'; check: (value: number) => string | undefined }
-  | { kind: 'string' }
-  | { kind: 'string-list' }
+  | { kind: 'string'; options?: readonly string[] }
+  | { kind: 'string-list'; options?: readonly string[] }
   | { kind: 'max-depth' }
   | { kind: 'stages' }
 
@@ -230,72 +182,147 @@ const POSITIVE_INTEGER: (value: number) => string | undefined = (value) =>
   Number.isSafeInteger(value) && value > 0 ? undefined : '必须是正整数'
 const NON_NEGATIVE_INTEGER: (value: number) => string | undefined = (value) =>
   Number.isSafeInteger(value) && value >= 0 ? undefined : '必须是非负整数'
+const PROMOTE_ON = ['either', 'tool-call', 'assistant-message'] as const
 
-/** 全量引擎参数校验规则（键 = ENGINE_PARAM_KEYS 的 canonical 键；缺键 = 不校验该键）。 */
-const PARAM_RULES: Record<string, ParamRule> = {
-  // 锚定/引导/注入。
-  firstTurnAnchor: { kind: 'boolean' },
-  firstTurnText: { kind: 'string' },
-  firstTurnCustom: { kind: 'boolean' },
-  guideText: { kind: 'string' },
-  guideCustom: { kind: 'boolean' },
-  guideEnabled: { kind: 'boolean' },
-  injectPrompt: { kind: 'boolean' },
-  // 模型路由与模型参数（agent-request patch）。
-  modelProvider: { kind: 'string' },
-  modelName: { kind: 'string' },
-  subagentModelProvider: { kind: 'string' },
-  subagentModelName: { kind: 'string' },
-  modelReasoningEffort: { kind: 'string' },
-  modelTemperature: { kind: 'number', check: FINITE_NUMBER },
-  modelMaxTokens: { kind: 'number', check: POSITIVE_INTEGER },
-  subagentReasoningEffort: { kind: 'string' },
-  subagentTemperature: { kind: 'number', check: FINITE_NUMBER },
-  subagentMaxTokens: { kind: 'number', check: POSITIVE_INTEGER },
-  // 委派与工具过滤。
-  toolFilterAllow: { kind: 'string-list' },
-  toolFilterDeny: { kind: 'string-list' },
-  maxDepth: { kind: 'max-depth' },
-  allowKinds: { kind: 'string-list' },
-  firstTurnWord: { kind: 'string' },
-  bootstrapMaxTokens: { kind: 'number', check: POSITIVE_INTEGER },
-  usePtcMode: { kind: 'boolean' },
-  // 晋升门控（tool-bootstrap 参数桥）。
-  promoteGate: { kind: 'boolean' },
-  promoteAfterFirstResponse: { kind: 'boolean' },
-  maxPromoteSteps: { kind: 'number', check: POSITIVE_INTEGER },
-  bootstrapTools: { kind: 'string-list' },
-  compactionTools: { kind: 'string-list' },
-  personaSectionsOnly: { kind: 'boolean' },
-  workspaceLine: { kind: 'boolean' },
-  phase1FirstCallInstruction: { kind: 'string' },
-  // context-gate 注入门控。
-  messageSources: { kind: 'string-list' },
-  deferredSources: { kind: 'string-list' },
-  deferredGraceSteps: { kind: 'number', check: NON_NEGATIVE_INTEGER },
-  instructionHint: { kind: 'boolean' },
-  // 渐进披露（stages 模式）。
-  stages: { kind: 'stages' },
-  stagePreUnlock: { kind: 'number', check: NON_NEGATIVE_INTEGER },
-  stageAdvanceTool: { kind: 'string' },
-  stageAdvanceDescription: { kind: 'string' },
-  stageSectionTemplate: { kind: 'string' },
-  // 工具行级参数。
-  toolFilterSubagents: { kind: 'boolean' },
-  strReplaceEditorMaxOutputChars: { kind: 'number', check: POSITIVE_INTEGER },
-  // 锚定/深思可选模块。
-  anchorTurn: { kind: 'boolean' },
-  anchorTurnText: { kind: 'string' },
-  deliberationGate: { kind: 'boolean' },
-  deliberationMinChars: { kind: 'number', check: POSITIVE_INTEGER },
-  deliberationMaxGatesPerTurn: { kind: 'number', check: POSITIVE_INTEGER },
-  cotDrip: { kind: 'boolean' },
-  cotDripEvery: { kind: 'number', check: NON_NEGATIVE_INTEGER },
-  cotDripMaxPerTurn: { kind: 'number', check: POSITIVE_INTEGER },
+export type EngineParamDefinition = ParamRule & {
+  card: string
+  label: string
+  /** 未配置时的编辑草稿；不等于强制写入运行时默认值。 */
+  defaultValue: string | number | boolean | undefined | { name: string; tools: string }[]
+  module?: { row: string; key?: string; mode?: 'positive' | 'nonempty-list' | 'editor-default' | 'optional-cap' }
+}
+
+/** 类型、校验、卡片归属、草稿默认值和组合行映射的唯一运行时目录。 */
+export const ENGINE_PARAM_DEFINITIONS: Record<EngineParamKey, EngineParamDefinition> = {
+  firstTurnAnchor: { kind: 'boolean', defaultValue: false, card: 'prompt-defaults', label: '首轮锚定' },
+  firstTurnText: { kind: 'string', defaultValue: '', card: 'prompt-defaults', label: '首轮锚定文本' },
+  firstTurnCustom: { kind: 'boolean', defaultValue: false, card: 'prompt-defaults', label: '使用自定义锚定文本' },
+  guideText: { kind: 'string', defaultValue: '', card: 'prompt-defaults', label: '每轮引导文本' },
+  guideCustom: { kind: 'boolean', defaultValue: false, card: 'prompt-defaults', label: '使用自定义引导文本' },
+  guideEnabled: { kind: 'boolean', defaultValue: undefined, card: 'prompt-defaults', label: '每轮引导（未设置时跟随锚定）' },
+  injectPrompt: { kind: 'boolean', defaultValue: true, card: 'prompt-defaults', label: '锚定确认后注入内容' },
+  modelProvider: { kind: 'string', defaultValue: '', card: 'main-model', label: '模型服务商' },
+  modelName: { kind: 'string', defaultValue: '', card: 'main-model', label: '模型' },
+  subagentModelProvider: { kind: 'string', defaultValue: '', card: 'subagent-model', label: '子代理模型服务商' },
+  subagentModelName: { kind: 'string', defaultValue: '', card: 'subagent-model', label: '子代理模型' },
+  modelReasoningEffort: { kind: 'string', defaultValue: '', card: 'main-model', label: '思维程度' },
+  modelTemperature: { kind: 'number', check: FINITE_NUMBER, defaultValue: '', card: 'main-model', label: '采样温度' },
+  modelMaxTokens: { kind: 'number', check: POSITIVE_INTEGER, defaultValue: '', card: 'main-model', label: '输出上限' },
+  subagentReasoningEffort: { kind: 'string', defaultValue: '', card: 'subagent-model', label: '子代理思维程度' },
+  subagentTemperature: { kind: 'number', check: FINITE_NUMBER, defaultValue: '', card: 'subagent-model', label: '子代理采样温度' },
+  subagentMaxTokens: { kind: 'number', check: POSITIVE_INTEGER, defaultValue: '', card: 'subagent-model', label: '子代理输出上限' },
+  toolFilterAllow: { kind: 'string-list', defaultValue: '', card: 'tool-filter', label: '工具白名单', module: { row: 'tool-filter', key: 'allow', mode: 'nonempty-list' } },
+  toolFilterDeny: { kind: 'string-list', defaultValue: '', card: 'tool-filter', label: '工具黑名单', module: { row: 'tool-filter', key: 'deny', mode: 'nonempty-list' } },
+  maxDepth: { kind: 'max-depth', defaultValue: '', card: 'subagent-tools', label: '递归深度' },
+  allowKinds: { kind: 'string-list', defaultValue: '', card: 'context-gate', label: '注入 kind 白名单', module: { row: 'context-gate' } },
+  firstTurnWord: { kind: 'string', defaultValue: '', card: 'prompt-defaults', label: '锚定确认词' },
+  bootstrapMaxTokens: { kind: 'number', check: NON_NEGATIVE_INTEGER, defaultValue: 0, card: 'tool-bootstrap', label: '首轮输出封顶（0 不封顶）', module: { row: 'tool-bootstrap', mode: 'optional-cap' } },
+  usePtcMode: { kind: 'boolean', defaultValue: false, card: 'code-presentation', label: 'PTC 呈现', module: { row: 'code-presentation' } },
+  promoteGate: { kind: 'boolean', defaultValue: false, card: 'tool-bootstrap', label: '门控晋升', module: { row: 'tool-bootstrap' } },
+  promoteAfterFirstResponse: { kind: 'boolean', defaultValue: false, card: 'tool-bootstrap', label: '首响应即晋升', module: { row: 'tool-bootstrap' } },
+  maxPromoteSteps: { kind: 'number', check: NON_NEGATIVE_INTEGER, defaultValue: 0, card: 'tool-bootstrap', label: '门控回退步数（0 默认）', module: { row: 'tool-bootstrap' } },
+  bootstrapTools: { kind: 'string-list', defaultValue: '', card: 'tool-bootstrap', label: '首轮窄化集', module: { row: 'tool-bootstrap' } },
+  compactionTools: { kind: 'string-list', defaultValue: '', card: 'tool-bootstrap', label: '压缩后恢复集', module: { row: 'tool-bootstrap' } },
+  personaSectionsOnly: { kind: 'boolean', defaultValue: false, card: 'tool-bootstrap', label: '首轮只留人设', module: { row: 'tool-bootstrap' } },
+  workspaceLine: { kind: 'boolean', defaultValue: false, card: 'tool-bootstrap', label: '工作目录行', module: { row: 'tool-bootstrap' } },
+  phase1FirstCallInstruction: { kind: 'string', defaultValue: '', card: 'tool-bootstrap', label: '首次调用指令', module: { row: 'tool-bootstrap' } },
+  messageSources: { kind: 'string-list', defaultValue: '', card: 'context-gate', label: '消息来源白名单', module: { row: 'context-gate' } },
+  deferredSources: { kind: 'string-list', defaultValue: '', card: 'context-gate', label: '延迟注入来源', module: { row: 'context-gate' } },
+  deferredGraceSteps: { kind: 'number', check: NON_NEGATIVE_INTEGER, defaultValue: 0, card: 'context-gate', label: '延迟注入宽限步数', module: { row: 'context-gate' } },
+  instructionHint: { kind: 'boolean', defaultValue: false, card: 'context-gate', label: '指令路径提示', module: { row: 'context-gate' } },
+  stages: { kind: 'stages', defaultValue: [], card: 'tool-bootstrap', label: '渐进披露阶段', module: { row: 'tool-bootstrap' } },
+  stagePreUnlock: { kind: 'number', check: NON_NEGATIVE_INTEGER, defaultValue: 1, card: 'tool-bootstrap', label: '预放档数', module: { row: 'tool-bootstrap' } },
+  stageAdvanceTool: { kind: 'string', defaultValue: '', card: 'tool-bootstrap', label: '阶段推进工具名', module: { row: 'tool-bootstrap' } },
+  stageAdvanceDescription: { kind: 'string', defaultValue: '', card: 'tool-bootstrap', label: '阶段推进工具描述', module: { row: 'tool-bootstrap' } },
+  stageSectionTemplate: { kind: 'string', defaultValue: '', card: 'tool-bootstrap', label: '阶段状态模板', module: { row: 'tool-bootstrap' } },
+  toolFilterSubagents: { kind: 'boolean', defaultValue: false, card: 'tool-filter', label: '子代理同过滤', module: { row: 'tool-filter', key: 'includeSubagents' } },
+  strReplaceEditorMaxOutputChars: { kind: 'number', check: POSITIVE_INTEGER, defaultValue: 16000, card: 'str-replace-editor', label: '编辑器输出上限', module: { row: 'str-replace-editor', key: 'maxOutputChars', mode: 'editor-default' } },
+  anchorTurn: { kind: 'boolean', defaultValue: false, card: 'anchor-turn', label: '前置锚定轮', module: { row: 'anchor-turn', key: 'enabled' } },
+  anchorTurnText: { kind: 'string', defaultValue: '', card: 'anchor-turn', label: '锚定轮文本', module: { row: 'anchor-turn', key: 'text' } },
+  deliberationGate: { kind: 'boolean', defaultValue: false, card: 'deliberation-gate', label: '轨迹深度门', module: { row: 'deliberation-gate', key: 'enabled' } },
+  deliberationMinChars: { kind: 'number', check: NON_NEGATIVE_INTEGER, defaultValue: 0, card: 'deliberation-gate', label: '深思下限（0 默认）', module: { row: 'deliberation-gate', key: 'minChars', mode: 'positive' } },
+  deliberationMaxGatesPerTurn: { kind: 'number', check: NON_NEGATIVE_INTEGER, defaultValue: 0, card: 'deliberation-gate', label: '每轮最大门控（0 默认）', module: { row: 'deliberation-gate', key: 'maxGatesPerTurn', mode: 'positive' } },
+  cotDrip: { kind: 'boolean', defaultValue: false, card: 'cot-drip', label: '深思维持节拍', module: { row: 'cot-drip', key: 'enabled' } },
+  cotDripEvery: { kind: 'number', check: NON_NEGATIVE_INTEGER, defaultValue: 0, card: 'cot-drip', label: '节拍间隔（0 默认；禁用请关闭节拍）', module: { row: 'cot-drip', key: 'every', mode: 'positive' } },
+  cotDripMaxPerTurn: { kind: 'number', check: NON_NEGATIVE_INTEGER, defaultValue: 0, card: 'cot-drip', label: '每轮最大提醒（0 默认）', module: { row: 'cot-drip', key: 'maxPerTurn', mode: 'positive' } },
+  bootstrapSubagents: { kind: 'boolean', defaultValue: false, card: 'tool-bootstrap', label: '子代理参与工具晋升', module: { row: 'tool-bootstrap', key: 'includeSubagents' } },
+  bootstrapPromoteOn: { kind: 'string', options: PROMOTE_ON, defaultValue: '', card: 'tool-bootstrap', label: '工具晋升信号', module: { row: 'tool-bootstrap', key: 'promoteOn' } },
+  contextGateEnabled: { kind: 'boolean', defaultValue: true, card: 'context-gate', label: '启用上下文门控', module: { row: 'context-gate', key: 'enabled' } },
+  contextGateSubagents: { kind: 'boolean', defaultValue: false, card: 'context-gate', label: '子代理参与上下文门控', module: { row: 'context-gate', key: 'includeSubagents' } },
+  contextGatePromoteOn: { kind: 'string', options: PROMOTE_ON, defaultValue: '', card: 'context-gate', label: '上下文晋升信号', module: { row: 'context-gate', key: 'promoteOn' } },
+  ptcSubagents: { kind: 'boolean', defaultValue: false, card: 'code-presentation', label: '子代理参与 PTC 晋升', module: { row: 'code-presentation', key: 'includeSubagents' } },
+  ptcPromoteOn: { kind: 'string', options: PROMOTE_ON, defaultValue: '', card: 'code-presentation', label: 'PTC 晋升信号', module: { row: 'code-presentation', key: 'promoteOn' } },
+  toolFilterEnabled: { kind: 'boolean', defaultValue: true, card: 'tool-filter', label: '启用工具过滤', module: { row: 'tool-filter', key: 'enabled' } },
+  anchorTurnSubagents: { kind: 'boolean', defaultValue: false, card: 'anchor-turn', label: '子代理参与锚定轮', module: { row: 'anchor-turn', key: 'includeSubagents' } },
+  deliberationSubagents: { kind: 'boolean', defaultValue: false, card: 'deliberation-gate', label: '子代理参与深思门控', module: { row: 'deliberation-gate', key: 'includeSubagents' } },
+  deliberationGateText: { kind: 'string', defaultValue: '', card: 'deliberation-gate', label: '深思门控提示文本', module: { row: 'deliberation-gate', key: 'gateText' } },
+  cotDripSubagents: { kind: 'boolean', defaultValue: false, card: 'cot-drip', label: '子代理参与深思节拍', module: { row: 'cot-drip', key: 'includeSubagents' } },
+  cotDripText: { kind: 'string', defaultValue: '', card: 'cot-drip', label: '深思节拍提示文本', module: { row: 'cot-drip', key: 'text' } },
+  customToolRequireApproval: { kind: 'string-list', options: ['shell', 'http', 'delegate', 'fs', 'ask-user'], defaultValue: '', card: 'tool-config-engine', label: '执行前需用户批准的工具种类', module: { row: 'tool-config-engine', key: 'requireApproval' } },
+}
+
+export const ENGINE_PARAM_KEYS = Object.keys(ENGINE_PARAM_DEFINITIONS) as EngineParamKey[]
+
+/** writePreset.runtimeOf 实际透传键：全部引擎参数可直接进入兼容 writer。 */
+export const WRITER_PARAM_KEYS = ENGINE_PARAM_KEYS
+
+/** 编译期断言：WRITER_PARAM_KEYS 与 PresetWriterParams 键必须一致。 */
+const _assertWriterParamsKeys: AssertKeysEqual<typeof WRITER_PARAM_KEYS[number], keyof PresetWriterParams> = true
+
+/** 已有逗号分隔/flow-array 语义，client 与生成器共享。 */
+export function engineParamList(value: unknown): string[] {
+  if (Array.isArray(value)) return value.map(String).filter((item) => item.length > 0)
+  if (typeof value !== 'string') return []
+  const text = value.trim()
+  const inner = text.startsWith('[') && text.endsWith(']') ? text.slice(1, -1) : text
+  return inner.split(',').map((item) => item.trim()).filter(Boolean)
+}
+
+/** 仅生成声明字段的行配置；复杂的子代理授权仍由 host 所有者处理。 */
+export function buildEngineModuleParams(params: Record<string, unknown>): Record<string, Record<string, unknown>> {
+  const result: Record<string, Record<string, unknown>> = {}
+  for (const key of ENGINE_PARAM_KEYS) {
+    const definition = ENGINE_PARAM_DEFINITIONS[key]
+    const binding = definition.module
+    if (binding === undefined) continue
+    let value = params[key]
+    if (binding.mode === 'editor-default') {
+      if (typeof value === 'string' && value.trim().length > 0) value = Number(value)
+      value = typeof value === 'number' && Number.isSafeInteger(value) && value > 0 ? value : definition.defaultValue
+    }
+    if (value === undefined || value === null) continue
+    if (definition.kind === 'boolean') value = value === true
+    else if (definition.kind === 'string-list') value = engineParamList(value)
+    else if (definition.kind === 'string' && (typeof value !== 'string' || value.length === 0)) continue
+    else if (definition.kind === 'number') {
+      if (typeof value === 'string' && value.trim().length > 0) value = Number(value)
+      if (typeof value !== 'number' || definition.check(value) !== undefined) continue
+    }
+    if (binding.mode === 'positive' && typeof value === 'number' && value <= 0) continue
+    if (binding.mode === 'nonempty-list' && Array.isArray(value) && value.length === 0) continue
+    // undefined 是内部删键指令：显式 0 必须清除组合自带封顶，而不是回填旧值。
+    if (binding.mode === 'optional-cap' && value === 0) value = undefined
+    const config = result[binding.row] ??= {}
+    config[binding.key ?? key] = value
+  }
+  return result
+}
+
+/** 仅投影已登记字段，绝不把任意行配置/路径/凭据泄露给浏览器。 */
+export function moduleParamFallbacks(configs: Record<string, Record<string, unknown>>): Record<string, unknown> {
+  const result: Record<string, unknown> = {}
+  for (const key of ENGINE_PARAM_KEYS) {
+    const binding = ENGINE_PARAM_DEFINITIONS[key].module
+    if (binding === undefined) continue
+    const value = configs[binding.row]?.[binding.key ?? key]
+    if (value !== undefined) result[key] = value
+  }
+  return result
 }
 
 /** 校验单个键值；返回错误消息（undefined = 通过）。 */
 function validateParamValue(key: string, rule: ParamRule, value: unknown): string | undefined {
+  if (value === '') return undefined
   switch (rule.kind) {
     case 'boolean':
       return typeof value === 'boolean' ? undefined : `${key}: 必须是布尔值`
@@ -318,10 +345,14 @@ function validateParamValue(key: string, rule: ParamRule, value: unknown): strin
       return `${key}: 必须是数字或数字字符串（留空 = 不设置）`
     }
     case 'string':
-      return typeof value === 'string' ? undefined : `${key}: 必须是字符串`
+      if (typeof value !== 'string') return `${key}: 必须是字符串`
+      return value === '' || rule.options === undefined || rule.options.includes(value)
+        ? undefined : `${key}: 必须为 ${rule.options.join('/')} 或留空`
     case 'string-list':
-      if (typeof value === 'string') return undefined
-      if (Array.isArray(value) && value.every((item) => typeof item === 'string')) return undefined
+      if (typeof value === 'string' || (Array.isArray(value) && value.every((item) => typeof item === 'string'))) {
+        return rule.options !== undefined && engineParamList(value).some((item) => !rule.options!.includes(item))
+          ? `${key}: 只允许 ${rule.options.join('/')}` : undefined
+      }
       return `${key}: 必须是字符串或字符串数组`
     case 'max-depth':
       if (value === '' || value === 'provider-managed') return undefined
@@ -363,7 +394,7 @@ export function validateEngineParamValues(overrides: Record<string, unknown>): E
   for (const [key, value] of Object.entries(overrides)) {
     // undefined/null 由保存层跳过。
     if (value === undefined || value === null) continue
-    const rule = PARAM_RULES[key]
+    const rule = Object.hasOwn(ENGINE_PARAM_DEFINITIONS, key) ? ENGINE_PARAM_DEFINITIONS[key as EngineParamKey] : undefined
     if (rule === undefined) {
       errors.push({ key, message: `${key}: 未知参数键（旧键已移除运行时兼容，请用迁移脚本清理）` })
       continue

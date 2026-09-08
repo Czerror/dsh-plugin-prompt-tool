@@ -23,8 +23,7 @@ export function SubagentToolPolicyCard(props: {
   onNotice: Notice
   /** 现有 toolFilterAllow（首次启用时复制为 default profile 的 allow）。 */
   seedAllow?: string
-  currentSessionId?: string
-  renderToolSurface: (sessionId: string, label: string) => ReactNode
+  presetId?: string
 }): ReactNode {
   const { onNotice } = props
   const [policy, setPolicy] = useState<PolicyDraft | null>(null)
@@ -33,11 +32,10 @@ export function SubagentToolPolicyCard(props: {
   const [saving, setSaving] = useState(false)
   const [preview, setPreview] = useState<unknown>(null)
   const [previewInput, setPreviewInput] = useState<Record<string, string | string[]>>({})
-  const [childSessionId, setChildSessionId] = useState('')
   const [characters, setCharacters] = useState<CharacterItem[]>([])
 
   const load = useCallback(() => {
-    void bridgeCall('subagentToolPolicy', {}).then((result) => {
+    void bridgeCall('subagentToolPolicy', { expectedPresetId: props.presetId }).then((result) => {
       if (result.ok && result.value.policy !== null) {
         setPolicy(result.value.policy as PolicyDraft)
       } else {
@@ -45,7 +43,7 @@ export function SubagentToolPolicyCard(props: {
       }
       setLoaded(true)
     })
-  }, [])
+  }, [props.presetId])
 
   useEffect(() => { load() }, [load])
   useEffect(() => {
@@ -66,7 +64,7 @@ export function SubagentToolPolicyCard(props: {
   }
   const save = (): void => {
     setSaving(true)
-    void bridgeCall('subagentToolPolicy', { policy }).then((result) => {
+    void bridgeCall('subagentToolPolicy', { policy, expectedPresetId: props.presetId }).then((result) => {
       setSaving(false)
       if (result.ok) {
         setDirty(false)
@@ -341,17 +339,6 @@ export function SubagentToolPolicyCard(props: {
             {preview !== null && (
               <pre className={styles.configFieldHint} style={{ whiteSpace: 'pre-wrap' }}>{JSON.stringify(preview, null, 2)}</pre>
             )}
-          </div>
-          {/* 已运行本地子代理实际工具面（只读） */}
-          <div className={styles.policyGroup}>
-            {props.renderToolSurface(props.currentSessionId ?? '', '主会话')}
-            <span className={styles.settingCopy}>
-              <strong>已运行子代理工具面</strong>
-              <small>输入本地子代理 session id 查询其创建时冻结的实际可见工具。</small>
-            </span>
-            <input className={styles.configInput} aria-label="子代理 session id" placeholder="session-…" value={childSessionId}
-              onChange={(event) => setChildSessionId(event.target.value.trim())} />
-            {props.renderToolSurface(childSessionId, '子代理')}
           </div>
         </>
       )}

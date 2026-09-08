@@ -1,11 +1,11 @@
-import { test } from 'node:test'
+import { after, test } from 'node:test'
 import assert from 'node:assert/strict'
-import { existsSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createServer } from 'node:http'
 import { Context } from '@deepseek-ai/cordis'
-import { ToolRuntime, defineTool } from '@deepseek-ai/dsh-tools'
+import { ToolRuntime, defineTool, parameterSchemaSpecToJsonSchema, valueSchemaSpecToJsonSchema } from '@deepseek-ai/dsh-tools'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 
 const { apply: applyToolConfigEngine } = await import('../../engine/tool-config-engine.mjs')
@@ -48,6 +48,7 @@ function runOf(cwd = process.cwd()) {
 
 function writeToolDir(files) {
   const dir = mkdtempSync(join(tmpdir(), 'pt-ctools-'))
+  after(() => rmSync(dir, { recursive: true, force: true }))
   for (const [name, content] of Object.entries(files)) {
     writeFileSync(join(dir, name), content, 'utf8')
   }
@@ -61,6 +62,36 @@ async function makeRealCtx() {
   await ctx.plugin(ToolRuntime)
   return ctx
 }
+
+test('tool-config-engine：官方 json / oneOf 物化产物可注册和调用，disposer 撤销注册', async () => {
+  const dir = mkdtempSync(join(process.cwd(), 'pt-ctools-json-'))
+  const ctx = await makeRealCtx()
+  try {
+    writeFileSync(join(dir, 'json.yml'), JSON.stringify({
+      id: 'json_tool', name: 'json_tool', description: '任意 JSON 参数与输出',
+      parameters: parameterSchemaSpecToJsonSchema({
+        payload: { type: 'json', required: true, description: '任意 JSON' },
+        choice: { oneOf: [{ type: 'string' }, { type: 'number' }], required: true },
+      }),
+      output: { schema: valueSchemaSpecToJsonSchema({ type: 'json' }) },
+      execute: { kind: 'ask-user' },
+    }), 'utf8')
+    applyToolConfigEngine(ctx, { configsDir: dir })
+    assert.deepEqual(ctx.tools.schemas().map((tool) => tool.name), ['json_tool'])
+    const result = await ctx.tools.execute({
+      callId: 'json-1', name: 'json_tool', arguments: { payload: { nested: [1, null, true] }, choice: 'x' },
+      signal: new AbortController().signal,
+    })
+    assert.equal(result.isError, false)
+    assert.match(result.value.error, /no approval channel/)
+    const tools = ctx.tools
+    await ctx.fiber.dispose()
+    assert.equal(tools.get('json_tool'), undefined)
+  } finally {
+    await ctx.fiber.dispose()
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
 
 test('tool-config-engine：加载定义并注册（shell/http/fs/ask-user 四类，JSON Schema 形态）', () => {
   const dir = writeToolDir({
@@ -205,6 +236,23 @@ execute:
   server.close()
 })
 
+test('tool-config-engine：fs content 插值实际写入和追加，原始参数类型保持可用', async () => {
+  const workdir = mkdtempSync(join(tmpdir(), 'pt-fs-content-'))
+  after(() => rmSync(workdir, { recursive: true, force: true }))
+  const dir = writeToolDir(Object.fromEntries(['write', 'append'].map((action) => [`${action}.json`, JSON.stringify({
+    id: action, name: `my_${action}`, description: '写入测试',
+    parameters: parameterSchemaSpecToJsonSchema({ text: { type: 'string', required: true } }),
+    output: { schema: valueSchemaSpecToJsonSchema({ type: 'object', additionalProperties: true }) },
+    execute: { kind: 'fs', action, path: 'note.txt', content: '{{args.text}}' },
+  })])))
+  const { ctx, warns } = makeCtx()
+  applyToolConfigEngine(ctx, { configsDir: dir })
+  assert.deepEqual(warns, [])
+  assert.equal((await ctx.tools.get('my_write').execute({ text: '第一行\n' }, runOf(workdir))).ok, true)
+  assert.equal((await ctx.tools.get('my_append').execute({ text: '追加内容' }, runOf(workdir))).ok, true)
+  assert.equal(readFileSync(join(workdir, 'note.txt'), 'utf8'), '第一行\n追加内容')
+})
+
 test('tool-config-engine：fs 执行器（cwd 内路径限定）', async () => {
   const dir = writeToolDir({
     '01-fs.yml': `id: fs
@@ -226,6 +274,7 @@ execute:
   const { ctx } = makeCtx()
   applyToolConfigEngine(ctx, { configsDir: dir })
   const workdir = mkdtempSync(join(tmpdir(), 'pt-fs-'))
+  after(() => rmSync(workdir, { recursive: true, force: true }))
   const target = join(workdir, 'a.txt')
   writeFileSync(target, 'hello fs', 'utf8')
   const ok = await ctx.tools.get('my_fs').execute({ path: 'a.txt' }, runOf(workdir))
@@ -460,6 +509,7 @@ execute:
 test('Wave1：真实 registry —— 非法参数在执行前失败且实现不运行', async () => {
   const ctx = await makeRealCtx()
   const workdir = mkdtempSync(join(tmpdir(), 'pt-badargs-'))
+  after(() => rmSync(workdir, { recursive: true, force: true }))
   const marker = join(workdir, 'ran.txt')
   const dir = writeToolDir({
     '01-write.yml': `id: write

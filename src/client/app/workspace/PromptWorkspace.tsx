@@ -5,6 +5,7 @@ import type { PromptToolWorkspaceController } from '../workbench/workspace-contr
 import { CharactersPage } from '../../features/characters/CharactersPage.tsx'
 import { PresetsPage } from '../../features/presets/PresetsPage.tsx'
 import { SkillsPage } from '../../features/skills/SkillsPage.tsx'
+import { ToolsPreviewPage } from '../../features/tools/ToolsPreviewPage.tsx'
 import { MainSessionPage } from './pages/MainSessionPage.tsx'
 import { SubagentPage } from './pages/SubagentPage.tsx'
 import { WorkspaceFrame } from './WorkspaceFrame.tsx'
@@ -38,17 +39,19 @@ export function PromptWorkspace(props: PromptWorkspaceProps): ReactNode {
         ? '预设配置'
         : page === 'characters'
           ? `${(store.meta.presets ?? []).filter((preset) => preset.meta?.source === 'sillytavern').length} 角色卡`
-          : '子代理'
+          : page === 'tools' ? '只读' : '子代理'
 
   const content = page === 'features'
     ? <MainSessionPage store={store} />
     : page === 'subagent'
       ? <SubagentPage store={store} />
-      : page === 'skills'
-        ? <SkillsPage store={store} api={props.api} />
-        : page === 'presets'
-          ? <PresetsPage store={store} />
-          : <CharactersPage store={store} />
+      : page === 'tools'
+        ? <ToolsPreviewPage api={props.api} presetId={store.fields.presetTemplate} />
+        : page === 'skills'
+          ? <SkillsPage store={store} api={props.api} />
+          : page === 'presets'
+            ? <PresetsPage store={store} />
+            : <CharactersPage store={store} />
 
   return (
     <WorkspaceFrame

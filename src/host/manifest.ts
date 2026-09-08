@@ -17,6 +17,7 @@ import { fileURLToPath } from 'node:url'
 import { Pair, Scalar, parse as parseYaml, parseDocument, YAMLMap, YAMLSeq } from 'yaml'
 import { DEFAULT_PRESET_DIR, DSH_HOME } from './paths.ts'
 import { engineCapability, engineRecipe, isEngineCapabilityPresent, type ModuleSourceMode, type PresetModuleFacts } from '../shared/engine-capabilities.ts'
+import { buildEngineModuleParams, engineParamList } from '../shared/engine-params.ts'
 
 export interface PresetSpec {
   id: string
@@ -660,14 +661,7 @@ export function resolvePresetParams(spec: PresetSpec, runtime: Record<string, un
 }
 
 /** 逗号分隔 / YAML flow 数组 / 空格分隔的字符串列表 → 字符串数组。 */
-function parseListParam(value: unknown): string[] {
-  if (Array.isArray(value)) return value.map((item) => String(item)).filter((item) => item.length > 0)
-  if (typeof value !== 'string') return []
-  const trimmed = value.trim()
-  if (trimmed.length === 0) return []
-  const inner = trimmed.startsWith('[') && trimmed.endsWith(']') ? trimmed.slice(1, -1) : trimmed
-  return inner.split(',').map((item) => item.trim()).filter((item) => item.length > 0)
-}
+const parseListParam = engineParamList
 
 /**
  * 参数桥：params 扁平键 → 引擎模块行 config 对象（取代旧 __TOKEN__ 文本渲染）。
@@ -680,111 +674,11 @@ function parseListParam(value: unknown): string[] {
  * 与官方 AgentOptions{provider,model} / toolFilter{allow,deny} / maxDepth 对齐。
  */
 export function buildModuleConfigsFromParams(params: Record<string, unknown>, options: { subagentPolicyEnabled?: boolean } = {}): Record<string, Record<string, unknown>> {
-  const out: Record<string, Record<string, unknown>> = {}
+  const out = buildEngineModuleParams(params)
   const merge = (module: string, cfg: Record<string, unknown>): void => {
     if (Object.keys(cfg).length === 0) return
     out[module] = { ...out[module], ...cfg }
   }
-
-  // tool-bootstrap：首轮工具目录相位（窄化/封顶/门控/压缩恢复集/人设窄化）。
-  const bootstrap: Record<string, unknown> = {}
-  if (typeof params.bootstrapMaxTokens === 'number' && params.bootstrapMaxTokens > 0) {
-    bootstrap.bootstrapMaxTokens = params.bootstrapMaxTokens
-  }
-  if (params.bootstrapTools !== undefined) bootstrap.bootstrapTools = parseListParam(params.bootstrapTools)
-  if (params.promoteGate !== undefined) bootstrap.promoteGate = params.promoteGate === true
-  if (params.promoteAfterFirstResponse !== undefined) {
-    bootstrap.promoteAfterFirstResponse = params.promoteAfterFirstResponse === true
-  }
-  if (params.maxPromoteSteps !== undefined && Number.isSafeInteger(params.maxPromoteSteps)) {
-    bootstrap.maxPromoteSteps = params.maxPromoteSteps
-  }
-  if (params.compactionTools !== undefined) bootstrap.compactionTools = parseListParam(params.compactionTools)
-  if (params.personaSectionsOnly !== undefined) bootstrap.personaSectionsOnly = params.personaSectionsOnly === true
-  if (params.workspaceLine !== undefined) bootstrap.workspaceLine = params.workspaceLine === true
-  if (typeof params.phase1FirstCallInstruction === 'string' && params.phase1FirstCallInstruction.length > 0) {
-    bootstrap.phase1FirstCallInstruction = params.phase1FirstCallInstruction
-  }
-  // 渐进披露（stages 模式）：阶段定义/预放/推进工具/阶段文案全部参数化。
-  if (params.stages !== undefined) bootstrap.stages = params.stages
-  if (params.stagePreUnlock !== undefined && Number.isSafeInteger(params.stagePreUnlock)) {
-    bootstrap.stagePreUnlock = params.stagePreUnlock
-  }
-  if (typeof params.stageAdvanceTool === 'string' && params.stageAdvanceTool.length > 0) {
-    bootstrap.stageAdvanceTool = params.stageAdvanceTool
-  }
-  if (typeof params.stageAdvanceDescription === 'string' && params.stageAdvanceDescription.length > 0) {
-    bootstrap.stageAdvanceDescription = params.stageAdvanceDescription
-  }
-  if (typeof params.stageSectionTemplate === 'string' && params.stageSectionTemplate.length > 0) {
-    bootstrap.stageSectionTemplate = params.stageSectionTemplate
-  }
-  merge('tool-bootstrap', bootstrap)
-
-  // context-gate：注入门控（kind 白名单 / 晋升后延迟注入 / instruction-hint 转换）。
-  const gate: Record<string, unknown> = {}
-  if (params.allowKinds !== undefined) gate.allowKinds = parseListParam(params.allowKinds)
-  if (params.messageSources !== undefined) gate.messageSources = parseListParam(params.messageSources)
-  if (params.deferredSources !== undefined) gate.deferredSources = parseListParam(params.deferredSources)
-  if (params.deferredGraceSteps !== undefined && Number.isSafeInteger(params.deferredGraceSteps)) {
-    gate.deferredGraceSteps = params.deferredGraceSteps
-  }
-  if (params.instructionHint !== undefined) gate.instructionHint = params.instructionHint === true
-  merge('context-gate', gate)
-
-  // code-presentation：晋升后 Code Mode (PTC) wire 呈现（独立于目录窄化）。
-  const presentation: Record<string, unknown> = {}
-  if (params.usePtcMode !== undefined) presentation.usePtcMode = params.usePtcMode === true
-  merge('code-presentation', presentation)
-
-  // anchor-turn：前置锚定轮（用户首条真实消息前 prepend 合成锚定轮）。
-  // 默认不写键 → 行默认（enabled 未声明 = 挂载即启用）；params 显式 false 关。
-  const anchorTurn: Record<string, unknown> = {}
-  if (params.anchorTurn !== undefined) anchorTurn.enabled = params.anchorTurn === true
-  if (typeof params.anchorTurnText === 'string' && params.anchorTurnText.length > 0) {
-    anchorTurn.text = params.anchorTurnText
-  }
-  merge('anchor-turn', anchorTurn)
-
-  // deliberation-gate：轨迹深度门（首工具调用前深思 < 下限 → deny 一次）。
-  const gate2: Record<string, unknown> = {}
-  if (params.deliberationGate !== undefined) gate2.enabled = params.deliberationGate === true
-  if (typeof params.deliberationMinChars === 'number' && params.deliberationMinChars > 0) {
-    gate2.minChars = params.deliberationMinChars
-  }
-  if (typeof params.deliberationMaxGatesPerTurn === 'number' && params.deliberationMaxGatesPerTurn > 0) {
-    gate2.maxGatesPerTurn = params.deliberationMaxGatesPerTurn
-  }
-  merge('deliberation-gate', gate2)
-
-  // cot-drip：深思维持节拍（每 N 次工具结果滴入 "We…" 重申）。
-  const drip: Record<string, unknown> = {}
-  if (params.cotDrip !== undefined) drip.enabled = params.cotDrip === true
-  if (typeof params.cotDripEvery === 'number' && params.cotDripEvery > 0) {
-    drip.every = params.cotDripEvery
-  }
-  if (typeof params.cotDripMaxPerTurn === 'number' && params.cotDripMaxPerTurn > 0) {
-    drip.maxPerTurn = params.cotDripMaxPerTurn
-  }
-  merge('cot-drip', drip)
-
-  // str-replace-editor：bootstrap-filesystem 内嵌的官方 minimal 行（默认 16000，params 可覆盖）。
-  const editor: Record<string, unknown> = {}
-  editor.maxOutputChars = typeof params.strReplaceEditorMaxOutputChars === 'number'
-    && Number.isSafeInteger(params.strReplaceEditorMaxOutputChars)
-    && params.strReplaceEditorMaxOutputChars > 0
-    ? params.strReplaceEditorMaxOutputChars
-    : 16000
-  merge('str-replace-editor', editor)
-
-  // tool-filter：主会话常驻工具掩码（空列表 = 不过滤，不写键）。
-  const filter: Record<string, unknown> = {}
-  const mainAllow = parseListParam(params.toolFilterAllow)
-  const mainDeny = parseListParam(params.toolFilterDeny)
-  if (mainAllow.length > 0) filter.allow = mainAllow
-  if (mainDeny.length > 0) filter.deny = mainDeny
-  if (params.toolFilterSubagents === true) filter.includeSubagents = true
-  merge('tool-filter', filter)
 
   // delegation 组：子代理模型路由/人设/工具集/深度（spawn 与 fork 两行同配置，
   // 由 applyModuleConfigs 的嵌套合并按子行 id 落位）。
@@ -923,7 +817,8 @@ export function applyModuleConfigs(raw: string, configs: Record<string, Record<s
       return false
     }
     for (const [key, value] of Object.entries(cfg)) {
-      configNode.set(key, value)
+      if (value === undefined) configNode.delete(key)
+      else configNode.set(key, value)
     }
     return true
   }

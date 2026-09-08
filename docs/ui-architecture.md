@@ -211,6 +211,7 @@ apply(ctx) 依次构造：
       └─ 完整工作台
           ├─ 主会话
           ├─ 子代理
+          ├─ 工具预览
           ├─ 技能设置
           ├─ 预设配置
           └─ 角色管理
@@ -226,12 +227,19 @@ workspace-pages.ts 是页面元数据的唯一来源。默认页为 features，�
 | id | 标题 | 主要组合 |
 |---|---|---|
 | features | 主会话 | 主会话 ModelRouteCard、PromptConfigsEditor（通用/引擎能力双视图）、按能力拆分的 EngineModuleList、直接工具卡列表 |
-| subagent | 子代理 | ModelRouteCard、DelegationToolsCard、ToolSurfaceView、ConfigListWithTemplates |
+| subagent | 子代理 | ModelRouteCard、DelegationToolsCard、ConfigListWithTemplates |
+| tools | 工具预览 | 顶置统一搜索；当前会话／所选预设两个可折叠分组，预设选择位于分组标题右侧；双列展开详情卡，680px 以下单列 |
 | skills | 技能设置 | 目录与来源、状态筛选、SkillRow、目录引用/导入/排序 |
 | presets | 预设配置 | 全局生成开关、AGENTS/生成目录设置、PresetSwitcher 与预设 CRUD |
 | characters | 角色管理 | PNG/JSON 导入、角色卡库、应用/移除/删除与目录打开 |
 
 主会话页中的卡片顺序是 UI 分组，不表示六个官方注入 seam 的运行顺序。六个插入点彼此独立，运行时顺序和参数语义见 [engine-reuse.md](engine-reuse.md)。
+
+工具预览与工具编辑分离。`CustomToolsCard` 只负责模型工具定义，保留在主会话模块列表；以预设 ID 为 React key 重挂载，加载期间和 system 只读时禁止写入。预览不隐藏自定义工具，不自动创建／恢复会话；当前会话读取冻结 generation，所选预设读取后续 generation，切换来源或刷新会丢弃旧请求响应。
+
+样式参照官方 `ui-settings-plugin-inventory/PluginInventorySettingsTab`，不是可配置插件表单。卡头复用官方 StateDot、Tag、Chevron，标记真实的「模型可见」；展开显示完整名称、来源视角、可见状态与描述。工具摘要没有插件配置启停或运行阶段，不显示虚构的「已启用／运行中」。搜索只在客户端过滤，并自动展开分组，不增加 bridge 请求。
+
+引擎字段由 `EngineParamFields` 按 `ENGINE_PARAM_DEFINITIONS` 生成，能力存在性仍由真实模块事实决定。普通参数不再在 JSX、默认值、读回、保存和快照中各抄一遍；枚举使用 MenuSelect，列表使用 TagInput，阶段保留结构化编辑。
 
 ### 5.3 状态展示约定
 
@@ -317,6 +325,7 @@ JSON bridge 的统一上限为 32 MiB；角色卡原始文件流独立限制为 
 4. 成功后的静默 load 留在预设队列内，且只在全局草稿版本未变化、其他通道无待存草稿、对应草稿仍等于请求快照时执行；参数还要求没有未完成阶段草稿。
 5. promptConfigs 自动保存使用 debounce；手动保存仍经过配置校验。
 6. 参数空字符串/空数组沿用删除键语义；variables 的空字符串仍是合法占位值。详细参数规则见 [architecture-params.md](architecture-params.md)。
+7. 预设写入携带 `expectedPresetId`，读回失败的自定义工具不降级为空列表供覆盖；跨预设旧草稿被拒绝，切换等待参数保存队列。
 
 ## 8. 业务 Feature
 
@@ -327,8 +336,8 @@ feature 只拥有自己的视图、瞬时状态、领域纯 helper 和 CSS：
 | prompts | 六层配置卡、字段策略、排序、模板插入、变量编辑和内容配置 |
 | models | 当前预设的主/子代理模型路由卡；模型下拉展示完整目录并按服务商分组，选择模型时内部回写 provider + model，不提供独立服务商选择控件 |
 | modules | 引擎能力列表与层级筛选；一项显式装配能力一张卡，存在性由 `/bootstrap.moduleFacts.declaredModules` 决定，卡片形态由 ui/EngineModuleCard.tsx 提供 |
-| subagents | 委派工具、实例级工具策略草稿、策略预览和工具面入口 |
-| tools | 自定义工具编辑/保存、参数模板和存活 Agent 工具面 |
+| subagents | 委派工具、实例级工具策略草稿及策略解析预览；不重复嵌入工具面 |
+| tools | 自定义工具编辑/保存、参数模板；独立工具预览页与只读工具面 |
 | skills | 技能目录引用/导入、状态筛选、排序、开关、修复和打开目录 |
 | presets | 预设生成开关、路径、切换、导入导出、复制/删除/打开 |
 | characters | SillyTavern PNG/JSON 导入、角色卡库存、应用/移除/删除 |

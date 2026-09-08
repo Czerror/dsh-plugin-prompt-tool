@@ -11,14 +11,14 @@
 import { writeFileSync, mkdirSync, rmSync, cpSync, mkdtempSync, renameSync, existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { parse as parseYaml, parseDocument, stringify as stringifyYaml } from 'yaml'
-import { parameterSchemaSpecToJsonSchema, valueSchemaSpecToJsonSchema } from '@deepseek-ai/dsh-tools'
 // 纯策略模块同时由 host writer 与生成运行时消费；保持校验算法单一来源。
 // @ts-expect-error 仓库根 ESM 引擎文件由 tsdown 作为源码依赖打包，无独立声明文件。
 import { validateSubagentToolPolicy } from '../../engine/subagent-tool-policy-core.mjs'
 import { DEFAULT_PRESET_DIR } from './paths.ts'
+import { compileCustomTool } from './custom-tools.ts'
 import { validateCustomToolIdentities } from '../shared/engine-capabilities.ts'
 import { PARAM_KEYS } from '../shared/param-keys.ts'
-import type { PresetWriterParams } from '../shared/engine-params.ts'
+import { ENGINE_PARAM_KEYS, type PresetWriterParams } from '../shared/engine-params.ts'
 import {
   configFileName,
   mergePromptConfigs,
@@ -140,6 +140,8 @@ function withLockRetry<T>(action: () => T, retries = 3): T {
 
 function runtimeOf(options: WritePresetOptions, prompt: string): Record<string, unknown> {
   return {
+    // 所有引擎参数可直接用于兼容 writePreset/buildCordis；undefined 不覆盖模板值。
+    ...Object.fromEntries(ENGINE_PARAM_KEYS.map((key) => [key, options[key]])),
     promptText: prompt,
     firstTurnAnchor: options.firstTurnAnchor === true,
     firstTurnCustom: options.firstTurnCustom === true,
@@ -151,7 +153,7 @@ function runtimeOf(options: WritePresetOptions, prompt: string): Record<string, 
     injectPrompt: options.injectPrompt !== false,
     // 透传：未声明 = 模板 preset.yml params / 引擎默认（false）兜底，不再强制 true。
     usePtcMode: typeof options.usePtcMode === 'boolean' ? options.usePtcMode : undefined,
-    bootstrapMaxTokens: Number.isSafeInteger(options.bootstrapMaxTokens) ? options.bootstrapMaxTokens : 0,
+    bootstrapMaxTokens: Number.isSafeInteger(options.bootstrapMaxTokens) ? options.bootstrapMaxTokens : undefined,
     modelProvider: typeof options.modelProvider === 'string' && options.modelProvider.length > 0
       ? options.modelProvider
       : '',
@@ -240,31 +242,12 @@ function modelRequestConfigs(params: Record<string, unknown>): PromptConfigSpec[
   return configs
 }
 
-/** 自定义工具 DSL → 官方 JSON Schema 物化（Wave 1）：
- *   preset.yml customTools 段是 DSL 单一来源，writePreset 用官方
- *   parameterSchemaSpecToJsonSchema / valueSchemaSpecToJsonSchema 转换后写入
- *   custom-tools/*.yml（生成物），tool-config-engine 运行时只透传标准 JSON Schema。
- *   customTools.scope 不支持（显式拒绝）；单条转换失败按既有 warn-and-skip。 */
+/** 手写/导入预设恢复路径：与保存方完整编译同源，但坏定义仍逐条告警跳过。 */
 function materializeCustomTool(tool: Record<string, unknown>, warn: (message: string) => void): Record<string, unknown> | undefined {
-  const id = String(tool.id)
-  if (tool.scope !== undefined) {
-    warn('customTools: ' + JSON.stringify(id) + ': customTools.scope is not supported (subagent tool policy is configured via subagentToolPolicy); skipped')
-    return undefined
-  }
   try {
-    const next: Record<string, unknown> = { ...tool }
-    if (next.parameters !== undefined) {
-      next.parameters = parameterSchemaSpecToJsonSchema(next.parameters as never)
-    }
-    const output = next.output
-    if (output === null || typeof output !== 'object' || Array.isArray(output) || (output as { schema?: unknown }).schema === undefined) {
-      throw new TypeError('output.schema is required')
-    }
-    const outputRecord = output as { schema?: unknown; [key: string]: unknown }
-    next.output = { ...outputRecord, schema: valueSchemaSpecToJsonSchema(outputRecord.schema as never) }
-    return next
+    return compileCustomTool(tool)
   } catch (error) {
-    warn('customTools: ' + JSON.stringify(id) + ': ' + String((error as Error).message ?? error) + '; skipped')
+    warn('customTools: ' + JSON.stringify(tool.id) + ': ' + String((error as Error).message ?? error) + '; skipped')
     return undefined
   }
 }
@@ -696,16 +679,10 @@ export function writePreset(prompt: string, options: WritePresetOptions): void {
   if (identityErrors.length > 0) throw new Error(identityErrors.join('; '))
   const warn = options.warn ?? (() => {})
   for (const [index, tool] of customTools.entries()) {
-    if (tool === null || typeof tool !== 'object' || Array.isArray(tool)
-      || typeof (tool as Record<string, unknown>).id !== 'string'
-      || String((tool as Record<string, unknown>).id).length === 0) {
-      continue
-    }
-    const toolId = String((tool as Record<string, unknown>).id)
     const materialized = materializeCustomTool(tool as Record<string, unknown>, warn)
     if (materialized === undefined) continue
     writeFileSync(
-      join(customToolsDir, configFileName(index + 1, toolId)),
+      join(customToolsDir, configFileName(index + 1, String(materialized.id))),
       stringifyYaml(materialized, { lineWidth: 0 }),
       'utf8',
     )

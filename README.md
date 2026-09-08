@@ -46,7 +46,7 @@ Web 客户端按四层组织：
 
 ```text
 src/client/
-├─ app/       # SlotRegistry owner、工作台壳与五页组合
+├─ app/       # SlotRegistry owner、工作台壳与六页组合
 ├─ data/      # typed bridge、Fields、状态 facade、保存与脏检测纯逻辑
 ├─ features/  # prompts / tools / subagents / skills / presets / characters
 └─ ui/        # 仅 props/callback 的共享交互与 CSS Modules
@@ -54,6 +54,13 @@ src/client/
 
 依赖方向固定为 `app → features → data/ui → shared contract`：跨领域组合只在 `app/workspace/pages/`，feature 不导入其他 feature 内部实现；标准控件优先复用 `@deepseek-ai/dsh-client-ui-primitives`。Client bridge 通过 `src/shared/bridge-contract.ts` 的 endpoint key 与 request/value map 调用，业务代码不拼接路径。样式按 owner 拆分，使用 DSH `--dsw-*` 语义 token，不定义插件级全局主题。
 完整的当前目录、slot 生命周期、状态边界、可访问性和维护约束见 [Web 客户端 UI 结构框架](docs/ui-architecture.md)。
+
+### 配置卡与工具预览
+
+- 参数在模块列表的配置卡内编辑。引擎能力按实际 `modules` 装配显示；共享参数定义统一生成字段、校验、默认草稿、保存快照和组合行映射。主／子代理模型保留专用配置卡。
+- 工具也按模块装配，例如 `bootstrap-filesystem` 同域提供文件系统与编辑工具。自定义模型工具通过「新建工具」或「从模板新建」配置名称、描述、参数、输出与执行器，保存前完整校验；不安装、连接或管理外部 MCP／DSH 插件。
+- 「工具预览」是独立顶层页，参照官方插件目录：顶部统一搜索、可折叠分组、右侧预设选择、双列展开详情卡，窄屏单列。卡片显示「模型可见」，不伪造插件运行状态。当前会话与所选预设分别读取：既有会话仍使用冻结 generation，修改预设只影响后续 generation；不会隐藏同名自定义工具或自动恢复会话。
+- `tool-config-engine` 能力卡配置哪些自定义执行器需要用户批准；缺少批准服务时拒绝执行。生成目录保持只读，仍由预设重建产生。
 
 ## 项目架构
 

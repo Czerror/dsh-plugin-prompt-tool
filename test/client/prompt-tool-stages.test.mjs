@@ -4,16 +4,16 @@ import { readFileSync } from 'node:fs'
 import { EMPTY_FIELDS, hasIncompleteStageDrafts } from '../../src/client/data/prompt-tool-fields.ts'
 import { shouldReloadAfterParamSave, snapshotSwitches } from '../../src/client/data/dirty-state.ts'
 
-const cards = readFileSync(new URL('../../src/client/features/modules/EngineModuleList.tsx', import.meta.url), 'utf8')
+const cards = readFileSync(new URL('../../src/client/features/modules/EngineParamFields.tsx', import.meta.url), 'utf8')
 const snapshotWithStages = (stages) => snapshotSwitches({ ...EMPTY_FIELDS, stages })
 
 test('stages 添加按钮追加可编辑的空草稿行', () => {
-  const start = cards.indexOf('<strong>渐进披露（stages）</strong>')
-  const end = cards.indexOf('<EngineModuleCard name="context-gate"')
+  const start = cards.indexOf("if (definition.kind === 'stages')")
+  const end = cards.indexOf("if (definition.kind === 'string-list')")
   assert.ok(start >= 0 && end > start, '应找到 stages UI 区块')
   const stagesUi = cards.slice(start, end)
-  assert.ok(stagesUi.includes("store.patch({ stages: [...fields.stages, { name: '', tools: '' }] })"), '添加按钮应追加空阶段草稿行')
-  assert.ok(stagesUi.includes('>+ 添加阶段</button>'), '应显示添加阶段按钮')
+  assert.ok(stagesUi.includes("update([...stages, { name: '', tools: '' }])"), '添加按钮应追加空阶段草稿行，不立即保存')
+  assert.ok(stagesUi.includes('>添加阶段</button>'), '应显示添加阶段按钮')
 })
 
 test('stages 未完成草稿保存后不重载，避免新增行立即消失', () => {

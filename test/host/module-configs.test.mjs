@@ -170,13 +170,13 @@ test('参数桥：anchor-turn / deliberation-gate / cot-drip 行级配置映射'
   assert.equal(drip.config.every, 3)
   assert.equal(drip.config.maxPerTurn, 2)
 
-  // 关闭：enabled: false；数字 0 = 回落行默认（不写键）。
+  // 关闭：enabled: false；参数桥数字 0 仍回落行默认（保留旧预设语义）。
   const off = parseYaml(buildCordis('P', { anchorTurn: false, deliberationGate: false, cotDrip: false, deliberationMinChars: 0, cotDripEvery: 0 }))
   assert.equal(off.find((row) => row?.id === 'anchor-turn').config.enabled, false)
   assert.equal(off.find((row) => row?.id === 'deliberation-gate').config.enabled, false)
   assert.equal(off.find((row) => row?.id === 'cot-drip').config.enabled, false)
   assert.equal(off.find((row) => row?.id === 'deliberation-gate').config.minChars, 400, '0 不写键 → 回落行默认 400')
-  assert.equal(off.find((row) => row?.id === 'cot-drip').config.every, 4, '0 不写键 → 回落行默认 4')
+  assert.equal(off.find((row) => row?.id === 'cot-drip').config.every, 4, '0 不写键，回落行默认 4')
 })
 
 test('参数桥：门控/状态机扁平键直达模块行 config（不 token 化）', () => {
@@ -214,6 +214,15 @@ test('参数桥：门控/状态机扁平键直达模块行 config（不 token �
   const defaultBootstrap = defaults.find((row) => row?.id === 'tool-bootstrap')
   assert.equal(defaultBootstrap.config.promoteGate, undefined, '未声明不合并')
   assert.equal(defaultBootstrap.config.bootstrapMaxTokens, undefined, 'bootstrapMaxTokens 0/未声明不合并')
+})
+
+test('关闭首轮输出封顶清除行默认/moduleConfigs 限额，不破坏其他配置', () => {
+  const spec = { id: 'cap-off', modules: ['tool-bootstrap'], params: { bootstrapMaxTokens: 0 },
+    moduleConfigs: { 'tool-bootstrap': { bootstrapMaxTokens: 1024, workspaceLine: true } } }
+  const rows = parseYaml(renderComposition(spec, {}))
+  const config = rows.find((row) => row.id === 'tool-bootstrap').config
+  assert.equal(Object.hasOwn(config, 'bootstrapMaxTokens'), false)
+  assert.equal(config.workspaceLine, true)
 })
 
 test('参数桥完整性：本地模块行 config 键 ⊆ ALLOWED_KEYS；stageAdvanceDescription 桥接落点', () => {

@@ -1,4 +1,4 @@
-export type WorkspacePage = 'features' | 'subagent' | 'skills' | 'presets' | 'characters'
+export type WorkspacePage = 'features' | 'subagent' | 'tools' | 'skills' | 'presets' | 'characters'
 
 export const WORKSPACE_PAGES: ReadonlyArray<{ id: WorkspacePage; label: string; title: string; detail: string }> = [
   {
@@ -12,6 +12,12 @@ export const WORKSPACE_PAGES: ReadonlyArray<{ id: WorkspacePage; label: string; 
     label: '子代理',
     title: '子代理',
     detail: '子代理作用域参数（模型/工具集/深度）与子代理提示词配置（audience 非仅主会话；子代理独立人设 = 新建配置卡：system-section + audience=subagent + 人设段，装配时替换主会话人设，无卡 = 继承主会话）。',
+  },
+  {
+    id: 'tools',
+    label: '工具预览',
+    title: '工具预览',
+    detail: '只读查看当前会话冻结的模型工具与所选预设后续 generation 的工具能力；添加和编辑仍在主会话配置卡，不管理 MCP 或插件安装。',
   },
   {
     id: 'skills',

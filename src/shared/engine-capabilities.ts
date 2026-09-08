@@ -30,6 +30,7 @@ export const ENGINE_CAPABILITIES: readonly EngineCapability[] = [
   { id: 'str-replace-editor', moduleKeys: ['bootstrap-filesystem', 'str-replace-editor'], rowIds: ['str-replace-editor'], displayLayer: 'tool-pipeline' },
   { id: 'deliberation-gate', moduleKeys: ['deliberation-gate'], rowIds: ['deliberation-gate'], displayLayer: 'tool-pipeline' },
   { id: 'cot-drip', moduleKeys: ['cot-drip'], rowIds: ['cot-drip'], displayLayer: 'tool-pipeline' },
+  { id: 'tool-config-engine', moduleKeys: ['tool-config-engine'], rowIds: ['tool-config-engine'], displayLayer: 'tool-pipeline' },
 ] as const
 
 export interface EngineRecipe {

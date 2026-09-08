@@ -34,6 +34,7 @@ import { registerTuiCommand } from './runtime/tui.ts'
 import { removeResidentAgentsBlock, writeAgents } from './runtime/agents-file.ts'
 import { writePreset } from './host/write-preset.ts'
 import type { WritePresetOptions } from './host/write-preset.ts'
+import { ENGINE_PARAM_KEYS } from './shared/engine-params.ts'
 import { ensurePresetSeed, listPresets, readPluginState, writePluginState } from './host/manifest.ts'
 import {
   Config,
@@ -139,6 +140,7 @@ export function apply(ctx: Context, configIn: Config): void {
       return
     }
     const params = resolvePresetParams(spec, {})
+    for (const key of ENGINE_PARAM_KEYS) (runtime as unknown as Record<string, unknown>)[key] = params[key]
     runtime.firstTurnAnchor = params.firstTurnAnchor === true
     runtime.firstTurnText = asString(params.firstTurnText)
     runtime.firstTurnCustom = params.firstTurnCustom === true
@@ -157,7 +159,7 @@ export function apply(ctx: Context, configIn: Config): void {
     runtime.subagentMaxTokens = asString(params.subagentMaxTokens)
     runtime.bootstrapMaxTokens = Number.isSafeInteger(params.bootstrapMaxTokens) && (params.bootstrapMaxTokens as number) >= 0
       ? params.bootstrapMaxTokens as number
-      : 0
+      : undefined
     // 透传：未声明 = 模板 preset.yml params / 引擎默认（false）兜底。
     runtime.usePtcMode = typeof params.usePtcMode === 'boolean' ? params.usePtcMode : undefined
     runtime.injectPrompt = params.injectPrompt !== false
@@ -199,6 +201,7 @@ export function apply(ctx: Context, configIn: Config): void {
     if (runtime.writePreset) {
       const presetPrompt = runtime.injectPrompt && current.length > 0 ? current : ''
       const options: WritePresetOptions = {
+        ...Object.fromEntries(ENGINE_PARAM_KEYS.map((key) => [key, (runtime as unknown as Record<string, unknown>)[key]])),
         firstTurnAnchor: runtime.firstTurnAnchor,
         firstTurnText: runtime.firstTurnText,
         firstTurnCustom: runtime.firstTurnCustom,
@@ -500,6 +503,7 @@ export function apply(ctx: Context, configIn: Config): void {
   // settings 存储优先于 cordis config：installSettingsSection 注册后立即用
   // settings 的解析值触发一次 onChange，完成初始写入，因此 config 只作 base。
   const runtime: RuntimeOptions = {
+    ...Object.fromEntries(ENGINE_PARAM_KEYS.map((key) => [key, initialParams[key]])),
     writeAgents: config.writeAgents,
     writePreset: config.writePreset,
     presetTemplate: typeof config.presetTemplate === 'string' && config.presetTemplate.length > 0 ? config.presetTemplate : 'anchored',
@@ -527,7 +531,7 @@ export function apply(ctx: Context, configIn: Config): void {
     subagentMaxTokens: asString(initialParams.subagentMaxTokens),
     bootstrapMaxTokens: Number.isSafeInteger(initialParams.bootstrapMaxTokens) && (initialParams.bootstrapMaxTokens as number) >= 0
       ? initialParams.bootstrapMaxTokens as number
-      : 0,
+      : undefined,
     usePtcMode: typeof initialParams.usePtcMode === 'boolean' ? initialParams.usePtcMode : undefined,
     toolFilterAllow: initialParams.toolFilterAllow as string[] | string | undefined,
     toolFilterDeny: initialParams.toolFilterDeny as string[] | string | undefined,
@@ -674,7 +678,7 @@ registerTuiCommand(
       subagentModelProvider: '',
       subagentModelName: '',
       injectAgentsPrompt: false,
-      bootstrapMaxTokens: 0,
+      bootstrapMaxTokens: undefined,
       usePtcMode: false,
       presetDir: runtime.presetDir,
       presetOrder: runtime.presetOrder,

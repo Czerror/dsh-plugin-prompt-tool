@@ -29,7 +29,7 @@ test('client bridge 调用只使用共享契约 key，不出现字面路径', ()
 test('工作台顶层页面 id 与顺序保持稳定', () => {
   const source = read('app/workspace/workspace-pages.ts')
   const ids = [...source.matchAll(/id: '([^']+)'/g)].map((match) => match[1])
-  assert.deepEqual(ids, ['features', 'subagent', 'skills', 'presets', 'characters'])
+  assert.deepEqual(ids, ['features', 'subagent', 'tools', 'skills', 'presets', 'characters'])
 })
 
 test('导入入口统一复用 ImportFileButton，不在业务页重复实现 file input', () => {

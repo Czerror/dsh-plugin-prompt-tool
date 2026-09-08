@@ -49,10 +49,10 @@ import {
 } from '../host/characters.ts'
 import { convertStToPreset, mergeStPresets } from '../host/sillytavern.ts'
 import { BRIDGE_ENDPOINTS, MAX_BRIDGE_BODY_BYTES, MAX_CHARACTER_CARD_STREAM_BYTES, SETTINGS_BRIDGE_PREFIX } from '../shared/bridge-contract.ts'
-import { validateEngineParamValues } from '../shared/engine-params.ts'
+import { moduleParamFallbacks, validateEngineParamValues } from '../shared/engine-params.ts'
 import { DEFAULT_PRESET_DIR } from '../host/paths.ts'
 import type { PresetModuleFacts } from '../shared/engine-capabilities.ts'
-import { validateCustomToolIdentities } from '../shared/engine-capabilities.ts'
+import { validateCustomTools } from '../host/custom-tools.ts'
 
 
 export interface SkillsBridgeState {
@@ -136,41 +136,8 @@ function guardEditablePresetDir(dir: string, presetRoot: string, res: ServerResp
 
 /** 将 moduleConfigs/行默认投影为 UI 字段兜底；显式 params 永远优先。 */
 function mergeModuleConfigFallbacks(params: Record<string, unknown>, facts: PresetModuleFacts): void {
-  const configs = facts.effectiveConfigs ?? {}
-  const mappings: Array<[string, string, string, 'list' | 'scalar']> = [
-    ['tool-bootstrap', 'bootstrapMaxTokens', 'bootstrapMaxTokens', 'scalar'],
-    ['tool-bootstrap', 'bootstrapTools', 'bootstrapTools', 'list'],
-    ['tool-bootstrap', 'compactionTools', 'compactionTools', 'list'],
-    ['tool-bootstrap', 'promoteGate', 'promoteGate', 'scalar'],
-    ['tool-bootstrap', 'promoteAfterFirstResponse', 'promoteAfterFirstResponse', 'scalar'],
-    ['tool-bootstrap', 'maxPromoteSteps', 'maxPromoteSteps', 'scalar'],
-    ['tool-bootstrap', 'personaSectionsOnly', 'personaSectionsOnly', 'scalar'],
-    ['tool-bootstrap', 'workspaceLine', 'workspaceLine', 'scalar'],
-    ['tool-bootstrap', 'phase1FirstCallInstruction', 'phase1FirstCallInstruction', 'scalar'],
-    ['tool-bootstrap', 'stagePreUnlock', 'stagePreUnlock', 'scalar'],
-    ['tool-bootstrap', 'stageAdvanceTool', 'stageAdvanceTool', 'scalar'],
-    ['tool-bootstrap', 'stageAdvanceDescription', 'stageAdvanceDescription', 'scalar'],
-    ['tool-bootstrap', 'stageSectionTemplate', 'stageSectionTemplate', 'scalar'],
-    ['context-gate', 'instructionHint', 'instructionHint', 'scalar'],
-    ['anchor-turn', 'enabled', 'anchorTurn', 'scalar'],
-    ['anchor-turn', 'text', 'anchorTurnText', 'scalar'],
-    ['code-presentation', 'usePtcMode', 'usePtcMode', 'scalar'],
-    ['tool-filter', 'allow', 'toolFilterAllow', 'list'],
-    ['tool-filter', 'deny', 'toolFilterDeny', 'list'],
-    ['tool-filter', 'includeSubagents', 'toolFilterSubagents', 'scalar'],
-    ['deliberation-gate', 'enabled', 'deliberationGate', 'scalar'],
-    ['deliberation-gate', 'minChars', 'deliberationMinChars', 'scalar'],
-    ['deliberation-gate', 'maxGatesPerTurn', 'deliberationMaxGatesPerTurn', 'scalar'],
-    ['cot-drip', 'enabled', 'cotDrip', 'scalar'],
-    ['cot-drip', 'every', 'cotDripEvery', 'scalar'],
-    ['cot-drip', 'maxPerTurn', 'cotDripMaxPerTurn', 'scalar'],
-    ['str-replace-editor', 'maxOutputChars', 'strReplaceEditorMaxOutputChars', 'scalar'],
-  ]
-  for (const [rowId, configKey, paramKey, kind] of mappings) {
-    if (Object.prototype.hasOwnProperty.call(params, paramKey)) continue
-    const value = configs[rowId]?.[configKey]
-    if (value === undefined) continue
-    params[paramKey] = kind === 'list' && Array.isArray(value) ? value.map(String).join(', ') : value
+  for (const [key, value] of Object.entries(moduleParamFallbacks(facts.effectiveConfigs ?? {}))) {
+    if (!Object.hasOwn(params, key)) params[key] = value
   }
 }
 
@@ -367,6 +334,19 @@ export function registerSettingsBridge(
       }
       const guardPresetWrite = (dir: string, res: ServerResponse): boolean =>
         guardEditablePresetDir(dir, getPresetRootDir?.() ?? userPresetsDir(), res)
+      /** 预设身份只作一致性检查，绝不用客户端 ID 构造写入路径。 */
+      const guardPresetIdentity = (record: Record<string, unknown>, dir: string, res: ServerResponse): boolean => {
+        const expected = record.expectedPresetId
+        if (expected !== undefined && (typeof expected !== 'string' || expected.length === 0 || expected.length > 256)) {
+          writeBridgeJson(res, 400, { ok: false, code: 'preset-identity-invalid', message: 'expectedPresetId 必须是非空预设 ID' })
+          return false
+        }
+        if ((getPresetConfigsDir?.() ?? '') !== dir || (expected !== undefined && expected !== basename(dir))) {
+          writeBridgeJson(res, 409, { ok: false, code: 'preset-changed', message: '当前预设已切换；旧草稿未写入，请重新读取后保存' })
+          return false
+        }
+        return true
+      }
       /** 引擎能力矩阵（meta 端点与 /bootstrap 共用）：动态 import 引擎 schema。 */
       const loadEngineMeta = async (): Promise<Record<string, unknown>> => {
         const engineMetaUrl = new URL('../engine/schema.mjs', import.meta.url)
@@ -821,6 +801,7 @@ export function registerSettingsBridge(
             }
             if (!guardPresetWrite(dir, res)) return
             try {
+              if (!guardPresetIdentity(record, dir, res)) return
               mkdirSync(dir, { recursive: true })
               for (const entry of contents) {
                 writeFileSync(join(dir, entry.scope === 'preset' ? 'preset.md' : 'agents.md'), entry.content, 'utf8')
@@ -852,6 +833,7 @@ export function registerSettingsBridge(
             if (parsedBody === undefined) return
             const { body } = parsedBody
             const record = (body ?? {}) as Record<string, unknown>
+            if (!guardPresetIdentity(record, dir, res)) return
             if (record.rebuild !== undefined && typeof record.rebuild !== 'boolean') {
               writeBridgeJson(res, 400, { ok: false, code: 'overrides-invalid-shape', message: 'rebuild must be a boolean' })
               return
@@ -899,6 +881,21 @@ export function registerSettingsBridge(
               return
             }
             try {
+              if (rawOverrides !== undefined) {
+                const spec = loadPresetSpec(dir)
+                const candidateParams = { ...spec.params }
+                for (const [key, value] of Object.entries(rawOverrides)) {
+                  if (value === '' || (Array.isArray(value) && value.length === 0)) delete candidateParams[key]
+                  else if (value !== null && value !== undefined) candidateParams[key] = value
+                }
+                const bootstrap = resolvePresetModuleFacts({ ...spec, params: candidateParams }, dir, true).effectiveConfigs?.['tool-bootstrap']
+                if ((bootstrap?.promoteGate === true || bootstrap?.promoteAfterFirstResponse === true)
+                  && bootstrap.promoteOn !== undefined && bootstrap.promoteOn !== 'either') {
+                  writeBridgeJson(res, 400, { ok: false, code: 'overrides-invalid-value', message: '门控晋升与首响应晋升要求工具晋升信号为 either；请先调整同一卡片中的晋升信号' })
+                  return
+                }
+              }
+              if (!guardPresetIdentity(record, dir, res)) return
               savePresetParams(
                 presetRoot,
                 templateName,
@@ -941,6 +938,7 @@ export function registerSettingsBridge(
             if (parsedBody === undefined) return
             const { body } = parsedBody
             const record = (body ?? {}) as Record<string, unknown>
+            if (!guardPresetIdentity(record, dir, res)) return
             // 无载荷 = 读取（preset.yml 顶层 variables + 插值开关）。
             if (record.variables === undefined && record.enabled === undefined) {
               writeBridgeJson(res, 200, { ok: true, value: readPresetVariables(dir) })
@@ -957,6 +955,7 @@ export function registerSettingsBridge(
             }
             if (!guardPresetWrite(dir, res)) return
             try {
+              if (!guardPresetIdentity(record, dir, res)) return
               savePresetParams(
                 presetRoot,
                 templateName,
@@ -987,6 +986,7 @@ export function registerSettingsBridge(
             if (parsedBody === undefined) return
             const { body } = parsedBody
             const record = (body ?? {}) as Record<string, unknown>
+            if (!guardPresetIdentity(record, dir, res)) return
             // 无载荷 = 读取（preset.yml 顶层 customTools 段）。
             if (record.customTools === undefined) {
               try {
@@ -994,7 +994,7 @@ export function registerSettingsBridge(
                 const customTools = Array.isArray(spec.customTools) ? spec.customTools : []
                 writeBridgeJson(res, 200, { ok: true, value: { customTools } })
               } catch {
-                writeBridgeJson(res, 200, { ok: true, value: { customTools: [] } })
+                writeBridgeJson(res, 409, { ok: false, code: 'custom-tools-unavailable', message: '自定义工具读取失败，原文件保持不变' })
               }
               return
             }
@@ -1004,12 +1004,13 @@ export function registerSettingsBridge(
                 writeBridgeJson(res, 400, { ok: false, code: 'custom-tools-invalid', message: 'customTools 必须是数组' })
                 return
               }
-              const identityErrors = validateCustomToolIdentities(customTools)
-              if (identityErrors.length > 0) {
-                writeBridgeJson(res, 400, { ok: false, code: 'custom-tools-invalid', message: identityErrors.join('; ') })
+              const errors = validateCustomTools(customTools)
+              if (errors.length > 0) {
+                writeBridgeJson(res, 400, { ok: false, code: 'custom-tools-invalid', message: errors.join('; ') })
                 return
               }
               if (!guardPresetWrite(dir, res)) return
+              if (!guardPresetIdentity(record, dir, res)) return
               withPresetDoc(dir, (doc) => {
                 if (customTools.length === 0) doc.deleteIn(['customTools'])
                 else {
@@ -1515,6 +1516,7 @@ export function registerSettingsBridge(
             if (parsedBody === undefined) return
             const { body } = parsedBody
             const record = (body ?? {}) as Record<string, unknown>
+            if (!guardPresetIdentity(record, dir, res)) return
             // 无 policy 载荷 = 读取（preset.yml 顶层 subagentToolPolicy 段）。
             if (record.policy === undefined) {
               try {
@@ -1539,6 +1541,7 @@ export function registerSettingsBridge(
                 writeBridgeJson(res, 409, { ok: false, code: 'subagent-tool-policy-rejected', message: '策略校验失败：' + errors.join('; '), value: { errors } })
                 return
               }
+              if (!guardPresetIdentity(record, dir, res)) return
               withPresetDoc(dir, (doc) => {
                 if (isEmpty) {
                   doc.deleteIn(['subagentToolPolicy'])
@@ -1612,6 +1615,7 @@ export function registerSettingsBridge(
             const parsedBody = await readBridgeBodyForHandler(req, res)
             if (parsedBody === undefined) return
             const body = asRecord(parsedBody.body)
+            if (!guardPresetIdentity(body, dir, res)) return
             const action = body.action
             const id = action === 'create' || action === 'remove' ? body.capabilityId : action === 'create-recipe' ? body.recipeId : undefined
             if ((action !== 'create' && action !== 'remove' && action !== 'create-recipe') || typeof id !== 'string' || id.trim().length === 0 || id.length > 128) {
@@ -1620,6 +1624,7 @@ export function registerSettingsBridge(
             }
             if (!guardPresetWrite(dir, res)) return
             const run = capabilityQueue.then(async () => {
+              if (!guardPresetIdentity(body, dir, res)) return
               const file = join(dir, 'preset.yml')
               let original: string | undefined
               try {

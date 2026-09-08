@@ -51,10 +51,10 @@ export const MainSessionPage = memo(function MainSessionPage(props: { store: Pro
         }
         beforeCards={layerFilter === 'all' || layerFilter === 'tool-pipeline' ? (
           <CustomToolsCard
-            onNotice={store.showNotice}
-            sessionId={store.api.currentSessionId()}
+            key={fields.presetTemplate}
             presetId={fields.presetTemplate}
-            listAgentPresets={store.api.listAgentPresets}
+            onNotice={store.showNotice}
+            disabled={store.moduleFacts?.editable !== true || !fields.writePreset}
           />
         ) : undefined}
       />

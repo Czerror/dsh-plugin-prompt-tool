@@ -1,9 +1,6 @@
 /** 提示词工具客户端状态模型与稳定默认值（无网络、无 React）。 */
-import type { EngineParamKey } from '../../shared/engine-params.ts'
+import { ENGINE_PARAM_DEFINITIONS, ENGINE_PARAM_KEYS, type EngineParamKey, type EngineParams } from '../../shared/engine-params.ts'
 import type { EngineMeta, PromptConfigDraft } from '../prompt-tool-types.ts'
-
-/** 本项目默认不设上限时的显示值（adapter 默认 maxTokens）。 */
-export const DEFAULT_BOOTSTRAP_DISPLAY = '256000'
 
 /** 宿主默认模型回显（agent-default-model settings：provider/model/reasoningEffort；插件参数未设置 = 继承宿主）。 */
 export interface HostDefaultModel {
@@ -26,91 +23,20 @@ export interface SkillCatalogEntry {
   userInvocable: boolean
 }
 
-export interface Fields {
+/** 参数草稿类型从宿主契约派生，只转换 UI 的列表/阶段/深度形态。 */
+type EngineParamDrafts = {
+  [K in EngineParamKey]-?: K extends 'stages' ? StageDraft[]
+    : K extends 'guideEnabled' ? boolean | undefined
+      : K extends 'maxDepth' ? string
+        : NonNullable<EngineParams[K]> extends string | string[] ? string : NonNullable<EngineParams[K]>
+}
+
+export interface Fields extends EngineParamDrafts {
   promptText: string
   promptPath: string
   agentsText: string
   agentsPath: string
   injectAgentsPrompt: boolean
-  firstTurnAnchor: boolean
-  firstTurnText: string
-  firstTurnCustom: boolean
-  guideText: string
-  guideCustom: boolean
-  /** 每轮引导独立开关；undefined = 跟随 firstTurnAnchor。 */
-  guideEnabled: boolean | undefined
-  modelProvider: string
-  modelName: string
-  subagentModelProvider: string
-  subagentModelName: string
-  modelReasoningEffort: string
-  modelTemperature: string
-  modelMaxTokens: string
-  subagentReasoningEffort: string
-  subagentTemperature: string
-  subagentMaxTokens: string
-  toolFilterAllow: string
-  toolFilterDeny: string
-  /** 子代理也启用主对话工具过滤。 */
-  toolFilterSubagents: boolean
-  maxDepth: string
-  allowKinds: string
-  firstTurnWord: string
-  bootstrapMaxTokens: number
-  usePtcMode: boolean
-  /** 门控晋升：首段 reasoning minimal-like + 工具调用才晋升（tool-bootstrap 参数桥）。 */
-  promoteGate: boolean
-  /** 无工具首响应 / 首轮 turn/end 即晋升。 */
-  promoteAfterFirstResponse: boolean
-  /** 门控回退步数上限（0 = 引擎默认 4）。 */
-  maxPromoteSteps: number
-  /** 首轮工具窄化集（逗号分隔；覆盖行默认）。 */
-  bootstrapTools: string
-  /** 压缩后恢复工具集（逗号分隔）。 */
-  compactionTools: string
-  /** 渐进披露阶段定义（UI 草稿形态：tools 逗号分隔字符串；非空 = 激活多级阶段窄化）。 */
-  stages: StageDraft[]
-  /** 预放档数（0 = 引擎默认 1）。 */
-  stagePreUnlock: number
-  /** 阶段推进工具名（空 = 默认 phase_advance）。 */
-  stageAdvanceTool: string
-  /** 阶段推进工具描述。 */
-  stageAdvanceDescription: string
-  /** 阶段状态 section 模板（{{stage}}/{{stageName}}/{{unlocked}}/{{total}}；空 = 不注入）。 */
-  stageSectionTemplate: string
-  /** phase-1 提示词段只留 persona。 */
-  personaSectionsOnly: boolean
-  /** 晋升后 persona 附加工作目录行。 */
-  workspaceLine: boolean
-  /** phase-1 persona 追加的首次调用指令行。 */
-  phase1FirstCallInstruction: string
-  /** 晋升后 agent-instructions 全文 → 一次性 hint（context-gate）。 */
-  instructionHint: boolean
-  /** context-gate phase-1 消息源白名单（逗号分隔；空 = 不启用）。 */
-  messageSources: string
-  /** 晋升后延迟注入的 source kind（逗号分隔）。 */
-  deferredSources: string
-  /** 延迟注入宽限步数（0 = 不延迟）。 */
-  deferredGraceSteps: number
-  /** 前置锚定轮（anchor-turn 行；需模块列表已挂行）。 */
-  anchorTurn: boolean
-  /** 前置锚定轮自定义锚定文本（空 = 引擎默认）。 */
-  anchorTurnText: string
-  /** 轨迹深度门（deliberation-gate 行；需模块列表已挂行）。 */
-  deliberationGate: boolean
-  /** 深思下限字符数（0 = 回落行默认 400）。 */
-  deliberationMinChars: number
-  /** 每轮最大门控次数（0 = 回落行默认 1）。 */
-  deliberationMaxGatesPerTurn: number
-  /** 深思维持节拍（cot-drip 行；需模块列表已挂行）。 */
-  cotDrip: boolean
-  /** 节拍间隔工具结果数（0 = 回落行默认 4）。 */
-  cotDripEvery: number
-  /** 每轮最大提醒条数（0 = 回落行默认 1）。 */
-  cotDripMaxPerTurn: number
-  /** str-replace-editor 最大输出字符数；16000 = 官方默认。 */
-  strReplaceEditorMaxOutputChars: number
-  injectPrompt: boolean
   skillSwitches: Record<string, boolean>
   skillOrder: string[]
   skillCatalog: SkillCatalogEntry[]
@@ -157,62 +83,12 @@ export const EMPTY_META: EngineMeta = {
   layerLabels: {},
 }
 export const EMPTY_FIELDS: Fields = {
+  ...Object.fromEntries(ENGINE_PARAM_KEYS.map((key) => [key, ENGINE_PARAM_DEFINITIONS[key].defaultValue])) as Pick<Fields, EngineParamKey>,
   promptText: '',
   promptPath: '',
   agentsText: '',
   agentsPath: '',
   injectAgentsPrompt: false,
-  firstTurnAnchor: false,
-  firstTurnText: '',
-  firstTurnCustom: false,
-  guideText: '',
-  guideCustom: false,
-  guideEnabled: undefined,
-  modelProvider: '',
-  modelName: '',
-  subagentModelProvider: '',
-  subagentModelName: '',
-  modelReasoningEffort: '',
-  modelTemperature: '',
-  modelMaxTokens: '',
-  subagentReasoningEffort: '',
-  subagentTemperature: '',
-  subagentMaxTokens: '',
-  toolFilterAllow: '',
-  toolFilterDeny: '',
-  toolFilterSubagents: false,
-  maxDepth: '',
-  allowKinds: '',
-  firstTurnWord: '',
-  bootstrapMaxTokens: 0,
-  usePtcMode: false,
-  stages: [],
-  stagePreUnlock: 1,
-  stageAdvanceTool: '',
-  stageAdvanceDescription: '',
-  stageSectionTemplate: '',
-  promoteGate: false,
-  promoteAfterFirstResponse: false,
-  maxPromoteSteps: 0,
-  bootstrapTools: '',
-  compactionTools: '',
-  personaSectionsOnly: false,
-  workspaceLine: false,
-  phase1FirstCallInstruction: '',
-  instructionHint: false,
-  messageSources: '',
-  deferredSources: '',
-  deferredGraceSteps: 0,
-  anchorTurn: false,
-  anchorTurnText: '',
-  deliberationGate: false,
-  deliberationMinChars: 0,
-  deliberationMaxGatesPerTurn: 0,
-  cotDrip: false,
-  cotDripEvery: 0,
-  cotDripMaxPerTurn: 0,
-  strReplaceEditorMaxOutputChars: 16000,
-  injectPrompt: true,
   skillSwitches: {},
   skillOrder: [],
   skillCatalog: [],
@@ -231,4 +107,4 @@ export const EMPTY_FIELDS: Fields = {
 }
 /** 编译期契约：所有引擎参数键都必须进入 Fields，防止 host 新增参数后 client 静默丢弃。 */
 type MissingEngineParamKeys = Exclude<EngineParamKey, keyof Fields>
-const _assertEngineParamsInFields: MissingEngineParamKeys[] = []
+const _assertEngineParamsInFields: MissingEngineParamKeys extends never ? true : false = true

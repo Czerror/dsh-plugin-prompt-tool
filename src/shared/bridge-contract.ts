@@ -68,10 +68,10 @@ export interface BridgeRequestMap {
   templates: undefined
   promptConfigs: undefined
   presetContent: undefined
-  importPreset: { contents: Array<{ scope: 'preset' | 'agents'; content: string }> }
-  paramOverrides: { overrides?: Record<string, unknown>; promptConfigs?: unknown[]; rebuild?: boolean }
-  presetVariables: { variables?: Record<string, string>; enabled?: boolean }
-  customTools: { customTools?: unknown[] } | undefined
+  importPreset: { contents: Array<{ scope: 'preset' | 'agents'; content: string }>; expectedPresetId?: string }
+  paramOverrides: { overrides?: Record<string, unknown>; promptConfigs?: unknown[]; rebuild?: boolean; expectedPresetId?: string }
+  presetVariables: { variables?: Record<string, string>; enabled?: boolean; expectedPresetId?: string }
+  customTools: { customTools?: unknown[]; expectedPresetId?: string } | undefined
   importPresetPackage: { files: Array<{ path?: string; name?: string; content?: string }> }
   exportPreset: { id: string }
   presetDelete: { id: string }
@@ -84,10 +84,10 @@ export interface BridgeRequestMap {
   charactersDelete: { id: string }
   charactersApply: { id: string }
   charactersRemove: { id: string }
-  subagentToolPolicy: { policy?: unknown } | undefined
+  subagentToolPolicy: { policy?: unknown; expectedPresetId?: string } | undefined
   subagentToolPolicyPreview: { tool?: string; description?: string; prompt?: string; tool_profile?: string; character_id?: string; task_type?: string; additional_tools?: string[]; restrict_tools?: string[] }
   toolSurface: { sessionId: string; presetId?: never } | { presetId: string; sessionId?: never }
-  engineCapability: { action: 'create' | 'remove'; capabilityId: string } | { action: 'create-recipe'; recipeId: string }
+  engineCapability: ({ action: 'create' | 'remove'; capabilityId: string } | { action: 'create-recipe'; recipeId: string }) & { expectedPresetId?: string }
 }
 
 /** settings descriptor 的跨端最小结构。 */

@@ -70,6 +70,10 @@
 
 ## 配置参考（params 扁平键 ↔ 模块行 config）
 
+字段映射集中在 `src/shared/engine-params.ts#ENGINE_PARAM_DEFINITIONS`；host 装配、bridge 回显与配置卡共享该目录。能力各自的 `includeSubagents`、`promoteOn`、启停和提示文本都可在所属卡片设置，依旧没有跨模块全局顺序；内部服务路径由生成器管理。
+
+自定义模型工具保持 `customTools` 资产及 `tool-config-engine` 模块链路。保存方与运行时复用 `engine/tool-definition.mjs`，保存前编译官方参数 DSL 并完整验证；`customToolRequireApproval` 控制需用户批准的执行器种类。工具预览只是有效工具面的只读视图，不承担安装、连接或注册职责。
+
 优先级：参数桥（params / UI）> `moduleConfigs`（模板/ST 行级直写）> 行默认。
 moduleConfigs 只补充参数桥未覆盖的键，不再锁定覆盖 UI 可管理参数。
 

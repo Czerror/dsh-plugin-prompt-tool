@@ -77,6 +77,7 @@ test('client bundle registers through queue/live facade', () => {
     window: { __ModuleLoader__: facade },
     document: createDocumentStub(),
     console,
+    structuredClone,
     setTimeout,
     clearTimeout,
   })

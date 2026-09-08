@@ -1,63 +1,51 @@
-/** preset.yml params 与客户端字段之间的纯转换。 */
-import type { Fields } from './prompt-tool-fields.ts'
+/** preset.yml params 与客户端字段之间的纯转换；字段清单/类型/默认值来自共享契约。 */
+import { ENGINE_PARAM_DEFINITIONS, ENGINE_PARAM_KEYS, engineParamList, type EngineParamKey } from '../../shared/engine-params.ts'
+import type { Fields, StageDraft } from './prompt-tool-fields.ts'
 import { deepEqual } from './dirty-state.ts'
 
-const joinList = (value: unknown): string | undefined =>
-  Array.isArray(value)
-    ? value.filter((item): item is string => typeof item === 'string').join(', ')
-    : typeof value === 'string' ? value : undefined
-
-/** 引擎 params 读回为 UI 草稿字段。 */
 export function readParamOverridesPatch(source: Record<string, unknown>): Partial<Fields> {
-  const patch: Partial<Fields> = {}
-  const stringKeys = [
-    'firstTurnText', 'guideText', 'modelProvider', 'modelName', 'subagentModelProvider', 'subagentModelName',
-    'modelReasoningEffort', 'modelTemperature', 'modelMaxTokens', 'subagentReasoningEffort',
-    'subagentTemperature', 'subagentMaxTokens', 'firstTurnWord', 'stageAdvanceTool',
-    'stageAdvanceDescription', 'stageSectionTemplate', 'phase1FirstCallInstruction', 'anchorTurnText',
-  ] as const
-  const booleanKeys = [
-    'firstTurnAnchor', 'firstTurnCustom', 'guideCustom', 'guideEnabled', 'usePtcMode', 'injectPrompt',
-    'promoteGate', 'promoteAfterFirstResponse', 'personaSectionsOnly', 'workspaceLine', 'instructionHint',
-    'anchorTurn', 'deliberationGate', 'cotDrip',
-  ] as const
-  const numberKeys = [
-    'bootstrapMaxTokens', 'maxPromoteSteps', 'stagePreUnlock', 'deferredGraceSteps',
-    'deliberationMinChars', 'deliberationMaxGatesPerTurn', 'cotDripEvery', 'cotDripMaxPerTurn',
-    'strReplaceEditorMaxOutputChars',
-  ] as const
-  const listKeys = [
-    'toolFilterAllow', 'toolFilterDeny', 'allowKinds', 'bootstrapTools', 'compactionTools',
-    'messageSources', 'deferredSources',
-  ] as const
-
-  for (const key of stringKeys) if (typeof source[key] === 'string') patch[key] = source[key]
-  for (const key of booleanKeys) if (typeof source[key] === 'boolean') patch[key] = source[key]
-  for (const key of numberKeys) if (typeof source[key] === 'number') patch[key] = source[key]
-  for (const key of listKeys) {
-    const value = joinList(source[key])
-    if (value !== undefined) patch[key] = value
+  const patch: Record<string, unknown> = {}
+  for (const key of ENGINE_PARAM_KEYS) {
+    const value = source[key]
+    const definition = ENGINE_PARAM_DEFINITIONS[key]
+    if (value === undefined || value === null) continue
+    switch (definition.kind) {
+      case 'boolean':
+        if (typeof value === 'boolean') patch[key] = value
+        break
+      case 'number': {
+        const number = typeof value === 'number' ? value : typeof value === 'string' && value.trim() !== '' ? Number(value) : undefined
+        if (number !== undefined && definition.check(number) === undefined) {
+          patch[key] = typeof definition.defaultValue === 'string' ? String(number) : number
+        }
+        break
+      }
+      case 'string':
+        if (typeof value === 'string') patch[key] = value
+        break
+      case 'string-list':
+        if (typeof value === 'string' || Array.isArray(value)) patch[key] = engineParamList(value).join(', ')
+        break
+      case 'max-depth':
+        if (typeof value === 'string' || typeof value === 'number') patch[key] = String(value)
+        break
+      case 'stages':
+        if (Array.isArray(value)) {
+          patch[key] = value.filter((stage) => stage !== null && typeof stage === 'object').map((stage) => ({
+            name: typeof stage.name === 'string' ? stage.name : '',
+            tools: engineParamList(stage.tools).join(', '),
+          }))
+        }
+        break
+    }
   }
-  if (source.maxDepth !== undefined && source.maxDepth !== null && source.maxDepth !== '') {
-    patch.maxDepth = String(source.maxDepth)
-  }
-  if (Array.isArray(source.stages)) {
-    patch.stages = source.stages
-      .filter((stage): stage is { name?: unknown; tools?: unknown } => stage !== null && typeof stage === 'object')
-      .map((stage) => ({
-        name: typeof stage.name === 'string' ? stage.name : '',
-        tools: Array.isArray(stage.tools)
-          ? stage.tools.filter((item): item is string => typeof item === 'string').join(', ')
-          : '',
-      }))
-  }
-  return patch
+  return patch as Partial<Fields>
 }
-
-const splitList = (value: string): string[] => value.split(',').map((item) => item.trim()).filter(Boolean)
 
 export interface ParamOverrideBuildOptions {
   loadedKeys: ReadonlySet<string>
+  /** 最近读回/保存的有效草稿；未编辑的行默认值不固化进 params。 */
+  baseline?: Partial<Fields>
   autoModelProvider?: string
   autoSubagentModelProvider?: string
 }
@@ -70,64 +58,25 @@ export function updateLoadedParamKeys(loadedKeys: Set<string>, overrides: Readon
   }
 }
 
-/** UI 草稿按“已有键或偏离默认值”规则生成 params 写入载荷。 */
+function serializedParam(key: EngineParamKey, value: unknown): unknown {
+  switch (ENGINE_PARAM_DEFINITIONS[key].kind) {
+    case 'string-list': return engineParamList(value)
+    case 'max-depth': return value === '' || value === 'provider-managed' ? value : Number(value)
+    case 'stages': return (value as StageDraft[]).map((stage) => ({
+      name: stage.name.trim(), tools: engineParamList(stage.tools),
+    })).filter((stage) => stage.name.length > 0 && stage.tools.length > 0)
+    default: return value
+  }
+}
+
+/** 只发送已存键或偏离默认的草稿；未操作字段不覆盖组合默认值。 */
 export function buildParamOverrides(fields: Fields, options: ParamOverrideBuildOptions): Record<string, unknown> {
-  const emit = (key: string, value: unknown, empty: unknown): Record<string, unknown> =>
-    options.loadedKeys.has(key) || !deepEqual(value, empty) ? { [key]: value } : {}
-  const overrides: Record<string, unknown> = {
-    ...emit('firstTurnAnchor', fields.firstTurnAnchor, false),
-    ...emit('firstTurnText', fields.firstTurnText, ''),
-    ...emit('firstTurnCustom', fields.firstTurnCustom, false),
-    ...emit('guideText', fields.guideText, ''),
-    ...emit('guideCustom', fields.guideCustom, false),
-    ...emit('guideEnabled', fields.guideEnabled, undefined),
-    ...emit('usePtcMode', fields.usePtcMode, false),
-    ...emit('injectPrompt', fields.injectPrompt, true),
-    ...emit('modelProvider', fields.modelProvider, ''),
-    ...emit('modelName', fields.modelName, ''),
-    ...emit('subagentModelProvider', fields.subagentModelProvider, ''),
-    ...emit('subagentModelName', fields.subagentModelName, ''),
-    ...emit('modelReasoningEffort', fields.modelReasoningEffort, ''),
-    ...emit('modelTemperature', fields.modelTemperature, ''),
-    ...emit('modelMaxTokens', fields.modelMaxTokens, ''),
-    ...emit('subagentReasoningEffort', fields.subagentReasoningEffort, ''),
-    ...emit('subagentTemperature', fields.subagentTemperature, ''),
-    ...emit('subagentMaxTokens', fields.subagentMaxTokens, ''),
-    ...emit('toolFilterAllow', splitList(fields.toolFilterAllow), []),
-    ...emit('toolFilterDeny', splitList(fields.toolFilterDeny), []),
-    ...emit('toolFilterSubagents', fields.toolFilterSubagents, false),
-    ...emit('maxDepth', fields.maxDepth === '' ? '' : fields.maxDepth === 'provider-managed' ? 'provider-managed' : Number(fields.maxDepth), ''),
-    ...emit('allowKinds', splitList(fields.allowKinds), []),
-    ...emit('firstTurnWord', fields.firstTurnWord, ''),
-    ...emit('bootstrapMaxTokens', fields.bootstrapMaxTokens, 0),
-    ...emit('promoteGate', fields.promoteGate, false),
-    ...emit('promoteAfterFirstResponse', fields.promoteAfterFirstResponse, false),
-    ...emit('maxPromoteSteps', fields.maxPromoteSteps, 0),
-    ...emit('bootstrapTools', splitList(fields.bootstrapTools), []),
-    ...emit('compactionTools', splitList(fields.compactionTools), []),
-    ...emit('stages', fields.stages
-      .map((stage) => ({ name: stage.name.trim(), tools: splitList(stage.tools) }))
-      .filter((stage) => stage.name.length > 0 && stage.tools.length > 0), []),
-    ...emit('stagePreUnlock', fields.stagePreUnlock, 1),
-    ...emit('stageAdvanceTool', fields.stageAdvanceTool, ''),
-    ...emit('stageAdvanceDescription', fields.stageAdvanceDescription, ''),
-    ...emit('stageSectionTemplate', fields.stageSectionTemplate, ''),
-    ...emit('personaSectionsOnly', fields.personaSectionsOnly, false),
-    ...emit('workspaceLine', fields.workspaceLine, false),
-    ...emit('phase1FirstCallInstruction', fields.phase1FirstCallInstruction, ''),
-    ...emit('instructionHint', fields.instructionHint, false),
-    ...emit('messageSources', splitList(fields.messageSources), []),
-    ...emit('deferredSources', splitList(fields.deferredSources), []),
-    ...emit('deferredGraceSteps', fields.deferredGraceSteps, 0),
-    ...emit('anchorTurn', fields.anchorTurn, false),
-    ...emit('anchorTurnText', fields.anchorTurnText, ''),
-    ...emit('deliberationGate', fields.deliberationGate, false),
-    ...emit('deliberationMinChars', fields.deliberationMinChars, 0),
-    ...emit('deliberationMaxGatesPerTurn', fields.deliberationMaxGatesPerTurn, 0),
-    ...emit('cotDrip', fields.cotDrip, false),
-    ...emit('cotDripEvery', fields.cotDripEvery, 0),
-    ...emit('cotDripMaxPerTurn', fields.cotDripMaxPerTurn, 0),
-    ...emit('strReplaceEditorMaxOutputChars', fields.strReplaceEditorMaxOutputChars, 16000),
+  const overrides: Record<string, unknown> = {}
+  for (const key of ENGINE_PARAM_KEYS) {
+    const value = serializedParam(key, fields[key])
+    const empty = serializedParam(key, options.baseline !== undefined && Object.hasOwn(options.baseline, key)
+      ? options.baseline[key] : ENGINE_PARAM_DEFINITIONS[key].defaultValue)
+    if (options.loadedKeys.has(key) || !deepEqual(value, empty)) overrides[key] = value ?? ''
   }
   const modelProviderIsDisplayOnly = !options.loadedKeys.has('modelProvider')
     && fields.modelName.length === 0 && fields.modelProvider === options.autoModelProvider
@@ -135,5 +84,12 @@ export function buildParamOverrides(fields: Fields, options: ParamOverrideBuildO
     && fields.subagentModelName.length === 0 && fields.subagentModelProvider === options.autoSubagentModelProvider
   if (modelProviderIsDisplayOnly) delete overrides.modelProvider
   if (subagentProviderIsDisplayOnly) delete overrides.subagentModelProvider
+  // 选择了模型时同时提交自动显示的 provider，不能只落 modelName 形成无效半路由。
+  if (Object.hasOwn(overrides, 'modelName') && fields.modelName !== '' && fields.modelProvider !== '') overrides.modelProvider = fields.modelProvider
+  if (Object.hasOwn(overrides, 'subagentModelName') && fields.subagentModelName !== '' && fields.subagentModelProvider !== '') overrides.subagentModelProvider = fields.subagentModelProvider
   return overrides
 }
+
+/** 保存队列中的过期草稿不得发往新预设；服务端另校验 expectedPresetId。 */
+export const isCurrentPresetDraft = (draft: Pick<Fields, 'presetTemplate'>, current: Pick<Fields, 'presetTemplate'>): boolean =>
+  draft.presetTemplate === current.presetTemplate

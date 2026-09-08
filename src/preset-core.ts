@@ -25,6 +25,7 @@ export { loadPromptConfigFiles, mergePromptConfigs, renderPromptConfigYaml } fro
 export function buildCordis(prompt: string, options: BuildCordisOptions = {}): string {
   const spec = loadPresetSpec(ANCHORED_TEMPLATE_DIR)
   const runtime = {
+    ...options,
     promptText: prompt,
     firstTurnAnchor: options.firstTurnAnchor === true,
     firstTurnCustom: options.firstTurnCustom === true,
@@ -34,9 +35,9 @@ export function buildCordis(prompt: string, options: BuildCordisOptions = {}): s
     guideEnabled: typeof options.guideEnabled === 'boolean' ? options.guideEnabled : undefined,
     injectPrompt: options.injectPrompt !== false,
     usePtcMode: typeof options.usePtcMode === 'boolean' ? options.usePtcMode : undefined,
-    bootstrapMaxTokens: Number.isSafeInteger(options.bootstrapMaxTokens) && (options.bootstrapMaxTokens ?? 0) > 0
+    bootstrapMaxTokens: Number.isSafeInteger(options.bootstrapMaxTokens) && (options.bootstrapMaxTokens ?? 0) >= 0
       ? options.bootstrapMaxTokens
-      : 0,
+      : undefined,
     modelProvider: typeof options.modelProvider === 'string' && options.modelProvider.length > 0
       ? options.modelProvider
       : '',

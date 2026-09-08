@@ -6,7 +6,6 @@ import type { PromptToolHostApi } from './host-api.ts'
 import type { PresetModuleFacts } from '../../shared/engine-capabilities.ts'
 import { bridgeCall, errorMessage, type BridgeResult, type BridgeSettingsView } from './bridge-client.ts'
 import {
-  DEFAULT_BOOTSTRAP_DISPLAY,
   EMPTY_FIELDS,
   EMPTY_META,
   type Fields,
@@ -23,7 +22,7 @@ import {
   type SwitchSnapshot,
 } from './dirty-state.ts'
 import { isContentAsset, liftContentText, stripContentText } from './prompt-config-content.ts'
-import { buildParamOverrides, readParamOverridesPatch, updateLoadedParamKeys } from './param-overrides.ts'
+import { buildParamOverrides, isCurrentPresetDraft, readParamOverridesPatch, updateLoadedParamKeys } from './param-overrides.ts'
 import { createSerialTaskQueue } from './save-queue.ts'
 
 /** rc8 ui-settings 共享镜像传输面：标准字段经官方 settingsScope 读写。 */
@@ -53,7 +52,6 @@ export interface PromptToolStore {
   modelCatalog: Record<string, string[]>
   hostDefaultModel?: HostDefaultModel
   moduleFacts?: PresetModuleFacts
-  bootstrapTokensDraft: string
   /** 新技能目录路径输入（多目录卡片：输入路径添加）。 */
   skillsDirDraft: string
   /** 当前预设模板消息批层（pre-step）配置数；0 = 模板无配置（入口开关联动关闭）。 */
@@ -79,16 +77,10 @@ export interface PromptToolStore {
   /** 保存模板变量；可显式传入下一份值（如清空场景，避免 setState 未生效时的旧闭包）。 */
   saveTemplateVariables: (next?: Record<string, string>) => Promise<void>
   toggle: (key: SwitchKey) => void
-  toggleBootstrapMaxTokens: () => void
   setPresetTemplate: (id: string) => void
   createEngineCapability: (action: 'create' | 'create-recipe', id: string) => Promise<void>
   removeEngineCapability: (id: string) => Promise<void>
-  setBootstrapTokensDraft: (value: string) => void
-  commitBootstrapTokensDraft: () => void
   /** 门控回退步数草稿（数字输入，失焦提交；0 = 引擎默认 4）。 */
-  gateStepsDraft: string
-  setGateStepsDraft: (value: string) => void
-  commitGateStepsDraft: () => void
   setSkillsDirDraft: (value: string) => void
   /** 追加技能目录（按添加顺序；重复路径拒绝）。 */
   addSkillsDir: (dir: string) => void
@@ -135,8 +127,6 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
   const [moduleFacts, setModuleFacts] = useState<PresetModuleFacts | undefined>(undefined)
   const [fields, setFields] = useState<Fields>(EMPTY_FIELDS)
   const [meta, setMeta] = useState<EngineMeta>(EMPTY_META)
-  const [bootstrapTokensDraft, setBootstrapTokensDraft] = useState(DEFAULT_BOOTSTRAP_DISPLAY)
-  const [gateStepsDraft, setGateStepsDraft] = useState('4')
   const [skillsDirDraft, setSkillsDirDraft] = useState('')
   const [templatePreStepCount, setTemplatePreStepCount] = useState(0)
   const [savedSwitches, setSavedSwitches] = useState<SwitchSnapshot>(EMPTY_SWITCHES)
@@ -175,6 +165,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
   /** 最近一次 load 时 preset.yml params 现有键集：persist 只发送「已有键或已改动」，
    *  未动过的键不写——避免 UI 默认值固化覆盖模板 moduleConfigs 默认。 */
   const loadedKeysRef = useRef<Set<string>>(new Set())
+  const paramBaselineRef = useRef<SwitchSnapshot>(EMPTY_SWITCHES)
 
   const showNotice = useCallback((kind: 'ok' | 'error', message: string) => {
     setNotice(message)
@@ -208,8 +199,6 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
       next.subagentModelProvider = autoSubagentModelProviderRef.current
     }
     publishFields(next)
-    setBootstrapTokensDraft(next.bootstrapMaxTokens > 0 ? String(next.bootstrapMaxTokens) : DEFAULT_BOOTSTRAP_DISPLAY)
-    setGateStepsDraft(next.maxPromoteSteps > 0 ? String(next.maxPromoteSteps) : '4')
     setSkillsDirDraft('')
     setSavedSwitches(snapshotSwitches(next))
     setSavedConfigs(next.promptConfigs)
@@ -272,6 +261,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
         publishFields(next)
         setSavedConfigs(actual)
       }
+      paramBaselineRef.current = snapshotSwitches(fieldsRef.current)
       setNotice('')
       return fieldsRef.current
     } catch (error) {
@@ -388,14 +378,21 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     const autoModelProvider = autoModelProviderRef.current
     const autoSubagentModelProvider = autoSubagentModelProviderRef.current
     await presetSaveQueueRef.current.enqueue(async () => {
+      if (!isCurrentPresetDraft(f, fieldsRef.current)) {
+        showNotice('error', '预设已切换，旧参数草稿未写入')
+        return
+      }
       const overrides = buildParamOverrides(f, {
         loadedKeys: loadedKeysRef.current,
+        baseline: paramBaselineRef.current,
         autoModelProvider,
         autoSubagentModelProvider,
       })
-      const res = await bridgeCall('paramOverrides', { overrides })
+      const res = await bridgeCall('paramOverrides', { overrides, expectedPresetId: f.presetTemplate })
+      if (!isCurrentPresetDraft(f, fieldsRef.current)) return
       if (res.ok) {
         updateLoadedParamKeys(loadedKeysRef.current, overrides)
+        paramBaselineRef.current = savedSnapshot
         // 只标记发起时快照；若期间有新编辑，当前 fields 仍保持 dirty。
         setSavedSwitches(savedSnapshot)
         const currentSnapshot = snapshotSwitches(fieldsRef.current)
@@ -417,10 +414,15 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
   /** 保存后是否静默重载。切换预设时传 false（随后的 settings.mutate 回调会统一 load，
    *  避免一次切换触发两次全量读取）。 */
   const persistConfigs = useCallback((configs: PromptConfigDraft[], options?: { reload?: boolean; rebuild?: boolean }): Promise<void> => {
+    const expectedPresetId = fieldsRef.current.presetTemplate
     const contentEntries = configs.filter(isContentAsset)
     const draftVersion = draftVersionRef.current
     const switchesWereClean = switchesEqual(snapshotSwitches(fieldsRef.current), savedSwitches)
     return presetSaveQueueRef.current.enqueue(async () => {
+      if (expectedPresetId !== fieldsRef.current.presetTemplate) {
+        showNotice('error', '预设已切换，旧提示词草稿未写入')
+        return
+      }
       // 内容资产：text 先写生成目录文件。合并为单次 /import-preset（批量载荷），
       // 服务端只触发一次重建——此前逐条请求每条各重建一次（多次写盘+recomposition）。
       if (contentEntries.length > 0) {
@@ -428,7 +430,8 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
           scope: config.id === 'prompt-injector' ? 'preset' as const : 'agents' as const,
           content: config.text ?? '',
         }))
-        const res = await bridgeCall('importPreset', { contents })
+        const res = await bridgeCall('importPreset', { contents, expectedPresetId })
+        if (expectedPresetId !== fieldsRef.current.presetTemplate) return
         if (!res.ok) {
           showNotice('error', 'preset.md/agents.md 保存失败：' + (res.message ?? 'settings bridge unavailable'))
           return
@@ -439,9 +442,11 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
       // 的 129 张配置卡被一次清空）；用户主动清空（此前已加载非空配置）允许落盘空数组。
       if (configs.length === 0 && savedConfigs.length === 0) return
       const res = await bridgeCall('paramOverrides', {
+        expectedPresetId,
         promptConfigs: configs.map(stripContentText),
         ...(options?.rebuild === false ? { rebuild: false } : {}),
       })
+      if (expectedPresetId !== fieldsRef.current.presetTemplate) return
       if (res.ok) {
         setSavedConfigs(configs)
         if (options?.reload !== false && shouldReloadAfterPresetSave(
@@ -464,6 +469,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
       Object.entries(next ?? templateVariables).filter(([key]) => key.trim().length > 0),
     )
     const res = await bridgeCall('presetVariables', {
+      expectedPresetId: fieldsRef.current.presetTemplate,
       variables: cleaned,
       enabled: templateVariablesEnabled,
     })
@@ -483,15 +489,9 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     else persistSwitches()
   }, [patch, persistParamOverrides, persistSwitches, load])
 
-  const toggleBootstrapMaxTokens = useCallback(() => {
-    const next = fieldsRef.current.bootstrapMaxTokens > 0 ? 0 : 256000
-    patch({ bootstrapMaxTokens: next })
-    setBootstrapTokensDraft(DEFAULT_BOOTSTRAP_DISPLAY)
-    void persistParamOverrides()
-  }, [patch, persistParamOverrides])
-
   const setPresetTemplate = useCallback(async (id: string) => {
     if (fieldsRef.current.presetTemplate === id) return
+    await presetSaveQueueRef.current.enqueue(async () => {})
     // 切换即保存：模块列表有未保存的提示词配置修改时先提交（写当前激活预设），
     // 避免切换后 load() 重置 fields 丢失修改。已保存/无修改则直接切换。
     const dirtyConfigs = promptConfigsDirty(fieldsRef.current.promptConfigs, savedConfigs)
@@ -518,7 +518,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
 
   const createEngineCapability = useCallback(async (action: 'create' | 'create-recipe', id: string): Promise<void> => {
     const request = action === 'create' ? { action: 'create' as const, capabilityId: id } : { action: 'create-recipe' as const, recipeId: id }
-    const result = await bridgeCall('engineCapability', request)
+    const result = await bridgeCall('engineCapability', { ...request, expectedPresetId: fieldsRef.current.presetTemplate })
     if (!result.ok) {
       showNotice('error', '引擎能力创建失败：' + (result.message ?? 'settings bridge unavailable'))
       return
@@ -528,7 +528,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
   }, [load, showNotice])
 
   const removeEngineCapability = useCallback(async (id: string): Promise<void> => {
-    const result = await bridgeCall('engineCapability', { action: 'remove', capabilityId: id })
+    const result = await bridgeCall('engineCapability', { action: 'remove', capabilityId: id, expectedPresetId: fieldsRef.current.presetTemplate })
     if (!result.ok) {
       showNotice('error', '引擎能力删除失败：' + (result.message ?? 'settings bridge unavailable'))
       return
@@ -536,29 +536,6 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     showNotice('ok', result.value.changed ? `已删除引擎能力：${id}` : `引擎能力不存在：${id}`)
     await load({ silent: true })
   }, [load, showNotice])
-
-  const commitBootstrapTokensDraft = useCallback(() => {
-    const parsed = Number(bootstrapTokensDraft)
-    if (!Number.isSafeInteger(parsed) || parsed <= 0) {
-      setBootstrapTokensDraft(DEFAULT_BOOTSTRAP_DISPLAY)
-      patch({ bootstrapMaxTokens: 256000 })
-    } else {
-      patch({ bootstrapMaxTokens: parsed })
-    }
-    void persistParamOverrides()
-  }, [bootstrapTokensDraft, patch, persistParamOverrides])
-
-  /** 门控回退步数提交：0 = 引擎默认 4（不写 params）。 */
-  const commitGateStepsDraft = useCallback(() => {
-    const parsed = Number(gateStepsDraft)
-    if (!Number.isSafeInteger(parsed) || parsed < 0) {
-      setGateStepsDraft(String(fieldsRef.current.maxPromoteSteps > 0 ? fieldsRef.current.maxPromoteSteps : 4))
-      return
-    }
-    patch({ maxPromoteSteps: parsed })
-    setGateStepsDraft(String(parsed))
-    void persistParamOverrides()
-  }, [gateStepsDraft, patch, persistParamOverrides])
 
   const addSkillsDir = useCallback((dir: string) => {
     const next = dir.trim()
@@ -659,7 +636,6 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     modelCatalog,
     hostDefaultModel,
     moduleFacts,
-    bootstrapTokensDraft,
     skillsDirDraft,
     templatePreStepCount,
     savedSwitches,
@@ -680,15 +656,9 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     setTemplateVariablesEnabled,
     saveTemplateVariables,
     toggle,
-    toggleBootstrapMaxTokens,
     setPresetTemplate,
     createEngineCapability,
     removeEngineCapability,
-    setBootstrapTokensDraft,
-    commitBootstrapTokensDraft,
-    gateStepsDraft,
-    setGateStepsDraft,
-    commitGateStepsDraft,
     setSkillsDirDraft,
     addSkillsDir,
     removeSkillsDir,

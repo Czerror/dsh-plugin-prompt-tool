@@ -44,6 +44,20 @@ const BRIDGE_SAMPLES = {
   cotDrip: true,
   cotDripEvery: 3,
   cotDripMaxPerTurn: 2,
+  bootstrapSubagents: true,
+  bootstrapPromoteOn: 'tool-call',
+  contextGateEnabled: false,
+  contextGateSubagents: true,
+  contextGatePromoteOn: 'assistant-message',
+  ptcSubagents: true,
+  ptcPromoteOn: 'either',
+  toolFilterEnabled: false,
+  anchorTurnSubagents: true,
+  deliberationSubagents: true,
+  deliberationGateText: '深思提示',
+  cotDripSubagents: true,
+  cotDripText: '保持思考',
+  customToolRequireApproval: ['shell', 'fs'],
 }
 
 test('PARAM_KEYS 派生一致性：= ENGINE_PARAM_KEYS + 锚定内容键 + promptConfigs', () => {
@@ -73,8 +87,9 @@ test('ENGINE_PARAM_KEYS 每个非 writer 键都有参数桥装配消费（防「
     assert.ok(Object.keys(configs).length > 0, `${key} 应被参数桥消费（产出组合行 config）`)
     for (const id of Object.keys(configs)) bridgeConsumed.add(id)
   }
-  assert.ok(bridgeConsumed.has('tool-bootstrap') && bridgeConsumed.has('context-gate'),
-    '参数桥应覆盖核心引擎行')
+  const allConfigs = buildModuleConfigsFromParams(BRIDGE_SAMPLES)
+  assert.ok(Object.hasOwn(allConfigs, 'tool-bootstrap') && Object.hasOwn(allConfigs, 'context-gate'),
+    '参数桥应覆盖核心引擎行；writer 参数仍需由 runtimeOf 透传')
 })
 
 test('MODEL_SEGMENT_MAP 双向一致：展平读回 = 保存写回（段目标唯一）', () => {

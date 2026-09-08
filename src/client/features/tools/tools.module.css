@@ -1,52 +1,45 @@
-/* tools feature。 */
-
-/* 工具管理区块：蓝点移入标题文字后（h2::after 被按钮 flex 容器挤到下方，禁用并在文字内重绘）。 */
+/* 参考官方 ui-settings-plugin-inventory；只复用公开原子和主题 token。 */
 .toolHeading h2::after { display: none; }
-.toolHeadingDot {
-  display: inline-block;
-  width: 5px;
-  height: 5px;
-  margin: 0 0 2px 2px;
-  border-radius: 50%;
-  corner-shape: round;
-  background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 70%, transparent);
-  box-shadow: 0 0 8px color-mix(in srgb, var(--dsw-alias-state-business-primary) 55%, transparent);
-}
-
-.toolSurfaceCards {
-  display: grid;
-  max-height: 220px;
-  gap: 6px;
-  overflow-y: auto;
-}
-
-.toolSurface {
-  border: 0.5px solid var(--dsw-alias-border-l2);
-  border-radius: 8px;
-  padding: 8px;
-}
-
-.toolSurfaceControls {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
+.toolHeadingDot { display: inline-block; width: 5px; height: 5px; margin: 0 0 2px 2px; border-radius: 50%; corner-shape: round; background: var(--dsw-alias-state-business-primary); }
 .customToolList { margin-top: 10px; }
-
-.toolSurfaceCard {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  gap: 2px;
-  border: 0.5px solid var(--dsw-alias-border-l2);
-  border-radius: 7px;
-  padding: 6px 8px;
-  background: var(--dsw-alias-bg-layer-3);
-  color: var(--dsw-alias-label-tertiary);
-  font-size: 12px;
-  line-height: 1.5;
-}
-
-.toolSurfaceCard strong { color: var(--dsw-alias-label-primary); }
-.toolSurfaceCard span { overflow-wrap: anywhere; }
+.customToolsFields { min-width: 0; margin: 0; padding: 0; border: 0; }
+.toolsPreviewPage { display: flex; flex-direction: column; gap: 14px; width: 100%; max-width: 760px; min-width: 0; color: var(--dsw-alias-label-primary); }
+.toolSearch { position: relative; display: flex; align-items: center; width: 100%; color: var(--dsw-alias-label-tertiary); }
+.toolSearch > svg { position: absolute; left: 12px; pointer-events: none; }
+.toolSearch input { width: 100%; min-width: 0; height: 36px; border: .5px solid var(--dsw-alias-border-l4); border-radius: 10px; padding: 0 34px 0 36px; background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-label-primary); font: inherit; font-size: 13px; }
+.toolSearch input:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary); outline-offset: 1px; }
+.toolGroup { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.toolGroup + .toolGroup { border-top: .5px solid var(--dsw-alias-border-l2); padding-top: 14px; }
+.toolGroupHeading { display: flex; align-items: center; gap: 8px; min-height: 36px; }
+.toolGroupToggle { display: flex; flex: none; align-items: center; gap: 8px; border: 0; padding: 0; background: transparent; color: inherit; font: inherit; font-size: 14px; cursor: pointer; }
+.toolGroupToggle > .toolChevron { transform: rotate(-90deg); }
+.toolGroupToggle[aria-expanded='true'] > .toolChevron { transform: none; }
+.toolGroupToggle:focus-visible, .toolRefresh:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary); outline-offset: 2px; }
+.toolHeaderAction { margin-left: auto; min-width: 0; max-width: 55%; }
+.toolPresetSelect { max-width: 100%; }
+.toolGroupSub { margin: -6px 0 0 20px; color: var(--dsw-alias-label-tertiary); font-size: 12px; line-height: 18px; font-variant-numeric: tabular-nums; }
+.toolGroupBody { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.toolSurfaceControls { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.toolRefresh { border: .5px solid var(--dsw-alias-border-l3); border-radius: 8px; padding: 4px 10px; background: transparent; color: var(--dsw-alias-label-primary); font: inherit; font-size: 12px; cursor: pointer; }
+.toolRefresh:disabled { opacity: .5; cursor: default; }
+.toolSurfaceHint, .toolSurfaceError { margin: 0; font-size: 12px; line-height: 18px; overflow-wrap: anywhere; }
+.toolSurfaceHint { color: var(--dsw-alias-label-tertiary); }
+.toolSurfaceError { color: var(--dsw-alias-label-error); }
+.toolSurfaceCards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: 10px; list-style: none; margin: 0; padding: 0; }
+.toolSurfaceCard { min-width: 0; overflow: hidden; border: 0; border-radius: 14px; box-shadow: var(--dsw-elevation-stroke); background: var(--dsw-alias-bg-layer-3); }
+.toolSurfaceCard[data-open] { box-shadow: var(--dsw-elevation-panel); }
+.toolCardToggle { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; min-height: 52px; border: 0; padding: 12px 14px; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.toolCardToggle:hover, .toolSurfaceCard[data-open] > .toolCardToggle { background: var(--dsw-alias-interactive-bg-hover); }
+.toolCardToggle:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary); outline-offset: -2px; }
+.toolCardTitle { min-width: 0; overflow: hidden; font-size: 14px; line-height: 20px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.toolCardTrailing { display: inline-flex; flex: none; align-items: center; gap: 7px; }
+.toolVisibleDot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; corner-shape: round; background: var(--dsw-alias-state-success-primary); }
+.toolChevron { flex: none; color: var(--dsw-alias-label-tertiary); }
+.toolSurfaceCard[data-open] .toolChevron { transform: rotate(180deg); }
+.toolCardDetails { border-top: .5px solid var(--dsw-alias-border-l2); padding: 10px 14px 12px; background: var(--dsw-alias-bg-module-platform); }
+.toolEntryValue { display: block; overflow-wrap: anywhere; font-family: var(--ds-font-family-code, ui-monospace, monospace); font-size: 12px; line-height: 18px; }
+.toolFacts { display: grid; grid-template-columns: 70px minmax(0, 1fr); gap: 6px 10px; margin: 8px 0 0; font-size: 12px; line-height: 18px; }
+.toolFacts dt { color: var(--dsw-alias-label-tertiary); }
+.toolFacts dd { min-width: 0; margin: 0; overflow-wrap: anywhere; white-space: pre-wrap; color: var(--dsw-alias-label-secondary); }
+@media (prefers-reduced-motion: no-preference) { .toolChevron { transition: transform 140ms var(--ds-ease-in-out); } }
+@media (max-width: 680px) { .toolSurfaceCards { grid-template-columns: minmax(0, 1fr); } .toolGroupHeading { flex-wrap: wrap; } }

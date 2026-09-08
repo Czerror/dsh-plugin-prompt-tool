@@ -689,8 +689,8 @@ test('settings bridge /custom-tools 保存时自动追加工具模块', async ()
     const handler = handlers.get(PREFIX + BRIDGE_ENDPOINTS.customTools)
     assert.ok(handler, '/custom-tools 端点应注册')
     const payload = Buffer.from(JSON.stringify({ customTools: [
-      { id: 'shell', execute: { kind: 'shell' } },
-      { id: 'world', execute: { kind: 'delegate', tool: 'world_book_upsert' } },
+      { id: 'shell', description: '运行命令', output: { schema: { type: 'string' } }, execute: { kind: 'shell', command: 'echo' } },
+      { id: 'world', description: '写入世界书', output: { schema: { type: 'json' } }, execute: { kind: 'delegate', tool: 'world_book_upsert' } },
     ] }))
     const res = fakeRes()
     await handler(fakeReq({ [Symbol.asyncIterator]: async function* () { yield payload } }), res)
@@ -718,7 +718,7 @@ test('settings bridge /custom-tools 拒绝缺少 modules 的预设', async () =>
       () => {},
     )
     const handler = handlers.get(PREFIX + BRIDGE_ENDPOINTS.customTools)
-    const payload = Buffer.from(JSON.stringify({ customTools: [{ id: 'shell', execute: { kind: 'shell' } }] }))
+    const payload = Buffer.from(JSON.stringify({ customTools: [{ id: 'shell', description: '运行命令', output: { schema: { type: 'string' } }, execute: { kind: 'shell', command: 'echo' } }] }))
     const res = fakeRes()
     await handler(fakeReq({ [Symbol.asyncIterator]: async function* () { yield payload } }), res)
     assert.equal(res.status, 409)
@@ -763,6 +763,118 @@ test('settings bridge /engine-capability 删除显式能力并只重建一次', 
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
+})
+
+test('自定义工具完整校验失败不写盘、不重建，合法工具只重建一次', async () => {
+  const dir = makeUserPresetDir('pt-custom-tool-validation-')
+  const file = join(dir, 'preset.yml')
+  const original = '# 用户注释\nid: beta\nmodules: []\nunknown: keep\n'
+  writeFileSync(file, original, 'utf8')
+  const { ctx, handlers } = makeHarness()
+  let rebuilds = 0
+  registerSettingsBridge(ctx, 'prompt-tool', () => ({ available: true, providers: [] }),
+    () => ({ activeSkillsDirs: [], skillCatalog: [] }), () => '', undefined, () => dir,
+    undefined, () => { rebuilds += 1 })
+  const handler = handlers.get(PREFIX + BRIDGE_ENDPOINTS.customTools)
+  const valid = { id: 'read_asset', description: '读取工作区文件', parameters: { path: { type: 'string', required: true } },
+    output: { schema: { type: 'json' } }, execute: { kind: 'fs', action: 'read', path: '{{args.path}}' } }
+  try {
+    for (const tool of [
+      { ...valid, description: '' }, { ...valid, enabled: 'on' },
+      { ...valid, execute: { kind: 'shell' } }, { ...valid, execute: { kind: 'external-plugin' } },
+      { ...valid, output: { schema: { type: 'invalid' } } },
+    ]) {
+      const body = Buffer.from(JSON.stringify({ customTools: [tool] }))
+      const res = fakeRes()
+      await handler(fakeReq({ [Symbol.asyncIterator]: async function* () { yield body } }), res)
+      assert.equal(res.status, 400)
+      assert.equal(JSON.parse(res.body).code, 'custom-tools-invalid')
+      assert.equal(readFileSync(file, 'utf8'), original)
+      assert.equal(rebuilds, 0)
+    }
+    const body = Buffer.from(JSON.stringify({ customTools: [valid] }))
+    const res = fakeRes()
+    await handler(fakeReq({ [Symbol.asyncIterator]: async function* () { yield body } }), res)
+    assert.equal(res.status, 200)
+    assert.equal(rebuilds, 1)
+    const spec = parseYaml(readFileSync(file, 'utf8'))
+    assert.deepEqual(spec.customTools, [valid], '只保存原始 DSL，不写回编译产物')
+    assert.ok(spec.modules.includes('tool-config-engine'))
+    assert.equal(spec.unknown, 'keep')
+    assert.match(readFileSync(file, 'utf8'), /# 用户注释/)
+  } finally { rmSync(dir, { recursive: true, force: true }) }
+})
+
+test('预设身份拦截跨预设旧请求及请求体读取期间的切换，任何通道都不串写', async () => {
+  const a = makeUserPresetDir('pt-identity-a-')
+  const b = makeUserPresetDir('pt-identity-b-')
+  for (const dir of [a, b]) writeFileSync(join(dir, 'preset.yml'), 'id: test\nmodules: []\n', 'utf8')
+  const original = readFileSync(join(b, 'preset.yml'), 'utf8')
+  let active = b
+  let rebuilds = 0
+  const { ctx, handlers } = makeHarness()
+  registerSettingsBridge(ctx, 'prompt-tool', () => ({ available: true, providers: [] }),
+    () => ({ activeSkillsDirs: [], skillCatalog: [] }), () => '', undefined, () => active,
+    () => { rebuilds += 1 }, () => { rebuilds += 1 }, undefined, () => { rebuilds += 1 })
+  const requests = [
+    ['paramOverrides', { overrides: { bootstrapSubagents: true } }],
+    ['paramOverrides', { promptConfigs: [] }],
+    ['customTools', { customTools: [] }],
+    ['subagentToolPolicy', { policy: null }],
+    ['presetVariables', { variables: {} }],
+    ['engineCapability', { action: 'create', capabilityId: 'tool-bootstrap' }],
+    ['importPreset', { contents: [{ scope: 'preset', content: '旧文本' }] }],
+  ]
+  try {
+    for (const [endpoint, payload] of requests) {
+      const body = Buffer.from(JSON.stringify({ ...payload, expectedPresetId: a.split(/[\\/]/).at(-1) }))
+      const res = fakeRes()
+      await handlers.get(PREFIX + BRIDGE_ENDPOINTS[endpoint])(fakeReq({ [Symbol.asyncIterator]: async function* () { yield body } }), res)
+      assert.equal(res.status, 409, endpoint)
+      assert.equal(JSON.parse(res.body).code, 'preset-changed')
+    }
+    active = a
+    const handler = handlers.get(PREFIX + BRIDGE_ENDPOINTS.paramOverrides)
+    const res = fakeRes()
+    await handler(fakeReq({ [Symbol.asyncIterator]: async function* () {
+      active = b
+      yield Buffer.from(JSON.stringify({ overrides: { bootstrapSubagents: true } }))
+    } }), res)
+    assert.equal(res.status, 409, '兼容旧客户端无ID请求也拦截读取期间切换')
+    assert.equal(rebuilds, 0)
+    assert.equal(readFileSync(join(b, 'preset.yml'), 'utf8'), original)
+    assert.equal(existsSync(join(b, 'preset.md')), false)
+    const invalid = fakeRes()
+    await handler(fakeReq({ [Symbol.asyncIterator]: async function* () {
+      yield Buffer.from(JSON.stringify({ overrides: {}, expectedPresetId: 1 }))
+    } }), invalid)
+    assert.equal(invalid.status, 400)
+  } finally { for (const dir of [a, b]) rmSync(dir, { recursive: true, force: true }) }
+})
+
+test('公开晋升信号与门控开关冲突在落盘前拒绝，保留旧参数', async () => {
+  const dir = makeUserPresetDir('pt-gate-conflict-')
+  const file = join(dir, 'preset.yml')
+  const original = 'id: test\nmodules: [tool-bootstrap]\nmoduleConfigs:\n  tool-bootstrap:\n    promoteOn: tool-call\n'
+  writeFileSync(file, original, 'utf8')
+  const { ctx, handlers } = makeHarness()
+  registerSettingsBridge(ctx, 'prompt-tool', () => ({ available: true, providers: [] }),
+    () => ({ activeSkillsDirs: [], skillCatalog: [] }), () => '', undefined, () => dir)
+  const handler = handlers.get(PREFIX + BRIDGE_ENDPOINTS.paramOverrides)
+  try {
+    const res = fakeRes()
+    await handler(fakeReq({ [Symbol.asyncIterator]: async function* () {
+      yield Buffer.from(JSON.stringify({ overrides: { promoteGate: true } }))
+    } }), res)
+    assert.equal(res.status, 400)
+    assert.equal(JSON.parse(res.body).code, 'overrides-invalid-value')
+    assert.equal(readFileSync(file, 'utf8'), original)
+    const valid = fakeRes()
+    await handler(fakeReq({ [Symbol.asyncIterator]: async function* () {
+      yield Buffer.from(JSON.stringify({ overrides: { promoteGate: true, bootstrapPromoteOn: 'either' } }))
+    } }), valid)
+    assert.equal(valid.status, 200)
+  } finally { rmSync(dir, { recursive: true, force: true }) }
 })
 
 test('settings bridge /subagent-tool-policy 保存、停用与模块装配均为原子操作', async () => {
