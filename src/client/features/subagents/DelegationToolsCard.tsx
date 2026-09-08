@@ -1,6 +1,7 @@
 import clsx from 'clsx'
 import type { ReactNode } from 'react'
 import type { PromptToolStore } from '../../data/use-prompt-tool-store.ts'
+import { HintTooltip } from '../../ui/HintTooltip.tsx'
 import { MenuSelect } from '../../ui/MenuSelect.tsx'
 import { SubagentToolPolicyCard } from './SubagentToolPolicyCard.tsx'
 import { EngineModuleCard } from '../../ui/EngineModuleCard.tsx'
@@ -21,21 +22,23 @@ export function DelegationToolsModuleCard(props: {
       <p className={styles.configFieldHint}>工具过滤与注入 kind 白名单由主会话的 `tool-filter` / `context-gate` 能力卡统一维护；此处只保留子代理深度和实例策略。</p>
       <div className={styles.settingRowStack}>
         <div className={styles.switchGrid}>
-          <span className={clsx(styles.switchGridItem, styles.switchGridField)} title="委派 maxDepth：0 禁止委派；provider-managed 由服务商管理；正整数限制递归层数；不设置 = 官方默认。选择即保存。">
-            <span className={styles.switchGridLabel}>递归深度</span>
-            <MenuSelect
-              className={styles.configInput}
-              compact
-              ariaLabel="递归深度"
-              value={fields.maxDepth}
-              disabled={!fields.writePreset}
-              options={maxDepthOptions.map((item) => ({ value: item, label: item === '' ? '（不设置）' : item }))}
-              onChange={(value) => {
-                store.patch({ maxDepth: value })
-                void store.persistParamOverrides()
-              }}
-            />
-          </span>
+          <HintTooltip label="0 表示禁止委派；服务商管理表示由服务商决定；正整数限制递归层数；留空使用默认值">
+            <span className={clsx(styles.switchGridItem, styles.switchGridField)}>
+              <span className={styles.switchGridLabel}>递归深度</span>
+              <MenuSelect
+                className={styles.configInput}
+                compact
+                ariaLabel="递归深度"
+                value={fields.maxDepth}
+                disabled={!fields.writePreset}
+                options={maxDepthOptions.map((item) => ({ value: item, label: item === '' ? '（不设置）' : item }))}
+                onChange={(value) => {
+                  store.patch({ maxDepth: value })
+                  void store.persistParamOverrides()
+                }}
+              />
+            </span>
+          </HintTooltip>
         </div>
       </div>
       <div className={styles.configSectionTitle}>子代理工具策略（subagentToolPolicy · 实例级授权）</div>

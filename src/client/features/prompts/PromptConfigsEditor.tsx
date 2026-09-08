@@ -2,6 +2,7 @@ import { useRef, useState, type FocusEvent, type ReactNode } from 'react'
 import clsx from 'clsx'
 import { IconChevronDownOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { PromptConfigList } from './PromptConfigList.tsx'
+import { HintTooltip } from '../../ui/HintTooltip.tsx'
 import { TemplatePicker } from '../../ui/TemplatePicker.tsx'
 import { useTemplatePicker } from './useTemplatePicker.ts'
 import { VariablesEditor } from './PromptConfigFields.tsx'
@@ -90,18 +91,20 @@ function TemplateVariablesModuleCard(props: {
           <IconChevronDownOutline14 className={clsx(styles.chevron, props.expanded && styles.chevronOpen)} />
         </button>
         <span className={styles.configHeaderActions}>
-          <label className={styles.configEnable} title={enabled ? '点击停用模板变量插值' : '点击启用模板变量插值'}>
-            <input
-              type="checkbox"
-              aria-label="启用模板变量插值"
-              checked={enabled}
-              onChange={(e) => {
-                props.setTemplateVariablesEnabled(e.target.checked)
-                void props.saveTemplateVariables()
-              }}
-            />
-            <span className={styles.switch} aria-hidden="true"><i /></span>
-          </label>
+          <HintTooltip label={enabled ? '点击停用模板变量插值' : '点击启用模板变量插值'}>
+            <label className={styles.configEnable}>
+              <input
+                type="checkbox"
+                aria-label="启用模板变量插值"
+                checked={enabled}
+                onChange={(e) => {
+                  props.setTemplateVariablesEnabled(e.target.checked)
+                  void props.saveTemplateVariables()
+                }}
+              />
+              <span className={styles.switch} aria-hidden="true"><i /></span>
+            </label>
+          </HintTooltip>
           <span className={styles.configActions}>
             {confirmingDelete ? (
               <>

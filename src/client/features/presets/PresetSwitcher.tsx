@@ -7,6 +7,7 @@ import { bridgeCall } from '../../data/bridge-client.ts'
 import { readImportFiles } from '../../data/import-files.ts'
 import type { PromptToolStore } from '../../data/use-prompt-tool-store.ts'
 import { DialogSurface } from '../../ui/DialogSurface.tsx'
+import { HintTooltip } from '../../ui/HintTooltip.tsx'
 import { ImportFileButton } from '../../ui/ImportFileButton.tsx'
 import sharedCss from '../../ui/controls.module.css'
 import featureCss from './presets.module.css'
@@ -161,18 +162,20 @@ export const PresetSwitcher = memo(function PresetSwitcher(props: { store: Promp
       {pickerOpen && (
         <DialogSurface title="从内置模板新建预设" closeLabel="关闭新建预设" anchorRef={pickerAnchorRef} onClose={() => setPickerOpen(false)}>
           {templates.length === 0 && <p className={styles.configFieldHint}>插件目录无内置模板。</p>}
-          <button type="button" className={styles.templateModalItem} data-custom
-            title="新建一份所有参数为空的自定义预设（重名自动加序号）"
-            onClick={() => void clonePreset('custom', true)}>
-            <strong>自定义预设</strong>
-            <small>custom · 所有参数为空（空白起点，重名自动加序号）</small>
-          </button>
-          {templates.map((template) => (
-            <button key={template.id} type="button" className={styles.templateModalItem}
-              title={`新建到用户目录：${template.id}`} onClick={() => void clonePreset(template.id)}>
-              <strong>{template.name}</strong>
-              <small>{template.id}</small>
+          <HintTooltip label="新建一份所有参数为空的自定义预设；重名时自动加序号">
+            <button type="button" className={styles.templateModalItem} data-custom
+              onClick={() => void clonePreset('custom', true)}>
+              <strong>自定义预设</strong>
+              <small>custom · 所有参数为空（空白起点，重名自动加序号）</small>
             </button>
+          </HintTooltip>
+          {templates.map((template) => (
+            <HintTooltip key={template.id} label={`新建到用户目录：${template.id}`}>
+              <button type="button" className={styles.templateModalItem} onClick={() => void clonePreset(template.id)}>
+                <strong>{template.name}</strong>
+                <small>{template.id}</small>
+              </button>
+            </HintTooltip>
           ))}
         </DialogSurface>
       )}
@@ -188,41 +191,49 @@ export const PresetSwitcher = memo(function PresetSwitcher(props: { store: Promp
     return (
       <div key={preset.id} className={clsx(styles.presetCard, blocked && styles.presetCardBlocked)}
         data-active={active ? '' : undefined}>
-        <button type="button" className={styles.presetCardMain} disabled={blocked}
-          title={blocked
+        <HintTooltip label={blocked
             ? '预设不可渲染（缺模块清单/组合文件）：可删除后经「新建预设」从内置模板还原，或检查 preset.yml'
-            : active ? '当前预设模板' : `切换到 ${preset.name}`}
-          onClick={() => store.setPresetTemplate(preset.id)}>
-          <span className={styles.presetCardHead}>
-            <strong className={styles.presetCardName}>{preset.name}</strong>
-            {active && <span className={styles.presetInUse}>使用中</span>}
-            {blocked && <span className={styles.presetBlocked}>不可用</span>}
-          </span>
-          {preset.description !== undefined && preset.description.length > 0
-            && <p className={styles.presetCardDesc}>{preset.description}</p>}
-          <code className={styles.presetCardId}>{preset.id}</code>
-        </button>
+            : active ? '当前预设' : `切换到 ${preset.name}`}>
+          <button type="button" className={styles.presetCardMain} disabled={blocked}
+            onClick={() => store.setPresetTemplate(preset.id)}>
+            <span className={styles.presetCardHead}>
+              <strong className={styles.presetCardName}>{preset.name}</strong>
+              {active && <span className={styles.presetInUse}>使用中</span>}
+              {blocked && <span className={styles.presetBlocked}>不可用</span>}
+            </span>
+            {preset.description !== undefined && preset.description.length > 0
+              && <p className={styles.presetCardDesc}>{preset.description}</p>}
+            <code className={styles.presetCardId}>{preset.id}</code>
+          </button>
+        </HintTooltip>
         <span className={styles.presetCardFooter}>
-          <button type="button" className={styles.presetIconButton} data-tip="复制预设"
-            aria-label={`复制预设：${preset.name}`}
-            onClick={() => void duplicatePreset(preset.id)}>
-            <IconCopyOutline16 />
-          </button>
-          <button type="button" className={styles.presetIconButton} data-tip="打开预设文件夹"
-            aria-label={`打开预设文件夹：${preset.name}`}
-            onClick={() => void openLocation(preset.id)}>
-            <IconFolderOpenOutline16 />
-          </button>
+          <HintTooltip label="复制预设">
+            <button type="button" className={styles.presetIconButton}
+              aria-label={`复制预设：${preset.name}`}
+              onClick={() => void duplicatePreset(preset.id)}>
+              <IconCopyOutline16 />
+            </button>
+          </HintTooltip>
+          <HintTooltip label="打开预设文件夹">
+            <button type="button" className={styles.presetIconButton}
+              aria-label={`打开预设文件夹：${preset.name}`}
+              onClick={() => void openLocation(preset.id)}>
+              <IconFolderOpenOutline16 />
+            </button>
+          </HintTooltip>
           {confirming ? (
             <span className={styles.presetCardActions}>
-              <button type="button" className={styles.pillButton} data-danger disabled={active}
-                title="删除后可从内置模板「新建」还原" onClick={() => void deletePreset(preset.id)}>确认删除</button>
+              <HintTooltip label="删除后可从内置模板重新创建">
+                <button type="button" className={styles.pillButton} data-danger disabled={active}
+                  onClick={() => void deletePreset(preset.id)}>确认删除</button>
+              </HintTooltip>
               <button type="button" className={styles.pillButton} data-variant="secondary" onClick={() => setConfirmingDelete(undefined)}>取消</button>
             </span>
           ) : (
-            <button type="button" className={styles.pillButton} data-danger disabled={active}
-              title={active ? '先切换其他预设再删除' : '删除用户目录副本（内置模板保留，可新建还原）'}
-              onClick={() => setConfirmingDelete(preset.id)}>删除</button>
+            <HintTooltip label={active ? '先切换其他预设再删除' : '删除用户目录副本；内置模板仍可重新创建'}>
+              <button type="button" className={styles.pillButton} data-danger disabled={active}
+                onClick={() => setConfirmingDelete(preset.id)}>删除</button>
+            </HintTooltip>
           )}
         </span>
       </div>

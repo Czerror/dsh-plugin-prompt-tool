@@ -11,6 +11,7 @@ import { readImportFiles } from '../../data/import-files.ts'
 import { usePromptToolFields } from '../../data/use-prompt-tool-fields.ts'
 import { tabKeyHandler } from '../../ui/tab-key.ts'
 import { CollapsibleCard } from '../../ui/CollapsibleCard.tsx'
+import { HintTooltip } from '../../ui/HintTooltip.tsx'
 import { SettingInputRow } from '../../ui/SettingInputRow.tsx'
 import { SkillRow } from './SkillRow.tsx'
 import { ImportFileButton } from '../../ui/ImportFileButton.tsx'
@@ -250,16 +251,17 @@ export const SkillsPage = memo(function SkillsPage(props: { store: PromptToolSto
       <CollapsibleCard id="pt-skills-dirs" title="目录与来源"
         meta={`${displaySkillsDirs.length} 个目录 · 选择引用 / 导入 / 移除`}>
         <div className={ui.dirAddBar}>
-          <button
-            type="button"
-            className={ui.primaryPill}
-            disabled={pickingDir || importingDir || store.savingSkillsDir}
-            title="选择宿主机目录并保存绝对路径引用，不会复制文件"
-            onClick={() => void pickSkillsDir()}
-          >
-            {pickingDir && <span className={ui.spinner} aria-hidden="true" />}
-            {pickingDir ? '选择中…' : '选择目录并添加引用'}
-          </button>
+          <HintTooltip label="选择宿主机目录并保存绝对路径引用；不会复制文件">
+            <button
+              type="button"
+              className={ui.primaryPill}
+              disabled={pickingDir || importingDir || store.savingSkillsDir}
+              onClick={() => void pickSkillsDir()}
+            >
+              {pickingDir && <span className={ui.spinner} aria-hidden="true" />}
+              {pickingDir ? '选择中…' : '选择目录并添加引用'}
+            </button>
+          </HintTooltip>
           <ImportFileButton
             label="导入文件夹内容"
             busyLabel="导入中…"
@@ -310,11 +312,11 @@ export const SkillsPage = memo(function SkillsPage(props: { store: PromptToolSto
               const isDefault = isDefaultDir(dir)
               return (
                 <div key={dir} className={ui.dirCard} data-invalid={!exists ? '' : undefined}>
-                  <span className={ui.skillRankBadge} title={`第 ${index + 1} 个目录`}>{index + 1}</span>
+                  <HintTooltip label={`第 ${index + 1} 个目录`}><span className={ui.skillRankBadge}>{index + 1}</span></HintTooltip>
                   <div className={ui.dirCardBody}>
                     <span className={ui.dirCardTitle}>
-                      <code className={ui.dirPath} title={dir}>{dir}</code>
-                      {isDefault && <span className={ui.duplicateBadge} title="未配置自定义目录时使用的 profile skills 副本">默认副本</span>}
+                      <HintTooltip label={dir}><code className={ui.dirPath}>{dir}</code></HintTooltip>
+                      {isDefault && <HintTooltip label="未配置自定义目录时使用的 profile skills 副本"><span className={ui.duplicateBadge}>默认副本</span></HintTooltip>}
                     </span>
                     <span className={ui.dirCardMeta}>
                       {exists

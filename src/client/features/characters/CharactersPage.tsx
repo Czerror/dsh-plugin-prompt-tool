@@ -7,6 +7,7 @@ import { IconFolderOpenOutline16, IconTrashOutline16 } from '@deepseek-ai/dsh-cl
 import { bridgeCall, bridgeUpload, shouldStreamJsonFile } from '../../data/bridge-client.ts'
 import { isPngSignature } from './character-card.ts'
 import { ImportFileButton } from '../../ui/ImportFileButton.tsx'
+import { HintTooltip } from '../../ui/HintTooltip.tsx'
 import type { PromptToolStore } from '../../data/use-prompt-tool-store.ts'
 import sharedCss from '../../ui/controls.module.css'
 import featureCss from './characters.module.css'
@@ -188,11 +189,13 @@ export const CharactersPage = memo(function CharactersPage(props: { store: Promp
                       {busy === card.id ? '导入中…' : '导入到当前预设'}
                     </button>
                   )}
-                  <button type="button" className={ui.presetIconButton} data-tip="打开角色卡目录"
-                    aria-label={`打开角色卡目录：${card.name}`}
-                    onClick={() => void openLocation(card.id)}>
-                    <IconFolderOpenOutline16 />
-                  </button>
+                  <HintTooltip label="打开角色卡目录">
+                    <button type="button" className={ui.presetIconButton}
+                      aria-label={`打开角色卡目录：${card.name}`}
+                      onClick={() => void openLocation(card.id)}>
+                      <IconFolderOpenOutline16 />
+                    </button>
+                  </HintTooltip>
                   {confirming ? (
                     <>
                       <button type="button" className={ui.pillButton} data-danger
@@ -201,11 +204,13 @@ export const CharactersPage = memo(function CharactersPage(props: { store: Promp
                         onClick={() => setConfirmingDelete(undefined)}>取消</button>
                     </>
                   ) : (
-                    <button type="button" className={ui.presetIconButton} data-tip="删除角色卡"
-                      aria-label={`删除角色卡：${card.name}`}
-                      onClick={() => setConfirmingDelete(card.id)}>
-                      <IconTrashOutline16 />
-                    </button>
+                    <HintTooltip label="删除角色卡">
+                      <button type="button" className={ui.presetIconButton}
+                        aria-label={`删除角色卡：${card.name}`}
+                        onClick={() => setConfirmingDelete(card.id)}>
+                        <IconTrashOutline16 />
+                      </button>
+                    </HintTooltip>
                   )}
                 </span>
               </div>

@@ -1,0 +1,24 @@
+.bubble {
+  position: fixed;
+  z-index: 1400;
+  width: max-content;
+  max-width: min(360px, calc(100vw - 24px));
+  padding: 3px 7px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--dsw-alias-tooltip-bg) 94%, var(--dsw-alias-bg-base));
+  color: var(--dsw-static-neutral-bluish-00);
+  font-size: 13px;
+  line-height: 20px;
+  white-space: pre-line;
+  overflow-wrap: break-word;
+  pointer-events: none;
+  animation: hint-tooltip-in 150ms var(--ds-ease-in-out);
+}
+
+@keyframes hint-tooltip-in {
+  from { opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bubble { animation: none; }
+}

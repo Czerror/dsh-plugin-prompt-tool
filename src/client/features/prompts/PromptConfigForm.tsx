@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import clsx from 'clsx'
-import { Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
 import { FormField } from '../../ui/FormField.tsx'
+import { HintTooltip } from '../../ui/HintTooltip.tsx'
 import type { EngineMeta, PromptConfigDraft } from '../../prompt-tool-types.ts'
 import { OptionField, StrategyParamsFields, VariablesEditor } from './PromptConfigFields.tsx'
 import { autoResizeTextarea } from './textarea-resize.ts'
@@ -85,13 +85,15 @@ export function PromptConfigForm(props: {
         {policy.merge && <OptionField className={styles.fieldSpan2} label="合并方式" hint="决定同位置内容是否合并发送" value={config.mergeMode} options={meta.mergeModes} fallback="separate" labels={MERGE_MODE_LABELS} onChange={(value) => onPatch({ mergeMode: value })} />}
         {policy.order && <FormField className={styles.fieldSpan2} label="顺序" hint="数值越小越靠前" hintMode="tooltip"><input className={inputClass} type="number" step={1} value={config.order ?? 0} onChange={(e) => onPatch({ order: Number(e.target.value) })} /></FormField>}
         <FormField className={styles.fieldSpan6} label="互斥组" hint="同组启用互斥后，只执行排序最前的启用配置" hintMode="tooltip"><input className={inputClass} value={config.group ?? ''} spellCheck={false} onChange={(e) => onPatch({ group: e.target.value })} /></FormField>
-        <Tooltip label="开启后，同一互斥组只执行排序最前的启用配置" side="right" delayMs={500} maxWidth={360}>
-          <label className={clsx(styles.configEnable, styles.configToggleField, styles.fieldSpan2)}>
-            <span className={styles.configFieldLabel}>互斥</span>
+        <div className={clsx(styles.configToggleField, styles.fieldSpan2)}>
+          <span className={styles.configFieldLabel}>互斥</span>
+          <HintTooltip label="开启后，同一互斥组只执行排序最前的启用配置">
+            <label className={styles.configEnable}>
             <input type="checkbox" aria-label="互斥" checked={config.exclusive === true} onChange={(e) => onPatch({ exclusive: e.target.checked })} />
             <span className={styles.switch} aria-hidden="true"><i /></span>
-          </label>
-        </Tooltip>
+            </label>
+          </HintTooltip>
+        </div>
         {policy.dedupe && <OptionField className={styles.fieldSpan4} label="去重方式" hint="控制配置的重复执行范围" value={config.dedupe} options={meta.dedupes} fallback="none" labels={DEDUPE_LABELS} onChange={(value) => onPatch({ dedupe: value })} />}
       </div>
 

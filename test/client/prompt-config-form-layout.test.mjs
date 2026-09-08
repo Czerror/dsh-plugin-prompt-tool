@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 
 const read = (file) => readFileSync(new URL(`../../${file}`, import.meta.url), 'utf8')
 
@@ -17,7 +17,7 @@ test('模块卡参数按语义分区，并用容器网格限制短字段宽度',
   assert.match(form, /<details/)
   assert.match(css, /container-type:\s*inline-size/)
   assert.match(css, /grid-template-columns:\s*repeat\(12,\s*minmax\(0,\s*1fr\)\)/)
-  assert.match(css, /@media \(max-width: 959px\)/)
+  assert.match(css, /@media \(max-width: 720px\)/)
   assert.doesNotMatch(css, /\.configGrid\s*\{[^}]*display:\s*flex/s)
 })
 
@@ -26,16 +26,47 @@ test('placeholder 空结果文本只在 text 行为下显示', () => {
   assert.match(fields, /emptyBehavior === 'text'\s*&&/)
 })
 
-test('模块参数使用简体中文标签与官方聚焦提示', () => {
+test('模块参数使用简体中文标签与统一说明浮窗', () => {
   const form = read('src/client/features/prompts/PromptConfigForm.tsx')
   const fields = read('src/client/features/prompts/PromptConfigFields.tsx')
   const formField = read('src/client/ui/FormField.tsx')
-  const css = read('src/client/features/prompts/prompts.module.css')
+  const tooltipCss = read('src/client/ui/HintTooltip.module.css')
 
   for (const label of ['人设', '独占', '动态抑制']) assert.match(fields, new RegExp(`label="${label}"`))
   assert.match(form, />互斥</)
   assert.doesNotMatch(fields, /label="(?:人设段|complete（|suppressRuntimeContext（)/)
-  assert.match(formField, /import \{ Tooltip \} from '@deepseek-ai\/dsh-client-ui-primitives'/)
+  assert.match(formField, /import \{ HintTooltip \} from '\.\/HintTooltip\.tsx'/)
   assert.match(formField, /hintMode === 'tooltip'/)
-  assert.match(css, /--dsw-alias-tooltip-bg:/)
+  assert.match(tooltipCss, /var\(--dsw-alias-tooltip-bg\)/)
+})
+
+test('说明浮窗只复用宿主视觉，并自行跟随指针或聚焦控件', () => {
+  const hintTooltip = read('src/client/ui/HintTooltip.tsx')
+  const hintCss = read('src/client/ui/HintTooltip.module.css')
+  const fields = read('src/client/features/prompts/PromptConfigFields.tsx')
+  const promptCss = read('src/client/features/prompts/prompts.module.css')
+
+  assert.doesNotMatch(hintTooltip, /@deepseek-ai\/dsh-client-ui-primitives/)
+  assert.match(hintTooltip, /createPortal\(/)
+  assert.match(hintTooltip, /event\.clientX/)
+  assert.match(hintTooltip, /getBoundingClientRect\(\)/)
+  assert.match(hintCss, /position:\s*fixed/)
+  assert.match(hintCss, /var\(--dsw-alias-tooltip-bg\)/)
+  assert.match(read('src/client/ui/FormField.tsx'), /configFieldControlAnchor/)
+  assert.doesNotMatch(read('src/client/features/prompts/PromptConfigCard.tsx'), /title=/)
+  assert.match(fields, /const toggleSpan = isPersona \? styles\.fieldSpan4 : styles\.fieldSpan3/)
+  assert.match(promptCss, /\.configToggleField\s*\{[^}]*flex-direction:\s*column/s)
+})
+
+test('原生元素不再使用浏览器 title 或 data-tip 说明', () => {
+  const root = new URL('../../src/client/', import.meta.url)
+  const files = (dir) => readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    const url = new URL(entry.name + (entry.isDirectory() ? '/' : ''), dir)
+    return entry.isDirectory() ? files(url) : entry.name.endsWith('.tsx') ? [url] : []
+  })
+  for (const file of files(root)) {
+    const source = readFileSync(file, 'utf8')
+    assert.doesNotMatch(source, /<(?:button|label|span|div|code|input|textarea|select)\b[^>]*\btitle=/gs, file.pathname)
+    assert.doesNotMatch(source, /\bdata-tip=/, file.pathname)
+  }
 })

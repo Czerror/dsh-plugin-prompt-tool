@@ -2,6 +2,7 @@ import clsx from 'clsx'
 import { useState, type ReactNode } from 'react'
 import { IconChevronDownOutline14, Menu } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PromptToolStore } from '../../data/use-prompt-tool-store.ts'
+import { HintTooltip } from '../../ui/HintTooltip.tsx'
 import { TagInput } from '../../ui/TagInput.tsx'
 import { EngineModuleCard } from '../../ui/EngineModuleCard.tsx'
 import { ENGINE_CAPABILITIES, ENGINE_RECIPES, engineCapability, isEngineCapabilityPresent } from '../../../shared/engine-capabilities.ts'
@@ -67,54 +68,60 @@ export function EngineModuleCards(props: { store: PromptToolStore; layerFilter?:
     'str-replace-editor', 'deliberation-gate', 'cot-drip',
   ].some(visibleCapability))
   const capped = fields.bootstrapMaxTokens > 0
-  // 紧凑开关项（合并行/栅格内用）：标签文字 + 开关内联，逐项说明收敛到 title 悬浮提示。
+  // 紧凑开关项（合并行/栅格内用）：标签文字 + 开关内联，说明统一用 HintTooltip。
   const gateChip = (id: string, label: string, hint: string, key: 'usePtcMode' | 'promoteGate' | 'promoteAfterFirstResponse' | 'personaSectionsOnly' | 'workspaceLine' | 'toolFilterSubagents' | 'instructionHint' | 'anchorTurn' | 'deliberationGate' | 'cotDrip'): ReactNode => (
-    <span className={styles.switchGridItem} title={hint}>
-      <span className={styles.switchGridLabel}>{label}</span>
-      <label className={styles.configEnable} htmlFor={id}>
-        <input id={id} type="checkbox" checked={fields[key]} disabled={!fields.writePreset} aria-label={label} onChange={() => store.toggle(key)} />
-        <span className={styles.switch} aria-hidden="true"><i /></span>
-      </label>
-    </span>
+    <HintTooltip label={hint}>
+      <span className={styles.switchGridItem}>
+        <span className={styles.switchGridLabel}>{label}</span>
+        <label className={styles.configEnable} htmlFor={id}>
+          <input id={id} type="checkbox" checked={fields[key]} disabled={!fields.writePreset} aria-label={label} onChange={() => store.toggle(key)} />
+          <span className={styles.switch} aria-hidden="true"><i /></span>
+        </label>
+      </span>
+    </HintTooltip>
   )
-  // 内联数字字段：标签 + 输入同一 flex 项（无独立行），说明收敛到 title；空 = 0 语义与原 numberRow 一致。
+  // 内联数字字段：标签 + 输入同一 flex 项（无独立行）；空 = 0 语义与原 numberRow 一致。
   const inlineNumber = (label: string, hint: string, value: number, onCommit: (next: number) => void, min = 0): ReactNode => (
-    <span key={label} className={clsx(styles.switchGridItem, styles.switchGridField)} title={hint}>
-      <span className={styles.switchGridLabel}>{label}</span>
-      <input
-        className={styles.configInput}
-        type="number"
-        min={min}
-        step={1}
-        value={String(value)}
-        disabled={!fields.writePreset}
-        aria-label={label}
-        onChange={(event) => {
-          if (event.target.value.trim() === '') onCommit(0)
-          else {
-            const parsed = Number(event.target.value)
-            if (Number.isSafeInteger(parsed) && parsed >= 0) onCommit(parsed)
-          }
-        }}
-        onBlur={() => void store.persistParamOverrides()}
-      />
-    </span>
+    <HintTooltip key={label} label={hint}>
+      <span className={clsx(styles.switchGridItem, styles.switchGridField)}>
+        <span className={styles.switchGridLabel}>{label}</span>
+        <input
+          className={styles.configInput}
+          type="number"
+          min={min}
+          step={1}
+          value={String(value)}
+          disabled={!fields.writePreset}
+          aria-label={label}
+          onChange={(event) => {
+            if (event.target.value.trim() === '') onCommit(0)
+            else {
+              const parsed = Number(event.target.value)
+              if (Number.isSafeInteger(parsed) && parsed >= 0) onCommit(parsed)
+            }
+          }}
+          onBlur={() => void store.persistParamOverrides()}
+        />
+      </span>
+    </HintTooltip>
   )
   // 内联文本字段：标签 + 输入同一 flex 项；wide = 长文本吃更多宽度。
   const inlineText = (label: string, hint: string, value: string, onChange: (next: string) => void, wide = false): ReactNode => (
-    <span key={label} className={clsx(styles.switchGridItem, styles.switchGridField, wide && styles.sessionModelRowWide)} title={hint}>
-      <span className={styles.switchGridLabel}>{label}</span>
-      <input
-        className={styles.configInput}
-        type="text"
-        value={value}
-        disabled={!fields.writePreset}
-        aria-label={label}
-        placeholder={label}
-        onChange={(event) => onChange(event.target.value)}
-        onBlur={() => void store.persistParamOverrides()}
-      />
-    </span>
+    <HintTooltip key={label} label={hint}>
+      <span className={clsx(styles.switchGridItem, styles.switchGridField, wide && styles.sessionModelRowWide)}>
+        <span className={styles.switchGridLabel}>{label}</span>
+        <input
+          className={styles.configInput}
+          type="text"
+          value={value}
+          disabled={!fields.writePreset}
+          aria-label={label}
+          placeholder={label}
+          onChange={(event) => onChange(event.target.value)}
+          onBlur={() => void store.persistParamOverrides()}
+        />
+      </span>
+    </HintTooltip>
   )
   return (
     <>
@@ -126,41 +133,47 @@ export function EngineModuleCards(props: { store: PromptToolStore; layerFilter?:
         onDelete={canEditCapabilities ? () => void store.removeEngineCapability('tool-bootstrap') : undefined}>
         <div className={styles.settingRowStack}>
           <div className={styles.sessionModelRow}>
-            <span className={styles.switchGridItem} title="bootstrapMaxTokens：关闭 = 首轮不设输出上限">
-              <span className={styles.switchGridLabel}>首轮输出封顶</span>
-              <label className={styles.configEnable} htmlFor="pt-bootstrap-tokens">
-                <input id="pt-bootstrap-tokens" type="checkbox" checked={capped} disabled={!fields.writePreset} aria-label="首轮输出封顶" onChange={store.toggleBootstrapMaxTokens} />
-                <span className={styles.switch} aria-hidden="true"><i /></span>
-              </label>
-            </span>
-            <span className={clsx(styles.switchGridItem, styles.switchGridField)} title="bootstrapMaxTokens：首轮请求 #1 的 maxTokens（正整数，失焦保存）">
-              <span className={styles.switchGridLabel}>数值</span>
-              <input
-                className={styles.configInput}
-                type="number"
-                min={1}
-                step={1}
-                value={store.bootstrapTokensDraft}
-                disabled={!fields.writePreset || !capped}
-                aria-label="首轮输出封顶数值"
-                onChange={(event) => store.setBootstrapTokensDraft(event.target.value)}
-                onBlur={store.commitBootstrapTokensDraft}
-              />
-            </span>
-            <span className={clsx(styles.switchGridItem, styles.switchGridField)} title="maxPromoteSteps：门控模式步数达上限强制晋升；0 = 引擎默认 4。失焦保存。">
-              <span className={styles.switchGridLabel}>门控回退步数</span>
-              <input
-                className={styles.configInput}
-                type="number"
-                min={0}
-                step={1}
-                value={store.gateStepsDraft}
-                disabled={!fields.writePreset}
-                aria-label="门控回退步数"
-                onChange={(event) => store.setGateStepsDraft(event.target.value)}
-                onBlur={store.commitGateStepsDraft}
-              />
-            </span>
+            <HintTooltip label="关闭时首轮不限制输出长度">
+              <span className={styles.switchGridItem}>
+                <span className={styles.switchGridLabel}>首轮输出封顶</span>
+                <label className={styles.configEnable} htmlFor="pt-bootstrap-tokens">
+                  <input id="pt-bootstrap-tokens" type="checkbox" checked={capped} disabled={!fields.writePreset} aria-label="首轮输出封顶" onChange={store.toggleBootstrapMaxTokens} />
+                  <span className={styles.switch} aria-hidden="true"><i /></span>
+                </label>
+              </span>
+            </HintTooltip>
+            <HintTooltip label="首轮请求的输出上限；填写正整数，失焦保存">
+              <span className={clsx(styles.switchGridItem, styles.switchGridField)}>
+                <span className={styles.switchGridLabel}>数值</span>
+                <input
+                  className={styles.configInput}
+                  type="number"
+                  min={1}
+                  step={1}
+                  value={store.bootstrapTokensDraft}
+                  disabled={!fields.writePreset || !capped}
+                  aria-label="首轮输出封顶数值"
+                  onChange={(event) => store.setBootstrapTokensDraft(event.target.value)}
+                  onBlur={store.commitBootstrapTokensDraft}
+                />
+              </span>
+            </HintTooltip>
+            <HintTooltip label="达到步数上限后强制晋升；0 使用默认值 4，失焦保存">
+              <span className={clsx(styles.switchGridItem, styles.switchGridField)}>
+                <span className={styles.switchGridLabel}>门控回退步数</span>
+                <input
+                  className={styles.configInput}
+                  type="number"
+                  min={0}
+                  step={1}
+                  value={store.gateStepsDraft}
+                  disabled={!fields.writePreset}
+                  aria-label="门控回退步数"
+                  onChange={(event) => store.setGateStepsDraft(event.target.value)}
+                  onBlur={store.commitGateStepsDraft}
+                />
+              </span>
+            </HintTooltip>
             {inlineText('首次调用指令', 'phase1FirstCallInstruction：phase-1 persona 追加的首次工具调用指令，例如 After your first reasoning block, make one tool call.；空 = 不追加。失焦保存。', fields.phase1FirstCallInstruction, (next) => store.patch({ phase1FirstCallInstruction: next }), true)}
           </div>
         </div>
@@ -186,44 +199,46 @@ export function EngineModuleCards(props: { store: PromptToolStore; layerFilter?:
         {fields.stages.map((stage, index) => (
           <div key={`stage-${index}`} className={styles.settingRowStack}>
             <div className={styles.sessionModelRow}>
-              <span className={clsx(styles.switchGridItem, styles.switchGridField, styles.sessionModelRowWide)} title="阶段名称（空名称或空工具集的行不写入）。失焦保存。">
-                <span className={styles.switchGridLabel}>{`阶段 ${index + 1}`}</span>
-                <input
-                  className={styles.configInput}
-                  type="text"
-                  value={stage.name}
-                  disabled={!fields.writePreset}
-                  aria-label={`阶段 ${index + 1} 名称`}
-                  placeholder="阶段名（如 了解 / 开发 / 验证）"
-                  onChange={(event) => {
-                    const next = [...fields.stages]
-                    next[index] = { ...stage, name: event.target.value }
-                    store.patch({ stages: next })
-                  }}
-                  onBlur={() => void store.persistParamOverrides()}
-                />
-              </span>
+              <HintTooltip label="空名称或空工具集不会写入；失焦保存">
+                <span className={clsx(styles.switchGridItem, styles.switchGridField, styles.sessionModelRowWide)}>
+                  <span className={styles.switchGridLabel}>{`阶段 ${index + 1}`}</span>
+                  <input
+                    className={styles.configInput}
+                    type="text"
+                    value={stage.name}
+                    disabled={!fields.writePreset}
+                    aria-label={`阶段 ${index + 1} 名称`}
+                    placeholder="阶段名（如 了解 / 开发 / 验证）"
+                    onChange={(event) => {
+                      const next = [...fields.stages]
+                      next[index] = { ...stage, name: event.target.value }
+                      store.patch({ stages: next })
+                    }}
+                    onBlur={() => void store.persistParamOverrides()}
+                  />
+                </span>
+              </HintTooltip>
               <span className={styles.configActions}>
-                <button type="button" className={styles.pillButton} aria-label={`上移阶段 ${index + 1}`} title="上移"
+                <HintTooltip label="上移"><button type="button" className={styles.pillButton} aria-label={`上移阶段 ${index + 1}`}
                   disabled={!fields.writePreset || index === 0} onClick={() => {
                     const next = [...fields.stages]
                     ;[next[index - 1], next[index]] = [next[index]!, next[index - 1]!]
                     store.patch({ stages: next })
                     void store.persistParamOverrides()
-                  }}>↑</button>
-                <button type="button" className={styles.pillButton} aria-label={`下移阶段 ${index + 1}`} title="下移"
+                  }}>↑</button></HintTooltip>
+                <HintTooltip label="下移"><button type="button" className={styles.pillButton} aria-label={`下移阶段 ${index + 1}`}
                   disabled={!fields.writePreset || index >= fields.stages.length - 1} onClick={() => {
                     const next = [...fields.stages]
                     ;[next[index], next[index + 1]] = [next[index + 1]!, next[index]!]
                     store.patch({ stages: next })
                     void store.persistParamOverrides()
-                  }}>↓</button>
-                <button type="button" className={styles.pillButton} data-danger aria-label={`删除阶段 ${index + 1}`} title="删除"
+                  }}>↓</button></HintTooltip>
+                <HintTooltip label="删除"><button type="button" className={styles.pillButton} data-danger aria-label={`删除阶段 ${index + 1}`}
                   disabled={!fields.writePreset} onClick={() => {
                     const next = fields.stages.filter((_, at) => at !== index)
                     store.patch({ stages: next })
                     void store.persistParamOverrides()
-                  }}>×</button>
+                  }}>×</button></HintTooltip>
               </span>
             </div>
             <TagInput

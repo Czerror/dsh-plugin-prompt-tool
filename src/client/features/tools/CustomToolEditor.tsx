@@ -2,6 +2,7 @@ import { useState, type ReactNode } from 'react'
 import clsx from 'clsx'
 import { IconChevronDownOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { FormField } from '../../ui/FormField.tsx'
+import { HintTooltip } from '../../ui/HintTooltip.tsx'
 import { MenuSelect } from '../../ui/MenuSelect.tsx'
 import sharedCss from '../../ui/controls.module.css'
 import featureCss from './tools.module.css'
@@ -62,11 +63,13 @@ function ParameterRowsEditor(props: { value: ToolDraft | undefined; onChange: (v
           <MenuSelect className={styles.configInput} compact ariaLabel="参数类型" value={row.type}
             options={SCHEMA_TYPES.map((type) => ({ value: type, label: type }))}
             onChange={(type) => setRow(index, { type })} />
-          <label className={styles.configEnable} title="required">
-            <input type="checkbox" aria-label="必填" checked={row.required}
-              onChange={(e) => setRow(index, { required: e.target.checked })} />
-            <span className={styles.switch} aria-hidden="true"><i /></span>
-          </label>
+          <HintTooltip label="模型必须填写此参数">
+            <label className={styles.configEnable}>
+              <input type="checkbox" aria-label="必填" checked={row.required}
+                onChange={(e) => setRow(index, { required: e.target.checked })} />
+              <span className={styles.switch} aria-hidden="true"><i /></span>
+            </label>
+          </HintTooltip>
           <input className={styles.configInput} aria-label="参数描述" value={row.description} spellCheck={false} placeholder="描述"
             onChange={(e) => setRow(index, { description: e.target.value })} />
           <button type="button" className={styles.pillButton} data-danger aria-label={`删除参数 ${row.key || index}`}
@@ -129,11 +132,13 @@ export function CustomToolCard(props: {
           <IconChevronDownOutline14 className={clsx(styles.chevron, props.expanded && styles.chevronOpen)} />
         </button>
         <span className={styles.configHeaderActions}>
-          <label className={styles.configEnable} title={enabled ? '点击停用（enabled=false 不注册）' : '点击启用'}>
-            <input type="checkbox" aria-label={`启用工具 ${id}`} checked={enabled}
-              onChange={(e) => props.onToggleEnabled(e.target.checked)} />
-            <span className={styles.switch} aria-hidden="true"><i /></span>
-          </label>
+          <HintTooltip label={enabled ? '点击停用；停用后不注册工具' : '点击启用'}>
+            <label className={styles.configEnable}>
+              <input type="checkbox" aria-label={`启用工具 ${id}`} checked={enabled}
+                onChange={(e) => props.onToggleEnabled(e.target.checked)} />
+              <span className={styles.switch} aria-hidden="true"><i /></span>
+            </label>
+          </HintTooltip>
           <span className={styles.configActions}>
             <button type="button" className={styles.pillButton} disabled={!props.canMoveUp} onClick={props.onMoveUp}>上移</button>
             <button type="button" className={styles.pillButton} disabled={!props.canMoveDown} onClick={props.onMoveDown}>下移</button>

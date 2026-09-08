@@ -2,6 +2,7 @@ import { memo, useState, type ReactNode } from 'react'
 import clsx from 'clsx'
 import { IconChevronDownOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { EngineMeta, PromptConfigDraft } from '../../prompt-tool-types.ts'
+import { HintTooltip } from '../../ui/HintTooltip.tsx'
 import { PromptConfigForm } from './PromptConfigForm.tsx'
 import { FILL_LABELS, LAYER_LABELS, POSITION_LABELS, STRATEGY_LABELS, fieldPolicyFor } from './prompt-config-policy.ts'
 import sharedCss from '../../ui/controls.module.css'
@@ -60,20 +61,23 @@ export const PromptConfigCard = memo(function PromptConfigCard(props: {
     >
       <header className={styles.configHeader}>
         {props.onDragStart !== undefined && (
-          <span
-            className={styles.dragHandle}
-            title="拖动调整顺序"
-            aria-hidden="true"
-            draggable
-            onDragStart={(event) => props.onDragStart!(config.id, event)}
-          >⠿</span>
+          <HintTooltip label="拖动调整顺序">
+            <span
+              className={styles.dragHandle}
+              aria-hidden="true"
+              draggable
+              onDragStart={(event) => props.onDragStart!(config.id, event)}
+            >⠿</span>
+          </HintTooltip>
         )}
         <button type="button" className={styles.configToggle} aria-expanded={props.expanded} onClick={() => props.onToggleExpanded(config.id)}>
           <span className={styles.configTitle}>
             <span className={styles.configTitleRow}>
               <span className={styles.configName}>{config.name && config.name !== config.id ? `${config.id} · ${config.name}` : config.id}</span>
               {config.layer === 'system-section' && config.params?.sectionName === 'deployment:persona' && (
-                <span className={styles.configChip} title="主会话人设；同名配置会覆盖，子代理继承">人设</span>
+                <HintTooltip label="主会话人设；同名配置会覆盖，子代理继承">
+                  <span className={styles.configChip}>人设</span>
+                </HintTooltip>
               )}
             </span>
             <span className={styles.configMeta}>{chips.join(' · ')}</span>
@@ -81,10 +85,12 @@ export const PromptConfigCard = memo(function PromptConfigCard(props: {
           <IconChevronDownOutline14 className={clsx(styles.chevron, props.expanded && styles.chevronOpen)} />
         </button>
         <span className={styles.configHeaderActions}>
-          <label className={styles.configEnable} title={enabled ? '点击关闭' : '点击启用'}>
-            <input type="checkbox" checked={enabled} aria-label={`启用 ${config.name ?? config.id}`} onChange={(e) => props.onToggleEnabled(config.id, e.target.checked)} />
-            <span className={styles.switch} aria-hidden="true"><i /></span>
-          </label>
+          <HintTooltip label={enabled ? '点击关闭' : '点击启用'}>
+            <label className={styles.configEnable}>
+              <input type="checkbox" checked={enabled} aria-label={`启用 ${config.name ?? config.id}`} onChange={(e) => props.onToggleEnabled(config.id, e.target.checked)} />
+              <span className={styles.switch} aria-hidden="true"><i /></span>
+            </label>
+          </HintTooltip>
           <span className={styles.configActions}>
             <button type="button" className={styles.pillButton} disabled={!props.canMoveUp} onClick={() => props.onMoveUp(config.id)}>上移</button>
             <button type="button" className={styles.pillButton} disabled={!props.canMoveDown} onClick={() => props.onMoveDown(config.id)}>下移</button>

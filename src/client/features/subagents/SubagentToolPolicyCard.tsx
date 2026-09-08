@@ -7,6 +7,7 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import clsx from 'clsx'
 import { bridgeCall } from '../../data/bridge-client.ts'
+import { HintTooltip } from '../../ui/HintTooltip.tsx'
 import { MenuSelect } from '../../ui/MenuSelect.tsx'
 import { TagInput } from '../../ui/TagInput.tsx'
 import { asBool, asList, asNum, createEmptyPolicy, splitList, type PolicyDraft } from './subagent-policy-draft.ts'
@@ -112,33 +113,39 @@ export function SubagentToolPolicyCard(props: {
 
   // 密集行内联项：标签 + 开关/控件同一 flex 项（与本插件工作台合并行范式一致）。
   const policyChip = (label: string, hint: string, checked: boolean, onToggle: (next: boolean) => void, ariaLabel?: string): ReactNode => (
-    <span className={styles.switchGridItem} title={hint}>
-      <span className={styles.switchGridLabel}>{label}</span>
-      <label className={styles.configEnable}>
-        <input type="checkbox" checked={checked} aria-label={ariaLabel ?? label} onChange={(event) => onToggle(event.target.checked)} />
-        <span className={styles.switch} aria-hidden="true"><i /></span>
-      </label>
-    </span>
+    <HintTooltip label={hint}>
+      <span className={styles.switchGridItem}>
+        <span className={styles.switchGridLabel}>{label}</span>
+        <label className={styles.configEnable}>
+          <input type="checkbox" checked={checked} aria-label={ariaLabel ?? label} onChange={(event) => onToggle(event.target.checked)} />
+          <span className={styles.switch} aria-hidden="true"><i /></span>
+        </label>
+      </span>
+    </HintTooltip>
   )
   const inlineField = (label: string, hint: string, control: ReactNode, wide = false): ReactNode => (
-    <span key={label} className={clsx(styles.switchGridItem, wide && styles.sessionModelRowWide)} title={hint}>
-      <span className={styles.switchGridLabel}>{label}</span>
-      {control}
-    </span>
+    <HintTooltip key={label} label={hint}>
+      <span className={clsx(styles.switchGridItem, wide && styles.sessionModelRowWide)}>
+        <span className={styles.switchGridLabel}>{label}</span>
+        {control}
+      </span>
+    </HintTooltip>
   )
 
   return (
     <>
       <div className={styles.settingRowStack}>
         <div className={styles.sessionModelRow}>
-          <span className={clsx(styles.switchGridItem, styles.sessionModelRowWide)} title="实例级工具授权（subagentToolPolicy）：模型只能在用户能力上限内选择与扩权；既有子代理不变，策略只影响后续新实例。">
-            <span className={styles.switchGridLabel}>
-              <strong>子代理工具策略</strong>
-              {loaded && (
-                <small className={styles.switchGridHint}>{enabled ? `已启用（${profiles.length} 档）` : '未启用'}</small>
-              )}
+          <HintTooltip label="模型只能在用户授权上限内选择工具；策略只影响后续新实例">
+            <span className={clsx(styles.switchGridItem, styles.sessionModelRowWide)}>
+              <span className={styles.switchGridLabel}>
+                <strong>子代理工具策略</strong>
+                {loaded && (
+                  <small className={styles.switchGridHint}>{enabled ? `已启用（${profiles.length} 档）` : '未启用'}</small>
+                )}
+              </span>
             </span>
-          </span>
+          </HintTooltip>
           {enabled && <button type="button" className={styles.pillButton} data-danger onClick={() => toggleEnabled(false)}>停用策略</button>}
           <button type="button" className={styles.pillButton} onClick={save} disabled={saving || !dirty || invalidCharacterBindings.length > 0}>
             {saving ? '保存中…' : '保存'}
@@ -190,11 +197,11 @@ export function SubagentToolPolicyCard(props: {
                 ))}
                 {policyChip('模型可选', '模型可选择：false 不进模型参数 enum。', asBool(profile.modelSelectable), (next) => patch({ ...policy, profiles: profiles.map((item, at) => at === index ? { ...item, modelSelectable: next } : item) }))}
                 <span className={styles.configActions}>
-                  <button type="button" className={styles.pillButton} aria-label="上移" title="上移" disabled={index === 0} onClick={() => moveProfile(index, -1)}>↑</button>
-                  <button type="button" className={styles.pillButton} aria-label="下移" title="下移" disabled={index === profiles.length - 1} onClick={() => moveProfile(index, 1)}>↓</button>
-                  <button type="button" className={styles.pillButton} aria-label="复制" title="复制" onClick={() => patch({ ...policy, profiles: [...profiles, { ...structuredClone(profile), id: `${profile.id}-copy`, name: `${profile.name ?? profile.id} 副本` }] })}>⧉</button>
-                  <button type="button" className={styles.pillButton} data-danger aria-label={`删除 profile ${profile.id || index}`} title="删除"
-                    onClick={() => removeProfile(profile.id)}>×</button>
+                  <HintTooltip label="上移"><button type="button" className={styles.pillButton} aria-label="上移" disabled={index === 0} onClick={() => moveProfile(index, -1)}>↑</button></HintTooltip>
+                  <HintTooltip label="下移"><button type="button" className={styles.pillButton} aria-label="下移" disabled={index === profiles.length - 1} onClick={() => moveProfile(index, 1)}>↓</button></HintTooltip>
+                  <HintTooltip label="复制"><button type="button" className={styles.pillButton} aria-label="复制" onClick={() => patch({ ...policy, profiles: [...profiles, { ...structuredClone(profile), id: `${profile.id}-copy`, name: `${profile.name ?? profile.id} 副本` }] })}>⧉</button></HintTooltip>
+                  <HintTooltip label="删除"><button type="button" className={styles.pillButton} data-danger aria-label={`删除 profile ${profile.id || index}`}
+                    onClick={() => removeProfile(profile.id)}>×</button></HintTooltip>
                 </span>
               </div>
               <TagInput id={`pt-sp-allow-${index}`} label="allow" hint="" value={asList(profile.allow).join(', ')} placeholder={ceilingAllow.join(', ')}
@@ -230,8 +237,8 @@ export function SubagentToolPolicyCard(props: {
                     onChange={(value) => patch({ ...policy, characterBindings: (policy.characterBindings ?? []).map((item, at) => at === index ? { ...item, profile: value } : item) })} />
                 ))}
                 {policyChip('模型可选', '模型可选择该角色绑定。', asBool(binding.modelSelectable), (next) => patch({ ...policy, characterBindings: (policy.characterBindings ?? []).map((item, at) => at === index ? { ...item, modelSelectable: next } : item) }), '角色绑定模型可选择')}
-                <button type="button" className={styles.pillButton} data-danger aria-label="删除绑定" title="删除"
-                  onClick={() => patch({ ...policy, characterBindings: (policy.characterBindings ?? []).filter((_, at) => at !== index) })}>×</button>
+                <HintTooltip label="删除"><button type="button" className={styles.pillButton} data-danger aria-label="删除绑定"
+                  onClick={() => patch({ ...policy, characterBindings: (policy.characterBindings ?? []).filter((_, at) => at !== index) })}>×</button></HintTooltip>
               </div>
             </div>
           ))}
@@ -267,8 +274,8 @@ export function SubagentToolPolicyCard(props: {
                 ))}
                 {policyChip('模型可选', '模型可选择该任务类型。', asBool(rule.modelSelectable), (next) => patch({ ...policy, taskRules: (policy.taskRules ?? []).map((item, at) => at === index ? { ...item, modelSelectable: next } : item) }), '任务规则模型可选择')}
                 {rule.pattern.length > 0 && (() => { try { new RegExp(rule.pattern); return null } catch { return <small className={styles.noticeError}>正则无效</small> } })()}
-                <button type="button" className={styles.pillButton} data-danger aria-label="删除规则" title="删除"
-                  onClick={() => patch({ ...policy, taskRules: (policy.taskRules ?? []).filter((_, at) => at !== index) })}>×</button>
+                <HintTooltip label="删除"><button type="button" className={styles.pillButton} data-danger aria-label="删除规则"
+                  onClick={() => patch({ ...policy, taskRules: (policy.taskRules ?? []).filter((_, at) => at !== index) })}>×</button></HintTooltip>
               </div>
             </div>
           ))}

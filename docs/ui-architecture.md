@@ -145,6 +145,9 @@
        ├─ DialogSurface.tsx
        ├─ EngineModuleCard.tsx
        ├─ FormField.tsx
+       ├─ HintTooltip.module.css
+       ├─ HintTooltip.tsx
+       ├─ hint-tooltip-position.ts
        ├─ ImportFileButton.tsx
        ├─ MenuSelect.tsx
        ├─ SettingInputRow.tsx
@@ -338,7 +341,7 @@ feature 只拥有自己的视图、瞬时状态、领域纯 helper 和 CSS：
 
 ui/ 只接收 props/callback，当前真实共享 seam 包括：
 
-- FormField：label/id 配对；hint 可内联，也可复用官方 Tooltip 在悬停或聚焦时显示。
+- FormField：label/id 配对；hint 可内联，也可通过 HintTooltip 在悬停或聚焦时显示。
 - SettingInputRow、ToggleRow、TagInput：设置和字段编辑形态。
 - MenuSelect：直接封装官方 Menu 的单选胶囊；支持连续选项的 `group` 分组标题。标准设置使用 36px，模块卡内使用 28px 紧凑形态，浮层统一 portal。
 - CollapsibleCard、EngineModuleCard：具体可复用的折叠/模块卡形态，不是万能 Card。
@@ -351,7 +354,7 @@ ui/ 只接收 props/callback，当前真实共享 seam 包括：
 
 模块卡内的选择器、开关及小型文本/数字输入使用紧凑尺寸；大文本和 JSON 编辑器保留 `field-sizing: content`、手动纵向缩放与现有自动测高，不随紧凑控件一起压缩。
 
-promptConfigs 模块卡展开区按基础信息、注入规则、作用范围、内容、策略参数和高级元数据分区；短字段使用基于卡片宽度的容器网格，高级来源/幂等元数据使用原生 details 收纳。字段说明统一复用官方 Tooltip，在悬停或聚焦时显示；模块卡只通过局部语义 token 提高提示背景不透明度，不复制官方 Tooltip 实现。布局变化不得改变字段默认值、未知枚举兼容或保存载荷。
+promptConfigs 模块卡展开区按基础信息、注入规则、作用范围、内容、策略参数和高级元数据分区；短字段使用基于卡片宽度的容器网格，高级来源/幂等元数据使用原生 details 收纳。字段说明统一使用 HintTooltip；视觉沿用宿主 Tooltip，定位由本插件处理。布局变化不得改变字段默认值、未知枚举兼容或保存载荷。
 
 主会话模块列表提供两个互斥 sibling view：`general` 展示当前 seam 的 promptConfigs，`capability` 展示模型路由、引擎能力卡和 tool-pipeline 工具卡。`layerFilter` 在两个 view 间保持独立；view 切换不改变 dirty 快照、参数保存队列或模块事实。
 
@@ -377,6 +380,17 @@ promptConfigs 模块卡展开区按基础信息、注入规则、作用范围、
 - 提示词、技能和阶段排序同时提供 pointer drag 与上移/下移键盘替代；边界按钮有明确 aria-label。
 - reduced-motion 下关闭平移和过渡；focus-visible 必须清晰。
 
+### 9.4 模块参数命名与说明
+
+- 可见参数名使用简洁简体中文，优先采用 2-6 字的领域名称；不在标签中显示内部键名、英文枚举或括号实现说明。
+- 内部键和值、bridge 载荷和 preset.yml 保持英文契约；下拉选项通过中文映射展示，未知旧值仍回显原值，不能因汉化丢失编辑能力。
+- 布尔参数使用正向短名称，例如「人设」「独占」「动态抑制」「互斥」；名称位于开关上方，与输入框和选择框保持相同字段节奏。
+- 字段说明统一经 `ui/HintTooltip.tsx`。组件只复用宿主 Tooltip 的视觉 token、内边距、圆角、字号与淡入效果，不调用宿主 Tooltip 的定位实现。
+- HintTooltip 通过 `body` portal 与 `position: fixed` 定位：鼠标悬停延迟 500ms 后在指针附近显示并随指针移动；键盘聚焦即时读取控件 `getBoundingClientRect()`，紧邻控件显示；视口边缘自动翻转或收敛。
+- `HintTooltip.module.css` 使用宿主 `--dsw-alias-tooltip-bg` 和静态前景 token，并与宿主尺寸一致；背景混入工作台底色以降低透明度。业务组件不得再使用原生 `title` 或自制 `data-tip` 伪元素。
+- 字段错误、只读警告、保存状态和空状态不是帮助说明，继续就地显示，不藏入 Tooltip。
+- 系统提示段中，人设开启时三个开关各占四格；人设关闭时「人设、段名、独占、动态抑制」各占三格。720px 以上卡片保持同一行，620px 以下改为单列。
+
 ## 10. 样式所有权
 
 样式使用 CSS Modules 和 DSH 语义 token，当前 owner 为：
@@ -384,6 +398,7 @@ promptConfigs 模块卡展开区按基础信息、注入规则、作用范围、
     app/workbench/Workbench.module.css
     app/workspace/PromptWorkspace.module.css
     ui/controls.module.css
+    ui/HintTooltip.module.css
     features/characters/characters.module.css
     features/presets/presets.module.css
     features/prompts/prompts.module.css

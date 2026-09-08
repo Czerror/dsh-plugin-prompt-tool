@@ -30,8 +30,6 @@
 }
 .configFormLayout {
   container-type: inline-size;
-  /* 复用宿主 Tooltip，仅在模块卡内提高背景不透明度。 */
-  --dsw-alias-tooltip-bg: color-mix(in srgb, var(--dsw-static-neutral-bluish-850) 94%, transparent);
 }
 .configGrid {
   display: grid;
@@ -56,7 +54,7 @@
 .fieldSpan9 { grid-column: span 9; }
 .fieldControl { width: 100%; }
 .fieldFull { min-width: 0; grid-column: 1 / -1; }
-.configToggleField { min-width: 0; min-height: 34px; align-items: center; gap: 8px; }
+.configToggleField { display: flex; min-width: 0; flex-direction: column; align-items: flex-start; gap: 4px; }
 .configAdvanced {
   border-top: 0.5px solid var(--dsw-alias-border-l2);
   padding-top: 10px;
@@ -95,7 +93,7 @@
 }
 
 /* 容器查询不可用时，按视口保留同一套紧凑布局。 */
-@media (max-width: 959px) {
+@media (max-width: 720px) {
   .configGrid { grid-template-columns: repeat(6, minmax(0, 1fr)); }
   .fieldSpan2,
   .fieldSpan3,

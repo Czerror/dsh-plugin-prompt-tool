@@ -1,6 +1,7 @@
 import { memo, type ReactNode } from 'react'
 import clsx from 'clsx'
 import type { SkillCatalogEntry } from '../../data/prompt-tool-fields.ts'
+import { HintTooltip } from '../../ui/HintTooltip.tsx'
 import sharedCss from '../../ui/controls.module.css'
 import featureCss from './skills.module.css'
 import { skillStatusLabel } from './skill-status.ts'
@@ -79,17 +80,17 @@ export const SkillRow = memo(function SkillRow(props: SkillRowProps): ReactNode 
         <input type="checkbox" checked={isSelected} disabled={!skill.valid} onChange={() => props.onToggleSelect(skill.folder)} />
       </label>
       {nested
-        ? <span className={ui.skillNestedMark} aria-hidden="true" title="嵌套子技能（跟随主技能，不参与拖拽排序）">▸</span>
+        ? <HintTooltip label="嵌套子技能；跟随主技能，不参与拖拽排序"><span className={ui.skillNestedMark} aria-hidden="true">▸</span></HintTooltip>
         : (
           <>
-            <span className={ui.dragHandle} title={`第 ${primaryIndex + 1} 位，拖动调整顺序`} aria-hidden="true">⠿</span>
-            <span className={ui.skillRankBadge} title={`第 ${primaryIndex + 1} 位`}>{primaryIndex + 1}</span>
+            <HintTooltip label={`第 ${primaryIndex + 1} 位；拖动调整顺序`}><span className={ui.dragHandle} aria-hidden="true">⠿</span></HintTooltip>
+            <HintTooltip label={`第 ${primaryIndex + 1} 位`}><span className={ui.skillRankBadge}>{primaryIndex + 1}</span></HintTooltip>
           </>
         )}
       <div className={ui.skillCardBody}>
         <span className={ui.skillCardTitleRow}>
           <strong>{skill.name || skill.folder}</strong>
-          {skill.duplicate === true && <span className={ui.duplicateBadge} title={`同名技能：来源目录 ${skill.dir ?? '未知'}`}>同名</span>}
+          {skill.duplicate === true && <HintTooltip label={`同名技能；来源目录 ${skill.dir ?? '未知'}`}><span className={ui.duplicateBadge}>同名</span></HintTooltip>}
           <SkillStatusChips skill={skill} enabled={enabled} />
         </span>
         <small className={ui.skillCardMeta}>{hint}</small>
@@ -107,8 +108,8 @@ export const SkillRow = memo(function SkillRow(props: SkillRowProps): ReactNode 
         </button>
       ) : !nested ? (
         <span className={ui.skillOrderButtons}>
-          <button type="button" className={ui.pillButton} aria-label={`上移 ${skill.name || skill.folder}`} title="上移（键盘排序）" disabled={!props.canMoveUp} onClick={() => props.onMoveUp(skill.folder)}>↑</button>
-          <button type="button" className={ui.pillButton} aria-label={`下移 ${skill.name || skill.folder}`} title="下移（键盘排序）" disabled={!props.canMoveDown} onClick={() => props.onMoveDown(skill.folder)}>↓</button>
+          <HintTooltip label="上移"><button type="button" className={ui.pillButton} aria-label={`上移 ${skill.name || skill.folder}`} disabled={!props.canMoveUp} onClick={() => props.onMoveUp(skill.folder)}>↑</button></HintTooltip>
+          <HintTooltip label="下移"><button type="button" className={ui.pillButton} aria-label={`下移 ${skill.name || skill.folder}`} disabled={!props.canMoveDown} onClick={() => props.onMoveDown(skill.folder)}>↓</button></HintTooltip>
         </span>
       ) : null}
     </div>

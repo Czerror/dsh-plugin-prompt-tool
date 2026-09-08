@@ -1,6 +1,6 @@
 /** 标签输入：chip 增删 + 回车/逗号添加；底层仍为逗号分隔字符串，零数据层改动。 */
 import { useState, type ReactNode } from 'react'
-import { Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
+import { HintTooltip } from './HintTooltip.tsx'
 import styles from './controls.module.css'
 
 export function TagInput(props: {
@@ -31,10 +31,8 @@ export function TagInput(props: {
     onCommit()
   }
 
-  const field = (
-    <div className={styles.settingRowStack}>
-      <span className={styles.settingCopy}><strong>{label}</strong>{hintMode !== 'tooltip' && <small>{hint}</small>}</span>
-      <div className={styles.tagInput} data-disabled={disabled ? '' : undefined}>
+  const control = (
+    <div className={styles.tagInput} data-disabled={disabled ? '' : undefined}>
         {tags.map((tag) => (
           <span key={tag} className={styles.tagChip}>
             {tag}
@@ -62,14 +60,17 @@ export function TagInput(props: {
           }}
           onBlur={commitDraft}
         />
-      </div>
+    </div>
+  )
+  const field = (
+    <div className={styles.settingRowStack}>
+      <span className={styles.settingCopy}><strong>{label}</strong>{hintMode !== 'tooltip' && <small>{hint}</small>}</span>
+      {hintMode === 'tooltip' ? <HintTooltip label={hint}>{control}</HintTooltip> : control}
     </div>
   )
   return (
     <div className={styles.rowGroup}>
-      {hintMode === 'tooltip'
-        ? <Tooltip label={hint} side="right" delayMs={500} maxWidth={360}>{field}</Tooltip>
-        : field}
+      {field}
     </div>
   )
 }

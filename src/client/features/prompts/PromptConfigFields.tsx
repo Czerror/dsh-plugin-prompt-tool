@@ -1,7 +1,7 @@
 import { useEffect, useId, useMemo, useState, type ReactNode } from 'react'
 import clsx from 'clsx'
-import { Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
 import { FormField } from '../../ui/FormField.tsx'
+import { HintTooltip } from '../../ui/HintTooltip.tsx'
 import { MenuSelect } from '../../ui/MenuSelect.tsx'
 import { TagInput } from '../../ui/TagInput.tsx'
 import { autoResizeTextarea } from './textarea-resize.ts'
@@ -80,16 +80,18 @@ export function JsonField(props: { label: string; value: Record<string, unknown>
 
 /** 布尔开关行（params 结构化编辑用）。 */
 function ParamToggle(props: { label: string; hint?: string; className?: string; checked: boolean; onChange: (checked: boolean) => void }): ReactNode {
-  const field = (
-    <label className={clsx(styles.configEnable, props.className)}>
-      <span className={styles.configFieldLabel}>{props.label}</span>
+  const control = (
+    <label className={styles.configEnable}>
       <input type="checkbox" aria-label={props.label} checked={props.checked} onChange={(e) => props.onChange(e.target.checked)} />
       <span className={styles.switch} aria-hidden="true"><i /></span>
     </label>
   )
-  return props.hint === undefined
-    ? field
-    : <Tooltip label={props.hint} side="right" delayMs={500} maxWidth={360}>{field}</Tooltip>
+  return (
+    <div className={clsx(styles.configToggleField, props.className)}>
+      <span className={styles.configFieldLabel}>{props.label}</span>
+      {props.hint === undefined ? control : <HintTooltip label={props.hint}>{control}</HintTooltip>}
+    </div>
+  )
 }
 
 /** params 文本域（结构化编辑用）：失焦写入草稿 params。 */
@@ -135,17 +137,18 @@ export function StrategyParamsFields(props: { strategy: string; layer?: string; 
     // 关 = 可选自定义段名，空则引擎回退 id 注册为普通段）、complete（独占 system prompt，
     // 预设内互斥）、suppressRuntimeContext（抑制动态快照）。
     const isPersona = str('sectionName') === 'deployment:persona' || str('sectionName') === 'persona'
+    const toggleSpan = isPersona ? styles.fieldSpan4 : styles.fieldSpan3
     return (
       <>
-        <ParamToggle className={styles.fieldSpan4} label="人设" hint="开启后注册为全局人设；同名人设会覆盖，子代理继承"
+        <ParamToggle className={toggleSpan} label="人设" hint="开启后注册为全局人设；同名人设会覆盖，子代理继承"
           checked={isPersona}
           onChange={(next) => set('sectionName', next ? 'deployment:persona' : '')} />
         {!isPersona && (
-          <ParamInput className={styles.fieldSpan8} label="段名" hint="留空时使用配置标识；同名段会覆盖已有段" value={str('sectionName')} onChange={(next) => set('sectionName', next)} />
+          <ParamInput className={styles.fieldSpan3} label="段名" hint="留空时使用配置标识；同名段会覆盖已有段" value={str('sectionName')} onChange={(next) => set('sectionName', next)} />
         )}
-        <ParamToggle className={styles.fieldSpan4} label="独占" hint="开启后系统提示只保留本段；同一预设只能启用一个"
+        <ParamToggle className={toggleSpan} label="独占" hint="开启后系统提示只保留本段；同一预设只能启用一个"
           checked={bool('complete')} onChange={(next) => set('complete', next)} />
-        <ParamToggle className={styles.fieldSpan4} label="动态抑制" hint="开启后不附加运行时上下文"
+        <ParamToggle className={toggleSpan} label="动态抑制" hint="开启后不附加运行时上下文"
           checked={bool('suppressRuntimeContext')} onChange={(next) => set('suppressRuntimeContext', next)} />
       </>
     )
