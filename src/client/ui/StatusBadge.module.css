@@ -1,0 +1,22 @@
+/* 只读状态徽章：8px 圆点 + 官方 Tag 胶囊；tone 同时决定两者颜色。 */
+.badge {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 7px;
+}
+
+.dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-radius: 50%;
+  corner-shape: round;
+  background: var(--status-dot);
+}
+
+.dot[data-tone='success'] { --status-dot: var(--dsw-alias-state-success-primary); }
+.dot[data-tone='info'] { --status-dot: var(--dsw-alias-state-business-primary); }
+.dot[data-tone='neutral'] { --status-dot: var(--dsw-alias-label-tertiary); }
+.dot[data-tone='danger'] { --status-dot: var(--dsw-alias-state-error-primary); }

@@ -33,7 +33,6 @@
 .toolCardToggle:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary); outline-offset: -2px; }
 .toolCardTitle { min-width: 0; overflow: hidden; font-size: 14px; line-height: 20px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
 .toolCardTrailing { display: inline-flex; flex: none; align-items: center; gap: 7px; }
-.toolVisibleDot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; corner-shape: round; background: var(--dsw-alias-state-success-primary); }
 .toolChevron { flex: none; color: var(--dsw-alias-label-tertiary); }
 .toolSurfaceCard[data-open] .toolChevron { transform: rotate(180deg); }
 .toolCardDetails { border-top: .5px solid var(--dsw-alias-border-l2); padding: 10px 14px 12px; background: var(--dsw-alias-bg-module-platform); }

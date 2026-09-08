@@ -1,5 +1,6 @@
 import { useEffect, useId, useState, type ReactNode } from 'react'
-import { IconChevronDownOutline14, Tag } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconChevronDownOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { StatusBadge } from '../../ui/StatusBadge.tsx'
 import { loadToolSurface, type ToolSurfaceEntry, type ToolSurfaceResult, type ToolSurfaceSource } from './tool-surface-request.ts'
 import css from './tools.module.css'
 
@@ -26,7 +27,7 @@ export function ToolSurfaceList({ tools, filter, sourceLabel = '工具面', sour
             <button type="button" className={css.toolCardToggle} aria-expanded={open} aria-controls={detailId}
               aria-label={`查看工具 ${entry.name}`} onClick={() => setExpanded(open ? null : key)}>
               <strong className={css.toolCardTitle}>{entry.name}</strong>
-              <span className={css.toolCardTrailing}><span className={css.toolVisibleDot} aria-hidden="true" /><Tag tone="success">模型可见</Tag><IconChevronDownOutline14 className={css.toolChevron} aria-hidden="true" /></span>
+              <span className={css.toolCardTrailing}><StatusBadge tone="success" label="模型可见" /><IconChevronDownOutline14 className={css.toolChevron} aria-hidden="true" /></span>
             </button>
             {open && <div id={detailId} className={css.toolCardDetails}>
               <code className={css.toolEntryValue}>{entry.name}</code>

@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { matchesSkillStatus, skillStatusLabel } from '../../src/client/features/skills/skill-status.ts'
+import { matchesSkillStatus, skillStatusLabel, skillStatusTone } from '../../src/client/features/skills/skill-status.ts'
 
 const skill = (overrides = {}) => ({
   folder: 'demo-skill',
@@ -36,4 +36,13 @@ test('技能状态筛选区分模型、用户、已禁用与全部', () => {
   assert.equal(matchesSkillStatus(disabled, false, 'disabled'), true)
   assert.equal(matchesSkillStatus(disabled, true, 'disabled'), false)
   assert.equal(matchesSkillStatus(invalid, true, 'disabled'), false)
+})
+
+test('技能状态徽章色调随注册、开关与调用范围变化', () => {
+  assert.equal(skillStatusTone(skill({ valid: false }), true), 'danger')
+  assert.equal(skillStatusTone(skill(), false), 'neutral')
+  assert.equal(skillStatusTone(skill({ modelInvocable: false, userInvocable: false }), true), 'neutral')
+  assert.equal(skillStatusTone(skill({ modelInvocable: false }), true), 'success')
+  assert.equal(skillStatusTone(skill({ userInvocable: false }), true), 'info')
+  assert.equal(skillStatusTone(skill(), true), 'info')
 })

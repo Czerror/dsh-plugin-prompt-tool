@@ -2,36 +2,12 @@ import { memo, type ReactNode } from 'react'
 import clsx from 'clsx'
 import type { SkillCatalogEntry } from '../../data/prompt-tool-fields.ts'
 import { HintTooltip } from '../../ui/HintTooltip.tsx'
+import { StatusBadge } from '../../ui/StatusBadge.tsx'
 import sharedCss from '../../ui/controls.module.css'
 import featureCss from './skills.module.css'
-import { skillStatusLabel } from './skill-status.ts'
+import { skillStatusLabel, skillStatusTone } from './skill-status.ts'
 
 const ui = { ...sharedCss, ...featureCss }
-/** 技能调用状态徽章：展示模型/用户调用权限及当前开关状态。 */
-function SkillStatusChips(props: { skill: SkillCatalogEntry; enabled: boolean }): ReactNode {
-  const { skill, enabled } = props
-  const status = skillStatusLabel(skill, enabled)
-  const callable = skill.valid && enabled && (skill.modelInvocable || skill.userInvocable)
-  const tone = !skill.valid
-    ? ui.skillStatusError
-    : !enabled || (!skill.modelInvocable && !skill.userInvocable)
-      ? ui.skillStatusOff
-      : !skill.modelInvocable
-        ? ui.skillStatusUser
-        : ui.skillStatusModel
-  return (
-    <span className={ui.skillStatusRow} aria-label={`技能调用状态：${status}`}>
-      <span className={clsx(ui.skillStatusChip, tone)}>
-        <i
-          className={ui.skillStatusDot}
-          data-state={callable ? 'available' : skill.valid && !enabled ? 'error' : undefined}
-          aria-hidden="true"
-        />
-        {status}
-      </span>
-    </span>
-  )
-}
 
 export interface SkillRowProps {
   skill: SkillCatalogEntry
@@ -61,6 +37,7 @@ export const SkillRow = memo(function SkillRow(props: SkillRowProps): ReactNode 
   const { skill, depth, primaryIndex, enabled, isSelected, dragging, dropBefore, dropAfter, fixing } = props
   const nested = depth > 0
   const hint = `${skill.dir ?? 'skills'}/${skill.folder}${skill.description ? ` · ${skill.description}` : ''}`
+  const status = skillStatusLabel(skill, enabled)
   return (
     <div
       className={clsx(ui.skillCard, !skill.valid && ui.skillRowInvalid)}
@@ -91,7 +68,7 @@ export const SkillRow = memo(function SkillRow(props: SkillRowProps): ReactNode 
         <span className={ui.skillCardTitleRow}>
           <strong>{skill.name || skill.folder}</strong>
           {skill.duplicate === true && <HintTooltip label={`同名技能；来源目录 ${skill.dir ?? '未知'}`}><span className={ui.duplicateBadge}>同名</span></HintTooltip>}
-          <SkillStatusChips skill={skill} enabled={enabled} />
+          <StatusBadge tone={skillStatusTone(skill, enabled)} label={status} ariaLabel={`技能调用状态：${status}`} />
         </span>
         <small className={ui.skillCardMeta}>{hint}</small>
         {!skill.valid && skill.issue && <span className={ui.skillIssue} role="note">{skill.issue}</span>}

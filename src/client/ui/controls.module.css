@@ -576,53 +576,6 @@
   background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 8%, transparent);
 }
 
-/* 状态芯片：带底色胶囊，模型=蓝 / 用户=绿 / 关闭=灰 / 未注册=红。 */
-.skillStatusRow {
-  display: inline-flex;
-  flex: 0 0 auto;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-}
-
-.skillStatusChip {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 3px 9px;
-  border: 1px solid var(--chip);
-  border-radius: 999px;
-  corner-shape: round;
-  color: var(--dsw-alias-label-primary-foreground);
-  background: var(--chip);
-  font-size: 11px;
-  font-weight: 650;
-  line-height: 16px;
-  white-space: nowrap;
-}
-
-.skillStatusModel { --chip: var(--dsw-alias-state-business-primary); }
-.skillStatusOff { --chip: var(--dsw-alias-label-secondary); }
-
-.skillStatusDot {
-  display: inline-block;
-  width: 6px;
-  height: 6px;
-  flex: none;
-  border-radius: 50%;
-  corner-shape: round;
-  background: currentColor;
-}
-
-.skillStatusDot[data-state='available'] {
-  background: var(--dsw-alias-state-success-primary);
-  box-shadow: 0 0 0 1px var(--dsw-alias-label-primary-foreground);
-}
-
-.skillStatusDot[data-state='error'] {
-  background: var(--dsw-alias-state-error-primary);
-}
-
 .dragHandle {
   display: grid;
   width: 28px;

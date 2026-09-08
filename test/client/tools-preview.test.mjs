@@ -109,7 +109,7 @@ test('官方目录式搜索、可折叠分组与标题右侧预设选择；不�
   assert.match(html, /aria-label="当前会话工具"/)
   assert.match(html, /aria-label="预设工具能力"/)
   assert.match(html, /aria-label="预设工具能力来源"/)
-  assert.match(read('src/client/features/tools/ToolSurfaceView.tsx'), /toolVisibleDot/)
+  assert.match(read('src/client/features/tools/ToolSurfaceView.tsx'), /<StatusBadge tone="success" label="模型可见" \/>/)
   assert.equal((html.match(/class="toolGroupToggle" aria-expanded="true"/g) ?? []).length, 2)
   assert.doesNotMatch(html, /role="tablist"|role="tabpanel"/)
   assert.ok(html.indexOf('搜索工具') < html.indexOf('当前会话工具'))
@@ -146,6 +146,7 @@ test('完整显示所有工具：同名自定义、第三方、空描述与长�
   assert.match(expanded, /<dl class="toolFacts">/)
   assert.match(expanded, /完整名称/)
   assert.match(expanded, /模型可见/)
+  assert.match(expanded, /class="badge"[\s\S]*?class="dot" data-tone="success"[\s\S]*?class="tag" data-tone="success">模型可见</)
   assert.match(expanded, /session-a/)
   assert.doesNotMatch(expanded, /运行中|已启用|配置状态|fiberPhase/)
   assert.match(render(ToolSurfaceList, { tools, filter: '', expandedName: 'empty_description' }), /（无描述）/)
@@ -164,6 +165,17 @@ test('工具卡双列网格、窄屏单列与键盘展开属性参照官方 inve
   const open = render(ToolSurfaceList, { tools: [{ name: 'read', description: '读取' }], filter: '', expandedName: 'read' })
   assert.match(open, /aria-expanded="true" aria-controls=/)
   assert.match(open, /<dl/)
+})
+
+test('技能卡与工具卡共用 StatusBadge：圆点 + 官方 Tag', () => {
+  const badge = read('src/client/ui/StatusBadge.tsx')
+  assert.match(badge, /import \{ Tag \} from '@deepseek-ai\/dsh-client-ui-primitives'/)
+  assert.match(badge, /<Tag tone=\{props\.tone\}>\{props\.label\}<\/Tag>/)
+  for (const path of ['src/client/features/tools/ToolSurfaceView.tsx', 'src/client/features/skills/SkillRow.tsx']) {
+    assert.match(read(path), /from '\.\.\/\.\.\/ui\/StatusBadge\.tsx'/, `${path} 应复用共享状态徽章`)
+  }
+  assert.doesNotMatch(read('src/client/features/tools/tools.module.css'), /toolVisibleDot/)
+  assert.doesNotMatch(read('src/client/ui/controls.module.css'), /skillStatusChip|skillStatusDot/)
 })
 
 test('搜索只过滤名称或描述，空列表与无匹配状态分开', () => {
