@@ -32,6 +32,14 @@ test('migrate-presets：旧 worldBook/扁平模型键/旧参数别名/覆盖文�
       'promptConfigs:',
       '  - id: keep-config',
       '    text: keep',
+      '  - id: old-persona',
+      '    layer: system-section',
+      '    params:',
+      '      sectionName: deployment:persona',
+      '  - id: bare-persona',
+      '    layer: system-section',
+      '    params:',
+      '      sectionName: persona',
       'worldBook:',
       '  injectMode: keyword',
       '  entries:',
@@ -58,6 +66,10 @@ test('migrate-presets：旧 worldBook/扁平模型键/旧参数别名/覆盖文�
     assert.doesNotMatch(doc, /worldBook:/)
     assert.match(doc, /strategy: world-book/)
     assert.match(doc, /id: keep-config/, '已有 promptConfigs 应保留')
+    // 旧 persona 段名迁移为官方拆分段名（运行时不再兼容）。
+    assert.doesNotMatch(doc, /sectionName: '?deployment:persona'?\s*$/m)
+    assert.doesNotMatch(doc, /sectionName: '?persona'?\s*$/m)
+    assert.equal((doc.match(/sectionName: '?deployment:persona-prefix'?/g) ?? []).length, 2, '两个旧段名都迁移为 prefix')
     // 覆盖文件并入后归档 .bak。
     assert.match(doc, /firstTurnAnchor: true/)
     assert.match(doc, /modules:\n\s+- bootstrap-filesystem/)
@@ -78,6 +90,30 @@ test('migrate-presets：dry-run 不写盘；无迁移目标零操作退出 0', (
     const output = execFileSync(process.execPath, [SCRIPT, '--dry-run'], { env: { ...process.env, DSH_HOME: home }, encoding: 'utf8' })
     assert.match(output, /0 migrated/)
     assert.equal(readFileSync(join(dir, 'preset.yml'), 'utf8'), 'id: beta\nparams:\n  keepMe: v\n', 'dry-run 不写盘')
+  } finally {
+    rmSync(home, { recursive: true, force: true })
+  }
+})
+
+test('migrate-presets：无 worldBook 时按 YAML 节点迁移 persona 段名并保留注释', () => {
+  const home = mkdtempSync(join(tmpdir(), 'pt-migrate-home-'))
+  try {
+    const dir = makePresetDir(home, 'gamma')
+    writeFileSync(join(dir, 'preset.yml'), [
+      'id: gamma',
+      '# 保留注释',
+      'promptConfigs:',
+      '  - id: persona-main',
+      '    params:',
+      '      sectionName: deployment:persona',
+      '',
+    ].join('\n'), 'utf8')
+    const output = execFileSync(process.execPath, [SCRIPT], { env: { ...process.env, DSH_HOME: home }, encoding: 'utf8' })
+    assert.match(output, /personaSection=1/)
+    const doc = readFileSync(join(dir, 'preset.yml'), 'utf8')
+    assert.match(doc, /# 保留注释/, '未知注释保留')
+    assert.match(doc, /sectionName: deployment:persona-prefix/)
+    assert.doesNotMatch(doc, /sectionName: '?deployment:persona'?\s*$/m)
   } finally {
     rmSync(home, { recursive: true, force: true })
   }

@@ -103,7 +103,7 @@ src/client/
 | `model`（主对话） | `provider` `name` `reasoningEffort` `temperature` `maxTokens` |
 | `subagentModel`（子代理固定路由） | `provider` `name` `reasoningEffort` `temperature` `maxTokens` |
 
-读取时顶层段展平进 params 扁平键（`modelProvider` 等）；保存时写顶层段并清理旧键。旧扁平键不再运行时兼容（参数只走 canonical 键），旧数据经 `pnpm migrate:presets` 离线一次性迁移。
+读取时顶层段展平进 params 扁平键（`modelProvider` 等）；保存时写顶层段并清理旧键。旧扁平键不再运行时兼容（参数只走 canonical 键），旧数据经 `pnpm migrate:presets` 离线一次性迁移。人设段名同理：旧 `deployment:persona` / `persona` 不再运行时兼容，由同一脚本迁移为官方 `deployment:persona-prefix`（suffix 段可直接在「段名」输入）。
 
 工作台「模型路由」卡顶部另有**当前会话**区（仅主对话作用域）：显示活动会话的模型/思维程度（会话 `modelSelection` 投影，缺省回退宿主默认），模型下拉展示全部可用模型并按服务商分组，选择模型时自动回写对应服务商；切换走官方 `session.selectModel`——对当前会话立即生效并被宿主持久化为新会话默认，与官方模型选择器双向同源；子代理会话与宿主默认场景不支持会话级切换。预设参数非空时按请求覆盖会话选择（参数桥优先级不变）。
 
@@ -181,7 +181,7 @@ pnpm typecheck && pnpm lint
 pnpm sync:anchored       # 刷新 upstream/dsh-anchored-standard 内联快照
 pnpm sync:yaml           # 刷新 engine/vendor/yaml（生成目录运行时 YAML 解析器）
 pnpm rebuild:composition # 只生成官方切块/变体；source/local 本地源不复制（失败安全）
-pnpm migrate:presets     # 离线一次性参数迁移（旧 worldBook/扁平模型键/模块别名/旧覆盖文件；--dry-run 预览）
+pnpm migrate:presets     # 离线一次性参数迁移（旧 worldBook/扁平模型键/模块别名/旧覆盖文件/旧 persona 段名；--dry-run 预览）
 ```
 
 ## 许可

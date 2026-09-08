@@ -7,7 +7,8 @@
 //   2. 旧扁平模型键（params.modelProvider 等）→ 顶层 model / subagentModel 段；
 //   3. 旧内容参数别名（params.guideComplexPattern）删除（运行时兼容已移除）；
 //   4. 旧参数覆盖文件 prompt-tool.overrides.yml → 并入 preset.yml params 后归档 .bak；
-//   5. 旧 str-replace-editor 模块名 → 官方 bootstrap-filesystem 组合。
+//   5. 旧 str-replace-editor 模块名 → 官方 bootstrap-filesystem 组合；
+//   6. 旧 persona 段名 deployment:persona / persona → deployment:persona-prefix。
 // 安全：dry-run（--dry-run / -n）只报告不写盘；写盘前每份 preset.yml 备份 .bak；
 // 解析失败 fail loud（非零退出），不动用户资产。
 //
@@ -72,7 +73,7 @@ function worldBookToConfigs(worldBook) {
 /** 迁移单个预设目录；返回 { changed, summary }。 */
 function migratePresetDir(presetDir) {
   const presetFile = join(presetDir, 'preset.yml')
-  const summary = { worldBook: 0, flatModel: 0, oldParam: 0, moduleAlias: false, overrides: false }
+  const summary = { worldBook: 0, flatModel: 0, oldParam: 0, moduleAlias: false, overrides: false, personaSection: 0 }
   if (!existsSync(presetFile)) return { changed: false, summary }
   let doc
   try {
@@ -148,12 +149,34 @@ function migratePresetDir(presetDir) {
     changed = true
   }
 
+  // 6) 旧 persona 段名 → 官方拆分段名（运行时兼容已移除）。
+  const configsNode = doc.get('promptConfigs')
+  const promptConfigs = configsNode !== null && typeof configsNode?.toJS === 'function'
+    ? configsNode.toJS(doc)
+    : configsNode
+  if (Array.isArray(promptConfigs)) {
+    // worldBook 迁移后 promptConfigs 是普通数组；其余情况是 YAMLSeq，按节点改以保留注释。
+    const items = Array.isArray(configsNode?.items) ? configsNode.items : undefined
+    promptConfigs.forEach((config, index) => {
+      const sectionName = config?.params?.sectionName
+      if (sectionName !== 'deployment:persona' && sectionName !== 'persona') return
+      const item = items?.[index]
+      if (item !== undefined && typeof item.setIn === 'function') {
+        item.setIn(['params', 'sectionName'], 'deployment:persona-prefix')
+      } else {
+        config.params.sectionName = 'deployment:persona-prefix'
+      }
+      summary.personaSection += 1
+      changed = true
+    })
+  }
+
   if (!changed) return { changed: false, summary }
 
   // 写盘前备份 preset.yml（.bak-<时间戳>），失败非零并保留原文件。
   const backup = `${presetFile}.bak-${Date.now().toString(36)}`
   if (DRY_RUN) {
-    console.log(`[dry-run] ${presetDir}: worldBook=${summary.worldBook} flatModel=${summary.flatModel} oldParam=${summary.oldParam} moduleAlias=${summary.moduleAlias} overrides=${summary.overrides}`)
+    console.log(`[dry-run] ${presetDir}: worldBook=${summary.worldBook} flatModel=${summary.flatModel} oldParam=${summary.oldParam} moduleAlias=${summary.moduleAlias} overrides=${summary.overrides} personaSection=${summary.personaSection}`)
     return { changed: true, summary }
   }
   const migratedText = doc.toString()
@@ -168,7 +191,7 @@ function migratePresetDir(presetDir) {
     throw new Error(`preset ${presetFile} 写盘失败：${String(error?.message ?? error)}`)
   }
   if (summary.overrides) renameSync(overridesFile, `${overridesFile}.bak-${Date.now().toString(36)}`)
-  console.log(`migrated ${presetDir}: worldBook=${summary.worldBook} flatModel=${summary.flatModel} oldParam=${summary.oldParam} moduleAlias=${summary.moduleAlias} overrides=${summary.overrides} (backup ${backup})`)
+  console.log(`migrated ${presetDir}: worldBook=${summary.worldBook} flatModel=${summary.flatModel} oldParam=${summary.oldParam} moduleAlias=${summary.moduleAlias} overrides=${summary.overrides} personaSection=${summary.personaSection} (backup ${backup})`)
   return { changed: true, summary }
 }
 

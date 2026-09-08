@@ -53,12 +53,10 @@ function textLayerGroups(configs) {
   return groups
 }
 
-/** persona 段标记（官方 deployment:persona-prefix/suffix + 旧版 deployment:persona/persona 兼容）。 */
+/** persona 段标记（官方 deployment:persona-prefix/suffix；旧段名由 scripts/migrate-presets.mjs 离线迁移）。 */
 const PERSONA_SECTION_NAMES = new Set([
   'deployment:persona-prefix',
   'deployment:persona-suffix',
-  'deployment:persona',
-  'persona',
 ])
 function isPersonaSection(config) {
   return PERSONA_SECTION_NAMES.has(config?.params?.sectionName)

@@ -104,7 +104,7 @@ test('applyCharacterToPreset：导入含 system-section 的卡自动开放 perso
     '    order: 0',
     '    text: 默认人设',
     '    params:',
-    '      sectionName: deployment:persona',
+    '      sectionName: deployment:persona-prefix',
     '      complete: true',
     '      suppressRuntimeContext: true',
     '',

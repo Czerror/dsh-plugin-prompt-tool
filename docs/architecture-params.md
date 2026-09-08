@@ -186,6 +186,17 @@ wholeWords/selectiveLogic）单一权威。两个写入端共用：
 - **多词确认**：`anchor-match` prefix 模式从「仅首词」改为「任一确认词前缀命中」（any 语义）；
 - **显式覆盖**：`firstTurnWord` 非空时优先（旧预设 `we` 行为不变）；空 = 自动派生（模板默认）。
 
+### persona 段名全量迁移到官方拆分契约（2026-09-09）
+
+- DSH 0.1.5 `dsh-system-prompt` 把单段 `deployment:persona` 拆成
+  `deployment:persona-prefix`（第一方指导之前，order 0）与
+  `deployment:persona-suffix`（第一方指导之后，order 10200），配置键
+  `persona` 拆成 `personaPrefix` / `personaSuffix`。
+- 运行时只认新段名：`src/shared/persona-section.ts`、`engine/layers.mjs`、
+  `engine/tool-bootstrap.mjs` 的 persona 集合删除 `deployment:persona` 与裸名 `persona`。
+- 旧预设兼容改由离线脚本承担：`scripts/migrate-presets.mjs` 把
+  `promptConfigs[].params.sectionName` 的旧值改写为 `deployment:persona-prefix`（写盘前备份）。
+
 ### 主会话人设参数化（2026-08-25）
 
 - 存储/契约：`ENGINE_PARAM_KEYS` + `WRITER_PARAM_KEYS` 完整透传（runtimeOf / index /

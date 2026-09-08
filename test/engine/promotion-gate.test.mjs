@@ -160,7 +160,7 @@ test('门控冷启动：DSH 0.1.2-alpha.4 snapshotEvents API 重建相位', () =
 const assembled = (extraSections = []) => ({
   tools: [{ name: 'bash' }, { name: 'str_replace_editor' }, { name: 'read' }],
   sections: [
-    { name: 'deployment:persona', text: 'You are a helpful software engineer assistant.' },
+    { name: 'deployment:persona-prefix', text: 'You are a helpful software engineer assistant.' },
     { name: 'plan-mode', text: 'plan policy' },
     ...extraSections,
   ],
@@ -184,7 +184,7 @@ test('tool-bootstrap：phase-1 裁剪工具 + personaSectionsOnly 只留 persona
   const agent = makeAgent(session)
   const out = await assembleThrough(listeners, agent, assembled())
   assert.deepEqual(out.tools.map((t) => t.name), ['bash', 'str_replace_editor'], '工具裁剪到双工具')
-  assert.deepEqual(out.sections.map((s) => s.name), ['deployment:persona'], 'sections 只留 persona')
+  assert.deepEqual(out.sections.map((s) => s.name), ['deployment:persona-prefix'], 'sections 只留 persona')
   assert.match(out.sections[0].text, /make one tool call\.$/, '指令追加到 persona 末尾')
   // 幂等：再次组装不重复追加。
   const again = await assembleThrough(listeners, agent, { ...out, sections: [...out.sections] })
@@ -246,7 +246,7 @@ test('tool-bootstrap：includeSubagents=true 子代理与主会话同相位（�
   }
   const out = await assembleThrough(listeners, subagent, assembled())
   assert.deepEqual(out.tools.map((t) => t.name), ['bash', 'str_replace_editor'], '子代理首轮裁剪到 bootstrap 对')
-  assert.deepEqual(out.sections.map((s) => s.name), ['deployment:persona'], '子代理 sections 过滤生效')
+  assert.deepEqual(out.sections.map((s) => s.name), ['deployment:persona-prefix'], '子代理 sections 过滤生效')
 })
 
 // ── zero-tool 模式（bootstrapTools: []）────────────────────────────────────
