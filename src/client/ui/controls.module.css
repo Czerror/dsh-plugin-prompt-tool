@@ -209,8 +209,7 @@
 }
 
 .pillButton,
-.primaryPill,
-.actions button {
+.primaryPill {
   appearance: none;
   display: inline-flex;
   box-sizing: border-box;
@@ -231,14 +230,11 @@
   transition: transform .14s ease, background-color .14s ease, border-color .14s ease, box-shadow .14s ease;
 }
 
-.pillButton:hover:not(:disabled),
-.actions button:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover-solid); }
+.pillButton:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover-solid); }
 .pillButton:active:not(:disabled),
-.primaryPill:active:not(:disabled),
-.actions button:active:not(:disabled) { transform: translateY(1px); }
+.primaryPill:active:not(:disabled) { transform: translateY(1px); }
 .pillButton:disabled,
-.primaryPill:disabled,
-.actions button:disabled { cursor: default; opacity: .4; }
+.primaryPill:disabled { cursor: default; opacity: .4; }
 .primaryPill,
 .save {
   /* !important：覆盖宿主按钮默认 token，主按钮实底反色必须无条件生效。 */
@@ -874,9 +870,6 @@
 .emptyState p { max-width: 520px; margin: 0; color: var(--dsw-alias-label-tertiary); font-size: 12px; line-height: 1.6; }
 .readOnly { color: var(--dsw-alias-label-tertiary); font-size: 12px; line-height: 18px; }
 
-.actions { display: none; }
-.actions > span { color: var(--dsw-alias-label-tertiary); font-size: 12px; line-height: 18px; }
-.actions > div { display: flex; gap: 8px; }
 /* 次级按钮语义变体：显式声明，避免未来主按钮规则误伤。 */
 .pillButton[data-variant='secondary'] {
   border-color: var(--dsw-alias-border-l2);
@@ -1023,7 +1016,6 @@
 
 .pillButton:focus-visible,
 .primaryPill:focus-visible,
-.actions button:focus-visible,
 .directoryInput:focus-visible,
 .toggleRow input:focus-visible + .switch,
 .configEnable > input:focus-visible + .switch,
@@ -1040,8 +1032,6 @@
 @media (max-width: 620px) {
   .toggleRow { align-items: stretch; flex-direction: column; gap: 9px; }
   .directoryControl { max-width: none; justify-content: space-between; }
-  .actions > div,
-.actions button { flex: 1; }
   .configActions { width: 100%; }
   .configActions .pillButton { flex: 1; }
   .configHeader { align-items: flex-start; }

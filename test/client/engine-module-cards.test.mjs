@@ -126,7 +126,6 @@ test('统一列表平铺渲染配置与能力卡，层级筛选只过滤不分�
   const props = {
     meta,
     configs,
-    savedConfigs: configs,
     viewFilter: 'all',
     onViewFilterChange() {},
     afterCards: createElement(EngineModuleCards, { store: active, showActions: false, showPromptDefaults: false, showStatus: false }),

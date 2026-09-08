@@ -328,7 +328,7 @@ JSON bridge 的统一上限为 32 MiB；角色卡原始文件流独立限制为 
 2. 请求使用保存时的 snapshot；成功后只更新该 snapshot 的 saved 基线。
 3. 请求期间继续编辑时，当前 fields 与 saved snapshot 不同，dirty 保持为真。
 4. 成功后的静默 load 留在预设队列内，且只在全局草稿版本未变化、其他通道无待存草稿、对应草稿仍等于请求快照时执行；参数还要求没有未完成阶段草稿。
-5. promptConfigs 自动保存使用 debounce；手动保存仍经过配置校验。
+5. promptConfigs 自动保存使用 debounce；工具栏手动保存仍经过配置校验，模块列表不再提供未保存提示、放弃修改和浮动保存条。
 6. 参数空字符串/空数组沿用删除键语义；variables 的空字符串仍是合法占位值。详细参数规则见 [architecture-params.md](architecture-params.md)。
 7. 预设写入携带 `expectedPresetId`，读回失败的自定义工具不降级为空列表供覆盖；跨预设旧草稿被拒绝，切换等待参数保存队列。
 

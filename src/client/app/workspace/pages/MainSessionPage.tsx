@@ -59,7 +59,6 @@ export const MainSessionPage = memo(function MainSessionPage(props: { store: Pro
       <PromptConfigsEditor
         meta={store.meta}
         configs={fields.promptConfigs}
-        savedConfigs={store.savedConfigs}
         onPatchConfigs={patchConfigs}
         onSaveConfigs={saveConfigs}
         onNotice={store.showNotice}

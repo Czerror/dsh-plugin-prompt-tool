@@ -46,7 +46,10 @@ test('主会话使用平铺模块列表与合并创建菜单', () => {
   assert.match(editor, /afterCards\?: ReactNode/)
   assert.match(list, /afterCards === undefined \?/)
   assert.doesNotMatch(list, /renderLayer|data-insertion-point/)
-  assert.match(list, /保存提示词配置/)
+  // 自动保存（store debounce）取代浮动未保存提示/放弃/保存条；工具栏保留校验与保存入口。
+  assert.doesNotMatch(list, /放弃修改|保存提示词配置|有未保存提示词配置修改/)
+  assert.match(list, /'校验中…' : '校验'/)
+  assert.match(list, /'保存中…' : '保存'/)
   assert.match(list, /能力模块不受此搜索影响/)
   // 下拉仍保留插入点层级分类（只过滤、不生成分类区块）。
   assert.match(list, /LAYER_LABELS/)

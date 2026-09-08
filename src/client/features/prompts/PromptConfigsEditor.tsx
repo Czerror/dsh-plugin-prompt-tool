@@ -23,7 +23,6 @@ export type { PromptConfigTemplateEntry } from '../../prompt-tool-types.ts'
 export interface PromptConfigsEditorProps {
   meta: EngineMeta
   configs: PromptConfigDraft[]
-  savedConfigs: PromptConfigDraft[]
   onPatchConfigs: (configs: PromptConfigDraft[]) => void
   onSaveConfigs: (configs: PromptConfigDraft[]) => void
   onNotice: (kind: 'ok' | 'error', message: string) => void
@@ -144,7 +143,6 @@ export function PromptConfigsEditor(props: PromptConfigsEditorProps): ReactNode 
       <PromptConfigList
         meta={props.meta}
         configs={props.configs}
-        savedConfigs={props.savedConfigs}
         viewFilter={props.viewFilter}
         onViewFilterChange={props.onViewFilterChange}
         toolbarActions={props.toolbarActions}

@@ -13,7 +13,6 @@ const styles = { ...sharedCss, ...featureCss }
 export interface PromptConfigListProps {
   meta: EngineMeta
   configs: PromptConfigDraft[]
-  savedConfigs: PromptConfigDraft[]
   /** 传入 layer 时只展示该层配置；不传展示全部配置。 */
   layer?: string
   /** 传入 scope 时按 audience 作用域过滤：main = 非仅子代理（主会话可见）；subagent = 非仅主会话（子代理可见；缺省公用两边都可见）。 */
@@ -38,7 +37,7 @@ export interface PromptConfigListProps {
 
 /** 共享的提示词配置列表：校验、保存、脏检测、复制、删除、层内移动。 */
 export function PromptConfigList(props: PromptConfigListProps): ReactNode {
-  const { meta, configs, savedConfigs, layer, scope, extraActions, beforeCards, afterCards, toolbarActions, viewFilter: viewFilterProp, onViewFilterChange, emptyHint, onPatchConfigs, onSaveConfigs, onNotice } = props
+  const { meta, configs, layer, scope, extraActions, beforeCards, afterCards, toolbarActions, viewFilter: viewFilterProp, onViewFilterChange, emptyHint, onPatchConfigs, onSaveConfigs, onNotice } = props
   const [expanded, setExpanded] = useState<string | undefined>(undefined)
   const [errors, setErrors] = useState<ValidationErrorEntry[]>([])
   const [validating, setValidating] = useState(false)
@@ -96,9 +95,6 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
     onPatchConfigs(configs.map((config) => visibleIds.has(config.id) ? { ...config, enabled } : config))
   }
 
-  // patch 路径从不原地 mutate（均生成新数组），引用比较即可判断脏；省掉每次渲染全量序列化大数组。
-  const dirty = configs !== savedConfigs
-
   const runValidate = async (target: PromptConfigDraft[]): Promise<boolean> => {
     setValidating(true)
     try {
@@ -126,12 +122,6 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
       onNotice('ok', `已校验并保存（${configs.length} 条提示词配置）`)
     }
     setSaving(false)
-  }
-
-  const discard = () => {
-    onPatchConfigs(savedConfigs)
-    setErrors([])
-    setExpanded(undefined)
   }
 
   // 显示顺序（层序/order/声明序）一次计算：position map 供每张卡判断上移/下移，
@@ -314,17 +304,6 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
         </>
       )}
 
-      <div className={styles.feedback} aria-live="polite">
-        {dirty && <p className={styles.readOnly}>提示词配置有未保存修改。</p>}
-      </div>
-
-      <footer className={`${styles.actions} ${dirty ? styles.actionsVisible : ''}`} aria-live="polite">
-        <span>{dirty ? '有未保存提示词配置修改' : ''}</span>
-        <div>
-          <button type="button" className={styles.pillButton} data-variant="secondary" disabled={saving || !dirty} onClick={discard}>放弃修改</button>
-          <button type="button" className={styles.save} disabled={saving || validating || !dirty} onClick={() => void save()}>{saving && <span className={styles.spinner} aria-hidden="true" />}{saving ? '保存中…' : '保存提示词配置'}</button>
-        </div>
-      </footer>
     </section>
   )
 }

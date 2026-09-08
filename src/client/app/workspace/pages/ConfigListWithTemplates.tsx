@@ -29,7 +29,6 @@ export const ConfigListWithTemplates = memo(function ConfigListWithTemplates(pro
       <PromptConfigList
         meta={store.meta}
         configs={fields.promptConfigs}
-        savedConfigs={store.savedConfigs}
         layer={layer}
         scope={scope}
         beforeCards={beforeCards}
