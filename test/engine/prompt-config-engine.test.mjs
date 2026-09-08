@@ -325,6 +325,15 @@ test('system-section 无子代理 persona 卡：persona 段保持静态文本（
   assert.equal(sections[0].text, 'MAIN', '无子代理卡 = 静态文本（子代理经 scope 链继承主会话）')
 })
 
+test('system-section：旧 persona 段名不再识别（只认官方 prefix/suffix，旧值走离线迁移）', () => {
+  const sections = []
+  makeWiredHarness([
+    { id: 'persona-main', layer: 'system-section', strategy: 'static', text: 'MAIN', order: 0, params: { sectionName: 'deployment:persona', complete: true } },
+    { id: 'sub-persona', layer: 'system-section', strategy: 'static', text: 'SUB', audience: 'subagent', params: { sectionName: 'persona' } },
+  ], { systemPrompt: { section: (def) => { sections.push(def); return () => {} } } })
+  assert.deepEqual(sections.map((section) => section.name).sort(), ['deployment:persona', 'persona'], '旧名按普通段注册，不再折叠进 persona 分支')
+})
+
 test('system-section 非 persona audience 段：text 函数按 agent scope 过滤', () => {
   const sections = []
   makeWiredHarness([
