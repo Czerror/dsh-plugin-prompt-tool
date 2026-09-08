@@ -154,6 +154,8 @@
        ├─ SettingInputRow.tsx
        ├─ StatusBadge.module.css
        ├─ StatusBadge.tsx
+       ├─ StatusDot.module.css
+       ├─ StatusDot.tsx
        ├─ tab-key.ts
        ├─ TagInput.tsx
        ├─ TemplatePicker.tsx
@@ -240,7 +242,7 @@ workspace-pages.ts 是页面元数据的唯一来源。默认页为 features，�
 
 工具预览与工具编辑分离。`CustomToolsCard` 只负责模型工具定义，保留在主会话模块列表；以预设 ID 为 React key 重挂载，加载期间和 system 只读时禁止写入。预览不隐藏自定义工具，不自动创建／恢复会话；当前会话读取冻结 generation，所选预设读取后续 generation，切换来源或刷新会丢弃旧请求响应。
 
-样式参照官方 `ui-settings-plugin-inventory/PluginInventorySettingsTab`，不是可配置插件表单。卡头复用共享 `StatusBadge`（官方 StateDot + Tag）与官方 Chevron，标记真实的「模型可见」；展开显示完整名称、来源视角、可见状态与描述。工具摘要没有插件配置启停或运行阶段，不显示虚构的「已启用／运行中」。搜索只在客户端过滤，并自动展开分组，不增加 bridge 请求。
+样式参照官方 `ui-settings-plugin-inventory/PluginInventorySettingsTab`，不是可配置插件表单。卡头复用共享 `StatusBadge`（StatusDot + 官方 Tag）与官方 Chevron，标记真实的「模型可见」；展开显示完整名称、来源视角、可见状态与描述。工具摘要没有插件配置启停或运行阶段，不显示虚构的「已启用／运行中」。搜索只在客户端过滤，并自动展开分组，不增加 bridge 请求。
 
 引擎字段由 `EngineParamFields` 按 `ENGINE_PARAM_DEFINITIONS` 生成，能力存在性仍由真实模块事实决定。普通参数不再在 JSX、默认值、读回、保存和快照中各抄一遍；枚举使用 MenuSelect，列表使用 TagInput，阶段保留结构化编辑。
 
@@ -357,7 +359,8 @@ ui/ 只接收 props/callback，当前真实共享 seam 包括：
 - SettingInputRow、ToggleRow、TagInput：设置和字段编辑形态。
 - MenuSelect：直接封装官方 Menu 的单选胶囊；支持连续选项的 `group` 分组标题。标准设置使用 36px，模块卡内使用 28px 紧凑形态，浮层统一 portal。
 - CollapsibleCard、EngineModuleCard：具体可复用的折叠/模块卡形态，不是万能 Card。
-- StatusBadge：只读状态徽章，官方 StateDot + Tag 胶囊；tone 同时驱动两者颜色，技能卡与工具预览共用。
+- StatusDot：6px 实心核心 + 3px 同色光晕的状态圆点，与工作台顶部「N 配置 · M 启用」在线指示同款；`pulse` 仅用于该在线指示。
+- StatusBadge：只读状态徽章，StatusDot + 官方 Tag 胶囊；tone 同时驱动两者颜色，技能卡与工具预览共用。
 - ImportFileButton：隐藏原生 file input 的导入入口。
 - TemplatePicker、DialogSurface：模板和预设操作的 portal 浮层。
 - anchored-popover.ts / anchored-popover-fit.ts：锚点位置和窄视口适配。
@@ -415,6 +418,7 @@ promptConfigs 模块卡展开区按基础信息、注入规则、作用范围、
     ui/controls.module.css
     ui/HintTooltip.module.css
     ui/StatusBadge.module.css
+    ui/StatusDot.module.css
     features/characters/characters.module.css
     features/presets/presets.module.css
     features/prompts/prompts.module.css

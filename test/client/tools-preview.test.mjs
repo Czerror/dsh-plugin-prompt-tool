@@ -146,7 +146,7 @@ test('完整显示所有工具：同名自定义、第三方、空描述与长�
   assert.match(expanded, /<dl class="toolFacts">/)
   assert.match(expanded, /完整名称/)
   assert.match(expanded, /模型可见/)
-  assert.match(expanded, /class="badge"[\s\S]*?class="dot" data-state="done"[\s\S]*?class="tag" data-tone="success">模型可见</)
+  assert.match(expanded, /class="badge"[\s\S]*?class="dot" data-tone="success"[\s\S]*?class="tag" data-tone="success">模型可见</)
   assert.match(expanded, /session-a/)
   assert.doesNotMatch(expanded, /运行中|已启用|配置状态|fiberPhase/)
   assert.match(render(ToolSurfaceList, { tools, filter: '', expandedName: 'empty_description' }), /（无描述）/)
@@ -167,14 +167,19 @@ test('工具卡双列网格、窄屏单列与键盘展开属性参照官方 inve
   assert.match(open, /<dl/)
 })
 
-test('技能卡与工具卡共用 StatusBadge：圆点 + 官方 Tag', () => {
+test('技能卡与工具卡共用 StatusBadge：StatusDot + 官方 Tag', () => {
+  const dot = read('src/client/ui/StatusDot.tsx')
+  assert.match(dot, /data-tone=\{props\.tone\}/)
+  assert.match(read('src/client/ui/StatusDot.module.css'), /box-shadow: 0 0 0 3px color-mix\(in srgb, var\(--status-dot\) 15%, transparent\)/)
   const badge = read('src/client/ui/StatusBadge.tsx')
-  assert.match(badge, /import \{ StateDot, Tag, type StateDotState \} from '@deepseek-ai\/dsh-client-ui-primitives'/)
-  assert.match(badge, /<StateDot state=\{DOT_STATE\[props\.tone\]\} size=\{8\} \/>/)
+  assert.match(badge, /import \{ StatusDot, type StatusDotTone \} from '\.\/StatusDot\.tsx'/)
+  assert.match(badge, /<StatusDot tone=\{props\.tone\} \/>/)
   assert.match(badge, /<Tag tone=\{props\.tone\}>\{props\.label\}<\/Tag>/)
   for (const path of ['src/client/features/tools/ToolSurfaceView.tsx', 'src/client/features/skills/SkillRow.tsx']) {
     assert.match(read(path), /from '\.\.\/\.\.\/ui\/StatusBadge\.tsx'/, `${path} 应复用共享状态徽章`)
   }
+  assert.match(read('src/client/app/workspace/WorkspaceFrame.tsx'), /<StatusDot tone=\{store\.loading \? 'neutral' : 'success'\} pulse=\{!store\.loading\} \/>/)
+  assert.doesNotMatch(read('src/client/app/workspace/PromptWorkspace.module.css'), /\.statusDot|pt-pulse/)
   assert.doesNotMatch(read('src/client/features/tools/tools.module.css'), /toolVisibleDot/)
   assert.doesNotMatch(read('src/client/ui/controls.module.css'), /skillStatusChip|skillStatusDot/)
 })

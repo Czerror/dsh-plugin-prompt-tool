@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 import type { PromptToolStore } from '../../data/use-prompt-tool-store.ts'
 import { WorkspaceNavigation } from './WorkspaceNavigation.tsx'
 import { WORKSPACE_PAGES, workspacePageMeta, type WorkspacePage } from './workspace-pages.ts'
+import { StatusDot } from '../../ui/StatusDot.tsx'
 import ui from '../../ui/controls.module.css'
 import css from './PromptWorkspace.module.css'
 
@@ -37,7 +38,7 @@ export function WorkspaceFrame(props: {
           <h1>提示词工具</h1>
         </div>
         <div className={css.statusCluster}>
-          <span className={css.statusDot} data-state={store.loading ? 'checking' : 'online'} aria-hidden="true" />
+          <StatusDot tone={store.loading ? 'neutral' : 'success'} pulse={!store.loading} />
           <span>{store.loading ? '读取中' : `${store.fields.promptConfigs.length} 配置 · ${enabledCount} 启用`}</span>
         </div>
         <button type="button" className={css.backButton} onClick={props.onClose}>返回对话</button>
