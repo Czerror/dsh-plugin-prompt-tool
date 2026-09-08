@@ -1,6 +1,6 @@
 import { useLayoutEffect, useRef, useState, type CSSProperties, type RefObject } from 'react'
 import { useAnchoredPosition } from '@deepseek-ai/dsh-client-ui-primitives'
-import { resolveAnchoredPopoverFit } from './anchored-popover-fit.ts'
+import { measurePanelContentHeight, resolveAnchoredPopoverFit } from './anchored-popover-fit.ts'
 import type { AnchoredPopoverFit } from './anchored-popover-fit.ts'
 
 /** body-portaled 浮层的统一定位：滚动、缩放和锚点/面板尺寸变化时重新测量。 */
@@ -28,7 +28,7 @@ export function useAnchoredPopoverStyle(options: {
       const panel = panelRef.current
       if (anchor === undefined || panel === null) return
       const cap = Math.floor(window.innerHeight * maxViewportRatio)
-      const desiredHeight = Math.min(Math.max(panel.scrollHeight, panel.offsetHeight), cap)
+      const desiredHeight = Math.min(measurePanelContentHeight(panel), cap)
       const next = resolveAnchoredPopoverFit({
         anchorTop: anchor.top,
         anchorBottom: anchor.bottom,
@@ -37,7 +37,8 @@ export function useAnchoredPopoverStyle(options: {
         gap,
         margin,
       })
-      setFit((current) => current?.side === next.side && current.maxHeight === next.maxHeight ? current : next)
+      const maxHeight = Math.min(next.maxHeight, cap)
+      setFit((current) => current?.side === next.side && current.maxHeight === maxHeight ? current : { side: next.side, maxHeight })
     }
     measureRef.current = measure
     measure()
