@@ -35,6 +35,7 @@ import {
   resolvePresetModuleFacts,
   resolvePresetDir,
   savePresetParams,
+  savePresetPersona,
   userPresetsDir,
   withPresetDoc,
 } from '../host/manifest.ts'
@@ -50,6 +51,7 @@ import {
 import { convertStToPreset, mergeStPresets } from '../host/sillytavern.ts'
 import { BRIDGE_ENDPOINTS, MAX_BRIDGE_BODY_BYTES, MAX_CHARACTER_CARD_STREAM_BYTES, SETTINGS_BRIDGE_PREFIX } from '../shared/bridge-contract.ts'
 import { moduleParamFallbacks, validateEngineParamValues } from '../shared/engine-params.ts'
+import { readPersonaSpec } from '../shared/persona-section.ts'
 import { DEFAULT_PRESET_DIR } from '../host/paths.ts'
 import type { PresetModuleFacts } from '../shared/engine-capabilities.ts'
 import { validateCustomTools } from '../host/custom-tools.ts'
@@ -881,6 +883,24 @@ export function registerSettingsBridge(
               return
             }
             try {
+              // 顶层人设「独占」与提示词配置「独占」互斥（官方 complete 段一个 scope
+              // 只能有一个）；promptConfigs 单独保存也走这里，故放在参数块之外。
+              if (Array.isArray(record.promptConfigs)) {
+                const spec = loadPresetSpec(dir)
+                const conflicting = record.promptConfigs.some((config) => {
+                  if (config === null || typeof config !== 'object' || Array.isArray(config)) return false
+                  const entry = config as Record<string, unknown>
+                  return entry.enabled !== false && (entry.params as Record<string, unknown> | undefined)?.complete === true
+                })
+                if (spec.persona?.complete === true && conflicting) {
+                  writeBridgeJson(res, 400, {
+                    ok: false,
+                    code: 'overrides-invalid-value',
+                    message: '顶层人设已开启「独占」；提示词配置的「独占」与之互斥，请先关闭其一',
+                  })
+                  return
+                }
+              }
               if (rawOverrides !== undefined) {
                 const spec = loadPresetSpec(dir)
                 const candidateParams = { ...spec.params }
@@ -1023,6 +1043,69 @@ export function registerSettingsBridge(
             } catch (error) {
               const message = error instanceof Error ? error.message : String(error)
               writeBridgeJson(res, 409, { ok: false, code: 'custom-tools-rejected', message: `自定义工具保存失败：${message}` })
+            }
+          },
+        }),
+        sctx.webServer.register({
+          kind: 'exact',
+          path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.persona,
+          handler: async (req, res) => {
+            if (!guard(req, res)) return
+            const dir = getPresetConfigsDir?.() ?? ''
+            if (dir.length === 0) {
+              writeBridgeJson(res, 400, { ok: false, code: 'preset-dir-unavailable', message: 'presetDir 未配置' })
+              return
+            }
+            const parsedBody = await readBridgeBodyForHandler(req, res)
+            if (parsedBody === undefined) return
+            const record = (parsedBody.body ?? {}) as Record<string, unknown>
+            if (!guardPresetIdentity(record, dir, res)) return
+            // 无 persona 载荷 = 读取（preset.yml 顶层 persona 段）。
+            if (record.persona === undefined) {
+              try {
+                writeBridgeJson(res, 200, { ok: true, value: { persona: readPersonaSpec(loadPresetSpec(dir).persona) ?? null } })
+              } catch {
+                writeBridgeJson(res, 200, { ok: true, value: { persona: null } })
+              }
+              return
+            }
+            if (!guardPresetWrite(dir, res)) return
+            try {
+              const raw = record.persona
+              const persona = raw === null ? null : readPersonaSpec(raw)
+              if (persona === undefined) {
+                writeBridgeJson(res, 400, {
+                  ok: false,
+                  code: 'preset-persona-invalid',
+                  message: 'persona 必须包含字符串 prefix（可选 suffix / complete / includeRuntimeContext）',
+                })
+                return
+              }
+              // 官方 complete 段一个 scope 只能有一个：顶层人设「独占」与提示词配置
+              // 「独占」同时启用时装配会失败，写盘前 fail loud（与 paramOverrides 的
+              // 晋升信号一致性检查同模式）。
+              if (persona?.complete === true) {
+                const configs = loadPresetSpec(dir).promptConfigs ?? []
+                const conflicting = configs.some((config) => {
+                  if (config === null || typeof config !== 'object' || Array.isArray(config)) return false
+                  const entry = config as Record<string, unknown>
+                  return entry.enabled !== false && (entry.params as Record<string, unknown> | undefined)?.complete === true
+                })
+                if (conflicting) {
+                  writeBridgeJson(res, 400, {
+                    ok: false,
+                    code: 'preset-persona-complete-conflict',
+                    message: '提示词配置已有「独占」段；顶层人设的「独占」与之互斥，请先关闭其一',
+                  })
+                  return
+                }
+              }
+              savePresetPersona(dirname(dir), basename(dir), persona)
+              afterOverridesChange?.()
+              writeBridgeJson(res, 200, { ok: true, value: { persona } })
+            } catch (error) {
+              const message = error instanceof Error ? error.message : String(error)
+              writeBridgeJson(res, 409, { ok: false, code: 'preset-persona-rejected', message: `人设保存失败：${message}` })
             }
           },
         }),

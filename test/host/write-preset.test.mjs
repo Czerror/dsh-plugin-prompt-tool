@@ -31,13 +31,13 @@ function makeOptions(presetDir) {
   }
 }
 
-/** 读取生成目录的 persona-main 提示词配置（文件名前缀随模板默认配置数量变化）。 */
-function readPersonaConfig(presetDir, template) {
-  const dir = join(presetDir, template, 'prompt-configs')
-  const file = readdirSync(dir).find((name) => name.endsWith('-persona-main.yml'))
-  assert.ok(file, `${template}: 应生成 persona-main 配置`)
-  const parsed = parseYaml(readFileSync(join(dir, file), 'utf8'))
-  return { ...parsed, text: parsed.text ?? parsed.texts?.[0] ?? '' }
+/** 读取生成组合里的官方 persona 行（preset.yml 顶层 persona 段的渲染产物）。 */
+function readPersonaRow(presetDir, template) {
+  const agent = readFileSync(join(presetDir, template, 'agent.cordis.yml'), 'utf8')
+  const row = parseYaml(agent).find((item) => item?.id === 'persona')
+  assert.ok(row, `${template}: 应生成 persona 行`)
+  assert.equal(row.name, '@deepseek-ai/dsh-persona', `${template}: persona 行应对齐官方包名`)
+  return row
 }
 
 test('writePreset 共享引擎 .engine：预设目录不复制 engine，组合引用 ../.engine', () => {
@@ -310,7 +310,7 @@ test('writePreset 空 prompt/agents 不生成空内容资产，prompt-injector �
   }
 })
 
-test('writePreset 四个官方基型只用 prompt-config-engine 等价承载 persona', () => {
+test('writePreset 四个官方基型以顶层 persona 段渲染官方 dsh-persona 行', () => {
   for (const template of ['standard', 'minimal', 'ptc', 'creative']) {
     const dir = join(tmpdir(), `prompt-tool-${template}-${process.pid}-${Date.now()}`)
     const presetDir = join(dir, 'preset')
@@ -339,21 +339,22 @@ test('writePreset 四个官方基型只用 prompt-config-engine 等价承载 per
       assert.match(agent, /^# prompt-tool:render v\d+$/m, `${template}: 组合应带渲染契约版本标记`)
       assert.ok(rows.length >= 2, `${template}: 组合行数异常（${rows.length}）`)
       if (template === 'creative') {
-        const persona = readPersonaConfig(presetDir, 'creative')
-        assert.ok(persona.params.sectionName === 'deployment:persona-prefix', 'creative 人设段应为 deployment:persona-prefix shadow')
-        assert.ok(persona.text.includes('{{model}}'), 'creative 人设应保留 {{model}} 变量')
-        assert.ok(persona.text.includes('editing-cordis-compositions'), 'creative 人设应引用创作 skill')
+        const persona = readPersonaRow(presetDir, 'creative')
+        assert.ok(persona.config.prefix.includes('{{model}}'), 'creative 人设应保留 {{model}} 变量')
+        assert.ok(persona.config.prefix.includes('editing-cordis-compositions'), 'creative 人设应引用创作 skill')
+        assert.equal(persona.config.suffix, 'Your working directory is {{cwd}}.', 'creative 人设 suffix 应对齐官方原文')
         assert.ok(existsSync(join(presetDir, 'creative', 'skills', 'editing-cordis-compositions', 'SKILL.md')), 'editing-cordis-compositions skill 应随预设复制')
         assert.ok(existsSync(join(presetDir, 'creative', 'skills', 'cordis-plugin-development', 'SKILL.md')), 'cordis-plugin-development skill 应随预设复制')
       } else if (template === 'standard' || template === 'ptc') {
-        const persona = readPersonaConfig(presetDir, template)
-        assert.equal(persona.text, 'You are a coding agent powered by the {{model}} model. Your working directory is {{cwd}}.', `${template}: 人设应对齐官方原文`)
-        assert.equal(persona.params?.complete, undefined, `${template}: 非独占（无 complete）`)
+        const persona = readPersonaRow(presetDir, template)
+        assert.equal(persona.config.prefix, 'You are a coding agent powered by the {{model}} model.', `${template}: prefix 应对齐官方原文`)
+        assert.equal(persona.config.suffix, 'Your working directory is {{cwd}}.', `${template}: suffix 应对齐官方原文`)
+        assert.equal(persona.config.complete, undefined, `${template}: 非独占（无 complete）`)
       } else if (template === 'minimal') {
-        const persona = readPersonaConfig(presetDir, 'minimal')
-        assert.equal(persona.text, 'You are a helpful software engineer assistant.', 'minimal: 人设应对齐官方原文')
-        assert.equal(persona.params?.complete, true, 'minimal: 人设独占（complete）')
-        assert.equal(persona.params?.suppressRuntimeContext, true, 'minimal: 抑制 runtime context')
+        const persona = readPersonaRow(presetDir, 'minimal')
+        assert.equal(persona.config.prefix, 'You are a helpful software engineer assistant.', 'minimal: 人设应对齐官方原文')
+        assert.equal(persona.config.complete, true, 'minimal: 人设独占（complete）')
+        assert.equal(persona.config.includeRuntimeContext, false, 'minimal: 抑制 runtime context')
       }
     } finally {
       rmSync(dir, { recursive: true, force: true })
@@ -562,8 +563,8 @@ test('writePreset 预设级模板变量生成 variables.yml（顶层 variables �
       bootstrapMaxTokens: 4096,
     })
     const pcDir = join(presetDir, 'anchored', 'prompt-configs')
-    const file = readdirSync(pcDir).find((name) => name.endsWith('-persona-main.yml'))
-    assert.ok(file, 'persona-main 配置存在')
+    const file = readdirSync(pcDir).find((name) => name.endsWith('-near-anchor.yml'))
+    assert.ok(file, '提示词配置文件存在')
     const parsed = parseYaml(readFileSync(join(pcDir, file), 'utf8'))
     for (const key of ['firstTurnAnchor', 'firstTurnText', 'modelProvider', 'modelName',
       'guideText', 'usePtcMode', 'injectPrompt', 'bootstrapMaxTokens', 'toolFilterAllow']) {
@@ -815,7 +816,7 @@ test('writePreset 旧版种子副本回退：纯元数据遮蔽包内模板 → 
     writePreset('PROMPT', { ...makeOptions(presetDir), presetTemplate: 'minimal', warn: (message) => warnings.push(message) })
     // 回退包内模板渲染成功：组合精确对齐官方 Minimal 基型。
     const cordis = readFileSync(join(presetDir, 'minimal', 'agent.cordis.yml'), 'utf8')
-    assert.deepEqual(parseYaml(cordis).map((row) => row.id), ['persistent-shell', 'bootstrap-filesystem', 'prompt-config-engine'])
+    assert.deepEqual(parseYaml(cordis).map((row) => row.id), ['persona', 'persistent-shell', 'bootstrap-filesystem', 'prompt-config-engine'])
     // 参数源升级：preset.yml 获得包内 modules 段，保留旧元数据命名
     const spec = parseYaml(readFileSync(join(presetDir, 'minimal', 'preset.yml'), 'utf8'))
     assert.ok(Array.isArray(spec.modules) && spec.modules.length > 0, '参数源升级为包内 modules 清单')

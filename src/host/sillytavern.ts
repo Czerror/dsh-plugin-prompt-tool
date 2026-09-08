@@ -16,6 +16,7 @@
  */
 import { createHash } from 'node:crypto'
 import type { PresetSpec } from './manifest.ts'
+import type { PersonaSpec } from '../shared/persona-section.ts'
 import { buildWorldBookEntry } from './worldbook.ts'
 
 /** ST 运行时指令（渲染时执行、不发送给模型）：setvar/getvar/ERA/trim/注释 → 剥离。 */
@@ -100,6 +101,9 @@ export function mergeStPresets(specs: PresetSpec[]): PresetSpec {
       moduleConfigs[key] = { ...moduleConfigs[key], ...value }
     }
   }
+  // 顶层 persona 段（ST 转换只在含 system-section 时声明）合并保留：丢失会让
+  // 合并预设回落宿主部署人设，导入的 system-section 被 complete 人设抑制。
+  const persona = specs.find((spec) => spec.persona !== undefined)?.persona
   const stripSuffix = (name: string): string => name.replace(/（SillyTavern 转换）$/, '')
   return {
     // 多源合并：id 拼接（2 + beta-2-42 → 2-beta-2-42），避免与任一源预设冲突。
@@ -109,6 +113,7 @@ export function mergeStPresets(specs: PresetSpec[]): PresetSpec {
     engineCompat: '>=0.4.2',
     meta: { source: 'sillytavern' },
     ...(Object.keys(params).length > 0 ? { params } : {}),
+    ...(persona === undefined ? {} : { persona }),
     modules,
     moduleConfigs,
     promptConfigs,
@@ -321,17 +326,15 @@ export function convertStToPreset(card: unknown, baseName: string): PresetSpec {
     }
   }
 
-  // modules 按需组装：prompt-config-engine 始终；system-section 注入需要 persona 服务。
+  // modules 按需组装：prompt-config-engine 始终。
   const modules = ['prompt-config-engine', 'character-tools']
   if (configs.some((config) => config.strategy === 'world-book')) modules.push('world-book-tools')
   modules.push('session-var-tools', 'tool-config-engine', 'tool-filter')
   const moduleConfigs: Record<string, Record<string, unknown>> = {}
-  if (systemSectionCount > 0) {
-    modules.unshift('persona')
-    // 只覆盖转换必需的键：complete: false 允许 system-section 生效；
-    // prefix/includeRuntimeContext 不声明（沿用引擎模块库 persona 行的默认人设）。
-    moduleConfigs.persona = { complete: false }
-  }
+  // 含 system-section 段时用顶层 persona 段声明官方人设行：空 prefix 只做 scope
+  // shadow（不注入标准编码 Agent 人设），complete: false 允许导入的 system-section
+  // 生效（宿主部署人设 complete: true 会抑制它们）。
+  const persona: PersonaSpec | undefined = systemSectionCount > 0 ? { prefix: '', complete: false } : undefined
   // tool-filter 始终装配，enable_web_search 按原 JSON 开关配置：
   //   true  → 同时组装 tool-web（fetch: true 启用）；
   //   false → 不组装 tool-web，写入黑名单（deny web_search/web_fetch），
@@ -383,6 +386,7 @@ export function convertStToPreset(card: unknown, baseName: string): PresetSpec {
       ...(droppedMarkers.length > 0 ? { stDroppedMarkers: droppedMarkers } : {}),
     },
     ...(Object.keys(variables).length > 0 ? { variables } : {}),
+    ...(persona === undefined ? {} : { persona }),
     modules,
     moduleConfigs,
     promptConfigs: configs,

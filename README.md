@@ -38,7 +38,7 @@ dsh --profile prompt-tool                                          # 首次启�
 - 🧩 **模板变量**：预设级 `variables` 段（`{{key}}` 插值源）——模块列表顶部「模板变量」卡片统一编辑（可折叠/清空/停用/失焦自动保存）；锚定匹配引擎（anchor-match）统一 custom-fallback 与 world-book 的匹配语义
 - 💬 **会话变量工具**：`session_var`（list/get/set/clear）——模型维护角色状态（`{{心情}}` 等），会话级覆盖预设默认；ST 运行时宏（`{{lastusermessage}}` / `{{lastcharmessage}}`）从会话事件提取
 - 🧩 **工具按模块装配**：角色卡、世界书、会话变量、自定义工具分别由 `character-tools` / `world-book-tools` / `session-var-tools` / `tool-config-engine` 模块提供；不再维护重复的顶层工具开关
-- 📐 **显式按需装配**：`modules: []` 保持空组合；四个官方基型只用 `prompt-config-engine` 承载等价 persona，不附加其他增强模块；Minimal 与 Anchored 共用官方 `bootstrap-filesystem`（`fs-local` + `str-replace-editor` 同隔离域）；Anchored 不预装 ST 管理工具
+- 📐 **显式按需装配**：`modules: []` 保持空组合；四个官方基型的人设由顶层 `persona` 段（`renderComposition` 自动前插官方 `persona` 行）与 `prompt-config-engine` 承载，不附加其他增强模块；Minimal 与 Anchored 共用官方 `bootstrap-filesystem`（`fs-local` + `str-replace-editor` 同隔离域）；Anchored 不预装 ST 管理工具
 
 ## Web 客户端结构
 
@@ -90,7 +90,7 @@ src/client/
 | 锚定 | `firstTurnAnchor` `firstTurnCustom` `firstTurnText` `firstTurnWord`（空 = 自动从锚句派生确认词）`firstTurnBuild` `firstTurnInspect` `firstTurnDeep` |
 | 引导 | `guideCustom` `guideText` `guideWeak` `guideDeep`（复杂判定 fallback 复用锚定的 `complexPattern`） |
 | PTC/门控 | `usePtcMode` `bootstrapMaxTokens` `injectPrompt` `allowKinds` |
-| 人设 | 配置卡：主会话 = `persona-main` 卡（system-section + `deployment:persona-prefix`，complete 互斥 + suppressRuntimeContext）；子代理独立人设 = 新建配置卡（system-section + `audience=subagent` + 人设段），装配时替换主会话人设（不继承）；无子代理卡 = scope 链继承主会话 |
+| 人设 | preset.yml 顶层 `persona` 段（官方 `@deepseek-ai/dsh-persona` 行 config 同构）：`prefix`（必填）/ `suffix` / `complete` / `includeRuntimeContext`；`complete` 独占 system prompt，与提示词配置的「独占」互斥；子代理独立人设走 `moduleConfigs.tool-subagent.persona`（官方 per-child persona，不继承主会话） |
 | 工具集 | `toolFilterAllow` `toolFilterDeny`（主对话 tool-filter；策略未启用时也写入子代理 delegation.toolFilter——策略启用后子代理改由 `subagentToolPolicy` 实例级解析授权，主/子代理列表分离） |
 | 深度 | `maxDepth`（0 禁止委派 / `provider-managed` / 正整数） |
 
@@ -103,7 +103,15 @@ src/client/
 | `model`（主对话） | `provider` `name` `reasoningEffort` `temperature` `maxTokens` |
 | `subagentModel`（子代理固定路由） | `provider` `name` `reasoningEffort` `temperature` `maxTokens` |
 
-读取时顶层段展平进 params 扁平键（`modelProvider` 等）；保存时写顶层段并清理旧键。旧扁平键不再运行时兼容（参数只走 canonical 键），旧数据经 `pnpm migrate:presets` 离线一次性迁移。人设段名同理：旧 `deployment:persona` / `persona` 不再运行时兼容，由同一脚本迁移为官方 `deployment:persona-prefix`（suffix 段可直接在「段名」输入）。
+读取时顶层段展平进 params 扁平键（`modelProvider` 等）；保存时写顶层段并清理旧键。旧扁平键不再运行时兼容（参数只走 canonical 键），旧数据经 `pnpm migrate:presets` 离线一次性迁移。人设同理：旧 `persona-main` / 子代理人设配置卡不再运行时兼容，由同一脚本合并进顶层 `persona` 段（`deployment:persona-suffix` 卡归 `suffix`，`suppressRuntimeContext` → `includeRuntimeContext: false`，子代理卡 → `moduleConfigs.tool-subagent.persona`）。顶层 `persona` 段示例：
+
+```yaml
+persona:
+  prefix: You are a coding agent powered by the {{model}} model.
+  suffix: Your working directory is {{cwd}}.
+  # complete: true               # prefix 独占整个 system prompt
+  # includeRuntimeContext: false # 抑制该 scope 的动态 runtime-context 快照
+```
 
 工作台「模型路由」卡顶部另有**当前会话**区（仅主对话作用域）：显示活动会话的模型/思维程度（会话 `modelSelection` 投影，缺省回退宿主默认），模型下拉展示全部可用模型并按服务商分组，选择模型时自动回写对应服务商；切换走官方 `session.selectModel`——对当前会话立即生效并被宿主持久化为新会话默认，与官方模型选择器双向同源；子代理会话与宿主默认场景不支持会话级切换。预设参数非空时按请求覆盖会话选择（参数桥优先级不变）。
 

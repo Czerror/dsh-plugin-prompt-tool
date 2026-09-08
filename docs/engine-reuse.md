@@ -5,8 +5,9 @@
 共享 ESM 实现 + cordis 插件行/声明式配置提供，任何 dsh 预设可自由装配。
 
 装配遵循显式按需语义：`modules: []` 生成合法空组合，只有列入 `modules` 的插件能力才会挂载；
-四个官方基型保留上游工具能力，仅用 `prompt-config-engine` + 既有 `persona-main` 配置等价替代
-官方 persona 行；Minimal 与 Anchored 均复用带隔离文件系统的 `bootstrap-filesystem`，其
+四个官方基型保留上游工具能力，人设统一由 preset.yml 顶层 `persona` 段（官方
+`@deepseek-ai/dsh-persona` 行 config 同构）驱动——`renderComposition` 在 `modules` 清单预设中
+自动前插该行，无需把 persona 写进 `modules`；Minimal 与 Anchored 均复用带隔离文件系统的 `bootstrap-filesystem`，其
 `fs-local` 与 `str-replace-editor` 嵌套行同属一个 `fs` 隔离域。官方 `agent.cordis.yml` 中
 同名 row 不作为可编辑插件能力；同一预设内仍禁止重复 row，跨预设的 `official-*` 文件仅保留
 确有语义差异的变体。

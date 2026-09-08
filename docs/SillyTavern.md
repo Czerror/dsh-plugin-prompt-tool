@@ -42,7 +42,7 @@
 | 条件 | modules | moduleConfigs |
 |---|---|---|
 | 始终 | `prompt-config-engine` + `character-tools` + `session-var-tools` + `tool-config-engine` + `tool-filter` | `tool-filter` 缺省为空操作；其余提供 ST 配置与管理工具链 |
-| 含 system-section | 前插 `persona` | `persona.complete: false`（standard 语义，允许 system-section 生效；prefix 不声明，沿用模块库 persona 行的默认人设） |
+| 含 system-section | 不追加（顶层 `persona` 段由 `renderComposition` 自动前插官方 persona 行） | 顶层 `persona: { prefix: '', complete: false }`（空 prefix 只做 scope shadow、不注入标准编码 Agent 人设；complete: false 允许导入的 system-section 生效） |
 | `enable_web_search: true` | 追加 `tool-web` | `tool-web.fetch: true` |
 | `enable_web_search: false` | 不追加模块（复用常驻 `tool-filter`） | `tool-filter.includeSubagents: false` + `deny: [web_search, web_fetch]` |
 | 含有效 `character_book` 条目 | 追加 `world-book-tools` | —（导入后可直接调用世界书管理工具） |
@@ -107,16 +107,16 @@ version: 1.0.0
 engineCompat: ">=0.4.2"
 # 采样参数不转换（模型设置 UI 管理）；setvar/getvar 变量收集进顶层 variables（本例无变量）
 modules:
-  - persona          # system-section 注入需要 persona 服务
   - prompt-config-engine
   - character-tools
   - session-var-tools
   - tool-config-engine
   - tool-filter
   - tool-web         # enable_web_search: true
+persona:             # 官方 @deepseek-ai/dsh-persona 行同构；renderComposition 自动前插该行
+  prefix: ""         # 空 prefix 只做 scope shadow，不注入标准编码 Agent 人设
+  complete: false    # standard 语义，允许导入的 system-section 生效
 moduleConfigs:
-  persona:
-    complete: false  # standard 语义，允许 system-section 生效
   tool-web:
     fetch: true
 promptConfigs:

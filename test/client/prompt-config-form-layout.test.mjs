@@ -32,7 +32,10 @@ test('模块参数使用简体中文标签与统一说明浮窗', () => {
   const formField = read('src/client/ui/FormField.tsx')
   const tooltipCss = read('src/client/ui/HintTooltip.module.css')
 
-  for (const label of ['人设', '独占', '动态抑制']) assert.match(fields, new RegExp(`label="${label}"`))
+  // 人设已迁到 preset.yml 顶层 persona 段（PresetPersonaCard），本层只剩普通段名、「独占」与「动态抑制」。
+  assert.match(fields, /label="独占"/)
+  assert.match(fields, /label="动态抑制"/)
+  assert.doesNotMatch(fields, /label="人设"/)
   assert.match(form, />互斥</)
   assert.doesNotMatch(fields, /label="(?:人设段|complete（|suppressRuntimeContext（)/)
   assert.match(formField, /import \{ HintTooltip \} from '\.\/HintTooltip\.tsx'/)
@@ -57,7 +60,11 @@ test('说明浮窗只复用宿主视觉，并自行跟随指针或聚焦控件',
   assert.match(hintCss, /var\(--dsw-alias-tooltip-bg\)/)
   assert.match(read('src/client/ui/FormField.tsx'), /configFieldControlAnchor/)
   assert.doesNotMatch(read('src/client/features/prompts/PromptConfigCard.tsx'), /title=/)
-  assert.match(fields, /const toggleSpan = isPersona \? styles\.fieldSpan4 : styles\.fieldSpan3/)
+  assert.doesNotMatch(fields, /isPersonaSectionName/)
+  const personaCard = read('src/client/features/persona/PresetPersonaCard.tsx')
+  assert.match(personaCard, /label="人设前缀"/)
+  assert.match(personaCard, /label="人设后缀"/)
+  assert.match(personaCard, /bridgeCall\('persona'/)
   assert.match(promptCss, /\.configToggleField\s*\{[^}]*flex-direction:\s*column/s)
 })
 

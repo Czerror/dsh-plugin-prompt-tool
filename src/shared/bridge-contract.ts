@@ -4,6 +4,8 @@
  * 端点附加字段只能以 value 旁的可选扩展字段出现（describe）。
  * 改路径或载荷形状必须同步更新 test/shared/bridge-contract.test.mjs。
  */
+import type { PersonaSpec } from './persona-section.ts'
+
 export const SETTINGS_BRIDGE_PREFIX = '/api/prompt-tool/settings'
 
 /** JSON bridge 的统一内存缓冲上限；超过后改用原始文件流端点。 */
@@ -26,6 +28,7 @@ export const BRIDGE_ENDPOINTS = {
   presetContent: '/preset-content',
   importPreset: '/import-preset',
   paramOverrides: '/param-overrides',
+  persona: '/persona',
   presetVariables: '/preset-variables',
   customTools: '/custom-tools',
   importPresetPackage: '/import-preset-package',
@@ -70,6 +73,8 @@ export interface BridgeRequestMap {
   presetContent: undefined
   importPreset: { contents: Array<{ scope: 'preset' | 'agents'; content: string }>; expectedPresetId?: string }
   paramOverrides: { overrides?: Record<string, unknown>; promptConfigs?: unknown[]; rebuild?: boolean; expectedPresetId?: string }
+  /** 顶层 persona 段读写（官方 @deepseek-ai/dsh-persona 行 config 同构）；省略 persona 键 = 读取。 */
+  persona: { persona?: PersonaSpec | null; expectedPresetId?: string } | undefined
   presetVariables: { variables?: Record<string, string>; enabled?: boolean; expectedPresetId?: string }
   customTools: { customTools?: unknown[]; expectedPresetId?: string } | undefined
   importPresetPackage: { files: Array<{ path?: string; name?: string; content?: string }> }
@@ -113,6 +118,7 @@ export interface BridgeValueMap {
   presetContent: Record<string, unknown>
   importPreset: { scopes: Array<'preset' | 'agents'> }
   paramOverrides: { overrides?: Record<string, unknown>; promptConfigs?: unknown[] }
+  persona: { persona: PersonaSpec | null }
   presetVariables: { variables: Record<string, string>; enabled: boolean }
   customTools: { customTools?: unknown[] }
   importPresetPackage: { id: string }

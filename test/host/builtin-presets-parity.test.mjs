@@ -25,10 +25,10 @@ test('内置预设集合移除 liangshen，保留 anchored + 四个官方基型 
   assert.equal(existsSync(join(root, 'preset', 'liangshen')), false)
 })
 
-test('standard 对齐官方 Standard，仅以 prompt-config-engine 承载等价 persona', () => {
+test('standard 对齐官方 Standard，以官方 dsh-persona 行承载人设', () => {
   const ids = idsOf(rowsOf('standard'))
   assert.deepEqual(ids, [
-    'agent-instructions', 'tool-bash', 'tool-pwsh', 'tool-fs', 'tool-fs-search',
+    'persona', 'agent-instructions', 'tool-bash', 'tool-pwsh', 'tool-fs', 'tool-fs-search',
     'tool-jobs', 'skill-filesystem', 'tool-skill', 'command-goal', 'tool-goal',
     'planning', 'compaction', 'delegation', 'tool-ask-user', 'tool-todo', 'tool-web', 'prompt-config-engine',
   ])
@@ -38,7 +38,7 @@ test('ptc 使用官方 alpha.4 呈现与 delegation 变体，不重复挂 code-p
   const rows = rowsOf('ptc')
   const ids = idsOf(rows)
   assert.deepEqual(ids, [
-    'agent-instructions', 'tool-bash', 'tool-pwsh', 'tool-fs', 'tool-fs-search',
+    'persona', 'agent-instructions', 'tool-bash', 'tool-pwsh', 'tool-fs', 'tool-fs-search',
     'tool-jobs', 'skill-filesystem', 'tool-skill', 'command-goal', 'tool-goal',
     'planning', 'compaction', 'delegation', 'tool-ask-user', 'tool-todo', 'tool-web',
     'tool-presentation', 'prompt-config-engine',
@@ -53,7 +53,7 @@ test('ptc 使用官方 alpha.4 呈现与 delegation 变体，不重复挂 code-p
 test('creative 基础行顺序对齐官方 Cordis，但不再复制 tool-cordis（避免全局 provider 重复注册）', () => {
   const ids = idsOf(rowsOf('creative'))
   assert.deepEqual(ids, [
-    'agent-instructions', 'tool-bash', 'tool-pwsh', 'tool-fs', 'tool-fs-search',
+    'persona', 'agent-instructions', 'tool-bash', 'tool-pwsh', 'tool-fs', 'tool-fs-search',
     'tool-jobs', 'command-goal', 'tool-goal', 'planning', 'compaction', 'delegation',
     'tool-ask-user', 'tool-todo', 'tool-web', 'skill-filesystem', 'tool-skill', 'prompt-config-engine',
   ])
@@ -63,14 +63,21 @@ test('creative 基础行顺序对齐官方 Cordis，但不再复制 tool-cordis�
   assert.doesNotMatch(skill, /supplies `standard`, `code`, `minimal`/)
 })
 
-test('minimal 复用官方 shell 与 filesystem 组合，以 prompt-config-engine 承载等价 persona', () => {
-  const ids = idsOf(rowsOf('minimal'))
-  assert.deepEqual(ids, ['persistent-shell', 'bootstrap-filesystem', 'prompt-config-engine'])
+test('minimal 复用官方 shell 与 filesystem 组合，以顶层 persona 段驱动官方 dsh-persona 行', () => {
+  const rows = rowsOf('minimal')
+  const ids = idsOf(rows)
+  assert.deepEqual(ids, ['persona', 'persistent-shell', 'bootstrap-filesystem', 'prompt-config-engine'])
   const spec = loadPresetSpec(join(root, 'preset', 'minimal'))
-  const persona = spec.promptConfigs.find((config) => config.id === 'persona-main')
-  assert.equal(persona.text, 'You are a helpful software engineer assistant.')
-  assert.equal(persona.params.complete, true)
-  assert.equal(persona.params.suppressRuntimeContext, true)
+  assert.equal(spec.persona.prefix, 'You are a helpful software engineer assistant.')
+  assert.equal(spec.persona.complete, true)
+  assert.equal(spec.persona.includeRuntimeContext, false)
+  const row = rows.find((item) => item.id === 'persona')
+  assert.equal(row.name, '@deepseek-ai/dsh-persona')
+  assert.deepEqual(row.config, {
+    prefix: 'You are a helpful software engineer assistant.',
+    complete: true,
+    includeRuntimeContext: false,
+  })
 })
 
 test('anchored 单文件显式声明上游核心与本项目保留差异', () => {

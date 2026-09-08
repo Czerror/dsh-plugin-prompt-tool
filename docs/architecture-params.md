@@ -186,16 +186,48 @@ wholeWords/selectiveLogic）单一权威。两个写入端共用：
 - **多词确认**：`anchor-match` prefix 模式从「仅首词」改为「任一确认词前缀命中」（any 语义）；
 - **显式覆盖**：`firstTurnWord` 非空时优先（旧预设 `we` 行为不变）；空 = 自动派生（模板默认）。
 
-### persona 段名全量迁移到官方拆分契约（2026-09-09）
+### persona 全量迁移到官方 dsh-persona 行（2026-09-09）
 
-- DSH 0.1.5 `dsh-system-prompt` 把单段 `deployment:persona` 拆成
-  `deployment:persona-prefix`（第一方指导之前，order 0）与
-  `deployment:persona-suffix`（第一方指导之后，order 10200），配置键
-  `persona` 拆成 `personaPrefix` / `personaSuffix`。
-- 运行时只认新段名：`src/shared/persona-section.ts`、`engine/layers.mjs`、
-  `engine/tool-bootstrap.mjs` 的 persona 集合删除 `deployment:persona` 与裸名 `persona`。
-- 旧预设兼容改由离线脚本承担：`scripts/migrate-presets.mjs` 把
-  `promptConfigs[].params.sectionName` 的旧值改写为 `deployment:persona-prefix`（写盘前备份）。
+- 单一数据源：`preset.yml` 顶层 `persona` 段，与官方 `@deepseek-ai/dsh-persona`
+  行 config 同构（`prefix` 必填；`suffix` 默认 `''`；`complete` 默认 `false`；
+  `includeRuntimeContext` 默认 `true`）：
+
+  ```yaml
+  persona:
+    prefix: You are a coding agent powered by the {{model}} model.
+    suffix: Your working directory is {{cwd}}.
+    # complete: true               # prefix 独占 system prompt（抑制 suffix 与其余段）
+    # includeRuntimeContext: false # 抑制该 scope 的动态 runtime-context 快照
+  ```
+
+- 渲染：`renderComposition` 对 `modules` 清单预设自动前插官方 `persona` 行
+  （`engine/compositions/library/persona.yml`），顶层段四个键是该行 config 的
+  唯一数据源；段内省略的键删除库行默认值（否则未声明 `suffix` 的预设会继承库行
+  标准 suffix）。`composition:` 组合预设不自动插行，需自带 persona 行。
+- 运行时不再有 persona 专属分支：`engine/layers.mjs` 把
+  `deployment:persona-prefix` / `deployment:persona-suffix` 当普通 system-section
+  段名处理，`complete` / `includeRuntimeContext` 由官方行承担；子代理独立人设走
+  `moduleConfigs.tool-subagent.persona`（官方 per-child persona shadow，不继承主会话）。
+- 互斥：顶层 `persona.complete: true` 与 `promptConfigs` 中 `enabled + params.complete`
+  互斥，bridge 写盘前返回 400（`preset-persona-complete-conflict` /
+  `overrides-invalid-value`），避免官方「一个 scope 只能有一个 complete 段」装配失败。
+- UI：工作台「预设人设」卡（`src/client/features/persona/PresetPersonaCard.tsx`）
+  经 bridge 端点 `/persona` 读写顶层 persona 段；提示词配置卡不再有「人设」开关
+  （「动态抑制」仍是普通 system-section 参数，保留在段配置卡）。
+- SillyTavern：`convertStToPreset` 在含 system-section 时声明
+  `persona: { prefix: '', complete: false }`（空 prefix 只做 scope shadow，允许导入段
+  生效）；`applyCharacterToPreset` 对含 system-section 的卡自动把顶层
+  `persona.complete` 置 `false`（幂等，返回 `personaOpened`）。
+- 离线迁移：`pnpm migrate:presets`（`scripts/migrate-presets.mjs`）把旧
+  `persona-main` / 子代理 persona 卡合并进顶层段——`deployment:persona-suffix` 卡归
+  `suffix`，其余（`deployment:persona-prefix` / `deployment:persona` / 裸 `persona`）
+  归 `prefix`，`complete` / `suppressRuntimeContext` 合并，子代理卡写
+  `moduleConfigs.tool-subagent.persona`，空文本卡只删不写，写盘前备份 `.bak`。
+  运行时无兼容层。
+
+> 以下 2026-08 的「主会话人设参数化」「人设参数桥移除」「子代理 persona 恢复官方
+> per-child shadow」「子代理 persona 配置卡替换方案」「角色卡导入的 persona 开放」
+> 结论均已被上面的 2026-09-09 全量迁移取代，仅作历史记录。
 
 ### 主会话人设参数化（2026-08-25）
 

@@ -82,8 +82,8 @@ test('importCharacterCard + applyCharacterToPreset：卡入库并导入预设（
   assert.equal(listed[0].imported, true)
 })
 
-test('applyCharacterToPreset：导入含 system-section 的卡自动开放 persona-main complete（ST system prompt 层级开放）', () => {
-  // 预建含 persona-main complete: true 的激活预设。
+test('applyCharacterToPreset：导入含 system-section 的卡自动开放顶层 persona complete（ST system prompt 层级开放）', () => {
+  // 预建含顶层 persona complete: true 的激活预设。
   const dir = mkdtempSync(join(tmpdir(), 'pt-chara-open-'))
   const template = 'anchored'
   const presetDir = join(dir, template)
@@ -96,17 +96,10 @@ test('applyCharacterToPreset：导入含 system-section 的卡自动开放 perso
     'meta:',
     '  order: 1',
     'modules: [prompt-config-engine]',
-    'promptConfigs:',
-    '  - id: persona-main',
-    '    name: 主会话人设',
-    '    layer: system-section',
-    '    strategy: static',
-    '    order: 0',
-    '    text: 默认人设',
-    '    params:',
-    '      sectionName: deployment:persona-prefix',
-    '      complete: true',
-    '      suppressRuntimeContext: true',
+    'persona:',
+    '  prefix: 默认人设',
+    '  complete: true',
+    '  includeRuntimeContext: false',
     '',
   ].join('\n'), 'utf8')
 
@@ -117,14 +110,13 @@ test('applyCharacterToPreset：导入含 system-section 的卡自动开放 perso
   assert.equal(applied.ok, true)
   assert.equal(applied.personaOpened, true, '导入 system-section 卡应报告 persona 开放')
   const preset = parseYaml(readFileSync(join(presetDir, 'preset.yml'), 'utf8'))
-  const persona = preset.promptConfigs.find((config) => config.id === 'persona-main')
-  assert.equal(persona.params.complete, false, 'persona-main complete 置 false（开放 ST system prompt）')
-  assert.equal(persona.params.suppressRuntimeContext, true, 'suppressRuntimeContext 不受影响')
+  assert.equal(preset.persona.complete, false, '顶层 persona complete 置 false（开放 ST system prompt）')
+  assert.equal(preset.persona.includeRuntimeContext, false, 'includeRuntimeContext 不受影响')
   // 幂等：再次导入不再报告开放（complete 已 false）。
   const again = applyCharacterToPreset(dir, template, cardId)
   assert.equal(again.personaOpened, undefined, '重复导入不再开放（已开放）')
 
-  // 反向：persona-main complete: true + 纯世界书卡（无 system-section）→ 不开放。
+  // 反向：顶层 persona complete: true + 纯世界书卡（无 system-section）→ 不开放。
   const loreOnly = JSON.stringify({
     spec: 'chara_card_v3',
     name: '纯世界书',
@@ -138,7 +130,7 @@ test('applyCharacterToPreset：导入含 system-section 的卡自动开放 perso
   const appliedLore = applyCharacterToPreset(dir, template, loreId)
   assert.equal(appliedLore.personaOpened, undefined, '纯世界书卡（无 system-section）不触碰 persona complete')
   const preset2 = parseYaml(readFileSync(join(presetDir, 'preset.yml'), 'utf8'))
-  assert.equal(preset2.promptConfigs.find((config) => config.id === 'persona-main').params.complete, false, '仍保持已开放状态')
+  assert.equal(preset2.persona.complete, false, '仍保持已开放状态')
 })
 
 test('syncImportedCharacterMemory：追加记忆后同步刷新已导入预设的条目', () => {

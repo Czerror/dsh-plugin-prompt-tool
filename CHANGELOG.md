@@ -2,6 +2,14 @@
 
 ## [未发布] - 2026-09-06
 
+### persona 全量迁移到官方 dsh-persona 行（2026-09-09）
+
+- `preset.yml` 顶层新增 `persona` 段（官方 `@deepseek-ai/dsh-persona` 行 config 同构：`prefix` / `suffix` / `complete` / `includeRuntimeContext`），替换旧的 `promptConfigs` 人设配置卡；`renderComposition` 对 `modules` 清单预设自动前插官方 persona 行，顶层段是行 config 的唯一数据源（段内省略键删除库行默认值，修复未声明 `suffix` 的预设继承库行标准 suffix 的行为缺陷）。
+- 运行时移除 persona 专属分支与子代理 persona 卡合并语义：`deployment:persona-prefix` / `deployment:persona-suffix` 按普通 system-section 处理，子代理独立人设走 `moduleConfigs.tool-subagent.persona`（官方 per-child persona，不继承主会话）；`engine/layers.mjs`、`src/host/{manifest,characters,sillytavern,write-preset}.ts` 同步。
+- 新增 bridge 端点 `/persona` 与工作台「预设人设」卡（`src/client/features/persona/PresetPersonaCard.tsx`）；提示词配置卡删除「人设」开关（「动态抑制」保留为普通 system-section 参数）。顶层 `persona.complete` 与提示词配置「独占」互斥，写盘前 400。
+- `scripts/migrate-presets.mjs` 离线迁移旧人设卡：prefix/suffix 拆分、`complete` / `includeRuntimeContext` 合并、子代理卡 → `tool-subagent.persona`、多卡全删、写盘前备份；运行时无兼容层。
+- SillyTavern 转换与角色卡导入改用顶层 persona 段（含 system-section 时 `prefix: ''` + `complete: false`）。
+
 ### 0.1.5-alpha.1 全量对齐（2026-09-09）
 
 - 依赖声明统一为 `^0.1.5-alpha.1`（peer + dev），新增 `@deepseek-ai/dsh-client-ui-sidebar-right` 与 `@deepseek-ai/dsh-client-ui-slots` 依赖边；`dsh.client.inject` 改声明右侧栏包，移除已无引用的 `dsh-client-ui-sidebar`。

@@ -52,7 +52,7 @@ test('mergePromptConfigs：同名 id 后者覆盖且保留位置，新 id 追加
     { id: 'near-anchor', enabled: false, strategy: 'static', text: '覆盖后的锚点' },
     { id: 'extra', strategy: 'static', layer: 'system-section', text: '新增提示词配置' },
   ])
-  assert.deepEqual(merged.map((spec) => spec.id), ['near-anchor', 'router-guide', 'prompt-injector', 'instruction-hint', 'persona-main', 'extra'])
+  assert.deepEqual(merged.map((spec) => spec.id), ['near-anchor', 'router-guide', 'prompt-injector', 'instruction-hint', 'extra'])
   assert.equal(merged[0].enabled, false)
   assert.equal(merged[0].text, '覆盖后的锚点')
   assert.equal(merged[4].layer, 'system-section')
@@ -109,21 +109,16 @@ test('renderPromptConfigYaml 全字段开放：variables/identity/params 嵌套�
   assert.deepEqual(doc.params.patch, { maxTokens: 2048 })
 })
 
-test('writePreset 生成 anchored 提示词配置模块（含 persona-main 人设段），数字前缀决定执行顺序', () => {
+test('writePreset 生成 anchored 提示词配置模块（人设走顶层 persona 段，不再生成 persona 配置卡），数字前缀决定执行顺序', () => {
   const { specs } = generatedConfigs()
-  assert.deepEqual(specs.map((spec) => spec.id), ['near-anchor', 'router-guide', 'prompt-injector', 'instruction-hint', 'persona-main'])
-  for (const spec of specs.filter((spec) => spec.id !== 'persona-main')) {
+  assert.deepEqual(specs.map((spec) => spec.id), ['near-anchor', 'router-guide', 'prompt-injector', 'instruction-hint'])
+  for (const spec of specs) {
     assert.equal(spec.layer, 'pre-step')
     assert.equal(spec.configKind, 'ordered')
     assert.equal(typeof spec.order, 'number')
     assert.equal(spec.role, 'user')
   }
-  const persona = specs.find((spec) => spec.id === 'persona-main')
-  assert.equal(persona.layer, 'system-section')
-  assert.equal(persona.params.sectionName, 'deployment:persona-prefix')
-  assert.equal(persona.params.complete, true)
-  assert.equal(persona.params.suppressRuntimeContext, true)
-  assert.match(persona.text ?? persona.texts?.[0] ?? '', /helpful assistant/)
+  assert.equal(specs.some((spec) => spec.layer === 'system-section'), false, '人设不再以 system-section 配置卡承载')
 })
 
 test('writePreset 处理空提示词时 prompt-injector 结构完整', () => {

@@ -252,27 +252,21 @@ promptConfigs:
     sourceKind: instruction-hint
     form: hint
     fill: instruction-hint
-  - id: persona-main
-    name: 主会话人设
-    layer: system-section
-    strategy: static
-    order: 0
-    params:
-      sectionName: deployment:persona-prefix
-      complete: true
-      suppressRuntimeContext: true
-    text: >-
-      You are a helpful assistant.
+persona:
+  prefix: >-
+    You are a helpful assistant.
 
-      Before acting, decide the task type (build or fix) and adopt the matching
-      style: build → hands-on production; fix → inspect-and-plan.
+    Before acting, decide the task type (build or fix) and adopt the matching
+    style: build → hands-on production; fix → inspect-and-plan.
 
-      Before acting, briefly review what you have already done in this session and
-      continue from where you left off; do not repeat completed steps. Do not run
-      environment checks (echo, whoami, uname, node --version, date) or exhaustive
-      grep/glob scans.
+    Before acting, briefly review what you have already done in this session and
+    continue from where you left off; do not repeat completed steps. Do not run
+    environment checks (echo, whoami, uname, node --version, date) or exhaustive
+    grep/glob scans.
 
-      Think deeply first, then produce.
+    Think deeply first, then produce.
+  complete: true
+  includeRuntimeContext: false
 legacyCleanup:
   []
 upstream:

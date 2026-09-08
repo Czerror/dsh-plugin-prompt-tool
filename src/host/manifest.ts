@@ -18,6 +18,7 @@ import { Pair, Scalar, parse as parseYaml, parseDocument, YAMLMap, YAMLSeq } fro
 import { DEFAULT_PRESET_DIR, DSH_HOME } from './paths.ts'
 import { engineCapability, engineRecipe, isEngineCapabilityPresent, type ModuleSourceMode, type PresetModuleFacts } from '../shared/engine-capabilities.ts'
 import { buildEngineModuleParams, engineParamList } from '../shared/engine-params.ts'
+import { PERSONA_MODULE, personaRowConfig, readPersonaSpec, type PersonaSpec } from '../shared/persona-section.ts'
 
 export interface PresetSpec {
   id: string
@@ -38,6 +39,8 @@ export interface PresetSpec {
   model?: Record<string, unknown>
   /** 顶层子代理模型段：provider/name/reasoningEffort/temperature/maxTokens。 */
   subagentModel?: Record<string, unknown>
+  /** 顶层人设段（官方 @deepseek-ai/dsh-persona 行同构）：prefix/suffix/complete/includeRuntimeContext。 */
+  persona?: PersonaSpec
   /** 预设级模板变量（{{key}} 插值源；与引擎行为参数 params 分离，顶层 variables 段）。 */
   variables?: Record<string, string>
   /** 自定义工具定义（tool-config-engine 渲染进 custom-tools/ 后运行时注册）。 */
@@ -579,6 +582,20 @@ export function savePresetParams(
   atomicWriteTextFile(file, doc.toString())
   invalidatePresetSpec(join(presetRoot, templateName))
   rmSync(join(presetRoot, templateName, 'prompt-tool.overrides.yml'), { force: true })
+}
+
+/**
+ * 保存激活预设的顶层 persona 段（官方 `@deepseek-ai/dsh-persona` 行 config 同构）。
+ * null = 删除该段（回落宿主部署人设）；默认值不落键（见 personaRowConfig）。
+ */
+export function savePresetPersona(presetRoot: string, templateName: string, persona: PersonaSpec | null): void {
+  const file = join(presetRoot, templateName, 'preset.yml')
+  if (!existsSync(file)) throw new Error(`preset ${templateName} 无 preset.yml`)
+  const doc = parseDocument(readFileSync(file, 'utf8'), { logLevel: 'silent' })
+  if (persona === null) doc.deleteIn(['persona'])
+  else doc.setIn(['persona'], personaRowConfig(persona))
+  atomicWriteTextFile(file, doc.toString())
+  invalidatePresetSpec(join(presetRoot, templateName))
 }
 
 /** 原子写文件（tmp + rename）：preset.yml 增量写路径防截断与半写。 */
@@ -1125,7 +1142,26 @@ export function renderComposition(spec: PresetSpec, runtime: Record<string, unkn
     // 参数桥优先：UI/运行时参数不被模板或 ST 直写覆盖。
     merged[id] = { ...cfg, ...merged[id] }
   }
-  return migratePersonaLoaderConfig(applyModuleConfigs(loadCompositionText(spec, templateDir), merged))
+  // 顶层 persona 段是官方 @deepseek-ai/dsh-persona 行的唯一数据源：modules 清单时
+  // 自动前插 persona 模块行，并把段值落成行 config（覆盖 moduleConfigs.persona 同名键）。
+  // 组合文件（composition:）预设不自动插行，需自带 persona 行。
+  const persona = readPersonaSpec(spec.persona)
+  if (persona !== undefined) {
+    // 顶层 persona 段是官方行四个键的唯一数据源：段内省略的键写 undefined，
+    // 让 applyModuleConfigs 删除库行默认值（否则 minimal 会继承库行标准 suffix，
+    // 未声明 suffix 的自定义预设也会被追加 "Your working directory …"）。
+    merged.persona = {
+      ...merged.persona,
+      prefix: persona.prefix,
+      suffix: persona.suffix ?? undefined,
+      complete: persona.complete ?? undefined,
+      includeRuntimeContext: persona.includeRuntimeContext ?? undefined,
+    }
+  }
+  const effective = persona !== undefined && Array.isArray(spec.modules) && !spec.modules.includes(PERSONA_MODULE)
+    ? { ...spec, modules: [PERSONA_MODULE, ...spec.modules] }
+    : spec
+  return migratePersonaLoaderConfig(applyModuleConfigs(loadCompositionText(effective, templateDir), merged))
 }
 
 /**

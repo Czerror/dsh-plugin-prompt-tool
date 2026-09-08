@@ -82,7 +82,7 @@ test('契约：client 前缀与 server 注册前缀同源', () => {
 test('契约：所有端点路径全部注册且无多余', () => {
   const handlers = register()
   const expected = Object.values(BRIDGE_ENDPOINTS)
-  assert.equal(expected.length, 31, 'BRIDGE_ENDPOINTS 应包含当前登记的 31 个端点')
+  assert.equal(expected.length, 32, 'BRIDGE_ENDPOINTS 应包含当前登记的 32 个端点')
   const registered = [...handlers.keys()].sort()
   const wanted = expected.map((p) => SETTINGS_BRIDGE_PREFIX + p).sort()
   assert.deepEqual(registered, wanted)
@@ -155,6 +155,18 @@ test('契约：/tool-surface 支持官方 preset scope 且只读有效 schema', 
   await handler(fakeReq({ body: JSON.stringify({ sessionId: 'live-session', presetId: 'official' }) }), invalid)
   assert.equal(invalid.status, 400)
   assert.equal(JSON.parse(invalid.body).code, 'tool-surface-invalid')
+})
+
+test('契约：/persona 未配置 presetDir 时稳定拒绝', async () => {
+  const handlers = register()
+  const handler = handlers.get(SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.persona)
+  assert.ok(handler, '/persona 端点未注册')
+  const res = fakeRes()
+  await handler(fakeReq({ body: JSON.stringify({}) }), res)
+  assert.equal(res.status, 400)
+  const payload = JSON.parse(res.body)
+  assert.equal(payload.ok, false)
+  assert.equal(payload.code, 'preset-dir-unavailable')
 })
 
 test('契约：失败载荷统一为 { ok: false, code?, message? }', async () => {

@@ -912,3 +912,104 @@ test('settings bridge /subagent-tool-policy 保存、停用与模块装配均为
     rmSync(dir, { recursive: true, force: true })
   }
 })
+
+test('settings bridge /persona 读写顶层 persona 段（官方 dsh-persona config 同构）并重建', async () => {
+  const { ctx, handlers } = makeHarness()
+  const dir = makeUserPresetDir('pt-persona-')
+  writeFileSync(join(dir, 'preset.yml'), 'id: beta\nname: beta\nunknown: keep\n', 'utf8')
+  let rebuilds = 0
+  try {
+    registerSettingsBridge(ctx, 'prompt-tool',
+      () => ({ available: true, providers: [] }),
+      () => ({ activeSkillsDirs: [], skillCatalog: [] }),
+      () => '',
+      undefined,
+      () => dir,
+      undefined,
+      () => { rebuilds += 1 },
+    )
+    const handler = handlers.get(PREFIX + BRIDGE_ENDPOINTS.persona)
+    assert.ok(handler, '/persona 端点应注册')
+    const write = fakeRes()
+    await handler(fakeReq({ [Symbol.asyncIterator]: async function* () {
+      yield Buffer.from(JSON.stringify({ persona: { prefix: 'PREFIX', suffix: 'SUFFIX', complete: true, includeRuntimeContext: false } }))
+    } }), write)
+    assert.equal(write.status, 200)
+    const written = parseYaml(readFileSync(join(dir, 'preset.yml'), 'utf8'))
+    assert.deepEqual(written.persona, { prefix: 'PREFIX', suffix: 'SUFFIX', complete: true, includeRuntimeContext: false })
+    assert.equal(written.unknown, 'keep', '未知字段保留')
+    assert.equal(rebuilds, 1, '写盘后触发重建')
+    // 无 persona 载荷 = 读取。
+    const read = fakeRes()
+    await handler(fakeReq(), read)
+    assert.equal(read.status, 200)
+    assert.deepEqual(JSON.parse(read.body).value.persona, { prefix: 'PREFIX', suffix: 'SUFFIX', complete: true, includeRuntimeContext: false })
+    // persona: null = 移除顶层段。
+    const remove = fakeRes()
+    await handler(fakeReq({ [Symbol.asyncIterator]: async function* () {
+      yield Buffer.from(JSON.stringify({ persona: null }))
+    } }), remove)
+    assert.equal(remove.status, 200)
+    assert.equal(parseYaml(readFileSync(join(dir, 'preset.yml'), 'utf8')).persona, undefined)
+    assert.equal(rebuilds, 2)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('settings bridge /persona 非法载荷 400，complete 与提示词配置「独占」双向互斥', async () => {
+  const { ctx, handlers } = makeHarness()
+  const dir = makeUserPresetDir('pt-persona-guard-')
+  try {
+    const register = (root) => registerSettingsBridge(ctx, 'prompt-tool',
+      () => ({ available: true, providers: [] }),
+      () => ({ activeSkillsDirs: [], skillCatalog: [] }),
+      () => '',
+      undefined,
+      () => root,
+      undefined,
+      () => {},
+    )
+    // 非法载荷：缺 required prefix。
+    writeFileSync(join(dir, 'preset.yml'), 'id: beta\n', 'utf8')
+    register(dir)
+    const handler = handlers.get(PREFIX + BRIDGE_ENDPOINTS.persona)
+    const invalid = fakeRes()
+    await handler(fakeReq({ [Symbol.asyncIterator]: async function* () {
+      yield Buffer.from(JSON.stringify({ persona: { suffix: 'x' } }))
+    } }), invalid)
+    assert.equal(invalid.status, 400)
+    assert.equal(JSON.parse(invalid.body).code, 'preset-persona-invalid')
+    assert.equal(parseYaml(readFileSync(join(dir, 'preset.yml'), 'utf8')).persona, undefined, '非法载荷不得写盘')
+    // 方向一：顶层 persona 已独占 → 保存带 complete 的提示词配置被拒。
+    writeFileSync(join(dir, 'preset.yml'), 'id: beta\npersona:\n  prefix: P\n  complete: true\n', 'utf8')
+    const overrides = handlers.get(PREFIX + BRIDGE_ENDPOINTS.paramOverrides)
+    const conflict = fakeRes()
+    await overrides(fakeReq({ [Symbol.asyncIterator]: async function* () {
+      yield Buffer.from(JSON.stringify({ promptConfigs: [{ id: 'exclusive', enabled: true, params: { complete: true } }] }))
+    } }), conflict)
+    assert.equal(conflict.status, 400)
+    assert.equal(JSON.parse(conflict.body).code, 'overrides-invalid-value')
+    // 方向二：提示词配置已独占 → 保存 complete 顶层人设被拒。
+    writeFileSync(join(dir, 'preset.yml'), [
+      'id: beta',
+      'promptConfigs:',
+      '  - id: exclusive',
+      '    layer: system-section',
+      '    strategy: static',
+      '    params:',
+      '      sectionName: deployment:persona-prefix',
+      '      complete: true',
+      '',
+    ].join('\n'), 'utf8')
+    const personaConflict = fakeRes()
+    await handler(fakeReq({ [Symbol.asyncIterator]: async function* () {
+      yield Buffer.from(JSON.stringify({ persona: { prefix: 'P', complete: true } }))
+    } }), personaConflict)
+    assert.equal(personaConflict.status, 400)
+    assert.equal(JSON.parse(personaConflict.body).code, 'preset-persona-complete-conflict')
+    assert.equal(parseYaml(readFileSync(join(dir, 'preset.yml'), 'utf8')).persona, undefined, '冲突不得写盘')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})

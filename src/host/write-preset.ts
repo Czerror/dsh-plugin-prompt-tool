@@ -40,11 +40,11 @@ import {
 const ENGINE_DIR = packageEngineDir()
 
 /**
- * 渲染契约版本：包内预设模板/引擎契约变化（modules 清单、persona 段名与
- * dsh-persona loader 字段等）时 +1。启动重建据此重刷用户目录旧产物——
+ * 渲染契约版本：包内预设模板/引擎契约变化（modules 清单、persona 顶层段与
+ * dsh-persona 行 config 字段等）时 +1。启动重建据此重刷用户目录旧产物——
  * 否则旧产物只会在用户手动切换该预设时才会重新渲染。
  */
-export const RENDER_VERSION = 2
+export const RENDER_VERSION = 3
 export const RENDER_STAMP = `# prompt-tool:render v${RENDER_VERSION}`
 
 /** 只允许把运行时迁移写回用户预设，绝不改包内 shipped 模板。 */
@@ -91,7 +91,7 @@ const DISABLED_TEXT_SLIM_THRESHOLD = 32 * 1024
 /** 参数性段落键：任一存在即视为用户配置过（非纯元数据种子副本）。 */
 const SUBSTANTIVE_PRESET_KEYS = [
   'params', 'modules', 'composition', 'promptConfigs', 'content', 'variables',
-  'customTools', 'worldBook', 'moduleConfigs', 'model', 'subagentModel',
+  'customTools', 'worldBook', 'moduleConfigs', 'model', 'subagentModel', 'persona',
   'subagentToolPolicy', 'variablesEnabled', 'legacyCleanup',
 ] as const
 

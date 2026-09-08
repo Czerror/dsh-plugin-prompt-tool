@@ -19,16 +19,10 @@ subagentModel:
   reasoningEffort: ""
   temperature: ""
   maxTokens: ""
+persona:
+  prefix: You are a helpful software engineer assistant.
+  complete: true
+  includeRuntimeContext: false
 params:
   maxDepth: ""
-promptConfigs:
-  - id: persona-main
-    name: 主会话人设
-    layer: system-section
-    strategy: static
-    order: 0
-    params:
-      sectionName: deployment:persona-prefix
-      complete: true
-      suppressRuntimeContext: true
-    text: "You are a helpful software engineer assistant."
+promptConfigs: []

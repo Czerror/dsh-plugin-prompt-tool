@@ -2,7 +2,6 @@ import { memo, useState, type ReactNode } from 'react'
 import clsx from 'clsx'
 import { IconChevronDownOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { EngineMeta, PromptConfigDraft } from '../../prompt-tool-types.ts'
-import { isPersonaSectionName } from '../../../shared/persona-section.ts'
 import { HintTooltip } from '../../ui/HintTooltip.tsx'
 import { PromptConfigForm } from './PromptConfigForm.tsx'
 import { FILL_LABELS, LAYER_LABELS, POSITION_LABELS, STRATEGY_LABELS, fieldPolicyFor } from './prompt-config-policy.ts'
@@ -75,11 +74,6 @@ export const PromptConfigCard = memo(function PromptConfigCard(props: {
           <span className={styles.configTitle}>
             <span className={styles.configTitleRow}>
               <span className={styles.configName}>{config.name && config.name !== config.id ? `${config.id} · ${config.name}` : config.id}</span>
-              {config.layer === 'system-section' && isPersonaSectionName(config.params?.sectionName) && (
-                <HintTooltip label="主会话人设；同名配置会覆盖，子代理继承">
-                  <span className={styles.configChip}>人设</span>
-                </HintTooltip>
-              )}
             </span>
             <span className={styles.configMeta}>{chips.join(' · ')}</span>
           </span>

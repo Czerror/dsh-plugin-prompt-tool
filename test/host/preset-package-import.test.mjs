@@ -287,10 +287,10 @@ test('importPresetPackage：SillyTavern JSON 单文件经转换引擎导入（�
   const converted = parseYaml(readFileSync(presetFile, 'utf8'))
   assert.equal(converted.name, '我的角色（SillyTavern 转换）', '预设名取卡片 name 字段')
   assert.deepEqual(converted.modules, [
-    'persona', 'prompt-config-engine', 'character-tools',
+    'prompt-config-engine', 'character-tools',
     'session-var-tools', 'tool-config-engine', 'tool-filter',
-  ], 'system-section 注入需要 persona；ST 管理工具按固定集合装配')
-  assert.equal(converted.moduleConfigs.persona.complete, false, 'complete: false 允许 system-section 生效')
+  ], 'ST 管理工具按固定集合装配；persona 行由顶层 persona 段渲染时自动前插')
+  assert.deepEqual(converted.persona, { prefix: '', complete: false }, 'system-section 注入需要顶层 persona（complete: false 允许其生效）')
   assert.equal(converted.modules.includes('tool-web'), false, 'enable_web_search: false 不组装 tool-web')
   assert.deepEqual(converted.moduleConfigs['tool-filter'], { includeSubagents: false, deny: ['web_search', 'web_fetch'] }, 'false 时 tool-filter deny web 工具')
   const configs = converted.promptConfigs

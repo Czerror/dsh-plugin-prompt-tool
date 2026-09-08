@@ -53,15 +53,6 @@ function textLayerGroups(configs) {
   return groups
 }
 
-/** persona 段标记（官方 deployment:persona-prefix/suffix；旧段名由 scripts/migrate-presets.mjs 离线迁移）。 */
-const PERSONA_SECTION_NAMES = new Set([
-  'deployment:persona-prefix',
-  'deployment:persona-suffix',
-])
-function isPersonaSection(config) {
-  return PERSONA_SECTION_NAMES.has(config?.params?.sectionName)
-}
-
 /** system-section:注册静态 system prompt 段(支持官方 {{variable}} 渲染与 merged 拼接)。 */
 function wireSystemSections(ctx, configs, warnOnce) {
   const systemPrompt = getService(ctx, 'systemPrompt')
@@ -69,38 +60,28 @@ function wireSystemSections(ctx, configs, warnOnce) {
     if (configs.length > 0) warnOnce(`${name}: systemPrompt service unavailable — system-section configs skipped`)
     return
   }
-  // 子代理 persona 分支卡（audience=subagent + 人设段标记）：不独立注册（同名段冲突），
-  // 作为主 persona 段的子代理分支——装配时子代理使用子卡文本（替换主会话人设）。
-  const subPersona = configs
-    .filter((config) => config.audience === 'subagent' && isPersonaSection(config))
-    .sort((a, b) => a.order - b.order)[0]
-  const registerable = configs.filter((config) => !(config.audience === 'subagent' && isPersonaSection(config)))
-  for (const group of textLayerGroups(registerable)) {
+  // 人设段（deployment:persona-prefix/suffix）由官方 @deepseek-ai/dsh-persona 行注册
+  // （preset.yml 顶层 persona 段驱动）；本层只处理其余 system-section 配置。
+  for (const group of textLayerGroups(configs)) {
     const base = group[0]
     try {
       const groupText = group.map((config) => configText(config)).filter((item) => item.length > 0).join('\n\n')
       if (groupText.length === 0) continue
       const hasAudience = group.some((config) => config.audience != null)
-      // persona 主段 + 存在子代理分支：text 按 agent 分支（子代理 = 子卡文本，替换语义；
-      // 无子卡 = 继承主 persona）。官方 AssembleContext 运行时含 agent（assembleContextFor 注入）。
-      const isPersonaMain = base.audience == null && isPersonaSection(base)
-      const text = isPersonaMain && subPersona !== undefined
-        ? (context) => isDelegated(context?.agent?.session) ? configText(subPersona) : groupText
-        : hasAudience
-          ? (context) => group
-              .filter((config) => matchesAgentScope(config, context?.agent))
-              .map((config) => configText(config))
-              .filter((item) => item.length > 0)
-              .join('\n\n')
-          : groupText
+      const text = hasAudience
+        ? (context) => group
+            .filter((config) => matchesAgentScope(config, context?.agent))
+            .map((config) => configText(config))
+            .filter((item) => item.length > 0)
+            .join('\n\n')
+        : groupText
       keepDisposer(ctx, systemPrompt.section({
         name: typeof base.params?.sectionName === 'string' && base.params.sectionName.length > 0 ? base.params.sectionName : base.id,
         order: base.order,
         text,
         ...(base.params?.complete === true ? { complete: true } : {}),
       }), `${name}: section ${base.id}`)
-      // persona 语义透传：suppressRuntimeContext 抑制该 scope 的动态 runtime-context
-      // 快照（官方 dsh-persona includeRuntimeContext:false 等价；多段重复调用幂等）。
+      // suppressRuntimeContext 抑制该 scope 的动态 runtime-context 快照（多段重复调用幂等）。
       if (base.params?.suppressRuntimeContext === true) {
         keepDisposer(ctx, systemPrompt.suppressRuntimeContext(), `${name}: suppressRuntimeContext ${base.id}`)
       }

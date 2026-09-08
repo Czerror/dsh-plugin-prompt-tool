@@ -5,6 +5,7 @@ import { PromptConfigsEditor } from '../../../features/prompts/PromptConfigsEdit
 import { useTemplatePicker } from '../../../features/prompts/useTemplatePicker.ts'
 import { INSERTION_LAYERS, LAYER_LABELS } from '../../../features/prompts/prompt-config-policy.ts'
 import { ModelRouteModuleCard } from '../../../features/models/ModelRouteCard.tsx'
+import { PresetPersonaCard } from '../../../features/persona/PresetPersonaCard.tsx'
 import { EngineModuleActions, EngineModuleCards, EnginePromptDefaultsCard } from '../../../features/modules/EngineModuleList.tsx'
 import { CustomToolsCard, type ToolCreateIntent } from '../../../features/tools/CustomToolsCard.tsx'
 import { TemplatePicker } from '../../../ui/TemplatePicker.tsx'
@@ -73,6 +74,7 @@ export const MainSessionPage = memo(function MainSessionPage(props: { store: Pro
         onVariablesExpandedChange={setVariablesExpanded}
         commonCards={
           <div className={ui.configList}>
+            <PresetPersonaCard presetId={fields.presetTemplate} disabled={!canEditPreset} onNotice={store.showNotice} />
             <ModelRouteModuleCard store={store} scope="main" />
             <EnginePromptDefaultsCard store={store} />
           </div>

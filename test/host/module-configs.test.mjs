@@ -83,8 +83,8 @@ test('anchored buildCordis 集成：moduleConfigs 合并与 token 渲染共存',
   const bootstrap = rows.find((row) => row?.id === 'tool-bootstrap')
   assert.ok(bash && gate && bootstrap, 'agent 组合应含核心行')
   assert.equal(bash.config.timeoutMs, 120000)
-  // 人设已模块化：组合不再含 router-first-turn 行（persona 由 promptConfigs 的
-  // system-section 模块承担，见 write-preset 测试的 persona-main 断言）。
+  // 人设已迁到顶层 persona 段：组合不再含 router-first-turn 行，persona 行由
+  // renderComposition 自动前插（见 write-preset 测试的顶层 persona 断言）。
   assert.equal(rows.some((row) => row?.id === 'router-first-turn'), false, '组合不应含 router-first-turn 行')
   assert.equal(gate.config.promoteOn, 'either')
   assert.deepEqual(gate.config.allowKinds, ['skill-invocation', 'near-anchor', 'router-guide'])

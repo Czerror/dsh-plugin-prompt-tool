@@ -10,7 +10,6 @@ import { inflateSync } from 'node:zlib'
 import { convertStToPreset, mergeStPresets } from './sillytavern.ts'
 import { appendPresetModules, withPresetDoc } from './manifest.ts'
 import { buildWorldBookEntry } from './worldbook.ts'
-import { isPersonaSectionName } from '../shared/persona-section.ts'
 import type { PresetSpec } from './manifest.ts'
 
 /** 引擎六层注入顺序（与 schema 层序一致）：合并写盘时按此排序，数组序 = 引擎序。 */
@@ -382,31 +381,22 @@ export function applyCharacterToPreset(
   if (spec === undefined) return { ok: false, message: `角色卡 ${cardId} 不存在或参数损坏` }
   const prefix = `chara-${cardId}-`
   // ST system-section 开放：导入卡含 system-section 段（角色设定/系统提示/后续指令）
-  // 时，激活预设 persona-main complete: true 会在 assembly 抑制这些段（官方 complete
+  // 时，激活预设 persona.complete: true 会在 assembly 抑制这些段（官方 complete
   // 只保留 persona 段）——自动置 complete: false 开放（与 ST 转换自身的
-  // moduleConfigs.persona = { complete: false } 语义对齐）。
+  // persona.complete = false 语义对齐）。
   const hasSystemSections = (spec.promptConfigs ?? []).some((config) =>
     config !== null && typeof config === 'object' && !Array.isArray(config)
     && (config as Record<string, unknown>).layer === 'system-section')
   let personaOpened = false
   try {
     withPresetDoc(join(presetRoot, templateName), (doc) => {
-      const current = doc.toJS() as { promptConfigs?: unknown[]; meta?: { importedCharacters?: unknown[] } }
+      const current = doc.toJS() as { persona?: unknown; promptConfigs?: unknown[]; meta?: { importedCharacters?: unknown[] } }
       if (hasSystemSections) {
-        const configs = Array.isArray(current.promptConfigs) ? current.promptConfigs : []
-        const personaIdx = configs.findIndex((config) => {
-          if (config === null || typeof config !== 'object' || Array.isArray(config)) return false
-          const entry = config as Record<string, unknown>
-          const params = entry.params as Record<string, unknown> | undefined
-          return entry.id === 'persona-main' || isPersonaSectionName(params?.sectionName)
-        })
-        if (personaIdx >= 0) {
-          const persona = configs[personaIdx] as Record<string, unknown> | undefined
-          const complete = (persona?.params as Record<string, unknown> | undefined)?.complete
-          if (complete === true) {
-            doc.setIn(['promptConfigs', personaIdx, 'params', 'complete'], false)
-            personaOpened = true
-          }
+        const persona = current.persona
+        if (persona !== null && typeof persona === 'object' && !Array.isArray(persona)
+          && (persona as Record<string, unknown>).complete === true) {
+          doc.setIn(['persona', 'complete'], false)
+          personaOpened = true
         }
       }
       const existing = Array.isArray(current.promptConfigs)
@@ -434,22 +424,6 @@ export function applyCharacterToPreset(
         ...added,
         ...(memoryEntry !== undefined ? [{ ...memoryEntry, id: memoryId }] : []),
       ])
-      // ST system-section 开放：最终数组上应用（避免被整体写盘覆盖）——导入卡含
-      // system-section 段且激活预设 persona-main complete: true（会抑制 ST 的
-      // system prompt 段）时，置 complete: false 开放。
-      if (hasSystemSections) {
-        const persona = merged.find((config) => {
-          if (config === null || typeof config !== 'object' || Array.isArray(config)) return false
-          const entry = config as Record<string, unknown>
-          const params = entry.params as Record<string, unknown> | undefined
-          return entry.id === 'persona-main' || isPersonaSectionName(params?.sectionName)
-        }) as Record<string, unknown> | undefined
-        const complete = (persona?.params as Record<string, unknown> | undefined)?.complete
-        if (complete === true && persona !== undefined) {
-          ;(persona.params as Record<string, unknown>).complete = false
-          personaOpened = true
-        }
-      }
       appendPresetModules(doc, [
         'character-tools',
         ...(merged.some((config) => config.strategy === 'world-book') ? ['world-book-tools'] : []),

@@ -8,7 +8,8 @@
 //   3. 旧内容参数别名（params.guideComplexPattern）删除（运行时兼容已移除）；
 //   4. 旧参数覆盖文件 prompt-tool.overrides.yml → 并入 preset.yml params 后归档 .bak；
 //   5. 旧 str-replace-editor 模块名 → 官方 bootstrap-filesystem 组合；
-//   6. 旧 persona 段名 deployment:persona / persona → deployment:persona-prefix。
+//   6. 旧 persona 卡（promptConfigs 内 persona-main / 子代理人设）→ 顶层 persona 段
+//      （官方 @deepseek-ai/dsh-persona 行同构）/ delegation 行 config.persona。
 // 安全：dry-run（--dry-run / -n）只报告不写盘；写盘前每份 preset.yml 备份 .bak；
 // 解析失败 fail loud（非零退出），不动用户资产。
 //
@@ -73,7 +74,7 @@ function worldBookToConfigs(worldBook) {
 /** 迁移单个预设目录；返回 { changed, summary }。 */
 function migratePresetDir(presetDir) {
   const presetFile = join(presetDir, 'preset.yml')
-  const summary = { worldBook: 0, flatModel: 0, oldParam: 0, moduleAlias: false, overrides: false, personaSection: 0 }
+  const summary = { worldBook: 0, flatModel: 0, oldParam: 0, moduleAlias: false, overrides: false, personaCard: 0, subagentPersona: 0 }
   if (!existsSync(presetFile)) return { changed: false, summary }
   let doc
   try {
@@ -149,26 +150,66 @@ function migratePresetDir(presetDir) {
     changed = true
   }
 
-  // 6) 旧 persona 段名 → 官方拆分段名（运行时兼容已移除）。
-  const configsNode = doc.get('promptConfigs')
-  const promptConfigs = configsNode !== null && typeof configsNode?.toJS === 'function'
-    ? configsNode.toJS(doc)
-    : configsNode
-  if (Array.isArray(promptConfigs)) {
-    // worldBook 迁移后 promptConfigs 是普通数组；其余情况是 YAMLSeq，按节点改以保留注释。
-    const items = Array.isArray(configsNode?.items) ? configsNode.items : undefined
-    promptConfigs.forEach((config, index) => {
-      const sectionName = config?.params?.sectionName
-      if (sectionName !== 'deployment:persona' && sectionName !== 'persona') return
-      const item = items?.[index]
-      if (item !== undefined && typeof item.setIn === 'function') {
-        item.setIn(['params', 'sectionName'], 'deployment:persona-prefix')
-      } else {
-        config.params.sectionName = 'deployment:persona-prefix'
+  // 6) 旧 persona 卡（promptConfigs 内的主/子代理人设）→ 顶层 persona 段 /
+  //    tool-subagent 行 config.persona。运行时人设段由官方
+  //    @deepseek-ai/dsh-persona 行注册，遗留卡会与官方行同名段冲突，
+  //    所以这里是纯数据迁移：遍历全部人设卡（多张合并），全部删除。
+  const currentConfigs = doc.toJS()?.promptConfigs
+  if (Array.isArray(currentConfigs)) {
+    const isPersonaSectionName = (name) => name === 'deployment:persona-prefix' || name === 'deployment:persona-suffix'
+      || name === 'deployment:persona' || name === 'persona'
+    const entries = currentConfigs
+      .map((config, index) => ({ config, index }))
+      .filter(({ config }) => config !== null && typeof config === 'object' && !Array.isArray(config))
+    const isPersonaEntry = ({ config }) => isPersonaSectionName(config.params?.sectionName) || config.id === 'persona-main'
+    const mainEntries = entries.filter((entry) => isPersonaEntry(entry) && entry.config.audience !== 'subagent')
+    const subEntries = entries.filter((entry) => isPersonaEntry(entry) && entry.config.audience === 'subagent')
+    const removals = []
+    if (mainEntries.length > 0) {
+      const prefixParts = []
+      const suffixParts = []
+      let complete = false
+      let includeRuntimeContext
+      for (const { config } of mainEntries) {
+        const text = typeof config.text === 'string' ? config.text : ''
+        const params = config.params ?? {}
+        // 段名是 persona-suffix 的卡归 suffix，其余（prefix/legacy/仅 id）归 prefix；
+        // 空文本卡原本就不注册段（回落部署人设）：只删卡，不写空文本。
+        if (text.trim().length > 0) {
+          if (params.sectionName === 'deployment:persona-suffix') suffixParts.push(text)
+          else prefixParts.push(text)
+        }
+        if (params.complete === true) complete = true
+        if (params.suppressRuntimeContext === true) includeRuntimeContext = false
       }
-      summary.personaSection += 1
+      if (!doc.has('persona') && (prefixParts.length > 0 || suffixParts.length > 0)) {
+        doc.set('persona', {
+          prefix: prefixParts.join('\n\n'),
+          ...(suffixParts.length > 0 ? { suffix: suffixParts.join('\n\n') } : {}),
+          ...(complete ? { complete: true } : {}),
+          ...(includeRuntimeContext === false ? { includeRuntimeContext: false } : {}),
+        })
+        summary.personaCard += mainEntries.length
+      }
+      removals.push(...mainEntries.map(({ index }) => index))
       changed = true
-    })
+    }
+    if (subEntries.length > 0) {
+      const texts = subEntries
+        .map(({ config }) => (typeof config.text === 'string' ? config.text : ''))
+        .filter((text) => text.trim().length > 0)
+      if (texts.length > 0) doc.setIn(['moduleConfigs', 'tool-subagent', 'persona'], texts.join('\n\n'))
+      summary.subagentPersona += subEntries.length
+      removals.push(...subEntries.map(({ index }) => index))
+      changed = true
+    }
+    // worldBook 迁移后 promptConfigs 可能是普通数组；其余情况是 YAMLSeq。
+    const configsNode = doc.get('promptConfigs')
+    const items = Array.isArray(configsNode?.items) ? configsNode.items : undefined
+    for (const index of removals.sort((a, b) => b - a)) {
+      if (items !== undefined) doc.deleteIn(['promptConfigs', index])
+      else if (Array.isArray(configsNode)) configsNode.splice(index, 1)
+    }
   }
 
   if (!changed) return { changed: false, summary }
@@ -176,7 +217,7 @@ function migratePresetDir(presetDir) {
   // 写盘前备份 preset.yml（.bak-<时间戳>），失败非零并保留原文件。
   const backup = `${presetFile}.bak-${Date.now().toString(36)}`
   if (DRY_RUN) {
-    console.log(`[dry-run] ${presetDir}: worldBook=${summary.worldBook} flatModel=${summary.flatModel} oldParam=${summary.oldParam} moduleAlias=${summary.moduleAlias} overrides=${summary.overrides} personaSection=${summary.personaSection}`)
+    console.log(`[dry-run] ${presetDir}: worldBook=${summary.worldBook} flatModel=${summary.flatModel} oldParam=${summary.oldParam} moduleAlias=${summary.moduleAlias} overrides=${summary.overrides} personaCard=${summary.personaCard} subagentPersona=${summary.subagentPersona}`)
     return { changed: true, summary }
   }
   const migratedText = doc.toString()
@@ -191,7 +232,7 @@ function migratePresetDir(presetDir) {
     throw new Error(`preset ${presetFile} 写盘失败：${String(error?.message ?? error)}`)
   }
   if (summary.overrides) renameSync(overridesFile, `${overridesFile}.bak-${Date.now().toString(36)}`)
-  console.log(`migrated ${presetDir}: worldBook=${summary.worldBook} flatModel=${summary.flatModel} oldParam=${summary.oldParam} moduleAlias=${summary.moduleAlias} overrides=${summary.overrides} personaSection=${summary.personaSection} (backup ${backup})`)
+  console.log(`migrated ${presetDir}: worldBook=${summary.worldBook} flatModel=${summary.flatModel} oldParam=${summary.oldParam} moduleAlias=${summary.moduleAlias} overrides=${summary.overrides} personaCard=${summary.personaCard} subagentPersona=${summary.subagentPersona} (backup ${backup})`)
   return { changed: true, summary }
 }
 

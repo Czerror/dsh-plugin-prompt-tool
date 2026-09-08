@@ -32,14 +32,24 @@ test('migrate-presets：旧 worldBook/扁平模型键/旧参数别名/覆盖文�
       'promptConfigs:',
       '  - id: keep-config',
       '    text: keep',
-      '  - id: old-persona',
+      '  - id: persona-main',
       '    layer: system-section',
+      '    text: 主会话人设文本',
       '    params:',
       '      sectionName: deployment:persona',
-      '  - id: bare-persona',
+      '      complete: true',
+      '      suppressRuntimeContext: true',
+      '  - id: persona-suffix',
       '    layer: system-section',
+      '    text: 人设后缀文本',
       '    params:',
-      '      sectionName: persona',
+      '      sectionName: deployment:persona-suffix',
+      '  - id: sub-persona',
+      '    layer: system-section',
+      '    audience: subagent',
+      '    text: 子代理人设文本',
+      '    params:',
+      '      sectionName: deployment:persona-prefix',
       'worldBook:',
       '  injectMode: keyword',
       '  entries:',
@@ -54,6 +64,7 @@ test('migrate-presets：旧 worldBook/扁平模型键/旧参数别名/覆盖文�
 
     const output = execFileSync(process.execPath, [SCRIPT], { env: { ...process.env, DSH_HOME: home }, encoding: 'utf8' })
     assert.match(output, /1 migrated/)
+    assert.match(output, /personaCard=2 subagentPersona=1/)
 
     const doc = readFileSync(join(dir, 'preset.yml'), 'utf8')
     // 扁平模型键迁移为顶层段，旧别名删除。
@@ -66,10 +77,13 @@ test('migrate-presets：旧 worldBook/扁平模型键/旧参数别名/覆盖文�
     assert.doesNotMatch(doc, /worldBook:/)
     assert.match(doc, /strategy: world-book/)
     assert.match(doc, /id: keep-config/, '已有 promptConfigs 应保留')
-    // 旧 persona 段名迁移为官方拆分段名（运行时不再兼容）。
-    assert.doesNotMatch(doc, /sectionName: '?deployment:persona'?\s*$/m)
-    assert.doesNotMatch(doc, /sectionName: '?persona'?\s*$/m)
-    assert.equal((doc.match(/sectionName: '?deployment:persona-prefix'?/g) ?? []).length, 2, '两个旧段名都迁移为 prefix')
+    // 旧 persona 卡合并为顶层 persona 段；子代理卡进 tool-subagent.persona（运行时不再兼容）。
+    assert.match(doc, /persona:\n\s+prefix: 主会话人设文本\n\s+suffix: 人设后缀文本\n\s+complete: true\n\s+includeRuntimeContext: false/)
+    assert.match(doc, /tool-subagent:\n\s+persona: 子代理人设文本/)
+    assert.doesNotMatch(doc, /id: persona-main/)
+    assert.doesNotMatch(doc, /id: persona-suffix/)
+    assert.doesNotMatch(doc, /id: sub-persona/)
+    assert.doesNotMatch(doc, /sectionName:/)
     // 覆盖文件并入后归档 .bak。
     assert.match(doc, /firstTurnAnchor: true/)
     assert.match(doc, /modules:\n\s+- bootstrap-filesystem/)
@@ -95,7 +109,7 @@ test('migrate-presets：dry-run 不写盘；无迁移目标零操作退出 0', (
   }
 })
 
-test('migrate-presets：无 worldBook 时按 YAML 节点迁移 persona 段名并保留注释', () => {
+test('migrate-presets：旧 persona 卡合并为顶层 persona 段并保留注释', () => {
   const home = mkdtempSync(join(tmpdir(), 'pt-migrate-home-'))
   try {
     const dir = makePresetDir(home, 'gamma')
@@ -106,14 +120,47 @@ test('migrate-presets：无 worldBook 时按 YAML 节点迁移 persona 段名并
       '  - id: persona-main',
       '    params:',
       '      sectionName: deployment:persona',
+      '    text: 人设文本',
       '',
     ].join('\n'), 'utf8')
     const output = execFileSync(process.execPath, [SCRIPT], { env: { ...process.env, DSH_HOME: home }, encoding: 'utf8' })
-    assert.match(output, /personaSection=1/)
+    assert.match(output, /personaCard=1 subagentPersona=0/)
     const doc = readFileSync(join(dir, 'preset.yml'), 'utf8')
     assert.match(doc, /# 保留注释/, '未知注释保留')
-    assert.match(doc, /sectionName: deployment:persona-prefix/)
+    assert.match(doc, /persona:\n\s+prefix: 人设文本/)
+    assert.doesNotMatch(doc, /persona-main/)
+    assert.doesNotMatch(doc, /sectionName:/)
+  } finally {
+    rmSync(home, { recursive: true, force: true })
+  }
+})
+
+test('migrate-presets：多张无文本旧 persona 卡全部删除，不写空 persona 段', () => {
+  const home = mkdtempSync(join(tmpdir(), 'pt-migrate-home-'))
+  try {
+    const dir = makePresetDir(home, 'empty-persona')
+    writeFileSync(join(dir, 'preset.yml'), [
+      'id: empty-persona',
+      'promptConfigs:',
+      '  - id: old-persona',
+      '    layer: system-section',
+      '    params:',
+      '      sectionName: deployment:persona',
+      '  - id: bare-persona',
+      '    layer: system-section',
+      '    params:',
+      '      sectionName: persona',
+      '  - id: keep-config',
+      '    text: keep',
+      '',
+    ].join('\n'), 'utf8')
+    const output = execFileSync(process.execPath, [SCRIPT], { env: { ...process.env, DSH_HOME: home }, encoding: 'utf8' })
+    assert.match(output, /personaCard=0 subagentPersona=0/)
+    const doc = readFileSync(join(dir, 'preset.yml'), 'utf8')
     assert.doesNotMatch(doc, /sectionName: '?deployment:persona'?\s*$/m)
+    assert.doesNotMatch(doc, /sectionName: '?persona'?\s*$/m)
+    assert.doesNotMatch(doc, /^persona:/m, '空文本卡不写空 persona 段')
+    assert.match(doc, /id: keep-config/)
   } finally {
     rmSync(home, { recursive: true, force: true })
   }

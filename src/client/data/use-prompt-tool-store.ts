@@ -291,9 +291,10 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
   const patch = useCallback((partial: Partial<Fields>) => {
     draftVersionRef.current += 1
     let next = { ...fieldsRef.current, ...partial }
-    // complete 互斥：system-section/persona 共用官方 complete 语义（预设内仅一个），
-    // 开启任一 enabled 配置的 complete 时自动关闭其他 enabled 配置的 complete。
-    // disabled 配置不参与（引擎 effectiveList 已过滤，不注册即不独占；重新启用时由本次收敛）。
+    // complete 互斥：官方 complete 段一个 scope 只能有一个，开启任一 enabled 配置的
+    // complete 时自动关闭其他 enabled 配置的 complete。disabled 配置不参与（引擎
+    // effectiveList 已过滤，不注册即不独占；重新启用时由本次收敛）。顶层人设的
+    // complete 不在本数组内，跨层冲突由 settings bridge 写盘前 fail loud。
     if (Array.isArray(next.promptConfigs)) {
       const activeComplete = (config: PromptConfigDraft): boolean => config.enabled !== false && config.params?.complete === true
       const enabledComplete = next.promptConfigs.some(activeComplete)
