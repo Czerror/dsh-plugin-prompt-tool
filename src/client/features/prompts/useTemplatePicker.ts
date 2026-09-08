@@ -15,7 +15,14 @@ export function useTemplatePicker(
   templates: PromptConfigTemplateEntry[]
   toolTemplates: ToolTemplateEntry[]
   open: boolean
-  openPicker: () => void
+  /** 当前浮层的插入点层级过滤；undefined 表示按层分组展示全部模板。 */
+  layer: string | undefined
+  /** 只展示工具模板（菜单「添加工具模板」入口）。 */
+  toolsOnly: boolean
+  /** 打开模板浮层；传入插入点层级时只列该层模板（无分组标题）。 */
+  openPicker: (layer?: string) => void
+  /** 打开只含工具模板的浮层。 */
+  openTools: () => void
   closePicker: () => void
   pickTemplate: (entry: PromptConfigTemplateEntry) => void
 } {
@@ -23,6 +30,8 @@ export function useTemplatePicker(
   const [templates, setTemplates] = useState<PromptConfigTemplateEntry[]>([])
   const [toolTemplates, setToolTemplates] = useState<ToolTemplateEntry[]>([])
   const [open, setOpen] = useState(false)
+  const [layer, setLayer] = useState<string | undefined>(undefined)
+  const [toolsOnly, setToolsOnly] = useState(false)
 
   const loadTemplates = async (): Promise<void> => {
     if (templates.length > 0) return
@@ -43,7 +52,16 @@ export function useTemplatePicker(
     }
   }
 
-  const openPicker = (): void => {
+  const openPicker = (target?: string): void => {
+    setLayer(target)
+    setToolsOnly(false)
+    setOpen(true)
+    void loadTemplates()
+  }
+
+  const openTools = (): void => {
+    setLayer(undefined)
+    setToolsOnly(true)
     setOpen(true)
     void loadTemplates()
   }
@@ -61,5 +79,5 @@ export function useTemplatePicker(
     setOpen(false)
   }
 
-  return { anchorRef, templates, toolTemplates, open, openPicker, closePicker, pickTemplate }
+  return { anchorRef, templates, toolTemplates, open, layer, toolsOnly, openPicker, openTools, closePicker, pickTemplate }
 }

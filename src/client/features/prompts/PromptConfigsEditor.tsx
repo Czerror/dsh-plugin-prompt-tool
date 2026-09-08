@@ -35,7 +35,7 @@ export interface PromptConfigsEditorProps {
   saveTemplateVariables: (next?: Record<string, string>) => Promise<void>
   viewFilter: string
   onViewFilterChange: (value: string) => void
-  /** 模板变量卡片展开态由页面持有：合并创建菜单的「从模板新建」需要展开它。 */
+  /** 模板变量卡片展开态由页面持有：合并创建菜单的「添加模板变量」需要展开它。 */
   variablesExpanded: boolean
   onVariablesExpandedChange: (value: boolean) => void
   /** 公共配置：模型、模板变量以外的预设级默认值等，不属于任何插入点。 */

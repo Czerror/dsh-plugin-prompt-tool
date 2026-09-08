@@ -3,6 +3,7 @@ import type { PromptToolStore } from '../../../data/use-prompt-tool-store.ts'
 import { usePromptToolFields } from '../../../data/use-prompt-tool-fields.ts'
 import { PromptConfigsEditor } from '../../../features/prompts/PromptConfigsEditor.tsx'
 import { useTemplatePicker } from '../../../features/prompts/useTemplatePicker.ts'
+import { INSERTION_LAYERS, LAYER_LABELS } from '../../../features/prompts/prompt-config-policy.ts'
 import { ModelRouteModuleCard } from '../../../features/models/ModelRouteCard.tsx'
 import { EngineModuleActions, EngineModuleCards, EnginePromptDefaultsCard } from '../../../features/modules/EngineModuleList.tsx'
 import { CustomToolsCard, type ToolCreateIntent } from '../../../features/tools/CustomToolsCard.tsx'
@@ -26,29 +27,33 @@ export const MainSessionPage = memo(function MainSessionPage(props: { store: Pro
   const saveConfigs = useCallback((configs: PromptToolStore['fields']['promptConfigs']) => {
     void store.persistConfigs(configs)
   }, [store])
-  // 模板浮层由页面持有：合并菜单的「从模板新建」同时提供提示词模板、工具模板和变量入口。
+  // 模板浮层由页面持有：合并菜单按插入点层级平铺「添加模板 · 层级」入口，浮层只列该层模板。
   const picker = useTemplatePicker(
     fields.promptConfigs,
     (config) => patchConfigs([...fields.promptConfigs, config]),
     store.showNotice,
   )
   const canEditPreset = store.fields.writePreset && store.moduleFacts?.editable === true
-  const createItems = [
-    { id: 'create:template', label: '从模板新建…' },
-    ...(canEditPreset ? [{ id: 'create:blank-tool', label: '新建空白工具' }] : []),
-  ]
-  const onCreateSelect = useCallback((id: string) => {
-    if (id === 'create:template') picker.openPicker()
-    else if (id === 'create:blank-tool') setToolCreate({ kind: 'blank' })
-  }, [picker])
-  const insertToolTemplate = useCallback((spec: Record<string, unknown>) => {
-    setToolCreate({ kind: 'template', spec })
-  }, [])
   const pickVariables = useCallback(() => {
     store.setTemplateVariables({ ...store.templateVariables, '': '' })
     setVariablesExpanded(true)
     picker.closePicker()
   }, [picker, store])
+  const createItems = [
+    ...INSERTION_LAYERS.map((layer) => ({ id: `tpl:${layer}`, label: `添加模板 · ${LAYER_LABELS[layer] ?? layer}` })),
+    { id: 'create:tool-template', label: '添加工具模板…' },
+    { id: 'create:variables', label: '添加模板变量' },
+    ...(canEditPreset ? [{ id: 'create:blank-tool', label: '新建空白工具' }] : []),
+  ]
+  const onCreateSelect = useCallback((id: string) => {
+    if (id.startsWith('tpl:')) picker.openPicker(id.slice(4))
+    else if (id === 'create:tool-template') picker.openTools()
+    else if (id === 'create:variables') pickVariables()
+    else if (id === 'create:blank-tool') setToolCreate({ kind: 'blank' })
+  }, [picker, pickVariables])
+  const insertToolTemplate = useCallback((spec: Record<string, unknown>) => {
+    setToolCreate({ kind: 'template', spec })
+  }, [])
   return (
     <section className={ui.section} aria-label="主会话与全局">
       <PromptConfigsEditor
@@ -93,11 +98,12 @@ export const MainSessionPage = memo(function MainSessionPage(props: { store: Pro
       {picker.open && (
         <TemplatePicker
           anchorRef={picker.anchorRef}
-          templates={picker.templates}
-          toolTemplates={picker.toolTemplates}
+          templates={picker.toolsOnly ? [] : picker.templates}
+          layer={picker.layer}
+          toolTemplates={picker.layer === undefined ? picker.toolTemplates : undefined}
           onPick={picker.pickTemplate}
           onPickTool={insertToolTemplate}
-          onPickVariables={pickVariables}
+          onPickVariables={picker.layer === undefined && !picker.toolsOnly ? pickVariables : undefined}
           onClose={picker.closePicker}
         />
       )}

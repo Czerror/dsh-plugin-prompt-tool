@@ -27,6 +27,7 @@ const loader = registerHooks({
 const { EngineParamFields } = await import('../../src/client/features/modules/EngineParamFields.tsx')
 const { EngineModuleCards } = await import('../../src/client/features/modules/EngineModuleList.tsx')
 const { PromptConfigList } = await import('../../src/client/features/prompts/PromptConfigList.tsx')
+const { TemplatePicker } = await import('../../src/client/ui/TemplatePicker.tsx')
 loader.deregister()
 const render = (component, props) => renderToStaticMarkup(createElement(component, props))
 const store = {
@@ -86,7 +87,7 @@ test('递归深度和专用模型卡保留，过滤字段不重复出现在委�
 
 test('自定义工具编辑入口保留，能力删除仍需二次确认', () => {
   const page = read('app/workspace/pages/MainSessionPage.tsx')
-  assert.match(page, /create:template/)
+  assert.match(page, /添加模板 · \$\{LAYER_LABELS/)
   assert.match(page, /create:blank-tool/)
   assert.match(page, /<CustomToolsCard/)
   assert.match(read('features/tools/CustomToolsCard.tsx'), /<CustomToolCard/)
@@ -101,6 +102,17 @@ test('插入点顺序恒为六层，公共默认值不伪装成 pre-step 能力'
   assert.doesNotMatch(list, /name="提示词生成默认值" layer="pre-step"/)
   const editor = read('features/prompts/PromptConfigsEditor.tsx')
   assert.match(editor, /aria-label="公共配置"/)
+})
+
+test('模板浮层按层级只列该层模板，不再渲染分组标题', () => {
+  const templates = [
+    { file: '10-pre-step.yml', spec: { id: 'example-pre-step', layer: 'pre-step' } },
+    { file: '20-system-section.yml', spec: { id: 'example-system-section', layer: 'system-section' } },
+  ]
+  const html = render(TemplatePicker, { anchorRef: { current: null }, templates, layer: 'system-section', onPick() {}, onClose() {} })
+  assert.match(html, /20-system-section\.yml/)
+  assert.doesNotMatch(html, /10-pre-step\.yml/)
+  assert.doesNotMatch(html, /templateGroupTitle/)
 })
 
 test('统一列表平铺渲染配置与能力卡，层级筛选只过滤不分区', () => {
