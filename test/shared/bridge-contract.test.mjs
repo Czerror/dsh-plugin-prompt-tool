@@ -6,6 +6,10 @@ import { BRIDGE_ENDPOINTS, SETTINGS_BRIDGE_PREFIX, registerSettingsBridge } from
 
 function makeHarness() {
   const handlers = new Map()
+  const agentPresets = {
+    list: async () => [{ id: 'official', trust: 'system' }],
+    standingKeyFor: async (id) => ({ id }),
+  }
   const sctx = {
     settings: {
       describe: () => [{ ns: 'prompt-tool', value: { promptText: 'P' }, base: {} }],
@@ -20,12 +24,13 @@ function makeHarness() {
     tools: {
       schemas: () => [{ name: 'bash', description: '运行命令' }],
     },
-    agentPresets: {
-      list: async () => [{ id: 'official', trust: 'system' }],
-      standingKeyFor: async (id) => ({ id }),
-    },
+    get: (name) => name === 'agentPresets' ? agentPresets : undefined,
     effect: (fn) => fn(),
   }
+  // Cordis 语义：未 inject 的服务属性访问直接抛错，可选服务只能经 ctx.get 解析。
+  Object.defineProperty(sctx, 'agentPresets', {
+    get() { throw new Error('cannot get property "agentPresets" without inject') },
+  })
   const ctx = { inject: (_deps, cb) => cb(sctx) }
   return { ctx, handlers }
 }

@@ -1717,10 +1717,10 @@ export function registerSettingsBridge(
           list: () => Promise<readonly { id?: unknown }[]>
           standingKeyFor: (id: string) => Promise<unknown>
         }
-        let agentPresets = (stx as Context & { agentPresets?: AgentPresetsLike }).agentPresets
-        if (agentPresets === undefined) {
-          try { agentPresets = (stx as Context & { get?: (name: string) => unknown }).get?.('agentPresets') as AgentPresetsLike | undefined } catch { /* optional service */ }
-        }
+        // agentPresets 不在本端点的 inject 列表内：ctx.agentPresets 属性访问会被 Cordis
+        // 拒绝（cannot get property "agentPresets" without inject），整条请求以 400 空响应
+        // 结束；与官方 plugin-inventory/session-controller 一致，用 ctx.get 解析可选服务。
+        const agentPresets = (stx as Context & { get?: (name: string) => unknown }).get?.('agentPresets') as AgentPresetsLike | undefined
         if (agentPresets === undefined) {
           writeBridgeJson(res, 503, { ok: false, code: 'tool-surface-unavailable', message: 'agentPresets 服务尚未就绪' })
           return
