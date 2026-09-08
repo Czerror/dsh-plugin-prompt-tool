@@ -103,7 +103,7 @@ test('插入点顺序恒为六层，公共默认值不伪装成 pre-step 能力'
   assert.match(editor, /aria-label="公共配置"/)
 })
 
-test('统一列表平铺渲染配置与能力卡，不再有插入点分类区块', () => {
+test('统一列表平铺渲染配置与能力卡，层级筛选只过滤不分区', () => {
   const configs = [{ id: 'persona-main', layer: 'system-section', strategy: 'static' }]
   const meta = {
     layers: ['pre-step', 'system-section', 'runtime-context', 'agent-request', 'llm-stream', 'tool-pipeline'],
@@ -126,6 +126,19 @@ test('统一列表平铺渲染配置与能力卡，不再有插入点分类区�
   assert.doesNotMatch(html, /data-insertion-point/)
   assert.match(html, /persona-main/)
   assert.match(html, /class="configName">anchor-turn</)
+  // 选中插入点层级：只留该层配置与能力卡，仍不生成分类区块。
+  const filtered = render(PromptConfigList, {
+    ...props,
+    viewFilter: 'pre-step',
+    afterCards: createElement(EngineModuleCards, { store: active, layerFilter: 'pre-step', showActions: false, showPromptDefaults: false, showStatus: false }),
+  })
+  assert.doesNotMatch(filtered, /data-insertion-point/)
+  assert.doesNotMatch(filtered, /persona-main/)
+  assert.match(filtered, /class="configName">anchor-turn</)
+  // 主会话把筛选值同时下发给配置与能力卡；自定义工具卡只在全部/工具链视图出现。
+  const page = read('app/workspace/pages/MainSessionPage.tsx')
+  assert.match(page, /layerFilter=\{viewFilter\}/)
+  assert.match(page, /viewFilter === 'tool-pipeline'/)
   // 世界书视图只留世界书配置，能力卡不混入。
   assert.doesNotMatch(render(PromptConfigList, { ...props, viewFilter: 'world-book' }), /anchor-turn/)
 })

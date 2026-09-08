@@ -3,7 +3,7 @@ import { bridgeCall, errorMessage } from '../../data/bridge-client.ts'
 import { MenuSelect } from '../../ui/MenuSelect.tsx'
 import { PromptConfigCard } from './PromptConfigCard.tsx'
 import { moveToView, moveWithinLayer, promptConfigLayer, viewOrderedIds } from './prompt-config-order.ts'
-import { displayLayers } from './prompt-config-policy.ts'
+import { displayLayers, LAYER_LABELS } from './prompt-config-policy.ts'
 import type { EngineMeta, PromptConfigDraft, ValidationErrorEntry } from '../../prompt-tool-types.ts'
 import sharedCss from '../../ui/controls.module.css'
 import featureCss from './prompts.module.css'
@@ -47,7 +47,7 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
   /** 拖拽排序状态：源卡片 id + 落点（目标 id + 前/后）。 */
   const [dragId, setDragId] = useState<string | undefined>(undefined)
   const [dropTarget, setDropTarget] = useState<{ id: string; before: boolean } | undefined>(undefined)
-  /** 过滤下拉：全部 / 世界书（策略）。外部 layer prop 传入时固定该层。 */
+  /** 过滤下拉：全部 / 世界书（策略）/ 各注入层级。外部 layer prop 传入时固定该层。 */
   const [innerViewFilter, setInnerViewFilter] = useState<string>('all')
   const viewFilter = viewFilterProp ?? innerViewFilter
   const changeViewFilter = (value: string): void => {
@@ -266,10 +266,11 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
           <MenuSelect
             className={styles.listFilter}
             value={viewFilter}
-            ariaLabel="按策略过滤"
+            ariaLabel="按层级或策略过滤"
             options={[
               { value: 'all', label: '全部' },
               { value: 'world-book', label: '世界书' },
+              ...allLayers.map((item) => ({ value: item, label: `层级：${LAYER_LABELS[item] ?? item}` })),
             ]}
             onChange={changeViewFilter}
           />

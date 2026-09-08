@@ -76,15 +76,17 @@ export const MainSessionPage = memo(function MainSessionPage(props: { store: Pro
         toolbarActions={<EngineModuleActions store={store} anchorRef={picker.anchorRef} extraItems={createItems} onExtraSelect={onCreateSelect} />}
         afterCards={
           <>
-            <EngineModuleCards store={store} showActions={false} showPromptDefaults={false} showStatus={false} />
-            <CustomToolsCard
-              key={fields.presetTemplate}
-              presetId={fields.presetTemplate}
-              onNotice={store.showNotice}
-              disabled={!canEditPreset}
-              createIntent={toolCreate}
-              onIntentConsumed={() => setToolCreate(undefined)}
-            />
+            <EngineModuleCards store={store} layerFilter={viewFilter} showActions={false} showPromptDefaults={false} showStatus={viewFilter !== 'all'} />
+            {(viewFilter === 'all' || viewFilter === 'tool-pipeline') && (
+              <CustomToolsCard
+                key={fields.presetTemplate}
+                presetId={fields.presetTemplate}
+                onNotice={store.showNotice}
+                disabled={!canEditPreset}
+                createIntent={toolCreate}
+                onIntentConsumed={() => setToolCreate(undefined)}
+              />
+            )}
           </>
         }
       />
