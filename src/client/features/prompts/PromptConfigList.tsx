@@ -21,8 +21,8 @@ export interface PromptConfigListProps {
   extraActions?: ReactNode
   /** 列表头部之后、配置卡片之前渲染的固定卡片（如模板变量——归类于配置列表下）。 */
   beforeCards?: ReactNode
-  /** 列表尾部的附加卡片（能力模块、自定义工具等）；世界书视图不渲染。 */
-  afterCards?: ReactNode
+  /** 模块卡（引擎能力、自定义工具）：视觉上排在层级配置卡之前；世界书视图不渲染。 */
+  moduleCards?: ReactNode
   /** 工具栏中的非提示词配置操作（如能力创建）。 */
   toolbarActions?: ReactNode
   /** 受控层筛选（全部/世界书/层级）；未传时内部 state 兜底（子代理页等独立实例）。 */
@@ -37,7 +37,7 @@ export interface PromptConfigListProps {
 
 /** 共享的提示词配置列表：校验、保存、脏检测、复制、删除、层内移动。 */
 export function PromptConfigList(props: PromptConfigListProps): ReactNode {
-  const { meta, configs, layer, scope, extraActions, beforeCards, afterCards, toolbarActions, viewFilter: viewFilterProp, onViewFilterChange, emptyHint, onPatchConfigs, onSaveConfigs, onNotice } = props
+  const { meta, configs, layer, scope, extraActions, beforeCards, moduleCards, toolbarActions, viewFilter: viewFilterProp, onViewFilterChange, emptyHint, onPatchConfigs, onSaveConfigs, onNotice } = props
   const [expanded, setExpanded] = useState<string | undefined>(undefined)
   const [errors, setErrors] = useState<ValidationErrorEntry[]>([])
   const [validating, setValidating] = useState(false)
@@ -284,7 +284,10 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
       {/* 配置列表下的置顶固定卡片（人设、模板变量等单例配置，不参与层过滤）。 */}
       {beforeCards}
 
-      {afterCards === undefined ? (
+      {/* 模块卡（引擎能力、自定义工具）：只调整视觉排序，层级配置卡仍按（层序, order, 声明序）注入。 */}
+      {moduleCards !== undefined && viewFilter !== 'world-book' && moduleCards}
+
+      {moduleCards === undefined ? (
         scoped.length === 0 ? (
           <div className={styles.emptyState}><span className={styles.emptyGlyph} aria-hidden="true">⌁</span><div><h3>{scope === 'subagent' ? '还没有子代理可见的配置' : effectiveLayer === undefined ? '还没有自定义配置' : '本层还没有自定义配置'}</h3><p>{scope === 'subagent' ? '从上方「新建」插入一条（插入后可在卡片「消息受众」下拉自由切换仅主会话/公用/仅子代理），或到主设置「配置」从目录导入。' : effectiveLayer === undefined ? '从上方模板插入一条，或从本地目录导入；默认四条内置配置不受影响。' : '请到主设置「配置」从模板插入或从目录导入。'}</p>{emptyHint !== undefined && <p className={styles.readOnly}>{emptyHint}</p>}</div></div>
         ) : filtered.length === 0 && keyword.length > 0 ? (
@@ -299,7 +302,6 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
           {filtered.length === 0 && keyword.length > 0 && <p className={styles.readOnly} role="status">没有匹配「{filter.trim()}」的提示词配置；能力模块不受此搜索影响。</p>}
           <div className={styles.configList}>
             {ordered.map((config) => renderCard(config))}
-            {viewFilter !== 'world-book' && afterCards}
           </div>
         </>
       )}

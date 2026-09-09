@@ -43,8 +43,8 @@ test('主会话使用平铺模块列表与合并创建菜单', () => {
   const list = read('features/prompts/PromptConfigList.tsx')
   assert.doesNotMatch(editor, /viewMode|通用设置|引擎能力设置/)
   assert.doesNotMatch(page, /viewMode|onViewModeChange/)
-  assert.match(editor, /afterCards\?: ReactNode/)
-  assert.match(list, /afterCards === undefined \?/)
+  assert.match(editor, /moduleCards\?: ReactNode/)
+  assert.match(list, /moduleCards === undefined \?/)
   assert.doesNotMatch(list, /renderLayer|data-insertion-point/)
   // 自动保存（store debounce）取代浮动未保存提示/放弃/保存条；工具栏保留校验与保存入口。
   assert.doesNotMatch(list, /放弃修改|保存提示词配置|有未保存提示词配置修改/)

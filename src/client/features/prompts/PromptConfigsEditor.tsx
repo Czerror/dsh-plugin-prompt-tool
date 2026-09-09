@@ -41,8 +41,8 @@ export interface PromptConfigsEditorProps {
   commonCards?: ReactNode
   /** 模块列表置顶卡片：脱离「公共配置」分组的单例配置（人设），不参与层过滤。 */
   beforeCards?: ReactNode
-  /** 列表尾部的附加卡片（能力模块、自定义工具等）。 */
-  afterCards?: ReactNode
+  /** 模块卡（引擎能力、自定义工具）：视觉上排在层级配置卡之前。 */
+  moduleCards?: ReactNode
   /** 模块列表工具栏中的合并创建菜单。 */
   toolbarActions?: ReactNode
 }
@@ -149,7 +149,7 @@ export function PromptConfigsEditor(props: PromptConfigsEditorProps): ReactNode 
         onViewFilterChange={props.onViewFilterChange}
         toolbarActions={props.toolbarActions}
         beforeCards={props.beforeCards}
-        afterCards={props.afterCards}
+        moduleCards={props.moduleCards}
         onPatchConfigs={props.onPatchConfigs}
         onSaveConfigs={props.onSaveConfigs}
         onNotice={props.onNotice}

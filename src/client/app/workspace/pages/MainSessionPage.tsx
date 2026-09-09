@@ -82,7 +82,7 @@ export const MainSessionPage = memo(function MainSessionPage(props: { store: Pro
           </div>
         }
         toolbarActions={<EngineModuleActions store={store} anchorRef={picker.anchorRef} extraItems={createItems} onExtraSelect={onCreateSelect} />}
-        afterCards={
+        moduleCards={
           <>
             <EngineModuleCards store={store} layerFilter={viewFilter} showActions={false} showPromptDefaults={false} showStatus={viewFilter !== 'all'} />
             {(viewFilter === 'all' || viewFilter === 'tool-pipeline') && (

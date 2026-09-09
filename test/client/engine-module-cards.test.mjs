@@ -128,7 +128,7 @@ test('统一列表平铺渲染配置与能力卡，层级筛选只过滤不分�
     configs,
     viewFilter: 'all',
     onViewFilterChange() {},
-    afterCards: createElement(EngineModuleCards, { store: active, showActions: false, showPromptDefaults: false, showStatus: false }),
+    moduleCards: createElement(EngineModuleCards, { store: active, showActions: false, showPromptDefaults: false, showStatus: false }),
     onPatchConfigs() {},
     onSaveConfigs() {},
     onNotice() {},
@@ -137,11 +137,13 @@ test('统一列表平铺渲染配置与能力卡，层级筛选只过滤不分�
   assert.doesNotMatch(html, /data-insertion-point/)
   assert.match(html, /persona-main/)
   assert.match(html, /class="configName">anchor-turn</)
+  // 视觉排序：模块卡（引擎能力）在层级配置卡之前；promptConfigs 的注入顺序仍由 ordered 决定。
+  assert.ok(html.indexOf('anchor-turn') < html.indexOf('persona-main'), '模块卡应排在层级配置卡之前')
   // 选中插入点层级：只留该层配置与能力卡，仍不生成分类区块。
   const filtered = render(PromptConfigList, {
     ...props,
     viewFilter: 'pre-step',
-    afterCards: createElement(EngineModuleCards, { store: active, layerFilter: 'pre-step', showActions: false, showPromptDefaults: false, showStatus: false }),
+    moduleCards: createElement(EngineModuleCards, { store: active, layerFilter: 'pre-step', showActions: false, showPromptDefaults: false, showStatus: false }),
   })
   assert.doesNotMatch(filtered, /data-insertion-point/)
   assert.doesNotMatch(filtered, /persona-main/)
