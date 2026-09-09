@@ -1,10 +1,11 @@
 /**
  * DSH 0.1.5-alpha.1 宿主契约回归。
  *
- * 0.1.5 相对 0.1.3 的破坏性变化：shell.overlay 自建工作台让位给官方
- * ui-sidebar-right；conversation.details.tool slot 与 session.events 数组移除；
- * PTC 事件由 tool/code-dispatch 改名为 tool/ptc-dispatch。本文件锁定插件只消费
- * 现存契约，并锁定非 pre-step 五层的注入时序。
+ * 0.1.5 相对 0.1.3 的破坏性变化：工作台新增官方 ui-sidebar-right 入口；
+ * conversation.details.tool slot 与 session.events 数组移除；PTC 事件由
+ * tool/code-dispatch 改名为 tool/ptc-dispatch。本文件锁定插件只消费现存契约
+ * （shell.overlay / sidebar.footer.action 在 0.1.5 仍由 ui-layout / ui-sidebar
+ * 声明，悬浮入口与右侧栏双入口并存），并锁定非 pre-step 五层的注入时序。
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
@@ -28,12 +29,15 @@ function sourceFiles(relative) {
   return files
 }
 
-test('客户端只注册 0.1.5 官方 slot 面：settings.plugins.tab + 右侧栏 keyed body', () => {
+test('客户端只注册 0.1.5 官方 slot 面：settings.plugins.tab + 右侧栏 keyed body + shell.overlay 悬浮入口', () => {
   assert.ok(register.includes("ctx.slots.inject('settings.plugins.tab'"), 'settings tab 注册缺失')
   assert.ok(register.includes("ctx.slots.inject('sidebar.right.pane.tab'"), '右侧栏 body 注册缺失')
   assert.match(register, /ctx\.sidebarRightTabs\.register\(\{/, '右侧栏 tab type 注册缺失')
   assert.match(register, /name: 'sidebar\.right\.pane\.tab', key: PROMPT_TOOL_TAB_ID/)
-  assert.doesNotMatch(register, /shell\.overlay|sidebar\.footer\.action|conversation\.details/)
+  // 双入口兼容：官方右侧栏 + shell.overlay 悬浮入口；footer.action 只挂几何探针。
+  assert.match(register, /ctx\.slots\.inject\('shell\.overlay'/)
+  assert.match(register, /ctx\.slots\.inject\('sidebar\.footer\.action'/)
+  assert.doesNotMatch(register, /conversation\.details/)
   assert.match(entry, /'sidebarRightTabs'/, '客户端 inject 应等待官方 tab registry')
 })
 
@@ -45,7 +49,11 @@ test('版本声明对齐 0.1.5-alpha.1，且 bundle 依赖边包含右侧栏包'
     }
   }
   assert.ok(manifest.dsh.client.inject.includes('@deepseek-ai/dsh-client-ui-sidebar-right'))
+  assert.ok(manifest.dsh.client.inject.includes('@deepseek-ai/dsh-client-ui-layout'))
+  assert.ok(manifest.dsh.client.inject.includes('@deepseek-ai/dsh-client-ui-sidebar'))
   assert.ok(manifest.peerDependencies['@deepseek-ai/dsh-client-ui-sidebar-right'] !== undefined)
+  assert.ok(manifest.peerDependencies['@deepseek-ai/dsh-client-ui-layout'] !== undefined)
+  assert.ok(manifest.peerDependencies['@deepseek-ai/dsh-client-ui-sidebar'] !== undefined)
   assert.ok(manifest.peerDependencies['@deepseek-ai/dsh-client-ui-slots'] !== undefined)
 })
 

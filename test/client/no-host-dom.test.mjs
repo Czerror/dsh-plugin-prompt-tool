@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs'
 
 const read = (path) => readFileSync(new URL(`../../${path}`, import.meta.url), 'utf8')
 
-test('客户端装配层不自建 root 或观察宿主 DOM（官方 slot + 官方右侧栏）', () => {
+test('客户端装配层不自建 root 或观察宿主 DOM（官方 slot + 官方右侧栏 + shell.overlay 悬浮入口）', () => {
   for (const file of [
     'src/client/index.ts',
     'src/client/app/workbench/register-workbench.tsx',

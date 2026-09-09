@@ -132,6 +132,12 @@ importers:
         specifier: ^2.9.0
         version: 2.9.0
     devDependencies:
+      '@deepseek-ai/dsh-client-ui-layout':
+        specifier: ^0.1.5-alpha.1
+        version: 0.1.5-alpha.1(@deepseek-ai/cordis@deepseek-harness+vendor+cordis)
+      '@deepseek-ai/dsh-client-ui-sidebar':
+        specifier: ^0.1.5-alpha.1
+        version: 0.1.5-alpha.1(@deepseek-ai/cordis@deepseek-harness+vendor+cordis)
       '@deepseek-ai/dsh-scope':
         specifier: link:../deepseek-harness/packages/core/scope
         version: link:../deepseek-harness/packages/core/scope
@@ -167,6 +173,16 @@ importers:
         version: 5.9.2
 
 packages:
+
+  '@deepseek-ai/dsh-client-ui-layout@0.1.5-alpha.1':
+    resolution: {integrity: sha512-j0zv6vp3VnkAPOn5HfmhXkyAtLIoNBx8QB0gB1ywQYmnGK/t9bO2t4bj1grfezuJrKy0ewJj3pwxanLZ98Ydug==}
+    peerDependencies:
+      '@deepseek-ai/cordis': ^4.0.2
+
+  '@deepseek-ai/dsh-client-ui-sidebar@0.1.5-alpha.1':
+    resolution: {integrity: sha512-YdFj/PBMSZ0WlFMoxgELHfLBkYqP0NlA4LzXr09NSbVMKgzgaifNeSTZiYybUnLDhilgn2Z+t7AsDMzyip79rQ==}
+    peerDependencies:
+      '@deepseek-ai/cordis': ^4.0.2
 
   '@oxc-project/types@0.144.0':
     resolution: {integrity: sha512-nuhZIOLuI6TFQ32I/WnUx+SCPY7SdSKwgnFHydAuoS1+Z4BRcaP+RRJmGzl9lw+0OFF7UmaESf7KQRXaNLHypg==}
@@ -811,6 +827,15 @@ packages:
     resolution: {integrity: sha512-t843J9IdYYpcDaW7o3aDPXpTM72FsvkIDYEHtigyGFCvC3EhiIaSGM5WVNZl3lxTv1Dfis6IW3S/yBsBIaCiWw==}
 
 snapshots:
+
+  '@deepseek-ai/dsh-client-ui-layout@0.1.5-alpha.1(@deepseek-ai/cordis@deepseek-harness+vendor+cordis)':
+    dependencies:
+      '@deepseek-ai/cordis': link:../deepseek-harness/vendor/cordis
+
+  '@deepseek-ai/dsh-client-ui-sidebar@0.1.5-alpha.1(@deepseek-ai/cordis@deepseek-harness+vendor+cordis)':
+    dependencies:
+      '@deepseek-ai/cordis': link:../deepseek-harness/vendor/cordis
+      clsx: 2.1.1
 
   '@oxc-project/types@0.144.0': {}
 

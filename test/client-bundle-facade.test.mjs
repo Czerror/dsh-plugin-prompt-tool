@@ -109,6 +109,8 @@ test('client bundle registers through queue/live facade', () => {
   for (const dependency of [
     '@deepseek-ai/dsh-client-connection',
     '@deepseek-ai/dsh-client-ui-renderer',
+    '@deepseek-ai/dsh-client-ui-layout',
+    '@deepseek-ai/dsh-client-ui-sidebar',
     '@deepseek-ai/dsh-client-ui-sidebar-right',
     '@deepseek-ai/dsh-client-ui-workspace',
     '@deepseek-ai/dsh-client-ui-settings-plugins',

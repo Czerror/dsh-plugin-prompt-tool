@@ -12,24 +12,27 @@ const skillsSettings = read('src/client/features/skills/SkillsPage.tsx')
 const entry = read('src/client/index.ts')
 const manifest = JSON.parse(read('package.json'))
 
-test('工作台按官方右侧栏两段注册，且不碰宿主 DOM', () => {
+test('工作台按官方右侧栏两段注册 + shell.overlay 悬浮入口，且不碰宿主 DOM', () => {
   assert.match(register, /ctx\.sidebarRightTabs\.register\(\{/)
   assert.match(register, /id: PROMPT_TOOL_TAB_ID/)
   assert.match(register, /kind: PROMPT_TOOL_TAB_KIND/)
   assert.match(register, /guide: \[\{/, 'guide 入口盒是右侧栏的官方入口')
   assert.match(register, /name: 'sidebar\.right\.pane\.tab', key: PROMPT_TOOL_TAB_ID/)
   assert.match(register, /name: 'settings\.plugins\.tab', id: 'prompt-tool'/)
+  assert.match(register, /name: 'shell\.overlay', id: 'prompt-tool-workbench'/)
+  assert.match(register, /name: 'sidebar\.footer\.action', id: 'prompt-tool-floating-geometry'/)
   assert.doesNotMatch(source, /createPortal|createRoot|MutationObserver|querySelector/)
-  assert.doesNotMatch(source, /shell\.overlay|sidebar\.footer\.action|dsh-panel-activate/)
+  assert.doesNotMatch(source, /dsh-panel-activate/)
   assert.doesNotMatch(source, /class\*|data-pane|centerCol|logoRow|newSession/)
 })
 
-test('tab body 复用 PromptWorkspace，关闭走官方 tab actions', () => {
+test('tab body 复用 PromptWorkspace，关闭走官方 tab actions，controller 可选', () => {
   assert.match(tab, /props\.useTabInfo\(\)/)
   assert.match(tab, /tab\.actions\.close\(\)/)
   assert.match(tab, /<PromptWorkspace/)
-  assert.doesNotMatch(workspace, /controller/)
-  assert.match(workspace, /useEffect\(\(\) => \{\s*void store\.load\(\)/)
+  // 悬浮入口传 controller（开关驱动加载），右侧栏 tab 不传（常开）。
+  assert.match(workspace, /controller\?: PromptToolWorkspaceController/)
+  assert.match(workspace, /if \(open\) void store\.load\(\)/)
 })
 
 test('client service and bundle injection edges cover the sidebar-right declarations', () => {
@@ -37,6 +40,8 @@ test('client service and bundle injection edges cover the sidebar-right declarat
   assert.match(entry, /'sidebarRightTabs'/)
   for (const dependency of [
     '@deepseek-ai/dsh-client-ui-renderer',
+    '@deepseek-ai/dsh-client-ui-layout',
+    '@deepseek-ai/dsh-client-ui-sidebar',
     '@deepseek-ai/dsh-client-ui-settings-plugins',
     '@deepseek-ai/dsh-client-ui-sidebar-right',
     '@deepseek-ai/dsh-client-ui-workspace',
@@ -44,6 +49,16 @@ test('client service and bundle injection edges cover the sidebar-right declarat
     assert.ok(manifest.dsh.client.inject.includes(dependency), dependency + ' missing from dsh.client.inject')
     assert.ok(manifest.peerDependencies[dependency] !== undefined, dependency + ' missing from peerDependencies')
   }
+})
+
+test('悬浮入口抽屉经 body portal 置顶，不受宿主导航栏遮挡', () => {
+  const overlay = read('src/client/app/workbench/WorkbenchOverlay.tsx')
+  const css = read('src/client/app/workbench/Workbench.module.css')
+  assert.match(overlay, /createPortal\(trigger, document\.body\)/)
+  assert.match(overlay, /createPortal\(drawer, document\.body\)/)
+  assert.match(css, /\.drawerLayer\s*\{[^}]*position:\s*fixed[^}]*z-index:\s*1000/s)
+  assert.match(css, /\.floatingTriggerLayer\s*\{[^}]*position:\s*fixed[^}]*z-index:\s*1100/s)
+  assert.match(overlay, /aria-modal="true"/)
 })
 
 test('/meta 预设下拉读 value.meta（不是顶层 meta 扩展字段）', () => {
