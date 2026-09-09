@@ -102,7 +102,6 @@ test('client bundle registers through queue/live facade', () => {
     'remote.agentPresets',
     'remote.session',
     'sessions',
-    'sidebarRightTabs',
   ])
   // alpha.1 后 dsh-client-runtime 已删除：装配边不得再引用，且需声明新依赖面。
   assert.ok(!manifest.dsh.client.inject.includes('@deepseek-ai/dsh-client-runtime'))
@@ -111,7 +110,6 @@ test('client bundle registers through queue/live facade', () => {
     '@deepseek-ai/dsh-client-ui-renderer',
     '@deepseek-ai/dsh-client-ui-layout',
     '@deepseek-ai/dsh-client-ui-sidebar',
-    '@deepseek-ai/dsh-client-ui-sidebar-right',
     '@deepseek-ai/dsh-client-ui-workspace',
     '@deepseek-ai/dsh-client-ui-settings-plugins',
     '@deepseek-ai/dsh-client-ui-settings',

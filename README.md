@@ -23,7 +23,7 @@ dsh --profile prompt-tool                                          # 首次启�
 - 🧑‍🤝‍🧑 **消息受众三态**：`audience: main / subagent`，省略 `audience` 表示公用；身份类提示词可只注入子代理
 - 🗂️ **内容与执行分离**：每条提示词配置渲染为 `~/.dsh/.agent-presets/<预设>/prompt-configs/` 下的 yml，引擎按文件名数字前缀顺序扫描
 - 🧩 **三层合并**：引擎默认（按 params 生成）< 模板默认 promptConfigs < 预设 promptConfigs，同名 `id` 覆盖
-- 🖥️ **官方右侧栏工作台**：工作台注册为官方 `@deepseek-ai/dsh-client-ui-sidebar-right` 的 tab 类型（`ctx.sidebarRightTabs.register` + keyed `sidebar.right.pane.tab` 两段注册），入口是会话右上角的官方展开按钮与右侧栏 guide 页；六页（主会话/子代理/工具预览/技能设置/预设配置/角色管理）在官方面板内渲染，无自建 portal、抽屉、几何探针或宿主 DOM 选择器
+- 🖥️ **悬浮工作台入口**：工作台经官方 `shell.overlay` 渲染左上角悬浮触发器与 body portal 抽屉（`sidebar.footer.action` 几何探针把 `--pt-sidebar-edge` 贴合侧栏轨道右缘）；六页（主会话/子代理/工具预览/技能设置/预设配置/角色管理）在抽屉内渲染，抽屉用 fixed + z-index 置顶，不被宿主导航栏遮挡
 - 🧪 **七种内容策略**：`static / first-turn-anchor / guide-auto / custom-fallback / instruction-hint / placeholder / world-book`（world-book 支持 ST selectiveLogic 选择性触发：任一/副键全中/排除）
 - 🛡️ **失败不伤会话**：单条失败跳过 + `warnOnce`；配置错误挂载时 fail loud；`dedupe: session` 持久幂等
 - 🧭 **通用 instruction-hint 引擎**：所有预设都可通过 `strategy: instruction-hint` 或 `placeholder + fill: instruction-hint` 提示指令文件存在；实现位于 `engine/instruction-hint.mjs`，不绑定 anchored；`context-gate.instructionHint` 按模型可见 surface 去重，重挂不重复，被压缩遮蔽后才再次提示

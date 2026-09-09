@@ -2,12 +2,12 @@
 
 ## [未发布] - 2026-09-06
 
-### 悬浮入口恢复与双入口兼容（2026-09-09）
+### 悬浮入口恢复，移除官方右侧栏（2026-09-09）
 
-- 恢复 `shell.overlay` 悬浮入口：`FloatingTrigger`（左上角按钮）+ `WorkbenchOverlay`（body portal 右侧抽屉）+ `SidebarGeometryProbe`（`sidebar.footer.action` 几何探针，输出 `--pt-sidebar-edge`）+ `PromptToolWorkspaceController`，与官方右侧栏 tab 双入口并存。
+- 恢复 `shell.overlay` 悬浮入口：`FloatingTrigger`（左上角按钮）+ `WorkbenchOverlay`（body portal 右侧抽屉）+ `SidebarGeometryProbe`（`sidebar.footer.action` 几何探针，输出 `--pt-sidebar-edge`）+ `PromptToolWorkspaceController`。
 - 抽屉经 body portal + `position: fixed` + `z-index: 1000`（触发器 1100）置顶，修复弹出悬浮层被宿主「对话/轨迹」顶部导航栏遮挡的问题。
-- `PromptWorkspace.controller` 改为可选：右侧栏 tab 不传（挂载即 load），悬浮抽屉传 controller（打开时 load）；两个入口各自持有独立实例，共享同一注入面。
-- 依赖恢复：`@deepseek-ai/dsh-client-ui-layout`（`shell.overlay` 声明）与 `@deepseek-ai/dsh-client-ui-sidebar`（`sidebar.footer.action` 声明）重新进入 peer/dev 与 `dsh.client.inject`，版本对齐 `^0.1.5-alpha.1`。
+- 官方右侧栏实测不适合本项目：移除 `ctx.sidebarRightTabs.register` + `sidebar.right.pane.tab` 两段注册、`PromptToolTab` 与 `sidebarRightTabs` inject；`@deepseek-ai/dsh-client-ui-sidebar-right` 退出 peer/dev 与 `dsh.client.inject`。
+- 依赖恢复：`@deepseek-ai/dsh-client-ui-layout`（`shell.overlay` 声明）与 `@deepseek-ai/dsh-client-ui-sidebar`（`sidebar.footer.action` 声明）进入 peer/dev 与 `dsh.client.inject`，版本对齐 `^0.1.5-alpha.1`。
 
 ### persona 全量迁移到官方 dsh-persona 行（2026-09-09）
 

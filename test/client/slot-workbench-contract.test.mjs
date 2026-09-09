@@ -4,46 +4,37 @@ import { readFileSync } from 'node:fs'
 
 const read = (path) => readFileSync(new URL(`../../${path}`, import.meta.url), 'utf8')
 const register = read('src/client/app/workbench/register-workbench.tsx')
-const tab = read('src/client/app/workbench/PromptToolTab.tsx')
 const settings = read('src/client/app/workbench/SettingsTab.tsx')
 const workspace = read('src/client/app/workspace/PromptWorkspace.tsx')
-const source = [register, tab, settings].join('\n')
+const source = [register, settings].join('\n')
 const skillsSettings = read('src/client/features/skills/SkillsPage.tsx')
 const entry = read('src/client/index.ts')
 const manifest = JSON.parse(read('package.json'))
 
-test('工作台按官方右侧栏两段注册 + shell.overlay 悬浮入口，且不碰宿主 DOM', () => {
-  assert.match(register, /ctx\.sidebarRightTabs\.register\(\{/)
-  assert.match(register, /id: PROMPT_TOOL_TAB_ID/)
-  assert.match(register, /kind: PROMPT_TOOL_TAB_KIND/)
-  assert.match(register, /guide: \[\{/, 'guide 入口盒是右侧栏的官方入口')
-  assert.match(register, /name: 'sidebar\.right\.pane\.tab', key: PROMPT_TOOL_TAB_ID/)
+test('工作台只注册 shell.overlay 悬浮入口 + 几何探针 + 基础设置，且不碰宿主 DOM', () => {
   assert.match(register, /name: 'settings\.plugins\.tab', id: 'prompt-tool'/)
   assert.match(register, /name: 'shell\.overlay', id: 'prompt-tool-workbench'/)
   assert.match(register, /name: 'sidebar\.footer\.action', id: 'prompt-tool-floating-geometry'/)
+  assert.doesNotMatch(register, /sidebarRightTabs|sidebar\.right\.pane\.tab|guide: \[\{/)
   assert.doesNotMatch(source, /createPortal|createRoot|MutationObserver|querySelector/)
   assert.doesNotMatch(source, /dsh-panel-activate/)
   assert.doesNotMatch(source, /class\*|data-pane|centerCol|logoRow|newSession/)
 })
 
-test('tab body 复用 PromptWorkspace，关闭走官方 tab actions，controller 可选', () => {
-  assert.match(tab, /props\.useTabInfo\(\)/)
-  assert.match(tab, /tab\.actions\.close\(\)/)
-  assert.match(tab, /<PromptWorkspace/)
-  // 悬浮入口传 controller（开关驱动加载），右侧栏 tab 不传（常开）。
-  assert.match(workspace, /controller\?: PromptToolWorkspaceController/)
+test('PromptWorkspace 由悬浮入口 controller 驱动加载', () => {
+  assert.match(workspace, /controller: PromptToolWorkspaceController/)
+  assert.match(workspace, /props\.controller\.subscribe/)
   assert.match(workspace, /if \(open\) void store\.load\(\)/)
 })
 
-test('client service and bundle injection edges cover the sidebar-right declarations', () => {
+test('client service and bundle injection edges cover the overlay/sidebar declarations', () => {
   assert.match(entry, /'slots'/)
-  assert.match(entry, /'sidebarRightTabs'/)
+  assert.doesNotMatch(entry, /sidebarRightTabs/)
   for (const dependency of [
     '@deepseek-ai/dsh-client-ui-renderer',
     '@deepseek-ai/dsh-client-ui-layout',
     '@deepseek-ai/dsh-client-ui-sidebar',
     '@deepseek-ai/dsh-client-ui-settings-plugins',
-    '@deepseek-ai/dsh-client-ui-sidebar-right',
     '@deepseek-ai/dsh-client-ui-workspace',
   ]) {
     assert.ok(manifest.dsh.client.inject.includes(dependency), dependency + ' missing from dsh.client.inject')

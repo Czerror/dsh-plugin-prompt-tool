@@ -98,9 +98,6 @@ importers:
       '@deepseek-ai/dsh-client-ui-settings-plugins':
         specifier: link:../deepseek-harness/packages/client/ui-settings-plugins
         version: link:../deepseek-harness/packages/client/ui-settings-plugins
-      '@deepseek-ai/dsh-client-ui-sidebar-right':
-        specifier: link:../deepseek-harness/packages/client/ui-sidebar-right
-        version: link:../deepseek-harness/packages/client/ui-sidebar-right
       '@deepseek-ai/dsh-client-ui-slots':
         specifier: link:../deepseek-harness/packages/client/ui-slots
         version: link:../deepseek-harness/packages/client/ui-slots

@@ -3,7 +3,6 @@ import type {} from '@deepseek-ai/dsh-api-session-controller/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
-import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import type { PromptToolSettingsTransport } from './data/use-prompt-tool-store.ts'
 import { createSessionModelFace } from './data/session-model-face.ts'
@@ -20,7 +19,6 @@ export const inject = [
   'remote.agentPresets',
   'remote.session',
   'sessions',
-  'sidebarRightTabs',
 ]
 
 /** 与宿主 settings namespace 相同的字符串；client 侧不依赖 host 包，按契约字面拼写。 */
@@ -86,10 +84,9 @@ export function apply(ctx: ClientContext): void {
     },
   }
 
-  // 双入口兼容：官方右侧栏（tab type 进 sidebarRightTabs，body 进 keyed
-  // sidebar.right.pane.tab）与 shell.overlay 悬浮入口（触发器 + body portal 抽屉）
-  // 共享同一注入面；settings.plugins.tab 基础设置同样复用。
-  // 注册全部走官方 registry / SlotRegistry，不手工挂载 DOM。
+  // 悬浮入口：shell.overlay（触发器 + body portal 抽屉）+ sidebar.footer.action
+  // 几何探针；settings.plugins.tab 基础设置共享同一注入面。
+  // 注册全部走官方 SlotRegistry，不手工挂载 DOM。
   const face: PromptToolWorkbenchFace = { controller: new PromptToolWorkspaceController(), api: hostApi, settings }
   registerWorkbenchSlots(ctx, face)
 }
