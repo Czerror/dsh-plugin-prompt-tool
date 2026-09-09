@@ -490,10 +490,10 @@ modules:
 # （第一方指导之后）；{{model}} / {{cwd}} 由宿主按 agent 路由与工作目录插值。
 # 不声明 = 沿用宿主部署人设。
 persona:
-  prefix: >-
-    You are a helpful software assistant.
   suffix: >-
     Your working directory is {{cwd}}.
+  prefix: >-
+    You are a helpful software assistant.
   # complete: true              # prefix 独占整个 system prompt（抑制其余段与 suffix）
   # includeRuntimeContext: false # 抑制该 scope 的动态 runtime-context 快照
 

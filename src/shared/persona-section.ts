@@ -38,11 +38,13 @@ export function readPersonaSpec(value: unknown): PersonaSpec | undefined {
   }
 }
 
-/** persona 段 → 官方行 config；默认值不落键（suffix ''、complete false、includeRuntimeContext true）。 */
+/** persona 段 → 官方行 config；默认值不落键（suffix ''、complete false、
+ *  includeRuntimeContext true）。键顺序对齐官方 agent.cordis.yml 写法：
+ *  suffix 在上、prefix 在下（prefix 常为长 block scalar，放末尾更易读）。 */
 export function personaRowConfig(persona: PersonaSpec): Record<string, unknown> {
   return {
-    prefix: persona.prefix,
     ...(persona.suffix === undefined || persona.suffix === '' ? {} : { suffix: persona.suffix }),
+    prefix: persona.prefix,
     ...(persona.complete === true ? { complete: true } : {}),
     ...(persona.includeRuntimeContext === false ? { includeRuntimeContext: false } : {}),
   }

@@ -78,7 +78,7 @@ test('migrate-presets：旧 worldBook/扁平模型键/旧参数别名/覆盖文�
     assert.match(doc, /strategy: world-book/)
     assert.match(doc, /id: keep-config/, '已有 promptConfigs 应保留')
     // 旧 persona 卡合并为顶层 persona 段；子代理卡进 tool-subagent.persona（运行时不再兼容）。
-    assert.match(doc, /persona:\n\s+prefix: 主会话人设文本\n\s+suffix: 人设后缀文本\n\s+complete: true\n\s+includeRuntimeContext: false/)
+    assert.match(doc, /persona:\n\s+suffix: 人设后缀文本\n\s+prefix: 主会话人设文本\n\s+complete: true\n\s+includeRuntimeContext: false/)
     assert.match(doc, /tool-subagent:\n\s+persona: 子代理人设文本/)
     assert.doesNotMatch(doc, /id: persona-main/)
     assert.doesNotMatch(doc, /id: persona-suffix/)
@@ -213,6 +213,71 @@ test('migrate-presets：坏 YAML 非零退出且保留原文件', () => {
       (error) => error.status !== 0,
     )
     assert.equal(readFileSync(join(dir, 'preset.yml'), 'utf8'), original, '坏 YAML 不写盘不动原文件')
+  } finally {
+    rmSync(home, { recursive: true, force: true })
+  }
+})
+
+test('migrate-presets：旧版合并单段 persona 拆回官方 suffix/prefix 两键（suffix 在上）', () => {
+  const home = mkdtempSync(join(tmpdir(), 'pt-migrate-merged-'))
+  try {
+    const dir = makePresetDir(home, 'merged-persona')
+    writeFileSync(join(dir, 'preset.yml'), [
+      'id: merged-persona',
+      'persona:',
+      '  prefix: You are a coding agent powered by the {{model}} model. Your working directory is {{cwd}}.',
+      'params:',
+      '  keepMe: v',
+      '',
+    ].join('\n'), 'utf8')
+    const output = execFileSync(process.execPath, [SCRIPT], { env: { ...process.env, DSH_HOME: home }, encoding: 'utf8' })
+    assert.match(output, /personaMerge=1/)
+    const doc = readFileSync(join(dir, 'preset.yml'), 'utf8')
+    assert.match(
+      doc,
+      /persona:\n\s+suffix: Your working directory is \{\{cwd\}\}\.\n\s+prefix: You are a coding agent powered by the \{\{model\}\} model\./,
+      'suffix 在上、prefix 在下，且合并文本已拆开',
+    )
+    assert.match(doc, /keepMe: v/, '无关字段保留')
+  } finally {
+    rmSync(home, { recursive: true, force: true })
+  }
+})
+
+test('migrate-presets：多段合并 persona 只摘 suffix 句，其余段落保留', () => {
+  const home = mkdtempSync(join(tmpdir(), 'pt-migrate-merged-multi-'))
+  try {
+    const dir = makePresetDir(home, 'merged-multi')
+    writeFileSync(join(dir, 'preset.yml'), [
+      'id: merged-multi',
+      'persona:',
+      '  prefix: |-',
+      '    You are a coding agent powered by the {{model}} model, running on the DeepSeek Harness. Your working directory is {{cwd}}.',
+      '',
+      '    You can read and modify the harness you run on.',
+      '',
+    ].join('\n'), 'utf8')
+    const output = execFileSync(process.execPath, [SCRIPT], { env: { ...process.env, DSH_HOME: home }, encoding: 'utf8' })
+    assert.match(output, /personaMerge=1/)
+    const doc = readFileSync(join(dir, 'preset.yml'), 'utf8')
+    assert.match(doc, /suffix: Your working directory is \{\{cwd\}\}\./)
+    assert.match(doc, /You are a coding agent powered by the \{\{model\}\} model, running on the\s+DeepSeek Harness\./)
+    assert.doesNotMatch(doc, /Harness\. Your working directory/, 'suffix 句已从 prefix 摘出')
+    assert.match(doc, /You can read and modify the harness you run on\./, '其余段落保留')
+  } finally {
+    rmSync(home, { recursive: true, force: true })
+  }
+})
+
+test('migrate-presets：不含库行默认 suffix 的自定义 persona 原样保留', () => {
+  const home = mkdtempSync(join(tmpdir(), 'pt-migrate-merged-keep-'))
+  try {
+    const dir = makePresetDir(home, 'custom-persona')
+    const original = 'id: custom-persona\npersona:\n  prefix: 自定义人设文本。\n'
+    writeFileSync(join(dir, 'preset.yml'), original, 'utf8')
+    const output = execFileSync(process.execPath, [SCRIPT], { env: { ...process.env, DSH_HOME: home }, encoding: 'utf8' })
+    assert.match(output, /0 migrated/)
+    assert.equal(readFileSync(join(dir, 'preset.yml'), 'utf8'), original)
   } finally {
     rmSync(home, { recursive: true, force: true })
   }

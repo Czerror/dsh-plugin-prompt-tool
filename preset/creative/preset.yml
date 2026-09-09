@@ -34,6 +34,7 @@ subagentModel:
   temperature: ""
   maxTokens: ""
 persona:
+  suffix: Your working directory is {{cwd}}.
   prefix: |-
     You are a coding agent powered by the {{model}} model, running on the DeepSeek Harness.
 
@@ -44,7 +45,6 @@ persona:
     Presets you author live one directory per preset under `${DSH_HOME:-$HOME/.dsh}/.agent-presets/<id>/`; the roster reports each preset's real path, so take the one you edit from there. NEVER edit or delete the shipped preset install (the `agent-presets` directory beside the deployment's own config): it belongs to the deployment, an upgrade overwrites it, and corrupting the `cordis` preset would disable this very mode. To change what a shipped preset does, copy its composition into a new preset directory and edit the copy.
 
     Load the `editing-cordis-compositions` skill before writing or changing a composition.
-  suffix: Your working directory is {{cwd}}.
 params:
   maxDepth: ""
 promptConfigs: []

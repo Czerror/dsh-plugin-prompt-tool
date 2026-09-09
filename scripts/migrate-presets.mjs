@@ -16,11 +16,49 @@
 // 用法：node scripts/migrate-presets.mjs [--dry-run]
 import { readFileSync, writeFileSync, renameSync, existsSync, readdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
-import { parseDocument } from 'yaml'
+import { parseDocument, parse as parseYamlText } from 'yaml'
 
 const DRY_RUN = process.argv.includes('--dry-run') || process.argv.includes('-n')
 const DSH_HOME = process.env.DSH_HOME || join(process.env.HOME || process.env.USERPROFILE || '', '.dsh')
 const PRESETS_DIR = join(DSH_HOME, '.agent-presets')
+
+/**
+ * 库行默认 persona suffix（官方 standard/ptc/cordis 共用同一句）。旧版插件把
+ * prefix+suffix 合成单段人设卡，5fa3ae9 整段迁进 persona.prefix，suffix 段
+ * （官方 order 10200）的位置被拉到最前；本脚本按它拆回官方两键。
+ */
+const LIBRARY_PERSONA_SUFFIX = (() => {
+  try {
+    const rows = parseYamlText(readFileSync(new URL('../engine/compositions/library/persona.yml', import.meta.url), 'utf8'), { logLevel: 'silent' })
+    const suffix = Array.isArray(rows) ? rows[0]?.config?.suffix : undefined
+    return typeof suffix === 'string' && suffix.trim().length > 0 ? suffix : undefined
+  } catch {
+    return undefined
+  }
+})()
+
+/**
+ * 拆分旧版合并 persona 文本：只在文本确实含库行默认 suffix 时拆（段落级，
+ * 保留其余段落与空行结构），避免误改用户自定义人设。
+ */
+function splitMergedPersonaSuffix(prefix, suffix) {
+  if (typeof prefix !== 'string' || typeof suffix !== 'string' || suffix.length === 0) return undefined
+  if (!prefix.includes(suffix)) return undefined
+  let found = false
+  const kept = []
+  for (const segment of prefix.split(/\n{2,}/)) {
+    if (!segment.includes(suffix)) {
+      kept.push(segment)
+      continue
+    }
+    found = true
+    const remainder = segment.replaceAll(suffix, '').replace(/\s{2,}/g, ' ').trim()
+    if (remainder.length > 0) kept.push(remainder)
+  }
+  const rebuilt = kept.join('\n\n').trim()
+  if (!found || rebuilt.length === 0) return undefined
+  return { prefix: rebuilt, suffix }
+}
 
 /** 旧扁平模型键 → [顶层段, 段键]（与 src/host/manifest.ts MODEL_SEGMENT_MAP 同源）。 */
 const MODEL_SEGMENT_MAP = {
@@ -82,7 +120,7 @@ function cardText(config) {
 /** 迁移单个预设目录；返回 { changed, summary }。 */
 function migratePresetDir(presetDir) {
   const presetFile = join(presetDir, 'preset.yml')
-  const summary = { worldBook: 0, flatModel: 0, oldParam: 0, moduleAlias: false, overrides: false, personaCard: 0, subagentPersona: 0 }
+  const summary = { worldBook: 0, flatModel: 0, oldParam: 0, moduleAlias: false, overrides: false, personaCard: 0, subagentPersona: 0, personaMerge: 0 }
   if (!existsSync(presetFile)) return { changed: false, summary }
   let doc
   try {
@@ -191,9 +229,10 @@ function migratePresetDir(presetDir) {
         if (params.suppressRuntimeContext === true) includeRuntimeContext = false
       }
       if (!doc.has('persona') && (prefixParts.length > 0 || suffixParts.length > 0)) {
+        const suffixText = suffixParts.join('\n\n')
         doc.set('persona', {
+          ...(suffixText.length > 0 ? { suffix: suffixText } : {}),
           prefix: prefixParts.join('\n\n'),
-          ...(suffixParts.length > 0 ? { suffix: suffixParts.join('\n\n') } : {}),
           ...(complete ? { complete: true } : {}),
           ...(includeRuntimeContext === false ? { includeRuntimeContext: false } : {}),
         })
@@ -220,12 +259,33 @@ function migratePresetDir(presetDir) {
     }
   }
 
+  // 7) persona 段旧合并文本拆回官方两键（suffix 在上、prefix 在下）：旧版
+  //    prefix+suffix 合成单段卡，迁移后 suffix 位置错误，只在含库行默认 suffix
+  //    时拆；保留段内其余键与顺序。
+  const personaNode = doc.get('persona')
+  if (LIBRARY_PERSONA_SUFFIX !== undefined && personaNode !== null && personaNode !== undefined
+    && typeof personaNode === 'object' && !Array.isArray(personaNode)) {
+    const persona = typeof personaNode.toJS === 'function' ? personaNode.toJS(doc) : personaNode
+    if (persona !== null && typeof persona === 'object' && !Array.isArray(persona)
+      && typeof persona.prefix === 'string' && !doc.hasIn(['persona', 'suffix'])) {
+      const split = splitMergedPersonaSuffix(persona.prefix, LIBRARY_PERSONA_SUFFIX)
+      if (split !== undefined) {
+        const rest = { ...persona }
+        delete rest.prefix
+        delete rest.suffix
+        doc.setIn(['persona'], { suffix: split.suffix, prefix: split.prefix, ...rest })
+        summary.personaMerge = 1
+        changed = true
+      }
+    }
+  }
+
   if (!changed) return { changed: false, summary }
 
   // 写盘前备份 preset.yml（.bak-<时间戳>），失败非零并保留原文件。
   const backup = `${presetFile}.bak-${Date.now().toString(36)}`
   if (DRY_RUN) {
-    console.log(`[dry-run] ${presetDir}: worldBook=${summary.worldBook} flatModel=${summary.flatModel} oldParam=${summary.oldParam} moduleAlias=${summary.moduleAlias} overrides=${summary.overrides} personaCard=${summary.personaCard} subagentPersona=${summary.subagentPersona}`)
+    console.log(`[dry-run] ${presetDir}: worldBook=${summary.worldBook} flatModel=${summary.flatModel} oldParam=${summary.oldParam} moduleAlias=${summary.moduleAlias} overrides=${summary.overrides} personaCard=${summary.personaCard} subagentPersona=${summary.subagentPersona} personaMerge=${summary.personaMerge}`)
     return { changed: true, summary }
   }
   const migratedText = doc.toString()
@@ -240,7 +300,7 @@ function migratePresetDir(presetDir) {
     throw new Error(`preset ${presetFile} 写盘失败：${String(error?.message ?? error)}`)
   }
   if (summary.overrides) renameSync(overridesFile, `${overridesFile}.bak-${Date.now().toString(36)}`)
-  console.log(`migrated ${presetDir}: worldBook=${summary.worldBook} flatModel=${summary.flatModel} oldParam=${summary.oldParam} moduleAlias=${summary.moduleAlias} overrides=${summary.overrides} personaCard=${summary.personaCard} subagentPersona=${summary.subagentPersona} (backup ${backup})`)
+  console.log(`migrated ${presetDir}: worldBook=${summary.worldBook} flatModel=${summary.flatModel} oldParam=${summary.oldParam} moduleAlias=${summary.moduleAlias} overrides=${summary.overrides} personaCard=${summary.personaCard} subagentPersona=${summary.subagentPersona} personaMerge=${summary.personaMerge} (backup ${backup})`)
   return { changed: true, summary }
 }
 

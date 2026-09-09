@@ -35,10 +35,10 @@ subagentModel:
   temperature: ""
   maxTokens: ""
 persona:
-  prefix: >-
-    You are a coding agent powered by the {{model}} model.
   suffix: >-
     Your working directory is {{cwd}}.
+  prefix: >-
+    You are a coding agent powered by the {{model}} model.
 params:
   maxDepth: ""
 promptConfigs: []
