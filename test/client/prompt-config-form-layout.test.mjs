@@ -68,6 +68,14 @@ test('说明浮窗只复用宿主视觉，并自行跟随指针或聚焦控件',
   assert.match(promptCss, /\.configToggleField\s*\{[^}]*flex-direction:\s*column/s)
 })
 
+test('人设卡脱离公共配置分组，在模块列表下置顶显示', () => {
+  const editor = read('src/client/features/prompts/PromptConfigsEditor.tsx')
+  const page = read('src/client/app/workspace/pages/MainSessionPage.tsx')
+  assert.match(editor, /beforeCards\?: ReactNode/)
+  assert.match(editor, /beforeCards=\{props\.beforeCards\}/)
+  assert.match(page, /beforeCards=\{\s*<PresetPersonaCard/)
+})
+
 test('原生元素不再使用浏览器 title 或 data-tip 说明', () => {
   const root = new URL('../../src/client/', import.meta.url)
   const files = (dir) => readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {

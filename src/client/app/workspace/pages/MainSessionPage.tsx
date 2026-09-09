@@ -72,9 +72,11 @@ export const MainSessionPage = memo(function MainSessionPage(props: { store: Pro
         onViewFilterChange={changeViewFilter}
         variablesExpanded={variablesExpanded}
         onVariablesExpandedChange={setVariablesExpanded}
+        beforeCards={
+          <PresetPersonaCard presetId={fields.presetTemplate} disabled={!canEditPreset} onNotice={store.showNotice} />
+        }
         commonCards={
           <div className={ui.configList}>
-            <PresetPersonaCard presetId={fields.presetTemplate} disabled={!canEditPreset} onNotice={store.showNotice} />
             <ModelRouteModuleCard store={store} scope="main" />
             <EnginePromptDefaultsCard store={store} />
           </div>

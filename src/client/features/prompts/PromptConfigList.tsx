@@ -281,7 +281,7 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
         </div>
       )}
 
-      {/* 归类于配置列表下的固定卡片（模板变量：可折叠 / 可删除 / 可新建）。 */}
+      {/* 配置列表下的置顶固定卡片（人设、模板变量等单例配置，不参与层过滤）。 */}
       {beforeCards}
 
       {afterCards === undefined ? (
