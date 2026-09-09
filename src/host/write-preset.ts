@@ -146,6 +146,34 @@ function withLockRetry<T>(action: () => T, retries = 3): T {
   }
 }
 
+/** 目录改名失败且可回退的占用错误（Windows 打开句柄/进程 cwd 会拒绝整目录改名）。 */
+function isLockError(error: unknown): boolean {
+  const code = (error as NodeJS.ErrnoException | undefined)?.code
+  return code === 'EPERM' || code === 'EACCES' || code === 'EBUSY'
+}
+
+/**
+ * 原地合并写：srcDir 覆盖到已存在的 destDir（目录交换被占用时的回退路径）。
+ * 同名目录递归合并（被占用的目录只刷新内容），同名文件覆盖，destDir 多余项删除。
+ */
+function syncDirInPlace(srcDir: string, destDir: string): void {
+  const keep = new Set(readdirSync(srcDir))
+  for (const entry of readdirSync(srcDir, { withFileTypes: true })) {
+    const source = join(srcDir, entry.name)
+    const target = join(destDir, entry.name)
+    if (entry.isDirectory()) {
+      if (existsSync(target)) syncDirInPlace(source, target)
+      else cpSync(source, target, { recursive: true, force: true })
+    } else {
+      withLockRetry(() => cpSync(source, target, { force: true }))
+    }
+  }
+  for (const entry of readdirSync(destDir)) {
+    if (keep.has(entry)) continue
+    withLockRetry(() => rmSync(join(destDir, entry), { recursive: true, force: true }))
+  }
+}
+
 function runtimeOf(options: WritePresetOptions, prompt: string): Record<string, unknown> {
   return {
     // 所有引擎参数可直接用于兼容 writePreset/buildCordis；undefined 不覆盖模板值。
@@ -718,25 +746,39 @@ export function writePreset(prompt: string, options: WritePresetOptions): void {
   rmSync(join(outDir, 'agents-instruction.txt'), { force: true })
 
   // 7) 原子提交:新目录完全写好后替换旧目录;失败时恢复旧目录并清理临时目录。
+  //    目录被占用（Windows 打开句柄/进程 cwd 拒绝整目录改名，如预设内 skills 被
+  //    技能监听器持有）时退回原地合并写，语义与整目录交换一致：同名项覆盖、
+  //    多余项删除，被占用的目录只刷新内容。
   const backupDir = join(presetDir, `.${templateName}.bak-${Date.now().toString(36)}`)
   let oldMoved = false
+  let inPlace = false
   if (existsSync(targetDir)) {
-    withLockRetry(() => renameSync(targetDir, backupDir))
-    oldMoved = true
-  }
-  try {
-    withLockRetry(() => renameSync(outDir, targetDir))
-  } catch (error) {
-    if (oldMoved) {
-      try {
-        withLockRetry(() => renameSync(backupDir, targetDir))
-      } catch {
-        // 恢复失败时保留 backup 供人工处理,不再覆盖现场。
-      }
+    try {
+      withLockRetry(() => renameSync(targetDir, backupDir))
+      oldMoved = true
+    } catch (error) {
+      if (!isLockError(error)) throw error
+      inPlace = true
     }
-    throw error
   }
-  if (oldMoved) rmSync(backupDir, { recursive: true, force: true })
+  if (inPlace) {
+    syncDirInPlace(outDir, targetDir)
+    rmSync(outDir, { recursive: true, force: true })
+  } else {
+    try {
+      withLockRetry(() => renameSync(outDir, targetDir))
+    } catch (error) {
+      if (oldMoved) {
+        try {
+          withLockRetry(() => renameSync(backupDir, targetDir))
+        } catch {
+          // 恢复失败时保留 backup 供人工处理,不再覆盖现场。
+        }
+      }
+      throw error
+    }
+    if (oldMoved) rmSync(backupDir, { recursive: true, force: true })
+  }
   } catch (error) {
     rmSync(tmpDir, { recursive: true, force: true })
     throw error

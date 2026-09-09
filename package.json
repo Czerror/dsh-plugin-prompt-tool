@@ -115,7 +115,8 @@
     "sync:anchored": "node scripts/sync-anchored.mjs",
     "sync:yaml": "node scripts/sync-yaml-vendor.mjs",
     "rebuild:composition": "node scripts/rebuild-composition.mjs",
-    "migrate:presets": "node scripts/migrate-presets.mjs"
+    "migrate:presets": "node scripts/migrate-presets.mjs",
+    "rematerialize:presets": "node scripts/rematerialize-presets.mjs"
   },
   "dependencies": {
     "yaml": "^2.9.0"

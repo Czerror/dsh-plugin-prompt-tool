@@ -147,12 +147,14 @@ export function renderPromptConfigYaml(spec: PromptConfigSpec): string {
   if (typeof spec.summary === 'string' && spec.summary.length > 0) lines.push(yamlScalar('summary', 0, spec.summary))
   if (typeof spec.templateFile === 'string' && spec.templateFile.length > 0) lines.push(`templateFile: ${spec.templateFile}`)
   if (typeof spec.fill === 'string' && spec.fill.length > 0) lines.push(`fill: ${spec.fill}`)
-  // text/texts 统一：text 为单块便捷写法，渲染归一为 texts。
+  // text/texts 统一：单段输出 text（对齐官方 PromptSection.text 单字符串语义），
+  // 多段保留 texts 数组（pre-step 多 content block / mergeMode=merged 拼接）。
   const texts = [
     ...(typeof spec.text === 'string' && spec.text.length > 0 ? [spec.text] : []),
     ...(Array.isArray(spec.texts) ? spec.texts : []),
   ]
-  if (texts.length > 0) lines.push(`texts: ${JSON.stringify(texts)}`)
+  if (texts.length === 1) lines.push(yamlScalar('text', 0, texts[0]!))
+  else if (texts.length > 1) lines.push(`texts: ${JSON.stringify(texts)}`)
   if (spec.mergeMode !== undefined && spec.mergeMode !== 'separate') lines.push(`mergeMode: ${spec.mergeMode}`)
   if (spec.identity !== undefined && spec.identity.value !== spec.id) {
     lines.push('identity:', `  field: ${spec.identity.field}`, `  value: ${spec.identity.value}`)

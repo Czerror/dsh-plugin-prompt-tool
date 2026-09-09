@@ -166,6 +166,42 @@ test('migrate-presets：多张无文本旧 persona 卡全部删除，不写空 p
   }
 })
 
+test('migrate-presets：texts 数组形态旧 persona 卡迁进顶层 persona 段，不丢文本', () => {
+  const home = mkdtempSync(join(tmpdir(), 'pt-migrate-home-'))
+  try {
+    const dir = makePresetDir(home, 'texts-persona')
+    writeFileSync(join(dir, 'preset.yml'), [
+      'id: texts-persona',
+      'promptConfigs:',
+      '  - id: persona-main',
+      '    layer: system-section',
+      '    strategy: static',
+      '    texts:',
+      '      - 第一段人设',
+      '      - 第二段人设',
+      '    params:',
+      '      sectionName: deployment:persona-prefix',
+      '      complete: true',
+      '      suppressRuntimeContext: true',
+      '  - id: keep-config',
+      '    text: keep',
+      '',
+    ].join('\n'), 'utf8')
+    const output = execFileSync(process.execPath, [SCRIPT], { env: { ...process.env, DSH_HOME: home }, encoding: 'utf8' })
+    assert.match(output, /personaCard=1 subagentPersona=0/)
+    const doc = readFileSync(join(dir, 'preset.yml'), 'utf8')
+    assert.match(doc, /^persona:/m, 'texts 卡必须写出顶层 persona 段')
+    assert.match(doc, /第一段人设/)
+    assert.match(doc, /第二段人设/)
+    assert.match(doc, /complete: true/)
+    assert.match(doc, /includeRuntimeContext: false/)
+    assert.doesNotMatch(doc, /persona-main/)
+    assert.match(doc, /id: keep-config/)
+  } finally {
+    rmSync(home, { recursive: true, force: true })
+  }
+})
+
 test('migrate-presets：坏 YAML 非零退出且保留原文件', () => {
   const home = mkdtempSync(join(tmpdir(), 'pt-migrate-bad-'))
   try {

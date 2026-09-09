@@ -71,6 +71,14 @@ function worldBookToConfigs(worldBook) {
   return out
 }
 
+/** 旧卡文本：`text` 单块便捷写法 + `texts` 多块（与 src/host/prompt-configs.ts 归一一致）。 */
+function cardText(config) {
+  return [
+    ...(typeof config.text === 'string' ? [config.text] : []),
+    ...(Array.isArray(config.texts) ? config.texts.filter((item) => typeof item === 'string') : []),
+  ].join('\n\n')
+}
+
 /** 迁移单个预设目录；返回 { changed, summary }。 */
 function migratePresetDir(presetDir) {
   const presetFile = join(presetDir, 'preset.yml')
@@ -171,7 +179,7 @@ function migratePresetDir(presetDir) {
       let complete = false
       let includeRuntimeContext
       for (const { config } of mainEntries) {
-        const text = typeof config.text === 'string' ? config.text : ''
+        const text = cardText(config)
         const params = config.params ?? {}
         // 段名是 persona-suffix 的卡归 suffix，其余（prefix/legacy/仅 id）归 prefix；
         // 空文本卡原本就不注册段（回落部署人设）：只删卡，不写空文本。
@@ -196,7 +204,7 @@ function migratePresetDir(presetDir) {
     }
     if (subEntries.length > 0) {
       const texts = subEntries
-        .map(({ config }) => (typeof config.text === 'string' ? config.text : ''))
+        .map(({ config }) => cardText(config))
         .filter((text) => text.trim().length > 0)
       if (texts.length > 0) doc.setIn(['moduleConfigs', 'tool-subagent', 'persona'], texts.join('\n\n'))
       summary.subagentPersona += subEntries.length

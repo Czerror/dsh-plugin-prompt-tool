@@ -102,7 +102,7 @@ test('renderPromptConfigYaml 全字段开放：variables/identity/params 嵌套�
   const doc = parse(yaml, { logLevel: 'silent' })
   assert.equal(doc.id, 'full')
   assert.equal(doc.layer, 'tool-pipeline')
-  assert.deepEqual(doc.texts, ['第一行\n第二行'])
+  assert.equal(doc.text, '第一行\n第二行')
   assert.deepEqual(doc.identity, { field: 'plugin', value: 'full-kind' })
   assert.deepEqual(doc.variables, { WHO: '李雷' })
   assert.equal(doc.params.toolNames, 'bash,run_code')

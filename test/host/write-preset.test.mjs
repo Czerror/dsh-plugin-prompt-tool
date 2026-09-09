@@ -784,7 +784,7 @@ test('模板变量插值开关：停用不生成 variables.yml 且剥离配置�
     const file = readdirSync(pcDir).find((name) => name.endsWith('-var-test.yml'))
     assert.ok(file, 'var-test 配置生成')
     const parsed = parseYaml(readFileSync(join(pcDir, file), 'utf8'))
-    assert.equal(parsed.texts[0], '剧情字 {{DSH_HOME}}', '预设变量引用剥离、内置变量保留')
+    assert.equal(parsed.text, '剧情字 {{DSH_HOME}}', '预设变量引用剥离、内置变量保留')
     // 重新启用：true = 删除开关键（缺省启用），变量文件恢复。
     savePresetParams(homePresetDir, 'anchored', undefined, undefined, { wordsCloud: '1500字' }, true)
     writePreset('PROMPT', { ...makeOptions(presetDir), promptConfigs: varConfig() })
@@ -792,7 +792,7 @@ test('模板变量插值开关：停用不生成 variables.yml 且剥离配置�
     const vars = parseYaml(readFileSync(varsFile, 'utf8'))
     assert.equal(vars.wordsCloud, '1500字')
     const reParsed = parseYaml(readFileSync(join(pcDir, file), 'utf8'))
-    assert.equal(reParsed.texts[0], '剧情{{wordsCloud}}字 {{DSH_HOME}}', '启用后配置文本保留引用（引擎插值）')
+    assert.equal(reParsed.text, '剧情{{wordsCloud}}字 {{DSH_HOME}}', '启用后配置文本保留引用（引擎插值）')
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
@@ -868,11 +868,12 @@ test('writePreset 禁用大条目瘦身：enabled=false 超阈值正文不落产
     }
     const dump = read('st-dump')
     assert.equal(dump.enabled, false)
-    assert.equal(dump.texts, undefined, '禁用大条目产物不落正文')
+    assert.equal(dump.text, undefined, '禁用大条目产物不落正文')
+    assert.equal(dump.texts, undefined, '禁用大条目产物不落多段正文')
     const smallOff = read('normal-off')
-    assert.deepEqual(smallOff.texts, ['小段文本'], '阈值内禁用条目保留正文')
+    assert.equal(smallOff.text, '小段文本', '阈值内禁用条目保留正文')
     const bigOn = read('normal-on')
-    assert.equal(bigOn.texts[0].length, 40 * 1024, '启用条目不受瘦身影响')
+    assert.equal(bigOn.text.length, 40 * 1024, '启用条目不受瘦身影响')
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
@@ -889,6 +890,34 @@ test('writePreset anchored 不默认装配 ST 管理工具模块' , () => {
       assert.equal(ids.includes(id), false, `${id} 应由 ST 转换按需装配`)
     }
   } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('writePreset 目标目录被占用时退回原地合并写：内容刷新且多余项清理', () => {
+  const dir = join(tmpdir(), `prompt-tool-lock-${process.pid}-${Date.now()}`)
+  const presetDir = join(dir, 'preset')
+  const originalCwd = process.cwd()
+  try {
+    writePreset('PROMPT', makeOptions(presetDir))
+    const target = join(presetDir, 'anchored')
+    const stale = join(target, 'prompt-configs', '9999-stale.yml')
+    mkdirSync(join(target, 'prompt-configs'), { recursive: true })
+    writeFileSync(stale, 'id: stale\n', 'utf8')
+    // 把本进程 cwd 放进目标目录：Windows 拒绝改名任何进程的当前目录，
+    // 等价于宿主打开句柄（真实场景 = 预设内 skills 被技能监听器持有）。
+    process.chdir(target)
+    writePreset('PROMPT2', makeOptions(presetDir))
+    assert.equal(readFileSync(join(target, 'preset.md'), 'utf8'), 'PROMPT2', '原地合并后内容资产刷新')
+    assert.ok(existsSync(join(target, 'agent.cordis.yml')), '组合仍在')
+    assert.equal(existsSync(stale), false, '原地合并同样清理多余项')
+    assert.equal(
+      readdirSync(presetDir).some((name) => name.includes('.bak-') || name.includes('.tmp-')),
+      false,
+      '不残留备份/临时目录',
+    )
+  } finally {
+    process.chdir(originalCwd)
     rmSync(dir, { recursive: true, force: true })
   }
 })

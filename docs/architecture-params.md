@@ -224,6 +224,29 @@ wholeWords/selectiveLogic）单一权威。两个写入端共用：
   归 `prefix`，`complete` / `suppressRuntimeContext` 合并，子代理卡写
   `moduleConfigs.tool-subagent.persona`，空文本卡只删不写，写盘前备份 `.bak`。
   运行时无兼容层。
+- 离线重物化：`pnpm rematerialize:presets`（`scripts/rematerialize-presets.mjs`）
+  先跑上面的数据迁移，再对每个插件格式预设（preset.yml 含 `modules` / `params`）
+  重跑 `writePreset`：重刷 `agent.cordis.yml`（带 `# prompt-tool:render vN` 戳）、
+  `prompt-configs/`、`custom-tools/`、`subagent-tools/` 与预设根共享 `.engine/`
+  （引擎指纹未变时跳过重刷）。手写/官方格式预设（无 `modules` / `params`，如
+  `liangshen`）整体跳过，不覆盖手写组合。参数：`--dsh-home <dir>`、`--dry-run`、
+  `--no-migrate`。宿主运行时会锁住预设内 `skills/` 目录（技能监听器持有句柄），
+  `writePreset` 整目录改名失败时退回原地合并写（同名项覆盖、多余项删除），
+  不再因占用而中止。
+
+### 提示词配置文本字段：单段 `text` / 多段 `texts`（2026-09-09）
+
+- 对外契约（preset.yml `promptConfigs`、UI 编辑、ST 导入、生成产物
+  `prompt-configs/*.yml`）以 `text` 单字符串为准，对齐官方
+  `PromptSection.text: string | ((context: AssembleContext) => string)`
+  （`deepseek-harness/packages/core/system-prompt/src/index.ts`）；单段渲染输出
+  `text: |-` block scalar。
+- `texts: string[]` 只承载「一条配置多段文本」（pre-step 多 content block、
+  `mergeMode=merged` 多块拼接），多段时渲染保留 `texts: [...]`；引擎
+  `engine/schema.mjs` 把 `text` + `texts` 归一为内部 `texts[]` 消费，运行时只见
+  归一结果。
+- 迁移脚本必须同时读 `text` 与 `texts`：旧 persona 卡两种形态并存，只读 `text`
+  会丢正文。`scripts/migrate-presets.mjs` 的 `cardText` 是唯一读取入口。
 
 > 以下 2026-08 的「主会话人设参数化」「人设参数桥移除」「子代理 persona 恢复官方
 > per-child shadow」「子代理 persona 配置卡替换方案」「角色卡导入的 persona 开放」

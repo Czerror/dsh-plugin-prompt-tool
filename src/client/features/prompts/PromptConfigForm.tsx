@@ -119,12 +119,12 @@ export function PromptConfigForm(props: {
             autoResizeTextarea(e)
             const next = e.target.value
             // 内容资产（prompt-injector / instruction-hint）走生成目录文件通道（text →
-            // params.text）；普通配置保存统一写 texts 单段整块（对齐官方 text 单字符串
-            // 语义；text 字段兼容读取，编辑后归一）。
+            // params.text）；其余配置单段写 text（对齐官方 PromptSection.text 单字符串
+            // 语义，texts 仅多段/旧数据兼容读取）。
             if (config.id === 'prompt-injector' || config.fill === 'instruction-hint') {
               onPatch({ text: next, texts: [] })
             } else {
-              onPatch({ text: undefined, texts: next.trim().length > 0 ? [next] : [] })
+              onPatch({ text: next.trim().length > 0 ? next : undefined, texts: [] })
             }
           }}
         />
