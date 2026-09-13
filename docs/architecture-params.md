@@ -13,7 +13,7 @@
 | 键集合 | `shared/param-keys.ts` | `PARAM_KEYS` = `ENGINE_PARAM_KEYS` 派生 + 锚定内容键 + `promptConfigs`；variables.yml 排除集 / mutate 拦截 / 读回遍历共用 |
 | 存储层 | `host/manifest.ts` | `loadPresetSpec`（顶层 model/subagentModel 段 → 扁平键，`MODEL_SEGMENT_MAP`）、`savePresetParams`（扁平键 → 段，同源映射；空值删键）、`buildModuleConfigsFromParams`（参数桥）、`renderComposition`（参数桥 > moduleConfigs > 行默认；组合模块从 `source/local` 与 `library` 唯一查找） |
 | 物化层 | `host/write-preset.ts` | `writePreset`：参数 + 内容资产 → 官方预设目录（agent.cordis.yml / prompt-configs / variables.yml）；`runtimeOf` 透传、`modelRequestConfigs` 模型 patch |
-| 装配层 | `index.ts` | `reloadPresetParams`（preset.yml → runtime）、`applyParamOverrides`（旧 overrides.yml 通道）、`rebuildPreset`（写入触发） |
+| 装配层 | `index.ts` | `reloadPresetParams`（preset.yml → runtime）、`rebuildPreset`（写入触发） |
 | 接线层 | `runtime/settings-bridge.ts` | `/param-overrides` GET（读回）/ POST（保存到激活预设 preset.yml） |
 | 消费端 | `client/data/param-overrides.ts`、`prompt-tool-fields.ts`、`dirty-state.ts` | 从共享定义派生 Fields、默认值、读回、序列化及全参数保存快照；store 保留保存队列和宿主适配 |
 
@@ -148,8 +148,8 @@ moduleConfigs 仅补充参数桥未覆盖的键（如 ST 导入 tool-web.fetch�
 | `custom-fallback`（prompt-injector） | 兜底注入：锚定词确认后注入 preset.md | `firstTurnWord`（锚定确认词）+ `promptText` | 确认后一次 / 未确认两轮兜底 |
 
 复用点：`guideComplexPattern` 冗余副本已移除——引导的复杂判定 fallback 复用锚定的
-`complexPattern`。旧预设 params 残留的 `guideComplexPattern` 不再运行时兼容（已从
-PARAM_KEYS 移除），由 `pnpm migrate:presets` 离线一次性清理。
+`complexPattern`。旧预设 params 残留的 `guideComplexPattern` 不再兼容（已从
+PARAM_KEYS 移除），本项目也不提供迁移：请自行从 preset.yml 删除该键。
 锚定与引导**不合并**：锚定句（reasoning 开头句，首轮一次性）与引导句（路由引导，每轮）注入位不同。
 
 ### 模块化视图（2026-08-25）
@@ -218,19 +218,17 @@ wholeWords/selectiveLogic）单一权威。两个写入端共用：
   `persona: { prefix: '', complete: false }`（空 prefix 只做 scope shadow，允许导入段
   生效）；`applyCharacterToPreset` 对含 system-section 的卡自动把顶层
   `persona.complete` 置 `false`（幂等，返回 `personaOpened`）。
-- 离线迁移：`pnpm migrate:presets`（`scripts/migrate-presets.mjs`）把旧
-  `persona-main` / 子代理 persona 卡合并进顶层段——`deployment:persona-suffix` 卡归
-  `suffix`，其余（`deployment:persona-prefix` / `deployment:persona` / 裸 `persona`）
-  归 `prefix`，`complete` / `suppressRuntimeContext` 合并，子代理卡写
-  `moduleConfigs.tool-subagent.persona`，空文本卡只删不写，写盘前备份 `.bak`。
-  运行时无兼容层。
+- 旧 persona 卡（`persona-main` / 子代理 persona 卡）无兼容层也不迁移：请手工改写为
+  顶层 `persona` 段——`deployment:persona-suffix` 卡归 `suffix`，其余
+  （`deployment:persona-prefix` / `deployment:persona` / 裸 `persona`）归 `prefix`，
+  子代理卡写 `moduleConfigs.tool-subagent.persona`。
 - 离线重物化：`pnpm rematerialize:presets`（`scripts/rematerialize-presets.mjs`）
-  先跑上面的数据迁移，再对每个插件格式预设（preset.yml 含 `modules` / `params`）
-  重跑 `writePreset`：重刷 `agent.cordis.yml`（带 `# prompt-tool:render vN` 戳）、
+  对每个插件格式预设（preset.yml 含 `modules` / `params`）重跑 `writePreset`：重刷
+  `agent.cordis.yml`（带 `# prompt-tool:render vN` 戳）、
   `prompt-configs/`、`custom-tools/`、`subagent-tools/` 与预设根共享 `.engine/`
   （引擎指纹未变时跳过重刷）。手写/官方格式预设（无 `modules` / `params`，如
-  `liangshen`）整体跳过，不覆盖手写组合。参数：`--dsh-home <dir>`、`--dry-run`、
-  `--no-migrate`。宿主运行时会锁住预设内 `skills/` 目录（技能监听器持有句柄），
+  `liangshen`）整体跳过，不覆盖手写组合。参数：`--dsh-home <dir>`、`--dry-run`。
+  宿主运行时会锁住预设内 `skills/` 目录（技能监听器持有句柄），
   `writePreset` 整目录改名失败时退回原地合并写（同名项覆盖、多余项删除），
   不再因占用而中止。
 
@@ -245,8 +243,8 @@ wholeWords/selectiveLogic）单一权威。两个写入端共用：
   `mergeMode=merged` 多块拼接），多段时渲染保留 `texts: [...]`；引擎
   `engine/schema.mjs` 把 `text` + `texts` 归一为内部 `texts[]` 消费，运行时只见
   归一结果。
-- 迁移脚本必须同时读 `text` 与 `texts`：旧 persona 卡两种形态并存，只读 `text`
-  会丢正文。`scripts/migrate-presets.mjs` 的 `cardText` 是唯一读取入口。
+- 旧 persona 卡的两种形态（`text` 单段 / `texts` 多段）不再由本项目处理：迁移脚本已移除，
+  升级前请自行把正文整理进顶层 `persona` 段。
 
 > 以下 2026-08 的「主会话人设参数化」「人设参数桥移除」「子代理 persona 恢复官方
 > per-child shadow」「子代理 persona 配置卡替换方案」「角色卡导入的 persona 开放」

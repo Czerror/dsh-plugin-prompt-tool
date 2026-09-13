@@ -22,8 +22,8 @@
 技能路径差异，不能仅按 row id 合并。真正重复的嵌套拆分（如旧版独立
 `str-replace-editor`）统一回收到所属官方 group。
 
-旧版 `str-replace-editor` 模块名在离线迁移或运行时装配时归一到
-`bootstrap-filesystem`，避免升级后预设失效。
+旧版 `str-replace-editor` 模块名不再兼容也不迁移（本项目不含迁移代码）：升级前请把
+预设里的该模块改写为 `bootstrap-filesystem`。
 
 ## 复制协议（跨项目复用）
 

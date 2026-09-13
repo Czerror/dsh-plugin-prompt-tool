@@ -1,11 +1,11 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { parseDocument } from 'yaml'
+import { parse as parseYaml, parseDocument } from 'yaml'
 
 const ROOT = fileURLToPath(new URL('../..', import.meta.url))
 const SCRIPT = join(ROOT, 'scripts', 'rematerialize-presets.mjs')
@@ -25,41 +25,19 @@ function seedPreset(home, name, template = 'minimal') {
   return dir
 }
 
-test('rematerialize-presets：旧 persona 卡迁移 + 组合/配置/共享引擎重新物化', () => {
+test('rematerialize-presets：按当前 preset.yml 重新物化组合与共享引擎', () => {
   const home = mkdtempSync(join(tmpdir(), 'pt-remat-'))
   try {
     const dir = seedPreset(home, 'minimal')
-    // 还原旧版形态：顶层 persona 段 → 旧 persona-main 卡。
-    const doc = parseDocument(readFileSync(join(dir, 'preset.yml'), 'utf8'))
-    doc.delete('persona')
-    doc.set('promptConfigs', [{
-      id: 'persona-main',
-      layer: 'system-section',
-      text: '迁移后人设',
-      params: { sectionName: 'deployment:persona-prefix' },
-    }])
-    writeFileSync(join(dir, 'preset.yml'), doc.toString(), 'utf8')
-    // 旧产物残留：旧版生成的 persona 配置卡文件必须被重新物化清掉。
-    mkdirSync(join(dir, 'prompt-configs'), { recursive: true })
-    writeFileSync(join(dir, 'prompt-configs', '0040-persona-main.yml'), 'id: persona-main\n', 'utf8')
-
     const output = run(home)
     assert.match(output, /1 materialized/)
     assert.match(output, /0 failed/)
 
-    const yml = readFileSync(join(dir, 'preset.yml'), 'utf8')
-    assert.match(yml, /persona:\n\s+prefix: 迁移后人设/, '旧卡合并为顶层 persona 段')
-    assert.doesNotMatch(yml, /persona-main/, '旧卡已删除')
     const composition = readFileSync(join(dir, 'agent.cordis.yml'), 'utf8')
     assert.match(composition, /# prompt-tool:render v/, '组合带 render 版本戳')
-    assert.match(composition, /dsh-persona/)
-    assert.match(composition, /迁移后人设/, '顶层 persona 段注入官方 persona 行')
+    assert.ok(Array.isArray(parseYaml(composition)), '组合是 YAML 数组')
     assert.ok(existsSync(join(home, '.agent-presets', '.engine', '.pt-engine-fingerprint')), '共享引擎已物化')
-    assert.equal(
-      readdirSync(join(dir, 'prompt-configs')).some((name) => name.includes('persona-main')),
-      false,
-      '旧 persona 配置卡产物已清理',
-    )
+    assert.ok(existsSync(join(dir, 'prompt-configs')), '提示词配置目录已物化')
   } finally {
     rmSync(home, { recursive: true, force: true })
   }

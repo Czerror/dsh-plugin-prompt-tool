@@ -378,30 +378,6 @@ test('writePreset outputId 覆盖：别名目录独立渲染（旧容器 id 兼�
   }
 })
 
-test('writePreset aliasOf（方案 E）：别名目录带完整参数源 + name 兼容标记 + 随源同步更新', () => {
-  const dir = join(tmpdir(), `prompt-tool-alias-e-${process.pid}-${Date.now()}`)
-  const presetDir = join(dir, 'preset')
-  try {
-    // 源预设目录先建参数源（模拟真实场景：种子化/新建后的 preset.yml）。
-    mkdirSync(join(presetDir, 'anchored'), { recursive: true })
-    writeFileSync(join(presetDir, 'anchored', 'preset.yml'),
-      'id: anchored\nname: Anchored\nmodules: [prompt-config-engine, tool-bash]\nparams:\n  firstTurnAnchor: true\n', 'utf8')
-    writePreset('SOURCE PROMPT', { ...makeOptions(presetDir), presetTemplate: 'anchored' })
-    // 别名物化（aliasOf: true）：preset.yml 应为源参数完整拷贝 + name 兼容标记。
-    writePreset('SOURCE PROMPT', { ...makeOptions(presetDir), presetTemplate: 'anchored', outputId: 'prompt-tool', aliasOf: true })
-    assert.ok(existsSync(join(presetDir, 'prompt-tool', 'preset.yml')), '别名目录必须有参数源 preset.yml')
-    const spec = parseYaml(readFileSync(join(presetDir, 'prompt-tool', 'preset.yml'), 'utf8'))
-    assert.equal(spec.id, 'prompt-tool', '别名 id = outputId')
-    assert.match(String(spec.name), /旧会话兼容/, '别名 name 带兼容标记')
-    assert.ok(Array.isArray(spec.modules) && spec.modules.length > 0, '参数源完整（modules 复制）')
-    // 同步更新：源渲染变化后再写别名，组合内容跟随（不再一次性冻结）。
-    writePreset('CHANGED PROMPT', { ...makeOptions(presetDir), presetTemplate: 'anchored', outputId: 'prompt-tool', aliasOf: true })
-    const agent = readFileSync(join(presetDir, 'prompt-tool', 'agent.cordis.yml'), 'utf8')
-    assert.ok(!agent.includes('SOURCE PROMPT') || agent.includes('CHANGED PROMPT'), '别名组合随源同步')
-  } finally {
-    rmSync(dir, { recursive: true, force: true })
-  }
-})
 test('writePreset 自定义预设（custom）保持显式空组合', () => {
   const dir = join(tmpdir(), `prompt-tool-custom-${process.pid}-${Date.now()}`)
   const presetDir = join(dir, 'preset')
@@ -448,61 +424,6 @@ test('writePreset 失败时保留旧生成目录', () => {
     assert.equal(readFileSync(join(presetDir, 'anchored', 'keep.txt'), 'utf8'), 'old')
   } finally {
     rmSync(dir, { recursive: true, force: true })
-  }
-})
-
-test('writePreset 预设隔离：多模板并存，overrides 随子预设互不串台', () => {
-  const dir = join(tmpdir(), `prompt-tool-iso-${process.pid}-${Date.now()}`)
-  const presetDir = join(dir, 'preset')
-  try {
-    // anchored 生成 + 写入 overrides
-    writePreset('PROMPT', makeOptions(presetDir))
-    mkdirSync(join(presetDir, 'anchored'), { recursive: true })
-    writeFileSync(join(presetDir, 'anchored', 'prompt-tool.overrides.yml'), 'firstTurnWord: test-word\n', 'utf8')
-    // 切换 minimal 重新生成
-    writePreset('PROMPT', { ...makeOptions(presetDir), presetTemplate: 'minimal' })
-    assert.ok(existsSync(join(presetDir, 'anchored', 'agent.cordis.yml')), 'anchored 子预设保留')
-    assert.ok(existsSync(join(presetDir, 'minimal', 'agent.cordis.yml')), 'minimal 子预设生成')
-    assert.ok(existsSync(join(presetDir, 'anchored', 'prompt-tool.overrides.yml')), 'anchored overrides 保留')
-    assert.ok(!existsSync(join(presetDir, 'minimal', 'prompt-tool.overrides.yml')), 'minimal 无 anchored 的 overrides（隔离）')
-    // 切回 anchored：overrides 仍在
-    writePreset('PROMPT', makeOptions(presetDir))
-    const overrides = readFileSync(join(presetDir, 'anchored', 'prompt-tool.overrides.yml'), 'utf8')
-    assert.match(overrides, /firstTurnWord: test-word/, '切回 anchored 后 overrides 保留')
-  } finally {
-    rmSync(dir, { recursive: true, force: true })
-  }
-})
-
-test('writePreset worldBook 迁移持久化 promptConfigs，第二次重建不丢条目', () => {
-  const presetDir = join(home, '.agent-presets')
-  const userTemplate = join(presetDir, 'anchored')
-  try {
-    rmSync(userTemplate, { recursive: true, force: true })
-    cpSync(join(ROOT, 'preset', 'anchored'), userTemplate, { recursive: true })
-    const presetFile = join(userTemplate, 'preset.yml')
-    const doc = parseDocument(readFileSync(presetFile, 'utf8'))
-    doc.setIn(['worldBook'], {
-      injectMode: 'keyword',
-      entries: [{ id: 'runtime-wb', name: '运行时条目', text: '迁移内容', keys: ['runtime'] }],
-    })
-    writeFileSync(presetFile, doc.toString(), 'utf8')
-
-    writePreset('PROMPT', { ...makeOptions(presetDir), presetTemplate: 'anchored' })
-    const migrated = parseYaml(readFileSync(presetFile, 'utf8'))
-    assert.equal(migrated.worldBook, undefined, '旧 worldBook 段应删除')
-    assert.equal(migrated.promptConfigs.filter((item) => item.id === 'runtime-wb').length, 1,
-      '迁移后的 promptConfigs 应写回参数源')
-
-    writePreset('PROMPT', { ...makeOptions(presetDir), presetTemplate: 'anchored' })
-    const persisted = parseYaml(readFileSync(presetFile, 'utf8'))
-    assert.equal(persisted.promptConfigs.filter((item) => item.id === 'runtime-wb').length, 1,
-      '第二次重建应保留且不重复迁移条目')
-    const generatedDir = join(presetDir, 'anchored', 'prompt-configs')
-    const generated = readdirSync(generatedDir).filter((name) => name.endsWith('-runtime-wb.yml'))
-    assert.equal(generated.length, 1, '迁移条目应继续物化')
-  } finally {
-    rmSync(userTemplate, { recursive: true, force: true })
   }
 })
 
@@ -803,30 +724,26 @@ test.after(() => {
 })
 
 
-test('writePreset 旧版种子副本回退：纯元数据遮蔽包内模板 → 回退渲染 + 参数源升级', () => {
+test('writePreset 组合源缺失回退：用户副本无组合源 → 回退包内模板渲染，不写回用户参数源', () => {
   // 模拟真实布局：presetDir 即隔离 DSH_HOME 的 .agent-presets（参数源与目标同目录，升级闭环）
   const presetDir = join(home, '.agent-presets')
   const userMinimal = join(presetDir, 'minimal')
   try {
     rmSync(userMinimal, { recursive: true, force: true })
     mkdirSync(userMinimal, { recursive: true })
-    // 旧版种子副本：纯元数据（无 modules/params/promptConfigs，目录无 agent.cordis.yml）
+    // 纯元数据副本：无 modules/params/promptConfigs，目录也无 agent.cordis.yml。
     writeFileSync(join(userMinimal, 'preset.yml'), 'name: 极简模式（旧）\ndescription: 旧版种子副本\norder: 3\n', 'utf8')
     const warnings = []
     writePreset('PROMPT', { ...makeOptions(presetDir), presetTemplate: 'minimal', warn: (message) => warnings.push(message) })
     // 回退包内模板渲染成功：组合精确对齐官方 Minimal 基型。
     const cordis = readFileSync(join(presetDir, 'minimal', 'agent.cordis.yml'), 'utf8')
     assert.deepEqual(parseYaml(cordis).map((row) => row.id), ['persona', 'persistent-shell', 'prompt-config-engine'])
-    // 参数源升级：preset.yml 获得包内 modules 段，保留旧元数据命名
+    // 不回写用户参数源：没有迁移，modules 不落盘，用户命名与内容原样保留。
     const spec = parseYaml(readFileSync(join(presetDir, 'minimal', 'preset.yml'), 'utf8'))
-    assert.ok(Array.isArray(spec.modules) && spec.modules.length > 0, '参数源升级为包内 modules 清单')
-    assert.equal(spec.name, '极简模式（旧）', '旧 name 保留（用户命名不丢）')
-    assert.equal(spec.description, '旧版种子副本', '旧 description 保留')
+    assert.equal(spec.modules, undefined, '不注入包内 modules（无迁移）')
+    assert.equal(spec.name, '极简模式（旧）', '用户命名保留')
+    assert.equal(spec.description, '旧版种子副本', '用户描述保留')
     assert.ok(warnings.some((message) => message.includes('回退')), '回退发生时 warn')
-    // 闭环：升级后的参数源可渲染，再次物化不再回退
-    const warnings2 = []
-    writePreset('PROMPT', { ...makeOptions(presetDir), presetTemplate: 'minimal', warn: (message) => warnings2.push(message) })
-    assert.ok(!warnings2.some((message) => message.includes('回退')), '升级闭环后不再回退')
   } finally {
     rmSync(userMinimal, { recursive: true, force: true })
   }

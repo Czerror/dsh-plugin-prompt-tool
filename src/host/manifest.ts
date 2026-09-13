@@ -53,11 +53,6 @@ export interface PresetSpec {
   promptConfigs?: unknown[]
   /** 可选:引擎组合模块行参数直写(行级 map config 浅合并;参数桥未覆盖的键生效,参数桥优先)。 */
   moduleConfigs?: Record<string, Record<string, unknown>>
-  /** 世界书（独立存储段，不进 promptConfigs）：injectMode + 条目。 */
-  worldBook?: {
-    injectMode?: 'full' | 'keyword'
-    entries: Array<Record<string, unknown>>
-  }
   upstream?: Record<string, unknown>
 }
 
@@ -339,8 +334,6 @@ export function stateFilePath(): string {
 
 export interface PromptToolState {
   seeded?: boolean
-  /** 旧容器 id 兼容快照已处理；删除后不再自动复活。 */
-  legacyAliasHandled?: boolean
 }
 
 /** 读插件状态；文件缺失/损坏返回空对象（按未标记处理，触发首次动作）。 */
@@ -362,23 +355,9 @@ export function writePluginState(state: PromptToolState): void {
 }
 
 /** 首次启动种子化：把插件目录全部内置模板复制到预设根（state.seeded 后不再自动补）。
- *  用户删除的预设不会自动复活；升级新增的模板用「新建」按需复制。
- *  兼容旧版预设根内 .pt-seeded 标记：存在即视为已种子化，并迁入状态文件后删除。 */
+ *  用户删除的预设不会自动复活；升级新增的模板用「新建」按需复制。 */
 export function ensurePresetSeed(): { created: string[] } {
   const root = userPresetsDir()
-  const legacyMark = join(root, '.pt-seeded')
-  const state = readPluginState()
-  // 旧标记迁移：.pt-seeded 只迁移进状态文件，不再作为「已种子化即永不补建」的闸门——
-  // 用户/迁移误删某个内置预设目录后，seeded=true 会让它永久消失；补建幂等
-  // （existsSync 跳过），每次都补齐缺失项无副作用。
-  if (existsSync(legacyMark)) {
-    try {
-      writePluginState({ ...state, seeded: true })
-      rmSync(legacyMark, { force: true })
-    } catch {
-      // 旧标记迁移失败不阻断（下次启动重试）。
-    }
-  }
   const created: string[] = []
   try {
     mkdirSync(root, { recursive: true })
@@ -501,8 +480,7 @@ function deleteFlatParam(doc: ReturnType<typeof parseDocument>, key: string): vo
 /**
  * 保存预设参数：写激活预设目录 preset.yml 的 params（merge）/ promptConfigs（整体替换）。
  * parseDocument 保留注释与未知键（preset.yml 模板含大量注释）；空值键删除（'' / []，
- * 回落模板/引擎默认；0 与 false 照常写入--语义与函数内注释、docs §3 一致）。写入后删除 prompt-tool.overrides.yml（旧参数覆盖
- * 通道残留——参数已并入 preset.yml，避免旧值覆盖新值）。
+ * 回落模板/引擎默认；0 与 false 照常写入——语义与函数内注释、docs §3 一致）。
  */
 export function savePresetParams(
   presetRoot: string,
@@ -580,7 +558,6 @@ export function savePresetParams(
   }
   atomicWriteTextFile(file, doc.toString())
   invalidatePresetSpec(join(presetRoot, templateName))
-  rmSync(join(presetRoot, templateName, 'prompt-tool.overrides.yml'), { force: true })
 }
 
 /**
@@ -1160,41 +1137,7 @@ export function renderComposition(spec: PresetSpec, runtime: Record<string, unkn
   const effective = persona !== undefined && Array.isArray(spec.modules) && !spec.modules.includes(PERSONA_MODULE)
     ? { ...spec, modules: [PERSONA_MODULE, ...spec.modules] }
     : spec
-  return migratePersonaLoaderConfig(applyModuleConfigs(loadCompositionText(effective, templateDir), merged))
-}
-
-/**
- * 官方 dsh-persona 契约迁移：新版 config 用 required `prefix`（+可选 `suffix`）
- * 替代旧 `text`；旧组合（SillyTavern 转换 / 用户手写）直接挂载会报
- * `$.prefix missing required value`。就地改名保留注释与其余字段，无变化返回原文。
- */
-export function migratePersonaLoaderConfig(raw: string): string {
-  if (!raw.includes('@deepseek-ai/dsh-persona')) return raw
-  const doc = parseDocument(raw, { logLevel: 'silent' })
-  // 解析失败的组合原样返回：后续 assertCompositionArray 会给出更准确的报错。
-  if (doc.errors.length > 0) return raw
-  const seq = doc.contents
-  if (!(seq instanceof YAMLSeq)) return raw
-  /** 读标量值（Parsed 节点值包装兼容，与 applyModuleConfigs.rowId 同模式）。 */
-  const scalarText = (node: unknown): string | undefined =>
-    node !== null && typeof node === 'object' && 'value' in node
-      ? String((node as { value: unknown }).value)
-      : undefined
-  let changed = false
-  for (const item of seq.items) {
-    if (!(item instanceof YAMLMap)) continue
-    if (scalarText(item.get('name', true)) !== '@deepseek-ai/dsh-persona') continue
-    const config = item.get('config', true)
-    if (!(config instanceof YAMLMap)) continue
-    // keepScalar 保留块标量等样式；已有 prefix 的行不动。
-    const legacy = config.get('text', true)
-    if (legacy === null || legacy === undefined) continue
-    // Parsed 行节点的 set 约束 value 为 ParsedNode；节点运行时合法，断言绕过泛型。
-    config.set('prefix', legacy as never)
-    config.delete('text')
-    changed = true
-  }
-  return changed ? doc.toString() : raw
+  return applyModuleConfigs(loadCompositionText(effective, templateDir), merged)
 }
 
 /** 组合文本基础校验（模板无关）：无未解析 token，且必须是 YAML 数组。 */

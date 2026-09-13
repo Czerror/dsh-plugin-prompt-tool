@@ -227,8 +227,8 @@ promptConfigs:
 - **模型工具**：`world_book_list / world_book_upsert / world_book_delete`
   （读写 promptConfigs 的 world-book 配置；`note` 写入角色卡记忆）
   该工具由 `world-book-tools` 模块提供；ST 预设含有效世界书条目时导入链路自动加入该模块。
-- **旧数据迁移**：旧版 preset.yml 顶层 `worldBook` 段在下次重建时自动迁移为
-  `promptConfigs` 中的 world-book 配置，并通过同目录临时文件原子写回后删除旧段（一次性、幂等）。
+- **旧数据**：旧版 preset.yml 顶层 `worldBook` 段不受支持也不迁移——请手工改写为
+  `promptConfigs` 中的 world-book 配置（本项目不含旧参数/旧内容迁移代码）。
 
 ---
 

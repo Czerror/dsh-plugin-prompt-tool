@@ -11,38 +11,32 @@
  *   - <preset>/preset.md、agents.md、agents-instruction.md
  *   - <presetRoot>/.engine/（共享引擎；指纹未变时 writePreset 内部跳过重刷）
  *
- * 旧版数据迁移：默认先执行 scripts/migrate-presets.mjs（旧 worldBook 段、扁平
- * 模型键、旧 persona 卡、旧模块名、overrides 文件；写盘前备份 .bak），再物化；
- * `--no-migrate` 跳过。手写/官方格式预设（preset.yml 无 modules/params，如
- * liangshen）整体跳过，不覆盖用户手写组合。
+ * 手写/官方格式预设（preset.yml 无 modules/params，如 liangshen）整体跳过，
+ * 不覆盖用户手写组合。本项目不含旧参数/旧内容迁移代码：物化只按当前契约重跑。
  *
  * 用法：
- *   node scripts/rematerialize-presets.mjs [--dsh-home <dir>] [--dry-run] [--no-migrate]
+ *   node scripts/rematerialize-presets.mjs [--dsh-home <dir>] [--dry-run]
  * 退出码：任一预设物化失败或校验不通过 = 1（其余预设继续处理）。
  */
-import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-const HERE = fileURLToPath(new URL('.', import.meta.url))
-const MIGRATE_SCRIPT = join(HERE, 'migrate-presets.mjs')
 const LIB_ENTRY = new URL('../lib/index.mjs', import.meta.url)
 const RENDER_STAMP_PREFIX = '# prompt-tool:render v'
 
 function parseArgs(argv) {
-  const out = { dshHome: undefined, dryRun: false, migrate: true }
+  const out = { dshHome: undefined, dryRun: false }
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index]
     if (arg === '--dry-run' || arg === '-n') out.dryRun = true
-    else if (arg === '--no-migrate') out.migrate = false
     else if (arg === '--dsh-home') {
       const value = argv[index + 1]
       if (value === undefined || value.trim().length === 0) throw new Error('--dsh-home 需要目录参数')
       out.dshHome = value
       index += 1
     } else if (arg.startsWith('--dsh-home=')) out.dshHome = arg.slice('--dsh-home='.length)
-    else throw new Error(`未知参数 ${arg}（支持 --dsh-home <dir> / --dry-run / --no-migrate）`)
+    else throw new Error(`未知参数 ${arg}（支持 --dsh-home <dir> / --dry-run）`)
   }
   return out
 }
@@ -62,19 +56,7 @@ if (!existsSync(fileURLToPath(LIB_ENTRY))) {
 }
 const { writePreset, listPresets, loadPresetSpec, resolvePresetParams, userPresetsDir } = await import(LIB_ENTRY.href)
 
-// 1) 旧版数据迁移（子进程复用既有 CLI：dry-run / 退出码 / .bak 备份语义一致）。
-if (args.migrate) {
-  const migrateArgs = [MIGRATE_SCRIPT]
-  if (args.dryRun) migrateArgs.push('--dry-run')
-  try {
-    execFileSync(process.execPath, migrateArgs, { stdio: 'inherit', env: process.env })
-  } catch {
-    console.error('rematerialize-presets: 离线迁移失败，已中止物化（原文件保留，迁移脚本写盘前已备份 .bak-*）')
-    process.exit(1)
-  }
-}
-
-// 2) 逐预设重新物化：插件格式（modules/params）走 writePreset；手写/官方格式跳过。
+// 逐预设重新物化：插件格式（modules/params）走 writePreset；手写/官方格式跳过。
 const presetRoot = userPresetsDir()
 const materializedIds = []
 const failures = []

@@ -36,13 +36,8 @@ import { RENDER_STAMP, writePreset } from './host/write-preset.ts'
 import type { WritePresetOptions } from './host/write-preset.ts'
 import { ENGINE_PARAM_KEYS } from './shared/engine-params.ts'
 import {
-  atomicWriteTextFile,
   ensurePresetSeed,
   listPresets,
-  migratePersonaLoaderConfig,
-  readPluginState,
-  removePresetModule,
-  writePluginState,
 } from './host/manifest.ts'
 import {
   Config,
@@ -54,10 +49,7 @@ import {
   SkillEntry,
 } from './config.ts'
 import {
-  DEFAULT_PRESET_DIR,
   DEFAULT_SKILLS_DIR,
-  LEGACY_CONTAINER_DIR,
-  LEGACY_USER_PRESETS_DIR,
 } from './host/paths.ts'
 import { setSkillEnabled, type SkillToggleResult } from './host/skill-toggle.ts'
 import {
@@ -67,7 +59,6 @@ import {
   type SkillsConfig,
   type SkillsConfigRead,
 } from './host/skills-config.ts'
-import { migrateLegacyLayout, migrateParamOverridesFile, normalizePresetRootDir } from './host/migration.ts'
 
 export const name = 'prompt-tool'
 // 内容走 user 层（AGENTS.md 常驻层 + skill 按需层），
@@ -105,25 +96,14 @@ function warn(ctx: Context, message: string): void {
 }
 
 export function apply(ctx: Context, configIn: Config): void {
-  // 旧布局 → 官方对齐布局一次性迁移（幂等；旧目录归档 .bak 保留安全网）。
-  // 旧容器没有根 preset.yml；带根 preset.yml 的 prompt-tool 是一次性兼容快照。
-  const hadLegacyContainer = existsSync(join(DEFAULT_PRESET_DIR, 'prompt-tool'))
-    && !existsSync(join(DEFAULT_PRESET_DIR, 'prompt-tool', 'preset.yml'))
-  let legacyMigrated = false
-  try {
-    legacyMigrated = migrateLegacyLayout(DEFAULT_PRESET_DIR, LEGACY_USER_PRESETS_DIR)
-  } catch (error) {
-    warn(ctx, `prompt-tool: 旧布局迁移失败（下次启动重试）：${error instanceof Error ? error.message : String(error)}`)
-  }
   // 首次启动种子化：全部内置模板复制到预设根（之后只经「新建」还原）。
+  // 旧布局/旧参数/旧内容的迁移不在运行时做（本项目不含迁移代码）。
   try {
     ensurePresetSeed()
   } catch (error) {
     warn(ctx, `prompt-tool: preset seed failed: ${error instanceof Error ? error.message : String(error)}`)
   }
   const config = { ...configIn }
-  // 旧版 presetDir 存量值（容器根/旧用户目录）归一化为预设根。
-  config.presetDir = normalizePresetRootDir(config.presetDir, DEFAULT_PRESET_DIR, LEGACY_CONTAINER_DIR)
   const modelsState = (): ModelDetection => detectModels(ctx)
   const getModelsState = (): ModelDetection => modelsState()
   // 内容资产优先读生成目录文件（writePreset 落盘），模板 content 作回退；
@@ -188,68 +168,10 @@ export function apply(ctx: Context, configIn: Config): void {
       : []
   }
 
-  // 旧会话兼容快照只处理一次：直接升级且存在旧容器时创建；现有快照只登记状态。
-  // 状态一旦写入，用户删除快照后不再自动复活；日常预设切换绝不触碰它。
-  let legacyAliasHandledThisRun = readPluginState().legacyAliasHandled === true
-  const ensureLegacyAliasOnce = (presetPrompt: string, options: WritePresetOptions): void => {
-    if (legacyAliasHandledThisRun) return
-    legacyAliasHandledThisRun = true
-    const aliasFile = join(runtime.presetDir, 'prompt-tool', 'preset.yml')
-    try {
-      if (!existsSync(aliasFile) && hadLegacyContainer) {
-        writePreset(presetPrompt, { ...options, outputId: 'prompt-tool', aliasOf: true })
-        warn(ctx, 'prompt-tool: 已创建一次性旧会话兼容快照 prompt-tool；日常切换不再重建')
-      }
-      writePluginState({ ...readPluginState(), legacyAliasHandled: true })
-    } catch (error) {
-      // 仅失败时允许下次 rebuild 重试；成功/无旧容器均永久结束兼容处理。
-      legacyAliasHandledThisRun = false
-      warn(ctx, `prompt-tool: 创建旧会话兼容快照失败（下次重建重试）：${error instanceof Error ? error.message : String(error)}`)
-    }
-  }
-
-  /**
-   * 官方 dsh-persona 契约升级（config.text → required prefix）就地迁移各预设组合：
-   * 旧产物/手写预设不必等用户逐个切换一次，重建时即修正。
-   */
-  const migrateStalePersonaCompositions = (): void => {
-    for (const preset of listPresets()) {
-      const file = join(runtime.presetDir, preset.id, 'agent.cordis.yml')
-      if (!existsSync(file)) continue
-      try {
-        const raw = readFileSync(file, 'utf8')
-        const migrated = migratePersonaLoaderConfig(raw)
-        if (migrated !== raw) atomicWriteTextFile(file, migrated)
-      } catch {
-        // 单个预设迁移失败不阻断其余；下次重建重试。
-      }
-    }
-  }
-
-  /**
-   * 官方 shipped「创造模式」(cordis) 已提供 tool-cordis；用户副本（本插件
-   * creative 种子）里的同模块会让进程全局 cordisInspect provider 重复注册。
-   * 重建时从 preset.yml 移除该模块，随后按渲染契约版本重刷组合。
-   */
-  const migrateLegacyToolCordisModules = (): void => {
-    for (const preset of listPresets()) {
-      try {
-        if (removePresetModule(join(runtime.presetDir, preset.id), 'official-tool-cordis')) {
-          warn(ctx, `prompt-tool: 预设 ${preset.id} 已移除重复的 official-tool-cordis 模块（该能力由官方「创造模式」提供）`)
-        }
-      } catch {
-        // 单个预设失败不阻断其余；下次重建重试。
-      }
-    }
-  }
-
   /** 重建生成目录（文本/组合/引擎/提示词配置）；writePreset 关闭时移除旧目录。 */
   const rebuildPreset = (): void => {
-    migrateLegacyToolCordisModules()
-    migrateStalePersonaCompositions()
     // 先重读激活预设参数（/param-overrides 保存、TUI 开关、预设切换后生效）。
     reloadPresetParams()
-    applyParamOverrides()
     if (runtime.writePreset) {
       const presetPrompt = runtime.injectPrompt && current.length > 0 ? current : ''
       const options: WritePresetOptions = {
@@ -312,7 +234,6 @@ export function apply(ctx: Context, configIn: Config): void {
         }
       }
       writePreset(presetPrompt, options)
-      ensureLegacyAliasOnce(presetPrompt, options)
     } else {
       // writePreset 关闭时清空各预设目录的生成物，保留 preset.yml 参数源与预设根本身。
       // agent.cordis.yml 改写为空组合而非删除：官方 discovery 对缺组合文件的目录
@@ -359,18 +280,6 @@ export function apply(ctx: Context, configIn: Config): void {
     }
   }
 
-  /** 旧版参数覆盖文件（prompt-tool.overrides.yml）一次性退役迁移：白名单
-   *  （PARAM_KEYS，含 guideEnabled/injectPrompt/usePtcMode）过滤后并入 preset.yml。
-   *  实现收敛到 migrateParamOverridesFile（migration.ts 单一权威）。 */
-  const applyParamOverrides = (): void => {
-    try {
-      if (migrateParamOverridesFile(runtime.presetDir, runtime.presetTemplate)) reloadPresetParams()
-    } catch {
-      // preset.yml 缺失等失败保留覆盖文件，下次重建重试；旧值不生效也不阻断启动。
-      warn(ctx, 'prompt-tool: prompt-tool.overrides.yml 迁移到 preset.yml 失败（下次重建重试）')
-    }
-  }
-
   // 技能管理框架（技能状态已从 settings.yaml 抽离）：
   //  实体层——包内 skills/ 增量复制到 $DSH_HOME/skills（官方 user-dsh 根，全
   //    profile 共享），用户技能与引用目录留在各自根，插件不维护隐藏仓库；
@@ -386,7 +295,7 @@ export function apply(ctx: Context, configIn: Config): void {
     return read.config
   }
   // 技能配置只有两个来源：默认技能根 + 该配置文件。旧 settings 键与旧 per-profile
-  // 副本不做运行时兼容，一律由离线脚本 scripts/migrate-skills.mjs 迁移。
+  // 副本不做兼容也不迁移（本项目不含迁移代码）。
   let skillsConfig = readSkillsConfigSafe()
   let skillsConfigSnapshot = JSON.stringify(skillsConfig)
   let skillsOrder: string[] = [...skillsConfig.order]
@@ -715,7 +624,8 @@ export function apply(ctx: Context, configIn: Config): void {
       return false
     }
   }
-  const syncHostDefault = (_reason: 'migrate' | 'switch'): void => {
+  /** 把本插件当前预设写进官方 agent-presets.default（单一共享事实）。 */
+  const syncHostDefault = (): void => {
     const s = hostSettingsService
     if (s === undefined) return
     const template = runtime.presetTemplate
@@ -850,7 +760,7 @@ registerTuiCommand(
       injectAgentsPrompt: typeof next.injectAgentsPrompt === 'boolean' ? next.injectAgentsPrompt : config.injectAgentsPrompt,
       residentAgentsPath: typeof next.residentAgentsPath === 'string' && next.residentAgentsPath.trim().length > 0 ? next.residentAgentsPath : config.residentAgentsPath,
       presetDir: typeof next.presetDir === 'string' && next.presetDir.trim().length > 0
-        ? normalizePresetRootDir(next.presetDir.trim(), DEFAULT_PRESET_DIR, LEGACY_CONTAINER_DIR)
+        ? next.presetDir.trim()
         : config.presetDir,
       presetOrder: Number.isSafeInteger(next.presetOrder) && next.presetOrder >= 0 ? next.presetOrder : config.presetOrder,
       fallbackText: typeof next.fallbackText === 'string' ? next.fallbackText : config.fallbackText,
@@ -899,7 +809,7 @@ registerTuiCommand(
     }
     rebuildPreset()
     if (presetTemplateChanged) {
-      syncHostDefault('switch')
+      syncHostDefault()
       // 内置工具面随组合行走（per-session 挂载），无需宿主平面重挂。
     }
   }
@@ -963,12 +873,8 @@ registerTuiCommand(
         }
       },
     })
-    // 旧布局迁移时 prompt-tool 旧容器 id 已失效，由插件修正官方 default；
-    // 正常 attach 则以官方 default 为共享事实反向对齐本插件。二者互斥，避免异步写竞态。
-    if (legacyMigrated) syncHostDefault('migrate')
-    else syncTemplateFromHostDefault()
-    // 旧版 settings 兼容（全局引擎参数 / 技能键 / per-profile 技能副本）不做运行时迁移：
-    // 一次性搬运由离线脚本承担（pnpm migrate:presets / pnpm migrate:skills）。
+    // 以官方 agent-presets.default 为共享事实反向对齐本插件。
+    syncTemplateFromHostDefault()
   })
 }
 
@@ -976,7 +882,7 @@ registerTuiCommand(
 export { Config, PromptSettingsSchema } from './config.ts'
 export { writePreset } from './host/write-preset.ts'
 export { convertStToPreset, mergeStPresets, processStText, stPresetId } from './host/sillytavern.ts'
-export { applyModuleConfigs, buildModuleConfigsFromParams, migratePersonaLoaderConfig, removePresetModule, savePresetParams, savePresetPersona, MODEL_SEGMENT_MAP } from './host/manifest.ts'
+export { applyModuleConfigs, buildModuleConfigsFromParams, removePresetModule, savePresetParams, savePresetPersona, MODEL_SEGMENT_MAP } from './host/manifest.ts'
 export { createEngineCapabilityInPreset, loadPresetSpec, removeEngineCapabilityFromPreset, renderComposition, resolvePresetModuleFacts, resolvePresetParams } from './host/manifest.ts'
 export { ENGINE_PARAM_KEYS, WRITER_PARAM_KEYS, validateEngineParamValues } from './shared/engine-params.ts'
 export { assertSafeConfigId, configFileName } from './host/prompt-configs.ts'
@@ -996,7 +902,6 @@ export { buildWorldBookEntry } from './host/worldbook.ts'
 export { ensureWebSurface, resolveProfileDir, scheduleWebSurfaceRepair } from './web-surface.ts'
 export { resolveSkillsDir } from './profile-skills.ts'
 export { importSkillsPackage } from './host/skills-import.ts'
-export { migrateLegacyLayout, normalizePresetRootDir } from './host/migration.ts'
 export { detectModels, installDefaultModelRoute, invalidateModelCatalog, listAdvertisedModels, peekModelCatalog, resolveSubagentStartOptions } from './runtime/models.ts'
 export type { PluginSubagentSeam } from './runtime/models.ts'
 export type { WritePresetOptions } from './host/write-preset.ts'

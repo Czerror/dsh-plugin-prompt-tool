@@ -17,8 +17,8 @@ const STATE_FILE = join(home, '.prompt-tool-state.json')
 const PRESETS_DIR = join(home, '.agent-presets')
 
 test('writePluginState/readPluginState：原子写（tmp+rename）往返一致', () => {
-  writePluginState({ seeded: true, legacyAliasHandled: true })
-  assert.deepEqual(readPluginState(), { seeded: true, legacyAliasHandled: true })
+  writePluginState({ seeded: true })
+  assert.deepEqual(readPluginState(), { seeded: true })
   assert.equal(existsSync(`${STATE_FILE}.tmp`), false, '临时文件不应残留')
 })
 
@@ -33,7 +33,7 @@ test('ensurePresetSeed：状态文件标记兼容保留，删除后自动补建�
   const first = ensurePresetSeed()
   assert.ok(first.created.length > 0, '首次应复制内置模板')
   assert.deepEqual(readPluginState().seeded, true, '种子化后应写状态文件')
-  assert.equal(existsSync(join(PRESETS_DIR, '.pt-seeded')), false, '预设根内不再写 .pt-seeded')
+  assert.equal(existsSync(join(PRESETS_DIR, '.pt-seeded')), false, '预设根内不写种子标记')
   // 二次调用幂等：全部存在时不重复复制。
   assert.deepEqual(ensurePresetSeed().created, [])
   // 删除某个内置预设后，种子化自动补建（seeded 标记不再是「永不恢复」闸门）。
@@ -41,17 +41,6 @@ test('ensurePresetSeed：状态文件标记兼容保留，删除后自动补建�
   assert.ok(typeof id === 'string' && id.length > 0)
   rmSync(join(PRESETS_DIR, id), { recursive: true, force: true })
   assert.ok(ensurePresetSeed().created.includes(id), '删除的内置预设应被补建恢复')
-})
-
-test('ensurePresetSeed：兼容旧版预设根 .pt-seeded 标记（迁入状态文件并删除）', () => {
-  // 清空状态（模拟旧版：无状态文件、只有预设根内标记）。
-  writePluginState({})
-  mkdirSync(PRESETS_DIR, { recursive: true })
-  writeFileSync(join(PRESETS_DIR, '.pt-seeded'), '', 'utf8')
-  const before = ensurePresetSeed()
-  assert.deepEqual(before.created, [], '旧标记存在 = 已种子化，不重复复制')
-  assert.equal(readPluginState().seeded, true, '旧标记应迁入状态文件')
-  assert.equal(existsSync(join(PRESETS_DIR, '.pt-seeded')), false, '旧标记文件应删除')
 })
 
 test('安全边界：状态写入只影响自身文件，DSH_HOME 根其他文件不被删除/修改', () => {
@@ -73,7 +62,7 @@ test('安全边界：状态写入只影响自身文件，DSH_HOME 根其他文�
   })
   const before = snapshot()
 
-  // 多次状态读写（含旧标记迁移路径）。
+  // 多次状态读写 + 种子化。
   writePluginState({ seeded: true })
     writePluginState({ seeded: true })
   ensurePresetSeed()

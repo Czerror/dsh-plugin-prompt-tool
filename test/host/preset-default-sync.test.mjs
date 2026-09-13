@@ -136,7 +136,7 @@ test('兼容快照已处理后，官方预设切换不会创建或复活 prompt-
   rmSync(presetDir, { recursive: true, force: true })
   preset('anchored')
   preset('creative')
-  writePluginState({ seeded: true, legacyAliasHandled: true })
+  writePluginState({ seeded: true })
   const initial = {
     writeAgents: false,
     writePreset: true,

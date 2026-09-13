@@ -2,8 +2,7 @@
  * preset.yml 顶层 `persona` 段契约：与官方 `@deepseek-ai/dsh-persona` 行同构，
  * 由渲染层写入 `deployment:persona-prefix`（order 0）与
  * `deployment:persona-suffix`（order 10200）两段。
- * 旧 params.sectionName 人设写法不做运行时兼容，由离线脚本
- * scripts/migrate-presets.mjs 迁移。
+ * 旧 params.sectionName 人设写法不做兼容也不迁移（本项目不含迁移代码）。
  */
 
 /** 组合模块库里官方人设行的模块名（engine/compositions/library/persona.yml）。 */

@@ -26,16 +26,9 @@ dsh --profile prompt-tool
 
 技能状态不再是 settings 数据：**停用 = 把技能目录里的 `SKILL.md` 改名为 `SKILL.md.disabled`**（官方 provider 与本插件同时看不到，开关热生效、可手工还原），技能顺序 / 附加目录 / rank 基数写在 `$DSH_HOME/skills/.system/prompt-tool/config.yml`（官方扫描跳过 `.system` 段），`settings.yaml` 只保留部署轴（预设 / AGENTS.md 等）。
 
-### 从旧版本升级（一次性离线迁移）
+### 从旧版本升级
 
-插件不含任何运行时兼容/自动迁移，旧数据由仓库脚本搬运（可重复运行，`--dry-run` 只报告、写盘前备份）：
-
-```bash
-pnpm migrate:skills     # 旧 per-profile 技能副本 → $DSH_HOME/skills；settings 技能键 → 配置文件 + 磁盘停用 + 删除旧键
-pnpm migrate:presets    # 旧全局 settings 引擎参数 → 各预设 preset.yml；旧预设格式/人设卡等
-```
-
-`pnpm migrate:skills --clean-legacy` 把旧副本目录改名归档（`skills.retired-<时间戳>`，可恢复，不删除）。
+本项目**不含任何旧参数/旧内容迁移代码**（既没有运行时兼容，也没有迁移脚本）：升级前请自行把旧数据整理成当前契约——技能实体放 `$DSH_HOME/skills`（停用 = `SKILL.md.disabled`），技能顺序/目录写 `$DSH_HOME/skills/.system/prompt-tool/config.yml`，预设参数只认 `preset.yml` 的当前字段。
 
 旧的 base-only profile（只有 `dsh-base`）首次启动时，插件会把 `@deepseek-ai/dsh-web-app` 补进该 profile 的 `dsh.profile.bundles`（写前留 `.bak`，幂等），并提示重启；需要重启 DSH 服务后生效，插件不会替你重启运行中的服务。
 
@@ -128,7 +121,7 @@ src/client/
 | `model`（主对话） | `provider` `name` `reasoningEffort` `temperature` `maxTokens` |
 | `subagentModel`（子代理固定路由） | `provider` `name` `reasoningEffort` `temperature` `maxTokens` |
 
-读取时顶层段展平进 params 扁平键（`modelProvider` 等）；保存时写顶层段并清理旧键。旧扁平键不再运行时兼容（参数只走 canonical 键），旧数据经 `pnpm migrate:presets` 离线一次性迁移。人设同理：旧 `persona-main` / 子代理人设配置卡不再运行时兼容，由同一脚本合并进顶层 `persona` 段（`deployment:persona-suffix` 卡归 `suffix`，`suppressRuntimeContext` → `includeRuntimeContext: false`，子代理卡 → `moduleConfigs.tool-subagent.persona`）。顶层 `persona` 段示例：
+读取时顶层段展平进 params 扁平键（`modelProvider` 等）；保存时写顶层段并清理旧键。旧扁平键不兼容也**不迁移**（参数只走 canonical 键），旧数据需自行整理。人设同理：旧 `persona-main` / 子代理人设配置卡不支持，人设统一写顶层 `persona` 段（`deployment:persona-suffix` 卡归 `suffix`，`suppressRuntimeContext` → `includeRuntimeContext: false`，子代理卡 → `moduleConfigs.tool-subagent.persona`）。顶层 `persona` 段示例：
 
 ```yaml
 persona:
@@ -215,7 +208,6 @@ pnpm verify:host         # 官方包基线：声明范围、安装版本、解�
 pnpm sync:anchored       # 刷新 upstream/dsh-anchored-standard 内联快照
 pnpm sync:yaml           # 刷新 engine/vendor/yaml（生成目录运行时 YAML 解析器）
 pnpm rebuild:composition # 只生成官方切块/变体；source/local 本地源不复制（失败安全）
-pnpm migrate:presets     # 离线一次性参数迁移（旧 worldBook/扁平模型键/模块别名/旧覆盖文件/旧 persona 段名；--dry-run 预览）
 ```
 
 测试由 `scripts/run-tests.mjs` 启动：先跑 build，再以独立临时 cwd 与 TEMP/TMP 启动 Node 内置 test runner，用例路径为绝对路径，避免相对 cwd 的测试污染仓库。
