@@ -52,7 +52,7 @@ export interface EngineParams {
   toolFilterAllow?: string[] | string
   /** 委派工具集黑名单（toolFilter.deny）。 */
   toolFilterDeny?: string[] | string
-  /** 委派递归深度上限（0 禁止委派 / provider-managed / 正整数；YAML 字符串标量兼容）。 */
+  /** 委派递归深度上限（0 禁止委派 / provider-managed / 正整数；数字字符串同义）。 */
   maxDepth?: number | 'provider-managed' | string
   /** 注入 kind 白名单（context-gate allowKinds；数组或逗号分隔字符串）。 */
   allowKinds?: string[] | string
@@ -157,7 +157,7 @@ export type PresetWriterParams = Partial<EngineParams>
  *     非空必须可解析为数字并满足各自约束（有限数 / 正整数 / 非负整数）；
  *   - 字符串键：必须是 string（'' = 删键回落默认）；
  *   - 列表键（工具集 / 白名单 / 来源）：必须是 string 或 string[]；
- *   - maxDepth：'' / 'provider-managed' / 非负整数 / 字符串标量；
+ *   - maxDepth：'' / 'provider-managed' / 非负安全整数及其数字字符串；
  *   - stages：{ name, tools } 数组。
  * 未知键（旧内容别名等不兼容键）在保存期响亮失败，不做运行时自动兼容。
  * 注意：内容占位变量（variables）的空字符串是合理设计（世界书动态引用），
@@ -243,10 +243,10 @@ export const ENGINE_PARAM_DEFINITIONS: Record<EngineParamKey, EngineParamDefinit
   anchorTurn: { kind: 'boolean', defaultValue: false, card: 'anchor-turn', module: { row: 'anchor-turn', key: 'enabled' } },
   anchorTurnText: { kind: 'string', defaultValue: '', card: 'anchor-turn', module: { row: 'anchor-turn', key: 'text' } },
   deliberationGate: { kind: 'boolean', defaultValue: false, card: 'deliberation-gate', module: { row: 'deliberation-gate', key: 'enabled' } },
-  deliberationMinChars: { kind: 'number', check: NON_NEGATIVE_INTEGER, defaultValue: 0, card: 'deliberation-gate', module: { row: 'deliberation-gate', key: 'minChars', mode: 'positive' } },
+  deliberationMinChars: { kind: 'number', check: NON_NEGATIVE_INTEGER, defaultValue: 0, card: 'deliberation-gate', module: { row: 'deliberation-gate', key: 'minChars' } },
   deliberationMaxGatesPerTurn: { kind: 'number', check: NON_NEGATIVE_INTEGER, defaultValue: 0, card: 'deliberation-gate', module: { row: 'deliberation-gate', key: 'maxGatesPerTurn', mode: 'positive' } },
   cotDrip: { kind: 'boolean', defaultValue: false, card: 'cot-drip', module: { row: 'cot-drip', key: 'enabled' } },
-  cotDripEvery: { kind: 'number', check: NON_NEGATIVE_INTEGER, defaultValue: 0, card: 'cot-drip', module: { row: 'cot-drip', key: 'every', mode: 'positive' } },
+  cotDripEvery: { kind: 'number', check: NON_NEGATIVE_INTEGER, defaultValue: 0, card: 'cot-drip', module: { row: 'cot-drip', key: 'every' } },
   cotDripMaxPerTurn: { kind: 'number', check: NON_NEGATIVE_INTEGER, defaultValue: 0, card: 'cot-drip', module: { row: 'cot-drip', key: 'maxPerTurn', mode: 'positive' } },
   bootstrapSubagents: { kind: 'boolean', defaultValue: false, card: 'tool-bootstrap', module: { row: 'tool-bootstrap', key: 'includeSubagents' } },
   bootstrapPromoteOn: { kind: 'string', options: PROMOTE_ON, defaultValue: '', card: 'tool-bootstrap', module: { row: 'tool-bootstrap', key: 'promoteOn' } },
@@ -323,6 +323,13 @@ export function moduleParamFallbacks(configs: Record<string, Record<string, unkn
   return result
 }
 
+/** 保存校验与参数桥共用深度解析；无效值在渲染时不覆盖行默认。 */
+export function normalizeMaxDepth(value: unknown): number | 'provider-managed' | undefined {
+  if (value === 'provider-managed') return value
+  const depth = typeof value === 'string' && value.trim().length > 0 ? Number(value) : value
+  return typeof depth === 'number' && Number.isSafeInteger(depth) && depth >= 0 ? depth : undefined
+}
+
 /** 校验单个键值；返回错误消息（undefined = 通过）。 */
 function validateParamValue(key: string, rule: ParamRule, value: unknown): string | undefined {
   if (value === '') return undefined
@@ -358,14 +365,8 @@ function validateParamValue(key: string, rule: ParamRule, value: unknown): strin
       }
       return `${key}: 必须是字符串或字符串数组`
     case 'max-depth':
-      if (value === '' || value === 'provider-managed') return undefined
-      if (typeof value === 'number') {
-        return Number.isSafeInteger(value) && value >= 0
-          ? undefined
-          : `${key}: 必须是非负整数、provider-managed 或字符串`
-      }
-      if (typeof value === 'string') return undefined
-      return `${key}: 必须是非负整数、provider-managed 或字符串`
+      return normalizeMaxDepth(value) !== undefined
+        ? undefined : `${key}: 必须是非负安全整数、数字字符串、provider-managed 或留空`
     case 'stages': {
       // 空数组 = 删键（清空全部阶段）；空串兼容 UI 清空。
       if (value === '' || (Array.isArray(value) && value.length === 0)) return undefined
@@ -378,8 +379,9 @@ function validateParamValue(key: string, rule: ParamRule, value: unknown): strin
         if (typeof record.name !== 'string' || record.name.trim().length === 0) {
           return `${key}[${index}]: name 必须是非空字符串`
         }
-        if (!Array.isArray(record.tools) || !record.tools.every((tool) => typeof tool === 'string')) {
-          return `${key}[${index}]: tools 必须是字符串数组`
+        if (!Array.isArray(record.tools) || record.tools.length === 0
+          || !record.tools.every((tool) => typeof tool === 'string' && tool.length > 0)) {
+          return `${key}[${index}]: tools 必须是非空字符串数组且每项非空`
         }
       }
       return undefined

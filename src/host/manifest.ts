@@ -17,7 +17,7 @@ import { fileURLToPath } from 'node:url'
 import { Pair, Scalar, parse as parseYaml, parseDocument, YAMLMap, YAMLSeq } from 'yaml'
 import { DEFAULT_PRESET_DIR, DSH_HOME } from './paths.ts'
 import { engineCapability, engineRecipe, isEngineCapabilityPresent, type ModuleSourceMode, type PresetModuleFacts } from '../shared/engine-capabilities.ts'
-import { buildEngineModuleParams, engineParamList } from '../shared/engine-params.ts'
+import { buildEngineModuleParams, engineParamList, normalizeMaxDepth } from '../shared/engine-params.ts'
 import { PERSONA_MODULE, personaRowConfig, readPersonaSpec, type PersonaSpec } from '../shared/persona-section.ts'
 
 export interface PresetSpec {
@@ -168,9 +168,9 @@ export function loadPresetSpec(dir: string): PresetSpec {
 
 /** 读取预设模板内容资产(presetText / agentsText);模板缺失时静默降级。
  *  模板目录按 resolvePresetDir 解析（用户自定义预设优先，包内模板回退）。 */
-export function loadPresetContent(template = 'anchored'): { presetText: string; agentsText: string } {
+export function loadPresetContent(template = 'anchored', presetRoot = userPresetsDir()): { presetText: string; agentsText: string } {
   try {
-    const spec = loadPresetSpec(resolvePresetDir(template))
+    const spec = loadPresetSpec(resolvePresetDir(template, presetRoot))
     return {
       presetText: typeof spec.content?.presetText === 'string' ? spec.content.presetText : '',
       agentsText: typeof spec.content?.agentsText === 'string' ? spec.content.agentsText : '',
@@ -230,11 +230,11 @@ function findPresetDir(scanDir: string, template: string): string | undefined {
 }
 
 /**
- * 解析预设模板目录：用户自定义优先，包内模板回退。
+ * 解析预设模板目录：当前预设根优先，包内模板回退；不读取其他部署根的同名预设。
  * 目录名与 preset.yml id 双匹配（UI 切换值=目录名；旧 settings 存量值=id 也兼容）。
  */
-export function resolvePresetDir(template: string): string {
-  const found = findPresetDir(userPresetsDir(), template) ?? findPresetDir(packagePresetDir(), template)
+export function resolvePresetDir(template: string, presetRoot = userPresetsDir()): string {
+  const found = findPresetDir(presetRoot, template) ?? findPresetDir(packagePresetDir(), template)
   return found ?? join(packagePresetDir(), template)
 }
 
@@ -258,9 +258,9 @@ export function isRenderablePresetDir(dir: string): boolean {
  * 幂等跳过导致模板升级无法到达用户目录）遮蔽包内新版模板的死路。
  * 返回 fallback=true 表示发生了包内回退，调用方负责 warn 与参数源升级判定。
  */
-export function resolveRenderablePresetDir(template: string): { dir: string; fallback: boolean } {
-  const userDir = findPresetDir(userPresetsDir(), template)
-  if (userDir === undefined) return { dir: resolvePresetDir(template), fallback: false }
+export function resolveRenderablePresetDir(template: string, presetRoot = userPresetsDir()): { dir: string; fallback: boolean } {
+  const userDir = findPresetDir(presetRoot, template)
+  if (userDir === undefined) return { dir: resolvePresetDir(template, presetRoot), fallback: false }
   if (isRenderablePresetDir(userDir)) return { dir: userDir, fallback: false }
   const builtin = findPresetDir(packagePresetDir(), template)
   if (builtin !== undefined && isRenderablePresetDir(builtin)) return { dir: builtin, fallback: true }
@@ -269,7 +269,7 @@ export function resolveRenderablePresetDir(template: string): { dir: string; fal
 
 /** 可用预设清单：全部来自预设根 ~/.dsh/.agent-presets（官方预设目录，含 agent.cordis.yml
  *  即被宿主挂载；点前缀目录与无 preset.yml 的官方目录跳过，不占本插件列表）。 */
-export function listPresets(): Array<{ id: string; name: string; user: boolean; renderable: boolean; description?: string; meta?: Record<string, unknown> }> {
+export function listPresets(presetRoot = userPresetsDir()): Array<{ id: string; name: string; user: boolean; renderable: boolean; description?: string; meta?: Record<string, unknown> }> {
   const scan = (dir: string): Array<{ id: string; name: string; user: boolean; renderable: boolean; description?: string; meta?: Record<string, unknown> }> => {
     try {
       return readdirSync(dir, { withFileTypes: true })
@@ -301,7 +301,7 @@ export function listPresets(): Array<{ id: string; name: string; user: boolean; 
     }
   }
   const byId = new Map<string, { id: string; name: string; user: boolean; renderable: boolean }>()
-  for (const preset of scan(userPresetsDir())) byId.set(preset.id, preset)
+  for (const preset of scan(presetRoot)) byId.set(preset.id, preset)
   return [...byId.values()].sort((a, b) => a.id.localeCompare(b.id))
 }
 
@@ -356,8 +356,7 @@ export function writePluginState(state: PromptToolState): void {
 
 /** 首次启动种子化：把插件目录全部内置模板复制到预设根（state.seeded 后不再自动补）。
  *  用户删除的预设不会自动复活；升级新增的模板用「新建」按需复制。 */
-export function ensurePresetSeed(): { created: string[] } {
-  const root = userPresetsDir()
+export function ensurePresetSeed(root = userPresetsDir()): { created: string[] } {
   const created: string[] = []
   try {
     mkdirSync(root, { recursive: true })
@@ -377,7 +376,7 @@ export function ensurePresetSeed(): { created: string[] } {
 
 /** 从插件目录复制内置预设到预设根（新建/还原）。
  *  autoSuffix=true（自定义预设入口）时同名自动递增（custom → custom-2 → …）；否则同名拒绝。 */
-export function cloneBuiltinPreset(id: string, autoSuffix = false): { ok: true; id: string } | { ok: false; message: string } {
+export function cloneBuiltinPreset(id: string, autoSuffix = false, presetRoot = userPresetsDir()): { ok: true; id: string } | { ok: false; message: string } {
   if (typeof id !== 'string' || id.length === 0 || id === '.' || id === '..'
     || id.includes('/') || id.includes('\\')) {
     return { ok: false, message: `非法预设 id：${id}` }
@@ -387,19 +386,19 @@ export function cloneBuiltinPreset(id: string, autoSuffix = false): { ok: true; 
     return { ok: false, message: `预设 ${id} 不是包内置预设` }
   }
   let targetId = id
-  let target = join(userPresetsDir(), targetId)
+  let target = join(presetRoot, targetId)
   if (existsSync(target)) {
     if (!autoSuffix) {
       return { ok: false, message: `用户目录已存在同名预设 ${id}，请先删除再新建` }
     }
     for (let suffix = 2; ; suffix++) {
       targetId = `${id}-${suffix}`
-      target = join(userPresetsDir(), targetId)
+      target = join(presetRoot, targetId)
       if (!existsSync(target)) break
     }
   }
   try {
-    mkdirSync(userPresetsDir(), { recursive: true })
+    mkdirSync(presetRoot, { recursive: true })
     cpSync(builtin, target, { recursive: true, force: true })
     return { ok: true, id: targetId }
   } catch (error) {
@@ -533,8 +532,7 @@ export function savePresetParams(
     doc.setIn(['promptConfigs'], cleaned)
   }
   if (variables !== undefined) {
-    // 预设级模板变量写顶层 variables 段（与引擎行为参数 params 分离）；
-    // 旧布局（变量混在 params 内容键）同名键一并清理（保存即迁移）。
+    // 模板变量只写顶层 variables 段，不修改 params 中的同名引擎参数。
     const kept = Object.fromEntries(
       Object.entries(variables).filter(([key, value]) => key.trim().length > 0 && typeof value === 'string'),
     )
@@ -542,10 +540,6 @@ export function savePresetParams(
       doc.setIn(['variables'], kept)
     } else {
       doc.deleteIn(['variables'])
-    }
-    for (const [key, value] of Object.entries(variables)) {
-      if (typeof value !== 'string') continue
-      deleteFlatParam(doc, key)
     }
   }
   if (variablesEnabled !== undefined) {
@@ -710,9 +704,8 @@ export function buildModuleConfigsFromParams(params: Record<string, unknown>, op
       }
     }
   }
-  const rawMaxDepth = params.maxDepth
-  if (rawMaxDepth === 'provider-managed') subagent.maxDepth = 'provider-managed'
-  else if (Number.isSafeInteger(rawMaxDepth) && (rawMaxDepth as number) >= 0) subagent.maxDepth = rawMaxDepth
+  const maxDepth = normalizeMaxDepth(params.maxDepth)
+  if (maxDepth !== undefined) subagent.maxDepth = maxDepth
   if (Object.keys(subagent).length > 0) {
     out['tool-subagent'] = subagent
     out['tool-subagent-fork'] = subagent
@@ -733,8 +726,7 @@ export function buildModuleConfigsFromParams(params: Record<string, unknown>, op
         })(),
       }
     }
-    if (rawMaxDepth === 'provider-managed') policy.maxDepth = 'provider-managed'
-    else if (Number.isSafeInteger(rawMaxDepth) && (rawMaxDepth as number) >= 0) policy.maxDepth = rawMaxDepth
+    if (maxDepth !== undefined) policy.maxDepth = maxDepth
     merge('subagent-tool-policy', policy)
   }
   return out

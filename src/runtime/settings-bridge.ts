@@ -386,7 +386,7 @@ export function registerSettingsBridge(
           getEngineMeta: () => Record<string, unknown>
         }
         const meta = getEngineMeta() as Record<string, unknown>
-        meta.presets = listPresets()
+        meta.presets = listPresets(getPresetRootDir?.())
         meta.builtinTemplates = listBuiltinTemplates()
         return meta
       }
@@ -433,13 +433,13 @@ export function registerSettingsBridge(
           // 这里会读旧预设参数，与下方 readParamOverrides/readPromptConfigs(新目录) 不同源。
           const activeDir = getPresetConfigsDir?.() ?? ''
           const templateName = activeDir.length > 0 ? basename(activeDir) : 'anchored'
-          const spec = loadPresetSpec(activeDir.length > 0 ? activeDir : resolvePresetDir(templateName))
+          const spec = loadPresetSpec(activeDir.length > 0 ? activeDir : resolvePresetDir(templateName, getPresetRootDir?.()))
           presetParams = resolvePresetParams(spec, {})
           const resolvedFacts = resolvePresetModuleFacts(
             spec,
             activeDir.length > 0 ? activeDir : undefined,
             isEditablePresetDir(
-              activeDir.length > 0 ? activeDir : resolvePresetDir(templateName),
+              activeDir.length > 0 ? activeDir : resolvePresetDir(templateName, getPresetRootDir?.()),
               getPresetRootDir?.() ?? userPresetsDir(),
             ),
           )
@@ -505,9 +505,6 @@ export function registerSettingsBridge(
         try {
           const spec = loadPresetSpec(dir)
           const variables: Record<string, string> = {}
-          for (const [key, value] of Object.entries(spec.params ?? {})) {
-            if (!PARAM_KEYS.has(key) && typeof value === 'string') variables[key] = value
-          }
           for (const [key, value] of Object.entries(spec.variables ?? {})) {
             if (typeof value === 'string') variables[key] = value
           }
@@ -1088,7 +1085,7 @@ export function registerSettingsBridge(
               writeBridgeJson(res, 400, { ok: false, code: 'preset-dir-unavailable', message: 'presetDir 未配置' })
               return
             }
-            // 预设级模板变量（非 PARAM_KEYS 的内容变量）：写激活预设 preset.yml
+            // 预设级模板变量：只读写激活预设 preset.yml
             // 顶层 variables 段；writePreset 渲染时展开进 prompt-configs/variables.yml，
             // 引擎加载合并进每条配置 variables（官方插值源）。配置卡片 variables
             // 只显示配置自身，模板变量统一在本卡片编辑。
@@ -1099,7 +1096,7 @@ export function registerSettingsBridge(
             const { body } = parsedBody
             const record = (body ?? {}) as Record<string, unknown>
             if (!guardPresetIdentity(record, dir, res)) return
-            // 无载荷 = 读取（preset.yml 顶层 variables + 插值开关）。
+            // 无载荷 = 读取（preset.yml 顶层 variables + 插值开关，不回退 params）。
             if (record.variables === undefined && record.enabled === undefined) {
               writeBridgeJson(res, 200, { ok: true, value: readPresetVariables(dir) })
               return
@@ -1334,11 +1331,12 @@ export function registerSettingsBridge(
             const topDir = slashIdx >= 0 ? presetYaml.path.slice(0, slashIdx) : ''
             const fallback = /^[a-zA-Z0-9][a-zA-Z0-9-]*$/.test(topDir) ? topDir : 'imported-preset'
             const id = parseImportedPresetId(presetYaml.content, fallback)
-            const targetDir = join(userPresetsDir(), id)
+            const presetRoot = getPresetRootDir?.() ?? userPresetsDir()
+            const targetDir = join(presetRoot, id)
             // 同名预设已存在 → 先备份（导入失败时恢复，成功后保留备份供回退）。
             let backupDir: string | undefined
             if (existsSync(targetDir)) {
-              backupDir = join(userPresetsDir(), `.${id}.bak-${Date.now().toString(36)}`)
+              backupDir = join(presetRoot, `.${id}.bak-${Date.now().toString(36)}`)
               renameSync(targetDir, backupDir)
             }
             try {
@@ -1397,7 +1395,7 @@ export function registerSettingsBridge(
             const record = (body ?? {}) as Record<string, unknown>
             const id = typeof record.id === 'string' && record.id.trim().length > 0 ? record.id.trim() : 'anchored'
             try {
-              const dir = resolvePresetDir(id)
+              const dir = resolvePresetDir(id, getPresetRootDir?.())
               const file = join(dir, 'preset.yml')
               if (!existsSync(file)) throw new Error(`模板 ${id} 无 preset.yml`)
               const content = readFileSync(file, 'utf8')
@@ -1442,10 +1440,10 @@ export function registerSettingsBridge(
             }
             // 全部预设都在预设根（首次启动种子化）：删除 = 物理删除官方预设目录，插件目录模板保留。
             // 宿主 agent-presets roster 即目录列表，删除后自然消失。
-            const presetDir = typeof value.presetDir === 'string' && value.presetDir.trim().length > 0
+            const presetDir = getPresetRootDir?.() ?? (typeof value.presetDir === 'string' && value.presetDir.trim().length > 0
               ? value.presetDir
               : typeof base.presetDir === 'string' && base.presetDir.trim().length > 0 ? base.presetDir
-                : DEFAULT_PRESET_DIR
+                : DEFAULT_PRESET_DIR)
             const result = removeUserPreset(id, presetDir)
             if (!result.ok) {
               writeBridgeJson(res, 400, { ok: false, code: 'preset-delete-rejected', message: result.message })
@@ -1468,7 +1466,7 @@ export function registerSettingsBridge(
               writeBridgeJson(res, 400, { ok: false, code: 'preset-clone-rejected', message: '缺少预设 id' })
               return
             }
-            const result = cloneBuiltinPreset(id, record.autoSuffix === true)
+            const result = cloneBuiltinPreset(id, record.autoSuffix === true, getPresetRootDir?.())
             if (!result.ok) {
               writeBridgeJson(res, 400, { ok: false, code: 'preset-clone-rejected', message: result.message })
               return
@@ -1493,10 +1491,10 @@ export function registerSettingsBridge(
             const descriptor = findDescriptor()
             const value = (descriptor?.value ?? {}) as Record<string, unknown>
             const base = (descriptor?.base ?? {}) as Record<string, unknown>
-            const presetDir = typeof value.presetDir === 'string' && value.presetDir.trim().length > 0
+            const presetDir = getPresetRootDir?.() ?? (typeof value.presetDir === 'string' && value.presetDir.trim().length > 0
               ? value.presetDir
               : typeof base.presetDir === 'string' && base.presetDir.trim().length > 0 ? base.presetDir
-                : DEFAULT_PRESET_DIR
+                : DEFAULT_PRESET_DIR)
             const result = duplicateUserPreset(id, presetDir)
             if (!result.ok) {
               writeBridgeJson(res, 400, { ok: false, code: 'preset-duplicate-rejected', message: result.message })
@@ -1522,10 +1520,10 @@ export function registerSettingsBridge(
             const descriptor = findDescriptor()
             const value = (descriptor?.value ?? {}) as Record<string, unknown>
             const base = (descriptor?.base ?? {}) as Record<string, unknown>
-            const presetDir = typeof value.presetDir === 'string' && value.presetDir.trim().length > 0
+            const presetDir = getPresetRootDir?.() ?? (typeof value.presetDir === 'string' && value.presetDir.trim().length > 0
               ? value.presetDir
               : typeof base.presetDir === 'string' && base.presetDir.trim().length > 0 ? base.presetDir
-                : DEFAULT_PRESET_DIR
+                : DEFAULT_PRESET_DIR)
             const result = openPresetLocation(id, presetDir)
             if (!result.ok) {
               writeBridgeJson(res, 400, { ok: false, code: 'preset-open-rejected', message: `${result.message}（${result.path}）` })

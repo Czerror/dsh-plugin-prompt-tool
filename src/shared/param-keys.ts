@@ -5,17 +5,17 @@
  *
  * 派生自 ENGINE_PARAM_KEYS（唯一权威）+ 少量附加键：
  *  - 锚定/引导内容键：writePreset 映射进 near-anchor/router-guide 的 promptConfig
- *    params（策略消费），须排除出 variables.yml（避免同一键双落盘为模板变量）；
+ *    params（策略消费），参与参数读回与 settings 写入拦截；
  *  - promptConfigs：settings 提示词配置数组键。
  * 注意：variables.yml 的占位键（spec.variables 空值登记，供世界书条目 {{key}} 动态
- * 引用）走另一套通道，不属于 PARAM_KEYS——两套体系不互串。
- * 放 shared：host（write-preset）与 config/settings-bridge 共用，单一来源。
+ * 引用）只读顶层 variables；本集合不再用于推断哪些 params 是模板变量。
+ * 放 shared：config/settings-bridge 共用，单一来源。
  */
 import { ENGINE_PARAM_KEYS } from './engine-params.ts'
 
 const EXTRA_PARAM_KEYS = [
   // 锚定/引导内容键：writePreset 映射进 near-anchor/router-guide 的 promptConfig
-  // params（策略消费），须排除出 variables.yml（避免同一键双落盘为模板变量）。
+  // params（策略消费），与顶层 variables 独立。
   'buildPattern', 'complexPattern', 'firstTurnBuild', 'firstTurnInspect', 'firstTurnDeep',
   'guideWeak', 'guideDeep',
   'promptConfigs',

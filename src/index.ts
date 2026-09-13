@@ -69,13 +69,13 @@ export const name = 'prompt-tool'
 // ensureWebSurface 自动把 web-app bundle 补进 profile，重启一次后生效。
 export const inject = ['skills', 'commands', 'llm', 'subagents']
 
-function readPromptFile(template: string, fallbackText: string): string {
-  const text = loadPresetContent(template).presetText
+function readPromptFile(template: string, fallbackText: string, presetRoot: string): string {
+  const text = loadPresetContent(template, presetRoot).presetText
   return text.length > 0 ? text : fallbackText
 }
 
-function readAgents(template: string): string {
-  return loadPresetContent(template).agentsText
+function readAgents(template: string, presetRoot: string): string {
+  return loadPresetContent(template, presetRoot).agentsText
 }
 
 /** 生成目录内容文件（writePreset 落盘；大文本存文件而非 settings）。 */
@@ -99,7 +99,7 @@ export function apply(ctx: Context, configIn: Config): void {
   // 首次启动种子化：全部内置模板复制到预设根（之后只经「新建」还原）。
   // 旧布局/旧参数/旧内容的迁移不在运行时做（本项目不含迁移代码）。
   try {
-    ensurePresetSeed()
+    ensurePresetSeed(configIn.presetDir)
   } catch (error) {
     warn(ctx, `prompt-tool: preset seed failed: ${error instanceof Error ? error.message : String(error)}`)
   }
@@ -117,19 +117,19 @@ export function apply(ctx: Context, configIn: Config): void {
   let initialParams: Record<string, unknown> = {}
   let initialSpec: PresetSpec | undefined
   try {
-    initialSpec = loadPresetSpec(resolvePresetDir(initialTemplate))
+    initialSpec = loadPresetSpec(resolvePresetDir(initialTemplate, config.presetDir))
     initialParams = resolvePresetParams(initialSpec, {})
   } catch (error) {
     warn(ctx, `prompt-tool: 激活预设参数读取失败（使用默认值）：${error instanceof Error ? error.message : String(error)}`)
   }
-  let current = readGeneratedContent(initialPresetDir, 'preset.md') || readPromptFile(initialTemplate, config.fallbackText)
-  let currentAgents = readGeneratedContent(initialPresetDir, 'agents.md') || readAgents(initialTemplate)
+  let current = readGeneratedContent(initialPresetDir, 'preset.md') || readPromptFile(initialTemplate, config.fallbackText, config.presetDir)
+  let currentAgents = readGeneratedContent(initialPresetDir, 'agents.md') || readAgents(initialTemplate, config.presetDir)
 
   /** 从激活预设 preset.yml 重读引擎参数到 runtime（参数保存/切换后调用）。 */
   const reloadPresetParams = (): void => {
     let spec: PresetSpec | undefined
     try {
-      spec = loadPresetSpec(resolvePresetDir(runtime.presetTemplate))
+      spec = loadPresetSpec(resolvePresetDir(runtime.presetTemplate, runtime.presetDir))
     } catch (error) {
       warn(ctx, `prompt-tool: 读取激活预设参数失败：${error instanceof Error ? error.message : String(error)}`)
       return
@@ -210,21 +210,21 @@ export function apply(ctx: Context, configIn: Config): void {
       }
       // 补建缺失/旧布局的预设目录（切换目标就绪；内容用模板默认）。
       // 仅补建缺失项与旧布局组合（../engine 引用），已就绪的预设由切换时更新。
-      for (const preset of listPresets()) {
+      for (const preset of listPresets(runtime.presetDir)) {
         if (preset.id === runtime.presetTemplate) continue
         const targetDir = join(runtime.presetDir, preset.id)
         if (!needsPresetRender(targetDir)) continue
         // 手写/官方格式预设（无 modules/params）不自动重渲染：参数桥无从下手，
         // 重渲染只会覆盖用户手写组合；其 persona 契约由就地迁移修正。
         try {
-          const spec = loadPresetSpec(resolvePresetDir(preset.id))
+          const spec = loadPresetSpec(resolvePresetDir(preset.id, runtime.presetDir))
           const pluginFormat = Array.isArray(spec.modules) || (spec.params !== null && typeof spec.params === 'object')
           if (!pluginFormat && existsSync(join(targetDir, 'agent.cordis.yml'))) continue
         } catch {
           // 读取失败按缺失处理：writePreset 会给出明确报错。
         }
         try {
-          writePreset(readPromptFile(preset.id, runtime.fallbackText), {
+          writePreset(readPromptFile(preset.id, runtime.fallbackText, runtime.presetDir), {
             ...options,
             presetTemplate: preset.id,
             agentsInstructionText: '',
@@ -243,7 +243,7 @@ export function apply(ctx: Context, configIn: Config): void {
       // 绝不删除整个用户预设目录（旧版误删 presetDir 根：用户全部预设、
       // 种子标记 .pt-seeded、共享 .engine 一并清空）。
       let cleaned = 0
-      for (const preset of listPresets()) {
+      for (const preset of listPresets(runtime.presetDir)) {
         const dir = join(runtime.presetDir, preset.id)
         for (const name of ['prompt-configs', 'custom-tools', 'preset.md', 'agents.md', 'agents-instruction.md', 'engine']) {
           try {
@@ -619,7 +619,7 @@ export function apply(ctx: Context, configIn: Config): void {
   }
   const managedPresetExists = (id: string): boolean => {
     try {
-      return listPresets().some(preset => preset.id === id)
+      return listPresets(runtime.presetDir).some(preset => preset.id === id)
     } catch {
       return false
     }
@@ -779,12 +779,12 @@ registerTuiCommand(
     if (!needsInitialApply && !settingsChanged) return
     needsInitialApply = false
 
-    // 切换预设：内容资产从新预设目录/模板重读——否则 rebuildPreset 会把旧预设的
+    // 切换预设或预设根：内容资产从新目录/模板重读——否则 rebuildPreset 会把旧预设的
     // preset.md/agents.md 内容复制进新预设（custom 空白预设被写入 anchored 文本）。
-    if (presetTemplateChanged) {
+    if (presetTemplateChanged || runtime.presetDir !== nextRuntime.presetDir) {
       const newDir = join(nextRuntime.presetDir, /^[a-zA-Z0-9\u4e00-\u9fff_-]+$/.test(nextRuntime.presetTemplate) ? nextRuntime.presetTemplate : 'anchored')
-      current = readGeneratedContent(newDir, 'preset.md') || readPromptFile(nextRuntime.presetTemplate, nextRuntime.fallbackText)
-      currentAgents = readGeneratedContent(newDir, 'agents.md') || readAgents(nextRuntime.presetTemplate)
+      current = readGeneratedContent(newDir, 'preset.md') || readPromptFile(nextRuntime.presetTemplate, nextRuntime.fallbackText, nextRuntime.presetDir)
+      currentAgents = readGeneratedContent(newDir, 'agents.md') || readAgents(nextRuntime.presetTemplate, nextRuntime.presetDir)
     }
     runtime.writeAgents = nextRuntime.writeAgents
     runtime.writePreset = nextRuntime.writePreset

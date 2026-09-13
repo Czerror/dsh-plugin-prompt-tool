@@ -377,6 +377,125 @@ test('settings bridge /param-overrides 数值参数保存前校验（temperature
   }
 })
 
+test('参数保存拒绝空工具阶段和非法深度，失败不写盘、不重建', async () => {
+  const { ctx, handlers } = makeHarness()
+  const dir = makeUserPresetDir('pt-param-validation-')
+  const file = join(dir, 'preset.yml')
+  const original = '# keep comment\nid: validation\nmodules: [tool-bootstrap]\nunknown: keep\n'
+  writeFileSync(file, original, 'utf8')
+  let rebuilds = 0
+  registerSettingsBridge(ctx, 'prompt-tool', () => ({ available: true, providers: [] }),
+    () => ({ activeSkillsDirs: [], skillCatalog: [] }), () => '', undefined, () => dir,
+    undefined, () => { rebuilds += 1 })
+  const write = handlers.get(PREFIX + BRIDGE_ENDPOINTS.paramOverrides)
+  for (const overrides of [
+    { stages: [{ name: 'read', tools: [] }] },
+    { stages: [{ name: 'read', tools: [''] }] },
+    { maxDepth: 'invalid' }, { maxDepth: ' ' }, { maxDepth: '-1' }, { maxDepth: '1.5' },
+  ]) {
+    const res = fakeRes()
+    await write(fakeReq({ [Symbol.asyncIterator]: async function* () {
+      yield Buffer.from(JSON.stringify({ overrides }))
+    } }), res)
+    assert.equal(res.status, 400, JSON.stringify(overrides))
+    assert.equal(JSON.parse(res.body).code, 'overrides-invalid-value')
+    assert.equal(readFileSync(file, 'utf8'), original)
+  }
+  assert.equal(rebuilds, 0)
+  for (const stages of [[{ name: 'read', tools: ['read'] }], []]) {
+    const res = fakeRes()
+    await write(fakeReq({ [Symbol.asyncIterator]: async function* () {
+      yield Buffer.from(JSON.stringify({ overrides: { stages, maxDepth: '0' } }))
+    } }), res)
+    assert.equal(res.status, 200)
+    const saved = parseYaml(readFileSync(file, 'utf8'))
+    assert.deepEqual(saved.params.stages, stages.length > 0 ? stages : undefined)
+    assert.equal(saved.params.maxDepth, '0')
+    assert.equal(saved.unknown, 'keep')
+  }
+  assert.equal(rebuilds, 2)
+  assert.match(readFileSync(file, 'utf8'), /# keep comment/)
+})
+
+test('模板变量与参数独立保存，读取与 bootstrap 不回退旧 params 内容键', async () => {
+  const { ctx, handlers } = makeHarness()
+  const dir = makeUserPresetDir('pt-variable-isolation-')
+  const file = join(dir, 'preset.yml')
+  const params = { usePtcMode: false, stagePreUnlock: 0, legacyOnly: '旧值', variables: { nested: '嵌套旧值' } }
+  writeFileSync(file, `# keep comment\nid: variable-isolation\nparams: ${JSON.stringify(params)}\n`, 'utf8')
+  registerSettingsBridge(ctx, 'prompt-tool', () => ({ available: true, providers: [] }),
+    () => ({ activeSkillsDirs: [], skillCatalog: [] }), () => '', undefined, () => dir)
+  const write = handlers.get(PREFIX + BRIDGE_ENDPOINTS.presetVariables)
+  for (const variables of [{ usePtcMode: 'text', stagePreUnlock: '' }, {}]) {
+    const res = fakeRes()
+    await write(fakeReq({ [Symbol.asyncIterator]: async function* () {
+      yield Buffer.from(JSON.stringify({ variables }))
+    } }), res)
+    assert.equal(res.status, 200)
+    const saved = parseYaml(readFileSync(file, 'utf8'))
+    assert.deepEqual(saved.params, params)
+    assert.deepEqual(saved.variables ?? {}, variables)
+    assert.match(readFileSync(file, 'utf8'), /# keep comment/)
+    const read = fakeRes()
+    await write(fakeReq(), read)
+    assert.equal(read.status, 200)
+    assert.deepEqual(JSON.parse(read.body).value, { variables, enabled: true })
+    const bootstrap = fakeRes()
+    await handlers.get(PREFIX + BRIDGE_ENDPOINTS.bootstrap)(fakeReq(), bootstrap)
+    assert.equal(bootstrap.status, 200)
+    assert.deepEqual(JSON.parse(bootstrap.body).variables, { variables, enabled: true })
+  }
+  const before = readFileSync(file, 'utf8')
+  const rejected = fakeRes()
+  await handlers.get(PREFIX + BRIDGE_ENDPOINTS.paramOverrides)(fakeReq({ [Symbol.asyncIterator]: async function* () {
+    yield Buffer.from(JSON.stringify({ overrides: { variables: { nested: '不支持' } } }))
+  } }), rejected)
+  assert.equal(rejected.status, 400)
+  assert.equal(JSON.parse(rejected.body).code, 'overrides-unknown-key')
+  assert.equal(readFileSync(file, 'utf8'), before)
+})
+
+test('自定义预设根的列表、导出、复制、删除、新建与导入不读写默认根', async () => {
+  const { ctx, handlers } = makeHarness()
+  const root = mkdtempSync(join(bridgeHome, 'custom-management-'))
+  const id = 'root-management'
+  const defaultDir = join(userPresetRoot, id)
+  const activeDir = join(root, id)
+  for (const [dir, name] of [[defaultDir, 'default'], [activeDir, 'custom']]) {
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, 'preset.yml'), `id: ${id}\nname: ${name}\nmodules: []\n`, 'utf8')
+  }
+  const defaultEntries = readdirSync(userPresetRoot).sort()
+  const defaultContent = readFileSync(join(defaultDir, 'preset.yml'), 'utf8')
+  registerSettingsBridge(ctx, 'prompt-tool', () => ({ available: true, providers: [] }),
+    () => ({ activeSkillsDirs: [], skillCatalog: [] }), () => '', undefined, () => activeDir,
+    undefined, undefined, undefined, undefined, () => root)
+  const call = async (endpoint, payload = {}) => {
+    const res = fakeRes()
+    await handlers.get(PREFIX + BRIDGE_ENDPOINTS[endpoint])(fakeReq({ [Symbol.asyncIterator]: async function* () {
+      yield Buffer.from(JSON.stringify(payload))
+    } }), res)
+    assert.equal(res.status, 200, res.body)
+    return JSON.parse(res.body).value
+  }
+  const meta = await call('meta')
+  assert.deepEqual(meta.meta.presets.map(preset => preset.id), [id])
+  const exported = await call('exportPreset', { id })
+  assert.equal(exported.content, readFileSync(join(activeDir, 'preset.yml'), 'utf8'))
+  const copied = await call('presetDuplicate', { id })
+  assert.equal(readFileSync(join(root, copied.id, 'preset.yml'), 'utf8'), exported.content)
+  await call('presetDelete', { id: copied.id })
+  assert.equal(existsSync(join(root, copied.id)), false)
+  const cloned = await call('presetClone', { id: 'custom' })
+  assert.ok(existsSync(join(root, cloned.id, 'preset.yml')))
+  const imported = await call('importPresetPackage', {
+    files: [{ path: 'preset.yml', content: 'id: root-import\nmodules: []\n' }],
+  })
+  assert.ok(existsSync(join(root, imported.id, 'preset.yml')))
+  assert.deepEqual(readdirSync(userPresetRoot).sort(), defaultEntries)
+  assert.equal(readFileSync(join(defaultDir, 'preset.yml'), 'utf8'), defaultContent)
+})
+
 test('settings bridge /configs-validate 接受 >64KB promptConfigs 载荷（不再 400 unreadable JSON body）', async () => {
   const { ctx, handlers } = makeHarness()
   registerSettingsBridge(

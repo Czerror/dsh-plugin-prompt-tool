@@ -17,7 +17,6 @@ import { validateSubagentToolPolicy } from '../../engine/subagent-tool-policy-co
 import { DEFAULT_PRESET_DIR } from './paths.ts'
 import { compileCustomTool } from './custom-tools.ts'
 import { validateCustomToolIdentities } from '../shared/engine-capabilities.ts'
-import { PARAM_KEYS } from '../shared/param-keys.ts'
 import { ENGINE_PARAM_KEYS, type PresetWriterParams } from '../shared/engine-params.ts'
 import {
   configFileName,
@@ -278,7 +277,7 @@ export function writePreset(prompt: string, options: WritePresetOptions): void {
   // 可渲染性回退：旧版种子副本（仅元数据 + 本地 .mjs，无 modules/composition/
   // agent.cordis.yml）遮蔽包内新版模板时，直接物化必失败——回退包内模板渲染并
   // warn；纯元数据参数源在第 2 步升级为包内新版（闭环后不再回退）。
-  const resolvedTemplate = resolveRenderablePresetDir(templateName)
+  const resolvedTemplate = resolveRenderablePresetDir(templateName, presetDir)
   const templateDir = resolvedTemplate.dir
   if (resolvedTemplate.fallback) {
     options.warn?.(`prompt-tool: 预设 ${templateName} 用户副本缺组合源（modules/agent.cordis.yml），已回退包内模板渲染`)
@@ -473,18 +472,11 @@ export function writePreset(prompt: string, options: WritePresetOptions): void {
   // 模型参数（agent-request）作为引擎默认级注入，优先级低于模板与 settings。
   const merged = mergePromptConfigs(modelRequestConfigs(params), templateDefaults, options.promptConfigs)
   // 预设级模板变量 → prompt-configs/variables.yml（单一文件）：引擎加载时合并进
-  // 每条配置 variables（官方插值源，配置自身优先）。来源 = preset.yml 顶层
-  // variables 段（新）优先 + params 内容键（旧布局兼容）；UI 已管理键（PARAM_KEYS）
-  // 与 runtime 参数（promptText 等）不进变量文件。variablesEnabled=false（卡片
+  // 每条配置 variables（配置自身优先）。唯一来源 = preset.yml 顶层 variables；
+  // params 与 runtime 参数不进入变量文件。variablesEnabled=false（卡片
   // 开关停用）时不生成变量文件，并把配置文本中的预设变量引用 {{key}} 剥离
   //（避免字面残留与官方 unknown variable 报错）。
   const presetVariables: Record<string, string> = {}
-  for (const [key, value] of Object.entries(spec.params ?? {})) {
-    if (PARAM_KEYS.has(key)) continue
-    if (value === undefined || value === null) continue
-    const text = String(value)
-    presetVariables[key] = text
-  }
   for (const [key, value] of Object.entries(spec.variables ?? {})) {
     // 空值占位键也写入（ST 未定义宏登记的变量）：引擎插值时 hasOwnProperty
     // 命中即替换为空串，不留 {{key}} 字面；UI 模板变量卡可编辑默认值覆盖。

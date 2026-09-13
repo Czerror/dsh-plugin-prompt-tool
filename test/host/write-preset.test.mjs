@@ -12,6 +12,23 @@ const home = mkdtempSync(join(tmpdir(), 'pt-wp-home-'))
 process.env.DSH_HOME = home
 const ROOT = fileURLToPath(new URL('../..', import.meta.url))
 const { writePreset, savePresetParams, loadPresetSpec } = await import('../../lib/index.mjs')
+test.after(() => rmSync(home, { recursive: true, force: true }))
+
+test('writePreset 从指定预设根读取同名参数，不被默认根遮蔽', () => {
+  const id = 'root-isolation'
+  const customRoot = mkdtempSync(join(home, 'custom-root-'))
+  for (const [root, usePtcMode] of [[join(home, '.agent-presets'), true], [customRoot, false]]) {
+    mkdirSync(join(root, id), { recursive: true })
+    writeFileSync(join(root, id, 'preset.yml'),
+      `id: ${id}\nmodules: [code-presentation]\nparams:\n  usePtcMode: ${usePtcMode}\n`, 'utf8')
+  }
+  const defaultFile = join(home, '.agent-presets', id, 'preset.yml')
+  const before = readFileSync(defaultFile, 'utf8')
+  writePreset('', { ...makeOptions(customRoot), presetTemplate: id, usePtcMode: undefined })
+  const row = parseYaml(readFileSync(join(customRoot, id, 'agent.cordis.yml'), 'utf8'))[0]
+  assert.equal(row.config.usePtcMode, false)
+  assert.equal(readFileSync(defaultFile, 'utf8'), before)
+})
 
 function makeOptions(presetDir) {
   return {
@@ -455,23 +472,23 @@ test('writePreset 拒绝非法 presetTemplate（路径穿越防护）', () => {
   }
 })
 
-test('writePreset 预设级模板变量生成 variables.yml（顶层 variables 段优先 + 旧 params 兼容）；UI 已管理键不落配置', () => {
+test('writePreset 预设变量只读顶层 variables，清空后不复活 params 中的旧内容键', () => {
   const dir = join(tmpdir(), `prompt-tool-uikeys-${process.pid}-${Date.now()}`)
   const presetDir = join(dir, 'preset')
   try {
-    // 先写入预设级模板变量（顶层 variables 段）+ 旧布局 params 内容键（兼容层）。
-    // writePreset 的 spec 经 resolvePresetDir 读取（用户预设根优先）：
-    // 复制包内完整 anchored 模板到 DSH_HOME 用户根，再写入顶层 variables 与
-    // 旧布局 params 内容键（兼容层），模拟真实用户预设。
-    const homePresetDir = join(home, '.agent-presets')
-    cpSync(join(ROOT, 'preset', 'anchored'), join(homePresetDir, 'anchored'), { recursive: true })
-    const presetFile = join(homePresetDir, 'anchored', 'preset.yml')
+    // 旧 params 内容键及嵌套 params.variables 保留原文件，但不再成为变量源。
+    cpSync(join(ROOT, 'preset', 'anchored'), join(presetDir, 'anchored'), { recursive: true })
+    const presetFile = join(presetDir, 'anchored', 'preset.yml')
     const doc = parseDocument(readFileSync(presetFile, 'utf8'))
     doc.setIn(['params', 'legacyVar'], '旧值')
     doc.setIn(['params', 'legacyEmpty'], '')
+    doc.setIn(['params', 'wordsCloud'], '旧默认')
+    doc.setIn(['params', 'variables'], { nested: '不是模板变量' })
     doc.get('modules', true).add('tool-config-engine')
     writeFileSync(presetFile, doc.toString(), 'utf8')
-    savePresetParams(homePresetDir, 'anchored', undefined, undefined, { wordsCloud: '1500字', 日期: '' })
+    const variables = { wordsCloud: '1500字', 日期: '', usePtcMode: '同名内容变量' }
+    savePresetParams(presetDir, 'anchored', undefined, undefined, variables)
+    const storedParams = parseYaml(readFileSync(presetFile, 'utf8')).params
     writePreset('PROMPT', {
       ...makeOptions(presetDir),
       firstTurnAnchor: true,
@@ -492,17 +509,17 @@ test('writePreset 预设级模板变量生成 variables.yml（顶层 variables �
       assert.equal(parsed.params?.[key], undefined, `配置 params 不得含 UI 管理键 ${key}`)
       assert.equal(parsed.variables?.[key], undefined, `配置 variables 不得含 UI 管理键 ${key}`)
     }
-    // 非 UI 键（内容变量）进单一文件 variables.yml（引擎加载时合并，配置文件保持干净）。
+    // 顶层变量不靠 PARAM_KEYS 猜测用途，允许与引擎参数同名；配置文件保持干净。
     const varsFile = join(pcDir, 'variables.yml')
     assert.ok(existsSync(varsFile), 'variables.yml 生成')
     const vars = parseYaml(readFileSync(varsFile, 'utf8'))
-    assert.equal(vars.wordsCloud, '1500字', '顶层 variables 段进 variables.yml')
-    assert.equal(vars.legacyVar, '旧值', '旧布局 params 内容键兼容进 variables.yml')
-    assert.equal(vars['日期'], '', '空值占位变量（ST 未定义宏登记）进 variables.yml')
-    assert.equal(vars.legacyEmpty, '', '旧布局 params 空值内容键也保留')
-    assert.equal(vars.promptText, undefined, 'runtime 参数（promptText）不进变量文件')
+    assert.deepEqual(vars, variables, '变量文件只包含顶层变量，保留空串与同名键')
     assert.equal(parsed.variables?.['wordsCloud'], undefined, '配置文件不再逐条展开内容变量')
     assert.equal(parsed.params?.wordsCloud, undefined, '内容变量不再进 params')
+    savePresetParams(presetDir, 'anchored', undefined, undefined, {})
+    writePreset('PROMPT', makeOptions(presetDir))
+    assert.equal(existsSync(varsFile), false, '清空顶层变量后移除旧生成文件，params 内容键不复活')
+    assert.deepEqual(parseYaml(readFileSync(presetFile, 'utf8')).params, storedParams, '不迁移或清理原 params')
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
@@ -512,9 +529,8 @@ test('writePreset 自定义工具渲染 custom-tools/<n>-<id>.yml（源 = preset
   const dir = join(tmpdir(), `prompt-tool-ctools-${process.pid}-${Date.now()}`)
   const presetDir = join(dir, 'preset')
   try {
-    const homePresetDir = join(home, '.agent-presets')
-    cpSync(join(ROOT, 'preset', 'anchored'), join(homePresetDir, 'anchored'), { recursive: true })
-    const presetFile = join(homePresetDir, 'anchored', 'preset.yml')
+    cpSync(join(ROOT, 'preset', 'anchored'), join(presetDir, 'anchored'), { recursive: true })
+    const presetFile = join(presetDir, 'anchored', 'preset.yml')
     const doc = parseDocument(readFileSync(presetFile, 'utf8'))
     doc.setIn(['customTools'], [
       {
@@ -550,9 +566,8 @@ test('writePreset 自动校验并装配 subagentToolPolicy，非法策略拒绝'
   const dir = join(tmpdir(), `prompt-tool-spolicy-${process.pid}-${Date.now()}`)
   const presetDir = join(dir, 'preset')
   try {
-    const homePresetDir = join(home, '.agent-presets')
-    cpSync(join(ROOT, 'preset', 'minimal'), join(homePresetDir, 'minimal'), { recursive: true })
-    const presetFile = join(homePresetDir, 'minimal', 'preset.yml')
+    cpSync(join(ROOT, 'preset', 'minimal'), join(presetDir, 'minimal'), { recursive: true })
+    const presetFile = join(presetDir, 'minimal', 'preset.yml')
     const doc = parseDocument(readFileSync(presetFile, 'utf8'))
     doc.setIn(['subagentToolPolicy'], {
       defaultProfile: 'base', ceiling: { allow: ['read'], deny: [] },
@@ -594,13 +609,12 @@ test('savePresetParams 清理空 key（VariablesEditor 待编辑行不落盘）'
   }
 })
 
-test('P1 回归：晋升门控/渐进披露/验证工具参数键不进 variables.yml（PARAM_KEYS 覆盖）', () => {
+test('晋升门控/渐进披露/验证工具参数仅进入组合配置，不成为模板变量', () => {
   const dir = mkdtempSync(join(tmpdir(), 'pt-wp-paramkeys-'))
   try {
     // 复制 anchored 模板，params 加新增参数键（模拟用户手写/UI 保存）。
-    const homePresetDir = join(home, '.agent-presets')
-    cpSync(join(ROOT, 'preset', 'anchored'), join(homePresetDir, 'anchored'), { recursive: true })
-    const presetFile = join(homePresetDir, 'anchored', 'preset.yml')
+    cpSync(join(ROOT, 'preset', 'anchored'), join(dir, 'anchored'), { recursive: true })
+    const presetFile = join(dir, 'anchored', 'preset.yml')
     const doc = parseDocument(readFileSync(presetFile, 'utf8'))
     doc.setIn(['params', 'promoteGate'], true)
     doc.setIn(['params', 'maxPromoteSteps'], 6)
@@ -620,7 +634,7 @@ test('P1 回归：晋升门控/渐进披露/验证工具参数键不进 variable
     const varsFile = join(pcDir, 'variables.yml')
     // 无内容变量（顶层 variables 段为空）时不生成 variables.yml；生成时不得含参数键。
     const vars = existsSync(varsFile) ? parseYaml(readFileSync(varsFile, 'utf8')) : {}
-    // 新增参数键必须被 PARAM_KEYS 排除：不得当作内容变量混入 variables.yml。
+    // params 整段不作为变量源，新增参数也不得混入 variables.yml。
     for (const key of ['promoteGate', 'maxPromoteSteps', 'bootstrapTools', 'messageSources',
       'stagePreUnlock',
       // 锚定/引导内容键：writePreset 映射进 promptConfig.params，不得双落盘 variables.yml。
@@ -687,7 +701,6 @@ test('顶层 model/subagentModel 段：读取展平进 params + 保存写顶层�
 test('模板变量插值开关：停用不生成 variables.yml 且剥离配置中的 {{key}} 引用（内置变量保留）', () => {
   const dir = join(tmpdir(), `prompt-tool-vars-off-${process.pid}-${Date.now()}`)
   const presetDir = join(dir, 'preset')
-  const homePresetDir = join(home, '.agent-presets')
   const varConfig = () => [{
     id: 'var-test',
     layer: 'pre-step',
@@ -696,8 +709,8 @@ test('模板变量插值开关：停用不生成 variables.yml 且剥离配置�
     texts: ['剧情{{wordsCloud}}字 {{DSH_HOME}}'],
   }]
   try {
-    cpSync(join(ROOT, 'preset', 'anchored'), join(homePresetDir, 'anchored'), { recursive: true })
-    savePresetParams(homePresetDir, 'anchored', undefined, undefined, { wordsCloud: '1500字' }, false)
+    cpSync(join(ROOT, 'preset', 'anchored'), join(presetDir, 'anchored'), { recursive: true })
+    savePresetParams(presetDir, 'anchored', undefined, undefined, { wordsCloud: '1500字' }, false)
     const pcDir = join(presetDir, 'anchored', 'prompt-configs')
     writePreset('PROMPT', { ...makeOptions(presetDir), promptConfigs: varConfig() })
     const varsFile = join(pcDir, 'variables.yml')
@@ -707,7 +720,7 @@ test('模板变量插值开关：停用不生成 variables.yml 且剥离配置�
     const parsed = parseYaml(readFileSync(join(pcDir, file), 'utf8'))
     assert.equal(parsed.text, '剧情字 {{DSH_HOME}}', '预设变量引用剥离、内置变量保留')
     // 重新启用：true = 删除开关键（缺省启用），变量文件恢复。
-    savePresetParams(homePresetDir, 'anchored', undefined, undefined, { wordsCloud: '1500字' }, true)
+    savePresetParams(presetDir, 'anchored', undefined, undefined, { wordsCloud: '1500字' }, true)
     writePreset('PROMPT', { ...makeOptions(presetDir), promptConfigs: varConfig() })
     assert.ok(existsSync(varsFile), '启用后 variables.yml 恢复生成')
     const vars = parseYaml(readFileSync(varsFile, 'utf8'))

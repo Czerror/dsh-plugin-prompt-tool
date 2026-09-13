@@ -103,5 +103,21 @@ test('MODEL_SEGMENT_MAP 双向一致：展平读回 = 保存写回（段目标�
   assert.equal(Object.keys(MODEL_SEGMENT_MAP).length, 10, '模型段映射应覆盖 10 个扁平键')
 })
 
+test('字符串深度与数字同义，普通委派及实例策略均接收归一后的限制', () => {
+  for (const value of [0, 2, 'provider-managed']) {
+    for (const subagentPolicyEnabled of [false, true]) {
+      const options = { subagentPolicyEnabled }
+      const configs = buildModuleConfigsFromParams({ maxDepth: String(value) }, options)
+      assert.deepEqual(configs, buildModuleConfigsFromParams({ maxDepth: value }, options))
+      for (const id of ['tool-subagent', 'tool-subagent-fork', ...(subagentPolicyEnabled ? ['subagent-tool-policy'] : [])]) {
+        assert.equal(configs[id].maxDepth, value)
+      }
+    }
+  }
+  for (const maxDepth of ['', ' ', 'invalid', '-1', '1.5']) {
+    assert.equal(buildModuleConfigsFromParams({ maxDepth })['tool-subagent'], undefined)
+  }
+})
+
 rmSync(home, { recursive: true, force: true })
 

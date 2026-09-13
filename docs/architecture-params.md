@@ -2,7 +2,7 @@
 
 > 适用范围：dsh-plugin-prompt-tool 的引擎行为参数（按预设存储、随预设走）全链路。
 > 相关代码：`src/shared/engine-params.ts`、`src/shared/param-keys.ts`、`src/host/manifest.ts`、
-> `src/host/write-preset.ts`、`src/index.ts`（reloadPresetParams / applyParamOverrides / rebuildPreset）、
+> `src/host/write-preset.ts`、`src/index.ts`（reloadPresetParams / rebuildPreset）、
 > `src/runtime/settings-bridge.ts`（/param-overrides）、`src/client/data/use-prompt-tool-store.ts`（fields / persist）。
 
 ## 1. 分层与职责
@@ -10,7 +10,7 @@
 | 层 | 文件 | 职责 |
 |---|---|---|
 | 契约层 | `shared/engine-params.ts` | `EngineParams` + 完整覆盖其键的 `ENGINE_PARAM_DEFINITIONS`（类型规则、卡片归属、标签、默认草稿、枚举、组合行映射）；`ENGINE_PARAM_KEYS` 与 `WRITER_PARAM_KEYS` 从目录派生 |
-| 键集合 | `shared/param-keys.ts` | `PARAM_KEYS` = `ENGINE_PARAM_KEYS` 派生 + 锚定内容键 + `promptConfigs`；variables.yml 排除集 / mutate 拦截 / 读回遍历共用 |
+| 键集合 | `shared/param-keys.ts` | `PARAM_KEYS` = `ENGINE_PARAM_KEYS` 派生 + 锚定内容键 + `promptConfigs`；参数写入白名单 / mutate 拦截 / 读回遍历共用，不推断模板变量 |
 | 存储层 | `host/manifest.ts` | `loadPresetSpec`（顶层 model/subagentModel 段 → 扁平键，`MODEL_SEGMENT_MAP`）、`savePresetParams`（扁平键 → 段，同源映射；空值删键）、`buildModuleConfigsFromParams`（参数桥）、`renderComposition`（参数桥 > moduleConfigs > 行默认；组合模块从 `source/local` 与 `library` 唯一查找） |
 | 物化层 | `host/write-preset.ts` | `writePreset`：参数 + 内容资产 → 官方预设目录（agent.cordis.yml / prompt-configs / variables.yml）；`runtimeOf` 透传、`modelRequestConfigs` 模型 patch |
 | 装配层 | `index.ts` | `reloadPresetParams`（preset.yml → runtime）、`rebuildPreset`（写入触发） |
@@ -28,7 +28,7 @@ UI fields
   → persistParamOverrides（只发送已存键或用户已改动键；含需清除的 '' / [] 与合法的 false / 0）
     → /param-overrides POST（settings-bridge）
       → savePresetParams（写 preset.yml：model 顶层段 / params；空值删键）
-        → reloadPresetParams + applyParamOverrides（runtime 态）
+        → reloadPresetParams（runtime 态）
           → rebuildPreset → writePreset
             → runtimeOf（透传 WRITER_PARAM_KEYS）
             → resolvePresetParams（spec.params + runtime 合并）
@@ -37,6 +37,11 @@ UI fields
               → agent.cordis.yml（宿主挂载生效）
 ```
 
+本插件的种子化、预设列表、参数与内容读取、保存、物化及导入／导出／复制／删除，
+均使用当前配置的 `presetDir`。该目录不只是输出位置，也是预设定义的读取根；
+不存在对应定义时回退包内模板，不读取默认预设根中的同名用户副本。
+切换 `presetDir` 时，即使预设 ID 未变，也重新加载参数和内容资产。
+
 ## 3. 空值语义（统一规则）
 
 `savePresetParams` 对空值统一处理（2026-08-25 起）：
@@ -44,9 +49,11 @@ UI fields
 | 值 | 处理 | 原因 |
 |---|---|---|
 | `''`（字符串清空） | **删键** | 回落模板/引擎默认（如 reasoningEffort 留空 = 继承宿主） |
-| `[]`（列表清空） | **删键** | 引擎对空数组 fail loud（bootstrapTools/stages）或全拦注入（messageSources/allowKinds） |
+| `[]`（列表清空） | **删键** | 恢复该参数的默认行为；清空全部阶段不生成非法的空阶段定义 |
 | `0`（`stagePreUnlock`） | **写 0（保留）** | 引擎 `undefined → 1`，`0` 是合法档位，二者不等价 |
-| `0`（其余数字） | **写 0** | 引擎 `|| 默认` 等价（maxPromoteSteps 0→4、deferredGraceSteps 0→无延迟） |
+| `0`（`cotDripEvery` / `deliberationMinChars`） | **写 0 并透传** | 分别禁用节拍提醒、取消深思下限；不得回落组合默认的 4 / 400 |
+| `0`（`bootstrapMaxTokens`） | **写 0，物化时删除封顶键** | 显式关闭输出封顶，不被行默认或 moduleConfigs 回填 |
+| `0`（其余数字） | **写 0，按字段语义消费** | 如 maxPromoteSteps 0→默认 4、deferredGraceSteps 0→无延迟 |
 | `false`（布尔） | **写 false** | 引擎 `=== true` 归一，false = 显式关闭（与默认等价或明确） |
 
 
@@ -54,8 +61,10 @@ UI fields
 `validateEngineParamValues()`（契约层与渲染消费同源）——覆盖全部 `ENGINE_PARAM_KEYS`：
 布尔键必须是 boolean；数值键（temperature/maxTokens/步数/字符数）按各自约束（有限数 /
 正整数 / 非负整数）；字符串键必须是 string；列表键（工具集/白名单/来源）必须是 string 或
-string[]；`maxDepth` 接受 `''`/`provider-managed`/非负整数/字符串标量；`stages` 必须是
-`{ name, tools }` 数组。未知键（旧内容别名等不兼容键）在保存期响亮失败
+string[]；`maxDepth` 接受 `''`/`provider-managed`/非负安全整数及其数字字符串，
+保存校验与普通委派、实例工具策略的参数桥共用归一化规则（`"0"` 与 `0` 同义）。
+`stages` 的每项必须有非空名称、非空 `tools` 数组，且工具名均为非空字符串；
+顶层 `stages: []` 仍表示删键。未知键（旧内容别名等不兼容键）在保存期响亮失败
 （`400 overrides-unknown-key` / `400 overrides-invalid-value`），不做运行时自动兼容。
 UI 字符串与 preset.yml 手写 number 两通道统一；空字符串仍是合法删键值。
 渲染层保持宽容（never-brick），配置错误只在保存期响亮失败。
@@ -67,7 +76,7 @@ Bridge 读取器区分空请求体与畸形 JSON；非对象 `overrides`、非�
 UI 侧 `persistParamOverrides` **条件发送**：
 
 - `load` 时记录 preset.yml 已存在的参数键；
-- 已有键即使被改成 `''` / `[]` / `false` 也发送，由保存层删除键；`stagePreUnlock: 0` 是合法档位，会照常写入；
+- 已有键即使被改成 `''` / `[]` / `false` / `0` 也发送；保存层只删除空字符串与空列表，合法的 `false` / `0` 照常保留；
 - 未改动且 preset.yml 未声明的值不发送；比较基线是最近读回／保存的有效草稿，避免把组合行默认值固化进 params；
 - 用户把值改到与已加载基线不同即发送，包括从行级 true 改为 false；
 - `guideEnabled` 可恢复继承：发送空字符串删除显式开关；`false` 仍是显式关闭，不当作空值；
@@ -78,13 +87,21 @@ UI 侧 `persistParamOverrides` **条件发送**：
 
 ## 4. variables 双通道（两套体系，不互串）
 
-1. **引擎行为参数**：`PARAM_KEYS`（派生自 `ENGINE_PARAM_KEYS`）——UI 有编辑入口，writePreset 合并时**排除出 variables.yml**。
+1. **引擎行为参数**：`PARAM_KEYS`（派生自 `ENGINE_PARAM_KEYS`）——UI 有编辑入口；`params` 整段不参与预设模板变量的读取与生成。
 2. **内容占位变量**：`spec.variables` 段（preset.yml 顶层 variables）→ `variables.yml`——空值占位键也写入：
    - 引擎插值（`engine/interpolate.mjs`）`hasOwnProperty` 命中 → 替换（空串不留字面）；
    - 用途：模型经 `world_book_upsert` 写世界书条目，内容引用 `{{key}}` 占位；ST 未定义宏登记；
    - UI 模板变量卡（VariablesEditor）可编辑默认值覆盖。
 
-新增参数时必须明确归属：引擎行为参数 → `ENGINE_PARAM_KEYS`（自动进 PARAM_KEYS 排除集）；内容占位 → `spec.variables` 段。二者不互串。
+新增参数时必须明确归属：引擎行为参数 → `ENGINE_PARAM_KEYS`（自动进 PARAM_KEYS 参数集合）；内容占位 → `spec.variables` 段。二者不互串。
+
+`variables` 与 `params` 是独立命名空间，允许同名键。保存或清空模板变量只更新
+`variables` 段，不删除或覆盖 `params` 中的同名参数（包括显式 `false` 与 `0`）。
+
+预设级变量的唯一来源是顶层 `variables`。`params` 中的旧内容键和嵌套
+`params.variables` 不再作为变量读取、回显或生成，也不会自动迁移或删除；旧预设
+需自行把所需内容变量改到顶层 `variables` 后重新物化。清空顶层变量后，旧键不再复活。
+单条提示词配置的 `promptConfigs[].variables` 仍是局部覆盖，优先于同名预设级变量。
 
 ## 5. 新增参数 checklist（引擎行为参数）
 
@@ -347,4 +364,4 @@ buildSubagentToolParameters(c)     → 模型可见扩展参数 Schema
 ## 10. 契约测试
 
 - `test/host/param-contract.test.mjs`：PARAM_KEYS 派生一致性；每个 ENGINE_PARAM_KEYS 键有装配消费；MODEL_SEGMENT_MAP 段目标唯一。
-- `test/host/write-preset.test.mjs`：模型参数 patch 生成/留空跳过；空值删键（''/[]，stagePreUnlock=0 保留）；PARAM_KEYS 不进 variables.yml，variables 空占位键保留。
+- `test/host/write-preset.test.mjs`：模型参数 patch 生成/留空跳过；空值删键（''/[]，stagePreUnlock=0 保留）；变量文件只读顶层 variables，保留空串与同名键，清空后不回退旧 params。

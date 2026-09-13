@@ -47,13 +47,23 @@ test('模块参数的装配与回显同源，完整覆盖门控列表与阶段',
   assert.deepEqual(readParamOverridesPatch(fallbacks).stages, [{ name: 'read', tools: 'read' }])
 })
 
-test('合法零值可保存，渐进披露零档位保留，其他零值沿用默认语义', () => {
-  const values = { stagePreUnlock: 0, cotDripEvery: 0, bootstrapMaxTokens: 0, maxPromoteSteps: 0 }
+test('合法零值保留阶段、节拍与深思下限语义，输出封顶仍可清除', () => {
+  const values = { stagePreUnlock: 0, cotDripEvery: 0, deliberationMinChars: 0, bootstrapMaxTokens: 0, maxPromoteSteps: 0 }
   assert.deepEqual(validateEngineParamValues(values), [])
   const configs = buildEngineModuleParams(values)
   assert.equal(configs['tool-bootstrap'].stagePreUnlock, 0)
-  assert.equal(configs['cot-drip']?.every, undefined)
+  assert.equal(configs['cot-drip'].every, 0)
+  assert.equal(configs['deliberation-gate'].minChars, 0)
   assert.equal(configs['tool-bootstrap'].bootstrapMaxTokens, undefined)
+})
+
+test('深度限制只接受非负安全整数、数字字符串、provider-managed 或清空值', () => {
+  for (const maxDepth of ['', 0, 2, '0', ' 2 ', 'provider-managed']) {
+    assert.deepEqual(validateEngineParamValues({ maxDepth }), [], String(maxDepth))
+  }
+  for (const maxDepth of [' ', 'invalid', '-1', '1.5', 'Infinity', '9007199254740992', -1, 1.5, true]) {
+    assert.equal(validateEngineParamValues({ maxDepth }).length, 1, String(maxDepth))
+  }
 })
 
 test('清除可选开关恢复继承，关闭子代理过滤覆盖行级 true', () => {

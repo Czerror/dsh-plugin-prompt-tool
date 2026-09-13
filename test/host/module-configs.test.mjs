@@ -170,13 +170,13 @@ test('参数桥：anchor-turn / deliberation-gate / cot-drip 行级配置映射'
   assert.equal(drip.config.every, 3)
   assert.equal(drip.config.maxPerTurn, 2)
 
-  // 关闭：enabled: false；参数桥数字 0 仍回落行默认（保留旧预设语义）。
+  // 关闭开关与显式零值独立保留，重新启用后仍使用零值而非行默认。
   const off = parseYaml(buildCordis('P', { anchorTurn: false, deliberationGate: false, cotDrip: false, deliberationMinChars: 0, cotDripEvery: 0 }))
   assert.equal(off.find((row) => row?.id === 'anchor-turn').config.enabled, false)
   assert.equal(off.find((row) => row?.id === 'deliberation-gate').config.enabled, false)
   assert.equal(off.find((row) => row?.id === 'cot-drip').config.enabled, false)
-  assert.equal(off.find((row) => row?.id === 'deliberation-gate').config.minChars, 400, '0 不写键 → 回落行默认 400')
-  assert.equal(off.find((row) => row?.id === 'cot-drip').config.every, 4, '0 不写键，回落行默认 4')
+  assert.equal(off.find((row) => row?.id === 'deliberation-gate').config.minChars, 0, '0 取消深思下限')
+  assert.equal(off.find((row) => row?.id === 'cot-drip').config.every, 0, '0 禁用滴入')
 })
 
 test('参数桥：门控/状态机扁平键直达模块行 config（不 token 化）', () => {
@@ -295,4 +295,28 @@ test('空白预设的 dormant moduleConfigs 不会隐式装配引擎能力', () 
   }
   const rows = parseYaml(renderComposition(spec, {}))
   assert.deepEqual(rows, [], '只有 modules 显式声明才允许装配能力')
+})
+
+test('显式零值穿过组合默认与直写配置后仍禁用节拍、取消深思下限', async () => {
+  const { apply: applyDrip } = await import('../../engine/cot-drip.mjs')
+  const { apply: applyGate } = await import('../../engine/deliberation-gate.mjs')
+  const rows = parseYaml(renderComposition({
+    id: 'zero', modules: ['cot-drip', 'deliberation-gate'],
+    moduleConfigs: { 'cot-drip': { every: 2 }, 'deliberation-gate': { minChars: 200 } },
+    params: { cotDrip: true, cotDripEvery: 0, cotDripSubagents: true,
+      deliberationGate: true, deliberationMinChars: 0, deliberationSubagents: true },
+  }, {}))
+  const listeners = new Map()
+  const ctx = { on: (event, callback) => { listeners.set(event, callback) } }
+  applyDrip(ctx, rows.find(row => row.id === 'cot-drip').config)
+  applyGate(ctx, rows.find(row => row.id === 'deliberation-gate').config)
+  for (const delegationDepth of [0, 1]) {
+    const exec = { agent: { session: { id: `zero-${delegationDepth}`, header: { delegationDepth }, events: [] } } }
+    for (let i = 0; i < 4; i += 1) {
+      const post = await listeners.get('tools/post-execute')(exec, {}, async () => ({ kind: 'accept' }))
+      assert.equal(post.additionalContexts, undefined)
+      const pre = listeners.get('tools/pre-execute')(exec, () => ({ kind: 'accept' }))
+      assert.equal(pre.kind, 'accept')
+    }
+  }
 })
