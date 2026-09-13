@@ -1,12 +1,13 @@
 /**
- * prompt-tool skills 的 profile 副本。
+ * prompt-tool skills 的安装副本。
  *
  * 安装命令 `dsh plugin add` 是官方的 pnpm 转发器，插件代码不会在该命令中
  * 执行（本项目也不修改官方源码）。因此复制动作放在插件首次 apply 时：
- * 把包内 `skills/` 增量复制到**本插件自己的 profile** 目录下的 `skills/`
- * （`$DSH_HOME/profiles/prompt-tool/skills`），并且后续启动优先使用这份副本。
- * 即使本插件从 `dsh web` / `dsh-tui` 启动，也固定写到 prompt-tool profile，
- * 不会写到 web / dsh-tui 的 profile 下。
+ * 把包内 `skills/` 增量复制到 **DSH_HOME 技能根**（`$DSH_HOME/skills`，
+ * 官方 dsh-skill-filesystem 的 `user-dsh` 来源），并且后续启动优先使用这份
+ * 副本。这份副本跨越 profile 共享：无论从 `dsh web` / `dsh-tui` 启动，官方
+ * provider 与本插件都从同一目录发现技能。旧版本写在
+ * `$DSH_HOME/profiles/<profile>/skills` 的副本不再使用，也不清理。
  *
  * 合并规则：
  *  - 包内 `skills/manifest.json` 记录每个技能的版本；
@@ -17,11 +18,10 @@
  */
 import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import type { Context } from '@deepseek-ai/cordis'
-import { resolveProfileDir } from './web-surface.ts'
+import { DSH_HOME } from './host/paths.ts'
 
-/** 本插件专属 profile 名；skills 副本固定放这里。 */
-const PLUGIN_PROFILE = 'prompt-tool'
+/** DSH_HOME 技能根：官方 dsh-skill-filesystem 的 user-dsh 来源。 */
+const SKILLS_ROOT = 'skills'
 /** 目标副本中记录已部署版本的隐藏 manifest。 */
 const TARGET_MANIFEST = '.prompt-tool-manifest.json'
 
@@ -115,30 +115,19 @@ function syncSkillsByManifest(sourceDir: string, targetDir: string): void {
   })
 }
 
-/** 定位本插件自己的 profile 目录；不存在时回退到当前 profile。 */
-function resolvePluginProfileDir(ctx: Context): string | undefined {
-  const currentDir = resolveProfileDir(ctx)
-  if (currentDir === undefined) return undefined
-  const profilesDir = join(currentDir, '..')
-  const pluginDir = join(profilesDir, PLUGIN_PROFILE)
-  return existsSync(join(pluginDir, 'package.json')) ? pluginDir : currentDir
-}
-
 /**
  * 返回本插件应使用的 skills 目录：
- * 优先本插件 profile（prompt-tool）下的 `skills/` 副本；无法确定 profile
- * 或复制失败时回退到 sourceDir（默认包内 `skills/`）。
+ * 优先 `$DSH_HOME/skills` 副本（官方 user-dsh 根，与官方 provider 同源）；
+ * 复制失败时回退到 sourceDir（默认包内 `skills/`）。
  */
-export function resolveProfileSkillsDir(ctx: Context, sourceDir: string, warn: (message: string) => void): string {
-  const profileDir = resolvePluginProfileDir(ctx)
-  if (profileDir === undefined) return sourceDir
-  const targetDir = join(profileDir, 'skills')
+export function resolveSkillsDir(sourceDir: string, warn: (message: string) => void): string {
+  const targetDir = join(DSH_HOME, SKILLS_ROOT)
   try {
     if (!existsSync(sourceDir)) return targetDir
     syncSkillsByManifest(sourceDir, targetDir)
     return targetDir
   } catch (error) {
-    warn(`prompt-tool: failed to copy skills into profile directory ${targetDir}: ${error instanceof Error ? error.message : String(error)}`)
+    warn(`prompt-tool: failed to copy skills into ${targetDir}: ${error instanceof Error ? error.message : String(error)}`)
     return sourceDir
   }
 }

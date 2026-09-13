@@ -22,6 +22,8 @@ dsh --profile prompt-tool
 
 从 web 模板初始化会让 profile 自带 `@deepseek-ai/dsh-base` 与 `@deepseek-ai/dsh-web-app` 两层，无需额外的 Web 自愈步骤。`--from-default-profile` 只在 profile 不存在时创建，不要对既有 profile 反复执行；已初始化的 profile 不会被改写。
 
+包内 `skills/` 会在启动时增量复制到 `$DSH_HOME/skills`（官方 `dsh-skill-filesystem` 的 `user-dsh` 技能根，所有 profile 共享）：包内技能按 `skills/manifest.json` 版本升级覆盖，你在该目录里自建的技能不会被删改。配置了自定义技能目录时不做复制。注意该目录同时是官方 provider 的扫描根：技能开关只控制插件自己注册的那一份，关掉的技能仍会由官方 provider 提供给模型。
+
 旧的 base-only profile（只有 `dsh-base`）首次启动时，插件会把 `@deepseek-ai/dsh-web-app` 补进该 profile 的 `dsh.profile.bundles`（写前留 `.bak`，幂等），并提示重启；需要重启 DSH 服务后生效，插件不会替你重启运行中的服务。
 
 需要 DSH `0.1.5-rc.2+`；当前开发与验证版本为 `0.1.5-rc.2`（官方包锁定该基线）。Node 需要 `^22.19.0 || >=24.0.0`，与官方宿主一致。

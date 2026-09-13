@@ -27,7 +27,7 @@ export interface Config {
   skillSwitches: Record<string, boolean>
   /** 技能展示顺序（目录名数组）：排前面的技能 rank 更小，模型最先看到。 */
   skillOrder: string[]
-  /** 用户自定义技能目录列表（按添加顺序，首个目录优先级最高）；空 = 自动使用当前 profile 下的 skills/ 副本。 */
+  /** 用户自定义技能目录列表（按添加顺序，首个目录优先级最高）；空 = 自动使用 $DSH_HOME/skills 副本。 */
   skillsDirs: string[]
   /** 旧版单值技能目录（仅读取迁移用，新版本统一写回 skillsDirs）。 */
   skillsDir?: string
@@ -110,9 +110,9 @@ export interface PromptSettings {
   /** 技能展示顺序（目录名数组）。 */
   skillOrder: string[]
   skillCatalog: SkillCatalogEntry[]
-  /** 用户自定义技能目录列表（按添加顺序）；空 = 自动使用 profile skills 副本。 */
+  /** 用户自定义技能目录列表（按添加顺序）；空 = 自动使用 $DSH_HOME/skills 副本。 */
   skillsDirs: string[]
-  /** 当前实际生效的技能目录列表（空配置 = [profile 副本路径]）。 */
+  /** 当前实际生效的技能目录列表（空配置 = [$DSH_HOME/skills]）。 */
   activeSkillsDirs: string[]
   /** 生效目录存在性（path → 目录是否存在，供 UI 状态徽章）。 */
   skillsDirExists: Record<string, boolean>
@@ -175,7 +175,7 @@ export interface RuntimeOptions extends PresetWriterParams {
   skillSwitches: Record<string, boolean>
   /** 技能展示顺序（目录名数组）。 */
   skillOrder: string[]
-  /** 用户自定义技能目录列表（按添加顺序）；空 = 自动使用 profile skills 副本。 */
+  /** 用户自定义技能目录列表（按添加顺序）；空 = 自动使用 $DSH_HOME/skills 副本。 */
   skillsDirs: string[]
   /** 技能候选排序基数。 */
   skillRankBase: number

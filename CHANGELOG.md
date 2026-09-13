@@ -2,6 +2,13 @@
 
 ## [未发布] - 2026-09-06
 
+### 技能安装副本改到 $DSH_HOME/skills（2026-09-13）
+
+- 包内 `skills/` 的安装副本从 `$DSH_HOME/profiles/<profile>/skills` 改到 `$DSH_HOME/skills`——官方 `dsh-skill-filesystem` 的 `user-dsh` 技能根。副本跨 profile 共享，官方 provider 与本插件从同一目录发现技能；版本化覆盖语义不变（包内技能按 `skills/manifest.json` 升级覆盖，用户自建技能保留）。旧副本目录不再使用，也不清理。
+- 已知后果：官方 provider 从同一目录注册同名技能，且预设层遮蔽宿主层（`dsh-skill` 注册表规则），因此「技能开关」只对插件自己的注册生效，关掉的技能仍会由官方 provider 提供给模型；插件侧排序/rank 对这些技能同样不再决定模型目录。
+- `resolveProfileSkillsDir(ctx, sourceDir, warn)` 更名为 `resolveSkillsDir(sourceDir, warn)`（不再依赖运行上下文，目标由 `host/paths.ts#DSH_HOME` 解析）；UI「默认副本」提示、配置注释与 `test/host/profile-skills.test.mjs` 同步更新，测试断言目标为 `$DSH_HOME/skills` 且不再写 profile 目录。
+- 修技能 watcher 的目录删除洪泛：被 watch 的目录删除/改名后 Windows 会持续上报事件（实测每秒十万级），防抖计时器被反复重置导致进程无法退出（表现为 `pnpm test` 挂死不退出）、CPU 满转。事件回调先确认目录仍存在，目录消失就关闭该目录的 watcher；新增 `test/host/skills-watcher.test.mjs` 用子进程断言删除后能自然退出。
+
 ### rc.2 收尾：官方 locale、模型元数据与同步结果（2026-09-13）
 
 - 悬浮入口补计划约定的交互细节：位置存储键固定为 `dsh-plugin-prompt-tool:trigger-position`（兼容早期 `:floating-trigger` 旧键），夹取时保留 8px 视口边缘留白；`@deepseek-ai/dsh-client-ui-sidebar` 在几何探针下线后失去最后一个消费方，从 `dsh.client.inject`、peer、dev 与 lockfile 移除。

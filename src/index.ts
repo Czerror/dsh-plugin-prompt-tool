@@ -23,7 +23,7 @@ import type { PresetSpec } from './host/manifest.ts'
 import type { PromptConfigSpec } from './host/prompt-configs.ts'
 import { createCachedSkillsReader, mergeSkillDirs } from './runtime/skills-provider.ts'
 import { scheduleWebSurfaceRepair } from './web-surface.ts'
-import { resolveProfileSkillsDir } from './profile-skills.ts'
+import { resolveSkillsDir } from './profile-skills.ts'
 import { detectModels, installDefaultModelRoute, invalidateModelCatalog, listAdvertisedModels } from './runtime/models.ts'
 import type { ModelDetection } from './runtime/models.ts'
 import { registerSettingsBridge } from './runtime/settings-bridge.ts'
@@ -364,8 +364,9 @@ export function apply(ctx: Context, configIn: Config): void {
     }
   }
 
-  // 首次启动把包内 skills/ 增量复制到 $DSH_HOME/profiles/<profile>/skills，
-  // 并优先使用 profile 副本；已有同名文件不覆盖，用户编辑会保留。
+  // 首次启动把包内 skills/ 增量复制到 $DSH_HOME/skills（官方 user-dsh 技能根，
+  // 所有 profile 共享），并优先使用这份副本；用户自定义技能保留、包内技能按
+  // manifest 版本覆盖。
   // 显式配置了其他技能目录时尊重用户选择，不做复制。
   const legacySkillsDir = typeof config.skillsDir === 'string' && config.skillsDir.length > 0 && config.skillsDir !== DEFAULT_SKILLS_DIR
     ? config.skillsDir
@@ -373,11 +374,11 @@ export function apply(ctx: Context, configIn: Config): void {
   const userSkillsDirs = Array.isArray(config.skillsDirs) && config.skillsDirs.length > 0
     ? config.skillsDirs.filter((dir): dir is string => typeof dir === 'string' && dir.trim().length > 0)
     : legacySkillsDir.length > 0 ? [legacySkillsDir] : []
-  /** 用户技能目录设置 → 实际生效目录列表（空配置 = profile skills 副本兜底）。 */
+  /** 用户技能目录设置 → 实际生效目录列表（空配置 = $DSH_HOME/skills 副本兜底）。 */
   const resolveActiveSkillsDirs = (dirs: string[]): string[] =>
     dirs.length > 0
       ? dirs
-      : [resolveProfileSkillsDir(ctx, DEFAULT_SKILLS_DIR, (message) => warn(ctx, message))]
+      : [resolveSkillsDir(DEFAULT_SKILLS_DIR, (message) => warn(ctx, message))]
   let activeSkillsDirs = resolveActiveSkillsDirs(userSkillsDirs)
   // 三层结构：
   //  1) 扫描层宽松——坏技能也进 catalog（valid=false + issue），UI 可见可修；
@@ -1006,7 +1007,7 @@ export {
 } from './host/manifest.ts'
 export { buildWorldBookEntry } from './host/worldbook.ts'
 export { ensureWebSurface, resolveProfileDir, scheduleWebSurfaceRepair } from './web-surface.ts'
-export { resolveProfileSkillsDir } from './profile-skills.ts'
+export { resolveSkillsDir } from './profile-skills.ts'
 export { importSkillsPackage } from './host/skills-import.ts'
 export { migrateLegacyLayout, normalizePresetRootDir } from './host/migration.ts'
 export { detectModels, installDefaultModelRoute, invalidateModelCatalog, listAdvertisedModels, peekModelCatalog, resolveSubagentStartOptions } from './runtime/models.ts'
