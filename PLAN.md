@@ -10,6 +10,7 @@
 - 本地官方 checkout 是 `master`，并不等于发布 tag。**读取目标源码使用 `git show <tag>:<path>`；不能把目录当前状态或 package.json 中同名版本号当成发布源码证明。**
 - 前轮审查记录：`typecheck`、`lint`、`test` 内的 build 通过；完整测试 646 项，644 通过、2 失败，均在 `test/host/rebuild-composition.test.mjs`；`git diff --check` 通过。这是混合本地依赖环境的结果，不是纯发布包 rc.2 的认证结果。
 - 本轮新增范围：模型目录与路由职责重构、官方模型元数据接入、新增明确用途的直接依赖、发布包安装与宿主契约验证。不能沿用上一轮「不重构模型、不引入依赖」作为排除项。
+- 本轮新增决策（2026-09-13）：工作台入口确定为「可拖动悬浮按钮」，参考外部实现 dsh-pet（见 §8.2、§14）。本轮只写入计划，不改任何代码。
 
 完成目标：修复官方组合漂移，建立可复现的 rc.2 依赖基线，使模型选择、默认同步、子代理路由和 UI 文案各有唯一责任方；保留现有提示词引擎及用户数据边界，并以确定性测试和隔离 smoke 验收。
 
@@ -49,7 +50,7 @@
 | A-04 | P2 | 对齐 client external 与 bundle manifest，保留必要 Web 自愈 | `tsdown.config.ts:15`、`src/web-surface.ts:35` | D-04、H-01～H-03 |
 | A-05 | P1 | 移除对全局 `subagents.start` 的 monkey patch，显式约束本插件路由范围 | `src/runtime/models.ts:154`、`src/host/manifest.ts:712`、`engine/subagent-tool-policy.mjs` | M-06～M-09 |
 | A-06 | P2 | 模型目录按实例隔离、动态 effort、默认同步可等待、错误可观察 | `src/runtime/models.ts:39`、`src/client/data/session-model-face.ts`、`src/client/features/models/ModelRouteCard.tsx:26` | M-01～M-05、M-10～M-12 |
-| A-07 | P2 | 去掉宿主 DOM 几何探针，保持全局工作台与官方 slot | `src/client/app/workbench/SidebarGeometryProbe.tsx:35`、`register-workbench.tsx` | U-01～U-04 |
+| A-07 | P2 | 入口改为可拖动悬浮按钮，删除宿主 DOM 几何探针 | `src/client/app/workbench/FloatingTrigger.tsx`、`register-workbench.tsx`、`SidebarGeometryProbe.tsx`（删除） | U-01～U-04 |
 | A-08 | P2 | Client 文案接入官方 locale；修正仍指向已移除右侧栏的提示 | `SettingsTab.tsx`、`FloatingTrigger.tsx`、各 feature 文案 | U-05、U-06 |
 | A-09 | P1 | 固定上游 fixture，增加真实发布依赖与实际行为的验证 | `test/host/rebuild-composition.test.mjs:10`、`test/host-contract.test.mjs`、`test/client-bundle-facade.test.mjs` | D-01、D-03、V-01～V-03 |
 
@@ -244,15 +245,58 @@ W3 完成条件：所有模型路径有明确来源及回显；保存失败可�
 
 ### 8.1 采用的 UI 方案
 
-- 默认方案：`sidebar.footer.action` 渲染真正可见的触发器；`shell.overlay` 继续承载全局抽屉；`settings.plugins.tab` 保留基础设置。
+- 入口定稿：保留 `shell.overlay` 注册，把其中的悬浮触发器改成**可拖动悬浮按钮**（详见 §8.2）；抽屉与 `settings.plugins.tab` 基础设置不变。
+- 不再使用 `sidebar.footer.action` 渲染入口：本项目不再需要「贴合侧栏轨道」这一几何语义，该 slot 的最后消费方随几何探针一起删除。
 - 不恢复 session-scoped 的 `sidebar.right.pane.tab`，不新增路由系统或第二个工作台状态所有者。当前六页工作台仍是全局配置工作台。
-- 删除 `SidebarGeometryProbe.tsx`、注册项、宿主祖先遍历、grid-template-columns 读取及 `--pt-sidebar-edge`。必要时将 `FloatingTrigger.tsx` 改名为 `WorkbenchTrigger.tsx`，控件只消费官方 `wide` props 与现有 controller。
-- 这是明确的入口位置调整，不是修补一个已被官方删除的 slot。若产品必须继续左上悬浮，应先另行确定不依赖宿主 DOM 的几何合同；不能悄悄保留原探针并标记本项完成。
-- 抽屉是否仍需 body portal 由 rc.2 smoke 验证；本计划先保留它，不因官方有 overlay 就擅自删除现有置顶保障。避免扩大宿主 CSS 选择器或用更高 z-index 修复焦点问题。
+- 抽屉保留 body portal 与 fixed + z-index 置顶；入口位置不再依赖宿主布局，也不再需要 `--pt-sidebar-edge`、宿主祖先爬链或 `ResizeObserver` 观察宿主 DOM。
 - 复用 `src/client/ui/dialog-focus.ts` 与现有 dialog helper，验证焦点陷阱、Escape、关闭后焦点归还、嵌套弹窗、Tab/Shift+Tab、窄屏和 reduced-motion。ARIA 声明不能代替真实键盘行为。
 - `dsh-panel-activate` 是私有跨插件互斥协议，不是官方 API。本轮保留既有兼容监听的生命周期；移除它需要证明消费者不再依赖，不能仅因本仓库无其他发送方就删除。
 
-### 8.2 全量用户文案归属
+### 8.2 可拖动悬浮按钮（2026-09-13 定稿）
+
+参考实现：`D:\AI\GitHub\dsh-web\packages\dsh-pet`（`@linxin666/dsh-pet` 0.3.21，Apache-2.0）。只借鉴交互机制，不复制其代码、样式或资产：
+
+- `src/client/PetSprite.tsx`：`pointerdown` 时 `setPointerCapture` 并记录起点，位移超过 4px 才算拖动；拖动中按 `right/bottom` 实时夹取到视口内（`clampOffset(dx, window.innerWidth - 40)`），拖动结束才持久化；拖动后浏览器补发的 `click` 由 `draggedRef` 吞掉。
+- `src/client/PetDockEntry.tsx`：收起态召唤按钮用 `position: fixed` + `right/bottom` + 高 z-index 保持可见。
+- 差异：dsh-pet 的坐标经其 host RPC 持久化；本插件没有对应的 UI 布局服务，位置属于浏览器本地偏好，因此改用 localStorage，不新增 bridge / settings 字段。
+
+确定的交互合同：
+
+1. 坐标用视口坐标 `{ left, top }`；默认位 `{ left: 56, top: 40 }`，保持当前视觉起点。
+2. 位移阈值 4px：小于阈值仍视为点击（开合工作台）；超过阈值进入拖动，拖动结束后浏览器补发的 `click` 必须被吞掉，不得开合。
+3. 拖动中实时夹取，按钮整体保持在视口内，边缘留白 8px；窗口尺寸变化后重新夹取（含持久化读回的位置），避免按钮跑到屏幕外。
+4. 位置只在拖动结束时写入 localStorage，key 固定为 `dsh-plugin-prompt-tool:trigger-position`；读写异常、非法载荷或缺字段统一回落默认位，不阻塞工作台，也不提示错误。
+5. 键盘路径不放宽：Enter / Space、`aria-label`、`aria-pressed`、HintTooltip 与焦点样式保持现有行为；`touch-action: none` 只加在按钮上，不影响页面滚动。
+6. 抽屉打开时按钮仍可点击关闭；现有 ≤920px 隐藏重复入口、≤520px 放大触控区的规则保留。
+7. 位置是纯 UI 偏好：不进 `preset.yml`、settings descriptor、bridge 载荷，也不参与预设切换与保存队列。
+
+拟修改文件：
+
+| 文件 | 修改内容 |
+|---|---|
+| `src/client/app/workbench/trigger-position.ts`（新增） | 纯函数与常量：`clampTriggerPosition`、`isTriggerPosition`、`readTriggerPosition`、`writeTriggerPosition`、`TRIGGER_MARGIN = 8`、默认位与 storage key |
+| `src/client/app/workbench/FloatingTrigger.tsx` | 加 `pointerdown/move/up/cancel` + `setPointerCapture` + 4px 阈值 + 拖动结束持久化 + resize 夹取；`triggerRef` 仍指向同一按钮，焦点归还语义不变 |
+| `src/client/app/workbench/Workbench.module.css` | `.floatingTriggerLayer` 去掉 `top/left` 与 `--pt-sidebar-edge`，改由 inline style 定位；`.floatingTrigger` 加 `touch-action: none`、`user-select: none`、`cursor: grab`（`:active` 为 `grabbing`）；删除 `.sidebarEdgeProbe` |
+| `src/client/app/workbench/register-workbench.tsx` | 删除 `sidebar.footer.action` 注册与 `SidebarGeometryProbe` import；保留 `settings.plugins.tab` 与 `shell.overlay` 两条注册边 |
+| `src/client/app/workbench/SidebarGeometryProbe.tsx` | 删除；宿主祖先爬链、`grid-template-columns` 读取、`ResizeObserver` / `transitionend` 跟随与全局 CSS 变量一并移除 |
+| `src/client/index.ts` | 注释同步为「可拖动触发器 + body portal 抽屉」 |
+| `package.json`、`pnpm-workspace.yaml`、`pnpm-lock.yaml` | `@deepseek-ai/dsh-client-ui-sidebar` 失去最后一个消费方：从 `dsh.client.inject`、peer、dev 移除，清理对应版本例外，由 pnpm 重新生成 lockfile（不手写 lock） |
+
+测试与验收：
+
+- 新增 `test/client/trigger-position.test.mjs`：夹取边界（含视口小于按钮）、非法/缺字段/非数字载荷回落默认、storage 抛错不影响读取、写入-读回一致。
+- `test/client/slot-workbench-contract.test.mjs`：断言 register 不再出现 `sidebar.footer.action`、触发器含指针拖动与阈值、CSS 不再出现 `--pt-sidebar-edge`；保留 portal 与 z-index 断言。
+- `test/host-contract.test.mjs`、`test/client-bundle-facade.test.mjs`：同步删除 `ui-sidebar` 的 inject / peer 断言。
+- 现有 `no-host-dom`、`dialog-focus` 保持通过；几何探针删除后，客户端不再保留任何宿主布局探测路径。
+- 真实浏览器 smoke 补充：拖动后刷新位置保持；窗口缩小后按钮完整可见；拖动不触发开合、单击与键盘仍开合。
+
+已否决的替代方案：
+
+- 保留 `sidebar.footer.action` + `--pt-sidebar-edge`：入口位置依赖宿主 grid 内部结构，上游改版即错位，且与「不观察宿主 DOM」的项目约束冲突。
+- 把位置写进 settings / bridge：两者承载部署轴与安全边界，拖动位置既不构成预设行为，也不值得新增写端点与校验面。
+- 固定角落的纯 CSS 方案：不满足「可拖动」这一产品要求。
+
+### 8.3 全量用户文案归属
 
 1. 在 `src/client/locales.ts`（新增）注册类型化 zh/en 字典。文本很多时再按现有 feature 分词典，但不复制翻译框架。
 2. `src/client/index.ts` 通过官方 locale effect 注册与清理；slot 注册补 locale namespace，label 使用官方支持的动态取值函数。
@@ -264,7 +308,7 @@ W3 完成条件：所有模型路径有明确来源及回显；保存失败可�
 
 修改范围：`src/client/app/workbench/`、`src/client/locales.ts`、各 feature 文案与 data 状态提示、必要的 shared 显示 key、`test/client/slot-workbench-contract.test.mjs`、`no-host-dom.test.mjs`、`dialog-focus.test.mjs`、拟新增 `test/client/locale-contract.test.mjs` 与 UI 权威文档。
 
-W4 完成条件：无宿主 DOM 几何探测；标准 slot 装卸正常；单一状态所有者保留草稿；中英文、键盘和窄屏验收通过。
+W4 完成条件：无可拖动入口之外的宿主 DOM 探测；位置持久化与视口夹取完成；标准 slot 装卸正常；单一状态所有者保留草稿；中英文、键盘和窄屏验收通过。
 
 ## 9. W5：固定基线、真实宿主与发布验证
 
@@ -307,7 +351,7 @@ W4 完成条件：无宿主 DOM 几何探测；标准 slot 装卸正常；单一
 | M-10 | 两个 Context 查询模型目录 | 缓存互不污染；并发同源刷新合并；旧 generation 不回写新数据；类方法 this 不丢失 |
 | M-11 | provider 超时／失败／移除及重连 | 保留其他成功分组，提供错误信息；变更使相关缓存失效；describe 不主动远端刷新 |
 | M-12 | 不同模型的 reasoning 元数据和手写模型 ID | effort 选项按 provider/model 更新；无能力时不虚构档位；未知存量值保留且切换仍经宿主校验 |
-| U-01 | 侧栏展开、折叠及不同宽度 | 实际入口由 footer slot 布局，无祖先查找、grid 解析或全局几何变量 |
+| U-01 | 拖动悬浮入口、切换窗口尺寸 | 拖动后位置持久化并跨刷新保持；按钮始终完整可见；窗口缩小后自动夹回；拖动不误开合，单击与键盘仍开合；无祖先爬链、无 grid-template-columns 读取、无针对宿主的 ResizeObserver |
 | U-02 | 抽屉反复开关、切预设与过滤 | 共用 controller/store，未完成草稿和保存队列不丢失；旧响应不串预设 |
 | U-03 | 键盘、嵌套对话框、窄屏、reduced-motion | 焦点限制和归还正确；Escape 不误关无关弹窗；控件有有效可访问名称 |
 | U-04 | Slot declarer 卸载／恢复、插件重挂 | 子项跟随声明生命周期；无重复入口、独立 React root 或宿主 DOM 观察 |
@@ -399,7 +443,7 @@ if ($LASTEXITCODE -ne 0) { throw 'diff --check 失败' }
 - [ ] W1：本地 bootstrap 来源、单工具 minimal、present 覆盖、迁移与原子重建验证。
 - [ ] W2：构建 external、manifest、Web 自愈与卸载生命周期。
 - [ ] W3：模型目录／effort／同步结果、去全局子代理 patch、完整路由回归。
-- [ ] W4：实际 footer 入口、移除 DOM 探针、官方 locale 与键盘／窄屏验收。
+- [ ] W4：可拖动悬浮入口（位置持久化、视口夹取、点击与拖动分离）、移除 DOM 探针、官方 locale 与键盘／窄屏验收。
 - [ ] W5：隔离 test runner、全量门禁、发布消费安装、真实浏览器 smoke。
 - [ ] 同步 README、CHANGELOG、UI/参数/引擎权威文档；记录行为变化和必须由用户执行的重载／物化动作。
 - [ ] 交付实际命令、退出码、失败或未验证项、验收矩阵映射、提交 SHA 与 `origin/dev` 推送结果。
@@ -427,6 +471,8 @@ if ($LASTEXITCODE -ne 0) { throw 'diff --check 失败' }
 | `packages/boot/app-boot/src/profile.ts`、`apps/cli/src/plugin.ts` | profile 模板、bundles 顺序与安装后 reconciliation |
 
 在线核对来源：官方 GitHub Release `deepseek-ai/deepseek-harness` 的 `dsh-v0.1.5-rc.2`；官方 npm registry 中第 4.2 节各包的精确版本元数据（核对日 2026-09-13）。依赖声明事实通过 npm 元数据核对，实际消费者类型／构建／运行兼容性必须由 W0/W5 补充验证，不能从“已发布”直接推导“集成已通过”。
+
+入口交互参考实现（非 DSH 官方包，只借鉴机制、不复制代码／资产）：`D:\AI\GitHub\dsh-web\packages\dsh-pet`（`@linxin666/dsh-pet` 0.3.21，Apache-2.0）——`src/client/PetSprite.tsx` 的 pointer capture、4px 位移阈值、视口夹取与拖动后吞掉尾随 click；`src/client/PetDockEntry.tsx` 的 fixed + right/bottom 收起按钮。其坐标持久化走 pet 自己的 host RPC，本插件不复用该通道。
 
 ## 15. 已完成旧计划归档
 
