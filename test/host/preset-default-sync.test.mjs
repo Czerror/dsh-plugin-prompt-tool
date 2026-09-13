@@ -102,7 +102,6 @@ test('官方 agent-presets.default 变化反向同步 prompt-tool.presetTemplate
     writePreset: false,
     presetTemplate: 'anchored',
     injectAgentsPrompt: false,
-    skillSwitches: {},
     skillOrder: [],
     skillsDirs: [],
     skillRankBase: 250,
@@ -137,13 +136,12 @@ test('兼容快照已处理后，官方预设切换不会创建或复活 prompt-
   rmSync(presetDir, { recursive: true, force: true })
   preset('anchored')
   preset('creative')
-  writePluginState({ seeded: true, paramsMigrated: true, legacyAliasHandled: true })
+  writePluginState({ seeded: true, legacyAliasHandled: true })
   const initial = {
     writeAgents: false,
     writePreset: true,
     presetTemplate: 'anchored',
     injectAgentsPrompt: false,
-    skillSwitches: {},
     skillOrder: [],
     skillsDirs: [],
     skillRankBase: 250,

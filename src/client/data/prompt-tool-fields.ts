@@ -39,7 +39,6 @@ export interface Fields extends EngineParamDrafts {
   agentsText: string
   agentsPath: string
   injectAgentsPrompt: boolean
-  skillSwitches: Record<string, boolean>
   skillOrder: string[]
   skillCatalog: SkillCatalogEntry[]
   /** 用户技能目录列表（按添加顺序）；空 = 默认副本。 */
@@ -91,7 +90,6 @@ export const EMPTY_FIELDS: Fields = {
   agentsText: '',
   agentsPath: '',
   injectAgentsPrompt: false,
-  skillSwitches: {},
   skillOrder: [],
   skillCatalog: [],
   skillsDirs: [],

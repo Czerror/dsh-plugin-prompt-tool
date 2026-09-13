@@ -339,9 +339,6 @@ export function stateFilePath(): string {
 
 export interface PromptToolState {
   seeded?: boolean
-  paramsMigrated?: boolean
-  /** 技能管理已从 settings 抽离（技能键已迁移到磁盘标记 + .system/prompt-tool/config.yml）。 */
-  skillsMigrated?: boolean
   /** 旧容器 id 兼容快照已处理；删除后不再自动复活。 */
   legacyAliasHandled?: boolean
 }

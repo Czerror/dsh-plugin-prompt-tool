@@ -67,7 +67,6 @@ export interface SkillsBridgeState {
   skillOrder: string[]
   skillDirs: string[]
   skillRankBase: number
-  skillSwitches: Record<string, boolean>
   /** 技能启停（隐藏策略）：改名磁盘标记 SKILL.md ↔ SKILL.md.disabled。 */
   toggleSkill: (folder: string, enabled: boolean, dir?: string) => SkillToggleResult
   /** 技能管理配置写入（附加根 / 顺序 / rank 基数），热应用并返回生效值。 */
@@ -481,7 +480,6 @@ export function registerSettingsBridge(
           skillOrder: skillsState.skillOrder,
           skillsDirs: skillsState.skillDirs,
           skillRankBase: skillsState.skillRankBase,
-          skillSwitches: skillsState.skillSwitches,
         }
       }
 

@@ -52,9 +52,8 @@ export const SkillsPage = memo(function SkillsPage(props: { store: PromptToolSto
     })
   }, [fields.skillCatalog, fields.skillOrder])
   // patch 路径从不原地 mutate：引用相等即内容未变，变化时再退内容比较。
-  const dirty = (fields.skillSwitches !== store.savedSwitches.skillSwitches
-      && JSON.stringify(fields.skillSwitches) !== JSON.stringify(store.savedSwitches.skillSwitches))
-    || (fields.skillOrder !== store.savedSwitches.skillOrder
+  // 启停不进脏检测：开关是磁盘事实（点一下即写盘并重载），只有顺序/目录/rank 需要保存。
+  const dirty = (fields.skillOrder !== store.savedSwitches.skillOrder
       && JSON.stringify(fields.skillOrder) !== JSON.stringify(store.savedSwitches.skillOrder))
     || (fields.skillsDirs !== store.savedSwitches.skillsDirs
       && JSON.stringify(fields.skillsDirs) !== JSON.stringify(store.savedSwitches.skillsDirs))

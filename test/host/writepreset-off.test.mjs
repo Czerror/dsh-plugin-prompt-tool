@@ -50,7 +50,6 @@ function settings(presetDir, writePreset) {
     writePreset,
     presetTemplate: 'anchored',
     injectAgentsPrompt: false,
-    skillSwitches: {},
     skillOrder: [],
     skillsDirs: [],
     skillRankBase: 250,

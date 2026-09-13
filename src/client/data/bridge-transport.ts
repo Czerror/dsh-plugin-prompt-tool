@@ -18,7 +18,6 @@ interface BridgeSuccessExtras {
   skillOrder?: string[]
   skillsDirs?: string[]
   skillRankBase?: number
-  skillSwitches?: Record<string, boolean>
   templatePreStepCount?: number
   presetParams?: Record<string, unknown>
   hostDefaultModel?: HostDefaultModel

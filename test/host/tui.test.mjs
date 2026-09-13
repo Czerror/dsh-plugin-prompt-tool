@@ -48,7 +48,6 @@ function makeTui({ failSave = false, skillCatalog = [] } = {}) {
     modelsAvailable: true,
     activeSkillsDirs: ['D:/skills'],
     skillCatalog,
-    skillSwitches: {},
     ...Object.fromEntries([
       'writeAgents', 'writePreset', 'injectAgentsPrompt',
     ].map((key) => [key, true])),
@@ -100,7 +99,7 @@ test('TUI：presetDir 提供时 status 显示生成目录实际配置（settings
     }
     const ctx = { inject(_deps, callback) { callback(sctx) } }
     const source = () => ({
-      modelsAvailable: true, activeSkillsDirs: [], skillCatalog: [], skillSwitches: {},
+      modelsAvailable: true, activeSkillsDirs: [], skillCatalog: [],
       writeAgents: true, writePreset: true, injectAgentsPrompt: false,
     })
     registerTuiCommand(ctx, 'prompt-tool', source, () => ({ available: true, providers: [] }), () => Promise.resolve({}), () => dir)

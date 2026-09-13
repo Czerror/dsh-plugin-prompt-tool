@@ -317,5 +317,70 @@ for (const entry of readdirSync(PRESETS_DIR, { withFileTypes: true })) {
   if (result.changed) changed += 1
 }
 console.log(`migrate-presets: ${total} preset(s) scanned, ${changed} migrated (${DRY_RUN ? 'dry-run' : 'written'})`)
-if (changed === 0) process.exit(0)
-// 有任何迁移执行过但存在失败时（异常已在上面抛出非零），这里正常退出。
+
+// ── 旧全局 settings 引擎参数 → 各插件格式 preset.yml（离线替代运行时兼容）────────────
+// 旧版把引擎参数（firstTurnAnchor / guideText / modelProvider / …）与 promptConfigs 存在
+// settings.yaml 的 prompt-tool 段；现在参数按预设存 preset.yml。运行时不再兼容，本步一次性搬运，
+// 搬完即从 settings.yaml 删除这些键（settings 只留部署轴）。官方格式预设（无 modules/params，
+// 组合直接挂载）跳过——不往用户手动建的预设注入参数。
+const SETTINGS_FILE = join(DSH_HOME, 'settings.yaml')
+const SETTINGS_NS = 'prompt-tool'
+
+async function migrateSettingsParams() {
+  if (!existsSync(SETTINGS_FILE)) return { keys: [], migrated: 0, skipped: 0 }
+  // 读 settings.yaml 用 Document API：删除键时保留注释与其他段。
+  const doc = parseDocument(readFileSync(SETTINGS_FILE, 'utf8'))
+  if (doc.errors.length > 0) throw new Error(`settings.yaml 不是合法 YAML，已拒绝改写：${doc.errors[0].message}`)
+  const user = (doc.toJS() ?? {})[SETTINGS_NS]
+  if (user === undefined || user === null || typeof user !== 'object') return { keys: [], migrated: 0, skipped: 0 }
+
+  // 参数键与写入语义由插件实现提供（savePresetParams：模型段映射、空值删除、注释保留）。
+  process.env.DSH_HOME = DSH_HOME
+  const { PARAM_KEYS } = await import('../src/shared/param-keys.ts')
+  const { loadPresetSpec, resolvePresetDir, savePresetParams } = await import('../src/host/manifest.ts')
+
+  const params = {}
+  for (const key of PARAM_KEYS) {
+    if (key !== 'promptConfigs' && Object.prototype.hasOwnProperty.call(user, key)) params[key] = user[key]
+  }
+  const promptConfigs = Array.isArray(user.promptConfigs) ? user.promptConfigs : undefined
+  const keys = [...Object.keys(params), ...(promptConfigs === undefined ? [] : ['promptConfigs'])]
+  if (keys.length === 0) return { keys: [], migrated: 0, skipped: 0 }
+
+  let migrated = 0
+  let skipped = 0
+  for (const entry of readdirSync(PRESETS_DIR, { withFileTypes: true })) {
+    if (!entry.isDirectory() || entry.name.startsWith('.')) continue
+    const presetFile = join(PRESETS_DIR, entry.name, 'preset.yml')
+    if (!existsSync(presetFile)) continue
+    const spec = loadPresetSpec(resolvePresetDir(entry.name))
+    const isPluginFormat = Array.isArray(spec.modules)
+      || (spec.params !== null && typeof spec.params === 'object')
+    if (!isPluginFormat) {
+      skipped += 1
+      continue
+    }
+    if (DRY_RUN) {
+      console.log(`[dry-run] settings 参数 → preset ${entry.name}（键：${keys.join(', ')}）`)
+    } else {
+      writeFileSync(`${presetFile}.bak-${Date.now().toString(36)}`, readFileSync(presetFile, 'utf8'), 'utf8')
+      savePresetParams(PRESETS_DIR, entry.name, params, promptConfigs)
+    }
+    migrated += 1
+  }
+
+  if (!DRY_RUN && migrated > 0) {
+    for (const key of keys) doc.deleteIn([SETTINGS_NS, key])
+    const backup = `${SETTINGS_FILE}.bak-${Date.now().toString(36)}`
+    const temporary = `${SETTINGS_FILE}.tmp-${process.pid}-${Date.now().toString(36)}`
+    writeFileSync(backup, readFileSync(SETTINGS_FILE, 'utf8'), 'utf8')
+    writeFileSync(temporary, doc.toString(), 'utf8')
+    renameSync(temporary, SETTINGS_FILE)
+  }
+  return { keys, migrated, skipped }
+}
+
+const settingsMigration = await migrateSettingsParams()
+console.log(settingsMigration.keys.length === 0
+  ? 'migrate-presets: settings 参数无需迁移'
+  : `migrate-presets: settings 参数 ${settingsMigration.migrated} preset(s) migrated（键：${settingsMigration.keys.join(', ')}）；跳过官方格式 ${settingsMigration.skipped} 个 (${DRY_RUN ? 'dry-run' : 'written'})`)

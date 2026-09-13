@@ -26,17 +26,6 @@ const readNumber = (source: Record<string, unknown>, key: string, fallback: numb
   return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : fallback
 }
 
-const readSkillSwitches = (source: Record<string, unknown>, key: string): Record<string, boolean> => {
-  const value = source[key]
-  if (value === null || typeof value !== 'object') return {}
-  const entries = Object.entries(value as Record<string, unknown>)
-  const result: Record<string, boolean> = {}
-  for (const [name, enabled] of entries) {
-    if (typeof enabled === 'boolean') result[name] = enabled
-  }
-  return result
-}
-
 const readSkillCatalog = (source: Record<string, unknown>, key: string): SkillCatalogEntry[] => {
   const value = source[key]
   if (!Array.isArray(value)) return []
@@ -78,9 +67,8 @@ export function fieldsFromView(res: BridgeResult<BridgeSettingsView>): Fields {
   const ns = res.ok ? res.value : undefined
   const value = asRecord(ns?.value)
   const base = asRecord(ns?.base)
-  // 技能管理已抽离 settings：优先用 describe 事实（来自插件配置文件与磁盘扫描），
-  // settings 里的同名字段只作旧宿主回退。
-  const extraSkillSwitches = res.ok && res.skillSwitches !== undefined ? res.skillSwitches : undefined
+  // 技能管理不在 settings：顺序/目录/rank 来自 describe 事实（插件配置文件），
+  // 启停来自 skillCatalog 的 disabled 标记（磁盘 SKILL.md.disabled）。
   const extraSkillOrder = res.ok && Array.isArray(res.skillOrder) ? res.skillOrder : undefined
   const extraSkillDirs = res.ok && Array.isArray(res.skillsDirs) ? res.skillsDirs : undefined
   const extraSkillRankBase = res.ok && typeof res.skillRankBase === 'number' ? res.skillRankBase : undefined
@@ -91,23 +79,13 @@ export function fieldsFromView(res: BridgeResult<BridgeSettingsView>): Fields {
     agentsText: readString(value, 'agentsText') ?? readString(base, 'agentsText') ?? '',
     agentsPath: readString(value, 'agentsPath') ?? readString(base, 'agentsPath') ?? '',
     injectAgentsPrompt: readBoolean(value, 'injectAgentsPrompt', readBoolean(base, 'injectAgentsPrompt', false)),
-    skillSwitches: extraSkillSwitches
-      ?? (value.skillSwitches !== undefined || base.skillSwitches !== undefined
-        ? { ...readSkillSwitches(base, 'skillSwitches'), ...readSkillSwitches(value, 'skillSwitches') }
-        : {}),
-    skillOrder: extraSkillOrder
-      ?? (readStringArray(value, 'skillOrder').length > 0
-        ? readStringArray(value, 'skillOrder')
-        : readStringArray(base, 'skillOrder')),
+    skillOrder: extraSkillOrder ?? [],
     skillCatalog: res.ok && res.skillCatalog !== undefined && res.skillCatalog.length > 0
       ? res.skillCatalog
       : readSkillCatalog(value, 'skillCatalog').length > 0
         ? readSkillCatalog(value, 'skillCatalog')
         : readSkillCatalog(base, 'skillCatalog'),
-    skillsDirs: extraSkillDirs
-      ?? (readStringArray(value, 'skillsDirs').length > 0
-        ? readStringArray(value, 'skillsDirs')
-        : readStringArray(base, 'skillsDirs')),
+    skillsDirs: extraSkillDirs ?? [],
     activeSkillsDirs: readStringArray(value, 'activeSkillsDirs').length > 0
       ? readStringArray(value, 'activeSkillsDirs')
       : readStringArray(base, 'activeSkillsDirs'),
@@ -126,7 +104,7 @@ export function fieldsFromView(res: BridgeResult<BridgeSettingsView>): Fields {
       }
       return result
     })(),
-    skillRankBase: extraSkillRankBase ?? readNumber(value, 'skillRankBase', readNumber(base, 'skillRankBase', 250)),
+    skillRankBase: extraSkillRankBase ?? 250,
     residentAgentsPath: readString(value, 'residentAgentsPath') ?? readString(base, 'residentAgentsPath') ?? '',
     presetDir: readString(value, 'presetDir') ?? readString(base, 'presetDir') ?? '',
     presetOrder: readNumber(value, 'presetOrder', readNumber(base, 'presetOrder', 5)),
@@ -159,7 +137,6 @@ export function bridgeViewFromBoot(boot: BridgeResult<BridgeSettingsView>): Brid
     skillOrder: boot.skillOrder,
     skillsDirs: boot.skillsDirs,
     skillRankBase: boot.skillRankBase,
-    skillSwitches: boot.skillSwitches,
     templatePreStepCount: boot.templatePreStepCount,
     presetParams: boot.presetParams,
     hostDefaultModel: boot.hostDefaultModel,

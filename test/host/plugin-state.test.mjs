@@ -17,8 +17,8 @@ const STATE_FILE = join(home, '.prompt-tool-state.json')
 const PRESETS_DIR = join(home, '.agent-presets')
 
 test('writePluginState/readPluginState：原子写（tmp+rename）往返一致', () => {
-  writePluginState({ seeded: true, paramsMigrated: false, legacyAliasHandled: true })
-  assert.deepEqual(readPluginState(), { seeded: true, paramsMigrated: false, legacyAliasHandled: true })
+  writePluginState({ seeded: true, legacyAliasHandled: true })
+  assert.deepEqual(readPluginState(), { seeded: true, legacyAliasHandled: true })
   assert.equal(existsSync(`${STATE_FILE}.tmp`), false, '临时文件不应残留')
 })
 
@@ -75,7 +75,7 @@ test('安全边界：状态写入只影响自身文件，DSH_HOME 根其他文�
 
   // 多次状态读写（含旧标记迁移路径）。
   writePluginState({ seeded: true })
-  writePluginState({ seeded: true, paramsMigrated: true })
+    writePluginState({ seeded: true })
   ensurePresetSeed()
 
   const after = snapshot()

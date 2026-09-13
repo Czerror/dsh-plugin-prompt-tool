@@ -9,6 +9,54 @@ import { fileURLToPath } from 'node:url'
 const ROOT = fileURLToPath(new URL('../..', import.meta.url))
 const SCRIPT = join(ROOT, 'scripts', 'migrate-presets.mjs')
 
+test('migrate-presets：旧全局 settings 引擎参数搬进插件格式预设，官方格式预设跳过', () => {
+  const home = mkdtempSync(join(tmpdir(), 'pt-migrate-settings-'))
+  try {
+    const pluginPreset = makePresetDir(home, 'beta')
+    writeFileSync(join(pluginPreset, 'preset.yml'), [
+      'id: beta',
+      'name: Beta',
+      'modules: [prompt-config-engine]',
+      'params:',
+      '  keepMe: v',
+      '',
+    ].join('\n'), 'utf8')
+    const officialPreset = makePresetDir(home, 'gamma')
+    writeFileSync(join(officialPreset, 'preset.yml'), 'id: gamma\nname: Gamma\n', 'utf8')
+    writeFileSync(join(home, 'settings.yaml'), [
+      'agent-presets:',
+      '  default: beta',
+      'prompt-tool:',
+      '  firstTurnAnchor: true',
+      '  guideText: 旧引导',
+      '  promptConfigs:',
+      '    - id: legacy-config',
+      '      text: 旧配置',
+      '  writeAgents: false',
+      '',
+    ].join('\n'), 'utf8')
+
+    const output = execFileSync(process.execPath, [SCRIPT], { env: { ...process.env, DSH_HOME: home }, encoding: 'utf8' })
+    assert.match(output, /settings 参数 1 preset\(s\) migrated/)
+
+    const after = readFileSync(join(pluginPreset, 'preset.yml'), 'utf8')
+    assert.match(after, /firstTurnAnchor: true/)
+    assert.match(after, /guideText: 旧引导/)
+    assert.match(after, /keepMe: v/, '既有参数保留')
+    assert.match(after, /legacy-config/, '旧 promptConfigs 搬进预设')
+
+    const settings = readFileSync(join(home, 'settings.yaml'), 'utf8')
+    assert.equal(/firstTurnAnchor|guideText|promptConfigs/.test(settings), false, '旧参数键已从 settings 移除')
+    assert.match(settings, /writeAgents: false/, '部署轴键保留')
+    assert.equal(/firstTurnAnchor/.test(readFileSync(join(officialPreset, 'preset.yml'), 'utf8')), false, '官方格式预设不注入参数')
+
+    const second = execFileSync(process.execPath, [SCRIPT], { env: { ...process.env, DSH_HOME: home }, encoding: 'utf8' })
+    assert.match(second, /settings 参数无需迁移/, '重复运行幂等')
+  } finally {
+    rmSync(home, { recursive: true, force: true })
+  }
+})
+
 function makePresetDir(home, name) {
   const dir = join(home, '.agent-presets', name)
   mkdirSync(dir, { recursive: true })

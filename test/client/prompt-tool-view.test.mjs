@@ -15,23 +15,29 @@ test('fields view：当前值覆盖 base，缺省字段保留稳定默认', () =
   })
   assert.equal(fields.writePreset, false)
   assert.equal(fields.presetTemplate, 'active')
-  assert.deepEqual(fields.skillOrder, ['base-skill'])
+  assert.deepEqual(fields.skillOrder, [], '技能顺序不在 settings：只认 describe 事实')
   assert.equal(fields.writeAgents, EMPTY_FIELDS.writeAgents)
 })
 
-test('fields view：保留 bootstrap 顶层的技能目录存在性', () => {
+test('fields view：技能顺序/目录/rank 与目录存在性都取 describe 事实', () => {
   const path = 'D:\\AI\\CC-switch\\skills'
   const fields = fieldsFromView(bridgeViewFromBoot({
     ok: true,
     value: {
       ns: 'prompt-tool',
       revision: 1,
-      value: { skillsDirs: [path], activeSkillsDirs: [path] },
+      value: {},
     },
+    skillOrder: ['demo-skill'],
+    skillsDirs: [path],
+    skillRankBase: 300,
     activeSkillsDirs: [path],
     skillsDirExists: { [path]: true },
     skillCatalog: [],
   }))
+  assert.deepEqual(fields.skillOrder, ['demo-skill'])
+  assert.deepEqual(fields.skillsDirs, [path])
+  assert.equal(fields.skillRankBase, 300)
   assert.equal(fields.skillsDirExists[path], true)
 })
 

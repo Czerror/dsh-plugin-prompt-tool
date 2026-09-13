@@ -5,7 +5,6 @@ import {
   DEFAULT_PRESET_DIR,
   DEFAULT_PRESET_ORDER,
   DEFAULT_RESIDENT_AGENTS_PATH,
-  DEFAULT_SKILL_RANK_BASE,
 } from './host/paths.ts'
 import type { PresetWriterParams } from './shared/engine-params.ts'
 
@@ -23,16 +22,6 @@ export interface Config {
   writePreset: boolean
   /** 预设模板名（默认 anchored；其他模板时 anchored 专属 UI 可隐藏）。 */
   presetTemplate: string
-  /** 旧版逐技能开关：仅用于一次性迁移（停用已改为磁盘标记 SKILL.md.disabled）。 */
-  skillSwitches: Record<string, boolean>
-  /** 技能展示顺序（目录名数组）：排前面的技能 rank 更小，模型最先看到。 */
-  skillOrder: string[]
-  /** 用户自定义技能目录列表（按添加顺序，首个目录优先级最高）；空 = 自动使用 $DSH_HOME/skills 副本。 */
-  skillsDirs: string[]
-  /** 旧版单值技能目录（仅读取迁移用，新版本统一写回 skillsDirs）。 */
-  skillsDir?: string
-  /** 技能候选排序基数，技能目录内按下标递增。 */
-  skillRankBase: number
   /** 常驻规则文件目标路径。 */
   residentAgentsPath: string
   /** 生成的 agent preset 目录。 */
@@ -50,12 +39,6 @@ export const Config: z<Config> = z.object({
   writeAgents: z.boolean().default(true),
   writePreset: z.boolean().default(true),
   presetTemplate: z.string().default('anchored'),
-  skillSwitches: z.dict(z.boolean()).default({}),
-  skillOrder: z.array(z.string()).default([]),
-  skillsDirs: z.array(z.string()).default([]),
-  // 兼容旧版单值 key：读取后由 index 归一迁移到 skillsDirs。
-  skillsDir: z.string().default(''),
-  skillRankBase: z.natural().default(DEFAULT_SKILL_RANK_BASE),
   residentAgentsPath: z.string().default(DEFAULT_RESIDENT_AGENTS_PATH),
   presetDir: z.string().default(DEFAULT_PRESET_DIR),
   presetOrder: z.natural().default(DEFAULT_PRESET_ORDER),
@@ -110,19 +93,12 @@ export interface PromptSettings {
   injectAgentsPrompt: boolean
   /** 运行时检测：是否检测到任何模型服务商（不写入 settings）。 */
   modelsAvailable: boolean
-  /** 派生视图：folder → 是否启用（由技能目录里的 SKILL.md / SKILL.md.disabled 标记推导）。 */
-  skillSwitches: Record<string, boolean>
-  /** 技能展示顺序（目录名数组）。 */
-  skillOrder: string[]
+  /** 技能目录全量条目（含停用态）：启停与顺序的唯一事实来源由技能根与配置文件提供。 */
   skillCatalog: SkillCatalogEntry[]
-  /** 用户自定义技能目录列表（按添加顺序）；空 = 自动使用 $DSH_HOME/skills 副本。 */
-  skillsDirs: string[]
-  /** 当前实际生效的技能目录列表（空配置 = [$DSH_HOME/skills]）。 */
+  /** 当前实际生效的技能目录列表（配置为空 = [$DSH_HOME/skills]）。 */
   activeSkillsDirs: string[]
   /** 生效目录存在性（path → 目录是否存在，供 UI 状态徽章）。 */
   skillsDirExists: Record<string, boolean>
-  /** 技能候选排序基数。 */
-  skillRankBase: number
   /** 常驻规则文件目标路径。 */
   residentAgentsPath: string
   /** 生成的 agent preset 目录。 */
@@ -139,8 +115,6 @@ export interface PromptSettings {
 export const PromptSettingsSchema: z<PromptSettings> = z.object({
   injectAgentsPrompt: z.boolean().default(false),
   modelsAvailable: z.boolean().default(true),
-  skillSwitches: z.dict(z.boolean()).default({}),
-  skillOrder: z.array(z.string()).default([]),
   skillCatalog: z.array(z.object({
     folder: z.string(),
     name: z.string(),
@@ -153,10 +127,8 @@ export const PromptSettingsSchema: z<PromptSettings> = z.object({
     modelInvocable: z.boolean().default(false),
     userInvocable: z.boolean().default(false),
   })).default([]),
-  skillsDirs: z.array(z.string()).default([]),
   activeSkillsDirs: z.array(z.string()).default([]),
   skillsDirExists: z.dict(z.boolean()).default({}),
-  skillRankBase: z.natural().default(DEFAULT_SKILL_RANK_BASE),
   residentAgentsPath: z.string().default(DEFAULT_RESIDENT_AGENTS_PATH),
   presetDir: z.string().default(DEFAULT_PRESET_DIR),
   presetOrder: z.natural().default(DEFAULT_PRESET_ORDER),
@@ -178,12 +150,6 @@ export interface RuntimeOptions extends PresetWriterParams {
   writePreset: boolean
   presetTemplate: string
   injectAgentsPrompt: boolean
-  /** 技能展示顺序（目录名数组）。 */
-  skillOrder: string[]
-  /** 用户自定义技能目录列表（按添加顺序）；空 = 自动使用 $DSH_HOME/skills 副本。 */
-  skillsDirs: string[]
-  /** 技能候选排序基数。 */
-  skillRankBase: number
   /** 常驻规则文件目标路径。 */
   residentAgentsPath: string
   /** 生成的 agent preset 目录。 */

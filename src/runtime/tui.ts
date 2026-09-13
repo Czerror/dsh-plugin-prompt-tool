@@ -96,7 +96,8 @@ function renderTuiStatus(source: PromptSettings, params: Record<string, unknown>
   }
   lines.push('技能开关:')
   for (const skill of source.skillCatalog) {
-    const value = source.skillSwitches[skill.folder] !== false
+    // 启停 = 磁盘事实：SKILL.md.disabled 标记。
+    const value = skill.disabled !== true
     const detail = skill.valid
       ? (skill.modelInvocable ? '模型可调用' : '模型不可调用')
       : `未注册:${skill.issue ?? '不合法'}`
@@ -248,7 +249,7 @@ export function registerTuiCommand(
         if (tokens[0] === 'skill') {
           const { id: folder, action } = parseIdentifierAndAction(tokens.slice(1), () => true)
           if (folder.length === 0) return usage()
-          const current = source.skillSwitches[folder] !== false
+          const current = source.skillCatalog.find((skill) => skill.folder === folder)?.disabled !== true
           const next = parseTuiBoolean(action, current)
           if (next === undefined) return usage()
           if (toggleSkillState === undefined) {

@@ -26,6 +26,17 @@ dsh --profile prompt-tool
 
 技能状态不再是 settings 数据：**停用 = 把技能目录里的 `SKILL.md` 改名为 `SKILL.md.disabled`**（官方 provider 与本插件同时看不到，开关热生效、可手工还原），技能顺序 / 附加目录 / rank 基数写在 `$DSH_HOME/skills/.system/prompt-tool/config.yml`（官方扫描跳过 `.system` 段），`settings.yaml` 只保留部署轴（预设 / AGENTS.md 等）。
 
+### 从旧版本升级（一次性离线迁移）
+
+插件不含任何运行时兼容/自动迁移，旧数据由仓库脚本搬运（可重复运行，`--dry-run` 只报告、写盘前备份）：
+
+```bash
+pnpm migrate:skills     # 旧 per-profile 技能副本 → $DSH_HOME/skills；settings 技能键 → 配置文件 + 磁盘停用 + 删除旧键
+pnpm migrate:presets    # 旧全局 settings 引擎参数 → 各预设 preset.yml；旧预设格式/人设卡等
+```
+
+`pnpm migrate:skills --clean-legacy` 把旧副本目录改名归档（`skills.retired-<时间戳>`，可恢复，不删除）。
+
 旧的 base-only profile（只有 `dsh-base`）首次启动时，插件会把 `@deepseek-ai/dsh-web-app` 补进该 profile 的 `dsh.profile.bundles`（写前留 `.bak`，幂等），并提示重启；需要重启 DSH 服务后生效，插件不会替你重启运行中的服务。
 
 需要 DSH `0.1.5-rc.2+`；当前开发与验证版本为 `0.1.5-rc.2`（官方包锁定该基线）。Node 需要 `^22.19.0 || >=24.0.0`，与官方宿主一致。

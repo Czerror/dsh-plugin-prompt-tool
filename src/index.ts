@@ -8,7 +8,7 @@ import type {
   SkillProviderControl,
 } from '@deepseek-ai/dsh-skill'
 import type {} from '@deepseek-ai/dsh-host-webserver'
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createSkillsWatcher } from './runtime/skills-watcher.ts'
 import { basename, dirname, join } from 'node:path'
 import {
@@ -47,7 +47,6 @@ import {
 import {
   Config,
   NS,
-  PARAM_KEYS,
   PromptSettings,
   PromptSettingsSchema,
   RuntimeOptions,
@@ -55,7 +54,6 @@ import {
   SkillEntry,
 } from './config.ts'
 import {
-  DEFAULT_SKILL_RANK_BASE,
   DEFAULT_PRESET_DIR,
   DEFAULT_SKILLS_DIR,
   LEGACY_CONTAINER_DIR,
@@ -63,8 +61,6 @@ import {
 } from './host/paths.ts'
 import { setSkillEnabled, type SkillToggleResult } from './host/skill-toggle.ts'
 import {
-  isDeprecatedProfileSkillDir,
-  planSkillsMigration,
   readSkillsConfig,
   skillsConfigPath,
   writeSkillsConfig,
@@ -389,24 +385,8 @@ export function apply(ctx: Context, configIn: Config): void {
     if (read.ok === false) warn(ctx, `prompt-tool: ${read.message}`)
     return read.config
   }
-  // 首启播种：配置文件还不存在时，把旧 loader config（cordis 行 config）里的
-  // 技能键迁进配置文件；settings 里的旧值由 migrateSkillsFromSettings 承担。
-  const legacyLoaderSkillDirs = [
-    ...(Array.isArray(config.skillsDirs) ? config.skillsDirs : []),
-    ...(typeof config.skillsDir === 'string' && config.skillsDir.trim().length > 0 ? [config.skillsDir] : []),
-  ].filter((dir): dir is string => typeof dir === 'string' && dir.trim().length > 0
-    && !isDeprecatedProfileSkillDir(dir))
-  const legacyLoaderSkillOrder = Array.isArray(config.skillOrder)
-    ? config.skillOrder.filter((folder): folder is string => typeof folder === 'string' && folder.length > 0)
-    : []
-  if (!existsSync(skillsConfigFile)
-    && (legacyLoaderSkillDirs.length > 0 || legacyLoaderSkillOrder.length > 0 || config.skillRankBase !== DEFAULT_SKILL_RANK_BASE)) {
-    const seeded = writeSkillsConfig(
-      { dirs: legacyLoaderSkillDirs, order: legacyLoaderSkillOrder, rankBase: config.skillRankBase },
-      skillsConfigFile,
-    )
-    if (seeded.ok === false) warn(ctx, `prompt-tool: ${seeded.message}`)
-  }
+  // 技能配置只有两个来源：默认技能根 + 该配置文件。旧 settings 键与旧 per-profile
+  // 副本不做运行时兼容，一律由离线脚本 scripts/migrate-skills.mjs 迁移。
   let skillsConfig = readSkillsConfigSafe()
   let skillsConfigSnapshot = JSON.stringify(skillsConfig)
   let skillsOrder: string[] = [...skillsConfig.order]
@@ -618,7 +598,6 @@ export function apply(ctx: Context, configIn: Config): void {
       skillOrder: [...skillsOrder],
       skillDirs: [...skillsConfig.dirs],
       skillRankBase: skillsRankBase,
-      skillSwitches: Object.fromEntries(skillCatalog.map((entry) => [entry.folder, entry.disabled !== true])),
       toggleSkill,
       patchSkillsConfig,
       renameSkillInOrder: renameSkillOrderEntry,
@@ -686,8 +665,6 @@ export function apply(ctx: Context, configIn: Config): void {
     writePreset: config.writePreset,
     presetTemplate: typeof config.presetTemplate === 'string' && config.presetTemplate.length > 0 ? config.presetTemplate : 'anchored',
     injectAgentsPrompt: config.injectAgentsPrompt,
-    skillOrder: [...skillsOrder],
-    skillsDirs: [...skillsConfig.dirs],
     // 引擎参数：激活预设 preset.yml（每预设独立，settings 不再承载）。
     firstTurnAnchor: initialParams.firstTurnAnchor === true,
     firstTurnText: asString(initialParams.firstTurnText),
@@ -715,7 +692,6 @@ export function apply(ctx: Context, configIn: Config): void {
     maxDepth: initialParams.maxDepth as RuntimeOptions['maxDepth'],
     allowKinds: initialParams.allowKinds as string[] | string | undefined,
     firstTurnWord: asString(initialParams.firstTurnWord) || undefined,
-    skillRankBase: skillsRankBase,
     residentAgentsPath: config.residentAgentsPath,
     presetDir: config.presetDir,
     presetOrder: config.presetOrder,
@@ -791,14 +767,9 @@ export function apply(ctx: Context, configIn: Config): void {
   let currentSource = (): PromptSettings => ({
     injectAgentsPrompt: runtime.injectAgentsPrompt,
     modelsAvailable: getModelsState().available,
-    // 派生视图：启用与否只看技能目录里的标记文件（SKILL.md / SKILL.md.disabled）。
-    skillSwitches: Object.fromEntries(skillCatalog.map((entry) => [entry.folder, entry.disabled !== true])),
-    skillOrder: runtime.skillOrder,
     skillCatalog,
-    skillsDirs: runtime.skillsDirs,
     activeSkillsDirs,
     skillsDirExists: Object.fromEntries(activeSkillsDirs.map((dir) => [dir, existsSync(dir)])),
-    skillRankBase: runtime.skillRankBase,
     residentAgentsPath: runtime.residentAgentsPath,
     presetDir: runtime.presetDir,
     presetOrder: runtime.presetOrder,
@@ -967,137 +938,6 @@ registerTuiCommand(
   // settings 注册 base 与运行时快照同源（单一组装，避免双份字段漂移）。
   const settingsEntry: PromptSettings = currentSource()
 
-  /**
-   * 阶段 3 迁移（一次性）：settings.yaml 里的技能管理键 → 磁盘事实 + 插件配置文件。
-   *  - `skillSwitches[folder] === false` → 该技能标记改名 SKILL.md.disabled（真实隐藏）；
-   *  - `skillsDirs` / `skillsDir` / `skillOrder` / `skillRankBase` → `.system/prompt-tool/config.yml`；
-   *  - 迁移后 unset settings 里的技能键，settings.yaml 只留部署轴（预设/AGENTS.md 等）。
-   * state.skillsMigrated 后跳过；settings 不可用时下次启动重试（迁移幂等）。
-   */
-  const migrateSkillsFromSettings = (sctx: Context): void => {
-    const state = readPluginState()
-    if (state.skillsMigrated === true) return
-    let userSection: Record<string, unknown> = {}
-    try {
-      const descriptor = sctx.settings.describe({ redactSecrets: true })
-        .find((entry) => String(entry.ns) === String(NS))
-      userSection = descriptor?.user !== null && typeof descriptor?.user === 'object'
-        ? descriptor.user as Record<string, unknown>
-        : {}
-    } catch {
-      return
-    }
-    const markMigrated = (): void => {
-      try {
-        writePluginState({ ...readPluginState(), skillsMigrated: true })
-      } catch {
-        // 状态写入失败下次启动重试（迁移本身幂等）。
-      }
-    }
-
-    // 迁移方案是纯函数（可确定性测试）：目录/顺序/rank → 配置文件，false → 磁盘停用，旧键 → 卸载。
-    const plan = planSkillsMigration(userSection, skillsConfig)
-    if (Object.keys(plan.patch).length > 0) patchSkillsConfig(plan.patch)
-    // 2) 关掉的技能落成磁盘事实（标记改名）；找不到的技能只提示，不阻断迁移。
-    for (const folder of plan.disable) {
-      const result = toggleSkill(folder, false)
-      if (result.ok === false) warn(ctx, `prompt-tool: 迁移技能开关失败（${folder}）：${result.message}`)
-    }
-    // 3) 卸载 settings 里的技能键：settings.yaml 不再承载技能管理。
-    const unsetKeys = plan.unsetKeys
-    if (unsetKeys.length === 0) {
-      markMigrated()
-      return
-    }
-    void sctx.settings.mutate(NS, unsetKeys.map((key) => ({ op: 'unset' as const, path: [key] })))
-      .then(() => {
-        settingsBridge.invalidateDescriptor()
-        markMigrated()
-      })
-      .catch((error: unknown) => {
-        warn(ctx, `prompt-tool: 技能键从 settings 卸载失败（下次启动重试）：${error instanceof Error ? error.message : String(error)}`)
-      })
-  }
-
-  /** 阶段 2 迁移：旧全局 settings 引擎参数 → 激活预设 preset.yml（一次性，state.paramsMigrated 后跳过）。
-   *  兼容旧版预设根内 .pt-params-migrated 标记：存在即视为已迁移，并迁入状态文件后删除。 */
-  const migrateSettingsParamsToPreset = (sctx: Context): void => {
-    const legacyMark = join(runtime.presetDir, '.pt-params-migrated')
-    const state = readPluginState()
-    if (state.paramsMigrated === true || existsSync(legacyMark)) {
-      if (existsSync(legacyMark)) {
-        try {
-          writePluginState({ ...state, paramsMigrated: true })
-          rmSync(legacyMark, { force: true })
-        } catch {
-          // 旧标记迁移失败不阻断（下次启动重试）。
-        }
-      }
-      return
-    }
-    let userSection: Record<string, unknown> = {}
-    try {
-      const descriptor = sctx.settings.describe({ redactSecrets: true })
-        .find((entry) => String(entry.ns) === String(NS))
-      // 官方 describe：value = schema 解析后的 resolved 值（参数键删除后不含旧参数），
-      // user = 原始文档 user section（含旧版全局参数键）——迁移必须读 user。
-      userSection = descriptor?.user !== null && typeof descriptor?.user === 'object'
-        ? descriptor.user as Record<string, unknown>
-        : descriptor?.value !== null && typeof descriptor?.value === 'object'
-          ? descriptor.value as Record<string, unknown>
-          : {}
-    } catch {
-      // describe 失败（settings 服务不可用）跳过，下次启动重试。
-      return
-    }
-    const params: Record<string, unknown> = {}
-    for (const key of PARAM_KEYS) {
-      if (key !== 'promptConfigs' && Object.prototype.hasOwnProperty.call(userSection, key)) {
-        params[key] = userSection[key]
-      }
-    }
-    const promptConfigs = Array.isArray(userSection.promptConfigs)
-      ? userSection.promptConfigs as unknown[]
-      : undefined
-    if (Object.keys(params).length === 0 && promptConfigs === undefined) {
-      try {
-        mkdirSync(runtime.presetDir, { recursive: true })
-        writePluginState({ ...readPluginState(), paramsMigrated: true })
-      } catch {
-        // 状态写入失败忽略（下次启动重试）。
-      }
-      return
-    }
-    try {
-      // 旧版参数是全局单文档（切换任何预设都生效）：写全部插件格式预设
-      // （含 modules/params 段的种子化模板），保持旧语义；官方格式预设
-      // （无 modules/params，组合直接挂载）跳过——不往用户手动建的预设注入参数。
-      let written = 0
-      for (const preset of listPresets()) {
-        try {
-          const spec = loadPresetSpec(resolvePresetDir(preset.id))
-          const isPluginFormat = Array.isArray(spec.modules)
-            || (spec.params !== null && typeof spec.params === 'object')
-          if (!isPluginFormat) continue
-          savePresetParams(runtime.presetDir, preset.id, params, promptConfigs)
-          written++
-        } catch {
-          // 单个预设写入失败不阻断其余（下次启动重试）。
-        }
-      }
-      if (written === 0) {
-        writePluginState({ ...readPluginState(), paramsMigrated: true })
-        return
-      }
-      reloadPresetParams()
-      rebuildPreset()
-      writePluginState({ ...readPluginState(), paramsMigrated: true })
-      warn(ctx, `prompt-tool: 已把旧全局 settings 参数迁移到 ${written} 个预设 preset.yml（每预设独立存储）`)
-    } catch (error) {
-      warn(ctx, `prompt-tool: settings 参数迁移失败（下次启动重试）：${error instanceof Error ? error.message : String(error)}`)
-    }
-  }
-
   // 启动顺序兜底：agent-presets 注册自身 settings namespace 时不会发 settings/updated。
   // 若本插件先 attach settings，首次读取会得到 undefined；等 agentPresets 服务就绪后再对齐一次。
   ctx.inject(['settings', 'agentPresets'], () => {
@@ -1127,10 +967,8 @@ registerTuiCommand(
     // 正常 attach 则以官方 default 为共享事实反向对齐本插件。二者互斥，避免异步写竞态。
     if (legacyMigrated) syncHostDefault('migrate')
     else syncTemplateFromHostDefault()
-    // 阶段 2 迁移：旧全局 settings 参数 → 激活预设 preset.yml。
-    migrateSettingsParamsToPreset(sctx)
-    // 阶段 3 迁移：settings 技能管理键 → 磁盘标记 + .system/prompt-tool/config.yml。
-    migrateSkillsFromSettings(sctx)
+    // 旧版 settings 兼容（全局引擎参数 / 技能键 / per-profile 技能副本）不做运行时迁移：
+    // 一次性搬运由离线脚本承担（pnpm migrate:presets / pnpm migrate:skills）。
   })
 }
 

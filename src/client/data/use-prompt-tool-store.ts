@@ -639,13 +639,17 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     })
   }, [load, patch, showNotice])
 
-  const skillEnabled = useCallback((folder: string) => fieldsRef.current.skillSwitches[folder] !== false, [])
+  /** 启停状态取自扫描事实：skillCatalog 条目的 disabled（磁盘 SKILL.md.disabled）。 */
+  const skillEnabled = useCallback(
+    (folder: string) => fieldsRef.current.skillCatalog.find((item) => item.folder === folder)?.disabled !== true,
+    [],
+  )
 
   /** 技能启停 = 磁盘标记改名（SKILL.md ↔ SKILL.md.disabled）：官方 provider 与本插件
    *  同时看不到/恢复该技能；成功后静默重载，用服务端扫描结果刷新开关与目录状态。 */
   const toggleSkill = useCallback((folder: string) => {
     const entry = fieldsRef.current.skillCatalog.find((item) => item.folder === folder)
-    const enabled = entry !== undefined ? entry.disabled !== true : fieldsRef.current.skillSwitches[folder] !== false
+    const enabled = entry === undefined ? true : entry.disabled !== true
     void bridgeCall('skillToggle', {
       folder,
       enabled: !enabled,
