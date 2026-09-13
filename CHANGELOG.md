@@ -2,10 +2,18 @@
 
 ## [未发布] - 2026-09-06
 
+### 技能管理框架：磁盘即状态，管理数据移出 settings.yaml（2026-09-14）
+
+- **停用策略改为文件事实**：停用 = 技能目录里的 `SKILL.md` 改名为 `SKILL.md.disabled`（启用 = 改回）。官方 `dsh-skill-filesystem` 与本插件都只认未加后缀的标记文件，因此一次改名同时让两条发现链路消失/恢复该技能——修复上一版「关掉的技能仍由官方 provider 提供给模型」的遮蔽问题；热生效、可逆、可手工还原，卸载插件后仍是普通技能目录（与 Fishquito7/dsh-skill-mcp-panel 的停用约定一致）。
+- **技能管理抽离 settings.yaml**：新增 `$DSH_HOME/skills/.system/prompt-tool/config.yml`（官方用户技能根的 `.system` 段被 `skipSystem` 忽略，永不会被当成技能），承载附加技能根 `dirs`、展示顺序 `order`、rank 基数 `rankBase`；`skillSwitches` 不再是配置（由磁盘标记派生）。写入使用 yaml Document API 保留注释与未知字段、内容无变化不落盘、YAML 损坏时拒绝覆盖；文件变更由技能 watcher 热加载，手工编辑即时生效。
+- **一次性迁移（阶段 3）**：首次启动读 settings 里的 `skillsDir`/`skillsDirs`/`skillSwitches`/`skillOrder`/`skillRankBase` → `false` 的开关落成磁盘停用、其余写配置文件 → 随后 `unset` 这些 settings 键（状态文件 `skillsMigrated` 标记，幂等；schema 暂留旧键一版用于读取）。示例：110 条全 `true` 的开关迁移后为 0 条。
+- **链路改道**：新增 bridge 端点 `/skill-toggle`（启停）与 `/skills-config`（顺序/目录/rank），`describe`/`bootstrap` 直接下发技能配置事实；客户端保存与批量启停、TUI `/prompt-tool skill` 全部改走磁盘标记；`/skill-fix` 对停用态照常修复并保持后缀；包内技能版本升级保留用户的停用态。
+- **移除 `skills/manifest.json`**：包内技能不再有手写版本清单，改为**内容哈希账本**——`$DSH_HOME/skills/.prompt-tool-manifest.json` 记录每个技能部署时包内容的 sha256，包内容哈希未变就不碰副本（用户本地改动保留），变了才整体覆盖；包根探测锚点从「有 `skills/manifest.json`」改为「同时有 `package.json` 与 `skills/`」（`src/host/paths.ts`）。旧格式账本读不出哈希，升级后首次启动会按当前包内容重铺一次包内技能（停用态仍保留，本地改动会被这一次覆盖）。
+
 ### 技能安装副本改到 $DSH_HOME/skills（2026-09-13）
 
 - 包内 `skills/` 的安装副本从 `$DSH_HOME/profiles/<profile>/skills` 改到 `$DSH_HOME/skills`——官方 `dsh-skill-filesystem` 的 `user-dsh` 技能根。副本跨 profile 共享，官方 provider 与本插件从同一目录发现技能；版本化覆盖语义不变（包内技能按 `skills/manifest.json` 升级覆盖，用户自建技能保留）。旧副本目录不再使用，也不清理。
-- 已知后果：官方 provider 从同一目录注册同名技能，且预设层遮蔽宿主层（`dsh-skill` 注册表规则），因此「技能开关」只对插件自己的注册生效，关掉的技能仍会由官方 provider 提供给模型；插件侧排序/rank 对这些技能同样不再决定模型目录。
+- 当时已知后果：官方 provider 从同一目录注册同名技能，且预设层遮蔽宿主层（`dsh-skill` 注册表规则），因此「技能开关」只对插件自己的注册生效，关掉的技能仍会由官方 provider 提供给模型。**已被上方「技能管理框架」一节的磁盘标记停用修复**。
 - `resolveProfileSkillsDir(ctx, sourceDir, warn)` 更名为 `resolveSkillsDir(sourceDir, warn)`（不再依赖运行上下文，目标由 `host/paths.ts#DSH_HOME` 解析）；UI「默认副本」提示、配置注释与 `test/host/profile-skills.test.mjs` 同步更新，测试断言目标为 `$DSH_HOME/skills` 且不再写 profile 目录。
 - 修技能 watcher 的目录删除洪泛：被 watch 的目录删除/改名后 Windows 会持续上报事件（实测每秒十万级），防抖计时器被反复重置导致进程无法退出（表现为 `pnpm test` 挂死不退出）、CPU 满转。事件回调先确认目录仍存在，目录消失就关闭该目录的 watcher；新增 `test/host/skills-watcher.test.mjs` 用子进程断言删除后能自然退出。
 

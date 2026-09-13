@@ -14,6 +14,11 @@ interface BridgeSuccessExtras {
   activeSkillsDirs?: string[]
   skillsDirExists?: Record<string, boolean>
   skillCatalog?: SkillCatalogEntry[]
+  /** 技能管理配置（已在插件配置文件里，不再来自 settings）：顺序 / 目录 / rank 基数 / 派生开关。 */
+  skillOrder?: string[]
+  skillsDirs?: string[]
+  skillRankBase?: number
+  skillSwitches?: Record<string, boolean>
   templatePreStepCount?: number
   presetParams?: Record<string, unknown>
   hostDefaultModel?: HostDefaultModel

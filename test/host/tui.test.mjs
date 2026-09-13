@@ -38,6 +38,7 @@ function makeTui({ failSave = false, skillCatalog = [] } = {}) {
   const commands = []
   const mutations = []
   const savedParams = []
+  const skillToggles = []
   const sctx = {
     commands: { register(def) { commands.push(def); return () => {} } },
     settings: { mutate: async (_ns, ops) => { mutations.push(ops) } },
@@ -63,12 +64,18 @@ function makeTui({ failSave = false, skillCatalog = [] } = {}) {
       if (failSave) throw new Error('disk full')
       savedParams.push([key, value])
     },
+    // 技能启停 = 磁盘标记改名（不再写 settings）。
+    (folder, enabled) => {
+      skillToggles.push([folder, enabled])
+      return { ok: true }
+    },
   )
   const handler = commands[0].handler
   return {
     run: (raw) => handler({ rawInput: raw }),
     mutations,
     savedParams,
+    skillToggles,
   }
 }
 
@@ -139,13 +146,13 @@ test('TUI：未知 id 与缺 id 分别给出错误与用法', async () => {
 })
 
 test('TUI：/prompt-tool skill 支持带空格的技能目录名', async () => {
-  const { run, mutations } = makeTui({
+  const { run, skillToggles } = makeTui({
     skillCatalog: [{ folder: 'web ui', name: 'Web UI', valid: true, modelInvocable: true }],
   })
   const result = await run('skill web ui on')
   assert.equal(result.kind, 'success')
   assert.match(result.text, /已把技能 web ui 设为 开/)
-  assert.deepEqual(mutations[0][0].path, ['skillSwitches', 'web ui'])
+  assert.deepEqual(skillToggles, [['web ui', true]])
 })
 
 test('TUI：/prompt-tool config 支持带空格的 id', async () => {

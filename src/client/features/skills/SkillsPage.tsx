@@ -117,13 +117,10 @@ export const SkillsPage = memo(function SkillsPage(props: { store: PromptToolSto
   const renderOrder = visibleSkills.filter((skill) => !isNestedFolder(skill.folder)).flatMap(expandSkill)
   const depthOf = (folder: string): number => folder.split('/').length - 1
 
-  /** 批量启用/禁用：一次 patch + 一次保存（避免逐项写 N 次）。 */
+  /** 批量启停：逐个改磁盘标记（单个失败不阻断其余），结束后统一重载一次。 */
   const batchSet = (enabled: boolean) => {
-    const next = { ...fields.skillSwitches }
-    for (const folder of selected) next[folder] = enabled
-    store.patch({ skillSwitches: next })
-    store.persistSwitches()
-    store.showNotice('ok', enabled ? t('skills.notice.enabled', { count: selected.size }) : t('skills.notice.disabled', { count: selected.size }))
+    const folders = [...selected]
+    void store.toggleSkills(folders, enabled)
     setSelected(new Set())
   }
 

@@ -5,11 +5,13 @@
  *   - 剥 UTF-8 BOM；
  *   - frontmatter `name` 缺失或非 kebab-case 时改写/补写为目录同名；
  *   - 目录名非 kebab-case 时重命名为合法目录（目标存在时追加数字后缀）。
- * 其余内容（description/whenToUse/metadata/正文）逐字节保留。
+ * 其余内容（description/whenToUse/metadata/正文）逐字节保留；停用态
+ * （SKILL.md.disabled）照常修复并保持停用后缀。
  */
 import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join, resolve, sep } from 'node:path'
 import { randomBytes } from 'node:crypto'
+import { DISABLED_SUFFIX, SKILL_MARKER } from '../host/skill-toggle.ts'
 import { parseFrontmatter } from './skills-parse.ts'
 import { SKILL_NAME_RE } from './skills-provider.ts'
 
@@ -86,10 +88,13 @@ export function fixSkillEntry(skillsDir: string, folder: string): SkillFixResult
   if (!sourceDir.startsWith(root + sep) || !existsSync(sourceDir)) {
     return { fixed: false, folder, fixedFolder: folder, name: folder, actions: [], error: `目录不存在：${folder}` }
   }
-  const file = join(sourceDir, 'SKILL.md')
+  const activeFile = join(sourceDir, SKILL_MARKER)
+  const parkedFile = activeFile + DISABLED_SUFFIX
+  const file = existsSync(activeFile) ? activeFile : parkedFile
   if (!existsSync(file)) {
     return { fixed: false, folder, fixedFolder: folder, name: folder, actions: [], error: 'SKILL.md 不存在，无法自动修复' }
   }
+  const markerName = file === activeFile ? SKILL_MARKER : SKILL_MARKER + DISABLED_SUFFIX
 
   let content = readFileSync(file, 'utf8')
   const hadBom = content.charCodeAt(0) === 0xfeff
@@ -114,7 +119,7 @@ export function fixSkillEntry(skillsDir: string, folder: string): SkillFixResult
     renameSync(sourceDir, join(root, fixedFolder))
     actions.push(`目录重命名：${folder} → ${fixedFolder}`)
   }
-  const targetFile = join(root, fixedFolder, 'SKILL.md')
+  const targetFile = join(root, fixedFolder, markerName)
   if (!nameValid || hadBom || declaredName !== fixedName) {
     writeFileAtomic(targetFile, next)
     actions.push('SKILL.md 已原子重写')

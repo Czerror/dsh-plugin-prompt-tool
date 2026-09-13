@@ -23,7 +23,7 @@ export interface Config {
   writePreset: boolean
   /** 预设模板名（默认 anchored；其他模板时 anchored 专属 UI 可隐藏）。 */
   presetTemplate: string
-  /** 以技能目录名为键的逐技能开关，缺省视为 true。 */
+  /** 旧版逐技能开关：仅用于一次性迁移（停用已改为磁盘标记 SKILL.md.disabled）。 */
   skillSwitches: Record<string, boolean>
   /** 技能展示顺序（目录名数组）：排前面的技能 rank 更小，模型最先看到。 */
   skillOrder: string[]
@@ -78,6 +78,8 @@ export interface SkillEntry {
   issue?: string
   /** 通过符号链接/junction 挂入的目录（删除类操作需谨慎）。 */
   linked?: boolean
+  /** 停用态（磁盘上标记文件带 .disabled 后缀）：只进管理界面，不注册给模型。 */
+  disabled?: boolean
   /** 官方调用策略：disable-model-invocation: true 时模型不可调用。 */
   modelInvocable: boolean
   /** 官方调用策略：user-invocable: false 时用户不可调用。 */
@@ -98,6 +100,8 @@ export interface SkillCatalogEntry {
   issue?: string
   /** 通过符号链接/junction 挂入的目录（删除类操作需谨慎）。 */
   linked?: boolean
+  /** 停用态：技能实体仍在该目录，标记文件为 SKILL.md.disabled。 */
+  disabled?: boolean
   modelInvocable: boolean
   userInvocable: boolean
 }
@@ -106,6 +110,7 @@ export interface PromptSettings {
   injectAgentsPrompt: boolean
   /** 运行时检测：是否检测到任何模型服务商（不写入 settings）。 */
   modelsAvailable: boolean
+  /** 派生视图：folder → 是否启用（由技能目录里的 SKILL.md / SKILL.md.disabled 标记推导）。 */
   skillSwitches: Record<string, boolean>
   /** 技能展示顺序（目录名数组）。 */
   skillOrder: string[]
@@ -144,6 +149,7 @@ export const PromptSettingsSchema: z<PromptSettings> = z.object({
     dir: z.string().default(''),
     duplicate: z.boolean().default(false),
     issue: z.string().default(''),
+    disabled: z.boolean().default(false),
     modelInvocable: z.boolean().default(false),
     userInvocable: z.boolean().default(false),
   })).default([]),
@@ -172,7 +178,6 @@ export interface RuntimeOptions extends PresetWriterParams {
   writePreset: boolean
   presetTemplate: string
   injectAgentsPrompt: boolean
-  skillSwitches: Record<string, boolean>
   /** 技能展示顺序（目录名数组）。 */
   skillOrder: string[]
   /** 用户自定义技能目录列表（按添加顺序）；空 = 自动使用 $DSH_HOME/skills 副本。 */

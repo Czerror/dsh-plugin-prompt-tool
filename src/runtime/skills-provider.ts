@@ -2,15 +2,17 @@
  * skills 目录扫描与 SKILL.md frontmatter 读取（纯函数）。
  *
  * 三层结构（扫描层宽松、管理界面全量展示、provider 层严格注册）：
- *   1. 技能规范：只有含 SKILL.md 的一级子目录才是技能——readSkills 跳过无
- *      SKILL.md 的目录（含隐藏目录）；SKILL.md 存在但名称非法时保留
+ *   1. 技能规范：只有含标记文件（SKILL.md 或停用态 SKILL.md.disabled）的
+ *      目录才是技能——readSkills 跳过无标记文件的目录（含隐藏目录）；
+ *      SKILL.md 存在但名称非法时保留
  *      valid=false + issue 供修复；
  *   2. Web/TUI 管理界面消费全量条目，灰显坏条目并展示原因；
- *   3. 注册给 ctx.skills 的 provider 只返回 valid=true 的候选，
+ *   3. 注册给 ctx.skills 的 provider 只返回 valid=true 且未停用的候选，
  *      并尊重 frontmatter 的 disable-model-invocation / user-invocable 调用策略。
  */
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
+import { DISABLED_SUFFIX, SKILL_MARKER } from '../host/skill-toggle.ts'
 import { parseFrontmatter } from './skills-parse.ts'
 import type { SkillEntry } from '../config.ts'
 
@@ -57,26 +59,36 @@ export function validSkills(entries: SkillEntry[]): SkillEntry[] {
 
 /**
  * 读取技能目录树的全部条目（含坏条目与嵌套子技能）。
- *  - 递归语义：任意层级含 SKILL.md 的目录都是技能（folder = 相对路径，嵌套用 / 分隔）；
- *    不含 SKILL.md 的目录（含多层空文件夹）不产生条目，继续下探其子目录。
- *  - 链接（junction/symlink）目录作为技能叶子：含 SKILL.md 则注册，不递归进入（防环）。
+ *  - 递归语义：任意层级含标记文件（SKILL.md 或停用态 SKILL.md.disabled）的目录
+ *    都是技能（folder = 相对路径，嵌套用 / 分隔）；不含标记文件的目录（含多层
+ *    空文件夹）不产生条目，继续下探其子目录。
+ *  - 停用态条目照常返回（disabled: true），由 provider 过滤，UI 仍可管理与修复。
+ *  - 链接（junction/symlink）目录作为技能叶子：含标记文件则注册，不递归进入（防环）。
  *  - frontmatter 无 name 时回退目录名；name（frontmatter 或目录名）必须 kebab-case 才 valid；
  *  - warn 仅用于日志，不再决定条目去留。
  */
 export function readSkills(skillsDir: string, warn?: (message: string) => void): SkillEntry[] {
   const entries: SkillEntry[] = []
   const walk = (current: string, rel: string, linked: boolean): void => {
-    const file = join(current, 'SKILL.md')
+    const file = join(current, SKILL_MARKER)
+    const parkedFile = file + DISABLED_SUFFIX
     let raw: string
+    let disabled = false
     try {
       raw = readFileSync(file, 'utf8')
     } catch {
-      if (linked) return
-      // 当前目录不是技能：下探子目录找（嵌套）技能；空文件夹自然不产生条目。
-      for (const folder of listSkillFolders(current)) {
-        walk(join(current, folder.name), rel.length > 0 ? `${rel}/${folder.name}` : folder.name, folder.linked)
+      try {
+        // 停用态：标记文件带 .disabled 后缀，条目仍进管理界面，但不注册给模型。
+        raw = readFileSync(parkedFile, 'utf8')
+        disabled = true
+      } catch {
+        if (linked) return
+        // 当前目录不是技能：下探子目录找（嵌套）技能；空文件夹自然不产生条目。
+        for (const folder of listSkillFolders(current)) {
+          walk(join(current, folder.name), rel.length > 0 ? `${rel}/${folder.name}` : folder.name, folder.linked)
+        }
+        return
       }
-      return
     }
     const name = basename(current)
     const { data, body } = parseFrontmatter(raw)
@@ -104,7 +116,7 @@ export function readSkills(skillsDir: string, warn?: (message: string) => void):
     entries.push({
       dir: skillsDir,
       folder: rel.length > 0 ? rel : name,
-      file,
+      file: disabled ? parkedFile : file,
       name: declaredName,
       description: typeof data.description === 'string' ? data.description : '',
       ...(typeof data.whenToUse === 'string' ? { whenToUse: data.whenToUse } : {}),
@@ -113,6 +125,7 @@ export function readSkills(skillsDir: string, warn?: (message: string) => void):
       valid,
       ...(issue !== undefined ? { issue } : {}),
       ...(linked ? { linked: true } : {}),
+      ...(disabled ? { disabled: true } : {}),
       modelInvocable: valid && data.disableModelInvocation !== true,
       userInvocable: valid && data.userInvocable !== false,
     })

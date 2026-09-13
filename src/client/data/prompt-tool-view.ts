@@ -56,6 +56,7 @@ const readSkillCatalog = (source: Record<string, unknown>, key: string): SkillCa
       ...(typeof record.dir === 'string' && record.dir.length > 0 ? { dir: record.dir } : {}),
       ...(record.duplicate === true ? { duplicate: true } : {}),
       ...(typeof record.issue === 'string' && record.issue.length > 0 ? { issue: record.issue } : {}),
+      ...(record.disabled === true ? { disabled: true } : {}),
       modelInvocable: readBoolean(record, 'modelInvocable', true),
       userInvocable: readBoolean(record, 'userInvocable', true),
     }]
@@ -77,6 +78,12 @@ export function fieldsFromView(res: BridgeResult<BridgeSettingsView>): Fields {
   const ns = res.ok ? res.value : undefined
   const value = asRecord(ns?.value)
   const base = asRecord(ns?.base)
+  // 技能管理已抽离 settings：优先用 describe 事实（来自插件配置文件与磁盘扫描），
+  // settings 里的同名字段只作旧宿主回退。
+  const extraSkillSwitches = res.ok && res.skillSwitches !== undefined ? res.skillSwitches : undefined
+  const extraSkillOrder = res.ok && Array.isArray(res.skillOrder) ? res.skillOrder : undefined
+  const extraSkillDirs = res.ok && Array.isArray(res.skillsDirs) ? res.skillsDirs : undefined
+  const extraSkillRankBase = res.ok && typeof res.skillRankBase === 'number' ? res.skillRankBase : undefined
   const next: Fields = {
     ...EMPTY_FIELDS,
     promptText: readString(value, 'promptText') ?? readString(base, 'promptText') ?? '',
@@ -84,20 +91,23 @@ export function fieldsFromView(res: BridgeResult<BridgeSettingsView>): Fields {
     agentsText: readString(value, 'agentsText') ?? readString(base, 'agentsText') ?? '',
     agentsPath: readString(value, 'agentsPath') ?? readString(base, 'agentsPath') ?? '',
     injectAgentsPrompt: readBoolean(value, 'injectAgentsPrompt', readBoolean(base, 'injectAgentsPrompt', false)),
-    skillSwitches: value.skillSwitches !== undefined || base.skillSwitches !== undefined
-      ? { ...readSkillSwitches(base, 'skillSwitches'), ...readSkillSwitches(value, 'skillSwitches') }
-      : {},
-    skillOrder: readStringArray(value, 'skillOrder').length > 0
-      ? readStringArray(value, 'skillOrder')
-      : readStringArray(base, 'skillOrder'),
+    skillSwitches: extraSkillSwitches
+      ?? (value.skillSwitches !== undefined || base.skillSwitches !== undefined
+        ? { ...readSkillSwitches(base, 'skillSwitches'), ...readSkillSwitches(value, 'skillSwitches') }
+        : {}),
+    skillOrder: extraSkillOrder
+      ?? (readStringArray(value, 'skillOrder').length > 0
+        ? readStringArray(value, 'skillOrder')
+        : readStringArray(base, 'skillOrder')),
     skillCatalog: res.ok && res.skillCatalog !== undefined && res.skillCatalog.length > 0
       ? res.skillCatalog
       : readSkillCatalog(value, 'skillCatalog').length > 0
         ? readSkillCatalog(value, 'skillCatalog')
         : readSkillCatalog(base, 'skillCatalog'),
-    skillsDirs: readStringArray(value, 'skillsDirs').length > 0
-      ? readStringArray(value, 'skillsDirs')
-      : readStringArray(base, 'skillsDirs'),
+    skillsDirs: extraSkillDirs
+      ?? (readStringArray(value, 'skillsDirs').length > 0
+        ? readStringArray(value, 'skillsDirs')
+        : readStringArray(base, 'skillsDirs')),
     activeSkillsDirs: readStringArray(value, 'activeSkillsDirs').length > 0
       ? readStringArray(value, 'activeSkillsDirs')
       : readStringArray(base, 'activeSkillsDirs'),
@@ -116,7 +126,7 @@ export function fieldsFromView(res: BridgeResult<BridgeSettingsView>): Fields {
       }
       return result
     })(),
-    skillRankBase: readNumber(value, 'skillRankBase', readNumber(base, 'skillRankBase', 250)),
+    skillRankBase: extraSkillRankBase ?? readNumber(value, 'skillRankBase', readNumber(base, 'skillRankBase', 250)),
     residentAgentsPath: readString(value, 'residentAgentsPath') ?? readString(base, 'residentAgentsPath') ?? '',
     presetDir: readString(value, 'presetDir') ?? readString(base, 'presetDir') ?? '',
     presetOrder: readNumber(value, 'presetOrder', readNumber(base, 'presetOrder', 5)),
@@ -146,6 +156,10 @@ export function bridgeViewFromBoot(boot: BridgeResult<BridgeSettingsView>): Brid
     activeSkillsDirs: boot.activeSkillsDirs,
     skillsDirExists: boot.skillsDirExists,
     skillCatalog: boot.skillCatalog,
+    skillOrder: boot.skillOrder,
+    skillsDirs: boot.skillsDirs,
+    skillRankBase: boot.skillRankBase,
+    skillSwitches: boot.skillSwitches,
     templatePreStepCount: boot.templatePreStepCount,
     presetParams: boot.presetParams,
     hostDefaultModel: boot.hostDefaultModel,

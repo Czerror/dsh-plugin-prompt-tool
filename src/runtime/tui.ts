@@ -188,6 +188,9 @@ function parseIdentifierAndAction(
 /** 参数保存回调：写激活预设 preset.yml；失败必须抛给命令层渲染为错误。 */
 export type SavePresetParam = (key: string, value: unknown) => void | Promise<void>
 
+/** 技能启停回调：改名磁盘标记 SKILL.md ↔ SKILL.md.disabled（隐藏策略唯一入口）。 */
+export type ToggleSkillState = (folder: string, enabled: boolean) => { ok: boolean; message?: string }
+
 /** 通过 DSH 命令注册表暴露 /prompt-tool，Web 与 dsh-tui 都能执行。 */
 export function registerTuiCommand(
   ctx: Context,
@@ -197,6 +200,7 @@ export function registerTuiCommand(
   getModelCatalog: () => Promise<Record<string, string[]>>,
   getPresetConfigsDir?: () => string,
   savePresetParam?: SavePresetParam,
+  toggleSkillState?: ToggleSkillState,
 ): void {
   ctx.inject(['settings'], (sctx: Context) => {
     return sctx.commands.register({
@@ -247,7 +251,14 @@ export function registerTuiCommand(
           const current = source.skillSwitches[folder] !== false
           const next = parseTuiBoolean(action, current)
           if (next === undefined) return usage()
-          await sctx.settings.mutate(ns, [{ op: 'set', path: ['skillSwitches', folder], value: next }])
+          if (toggleSkillState === undefined) {
+            return { kind: 'error', text: `无法切换技能 ${folder}：技能启停回调不可用` }
+          }
+          // 技能启停是磁盘事实（标记改名），不再写 settings。
+          const toggled = toggleSkillState(folder, next)
+          if (toggled.ok === false) {
+            return { kind: 'error', text: toggled.message ?? `技能 ${folder} 切换失败` }
+          }
           return { kind: 'success', text: `已把技能 ${folder} 设为 ${next ? '开' : '关'}
 
 ${renderTuiStatus(getSource(), readPresetParams(getPresetConfigsDir?.()), resolvePromptConfigs(getPresetConfigsDir?.(), []))}` }

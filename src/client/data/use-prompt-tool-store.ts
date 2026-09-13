@@ -95,6 +95,8 @@ export interface PromptToolStore {
   /** 移除技能目录引用（只删引用，不删原文件）。 */
   removeSkillsDir: (dir: string) => void
   toggleSkill: (folder: string) => void
+  /** 批量启停（磁盘标记）；失败项提示但不阻断其余。 */
+  toggleSkills: (folders: string[], enabled: boolean) => Promise<void>
   skillEnabled: (folder: string) => boolean
   fixSkill: (folder: string) => void
   /** 打开指定技能目录；不传 = 打开第一个生效目录。 */
@@ -391,13 +393,18 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
 
   const persistSwitches = useCallback((onSaved?: () => void) => {
     const savedSnapshot = snapshotSwitches(fieldsRef.current)
+    // 技能管理已从 settings.yaml 抽离：顺序/目录/rank 写插件配置文件，
+    // settings 只留部署轴（AGENTS.md / 预设）；启停是磁盘事实，不经这里。
+    void bridgeCall('skillsConfig', {
+      order: fieldsRef.current.skillOrder,
+      dirs: fieldsRef.current.skillsDirs,
+      rankBase: fieldsRef.current.skillRankBase,
+    }).then((res) => {
+      if (!res.ok) showNotice('error', '技能配置保存失败：' + (res.message ?? 'settings bridge unavailable'))
+    })
     return enqueueSave(
       [
         { op: 'set', path: ['injectAgentsPrompt'], value: fieldsRef.current.injectAgentsPrompt },
-        { op: 'set', path: ['skillSwitches'], value: fieldsRef.current.skillSwitches },
-        { op: 'set', path: ['skillOrder'], value: fieldsRef.current.skillOrder },
-        { op: 'set', path: ['skillsDirs'], value: fieldsRef.current.skillsDirs },
-        { op: 'set', path: ['skillRankBase'], value: fieldsRef.current.skillRankBase },
         { op: 'set', path: ['residentAgentsPath'], value: fieldsRef.current.residentAgentsPath },
         { op: 'set', path: ['presetDir'], value: fieldsRef.current.presetDir },
         { op: 'set', path: ['presetOrder'], value: fieldsRef.current.presetOrder },
@@ -603,38 +610,75 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     }
     const dirs = [...current, next]
     patch({ skillsDirs: dirs })
-    enqueueSave(
-      [{ op: 'set', path: ['skillsDirs'], value: dirs }],
-      `技能目录已添加：${next}`,
-      () => {
-        setSavedSwitches(snapshotSwitches(fieldsRef.current))
-        void load({ silent: true })
-      },
-      setSavingSkillsDir,
-    )
-  }, [enqueueSave, load, patch, showNotice])
+    setSavingSkillsDir(true)
+    void bridgeCall('skillsConfig', { dirs }).then((res) => {
+      setSavingSkillsDir(false)
+      if (!res.ok) {
+        showNotice('error', '技能目录保存失败：' + (res.message ?? 'settings bridge unavailable'))
+        return
+      }
+      showNotice('ok', `技能目录已添加：${next}`)
+      setSavedSwitches(snapshotSwitches(fieldsRef.current))
+      void load({ silent: true })
+    })
+  }, [load, patch, showNotice])
 
   const removeSkillsDir = useCallback((dir: string) => {
     const dirs = fieldsRef.current.skillsDirs.filter((item) => item !== dir)
     patch({ skillsDirs: dirs })
-    enqueueSave(
-      [{ op: 'set', path: ['skillsDirs'], value: dirs }],
-      `已移除技能目录引用：${dir}`,
-      () => {
-        setSavedSwitches(snapshotSwitches(fieldsRef.current))
-        void load({ silent: true })
-      },
-      setSavingSkillsDir,
-    )
-  }, [enqueueSave, load, patch, showNotice])
+    setSavingSkillsDir(true)
+    void bridgeCall('skillsConfig', { dirs }).then((res) => {
+      setSavingSkillsDir(false)
+      if (!res.ok) {
+        showNotice('error', '技能目录保存失败：' + (res.message ?? 'settings bridge unavailable'))
+        return
+      }
+      showNotice('ok', `已移除技能目录引用：${dir}`)
+      setSavedSwitches(snapshotSwitches(fieldsRef.current))
+      void load({ silent: true })
+    })
+  }, [load, patch, showNotice])
 
   const skillEnabled = useCallback((folder: string) => fieldsRef.current.skillSwitches[folder] !== false, [])
 
+  /** 技能启停 = 磁盘标记改名（SKILL.md ↔ SKILL.md.disabled）：官方 provider 与本插件
+   *  同时看不到/恢复该技能；成功后静默重载，用服务端扫描结果刷新开关与目录状态。 */
   const toggleSkill = useCallback((folder: string) => {
-    const enabled = fieldsRef.current.skillSwitches[folder] !== false
-    patch({ skillSwitches: { ...fieldsRef.current.skillSwitches, [folder]: !enabled } })
-    persistSwitches()
-  }, [patch, persistSwitches])
+    const entry = fieldsRef.current.skillCatalog.find((item) => item.folder === folder)
+    const enabled = entry !== undefined ? entry.disabled !== true : fieldsRef.current.skillSwitches[folder] !== false
+    void bridgeCall('skillToggle', {
+      folder,
+      enabled: !enabled,
+      ...(entry?.dir !== undefined && entry.dir.length > 0 ? { dir: entry.dir } : {}),
+    }).then((res) => {
+      if (!res.ok) {
+        showNotice('error', `技能 ${folder} 切换失败：` + (res.message ?? 'settings bridge unavailable'))
+        return
+      }
+      showNotice('ok', `已${enabled ? '停用' : '启用'}技能：${folder}`)
+      void load({ silent: true })
+    })
+  }, [load, showNotice])
+
+  /** 批量启停：逐个改磁盘标记（单个失败不阻断其余），结束后统一重载一次。 */
+  const toggleSkills = useCallback(async (folders: string[], enabled: boolean): Promise<void> => {
+    const failures: string[] = []
+    for (const folder of folders) {
+      const entry = fieldsRef.current.skillCatalog.find((item) => item.folder === folder)
+      const res = await bridgeCall('skillToggle', {
+        folder,
+        enabled,
+        ...(entry?.dir !== undefined && entry.dir.length > 0 ? { dir: entry.dir } : {}),
+      })
+      if (!res.ok) failures.push(folder)
+    }
+    if (failures.length > 0) {
+      showNotice('error', `部分技能切换失败：${failures.join('、')}`)
+    } else {
+      showNotice('ok', `${enabled ? '已启用' : '已停用'} ${folders.length} 个技能`)
+    }
+    await load({ silent: true })
+  }, [load, showNotice])
 
   const fixSkill = useCallback(async (folder: string) => {
     setFixingSkill(folder)
@@ -721,6 +765,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     addSkillsDir,
     removeSkillsDir,
     toggleSkill,
+    toggleSkills,
     skillEnabled,
     fixSkill,
     openSkillsDir,

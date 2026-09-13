@@ -8,12 +8,14 @@ import { dirname } from 'node:path'
 /**
  * 包内 skills 目录。
  * 源码位于 src/host/（../../skills = 包根/skills），构建后内联进 lib/（层级变浅）。
- * 统一向上查找最近包含 skills/manifest.json 的包根，两种形态都正确。
+ * 统一向上查找最近的包根（同时含 package.json 与 skills/），两种形态都正确；
+ * 不使用 skills/manifest.json 作锚点：包内技能不再有手写版本清单（见 profile-skills.ts
+ * 的内容哈希账本）。
  */
 export const SKILLS_DIR = (() => {
   let dir = dirname(fileURLToPath(import.meta.url))
   for (let depth = 0; depth < 6; depth += 1) {
-    if (existsSync(join(dir, 'skills', 'manifest.json'))) return join(dir, 'skills')
+    if (existsSync(join(dir, 'package.json')) && existsSync(join(dir, 'skills'))) return join(dir, 'skills')
     const parent = dirname(dir)
     if (parent === dir) break
     dir = parent

@@ -54,6 +54,8 @@ import type { ModelSyncResult } from '../shared/bridge-contract.ts'
 import { moduleParamFallbacks, validateEngineParamValues } from '../shared/engine-params.ts'
 import { readPersonaSpec } from '../shared/persona-section.ts'
 import { DEFAULT_PRESET_DIR } from '../host/paths.ts'
+import type { SkillToggleResult } from '../host/skill-toggle.ts'
+import type { SkillsConfigRead } from '../host/skills-config.ts'
 import type { PresetModuleFacts } from '../shared/engine-capabilities.ts'
 import { validateCustomTools } from '../host/custom-tools.ts'
 
@@ -61,6 +63,17 @@ import { validateCustomTools } from '../host/custom-tools.ts'
 export interface SkillsBridgeState {
   activeSkillsDirs: string[]
   skillCatalog: SkillCatalogEntry[]
+  /** 技能管理配置快照（顺序 / 附加目录 / rank 基数）与派生开关：describe 事实来源。 */
+  skillOrder: string[]
+  skillDirs: string[]
+  skillRankBase: number
+  skillSwitches: Record<string, boolean>
+  /** 技能启停（隐藏策略）：改名磁盘标记 SKILL.md ↔ SKILL.md.disabled。 */
+  toggleSkill: (folder: string, enabled: boolean, dir?: string) => SkillToggleResult
+  /** 技能管理配置写入（附加根 / 顺序 / rank 基数），热应用并返回生效值。 */
+  patchSkillsConfig: (patch: { dirs?: string[]; order?: string[]; rankBase?: number }) => SkillsConfigRead
+  /** 技能目录改名后同步配置里的顺序项（未列出该技能时不写盘）。 */
+  renameSkillInOrder: (from: string, to: string) => SkillsConfigRead
 }
 
 /** 仅允许本机回环请求，镜像官方 settings bridge 的边界。 */
@@ -463,6 +476,12 @@ export function registerSettingsBridge(
           activeSkillsDirs: skillsState.activeSkillsDirs,
           skillsDirExists: Object.fromEntries(skillsState.activeSkillsDirs.map((dir) => [dir, existsSync(dir)])),
           skillCatalog: skillsState.skillCatalog,
+          // 技能管理配置随 describe 下发（settings 已不承载技能键）：客户端字段与
+          // 「技能设置」页据此渲染，与磁盘标记/配置文件保持同源。
+          skillOrder: skillsState.skillOrder,
+          skillsDirs: skillsState.skillDirs,
+          skillRankBase: skillsState.skillRankBase,
+          skillSwitches: skillsState.skillSwitches,
         }
       }
 
@@ -691,31 +710,12 @@ export function registerSettingsBridge(
               writeBridgeJson(res, 400, { ok: false, code: 'skill-fix-failed', message: result.error ?? '修复失败' })
               return
             }
-            // 目录重命名后同步 settings 里的 skillSwitches / skillOrder 键。
-            const descriptor = findDescriptor()
-            if (descriptor !== undefined && result.folder !== result.fixedFolder) {
-              const value = asRecord(descriptor.value)
-              const base = asRecord(descriptor.base)
-              const switches = asRecord(value.skillSwitches !== undefined ? value.skillSwitches : base.skillSwitches)
-              const orderValue = value.skillOrder !== undefined ? value.skillOrder : base.skillOrder
-              const order = Array.isArray(orderValue) ? orderValue.filter((item): item is string => typeof item === 'string') : []
-              const ops: SettingsPathOp[] = []
-              if (Object.prototype.hasOwnProperty.call(switches, result.folder)) {
-                ops.push({ op: 'set', path: ['skillSwitches', result.fixedFolder], value: switches[result.folder] })
-                ops.push({ op: 'unset', path: ['skillSwitches', result.folder] })
-              }
-              if (order.includes(result.folder)) {
-                ops.push({ op: 'set', path: ['skillOrder'], value: order.map((item) => item === result.folder ? result.fixedFolder : item) })
-              }
-              if (ops.length > 0) {
-                try {
-                  await sctx.settings.mutate(ns, ops)
-                  invalidateDescriptor()
-                } catch (error) {
-                  const message = error instanceof Error ? error.message : String(error)
-                  writeBridgeJson(res, 409, { ok: false, code: 'settings-rejected', message: `技能文件已修复，但 settings 键迁移失败：${message}` })
-                  return
-                }
+            // 目录重命名后同步技能配置里的顺序（技能状态在磁盘上，无 settings 键可迁移）。
+            if (result.folder !== result.fixedFolder) {
+              const renamed = getSkillsState().renameSkillInOrder(result.folder, result.fixedFolder)
+              if (renamed.ok === false) {
+                writeBridgeJson(res, 409, { ok: false, code: 'settings-rejected', message: `技能文件已修复，但技能配置顺序同步失败：${renamed.message}` })
+                return
               }
             }
             afterSkillsChange?.()
@@ -758,6 +758,99 @@ export function registerSettingsBridge(
             }
             afterSkillsChange?.()
             writeBridgeJson(res, 200, { ok: true, value: result })
+          },
+        }),
+        sctx.webServer.register({
+          kind: 'exact',
+          path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.skillToggle,
+          handler: async (req, res) => {
+            if (!guard(req, res)) return
+            const parsedBody = await readBridgeBodyForHandler(req, res)
+            if (parsedBody === undefined) return
+            const { body } = parsedBody
+            if (body === null || body === undefined || typeof body !== 'object') {
+              writeBridgeJson(res, 400, { ok: false, code: 'settings-rejected', message: 'unreadable JSON body' })
+              return
+            }
+            const record = body as Record<string, unknown>
+            const folder = typeof record.folder === 'string' ? record.folder : ''
+            const dir = typeof record.dir === 'string' && record.dir.length > 0 ? record.dir : undefined
+            if (folder.length === 0 || typeof record.enabled !== 'boolean') {
+              writeBridgeJson(res, 400, { ok: false, code: 'skill-toggle-rejected', message: 'folder 与 enabled 必填' })
+              return
+            }
+            // 启停 = 磁盘标记改名（SKILL.md ↔ SKILL.md.disabled）：官方 provider 与
+            // 本插件同时看不到/恢复该技能，无需重启；失败不改文件。
+            const result = getSkillsState().toggleSkill(folder, record.enabled, dir)
+            if (result.ok === false) {
+              writeBridgeJson(res, result.code === 'not-found' ? 404 : 409, {
+                ok: false,
+                code: `skill-toggle-${result.code}`,
+                message: result.message,
+              })
+              return
+            }
+            afterSkillsChange?.()
+            writeBridgeJson(res, 200, {
+              ok: true,
+              value: {
+                folder: result.folder,
+                enabled: result.enabled,
+                changed: result.changed,
+                file: result.file,
+                skillCatalog: getSkillsState().skillCatalog,
+              },
+            })
+          },
+        }),
+        sctx.webServer.register({
+          kind: 'exact',
+          path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.skillsConfig,
+          handler: async (req, res) => {
+            if (!guard(req, res)) return
+            const parsedBody = await readBridgeBodyForHandler(req, res)
+            if (parsedBody === undefined) return
+            const { body } = parsedBody
+            const record = (body ?? {}) as Record<string, unknown>
+            const patch: { dirs?: string[]; order?: string[]; rankBase?: number } = {}
+            if (record.dirs !== undefined) {
+              if (!Array.isArray(record.dirs) || record.dirs.some((item) => typeof item !== 'string')) {
+                writeBridgeJson(res, 400, { ok: false, code: 'skills-config-rejected', message: 'dirs 必须是字符串数组' })
+                return
+              }
+              patch.dirs = (record.dirs as string[]).filter((dir) => dir.trim().length > 0)
+            }
+            if (record.order !== undefined) {
+              if (!Array.isArray(record.order) || record.order.some((item) => typeof item !== 'string')) {
+                writeBridgeJson(res, 400, { ok: false, code: 'skills-config-rejected', message: 'order 必须是字符串数组' })
+                return
+              }
+              patch.order = (record.order as string[]).filter((folder) => folder.length > 0)
+            }
+            if (record.rankBase !== undefined) {
+              if (typeof record.rankBase !== 'number' || !Number.isSafeInteger(record.rankBase) || record.rankBase < 0) {
+                writeBridgeJson(res, 400, { ok: false, code: 'skills-config-rejected', message: 'rankBase 必须是非负整数' })
+                return
+              }
+              patch.rankBase = record.rankBase
+            }
+            const written = getSkillsState().patchSkillsConfig(patch)
+            if (written.ok === false) {
+              writeBridgeJson(res, 409, { ok: false, code: 'skills-config-rejected', message: written.message })
+              return
+            }
+            afterSkillsChange?.()
+            const state = getSkillsState()
+            writeBridgeJson(res, 200, {
+              ok: true,
+              value: {
+                dirs: written.config.dirs,
+                order: written.config.order,
+                rankBase: written.config.rankBase,
+                activeSkillsDirs: state.activeSkillsDirs,
+                skillCatalog: state.skillCatalog,
+              },
+            })
           },
         }),
         sctx.webServer.register({

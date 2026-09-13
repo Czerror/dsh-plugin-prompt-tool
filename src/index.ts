@@ -55,11 +55,14 @@ import {
   SkillEntry,
 } from './config.ts'
 import {
+  DEFAULT_SKILL_RANK_BASE,
   DEFAULT_PRESET_DIR,
   DEFAULT_SKILLS_DIR,
   LEGACY_CONTAINER_DIR,
   LEGACY_USER_PRESETS_DIR,
 } from './host/paths.ts'
+import { setSkillEnabled, type SkillToggleResult } from './host/skill-toggle.ts'
+import { readSkillsConfig, skillsConfigPath, writeSkillsConfig, type SkillsConfig, type SkillsConfigRead } from './host/skills-config.ts'
 import { migrateLegacyLayout, migrateParamOverridesFile, normalizePresetRootDir } from './host/migration.ts'
 
 export const name = 'prompt-tool'
@@ -364,22 +367,47 @@ export function apply(ctx: Context, configIn: Config): void {
     }
   }
 
-  // 首次启动把包内 skills/ 增量复制到 $DSH_HOME/skills（官方 user-dsh 技能根，
-  // 所有 profile 共享），并优先使用这份副本；用户自定义技能保留、包内技能按
-  // manifest 版本覆盖。
-  // 显式配置了其他技能目录时尊重用户选择，不做复制。
-  const legacySkillsDir = typeof config.skillsDir === 'string' && config.skillsDir.length > 0 && config.skillsDir !== DEFAULT_SKILLS_DIR
-    ? config.skillsDir
-    : ''
-  const userSkillsDirs = Array.isArray(config.skillsDirs) && config.skillsDirs.length > 0
-    ? config.skillsDirs.filter((dir): dir is string => typeof dir === 'string' && dir.trim().length > 0)
-    : legacySkillsDir.length > 0 ? [legacySkillsDir] : []
-  /** 用户技能目录设置 → 实际生效目录列表（空配置 = $DSH_HOME/skills 副本兜底）。 */
+  // 技能管理框架（技能状态已从 settings.yaml 抽离）：
+  //  实体层——包内 skills/ 增量复制到 $DSH_HOME/skills（官方 user-dsh 根，全
+  //    profile 共享），用户技能与引用目录留在各自根，插件不维护隐藏仓库；
+  //  启停层——磁盘事实：停用 = 标记文件改名 SKILL.md → SKILL.md.disabled，
+  //    官方 provider 与本插件同时看不到，热生效且可逆；
+  //  配置层——<DSH_HOME>/skills/.system/prompt-tool/config.yml（附加根 / 顺序 /
+  //    rank 基数）；官方该根的 .system 段被 skipSystem，本插件也跳过点目录，
+  //    所以配置文件永远不会被当成技能。
+  const skillsConfigFile = skillsConfigPath()
+  const readSkillsConfigSafe = (): SkillsConfig => {
+    const read = readSkillsConfig(skillsConfigFile)
+    if (read.ok === false) warn(ctx, `prompt-tool: ${read.message}`)
+    return read.config
+  }
+  // 首启播种：配置文件还不存在时，把旧 loader config（cordis 行 config）里的
+  // 技能键迁进配置文件；settings 里的旧值由 migrateSkillsFromSettings 承担。
+  const legacyLoaderSkillDirs = [
+    ...(Array.isArray(config.skillsDirs) ? config.skillsDirs : []),
+    ...(typeof config.skillsDir === 'string' && config.skillsDir.trim().length > 0 ? [config.skillsDir] : []),
+  ].filter((dir): dir is string => typeof dir === 'string' && dir.trim().length > 0)
+  const legacyLoaderSkillOrder = Array.isArray(config.skillOrder)
+    ? config.skillOrder.filter((folder): folder is string => typeof folder === 'string' && folder.length > 0)
+    : []
+  if (!existsSync(skillsConfigFile)
+    && (legacyLoaderSkillDirs.length > 0 || legacyLoaderSkillOrder.length > 0 || config.skillRankBase !== DEFAULT_SKILL_RANK_BASE)) {
+    const seeded = writeSkillsConfig(
+      { dirs: legacyLoaderSkillDirs, order: legacyLoaderSkillOrder, rankBase: config.skillRankBase },
+      skillsConfigFile,
+    )
+    if (seeded.ok === false) warn(ctx, `prompt-tool: ${seeded.message}`)
+  }
+  let skillsConfig = readSkillsConfigSafe()
+  let skillsConfigSnapshot = JSON.stringify(skillsConfig)
+  let skillsOrder: string[] = [...skillsConfig.order]
+  let skillsRankBase = skillsConfig.rankBase
+  /** 配置里的附加根 → 实际生效目录列表（空配置 = $DSH_HOME/skills 副本兜底）。 */
   const resolveActiveSkillsDirs = (dirs: string[]): string[] =>
     dirs.length > 0
       ? dirs
       : [resolveSkillsDir(DEFAULT_SKILLS_DIR, (message) => warn(ctx, message))]
-  let activeSkillsDirs = resolveActiveSkillsDirs(userSkillsDirs)
+  let activeSkillsDirs = resolveActiveSkillsDirs(skillsConfig.dirs)
   // 三层结构：
   //  1) 扫描层宽松——坏技能也进 catalog（valid=false + issue），UI 可见可修；
   //  2) provider 层严格——只有 valid=true 的候选注册给模型；
@@ -403,6 +431,7 @@ export function apply(ctx: Context, configIn: Config): void {
       ...(counts.get(skill.folder)! > 1 ? { duplicate: true } : {}),
       ...(skill.issue !== undefined ? { issue: skill.issue } : {}),
       ...(skill.linked === true ? { linked: true } : {}),
+      ...(skill.disabled === true ? { disabled: true } : {}),
       modelInvocable: skill.modelInvocable,
       userInvocable: skill.userInvocable,
     }))
@@ -412,15 +441,6 @@ export function apply(ctx: Context, configIn: Config): void {
     mergeSkillDirs(activeSkillsDirs, readSkillsChecked)
   let skillCatalog: SkillCatalogEntry[] = catalogOf(readAllSkillsChecked())
 
-  // 技能目录热更新：任一目录新增/删除/改名后，catalog 与注册表缓存一起刷新。
-  const skillsWatcher = createSkillsWatcher(() => activeSkillsDirs, () => {
-    skillCatalog = catalogOf(readAllSkillsChecked())
-    cachedSkills.invalidate(); invalidateSkills?.()
-  })
-  skillsWatcher.watch()
-  // 插件卸载时关闭技能目录 watcher，避免泄漏与对已卸载 provider 的无效刷新。
-  ctx.effect(() => () => skillsWatcher.close())
-
   /** 切换生效技能目录列表并刷新目录快照（供 describe / TUI 显示）。 */
   const applyActiveSkillsDirs = (dirs: string[]): void => {
     activeSkillsDirs = dirs
@@ -429,13 +449,92 @@ export function apply(ctx: Context, configIn: Config): void {
     skillsWatcher.watch()
   }
 
-  // 1) 按需层：注册 skills/*/SKILL.md，name/description/whenToUse/metadata 全部来自各自 frontmatter。
-  //    content 只包含技能自身正文；preset.md 不拼进技能正文，全部技能关闭时列表自然为空。
-  let skillSwitches: Record<string, boolean> = { ...config.skillSwitches }
-  let skillOrder: string[] = Array.isArray(config.skillOrder) ? [...config.skillOrder] : []
-  let skillRankBase = config.skillRankBase
+  /** 配置文件变化（手工编辑或 UI 写入）→ 重新应用目录/顺序/rank，热生效无需重启。 */
+  const reloadSkillsConfig = (): void => {
+    const next = readSkillsConfigSafe()
+    const snapshot = JSON.stringify(next)
+    if (snapshot === skillsConfigSnapshot) return
+    skillsConfig = next
+    skillsConfigSnapshot = snapshot
+    skillsOrder = [...next.order]
+    skillsRankBase = next.rankBase
+    const wanted = resolveActiveSkillsDirs(next.dirs)
+    if (JSON.stringify(wanted) === JSON.stringify(activeSkillsDirs)) {
+      cachedSkills.invalidate()
+      skillCatalog = catalogOf(readAllSkillsChecked())
+    } else {
+      applyActiveSkillsDirs(wanted)
+    }
+    invalidateSkills?.()
+  }
+
+  // 技能目录热更新：任一目录新增/删除/改名后，catalog 与注册表缓存一起刷新；
+  // 配置文件与技能标记改名同样走这条热路径（无需重启 DSH）。
+  const skillsWatcher = createSkillsWatcher(() => activeSkillsDirs, () => {
+    reloadSkillsConfig()
+    skillCatalog = catalogOf(readAllSkillsChecked())
+    cachedSkills.invalidate(); invalidateSkills?.()
+  })
+  skillsWatcher.watch()
+  // 插件卸载时关闭技能目录 watcher，避免泄漏与对已卸载 provider 的无效刷新。
+  ctx.effect(() => () => skillsWatcher.close())
+
+  /**
+   * 技能启停（插件侧隐藏策略的唯一入口）：改名磁盘标记文件后重扫 catalog，
+   * 并让 ctx.skills 注册表缓存失效，模型目录即时反映停用/启用。
+   */
+  const toggleSkill = (folder: string, enabled: boolean, dir?: string): SkillToggleResult => {
+    const target = dir !== undefined && dir.length > 0
+      ? { dir, folder }
+      : skillCatalog.find((item) => item.folder === folder)
+    if (target === undefined || typeof target.dir !== 'string' || target.dir.length === 0) {
+      return { ok: false, code: 'not-found', message: `未找到技能：${folder}` }
+    }
+    const result = setSkillEnabled(target.dir, folder, enabled)
+    if (result.ok) {
+      cachedSkills.invalidate()
+      skillCatalog = catalogOf(readAllSkillsChecked())
+      invalidateSkills?.()
+    }
+    return result
+  }
+
+  /** 写技能管理配置（附加根 / 顺序 / rank 基数）并热应用。 */
+  const patchSkillsConfig = (patch: { dirs?: string[]; order?: string[]; rankBase?: number }): SkillsConfigRead => {
+    const written = writeSkillsConfig(patch, skillsConfigFile)
+    if (written.ok === false) {
+      warn(ctx, `prompt-tool: ${written.message}`)
+      return written
+    }
+    skillsConfig = written.config
+    skillsConfigSnapshot = JSON.stringify(written.config)
+    skillsOrder = [...written.config.order]
+    skillsRankBase = written.config.rankBase
+    const wanted = resolveActiveSkillsDirs(written.config.dirs)
+    if (JSON.stringify(wanted) !== JSON.stringify(activeSkillsDirs)) {
+      applyActiveSkillsDirs(wanted)
+    } else {
+      cachedSkills.invalidate()
+      skillCatalog = catalogOf(readAllSkillsChecked())
+      skillsWatcher.watch()
+    }
+    invalidateSkills?.()
+    return written
+  }
+
+  /** 技能目录改名后同步配置里的顺序项；该技能不在显式顺序里时不写盘。 */
+  const renameSkillOrderEntry = (from: string, to: string): SkillsConfigRead => {
+    if (from === to || !skillsConfig.order.includes(from)) {
+      return { ok: true, config: skillsConfig, exists: existsSync(skillsConfigFile) }
+    }
+    return patchSkillsConfig({ order: skillsConfig.order.map((item) => item === from ? to : item) })
+  }
+
+  // 1) 按需层：注册未停用的 skills/*/SKILL.md（停用态标记名 SKILL.md.disabled），
+  //    name/description/whenToUse/metadata 全部来自各自 frontmatter；停用条目
+  //    只进管理界面，不注册给模型。content 只包含技能自身正文；preset.md 不拼进技能正文。
   const orderSkills = (skills: readonly SkillEntry[]): SkillEntry[] => {
-    const index = new Map(skillOrder.map((folder, at) => [folder, at]))
+    const index = new Map(skillsOrder.map((folder, at) => [folder, at]))
     return [...skills].sort((left, right) => {
       const leftAt = index.get(left.folder)
       const rightAt = index.get(right.folder)
@@ -461,7 +560,7 @@ export function apply(ctx: Context, configIn: Config): void {
           unique.push(skill)
         }
         return orderSkills(unique)
-          .filter((skill) => skill.valid && skillSwitches[skill.folder] !== false)
+          .filter((skill) => skill.valid && skill.disabled !== true)
           .map((skill, index): SkillCandidate => ({
             name: skill.name,
             description: skill.description || skill.folder,
@@ -470,7 +569,7 @@ export function apply(ctx: Context, configIn: Config): void {
             source: 'runtime',
             provider: 'prompt-tool',
             resourceBase: { kind: 'directory', path: join(skill.dir, skill.folder) },
-            rank: skillRankBase + index,
+            rank: skillsRankBase + index,
             locator: skill.folder,
             path: skill.file,
             ...(skill.metadata !== undefined ? { metadata: skill.metadata } : {}),
@@ -481,7 +580,7 @@ export function apply(ctx: Context, configIn: Config): void {
         // 精确匹配来源文件；同名回退 folder（保留首个目录条目）。
         const skill = readAllSkillsChecked().find((entry) => entry.file === candidate.path)
           ?? readAllSkillsChecked().find((entry) => entry.folder === candidate.locator || entry.name === candidate.name)
-        if (skill === undefined || !skill.valid || skillSwitches[skill.folder] === false) return undefined
+        if (skill === undefined || !skill.valid || skill.disabled === true) return undefined
         return {
           name: candidate.name,
           description: candidate.description,
@@ -504,7 +603,17 @@ export function apply(ctx: Context, configIn: Config): void {
     ctx,
     NS,
     getModelsState,
-    () => ({ activeSkillsDirs, skillCatalog }),
+    () => ({
+      activeSkillsDirs,
+      skillCatalog,
+      skillOrder: [...skillsOrder],
+      skillDirs: [...skillsConfig.dirs],
+      skillRankBase: skillsRankBase,
+      skillSwitches: Object.fromEntries(skillCatalog.map((entry) => [entry.folder, entry.disabled !== true])),
+      toggleSkill,
+      patchSkillsConfig,
+      renameSkillInOrder: renameSkillOrderEntry,
+    }),
     // 模板专属策略目录：当前 anchored 策略为引擎内置，自定义模板可经此注入。
     () => '',
     () => {
@@ -568,9 +677,8 @@ export function apply(ctx: Context, configIn: Config): void {
     writePreset: config.writePreset,
     presetTemplate: typeof config.presetTemplate === 'string' && config.presetTemplate.length > 0 ? config.presetTemplate : 'anchored',
     injectAgentsPrompt: config.injectAgentsPrompt,
-    skillSwitches: { ...config.skillSwitches },
-    skillOrder: [...skillOrder],
-    skillsDirs: [...userSkillsDirs],
+    skillOrder: [...skillsOrder],
+    skillsDirs: [...skillsConfig.dirs],
     // 引擎参数：激活预设 preset.yml（每预设独立，settings 不再承载）。
     firstTurnAnchor: initialParams.firstTurnAnchor === true,
     firstTurnText: asString(initialParams.firstTurnText),
@@ -598,7 +706,7 @@ export function apply(ctx: Context, configIn: Config): void {
     maxDepth: initialParams.maxDepth as RuntimeOptions['maxDepth'],
     allowKinds: initialParams.allowKinds as string[] | string | undefined,
     firstTurnWord: asString(initialParams.firstTurnWord) || undefined,
-    skillRankBase: config.skillRankBase,
+    skillRankBase: skillsRankBase,
     residentAgentsPath: config.residentAgentsPath,
     presetDir: config.presetDir,
     presetOrder: config.presetOrder,
@@ -674,7 +782,8 @@ export function apply(ctx: Context, configIn: Config): void {
   let currentSource = (): PromptSettings => ({
     injectAgentsPrompt: runtime.injectAgentsPrompt,
     modelsAvailable: getModelsState().available,
-    skillSwitches: runtime.skillSwitches,
+    // 派生视图：启用与否只看技能目录里的标记文件（SKILL.md / SKILL.md.disabled）。
+    skillSwitches: Object.fromEntries(skillCatalog.map((entry) => [entry.folder, entry.disabled !== true])),
     skillOrder: runtime.skillOrder,
     skillCatalog,
     skillsDirs: runtime.skillsDirs,
@@ -708,6 +817,11 @@ registerTuiCommand(
     }
     reloadPresetParams()
     rebuildPreset()
+  },
+  // 技能启停：磁盘标记改名（SKILL.md ↔ SKILL.md.disabled），失败原因回给命令层。
+  (folder, enabled) => {
+    const result = toggleSkill(folder, enabled)
+    return result.ok ? { ok: true } : { ok: false, message: result.message }
   },
 )
 
@@ -749,18 +863,11 @@ registerTuiCommand(
     const next = currentSource()
     const nextRuntime: Pick<RuntimeOptions,
       'writeAgents' | 'writePreset' | 'presetTemplate' | 'injectAgentsPrompt'
-      | 'skillSwitches' | 'skillOrder' | 'skillsDirs' | 'skillRankBase'
       | 'residentAgentsPath' | 'presetDir' | 'presetOrder' | 'fallbackText'> = {
       writeAgents: typeof next.writeAgents === 'boolean' ? next.writeAgents : config.writeAgents,
       writePreset: typeof next.writePreset === 'boolean' ? next.writePreset : config.writePreset,
       presetTemplate: typeof next.presetTemplate === 'string' && next.presetTemplate.length > 0 ? next.presetTemplate : 'anchored',
       injectAgentsPrompt: typeof next.injectAgentsPrompt === 'boolean' ? next.injectAgentsPrompt : config.injectAgentsPrompt,
-      skillSwitches: next.skillSwitches !== undefined ? next.skillSwitches : config.skillSwitches,
-      skillOrder: Array.isArray(next.skillOrder) ? next.skillOrder.filter((folder): folder is string => typeof folder === 'string') : config.skillOrder,
-      skillsDirs: Array.isArray(next.skillsDirs)
-        ? next.skillsDirs.filter((dir): dir is string => typeof dir === 'string' && dir.trim().length > 0)
-        : userSkillsDirs,
-      skillRankBase: Number.isSafeInteger(next.skillRankBase) && next.skillRankBase >= 0 ? next.skillRankBase : config.skillRankBase,
       residentAgentsPath: typeof next.residentAgentsPath === 'string' && next.residentAgentsPath.trim().length > 0 ? next.residentAgentsPath : config.residentAgentsPath,
       presetDir: typeof next.presetDir === 'string' && next.presetDir.trim().length > 0
         ? normalizePresetRootDir(next.presetDir.trim(), DEFAULT_PRESET_DIR, LEGACY_CONTAINER_DIR)
@@ -768,20 +875,12 @@ registerTuiCommand(
       presetOrder: Number.isSafeInteger(next.presetOrder) && next.presetOrder >= 0 ? next.presetOrder : config.presetOrder,
       fallbackText: typeof next.fallbackText === 'string' ? next.fallbackText : config.fallbackText,
     }
-    const skillSwitchesChanged = JSON.stringify(runtime.skillSwitches) !== JSON.stringify(nextRuntime.skillSwitches)
-    const skillOrderChanged = JSON.stringify(runtime.skillOrder) !== JSON.stringify(nextRuntime.skillOrder)
-    const skillsDirsChanged = JSON.stringify(runtime.skillsDirs) !== JSON.stringify(nextRuntime.skillsDirs)
-    const skillRankBaseChanged = runtime.skillRankBase !== nextRuntime.skillRankBase
     const fallbackTextChanged = runtime.fallbackText !== nextRuntime.fallbackText
     const presetTemplateChanged = runtime.presetTemplate !== nextRuntime.presetTemplate
     const settingsChanged = runtime.writeAgents !== nextRuntime.writeAgents
       || runtime.writePreset !== nextRuntime.writePreset
       || runtime.presetTemplate !== nextRuntime.presetTemplate
       || runtime.injectAgentsPrompt !== nextRuntime.injectAgentsPrompt
-      || skillSwitchesChanged
-      || skillOrderChanged
-      || skillsDirsChanged
-      || skillRankBaseChanged
       || runtime.residentAgentsPath !== nextRuntime.residentAgentsPath
       || runtime.presetDir !== nextRuntime.presetDir
       || runtime.presetOrder !== nextRuntime.presetOrder
@@ -801,23 +900,10 @@ registerTuiCommand(
     runtime.writePreset = nextRuntime.writePreset
     runtime.presetTemplate = nextRuntime.presetTemplate
     runtime.injectAgentsPrompt = nextRuntime.injectAgentsPrompt
-    runtime.skillSwitches = nextRuntime.skillSwitches
-    runtime.skillOrder = nextRuntime.skillOrder
-    runtime.skillsDirs = nextRuntime.skillsDirs
-    runtime.skillRankBase = nextRuntime.skillRankBase
     runtime.residentAgentsPath = nextRuntime.residentAgentsPath
     runtime.presetDir = nextRuntime.presetDir
     runtime.presetOrder = nextRuntime.presetOrder
     runtime.fallbackText = nextRuntime.fallbackText
-    skillSwitches = runtime.skillSwitches
-    skillOrder = runtime.skillOrder
-    skillRankBase = runtime.skillRankBase
-    if (skillsDirsChanged) {
-      applyActiveSkillsDirs(resolveActiveSkillsDirs(runtime.skillsDirs))
-      cachedSkills.invalidate(); invalidateSkills?.()
-    } else if (skillSwitchesChanged || skillOrderChanged || skillRankBaseChanged) {
-      cachedSkills.invalidate(); invalidateSkills?.()
-    }
 
     let residentAgentsWritten = false
     if (runtime.writeAgents) {
@@ -871,6 +957,80 @@ registerTuiCommand(
 
   // settings 注册 base 与运行时快照同源（单一组装，避免双份字段漂移）。
   const settingsEntry: PromptSettings = currentSource()
+
+  /**
+   * 阶段 3 迁移（一次性）：settings.yaml 里的技能管理键 → 磁盘事实 + 插件配置文件。
+   *  - `skillSwitches[folder] === false` → 该技能标记改名 SKILL.md.disabled（真实隐藏）；
+   *  - `skillsDirs` / `skillsDir` / `skillOrder` / `skillRankBase` → `.system/prompt-tool/config.yml`；
+   *  - 迁移后 unset settings 里的技能键，settings.yaml 只留部署轴（预设/AGENTS.md 等）。
+   * state.skillsMigrated 后跳过；settings 不可用时下次启动重试（迁移幂等）。
+   */
+  const migrateSkillsFromSettings = (sctx: Context): void => {
+    const state = readPluginState()
+    if (state.skillsMigrated === true) return
+    let userSection: Record<string, unknown> = {}
+    try {
+      const descriptor = sctx.settings.describe({ redactSecrets: true })
+        .find((entry) => String(entry.ns) === String(NS))
+      userSection = descriptor?.user !== null && typeof descriptor?.user === 'object'
+        ? descriptor.user as Record<string, unknown>
+        : {}
+    } catch {
+      return
+    }
+    const markMigrated = (): void => {
+      try {
+        writePluginState({ ...readPluginState(), skillsMigrated: true })
+      } catch {
+        // 状态写入失败下次启动重试（迁移本身幂等）。
+      }
+    }
+
+    const legacyDirs = [
+      ...(Array.isArray(userSection.skillsDirs) ? userSection.skillsDirs : []),
+      ...(typeof userSection.skillsDir === 'string' ? [userSection.skillsDir] : []),
+    ].filter((dir): dir is string => typeof dir === 'string' && dir.trim().length > 0)
+    const legacyOrder = Array.isArray(userSection.skillOrder)
+      ? userSection.skillOrder.filter((folder): folder is string => typeof folder === 'string' && folder.length > 0)
+      : []
+    const legacyRankBase = typeof userSection.skillRankBase === 'number' && Number.isSafeInteger(userSection.skillRankBase)
+      ? userSection.skillRankBase
+      : undefined
+    const disabledFolders = Object.entries(
+      userSection.skillSwitches !== null && typeof userSection.skillSwitches === 'object'
+        ? userSection.skillSwitches as Record<string, unknown>
+        : {},
+    ).filter(([, value]) => value === false).map(([folder]) => folder)
+
+    // 1) 配置键只在"文件里还没有该值"时补写，避免覆盖用户手编的配置文件。
+    const patch: { dirs?: string[]; order?: string[]; rankBase?: number } = {}
+    if (legacyDirs.length > 0 && skillsConfig.dirs.length === 0) patch.dirs = legacyDirs
+    if (legacyOrder.length > 0 && skillsConfig.order.length === 0) patch.order = legacyOrder
+    if (legacyRankBase !== undefined && legacyRankBase !== DEFAULT_SKILL_RANK_BASE && skillsConfig.rankBase === DEFAULT_SKILL_RANK_BASE) {
+      patch.rankBase = legacyRankBase
+    }
+    if (Object.keys(patch).length > 0) patchSkillsConfig(patch)
+    // 2) 关掉的技能落成磁盘事实（标记改名）；找不到的技能只提示，不阻断迁移。
+    for (const folder of disabledFolders) {
+      const result = toggleSkill(folder, false)
+      if (result.ok === false) warn(ctx, `prompt-tool: 迁移技能开关失败（${folder}）：${result.message}`)
+    }
+    // 3) 卸载 settings 里的技能键：settings.yaml 不再承载技能管理。
+    const unsetKeys = ['skillsDir', 'skillsDirs', 'skillSwitches', 'skillOrder', 'skillRankBase']
+      .filter((key) => Object.prototype.hasOwnProperty.call(userSection, key))
+    if (unsetKeys.length === 0) {
+      markMigrated()
+      return
+    }
+    void sctx.settings.mutate(NS, unsetKeys.map((key) => ({ op: 'unset' as const, path: [key] })))
+      .then(() => {
+        settingsBridge.invalidateDescriptor()
+        markMigrated()
+      })
+      .catch((error: unknown) => {
+        warn(ctx, `prompt-tool: 技能键从 settings 卸载失败（下次启动重试）：${error instanceof Error ? error.message : String(error)}`)
+      })
+  }
 
   /** 阶段 2 迁移：旧全局 settings 引擎参数 → 激活预设 preset.yml（一次性，state.paramsMigrated 后跳过）。
    *  兼容旧版预设根内 .pt-params-migrated 标记：存在即视为已迁移，并迁入状态文件后删除。 */
@@ -982,6 +1142,8 @@ registerTuiCommand(
     else syncTemplateFromHostDefault()
     // 阶段 2 迁移：旧全局 settings 参数 → 激活预设 preset.yml。
     migrateSettingsParamsToPreset(sctx)
+    // 阶段 3 迁移：settings 技能管理键 → 磁盘标记 + .system/prompt-tool/config.yml。
+    migrateSkillsFromSettings(sctx)
   })
 }
 

@@ -24,6 +24,8 @@ export const BRIDGE_ENDPOINTS = {
   configsValidate: '/configs-validate',
   skillFix: '/skill-fix',
   skillsImport: '/skills-import',
+  skillToggle: '/skill-toggle',
+  skillsConfig: '/skills-config',
   templates: '/templates',
   promptConfigs: '/prompt-configs',
   presetContent: '/preset-content',
@@ -71,6 +73,10 @@ export interface BridgeRequestMap {
   configsValidate: { promptConfigs: unknown[]; strategyDir?: string }
   skillFix: { folder: string }
   skillsImport: { files: Array<{ path: string; content: string }> }
+  /** 技能启停（隐藏策略）：改名磁盘标记 SKILL.md ↔ SKILL.md.disabled。 */
+  skillToggle: { folder: string; enabled: boolean; dir?: string }
+  /** 技能管理配置（附加技能根 / 顺序 / rank 基数）：写 <DSH_HOME>/skills/.system/prompt-tool/config.yml。 */
+  skillsConfig: { dirs?: string[]; order?: string[]; rankBase?: number }
   templates: undefined
   promptConfigs: undefined
   presetContent: undefined
@@ -143,6 +149,9 @@ export interface BridgeValueMap {
   configsValidate: { valid: boolean; errors: Array<{ index: number; id: string; message: string }>; configs?: unknown[]; files?: unknown[] }
   skillFix: { folder: string; fixedFolder: string; name: string; actions: string[] }
   skillsImport: { path: string; count: number }
+  skillToggle: { folder: string; enabled: boolean; changed: boolean; file: string; skillCatalog: unknown[] }
+  /** 写入后的技能管理配置 + 生效目录（客户端据此刷新字段与目录列表）。 */
+  skillsConfig: { dirs: string[]; order: string[]; rankBase: number; activeSkillsDirs: string[]; skillCatalog: unknown[] }
   templates: { templates?: unknown[]; toolTemplates?: unknown[] }
   promptConfigs: { promptConfigs: unknown[] }
   presetContent: Record<string, unknown>

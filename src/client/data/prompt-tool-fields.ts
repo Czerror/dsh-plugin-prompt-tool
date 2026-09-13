@@ -19,6 +19,8 @@ export interface SkillCatalogEntry {
   /** 同名标记：多目录存在相同 folder 时 UI 标注。 */
   duplicate?: boolean
   issue?: string
+  /** 停用态：技能仍在磁盘上，标记文件为 SKILL.md.disabled（官方与本插件都不提供给模型）。 */
+  disabled?: boolean
   modelInvocable: boolean
   userInvocable: boolean
 }

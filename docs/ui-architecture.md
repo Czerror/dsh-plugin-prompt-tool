@@ -287,6 +287,7 @@ workspace-pages.ts 是页面元数据的唯一来源。默认页为 features，�
 | filter、search、展开、确认 | 对应 feature | 页面或 feature 局部生命周期 |
 | 保存队列、revision、草稿版本 | save-queue + store | 工作台挂载期 |
 | 大文本和角色卡原文件 | 文件通道/bridge | 不进入 settings descriptor |
+| 技能启停 / 技能顺序与目录 | 磁盘技能根 | 停用 = `SKILL.md.disabled` 标记；顺序/目录/rank 在 `$DSH_HOME/skills/.system/prompt-tool/config.yml`（settings 不承载技能状态） |
 
 不新增 React Context 来广播整个 store。页面通过 usePromptToolFields selector 订阅窄切片，叶子组件接收显式值与 callback。
 
@@ -352,6 +353,7 @@ JSON bridge 的统一上限为 32 MiB；角色卡原始文件流独立限制为 
 5. promptConfigs 自动保存使用 debounce；工具栏手动保存仍经过配置校验，模块列表不再提供未保存提示、放弃修改和浮动保存条。
 6. 参数空字符串/空数组沿用删除键语义；variables 的空字符串仍是合法占位值。详细参数规则见 [architecture-params.md](architecture-params.md)。
 7. 预设写入携带 `expectedPresetId`，读回失败的自定义工具不降级为空列表供覆盖；跨预设旧草稿被拒绝，切换等待参数保存队列。
+8. 技能写入不进 settings：启停走 `/skill-toggle`（磁盘标记 `SKILL.md` ↔ `SKILL.md.disabled`），顺序/目录/rank 走 `/skills-config`（插件配置文件）；成功后静默 load，`describe` 事实（`skillSwitches` / `skillOrder` / `skillsDirs` / `skillRankBase` / `skillCatalog`）优先于 settings 旧字段。
 
 ## 8. 业务 Feature
 
