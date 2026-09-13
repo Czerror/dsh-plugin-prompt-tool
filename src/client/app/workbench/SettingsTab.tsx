@@ -1,16 +1,17 @@
 import { useCallback, useEffect, useState, useSyncExternalStore, type ReactNode } from 'react'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings-plugins/client'
-import type { InjectFace, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import { bridgeCall } from '../../data/bridge-client.ts'
 import { MenuSelect } from '../../ui/MenuSelect.tsx'
 import { ToggleRow } from '../../ui/ToggleRow.tsx'
 import type { PromptToolWorkbenchFace } from './workbench-face.ts'
 import ui from '../../ui/controls.module.css'
 /** settings.plugins.tab：基础开关（settings 命名空间直读直写，官方 SettingsScope 通道）。 */
-type TabProps = PropsRuntime<'settings.plugins.tab'> & InjectFace<PromptToolWorkbenchFace>
+type TabProps = PropsRuntime<'settings.plugins.tab'> & InjectFace<PromptToolWorkbenchFace> & PropsLocale<'prompt-tool'>
 
 export function SettingsTab(props: TabProps): ReactNode {
+  const { t } = props
   const scope = props.settings.scope
   // useSyncExternalStore 需要稳定的函数引用；直接传方法引用会脱离 this 调用。
   const subscribe = useCallback((listener: () => void) => scope.subscribe(listener), [scope])
@@ -40,28 +41,28 @@ export function SettingsTab(props: TabProps): ReactNode {
       await scope.set('presetTemplate', id)
       const result = await props.api.switchPreset(id)
       if (result.applied) {
-        setPresetNotice({ kind: 'ok', message: `已切换到 ${id}，当前空会话已重组。` })
+        setPresetNotice({ kind: 'ok', message: t('settings.switched', { id }) })
       } else if (result.message !== undefined) {
-        setPresetNotice({ kind: 'error', message: `默认预设已更新为 ${id}；当前会话未切换：${result.message}` })
+        setPresetNotice({ kind: 'error', message: t('settings.switchDefaultOnly', { id, reason: result.message }) })
       } else {
-        setPresetNotice({ kind: 'ok', message: `默认预设已更新为 ${id}；当前没有可重组的空会话。` })
+        setPresetNotice({ kind: 'ok', message: t('settings.switchPending', { id }) })
       }
     } catch (error) {
-      setPresetNotice({ kind: 'error', message: `切换预设失败：${error instanceof Error ? error.message : String(error)}` })
+      setPresetNotice({ kind: 'error', message: t('settings.switchFailed', { reason: error instanceof Error ? error.message : String(error) }) })
     } finally {
       setSwitchingPreset(false)
     }
   }
 
   return (
-    <section className={ui.section} aria-label="提示词工具基础设置">
-      <ToggleRow id="pt-writePreset" label="生成锚定注入预设" hint="关闭后移除各预设目录的生成物，参数与内容不再物化。" checked={value.writePreset === true} onChange={(v) => set('writePreset', v)} />
-      <ToggleRow id="pt-writeAgents" label="写入 AGENTS.md" hint="把常驻规则写入 ~/.dsh/AGENTS.md。" checked={value.writeAgents === true} onChange={(v) => set('writeAgents', v)} />
-      <ToggleRow id="pt-injectAgentsPrompt" label="注入 AGENTS 内容到提示词" hint="用 AGENTS.md 内容替换本地 instruction-hint 的默认提示文本。" checked={value.injectAgentsPrompt === true} onChange={(v) => set('injectAgentsPrompt', v)} />
+    <section className={ui.section} aria-label={t('settings.aria')}>
+      <ToggleRow id="pt-writePreset" label={t('settings.writePreset.label')} hint={t('settings.writePreset.hint')} checked={value.writePreset === true} onChange={(v) => set('writePreset', v)} />
+      <ToggleRow id="pt-writeAgents" label={t('settings.writeAgents.label')} hint={t('settings.writeAgents.hint')} checked={value.writeAgents === true} onChange={(v) => set('writeAgents', v)} />
+      <ToggleRow id="pt-injectAgentsPrompt" label={t('settings.injectAgentsPrompt.label')} hint={t('settings.injectAgentsPrompt.hint')} checked={value.injectAgentsPrompt === true} onChange={(v) => set('injectAgentsPrompt', v)} />
       <div className={ui.rowGroup}>
         <div className={ui.settingRowStack}>
-          <span className={ui.settingCopy}><strong>预设模板</strong><small>新会话默认挂载的预设；完整预设管理与提示词配置请从会话右上角的右侧栏展开按钮打开「提示词工具」工作台。</small></span>
-          <MenuSelect className={ui.directoryInput} ariaLabel="预设模板"
+          <span className={ui.settingCopy}><strong>{t('settings.presetTemplate.title')}</strong><small>{t('settings.presetTemplate.hint')}</small></span>
+          <MenuSelect className={ui.directoryInput} ariaLabel={t('settings.presetTemplate.title')}
             value={typeof value.presetTemplate === 'string' ? value.presetTemplate : ''}
             disabled={!snapshot.writable || switchingPreset}
             compact={false}

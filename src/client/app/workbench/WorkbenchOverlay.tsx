@@ -1,16 +1,16 @@
 import { useEffect, useRef, useSyncExternalStore, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
-import type { InjectFace, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import { PromptWorkspace } from '../workspace/PromptWorkspace.tsx'
 import { FloatingTrigger } from './FloatingTrigger.tsx'
 import type { PromptToolWorkbenchFace } from './workbench-face.ts'
 import css from './Workbench.module.css'
 
-type OverlayProps = PropsRuntime<'shell.overlay'> & InjectFace<PromptToolWorkbenchFace>
+type OverlayProps = PropsRuntime<'shell.overlay'> & InjectFace<PromptToolWorkbenchFace> & PropsLocale<'prompt-tool'>
 /** shell.overlay：顶层触发器 + 右侧抽屉工作台；store 状态跨开关保留。 */
 export function WorkbenchOverlay(props: OverlayProps): ReactNode {
-  const { controller, api, settings } = props
+  const { controller, api, settings, t } = props
   const open = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot).open
   useEffect(() => {
     if (!open) return
@@ -41,15 +41,15 @@ export function WorkbenchOverlay(props: OverlayProps): ReactNode {
     if (!wasOpen && open) drawerRef.current?.focus()
     if (wasOpen && !open) triggerRef.current?.focus()
   }, [open])
-  const trigger = <FloatingTrigger controller={controller} triggerRef={triggerRef} />
+  const trigger = <FloatingTrigger controller={controller} triggerRef={triggerRef} t={t} />
   // 抽屉同样 body portal + fixed 顶层：宿主「对话/轨迹」顶部导航栏处于更高层级，
   // 只挂在 shell.overlay slot 内会被导航栏遮挡（不是最顶层）；portal 到 body 后
   // 用高 z-index 保证抽屉背板/面板与悬浮按钮始终在导航栏之上。
   const drawer = (
     <div className={css.drawerLayer} data-open={open ? '' : undefined}>
       <div className={css.drawerBackdrop} onClick={() => controller.close()} aria-hidden="true" />
-      <section ref={drawerRef} className={css.drawerPanel} data-dsh-part="workspace-drawer" role="dialog" aria-modal="true" aria-label="提示词工具" tabIndex={-1}>
-        <PromptWorkspace api={api} settings={settings} controller={controller} onClose={() => controller.close()} />
+      <section ref={drawerRef} className={css.drawerPanel} data-dsh-part="workspace-drawer" role="dialog" aria-modal="true" aria-label={t('app.panelAria')} tabIndex={-1}>
+        <PromptWorkspace api={api} settings={settings} controller={controller} t={t} onClose={() => controller.close()} />
       </section>
     </div>
   )

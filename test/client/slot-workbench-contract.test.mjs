@@ -11,10 +11,10 @@ const skillsSettings = read('src/client/features/skills/SkillsPage.tsx')
 const entry = read('src/client/index.ts')
 const manifest = JSON.parse(read('package.json'))
 
-test('工作台只注册 shell.overlay 悬浮入口 + 几何探针 + 基础设置，且不碰宿主 DOM', () => {
+test('工作台只注册 shell.overlay 可拖动悬浮入口 + 基础设置，且不碰宿主 DOM', () => {
   assert.match(register, /name: 'settings\.plugins\.tab', id: 'prompt-tool'/)
   assert.match(register, /name: 'shell\.overlay', id: 'prompt-tool-workbench'/)
-  assert.match(register, /name: 'sidebar\.footer\.action', id: 'prompt-tool-floating-geometry'/)
+  assert.doesNotMatch(register, /footer\.action|floating-geometry/, '入口位置不再依赖宿主侧栏几何')
   assert.doesNotMatch(register, /sidebarRightTabs|sidebar\.right\.pane\.tab|guide: \[\{/)
   assert.doesNotMatch(source, /createPortal|createRoot|MutationObserver|querySelector/)
   assert.doesNotMatch(source, /dsh-panel-activate/)
@@ -27,13 +27,12 @@ test('PromptWorkspace 由悬浮入口 controller 驱动加载', () => {
   assert.match(workspace, /if \(open\) void store\.load\(\)/)
 })
 
-test('client service and bundle injection edges cover the overlay/sidebar declarations', () => {
+test('client service and bundle injection edges cover the overlay/settings declarations', () => {
   assert.match(entry, /'slots'/)
   assert.doesNotMatch(entry, /sidebarRightTabs/)
   for (const dependency of [
     '@deepseek-ai/dsh-client-ui-renderer',
     '@deepseek-ai/dsh-client-ui-layout',
-    '@deepseek-ai/dsh-client-ui-sidebar',
     '@deepseek-ai/dsh-client-ui-settings-plugins',
     '@deepseek-ai/dsh-client-ui-workspace',
   ]) {
@@ -60,14 +59,14 @@ test('/meta 预设下拉读 value.meta（不是顶层 meta 扩展字段）', () 
 
 test('技能目录列表展示 skillsDirs 的全部配置项，空配置才使用默认副本', () => {
   assert.match(skillsSettings, /const displaySkillsDirs = fields\.skillsDirs\.length > 0\s*\? fields\.skillsDirs\s*: fields\.activeSkillsDirs/)
-  assert.match(skillsSettings, /meta=\{`\$\{displaySkillsDirs\.length\} 个目录/)
+  assert.match(skillsSettings, /meta=\{t\('skills\.dirs\.meta', \{ count: displaySkillsDirs\.length \}\)\}/)
   assert.match(skillsSettings, /\{displaySkillsDirs\.length === 0 \?/)
   assert.match(skillsSettings, /\{displaySkillsDirs\.map\(\(dir, index\) =>/)
 })
 
 test('技能目录同时提供绝对路径引用与文件夹内容导入', () => {
   assert.match(skillsSettings, /api\.pickDirectory\(\)/)
-  assert.match(skillsSettings, /选择目录并添加引用/)
-  assert.match(skillsSettings, /label="导入文件夹内容"/)
+  assert.match(skillsSettings, /t\('skills\.dirs\.pick'\)/)
+  assert.match(skillsSettings, /label=\{t\('skills\.dirs\.import'\)\}/)
   assert.match(skillsSettings, /\bdirectory\b/, '技能页仍应保留文件夹导入入口')
 })

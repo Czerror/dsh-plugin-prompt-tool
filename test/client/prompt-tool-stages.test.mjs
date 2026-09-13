@@ -13,7 +13,8 @@ test('stages 添加按钮追加可编辑的空草稿行', () => {
   assert.ok(start >= 0 && end > start, '应找到 stages UI 区块')
   const stagesUi = cards.slice(start, end)
   assert.ok(stagesUi.includes("update([...stages, { name: '', tools: '' }])"), '添加按钮应追加空阶段草稿行，不立即保存')
-  assert.ok(stagesUi.includes('>添加阶段</button>'), '应显示添加阶段按钮')
+  // 按钮文案走 prompt-tool 字典（归档 §8.3.1 分词典）：断言键名而不是中文字面量。
+  assert.ok(stagesUi.includes("t('param.stages.add')"), '应显示添加阶段按钮')
 })
 
 test('stages 未完成草稿保存后不重载，避免新增行立即消失', () => {

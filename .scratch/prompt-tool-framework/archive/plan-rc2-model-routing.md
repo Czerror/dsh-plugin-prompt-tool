@@ -1,4 +1,27 @@
+---
+meta:
+  contentType: Archive
+  title: DSH 0.1.5-rc.2 适配、模型路由重构与依赖治理计划（已实施）
+  category: Engineering
+---
+
 # DSH 0.1.5-rc.2 适配、模型路由重构与依赖治理计划
+
+> 归档说明：本文原为仓库根目录 `PLAN.md`，2026-09-13 实施完成后归档到
+> `.scratch/prompt-tool-framework/archive/`。计划内容保持原样（含当时的验收矩阵与
+> 命令），实施结论与验证记录见仓库 `.ai-memory/20260913/daily.md` 与提交
+> `e980620`。本文只保留历史设计，**不是当前待办**。
+>
+> 实施落地范围：W0（rc.2 依赖基线、固定 fixture、`verify:host`、版本契约）、
+> W1（bootstrap-filesystem 本地化、单工具 minimal、present 覆盖、原子重建）、
+> W2（bundle manifest、client external、Web 自愈生命周期）、
+> W3（目录缓存按 Context 隔离、移除全局 subagents.start patch、官方类型消费）、
+> W4（可拖动悬浮入口 + 位置偏好，删除 SidebarGeometryProbe 与 `--pt-sidebar-edge`）、
+> W5（隔离 cwd 的 `scripts/run-tests.mjs`、全量门禁）。
+>
+> 未完成／未验证项：官方 locale 词典接入（U-05/U-06 的字典化迁移）、真实浏览器
+> smoke（U-01～U-04 的指针/键盘实机验收）、无同级源码的消费安装 smoke（D-01）、
+> 跨平台（POSIX）实跑。这些项在本轮以源码守卫 + 纯函数单测覆盖，需后续单独验收。
 
 ## 1. 状态、基线与本轮边界
 
@@ -477,3 +500,70 @@ if ($LASTEXITCODE -ne 0) { throw 'diff --check 失败' }
 ## 15. 已完成旧计划归档
 
 旧的「模块列表与引擎设置归一重构计划」已完成，正文已移出本文件，归档到 [.scratch/prompt-tool-framework/archive/plan-module-list-refactor.md](.scratch/prompt-tool-framework/archive/plan-module-list-refactor.md)；归档文件只保留历史设计与其时的测试记录，不是当前待办，也不参与本计划的验收。
+
+## 16. 收尾轮记录（2026-09-13，提交 5e1d393）
+
+第一轮实施（提交 `e980620`）完成后，核验发现仍有多项未实现，于是重建了一份「剩余收尾计划」`PLAN.md` 并执行完毕。第二轮完成的内容：
+
+- **official locale 迁移（U-05/U-06）**：`src/client/locales.ts` + `locales-{params,prompts,cards}.ts`（zh 为键集事实源、en 同键集类型约束），经 `ctx.effect(() => registerPromptToolLocale(ctx.locale))` 注册进官方 `prompt-tool` 命名空间；slot 注册声明 locale namespace，设置 tab 标题用动态 thunk；工作台入口/设置/六页/技能/预设/角色/工具/提示词配置/子代理策略/模型卡的用户可见文案全部改为 `t(key)`；`src/shared/engine-params.ts` 的 68 个中文 `label` 改为 `labelKey`（shared 不再持有显示文案）；新增 `test/client/locale-contract.test.mjs` 守卫（键集一致、注册可释放、关键 UI 文件无硬编码长文案、参数键必有词条）。
+- **模型档位官方元数据（M-12）**：新增 bridge 端点 `/model-reasoning` 与 `ModelReasoningView`（`known` / `efforts` / `defaultEffort`），`refreshModelReasoning` 走官方 `llm.resolveModelInfo`（bind 保 this、单点超时、按路由缓存）；`buildEffortOptions` 不再硬编码 `off/low/high/max`：未知能力不给档位、已知无能力不显示、目录外存量值保留回显。
+- **默认同步结果可等待可观察（M-03/M-04）**：`ModelSyncResult`（`synced / unchanged / unavailable / failed` + 脱敏消息）由可等待的 `installDefaultModelRoute` 产出，随 `/param-overrides` 保存响应回传；客户端 `model-sync-notice.ts` 分别表达「已保存」与「默认模型同步失败/不可用（可重试）」，`rebuild:false` 不带同步事实。
+- **目录缓存失效（M-11）**：`/models` 支持 `refresh: true` 越过 10 分钟 TTL；客户端在官方 `connection/reset`、`llm/adapters-updated`、服务重挂与显式刷新时失效；provider 单点失败不清空其他成功分组；generation 防止旧结果回写。
+- **W4 收尾**：位置存储键对齐 `dsh-plugin-prompt-tool:trigger-position`（兼容早期 `:floating-trigger` 旧键），夹取保留 8px 视口留白；`@deepseek-ai/dsh-client-ui-sidebar` 失去最后消费方后退出 `dsh.client.inject`、peer、dev 与 lockfile。
+- **验证**：`typecheck`、`lint`、`verify:host`（43 个直接官方包 0 失败）、`test`（681 项全过）、`build`、`git diff --check`；另完成无同级官方源码的消费安装 smoke（tarball 安装，21 个 peer + 10 个 client inject 包全部解析到 `0.1.5-rc.2`）与隔离 `DSH_HOME` + 随机端口的真实宿主 smoke（客户端 module boot graph 含本插件、插件 client bundle 200、完整 profile 的 manifest 未被改写）。
+- **仍未执行（环境限制，已在交付说明标注）**：真实浏览器 pointer/键盘/窄屏实机验收（本机无浏览器自动化设施，仅源码守卫 + 纯函数单测覆盖）、POSIX 实跑（仅 Windows + Node v26.7.0）。
+
+### 16.1 第二轮 PLAN.md 正文（剩余收尾计划）
+
+以下为第二轮 `PLAN.md`（根目录已删除）的正文存档，记录当时的执行范围与命令：
+
+```markdown
+# DSH 0.1.5-rc.2 适配：剩余收尾计划
+
+状态：进行中（2026-09-13）。
+
+## 0. 本文件为什么存在
+
+原始「rc.2 适配、模型路由重构与依赖治理计划」在执行到一半时被提前归档（提交 6afe5c2），
+根目录 PLAN.md 被删除，但归档说明自认仍有验收项未做。本文件是剩余工作的执行计划：
+完整设计、验收矩阵（C/D/H/M/U/V）与边界条款见本归档正文；本文件只列未完成项与验收命令，
+全部完成后再次归档并清理根目录 PLAN.md。
+
+## 1. 已完成（有证据，不重做）
+
+W0 依赖基线（verify:host 43+ 官方包 0 失败、固定 fixture + PROVENANCE 哈希、版本契约矩阵）；
+W1 组合重建（单工具 minimal、present、bootstrap-filesystem 本地化、原子重建）；
+W2 构建与 manifest（删私有 requires、client external 收敛、manifest 类型 + JSON 断言、Web 自愈延迟任务可取消）；
+W3 部分（目录缓存按 Context 隔离 + 并发合并 + generation；移除全局 subagents.start patch）；
+W4 入口（可拖动悬浮按钮：4px 阈值、视口夹取、拖动吞 click、位置持久化；删除 SidebarGeometryProbe 与 --pt-sidebar-edge）；
+W5 部分（scripts/run-tests.mjs 隔离 cwd 入口；全量门禁）；
+消费安装 smoke（无同级源码的临时项目：21 peer + 10 client inject 全部解析 rc.2）；
+隔离宿主 smoke（临时 DSH_HOME + 随机端口 dsh web：插件进入 client module boot graph、client bundle 200、manifest 未被改写）。
+
+## 2. 未完成项（本计划执行范围）
+
+R1 官方 locale 词典迁移（§8.3，U-05/U-06）：新增 src/client/locales.ts 与分区词典；ctx.effect 注册/释放；
+slot 补 locale namespace、label 动态取值；迁移入口/设置/六页/各 feature 文案；shared 显示标签改 labelKey；
+新增 test/client/locale-contract.test.mjs 守卫；同步 docs/ui-architecture.md。
+
+R2 模型档位来自官方元数据（§7.4，M-12）：Web 侧优先 remote.session.modelCatalog() 的 reasoning 元数据
+（实际实现走 bridge /model-reasoning + host llm.resolveModelInfo，属设计变更）；无能力不虚构、存量值保留回显、
+目录非授权白名单。
+
+R3 默认模型同步结果可等待、可观察（§7.5，M-03/M-04）：bridge-contract 先加 modelSync 四态 + 安全消息；
+installDefaultModelRoute 可等待、未变不重复写、失败折叠为结果；保存链路带出结果并在 UI 分别表达、可重试。
+
+R4 目录缓存失效（§7.4，M-11）：订阅 llm/adapters-updated、服务重挂、显式刷新、客户端连接重置时失效。
+
+R5 收尾（root）：CHANGELOG/文档、全量门禁、提交推送 origin/dev、归档并删除 PLAN.md。
+
+## 3. 本环境不执行（交付说明中标注）
+
+真实浏览器 pointer/键盘/窄屏实机验收；POSIX 实跑（仅 Windows + Node v26.7.0）。
+
+## 4. 验证命令
+
+pnpm --dir $Repo typecheck; pnpm --dir $Repo lint; pnpm --dir $Repo verify:host;
+pnpm --dir $Repo test（走 scripts/run-tests.mjs：先 build，再隔离 cwd 跑全量）;
+git -C $Repo diff --check。
+```

@@ -72,6 +72,8 @@ function makeHarness(initial) {
   const ctx = {
     logger: { warn: () => {} },
     effect: (factory) => { const dispose = factory(); return typeof dispose === 'function' ? dispose : () => {} },
+    // 真实 cordis Context 提供事件订阅；插件用它订阅 provider 拓扑变化失效模型目录。
+    on: () => () => {},
     skills: { registerProvider: () => {} },
     get: (name) => name === 'webServer' ? {} : undefined,
     provide: () => () => {},

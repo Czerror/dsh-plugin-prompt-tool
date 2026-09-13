@@ -31,16 +31,33 @@ test('modules: [] 是显式空装配，不再展开默认引擎能力', () => {
   assert.deepEqual(JSON.parse(renderComposition(blank, {})), [])
 })
 
-test('能力事实覆盖 filesystem module 与 nested row id', () => {
-  const dir = fileURLToPath(new URL('../../preset/minimal/', import.meta.url))
-  const facts = resolvePresetModuleFacts(preset('minimal'), dir, true)
-  assert.equal(facts.sourceMode, 'explicit')
-  assert.ok(facts.effectiveModules.includes('bootstrap-filesystem'))
-  assert.equal(facts.editable, true)
-  assert.ok(facts.rowIds.includes('persistent-shell'))
-  assert.ok(facts.rowIds.includes('fs-local'))
-  assert.ok(facts.rowIds.includes('str-replace-editor'))
-  assert.equal(isEngineCapabilityPresent('str-replace-editor', facts), true)
+test('能力事实覆盖本地 filesystem module 与 nested row id', () => {
+  // rc.2 官方 minimal 只剩单 shell 工具，编辑能力改由本地 bootstrap-filesystem 提供；
+  // 该能力现在只对显式声明它的预设生效（Anchored 与旧用户预设）。
+  const dir = mkdtempSync(join(tmpdir(), 'pt-filesystem-facts-'))
+  try {
+    writeFileSync(join(dir, 'preset.yml'), [
+      'id: explicit-editor',
+      'name: explicit-editor',
+      'version: "1"',
+      'engineCompat: ">=0"',
+      'modules: [bootstrap-filesystem]',
+      '',
+    ].join('\n'), 'utf8')
+    const facts = resolvePresetModuleFacts(loadPresetSpec(dir), dir, true)
+    assert.equal(facts.sourceMode, 'explicit')
+    assert.ok(facts.effectiveModules.includes('bootstrap-filesystem'))
+    assert.equal(facts.editable, true)
+    assert.ok(facts.rowIds.includes('fs-local'))
+    assert.ok(facts.rowIds.includes('str-replace-editor'))
+    assert.equal(isEngineCapabilityPresent('str-replace-editor', facts), true)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+
+  const minimal = resolvePresetModuleFacts(preset('minimal'), fileURLToPath(new URL('../../preset/minimal/', import.meta.url)), true)
+  assert.equal(minimal.effectiveModules.includes('bootstrap-filesystem'), false, 'rc.2 minimal 不再装配编辑器能力')
+  assert.equal(isEngineCapabilityPresent('str-replace-editor', minimal), false)
 })
 
 test('官方 agent.cordis.yml 行只作运行事实，不伪装成可编辑引擎能力', () => {

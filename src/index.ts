@@ -22,9 +22,9 @@ import {
 import type { PresetSpec } from './host/manifest.ts'
 import type { PromptConfigSpec } from './host/prompt-configs.ts'
 import { createCachedSkillsReader, mergeSkillDirs } from './runtime/skills-provider.ts'
-import { ensureWebSurface } from './web-surface.ts'
+import { scheduleWebSurfaceRepair } from './web-surface.ts'
 import { resolveProfileSkillsDir } from './profile-skills.ts'
-import { detectModels, installDefaultModelRoute, installSubagentModelRoute, listAdvertisedModels } from './runtime/models.ts'
+import { detectModels, installDefaultModelRoute, invalidateModelCatalog, listAdvertisedModels } from './runtime/models.ts'
 import type { ModelDetection } from './runtime/models.ts'
 import { registerSettingsBridge } from './runtime/settings-bridge.ts'
 import { registerCharacterTools } from './runtime/character-tools.ts'
@@ -529,10 +529,11 @@ export function apply(ctx: Context, configIn: Config): void {
       // 参数覆盖变更：应用参数并重建。
       try {
         rebuildPreset()
-        applyDefaultModel()
       } catch (error) {
         warn(ctx, `prompt-tool: overrides rebuild failed: ${String(error)}`)
       }
+      // 默认模型同步结果回给参数覆盖端点：预设已保存与默认模型同步失败分开表达。
+      return applyDefaultModel()
     },
     // 预设包导入后物化该预设：组合/配置目录/共享引擎落盘，宿主 discovery 立即可见。
     (id) => {
@@ -544,16 +545,19 @@ export function apply(ctx: Context, configIn: Config): void {
     },
     () => {
       rebuildPreset()
-      applyDefaultModel()
+      return applyDefaultModel()
     },
     () => runtime.presetDir,
   )
 
   // 首次以 base-only profile 启动时自动补 @deepseek-ai/dsh-web-app：
   // 写进 profile bundles（下一次启动由官方装配路径生效），并提示重启。
-  setImmediate(() => {
-    void ensureWebSurface(ctx, (message) => warn(ctx, message))
-  })
+  // 延迟任务挂在 effect 上：插件卸载后不再补写 profile，也不残留计时器。
+  scheduleWebSurfaceRepair(ctx, (message) => warn(ctx, message))
+
+  // provider 拓扑变化（适配器注册/移除）会让已缓存的模型目录过期：
+  // 订阅官方 payload-free 事件，按 Context 失效缓存；监听器挂在 effect 上，重挂无残留。
+  ctx.effect(() => ctx.on('llm/adapters-updated', () => invalidateModelCatalog(ctx)))
 
   // settings 存储优先于 cordis config：installSettingsSection 注册后立即用
   // settings 的解析值触发一次 onChange，完成初始写入，因此 config 只作 base。
@@ -651,15 +655,9 @@ export function apply(ctx: Context, configIn: Config): void {
       })
   }
 
-  // 模型路由（主对话直派子代理与委派子代理通用）：
-  // 宿主直派子代理补子代理固定模型路由（subagentModelProvider + subagentModelName 同时非空时生效）；
-  // 调用方显式模型优先，persona 与 toolFilter 保持不变。
-  installSubagentModelRoute(
-    ctx,
-    () => runtime.subagentModelProvider.length > 0 && runtime.subagentModelName.length > 0,
-    () => runtime.subagentModelProvider,
-    () => runtime.subagentModelName,
-  )
+  // 子代理固定模型路由：不替换 ctx.subagents 的 start/startContinuable 方法，
+  // 只经 buildModuleConfigsFromParams 把 agentOptions 写进本插件生成的
+  // tool-subagent / tool-subagent-fork 行；第三方直派保持官方默认继承语义。
   // 主对话默认模型控制：modelProvider + modelName 非空时写入官方 agent-default-model
   // （新会话默认模型）；仅思维程度非空时与宿主当前选择合并、只同步思维程度；
   // 三者皆空 = 不干预，继承用户在宿主 web 的选择。
@@ -1007,11 +1005,12 @@ export {
   writePluginState,
 } from './host/manifest.ts'
 export { buildWorldBookEntry } from './host/worldbook.ts'
-export { ensureWebSurface, resolveProfileDir } from './web-surface.ts'
+export { ensureWebSurface, resolveProfileDir, scheduleWebSurfaceRepair } from './web-surface.ts'
 export { resolveProfileSkillsDir } from './profile-skills.ts'
 export { importSkillsPackage } from './host/skills-import.ts'
 export { migrateLegacyLayout, normalizePresetRootDir } from './host/migration.ts'
-export { detectModels, installDefaultModelRoute, listAdvertisedModels } from './runtime/models.ts'
+export { detectModels, installDefaultModelRoute, invalidateModelCatalog, listAdvertisedModels, peekModelCatalog, resolveSubagentStartOptions } from './runtime/models.ts'
+export type { PluginSubagentSeam } from './runtime/models.ts'
 export type { WritePresetOptions } from './host/write-preset.ts'
 export { validatePromptConfigs } from './runtime/configs-validate.ts'
 export { registerSettingsBridge } from './runtime/settings-bridge.ts'

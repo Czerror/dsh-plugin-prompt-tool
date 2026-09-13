@@ -20,6 +20,7 @@ modules:
   - tool-ask-user
   - tool-todo
   - tool-web
+  - present
   - prompt-config-engine
 model:
   provider: ""

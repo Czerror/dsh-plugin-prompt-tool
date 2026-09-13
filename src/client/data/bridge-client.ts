@@ -14,7 +14,8 @@ export type BridgeKey = keyof typeof BRIDGE_ENDPOINTS
 
 export function bridgeCall<K extends BridgeKey>(
   endpoint: K,
-  ...args: BridgeRequestMap[K] extends undefined ? [] : [body: BridgeRequestMap[K]]
+  // 契约里 body 可省略（`models: { refresh?: boolean } | undefined`）时，调用方无需显式传 undefined。
+  ...args: undefined extends BridgeRequestMap[K] ? [body?: BridgeRequestMap[K]] : [body: BridgeRequestMap[K]]
 ): Promise<BridgeResult<BridgeValueMap[K]>> {
   return postBridge<BridgeValueMap[K]>(BRIDGE_ENDPOINTS[endpoint], args[0])
 }

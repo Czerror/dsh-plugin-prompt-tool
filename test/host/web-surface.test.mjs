@@ -4,7 +4,9 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { ensureWebSurface } from '../../lib/index.mjs'
+import { ensureWebSurface, scheduleWebSurfaceRepair } from '../../lib/index.mjs'
+
+const webSurfaceSource = readFileSync(new URL('../../src/web-surface.ts', import.meta.url), 'utf8')
 
 function makeProfile(root, { bundles = ['@deepseek-ai/dsh-base'] } = {}) {
   const profileDir = join(root, 'prompt-tool')
@@ -20,6 +22,23 @@ function ctxFor(profileDir, webServer) {
     get: (key) => key === 'webServer' ? webServer : undefined,
   }
 }
+
+/** 带 disposer 记录的假 ctx：验证延迟任务确实挂在 effect 上。 */
+function effectCtxFor(profileDir) {
+  const effects = []
+  return {
+    baseUrl: pathToFileURL(profileDir + '/').href,
+    get: () => undefined,
+    effect: (callback, name) => {
+      effects.push({ name, dispose: callback() })
+      return () => {}
+    },
+    effects,
+  }
+}
+
+const readBundles = (profileDir) =>
+  JSON.parse(readFileSync(join(profileDir, 'package.json'), 'utf8')).dsh.profile.bundles
 
 test('ensureWebSurface 为当前 profile 补 web-app 并写 .bak 备份', () => {
   const root = join(tmpdir(), `prompt-tool-web-${process.pid}-${Date.now()}`)
@@ -70,6 +89,38 @@ test('ensureWebSurface 在 webServer 已存在时不修改 manifest', () => {
     ensureWebSurface(ctxFor(profileDir, {}), () => {})
     assert.deepEqual(JSON.parse(readFileSync(join(profileDir, 'package.json'), 'utf8')), manifest)
     assert.equal(existsSync(join(profileDir, 'package.json.bak')), false)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('ensureWebSurface 的 web-app 来源是文件常量，不再读 package.json#dsh.bundle.requires', () => {
+  assert.match(webSurfaceSource, /const WEB_APP_BUNDLE = '@deepseek-ai\/dsh-web-app'/)
+  // 只看代码，注释里保留“为什么不再读清单”的说明不算违规。
+  const code = webSurfaceSource.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '')
+  assert.doesNotMatch(code, /\.\.\/package\.json/, '不得再读插件自身 package.json 的私有 requires 字段')
+  assert.doesNotMatch(code, /requires/, '官方 DshBundleManifest 只有 patch，代码里不再有 requires 读取路径')
+})
+
+test('scheduleWebSurfaceRepair：延迟到本轮装配结束后补写，插件卸载后不再写盘', async () => {
+  const root = join(tmpdir(), `prompt-tool-web-${process.pid}-${Date.now()}`)
+  mkdirSync(root, { recursive: true })
+  try {
+    const live = makeProfile(join(root, 'live'))
+    const liveCtx = effectCtxFor(live.profileDir)
+    scheduleWebSurfaceRepair(liveCtx, () => {})
+    assert.equal(liveCtx.effects.length, 1, '修复任务必须注册在 ctx.effect 上')
+    assert.equal(readBundles(live.profileDir).includes('@deepseek-ai/dsh-web-app'), false, '注册当帧不写盘')
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    assert.equal(readBundles(live.profileDir).includes('@deepseek-ai/dsh-web-app'), true, '延迟任务应补写 web-app')
+
+    const unloaded = makeProfile(join(root, 'unloaded'))
+    const unloadedCtx = effectCtxFor(unloaded.profileDir)
+    scheduleWebSurfaceRepair(unloadedCtx, () => {})
+    unloadedCtx.effects[0].dispose()
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    assert.deepEqual(readBundles(unloaded.profileDir), ['@deepseek-ai/dsh-base'], '卸载后不得再异步补写 profile')
+    assert.equal(existsSync(join(unloaded.profileDir, 'package.json.bak')), false)
   } finally {
     rmSync(root, { recursive: true, force: true })
   }

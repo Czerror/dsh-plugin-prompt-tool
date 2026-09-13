@@ -8,7 +8,7 @@ import { pipeline } from 'node:stream/promises'
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml'
 import type { SettingsDescriptor, SettingsPathOp } from '@deepseek-ai/dsh-settings'
 import { PARAM_KEYS } from '../config.ts'
-import { listAdvertisedModels, peekModelCatalog, type ModelDetection } from './models.ts'
+import { invalidateModelCatalog, listAdvertisedModels, peekModelCatalog, refreshModelReasoning, type ModelDetection } from './models.ts'
 import type { SkillCatalogEntry } from '../config.ts'
 import { loadPromptConfigFiles } from '../host/prompt-configs.ts'
 import { validatePromptConfigs } from './configs-validate.ts'
@@ -50,6 +50,7 @@ import {
 } from '../host/characters.ts'
 import { convertStToPreset, mergeStPresets } from '../host/sillytavern.ts'
 import { BRIDGE_ENDPOINTS, MAX_BRIDGE_BODY_BYTES, MAX_CHARACTER_CARD_STREAM_BYTES, SETTINGS_BRIDGE_PREFIX } from '../shared/bridge-contract.ts'
+import type { ModelSyncResult } from '../shared/bridge-contract.ts'
 import { moduleParamFallbacks, validateEngineParamValues } from '../shared/engine-params.ts'
 import { readPersonaSpec } from '../shared/persona-section.ts'
 import { DEFAULT_PRESET_DIR } from '../host/paths.ts'
@@ -287,8 +288,12 @@ export function registerSettingsBridge(
   getPresetConfigsDir?: () => string,
   /** 内容导入完成回调：批量 scope 只触发一次重建（更新运行时文本并重建预设）。 */
   afterPresetImport?: (scopes: Array<'preset' | 'agents'>) => void,
-  /** 参数覆盖写入回调（重建预设使参数生效）。 */
-  afterOverridesChange?: () => void,
+  /**
+   * 参数覆盖写入回调（重建预设使参数生效）。返回值若为 Promise，是宿主默认模型同步结果：
+   * 只有参数覆盖端点会把结果回给客户端（预设已保存 vs 默认模型同步失败要分开表达）；
+   * 其余调用点不需要该结果。
+   */
+  afterOverridesChange?: () => ModelSyncResult | Promise<ModelSyncResult>,
   /** 预设包导入完成回调（物化导入预设：组合/配置目录/共享引擎落盘，宿主 discovery 可见）。 */
   afterPresetPackageImport?: (id: string) => void,
   /** 能力/recipe 原子创建后重建回调；抛错时调用方恢复 preset.yml。 */
@@ -298,6 +303,19 @@ export function registerSettingsBridge(
 ): { invalidateDescriptor: () => void } {
   let invalidateCachedDescriptor: () => void = () => {}
   let capabilityQueue: Promise<void> = Promise.resolve()
+  /**
+   * 触发参数覆盖回调并等待可选的模型同步结果：端点能据此把「预设已保存」与
+   * 「宿主默认模型同步失败」分开表达；不需要结果的调用方走本函数忽略返回值即可
+   * （不产生未处理拒绝）。
+   */
+  const runOverridesChange = async (): Promise<ModelSyncResult | undefined> => {
+    try {
+      return await afterOverridesChange?.()
+    } catch {
+      // 回调失败不应让保存端点整体失败：预设参数已经落盘，回调只影响重建/同步。
+      return undefined
+    }
+  }
   // 动态等待 webServer：webServer 由 @deepseek-ai/dsh-web-app 提供。
   // profile 首次缺少该 bundle 时，本子插件先 pending 但不阻塞启动审计；
   // ensureWebSurface 会把 bundle 补进 manifest，重启后本子插件自动激活。
@@ -388,7 +406,8 @@ export function registerSettingsBridge(
         }
         // 模型目录移出关键路径：/describe 只读缓存（未命中返回空），
         // 查询由独立 /models 端点触发（客户端惰性加载，不阻塞工作台）。
-        const modelCatalog = peekModelCatalog()
+        // 目录缓存按当前 bridge Context 隔离：另一个插件实例/测试 Context 不共享结果。
+        const modelCatalog = peekModelCatalog(sctx)
         // 引擎参数按预设存储：/describe 附带激活预设参数（settings 已不承载；
         // 客户端 fields 参数键由此合并，promptConfigs 仍以 /prompt-configs 实际配置为准）。
         let presetParams: Record<string, unknown> = {}
@@ -550,8 +569,36 @@ export function registerSettingsBridge(
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.models,
           handler: async (req, res) => {
             if (!guard(req, res)) return
+            const parsedBody = await readBridgeBodyForHandler(req, res)
+            if (parsedBody === undefined) return
+            const record = parsedBody.body as { refresh?: unknown } | undefined
+            // 显式刷新（客户端重连、用户重试）越过 10 分钟 TTL：先失效再全量查询。
+            // 目录查询失败不影响下一次调用，也不返回空目录冒充成功。
+            if (record?.refresh === true) invalidateModelCatalog(sctx)
             const modelCatalog = await listAdvertisedModels(sctx)
             writeBridgeJson(res, 200, { ok: true, value: { modelCatalog } })
+          },
+        }),
+        sctx.webServer.register({
+          kind: 'exact',
+          path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.modelReasoning,
+          handler: async (req, res) => {
+            if (!guard(req, res)) return
+            const parsedBody = await readBridgeBodyForHandler(req, res)
+            if (parsedBody === undefined) return
+            const record = parsedBody.body
+            if (record === null || record === undefined || typeof record !== 'object') {
+              writeBridgeJson(res, 400, { ok: false, code: 'reasoning-invalid-shape', message: 'model reasoning requires a JSON body' })
+              return
+            }
+            const { provider, model } = record as { provider?: unknown; model?: unknown }
+            if (typeof provider !== 'string' || provider.length === 0 || typeof model !== 'string' || model.length === 0) {
+              writeBridgeJson(res, 400, { ok: false, code: 'reasoning-invalid-shape', message: 'provider and model must be non-empty strings' })
+              return
+            }
+            // 查询失败/超时返回 known:false：客户端据此保持「未查到」，不虚构档位。
+            const reasoning = await refreshModelReasoning(sctx, provider, model) ?? { known: false, efforts: [] }
+            writeBridgeJson(res, 200, { ok: true, value: { reasoning } })
           },
         }),
         sctx.webServer.register({
@@ -924,12 +971,14 @@ export function registerSettingsBridge(
               )
               // 预设切换前保存当前配置卡时只需落盘，不立即重建；
               // 后续 settings presetTemplate 变更会让目标预设完成唯一一次重建。
-              if (record.rebuild !== false) afterOverridesChange?.()
+              // rebuild === false 时不做重建/同步，也不回 modelSync（没有同步事实可报）。
+              const modelSync = record.rebuild === false ? undefined : await runOverridesChange()
               writeBridgeJson(res, 200, {
                 ok: true,
                 value: {
                   ...(record.overrides !== undefined ? { overrides: record.overrides } : {}),
                   ...(record.promptConfigs !== undefined ? { promptConfigs: record.promptConfigs } : {}),
+                  ...(modelSync !== undefined ? { modelSync } : {}),
                 },
               })
             } catch (error) {
@@ -984,7 +1033,7 @@ export function registerSettingsBridge(
                 record.variables as Record<string, string> | undefined,
                 record.enabled as boolean | undefined,
               )
-              afterOverridesChange?.()
+              void runOverridesChange()
               writeBridgeJson(res, 200, { ok: true, value: { variables: record.variables } })
             } catch (error) {
               const message = error instanceof Error ? error.message : String(error)
@@ -1038,7 +1087,7 @@ export function registerSettingsBridge(
                   appendPresetModules(doc, customToolModules(customTools))
                 }
               })
-              afterOverridesChange?.()
+              void runOverridesChange()
               writeBridgeJson(res, 200, { ok: true, value: { customTools } })
             } catch (error) {
               const message = error instanceof Error ? error.message : String(error)
@@ -1101,7 +1150,7 @@ export function registerSettingsBridge(
                 }
               }
               savePresetPersona(dirname(dir), basename(dir), persona)
-              afterOverridesChange?.()
+              void runOverridesChange()
               writeBridgeJson(res, 200, { ok: true, value: { persona } })
             } catch (error) {
               const message = error instanceof Error ? error.message : String(error)
@@ -1552,7 +1601,7 @@ export function registerSettingsBridge(
               writeBridgeJson(res, 400, { ok: false, code: 'characters-rejected', message: result.message })
               return
             }
-            afterOverridesChange?.()
+            void runOverridesChange()
             writeBridgeJson(res, 200, { ok: true, value: { id, count: result.count } })
           },
         }),
@@ -1581,7 +1630,7 @@ export function registerSettingsBridge(
               writeBridgeJson(res, 400, { ok: false, code: 'characters-rejected', message: result.message })
               return
             }
-            afterOverridesChange?.()
+            void runOverridesChange()
             writeBridgeJson(res, 200, { ok: true, value: { id, count: result.count } })
           },
         }),
@@ -1637,7 +1686,7 @@ export function registerSettingsBridge(
                   appendPresetModules(doc, ['subagent-tool-policy'])
                 }
               })
-              afterOverridesChange?.()
+              void runOverridesChange()
               writeBridgeJson(res, 200, { ok: true, value: { policy, errors } })
             } catch (error) {
               const message = error instanceof Error ? error.message : String(error)

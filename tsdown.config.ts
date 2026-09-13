@@ -9,14 +9,16 @@ import { transform } from 'lightningcss'
 const PLUGIN_ID = 'dsh-plugin-prompt-tool'
 
 /**
- * rc8 client-modules baseline：全部是宿主 PLATFORM_MODULES / PRELOADED_CLIENT_EXTERNALS
- * 表中的模块。它们从 loader 模块表解析，不打包进 lib/client.js。
+ * rc.2 client-modules baseline：全部由宿主模块表（PLATFORM_MODULES 与预载
+ * 客户端模块）提供，从 loader 解析，不打包进 lib/client.js。
+ *
+ * 只列本插件真正产生的模块请求：值 import 才会形成 require 边，
+ * `import type` 会被擦除。需要新的平台模块时先在这里补 external，
+ * 再验证提供者确实在 boot graph 内，不要整表照抄宿主清单。
  */
 const CLIENT_EXTERNALS = [
   'react', 'react/jsx-runtime', 'react-dom', 'react-dom/client',
-  'cordis',
-  '@deepseek-ai/dsh-client-ui-slots',
-  '@deepseek-ai/dsh-client-runtime/client',
+  '@deepseek-ai/cordis',
   '@deepseek-ai/dsh-client-ui-primitives',
 ]
 
@@ -49,7 +51,7 @@ const client: UserConfig = {
     alwaysBundle: (id: string) => (CLIENT_EXTERNALS.includes(id) ? undefined : true),
   },
   define: {
-    // rc8 client bundle build environment：先提供空 process.env 容器，
+    // client bundle 构建环境：先提供空 process.env 容器，
     // 精确键的替换会覆盖该容器，避免内联依赖在浏览器里抛 ReferenceError。
     'process.env': '{}',
     'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV ?? 'production'),
@@ -94,7 +96,7 @@ const client: UserConfig = {
   }],
   outputOptions: {
     entryFileNames: 'client.js',
-    // rc8 queue/live facade 契约：脚本执行只调用 load() 登记 factory；
+    // queue/live facade 契约：脚本执行只调用 load() 登记 factory；
     // Host 在 module-system create() 前把登记放入 pendingQueue，create() 时切到 live 并排空。
     banner: `window.__ModuleLoader__.load({ id: ${JSON.stringify(PLUGIN_ID)}, factory: (require) => {`,
     footer: 'return module.exports; } });',

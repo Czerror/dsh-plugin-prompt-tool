@@ -20,6 +20,7 @@ modules:
   - tool-web
   - official-skill-filesystem-cordis
   - official-tool-skill
+  - present
   - prompt-config-engine
 model:
   provider: ""

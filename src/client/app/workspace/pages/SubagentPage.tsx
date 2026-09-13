@@ -1,5 +1,6 @@
 import { memo, type ReactNode } from 'react'
 import type { PromptToolStore } from '../../../data/use-prompt-tool-store.ts'
+import type { PromptToolTranslate } from '../../../locales.ts'
 import { ModelRouteModuleCard } from '../../../features/models/ModelRouteCard.tsx'
 import { DelegationToolsModuleCard } from '../../../features/subagents/DelegationToolsCard.tsx'
 import { ConfigListWithTemplates } from './ConfigListWithTemplates.tsx'
@@ -8,18 +9,18 @@ import ui from '../../../ui/controls.module.css'
  *  （audience != main 即公用或仅子代理）。子代理独有：子代理模型、工具与深度
  *  （toolFilter / allowKinds / maxDepth）；主会话引擎模块（tool-bootstrap /
  *  context-gate / 工具管线）不在此重复（避免双入口）。 */
-export const SubagentPage = memo(function SubagentPage(props: { store: PromptToolStore }): ReactNode {
-  const { store } = props
+export const SubagentPage = memo(function SubagentPage(props: { store: PromptToolStore; t: PromptToolTranslate }): ReactNode {
+  const { store, t } = props
   return (
     <>
-      <section className={ui.section} aria-label="子代理">
+      <section className={ui.section} aria-label={t('subagent.aria')}>
         <div className={ui.configList}>
           <ModelRouteModuleCard store={store} scope="subagent" />
-          <DelegationToolsModuleCard store={store} />
+          <DelegationToolsModuleCard store={store} t={t} />
         </div>
       </section>
       <div className={ui.subagentConfigs}>
-        <ConfigListWithTemplates store={store} scope="subagent" />
+        <ConfigListWithTemplates store={store} scope="subagent" t={t} />
       </div>
     </>
   )

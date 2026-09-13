@@ -10,6 +10,7 @@ import { ImportFileButton } from '../../ui/ImportFileButton.tsx'
 import { HintTooltip } from '../../ui/HintTooltip.tsx'
 import { StatusBadge } from '../../ui/StatusBadge.tsx'
 import type { PromptToolStore } from '../../data/use-prompt-tool-store.ts'
+import type { PromptToolTranslate } from '../../locales.ts'
 import sharedCss from '../../ui/controls.module.css'
 import featureCss from './characters.module.css'
 
@@ -23,8 +24,8 @@ interface CharacterCardItem {
   imported: boolean
 }
 
-export const CharactersPage = memo(function CharactersPage(props: { store: PromptToolStore }): ReactNode {
-  const { store } = props
+export const CharactersPage = memo(function CharactersPage(props: { store: PromptToolStore; t: PromptToolTranslate }): ReactNode {
+  const { store, t } = props
   const [importing, setImporting] = useState(false)
   const [confirmingDelete, setConfirmingDelete] = useState<string | undefined>(undefined)
   const [busy, setBusy] = useState<string | undefined>(undefined)
@@ -47,8 +48,8 @@ export const CharactersPage = memo(function CharactersPage(props: { store: Promp
         const header = await file.slice(0, 8).arrayBuffer()
         if (isPngSignature(header)) {
           const res = await bridgeUpload(file, file.name)
-          if (res.ok) store.showNotice('ok', `角色卡「${res.value.name}」已入库`)
-          else store.showNotice('error', '角色卡入库失败：' + (res.message ?? 'settings bridge unavailable'))
+          if (res.ok) store.showNotice('ok', t('characters.notice.stored', { name: res.value.name }))
+          else store.showNotice('error', t('characters.notice.storeFailed', { reason: res.message ?? 'settings bridge unavailable' }))
           continue
         }
         if (/\.json$/i.test(file.name)) {
@@ -57,15 +58,15 @@ export const CharactersPage = memo(function CharactersPage(props: { store: Promp
             : await bridgeCall('charactersImport', {
               files: [{ path: file.name, content: await file.text() }],
             })
-          if (res.ok) store.showNotice('ok', `角色卡「${res.value.name}」已入库`)
-          else store.showNotice('error', '角色卡入库失败：' + (res.message ?? 'settings bridge unavailable'))
+          if (res.ok) store.showNotice('ok', t('characters.notice.stored', { name: res.value.name }))
+          else store.showNotice('error', t('characters.notice.storeFailed', { reason: res.message ?? 'settings bridge unavailable' }))
           continue
         }
-        store.showNotice('error', `不支持的文件类型：${file.name}（仅 PNG 角色卡或 JSON）`)
+        store.showNotice('error', t('characters.notice.unsupported', { name: file.name }))
       }
       await loadCharacters()
     } catch (error) {
-      store.showNotice('error', `角色卡导入失败：${error instanceof Error ? error.message : String(error)}`)
+      store.showNotice('error', t('characters.notice.importFailed', { reason: error instanceof Error ? error.message : String(error) }))
     } finally {
       setImporting(false)
     }
@@ -77,11 +78,11 @@ export const CharactersPage = memo(function CharactersPage(props: { store: Promp
     try {
       const res = await bridgeCall('charactersApply', { id })
       if (res.ok) {
-        store.showNotice('ok', `已导入到当前预设（${res.value.count} 条配置）`)
+        store.showNotice('ok', t('characters.notice.applied', { count: res.value.count }))
         await store.load()
         await loadCharacters()
       } else {
-        store.showNotice('error', '导入到当前预设失败：' + (res.message ?? 'settings bridge unavailable'))
+        store.showNotice('error', t('characters.notice.applyFailed', { reason: res.message ?? 'settings bridge unavailable' }))
       }
     } finally {
       setBusy(undefined)
@@ -94,11 +95,11 @@ export const CharactersPage = memo(function CharactersPage(props: { store: Promp
     try {
       const res = await bridgeCall('charactersRemove', { id })
       if (res.ok) {
-        store.showNotice('ok', `已从当前预设移除（${res.value.count} 条配置）`)
+        store.showNotice('ok', t('characters.notice.removed', { count: res.value.count }))
         await store.load()
         await loadCharacters()
       } else {
-        store.showNotice('error', '移除失败：' + (res.message ?? 'settings bridge unavailable'))
+        store.showNotice('error', t('characters.notice.removeFailed', { reason: res.message ?? 'settings bridge unavailable' }))
       }
     } finally {
       setBusy(undefined)
@@ -109,45 +110,45 @@ export const CharactersPage = memo(function CharactersPage(props: { store: Promp
     const res = await bridgeCall('charactersDelete', { id })
     if (res.ok) {
       setConfirmingDelete(undefined)
-      store.showNotice('ok', `角色卡 ${id} 已删除（已导入当前预设的参数不受影响）`)
+      store.showNotice('ok', t('characters.notice.deleted', { id }))
       await loadCharacters()
     } else {
-      store.showNotice('error', '删除失败：' + (res.message ?? 'settings bridge unavailable'))
+      store.showNotice('error', t('characters.notice.deleteFailed', { reason: res.message ?? 'settings bridge unavailable' }))
     }
   }
 
   const openLocation = async (id: string): Promise<void> => {
     const res = await bridgeCall('presetOpen', { id: `/.characters/${id}` })
-    if (res.ok) store.showNotice('ok', `已打开角色卡目录：${res.value.path}`)
-    else store.showNotice('error', '打开目录失败：' + (res.message ?? 'settings bridge unavailable'))
+    if (res.ok) store.showNotice('ok', t('characters.notice.opened', { path: res.value.path }))
+    else store.showNotice('error', t('characters.notice.openFailed', { reason: res.message ?? 'settings bridge unavailable' }))
   }
 
   return (
-    <section className={ui.section} aria-label="角色管理">
+    <section className={ui.section} aria-label={t('characters.aria')}>
       <div className={ui.rowGroup}>
         <div className={ui.settingRowStack}>
           <span className={ui.settingCopy}>
-            <strong>角色卡库</strong>
-            <small>导入 SillyTavern 角色卡（PNG tEXt chunk：ccv3 / chara，或 chara_card JSON）到独立库。角色卡参数不直接生成预设——点击「导入到当前预设」把角色设定 / 系统提示 / 开场白 / 提示词库合并进当前激活预设，可随时移除。</small>
+            <strong>{t('characters.library.title')}</strong>
+            <small>{t('characters.library.hint')}</small>
           </span>
           <span className={ui.inlineControls}>
             <ImportFileButton
-              label="导入角色卡图片"
-              busyLabel="导入中…"
+              label={t('characters.importImage')}
+              busyLabel={t('characters.importing')}
               busy={importing}
               accept=".png,.jpg,.jpeg,image/png,image/jpeg"
               multiple
-              ariaLabel="选择 SillyTavern 角色卡图片"
+              ariaLabel={t('characters.pickImage.aria')}
               className={ui.primaryPill}
               onFiles={(files) => void importCard(files)}
             />
             <ImportFileButton
-              label="导入角色卡 JSON"
-              busyLabel="导入中…"
+              label={t('characters.importJson')}
+              busyLabel={t('characters.importing')}
               busy={importing}
               accept=".json"
               multiple
-              ariaLabel="选择角色卡 JSON"
+              ariaLabel={t('characters.pickJson.aria')}
               className={ui.pillButton}
               onFiles={(files) => void importCard(files)}
             />
@@ -159,8 +160,8 @@ export const CharactersPage = memo(function CharactersPage(props: { store: Promp
         <div className={ui.emptyState}>
           <span className={ui.emptyGlyph} aria-hidden="true">⌁</span>
           <div>
-            <h3>角色卡库为空</h3>
-            <p>从上方导入 SillyTavern 角色卡（PNG / JSON），然后点击「导入到当前预设」应用到正在使用的预设。</p>
+            <h3>{t('characters.empty.title')}</h3>
+            <p>{t('characters.empty.hint')}</p>
           </div>
         </div>
       ) : (
@@ -172,7 +173,7 @@ export const CharactersPage = memo(function CharactersPage(props: { store: Promp
                 <div className={ui.presetCardBody}>
                   <span className={ui.presetCardHead}>
                     <strong className={ui.presetCardName}>{card.name}</strong>
-                    {card.imported && <StatusBadge className={ui.presetHeadBadge} tone="success" label="已导入当前预设" />}
+                    {card.imported && <StatusBadge className={ui.presetHeadBadge} tone="success" label={t('characters.badge.imported')} />}
                   </span>
                   {card.description !== undefined && card.description.length > 0
                     && <p className={ui.presetCardDesc}>{card.description}</p>}
@@ -182,17 +183,17 @@ export const CharactersPage = memo(function CharactersPage(props: { store: Promp
                   {card.imported ? (
                     <button type="button" className={ui.pillButton} data-variant="secondary" disabled={busy === card.id}
                       onClick={() => void removeCard(card.id)}>
-                      {busy === card.id ? '移除中…' : '从当前预设移除'}
+                      {busy === card.id ? t('characters.removing') : t('characters.remove')}
                     </button>
                   ) : (
                     <button type="button" className={ui.primaryPill} disabled={busy === card.id}
                       onClick={() => void applyCard(card.id)}>
-                      {busy === card.id ? '导入中…' : '导入到当前预设'}
+                      {busy === card.id ? t('characters.importing') : t('characters.apply')}
                     </button>
                   )}
-                  <HintTooltip label="打开角色卡目录">
+                  <HintTooltip label={t('characters.openDir.label')}>
                     <button type="button" className={ui.presetIconButton}
-                      aria-label={`打开角色卡目录：${card.name}`}
+                      aria-label={t('characters.openDir.aria', { name: card.name })}
                       onClick={() => void openLocation(card.id)}>
                       <IconFolderOpenOutline16 />
                     </button>
@@ -200,14 +201,14 @@ export const CharactersPage = memo(function CharactersPage(props: { store: Promp
                   {confirming ? (
                     <>
                       <button type="button" className={ui.pillButton} data-danger
-                        onClick={() => void deleteCard(card.id)}>确认删除</button>
+                        onClick={() => void deleteCard(card.id)}>{t('characters.confirmDelete')}</button>
                       <button type="button" className={ui.pillButton} data-variant="secondary"
-                        onClick={() => setConfirmingDelete(undefined)}>取消</button>
+                        onClick={() => setConfirmingDelete(undefined)}>{t('characters.cancel')}</button>
                     </>
                   ) : (
-                    <HintTooltip label="删除角色卡">
+                    <HintTooltip label={t('characters.delete.label')}>
                       <button type="button" className={ui.presetIconButton}
-                        aria-label={`删除角色卡：${card.name}`}
+                        aria-label={t('characters.delete.aria', { name: card.name })}
                         onClick={() => setConfirmingDelete(card.id)}>
                         <IconTrashOutline16 />
                       </button>

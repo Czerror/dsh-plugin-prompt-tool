@@ -9,6 +9,7 @@ import ts from 'typescript'
 import { parse } from 'yaml'
 import { patchToolParameter } from '../../src/client/features/tools/custom-tool-parameters.ts'
 import { compileCustomTool } from '../../src/host/custom-tools.ts'
+import { PROMPT_TOOL_DICTS } from '../../src/client/locales.ts'
 
 const require = createRequire(import.meta.url)
 const reactUrls = Object.fromEntries(['react', 'react/jsx-runtime', 'react/jsx-dev-runtime']
@@ -29,6 +30,13 @@ const loader = registerHooks({
 })
 const { CustomToolCard } = await import('../../src/client/features/tools/CustomToolEditor.tsx')
 loader.deregister()
+
+/** 渲染用翻译：与官方 locale 同形（键 + {name} 插值），断言直接对比 zh 词典值。 */
+const t = (key, params) => {
+  const template = PROMPT_TOOL_DICTS.zh[key]
+  if (template === undefined) throw new Error(`missing locale key: ${key}`)
+  return template.replace(/\{(\w+)\}/g, (_, name) => String(params?.[name] ?? ''))
+}
 
 const tool = (parameters, execute = { kind: 'ask-user' }) => ({
   id: 'editor_tool', name: 'editor_tool', description: '编辑器测试', parameters,
@@ -73,6 +81,7 @@ test('所有已有工具模板经参数描述编辑和 JSON roundtrip 后仍能�
 test('工具卡暴露 fs 内容、复杂参数 JSON、输出 JSON 和超时输入', () => {
   for (const action of ['write', 'append']) {
     const html = renderToStaticMarkup(createElement(CustomToolCard, {
+      t,
       tool: tool({ choice: { oneOf: [{ type: 'string' }, { type: 'number' }] } }, {
         kind: 'fs', action, path: 'note.txt', content: '首行\n{{args.text}}',
       }), index: 0, expanded: true, canMoveUp: false, canMoveDown: false,

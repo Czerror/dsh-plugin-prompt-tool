@@ -24,7 +24,10 @@ import {
 } from './dirty-state.ts'
 import { isContentAsset, liftContentText, stripContentText } from './prompt-config-content.ts'
 import { buildParamOverrides, isCurrentPresetDraft, readParamOverridesPatch, updateLoadedParamKeys } from './param-overrides.ts'
+import { modelSyncNotice } from './model-sync-notice.ts'
 import { createSerialTaskQueue } from './save-queue.ts'
+import { modelChoiceValue } from '../features/models/model-options.ts'
+import type { ModelReasoningView } from '../../shared/bridge-contract.ts'
 
 /** rc8 ui-settings 共享镜像传输面：标准字段经官方 settingsScope 读写。 */
 export interface PromptToolSettingsTransport {
@@ -51,6 +54,10 @@ export interface PromptToolStore {
   meta: EngineMeta
   loading: boolean
   modelCatalog: Record<string, string[]>
+  /** provider/model 路由的推理档位元数据（按 modelChoiceValue 键）；未查到 = known:false。 */
+  modelReasoning: Record<string, ModelReasoningView>
+  /** 按需查询某路由的推理档位（结果进 modelReasoning；失败静默保持未查到）。 */
+  ensureModelReasoning: (provider: string, model: string) => void
   hostDefaultModel?: HostDefaultModel
   moduleFacts?: PresetModuleFacts
   /** 新技能目录路径输入（多目录卡片：输入路径添加）。 */
@@ -124,6 +131,7 @@ function waitForScope(scope: SettingsScope<Record<string, unknown>>): Promise<Se
 
 export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolSettingsTransport): PromptToolStore {
   const [modelCatalog, setModelCatalog] = useState<Record<string, string[]>>({})
+  const [modelReasoning, setModelReasoning] = useState<Record<string, ModelReasoningView>>({})
   const [hostDefaultModel, setHostDefaultModel] = useState<HostDefaultModel | undefined>(undefined)
   const [moduleFacts, setModuleFacts] = useState<PresetModuleFacts | undefined>(undefined)
   const [fields, setFields] = useState<Fields>(EMPTY_FIELDS)
@@ -174,9 +182,25 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
   }, [])
 
   /** 模型目录惰性加载：独立于主 load（/describe 不再阻塞等模型查询）。 */
-  const loadModels = useCallback(async (): Promise<void> => {
-    const res = await bridgeCall('models')
+  /** 模型目录：默认走 10 分钟缓存；refresh=true 时请求宿主越过 TTL 重新查询。 */
+  const loadModels = useCallback(async (refresh = false): Promise<void> => {
+    const res = refresh ? await bridgeCall('models', { refresh: true }) : await bridgeCall('models')
     if (res.ok) setModelCatalog(res.value.modelCatalog ?? {})
+  }, [])
+
+  /** 已发起过查询的路由键：避免同一路由随每次渲染重复请求（结果无论成败都不重发）。 */
+  const reasoningRequestedRef = useRef(new Set<string>())
+  const ensureModelReasoning = useCallback((provider: string, model: string): void => {
+    if (provider.length === 0 || model.length === 0) return
+    const key = modelChoiceValue(provider, model)
+    if (reasoningRequestedRef.current.has(key)) return
+    reasoningRequestedRef.current.add(key)
+    void (async () => {
+      const res = await bridgeCall('modelReasoning', { provider, model })
+      // 未查到（失败/超时/未注册）：保持「未查到」，不写入空档位，UI 不虚构选项。
+      if (!res.ok) return
+      setModelReasoning((previous) => ({ ...previous, [key]: res.value.reasoning }))
+    })()
   }, [])
 
   const applyView = useCallback((res: BridgeResult<BridgeSettingsView>): Fields => {
@@ -277,6 +301,26 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
   useEffect(() => {
     void loadModels()
   }, [loadModels])
+
+  // 目录就绪后补查当前可见路由的推理档位（会话选择 / 预设主模型 / 子代理模型 / 宿主默认）。
+  // 只查这几条可见路由：不遍历整个目录，也不把目录当授权白名单。
+  useEffect(() => {
+    reasoningRequestedRef.current.clear()
+    const current = fieldsRef.current
+    const face = api.sessionModel.snapshot()
+    const sessionSelection = face.selection
+    const routes: Array<{ provider?: string; model?: string }> = [
+      { provider: sessionSelection?.provider, model: sessionSelection?.model },
+      { provider: current.modelProvider, model: current.modelName },
+      { provider: current.subagentModelProvider, model: current.subagentModelName },
+      { provider: hostDefaultModel?.provider, model: hostDefaultModel?.model },
+    ]
+    for (const route of routes) {
+      if (route.provider !== undefined && route.model !== undefined) {
+        ensureModelReasoning(route.provider, route.model)
+      }
+    }
+  }, [api, ensureModelReasoning, hostDefaultModel?.model, hostDefaultModel?.provider, modelCatalog])
 
   const refreshRevision = useCallback(async () => {
     try {
@@ -399,6 +443,9 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
         paramBaselineRef.current = savedSnapshot
         // 只标记发起时快照；若期间有新编辑，当前 fields 仍保持 dirty。
         setSavedSwitches(savedSnapshot)
+        // 预设已落盘，但宿主默认模型同步可能未完成：分别表达，不谎报全绿。
+        const syncNotice = modelSyncNotice(res.value.modelSync, '预设已保存')
+        if (syncNotice !== undefined) showNotice(syncNotice.kind, syncNotice.message)
         const currentSnapshot = snapshotSwitches(fieldsRef.current)
         // 服务端会过滤未完成阶段；此时不重载，保留 UI 正在编辑的空草稿行。
         if (shouldReloadAfterPresetSave(
@@ -456,6 +503,8 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
       if (expectedPresetId !== fieldsRef.current.presetTemplate) return
       if (res.ok) {
         setSavedConfigs(configs)
+        const syncNotice = modelSyncNotice(res.value.modelSync, '提示词配置已保存')
+        if (syncNotice !== undefined) showNotice(syncNotice.kind, syncNotice.message)
         if (options?.reload !== false && !pendingVariableRows && shouldReloadAfterPresetSave(
           draftVersion,
           draftVersionRef.current,
@@ -641,6 +690,8 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     meta,
     loading,
     modelCatalog,
+    modelReasoning,
+    ensureModelReasoning,
     hostDefaultModel,
     moduleFacts,
     skillsDirDraft,

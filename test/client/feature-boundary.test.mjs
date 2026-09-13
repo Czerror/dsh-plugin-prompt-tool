@@ -18,10 +18,10 @@ test('feature 不直接导入其他 feature 内部实现', () => {
   }
 })
 
-test('客户端根目录只保留入口、共享类型与待拆样式', () => {
+test('客户端根目录只保留入口、字典、共享类型与待拆样式', () => {
   const files = readdirSync(new URL('../../src/client/', import.meta.url), { withFileTypes: true })
     .filter((entry) => entry.isFile())
     .map((entry) => entry.name)
     .sort()
-  assert.deepEqual(files, ['index.ts', 'prompt-tool-types.ts'])
+  assert.deepEqual(files, ['index.ts', 'locales-cards.ts', 'locales-params.ts', 'locales-prompts.ts', 'locales.ts', 'prompt-tool-types.ts'])
 })

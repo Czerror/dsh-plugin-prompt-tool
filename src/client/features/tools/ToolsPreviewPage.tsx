@@ -1,12 +1,13 @@
 import { useEffect, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { IconSearchOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PromptToolHostApi } from '../../data/host-api.ts'
+import type { PromptToolTranslate } from '../../locales.ts'
 import { MenuSelect } from '../../ui/MenuSelect.tsx'
 import { ToolSurfaceView } from './ToolSurfaceView.tsx'
 import css from './tools.module.css'
 
 /** 参考官方 plugin-inventory 的搜索、分组与详情卡；数据仍是模型工具面。 */
-export function ToolsPreviewPage({ api, presetId }: { api: PromptToolHostApi; presetId?: string }): ReactNode {
+export function ToolsPreviewPage({ api, presetId, t }: { api: PromptToolHostApi; presetId?: string; t: PromptToolTranslate }): ReactNode {
   const [query, setQuery] = useState('')
   const [revision, setRevision] = useState(0)
   const [selectedId, setSelectedId] = useState('')
@@ -28,31 +29,31 @@ export function ToolsPreviewPage({ api, presetId }: { api: PromptToolHostApi; pr
       setLoading(false)
     }, (reason: unknown) => {
       if (!active) return
-      setError(reason instanceof Error ? reason.message : '预设列表读取失败')
+      setError(reason instanceof Error ? reason.message : t('tools.loadFailed'))
       setLoading(false)
     })
     return () => { active = false }
-  }, [api.listAgentPresets, presetId, revision])
+  }, [api.listAgentPresets, presetId, revision, t])
 
-  return <section className={css.toolsPreviewPage} aria-label="工具预览">
+  return <section className={css.toolsPreviewPage} aria-label={t('tools.aria')}>
     <label className={css.toolSearch}>
       <IconSearchOutline16 aria-hidden="true" />
-      <input type="search" aria-label="搜索工具" placeholder="搜索工具名或描述" value={query}
+      <input type="search" aria-label={t('tools.search.aria')} placeholder={t('tools.search.placeholder')} value={query}
         onChange={(event) => setQuery(event.target.value)} />
     </label>
-    <ToolSurfaceView sessionId={sessionId ?? ''} label="当前会话工具" query={query} />
-    <ToolSurfaceView presetId={selectedId} label="预设工具能力" query={query} headerAction={
-      <MenuSelect ariaLabel="预设工具能力来源" value={selectedId} placeholder="选择预设"
+    <ToolSurfaceView sessionId={sessionId ?? ''} label={t('tools.surface.session')} t={t} query={query} />
+    <ToolSurfaceView presetId={selectedId} label={t('tools.surface.preset')} t={t} query={query} headerAction={
+      <MenuSelect ariaLabel={t('tools.surface.source.aria')} value={selectedId} placeholder={t('tools.surface.source.placeholder')}
         disabled={loading || presets.length === 0} className={css.toolPresetSelect} onChange={setSelectedId}
         options={presets.map((preset) => ({ value: preset.id, label: preset.name ?? preset.id }))} />
     }>
       <div className={css.toolSurfaceControls}>
-        <button type="button" className={css.toolRefresh} disabled={loading} onClick={() => setRevision((value) => value + 1)}>刷新预设列表</button>
-        {loading && <span className={css.toolSurfaceHint} role="status">正在读取预设…</span>}
+        <button type="button" className={css.toolRefresh} disabled={loading} onClick={() => setRevision((value) => value + 1)}>{t('tools.refreshPresets')}</button>
+        {loading && <span className={css.toolSurfaceHint} role="status">{t('tools.loadingPresets')}</span>}
         {error && <span className={css.toolSurfaceError} role="alert">{error}</span>}
-        {!loading && !error && presets.length === 0 && <span className={css.toolSurfaceHint}>暂无可用预设。</span>}
+        {!loading && !error && presets.length === 0 && <span className={css.toolSurfaceHint}>{t('tools.noPresets')}</span>}
       </div>
     </ToolSurfaceView>
-    <p className={css.toolSurfaceHint}>仅预览模型工具；添加和编辑仍在「主会话」模块配置卡，不提供 MCP／插件安装管理。</p>
+    <p className={css.toolSurfaceHint}>{t('tools.footnote')}</p>
   </section>
 }

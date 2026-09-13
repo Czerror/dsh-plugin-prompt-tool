@@ -2,6 +2,23 @@
 
 ## [未发布] - 2026-09-06
 
+### rc.2 收尾：官方 locale、模型元数据与同步结果（2026-09-13）
+
+- 悬浮入口补计划约定的交互细节：位置存储键固定为 `dsh-plugin-prompt-tool:trigger-position`（兼容早期 `:floating-trigger` 旧键），夹取时保留 8px 视口边缘留白；`@deepseek-ai/dsh-client-ui-sidebar` 在几何探针下线后失去最后一个消费方，从 `dsh.client.inject`、peer、dev 与 lockfile 移除。
+- 官方 locale 词典接入：新增 `src/client/locales.ts`（zh 为键集事实源、en 用同键集类型约束，`locales-params` / `locales-prompts` / `locales-cards` 按 feature 分区后合并注册），经 `ctx.effect(() => registerPromptToolLocale(ctx.locale))` 注册与释放；工作台入口、设置页、六页外壳与技能/预设/角色/工具页面文案迁移到官方 `prompt-tool` 命名空间（含子代理「工具与深度」模块卡、实例级工具策略与自定义工具卡），slot 注册声明 locale namespace，设置 tab 标题改用动态 thunk；新增 `test/client/locale-contract.test.mjs` 守卫（键集一致、注册可释放、关键 UI 文件无硬编码长文案）。
+- 模型档位来自官方元数据：新增 bridge 端点 `/model-reasoning` 与 `ModelReasoningView`（`known` / `efforts` / `defaultEffort`），模型路由卡不再硬编码 `off / low / high / max`；无推理能力时不虚构档位，已保存但不在目录中的值保留回显，目录只作展示不作授权白名单。
+- 默认模型同步可等待、可观察：新增 `ModelSyncResult`（`synced / unchanged / unavailable / failed` + 安全消息）随预设保存响应返回，UI 能分别显示「预设已保存」与「默认模型同步失败/不可用」并可重试；模型目录缓存在官方 `llm/adapters-updated`、服务重挂与显式刷新时失效，provider 单点失败不清空其他成功分组。
+- 验证补充：无同级官方源码的消费安装 smoke（tarball 安装后 21 个 peer 与 10 个 client inject 包全部解析到 `0.1.5-rc.2`）；隔离 `DSH_HOME` + 随机端口的真实宿主 smoke（客户端 module boot graph 含本插件、插件 client bundle 正常下发、完整 profile 的 manifest 未被改写）。
+
+### DSH 0.1.5-rc.2 组合对齐与依赖基线（2026-09-13）
+
+- 依赖基线精确到 `0.1.5-rc.2`（Cordis `4.0.2`）：peer 范围 `^0.1.5-rc.2`、dev 精确锁定、移除全部指向 `../deepseek-harness` 的默认 `overrides: link:` 与失效版本例外；新增直接依赖 `@deepseek-ai/dsh-agent` / `dsh-llm` / `dsh-agent-default-model` / `dsh-subagent` / `dsh-tool-subagent` / `dsh-package-manifest` / `dsh-client-locale`（dev）与 `semver@7.8.5`，每个都有真实消费者。
+- 新增 `scripts/verify-host-contracts.mjs`（`pnpm verify:host`）：报告每个直接官方包的声明范围、安装版本与解析目标，拒绝非 `node_modules` 解析（源码 link）、dev 版本漂移、未声明的官方 import 与缺少 peer 的 `dsh.client.inject`。
+- 组合重建改用固定 fixture `test/fixtures/dsh/0.1.5-rc.2/`（tag `dsh-v0.1.5-rc.2`、commit `fb2c4b9e`，逐文件 SHA-256 登记在 `PROVENANCE.md`），不再读取开发机同级官方源码；生成产物记录来源 tag 与 commit。
+- 对齐官方 rc.2 组合漂移：`present`（`@deepseek-ai/dsh-tool-present`）进入 standard / ptc / creative 的行序；官方 minimal 已删除 `filesystem` 组，内置 Minimal 同步为单 shell 工具基型。
+- `bootstrap-filesystem` 改为本地模块 `engine/compositions/source/local/bootstrap-filesystem.yml`：Anchored 与既有用户预设仍可显式引用（`fs-local` + `str-replace-editor` 同隔离域、旧 `str-replace-editor` 别名不变），不再声称来自官方 minimal。
+- 新增 `test/host/version-contract.test.mjs` 锁定版本判定与解析来源，`test/fixtures/.../PROVENANCE.md` 指纹用例锁定固定输入未被本地 master 污染。
+
 ### 悬浮入口恢复，移除官方右侧栏（2026-09-09）
 
 - 恢复 `shell.overlay` 悬浮入口：`FloatingTrigger`（左上角按钮）+ `WorkbenchOverlay`（body portal 右侧抽屉）+ `SidebarGeometryProbe`（`sidebar.footer.action` 几何探针，输出 `--pt-sidebar-edge`）+ `PromptToolWorkspaceController`。

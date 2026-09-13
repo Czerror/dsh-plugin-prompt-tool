@@ -1,10 +1,10 @@
 /**
- * DSH 0.1.5-alpha.1 宿主契约回归。
+ * DSH 0.1.5-rc.2 宿主契约回归。
  *
  * 0.1.5 相对 0.1.3 的破坏性变化：conversation.details.tool slot 与
  * session.events 数组移除；PTC 事件由 tool/code-dispatch 改名为 tool/ptc-dispatch。
- * 本文件锁定插件只消费现存契约（shell.overlay / sidebar.footer.action 在
- * 0.1.5 仍由 ui-layout / ui-sidebar 声明；官方右侧栏实测不适合本项目，已移除），
+ * 本文件锁定插件只消费现存契约（shell.overlay 由 ui-layout 声明；官方右侧栏
+ * 与 sidebar.footer.action 几何探针都已移除——悬浮入口改为可拖动、读自己的位置偏好），
  * 并锁定非 pre-step 五层的注入时序。
  */
 import test from 'node:test'
@@ -29,29 +29,31 @@ function sourceFiles(relative) {
   return files
 }
 
-test('客户端只注册 0.1.5 官方 slot 面：settings.plugins.tab + shell.overlay 悬浮入口 + 几何探针', () => {
+test('客户端只注册 0.1.5 官方 slot 面：settings.plugins.tab + shell.overlay 可拖动悬浮入口', () => {
   assert.ok(register.includes("ctx.slots.inject('settings.plugins.tab'"), 'settings tab 注册缺失')
   assert.match(register, /name: 'settings\.plugins\.tab', id: 'prompt-tool'/)
-  // 悬浮入口：shell.overlay 触发器/抽屉 + footer.action 几何探针；官方右侧栏已移除。
+  // 悬浮入口：shell.overlay 触发器/抽屉；右侧栏与几何探针都已移除。
   assert.match(register, /ctx\.slots\.inject\('shell\.overlay'/)
-  assert.match(register, /ctx\.slots\.inject\('sidebar\.footer\.action'/)
+  assert.doesNotMatch(register, /footer\.action/, '不再占用 sidebar footer 做几何探针')
   assert.doesNotMatch(register, /sidebarRightTabs|sidebar\.right\.pane\.tab|conversation\.details/)
   assert.doesNotMatch(entry, /'sidebarRightTabs'/, '客户端 inject 不应等待已移除的 tab registry')
   assert.match(entry, /'slots'/)
 })
 
-test('版本声明对齐 0.1.5-alpha.1，且 bundle 依赖边包含悬浮入口所需包', () => {
-  for (const section of ['peerDependencies', 'devDependencies']) {
-    for (const [name, range] of Object.entries(manifest[section])) {
-      if (!name.startsWith('@deepseek-ai/dsh-')) continue
-      assert.equal(range, '^0.1.5-alpha.1', `${section}.${name} 应声明 ^0.1.5-alpha.1`)
-    }
+test('版本声明对齐 0.1.5-rc.2，且 bundle 依赖边包含悬浮入口所需包', () => {
+  for (const [name, range] of Object.entries(manifest.peerDependencies)) {
+    if (!name.startsWith('@deepseek-ai/dsh-')) continue
+    assert.equal(range, '^0.1.5-rc.2', `peerDependencies.${name} 应声明 ^0.1.5-rc.2`)
+  }
+  for (const [name, range] of Object.entries(manifest.devDependencies)) {
+    if (!name.startsWith('@deepseek-ai/dsh-')) continue
+    assert.equal(range, '0.1.5-rc.2', `devDependencies.${name} 应精确锁定 0.1.5-rc.2`)
   }
   assert.ok(manifest.dsh.client.inject.includes('@deepseek-ai/dsh-client-ui-layout'))
-  assert.ok(manifest.dsh.client.inject.includes('@deepseek-ai/dsh-client-ui-sidebar'))
   assert.ok(!manifest.dsh.client.inject.includes('@deepseek-ai/dsh-client-ui-sidebar-right'), '官方右侧栏已移除')
+  assert.ok(!manifest.dsh.client.inject.includes('@deepseek-ai/dsh-client-ui-sidebar'), '几何探针下线后不再消费宿主侧栏 slot')
   assert.ok(manifest.peerDependencies['@deepseek-ai/dsh-client-ui-layout'] !== undefined)
-  assert.ok(manifest.peerDependencies['@deepseek-ai/dsh-client-ui-sidebar'] !== undefined)
+  assert.equal(manifest.peerDependencies['@deepseek-ai/dsh-client-ui-sidebar'], undefined, 'ui-sidebar 已无消费方')
   assert.ok(manifest.peerDependencies['@deepseek-ai/dsh-client-ui-slots'] !== undefined)
 })
 

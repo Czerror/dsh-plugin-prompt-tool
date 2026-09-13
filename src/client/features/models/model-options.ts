@@ -1,4 +1,5 @@
 import type { MenuSelectOption } from '../../ui/MenuSelect.tsx'
+import type { ModelReasoningView } from '../../../shared/bridge-contract.ts'
 
 export interface ModelSelection {
   provider: string
@@ -44,5 +45,37 @@ export function buildModelOptions(
     }
   }
   for (const selection of extras) add(selection.provider, selection.model)
+  return options
+}
+
+/**
+ * 思维程度选项：只展示该 provider/model 路由真实声明的档位。
+ *
+ * - 目录未收录 / 尚未查到（known=false）：返回空列表，UI 不展示档位选择，也不用固定
+ *   列表伪造能力（M-12）。
+ * - 查过但不提供推理档位（known=true, efforts 空）：同样返回空列表。
+ * - 已保存但不在目录中的值：保留为唯一可选项并标注，用户切换界面后仍然可回显，
+ *   不会因为目录缺项把存量值吞掉。
+ *
+ * @param view 该路由的推理元数据视图（来自 store.modelReasoning）。
+ * @param current 当前生效的档位值（会话选择 / 插件参数），空字符串表示未设置。
+ */
+export function buildEffortOptions(view: ModelReasoningView | undefined, current: string): MenuSelectOption[] {
+  const known = view?.known === true
+  const declared = known && Array.isArray(view.efforts) ? view.efforts : []
+  const options: MenuSelectOption[] = []
+  const seen = new Set<string>()
+  for (const effort of declared) {
+    if (typeof effort?.id !== 'string' || effort.id.length === 0 || seen.has(effort.id)) continue
+    seen.add(effort.id)
+    const label = typeof effort.name === 'string' && effort.name.length > 0 ? effort.name : effort.id
+    options.push({ value: effort.id, label })
+  }
+  if (current.length > 0 && !seen.has(current)) {
+    options.push({ value: current, label: `${current}（当前值，模型未声明）` })
+  }
+  if (options.length > 0 && current.length === 0 && !options.some((option) => option.value === '')) {
+    options.unshift({ value: '', label: '（模型默认）' })
+  }
   return options
 }

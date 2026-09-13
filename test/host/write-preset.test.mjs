@@ -816,7 +816,7 @@ test('writePreset 旧版种子副本回退：纯元数据遮蔽包内模板 → 
     writePreset('PROMPT', { ...makeOptions(presetDir), presetTemplate: 'minimal', warn: (message) => warnings.push(message) })
     // 回退包内模板渲染成功：组合精确对齐官方 Minimal 基型。
     const cordis = readFileSync(join(presetDir, 'minimal', 'agent.cordis.yml'), 'utf8')
-    assert.deepEqual(parseYaml(cordis).map((row) => row.id), ['persona', 'persistent-shell', 'bootstrap-filesystem', 'prompt-config-engine'])
+    assert.deepEqual(parseYaml(cordis).map((row) => row.id), ['persona', 'persistent-shell', 'prompt-config-engine'])
     // 参数源升级：preset.yml 获得包内 modules 段，保留旧元数据命名
     const spec = parseYaml(readFileSync(join(presetDir, 'minimal', 'preset.yml'), 'utf8'))
     assert.ok(Array.isArray(spec.modules) && spec.modules.length > 0, '参数源升级为包内 modules 清单')

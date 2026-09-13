@@ -5,6 +5,7 @@
  *  由 bridge 写盘前 fail loud。 */
 import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import { bridgeCall } from '../../data/bridge-client.ts'
+import type { PromptToolTranslate } from '../../locales.ts'
 import { EngineModuleCard } from '../../ui/EngineModuleCard.tsx'
 import { ToggleRow } from '../../ui/ToggleRow.tsx'
 import styles from '../../ui/controls.module.css'
@@ -20,8 +21,8 @@ interface PersonaDraft {
 
 const EMPTY_PERSONA: PersonaDraft = { prefix: '', suffix: '', complete: false, includeRuntimeContext: true }
 
-export function PresetPersonaCard(props: { presetId?: string; disabled?: boolean; onNotice: Notice }): ReactNode {
-  const { onNotice } = props
+export function PresetPersonaCard(props: { t: PromptToolTranslate; presetId?: string; disabled?: boolean; onNotice: Notice }): ReactNode {
+  const { t, onNotice } = props
   const [draft, setDraft] = useState<PersonaDraft>(EMPTY_PERSONA)
   const [declared, setDeclared] = useState(false)
   const [loaded, setLoaded] = useState(false)
@@ -40,11 +41,11 @@ export function PresetPersonaCard(props: { presetId?: string; disabled?: boolean
         })
         setDeclared(persona !== null)
       } else {
-        onNotice('error', result.message ?? '人设读取失败')
+        onNotice('error', result.message ?? t('persona.notice.loadFailed'))
       }
       setLoaded(true)
     })
-  }, [props.presetId, onNotice])
+  }, [props.presetId, onNotice, t])
   useEffect(() => { load() }, [load])
 
   const patch = (next: Partial<PersonaDraft>): void => {
@@ -57,10 +58,10 @@ export function PresetPersonaCard(props: { presetId?: string; disabled?: boolean
       setSaving(false)
       if (result.ok) {
         setDirty(false)
-        onNotice('ok', persona === null ? '已移除人设段（回落宿主部署人设）' : '人设已保存并重建')
+        onNotice('ok', persona === null ? t('persona.notice.removed') : t('persona.notice.saved'))
         load()
       } else {
-        onNotice('error', result.message ?? '人设保存失败')
+        onNotice('error', result.message ?? t('persona.notice.saveFailed'))
       }
     })
   }
@@ -76,54 +77,54 @@ export function PresetPersonaCard(props: { presetId?: string; disabled?: boolean
   const busy = props.disabled === true || saving || !loaded
   return (
     <EngineModuleCard
-      name="人设"
-      meta={declared ? 'preset.yml 顶层 persona · 官方 @deepseek-ai/dsh-persona 行同构' : '未声明：继承宿主部署人设'}
+      name={t('persona.name')}
+      meta={declared ? t('persona.meta.declared') : t('persona.meta.inherited')}
       layer="system-section"
     >
       <span className={styles.configFieldStack}>
-        <span className={styles.configFieldLabel}>前缀 prefix</span>
+        <span className={styles.configFieldLabel}>{t('persona.prefix.label')}</span>
         <textarea
           className={styles.configTextarea}
-          aria-label="人设前缀"
+          aria-label={t('persona.prefix.aria')}
           value={draft.prefix}
           spellCheck={false}
           disabled={props.disabled}
           onChange={(event) => patch({ prefix: event.target.value })}
         />
-        <span className={styles.configFieldHint}>渲染为 deployment:persona-prefix（第一方指导之前，官方 order 0）；支持 {'{{model}}'} / {'{{cwd}}'} 等官方变量；留空 = 该段渲染时丢弃。</span>
+        <span className={styles.configFieldHint}>{t('persona.prefix.hint')}</span>
       </span>
       <span className={styles.configFieldStack}>
-        <span className={styles.configFieldLabel}>后缀 suffix</span>
+        <span className={styles.configFieldLabel}>{t('persona.suffix.label')}</span>
         <textarea
           className={styles.configTextarea}
-          aria-label="人设后缀"
+          aria-label={t('persona.suffix.aria')}
           value={draft.suffix}
           spellCheck={false}
           disabled={props.disabled}
           onChange={(event) => patch({ suffix: event.target.value })}
         />
-        <span className={styles.configFieldHint}>渲染为 deployment:persona-suffix（第一方指导之后，官方 order 10200）；留空 = 遮蔽宿主后缀。</span>
+        <span className={styles.configFieldHint}>{t('persona.suffix.hint')}</span>
       </span>
       <ToggleRow
         id="persona-complete"
-        label="独占"
-        hint="prefix 成为唯一系统提示段；与提示词配置的「独占」互斥"
+        label={t('persona.complete.label')}
+        hint={t('persona.complete.hint')}
         checked={draft.complete}
         disabled={props.disabled}
         onChange={(next) => patch({ complete: next })}
       />
       <ToggleRow
         id="persona-runtime-context"
-        label="动态运行时上下文"
-        hint="关闭 = 该 scope 不附加动态快照（官方 includeRuntimeContext:false）"
+        label={t('persona.runtimeContext.label')}
+        hint={t('persona.runtimeContext.hint')}
         checked={draft.includeRuntimeContext}
         disabled={props.disabled}
         onChange={(next) => patch({ includeRuntimeContext: next })}
       />
       <div className={styles.configActions}>
-        <button type="button" className={styles.pillButton} disabled={busy || !dirty} onClick={save}>{saving ? '保存中…' : '保存人设'}</button>
+        <button type="button" className={styles.pillButton} disabled={busy || !dirty} onClick={save}>{saving ? t('persona.saving') : t('persona.save')}</button>
         {declared && (
-          <button type="button" className={styles.pillButton} data-danger disabled={busy} onClick={() => write(null)}>移除人设段</button>
+          <button type="button" className={styles.pillButton} data-danger disabled={busy} onClick={() => write(null)}>{t('persona.remove')}</button>
         )}
       </div>
     </EngineModuleCard>

@@ -9,9 +9,10 @@
     "skipLibCheck": true,
     "allowImportingTsExtensions": true,
     "rewriteRelativeImportExtensions": true,
+    "resolveJsonModule": true,
     "noEmit": true,
     "types": ["node"]
   },
-  "include": ["src"],
+  "include": ["src", "test/types"],
   "exclude": ["src/client"]
 }

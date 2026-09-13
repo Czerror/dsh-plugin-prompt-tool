@@ -19,6 +19,7 @@ export const BRIDGE_ENDPOINTS = {
   bootstrap: '/bootstrap',
   describe: '/describe',
   models: '/models',
+  modelReasoning: '/model-reasoning',
   mutate: '/mutate',
   configsValidate: '/configs-validate',
   skillFix: '/skill-fix',
@@ -63,7 +64,9 @@ export interface BridgeRequestMap {
   meta: undefined
   bootstrap: undefined
   describe: undefined
-  models: undefined
+  /** 省略 body 或 `refresh: true`（显式刷新越过 10 分钟目录 TTL）。 */
+  models: { refresh?: boolean } | undefined
+  modelReasoning: { provider: string; model: string }
   mutate: { ops: unknown[]; expectedRevision?: number }
   configsValidate: { promptConfigs: unknown[]; strategyDir?: string }
   skillFix: { folder: string }
@@ -103,12 +106,39 @@ export interface BridgeSettingsView {
   revision: number
 }
 
+/**
+ * 默认模型同步结果（预设保存链路带出，跨端统一形状）。
+ *
+ * 「预设已保存」与「宿主默认模型同步」是两件事：预设参数先落盘，随后插件把
+ * provider/model/effort 写进官方 agent-default-model；后者可能因为服务未装配、
+ * 宿主当前值已一致或写盘被拒而不同。四态都与失败区分：只有 `failed` 需要用户重试。
+ */
+export interface ModelSyncResult {
+  status: 'synced' | 'unchanged' | 'unavailable' | 'failed'
+  /** 安全提示：只带状态说明，不含凭证、路径或 provider 原始错误正文。 */
+  message?: string
+}
+
+/**
+ * 一条 provider/model 路由的推理档位元数据（官方模型元数据的展示子集）。
+ *
+ * `known` 区分「查过且该路由不提供档位」与「尚未取得元数据」：前者 UI 必须隐藏档位
+ * 选择而不是拿固定列表伪造能力；后者只是还没查到，不能据此判断模型没有推理能力。
+ * 目录/元数据只作展示，不是授权白名单——查询失败不影响保存任意模型 id。
+ */
+export interface ModelReasoningView {
+  known: boolean
+  efforts: Array<{ id: string; name: string; description?: string }>
+  defaultEffort?: string
+}
+
 /** 端点级响应 value 契约（value 字段形状；扩展字段仍以 value 旁可选字段出现）。 */
 export interface BridgeValueMap {
   meta: { meta: Record<string, unknown> }
   bootstrap: BridgeSettingsView
   describe: BridgeSettingsView
   models: { modelCatalog: Record<string, string[]> }
+  modelReasoning: { reasoning: ModelReasoningView }
   mutate: BridgeSettingsView
   configsValidate: { valid: boolean; errors: Array<{ index: number; id: string; message: string }>; configs?: unknown[]; files?: unknown[] }
   skillFix: { folder: string; fixedFolder: string; name: string; actions: string[] }
@@ -117,7 +147,11 @@ export interface BridgeValueMap {
   promptConfigs: { promptConfigs: unknown[] }
   presetContent: Record<string, unknown>
   importPreset: { scopes: Array<'preset' | 'agents'> }
-  paramOverrides: { overrides?: Record<string, unknown>; promptConfigs?: unknown[] }
+  /**
+   * 参数/提示词配置写入结果。`modelSync` 只描述宿主默认模型同步的附加结果：
+   * 预设写盘成功但默认模型未同步（unavailable/failed）时，UI 据此分开表达并允许重试。
+   */
+  paramOverrides: { overrides?: Record<string, unknown>; promptConfigs?: unknown[]; modelSync?: ModelSyncResult }
   persona: { persona: PersonaSpec | null }
   presetVariables: { variables: Record<string, string>; enabled: boolean }
   customTools: { customTools?: unknown[] }

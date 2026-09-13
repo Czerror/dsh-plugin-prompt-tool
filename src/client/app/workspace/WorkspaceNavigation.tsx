@@ -1,12 +1,13 @@
 import type { ReactNode } from 'react'
 import { tabKeyHandler } from '../../ui/tab-key.ts'
+import type { PromptToolTranslate } from '../../locales.ts'
 import { WORKSPACE_PAGE_IDS, WORKSPACE_PAGES, type WorkspacePage } from './workspace-pages.ts'
 import css from './PromptWorkspace.module.css'
 
-export function WorkspaceNavigation(props: { page: WorkspacePage; onChange: (page: WorkspacePage) => void }): ReactNode {
+export function WorkspaceNavigation(props: { page: WorkspacePage; onChange: (page: WorkspacePage) => void; t: PromptToolTranslate }): ReactNode {
   return (
     <div className={css.topNavigation}>
-      <div className={css.nav} role="tablist" aria-label="提示词工具页面">
+      <div className={css.nav} role="tablist" aria-label={props.t('nav.aria')}>
         {WORKSPACE_PAGES.map((item) => {
           const active = props.page === item.id
           return (
@@ -22,7 +23,7 @@ export function WorkspaceNavigation(props: { page: WorkspacePage; onChange: (pag
               onClick={() => props.onChange(item.id)}
               onKeyDown={tabKeyHandler(WORKSPACE_PAGE_IDS, props.page, props.onChange)}
             >
-              <span><strong>{item.label}</strong></span>
+              <span><strong>{props.t(item.labelKey)}</strong></span>
             </button>
           )
         })}

@@ -1,6 +1,7 @@
 import clsx from 'clsx'
 import type { ReactNode } from 'react'
 import type { PromptToolStore } from '../../data/use-prompt-tool-store.ts'
+import type { PromptToolTranslate } from '../../locales.ts'
 import { WorkspaceNavigation } from './WorkspaceNavigation.tsx'
 import { WORKSPACE_PAGES, workspacePageMeta, type WorkspacePage } from './workspace-pages.ts'
 import { StatusDot } from '../../ui/StatusDot.tsx'
@@ -20,11 +21,12 @@ export function WorkspaceFrame(props: {
   store: PromptToolStore
   page: WorkspacePage
   pageMeta: string
+  t: PromptToolTranslate
   onPageChange: (page: WorkspacePage) => void
   onClose: () => void
   children: ReactNode
 }): ReactNode {
-  const { store } = props
+  const { store, t } = props
   const descriptor = workspacePageMeta(props.page)
   const enabledCount = store.fields.promptConfigs.filter((config) => config.enabled !== false).length
   const hasData = store.meta.layers.length > 0
@@ -35,16 +37,18 @@ export function WorkspaceFrame(props: {
       <header className={css.masthead}>
         <div className={css.brand}>
           <span className={css.brandLogo} aria-hidden="true">⌁</span>
-          <h1>提示词工具</h1>
+          <h1>{t('app.title')}</h1>
         </div>
         <div className={css.statusCluster}>
           <StatusDot tone={store.loading ? 'neutral' : 'success'} pulse={!store.loading} />
-          <span>{store.loading ? '读取中' : `${store.fields.promptConfigs.length} 配置 · ${enabledCount} 启用`}</span>
+          <span>{store.loading
+            ? t('app.loading')
+            : t('app.statusSummary', { configs: store.fields.promptConfigs.length, enabled: enabledCount })}</span>
         </div>
-        <button type="button" className={css.backButton} onClick={props.onClose}>返回对话</button>
+        <button type="button" className={css.backButton} onClick={props.onClose}>{t('app.backToChat')}</button>
       </header>
 
-      <WorkspaceNavigation page={props.page} onChange={props.onPageChange} />
+      <WorkspaceNavigation page={props.page} onChange={props.onPageChange} t={t} />
 
       <main className={css.canvas}>
         {WORKSPACE_PAGES.map((item) => {
@@ -60,7 +64,7 @@ export function WorkspaceFrame(props: {
             >
               {active && (
                 <>
-                  <PageHeader title={descriptor.title} description={descriptor.detail} meta={props.pageMeta} />
+                  <PageHeader title={t(descriptor.titleKey)} description={t(descriptor.detailKey)} meta={props.pageMeta} />
                   {store.loading && !hasData ? (
                     <div className={ui.skeletonStack} aria-hidden="true">
                       {[0, 1, 2, 3].map((row) => <div key={row} className={ui.skeletonRow} />)}

@@ -21,7 +21,8 @@ test('技能筛选 tabs：roving tabindex 与共享 panel 关系完整', () => {
   assert.match(source, /aria-controls="pt-skills-panel"/)
   assert.match(source, /id="pt-skills-panel"/)
   assert.match(source, /aria-labelledby=\{`pt-skills-tab-\$\{statusTab\}`\}/)
-  for (const label of ['全部', '模型', '用户', '已禁用']) assert.match(source, new RegExp(`label: '${label}'`))
+  // 标签改走字典键（渲染时求值）：断言键存在，且状态文案不被硬编码进 tabs。
+  for (const key of ['all', 'model', 'user', 'disabled']) assert.match(source, new RegExp(`labelKey: 'skills\\.tabs\\.${key}'`))
   assert.doesNotMatch(source, /label: '模型可调用'|label: '未注册'/)
 })
 

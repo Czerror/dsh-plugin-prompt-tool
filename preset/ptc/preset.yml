@@ -21,6 +21,7 @@ modules:
   - tool-todo
   - tool-web
   - official-tool-presentation
+  - present
   - prompt-config-engine
 model:
   provider: ""

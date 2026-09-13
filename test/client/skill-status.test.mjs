@@ -1,6 +1,14 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { PROMPT_TOOL_DICTS } from '../../src/client/locales.ts'
 import { matchesSkillStatus, skillStatusLabel, skillStatusTone } from '../../src/client/features/skills/skill-status.ts'
+
+/** 中文命名空间翻译（mock 官方 Translate 的 {name} 插值，键缺失即失败）。 */
+const zh = (key, params) => {
+  const template = PROMPT_TOOL_DICTS.zh[key]
+  if (template === undefined) throw new Error(`missing locale key: ${key}`)
+  return template.replace(/\{(\w+)\}/g, (_, name) => String(params?.[name] ?? ''))
+}
 
 const skill = (overrides = {}) => ({
   folder: 'demo-skill',
@@ -13,12 +21,12 @@ const skill = (overrides = {}) => ({
 })
 
 test('技能状态胶囊显示模型/用户调用范围与开关状态', () => {
-  assert.equal(skillStatusLabel(skill(), true), '可调用:模型/用户')
-  assert.equal(skillStatusLabel(skill({ userInvocable: false }), true), '可调用:模型')
-  assert.equal(skillStatusLabel(skill({ modelInvocable: false }), true), '可调用:用户')
-  assert.equal(skillStatusLabel(skill({ modelInvocable: false, userInvocable: false }), true), '不可调用')
-  assert.equal(skillStatusLabel(skill(), false), '已禁用')
-  assert.equal(skillStatusLabel(skill({ valid: false }), true), '未注册')
+  assert.equal(skillStatusLabel(skill(), true, zh), '可调用:模型/用户')
+  assert.equal(skillStatusLabel(skill({ userInvocable: false }), true, zh), '可调用:模型')
+  assert.equal(skillStatusLabel(skill({ modelInvocable: false }), true, zh), '可调用:用户')
+  assert.equal(skillStatusLabel(skill({ modelInvocable: false, userInvocable: false }), true, zh), '不可调用')
+  assert.equal(skillStatusLabel(skill(), false, zh), '已禁用')
+  assert.equal(skillStatusLabel(skill({ valid: false }), true, zh), '未注册')
 })
 
 test('技能状态筛选区分模型、用户、已禁用与全部', () => {

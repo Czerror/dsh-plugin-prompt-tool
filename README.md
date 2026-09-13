@@ -9,12 +9,22 @@ DSH 生态的提示词注入标准层：一个 `prompt-config-engine.mjs` 接线
 ## 安装
 
 ```bash
+# 1) 新建 profile：从官方 web 模板初始化（仅用于尚不存在的 profile，已存在的 profile 请跳过）
+dsh --profile prompt-tool --from-default-profile web
+
+# 2) 安装插件
 dsh plugin --profile prompt-tool add dsh-plugin-prompt-tool        # npm 安装
 dsh plugin --profile prompt-tool add link:<本仓库绝对路径>          # 本地源码（link 覆盖 registry）
-dsh --profile prompt-tool                                          # 首次启动自动补 dsh-web-app，二次启动生效
+
+# 3) 启动
+dsh --profile prompt-tool
 ```
 
-需要 DSH `0.1.5-alpha.1+`；当前开发与验证版本为 `0.1.5-alpha.1`。
+从 web 模板初始化会让 profile 自带 `@deepseek-ai/dsh-base` 与 `@deepseek-ai/dsh-web-app` 两层，无需额外的 Web 自愈步骤。`--from-default-profile` 只在 profile 不存在时创建，不要对既有 profile 反复执行；已初始化的 profile 不会被改写。
+
+旧的 base-only profile（只有 `dsh-base`）首次启动时，插件会把 `@deepseek-ai/dsh-web-app` 补进该 profile 的 `dsh.profile.bundles`（写前留 `.bak`，幂等），并提示重启；需要重启 DSH 服务后生效，插件不会替你重启运行中的服务。
+
+需要 DSH `0.1.5-rc.2+`；当前开发与验证版本为 `0.1.5-rc.2`（官方包锁定该基线）。Node 需要 `^22.19.0 || >=24.0.0`，与官方宿主一致。
 
 ## 特性
 
@@ -23,7 +33,7 @@ dsh --profile prompt-tool                                          # 首次启�
 - 🧑‍🤝‍🧑 **消息受众三态**：`audience: main / subagent`，省略 `audience` 表示公用；身份类提示词可只注入子代理
 - 🗂️ **内容与执行分离**：每条提示词配置渲染为 `~/.dsh/.agent-presets/<预设>/prompt-configs/` 下的 yml，引擎按文件名数字前缀顺序扫描
 - 🧩 **三层合并**：引擎默认（按 params 生成）< 模板默认 promptConfigs < 预设 promptConfigs，同名 `id` 覆盖
-- 🖥️ **悬浮工作台入口**：工作台经官方 `shell.overlay` 渲染左上角悬浮触发器与 body portal 抽屉（`sidebar.footer.action` 几何探针把 `--pt-sidebar-edge` 贴合侧栏轨道右缘）；六页（主会话/子代理/工具预览/技能设置/预设配置/角色管理）在抽屉内渲染，抽屉用 fixed + z-index 置顶，不被宿主导航栏遮挡
+- 🖥️ **可拖动悬浮工作台入口**：工作台经官方 `shell.overlay` 渲染悬浮触发器与 body portal 抽屉；按钮可拖动、位置存插件自己的 localStorage、窗口变化自动夹回可见区（不读宿主布局树，已移除 `sidebar.footer.action` 几何探针）；六页（主会话/子代理/工具预览/技能设置/预设配置/角色管理）在抽屉内渲染，抽屉用 fixed + z-index 置顶，不被宿主导航栏遮挡
 - 🧪 **七种内容策略**：`static / first-turn-anchor / guide-auto / custom-fallback / instruction-hint / placeholder / world-book`（world-book 支持 ST selectiveLogic 选择性触发：任一/副键全中/排除）
 - 🛡️ **失败不伤会话**：单条失败跳过 + `warnOnce`；配置错误挂载时 fail loud；`dedupe: session` 持久幂等
 - 🧭 **通用 instruction-hint 引擎**：所有预设都可通过 `strategy: instruction-hint` 或 `placeholder + fill: instruction-hint` 提示指令文件存在；实现位于 `engine/instruction-hint.mjs`，不绑定 anchored；`context-gate.instructionHint` 按模型可见 surface 去重，重挂不重复，被压缩遮蔽后才再次提示
@@ -184,13 +194,18 @@ UI / 写盘展示顺序固定为 `pre-step → system-section → runtime-contex
 
 ```sh
 pnpm install && pnpm build
-pnpm test          # 437 单测：参数契约/注入装配/六插入点/生成链路/引擎语义/安全边界
+pnpm test          # 全量契约与行为测试（隔离 cwd 运行）：参数契约/注入装配/六插入点/生成链路/引擎语义/组合重建/模型路由/UI 契约/安全边界
 pnpm typecheck && pnpm lint
+pnpm verify:host         # 官方包基线：声明范围、安装版本、解析目标（拒绝源码 link）、缺失声明与 inject peer
 pnpm sync:anchored       # 刷新 upstream/dsh-anchored-standard 内联快照
 pnpm sync:yaml           # 刷新 engine/vendor/yaml（生成目录运行时 YAML 解析器）
 pnpm rebuild:composition # 只生成官方切块/变体；source/local 本地源不复制（失败安全）
 pnpm migrate:presets     # 离线一次性参数迁移（旧 worldBook/扁平模型键/模块别名/旧覆盖文件/旧 persona 段名；--dry-run 预览）
 ```
+
+测试由 `scripts/run-tests.mjs` 启动：先跑 build，再以独立临时 cwd 与 TEMP/TMP 启动 Node 内置 test runner，用例路径为绝对路径，避免相对 cwd 的测试污染仓库。
+
+依赖升级后的验证顺序：`pnpm install` → `pnpm verify:host` → `pnpm typecheck && pnpm lint` → `pnpm test`。官方源码联调请使用不入库的显式本地 override，不要恢复 `pnpm-workspace.yaml` 里的 `link:` 默认配置。
 
 ## 许可
 

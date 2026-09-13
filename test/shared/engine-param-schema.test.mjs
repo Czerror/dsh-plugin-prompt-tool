@@ -13,7 +13,10 @@ test('参数定义完整覆盖卡片归属、默认草稿与读写契约', () =>
   assert.deepEqual(Object.keys(ENGINE_PARAM_DEFINITIONS), [...ENGINE_PARAM_KEYS])
   for (const key of ENGINE_PARAM_KEYS) {
     const definition = ENGINE_PARAM_DEFINITIONS[key]
-    assert.ok(definition.card && definition.label, `${key} 必须归属配置卡`)
+    // 显示文案不在 shared：shared 只给键与卡片归属，标签由 UI 按 `param.<键>` 查 prompt-tool 字典
+    // （键覆盖由 test/client/locale-contract.test.mjs 守卫）。
+    assert.ok(definition.card, `${key} 必须归属配置卡`)
+    assert.equal(definition.label, undefined, `${key} 不得在 shared 持有显示文案`)
     assert.deepEqual(EMPTY_FIELDS[key], definition.defaultValue, `${key} 默认值同源`)
   }
   assert.deepEqual(buildParamOverrides(EMPTY_FIELDS, { loadedKeys: new Set() }), {})

@@ -1,6 +1,7 @@
 import { useState, type ReactNode, type RefObject } from 'react'
 import { IconChevronDownOutline14, Menu } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PromptToolStore } from '../../data/use-prompt-tool-store.ts'
+import type { PromptToolTranslate } from '../../locales.ts'
 import { EngineModuleCard } from '../../ui/EngineModuleCard.tsx'
 import { ENGINE_CAPABILITIES, ENGINE_RECIPES, isEngineCapabilityPresent } from '../../../shared/engine-capabilities.ts'
 import { EngineParamFields } from './EngineParamFields.tsx'
@@ -14,13 +15,14 @@ export interface ModuleCreateItem {
 
 export function EngineCapabilityCreateMenu(props: {
   store: PromptToolStore
+  t: PromptToolTranslate
   /** 菜单按钮 ref：模板浮层锚定到该按钮。 */
   anchorRef?: RefObject<HTMLButtonElement>
   /** 合并入口：排在能力模块项之前的创建项。 */
   extraItems?: readonly ModuleCreateItem[]
   onExtraSelect?: (id: string) => void
 }): ReactNode {
-  const { store, anchorRef, extraItems = [], onExtraSelect } = props
+  const { store, t, anchorRef, extraItems = [], onExtraSelect } = props
   const [open, setOpen] = useState(false)
   const editable = store.fields.writePreset && store.moduleFacts?.editable === true
   if (!editable && extraItems.length === 0) return null
@@ -29,8 +31,8 @@ export function EngineCapabilityCreateMenu(props: {
     ...(editable
       ? [
         ...ENGINE_CAPABILITIES.filter(({ id }) => !isEngineCapabilityPresent(id, store.moduleFacts))
-          .map(({ id }) => ({ id: `cap:${id}`, label: `添加模块 · ${id}` })),
-        ...ENGINE_RECIPES.map(({ id }) => ({ id: `recipe:${id}`, label: `连锁创建 · ${id}` })),
+          .map(({ id }) => ({ id: `cap:${id}`, label: t('modules.addCapabilityItem', { id }) })),
+        ...ENGINE_RECIPES.map(({ id }) => ({ id: `recipe:${id}`, label: t('modules.createRecipeItem', { id }) })),
       ]
       : []),
   ]
@@ -43,12 +45,13 @@ export function EngineCapabilityCreateMenu(props: {
       } else onExtraSelect?.(id)
     }}
     anchor={<button ref={anchorRef} type="button" className={styles.pillButton} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(!open)}>
-      添加能力 / 工具模块<IconChevronDownOutline14 />
+      {t('modules.addCapability')}<IconChevronDownOutline14 />
     </button>} />
 }
 
 export function EngineModuleActions(props: {
   store: PromptToolStore
+  t: PromptToolTranslate
   anchorRef?: RefObject<HTMLButtonElement>
   extraItems?: readonly ModuleCreateItem[]
   onExtraSelect?: (id: string) => void
@@ -56,10 +59,10 @@ export function EngineModuleActions(props: {
   return <div className={styles.configActions}><EngineCapabilityCreateMenu {...props} /></div>
 }
 
-export function EnginePromptDefaultsCard({ store }: { store: PromptToolStore }): ReactNode {
+export function EnginePromptDefaultsCard({ store, t }: { store: PromptToolStore; t: PromptToolTranslate }): ReactNode {
   return (
-    <EngineModuleCard name="提示词生成默认值" meta="预设级提示词生成默认值；不自动添加能力模块。">
-      <EngineParamFields store={store} card="prompt-defaults" />
+    <EngineModuleCard name={t('modules.promptDefaults.name')} meta={t('modules.promptDefaults.meta')}>
+      <EngineParamFields store={store} card="prompt-defaults" t={t} />
     </EngineModuleCard>
   )
 }
@@ -67,12 +70,14 @@ export function EnginePromptDefaultsCard({ store }: { store: PromptToolStore }):
 /** 能力存在性来自实际装配，字段来自共享参数目录；参数不再手工复制到各卡。层筛选只影响展示。 */
 export function EngineModuleCards({
   store,
+  t,
   layerFilter = 'all',
   showActions = true,
   showPromptDefaults = true,
   showStatus = true,
 }: {
   store: PromptToolStore
+  t: PromptToolTranslate
   layerFilter?: string
   showActions?: boolean
   showPromptDefaults?: boolean
@@ -82,16 +87,16 @@ export function EngineModuleCards({
     (layerFilter === 'all' || layerFilter === displayLayer) && isEngineCapabilityPresent(id, store.moduleFacts))
   const editable = store.fields.writePreset && store.moduleFacts?.editable === true
   return <>
-    {showActions && <EngineModuleActions store={store} />}
+    {showActions && <EngineModuleActions store={store} t={t} />}
     {capabilities.map((capability) => (
       <EngineModuleCard key={capability.id} name={capability.id} layer={capability.displayLayer}
-        meta="配置随当前预设保存；仅装配已选模块。"
+        meta={t('modules.card.meta')}
         onDelete={editable ? () => void store.removeEngineCapability(capability.id) : undefined}>
-        <EngineParamFields store={store} card={capability.id} />
+        <EngineParamFields store={store} card={capability.id} t={t} />
       </EngineModuleCard>
     ))}
-    {showPromptDefaults && (layerFilter === 'all' || layerFilter === 'pre-step') && <EnginePromptDefaultsCard store={store} />}
-    {showStatus && store.moduleFacts === undefined && <p className={styles.configFieldHint} role="status">正在读取当前预设模块事实…</p>}
-    {showStatus && store.moduleFacts !== undefined && capabilities.length === 0 && <p className={styles.configFieldHint} role="status">{layerFilter === 'all' ? '当前预设无已装配的引擎能力；可按需添加模块。' : '当前分类无已装配的引擎能力；可按需添加模块。'}</p>}
+    {showPromptDefaults && (layerFilter === 'all' || layerFilter === 'pre-step') && <EnginePromptDefaultsCard store={store} t={t} />}
+    {showStatus && store.moduleFacts === undefined && <p className={styles.configFieldHint} role="status">{t('modules.status.reading')}</p>}
+    {showStatus && store.moduleFacts !== undefined && capabilities.length === 0 && <p className={styles.configFieldHint} role="status">{layerFilter === 'all' ? t('modules.status.emptyAll') : t('modules.status.emptyFiltered')}</p>}
   </>
 }

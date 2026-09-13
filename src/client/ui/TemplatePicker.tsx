@@ -2,21 +2,24 @@
 import type { ReactNode, RefObject } from 'react'
 import { createPortal } from 'react-dom'
 import { Button, useDismissOnOutsidePointer } from '@deepseek-ai/dsh-client-ui-primitives'
+import type { PromptToolLocaleKey, PromptToolTranslate } from '../locales.ts'
 import { useAnchoredPopoverStyle } from './anchored-popover.ts'
 import { useDialogFocus } from './dialog-focus.ts'
 import styles from './controls.module.css'
 import type { PromptConfigTemplateEntry } from '../prompt-tool-types.ts'
 
-export const TEMPLATE_LAYER_TITLES: Record<string, string> = {
-  'pre-step': '消息批层',
-  'system-section': '系统段层',
-  'runtime-context': '运行上下文',
-  'agent-request': '调用配置层',
-  'llm-stream': '模型流层',
-  'tool-pipeline': '工具管线层',
+/** 模板分组标题（模板库按官方批次命名，与配置卡的注入层标签分开）。 */
+const TEMPLATE_LAYER_LABEL_KEYS: Record<string, PromptToolLocaleKey> = {
+  'pre-step': 'templates.layer.pre-step',
+  'system-section': 'templates.layer.system-section',
+  'runtime-context': 'templates.layer.runtime-context',
+  'agent-request': 'templates.layer.agent-request',
+  'llm-stream': 'templates.layer.llm-stream',
+  'tool-pipeline': 'templates.layer.tool-pipeline',
 }
 
 export function TemplatePicker(props: {
+  t: PromptToolTranslate
   anchorRef: RefObject<HTMLElement | null>
   templates: PromptConfigTemplateEntry[]
   /** 传入 layer 时只显示该层模板（无分组标题）；不传按层分组展示全部。 */
@@ -29,7 +32,11 @@ export function TemplatePicker(props: {
   onPickVariables?: () => void
   onClose: () => void
 }): ReactNode {
-  const { anchorRef, templates, layer, onPick, toolTemplates, onPickTool, onPickVariables, onClose } = props
+  const { t, anchorRef, templates, layer, onPick, toolTemplates, onPickTool, onPickVariables, onClose } = props
+  const layerTitle = (value: string): string => {
+    const key = TEMPLATE_LAYER_LABEL_KEYS[value]
+    return key === undefined ? value : t(key)
+  }
   const { dialogRef, onDialogKeyDown } = useDialogFocus<HTMLDivElement>(true, onClose)
   const portalRef = dialogRef as RefObject<HTMLElement | null>
   const position = useAnchoredPopoverStyle({
@@ -58,29 +65,29 @@ export function TemplatePicker(props: {
       className={styles.templatePopover}
       style={position ?? { visibility: 'hidden' }}
       role="dialog"
-      aria-label="选择内置模板"
+      aria-label={t('templates.aria')}
       onClick={(event) => event.stopPropagation()}
       onKeyDown={onDialogKeyDown}
     >
       <div className={styles.templateModalHead}>
-        <strong>选择内置模板{layer !== undefined ? `（${TEMPLATE_LAYER_TITLES[layer] ?? layer}）` : ''}</strong>
-        <Button variant="ghost" size="sm" className={styles.dialogClose} aria-label="关闭模板选择" onClick={onClose}>×</Button>
+        <strong>{layer !== undefined ? t('templates.title', { layer: layerTitle(layer) }) : t('templates.aria')}</strong>
+        <Button variant="ghost" size="sm" className={styles.dialogClose} aria-label={t('templates.closeAria')} onClick={onClose}>×</Button>
       </div>
       <div className={styles.templateModalList}>
         {onPickVariables !== undefined && (
           <div className={styles.templateGroup}>
-            <strong className={styles.templateGroupTitle}>变量</strong>
+            <strong className={styles.templateGroupTitle}>{t('templates.group.variables')}</strong>
             <button type="button" className={styles.templateModalItem} onClick={onPickVariables}>
               <strong>Variables</strong>
-              <small>{'模板变量（预设级 {{key}} 插值）'}</small>
+              <small>{t('templates.variables.hint')}</small>
             </button>
           </div>
         )}
         {visible.length === 0 && (toolTemplates?.length ?? 0) === 0
-          && <p className={styles.configFieldHint}>本层暂无内置模板。</p>}
+          && <p className={styles.configFieldHint}>{t('templates.empty')}</p>}
         {[...groups.entries()].map(([groupLayer, items]) => (
           <div key={groupLayer} className={styles.templateGroup}>
-            {layer === undefined && <strong className={styles.templateGroupTitle}>{TEMPLATE_LAYER_TITLES[groupLayer] ?? groupLayer}</strong>}
+            {layer === undefined && <strong className={styles.templateGroupTitle}>{layerTitle(groupLayer)}</strong>}
             {items.map((template) => (
               <button key={template.file} type="button" className={styles.templateModalItem} onClick={() => onPick(template)}>
                 <strong>{template.file}</strong>
@@ -91,7 +98,7 @@ export function TemplatePicker(props: {
         ))}
         {toolTemplates !== undefined && toolTemplates.length > 0 && (
           <div className={styles.templateGroup}>
-            <strong className={styles.templateGroupTitle}>工具</strong>
+            <strong className={styles.templateGroupTitle}>{t('templates.group.tools')}</strong>
             {toolTemplates.map((template) => (
               <button key={template.file} type="button" className={styles.templateModalItem}
                 onClick={() => onPickTool?.(template.spec)}>

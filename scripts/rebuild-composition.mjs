@@ -6,7 +6,9 @@
 // 本地模块以 engine/compositions/source/local/*.yml 为唯一源，不复制到 library/；
 // library/ 只保留脚本从官方预设切出的行与确有语义差异的官方变体。
 //
-// 用法:node scripts/rebuild-composition.mjs [deepseek-harness 仓库路径]
+// 用法:node scripts/rebuild-composition.mjs [固定 tag 导出的上游目录]
+// 固定输入见 test/fixtures/dsh/<版本>/（由 PROVENANCE.md 记录 tag 与提交）；
+// 不要把当前 master 或开发机同级源码当成 rc.2 发布源码。
 import { readFileSync, writeFileSync, readdirSync, mkdirSync, rmSync, renameSync, existsSync } from 'node:fs'
 import { basename, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -19,7 +21,22 @@ const presetsDir = join(repo, 'packages', 'preset', 'agent-presets', 'presets')
 const compositionDir = join(root, 'engine', 'compositions')
 const libraryDir = join(compositionDir, 'library')
 const localDir = join(compositionDir, 'source', 'local')
-const sourceRepo = basename(repo) || 'deepseek-harness'
+
+/**
+ * 上游标识：优先读固定输入目录里的 PROVENANCE.md（tag + 提交），
+ * 这样生成文件的来源行不会退化成「本机目录名」这种无法追溯的标签。
+ */
+function upstreamProvenance(repoDir) {
+  const label = basename(repoDir) || 'deepseek-harness'
+  const file = join(repoDir, 'PROVENANCE.md')
+  if (!existsSync(file)) return { label, commit: undefined }
+  const text = readFileSync(file, 'utf8')
+  const field = (name) => new RegExp(`来源\\s*${name}[^\\n]*?([0-9A-Za-z][0-9A-Za-z.\\-_]*)`).exec(text)?.[1]
+  return { label: field('tag') ?? label, commit: field('提交') }
+}
+
+const upstream = upstreamProvenance(repo)
+const sourceRepo = upstream.label
 
 /**
  * Discover the upstream preset set instead of silently assuming a fixed list.
@@ -120,9 +137,6 @@ const PATCHES = {
   'tool-bash': [
     { from: 'disabled: !!js process.platform === \'win32\'', to: 'disabled: true' },
   ],
-  'bootstrap-filesystem': [
-    { from: '- id: filesystem\n', to: '- id: bootstrap-filesystem\n' },
-  ],
   'persistent-shell': [
     {
       // Anchored 同时挂普通 tool-pwsh；Windows 整组关闭 persistent-shell，避免重复注册 pwsh。
@@ -177,12 +191,13 @@ const OFFICIAL_MODULES = [
   { id: 'tool-ask-user', preset: 'standard' },
   { id: 'tool-todo', preset: 'standard' },
   { id: 'tool-web', preset: 'standard' },
+  // rc.2 起 standard / ptc / cordis 都在末尾挂 present 行，语义完全相同，只保留一份。
+  { id: 'present', preset: 'standard' },
   { id: 'official-tool-presentation', preset: 'ptc', sourceId: 'tool-presentation' },
   { id: 'official-tool-cordis', preset: 'cordis', sourceId: 'tool-cordis' },
   { id: 'official-skill-filesystem-cordis', preset: 'cordis', sourceId: 'skill-filesystem' },
   { id: 'official-persistent-shell', preset: 'minimal', sourceId: 'persistent-shell' },
   { id: 'persistent-shell', preset: 'minimal', sourceId: 'persistent-shell' },
-  { id: 'bootstrap-filesystem', preset: 'minimal', sourceId: 'filesystem' },
 ]
 
 /**
@@ -198,8 +213,6 @@ const TARGET_MODULE_OVERRIDES = {
   },
   minimal: {
     'persistent-shell': 'official-persistent-shell',
-    // Minimal keeps the upstream filesystem group (including its editor).
-    filesystem: 'bootstrap-filesystem',
   },
   ptc: {
     'agent-instructions': 'official-agent-instructions',
@@ -400,7 +413,8 @@ try {
     if (section === undefined) throw new Error(`${id}: official ${preset} preset has no top-level row ${rowId}`)
     const body = applyPatches(id, section, `${preset}/agent.cordis.yml`)
     const patches = PATCHES[id]?.length ?? 0
-    const provenance = `# module: ${id}\n# source: ${sourceRepo}/packages/preset/agent-presets/presets/${preset}/agent.cordis.yml\n# local patches: ${patches}\n\n`
+    const commit = upstream.commit === undefined ? '' : `# commit: ${upstream.commit}\n`
+    const provenance = `# module: ${id}\n# source: ${sourceRepo}/packages/preset/agent-presets/presets/${preset}/agent.cordis.yml\n${commit}# local patches: ${patches}\n\n`
     writeFileSync(join(tmpDir, `${id}.yml`), provenance + body)
   }
 

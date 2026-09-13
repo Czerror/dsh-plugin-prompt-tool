@@ -34,6 +34,8 @@ function makeCtx(settingsValue) {
   return {
     logger: { warn: () => {} },
     effect: (fn) => { fn(); return () => {} },
+    // 真实 cordis Context 提供事件订阅；本 mock 只覆盖插件订阅的 provider 拓扑事件。
+    on: () => () => {},
     skills: { registerProvider: () => {} },
     get: (name) => (name === 'webServer' ? {} : undefined),
     provide: () => () => {},

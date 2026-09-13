@@ -1,9 +1,10 @@
 import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react'
 import { bridgeCall, errorMessage } from '../../data/bridge-client.ts'
+import type { PromptToolTranslate } from '../../locales.ts'
 import { MenuSelect } from '../../ui/MenuSelect.tsx'
 import { PromptConfigCard } from './PromptConfigCard.tsx'
 import { moveToView, moveWithinLayer, promptConfigLayer, viewOrderedIds } from './prompt-config-order.ts'
-import { displayLayers, LAYER_LABELS } from './prompt-config-policy.ts'
+import { displayLayers, LAYER_LABEL_KEYS, translateLabel } from './prompt-config-policy.ts'
 import type { EngineMeta, PromptConfigDraft, ValidationErrorEntry } from '../../prompt-tool-types.ts'
 import sharedCss from '../../ui/controls.module.css'
 import featureCss from './prompts.module.css'
@@ -11,6 +12,7 @@ import featureCss from './prompts.module.css'
 const styles = { ...sharedCss, ...featureCss }
 
 export interface PromptConfigListProps {
+  t: PromptToolTranslate
   meta: EngineMeta
   configs: PromptConfigDraft[]
   /** 传入 layer 时只展示该层配置；不传展示全部配置。 */
@@ -37,7 +39,7 @@ export interface PromptConfigListProps {
 
 /** 共享的提示词配置列表：校验、保存、脏检测、复制、删除、层内移动。 */
 export function PromptConfigList(props: PromptConfigListProps): ReactNode {
-  const { meta, configs, layer, scope, extraActions, beforeCards, moduleCards, toolbarActions, viewFilter: viewFilterProp, onViewFilterChange, emptyHint, onPatchConfigs, onSaveConfigs, onNotice } = props
+  const { t, meta, configs, layer, scope, extraActions, beforeCards, moduleCards, toolbarActions, viewFilter: viewFilterProp, onViewFilterChange, emptyHint, onPatchConfigs, onSaveConfigs, onNotice } = props
   const [expanded, setExpanded] = useState<string | undefined>(undefined)
   const [errors, setErrors] = useState<ValidationErrorEntry[]>([])
   const [validating, setValidating] = useState(false)
@@ -100,13 +102,13 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
     try {
       const res = await bridgeCall('configsValidate', { promptConfigs: target })
       if (!res.ok) {
-        onNotice('error', '校验请求失败：' + (res.message ?? 'settings bridge unavailable'))
+        onNotice('error', t('configs.notice.validateFailed', { reason: res.message ?? 'settings bridge unavailable' }))
         return false
       }
       setErrors(res.value.valid ? [] : res.value.errors ?? [])
       return res.value.valid
     } catch (error) {
-      onNotice('error', '校验请求失败：' + errorMessage(error))
+      onNotice('error', t('configs.notice.validateFailed', { reason: errorMessage(error) }))
       return false
     } finally {
       setValidating(false)
@@ -119,7 +121,7 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
     if (valid) {
       setErrors([])
       onSaveConfigs(configs)
-      onNotice('ok', `已校验并保存（${configs.length} 条提示词配置）`)
+      onNotice('ok', t('configs.notice.saved', { count: configs.length }))
     }
     setSaving(false)
   }
@@ -168,14 +170,14 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
     clone.id = nextId
     onPatchConfigs([...current, clone])
     setExpanded(nextId)
-    onNotice('ok', '已复制')
-  }, [onNotice, onPatchConfigs])
+    onNotice('ok', t('configs.notice.copied'))
+  }, [onNotice, onPatchConfigs, t])
   const handleDelete = useCallback((id: string) => {
     const current = liveRef.current.configs
     onPatchConfigs(current.filter((item) => item.id !== id))
     setExpanded((value) => value === id ? undefined : value)
-    onNotice('ok', '已删除')
-  }, [onNotice, onPatchConfigs])
+    onNotice('ok', t('configs.notice.deleted'))
+  }, [onNotice, onPatchConfigs, t])
   const handleDragStart = useCallback((id: string, event: React.DragEvent<HTMLElement>) => {
     setDragId(id)
     event.dataTransfer.effectAllowed = 'move'
@@ -208,6 +210,7 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
     return (
       <PromptConfigCard
         key={config.id}
+        t={t}
         meta={meta}
         config={config}
         expanded={expanded === config.id}
@@ -234,12 +237,12 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
   return (
     <section className={styles.section} aria-labelledby="prompt-tool-configs-heading">
       <div className={styles.sectionHeading}>
-      <div><h2 id="prompt-tool-configs-heading">{layer === undefined ? '模块列表' : '本层配置'}</h2><p>{scoped.length} 条配置 · {scoped.filter((config) => config.enabled !== false).length} 条启用；上下移动控制同层顺序。</p></div>
+      <div><h2 id="prompt-tool-configs-heading">{layer === undefined ? t('configs.heading.all') : t('configs.heading.layer')}</h2><p>{t('configs.meta', { total: scoped.length, enabled: scoped.filter((config) => config.enabled !== false).length })}</p></div>
         <div className={styles.sectionActions} data-module-toolbar="true">
           {extraActions}
           {toolbarActions}
-          <button type="button" className={styles.pillButton} disabled={validating} onClick={() => void runValidate(configs)}>{validating && <span className={styles.spinner} aria-hidden="true" />}{validating ? '校验中…' : '校验'}</button>
-          <button type="button" className={styles.primaryPill} disabled={saving || validating} onClick={() => void save()}>{saving && <span className={styles.spinner} aria-hidden="true" />}{saving ? '保存中…' : '保存'}</button>
+          <button type="button" className={styles.pillButton} disabled={validating} onClick={() => void runValidate(configs)}>{validating && <span className={styles.spinner} aria-hidden="true" />}{validating ? t('configs.validating') : t('configs.validate')}</button>
+          <button type="button" className={styles.primaryPill} disabled={saving || validating} onClick={() => void save()}>{saving && <span className={styles.spinner} aria-hidden="true" />}{saving ? t('configs.saving') : t('configs.save')}</button>
         </div>
       </div>
 
@@ -247,8 +250,8 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
         <input
           className={styles.listFilter}
           value={filter}
-          aria-label="过滤提示词配置"
-          placeholder="过滤提示词配置：按标识 / 名称…"
+          aria-label={t('configs.filter.aria')}
+          placeholder={t('configs.filter.placeholder')}
           spellCheck={false}
           onChange={(event) => setFilter(event.target.value)}
         />
@@ -256,27 +259,27 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
           <MenuSelect
             className={styles.listFilter}
             value={viewFilter}
-            ariaLabel="按层级或策略过滤"
+            ariaLabel={t('configs.view.aria')}
             options={[
-              { value: 'all', label: '全部' },
-              { value: 'world-book', label: '世界书' },
-              ...allLayers.map((item) => ({ value: item, label: `层级：${LAYER_LABELS[item] ?? item}` })),
+              { value: 'all', label: t('configs.view.all') },
+              { value: 'world-book', label: t('configs.view.worldBook') },
+              ...allLayers.map((item) => ({ value: item, label: t('configs.view.layer', { layer: translateLabel(t, LAYER_LABEL_KEYS, item) }) })),
             ]}
             onChange={changeViewFilter}
           />
         )}
         <span className={styles.batchControls}>
           <button type="button" className={styles.pillButton} disabled={ordered.length === 0}
-            onClick={() => batchSetEnabled(true)}>启用</button>
+            onClick={() => batchSetEnabled(true)}>{t('configs.batch.enable')}</button>
           <button type="button" className={styles.pillButton} disabled={ordered.length === 0}
-            onClick={() => batchSetEnabled(false)}>禁用</button>
+            onClick={() => batchSetEnabled(false)}>{t('configs.batch.disable')}</button>
         </span>
       </div>
 
       {errors.length > 0 && (
         <div className={styles.configErrorBox}>
           {errors.map((error, index) => (
-            <div key={`${error.index}-${index}`} className={styles.configErrorLine}>[{error.index}] {error.id || '(缺 id)'}：{error.message}</div>
+            <div key={`${error.index}-${index}`} className={styles.configErrorLine}>[{error.index}] {error.id || t('configs.error.missingId')}：{error.message}</div>
           ))}
         </div>
       )}
@@ -289,9 +292,9 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
 
       {moduleCards === undefined ? (
         scoped.length === 0 ? (
-          <div className={styles.emptyState}><span className={styles.emptyGlyph} aria-hidden="true">⌁</span><div><h3>{scope === 'subagent' ? '还没有子代理可见的配置' : effectiveLayer === undefined ? '还没有自定义配置' : '本层还没有自定义配置'}</h3><p>{scope === 'subagent' ? '从上方「新建」插入一条（插入后可在卡片「消息受众」下拉自由切换仅主会话/公用/仅子代理），或到主设置「配置」从目录导入。' : effectiveLayer === undefined ? '从上方模板插入一条，或从本地目录导入；默认四条内置配置不受影响。' : '请到主设置「配置」从模板插入或从目录导入。'}</p>{emptyHint !== undefined && <p className={styles.readOnly}>{emptyHint}</p>}</div></div>
+          <div className={styles.emptyState}><span className={styles.emptyGlyph} aria-hidden="true">⌁</span><div><h3>{scope === 'subagent' ? t('configs.empty.subagent.title') : effectiveLayer === undefined ? t('configs.empty.all.title') : t('configs.empty.layer.title')}</h3><p>{scope === 'subagent' ? t('configs.empty.subagent.desc') : effectiveLayer === undefined ? t('configs.empty.all.desc') : t('configs.empty.layer.desc')}</p>{emptyHint !== undefined && <p className={styles.readOnly}>{emptyHint}</p>}</div></div>
         ) : filtered.length === 0 && keyword.length > 0 ? (
-          <p className={styles.readOnly} role="status">没有匹配「{filter.trim()}」的配置。</p>
+          <p className={styles.readOnly} role="status">{t('configs.noMatch', { keyword: filter.trim() })}</p>
         ) : (
           <div className={styles.configList}>
             {ordered.map((config) => renderCard(config))}
@@ -299,7 +302,7 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
         )
       ) : (
         <>
-          {filtered.length === 0 && keyword.length > 0 && <p className={styles.readOnly} role="status">没有匹配「{filter.trim()}」的提示词配置；能力模块不受此搜索影响。</p>}
+          {filtered.length === 0 && keyword.length > 0 && <p className={styles.readOnly} role="status">{t('configs.noMatch.modules', { keyword: filter.trim() })}</p>}
           <div className={styles.configList}>
             {ordered.map((config) => renderCard(config))}
           </div>

@@ -1,6 +1,7 @@
 /** 工具管理（tool-pipeline 层）：自定义工具定义。 */
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { bridgeCall } from '../../data/bridge-client.ts'
+import type { PromptToolTranslate } from '../../locales.ts'
 import { CustomToolCard, asRecord, type ToolDraft } from './CustomToolEditor.tsx'
 import sharedCss from '../../ui/controls.module.css'
 import featureCss from './tools.module.css'
@@ -12,6 +13,7 @@ export type ToolCreateIntent = { kind: 'blank' | 'template'; spec?: ToolDraft }
 
 /** 自定义工具编辑器：命令栏 + 一工具一卡，不再增加聚合卡片。 */
 export function CustomToolsCard(props: {
+  t: PromptToolTranslate
   onNotice: (kind: 'ok' | 'error', message: string) => void
   disabled?: boolean
   presetId?: string
@@ -20,6 +22,7 @@ export function CustomToolsCard(props: {
   /** 意图已消费：页面清空状态，避免预设切换重挂载后重放旧意图。 */
   onIntentConsumed?: () => void
 }): ReactNode {
+  const { t } = props
   const [tools, setTools] = useState<ToolDraft[]>([])
   const [expandedCards, setExpandedCards] = useState<Set<number>>(new Set())
   const [hasPersistedTools, setHasPersistedTools] = useState(false)
@@ -36,7 +39,7 @@ export function CustomToolsCard(props: {
       const customResult = await bridgeCall('customTools', { expectedPresetId: props.presetId })
       if (!active) return
       if (!customResult.ok) {
-        setLoadError(customResult.message ?? '自定义工具读取失败')
+        setLoadError(customResult.message ?? t('customTools.loadFailed'))
         setLoading(false)
         return
       }
@@ -70,9 +73,9 @@ export function CustomToolsCard(props: {
       setSaving(false)
       if (customResult.ok) {
         setHasPersistedTools(cleanTools.length > 0)
-        props.onNotice('ok', `已保存 ${tools.length} 个自定义工具（已重建）`)
+        props.onNotice('ok', t('customTools.saved', { count: tools.length }))
       } else {
-        props.onNotice('error', ('message' in customResult ? customResult.message : undefined) ?? '保存失败')
+        props.onNotice('error', ('message' in customResult ? customResult.message : undefined) ?? t('customTools.saveFailed'))
       }
     })
   }
@@ -96,13 +99,13 @@ export function CustomToolsCard(props: {
     if (intent.kind === 'template' && intent.spec !== undefined) {
       const spec = intent.spec
       if (tools.some((tool) => tool.id === spec.id)) {
-        props.onNotice('error', `工具 id 已存在：${String(spec.id)}`)
+        props.onNotice('error', t('customTools.duplicateId', { id: String(spec.id) }))
         return
       }
       const clone = JSON.parse(JSON.stringify(spec)) as ToolDraft
       updateTools([...tools, clone])
       setExpandedCards(new Set([...expandedCards, tools.length]))
-      props.onNotice('ok', `已插入工具模板 ${String(spec.id)}（保存后生效）`)
+      props.onNotice('ok', t('customTools.templateInserted', { id: String(spec.id) }))
       return
     }
     updateTools([...tools, {
@@ -114,17 +117,17 @@ export function CustomToolsCard(props: {
     }])
   }, [disabled, expandedCards, props, tools])
   return (
-    <section aria-label="自定义工具编辑">
-      <p className={styles.configFieldHint}>经顶部「添加能力 / 工具模块」新建或从模板插入工具；模型可见工具请到顶层「工具预览」查看。</p>
-      {props.disabled && <p className={styles.configFieldHint} role="status">当前预设工具只读；system 预设或未启用预设写入时不能编辑或保存。</p>}
-      {loading && <p className={styles.configFieldHint} role="status">正在读取自定义工具…</p>}
-      {loadError && <p role="alert">{loadError} <button type="button" className={styles.pillButton} onClick={() => setRevision((value) => value + 1)}>重试读取</button></p>}
+    <section aria-label={t('customTools.aria')}>
+      <p className={styles.configFieldHint}>{t('customTools.hint')}</p>
+      {props.disabled && <p className={styles.configFieldHint} role="status">{t('customTools.readonly')}</p>}
+      {loading && <p className={styles.configFieldHint} role="status">{t('customTools.loading')}</p>}
+      {loadError && <p role="alert">{loadError} <button type="button" className={styles.pillButton} onClick={() => setRevision((value) => value + 1)}>{t('customTools.retry')}</button></p>}
       {/* 只读切换重挂子树，释放已打开的 portal 菜单；无需给编辑器逐字段增加接口。 */}
-      <fieldset key={disabled ? 'readonly' : 'editable'} className={styles.customToolsFields} disabled={disabled} aria-label="自定义工具配置">
+      <fieldset key={disabled ? 'readonly' : 'editable'} className={styles.customToolsFields} disabled={disabled} aria-label={t('customTools.fieldsAria')}>
         <div className={styles.configActions}>
           {(tools.length > 0 || hasPersistedTools) && (
             <button type="button" className={styles.primaryPill} disabled={disabled || saving} onClick={save}>
-              {saving ? '保存中…' : '保存'}
+              {saving ? t('customTools.saving') : t('customTools.save')}
             </button>
           )}
         </div>
@@ -132,6 +135,7 @@ export function CustomToolsCard(props: {
           <div className={`${styles.configList} ${styles.customToolList}`}>
             {tools.map((tool, index) => (
               <CustomToolCard
+                t={t}
                 key={`${String(tool.id ?? '')}-${index}`}
                 tool={tool}
                 index={index}

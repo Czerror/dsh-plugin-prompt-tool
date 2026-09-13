@@ -10,6 +10,7 @@ import { WORKSPACE_PAGE_IDS, workspacePageMeta } from '../../src/client/app/work
 import { nextTabIndex } from '../../src/client/ui/tab-key.ts'
 import { loadToolSurface } from '../../src/client/features/tools/tool-surface-request.ts'
 import { SETTINGS_BRIDGE_PREFIX, BRIDGE_ENDPOINTS } from '../../src/shared/bridge-contract.ts'
+import { PROMPT_TOOL_DICTS } from '../../src/client/locales.ts'
 
 const read = (path) => readFileSync(new URL(`../../${path}`, import.meta.url), 'utf8')
 const reactModules = Object.fromEntries(['react', 'react/jsx-runtime', 'react-dom'].map((name) => [name, import.meta.resolve(name)]))
@@ -41,19 +42,25 @@ const { StatusBadge } = await import('../../src/client/ui/StatusBadge.tsx')
 loader.deregister()
 
 const render = (component, props) => renderToStaticMarkup(createElement(component, props))
+/** 测试用命名空间翻译：读 zh 字典并做 {name} 插值（等价官方 Translate 的调用面，键缺失即失败）。 */
+const t = (key, params) => {
+  const template = PROMPT_TOOL_DICTS.zh[key]
+  if (template === undefined) throw new Error(`missing locale key: ${key}`)
+  return template.replace(/\{(\w+)\}/g, (_, name) => String(params?.[name] ?? ''))
+}
 
 test('工具预览是独立顶层 tab，键盘导航及 panel 关系完整', () => {
   assert.deepEqual(WORKSPACE_PAGE_IDS, ['features', 'subagent', 'tools', 'skills', 'presets', 'characters'])
-  assert.equal(workspacePageMeta('tools').label, '工具预览')
+  assert.equal(workspacePageMeta('tools').labelKey, 'page.tools.label')
   assert.equal(WORKSPACE_PAGE_IDS[nextTabIndex(WORKSPACE_PAGE_IDS.length, 1, 'ArrowRight')], 'tools')
   assert.equal(WORKSPACE_PAGE_IDS[nextTabIndex(WORKSPACE_PAGE_IDS.length, 3, 'ArrowLeft')], 'tools')
-  const html = render(WorkspaceNavigation, { page: 'tools', onChange() {} })
+  const html = render(WorkspaceNavigation, { page: 'tools', onChange() {}, t })
   assert.match(html, /id="pt-workspace-tab-tools"[^>]*role="tab"[^>]*tabindex="0"[^>]*aria-selected="true"[^>]*aria-controls="pt-workspace-panel-tools"/)
   assert.match(read('src/client/app/workspace/PromptWorkspace.tsx'), /page === 'tools'[\s\S]*?<ToolsPreviewPage api=\{props\.api\}/)
 })
 
 test('编辑保留在主会话，工具预览没有保存或安装管理入口', () => {
-  const edit = render(CustomToolsCard, { onNotice() {} })
+  const edit = render(CustomToolsCard, { onNotice() {}, t })
   assert.match(edit, /自定义工具编辑/)
   assert.match(edit, /添加能力 \/ 工具模块/)
   assert.doesNotMatch(edit, /从模板新建|新建工具/)
@@ -76,7 +83,8 @@ test('子代理仅保留实例策略解析，旧工具面标签、session 输入
   const policy = read('src/client/features/subagents/SubagentToolPolicyCard.tsx')
   const delegation = read('src/client/features/subagents/DelegationToolsCard.tsx')
   assert.doesNotMatch(policy + delegation, /renderToolSurface|currentSessionId|childSessionId|已运行子代理工具面|子代理 session id/)
-  assert.match(policy, /实例解析预览/)
+  assert.match(policy, /t\('policy\.preview\.title'\)/, '预览标题必须来自 prompt-tool 字典')
+  assert.match(PROMPT_TOOL_DICTS.zh['policy.preview.title'], /实例解析预览/)
   assert.match(policy, /bridgeCall\('subagentToolPolicyPreview', previewInput\)/)
   assert.match(delegation, /<SubagentToolPolicyCard/)
 })
@@ -87,7 +95,7 @@ test('自定义工具按预设 key 重挂载，system 或关闭 writePreset 时�
   assert.match(main, /const canEditPreset = store\.fields\.writePreset && store\.moduleFacts\?\.editable === true/)
   assert.match(main, /disabled=\{!canEditPreset\}/)
   const source = read('src/client/features/tools/CustomToolsCard.tsx')
-  const html = render(CustomToolsCard, { disabled: true, onNotice() {} })
+  const html = render(CustomToolsCard, { disabled: true, onNotice() {}, t })
   assert.match(html, /当前预设工具只读/)
   assert.match(html, /<fieldset[^>]*disabled=""[^>]*aria-label="自定义工具配置"/)
   assert.match(source, /const disabled = props\.disabled === true \|\| loading/)
@@ -105,12 +113,13 @@ test('官方目录式搜索、可折叠分组与标题右侧预设选择；不�
   const snapshot = { sessionId: 'current-session', selectable: true }
   const html = render(ToolsPreviewPage, {
     api: { sessionModel: { subscribe() { return () => {} }, snapshot: () => snapshot }, listAgentPresets() { throw new Error('当前会话视角不得加载预设') } },
+    t,
   })
   assert.match(html, /aria-label="搜索工具"/)
   assert.match(html, /aria-label="当前会话工具"/)
   assert.match(html, /aria-label="预设工具能力"/)
   assert.match(html, /aria-label="预设工具能力来源"/)
-  assert.match(read('src/client/features/tools/ToolSurfaceView.tsx'), /<StatusBadge tone="success" label="模型可见" \/>/)
+  assert.match(read('src/client/features/tools/ToolSurfaceView.tsx'), /<StatusBadge tone="success" label=\{t\('tools\.surface\.badge\.visible'\)\} \/>/)
   assert.equal((html.match(/class="toolGroupToggle" aria-expanded="true"/g) ?? []).length, 2)
   assert.doesNotMatch(html, /role="tablist"|role="tabpanel"/)
   assert.ok(html.indexOf('搜索工具') < html.indexOf('当前会话工具'))
@@ -118,7 +127,7 @@ test('官方目录式搜索、可折叠分组与标题右侧预设选择；不�
   assert.match(html, /冻结 generation/)
   assert.match(html, /不会自动 resume 会话/)
   assert.match(html, /刷新预设列表/)
-  const preset = render(ToolSurfaceView, { presetId: 'next-preset', label: '预设工具能力' })
+  const preset = render(ToolSurfaceView, { presetId: 'next-preset', label: '预设工具能力', t })
   assert.match(preset, /后续 generation/)
   assert.match(preset, /不代表当前会话/)
   assert.match(preset, /next-preset/)
@@ -137,12 +146,12 @@ test('完整显示所有工具：同名自定义、第三方、空描述与长�
     { name: 'custom_tool', description: '<script>alert(1)</script>\n第二行' },
     ...Array.from({ length: 120 }, (_, index) => ({ name: `tool_${index}`, description: '工具描述' })),
   ]
-  const html = render(ToolSurfaceList, { tools, filter: '' })
+  const html = render(ToolSurfaceList, { tools, filter: '', t })
   assert.equal((html.match(/data-tool-card="true"/g) ?? []).length, tools.length)
   assert.equal((html.match(/aria-label="查看工具 custom_tool"/g) ?? []).length, 2)
   assert.match(html, /mcp_tool/)
   assert.match(html, /显示 124 \/ 124 个工具/)
-  const expanded = render(ToolSurfaceList, { tools, filter: '', expandedName: 'custom_tool', sourceLabel: '当前会话工具', sourceId: 'session-a' })
+  const expanded = render(ToolSurfaceList, { tools, filter: '', expandedName: 'custom_tool', sourceLabel: '当前会话工具', sourceId: 'session-a', t })
   assert.match(expanded, /&lt;script&gt;alert\(1\)&lt;\/script&gt;\n第二行/)
   assert.match(expanded, /<dl class="toolFacts">/)
   assert.match(expanded, /完整名称/)
@@ -150,7 +159,7 @@ test('完整显示所有工具：同名自定义、第三方、空描述与长�
   assert.match(expanded, /class="badge"[\s\S]*?class="dot" data-tone="success"[\s\S]*?class="tag" data-tone="success">模型可见</)
   assert.match(expanded, /session-a/)
   assert.doesNotMatch(expanded, /运行中|已启用|配置状态|fiberPhase/)
-  assert.match(render(ToolSurfaceList, { tools, filter: '', expandedName: 'empty_description' }), /（无描述）/)
+  assert.match(render(ToolSurfaceList, { tools, filter: '', expandedName: 'empty_description', t }), /（无描述）/)
   assert.doesNotMatch(html, /<script>/)
   assert.doesNotMatch(read('src/client/features/tools/tools.module.css'), /max-height:|line-clamp/)
 })
@@ -160,10 +169,10 @@ test('工具卡双列网格、窄屏单列与键盘展开属性参照官方 inve
   assert.match(css, /grid-template-columns: repeat\(2, minmax\(0, 1fr\)\)/)
   assert.match(css, /@media \(max-width: 680px\)[\s\S]*grid-template-columns: minmax\(0, 1fr\)/)
   assert.match(css, /\.toolCardToggle:focus-visible/)
-  const closed = render(ToolSurfaceList, { tools: [{ name: 'read', description: '读取' }], filter: '' })
+  const closed = render(ToolSurfaceList, { tools: [{ name: 'read', description: '读取' }], filter: '', t })
   assert.match(closed, /aria-expanded="false" aria-controls=/)
   assert.doesNotMatch(closed, /<dl/)
-  const open = render(ToolSurfaceList, { tools: [{ name: 'read', description: '读取' }], filter: '', expandedName: 'read' })
+  const open = render(ToolSurfaceList, { tools: [{ name: 'read', description: '读取' }], filter: '', expandedName: 'read', t })
   assert.match(open, /aria-expanded="true" aria-controls=/)
   assert.match(open, /<dl/)
 })
@@ -185,8 +194,8 @@ test('状态胶囊统一复用 StatusBadge：StatusDot + 官方 Tag', () => {
   ]) {
     assert.match(read(path), /from '\.\.\/\.\.\/ui\/StatusBadge\.tsx'/, `${path} 应复用共享状态徽章`)
   }
-  assert.match(read('src/client/features/presets/PresetSwitcher.tsx'), /<StatusBadge className=\{styles\.presetHeadBadge\} tone="success" label="使用中" \/>/)
-  assert.match(read('src/client/features/characters/CharactersPage.tsx'), /<StatusBadge className=\{ui\.presetHeadBadge\} tone="success" label="已导入当前预设" \/>/)
+  assert.match(read('src/client/features/presets/PresetSwitcher.tsx'), /<StatusBadge className=\{styles\.presetHeadBadge\} tone="success" label=\{t\('presetSwitcher\.badge\.active'\)\} \/>/)
+  assert.match(read('src/client/features/characters/CharactersPage.tsx'), /<StatusBadge className=\{ui\.presetHeadBadge\} tone="success" label=\{t\('characters\.badge\.imported'\)\} \/>/)
   assert.doesNotMatch(read('src/client/ui/controls.module.css'), /presetInUse/)
   assert.match(read('src/client/app/workspace/WorkspaceFrame.tsx'), /<StatusDot tone=\{store\.loading \? 'neutral' : 'success'\} pulse=\{!store\.loading\} \/>/)
   assert.doesNotMatch(read('src/client/app/workspace/PromptWorkspace.module.css'), /\.statusDot|pt-pulse/)
@@ -196,12 +205,12 @@ test('状态胶囊统一复用 StatusBadge：StatusDot + 官方 Tag', () => {
 
 test('搜索只过滤名称或描述，空列表与无匹配状态分开', () => {
   const tools = [{ name: 'Read_File', description: '读取文件' }, { name: 'other', description: 'Read docs' }]
-  assert.equal((render(ToolSurfaceList, { tools, filter: ' READ ' }).match(/data-tool-card=/g) ?? []).length, 2)
-  assert.match(render(ToolSurfaceList, { tools, filter: '文件' }), /显示 1 \/ 2 个工具/)
-  assert.match(render(ToolSurfaceList, { tools, filter: 'missing' }), /无匹配工具/)
-  assert.match(render(ToolSurfaceList, { tools: [], filter: '' }), /该来源暂无可见工具/)
-  assert.match(render(ToolSurfaceView, { sessionId: '', label: '当前会话工具' }), /尚未选择当前会话/)
-  assert.match(render(ToolSurfaceView, { presetId: '', label: '预设工具能力' }), /请选择预设/)
+  assert.equal((render(ToolSurfaceList, { tools, filter: ' READ ', t }).match(/data-tool-card=/g) ?? []).length, 2)
+  assert.match(render(ToolSurfaceList, { tools, filter: '文件', t }), /显示 1 \/ 2 个工具/)
+  assert.match(render(ToolSurfaceList, { tools, filter: 'missing', t }), /无匹配工具/)
+  assert.match(render(ToolSurfaceList, { tools: [], filter: '', t }), /该来源暂无可见工具/)
+  assert.match(render(ToolSurfaceView, { sessionId: '', label: '当前会话工具', t }), /尚未选择当前会话/)
+  assert.match(render(ToolSurfaceView, { presetId: '', label: '预设工具能力', t }), /请选择预设/)
 })
 
 test('来源切换、刷新及卸载均丢弃过期成功和失败响应，bridge 载荷不变', async (t) => {

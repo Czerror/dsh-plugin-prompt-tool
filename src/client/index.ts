@@ -1,4 +1,6 @@
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
+import type {} from '@deepseek-ai/dsh-client-locale/client'
+import type {} from '@deepseek-ai/dsh-client-connection/client'
 import type {} from '@deepseek-ai/dsh-api-session-controller/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
@@ -6,12 +8,15 @@ import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import type { PromptToolSettingsTransport } from './data/use-prompt-tool-store.ts'
 import { createSessionModelFace } from './data/session-model-face.ts'
+import { bridgeCall } from './data/bridge-client.ts'
 import { registerWorkbenchSlots } from './app/workbench/register-workbench.tsx'
 import { PromptToolWorkspaceController } from './app/workbench/workspace-controller.ts'
 import type { PromptToolWorkbenchFace } from './app/workbench/workbench-face.ts'
 import type { PromptToolHostApi } from './data/host-api.ts'
+import { PROMPT_TOOL_NS as LOCALE_NS, registerPromptToolLocale } from './locales.ts'
 
 export const inject = [
+  'locale',
   'slots',
   'settingsScope',
   'uiWorkspace',
@@ -25,6 +30,16 @@ export const inject = [
 const PROMPT_TOOL_NS = 'prompt-tool'
 
 export function apply(ctx: ClientContext): void {
+  // 官方 locale 字典：注册挂 effect（卸载/重挂自动释放，不会重复注册同一命名空间）。
+  // 命名空间在 locales.ts 里并入官方 LocaleNamespaceMap，slot 注册据此拿到 typed t。
+  ctx.effect(() => registerPromptToolLocale(ctx.locale))
+  const t = ctx.locale.bind(LOCALE_NS)
+  // 官方连接世代重建（connection/reset）后，宿主的模型目录缓存可能已过期：
+  // 显式刷新一次（越过 10 分钟 TTL），下一次打开工作台即命中新目录。
+  // 目录刷新不是关键路径，失败静默。
+  ctx.effect(() => ctx.on('connection/reset', () => {
+    void bridgeCall('models', { refresh: true }).catch(() => undefined)
+  }))
   // alpha.1 ui-settings：标准字段读写走官方共享 describe mirror + scope mutate
   // （revision 校验与 mirror fold 由 SettingsScopeController 内置，无需 acceptView）。
   const scope = ctx.settingsScope.bind<Record<string, unknown>>({ namespace: PROMPT_TOOL_NS })
@@ -69,7 +84,7 @@ export function apply(ctx: ClientContext): void {
       const session = list.current === undefined ? undefined : list.byId[list.current]
       if (session === undefined) return { applied: false }
       if (!session.blank) {
-        return { applied: false, message: '当前会话已有内容，官方只允许空会话切换；本次只更新后续会话默认预设' }
+        return { applied: false, message: t('settings.switchReason.sessionNotBlank') }
       }
       const result = await ctx.remote.agentPresets.select(session.id, id)
       if (!result.ok) {
@@ -84,9 +99,10 @@ export function apply(ctx: ClientContext): void {
     },
   }
 
-  // 悬浮入口：shell.overlay（触发器 + body portal 抽屉）+ sidebar.footer.action
-  // 几何探针；settings.plugins.tab 基础设置共享同一注入面。
+  // 悬浮入口：shell.overlay（可拖动触发器 + body portal 抽屉）；
+  // settings.plugins.tab 基础设置共享同一注入面。
+  // 位置由插件自己的位置偏好 + 视口夹取决定，不读宿主布局树。
   // 注册全部走官方 SlotRegistry，不手工挂载 DOM。
-  const face: PromptToolWorkbenchFace = { controller: new PromptToolWorkspaceController(), api: hostApi, settings }
+  const face: PromptToolWorkbenchFace = { controller: new PromptToolWorkspaceController(), api: hostApi, settings, t }
   registerWorkbenchSlots(ctx, face)
 }

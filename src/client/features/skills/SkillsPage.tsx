@@ -6,6 +6,7 @@ import clsx from 'clsx'
 import type { SkillCatalogEntry } from '../../data/prompt-tool-fields.ts'
 import type { PromptToolStore } from '../../data/use-prompt-tool-store.ts'
 import type { PromptToolHostApi } from '../../data/host-api.ts'
+import type { PromptToolLocaleKey, PromptToolTranslate } from '../../locales.ts'
 import { bridgeCall } from '../../data/bridge-client.ts'
 import { readImportFiles } from '../../data/import-files.ts'
 import { usePromptToolFields } from '../../data/use-prompt-tool-fields.ts'
@@ -21,15 +22,15 @@ import { matchesSkillStatus, type SkillStatusTab } from './skill-status.ts'
 
 const ui = { ...sharedCss, ...featureCss }
 
-const SKILL_STATUS_TABS: Array<{ id: SkillStatusTab; label: string }> = [
-  { id: 'all', label: '全部' },
-  { id: 'model', label: '模型' },
-  { id: 'user', label: '用户' },
-  { id: 'disabled', label: '已禁用' },
+const SKILL_STATUS_TABS: Array<{ id: SkillStatusTab; labelKey: PromptToolLocaleKey }> = [
+  { id: 'all', labelKey: 'skills.tabs.all' },
+  { id: 'model', labelKey: 'skills.tabs.model' },
+  { id: 'user', labelKey: 'skills.tabs.user' },
+  { id: 'disabled', labelKey: 'skills.tabs.disabled' },
 ]
 
-export const SkillsPage = memo(function SkillsPage(props: { store: PromptToolStore; api: PromptToolHostApi }): ReactNode {
-  const { store, api } = props
+export const SkillsPage = memo(function SkillsPage(props: { store: PromptToolStore; api: PromptToolHostApi; t: PromptToolTranslate }): ReactNode {
+  const { store, api, t } = props
   const fields = usePromptToolFields(store, (value) => value)
   const [pickingDir, setPickingDir] = useState(false)
   const [importingDir, setImportingDir] = useState(false)
@@ -122,7 +123,7 @@ export const SkillsPage = memo(function SkillsPage(props: { store: PromptToolSto
     for (const folder of selected) next[folder] = enabled
     store.patch({ skillSwitches: next })
     store.persistSwitches()
-    store.showNotice('ok', `已${enabled ? '启用' : '禁用'} ${selected.size} 个技能`)
+    store.showNotice('ok', enabled ? t('skills.notice.enabled', { count: selected.size }) : t('skills.notice.disabled', { count: selected.size }))
     setSelected(new Set())
   }
 
@@ -160,7 +161,7 @@ export const SkillsPage = memo(function SkillsPage(props: { store: PromptToolSto
       const path = await api.pickDirectory()
       if (path !== null) store.addSkillsDir(path)
     } catch (error) {
-      store.showNotice('error', '选择目录失败：' + (error instanceof Error ? error.message : String(error)))
+      store.showNotice('error', t('skills.notice.dirPickFailed', { reason: error instanceof Error ? error.message : String(error) }))
     } finally {
       setPickingDir(false)
     }
@@ -172,13 +173,13 @@ export const SkillsPage = memo(function SkillsPage(props: { store: PromptToolSto
     try {
       const res = await bridgeCall('skillsImport', { files: await readImportFiles(files, 'base64') })
       if (res.ok) {
-        store.showNotice('ok', `已导入 ${res.value.count} 个技能文件到 ${res.value.path}`)
+        store.showNotice('ok', t('skills.notice.imported', { count: res.value.count, path: res.value.path }))
         await store.load()
       } else {
-        store.showNotice('error', '导入技能目录失败：' + (res.message ?? 'settings bridge unavailable'))
+        store.showNotice('error', t('skills.notice.importFailed', { reason: res.message ?? 'settings bridge unavailable' }))
       }
     } catch (error) {
-      store.showNotice('error', '导入技能目录失败：' + (error instanceof Error ? error.message : String(error)))
+      store.showNotice('error', t('skills.notice.importFailed', { reason: error instanceof Error ? error.message : String(error) }))
     } finally {
       setImportingDir(false)
     }
@@ -217,10 +218,10 @@ export const SkillsPage = memo(function SkillsPage(props: { store: PromptToolSto
   }, [orderedPrimary, moveSkill])
 
   return (
-    <section className={ui.section} aria-label="技能设置">
+    <section className={ui.section} aria-label={t('skills.aria')}>
       {fields.skillCatalog.length > 0 && (
         <div className={ui.skillStatsRow}>
-          <div className={ui.skillStats} role="tablist" aria-label="技能状态筛选">
+          <div className={ui.skillStats} role="tablist" aria-label={t('skills.tabs.aria')}>
             {SKILL_STATUS_TABS.map((tab) => (
               <button
                 key={tab.id}
@@ -240,18 +241,18 @@ export const SkillsPage = memo(function SkillsPage(props: { store: PromptToolSto
                       : tab.id === 'disabled' ? ui.skillStatusOff
                         : ui.skillStatAll)} aria-hidden="true" />
                 <strong>{tabCounts[tab.id]}</strong>
-                <small>{tab.label}</small>
+                <small>{t(tab.labelKey)}</small>
               </button>
             ))}
           </div>
-          <button type="button" className={ui.pillButton} onClick={() => void store.load()}>刷新技能列表</button>
+          <button type="button" className={ui.pillButton} onClick={() => void store.load()}>{t('skills.refresh')}</button>
         </div>
       )}
 
-      <CollapsibleCard id="pt-skills-dirs" title="目录与来源"
-        meta={`${displaySkillsDirs.length} 个目录 · 选择引用 / 导入 / 移除`}>
+      <CollapsibleCard id="pt-skills-dirs" title={t('skills.dirs.title')}
+        meta={t('skills.dirs.meta', { count: displaySkillsDirs.length })}>
         <div className={ui.dirAddBar}>
-          <HintTooltip label="选择宿主机目录并保存绝对路径引用；不会复制文件">
+          <HintTooltip label={t('skills.dirs.pick.hint')}>
             <button
               type="button"
               className={ui.primaryPill}
@@ -259,26 +260,26 @@ export const SkillsPage = memo(function SkillsPage(props: { store: PromptToolSto
               onClick={() => void pickSkillsDir()}
             >
               {pickingDir && <span className={ui.spinner} aria-hidden="true" />}
-              {pickingDir ? '选择中…' : '选择目录并添加引用'}
+              {pickingDir ? t('skills.dirs.picking') : t('skills.dirs.pick')}
             </button>
           </HintTooltip>
           <ImportFileButton
-            label="导入文件夹内容"
-            busyLabel="导入中…"
+            label={t('skills.dirs.import')}
+            busyLabel={t('skills.dirs.importing')}
             busy={importingDir}
             disabled={pickingDir || store.savingSkillsDir}
             directory
-            ariaLabel="选择包含技能子目录的文件夹"
-            title="读取文件夹内容并复制到第一个当前生效技能目录"
+            ariaLabel={t('skills.dirs.import.aria')}
+            title={t('skills.dirs.import.title')}
             className={ui.pillButton}
             onFiles={(files) => void importSkillsDir(files)}
           />
           <div className={ui.dirAddInput}>
             <input
               className={ui.directoryInput}
-              aria-label="按路径添加技能目录"
+              aria-label={t('skills.dirs.input.aria')}
               value={store.skillsDirDraft}
-              placeholder="或直接输入目录路径"
+              placeholder={t('skills.dirs.input.placeholder')}
               spellCheck={false}
               onChange={(event) => store.setSkillsDirDraft(event.target.value)}
               onKeyDown={(event) => {
@@ -298,12 +299,12 @@ export const SkillsPage = memo(function SkillsPage(props: { store: PromptToolSto
               }}
             >
               {store.savingSkillsDir && <span className={ui.spinner} aria-hidden="true" />}
-              添加
+              {t('skills.dirs.add')}
             </button>
           </div>
         </div>
         {displaySkillsDirs.length === 0 ? (
-          <p className={ui.readOnly} role="status">技能目录列表为空。</p>
+          <p className={ui.readOnly} role="status">{t('skills.dirs.empty')}</p>
         ) : (
           <div className={ui.dirCardList}>
             {displaySkillsDirs.map((dir, index) => {
@@ -312,29 +313,29 @@ export const SkillsPage = memo(function SkillsPage(props: { store: PromptToolSto
               const isDefault = isDefaultDir(dir)
               return (
                 <div key={dir} className={ui.dirCard} data-invalid={!exists ? '' : undefined}>
-                  <HintTooltip label={`第 ${index + 1} 个目录`}><span className={ui.skillRankBadge}>{index + 1}</span></HintTooltip>
+                  <HintTooltip label={t('skills.dir.rank', { index: index + 1 })}><span className={ui.skillRankBadge}>{index + 1}</span></HintTooltip>
                   <div className={ui.dirCardBody}>
                     <span className={ui.dirCardTitle}>
                       <HintTooltip label={dir}><code className={ui.dirPath}>{dir}</code></HintTooltip>
-                      {isDefault && <HintTooltip label="未配置自定义目录时使用的 profile skills 副本"><span className={ui.duplicateBadge}>默认副本</span></HintTooltip>}
+                      {isDefault && <HintTooltip label={t('skills.dir.default.hint')}><span className={ui.duplicateBadge}>{t('skills.dir.default')}</span></HintTooltip>}
                     </span>
                     <span className={ui.dirCardMeta}>
                       {exists
-                        ? (count > 0 ? `${count} 个技能` : '空目录')
-                        : '目录不存在'}
-                      {!exists && ' · 可移除后重新添加'}
+                        ? (count > 0 ? t('skills.dir.count', { count }) : t('skills.dir.empty'))
+                        : t('skills.dir.missing')}
+                      {!exists && t('skills.dir.missing.hint')}
                     </span>
                   </div>
                   <div className={ui.dirCardActions}>
-                    <button type="button" className={ui.pillButton} onClick={() => void store.openSkillsDir(dir)}>打开</button>
-                    <button type="button" className={ui.pillButton} onClick={() => void store.load()}>重扫</button>
+                    <button type="button" className={ui.pillButton} onClick={() => void store.openSkillsDir(dir)}>{t('skills.dir.open')}</button>
+                    <button type="button" className={ui.pillButton} onClick={() => void store.load()}>{t('skills.dir.rescan')}</button>
                     {!isDefault && (removingDir === dir ? (
                       <>
-                        <button type="button" className={ui.pillButton} data-danger onClick={() => { store.removeSkillsDir(dir); setRemovingDir(undefined) }}>确认移除</button>
-                        <button type="button" className={ui.pillButton} data-variant="secondary" onClick={() => setRemovingDir(undefined)}>取消</button>
+                        <button type="button" className={ui.pillButton} data-danger onClick={() => { store.removeSkillsDir(dir); setRemovingDir(undefined) }}>{t('skills.dir.confirmRemove')}</button>
+                        <button type="button" className={ui.pillButton} data-variant="secondary" onClick={() => setRemovingDir(undefined)}>{t('skills.dir.cancel')}</button>
                       </>
                     ) : (
-                      <button type="button" className={ui.pillButton} onClick={() => setRemovingDir(dir)}>移除</button>
+                      <button type="button" className={ui.pillButton} onClick={() => setRemovingDir(dir)}>{t('skills.dir.remove')}</button>
                     ))}
                   </div>
                 </div>
@@ -342,9 +343,9 @@ export const SkillsPage = memo(function SkillsPage(props: { store: PromptToolSto
             })}
           </div>
         )}
-        <p className={ui.readOnly}>目录顺序即添加顺序；同名技能全部保留并标注「同名」，模型注册只取首个目录。移除目录只删除引用，不删除原文件。</p>
+        <p className={ui.readOnly}>{t('skills.dir.footnote')}</p>
         <div className={ui.cardDivider} />
-        <SettingInputRow id="pt-skill-rank-base" label="技能排序基数" hint="每个技能实际 rank = 基数 + 拖拽序号；默认 250。数值过小会让本项目技能抢占其他插件技能的位置，但不会影响任何提示词消息注入。"
+        <SettingInputRow id="pt-skill-rank-base" label={t('skills.rankBase.label')} hint={t('skills.rankBase.hint')}
           type="number" value={String(fields.skillRankBase)}
           onInput={(value) => store.patch({ skillRankBase: Number(value) || 0 })}
           onCommit={store.persistSwitches} />
@@ -355,19 +356,19 @@ export const SkillsPage = memo(function SkillsPage(props: { store: PromptToolSto
           <input
             className={ui.listFilter}
             value={skillFilter}
-            aria-label="过滤技能列表"
-            placeholder="过滤技能：名称 / 目录 / 描述…"
+            aria-label={t('skills.filter.aria')}
+            placeholder={t('skills.filter.placeholder')}
             spellCheck={false}
             onChange={(event) => setSkillFilter(event.target.value)}
           />
-          {selected.size > 0 && <span className={ui.selectionCount}>已选 {selected.size}</span>}
+          {selected.size > 0 && <span className={ui.selectionCount}>{t('skills.selected', { count: selected.size })}</span>}
           {selectableSkills.length > 0 && (
             <button type="button" className={ui.pillButton} data-active={allSelected ? '' : undefined} onClick={toggleSelectAll}>
-              {allSelected ? '取消全选' : '全选'}
+              {allSelected ? t('skills.unselectAll') : t('skills.selectAll')}
             </button>
           )}
-          <button type="button" className={ui.pillButton} disabled={!selectionMode} onClick={() => batchSet(true)}>批量启用</button>
-          <button type="button" className={ui.pillButton} disabled={!selectionMode} onClick={() => batchSet(false)}>批量禁用</button>
+          <button type="button" className={ui.pillButton} disabled={!selectionMode} onClick={() => batchSet(true)}>{t('skills.batchEnable')}</button>
+          <button type="button" className={ui.pillButton} disabled={!selectionMode} onClick={() => batchSet(false)}>{t('skills.batchDisable')}</button>
         </div>
       )}
 
@@ -378,9 +379,9 @@ export const SkillsPage = memo(function SkillsPage(props: { store: PromptToolSto
         tabIndex={0}
       >
       {fields.skillCatalog.length === 0 ? (
-        <div className={ui.emptyState}><span className={ui.emptyGlyph} aria-hidden="true">◇</span><div><h3>skills 目录下没有技能</h3><p>展开上方「目录与来源」选择目录并添加引用，或导入文件夹内容；也可确认技能目录路径后重新打开工作台。</p></div></div>
+        <div className={ui.emptyState}><span className={ui.emptyGlyph} aria-hidden="true">◇</span><div><h3>{t('skills.empty.title')}</h3><p>{t('skills.empty.hint')}</p></div></div>
       ) : visibleSkills.length === 0 ? (
-        <p className={ui.readOnly} role="status">没有匹配当前筛选的技能。</p>
+        <p className={ui.readOnly} role="status">{t('skills.noMatch')}</p>
       ) : (
         <>
           <div className={ui.skillCardList} data-dragging={dragFolder !== undefined ? '' : undefined}>
@@ -391,6 +392,7 @@ export const SkillsPage = memo(function SkillsPage(props: { store: PromptToolSto
                 <SkillRow
                   key={skill.folder}
                   skill={skill}
+                  t={t}
                   depth={depth}
                   primaryIndex={primaryIndex}
                   enabled={store.skillEnabled(skill.folder)}
@@ -418,7 +420,7 @@ export const SkillsPage = memo(function SkillsPage(props: { store: PromptToolSto
       )}
       </div>
 
-      {dirty && <p className={ui.readOnly} role="status">Skills 开关与目录修改立即保存；如上方按钮仍在写入，请稍候。</p>}
+      {dirty && <p className={ui.readOnly} role="status">{t('skills.dirty')}</p>}
     </section>
   )
 })

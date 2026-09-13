@@ -25,33 +25,15 @@ import { basename, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { Context } from '@deepseek-ai/cordis'
 
-const FALLBACK_WEB_APP_BUNDLE = '@deepseek-ai/dsh-web-app'
+/**
+ * Web surface bundle：DSH 随安装自带的 in-box bundle。
+ * 这是装配事实的唯一定义处，不再从 package.json#dsh.bundle.requires 读取
+ * （官方 DshBundleManifest 只有 patch，没有 requires 字段；私有扩展会让
+ * 清单看起来像支持该字段，实际无人消费）。
+ */
+const WEB_APP_BUNDLE = '@deepseek-ai/dsh-web-app'
 const BASE_BUNDLE = '@deepseek-ai/dsh-base'
 const PLUGIN_BUNDLE = 'dsh-plugin-prompt-tool'
-
-/**
- * 从本插件自己的 package.json 读取 `dsh.bundle.requires` 中声明的
- * Web surface bundle（缺失时回退到 @deepseek-ai/dsh-web-app）。
- * 这样“把 web-app 补进本插件 package.json”就是装配事实，而不是散落的魔法字符串。
- */
-function readWebAppBundle(): string {
-  try {
-    const manifestPath = new URL('../package.json', import.meta.url)
-    const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as {
-      dsh?: { bundle?: { requires?: unknown } }
-    }
-    const requires = manifest.dsh?.bundle?.requires
-    if (Array.isArray(requires)) {
-      const first = requires.find((entry): entry is string => typeof entry === 'string')
-      if (first !== undefined && first.length > 0) return first
-    }
-  } catch {
-    // 包结构异常时用内置回退值，自愈仍可用。
-  }
-  return FALLBACK_WEB_APP_BUNDLE
-}
-
-const WEB_APP_BUNDLE = readWebAppBundle()
 
 interface ProfileManifest {
   dependencies?: Record<string, unknown>
@@ -146,5 +128,23 @@ export function ensureWebSurface(ctx: Context, warn: (message: string) => void):
     notify(`prompt-tool: auto-added ${WEB_APP_BUNDLE} to dsh.profile.bundles for profile "${profileName}"; next launch will mount the Web surface`)
     notify('prompt-tool: please restart the app for the repaired profile to take effect')
   }
+}
+
+/**
+ * 把首次启动自愈挂到插件生命周期上：延迟到本轮装配结束后执行，
+ * 插件卸载会取消计时器，卸载后不再异步补写 profile。
+ */
+export function scheduleWebSurfaceRepair(ctx: Context, warn: (message: string) => void): void {
+  ctx.effect(() => {
+    let cancelled = false
+    const timer = setTimeout(() => {
+      if (cancelled) return
+      ensureWebSurface(ctx, warn)
+    }, 0)
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+  }, 'prompt-tool: deferred web surface repair')
 }
 

@@ -3,7 +3,7 @@ import type { PromptToolStore } from '../../data/use-prompt-tool-store.ts'
 import { EngineModuleCard } from '../../ui/EngineModuleCard.tsx'
 import { MenuSelect } from '../../ui/MenuSelect.tsx'
 import styles from '../../ui/controls.module.css'
-import { buildModelOptions, modelChoiceValue, parseModelChoice } from './model-options.ts'
+import { buildEffortOptions, buildModelOptions, modelChoiceValue, parseModelChoice } from './model-options.ts'
 /** 模型路由模块卡（官方 agent-default-model 层，非引擎模块——归类配置列表下）：
  *  主对话/子代理共用同一配置源（缺省继承宿主默认）；模型路由与人设按作用域完全分离
  *  （main=主对话模型、subagent=子代理模型，参数各自独立）。 */
@@ -23,13 +23,10 @@ export function ModelRouteModuleCard(props: { store: PromptToolStore; scope: 'ma
   // agent-default-model 的可选项（模型目录查询失败/未公布时也能选择与回显）。
   const provider = props.scope === 'main' ? fields.modelProvider : fields.subagentModelProvider
   const modelName = props.scope === 'main' ? fields.modelName : fields.subagentModelName
-  const reasoningEffortOptions = ['', 'off', 'low', 'high', 'max']
   // 宿主默认思维程度回显（agent-default-model settings reasoningEffort；官方档位同源）。
   const hostEffort = host?.reasoningEffort !== undefined && host.reasoningEffort.length > 0
     ? host.reasoningEffort
     : undefined
-  const withCurrent = (options: string[], current: string): string[] =>
-    current.length > 0 && !options.includes(current) ? [...options, current] : options
   const active = provider.length > 0 && modelName.length > 0
   const modelOptions = buildModelOptions(store.modelCatalog, [
     ...(provider.length > 0 && modelName.length > 0 ? [{ provider, model: modelName }] : []),
@@ -46,6 +43,12 @@ export function ModelRouteModuleCard(props: { store: PromptToolStore; scope: 'ma
       : []),
   ]).filter((option) => option.value.length > 0)
   const reasoningEffort = props.scope === 'main' ? fields.modelReasoningEffort : fields.subagentReasoningEffort
+  // 思维程度档位来自官方元数据（store.modelReasoning 按 provider/model 路由查得）：
+  // 未查到或该路由不提供推理档位时不展示固定列表，存量值仍保留回显（M-12）。
+  const sessionReasoning = store.modelReasoning[modelChoiceValue(sessionProvider, sessionModelName)]
+  const presetReasoning = store.modelReasoning[modelChoiceValue(provider, modelName)]
+  const sessionEffortOptions = buildEffortOptions(sessionReasoning, sessionEffort)
+  const presetEffortOptions = buildEffortOptions(presetReasoning, reasoningEffort)
   const temperature = props.scope === 'main' ? fields.modelTemperature : fields.subagentTemperature
   const maxTokens = props.scope === 'main' ? fields.modelMaxTokens : fields.subagentMaxTokens
   const patchModelParam = (key: 'modelReasoningEffort' | 'modelTemperature' | 'modelMaxTokens' | 'subagentReasoningEffort' | 'subagentTemperature' | 'subagentMaxTokens', value: string): void => {
@@ -111,7 +114,7 @@ export function ModelRouteModuleCard(props: { store: PromptToolStore; scope: 'ma
               ariaLabel="会话思维程度"
               value={sessionEffort}
               disabled={!sessionView.selectable || selecting}
-              options={withCurrent(reasoningEffortOptions, sessionEffort).map((item) => ({ value: item, label: item.length === 0 ? '（模型默认）' : item }))}
+              options={sessionEffortOptions}
               onChange={(reasoningEffort) => applySessionSelection({ reasoningEffort })}
             />
           </div>
@@ -121,8 +124,8 @@ export function ModelRouteModuleCard(props: { store: PromptToolStore; scope: 'ma
         <span className={styles.settingCopy}>
           <strong>预设模型</strong>
           <small>{props.scope === 'main'
-            ? `选择模型后自动绑定对应服务商（新会话默认模型，agent-default-model）；思维程度官方档位 off / low / high / max，选择即保存并同步宿主新会话默认；留空 = 继承宿主默认${hostEffort !== undefined ? `（思维程度当前为 ${hostEffort}）` : ''}。`
-            : '选择模型后自动绑定对应服务商（agentOptions 注入 tool-subagent），调用方显式模型优先；思维程度官方档位 off / low / high / max，留空 = 不设置（模型默认）。'}</small>
+            ? `选择模型后自动绑定对应服务商（新会话默认模型，agent-default-model）；思维程度档位按所选模型声明展示，选择即保存并同步宿主新会话默认；留空 = 继承宿主默认${hostEffort !== undefined ? `（思维程度当前为 ${hostEffort}）` : ''}。`
+            : '选择模型后自动绑定对应服务商（agentOptions 注入 tool-subagent），调用方显式模型优先；思维程度档位按所选模型声明展示，留空 = 不设置（模型默认）。'}</small>
         </span>
         <div className={styles.sessionModelRow}>
           <MenuSelect
@@ -149,7 +152,7 @@ export function ModelRouteModuleCard(props: { store: PromptToolStore; scope: 'ma
             ariaLabel="思维程度"
             value={reasoningEffort}
             disabled={!fields.writePreset}
-            options={withCurrent(hostEffort !== undefined ? [...new Set([...reasoningEffortOptions, hostEffort])] : reasoningEffortOptions, reasoningEffort).map((item) => ({ value: item, label: item.length === 0 ? '（不设置）' : item }))}
+            options={presetEffortOptions}
             onChange={(value) => patchModelParam(
               props.scope === 'main' ? 'modelReasoningEffort' : 'subagentReasoningEffort',
               value,

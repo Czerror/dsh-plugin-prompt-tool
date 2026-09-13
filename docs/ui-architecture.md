@@ -66,9 +66,9 @@
     ├─ app/
     │  ├─ workbench/
     │  │  ├─ FloatingTrigger.tsx
+    │  │  ├─ floating-trigger-position.ts
     │  │  ├─ register-workbench.tsx
     │  │  ├─ SettingsTab.tsx
-    │  │  ├─ SidebarGeometryProbe.tsx
     │  │  ├─ Workbench.module.css
     │  │  ├─ WorkbenchOverlay.tsx
     │  │  ├─ workspace-controller.ts
@@ -169,6 +169,7 @@
 
 src/client/index.ts 的 inject 列表是：
 
+    locale
     slots
     settingsScope
     uiWorkspace
@@ -179,11 +180,12 @@ src/client/index.ts 的 inject 列表是：
 
 apply(ctx) 依次构造：
 
-1. prompt-tool SettingsScope transport，用于标准部署设置的 mirror、ensure 和 mutate。
-2. PromptToolHostApi，封装目录选择、打开路径、预设切换和当前会话模型选择。
-3. session-model-face，读取官方 sessions projection，并经 remote.session.selectModel 写回。
-4. PromptToolWorkbenchFace。
-5. registerWorkbenchSlots(ctx, face)，唯一负责 shell.overlay 悬浮入口、sidebar.footer.action 几何探针与 settings.plugins.tab 的注册。
+1. locale 字典注册：`ctx.effect(() => registerPromptToolLocale(ctx.locale))` 把 `src/client/locales.ts` 的 zh/en 字典注册进官方命名空间 `prompt-tool`；卸载/重挂由 effect 释放，不重复注册。
+2. prompt-tool SettingsScope transport，用于标准部署设置的 mirror、ensure 和 mutate。
+3. PromptToolHostApi，封装目录选择、打开路径、预设切换和当前会话模型选择。
+4. session-model-face，读取官方 sessions projection，并经 remote.session.selectModel 写回。
+5. PromptToolWorkbenchFace：controller / api / settings / `t`（`ctx.locale.bind('prompt-tool')`，引用稳定、调用时读当前语言）。
+6. registerWorkbenchSlots(ctx, face)，唯一负责 shell.overlay 悬浮入口与 settings.plugins.tab 的注册。
 
 入口不直接导入页面、bridge endpoint 或业务卡片；需要新宿主能力时先扩展 data/host-api.ts 或 shared 契约。
 
@@ -192,21 +194,32 @@ apply(ctx) 依次构造：
 | 官方注册面 | id / key | 位置 | owner | 作用 |
 |---|---|---|---|---|
 | settings.plugins.tab | prompt-tool | order 40 | SettingsTab | 部署开关、AGENTS 写入/注入和默认预设 |
-| shell.overlay | prompt-tool-workbench | order 50 | WorkbenchOverlay | 悬浮触发器 + body portal 抽屉 |
-| sidebar.footer.action | prompt-tool-floating-geometry | order 40 | SidebarGeometryProbe | 只读几何探针，输出 --pt-sidebar-edge |
+| shell.overlay | prompt-tool-workbench | order 50 | WorkbenchOverlay | 可拖动悬浮触发器 + body portal 抽屉 |
 
-三处 slot 都使用 ctx.slots.inject() 等待官方槽位声明，再调用 ctx.slots.register()。返回的 disposer 在 register-workbench.tsx 中统一释放。不要添加第二个注册入口，也不要改变 id 或 inject face 的形状。
+两处 slot 都使用 ctx.slots.inject() 等待官方槽位声明，再调用 ctx.slots.register()。返回的 disposer 在 register-workbench.tsx 中统一释放。不要添加第二个注册入口，也不要改变 id 或 inject face 的形状。
+
+两处注册都声明 `locale: PROMPT_TOOL_NS`：slot 组件由此拿到框架注入的 typed `t` seat，同时把「渲染需要已安装的 locale face」写成显式契约（locale face 由官方 dsh-client-locale 在 boot 期经 renderer 安装）。列表项 label（设置 tab 标题）用 `() => face.t('tab.label')` thunk，宿主重读 label 时取当前语言。
+
+### 4.2.1 文案归属（locale）
+
+- 用户可见文案统一归 `prompt-tool` 命名空间：zh 常量是唯一事实源，键类型由它派生，en 用 `Record<Key, string>` 强制键集一致；`register` 用官方类型化形式一次注册两种语言。文本量大的 feature 按 `locales.ts` / `locales-params.ts` / `locales-prompts.ts` / `locales-cards.ts` 分区，注册时在 `locales.ts` 合并成同一命名空间，不注册第二套框架。
+- 组件树很深，不逐层重建 i18n 上下文：入口组件用注入的 `t`，`PromptToolWorkbenchFace.t` 作为同一 bind 结果的稳定引用向下传递（页面与卡片按需加 `t` prop）。
+- 渲染时才求值（`t('key', params)`），不做模块级缓存；语言切换由 renderer 订阅 locale revision 后整体重渲染跟进。
+- 不进字典的内容：provider/model id、文件路径、用户内容、协议 code 与 bridge 错误码；动态拼接用 `{name}` 占位参数。
+- 已迁移：工作台外壳与悬浮入口、设置页、六页外壳、引擎参数卡与模块列表（标签按 shared 键推导成 `param.<键>` 词条）、提示词配置与人设区、角色库页、子代理「工具与深度」模块卡与实例级工具策略、自定义工具卡。子代理策略的档位显示名（首次启用写入 preset.yml 的 seed 值）属于用户可改内容，保持原值不入字典。
+- 仍未迁移：`ui/` 控件回退文案（`TagInput` / `MenuSelect` / `DialogSurface` / `EngineModuleCard`），以及 `features/models/**` 与 `data/**` 的状态提示（这两个目录属模型路由任务的文件边界）。迁移时同步加入 `test/client/locale-contract.test.mjs` 的 `MIGRATED_UI_FILES` 清单。
 
 ### 4.3 悬浮入口与关闭行为
 
-- `shell.overlay` 注册左上角悬浮触发器，`sidebar.footer.action` 几何探针把 `--pt-sidebar-edge` 同步为侧栏轨道右缘；触发器打开 body portal 抽屉，抽屉与触发器分别用 fixed + z-index 1000 / 1100 置顶，不被宿主「对话/轨迹」顶部导航栏遮挡。
+- `shell.overlay` 注册可拖动悬浮触发器：位置是纯客户端界面偏好（localStorage，`floating-trigger-position.ts`），窗口尺寸变化时按实际按钮尺寸夹回可见区；不读宿主 DOM 几何，也不再占用 `sidebar.footer.action` 做 `--pt-sidebar-edge` 探针。
+- 拖动与单击以 4px 位移阈值区分：拖动结束吞掉尾随 click，单击与键盘仍开合；触发器打开 body portal 抽屉，抽屉与触发器分别用 fixed + z-index 1000 / 1100 置顶，不被宿主「对话/轨迹」顶部导航栏遮挡。
 - 关闭支持 Escape、点击背板与按钮切换，焦点在触发器与抽屉之间转移；抽屉打开时触发 PromptWorkspace.store.load()，关闭保留实例状态。
 - 官方右侧栏（`@deepseek-ai/dsh-client-ui-sidebar-right`）实测不适合本项目：已移除 tab type / keyed body 两段注册、`PromptToolTab` 与 `sidebarRightTabs` inject。
 - 插件不持久化工作台开关：悬浮抽屉开关是内存态，刷新回落。
 
 ### 4.4 0.1.5 新能力采用面
 
-- 采用：shell.overlay 悬浮入口、sidebar.footer.action 几何探针、官方 Switch / Tag。
+- 采用：shell.overlay 可拖动悬浮入口、官方 Switch / Tag。
 - 已满足、无需接入：`host-open-in-app`。`PromptToolHostApi.openPath` 走 `remote.session.openWorkspacePath`，其契约就是宿主交给原生打开器；官方 `ui-open-in-app` 客户端包不提供跨插件服务，只是会话头部的分割按钮。
 - 不适用：`ctx.workspaceFiles` 只覆盖 workspace 根，插件的读写路径域是 DSH_HOME（预设、技能、角色卡）。
 - 不采用：官方右侧栏（`ui-sidebar-right`）实测不适合本项目，已移除；`client-resources` 资源 tab 需要自建 provider 与第二个 tab 类型，而工作台已在抽屉内就地编辑这些文件，重复呈现没有收益。
@@ -218,7 +231,7 @@ apply(ctx) 依次构造：
     settings.plugins.tab
       └─ 基础设置：部署开关 + 默认预设
 
-    悬浮入口（shell.overlay 触发器 + sidebar.footer.action 探针）
+    悬浮入口（shell.overlay 可拖动触发器，位置存插件 localStorage）
       └─ 完整工作台（body portal 抽屉）
           ├─ 主会话
           ├─ 子代理
@@ -493,6 +506,7 @@ promptConfigs 模块卡展开区按基础信息、注入规则、作用范围、
 - Archify 1440×900 与 2048×1320 明暗图的 containment、captures、showcase 均通过；自动收据 visualReview=pending 仍表示需要人工查看截图，不等同于渲染失败。
 - 2026-09-09：工作台迁移到官方右侧栏（DSH 0.1.5-alpha.1 两段注册），删除自建 overlay、几何探针与面板互斥事件；ToggleRow 改用官方 Switch。
 - 2026-09-09：恢复 shell.overlay 悬浮入口（触发器 + body portal 抽屉 + sidebar.footer.action 几何探针），抽屉经 body portal + fixed + z-index 置顶；官方右侧栏实测不适合本项目，随后移除。
+- 2026-09-13：悬浮入口改为可拖动（pointer capture + 4px 阈值 + 视口夹取 + 插件自有 localStorage 位置偏好），删除 SidebarGeometryProbe 与 `--pt-sidebar-edge`，不再观察宿主布局树。
 
 ## 13. 维护清单
 
@@ -506,4 +520,4 @@ promptConfigs 模块卡展开区按基础信息、注入规则、作用范围、
 6. 新 selector 必须有明确 CSS owner；新交互必须同时考虑键盘、焦点、错误和 reduced-motion。
 7. 完成 typecheck、lint、test、build 和 diff --check 后再提交；不要停止或重启当前 DSH 服务。
 
-本文是客户端结构的长期权威文档；根目录 [PLAN.md](../PLAN.md) 仅跟踪当前引擎能力卡重构，完成后将状态沉淀回本文及对应领域文档。
+本文是客户端结构的长期权威文档；根目录 PLAN.md 只跟踪进行中的计划（当前无），一次性计划的结论沉淀回本文及对应领域文档。

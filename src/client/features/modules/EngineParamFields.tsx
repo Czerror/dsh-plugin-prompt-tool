@@ -2,19 +2,25 @@ import { useState, type ReactNode } from 'react'
 import { ENGINE_PARAM_DEFINITIONS, ENGINE_PARAM_KEYS, type EngineParamKey } from '../../../shared/engine-params.ts'
 import type { PromptToolStore } from '../../data/use-prompt-tool-store.ts'
 import type { StageDraft } from '../../data/prompt-tool-fields.ts'
+import type { PromptToolTranslate } from '../../locales.ts'
 import { MenuSelect } from '../../ui/MenuSelect.tsx'
 import { TagInput } from '../../ui/TagInput.tsx'
 import { HintTooltip } from '../../ui/HintTooltip.tsx'
 import styles from '../../ui/controls.module.css'
 
-/** 简单字段由共享定义驱动；阶段继续使用结构化编辑，不暴露任意 JSON 配置。 */
-export function EngineParamFields({ store, card }: { store: PromptToolStore; card: string }): ReactNode {
+/**
+ * 简单字段由共享定义驱动；阶段继续使用结构化编辑，不暴露任意 JSON 配置。
+ *
+ * 显示标签不进 shared：shared 只给参数键，UI 按 `param.<键>` 查 prompt-tool 字典
+ * （键类型由 ENGINE_PARAM_KEY 的模板字面量约束，新增参数缺词条即编译失败）。
+ */
+export function EngineParamFields({ store, card, t }: { store: PromptToolStore; card: string; t: PromptToolTranslate }): ReactNode {
   return ENGINE_PARAM_KEYS.filter((key) => ENGINE_PARAM_DEFINITIONS[key].card === card).map((key) => (
-    <EngineParamField key={`${store.fields.presetTemplate}:${key}`} store={store} param={key} />
+    <EngineParamField key={`${store.fields.presetTemplate}:${key}`} store={store} param={key} t={t} />
   ))
 }
 
-function EngineParamField({ store, param }: { store: PromptToolStore; param: EngineParamKey }): ReactNode {
+function EngineParamField({ store, param, t }: { store: PromptToolStore; param: EngineParamKey; t: PromptToolTranslate }): ReactNode {
   const definition = ENGINE_PARAM_DEFINITIONS[param]
   const value = store.fields[param]
   const disabled = !store.fields.writePreset || store.moduleFacts?.editable !== true
@@ -23,8 +29,13 @@ function EngineParamField({ store, param }: { store: PromptToolStore; param: Eng
   const save = (): void => { void store.persistParamOverrides() }
   const patch = (next: unknown): void => { store.patch({ [param]: next }) }
   const id = `pt-param-${param}`
-  const hint = `${param}：${definition.label}。空文本/列表回落预设默认；保存后用于后续 generation。`
-  const optionLabels: Record<string, string> = { either: '工具调用或助手消息', 'tool-call': '工具调用', 'assistant-message': '助手消息' }
+  const label = t(`param.${param}`)
+  const hint = t('param.hint', { param, label })
+  const optionLabels: Record<string, string> = {
+    either: t('param.option.either'),
+    'tool-call': t('param.option.tool-call'),
+    'assistant-message': t('param.option.assistant-message'),
+  }
   const menuField = (definition.kind === 'string' && definition.options !== undefined)
     || (definition.kind === 'boolean' && definition.defaultValue === undefined)
   if (definition.kind === 'stages') {
@@ -40,46 +51,46 @@ function EngineParamField({ store, param }: { store: PromptToolStore; param: Eng
     }
     return (
       <div className={styles.settingRowStack} data-param-key={param}>
-        <strong>{definition.label}</strong>
-        <small>阶段非空时启用渐进披露。未填完的草稿保留；清空全部阶段恢复两相模式。</small>
+        <strong>{label}</strong>
+        <small>{t('param.stages.hint')}</small>
         {stages.map((stage, index) => (
           <div className={styles.settingRowStack} key={index}>
-            <input className={styles.configInput} aria-label={`阶段 ${index + 1} 名称`} value={stage.name} disabled={disabled}
+            <input className={styles.configInput} aria-label={t('param.stages.nameAria', { index: index + 1 })} value={stage.name} disabled={disabled}
               onChange={(event) => update(stages.map((item, at) => at === index ? { ...item, name: event.target.value } : item))} onBlur={save} />
-            <TagInput id={`pt-stage-${index}-tools`} label={`阶段 ${index + 1} 工具集`} hint="回车或逗号添加工具名。" value={stage.tools} disabled={disabled}
+            <TagInput id={`pt-stage-${index}-tools`} label={t('param.stages.toolsLabel', { index: index + 1 })} hint={t('param.stages.toolsHint')} value={stage.tools} disabled={disabled}
               onChange={(tools) => update(stages.map((item, at) => at === index ? { ...item, tools } : item))} onCommit={save} />
             <div className={styles.configActions}>
-              <button type="button" className={styles.pillButton} aria-label={`上移阶段 ${index + 1}`} disabled={disabled || index === 0} onClick={() => move(index, -1)}>上移</button>
-              <button type="button" className={styles.pillButton} aria-label={`下移阶段 ${index + 1}`} disabled={disabled || index === stages.length - 1} onClick={() => move(index, 1)}>下移</button>
-              <button type="button" className={styles.pillButton} aria-label={`删除阶段 ${index + 1}`} disabled={disabled} onClick={() => update(stages.filter((_, at) => at !== index), true)}>删除</button>
+              <button type="button" className={styles.pillButton} aria-label={t('param.stages.moveUpAria', { index: index + 1 })} disabled={disabled || index === 0} onClick={() => move(index, -1)}>{t('param.stages.moveUp')}</button>
+              <button type="button" className={styles.pillButton} aria-label={t('param.stages.moveDownAria', { index: index + 1 })} disabled={disabled || index === stages.length - 1} onClick={() => move(index, 1)}>{t('param.stages.moveDown')}</button>
+              <button type="button" className={styles.pillButton} aria-label={t('param.stages.removeAria', { index: index + 1 })} disabled={disabled} onClick={() => update(stages.filter((_, at) => at !== index), true)}>{t('param.stages.remove')}</button>
             </div>
           </div>
         ))}
-        <button type="button" className={styles.pillButton} disabled={disabled} onClick={() => update([...stages, { name: '', tools: '' }])}>添加阶段</button>
+        <button type="button" className={styles.pillButton} disabled={disabled} onClick={() => update([...stages, { name: '', tools: '' }])}>{t('param.stages.add')}</button>
       </div>
     )
   }
   if (definition.kind === 'string-list') {
-    return <TagInput id={id} label={definition.label} hint={hint} value={String(value ?? '')} disabled={disabled}
+    return <TagInput id={id} label={label} hint={hint} value={String(value ?? '')} disabled={disabled}
       onChange={patch} onCommit={save} />
   }
   let control: ReactNode
   if (definition.kind === 'string' && definition.options !== undefined) {
-    control = <MenuSelect compact ariaLabel={definition.label} value={String(value ?? '')} disabled={disabled}
-      options={[{ value: '', label: '继承预设默认' }, ...definition.options.map((item) => ({ value: item, label: optionLabels[item] ?? item }))]}
+    control = <MenuSelect compact ariaLabel={label} value={String(value ?? '')} disabled={disabled}
+      options={[{ value: '', label: t('param.inheritPresetDefault') }, ...definition.options.map((item) => ({ value: item, label: optionLabels[item] ?? item }))]}
       onChange={(next) => { patch(next); save() }} />
   } else if (definition.kind === 'boolean' && definition.defaultValue === undefined) {
-    control = <MenuSelect compact ariaLabel={definition.label} value={value === undefined ? '' : String(value)} disabled={disabled}
-      options={[{ value: '', label: '继承锚定开关' }, { value: 'true', label: '开启' }, { value: 'false', label: '关闭' }]}
+    control = <MenuSelect compact ariaLabel={label} value={value === undefined ? '' : String(value)} disabled={disabled}
+      options={[{ value: '', label: t('param.inheritAnchorSwitch') }, { value: 'true', label: t('param.on') }, { value: 'false', label: t('param.off') }]}
       onChange={(next) => { patch(next === '' ? undefined : next === 'true'); save() }} />
   } else if (definition.kind === 'boolean') {
     control = <label className={styles.configEnable} htmlFor={id}>
-      <input id={id} type="checkbox" checked={value === true} disabled={disabled} aria-label={definition.label}
+      <input id={id} type="checkbox" checked={value === true} disabled={disabled} aria-label={label}
         onChange={(event) => { patch(event.target.checked); save() }} />
       <span className={styles.switch} aria-hidden="true"><i /></span>
     </label>
   } else if (definition.kind === 'number') {
-    control = <input id={id} className={styles.configInput} type="number" step="any" aria-label={definition.label}
+    control = <input id={id} className={styles.configInput} type="number" step="any" aria-label={label}
       aria-invalid={error !== undefined} aria-describedby={error === undefined ? undefined : `${id}-error`}
       value={numberDraft ?? String(value ?? '')} disabled={disabled}
       onChange={(event) => { setNumberDraft(event.target.value); setError(undefined) }}
@@ -93,12 +104,12 @@ function EngineParamField({ store, param }: { store: PromptToolStore; param: Eng
         save()
       }} />
   } else {
-    control = <textarea id={id} className={styles.configTextarea} rows={2} aria-label={definition.label} value={String(value ?? '')}
+    control = <textarea id={id} className={styles.configTextarea} rows={2} aria-label={label} value={String(value ?? '')}
       disabled={disabled} onChange={(event) => patch(event.target.value)} onBlur={save} />
   }
   return <div className={styles.settingRowStack} data-param-key={param}>
     <HintTooltip label={hint}><span className={styles.settingCopy}>
-      {menuField ? <span>{definition.label}</span> : <label htmlFor={id}>{definition.label}</label>}
+      {menuField ? <span>{label}</span> : <label htmlFor={id}>{label}</label>}
       <small>{param}</small>
     </span></HintTooltip>
     {control}

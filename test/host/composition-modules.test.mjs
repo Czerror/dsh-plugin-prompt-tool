@@ -108,7 +108,8 @@ test('组合库无 __TOKEN__ 残留：参数桥模块齐备且官方 alpha.4 变
   assert.match(persistentShell, /- id: persistent-shell[\s\S]*?group: true\s+disabled: !!js process\.platform === 'win32'\s+isolate:/,
     'anchored persistent-shell 整组必须在 Windows 禁用，避免与普通 tool-pwsh 重复注册 pwsh')
   assert.match(persistentShell, /shellPath: !!js/, 'anchored bash PTY 保留 /bin/bash → PATH 回退')
-  const filesystem = read('engine/compositions/library/bootstrap-filesystem.yml')
+  // rc.2 官方 minimal 已无 filesystem 行：该能力改为本地模块，仍供 Anchored 与旧预设引用。
+  const filesystem = read('engine/compositions/source/local/bootstrap-filesystem.yml')
   const filesystemRows = parse(filesystem, { logLevel: 'silent' })
   assert.equal(filesystemRows.length, 1)
   assert.equal(filesystemRows[0].id, 'bootstrap-filesystem')

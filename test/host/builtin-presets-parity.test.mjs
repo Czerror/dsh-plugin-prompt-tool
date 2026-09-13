@@ -30,8 +30,15 @@ test('standard 对齐官方 Standard，以官方 dsh-persona 行承载人设', (
   assert.deepEqual(ids, [
     'persona', 'agent-instructions', 'tool-bash', 'tool-pwsh', 'tool-fs', 'tool-fs-search',
     'tool-jobs', 'skill-filesystem', 'tool-skill', 'command-goal', 'tool-goal',
-    'planning', 'compaction', 'delegation', 'tool-ask-user', 'tool-todo', 'tool-web', 'prompt-config-engine',
+    'planning', 'compaction', 'delegation', 'tool-ask-user', 'tool-todo', 'tool-web', 'present', 'prompt-config-engine',
   ])
+})
+
+test('rc.2 新增 present 行：standard / ptc / creative 按官方层内顺序覆盖，minimal 不含', () => {
+  assert.deepEqual(idsOf(rowsOf('standard')).slice(-2), ['present', 'prompt-config-engine'])
+  assert.deepEqual(idsOf(rowsOf('ptc')).slice(-2), ['present', 'prompt-config-engine'])
+  assert.deepEqual(idsOf(rowsOf('creative')).slice(-2), ['present', 'prompt-config-engine'])
+  assert.equal(idsOf(rowsOf('minimal')).includes('present'), false, 'minimal 基型没有 present 行')
 })
 
 test('ptc 使用官方 alpha.4 呈现与 delegation 变体，不重复挂 code-presentation', () => {
@@ -41,7 +48,7 @@ test('ptc 使用官方 alpha.4 呈现与 delegation 变体，不重复挂 code-p
     'persona', 'agent-instructions', 'tool-bash', 'tool-pwsh', 'tool-fs', 'tool-fs-search',
     'tool-jobs', 'skill-filesystem', 'tool-skill', 'command-goal', 'tool-goal',
     'planning', 'compaction', 'delegation', 'tool-ask-user', 'tool-todo', 'tool-web',
-    'tool-presentation', 'prompt-config-engine',
+    'tool-presentation', 'present', 'prompt-config-engine',
   ])
   const presentation = rows.find((row) => row.id === 'tool-presentation')
   assert.equal(presentation.config.mode, 'ptc')
@@ -55,7 +62,7 @@ test('creative 基础行顺序对齐官方 Cordis，但不再复制 tool-cordis�
   assert.deepEqual(ids, [
     'persona', 'agent-instructions', 'tool-bash', 'tool-pwsh', 'tool-fs', 'tool-fs-search',
     'tool-jobs', 'command-goal', 'tool-goal', 'planning', 'compaction', 'delegation',
-    'tool-ask-user', 'tool-todo', 'tool-web', 'skill-filesystem', 'tool-skill', 'prompt-config-engine',
+    'tool-ask-user', 'tool-todo', 'tool-web', 'skill-filesystem', 'tool-skill', 'present', 'prompt-config-engine',
   ])
   assert.ok(!ids.includes('tool-cordis'), 'tool-cordis 由官方 shipped「创造模式」(cordis) 预设提供')
   const skill = readFileSync(join(root, 'preset/creative/skills/editing-cordis-compositions/SKILL.md'), 'utf8')
@@ -63,10 +70,10 @@ test('creative 基础行顺序对齐官方 Cordis，但不再复制 tool-cordis�
   assert.doesNotMatch(skill, /supplies `standard`, `code`, `minimal`/)
 })
 
-test('minimal 复用官方 shell 与 filesystem 组合，以顶层 persona 段驱动官方 dsh-persona 行', () => {
+test('minimal 对齐 rc.2 单 shell 基型，以顶层 persona 段驱动官方 dsh-persona 行', () => {
   const rows = rowsOf('minimal')
   const ids = idsOf(rows)
-  assert.deepEqual(ids, ['persona', 'persistent-shell', 'bootstrap-filesystem', 'prompt-config-engine'])
+  assert.deepEqual(ids, ['persona', 'persistent-shell', 'prompt-config-engine'])
   const spec = loadPresetSpec(join(root, 'preset', 'minimal'))
   assert.equal(spec.persona.prefix, 'You are a helpful software engineer assistant.')
   assert.equal(spec.persona.complete, true)

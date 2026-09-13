@@ -1,41 +1,43 @@
 import { useEffect, useId, useState, type ReactNode } from 'react'
 import { IconChevronDownOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { StatusBadge } from '../../ui/StatusBadge.tsx'
+import type { PromptToolTranslate } from '../../locales.ts'
 import { loadToolSurface, type ToolSurfaceEntry, type ToolSurfaceResult, type ToolSurfaceSource } from './tool-surface-request.ts'
 import css from './tools.module.css'
 
-type ToolSurfaceProps = ToolSurfaceSource & { label: string; query?: string; headerAction?: ReactNode; children?: ReactNode }
+type ToolSurfaceProps = ToolSurfaceSource & { label: string; t: PromptToolTranslate; query?: string; headerAction?: ReactNode; children?: ReactNode }
 const matches = (entry: ToolSurfaceEntry, query: string): boolean =>
   entry.name.toLowerCase().includes(query) || entry.description.toLowerCase().includes(query)
 
 /** 一工具一卡；公开事实只到名称/描述/来源视角，不伪造插件配置或运行状态。 */
-export function ToolSurfaceList({ tools, filter, sourceLabel = '工具面', sourceId = '', expandedName }: {
-  tools: readonly ToolSurfaceEntry[]; filter: string; sourceLabel?: string; sourceId?: string; expandedName?: string
+export function ToolSurfaceList({ tools, filter, t, sourceLabel, sourceId = '', expandedName }: {
+  tools: readonly ToolSurfaceEntry[]; filter: string; t: PromptToolTranslate; sourceLabel?: string; sourceId?: string; expandedName?: string
 }): ReactNode {
+  const sourceLabelText = sourceLabel ?? t('tools.surface.sourceLabel')
   const prefix = useId()
   const [expanded, setExpanded] = useState<string | null>(expandedName ?? null)
   const visible = tools.filter((entry) => matches(entry, filter.trim().toLowerCase()))
   return <>
-    <p className={css.toolSurfaceHint} role="status">显示 {visible.length} / {tools.length} 个工具</p>
-    {visible.length === 0 ? <p className={css.toolSurfaceHint}>{tools.length === 0 ? '该来源暂无可见工具。' : '无匹配工具，请调整搜索。'}</p> : (
-      <ul className={css.toolSurfaceCards} aria-label="模型可见工具">
+    <p className={css.toolSurfaceHint} role="status">{t('tools.surface.count', { visible: visible.length, total: tools.length })}</p>
+    {visible.length === 0 ? <p className={css.toolSurfaceHint}>{tools.length === 0 ? t('tools.surface.emptySource') : t('tools.surface.emptyFilter')}</p> : (
+      <ul className={css.toolSurfaceCards} aria-label={t('tools.surface.list.aria')}>
         {visible.map((entry, index) => {
           const key = `${entry.name}:${index}`
           const open = expanded === key || expanded === entry.name
           const detailId = `${prefix}-tool-${index}`
           return <li key={key} className={css.toolSurfaceCard} data-tool-card="true" data-open={open || undefined}>
             <button type="button" className={css.toolCardToggle} aria-expanded={open} aria-controls={detailId}
-              aria-label={`查看工具 ${entry.name}`} onClick={() => setExpanded(open ? null : key)}>
+              aria-label={t('tools.surface.card.aria', { name: entry.name })} onClick={() => setExpanded(open ? null : key)}>
               <strong className={css.toolCardTitle}>{entry.name}</strong>
-              <span className={css.toolCardTrailing}><StatusBadge tone="success" label="模型可见" /><IconChevronDownOutline14 className={css.toolChevron} aria-hidden="true" /></span>
+              <span className={css.toolCardTrailing}><StatusBadge tone="success" label={t('tools.surface.badge.visible')} /><IconChevronDownOutline14 className={css.toolChevron} aria-hidden="true" /></span>
             </button>
             {open && <div id={detailId} className={css.toolCardDetails}>
               <code className={css.toolEntryValue}>{entry.name}</code>
               <dl className={css.toolFacts}>
-                <dt>完整名称</dt><dd>{entry.name}</dd>
-                <dt>来自</dt><dd>{sourceLabel}{sourceId && <> · <code>{sourceId}</code></>}</dd>
-                <dt>可见状态</dt><dd>模型可见</dd>
-                <dt>工具描述</dt><dd>{entry.description || '（无描述）'}</dd>
+                <dt>{t('tools.surface.detail.name')}</dt><dd>{entry.name}</dd>
+                <dt>{t('tools.surface.detail.from')}</dt><dd>{sourceLabelText}{sourceId && <> · <code>{sourceId}</code></>}</dd>
+                <dt>{t('tools.surface.detail.status')}</dt><dd>{t('tools.surface.badge.visible')}</dd>
+                <dt>{t('tools.surface.detail.description')}</dt><dd>{entry.description || t('tools.surface.detail.noDescription')}</dd>
               </dl>
             </div>}
           </li>
@@ -51,6 +53,7 @@ export function ToolSurfaceView(props: ToolSurfaceProps): ReactNode {
 }
 
 function ToolSurfaceContent(props: ToolSurfaceProps): ReactNode {
+  const { t } = props
   const { sessionId, presetId, query = '' } = props
   const [result, setResult] = useState<ToolSurfaceResult | null>(null)
   const [revision, setRevision] = useState(0)
@@ -69,22 +72,22 @@ function ToolSurfaceContent(props: ToolSurfaceProps): ReactNode {
       </button>
       <div className={css.toolHeaderAction}>{props.headerAction}</div>
     </div>
-    <p className={css.toolGroupSub}>{sessionId !== undefined ? '当前存活会话 · 冻结 generation' : '所选预设 · 后续 generation'}{count !== undefined && ` · ${count} 个`}</p>
+    <p className={css.toolGroupSub}>{sessionId !== undefined ? t('tools.surface.sub.session') : t('tools.surface.sub.preset')}{count !== undefined && t('tools.surface.sub.count', { count })}</p>
     {open && <div className={css.toolGroupBody} id={contentId}>
       {props.children}
-      {sourceId.length === 0 ? <p className={css.toolSurfaceHint}>{sessionId !== undefined ? '尚未选择当前会话；不会自动创建或恢复会话。' : '请选择预设后读取工具能力。'}</p> : <>
+      {sourceId.length === 0 ? <p className={css.toolSurfaceHint}>{sessionId !== undefined ? t('tools.surface.noSession') : t('tools.surface.noPreset')}</p> : <>
         <div className={css.toolSurfaceControls}>
-          <p className={css.toolSurfaceHint}>来源：<code>{sourceId}</code></p>
-          <button type="button" className={css.toolRefresh} disabled={loading} onClick={() => { setResult(null); setRevision((value) => value + 1) }}>刷新工具</button>
+          <p className={css.toolSurfaceHint}>{t('tools.surface.origin')}<code>{sourceId}</code></p>
+          <button type="button" className={css.toolRefresh} disabled={loading} onClick={() => { setResult(null); setRevision((value) => value + 1) }}>{t('tools.surface.refresh')}</button>
         </div>
-        {loading && <p className={css.toolSurfaceHint} role="status">正在读取工具…</p>}
+        {loading && <p className={css.toolSurfaceHint} role="status">{t('tools.surface.loading')}</p>}
         {result !== null && (result.ok
-          ? <ToolSurfaceList tools={result.value.tools} filter={query} sourceLabel={props.label} sourceId={sourceId} />
-          : <p className={css.toolSurfaceError} role="alert">{result.message || '工具面读取失败'}；可刷新重试。</p>)}
+          ? <ToolSurfaceList tools={result.value.tools} filter={query} t={t} sourceLabel={props.label} sourceId={sourceId} />
+          : <p className={css.toolSurfaceError} role="alert">{result.message || t('tools.surface.readFailed')}{t('tools.surface.retrySuffix')}</p>)}
       </>}
       <p className={css.toolSurfaceHint}>{sessionId !== undefined
-        ? '刷新不升级既有会话的 generation，也不会自动 resume 会话。'
-        : '预设能力不代表当前会话；修改预设不替换既有会话的冻结 generation。'}</p>
+        ? t('tools.surface.note.session')
+        : t('tools.surface.note.preset')}</p>
     </div>}
   </section>
 }

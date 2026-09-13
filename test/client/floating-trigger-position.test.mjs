@@ -1,0 +1,90 @@
+/**
+ * 可拖动悬浮入口的位置模型：视口夹取、拖动判定与持久化读写。
+ *
+ * 这些纯函数是拖动交互的判定核心（拖动 vs 单击、按钮始终完整可见、位置跨刷新保持），
+ * 在 Node 里用最小 window/localStorage 替身验证，不启动浏览器也不读宿主 DOM。
+ */
+import test from 'node:test'
+import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+
+import {
+  DEFAULT_TRIGGER,
+  DRAG_THRESHOLD_PX,
+  TRIGGER_MARGIN_PX,
+  clampPoint,
+  isDragGesture,
+  readStoredTriggerPosition,
+  storeTriggerPosition,
+} from '../../src/client/app/workbench/floating-trigger-position.ts'
+
+test('clampPoint：按钮始终完整可见（含窄屏 40px 尺寸与极小视口）', () => {
+  assert.deepEqual(
+    clampPoint({ x: -20, y: -5 }, { width: 1000, height: 800 }),
+    { x: TRIGGER_MARGIN_PX, y: TRIGGER_MARGIN_PX },
+    '左上角同样保留边缘留白',
+  )
+  assert.deepEqual(clampPoint({ x: 5000, y: 5000 }, { width: 1000, height: 800 }), { x: 964, y: 764 })
+  assert.deepEqual(
+    clampPoint({ x: 5000, y: 5000 }, { width: 320, height: 400 }, { width: 40, height: 40 }),
+    { x: 272, y: 352 },
+    '窄屏按钮是 40px，夹取必须用实际渲染尺寸',
+  )
+  assert.deepEqual(clampPoint({ x: 10, y: 10 }, { width: 20, height: 10 }), { x: 0, y: 0 }, '视口小于按钮时不产生负坐标')
+  assert.deepEqual(
+    clampPoint({ x: 500, y: 500 }, { width: 30, height: 30 }),
+    { x: 0, y: 0 },
+    '留白放不下时退化为按钮完整可见，仍不越出视口',
+  )
+  assert.deepEqual(clampPoint(DEFAULT_TRIGGER, { width: 1200, height: 900 }), DEFAULT_TRIGGER, '默认位置在常规视口内不变')
+})
+
+test('isDragGesture：位移超过阈值才算拖动（小于阈值保留单击）', () => {
+  const start = { x: 100, y: 100 }
+  assert.equal(isDragGesture(start, { x: 100, y: 100 }), false)
+  assert.equal(isDragGesture(start, { x: 100 + DRAG_THRESHOLD_PX, y: 100 }), false, '等于阈值仍算单击')
+  assert.equal(isDragGesture(start, { x: 100 + DRAG_THRESHOLD_PX + 1, y: 100 }), true)
+  assert.equal(isDragGesture(start, { x: 100, y: 100 - DRAG_THRESHOLD_PX - 1 }), true, '向上拖动同样成立')
+})
+
+test('位置持久化：写入后可读回；损坏与缺失数据回退默认位置', () => {
+  const store = new Map()
+  const previous = Object.getOwnPropertyDescriptor(globalThis, 'window')
+  globalThis.window = {
+    localStorage: {
+      getItem: (key) => (store.has(key) ? store.get(key) : null),
+      setItem: (key, value) => { store.set(key, value) },
+    },
+  }
+  try {
+    assert.equal(readStoredTriggerPosition(), undefined, '未写过时返回 undefined')
+    storeTriggerPosition({ x: 120.4, y: 88.6 })
+    assert.deepEqual(readStoredTriggerPosition(), { x: 120, y: 89 }, '位置按整数像素读回')
+    assert.ok(store.has('dsh-plugin-prompt-tool:trigger-position'), '写入固定的 storage key')
+    store.set('dsh-plugin-prompt-tool:trigger-position', '{not json')
+    assert.equal(readStoredTriggerPosition(), undefined, '损坏 JSON 回退默认')
+    store.set('dsh-plugin-prompt-tool:trigger-position', JSON.stringify({ x: 'left', y: 1 }))
+    assert.equal(readStoredTriggerPosition(), undefined, '非法类型回退默认')
+    // 只保留旧键时也要读回（早期提交用过 floating-trigger 键）。
+    store.clear()
+    store.set('dsh-plugin-prompt-tool:floating-trigger', JSON.stringify({ x: 10, y: 20 }))
+    assert.deepEqual(readStoredTriggerPosition(), { x: 10, y: 20 }, '旧键位置偏好继续可用')
+  } finally {
+    if (previous === undefined) delete globalThis.window
+    else Object.defineProperty(globalThis, 'window', previous)
+  }
+})
+
+test('拖动实现不读宿主布局：无 grid 模板、无祖先爬链、无针对宿主的观察器', () => {
+  for (const file of ['FloatingTrigger.tsx', 'floating-trigger-position.ts', 'register-workbench.tsx']) {
+    const source = readFileSync(new URL(`../../src/client/app/workbench/${file}`, import.meta.url), 'utf8')
+    assert.ok(!source.includes('gridTemplateColumns'), `${file} 不应读取宿主 grid 模板`)
+    assert.ok(!source.includes('parentElement'), `${file} 不应向上爬宿主 DOM`)
+    assert.ok(!source.includes('MutationObserver'), `${file} 不应观察宿主 DOM`)
+    assert.ok(!source.includes('new ResizeObserver'), `${file} 不应针对宿主布局安装观察器`)
+    assert.ok(!source.includes('--pt-sidebar-edge'), `${file} 不应依赖侧栏几何变量`)
+  }
+  const css = readFileSync(new URL('../../src/client/app/workbench/Workbench.module.css', import.meta.url), 'utf8')
+  assert.ok(!css.includes('--pt-sidebar-edge'), '样式不应残留侧栏几何变量')
+  assert.ok(!css.includes('.sidebarEdgeProbe'), '样式不应残留几何探针')
+})
