@@ -13,7 +13,7 @@
  * 内容未变化时不落盘（避免 watcher 空转）。
  */
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { dirname, join, resolve, sep } from 'node:path'
 import { Document, parseDocument } from 'yaml'
 import { DEFAULT_SKILL_RANK_BASE, DSH_HOME } from './paths.ts'
 
@@ -43,6 +43,78 @@ export function defaultSkillsConfig(): SkillsConfig {
 
 export function skillsConfigPath(dshHome: string = DSH_HOME): string {
   return join(dshHome, SKILLS_CONFIG_RELATIVE)
+}
+
+/**
+ * 旧版 per-profile 技能副本路径（`<DSH_HOME>/profiles/<name>/skills`）已废弃：
+ * 技能根早先固定写在插件自己的 prompt-tool profile 下，现在统一为
+ * `<DSH_HOME>/skills`。迁移时必须丢掉这类引用，否则会把废弃副本重新挂成技能根
+ * （指向过期副本，且与新的默认根重复）。
+ */
+export function isDeprecatedProfileSkillDir(dir: string, dshHome: string = DSH_HOME): boolean {
+  if (typeof dir !== 'string' || dir.trim().length === 0) return false
+  const normalize = (value: string): string => {
+    const resolved = resolve(value)
+    return process.platform === 'win32' ? resolved.toLowerCase() : resolved
+  }
+  const profilesDir = normalize(join(dshHome, 'profiles'))
+  const resolved = normalize(dir)
+  return resolved === profilesDir || resolved.startsWith(profilesDir + sep)
+}
+
+/** 一次性迁移的决策结果（纯数据；由调用方执行磁盘/配置/settings 副作用）。 */
+export interface SkillsMigrationPlan {
+  /** 需要写入配置文件的键（只含与现值不同的项）。 */
+  patch: { dirs?: string[]; order?: string[]; rankBase?: number }
+  /** 旧 settings 里显式关闭（false）的技能：需落成磁盘停用。 */
+  disable: string[]
+  /** 需要从 settings 卸载的旧技能键（迁移后 settings.yaml 只留部署轴）。 */
+  unsetKeys: string[]
+}
+
+/** settings 里的旧技能管理键（迁移后全部卸载）。 */
+export const LEGACY_SKILL_SETTINGS_KEYS = ['skillsDir', 'skillsDirs', 'skillSwitches', 'skillOrder', 'skillRankBase'] as const
+
+/**
+ * 计算一次性迁移方案：settings 技能键 → 配置文件（目录/顺序/rank）+ 磁盘停用清单 + 待卸载键。
+ * 规则：
+ *  - 旧 per-profile 副本路径（废弃布局）丢弃，不写进 `dirs`；
+ *  - 配置文件里已有的值不覆盖（用户手编优先）；
+ *  - rankBase 等于默认值时省略（保持配置文件精简）；
+ *  - `skillSwitches` 只取显式 `false`（`true` 是默认态，不需要任何状态）。
+ */
+export function planSkillsMigration(
+  userSection: Record<string, unknown>,
+  current: SkillsConfig,
+  dshHome: string = DSH_HOME,
+): SkillsMigrationPlan {
+  const pickString = (value: unknown): string[] => (typeof value === 'string' ? [value] : [])
+  const legacyDirs = [
+    ...(Array.isArray(userSection.skillsDirs) ? userSection.skillsDirs : []),
+    ...pickString(userSection.skillsDir),
+  ].filter((dir): dir is string => typeof dir === 'string' && dir.trim().length > 0
+    && !isDeprecatedProfileSkillDir(dir, dshHome))
+  const legacyOrder = Array.isArray(userSection.skillOrder)
+    ? userSection.skillOrder.filter((folder): folder is string => typeof folder === 'string' && folder.length > 0)
+    : []
+  const legacyRankBase = typeof userSection.skillRankBase === 'number' && Number.isSafeInteger(userSection.skillRankBase) && userSection.skillRankBase >= 0
+    ? userSection.skillRankBase
+    : undefined
+  const disable = Object.entries(
+    userSection.skillSwitches !== null && typeof userSection.skillSwitches === 'object'
+      ? userSection.skillSwitches as Record<string, unknown>
+      : {},
+  ).filter(([, value]) => value === false).map(([folder]) => folder)
+
+  const patch: SkillsMigrationPlan['patch'] = {}
+  if (legacyDirs.length > 0 && current.dirs.length === 0) patch.dirs = legacyDirs
+  if (legacyOrder.length > 0 && current.order.length === 0) patch.order = legacyOrder
+  if (legacyRankBase !== undefined && legacyRankBase !== DEFAULT_SKILL_RANK_BASE && current.rankBase === DEFAULT_SKILL_RANK_BASE) {
+    patch.rankBase = legacyRankBase
+  }
+  const unsetKeys = LEGACY_SKILL_SETTINGS_KEYS
+    .filter((key) => Object.prototype.hasOwnProperty.call(userSection, key))
+  return { patch, disable, unsetKeys: [...unsetKeys] }
 }
 
 function asStringList(value: unknown): string[] {

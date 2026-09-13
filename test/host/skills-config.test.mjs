@@ -13,7 +13,8 @@ after(() => {
   rmSync(home, { recursive: true, force: true })
 })
 
-const { defaultSkillsConfig, readSkillsConfig, skillsConfigPath, writeSkillsConfig } = await import('../../src/host/skills-config.ts')
+const { defaultSkillsConfig, isDeprecatedProfileSkillDir, planSkillsMigration, readSkillsConfig, skillsConfigPath, writeSkillsConfig } =
+  await import('../../src/host/skills-config.ts')
 
 const file = skillsConfigPath()
 
@@ -59,4 +60,39 @@ test('YAML 损坏时拒绝覆盖并报错（不丢用户手写内容）', () => 
   const written = writeSkillsConfig({ order: ['x'] }, file)
   assert.equal(written.ok, false)
   assert.equal(readFileSync(file, 'utf8'), 'dirs: [unclosed\n', '损坏文件不得被覆盖')
+})
+
+test('旧版 per-profile 副本路径判定：迁移时丢弃，默认根与普通目录保留', () => {
+  const dshHome = join(home, '.dsh')
+  assert.equal(isDeprecatedProfileSkillDir(join(dshHome, 'profiles', 'prompt-tool', 'skills'), dshHome), true)
+  assert.equal(isDeprecatedProfileSkillDir(join(dshHome, 'Profiles', 'WEB', 'skills'), dshHome), process.platform === 'win32')
+  assert.equal(isDeprecatedProfileSkillDir(join(dshHome, 'skills'), dshHome), false)
+  assert.equal(isDeprecatedProfileSkillDir(join(home, 'external-skills'), dshHome), false)
+  assert.equal(isDeprecatedProfileSkillDir('', dshHome), false)
+})
+
+test('迁移方案：目录/顺序/rank 写配置，false 落成停用，旧键全部卸载', () => {
+  const dshHome = join(home, '.dsh')
+  const plan = planSkillsMigration({
+    skillsDir: join(dshHome, 'profiles', 'prompt-tool', 'skills'),
+    skillsDirs: [join(dshHome, 'profiles', 'prompt-tool', 'skills'), 'D:\\external-skills'],
+    skillSwitches: { 'on-skill': true, 'off-skill': false },
+    skillOrder: ['off-skill', 'on-skill'],
+    skillRankBase: 300,
+  }, defaultSkillsConfig(), dshHome)
+  assert.deepEqual(plan.patch.dirs, ['D:\\external-skills'], '废弃的 per-profile 副本路径不得作为技能根迁移')
+  assert.deepEqual(plan.patch.order, ['off-skill', 'on-skill'])
+  assert.equal(plan.patch.rankBase, 300)
+  assert.deepEqual(plan.disable, ['off-skill'], 'true 是默认态，不产生任何状态')
+  assert.deepEqual(plan.unsetKeys, ['skillsDir', 'skillsDirs', 'skillSwitches', 'skillOrder', 'skillRankBase'])
+})
+
+test('迁移方案：配置已有值不覆盖、默认 rank 不写入、无旧键时不卸载', () => {
+  const dshHome = join(home, '.dsh')
+  const current = { dirs: ['D:\\keep'], order: ['keep-skill'], rankBase: 250 }
+  const plan = planSkillsMigration({ skillsDirs: ['D:\\external'], skillOrder: ['x'], skillRankBase: 250 }, current, dshHome)
+  assert.deepEqual(plan.patch, {})
+  assert.deepEqual(plan.disable, [])
+  assert.deepEqual(plan.unsetKeys, ['skillsDirs', 'skillOrder', 'skillRankBase'])
+  assert.deepEqual(planSkillsMigration({}, current, dshHome).unsetKeys, [])
 })

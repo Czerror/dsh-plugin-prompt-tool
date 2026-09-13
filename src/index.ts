@@ -62,7 +62,15 @@ import {
   LEGACY_USER_PRESETS_DIR,
 } from './host/paths.ts'
 import { setSkillEnabled, type SkillToggleResult } from './host/skill-toggle.ts'
-import { readSkillsConfig, skillsConfigPath, writeSkillsConfig, type SkillsConfig, type SkillsConfigRead } from './host/skills-config.ts'
+import {
+  isDeprecatedProfileSkillDir,
+  planSkillsMigration,
+  readSkillsConfig,
+  skillsConfigPath,
+  writeSkillsConfig,
+  type SkillsConfig,
+  type SkillsConfigRead,
+} from './host/skills-config.ts'
 import { migrateLegacyLayout, migrateParamOverridesFile, normalizePresetRootDir } from './host/migration.ts'
 
 export const name = 'prompt-tool'
@@ -386,7 +394,8 @@ export function apply(ctx: Context, configIn: Config): void {
   const legacyLoaderSkillDirs = [
     ...(Array.isArray(config.skillsDirs) ? config.skillsDirs : []),
     ...(typeof config.skillsDir === 'string' && config.skillsDir.trim().length > 0 ? [config.skillsDir] : []),
-  ].filter((dir): dir is string => typeof dir === 'string' && dir.trim().length > 0)
+  ].filter((dir): dir is string => typeof dir === 'string' && dir.trim().length > 0
+    && !isDeprecatedProfileSkillDir(dir))
   const legacyLoaderSkillOrder = Array.isArray(config.skillOrder)
     ? config.skillOrder.filter((folder): folder is string => typeof folder === 'string' && folder.length > 0)
     : []
@@ -986,38 +995,16 @@ registerTuiCommand(
       }
     }
 
-    const legacyDirs = [
-      ...(Array.isArray(userSection.skillsDirs) ? userSection.skillsDirs : []),
-      ...(typeof userSection.skillsDir === 'string' ? [userSection.skillsDir] : []),
-    ].filter((dir): dir is string => typeof dir === 'string' && dir.trim().length > 0)
-    const legacyOrder = Array.isArray(userSection.skillOrder)
-      ? userSection.skillOrder.filter((folder): folder is string => typeof folder === 'string' && folder.length > 0)
-      : []
-    const legacyRankBase = typeof userSection.skillRankBase === 'number' && Number.isSafeInteger(userSection.skillRankBase)
-      ? userSection.skillRankBase
-      : undefined
-    const disabledFolders = Object.entries(
-      userSection.skillSwitches !== null && typeof userSection.skillSwitches === 'object'
-        ? userSection.skillSwitches as Record<string, unknown>
-        : {},
-    ).filter(([, value]) => value === false).map(([folder]) => folder)
-
-    // 1) 配置键只在"文件里还没有该值"时补写，避免覆盖用户手编的配置文件。
-    const patch: { dirs?: string[]; order?: string[]; rankBase?: number } = {}
-    if (legacyDirs.length > 0 && skillsConfig.dirs.length === 0) patch.dirs = legacyDirs
-    if (legacyOrder.length > 0 && skillsConfig.order.length === 0) patch.order = legacyOrder
-    if (legacyRankBase !== undefined && legacyRankBase !== DEFAULT_SKILL_RANK_BASE && skillsConfig.rankBase === DEFAULT_SKILL_RANK_BASE) {
-      patch.rankBase = legacyRankBase
-    }
-    if (Object.keys(patch).length > 0) patchSkillsConfig(patch)
+    // 迁移方案是纯函数（可确定性测试）：目录/顺序/rank → 配置文件，false → 磁盘停用，旧键 → 卸载。
+    const plan = planSkillsMigration(userSection, skillsConfig)
+    if (Object.keys(plan.patch).length > 0) patchSkillsConfig(plan.patch)
     // 2) 关掉的技能落成磁盘事实（标记改名）；找不到的技能只提示，不阻断迁移。
-    for (const folder of disabledFolders) {
+    for (const folder of plan.disable) {
       const result = toggleSkill(folder, false)
       if (result.ok === false) warn(ctx, `prompt-tool: 迁移技能开关失败（${folder}）：${result.message}`)
     }
     // 3) 卸载 settings 里的技能键：settings.yaml 不再承载技能管理。
-    const unsetKeys = ['skillsDir', 'skillsDirs', 'skillSwitches', 'skillOrder', 'skillRankBase']
-      .filter((key) => Object.prototype.hasOwnProperty.call(userSection, key))
+    const unsetKeys = plan.unsetKeys
     if (unsetKeys.length === 0) {
       markMigrated()
       return

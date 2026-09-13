@@ -7,6 +7,7 @@
 - **停用策略改为文件事实**：停用 = 技能目录里的 `SKILL.md` 改名为 `SKILL.md.disabled`（启用 = 改回）。官方 `dsh-skill-filesystem` 与本插件都只认未加后缀的标记文件，因此一次改名同时让两条发现链路消失/恢复该技能——修复上一版「关掉的技能仍由官方 provider 提供给模型」的遮蔽问题；热生效、可逆、可手工还原，卸载插件后仍是普通技能目录（与 Fishquito7/dsh-skill-mcp-panel 的停用约定一致）。
 - **技能管理抽离 settings.yaml**：新增 `$DSH_HOME/skills/.system/prompt-tool/config.yml`（官方用户技能根的 `.system` 段被 `skipSystem` 忽略，永不会被当成技能），承载附加技能根 `dirs`、展示顺序 `order`、rank 基数 `rankBase`；`skillSwitches` 不再是配置（由磁盘标记派生）。写入使用 yaml Document API 保留注释与未知字段、内容无变化不落盘、YAML 损坏时拒绝覆盖；文件变更由技能 watcher 热加载，手工编辑即时生效。
 - **一次性迁移（阶段 3）**：首次启动读 settings 里的 `skillsDir`/`skillsDirs`/`skillSwitches`/`skillOrder`/`skillRankBase` → `false` 的开关落成磁盘停用、其余写配置文件 → 随后 `unset` 这些 settings 键（状态文件 `skillsMigrated` 标记，幂等；schema 暂留旧键一版用于读取）。示例：110 条全 `true` 的开关迁移后为 0 条。
+- **迁移丢弃废弃布局**：旧 per-profile 副本路径（`<DSH_HOME>/profiles/<profile>/skills`）不再作为技能根迁移——否则会把废弃副本重新挂成技能根。判定与迁移方案是纯函数（`isDeprecatedProfileSkillDir` / `planSkillsMigration`，`src/host/skills-config.ts`），带确定性用例。
 - **链路改道**：新增 bridge 端点 `/skill-toggle`（启停）与 `/skills-config`（顺序/目录/rank），`describe`/`bootstrap` 直接下发技能配置事实；客户端保存与批量启停、TUI `/prompt-tool skill` 全部改走磁盘标记；`/skill-fix` 对停用态照常修复并保持后缀；包内技能版本升级保留用户的停用态。
 - **移除 `skills/manifest.json`**：包内技能不再有手写版本清单，改为**内容哈希账本**——`$DSH_HOME/skills/.prompt-tool-manifest.json` 记录每个技能部署时包内容的 sha256，包内容哈希未变就不碰副本（用户本地改动保留），变了才整体覆盖；包根探测锚点从「有 `skills/manifest.json`」改为「同时有 `package.json` 与 `skills/`」（`src/host/paths.ts`）。旧格式账本读不出哈希，升级后首次启动会按当前包内容重铺一次包内技能（停用态仍保留，本地改动会被这一次覆盖）。
 
