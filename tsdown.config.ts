@@ -34,7 +34,12 @@ const lib: UserConfig = {
   target: 'es2024',
   dts: true,
   clean: true,
-  deps: { neverBundle: ['@deepseek-ai/cordis'] },
+  deps: {
+    neverBundle: ['@deepseek-ai/cordis'],
+    onlyBundle: [],
+    // 声明引用官方 SDK，不能复制品牌类型或其相对模块扩充。
+    dts: { neverBundle: [/^@deepseek-ai\//] },
+  },
 }
 
 const client: UserConfig = {
@@ -49,6 +54,7 @@ const client: UserConfig = {
   deps: {
     neverBundle: CLIENT_EXTERNALS,
     alwaysBundle: (id: string) => (CLIENT_EXTERNALS.includes(id) ? undefined : true),
+    onlyBundle: ['clsx'],
   },
   define: {
     // client bundle 构建环境：先提供空 process.env 容器，
