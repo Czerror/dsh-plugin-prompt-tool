@@ -2,11 +2,12 @@ import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react'
 import { bridgeCall, errorMessage } from '../../data/bridge-client.ts'
 import type { PromptToolTranslate } from '../../locales.ts'
 import { MenuSelect } from '../../ui/MenuSelect.tsx'
+import { ToggleRow } from '../../ui/ToggleRow.tsx'
 import { PromptConfigCard } from './PromptConfigCard.tsx'
 import { moveToView, moveWithinLayer, promptConfigLayer, viewOrderedIds } from './prompt-config-order.ts'
 import { displayLayers, LAYER_LABEL_KEYS, translateLabel } from './prompt-config-policy.ts'
 import type { EngineMeta, PromptConfigDraft, ValidationErrorEntry } from '../../prompt-tool-types.ts'
-import type { InstructionPolicyFileOverride } from '../../../shared/instructions.ts'
+import type { InstructionPolicyFileOverride, InstructionPolicySnapshot } from '../../../shared/instructions.ts'
 import sharedCss from '../../ui/controls.module.css'
 import featureCss from './prompts.module.css'
 
@@ -34,7 +35,9 @@ export interface PromptConfigListProps {
   /** 空状态追加提示（如「当前预设模板该层无配置」）。 */
   emptyHint?: string
   onPatchConfigs: (configs: PromptConfigDraft[]) => void
-  onSaveConfigs: (configs: PromptConfigDraft[]) => void
+  onSaveConfigs: (configs: PromptConfigDraft[]) => Promise<boolean>
+  instructionPolicy?: InstructionPolicySnapshot
+  onToggleInstructionSource?: (enabled: boolean) => Promise<boolean>
   /** 指令文件卡：显式写盘与重新读取（不经预设保存路径）。 */
   onSaveInstructionFile?: (fileId: string) => void
   onReloadInstructionFile?: (fileId: string) => void
@@ -50,6 +53,7 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
   const [errors, setErrors] = useState<ValidationErrorEntry[]>([])
   const [validating, setValidating] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [savingSource, setSavingSource] = useState(false)
   const [filter, setFilter] = useState('')
   /** 拖拽排序状态：源卡片 id + 落点（目标 id + 前/后）。 */
   const [dragId, setDragId] = useState<string | undefined>(undefined)
@@ -121,15 +125,20 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
     }
   }
 
-  const save = async () => {
+  const save = async (): Promise<boolean> => {
     setSaving(true)
-    const valid = await runValidate(configs)
-    if (valid) {
+    try {
+      if (!await runValidate(configs)) return false
       setErrors([])
-      onSaveConfigs(configs)
-      onNotice('ok', t('configs.notice.saved', { count: configs.length }))
+      const saved = await onSaveConfigs(configs)
+      if (saved) onNotice('ok', t('configs.notice.saved', { count: configs.length }))
+      return saved
+    } catch (error) {
+      onNotice('error', t('configs.notice.saveFailed', { reason: errorMessage(error) }))
+      return false
+    } finally {
+      setSaving(false)
     }
-    setSaving(false)
   }
 
   // 显示顺序（层序/order/声明序）一次计算：position map 供每张卡判断上移/下移，
@@ -251,10 +260,36 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
           {extraActions}
           {toolbarActions}
           <button type="button" className={styles.pillButton} disabled={validating} onClick={() => void runValidate(configs)}>{validating && <span className={styles.spinner} aria-hidden="true" />}{validating ? t('configs.validating') : t('configs.validate')}</button>
-          <button type="button" className={styles.primaryPill} disabled={saving || validating} onClick={() => void save()}>{saving && <span className={styles.spinner} aria-hidden="true" />}{saving ? t('configs.saving') : t('configs.save')}</button>
+          <button type="button" className={styles.primaryPill} disabled={saving || validating} onClick={save}>{saving && <span className={styles.spinner} aria-hidden="true" />}{saving ? t('configs.saving') : t('configs.save')}</button>
         </div>
       </div>
 
+      {props.instructionPolicy !== undefined && props.onToggleInstructionSource !== undefined && (
+        <ToggleRow
+          id="prompt-tool-instruction-source"
+          label={t('instructions.source.label')}
+          checked={props.instructionPolicy.policy.enabled}
+          disabled={savingSource || props.instructionPolicy.error !== undefined}
+          hint={[
+            props.instructionPolicy.error !== undefined
+              ? t('instructions.source.unavailable', { reason: props.instructionPolicy.error })
+              : t(props.instructionPolicy.policy.enabled ? 'instructions.source.enabled' : 'instructions.source.disabled'),
+            ...(configs.some((config) => config.contentOwnerConflict === true) ? [t('instructions.source.ownerConflict')] : []),
+          ].join('；')}
+          onChange={async (enabled) => {
+            if (savingSource || props.instructionPolicy?.error !== undefined) return false
+            setSavingSource(true)
+            try {
+              return await props.onToggleInstructionSource!(enabled)
+            } catch (error) {
+              onNotice('error', t('configs.notice.saveFailed', { reason: errorMessage(error) }))
+              return false
+            } finally {
+              setSavingSource(false)
+            }
+          }}
+        />
+      )}
       <div className={styles.listFilterRow}>
         <input
           className={styles.listFilter}

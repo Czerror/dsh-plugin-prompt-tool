@@ -108,6 +108,8 @@ export function detectAgentsFiles(options: { cwd?: string; home?: string; projec
   const home = resolve(options.home ?? DSH_HOME)
   const cwd = resolve(options.cwd ?? process.cwd())
   const root = findProjectRoot(cwd)
+  const realHome = realPathOf(home)
+  const realRoot = realPathOf(root)
   const found: AgentsFileCard[] = []
   const seen = new Set<string>()
   const push = (path: string, scope: 'global' | 'project'): void => {
@@ -122,7 +124,9 @@ export function detectAgentsFiles(options: { cwd?: string; home?: string; projec
     }
     // 重解析/符号链接不得把可写目标带出获准范围：全局文件限 DSH_HOME 内，
     // 项目文件限项目根内（项目根按 .git 标记，无标记时为会话 cwd）。
-    if (!within(scope === 'global' ? home : root, realPath)) return
+    // 授权根本身也可能是目录链接，必须与候选在同一真实路径空间比较。
+    const allowedRoot = scope === 'global' ? realHome : realRoot
+    if (allowedRoot === undefined || !within(allowedRoot, realPath)) return
     // 同一实际文件只出现一次（例如 AGENTS.md 是指向 CLAUDE.md 的符号链接）。
     const identity = CASE_INSENSITIVE_PLATFORM ? realPath.toLowerCase() : realPath
     if (seen.has(identity)) return
@@ -168,18 +172,6 @@ export function agentsFileCardSpecs(files: readonly AgentsFileIdentity[] = detec
     fill: 'instruction-hint',
     params: { scope: file.scope, file: file.path, displayPath: file.displayPath, fileId: file.fileId },
   }))
-}
-
-/**
- * 读取探测到的指令文件（缺失或不可读返回空串）。
- * @deprecated 只用于「失败即空」的旧调用点；需要区分读取失败请用 readAgentsFileSnapshot。
- */
-export function readAgentsFile(path: string): string {
-  try {
-    return readFileSync(path, 'utf8')
-  } catch {
-    return ''
-  }
 }
 
 /**

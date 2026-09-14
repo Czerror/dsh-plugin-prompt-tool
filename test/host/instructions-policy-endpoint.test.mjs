@@ -1,10 +1,10 @@
 // /instructions-policy 端点契约：读取默认值、乐观并发写入、白名单拒绝、损坏文件拒绝覆盖、
 // loopback 防护。DSH_HOME 指向独立临时目录，绝不触碰真实用户策略文件。
-import { after, test } from 'node:test'
+import { after, beforeEach, test } from 'node:test'
 import assert from 'node:assert/strict'
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 
 const home = mkdtempSync(join(tmpdir(), 'pt-instructions-policy-bridge-'))
 const previousHome = process.env.DSH_HOME
@@ -12,12 +12,14 @@ process.env.DSH_HOME = home
 after(() => {
   if (previousHome === undefined) delete process.env.DSH_HOME
   else process.env.DSH_HOME = previousHome
+  assert.equal(dirname(home), resolve(tmpdir()), '只清理本次隔离临时目录')
   rmSync(home, { recursive: true, force: true })
 })
 
 const { BRIDGE_ENDPOINTS, SETTINGS_BRIDGE_PREFIX, registerSettingsBridge } = await import('../../lib/index.mjs')
 
 const policyPath = join(home, '.prompt-tool', 'instructions.yml')
+beforeEach(() => { rmSync(policyPath, { force: true }) })
 const endpoint = SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.instructionsPolicy
 
 function handlers() {
@@ -93,6 +95,8 @@ test('写入：expectedRevision=null 创建策略；过期版本返回 409 且�
 
 test('写入：未知字段与非有限 order 拒绝，文件不变', async () => {
   const handler = handlers().get(endpoint)
+  const created = await call(handler, { policy: { enabled: true }, expectedRevision: null })
+  assert.equal(created.status, 200)
   const raw = readFileSync(policyPath, 'utf8')
   const current = await call(handler, {})
   const withText = await call(handler, { policy: { files: { f1: { text: '正文不得进策略' } } }, expectedRevision: current.payload.value.revision })

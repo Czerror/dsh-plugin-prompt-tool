@@ -5,12 +5,57 @@
 // - 保存成功只更新请求快照基线，期间的新输入仍 dirty。
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { createRequire } from 'node:module'
+import { createRequire, registerHooks } from 'node:module'
+import { readFileSync } from 'node:fs'
 import { usePromptToolStore } from '../../src/client/data/use-prompt-tool-store.ts'
+import { PROMPT_TOOL_DICTS } from '../../src/client/locales.ts'
 
 const require = createRequire(new URL('../../package.json', import.meta.url))
 const React = require('react')
 const { renderToString } = require('react-dom/server')
+const ts = require('typescript')
+// 沿用客户端 Node runner 的源码加载方式；不构建、不替换 React hooks。
+const reactModules = Object.fromEntries(['react', 'react/jsx-runtime', 'react-dom'].map((name) => [name, import.meta.resolve(name)]))
+const loader = registerHooks({
+  resolve(specifier, context, nextResolve) {
+    return reactModules[specifier] === undefined ? nextResolve(specifier, context) : { url: reactModules[specifier], shortCircuit: true }
+  },
+  load(url, context, nextLoad) {
+    if (url.endsWith('.css')) return { format: 'module', shortCircuit: true, source: 'export default new Proxy({}, { get: (_, key) => key })' }
+    if (url.endsWith('.tsx')) return { format: 'module', shortCircuit: true, source: ts.transpileModule(readFileSync(new URL(url), 'utf8'), {
+      compilerOptions: { jsx: ts.JsxEmit.ReactJSX, module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2024 },
+    }).outputText }
+    return nextLoad(url, context)
+  },
+})
+const { MainSessionPage } = await import('../../src/client/app/workspace/pages/MainSessionPage.tsx')
+const { ConfigListWithTemplates } = await import('../../src/client/app/workspace/pages/ConfigListWithTemplates.tsx')
+const { PromptConfigsEditor } = await import('../../src/client/features/prompts/PromptConfigsEditor.tsx')
+const { PromptConfigList } = await import('../../src/client/features/prompts/PromptConfigList.tsx')
+const { ToggleRow } = await import('../../src/client/ui/ToggleRow.tsx')
+loader.deregister()
+const t = (key, params = {}) => Object.entries(params).reduce((text, [name, value]) => text.replaceAll(`{${name}}`, String(value)), PROMPT_TOOL_DICTS.zh[key] ?? key)
+
+// SSR 只取得真实组件返回的元素与事件回调；不声称验证了 effect、DOM 事件或重渲染。
+const componentTree = (Component, props) => {
+  let tree
+  function Probe() { tree = (Component.type ?? Component)(props); return null }
+  renderToString(React.createElement(Probe))
+  return tree
+}
+const findElement = (node, predicate) => {
+  if (Array.isArray(node)) return node.map((child) => findElement(child, predicate)).find(Boolean)
+  if (!React.isValidElement(node)) return undefined
+  return predicate(node) ? node : findElement(node.props.children, predicate)
+}
+const listFromPage = (Page, store, onNotice) => {
+  const view = { ...store, fields: store.getFields(), instructionPolicy: store.getInstructionPolicy(), showNotice: onNotice ?? store.showNotice }
+  const tree = componentTree(Page, { store: view, t })
+  const editor = findElement(tree, (node) => node.type === PromptConfigsEditor)
+  const list = findElement(editor ? componentTree(editor.type, editor.props) : tree, (node) => node.type === PromptConfigList)
+  assert.ok(list, '实际页面必须能路由到提示词配置列表')
+  return componentTree(list.type, list.props)
+}
 
 const okResponse = (payload) => new Response(JSON.stringify(payload))
 
@@ -98,13 +143,13 @@ const installFetch = (requests, handler) => {
     const body = JSON.parse(init?.body ?? '{}')
     requests.push({ endpoint, body })
     if (endpoint === 'bootstrap') {
-      return okResponse(typeof handler.bootstrap === 'function' ? handler.bootstrap(body) : handler.bootstrap ?? bootstrapPayload())
+      return okResponse(typeof handler.bootstrap === 'function' ? await handler.bootstrap(body) : handler.bootstrap ?? bootstrapPayload())
     }
     if (endpoint === 'instructions-policy') {
-      return okResponse(typeof handler.instructionsPolicy === 'function' ? handler.instructionsPolicy(body) : handler.instructionsPolicy ?? policyPayload())
+      return okResponse(typeof handler.instructionsPolicy === 'function' ? await handler.instructionsPolicy(body) : handler.instructionsPolicy ?? policyPayload())
     }
     const payload = handler[endpoint]
-    return okResponse(typeof payload === 'function' ? payload(body) : payload ?? { ok: true, value: {} })
+    return okResponse(typeof payload === 'function' ? await payload(body) : payload ?? { ok: true, value: {} })
   }
   return () => { globalThis.fetch = original }
 }
@@ -428,4 +473,423 @@ test('指令策略：读取失败或缺快照时禁用策略编辑', async () =>
   } finally {
     restore()
   }
+})
+
+test('R4：A 的策略读取迟到不得把旧配置应用到已加载的预设 B', async () => {
+  const requests = []
+  const entered = Promise.withResolvers()
+  const gate = Promise.withResolvers()
+  let preset = 'A'
+  let reads = 0
+  const restore = installFetch(requests, {
+    bootstrap: () => bootstrapPayload({ presetTemplate: preset, cards: [{ id: preset, text: preset }] }),
+    instructionsPolicy: async () => {
+      const read = ++reads
+      if (read === 1) { entered.resolve(); await gate.promise }
+      return policyPayload({}, { revision: read === 1 ? 'pol-A' : 'pol-B' })
+    },
+  })
+  try {
+    const store = mountStore(makeApi(), makeSettings())
+    const oldLoad = store.load()
+    await entered.promise
+    preset = 'B'
+    await store.load()
+    const current = store.getFields()
+    gate.resolve()
+    await oldLoad
+    assert.equal(store.getFields(), current, '迟到的整条 load 链不得再发布任何 fields')
+    assert.equal(store.getFields().presetTemplate, 'B')
+    assert.deepEqual(store.getFields().promptConfigs.map(({ id }) => id), ['B'])
+    assert.equal(store.getInstructionPolicy().revision, 'pol-B')
+  } finally { gate.resolve(); restore() }
+})
+
+test('R4：策略读取期间的新草稿不得被 bootstrap 旧卡覆盖', async () => {
+  const entered = Promise.withResolvers()
+  const gate = Promise.withResolvers()
+  let delay = false
+  const restore = installFetch([], {
+    bootstrap: bootstrapPayload({ cards: [{ id: 'preset-card', text: 'disk' }] }),
+    instructionsPolicy: async () => {
+      if (delay) { entered.resolve(); await gate.promise }
+      return policyPayload()
+    },
+  })
+  try {
+    const store = mountStore(makeApi(), makeSettings())
+    await store.load()
+    delay = true
+    const loading = store.load()
+    await entered.promise
+    store.patch({ promptConfigs: [{ id: 'preset-card', text: 'new draft' }] })
+    gate.resolve()
+    await loading
+    assert.equal(store.getFields().promptConfigs[0].text, 'new draft')
+  } finally { gate.resolve(); restore() }
+})
+
+test('R4：单文件重新读取迟到不得把 A 文件加入 B 草稿池', async () => {
+  const gate = Promise.withResolvers()
+  const restore = installFetch([], {
+    bootstrap: ({ sessionId }) => sessionId === 'sess-B'
+      ? bootstrapPayload({ contextId: 'ctx-B', cards: [], files: [] }) : bootstrapPayload(),
+    'prompt-configs': async () => {
+      await gate.promise
+      return { ok: true, value: { instructions: bootstrapPayload().instructions } }
+    },
+  })
+  try {
+    const api = makeApi()
+    const store = mountStore(api, makeSettings())
+    await store.load()
+    const reloading = store.reloadInstructionFile('f1')
+    api.currentSessionId = () => 'sess-B'
+    await store.load()
+    const pool = store.getInstructionPool()
+    gate.resolve()
+    await reloading
+    assert.equal(store.getInstructionPool(), pool)
+    assert.equal(store.getInstructionPool().drafts[0].status, 'missing')
+  } finally { gate.resolve(); restore() }
+})
+
+test('R4：重新读取期间继续编辑保留新草稿，错误上下文快照也不可应用', async () => {
+  for (const contextId of ['ctx-1', 'ctx-other']) {
+    const gate = Promise.withResolvers()
+    const restore = installFetch([], {
+      'prompt-configs': async () => {
+        await gate.promise
+        return { ok: true, value: { instructions: bootstrapPayload({ contextId, files: [fileSnapshot({ text: 'disk V2', revision: 'r2' })] }).instructions } }
+      },
+    })
+    try {
+      const store = mountStore(makeApi(), makeSettings())
+      await store.load()
+      const reloading = store.reloadInstructionFile('f1')
+      if (contextId === 'ctx-1') store.patch({ promptConfigs: [fileCard({ text: 'new draft' })] })
+      const pool = store.getInstructionPool()
+      gate.resolve()
+      await reloading
+      assert.equal(store.getInstructionPool(), pool)
+    } finally { gate.resolve(); restore() }
+  }
+})
+
+test('R4：保存中切工作区，丢弃迟到结果且不继续发送余下 A 文件', async () => {
+  const requests = []
+  const gate = Promise.withResolvers()
+  const first = Promise.withResolvers()
+  const files = [fileSnapshot(), fileSnapshot({ fileId: 'f2' })]
+  const cards = files.map((file) => fileCard({ id: `agents-file-${file.fileId}`, params: { ...fileCard().params, fileId: file.fileId } }))
+  const restore = installFetch(requests, {
+    bootstrap: ({ sessionId }) => sessionId === 'sess-B'
+      ? bootstrapPayload({ contextId: 'ctx-B', cards: [], files: [] }) : bootstrapPayload({ cards, files }),
+    'agents-file': async ({ fileId }) => {
+      first.resolve()
+      await gate.promise
+      return { ok: true, value: { fileId, revision: 'saved' } }
+    },
+  })
+  try {
+    const api = makeApi()
+    const store = mountStore(api, makeSettings())
+    await store.load()
+    store.patch({ promptConfigs: cards.map((card) => ({ ...card, text: 'A draft' })) })
+    const saving = store.persistInstructionFiles()
+    await first.promise
+    api.currentSessionId = () => 'sess-B'
+    await store.load()
+    const current = store.getInstructionPool()
+    gate.resolve()
+    assert.equal(await saving, false)
+    assert.equal(store.getInstructionPool(), current)
+    assert.deepEqual(fileCalls(requests).map(({ body }) => body.fileId), ['f1'])
+  } finally { gate.resolve(); restore() }
+})
+
+test('R6：工作区 A→B→A 保留草稿基线，仅真实磁盘变更阻止继续保存', async () => {
+  for (const diskChanged of [false, true]) {
+    const requests = []
+    let returning = false
+    const restore = installFetch(requests, {
+      bootstrap: ({ sessionId }) => sessionId === 'sess-B'
+        ? bootstrapPayload({ contextId: 'ctx-B', cards: [], files: [] })
+        : bootstrapPayload({ files: [fileSnapshot(returning && diskChanged ? { text: 'external', revision: 'r2' } : {})] }),
+      'agents-file': { ok: true, value: { fileId: 'f1', revision: 'saved' } },
+    })
+    try {
+      const api = makeApi()
+      const store = mountStore(api, makeSettings())
+      await store.load()
+      store.patch({ promptConfigs: [fileCard({ text: 'kept draft' })] })
+      api.currentSessionId = () => 'sess-B'
+      await store.load()
+      const away = store.getInstructionPool().drafts[0]
+      assert.equal(away.revision, 'r1', '离开范围只暂停写资格，不销毁基线')
+      assert.equal(away.savedContent, 'V1')
+      assert.equal(await store.persistInstructionFiles(), false, '不可写的未保存文件不算全部保存成功')
+      assert.equal(fileCalls(requests).length, 0)
+      returning = true
+      api.currentSessionId = () => 'sess-1'
+      await store.load()
+      const back = store.getInstructionPool().drafts[0]
+      assert.equal(back.content, 'kept draft')
+      assert.equal(back.conflict === true, diskChanged)
+      assert.equal(await store.persistInstructionFiles(), !diskChanged)
+      assert.equal(fileCalls(requests).length, diskChanged ? 0 : 1)
+      if (!diskChanged) assert.equal(fileCalls(requests)[0].body.expectedRevision, 'r1')
+    } finally { restore() }
+  }
+})
+
+test('R7：保存全部汇总失败，保留已成功文件/预设及失败草稿，不重载抹错误', async () => {
+  const requests = []
+  const files = [fileSnapshot(), fileSnapshot({ fileId: 'f2' })]
+  const cards = files.map((file) => fileCard({ id: `agents-file-${file.fileId}`, params: { ...fileCard().params, fileId: file.fileId } }))
+  cards.push({ id: 'preset-card', text: 'preset draft' })
+  const restore = installFetch(requests, {
+    bootstrap: bootstrapPayload({ cards, files }),
+    'agents-file': ({ fileId }) => fileId === 'f1'
+      ? { ok: true, value: { fileId, revision: 'saved' } }
+      : { ok: false, code: 'agents-file-conflict', message: 'external change' },
+  })
+  try {
+    const store = mountStore(makeApi(), makeSettings())
+    await store.load()
+    store.patch({ promptConfigs: cards.map((card) => ({ ...card, text: 'edited' })) })
+    assert.equal(await store.persistConfigs(store.getFields().promptConfigs), false)
+    const [saved, failed] = store.getInstructionPool().drafts
+    assert.equal(saved.revision, 'saved')
+    assert.equal(saved.savedContent, 'edited')
+    assert.equal(failed.savedContent, 'V1')
+    assert.equal(failed.content, 'edited')
+    assert.equal(failed.error, 'external change')
+    assert.equal(failed.conflict, true)
+    const presetWrites = requests.filter(({ endpoint }) => endpoint === 'param-overrides')
+    assert.deepEqual(presetWrites[0].body.promptConfigs.map(({ id }) => id), ['preset-card'])
+    assert.equal(requests.filter(({ endpoint }) => endpoint === 'bootstrap').length, 1)
+  } finally { restore() }
+})
+
+test('R5：实际工作台来源总开关写顶层 enabled，不暗改文件开关或官方负责人', async () => {
+  for (const Page of [MainSessionPage, ConfigListWithTemplates]) {
+    const requests = []
+    let policy = { enabled: false, defaults: policyValues(), files: {} }
+    let revision = 'pol-1'
+    const restore = installFetch(requests, {
+      bootstrap: bootstrapPayload({ ownerOfficialInstructions: true }),
+      instructionsPolicy: ({ policy: patch }) => {
+        if (patch) {
+          policy = { ...policy, ...patch, files: { ...policy.files, ...patch.files } }
+          revision = 'pol-2'
+        }
+        return policyPayload({}, { policy, revision })
+      },
+    })
+    try {
+      const store = mountStore(makeApi(), makeSettings())
+      await store.load()
+      assert.equal(await store.updateInstructionPolicy('f1', { enabled: true }), true)
+      assert.equal(store.getInstructionPolicy().policy.enabled, false, '文件启用不应偷偷开启独立来源')
+      assert.equal(store.getFields().promptConfigs[0].enabled, false)
+      const tree = listFromPage(Page, store)
+      const toggle = findElement(tree, (node) => node.type === ToggleRow && node.props.label === '独立指令文件来源')
+      assert.ok(toggle, '总开关必须从真实页面可达，而不是孤立 store API')
+      assert.equal(toggle.props.checked, false)
+      assert.match(toggle.props.hint, /已关闭.*文件开关不会生效/)
+      assert.match(toggle.props.hint, /官方指令仍负责.*不会接管官方负责人/)
+      assert.equal(await toggle.props.onChange(true), true)
+      assert.deepEqual(requests.at(-1).body, { policy: { enabled: true }, expectedRevision: 'pol-2' })
+      assert.equal(store.getFields().promptConfigs[0].enabled, true)
+      assert.equal(store.getFields().promptConfigs[0].contentOwnerConflict, true)
+      assert.deepEqual(store.getInstructionPool().owner, { officialInstructions: true })
+      assert.ok(requests.every(({ endpoint }) => ['bootstrap', 'instructions-policy'].includes(endpoint)))
+    } finally { restore() }
+  }
+})
+
+test('R5：来源总开关等待写入结果，失败/缺少快照不假成功，读取失败时禁用', async () => {
+  for (const response of [{ ok: false, message: 'denied' }, { ok: true, value: {} }]) {
+    const gate = Promise.withResolvers()
+    const entered = Promise.withResolvers()
+    const restore = installFetch([], {
+      instructionsPolicy: async ({ policy: patch }) => {
+        if (!patch) return policyPayload({}, { policy: { enabled: false, defaults: policyValues(), files: {} } })
+        entered.resolve()
+        await gate.promise
+        return response
+      },
+    })
+    try {
+      const store = mountStore(makeApi(), makeSettings())
+      await store.load()
+      const initial = store.getInstructionPolicy()
+      const toggle = findElement(listFromPage(MainSessionPage, store), (node) => node.type === ToggleRow && node.props.label === '独立指令文件来源')
+      assert.ok(toggle)
+      const saving = toggle.props.onChange(true)
+      await entered.promise
+      assert.equal(store.getInstructionPolicy(), initial, '请求中不得乐观显示已开启')
+      gate.resolve()
+      assert.equal(await saving, false)
+      assert.equal(store.getInstructionPolicy(), initial)
+    } finally { gate.resolve(); restore() }
+  }
+  const requests = []
+  const restore = installFetch(requests, { instructionsPolicy: { ok: false, message: 'unavailable' } })
+  try {
+    const store = mountStore(makeApi(), makeSettings())
+    await store.load()
+    const toggle = findElement(listFromPage(MainSessionPage, store), (node) => node.type === ToggleRow && node.props.label === '独立指令文件来源')
+    assert.ok(toggle)
+    assert.equal(toggle.props.disabled, true)
+    assert.match(toggle.props.hint, /unavailable/)
+    assert.equal(await store.setInstructionSourceEnabled(true), false)
+    assert.equal(requests.filter(({ body }) => body.policy).length, 0)
+  } finally { restore() }
+})
+
+test('R7：实际页面保存按钮等待真实 store 布尔结果，失败不能提前报成功', async () => {
+  for (const Page of [MainSessionPage, ConfigListWithTemplates]) {
+    for (const succeeds of [false, true]) {
+      const gate = Promise.withResolvers()
+      const entered = Promise.withResolvers()
+      const notices = []
+      const restore = installFetch([], {
+        'configs-validate': { ok: true, value: { valid: true } },
+        'agents-file': async () => {
+          entered.resolve()
+          await gate.promise
+          return succeeds ? { ok: true, value: { fileId: 'f1', revision: 'saved' } } : { ok: false, message: 'denied' }
+        },
+      })
+      try {
+        const store = mountStore(makeApi(), makeSettings())
+        await store.load()
+        store.patch({ promptConfigs: [fileCard({ text: 'edited' })] })
+        const tree = listFromPage(Page, store, (...notice) => notices.push(notice))
+        const button = findElement(tree, (node) => node.type === 'button' && React.Children.toArray(node.props.children).includes(t('configs.save')))
+        assert.ok(button)
+        const saving = button.props.onClick()
+        await entered.promise
+        assert.deepEqual(notices, [], '文件写入尚未返回时不报告全量成功')
+        gate.resolve()
+        assert.equal(await saving, succeeds)
+        assert.equal(notices.filter(([kind]) => kind === 'ok').length, succeeds ? 1 : 0)
+      } finally { gate.resolve(); restore() }
+    }
+  }
+})
+
+test('R4：保存迟到遇到重新读取或 A→B→A，不能覆盖当前基线；重复保存不并发写同文件', async () => {
+  for (const reset of ['reload', 'A-B-A']) {
+    const gate = Promise.withResolvers()
+    const entered = Promise.withResolvers()
+    const requests = []
+    const restore = installFetch(requests, {
+      bootstrap: ({ sessionId }) => sessionId === 'sess-B'
+        ? bootstrapPayload({ contextId: 'ctx-B', cards: [], files: [] }) : bootstrapPayload(),
+      'prompt-configs': { ok: true, value: { instructions: bootstrapPayload({ files: [fileSnapshot({ text: 'reread', revision: 'r2' })] }).instructions } },
+      'agents-file': async () => {
+        entered.resolve()
+        await gate.promise
+        return { ok: true, value: { fileId: 'f1', revision: 'old-save' } }
+      },
+    })
+    try {
+      const api = makeApi()
+      const store = mountStore(api, makeSettings())
+      await store.load()
+      store.patch({ promptConfigs: [fileCard({ text: 'first draft' })] })
+      const saving = store.persistInstructionFiles()
+      await entered.promise
+      assert.equal(await store.persistInstructionFiles(), false)
+      assert.equal(fileCalls(requests).length, 1)
+      if (reset === 'reload') await store.reloadInstructionFile('f1')
+      else {
+        api.currentSessionId = () => 'sess-B'
+        await store.load()
+        api.currentSessionId = () => 'sess-1'
+        await store.load()
+      }
+      const current = store.getInstructionPool()
+      gate.resolve()
+      assert.equal(await saving, false)
+      assert.equal(store.getInstructionPool(), current)
+      assert.equal(current.drafts[0].saving === true, false)
+      assert.equal(current.drafts[0].revision, reset === 'reload' ? 'r2' : 'r1')
+    } finally { gate.resolve(); restore() }
+  }
+})
+
+test('R4：load 的策略读取期间文件已保存，旧读取不得倒退文件基线', async () => {
+  const gate = Promise.withResolvers()
+  const entered = Promise.withResolvers()
+  let delay = false
+  const restore = installFetch([], {
+    instructionsPolicy: async () => {
+      if (delay) { entered.resolve(); await gate.promise }
+      return policyPayload()
+    },
+    'agents-file': { ok: true, value: { fileId: 'f1', revision: 'saved' } },
+  })
+  try {
+    const store = mountStore(makeApi(), makeSettings())
+    await store.load()
+    store.patch({ promptConfigs: [fileCard({ text: 'edited' })] })
+    delay = true
+    const loading = store.load()
+    await entered.promise
+    assert.equal(await store.persistInstructionFiles(), true)
+    const current = store.getInstructionPool()
+    gate.resolve()
+    await loading
+    assert.equal(store.getInstructionPool(), current)
+    assert.equal(current.drafts[0].savedContent, 'edited')
+    assert.equal(current.drafts[0].revision, 'saved')
+  } finally { gate.resolve(); restore() }
+})
+
+test('R7：后续文件尚未应答时即确认前一成功文件，批次失效也保留成功资源', async () => {
+  const gate = Promise.withResolvers()
+  const entered = Promise.withResolvers()
+  const files = [fileSnapshot(), fileSnapshot({ fileId: 'f2' })]
+  const cards = files.map((file) => fileCard({ id: `agents-file-${file.fileId}`, params: { ...fileCard().params, fileId: file.fileId } }))
+  const restore = installFetch([], {
+    bootstrap: ({ sessionId }) => sessionId === 'sess-B'
+      ? bootstrapPayload({ contextId: 'ctx-B', cards: [], files: [] }) : bootstrapPayload({ cards, files }),
+    'agents-file': async ({ fileId }) => {
+      if (fileId === 'f2') { entered.resolve(); await gate.promise }
+      return { ok: true, value: { fileId, revision: 'saved' } }
+    },
+  })
+  try {
+    const api = makeApi()
+    const store = mountStore(api, makeSettings())
+    await store.load()
+    store.patch({ promptConfigs: cards.map((card) => ({ ...card, text: 'edited' })) })
+    const saving = store.persistInstructionFiles()
+    await entered.promise
+    assert.equal(store.getInstructionPool().drafts[0].revision, 'saved')
+    assert.equal(store.getInstructionPool().drafts[0].savedContent, 'edited')
+    api.currentSessionId = () => 'sess-B'
+    await store.load()
+    gate.resolve()
+    assert.equal(await saving, false)
+    assert.equal(store.getInstructionPool().drafts[0].revision, 'saved')
+    assert.equal(store.getInstructionPool().drafts[1].content, 'edited')
+  } finally { gate.resolve(); restore() }
+})
+
+test('R7：实际列表保存回调 reject 时返回 false 并明确报错', async () => {
+  const restore = installFetch([], { 'configs-validate': { ok: true, value: { valid: true } } })
+  try {
+    const store = mountStore(makeApi(), makeSettings())
+    await store.load()
+    const notices = []
+    const tree = listFromPage(MainSessionPage, { ...store, persistConfigs: async () => { throw new Error('write rejected') } }, (...notice) => notices.push(notice))
+    const button = findElement(tree, (node) => node.type === 'button' && React.Children.toArray(node.props.children).includes(t('configs.save')))
+    assert.equal(await button.props.onClick(), false)
+    assert.deepEqual(notices, [['error', '保存失败：write rejected']])
+  } finally { restore() }
 })

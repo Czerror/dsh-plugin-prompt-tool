@@ -16,7 +16,7 @@ export const ConfigListWithTemplates = memo(function ConfigListWithTemplates(pro
     store.patch({ promptConfigs: configs })
   }, [store])
   const saveConfigs = useCallback((configs: PromptToolStore['fields']['promptConfigs']) => {
-    void store.persistConfigs(configs)
+    return store.persistConfigs(configs)
   }, [store])
   // 指令文件卡：显式写盘与重新读取（与预设保存分流）。
   const saveInstructionFile = useCallback((fileId: string) => {
@@ -52,6 +52,8 @@ export const ConfigListWithTemplates = memo(function ConfigListWithTemplates(pro
         }
         onPatchConfigs={patchConfigs}
         onSaveConfigs={saveConfigs}
+        instructionPolicy={store.instructionPolicy}
+        onToggleInstructionSource={store.setInstructionSourceEnabled}
         onSaveInstructionFile={saveInstructionFile}
         onReloadInstructionFile={reloadInstructionFile}
         onPatchInstructionPolicy={patchInstructionPolicy}

@@ -2,8 +2,8 @@
 
 - 日期：2026-09-14。
 - 审查基线：`dev@0779c13`；依赖目标：DSH `0.1.5-rc.2`、Cordis `4.0.2`，不是当前上游 master。
-- 状态：设计与修改计划；下列实现、运行时验证和发布动作均未执行。
-- 本轮授权范围：创建本计划并完成文档校验、提交、推送；不据此自动开始实现。
+- 状态：已有实现并进入审查修复；实现、确定性回归与真实 UI/会话验收分开记录，以第 8 节为准。
+- 授权范围：初始计划阶段仅交付文档；后续实现与本轮 13 项审查问题修复均由用户另行授权。
 - 目标：AGENTS 正文、指令卡策略与预设分别拥有独立存储和生命周期，同时复用现有 pre-step 卡组件与执行算法；修复本次审查确认的六项问题。
 
 ## 1. 执行入口与范围
@@ -341,14 +341,18 @@ type InstructionContent =
 
 阶段按依赖顺序执行。执行状态（2026-09-14）：
 
-- W0 ✅ `5945018`（AGENTS.md F5/F6、ADR-0003、CONTEXT 术语、作用域接线验证用例）
-- W1 ✅ `f27f807`（F1–F3：读取收口、普通卡正文保留、单文件 dirty 写 + 版本/上下文校验、独立文件草稿池）
-- W2 ✅ `f216b71` + `c2c6474` + `af87055` + `2df2281`（独立策略存储与端点、工作台策略控件、负责人提示、越界符号链接写防护与范围回归）
-- W3 ✅ `205f847` + `39fe0b3` + `25d5e0c` + `5d92b52`（pre-step 协调器单执行器、`runPreStepBatch` 单一算法、按 `(fileId, revision, epoch)` 判可见状态、负责人冲突跳过）
-- W4 ✅ `205f847`（writePreset 停止物化文件卡、`agentsHints` 停止消费、运行时不物化旧卡）
-- W5 ⏳ 门禁、文档与隔离真机 smoke 已完成（见下）；真实 UI 交互与本地主/子会话 smoke 未执行（无本地存活会话的冷实例），交付说明中标注
+- W0–W4 已有实现，原阶段提交已压缩为 `11a9e73`；审查发现的来源、保存与生命周期缺陷按下表补充修复和行为回归，不以原完成标记替代验收。
+- 下列勾选表示已有代码或对应确定性测试，不表示真实 UI、模型会话或用户运行中的 DSH 已验收。
+- W5 尚未完成：完整门禁与审查反例回归之外，真实浏览器交互及本地主/子会话 smoke 仍需单独执行；不操作当前运行中的 DSH。
 
-以下勾选状态按实际交付更新；未勾选项 = 尚未验证。
+本轮审查修复证据入口（只覆盖对应反例，不等价于完整端到端验收）：
+
+| 审查项 | 修复行为 | 回归入口 |
+|---|---|---|
+| S1–S2 | 明确文件来源身份，保留普通文件参数卡；链接根与候选统一真实路径，仍拒绝越界 | `test/host/instruction-source-review.test.mjs` |
+| S3–S6 | 策略原始字节版本、严格解码、YAML 转换错误态、null 覆盖更新、用例隔离 | `test/host/instructions-policy.test.mjs`、`test/host/instructions-policy-endpoint.test.mjs` |
+| R1–R3 | 迟到门控、resolver 来源 ctx、服务实例 HMR 重登记及空来源生命周期 | `test/host/pre-step-wiring.test.mjs` |
+| R4–R7 | 迟到响应隔离、独立来源总开关、工作区往返保留基线、保存全部汇总失败 | `test/client/instruction-save-flow.test.mjs`、`test/client/instruction-drafts.test.mjs` |
 
 ### W0：契约冻结与规范冲突处理
 
@@ -398,9 +402,9 @@ type InstructionContent =
 
 ### W5：全量验收、文档与交付
 
-- [x] 完成第 9 节矩阵、完整 typecheck/lint/test/build 与 diff 检查。
-- [ ] 隔离 profile/随机端口进行真实 UI 和本地主/子会话 smoke；不操作正在运行的服务。
-      （已完成：隔离 DSH_HOME + 独立 profile + OS 随机端口真机验证插件加载、/bootstrap、/agents-file 写入与 409、/instructions-policy；
+- [x] 执行完整 typecheck/lint/test/build、diff 检查及本轮审查反例回归。
+- [ ] 完成第 9 节对应的真实 UI 和本地主/子会话端到端验收：使用隔离 profile/随机端口，不操作正在运行的服务。
+      （此前已验证：隔离 DSH_HOME + 独立 profile + OS 随机端口真机插件加载、/bootstrap、/agents-file 写入与 409、/instructions-policy；
       未完成：浏览器内真实 UI 点击路径与本地主/子会话提示词注入观察——冷实例没有存活会话，需用户环境或后续 smoke。）
 - [x] 同步 README、CHANGELOG、权威文档、CONTEXT 和 ADR，核对路径与命令。
 - [x] 只暂存本 Wave 文件，创建中文 Conventional Commit，推送 origin/dev；报告 SHA、验证和用户切换步骤。
@@ -552,9 +556,9 @@ if ($LASTEXITCODE -ne 0) { throw 'diff check failed' }
 - `D:\AI\GitHub\deepseek-harness\docs\agent-lifecycle.zh.md`：生命周期说明仅作对照；若与安装版本不同，以固定包类型和隔离验证为准。
 - [固定输入出处](test/fixtures/dsh/0.1.5-rc.2/PROVENANCE.md)、[官方指令组合快照](engine/compositions/library/official-agent-instructions.yml)：版本来源及 maxBytes=65536 基线。
 
-### 11.3 当前交付的验收边界
+### 11.3 原始计划提交的验收边界（历史记录）
 
-- 本次只交付 PLAN.md：检查 Markdown 结构、现有引用路径、拟新增路径标记、命令对应的 scripts、F1–F6 到验收项/Wave 的对应关系，以及 git diff --check。
-- W0–W5、T01–T29 均为待实施/待验证，不能因文档校验通过改为完成。
+- 原始计划提交 `4887019` 只交付 PLAN.md：检查 Markdown 结构、现有引用路径、拟新增路径标记、命令对应的 scripts、F1–F6 到验收项/Wave 的对应关系，以及 git diff --check。
+- 当时 W0–W5、T01–T29 均待实施/待验证；文档校验不能代替实施证据，后续状态以第 8 节为准。
 - 项目修改记忆仅追加到被忽略的 `.ai-memory/{YYYYMMDD}/daily.md`；不放知识图谱或 handoff，也不纳入提交。
-- 最终仅提交本轮文档文件，推送 origin/dev，报告提交 SHA；不创建 PR、不切换 main。
+- 原始计划仅提交文档；后续实施和修复仍只提交本轮任务文件并推送 origin/dev，报告 SHA，不创建 PR、不切换 main。

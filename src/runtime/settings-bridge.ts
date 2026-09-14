@@ -156,9 +156,9 @@ function localAgentCwd(ctx: Context, sessionId: string): string | undefined {
   return typeof cwd === 'string' && cwd.length > 0 ? cwd : undefined
 }
 
-/** 生成目录里的文件卡（按 params.file 绑定真实指令文件）。 */
+/** 只识别插件保留的生成卡 ID（旧版 8 位 / 当前 16 位）；params.file 不是来源凭据。 */
 const isFileCardSpec = (card: unknown): card is Record<string, unknown> & { params: Record<string, unknown> } => {
-  if (!isRecord(card)) return false
+  if (!isRecord(card) || typeof card.id !== 'string' || !/^agents-file-(?:[0-9a-f]{8}|[0-9a-f]{16})$/.test(card.id)) return false
   const params = card.params
   return isRecord(params) && typeof params.file === 'string' && params.file.length > 0
 }
@@ -1017,7 +1017,7 @@ export function registerSettingsBridge(
             // 实际生效配置 = 生成目录 prompt-configs/（引擎加载源）；
             // settings.promptConfigs 仅是用户覆盖层，默认为空不代表无配置。
             const dir = getPresetConfigsDir?.() ?? ''
-            // 文件卡（params.file）：与 /bootstrap 共用同一读取入口，附正文、字节版本与读取状态。
+            // 独立文件来源：与 /bootstrap 共用同一读取入口，附正文、字节版本与读取状态。
             const scope = resolveInstructionScope(sctx, session.sessionId)
             writeBridgeJson(res, 200, {
               ok: true,

@@ -47,9 +47,3 @@ export function instructionPolicyPatchForFile(
 ): InstructionPolicyPatch {
   return { files: { [fileId]: override } }
 }
-
-/** 读取快照里该文件的覆盖（判断 UI 是否与磁盘一致）。 */
-export const instructionFileOverride = (
-  snapshot: InstructionPolicySnapshot,
-  fileId: string,
-): InstructionPolicyFileOverride | undefined => snapshot.policy.files[fileId]

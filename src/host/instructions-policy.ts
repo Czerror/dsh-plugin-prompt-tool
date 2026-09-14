@@ -13,7 +13,7 @@
 import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { Document, isMap, parseDocument } from 'yaml'
+import { Document, isMap, isScalar, parseDocument, visit } from 'yaml'
 // 枚举取值与引擎同源，避免两处常量漂移。
 // @ts-expect-error 仓库根 ESM 引擎文件由 tsdown 作为源码依赖打包，无独立声明文件。
 import { KNOWN_AUDIENCES, KNOWN_MODEL_SCOPES, KNOWN_POSITIONS, KNOWN_PROMOTIONS } from '../../engine/schema.mjs'
@@ -148,18 +148,27 @@ export function validateInstructionPolicyPatch(
 export function readInstructionPolicy(file: string = instructionPolicyPath()): InstructionPolicyRead {
   const empty: InstructionPolicyRead = { policy: defaultInstructionPolicy(), revision: null, exists: false, path: file }
   if (!existsSync(file)) return empty
-  let raw: string
+  let bytes: Buffer
   try {
-    raw = readFileSync(file, 'utf8')
+    bytes = readFileSync(file)
   } catch (error) {
     return { ...empty, exists: true, error: `读取指令策略失败：${error instanceof Error ? error.message : String(error)}` }
   }
-  const revision = sha256(raw)
-  const doc = parseDocument(raw)
-  if (doc.errors.length > 0) {
-    return { ...empty, exists: true, revision, error: `指令策略不是合法 YAML：${doc.errors[0]?.message ?? '解析失败'}` }
+  const revision = sha256(bytes)
+  let raw: string
+  try {
+    raw = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes)
+  } catch {
+    return { ...empty, exists: true, revision, error: '指令策略不是合法 UTF-8，已拒绝覆盖' }
   }
-  const data = doc.toJS() as unknown
+  let data: unknown
+  try {
+    const doc = parseDocument(raw)
+    if (doc.errors.length > 0) throw doc.errors[0]
+    data = doc.toJS()
+  } catch (error) {
+    return { ...empty, exists: true, revision, error: `指令策略不是合法 YAML：${error instanceof Error ? error.message : String(error)}` }
+  }
   if (!isRecord(data)) return { ...empty, exists: true, revision, error: '指令策略必须是 YAML 映射' }
   const version = data.schemaVersion
   if (version !== undefined && version !== INSTRUCTIONS_POLICY_VERSION) {
@@ -204,10 +213,16 @@ function documentFor(file: string): { doc: Document } | { error: string } {
     doc.set('schemaVersion', INSTRUCTIONS_POLICY_VERSION)
     return { doc }
   }
-  const raw = readFileSync(file, 'utf8')
-  const doc = parseDocument(raw)
-  if (doc.errors.length > 0) return { error: `指令策略不是合法 YAML，已拒绝覆盖：${doc.errors[0]?.message ?? '解析失败'}` }
-  return { doc }
+  try {
+    const raw = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(readFileSync(file))
+    const doc = parseDocument(raw)
+    if (doc.errors.length > 0) throw doc.errors[0]
+    // alias 错误可能延迟到转换阶段；修改前校验，不能靠删除坏字段绕过。
+    doc.toJS()
+    return { doc }
+  } catch (error) {
+    return { error: `读取或解析指令策略失败，已拒绝覆盖：${error instanceof Error ? error.message : String(error)}` }
+  }
 }
 
 function writeFileAtomic(file: string, content: string): void {
@@ -266,6 +281,27 @@ export function writeInstructionPolicy(options: {
         doc.deleteIn(['files', fileId])
         continue
       }
+      const previous = doc.getIn(['files', fileId], true)
+      if (isScalar(previous) && previous.value === null) {
+        // ponytail: 共享 null 锚点不自动展开；保值解引用需要独立的编辑协议。
+        let referenced = false
+        if (previous.anchor !== undefined) {
+          visit(doc, { Alias(_key, alias) {
+            if (alias.resolve(doc) !== previous) return
+            referenced = true
+            return visit.BREAK
+          } })
+        }
+        if (referenced) {
+          return { ok: false, status: 400, code: 'instructions-policy-invalid', message: `文件 ${fileId} 的空覆盖被 YAML alias 引用，无法安全修改；请先在策略文件中解除该引用` }
+        }
+        const map = doc.createNode({})
+        map.comment = previous.comment
+        map.commentBefore = previous.commentBefore
+        map.spaceBefore = previous.spaceBefore
+        map.anchor = previous.anchor
+        doc.setIn(['files', fileId], map)
+      }
       for (const [key, value] of Object.entries(override)) {
         if (value === undefined) continue
         if (key === 'enabled' && value === true) doc.deleteIn(['files', fileId, 'enabled'])
@@ -280,8 +316,9 @@ export function writeInstructionPolicy(options: {
     if (isMap(files) && files.items.length === 0) doc.delete('files')
   }
 
-  const content = doc.toString()
+  let content: string
   try {
+    content = doc.toString()
     mkdirSync(dirname(file), { recursive: true })
     writeFileAtomic(file, content)
   } catch (error) {

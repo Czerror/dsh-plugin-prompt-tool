@@ -60,7 +60,7 @@ export interface PreStepPromptConfig {
   params: Record<string, unknown>
   variables: Record<string, unknown>
   identity: { field: 'plugin'; value: string }
-  resolve: (input: unknown) => unknown
+  resolve: (input: Record<string, unknown>) => unknown
 }
 
 /** 一个预设 mount 注册进来的来源：提示词配置 + 装配事实（晋升/去重由协调器统一持有）。 */
@@ -337,8 +337,8 @@ function defaultCollectFiles(readPolicy: () => InstructionPolicy | undefined, ho
 
 /**
  * 安装协调器：发布 `promptToolPreStep` 服务并注册唯一的 pre-step 监听器。
- * 监听器以 prepend 注册（与锚定预设的 context-gate 同组），先登记来源再交出执行权，
- * 保证与门控/压缩插件共挂时没有第二个执行器，也不让已有预设消息绕过门控。
+ * 普通监听器留在 prepend 门控内侧；来源监听器只登记后交出执行权。
+ * 即使服务迟到或重挂，已安装的 context-gate 仍能过滤最终消息批。
  */
 export function installPreStepCoordinator(
   ctx: Context,
@@ -419,7 +419,7 @@ export function installPreStepCoordinator(
       warnOnce(`${WARN_LABEL}: coordination failed, keeping decision: ${String((error as Error | undefined)?.message ?? error)}`)
       return decision
     }
-  }, { prepend: true })
+  })
 
   ctx.effect(() => () => {
     officialOwner.clear()
@@ -429,7 +429,15 @@ export function installPreStepCoordinator(
   const service: PreStepCoordinatorService = {
     version: PRE_STEP_COORDINATOR_VERSION,
     registerPreset(sourceCtx, sourceId, source) {
-      return layers.effect(sourceCtx, (layer) => layer.entries.insert(sourceId, source), {
+      // 来源筛选与 resolver 的服务解析必须使用同一个上下文；批次合并不改变隔离服务。
+      const boundSource: PreStepSource = {
+        ...source,
+        configs: source.configs.map((config) => ({
+          ...config,
+          resolve: (input) => config.resolve({ ...input, ctx: sourceCtx }),
+        })),
+      }
+      return layers.effect(sourceCtx, (layer) => layer.entries.insert(sourceId, boundSource), {
         label: `prompt-tool: pre-step source ${sourceId}`,
       })
     },

@@ -110,7 +110,8 @@ function mergeDraft(draft: InstructionDraft, file: InstructionFileSnapshot, cont
       displayPath: file.displayPath,
       scope: file.scope,
       status: file.status,
-      ...(file.message === undefined ? {} : { message: file.message }),
+      message: file.message,
+      saving: false,
       revision: null,
     }
   }
@@ -125,11 +126,12 @@ function mergeDraft(draft: InstructionDraft, file: InstructionFileSnapshot, cont
       displayPath: file.displayPath,
       scope: file.scope,
       status: 'ready',
-      ...(file.message === undefined ? {} : { message: file.message }),
+      message: file.message,
+      saving: false,
       conflict: true,
     }
   }
-  if (dirty) return { ...draft, contextId, path: file.path, displayPath: file.displayPath, scope: file.scope, status: 'ready' }
+  if (dirty) return { ...draft, contextId, path: file.path, displayPath: file.displayPath, scope: file.scope, status: 'ready', message: file.message, saving: false }
   return draftFromSnapshot(file, contextId)
 }
 
@@ -150,7 +152,7 @@ export function poolFromSnapshot(
   })
   for (const draft of base.drafts) {
     if (snapshot.files.some((file) => file.fileId === draft.fileId)) continue
-    drafts.push({ ...draft, status: 'missing', revision: null, message: '文件不在当前工作区范围或已不存在' })
+    drafts.push({ ...draft, contextId: null, status: 'missing', saving: false, message: '文件不在当前工作区范围或已不存在' })
   }
   return {
     contextId,
@@ -165,7 +167,7 @@ export function poolFromSnapshot(
 
 /** 上下文切换：保留草稿（不丢输入），但旧上下文草稿自此不可写；负责人事实回到未观察态。 */
 export function switchInstructionContext(pool: InstructionDraftPool, seq: number): InstructionDraftPool {
-  return { ...pool, contextId: null, cwd: null, source: 'global-only', seq, owner: { officialInstructions: null } }
+  return { ...pool, contextId: null, cwd: null, source: 'global-only', seq, drafts: pool.drafts.map((draft) => ({ ...draft, saving: false })), owner: { officialInstructions: null } }
 }
 
 /** 迟到响应（上下文序号已过期）不得写入当前视图。 */
@@ -203,6 +205,7 @@ export const canSaveDraft = (pool: InstructionDraftPool, draft: InstructionDraft
   && draft.contextId === pool.contextId
   && draft.revision !== null
   && draft.conflict !== true
+  && draft.saving !== true
   && draft.content !== draft.savedContent
 
 export const saveableInstructionDrafts = (pool: InstructionDraftPool): InstructionDraft[] =>

@@ -27,6 +27,7 @@ import {
   applySaveOutcomes,
   EMPTY_INSTRUCTION_POOL,
   instructionSaveRequest,
+  isCurrentInstructionSeq,
   isInstructionConflictCode,
   markDraftSaving,
   poolFromSnapshot,
@@ -43,7 +44,7 @@ import {
   instructionPolicyPatchForFile,
   resolveInstructionFilePolicy,
 } from './instruction-policy.ts'
-import type { InstructionPolicyFileOverride, InstructionPolicySnapshot } from '../../shared/instructions.ts'
+import type { InstructionPolicyFileOverride, InstructionPolicyPatch, InstructionPolicySnapshot } from '../../shared/instructions.ts'
 import { buildParamOverrides, isCurrentPresetDraft, readParamOverridesPatch, updateLoadedParamKeys } from './param-overrides.ts'
 import { modelSyncNotice } from './model-sync-notice.ts'
 import { createSerialTaskQueue } from './save-queue.ts'
@@ -106,6 +107,8 @@ export interface PromptToolStore {
   getInstructionPolicy: () => InstructionPolicySnapshot
   /** 写单个文件的行为策略（null = 删除覆盖、恢复默认）；带 revision 乐观并发。 */
   updateInstructionPolicy: (fileId: string, override: InstructionPolicyFileOverride | null) => Promise<boolean>
+  /** 独立来源总开关：仅写策略顶层 enabled，不改变官方负责人或单文件覆盖。 */
+  setInstructionSourceEnabled: (enabled: boolean) => Promise<boolean>
   savingSkillsDir: boolean
   fixingSkill: string | undefined
   notice: string
@@ -361,27 +364,34 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     // 并发保护：慢的旧请求不得覆盖新请求（last-good 语义保留旧数据）。
     const seq = ++loadSeqRef.current
     const draftVersion = draftVersionRef.current
+    const sessionId = api.currentSessionId()
     // silent：保存后静默刷新（不闪 loading、避免重渲染风暴与滚动跳动）；失败仍报错。
     if (!options?.silent) setLoading(true)
     try {
       // /bootstrap 聚合读取：meta + describe runtime facts + 参数覆盖 + 模板变量 +
       // 实际生效配置一次取回（此前 5 端点串行，preset.yml 每端点读盘解析）。
       // 带当前会话 id：服务端据此解析该本地 Agent 的工作区，返回对应指令文件快照。
-      const sessionId = api.currentSessionId()
       // 会话/工作区切换：建立新的指令上下文。草稿保留但旧上下文不可写，未保存的文件
       // 与版本在切换到新工作区后必须重新读取校验，防止把 A 的正文写进 B 的文件集。
       if (sessionId !== instructionSessionRef.current) {
         instructionSessionRef.current = sessionId
         publishInstructions(switchInstructionContext(instructionPoolRef.current, ++instructionSeqRef.current))
+        publishFields({ ...fieldsRef.current, promptConfigs: fieldsRef.current.promptConfigs.filter((config) => instructionFileIdOf(config) === undefined) })
       }
+      const instructionSnapshot = instructionPoolRef.current
+      const policySnapshot = instructionPolicyRef.current
       const boot = await bridgeCall('bootstrap', sessionId === undefined ? {} : { sessionId })
-      if (seq !== loadSeqRef.current) return EMPTY_FIELDS
+      if (seq !== loadSeqRef.current || sessionId !== api.currentSessionId()) return EMPTY_FIELDS
       // 读取期间用户已修改草稿：不应用服务端快照覆盖，保留草稿；后续保存/读取再同步。
       if (draftVersionRef.current !== draftVersion) return fieldsRef.current
       if (!boot.ok) {
         showNotice('error', '读取配置失败：' + (boot.message ?? 'bootstrap unavailable'))
         return EMPTY_FIELDS
       }
+      // 两次读取都完成后才应用快照；任何 await 期间的新上下文/草稿/文件结果优先。
+      const policyRes = await bridgeCall('instructionsPolicy')
+      if (seq !== loadSeqRef.current || sessionId !== api.currentSessionId()) return EMPTY_FIELDS
+      if (draftVersionRef.current !== draftVersion || instructionPoolRef.current !== instructionSnapshot) return fieldsRef.current
       if (boot.meta !== undefined) setMeta(boot.meta.meta)
       // /bootstrap 已携带 settings descriptor（value/base/revision）：直接作为 fields
       // 主源，不再 await settings.ensure()——宿主全量 describe mirror 是切换预设后
@@ -410,10 +420,9 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
         }
       }
       // 指令卡策略（独立存储，默认禁用）：读失败时明确标记，UI 据此禁用策略编辑。
-      const policyRes = await bridgeCall('instructionsPolicy')
       const policyValue = policyRes.ok ? policyRes.value : undefined
       // 响应缺少策略快照（老宿主/异常载荷）不得当成「空策略」放开编辑。
-      publishInstructionPolicy(policyValue?.policy === undefined
+      if (instructionPolicyRef.current === policySnapshot) publishInstructionPolicy(policyValue?.policy === undefined
         ? { ...EMPTY_INSTRUCTION_POLICY_SNAPSHOT, error: `未读取到指令策略：${policyRes.ok ? '响应缺少策略快照' : policyRes.message ?? 'settings bridge unavailable'}` }
         : {
           policy: policyValue.policy,
@@ -447,7 +456,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
       setNotice('')
       return fieldsRef.current
     } catch (error) {
-      showNotice('error', '读取失败：' + errorMessage(error))
+      if (seq === loadSeqRef.current && sessionId === api.currentSessionId() && draftVersionRef.current === draftVersion) showNotice('error', '读取失败：' + errorMessage(error))
       return EMPTY_FIELDS
     } finally {
       if (seq === loadSeqRef.current && !options?.silent) setLoading(false)
@@ -644,10 +653,16 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
    * 逐文件结果；失败与冲突都保留草稿，不触发预设重建，也不重载覆盖用户输入。
    */
   const persistInstructionFiles = useCallback(async (fileIds?: readonly string[]): Promise<boolean> => {
-    const targets = saveableInstructionDrafts(instructionPoolRef.current)
+    const pool = instructionPoolRef.current
+    const pending = unsavedInstructionDrafts(pool).filter((draft) => fileIds === undefined || fileIds.includes(draft.fileId))
+    if (pending.length === 0) return true
+    const targets = saveableInstructionDrafts(pool)
       .filter((draft) => fileIds === undefined || fileIds.includes(draft.fileId))
-    if (targets.length === 0) return true
     const sessionId = api.currentSessionId()
+    const isCurrent = (): boolean => isCurrentInstructionSeq(instructionPoolRef.current, pool.seq)
+      && instructionPoolRef.current.contextId === pool.contextId
+      && sessionId === api.currentSessionId() && sessionId === instructionSessionRef.current
+    if (!isCurrent()) return false
     const requests = new Map(targets.flatMap((draft) => {
       const request = instructionSaveRequest(instructionPoolRef.current, draft.fileId, sessionId)
       return request === undefined ? [] : [[draft.fileId, request] as const]
@@ -657,18 +672,33 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
       publishInstructions(saving)
       syncInstructionCards(saving)
     }
-    const results: InstructionSaveOutcome[] = []
+    const results: InstructionSaveOutcome[] = pending.filter((draft) => !requests.has(draft.fileId)).map((draft) => ({
+      fileId: draft.fileId, ok: false, message: draft.error ?? draft.message ?? '文件尚不可写、存在冲突或正在保存',
+    }))
     for (const [fileId, request] of requests) {
+      // 每次发送前和应答后都复核；切换工作区后不能继续提交批次中的旧文件。
+      if (!isCurrent()) return false
+      const current = instructionPoolRef.current.drafts.find((draft) => draft.fileId === fileId)
+      if (current?.saving !== true || current.revision !== request.expectedRevision || current.contextId !== request.contextId) {
+        results.push({ fileId, ok: false, message: '文件已重新读取，本次旧草稿未继续保存' })
+        continue
+      }
       const res = await bridgeCall('agentsFile', request)
-      // 响应回来时该文件已被重新读取（上下文或版本已换）：本次结果作废，不写回池。
-      if (instructionPoolRef.current.drafts.find((draft) => draft.fileId === fileId)?.contextId !== request.contextId) continue
-      if (res.ok) results.push({ fileId, ok: true, revision: res.value.revision })
-      else results.push({ fileId, ok: false, message: res.message ?? '写盘失败', conflict: isInstructionConflictCode(res.code) })
+      if (!isCurrent()) return false
+      const latest = instructionPoolRef.current.drafts.find((draft) => draft.fileId === fileId)
+      if (latest?.saving !== true || latest.revision !== request.expectedRevision || latest.contextId !== request.contextId) {
+        results.push({ fileId, ok: false, message: '文件已重新读取，迟到保存结果未应用' })
+        continue
+      }
+      const result: InstructionSaveOutcome = res.ok && typeof res.value.revision === 'string'
+        ? { fileId, ok: true, revision: res.value.revision }
+        : { fileId, ok: false, message: res.ok ? '保存响应缺少文件版本' : res.message ?? '写盘失败', conflict: !res.ok && isInstructionConflictCode(res.code) }
+      results.push(result)
+      // 已成功的文件立即确认；后续文件失败或切换上下文也不丢失成功基线。
+      const settled = applySaveOutcomes(instructionPoolRef.current, [result], requests)
+      publishInstructions(settled)
+      syncInstructionCards(settled)
     }
-    if (results.length === 0) return true
-    const settled = applySaveOutcomes(instructionPoolRef.current, results, requests)
-    publishInstructions(settled)
-    syncInstructionCards(settled)
     const failures = results.filter((result) => !result.ok)
     if (failures.length > 0) {
       const label = (fileId: string): string => instructionPoolRef.current.drafts.find((draft) => draft.fileId === fileId)?.displayPath ?? fileId
@@ -683,32 +713,53 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
    * 写单个文件的指令卡策略（独立于预设）：enabled/顺序/位置/晋升/受众/模型范围/显示名。
    * 带读取时 revision 的乐观并发；失败保留快照并提示，不偷偷改本地状态。
    */
-  const updateInstructionPolicy = useCallback(async (fileId: string, override: InstructionPolicyFileOverride | null): Promise<boolean> => {
+  const persistInstructionPolicy = useCallback((policy: InstructionPolicyPatch): Promise<boolean> => saveQueueRef.current.enqueue(async () => {
     const current = instructionPolicyRef.current
     if (current.error !== undefined) {
       showNotice('error', `指令策略不可写：${current.error}`)
       return false
     }
     const res = await bridgeCall('instructionsPolicy', {
-      policy: instructionPolicyPatchForFile(fileId, override),
+      policy,
       expectedRevision: current.revision,
     })
-    if (!res.ok) {
-      showNotice('error', '指令策略保存失败：' + (res.message ?? 'settings bridge unavailable'))
+    if (instructionPolicyRef.current !== current) return false
+    if (!res.ok || res.value.policy === undefined || res.value.error !== undefined) {
+      showNotice('error', '指令策略保存失败：' + (res.ok ? res.value.error ?? '响应缺少策略快照' : res.message ?? 'settings bridge unavailable'))
       return false
     }
     publishInstructionPolicy({ policy: res.value.policy, revision: res.value.revision, exists: res.value.exists })
     syncInstructionCards(instructionPoolRef.current)
     showNotice('ok', '指令策略已保存（影响后续注入，不撤回已进入会话的内容）')
     return true
-  }, [publishInstructionPolicy, showNotice, syncInstructionCards])
+  }), [publishInstructionPolicy, showNotice, syncInstructionCards])
+
+  const updateInstructionPolicy = useCallback((fileId: string, override: InstructionPolicyFileOverride | null): Promise<boolean> => (
+    persistInstructionPolicy(instructionPolicyPatchForFile(fileId, override))
+  ), [persistInstructionPolicy])
+  const setInstructionSourceEnabled = useCallback((enabled: boolean): Promise<boolean> => (
+    persistInstructionPolicy({ enabled })
+  ), [persistInstructionPolicy])
 
   /** 冲突处理：重新读取单个文件并丢弃本地草稿（不自动重载，避免悄悄覆盖用户输入）。 */
   const reloadInstructionFile = useCallback(async (fileId: string): Promise<void> => {
     const sessionId = api.currentSessionId()
+    const pool = instructionPoolRef.current
+    const draft = pool.drafts.find((entry) => entry.fileId === fileId)
+    if (pool.contextId === null || draft?.contextId !== pool.contextId || sessionId !== instructionSessionRef.current) return
     const res = await bridgeCall('promptConfigs', sessionId === undefined ? {} : { sessionId })
+    if (sessionId !== api.currentSessionId() || !isCurrentInstructionSeq(instructionPoolRef.current, pool.seq)
+      || instructionPoolRef.current.contextId !== pool.contextId) return
+    if (instructionPoolRef.current.drafts.find((entry) => entry.fileId === fileId) !== draft) {
+      showNotice('error', '重新读取期间文件草稿已更新，本次读取未覆盖新草稿')
+      return
+    }
     if (!res.ok || res.value.instructions === undefined) {
       showNotice('error', `重新读取指令文件失败：${res.ok ? '未返回指令文件快照' : res.message ?? 'settings bridge unavailable'}`)
+      return
+    }
+    if (res.value.instructions.context.contextId !== pool.contextId) {
+      showNotice('error', '指令文件上下文已变化，本次读取未应用；请重新加载工作台')
       return
     }
     const file = res.value.instructions.files.find((entry) => entry.fileId === fileId)
@@ -758,13 +809,12 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
       }
       // 指令文件与预设是两类资产：只提交已改动且可写的文件（逐文件版本校验），
       // 未修改的文件不写盘；文件失败不回滚预设写盘，也不假装整体成功。
-      if (options?.includeInstructions !== false) {
-        await persistInstructionFiles()
-      }
+      const instructionsSaved = options?.includeInstructions === false || await persistInstructionFiles()
+      if (expectedPresetId !== fieldsRef.current.presetTemplate) return false
       // promptConfigs 按预设存储：写激活预设 preset.yml（settings 不再承载）。
       // 防御：初始化期空数组自动保存不得覆盖服务端已有配置（历史教训：beta-2-42
       // 的 129 张配置卡被一次清空）；用户主动清空（此前已加载非空配置）允许落盘空数组。
-      if (configs.length === 0 && savedConfigs.length === 0) return true
+      if (configs.length === 0 && savedConfigs.length === 0) return instructionsSaved
       const res = await bridgeCall('paramOverrides', {
         expectedPresetId,
         // 引擎探测生成的文件卡不进预设（文件即真相）：只持久化用户自己的卡片。
@@ -775,15 +825,15 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
       if (res.ok) {
         setSavedConfigs(configs)
         const syncNotice = modelSyncNotice(res.value.modelSync, '提示词配置已保存')
-        if (syncNotice !== undefined) showNotice(syncNotice.kind, syncNotice.message)
-        if (options?.reload !== false && !pendingVariableRows && shouldReloadAfterPresetSave(
+        if (instructionsSaved && syncNotice !== undefined) showNotice(syncNotice.kind, syncNotice.message)
+        if (instructionsSaved && options?.reload !== false && !pendingVariableRows && shouldReloadAfterPresetSave(
           draftVersion,
           draftVersionRef.current,
           switchesWereClean && !promptConfigsDirty(fieldsRef.current.promptConfigs, configs),
         )) {
           await load({ silent: true })
         }
-        return true
+        return instructionsSaved
       } else {
         showNotice('error', '提示词配置保存失败：' + (res.message ?? 'settings bridge unavailable'))
         return false
@@ -1039,6 +1089,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     instructionPolicy,
     getInstructionPolicy: () => instructionPolicyRef.current,
     updateInstructionPolicy,
+    setInstructionSourceEnabled,
     savingSkillsDir,
     fixingSkill,
     notice,

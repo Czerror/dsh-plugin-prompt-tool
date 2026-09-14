@@ -350,7 +350,9 @@ system-section 段（character-definition / system-prompt / post-history）。
   cwd 冒充工作区）。
 - **探测范围**：用户级 `$DSH_HOME/AGENTS.md` + 工作区 cwd→项目根链（`.git` 为根标记）每个
   目录的 `AGENTS.md` / `CLAUDE.md` / `AGENTS.local.md` / `CLAUDE.local.md`；只接受普通文件，
-  符号链接先解析真实路径，越出获准范围（全局限 DSH_HOME、项目限项目根）的文件不收录也不可写。
+  候选文件与授权根均先解析真实路径，允许根目录本身是目录链接；越出获准范围（全局限
+  DSH_HOME、项目限项目根）的文件不收录也不可写。普通预设卡的 `params.file` 不是独立
+  来源身份，不能因此被过滤或改走指令文件保存通道。
 - **编辑框**：`/bootstrap` 与 `/prompt-configs` 读时把同一份快照（正文 + 文件身份 + 字节
   SHA-256 + 读取状态）附到文件卡；改后经 `/agents-file` 写回真实文件（`fileId` + `contextId`
   必须命中服务端当次探测白名单，`expectedRevision` 做乐观并发，未知 id / 类型错误 400、越界
@@ -358,8 +360,10 @@ system-section 段（character-definition / system-prompt / post-history）。
   触发预设重建。
 - **独立策略**：`$DSH_HOME/.prompt-tool/instructions.yml`（`src/host/instructions-policy.ts`）
   承载启停、层内序号、位置、晋升、受众与模型范围；默认 `enabled: false`（安全缺省，需显式
-  开启），用 Document API 保留注释与未知字段、内容版本乐观并发、严格字段白名单、损坏文件
-  拒绝写入。策略只影响未来的注入，不撤回已进入会话历史的内容。
+  开启），用 Document API 保留注释与未知字段、原始字节 SHA-256 乐观并发及严格字段白名单。
+  非法 UTF-8、YAML 解析/转换失败均作为不可读状态拒绝写入；未被 alias 引用的 null 文件
+  覆盖可被后续局部保存替换为有效覆盖。被引用的 null 锚点须先解除共享引用；局部更新拒写
+  且保留原字节，避免连带改变其他字段。策略只影响未来的注入，不撤回已进入会话历史的内容。
 - **注入**：宿主侧 pre-step 协调器（`src/runtime/pre-step-coordinator.ts`）按会话工作区实时
   探测并编译文件卡，与预设卡共用 `engine/executor.mjs#runPreStepBatch`；文件正文 literal、
   身份含 `(fileId, revision, epoch)`、按可见面判定是否需要重发。运行时语义见

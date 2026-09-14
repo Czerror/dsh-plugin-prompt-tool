@@ -28,7 +28,7 @@ export const MainSessionPage = memo(function MainSessionPage(props: { store: Pro
     store.patch({ promptConfigs: configs })
   }, [store])
   const saveConfigs = useCallback((configs: PromptToolStore['fields']['promptConfigs']) => {
-    void store.persistConfigs(configs)
+    return store.persistConfigs(configs)
   }, [store])
   // 指令文件卡：正文只显式写盘（不随预设 debounce），冲突时用重新读取恢复。
   const saveInstructionFile = useCallback((fileId: string) => {
@@ -77,6 +77,8 @@ export const MainSessionPage = memo(function MainSessionPage(props: { store: Pro
         configs={fields.promptConfigs}
         onPatchConfigs={patchConfigs}
         onSaveConfigs={saveConfigs}
+        instructionPolicy={store.instructionPolicy}
+        onToggleInstructionSource={store.setInstructionSourceEnabled}
         onSaveInstructionFile={saveInstructionFile}
         onReloadInstructionFile={reloadInstructionFile}
         onPatchInstructionPolicy={patchInstructionPolicy}

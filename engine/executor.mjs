@@ -16,6 +16,7 @@ import {
   createWarnOnce,
   getService,
   isDelegated,
+  keepDisposer,
   matchesModel,
   newMessageId,
   sessionEvents,
@@ -276,16 +277,7 @@ export function applyPromptConfigs(ctx, configs, options = {}) {
   const sourceId = typeof options.sourceId === 'string' && options.sourceId.length > 0
     ? options.sourceId
     : `preset:${String(list[0]?.id ?? 'unknown')}`
-  if (list.length === 0) {
-    // 空 mount 也要上报装配事实：负责人冲突检测（官方指令行是否仍在）不依赖是否有预设卡。
-    const coordinator = coordinatorOf(ctx)
-    if (coordinator === undefined) return
-    coordinator.registerPreset(ctx, sourceId, {
-      configs: [],
-      officialInstructions: options.officialInstructions === true,
-    })
-    return
-  }
+  // 空 mount 同样保留接管监听：装配事实与协调器迟到/HMR 不依赖是否有预设卡。
   // 互斥组:同一 group 且 exclusive=true 时,只保留排序后第一个 enabled 提示词配置。
   const claimedGroups = new Set()
   const effectiveList = list.filter((config) => {
@@ -323,6 +315,12 @@ export function applyPromptConfigs(ctx, configs, options = {}) {
       // 协调器自身已释放:忽略。
     }
   }
+  let active = true
+  keepDisposer(ctx, () => {
+    active = false
+    releaseRegistration()
+    injectedMemo.clear()
+  })
 
   // 非 pre-step 提示词配置接入各自声明的官方层级通道(system-section /
   // runtime-context / agent-request / llm-stream / tool-pipeline)。
@@ -330,23 +328,30 @@ export function applyPromptConfigs(ctx, configs, options = {}) {
 
   // 协调器已在（正常装配顺序：插件先加载、预设后挂载）时立即登记来源；
   // 迟到/消失由下面的监听器按「先撤旧再启新」处理。
-  const initialCoordinator = coordinatorOf(ctx)
-  if (initialCoordinator !== undefined) {
-    registration = initialCoordinator.registerPreset(ctx, sourceId, source) ?? null
+  let registeredCoordinator = coordinatorOf(ctx)
+  if (registeredCoordinator !== undefined) {
+    registration = registeredCoordinator.registerPreset(ctx, sourceId, source) ?? null
   }
 
   ctx.on('agent/pre-step', async (payload, next) => {
+    // waterfall 可已捕获随后被释放的回调；失效来源不得向新协调器重新注册。
+    if (!active) return next()
     const coordinator = coordinatorOf(ctx)
+    // HMR 可在相邻两步之间替换服务：旧句柄非空不代表仍向当前实例注册。
+    if (coordinator !== registeredCoordinator) {
+      releaseRegistration()
+      if (coordinator === undefined) {
+        warnOnce(`${name}: pre-step coordinator unavailable, resuming standalone execution`)
+      }
+      registeredCoordinator = coordinator
+    }
     if (coordinator !== undefined) {
       // 管理路径:先登记本来源,再交出唯一执行权(本监听器不再注入)。
       if (registration === null) registration = coordinator.registerPreset(ctx, sourceId, source) ?? null
       return next()
     }
-    if (registration !== null) {
-      releaseRegistration()
-      warnOnce(`${name}: pre-step coordinator unavailable, resuming standalone execution`)
-    }
     const decision = await next()
+    if (!active) return decision
     return runPreStepBatch({
       ctx,
       agent: payload?.agent,

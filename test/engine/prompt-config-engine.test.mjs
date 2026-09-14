@@ -282,8 +282,8 @@ test('system-section 与 runtime-context 注册到 systemPrompt 服务', () => {
   assert.equal(contexts[0].name, 'ctx')
   assert.equal(contexts[0].order, 5)
   assert.equal(contexts[0].text, '环境 {{DSH_HOME}}')
-  // 注册 disposer 已挂到 fiber 效果表；手动执行后服务侧收到两个注销。
-  assert.equal(harness.disposed.length, 2)
+  // 来源存活标记及两个服务 disposer 均挂到 fiber；服务侧仍只收到两个注销。
+  assert.equal(harness.disposed.length, 3)
   for (const cleanup of harness.disposed) cleanup()
   assert.deepEqual(disposed, ['sys', 'ctx'])
 })

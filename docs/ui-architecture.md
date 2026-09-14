@@ -357,6 +357,9 @@ JSON bridge 的统一上限为 32 MiB；角色卡原始文件流独立限制为 
 9. 技能写入不进 settings：启停走 `/skill-toggle`（磁盘标记 `SKILL.md` ↔ `SKILL.md.disabled`），顺序/目录/rank 走 `/skills-config`（插件配置文件）；成功后静默 load，`describe` 事实（`skillSwitches` / `skillOrder` / `skillsDirs` / `skillRankBase` / `skillCatalog`）优先于 settings 旧字段。
 10. 指令文件正文走独立草稿池（`data/instruction-drafts.ts`），不与预设保存队列混用：预设 debounce 自动保存与预设切换一律不带文件正文；只有卡片「保存到文件」与列表「保存全部」才提交 dirty 文件，成功只把请求时快照记为基线，冲突/失败保留草稿。会话或工作区切换建立新的指令上下文（`instructions.context.contextId` 变化即新上下文）：旧上下文的迟到响应不覆盖当前视图，旧 `contextId` 的保存被服务端 409 拒绝。
 11. 指令负责人事实来自 `/bootstrap` 的 `instructions.owner.officialInstructions`（服务端从 pre-step 协调器观察结果取，`null` = 尚未观察到，不当冲突处理）：`true` 时文件卡显示「官方指令行仍在 → 独立来源不注入」，不做「已生效」暗示。
+12. 模块列表工具栏下的「独立指令文件来源」总开关复用 ToggleRow，只修改独立策略顶层 `enabled`，默认关闭；单文件开关不隐式开启总来源，也不改变官方负责人。策略不可读时禁用总开关；应答成功前不乐观显示已启用。
+13. bootstrap 与策略快照均读取完成后再应用，异步边界复核请求序号、会话与草稿状态。暂时离开工作区只暂停文件写资格，保留草稿与版本基线；返回并读取时，版本未变可继续保存，版本变化仍须解决冲突。
+14. 列表保存按钮等待真实 `Promise<boolean>` 结果；文件或预设部分失败时不显示整体成功、不以静默重载清除错误。已经成功保存的文件立即更新其基线，不因后续失败回滚或丢失确认。
 
 ## 8. 业务 Feature
 
