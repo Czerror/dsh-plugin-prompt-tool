@@ -12,6 +12,7 @@ import { CustomToolsCard, type ToolCreateIntent } from '../../../features/tools/
 import { TemplatePicker } from '../../../ui/TemplatePicker.tsx'
 import ui from '../../../ui/controls.module.css'
 import type { InstructionPolicyFileOverride } from '../../../../shared/instructions.ts'
+import { engineCapability } from '../../../../shared/engine-capabilities.ts'
 /** 主会话页：公共配置 + 平铺模块列表 + 合并创建菜单（提示词配置 / 工具 / 能力模块）。 */
 export const MainSessionPage = memo(function MainSessionPage(props: { store: PromptToolStore; t: PromptToolTranslate }): ReactNode {
   const { store, t } = props
@@ -23,6 +24,11 @@ export const MainSessionPage = memo(function MainSessionPage(props: { store: Pro
   }, [])
   const [variablesExpanded, setVariablesExpanded] = useState(false)
   const [toolCreate, setToolCreate] = useState<ToolCreateIntent>()
+  const [focusCapability, setFocusCapability] = useState<string>()
+  const revealCapability = useCallback((id: string) => {
+    setFocusCapability(id)
+    setViewFilter(engineCapability(id)?.displayLayer ?? 'all')
+  }, [])
   // 稳定回调：卡片 memo 的生效前提（store 引用已稳定）。
   const patchConfigs = useCallback((configs: PromptToolStore['fields']['promptConfigs']) => {
     store.patch({ promptConfigs: configs })
@@ -44,7 +50,7 @@ export const MainSessionPage = memo(function MainSessionPage(props: { store: Pro
   // 模板浮层由页面持有：合并菜单按插入点层级平铺「添加模板 · 层级」入口，浮层只列该层模板。
   const picker = useTemplatePicker(
     fields.promptConfigs,
-    (config) => patchConfigs([...fields.promptConfigs, config]),
+    (config) => patchConfigs([...store.getFields().promptConfigs, config]),
     store.showNotice,
     t,
   )
@@ -64,17 +70,23 @@ export const MainSessionPage = memo(function MainSessionPage(props: { store: Pro
     if (id.startsWith('tpl:')) picker.openPicker(id.slice(4))
     else if (id === 'create:tool-template') picker.openTools()
     else if (id === 'create:variables') pickVariables()
-    else if (id === 'create:blank-tool') setToolCreate({ kind: 'blank' })
-  }, [picker, pickVariables])
+    else if (id === 'create:blank-tool') {
+      setViewFilter('tool-pipeline')
+      setToolCreate({ kind: 'blank', presetId: fields.presetTemplate })
+    }
+  }, [fields.presetTemplate, picker, pickVariables])
   const insertToolTemplate = useCallback((spec: Record<string, unknown>) => {
-    setToolCreate({ kind: 'template', spec })
-  }, [])
+    setViewFilter('tool-pipeline')
+    setToolCreate({ kind: 'template', spec, presetId: fields.presetTemplate })
+    picker.closePicker()
+  }, [fields.presetTemplate, picker])
   return (
     <section className={ui.section} aria-label={t('main.aria')}>
       <PromptConfigsEditor
         t={t}
         meta={store.meta}
         configs={fields.promptConfigs}
+        createdConfigId={picker.createdConfigId}
         onPatchConfigs={patchConfigs}
         onSaveConfigs={saveConfigs}
         instructionPolicy={store.instructionPolicy}
@@ -101,11 +113,11 @@ export const MainSessionPage = memo(function MainSessionPage(props: { store: Pro
             <EnginePromptDefaultsCard store={store} t={t} />
           </div>
         }
-        toolbarActions={<EngineModuleActions store={store} t={t} anchorRef={picker.anchorRef} extraItems={createItems} onExtraSelect={onCreateSelect} />}
+        toolbarActions={<EngineModuleActions store={store} t={t} anchorRef={picker.anchorRef} extraItems={createItems} onExtraSelect={onCreateSelect} onCreated={revealCapability} />}
         moduleCards={
           <>
-            <EngineModuleCards store={store} t={t} layerFilter={viewFilter} showActions={false} showPromptDefaults={false} showStatus={viewFilter !== 'all'} />
-            {(viewFilter === 'all' || viewFilter === 'tool-pipeline') && (
+            <EngineModuleCards store={store} t={t} layerFilter={viewFilter} focusCapability={focusCapability} showActions={false} showPromptDefaults={false} showStatus={viewFilter !== 'all'} />
+            <div hidden={viewFilter !== 'all' && viewFilter !== 'tool-pipeline'}>
               <CustomToolsCard
                 key={fields.presetTemplate}
                 presetId={fields.presetTemplate}
@@ -115,7 +127,7 @@ export const MainSessionPage = memo(function MainSessionPage(props: { store: Pro
                 createIntent={toolCreate}
                 onIntentConsumed={() => setToolCreate(undefined)}
               />
-            )}
+            </div>
           </>
         }
       />

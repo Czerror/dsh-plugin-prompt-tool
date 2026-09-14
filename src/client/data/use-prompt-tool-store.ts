@@ -14,6 +14,7 @@ import {
 import { bridgeViewFromBoot, fieldsFromView, mergePresetParams } from './prompt-tool-view.ts'
 import {
   EMPTY_SWITCHES,
+  deepEqual,
   hasPendingVariableRows,
   promptConfigsDirty,
   shouldReloadAfterParamSave,
@@ -130,7 +131,7 @@ export interface PromptToolStore {
   saveTemplateVariables: (next?: Record<string, string>, enabled?: boolean) => Promise<void>
   toggle: (key: SwitchKey) => void
   setPresetTemplate: (id: string) => void
-  createEngineCapability: (action: 'create' | 'create-recipe', id: string) => Promise<void>
+  createEngineCapability: (action: 'create' | 'create-recipe', id: string) => Promise<boolean>
   removeEngineCapability: (id: string) => Promise<void>
   /** 门控回退步数草稿（数字输入，失焦提交；0 = 引擎默认 4）。 */
   setSkillsDirDraft: (value: string) => void
@@ -242,10 +243,17 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
   const [skillsDirDraft, setSkillsDirDraft] = useState('')
   const [templatePreStepCount, setTemplatePreStepCount] = useState(0)
   const [savedSwitches, setSavedSwitches] = useState<SwitchSnapshot>(EMPTY_SWITCHES)
-  const [savedConfigs, setSavedConfigs] = useState<PromptConfigDraft[]>([])
+  const [savedConfigs, setSavedConfigsState] = useState<PromptConfigDraft[]>([])
+  const savedConfigsRef = useRef<PromptConfigDraft[]>([])
+  const setSavedConfigs = useCallback((next: PromptConfigDraft[]) => {
+    savedConfigsRef.current = next
+    setSavedConfigsState(next)
+  }, [])
   const [instructionPool, setInstructionPool] = useState<InstructionDraftPool>(EMPTY_INSTRUCTION_POOL)
   const [instructionPolicy, setInstructionPolicy] = useState<InstructionPolicySnapshot>(EMPTY_INSTRUCTION_POLICY_SNAPSHOT)
-  const [templateVariables, setTemplateVariables] = useState<Record<string, string>>({})
+  const [templateVariables, setTemplateVariablesState] = useState<Record<string, string>>({})
+  const templateVariablesRef = useRef<Record<string, string>>({})
+  const savedTemplateVariablesRef = useRef<Record<string, string>>({})
   const [templateVariablesEnabled, setTemplateVariablesEnabled] = useState(true)
   const [loading, setLoading] = useState(false)
   const [savingSkillsDir, setSavingSkillsDir] = useState(false)
@@ -292,6 +300,11 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
   /** 用户草稿版本：patch 时递增。load 应答返回时若版本变化，跳过覆盖，避免
    *  保存后的静默刷新吞掉用户在读取期间的编辑。 */
   const draftVersionRef = useRef(0)
+  const setTemplateVariables = useCallback((next: Record<string, string>) => {
+    draftVersionRef.current += 1
+    templateVariablesRef.current = next
+    setTemplateVariablesState(next)
+  }, [])
   /** 已成功应用快照的预设 id：与当前 fields.presetTemplate 不一致时（切换/加载进行中）
    *  拒绝写盘，避免旧预设字段被当成当前预设数据写进新预设。 */
   const loadedPresetRef = useRef<string | undefined>(undefined)
@@ -360,10 +373,15 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     return next
   }, [])
 
-  const load = useCallback(async (options?: { silent?: boolean }) => {
+  const load = useCallback(async (options?: { silent?: boolean; presetConfigs?: PromptConfigDraft[] }) => {
     // 并发保护：慢的旧请求不得覆盖新请求（last-good 语义保留旧数据）。
     const seq = ++loadSeqRef.current
     const draftVersion = draftVersionRef.current
+    const samePreset = loadedPresetRef.current === fieldsRef.current.presetTemplate
+    const localConfigs = fieldsRef.current.promptConfigs.filter(isPresetCard)
+    // 读取保护也覆盖“请求开始前”已有的草稿；不能只检查 await 期间的版本变化。
+    const retainedConfigs = options?.presetConfigs ?? (samePreset && !deepEqual(localConfigs, savedConfigsRef.current.filter(isPresetCard)) ? localConfigs : undefined)
+    const retainVariables = samePreset && !deepEqual(templateVariablesRef.current, savedTemplateVariablesRef.current)
     const sessionId = api.currentSessionId()
     // silent：保存后静默刷新（不闪 loading、避免重渲染风暴与滚动跳动）；失败仍报错。
     if (!options?.silent) setLoading(true)
@@ -432,7 +450,11 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
         })
       // 预设级模板变量（preset.yml 内容变量；失败不阻断主流程）。
       if (boot.ok && boot.variables !== undefined) {
-        setTemplateVariables(boot.variables.variables)
+        savedTemplateVariablesRef.current = boot.variables.variables
+        if (!retainVariables) {
+          templateVariablesRef.current = boot.variables.variables
+          setTemplateVariablesState(boot.variables.variables)
+        }
         setTemplateVariablesEnabled(boot.variables.enabled !== false)
       }
       // 实际生效配置（引擎从生成目录加载；settings.promptConfigs 仅为覆盖层，
@@ -449,6 +471,12 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
         const next = { ...fieldsRef.current, promptConfigs: actual }
         publishFields(next)
         setSavedConfigs(actual)
+      }
+      if (retainedConfigs !== undefined) {
+        const restored = [...retainedConfigs, ...fieldsRef.current.promptConfigs.filter((config) => !isPresetCard(config))]
+        publishFields({ ...fieldsRef.current, promptConfigs: restored })
+        // 明确保存的定义是权威应答；生成目录的暂时空快照不能让新卡消失。
+        if (options?.presetConfigs !== undefined) setSavedConfigs(restored)
       }
       // 快照已完整应用：该预设自此可写（切换/首次加载期间由 loadedPresetRef 拦截写盘）。
       loadedPresetRef.current = fieldsRef.current.presetTemplate
@@ -831,7 +859,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
           draftVersionRef.current,
           switchesWereClean && !promptConfigsDirty(fieldsRef.current.promptConfigs, configs),
         )) {
-          await load({ silent: true })
+          await load({ silent: true, presetConfigs: configs.filter(isPresetCard) })
         }
         return instructionsSaved
       } else {
@@ -848,12 +876,13 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
       showNotice('error', PRESET_PENDING_MESSAGE)
       return
     }
-    // 空 key 行（待编辑）不落盘；本地同步清理保持显示一致。
+    const expectedPresetId = fieldsRef.current.presetTemplate
+    // 空 key 行不落盘，但必须保留在本地草稿，不能把编辑中的整张卡清掉。
     const cleaned = Object.fromEntries(
-      Object.entries(next ?? templateVariables).filter(([key]) => key.trim().length > 0),
+      Object.entries(next ?? templateVariablesRef.current).filter(([key]) => key.trim().length > 0),
     )
     const res = await bridgeCall('presetVariables', {
-      expectedPresetId: fieldsRef.current.presetTemplate,
+      expectedPresetId,
       variables: cleaned,
       // 开关 onChange 与保存同帧触发：优先用调用方传入的新值，避免读到上一帧 enabled。
       enabled: enabledOverride ?? templateVariablesEnabled,
@@ -862,8 +891,8 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
       showNotice('error', `模板变量保存失败：${res.message ?? '未知错误'}`)
       return
     }
-    setTemplateVariables(cleaned)
-  }, [templateVariables, templateVariablesEnabled, showNotice])
+    if (expectedPresetId === fieldsRef.current.presetTemplate) savedTemplateVariablesRef.current = cleaned
+  }, [templateVariablesEnabled, showNotice])
 
   const toggle = useCallback((key: SwitchKey) => {
     patch({ [key]: !fieldsRef.current[key] })
@@ -908,15 +937,16 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     await load({ silent: true })
   }, [enqueueSave, load, patch, persistConfigs, savedConfigs, showNotice])
 
-  const createEngineCapability = useCallback(async (action: 'create' | 'create-recipe', id: string): Promise<void> => {
+  const createEngineCapability = useCallback(async (action: 'create' | 'create-recipe', id: string): Promise<boolean> => {
     const request = action === 'create' ? { action: 'create' as const, capabilityId: id } : { action: 'create-recipe' as const, recipeId: id }
     const result = await bridgeCall('engineCapability', { ...request, expectedPresetId: fieldsRef.current.presetTemplate })
     if (!result.ok) {
       showNotice('error', '引擎能力创建失败：' + (result.message ?? 'settings bridge unavailable'))
-      return
+      return false
     }
     showNotice('ok', result.value.changed ? `已创建引擎能力：${id}` : `引擎能力已存在：${id}`)
     await load({ silent: true })
+    return true
   }, [load, showNotice])
 
   const removeEngineCapability = useCallback(async (id: string): Promise<void> => {

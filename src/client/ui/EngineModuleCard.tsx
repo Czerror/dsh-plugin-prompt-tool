@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import clsx from 'clsx'
 import { IconChevronDownOutline14, IconTrashOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { HintTooltip } from './HintTooltip.tsx'
@@ -14,6 +14,8 @@ export function EngineModuleCard(props: {
   layer?: string
   children?: ReactNode
   onDelete?: () => void
+  /** 创建或选择另一个行为时展开；不因普通字段编辑反复展开。 */
+  revealKey?: string
   /** 纯开关卡：开关直接渲染在 header 顶层（右侧），卡片不展开、不折叠。 */
   topSwitch?: {
     id: string
@@ -24,8 +26,12 @@ export function EngineModuleCard(props: {
     onToggle: () => void
   }
 }): ReactNode {
-  const [expanded, setExpanded] = useState(false)
+  const [expanded, setExpanded] = useState(props.revealKey !== undefined)
   const [confirmingDelete, setConfirmingDelete] = useState(false)
+  useEffect(() => {
+    if (props.revealKey !== undefined) setExpanded(true)
+    setConfirmingDelete(false)
+  }, [props.revealKey])
   const compact = props.topSwitch !== undefined
   return (
     <article className={clsx(styles.configCard, styles.moduleCard)} data-module-card="true">

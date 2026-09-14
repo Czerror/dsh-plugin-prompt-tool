@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { registerHooks } from 'node:module'
-import { createElement } from 'react'
+import { createElement, isValidElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import ts from 'typescript'
 import { ENGINE_CAPABILITIES, engineCapability, engineRecipe } from '../../src/shared/engine-capabilities.ts'
@@ -10,6 +10,8 @@ import { ENGINE_PARAM_DEFINITIONS, ENGINE_PARAM_KEYS } from '../../src/shared/en
 import { displayLayers } from '../../src/client/features/prompts/prompt-config-policy.ts'
 import { EMPTY_FIELDS } from '../../src/client/data/prompt-tool-fields.ts'
 import { PROMPT_TOOL_DICTS } from '../../src/client/locales.ts'
+import { useTemplatePicker } from '../../src/client/features/prompts/useTemplatePicker.ts'
+import { getEngineMeta } from '../../engine/schema.mjs'
 
 const read = (path) => readFileSync(new URL(`../../src/client/${path}`, import.meta.url), 'utf8')
 const reactModules = Object.fromEntries(['react', 'react/jsx-runtime', 'react-dom'].map((name) => [name, import.meta.resolve(name)]))
@@ -26,11 +28,25 @@ const loader = registerHooks({
   },
 })
 const { EngineParamFields } = await import('../../src/client/features/modules/EngineParamFields.tsx')
-const { EngineModuleCards } = await import('../../src/client/features/modules/EngineModuleList.tsx')
+const { EngineModuleCards, EngineBehaviorCard, EngineCapabilityCreateMenu } = await import('../../src/client/features/modules/EngineModuleList.tsx')
+const { PromptConfigForm } = await import('../../src/client/features/prompts/PromptConfigForm.tsx')
+const { MenuSelect } = await import('../../src/client/ui/MenuSelect.tsx')
+const { OptionField } = await import('../../src/client/features/prompts/PromptConfigFields.tsx')
 const { PromptConfigList } = await import('../../src/client/features/prompts/PromptConfigList.tsx')
 const { TemplatePicker } = await import('../../src/client/ui/TemplatePicker.tsx')
 loader.deregister()
 const render = (component, props) => renderToStaticMarkup(createElement(component, props))
+const tree = (component, props) => {
+  let result
+  function Probe() { result = component(props); return null }
+  render(Probe)
+  return result
+}
+const find = (node, predicate) => {
+  if (Array.isArray(node)) return node.map((child) => find(child, predicate)).find(Boolean)
+  if (!isValidElement(node)) return undefined
+  return predicate(node) ? node : find(node.props.children, predicate)
+}
 /** 渲染用翻译：与官方 locale 同形（键 + {name} 插值），断言直接对比 zh 词典值。 */
 const zh = PROMPT_TOOL_DICTS.zh
 const t = (key, params) => {
@@ -66,16 +82,14 @@ test('卡片存在性来自装配事实，filesystem-editor 显示为编辑工�
   assert.doesNotMatch(absent, /class="configName">tool-bootstrap</)
   const active = { ...store, moduleFacts: { ...store.moduleFacts, effectiveModules: ['tool-bootstrap', 'filesystem-editor', 'promoted-code-mode', 'progress-reminder'] } }
   const html = render(EngineModuleCards, { store: active, t })
-  assert.match(html, /class="configName">tool-bootstrap</)
-  assert.match(html, /class="configName">str-replace-editor</)
-  assert.match(html, /class="configName">promoted-code-mode</)
-  assert.match(html, /class="configName">progress-reminder</)
+  assert.equal((html.match(/class="configName">引擎行为</g) ?? []).length, 2, 'system-section/tool-pipeline 各一张通用行为卡')
+  for (const id of ['tool-bootstrap', 'str-replace-editor', 'promoted-code-mode', 'progress-reminder']) assert.ok(html.includes(id))
   const filtered = render(EngineModuleCards, { store: active, t, layerFilter: 'pre-step' })
   assert.doesNotMatch(filtered, /class="configName">tool-bootstrap</)
   assert.doesNotMatch(filtered, /class="configName">str-replace-editor</)
   assert.doesNotMatch(filtered, /class="configName">(?:promoted-code-mode|progress-reminder)</)
   const anchored = render(EngineModuleCards, { store: { ...store, moduleFacts: { ...store.moduleFacts, effectiveModules: ['anchor-turn'] } }, t, layerFilter: 'pre-step' })
-  assert.match(anchored, /class="configName">anchor-turn</)
+  assert.match(anchored, /class="configMeta">anchor-turn</)
   assert.doesNotMatch(render(EngineModuleCards, { store: { ...store, moduleFacts: { ...store.moduleFacts, effectiveModules: ['anchor-turn'] } }, t, layerFilter: 'system-section' }), /class="configName">anchor-turn</)
   const official = render(EngineModuleCards, { store: { ...active, moduleFacts: { ...active.moduleFacts, sourceMode: 'official' } }, t })
   assert.doesNotMatch(official, /class="configName">tool-bootstrap</)
@@ -132,7 +146,16 @@ test('自定义工具编辑入口保留，能力删除仍需二次确认', () =>
   assert.match(page, /<CustomToolsCard/)
   assert.match(read('features/tools/CustomToolsCard.tsx'), /<CustomToolCard/)
   assert.match(read('ui/EngineModuleCard.tsx'), /确认删除/)
-  assert.match(read('features/modules/EngineModuleList.tsx'), /store\.removeEngineCapability\(capability\.id\)/)
+  const removed = []
+  const card = tree(EngineBehaviorCard, { store: { ...store, fields: { ...store.fields, writePreset: true }, removeEngineCapability: (id) => removed.push(id) }, t,
+    capabilities: ENGINE_CAPABILITIES.filter(({ displayLayer }) => displayLayer === 'pre-step'), focusCapability: 'anchor-turn' })
+  const select = find(card, (node) => node.type === MenuSelect)
+  assert.equal(select.props.value, 'anchor-turn')
+  assert.deepEqual(select.props.options.map(({ value }) => value), ['context-gate', 'anchor-turn'])
+  select.props.onChange('context-gate')
+  assert.deepEqual(removed, [], '选择编辑目标不修改装配')
+  card.props.onDelete()
+  assert.deepEqual(removed, ['anchor-turn'], '删除回调只操作当前渲染的选中项')
 })
 
 test('插入点顺序恒为六层，公共默认值不伪装成 pre-step 能力', () => {
@@ -177,7 +200,7 @@ test('统一列表平铺渲染配置与能力卡，层级筛选只过滤不分�
   const html = render(PromptConfigList, props)
   assert.doesNotMatch(html, /data-insertion-point/)
   assert.match(html, /persona-main/)
-  assert.match(html, /class="configName">anchor-turn</)
+  assert.match(html, /class="configMeta">anchor-turn</)
   // 视觉排序：模块卡（引擎能力）在层级配置卡之前；promptConfigs 的注入顺序仍由 ordered 决定。
   assert.ok(html.indexOf('anchor-turn') < html.indexOf('persona-main'), '模块卡应排在层级配置卡之前')
   // 选中插入点层级：只留该层配置与能力卡，仍不生成分类区块。
@@ -188,11 +211,49 @@ test('统一列表平铺渲染配置与能力卡，层级筛选只过滤不分�
   })
   assert.doesNotMatch(filtered, /data-insertion-point/)
   assert.doesNotMatch(filtered, /persona-main/)
-  assert.match(filtered, /class="configName">anchor-turn</)
+  assert.match(filtered, /class="configMeta">anchor-turn</)
   // 主会话把筛选值同时下发给配置与能力卡；自定义工具卡只在全部/工具链视图出现。
   const page = read('app/workspace/pages/MainSessionPage.tsx')
   assert.match(page, /layerFilter=\{viewFilter\}/)
-  assert.match(page, /viewFilter === 'tool-pipeline'/)
-  // 世界书视图只留世界书配置，能力卡不混入。
-  assert.doesNotMatch(render(PromptConfigList, { ...props, viewFilter: 'world-book' }), /anchor-turn/)
+  assert.match(page, /hidden=\{viewFilter !== 'all' && viewFilter !== 'tool-pipeline'\}/)
+  // 世界书只隐藏模块区域，不卸载工具草稿 owner。
+  const worldBook = tree(PromptConfigList, { ...props, viewFilter: 'world-book' })
+  const owner = find(worldBook, (node) => node.props.children === props.moduleCards)
+  assert.equal(owner.props.hidden, true)
+})
+
+test('创建菜单始终列出全部未添加能力，不按当前层过滤', async () => {
+  const created = []
+  const revealed = []
+  const menu = tree(EngineCapabilityCreateMenu, { t, store: { ...store, fields: { ...store.fields, writePreset: true },
+    createEngineCapability: async (...args) => { created.push(args); return true } }, onCreated: (id) => revealed.push(id) })
+  assert.deepEqual(menu.props.items.filter(({ id }) => id.startsWith('cap:')).map(({ id }) => id.slice(4)), ENGINE_CAPABILITIES.map(({ id }) => id))
+  menu.props.onSelect('cap:tool-filter')
+  await Promise.resolve()
+  assert.deepEqual(created, [['create', 'tool-filter']])
+  assert.deepEqual(revealed, ['tool-filter'])
+})
+
+test('通用模板可重复创建空卡，独立指令提示入口归为动态填充', () => {
+  const source = { file: 'hint.yml', spec: { id: 'hint', layer: 'pre-step', strategy: 'instruction-hint', text: '', identity: { field: 'plugin', value: 'hint' } } }
+  let picker
+  const picked = []
+  function Probe() { picker = useTemplatePicker([{ id: 'hint' }, { id: 'hint-2' }], (config) => picked.push(config), () => {}, t); return null }
+  render(Probe)
+  picker.pickTemplate(source)
+  assert.equal(picked[0].id, 'hint-3')
+  assert.equal(picked[0].identity.value, 'hint-3')
+  assert.equal(picked[0].text, '')
+  assert.equal(picked[0].strategy, 'placeholder')
+  assert.equal(picked[0].fill, 'instruction-hint')
+  assert.equal(source.spec.strategy, 'instruction-hint', '不修改模板对象')
+  const patches = []
+  const form = tree(PromptConfigForm, { t, meta: getEngineMeta(), config: source.spec, onPatch: (patch) => patches.push(patch) })
+  const strategy = find(form, (node) => node.type === OptionField && node.props.label === t('form.strategy.label'))
+  assert.equal(strategy.props.value, 'placeholder')
+  assert.equal(strategy.props.options.includes('instruction-hint'), false)
+  const fill = find(form, (node) => node.type === OptionField && node.props.label === t('form.fill.label'))
+  assert.equal(fill.props.value, 'instruction-hint')
+  fill.props.onChange('skill-catalog')
+  assert.deepEqual(patches, [{ strategy: 'placeholder', fill: 'skill-catalog' }])
 })

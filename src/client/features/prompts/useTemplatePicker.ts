@@ -21,6 +21,7 @@ export function useTemplatePicker(
   layer: string | undefined
   /** 只展示工具模板（菜单「添加工具模板」入口）。 */
   toolsOnly: boolean
+  createdConfigId: string | undefined
   /** 打开模板浮层；传入插入点层级时只列该层模板（无分组标题）。 */
   openPicker: (layer?: string) => void
   /** 打开只含工具模板的浮层。 */
@@ -34,6 +35,7 @@ export function useTemplatePicker(
   const [open, setOpen] = useState(false)
   const [layer, setLayer] = useState<string | undefined>(undefined)
   const [toolsOnly, setToolsOnly] = useState(false)
+  const [createdConfigId, setCreatedConfigId] = useState<string>()
 
   const loadTemplates = async (): Promise<void> => {
     if (templates.length > 0) return
@@ -71,15 +73,19 @@ export function useTemplatePicker(
   const closePicker = (): void => setOpen(false)
 
   const pickTemplate = (entry: PromptConfigTemplateEntry): void => {
-    if (configs.some((config) => config.id === entry.spec.id)) {
-      onNotice('error', t('templates.duplicateId', { id: entry.spec.id }))
-      return
-    }
     const clone = JSON.parse(JSON.stringify(entry.spec)) as PromptConfigDraft
+    let suffix = 2
+    while (configs.some((config) => config.id === clone.id)) clone.id = `${entry.spec.id}-${suffix++}`
+    if (clone.identity?.value === entry.spec.id) clone.identity = { ...clone.identity, value: clone.id }
+    if (clone.strategy === 'instruction-hint') {
+      clone.strategy = 'placeholder'
+      clone.fill = 'instruction-hint'
+    }
     onPickConfig(clone)
+    setCreatedConfigId(clone.id)
     onNotice('ok', t('templates.inserted', { file: entry.file, id: clone.id }))
     setOpen(false)
   }
 
-  return { anchorRef, templates, toolTemplates, open, layer, toolsOnly, openPicker, openTools, closePicker, pickTemplate }
+  return { anchorRef, templates, toolTemplates, open, layer, toolsOnly, createdConfigId, openPicker, openTools, closePicker, pickTemplate }
 }

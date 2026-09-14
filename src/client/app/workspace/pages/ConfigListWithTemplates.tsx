@@ -33,7 +33,7 @@ export const ConfigListWithTemplates = memo(function ConfigListWithTemplates(pro
   const preStepEmpty = store.templatePreStepCount === 0 && (layer === undefined || layer === 'pre-step')
   const templatePicker = useTemplatePicker(
     fields.promptConfigs,
-    (config) => store.patch({ promptConfigs: [...fields.promptConfigs, config] }),
+    (config) => store.patch({ promptConfigs: [...store.getFields().promptConfigs, config] }),
     store.showNotice,
     t,
   )
@@ -43,6 +43,7 @@ export const ConfigListWithTemplates = memo(function ConfigListWithTemplates(pro
         t={t}
         meta={store.meta}
         configs={fields.promptConfigs}
+        createdConfigId={templatePicker.createdConfigId}
         layer={layer}
         scope={scope}
         beforeCards={beforeCards}

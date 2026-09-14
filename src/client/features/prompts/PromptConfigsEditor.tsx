@@ -45,6 +45,7 @@ export interface PromptConfigsEditorProps {
   saveTemplateVariables: (next?: Record<string, string>, enabled?: boolean) => Promise<void>
   viewFilter: string
   onViewFilterChange: (value: string) => void
+  createdConfigId?: string
   /** 模板变量卡片展开态由页面持有：合并创建菜单的「添加模板变量」需要展开它。 */
   variablesExpanded: boolean
   onVariablesExpandedChange: (value: boolean) => void
@@ -163,6 +164,7 @@ export function PromptConfigsEditor(props: PromptConfigsEditorProps): ReactNode 
         configs={props.configs}
         viewFilter={props.viewFilter}
         onViewFilterChange={props.onViewFilterChange}
+        createdConfigId={props.createdConfigId}
         toolbarActions={props.toolbarActions}
         beforeCards={props.beforeCards}
         moduleCards={props.moduleCards}

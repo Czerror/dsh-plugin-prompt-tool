@@ -57,9 +57,13 @@ export function PromptConfigForm(props: {
   /** 指令文件卡：行为策略写独立策略存储（不写 preset.yml）。 */
   onPatchPolicy?: (patch: InstructionPolicyFileOverride) => void
 }): ReactNode {
-  const { t, meta, config, onPatch, onPatchPolicy } = props
+  const { t, meta, config, onPatch: patchConfig, onPatchPolicy } = props
+  const instructionHint = config.strategy === 'instruction-hint'
+  const onPatch = (patch: Partial<PromptConfigDraft>): void => patchConfig(instructionHint
+    ? { strategy: 'placeholder', fill: 'instruction-hint', ...patch }
+    : patch)
   const policy = fieldPolicyFor(meta, config.layer)
-  const strategy = config.strategy ?? 'static'
+  const strategy = instructionHint ? 'placeholder' : config.strategy ?? 'static'
   const placeholder = strategy === 'placeholder' && policy.placeholder
   const fillOptions = ['', ...meta.fills]
   const advancedCount = [
@@ -135,7 +139,7 @@ export function PromptConfigForm(props: {
           <input className={inputClass} value={config.name ?? ''} spellCheck={false} onChange={(e) => onPatch({ name: e.target.value })} />
         </FormField>
         <OptionField t={t} className={styles.fieldSpan3} label={t('form.layer.label')} hint={t('form.layer.hint')} value={config.layer} options={meta.layers} fallback="pre-step" labelKeys={LAYER_LABEL_KEYS} onChange={(value) => onPatch({ layer: value })} />
-        <OptionField t={t} className={styles.fieldSpan3} label={t('form.strategy.label')} hint={t('form.strategy.hint')} value={config.strategy} options={meta.strategies} fallback="static" labelKeys={STRATEGY_LABEL_KEYS} onChange={(value) => onPatch({ strategy: value })} />
+        <OptionField t={t} className={styles.fieldSpan3} label={t('form.strategy.label')} hint={t('form.strategy.hint')} value={strategy} options={meta.strategies.filter((value) => value !== 'instruction-hint')} fallback="static" labelKeys={STRATEGY_LABEL_KEYS} onChange={(value) => onPatch({ strategy: value, fill: value === 'placeholder' ? (config.fill ?? (instructionHint ? 'instruction-hint' : 'env-facts')) : undefined })} />
       </div>
 
       <div className={styles.configSectionTitle}>{t('form.section.rules')}</div>
@@ -194,7 +198,7 @@ export function PromptConfigForm(props: {
       <div className={styles.configSectionTitle}>{t('form.section.strategy')}</div>
       <div className={clsx(styles.configGrid, styles.strategyGrid)}>
         {placeholder && (
-          <OptionField t={t} className={styles.fieldSpan3} label={t('form.fill.label')} hint={t('form.fill.hint')} value={config.fill} options={fillOptions} fallback="" labelKeys={FILL_LABEL_KEYS} onChange={(value) => onPatch({ fill: value || undefined })} />
+          <OptionField t={t} className={styles.fieldSpan3} label={t('form.fill.label')} hint={t('form.fill.hint')} value={config.fill ?? (instructionHint ? 'instruction-hint' : undefined)} options={fillOptions} fallback="" labelKeys={FILL_LABEL_KEYS} onChange={(value) => onPatch({ fill: value || undefined })} />
         )}
         <StrategyParamsFields t={t} strategy={strategy} layer={config.layer} params={config.params} id={config.id} onPatch={(value) => onPatch({ params: value })} />
       </div>

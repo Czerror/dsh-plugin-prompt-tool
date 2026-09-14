@@ -893,3 +893,32 @@ test('R7：实际列表保存回调 reject 时返回 false 并明确报错', asy
     assert.deepEqual(notices, [['error', '保存失败：write rejected']])
   } finally { restore() }
 })
+
+const emptyLayerCards = () => ['pre-step', 'system-section', 'runtime-context', 'agent-request', 'llm-stream', 'tool-pipeline']
+  .map((layer) => ({ id: `draft-${layer}`, layer, strategy: 'static', text: '' }))
+
+test('六层空草稿：后台刷新不能覆盖刷新前已有的未保存配置', async () => {
+  const restore = installFetch([], { bootstrap: bootstrapPayload({ cards: [], files: [] }) })
+  try {
+    const store = mountStore(makeApi(), makeSettings())
+    await store.load()
+    const cards = emptyLayerCards()
+    store.patch({ promptConfigs: cards })
+    await store.load({ silent: true })
+    assert.deepEqual(store.getFields().promptConfigs, cards)
+  } finally { restore() }
+})
+
+test('六层空草稿：保存成功不以尚未更新的生成快照清空编辑定义', async () => {
+  const requests = []
+  const restore = installFetch(requests, { bootstrap: bootstrapPayload({ cards: [], files: [] }) })
+  try {
+    const store = mountStore(makeApi(), makeSettings())
+    await store.load()
+    const cards = emptyLayerCards()
+    store.patch({ promptConfigs: cards })
+    assert.equal(await store.persistConfigs(cards, { includeInstructions: false }), true)
+    assert.deepEqual(requests.find(({ endpoint }) => endpoint === 'param-overrides').body.promptConfigs, cards)
+    assert.deepEqual(store.getFields().promptConfigs, cards)
+  } finally { restore() }
+})

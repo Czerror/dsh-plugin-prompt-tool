@@ -103,6 +103,8 @@ UI 侧 `persistParamOverrides` **条件发送**：
 需自行把所需内容变量改到顶层 `variables` 后重新物化。清空顶层变量后，旧键不再复活。
 单条提示词配置的 `promptConfigs[].variables` 仍是局部覆盖，优先于同名预设级变量。
 
+未填写变量名的空键行属于客户端草稿：保存载荷不携带空键，但保存成功不清理本地编辑行，同一预设的后台刷新也不覆盖该草稿。变量值为空字符串与变量名为空不是同一语义；具名空值仍正常持久化。
+
 ## 5. 新增参数 checklist（引擎行为参数）
 
 1. `shared/engine-params.ts`：`EngineParams` 加字段，并在 `ENGINE_PARAM_DEFINITIONS` 登记规则、默认草稿、卡片和组合映射；键集、默认值、普通字段渲染、读写和保存快照自动派生。

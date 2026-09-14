@@ -51,9 +51,10 @@ export const PromptConfigCard = memo(function PromptConfigCard(props: {
   const fileNotWritable = config.contentStatus !== undefined && config.contentStatus !== 'ready'
   const policy = fieldPolicyFor(meta, config.layer)
   const layer = config.layer ?? 'pre-step'
-  const strategy = config.strategy ?? 'static'
+  const strategy = config.strategy === 'instruction-hint' ? 'placeholder' : config.strategy ?? 'static'
   const chips = [translateLabel(t, LAYER_LABEL_KEYS, layer), translateLabel(t, STRATEGY_LABEL_KEYS, strategy)]
-  if (config.fill) chips.push(translateLabel(t, FILL_LABEL_KEYS, config.fill))
+  const fill = config.fill ?? (config.strategy === 'instruction-hint' ? 'instruction-hint' : undefined)
+  if (fill) chips.push(translateLabel(t, FILL_LABEL_KEYS, fill))
   if (policy.position) {
     const position = config.position ?? 'after-user'
     chips.push(t('card.chip.position', { value: translateLabel(t, POSITION_LABEL_KEYS, position) }))

@@ -1,9 +1,10 @@
-import { useState, type ReactNode, type RefObject } from 'react'
+import { useEffect, useState, type ReactNode, type RefObject } from 'react'
 import { IconChevronDownOutline14, Menu } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PromptToolStore } from '../../data/use-prompt-tool-store.ts'
 import type { PromptToolTranslate } from '../../locales.ts'
 import { EngineModuleCard } from '../../ui/EngineModuleCard.tsx'
-import { ENGINE_CAPABILITIES, ENGINE_RECIPES, isEngineCapabilityPresent } from '../../../shared/engine-capabilities.ts'
+import { ENGINE_CAPABILITIES, ENGINE_RECIPES, engineRecipe, isEngineCapabilityPresent, type EngineCapability } from '../../../shared/engine-capabilities.ts'
+import { MenuSelect } from '../../ui/MenuSelect.tsx'
 import { EngineParamFields } from './EngineParamFields.tsx'
 import styles from '../../ui/controls.module.css'
 
@@ -21,6 +22,7 @@ export function EngineCapabilityCreateMenu(props: {
   /** 合并入口：排在能力模块项之前的创建项。 */
   extraItems?: readonly ModuleCreateItem[]
   onExtraSelect?: (id: string) => void
+  onCreated?: (capabilityId: string) => void
 }): ReactNode {
   const { store, t, anchorRef, extraItems = [], onExtraSelect } = props
   const [open, setOpen] = useState(false)
@@ -41,7 +43,10 @@ export function EngineCapabilityCreateMenu(props: {
       setOpen(false)
       const [kind, value] = id.split(':', 2)
       if (kind === 'cap' || kind === 'recipe') {
-        if (value !== undefined) void store.createEngineCapability(kind === 'recipe' ? 'create-recipe' : 'create', value)
+        if (value !== undefined) void store.createEngineCapability(kind === 'recipe' ? 'create-recipe' : 'create', value).then((created) => {
+          const capabilityId = kind === 'recipe' ? engineRecipe(value)?.capabilities[0] : value
+          if (created && capabilityId !== undefined) props.onCreated?.(capabilityId)
+        })
       } else onExtraSelect?.(id)
     }}
     anchor={<button ref={anchorRef} type="button" className={styles.pillButton} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(!open)}>
@@ -55,6 +60,7 @@ export function EngineModuleActions(props: {
   anchorRef?: RefObject<HTMLButtonElement>
   extraItems?: readonly ModuleCreateItem[]
   onExtraSelect?: (id: string) => void
+  onCreated?: (capabilityId: string) => void
 }): ReactNode {
   return <div className={styles.configActions}><EngineCapabilityCreateMenu {...props} /></div>
 }
@@ -67,7 +73,31 @@ export function EnginePromptDefaultsCard({ store, t }: { store: PromptToolStore;
   )
 }
 
-/** 能力存在性来自实际装配，字段来自共享参数目录；参数不再手工复制到各卡。层筛选只影响展示。 */
+/** 同层共用一张行为卡；下拉只切换编辑目标，不改变其他已装配行为。 */
+export function EngineBehaviorCard({ store, t, capabilities, focusCapability }: {
+  store: PromptToolStore
+  t: PromptToolTranslate
+  capabilities: readonly EngineCapability[]
+  focusCapability?: string
+}): ReactNode {
+  const [selectedId, setSelectedId] = useState(focusCapability)
+  useEffect(() => { if (focusCapability !== undefined) setSelectedId(focusCapability) }, [focusCapability])
+  const selected = capabilities.find(({ id }) => id === selectedId) ?? capabilities[0]
+  if (selected === undefined) return null
+  const editable = store.fields.writePreset && store.moduleFacts?.editable === true
+  return <EngineModuleCard name={t('modules.behavior.name')} layer={selected.displayLayer}
+    meta={capabilities.map(({ id }) => id).join(' · ')} revealKey={selected.id}
+    onDelete={editable ? () => void store.removeEngineCapability(selected.id) : undefined}>
+    <label className={styles.configFieldLabel}>{t('modules.behavior.label')}
+      <MenuSelect ariaLabel={t('modules.behavior.label')} value={selected.id}
+        options={capabilities.map(({ id }) => ({ value: id, label: id }))} onChange={setSelectedId} />
+    </label>
+    <p className={styles.configFieldHint}>{t('modules.behavior.hint')}</p>
+    <EngineParamFields store={store} card={selected.id} t={t} />
+  </EngineModuleCard>
+}
+
+/** 能力存在性来自实际装配；只统一卡片呈现，不建立第二份配置或运行时顺序。 */
 export function EngineModuleCards({
   store,
   t,
@@ -75,6 +105,7 @@ export function EngineModuleCards({
   showActions = true,
   showPromptDefaults = true,
   showStatus = true,
+  focusCapability,
 }: {
   store: PromptToolStore
   t: PromptToolTranslate
@@ -82,18 +113,16 @@ export function EngineModuleCards({
   showActions?: boolean
   showPromptDefaults?: boolean
   showStatus?: boolean
+  focusCapability?: string
 }): ReactNode {
   const capabilities = ENGINE_CAPABILITIES.filter(({ id, displayLayer }) =>
     (layerFilter === 'all' || layerFilter === displayLayer) && isEngineCapabilityPresent(id, store.moduleFacts))
-  const editable = store.fields.writePreset && store.moduleFacts?.editable === true
+  const layers = [...new Set(capabilities.map(({ displayLayer }) => displayLayer))]
   return <>
     {showActions && <EngineModuleActions store={store} t={t} />}
-    {capabilities.map((capability) => (
-      <EngineModuleCard key={capability.id} name={capability.id} layer={capability.displayLayer}
-        meta={t('modules.card.meta')}
-        onDelete={editable ? () => void store.removeEngineCapability(capability.id) : undefined}>
-        <EngineParamFields store={store} card={capability.id} t={t} />
-      </EngineModuleCard>
+    {layers.map((layer) => (
+      <EngineBehaviorCard key={layer} store={store} t={t} focusCapability={focusCapability}
+        capabilities={capabilities.filter(({ displayLayer }) => displayLayer === layer)} />
     ))}
     {showPromptDefaults && (layerFilter === 'all' || layerFilter === 'pre-step') && <EnginePromptDefaultsCard store={store} t={t} />}
     {showStatus && store.moduleFacts === undefined && <p className={styles.configFieldHint} role="status">{t('modules.status.reading')}</p>}

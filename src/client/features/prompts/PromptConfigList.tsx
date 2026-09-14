@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { bridgeCall, errorMessage } from '../../data/bridge-client.ts'
 import type { PromptToolTranslate } from '../../locales.ts'
 import { MenuSelect } from '../../ui/MenuSelect.tsx'
@@ -32,6 +32,8 @@ export interface PromptConfigListProps {
   /** 受控层筛选（全部/世界书/层级）；未传时内部 state 兜底（子代理页等独立实例）。 */
   viewFilter?: string
   onViewFilterChange?: (value: string) => void
+  /** 只响应明确的创建动作；后台读取已有配置不抢占筛选或展开状态。 */
+  createdConfigId?: string
   /** 空状态追加提示（如「当前预设模板该层无配置」）。 */
   emptyHint?: string
   onPatchConfigs: (configs: PromptConfigDraft[]) => void
@@ -65,6 +67,13 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
     if (onViewFilterChange !== undefined) onViewFilterChange(value)
     else setInnerViewFilter(value)
   }
+  useEffect(() => {
+    const created = configs.find((config) => config.id === props.createdConfigId)
+    if (created === undefined) return
+    setExpanded(created.id)
+    setFilter('')
+    changeViewFilter(promptConfigLayer(created))
+  }, [props.createdConfigId])
 
   const effectiveLayer = layer ?? (viewFilter !== 'all' && viewFilter !== 'world-book' ? viewFilter : undefined)
   const allLayers = displayLayers([...meta.layers, ...configs.map(promptConfigLayer)])
@@ -332,7 +341,7 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
       {beforeCards}
 
       {/* 模块卡（引擎能力、自定义工具）：只调整视觉排序，层级配置卡仍按（层序, order, 声明序）注入。 */}
-      {moduleCards !== undefined && viewFilter !== 'world-book' && moduleCards}
+      {moduleCards !== undefined && <div hidden={viewFilter === 'world-book'}>{moduleCards}</div>}
 
       {moduleCards === undefined ? (
         scoped.length === 0 ? (

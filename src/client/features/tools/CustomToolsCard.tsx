@@ -9,7 +9,7 @@ import featureCss from './tools.module.css'
 const styles = { ...sharedCss, ...featureCss }
 
 /** 「添加能力 / 工具模块」菜单下发的创建意图；每次请求一个新对象，消费后由页面清空。 */
-export type ToolCreateIntent = { kind: 'blank' | 'template'; spec?: ToolDraft }
+export type ToolCreateIntent = { kind: 'blank' | 'template'; spec?: ToolDraft; presetId?: string }
 
 /** 自定义工具编辑器：命令栏 + 一工具一卡，不再增加聚合卡片。 */
 export function CustomToolsCard(props: {
@@ -93,6 +93,11 @@ export function CustomToolsCard(props: {
   useEffect(() => {
     const intent = props.createIntent
     if (intent === undefined || intent === handledIntentRef.current) return
+    if (intent.presetId !== undefined && intent.presetId !== props.presetId) {
+      handledIntentRef.current = intent
+      props.onIntentConsumed?.()
+      return
+    }
     if (disabled) return
     handledIntentRef.current = intent
     props.onIntentConsumed?.()
@@ -108,13 +113,16 @@ export function CustomToolsCard(props: {
       props.onNotice('ok', t('customTools.templateInserted', { id: String(spec.id) }))
       return
     }
+    let suffix = 1
+    while (tools.some((tool) => tool.id === `tool-${suffix}` || (tool.name ?? tool.id) === (suffix === 1 ? 'my_tool' : `my_tool_${suffix}`))) suffix += 1
     updateTools([...tools, {
-      id: `tool-${tools.length + 1}`,
-      name: 'my_tool',
+      id: `tool-${suffix}`,
+      name: suffix === 1 ? 'my_tool' : `my_tool_${suffix}`,
       description: '',
       output: { schema: { type: 'object', additionalProperties: true } },
       execute: { kind: 'shell', command: '' },
     }])
+    setExpandedCards(new Set([...expandedCards, tools.length]))
   }, [disabled, expandedCards, props, tools])
   return (
     <section aria-label={t('customTools.aria')}>
