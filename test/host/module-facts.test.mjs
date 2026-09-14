@@ -18,7 +18,7 @@ const preset = (id) => loadPresetSpec(fileURLToPath(new URL(`../../preset/${id}/
 test('modules: [] 是显式空装配，不再展开默认引擎能力', () => {
   const explicit = resolvePresetModuleFacts(preset('anchored'))
   assert.equal(explicit.sourceMode, 'explicit')
-  assert.ok(explicit.effectiveModules.includes('bootstrap-filesystem'))
+  assert.ok(explicit.effectiveModules.includes('filesystem-editor'))
   assert.ok(explicit.rowIds.includes('str-replace-editor'), '嵌套编辑器 row 必须被收集')
 
   const blank = preset('custom')
@@ -32,8 +32,8 @@ test('modules: [] 是显式空装配，不再展开默认引擎能力', () => {
 })
 
 test('能力事实覆盖本地 filesystem module 与 nested row id', () => {
-  // rc.2 官方 minimal 只剩单 shell 工具，编辑能力改由本地 bootstrap-filesystem 提供；
-  // 该能力现在只对显式声明它的预设生效（Anchored 与旧用户预设）。
+  // rc.2 官方 minimal 只剩单 shell 工具，编辑能力改由本地 filesystem-editor 提供；
+  // 该能力只对显式声明它的预设生效。
   const dir = mkdtempSync(join(tmpdir(), 'pt-filesystem-facts-'))
   try {
     writeFileSync(join(dir, 'preset.yml'), [
@@ -41,12 +41,12 @@ test('能力事实覆盖本地 filesystem module 与 nested row id', () => {
       'name: explicit-editor',
       'version: "1"',
       'engineCompat: ">=0"',
-      'modules: [bootstrap-filesystem]',
+      'modules: [filesystem-editor]',
       '',
     ].join('\n'), 'utf8')
     const facts = resolvePresetModuleFacts(loadPresetSpec(dir), dir, true)
     assert.equal(facts.sourceMode, 'explicit')
-    assert.ok(facts.effectiveModules.includes('bootstrap-filesystem'))
+    assert.ok(facts.effectiveModules.includes('filesystem-editor'))
     assert.equal(facts.editable, true)
     assert.ok(facts.rowIds.includes('fs-local'))
     assert.ok(facts.rowIds.includes('str-replace-editor'))
@@ -56,7 +56,7 @@ test('能力事实覆盖本地 filesystem module 与 nested row id', () => {
   }
 
   const minimal = resolvePresetModuleFacts(preset('minimal'), fileURLToPath(new URL('../../preset/minimal/', import.meta.url)), true)
-  assert.equal(minimal.effectiveModules.includes('bootstrap-filesystem'), false, 'rc.2 minimal 不再装配编辑器能力')
+  assert.equal(minimal.effectiveModules.includes('filesystem-editor'), false, 'rc.2 minimal 不再装配编辑器能力')
   assert.equal(isEngineCapabilityPresent('str-replace-editor', minimal), false)
 })
 
@@ -68,8 +68,8 @@ test('官方 agent.cordis.yml 行只作运行事实，不伪装成可编辑引�
       '  name: ./tool-bootstrap.mjs',
       '- id: context-gate',
       '  name: ./context-gate.mjs',
-      '- id: code-presentation',
-      '  name: ./code-presentation.mjs',
+      '- id: promoted-code-mode',
+      '  name: ./promoted-code-mode.mjs',
       '- id: str-replace-editor',
       '  name: "@deepseek-ai/dsh-tool-str-replace-editor"',
       '',

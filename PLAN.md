@@ -554,7 +554,7 @@ if ($LASTEXITCODE -ne 0) { throw 'diff check failed' }
 - `node_modules/@deepseek-ai/dsh-scope/README.md` 与 `lib/types/{index,store}.d.ts`：scopeOf、ScopedLayers、NamedEntries、effect/disposer、未标记全局监听与作用域继承。
 - `node_modules/@deepseek-ai/dsh-agent/lib/types/runtime-types.d.ts:92–99,139–149,306–319`：PreStepDecision、Agent ctx/session、agent/pre-step waterfall。
 - `D:\AI\GitHub\deepseek-harness\docs\agent-lifecycle.zh.md`：生命周期说明仅作对照；若与安装版本不同，以固定包类型和隔离验证为准。
-- [固定输入出处](test/fixtures/dsh/0.1.5-rc.2/PROVENANCE.md)、[官方指令组合快照](engine/compositions/library/official-agent-instructions.yml)：版本来源及 maxBytes=65536 基线。
+- [固定输入出处](test/fixtures/dsh/0.1.5-rc.2/PROVENANCE.md)、[官方指令组合快照](engine/compositions/library/agent-instructions.yml)：版本来源及 maxBytes=65536 基线。
 
 ### 11.3 原始计划提交的验收边界（历史记录）
 

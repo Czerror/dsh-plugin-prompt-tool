@@ -52,7 +52,7 @@ test('合法零值保留阶段、节拍与深思下限语义，输出封顶仍�
   assert.deepEqual(validateEngineParamValues(values), [])
   const configs = buildEngineModuleParams(values)
   assert.equal(configs['tool-bootstrap'].stagePreUnlock, 0)
-  assert.equal(configs['cot-drip'].every, 0)
+  assert.equal(configs['progress-reminder'].every, 0)
   assert.equal(configs['deliberation-gate'].minChars, 0)
   assert.equal(configs['tool-bootstrap'].bootstrapMaxTokens, undefined)
 })
@@ -74,8 +74,28 @@ test('清除可选开关恢复继承，关闭子代理过滤覆盖行级 true', 
   assert.equal(buildEngineModuleParams({ strReplaceEditorMaxOutputChars: '32000' })['str-replace-editor'].maxOutputChars, 32000)
 })
 
+test('模块重命名只改变行映射，保留参数键、工具名与消息来源身份', () => {
+  const params = {
+    usePtcMode: true, ptcSubagents: true, ptcPromoteOn: 'tool-call',
+    cotDrip: true, cotDripEvery: 0, cotDripMaxPerTurn: 2, cotDripSubagents: true, cotDripText: '保持节拍',
+    strReplaceEditorMaxOutputChars: 32000, bootstrapTools: ['bash', 'run_code', 'str_replace_editor'],
+    messageSources: ['cot-drip'], deferredSources: ['cot-drip'],
+  }
+  const configs = buildEngineModuleParams(params)
+  assert.deepEqual(configs['promoted-code-mode'], { usePtcMode: true, includeSubagents: true, promoteOn: 'tool-call' })
+  assert.deepEqual(configs['progress-reminder'], { enabled: true, every: 0, maxPerTurn: 2, includeSubagents: true, text: '保持节拍' })
+  assert.deepEqual(configs['str-replace-editor'], { maxOutputChars: 32000 })
+  assert.deepEqual(moduleParamFallbacks(configs), params)
+  assert.equal(configs['code-presentation'], undefined)
+  assert.equal(configs['cot-drip'], undefined)
+  assert.deepEqual(moduleParamFallbacks({
+    'code-presentation': { usePtcMode: true, includeSubagents: true, promoteOn: 'tool-call' },
+    'cot-drip': { enabled: true, every: 4, maxPerTurn: 1, includeSubagents: true, text: '旧行' },
+  }), {})
+})
+
 test('能力卡覆盖引擎全部公开配置键，且新参数自动参与保存中脏检测', () => {
-  for (const module of ['tool-bootstrap', 'context-gate', 'code-presentation', 'tool-filter', 'anchor-turn', 'deliberation-gate', 'cot-drip']) {
+  for (const module of ['tool-bootstrap', 'context-gate', 'promoted-code-mode', 'tool-filter', 'anchor-turn', 'deliberation-gate', 'progress-reminder']) {
     const source = readFileSync(new URL(`../../engine/${module}.mjs`, import.meta.url), 'utf8')
     const allowed = source.match(/const ALLOWED_KEYS = new Set\(\[([\s\S]*?)\]\)/)?.[1]
     assert.ok(allowed, `${module} 公共配置键`)

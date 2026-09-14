@@ -18,7 +18,7 @@ import { Pair, Scalar, parse as parseYaml, parseDocument, YAMLMap, YAMLSeq } fro
 import { DEFAULT_PRESET_DIR, DSH_HOME } from './paths.ts'
 import { engineCapability, engineRecipe, isEngineCapabilityPresent, type ModuleSourceMode, type PresetModuleFacts } from '../shared/engine-capabilities.ts'
 import { buildEngineModuleParams, engineParamList, normalizeMaxDepth } from '../shared/engine-params.ts'
-import { PERSONA_MODULE, personaRowConfig, readPersonaSpec, type PersonaSpec } from '../shared/persona-section.ts'
+import { personaRowConfig, readPersonaSpec, type PersonaSpec } from '../shared/persona-section.ts'
 
 export interface PresetSpec {
   id: string
@@ -741,21 +741,12 @@ export function buildModuleConfigsFromParams(params: Record<string, unknown>, op
 /**
  * 组合模块目录分工：
  * - source/local：本项目自有模块的唯一源文件；
- * - library：由 rebuild-composition 生成的官方切块与少量官方变体。
+ * - library：由 rebuild-composition 原样生成的官方切块与官方预设变体，不含本地补丁。
  * 同名文件禁止同时存在，避免 source 与产物漂移。
  */
 function compositionModuleDirs(): string[] {
   const root = join(packageEngineDir(), 'compositions')
   return [join(root, 'source', 'local'), join(root, 'library')]
-}
-
-/** 已发布版本中的旧模块名：Minimal 现在统一使用官方 filesystem 组合。 */
-const COMPOSITION_MODULE_ALIASES: Readonly<Record<string, string>> = {
-  'str-replace-editor': 'bootstrap-filesystem',
-}
-
-function canonicalCompositionModule(name: string): string {
-  return COMPOSITION_MODULE_ALIASES[name] ?? name
 }
 
 function assertBareModuleName(name: string): void {
@@ -766,11 +757,10 @@ function assertBareModuleName(name: string): void {
 
 function moduleFile(name: string): string {
   assertBareModuleName(name)
-  const canonical = canonicalCompositionModule(name)
-  const candidates = compositionModuleDirs().map((dir) => join(dir, `${canonical}.yml`))
+  const candidates = compositionModuleDirs().map((dir) => join(dir, `${name}.yml`))
   const existing = candidates.filter((file) => existsSync(file))
   if (existing.length > 1) {
-    throw new Error(`composition module ${canonical} is duplicated across source/local and library: ${existing.join(', ')}`)
+    throw new Error(`composition module ${name} is duplicated across source/local and library: ${existing.join(', ')}`)
   }
   if (existing.length === 0) {
     throw new Error(`composition module ${name} not found in source/local or library`)
@@ -785,14 +775,13 @@ function assembleModules(spec: PresetSpec): string {
     if (typeof name !== 'string' || name.length === 0) {
       throw new Error(`preset ${spec.id}: modules must be non-empty strings`)
     }
-    const canonical = canonicalCompositionModule(name)
-    if (seen.has(canonical)) {
-      throw new Error(`preset ${spec.id}: duplicate composition module ${JSON.stringify(name)} (canonical ${JSON.stringify(canonical)})`)
+    if (seen.has(name)) {
+      throw new Error(`preset ${spec.id}: duplicate composition module ${JSON.stringify(name)}`)
     }
-    seen.add(canonical)
+    seen.add(name)
     // 模块名 containment：只允许裸库名（禁路径分隔符 / .. / 点目录）。
     try {
-      parts.push(readFileSync(moduleFile(canonical), 'utf8'))
+      parts.push(readFileSync(moduleFile(name), 'utf8'))
     } catch (error) {
       throw new Error(`preset ${spec.id}: ${String((error as Error).message ?? error)}`)
     }
@@ -1116,14 +1105,18 @@ export function renderComposition(spec: PresetSpec, runtime: Record<string, unkn
     // 参数桥优先：UI/运行时参数不被模板或 ST 直写覆盖。
     merged[id] = { ...cfg, ...merged[id] }
   }
-  // 顶层 persona 段是官方 @deepseek-ai/dsh-persona 行的唯一数据源：modules 清单时
-  // 自动前插 persona 模块行，并把段值落成行 config（覆盖 moduleConfigs.persona 同名键）。
-  // 组合文件（composition:）预设不自动插行，需自带 persona 行。
+  let raw = loadCompositionText(spec, templateDir)
+  // 人设由预设字段直接生成官方行，不查模块库，也不改写 modules 清单。
+  // composition 文件仍自行提供该行；顶层字段只覆盖它的配置。
   const persona = readPersonaSpec(spec.persona)
-  if (persona !== undefined) {
-    // 顶层 persona 段是官方行四个键的唯一数据源：段内省略的键写 undefined，
-    // 让 applyModuleConfigs 删除库行默认值（否则 minimal 会继承库行标准 suffix，
-    // 未声明 suffix 的自定义预设也会被追加 "Your working directory …"）。
+  if (persona !== undefined && Array.isArray(spec.modules)) {
+    const doc = parseDocument(raw, { logLevel: 'silent' })
+    if (!(doc.contents instanceof YAMLSeq)) throw new Error(`preset ${spec.id}: composition must be a YAML array`)
+    merged.persona = personaRowConfig(persona)
+    const rows: YAMLSeq = doc.contents
+    rows.items.unshift(doc.createNode({ id: 'persona', name: '@deepseek-ai/dsh-persona', config: merged.persona }))
+    raw = doc.toString()
+  } else if (persona !== undefined) {
     merged.persona = {
       ...merged.persona,
       prefix: persona.prefix,
@@ -1132,10 +1125,7 @@ export function renderComposition(spec: PresetSpec, runtime: Record<string, unkn
       includeRuntimeContext: persona.includeRuntimeContext ?? undefined,
     }
   }
-  const effective = persona !== undefined && Array.isArray(spec.modules) && !spec.modules.includes(PERSONA_MODULE)
-    ? { ...spec, modules: [PERSONA_MODULE, ...spec.modules] }
-    : spec
-  return applyModuleConfigs(loadCompositionText(effective, templateDir), merged)
+  return applyModuleConfigs(raw, merged)
 }
 
 /** 组合文本基础校验（模板无关）：无未解析 token，且必须是 YAML 数组。 */

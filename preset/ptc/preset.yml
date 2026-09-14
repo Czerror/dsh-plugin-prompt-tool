@@ -4,14 +4,14 @@ description: 功能完整的编码 Agent，但默认不提供 workflow 工具；
 version: 1.0.0
 engineCompat: ">=0.4.2"
 modules:
-  - official-agent-instructions
-  - official-tool-bash
+  - agent-instructions
+  - tool-bash
   - tool-pwsh
   - tool-fs
   - tool-fs-search
   - tool-jobs
   - skill-filesystem
-  - official-tool-skill
+  - tool-skill
   - command-goal
   - tool-goal
   - planning
@@ -20,8 +20,8 @@ modules:
   - tool-ask-user
   - tool-todo
   - tool-web
-  - official-tool-presentation
-  - present
+  - tool-presentation
+  - tool-present
   - prompt-config-engine
 model:
   provider: ""

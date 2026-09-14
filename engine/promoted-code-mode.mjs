@@ -1,5 +1,5 @@
 /**
- * code-presentation - 晋升后 PTC mode wire 呈现。
+ * promoted-code-mode - 晋升后 PTC mode wire 呈现。
  *
  * 从 tool-bootstrap 拆出的独立关注点：bootstrap 负责首轮工具目录窄化，
  * 本模块只负责晋升后把工具呈现切换为 PTC mode（单 run_code，由
@@ -22,7 +22,7 @@ import { createEpochPromotion, isSuccessfulCompactionEnd } from './compaction-ep
 import { booleanOption, parsePromoteOn, validateConfig } from './shared.mjs'
 
 /** Cordis plugin name used by loader diagnostics. */
-export const name = 'code-presentation'
+export const name = 'promoted-code-mode'
 
 /** 无 inject：监听器只在使用时触碰 ctx 服务（同 tool-bootstrap 纪律）。 */
 export const inject = []
@@ -50,7 +50,7 @@ export function apply(ctx, config) {
     }
     return state
   }
-  const applyCodePresentation = (agent) => {
+  const applyPromotedCodeMode = (agent) => {
     const session = agent?.session
     if (session === undefined) return
     const state = presentationState(session)
@@ -60,7 +60,7 @@ export function apply(ctx, config) {
     state.disposer = tools.presentAs('ptc')
     state.applied = true
   }
-  const releaseCodePresentation = (session) => {
+  const releasePromotedCodeMode = (session) => {
     const state = presentationBySession.get(session)
     if (state === undefined) return
     if (typeof state.disposer === 'function') {
@@ -73,12 +73,12 @@ export function apply(ctx, config) {
   ctx.on('session/event', (session, event) => promotion.observe(session, event))
   ctx.on('session/event', (session, event) => {
     if (isSuccessfulCompactionEnd(event)) {
-      releaseCodePresentation(session)
+      releasePromotedCodeMode(session)
       return
     }
     if (event.type !== 'step/end' && event.type !== 'turn/end') return
     const agent = agentBySession.get(session)
-    if (agent !== undefined && promotion.status(agent).promoted) applyCodePresentation(agent)
+    if (agent !== undefined && promotion.status(agent).promoted) applyPromotedCodeMode(agent)
   })
 
   ctx.on('system-prompt/assemble', async (_assembly, context, next) => {
@@ -90,10 +90,10 @@ export function apply(ctx, config) {
       agentBySession.set(agent.session, agent)
       if ((agent.session?.header?.delegationDepth ?? 0) > 0 && !includeSubagents) {
         // 默认：子代理继承完整目录 → 直接应用呈现。
-        applyCodePresentation(agent)
+        applyPromotedCodeMode(agent)
         return assembled
       }
-      if (promotion.status(agent).promoted) applyCodePresentation(agent)
+      if (promotion.status(agent).promoted) applyPromotedCodeMode(agent)
       return assembled
     } catch {
       // 呈现失败不阻断会话：保持原样。

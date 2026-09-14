@@ -23,13 +23,12 @@ export const ENGINE_CAPABILITIES: readonly EngineCapability[] = [
   { id: 'tool-bootstrap', moduleKeys: ['tool-bootstrap'], rowIds: ['tool-bootstrap'], displayLayer: 'system-section' },
   { id: 'context-gate', moduleKeys: ['context-gate'], rowIds: ['context-gate'], displayLayer: 'pre-step' },
   { id: 'anchor-turn', moduleKeys: ['anchor-turn'], rowIds: ['anchor-turn'], displayLayer: 'pre-step' },
-  { id: 'code-presentation', moduleKeys: ['code-presentation'], rowIds: ['code-presentation'], displayLayer: 'tool-pipeline' },
+  { id: 'promoted-code-mode', moduleKeys: ['promoted-code-mode'], rowIds: ['promoted-code-mode'], displayLayer: 'tool-pipeline' },
   { id: 'tool-filter', moduleKeys: ['tool-filter'], rowIds: ['tool-filter'], displayLayer: 'tool-pipeline' },
-  // bootstrap-filesystem 同时提供 fs-local 与 str-replace-editor，二者必须同域；
-  // 保留旧模块名作迁移别名，创建时只追加 canonical 模块。
-  { id: 'str-replace-editor', moduleKeys: ['bootstrap-filesystem', 'str-replace-editor'], rowIds: ['str-replace-editor'], displayLayer: 'tool-pipeline' },
+  // filesystem-editor 同时提供 fs-local 与 str-replace-editor，二者必须同域。
+  { id: 'str-replace-editor', moduleKeys: ['filesystem-editor'], rowIds: ['str-replace-editor'], displayLayer: 'tool-pipeline' },
   { id: 'deliberation-gate', moduleKeys: ['deliberation-gate'], rowIds: ['deliberation-gate'], displayLayer: 'tool-pipeline' },
-  { id: 'cot-drip', moduleKeys: ['cot-drip'], rowIds: ['cot-drip'], displayLayer: 'tool-pipeline' },
+  { id: 'progress-reminder', moduleKeys: ['progress-reminder'], rowIds: ['progress-reminder'], displayLayer: 'tool-pipeline' },
   { id: 'tool-config-engine', moduleKeys: ['tool-config-engine'], rowIds: ['tool-config-engine'], displayLayer: 'tool-pipeline' },
 ] as const
 
@@ -42,8 +41,8 @@ export interface EngineRecipe {
 /** 只保留已有真实工作流的一键组合；recipe 本身不写入 preset.yml。 */
 export const ENGINE_RECIPES: readonly EngineRecipe[] = [
   { id: 'phase-control', capabilities: ['context-gate', 'tool-bootstrap'] },
-  { id: 'phase-control-ptc', capabilities: ['context-gate', 'tool-bootstrap', 'code-presentation'], initialParams: { usePtcMode: true } },
-  { id: 'deliberation', capabilities: ['deliberation-gate', 'cot-drip'], initialParams: { deliberationGate: true, cotDrip: true } },
+  { id: 'phase-control-ptc', capabilities: ['context-gate', 'tool-bootstrap', 'promoted-code-mode'], initialParams: { usePtcMode: true } },
+  { id: 'deliberation', capabilities: ['deliberation-gate', 'progress-reminder'], initialParams: { deliberationGate: true, cotDrip: true } },
 ] as const
 
 export function engineCapability(id: string): EngineCapability | undefined {

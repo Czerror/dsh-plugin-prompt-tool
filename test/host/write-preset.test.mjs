@@ -22,7 +22,7 @@ test('writePreset 从指定预设根读取同名参数，不被默认根遮蔽',
   for (const [root, usePtcMode] of [[join(home, '.agent-presets'), true], [customRoot, false]]) {
     mkdirSync(join(root, id), { recursive: true })
     writeFileSync(join(root, id, 'preset.yml'),
-      `id: ${id}\nmodules: [code-presentation]\nparams:\n  usePtcMode: ${usePtcMode}\n`, 'utf8')
+      `id: ${id}\nmodules: [promoted-code-mode]\nparams:\n  usePtcMode: ${usePtcMode}\n`, 'utf8')
   }
   const defaultFile = join(home, '.agent-presets', id, 'preset.yml')
   const before = readFileSync(defaultFile, 'utf8')
@@ -374,7 +374,7 @@ test('writePreset 四个官方基型以顶层 persona 段渲染官方 dsh-person
       const agent = readFileSync(join(presetDir, template, 'agent.cordis.yml'), 'utf8')
       const rows = parseYaml(agent)
       assert.equal(rows.filter((row) => row?.id === 'prompt-config-engine').length, 1, `${template}: persona 配置执行器应且仅应装配一次`)
-      for (const id of ['context-gate', 'tool-bootstrap', 'code-presentation']) {
+      for (const id of ['context-gate', 'tool-bootstrap', 'promoted-code-mode']) {
         assert.equal(rows.some((row) => row?.id === id), false, `${template}: 不应追加 ${id}`)
       }
       assert.ok(!/__[A-Za-z0-9_]+__/.test(agent), `${template}: 不应残留未解析 token`)

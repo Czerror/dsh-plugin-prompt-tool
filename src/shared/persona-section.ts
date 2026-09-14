@@ -5,9 +5,6 @@
  * 旧 params.sectionName 人设写法不做兼容也不迁移（本项目不含迁移代码）。
  */
 
-/** 组合模块库里官方人设行的模块名（engine/compositions/library/persona.yml）。 */
-export const PERSONA_MODULE = 'persona'
-
 /**
  * preset.yml 顶层 `persona` 段：与官方 `@deepseek-ai/dsh-persona` 行的 config 同构。
  * 官方 schema：prefix required、suffix 默认 ''、complete 默认 false、

@@ -7,7 +7,7 @@ import {
 } from '../../engine/compaction-epoch.mjs'
 import { apply as applyToolBootstrap } from '../../engine/tool-bootstrap.mjs'
 import { apply as applyContextGate } from '../../engine/context-gate.mjs'
-import { apply as applyCodePresentation } from '../../engine/code-presentation.mjs'
+import { apply as applyPromotedCodeMode } from '../../engine/promoted-code-mode.mjs'
 
 /** 收集 ctx.on 注册的监听器（按注册顺序）。 */
 function makeCtx() {
@@ -304,9 +304,9 @@ test('tool-bootstrap：零工具模式 compaction 回退补 shell（对齐上游
   assert.deepEqual(after.tools.map((t) => t.name).sort(), ['bash', 'read', 'write'], 'compaction 回退 = shell + 核心工具集')
 })
 
-// ── code-presentation：晋升后 PTC mode 呈现（从 tool-bootstrap 拆出） ──
+// ── promoted-code-mode：晋升后 PTC mode 呈现（从 tool-bootstrap 拆出） ──
 
-test('code-presentation：晋升后应用 PTC，失败压缩保留、成功压缩释放', async () => {
+test('promoted-code-mode：晋升后应用 PTC，失败压缩保留、成功压缩释放', async () => {
   const { ctx, listeners } = makeCtx()
   const presented = []
   let disposed = 0
@@ -314,7 +314,7 @@ test('code-presentation：晋升后应用 PTC，失败压缩保留、成功压�
     session,
     ctx: { tools: { presentAs: (mode) => { presented.push(mode); return () => { disposed += 1 } } } },
   })
-  applyCodePresentation(ctx, { usePtcMode: true })
+  applyPromotedCodeMode(ctx, { usePtcMode: true })
   const session = makeSession([{ type: 'tool/call', seq: 1 }])
   const agent = agentWithTools(session)
   const handler = listeners.get('system-prompt/assemble')?.[0]?.handler
@@ -334,26 +334,26 @@ test('code-presentation：晋升后应用 PTC，失败压缩保留、成功压�
   assert.equal(presented.length, 2, '重新晋升后再次应用')
 })
 
-test('code-presentation：usePtcMode=false 不注册任何监听（只 bootstrap 预设）', () => {
+test('promoted-code-mode：usePtcMode=false 不注册任何监听（只 bootstrap 预设）', () => {
   const { ctx, listeners } = makeCtx()
-  applyCodePresentation(ctx, { usePtcMode: false })
+  applyPromotedCodeMode(ctx, { usePtcMode: false })
   assert.equal(listeners.size, 0, 'usePtcMode=false 时不注册监听')
 })
 
-test('code-presentation：默认 usePtcMode=false（opt-in，未声明不注册）', () => {
+test('promoted-code-mode：默认 usePtcMode=false（opt-in，未声明不注册）', () => {
   const { ctx, listeners } = makeCtx()
-  applyCodePresentation(ctx, {})
+  applyPromotedCodeMode(ctx, {})
   assert.equal(listeners.size, 0, '默认不启用 PTC 呈现')
 })
 
-test('code-presentation：未晋升不应用，子代理（默认）直接应用', async () => {
+test('promoted-code-mode：未晋升不应用，子代理（默认）直接应用', async () => {
   const { ctx, listeners } = makeCtx()
   const presented = []
   const agentWithTools = (session) => ({
     session,
     ctx: { tools: { presentAs: (mode) => { presented.push(mode); return () => {} } } },
   })
-  applyCodePresentation(ctx, { usePtcMode: true })
+  applyPromotedCodeMode(ctx, { usePtcMode: true })
   const handler = listeners.get('system-prompt/assemble')?.[0]?.handler
   assert.ok(handler)
   // 主会话未晋升：不应用。

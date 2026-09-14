@@ -110,7 +110,7 @@ export interface EngineParams {
   deliberationMinChars?: number
   /** 轨迹深度门每轮最大 deny 次数（默认 1）。 */
   deliberationMaxGatesPerTurn?: number
-  /** 深思维持节拍（cot-drip 行）：每 N 次工具结果滴入一条 "We…" 重申；false = 行挂载但禁用。 */
+  /** 深思维持节拍（progress-reminder 行）：每 N 次工具结果滴入一条 "We…" 重申；false = 行挂载但禁用。 */
   cotDrip?: boolean
   /** 深思维持节拍间隔（工具结果数；默认 4；0 = 禁用滴入）。 */
   cotDripEvery?: number
@@ -220,7 +220,7 @@ export const ENGINE_PARAM_DEFINITIONS: Record<EngineParamKey, EngineParamDefinit
   allowKinds: { kind: 'string-list', defaultValue: '', card: 'context-gate', module: { row: 'context-gate' } },
   firstTurnWord: { kind: 'string', defaultValue: '', card: 'prompt-defaults' },
   bootstrapMaxTokens: { kind: 'number', check: NON_NEGATIVE_INTEGER, defaultValue: 0, card: 'tool-bootstrap', module: { row: 'tool-bootstrap', mode: 'optional-cap' } },
-  usePtcMode: { kind: 'boolean', defaultValue: false, card: 'code-presentation', module: { row: 'code-presentation' } },
+  usePtcMode: { kind: 'boolean', defaultValue: false, card: 'promoted-code-mode', module: { row: 'promoted-code-mode' } },
   promoteGate: { kind: 'boolean', defaultValue: false, card: 'tool-bootstrap', module: { row: 'tool-bootstrap' } },
   promoteAfterFirstResponse: { kind: 'boolean', defaultValue: false, card: 'tool-bootstrap', module: { row: 'tool-bootstrap' } },
   maxPromoteSteps: { kind: 'number', check: NON_NEGATIVE_INTEGER, defaultValue: 0, card: 'tool-bootstrap', module: { row: 'tool-bootstrap' } },
@@ -245,22 +245,22 @@ export const ENGINE_PARAM_DEFINITIONS: Record<EngineParamKey, EngineParamDefinit
   deliberationGate: { kind: 'boolean', defaultValue: false, card: 'deliberation-gate', module: { row: 'deliberation-gate', key: 'enabled' } },
   deliberationMinChars: { kind: 'number', check: NON_NEGATIVE_INTEGER, defaultValue: 0, card: 'deliberation-gate', module: { row: 'deliberation-gate', key: 'minChars' } },
   deliberationMaxGatesPerTurn: { kind: 'number', check: NON_NEGATIVE_INTEGER, defaultValue: 0, card: 'deliberation-gate', module: { row: 'deliberation-gate', key: 'maxGatesPerTurn', mode: 'positive' } },
-  cotDrip: { kind: 'boolean', defaultValue: false, card: 'cot-drip', module: { row: 'cot-drip', key: 'enabled' } },
-  cotDripEvery: { kind: 'number', check: NON_NEGATIVE_INTEGER, defaultValue: 0, card: 'cot-drip', module: { row: 'cot-drip', key: 'every' } },
-  cotDripMaxPerTurn: { kind: 'number', check: NON_NEGATIVE_INTEGER, defaultValue: 0, card: 'cot-drip', module: { row: 'cot-drip', key: 'maxPerTurn', mode: 'positive' } },
+  cotDrip: { kind: 'boolean', defaultValue: false, card: 'progress-reminder', module: { row: 'progress-reminder', key: 'enabled' } },
+  cotDripEvery: { kind: 'number', check: NON_NEGATIVE_INTEGER, defaultValue: 0, card: 'progress-reminder', module: { row: 'progress-reminder', key: 'every' } },
+  cotDripMaxPerTurn: { kind: 'number', check: NON_NEGATIVE_INTEGER, defaultValue: 0, card: 'progress-reminder', module: { row: 'progress-reminder', key: 'maxPerTurn', mode: 'positive' } },
   bootstrapSubagents: { kind: 'boolean', defaultValue: false, card: 'tool-bootstrap', module: { row: 'tool-bootstrap', key: 'includeSubagents' } },
   bootstrapPromoteOn: { kind: 'string', options: PROMOTE_ON, defaultValue: '', card: 'tool-bootstrap', module: { row: 'tool-bootstrap', key: 'promoteOn' } },
   contextGateEnabled: { kind: 'boolean', defaultValue: true, card: 'context-gate', module: { row: 'context-gate', key: 'enabled' } },
   contextGateSubagents: { kind: 'boolean', defaultValue: false, card: 'context-gate', module: { row: 'context-gate', key: 'includeSubagents' } },
   contextGatePromoteOn: { kind: 'string', options: PROMOTE_ON, defaultValue: '', card: 'context-gate', module: { row: 'context-gate', key: 'promoteOn' } },
-  ptcSubagents: { kind: 'boolean', defaultValue: false, card: 'code-presentation', module: { row: 'code-presentation', key: 'includeSubagents' } },
-  ptcPromoteOn: { kind: 'string', options: PROMOTE_ON, defaultValue: '', card: 'code-presentation', module: { row: 'code-presentation', key: 'promoteOn' } },
+  ptcSubagents: { kind: 'boolean', defaultValue: false, card: 'promoted-code-mode', module: { row: 'promoted-code-mode', key: 'includeSubagents' } },
+  ptcPromoteOn: { kind: 'string', options: PROMOTE_ON, defaultValue: '', card: 'promoted-code-mode', module: { row: 'promoted-code-mode', key: 'promoteOn' } },
   toolFilterEnabled: { kind: 'boolean', defaultValue: true, card: 'tool-filter', module: { row: 'tool-filter', key: 'enabled' } },
   anchorTurnSubagents: { kind: 'boolean', defaultValue: false, card: 'anchor-turn', module: { row: 'anchor-turn', key: 'includeSubagents' } },
   deliberationSubagents: { kind: 'boolean', defaultValue: false, card: 'deliberation-gate', module: { row: 'deliberation-gate', key: 'includeSubagents' } },
   deliberationGateText: { kind: 'string', defaultValue: '', card: 'deliberation-gate', module: { row: 'deliberation-gate', key: 'gateText' } },
-  cotDripSubagents: { kind: 'boolean', defaultValue: false, card: 'cot-drip', module: { row: 'cot-drip', key: 'includeSubagents' } },
-  cotDripText: { kind: 'string', defaultValue: '', card: 'cot-drip', module: { row: 'cot-drip', key: 'text' } },
+  cotDripSubagents: { kind: 'boolean', defaultValue: false, card: 'progress-reminder', module: { row: 'progress-reminder', key: 'includeSubagents' } },
+  cotDripText: { kind: 'string', defaultValue: '', card: 'progress-reminder', module: { row: 'progress-reminder', key: 'text' } },
   customToolRequireApproval: { kind: 'string-list', options: ['shell', 'http', 'delegate', 'fs', 'ask-user'], defaultValue: '', card: 'tool-config-engine', module: { row: 'tool-config-engine', key: 'requireApproval' } },
 }
 

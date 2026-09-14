@@ -24,9 +24,9 @@ function findAllNested(rows, idSet) {
   return found
 }
 
-const RAW = `# module: custom-bash
-- id: custom-bash
-  name: ./engine/custom-bash.mjs
+const RAW = `# module: tool-git-bash
+- id: tool-git-bash
+  name: ./engine/tool-git-bash.mjs
   config:
     timeoutMs: 120000
     maxOutputBytes: 64000
@@ -38,14 +38,14 @@ const RAW = `# module: custom-bash
 `
 
 test('moduleConfigs 覆盖声明模块的行级 config（未覆盖键保留）', () => {
-  const out = applyModuleConfigs(RAW, { 'custom-bash': { timeoutMs: 180000 } })
+  const out = applyModuleConfigs(RAW, { 'tool-git-bash': { timeoutMs: 180000 } })
   assert.ok(out.includes('timeoutMs: 180000'))
   assert.ok(!out.includes('timeoutMs: 120000'))
   assert.ok(out.includes('maxOutputBytes: 64000'))
 })
 
 test('moduleConfigs 不影响未声明模块与 __TOKEN__', () => {
-  const out = applyModuleConfigs(RAW, { 'custom-bash': { timeoutMs: 180000 } })
+  const out = applyModuleConfigs(RAW, { 'tool-git-bash': { timeoutMs: 180000 } })
   const rows = parseYaml(out)
   const router = rows.find((row) => row?.id === 'router-first-turn')
   assert.ok(router)
@@ -78,7 +78,7 @@ test('resolvePresetParams 模型路由/委派参数全扁平（preset.yml params
 
 test('anchored buildCordis 集成：moduleConfigs 合并与 token 渲染共存', () => {
   const rows = parseYaml(buildCordis('P'))
-  const bash = rows.find((row) => row?.id === 'custom-bash')
+  const bash = rows.find((row) => row?.id === 'tool-git-bash')
   const gate = rows.find((row) => row?.id === 'context-gate')
   const bootstrap = rows.find((row) => row?.id === 'tool-bootstrap')
   assert.ok(bash && gate && bootstrap, 'agent 组合应含核心行')
@@ -142,7 +142,7 @@ test('buildCordis 透传 allowKinds 覆盖模板默认', () => {
   assert.deepEqual(defaultGate.config.allowKinds, ['skill-invocation', 'near-anchor', 'router-guide'])
 })
 
-test('参数桥：anchor-turn / deliberation-gate / cot-drip 行级配置映射', () => {
+test('参数桥：anchor-turn / deliberation-gate / progress-reminder 行级配置映射', () => {
   const rows = parseYaml(buildCordis('P', {
     anchorTurn: true,
     anchorTurnText: '你是谁',
@@ -164,8 +164,8 @@ test('参数桥：anchor-turn / deliberation-gate / cot-drip 行级配置映射'
   assert.equal(gate.config.minChars, 600)
   assert.equal(gate.config.maxGatesPerTurn, 2)
 
-  const drip = rows.find((row) => row?.id === 'cot-drip')
-  assert.ok(drip, '应含 cot-drip 行')
+  const drip = rows.find((row) => row?.id === 'progress-reminder')
+  assert.ok(drip, '应含 progress-reminder 行')
   assert.equal(drip.config.enabled, true)
   assert.equal(drip.config.every, 3)
   assert.equal(drip.config.maxPerTurn, 2)
@@ -174,9 +174,9 @@ test('参数桥：anchor-turn / deliberation-gate / cot-drip 行级配置映射'
   const off = parseYaml(buildCordis('P', { anchorTurn: false, deliberationGate: false, cotDrip: false, deliberationMinChars: 0, cotDripEvery: 0 }))
   assert.equal(off.find((row) => row?.id === 'anchor-turn').config.enabled, false)
   assert.equal(off.find((row) => row?.id === 'deliberation-gate').config.enabled, false)
-  assert.equal(off.find((row) => row?.id === 'cot-drip').config.enabled, false)
+  assert.equal(off.find((row) => row?.id === 'progress-reminder').config.enabled, false)
   assert.equal(off.find((row) => row?.id === 'deliberation-gate').config.minChars, 0, '0 取消深思下限')
-  assert.equal(off.find((row) => row?.id === 'cot-drip').config.every, 0, '0 禁用滴入')
+  assert.equal(off.find((row) => row?.id === 'progress-reminder').config.every, 0, '0 禁用滴入')
 })
 
 test('参数桥：门控/状态机扁平键直达模块行 config（不 token 化）', () => {
@@ -207,8 +207,8 @@ test('参数桥：门控/状态机扁平键直达模块行 config（不 token �
   assert.deepEqual(gate.config.deferredSources, ['agent-instructions'])
   assert.equal(gate.config.deferredGraceSteps, 2)
   assert.equal(gate.config.instructionHint, true)
-  const presentation = rows.find((row) => row?.id === 'code-presentation')
-  assert.equal(presentation.config.usePtcMode, false, 'usePtcMode=false 直达 code-presentation 行')
+  const presentation = rows.find((row) => row?.id === 'promoted-code-mode')
+  assert.equal(presentation.config.usePtcMode, false, 'usePtcMode=false 直达 promoted-code-mode 行')
   // 未声明的门控键不合并（行默认 / 引擎默认生效）。
   const defaults = parseYaml(buildCordis('P'))
   const defaultBootstrap = defaults.find((row) => row?.id === 'tool-bootstrap')
@@ -234,7 +234,7 @@ test('参数桥完整性：本地模块行 config 键 ⊆ ALLOWED_KEYS；stageAd
       'stages', 'stagePreUnlock', 'stageAdvanceTool', 'stageAdvanceDescription', 'stageSectionTemplate']),
     'context-gate': new Set(['promoteOn', 'includeSubagents', 'enabled', 'allowKinds',
       'messageSources', 'deferredSources', 'deferredGraceSteps', 'instructionHint']),
-    'code-presentation': new Set(['usePtcMode', 'includeSubagents', 'promoteOn']),
+    'promoted-code-mode': new Set(['usePtcMode', 'includeSubagents', 'promoteOn']),
     'tool-filter': new Set(['allow', 'deny', 'includeSubagents', 'enabled']),
   }
   const rows = parseYaml(buildCordis('P', {
@@ -290,7 +290,7 @@ test('空白预设的 dormant moduleConfigs 不会隐式装配引擎能力', () 
     ...base,
     moduleConfigs: {
       'tool-bootstrap': { promoteGate: true, maxPromoteSteps: 4 },
-      'code-presentation': { usePtcMode: true },
+      'promoted-code-mode': { usePtcMode: true },
     },
   }
   const rows = parseYaml(renderComposition(spec, {}))
@@ -298,17 +298,17 @@ test('空白预设的 dormant moduleConfigs 不会隐式装配引擎能力', () 
 })
 
 test('显式零值穿过组合默认与直写配置后仍禁用节拍、取消深思下限', async () => {
-  const { apply: applyDrip } = await import('../../engine/cot-drip.mjs')
+  const { apply: applyDrip } = await import('../../engine/progress-reminder.mjs')
   const { apply: applyGate } = await import('../../engine/deliberation-gate.mjs')
   const rows = parseYaml(renderComposition({
-    id: 'zero', modules: ['cot-drip', 'deliberation-gate'],
-    moduleConfigs: { 'cot-drip': { every: 2 }, 'deliberation-gate': { minChars: 200 } },
+    id: 'zero', modules: ['progress-reminder', 'deliberation-gate'],
+    moduleConfigs: { 'progress-reminder': { every: 2 }, 'deliberation-gate': { minChars: 200 } },
     params: { cotDrip: true, cotDripEvery: 0, cotDripSubagents: true,
       deliberationGate: true, deliberationMinChars: 0, deliberationSubagents: true },
   }, {}))
   const listeners = new Map()
   const ctx = { on: (event, callback) => { listeners.set(event, callback) } }
-  applyDrip(ctx, rows.find(row => row.id === 'cot-drip').config)
+  applyDrip(ctx, rows.find(row => row.id === 'progress-reminder').config)
   applyGate(ctx, rows.find(row => row.id === 'deliberation-gate').config)
   for (const delegationDepth of [0, 1]) {
     const exec = { agent: { session: { id: `zero-${delegationDepth}`, header: { delegationDepth }, events: [] } } }

@@ -41,7 +41,7 @@ const ENGINE_DIR = packageEngineDir()
  * dsh-persona 行 config 字段等）时 +1。启动重建据此重刷用户目录旧产物——
  * 否则旧产物只会在用户手动切换该预设时才会重新渲染。
  */
-export const RENDER_VERSION = 3
+export const RENDER_VERSION = 4
 export const RENDER_STAMP = `# prompt-tool:render v${RENDER_VERSION}`
 
 /** 包内引擎指纹（相对路径 + size）：引擎文件未变时共享引擎不重刷。
@@ -199,7 +199,7 @@ function runtimeOf(options: WritePresetOptions, prompt: string): Record<string, 
     firstTurnWord: typeof options.firstTurnWord === 'string' && options.firstTurnWord.length > 0
       ? options.firstTurnWord
       : undefined,
-    // 锚定/深思可选模块（anchor-turn / deliberation-gate / cot-drip 参数桥）。
+    // 锚定/深思可选模块（anchor-turn / deliberation-gate / progress-reminder 参数桥）。
     anchorTurn: typeof options.anchorTurn === 'boolean' ? options.anchorTurn : undefined,
     anchorTurnText: typeof options.anchorTurnText === 'string' ? options.anchorTurnText : undefined,
     deliberationGate: typeof options.deliberationGate === 'boolean' ? options.deliberationGate : undefined,

@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { apply as applyDrip, DRIP_TEXT } from '../../engine/cot-drip.mjs'
+import { apply as applyProgressReminder, DRIP_TEXT } from '../../engine/progress-reminder.mjs'
 
 function makeCtx() {
   const listeners = new Map()
@@ -20,9 +20,9 @@ function makeCtx() {
 const makeSession = () => ({ id: `s-${Math.random()}`, header: { delegationDepth: 0 } })
 const makeExec = (session) => ({ agent: { session } })
 
-test('cot-drip：每 N 次工具结果滴入一条提醒，每轮最多 1 条', async () => {
+test('progress-reminder：每 N 次工具结果滴入一条提醒，每轮最多 1 条', async () => {
   const { ctx, listeners } = makeCtx()
-  applyDrip(ctx, { every: 2 })
+  applyProgressReminder(ctx, { every: 2 })
   const session = makeSession()
   const exec = makeExec(session)
   const post = listeners.get('tools/post-execute')[0]
@@ -40,7 +40,7 @@ test('cot-drip：每 N 次工具结果滴入一条提醒，每轮最多 1 条', 
   const d2 = await run(2)
   assert.equal(d2.additionalContexts.length, 1)
   assert.equal(d2.additionalContexts[0].content[0].text, DRIP_TEXT)
-  assert.equal(d2.additionalContexts[0].source.plugin, 'cot-drip')
+  assert.equal(d2.additionalContexts[0].source.plugin, 'progress-reminder')
 
   const d4 = await run(2)
   assert.equal(d4.additionalContexts, undefined, '每轮最多 1 条（后续结果不带滴入）')
@@ -51,16 +51,16 @@ test('cot-drip：每 N 次工具结果滴入一条提醒，每轮最多 1 条', 
   assert.equal(d5.additionalContexts.length, 1, '新轮重置后再次滴入')
 })
 
-test('cot-drip：every=0 禁用；子代理默认不滴；失败保留原决策', async () => {
+test('progress-reminder：every=0 禁用；子代理默认不滴；失败保留原决策', async () => {
   const { ctx, listeners } = makeCtx()
-  applyDrip(ctx, { every: 0 })
+  applyProgressReminder(ctx, { every: 0 })
   const session = makeSession()
   const post = listeners.get('tools/post-execute')[0]
   const decision = await post(makeExec(session), {}, async () => ({ kind: 'accept' }))
   assert.equal(decision.additionalContexts, undefined, 'every=0 禁用')
 
   const { ctx: ctx2, listeners: listeners2 } = makeCtx()
-  applyDrip(ctx2, { every: 1 })
+  applyProgressReminder(ctx2, { every: 1 })
   const sub = makeSession()
   sub.header.delegationDepth = 1
   const subDecision = await listeners2.get('tools/post-execute')[0](makeExec(sub), {}, async () => ({ kind: 'accept' }))
@@ -69,5 +69,5 @@ test('cot-drip：every=0 禁用；子代理默认不滴；失败保留原决策'
   const failed = await listeners2.get('tools/post-execute')[0](makeExec(sub), {}, async () => ({ kind: 'reject', reason: 'x' }))
   assert.equal(failed.kind, 'reject', '非 accept 决策原样透传')
 
-  assert.throws(() => applyDrip(ctx, { bogus: 1 }), /unknown config key/)
+  assert.throws(() => applyProgressReminder(ctx, { bogus: 1 }), /unknown config key/)
 })

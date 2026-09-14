@@ -5,7 +5,7 @@ import { registerHooks } from 'node:module'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import ts from 'typescript'
-import { ENGINE_CAPABILITIES } from '../../src/shared/engine-capabilities.ts'
+import { ENGINE_CAPABILITIES, engineCapability, engineRecipe } from '../../src/shared/engine-capabilities.ts'
 import { ENGINE_PARAM_DEFINITIONS, ENGINE_PARAM_KEYS } from '../../src/shared/engine-params.ts'
 import { displayLayers } from '../../src/client/features/prompts/prompt-config-policy.ts'
 import { EMPTY_FIELDS } from '../../src/client/data/prompt-tool-fields.ts'
@@ -61,21 +61,48 @@ test('模块字段从目录渲染，每个参数有且只有一个配置卡 owne
   }
 })
 
-test('卡片存在性来自装配事实，bootstrap-filesystem 显示为编辑工具能力', () => {
+test('卡片存在性来自装配事实，filesystem-editor 显示为编辑工具能力', () => {
   const absent = render(EngineModuleCards, { store, t })
   assert.doesNotMatch(absent, /class="configName">tool-bootstrap</)
-  const active = { ...store, moduleFacts: { ...store.moduleFacts, effectiveModules: ['tool-bootstrap', 'bootstrap-filesystem'] } }
+  const active = { ...store, moduleFacts: { ...store.moduleFacts, effectiveModules: ['tool-bootstrap', 'filesystem-editor', 'promoted-code-mode', 'progress-reminder'] } }
   const html = render(EngineModuleCards, { store: active, t })
   assert.match(html, /class="configName">tool-bootstrap</)
   assert.match(html, /class="configName">str-replace-editor</)
+  assert.match(html, /class="configName">promoted-code-mode</)
+  assert.match(html, /class="configName">progress-reminder</)
   const filtered = render(EngineModuleCards, { store: active, t, layerFilter: 'pre-step' })
   assert.doesNotMatch(filtered, /class="configName">tool-bootstrap</)
   assert.doesNotMatch(filtered, /class="configName">str-replace-editor</)
+  assert.doesNotMatch(filtered, /class="configName">(?:promoted-code-mode|progress-reminder)</)
   const anchored = render(EngineModuleCards, { store: { ...store, moduleFacts: { ...store.moduleFacts, effectiveModules: ['anchor-turn'] } }, t, layerFilter: 'pre-step' })
   assert.match(anchored, /class="configName">anchor-turn</)
   assert.doesNotMatch(render(EngineModuleCards, { store: { ...store, moduleFacts: { ...store.moduleFacts, effectiveModules: ['anchor-turn'] } }, t, layerFilter: 'system-section' }), /class="configName">anchor-turn</)
   const official = render(EngineModuleCards, { store: { ...active, moduleFacts: { ...active.moduleFacts, sourceMode: 'official' } }, t })
   assert.doesNotMatch(official, /class="configName">tool-bootstrap</)
+})
+
+test('能力与组合只引用新模块名，不接受旧模块名或编辑器模块别名', () => {
+  const editor = engineCapability('str-replace-editor')
+  assert.deepEqual(editor.moduleKeys, ['filesystem-editor'])
+  assert.deepEqual(editor.rowIds, ['str-replace-editor'])
+  for (const id of ['promoted-code-mode', 'progress-reminder']) {
+    assert.deepEqual(engineCapability(id).moduleKeys, [id])
+    assert.deepEqual(engineCapability(id).rowIds, [id])
+  }
+  assert.equal(engineCapability('code-presentation'), undefined)
+  assert.equal(engineCapability('cot-drip'), undefined)
+  const legacy = { ...store, moduleFacts: {
+    ...store.moduleFacts,
+    effectiveModules: ['bootstrap-filesystem', 'str-replace-editor', 'custom-bash', 'code-presentation', 'cot-drip'],
+    rowIds: ['str-replace-editor', 'promoted-code-mode', 'progress-reminder'],
+  } }
+  assert.doesNotMatch(render(EngineModuleCards, { store: legacy, t }), /class="configName">(?:str-replace-editor|promoted-code-mode|progress-reminder)</)
+  assert.deepEqual(engineRecipe('phase-control-ptc'), {
+    id: 'phase-control-ptc', capabilities: ['context-gate', 'tool-bootstrap', 'promoted-code-mode'], initialParams: { usePtcMode: true },
+  })
+  assert.deepEqual(engineRecipe('deliberation'), {
+    id: 'deliberation', capabilities: ['deliberation-gate', 'progress-reminder'], initialParams: { deliberationGate: true, cotDrip: true },
+  })
 })
 
 test('字段类型、零值与 system 只读由同一渲染器处理', () => {

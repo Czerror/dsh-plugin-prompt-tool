@@ -41,7 +41,7 @@ test('rc.2 新增 present 行：standard / ptc / creative 按官方层内顺序�
   assert.equal(idsOf(rowsOf('minimal')).includes('present'), false, 'minimal 基型没有 present 行')
 })
 
-test('ptc 使用官方 alpha.4 呈现与 delegation 变体，不重复挂 code-presentation', () => {
+test('ptc 使用官方 alpha.4 呈现与 delegation 变体，不重复挂 promoted-code-mode', () => {
   const rows = rowsOf('ptc')
   const ids = idsOf(rows)
   assert.deepEqual(ids, [
@@ -52,7 +52,7 @@ test('ptc 使用官方 alpha.4 呈现与 delegation 变体，不重复挂 code-p
   ])
   const presentation = rows.find((row) => row.id === 'tool-presentation')
   assert.equal(presentation.config.mode, 'ptc')
-  assert.equal(ids.includes('code-presentation'), false, '官方 tool-presentation 已承担 PTC 呈现，不重复注册')
+  assert.equal(ids.includes('promoted-code-mode'), false, '官方 tool-presentation 已承担 PTC 呈现，不重复注册')
   const delegation = rows.find((row) => row.id === 'delegation')
   assert.equal(delegation.config.find((row) => row.id === 'tool-workflow').disabled, true)
 })

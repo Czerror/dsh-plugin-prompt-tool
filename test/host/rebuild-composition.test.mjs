@@ -6,6 +6,8 @@ import { spawnSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
+import { isDeepStrictEqual } from 'node:util'
+import { parse } from 'yaml'
 
 const ROOT = fileURLToPath(new URL('../..', import.meta.url))
 /** 固定上游输入：0.1.5-rc.2 tag 导出，不读取开发机 ../deepseek-harness。 */
@@ -79,10 +81,24 @@ test('rebuild-composition：动态发现官方预设并拒绝缺行、重复和�
     // C-01/C-03：官方 minimal 已删除 filesystem 行，本地编辑能力改为 source/local 模块。
     const library = join(root, 'engine', 'compositions', 'library')
     const localModules = join(root, 'engine', 'compositions', 'source', 'local')
-    assert.equal(existsSync(join(library, 'bootstrap-filesystem.yml')), false, 'library 不得再切分官方 minimal filesystem 行')
-    assert.equal(existsSync(join(localModules, 'bootstrap-filesystem.yml')), true, '本地 bootstrap-filesystem 必须存在')
+    assert.equal(existsSync(join(library, 'filesystem-editor.yml')), false, '本地编辑器不属于官方快照')
+    assert.equal(existsSync(join(localModules, 'filesystem-editor.yml')), true, '本地 filesystem-editor 必须存在')
+    assert.equal(existsSync(join(library, 'persona.yml')), false, '人设直接由预设字段生成，不得拆回模块库')
+    assert.equal(existsSync(join(library, 'tool-bash-disabled.yml')), false)
+    assert.equal(existsSync(join(localModules, 'tool-bash-disabled.yml')), true)
+    assert.equal(existsSync(join(localModules, 'persistent-shell-posix.yml')), true)
+    const generated = readdirSync(library).filter((name) => name.endsWith('.yml'))
+    assert.equal(generated.length, 22)
+    const upstreamRows = ['standard', 'minimal', 'ptc', 'cordis'].flatMap((name) =>
+      parse(readFileSync(join(FIXTURE_PRESETS, name, 'agent.cordis.yml'), 'utf8'), { logLevel: 'silent' }))
+    for (const name of generated) {
+      const rows = parse(readFileSync(join(library, name), 'utf8'), { logLevel: 'silent' })
+      assert.equal(rows.length, 1)
+      assert.notEqual(rows[0].id, 'persona')
+      assert.ok(upstreamRows.some((row) => isDeepStrictEqual(row, rows[0])), `${name} 必须与固定官方来源完全同构，不得带本地补丁`)
+    }
     // C-02：rc.2 的 present 行必须被覆盖，且来源行记录固定 tag 与提交。
-    const present = readFileSync(join(library, 'present.yml'), 'utf8')
+    const present = readFileSync(join(library, 'tool-present.yml'), 'utf8')
     // 临时上游目录不带 PROVENANCE.md，来源行只保证指向 minimal 之外的官方基型；
     // tag/commit 由上面「固定上游 fixture 与 PROVENANCE 指纹一致」用例锁定。
     assert.match(present, /^# source: .*\/packages\/preset\/agent-presets\/presets\/standard\/agent\.cordis\.yml$/m)
@@ -103,7 +119,7 @@ test('rebuild-composition：动态发现官方预设并拒绝缺行、重复和�
     assert.notEqual(duplicate.status, 0)
     assert.match(duplicate.stderr + duplicate.stdout, /duplicate modules: tool-web/)
 
-    writeFileSync(file, original.replace('  - present\n  - prompt-config-engine\n', '  - prompt-config-engine\n  - present\n'), 'utf8')
+    writeFileSync(file, original.replace('  - tool-present\n  - prompt-config-engine\n', '  - prompt-config-engine\n  - tool-present\n'), 'utf8')
     const reordered = run(root, upstream)
     assert.notEqual(reordered.status, 0)
     assert.match(reordered.stderr + reordered.stdout, /modules do not match official standard order/)

@@ -217,10 +217,9 @@ wholeWords/selectiveLogic）单一权威。两个写入端共用：
     # includeRuntimeContext: false # 抑制该 scope 的动态 runtime-context 快照
   ```
 
-- 渲染：`renderComposition` 对 `modules` 清单预设自动前插官方 `persona` 行
-  （`engine/compositions/library/persona.yml`），顶层段四个键是该行 config 的
-  唯一数据源；段内省略的键删除库行默认值（否则未声明 `suffix` 的预设会继承库行
-  标准 suffix）。`composition:` 组合预设不自动插行，需自带 persona 行。
+- 渲染：`renderComposition` 直接从顶层字段生成官方 `@deepseek-ai/dsh-persona` 行，
+  不读取模块库、不向 `modules` 补入人设模块，也不继承标准预设文本。`persona` 不是
+  可引用的模块名；`composition:` 组合预设不自动插行，需自带 persona 行。
 - 运行时不再有 persona 专属分支：`engine/layers.mjs` 把
   `deployment:persona-prefix` / `deployment:persona-suffix` 当普通 system-section
   段名处理，`complete` / `includeRuntimeContext` 由官方行承担；子代理独立人设走
@@ -306,14 +305,11 @@ wholeWords/selectiveLogic）单一权威。两个写入端共用：
 
 ### 角色卡导入的 persona 开放（2026-08-25）
 
-ST 转换（convertStToPreset）自带人设开放处理（`moduleConfigs.persona = { complete: false }`，
-注释「complete: false 允许 system-section 生效」）——但角色卡**导入激活预设**（applyCharacterToPreset）
-此前未处理：激活预设 persona-main `complete: true` 会在 assembly 抑制导入的 ST
-system-section 段（character-definition / system-prompt / post-history）。
-
-修复：导入卡含 system-section 段且激活预设 persona-main complete: true 时，自动置
-`complete: false`（开放，返回 `personaOpened: true`）；幂等（已开放不再改）；纯世界书卡
-（无 system-section）不触碰。
+ST 转换（convertStToPreset）通过顶层 `persona: { prefix: '', complete: false }`
+允许 system-section 生效，不追加 persona 模块或依赖标准库人设。
+角色卡导入激活预设（applyCharacterToPreset）时，若卡片含 system-section 且目标预设
+顶层 `persona.complete: true`，则置为 false 并返回 `personaOpened: true`；已开放时
+不重复修改，纯世界书卡不触碰人设。
 
 ## 9. 子代理工具策略（subagentToolPolicy，2026-09-02）
 

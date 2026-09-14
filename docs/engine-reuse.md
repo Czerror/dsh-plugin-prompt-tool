@@ -7,23 +7,29 @@
 装配遵循显式按需语义：`modules: []` 生成合法空组合，只有列入 `modules` 的插件能力才会挂载；
 四个官方基型保留上游工具能力，人设统一由 preset.yml 顶层 `persona` 段（官方
 `@deepseek-ai/dsh-persona` 行 config 同构）驱动——`renderComposition` 在 `modules` 清单预设中
-自动前插该行，无需把 persona 写进 `modules`。
+直接从字段生成该行，不读取任何 persona 模块。模块库不提供 `persona`，不得把人设
+重新拆回模块清单；ST/角色卡转换也遵循顶层字段契约。
 
-`bootstrap-filesystem` 自 DSH `0.1.5-rc.2` 起是**本地模块**
-（`engine/compositions/source/local/bootstrap-filesystem.yml`）：官方 minimal 已删除
+`filesystem-editor` 是**本地模块**
+（`engine/compositions/source/local/filesystem-editor.yml`）：DSH `0.1.5-rc.2` 官方 minimal 已删除
 `filesystem` 行，只剩当前 OS 的持久 shell，因此内置 `preset/minimal` 同步为单 shell 工具基型；
 带隔离文件系统的 `fs-local` + `str-replace-editor`（同属一个 `fs` 隔离域）只由显式声明
-`bootstrap-filesystem` 的预设装配，如内置 Anchored 与既有用户预设。官方 `agent.cordis.yml` 中
-同名 row 不作为可编辑插件能力；同一预设内仍禁止重复 row，跨预设的 `official-*` 文件仅保留
-确有语义差异的变体。
+`filesystem-editor` 的预设装配，如内置 Anchored。官方 `agent.cordis.yml` 中同名 row 不作为
+可编辑插件能力；同一预设内仍禁止重复 row。
 
-当前保留的变体包括 `tool-bash`、`persistent-shell`、`delegation` 和
-`skill-filesystem`：它们分别承载平台禁用、shell 回退、PTC workflow 开关或 Cordis
-技能路径差异，不能仅按 row id 合并。真正重复的嵌套拆分（如旧版独立
-`str-replace-editor`）统一回收到所属官方 group。
+### 官方与本地分类
 
-旧版 `str-replace-editor` 模块名不再兼容也不迁移（本项目不含迁移代码）：升级前请把
-预设里的该模块改写为 `bootstrap-filesystem`。
+- `engine/compositions/library/`：仅由固定官方输入原样切出的 22 个模块。官方预设本身的
+  `delegation-ptc`、`skill-filesystem-cordis` 差异可保留，但不允许注入本地补丁。
+- `engine/compositions/source/local/`：19 个本地自有或本地改写模块的唯一源码。
+  `tool-bash-disabled` 与 `persistent-shell-posix` 是本地适配，不因使用官方包就归为官方模块。
+- 模块文件名是 `modules` 的直接标识；官方原始 row id 保持不变，必要的模块名只描述职责
+  或预设变体，例如 `tool-present` 对应官方 `present` 行。官方模块不使用额外 `official-` 前缀。
+- 本地明确职责：`tool-git-bash` 提供 Windows Git Bash，`promoted-code-mode` 在晋升后启用
+  Code Mode，`progress-reminder` 按工具结果节拍提醒进度。其他已经清楚的名称保持不变。
+- **不提供旧名别名、兼容导出、双读或自动迁移。** 已撤销的模块名直接拒绝；`tool-bash`
+  和 `persistent-shell` 只表示原样官方模块。本地适配须使用明确的新名。嵌套官方编辑器的
+  row/tool 名 `str-replace-editor` 保持，但它不是可独立引用的组合模块。
 
 ## 复制协议（跨项目复用）
 
@@ -46,7 +52,7 @@
 | `context-gate` | engine/context-gate.mjs | 注入门控：未晋升时清空运行时上下文 + pre-step kind 白名单；可选调用 instruction-hint 完成全文转换 |
 | `instruction-hint` | engine/instruction-hint.mjs | 通用指令文件解析：`params.text` 自定义提示 → `params.file` 运行时读该文件正文（`Instructions from:` 头）→ `params.scope`（all / global / project）只发文件存在提示；含 agent-instructions 转换，prompt-config 与 context-gate 共用 |
 | `tool-bootstrap` | engine/tool-bootstrap.mjs | 首轮工具目录窄化（bootstrap 对）→ 晋升后恢复完整目录；bootstrapMaxTokens 封顶；promoteGate 门控；personaSectionsOnly / workspaceLine |
-| `code-presentation` | engine/code-presentation.mjs | 晋升后 PTC mode 呈现（`tools.presentAs('ptc')`），成功 compaction/end 释放 |
+| `promoted-code-mode` | engine/promoted-code-mode.mjs | 晋升后 PTC mode 呈现（`tools.presentAs('ptc')`），成功 compaction/end 释放 |
 | `prompt-config-engine` | engine/prompt-config-engine.mjs | 提示词配置执行器（per-config `promotion: main / include-subagents` 门控） |
 | `tool-config-engine` | engine/tool-config-engine.mjs | 自定义工具引擎：preset.yml `customTools` 段 → 官方转换器物化标准 JSON Schema（`custom-tools/*.yml`）→ 运行时 `ctx.tools.register`（执行器 shell/http/delegate/fs/ask-user；行 `requireApproval` 门；delegate 经 `ctx.tools.execute` 嵌套调度走完整官方工具管线） |
 | `subagent-tool-policy` | engine/subagent-tool-policy.mjs | generation-scoped subagent/subagent_fork shadow：只安装到当前预设后代；spawn/fork 分别绑定官方 provider，foreground 读取 `SubagentRun.result`，continuable 读取 `childId` 并传顶层 signal；实例参数在 body 前校验，扩权经 approval 门，provider 能力不足 fail loud |
@@ -130,7 +136,7 @@ moduleConfigs 只补充参数桥未覆盖的键，不再锁定覆盖 UI 可管�
 
 | params 键 | 落点（config 键） | 默认 |
 |---|---|---|
-| `usePtcMode` | code-presentation.usePtcMode | false（opt-in） |
+| `usePtcMode` | promoted-code-mode.usePtcMode | false（opt-in） |
 | `bootstrapMaxTokens` | tool-bootstrap.bootstrapMaxTokens | 不封顶 |
 | `bootstrapTools` | tool-bootstrap.bootstrapTools | [bash, str_replace_editor] |
 | `promoteGate` | tool-bootstrap.promoteGate | false |
@@ -165,7 +171,7 @@ progressive disclosure 自写）：目录 = 当前阶段工具 + 预放（`stage
 
 ```yaml
 modules:
-  - code-presentation
+  - promoted-code-mode
 ```
 
 PTC + 首轮锚定：
@@ -174,11 +180,11 @@ PTC + 首轮锚定：
 modules:
   - context-gate
   - tool-bootstrap
-  - code-presentation
+  - promoted-code-mode
 moduleConfigs:
   tool-bootstrap:
     bootstrapTools: [bash, str_replace_editor]
-  code-presentation:
+  promoted-code-mode:
     usePtcMode: true             # PTC 呈现默认 false，这里显式开启
 ```
 
@@ -218,7 +224,7 @@ moduleConfigs:
 
 ## 重建与验证
 
-- 组合重建：`pnpm rebuild:composition`（只生成 `library/` 的官方切块/变体；`source/local/` 保持本地源文件，不复制）；
+- 组合重建：`pnpm rebuild:composition test/fixtures/dsh/0.1.5-rc.2`（只生成 `library/` 的原样官方切块/变体；`source/local/` 保持本地源文件，不复制）；
 - 本地新增模块放 `engine/compositions/source/local/<name>.yml`，重建脚本校验后直接装配；
-  官方行变体在 `OFFICIAL_MODULES` 显式登记并生成到 `library/`；两处同名会 fail loud；
+  官方预设行变体在 `OFFICIAL_MODULES` 显式登记并生成到 `library/`；本地改写不得加入生成器补丁表，两处同名会 fail loud；
 - 验证三连：`pnpm typecheck` + `pnpm lint` + `pnpm test`。

@@ -4,8 +4,8 @@ description: 用于创建自定义 Agent preset：具备标准模式的全部能
 version: 1.0.0
 engineCompat: ">=0.4.2"
 modules:
-  - official-agent-instructions
-  - official-tool-bash
+  - agent-instructions
+  - tool-bash
   - tool-pwsh
   - tool-fs
   - tool-fs-search
@@ -18,9 +18,9 @@ modules:
   - tool-ask-user
   - tool-todo
   - tool-web
-  - official-skill-filesystem-cordis
-  - official-tool-skill
-  - present
+  - skill-filesystem-cordis
+  - tool-skill
+  - tool-present
   - prompt-config-engine
 model:
   provider: ""

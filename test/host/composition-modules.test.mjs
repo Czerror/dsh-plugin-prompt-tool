@@ -51,14 +51,15 @@ test('组合源与生成库职责分离：本地模块不复制到 library', () 
 })
 
 test('模块来源可追溯：官方切块、本地源和通用 instruction-hint 各有明确归属', () => {
-  const official = read('engine/compositions/library/official-agent-instructions.yml')
+  const official = read('engine/compositions/library/agent-instructions.yml')
   assert.match(official, /# source: .*agent-presets\/presets\/standard\/agent\.cordis\.yml/)
   const ptc = read('engine/compositions/library/delegation-ptc.yml')
   assert.match(ptc, /# source: .*agent-presets\/presets\/ptc\/agent\.cordis\.yml/)
   const local = read('engine/compositions/source/local/context-gate.yml')
   assert.match(local, /source\/local\/context-gate\.yml/)
   assert.ok(existsSync(join(root, 'engine/instruction-hint.mjs')), 'instruction-hint 必须位于通用 engine 根目录')
-  assert.ok(existsSync(join(root, 'engine/compositions/library/persona.yml')), '动态 ST 转换仍需 persona 模块')
+  assert.equal(existsSync(join(libraryDir, 'persona.yml')), false, '人设只由顶层 persona 字段提供，不保留模块')
+  assert.equal(existsSync(join(localDir, 'persona.yml')), false, 'persona 不转移为本地模块')
 })
 
 test('官方行变体仅保留确有语义差异的重复行', () => {
@@ -74,11 +75,13 @@ test('官方行变体仅保留确有语义差异的重复行', () => {
     .map(([id, files]) => [id, files.sort()]))
   assert.deepEqual(duplicates, {
     delegation: ['delegation', 'delegation-ptc'],
-    'persistent-shell': ['official-persistent-shell', 'persistent-shell'],
-    'skill-filesystem': ['official-skill-filesystem-cordis', 'skill-filesystem'],
-    'tool-bash': ['official-tool-bash', 'tool-bash'],
+    'skill-filesystem': ['skill-filesystem', 'skill-filesystem-cordis'],
   })
-  for (const name of ['official-filesystem', 'persona-cordis', 'persona-minimal']) {
+  for (const name of [
+    'official-agent-instructions', 'official-tool-bash', 'official-tool-skill',
+    'official-persistent-shell', 'official-tool-presentation', 'official-tool-cordis',
+    'official-skill-filesystem-cordis', 'present', 'official-filesystem', 'persona-cordis', 'persona-minimal',
+  ]) {
     assert.equal(existsSync(join(libraryDir, `${name}.yml`)), false, `${name} 不应重复切分官方基型已有行`)
   }
 })
@@ -91,8 +94,10 @@ test('组合库无 __TOKEN__ 残留：参数桥模块齐备且官方 alpha.4 变
       assert.ok(!/__[A-Za-z0-9_]+__/.test(content), `${file} 不应含 __TOKEN__`)
     }
   }
-  const presentation = parse(read('engine/compositions/library/official-tool-presentation.yml'), { logLevel: 'silent' })[0]
+  const presentation = parse(read('engine/compositions/library/tool-presentation.yml'), { logLevel: 'silent' })[0]
   assert.equal(presentation.config.mode, 'ptc', 'alpha.4 官方 PTC mode 名为 ptc')
+  const present = parse(read('engine/compositions/library/tool-present.yml'), { logLevel: 'silent' })[0]
+  assert.equal(present.id, 'present', 'tool-present 模块保留官方 present row id')
   const ptcDelegation = parse(read('engine/compositions/library/delegation-ptc.yml'), { logLevel: 'silent' })[0]
   const workflow = ptcDelegation.config.find((row) => row.id === 'tool-workflow')
   assert.equal(workflow.disabled, true, 'PTC 不暴露第二个模型编排面 workflow')
@@ -100,19 +105,24 @@ test('组合库无 __TOKEN__ 残留：参数桥模块齐备且官方 alpha.4 变
   const delegation = read('engine/compositions/library/delegation.yml')
   assert.match(delegation, /modelSelectionSettings: true/)
   assert.match(delegation, /backgroundMode: one-shot/)
-  const bash = read('engine/compositions/library/tool-bash.yml')
-  assert.ok(bash.includes('disabled: true'))
+  const bash = parse(read('engine/compositions/source/local/tool-bash-disabled.yml'), { logLevel: 'silent' })[0]
+  assert.equal(bash.id, 'tool-bash-disabled')
+  assert.equal(bash.name, '@deepseek-ai/dsh-tool-bash')
+  assert.equal(bash.disabled, true)
   const pwsh = read('engine/compositions/library/tool-pwsh.yml')
   assert.match(pwsh, /disabled: !!js process\.platform !== 'win32'/, '普通 pwsh 只在 Windows 启用')
-  const persistentShell = read('engine/compositions/library/persistent-shell.yml')
-  assert.match(persistentShell, /- id: persistent-shell[\s\S]*?group: true\s+disabled: !!js process\.platform === 'win32'\s+isolate:/,
-    'anchored persistent-shell 整组必须在 Windows 禁用，避免与普通 tool-pwsh 重复注册 pwsh')
+  const persistentShell = read('engine/compositions/source/local/persistent-shell-posix.yml')
+  assert.match(persistentShell, /- id: persistent-shell-posix[\s\S]*?group: true\s+disabled: !!js process\.platform === 'win32'\s+isolate:/,
+    'anchored persistent-shell-posix 整组必须在 Windows 禁用，避免与普通 tool-pwsh 重复注册 pwsh')
   assert.match(persistentShell, /shellPath: !!js/, 'anchored bash PTY 保留 /bin/bash → PATH 回退')
-  // rc.2 官方 minimal 已无 filesystem 行：该能力改为本地模块，仍供 Anchored 与旧预设引用。
-  const filesystem = read('engine/compositions/source/local/bootstrap-filesystem.yml')
+  const shellRows = parse(persistentShell, { logLevel: 'silent' })[0]
+  assert.equal(shellRows.isolate.terminals, true)
+  assert.deepEqual(shellRows.config.map((row) => row.id), ['pty', 'terminal-bash', 'persistent-bash', 'terminal-pwsh', 'persistent-pwsh'])
+  // rc.2 官方 minimal 已无 filesystem 行：该能力只由显式声明本地模块的预设装配。
+  const filesystem = read('engine/compositions/source/local/filesystem-editor.yml')
   const filesystemRows = parse(filesystem, { logLevel: 'silent' })
   assert.equal(filesystemRows.length, 1)
-  assert.equal(filesystemRows[0].id, 'bootstrap-filesystem')
+  assert.equal(filesystemRows[0].id, 'filesystem-editor')
   assert.equal(filesystemRows[0].group, true)
   assert.equal(filesystemRows[0].isolate.fs, true)
   assert.deepEqual(filesystemRows[0].config.map((row) => row.id), ['fs-local', 'str-replace-editor'])

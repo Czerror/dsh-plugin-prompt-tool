@@ -3,7 +3,7 @@
  * preset's REAL tool schema (persistent `bash` + `str_replace_editor`), then
  * keep the assembled catalog once the session has produced its first durable
  * promotion signal. Code Mode (PTC) wire presentation lives in the companion
- * `code-presentation` plugin (mounted as a separate row), not here.
+ * `promoted-code-mode` plugin (mounted as a separate row), not here.
  * Injected-context control lives in the companion `context-gate` plugin.
  *
  * GATE MODE (strict two-phase stabilization extension, source: xiaobright/dsh-anchored-standard
@@ -379,7 +379,7 @@ export function apply(ctx, config) {
       const status = promotion.status(agent)
       if (status.promoted) {
         // prompt-tool patch: keep the assembled catalog after promotion
-        // (Code Mode presentation is the companion code-presentation row's job).
+        // (Code Mode presentation is the companion promoted-code-mode row's job).
         return workspaceLine ? withWorkspaceLine(assembled, agent) : assembled
       }
       // Controlled phase: the bootstrap pair; after a compaction, plus the

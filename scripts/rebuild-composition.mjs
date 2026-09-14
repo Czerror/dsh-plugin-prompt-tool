@@ -2,7 +2,7 @@
 //
 // 数据来源(官方):standard / minimal / ptc / cordis 的 agent.cordis.yml。
 // 本脚本只保留一份共享行；官方预设确有语义差异时才生成变体模块
-// （PTC delegation、Cordis skill-filesystem、Anchored shell 补丁等）。
+// （PTC delegation、Cordis skill-filesystem）。本地改写属于 source/local，不冒充官方变体。
 // 本地模块以 engine/compositions/source/local/*.yml 为唯一源，不复制到 library/；
 // library/ 只保留脚本从官方预设切出的行与确有语义差异的官方变体。
 //
@@ -131,57 +131,19 @@ for (const preset of OFFICIAL_PRESETS) {
   officialRows.set(preset, new Map(parsed.map((row) => [row.id, row])))
 }
 
-/** 本地补丁:输出模块 id → 对官方切块应用的字符串替换(全部幂等,缺失时 fail loud)。 */
-const PATCHES = {
-  // Anchored Standard 在 Windows 使用 custom-bash；普通 tool-bash 永久关闭。
-  'tool-bash': [
-    { from: 'disabled: !!js process.platform === \'win32\'', to: 'disabled: true' },
-  ],
-  'persistent-shell': [
-    {
-      // Anchored 同时挂普通 tool-pwsh；Windows 整组关闭 persistent-shell，避免重复注册 pwsh。
-      from: "- id: persistent-shell\n  name: cordis:group\n  group: true\n  isolate:",
-      to: "- id: persistent-shell\n  name: cordis:group\n  group: true\n  disabled: !!js process.platform === 'win32'\n  isolate:",
-    },
-    {
-      // 对齐 dsh-anchored-standard issue #44：NixOS 等无 /bin/bash 时回退 PATH 中的 bash。
-      from: "- id: terminal-bash\n      name: '@deepseek-ai/dsh-terminal-bash'\n      disabled: !!js process.platform === 'win32'\n      config:\n        timeoutMs: 300000",
-      to: "- id: terminal-bash\n      name: '@deepseek-ai/dsh-terminal-bash'\n      disabled: !!js process.platform === 'win32'\n      config:\n        shellPath: !!js \"process.getBuiltinModule?.('node:fs')?.existsSync('/bin/bash') ? '/bin/bash' : 'bash'\"\n        timeoutMs: 300000",
-    },
-  ],
-}
-
-function applyPatches(id, text, source) {
-  let out = text
-  for (const patch of PATCHES[id] ?? []) {
-    const occurrences = out.split(patch.from).length - 1
-    if (occurrences === 0) {
-      throw new Error(`${id}: official patch marker missing in ${source}:\n${patch.from}`)
-    }
-    if (occurrences !== 1) {
-      throw new Error(`${id}: official patch marker occurs ${occurrences} times in ${source}; expected exactly once`)
-    }
-    out = out.replace(patch.from, patch.to)
-  }
-  return out
-}
-
 /**
  * 官方模块映射。相同语义只保留一份；确有差异的行使用独立文件名。
- * persona 由各 preset.yml 的 system-section 配置卡等价表达，不重复生成 Cordis 行。
+ * persona 由 preset.yml 顶层字段直接生成官方行，不属于模块库。
  */
 const OFFICIAL_MODULES = [
-  // 动态 ST/角色卡转换仍可显式装配标准 persona。
-  { id: 'persona', preset: 'standard' },
-  { id: 'official-agent-instructions', preset: 'standard', sourceId: 'agent-instructions' },
-  { id: 'official-tool-bash', preset: 'standard', sourceId: 'tool-bash' },
-  { id: 'tool-bash', preset: 'standard', sourceId: 'tool-bash' },
+  { id: 'agent-instructions', preset: 'standard' },
+  { id: 'tool-bash', preset: 'standard' },
   { id: 'tool-pwsh', preset: 'standard' },
   { id: 'tool-fs', preset: 'standard' },
   { id: 'tool-fs-search', preset: 'standard' },
   { id: 'tool-jobs', preset: 'standard' },
   { id: 'skill-filesystem', preset: 'standard' },
-  { id: 'official-tool-skill', preset: 'standard', sourceId: 'tool-skill' },
+  { id: 'tool-skill', preset: 'standard' },
   { id: 'command-goal', preset: 'standard' },
   { id: 'tool-goal', preset: 'standard' },
   { id: 'planning', preset: 'standard' },
@@ -192,41 +154,29 @@ const OFFICIAL_MODULES = [
   { id: 'tool-todo', preset: 'standard' },
   { id: 'tool-web', preset: 'standard' },
   // rc.2 起 standard / ptc / cordis 都在末尾挂 present 行，语义完全相同，只保留一份。
-  { id: 'present', preset: 'standard' },
-  { id: 'official-tool-presentation', preset: 'ptc', sourceId: 'tool-presentation' },
-  { id: 'official-tool-cordis', preset: 'cordis', sourceId: 'tool-cordis' },
-  { id: 'official-skill-filesystem-cordis', preset: 'cordis', sourceId: 'skill-filesystem' },
-  { id: 'official-persistent-shell', preset: 'minimal', sourceId: 'persistent-shell' },
-  { id: 'persistent-shell', preset: 'minimal', sourceId: 'persistent-shell' },
+  { id: 'tool-present', preset: 'standard', sourceId: 'present' },
+  { id: 'tool-presentation', preset: 'ptc' },
+  { id: 'tool-cordis', preset: 'cordis' },
+  { id: 'skill-filesystem-cordis', preset: 'cordis', sourceId: 'skill-filesystem' },
+  { id: 'persistent-shell', preset: 'minimal' },
 ]
 
 /**
  * Target preset module names in official row order. Most rows keep their id;
- * these aliases are the deliberate local split/variant names. The generated
+ * these names identify official variants, not compatibility aliases. The generated
  * prompt-config-engine is a local module appended to every official target.
  */
 const TARGET_MODULE_OVERRIDES = {
   standard: {
-    'agent-instructions': 'official-agent-instructions',
-    'tool-bash': 'official-tool-bash',
-    'tool-skill': 'official-tool-skill',
-  },
-  minimal: {
-    'persistent-shell': 'official-persistent-shell',
+    present: 'tool-present',
   },
   ptc: {
-    'agent-instructions': 'official-agent-instructions',
-    'tool-bash': 'official-tool-bash',
-    'tool-skill': 'official-tool-skill',
     delegation: 'delegation-ptc',
-    'tool-presentation': 'official-tool-presentation',
+    present: 'tool-present',
   },
   cordis: {
-    'agent-instructions': 'official-agent-instructions',
-    'tool-bash': 'official-tool-bash',
-    'tool-skill': 'official-tool-skill',
-    'tool-cordis': 'official-tool-cordis',
-    'skill-filesystem': 'official-skill-filesystem-cordis',
+    'skill-filesystem': 'skill-filesystem-cordis',
+    present: 'tool-present',
   },
 }
 const TARGET_EXTRA_MODULES = ['prompt-config-engine']
@@ -411,11 +361,9 @@ try {
     const rowId = sourceId ?? id
     const section = officialSections.get(preset)?.get(rowId)
     if (section === undefined) throw new Error(`${id}: official ${preset} preset has no top-level row ${rowId}`)
-    const body = applyPatches(id, section, `${preset}/agent.cordis.yml`)
-    const patches = PATCHES[id]?.length ?? 0
     const commit = upstream.commit === undefined ? '' : `# commit: ${upstream.commit}\n`
-    const provenance = `# module: ${id}\n# source: ${sourceRepo}/packages/preset/agent-presets/presets/${preset}/agent.cordis.yml\n${commit}# local patches: ${patches}\n\n`
-    writeFileSync(join(tmpDir, `${id}.yml`), provenance + body)
+    const provenance = `# module: ${id}\n# source: ${sourceRepo}/packages/preset/agent-presets/presets/${preset}/agent.cordis.yml\n${commit}# local patches: 0\n\n`
+    writeFileSync(join(tmpDir, `${id}.yml`), provenance + section)
   }
 
   // 每个模块必须是且仅是一个顶层 Cordis 行；变体允许文件名与行 id 不同。

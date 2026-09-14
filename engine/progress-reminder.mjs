@@ -1,5 +1,5 @@
 /**
- * cot-drip — 执行期深思维持节拍（上游 dsh-anchored-standard 移植, MIT）。
+ * progress-reminder — 执行期深思维持节拍（上游 dsh-anchored-standard 移植, MIT）。
  *
  * 锚定模式在每轮开场有深思考，但长工具循环中深思会衰减（后期步骤退化
  * 回 "Let me…"）。本模块每 N 次工具结果向对话滴入一条短 user 提醒——
@@ -20,7 +20,7 @@
 import { MAX_TRACKED_SESSIONS, booleanOption, validateConfig } from './shared.mjs'
 
 /** Cordis plugin name used by loader diagnostics. */
-export const name = 'cot-drip'
+export const name = 'progress-reminder'
 
 /** 默认提醒文本——一条规划节拍，措辞维持 "We" 语态。 */
 export const DRIP_TEXT = [
@@ -116,7 +116,7 @@ export function apply(ctx, config) {
       const notice = {
         id: typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
           ? crypto.randomUUID()
-          : `cot-drip-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+          : `progress-reminder-${Date.now()}-${Math.random().toString(36).slice(2)}`,
         role: 'user',
         content: [{ type: 'text', text }],
         source: {

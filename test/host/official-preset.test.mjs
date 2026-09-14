@@ -1,12 +1,12 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
-import { fileURLToPath } from 'node:url'
+import { parse } from 'yaml'
 
-const rootDir = fileURLToPath(new URL('../..', import.meta.url))
+const libUrl = new URL('../../lib/index.mjs', import.meta.url).href
 
 /** 子进程隔离验证：官方格式预设（preset.yml 仅元数据 + agent.cordis.yml）导入后可用。 */
 test('官方格式预设：无 id 回退目录名，无 modules/composition 回退 agent.cordis.yml 渲染', () => {
@@ -32,7 +32,7 @@ test('官方格式预设：无 id 回退目录名，无 modules/composition 回�
     const script = `
       import { readFileSync, existsSync } from 'node:fs'
       import { join } from 'node:path'
-      const { listPresets, writePreset, resolvePresetDir } = await import('./lib/index.mjs')
+      const { listPresets, writePreset, resolvePresetDir } = await import(${JSON.stringify(libUrl)})
       const found = listPresets().find((p) => p.id === 'official-demo')
       if (!found) throw new Error('official-demo 未出现在预设清单')
       if (found.name !== '官方格式演示') throw new Error('name 读取错误')
@@ -53,7 +53,7 @@ test('官方格式预设：无 id 回退目录名，无 modules/composition 回�
       console.log('OK')
     `
     const res = spawnSync(process.execPath, ['--input-type=module', '-e', script], {
-      cwd: rootDir,
+      cwd: process.cwd(),
       env: { ...process.env, DSH_HOME: home },
       encoding: 'utf8',
     })
@@ -64,8 +64,8 @@ test('官方格式预设：无 id 回退目录名，无 modules/composition 回�
   }
 })
 
-/** bootstrap-filesystem 内嵌编辑器参数化：params 覆盖官方默认 16000。 */
-test('官方 bootstrap-filesystem 行：params 覆盖嵌套编辑器 maxOutputChars', () => {
+/** filesystem-editor 内嵌编辑器参数化：params 覆盖默认 16000，嵌套 row 不改名。 */
+test('本地 filesystem-editor 行：装配嵌套编辑器并覆盖 maxOutputChars', () => {
   const home = mkdtempSync(join(tmpdir(), 'pt-editor-param-'))
   try {
     const presetDir = join(home, '.agent-presets', 'editor-param')
@@ -74,7 +74,8 @@ test('官方 bootstrap-filesystem 行：params 覆盖嵌套编辑器 maxOutputCh
       'id: editor-param',
       'name: 编辑器参数覆盖',
       'modules:',
-      '  - bootstrap-filesystem',
+      '  - filesystem-editor',
+      '  - prompt-config-engine',
       'params:',
       '  strReplaceEditorMaxOutputChars: 32000',
       '',
@@ -83,7 +84,7 @@ test('官方 bootstrap-filesystem 行：params 覆盖嵌套编辑器 maxOutputCh
     const script = `
       import { readFileSync } from 'node:fs'
       import { join } from 'node:path'
-      const { writePreset } = await import('./lib/index.mjs')
+      const { writePreset } = await import(${JSON.stringify(libUrl)})
       const gen = join(process.env.DSH_HOME, '.agent-presets')
       writePreset('PROMPT', {
         presetDir: gen, presetTemplate: 'editor-param', presetOrder: 1,
@@ -99,18 +100,25 @@ test('官方 bootstrap-filesystem 行：params 覆盖嵌套编辑器 maxOutputCh
       console.log('OK')
     `
     const res = spawnSync(process.execPath, ['--input-type=module', '-e', script], {
-      cwd: rootDir,
+      cwd: process.cwd(),
       env: { ...process.env, DSH_HOME: home },
       encoding: 'utf8',
     })
     if (res.status !== 0) throw new Error(`probe failed: ${res.stderr || res.stdout}`)
     assert.match(res.stdout, /OK/)
+    const rows = parse(readFileSync(join(presetDir, 'agent.cordis.yml'), 'utf8'))
+    assert.deepEqual(rows.map((row) => row.id), ['filesystem-editor', 'prompt-config-engine'])
+    assert.equal(rows[0].group, true)
+    assert.deepEqual(rows[0].isolate, { fs: true })
+    assert.deepEqual(rows[0].config.map((row) => row.id), ['fs-local', 'str-replace-editor'])
+    assert.equal(rows[0].config[1].name, '@deepseek-ai/dsh-tool-str-replace-editor')
+    assert.equal(rows[0].config[1].config.maxOutputChars, 32000)
   } finally {
     rmSync(home, { recursive: true, force: true })
   }
 })
 
-test('旧 str-replace-editor 模块名运行时归一到 bootstrap-filesystem', () => {
+test('旧 str-replace-editor 模块名明确拒绝，不归一也不改写预设', () => {
   const home = mkdtempSync(join(tmpdir(), 'pt-editor-alias-'))
   try {
     const presetDir = join(home, '.agent-presets', 'editor-alias')
@@ -123,36 +131,31 @@ test('旧 str-replace-editor 模块名运行时归一到 bootstrap-filesystem', 
       '  - prompt-config-engine',
       '',
     ].join('\n'), 'utf8')
+    const before = readFileSync(join(presetDir, 'preset.yml'), 'utf8')
 
     const script = `
-      import { readFileSync } from 'node:fs'
+      import assert from 'node:assert/strict'
       import { join } from 'node:path'
-      import { parse } from 'yaml'
-      const { writePreset } = await import('./lib/index.mjs')
+      const { writePreset } = await import(${JSON.stringify(libUrl)})
       const gen = join(process.env.DSH_HOME, '.agent-presets')
-      writePreset('PROMPT', {
+      assert.throws(() => writePreset('PROMPT', {
         presetDir: gen, presetTemplate: 'editor-alias', presetOrder: 1,
         firstTurnAnchor: false, firstTurnText: '', firstTurnCustom: false,
         guideText: '', guideCustom: false, injectPrompt: true,
         modelProvider: '', subagentModelProvider: '', subagentModelName: '', modelName: '',
         bootstrapMaxTokens: 0, usePtcMode: true, promptConfigs: [],
-      })
-      const rows = parse(readFileSync(join(gen, 'editor-alias', 'agent.cordis.yml'), 'utf8'))
-      if (rows.map((row) => row.id).join(',') !== 'bootstrap-filesystem,prompt-config-engine') {
-        throw new Error('旧模块别名未归一: ' + rows.map((row) => row.id).join(','))
-      }
-      if (rows[0].config.map((row) => row.id).join(',') !== 'fs-local,str-replace-editor') {
-        throw new Error('filesystem 子行不完整')
-      }
+      }), /composition module str-replace-editor not found/)
       console.log('OK')
     `
     const res = spawnSync(process.execPath, ['--input-type=module', '-e', script], {
-      cwd: rootDir,
+      cwd: process.cwd(),
       env: { ...process.env, DSH_HOME: home },
       encoding: 'utf8',
     })
     if (res.status !== 0) throw new Error(`probe failed: ${res.stderr || res.stdout}`)
     assert.match(res.stdout, /OK/)
+    assert.equal(readFileSync(join(presetDir, 'preset.yml'), 'utf8'), before)
+    assert.equal(existsSync(join(presetDir, 'agent.cordis.yml')), false)
   } finally {
     rmSync(home, { recursive: true, force: true })
   }

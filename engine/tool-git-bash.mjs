@@ -1,5 +1,5 @@
 /**
- * custom-bash — a Windows-capable `bash` tool that registers under the SAME
+ * tool-git-bash — a Windows-capable `bash` tool that registers under the SAME
  * name (`bash`) as the official persistent bash, with a Minimal-compatible
  * description, but executes through `ctx.subprocess.spawn` instead of a PTY.
  *
@@ -46,7 +46,7 @@ import { dirname, join } from 'node:path'
 import { validateConfig } from './shared.mjs'
 
 /** Cordis plugin name used by loader diagnostics. */
-export const name = 'custom-bash'
+export const name = 'tool-git-bash'
 
 /** The subprocess and tools services must exist before this tool can register. */
 export const inject = ['subprocess', 'tools']
@@ -167,7 +167,7 @@ export function apply(ctx, config) {
       // PATH): name the remedies instead of leaking a raw ENOENT. Never
       // fall back to pwsh/cmd here — the schema promises `bash -c`
       // semantics; a different shell would silently break every command.
-      throw new Error(`bash executable not found — install Git for Windows, expose a bash on PATH, or set the custom-bash \`bashPath\` config (${String((error && error.message) || error)})`)
+      throw new Error(`bash executable not found — install Git for Windows, expose a bash on PATH, or set the tool-git-bash \`bashPath\` config (${String((error && error.message) || error)})`)
     }
   }
 
@@ -269,7 +269,7 @@ export function apply(ctx, config) {
           // Collected readers may be unavailable on some backends; tolerate.
         }
         const note = usedFallback
-          ? `[custom-bash] workdir ${requested} was unusable (ENOENT); fell back to session cwd\n`
+          ? `[tool-git-bash] workdir ${requested} was unusable (ENOENT); fell back to session cwd\n`
           : ''
         const text = [stdout, stderr].filter((part) => part.length > 0).join('\n')
         const tail = note + (text.length > 0 ? text : `exit code: ${outcome.exitCode} (no output)`)

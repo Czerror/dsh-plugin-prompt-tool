@@ -1,0 +1,10 @@
+# module: tool-git-bash
+# source: engine/compositions/source/local/tool-git-bash.yml (本地附加,上游 dsh-anchored-standard 移植)
+# Windows Git Bash 适配；普通 tool-bash 在 anchored 组合中永久关闭。
+
+- id: tool-git-bash
+  name: ./engine/tool-git-bash.mjs
+  disabled: !!js process.platform !== 'win32'
+  config:
+    timeoutMs: 120000
+    maxOutputBytes: 64000

@@ -1,7 +1,7 @@
 # module: persistent-shell
 # source: dsh-v0.1.5-rc.2/packages/preset/agent-presets/presets/minimal/agent.cordis.yml
 # commit: fb2c4b9e698e30edb738bca4cf0618587db7d203
-# local patches: 2
+# local patches: 0
 
 # The PTY registry is an agent-owned service, so it lives in an entry-local
 # realm. The backend still consumes the host sandbox policy and subprocess
@@ -11,7 +11,6 @@
 - id: persistent-shell
   name: cordis:group
   group: true
-  disabled: !!js process.platform === 'win32'
   isolate:
     terminals: true
   config:
@@ -22,7 +21,6 @@
       name: '@deepseek-ai/dsh-terminal-bash'
       disabled: !!js process.platform === 'win32'
       config:
-        shellPath: !!js "process.getBuiltinModule?.('node:fs')?.existsSync('/bin/bash') ? '/bin/bash' : 'bash'"
         timeoutMs: 300000
 
     - id: persistent-bash

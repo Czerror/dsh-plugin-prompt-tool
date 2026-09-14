@@ -19,7 +19,7 @@ test('能力创建一次写入 modules/初始参数并保持幂等', () => {
     assert.equal(first.changed, true)
     const parsed = parseYaml(readFileSync(file, 'utf8'))
     assert.ok(parsed.modules.includes('deliberation-gate'))
-    assert.ok(parsed.modules.includes('cot-drip'))
+    assert.ok(parsed.modules.includes('progress-reminder'))
     assert.equal(parsed.params.customKeep, true)
     assert.equal(parsed.params.deliberationGate, true)
     const before = readFileSync(file, 'utf8')
@@ -48,7 +48,7 @@ test('filesystem 组合已满足编辑器能力时不追加独立模块', () => 
   const dir = mkdtempSync(join(tmpdir(), 'pt-engine-capability-nested-'))
   try {
     const file = join(dir, 'preset.yml')
-    writeFileSync(file, 'id: nested\nname: nested\nversion: "1"\nengineCompat: ">=0"\nmodules: [bootstrap-filesystem]\n', 'utf8')
+    writeFileSync(file, 'id: nested\nname: nested\nversion: "1"\nengineCompat: ">=0"\nmodules: [filesystem-editor]\n', 'utf8')
     const before = readFileSync(file, 'utf8')
     const result = createEngineCapabilityInPreset(dir, { action: 'create', capabilityId: 'str-replace-editor' })
     assert.equal(result.changed, false)
@@ -75,13 +75,13 @@ test('能力候选校验拒绝重复 Loader row 且不写盘', () => {
   }
 })
 
-test('删除编辑器能力移除 bootstrap-filesystem 组合', () => {
+test('删除编辑器能力移除 filesystem-editor 组合', () => {
   const dir = mkdtempSync(join(tmpdir(), 'pt-engine-capability-remove-editor-'))
   try {
     const file = join(dir, 'preset.yml')
-    writeFileSync(file, 'id: remove-editor\nname: remove-editor\nversion: "1"\nengineCompat: ">=0"\nmodules: [bootstrap-filesystem, prompt-config-engine]\n', 'utf8')
+    writeFileSync(file, 'id: remove-editor\nname: remove-editor\nversion: "1"\nengineCompat: ">=0"\nmodules: [filesystem-editor, prompt-config-engine]\n', 'utf8')
     const result = removeEngineCapabilityFromPreset(dir, 'str-replace-editor')
-    assert.deepEqual(result, { changed: true, removedModules: ['bootstrap-filesystem'], capabilityIds: ['str-replace-editor'] })
+    assert.deepEqual(result, { changed: true, removedModules: ['filesystem-editor'], capabilityIds: ['str-replace-editor'] })
     assert.deepEqual(parseYaml(readFileSync(file, 'utf8')).modules, ['prompt-config-engine'])
   } finally {
     rmSync(dir, { recursive: true, force: true })

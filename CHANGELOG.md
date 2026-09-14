@@ -2,6 +2,14 @@
 
 ## [未发布] - 2026-09-06
 
+### 组合模块直接重命名与来源纠正（破坏性变更）
+
+- `library` 只生成固定官方输入原样的 22 个模块；本地补丁改为 `source/local/tool-bash-disabled.yml` 与 `persistent-shell-posix.yml`，本地模块共 19 个，不再在官方生成器维护字符串补丁。
+- 删除 `library/persona.yml` 与生成登记。`renderComposition` 直接按预设顶层 `persona` 字段生成官方行，不再向 modules 清单隐式补回人设模块；内置预设、ST/角色卡继续共用字段契约。
+- 官方模块去掉不一致的 `official-` 前缀，`present` 模块改为 `tool-present`（官方 row id 不变）。本地 `bootstrap-filesystem`、`custom-bash`、`code-presentation`、`cot-drip` 分别直接改为 `filesystem-editor`、`tool-git-bash`、`promoted-code-mode`、`progress-reminder`，同步源码、配置和 UI。
+- 删除旧 `str-replace-editor` 组合别名，不提供任何旧名映射或自动迁移。`tool-bash`、`persistent-shell` 现在只表示原样官方行；本地适配使用明确后缀。旧预设模块清单必须由用户显式更新；工具名、既有参数键与消息来源类别不变，模块身份使用新名，既有会话历史不改写。
+- 渲染契约升至 v4；官方快照由重建脚本生成，行为测试验证官方行同构、人设直接渲染、旧名拒绝、参数桥和本地适配，用户服务切换由用户安排。
+
 ### 独立指令来源审查修复（2026-09-14）
 
 - 修复普通预设卡因 `params.file` 被误判为独立指令卡而丢失；授权根与候选文件统一真实路径，允许目录链接作为工作区或 DSH_HOME，同时保留越界拒绝。

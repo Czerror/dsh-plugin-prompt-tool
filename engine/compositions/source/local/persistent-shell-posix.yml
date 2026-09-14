@@ -1,16 +1,14 @@
-# module: official-persistent-shell
-# source: dsh-v0.1.5-rc.2/packages/preset/agent-presets/presets/minimal/agent.cordis.yml
+# module: persistent-shell-posix
+# source: engine/compositions/source/local/persistent-shell-posix.yml (本地适配)
+# based on: dsh-v0.1.5-rc.2 minimal/agent.cordis.yml#persistent-shell
 # commit: fb2c4b9e698e30edb738bca4cf0618587db7d203
-# local patches: 0
+# 本地差异：Windows 禁用整组；POSIX 缺少 /bin/bash 时从 PATH 查找 bash。
+# 保留原组内服务、工具配置与隔离域，不改变工具名和权限边界。
 
-# The PTY registry is an agent-owned service, so it lives in an entry-local
-# realm. The backend still consumes the host sandbox policy and subprocess
-# implementation, while the tool registers into this agent's scoped catalog.
-# Exactly one shell stack mounts per host: the bash stack gates off win32 and
-# its pwsh twin gates off POSIX, mirroring the one-shot shell rows.
-- id: persistent-shell
+- id: persistent-shell-posix
   name: cordis:group
   group: true
+  disabled: !!js process.platform === 'win32'
   isolate:
     terminals: true
   config:
@@ -21,6 +19,7 @@
       name: '@deepseek-ai/dsh-terminal-bash'
       disabled: !!js process.platform === 'win32'
       config:
+        shellPath: !!js "process.getBuiltinModule?.('node:fs')?.existsSync('/bin/bash') ? '/bin/bash' : 'bash'"
         timeoutMs: 300000
 
     - id: persistent-bash

@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
-import { apply as applyCustomBash } from '../../../engine/custom-bash.mjs'
+import { apply as applyGitBash } from '../../../engine/tool-git-bash.mjs'
 
 function makeTool({ timeoutMs = 30, exitCode = 0, output = '', pending = false } = {}) {
   let registered
@@ -24,7 +24,7 @@ function makeTool({ timeoutMs = 30, exitCode = 0, output = '', pending = false }
     },
     tools: { register: (tool) => { registered = tool } },
   }
-  applyCustomBash(ctx, { bashPath: 'C:/git/bin/bash.exe', timeoutMs })
+  applyGitBash(ctx, { bashPath: 'C:/git/bin/bash.exe', timeoutMs })
   assert.ok(registered)
   return registered
 }

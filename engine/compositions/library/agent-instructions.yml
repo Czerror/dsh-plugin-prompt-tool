@@ -1,7 +1,9 @@
-# module: present
+# module: agent-instructions
 # source: dsh-v0.1.5-rc.2/packages/preset/agent-presets/presets/standard/agent.cordis.yml
 # commit: fb2c4b9e698e30edb738bca4cf0618587db7d203
 # local patches: 0
 
-- id: present
-  name: '@deepseek-ai/dsh-tool-present'
+- id: agent-instructions
+  name: '@deepseek-ai/dsh-agent-instructions'
+  config:
+    maxBytes: 65536

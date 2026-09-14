@@ -56,7 +56,7 @@ dsh --profile prompt-tool
 - 🧩 **模板变量**：仅从预设顶层 `variables` 段提供 `{{key}}` 插值默认值，单条提示词配置的 `variables` 可局部覆盖——模块列表顶部「模板变量」卡片统一编辑（可折叠/清空/停用/失焦自动保存）。`params` 中的旧内容变量及 `params.variables` 不再读取，也不自动迁移；旧预设需自行整理到顶层后重新物化。锚定匹配引擎（anchor-match）统一 custom-fallback 与 world-book 的匹配语义
 - 💬 **会话变量工具**：`session_var`（list/get/set/clear）——模型维护角色状态（`{{心情}}` 等），会话级覆盖预设默认；ST 运行时宏（`{{lastusermessage}}` / `{{lastcharmessage}}`）从会话事件提取
 - 🧩 **工具按模块装配**：角色卡、世界书、会话变量、自定义工具分别由 `character-tools` / `world-book-tools` / `session-var-tools` / `tool-config-engine` 模块提供；不再维护重复的顶层工具开关
-- 📐 **显式按需装配**：`modules: []` 保持空组合；四个官方基型的人设由顶层 `persona` 段（`renderComposition` 自动前插官方 `persona` 行）与 `prompt-config-engine` 承载，不附加其他增强模块；Minimal 与 Anchored 共用官方 `bootstrap-filesystem`（`fs-local` + `str-replace-editor` 同隔离域）；Anchored 不预装 ST 管理工具
+- 📐 **显式按需装配**：`modules: []` 保持空组合；四个官方基型的人设直接由顶层 `persona` 段生成官方行，不再经模块库；不附加其他增强模块。Minimal 保持官方单 shell 基型，Anchored 显式装配本地 `filesystem-editor`（`fs-local` + `str-replace-editor` 同隔离域），不预装 ST 管理工具
 
 ## Web 客户端结构
 
@@ -76,7 +76,7 @@ src/client/
 ### 配置卡与工具预览
 
 - 参数在模块列表的配置卡内编辑。引擎能力按实际 `modules` 装配显示；共享参数定义统一生成字段、校验、默认草稿、保存快照和组合行映射。主／子代理模型保留专用配置卡。
-- 工具也按模块装配，例如 `bootstrap-filesystem` 同域提供文件系统与编辑工具。自定义模型工具经「添加能力 / 工具模块 → 添加工具模板 / 新建空白工具」配置名称、描述、参数、输出与执行器，保存前完整校验；不安装、连接或管理外部 MCP／DSH 插件。
+- 工具也按模块装配，例如本地 `filesystem-editor` 同域提供文件系统与编辑工具。`library` 只放原样官方模块，本地适配归 `source/local`；模块旧名不兼容、不迁移。自定义模型工具经「添加能力 / 工具模块 → 添加工具模板 / 新建空白工具」配置名称、描述、参数、输出与执行器，保存前完整校验；不安装、连接或管理外部 MCP／DSH 插件。
 - 「工具预览」是独立顶层页，参照官方插件目录：顶部统一搜索、可折叠分组、右侧预设选择、双列展开详情卡，窄屏单列。卡片显示「模型可见」，不伪造插件运行状态。当前会话与所选预设分别读取：既有会话仍使用冻结 generation，修改预设只影响后续 generation；不会隐藏同名自定义工具或自动恢复会话。
 - `tool-config-engine` 能力卡配置哪些自定义执行器需要用户批准；缺少批准服务时拒绝执行。生成目录保持只读，仍由预设重建产生。
 

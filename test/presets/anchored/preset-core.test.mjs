@@ -76,11 +76,11 @@ test('buildCordis 适配 context-gate：放行 near-anchor/router-guide，子代
   assert.deepEqual(row.config.allowKinds, ['skill-invocation', 'near-anchor', 'router-guide'])
 })
 
-test('buildCordis custom-bash 运行时探测并显式写入超时/输出上限', () => {
+test('buildCordis tool-git-bash 运行时探测并显式写入超时/输出上限', () => {
   const out = buildCordis('PROMPT')
   assert.ok(!out.includes('bashPath:'))
   const doc = parse(out, { logLevel: 'silent' })
-  const row = findAllRows(doc, new Set(['custom-bash']))[0]
+  const row = findAllRows(doc, new Set(['tool-git-bash']))[0]
   assert.ok(row)
   assert.equal(row.config.timeoutMs, 120000)
   assert.equal(row.config.maxOutputBytes, 64000)
@@ -110,9 +110,9 @@ test('buildCordis 未设置模型服务商/模型名时子代理行不出现 age
 test('buildCordis 默认开启使用 PTC 模式（anchored 模板显式 true，预设设置保持）', () => {
   const out = buildCordis('PROMPT')
   const doc = parse(out, { logLevel: 'silent' })
-  const presentation = doc.find((entry) => entry?.id === 'code-presentation')
+  const presentation = doc.find((entry) => entry?.id === 'promoted-code-mode')
   const search = doc.find((entry) => entry?.id === 'dev-tool-search')
-  assert.ok(presentation, 'PTC 呈现独立行（code-presentation）')
+  assert.ok(presentation, 'PTC 呈现独立行（promoted-code-mode）')
   assert.equal(presentation.config.usePtcMode, true)
   assert.equal(search, undefined)
 })
@@ -120,7 +120,7 @@ test('buildCordis 默认开启使用 PTC 模式（anchored 模板显式 true，�
 test('buildCordis 可显式关闭使用 PTC 模式（运行时覆盖模板）', () => {
   const out = buildCordis('PROMPT', { usePtcMode: false })
   const doc = parse(out, { logLevel: 'silent' })
-  const presentation = doc.find((entry) => entry?.id === 'code-presentation')
+  const presentation = doc.find((entry) => entry?.id === 'promoted-code-mode')
   assert.ok(presentation)
   assert.equal(presentation.config.usePtcMode, false)
 })
@@ -128,7 +128,7 @@ test('buildCordis 可显式关闭使用 PTC 模式（运行时覆盖模板）', 
 test('buildCordis 可显式开启使用 PTC 模式', () => {
   const out = buildCordis('PROMPT', { usePtcMode: true })
   const doc = parse(out, { logLevel: 'silent' })
-  const presentation = doc.find((entry) => entry?.id === 'code-presentation')
+  const presentation = doc.find((entry) => entry?.id === 'promoted-code-mode')
   assert.ok(presentation)
   assert.equal(presentation.config.usePtcMode, true)
 })

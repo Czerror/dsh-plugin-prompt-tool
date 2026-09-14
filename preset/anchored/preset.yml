@@ -263,19 +263,19 @@ modules:
   - context-gate
   - anchor-turn
   - deliberation-gate
-  - cot-drip
+  - progress-reminder
   - tool-filter
   - tool-bootstrap
-  - code-presentation
+  - promoted-code-mode
   - prompt-config-engine
   - run-code-env
-  - tool-bash
+  - tool-bash-disabled
   - tool-pwsh
-  - persistent-shell
-  - custom-bash
+  - persistent-shell-posix
+  - tool-git-bash
   - tool-fs
   - tool-fs-search
-  - bootstrap-filesystem
+  - filesystem-editor
   - tool-jobs
   - skill-filesystem
   - skill-search
