@@ -11,6 +11,21 @@ export function matchesSkillStatus(skill: SkillCatalogEntry, enabled: boolean, t
   return true
 }
 
+/**
+ * 按筛选条件保留技能行：命中项之外，保留“存在命中后代”的父节点作为树容器。
+ * 只保留命中项会让子技能单独命中时从顶层展开逻辑里消失（父节点不在可见集合）。
+ */
+export function filterSkillCatalog(
+  catalog: SkillCatalogEntry[],
+  match: (skill: SkillCatalogEntry) => boolean,
+): SkillCatalogEntry[] {
+  const matchedFolders = catalog.filter(match).map((skill) => skill.folder)
+  if (matchedFolders.length === 0) return []
+  // ponytail: O(n²) 前缀扫描；技能目录量级下无需索引，规模上来再换字典。
+  return catalog.filter((skill) => matchedFolders.includes(skill.folder)
+    || matchedFolders.some((folder) => folder.startsWith(`${skill.folder}/`)))
+}
+
 export function skillStatusLabel(skill: SkillCatalogEntry, enabled: boolean, t: PromptToolTranslate): string {
   if (!skill.valid) return t('skills.status.unregistered')
   if (!enabled) return t('skills.status.disabled')

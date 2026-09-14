@@ -1,10 +1,11 @@
-import { useEffect, useRef, useSyncExternalStore, type ReactNode } from 'react'
+import { useEffect, useRef, useSyncExternalStore, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import { PromptWorkspace } from '../workspace/PromptWorkspace.tsx'
 import { FloatingTrigger } from './FloatingTrigger.tsx'
 import type { PromptToolWorkbenchFace } from './workbench-face.ts'
+import { FOCUSABLE, nextDialogFocusIndex } from '../../ui/dialog-focus.ts'
 import css from './Workbench.module.css'
 
 type OverlayProps = PropsRuntime<'shell.overlay'> & InjectFace<PromptToolWorkbenchFace> & PropsLocale<'prompt-tool'>
@@ -41,6 +42,20 @@ export function WorkbenchOverlay(props: OverlayProps): ReactNode {
     if (!wasOpen && open) drawerRef.current?.focus()
     if (wasOpen && !open) triggerRef.current?.focus()
   }, [open])
+  /** aria-modal 抽屉的首尾 Tab 循环：焦点不得越过抽屉进入宿主页面。
+   *  弹窗（DialogSurface/TemplatePicker）是 body portal，不在抽屉 DOM 内——
+   *  焦点在弹窗内时交给弹窗自己的循环管理，这里不拦截。 */
+  const onDrawerKeyDown = (event: ReactKeyboardEvent<HTMLElement>): void => {
+    if (event.key !== 'Tab' || drawerRef.current === null) return
+    const active = document.activeElement
+    if (!(active instanceof HTMLElement) || !drawerRef.current.contains(active)) return
+    const focusables = [...drawerRef.current.querySelectorAll<HTMLElement>(FOCUSABLE)]
+      .filter((element) => !element.hasAttribute('disabled') && element.getClientRects().length > 0)
+    const next = nextDialogFocusIndex(focusables.length, focusables.indexOf(active), event.shiftKey)
+    if (next === undefined) return
+    event.preventDefault()
+    focusables[next]?.focus()
+  }
   const trigger = <FloatingTrigger controller={controller} triggerRef={triggerRef} t={t} />
   // 抽屉同样 body portal + fixed 顶层：宿主「对话/轨迹」顶部导航栏处于更高层级，
   // 只挂在 shell.overlay slot 内会被导航栏遮挡（不是最顶层）；portal 到 body 后
@@ -48,7 +63,7 @@ export function WorkbenchOverlay(props: OverlayProps): ReactNode {
   const drawer = (
     <div className={css.drawerLayer} data-open={open ? '' : undefined}>
       <div className={css.drawerBackdrop} onClick={() => controller.close()} aria-hidden="true" />
-      <section ref={drawerRef} className={css.drawerPanel} data-dsh-part="workspace-drawer" role="dialog" aria-modal="true" aria-label={t('app.panelAria')} tabIndex={-1}>
+      <section ref={drawerRef} className={css.drawerPanel} data-dsh-part="workspace-drawer" role="dialog" aria-modal="true" aria-label={t('app.panelAria')} tabIndex={-1} onKeyDown={onDrawerKeyDown}>
         <PromptWorkspace api={api} settings={settings} controller={controller} t={t} onClose={() => controller.close()} />
       </section>
     </div>

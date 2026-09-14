@@ -33,7 +33,8 @@ export interface PromptConfigsEditorProps {
   setTemplateVariables: (value: Record<string, string>) => void
   templateVariablesEnabled: boolean
   setTemplateVariablesEnabled: (value: boolean) => void
-  saveTemplateVariables: (next?: Record<string, string>) => Promise<void>
+  /** 保存模板变量；开关变更时把新值一并传入，避免读到上一帧 enabled。 */
+  saveTemplateVariables: (next?: Record<string, string>, enabled?: boolean) => Promise<void>
   viewFilter: string
   onViewFilterChange: (value: string) => void
   /** 模板变量卡片展开态由页面持有：合并创建菜单的「添加模板变量」需要展开它。 */
@@ -58,7 +59,7 @@ function TemplateVariablesModuleCard(props: {
   setTemplateVariables: (value: Record<string, string>) => void
   templateVariablesEnabled: boolean
   setTemplateVariablesEnabled: (value: boolean) => void
-  saveTemplateVariables: (next?: Record<string, string>) => Promise<void>
+  saveTemplateVariables: (next?: Record<string, string>, enabled?: boolean) => Promise<void>
   expanded: boolean
   onToggleExpanded: () => void
 }): ReactNode {
@@ -101,7 +102,7 @@ function TemplateVariablesModuleCard(props: {
                 checked={enabled}
                 onChange={(e) => {
                   props.setTemplateVariablesEnabled(e.target.checked)
-                  void props.saveTemplateVariables()
+                  void props.saveTemplateVariables(undefined, e.target.checked)
                 }}
               />
               <span className={styles.switch} aria-hidden="true"><i /></span>

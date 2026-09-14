@@ -353,7 +353,8 @@ JSON bridge 的统一上限为 32 MiB；角色卡原始文件流独立限制为 
 5. promptConfigs 自动保存使用 debounce；工具栏手动保存仍经过配置校验，模块列表不再提供未保存提示、放弃修改和浮动保存条。
 6. 参数空字符串/空数组沿用删除键语义；variables 的空字符串仍是合法占位值。详细参数规则见 [architecture-params.md](architecture-params.md)。
 7. 预设写入携带 `expectedPresetId`，读回失败的自定义工具不降级为空列表供覆盖；跨预设旧草稿被拒绝，切换等待参数保存队列。
-8. 技能写入不进 settings：启停走 `/skill-toggle`（磁盘标记 `SKILL.md` ↔ `SKILL.md.disabled`），顺序/目录/rank 走 `/skills-config`（插件配置文件）；成功后静默 load，`describe` 事实（`skillSwitches` / `skillOrder` / `skillsDirs` / `skillRankBase` / `skillCatalog`）优先于 settings 旧字段。
+8. 切换预设是事务：先保存当前预设草稿，保存未成功（失败/被拒）即取消切换并保留草稿；切换成功后等 settings 写入与随后的静默 load 完成才返回。切换或首次加载完成前，`loadedPresetRef` 拒绝参数、promptConfigs 与模板变量写盘——旧预设字段不会带新 `presetTemplate` 落盘；重新加载成功应用该预设数据后才恢复写入。
+9. 技能写入不进 settings：启停走 `/skill-toggle`（磁盘标记 `SKILL.md` ↔ `SKILL.md.disabled`），顺序/目录/rank 走 `/skills-config`（插件配置文件）；成功后静默 load，`describe` 事实（`skillSwitches` / `skillOrder` / `skillsDirs` / `skillRankBase` / `skillCatalog`）优先于 settings 旧字段。
 
 ## 8. 业务 Feature
 
@@ -416,6 +417,7 @@ promptConfigs 模块卡展开区按基础信息、注入规则、作用范围、
 ### 9.3 Dialog、表单与排序
 
 - DialogSurface/TemplatePicker 使用 body portal、backdrop、Escape、首控件聚焦、Tab/Shift+Tab 循环、关闭后焦点恢复、role=dialog 和 aria-modal。
+- 工作台抽屉（shell.overlay，role=dialog + aria-modal）在抽屉内提供首尾 Tab 循环，复用 dialog-focus 的 `FOCUSABLE` / `nextDialogFocusIndex`；焦点位于 body portal 弹窗内时由弹窗自身循环接管，抽屉不拦截。
 - 弹窗只操作自己的 ref，不查询宿主页面结构。
 - 数值输入在提交点解析，草稿期保留字符串，避免输入中间态跳动。
 - 提示词、技能和阶段排序同时提供 pointer drag 与上移/下移键盘替代；边界按钮有明确 aria-label。

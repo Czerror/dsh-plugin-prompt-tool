@@ -18,7 +18,7 @@ import { SkillRow } from './SkillRow.tsx'
 import { ImportFileButton } from '../../ui/ImportFileButton.tsx'
 import sharedCss from '../../ui/controls.module.css'
 import featureCss from './skills.module.css'
-import { matchesSkillStatus, type SkillStatusTab } from './skill-status.ts'
+import { filterSkillCatalog, matchesSkillStatus, type SkillStatusTab } from './skill-status.ts'
 
 const ui = { ...sharedCss, ...featureCss }
 
@@ -67,11 +67,11 @@ export const SkillsPage = memo(function SkillsPage(props: { store: PromptToolSto
   }
 
   const keyword = skillFilter.trim().toLowerCase()
-  const visibleSkills = orderedSkills.filter((skill) => {
-    if (!matchesSkillStatus(skill, store.skillEnabled(skill.folder), statusTab)) return false
-    return keyword.length === 0
-      || [skill.folder, skill.name ?? '', skill.description ?? ''].join(' ').toLowerCase().includes(keyword)
-  })
+  // 命中子技能时父节点保留为树容器（否则 renderOrder 从顶层展开时丢行）。
+  const visibleSkills = filterSkillCatalog(orderedSkills, (skill) =>
+    matchesSkillStatus(skill, store.skillEnabled(skill.folder), statusTab)
+    && (keyword.length === 0
+      || [skill.folder, skill.name ?? '', skill.description ?? ''].join(' ').toLowerCase().includes(keyword)))
 
   const selectionMode = selected.size > 0
   const toggleSelect = useCallback((folder: string) => {

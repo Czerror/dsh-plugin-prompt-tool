@@ -30,6 +30,8 @@ export function SubagentToolPolicyCard(props: {
   const { onNotice, t } = props
   const [policy, setPolicy] = useState<PolicyDraft | null>(null)
   const [loaded, setLoaded] = useState(false)
+  /** 读取失败不能降级成「无策略」：否则重新启用后保存会用新策略整体覆盖磁盘中的既有策略。 */
+  const [loadError, setLoadError] = useState('')
   const [dirty, setDirty] = useState(false)
   const [saving, setSaving] = useState(false)
   const [preview, setPreview] = useState<unknown>(null)
@@ -37,15 +39,17 @@ export function SubagentToolPolicyCard(props: {
   const [characters, setCharacters] = useState<CharacterItem[]>([])
 
   const load = useCallback(() => {
+    setLoadError('')
     void bridgeCall('subagentToolPolicy', { expectedPresetId: props.presetId }).then((result) => {
-      if (result.ok && result.value.policy !== null) {
-        setPolicy(result.value.policy as PolicyDraft)
-      } else {
-        setPolicy(null)
+      if (!result.ok) {
+        setLoadError(result.message ?? t('policy.loadFailed'))
+        setLoaded(true)
+        return
       }
+      setPolicy((result.value.policy ?? null) as PolicyDraft | null)
       setLoaded(true)
     })
-  }, [props.presetId])
+  }, [props.presetId, t])
 
   useEffect(() => { load() }, [load])
   useEffect(() => {
@@ -147,13 +151,19 @@ export function SubagentToolPolicyCard(props: {
             </span>
           </HintTooltip>
           {enabled && <button type="button" className={styles.pillButton} data-danger onClick={() => toggleEnabled(false)}>{t('policy.disable')}</button>}
-          <button type="button" className={styles.pillButton} onClick={save} disabled={saving || !dirty || invalidCharacterBindings.length > 0}>
+          <button type="button" className={styles.pillButton} onClick={save} disabled={saving || !dirty || invalidCharacterBindings.length > 0 || loadError.length > 0}>
             {saving ? t('policy.saving') : t('policy.save')}
           </button>
         </div>
       </div>
       {!loaded && <p className={styles.configFieldHint}>{t('policy.loading')}</p>}
-      {loaded && !enabled && (
+      {loaded && loadError.length > 0 && (
+        <p className={styles.noticeError} role="alert">
+          {t('policy.loadFailed')}
+          <button type="button" className={styles.pillButton} onClick={() => { setLoaded(false); load() }}>{t('policy.retry')}</button>
+        </p>
+      )}
+      {loaded && loadError.length === 0 && !enabled && (
         <div className={styles.settingRowStack}>
           <p className={styles.configFieldHint}>{t('policy.disabledHint')}</p>
           <span className={styles.configActions}>
@@ -161,7 +171,7 @@ export function SubagentToolPolicyCard(props: {
           </span>
         </div>
       )}
-      {loaded && enabled && policy !== null && (
+      {loaded && loadError.length === 0 && enabled && policy !== null && (
         <>
           {invalidCharacterBindings.length > 0 && <p className={styles.noticeError}>{t('policy.invalidBindings')}</p>}
           {/* 总览：default + ceiling */}

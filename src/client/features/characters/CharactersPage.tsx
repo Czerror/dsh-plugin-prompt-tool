@@ -136,7 +136,7 @@ export const CharactersPage = memo(function CharactersPage(props: { store: Promp
               label={t('characters.importImage')}
               busyLabel={t('characters.importing')}
               busy={importing}
-              accept=".png,.jpg,.jpeg,image/png,image/jpeg"
+              accept=".png,image/png"
               multiple
               ariaLabel={t('characters.pickImage.aria')}
               className={ui.primaryPill}

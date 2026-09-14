@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, type KeyboardEvent as ReactKeyboardEvent, type RefObject } from 'react'
 
-const FOCUSABLE = 'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+export const FOCUSABLE = 'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
 
 /** 仅在焦点将越过首尾或当前焦点不在弹窗内时返回循环目标。 */
 export function nextDialogFocusIndex(length: number, current: number, backward: boolean): number | undefined {

@@ -31,7 +31,9 @@ test('角色卡导入按 PNG 魔数与载荷大小分流', () => {
   const transport = read('src/client/data/bridge-transport.ts')
   assert.match(page, /isPngSignature/)
   assert.match(page, /bridgeUpload\(file, file\.name\)/)
-  assert.match(page, /\.jpg,\.jpeg/)
+  // 选择器与解析范围一致：仅 PNG（JPG/JPEG 会被 importCard 判为不支持）。
+  assert.match(page, /accept="\.png,image\/png"/)
+  assert.doesNotMatch(page, /image\/jpeg/)
   assert.match(client, /BRIDGE_ENDPOINTS\.charactersImportStream/)
   assert.match(transport, /export async function uploadBridge/)
   assert.match(transport, /export function shouldStreamJsonFile/)

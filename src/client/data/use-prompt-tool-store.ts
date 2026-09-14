@@ -44,6 +44,9 @@ export type SwitchKey = 'injectAgentsPrompt' | 'firstTurnAnchor' | 'firstTurnCus
 /** 参数类布尔开关：写激活预设 preset.yml（settings 只留全局开关）。 */
 const PARAM_SWITCH_KEYS: ReadonlySet<SwitchKey> = new Set(['firstTurnAnchor', 'firstTurnCustom', 'guideCustom', 'toolFilterSubagents', 'injectPrompt', 'usePtcMode', 'promoteGate', 'promoteAfterFirstResponse', 'personaSectionsOnly', 'workspaceLine', 'instructionHint', 'anchorTurn', 'deliberationGate', 'cotDrip'])
 
+/** 预设切换/首次加载期间写盘拒绝提示：写盘会持续拒绝，直到该预设数据成功应用。 */
+const PRESET_PENDING_MESSAGE = '预设数据尚未加载完成，本次修改未保存；请稍后重试或重新打开工作台'
+
 export interface PromptToolStore {
   api: PromptToolHostApi
   fields: Fields
@@ -75,15 +78,16 @@ export interface PromptToolStore {
   patch: (partial: Partial<Fields>) => void
   persistSwitches: () => void
   persistParamOverrides: () => Promise<void>
-  persistConfigs: (configs: PromptConfigDraft[]) => void
+  /** 保存提示词配置；返回 false 表示未写入（预设切换中、跨预设旧草稿或失败）。 */
+  persistConfigs: (configs: PromptConfigDraft[]) => Promise<boolean>
   /** 预设级模板变量（preset.yml 内容变量；writePreset 展开进 variables.yml，引擎合并进每条配置）。 */
   templateVariables: Record<string, string>
   setTemplateVariables: (value: Record<string, string>) => void
   /** 模板变量插值开关（preset.yml 顶层 variablesEnabled，缺省 true）。 */
   templateVariablesEnabled: boolean
   setTemplateVariablesEnabled: (value: boolean) => void
-  /** 保存模板变量；可显式传入下一份值（如清空场景，避免 setState 未生效时的旧闭包）。 */
-  saveTemplateVariables: (next?: Record<string, string>) => Promise<void>
+  /** 保存模板变量；可显式传入下一份值与开关状态（避免 setState 未生效时的旧闭包）。 */
+  saveTemplateVariables: (next?: Record<string, string>, enabled?: boolean) => Promise<void>
   toggle: (key: SwitchKey) => void
   setPresetTemplate: (id: string) => void
   createEngineCapability: (action: 'create' | 'create-recipe', id: string) => Promise<void>
@@ -170,6 +174,9 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
   /** 用户草稿版本：patch 时递增。load 应答返回时若版本变化，跳过覆盖，避免
    *  保存后的静默刷新吞掉用户在读取期间的编辑。 */
   const draftVersionRef = useRef(0)
+  /** 已成功应用快照的预设 id：与当前 fields.presetTemplate 不一致时（切换/加载进行中）
+   *  拒绝写盘，避免旧预设字段被当成当前预设数据写进新预设。 */
+  const loadedPresetRef = useRef<string | undefined>(undefined)
   /** applyView 自动预选的 provider：无模型名时不作为用户显式参数落盘。 */
   const autoModelProviderRef = useRef<string | undefined>(undefined)
   const autoSubagentModelProviderRef = useRef<string | undefined>(undefined)
@@ -288,6 +295,8 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
         publishFields(next)
         setSavedConfigs(actual)
       }
+      // 快照已完整应用：该预设自此可写（切换/首次加载期间由 loadedPresetRef 拦截写盘）。
+      loadedPresetRef.current = fieldsRef.current.presetTemplate
       paramBaselineRef.current = snapshotSwitches(fieldsRef.current)
       setNotice('')
       return fieldsRef.current
@@ -358,9 +367,9 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     publishFields(next)
   }, [publishFields])
 
-  const enqueueSave = useCallback((ops: SettingsPathOpView[], okMessage: string | undefined, onSaved: () => void, setBusy?: (busy: boolean) => void) => {
+  const enqueueSave = useCallback((ops: SettingsPathOpView[], okMessage: string | undefined, onSaved: () => void, setBusy?: (busy: boolean) => void): Promise<void> => {
     setBusy?.(true)
-    void saveQueueRef.current.enqueue(async () => {
+    return saveQueueRef.current.enqueue(async () => {
       try {
         await settings.mutate(ops, revisionRef.current)
         revisionRef.current = settings.scope.getSnapshot().revision
@@ -433,6 +442,11 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     const autoModelProvider = autoModelProviderRef.current
     const autoSubagentModelProvider = autoSubagentModelProviderRef.current
     await presetSaveQueueRef.current.enqueue(async () => {
+      // 切换进行中（目标预设数据未应用）：参数仍是旧预设值，拒绝写入 presetTemplate。
+      if (loadedPresetRef.current !== undefined && loadedPresetRef.current !== fieldsRef.current.presetTemplate) {
+        showNotice('error', PRESET_PENDING_MESSAGE)
+        return
+      }
       if (!isCurrentPresetDraft(f, fieldsRef.current)) {
         showNotice('error', '预设已切换，旧参数草稿未写入')
         return
@@ -470,8 +484,9 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
   }, [load, savedConfigs, showNotice])
 
   /** 保存后是否静默重载。切换预设时传 false（随后的 settings.mutate 回调会统一 load，
-   *  避免一次切换触发两次全量读取）。 */
-  const persistConfigs = useCallback((configs: PromptConfigDraft[], options?: { reload?: boolean; rebuild?: boolean }): Promise<void> => {
+   *  避免一次切换触发两次全量读取）。返回 false = 未写入（切换中/跨预设旧草稿/失败），
+   *  调用方（如开关预设）据此中止后续流程。 */
+  const persistConfigs = useCallback((configs: PromptConfigDraft[], options?: { reload?: boolean; rebuild?: boolean }): Promise<boolean> => {
     const expectedPresetId = fieldsRef.current.presetTemplate
     const contentEntries = configs.filter(isContentAsset)
     const draftVersion = draftVersionRef.current
@@ -480,9 +495,14 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     // 否则服务端状态覆盖草稿，刚点开的变量编辑行立即消失。
     const pendingVariableRows = hasPendingVariableRows(configs)
     return presetSaveQueueRef.current.enqueue(async () => {
+      // 切换进行中（目标预设数据未应用）：fields 仍是旧预设字段，拒绝写入 presetTemplate。
+      if (loadedPresetRef.current !== undefined && loadedPresetRef.current !== fieldsRef.current.presetTemplate) {
+        showNotice('error', PRESET_PENDING_MESSAGE)
+        return false
+      }
       if (expectedPresetId !== fieldsRef.current.presetTemplate) {
         showNotice('error', '预设已切换，旧提示词草稿未写入')
-        return
+        return false
       }
       // 内容资产：text 先写生成目录文件。合并为单次 /import-preset（批量载荷），
       // 服务端只触发一次重建——此前逐条请求每条各重建一次（多次写盘+recomposition）。
@@ -492,22 +512,22 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
           content: config.text ?? '',
         }))
         const res = await bridgeCall('importPreset', { contents, expectedPresetId })
-        if (expectedPresetId !== fieldsRef.current.presetTemplate) return
+        if (expectedPresetId !== fieldsRef.current.presetTemplate) return false
         if (!res.ok) {
           showNotice('error', 'preset.md/agents.md 保存失败：' + (res.message ?? 'settings bridge unavailable'))
-          return
+          return false
         }
       }
       // promptConfigs 按预设存储：写激活预设 preset.yml（settings 不再承载）。
       // 防御：初始化期空数组自动保存不得覆盖服务端已有配置（历史教训：beta-2-42
       // 的 129 张配置卡被一次清空）；用户主动清空（此前已加载非空配置）允许落盘空数组。
-      if (configs.length === 0 && savedConfigs.length === 0) return
+      if (configs.length === 0 && savedConfigs.length === 0) return true
       const res = await bridgeCall('paramOverrides', {
         expectedPresetId,
         promptConfigs: configs.map(stripContentText),
         ...(options?.rebuild === false ? { rebuild: false } : {}),
       })
-      if (expectedPresetId !== fieldsRef.current.presetTemplate) return
+      if (expectedPresetId !== fieldsRef.current.presetTemplate) return false
       if (res.ok) {
         setSavedConfigs(configs)
         const syncNotice = modelSyncNotice(res.value.modelSync, '提示词配置已保存')
@@ -519,14 +539,21 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
         )) {
           await load({ silent: true })
         }
+        return true
       } else {
         showNotice('error', '提示词配置保存失败：' + (res.message ?? 'settings bridge unavailable'))
+        return false
       }
     })
   }, [load, savedConfigs, savedSwitches, showNotice])
 
   /** 模板变量：写激活预设 preset.yml 内容变量（后端 savePresetParams + afterOverridesChange 触发重建）。 */
-  const saveTemplateVariables = useCallback(async (next?: Record<string, string>) => {
+  const saveTemplateVariables = useCallback(async (next?: Record<string, string>, enabledOverride?: boolean) => {
+    // 切换进行中（目标预设数据未应用）：变量仍是旧预设值，拒绝写入 presetTemplate。
+    if (loadedPresetRef.current !== undefined && loadedPresetRef.current !== fieldsRef.current.presetTemplate) {
+      showNotice('error', PRESET_PENDING_MESSAGE)
+      return
+    }
     // 空 key 行（待编辑）不落盘；本地同步清理保持显示一致。
     const cleaned = Object.fromEntries(
       Object.entries(next ?? templateVariables).filter(([key]) => key.trim().length > 0),
@@ -534,7 +561,8 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     const res = await bridgeCall('presetVariables', {
       expectedPresetId: fieldsRef.current.presetTemplate,
       variables: cleaned,
-      enabled: templateVariablesEnabled,
+      // 开关 onChange 与保存同帧触发：优先用调用方传入的新值，避免读到上一帧 enabled。
+      enabled: enabledOverride ?? templateVariablesEnabled,
     })
     if (!res.ok) {
       showNotice('error', `模板变量保存失败：${res.message ?? '未知错误'}`)
@@ -556,28 +584,34 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     if (fieldsRef.current.presetTemplate === id) return
     await presetSaveQueueRef.current.enqueue(async () => {})
     // 切换即保存：模块列表有未保存的提示词配置修改时先提交（写当前激活预设），
-    // 避免切换后 load() 重置 fields 丢失修改。已保存/无修改则直接切换。
+    // 避免切换后 load() 重置 fields 丢失修改。已保存/无修改则直接切换；
+    // 保存未成功（失败/被拒）时不切换，把草稿完整留在当前预设。
     const dirtyConfigs = promptConfigsDirty(fieldsRef.current.promptConfigs, savedConfigs)
     if (dirtyConfigs) {
       // 免双 load：保存成功后由下方 enqueueSave 的 onSaved 统一静默重载。
       // 切换前只落盘当前预设，不重建；settings 切换后目标预设只重建一次。
-      await persistConfigs(fieldsRef.current.promptConfigs, { reload: false, rebuild: false })
+      const savedDraft = await persistConfigs(fieldsRef.current.promptConfigs, { reload: false, rebuild: false })
+      if (!savedDraft) {
+        showNotice('error', '当前预设的提示词配置未保存成功，已取消切换')
+        return
+      }
     }
     const switchResult = await api.switchPreset(id)
     patch({ presetTemplate: id })
-    enqueueSave(
+    await enqueueSave(
       [{ op: 'set', path: ['presetTemplate'], value: id }],
       switchResult.applied
         ? `已切换预设模板：${id}（当前空会话已重组）`
         : `已切换默认预设模板：${id}`,
       () => {
-        void load({ silent: true })
         if (switchResult.message !== undefined) {
           showNotice('error', switchResult.message)
         }
       },
     )
-  }, [enqueueSave, load, patch, persistConfigs, savedConfigs])
+    // 队列完成后再刷新：新数据应用前 fields 仍是旧预设字段，写路径守卫以此拦截误写。
+    await load({ silent: true })
+  }, [enqueueSave, load, patch, persistConfigs, savedConfigs, showNotice])
 
   const createEngineCapability = useCallback(async (action: 'create' | 'create-recipe', id: string): Promise<void> => {
     const request = action === 'create' ? { action: 'create' as const, capabilityId: id } : { action: 'create-recipe' as const, recipeId: id }
