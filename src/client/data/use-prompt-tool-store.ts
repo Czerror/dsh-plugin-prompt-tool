@@ -22,7 +22,28 @@ import {
   switchesEqual,
   type SwitchSnapshot,
 } from './dirty-state.ts'
-import { isAgentsFileCard, isContentAsset, liftContentText, stripContentText } from './prompt-config-content.ts'
+import { instructionFileIdOf, isContentAsset, isPresetCard, liftContentText, stripContentText } from './prompt-config-content.ts'
+import {
+  applySaveOutcomes,
+  EMPTY_INSTRUCTION_POOL,
+  instructionSaveRequest,
+  isInstructionConflictCode,
+  markDraftSaving,
+  poolFromSnapshot,
+  resetDraftFromSnapshot,
+  saveableInstructionDrafts,
+  setDraftContent,
+  switchInstructionContext,
+  unsavedInstructionDrafts,
+  type InstructionDraftPool,
+  type InstructionSaveOutcome,
+} from './instruction-drafts.ts'
+import {
+  EMPTY_INSTRUCTION_POLICY_SNAPSHOT,
+  instructionPolicyPatchForFile,
+  resolveInstructionFilePolicy,
+} from './instruction-policy.ts'
+import type { InstructionPolicyFileOverride, InstructionPolicySnapshot } from '../../shared/instructions.ts'
 import { buildParamOverrides, isCurrentPresetDraft, readParamOverridesPatch, updateLoadedParamKeys } from './param-overrides.ts'
 import { modelSyncNotice } from './model-sync-notice.ts'
 import { createSerialTaskQueue } from './save-queue.ts'
@@ -69,6 +90,22 @@ export interface PromptToolStore {
   templatePreStepCount: number
   savedSwitches: SwitchSnapshot
   savedConfigs: PromptConfigDraft[]
+  /** 指令文件草稿池：正文/版本/读取状态按 fileId 索引，跨预设保留。 */
+  instructionPool: InstructionDraftPool
+  /** 草稿池读取（回调里读最新值，不依赖渲染快照）。 */
+  getInstructionPool: () => InstructionDraftPool
+  /** 存在未保存的指令文件草稿（预设保存不覆盖它们）。 */
+  dirtyInstructions: boolean
+  /** 显式保存指令文件（不传 fileIds = 保存全部可写文件）；只提交已改动、可写、上下文匹配的文件。 */
+  persistInstructionFiles: (fileIds?: readonly string[]) => Promise<boolean>
+  /** 重新读取单个指令文件并丢弃本地草稿（版本冲突时使用）。 */
+  reloadInstructionFile: (fileId: string) => Promise<void>
+  /** 指令卡策略快照（独立存储）：error 非空时 UI 禁用策略编辑。 */
+  instructionPolicy: InstructionPolicySnapshot
+  /** 策略快照读取（回调里读最新值，不依赖渲染快照）。 */
+  getInstructionPolicy: () => InstructionPolicySnapshot
+  /** 写单个文件的行为策略（null = 删除覆盖、恢复默认）；带 revision 乐观并发。 */
+  updateInstructionPolicy: (fileId: string, override: InstructionPolicyFileOverride | null) => Promise<boolean>
   savingSkillsDir: boolean
   fixingSkill: string | undefined
   notice: string
@@ -135,6 +172,63 @@ function waitForScope(scope: SettingsScope<Record<string, unknown>>): Promise<Se
   })
 }
 
+/**
+ * 把文件草稿状态贴到指令文件卡上（视图元数据，不写进 preset.yml）。
+ * 卡片正文以草稿池为准：服务端附带的 params.text 不再是文件正文的来源。
+ */
+function withInstructionState(
+  configs: PromptConfigDraft[],
+  pool: InstructionDraftPool,
+  policy: InstructionPolicySnapshot,
+): PromptConfigDraft[] {
+  return configs.map((config) => {
+    const fileId = instructionFileIdOf(config)
+    if (fileId === undefined) return config
+    // 行为字段来自独立策略（不是预设卡字段），文件卡的显隐/顺序/位置等以它为准。
+    const resolved = resolveInstructionFilePolicy(policy.policy, fileId)
+    const draft = pool.drafts.find((entry) => entry.fileId === fileId)
+    if (draft === undefined) {
+      // 卡存在但没有对应快照：不把未知正文当空文件，直接禁用保存。
+      return {
+        ...config,
+        ...policyFields(resolved),
+        text: '',
+        contentStatus: 'unreadable' as const,
+        contentMessage: '未读取到该文件正文，已禁用保存',
+      }
+    }
+    const message = draft.error ?? draft.message
+    return {
+      ...config,
+      ...policyFields(resolved),
+      text: draft.content,
+      contentStatus: draft.status,
+      // 视图字段显式覆盖：池里冲突/提示已清除时卡片不得留上一帧的旧标记。
+      contentMessage: message,
+      contentDirty: draft.content !== draft.savedContent,
+      contentConflict: draft.conflict === true ? true : undefined,
+      // 负责人冲突是会话级事实（服务端观察），不是文件自身状态：只在确认冲突时显示。
+      contentOwnerConflict: pool.owner?.officialInstructions === true ? true : undefined,
+      contentSaving: draft.saving === true ? true : undefined,
+    }
+  })
+}
+
+/** 策略值 → 卡片行为字段（文件卡的行为不来自 preset.yml）。 */
+function policyFields(
+  resolved: { order: number; position: string; promotion: string; audience: string | null; modelScope: string; enabled: boolean; name?: string },
+): Partial<PromptConfigDraft> {
+  return {
+    enabled: resolved.enabled,
+    order: resolved.order,
+    position: resolved.position,
+    promotion: resolved.promotion,
+    audience: resolved.audience,
+    modelScope: resolved.modelScope,
+    ...(resolved.name === undefined ? {} : { name: resolved.name }),
+  }
+}
+
 export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolSettingsTransport): PromptToolStore {
   const [modelCatalog, setModelCatalog] = useState<Record<string, string[]>>({})
   const [modelReasoning, setModelReasoning] = useState<Record<string, ModelReasoningView>>({})
@@ -146,6 +240,8 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
   const [templatePreStepCount, setTemplatePreStepCount] = useState(0)
   const [savedSwitches, setSavedSwitches] = useState<SwitchSnapshot>(EMPTY_SWITCHES)
   const [savedConfigs, setSavedConfigs] = useState<PromptConfigDraft[]>([])
+  const [instructionPool, setInstructionPool] = useState<InstructionDraftPool>(EMPTY_INSTRUCTION_POOL)
+  const [instructionPolicy, setInstructionPolicy] = useState<InstructionPolicySnapshot>(EMPTY_INSTRUCTION_POLICY_SNAPSHOT)
   const [templateVariables, setTemplateVariables] = useState<Record<string, string>>({})
   const [templateVariablesEnabled, setTemplateVariablesEnabled] = useState(true)
   const [loading, setLoading] = useState(false)
@@ -166,6 +262,25 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
   const subscribeFields = useCallback((listener: () => void) => {
     fieldsListenersRef.current.add(listener)
     return () => { fieldsListenersRef.current.delete(listener) }
+  }, [])
+  /** 指令文件草稿池（独立于 fields）：patch/保存/重新读取都经此发布。 */
+  const instructionPoolRef = useRef<InstructionDraftPool>(EMPTY_INSTRUCTION_POOL)
+  const instructionPolicyRef = useRef<InstructionPolicySnapshot>(EMPTY_INSTRUCTION_POLICY_SNAPSHOT)
+  const instructionSeqRef = useRef(0)
+  /** 上一次指令上下文对应的会话 id：变化即建立新上下文（旧草稿保留但不可写）。 */
+  const instructionSessionRef = useRef<string | undefined>(undefined)
+  const publishInstructions = useCallback((next: InstructionDraftPool) => {
+    instructionPoolRef.current = next
+    setInstructionPool(next)
+  }, [])
+  /** 卡片是草稿池的派生视图：池变化后同步正文与状态，避免界面停留旧版本。 */
+  const syncInstructionCards = useCallback((pool: InstructionDraftPool) => {
+    const current = fieldsRef.current
+    publishFields({ ...current, promptConfigs: withInstructionState(current.promptConfigs, pool, instructionPolicyRef.current) })
+  }, [publishFields])
+  const publishInstructionPolicy = useCallback((next: InstructionPolicySnapshot) => {
+    instructionPolicyRef.current = next
+    setInstructionPolicy(next)
   }, [])
   const revisionRef = useRef<number | undefined>(undefined)
   const saveQueueRef = useRef(createSerialTaskQueue())
@@ -251,7 +366,15 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     try {
       // /bootstrap 聚合读取：meta + describe runtime facts + 参数覆盖 + 模板变量 +
       // 实际生效配置一次取回（此前 5 端点串行，preset.yml 每端点读盘解析）。
-      const boot = await bridgeCall('bootstrap')
+      // 带当前会话 id：服务端据此解析该本地 Agent 的工作区，返回对应指令文件快照。
+      const sessionId = api.currentSessionId()
+      // 会话/工作区切换：建立新的指令上下文。草稿保留但旧上下文不可写，未保存的文件
+      // 与版本在切换到新工作区后必须重新读取校验，防止把 A 的正文写进 B 的文件集。
+      if (sessionId !== instructionSessionRef.current) {
+        instructionSessionRef.current = sessionId
+        publishInstructions(switchInstructionContext(instructionPoolRef.current, ++instructionSeqRef.current))
+      }
+      const boot = await bridgeCall('bootstrap', sessionId === undefined ? {} : { sessionId })
       if (seq !== loadSeqRef.current) return EMPTY_FIELDS
       // 读取期间用户已修改草稿：不应用服务端快照覆盖，保留草稿；后续保存/读取再同步。
       if (draftVersionRef.current !== draftVersion) return fieldsRef.current
@@ -275,7 +398,30 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
           publishFields(next)
           setSavedSwitches(snapshotSwitches(next))
         }
-      }      // 预设级模板变量（preset.yml 内容变量；失败不阻断主流程）。
+      }
+      // 指令文件（独立来源）：正文、身份、版本、读取状态来自同一次读取。
+      if (boot.ok && boot.instructions !== undefined) {
+        publishInstructions(poolFromSnapshot(boot.instructions, ++instructionSeqRef.current, instructionPoolRef.current))
+        // 切到别的工作区后，未保存草稿的文件可能已不在当前可见范围：保留草稿，但要说清楚。
+        const visible = new Set(boot.instructions.files.map((file) => file.fileId))
+        const stranded = unsavedInstructionDrafts(instructionPoolRef.current).filter((draft) => !visible.has(draft.fileId))
+        if (stranded.length > 0) {
+          showNotice('error', `有 ${stranded.length} 个未保存的指令文件草稿不在当前工作区（${stranded.map((draft) => draft.displayPath).join('、')}），已保留；切回原工作区后可继续保存`)
+        }
+      }
+      // 指令卡策略（独立存储，默认禁用）：读失败时明确标记，UI 据此禁用策略编辑。
+      const policyRes = await bridgeCall('instructionsPolicy')
+      const policyValue = policyRes.ok ? policyRes.value : undefined
+      // 响应缺少策略快照（老宿主/异常载荷）不得当成「空策略」放开编辑。
+      publishInstructionPolicy(policyValue?.policy === undefined
+        ? { ...EMPTY_INSTRUCTION_POLICY_SNAPSHOT, error: `未读取到指令策略：${policyRes.ok ? '响应缺少策略快照' : policyRes.message ?? 'settings bridge unavailable'}` }
+        : {
+          policy: policyValue.policy,
+          revision: policyValue.revision ?? null,
+          exists: policyValue.exists === true,
+          ...(policyValue.error === undefined ? {} : { error: policyValue.error }),
+        })
+      // 预设级模板变量（preset.yml 内容变量；失败不阻断主流程）。
       if (boot.ok && boot.variables !== undefined) {
         setTemplateVariables(boot.variables.variables)
         setTemplateVariablesEnabled(boot.variables.enabled !== false)
@@ -290,7 +436,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
         const userConfigs = boot.promptConfigs.promptConfigs.filter((config) => !engineGenerated.has(config.id))
         // 内容资产条目（prompt-injector / instruction-hint）：params.text（生成目录文件渲染产物）
         // 提升到 text 框显示，编辑入口统一为模块卡片。
-        const actual = userConfigs.map(liftContentText)
+        const actual = withInstructionState(userConfigs.map(liftContentText), instructionPoolRef.current, instructionPolicyRef.current)
         const next = { ...fieldsRef.current, promptConfigs: actual }
         publishFields(next)
         setSavedConfigs(actual)
@@ -306,7 +452,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     } finally {
       if (seq === loadSeqRef.current && !options?.silent) setLoading(false)
     }
-  }, [applyView, settings, showNotice])
+  }, [api, applyView, publishInstructionPolicy, publishInstructions, settings, showNotice])
 
   // 挂载即后台拉取模型目录（不阻塞工作台首屏；10min 缓存兜底重复打开）。
   useEffect(() => {
@@ -346,6 +492,20 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
   const patch = useCallback((partial: Partial<Fields>) => {
     draftVersionRef.current += 1
     let next = { ...fieldsRef.current, ...partial }
+    // 文件卡正文镜像进文件草稿池：预设保存不承载它们，文件只能经显式保存写盘。
+    if (Array.isArray(partial.promptConfigs)) {
+      let pool = instructionPoolRef.current
+      for (const config of partial.promptConfigs) {
+        const fileId = instructionFileIdOf(config)
+        if (fileId === undefined || typeof config.text !== 'string') continue
+        const draft = pool.drafts.find((entry) => entry.fileId === fileId)
+        if (draft === undefined || draft.content === config.text) continue
+        pool = setDraftContent(pool, fileId, config.text)
+      }
+      if (pool !== instructionPoolRef.current) publishInstructions(pool)
+      // 卡片视图（状态徽标、正文）以草稿池为准，避免编辑后状态停在上一帧。
+      next = { ...next, promptConfigs: withInstructionState(next.promptConfigs, instructionPoolRef.current, instructionPolicyRef.current) }
+    }
     // complete 互斥：官方 complete 段一个 scope 只能有一个，开启任一 enabled 配置的
     // complete 时自动关闭其他 enabled 配置的 complete。disabled 配置不参与（引擎
     // effectiveList 已过滤，不注册即不独占；重新启用时由本次收敛）。顶层人设的
@@ -365,7 +525,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
       }
     }
     publishFields(next)
-  }, [publishFields])
+  }, [publishFields, publishInstructions])
 
   const enqueueSave = useCallback((ops: SettingsPathOpView[], okMessage: string | undefined, onSaved: () => void, setBusy?: (busy: boolean) => void): Promise<void> => {
     setBusy?.(true)
@@ -479,13 +639,95 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     })
   }, [load, savedConfigs, showNotice])
 
+  /**
+   * 指令文件显式保存：只提交「已改动 + 读取就绪 + 有基线版本 + 上下文匹配」的文件。
+   * 逐文件结果；失败与冲突都保留草稿，不触发预设重建，也不重载覆盖用户输入。
+   */
+  const persistInstructionFiles = useCallback(async (fileIds?: readonly string[]): Promise<boolean> => {
+    const targets = saveableInstructionDrafts(instructionPoolRef.current)
+      .filter((draft) => fileIds === undefined || fileIds.includes(draft.fileId))
+    if (targets.length === 0) return true
+    const sessionId = api.currentSessionId()
+    const requests = new Map(targets.flatMap((draft) => {
+      const request = instructionSaveRequest(instructionPoolRef.current, draft.fileId, sessionId)
+      return request === undefined ? [] : [[draft.fileId, request] as const]
+    }))
+    for (const fileId of requests.keys()) {
+      const saving = markDraftSaving(instructionPoolRef.current, fileId, true)
+      publishInstructions(saving)
+      syncInstructionCards(saving)
+    }
+    const results: InstructionSaveOutcome[] = []
+    for (const [fileId, request] of requests) {
+      const res = await bridgeCall('agentsFile', request)
+      // 响应回来时该文件已被重新读取（上下文或版本已换）：本次结果作废，不写回池。
+      if (instructionPoolRef.current.drafts.find((draft) => draft.fileId === fileId)?.contextId !== request.contextId) continue
+      if (res.ok) results.push({ fileId, ok: true, revision: res.value.revision })
+      else results.push({ fileId, ok: false, message: res.message ?? '写盘失败', conflict: isInstructionConflictCode(res.code) })
+    }
+    if (results.length === 0) return true
+    const settled = applySaveOutcomes(instructionPoolRef.current, results, requests)
+    publishInstructions(settled)
+    syncInstructionCards(settled)
+    const failures = results.filter((result) => !result.ok)
+    if (failures.length > 0) {
+      const label = (fileId: string): string => instructionPoolRef.current.drafts.find((draft) => draft.fileId === fileId)?.displayPath ?? fileId
+      showNotice('error', `指令文件保存失败（${failures.length}/${results.length}）：${failures.map((failure) => `${label(failure.fileId)}：${failure.message ?? '未知错误'}`).join('；')}`)
+      return false
+    }
+    showNotice('ok', `已保存指令文件：${results.length} 个`)
+    return true
+  }, [api, publishInstructions, showNotice, syncInstructionCards])
+
+  /**
+   * 写单个文件的指令卡策略（独立于预设）：enabled/顺序/位置/晋升/受众/模型范围/显示名。
+   * 带读取时 revision 的乐观并发；失败保留快照并提示，不偷偷改本地状态。
+   */
+  const updateInstructionPolicy = useCallback(async (fileId: string, override: InstructionPolicyFileOverride | null): Promise<boolean> => {
+    const current = instructionPolicyRef.current
+    if (current.error !== undefined) {
+      showNotice('error', `指令策略不可写：${current.error}`)
+      return false
+    }
+    const res = await bridgeCall('instructionsPolicy', {
+      policy: instructionPolicyPatchForFile(fileId, override),
+      expectedRevision: current.revision,
+    })
+    if (!res.ok) {
+      showNotice('error', '指令策略保存失败：' + (res.message ?? 'settings bridge unavailable'))
+      return false
+    }
+    publishInstructionPolicy({ policy: res.value.policy, revision: res.value.revision, exists: res.value.exists })
+    syncInstructionCards(instructionPoolRef.current)
+    showNotice('ok', '指令策略已保存（影响后续注入，不撤回已进入会话的内容）')
+    return true
+  }, [publishInstructionPolicy, showNotice, syncInstructionCards])
+
+  /** 冲突处理：重新读取单个文件并丢弃本地草稿（不自动重载，避免悄悄覆盖用户输入）。 */
+  const reloadInstructionFile = useCallback(async (fileId: string): Promise<void> => {
+    const sessionId = api.currentSessionId()
+    const res = await bridgeCall('promptConfigs', sessionId === undefined ? {} : { sessionId })
+    if (!res.ok || res.value.instructions === undefined) {
+      showNotice('error', `重新读取指令文件失败：${res.ok ? '未返回指令文件快照' : res.message ?? 'settings bridge unavailable'}`)
+      return
+    }
+    const file = res.value.instructions.files.find((entry) => entry.fileId === fileId)
+    if (file === undefined) {
+      showNotice('error', '该指令文件不在当前工作区范围内，本地草稿已保留但不可写')
+      return
+    }
+    const reset = resetDraftFromSnapshot(instructionPoolRef.current, file)
+    publishInstructions(reset)
+    syncInstructionCards(reset)
+    showNotice('ok', `已重新读取指令文件：${file.displayPath}`)
+  }, [api, publishInstructions, showNotice, syncInstructionCards])
+
   /** 保存后是否静默重载。切换预设时传 false（随后的 settings.mutate 回调会统一 load，
    *  避免一次切换触发两次全量读取）。返回 false = 未写入（切换中/跨预设旧草稿/失败），
    *  调用方（如开关预设）据此中止后续流程。 */
-  const persistConfigs = useCallback((configs: PromptConfigDraft[], options?: { reload?: boolean; rebuild?: boolean }): Promise<boolean> => {
+  const persistConfigs = useCallback((configs: PromptConfigDraft[], options?: { reload?: boolean; rebuild?: boolean; includeInstructions?: boolean }): Promise<boolean> => {
     const expectedPresetId = fieldsRef.current.presetTemplate
     const contentEntries = configs.filter(isContentAsset)
-    const fileCards = configs.filter(isAgentsFileCard)
     const draftVersion = draftVersionRef.current
     const switchesWereClean = switchesEqual(snapshotSwitches(fieldsRef.current), savedSwitches)
     // 待编辑变量行（空 key）不落盘（服务端 savePresetParams 清理）；此时跳过保存后静默重载，
@@ -514,19 +756,10 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
           return false
         }
       }
-      // AGENTS 文件卡：卡内编辑框直接写回探测到的真实文件（服务端按 fileId 白名单校验），
-      // 卡定义与正文都不进 preset.yml。
-      if (fileCards.length > 0) {
-        const files = fileCards.map((config) => ({
-          fileId: typeof config.params?.fileId === 'string' ? config.params.fileId : '',
-          content: config.text ?? '',
-        }))
-        const res = await bridgeCall('agentsFile', { files })
-        if (expectedPresetId !== fieldsRef.current.presetTemplate) return false
-        if (!res.ok) {
-          showNotice('error', 'AGENTS.md 保存失败：' + (res.message ?? 'settings bridge unavailable'))
-          return false
-        }
+      // 指令文件与预设是两类资产：只提交已改动且可写的文件（逐文件版本校验），
+      // 未修改的文件不写盘；文件失败不回滚预设写盘，也不假装整体成功。
+      if (options?.includeInstructions !== false) {
+        await persistInstructionFiles()
       }
       // promptConfigs 按预设存储：写激活预设 preset.yml（settings 不再承载）。
       // 防御：初始化期空数组自动保存不得覆盖服务端已有配置（历史教训：beta-2-42
@@ -535,7 +768,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
       const res = await bridgeCall('paramOverrides', {
         expectedPresetId,
         // 引擎探测生成的文件卡不进预设（文件即真相）：只持久化用户自己的卡片。
-        promptConfigs: configs.filter((config) => !isAgentsFileCard(config)).map(stripContentText),
+        promptConfigs: configs.filter(isPresetCard).map(stripContentText),
         ...(options?.rebuild === false ? { rebuild: false } : {}),
       })
       if (expectedPresetId !== fieldsRef.current.presetTemplate) return false
@@ -556,7 +789,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
         return false
       }
     })
-  }, [load, savedConfigs, savedSwitches, showNotice])
+  }, [api, load, persistInstructionFiles, savedConfigs, savedSwitches, showNotice])
 
   /** 模板变量：写激活预设 preset.yml 内容变量（后端 savePresetParams + afterOverridesChange 触发重建）。 */
   const saveTemplateVariables = useCallback(async (next?: Record<string, string>, enabledOverride?: boolean) => {
@@ -601,7 +834,8 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     if (dirtyConfigs) {
       // 免双 load：保存成功后由下方 enqueueSave 的 onSaved 统一静默重载。
       // 切换前只落盘当前预设，不重建；settings 切换后目标预设只重建一次。
-      const savedDraft = await persistConfigs(fieldsRef.current.promptConfigs, { reload: false, rebuild: false })
+      // 指令文件草稿与预设无关：切换不隐式保存、不清空它们（独立显式保存）。
+      const savedDraft = await persistConfigs(fieldsRef.current.promptConfigs, { reload: false, rebuild: false, includeInstructions: false })
       if (!savedDraft) {
         showNotice('error', '当前预设的提示词配置未保存成功，已取消切换')
         return
@@ -759,7 +993,13 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
 
   const currentSwitches = snapshotSwitches(fields)
   const dirtySwitches = !switchesEqual(currentSwitches, savedSwitches)
-  const dirtyConfigs = promptConfigsDirty(fields.promptConfigs, savedConfigs)
+  // 预设卡与文件卡分开算脏：文件正文只走显式保存，不进入预设的 debounce 自动保存。
+  const presetCards = fields.promptConfigs.filter(isPresetCard)
+  const savedPresetCards = savedConfigs.filter(isPresetCard)
+  const dirtyPresetConfigs = presetCards.length !== savedPresetCards.length
+    || presetCards.some((config, index) => config !== savedPresetCards[index])
+  const dirtyInstructions = unsavedInstructionDrafts(instructionPool).length > 0
+  const dirtyConfigs = dirtyPresetConfigs || dirtyInstructions
   const dirty = dirtySwitches || dirtyConfigs
 
   // 任意 UI 修改自动保存：模块列表的提示词配置修改（顶端总开关/卡片字段/增删/排序，
@@ -767,10 +1007,10 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
   // 与手动「保存」共用同一写盘逻辑（跳过校验：编辑中间态直存，后端容错；
   // 手动保存按钮仍保留校验路径）。保存成功 load() 更新 savedConfigs → dirty 消失自愈。
   useEffect(() => {
-    if (!dirtyConfigs) return
-    const timer = setTimeout(() => { void persistConfigs(fields.promptConfigs) }, 800)
+    if (!dirtyPresetConfigs) return
+    const timer = setTimeout(() => { void persistConfigs(fields.promptConfigs, { includeInstructions: false }) }, 800)
     return () => clearTimeout(timer)
-  }, [dirtyConfigs, fields.promptConfigs, persistConfigs])
+  }, [dirtyPresetConfigs, fields.promptConfigs, persistConfigs])
 
   // 返回引用稳定化：memo 子组件以 props.store 同一性跳过父级重渲染（订阅式 selector
   // 化依赖稳定 store 引用）；每次渲染重建内容对象但复用 ref 外壳。
@@ -791,6 +1031,14 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     templatePreStepCount,
     savedSwitches,
     savedConfigs,
+    instructionPool,
+    getInstructionPool: () => instructionPoolRef.current,
+    dirtyInstructions,
+    persistInstructionFiles,
+    reloadInstructionFile,
+    instructionPolicy,
+    getInstructionPolicy: () => instructionPolicyRef.current,
+    updateInstructionPolicy,
     savingSkillsDir,
     fixingSkill,
     notice,

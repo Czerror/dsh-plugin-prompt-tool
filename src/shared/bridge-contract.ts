@@ -5,6 +5,12 @@
  * 改路径或载荷形状必须同步更新 test/shared/bridge-contract.test.mjs。
  */
 import type { PersonaSpec } from './persona-section.ts'
+import type {
+  InstructionFileWriteResult,
+  InstructionPolicy,
+  InstructionPolicyPatch,
+  InstructionsSnapshot,
+} from './instructions.ts'
 
 export const SETTINGS_BRIDGE_PREFIX = '/api/prompt-tool/settings'
 
@@ -29,6 +35,7 @@ export const BRIDGE_ENDPOINTS = {
   templates: '/templates',
   promptConfigs: '/prompt-configs',
   agentsFile: '/agents-file',
+  instructionsPolicy: '/instructions-policy',
   presetContent: '/preset-content',
   importPreset: '/import-preset',
   paramOverrides: '/param-overrides',
@@ -65,7 +72,8 @@ export type BridgeErrorPayload = { ok: false; code?: string; message?: string }
  */
 export interface BridgeRequestMap {
   meta: undefined
-  bootstrap: undefined
+  /** 可选 sessionId：服务端据此解析该本地 Agent 的工作区，返回对应指令文件快照。 */
+  bootstrap: { sessionId?: string } | undefined
   describe: undefined
   /** 省略 body 或 `refresh: true`（显式刷新越过 10 分钟目录 TTL）。 */
   models: { refresh?: boolean } | undefined
@@ -79,9 +87,24 @@ export interface BridgeRequestMap {
   /** 技能管理配置（附加技能根 / 顺序 / rank 基数）：写 <DSH_HOME>/skills/.system/prompt-tool/config.yml。 */
   skillsConfig: { dirs?: string[]; order?: string[]; rankBase?: number }
   templates: undefined
-  promptConfigs: undefined
-  /** 文件卡写盘：fileId 必须命中服务端当次探测白名单（`$DSH_HOME/AGENTS.md` 或工作区项目链）。 */
-  agentsFile: { files: Array<{ fileId: string; content: string }> }
+  /** 可选 sessionId：与 /bootstrap 同源解析当前工作区（单读与聚合读取必须一致）。 */
+  promptConfigs: { sessionId?: string } | undefined
+  /**
+   * 单文件写盘：fileId/contextId 必须命中服务端当次解析的白名单；
+   * expectedRevision 是客户端已读取的字节版本（乐观并发控制，服务端重读校验）。
+   */
+  agentsFile: {
+    sessionId?: string
+    contextId: string
+    fileId: string
+    expectedRevision: string | null
+    content: string
+  }
+  /**
+   * 指令文件卡策略（独立存储，默认禁用）：省略 `policy` = 读取；
+   * 写入必须带读取时的 `expectedRevision`（文件缺失为 null）。
+   */
+  instructionsPolicy: { policy?: InstructionPolicyPatch; expectedRevision?: string | null } | undefined
   presetContent: undefined
   importPreset: { contents: Array<{ scope: 'preset' | 'agents'; content: string }>; expectedPresetId?: string }
   paramOverrides: { overrides?: Record<string, unknown>; promptConfigs?: unknown[]; rebuild?: boolean; expectedPresetId?: string }
@@ -156,8 +179,9 @@ export interface BridgeValueMap {
   /** 写入后的技能管理配置 + 生效目录（客户端据此刷新字段与目录列表）。 */
   skillsConfig: { dirs: string[]; order: string[]; rankBase: number; activeSkillsDirs: string[]; skillCatalog: unknown[] }
   templates: { templates?: unknown[]; toolTemplates?: unknown[] }
-  promptConfigs: { promptConfigs: unknown[] }
-  agentsFile: { files: Array<{ fileId: string; path: string }> }
+  promptConfigs: { promptConfigs: unknown[]; instructions?: InstructionsSnapshot }
+  agentsFile: InstructionFileWriteResult
+  instructionsPolicy: { policy: InstructionPolicy; revision: string | null; exists: boolean; error?: string }
   presetContent: Record<string, unknown>
   importPreset: { scopes: Array<'preset' | 'agents'> }
   /**

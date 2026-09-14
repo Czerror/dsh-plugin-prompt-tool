@@ -11,6 +11,7 @@ import { EngineModuleActions, EngineModuleCards, EnginePromptDefaultsCard } from
 import { CustomToolsCard, type ToolCreateIntent } from '../../../features/tools/CustomToolsCard.tsx'
 import { TemplatePicker } from '../../../ui/TemplatePicker.tsx'
 import ui from '../../../ui/controls.module.css'
+import type { InstructionPolicyFileOverride } from '../../../../shared/instructions.ts'
 /** 主会话页：公共配置 + 平铺模块列表 + 合并创建菜单（提示词配置 / 工具 / 能力模块）。 */
 export const MainSessionPage = memo(function MainSessionPage(props: { store: PromptToolStore; t: PromptToolTranslate }): ReactNode {
   const { store, t } = props
@@ -28,6 +29,17 @@ export const MainSessionPage = memo(function MainSessionPage(props: { store: Pro
   }, [store])
   const saveConfigs = useCallback((configs: PromptToolStore['fields']['promptConfigs']) => {
     void store.persistConfigs(configs)
+  }, [store])
+  // 指令文件卡：正文只显式写盘（不随预设 debounce），冲突时用重新读取恢复。
+  const saveInstructionFile = useCallback((fileId: string) => {
+    void store.persistInstructionFiles([fileId])
+  }, [store])
+  const reloadInstructionFile = useCallback((fileId: string) => {
+    void store.reloadInstructionFile(fileId)
+  }, [store])
+  // 指令卡行为策略：独立存储，改动按 revision 乐观提交（不写 preset.yml）。
+  const patchInstructionPolicy = useCallback((fileId: string, override: InstructionPolicyFileOverride) => {
+    void store.updateInstructionPolicy(fileId, override)
   }, [store])
   // 模板浮层由页面持有：合并菜单按插入点层级平铺「添加模板 · 层级」入口，浮层只列该层模板。
   const picker = useTemplatePicker(
@@ -65,6 +77,9 @@ export const MainSessionPage = memo(function MainSessionPage(props: { store: Pro
         configs={fields.promptConfigs}
         onPatchConfigs={patchConfigs}
         onSaveConfigs={saveConfigs}
+        onSaveInstructionFile={saveInstructionFile}
+        onReloadInstructionFile={reloadInstructionFile}
+        onPatchInstructionPolicy={patchInstructionPolicy}
         onNotice={store.showNotice}
         templateVariables={store.templateVariables}
         setTemplateVariables={store.setTemplateVariables}

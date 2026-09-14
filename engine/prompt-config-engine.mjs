@@ -19,6 +19,9 @@
  * 铁律:任一提示词配置失败只跳过该提示词配置并 warnOnce;配置错误挂载时 fail loud。
  */
 
+import { readFileSync } from 'node:fs'
+import { basename } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { createPromptConfigs, loadPromptConfigFiles, parsePromptConfigYaml } from './schema.mjs'
 import { applyPromptConfigs } from './executor.mjs'
 
@@ -33,6 +36,26 @@ export const inject = ['systemPrompt', 'tools', 'llm']
 
 export { parsePromptConfigYaml, loadPromptConfigFiles, createPromptConfigs, applyPromptConfigs }
 
+/** 物化清单里是否仍挂着官方指令加载行（负责人冲突事实）。 */
+const OFFICIAL_INSTRUCTIONS_ROW = /dsh-agent-instructions|(^|\s)id:\s*agent-instructions\b/m
+
+/**
+ * 本 mount 的装配事实：来源 id（协调器注册键，取预设目录名）+ 是否仍挂着官方
+ * 指令行。协调器据此拒绝在官方负责人仍在时同时注入插件指令文件正文。
+ * 引擎直接以源码方式被引用（无物化组合文件）时按未知处理，不声明冲突。
+ */
+function compositionFacts(dirUrl) {
+  try {
+    const dir = new URL('..', dirUrl)
+    return {
+      sourceId: `preset:${basename(fileURLToPath(dir))}`,
+      officialInstructions: OFFICIAL_INSTRUCTIONS_ROW.test(readFileSync(new URL('../agent.cordis.yml', dirUrl), 'utf8')),
+    }
+  } catch {
+    return { sourceId: undefined, officialInstructions: false }
+  }
+}
+
 /**
  * 引擎插件入口:config.configsDir 为提示词配置模块目录(相对本文件的 URL),
  * config.strategyDir 为模板专属策略目录(可选)。引擎扫描目录内每个
@@ -46,5 +69,9 @@ export function apply(ctx, config) {
   const strategyDir = typeof config?.strategyDir === 'string' && config.strategyDir.length > 0
     ? config.strategyDir
     : undefined
-  applyPromptConfigs(ctx, createPromptConfigs(loadPromptConfigFiles(dirUrl), { strategyDir }), { prepend: true })
+  const facts = compositionFacts(dirUrl)
+  applyPromptConfigs(ctx, createPromptConfigs(loadPromptConfigFiles(dirUrl), { strategyDir }), {
+    prepend: true,
+    ...facts,
+  })
 }

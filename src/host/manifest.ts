@@ -50,8 +50,9 @@ export interface PresetSpec {
   /** 模板变量插值开关（缺省 true = 启用；false = 停用，writePreset 不生成变量文件）。 */
   variablesEnabled?: boolean
   /**
-   * 是否注入插件的 AGENTS 探测提示卡（agents-project / agents-global；缺省 true）。
-   * 空白模板（custom）显式 false，保持「显式空组合」语义。
+   * @deprecated 自 2026-09-14 起不再生效：指令文件卡由独立指令来源
+   * （pre-step 协调器 + `$DSH_HOME/.prompt-tool/instructions.yml` 策略）按会话现场解析，
+   * 不再由 writePreset 物化。字段保留仅为兼容既有用户 preset.yml 的解析（不迁移、不删除）。
    */
   agentsHints?: boolean
   /** 可选:模板自定义提示词配置覆盖(纯数据,不使用模板语法)。 */

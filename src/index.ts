@@ -30,6 +30,7 @@ import { registerSettingsBridge } from './runtime/settings-bridge.ts'
 import { registerCharacterTools } from './runtime/character-tools.ts'
 import { registerWorldBookTools } from './runtime/world-book-tools.ts'
 import { registerSessionVarTools } from './runtime/session-var-tools.ts'
+import { installPreStepCoordinator } from './runtime/pre-step-coordinator.ts'
 import { registerTuiCommand } from './runtime/tui.ts'
 import { RENDER_STAMP, writePreset } from './host/write-preset.ts'
 import type { WritePresetOptions } from './host/write-preset.ts'
@@ -807,6 +808,11 @@ registerTuiCommand(
     mount: (scopeCtx: Context): (() => void) => registerSessionVarTools(scopeCtx),
   })
 
+  // 独立指令文件来源：宿主侧按本次 Agent 实时编译文件卡，引擎在每次 pre-step
+  // 查询本服务（ctx.get('promptToolPreStep')），不注册第二个 pre-step 监听器。
+  // 策略缺省 enabled=false；服务缺失时引擎只执行预设卡（独立引擎复制场景）。
+  installPreStepCoordinator(ctx)
+
   // settings 注册 base 与运行时快照同源（单一组装，避免双份字段漂移）。
   const settingsEntry: PromptSettings = currentSource()
 
@@ -844,7 +850,26 @@ registerTuiCommand(
 export { Config, PromptSettingsSchema } from './config.ts'
 export { writePreset } from './host/write-preset.ts'
 // AGENTS 文件卡：探测 → 卡片合成与文件写盘（bridge 端点与回归测试共用）。
-export { agentsFileCardSpecs, agentsFileId, detectAgentsFiles, writeAgentsFile } from './host/agents-cards.ts'
+export {
+  agentsFileCardSpecs,
+  agentsFileId,
+  detectAgentsFileSnapshots,
+  detectAgentsFiles,
+  readAgentsFileSnapshot,
+  writeAgentsFile,
+  writeAgentsFileChecked,
+} from './host/agents-cards.ts'
+export { MAX_INSTRUCTION_FILE_BYTES, INSTRUCTION_FILE_STATUSES } from './shared/instructions.ts'
+export type { InstructionContextView, InstructionFileSnapshot, InstructionFileStatus } from './shared/instructions.ts'
+export { installPreStepCoordinator, PRE_STEP_COORDINATOR_SERVICE, PRE_STEP_COORDINATOR_VERSION } from './runtime/pre-step-coordinator.ts'
+export type {
+  PreStepCoordinatorOptions,
+  PreStepCoordinatorService,
+  PreStepFileContribution,
+  PreStepPromptConfig,
+  PreStepSource,
+} from './runtime/pre-step-coordinator.ts'
+export { mergeInstructionCards } from './runtime/settings-bridge.ts'
 export { convertStToPreset, mergeStPresets, processStText, stPresetId } from './host/sillytavern.ts'
 export { applyModuleConfigs, buildModuleConfigsFromParams, removePresetModule, savePresetParams, savePresetPersona, MODEL_SEGMENT_MAP } from './host/manifest.ts'
 export { createEngineCapabilityInPreset, loadPresetSpec, removeEngineCapabilityFromPreset, renderComposition, resolvePresetModuleFacts, resolvePresetParams } from './host/manifest.ts'

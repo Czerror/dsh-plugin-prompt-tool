@@ -338,15 +338,37 @@ system-section 段（character-definition / system-prompt / post-history）。
 - 预览链路：`/subagent-tool-policy-preview` POST 与运行时 `resolveSubagentToolPolicy()` 同一 seam（不重复算法）；预览用 ceiling 工具宇宙。
 - 工具面：`/tool-surface` POST 接受互斥的 `{ sessionId }` 或 `{ presetId }`。前者只读返回当前存活本地 Agent 的 name/description 摘要；后者仅在用户明确选择预设时，经官方 `agentPresets.list()` 白名单、`standingKeyFor()` 和 `tools.schemas(scope)` 懒加载预设有效能力。两者均不下发完整 Schema、大文本或 secrets；PTC 下“预设工具能力”不等于模型 wire 直连工具。
 
-### AGENTS 文件卡（agentsHints，2026-09-14）
+### 独立指令文件来源与指令策略（2026-09-14）
 
-AGENTS.md 走「文件即真相」：`writePreset` 每次重建都探测一次，为**探测到的每个文件**生成一张卡（`src/host/agents-cards.ts`）：
+指令文件（AGENTS.md / CLAUDE.md 等）不属于预设生命周期：正文在用户自己的文件里，行为在
+独立策略文件里，两者都不写进 `preset.yml`。
 
-- 探测范围：用户级 `$DSH_HOME/AGENTS.md` + 工作区 cwd→项目根链（`.git` 为根标记）每个目录的 `AGENTS.md` / `CLAUDE.md` / `AGENTS.local.md` / `CLAUDE.local.md`；不存在的文件不生成卡。
-- 卡片形状：`agents-file-<路径 sha1 前8位>`，`pre-step` 层 + `position: after-user`（对齐官方 `@deepseek-ai/dsh-agent-instructions` 的 `agent/pre-step` 插入点），`params` 只带 `scope` / `file` / `displayPath` / `fileId`。
-- 编辑框：`/prompt-configs` 读时把该文件正文附到 `params.text`（客户端提升到编辑框），改后经 `/agents-file` 写回真实文件（按 `fileId` 命中服务端当次探测白名单，未知 id 或非字符串内容 400 拒绝，tmp + rename 原子写）。
-- 不落预设：文件卡是生成目录产物；`/param-overrides` 持久化 preset.yml 时整卡剔除，预设里只保留用户自己的卡。
-- 注入内容 = 该文件**当前正文**：卡的 `fill` 仍是 `instruction-hint`（UI「填充来源=指令提示」），`params.file` 让 resolver 每次注入时重读文件并加 `Instructions from: <显示路径>` 头；`params.text`（UI「自定义提示」）优先级最高，服务端读配置时把文件正文附到这里，所以编辑框看到/编辑的就是该文件；`params.scope`（all/global/project）保留无 file 时的区域探测。`preset.yml#agentsHints: false` 可整体关闭（`custom` 空白模板已设）。
+- **不再物化生成卡**：`writePreset` 不再探测指令文件、不再把 `agents-file-*` 卡写进生成
+  目录；`preset.yml#agentsHints` 已不是运行时开关（字段仅为兼容既有用户预设保留解析，不再
+  生效）。文件集合、正文、版本与读取状态由 `/bootstrap`、`/prompt-configs` 按**本会话工作区**
+  现场解析（`agent.session.header.cwd`；无本地会话时只保留 `$DSH_HOME/AGENTS.md`，不拿进程
+  cwd 冒充工作区）。
+- **探测范围**：用户级 `$DSH_HOME/AGENTS.md` + 工作区 cwd→项目根链（`.git` 为根标记）每个
+  目录的 `AGENTS.md` / `CLAUDE.md` / `AGENTS.local.md` / `CLAUDE.local.md`；只接受普通文件，
+  符号链接先解析真实路径，越出获准范围（全局限 DSH_HOME、项目限项目根）的文件不收录也不可写。
+- **编辑框**：`/bootstrap` 与 `/prompt-configs` 读时把同一份快照（正文 + 文件身份 + 字节
+  SHA-256 + 读取状态）附到文件卡；改后经 `/agents-file` 写回真实文件（`fileId` + `contextId`
+  必须命中服务端当次探测白名单，`expectedRevision` 做乐观并发，未知 id / 类型错误 400、越界
+  403、缺失 404、版本或上下文过期 409、超限 413，tmp + rename 原子写且保留原权限），写盘不
+  触发预设重建。
+- **独立策略**：`$DSH_HOME/.prompt-tool/instructions.yml`（`src/host/instructions-policy.ts`）
+  承载启停、层内序号、位置、晋升、受众与模型范围；默认 `enabled: false`（安全缺省，需显式
+  开启），用 Document API 保留注释与未知字段、内容版本乐观并发、严格字段白名单、损坏文件
+  拒绝写入。策略只影响未来的注入，不撤回已进入会话历史的内容。
+- **注入**：宿主侧 pre-step 协调器（`src/runtime/pre-step-coordinator.ts`）按会话工作区实时
+  探测并编译文件卡，与预设卡共用 `engine/executor.mjs#runPreStepBatch`；文件正文 literal、
+  身份含 `(fileId, revision, epoch)`、按可见面判定是否需要重发。运行时语义见
+  [engine-reuse.md](engine-reuse.md#pre-step-协调器与独立指令文件来源2026-09-14)。
+- **负责人冲突与未知装配**：该 mount 的组合仍挂着官方 `@deepseek-ai/dsh-agent-instructions`
+  行时，独立来源不参战（同一正文只由一方注入）；该 Agent 的 scope 里没有任何已注册的 preset
+  来源（mount 没有 `prompt-config-engine` 行或引擎未注册）按「未知」处理，同样不注入。
+  `instructions.owner.officialInstructions` 把 `true/false/null(未知)` 发给工作台。切换到插件
+  负责需要用户先在自己的预设里去掉官方指令行/模块，再显式开启独立策略。
 
 ### 模块事实与能力卡（2026-09-05）
 

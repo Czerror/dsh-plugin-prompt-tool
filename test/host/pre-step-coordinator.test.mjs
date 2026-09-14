@@ -1,0 +1,429 @@
+// 独立指令文件来源协调层（W3）：策略开关、按会话工作区探测、文件版本可见状态、
+// 一次性失效通知与负责人冲突。覆盖 PLAN.md T15–T21 的判定面：
+//   - 策略缺失/损坏 → 不注入（不把损坏策略当空配置，也不冒充空正文）；
+//   - 按会话 cwd 探测全局 + 项目文件，字段来自独立策略（defaults + 每文件覆盖）；
+//   - 同版本已可见不重复、内容变化注入新版本一次、成功压缩后同版本恢复、失败压缩不重放；
+//   - reject / 无 after-user 锚点不确认注入；不可用文件只在曾注入过时发一次失效通知；
+//   - 官方指令行仍在（负责人冲突）时不注入；旧生成卡 agents-file-* 不再参战。
+import { after, test } from 'node:test'
+import assert from 'node:assert/strict'
+import { createHash } from 'node:crypto'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { installPreStepCoordinator } from '../../src/runtime/pre-step-coordinator.ts'
+import { agentsFileId } from '../../src/host/agents-cards.ts'
+
+const home = mkdtempSync(join(tmpdir(), 'pt-coord-home-'))
+const ws = mkdtempSync(join(tmpdir(), 'pt-coord-ws-'))
+mkdirSync(join(ws, '.git'), { recursive: true })
+const nested = join(ws, 'packages', 'app')
+mkdirSync(nested, { recursive: true })
+writeFileSync(join(home, 'AGENTS.md'), 'GLOBAL RULES\n', 'utf8')
+writeFileSync(join(ws, 'AGENTS.md'), 'PROJECT RULES\n', 'utf8')
+
+after(() => {
+  rmSync(home, { recursive: true, force: true })
+  rmSync(ws, { recursive: true, force: true })
+})
+
+const sha256 = (value) => createHash('sha256').update(value).digest('hex')
+const GLOBAL_ID = agentsFileId(join(home, 'AGENTS.md'))
+const PROJECT_ID = agentsFileId(join(ws, 'AGENTS.md'))
+const rev16 = (text) => sha256(Buffer.from(text)).slice(0, 16)
+
+let caseSeq = 0
+const newPolicyFile = () => {
+  caseSeq += 1
+  const dir = join(home, '.prompt-tool', `case-${caseSeq}`)
+  mkdirSync(dir, { recursive: true })
+  return join(dir, 'instructions.yml')
+}
+const policyWith = (content) => {
+  const file = newPolicyFile()
+  writeFileSync(file, content, 'utf8')
+  return file
+}
+
+const userTask = {
+  id: 'task-1',
+  role: 'user',
+  content: [{ type: 'text', text: '写一个工具' }],
+  source: { kind: 'user' },
+}
+
+let sessionSeq = 0
+/** 只带持久日志（无 deriveMessages）：走「事件流 + compaction 边界」可见面回退路径。 */
+const agentAt = (cwd, events = [], header = {}) => {
+  sessionSeq += 1
+  return {
+    session: {
+      id: `s-${sessionSeq}`,
+      header: { delegationDepth: 0, ...(cwd === undefined ? {} : { cwd }), ...header },
+      snapshotEvents: () => events,
+    },
+    options: { model: 'pro' },
+  }
+}
+
+/** 注入过的历史消息（持久事件形状：event.data 本身是消息）。 */
+const injectedEvent = (fileId, revision, seq = 1) => ({
+  seq,
+  type: 'user/message',
+  data: {
+    id: `injected-${fileId}-${revision}`,
+    role: 'user',
+    content: [{ type: 'text', text: 'OLD BODY' }],
+    source: { kind: 'instruction-file', form: 'instructions', plugin: `instruction-file:${fileId}:${revision}:e0` },
+  },
+})
+
+/** 生成器感知的最小 ctx：cordis effect（含 generator effect）、on、provide、logger。 */
+const makeCtx = () => {
+  const listeners = new Map()
+  const provided = new Map()
+  const warnings = []
+  const cleanups = []
+  const disposeEffect = (fn) => {
+    const result = fn()
+    if (result !== null && typeof result === 'object' && typeof result.next === 'function') {
+      const undo = []
+      for (let step = result.next(); step.done !== true; step = result.next()) {
+        if (typeof step.value === 'function') undo.push(step.value)
+      }
+      return () => {
+        for (const item of undo.reverse()) item()
+      }
+    }
+    return typeof result === 'function' ? result : () => {}
+  }
+  const ctx = {
+    on(name, handler) {
+      listeners.set(name, handler)
+      return () => listeners.delete(name)
+    },
+    effect(fn) {
+      const dispose = disposeEffect(fn)
+      cleanups.push(dispose)
+      return dispose
+    },
+    provide(name, value) {
+      provided.set(name, value)
+    },
+    get(name) {
+      return provided.get(name)
+    },
+    logger: { warn: (message) => warnings.push(message) },
+  }
+  return { ctx, listeners, provided, warnings, cleanups }
+}
+
+const coordinatorFor = (options = {}) => {
+  const harness = makeCtx()
+  const service = installPreStepCoordinator(harness.ctx, { home, ...options })
+  // 生产装配里每个 mount 都有 prompt-config-engine 行（即使没有预设卡也会上报装配事实）；
+  // 测试默认注册一份「只有事实、没有配置」的来源，未确认装配的用例显式关掉它。
+  if (options.preset !== false) {
+    service.registerPreset(harness.ctx, 'preset:test-owner', { configs: [], officialInstructions: false })
+  }
+  return { ...harness, service }
+}
+
+const step = async (harness, agent, decide) =>
+  harness.listeners.get('agent/pre-step')(
+    { agent },
+    decide ?? (async () => ({ kind: 'enter', messages: [userTask] })),
+  )
+
+const fileMessages = (decision) =>
+  (Array.isArray(decision?.messages) ? decision.messages : []).filter((message) => message?.source?.kind === 'instruction-file')
+
+const bodyOf = (message) =>
+  (Array.isArray(message?.content) ? message.content : [])
+    .map((block) => (typeof block?.text === 'string' ? block.text : ''))
+    .join('\n')
+
+/** 极简预设来源：只会注入一条静态消息，用于负责人冲突/遗留卡用例。 */
+const presetCard = (overrides = {}) => ({
+  id: 'preset-card-1',
+  layer: 'pre-step',
+  enabled: true,
+  order: 10,
+  position: 'after-user',
+  promotion: 'none',
+  audience: null,
+  modelScope: 'all',
+  role: 'user',
+  dedupe: 'none',
+  mergeMode: 'separate',
+  sourceKind: 'preset-card',
+  form: 'text',
+  texts: [],
+  params: {},
+  variables: {},
+  identity: { field: 'plugin', value: 'preset-card-1' },
+  resolve: async () => ({ text: 'PRESET BODY' }),
+  ...overrides,
+})
+
+const registerPreset = (harness, configs, officialInstructions = false) =>
+  harness.service.registerPreset(harness.ctx, 'preset:test', {
+    configs,
+    officialInstructions,
+  })
+
+test('T15 策略缺失（默认禁用）不注入文件正文', async () => {
+  const harness = coordinatorFor({ policyFile: newPolicyFile() })
+  const decision = await step(harness, agentAt(nested))
+  assert.deepEqual(decision.messages.map((message) => message.id), ['task-1'])
+  assert.deepEqual(harness.warnings, [])
+})
+
+test('T15 enabled 后按会话工作区探测：全局 + 项目文件各一张，字段来自策略 defaults', async () => {
+  const file = policyWith('schemaVersion: 1\nenabled: true\ndefaults:\n  order: 12\n  position: before-all\n')
+  const harness = coordinatorFor({ policyFile: file })
+  const decision = await step(harness, agentAt(nested))
+  const cards = fileMessages(decision)
+  assert.equal(cards.length, 2, '全局与项目文件各一条')
+  // before-all 按 order 升序插在用户消息之前。
+  assert.deepEqual(decision.messages.map((message) => message.source.kind), ['instruction-file', 'instruction-file', 'user'])
+  const project = cards.find((message) => message.source.plugin.includes(PROJECT_ID))
+  assert.ok(project, '项目文件按真实路径身份生成')
+  assert.equal(bodyOf(project), 'Instructions from: AGENTS.md\n\nPROJECT RULES')
+  assert.equal(project.role, 'user')
+  assert.equal(project.source.form, 'instructions')
+  assert.equal(project.source.plugin, `instruction-file:${PROJECT_ID}:${rev16('PROJECT RULES\n')}:e0`)
+  const global = cards.find((message) => message.source.plugin.includes(GLOBAL_ID))
+  assert.equal(bodyOf(global), 'Instructions from: ~/.dsh/AGENTS.md\n\nGLOBAL RULES')
+})
+
+test('T12 无本地会话 cwd：只保留可确认的全局文件，不拿进程 cwd 兜底', async () => {
+  const file = policyWith('enabled: true\n')
+  const harness = coordinatorFor({ policyFile: file })
+  const decision = await step(harness, agentAt(undefined))
+  assert.equal(fileMessages(decision).length, 1)
+  assert.equal(fileMessages(decision)[0].source.plugin.includes(GLOBAL_ID), true)
+})
+
+test('T15 每文件覆盖：行为字段与显示名生效；enabled=false 单独关闭该文件', async () => {
+  const file = policyWith([
+    'enabled: true',
+    'files:',
+    `  ${PROJECT_ID}:`,
+    '    order: 7',
+    '    position: after-all',
+    '    promotion: main',
+    '    audience: subagent',
+    '    modelScope: flash',
+    '',
+  ].join('\n'))
+  const harness = coordinatorFor({ policyFile: file })
+  // audience=subagent 且 modelScope=flash：主会话不注入，Flash 子代理注入。
+  const main = await step(harness, agentAt(nested))
+  assert.deepEqual(fileMessages(main).map((message) => message.source.plugin.includes(PROJECT_ID)), [false])
+  const sub = await step(
+    harness,
+    { ...agentAt(nested, [{ seq: 1, type: 'tool/call', data: {} }], { delegationDepth: 1 }), options: { model: 'deepseek-flash' } },
+  )
+  assert.deepEqual(
+    fileMessages(sub).map((message) => message.source.plugin.includes(PROJECT_ID)).sort(),
+    [false, true],
+    'Flash 子代理同时注入两份文件',
+  )
+  assert.deepEqual(
+    sub.messages.map((message) => message.source.kind),
+    ['user', 'instruction-file', 'instruction-file'],
+    'after-all / after-user 都落在真实用户消息之后',
+  )
+
+  const scoped = policyWith(`enabled: true\nfiles:\n  ${PROJECT_ID}:\n    enabled: false\n`)
+  const off = await step(coordinatorFor({ policyFile: scoped }), agentAt(nested))
+  assert.deepEqual(fileMessages(off).map((message) => message.source.plugin.includes(PROJECT_ID)), [false])
+  assert.equal(fileMessages(off).length, 1, '只剩全局文件一张')
+})
+
+test('T16/T20 同版本已可见不重复；内容变化注入新版本一次；多文件身份独立', async () => {
+  const file = policyWith('enabled: true\n')
+  const harness = coordinatorFor({ policyFile: file })
+  const projectIdentity = `instruction-file:${PROJECT_ID}:${rev16('PROJECT RULES\n')}:e0`
+  const already = await step(harness, agentAt(nested, [injectedEvent(PROJECT_ID, rev16('PROJECT RULES\n'))]))
+  assert.deepEqual(
+    fileMessages(already).map((message) => message.source.plugin),
+    [`instruction-file:${GLOBAL_ID}:${rev16('GLOBAL RULES\n')}:e0`],
+    '项目文件同版本已可见 → 不重复；全局文件独立身份照常注入',
+  )
+
+  writeFileSync(join(ws, 'AGENTS.md'), 'PROJECT RULES V2\n', 'utf8')
+  const changed = await step(harness, agentAt(nested, [injectedEvent(PROJECT_ID, rev16('PROJECT RULES\n'))]))
+  const updated = fileMessages(changed).find((message) => message.source.plugin.includes(PROJECT_ID))
+  assert.ok(updated, '内容变化 → 注入新版本一次')
+  assert.equal(updated.source.plugin, `instruction-file:${PROJECT_ID}:${rev16('PROJECT RULES V2\n')}:e0`)
+  assert.notEqual(updated.source.plugin, projectIdentity, '新版本身份与旧版本不同')
+  assert.equal(bodyOf(updated), 'Instructions from: AGENTS.md\n\nPROJECT RULES V2')
+  writeFileSync(join(ws, 'AGENTS.md'), 'PROJECT RULES\n', 'utf8')
+})
+
+test('T17 成功压缩后同版本恢复注入；失败压缩不推进 epoch', async () => {
+  const file = policyWith([
+    'enabled: true',
+    'files:',
+    `  ${GLOBAL_ID}:`,
+    '    enabled: false',
+    '',
+  ].join('\n'))
+  const harness = coordinatorFor({ policyFile: file })
+  const identity = `instruction-file:${PROJECT_ID}:${rev16('PROJECT RULES\n')}:e0`
+  const success = await step(
+    harness,
+    agentAt(nested, [injectedEvent(PROJECT_ID, rev16('PROJECT RULES\n'), 1), { seq: 2, type: 'compaction/end', data: {} }]),
+  )
+  const afterSuccess = fileMessages(success)
+  assert.equal(afterSuccess.length, 1, '成功压缩把旧全文移出可见面 → 同版本重新注入一次')
+  assert.notEqual(afterSuccess[0].source.plugin, identity, '新 epoch 身份，不复用旧消息身份')
+  assert.equal(afterSuccess[0].source.plugin, `instruction-file:${PROJECT_ID}:${rev16('PROJECT RULES\n')}:e2`)
+
+  const failed = await step(
+    harness,
+    agentAt(nested, [
+      injectedEvent(PROJECT_ID, rev16('PROJECT RULES\n'), 1),
+      { seq: 2, type: 'compaction/end', data: { error: 'boom' } },
+    ]),
+  )
+  assert.deepEqual(fileMessages(failed), [], '失败压缩不推进边界 → 不重放同版本')
+})
+
+test('T19 可见面以 deriveMessages() 为准（压缩投影后的真相优先于持久日志）', async () => {
+  const file = policyWith('enabled: true\n')
+  const harness = coordinatorFor({ policyFile: file })
+  const agent = agentAt(nested, [injectedEvent(PROJECT_ID, rev16('PROJECT RULES\n')), injectedEvent(GLOBAL_ID, rev16('GLOBAL RULES\n'))])
+  agent.session.deriveMessages = () => []
+  const decision = await step(harness, agent)
+  assert.equal(fileMessages(decision).length, 2, '投影后可见面为空 → 两份文件都重新注入')
+})
+
+test('T21 不可用文件：曾注入过发一次失效通知，从未注入过静默；通知只发一次', async () => {
+  const file = policyWith([
+    'enabled: true',
+    'files:',
+    `  ${GLOBAL_ID}:`,
+    '    enabled: false',
+    `  ${PROJECT_ID}:`,
+    '    enabled: false',
+    '',
+  ].join('\n'))
+  const harness = coordinatorFor({ policyFile: file })
+  const emptyDir = join(ws, 'empty-case')
+  mkdirSync(emptyDir, { recursive: true })
+  writeFileSync(join(emptyDir, 'AGENTS.md'), '', 'utf8')
+  const emptyId = agentsFileId(join(emptyDir, 'AGENTS.md'))
+
+  const noticed = await step(harness, agentAt(emptyDir, [injectedEvent(emptyId, rev16('OLD\n'))]))
+  const notice = fileMessages(noticed)
+  assert.equal(notice.length, 1, '曾注入过正文 → 发一次失效通知')
+  assert.equal(notice[0].source.plugin, `instruction-file:${emptyId}:unavailable:e0`)
+  assert.match(bodyOf(notice[0]), /no longer available \(file is empty\)/)
+  assert.match(bodyOf(notice[0]), /stale/)
+
+  const repeated = await step(harness, agentAt(emptyDir, [
+    injectedEvent(emptyId, rev16('OLD\n'), 1),
+    {
+      seq: 2,
+      type: 'user/message',
+      data: {
+        id: 'notice-1',
+        role: 'user',
+        content: [{ type: 'text', text: 'no longer available' }],
+        source: { kind: 'instruction-file', form: 'instructions', plugin: `instruction-file:${emptyId}:unavailable:e0` },
+      },
+    },
+  ]))
+  assert.deepEqual(fileMessages(repeated), [], '失效通知只发一次')
+
+  const never = await step(harness, agentAt(emptyDir))
+  assert.deepEqual(fileMessages(never), [], '从未注入过的文件不可用时不注入任何东西')
+
+  const bigDir = join(ws, 'big-case')
+  mkdirSync(bigDir, { recursive: true })
+  writeFileSync(join(bigDir, 'AGENTS.md'), 'x'.repeat(64 * 1024 + 1), 'utf8')
+  const bigId = agentsFileId(join(bigDir, 'AGENTS.md'))
+  const big = await step(harness, agentAt(bigDir, [injectedEvent(bigId, rev16('OLD\n'))]))
+  assert.match(bodyOf(fileMessages(big)[0]), /no longer available/)
+  assert.equal(fileMessages(big)[0].source.plugin, `instruction-file:${bigId}:unavailable:e0`)
+})
+
+test('策略损坏或 schemaVersion 未知：拒绝注入，不当作空配置', async () => {
+  const broken = policyWith('enabled: true\n  bad indent::\n')
+  assert.deepEqual(fileMessages(await step(coordinatorFor({ policyFile: broken }), agentAt(nested))), [])
+  const future = policyWith('schemaVersion: 99\nenabled: true\n')
+  assert.deepEqual(fileMessages(await step(coordinatorFor({ policyFile: future }), agentAt(nested))), [])
+})
+
+test('T18 reject 与缺少 after-user 锚点都不确认注入', async () => {
+  const file = policyWith('enabled: true\n')
+  const harness = coordinatorFor({ policyFile: file })
+  const rejected = await step(harness, agentAt(nested), async () => ({ kind: 'reject' }))
+  assert.deepEqual(rejected, { kind: 'reject' })
+  const noAnchor = await step(harness, agentAt(nested), async () => ({ kind: 'enter', messages: [] }))
+  assert.deepEqual(noAnchor.messages, [], '没有真实用户消息锚点 → 文件卡延后，不写入')
+})
+
+test('T27 负责人冲突：官方指令行仍在时不注入文件正文（预设卡照常）', async () => {
+  const file = policyWith('enabled: true\n')
+  const harness = coordinatorFor({ policyFile: file })
+  registerPreset(harness, [presetCard()], true)
+  const decision = await step(harness, agentAt(nested))
+  assert.deepEqual(fileMessages(decision), [], '同一正文只由一方注入')
+  assert.deepEqual(decision.messages.map((message) => message.source.kind), ['user', 'preset-card'], '预设卡照常注入')
+})
+
+test('T27 未确认装配（没有已注册的 preset 来源）不注入文件正文，也不谎称插件负责', async () => {
+  const file = policyWith('enabled: true\n')
+  const harness = coordinatorFor({ policyFile: file, preset: false })
+  const agent = agentAt(nested)
+  const decision = await step(harness, agent)
+  assert.deepEqual(fileMessages(decision), [], '装配未知 → 不同时执行，也不要「偷跑」')
+  assert.equal(harness.service.officialOwnerOf(agent.session.id), undefined, '未确认 → 负责人事实保持未知')
+})
+
+test('T25 旧生成卡 agents-file-* 由独立来源接管后不再参战', async () => {
+  const file = policyWith('enabled: true\nfiles:\n  ' + GLOBAL_ID + ':\n    enabled: false\n')
+  const harness = coordinatorFor({ policyFile: file })
+  registerPreset(harness, [
+    presetCard({
+      id: `agents-file-${PROJECT_ID}`,
+      sourceKind: 'instruction-file',
+      identity: { field: 'plugin', value: `agents-file-${PROJECT_ID}` },
+      resolve: async () => ({ text: 'LEGACY CARD BODY' }),
+    }),
+  ])
+  const decision = await step(harness, agentAt(nested))
+  const texts = decision.messages.map(bodyOf)
+  assert.ok(!texts.some((text) => text.includes('LEGACY CARD BODY')), '遗留卡不参与注入')
+  assert.equal(fileMessages(decision).length, 1, '运行时文件来源照常注入')
+  assert.ok(harness.warnings.some((message) => /skipping legacy generated file card/.test(message)))
+})
+
+test('T15/T16 文件卡按策略晋升门控，正文 literal（不经过预设变量插值）', async () => {
+  const dir = join(ws, 'literal-case')
+  mkdirSync(dir, { recursive: true })
+  writeFileSync(join(dir, 'AGENTS.md'), 'RULES {{KeepRaw}}\n', 'utf8')
+  const file = policyWith([
+    'enabled: true',
+    'files:',
+    `  ${GLOBAL_ID}:`,
+    '    enabled: false',
+    `  ${PROJECT_ID}:`,
+    '    enabled: false',
+    `  ${agentsFileId(join(dir, 'AGENTS.md'))}:`,
+    '    promotion: main',
+    '',
+  ].join('\n'))
+  const harness = coordinatorFor({ policyFile: file })
+
+  const unpromoted = await step(harness, agentAt(dir))
+  assert.deepEqual(fileMessages(unpromoted), [], 'promotion=main 未晋升不注入（缺锚点之外的第二道门）')
+
+  const promoted = await step(harness, agentAt(dir, [{ seq: 1, type: 'tool/call', data: {} }]))
+  assert.equal(fileMessages(promoted).length, 1)
+  assert.match(bodyOf(fileMessages(promoted)[0]), /\{\{KeepRaw\}\}/, '文件正文 literal，不插值')
+})

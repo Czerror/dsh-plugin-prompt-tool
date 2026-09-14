@@ -4,6 +4,7 @@ import { FormField } from '../../ui/FormField.tsx'
 import { HintTooltip } from '../../ui/HintTooltip.tsx'
 import type { PromptToolTranslate } from '../../locales.ts'
 import type { EngineMeta, PromptConfigDraft } from '../../prompt-tool-types.ts'
+import type { InstructionPolicyFileOverride } from '../../../shared/instructions.ts'
 import { OptionField, StrategyParamsFields, VariablesEditor } from './PromptConfigFields.tsx'
 import { autoResizeTextarea } from './textarea-resize.ts'
 import {
@@ -53,8 +54,10 @@ export function PromptConfigForm(props: {
   meta: EngineMeta
   config: PromptConfigDraft
   onPatch: (patch: Partial<PromptConfigDraft>) => void
+  /** 指令文件卡：行为策略写独立策略存储（不写 preset.yml）。 */
+  onPatchPolicy?: (patch: InstructionPolicyFileOverride) => void
 }): ReactNode {
-  const { t, meta, config, onPatch } = props
+  const { t, meta, config, onPatch, onPatchPolicy } = props
   const policy = fieldPolicyFor(meta, config.layer)
   const strategy = config.strategy ?? 'static'
   const placeholder = strategy === 'placeholder' && policy.placeholder
@@ -66,6 +69,61 @@ export function PromptConfigForm(props: {
     config.templateFile,
     config.identity !== undefined && (config.identity.field !== 'plugin' || config.identity.value.length > 0),
   ].filter(Boolean).length
+  // 指令文件卡：正文对应磁盘上的原文件；读取失败或磁盘已变时不得继续编辑覆盖。
+  const isInstructionFile = config.contentStatus !== undefined || config.origin?.kind === 'instruction-file'
+  const filePath = typeof config.params?.displayPath === 'string' && config.params.displayPath.length > 0
+    ? config.params.displayPath
+    : typeof config.params?.file === 'string' ? config.params.file : ''
+  const textReadOnly = isInstructionFile
+    && ((config.contentStatus !== undefined && config.contentStatus !== 'ready') || config.contentConflict === true)
+  // 指令文件卡：绑定（插入点/角色/表单/填充/去重）由文件来源固定，正文走显式保存；
+  // 行为策略待独立策略存储接线后再放开，先不提供会静默丢弃的假控件。
+  if (isInstructionFile) {
+    return (
+      <div className={clsx(styles.configForm, styles.configFormLayout)}>
+        <div className={styles.configSectionTitle}>{t('form.section.content')}</div>
+        <p className={styles.configFieldHint}>{t('form.text.fileTarget', { path: filePath })}</p>
+        <p className={styles.configFieldHint}>{t('file.bindingLocked')}</p>
+        {textReadOnly && <p className={styles.configFieldHint}>{t('form.text.fileReadOnly')}</p>}
+        {config.contentOwnerConflict === true && <p className={styles.configFieldHint}>{t('file.ownerConflict')}</p>}
+        <p className={styles.configFieldHint}>{t('file.policyNote')}</p>
+        <FormField label={t('form.text.label')} hint={t('form.text.hint')} hintMode="tooltip">
+          <textarea
+            className={styles.configTextarea}
+            aria-label={t('form.text.aria')}
+            value={config.text ?? ''}
+            spellCheck={false}
+            readOnly={textReadOnly}
+            onChange={(e) => {
+              autoResizeTextarea(e)
+              onPatch({ text: e.target.value })
+            }}
+          />
+        </FormField>
+        {/* 行为策略：独立存储，改动即按 revision 提交；绑定字段仍不可改。 */}
+        <div className={styles.configSectionTitle}>{t('form.section.rules')}</div>
+        <div className={clsx(styles.configGrid, styles.strategyGrid)}>
+          <FormField className={styles.fieldSpan2} label={t('form.order.label')} hint={t('form.order.hint')} hintMode="tooltip">
+            <input
+              className={inputClass}
+              type="number"
+              min={0}
+              step={1}
+              defaultValue={config.order ?? 30}
+              onBlur={(event) => {
+                const next = Number(event.target.value)
+                if (Number.isSafeInteger(next) && next >= 0) onPatchPolicy?.({ order: next })
+              }}
+            />
+          </FormField>
+          {policy.position && <OptionField t={t} className={styles.fieldSpan3} label={t('form.position.label')} hint={t('form.position.hint')} value={config.position} options={meta.positions} fallback="after-user" labelKeys={POSITION_LABEL_KEYS} onChange={(value) => onPatchPolicy?.({ position: value })} />}
+          {policy.promotion && <OptionField t={t} className={styles.fieldSpan3} label={t('form.promotion.label')} hint={t('form.promotion.hint')} value={config.promotion} options={meta.promotions} fallback="none" labelKeys={PROMOTION_LABEL_KEYS} onChange={(value) => onPatchPolicy?.({ promotion: value })} />}
+          {policy.audience && <OptionField t={t} className={styles.fieldSpan3} label={t('form.audience.label')} hint={t('form.audience.hint')} value={config.audience ?? undefined} options={['', ...meta.audienceModes]} fallback="" labelKeys={AUDIENCE_LABEL_KEYS} onChange={(value) => onPatchPolicy?.({ audience: value === '' ? null : value })} />}
+          {policy.modelScope && <OptionField t={t} className={styles.fieldSpan3} label={t('form.modelScope.label')} hint={t('form.modelScope.hint')} value={config.modelScope} options={meta.modelScopes} fallback="all" labelKeys={MODEL_SCOPE_LABEL_KEYS} onChange={(value) => onPatchPolicy?.({ modelScope: value })} />}
+        </div>
+      </div>
+    )
+  }
   return (
     <div className={clsx(styles.configForm, styles.configFormLayout)}>
       <div className={styles.configSectionTitle}>{t('form.section.basic')}</div>

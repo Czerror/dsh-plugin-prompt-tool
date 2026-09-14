@@ -6,6 +6,7 @@ import { PromptConfigCard } from './PromptConfigCard.tsx'
 import { moveToView, moveWithinLayer, promptConfigLayer, viewOrderedIds } from './prompt-config-order.ts'
 import { displayLayers, LAYER_LABEL_KEYS, translateLabel } from './prompt-config-policy.ts'
 import type { EngineMeta, PromptConfigDraft, ValidationErrorEntry } from '../../prompt-tool-types.ts'
+import type { InstructionPolicyFileOverride } from '../../../shared/instructions.ts'
 import sharedCss from '../../ui/controls.module.css'
 import featureCss from './prompts.module.css'
 
@@ -34,12 +35,17 @@ export interface PromptConfigListProps {
   emptyHint?: string
   onPatchConfigs: (configs: PromptConfigDraft[]) => void
   onSaveConfigs: (configs: PromptConfigDraft[]) => void
+  /** 指令文件卡：显式写盘与重新读取（不经预设保存路径）。 */
+  onSaveInstructionFile?: (fileId: string) => void
+  onReloadInstructionFile?: (fileId: string) => void
+  /** 指令文件卡的行为策略改动（独立策略存储）。 */
+  onPatchInstructionPolicy?: (fileId: string, override: InstructionPolicyFileOverride) => void
   onNotice: (kind: 'ok' | 'error', message: string) => void
 }
 
 /** 共享的提示词配置列表：校验、保存、脏检测、复制、删除、层内移动。 */
 export function PromptConfigList(props: PromptConfigListProps): ReactNode {
-  const { t, meta, configs, layer, scope, extraActions, beforeCards, moduleCards, toolbarActions, viewFilter: viewFilterProp, onViewFilterChange, emptyHint, onPatchConfigs, onSaveConfigs, onNotice } = props
+  const { t, meta, configs, layer, scope, extraActions, beforeCards, moduleCards, toolbarActions, viewFilter: viewFilterProp, onViewFilterChange, emptyHint, onPatchConfigs, onSaveConfigs, onSaveInstructionFile, onReloadInstructionFile, onPatchInstructionPolicy, onNotice } = props
   const [expanded, setExpanded] = useState<string | undefined>(undefined)
   const [errors, setErrors] = useState<ValidationErrorEntry[]>([])
   const [validating, setValidating] = useState(false)
@@ -226,6 +232,9 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
         onMoveDown={handleMoveDown}
         onDuplicate={handleDuplicate}
         onDelete={handleDelete}
+        onSaveInstructionFile={onSaveInstructionFile}
+        onReloadInstructionFile={onReloadInstructionFile}
+        onPatchInstructionPolicy={onPatchInstructionPolicy}
         onDragStart={handleDragStart}
         onDragOver={handleDragOver}
         onDrop={handleDrop}

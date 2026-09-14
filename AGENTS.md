@@ -44,6 +44,7 @@
 只改文档时运行 `git -C $Repo diff --check`，并核对文档中的路径、链接和命令。
 
 - 非平凡分支、解析器、状态迁移、文件写入和安全边界必须有最小确定性回归测试。
+- 指令文件读写必须覆盖授权、上下文白名单、内容版本冲突和读取失败的行为回归；不用静态源码字符串匹配代替行为断言。
 - 测试优先使用 Node 内置 test runner 和现有 helper；仅有明确收益时新增框架或依赖。
 - 文件系统测试使用独立临时目录和临时 `DSH_HOME`，结束后清理，且不依赖共享状态或执行顺序。
 - 修改参数、bridge、UI slot、engine、预设或生成器时，运行对应的 shared/client/engine/host/presets 契约测试；最终交付仍执行完整 test。
@@ -60,14 +61,16 @@
 - 监听器、工具、watcher 和动态服务挂在 ctx.effect 或 disposer 上；重挂前释放旧实例。
 - 仅依赖已发布的官方包和 node_modules 类型；相对 TypeScript import 保留显式扩展名，纯类型依赖使用 import type。
 - Skills、SillyTavern、角色卡、世界书和自定义工具复用既有 provider、host 工厂和 rebuildPreset()，不在 UI 复制转换或热装配通道。
-- 修改源文件后通过 package scripts 重新生成 `lib/`、`engine/compositions/library/` 和 `engine/vendor/yaml/`；这些生成目录不手工编辑或提交。
+- 修改源文件后通过 package scripts 重新生成 `lib/`、`engine/compositions/library/` 和 `engine/vendor/yaml/`。`lib/` 是构建产物，已被忽略，不手工编辑也不提交。
+- `engine/compositions/library/`（`rebuild:composition`）与 `engine/vendor/yaml/`（`sync:yaml`）是版本化分发快照：不手工编辑，由脚本按固定输入生成并验证，按任务范围提交；不得 git rm，也不得加入忽略。
 
 ### 配置、写盘与安全
 
 - preset.yml 是具体预设行为的单一来源；settings 只承载部署轴，复杂数据和大文本走文件或 loopback bridge。
 - 所有 YAML 修改使用 yaml Document API 保留注释和未知字段；写盘先完整生成临时目录，再原子 rename，system 目录保持只读。
-- 只写 DSH_HOME 下本插件拥有的状态、生成目录、.engine 指纹和 .characters；不得清理其他用户或官方文件。
-- 生成到用户目录的 AGENTS.md 只更新受管块并保留其余内容。
+- 默认只写 DSH_HOME 下本插件拥有的状态、生成目录、.engine 指纹、.characters 和指令策略文件；不得清理其他用户或官方文件。
+- 预设定义只拥有预设行为；指令文件正文与指令策略是独立所有者。工作区指令文件（AGENTS.md、CLAUDE.md 及其 .local 变体）正文属于用户文件，只有用户授权编辑、目标命中当前会话上下文白名单且版本校验通过时才写入，且只替换该文件本身。
+- 写入指令文件不覆盖用户未知改动，不修改官方或只读目录中的文件；不得把指令正文复制进 preset.yml、settings、生成目录或策略文件。
 - bridge 路径和载荷先改 src/shared/bridge-contract.ts，再同步 host、client 和契约测试；成功/失败载荷保持统一包装，写入端点先做白名单、类型、数值和大小校验。
 - secrets、token 和大文本不进入 settings descriptor；保留 loopback、Host/Origin 校验和请求体上限。
 

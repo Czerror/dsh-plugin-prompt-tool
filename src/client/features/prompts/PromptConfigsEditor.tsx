@@ -11,6 +11,7 @@ import featureCss from './prompts.module.css'
 const styles = { ...sharedCss, ...featureCss }
 
 import type { EngineMeta, PromptConfigDraft } from '../../prompt-tool-types.ts'
+import type { InstructionPolicyFileOverride } from '../../../shared/instructions.ts'
 
 export type { PromptConfigDraft, LayerFieldPolicy } from '../../prompt-tool-types.ts'
 export type { ValidationErrorEntry } from '../../prompt-tool-types.ts'
@@ -27,6 +28,11 @@ export interface PromptConfigsEditorProps {
   configs: PromptConfigDraft[]
   onPatchConfigs: (configs: PromptConfigDraft[]) => void
   onSaveConfigs: (configs: PromptConfigDraft[]) => void
+  /** 指令文件卡：显式写盘 / 重新读取（不经预设保存路径）。 */
+  onSaveInstructionFile?: (fileId: string) => void
+  onReloadInstructionFile?: (fileId: string) => void
+  /** 指令文件卡的行为策略改动（独立策略存储）。 */
+  onPatchInstructionPolicy?: (fileId: string, override: InstructionPolicyFileOverride) => void
   onNotice: (kind: 'ok' | 'error', message: string) => void
   /** 预设级模板变量（preset.yml 顶层 variables 段；编辑入口与模块列表统一）。 */
   templateVariables: Record<string, string>
@@ -160,6 +166,9 @@ export function PromptConfigsEditor(props: PromptConfigsEditorProps): ReactNode 
         moduleCards={props.moduleCards}
         onPatchConfigs={props.onPatchConfigs}
         onSaveConfigs={props.onSaveConfigs}
+        onSaveInstructionFile={props.onSaveInstructionFile}
+        onReloadInstructionFile={props.onReloadInstructionFile}
+        onPatchInstructionPolicy={props.onPatchInstructionPolicy}
         onNotice={props.onNotice}
       />
 

@@ -24,7 +24,6 @@ import {
   renderPromptConfigYaml,
 } from './prompt-configs.ts'
 import type { PromptConfigSpec } from './prompt-configs.ts'
-import { agentsFileCardSpecs, type AgentsFileCard } from './agents-cards.ts'
 import {
   assertCompositionArray,
   asString,
@@ -86,11 +85,6 @@ const DISABLED_TEXT_SLIM_THRESHOLD = 32 * 1024
 export interface WritePresetOptions extends PresetWriterParams {
   /** AGENTS.md 内容资产（写生成目录 agents.md）：常驻层写盘的唯一来源，不再注入提示词。 */
   agentsInstructionText?: string
-  /**
-   * AGENTS 文件卡来源覆盖（测试注入用）。缺省 = 按进程 DSH_HOME 与 cwd 现场探测；
-   * 探测结果只进生成目录，不写 preset.yml。
-   */
-  agentsFiles?: AgentsFileCard[]
   presetDir: string
   presetOrder: number
   /** settings 层用户自定义提示词配置(优先级最高)。 */
@@ -473,10 +467,10 @@ export function writePreset(prompt: string, options: WritePresetOptions): void {
     // 全部内容由模板数据或用户 settings 提供。
     templateDefaults = []
   }
-  // 模型参数（agent-request）与 AGENTS 探测提示卡作为引擎默认级注入，优先级低于模板与 settings；
-  // 空白模板可用 preset.yml#agentsHints=false 保持「显式空组合」。
-  const agentsHints = spec.agentsHints === false ? [] : agentsFileCardSpecs(options.agentsFiles ?? undefined)
-  const merged = mergePromptConfigs(modelRequestConfigs(params), templateDefaults, agentsHints, options.promptConfigs)
+  // 模型参数（agent-request）作为引擎默认级注入，优先级低于模板与 settings。
+  // 指令文件卡不再物化：正文与行为由独立指令来源（pre-step 协调器 + 独立策略）按会话
+  // 现场解析，生成目录里不再出现 agents-file-*，preset.yml#agentsHints 也不再是开关。
+  const merged = mergePromptConfigs(modelRequestConfigs(params), templateDefaults, options.promptConfigs)
   // 预设级模板变量 → prompt-configs/variables.yml（单一文件）：引擎加载时合并进
   // 每条配置 variables（配置自身优先）。唯一来源 = preset.yml 顶层 variables；
   // params 与 runtime 参数不进入变量文件。variablesEnabled=false（卡片

@@ -1,5 +1,10 @@
 /** 客户端共享类型：提示词配置草稿、层能力矩阵与引擎 /meta 载荷。 */
 
+/** 卡片来源：预设卡，或指向用户磁盘指令文件的文件卡（服务端生成，客户端只读）。 */
+export type CardOrigin =
+  | { kind: 'preset'; presetId: string }
+  | { kind: 'instruction-file'; fileId: string; contextId: string | null }
+
 /** 客户端侧的提示词配置草稿：与宿主 PromptConfigSpec 同构，字段全部宽松。 */
 export interface PromptConfigDraft {
   id: string
@@ -29,6 +34,20 @@ export interface PromptConfigDraft {
   variables?: Record<string, string>
   params?: Record<string, unknown>
   identity?: { field: string; value: string }
+  /** 视图元数据：来源归属；不写进 preset.yml，也不参与预设序列化。 */
+  origin?: CardOrigin
+  /** 视图元数据：指令文件读取状态（ready 之外不可编辑、不可保存）。 */
+  contentStatus?: 'ready' | 'missing' | 'unreadable' | 'too-large'
+  /** 视图元数据：读取失败或保存失败的诊断信息。 */
+  contentMessage?: string
+  /** 视图元数据：正文相对基线已改动（文件卡）。 */
+  contentDirty?: boolean
+  /** 视图元数据：外部编辑造成版本冲突，必须先重新读取。 */
+  contentConflict?: boolean
+  /** 视图元数据：该会话装配仍由官方指令行负责，独立来源本次不注入正文。 */
+  contentOwnerConflict?: boolean
+  /** 视图元数据：该文件正在保存。 */
+  contentSaving?: boolean
 }
 
 /** 包内内置模板条目：文件 + 原文 + 解析后的单条配置（与生成目录 prompt-configs/*.yml 同构）。 */

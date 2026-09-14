@@ -2,6 +2,24 @@
 
 ## [未发布] - 2026-09-06
 
+### 独立指令文件来源：统一 pre-step 执行与文件版本可见状态（2026-09-14）
+
+- **单一 pre-step 执行器（W3）**：新增宿主侧协调器 `src/runtime/pre-step-coordinator.ts`，用一个 `agent/pre-step` 监听器统一执行预设来源与独立指令文件来源；`engine/executor.mjs` 抽出 `runPreStepBatch` 作为唯一批执行算法，`prompt-config-engine` 行在协调服务可用时只注册来源、不再自建执行路径，服务缺失（引擎被复制到无宿主目录）时仍可独立运行。协调服务迟到/消失时先撤旧再启新，任一时刻每个 scope 只有一个执行器；来源作用域沿用 `@deepseek-ai/dsh-scope`（父 scope 对子代理可见、兄弟不串、dispose 即释放）。与 `context-gate` 共挂时门控仍在更外层。
+- **文件版本可见状态（F4）**：独立指令文件按 `(fileId, revision, surface epoch)` 判定候选资格，可见面以 `session.deriveMessages()` 为准（缺失时回退持久日志 + 最后一次成功 `compaction/end`）。修复「首次注入后文件更新/压缩后不再注入」：同版本已可见不重复、内容变化注入新版本一次、成功压缩后同版本恢复一次、失败压缩不重放、`reject`/缺锚点不确认、重挂与恢复从持久记录重建。已注入过的文件被清空/删除/超限时只发一次带身份的失效通知，历史正文不撤回。
+- **负责人冲突与未知装配**：引擎行从物化组合读取「本 mount 是否仍挂着官方 `@deepseek-ai/dsh-agent-instructions`」，协调器据此整体跳过文件正文注入（同一正文只由一方注入）；该 Agent 的 scope 里没有任何已注册 preset 来源（没有引擎行/引擎未注册）时按未知处理，同样不注入。两者都通过 `/bootstrap`、`/prompt-configs` 的 `instructions.owner.officialInstructions`（`true/false/null`）上报工作台。
+- **独立策略生效**：`$DSH_HOME/.prompt-tool/instructions.yml` 的启停、层内序号、位置、晋升、受众与模型范围现在真正决定注入行为（此前只做存储与回显）；默认 `enabled: false`，需用户显式开启。策略只影响未来注入，不撤回已进入会话历史的内容。
+- **生成目录不再物化文件卡（W4）**：`writePreset` 删除 AGENTS 探测与 `agents-file-*` 卡合成、删除 `agentsFiles` 选项；`preset.yml#agentsHints` 不再是运行时开关（字段保留仅为兼容既有用户预设解析，不迁移、不删除）。既有生成目录里的旧文件卡在运行时被跳过，重新物化一次后即消失。
+
+### 指令文件读写加固：读取一致性与显式保存（2026-09-14）
+
+- **读取收口（F1）**：`/bootstrap` 与 `/prompt-configs` 共用同一份指令文件快照（正文、文件身份、字节版本 SHA-256、读取状态一次取回）；此前只有单读端点附正文，工作台用 `/bootstrap` 拿到空草稿，随后一次保存会把真实 `AGENTS.md` 清空。
+- **普通卡正文不再被剥离（F2）**：`stripContentText` 只对内容资产（preset.md 注入卡）剥离文件通道正文，普通 `static`/`placeholder` 卡的 `text`、`texts`、`params.text` 完整往返——修复一次普通保存就丢卡片正文。
+- **只写改动过的文件（F3）**：保存载荷改为单文件请求 `{sessionId, contextId, fileId, expectedRevision, content}`，只提交读取就绪、有基线版本、上下文匹配且正文相对基线有改动的文件；未修改文件不写盘，旧副本不再覆盖外部新版本。
+- **冲突与失败不丢草稿**：外部改动（`agents-file-conflict`）、目标身份变化、当前不可读、工作区上下文过期（`agents-file-context-stale`）都返回 409 并保留草稿，卡片显示冲突态并提供「重新读取」；保存成功只把**请求时快照**记为基线，期间继续编辑仍保持未保存。
+- **文件与预设解耦**：文件卡正文不参与预设 debounce 自动保存，预设切换不隐式保存也不清空文件草稿；文件卡正文与卡片定义都不写进 preset.yml；文件写入不再触发预设重建。
+- **UI 不再有静默丢弃的开关**：文件卡正文框按读取状态只读，插入点/角色/消息表单/填充来源/去重等绑定在卡片内标注为固定，避免改动被静默丢弃（行为策略待独立策略存储接线后放开）。
+- **独立指令策略存储与工作台策略控件**：`src/host/instructions-policy.ts`（`$DSH_HOME/.prompt-tool/instructions.yml`，默认 `enabled: false`）用 Document API 保留注释与未知字段、内容版本乐观并发、严格字段白名单、损坏文件拒绝写入；新增 `/instructions-policy` 端点（省略 `policy` = 读取，写入带 `expectedRevision`），文件卡的启停、顺序、位置、晋升、受众与模型范围改走策略，不再写 preset.yml。**注意**：注入侧尚未消费策略——运行时接线（W3/W4）完成前，这些字段与启停只做存储与回显，不改变实际注入，也不撤回已进入会话的内容。
+
 ### AGENTS.md 改为探测生成的文件卡（2026-09-14）
 
 - **文件即真相**：插件不再写任何常驻内容——删除 `writeAgents` / `residentAgentsPath` 设置轴、`src/runtime/agents-file.ts` 受管块读写与 TUI/UI 开关；`$DSH_HOME/AGENTS.md` 恢复为用户完全自有的文件。

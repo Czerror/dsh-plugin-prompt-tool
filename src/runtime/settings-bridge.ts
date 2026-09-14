@@ -1,6 +1,7 @@
 /** 自建 loopback settings bridge：Web 设置页数据通道（提示词配置数组经此输出到 UI）。 */
 import type { Context } from '@deepseek-ai/cordis'
 import type { IncomingMessage, ServerResponse } from 'node:http'
+import { createHash } from 'node:crypto'
 import { basename, dirname, join, resolve, sep } from 'node:path'
 import { createWriteStream, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { Transform } from 'node:stream'
@@ -57,7 +58,17 @@ import type { SkillToggleResult } from '../host/skill-toggle.ts'
 import type { SkillsConfigRead } from '../host/skills-config.ts'
 import type { PresetModuleFacts } from '../shared/engine-capabilities.ts'
 import { validateCustomTools } from '../host/custom-tools.ts'
-import { detectAgentsFiles, readAgentsFile, writeAgentsFile } from '../host/agents-cards.ts'
+import {
+  agentsFileCardSpecs,
+  agentsFileId,
+  detectAgentsFiles,
+  readAgentsFileSnapshot,
+  writeAgentsFileChecked,
+  type AgentsFileCard,
+} from '../host/agents-cards.ts'
+import type { InstructionContextView, InstructionFileSnapshot, InstructionsOwnerView } from '../shared/instructions.ts'
+import { instructionPolicyPath, readInstructionPolicy, writeInstructionPolicy } from '../host/instructions-policy.ts'
+import { PRE_STEP_COORDINATOR_SERVICE } from './pre-step-coordinator.ts'
 
 
 export interface SkillsBridgeState {
@@ -118,6 +129,129 @@ function writeBridgeJson(res: ServerResponse, status: number, body: unknown): vo
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === 'object' && !Array.isArray(value)
+
+/**
+ * 解析请求体里的可选 sessionId：缺失/undefined 合法（= 无本地会话），
+ * 类型错误或超长报错，避免「静默按无会话处理」把工作区读成另一份。
+ */
+function readSessionIdField(body: unknown): { ok: true; sessionId?: string } | { ok: false; message: string } {
+  if (body === undefined || body === null) return { ok: true }
+  if (!isRecord(body)) return { ok: false, message: 'body must be an object' }
+  const value = body.sessionId
+  if (value === undefined || value === null) return { ok: true }
+  if (typeof value !== 'string') return { ok: false, message: 'sessionId must be a string' }
+  const trimmed = value.trim()
+  if (trimmed.length === 0) return { ok: true }
+  if (trimmed.length > 256) return { ok: false, message: 'sessionId 长度不能超过 256' }
+  return { ok: true, sessionId: trimmed }
+}
+
+/** 存活本地 Agent 的会话 cwd；无 agents 服务 / 未知 session / 无 cwd 时返回 undefined（不猜）。 */
+function localAgentCwd(ctx: Context, sessionId: string): string | undefined {
+  const agents = (ctx as Context & { get?: (name: string) => unknown }).get?.('agents') as
+    | { get?: (id: string) => unknown }
+    | undefined
+  const agent = agents?.get?.(sessionId) as { session?: { header?: { cwd?: unknown } } } | undefined
+  const cwd = agent?.session?.header?.cwd
+  return typeof cwd === 'string' && cwd.length > 0 ? cwd : undefined
+}
+
+/** 生成目录里的文件卡（按 params.file 绑定真实指令文件）。 */
+const isFileCardSpec = (card: unknown): card is Record<string, unknown> & { params: Record<string, unknown> } => {
+  if (!isRecord(card)) return false
+  const params = card.params
+  return isRecord(params) && typeof params.file === 'string' && params.file.length > 0
+}
+
+/** 生成卡上的文件身份：优先 params.fileId，缺失时按路径派生（与新探测同源）。 */
+const cardFileId = (card: Record<string, unknown> & { params: Record<string, unknown> }): string =>
+  typeof card.params.fileId === 'string' && card.params.fileId.length > 0
+    ? card.params.fileId
+    : agentsFileId(card.params.file as string)
+
+/** 文件卡视图：正文/版本/读取状态来自本次一致读取，策略字段保留生成卡上的值。 */
+function withSnapshot(
+  card: Record<string, unknown> & { params: Record<string, unknown> },
+  file: InstructionFileSnapshot,
+): Record<string, unknown> {
+  return {
+    ...card,
+    params: {
+      ...card.params,
+      scope: file.scope,
+      file: file.path,
+      displayPath: file.displayPath,
+      fileId: file.fileId,
+      revision: file.revision,
+      readStatus: file.status,
+      ...(file.message === undefined ? {} : { readMessage: file.message }),
+      text: file.text,
+    },
+  }
+}
+
+/**
+ * 两类卡合并：预设卡原样保留，文件卡换成本次工作区的文件快照。
+ * 生成目录里属于其他工作区的文件卡不再展示（写盘白名单也不含它们）；
+ * 当前工作区里没有对应生成卡的文件按默认文件卡补齐。
+ */
+export function mergeInstructionCards(
+  presetCards: readonly unknown[],
+  files: readonly InstructionFileSnapshot[],
+): unknown[] {
+  const byId = new Map(files.map((file) => [file.fileId, file]))
+  const kept: unknown[] = []
+  for (const card of presetCards) {
+    if (!isFileCardSpec(card)) {
+      kept.push(card)
+      continue
+    }
+    const file = byId.get(cardFileId(card))
+    if (file !== undefined) kept.push(withSnapshot(card, file))
+  }
+  const present = new Set(kept.filter(isFileCardSpec).map((card) => cardFileId(card)))
+  const defaults = agentsFileCardSpecs(files)
+  files.forEach((file, index) => {
+    if (present.has(file.fileId)) return
+    const fallback = defaults[index]
+    if (fallback !== undefined) kept.push(withSnapshot(fallback as unknown as Record<string, unknown> & { params: Record<string, unknown> }, file))
+  })
+  return kept
+}
+
+/** 本次请求的指令文件读取范围（正文真相源：探测到的工作区文件）。 */
+interface ResolvedInstructionScope {
+  context: InstructionContextView
+  cards: AgentsFileCard[]
+  files: InstructionFileSnapshot[]
+}
+
+/**
+ * 负责人事实：pre-step 协调器观察到该会话实际装配仍挂着官方指令行时返回 true。
+ * 没有协调服务或还没观察过（例如会话尚未跑过 pre-step）时返回 null——不猜。
+ */
+function instructionOwner(ctx: Context, sessionId: string | undefined): InstructionsOwnerView {
+  if (sessionId === undefined) return { officialInstructions: null }
+  const service = (ctx as Context & { get?: (name: string) => unknown }).get?.(PRE_STEP_COORDINATOR_SERVICE) as
+    | { officialOwnerOf?: (id: string) => boolean | undefined }
+    | undefined
+  const observed = service?.officialOwnerOf?.(sessionId)
+  return { officialInstructions: observed ?? null }
+}
+
+function resolveInstructionScope(ctx: Context, sessionId: string | undefined): ResolvedInstructionScope {
+  const cwd = sessionId === undefined ? undefined : localAgentCwd(ctx, sessionId)
+  const cards = cwd === undefined ? detectAgentsFiles({ projects: false }) : detectAgentsFiles({ cwd })
+  const contextId = createHash('sha256')
+    .update([cwd ?? '', ...cards.map((card) => card.fileId)].join('\n'))
+    .digest('hex')
+    .slice(0, 16)
+  return {
+    context: { contextId, cwd: cwd ?? null, source: cwd === undefined ? 'global-only' : 'session' },
+    cards,
+    files: cards.map(readAgentsFileSnapshot),
+  }
+}
 
 const asRecord = (value: unknown): Record<string, unknown> => isRecord(value) ? value : {}
 
@@ -529,20 +663,30 @@ export function registerSettingsBridge(
               writeBridgeJson(res, 404, { ok: false, code: 'settings-not-exposed', message: 'prompt-tool settings namespace is not registered' })
               return
             }
+            const parsedBody = await readBridgeBodyForHandler(req, res)
+            if (parsedBody === undefined) return
+            const session = readSessionIdField(parsedBody.body)
+            if (!session.ok) {
+              writeBridgeJson(res, 400, { ok: false, code: 'settings-rejected', message: session.message })
+              return
+            }
             // 工作台首屏/保存后刷新的聚合读取：meta + describe 事实 + 参数覆盖 +
-            // 模板变量 + 实际生效配置。此前客户端串行 5 个端点（每端点独立读盘
-            // parse preset.yml）；聚合后单请求、preset.yml 命中 mtime 缓存仅解析一次。
+            // 模板变量 + 实际生效配置 + 指令文件快照。此前客户端串行 5 个端点
+            // （每端点独立读盘 parse preset.yml）；聚合后单请求、preset.yml 命中
+            // mtime 缓存仅解析一次。文件卡正文与 /prompt-configs 走同一读取入口。
             try {
               const meta = await loadEngineMeta()
               const dir = getPresetConfigsDir?.() ?? ''
               const extras = collectDescribeExtras()
+              const scope = resolveInstructionScope(sctx, session.sessionId)
               writeBridgeJson(res, 200, {
                 ok: true,
                 value: descriptor,
                 meta: { meta },
                 overrides: { overrides: dir.length > 0 ? readParamOverrides(dir) : {} },
                 variables: dir.length > 0 ? readPresetVariables(dir) : { variables: {}, enabled: true },
-                promptConfigs: { promptConfigs: readPromptConfigs(dir) },
+                promptConfigs: { promptConfigs: mergeInstructionCards(readPromptConfigs(dir), scope.files) },
+                instructions: { context: scope.context, files: scope.files, owner: instructionOwner(sctx, session.sessionId) },
                 ...extras,
               })
             } catch (error) {
@@ -863,17 +1007,25 @@ export function registerSettingsBridge(
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.promptConfigs,
           handler: async (req, res) => {
             if (!guard(req, res)) return
+            const parsedBody = await readBridgeBodyForHandler(req, res)
+            if (parsedBody === undefined) return
+            const session = readSessionIdField(parsedBody.body)
+            if (!session.ok) {
+              writeBridgeJson(res, 400, { ok: false, code: 'settings-rejected', message: session.message })
+              return
+            }
             // 实际生效配置 = 生成目录 prompt-configs/（引擎加载源）；
             // settings.promptConfigs 仅是用户覆盖层，默认为空不代表无配置。
             const dir = getPresetConfigsDir?.() ?? ''
-            // 文件卡（params.file）：读时附带该文件当前正文，卡内编辑框直接编辑真实文件。
-            const configs = readPromptConfigs(dir).map((raw) => {
-              const spec = raw as Record<string, unknown>
-              const params = spec.params as Record<string, unknown> | undefined
-              const file = typeof params?.file === 'string' ? params.file : ''
-              return file.length === 0 ? raw : { ...spec, params: { ...params, text: readAgentsFile(file) } }
+            // 文件卡（params.file）：与 /bootstrap 共用同一读取入口，附正文、字节版本与读取状态。
+            const scope = resolveInstructionScope(sctx, session.sessionId)
+            writeBridgeJson(res, 200, {
+              ok: true,
+              value: {
+                promptConfigs: mergeInstructionCards(readPromptConfigs(dir), scope.files),
+                instructions: { context: scope.context, files: scope.files, owner: instructionOwner(sctx, session.sessionId) },
+              },
             })
-            writeBridgeJson(res, 200, { ok: true, value: { promptConfigs: configs } })
           },
         }),
         sctx.webServer.register({
@@ -884,42 +1036,108 @@ export function registerSettingsBridge(
             const parsedBody = await readBridgeBodyForHandler(req, res)
             if (parsedBody === undefined) return
             const { body } = parsedBody
-            if (body === null || body === undefined || typeof body !== 'object') {
+            if (!isRecord(body)) {
               writeBridgeJson(res, 400, { ok: false, code: 'settings-rejected', message: 'unreadable JSON body' })
               return
             }
-            const record = body as Record<string, unknown>
-            const entries = Array.isArray(record.files) ? record.files : []
-            // 白名单：只允许写本次探测到的 AGENTS 指令文件（避免任意路径写）。
-            const allowed = new Map(detectAgentsFiles().map((file) => [file.fileId, file.path]))
-            const writes: Array<{ fileId: string; path: string; content: string }> = []
-            for (const entry of entries) {
-              if (entry === null || typeof entry !== 'object') continue
-              const item = entry as Record<string, unknown>
-              const fileId = typeof item.fileId === 'string' ? item.fileId : ''
-              const target = allowed.get(fileId)
-              if (target === undefined) {
-                writeBridgeJson(res, 400, { ok: false, code: 'settings-rejected', message: `unknown agents file: ${fileId}` })
-                return
-              }
-              if (typeof item.content !== 'string') {
-                writeBridgeJson(res, 400, { ok: false, code: 'settings-rejected', message: 'content must be a string' })
-                return
-              }
-              writes.push({ fileId, path: target, content: item.content })
-            }
-            if (writes.length === 0) {
-              writeBridgeJson(res, 400, { ok: false, code: 'settings-rejected', message: 'no files to write' })
+            const session = readSessionIdField(body)
+            if (!session.ok) {
+              writeBridgeJson(res, 400, { ok: false, code: 'settings-rejected', message: session.message })
               return
             }
-            try {
-              for (const write of writes) writeAgentsFile(write.path, write.content)
-              afterPresetImport?.([])
-              writeBridgeJson(res, 200, { ok: true, value: { files: writes.map((write) => ({ fileId: write.fileId, path: write.path })) } })
-            } catch (error) {
-              const message = error instanceof Error ? error.message : String(error)
-              writeBridgeJson(res, 500, { ok: false, code: 'agents-file-write-failed', message })
+            const record = body
+            const fileId = typeof record.fileId === 'string' ? record.fileId.trim() : ''
+            const contextId = typeof record.contextId === 'string' ? record.contextId.trim() : ''
+            const content = record.content
+            const expectedRevision = record.expectedRevision === null
+              ? null
+              : (typeof record.expectedRevision === 'string' && record.expectedRevision.length > 0
+                ? record.expectedRevision
+                : undefined)
+            if (fileId === '' || contextId === '' || typeof content !== 'string' || expectedRevision === undefined) {
+              writeBridgeJson(res, 400, {
+                ok: false,
+                code: 'settings-rejected',
+                message: 'fileId/contextId 必须是非空字符串，content 必须是字符串，expectedRevision 必须是 SHA-256 或 null',
+              })
+              return
             }
+            // 白名单与上下文都由服务端本次重新解析：客户端提交的 contextId 只用于
+            // 说明「它是按哪次读取起草的」，过期工作区（切会话/外部改动上下文）一律拒绝。
+            const scope = resolveInstructionScope(sctx, session.sessionId)
+            if (contextId !== scope.context.contextId) {
+              writeBridgeJson(res, 409, {
+                ok: false,
+                code: 'agents-file-context-stale',
+                message: '工作区上下文已变化，未写盘；请重新读取后再保存',
+              })
+              return
+            }
+            const file = scope.cards.find((card) => card.fileId === fileId)
+            if (file === undefined) {
+              writeBridgeJson(res, 400, {
+                ok: false,
+                code: 'settings-rejected',
+                message: `unknown agents file: ${fileId}`,
+              })
+              return
+            }
+            const outcome = await writeAgentsFileChecked({ file, content, expectedRevision })
+            if (!outcome.ok) {
+              writeBridgeJson(res, outcome.status, { ok: false, code: outcome.code, message: outcome.message })
+              return
+            }
+            // 正文写入是文件事实，不触发预设重建：运行时下一次读取直接看新文件。
+            writeBridgeJson(res, 200, { ok: true, value: { fileId: outcome.fileId, revision: outcome.revision } })
+          },
+        }),
+        sctx.webServer.register({
+          kind: 'exact',
+          path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.instructionsPolicy,
+          handler: async (req, res) => {
+            if (!guard(req, res)) return
+            const parsedBody = await readBridgeBodyForHandler(req, res)
+            if (parsedBody === undefined) return
+            const body = parsedBody.body
+            if (body !== undefined && body !== null && !isRecord(body)) {
+              writeBridgeJson(res, 400, { ok: false, code: 'settings-rejected', message: 'unreadable JSON body' })
+              return
+            }
+            const record = isRecord(body) ? body : {}
+            const file = instructionPolicyPath()
+            // 省略 policy = 读取：损坏/版本不认识时带 error 返回，客户端据此禁用保存。
+            if (record.policy === undefined) {
+              const snapshot = readInstructionPolicy(file)
+              writeBridgeJson(res, 200, {
+                ok: true,
+                value: {
+                  policy: snapshot.policy,
+                  revision: snapshot.revision,
+                  exists: snapshot.exists,
+                  ...(snapshot.error === undefined ? {} : { error: snapshot.error }),
+                },
+              })
+              return
+            }
+            const expectedRevision = record.expectedRevision === null
+              ? null
+              : (typeof record.expectedRevision === 'string' && record.expectedRevision.length > 0
+                ? record.expectedRevision
+                : undefined)
+            if (expectedRevision === undefined) {
+              writeBridgeJson(res, 400, {
+                ok: false,
+                code: 'instructions-policy-invalid',
+                message: 'expectedRevision 必须是 SHA-256 或 null',
+              })
+              return
+            }
+            const outcome = writeInstructionPolicy({ file, patch: record.policy, expectedRevision })
+            if (!outcome.ok) {
+              writeBridgeJson(res, outcome.status, { ok: false, code: outcome.code, message: outcome.message })
+              return
+            }
+            writeBridgeJson(res, 200, { ok: true, value: { policy: outcome.policy, revision: outcome.revision, exists: true } })
           },
         }),
         sctx.webServer.register({

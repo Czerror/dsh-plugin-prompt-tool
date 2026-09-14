@@ -355,6 +355,8 @@ JSON bridge 的统一上限为 32 MiB；角色卡原始文件流独立限制为 
 7. 预设写入携带 `expectedPresetId`，读回失败的自定义工具不降级为空列表供覆盖；跨预设旧草稿被拒绝，切换等待参数保存队列。
 8. 切换预设是事务：先保存当前预设草稿，保存未成功（失败/被拒）即取消切换并保留草稿；切换成功后等 settings 写入与随后的静默 load 完成才返回。切换或首次加载完成前，`loadedPresetRef` 拒绝参数、promptConfigs 与模板变量写盘——旧预设字段不会带新 `presetTemplate` 落盘；重新加载成功应用该预设数据后才恢复写入。
 9. 技能写入不进 settings：启停走 `/skill-toggle`（磁盘标记 `SKILL.md` ↔ `SKILL.md.disabled`），顺序/目录/rank 走 `/skills-config`（插件配置文件）；成功后静默 load，`describe` 事实（`skillSwitches` / `skillOrder` / `skillsDirs` / `skillRankBase` / `skillCatalog`）优先于 settings 旧字段。
+10. 指令文件正文走独立草稿池（`data/instruction-drafts.ts`），不与预设保存队列混用：预设 debounce 自动保存与预设切换一律不带文件正文；只有卡片「保存到文件」与列表「保存全部」才提交 dirty 文件，成功只把请求时快照记为基线，冲突/失败保留草稿。会话或工作区切换建立新的指令上下文（`instructions.context.contextId` 变化即新上下文）：旧上下文的迟到响应不覆盖当前视图，旧 `contextId` 的保存被服务端 409 拒绝。
+11. 指令负责人事实来自 `/bootstrap` 的 `instructions.owner.officialInstructions`（服务端从 pre-step 协调器观察结果取，`null` = 尚未观察到，不当冲突处理）：`true` 时文件卡显示「官方指令行仍在 → 独立来源不注入」，不做「已生效」暗示。
 
 ## 8. 业务 Feature
 

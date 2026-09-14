@@ -56,6 +56,48 @@
 | `compaction-epoch` | engine/compaction-epoch.mjs | 晋升状态机（被上面各模块共用；非插件行） |
 | `tool-filter` | engine/tool-filter.mjs | 常驻工具白名单/黑名单（与晋升无关的常量掩码） |
 
+## pre-step 协调器与独立指令文件来源（2026-09-14）
+
+`prompt-config-engine` 行不再无条件自建 pre-step 监听器：
+
+- 宿主插件提供 `promptToolPreStep` 协调服务时，引擎行把本 mount 的提示词配置注册给协调器
+  （`registerPreset`），由协调器用**同一个** `engine/executor.mjs#runPreStepBatch` 统一执行
+  预设来源与独立指令文件来源；任一时刻每个 scope 只有一条执行路径。
+- 没有该服务（引擎被复制到无宿主的目录复用）时，引擎行仍自带 pre-step 监听器，只执行自身
+  预设配置；引擎不 import `src/host`，也不强制协调服务存在。
+- 协调服务迟到（插件后加载 / HMR）时，引擎行先撤下本地执行再启用管理路径；协调服务消失时
+  反向恢复独立执行，不会双跑，也不存在「两个执行器各注入一次」。
+- 来源作用域来自注册 ctx（`@deepseek-ai/dsh-scope`）：同一 mount 内唯一，父 scope 的来源对
+  子代理可见、兄弟 scope 互不串，scope dispose 即释放；总线顺序与锚定预设一致——协调器与
+  `context-gate` 同组注册，门控仍在更外层，已注入消息照样受 `allowKinds` 约束。
+
+### 独立指令文件来源
+
+正文永远在用户自己的指令文件里；独立来源只是「按会话工作区现场探测 + 独立策略」的第二类
+pre-step 来源：
+
+- 候选资格 = 文件可读且非空 + 独立策略（`$DSH_HOME/.prompt-tool/instructions.yml`，缺省
+  `enabled: false`）启用 + 该 `(fileId, revision, surface epoch)` 身份尚未出现在当前可见
+  上下文里。可见面以 `session.deriveMessages()` 为准，缺失时回退「持久日志里最后一次成功
+  `compaction/end` 之后的消息」。
+- 因此：同版本已可见不重复注入；内容变化在下一个合适 pre-step 注入一次新版本；成功压缩后
+  同版本恢复一次（新 epoch 身份）；失败压缩不推进 epoch、不重放；`reject`、缺少
+  `after-user` 锚点、后续 prepare/admission 取消都不算已注入，条件恢复后仍可重试；重挂或
+  进程恢复直接从持久记录重建，不依赖进程内已投递集合。
+- 文件正文以 content 块注入并加 `Instructions from: <显示路径>` 头，不经过预设变量插值；
+  同一文件只有一份身份，不同文件不互相去重；多个文件按全局 → 项目根 → cwd 的探测顺序、
+  与预设卡一起按 `order` 升序执行。
+- 已注入过的文件被清空/删除/超限时，不再注入新全文，只发一次带文件身份的失效通知；历史
+  正文仍在会话日志里，插件不谎称已撤回，也不篡改旧消息。
+- 旧版物化在生成目录里的 `agents-file-*` 卡（`sourceKind: instruction-file`）不再参战：
+  独立来源接管后统一跳过，避免同一正文双份注入。
+- 负责人冲突：该 mount 的组合仍挂着官方 `@deepseek-ai/dsh-agent-instructions` 行时（引擎行
+  从物化组合读取该装配事实），协调器整体跳过文件正文注入——同一正文只由一方注入；工作台
+  通过 `instructions.owner.officialInstructions` 显示该事实（`null` = 尚未观察到，不猜）。
+- 装配未知同样不注入：该 Agent 的 scope 里没有任何已注册的 preset 来源（mount 没有
+  `prompt-config-engine` 行，或引擎行未注册）时不确认负责人，文件正文一律不注入，
+  `instructions.owner.officialInstructions` 保持 `null`——不靠「先注入再说」赌只有一个负责人。
+
 ## 提示词配置插入点与顺序
 
 - 六个插入点彼此独立，没有跨层全局运行顺序。

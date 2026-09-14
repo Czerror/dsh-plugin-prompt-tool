@@ -2,6 +2,7 @@
 import type { EngineMeta, PromptConfigDraft } from '../prompt-tool-types.ts'
 import type { HostDefaultModel, SkillCatalogEntry } from './prompt-tool-fields.ts'
 import type { PresetModuleFacts } from '../../shared/engine-capabilities.ts'
+import type { InstructionsSnapshot } from '../../shared/instructions.ts'
 import {
   MAX_BRIDGE_BODY_BYTES,
   SETTINGS_BRIDGE_PREFIX,
@@ -26,6 +27,8 @@ interface BridgeSuccessExtras {
   overrides?: { overrides: Record<string, unknown> }
   variables?: { variables: Record<string, string>; enabled: boolean }
   promptConfigs?: { promptConfigs: PromptConfigDraft[] }
+  /** 指令文件快照（独立来源）：正文、身份、版本与读取状态来自同一次读取。 */
+  instructions?: InstructionsSnapshot
 }
 
 export type { BridgeSettingsView } from '../../shared/bridge-contract.ts'

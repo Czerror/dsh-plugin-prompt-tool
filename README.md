@@ -112,7 +112,21 @@ src/client/
 | 工具集 | `toolFilterAllow` `toolFilterDeny`（主对话 tool-filter；策略未启用时也写入子代理 delegation.toolFilter——策略启用后子代理改由 `subagentToolPolicy` 实例级解析授权，主/子代理列表分离） |
 | 深度 | `maxDepth`（0 禁止委派 / `provider-managed` / 正整数） |
 
-> 注：`injectPrompt`（params）= 锚定确认后注入 preset.md 的开关。AGENTS.md 走「文件即真相」：插件每次重建探测 `$DSH_HOME/AGENTS.md` 与工作区 cwd→项目根链的 AGENTS.md/CLAUDE.md 等候选，**探测到哪个文件就生成哪张** `pre-step` 卡（紧随真实用户消息，对齐官方 `@deepseek-ai/dsh-agent-instructions` 的插入点）；卡内「填充来源=指令提示」+ `params.file` 每次注入时读该文件正文（`Instructions from: <路径>` 头 + 全文），「自定义提示」编辑框就是该文件内容、保存直接写回文件，卡片定义与正文都不进 preset.yml。插件不再写常驻受管块。
+> 注：`injectPrompt`（params）= 锚定确认后注入 preset.md 的开关。AGENTS.md 走「文件即真相」：文件集合、正文与版本**不再物化进生成目录**，而是由宿主按**本会话工作区**现场解析（`$DSH_HOME/AGENTS.md` + 工作区 cwd→项目根链的 AGENTS.md/CLAUDE.md/AGENTS.local.md/CLAUDE.local.md）；工作台里的文件卡就是该文件，编辑框里的内容保存后直接写回原文件，卡片定义与正文都不进 preset.yml。插件不写常驻受管块。
+
+独立指令来源与指令策略（2026-09-14 起）：
+
+- 注入由宿主侧 pre-step 协调器统一执行（预设卡 + 独立指令文件卡同一批算法、每个 scope 只有一个执行器）；正文以 `Instructions from: <路径>` 头 literal 注入，不经过预设变量插值。
+- 行为开关在 `$DSH_HOME/.prompt-tool/instructions.yml`：启停、层内序号、位置、晋升、受众、模型范围。**默认 `enabled: false`**，需要你显式开启；`preset.yml#agentsHints` 已不再生效（旧字段不迁移、不删除）。
+- 同一文件同版本在可见上下文里只注入一次；文件内容变化会在下一个合适时机注入新版本；成功压缩后同版本会重新注入一次；已注入过的文件被清空/删除只发一次失效通知，历史正文不撤回。
+- 负责人冲突：预设里仍挂着官方 `@deepseek-ai/dsh-agent-instructions` 行时，独立来源**不注入**（同一正文只由一方注入），工作台会显示该状态；要用插件来源请先在预设里去掉官方指令行/模块再开启策略。
+
+指令文件正文属于用户自己的文件，不受预设生命周期管辖。工作台按**打开时解析出的会话工作区**读取文件快照（正文 + 文件身份 + 字节版本 + 读取状态一次取回），正文只在**显式保存**（卡片「保存到文件」或列表保存）时写回原文件：
+
+- 未修改的文件不写盘；预设的 debounce 自动保存与预设切换都不写文件，切换预设只保留文件草稿。
+- 每个请求带读取时的 `expectedRevision` 与工作区 `contextId`；外部改动或工作区变化返回 409，草稿保留并提示「重新读取」，不静默覆盖磁盘新版本。
+- 读取失败（不可读/超限/文件消失）与「读取成功的空文件」严格区分：前者不可编辑、不可保存，不用空正文掩盖错误。
+- 原子写入（tmp + rename，保留原权限），失败保留原文件并清理临时文件；正文不受预设变量插值影响。
 
 模型参数在 **preset.yml 顶层 `model` / `subagentModel` 段**（官方 `agent-default-model` 同构）：
 
