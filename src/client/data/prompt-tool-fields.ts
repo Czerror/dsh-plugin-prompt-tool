@@ -49,7 +49,6 @@ export interface Fields extends EngineParamDrafts {
   skillsDirExists: Record<string, boolean>
   skillRankBase: number
   residentAgentsPath: string
-  presetDir: string
   presetOrder: number
   fallbackText: string
   writeAgents: boolean
@@ -97,7 +96,6 @@ export const EMPTY_FIELDS: Fields = {
   skillsDirExists: {},
   skillRankBase: 250,
   residentAgentsPath: '',
-  presetDir: '',
   presetOrder: 5,
   fallbackText: '',
   writeAgents: true,

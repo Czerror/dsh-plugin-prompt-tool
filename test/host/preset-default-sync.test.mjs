@@ -1,9 +1,8 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { parse as parseYaml } from 'yaml'
 
 const home = mkdtempSync(join(tmpdir(), 'pt-preset-sync-'))
 process.env.DSH_HOME = home
@@ -85,7 +84,6 @@ function makeHarness(initial) {
     ctx,
     mutations,
     getPromptState: () => promptState,
-    setPresetRoot: (value) => settings.mutate('prompt-tool', [{ op: 'set', path: ['presetDir'], value }]),
     emitOfficialDefault: (value) => {
       hostDefault = value
       for (const callback of listeners.get('settings/updated') ?? []) {
@@ -108,7 +106,6 @@ test('官方 agent-presets.default 变化反向同步 prompt-tool.presetTemplate
     skillsDirs: [],
     skillRankBase: 250,
     residentAgentsPath: join(home, 'AGENTS.md'),
-    presetDir,
     presetOrder: 5,
     fallbackText: '',
   }
@@ -148,7 +145,6 @@ test('兼容快照已处理后，官方预设切换不会创建或复活 prompt-
     skillsDirs: [],
     skillRankBase: 250,
     residentAgentsPath: join(home, 'AGENTS.md'),
-    presetDir,
     presetOrder: 5,
     fallbackText: '',
   }
@@ -165,37 +161,4 @@ test('兼容快照已处理后，官方预设切换不会创建或复活 prompt-
   assert.equal(existsSync(join(presetDir, 'prompt-tool')), false,
     '切换预设后不得创建或复活 prompt-tool 兼容目录')
 })
-test('自定义预设根贯穿初始化、切换与同名预设换根，不污染默认根', async () => {
-  const customRoot = mkdtempSync(join(home, 'custom-root-'))
-  const otherRoot = mkdtempSync(join(home, 'other-root-'))
-  for (const [root, id, usePtcMode, text] of [
-    [presetDir, 'root-main', true, 'default'],
-    [customRoot, 'root-main', false, 'custom-main'],
-    [customRoot, 'root-next', true, 'custom-next'],
-    [otherRoot, 'root-next', false, 'other-next'],
-  ]) {
-    mkdirSync(join(root, id), { recursive: true })
-    writeFileSync(join(root, id, 'preset.yml'),
-      `id: ${id}\nmodules: [code-presentation]\nparams:\n  usePtcMode: ${usePtcMode}\ncontent:\n  presetText: ${text}\n`, 'utf8')
-  }
-  const defaultFile = join(presetDir, 'root-main', 'preset.yml')
-  const before = readFileSync(defaultFile, 'utf8')
-  const initial = { writeAgents: false, writePreset: true, presetTemplate: 'root-main',
-    injectAgentsPrompt: false, residentAgentsPath: join(home, 'AGENTS.md'),
-    presetDir: customRoot, presetOrder: 5, fallbackText: '' }
-  const harness = makeHarness(initial)
-  apply(harness.ctx, initial)
-  const ptc = (root, id) => parseYaml(readFileSync(join(root, id, 'agent.cordis.yml'), 'utf8'))
-    .find(row => row.id === 'code-presentation').config.usePtcMode
-  assert.equal(ptc(customRoot, 'root-main'), false)
-  harness.emitOfficialDefault('root-next')
-  await Promise.resolve()
-  assert.equal(harness.getPromptState().presetTemplate, 'root-next')
-  assert.equal(ptc(customRoot, 'root-next'), true)
-  await harness.setPresetRoot(otherRoot)
-  assert.equal(ptc(otherRoot, 'root-next'), false)
-  assert.equal(readFileSync(join(otherRoot, 'root-next', 'preset.md'), 'utf8'), 'other-next')
-  assert.equal(readFileSync(defaultFile, 'utf8'), before)
-})
-
 test.after(() => { rmSync(home, { recursive: true, force: true }) })

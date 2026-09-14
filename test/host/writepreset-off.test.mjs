@@ -44,7 +44,7 @@ function makeCtx(settingsValue) {
   }
 }
 
-function settings(presetDir, writePreset) {
+function settings(writePreset) {
   return {
     writeAgents: true,
     writePreset,
@@ -54,7 +54,6 @@ function settings(presetDir, writePreset) {
     skillsDirs: [],
     skillRankBase: 250,
     residentAgentsPath: join(home, 'AGENTS.md'),
-    presetDir,
     presetOrder: 5,
     fallbackText: '',
   }
@@ -71,8 +70,8 @@ test('writePreset 关闭时清空组合为空数组，保留 preset.yml 与预�
     '- id: x\n  name: ./engine/x.mjs\n', 'utf8')
   writeFileSync(join(presetDir, 'anchored', 'prompt-configs', '00-a.yml'), 'id: a\n', 'utf8')
 
-  const value = settings(presetDir, false)
-  apply(makeCtx(value, presetDir), value)
+  const value = settings(false)
+  apply(makeCtx(value), value)
 
   // 组合改写为空数组而非删除：官方 discovery 对缺 agent.cordis.yml 的目录仍占用
   // id 并判 broken（挂载抛 agent-preset/invalid、picker 丢弃该行），导致无法新建
@@ -101,14 +100,18 @@ test('writePreset 关闭时清空组合为空数组，保留 preset.yml 与预�
 })
 
 test('writePreset 开启时不受影响：预设目录正常生成', () => {
-  const presetDir = join(home, '.agent-presets-2')
+  const presetDir = join(home, '.agent-presets')
   mkdirSync(join(presetDir, 'anchored'), { recursive: true })
   writePluginState({ seeded: true })
   writeFileSync(join(presetDir, 'anchored', 'preset.yml'),
     'id: anchored\nname: Anchored\nmodules: [prompt-config-engine]\n', 'utf8')
 
-  const value = settings(presetDir, true)
-  apply(makeCtx(value, presetDir), value)
+  const value = settings(true)
+  apply(makeCtx(value), value)
 
   assert.equal(existsSync(join(presetDir, 'anchored', 'preset.yml')), true, 'writePreset=true 预设参数保留')
+  const rows = readFileSync(join(presetDir, 'anchored', 'agent.cordis.yml'), 'utf8')
+    .split('\n').filter((line) => !line.startsWith('#') && line.trim().length > 0)
+  assert.equal(rows.length > 0 && rows.every((line) => line.trim() === '[]'), false,
+    '重新开启后组合应恢复生成（不再停留在关闭期的空组合）')
 })

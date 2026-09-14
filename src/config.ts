@@ -2,7 +2,6 @@
 import z from '@deepseek-ai/schemastery'
 import type { PromptConfigSpec } from './host/prompt-configs.ts'
 import {
-  DEFAULT_PRESET_DIR,
   DEFAULT_PRESET_ORDER,
   DEFAULT_RESIDENT_AGENTS_PATH,
 } from './host/paths.ts'
@@ -24,8 +23,6 @@ export interface Config {
   presetTemplate: string
   /** 常驻规则文件目标路径。 */
   residentAgentsPath: string
-  /** 生成的 agent preset 目录。 */
-  presetDir: string
   /** 生成 preset 的显示顺序。 */
   presetOrder: number
   /** preset.md 缺失或不可读时使用的文本。 */
@@ -40,7 +37,6 @@ export const Config: z<Config> = z.object({
   writePreset: z.boolean().default(true),
   presetTemplate: z.string().default('anchored'),
   residentAgentsPath: z.string().default(DEFAULT_RESIDENT_AGENTS_PATH),
-  presetDir: z.string().default(DEFAULT_PRESET_DIR),
   presetOrder: z.natural().default(DEFAULT_PRESET_ORDER),
   fallbackText: z.string().default(''),
 })
@@ -101,8 +97,6 @@ export interface PromptSettings {
   skillsDirExists: Record<string, boolean>
   /** 常驻规则文件目标路径。 */
   residentAgentsPath: string
-  /** 生成的 agent preset 目录。 */
-  presetDir: string
   /** 生成 preset 的显示顺序。 */
   presetOrder: number
   /** preset.md 缺失或不可读时使用的文本。 */
@@ -130,7 +124,6 @@ export const PromptSettingsSchema: z<PromptSettings> = z.object({
   activeSkillsDirs: z.array(z.string()).default([]),
   skillsDirExists: z.dict(z.boolean()).default({}),
   residentAgentsPath: z.string().default(DEFAULT_RESIDENT_AGENTS_PATH),
-  presetDir: z.string().default(DEFAULT_PRESET_DIR),
   presetOrder: z.natural().default(DEFAULT_PRESET_ORDER),
   fallbackText: z.string().default(''),
   writeAgents: z.boolean().default(true),
@@ -152,8 +145,6 @@ export interface RuntimeOptions extends PresetWriterParams {
   injectAgentsPrompt: boolean
   /** 常驻规则文件目标路径。 */
   residentAgentsPath: string
-  /** 生成的 agent preset 目录。 */
-  presetDir: string
   /** 生成 preset 的显示顺序。 */
   presetOrder: number
   /** preset.md 缺失或不可读时使用的文本。 */

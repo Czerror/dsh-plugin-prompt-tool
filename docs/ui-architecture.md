@@ -254,7 +254,7 @@ workspace-pages.ts 是页面元数据的唯一来源。默认页为 features，�
 | subagent | 子代理 | ModelRouteCard、DelegationToolsCard、ConfigListWithTemplates |
 | tools | 工具预览 | 顶置统一搜索；当前会话／所选预设两个可折叠分组，预设选择位于分组标题右侧；双列展开详情卡，680px 以下单列 |
 | skills | 技能设置 | 目录与来源、状态筛选、SkillRow、目录引用/导入/排序 |
-| presets | 预设配置 | 全局生成开关、AGENTS/生成目录设置、PresetSwitcher 与预设 CRUD |
+| presets | 预设配置 | 全局生成开关、AGENTS 路径与生成顺序设置、PresetSwitcher 与预设 CRUD |
 | characters | 角色管理 | PNG/JSON 导入、角色卡库、应用/移除/删除与目录打开 |
 
 主会话页中的卡片顺序是 UI 分组，不表示六个官方注入 seam 的运行顺序。六个插入点彼此独立，运行时顺序和参数语义见 [engine-reuse.md](engine-reuse.md)。

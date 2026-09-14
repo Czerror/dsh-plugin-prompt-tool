@@ -415,7 +415,6 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
       [
         { op: 'set', path: ['injectAgentsPrompt'], value: fieldsRef.current.injectAgentsPrompt },
         { op: 'set', path: ['residentAgentsPath'], value: fieldsRef.current.residentAgentsPath },
-        { op: 'set', path: ['presetDir'], value: fieldsRef.current.presetDir },
         { op: 'set', path: ['presetOrder'], value: fieldsRef.current.presetOrder },
         { op: 'set', path: ['fallbackText'], value: fieldsRef.current.fallbackText },
         { op: 'set', path: ['writeAgents'], value: fieldsRef.current.writeAgents },

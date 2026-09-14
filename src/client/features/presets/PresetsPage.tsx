@@ -32,10 +32,6 @@ export const PresetsPage = memo(function PresetsPage(props: { store: PromptToolS
           value={fields.residentAgentsPath} placeholder={fields.residentAgentsPath || t('presets.agentsPath.placeholder')}
           onInput={(value) => store.patch({ residentAgentsPath: value })}
           onCommit={store.persistSwitches} />
-        <SettingInputRow id="pt-preset-dir" label={t('presets.presetDir.label')} hint={t('presets.presetDir.hint')}
-          value={fields.presetDir} placeholder={fields.presetDir || t('presets.presetDir.placeholder')}
-          onInput={(value) => store.patch({ presetDir: value })}
-          onCommit={store.persistSwitches} />
         <SettingInputRow id="pt-preset-order" label={t('presets.order.label')} hint={t('presets.order.hint')}
           type="number" value={String(fields.presetOrder)}
           onInput={(value) => store.patch({ presetOrder: Number(value) || 0 })}

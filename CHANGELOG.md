@@ -2,6 +2,11 @@
 
 ## [未发布] - 2026-09-06
 
+### 移除预设根目录配置（2026-09-14）
+
+- 删除 settings 轴 `presetDir` 与「预设和配置」页的「预设根目录」输入行：预设根固定为官方 `$DSH_HOME/.agent-presets`（`host/paths.ts#DEFAULT_PRESET_DIR`），不再从 settings/descriptor 读取，也不再经 `registerSettingsBridge` 的预设根回调透传。
+- 客户端 `Fields`、脏检测快照、保存 ops 与 zh/en 文案同步删除该键；旧 settings.yaml 里的 `presetDir` 值不再被读取（schema 不含该键，无运行时迁移），自定义根下的预设需自行移回官方预设根。
+
 ### 前端审查修复：预设切换事务与交互缺陷（2026-09-14）
 
 - 预设切换改为事务：当前预设草稿保存失败（含被跨预设守卫拒绝）时取消切换并保留草稿；切换成功后等待 settings 写入与随后的静默 load 完成才返回，不再出现「已切到新预设、界面仍是旧预设数据」的可编辑窗口。

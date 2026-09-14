@@ -229,9 +229,6 @@ const ZH_CORE = {
   'presets.agentsPath.label': 'AGENTS.md 常驻路径',
   'presets.agentsPath.hint': '写入/移除 AGENTS.md 受管块的目标文件；修改后下一次开关保存立即切换。',
   'presets.agentsPath.placeholder': '默认 ~/.dsh/AGENTS.md',
-  'presets.presetDir.label': '预设根目录',
-  'presets.presetDir.hint': '预设根目录（官方 USER_PRESET_DIR）；每个预设一个官方预设目录，修改后下次写入会生成到新根，建议同时在宿主 agent-presets 设置里选择该目录。',
-  'presets.presetDir.placeholder': '默认 ~/.dsh/.agent-presets',
   'presets.order.label': 'preset 显示顺序',
   'presets.order.hint': '生成 preset.yml 的 order；数值小的 preset 在宿主列表中靠前。',
 
@@ -508,9 +505,6 @@ const EN_CORE: Record<keyof typeof ZH_CORE, string> = {
   'presets.agentsPath.label': 'AGENTS.md path',
   'presets.agentsPath.hint': 'Target file for writing/removing the managed AGENTS.md block; the next switch save applies a change immediately.',
   'presets.agentsPath.placeholder': 'Default ~/.dsh/AGENTS.md',
-  'presets.presetDir.label': 'Preset root directory',
-  'presets.presetDir.hint': 'Preset root (the official USER_PRESET_DIR); each preset gets one official preset directory. After a change the next write targets the new root — also select that directory in the host agent-presets settings.',
-  'presets.presetDir.placeholder': 'Default ~/.dsh/.agent-presets',
   'presets.order.label': 'Preset display order',
   'presets.order.hint': 'The order written into preset.yml; smaller values appear earlier in the host preset list.',
 

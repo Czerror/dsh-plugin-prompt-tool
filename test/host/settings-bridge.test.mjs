@@ -455,21 +455,17 @@ test('模板变量与参数独立保存，读取与 bootstrap 不回退旧 param
   assert.equal(readFileSync(file, 'utf8'), before)
 })
 
-test('自定义预设根的列表、导出、复制、删除、新建与导入不读写默认根', async () => {
+test('预设列表、导出、复制、删除、新建与导入都作用于官方预设根', async () => {
   const { ctx, handlers } = makeHarness()
-  const root = mkdtempSync(join(bridgeHome, 'custom-management-'))
   const id = 'root-management'
-  const defaultDir = join(userPresetRoot, id)
-  const activeDir = join(root, id)
-  for (const [dir, name] of [[defaultDir, 'default'], [activeDir, 'custom']]) {
-    mkdirSync(dir, { recursive: true })
-    writeFileSync(join(dir, 'preset.yml'), `id: ${id}\nname: ${name}\nmodules: []\n`, 'utf8')
-  }
-  const defaultEntries = readdirSync(userPresetRoot).sort()
-  const defaultContent = readFileSync(join(defaultDir, 'preset.yml'), 'utf8')
-  registerSettingsBridge(ctx, 'prompt-tool', () => ({ available: true, providers: [] }),
-    () => ({ activeSkillsDirs: [], skillCatalog: [] }), () => '', undefined, () => activeDir,
-    undefined, undefined, undefined, undefined, () => root)
+  const activeDir = join(userPresetRoot, id)
+  const presetContent = `id: ${id}\nname: custom\nmodules: []\n`
+  mkdirSync(activeDir, { recursive: true })
+  writeFileSync(join(activeDir, 'preset.yml'), presetContent, 'utf8')
+  registerSettingsBridge(ctx, 'prompt-tool',
+    () => ({ available: true, providers: [] }),
+    () => ({ activeSkillsDirs: [], skillCatalog: [] }),
+    () => '', undefined, () => activeDir)
   const call = async (endpoint, payload = {}) => {
     const res = fakeRes()
     await handlers.get(PREFIX + BRIDGE_ENDPOINTS[endpoint])(fakeReq({ [Symbol.asyncIterator]: async function* () {
@@ -479,21 +475,20 @@ test('自定义预设根的列表、导出、复制、删除、新建与导入�
     return JSON.parse(res.body).value
   }
   const meta = await call('meta')
-  assert.deepEqual(meta.meta.presets.map(preset => preset.id), [id])
+  assert.ok(meta.meta.presets.some(preset => preset.id === id), '预设列表应含官方预设根下的预设')
   const exported = await call('exportPreset', { id })
   assert.equal(exported.content, readFileSync(join(activeDir, 'preset.yml'), 'utf8'))
   const copied = await call('presetDuplicate', { id })
-  assert.equal(readFileSync(join(root, copied.id, 'preset.yml'), 'utf8'), exported.content)
+  assert.equal(readFileSync(join(userPresetRoot, copied.id, 'preset.yml'), 'utf8'), exported.content)
   await call('presetDelete', { id: copied.id })
-  assert.equal(existsSync(join(root, copied.id)), false)
+  assert.equal(existsSync(join(userPresetRoot, copied.id)), false)
   const cloned = await call('presetClone', { id: 'custom' })
-  assert.ok(existsSync(join(root, cloned.id, 'preset.yml')))
+  assert.ok(existsSync(join(userPresetRoot, cloned.id, 'preset.yml')))
   const imported = await call('importPresetPackage', {
     files: [{ path: 'preset.yml', content: 'id: root-import\nmodules: []\n' }],
   })
-  assert.ok(existsSync(join(root, imported.id, 'preset.yml')))
-  assert.deepEqual(readdirSync(userPresetRoot).sort(), defaultEntries)
-  assert.equal(readFileSync(join(defaultDir, 'preset.yml'), 'utf8'), defaultContent)
+  assert.ok(existsSync(join(userPresetRoot, imported.id, 'preset.yml')))
+  assert.equal(readFileSync(join(activeDir, 'preset.yml'), 'utf8'), presetContent, '管理操作不得改动源预设')
 })
 
 test('settings bridge /configs-validate 接受 >64KB promptConfigs 载荷（不再 400 unreadable JSON body）', async () => {
@@ -590,33 +585,6 @@ test('settings bridge：system 预设拒绝全部当前预设写入', async () =
     }
   } finally {
     rmSync(dir, { recursive: true, force: true })
-  }
-})
-
-test('settings bridge：自定义 presetDir 内的用户预设允许写入', async () => {
-  const presetRoot = mkdtempSync(join(tmpdir(), 'pt-custom-preset-root-'))
-  const dir = join(presetRoot, 'custom')
-  mkdirSync(dir)
-  writeFileSync(join(dir, 'preset.yml'), 'id: custom\nmodules: []\n', 'utf8')
-  try {
-    const { ctx, handlers } = makeHarness()
-    registerSettingsBridge(ctx, 'prompt-tool',
-      () => ({ available: true, providers: [] }),
-      () => ({ activeSkillsDirs: [], skillCatalog: [] }),
-      () => '', undefined, () => dir, undefined, undefined, undefined, undefined, () => presetRoot)
-    const handler = handlers.get(PREFIX + BRIDGE_ENDPOINTS.paramOverrides)
-    const res = fakeRes()
-    await handler(fakeReq({ [Symbol.asyncIterator]: async function* () {
-      yield Buffer.from(JSON.stringify({ overrides: { firstTurnAnchor: true } }))
-    } }), res)
-    assert.equal(res.status, 200)
-    assert.equal(parseYaml(readFileSync(join(dir, 'preset.yml'), 'utf8')).params.firstTurnAnchor, true)
-    const describe = handlers.get(PREFIX + BRIDGE_ENDPOINTS.describe)
-    const describeRes = fakeRes()
-    await describe(fakeReq(), describeRes)
-    assert.equal(JSON.parse(describeRes.body).moduleFacts.editable, true)
-  } finally {
-    rmSync(presetRoot, { recursive: true, force: true })
   }
 })
 
