@@ -6,9 +6,9 @@
 
 - **文件即真相**：插件不再写任何常驻内容——删除 `writeAgents` / `residentAgentsPath` 设置轴、`src/runtime/agents-file.ts` 受管块读写与 TUI/UI 开关；`$DSH_HOME/AGENTS.md` 恢复为用户完全自有的文件。
 - **探测到才生成卡**：`writePreset` 每次重建都探测用户级 `$DSH_HOME/AGENTS.md` 与工作区 cwd→项目根链的 AGENTS.md/CLAUDE.md/AGENTS.local.md/CLAUDE.local.md，为**每个已存在文件**生成一张 `agents-file-<路径哈希>` 卡（`pre-step` + `position: after-user`，对齐官方 `@deepseek-ai/dsh-agent-instructions` 的插入点）；文件不存在就不生成卡。
-- **卡内编辑框直接编辑该文件**：读配置时服务端把文件正文附在卡的 `params.text`（客户端提升到编辑框），保存走新端点 `/agents-file`（按 `fileId` 命中服务端探测白名单才写盘，未知 id / 非字符串内容 400 拒绝），写盘为 tmp + rename。
+- **卡内编辑框直接编辑该文件**：读配置时服务端把文件正文附在卡的 `params.text`（客户端提升到「自定义提示」编辑框），保存走新端点 `/agents-file`（按 `fileId` 命中服务端探测白名单才写盘，未知 id / 非字符串内容 400 拒绝），写盘为 tmp + rename。
 - **参数不落预设**：文件卡是生成目录产物，`/param-overrides` 写 preset.yml 时整卡剔除（`preset.yml` 只保留用户自己的卡）；卡片定义与正文都不进预设。
-- 注入只提示「该文件存在」（`params.file` 精确到单个文件，`params.scope` 保留 all/global/project 探测），不注入正文；`engine/instruction-hint.mjs` 删除 `agentsInstructionPath` 物化文件通道，`params.text` 仅作显式自定义文本。
+- 注入内容 = 该文件正文：卡保持 `fill: instruction-hint`（填充来源「指令提示」），`engine/instruction-hint.mjs` 的 `params.file` 分支每次注入时重读文件（`Instructions from: <显示路径>` 头 + 全文），文件缺失/不可读/空则不注入；`params.text`（自定义提示）优先，`params.scope`（all/global/project）保留无 file 时的区域提示；删除 `agentsInstructionPath` 物化文件通道。
 - 空白模板 `custom` 用 `preset.yml#agentsHints: false` 保持显式空组合；回归测试见 `test/host/agents-cards.test.mjs`（探测/卡形状/写盘/白名单）与 `test/host/write-preset.test.mjs`（各模板生成且不落 preset.yml）。
 
 ### 移除预设根目录配置（2026-09-14）

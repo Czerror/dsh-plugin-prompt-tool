@@ -11,6 +11,7 @@
  */
 
 import { randomUUID } from 'node:crypto'
+import { readFileSync } from 'node:fs'
 
 export const name = 'instruction-hint'
 
@@ -121,22 +122,12 @@ function hintScope(value) {
   return typeof value === 'string' && HINT_SCOPES.has(value) ? value : 'all'
 }
 
-/** 探测单个绝对路径是否为可读文件（文件卡绑定的 AGENTS.md）。 */
-async function presentInstructionFilePath(fs, path, signal) {
-  try {
-    const target = await fs.resolve(path, { signal })
-    const info = await fs.stat(target, signal)
-    return info !== undefined && info.type === 'file'
-  } catch {
-    return false
-  }
-}
-
 /**
  * prompt-config strategy=instruction-hint 的 resolver。
- * 只做动态探测：params.file（文件卡绑定的单个文件）优先，其次按 params.scope
- * 探测来源（all / global / project）；params.text 仅作显式自定义文本覆盖。
- * 探测不到对应文件时返回 null，不注入任何消息。
+ * params.text（自定义提示）优先；params.file（文件卡绑定的单个指令文件）次之——
+ * 运行时读该文件正文并加 `Instructions from:` 头注入；最后按 params.scope 探测来源
+ * （all / global / project）只发「文件存在」提示。
+ * 文件缺失、不可读或空内容时返回 null，不注入任何消息。
  */
 export function createInstructionHintResolver(config = {}) {
   const customText = typeof config?.params?.text === 'string' && config.params.text.trim().length > 0
@@ -149,20 +140,28 @@ export function createInstructionHintResolver(config = {}) {
   const fileLabel = typeof config?.params?.displayPath === 'string' && config.params.displayPath.trim().length > 0
     ? config.params.displayPath.trim()
     : file
+  /** 文件即真相：每次注入都重读绑定文件，外部编辑立即生效。 */
+  const readBoundFile = () => {
+    try {
+      return readFileSync(file, 'utf8').trim()
+    } catch {
+      return ''
+    }
+  }
 
   return async ({ ctx, agent, session }) => {
     const id = `instruction-hint-${session.id}-${randomUUID()}`
     if (customText.length > 0) {
       return { id, text: customText, source: { kind: 'instruction-hint', form: 'hint' } }
     }
-    const fs = ctx.get('fs')
-    if (fs === undefined) return null
     if (file.length > 0) {
-      const present = await presentInstructionFilePath(fs, file, agent.signal)
-      return present
-        ? { id, text: `A workspace instruction file exists: ${fileLabel}. ${REFERENCE_HINT_SUFFIX}`, source: { kind: 'instruction-hint', form: 'hint' } }
+      const content = readBoundFile()
+      return content.length > 0
+        ? { id, text: `Instructions from: ${fileLabel}\n\n${content}`, source: { kind: 'instruction-file', form: 'instructions' } }
         : null
     }
+    const fs = ctx.get('fs')
+    if (fs === undefined) return null
     const cwd = session.header?.cwd ?? process.cwd()
     const found = await collectInstructionFiles(fs, cwd, agent.signal)
     const text = buildInstructionHintText(found, scope)

@@ -1,7 +1,8 @@
 /**
  * AGENTS 指令文件探测与文件卡合成。
  * 文件即真相：探测到的 AGENTS.md 不写进 preset.yml，只作为生成目录的 pre-step 卡；
- * 卡内编辑框经 bridge 直接读写该文件，注入侧只发「文件存在」提示、不注入正文。
+ * 卡内编辑框经 bridge 直接读写该文件；注入侧运行时读该文件正文
+ * （fill=instruction-file），文件缺失或空内容就不注入。
  */
 import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
@@ -84,7 +85,7 @@ export function detectAgentsFiles(options: { cwd?: string; home?: string } = {})
 /**
  * 探测结果 → pre-step 提示卡（每个文件一张，不落 preset.yml）。
  * 插入点对齐官方 `@deepseek-ai/dsh-agent-instructions`：pre-step 层、紧随真实用户消息；
- * 注入只提示文件存在（params.file 精确到单个文件），正文由模型按需读取。
+ * 注入内容 = 该文件当前正文（`fill=instruction-file` 运行时读取，params.file 精确到单个文件）。
  */
 export function agentsFileCardSpecs(files: readonly AgentsFileCard[] = detectAgentsFiles()): PromptConfigSpec[] {
   return files.map((file, index) => ({
@@ -99,8 +100,8 @@ export function agentsFileCardSpecs(files: readonly AgentsFileCard[] = detectAge
     position: 'after-user' as const,
     dedupe: 'session' as const,
     promotion: 'include-subagents' as const,
-    sourceKind: 'instruction-hint',
-    form: 'hint',
+    sourceKind: 'instruction-file',
+    form: 'instructions',
     fill: 'instruction-hint',
     params: { scope: file.scope, file: file.path, displayPath: file.displayPath, fileId: file.fileId },
   }))

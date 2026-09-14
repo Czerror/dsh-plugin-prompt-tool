@@ -112,7 +112,7 @@ src/client/
 | 工具集 | `toolFilterAllow` `toolFilterDeny`（主对话 tool-filter；策略未启用时也写入子代理 delegation.toolFilter——策略启用后子代理改由 `subagentToolPolicy` 实例级解析授权，主/子代理列表分离） |
 | 深度 | `maxDepth`（0 禁止委派 / `provider-managed` / 正整数） |
 
-> 注：`injectPrompt`（params）= 锚定确认后注入 preset.md 的开关。AGENTS.md 走「文件即真相」：插件每次重建探测 `$DSH_HOME/AGENTS.md` 与工作区 cwd→项目根链的 AGENTS.md/CLAUDE.md 等候选，**探测到哪个文件就生成哪张** `pre-step` 卡（紧随真实用户消息，对齐官方 `@deepseek-ai/dsh-agent-instructions` 的插入点），卡内编辑框直接编辑该文件、不写进 preset.yml；注入只提示文件存在，不注入正文。插件不再写常驻受管块。
+> 注：`injectPrompt`（params）= 锚定确认后注入 preset.md 的开关。AGENTS.md 走「文件即真相」：插件每次重建探测 `$DSH_HOME/AGENTS.md` 与工作区 cwd→项目根链的 AGENTS.md/CLAUDE.md 等候选，**探测到哪个文件就生成哪张** `pre-step` 卡（紧随真实用户消息，对齐官方 `@deepseek-ai/dsh-agent-instructions` 的插入点）；卡内「填充来源=指令提示」+ `params.file` 每次注入时读该文件正文（`Instructions from: <路径>` 头 + 全文），「自定义提示」编辑框就是该文件内容、保存直接写回文件，卡片定义与正文都不进 preset.yml。插件不再写常驻受管块。
 
 模型参数在 **preset.yml 顶层 `model` / `subagentModel` 段**（官方 `agent-default-model` 同构）：
 

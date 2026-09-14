@@ -346,7 +346,7 @@ AGENTS.md 走「文件即真相」：`writePreset` 每次重建都探测一次�
 - 卡片形状：`agents-file-<路径 sha1 前8位>`，`pre-step` 层 + `position: after-user`（对齐官方 `@deepseek-ai/dsh-agent-instructions` 的 `agent/pre-step` 插入点），`params` 只带 `scope` / `file` / `displayPath` / `fileId`。
 - 编辑框：`/prompt-configs` 读时把该文件正文附到 `params.text`（客户端提升到编辑框），改后经 `/agents-file` 写回真实文件（按 `fileId` 命中服务端当次探测白名单，未知 id 或非字符串内容 400 拒绝，tmp + rename 原子写）。
 - 不落预设：文件卡是生成目录产物；`/param-overrides` 持久化 preset.yml 时整卡剔除，预设里只保留用户自己的卡。
-- 注入只提示「该文件存在」（`params.file` 精确到文件；`params.scope` 保留 all/global/project 区域探测），不注入正文；`preset.yml#agentsHints: false` 可整体关闭（`custom` 空白模板已设）。
+- 注入内容 = 该文件**当前正文**：卡的 `fill` 仍是 `instruction-hint`（UI「填充来源=指令提示」），`params.file` 让 resolver 每次注入时重读文件并加 `Instructions from: <显示路径>` 头；`params.text`（UI「自定义提示」）优先级最高，服务端读配置时把文件正文附到这里，所以编辑框看到/编辑的就是该文件；`params.scope`（all/global/project）保留无 file 时的区域探测。`preset.yml#agentsHints: false` 可整体关闭（`custom` 空白模板已设）。
 
 ### 模块事实与能力卡（2026-09-05）
 

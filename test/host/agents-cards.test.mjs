@@ -45,15 +45,16 @@ test('detectAgentsFiles：只返回已存在文件（用户级 + 项目根→cwd
   assert.equal(detectAgentsFiles({ cwd: repo, home: join(home, 'empty') }).length, 1, '未探测到的 home 不生成卡，只留项目根文件')
 })
 
-test('agentsFileCardSpecs：一文件一卡，pre-step/after-user，params 只带来源与路径、无正文', () => {
+test('agentsFileCardSpecs：一文件一卡，pre-step/after-user，注入该文件正文', () => {
   const specs = agentsFileCardSpecs(detectAgentsFiles({ cwd: nested, home }))
   assert.equal(specs.length, 3)
   for (const spec of specs) {
     assert.equal(spec.layer, 'pre-step')
     assert.equal(spec.position, 'after-user')
     assert.equal(spec.fill, 'instruction-hint')
+    assert.equal(spec.form, 'instructions')
     assert.equal(spec.params.scope === 'global' || spec.params.scope === 'project', true)
-    assert.equal(spec.params.text, undefined, '卡片不承载文件正文')
+    assert.equal(spec.params.text, undefined, '正文由 fill 运行时按 params.file 读取，不写进卡定义')
     assert.equal(typeof spec.params.file, 'string')
     assert.match(spec.id, /^agents-file-[0-9a-f]{8}$/)
   }

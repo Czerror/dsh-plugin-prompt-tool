@@ -469,6 +469,35 @@ test('placeholder：instruction-hint 探测 cwd→项目根完整链、使用建
   assert.doesNotMatch(hint.content[0].text, /Do NOT assume|read .* first and follow/i)
 })
 
+test('placeholder：instruction-hint + params.file 注入绑定文件正文，缺失/空文件不注入', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'pt-file-fill-'))
+  try {
+    const file = join(dir, 'AGENTS.md')
+    writeFileSync(file, 'RULES BODY\n', 'utf8')
+    const { step } = makeHarness(createPromptConfigs([{
+      id: 'agents-file-test', strategy: 'placeholder', fill: 'instruction-hint',
+      position: 'after-all', promotion: 'none', dedupe: 'none',
+      sourceKind: 'instruction-file', form: 'instructions',
+      params: { file, displayPath: 'AGENTS.md' },
+    }]))
+    const session = { id: 'file-fill', header: { delegationDepth: 0, cwd: dir }, snapshotEvents: () => [] }
+    const decision = await step(agent({ session }))
+    const injected = decision.messages.filter((message) => message?.source?.kind === 'instruction-file')
+    assert.equal(injected.length, 1)
+    assert.equal(injected[0].content[0].text, 'Instructions from: AGENTS.md\n\nRULES BODY')
+
+    writeFileSync(file, '   \n', 'utf8')
+    const empty = await step(agent({ session }))
+    assert.equal(empty.messages.some((message) => message?.source?.kind === 'instruction-file'), false, '空文件不注入')
+
+    rmSync(file, { force: true })
+    const missing = await step(agent({ session }))
+    assert.equal(missing.messages.some((message) => message?.source?.kind === 'instruction-file'), false, '文件缺失不注入')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
 test('placeholder：env-facts 注入默认机器事实，未知 fill fail loud', async () => {
   const { step } = makeHarness(createPromptConfigs([{
     id: 'env-facts', strategy: 'placeholder', fill: 'env-facts', position: 'after-all',
