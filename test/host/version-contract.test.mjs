@@ -17,6 +17,7 @@ import {
   CORDIS_BASELINE,
   DSH_BASELINE,
   OFFICIAL_SCOPE,
+  dependencyVersionProblems,
   expectedDevBaseline,
   isExactBaseline,
   isRepoLocalResolution,
@@ -38,15 +39,107 @@ test('semver：预发布范围判定不再误诊 rc.2', () => {
   assert.equal(peerRangeAccepts('^0.1.5-rc.2', 'not-a-version'), false, '非法版本必须拒绝')
 })
 
-test('semver：精确开发基线拒绝 alpha/rc.1/非法版本', () => {
-  assert.equal(isExactBaseline(DSH_BASELINE, DSH_BASELINE), true)
-  assert.equal(isExactBaseline('0.1.5-rc.1', DSH_BASELINE), false)
-  assert.equal(isExactBaseline('0.1.5-alpha.1', DSH_BASELINE), false)
-  assert.equal(isExactBaseline('0.1.5', DSH_BASELINE), false)
-  assert.equal(isExactBaseline('nope', DSH_BASELINE), false)
+test('semver：精确开发基线拒绝不同版本与无效解析结果', () => {
+  assert.equal(isExactBaseline('0.1.5-rc.2', '0.1.5-rc.2'), true)
+  for (const version of ['0.1.5-rc.1', '0.1.5-alpha.1', '0.1.5', 'nope']) {
+    assert.equal(isExactBaseline(version, '0.1.5-rc.2'), false)
+  }
+  for (const version of [undefined, null, 123, {}, '', 'latest', '*', 'v1.2.3', ' 1.2.3 ', '01.2.3', '1.2.3-rc.01']) {
+    assert.equal(isExactBaseline(version, version), false, `${String(version)} 不是精确 semver`)
+  }
+  assert.equal(isExactBaseline('nope', null), false, '解析失败不能命中空基线')
+  assert.equal(isExactBaseline('1.2.3+build.1', '1.2.3+build.1'), true)
+  assert.equal(isExactBaseline('1.2.3+build.1', '1.2.3+build.2'), false)
+})
+
+function versionManifest(dsh, cordis) {
+  return {
+    devDependencies: {
+      '@deepseek-ai/dsh-agent': dsh,
+      '@deepseek-ai/dsh-tools': dsh,
+      '@deepseek-ai/cordis': cordis,
+    },
+    peerDependencies: {
+      '@deepseek-ai/dsh-tools': `^${dsh}`,
+      '@deepseek-ai/dsh-system-prompt': `^${dsh}`,
+      '@deepseek-ai/cordis': `^${cordis}`,
+    },
+    dependencies: { '@deepseek-ai/dsh-api-remotes': `^${dsh}` },
+  }
+}
+
+test('发布基线：跟随 manifest 显式选择，不把 rc.2 固化为永久版本', () => {
+  for (const [dsh, cordis] of [
+    ['0.1.5-rc.2', '4.0.2'],
+    ['0.1.5', '4.0.3'],
+    ['0.2.0-rc.1', '5.0.0-beta.2'],
+    ['1.0.0+build.1', '6.0.0+build.2'],
+  ]) {
+    const selected = versionManifest(dsh, cordis)
+    assert.equal(expectedDevBaseline('@deepseek-ai/dsh-agent', selected), dsh)
+    assert.equal(expectedDevBaseline('@deepseek-ai/dsh-tools', selected), dsh)
+    assert.equal(expectedDevBaseline('@deepseek-ai/cordis', selected), cordis)
+    for (const [section, dependencies] of Object.entries(selected)) {
+      for (const name of Object.keys(dependencies)) {
+        const installed = name === '@deepseek-ai/cordis' ? cordis : dsh
+        assert.deepEqual(dependencyVersionProblems(name, section, installed, selected), [], `${section}.${name}@${installed}`)
+      }
+    }
+  }
+})
+
+test('发布基线：缺失、标签、范围和非法 semver 必须失败', () => {
+  for (const name of ['@deepseek-ai/dsh-agent', '@deepseek-ai/cordis']) {
+    for (const version of [undefined, null, 123, {}, '', 'latest', 'next', '*', '^0.2.0', '~0.2.0', '>=0.2.0', '0.2', 'v0.2.0', ' 0.2.0 ', '0.2.0-rc.01', 'nope']) {
+      const selected = versionManifest('0.2.0', '4.1.0')
+      selected.devDependencies[name] = version
+      assert.throws(() => expectedDevBaseline(name, selected), /精确 semver/, `${name}: ${String(version)}`)
+    }
+    assert.throws(() => expectedDevBaseline(name, {}), /精确 semver/)
+  }
+})
+
+test('发布基线：保留内部导出，非 DSH 包不误用 DSH 版本', () => {
+  assert.equal(DSH_BASELINE, manifest.devDependencies['@deepseek-ai/dsh-agent'])
+  assert.equal(CORDIS_BASELINE, manifest.devDependencies['@deepseek-ai/cordis'])
   assert.equal(expectedDevBaseline('@deepseek-ai/dsh-tools'), DSH_BASELINE)
   assert.equal(expectedDevBaseline('@deepseek-ai/cordis'), CORDIS_BASELINE)
+  assert.equal(expectedDevBaseline('@deepseek-ai/schemastery'), undefined)
   assert.equal(expectedDevBaseline('yaml'), undefined)
+})
+
+test('依赖版本：DSH 与 Cordis 安装必须命中已选版本，不能只满足宽范围', () => {
+  const selected = versionManifest('0.2.0', '4.1.0')
+  for (const [section, dependencies] of Object.entries(selected)) {
+    for (const name of Object.keys(dependencies)) {
+      const drift = name === '@deepseek-ai/cordis' ? '4.1.1' : '0.2.1'
+      for (const installed of [drift, undefined, null, 'nope']) {
+        assert.ok(dependencyVersionProblems(name, section, installed, selected).some((problem) => problem.includes('不等于基线')))
+      }
+    }
+  }
+})
+
+test('依赖版本：官方 dev 声明必须精确，DSH 必须与主 dsh-agent 一致', () => {
+  const selected = versionManifest('0.2.0', '4.1.0')
+  for (const range of ['latest', '*', '^0.2.0', '0.2.1', null, undefined, 'nope']) {
+    selected.devDependencies['@deepseek-ai/dsh-tools'] = range
+    assert.ok(dependencyVersionProblems('@deepseek-ai/dsh-tools', 'devDependencies', '0.2.0', selected).some((problem) => problem.includes('dev 声明')))
+  }
+  const name = '@deepseek-ai/schemastery'
+  selected.devDependencies[name] = '3.19.0'
+  assert.deepEqual(dependencyVersionProblems(name, 'devDependencies', '3.19.0', selected), [])
+  selected.devDependencies[name] = '^3.19.0'
+  assert.ok(dependencyVersionProblems(name, 'devDependencies', '3.19.0', selected).some((problem) => problem.includes('精确 semver')))
+})
+
+test('依赖版本：命中基线也不能跳过 peer 与运行依赖的声明范围', () => {
+  const selected = versionManifest('0.2.0', '4.1.0')
+  const name = '@deepseek-ai/dsh-tools'
+  for (const section of ['peerDependencies', 'dependencies']) {
+    selected[section][name] = '^0.3.0'
+    assert.ok(dependencyVersionProblems(name, section, '0.2.0', selected).some((problem) => problem.includes(`不满足 ${section} 范围`)))
+  }
 })
 
 test('解析目标：只接受仓库内 node_modules，拒绝同级源码 link', () => {
@@ -92,7 +185,6 @@ test('package.json：peer 接受基线，dev 精确锁定基线', () => {
     assert.equal(peerRangeAccepts(range, DSH_BASELINE), true, `${name} 的 peer 范围 ${range} 必须接受 ${DSH_BASELINE}`)
   }
   assert.equal(peerRangeAccepts(manifest.peerDependencies['@deepseek-ai/cordis'], CORDIS_BASELINE), true)
-  assert.equal(manifest.peerDependencies['@deepseek-ai/schemastery'], '^3.18.1', 'schemastery 不随 DSH 系列升版')
 
   const devs = Object.entries(manifest.devDependencies).filter(([name]) => isDshPackage(name))
   assert.ok(devs.length > 0, 'dev 声明不能为空')
@@ -127,7 +219,7 @@ test('新增直接依赖都有真实消费者（D-02）', () => {
     'semver',
   ]
   for (const name of added) {
-    assert.ok(manifest.devDependencies[name] === DSH_BASELINE || manifest.devDependencies[name] === '7.8.5', `${name} 应在 devDependencies`)
+    assert.ok(Object.hasOwn(manifest.devDependencies, name), `${name} 应在 devDependencies`)
     assert.ok(consumed.has(name), `${name} 已声明但没有消费方（需 import／类型测试／脚本使用）`)
   }
 })

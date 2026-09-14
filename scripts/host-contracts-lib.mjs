@@ -1,21 +1,28 @@
-// host-contracts-lib.mjs — 宿主契约验证的纯函数。
+// host-contracts-lib.mjs — 宿主契约验证的共享判定。
 //
 // 供 scripts/verify-host-contracts.mjs（CLI 报告）与 test/host/version-contract.test.mjs
 // 共用，避免两处各写一份版本／路径判断。这里不读仓库外的私有源码，也不安装依赖。
+import { readFileSync } from 'node:fs'
 import semver from 'semver'
+
+const manifest = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
 
 /** 官方包作用域；本插件只消费这个作用域下的宿主能力。 */
 export const OFFICIAL_SCOPE = '@deepseek-ai/'
 
-/** 本仓库锁定的官方发布基线。 */
-export const DSH_BASELINE = '0.1.5-rc.2'
-export const CORDIS_BASELINE = '4.0.2'
+/** 本仓库 package.json 显式选择的发布版本；导出名保持稳定。 */
+export const DSH_BASELINE = expectedDevBaseline('@deepseek-ai/dsh-agent')
+export const CORDIS_BASELINE = expectedDevBaseline('@deepseek-ai/cordis')
 
 /** dev 依赖精确基线：按包名给出必须等值命中的版本。 */
-export function expectedDevBaseline(name) {
-  if (name === '@deepseek-ai/cordis') return CORDIS_BASELINE
-  if (name.startsWith(OFFICIAL_SCOPE)) return DSH_BASELINE
-  return undefined
+export function expectedDevBaseline(name, selectedManifest = manifest) {
+  const source = name.startsWith(`${OFFICIAL_SCOPE}dsh-`) ? '@deepseek-ai/dsh-agent' : name
+  if (source !== '@deepseek-ai/dsh-agent' && source !== '@deepseek-ai/cordis') return undefined
+  const version = selectedManifest.devDependencies?.[source]
+  if (!isExactBaseline(version, version)) {
+    throw new Error(`devDependencies.${source}: 必须声明精确 semver 发布版本，实际为 ${String(version)}`)
+  }
+  return version
 }
 
 /**
@@ -28,9 +35,30 @@ export function peerRangeAccepts(range, version) {
   return semver.satisfies(version, range, { includePrerelease: true })
 }
 
-/** 精确基线命中：非 semver、rc 序号不符、alpha 混入都必须为 false。 */
+/** 精确基线命中：完整 semver 必须相同，不能把解析失败或归一化结果当成精确声明。 */
 export function isExactBaseline(version, expected) {
-  return semver.valid(version) === expected
+  if (typeof version !== 'string' || version !== expected) return false
+  const parsed = semver.parse(version)
+  return parsed !== null && version === `${parsed.version}${parsed.build.length > 0 ? `+${parsed.build.join('.')}` : ''}`
+}
+
+/** CLI 与行为测试共用的版本验证；manifest 可显式传入，不需要改写仓库文件。 */
+export function dependencyVersionProblems(name, section, version, selectedManifest = manifest) {
+  const range = selectedManifest[section]?.[name]
+  const baseline = expectedDevBaseline(name, selectedManifest)
+  const problems = []
+  if (!peerRangeAccepts(range, version)) {
+    problems.push(`安装版本 ${version} 不满足 ${section} 范围 ${range}`)
+  }
+  if (section === 'devDependencies') {
+    if (!isExactBaseline(range, range)) problems.push(`dev 声明 ${range} 不是精确 semver 发布版本`)
+    if (baseline !== undefined && range !== baseline) problems.push(`dev 声明 ${range} 不是精确基线 ${baseline}`)
+  }
+  const expected = baseline ?? (section === 'devDependencies' ? range : undefined)
+  if (expected !== undefined && !isExactBaseline(version, expected)) {
+    problems.push(`安装版本 ${version} 不等于基线 ${expected}`)
+  }
+  return problems
 }
 
 /**

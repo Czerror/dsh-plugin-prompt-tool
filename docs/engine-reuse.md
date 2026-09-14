@@ -19,7 +19,7 @@
 
 ### 官方与本地分类
 
-- `engine/compositions/library/`：仅由固定官方输入原样切出的 22 个模块。官方预设本身的
+- `engine/compositions/library/`：跟随核验过的官方最新 master，当前原样切出 22 个模块。官方预设本身的
   `delegation-ptc`、`skill-filesystem-cordis` 差异可保留，但不允许注入本地补丁。
 - `engine/compositions/source/local/`：19 个本地自有或本地改写模块的唯一源码。
   `tool-bash-disabled` 与 `persistent-shell-posix` 是本地适配，不因使用官方包就归为官方模块。
@@ -224,7 +224,14 @@ moduleConfigs:
 
 ## 重建与验证
 
-- 组合重建：`pnpm rebuild:composition test/fixtures/dsh/0.1.5-rc.2`（只生成 `library/` 的原样官方切块/变体；`source/local/` 保持本地源文件，不复制）；
+- 更新官方模块：`pnpm rebuild:composition`。默认读取同级 `deepseek-harness`（可用
+  `DSH_HARNESS_REPO` 指定源码目录），先向官方远端核验 master HEAD；本地落后、预设文件
+  有未提交改动或网络核验失败时拒绝生成，不回退旧版本，也不自动修改宿主源码仓库。
+- 每次同步记录真实分支/commit，更新 `test/fixtures/dsh/current/PROVENANCE.md` 与当前快照。
+  离线复验：`pnpm rebuild:composition test/fixtures/dsh/current`；这是重放已记录提交，
+  不是声明该快照永远为最新。完整测试校验模块来源与快照一致，且无需网络。
+- 已发布依赖的实际版本以 package.json 为准，验证脚本不再另行硬编码 rc.2；更新前同时核实
+  npm 的版本列表与 dist-tags，不能把名字为 latest 的旧标签误当成更新版本。
 - 本地新增模块放 `engine/compositions/source/local/<name>.yml`，重建脚本校验后直接装配；
   官方预设行变体在 `OFFICIAL_MODULES` 显式登记并生成到 `library/`；本地改写不得加入生成器补丁表，两处同名会 fail loud；
 - 验证三连：`pnpm typecheck` + `pnpm lint` + `pnpm test`。

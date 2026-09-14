@@ -32,7 +32,7 @@ dsh --profile prompt-tool
 
 旧的 base-only profile（只有 `dsh-base`）首次启动时，插件会把 `@deepseek-ai/dsh-web-app` 补进该 profile 的 `dsh.profile.bundles`（写前留 `.bak`，幂等），并提示重启；需要重启 DSH 服务后生效，插件不会替你重启运行中的服务。
 
-需要 DSH `0.1.5-rc.2+`；当前开发与验证版本为 `0.1.5-rc.2`（官方包锁定该基线）。Node 需要 `^22.19.0 || >=24.0.0`，与官方宿主一致。
+需要 DSH `0.1.5-rc.2+`；实际开发与验证版本由 package.json 的已选发布包声明决定，不在验证脚本中重复锁死版本。官方组合模块跟随核验过的最新 master（`pnpm rebuild:composition`），记录实际提交并以当前快照离线复验。Node 需要 `^22.19.0 || >=24.0.0`，与官方宿主一致。
 
 ## 特性
 

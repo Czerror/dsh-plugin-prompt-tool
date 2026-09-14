@@ -1,7 +1,7 @@
 # AGENTS 独立文件源与 pre-step 卡统一设计及修复计划
 
 - 日期：2026-09-14。
-- 审查基线：`dev@0779c13`；依赖目标：DSH `0.1.5-rc.2`、Cordis `4.0.2`，不是当前上游 master。
+- 初始审查基线：`dev@0779c13`，当时使用 DSH `0.1.5-rc.2`、Cordis `4.0.2`；这不是永久目标。后续官方组合跟随核验过的最新 master，发布包版本以 package.json 为准。
 - 状态：已有实现并进入审查修复；实现、确定性回归与真实 UI/会话验收分开记录，以第 8 节为准。
 - 授权范围：初始计划阶段仅交付文档；后续实现与本轮 13 项审查问题修复均由用户另行授权。
 - 目标：AGENTS 正文、指令卡策略与预设分别拥有独立存储和生命周期，同时复用现有 pre-step 卡组件与执行算法；修复本次审查确认的六项问题。
@@ -477,7 +477,7 @@ if ($LASTEXITCODE -ne 0) { throw 'diff check failed' }
 - `pnpm --dir` 本身不能保证测试 cwd 隔离；当前 scripts/run-tests.mjs 会用临时 cwd 启动测试，TEMP/TMP 指向上述隔离根。验证时检查真实子进程 cwd，不只检查父 shell。
 - 临时环境变量只留在验证进程，不写系统环境；文件系统测试各自建立、清理独立目录。任何递归清理先验证绝对目标仍在本次临时目录内。
 - 定向测试也从隔离 cwd 运行，以绝对测试路径调用 node --test；依赖 lib 的用例先用既有 build 生成输入，不能拿旧 bundle 冒充新源码验证。
-- 组合源确实改变时，用固定输入：`pnpm --dir $Repo rebuild:composition -- "$Repo/test/fixtures/dsh/0.1.5-rc.2"`。不使用重建脚本默认的同级开发仓库作为发布输入。
+- 同步官方组合时运行 `pnpm --dir $Repo rebuild:composition`：默认核验源码 checkout 与官方当前 master HEAD 一致且预设目录干净，再记录实际提交。离线回归使用 `$Repo/test/fixtures/dsh/current`，不将快照的已记录提交冒充实时最新。
 - yaml 依赖确实改变时才执行 `pnpm --dir $Repo sync:yaml`，并跑 vendor parity 测试；本设计不要求升级 yaml。
 - 实现交付时保存每条命令的退出码、测试总数及关键断言；临时审查复现脚本不是正式回归测试的依赖。
 
@@ -547,14 +547,14 @@ if ($LASTEXITCODE -ne 0) { throw 'diff check failed' }
 - [执行器](engine/executor.mjs)、[指令填充](engine/instruction-hint.mjs)、[epoch](engine/compaction-epoch.mjs)：当前注入与去重行为。
 - [package.json](package.json)、[构建配置](tsdown.config.ts)、[测试入口](scripts/run-tests.mjs)、[组合重建](scripts/rebuild-composition.mjs)、[yaml 同步](scripts/sync-yaml-vendor.mjs)：实际命令与生成链。
 
-### 11.2 固定版本宿主依据
+### 11.2 初始验收时的宿主依据（历史）
 
 本机于 2026-09-14 核对的已安装官方包（由 package.json 锁定版本），不是猜测新 API：
 
 - `node_modules/@deepseek-ai/dsh-scope/README.md` 与 `lib/types/{index,store}.d.ts`：scopeOf、ScopedLayers、NamedEntries、effect/disposer、未标记全局监听与作用域继承。
 - `node_modules/@deepseek-ai/dsh-agent/lib/types/runtime-types.d.ts:92–99,139–149,306–319`：PreStepDecision、Agent ctx/session、agent/pre-step waterfall。
 - `D:\AI\GitHub\deepseek-harness\docs\agent-lifecycle.zh.md`：生命周期说明仅作对照；若与安装版本不同，以固定包类型和隔离验证为准。
-- [固定输入出处](test/fixtures/dsh/0.1.5-rc.2/PROVENANCE.md)、[官方指令组合快照](engine/compositions/library/agent-instructions.yml)：版本来源及 maxBytes=65536 基线。
+- [当前上游快照出处](test/fixtures/dsh/current/PROVENANCE.md)、[官方指令组合快照](engine/compositions/library/agent-instructions.yml)：实际来源提交及指令配置；不锁定初始版本。
 
 ### 11.3 原始计划提交的验收边界（历史记录）
 

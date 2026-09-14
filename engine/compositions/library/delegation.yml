@@ -1,6 +1,6 @@
 # module: delegation
-# source: dsh-v0.1.5-rc.2/packages/preset/agent-presets/presets/standard/agent.cordis.yml
-# commit: fb2c4b9e698e30edb738bca4cf0618587db7d203
+# source: master/packages/preset/agent-presets/presets/standard/agent.cordis.yml
+# commit: c291e7961a515f6d7af9304e7fd1d257929aef26
 # local patches: 0
 
 # ── delegation and workflows ────────────────────────────────────────────────

@@ -3,8 +3,9 @@
 // 用法:node scripts/verify-host-contracts.mjs
 //
 // 报告每个直接官方依赖的声明范围、实际安装版本、解析目标，并在下列任一情况下失败：
-//   1. 声明的官方包未安装，或安装版本不满足 peer 范围；
-//   2. dev 依赖未精确锁定到仓库基线（0.1.5-rc.2 / cordis 4.0.2）；
+//   1. 声明的官方包未安装，或安装版本不满足声明范围；
+//   2. 官方 dev 依赖不是精确 semver，DSH 包偏离 devDependencies 中 dsh-agent 的
+//      已选发布版本，或 Cordis 偏离自身显式选择；
 //   3. 解析目标落在仓库 node_modules 之外（典型为 ../deepseek-harness 源码 link）；
 //   4. 源码里出现未在 package.json 声明的官方包 import；
 //   5. `dsh.client.inject` 声明的包没有对应的 peer 声明。
@@ -15,11 +16,9 @@ import { join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
   OFFICIAL_SCOPE,
-  expectedDevBaseline,
-  isExactBaseline,
+  dependencyVersionProblems,
   isRepoLocalResolution,
   officialImports,
-  peerRangeAccepts,
 } from './host-contracts-lib.mjs'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
@@ -47,7 +46,7 @@ function shortTarget(target) {
   return relativeTarget.startsWith('..') ? target : relativeTarget
 }
 
-for (const section of ['peerDependencies', 'devDependencies']) {
+for (const section of ['peerDependencies', 'devDependencies', 'dependencies']) {
   for (const [name, range] of Object.entries(manifest[section] ?? {})) {
     if (!name.startsWith(OFFICIAL_SCOPE)) continue
     const installed = installedPackage(name)
@@ -57,17 +56,7 @@ for (const section of ['peerDependencies', 'devDependencies']) {
       continue
     }
 
-    const problems = []
-    if (section === 'peerDependencies' && !peerRangeAccepts(range, installed.version)) {
-      problems.push(`安装版本 ${installed.version} 不满足 peer 范围 ${range}`)
-    }
-    const baseline = expectedDevBaseline(name)
-    if (section === 'devDependencies' && baseline !== undefined) {
-      if (range !== baseline) problems.push(`dev 声明 ${range} 不是精确基线 ${baseline}`)
-      if (!isExactBaseline(installed.version, baseline)) {
-        problems.push(`dev 安装版本 ${installed.version} 不等于基线 ${baseline}`)
-      }
-    }
+    const problems = dependencyVersionProblems(name, section, installed.version, manifest)
     if (!isRepoLocalResolution(installed.realPath, root)) {
       problems.push(`解析目标在仓库 node_modules 之外（${installed.realPath}）`)
     }

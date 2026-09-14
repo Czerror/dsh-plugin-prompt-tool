@@ -2,6 +2,12 @@
 
 ## [未发布] - 2026-09-06
 
+### 官方模块跟随最新上游
+
+- 默认 `rebuild:composition` 核验官方 master 的远端 HEAD，拒绝落后 checkout、预设局部修改和无法核验的网络状态；不修改宿主源码，不回退旧版本。生成模块记录实际分支与 commit。
+- 本次核验 master 为 `c291e7961a515f6d7af9304e7fd1d257929aef26`；其预设文件与目前最新发布 rc.2 相同，模块正文无变化。官方分发快照出处更新为 master，不虚构版本升级或按落后的 npm latest 标签降级。
+- 离线数据移至 `test/fixtures/dsh/current`，保留实际提交与文件指纹，测试不再硬编码 rc.2 或单一提交；宿主依赖基线从 package.json 的明确发布版本派生，不重复写死常量。
+
 ### 组合模块直接重命名与来源纠正（破坏性变更）
 
 - `library` 只生成固定官方输入原样的 22 个模块；本地补丁改为 `source/local/tool-bash-disabled.yml` 与 `persistent-shell-posix.yml`，本地模块共 19 个，不再在官方生成器维护字符串补丁。

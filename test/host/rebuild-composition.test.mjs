@@ -10,8 +10,8 @@ import { isDeepStrictEqual } from 'node:util'
 import { parse } from 'yaml'
 
 const ROOT = fileURLToPath(new URL('../..', import.meta.url))
-/** 固定上游输入：0.1.5-rc.2 tag 导出，不读取开发机 ../deepseek-harness。 */
-const FIXTURE = join(ROOT, 'test', 'fixtures', 'dsh', '0.1.5-rc.2')
+/** 离线复验最近一次同步的上游快照，不固定发布版本或请求实时网络。 */
+const FIXTURE = join(ROOT, 'test', 'fixtures', 'dsh', 'current')
 const FIXTURE_PRESETS = join(FIXTURE, 'packages', 'preset', 'agent-presets', 'presets')
 const SCRIPT = join(ROOT, 'scripts', 'rebuild-composition.mjs')
 
@@ -20,6 +20,7 @@ function fixture() {
   mkdirSync(join(root, 'scripts'), { recursive: true })
   mkdirSync(join(root, 'node_modules'), { recursive: true })
   cpSync(SCRIPT, join(root, 'scripts', 'rebuild-composition.mjs'))
+  cpSync(join(ROOT, 'scripts', 'composition-source.mjs'), join(root, 'scripts', 'composition-source.mjs'))
   cpSync(join(ROOT, 'engine', 'compositions'), join(root, 'engine', 'compositions'), { recursive: true })
   cpSync(join(ROOT, 'preset'), join(root, 'preset'), { recursive: true })
   cpSync(join(ROOT, 'node_modules', 'yaml'), join(root, 'node_modules', 'yaml'), { recursive: true })
@@ -49,7 +50,7 @@ function listFixtureFiles(dir, prefix = '') {
   return files
 }
 
-test('固定上游 fixture 与 PROVENANCE 指纹一致（禁止本地 master 冒充 rc.2）', () => {
+test('当前上游快照与 PROVENANCE 指纹一致，提交可更新但不能伪造来源', () => {
   const provenance = readFileSync(join(FIXTURE, 'PROVENANCE.md'), 'utf8')
   const listed = new Map()
   for (const match of provenance.matchAll(/^\| `([^`]+)` \| (\d+) \| `([0-9a-f]{64})` \|$/gm)) {
@@ -68,7 +69,20 @@ test('固定上游 fixture 与 PROVENANCE 指纹一致（禁止本地 master 冒
   for (const relative of listed.keys()) {
     assert.ok(actual.includes(relative), `PROVENANCE 登记的 ${relative} 在 fixture 中缺失`)
   }
-  assert.match(provenance, /fb2c4b9e698e30edb738bca4cf0618587db7d203/, 'PROVENANCE 必须记录来源提交')
+  assert.match(provenance, /来源提交：`[0-9a-f]{40}`/, 'PROVENANCE 必须记录实际来源提交')
+  assert.match(provenance, /来源分支：`master`/)
+})
+
+test('分发库记录当前上游快照的实际提交，不沿用旧发布版本出处', () => {
+  const provenance = readFileSync(join(FIXTURE, 'PROVENANCE.md'), 'utf8')
+  const commit = /来源提交：`([0-9a-f]{40})`/.exec(provenance)?.[1]
+  assert.ok(commit)
+  const library = join(ROOT, 'engine', 'compositions', 'library')
+  for (const file of readdirSync(library).filter((name) => name.endsWith('.yml'))) {
+    const source = readFileSync(join(library, file), 'utf8')
+    assert.match(source, new RegExp(`^# commit: ${commit}$`, 'm'), file)
+    assert.match(source, /^# source: master\/packages\/preset\/agent-presets\/presets\//m, file)
+  }
 })
 
 test('rebuild-composition：动态发现官方预设并拒绝缺行、重复和乱序', () => {

@@ -6,13 +6,13 @@
 // 本地模块以 engine/compositions/source/local/*.yml 为唯一源，不复制到 library/；
 // library/ 只保留脚本从官方预设切出的行与确有语义差异的官方变体。
 //
-// 用法:node scripts/rebuild-composition.mjs [固定 tag 导出的上游目录]
-// 固定输入见 test/fixtures/dsh/<版本>/（由 PROVENANCE.md 记录 tag 与提交）；
-// 不要把当前 master 或开发机同级源码当成 rc.2 发布源码。
+// 默认核验官方最新 master 后重建；不会修改宿主源码仓库。
+// 显式目录参数用于离线重放已记录提交的快照，不代表实时最新。
 import { readFileSync, writeFileSync, readdirSync, mkdirSync, rmSync, renameSync, existsSync } from 'node:fs'
 import { basename, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parse as parseYaml } from 'yaml'
+import { verifyLatestCompositionSource } from './composition-source.mjs'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 const repoArg = process.argv.slice(2).find((arg) => arg !== '--')
@@ -23,7 +23,7 @@ const libraryDir = join(compositionDir, 'library')
 const localDir = join(compositionDir, 'source', 'local')
 
 /**
- * 上游标识：优先读固定输入目录里的 PROVENANCE.md（tag + 提交），
+ * 离线快照标识：读取 PROVENANCE.md（分支或 tag + 实际提交），
  * 这样生成文件的来源行不会退化成「本机目录名」这种无法追溯的标签。
  */
 function upstreamProvenance(repoDir) {
@@ -32,10 +32,10 @@ function upstreamProvenance(repoDir) {
   if (!existsSync(file)) return { label, commit: undefined }
   const text = readFileSync(file, 'utf8')
   const field = (name) => new RegExp(`来源\\s*${name}[^\\n]*?([0-9A-Za-z][0-9A-Za-z.\\-_]*)`).exec(text)?.[1]
-  return { label: field('tag') ?? label, commit: field('提交') }
+  return { label: field('分支') ?? field('tag') ?? label, commit: field('提交') }
 }
 
-const upstream = upstreamProvenance(repo)
+const upstream = repoArg === undefined ? verifyLatestCompositionSource(repo) : upstreamProvenance(repo)
 const sourceRepo = upstream.label
 
 /**
