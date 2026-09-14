@@ -44,7 +44,7 @@
 | 模块行 | 引擎文件 | 职责 |
 |---|---|---|
 | `context-gate` | engine/context-gate.mjs | 注入门控：未晋升时清空运行时上下文 + pre-step kind 白名单；可选调用 instruction-hint 完成全文转换 |
-| `instruction-hint` | engine/instruction-hint.mjs | 通用指令文件动态探测与建议式 hint（`params.scope` = all / global / project）与 agent-instructions 转换；只提示文件存在、不注入正文，prompt-config 与 context-gate 共用 |
+| `instruction-hint` | engine/instruction-hint.mjs | 通用指令文件动态探测与建议式 hint（`params.file` 单文件优先，`params.scope` = all / global / project）与 agent-instructions 转换；只提示文件存在、不注入正文，prompt-config 与 context-gate 共用 |
 | `tool-bootstrap` | engine/tool-bootstrap.mjs | 首轮工具目录窄化（bootstrap 对）→ 晋升后恢复完整目录；bootstrapMaxTokens 封顶；promoteGate 门控；personaSectionsOnly / workspaceLine |
 | `code-presentation` | engine/code-presentation.mjs | 晋升后 PTC mode 呈现（`tools.presentAs('ptc')`），成功 compaction/end 释放 |
 | `prompt-config-engine` | engine/prompt-config-engine.mjs | 提示词配置执行器（per-config `promotion: main / include-subagents` 门控） |

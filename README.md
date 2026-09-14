@@ -112,7 +112,7 @@ src/client/
 | 工具集 | `toolFilterAllow` `toolFilterDeny`（主对话 tool-filter；策略未启用时也写入子代理 delegation.toolFilter——策略启用后子代理改由 `subagentToolPolicy` 实例级解析授权，主/子代理列表分离） |
 | 深度 | `maxDepth`（0 禁止委派 / `provider-managed` / 正整数） |
 
-> 注：`injectPrompt`（params）= 锚定确认后注入 preset.md 的开关。AGENTS.md 不注入正文：提示词侧只有两张动态探测提示卡——`agents-project`（cwd→项目根链）与 `agents-global`（`$DSH_HOME/AGENTS.md`），都在 `pre-step` 层紧随真实用户消息，对齐官方 `@deepseek-ai/dsh-agent-instructions` 的插入点。两张卡是插件级默认，所有插件格式预设都有（空白模板 custom 用 `preset.yml#agentsHints: false` 关闭）；需要把内容落到 `$DSH_HOME/AGENTS.md` 时另开 `writeAgents`。
+> 注：`injectPrompt`（params）= 锚定确认后注入 preset.md 的开关。AGENTS.md 走「文件即真相」：插件每次重建探测 `$DSH_HOME/AGENTS.md` 与工作区 cwd→项目根链的 AGENTS.md/CLAUDE.md 等候选，**探测到哪个文件就生成哪张** `pre-step` 卡（紧随真实用户消息，对齐官方 `@deepseek-ai/dsh-agent-instructions` 的插入点），卡内编辑框直接编辑该文件、不写进 preset.yml；注入只提示文件存在，不注入正文。插件不再写常驻受管块。
 
 模型参数在 **preset.yml 顶层 `model` / `subagentModel` 段**（官方 `agent-default-model` 同构）：
 

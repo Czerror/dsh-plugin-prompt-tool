@@ -31,7 +31,6 @@ import { registerCharacterTools } from './runtime/character-tools.ts'
 import { registerWorldBookTools } from './runtime/world-book-tools.ts'
 import { registerSessionVarTools } from './runtime/session-var-tools.ts'
 import { registerTuiCommand } from './runtime/tui.ts'
-import { removeResidentAgentsBlock, writeAgents } from './runtime/agents-file.ts'
 import { RENDER_STAMP, writePreset } from './host/write-preset.ts'
 import type { WritePresetOptions } from './host/write-preset.ts'
 import { ENGINE_PARAM_KEYS } from './shared/engine-params.ts'
@@ -569,7 +568,6 @@ export function apply(ctx: Context, configIn: Config): void {
   // settings 的解析值触发一次 onChange，完成初始写入，因此 config 只作 base。
   const runtime: RuntimeOptions = {
     ...Object.fromEntries(ENGINE_PARAM_KEYS.map((key) => [key, initialParams[key]])),
-    writeAgents: config.writeAgents,
     writePreset: config.writePreset,
     presetTemplate: typeof config.presetTemplate === 'string' && config.presetTemplate.length > 0 ? config.presetTemplate : 'anchored',
     // 引擎参数：激活预设 preset.yml（每预设独立，settings 不再承载）。
@@ -599,7 +597,6 @@ export function apply(ctx: Context, configIn: Config): void {
     maxDepth: initialParams.maxDepth as RuntimeOptions['maxDepth'],
     allowKinds: initialParams.allowKinds as string[] | string | undefined,
     firstTurnWord: asString(initialParams.firstTurnWord) || undefined,
-    residentAgentsPath: config.residentAgentsPath,
     presetOrder: config.presetOrder,
     fallbackText: config.fallbackText,
     promptConfigs: Array.isArray(initialSpec?.promptConfigs) ? initialSpec.promptConfigs as PromptConfigSpec[] : [],
@@ -676,10 +673,8 @@ export function apply(ctx: Context, configIn: Config): void {
     skillCatalog,
     activeSkillsDirs,
     skillsDirExists: Object.fromEntries(activeSkillsDirs.map((dir) => [dir, existsSync(dir)])),
-    residentAgentsPath: runtime.residentAgentsPath,
     presetOrder: runtime.presetOrder,
     fallbackText: runtime.fallbackText,
-    writeAgents: runtime.writeAgents,
     writePreset: runtime.writePreset,
     presetTemplate: runtime.presetTemplate,
   })
@@ -746,21 +741,16 @@ registerTuiCommand(
   const applyState = (): void => {
     const next = currentSource()
     const nextRuntime: Pick<RuntimeOptions,
-      'writeAgents' | 'writePreset' | 'presetTemplate'
-      | 'residentAgentsPath' | 'presetOrder' | 'fallbackText'> = {
-      writeAgents: typeof next.writeAgents === 'boolean' ? next.writeAgents : config.writeAgents,
+      'writePreset' | 'presetTemplate' | 'presetOrder' | 'fallbackText'> = {
       writePreset: typeof next.writePreset === 'boolean' ? next.writePreset : config.writePreset,
       presetTemplate: typeof next.presetTemplate === 'string' && next.presetTemplate.length > 0 ? next.presetTemplate : 'anchored',
-      residentAgentsPath: typeof next.residentAgentsPath === 'string' && next.residentAgentsPath.trim().length > 0 ? next.residentAgentsPath : config.residentAgentsPath,
       presetOrder: Number.isSafeInteger(next.presetOrder) && next.presetOrder >= 0 ? next.presetOrder : config.presetOrder,
       fallbackText: typeof next.fallbackText === 'string' ? next.fallbackText : config.fallbackText,
     }
     const fallbackTextChanged = runtime.fallbackText !== nextRuntime.fallbackText
     const presetTemplateChanged = runtime.presetTemplate !== nextRuntime.presetTemplate
-    const settingsChanged = runtime.writeAgents !== nextRuntime.writeAgents
-      || runtime.writePreset !== nextRuntime.writePreset
+    const settingsChanged = runtime.writePreset !== nextRuntime.writePreset
       || runtime.presetTemplate !== nextRuntime.presetTemplate
-      || runtime.residentAgentsPath !== nextRuntime.residentAgentsPath
       || runtime.presetOrder !== nextRuntime.presetOrder
       || fallbackTextChanged
     // 首次必须写入：settings 与文件/config 一致时也不能跳过 preset/AGENTS 生成。
@@ -774,25 +764,11 @@ registerTuiCommand(
       current = readGeneratedContent(newDir, 'preset.md') || readPromptFile(nextRuntime.presetTemplate, nextRuntime.fallbackText)
       currentAgents = readGeneratedContent(newDir, 'agents.md') || readAgents(nextRuntime.presetTemplate)
     }
-    runtime.writeAgents = nextRuntime.writeAgents
     runtime.writePreset = nextRuntime.writePreset
     runtime.presetTemplate = nextRuntime.presetTemplate
-    runtime.residentAgentsPath = nextRuntime.residentAgentsPath
     runtime.presetOrder = nextRuntime.presetOrder
     runtime.fallbackText = nextRuntime.fallbackText
 
-    let residentAgentsWritten = false
-    if (runtime.writeAgents) {
-      residentAgentsWritten = writeAgents(currentAgents, runtime.residentAgentsPath)
-      if (!residentAgentsWritten) {
-        warn(ctx, `prompt-tool: failed to write resident rules to ${runtime.residentAgentsPath}`)
-      }
-    } else {
-      residentAgentsWritten = removeResidentAgentsBlock(runtime.residentAgentsPath)
-      if (!residentAgentsWritten) {
-        warn(ctx, `prompt-tool: failed to remove resident rules block from ${runtime.residentAgentsPath}`)
-      }
-    }
     rebuildPreset()
     if (presetTemplateChanged) {
       syncHostDefault()
@@ -866,9 +842,9 @@ registerTuiCommand(
 
 // 公共 API：宿主与测试复用 settings schema 与提示词配置权威校验。
 export { Config, PromptSettingsSchema } from './config.ts'
-// 常驻 AGENTS.md 受管块读写：宿主装配用，同时作为契约测试的公开入口。
-export { removeResidentAgentsBlock, writeAgents } from './runtime/agents-file.ts'
 export { writePreset } from './host/write-preset.ts'
+// AGENTS 文件卡：探测 → 卡片合成与文件写盘（bridge 端点与回归测试共用）。
+export { agentsFileCardSpecs, agentsFileId, detectAgentsFiles, writeAgentsFile } from './host/agents-cards.ts'
 export { convertStToPreset, mergeStPresets, processStText, stPresetId } from './host/sillytavern.ts'
 export { applyModuleConfigs, buildModuleConfigsFromParams, removePresetModule, savePresetParams, savePresetPersona, MODEL_SEGMENT_MAP } from './host/manifest.ts'
 export { createEngineCapabilityInPreset, loadPresetSpec, removeEngineCapabilityFromPreset, renderComposition, resolvePresetModuleFacts, resolvePresetParams } from './host/manifest.ts'

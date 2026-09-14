@@ -1,10 +1,7 @@
 /** 插件配置、settings 数据模型与默认常量（settings 接口层）。 */
 import z from '@deepseek-ai/schemastery'
 import type { PromptConfigSpec } from './host/prompt-configs.ts'
-import {
-  DEFAULT_PRESET_ORDER,
-  DEFAULT_RESIDENT_AGENTS_PATH,
-} from './host/paths.ts'
+import { DEFAULT_PRESET_ORDER } from './host/paths.ts'
 import type { PresetWriterParams } from './shared/engine-params.ts'
 
 export const NS = 'prompt-tool' as const
@@ -13,14 +10,10 @@ export const NS = 'prompt-tool' as const
 export { PARAM_KEYS } from './shared/param-keys.ts'
 
 export interface Config {
-  /** 是否写 ~/.dsh/AGENTS.md（默认 true）。 */
-  writeAgents: boolean
   /** 是否生成锚定注入 preset（默认 true）。 */
   writePreset: boolean
   /** 预设模板名（默认 anchored；其他模板时 anchored 专属 UI 可隐藏）。 */
   presetTemplate: string
-  /** 常驻规则文件目标路径。 */
-  residentAgentsPath: string
   /** 生成 preset 的显示顺序。 */
   presetOrder: number
   /** preset.md 缺失或不可读时使用的文本。 */
@@ -30,10 +23,8 @@ export interface Config {
 // 官方插件配置范式：同名 interface Config 与 Schemastery schema 成对导出，
 // 框架在插件加载时校验并填充默认值。
 export const Config: z<Config> = z.object({
-  writeAgents: z.boolean().default(true),
   writePreset: z.boolean().default(true),
   presetTemplate: z.string().default('anchored'),
-  residentAgentsPath: z.string().default(DEFAULT_RESIDENT_AGENTS_PATH),
   presetOrder: z.natural().default(DEFAULT_PRESET_ORDER),
   fallbackText: z.string().default(''),
 })
@@ -91,13 +82,10 @@ export interface PromptSettings {
   activeSkillsDirs: string[]
   /** 生效目录存在性（path → 目录是否存在，供 UI 状态徽章）。 */
   skillsDirExists: Record<string, boolean>
-  /** 常驻规则文件目标路径。 */
-  residentAgentsPath: string
   /** 生成 preset 的显示顺序。 */
   presetOrder: number
   /** preset.md 缺失或不可读时使用的文本。 */
   fallbackText: string
-  writeAgents: boolean
   writePreset: boolean
   presetTemplate: string
 }
@@ -118,10 +106,8 @@ export const PromptSettingsSchema: z<PromptSettings> = z.object({
   })).default([]),
   activeSkillsDirs: z.array(z.string()).default([]),
   skillsDirExists: z.dict(z.boolean()).default({}),
-  residentAgentsPath: z.string().default(DEFAULT_RESIDENT_AGENTS_PATH),
   presetOrder: z.natural().default(DEFAULT_PRESET_ORDER),
   fallbackText: z.string().default(''),
-  writeAgents: z.boolean().default(true),
   writePreset: z.boolean().default(true),
   presetTemplate: z.string().default('anchored'),
 })
@@ -134,11 +120,8 @@ export const PromptSettingsSchema: z<PromptSettings> = z.object({
  * firstTurnWord）由 PresetWriterParams 继承，不再逐字段手写。
  */
 export interface RuntimeOptions extends PresetWriterParams {
-  writeAgents: boolean
   writePreset: boolean
   presetTemplate: string
-  /** 常驻规则文件目标路径。 */
-  residentAgentsPath: string
   /** 生成 preset 的显示顺序。 */
   presetOrder: number
   /** preset.md 缺失或不可读时使用的文本。 */

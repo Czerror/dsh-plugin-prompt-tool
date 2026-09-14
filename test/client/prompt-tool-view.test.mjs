@@ -16,7 +16,6 @@ test('fields view：当前值覆盖 base，缺省字段保留稳定默认', () =
   assert.equal(fields.writePreset, false)
   assert.equal(fields.presetTemplate, 'active')
   assert.deepEqual(fields.skillOrder, [], '技能顺序不在 settings：只认 describe 事实')
-  assert.equal(fields.writeAgents, EMPTY_FIELDS.writeAgents)
 })
 
 test('fields view：技能顺序/目录/rank 与目录存在性都取 describe 事实', () => {

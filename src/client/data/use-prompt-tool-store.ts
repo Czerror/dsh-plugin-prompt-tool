@@ -22,7 +22,7 @@ import {
   switchesEqual,
   type SwitchSnapshot,
 } from './dirty-state.ts'
-import { isContentAsset, liftContentText, stripContentText } from './prompt-config-content.ts'
+import { isAgentsFileCard, isContentAsset, liftContentText, stripContentText } from './prompt-config-content.ts'
 import { buildParamOverrides, isCurrentPresetDraft, readParamOverridesPatch, updateLoadedParamKeys } from './param-overrides.ts'
 import { modelSyncNotice } from './model-sync-notice.ts'
 import { createSerialTaskQueue } from './save-queue.ts'
@@ -39,7 +39,7 @@ export interface PromptToolSettingsTransport {
   mutate: (ops: SettingsPathOpView[], expectedRevision?: number) => Promise<void>
 }
 
-export type SwitchKey = 'firstTurnAnchor' | 'firstTurnCustom' | 'guideCustom' | 'toolFilterSubagents' | 'injectPrompt' | 'usePtcMode' | 'promoteGate' | 'promoteAfterFirstResponse' | 'personaSectionsOnly' | 'workspaceLine' | 'instructionHint' | 'anchorTurn' | 'deliberationGate' | 'cotDrip' | 'writeAgents' | 'writePreset'
+export type SwitchKey = 'firstTurnAnchor' | 'firstTurnCustom' | 'guideCustom' | 'toolFilterSubagents' | 'injectPrompt' | 'usePtcMode' | 'promoteGate' | 'promoteAfterFirstResponse' | 'personaSectionsOnly' | 'workspaceLine' | 'instructionHint' | 'anchorTurn' | 'deliberationGate' | 'cotDrip' | 'writePreset'
 
 /** 参数类布尔开关：写激活预设 preset.yml（settings 只留全局开关）。 */
 const PARAM_SWITCH_KEYS: ReadonlySet<SwitchKey> = new Set(['firstTurnAnchor', 'firstTurnCustom', 'guideCustom', 'toolFilterSubagents', 'injectPrompt', 'usePtcMode', 'promoteGate', 'promoteAfterFirstResponse', 'personaSectionsOnly', 'workspaceLine', 'instructionHint', 'anchorTurn', 'deliberationGate', 'cotDrip'])
@@ -413,10 +413,8 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     })
     return enqueueSave(
       [
-        { op: 'set', path: ['residentAgentsPath'], value: fieldsRef.current.residentAgentsPath },
         { op: 'set', path: ['presetOrder'], value: fieldsRef.current.presetOrder },
         { op: 'set', path: ['fallbackText'], value: fieldsRef.current.fallbackText },
-        { op: 'set', path: ['writeAgents'], value: fieldsRef.current.writeAgents },
         { op: 'set', path: ['writePreset'], value: fieldsRef.current.writePreset },
       ],
       undefined,
@@ -487,6 +485,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
   const persistConfigs = useCallback((configs: PromptConfigDraft[], options?: { reload?: boolean; rebuild?: boolean }): Promise<boolean> => {
     const expectedPresetId = fieldsRef.current.presetTemplate
     const contentEntries = configs.filter(isContentAsset)
+    const fileCards = configs.filter(isAgentsFileCard)
     const draftVersion = draftVersionRef.current
     const switchesWereClean = switchesEqual(snapshotSwitches(fieldsRef.current), savedSwitches)
     // 待编辑变量行（空 key）不落盘（服务端 savePresetParams 清理）；此时跳过保存后静默重载，
@@ -502,17 +501,30 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
         showNotice('error', '预设已切换，旧提示词草稿未写入')
         return false
       }
-      // 内容资产：text 先写生成目录文件。合并为单次 /import-preset（批量载荷），
-      // 服务端只触发一次重建——此前逐条请求每条各重建一次（多次写盘+recomposition）。
+      // 内容资产（preset.md）：合并为单次 /import-preset（批量载荷），服务端只触发一次重建。
       if (contentEntries.length > 0) {
         const contents = contentEntries.map((config) => ({
-          scope: config.id === 'prompt-injector' ? 'preset' as const : 'agents' as const,
+          scope: 'preset' as const,
           content: config.text ?? '',
         }))
         const res = await bridgeCall('importPreset', { contents, expectedPresetId })
         if (expectedPresetId !== fieldsRef.current.presetTemplate) return false
         if (!res.ok) {
-          showNotice('error', 'preset.md/agents.md 保存失败：' + (res.message ?? 'settings bridge unavailable'))
+          showNotice('error', 'preset.md 保存失败：' + (res.message ?? 'settings bridge unavailable'))
+          return false
+        }
+      }
+      // AGENTS 文件卡：卡内编辑框直接写回探测到的真实文件（服务端按 fileId 白名单校验），
+      // 卡定义与正文都不进 preset.yml。
+      if (fileCards.length > 0) {
+        const files = fileCards.map((config) => ({
+          fileId: typeof config.params?.fileId === 'string' ? config.params.fileId : '',
+          content: config.text ?? '',
+        }))
+        const res = await bridgeCall('agentsFile', { files })
+        if (expectedPresetId !== fieldsRef.current.presetTemplate) return false
+        if (!res.ok) {
+          showNotice('error', 'AGENTS.md 保存失败：' + (res.message ?? 'settings bridge unavailable'))
           return false
         }
       }
@@ -522,7 +534,8 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
       if (configs.length === 0 && savedConfigs.length === 0) return true
       const res = await bridgeCall('paramOverrides', {
         expectedPresetId,
-        promptConfigs: configs.map(stripContentText),
+        // 引擎探测生成的文件卡不进预设（文件即真相）：只持久化用户自己的卡片。
+        promptConfigs: configs.filter((config) => !isAgentsFileCard(config)).map(stripContentText),
         ...(options?.rebuild === false ? { rebuild: false } : {}),
       })
       if (expectedPresetId !== fieldsRef.current.presetTemplate) return false

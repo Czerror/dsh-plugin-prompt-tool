@@ -24,6 +24,7 @@ import {
   renderPromptConfigYaml,
 } from './prompt-configs.ts'
 import type { PromptConfigSpec } from './prompt-configs.ts'
+import { agentsFileCardSpecs, type AgentsFileCard } from './agents-cards.ts'
 import {
   assertCompositionArray,
   asString,
@@ -85,6 +86,11 @@ const DISABLED_TEXT_SLIM_THRESHOLD = 32 * 1024
 export interface WritePresetOptions extends PresetWriterParams {
   /** AGENTS.md 内容资产（写生成目录 agents.md）：常驻层写盘的唯一来源，不再注入提示词。 */
   agentsInstructionText?: string
+  /**
+   * AGENTS 文件卡来源覆盖（测试注入用）。缺省 = 按进程 DSH_HOME 与 cwd 现场探测；
+   * 探测结果只进生成目录，不写 preset.yml。
+   */
+  agentsFiles?: AgentsFileCard[]
   presetDir: string
   presetOrder: number
   /** settings 层用户自定义提示词配置(优先级最高)。 */
@@ -239,33 +245,6 @@ function modelRequestConfigs(params: Record<string, unknown>): PromptConfigSpec[
     configs.push({ id: 'subagent-model-params', name: '模型参数（子代理）', layer: 'agent-request', audience: 'subagent', order: -100, params: { patch: subagentPatch } })
   }
   return configs
-}
-
-/**
- * AGENTS 指令提示卡（插件级默认，所有非空白模板共用）。
- * 插入点对齐官方 `@deepseek-ai/dsh-agent-instructions`：pre-step 层、紧随真实用户消息
- * （position: after-user），只做动态探测——项目卡跟会话 cwd→项目根链，全局卡跟
- * `$DSH_HOME/AGENTS.md`；不注入文件正文，探测不到就不产生消息。
- * 预设可在 preset.yml 的 promptConfigs 里按同名 id 覆盖（含 enabled: false 关闭）。
- */
-function agentsHintConfigs(): PromptConfigSpec[] {
-  const base: Omit<PromptConfigSpec, 'id'> = {
-    enabled: true,
-    strategy: 'placeholder',
-    layer: 'pre-step',
-    configKind: 'ordered',
-    role: 'user',
-    position: 'after-user',
-    dedupe: 'session',
-    promotion: 'include-subagents',
-    sourceKind: 'instruction-hint',
-    form: 'hint',
-    fill: 'instruction-hint',
-  }
-  return [
-    { ...base, id: 'agents-project', name: '项目指令提示（cwd 项目根）', order: 30, params: { scope: 'project' } },
-    { ...base, id: 'agents-global', name: '全局指令提示（$DSH_HOME/AGENTS.md）', order: 40, params: { scope: 'global' } },
-  ]
 }
 
 /** 手写/导入预设恢复路径：与保存方完整编译同源，但坏定义仍逐条告警跳过。 */
@@ -496,7 +475,7 @@ export function writePreset(prompt: string, options: WritePresetOptions): void {
   }
   // 模型参数（agent-request）与 AGENTS 探测提示卡作为引擎默认级注入，优先级低于模板与 settings；
   // 空白模板可用 preset.yml#agentsHints=false 保持「显式空组合」。
-  const agentsHints = spec.agentsHints === false ? [] : agentsHintConfigs()
+  const agentsHints = spec.agentsHints === false ? [] : agentsFileCardSpecs(options.agentsFiles ?? undefined)
   const merged = mergePromptConfigs(modelRequestConfigs(params), templateDefaults, agentsHints, options.promptConfigs)
   // 预设级模板变量 → prompt-configs/variables.yml（单一文件）：引擎加载时合并进
   // 每条配置 variables（配置自身优先）。唯一来源 = preset.yml 顶层 variables；

@@ -2,13 +2,14 @@
 
 ## [未发布] - 2026-09-06
 
-### AGENTS.md 改为动态探测提示卡（2026-09-14）
+### AGENTS.md 改为探测生成的文件卡（2026-09-14）
 
-- 提示词侧不再注入 AGENTS.md 正文：删除 `injectAgentsPrompt` 设置轴、`agents-instruction.md` 物化文件与 `agentsInstructionPath` 通道；`engine/instruction-hint.mjs` 只做动态探测（`params.scope` = all / global / project），探测不到文件时不注入任何消息，`params.text` 仅作显式自定义文本。
-- 预设 `promptConfigs` 用两张卡替代原 `instruction-hint` 卡：`agents-project`（cwd→项目根链）与 `agents-global`（`$DSH_HOME/AGENTS.md`），都在 `pre-step` 层、`position: after-user`，与官方 `@deepseek-ai/dsh-agent-instructions` 的插入点一致（`agent/pre-step` 折叠进进入的批次、紧随真实用户消息）；全局卡提示文本带 `$DSH_HOME/AGENTS.md` 路径。
-- `agents.md` 内容资产保留为常驻层（`writeAgents` → `$DSH_HOME/AGENTS.md` 受管块）的唯一来源；客户端内容资产通道收窄到 `prompt-injector`（preset.md）——此前任何一次提示词保存都会把 AGENTS 卡片空文本写回 `agents.md`，清掉常驻内容。
-- 常驻受管块加固：标记必须整行精确相等且只认文件头部的块（正文里缩进或同形的标记行不再被当作块边界），BOM 保持在文件头，正文含同形标记行时写盘加反斜杠转义；补 `test/host/agents-file.test.mjs` 回归。
-- 两张探测卡改为**插件级默认**：`writePreset` 对所有插件格式预设注入 `agents-project` 与 `agents-global`（此前只在 anchored 模板的 `promptConfigs` 里，激活 standard 等预设时完全没有 AGENTS 卡）；空白模板 `custom` 新增 `preset.yml#agentsHints: false` 保持显式空组合。
+- **文件即真相**：插件不再写任何常驻内容——删除 `writeAgents` / `residentAgentsPath` 设置轴、`src/runtime/agents-file.ts` 受管块读写与 TUI/UI 开关；`$DSH_HOME/AGENTS.md` 恢复为用户完全自有的文件。
+- **探测到才生成卡**：`writePreset` 每次重建都探测用户级 `$DSH_HOME/AGENTS.md` 与工作区 cwd→项目根链的 AGENTS.md/CLAUDE.md/AGENTS.local.md/CLAUDE.local.md，为**每个已存在文件**生成一张 `agents-file-<路径哈希>` 卡（`pre-step` + `position: after-user`，对齐官方 `@deepseek-ai/dsh-agent-instructions` 的插入点）；文件不存在就不生成卡。
+- **卡内编辑框直接编辑该文件**：读配置时服务端把文件正文附在卡的 `params.text`（客户端提升到编辑框），保存走新端点 `/agents-file`（按 `fileId` 命中服务端探测白名单才写盘，未知 id / 非字符串内容 400 拒绝），写盘为 tmp + rename。
+- **参数不落预设**：文件卡是生成目录产物，`/param-overrides` 写 preset.yml 时整卡剔除（`preset.yml` 只保留用户自己的卡）；卡片定义与正文都不进预设。
+- 注入只提示「该文件存在」（`params.file` 精确到单个文件，`params.scope` 保留 all/global/project 探测），不注入正文；`engine/instruction-hint.mjs` 删除 `agentsInstructionPath` 物化文件通道，`params.text` 仅作显式自定义文本。
+- 空白模板 `custom` 用 `preset.yml#agentsHints: false` 保持显式空组合；回归测试见 `test/host/agents-cards.test.mjs`（探测/卡形状/写盘/白名单）与 `test/host/write-preset.test.mjs`（各模板生成且不落 preset.yml）。
 
 ### 移除预设根目录配置（2026-09-14）
 

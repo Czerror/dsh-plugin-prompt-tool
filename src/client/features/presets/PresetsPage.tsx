@@ -24,14 +24,6 @@ export const PresetsPage = memo(function PresetsPage(props: { store: PromptToolS
         </div>
       </section>
       <CollapsibleCard id="pt-host-generated" title={t('presets.agents.title')} meta={t('presets.agents.meta')}>
-        <div className={ui.rowGroup}>
-          <ToggleRow id="pt-write-agents" label={t('presets.writeAgents.label')} hint={t('presets.writeAgents.hint')}
-            checked={fields.writeAgents} onChange={() => store.toggle('writeAgents')} />
-        </div>
-        <SettingInputRow id="pt-resident-agents-path" label={t('presets.agentsPath.label')} hint={t('presets.agentsPath.hint')}
-          value={fields.residentAgentsPath} placeholder={fields.residentAgentsPath || t('presets.agentsPath.placeholder')}
-          onInput={(value) => store.patch({ residentAgentsPath: value })}
-          onCommit={store.persistSwitches} />
         <SettingInputRow id="pt-preset-order" label={t('presets.order.label')} hint={t('presets.order.hint')}
           type="number" value={String(fields.presetOrder)}
           onInput={(value) => store.patch({ presetOrder: Number(value) || 0 })}

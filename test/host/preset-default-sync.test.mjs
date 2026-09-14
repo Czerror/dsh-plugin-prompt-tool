@@ -98,13 +98,11 @@ test('官方 agent-presets.default 变化反向同步 prompt-tool.presetTemplate
   preset('creative')
   writePluginState({ seeded: true })
   const initial = {
-    writeAgents: false,
     writePreset: false,
     presetTemplate: 'anchored',
     skillOrder: [],
     skillsDirs: [],
     skillRankBase: 250,
-    residentAgentsPath: join(home, 'AGENTS.md'),
     presetOrder: 5,
     fallbackText: '',
   }
@@ -136,13 +134,11 @@ test('兼容快照已处理后，官方预设切换不会创建或复活 prompt-
   preset('creative')
   writePluginState({ seeded: true })
   const initial = {
-    writeAgents: false,
     writePreset: true,
     presetTemplate: 'anchored',
     skillOrder: [],
     skillsDirs: [],
     skillRankBase: 250,
-    residentAgentsPath: join(home, 'AGENTS.md'),
     presetOrder: 5,
     fallbackText: '',
   }

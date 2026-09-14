@@ -12,6 +12,11 @@ const home = mkdtempSync(join(tmpdir(), 'pt-wp-home-'))
 process.env.DSH_HOME = home
 const ROOT = fileURLToPath(new URL('../..', import.meta.url))
 const { writePreset, savePresetParams, loadPresetSpec } = await import('../../lib/index.mjs')
+/** AGENTS 文件卡固定样本：writePreset 现场探测 DSH_HOME/cwd，测试注入以保持确定性。 */
+const AGENTS_FILES = [
+  { fileId: 'aaaaaaaa', path: 'D:/repo/AGENTS.md', displayPath: 'AGENTS.md', scope: 'project' },
+  { fileId: 'bbbbbbbb', path: 'D:/home/.dsh/AGENTS.md', displayPath: '~/.dsh/AGENTS.md', scope: 'global' },
+]
 test.after(() => rmSync(home, { recursive: true, force: true }))
 
 test('writePreset 从指定预设根读取同名参数，不被默认根遮蔽', () => {
@@ -287,44 +292,49 @@ test('writePreset 只写预设目录、不写预设根 agent.cordis.yml（无容
   }
 })
 
-test('writePreset 生成的 AGENTS 提示卡只做动态探测，不再注入全文', () => {
+test('writePreset 为探测到的 AGENTS 文件生成文件卡（不注入正文、不写预设）', () => {
   const dir = join(tmpdir(), `prompt-tool-ai-${process.pid}-${Date.now()}`)
   const presetDir = join(dir, 'preset')
   try {
-    writePreset('PROMPT', { ...makeOptions(presetDir), agentsInstructionText: 'AGENTS CONTENT' })
+    writePreset('PROMPT', { ...makeOptions(presetDir), agentsInstructionText: 'AGENTS CONTENT', agentsFiles: AGENTS_FILES })
     const configsDir = join(presetDir, 'anchored', 'prompt-configs')
-    const project = parseYaml(readFileSync(join(configsDir, '0030-agents-project.yml'), 'utf8'))
-    const global = parseYaml(readFileSync(join(configsDir, '0040-agents-global.yml'), 'utf8'))
-    assert.deepEqual([project.id, global.id], ['agents-project', 'agents-global'])
+    const project = parseYaml(readFileSync(join(configsDir, '0030-agents-file-aaaaaaaa.yml'), 'utf8'))
+    const global = parseYaml(readFileSync(join(configsDir, '0040-agents-file-bbbbbbbb.yml'), 'utf8'))
+    assert.deepEqual([project.id, global.id], ['agents-file-aaaaaaaa', 'agents-file-bbbbbbbb'])
     assert.deepEqual([project.params.scope, global.params.scope], ['project', 'global'])
+    assert.deepEqual(
+      [project.params.file, global.params.file],
+      ['D:/repo/AGENTS.md', 'D:/home/.dsh/AGENTS.md'],
+      '卡绑定探测到的真实文件路径（编辑框据此读写）',
+    )
     for (const spec of [project, global]) {
       assert.equal(spec.layer, 'pre-step', '与官方 agent-instructions 的 pre-step 插入点一致')
       assert.equal(spec.position, 'after-user', '紧随真实用户消息之后')
       assert.equal(spec.fill, 'instruction-hint')
       assert.equal(spec.params.text, undefined, '不再把 AGENTS 全文注入卡片')
-      assert.equal(spec.params.agentsInstructionPath, undefined, '不再写物化提示文件路径')
     }
     assert.equal(existsSync(join(presetDir, 'anchored', 'agents-instruction.md')), false, '不再生成 agents-instruction.md')
-    assert.equal(readFileSync(join(presetDir, 'anchored', 'agents.md'), 'utf8'), 'AGENTS CONTENT', 'agents.md 仍作为常驻层内容资产')
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
 })
 
-test('插件级 AGENTS 探测卡对所有非空白模板生效，custom 保持显式空白', () => {
+test('AGENTS 文件卡对所有非空白模板生效且不落 preset.yml，custom 保持显式空白', () => {
   const dir = join(tmpdir(), `prompt-tool-hints-${process.pid}-${Date.now()}`)
   const presetDir = join(dir, 'preset')
   try {
     for (const template of ['standard', 'minimal', 'ptc', 'creative']) {
-      writePreset('', { ...makeOptions(presetDir), presetTemplate: template, injectPrompt: false })
+      writePreset('', { ...makeOptions(presetDir), presetTemplate: template, injectPrompt: false, agentsFiles: AGENTS_FILES })
       const configsDir = join(presetDir, template, 'prompt-configs')
       const specs = readdirSync(configsDir).sort()
         .map((name) => parseYaml(readFileSync(join(configsDir, name), 'utf8')))
-      assert.deepEqual(specs.map((spec) => spec.id), ['agents-project', 'agents-global'], `${template} 应生成两张探测卡`)
+      assert.deepEqual(specs.map((spec) => spec.id), ['agents-file-aaaaaaaa', 'agents-file-bbbbbbbb'], `${template} 应生成两张文件卡`)
       assert.deepEqual(specs.map((spec) => [spec.layer, spec.position]), [['pre-step', 'after-user'], ['pre-step', 'after-user']])
+      const presetYml = readFileSync(join(presetDir, template, 'preset.yml'), 'utf8')
+      assert.ok(!presetYml.includes('agents-file-'), `${template} 的文件卡不得写进 preset.yml`)
     }
-    writePreset('', { ...makeOptions(presetDir), presetTemplate: 'custom', injectPrompt: false })
-    assert.equal(readdirSync(join(presetDir, 'custom', 'prompt-configs')).length, 0, 'custom 空白模板不注入探测卡（agentsHints: false）')
+    writePreset('', { ...makeOptions(presetDir), presetTemplate: 'custom', injectPrompt: false, agentsFiles: AGENTS_FILES })
+    assert.equal(readdirSync(join(presetDir, 'custom', 'prompt-configs')).length, 0, 'custom 空白模板不注入文件卡（agentsHints: false）')
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }

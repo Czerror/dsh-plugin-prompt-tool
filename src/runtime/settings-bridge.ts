@@ -57,6 +57,7 @@ import type { SkillToggleResult } from '../host/skill-toggle.ts'
 import type { SkillsConfigRead } from '../host/skills-config.ts'
 import type { PresetModuleFacts } from '../shared/engine-capabilities.ts'
 import { validateCustomTools } from '../host/custom-tools.ts'
+import { detectAgentsFiles, readAgentsFile, writeAgentsFile } from '../host/agents-cards.ts'
 
 
 export interface SkillsBridgeState {
@@ -865,7 +866,60 @@ export function registerSettingsBridge(
             // 实际生效配置 = 生成目录 prompt-configs/（引擎加载源）；
             // settings.promptConfigs 仅是用户覆盖层，默认为空不代表无配置。
             const dir = getPresetConfigsDir?.() ?? ''
-            writeBridgeJson(res, 200, { ok: true, value: { promptConfigs: readPromptConfigs(dir) } })
+            // 文件卡（params.file）：读时附带该文件当前正文，卡内编辑框直接编辑真实文件。
+            const configs = readPromptConfigs(dir).map((raw) => {
+              const spec = raw as Record<string, unknown>
+              const params = spec.params as Record<string, unknown> | undefined
+              const file = typeof params?.file === 'string' ? params.file : ''
+              return file.length === 0 ? raw : { ...spec, params: { ...params, text: readAgentsFile(file) } }
+            })
+            writeBridgeJson(res, 200, { ok: true, value: { promptConfigs: configs } })
+          },
+        }),
+        sctx.webServer.register({
+          kind: 'exact',
+          path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.agentsFile,
+          handler: async (req, res) => {
+            if (!guard(req, res)) return
+            const parsedBody = await readBridgeBodyForHandler(req, res)
+            if (parsedBody === undefined) return
+            const { body } = parsedBody
+            if (body === null || body === undefined || typeof body !== 'object') {
+              writeBridgeJson(res, 400, { ok: false, code: 'settings-rejected', message: 'unreadable JSON body' })
+              return
+            }
+            const record = body as Record<string, unknown>
+            const entries = Array.isArray(record.files) ? record.files : []
+            // 白名单：只允许写本次探测到的 AGENTS 指令文件（避免任意路径写）。
+            const allowed = new Map(detectAgentsFiles().map((file) => [file.fileId, file.path]))
+            const writes: Array<{ fileId: string; path: string; content: string }> = []
+            for (const entry of entries) {
+              if (entry === null || typeof entry !== 'object') continue
+              const item = entry as Record<string, unknown>
+              const fileId = typeof item.fileId === 'string' ? item.fileId : ''
+              const target = allowed.get(fileId)
+              if (target === undefined) {
+                writeBridgeJson(res, 400, { ok: false, code: 'settings-rejected', message: `unknown agents file: ${fileId}` })
+                return
+              }
+              if (typeof item.content !== 'string') {
+                writeBridgeJson(res, 400, { ok: false, code: 'settings-rejected', message: 'content must be a string' })
+                return
+              }
+              writes.push({ fileId, path: target, content: item.content })
+            }
+            if (writes.length === 0) {
+              writeBridgeJson(res, 400, { ok: false, code: 'settings-rejected', message: 'no files to write' })
+              return
+            }
+            try {
+              for (const write of writes) writeAgentsFile(write.path, write.content)
+              afterPresetImport?.([])
+              writeBridgeJson(res, 200, { ok: true, value: { files: writes.map((write) => ({ fileId: write.fileId, path: write.path })) } })
+            } catch (error) {
+              const message = error instanceof Error ? error.message : String(error)
+              writeBridgeJson(res, 500, { ok: false, code: 'agents-file-write-failed', message })
+            }
           },
         }),
         sctx.webServer.register({

@@ -312,7 +312,7 @@ use-prompt-tool-store.ts 是唯一工作台 facade，负责把 SettingsScope mir
 | prompt-tool-view.ts | bootstrap/view 到 Fields 的 shape guard 与映射 |
 | dirty-state.ts | snapshot、深比较、阶段草稿完整性和 reload 判定 |
 | param-overrides.ts | params 的列表拆分、条件发送和读回 patch |
-| prompt-config-content.ts | preset.md 内容资产的提升与剥离（AGENTS.md 改走常驻层受管块 + 动态探测卡，不再由卡片承载正文） |
+| prompt-config-content.ts | preset.md 内容资产的提升与剥离；AGENTS 文件卡（`params.file`）的正文提升与文件写回分流 |
 | save-queue.ts | 串行保存任务的最小队列 |
 | import-files.ts | 浏览器文件导入的纯读取辅助 |
 | session-model-face.ts | 官方会话模型 projection 与选择动作 |

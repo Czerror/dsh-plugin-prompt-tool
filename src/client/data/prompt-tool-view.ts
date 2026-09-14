@@ -104,10 +104,8 @@ export function fieldsFromView(res: BridgeResult<BridgeSettingsView>): Fields {
       return result
     })(),
     skillRankBase: extraSkillRankBase ?? 250,
-    residentAgentsPath: readString(value, 'residentAgentsPath') ?? readString(base, 'residentAgentsPath') ?? '',
     presetOrder: readNumber(value, 'presetOrder', readNumber(base, 'presetOrder', 5)),
     fallbackText: readString(value, 'fallbackText') ?? readString(base, 'fallbackText') ?? '',
-    writeAgents: readBoolean(value, 'writeAgents', readBoolean(base, 'writeAgents', true)),
     writePreset: readBoolean(value, 'writePreset', readBoolean(base, 'writePreset', true)),
     presetTemplate: readString(value, 'presetTemplate') ?? readString(base, 'presetTemplate') ?? 'anchored',
     promptConfigs: value.promptConfigs !== undefined

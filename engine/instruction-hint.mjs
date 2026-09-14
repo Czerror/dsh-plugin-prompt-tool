@@ -121,9 +121,21 @@ function hintScope(value) {
   return typeof value === 'string' && HINT_SCOPES.has(value) ? value : 'all'
 }
 
+/** 探测单个绝对路径是否为可读文件（文件卡绑定的 AGENTS.md）。 */
+async function presentInstructionFilePath(fs, path, signal) {
+  try {
+    const target = await fs.resolve(path, { signal })
+    const info = await fs.stat(target, signal)
+    return info !== undefined && info.type === 'file'
+  } catch {
+    return false
+  }
+}
+
 /**
  * prompt-config strategy=instruction-hint 的 resolver。
- * 只做动态探测（params.scope 选择来源）；params.text 仅作显式自定义文本覆盖。
+ * 只做动态探测：params.file（文件卡绑定的单个文件）优先，其次按 params.scope
+ * 探测来源（all / global / project）；params.text 仅作显式自定义文本覆盖。
  * 探测不到对应文件时返回 null，不注入任何消息。
  */
 export function createInstructionHintResolver(config = {}) {
@@ -131,6 +143,12 @@ export function createInstructionHintResolver(config = {}) {
     ? config.params.text.trim()
     : ''
   const scope = hintScope(config?.params?.scope)
+  const file = typeof config?.params?.file === 'string' && config.params.file.trim().length > 0
+    ? config.params.file.trim()
+    : ''
+  const fileLabel = typeof config?.params?.displayPath === 'string' && config.params.displayPath.trim().length > 0
+    ? config.params.displayPath.trim()
+    : file
 
   return async ({ ctx, agent, session }) => {
     const id = `instruction-hint-${session.id}-${randomUUID()}`
@@ -139,6 +157,12 @@ export function createInstructionHintResolver(config = {}) {
     }
     const fs = ctx.get('fs')
     if (fs === undefined) return null
+    if (file.length > 0) {
+      const present = await presentInstructionFilePath(fs, file, agent.signal)
+      return present
+        ? { id, text: `A workspace instruction file exists: ${fileLabel}. ${REFERENCE_HINT_SUFFIX}`, source: { kind: 'instruction-hint', form: 'hint' } }
+        : null
+    }
     const cwd = session.header?.cwd ?? process.cwd()
     const found = await collectInstructionFiles(fs, cwd, agent.signal)
     const text = buildInstructionHintText(found, scope)

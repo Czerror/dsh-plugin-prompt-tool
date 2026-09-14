@@ -46,13 +46,11 @@ function makeCtx(settingsValue) {
 
 function settings(writePreset) {
   return {
-    writeAgents: true,
     writePreset,
     presetTemplate: 'anchored',
     skillOrder: [],
     skillsDirs: [],
     skillRankBase: 250,
-    residentAgentsPath: join(home, 'AGENTS.md'),
     presetOrder: 5,
     fallbackText: '',
   }

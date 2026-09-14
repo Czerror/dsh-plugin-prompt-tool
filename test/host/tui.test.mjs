@@ -49,7 +49,7 @@ function makeTui({ failSave = false, skillCatalog = [] } = {}) {
     activeSkillsDirs: ['D:/skills'],
     skillCatalog,
     ...Object.fromEntries([
-      'writeAgents', 'writePreset',
+      'writePreset',
     ].map((key) => [key, true])),
   })
   registerTuiCommand(
@@ -100,7 +100,7 @@ test('TUI：presetDir 提供时 status 显示生成目录实际配置（settings
     const ctx = { inject(_deps, callback) { callback(sctx) } }
     const source = () => ({
       modelsAvailable: true, activeSkillsDirs: [], skillCatalog: [],
-      writeAgents: true, writePreset: true,
+      writePreset: true,
     })
     registerTuiCommand(ctx, 'prompt-tool', source, () => ({ available: true, providers: [] }), () => Promise.resolve({}), () => dir)
     const result = await commands[0].handler({ rawInput: 'status' })
@@ -181,10 +181,10 @@ test('TUI：参数开关切换走 savePresetParam 回调，全局开关仍走 se
   assert.equal(savedParams[0][0], 'firstTurnAnchor')
   assert.equal(savedParams[0][1], false)
   assert.equal(mutations.length, 0, '参数开关不应写 settings')
-  const globalResult = await run('toggle writeAgents')
+  const globalResult = await run('toggle writePreset')
   assert.equal(globalResult.kind, 'success')
   assert.equal(mutations.length, 1)
-  assert.deepEqual(mutations[0][0].path, ['writeAgents'])
+  assert.deepEqual(mutations[0][0].path, ['writePreset'])
   assert.equal(savedParams.length, 1, '全局开关不应走参数回调')
 })
 

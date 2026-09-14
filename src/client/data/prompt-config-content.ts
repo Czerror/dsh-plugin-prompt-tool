@@ -8,6 +8,13 @@ import type { PromptConfigDraft } from '../prompt-tool-types.ts'
 export const isContentAsset = (config: PromptConfigDraft): boolean =>
   config.id === 'prompt-injector'
 
+/**
+ * AGENTS 文件卡：`params.file` 绑定探测到的真实指令文件（`$DSH_HOME/AGENTS.md` 或工作区项目链）。
+ * 卡内编辑框读写该文件本身，卡片定义与正文都不写进 preset.yml。
+ */
+export const isAgentsFileCard = (config: PromptConfigDraft): boolean =>
+  typeof config.params?.file === 'string' && config.params.file.length > 0
+
 /** 剥离内容资产的 text（顶层 + params.text）：settings 载荷不承载大文本。 */
 export const stripContentText = (config: PromptConfigDraft): PromptConfigDraft => {
   const next: PromptConfigDraft = { ...config }
@@ -22,7 +29,7 @@ export const stripContentText = (config: PromptConfigDraft): PromptConfigDraft =
 
 /** 渲染产物 → 编辑草稿：params.text 提升到 text 编辑框。 */
 export const liftContentText = (config: PromptConfigDraft): PromptConfigDraft => {
-  if (!isContentAsset(config) || (config.text ?? '') !== '') return config
+  if ((!isContentAsset(config) && !isAgentsFileCard(config)) || (config.text ?? '') !== '') return config
   const text = typeof config.params?.text === 'string' ? config.params.text : ''
   return text.length > 0 ? { ...config, text } : config
 }

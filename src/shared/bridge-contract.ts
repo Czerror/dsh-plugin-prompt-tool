@@ -28,6 +28,7 @@ export const BRIDGE_ENDPOINTS = {
   skillsConfig: '/skills-config',
   templates: '/templates',
   promptConfigs: '/prompt-configs',
+  agentsFile: '/agents-file',
   presetContent: '/preset-content',
   importPreset: '/import-preset',
   paramOverrides: '/param-overrides',
@@ -79,6 +80,8 @@ export interface BridgeRequestMap {
   skillsConfig: { dirs?: string[]; order?: string[]; rankBase?: number }
   templates: undefined
   promptConfigs: undefined
+  /** 文件卡写盘：fileId 必须命中服务端当次探测白名单（`$DSH_HOME/AGENTS.md` 或工作区项目链）。 */
+  agentsFile: { files: Array<{ fileId: string; content: string }> }
   presetContent: undefined
   importPreset: { contents: Array<{ scope: 'preset' | 'agents'; content: string }>; expectedPresetId?: string }
   paramOverrides: { overrides?: Record<string, unknown>; promptConfigs?: unknown[]; rebuild?: boolean; expectedPresetId?: string }
@@ -154,6 +157,7 @@ export interface BridgeValueMap {
   skillsConfig: { dirs: string[]; order: string[]; rankBase: number; activeSkillsDirs: string[]; skillCatalog: unknown[] }
   templates: { templates?: unknown[]; toolTemplates?: unknown[] }
   promptConfigs: { promptConfigs: unknown[] }
+  agentsFile: { files: Array<{ fileId: string; path: string }> }
   presetContent: Record<string, unknown>
   importPreset: { scopes: Array<'preset' | 'agents'> }
   /**

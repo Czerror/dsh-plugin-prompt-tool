@@ -47,10 +47,8 @@ export interface Fields extends EngineParamDrafts {
   /** 生效目录存在性（path → 是否存在）。 */
   skillsDirExists: Record<string, boolean>
   skillRankBase: number
-  residentAgentsPath: string
   presetOrder: number
   fallbackText: string
-  writeAgents: boolean
   writePreset: boolean
   presetTemplate: string
   promptConfigs: PromptConfigDraft[]
@@ -93,10 +91,8 @@ export const EMPTY_FIELDS: Fields = {
   activeSkillsDirs: [],
   skillsDirExists: {},
   skillRankBase: 250,
-  residentAgentsPath: '',
   presetOrder: 5,
   fallbackText: '',
-  writeAgents: true,
   writePreset: true,
   presetTemplate: 'anchored',
   promptConfigs: [],

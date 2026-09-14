@@ -42,7 +42,6 @@ function resolveDshHome(): string {
 }
 
 export const DSH_HOME = resolveDshHome()
-export const DEFAULT_RESIDENT_AGENTS_PATH = join(DSH_HOME, 'AGENTS.md')
 /**
  * 预设根：官方 USER_PRESET_DIR（DSH_HOME/.agent-presets）。
  * 每个预设一个官方预设目录（agent.cordis.yml 组合本体 + preset.yml 参数），

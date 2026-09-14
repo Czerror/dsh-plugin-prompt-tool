@@ -5,7 +5,7 @@ import { EMPTY_FIELDS, hasIncompleteStageDrafts, type Fields } from './prompt-to
 
 const SETTINGS_SNAPSHOT_KEYS = [
   'skillOrder', 'skillsDirs', 'skillRankBase',
-  'residentAgentsPath', 'presetOrder', 'fallbackText', 'writeAgents', 'writePreset',
+  'presetOrder', 'fallbackText', 'writePreset',
 ] as const
 export type SwitchSnapshot = Pick<Fields, EngineParamKey | typeof SETTINGS_SNAPSHOT_KEYS[number]>
 
