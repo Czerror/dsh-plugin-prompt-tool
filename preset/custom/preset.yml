@@ -8,5 +8,8 @@ version: 1.0.0
 engineCompat: ">=0.4.2"
 modules: []
 params: {}
+# 空白起点不隐式装配任何提示词卡（含插件级 AGENTS 探测提示）：
+# 需要时从 UI 添加，或把本键改为 true 恢复插件级默认卡。
+agentsHints: false
 promptConfigs: []
 legacyCleanup: []

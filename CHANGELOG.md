@@ -8,6 +8,7 @@
 - 预设 `promptConfigs` 用两张卡替代原 `instruction-hint` 卡：`agents-project`（cwd→项目根链）与 `agents-global`（`$DSH_HOME/AGENTS.md`），都在 `pre-step` 层、`position: after-user`，与官方 `@deepseek-ai/dsh-agent-instructions` 的插入点一致（`agent/pre-step` 折叠进进入的批次、紧随真实用户消息）；全局卡提示文本带 `$DSH_HOME/AGENTS.md` 路径。
 - `agents.md` 内容资产保留为常驻层（`writeAgents` → `$DSH_HOME/AGENTS.md` 受管块）的唯一来源；客户端内容资产通道收窄到 `prompt-injector`（preset.md）——此前任何一次提示词保存都会把 AGENTS 卡片空文本写回 `agents.md`，清掉常驻内容。
 - 常驻受管块加固：标记必须整行精确相等且只认文件头部的块（正文里缩进或同形的标记行不再被当作块边界），BOM 保持在文件头，正文含同形标记行时写盘加反斜杠转义；补 `test/host/agents-file.test.mjs` 回归。
+- 两张探测卡改为**插件级默认**：`writePreset` 对所有插件格式预设注入 `agents-project` 与 `agents-global`（此前只在 anchored 模板的 `promptConfigs` 里，激活 standard 等预设时完全没有 AGENTS 卡）；空白模板 `custom` 新增 `preset.yml#agentsHints: false` 保持显式空组合。
 
 ### 移除预设根目录配置（2026-09-14）
 

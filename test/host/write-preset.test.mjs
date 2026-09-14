@@ -311,6 +311,25 @@ test('writePreset 生成的 AGENTS 提示卡只做动态探测，不再注入全
   }
 })
 
+test('插件级 AGENTS 探测卡对所有非空白模板生效，custom 保持显式空白', () => {
+  const dir = join(tmpdir(), `prompt-tool-hints-${process.pid}-${Date.now()}`)
+  const presetDir = join(dir, 'preset')
+  try {
+    for (const template of ['standard', 'minimal', 'ptc', 'creative']) {
+      writePreset('', { ...makeOptions(presetDir), presetTemplate: template, injectPrompt: false })
+      const configsDir = join(presetDir, template, 'prompt-configs')
+      const specs = readdirSync(configsDir).sort()
+        .map((name) => parseYaml(readFileSync(join(configsDir, name), 'utf8')))
+      assert.deepEqual(specs.map((spec) => spec.id), ['agents-project', 'agents-global'], `${template} 应生成两张探测卡`)
+      assert.deepEqual(specs.map((spec) => [spec.layer, spec.position]), [['pre-step', 'after-user'], ['pre-step', 'after-user']])
+    }
+    writePreset('', { ...makeOptions(presetDir), presetTemplate: 'custom', injectPrompt: false })
+    assert.equal(readdirSync(join(presetDir, 'custom', 'prompt-configs')).length, 0, 'custom 空白模板不注入探测卡（agentsHints: false）')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
 test('writePreset 空 prompt/agents 不生成空内容资产，prompt-injector 禁用', () => {
   const dir = join(tmpdir(), `prompt-tool-blank-${process.pid}-${Date.now()}`)
   const presetDir = join(dir, 'preset')

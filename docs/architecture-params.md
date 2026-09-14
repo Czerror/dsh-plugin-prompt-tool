@@ -338,6 +338,15 @@ system-section 段（character-definition / system-prompt / post-history）。
 - 预览链路：`/subagent-tool-policy-preview` POST 与运行时 `resolveSubagentToolPolicy()` 同一 seam（不重复算法）；预览用 ceiling 工具宇宙。
 - 工具面：`/tool-surface` POST 接受互斥的 `{ sessionId }` 或 `{ presetId }`。前者只读返回当前存活本地 Agent 的 name/description 摘要；后者仅在用户明确选择预设时，经官方 `agentPresets.list()` 白名单、`standingKeyFor()` 和 `tools.schemas(scope)` 懒加载预设有效能力。两者均不下发完整 Schema、大文本或 secrets；PTC 下“预设工具能力”不等于模型 wire 直连工具。
 
+### AGENTS 探测提示卡（agentsHints，2026-09-14）
+
+`agents-project` / `agents-global` 由 `writePreset` 作为**插件级默认**注入到所有插件格式预设（此前只写在 anchored 模板的 `promptConfigs` 里，切到 standard 等模板后完全没有卡）：
+
+- 两张卡都在 `pre-step` 层、`position: after-user`，与官方 `@deepseek-ai/dsh-agent-instructions` 的插入点一致（进入的消息批里、紧随真实用户消息、driver 运行时上下文之前）；
+- 只做动态探测：项目卡按会话 cwd→项目根链（AGENTS.md/CLAUDE.md/AGENTS.local.md/CLAUDE.local.md），全局卡按 `$DSH_HOME/AGENTS.md`；探测不到文件不产生消息，也不注入文件正文；
+- 卡片是预设级静态产物，会话 cwd 只能运行时解析——所以卡里固化的是来源（scope），提示文本里的路径来自当次探测；
+- 关闭方式：`preset.yml` 顶层 `agentsHints: false`（`preset/custom/preset.yml` 用它保持「显式空组合」），或在 `promptConfigs` 里按同名 id 覆盖 / 置 `enabled: false`。
+
 ### 模块事实与能力卡（2026-09-05）
 
 - `/bootstrap` 附带 `moduleFacts`：`declaredModules`（缺失为 `null`）、`effectiveModules`（`modules: []` 保持显式空装配）、递归 `rowIds`、`sourceMode` 和 `editable`；官方 `agent.cordis.yml` 行只作运行事实，不伪装成可编辑的插件能力。

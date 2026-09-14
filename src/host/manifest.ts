@@ -49,6 +49,11 @@ export interface PresetSpec {
   subagentToolPolicy?: Record<string, unknown>
   /** 模板变量插值开关（缺省 true = 启用；false = 停用，writePreset 不生成变量文件）。 */
   variablesEnabled?: boolean
+  /**
+   * 是否注入插件的 AGENTS 探测提示卡（agents-project / agents-global；缺省 true）。
+   * 空白模板（custom）显式 false，保持「显式空组合」语义。
+   */
+  agentsHints?: boolean
   /** 可选:模板自定义提示词配置覆盖(纯数据,不使用模板语法)。 */
   promptConfigs?: unknown[]
   /** 可选:引擎组合模块行参数直写(行级 map config 浅合并;参数桥未覆盖的键生效,参数桥优先)。 */
