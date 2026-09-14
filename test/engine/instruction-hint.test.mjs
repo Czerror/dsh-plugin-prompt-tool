@@ -4,6 +4,7 @@ import assert from 'node:assert/strict'
 import {
   buildInstructionHint,
   collectInstructionFiles,
+  createInstructionHintResolver,
   instructionHintMessages,
 } from '../../engine/instruction-hint.mjs'
 import { createPromptConfigs } from '../../engine/prompt-config-engine.mjs'
@@ -27,7 +28,48 @@ test('instruction-hint 是通用引擎：探测 cwd 到项目根的完整链和�
     root: '/repo',
     projectFiles: ['/repo/sub/CLAUDE.md', 'AGENTS.md'],
     userGlobalFiles: ['AGENTS.md'],
+    userGlobalHome: '/home/.dsh',
   })
+})
+
+test('instruction-hint scope：project 只报项目链，global 只报 $DSH_HOME/AGENTS.md', async () => {
+  const files = new Map([
+    ['/repo/.git', { type: 'directory' }],
+    ['/repo/AGENTS.md', { type: 'file' }],
+    ['/home/.dsh/AGENTS.md', { type: 'file' }],
+  ])
+  const fs = makeFs(files)
+  const previousHome = process.env.DSH_HOME
+  process.env.DSH_HOME = '/home/.dsh'
+  try {
+    const run = async (scope) => {
+      const resolve = createInstructionHintResolver(scope === undefined ? {} : { params: { scope } })
+      return resolve({
+        ctx: { get: (name) => (name === 'fs' ? fs : undefined) },
+        agent: {},
+        session: { id: 'scope-session', header: { cwd: '/repo/sub' } },
+      })
+    }
+    const project = await run('project')
+    assert.match(project.text, /Reference documents exist: AGENTS\.md \(project root: \/repo\)\./)
+    assert.doesNotMatch(project.text, /user reference document/)
+    const global = await run('global')
+    assert.match(global.text, /A user reference document exists: \/home\/\.dsh\/AGENTS\.md\./)
+    assert.doesNotMatch(global.text, /Reference documents exist/)
+    const all = await run(undefined)
+    assert.match(all.text, /Reference documents exist/)
+    assert.match(all.text, /A user reference document exists/)
+    const none = createInstructionHintResolver({ params: { scope: 'project' } })
+    const empty = await none({
+      ctx: { get: (name) => (name === 'fs' ? makeFs(new Map()) : undefined) },
+      agent: {},
+      session: { id: 'empty-session', header: { cwd: '/repo' } },
+    })
+    assert.equal(empty, null, '探测不到文件时返回 null，不注入消息')
+  } finally {
+    if (previousHome === undefined) delete process.env.DSH_HOME
+    else process.env.DSH_HOME = previousHome
+  }
 })
 
 test('instruction-hint 共享转换保留替换消息 id、只替换一次', () => {

@@ -238,20 +238,38 @@ promptConfigs:
     dedupe: session
     promotion: main
     sourceKind: plugin
-  - id: instruction-hint
-    name: 指令文件提示
+  - id: agents-project
+    name: 项目指令提示（cwd 项目根）
     enabled: true
     strategy: placeholder
     layer: pre-step
     configKind: ordered
     order: 30
     role: user
-    position: after-all
+    position: after-user
     dedupe: session
     promotion: include-subagents
     sourceKind: instruction-hint
     form: hint
     fill: instruction-hint
+    params:
+      scope: project
+  - id: agents-global
+    name: 全局指令提示（$DSH_HOME/AGENTS.md）
+    enabled: true
+    strategy: placeholder
+    layer: pre-step
+    configKind: ordered
+    order: 40
+    role: user
+    position: after-user
+    dedupe: session
+    promotion: include-subagents
+    sourceKind: instruction-hint
+    form: hint
+    fill: instruction-hint
+    params:
+      scope: global
 persona:
   prefix: >-
     You are a helpful assistant.

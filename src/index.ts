@@ -199,7 +199,6 @@ export function apply(ctx: Context, configIn: Config): void {
         maxDepth: runtime.maxDepth,
         allowKinds: runtime.allowKinds,
         firstTurnWord: runtime.firstTurnWord,
-        injectAgentsPrompt: runtime.injectAgentsPrompt,
         bootstrapMaxTokens: runtime.bootstrapMaxTokens,
         usePtcMode: runtime.usePtcMode,
         agentsInstructionText: currentAgents,
@@ -573,7 +572,6 @@ export function apply(ctx: Context, configIn: Config): void {
     writeAgents: config.writeAgents,
     writePreset: config.writePreset,
     presetTemplate: typeof config.presetTemplate === 'string' && config.presetTemplate.length > 0 ? config.presetTemplate : 'anchored',
-    injectAgentsPrompt: config.injectAgentsPrompt,
     // 引擎参数：激活预设 preset.yml（每预设独立，settings 不再承载）。
     firstTurnAnchor: initialParams.firstTurnAnchor === true,
     firstTurnText: asString(initialParams.firstTurnText),
@@ -674,7 +672,6 @@ export function apply(ctx: Context, configIn: Config): void {
   )
 
   let currentSource = (): PromptSettings => ({
-    injectAgentsPrompt: runtime.injectAgentsPrompt,
     modelsAvailable: getModelsState().available,
     skillCatalog,
     activeSkillsDirs,
@@ -733,7 +730,6 @@ registerTuiCommand(
       modelName: '',
       subagentModelProvider: '',
       subagentModelName: '',
-      injectAgentsPrompt: false,
       bootstrapMaxTokens: undefined,
       usePtcMode: false,
       presetDir: DEFAULT_PRESET_DIR,
@@ -750,12 +746,11 @@ registerTuiCommand(
   const applyState = (): void => {
     const next = currentSource()
     const nextRuntime: Pick<RuntimeOptions,
-      'writeAgents' | 'writePreset' | 'presetTemplate' | 'injectAgentsPrompt'
+      'writeAgents' | 'writePreset' | 'presetTemplate'
       | 'residentAgentsPath' | 'presetOrder' | 'fallbackText'> = {
       writeAgents: typeof next.writeAgents === 'boolean' ? next.writeAgents : config.writeAgents,
       writePreset: typeof next.writePreset === 'boolean' ? next.writePreset : config.writePreset,
       presetTemplate: typeof next.presetTemplate === 'string' && next.presetTemplate.length > 0 ? next.presetTemplate : 'anchored',
-      injectAgentsPrompt: typeof next.injectAgentsPrompt === 'boolean' ? next.injectAgentsPrompt : config.injectAgentsPrompt,
       residentAgentsPath: typeof next.residentAgentsPath === 'string' && next.residentAgentsPath.trim().length > 0 ? next.residentAgentsPath : config.residentAgentsPath,
       presetOrder: Number.isSafeInteger(next.presetOrder) && next.presetOrder >= 0 ? next.presetOrder : config.presetOrder,
       fallbackText: typeof next.fallbackText === 'string' ? next.fallbackText : config.fallbackText,
@@ -765,7 +760,6 @@ registerTuiCommand(
     const settingsChanged = runtime.writeAgents !== nextRuntime.writeAgents
       || runtime.writePreset !== nextRuntime.writePreset
       || runtime.presetTemplate !== nextRuntime.presetTemplate
-      || runtime.injectAgentsPrompt !== nextRuntime.injectAgentsPrompt
       || runtime.residentAgentsPath !== nextRuntime.residentAgentsPath
       || runtime.presetOrder !== nextRuntime.presetOrder
       || fallbackTextChanged
@@ -783,7 +777,6 @@ registerTuiCommand(
     runtime.writeAgents = nextRuntime.writeAgents
     runtime.writePreset = nextRuntime.writePreset
     runtime.presetTemplate = nextRuntime.presetTemplate
-    runtime.injectAgentsPrompt = nextRuntime.injectAgentsPrompt
     runtime.residentAgentsPath = nextRuntime.residentAgentsPath
     runtime.presetOrder = nextRuntime.presetOrder
     runtime.fallbackText = nextRuntime.fallbackText
@@ -873,6 +866,8 @@ registerTuiCommand(
 
 // 公共 API：宿主与测试复用 settings schema 与提示词配置权威校验。
 export { Config, PromptSettingsSchema } from './config.ts'
+// 常驻 AGENTS.md 受管块读写：宿主装配用，同时作为契约测试的公开入口。
+export { removeResidentAgentsBlock, writeAgents } from './runtime/agents-file.ts'
 export { writePreset } from './host/write-preset.ts'
 export { convertStToPreset, mergeStPresets, processStText, stPresetId } from './host/sillytavern.ts'
 export { applyModuleConfigs, buildModuleConfigsFromParams, removePresetModule, savePresetParams, savePresetPersona, MODEL_SEGMENT_MAP } from './host/manifest.ts'

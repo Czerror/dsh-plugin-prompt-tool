@@ -112,7 +112,7 @@ src/client/
 | 工具集 | `toolFilterAllow` `toolFilterDeny`（主对话 tool-filter；策略未启用时也写入子代理 delegation.toolFilter——策略启用后子代理改由 `subagentToolPolicy` 实例级解析授权，主/子代理列表分离） |
 | 深度 | `maxDepth`（0 禁止委派 / `provider-managed` / 正整数） |
 
-> 注：`injectPrompt`（params）= 锚定确认后注入 preset.md 的开关；`injectAgentsPrompt`（settings）= 把 AGENTS.md 内容作为 instruction-hint 提示文本的开关。两者功能不同，勿混淆。
+> 注：`injectPrompt`（params）= 锚定确认后注入 preset.md 的开关。AGENTS.md 不再注入正文：常驻层由 `writeAgents` 写入 `$DSH_HOME/AGENTS.md` 受管块，提示词侧只有两张动态探测提示卡——`agents-project`（cwd→项目根链）与 `agents-global`（`$DSH_HOME/AGENTS.md`），都在 `pre-step` 层紧随真实用户消息，对齐官方 `@deepseek-ai/dsh-agent-instructions` 的插入点。
 
 模型参数在 **preset.yml 顶层 `model` / `subagentModel` 段**（官方 `agent-default-model` 同构）：
 

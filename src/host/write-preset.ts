@@ -83,9 +83,7 @@ const DISABLED_TEXT_SLIM_THRESHOLD = 32 * 1024
  * 此处只保留 writePreset 专属字段——加引擎参数只需改一处契约，漏透传变成编译错误。
  */
 export interface WritePresetOptions extends PresetWriterParams {
-  /** 是否注入 agents.md 内容到 instruction-hint（false 时 instruction-hint 走引擎默认提示/动态探测）。 */
-  injectAgentsPrompt?: boolean
-  /** 写入 agents-instruction.txt 供 instruction-hint 配置读取;不传则使用本地默认 hint。 */
+  /** AGENTS.md 内容资产（写生成目录 agents.md）：常驻层写盘的唯一来源，不再注入提示词。 */
   agentsInstructionText?: string
   presetDir: string
   presetOrder: number
@@ -528,16 +526,6 @@ export function writePreset(prompt: string, options: WritePresetOptions): void {
         anchorWords,
       }
     }
-    // instruction-hint：agents.md 内容经 injectAgentsPrompt 开关注入 params.text
-    //（关闭时保持无 text，引擎回退 agents-instruction.txt / 动态探测）。
-    // agentsInstructionPath：共享引擎后 fillers 相对 .engine 解析，必须显式指向本预设目录文件。
-    if (config.fill === 'instruction-hint') {
-      config.params = {
-        ...config.params,
-    agentsInstructionPath: `../${outputId}/agents-instruction.md`,
-        ...(options.injectAgentsPrompt === true ? { text: asString(options.agentsInstructionText) } : {}),
-      }
-    }
     // 停用模板变量插值：剥离配置文本（texts/text/params.text）中的预设变量引用，
     // 内置变量（{{DSH_HOME}}/{{WORKSPACE}}/{{CWD}}）保留。
     if (!variablesEnabled && presetVariableKeys.size > 0) {
@@ -591,15 +579,6 @@ export function writePreset(prompt: string, options: WritePresetOptions): void {
     mkdirSync(subagentToolsDir, { recursive: true })
     writeFileSync(join(subagentToolsDir, 'policy.yml'), stringifyYaml(spec.subagentToolPolicy, { lineWidth: 0 }), 'utf8')
   }
-
-  // 6) agents-instruction.md(模板内容资产经 settings 覆盖时写入；清旧 .txt 残留)。
-  const agentsInstructionPath = join(outDir, 'agents-instruction.md')
-  if (typeof options.agentsInstructionText === 'string' && options.agentsInstructionText.trim().length > 0) {
-    writeFileSync(agentsInstructionPath, options.agentsInstructionText, 'utf8')
-  } else {
-    rmSync(agentsInstructionPath, { force: true })
-  }
-  rmSync(join(outDir, 'agents-instruction.txt'), { force: true })
 
   // 7) 原子提交:新目录完全写好后替换旧目录;失败时恢复旧目录并清理临时目录。
   //    目录被占用（Windows 打开句柄/进程 cwd 拒绝整目录改名，如预设内 skills 被

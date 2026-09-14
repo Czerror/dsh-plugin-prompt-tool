@@ -78,7 +78,6 @@ export function fieldsFromView(res: BridgeResult<BridgeSettingsView>): Fields {
     promptPath: readString(value, 'promptPath') ?? readString(base, 'promptPath') ?? '',
     agentsText: readString(value, 'agentsText') ?? readString(base, 'agentsText') ?? '',
     agentsPath: readString(value, 'agentsPath') ?? readString(base, 'agentsPath') ?? '',
-    injectAgentsPrompt: readBoolean(value, 'injectAgentsPrompt', readBoolean(base, 'injectAgentsPrompt', false)),
     skillOrder: extraSkillOrder ?? [],
     skillCatalog: res.ok && res.skillCatalog !== undefined && res.skillCatalog.length > 0
       ? res.skillCatalog

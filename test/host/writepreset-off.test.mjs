@@ -49,7 +49,6 @@ function settings(writePreset) {
     writeAgents: true,
     writePreset,
     presetTemplate: 'anchored',
-    injectAgentsPrompt: false,
     skillOrder: [],
     skillsDirs: [],
     skillRankBase: 250,

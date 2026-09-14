@@ -13,8 +13,6 @@ export const NS = 'prompt-tool' as const
 export { PARAM_KEYS } from './shared/param-keys.ts'
 
 export interface Config {
-  /** 是否用 AGENTS.md 内容替换本地 instruction-hint 的默认提示文本（默认关闭）。 */
-  injectAgentsPrompt: boolean
   /** 是否写 ~/.dsh/AGENTS.md（默认 true）。 */
   writeAgents: boolean
   /** 是否生成锚定注入 preset（默认 true）。 */
@@ -32,7 +30,6 @@ export interface Config {
 // 官方插件配置范式：同名 interface Config 与 Schemastery schema 成对导出，
 // 框架在插件加载时校验并填充默认值。
 export const Config: z<Config> = z.object({
-  injectAgentsPrompt: z.boolean().default(false),
   writeAgents: z.boolean().default(true),
   writePreset: z.boolean().default(true),
   presetTemplate: z.string().default('anchored'),
@@ -86,7 +83,6 @@ export interface SkillCatalogEntry {
 }
 
 export interface PromptSettings {
-  injectAgentsPrompt: boolean
   /** 运行时检测：是否检测到任何模型服务商（不写入 settings）。 */
   modelsAvailable: boolean
   /** 技能目录全量条目（含停用态）：启停与顺序的唯一事实来源由技能根与配置文件提供。 */
@@ -107,7 +103,6 @@ export interface PromptSettings {
 }
 
 export const PromptSettingsSchema: z<PromptSettings> = z.object({
-  injectAgentsPrompt: z.boolean().default(false),
   modelsAvailable: z.boolean().default(true),
   skillCatalog: z.array(z.object({
     folder: z.string(),
@@ -142,7 +137,6 @@ export interface RuntimeOptions extends PresetWriterParams {
   writeAgents: boolean
   writePreset: boolean
   presetTemplate: string
-  injectAgentsPrompt: boolean
   /** 常驻规则文件目标路径。 */
   residentAgentsPath: string
   /** 生成 preset 的显示顺序。 */

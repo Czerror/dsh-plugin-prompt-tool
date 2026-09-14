@@ -51,11 +51,12 @@ test('preset/shared.mjs 提供公共晋升解析与消息工具', () => {
   assert.ok(source.includes('export function isDelegated'))
 })
 
-test('通用 instruction-hint 引擎读取 agents-instruction.md 并由两个调用方复用', () => {
+test('通用 instruction-hint 引擎只做动态探测并由两个调用方复用', () => {
   const source = read('engine/instruction-hint.mjs')
-  assert.ok(source.includes('new URL(path, import.meta.url)'), '共享引擎下路径经 params.agentsInstructionPath 注入')
-  assert.ok(source.includes('agentsInstructionPath'), '通用引擎支持显式路径参数')
-  assert.ok(source.includes('agentsInstructionText.length > 0'))
+  assert.equal(source.includes('agentsInstructionPath'), false, '不再支持物化 agents-instruction 文件回退')
+  assert.equal(source.includes('readAgentsInstructionText'), false)
+  assert.ok(source.includes('HINT_SCOPES'), '按 params.scope 区分 all/global/project 三个来源')
+  assert.ok(source.includes('buildInstructionHintText(found, scope)'))
   const fillers = read('engine/fillers.mjs')
   assert.ok(fillers.includes("from './instruction-hint.mjs'"), 'placeholder filler 复用通用引擎')
   const gate = read('engine/context-gate.mjs')

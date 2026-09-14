@@ -11,7 +11,6 @@
  */
 
 import { randomUUID } from 'node:crypto'
-import { readFileSync } from 'node:fs'
 
 export const name = 'instruction-hint'
 
@@ -93,59 +92,56 @@ export async function collectInstructionFiles(fs, cwd, signal, home) {
   if (dshHome !== undefined) {
     userGlobalFiles.push(...await presentInDir(fs, dshHome, [USER_GLOBAL_INSTRUCTION_CANDIDATE], signal))
   }
-  return { root, projectFiles, userGlobalFiles }
+  return { root, projectFiles, userGlobalFiles, userGlobalHome: dshHome }
 }
 
-/** 读取物化的 agents-instruction.md；路径相对本共享引擎文件解析。 */
-export function readAgentsInstructionText(path = './agents-instruction.md') {
-  try {
-    return readFileSync(new URL(path, import.meta.url), 'utf8').trim()
-  } catch {
-    return ''
-  }
-}
-
-/** 将探测结果格式化为建议式 hint；无文件时返回空字符串。 */
-export function buildInstructionHintText({ root, projectFiles = [], userGlobalFiles = [] } = {}) {
+/**
+ * 将探测结果格式化为建议式 hint；无文件时返回空字符串。
+ * scope 限定只报告某一来源：all（默认）/ global（$DSH_HOME/AGENTS.md）/ project（cwd→项目根链）。
+ */
+export function buildInstructionHintText({ root, projectFiles = [], userGlobalFiles = [], userGlobalHome } = {}, scope = 'all') {
   const sections = []
-  if (projectFiles.length > 0) {
+  if (scope !== 'global' && projectFiles.length > 0) {
     sections.push(`Reference documents exist: ${projectFiles.join(', ')} (project root: ${root}).`)
   }
-  if (userGlobalFiles.length > 0) {
-    sections.push(`A user reference document exists: ${USER_GLOBAL_INSTRUCTION_CANDIDATE}.`)
+  if (scope !== 'project' && userGlobalFiles.length > 0) {
+    const paths = typeof userGlobalHome === 'string' && userGlobalHome.length > 0
+      ? userGlobalFiles.map((name) => joinPath(userGlobalHome, name))
+      : userGlobalFiles
+    sections.push(`A user reference document exists: ${paths.join(', ')}.`)
   }
   if (sections.length === 0) return ''
   sections.push(REFERENCE_HINT_SUFFIX)
   return sections.join(' ')
 }
 
+const HINT_SCOPES = new Set(['all', 'global', 'project'])
+
+function hintScope(value) {
+  return typeof value === 'string' && HINT_SCOPES.has(value) ? value : 'all'
+}
+
 /**
  * prompt-config strategy=instruction-hint 的 resolver。
- * params.text 优先，其次读取物化 agents-instruction.md，最后动态探测文件链。
+ * 只做动态探测（params.scope 选择来源）；params.text 仅作显式自定义文本覆盖。
+ * 探测不到对应文件时返回 null，不注入任何消息。
  */
 export function createInstructionHintResolver(config = {}) {
   const customText = typeof config?.params?.text === 'string' && config.params.text.trim().length > 0
     ? config.params.text.trim()
     : ''
-  const instructionPath = typeof config?.params?.agentsInstructionPath === 'string'
-    && config.params.agentsInstructionPath.trim().length > 0
-    ? config.params.agentsInstructionPath
-    : './agents-instruction.md'
-  const agentsInstructionText = readAgentsInstructionText(instructionPath)
+  const scope = hintScope(config?.params?.scope)
 
   return async ({ ctx, agent, session }) => {
     const id = `instruction-hint-${session.id}-${randomUUID()}`
     if (customText.length > 0) {
       return { id, text: customText, source: { kind: 'instruction-hint', form: 'hint' } }
     }
-    if (agentsInstructionText.length > 0) {
-      return { id, text: agentsInstructionText, source: { kind: 'instruction-hint', form: 'hint' } }
-    }
     const fs = ctx.get('fs')
     if (fs === undefined) return null
     const cwd = session.header?.cwd ?? process.cwd()
     const found = await collectInstructionFiles(fs, cwd, agent.signal)
-    const text = buildInstructionHintText(found)
+    const text = buildInstructionHintText(found, scope)
     return text.length > 0
       ? { id, text, source: { kind: 'instruction-hint', form: 'hint' } }
       : null

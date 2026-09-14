@@ -121,10 +121,9 @@ export function PromptConfigForm(props: {
           onChange={(e) => {
             autoResizeTextarea(e)
             const next = e.target.value
-            // 内容资产（prompt-injector / instruction-hint）走生成目录文件通道（text →
-            // params.text）；其余配置单段写 text（对齐官方 PromptSection.text 单字符串
-            // 语义，texts 仅多段/旧数据兼容读取）。
-            if (config.id === 'prompt-injector' || config.fill === 'instruction-hint') {
+            // 内容资产（prompt-injector）走生成目录文件通道（text → params.text 由写盘端接管）；
+            // 其余配置单段写 text（对齐官方 PromptSection.text 单字符串语义，texts 仅多段/旧数据兼容读取）。
+            if (config.id === 'prompt-injector') {
               onPatch({ text: next, texts: [] })
             } else {
               onPatch({ text: next.trim().length > 0 ? next : undefined, texts: [] })

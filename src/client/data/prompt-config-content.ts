@@ -1,9 +1,12 @@
 /** promptConfigs 内容资产的文件载荷与 UI 草稿映射（纯逻辑）。 */
 import type { PromptConfigDraft } from '../prompt-tool-types.ts'
 
-/** 内容资产条目：preset.md / AGENTS.md 的 text 走生成目录文件通道。 */
+/**
+ * 内容资产条目：只有 preset.md 注入卡（prompt-injector）的 text 走生成目录文件通道。
+ * AGENTS.md 已改为常驻层（$DSH_HOME/AGENTS.md 受管块）+ 动态探测提示，不再由卡片承载正文。
+ */
 export const isContentAsset = (config: PromptConfigDraft): boolean =>
-  config.id === 'prompt-injector' || config.fill === 'instruction-hint'
+  config.id === 'prompt-injector'
 
 /** 剥离内容资产的 text（顶层 + params.text）：settings 载荷不承载大文本。 */
 export const stripContentText = (config: PromptConfigDraft): PromptConfigDraft => {

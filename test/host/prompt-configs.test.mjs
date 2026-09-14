@@ -52,10 +52,10 @@ test('mergePromptConfigs：同名 id 后者覆盖且保留位置，新 id 追加
     { id: 'near-anchor', enabled: false, strategy: 'static', text: '覆盖后的锚点' },
     { id: 'extra', strategy: 'static', layer: 'system-section', text: '新增提示词配置' },
   ])
-  assert.deepEqual(merged.map((spec) => spec.id), ['near-anchor', 'router-guide', 'prompt-injector', 'instruction-hint', 'extra'])
+  assert.deepEqual(merged.map((spec) => spec.id), ['near-anchor', 'router-guide', 'prompt-injector', 'agents-project', 'agents-global', 'extra'])
   assert.equal(merged[0].enabled, false)
   assert.equal(merged[0].text, '覆盖后的锚点')
-  assert.equal(merged[4].layer, 'system-section')
+  assert.equal(merged[5].layer, 'system-section')
 })
 
 test('loadPromptConfigFiles 扫描 yml 与 json，非法文件 fail loud', () => {
@@ -111,7 +111,7 @@ test('renderPromptConfigYaml 全字段开放：variables/identity/params 嵌套�
 
 test('writePreset 生成 anchored 提示词配置模块（人设走顶层 persona 段，不再生成 persona 配置卡），数字前缀决定执行顺序', () => {
   const { specs } = generatedConfigs()
-  assert.deepEqual(specs.map((spec) => spec.id), ['near-anchor', 'router-guide', 'prompt-injector', 'instruction-hint'])
+  assert.deepEqual(specs.map((spec) => spec.id), ['near-anchor', 'router-guide', 'prompt-injector', 'agents-project', 'agents-global'])
   for (const spec of specs) {
     assert.equal(spec.layer, 'pre-step')
     assert.equal(spec.configKind, 'ordered')
@@ -203,5 +203,6 @@ test('writePreset injectPrompt=false 且 firstTurnAnchor=true 只启用近锚与
   assert.equal(byId['near-anchor'].enabled, true)
   assert.equal(byId['router-guide'].enabled, true)
   assert.equal(byId['prompt-injector'].enabled, false)
-  assert.equal(byId['instruction-hint'].enabled, true)
+  assert.equal(byId['agents-project'].enabled, true)
+  assert.equal(byId['agents-global'].enabled, true)
 })

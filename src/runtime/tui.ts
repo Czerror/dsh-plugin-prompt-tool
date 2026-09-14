@@ -12,7 +12,6 @@ import { loadPresetSpec, resolvePresetParams } from '../host/manifest.ts'
 const TUI_GLOBAL_SWITCHES: ReadonlyArray<readonly [key: string, label: string]> = [
   ['writeAgents', '写入常驻规则 AGENTS.md'],
   ['writePreset', '启用锚定预设'],
-  ['injectAgentsPrompt', '用 AGENTS.md 替换 instruction-hint 提示'],
 ]
 
 /** dsh-tui 参数开关：写激活预设 preset.yml（settings 不再承载引擎参数）。 */
@@ -212,7 +211,7 @@ export function registerTuiCommand(
         const usage = (): CommandResult => ({
           kind: 'error',
           text: '用法：/prompt-tool status\n' +
-            '      /prompt-tool on|off|toggle <writeAgents|writePreset|injectPrompt|injectAgentsPrompt|firstTurnAnchor|firstTurnCustom|guideEnabled|guideCustom|usePtcMode>\n' +
+            '      /prompt-tool on|off|toggle <writeAgents|writePreset|injectPrompt|firstTurnAnchor|firstTurnCustom|guideEnabled|guideCustom|usePtcMode>\n' +
             '      /prompt-tool skill <技能目录名> on|off|toggle（目录名可含空格）\n' +
             '      /prompt-tool config <id>（id 可含空格）\n' +
             '      /prompt-tool config <id> on|off|toggle\n' +

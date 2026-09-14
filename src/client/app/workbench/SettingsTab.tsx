@@ -58,7 +58,6 @@ export function SettingsTab(props: TabProps): ReactNode {
     <section className={ui.section} aria-label={t('settings.aria')}>
       <ToggleRow id="pt-writePreset" label={t('settings.writePreset.label')} hint={t('settings.writePreset.hint')} checked={value.writePreset === true} onChange={(v) => set('writePreset', v)} />
       <ToggleRow id="pt-writeAgents" label={t('settings.writeAgents.label')} hint={t('settings.writeAgents.hint')} checked={value.writeAgents === true} onChange={(v) => set('writeAgents', v)} />
-      <ToggleRow id="pt-injectAgentsPrompt" label={t('settings.injectAgentsPrompt.label')} hint={t('settings.injectAgentsPrompt.hint')} checked={value.injectAgentsPrompt === true} onChange={(v) => set('injectAgentsPrompt', v)} />
       <div className={ui.rowGroup}>
         <div className={ui.settingRowStack}>
           <span className={ui.settingCopy}><strong>{t('settings.presetTemplate.title')}</strong><small>{t('settings.presetTemplate.hint')}</small></span>

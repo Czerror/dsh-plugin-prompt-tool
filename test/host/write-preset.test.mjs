@@ -287,21 +287,25 @@ test('writePreset 只写预设目录、不写预设根 agent.cordis.yml（无容
   }
 })
 
-test('writePreset injectAgentsPrompt 注入 agents 内容到 instruction-hint params.text', () => {
+test('writePreset 生成的 AGENTS 提示卡只做动态探测，不再注入全文', () => {
   const dir = join(tmpdir(), `prompt-tool-ai-${process.pid}-${Date.now()}`)
   const presetDir = join(dir, 'preset')
   try {
-    writePreset('PROMPT', { ...makeOptions(presetDir), agentsInstructionText: 'AGENTS CONTENT', injectAgentsPrompt: true })
-    const hint = readFileSync(join(presetDir, 'anchored', 'prompt-configs', '0030-instruction-hint.yml'), 'utf8')
-    assert.ok(hint.includes('AGENTS CONTENT'), hint)
-    assert.ok(hint.includes('agentsInstructionPath: |-') && hint.includes('../anchored/agents-instruction.md'), hint)
-    assert.ok(existsSync(join(presetDir, 'anchored', 'agents-instruction.md')), 'agents-instruction.md 应写入')
-    assert.equal(existsSync(join(presetDir, 'anchored', 'agents-instruction.txt')), false, '旧 .txt 残留应清理')
-    // 关闭时不注入：instruction-hint 保持无 params.text（引擎回退 agents-instruction.md / 动态探测）。
-    const dir2 = join(dir, 'preset2')
-    writePreset('PROMPT', { ...makeOptions(dir2), agentsInstructionText: 'AGENTS CONTENT', injectAgentsPrompt: false })
-    const hint2 = readFileSync(join(dir2, 'anchored', 'prompt-configs', '0030-instruction-hint.yml'), 'utf8')
-    assert.ok(!hint2.includes('AGENTS CONTENT'), hint2)
+    writePreset('PROMPT', { ...makeOptions(presetDir), agentsInstructionText: 'AGENTS CONTENT' })
+    const configsDir = join(presetDir, 'anchored', 'prompt-configs')
+    const project = parseYaml(readFileSync(join(configsDir, '0030-agents-project.yml'), 'utf8'))
+    const global = parseYaml(readFileSync(join(configsDir, '0040-agents-global.yml'), 'utf8'))
+    assert.deepEqual([project.id, global.id], ['agents-project', 'agents-global'])
+    assert.deepEqual([project.params.scope, global.params.scope], ['project', 'global'])
+    for (const spec of [project, global]) {
+      assert.equal(spec.layer, 'pre-step', '与官方 agent-instructions 的 pre-step 插入点一致')
+      assert.equal(spec.position, 'after-user', '紧随真实用户消息之后')
+      assert.equal(spec.fill, 'instruction-hint')
+      assert.equal(spec.params.text, undefined, '不再把 AGENTS 全文注入卡片')
+      assert.equal(spec.params.agentsInstructionPath, undefined, '不再写物化提示文件路径')
+    }
+    assert.equal(existsSync(join(presetDir, 'anchored', 'agents-instruction.md')), false, '不再生成 agents-instruction.md')
+    assert.equal(readFileSync(join(presetDir, 'anchored', 'agents.md'), 'utf8'), 'AGENTS CONTENT', 'agents.md 仍作为常驻层内容资产')
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
