@@ -90,14 +90,19 @@ const DYNAMIC_MACROS = {
   pipe: () => '|',
 }
 
-/** 模板变量插值：配置 variables 优先，ST 运行时宏次之，内置 {{DSH_HOME}} / {{WORKSPACE}} / {{CWD}} 兜底。 */
-export function interpolateVariables(text, variables, session) {
-  const builtins = {
+/** 内置变量：路径类事实（无会话上下文时回退进程 cwd）；两条插值通道同源。 */
+function builtinVariables(session) {
+  return {
     DSH_HOME: process.env.DSH_HOME ?? (process.env.USERPROFILE ? `${process.env.USERPROFILE}\\.dsh` : ''),
     WORKSPACE: process.env.DSH_WORKSPACE ?? session?.header?.cwd ?? process.cwd(),
     CWD: session?.header?.cwd ?? process.cwd(),
   }
-  return text.replace(/\{\{([A-Za-z0-9_.\u4e00-\u9fff-]+)(?:::(.*?))?\}\}/g, (whole, key, arg) => {
+}
+
+/** 模板变量插值：配置 variables 优先，ST 运行时宏次之，内置 {{DSH_HOME}} / {{WORKSPACE}} / {{CWD}} 兜底。 */
+export function interpolateVariables(text, variables, session) {
+  const builtins = builtinVariables(session)
+  return normalizeMacroSyntax(text).replace(REFERENCE_RE, (whole, key, arg) => {
     if (Object.prototype.hasOwnProperty.call(variables, key)) return String(variables[key])
     const dynamic = DYNAMIC_MACROS[key.toLowerCase()]
     if (dynamic !== undefined) return dynamic(arg, session)
@@ -105,13 +110,80 @@ export function interpolateVariables(text, variables, session) {
   })
 }
 
-/** 仅做配置级静态变量替换（无 session 上下文的层）。 */
+/** 静态层插值：配置 variables 优先，ST 运行时宏取空串，内置路径变量按无会话语义解析。 */
 export function interpolateStatic(text, variables) {
-  return text.replace(/\{\{([A-Za-z0-9_.\u4e00-\u9fff-]+)(?:::(.*?))?\}\}/g, (whole, key, arg) => {
+  const builtins = builtinVariables(undefined)
+  return normalizeMacroSyntax(text).replace(REFERENCE_RE, (whole, key, arg) => {
     if (Object.prototype.hasOwnProperty.call(variables, key)) return String(variables[key])
     // ST 运行时宏在无会话上下文（system-section 注册期）时替换为空串——
     // 不残留字面，也不触发官方 unknown variable 渲染报错。
     const dynamic = DYNAMIC_MACROS[key.toLowerCase()]
-    return dynamic !== undefined ? dynamic(arg, undefined) : whole
+    if (dynamic !== undefined) return dynamic(arg, undefined)
+    // 内置变量必须在此解析：官方严格插值不认大写名字（{{DSH_HOME}} 会被判畸形引用）。
+    return Object.prototype.hasOwnProperty.call(builtins, key) ? builtins[key] : whole
   })
+}
+
+/**
+ * 引用正则：键允许字母数字、下划线、点、中文与连字符（与 ST setvar/getvar 一致），
+ * `::` 之后是本项目宏参数。官方插值语法更窄，故这两条通道各用各的。
+ */
+const REFERENCE_RE = /\{\{([A-Za-z0-9_.\u4e00-\u9fff-]+)(?:::(.*?))?\}\}/g
+
+/** ST 宏形态 → 本项目语法（幂等）。 */
+const MACRO_ALIASES = 'roll|random|pick|chance'
+/** 空格形态：{{roll 1d6}}（ST 语料常见，本项目语法要求 ::）。 */
+const MACRO_SPACE_RE = new RegExp(`\\{\\{\\s*(${MACRO_ALIASES})\\s+([^{}]*?)\\s*\\}\\}`, 'gi')
+/** 单冒号形态：{{roll:1d6}}（`::` 已是本项目语法，用负向断言排除）。 */
+const MACRO_SINGLE_COLON_RE = new RegExp(`\\{\\{\\s*(${MACRO_ALIASES})\\s*:(?!:)\\s*([^{}]*?)\\s*\\}\\}`, 'gi')
+
+/**
+ * ST 宏写法归一：{{roll 1d6}} / {{roll:1d6}} → {{roll::1d6}}。
+ * 与 `src/host/sillytavern.ts` 的导入期归一同源（两处物理隔离，改动需同步）。
+ */
+export function normalizeMacroSyntax(text) {
+  return text
+    .replace(MACRO_SPACE_RE, (_whole, macro, arg) => `{{${String(macro).toLowerCase()}::${arg}}}`)
+    .replace(MACRO_SINGLE_COLON_RE, (_whole, macro, arg) => `{{${String(macro).toLowerCase()}::${arg}}}`)
+}
+
+/**
+ * 官方插值通道（system-section / runtime-context）专用清洗。
+ *
+ * 官方 renderPrompt 对 section/context 文本做严格插值：畸形引用、`{{}}`、未注册名、
+ * 值为 undefined 都抛错并让整轮 assembly 失败，而 runtime-context 在 0.1.6 没有
+ * `interpolate:false`（PromptContext 无该字段）。因此交给官方之前必须保证文本里
+ * 不再有本项目解析后残留的引用：
+ *   - `{{…}}` 成组引用（含畸形名字）→ 整段剥离（决策：未命中引用剥离）；
+ *   - 有 `{{` 却没成组、但后文存在 `}}` → 只移除 `{{`（官方判畸形），保留可见文本；
+ *   - 只有 `{{` 且其后无 `}}` → 官方按字面处理，原样保留。
+ * @returns 清洗后文本与已剥离片段（供调用方一次性告警）。
+ */
+export function stripUnresolvedRefs(text) {
+  const stripped = []
+  let out = ''
+  let index = 0
+  while (index < text.length) {
+    const open = text.indexOf('{{', index)
+    if (open < 0) {
+      out += text.slice(index)
+      break
+    }
+    out += text.slice(index, open)
+    const rest = text.slice(open)
+    const group = /^\{\{([^{}]*)\}\}/.exec(rest)
+    if (group !== null) {
+      stripped.push(group[0])
+      index = open + group[0].length
+      continue
+    }
+    if (rest.indexOf('}}', 2) >= 0) {
+      stripped.push(rest.slice(0, 2))
+      index = open + 2
+      continue
+    }
+    out += '{{'
+    index = open + 2
+  }
+  return { text: out, stripped }
 }

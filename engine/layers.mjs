@@ -10,7 +10,7 @@ import {
   matchesModel,
   parseToolNames,
 } from './shared.mjs'
-import { interpolateVariables, interpolateStatic } from './interpolate.mjs'
+import { interpolateVariables, interpolateStatic, stripUnresolvedRefs } from './interpolate.mjs'
 
 const name = 'prompt-config-engine'
 
@@ -29,6 +29,21 @@ function matchesAgentScope(config, agent) {
   if (config.audience === 'main' && delegated) return false
   if (config.audience === 'subagent' && !delegated) return false
   return matchesModel(config.modelScope, agent.options?.model)
+}
+
+/**
+ * 官方插值通道（system-section / runtime-context）出口清洗：本项目解析后仍残留的
+ * 引用一律剥离，官方严格插值因此看不到未注册引用（既不抛错也不留字面）。
+ * 只在本项目的宽容解析之后调用；其他层（pre-step / agent-request / tool-pipeline）
+ * 不经官方插值，保持原有宽容语义。
+ */
+function officialChannelText(text, label, warnOnce) {
+  const result = stripUnresolvedRefs(text)
+  if (result.stripped.length > 0) {
+    const samples = [...new Set(result.stripped)].slice(0, 3).join(' ')
+    warnOnce(`${name}: ${label} 剥离了 ${result.stripped.length} 处无法解析的引用（${samples}）——请在模板变量里登记，或改用本项目宏语法 {{roll::1d6}}`)
+  }
+  return result.text
 }
 
 /** 文本型层分组:merged 模式按位置分组,否则每条独立。 */
@@ -69,12 +84,16 @@ function wireSystemSections(ctx, configs, warnOnce) {
       if (groupText.length === 0) continue
       const hasAudience = group.some((config) => config.audience != null)
       const text = hasAudience
-        ? (context) => group
-            .filter((config) => matchesAgentScope(config, context?.agent))
-            .map((config) => configText(config))
-            .filter((item) => item.length > 0)
-            .join('\n\n')
-        : groupText
+        ? (context) => officialChannelText(
+            group
+              .filter((config) => matchesAgentScope(config, context?.agent))
+              .map((config) => configText(config))
+              .filter((item) => item.length > 0)
+              .join('\n\n'),
+            `system-section ${base.id}`,
+            warnOnce,
+          )
+        : officialChannelText(groupText, `system-section ${base.id}`, warnOnce)
       keepDisposer(ctx, systemPrompt.section({
         name: typeof base.params?.sectionName === 'string' && base.params.sectionName.length > 0 ? base.params.sectionName : base.id,
         order: base.order,
@@ -107,7 +126,7 @@ function wireRuntimeContexts(ctx, configs, warnOnce) {
       keepDisposer(ctx, systemPrompt.context({
         name: typeof base.params?.contextName === 'string' && base.params.contextName.length > 0 ? base.params.contextName : base.id,
         order: base.order,
-        text,
+        text: officialChannelText(text, `runtime-context ${base.id}`, warnOnce),
       }), `${name}: context ${base.id}`)
     } catch (error) {
       warnOnce(`${name}: runtime-context config ${base.id} failed: ${String(error?.message ?? error)}`)
@@ -128,8 +147,11 @@ function wireRuntimeContexts(ctx, configs, warnOnce) {
           const resolved = await resolver({ ctx, agent, session, decision: { kind: 'ok', messages: [] }, messages: [] })
           if (resolved === null || resolved === undefined) return ''
           const variables = { ...config.variables, ...(resolved.variables !== null && typeof resolved.variables === 'object' ? resolved.variables : {}) }
-          if (config.texts.length > 0) return interpolateVariables(config.texts.join('\n\n'), variables, session)
-          return typeof resolved.text === 'string' ? interpolateVariables(resolved.text, variables, session) : ''
+          // runtime-context 是官方插值通道且 0.1.6 没有 interpolate:false：出口同样清洗。
+          const rendered = config.texts.length > 0
+            ? interpolateVariables(config.texts.join('\n\n'), variables, session)
+            : typeof resolved.text === 'string' ? interpolateVariables(resolved.text, variables, session) : ''
+          return officialChannelText(rendered, `runtime-context ${config.id}`, warnOnce)
         },
       }), `${name}: context ${config.id}`)
     } catch (error) {

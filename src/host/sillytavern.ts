@@ -19,8 +19,21 @@ import type { PresetSpec } from './manifest.ts'
 import type { PersonaSpec } from '../shared/persona-section.ts'
 import { buildWorldBookEntry } from './worldbook.ts'
 
-/** ST 运行时指令（渲染时执行、不发送给模型）：setvar/getvar/ERA/trim/注释 → 剥离。 */
-const ST_DIRECTIVE = /\{\{(setvar|getvar|ERA|trim|\/\/)[^}]*\}\}/gi
+/** ST 运行时指令（渲染时执行、不发送给模型）：setvar/getvar/ERA/trim → 剥离。 */
+const ST_DIRECTIVE = /\{\{(setvar|getvar|ERA|trim)[^}]*\}\}/gi
+/** ST 注释宏 {{// …}}：正文可跨行（跨行实例含 `}` 字符，`[^}]*` 剥不掉）→ 惰性剥到首个 `}}`。
+ *  未闭合（文本内没有 `}}`）时不匹配，交给引擎在官方通道出口中和。 */
+const ST_COMMENT = /\{\{\/\/[\s\S]*?\}\}/g
+/** ST 宏形态 → 本项目语法（与 engine/interpolate.mjs 的 normalizeMacroSyntax 同源，改动需同步）：
+ *  {{roll 1d6}} / {{roll:1d6}} → {{roll::1d6}}。引擎侧再归一一次，保证旧内容同样受益。 */
+const ST_MACRO_SPACE = /\{\{\s*(roll|random|pick|chance)\s+([^{}]*?)\s*\}\}/gi
+const ST_MACRO_SINGLE_COLON = /\{\{\s*(roll|random|pick|chance)\s*:(?!:)\s*([^{}]*?)\s*\}\}/gi
+
+function normalizeStMacros(text: string): string {
+  return text
+    .replace(ST_MACRO_SPACE, (_whole, macro: string, arg: string) => `{{${macro.toLowerCase()}::${arg}}}`)
+    .replace(ST_MACRO_SINGLE_COLON, (_whole, macro: string, arg: string) => `{{${macro.toLowerCase()}::${arg}}}`)
+}
 
 /** ST marker prompts（marker: true）：content 不发送给模型（仅标记注入位置，ST
  *  以运行时内容填充该位置）；SPresetSettings 是旧版 ST 的预设设置 dump（正则
@@ -38,8 +51,10 @@ const ST_DIRECTIVE = /\{\{(setvar|getvar|ERA|trim|\/\/)[^}]*\}\}/gi
 export function processStText(text: string, cardName: string, variables: Record<string, string>): string {
   // 顺序敏感：先收集 setvar（同文本后续 getvar 可读到），再改写 getvar，最后剥离残留指令——
   // 否则 ST_DIRECTIVE 会先把 setvar/getvar 整段剥掉，收集正则匹配不到。
+  // 注释先行（注释里的指令不该执行）；宏形态归一随后（幂等，引擎侧还会再归一一次）。
+  let cleaned = normalizeStMacros(text.replace(ST_COMMENT, ''))
   // setvar：{{setvar::k::v}} → 收集 k=v（会话变量初始值 = fallback 基准），指令剥离。
-  let cleaned = text.replace(/\{\{setvar::([A-Za-z0-9_.\u4e00-\u9fff-]+)::([^}]*)\}\}/g, (_whole, key: string, value: string) => {
+  cleaned = cleaned.replace(/\{\{setvar::([A-Za-z0-9_.\u4e00-\u9fff-]+)::([^}]*)\}\}/g, (_whole, key: string, value: string) => {
     variables[key] = value
     return ''
   })
@@ -165,6 +180,14 @@ export function convertStToPreset(card: unknown, baseName: string): PresetSpec {
   // 与引擎行为参数 params 分离，写 preset.yml 顶层 variables 段）。
   const variables: Record<string, string> = {}
   const clean = (text: string): string => processStText(text, cardName, variables)
+  // ST 字段宏 → 内容变量（决策：登记为内容变量，不写进模型人设段）。宏名与键名一致，
+  // 登记后由引擎正常解析，工作台「模板变量」卡可编辑；值同样过一遍 ST 清洗，避免
+  // {{char}} 之类的字面随值泄漏。字段缺失时不登记——若正文引用了它，由下方
+  // 「未定义自定义宏登记」补空占位（保持「不留字面」语义）。
+  for (const key of ['description', 'personality', 'scenario', 'persona'] as const) {
+    const value = bodyText(key)
+    if (value.length > 0) variables[key] = clean(value)
+  }
   // 角色卡正文 → 提示词配置：角色设定（描述/性格/场景）拼接、系统提示、后续指令、开场白。
   // order 取负值使角色卡内容排在响应预设 prompts（order≥100）之前。
   const characterDefinition = [bodyText('description'), bodyText('personality'), bodyText('scenario')]

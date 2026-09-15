@@ -7,6 +7,8 @@ import { pathToFileURL } from 'node:url'
 import { applyPromptConfigs, createPromptConfigs as createPromptConfigsCore, inject, loadPromptConfigFiles, parsePromptConfigYaml } from '../../engine/prompt-config-engine.mjs'
 import { extractText } from '../../engine/shared.mjs'
 import { setSessionVar } from '../../engine/session-vars.mjs'
+// 官方渲染器：回归「我方解析后的出口文本不再触发官方严格插值抛错」。
+import { renderContextSections, renderPrompt } from '@deepseek-ai/dsh-system-prompt'
 
 /** 引擎测试夹具使用包内 engine 目录作为自定义策略探测目录;内置策略不依赖 strategyDir。 */
 const STRATEGY_DIR = new URL('../../engine/', import.meta.url).href
@@ -260,6 +262,53 @@ function makeWiredHarness(configSpecs, services = {}) {
   return { listeners, sections, contexts, disposed }
 }
 
+test('官方插值通道出口：无法解析的引用被剥离，官方 renderPrompt/renderContextSections 不再抛错', () => {
+  const sections = []
+  const contexts = []
+  makeWiredHarness([
+    {
+      id: 'sys',
+      layer: 'system-section',
+      strategy: 'static',
+      order: 0,
+      text: 'A {{缺失名}} B {{}} C {{// {x}\n注释 }} D {{roll 1d6}} E {{wordsCloud}}',
+      variables: { wordsCloud: '1500' },
+    },
+    { id: 'ctx', layer: 'runtime-context', strategy: 'static', order: 0, text: '未知 {{缺失名}} 与 {{}}' },
+  ], {
+    systemPrompt: {
+      section(def) { sections.push(def); return () => {} },
+      context(def) { contexts.push(def); return () => {} },
+    },
+  })
+
+  const sectionText = sections[0].text
+  const contextText = contexts[0].text
+  assert.doesNotMatch(sectionText, /\{\{缺失名\}\}/, '未命中引用整段剥离')
+  assert.doesNotMatch(sectionText, /\{\{\}\}/, '空引用剥离')
+  assert.doesNotMatch(sectionText, /\{\{/, '出口不留开括号组')
+  assert.match(sectionText, /1500/, '已声明变量照常解析')
+  assert.match(sectionText, /D \d+ E/, 'ST 形态宏归一后照常求值')
+  assert.doesNotMatch(contextText, /缺失名|\{\{/, 'runtime-context 出口同样清洗')
+
+  // 反证：原始文本确实会被官方严格插值拦下（中文名判畸形、合法名判未注册）——出口清洗才是关键。
+  assert.throws(
+    () => renderPrompt({ sections: [{ name: 'raw', text: 'A {{缺失名}}' }], variables: {} }),
+    /malformed prompt variable reference/,
+  )
+  assert.throws(
+    () => renderPrompt({ sections: [{ name: 'raw', text: 'A {{missingname}}' }], variables: {} }),
+    /unknown prompt variable/,
+  )
+  assert.throws(
+    () => renderContextSections({ contexts: [{ name: 'raw', text: 'A {{missingname}}' }], variables: {} }),
+    /unknown prompt variable/,
+  )
+  // 出口文本经官方渲染器不再抛错（0.1.6 的 runtime-context 没有 interpolate:false，只能靠这里）。
+  assert.equal(renderPrompt({ sections: [{ name: 'sys', text: sectionText }], variables: {} }), sectionText)
+  assert.doesNotThrow(() => renderContextSections({ contexts: [{ name: 'ctx', text: contextText }], variables: {} }))
+})
+
 test('system-section 与 runtime-context 注册到 systemPrompt 服务', () => {
   const sections = []
   const contexts = []
@@ -281,7 +330,8 @@ test('system-section 与 runtime-context 注册到 systemPrompt 服务', () => {
   assert.equal(contexts.length, 1)
   assert.equal(contexts[0].name, 'ctx')
   assert.equal(contexts[0].order, 5)
-  assert.equal(contexts[0].text, '环境 {{DSH_HOME}}')
+  // 内置路径变量在静态层就解析：官方严格插值不认大写名字，残留 {{DSH_HOME}} 会判畸形引用。
+  assert.equal(contexts[0].text, `环境 ${process.env.DSH_HOME ?? (process.env.USERPROFILE ? `${process.env.USERPROFILE}\\.dsh` : '')}`)
   // 来源存活标记及两个服务 disposer 均挂到 fiber；服务侧仍只收到两个注销。
   assert.equal(harness.disposed.length, 3)
   for (const cleanup of harness.disposed) cleanup()

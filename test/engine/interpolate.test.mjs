@@ -1,6 +1,33 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { interpolateStatic, interpolateVariables } from '../../engine/interpolate.mjs'
+import { interpolateStatic, interpolateVariables, normalizeMacroSyntax, stripUnresolvedRefs } from '../../engine/interpolate.mjs'
+
+test('normalizeMacroSyntax：ST 宏写法归一到本项目语法（幂等，普通变量不动）', () => {
+  assert.equal(normalizeMacroSyntax('{{roll 1d6}}'), '{{roll::1d6}}')
+  assert.equal(normalizeMacroSyntax('{{ROLL:2d6+3}}'), '{{roll::2d6+3}}')
+  assert.equal(normalizeMacroSyntax('{{pick: a,b }}'), '{{pick::a,b}}')
+  assert.equal(normalizeMacroSyntax('{{roll::1d6}}'), '{{roll::1d6}}', '已是本项目语法时不重复归一')
+  assert.equal(normalizeMacroSyntax('{{wordsCloud}}'), '{{wordsCloud}}')
+  assert.equal(normalizeMacroSyntax('{{day}}'), '{{day}}', '非宏名不受影响')
+})
+
+test('interpolateStatic：ST 形态宏（空格/单冒号）直接可用', () => {
+  assert.ok(/^\d+$/.test(interpolateStatic('{{roll 1d6}}', {})), '空格形态骰子')
+  assert.ok(['a', 'b'].includes(interpolateStatic('{{random:a,b}}', {})), '单冒号形态 random')
+  assert.ok(['a', 'b'].includes(interpolateStatic('{{pick a,b}}', {})), '空格形态 pick')
+  assert.equal(interpolateStatic('{{chance:0}}', {}), 'false')
+  assert.equal(interpolateStatic('{{chance 100}}', {}), 'true')
+})
+
+test('stripUnresolvedRefs：成组引用剥离、畸形只中和开括号、孤立 {{ 保留', () => {
+  assert.deepEqual(stripUnresolvedRefs('前{{未知}}后'), { text: '前后', stripped: ['{{未知}}'] })
+  assert.deepEqual(stripUnresolvedRefs('{{}}x'), { text: 'x', stripped: ['{{}}'] })
+  assert.deepEqual(stripUnresolvedRefs('{{roll 1d6}}').text, '', '未归一的畸形组按引用整段剥离')
+  // 组内含花括号（真实语料里的跨行注释）→ 官方会判畸形，只移除 {{ 保留可见文本。
+  assert.deepEqual(stripUnresolvedRefs('{{// {a}\n后面 }}尾'), { text: '// {a}\n后面 }}尾', stripped: ['{{'] })
+  assert.deepEqual(stripUnresolvedRefs('代码 {{ 没有闭合'), { text: '代码 {{ 没有闭合', stripped: [] }, '无 }} 时官方按字面处理')
+  assert.deepEqual(stripUnresolvedRefs('{{a}}{{b}}'), { text: '', stripped: ['{{a}}', '{{b}}'] })
+})
 
 test('interpolateStatic：配置 variables 替换 {{key}}，未注册保留字面', () => {
   assert.equal(interpolateStatic('剧情{{wordsCloud}}字 {{缺失}}', { wordsCloud: '1500' }), '剧情1500字 {{缺失}}')

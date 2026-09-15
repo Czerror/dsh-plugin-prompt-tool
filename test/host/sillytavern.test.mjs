@@ -31,6 +31,31 @@ test('stPresetId：英文文件名保持 slug', () => {
   assert.equal(stPresetId('My Card v2'), 'my-card-v2')
 })
 
+test('convertStToPreset：跨行注释剥离、ST 宏归一、字段宏登记为内容变量', () => {
+  const card = {
+    name: '测试卡',
+    data: {
+      description: '描写 {{char}} 的场景',
+      personality: '性格文本',
+      scenario: '场景文本',
+      system_prompt: '{{// 注释开头\n{ "thinking": { "type": "disabled" } }\n注释结尾 }}\n正文 {{roll 1d6}} 与 {{random:a,b}} 与 {{description}} 与 {{persona}}',
+    },
+  }
+  const spec = convertStToPreset(card, 'st-macro-card')
+  assert.equal(spec.variables.description, '描写 测试卡 的场景', '字段宏登记为内容变量并清洗 {{char}}')
+  assert.equal(spec.variables.personality, '性格文本')
+  assert.equal(spec.variables.scenario, '场景文本')
+  assert.equal(spec.variables.persona, '', '卡内无 persona 字段但正文引用 → 空占位（不留字面）')
+
+  const system = spec.promptConfigs.find((config) => config.id === 'system-prompt')
+  assert.ok(system !== undefined, '系统提示卡存在')
+  assert.doesNotMatch(system.text, /\{\{\/\//, '跨行注释宏被剥离')
+  assert.doesNotMatch(system.text, /thinking/, '注释正文（含 JSON）随注释一并剥离')
+  assert.match(system.text, /\{\{roll::1d6\}\}/, '空格形态骰子归一到本项目语法')
+  assert.match(system.text, /\{\{random::a,b\}\}/, '单冒号形态 random 归一到本项目语法')
+  assert.match(system.text, /\{\{description\}\}/, '字段宏保留为变量引用，由引擎解析')
+})
+
 test('convertStToPreset：世界书正则键保留原样且不写幽灵字段 useRegex', () => {
   const card = {
     name: '测试卡',
