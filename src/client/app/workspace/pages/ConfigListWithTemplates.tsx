@@ -6,6 +6,7 @@ import { PromptConfigList } from '../../../features/prompts/PromptConfigList.tsx
 import { TemplatePicker } from '../../../ui/TemplatePicker.tsx'
 import { useTemplatePicker } from '../../../features/prompts/useTemplatePicker.ts'
 import ui from '../../../ui/controls.module.css'
+import type { InstructionPolicyFileOverride } from '../../../../shared/instructions.ts'
 /** 配置列表 + 新建模板：六层页按 layer 过滤，子代理页按 scope 过滤（subagent 只列子代理可见模板）。 */
 export const ConfigListWithTemplates = memo(function ConfigListWithTemplates(props: { store: PromptToolStore; t: PromptToolTranslate; layer?: string; scope?: 'main' | 'subagent'; beforeCards?: ReactNode }): ReactNode {
   const { store, t, layer, scope, beforeCards } = props
@@ -16,6 +17,16 @@ export const ConfigListWithTemplates = memo(function ConfigListWithTemplates(pro
   }, [store])
   const saveConfigs = useCallback((configs: PromptToolStore['fields']['promptConfigs']) => {
     return store.persistConfigs(configs)
+  }, [store])
+  // 指令文件卡：显式写盘与重新读取（与预设保存分流）。
+  const saveInstructionFile = useCallback((fileId: string) => {
+    void store.persistInstructionFiles([fileId])
+  }, [store])
+  const reloadInstructionFile = useCallback((fileId: string) => {
+    void store.reloadInstructionFile(fileId)
+  }, [store])
+  const patchInstructionPolicy = useCallback((fileId: string, override: InstructionPolicyFileOverride) => {
+    void store.updateInstructionPolicy(fileId, override)
   }, [store])
   // 当前预设模板消息批层无配置时，pre-step 层空状态追加提示（列表仍可自定义：
   // 新建配置作为 settings 覆盖层保存，切换预设后保留）。
@@ -42,6 +53,11 @@ export const ConfigListWithTemplates = memo(function ConfigListWithTemplates(pro
         }
         onPatchConfigs={patchConfigs}
         onSaveConfigs={saveConfigs}
+        instructionPolicy={store.instructionPolicy}
+        onToggleInstructionSource={store.setInstructionSourceEnabled}
+        onSaveInstructionFile={saveInstructionFile}
+        onReloadInstructionFile={reloadInstructionFile}
+        onPatchInstructionPolicy={patchInstructionPolicy}
         onNotice={store.showNotice}
       />
       {templatePicker.open && (

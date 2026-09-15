@@ -3,8 +3,10 @@ import clsx from 'clsx'
 import { IconChevronDownOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PromptToolTranslate } from '../../locales.ts'
 import type { EngineMeta, PromptConfigDraft } from '../../prompt-tool-types.ts'
+import type { InstructionPolicyFileOverride } from '../../../shared/instructions.ts'
 import { HintTooltip } from '../../ui/HintTooltip.tsx'
 import { PromptConfigForm } from './PromptConfigForm.tsx'
+import { instructionFileIdOf } from '../../data/prompt-config-content.ts'
 import { FILL_LABEL_KEYS, LAYER_LABEL_KEYS, POSITION_LABEL_KEYS, STRATEGY_LABEL_KEYS, fieldPolicyFor, translateLabel } from './prompt-config-policy.ts'
 import sharedCss from '../../ui/controls.module.css'
 import featureCss from './prompts.module.css'
@@ -31,6 +33,12 @@ export const PromptConfigCard = memo(function PromptConfigCard(props: {
   onMoveDown: (id: string) => void
   onDuplicate: (id: string) => void
   onDelete: (id: string) => void
+  /** 指令文件卡的显式写盘（不经预设保存路径）。 */
+  onSaveInstructionFile?: (fileId: string) => void
+  /** 指令文件卡的重新读取（冲突/不可读时丢弃本地草稿，采纳磁盘版本）。 */
+  onReloadInstructionFile?: (fileId: string) => void
+  /** 指令文件卡的行为策略改动（独立策略存储；null 字段不提交）。 */
+  onPatchInstructionPolicy?: (fileId: string, override: InstructionPolicyFileOverride) => void
   onDragStart?: (id: string, event: React.DragEvent<HTMLElement>) => void
   onDragOver?: (id: string, event: React.DragEvent<HTMLElement>) => void
   onDrop?: (id: string, event: React.DragEvent<HTMLElement>) => void
@@ -39,6 +47,8 @@ export const PromptConfigCard = memo(function PromptConfigCard(props: {
   const { t, meta, config } = props
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const enabled = config.enabled !== false
+  const instructionFileId = instructionFileIdOf(config)
+  const fileNotWritable = config.contentStatus !== undefined && config.contentStatus !== 'ready'
   const policy = fieldPolicyFor(meta, config.layer)
   const layer = config.layer ?? 'pre-step'
   const strategy = config.strategy === 'instruction-hint' ? 'placeholder' : config.strategy ?? 'static'
@@ -52,6 +62,10 @@ export const PromptConfigCard = memo(function PromptConfigCard(props: {
   if (config.mergeMode === 'merged') chips.push(t('card.chip.merged'))
   if ((config.order ?? 0) !== 0) chips.push(t('card.chip.order', { order: config.order ?? 0 }))
   if (config.group) chips.push(t(config.exclusive === true ? 'card.chip.exclusiveGroup' : 'card.chip.group', { name: config.group }))
+  // 指令文件卡：读取状态与未保存/冲突必须常驻可见，不用空 textarea 掩盖读取失败。
+  if (config.contentStatus !== undefined && config.contentStatus !== 'ready') chips.push(t('card.chip.fileUnavailable'))
+  if (config.contentConflict === true) chips.push(t('card.chip.fileConflict'))
+  else if (config.contentDirty === true) chips.push(t(config.contentSaving === true ? 'card.chip.fileSaving' : 'card.chip.fileDirty'))
   return (
     <article
       className={clsx(styles.configCard, props.expanded && styles.configCardOpen)}
@@ -89,12 +103,34 @@ export const PromptConfigCard = memo(function PromptConfigCard(props: {
                 type="checkbox"
                 checked={enabled}
                 aria-label={t('card.enableAria', { name: config.name ?? config.id })}
-                onChange={(e) => props.onToggleEnabled(config.id, e.target.checked)}
+                onChange={(e) => {
+                  // 文件卡的启停属于独立策略：写 preset 卡字段会被静默丢弃。
+                  if (instructionFileId !== undefined) props.onPatchInstructionPolicy?.(instructionFileId, { enabled: e.target.checked })
+                  else props.onToggleEnabled(config.id, e.target.checked)
+                }}
               />
               <span className={styles.switch} aria-hidden="true"><i /></span>
             </label>
           </HintTooltip>
           <span className={styles.configActions}>
+            {instructionFileId !== undefined && (
+              <>
+                <button
+                  type="button"
+                  className={styles.pillButton}
+                  disabled={fileNotWritable || config.contentConflict === true || config.contentDirty !== true || config.contentSaving === true}
+                  onClick={() => props.onSaveInstructionFile?.(instructionFileId)}
+                >{t('card.saveFile')}</button>
+                {(config.contentConflict === true || fileNotWritable) && (
+                  <button
+                    type="button"
+                    className={styles.pillButton}
+                    data-variant="secondary"
+                    onClick={() => props.onReloadInstructionFile?.(instructionFileId)}
+                  >{t('card.reloadFile')}</button>
+                )}
+              </>
+            )}
             <button type="button" className={styles.pillButton} disabled={!props.canMoveUp} onClick={() => props.onMoveUp(config.id)}>{t('card.moveUp')}</button>
             <button type="button" className={styles.pillButton} disabled={!props.canMoveDown} onClick={() => props.onMoveDown(config.id)}>{t('card.moveDown')}</button>
             <button type="button" className={styles.pillButton} onClick={() => props.onDuplicate(config.id)}>{t('card.duplicate')}</button>
@@ -109,12 +145,18 @@ export const PromptConfigCard = memo(function PromptConfigCard(props: {
           </span>
         </span>
       </header>
+      {props.expanded && config.contentMessage !== undefined && (
+        <p className={styles.configFieldHint}>{t('card.fileStatusDetail', { message: config.contentMessage })}</p>
+      )}
       {props.expanded && (
         <PromptConfigForm
           t={t}
           meta={meta}
           config={config}
           onPatch={(patch) => props.onPatch(config.id, patch)}
+          {...(instructionFileId === undefined
+            ? {}
+            : { onPatchPolicy: (patch: InstructionPolicyFileOverride) => props.onPatchInstructionPolicy?.(instructionFileId, patch) })}
         />
       )}
     </article>

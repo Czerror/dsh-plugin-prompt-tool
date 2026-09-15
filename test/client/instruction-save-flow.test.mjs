@@ -33,11 +33,6 @@ const { ConfigListWithTemplates } = await import('../../src/client/app/workspace
 const { PromptConfigsEditor } = await import('../../src/client/features/prompts/PromptConfigsEditor.tsx')
 const { PromptConfigList } = await import('../../src/client/features/prompts/PromptConfigList.tsx')
 const { ToggleRow } = await import('../../src/client/ui/ToggleRow.tsx')
-const { EngineModuleCards, EngineBehaviorCard } = await import('../../src/client/features/modules/EngineModuleList.tsx')
-const { InstructionFileEntry, InstructionSourceRow } = await import('../../src/client/features/prompts/InstructionFileEntry.tsx')
-const { MenuSelect } = await import('../../src/client/ui/MenuSelect.tsx')
-const { PromptConfigCard } = await import('../../src/client/features/prompts/PromptConfigCard.tsx')
-const { PromptConfigForm } = await import('../../src/client/features/prompts/PromptConfigForm.tsx')
 loader.deregister()
 const t = (key, params = {}) => Object.entries(params).reduce((text, [name, value]) => text.replaceAll(`{${name}}`, String(value)), PROMPT_TOOL_DICTS.zh[key] ?? key)
 
@@ -51,40 +46,11 @@ const componentTree = (Component, props) => {
 const findElement = (node, predicate) => {
   if (Array.isArray(node)) return node.map((child) => findElement(child, predicate)).find(Boolean)
   if (!React.isValidElement(node)) return undefined
-  if (predicate(node)) return node
-  // 组合式页面把层卡挂在 props（moduleCards / preStepSlot / headerSlot）上，不能只看 children。
-  for (const value of Object.values(node.props)) {
-    if (!React.isValidElement(value) && !Array.isArray(value)) continue
-    const found = findElement(value, predicate)
-    if (found !== undefined) return found
-  }
-  return undefined
-}
-/** store 对象是挂载帧快照：渲染前用 getter 取当前 fields / policy / notice。 */
-const viewOf = (store, onNotice) => ({
-  ...store,
-  fields: store.getFields(),
-  instructionPolicy: store.getInstructionPolicy(),
-  showNotice: onNotice ?? store.showNotice,
-})
-/** 主会话页组合出的前置步骤层卡：指令文件条目与来源开关都在它内部。 */
-const preStepCardFromPage = (store) => {
-  const page = componentTree(MainSessionPage, { store: viewOf(store), t })
-  const layerCards = findElement(page, (node) => node.type === EngineModuleCards)
-  assert.ok(layerCards, '主会话页必须把层卡组合进模块区')
-  const cards = componentTree(EngineModuleCards, layerCards.props)
-  const preStep = findElement(cards, (node) => node.type === EngineBehaviorCard && node.props.layer === 'pre-step')
-  assert.ok(preStep, '前置步骤层卡必须存在')
-  return preStep
-}
-const instructionSourceToggle = (store) => {
-  const body = componentTree(EngineBehaviorCard, preStepCardFromPage(store).props)
-  const row = findElement(body, (node) => node.type === InstructionSourceRow)
-  assert.ok(row, '来源总开关必须挂在前置步骤层卡内')
-  return findElement(componentTree(InstructionSourceRow, row.props), (node) => node.type === ToggleRow)
+  return predicate(node) ? node : findElement(node.props.children, predicate)
 }
 const listFromPage = (Page, store, onNotice) => {
-  const tree = componentTree(Page, { store: viewOf(store, onNotice), t })
+  const view = { ...store, fields: store.getFields(), instructionPolicy: store.getInstructionPolicy(), showNotice: onNotice ?? store.showNotice }
+  const tree = componentTree(Page, { store: view, t })
   const editor = findElement(tree, (node) => node.type === PromptConfigsEditor)
   const list = findElement(editor ? componentTree(editor.type, editor.props) : tree, (node) => node.type === PromptConfigList)
   assert.ok(list, '实际页面必须能路由到提示词配置列表')
@@ -707,10 +673,11 @@ test('R7：保存全部汇总失败，保留已成功文件/预设及失败草�
 })
 
 test('R5：实际工作台来源总开关写顶层 enabled，不暗改文件开关或官方负责人', async () => {
-  const requests = []
-  let policy = { enabled: false, defaults: policyValues(), files: {} }
-  let revision = 'pol-1'
-  const restore = installFetch(requests, {
+  for (const Page of [MainSessionPage, ConfigListWithTemplates]) {
+    const requests = []
+    let policy = { enabled: false, defaults: policyValues(), files: {} }
+    let revision = 'pol-1'
+    const restore = installFetch(requests, {
       bootstrap: bootstrapPayload({ ownerOfficialInstructions: true }),
       instructionsPolicy: ({ policy: patch }) => {
         if (patch) {
@@ -719,25 +686,27 @@ test('R5：实际工作台来源总开关写顶层 enabled，不暗改文件开�
         }
         return policyPayload({}, { policy, revision })
       },
-  })
-  try {
-    const store = mountStore(makeApi(), makeSettings())
-    await store.load()
-    assert.equal(await store.updateInstructionPolicy('f1', { enabled: true }), true)
-    assert.equal(store.getInstructionPolicy().policy.enabled, false, '文件启用不应偷偷开启独立来源')
-    assert.equal(store.getFields().promptConfigs[0].enabled, false)
-    const toggle = instructionSourceToggle(store)
-    assert.ok(toggle, '总开关必须从前置步骤层卡可达，而不是孤立 store API')
-    assert.equal(toggle.props.checked, false)
-    assert.match(toggle.props.hint, /已关闭.*文件开关不会生效/)
-    assert.match(toggle.props.hint, /官方指令仍负责.*不会接管官方负责人/)
-    assert.equal(await toggle.props.onChange(true), true)
-    assert.deepEqual(requests.at(-1).body, { policy: { enabled: true }, expectedRevision: 'pol-2' })
-    assert.equal(store.getFields().promptConfigs[0].enabled, true)
-    assert.equal(store.getFields().promptConfigs[0].contentOwnerConflict, true)
-    assert.deepEqual(store.getInstructionPool().owner, { officialInstructions: true })
-    assert.ok(requests.every(({ endpoint }) => ['bootstrap', 'instructions-policy'].includes(endpoint)))
-  } finally { restore() }
+    })
+    try {
+      const store = mountStore(makeApi(), makeSettings())
+      await store.load()
+      assert.equal(await store.updateInstructionPolicy('f1', { enabled: true }), true)
+      assert.equal(store.getInstructionPolicy().policy.enabled, false, '文件启用不应偷偷开启独立来源')
+      assert.equal(store.getFields().promptConfigs[0].enabled, false)
+      const tree = listFromPage(Page, store)
+      const toggle = findElement(tree, (node) => node.type === ToggleRow && node.props.label === '独立指令文件来源')
+      assert.ok(toggle, '总开关必须从真实页面可达，而不是孤立 store API')
+      assert.equal(toggle.props.checked, false)
+      assert.match(toggle.props.hint, /已关闭.*文件开关不会生效/)
+      assert.match(toggle.props.hint, /官方指令仍负责.*不会接管官方负责人/)
+      assert.equal(await toggle.props.onChange(true), true)
+      assert.deepEqual(requests.at(-1).body, { policy: { enabled: true }, expectedRevision: 'pol-2' })
+      assert.equal(store.getFields().promptConfigs[0].enabled, true)
+      assert.equal(store.getFields().promptConfigs[0].contentOwnerConflict, true)
+      assert.deepEqual(store.getInstructionPool().owner, { officialInstructions: true })
+      assert.ok(requests.every(({ endpoint }) => ['bootstrap', 'instructions-policy'].includes(endpoint)))
+    } finally { restore() }
+  }
 })
 
 test('R5：来源总开关等待写入结果，失败/缺少快照不假成功，读取失败时禁用', async () => {
@@ -756,7 +725,7 @@ test('R5：来源总开关等待写入结果，失败/缺少快照不假成功�
       const store = mountStore(makeApi(), makeSettings())
       await store.load()
       const initial = store.getInstructionPolicy()
-      const toggle = instructionSourceToggle(store)
+      const toggle = findElement(listFromPage(MainSessionPage, store), (node) => node.type === ToggleRow && node.props.label === '独立指令文件来源')
       assert.ok(toggle)
       const saving = toggle.props.onChange(true)
       await entered.promise
@@ -771,7 +740,7 @@ test('R5：来源总开关等待写入结果，失败/缺少快照不假成功�
   try {
     const store = mountStore(makeApi(), makeSettings())
     await store.load()
-    const toggle = instructionSourceToggle(store)
+    const toggle = findElement(listFromPage(MainSessionPage, store), (node) => node.type === ToggleRow && node.props.label === '独立指令文件来源')
     assert.ok(toggle)
     assert.equal(toggle.props.disabled, true)
     assert.match(toggle.props.hint, /unavailable/)
@@ -910,51 +879,6 @@ test('R7：后续文件尚未应答时即确认前一成功文件，批次失效
     assert.equal(store.getInstructionPool().drafts[0].revision, 'saved')
     assert.equal(store.getInstructionPool().drafts[1].content, 'edited')
   } finally { gate.resolve(); restore() }
-})
-
-test('指令文件归前置步骤层卡：列表不出独立卡片，正文编辑与来源开关都在层卡内', async () => {
-  const files = [fileSnapshot(), fileSnapshot({ fileId: 'f2', displayPath: 'AGENTS.md' })]
-  const cards = files.map((file) => fileCard({
-    id: `agents-file-${file.fileId}`,
-    name: `AGENTS：${file.displayPath}`,
-    params: { ...fileCard().params, fileId: file.fileId, displayPath: file.displayPath },
-  }))
-  const restore = installFetch([], { bootstrap: bootstrapPayload({ cards, files }) })
-  try {
-    const store = mountStore(makeApi(), makeSettings())
-    await store.load()
-    // 独立卡片消失：列表只渲染预设卡，指令文件不再单独出卡。
-    const list = listFromPage(MainSessionPage, store)
-    assert.equal(findElement(list, (node) => node.type === PromptConfigCard
-      && String(node.props.config?.id ?? '').startsWith('agents-file-')), undefined)
-    assert.equal(findElement(list, (node) => node.type === ToggleRow), undefined, '来源开关不再作为列表上的常驻行')
-    // 归入前置步骤层卡：文件出现在层卡的选择下拉里。
-    const preStep = preStepCardFromPage(store)
-    const body = componentTree(EngineBehaviorCard, preStep.props)
-    assert.ok(findElement(body, (node) => node.type === InstructionSourceRow), '来源开关随指令文件进层卡')
-    const select = findElement(body, (node) => node.type === MenuSelect)
-    assert.deepEqual(select.props.options.map(({ value, label }) => [value, label]), [
-      ['agents-file-f1', 'AGENTS：AGENTS.md'],
-      ['agents-file-f2', 'AGENTS：AGENTS.md'],
-    ])
-    // 选中文件时给出正文编辑与独立策略接线；行为仍由文件来源固定为官方等价绑定。
-    const focused = componentTree(EngineBehaviorCard, { ...preStep.props, focusCapability: 'agents-file-f2' })
-    const entry = findElement(focused, (node) => node.type === InstructionFileEntry)
-    assert.ok(entry, '选中文件后必须能编辑该文件')
-    assert.equal(entry.props.card.id, 'agents-file-f2')
-    assert.equal(entry.props.card.text, 'V1')
-    assert.equal(typeof entry.props.onPatchPolicy, 'function')
-    assert.match(preStep.props.extraMeta, /2/)
-    // 行为与官方一致：正文可编辑，但没有插入点/填充来源等绑定选择器。
-    const entryBody = componentTree(InstructionFileEntry, entry.props)
-    const form = findElement(entryBody, (node) => node.type === PromptConfigForm)
-    assert.ok(form, '文件条目必须带正文编辑表单')
-    const formBody = componentTree(PromptConfigForm, form.props)
-    const textarea = findElement(formBody, (node) => node.type === 'textarea' && node.props['aria-label'] === t('form.text.aria'))
-    assert.equal(textarea.props.value, 'V1')
-    assert.equal(findElement(formBody, (node) => node.props.label === t('form.layer.label')), undefined)
-    assert.equal(findElement(formBody, (node) => node.props.label === t('form.fill.label')), undefined)
-  } finally { restore() }
 })
 
 test('R7：实际列表保存回调 reject 时返回 false 并明确报错', async () => {
