@@ -1,10 +1,9 @@
-import { useEffect, useState, type ReactNode, type RefObject } from 'react'
+import { useState, type ReactNode, type RefObject } from 'react'
 import { IconChevronDownOutline14, Menu } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PromptToolStore } from '../../data/use-prompt-tool-store.ts'
 import type { PromptToolTranslate } from '../../locales.ts'
 import { EngineModuleCard } from '../../ui/EngineModuleCard.tsx'
-import { ENGINE_CAPABILITIES, ENGINE_RECIPES, engineRecipe, isEngineCapabilityPresent, type EngineCapability } from '../../../shared/engine-capabilities.ts'
-import { MenuSelect } from '../../ui/MenuSelect.tsx'
+import { ENGINE_CAPABILITIES, ENGINE_RECIPES, engineRecipe, isEngineCapabilityPresent } from '../../../shared/engine-capabilities.ts'
 import { EngineParamFields } from './EngineParamFields.tsx'
 import styles from '../../ui/controls.module.css'
 
@@ -73,33 +72,7 @@ export function EnginePromptDefaultsCard({ store, t }: { store: PromptToolStore;
   )
 }
 
-/** 同层共用一张行为卡；下拉只切换编辑目标，不改变其他已装配行为。 */
-export function EngineBehaviorCard({ store, t, capabilities, focusCapability }: {
-  store: PromptToolStore
-  t: PromptToolTranslate
-  capabilities: readonly EngineCapability[]
-  focusCapability?: string
-}): ReactNode {
-  const [selectedId, setSelectedId] = useState(focusCapability)
-  useEffect(() => { if (focusCapability !== undefined) setSelectedId(focusCapability) }, [focusCapability])
-  const selected = capabilities.find(({ id }) => id === selectedId) ?? capabilities[0]
-  if (selected === undefined) return null
-  const editable = store.fields.writePreset && store.moduleFacts?.editable === true
-  // 默认折叠：只有「创建/定位到本卡某项能力」才带出展开信号，切换编辑目标不重开卡片。
-  const reveal = capabilities.some(({ id }) => id === focusCapability) ? focusCapability : undefined
-  return <EngineModuleCard name={t('modules.behavior.name')} layer={selected.displayLayer}
-    meta={capabilities.map(({ id }) => id).join(' · ')} revealKey={reveal}
-    onDelete={editable ? () => void store.removeEngineCapability(selected.id) : undefined}>
-    <label className={styles.configFieldLabel}>{t('modules.behavior.label')}
-      <MenuSelect ariaLabel={t('modules.behavior.label')} value={selected.id}
-        options={capabilities.map(({ id }) => ({ value: id, label: id }))} onChange={setSelectedId} />
-    </label>
-    <p className={styles.configFieldHint}>{t('modules.behavior.hint')}</p>
-    <EngineParamFields store={store} card={selected.id} t={t} />
-  </EngineModuleCard>
-}
-
-/** 能力存在性来自实际装配；只统一卡片呈现，不建立第二份配置或运行时顺序。 */
+/** 能力存在性来自实际装配；一项已装配能力一张卡，直接编辑自身参数（无编辑目标选择器）。 */
 export function EngineModuleCards({
   store,
   t,
@@ -119,12 +92,16 @@ export function EngineModuleCards({
 }): ReactNode {
   const capabilities = ENGINE_CAPABILITIES.filter(({ id, displayLayer }) =>
     (layerFilter === 'all' || layerFilter === displayLayer) && isEngineCapabilityPresent(id, store.moduleFacts))
-  const layers = [...new Set(capabilities.map(({ displayLayer }) => displayLayer))]
+  const editable = store.fields.writePreset && store.moduleFacts?.editable === true
   return <>
     {showActions && <EngineModuleActions store={store} t={t} />}
-    {layers.map((layer) => (
-      <EngineBehaviorCard key={layer} store={store} t={t} focusCapability={focusCapability}
-        capabilities={capabilities.filter(({ displayLayer }) => displayLayer === layer)} />
+    {capabilities.map((capability) => (
+      <EngineModuleCard key={capability.id} name={capability.id} layer={capability.displayLayer}
+        meta={capability.moduleKeys.join(' · ')}
+        revealKey={capability.id === focusCapability ? focusCapability : undefined}
+        onDelete={editable ? () => void store.removeEngineCapability(capability.id) : undefined}>
+        <EngineParamFields store={store} card={capability.id} t={t} />
+      </EngineModuleCard>
     ))}
     {showPromptDefaults && (layerFilter === 'all' || layerFilter === 'pre-step') && <EnginePromptDefaultsCard store={store} t={t} />}
     {showStatus && store.moduleFacts === undefined && <p className={styles.configFieldHint} role="status">{t('modules.status.reading')}</p>}

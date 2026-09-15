@@ -70,9 +70,8 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
   useEffect(() => {
     const created = configs.find((config) => config.id === props.createdConfigId)
     if (created === undefined) return
+    // 只展开新建的卡：不改动用户的层级筛选与搜索词。
     setExpanded(created.id)
-    setFilter('')
-    changeViewFilter(promptConfigLayer(created))
   }, [props.createdConfigId])
 
   const effectiveLayer = layer ?? (viewFilter !== 'all' && viewFilter !== 'world-book' ? viewFilter : undefined)

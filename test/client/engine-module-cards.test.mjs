@@ -33,9 +33,8 @@ const loader = registerHooks({
   },
 })
 const { EngineParamFields } = await import('../../src/client/features/modules/EngineParamFields.tsx')
-const { EngineModuleCards, EngineBehaviorCard, EngineCapabilityCreateMenu } = await import('../../src/client/features/modules/EngineModuleList.tsx')
+const { EngineModuleCards, EngineCapabilityCreateMenu } = await import('../../src/client/features/modules/EngineModuleList.tsx')
 const { PromptConfigForm } = await import('../../src/client/features/prompts/PromptConfigForm.tsx')
-const { MenuSelect } = await import('../../src/client/ui/MenuSelect.tsx')
 const { OptionField } = await import('../../src/client/features/prompts/PromptConfigFields.tsx')
 const { PromptConfigList } = await import('../../src/client/features/prompts/PromptConfigList.tsx')
 const { TemplatePicker } = await import('../../src/client/ui/TemplatePicker.tsx')
@@ -82,19 +81,22 @@ test('模块字段从目录渲染，每个参数有且只有一个配置卡 owne
   }
 })
 
-test('卡片存在性来自装配事实，filesystem-editor 显示为编辑工具能力', () => {
+test('卡片存在性来自装配事实，一项装配能力一张卡', () => {
   const absent = render(EngineModuleCards, { store, t })
   assert.doesNotMatch(absent, /class="configName">tool-bootstrap</)
   const active = { ...store, moduleFacts: { ...store.moduleFacts, effectiveModules: ['tool-bootstrap', 'filesystem-editor', 'promoted-code-mode', 'progress-reminder'] } }
-  const html = render(EngineModuleCards, { store: active, t })
-  assert.equal((html.match(/class="configName">引擎行为</g) ?? []).length, 2, 'system-section/tool-pipeline 各一张通用行为卡')
-  for (const id of ['tool-bootstrap', 'str-replace-editor', 'promoted-code-mode', 'progress-reminder']) assert.ok(html.includes(id))
+  const html = render(EngineModuleCards, { store: active, t, showPromptDefaults: false })
+  assert.equal((html.match(/data-module-card="true"/g) ?? []).length, 4, '每项装配能力一张卡')
+  for (const id of ['tool-bootstrap', 'promoted-code-mode', 'progress-reminder', 'str-replace-editor']) assert.match(html, new RegExp(`class="configName">${id}<`))
+  // 卡头 meta 显示提供该能力的 modules 行（str-replace-editor 由 filesystem-editor 行提供）。
+  assert.match(html, /class="configMeta">filesystem-editor</)
+  assert.doesNotMatch(html, /编辑行为/, '不再提供编辑目标选择器')
   const filtered = render(EngineModuleCards, { store: active, t, layerFilter: 'pre-step' })
   assert.doesNotMatch(filtered, /class="configName">tool-bootstrap</)
   assert.doesNotMatch(filtered, /class="configName">str-replace-editor</)
   assert.doesNotMatch(filtered, /class="configName">(?:promoted-code-mode|progress-reminder)</)
   const anchored = render(EngineModuleCards, { store: { ...store, moduleFacts: { ...store.moduleFacts, effectiveModules: ['anchor-turn'] } }, t, layerFilter: 'pre-step' })
-  assert.match(anchored, /class="configMeta">anchor-turn</)
+  assert.ok(anchored.includes('class="configName">anchor-turn<'), 'pre-step 过滤只留本层能力卡')
   assert.doesNotMatch(render(EngineModuleCards, { store: { ...store, moduleFacts: { ...store.moduleFacts, effectiveModules: ['anchor-turn'] } }, t, layerFilter: 'system-section' }), /class="configName">anchor-turn</)
   const official = render(EngineModuleCards, { store: { ...active, moduleFacts: { ...active.moduleFacts, sourceMode: 'official' } }, t })
   assert.doesNotMatch(official, /class="configName">tool-bootstrap</)
@@ -152,15 +154,20 @@ test('自定义工具编辑入口保留，能力删除仍需二次确认', () =>
   assert.match(read('features/tools/CustomToolsCard.tsx'), /<CustomToolCard/)
   assert.match(read('ui/EngineModuleCard.tsx'), /确认删除/)
   const removed = []
-  const card = tree(EngineBehaviorCard, { store: { ...store, fields: { ...store.fields, writePreset: true }, removeEngineCapability: (id) => removed.push(id) }, t,
-    capabilities: ENGINE_CAPABILITIES.filter(({ displayLayer }) => displayLayer === 'pre-step'), focusCapability: 'anchor-turn' })
-  const select = find(card, (node) => node.type === MenuSelect)
-  assert.equal(select.props.value, 'anchor-turn')
-  assert.deepEqual(select.props.options.map(({ value }) => value), ['context-gate', 'anchor-turn'])
-  select.props.onChange('context-gate')
-  assert.deepEqual(removed, [], '选择编辑目标不修改装配')
+  const cards = tree(EngineModuleCards, {
+    store: {
+      ...store,
+      fields: { ...store.fields, writePreset: true },
+      moduleFacts: { ...store.moduleFacts, effectiveModules: ['context-gate', 'anchor-turn'] },
+      removeEngineCapability: (id) => removed.push(id),
+    },
+    t,
+  })
+  const card = find(cards, (node) => node.props?.name === 'anchor-turn' && node.props.onDelete !== undefined)
+  assert.ok(card, 'anchor-turn 必须有自己的卡片')
+  assert.deepEqual(removed, [])
   card.props.onDelete()
-  assert.deepEqual(removed, ['anchor-turn'], '删除回调只操作当前渲染的选中项')
+  assert.deepEqual(removed, ['anchor-turn'], '删除回调只操作本卡对应的能力')
 })
 
 test('插入点顺序恒为六层，公共默认值不伪装成 pre-step 能力', () => {
@@ -204,10 +211,10 @@ test('统一列表平铺渲染配置与能力卡，层级筛选只过滤不分�
   }
   const html = render(PromptConfigList, props)
   assert.doesNotMatch(html, /data-insertion-point/)
-  assert.match(html, /persona-main/)
+  assert.ok(html.includes('persona-main'), '层级配置卡与模块卡同列表渲染')
   assert.match(html, /class="configMeta">anchor-turn</)
   // 视觉排序：模块卡（引擎能力）在层级配置卡之前；promptConfigs 的注入顺序仍由 ordered 决定。
-  assert.ok(html.indexOf('anchor-turn') < html.indexOf('persona-main'), '模块卡应排在层级配置卡之前')
+  assert.ok(html.indexOf('anchor-turn') < html.indexOf('persona-main'), '模块卡排在层级配置卡之前')
   // 选中插入点层级：只留该层配置与能力卡，仍不生成分类区块。
   const filtered = render(PromptConfigList, {
     ...props,
@@ -229,17 +236,14 @@ test('统一列表平铺渲染配置与能力卡，层级筛选只过滤不分�
   assert.match(owner.props.className, /configList/)
 })
 
-test('引擎行为卡默认折叠，只有创建/定位到本层才展开', () => {
+test('能力卡默认折叠，只有创建/定位到该能力才展开', () => {
   const active = { ...store, moduleFacts: { ...store.moduleFacts, effectiveModules: ['context-gate', 'anchor-turn', 'tool-bootstrap'] } }
-  const preStep = ENGINE_CAPABILITIES.filter(({ displayLayer }) => displayLayer === 'pre-step')
-  const collapsed = render(EngineBehaviorCard, { store: active, t, capabilities: preStep })
-  assert.match(collapsed, /aria-expanded="false"/, '未创建/未定位时行为卡必须折叠')
-  assert.doesNotMatch(collapsed, /aria-label="编辑行为"/, '折叠的行为卡不渲染编辑表单')
-  const revealed = render(EngineBehaviorCard, { store: active, t, capabilities: preStep, focusCapability: 'anchor-turn' })
-  assert.match(revealed, /aria-expanded="true"/, '创建/定位到本层能力时展开')
-  assert.match(revealed, /aria-label="编辑行为"/)
-  const otherLayer = render(EngineBehaviorCard, { store: active, t, capabilities: preStep, focusCapability: 'tool-bootstrap' })
-  assert.match(otherLayer, /aria-expanded="false"/, '别的层级的定位信号不展开本卡')
+  const collapsed = render(EngineModuleCards, { store: active, t, showPromptDefaults: false })
+  assert.equal((collapsed.match(/aria-expanded="true"/g) ?? []).length, 0, '未创建/未定位时全部折叠')
+  assert.doesNotMatch(collapsed, /aria-label="锚定轮文本"/, '折叠的卡不渲染参数表单')
+  const revealed = render(EngineModuleCards, { store: active, t, showPromptDefaults: false, focusCapability: 'anchor-turn' })
+  assert.equal((revealed.match(/aria-expanded="true"/g) ?? []).length, 1, '只展开定位到的那张卡')
+  assert.match(revealed, /aria-label="锚定轮文本"/, '定位目标的参数表单可见')
 })
 
 test('创建菜单始终列出全部未添加能力，不按当前层过滤', async () => {

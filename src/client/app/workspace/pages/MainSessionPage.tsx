@@ -12,7 +12,6 @@ import { CustomToolsCard, type ToolCreateIntent } from '../../../features/tools/
 import { TemplatePicker } from '../../../ui/TemplatePicker.tsx'
 import ui from '../../../ui/controls.module.css'
 import type { InstructionPolicyFileOverride } from '../../../../shared/instructions.ts'
-import { engineCapability } from '../../../../shared/engine-capabilities.ts'
 /** 主会话页：公共配置 + 平铺模块列表 + 合并创建菜单（提示词配置 / 工具 / 能力模块）。 */
 export const MainSessionPage = memo(function MainSessionPage(props: { store: PromptToolStore; t: PromptToolTranslate }): ReactNode {
   const { store, t } = props
@@ -25,9 +24,9 @@ export const MainSessionPage = memo(function MainSessionPage(props: { store: Pro
   const [variablesExpanded, setVariablesExpanded] = useState(false)
   const [toolCreate, setToolCreate] = useState<ToolCreateIntent>()
   const [focusCapability, setFocusCapability] = useState<string>()
+  // 创建后只定位并展开新卡，不改动用户选定的列表筛选。
   const revealCapability = useCallback((id: string) => {
     setFocusCapability(id)
-    setViewFilter(engineCapability(id)?.displayLayer ?? 'all')
   }, [])
   // 稳定回调：卡片 memo 的生效前提（store 引用已稳定）。
   const patchConfigs = useCallback((configs: PromptToolStore['fields']['promptConfigs']) => {
@@ -71,12 +70,10 @@ export const MainSessionPage = memo(function MainSessionPage(props: { store: Pro
     else if (id === 'create:tool-template') picker.openTools()
     else if (id === 'create:variables') pickVariables()
     else if (id === 'create:blank-tool') {
-      setViewFilter('tool-pipeline')
       setToolCreate({ kind: 'blank', presetId: fields.presetTemplate })
     }
   }, [fields.presetTemplate, picker, pickVariables])
   const insertToolTemplate = useCallback((spec: Record<string, unknown>) => {
-    setViewFilter('tool-pipeline')
     setToolCreate({ kind: 'template', spec, presetId: fields.presetTemplate })
     picker.closePicker()
   }, [fields.presetTemplate, picker])
