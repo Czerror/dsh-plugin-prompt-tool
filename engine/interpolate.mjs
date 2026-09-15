@@ -110,10 +110,15 @@ export function interpolateVariables(text, variables, session) {
   })
 }
 
-/** 静态层插值：配置 variables 优先，ST 运行时宏取空串，内置路径变量按无会话语义解析。 */
-export function interpolateStatic(text, variables) {
+/**
+ * 静态层插值：配置 variables 优先，ST 运行时宏取空串，内置路径变量按无会话语义解析。
+ * @param keep 需要交给官方变量通道按 assembly 求值的名字（运行时事实与已注册变量）——
+ *   命中即原样保留引用，不做静态替换。
+ */
+export function interpolateStatic(text, variables, keep) {
   const builtins = builtinVariables(undefined)
   return normalizeMacroSyntax(text).replace(REFERENCE_RE, (whole, key, arg) => {
+    if (keep !== undefined && keep.has(key)) return whole
     if (Object.prototype.hasOwnProperty.call(variables, key)) return String(variables[key])
     // ST 运行时宏在无会话上下文（system-section 注册期）时替换为空串——
     // 不残留字面，也不触发官方 unknown variable 渲染报错。
@@ -122,6 +127,32 @@ export function interpolateStatic(text, variables) {
     // 内置变量必须在此解析：官方严格插值不认大写名字（{{DSH_HOME}} 会被判畸形引用）。
     return Object.prototype.hasOwnProperty.call(builtins, key) ? builtins[key] : whole
   })
+}
+
+/**
+ * 需要按 assembly 求值的运行时事实（官方变量注册用）。
+ * random/pick/roll/chance 是「每次出现各算一次」的求值宏，newline/pipe 是字面宏，
+ * 都不在其中——它们继续由 interpolate* 内联处理。
+ */
+export const RUNTIME_FACTS = new Set([
+  'lastusermessage',
+  'lastcharmessage',
+  'charifnotgroup',
+  'time',
+  'date',
+  'weekday',
+  'isotime',
+  'isodate',
+])
+
+/**
+ * 运行时事实求值（大小写不敏感）。非事实名返回 undefined。
+ * @param session 会话对象；缺省时按静态语义（运行时宏为空、时间取当前值）。
+ */
+export function runtimeFactValue(name, session) {
+  const key = String(name ?? '').toLowerCase()
+  if (!RUNTIME_FACTS.has(key)) return undefined
+  return DYNAMIC_MACROS[key](undefined, session)
 }
 
 /**
@@ -159,7 +190,7 @@ export function normalizeMacroSyntax(text) {
  *   - 只有 `{{` 且其后无 `}}` → 官方按字面处理，原样保留。
  * @returns 清洗后文本与已剥离片段（供调用方一次性告警）。
  */
-export function stripUnresolvedRefs(text) {
+export function stripUnresolvedRefs(text, keep) {
   const stripped = []
   let out = ''
   let index = 0
@@ -173,6 +204,12 @@ export function stripUnresolvedRefs(text) {
     const rest = text.slice(open)
     const group = /^\{\{([^{}]*)\}\}/.exec(rest)
     if (group !== null) {
+      // 白名单（已注册的官方变量名）原样保留，交给官方按 assembly 求值。
+      if (keep !== undefined && keep.has(group[1].trim())) {
+        out += group[0]
+        index = open + group[0].length
+        continue
+      }
       stripped.push(group[0])
       index = open + group[0].length
       continue

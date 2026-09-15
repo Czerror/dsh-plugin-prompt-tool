@@ -73,6 +73,20 @@ test('loadPromptConfigFiles 扫描 yml 与 json，非法文件 fail loud', () =>
   }
 })
 
+test('renderPromptConfigYaml：数字形状的 id/name 加引号，回读仍是字符串（否则整个预设挂载失败）', () => {
+  const yaml = renderPromptConfigYaml({ id: 'st-prompt-32', name: '1', layer: 'pre-step', strategy: 'static', text: '正文' })
+  assert.match(yaml, /^name: '1'$/m, '数字形状名字必须带引号')
+  const parsed = parse(yaml)
+  assert.equal(parsed.name, '1')
+  assert.equal(typeof parsed.name, 'string')
+  // id 同样：纯数字 id 不带引号会被解析回 number。
+  const idYaml = renderPromptConfigYaml({ id: '123', strategy: 'static', text: '正文' })
+  assert.match(idYaml, /^id: '123'$/m)
+  assert.equal(typeof parse(idYaml).id, 'string')
+  // 普通字符串不加引号（不制造无谓 diff）。
+  assert.match(renderPromptConfigYaml({ id: 'custom', name: '角色设定', strategy: 'static', text: 'x' }), /^name: 角色设定$/m)
+})
+
 test('renderPromptConfigYaml 全字段开放：variables/identity/params 嵌套完整回读', () => {
   const yaml = renderPromptConfigYaml({
     id: 'full',

@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { interpolateStatic, interpolateVariables, normalizeMacroSyntax, stripUnresolvedRefs } from '../../engine/interpolate.mjs'
+import { interpolateStatic, interpolateVariables, normalizeMacroSyntax, runtimeFactValue, stripUnresolvedRefs } from '../../engine/interpolate.mjs'
 
 test('normalizeMacroSyntax：ST 宏写法归一到本项目语法（幂等，普通变量不动）', () => {
   assert.equal(normalizeMacroSyntax('{{roll 1d6}}'), '{{roll::1d6}}')
@@ -27,6 +27,26 @@ test('stripUnresolvedRefs：成组引用剥离、畸形只中和开括号、孤�
   assert.deepEqual(stripUnresolvedRefs('{{// {a}\n后面 }}尾'), { text: '// {a}\n后面 }}尾', stripped: ['{{'] })
   assert.deepEqual(stripUnresolvedRefs('代码 {{ 没有闭合'), { text: '代码 {{ 没有闭合', stripped: [] }, '无 }} 时官方按字面处理')
   assert.deepEqual(stripUnresolvedRefs('{{a}}{{b}}'), { text: '', stripped: ['{{a}}', '{{b}}'] })
+})
+
+test('keep 白名单：静态插值保留引用、出口剥离放行已注册官方名', () => {
+  const keep = new Set(['time', 'sv_pov_1'])
+  assert.equal(interpolateStatic('{{time}} 与 {{wordsCloud}} 与 {{未知}}', { wordsCloud: '1500' }, keep), '{{time}} 与 1500 与 {{未知}}')
+  assert.deepEqual(stripUnresolvedRefs('{{time}} 与 {{未知}} 与 {{sv_pov_1}}', keep), {
+    text: '{{time}} 与  与 {{sv_pov_1}}',
+    stripped: ['{{未知}}'],
+  })
+})
+
+test('runtimeFactValue：事实按会话现算，求值宏不在事实集合内', () => {
+  const session = { header: { cwd: '/cwd' }, snapshotEvents: () => [{ type: 'user/message', data: { message: { content: [{ type: 'text', text: '最新用户' }] } } }] }
+  assert.equal(runtimeFactValue('lastusermessage', session), '最新用户')
+  assert.equal(runtimeFactValue('lastUserMessage', session), '最新用户', '大小写不敏感')
+  assert.equal(runtimeFactValue('charifnotgroup', session), '')
+  assert.match(runtimeFactValue('time', session), /^\d{2}:\d{2}$/)
+  assert.match(runtimeFactValue('date', session), /^\d{4}-\d{2}-\d{2}$/)
+  assert.equal(runtimeFactValue('roll', session), undefined, '求值宏不入事实集合')
+  assert.equal(runtimeFactValue('缺失', session), undefined)
 })
 
 test('interpolateStatic：配置 variables 替换 {{key}}，未注册保留字面', () => {

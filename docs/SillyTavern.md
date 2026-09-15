@@ -248,16 +248,21 @@ ST 变量系统 = **变量读取 + 默认值兜底**，由引擎 `interpolate` �
 | `{{user}}` / `{{char}}` | 替换为「用户」/ 角色名 |
 | `{{description}}` / `{{personality}}` / `{{scenario}}` / `{{persona}}` | 字段宏 → 顶层 `variables` 同名内容变量（值取卡片字段并过一遍 ST 清洗）；字段缺失但正文有引用时登记空占位，不留字面。**不写进模型人设段** |
 | `{{roll 1d6}}` / `{{roll:1d6}}` / `{{random:a,b}}` 等 | 归一到本项目宏语法 `{{roll::1d6}}`（导入期与引擎侧各归一一次，旧内容同样受益） |
-| `{{lastusermessage}}` / `{{lastcharmessage}}`（大小写不敏感） | 运行时宏：会话最后一条用户 / 角色消息（引擎从 session 事件提取） |
+| `{{lastusermessage}}` / `{{lastcharmessage}}`（大小写不敏感） | 运行时事实：会话最后一条用户 / 角色消息。pre-step 层由引擎现算；官方插值两层注册成官方 prompt 变量，按每次 assembly 求值 |
 | `{{charIfNotGroup}}` | 空串（dsh 会话 header 无角色名；不残留字面） |
+| `{{time}}` / `{{date}}` / `{{weekday}}` / `{{isotime}}` / `{{isodate}}` | 时间事实：同样按 assembly 求值（官方插值两层走官方变量注册，不再于挂载时冻结） |
+| `{{random::a,b}}` / `{{pick::…}}` / `{{roll::1d6}}` / `{{chance::50}}` | 求值宏：每次出现各算一次，由引擎内联求值（**不**注册成官方变量，否则同段多处会取到同一个值） |
 
 插值优先级：**resolved 运行时 > 会话变量（session_var） > 配置 variables > 预设 variables > 运行时宏 > 内置（DSH_HOME/WORKSPACE/CWD） > 字面保留**。
 
-官方插值通道（`system-section` / `runtime-context`）出口清洗：本项目宽容解析后仍残留的
-引用一律剥离，再交给官方渲染器——官方对这些文本做严格插值（畸形引用、未注册名、值为
-undefined 都让整轮组装失败），而 runtime-context 在 0.1.6 没有 `interpolate:false`。
-被剥离的引用会以 `warnOnce` 记录（含样本），便于回填为模板变量。内置路径变量
-（`{{DSH_HOME}}`/`{{WORKSPACE}}`/`{{CWD}}`）在该通道内一并在本项目侧解析，不再残留字面。
+官方插值通道（`system-section` / `runtime-context`）的出口规则：本项目宽容解析后，
+运行时事实与"已声明且被引用"的内容变量**注册成官方 prompt 变量**（按 assembly 求值，
+优先级＝会话变量覆盖 > 声明值 > 运行时事实），非法官方名（中文/大写/连字符）改写为
+`sv_<slug>_<hash>` 别名并同步改写引用；其余残留引用一律剥离，再交给官方渲染器——官方
+对这些文本做严格插值（畸形引用、未注册名、值为 undefined 都让整轮组装失败），而
+runtime-context 在 0.1.6 没有 `interpolate:false`。被剥离的引用会以 `warnOnce` 记录
+（含样本），便于回填为模板变量；内置路径变量（`{{DSH_HOME}}`/`{{WORKSPACE}}`/`{{CWD}}`）
+在该通道内一并在本项目侧解析，不再残留字面。
 
 会话变量工具（模型可调用）：
 

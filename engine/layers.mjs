@@ -10,16 +10,89 @@ import {
   matchesModel,
   parseToolNames,
 } from './shared.mjs'
-import { interpolateVariables, interpolateStatic, stripUnresolvedRefs } from './interpolate.mjs'
+import { interpolateVariables, interpolateStatic, stripUnresolvedRefs, RUNTIME_FACTS, runtimeFactValue } from './interpolate.mjs'
+import { getSessionVar } from './session-vars.mjs'
 
 const name = 'prompt-config-engine'
 
-/** 单条文本型配置的完整文本:texts 数组按空行拼接（单一文本字段）。 */
-function configText(config) {
+/** 单条文本型配置的完整文本:texts 数组按空行拼接（单一文本字段）。
+ *  keep=官方变量通道按 assembly 求值的名字，静态 pass 命中即原样保留引用。 */
+function configText(config, registry) {
   return config.texts
-    .map((item) => interpolateStatic(item, config.variables))
+    .map((item) => interpolateStatic(item, config.variables, registry?.protect))
     .filter((item) => item.length > 0)
     .join('\n\n')
+}
+
+/** 官方 prompt 变量名规则（与官方 system-prompt 的 VARIABLE_NAME 一致）。 */
+const OFFICIAL_NAME_RE = /^[a-z][a-z0-9_]*$/
+/** 引用形态（仅名字，无 `::` 参数）：事实与内容变量引用都用这一形态。 */
+const NAME_REFERENCE_RE = /\{\{([A-Za-z0-9_.\u4e00-\u9fff-]+)\}\}/g
+
+/** 名字哈希（djb2 → base36）：非法官方名改写的确定性后缀。 */
+function shortHash(text) {
+  let hash = 5381
+  for (let index = 0; index < text.length; index += 1) hash = ((hash * 33) ^ text.charCodeAt(index)) >>> 0
+  return hash.toString(36)
+}
+
+/** 非法官方名的确定性改写：sv_<ascii slug>_<hash>；slug 为空（纯中文名）时只用 hash。 */
+function officialAliasOf(name) {
+  const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')
+  return `sv_${slug.length > 0 ? `${slug}_` : ''}${shortHash(name)}`
+}
+
+/**
+ * 注册官方 prompt 变量（systemPrompt.variable，按 assembly 求值）：
+ *   - 运行时事实（ST 运行时宏 + 时间类）：值随每次 assembly 现算，不再在注册期冻结为空；
+ *   - 官方通道文本里被引用、且已声明的内容变量：值 = 会话变量覆盖 ?? 声明值。
+ * 非法官方名（中文/大写/连字符）改写成确定性别名并改写文本引用；注册失败的名字退回静态解析。
+ * @returns protect=静态 pass 保留的名字；alias=原引用名→官方名；registered=已注册官方名（剥离白名单）。
+ */
+function registerOfficialVariables(ctx, configs, warnOnce) {
+  const registry = { protect: new Set(), alias: new Map(), registered: new Set() }
+  const systemPrompt = getService(ctx, 'systemPrompt')
+  if (systemPrompt === undefined || typeof systemPrompt.variable !== 'function') return registry
+  const declared = new Map()
+  const referenced = new Set()
+  for (const config of configs) {
+    for (const [name, value] of Object.entries(config.variables ?? {})) {
+      if (!declared.has(name)) declared.set(name, value === null || value === undefined ? '' : String(value))
+    }
+    for (const text of config.texts) {
+      for (const match of String(text).matchAll(NAME_REFERENCE_RE)) referenced.add(match[1])
+    }
+  }
+  // 只注册"会被用到"的名字：事实 + 官方通道里被引用的已声明变量。
+  const candidates = new Set([...RUNTIME_FACTS, ...[...referenced].filter((name) => declared.has(name))])
+  for (const name of candidates) {
+    const official = OFFICIAL_NAME_RE.test(name) ? name : officialAliasOf(name)
+    const isFact = RUNTIME_FACTS.has(name.toLowerCase())
+    const declaredValue = declared.get(name)
+    try {
+      keepDisposer(ctx, systemPrompt.variable(official, (context) => {
+        const session = context?.agent?.session
+        // 优先级与 interpolate 一致：会话变量 > 配置 variables > 运行时事实。
+        const override = session === undefined ? undefined : getSessionVar(session, name)
+        if (override !== undefined) return String(override)
+        if (declaredValue !== undefined) return declaredValue
+        if (isFact) return runtimeFactValue(name, session) ?? ''
+        return ''
+      }), `${name}: official prompt variable ${official}`)
+      registry.registered.add(official)
+      registry.protect.add(name)
+      if (official !== name) registry.alias.set(name, official)
+    } catch (error) {
+      warnOnce(`${name}: 官方 prompt 变量 ${official} 注册失败，该引用退回静态解析：${String(error?.message ?? error)}`)
+    }
+  }
+  return registry
+}
+
+/** 非法名的引用改写：`{{中文名}}` → `{{sv_中文_<hash>}}`（仅已注册成功的别名）。 */
+function rewriteOfficialAliases(text, alias) {
+  if (alias.size === 0) return text
+  return text.replace(NAME_REFERENCE_RE, (whole, name) => alias.has(name) ? `{{${alias.get(name)}}}` : whole)
 }
 
 /** agent/request 与 tools/* 层的作用域过滤。 */
@@ -37,8 +110,8 @@ function matchesAgentScope(config, agent) {
  * 只在本项目的宽容解析之后调用；其他层（pre-step / agent-request / tool-pipeline）
  * 不经官方插值，保持原有宽容语义。
  */
-function officialChannelText(text, label, warnOnce) {
-  const result = stripUnresolvedRefs(text)
+function officialChannelText(text, label, registry, warnOnce) {
+  const result = stripUnresolvedRefs(rewriteOfficialAliases(text, registry.alias), registry.registered)
   if (result.stripped.length > 0) {
     const samples = [...new Set(result.stripped)].slice(0, 3).join(' ')
     warnOnce(`${name}: ${label} 剥离了 ${result.stripped.length} 处无法解析的引用（${samples}）——请在模板变量里登记，或改用本项目宏语法 {{roll::1d6}}`)
@@ -69,7 +142,7 @@ function textLayerGroups(configs) {
 }
 
 /** system-section:注册静态 system prompt 段(支持官方 {{variable}} 渲染与 merged 拼接)。 */
-function wireSystemSections(ctx, configs, warnOnce) {
+function wireSystemSections(ctx, configs, registry, warnOnce) {
   const systemPrompt = getService(ctx, 'systemPrompt')
   if (systemPrompt === undefined || typeof systemPrompt.section !== 'function') {
     if (configs.length > 0) warnOnce(`${name}: systemPrompt service unavailable — system-section configs skipped`)
@@ -80,20 +153,21 @@ function wireSystemSections(ctx, configs, warnOnce) {
   for (const group of textLayerGroups(configs)) {
     const base = group[0]
     try {
-      const groupText = group.map((config) => configText(config)).filter((item) => item.length > 0).join('\n\n')
+      const groupText = group.map((config) => configText(config, registry)).filter((item) => item.length > 0).join('\n\n')
       if (groupText.length === 0) continue
       const hasAudience = group.some((config) => config.audience != null)
       const text = hasAudience
         ? (context) => officialChannelText(
             group
               .filter((config) => matchesAgentScope(config, context?.agent))
-              .map((config) => configText(config))
+              .map((config) => configText(config, registry))
               .filter((item) => item.length > 0)
               .join('\n\n'),
             `system-section ${base.id}`,
+            registry,
             warnOnce,
           )
-        : officialChannelText(groupText, `system-section ${base.id}`, warnOnce)
+        : officialChannelText(groupText, `system-section ${base.id}`, registry, warnOnce)
       keepDisposer(ctx, systemPrompt.section({
         name: typeof base.params?.sectionName === 'string' && base.params.sectionName.length > 0 ? base.params.sectionName : base.id,
         order: base.order,
@@ -111,7 +185,7 @@ function wireSystemSections(ctx, configs, warnOnce) {
 }
 
 /** runtime-context:注册动态运行时上下文(晋升后由 context-gate 差分投影;支持 merged 拼接与 placeholder 函数 provider)。 */
-function wireRuntimeContexts(ctx, configs, warnOnce) {
+function wireRuntimeContexts(ctx, configs, registry, warnOnce) {
   const systemPrompt = getService(ctx, 'systemPrompt')
   if (systemPrompt === undefined || typeof systemPrompt.context !== 'function') {
     if (configs.length > 0) warnOnce(`${name}: systemPrompt service unavailable — runtime-context configs skipped`)
@@ -121,12 +195,12 @@ function wireRuntimeContexts(ctx, configs, warnOnce) {
   for (const group of textLayerGroups(staticConfigs)) {
     const base = group[0]
     try {
-      const text = group.map((config) => configText(config)).filter((item) => item.length > 0).join('\n\n')
+      const text = group.map((config) => configText(config, registry)).filter((item) => item.length > 0).join('\n\n')
       if (text.length === 0) continue
       keepDisposer(ctx, systemPrompt.context({
         name: typeof base.params?.contextName === 'string' && base.params.contextName.length > 0 ? base.params.contextName : base.id,
         order: base.order,
-        text: officialChannelText(text, `runtime-context ${base.id}`, warnOnce),
+        text: officialChannelText(text, `runtime-context ${base.id}`, registry, warnOnce),
       }), `${name}: context ${base.id}`)
     } catch (error) {
       warnOnce(`${name}: runtime-context config ${base.id} failed: ${String(error?.message ?? error)}`)
@@ -151,7 +225,7 @@ function wireRuntimeContexts(ctx, configs, warnOnce) {
           const rendered = config.texts.length > 0
             ? interpolateVariables(config.texts.join('\n\n'), variables, session)
             : typeof resolved.text === 'string' ? interpolateVariables(resolved.text, variables, session) : ''
-          return officialChannelText(rendered, `runtime-context ${config.id}`, warnOnce)
+          return officialChannelText(rendered, `runtime-context ${config.id}`, registry, warnOnce)
         },
       }), `${name}: context ${config.id}`)
     } catch (error) {
@@ -247,8 +321,10 @@ function wireToolPipelines(ctx, configs, warnOnce) {
 
 /** 把非 pre-step 提示词配置接入其声明的官方层级通道。 */
 export function wireLayers(ctx, configs, warnOnce) {
-  wireSystemSections(ctx, configs.filter((config) => config.layer === 'system-section'), warnOnce)
-  wireRuntimeContexts(ctx, configs.filter((config) => config.layer === 'runtime-context'), warnOnce)
+  // 官方插值两层共享一份变量注册：运行时事实按 assembly 求值，非法名走别名改写。
+  const registry = registerOfficialVariables(ctx, configs.filter((config) => config.layer === 'system-section' || config.layer === 'runtime-context'), warnOnce)
+  wireSystemSections(ctx, configs.filter((config) => config.layer === 'system-section'), registry, warnOnce)
+  wireRuntimeContexts(ctx, configs.filter((config) => config.layer === 'runtime-context'), registry, warnOnce)
   wireAgentRequests(ctx, configs.filter((config) => config.layer === 'agent-request'), warnOnce)
   wireLlmStreams(ctx, configs.filter((config) => config.layer === 'llm-stream'), warnOnce)
   wireToolPipelines(ctx, configs.filter((config) => config.layer === 'tool-pipeline'), warnOnce)

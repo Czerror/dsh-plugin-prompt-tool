@@ -262,6 +262,57 @@ function makeWiredHarness(configSpecs, services = {}) {
   return { listeners, sections, contexts, disposed }
 }
 
+test('官方变量注册：事实按 assembly 求值、非法名改写为别名、未声明引用剥离', () => {
+  const providers = new Map()
+  const sections = []
+  makeWiredHarness([
+    {
+      id: 'facts',
+      layer: 'system-section',
+      strategy: 'static',
+      order: 0,
+      text: '时间 {{time}} 用户 {{lastusermessage}} 视角 {{POV}} 未声明 {{missing}}',
+      variables: { POV: '视角值' },
+    },
+  ], {
+    systemPrompt: {
+      variable(name, provider) { providers.set(name, provider); return () => providers.delete(name) },
+      section(def) { sections.push(def); return () => {} },
+      context() { return () => {} },
+    },
+  })
+
+  assert.ok(providers.has('time'), '时间事实注册为官方变量')
+  assert.ok(providers.has('lastusermessage'), '会话消息事实注册为官方变量')
+  const alias = [...providers.keys()].find((name) => name.startsWith('sv_'))
+  assert.ok(alias !== undefined, '非法官方名（大写 POV）改写为 sv_ 别名')
+
+  const text = sections[0].text
+  assert.match(text, /\{\{time\}\}/, '事实保留引用，交由官方按 assembly 求值（不再注册期冻结）')
+  assert.match(text, /\{\{lastusermessage\}\}/)
+  assert.match(text, new RegExp(`\\{\\{${alias}\\}\\}`), '别名改写生效')
+  assert.doesNotMatch(text, /\{\{POV\}\}/, '非法原名不再出现在注册文本里')
+  assert.doesNotMatch(text, /missing/, '未声明引用被剥离')
+
+  const session = {
+    id: 's1',
+    header: {},
+    snapshotEvents: () => [{ type: 'user/message', data: { message: { content: [{ type: 'text', text: '最新用户' }] } } }],
+  }
+  const context = { agent: { session } }
+  assert.equal(providers.get('lastusermessage')(context), '最新用户', '事实随会话现算')
+  assert.match(providers.get('time')(context), /^\d{2}:\d{2}$/)
+  assert.equal(providers.get(alias)(context), '视角值', '声明值兜底')
+  setSessionVar(session, 'POV', '会话覆盖')
+  assert.equal(providers.get(alias)(context), '会话覆盖', '会话变量优先于声明值')
+
+  // 官方渲染器能直接解析（白名单引用不被剥离）。
+  assert.doesNotThrow(() => renderPrompt({
+    sections: [{ name: 'facts', text }],
+    variables: Object.fromEntries([...providers].map(([name, provider]) => [name, provider(context)])),
+  }))
+})
+
 test('官方插值通道出口：无法解析的引用被剥离，官方 renderPrompt/renderContextSections 不再抛错', () => {
   const sections = []
   const contexts = []

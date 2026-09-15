@@ -103,6 +103,12 @@ UI 侧 `persistParamOverrides` **条件发送**：
 需自行把所需内容变量改到顶层 `variables` 后重新物化。清空顶层变量后，旧键不再复活。
 单条提示词配置的 `promptConfigs[].variables` 仍是局部覆盖，优先于同名预设级变量。
 
+内容变量进入官方插值两层（`system-section` / `runtime-context`）时按每次 assembly 求值：
+被引用且已声明的名字注册为官方 `systemPrompt.variable()`，取值优先级＝会话变量覆盖 >
+声明值 > 运行时事实（`lastusermessage`/`time` 等）。非法官方名（中文/大写/连字符）改写为
+`sv_<slug>_<hash>` 别名并同步改写引用；未声明的引用在出口剥离（`warnOnce` 记录样本）。
+`random`/`pick`/`roll`/`chance` 是"每次出现各算一次"的求值宏，始终由引擎内联处理。
+
 未填写变量名的空键行属于客户端草稿：保存载荷不携带空键，但保存成功不清理本地编辑行，同一预设的后台刷新也不覆盖该草稿。变量值为空字符串与变量名为空不是同一语义；具名空值仍正常持久化。
 
 ## 5. 新增参数 checklist（引擎行为参数）

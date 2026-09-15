@@ -125,10 +125,21 @@ function yamlMap(level: number, value: Record<string, unknown>): string[] {
   return lines
 }
 
+/**
+ * 用户提供的字符串写成 YAML 标量时的最小引号保护：数字/布尔/null 形状的值
+ * （ST 导入的模板名常见为 "1"、"2"）不带引号会被解析回 number，下一轮加载时
+ * 触发 `name/id must be a non-empty string` 而让整个预设挂载失败。
+ */
+function yamlSafeScalar(text: string): string {
+  return /^(?:[-+.]?[0-9][0-9._eE+-]*|true|false|null|yes|no|on|off|~)$/i.test(text)
+    ? `'${text.replace(/'/g, "''")}'`
+    : text
+}
+
 /** 把任意提示词配置 spec 渲染为独立提示词配置模块 yml（全部字段开放可配置）。 */
 export function renderPromptConfigYaml(spec: PromptConfigSpec): string {
-  const lines: string[] = [`id: ${spec.id}`]
-  if (typeof spec.name === 'string' && spec.name.length > 0 && spec.name !== spec.id) lines.push(`name: ${spec.name}`)
+  const lines: string[] = [`id: ${yamlSafeScalar(spec.id)}`]
+  if (typeof spec.name === 'string' && spec.name.length > 0 && spec.name !== spec.id) lines.push(`name: ${yamlSafeScalar(spec.name)}`)
   if (spec.configKind !== undefined) lines.push(`configKind: ${spec.configKind}`)
   if (spec.layer !== undefined) lines.push(`layer: ${spec.layer}`)
   if (spec.order !== undefined) lines.push(`order: ${spec.order}`)
