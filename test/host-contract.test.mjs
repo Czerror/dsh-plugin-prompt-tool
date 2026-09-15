@@ -1,5 +1,5 @@
 /**
- * DSH 0.1.5-rc.2 宿主契约回归。
+ * DSH 宿主契约回归（当前基线见 package.json 的官方发布包声明）。
  *
  * 0.1.5 相对 0.1.3 的破坏性变化：conversation.details.tool slot 与
  * session.events 数组移除；PTC 事件由 tool/code-dispatch 改名为 tool/ptc-dispatch。
@@ -40,14 +40,17 @@ test('客户端只注册 0.1.5 官方 slot 面：settings.plugins.tab + shell.ov
   assert.match(entry, /'slots'/)
 })
 
-test('版本声明对齐 0.1.5-rc.2，且 bundle 依赖边包含悬浮入口所需包', () => {
+test('版本声明对齐 package.json 的官方开发基线，且 bundle 依赖边包含悬浮入口所需包', () => {
+  // 基线只从 manifest 派生：官方版本升级时改 package.json 一处，不在这里重复写死。
+  const baseline = manifest.devDependencies['@deepseek-ai/dsh-agent']
+  assert.match(baseline, /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/, '主基线必须是精确 semver')
   for (const [name, range] of Object.entries(manifest.peerDependencies)) {
     if (!name.startsWith('@deepseek-ai/dsh-')) continue
-    assert.equal(range, '^0.1.5-rc.2', `peerDependencies.${name} 应声明 ^0.1.5-rc.2`)
+    assert.equal(range, `^${baseline}`, `peerDependencies.${name} 应声明 ^${baseline}`)
   }
   for (const [name, range] of Object.entries(manifest.devDependencies)) {
     if (!name.startsWith('@deepseek-ai/dsh-')) continue
-    assert.equal(range, '0.1.5-rc.2', `devDependencies.${name} 应精确锁定 0.1.5-rc.2`)
+    assert.equal(range, baseline, `devDependencies.${name} 应精确锁定 ${baseline}`)
   }
   assert.ok(manifest.dsh.client.inject.includes('@deepseek-ai/dsh-client-ui-layout'))
   assert.ok(!manifest.dsh.client.inject.includes('@deepseek-ai/dsh-client-ui-sidebar-right'), '官方右侧栏已移除')

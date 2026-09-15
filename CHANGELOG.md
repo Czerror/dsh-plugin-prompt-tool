@@ -2,6 +2,13 @@
 
 ## [未发布] - 2026-09-06
 
+### 官方组合跟随 DSH 0.1.6-alpha.1 与 PTC 命名统一（2026-09-15）
+
+- 官方 master（`0d1f50007f9bca3f52b06e1c3074fa14d5fb0720`，`dsh-v0.1.6-alpha.1` 之后）把组合嵌套行 `workflow-worker-thread`（`@deepseek-ai/dsh-workflow-worker-thread`）改名为 `workflow-ptc`（`@deepseek-ai/dsh-workflow-ptc`）。旧包已被上游删除（源码树与 npm 都只到 `0.1.5-rc.2`），继续生成旧行会让预设在该宿主上解析失败，故本次升级没有中间兼容版本。
+- 同步 `preset/creative/skills/editing-cordis-compositions/SKILL.md` 与 `test/fixtures/dsh/current` 离线快照（10 个文件与官方逐字节一致，指纹表与来源提交已更新），重建 `engine/compositions/library` 的 22 个官方模块：只有 `delegation`、`delegation-ptc` 的正文变化，其余为来源 commit 头刷新。
+- **行为变化**：`tool-ralph` 在 standard、ptc、cordis 官方预设中一律 `disabled: true`，本插件生成的预设随之默认不再向模型暴露 `ralph` 工具与对应 workflow engine 行（此前默认开启）。需要该工具时按官方配方复制预设并在 preset 中去掉这两处 `disabled`；PTC 预设在改名后额外禁用了无消费者的 `workflow-ptc` 行。
+- 依赖基线抬到 `0.1.6-alpha.1`：`^0.1.5-rc.2` 按 semver 预发布元组规则不匹配该版本，必须显式改范围；组合快照与宿主版本绑定，旧宿主请先升级 DSH 再切到本版本（不提供双读或自动迁移）。
+
 ### 官方模块跟随最新上游
 
 - 默认 `rebuild:composition` 核验官方 master 的远端 HEAD，拒绝落后 checkout、预设局部修改和无法核验的网络状态；不修改宿主源码，不回退旧版本。生成模块记录实际分支与 commit。
