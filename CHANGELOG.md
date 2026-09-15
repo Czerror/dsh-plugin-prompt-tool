@@ -2,6 +2,11 @@
 
 ## [未发布] - 2026-09-06
 
+### ST 变量赋值族与配置名称的 YAML 安全往返（2026-09-16）
+
+- **补齐 ST 变量赋值族**：此前只识别 `setvar`/`getvar`，`{{addvar::POV_rules::…}}` 这类"分卡拼规则块"的写法会被当作普通引用剥离，随后 `{{POV_rules}}` 只拿到空占位——**内容静默丢失**（实测明月秋青 v5.0：19 个变量全空、8 处引用被剥离并告警）。现在赋值族按 ST 语义落变量表（`setvar`/`setglobalvar` 覆盖、`addvar`/`addglobalvar` 追加、global 并入同一张表），读取族 `getvar`/`getglobalvar` 改写为 `{{k}}`（含 `::默认值` 语义），`incvar`/`decvar`/`trim`/`ERA` 只剥离。该预设重导后 19 个变量全部有值（`POV_rules` 462 / `anti_rules` 267 / `thinking_chain` 381 字符），告警归零、卡片数 102→89（纯赋值卡不再产出空文本卡）。
+- **配置名称/路径改为 YAML 安全标量**：`renderPromptConfigYaml` 里 `id`/`name`/`configKind`/`group`/`sourceKind`/`form`/`templateFile`/`fill`/`identity` 的用户字符串统一交给 `yaml` 适配器决定引号，替代此前只覆盖数字/布尔/null 的手写规则。裸写破坏往返的两种真实形态都会让**整个预设无法挂载**：数字形状（`name: "1"` → 解析回 number，触发 `name must be a non-empty string`）与特殊起始字符（`[主控制器]全能世界书`、`{{user}}档案`、`[new]剧情生成器[...]` → YAML 解析报错）。
+
 ### 运行时事实官方变量化与配置渲染引号修复（2026-09-16）
 
 - **运行时事实改为官方变量注册**：`lastusermessage`/`lastcharmessage`/`charifnotgroup`/`time`/`date`/`weekday`/`isotime`/`isodate` 注册为官方 `systemPrompt.variable()`，按每次 assembly 求值——修掉这些宏在 `system-section`/`runtime-context` 里被注册期冻结的问题（此前 `{{lastUserMessage}}` 在该层渲染为空串）。

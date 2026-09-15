@@ -19,8 +19,13 @@ import type { PresetSpec } from './manifest.ts'
 import type { PersonaSpec } from '../shared/persona-section.ts'
 import { buildWorldBookEntry } from './worldbook.ts'
 
-/** ST 运行时指令（渲染时执行、不发送给模型）：setvar/getvar/ERA/trim → 剥离。 */
-const ST_DIRECTIVE = /\{\{(setvar|getvar|ERA|trim)[^}]*\}\}/gi
+/** ST 变量赋值族（渲染时无输出）：setvar/setglobalvar 覆盖，addvar/addglobalvar 追加。
+ *  本项目没有独立的全局变量作用域，global 形式并入同一张变量表。 */
+const ST_ASSIGN = /\{\{(setvar|addvar|setglobalvar|addglobalvar)::([A-Za-z0-9_.\u4e00-\u9fff-]+)::([^}]*)\}\}/gi
+/** ST 变量读取族：getvar/getglobalvar（可带 `::默认值`）。 */
+const ST_GET = /\{\{(getvar|getglobalvar)::([A-Za-z0-9_.\u4e00-\u9fff-]+)(?:::([^}]*))?\}\}/gi
+/** 其余 ST 运行时指令（渲染时无输出）：ERA/trim/incvar/decvar → 剥离。 */
+const ST_DIRECTIVE = /\{\{(ERA|trim|incvar|decvar)[^}]*\}\}/gi
 /** ST 注释宏 {{// …}}：正文可跨行（跨行实例含 `}` 字符，`[^}]*` 剥不掉）→ 惰性剥到首个 `}}`。
  *  未闭合（文本内没有 `}}`）时不匹配，交给引擎在官方通道出口中和。 */
 const ST_COMMENT = /\{\{\/\/[\s\S]*?\}\}/g
@@ -42,10 +47,11 @@ function normalizeStMacros(text: string): string {
 
 /**
  * 处理 SillyTavern 文本，ST 变量语义 → 本项目 params fallback 插值：
- *   {{setvar::k::v}}        → 收集 k=v 进 params（会话变量初始值 = fallback 基准），指令剥离；
- *   {{getvar::k}}           → 改写为 {{k}}（引擎按 params 插值，无值保留原样）；
- *   {{getvar::k::default}}  → 改写为 {{k}} 且 variables 缺 k 时写入 default（fallback 落顶层 variables）；
- *   {{trim}}/{{//注释}}/{{ERA:...}} → 剥离（格式化/注释/第三方运行时）；
+ *   {{setvar::k::v}} / {{setglobalvar::k::v}}   → 覆盖 k=v（会话变量初始值 = fallback 基准），指令剥离；
+ *   {{addvar::k::v}} / {{addglobalvar::k::v}}   → 追加到 k（ST 的分卡拼接写法），指令剥离；
+ *   {{getvar::k}} / {{getglobalvar::k}}         → 改写为 {{k}}（引擎插值；无值无默认 → 空串，ST 语义）；
+ *   {{getvar::k::default}}                      → 改写为 {{k}} 且 variables 缺 k 时写入 default；
+ *   {{trim}}/{{//注释}}/{{ERA:...}}/{{incvar}}/{{decvar}} → 剥离（格式化/注释/第三方运行时/自增自减）；
  *   {{user}}/{{char}}       → 替换占位符。
  */
 export function processStText(text: string, cardName: string, variables: Record<string, string>): string {
@@ -53,20 +59,23 @@ export function processStText(text: string, cardName: string, variables: Record<
   // 否则 ST_DIRECTIVE 会先把 setvar/getvar 整段剥掉，收集正则匹配不到。
   // 注释先行（注释里的指令不该执行）；宏形态归一随后（幂等，引擎侧还会再归一一次）。
   let cleaned = normalizeStMacros(text.replace(ST_COMMENT, ''))
-  // setvar：{{setvar::k::v}} → 收集 k=v（会话变量初始值 = fallback 基准），指令剥离。
-  cleaned = cleaned.replace(/\{\{setvar::([A-Za-z0-9_.\u4e00-\u9fff-]+)::([^}]*)\}\}/g, (_whole, key: string, value: string) => {
-    variables[key] = value
+  // 赋值族：{{setvar::k::v}} 覆盖；{{addvar::k::v}} 追加（ST 语义：同名多次 addvar 拼接成一段，
+  // 秋青/狐神抚一类的 ST 预设全靠它把分卡写好的规则块拼成 {{POV_rules}}/{{anti_rules}} 等）。
+  // 仅检查自有属性（变量名来自外部文本，避开 constructor/__proto__ 等原型链键）。
+  const hasOwn = (key: string): boolean => Object.prototype.hasOwnProperty.call(variables, key)
+  cleaned = cleaned.replace(ST_ASSIGN, (_whole, op: string, key: string, value: string) => {
+    const append = /add/i.test(op)
+    variables[key] = append ? `${hasOwn(key) ? variables[key] : ''}${value}` : value
     return ''
   })
-  // getvar 带默认值（fallback）：{{getvar::k::default}} → {{k}} + params.k ??= default。
-  cleaned = cleaned.replace(/\{\{getvar::([A-Za-z0-9_.\u4e00-\u9fff-]+)::([^}]*)\}\}/g, (_whole, key: string, fallback: string) => {
-    // 仅检查自有属性（ST 变量名来自外部文本，避开 constructor/__proto__ 等原型链键）。
-    if (!Object.prototype.hasOwnProperty.call(variables, key) && fallback.length > 0) variables[key] = fallback
+  // 读取族：有值 → {{k}}；带默认值且缺省 → 先落默认再 {{k}}；无值无默认 → 空串（ST 语义）。
+  cleaned = cleaned.replace(ST_GET, (_whole, _op: string, key: string, fallback?: string) => {
+    if (!hasOwn(key)) {
+      if (typeof fallback === 'string' && fallback.length > 0) variables[key] = fallback
+      else return ''
+    }
     return `{{${key}}}`
   })
-  // getvar 无默认：{{getvar::k}} → 有值 {{k}}（引擎按 variables 插值），无值空串（ST 语义）。
-  cleaned = cleaned.replace(/\{\{getvar::([A-Za-z0-9_.\u4e00-\u9fff-]+)\}\}/g, (_whole, key: string) =>
-    Object.prototype.hasOwnProperty.call(variables, key) ? `{{${key}}}` : '')
   // 剥离残留运行时指令与注释（trim/ERA/注释；顺序在收集之后）。
   cleaned = cleaned.replace(ST_DIRECTIVE, '')
   cleaned = cleaned

@@ -240,10 +240,11 @@ ST 变量系统 = **变量读取 + 默认值兜底**，由引擎 `interpolate` �
 
 | ST 语法 | 处理 |
 |---|---|
-| `{{setvar::k::v}}` | 收集 `k=v` 进顶层 `variables`（预设变量初始值 = fallback 基准），指令剥离 |
+| `{{setvar::k::v}}` / `{{setglobalvar::k::v}}` | 收集 `k=v` 进顶层 `variables`（预设变量初始值 = fallback 基准），指令剥离；global 形式并入同一张表（本项目无全局作用域拆分） |
+| `{{addvar::k::v}}` / `{{addglobalvar::k::v}}` | 追加到 `k`（ST 的"分卡拼规则块"写法：多张卡各 `addvar::POV_rules::…`，正文再 `{{POV_rules}}`），指令剥离 |
 | `{{getvar::k::default}}` | 改写 `{{k}}`，`variables.k` 缺省时写入 `default`（兜底落 variables） |
-| `{{getvar::k}}` | 改写 `{{k}}`（引擎按 variables 插值） |
-| `{{trim}}` / `{{ERA:...}}` | 剥离（格式化指令 / 第三方运行时） |
+| `{{getvar::k}}` / `{{getglobalvar::k}}` | 改写 `{{k}}`（引擎按 variables 插值；无值无默认 → 空串，ST 语义） |
+| `{{trim}}` / `{{ERA:...}}` / `{{incvar::k}}` / `{{decvar::k}}` | 剥离（格式化指令 / 第三方运行时 / 自增自减） |
 | `{{//注释}}` | 剥离；正文可跨行（含 `}` 的 JSON 示例也算注释正文），惰性剥到首个 `}}` |
 | `{{user}}` / `{{char}}` | 替换为「用户」/ 角色名 |
 | `{{description}}` / `{{personality}}` / `{{scenario}}` / `{{persona}}` | 字段宏 → 顶层 `variables` 同名内容变量（值取卡片字段并过一遍 ST 清洗）；字段缺失但正文有引用时登记空占位，不留字面。**不写进模型人设段** |

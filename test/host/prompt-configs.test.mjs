@@ -75,16 +75,39 @@ test('loadPromptConfigFiles 扫描 yml 与 json，非法文件 fail loud', () =>
 
 test('renderPromptConfigYaml：数字形状的 id/name 加引号，回读仍是字符串（否则整个预设挂载失败）', () => {
   const yaml = renderPromptConfigYaml({ id: 'st-prompt-32', name: '1', layer: 'pre-step', strategy: 'static', text: '正文' })
-  assert.match(yaml, /^name: '1'$/m, '数字形状名字必须带引号')
+  assert.match(yaml, /^name: ["']1["']$/m, '数字形状名字必须带引号（引号样式由 yaml 适配器决定）')
   const parsed = parse(yaml)
   assert.equal(parsed.name, '1')
   assert.equal(typeof parsed.name, 'string')
   // id 同样：纯数字 id 不带引号会被解析回 number。
   const idYaml = renderPromptConfigYaml({ id: '123', strategy: 'static', text: '正文' })
-  assert.match(idYaml, /^id: '123'$/m)
+  assert.match(idYaml, /^id: ["']123["']$/m)
   assert.equal(typeof parse(idYaml).id, 'string')
   // 普通字符串不加引号（不制造无谓 diff）。
   assert.match(renderPromptConfigYaml({ id: 'custom', name: '角色设定', strategy: 'static', text: 'x' }), /^name: 角色设定$/m)
+})
+
+test('renderPromptConfigYaml：YAML 特殊起始字符的名称/路径往返无损（否则整首预设解析失败）', () => {
+  // 真实素材：ST 预设里的条目名以上述字符开头，裸写会被 YAML 当流程序列/映射/锚点解析而报错。
+  const names = ['[主控制器]全能世界书', '{{user}}档案', '[new]剧情生成器[可生成多个事件]', '[mvu_update]输出规则', '- 破折号开头', '#井号开头', 'a: 带冒号', '*锚点', '&引用', '!标签', '%百分号', '?问号']
+  for (const name of names) {
+    const yaml = renderPromptConfigYaml({ id: 'cfg', name, strategy: 'static', text: '正文' })
+    const parsed = parse(yaml)
+    assert.equal(parsed.name, name, `name 往返必须无损：${name}`)
+    assert.equal(typeof parsed.name, 'string')
+    // 单行字段：不得把值渲染成多行块标量。
+    assert.ok(yaml.split('\n').find((line) => line.startsWith('name:')) !== undefined)
+  }
+  // 其他用户字符串字段同样走安全标量。
+  const extra = renderPromptConfigYaml({ id: 'cfg', strategy: 'static', fill: '[fill]', templateFile: '{{tpl}}/x.yml', group: '[g]', text: '正文' })
+  const parsedExtra = parse(extra)
+  assert.equal(parsedExtra.fill, '[fill]')
+  assert.equal(parsedExtra.templateFile, '{{tpl}}/x.yml')
+  assert.equal(parsedExtra.group, '[g]')
+  // 多行名称退化为单行双引号标量（JSON 字符串是合法 YAML 标量）。
+  const multiline = renderPromptConfigYaml({ id: 'cfg', name: '第一行\n第二行', strategy: 'static', text: 'x' })
+  assert.match(multiline, /^name: "第一行\\n第二行"$/m)
+  assert.equal(parse(multiline).name, '第一行\n第二行')
 })
 
 test('renderPromptConfigYaml 全字段开放：variables/identity/params 嵌套完整回读', () => {

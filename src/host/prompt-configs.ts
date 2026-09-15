@@ -10,7 +10,7 @@
  */
 import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
-import { parse as parseYaml } from 'yaml'
+import { parse as parseYaml, stringify as stringifyYamlValue } from 'yaml'
 import type { EngineParams } from '../shared/engine-params.ts'
 
 export interface PromptConfigSpec {
@@ -126,21 +126,22 @@ function yamlMap(level: number, value: Record<string, unknown>): string[] {
 }
 
 /**
- * 用户提供的字符串写成 YAML 标量时的最小引号保护：数字/布尔/null 形状的值
- * （ST 导入的模板名常见为 "1"、"2"）不带引号会被解析回 number，下一轮加载时
- * 触发 `name/id must be a non-empty string` 而让整个预设挂载失败。
+ * 用户提供的字符串写成 YAML 标量：引号由 yaml 适配器决定，不手写规则。
+ * 裸写会破坏往返的两类真实素材：数字/布尔/null 形状（`name: "1"` → 解析回 number，
+ * 触发 `name must be a non-empty string`）与特殊起始字符（`[主控制器]全能世界书`、
+ * `{{user}}档案`、`[new]剧情生成器[...]` → 解析报错），两者都会让**整个预设无法挂载**。
+ * 多行值不在此函数内联处理（调用方均为单行字段），必要时退化为 JSON 双引号标量。
  */
 function yamlSafeScalar(text: string): string {
-  return /^(?:[-+.]?[0-9][0-9._eE+-]*|true|false|null|yes|no|on|off|~)$/i.test(text)
-    ? `'${text.replace(/'/g, "''")}'`
-    : text
+  const emitted = stringifyYamlValue(text).trimEnd()
+  return emitted.includes('\n') ? JSON.stringify(text) : emitted
 }
 
 /** 把任意提示词配置 spec 渲染为独立提示词配置模块 yml（全部字段开放可配置）。 */
 export function renderPromptConfigYaml(spec: PromptConfigSpec): string {
   const lines: string[] = [`id: ${yamlSafeScalar(spec.id)}`]
   if (typeof spec.name === 'string' && spec.name.length > 0 && spec.name !== spec.id) lines.push(`name: ${yamlSafeScalar(spec.name)}`)
-  if (spec.configKind !== undefined) lines.push(`configKind: ${spec.configKind}`)
+  if (spec.configKind !== undefined) lines.push(`configKind: ${yamlSafeScalar(spec.configKind)}`)
   if (spec.layer !== undefined) lines.push(`layer: ${spec.layer}`)
   if (spec.order !== undefined) lines.push(`order: ${spec.order}`)
   if (spec.role !== undefined) lines.push(`role: ${spec.role}`)
@@ -151,13 +152,13 @@ export function renderPromptConfigYaml(spec: PromptConfigSpec): string {
   if (spec.promotion !== undefined) lines.push(`promotion: ${spec.promotion}`)
   if (spec.audience !== undefined && spec.audience !== null) lines.push(`audience: ${spec.audience}`)
   if (spec.modelScope !== undefined) lines.push(`modelScope: ${spec.modelScope}`)
-  if (typeof spec.group === 'string' && spec.group.length > 0) lines.push(`group: ${spec.group}`)
+  if (typeof spec.group === 'string' && spec.group.length > 0) lines.push(`group: ${yamlSafeScalar(spec.group)}`)
   if (spec.exclusive === true) lines.push('exclusive: true')
-  if (typeof spec.sourceKind === 'string' && spec.sourceKind.length > 0 && spec.sourceKind !== spec.id) lines.push(`sourceKind: ${spec.sourceKind}`)
-  if (typeof spec.form === 'string' && spec.form.length > 0 && spec.form !== 'notice') lines.push(`form: ${spec.form}`)
+  if (typeof spec.sourceKind === 'string' && spec.sourceKind.length > 0 && spec.sourceKind !== spec.id) lines.push(`sourceKind: ${yamlSafeScalar(spec.sourceKind)}`)
+  if (typeof spec.form === 'string' && spec.form.length > 0 && spec.form !== 'notice') lines.push(`form: ${yamlSafeScalar(spec.form)}`)
   if (typeof spec.summary === 'string' && spec.summary.length > 0) lines.push(yamlScalar('summary', 0, spec.summary))
-  if (typeof spec.templateFile === 'string' && spec.templateFile.length > 0) lines.push(`templateFile: ${spec.templateFile}`)
-  if (typeof spec.fill === 'string' && spec.fill.length > 0) lines.push(`fill: ${spec.fill}`)
+  if (typeof spec.templateFile === 'string' && spec.templateFile.length > 0) lines.push(`templateFile: ${yamlSafeScalar(spec.templateFile)}`)
+  if (typeof spec.fill === 'string' && spec.fill.length > 0) lines.push(`fill: ${yamlSafeScalar(spec.fill)}`)
   // text/texts 统一：单段输出 text（对齐官方 PromptSection.text 单字符串语义），
   // 多段保留 texts 数组（pre-step 多 content block / mergeMode=merged 拼接）。
   const texts = [
@@ -168,7 +169,7 @@ export function renderPromptConfigYaml(spec: PromptConfigSpec): string {
   else if (texts.length > 1) lines.push(`texts: ${JSON.stringify(texts)}`)
   if (spec.mergeMode !== undefined && spec.mergeMode !== 'separate') lines.push(`mergeMode: ${spec.mergeMode}`)
   if (spec.identity !== undefined && spec.identity.value !== spec.id) {
-    lines.push('identity:', `  field: ${spec.identity.field}`, `  value: ${spec.identity.value}`)
+    lines.push('identity:', `  field: ${yamlSafeScalar(spec.identity.field)}`, `  value: ${yamlSafeScalar(spec.identity.value)}`)
   }
   if (spec.variables !== undefined && Object.keys(spec.variables).length > 0) {
     lines.push('variables:')

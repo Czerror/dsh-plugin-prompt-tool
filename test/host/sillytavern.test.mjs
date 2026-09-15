@@ -31,6 +31,29 @@ test('stPresetId：英文文件名保持 slug', () => {
   assert.equal(stPresetId('My Card v2'), 'my-card-v2')
 })
 
+test('convertStToPreset：addvar/setglobalvar/getglobalvar/incvar 族按 ST 语义落变量表', () => {
+  // 真实素材（明月秋青 v5.0 一类）：分卡用 addvar 拼出 {{POV_rules}}/{{anti_rules}}，后续卡片再引用。
+  const card = {
+    name: '变量族卡',
+    data: {
+      system_prompt: [
+        '{{addvar::POV_rules::- 第一人称}}',
+        '{{addvar::POV_rules::，禁止旁白}}',
+        '{{setglobalvar::output_language::简体中文}}',
+        '{{incvar::counter}}',
+        '语言 {{output_language}} 规则 {{POV_rules}} 缺省 {{missing_var::回退值}}',
+      ].join('\n'),
+    },
+  }
+  const spec = convertStToPreset(card, 'st-var-family')
+  assert.equal(spec.variables.POV_rules, '- 第一人称，禁止旁白', 'addvar 同名追加')
+  assert.equal(spec.variables.output_language, '简体中文', 'setglobalvar 并入同一变量表')
+  assert.equal('counter' in spec.variables, false, 'incvar 只剥离、不当成变量登记')
+  const system = spec.promptConfigs.find((config) => config.id === 'system-prompt')
+  assert.doesNotMatch(system.text, /\{\{(addvar|setglobalvar|incvar)/, '赋值/自增指令不得留在正文里')
+  assert.match(system.text, /\{\{POV_rules\}\}/, '引用保留为变量引用，由引擎解析')
+})
+
 test('convertStToPreset：跨行注释剥离、ST 宏归一、字段宏登记为内容变量', () => {
   const card = {
     name: '测试卡',
