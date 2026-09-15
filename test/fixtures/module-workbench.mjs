@@ -9,6 +9,27 @@ const session = {}
 const api = { sessionModel: { snapshot: () => session, subscribe: () => () => {} }, currentSessionId: () => undefined }
 const settings = { scope: { getSnapshot: () => ({ status: 'ready', revision: 1 }) }, ensure: async () => {}, mutate: async () => {} }
 const t = (key, params = {}) => Object.entries(params).reduce((text, [key, value]) => text.replaceAll(`{${key}}`, String(value)), PROMPT_TOOL_DICTS.zh[key] ?? key)
+// 两条指令文件（全局 + 项目）：与真实探测结果同形，用于验证它们只出现在前置步骤层卡内。
+const instructionFiles = [
+  { fileId: 'f1', path: 'D:/home/.dsh/AGENTS.md', displayPath: '~/.dsh/AGENTS.md', scope: 'global', status: 'ready', text: '全局指令正文', revision: 'r1' },
+  { fileId: 'f2', path: 'D:/repo/AGENTS.md', displayPath: 'AGENTS.md', scope: 'project', status: 'ready', text: '项目指令正文', revision: 'r2' },
+]
+const instructionCard = (file) => ({
+  id: `agents-file-${file.fileId}`,
+  name: `AGENTS：${file.displayPath}`,
+  enabled: true,
+  strategy: 'placeholder',
+  layer: 'pre-step',
+  position: 'after-user',
+  dedupe: 'session',
+  promotion: 'include-subagents',
+  sourceKind: 'instruction-file',
+  form: 'instructions',
+  fill: 'instruction-hint',
+  order: 30 + instructionFiles.indexOf(file),
+  origin: { kind: 'instruction-file', fileId: file.fileId },
+  params: { scope: file.scope, file: file.path, displayPath: file.displayPath, fileId: file.fileId },
+})
 let configs = [], variables = {}, tools = []
 const modules = new Set()
 window.requests = []
@@ -19,10 +40,16 @@ window.fetch = async (url, init) => {
   if (endpoint === 'bootstrap') return new Response(JSON.stringify({ ok: true,
     value: { value: { presetTemplate: 'test', writePreset: true }, base: {}, revision: 1 },
     meta: { meta: fixture.meta }, overrides: { overrides: {} }, variables: { variables, enabled: true },
-    promptConfigs: { promptConfigs: window.staleGenerated ? [] : configs },
+    // 生成快照可能暂时为空；指令文件卡始终由文件快照合并回来（与宿主 bridge 同形）。
+    promptConfigs: { promptConfigs: [...(window.staleGenerated ? [] : configs), ...instructionFiles.map(instructionCard)] },
+    instructions: {
+      context: { contextId: 'ctx-1', cwd: 'D:/repo', source: 'session' },
+      files: instructionFiles,
+      owner: { officialInstructions: null },
+    },
     moduleFacts: { sourceMode: 'explicit', editable: true, effectiveModules: [...modules], declaredModules: [...modules], rowIds: [] },
   }))
-  if (endpoint === 'instructions-policy') value = { policy: { enabled: false, files: {}, defaults: { order: 30, position: 'after-user', promotion: 'none', audience: null, modelScope: 'all' } }, revision: null, exists: false }
+  if (endpoint === 'instructions-policy') value = { policy: { enabled: true, files: {}, defaults: { order: 30, position: 'after-user', promotion: 'include-subagents', audience: null, modelScope: 'all' } }, revision: 'pol-1', exists: true }
   if (endpoint === 'templates') value = fixture.templates
   if (endpoint === 'param-overrides') { if (body.promptConfigs) configs = body.promptConfigs; value = body }
   if (endpoint === 'custom-tools') {

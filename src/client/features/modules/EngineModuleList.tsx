@@ -73,27 +73,50 @@ export function EnginePromptDefaultsCard({ store, t }: { store: PromptToolStore;
   )
 }
 
-/** 同层共用一张行为卡；下拉只切换编辑目标，不改变其他已装配行为。 */
-export function EngineBehaviorCard({ store, t, capabilities, focusCapability }: {
+/** 层卡内的额外可编辑条目（如 AGENTS 指令文件）：由 app 层组合注入，feature 不跨域引用。 */
+export interface LayerCardEntry {
+  id: string
+  label: string
+}
+
+/** 同层共用一张卡；下拉只切换编辑目标，不改变其他已装配行为。 */
+export function EngineBehaviorCard(props: {
   store: PromptToolStore
   t: PromptToolTranslate
+  /** 卡所属插入点层：能力为空时仍可承载 extraEntries。 */
+  layer: string
   capabilities: readonly EngineCapability[]
+  /** 与能力共用同一个选择下拉的额外条目（如指令文件）。 */
+  extraEntries?: readonly LayerCardEntry[]
+  renderExtra?: (id: string) => ReactNode
+  extraMeta?: string
+  /** 卡内顶部插槽（如独立指令文件来源开关）。 */
+  headerSlot?: ReactNode
   focusCapability?: string
 }): ReactNode {
+  const { store, t, layer, capabilities, extraEntries = [], renderExtra, extraMeta, headerSlot, focusCapability } = props
   const [selectedId, setSelectedId] = useState(focusCapability)
   useEffect(() => { if (focusCapability !== undefined) setSelectedId(focusCapability) }, [focusCapability])
-  const selected = capabilities.find(({ id }) => id === selectedId) ?? capabilities[0]
-  if (selected === undefined) return null
+  const options = [
+    ...capabilities.map(({ id }) => ({ value: id, label: id })),
+    ...extraEntries.map(({ id, label }) => ({ value: id, label })),
+  ]
+  const activeId = options.some(({ value }) => value === selectedId) ? selectedId : options[0]?.value
+  if (activeId === undefined) return null
+  const capability = capabilities.find(({ id }) => id === activeId)
   const editable = store.fields.writePreset && store.moduleFacts?.editable === true
-  return <EngineModuleCard name={t('modules.behavior.name')} layer={selected.displayLayer}
-    meta={capabilities.map(({ id }) => id).join(' · ')} revealKey={selected.id}
-    onDelete={editable ? () => void store.removeEngineCapability(selected.id) : undefined}>
-    <label className={styles.configFieldLabel}>{t('modules.behavior.label')}
-      <MenuSelect ariaLabel={t('modules.behavior.label')} value={selected.id}
-        options={capabilities.map(({ id }) => ({ value: id, label: id }))} onChange={setSelectedId} />
-    </label>
-    <p className={styles.configFieldHint}>{t('modules.behavior.hint')}</p>
-    <EngineParamFields store={store} card={selected.id} t={t} />
+  return <EngineModuleCard name={t('modules.behavior.name')} layer={layer}
+    meta={[...capabilities.map(({ id }) => id), ...(extraMeta === undefined ? [] : [extraMeta])].join(' · ')}
+    revealKey={activeId}
+    onDelete={capability === undefined || !editable ? undefined : () => void store.removeEngineCapability(capability.id)}>
+    {headerSlot}
+    {options.length > 1 && <>
+      <label className={styles.configFieldLabel}>{t('modules.behavior.label')}
+        <MenuSelect ariaLabel={t('modules.behavior.label')} value={activeId} options={options} onChange={setSelectedId} />
+      </label>
+      <p className={styles.configFieldHint}>{t('modules.behavior.hint')}</p>
+    </>}
+    {capability === undefined ? renderExtra?.(activeId) : <EngineParamFields store={store} card={capability.id} t={t} />}
   </EngineModuleCard>
 }
 
@@ -106,6 +129,10 @@ export function EngineModuleCards({
   showPromptDefaults = true,
   showStatus = true,
   focusCapability,
+  preStepEntries,
+  renderPreStepEntry,
+  preStepMeta,
+  preStepSlot,
 }: {
   store: PromptToolStore
   t: PromptToolTranslate
@@ -114,18 +141,30 @@ export function EngineModuleCards({
   showPromptDefaults?: boolean
   showStatus?: boolean
   focusCapability?: string
+  /** 前置步骤层额外条目（AGENTS 指令文件）：与同层能力共用下拉。 */
+  preStepEntries?: readonly LayerCardEntry[]
+  renderPreStepEntry?: (id: string) => ReactNode
+  preStepMeta?: string
+  /** 前置步骤层卡顶部插槽（独立来源开关）。 */
+  preStepSlot?: ReactNode
 }): ReactNode {
   const capabilities = ENGINE_CAPABILITIES.filter(({ id, displayLayer }) =>
     (layerFilter === 'all' || layerFilter === displayLayer) && isEngineCapabilityPresent(id, store.moduleFacts))
-  const layers = [...new Set(capabilities.map(({ displayLayer }) => displayLayer))]
+  // 指令文件只属于前置步骤：有文件条目时该层即使是空能力也要出卡。
+  const showPreStep = (layerFilter === 'all' || layerFilter === 'pre-step')
+    && ((preStepEntries?.length ?? 0) > 0 || preStepSlot !== undefined)
+  const layers = [...new Set([...capabilities.map(({ displayLayer }) => displayLayer), ...(showPreStep ? ['pre-step'] : [])])]
   return <>
     {showActions && <EngineModuleActions store={store} t={t} />}
     {layers.map((layer) => (
-      <EngineBehaviorCard key={layer} store={store} t={t} focusCapability={focusCapability}
-        capabilities={capabilities.filter(({ displayLayer }) => displayLayer === layer)} />
+      <EngineBehaviorCard key={layer} store={store} t={t} layer={layer} focusCapability={focusCapability}
+        capabilities={capabilities.filter(({ displayLayer }) => displayLayer === layer)}
+        {...(layer === 'pre-step'
+          ? { extraEntries: preStepEntries, renderExtra: renderPreStepEntry, extraMeta: preStepMeta, headerSlot: preStepSlot }
+          : {})} />
     ))}
     {showPromptDefaults && (layerFilter === 'all' || layerFilter === 'pre-step') && <EnginePromptDefaultsCard store={store} t={t} />}
     {showStatus && store.moduleFacts === undefined && <p className={styles.configFieldHint} role="status">{t('modules.status.reading')}</p>}
-    {showStatus && store.moduleFacts !== undefined && capabilities.length === 0 && <p className={styles.configFieldHint} role="status">{layerFilter === 'all' ? t('modules.status.emptyAll') : t('modules.status.emptyFiltered')}</p>}
+    {showStatus && store.moduleFacts !== undefined && layers.length === 0 && <p className={styles.configFieldHint} role="status">{layerFilter === 'all' ? t('modules.status.emptyAll') : t('modules.status.emptyFiltered')}</p>}
   </>
 }

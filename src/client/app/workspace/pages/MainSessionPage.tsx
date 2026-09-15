@@ -3,6 +3,7 @@ import type { PromptToolStore } from '../../../data/use-prompt-tool-store.ts'
 import { usePromptToolFields } from '../../../data/use-prompt-tool-fields.ts'
 import type { PromptToolTranslate } from '../../../locales.ts'
 import { PromptConfigsEditor } from '../../../features/prompts/PromptConfigsEditor.tsx'
+import { InstructionFileEntry, InstructionSourceRow } from '../../../features/prompts/InstructionFileEntry.tsx'
 import { useTemplatePicker } from '../../../features/prompts/useTemplatePicker.ts'
 import { INSERTION_LAYERS, LAYER_LABEL_KEYS, translateLabel } from '../../../features/prompts/prompt-config-policy.ts'
 import { ModelRouteModuleCard } from '../../../features/models/ModelRouteCard.tsx'
@@ -13,6 +14,8 @@ import { TemplatePicker } from '../../../ui/TemplatePicker.tsx'
 import ui from '../../../ui/controls.module.css'
 import type { InstructionPolicyFileOverride } from '../../../../shared/instructions.ts'
 import { engineCapability } from '../../../../shared/engine-capabilities.ts'
+import type { PromptConfigDraft } from '../../../prompt-tool-types.ts'
+import { instructionFileIdOf, isAgentsFileCard } from '../../../data/prompt-config-content.ts'
 /** 主会话页：公共配置 + 平铺模块列表 + 合并创建菜单（提示词配置 / 工具 / 能力模块）。 */
 export const MainSessionPage = memo(function MainSessionPage(props: { store: PromptToolStore; t: PromptToolTranslate }): ReactNode {
   const { store, t } = props
@@ -46,6 +49,13 @@ export const MainSessionPage = memo(function MainSessionPage(props: { store: Pro
   // 指令卡行为策略：独立存储，改动按 revision 乐观提交（不写 preset.yml）。
   const patchInstructionPolicy = useCallback((fileId: string, override: InstructionPolicyFileOverride) => {
     void store.updateInstructionPolicy(fileId, override)
+  }, [store])
+  // 指令文件卡（AGENTS.md / CLAUDE.md）：正文与策略在前置步骤层卡内编辑，不再作为独立卡片。
+  const instructionCards = fields.promptConfigs.filter(isAgentsFileCard)
+  const patchInstructionCard = useCallback((id: string, patch: Partial<PromptConfigDraft>) => {
+    store.patch({
+      promptConfigs: store.getFields().promptConfigs.map((config) => config.id === id ? { ...config, ...patch } : config),
+    })
   }, [store])
   // 模板浮层由页面持有：合并菜单按插入点层级平铺「添加模板 · 层级」入口，浮层只列该层模板。
   const picker = useTemplatePicker(
@@ -89,11 +99,6 @@ export const MainSessionPage = memo(function MainSessionPage(props: { store: Pro
         createdConfigId={picker.createdConfigId}
         onPatchConfigs={patchConfigs}
         onSaveConfigs={saveConfigs}
-        instructionPolicy={store.instructionPolicy}
-        onToggleInstructionSource={store.setInstructionSourceEnabled}
-        onSaveInstructionFile={saveInstructionFile}
-        onReloadInstructionFile={reloadInstructionFile}
-        onPatchInstructionPolicy={patchInstructionPolicy}
         onNotice={store.showNotice}
         templateVariables={store.templateVariables}
         setTemplateVariables={store.setTemplateVariables}
@@ -116,7 +121,44 @@ export const MainSessionPage = memo(function MainSessionPage(props: { store: Pro
         toolbarActions={<EngineModuleActions store={store} t={t} anchorRef={picker.anchorRef} extraItems={createItems} onExtraSelect={onCreateSelect} onCreated={revealCapability} />}
         moduleCards={
           <>
-            <EngineModuleCards store={store} t={t} layerFilter={viewFilter} focusCapability={focusCapability} showActions={false} showPromptDefaults={false} showStatus={viewFilter !== 'all'} />
+            <EngineModuleCards
+              store={store}
+              t={t}
+              layerFilter={viewFilter}
+              focusCapability={focusCapability}
+              showActions={false}
+              showPromptDefaults={false}
+              showStatus={viewFilter !== 'all'}
+              preStepEntries={instructionCards.map((card) => ({ id: card.id, label: card.name ?? card.id }))}
+              preStepMeta={instructionCards.length === 0 ? undefined : t('instructions.files.meta', { count: instructionCards.length })}
+              preStepSlot={instructionCards.length === 0 ? undefined : (
+                <InstructionSourceRow
+                  t={t}
+                  policy={store.instructionPolicy}
+                  ownerConflict={instructionCards.some((card) => card.contentOwnerConflict === true)}
+                  onToggle={store.setInstructionSourceEnabled}
+                  onNotice={store.showNotice}
+                />
+              )}
+              renderPreStepEntry={(id) => {
+                const card = instructionCards.find((item) => item.id === id)
+                if (card === undefined) return null
+                const fileId = instructionFileIdOf(card)
+                return (
+                  <InstructionFileEntry
+                    t={t}
+                    meta={store.meta}
+                    card={card}
+                    onPatch={(patch) => patchInstructionCard(card.id, patch)}
+                    {...(fileId === undefined || patchInstructionPolicy === undefined
+                      ? {}
+                      : { onPatchPolicy: patchInstructionPolicy })}
+                    onSave={saveInstructionFile}
+                    onReload={reloadInstructionFile}
+                  />
+                )
+              }}
+            />
             <div hidden={viewFilter !== 'all' && viewFilter !== 'tool-pipeline'}>
               <CustomToolsCard
                 key={fields.presetTemplate}
