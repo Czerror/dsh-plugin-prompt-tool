@@ -274,6 +274,8 @@ test('官方变量注册：事实按 assembly 求值、非法名改写为别名�
       text: '时间 {{time}} 用户 {{lastusermessage}} 视角 {{POV}} 未声明 {{missing}}',
       variables: { POV: '视角值' },
     },
+    // 大小写变体统一注册到规范小写名（不额外生成别名）。
+    { id: 'case', layer: 'system-section', strategy: 'static', order: 1, text: '再取一次 {{lastUserMessage}}' },
   ], {
     systemPrompt: {
       variable(name, provider) { providers.set(name, provider); return () => providers.delete(name) },
@@ -284,6 +286,7 @@ test('官方变量注册：事实按 assembly 求值、非法名改写为别名�
 
   assert.ok(providers.has('time'), '时间事实注册为官方变量')
   assert.ok(providers.has('lastusermessage'), '会话消息事实注册为官方变量')
+  assert.ok(![...providers.keys()].some((name) => name.startsWith('sv_lastusermessage')), '大小写变体不生成别名')
   const alias = [...providers.keys()].find((name) => name.startsWith('sv_'))
   assert.ok(alias !== undefined, '非法官方名（大写 POV）改写为 sv_ 别名')
 

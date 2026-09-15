@@ -63,11 +63,13 @@ function registerOfficialVariables(ctx, configs, warnOnce) {
       for (const match of String(text).matchAll(NAME_REFERENCE_RE)) referenced.add(match[1])
     }
   }
-  // 只注册"会被用到"的名字：事实 + 官方通道里被引用的已声明变量。
-  const candidates = new Set([...RUNTIME_FACTS, ...[...referenced].filter((name) => declared.has(name))])
+  // 只注册"会被用到"的名字：官方通道文本里被引用的运行时事实与已声明变量。
+  // 未被引用的名字不注册——避免在 preset scope 里无谓遮蔽同名的他方注册。
+  const candidates = [...referenced].filter((name) => declared.has(name) || RUNTIME_FACTS.has(name.toLowerCase()))
   for (const name of candidates) {
-    const official = OFFICIAL_NAME_RE.test(name) ? name : officialAliasOf(name)
     const isFact = RUNTIME_FACTS.has(name.toLowerCase())
+    // 事实名大小写不敏感：统一注册到规范小写名，避免 {{lastUserMessage}} 这类变体各生成一个别名。
+    const official = isFact ? name.toLowerCase() : OFFICIAL_NAME_RE.test(name) ? name : officialAliasOf(name)
     const declaredValue = declared.get(name)
     try {
       keepDisposer(ctx, systemPrompt.variable(official, (context) => {
