@@ -21,7 +21,12 @@ const loader = registerHooks({
     return nextResolve(specifier, context)
   },
   load(url, context, nextLoad) {
-    if (url.endsWith('.css')) return { format: 'module', shortCircuit: true, source: 'export default {}' }
+    // 真实类名表：SSR 断言与 `{ ...styles }` 合并都要看得到 CSS Modules 键。
+    if (url.endsWith('.css')) {
+      const source = readFileSync(new URL(url), 'utf8')
+      const names = [...new Set([...source.matchAll(/\.([A-Za-z_][\w-]*)/g)].map(([, name]) => name))]
+      return { format: 'module', shortCircuit: true, source: `export default ${JSON.stringify(Object.fromEntries(names.map((name) => [name, name])))}` }
+    }
     if (url.endsWith('.tsx')) return { format: 'module', shortCircuit: true, source: ts.transpileModule(readFileSync(new URL(url), 'utf8'), {
       compilerOptions: { jsx: ts.JsxEmit.ReactJSX, module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2024 },
     }).outputText }
@@ -93,4 +98,20 @@ test('工具卡暴露 fs 内容、复杂参数 JSON、输出 JSON 和超时输�
     assert.match(html, /aria-label="输出 schema JSON"/)
     assert.match(html, /aria-label="工具超时毫秒"/)
   }
+})
+
+test('工具卡默认折叠，只读时写操作禁用但折叠按钮仍可用', () => {
+  const props = { t, tool: tool({}), index: 0, canMoveUp: false, canMoveDown: false, onToggleExpanded() {}, onPatch() {}, onToggleEnabled() {}, onMoveUp() {}, onMoveDown() {}, onDuplicate() {}, onRemove() {} }
+  const collapsed = renderToStaticMarkup(createElement(CustomToolCard, { ...props, expanded: false }))
+  assert.match(collapsed, /data-tool-card="true"/)
+  assert.match(collapsed, /aria-expanded="false"/, '默认折叠')
+  assert.equal(collapsed.includes(`aria-label="${t('toolEditor.field.idAria')}"`), false, '折叠的卡不渲染表单')
+  const readonly = renderToStaticMarkup(createElement(CustomToolCard, { ...props, expanded: true, disabled: true }))
+  const toggle = readonly.slice(readonly.indexOf('configToggle'), readonly.indexOf('configHeaderActions'))
+  assert.match(toggle, /aria-expanded="true"/)
+  assert.doesNotMatch(toggle, /disabled/, '折叠按钮不随只读禁用')
+  assert.match(readonly, /<fieldset class="cardScopeActions"[^>]*disabled=""/, '只读时卡头写操作被禁用')
+  const form = readonly.slice(readonly.indexOf('class="configForm"'))
+  assert.match(form, /^[^>]*disabled=""/, '只读时表单整体禁用')
+  assert.ok(form.includes(`aria-label="${t('toolEditor.field.idAria')}"`), '表单内容仍渲染在只读边界内')
 })

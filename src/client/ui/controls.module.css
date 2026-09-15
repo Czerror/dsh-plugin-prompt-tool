@@ -746,6 +746,8 @@
 
 /* 提示词配置列表：卡片 + 开关 + 四按钮 + 表单。 */
 .configList { display: flex; min-width: 0; flex-direction: column; gap: 10px; }
+/* 模块卡容器同时承担 world-book 视图的 hidden 隐藏：作者样式不得盖掉 UA 的 hidden。 */
+.configList[hidden] { display: none; }
 .configCard {
   display: flex;
   flex-direction: column;
@@ -788,6 +790,9 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
+  margin: 0;
+  min-width: 0;
+  border: 0;
   border-top: 1px solid color-mix(in srgb, var(--dsw-alias-state-business-primary) 16%, var(--dsw-alias-border-l2));
   padding: 12px 14px;
   background: linear-gradient(180deg, color-mix(in srgb, var(--dsw-alias-state-business-primary) 4%, transparent), transparent 28%), var(--dsw-alias-bg-layer-2);

@@ -101,6 +101,8 @@ export function CustomToolCard(props: {
   tool: ToolDraft
   index: number
   expanded: boolean
+  /** 只读（system 预设或关闭 writePreset）：禁掉写操作，但保留卡片展开/折叠。 */
+  disabled?: boolean
   onToggleExpanded: () => void
   onPatch: (patch: Partial<ToolDraft>) => void
   onToggleEnabled: (enabled: boolean) => void
@@ -141,31 +143,33 @@ export function CustomToolCard(props: {
           </span>
           <IconChevronDownOutline14 className={clsx(styles.chevron, props.expanded && styles.chevronOpen)} />
         </button>
-        <span className={styles.configHeaderActions}>
-          <HintTooltip label={enabled ? t('toolEditor.enable.hint.on') : t('toolEditor.enable.hint.off')}>
-            <label className={styles.configEnable}>
-              <input type="checkbox" aria-label={t('toolEditor.enable.aria', { id })} checked={enabled}
-                onChange={(e) => props.onToggleEnabled(e.target.checked)} />
-              <span className={styles.switch} aria-hidden="true"><i /></span>
-            </label>
-          </HintTooltip>
-          <span className={styles.configActions}>
-            <button type="button" className={styles.pillButton} disabled={!props.canMoveUp} onClick={props.onMoveUp}>{t('toolEditor.moveUp')}</button>
-            <button type="button" className={styles.pillButton} disabled={!props.canMoveDown} onClick={props.onMoveDown}>{t('toolEditor.moveDown')}</button>
-            <button type="button" className={styles.pillButton} onClick={props.onDuplicate}>{t('toolEditor.duplicate')}</button>
-            {confirmingDelete ? (
-              <>
-                <button type="button" className={styles.pillButton} data-danger onClick={props.onRemove}>{t('toolEditor.confirmRemove')}</button>
-                <button type="button" className={styles.pillButton} data-variant="secondary" onClick={() => setConfirmingDelete(false)}>{t('toolEditor.cancel')}</button>
-              </>
-            ) : (
-              <button type="button" className={styles.pillButton} data-danger onClick={() => setConfirmingDelete(true)}>{t('toolEditor.remove')}</button>
-            )}
-          </span>
-        </span>
+        <div className={styles.configHeaderActions}>
+          <fieldset className={styles.cardScopeActions} disabled={props.disabled === true}>
+            <HintTooltip label={enabled ? t('toolEditor.enable.hint.on') : t('toolEditor.enable.hint.off')}>
+              <label className={styles.configEnable}>
+                <input type="checkbox" aria-label={t('toolEditor.enable.aria', { id })} checked={enabled}
+                  onChange={(e) => props.onToggleEnabled(e.target.checked)} />
+                <span className={styles.switch} aria-hidden="true"><i /></span>
+              </label>
+            </HintTooltip>
+            <span className={styles.configActions}>
+              <button type="button" className={styles.pillButton} disabled={!props.canMoveUp} onClick={props.onMoveUp}>{t('toolEditor.moveUp')}</button>
+              <button type="button" className={styles.pillButton} disabled={!props.canMoveDown} onClick={props.onMoveDown}>{t('toolEditor.moveDown')}</button>
+              <button type="button" className={styles.pillButton} onClick={props.onDuplicate}>{t('toolEditor.duplicate')}</button>
+              {confirmingDelete ? (
+                <>
+                  <button type="button" className={styles.pillButton} data-danger onClick={props.onRemove}>{t('toolEditor.confirmRemove')}</button>
+                  <button type="button" className={styles.pillButton} data-variant="secondary" onClick={() => setConfirmingDelete(false)}>{t('toolEditor.cancel')}</button>
+                </>
+              ) : (
+                <button type="button" className={styles.pillButton} data-danger onClick={() => setConfirmingDelete(true)}>{t('toolEditor.remove')}</button>
+              )}
+            </span>
+          </fieldset>
+        </div>
       </header>
       {props.expanded && (
-        <div className={styles.configForm}>
+        <fieldset className={styles.configForm} disabled={props.disabled === true}>
           <span className={styles.variableRow}>
             <FormField label={t('toolEditor.field.id')}>
               <input className={styles.configInput} aria-label={t('toolEditor.field.idAria')} value={id} spellCheck={false}
@@ -276,7 +280,7 @@ export function CustomToolCard(props: {
               }} />
             {timeoutError && <small role="alert">{timeoutError}</small>}
           </FormField>
-        </div>
+        </fieldset>
       )}
     </article>
   )

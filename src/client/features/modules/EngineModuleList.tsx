@@ -85,8 +85,10 @@ export function EngineBehaviorCard({ store, t, capabilities, focusCapability }: 
   const selected = capabilities.find(({ id }) => id === selectedId) ?? capabilities[0]
   if (selected === undefined) return null
   const editable = store.fields.writePreset && store.moduleFacts?.editable === true
+  // 默认折叠：只有「创建/定位到本卡某项能力」才带出展开信号，切换编辑目标不重开卡片。
+  const reveal = capabilities.some(({ id }) => id === focusCapability) ? focusCapability : undefined
   return <EngineModuleCard name={t('modules.behavior.name')} layer={selected.displayLayer}
-    meta={capabilities.map(({ id }) => id).join(' · ')} revealKey={selected.id}
+    meta={capabilities.map(({ id }) => id).join(' · ')} revealKey={reveal}
     onDelete={editable ? () => void store.removeEngineCapability(selected.id) : undefined}>
     <label className={styles.configFieldLabel}>{t('modules.behavior.label')}
       <MenuSelect ariaLabel={t('modules.behavior.label')} value={selected.id}

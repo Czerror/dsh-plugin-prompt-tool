@@ -340,8 +340,9 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
       {/* 配置列表下的置顶固定卡片（人设、模板变量等单例配置，不参与层过滤）。 */}
       {beforeCards}
 
-      {/* 模块卡（引擎能力、自定义工具）：只调整视觉排序，层级配置卡仍按（层序, order, 声明序）注入。 */}
-      {moduleCards !== undefined && <div hidden={viewFilter === 'world-book'}>{moduleCards}</div>}
+      {/* 模块卡（引擎能力、自定义工具）：与层级配置卡同款列表间距（configList），
+          只调整视觉排序，层级配置卡仍按（层序, order, 声明序）注入。 */}
+      {moduleCards !== undefined && <div className={styles.configList} hidden={viewFilter === 'world-book'}>{moduleCards}</div>}
 
       {moduleCards === undefined ? (
         scoped.length === 0 ? (

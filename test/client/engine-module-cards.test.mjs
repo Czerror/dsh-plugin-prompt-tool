@@ -20,7 +20,12 @@ const loader = registerHooks({
     return reactModules[specifier] === undefined ? nextResolve(specifier, context) : { url: reactModules[specifier], shortCircuit: true }
   },
   load(url, context, nextLoad) {
-    if (url.endsWith('.css')) return { format: 'module', shortCircuit: true, source: 'export default new Proxy({}, { get: (_, key) => key })' }
+    // 真实类名表：SSR 断言与 `{ ...styles }` 合并都要看得到 CSS Modules 键。
+    if (url.endsWith('.css')) {
+      const source = readFileSync(new URL(url), 'utf8')
+      const names = [...new Set([...source.matchAll(/\.([A-Za-z_][\w-]*)/g)].map(([, name]) => name))]
+      return { format: 'module', shortCircuit: true, source: `export default ${JSON.stringify(Object.fromEntries(names.map((name) => [name, name])))}` }
+    }
     if (url.endsWith('.tsx')) return { format: 'module', shortCircuit: true, source: ts.transpileModule(readFileSync(new URL(url), 'utf8'), {
       compilerOptions: { jsx: ts.JsxEmit.ReactJSX, module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2024 },
     }).outputText }
@@ -220,6 +225,21 @@ test('统一列表平铺渲染配置与能力卡，层级筛选只过滤不分�
   const worldBook = tree(PromptConfigList, { ...props, viewFilter: 'world-book' })
   const owner = find(worldBook, (node) => node.props.children === props.moduleCards)
   assert.equal(owner.props.hidden, true)
+  // 模块卡容器与层级配置卡同款列表间距（configList），不是无间距的裸 div。
+  assert.match(owner.props.className, /configList/)
+})
+
+test('引擎行为卡默认折叠，只有创建/定位到本层才展开', () => {
+  const active = { ...store, moduleFacts: { ...store.moduleFacts, effectiveModules: ['context-gate', 'anchor-turn', 'tool-bootstrap'] } }
+  const preStep = ENGINE_CAPABILITIES.filter(({ displayLayer }) => displayLayer === 'pre-step')
+  const collapsed = render(EngineBehaviorCard, { store: active, t, capabilities: preStep })
+  assert.match(collapsed, /aria-expanded="false"/, '未创建/未定位时行为卡必须折叠')
+  assert.doesNotMatch(collapsed, /aria-label="编辑行为"/, '折叠的行为卡不渲染编辑表单')
+  const revealed = render(EngineBehaviorCard, { store: active, t, capabilities: preStep, focusCapability: 'anchor-turn' })
+  assert.match(revealed, /aria-expanded="true"/, '创建/定位到本层能力时展开')
+  assert.match(revealed, /aria-label="编辑行为"/)
+  const otherLayer = render(EngineBehaviorCard, { store: active, t, capabilities: preStep, focusCapability: 'tool-bootstrap' })
+  assert.match(otherLayer, /aria-expanded="false"/, '别的层级的定位信号不展开本卡')
 })
 
 test('创建菜单始终列出全部未添加能力，不按当前层过滤', async () => {

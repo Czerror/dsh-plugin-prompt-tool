@@ -3,6 +3,8 @@
 .toolHeadingDot { display: inline-block; width: 5px; height: 5px; margin: 0 0 2px 2px; border-radius: 50%; corner-shape: round; background: var(--dsw-alias-state-business-primary); }
 .customToolList { margin-top: 10px; }
 .customToolsFields { min-width: 0; margin: 0; padding: 0; border: 0; }
+/* 只读边界：卡头操作区可被 fieldset 禁用，而卡片折叠按钮留在边界之外保持可点。 */
+.cardScopeActions { display: flex; align-items: center; gap: 8px; min-width: 0; border: 0; margin: 0; padding: 0; }
 .toolsPreviewPage { display: flex; flex-direction: column; gap: 14px; width: 100%; max-width: 760px; min-width: 0; color: var(--dsw-alias-label-primary); }
 .toolSearch { position: relative; display: flex; align-items: center; width: 100%; color: var(--dsw-alias-label-tertiary); }
 .toolSearch > svg { position: absolute; left: 12px; pointer-events: none; }

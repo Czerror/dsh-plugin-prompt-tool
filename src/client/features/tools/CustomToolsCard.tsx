@@ -130,8 +130,8 @@ export function CustomToolsCard(props: {
       {props.disabled && <p className={styles.configFieldHint} role="status">{t('customTools.readonly')}</p>}
       {loading && <p className={styles.configFieldHint} role="status">{t('customTools.loading')}</p>}
       {loadError && <p role="alert">{loadError} <button type="button" className={styles.pillButton} onClick={() => setRevision((value) => value + 1)}>{t('customTools.retry')}</button></p>}
-      {/* 只读切换重挂子树，释放已打开的 portal 菜单；无需给编辑器逐字段增加接口。 */}
-      <fieldset key={disabled ? 'readonly' : 'editable'} className={styles.customToolsFields} disabled={disabled} aria-label={t('customTools.fieldsAria')}>
+      {/* 只读切换重挂子树，释放已打开的 portal 菜单；禁用边界下移到每张卡（卡片折叠按钮保持可点）。 */}
+      <fieldset key={disabled ? 'readonly' : 'editable'} className={styles.customToolsFields} aria-label={t('customTools.fieldsAria')}>
         <div className={styles.configActions}>
           {(tools.length > 0 || hasPersistedTools) && (
             <button type="button" className={styles.primaryPill} disabled={disabled || saving} onClick={save}>
@@ -147,7 +147,8 @@ export function CustomToolsCard(props: {
                 key={`${String(tool.id ?? '')}-${index}`}
                 tool={tool}
                 index={index}
-                expanded={props.disabled === true || expandedCards.has(index)}
+                disabled={disabled}
+                expanded={expandedCards.has(index)}
                 onToggleExpanded={() => toggleCard(index)}
                 onPatch={(patch) => patchTool(index, patch)}
                 onToggleEnabled={(enabled) => patchTool(index, { enabled })}
