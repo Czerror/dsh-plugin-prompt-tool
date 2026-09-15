@@ -33,6 +33,8 @@ const { ConfigListWithTemplates } = await import('../../src/client/app/workspace
 const { PromptConfigsEditor } = await import('../../src/client/features/prompts/PromptConfigsEditor.tsx')
 const { PromptConfigList } = await import('../../src/client/features/prompts/PromptConfigList.tsx')
 const { ToggleRow } = await import('../../src/client/ui/ToggleRow.tsx')
+const { PromptConfigCard } = await import('../../src/client/features/prompts/PromptConfigCard.tsx')
+const { PromptConfigForm } = await import('../../src/client/features/prompts/PromptConfigForm.tsx')
 loader.deregister()
 const t = (key, params = {}) => Object.entries(params).reduce((text, [name, value]) => text.replaceAll(`{${name}}`, String(value)), PROMPT_TOOL_DICTS.zh[key] ?? key)
 
@@ -920,5 +922,31 @@ test('六层空草稿：保存成功不以尚未更新的生成快照清空编�
     assert.equal(await store.persistConfigs(cards, { includeInstructions: false }), true)
     assert.deepEqual(requests.find(({ endpoint }) => endpoint === 'param-overrides').body.promptConfigs, cards)
     assert.deepEqual(store.getFields().promptConfigs, cards)
+  } finally { restore() }
+})
+
+test('指令文件复用标准配置卡：与普通前置步骤卡同组件同层，就地编辑正文', async () => {
+  const cards = [
+    fileCard(),
+    { id: 'example-pre-step', name: '示例：消息批注入', layer: 'pre-step', strategy: 'static', position: 'after-user', order: 0, text: '示例正文' },
+  ]
+  const restore = installFetch([], { bootstrap: bootstrapPayload({ cards }) })
+  try {
+    const store = mountStore(makeApi(), makeSettings())
+    await store.load()
+    const tree = listFromPage(MainSessionPage, store)
+    const fileElement = findElement(tree, (node) => node.type === PromptConfigCard && node.props.config?.id === 'agents-file-f1')
+    const exampleElement = findElement(tree, (node) => node.type === PromptConfigCard && node.props.config?.id === 'example-pre-step')
+    assert.ok(fileElement, '指令文件必须以标准配置卡渲染，而不是另一套卡片')
+    assert.ok(exampleElement, '同一列表里存在可对比的普通前置步骤卡')
+    assert.equal(fileElement.type, exampleElement.type, '两类卡使用同一个卡片组件')
+    assert.equal(fileElement.props.config.layer, 'pre-step')
+    assert.equal(typeof fileElement.props.onSaveInstructionFile, 'function', '卡片保留显式写回原文件')
+    const html = renderToString(React.createElement(PromptConfigCard, { ...fileElement.props, expanded: false }))
+    assert.match(html, /前置步骤/, '卡片头部显示标准的层级信息')
+    const expanded = componentTree(PromptConfigCard, { ...fileElement.props, expanded: true })
+    const form = findElement(expanded, (node) => node.type === PromptConfigForm)
+    assert.equal(form.props.config.id, 'agents-file-f1', '展开后就地编辑该文件正文')
+    assert.equal(form.props.config.text, 'V1')
   } finally { restore() }
 })
