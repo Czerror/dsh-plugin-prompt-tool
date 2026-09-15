@@ -15,12 +15,17 @@ const preset = (id) => {
     `id: ${id}\nname: ${id}\nmodules: [prompt-config-engine]\n`, 'utf8')
 }
 
-function makeHarness(initial) {
+function makeHarness(initial, options = {}) {
   let promptState = { ...initial }
   let hostDefault = initial.presetTemplate
   let promptWatcher
   const listeners = new Map()
   const mutations = []
+  const warnings = []
+  const hostDocument = () => ({
+    default: hostDefault,
+    ...options.modeSelectionEnabled === undefined ? {} : { modeSelectionEnabled: options.modeSelectionEnabled },
+  })
 
   const settings = {
     describe: () => [],
@@ -37,7 +42,7 @@ function makeHarness(initial) {
         hooks.onChange()
       }
     },
-    get: (ns) => String(ns) === 'agent-presets' ? { default: hostDefault } : promptState,
+    get: (ns) => String(ns) === 'agent-presets' ? hostDocument() : promptState,
     mutate: async (ns, ops) => {
       mutations.push({ ns: String(ns), ops })
       if (String(ns) === 'prompt-tool') {
@@ -67,10 +72,13 @@ function makeHarness(initial) {
       listeners.set(event, entries)
       return () => { listeners.set(event, (listeners.get(event) ?? []).filter((item) => item !== callback)) }
     },
-    get: () => undefined,
+    // 官方 agent-presets 服务面：把策略关掉后，生效默认值只有它能给出。
+    get: (name) => name === 'agentPresets' && options.serviceDefaultId !== undefined
+      ? { get defaultId() { return options.serviceDefaultId } }
+      : undefined,
   }
   const ctx = {
-    logger: { warn: () => {} },
+    logger: { warn: (message) => { warnings.push(String(message)) } },
     effect: (factory) => { const dispose = factory(); return typeof dispose === 'function' ? dispose : () => {} },
     // 真实 cordis Context 提供事件订阅；插件用它订阅 provider 拓扑变化失效模型目录。
     on: () => () => {},
@@ -83,7 +91,14 @@ function makeHarness(initial) {
   return {
     ctx,
     mutations,
+    warnings,
     getPromptState: () => promptState,
+    /** 模拟工作台里切换预设：写入本插件 settings 并触发 onChange → applyState → 正向同步。 */
+    switchPreset: (id) => {
+      const previous = promptState
+      promptState = { ...promptState, presetTemplate: id }
+      promptWatcher?.(promptState, previous)
+    },
     emitOfficialDefault: (value) => {
       hostDefault = value
       for (const callback of listeners.get('settings/updated') ?? []) {
@@ -127,6 +142,71 @@ test('官方 agent-presets.default 变化反向同步 prompt-tool.presetTemplate
     '相同官方默认值重复通知不得重复写入')
 })
 
+
+test('宿主关闭模式选择时：不假装同步，跟随服务生效默认值并只告警一次', async () => {
+  rmSync(presetDir, { recursive: true, force: true })
+  preset('anchored')
+  preset('creative')
+  preset('minimal')
+  writePluginState({ seeded: true })
+  const initial = {
+    writePreset: false,
+    presetTemplate: 'anchored',
+    skillOrder: [],
+    skillsDirs: [],
+    skillRankBase: 250,
+    presetOrder: 5,
+    fallbackText: '',
+  }
+  // 宿主关掉模式选择：存储值仍是 anchored，但生效默认值由 config.default 决定（creative）。
+  const harness = makeHarness(initial, { modeSelectionEnabled: false, serviceDefaultId: 'creative' })
+  apply(harness.ctx, initial)
+  await Promise.resolve()
+
+  assert.equal(harness.getPromptState().presetTemplate, 'creative',
+    '关闭策略后应跟随服务生效默认值，而不是存储值')
+  assert.equal(harness.mutations.filter((item) => item.ns === 'agent-presets').length, 0,
+    '策略关闭时不得写入 default')
+
+  // 工作台切换：写入被忽略，因此必须告警且不产生 agent-presets 写入。
+  harness.switchPreset('minimal')
+  await Promise.resolve()
+  assert.equal(harness.mutations.filter((item) => item.ns === 'agent-presets').length, 0,
+    '策略关闭时正向同步不得落盘')
+  harness.switchPreset('anchored')
+  await Promise.resolve()
+  const policyWarnings = harness.warnings.filter((message) => message.includes('modeSelectionEnabled=false'))
+  assert.equal(policyWarnings.length, 1, '同一进程只告警一次')
+})
+
+test('宿主未声明策略时保持原行为：正向写入 default，反向跟随存储值', async () => {
+  rmSync(presetDir, { recursive: true, force: true })
+  preset('anchored')
+  preset('creative')
+  writePluginState({ seeded: true })
+  const initial = {
+    writePreset: false,
+    presetTemplate: 'anchored',
+    skillOrder: [],
+    skillsDirs: [],
+    skillRankBase: 250,
+    presetOrder: 5,
+    fallbackText: '',
+  }
+  const harness = makeHarness(initial)
+  apply(harness.ctx, initial)
+  await Promise.resolve()
+  assert.equal(harness.getPromptState().presetTemplate, 'anchored', '缺省策略下初始值不变')
+  assert.equal(harness.mutations.length, 0, '初始一致不写入')
+
+  harness.switchPreset('creative')
+  await Promise.resolve()
+  const writes = harness.mutations.filter((item) => item.ns === 'agent-presets')
+  assert.equal(writes.length, 1, '缺省策略下切换仍需写入宿主 default')
+  assert.deepEqual(writes[0].ops, [{ op: 'set', path: ['default'], value: 'creative' }])
+  assert.equal(harness.warnings.filter((message) => message.includes('modeSelectionEnabled')).length, 0,
+    '未声明策略时不得误报')
+})
 
 test('兼容快照已处理后，官方预设切换不会创建或复活 prompt-tool 目录', async () => {
   rmSync(presetDir, { recursive: true, force: true })

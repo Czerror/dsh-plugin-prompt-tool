@@ -2,6 +2,11 @@
 
 ## [未发布] - 2026-09-06
 
+### 宿主预设策略感知与预设内嵌技能漂移检查（2026-09-15）
+
+- **默认预设同步感知 `modeSelectionEnabled`**：官方关闭模式选择时 `defaultId` 回落 `config.default`，用户保存的 `agent-presets.default` 不再决定新会话。插件改为跟随「生效默认值」（优先读服务 getter `agentPresets.defaultId`），此时不再写 `default`、也不再假装同步成功，只在首次触发时告警一次并指明改 `cordis.patch.yml` 的 `agent-presets.config.default` 或重新开启模式选择。开关缺省（含旧版宿主）行为完全不变。
+- **`rematerialize:presets` 增加预设内嵌 skills 漂移检查**：官方 cordis 谱系的 `skill-filesystem-cordis` 行按 `<预设>/skills/` 读取技能，该副本只在建预设时由 `ensurePresetSeed`/`cloneBuiltinPreset` 复制一次，`writePreset` 与重新物化都不管理它——包内技能更新后用户副本会静默过期（例如技能正文仍引用已删除的官方包）。脚本默认比对包内模板并报告缺失/内容不同/预设独有文件，不覆盖、不删除；显式 `--refresh-skills` 才刷新，且先把原目录改名为 `skills.bak-<时间戳>` 以便回退。
+
 ### 官方组合跟随 DSH 0.1.6-alpha.1 与 PTC 命名统一（2026-09-15）
 
 - 官方 master（`0d1f50007f9bca3f52b06e1c3074fa14d5fb0720`，`dsh-v0.1.6-alpha.1` 之后）把组合嵌套行 `workflow-worker-thread`（`@deepseek-ai/dsh-workflow-worker-thread`）改名为 `workflow-ptc`（`@deepseek-ai/dsh-workflow-ptc`）。旧包已被上游删除（源码树与 npm 都只到 `0.1.5-rc.2`），继续生成旧行会让预设在该宿主上解析失败，故本次升级没有中间兼容版本。

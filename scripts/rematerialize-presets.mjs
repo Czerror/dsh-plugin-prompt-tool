@@ -15,28 +15,37 @@
  * 不覆盖用户手写组合。本项目不含旧参数/旧内容迁移代码：物化只按当前契约重跑。
  *
  * 用法：
- *   node scripts/rematerialize-presets.mjs [--dsh-home <dir>] [--dry-run]
+ *   node scripts/rematerialize-presets.mjs [--dsh-home <dir>] [--dry-run] [--refresh-skills]
  * 退出码：任一预设物化失败或校验不通过 = 1（其余预设继续处理）。
+ *
+ * 预设内嵌 skills（官方 cordis 谱系的 `skill-filesystem-cordis` 行按 `baseUrl/skills/`
+ * 读取）：writePreset 不管理它，建预设时复制一次后即冻结。本脚本默认只比对包内
+ * 模板并报告漂移，不覆盖用户副本；显式 `--refresh-skills` 才刷新，且先把原目录
+ * 改名为 `skills.bak-<时间戳>`（可恢复），预设独有的文件不删除。
  */
-import { existsSync, readFileSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { cpSync, existsSync, readFileSync, readdirSync, renameSync } from 'node:fs'
+import { join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const LIB_ENTRY = new URL('../lib/index.mjs', import.meta.url)
 const RENDER_STAMP_PREFIX = '# prompt-tool:render v'
+const root = fileURLToPath(new URL('..', import.meta.url))
+const SKILLS_DIR = 'skills'
+const SKILLS_BACKUP_PREFIX = 'skills.bak-'
 
 function parseArgs(argv) {
-  const out = { dshHome: undefined, dryRun: false }
+  const out = { dshHome: undefined, dryRun: false, refreshSkills: false }
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index]
     if (arg === '--dry-run' || arg === '-n') out.dryRun = true
+    else if (arg === '--refresh-skills') out.refreshSkills = true
     else if (arg === '--dsh-home') {
       const value = argv[index + 1]
       if (value === undefined || value.trim().length === 0) throw new Error('--dsh-home 需要目录参数')
       out.dshHome = value
       index += 1
     } else if (arg.startsWith('--dsh-home=')) out.dshHome = arg.slice('--dsh-home='.length)
-    else throw new Error(`未知参数 ${arg}（支持 --dsh-home <dir> / --dry-run）`)
+    else throw new Error(`未知参数 ${arg}（支持 --dsh-home <dir> / --dry-run / --refresh-skills）`)
   }
   return out
 }
@@ -45,6 +54,38 @@ function parseArgs(argv) {
 function readGenerated(dir, name) {
   const file = join(dir, name)
   return existsSync(file) ? readFileSync(file, 'utf8') : undefined
+}
+
+/** 递归读文件树为「相对路径 → 字节」；目录不存在返回 undefined。 */
+function readTree(dir) {
+  if (!existsSync(dir)) return undefined
+  const files = new Map()
+  const walk = (current, prefix) => {
+    for (const entry of readdirSync(current, { withFileTypes: true })) {
+      const rel = prefix.length > 0 ? `${prefix}/${entry.name}` : entry.name
+      const full = join(current, entry.name)
+      if (entry.isDirectory()) walk(full, rel)
+      else if (entry.isFile()) files.set(rel, readFileSync(full))
+    }
+  }
+  walk(dir, '')
+  return files
+}
+
+/**
+ * 预设内嵌 skills 与包内模板 `preset/<id>/skills` 的漂移；模板不含 skills 时返回
+ * undefined。只报差异：缺失/内容不同/预设独有（独有文件永不删除）。
+ */
+function skillsDrift(presetId, presetDir) {
+  const templateDir = join(root, 'preset', presetId, SKILLS_DIR)
+  const template = readTree(templateDir)
+  if (template === undefined) return undefined
+  const local = readTree(join(presetDir, SKILLS_DIR)) ?? new Map()
+  const missing = [...template.keys()].filter((rel) => !local.has(rel))
+  const differing = [...template.keys()].filter((rel) => local.has(rel) && !template.get(rel).equals(local.get(rel)))
+  const extra = [...local.keys()].filter((rel) => !template.has(rel))
+  if (missing.length === 0 && differing.length === 0 && extra.length === 0) return undefined
+  return { presetId, templateDir, skillsDir: join(presetDir, SKILLS_DIR), missing, differing, extra }
 }
 
 const args = parseArgs(process.argv.slice(2))
@@ -111,7 +152,44 @@ for (const [index, preset] of presets.entries()) {
   }
 }
 
-// 3) 物化后校验：组合版本戳与共享引擎标记存在（失败计入退出码）。
+// 3) 预设内嵌 skills 与包内模板比对：writePreset 不管这份副本，包更新后它会静默过期。
+//    默认只报告；--refresh-skills 先备份再按模板刷新（预设独有文件不删除）。
+const staleSkills = []
+for (const preset of presets) {
+  const drift = skillsDrift(preset.id, join(presetRoot, preset.id))
+  if (drift !== undefined) staleSkills.push(drift)
+}
+for (const drift of staleSkills) {
+  const parts = []
+  if (drift.missing.length > 0) parts.push(`${drift.missing.length} 个包内文件缺失`)
+  if (drift.differing.length > 0) parts.push(`${drift.differing.length} 个内容不同`)
+  if (drift.extra.length > 0) parts.push(`${drift.extra.length} 个预设独有`)
+  const sample = [...drift.missing, ...drift.differing, ...drift.extra].slice(0, 3).join(', ')
+  if (args.refreshSkills && args.dryRun) {
+    console.log(`[dry-run] would refresh skills ${drift.presetId}: ${parts.join('、')}（${sample}）`)
+    continue
+  }
+  if (!args.refreshSkills) {
+    console.log(`stale skills ${drift.presetId}: ${parts.join('、')}（${sample}）；加 --refresh-skills 先备份再按包内模板刷新`)
+    continue
+  }
+  try {
+    let backupDir
+    if (existsSync(drift.skillsDir)) {
+      backupDir = join(presetRoot, drift.presetId, `${SKILLS_BACKUP_PREFIX}${Date.now().toString(36)}`)
+      renameSync(drift.skillsDir, backupDir)
+    }
+    cpSync(drift.templateDir, drift.skillsDir, { recursive: true, force: true })
+    console.log(`refreshed skills ${drift.presetId}${backupDir === undefined ? '' : `（原副本已备份为 ${relative(presetRoot, backupDir)}）`}`)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    // 运行中的宿主会在 skills 目录里持有句柄，改名同样会 EPERM/EBUSY。
+    const locked = /EPERM|EBUSY|EACCES/.test(message)
+    failures.push(`${drift.presetId}: 刷新预设内嵌 skills 失败：${message}${locked ? '（目录被运行中的宿主进程锁定，重启 DSH 后重跑本脚本）' : ''}`)
+  }
+}
+
+// 4) 物化后校验：组合版本戳与共享引擎标记存在（失败计入退出码）。
 if (!args.dryRun && materializedIds.length > 0) {
   const marker = join(presetRoot, '.engine', '.pt-engine-fingerprint')
   if (!existsSync(marker)) failures.push('共享引擎缺少 .engine/.pt-engine-fingerprint')
@@ -132,7 +210,7 @@ if (!args.dryRun && materializedIds.length > 0) {
 for (const failure of failures) console.error(`FAIL ${failure}`)
 console.log(
   `rematerialize-presets: ${presets.length} preset(s) scanned, `
-  + `${args.dryRun ? 0 : materializedIds.length} materialized, ${skipped} skipped, ${failures.length} failed`
+  + `${args.dryRun ? 0 : materializedIds.length} materialized, ${skipped} skipped, ${staleSkills.length} stale skills, ${failures.length} failed`
   + `${args.dryRun ? ' (dry-run)' : ''}`,
 )
 process.exit(failures.length > 0 ? 1 : 0)

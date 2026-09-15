@@ -234,4 +234,5 @@ moduleConfigs:
   npm 的版本列表与 dist-tags，不能把名字为 latest 的旧标签误当成更新版本。
 - 本地新增模块放 `engine/compositions/source/local/<name>.yml`，重建脚本校验后直接装配；
   官方预设行变体在 `OFFICIAL_MODULES` 显式登记并生成到 `library/`；本地改写不得加入生成器补丁表，两处同名会 fail loud；
+- 用户目录刷新：`pnpm rematerialize:presets` 按各预设 `preset.yml` 重新物化组合与共享引擎。预设内嵌 `skills/`（官方 cordis 谱系按 `<预设>/skills/` 读取）不由 `writePreset` 管理，脚本默认只报告与 `preset/<id>/skills` 的漂移，`--refresh-skills` 才刷新且先备份为 `skills.bak-<时间戳>`，预设独有文件不删除；
 - 验证三连：`pnpm typecheck` + `pnpm lint` + `pnpm test`。

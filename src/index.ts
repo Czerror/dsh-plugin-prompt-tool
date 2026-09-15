@@ -612,6 +612,36 @@ export function apply(ctx: Context, configIn: Config): void {
     const candidate = (value as { default?: unknown }).default
     return typeof candidate === 'string' && candidate.length > 0 ? candidate : undefined
   }
+  /** 官方 agent-presets 服务面（只读 getter）：本项目不声明该包依赖，只依赖最小形状。 */
+  type AgentPresetsPolicyService = { readonly defaultId?: unknown }
+  let agentPresetsService: AgentPresetsPolicyService | undefined
+  let modeSelectionWarned = false
+  /**
+   * 官方 `agent-presets.modeSelectionEnabled`：显式 false 时官方忽略用户保存的
+   * `default`、回落 `config.default`，设置页也不显示选择器。缺省（含旧版宿主）
+   * 视为开启。
+   */
+  const modeSelectionEnabled = (value: unknown): boolean | undefined => {
+    if (value === null || typeof value !== 'object') return undefined
+    const flag = (value as { modeSelectionEnabled?: unknown }).modeSelectionEnabled
+    return typeof flag === 'boolean' ? flag : undefined
+  }
+  const warnModeSelectionOnce = (): void => {
+    if (modeSelectionWarned) return
+    modeSelectionWarned = true
+    warn(ctx, 'prompt-tool: 宿主已关闭 agent-presets 模式选择（modeSelectionEnabled=false）：写入 default 不影响新会话，官方设置页也不显示预设选择器。请改 profile 的 cordis.patch.yml（agent-presets config.default），或在官方设置里重新开启模式选择。')
+  }
+  /**
+   * 生效默认预设（与官方 selectionPolicy 同源）：开关关闭时 official 只认
+   * `config.default`，该值只有服务 getter 能给出；服务未就绪时返回 undefined，
+   * 由 `ctx.inject(['settings','agentPresets'])` 的迟到回调再对齐一次。
+   */
+  const effectiveHostDefault = (value?: unknown): string | undefined => {
+    const document = value ?? hostSettingsService?.get(agentPresetsNs)
+    if (modeSelectionEnabled(document) !== false) return readHostDefault(document)
+    const effective = agentPresetsService?.defaultId
+    return typeof effective === 'string' && effective.length > 0 ? effective : undefined
+  }
   const managedPresetExists = (id: string): boolean => {
     try {
       return listPresets().some(preset => preset.id === id)
@@ -630,6 +660,11 @@ export function apply(ctx: Context, configIn: Config): void {
       warn(ctx, `prompt-tool: 预设 id ${JSON.stringify(template)} 不符合官方 agent-presets 命名（^[a-z0-9][a-z0-9-]*$），跳过宿主 default 同步；请将预设目录改名为合法 id`)
       return
     }
+    // 策略关闭时写入必然被忽略：不假装同步成功，只告警一次。
+    if (modeSelectionEnabled(s.get(agentPresetsNs)) === false) {
+      warnModeSelectionOnce()
+      return
+    }
     if (readHostDefault(s.get(agentPresetsNs)) === template) return
     // settings.mutate 是 async：未 await 时 try/catch 接不住 rejection。
     void s.mutate(agentPresetsNs, [{ op: 'set', path: ['default'], value: template }])
@@ -640,7 +675,8 @@ export function apply(ctx: Context, configIn: Config): void {
   const syncTemplateFromHostDefault = (value?: unknown): void => {
     const s = hostSettingsService
     if (s === undefined) return
-    const template = readHostDefault(value ?? s.get(agentPresetsNs))
+    // 跟随的是「生效默认」而不是存储值：策略关闭时存储值已不再决定新会话。
+    const template = effectiveHostDefault(value)
     if (template === undefined || template === runtime.presetTemplate) return
     // 官方设置可列出插件未管理的 shipped/第三方预设；只跟随本项目能解析/编辑的预设，
     // 避免把不存在的 presetTemplate 写进本插件后导致 writePreset 失败。
@@ -818,7 +854,8 @@ registerTuiCommand(
 
   // 启动顺序兜底：agent-presets 注册自身 settings namespace 时不会发 settings/updated。
   // 若本插件先 attach settings，首次读取会得到 undefined；等 agentPresets 服务就绪后再对齐一次。
-  ctx.inject(['settings', 'agentPresets'], () => {
+  ctx.inject(['settings', 'agentPresets'], (apctx: Context) => {
+    agentPresetsService = apctx.get('agentPresets') as AgentPresetsPolicyService | undefined
     syncTemplateFromHostDefault()
   })
   ctx.inject(['settings'], (sctx: Context) => {
