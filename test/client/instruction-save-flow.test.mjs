@@ -945,7 +945,7 @@ test('指令文件复用标准配置卡：与普通前置步骤卡同组件同�
     assert.ok(exampleElement, '同一列表里存在可对比的普通前置步骤卡')
     assert.equal(fileElement.type, exampleElement.type, '两类卡使用同一个卡片组件')
     assert.equal(fileElement.props.config.layer, 'pre-step')
-    assert.equal(typeof fileElement.props.onSaveInstructionFile, 'function', '卡片保留显式写回原文件')
+    assert.equal(typeof fileElement.props.onSaveInstructionFile, 'function', '卡片保留原文件写回通道（失焦触发）')
     const html = renderToString(React.createElement(PromptConfigCard, { ...fileElement.props, expanded: false }))
     assert.match(html, /前置步骤/, '卡片头部显示标准的层级信息')
     const expanded = componentTree(PromptConfigCard, { ...fileElement.props, expanded: true })
@@ -984,4 +984,26 @@ test('指令文件与普通前置步骤卡共用同一套表单字段：绑定�
   for (const label of ['名称', '拼接位置', '顺序', '晋升范围', '消息受众', '模型范围']) {
     assert.equal(controlDisabled(label), false, `${label} 应可写（落独立指令策略）`)
   }
+})
+
+test('指令文件正文失焦自动写回：无「保存到文件」按钮，脏草稿在焦点离开卡片时提交', async () => {
+  const requests = []
+  const restore = installFetch(requests, { 'agents-file': { ok: true, value: { fileId: 'f1', revision: 'saved' } } })
+  try {
+    const store = mountStore(makeApi(), makeSettings())
+    await store.load()
+    store.patch({ promptConfigs: [fileCard({ text: 'edited' })] })
+    const tree = listFromPage(MainSessionPage, store)
+    const card = findElement(tree, (node) => node.type === PromptConfigCard && node.props.config?.id === 'agents-file-f1')
+    const rendered = componentTree(PromptConfigCard, { ...card.props, expanded: true })
+    assert.equal(findElement(rendered, (node) => node.type === 'button' && node.props.children === t('card.saveFile')), undefined, '不再提供保存到文件按钮')
+    const article = findElement(rendered, (node) => node.type === 'article')
+    assert.equal(typeof article.props.onBlur, 'function', '正文失焦要自动写回')
+    article.props.onBlur({ relatedTarget: null })
+    for (let i = 0; i < 20 && store.getInstructionPool().drafts[0]?.savedContent !== 'edited'; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    }
+    assert.deepEqual(fileCalls(requests).map(({ body }) => body.fileId), ['f1'])
+    assert.equal(store.getInstructionPool().drafts[0].savedContent, 'edited')
+  } finally { restore() }
 })

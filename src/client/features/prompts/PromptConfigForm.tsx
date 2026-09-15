@@ -169,7 +169,7 @@ export function PromptConfigForm(props: {
             autoResizeTextarea(e)
             const next = e.target.value
             // 内容资产（prompt-injector）走生成目录文件通道（text → params.text 由写盘端接管）；
-            // 指令文件卡：正文始终按字符串写草稿（允许清空），保存仍走「保存到文件」显式写回。
+            // 指令文件卡：正文始终按字符串写草稿（允许清空），焦点离开卡片时自动写回原文件。
             // 其余配置单段写 text（对齐官方 PromptSection.text 单字符串语义，texts 仅多段/旧数据兼容读取）。
             if (locked || config.id === 'prompt-injector') {
               onPatch({ text: next, texts: [] })

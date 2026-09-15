@@ -172,8 +172,17 @@ const registerPreset = (harness, configs, officialInstructions = false) =>
     officialInstructions,
   })
 
-test('T15 策略缺失（默认禁用）不注入文件正文', async () => {
+test('T15 策略缺失（默认启用）按默认档位注入文件正文', async () => {
   const harness = coordinatorFor({ policyFile: newPolicyFile() })
+  const decision = await step(harness, agentAt(nested))
+  const cards = fileMessages(decision)
+  assert.equal(cards.length, 2, '默认启用时全局与项目文件都参战')
+  assert.deepEqual(decision.messages.map((message) => message.source.kind), ['user', 'instruction-file', 'instruction-file'])
+  assert.deepEqual(harness.warnings, [])
+})
+
+test('T15 显式 enabled=false 时不注入文件正文', async () => {
+  const harness = coordinatorFor({ policyFile: policyWith('schemaVersion: 1\nenabled: false\n') })
   const decision = await step(harness, agentAt(nested))
   assert.deepEqual(decision.messages.map((message) => message.id), ['task-1'])
   assert.deepEqual(harness.warnings, [])

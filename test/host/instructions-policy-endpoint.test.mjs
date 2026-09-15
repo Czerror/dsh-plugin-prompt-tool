@@ -67,7 +67,7 @@ const call = async (handler, body) => {
   return { status: res.status, payload: JSON.parse(res.body) }
 }
 
-test('读取：策略文件缺失时返回默认值（enabled=false）且不创建文件', async () => {
+test('读取：策略文件缺失时返回默认值（enabled=true）且不创建文件', async () => {
   const handler = handlers().get(endpoint)
   assert.ok(handler, '端点未注册')
   const { status, payload } = await call(handler, {})
@@ -75,7 +75,7 @@ test('读取：策略文件缺失时返回默认值（enabled=false）且不创�
   assert.equal(payload.ok, true)
   assert.equal(payload.value.exists, false)
   assert.equal(payload.value.revision, null)
-  assert.equal(payload.value.policy.enabled, false)
+  assert.equal(payload.value.policy.enabled, true)
   assert.deepEqual(payload.value.policy.defaults, { order: 30, position: 'after-user', promotion: 'none', audience: null, modelScope: 'all' })
   assert.equal(existsSync(policyPath), false)
 })

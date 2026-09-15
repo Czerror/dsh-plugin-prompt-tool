@@ -1,4 +1,4 @@
-import { memo, useState, type ReactNode } from 'react'
+import { memo, useRef, useState, type FocusEvent, type ReactNode } from 'react'
 import clsx from 'clsx'
 import { IconChevronDownOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PromptToolTranslate } from '../../locales.ts'
@@ -46,9 +46,17 @@ export const PromptConfigCard = memo(function PromptConfigCard(props: {
 }): ReactNode {
   const { t, meta, config } = props
   const [confirmingDelete, setConfirmingDelete] = useState(false)
+  const cardRef = useRef<HTMLElement>(null)
   const enabled = config.enabled !== false
   const instructionFileId = instructionFileIdOf(config)
   const fileNotWritable = config.contentStatus !== undefined && config.contentStatus !== 'ready'
+  /** 指令文件正文失焦即写回原文件（与模板变量卡同款）：焦点离开整张卡才提交，卡内切换控件不触发。 */
+  const autoSaveOnBlur = (event: FocusEvent<HTMLElement>): void => {
+    if (instructionFileId === undefined || props.onSaveInstructionFile === undefined) return
+    if (config.contentDirty !== true || config.contentSaving === true) return
+    const next = event.relatedTarget
+    if (next === null || !cardRef.current?.contains(next as Node)) props.onSaveInstructionFile(instructionFileId)
+  }
   const policy = fieldPolicyFor(meta, config.layer)
   const layer = config.layer ?? 'pre-step'
   const strategy = config.strategy === 'instruction-hint' ? 'placeholder' : config.strategy ?? 'static'
@@ -68,6 +76,8 @@ export const PromptConfigCard = memo(function PromptConfigCard(props: {
   else if (config.contentDirty === true) chips.push(t(config.contentSaving === true ? 'card.chip.fileSaving' : 'card.chip.fileDirty'))
   return (
     <article
+      ref={cardRef}
+      onBlur={autoSaveOnBlur}
       className={clsx(styles.configCard, props.expanded && styles.configCardOpen)}
       data-dragging={props.dragging ? '' : undefined}
       data-drop-before={props.dropBefore ? '' : undefined}
@@ -113,23 +123,13 @@ export const PromptConfigCard = memo(function PromptConfigCard(props: {
             </label>
           </HintTooltip>
           <span className={styles.configActions}>
-            {instructionFileId !== undefined && (
-              <>
-                <button
-                  type="button"
-                  className={styles.pillButton}
-                  disabled={fileNotWritable || config.contentConflict === true || config.contentDirty !== true || config.contentSaving === true}
-                  onClick={() => props.onSaveInstructionFile?.(instructionFileId)}
-                >{t('card.saveFile')}</button>
-                {(config.contentConflict === true || fileNotWritable) && (
-                  <button
-                    type="button"
-                    className={styles.pillButton}
-                    data-variant="secondary"
-                    onClick={() => props.onReloadInstructionFile?.(instructionFileId)}
-                  >{t('card.reloadFile')}</button>
-                )}
-              </>
+            {instructionFileId !== undefined && (config.contentConflict === true || fileNotWritable) && (
+              <button
+                type="button"
+                className={styles.pillButton}
+                data-variant="secondary"
+                onClick={() => props.onReloadInstructionFile?.(instructionFileId)}
+              >{t('card.reloadFile')}</button>
             )}
             <button type="button" className={styles.pillButton} disabled={!props.canMoveUp} onClick={() => props.onMoveUp(config.id)}>{t('card.moveUp')}</button>
             <button type="button" className={styles.pillButton} disabled={!props.canMoveDown} onClick={() => props.onMoveDown(config.id)}>{t('card.moveDown')}</button>
