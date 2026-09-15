@@ -35,6 +35,10 @@ const { PromptConfigList } = await import('../../src/client/features/prompts/Pro
 const { ToggleRow } = await import('../../src/client/ui/ToggleRow.tsx')
 const { PromptConfigCard } = await import('../../src/client/features/prompts/PromptConfigCard.tsx')
 const { PromptConfigForm } = await import('../../src/client/features/prompts/PromptConfigForm.tsx')
+const { FormField } = await import('../../src/client/ui/FormField.tsx')
+const { OptionField } = await import('../../src/client/features/prompts/PromptConfigFields.tsx')
+const { MenuSelect } = await import('../../src/client/ui/MenuSelect.tsx')
+const { getEngineMeta } = await import('../../engine/schema.mjs')
 loader.deregister()
 const t = (key, params = {}) => Object.entries(params).reduce((text, [name, value]) => text.replaceAll(`{${name}}`, String(value)), PROMPT_TOOL_DICTS.zh[key] ?? key)
 
@@ -949,4 +953,35 @@ test('指令文件复用标准配置卡：与普通前置步骤卡同组件同�
     assert.equal(form.props.config.id, 'agents-file-f1', '展开后就地编辑该文件正文')
     assert.equal(form.props.config.text, 'V1')
   } finally { restore() }
+})
+
+test('指令文件与普通前置步骤卡共用同一套表单字段：绑定项置灰、策略项可写', () => {
+  const meta = getEngineMeta()
+  const plain = { id: 'example-pre-step', name: '示例：消息批注入', layer: 'pre-step', strategy: 'static', position: 'after-user', order: 0, text: '示例正文' }
+  const treeOf = (config) => componentTree(PromptConfigForm, { t, meta, config, onPatch() {}, onPatchPolicy() {} })
+  const labelsOf = (node, out = []) => {
+    if (Array.isArray(node)) { for (const child of node) labelsOf(child, out); return out }
+    if (!React.isValidElement(node)) return out
+    if (typeof node.props?.label === 'string') out.push(node.props.label)
+    return labelsOf(node.props.children, out)
+  }
+  const shared = ['标识', '名称', '注入层', '内容策略', '配置类型', '消息角色', '拼接位置', '合并方式', '顺序', '互斥组', '去重方式', '晋升范围', '消息受众', '模型范围', '注入内容']
+  for (const config of [plain, fileCard()]) {
+    const labels = labelsOf(treeOf(config))
+    for (const label of shared) assert.ok(labels.includes(label), `${config.id} 缺少字段 ${label}`)
+  }
+  const fileTree = treeOf(fileCard())
+  const controlDisabled = (label) => {
+    const field = findElement(fileTree, (node) => (node.type === FormField || node.type === OptionField) && node.props.label === label)
+    assert.ok(field, `找不到字段 ${label}`)
+    const body = field.type === OptionField ? componentTree(OptionField, field.props) : field.props.children
+    const control = findElement(body, (node) => node.type === MenuSelect || node.type === 'input')
+    return control?.props.disabled === true
+  }
+  for (const label of ['标识', '注入层', '内容策略', '配置类型', '消息角色', '合并方式', '去重方式', '填充来源', '来源类型', '消息形式']) {
+    assert.equal(controlDisabled(label), true, `${label} 由指令文件来源固定，应只读`)
+  }
+  for (const label of ['名称', '拼接位置', '顺序', '晋升范围', '消息受众', '模型范围']) {
+    assert.equal(controlDisabled(label), false, `${label} 应可写（落独立指令策略）`)
+  }
 })

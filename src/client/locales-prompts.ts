@@ -120,7 +120,7 @@ export const PROMPTS_ZH = {
   'form.text.fileReadOnly': '文件当前不可读或磁盘版本已变化：正文保持只读，重新读取后再编辑或保存。',
   'file.bindingLocked': '插入点、角色、消息表单、填充来源与去重规则由指令文件来源固定：卡片不可改这些绑定，改绑定请调整预设或独立策略。',
   'file.ownerConflict': '该会话的装配仍在用官方 @deepseek-ai/dsh-agent-instructions 注入指令文件，插件独立来源本次不注入正文（同一正文只由一方注入）。要改由插件负责：先在预设里去掉官方指令行/模块，再开启下面的策略开关。',
-  'file.policyNote': '下面的启停、顺序、位置、晋升、受众与模型范围写独立指令策略（$DSH_HOME/.prompt-tool/instructions.yml），不写 preset.yml，并直接决定后续注入（默认关闭）。策略只影响未来的注入，不撤回已进入会话历史的内容；文件内容变化会在下一个合适时机注入一次新版本。',
+  'file.policyNote': '卡内的启停、顺序、位置、晋升、受众与模型范围写独立指令策略（$DSH_HOME/.prompt-tool/instructions.yml），不写 preset.yml，并直接决定后续注入（默认关闭）。策略只影响未来的注入，不撤回已进入会话历史的内容；文件内容变化会在下一个合适时机注入一次新版本。',
   'form.fill.label': '填充来源',
   'form.fill.hint': '选择动态内容的来源',
   'form.sourceKind.label': '来源类型',

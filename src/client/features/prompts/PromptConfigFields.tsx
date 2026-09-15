@@ -32,13 +32,14 @@ function selectValue(options: readonly string[], value: string | undefined, fall
 }
 
 /** 共享枚举下拉：保持未知当前值可见，避免旧配置无法编辑。 */
-export function OptionField(props: { t: PromptToolTranslate; label: string; hint?: string; className?: string; value: string | undefined; options: readonly string[]; fallback: string; onChange: (value: string) => void; keepCurrent?: boolean; labelKeys?: Record<string, PromptToolLocaleKey> }): ReactNode {
+export function OptionField(props: { t: PromptToolTranslate; label: string; hint?: string; className?: string; value: string | undefined; options: readonly string[]; fallback: string; onChange: (value: string) => void; keepCurrent?: boolean; labelKeys?: Record<string, PromptToolLocaleKey>; disabled?: boolean }): ReactNode {
   const options = props.keepCurrent === true ? selectOptions(props.t, props.options, props.value) : props.options.map((item) => ({ value: item, label: item }))
   return (
     <FormField label={props.label} hint={props.hint} hintMode="tooltip" className={props.className}>
       <MenuSelect
         className={clsx(styles.configInput, styles.fieldControl)}
         ariaLabel={props.label}
+        disabled={props.disabled}
         value={props.keepCurrent === true
           ? (props.value ?? props.fallback)
           : selectValue(props.options, props.value, props.fallback)}
