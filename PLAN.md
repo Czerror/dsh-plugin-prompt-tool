@@ -150,4 +150,12 @@
 - [✔] **Wave 4：文档与交付**
   - [✔] R8：文档更新（README / NOTE / docs×2 / CHANGELOG / preset.yml / templates）。
   - [✔] R9：完整门禁——`typecheck` ✓、`lint` 0 warning/0 error ✓、`test` 930/930 ✓、`build` ✓、`git diff --check` 干净 ✓。
-  - [ ] R10：提交与推送 `origin/dev`（本轮执行中）。
+  - [✔] R10：提交 `a406136`（`refactor(preset)!: 移除上游 anchored 预设，只保留引擎移植`）已推送 `origin/dev`（`0af985a..a406136`）。
+
+## 8. 交付与 OCR 委托审查记录
+
+- 提交：`a406136`，普通快进推送 `origin/dev`（`0af985a..a406136`）；未切 `main`、未建 PR、未提交本地记忆（`.ai-memory/` 被忽略）。
+- 审查入口：`ocr delegate preview --format json`（workspace 模式）判定 60 个变更文件中 **34 个可审查**（26 个被排除：md 文档、删除文件、`.scratch` 归档，以及 `test/fixtures/preset-template*` 两个夹具文件）；`ocr delegate rule --format json` 返回 3 组规则（YAML 键拼写 / package.json 依赖 / TS-JS 质量与安全）。
+- 覆盖：34/34 可审查文件逐文件审阅（`git diff` + 规则）；被规则排除的 `test/fixtures/preset-template/preset.yml` 与 `preset-template.mjs` 由本轮作者手工审阅（内容为测试夹具，不含提示词正文）。
+- 审查确认并修复 2 处漏改：①`src/client/locales.ts` 中文文案仍为「生成锚定注入预设」（EN 已改为 prompt-tool 口径）；②`src/config.ts` 的 `writePreset` 注释仍写「锚定注入 preset」。另同步清理 `src/host/write-preset.ts` 中仍引用已删除 `buildCordis` 的注释。
+- 审查确认的非缺陷取舍（记录备查）：原 anchored 测试中的 `tool-web.fetch: true` 本地保留差异断言随预设下线失去载体（`delegation` 的 `modelSelectionSettings` / `backgroundMode` 两条仍由 `composition-modules` 的库断言覆盖）；引擎侧 `anchored-*` 插件名、`hasAnchoredReasoning`、`anchored-popover*` 属「锚点/锚定推理」语义或上游来源注释，按计划保留不改名。
