@@ -74,15 +74,10 @@ export function EngineModuleActions(props: {
   onCreated?: (capabilityId: string) => void
   /** 该页面不提供创建的能力。 */
   excludeCapabilities?: readonly string[]
-  /** 菜单区提示：说明被排除能力的正确入口。 */
-  hint?: string
 }): ReactNode {
-  return (
-    <div className={styles.configActions}>
-      {props.hint !== undefined && <p className={styles.configFieldHint}>{props.hint}</p>}
-      <EngineCapabilityCreateMenu {...props} />
-    </div>
-  )
+  // 工具栏只放按钮：说明文字由 EngineModuleCards 渲染在卡片列表上方，
+  // 避免挤进 .configActions（flex + margin-left:auto）导致按钮偏移。
+  return <div className={styles.configActions}><EngineCapabilityCreateMenu {...props} /></div>
 }
 
 export function EnginePromptDefaultsCard({ store, t }: { store: PromptToolStore; t: PromptToolTranslate }): ReactNode {
@@ -104,6 +99,7 @@ export function EngineModuleCards({
   focusCapability,
   excludeCapabilities,
   emptyHint,
+  hint,
   renderCapabilityExtra,
 }: {
   store: PromptToolStore
@@ -118,6 +114,8 @@ export function EngineModuleCards({
   excludeCapabilities?: readonly string[]
   /** 无卡片时的替代说明（默认按层级给通用空状态）。 */
   emptyHint?: string
+  /** 卡片列表上方的说明（工具栏只放按钮，说明文字不挤进按钮行）。 */
+  hint?: string
   /** 能力卡内的附加编辑器（由页面注入，避免 feature 间反向依赖）。 */
   renderCapabilityExtra?: (slot: CapabilityEditorSlot) => ReactNode
 }): ReactNode {
@@ -136,6 +134,7 @@ export function EngineModuleCards({
   }, [focusToken, focusId])
   return <>
     {showActions && <EngineModuleActions store={store} t={t} />}
+    {hint !== undefined && <p className={styles.configFieldHint}>{hint}</p>}
     {capabilities.map((capability) => (
       <EngineModuleCard key={capability.id} name={capability.id} layer={capability.displayLayer}
         meta={capability.moduleKeys.join(' · ')}

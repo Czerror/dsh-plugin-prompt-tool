@@ -104,7 +104,6 @@ export const SubagentPage = memo(function SubagentPage(props: { store: PromptToo
               onExtraSelect={onCreateSelect}
               onCreated={revealCapability}
               excludeCapabilities={mainSessionOnly}
-              hint={t('modules.subagentScopeHint')}
             />
           }
           moduleCards={
@@ -119,6 +118,7 @@ export const SubagentPage = memo(function SubagentPage(props: { store: PromptToo
                   showStatus={viewFilter !== 'all'}
                   focusCapability={focusCapability}
                   excludeCapabilities={mainSessionOnly}
+                  hint={t('modules.subagentScopeHint')}
                   emptyHint={t('modules.subagentEmptyHint')}
                   renderCapabilityExtra={({ capabilityId }) => capabilityId === 'subagent-tool-policy'
                     ? (

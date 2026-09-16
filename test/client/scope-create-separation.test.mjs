@@ -226,8 +226,12 @@ test('子代理页能力卡排除清单由页面下发（源码契约）', () =>
   const subagent = read('app/workspace/pages/SubagentPage.tsx')
   assert.match(subagent, /const mainSessionOnly = \['tool-filter'\]/)
   assert.match(subagent, /excludeCapabilities=\{mainSessionOnly\}/)
-  assert.match(subagent, /hint=\{t\('modules\.subagentScopeHint'\)\}/)
   assert.match(subagent, /emptyHint=\{t\('modules\.subagentEmptyHint'\)\}/)
+  // 说明文字挂在能力卡列表侧，不得塞进工具栏按钮行（曾导致按钮偏移）。
+  assert.match(subagent, /<EngineModuleCards[\s\S]*?hint=\{t\('modules\.subagentScopeHint'\)\}/)
+  const modulesSource = read('features/modules/EngineModuleList.tsx')
+  const actionsBlock = modulesSource.slice(0, modulesSource.indexOf('export function EnginePromptDefaultsCard'))
+  assert.doesNotMatch(actionsBlock, /configFieldHint/, '工具栏只放按钮，说明文字由卡片列表渲染')
   // 主会话页不排除任何能力。
   const main = read('app/workspace/pages/MainSessionPage.tsx')
   assert.doesNotMatch(main, /excludeCapabilities/)

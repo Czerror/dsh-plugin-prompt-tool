@@ -22,6 +22,10 @@
 - **子代理页排除仅主对话能力**：`EngineModuleActions` / `EngineModuleCards` 新增 `excludeCapabilities`
   与 `hint` / `emptyHint`；子代理页排除 `tool-filter`（主对话常驻过滤，对子代理不生效），并在菜单区提示
   "子代理工具面请用「子代理工具策略」"。
+- **修正说明文字位置与文案**：该说明原先挂在工具栏（`.configActions` 是 `flex + margin-left:auto`），
+  会把按钮行挤偏；现改为由 `EngineModuleCards` 渲染在能力卡列表上方，工具栏只放按钮。
+  文案同步改为指向能力卡本身（"由「subagent-tool-policy」能力卡管理（在本菜单里创建）"），
+  不再指向已迁走的「工具与深度」卡；中英文同步。
 - **测试**：新增 `test/host/subagent-policy-capability.test.mjs`（7 条：目录登记+骨架校验、启用写骨架与物化、
   幂等、半状态自愈、删除清段、残留清理）；`engine-module-cards` 夹具改为同时声明 `declaredModules`；
   `scope-create-separation` 增补子代理页排除能力的菜单/卡片断言；`tools-preview` 的入口断言改为"编辑器由

@@ -101,9 +101,9 @@ export const PARAMS_ZH = {
   'modules.status.reading': '正在读取当前预设模块事实…',
   'modules.status.emptyAll': '当前预设无已装配的引擎能力；可按需添加模块。',
   'modules.status.emptyFiltered': '当前分类无已装配的引擎能力；可按需添加模块。',
-  // 子代理页不提供「仅主对话」能力的创建与卡片：引导到实例级策略。
-  'modules.subagentScopeHint': '子代理工具面用下方「工具与深度」卡的「子代理工具策略」配置；「tool-filter」只作用于主对话，不在本页提供。',
-  'modules.subagentEmptyHint': '子代理页不显示「仅主对话」的引擎能力；子代理工具面请配置「子代理工具策略」。',
+  // 子代理页不提供「仅主对话」能力的创建与卡片：引导到实例级策略能力卡。
+  'modules.subagentScopeHint': '子代理工具面由「subagent-tool-policy」能力卡管理（在本菜单里创建）；「tool-filter」只作用于主对话，不在本页提供。',
+  'modules.subagentEmptyHint': '子代理页不显示「仅主对话」的引擎能力；子代理工具面请启用「subagent-tool-policy」能力。',
 }
 
 export const PARAMS_EN: Record<keyof typeof PARAMS_ZH, string> = {
@@ -200,7 +200,7 @@ export const PARAMS_EN: Record<keyof typeof PARAMS_ZH, string> = {
   'modules.status.reading': 'Reading the current preset module facts…',
   'modules.status.emptyAll': 'This preset has no mounted engine capability; add modules as needed.',
   'modules.status.emptyFiltered': 'No mounted engine capability in this category; add modules as needed.',
-  // Subagent page omits main-session-only capabilities and points at the per-instance policy instead.
-  'modules.subagentScopeHint': 'Configure the subagent tool surface with "Subagent tool policy" in the "Tools & depth" card below; "tool-filter" affects the main session only and is not offered here.',
-  'modules.subagentEmptyHint': 'Main-session-only engine capabilities are not shown on the subagent page; configure the subagent tool surface with "Subagent tool policy".',
+  // Subagent page omits main-session-only capabilities and points at the per-instance policy capability card.
+  'modules.subagentScopeHint': 'The subagent tool surface is managed by the "subagent-tool-policy" capability card (create it from this menu); "tool-filter" affects the main session only and is not offered here.',
+  'modules.subagentEmptyHint': 'Main-session-only engine capabilities are not shown on the subagent page; enable the "subagent-tool-policy" capability for the subagent tool surface.',
 }
