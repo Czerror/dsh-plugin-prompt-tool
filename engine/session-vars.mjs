@@ -11,11 +11,12 @@
 /** session 对象上的变量属性键（字符串常量，跨模块实例一致）。 */
 export const SESSION_VARS_KEY = '__pt_session_vars__'
 
-function varsOf(session) {
+function varsOf(session, create = false) {
   if (session === null || typeof session !== 'object') return undefined
-  let vars = session[SESSION_VARS_KEY]
+  let vars = Object.hasOwn(session, SESSION_VARS_KEY) ? session[SESSION_VARS_KEY] : undefined
   if (vars === undefined) {
-    vars = {}
+    if (!create) return undefined
+    vars = Object.create(null)
     session[SESSION_VARS_KEY] = vars
   }
   return vars
@@ -30,14 +31,15 @@ export function sessionVarsSnapshot(session) {
 /** 读取单个会话变量（未设置 → undefined）。 */
 export function getSessionVar(session, key) {
   const vars = varsOf(session)
-  return vars === undefined ? undefined : vars[String(key)]
+  return vars === undefined || !Object.hasOwn(vars, String(key)) ? undefined : vars[String(key)]
 }
 
 /** 设置会话变量（值转字符串；空值仍记录）。 */
 export function setSessionVar(session, key, value) {
-  const vars = varsOf(session)
+  const vars = varsOf(session, true)
   if (vars === undefined) return
-  vars[String(key)] = String(value ?? '')
+  // defineProperty 同时保护仍在运行的旧实例创建的普通对象（__proto__ 不能触发 setter）。
+  Object.defineProperty(vars, String(key), { value: String(value ?? ''), writable: true, enumerable: true, configurable: true })
 }
 
 /** 清除会话变量；key 缺省时清空全部。 */

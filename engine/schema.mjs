@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url'
 import { sep } from 'node:path'
 import { parse as parseYaml } from './vendor/yaml/index.js'
 import { bindResolver } from './strategies.mjs'
+import { attachStRenderers } from './st-render.mjs'
 
 const name = 'prompt-config-engine'
 
@@ -325,7 +326,7 @@ export function createPromptConfigs(specs, options = {}) {
   })
   // 排序契约:anchor 提示词配置保持模块文件相对顺序(固定锚点),ordered 提示词配置按 order
   // 稳定升序排在其后。默认 order=0 时等价于文件顺序。
-  return configs
+  return attachStRenderers(configs
     .map((config, fileOrder) => ({ config, fileOrder }))
     .sort((a, b) => {
       const aAnchor = a.config.configKind === 'anchor' ? 0 : 1
@@ -334,5 +335,5 @@ export function createPromptConfigs(specs, options = {}) {
       if (aAnchor === 1 && a.config.order !== b.config.order) return a.config.order - b.config.order
       return a.fileOrder - b.fileOrder
     })
-    .map(({ config }) => config)
+    .map(({ config }) => config))
 }

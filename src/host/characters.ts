@@ -390,7 +390,7 @@ export function applyCharacterToPreset(
   let personaOpened = false
   try {
     withPresetDoc(join(presetRoot, templateName), (doc) => {
-      const current = doc.toJS() as { persona?: unknown; promptConfigs?: unknown[]; meta?: { importedCharacters?: unknown[] } }
+      const current = doc.toJS() as { persona?: unknown; promptConfigs?: unknown[]; meta?: { importedCharacters?: unknown[]; stWarnings?: unknown[] } }
       if (hasSystemSections) {
         const persona = current.persona
         if (persona !== null && typeof persona === 'object' && !Array.isArray(persona)
@@ -409,7 +409,10 @@ export function applyCharacterToPreset(
         const entry = config as Record<string, unknown>
         // 世界书（world-book 策略）与普通配置一起带前缀并入；空文本跳过。
         if (entry.text === undefined || String(entry.text).trim().length === 0) return []
-        return [{ ...entry, id: `${prefix}${String(entry.id ?? '')}` }]
+        return [{ ...entry, id: `${prefix}${String(entry.id ?? '')}`, variables: {
+          ...(spec.variablesEnabled === false ? {} : spec.variables),
+          ...entry.variables as Record<string, string> | undefined,
+        } }]
       })
       for (const [key, value] of Object.entries(spec.params ?? {})) {
         doc.setIn(['params', key], value)
@@ -432,6 +435,10 @@ export function applyCharacterToPreset(
         'tool-filter',
       ])
       doc.setIn(['promptConfigs'], merged)
+      if (Array.isArray(spec.meta?.stWarnings) && spec.meta.stWarnings.length > 0) {
+        const warnings = Array.isArray(current.meta?.stWarnings) ? current.meta.stWarnings : []
+        doc.setIn(['meta', 'stWarnings'], [...new Set([...warnings, ...spec.meta.stWarnings].filter(value => typeof value === 'string'))])
+      }
       const list = Array.isArray(current.meta?.importedCharacters) ? current.meta.importedCharacters : []
       if (!list.map(String).includes(cardId)) list.push(cardId)
       doc.setIn(['meta', 'importedCharacters'], list)

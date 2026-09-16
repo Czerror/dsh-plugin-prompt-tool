@@ -47,7 +47,7 @@ dsh --profile prompt-tool
 - 🧭 **通用 instruction-hint 引擎**：所有预设都可通过 `strategy: instruction-hint` 或 `placeholder + fill: instruction-hint` 提示指令文件存在；实现位于 `engine/instruction-hint.mjs`，不绑定 anchored；`context-gate.instructionHint` 按模型可见 surface 去重，重挂不重复，被压缩遮蔽后才再次提示
 - 📦 **Bridge 载荷**：JSON 请求统一 32 MiB 硬上限并明确返回 413；角色卡原始图片走 64 MiB 流式通道，按 PNG 魔数识别。
 - 📂 **技能目录管理**：Web UI 可用宿主目录选择器保存外部技能目录的绝对路径引用，也可用浏览器 `webkitdirectory` 导入文件夹内容到第一个当前生效技能目录；两种操作明确分开。
-- 🎭 **SillyTavern 导入**：JSON 预设卡片一键转换为本地预设——`prompts[]` 映射提示词配置、setvar/getvar 收集进顶层 `variables`（未定义自定义宏自动登记空值占位）、`enable_web_search` 按开关装配工具；采样参数剥离（模型设置 UI 管理）
+- 🎭 **SillyTavern 导入**：JSON 预设、角色卡和独立世界书转换为本地预设——按官方顺序表保留启停，赋值模板运行时求值；不等价能力明确报告，采样参数由宿主管理
 - 🎴 **角色卡库**：SillyTavern 角色卡（PNG tEXt chunk `ccv3`/`chara`，或 chara_card JSON）导入独立库（`.characters/<id>/`，含原图/转换参数/角色记忆），按 PNG 魔数识别图片并经原始文件流上传，避免头像 base64 膨胀；按需「导入到当前预设」（`chara-<卡>-` 前缀合并、幂等可移除），多文件自动合并
 - 📚 **世界书**：`character_book` 转 world-book 策略配置（`keys` 命中触发 / `constant` 常驻 / 正则键自动检测 / `selectiveLogic` 组合逻辑），与模块卡片同一存储与编辑（模块列表「世界书」过滤 + 批量启用/禁用）
 - 🛠️ **自定义工具**：preset.yml `customTools` 段声明式定义模型工具（执行器 shell/http/delegate/fs/ask-user，`{{args.x}}` 参数插值）；参数与输出经官方 `dsh-tools` 转换器物化为标准 JSON Schema，非法参数产生标准工具错误，delegate 经 `ctx.tools.execute` 嵌套调度走完整官方工具管线；`customTools.scope` 暂不支持（显式拒绝）
@@ -178,9 +178,9 @@ UI / 写盘展示顺序固定为 `pre-step → system-section → runtime-contex
 
 工作台「预设配置」页导入 SillyTavern JSON 预设卡片（导入包无定义文件、仅含单个 `.json` 时自动识别转换），按注入层级映射为本地预设：
 
-- `prompts[]` → `promptConfigs`：`system_prompt + role=system` → `system-section`（多条可 `mergeMode: merged` 拼接）；其余 → `pre-step`（`injection_position=0` → `before-all`，否则 `after-user`）；OFF 状态与 `injection_order` 原样保留
+- `prompts[]` → `promptConfigs`：system 角色进入 `system-section`，其余进入 `pre-step`；官方 `prompt_order[].order[]` 决定启停与相对顺序，深度位置保留来源并报告降级
 - 采样参数（`temperature` / `openai_max_tokens` / `reasoning_effort`）**剥离**——模型参数统一由「模型设置」UI / 宿主默认管理
-- ST 变量：`setvar`/`getvar`（含默认值）收集进顶层 `variables`；未定义自定义宏自动登记空值占位（不留字面）
+- ST 变量：保留可启停的赋值模板，在运行时顺序求值；声明变量在合并和角色卡应用时保持局部绑定
 - ST 管理工具：始终装配 `character-tools`、`session-var-tools`、`tool-config-engine` 与空操作默认的 `tool-filter`
 - `enable_web_search`：`true` → 额外组装 `tool-web`（fetch 启用）；`false` → 复用 `tool-filter` 黑名单 `web_search / web_fetch`
 - 含有效 `character_book` 条目时自动追加 `world-book-tools` 模块，使导入预设可直接调用世界书管理工具
@@ -203,13 +203,12 @@ UI / 写盘展示顺序固定为 `pre-step → system-section → runtime-contex
 
 `character_book` 条目转 world-book 策略配置（与普通模块同一存储/编辑）：
 
-- **注入语义**：`constant` 常驻注入；有 `keys` 命中聊天内容才注入；无 keys 全局每次注入
-- **匹配选项**：`caseSensitive` / `wholeWords`；正则形态键（`/regex/` 或含特殊字符）自动检测
+- **ST 注入语义**：常驻候选或主键命中，再按副键逻辑、概率、分组与时序筛选；非常驻无主键不注入；原生手写 world-book 约定保持不变
+- **匹配选项**：`caseSensitive` / `wholeWords`；只有 `/pattern/flags` 形式识别为正则，其余为字面键
 - **管理**：模块列表顶部下拉选「世界书」过滤（完整模块卡片编辑 + 批量启用/禁用）；
   模型工具 `world_book_list/upsert/delete`（`note` 写入角色卡记忆）
-- **ST 变量**：`setvar`/`getvar` 收集进顶层 `variables`、未定义自定义宏自动登记空值占位；
-  `trim`/注释/ERA 剥离，`{{user}}`/`{{char}}` 替换；运行时宏（lastusermessage/lastcharmessage）
-  从会话事件提取；TavernHelper 扩展注入物自动剥离
+- **ST 变量**：赋值不在导入时执行；local/global 分表但只在会话内有效，嵌套宏有循环与大小保护。
+  深度历史位置、system 角色、token 预算和 ST 扩展脚本不具备完整等价性，详见兼容边界
 - **会话变量**：`session_var` 工具（list/get/set/clear）维护角色状态（会话级覆盖预设默认，
   结束即失）；跨会话长期记忆用 `world_book` note（持久 memory.md 跟随角色卡）
 

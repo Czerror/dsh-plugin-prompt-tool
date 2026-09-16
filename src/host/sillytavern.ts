@@ -2,7 +2,7 @@
  * SillyTavern 预设 → 本项目单文件预设转换引擎（纯函数，无文件 IO）。
  *
  * 按需转换原则：只按注入层级映射 SillyTavern 实际内容，不注入本项目默认内容。
- *   - prompts[] → promptConfigs：system_prompt+role=system → system-section（可拼接）；
+ *   - prompts[] → promptConfigs：role=system → system-section（可拼接）；
  *     其余 → pre-step（role/position/dedupe 按 ST 语义）；
  *   - 角色卡正文（chara_card_v3：data 内层；旧版顶层直存）→ promptConfigs：
  *     description/personality/scenario 拼接为「角色设定」system-section，
@@ -18,72 +18,16 @@ import { createHash } from 'node:crypto'
 import type { PresetSpec } from './manifest.ts'
 import type { PersonaSpec } from '../shared/persona-section.ts'
 import { buildWorldBookEntry } from './worldbook.ts'
-
-/** ST 变量赋值族（渲染时无输出）：setvar/setglobalvar 覆盖，addvar/addglobalvar 追加。
- *  本项目没有独立的全局变量作用域，global 形式并入同一张变量表。 */
-const ST_ASSIGN = /\{\{(setvar|addvar|setglobalvar|addglobalvar)::([A-Za-z0-9_.\u4e00-\u9fff-]+)::([^}]*)\}\}/gi
-/** ST 变量读取族：getvar/getglobalvar（可带 `::默认值`）。 */
-const ST_GET = /\{\{(getvar|getglobalvar)::([A-Za-z0-9_.\u4e00-\u9fff-]+)(?:::([^}]*))?\}\}/gi
-/** 其余 ST 运行时指令（渲染时无输出）：ERA/trim/incvar/decvar → 剥离。 */
-const ST_DIRECTIVE = /\{\{(ERA|trim|incvar|decvar)[^}]*\}\}/gi
-/** ST 注释宏 {{// …}}：正文可跨行（跨行实例含 `}` 字符，`[^}]*` 剥不掉）→ 惰性剥到首个 `}}`。
- *  未闭合（文本内没有 `}}`）时不匹配，交给引擎在官方通道出口中和。 */
-const ST_COMMENT = /\{\{\/\/[\s\S]*?\}\}/g
-/** ST 宏形态 → 本项目语法（与 engine/interpolate.mjs 的 normalizeMacroSyntax 同源，改动需同步）：
- *  {{roll 1d6}} / {{roll:1d6}} → {{roll::1d6}}。引擎侧再归一一次，保证旧内容同样受益。 */
-const ST_MACRO_SPACE = /\{\{\s*(roll|random|pick|chance)\s+([^{}]*?)\s*\}\}/gi
-const ST_MACRO_SINGLE_COLON = /\{\{\s*(roll|random|pick|chance)\s*:(?!:)\s*([^{}]*?)\s*\}\}/gi
-
-function normalizeStMacros(text: string): string {
-  return text
-    .replace(ST_MACRO_SPACE, (_whole, macro: string, arg: string) => `{{${macro.toLowerCase()}::${arg}}}`)
-    .replace(ST_MACRO_SINGLE_COLON, (_whole, macro: string, arg: string) => `{{${macro.toLowerCase()}::${arg}}}`)
-}
+import { prepareStText, renderStText } from '../../engine/st-macros.mjs'
 
 /** ST marker prompts（marker: true）：content 不发送给模型（仅标记注入位置，ST
  *  以运行时内容填充该位置）；SPresetSettings 是旧版 ST 的预设设置 dump（正则
  *  脚本/扩展配置/ToolBindings，动辄数百 KB）。两者转换时整体丢弃并计数进
  *  meta.stDroppedMarkers——防止设置 dump 与位置占位污染 promptConfigs 与注入。 */
 
-/**
- * 处理 SillyTavern 文本，ST 变量语义 → 本项目 params fallback 插值：
- *   {{setvar::k::v}} / {{setglobalvar::k::v}}   → 覆盖 k=v（会话变量初始值 = fallback 基准），指令剥离；
- *   {{addvar::k::v}} / {{addglobalvar::k::v}}   → 追加到 k（ST 的分卡拼接写法），指令剥离；
- *   {{getvar::k}} / {{getglobalvar::k}}         → 改写为 {{k}}（引擎插值；无值无默认 → 空串，ST 语义）；
- *   {{getvar::k::default}}                      → 改写为 {{k}} 且 variables 缺 k 时写入 default；
- *   {{trim}}/{{//注释}}/{{ERA:...}}/{{incvar}}/{{decvar}} → 剥离（格式化/注释/第三方运行时/自增自减）；
- *   {{user}}/{{char}}       → 替换占位符。
- */
-export function processStText(text: string, cardName: string, variables: Record<string, string>): string {
-  // 顺序敏感：先收集 setvar（同文本后续 getvar 可读到），再改写 getvar，最后剥离残留指令——
-  // 否则 ST_DIRECTIVE 会先把 setvar/getvar 整段剥掉，收集正则匹配不到。
-  // 注释先行（注释里的指令不该执行）；宏形态归一随后（幂等，引擎侧还会再归一一次）。
-  let cleaned = normalizeStMacros(text.replace(ST_COMMENT, ''))
-  // 赋值族：{{setvar::k::v}} 覆盖；{{addvar::k::v}} 追加（ST 语义：同名多次 addvar 拼接成一段，
-  // 秋青/狐神抚一类的 ST 预设全靠它把分卡写好的规则块拼成 {{POV_rules}}/{{anti_rules}} 等）。
-  // 仅检查自有属性（变量名来自外部文本，避开 constructor/__proto__ 等原型链键）。
-  const hasOwn = (key: string): boolean => Object.prototype.hasOwnProperty.call(variables, key)
-  cleaned = cleaned.replace(ST_ASSIGN, (_whole, op: string, key: string, value: string) => {
-    const append = /add/i.test(op)
-    variables[key] = append ? `${hasOwn(key) ? variables[key] : ''}${value}` : value
-    return ''
-  })
-  // 读取族：有值 → {{k}}；带默认值且缺省 → 先落默认再 {{k}}；无值无默认 → 空串（ST 语义）。
-  cleaned = cleaned.replace(ST_GET, (_whole, _op: string, key: string, fallback?: string) => {
-    if (!hasOwn(key)) {
-      if (typeof fallback === 'string' && fallback.length > 0) variables[key] = fallback
-      else return ''
-    }
-    return `{{${key}}}`
-  })
-  // 剥离残留运行时指令与注释（trim/ERA/注释；顺序在收集之后）。
-  cleaned = cleaned.replace(ST_DIRECTIVE, '')
-  cleaned = cleaned
-    .replace(/\{\{char\}\}/gi, cardName.trim().length > 0 ? cardName.trim() : '角色')
-    .replace(/\{\{user\}\}/gi, '用户')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim()
-  return cleaned
+/** 显式文本求值工具；导入本身仅 prepare，避免执行禁用卡的副作用。 */
+export function processStText(text: string, cardName: string, variables: Record<string, string | number>): string {
+  return renderStText(prepareStText(text, cardName), { variables, local: variables }).trim()
 }
 
 /** 合并多个转换结果为一个预设（角色卡 × 响应预设 → 单预设）。 */
@@ -100,11 +44,13 @@ export function mergeStPresets(specs: PresetSpec[]): PresetSpec {
       let id = base
       for (let suffix = 2; seen.has(id); suffix++) id = `${base}-${suffix}`
       seen.add(id)
-      promptConfigs.push({ ...entry, id })
+      promptConfigs.push({ ...entry, id, variables: { ...(spec.variablesEnabled === false ? {} : spec.variables), ...entry.variables as Record<string, string> | undefined } })
     }
   }
   const params: Record<string, unknown> = {}
   for (const spec of specs) Object.assign(params, spec.params ?? {})
+  const variables = Object.fromEntries(specs.filter(spec => spec.variablesEnabled !== false).flatMap(spec => Object.entries(spec.variables ?? {})))
+  const warnings = [...new Set(specs.flatMap(spec => Array.isArray(spec.meta?.stWarnings) ? spec.meta.stWarnings.filter((value): value is string => typeof value === 'string') : []))]
   const modules: string[] = []
   for (const spec of specs) {
     for (const name of spec.modules ?? []) {
@@ -135,8 +81,9 @@ export function mergeStPresets(specs: PresetSpec[]): PresetSpec {
     name: specs.map((spec) => stripSuffix(spec.name)).join(' × ') + '（SillyTavern 合并）',
     version: '1.0.0',
     engineCompat: '>=0.4.2',
-    meta: { source: 'sillytavern' },
+    meta: { source: 'sillytavern', ...(warnings.length > 0 ? { stWarnings: warnings } : {}) },
     ...(Object.keys(params).length > 0 ? { params } : {}),
+    ...(Object.keys(variables).length > 0 ? { variables } : {}),
     ...(persona === undefined ? {} : { persona }),
     modules,
     moduleConfigs,
@@ -154,15 +101,21 @@ export function convertStToPreset(card: unknown, baseName: string): PresetSpec {
   // 完全由 prompt_order 数组顺序决定（injection_order 只对 in-chat 注入有效）；
   // 缺失/无效时回退 prompts 数组顺序。enabled=false 的条目即使 prompts 内未标也禁用。
   const orderIndex = new Map<string, number>()
-  const orderDisabled = new Set<string>()
+  const orderEnabled = new Map<string, boolean>()
+  let ordered = false
   if (Array.isArray(record.prompt_order)) {
+    const groups = record.prompt_order.filter((entry): entry is Record<string, unknown> => entry !== null && typeof entry === 'object' && Array.isArray(entry.order))
+    const group = groups.find(entry => String(entry.character_id) === String(record.character_id ?? 100001)) ?? (groups.length === 1 ? groups[0] : undefined)
+    if (groups.length > 1 && group === undefined) throw new TypeError('SillyTavern prompt_order 包含多个角色，请提供 character_id 或导出全局预设')
+    const order = group === undefined ? record.prompt_order : group.order as unknown[]
+    ordered = group !== undefined || order.some(entry => entry !== null && typeof entry === 'object' && typeof (entry as Record<string, unknown>).identifier === 'string')
     let rank = 0
-    for (const entry of record.prompt_order as Array<Record<string, unknown>>) {
+    for (const entry of order as Array<Record<string, unknown>>) {
       if (entry === null || typeof entry !== 'object') continue
       const id = typeof entry.identifier === 'string' ? entry.identifier : ''
       if (id.length === 0) continue
       if (!orderIndex.has(id)) orderIndex.set(id, rank)
-      if (entry.enabled === false) orderDisabled.add(id)
+      orderEnabled.set(id, entry.enabled === true)
       rank += 1
     }
   }
@@ -171,24 +124,26 @@ export function convertStToPreset(card: unknown, baseName: string): PresetSpec {
   let systemSectionCount = 0
   // 角色卡正文：chara_card_v3 实际内容在 data 内层（顶层为同步冗余），旧版顶层直存。
   const body = (record.data !== null && typeof record.data === 'object' ? record.data as Record<string, unknown> : record) as Record<string, unknown>
-  // 扩展注入物剥离（TavernHelper 等 ST 扩展脚本/文档）：本引擎不执行 JS，
-  // 原样注入只会污染模型上下文。显式剔除 extensions 下的脚本注入字段，
-  // 防御未来转换逻辑读取 data 全字段时带入（当前只读正文/世界书，本步为显式边界）。
+  // 不复制或执行扩展脚本，也不修改调用方持有的原始角色卡。
   const extensions = body.extensions !== null && typeof body.extensions === 'object'
     ? body.extensions as Record<string, unknown>
     : undefined
-  if (extensions !== undefined) {
-    for (const key of Object.keys(extensions)) {
-      if (/helper|script|regex|tavern/i.test(key)) delete extensions[key]
-    }
+  const warnings = new Set<string>()
+  if (extensions && Object.keys(extensions).some(key => /helper|script|regex|tavern/i.test(key))) {
+    warnings.add('ST 扩展脚本与正则不执行，依赖它们的界面或状态更新需要单独适配')
   }
   const bodyText = (key: string): string => typeof body[key] === 'string' ? (body[key] as string).trim() : ''
   const cardName = (typeof record.name === 'string' && record.name.trim().length > 0 ? record.name.trim()
     : typeof body.name === 'string' && body.name.trim().length > 0 ? (body.name as string).trim() : '')
-  // ST 变量初始值（setvar/getvar fallback）进顶层 variables（{{key}} 插值源；
-  // 与引擎行为参数 params 分离，写 preset.yml 顶层 variables 段）。
+  // 声明字段与自定义占位进 variables；赋值指令保持模板，由运行时帧负责。
   const variables: Record<string, string> = {}
-  const clean = (text: string): string => processStText(text, cardName, variables)
+  if (cardName && (body.description !== undefined || body.first_mes !== undefined || body.character_book !== undefined)) {
+    variables.char = cardName
+    variables.charifnotgroup = cardName
+    variables.charIfNotGroup = cardName
+  }
+  // 导入只保留模板，不执行 set/add/inc：否则禁用卡和重复引用会污染变量。
+  const clean = (text: string): string => prepareStText(text, cardName)
   // ST 字段宏 → 内容变量（决策：登记为内容变量，不写进模型人设段）。宏名与键名一致，
   // 登记后由引擎正常解析，工作台「模板变量」卡可编辑；值同样过一遍 ST 清洗，避免
   // {{char}} 之类的字面随值泄漏。字段缺失时不登记——若正文引用了它，由下方
@@ -218,15 +173,33 @@ export function convertStToPreset(card: unknown, baseName: string): PresetSpec {
     configs.push({ id: 'post-history-instructions', name: '后续指令', strategy: 'static', order: -10, text: postHistoryClean, layer: 'system-section', mergeMode: 'merged' })
     systemSectionCount += 1
   }
-  // 世界书（lorebook / character_book）→ world-book 策略配置（promptConfigs，
-  // 与模块体系统一）：无 keys 条目恒注入（全局条目）、有 keys 条目命中触发
-  // （keyword 语义由 resolver 的 constant/keys 判定）。
+  // 示例对话保留为一次性的角色消息，不与实际开场白拼成同一消息。
+  const examples = bodyText('mes_example')
+  if (examples.length > 0) {
+    const escape = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const marker = new RegExp(`(?:^|\\n)\\s*(\\{\\{user\\}\\}|\\{\\{char\\}\\}|user|assistant${cardName ? `|${escape(cardName)}` : ''})\\s*:\\s*`, 'gi')
+    let index = 0
+    for (const block of examples.split(/<START>/gi).filter(text => text.trim().length > 0)) {
+      const turns = [...block.matchAll(marker)]
+      const parts = turns.length > 0 ? turns.map((turn, at) => ({
+        role: /^(?:\{\{user\}\}|user)$/i.test(turn[1]!) ? 'user' : 'assistant',
+        text: block.slice(turn.index! + turn[0].length, turns[at + 1]?.index),
+      })) : [{ role: 'user', text: block }]
+      for (const part of parts) {
+        const text = clean(part.text)
+        if (!text) continue
+        configs.push({ id: `dialogue-example-${++index}`, name: `示例对话 ${index}`, strategy: 'static', text,
+          layer: 'pre-step', role: part.role, position: 'before-all', dedupe: 'session', order: -60 + index / 1000 })
+      }
+    }
+  }
+  // 世界书仍经同一工厂构造，ST 特有触发语义由 params.stWorldBook 显式启用。
   // 形态兼容：entries 可能是数组（角色卡 CCv2/CCv3、spec v2）或对象
   // （ST 编辑器内部格式，键为字符串序数）。
   // 别名收敛：角色卡用 keys/secondary_keys/insertion_order/enabled/id，
   // ST 编辑器内部格式用 key/keysecondary/order/disable/uid——两套名字都真实
-  // 存在，漏读会让关键词条目 keys 为空、退化为常驻注入（引擎对无 keys 条目恒注入）。
-  const book = (body as Record<string, unknown>).character_book
+  // 存在，漏读会让关键词条目失去触发条件。
+  const book = body.character_book ?? (body.entries !== undefined ? body : undefined)
   if (book !== null && typeof book === 'object' && !Array.isArray(book)) {
     const rawEntries = (book as Record<string, unknown>).entries
     const entryList = Array.isArray(rawEntries)
@@ -250,29 +223,54 @@ export function convertStToPreset(card: unknown, baseName: string): PresetSpec {
       const constant = entry.constant === true || entry.add_always === true
       // 启用兼容：disable 是 ST 编辑器内部格式（disable=true 禁用），enabled 是角色卡格式。
       const enabled = entry.disable !== undefined ? entry.disable !== true : entry.enabled !== false
-      // ST 世界书 order 大优先（world-info.js sortFn = b.order - a.order）；
-      // 本项目引擎按 order 升序注入（层内小优先），取反保持 ST 相对顺序（大 order 先注入）。
+      // ST 降序选择候选后 unshift，最终正文低 order 在前；选择优先级留给选择器。
       const stOrder = typeof entry.insertion_order === 'number'
         ? entry.insertion_order
         : (typeof entry.order === 'number' ? entry.order : 100)
-      configs.push(buildWorldBookEntry({
+      const ext = entry.extensions !== null && typeof entry.extensions === 'object' && !Array.isArray(entry.extensions)
+        ? entry.extensions as Record<string, unknown> : {}
+      const option = (key: string, alias = key): unknown => ext[key] ?? entry[key] ?? entry[alias]
+      const position = option('position') ?? (entry.position === 'after_char' ? 1 : 0)
+      const stWorldBook: Record<string, unknown> = {
+        selective: entry.selective === true,
+        position, depth: option('depth') ?? 4, role: option('role') ?? 0,
+        scanDepth: option('scan_depth', 'scanDepth') ?? (book as Record<string, unknown>).scan_depth ?? 2,
+      }
+      if ((book as Record<string, unknown>).recursive_scanning === true) stWorldBook.recursive = true
+      for (const [target, source] of Object.entries({ probability: 'probability', useProbability: 'useProbability', group: 'group',
+        groupOverride: 'group_override', groupWeight: 'group_weight', sticky: 'sticky', cooldown: 'cooldown', delay: 'delay',
+        recursive: 'recursive_scanning', excludeRecursion: 'exclude_recursion', preventRecursion: 'prevent_recursion',
+        matchCharacterDescription: 'match_character_description', matchCharacterPersonality: 'match_character_personality',
+        matchScenario: 'match_scenario', matchPersonaDescription: 'match_persona_description' })) {
+        const value = option(source, target)
+        if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'string') stWorldBook[target] = value
+      }
+      const sourceRole = stWorldBook.role
+      if (position === 4) warnings.add('ST 世界书深度位置无法映射到持久历史：保留 position/depth/role，降级为当前消息批末尾')
+      else if (![0, 1, 'before_char', 'after_char'].includes(position as number | string)) warnings.add('ST 世界书特殊插入点暂不可用：保留来源位置，降级为当前消息批头部')
+      if (sourceRole === 0) warnings.add('DSH pre-step 不接受 system 角色：世界书 system 消息降级为 user，原角色保留在 stWorldBook')
+      if (option('vectorized') === true || option('outlet_name') || (Array.isArray(option('triggers')) && (option('triggers') as unknown[]).length > 0) || option('automation_id')) warnings.add('ST 世界书向量、outlet、生成类型或自动化控制需要宿主专门适配')
+      const worldConfig = buildWorldBookEntry({
         id: `lore-${String(entry.id ?? entry.uid ?? index)}`,
         name: comment,
-        // ST 启用状态保留；无 keys 条目由 resolver 按全局（constant 语义）每次注入。
+        // 启用状态保留；非常驻且无主键的 ST 条目不再隐式常驻。
         enabled,
-        order: -stOrder,
+        order: stOrder,
         text: content,
         constant,
         keys: keys.length > 0 ? keys : undefined,
         secondaryKeys: secondaryKeys.length > 0 ? secondaryKeys : undefined,
-        ...((entry.case_sensitive ?? entry.caseSensitive) === true ? { caseSensitive: true } : {}),
-        ...((entry.match_whole_words ?? entry.matchWholeWords) === true ? { wholeWords: true } : {}),
+        ...(option('case_sensitive', 'caseSensitive') === true ? { caseSensitive: true } : {}),
+        ...(option('match_whole_words', 'matchWholeWords') === true ? { wholeWords: true } : {}),
         // selectiveLogic（ST world_info_logic 0/1/2/3）：选择性触发组合逻辑，
         // 由 anchor-match 引擎消费（any/all/not）。保留不再丢弃。
-        ...(typeof entry.selectiveLogic === 'number'
-          ? { selectiveLogic: entry.selectiveLogic }
+        ...(typeof option('selectiveLogic') === 'number'
+          ? { selectiveLogic: option('selectiveLogic') as number }
           : (typeof entry.selective_logic === 'number' ? { selectiveLogic: entry.selective_logic } : {})),
-      }))
+      })
+      configs.push({ ...worldConfig, role: sourceRole === 2 ? 'assistant' : 'user',
+        position: position === 4 ? 'after-all' : 'before-all',
+        params: { ...worldConfig.params as Record<string, unknown>, stWorldBook } })
     }
   }
   const firstMes = clean(bodyText('first_mes'))
@@ -332,13 +330,20 @@ export function convertStToPreset(card: unknown, baseName: string): PresetSpec {
       name: typeof prompt.name === 'string' && prompt.name.length > 0 ? prompt.name : id,
       // 保留 SillyTavern 启用状态：prompt_order 禁用标记优先，其次 prompts 内 enabled。
       // 注意用原始 identifier 查表（UUID 会被 id 生成规则替换为 st-prompt-N，查生成 id 永远 miss）。
-      enabled: orderDisabled.has(rawId) ? false : prompt.enabled !== false,
+      enabled: ordered ? orderEnabled.get(rawId) === true : prompt.enabled !== false,
       strategy: 'static',
       // RELATIVE 注入顺序 = prompt_order 数组顺序（ST 忽略 injection_order）；
       // 无映射时按数组索引，保持 ST 预设内相对顺序。
-      order: ((rawId.length > 0 ? orderIndex.get(rawId) : undefined) ?? index) * 10,
+      order: ((rawId.length > 0 ? orderIndex.get(rawId) : undefined) ?? (ordered ? orderIndex.size + index : index)) * 10,
       text: content,
+      ...((prompt.injection_position === 1 || Array.isArray(prompt.injection_trigger)) ? { params: { stSource: {
+        position: prompt.injection_position ?? 0, depth: prompt.injection_depth ?? 4,
+        order: prompt.injection_order ?? 100, role,
+        ...(Array.isArray(prompt.injection_trigger) ? { triggers: prompt.injection_trigger } : {}),
+      } } } : {}),
     }
+    if (prompt.injection_position === 1) warnings.add('ST prompt 深度注入暂按 DSH 插入点降级，原 position/depth/order/role 保留在 stSource')
+    if (Array.isArray(prompt.injection_trigger) && prompt.injection_trigger.length > 0) warnings.add('ST prompt 的生成类型触发条件在 DSH 不等价，保留在 stSource.triggers')
     if (role === 'system') {
       // 多个 system-section 可拼接：mergeMode=merged 时引擎按 order 升序拼为一条 system prompt。
       configs.push({ ...base, layer: 'system-section', mergeMode: 'merged' })
@@ -382,11 +387,12 @@ export function convertStToPreset(card: unknown, baseName: string): PresetSpec {
   // 未定义自定义宏登记：卡内文本引用了但无变量源的 {{key}}（非内置 / 非运行时宏）
   // → 预设 variables 空值占位——插值替换为空不留字面；模板变量卡片可编辑默认值；
   // 会话变量工具（session_var）可运行时覆盖（对应 ST 正则/STscript 更新语义）。
-  const RUNTIME_MACROS = new Set(['lastusermessage', 'lastcharmessage', 'charifnotgroup'])
+  const RUNTIME_MACROS = new Set(['lastusermessage', 'lastcharmessage', 'charifnotgroup', 'time', 'date', 'weekday', 'isotime', 'isodate', 'random', 'pick', 'roll', 'chance', 'newline', 'pipe'])
   const BUILTIN_KEYS = new Set(['DSH_HOME', 'WORKSPACE', 'CWD'])
   const MACRO_RE = /\{\{([A-Za-z0-9_.\u4e00-\u9fff-]+)\}\}/g
   const knownKeys = new Set(Object.keys(variables).map((key) => key.toLowerCase()))
   for (const config of configs) {
+    config.params = { ...config.params as Record<string, unknown> | undefined, stMacros: true }
     const configRecord = config as { params?: { text?: unknown } }
     const texts = [
       ...(typeof config.text === 'string' && config.text.length > 0 ? [config.text] : []),
@@ -415,6 +421,7 @@ export function convertStToPreset(card: unknown, baseName: string): PresetSpec {
     // stDroppedMarkers 审计丢弃的系统/标记条目（SPresetSettings 等）。
     meta: {
       source: 'sillytavern',
+      ...(warnings.size > 0 ? { stWarnings: [...warnings] } : {}),
       ...(droppedMarkers.length > 0 ? { stDroppedMarkers: droppedMarkers } : {}),
     },
     ...(Object.keys(variables).length > 0 ? { variables } : {}),

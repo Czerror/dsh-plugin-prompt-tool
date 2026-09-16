@@ -31,7 +31,7 @@ test('stPresetId：英文文件名保持 slug', () => {
   assert.equal(stPresetId('My Card v2'), 'my-card-v2')
 })
 
-test('convertStToPreset：addvar/setglobalvar/getglobalvar/incvar 族按 ST 语义落变量表', () => {
+test('convertStToPreset：变量指令保留在卡片，导入期不产生赋值副作用', () => {
   // 真实素材（明月秋青 v5.0 一类）：分卡用 addvar 拼出 {{POV_rules}}/{{anti_rules}}，后续卡片再引用。
   const card = {
     name: '变量族卡',
@@ -46,11 +46,12 @@ test('convertStToPreset：addvar/setglobalvar/getglobalvar/incvar 族按 ST 语�
     },
   }
   const spec = convertStToPreset(card, 'st-var-family')
-  assert.equal(spec.variables.POV_rules, '- 第一人称，禁止旁白', 'addvar 同名追加')
-  assert.equal(spec.variables.output_language, '简体中文', 'setglobalvar 并入同一变量表')
-  assert.equal('counter' in spec.variables, false, 'incvar 只剥离、不当成变量登记')
+  assert.equal(spec.variables.POV_rules, '', '普通引用仅登记默认占位')
+  assert.equal(spec.variables.output_language, '', 'global 不在导入期执行')
+  assert.equal('counter' in spec.variables, false, 'incvar 留给运行时')
   const system = spec.promptConfigs.find((config) => config.id === 'system-prompt')
-  assert.doesNotMatch(system.text, /\{\{(addvar|setglobalvar|incvar)/, '赋值/自增指令不得留在正文里')
+  assert.match(system.text, /\{\{addvar/, '保留模板供运行时求值')
+  assert.equal(system.params.stMacros, true)
   assert.match(system.text, /\{\{POV_rules\}\}/, '引用保留为变量引用，由引擎解析')
 })
 
@@ -114,7 +115,7 @@ test('convertStToPreset：空世界书不装工具，tool-filter 仍按需就绪
   assert.equal(spec.moduleConfigs['tool-filter'], undefined, '字段缺省时过滤器为空操作')
 })
 
-test('convertStToPreset：世界书 order 取反（ST 大优先 → 引擎升序）', () => {
+test('convertStToPreset：世界书最终正文 order 升序（ST 激活后 unshift）', () => {
   const card = {
     name: '排序卡',
     data: {
@@ -131,8 +132,8 @@ test('convertStToPreset：世界书 order 取反（ST 大优先 → 引擎升序
     .filter((config) => config.strategy === 'world-book')
     .sort((x, y) => Number(x.order) - Number(y.order))
   assert.equal(lore.length, 2)
-  assert.equal(lore[0].order, -200, '大 insertion_order 取反后最前（引擎先注入）')
-  assert.equal(lore[1].order, -10)
+  assert.equal(lore[0].order, 10, '正文低 order 在前，激活优先级另按降序处理')
+  assert.equal(lore[1].order, 200)
 })
 
 test('convertStToPreset：世界书条目结构 = buildWorldBookEntry 工厂同参数产物（两通道同构）', () => {
@@ -170,7 +171,12 @@ test('convertStToPreset：世界书条目结构 = buildWorldBookEntry 工厂同�
     caseSensitive: lore[0].params.caseSensitive,
     wholeWords: lore[0].params.wholeWords,
   })
-  assert.deepEqual(lore[0], expected, 'ST 转换产物与工厂同参数构造完全一致')
+  const { stWorldBook, stMacros, ...params } = lore[0].params
+  const { role, ...withoutRole } = lore[0]
+  assert.deepEqual({ ...withoutRole, params }, expected, '通用结构复用工厂，ST 专属语义在 params 中')
+  assert.equal(stMacros, true)
+  assert.equal(stWorldBook.scanDepth, 2)
+  assert.equal(role, 'user')
 })
 
 test('convertStToPreset：marker 条目与 SPresetSettings 设置 dump 整体丢弃', () => {

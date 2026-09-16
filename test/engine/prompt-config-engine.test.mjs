@@ -336,7 +336,7 @@ test('官方插值通道出口：无法解析的引用被剥离，官方 renderP
     },
   })
 
-  const sectionText = sections[0].text
+  const sectionText = typeof sections[0].text === 'function' ? sections[0].text({}) : sections[0].text
   const contextText = contexts[0].text
   assert.doesNotMatch(sectionText, /\{\{缺失名\}\}/, '未命中引用整段剥离')
   assert.doesNotMatch(sectionText, /\{\{\}\}/, '空引用剥离')

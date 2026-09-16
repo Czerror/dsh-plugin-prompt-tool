@@ -10,24 +10,29 @@ import {
   matchesModel,
   parseToolNames,
 } from './shared.mjs'
-import { interpolateVariables, interpolateStatic, stripUnresolvedRefs, RUNTIME_FACTS, runtimeFactValue } from './interpolate.mjs'
-import { getSessionVar } from './session-vars.mjs'
+import { interpolateVariables, stripUnresolvedRefs, RUNTIME_FACTS, runtimeFactValue } from './interpolate.mjs'
+import { getSessionVar, sessionVarsSnapshot } from './session-vars.mjs'
 
 const name = 'prompt-config-engine'
 
 /** 单条文本型配置的完整文本:texts 数组按空行拼接（单一文本字段）。
  *  keep=官方变量通道按 assembly 求值的名字，静态 pass 命中即原样保留引用。 */
-function configText(config, registry) {
-  return config.texts
-    .map((item) => interpolateStatic(item, config.variables, registry?.protect))
+function configText(config, registries, warnOnce, context) {
+  const registry = registries.get(config)
+  if (typeof config.renderSt === 'function') {
+    return officialChannelText(config.renderSt(context?.agent, [], warnOnce, context), `${config.layer} ${config.id}`, registry, warnOnce)
+  }
+  const text = config.texts
+    .map((item) => interpolateVariables(item, config.variables, context?.agent?.session, registry?.protect))
     .filter((item) => item.length > 0)
     .join('\n\n')
+  return officialChannelText(text, `${config.layer} ${config.id}`, registry, warnOnce)
 }
 
 /** 官方 prompt 变量名规则（与官方 system-prompt 的 VARIABLE_NAME 一致）。 */
 const OFFICIAL_NAME_RE = /^[a-z][a-z0-9_]*$/
 /** 引用形态（仅名字，无 `::` 参数）：事实与内容变量引用都用这一形态。 */
-const NAME_REFERENCE_RE = /\{\{([A-Za-z0-9_.\u4e00-\u9fff-]+)\}\}/g
+const NAME_REFERENCE_RE = /\{\{\s*([A-Za-z0-9_.\u4e00-\u9fff-]+)\s*\}\}/g
 
 /** 名字哈希（djb2 → base36）：非法官方名改写的确定性后缀。 */
 function shortHash(text) {
@@ -47,48 +52,70 @@ function officialAliasOf(name) {
  *   - 运行时事实（ST 运行时宏 + 时间类）：值随每次 assembly 现算，不再在注册期冻结为空；
  *   - 官方通道文本里被引用、且已声明的内容变量：值 = 会话变量覆盖 ?? 声明值。
  * 非法官方名（中文/大写/连字符）改写成确定性别名并改写文本引用；注册失败的名字退回静态解析。
- * @returns protect=静态 pass 保留的名字；alias=原引用名→官方名；registered=已注册官方名（剥离白名单）。
+ * @returns 各配置独立的引用白名单与别名；同一作用域内等价绑定只注册一次。
  */
 function registerOfficialVariables(ctx, configs, warnOnce) {
-  const registry = { protect: new Set(), alias: new Map(), registered: new Set() }
+  const registries = new Map(configs.map((config) => [config, { protect: new Set(), alias: new Map(), registered: new Set() }]))
   const systemPrompt = getService(ctx, 'systemPrompt')
-  if (systemPrompt === undefined || typeof systemPrompt.variable !== 'function') return registry
-  const declared = new Map()
-  const referenced = new Set()
+  if (systemPrompt === undefined || typeof systemPrompt.variable !== 'function') return registries
+  const references = new Map()
+  const reserved = new Set()
+  const facts = new Set()
   for (const config of configs) {
-    for (const [name, value] of Object.entries(config.variables ?? {})) {
-      if (!declared.has(name)) declared.set(name, value === null || value === undefined ? '' : String(value))
-    }
+    if (config.params?.stMacros === true) continue
+    const referenced = new Set()
     for (const text of config.texts) {
       for (const match of String(text).matchAll(NAME_REFERENCE_RE)) referenced.add(match[1])
     }
-  }
-  // 只注册"会被用到"的名字：官方通道文本里被引用的运行时事实与已声明变量。
-  // 未被引用的名字不注册——避免在 preset scope 里无谓遮蔽同名的他方注册。
-  const candidates = [...referenced].filter((name) => declared.has(name) || RUNTIME_FACTS.has(name.toLowerCase()))
-  for (const name of candidates) {
-    const isFact = RUNTIME_FACTS.has(name.toLowerCase())
-    // 事实名大小写不敏感：统一注册到规范小写名，避免 {{lastUserMessage}} 这类变体各生成一个别名。
-    const official = isFact ? name.toLowerCase() : OFFICIAL_NAME_RE.test(name) ? name : officialAliasOf(name)
-    const declaredValue = declared.get(name)
-    try {
-      keepDisposer(ctx, systemPrompt.variable(official, (context) => {
-        const session = context?.agent?.session
-        // 优先级与 interpolate 一致：会话变量 > 配置 variables > 运行时事实。
-        const override = session === undefined ? undefined : getSessionVar(session, name)
-        if (override !== undefined) return String(override)
-        if (declaredValue !== undefined) return declaredValue
-        if (isFact) return runtimeFactValue(name, session) ?? ''
-        return ''
-      }), `${name}: official prompt variable ${official}`)
-      registry.registered.add(official)
-      registry.protect.add(name)
-      if (official !== name) registry.alias.set(name, official)
-    } catch (error) {
-      warnOnce(`${name}: 官方 prompt 变量 ${official} 注册失败，该引用退回静态解析：${String(error?.message ?? error)}`)
+    references.set(config, referenced)
+    for (const name of referenced) {
+      if (!Object.hasOwn(config.variables, name) && RUNTIME_FACTS.has(name.toLowerCase())) facts.add(name.toLowerCase())
+      if (OFFICIAL_NAME_RE.test(name)) reserved.add(name)
     }
   }
-  return registry
+  for (const fact of facts) reserved.add(fact)
+  const bindings = new Map()
+  const usedNames = new Set()
+  for (const [config, referenced] of references) {
+    const registry = registries.get(config)
+    for (const name of referenced) {
+      const declared = Object.hasOwn(config.variables, name)
+      const isFact = !declared && RUNTIME_FACTS.has(name.toLowerCase())
+      if (!declared && !isFact) continue
+      let official = isFact ? name.toLowerCase() : OFFICIAL_NAME_RE.test(name) ? name : officialAliasOf(name)
+      try {
+        // 内容绑定包含局部命名空间：会话覆盖也可以再引用其中的变量。
+        // 纯事实不属于任何配置的内容命名空间，所有大小写变体复用规范名。
+        const signature = isFact ? `fact:${official}` : JSON.stringify([name, Object.entries(config.variables).sort(([a], [b]) => a.localeCompare(b))])
+        let binding = bindings.get(signature)
+        if (binding === undefined) {
+          if (usedNames.has(official) || (!isFact && facts.has(official)) || (official !== name && !isFact && reserved.has(official))) {
+            const base = officialAliasOf(`${name}:${signature}`)
+            official = base
+            for (let suffix = 1; usedNames.has(official) || reserved.has(official); suffix++) official = `${base}_${suffix}`
+          }
+          usedNames.add(official)
+          const source = isFact ? name.toLowerCase() : name
+          const declaredValue = declared ? String(config.variables[name] ?? '') : undefined
+          keepDisposer(ctx, systemPrompt.variable(official, (context) => {
+            const session = context?.agent?.session
+            const override = getSessionVar(session, source)
+            const value = override !== undefined ? String(override) : declaredValue ?? runtimeFactValue(source, session) ?? ''
+            const expanded = interpolateVariables(value, { ...config.variables, ...sessionVarsSnapshot(session) }, session)
+            return officialChannelText(expanded, `variable ${official}`, { alias: new Map(), registered: new Set() }, warnOnce)
+          }), `${name}: official prompt variable ${official}`)
+          binding = official
+          bindings.set(signature, binding)
+        }
+        registry.registered.add(binding)
+        registry.protect.add(name)
+        if (binding !== name) registry.alias.set(name, binding)
+      } catch (error) {
+        warnOnce(`${name}: 官方 prompt 变量 ${official} 注册失败，该引用退回静态解析：${String(error?.message ?? error)}`)
+      }
+    }
+  }
+  return registries
 }
 
 /** 非法名的引用改写：`{{中文名}}` → `{{sv_中文_<hash>}}`（仅已注册成功的别名）。 */
@@ -155,21 +182,17 @@ function wireSystemSections(ctx, configs, registry, warnOnce) {
   for (const group of textLayerGroups(configs)) {
     const base = group[0]
     try {
-      const groupText = group.map((config) => configText(config, registry)).filter((item) => item.length > 0).join('\n\n')
-      if (groupText.length === 0) continue
-      const hasAudience = group.some((config) => config.audience != null)
-      const text = hasAudience
-        ? (context) => officialChannelText(
-            group
+      const dynamic = group.some((config) => config.audience != null || typeof config.renderSt === 'function'
+        || config.texts.some(text => /\{\{\s*(?:random|pick|roll|chance)(?=\s|:|\})/i.test(text)))
+      const groupText = dynamic ? '' : group.map((config) => configText(config, registry, warnOnce)).filter((item) => item.length > 0).join('\n\n')
+      if (!dynamic && groupText.length === 0) continue
+      const text = dynamic
+        ? (context) => group
               .filter((config) => matchesAgentScope(config, context?.agent))
-              .map((config) => configText(config, registry))
+              .map((config) => configText(config, registry, warnOnce, context))
               .filter((item) => item.length > 0)
-              .join('\n\n'),
-            `system-section ${base.id}`,
-            registry,
-            warnOnce,
-          )
-        : officialChannelText(groupText, `system-section ${base.id}`, registry, warnOnce)
+              .join('\n\n')
+        : groupText
       keepDisposer(ctx, systemPrompt.section({
         name: typeof base.params?.sectionName === 'string' && base.params.sectionName.length > 0 ? base.params.sectionName : base.id,
         order: base.order,
@@ -197,12 +220,15 @@ function wireRuntimeContexts(ctx, configs, registry, warnOnce) {
   for (const group of textLayerGroups(staticConfigs)) {
     const base = group[0]
     try {
-      const text = group.map((config) => configText(config, registry)).filter((item) => item.length > 0).join('\n\n')
-      if (text.length === 0) continue
+      const dynamic = group.some(config => typeof config.renderSt === 'function'
+        || config.texts.some(text => /\{\{\s*(?:random|pick|roll|chance)(?=\s|:|\})/i.test(text)))
+      const render = context => group.map(config => configText(config, registry, warnOnce, context)).filter(item => item.length > 0).join('\n\n')
+      const text = dynamic ? render : render()
+      if (!dynamic && text.length === 0) continue
       keepDisposer(ctx, systemPrompt.context({
         name: typeof base.params?.contextName === 'string' && base.params.contextName.length > 0 ? base.params.contextName : base.id,
         order: base.order,
-        text: officialChannelText(text, `runtime-context ${base.id}`, registry, warnOnce),
+        text,
       }), `${name}: context ${base.id}`)
     } catch (error) {
       warnOnce(`${name}: runtime-context config ${base.id} failed: ${String(error?.message ?? error)}`)
@@ -227,7 +253,7 @@ function wireRuntimeContexts(ctx, configs, registry, warnOnce) {
           const rendered = config.texts.length > 0
             ? interpolateVariables(config.texts.join('\n\n'), variables, session)
             : typeof resolved.text === 'string' ? interpolateVariables(resolved.text, variables, session) : ''
-          return officialChannelText(rendered, `runtime-context ${config.id}`, registry, warnOnce)
+          return officialChannelText(rendered, `runtime-context ${config.id}`, registry.get(config), warnOnce)
         },
       }), `${name}: context ${config.id}`)
     } catch (error) {

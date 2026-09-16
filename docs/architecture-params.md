@@ -107,7 +107,10 @@ UI 侧 `persistParamOverrides` **条件发送**：
 被引用且已声明的名字注册为官方 `systemPrompt.variable()`，取值优先级＝会话变量覆盖 >
 声明值 > 运行时事实（`lastusermessage`/`time` 等）。非法官方名（中文/大写/连字符）改写为
 `sv_<slug>_<hash>` 别名并同步改写引用；未声明的引用在出口剥离（`warnOnce` 记录样本）。
-`random`/`pick`/`roll`/`chance` 是"每次出现各算一次"的求值宏，始终由引擎内联处理。
+同名但不同配置默认值分别绑定，运行时事实大小写变体只注册一次；变量值有界展开后也经过出口清洗。
+`random`/`roll`/`chance` 内联求值，动态文本每次 assembly 重算；`pick` 按会话与模板位置稳定选择。
+ST 导入配置显式带 `params.stMacros: true`，赋值模板保留到运行期；变量帧只服务宏求值，不建立
+跨插入点的全局注入顺序。local/global 分表但均不跨会话持久化，详见 [SillyTavern.md](SillyTavern.md)。
 
 未填写变量名的空键行属于客户端草稿：保存载荷不携带空键，但保存成功不清理本地编辑行，同一预设的后台刷新也不覆盖该草稿。变量值为空字符串与变量名为空不是同一语义；具名空值仍正常持久化。
 
@@ -199,7 +202,9 @@ wholeWords/selectiveLogic）单一权威。两个写入端共用：
 - **角色卡记忆**（`characters.ts` buildCharacterMemoryEntry）：角色卡导入/记忆同步的 world-book 记忆
   条目同源构造（id 由调用方加 chara-<卡>- 前缀，工厂 id 缺省不写）。
 
-契约测试断言：ST 转换产物与工厂同参数构造完全一致（两通道同构）。
+契约测试断言：ST 转换的通用字段与工厂同参数构造一致；ST 特有扫描、分组、概率和时序行为
+保存在 `params.stWorldBook`，由选择器处理，原生 world-book 约定不变。位置或角色无法无损映射
+时保留来源并通过 `meta.stWarnings` / 物化 warn 报告，不能声称完整 ST 等价。
 
 ### 锚定确认词归一（2026-08-25）
 

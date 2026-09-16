@@ -51,7 +51,7 @@ export function parseRegexFromString(key) {
 
 /** 单键正则编译（逐键匹配：any/all/not 需要精确的命中键数，捕获组会干扰 match 计数）。
  *  useRegex 三态：true=强制正则；false=强制字面；缺省=ST 语义自动检测。 */
-function compileSingle(key, { caseSensitive, wholeWords, useRegex }) {
+function compileSingle(key, { caseSensitive, wholeWords, useRegex, stWords }) {
   const flags = caseSensitive ? '' : 'i'
   if (useRegex === true) {
     // ST use_regex=true：键原样作为正则（作者负责合法性）。
@@ -62,6 +62,7 @@ function compileSingle(key, { caseSensitive, wholeWords, useRegex }) {
     if (auto !== undefined) return auto
   }
   if (wholeWords) {
+    if (stWords) return new RegExp(key.split(/\s+/).length > 1 ? escapeRegExp(key) : `(?:^|\\W)(${escapeRegExp(key)})(?:$|\\W)`, flags)
     return new RegExp(`(^|[^\\p{L}\\p{N}])(${escapeRegExp(key)})(?![\\p{L}\\p{N}])`, `${flags}u`)
   }
   return new RegExp(escapeRegExp(key), flags)
@@ -85,6 +86,7 @@ function compileKeyList(list, options) {
  * @param {boolean} [options.useRegex] 三态：true=强制正则 / false=强制字面 / 缺省=自动检测（ST 语义）
  * @param {'any'|'all'|'not'|'notAny'} [options.logic] 组合逻辑（缺省 any）
  * @param {'scan'|'prefix'} [options.mode] 匹配模式（缺省 scan）
+ * @param {boolean} [options.stWords] ST 整词规则：多词子串、单词 ASCII 边界；仅 ST 导入开启
  * @returns {{ scan: (text: string) => { primary: number, secondary: number, active: boolean } }}
  */
 export function createAnchorMatcher(options = {}) {
@@ -96,9 +98,10 @@ export function createAnchorMatcher(options = {}) {
     useRegex = undefined,
     logic = MATCH_LOGIC.ANY,
     mode = 'scan',
+    stWords = false,
   } = options
-  const primaryList = compileKeyList(keys, { caseSensitive, wholeWords, useRegex })
-  const secondaryList = compileKeyList(secondaryKeys, { caseSensitive, wholeWords, useRegex })
+  const primaryList = compileKeyList(keys, { caseSensitive, wholeWords, useRegex, stWords })
+  const secondaryList = compileKeyList(secondaryKeys, { caseSensitive, wholeWords, useRegex, stWords })
 
   const scan = (raw) => {
     const text = String(raw ?? '')

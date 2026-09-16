@@ -300,6 +300,7 @@ test('importPresetPackage：SillyTavern JSON 单文件经转换引擎导入（�
     // RELATIVE 注入顺序 = prompt_order / 数组顺序（ST 忽略 injection_order）。
     id: 'main', name: '主提示', enabled: true, strategy: 'static', order: 0,
     text: '你是助手。', layer: 'system-section', mergeMode: 'merged',
+    params: { stMacros: true },
   })
   const nsfw = configs.find((config) => config.id === 'nsfw')
   assert.equal(nsfw.enabled, false, 'ST OFF 备用提示词保留 enabled: false')
@@ -483,7 +484,7 @@ test('importPresetPackage：世界书 ST 编辑器内部格式（key/keysecondar
   assert.deepEqual(bar.params.secondaryKeys, ['酒保'], 'keysecondary 应收敛为 secondaryKeys')
   assert.equal(bar.params.constant, false, '关键词条目不常驻')
   assert.equal(bar.enabled, true, 'disable: false → 启用')
-  assert.equal(bar.order, -50, 'order 取反（ST 大优先 → 引擎升序；编辑器格式无 insertion_order 时用 order）')
+  assert.equal(bar.order, 50, '最终正文按 ST unshift 结果升序；激活优先级另行处理')
   const banned = configs.find((config) => config.id === 'lore-11')
   assert.equal(banned.enabled, false, 'disable: true → 禁用')
   const castle = configs.find((config) => config.id === 'lore-12')

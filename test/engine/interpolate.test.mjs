@@ -1,6 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { interpolateStatic, interpolateVariables, normalizeMacroSyntax, runtimeFactValue, stripUnresolvedRefs } from '../../engine/interpolate.mjs'
+import { SESSION_VARS_KEY, getSessionVar, setSessionVar, sessionVarsSnapshot, clearSessionVars } from '../../engine/session-vars.mjs'
 
 test('normalizeMacroSyntax：ST 宏写法归一到本项目语法（幂等，普通变量不动）', () => {
   assert.equal(normalizeMacroSyntax('{{roll 1d6}}'), '{{roll::1d6}}')
@@ -87,7 +88,7 @@ test('interpolateStatic：动态宏（roll/random/pick/chance/time/date）', () 
     assert.ok(value >= 1 && value <= 6, `1d6 应在 1-6：${value}`)
   }
   assert.ok(/^\d+$/.test(interpolateStatic('{{roll::2d6+3}}', {})), '2d6+3 为数字')
-  assert.equal(interpolateStatic('{{roll::非法}}', {}), '非法', '非法表达式原样')
+  assert.equal(interpolateStatic('{{roll::非法}}', {}), '', 'ST 非法骰子表达式无输出')
   // pick / random：从列表选一个。
   for (let i = 0; i < 10; i++) {
     assert.ok(['a', 'b', 'c'].includes(interpolateStatic('{{pick::a,b,c}}', {})), 'pick 列表内')
@@ -121,4 +122,61 @@ test('interpolateVariables：ST 运行时宏（大小写不敏感）从会话事
   assert.equal(interpolateVariables('{{charIfNotGroup}}', {}, session), '', '无角色名来源 → 空串')
   // 配置 variables 优先于运行时宏。
   assert.equal(interpolateVariables('{{lastusermessage}}', { lastusermessage: '覆盖' }, session), '覆盖')
+})
+
+test('嵌套内容变量在本项目递归插值，保留空值、零、false 和未声明引用', () => {
+  const variables = { body: '前{{alias}}后/{{empty}}/{{count}}/{{flag}}', alias: '{{tone}} {{lastUserMessage}} {{missing}}', tone: 'A', empty: '', count: 0, flag: false }
+  const session = { snapshotEvents: () => [{ type: 'user/message', data: { message: { content: [{ text: 'LATEST' }] } } }] }
+  assert.equal(interpolateVariables('{{body}}', variables, session), '前A LATEST {{missing}}后//0/false')
+  assert.equal(interpolateStatic('{{body}}', variables), '前A  {{missing}}后//0/false')
+})
+
+test('递归循环和展开预算只阻断不安全引用，不吞掉周围合法内容', () => {
+  const cycle = { a: '前{{b}}后', b: '{{a}}', good: 'OK' }
+  assert.equal(interpolateVariables('{{a}}|{{good}}', cycle), '前{{a}}后|OK')
+  const bomb = { leaf: 'x'.repeat(8192), good: 'OK' }
+  for (let index = 0; index < 40; index++) bomb[`n${index}`] = index === 39 ? '{{leaf}}' : `{{n${index + 1}}}{{n${index + 1}}}`
+  const expanded = interpolateVariables('前{{n0}}后|{{good}}', bomb)
+  assert.ok(expanded.length < 2 ** 21, '指数展开有长度/工作量边界')
+  assert.equal(stripUnresolvedRefs(expanded).text.endsWith('后|OK'), true)
+  const literal = '合法文本'.repeat(8192)
+  assert.equal(interpolateVariables('{{literal}}', { literal }), literal, '合法长文本不因清洗丢失')
+})
+
+test('官方清洗 keep 只放行精确合法名字，空白或大写不能漏给严格渲染器', () => {
+  assert.deepEqual(stripUnresolvedRefs('{{time}}/{{ time }}/{{TIME}}', new Set(['time', 'TIME'])), {
+    text: '{{time}}//', stripped: ['{{ time }}', '{{TIME}}'],
+  })
+  assert.equal(interpolateStatic('{{ time }}', {}, new Set(['time'])), '{{time}}', '合法引用空白归一')
+})
+
+test('会话变量只读取自有键，原型名字可作为内容值且读取不创建状态', () => {
+  const session = {}
+  assert.equal(getSessionVar(session, 'constructor'), undefined)
+  assert.deepEqual(sessionVarsSnapshot(session), {})
+  assert.equal(Object.hasOwn(session, SESSION_VARS_KEY), false)
+  setSessionVar(session, '__proto__', '原型键')
+  setSessionVar(session, 'constructor', '')
+  assert.equal(getSessionVar(session, '__proto__'), '原型键')
+  assert.equal(getSessionVar(session, 'constructor'), '')
+  clearSessionVars(session, '__proto__')
+  assert.equal(getSessionVar(session, '__proto__'), undefined)
+  clearSessionVars(session)
+  assert.deepEqual(sessionVarsSnapshot(session), {})
+  assert.equal(interpolateVariables('{{constructor}}', {}), '{{constructor}}', '动态宏也不得读取原型成员')
+})
+
+test('ST random 支持双冒号与转义逗号，pick同会话同模板稳定，roll数字按1dN', (t) => {
+  let next = 0
+  t.mock.method(Math, 'random', () => next)
+  assert.equal(interpolateVariables('{{random::a::b}}', {}), 'a')
+  next = 0.99
+  assert.equal(interpolateVariables('{{random::a::b}}', {}), 'b')
+  next = 0
+  assert.equal(interpolateVariables('{{random::a\\,b,c}}', {}), 'a,b')
+  const session = { id: 'stable' }
+  const first = interpolateVariables('{{pick::a::b}}', {}, session)
+  next = 0.99
+  assert.equal(interpolateVariables('{{pick::a::b}}', {}, session), first)
+  assert.equal(interpolateVariables('{{roll::6}}', {}), '6')
 })

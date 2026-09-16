@@ -25,6 +25,7 @@ import { interpolateVariables } from './interpolate.mjs'
 import { createEpochPromotion } from './compaction-epoch.mjs'
 import { wireLayers } from './layers.mjs'
 import { sessionVarsSnapshot } from './session-vars.mjs'
+import { selectStWorldBook } from './st-world-book.mjs'
 
 const name = 'prompt-config-engine'
 
@@ -133,6 +134,11 @@ export async function runPreStepBatch(options) {
     let changed = false
 
     const due = []
+    const stWorldBook = selectStWorldBook(configs.filter(config => config.layer === 'pre-step'
+      && !(config.audience === 'main' && isDelegated(session)) && !(config.audience === 'subagent' && !isDelegated(session))
+      && matchesModel(config.modelScope, agent.options?.model)
+      && (config.promotion !== 'main' || main.status(agent).promoted)
+      && (config.promotion !== 'include-subagents' || withSubagents.status(agent).promoted)), session, messages, warnOnce)
     for (const config of configs) {
       try {
         if (config.layer !== 'pre-step') continue
@@ -153,7 +159,7 @@ export async function runPreStepBatch(options) {
           continue
         }
 
-        const resolved = await config.resolve({ ctx, agent, session, decision, messages })
+        const resolved = await config.resolve({ ctx, agent, session, decision, messages, stWorldBookSelected: stWorldBook.has(config) })
         if (resolved === null || resolved === undefined) continue
         const patched = { ...resolved }
         // params 并入插值变量：ST 变量（setvar/getvar 收集 + 预设参数）顶层 key 直接可插值
@@ -165,11 +171,14 @@ export async function runPreStepBatch(options) {
           ...sessionVarsSnapshot(session),
           ...(resolved.variables !== null && typeof resolved.variables === 'object' ? resolved.variables : {}),
         }
-        if (typeof patched.text === 'string') {
+        if (typeof config.renderSt === 'function') {
+          patched.text = config.renderSt(agent, messages, warnOnce, options)
+          patched.content = patched.text.length > 0 ? [{ type: 'text', text: patched.text }] : []
+        } else if (typeof patched.text === 'string') {
           // 提示词配置级模板变量 + filler 变量 + 内置环境变量插值。
           patched.text = interpolateVariables(patched.text, mergedVars, session)
         }
-        if (config.texts.length > 0) {
+        if (config.texts.length > 0 && typeof config.renderSt !== 'function') {
           const blocks = config.texts
             .map((item) => interpolateVariables(item, mergedVars, session))
             .filter((item) => item.length > 0)
@@ -234,6 +243,7 @@ export async function runPreStepBatch(options) {
     // 同位置批量插入:planned 已按 order 升序,多元素 splice/unshift/push 保持该顺序。
     const markGroup = (group) => {
       for (const entry of group) {
+        stWorldBook.commit?.(entry.config)
         if (entry.config.dedupe === 'session') configMemo(memo, entry.config).add(session.id)
       }
     }

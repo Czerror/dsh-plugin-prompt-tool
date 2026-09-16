@@ -14,6 +14,7 @@
  */
 
 import { sessionEvents } from './shared.mjs'
+import { createHash } from 'node:crypto'
 
 /** 会话事件中最后一条指定类型消息的文本（事件倒序扫描；无则空串）。 */
 function lastMessageOf(session, type) {
@@ -32,22 +33,26 @@ function lastMessageOf(session, type) {
   return ''
 }
 
-/** 逗号分隔随机选一个（{{random::a,b,c}} / {{pick::a,b,c}}）。 */
-function pickRandom(arg) {
-  const items = String(arg ?? '').split(',').map((item) => item.trim()).filter((item) => item.length > 0)
+/** ST 双冒号/逗号列表；有 seed 时稳定选择，否则每次采样。 */
+function pickRandom(arg, seed) {
+  const input = String(arg ?? '')
+  const items = input.includes('::') ? input.split('::')
+    : input.split(/(?<!\\),/).map(item => item.trim().replaceAll('\\,', ','))
   if (items.length === 0) return ''
-  return items[Math.floor(Math.random() * items.length)]
+  const random = seed === undefined ? Math.random() : createHash('sha256').update(seed).digest().readUInt32BE() / 2 ** 32
+  return items[Math.floor(random * items.length)]
 }
 
-/** 骰子表达式（{{roll::2d6+3}} / {{roll::1d20}}；非法表达式原样返回）。 */
+/** 骰子表达式（{{roll::2d6+3}} / {{roll::6}}；非法或不安全输入为空）。 */
 function rollDice(arg) {
-  const text = String(arg ?? '').replace(/\s+/g, '').toLowerCase()
+  const raw = String(arg ?? '').replace(/\s+/g, '').toLowerCase()
+  const text = /^\d+$/.test(raw) ? `1d${raw}` : raw
   const match = text.match(/^(\d*)d(\d+)([+-]\d+)?$/)
-  if (match === null) return text
+  if (match === null) return ''
   const count = match[1] === '' ? 1 : Number.parseInt(match[1], 10)
   const sides = Number.parseInt(match[2], 10)
   const modifier = match[3] === undefined ? 0 : Number.parseInt(match[3], 10)
-  if (!Number.isSafeInteger(count) || count <= 0 || count > 100 || !Number.isSafeInteger(sides) || sides <= 0) return text
+  if (!Number.isSafeInteger(count) || count <= 0 || count > 100 || !Number.isSafeInteger(sides) || sides <= 0 || !Number.isSafeInteger(modifier) || !Number.isSafeInteger(count * sides + Math.abs(modifier))) return ''
   let sum = 0
   for (let index = 0; index < count; index++) sum += 1 + Math.floor(Math.random() * sides)
   return String(sum + modifier)
@@ -65,7 +70,7 @@ function formatTime(now) {
   return `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
 }
 
-/** UTC YYYY-MM-DD（{{date}}）。 */
+/** 本地 YYYY-MM-DD（{{date}}）；UTC 日期由 isodate 提供。 */
 function formatDate(now) {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
 }
@@ -100,14 +105,37 @@ function builtinVariables(session) {
 }
 
 /** 模板变量插值：配置 variables 优先，ST 运行时宏次之，内置 {{DSH_HOME}} / {{WORKSPACE}} / {{CWD}} 兜底。 */
-export function interpolateVariables(text, variables, session) {
+export function interpolateVariables(text, variables, session, keep, sourceId = '') {
   const builtins = builtinVariables(session)
-  return normalizeMacroSyntax(text).replace(REFERENCE_RE, (whole, key, arg) => {
-    if (Object.prototype.hasOwnProperty.call(variables, key)) return String(variables[key])
-    const dynamic = DYNAMIC_MACROS[key.toLowerCase()]
-    if (dynamic !== undefined) return dynamic(arg, session)
-    return Object.prototype.hasOwnProperty.call(builtins, key) ? builtins[key] : whole
-  })
+  const active = new Set()
+  // 限制展开增加的字符数、递归深度与工作量；原始正文不截断，失败引用留给出口清洗。
+  let remainingChars = 1024 * 1024
+  let remainingExpansions = 4096
+  function render(input, depth = 0) {
+    return normalizeMacroSyntax(input).replace(REFERENCE_RE, (whole, key, arg, offset) => {
+      if (arg === undefined && keep?.has(key)) return `{{${key}}}`
+      if (active.has(key)) return whole
+      let value
+      if (Object.hasOwn(variables, key)) value = String(variables[key] ?? '')
+      else if (key.toLowerCase() === 'pick') value = pickRandom(arg, JSON.stringify([session?.id ?? '', sourceId, input, offset]))
+      else if (Object.hasOwn(DYNAMIC_MACROS, key.toLowerCase())) value = DYNAMIC_MACROS[key.toLowerCase()](arg, session)
+      else if (Object.hasOwn(builtins, key)) value = builtins[key]
+      else return whole
+      const growth = Math.max(0, value.length - whole.length)
+      const nested = value.includes('{{')
+      if (growth > remainingChars || (nested && (depth >= 32 || remainingExpansions <= 0))) return whole
+      remainingChars -= growth
+      if (!nested) return value
+      remainingExpansions--
+      active.add(key)
+      try {
+        return render(value, depth + 1)
+      } finally {
+        active.delete(key)
+      }
+    })
+  }
+  return render(text)
 }
 
 /**
@@ -116,17 +144,7 @@ export function interpolateVariables(text, variables, session) {
  *   命中即原样保留引用，不做静态替换。
  */
 export function interpolateStatic(text, variables, keep) {
-  const builtins = builtinVariables(undefined)
-  return normalizeMacroSyntax(text).replace(REFERENCE_RE, (whole, key, arg) => {
-    if (keep !== undefined && keep.has(key)) return whole
-    if (Object.prototype.hasOwnProperty.call(variables, key)) return String(variables[key])
-    // ST 运行时宏在无会话上下文（system-section 注册期）时替换为空串——
-    // 不残留字面，也不触发官方 unknown variable 渲染报错。
-    const dynamic = DYNAMIC_MACROS[key.toLowerCase()]
-    if (dynamic !== undefined) return dynamic(arg, undefined)
-    // 内置变量必须在此解析：官方严格插值不认大写名字（{{DSH_HOME}} 会被判畸形引用）。
-    return Object.prototype.hasOwnProperty.call(builtins, key) ? builtins[key] : whole
-  })
+  return interpolateVariables(text, variables, undefined, keep)
 }
 
 /**
@@ -159,7 +177,7 @@ export function runtimeFactValue(name, session) {
  * 引用正则：键允许字母数字、下划线、点、中文与连字符（与 ST setvar/getvar 一致），
  * `::` 之后是本项目宏参数。官方插值语法更窄，故这两条通道各用各的。
  */
-const REFERENCE_RE = /\{\{([A-Za-z0-9_.\u4e00-\u9fff-]+)(?:::(.*?))?\}\}/g
+const REFERENCE_RE = /\{\{\s*([A-Za-z0-9_.\u4e00-\u9fff-]+)\s*(?:::([^{}]*?))?\}\}/g
 
 /** ST 宏形态 → 本项目语法（幂等）。 */
 const MACRO_ALIASES = 'roll|random|pick|chance'
@@ -205,7 +223,7 @@ export function stripUnresolvedRefs(text, keep) {
     const group = /^\{\{([^{}]*)\}\}/.exec(rest)
     if (group !== null) {
       // 白名单（已注册的官方变量名）原样保留，交给官方按 assembly 求值。
-      if (keep !== undefined && keep.has(group[1].trim())) {
+      if (/^[a-z][a-z0-9_]*$/.test(group[1]) && keep?.has(group[1])) {
         out += group[0]
         index = open + group[0].length
         continue

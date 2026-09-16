@@ -281,6 +281,9 @@ export function writePreset(prompt: string, options: WritePresetOptions): void {
     options.warn?.(`prompt-tool: 预设 ${templateName} 用户副本缺组合源（modules/agent.cordis.yml），已回退包内模板渲染`)
   }
   let spec = loadPresetSpec(templateDir)
+  if (Array.isArray(spec.meta?.stWarnings)) {
+    for (const warning of spec.meta.stWarnings) if (typeof warning === 'string') options.warn?.(`prompt-tool: ST 导入兼容提示：${warning}`)
+  }
   if (spec.subagentToolPolicy !== undefined && spec.subagentToolPolicy !== null) {
     const policyErrors = validateSubagentToolPolicy(spec.subagentToolPolicy)
     if (policyErrors.length > 0) {

@@ -138,6 +138,7 @@ function createCustomFallbackResolver(config) {
  * (any=任一命中 / all=副键全中 / not=副键全不中)。匹配经 anchor-match 引擎。
  */
 function createWorldBookResolver(config) {
+  if (config.params?.stWorldBook) return ({ stWorldBookSelected }) => stWorldBookSelected === true ? { text: config.texts.join('\n\n') } : null
   const constant = config.params?.constant === true
   // selectiveLogic：ST world_info_logic 0=AND_ANY 1=NOT_ALL 2=NOT_ANY 3=AND_ALL。
   const rawLogic = config.params?.selectiveLogic
