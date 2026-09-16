@@ -322,6 +322,12 @@ export function convertStToPresetWithReport(
     const value = bodyText(key)
     if (value.length > 0) variables[key] = clean(value)
   }
+  // ST 的世界书扫描字段来自 globalScanData（script.js:4626-4634）：creatorNotes 取
+  // data.creator_notes、characterDepthPrompt 取 data.extensions.depth_prompt.prompt。
+  // 这里把 creator_notes 登记为内容变量，供 matchCreatorNotes 扫描开关按需并入；
+  // depth_prompt 的变量在同名配置生成处登记（两处都只在有内容时登记，缺省零噪音）。
+  const creatorNotes = bodyText('creator_notes')
+  if (creatorNotes.length > 0) variables.creator_notes = clean(creatorNotes)
   // 角色卡正文 → 提示词配置：角色设定（描述/性格/场景）拼接、系统提示、后续指令、开场白。
   // order 取负值使角色卡内容排在响应预设 prompts（order≥100）之前。
   const characterDefinition = [bodyText('description'), bodyText('personality'), bodyText('scenario')]
@@ -454,7 +460,10 @@ export function convertStToPresetWithReport(
         // 磁盘形态是驼峰顶层 / extensions 蛇形，两种拼写都读。
         delayUntilRecursion: 'delay_until_recursion', useGroupScoring: 'use_group_scoring',
         matchCharacterDescription: 'match_character_description', matchCharacterPersonality: 'match_character_personality',
-        matchScenario: 'match_scenario', matchPersonaDescription: 'match_persona_description' })) {
+        matchScenario: 'match_scenario', matchPersonaDescription: 'match_persona_description',
+        // ST 的 globalScanData 另有 creator notes 与角色深度提示词两个扫描开关
+        // （world-info.js:5664/5666，磁盘形态是 extensions 蛇形）。
+        matchCreatorNotes: 'match_creator_notes', matchCharacterDepthPrompt: 'match_character_depth_prompt' })) {
         // ST 内嵌 extensions 的导出形状为蛇形（use_probability）；既有驼峰拼写仍是主名。
         const value = option(source, target, ...(target === 'useProbability' ? ['use_probability'] : []))
         if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'string') stWorldBook[target] = value
@@ -549,6 +558,29 @@ export function convertStToPresetWithReport(
           : entryCodes.some((code) => code !== 'disabled') ? 'degraded' : 'equivalent',
         codes: entryCodes })
     }
+  }
+  // ST 的角色深度提示词（char-data.js:73-76：{ prompt, depth, role }）：ST 只在群聊里
+  // 自动注入（group-chats.js:459-464），world-info 的 matchCharacterDepthPrompt 也读它。
+  // 本项目没有群聊：默认注入会造成「ST 不注入而我们注入」的反向不等价，因此保留为一条
+  // **禁用**配置——内容、来源与原因码都在产物里，用户可手动启用；正文不进模型上下文。
+  const depthPromptRaw = extensions?.depth_prompt
+  const depthPromptSource = depthPromptRaw !== null && typeof depthPromptRaw === 'object' && !Array.isArray(depthPromptRaw)
+    ? depthPromptRaw as Record<string, unknown> : undefined
+  const depthPromptText = typeof depthPromptSource?.prompt === 'string' ? clean(depthPromptSource.prompt) : ''
+  if (depthPromptText.length > 0) {
+    variables.depth_prompt = depthPromptText
+    sourceInputs += 1
+    const order = -50
+    configs.push({
+      id: 'st-depth-prompt', name: '角色深度提示词', strategy: 'static', enabled: false, order,
+      text: depthPromptText, layer: 'pre-step', mergeMode: 'merged', role: ST_PRE_STEP_ROLE,
+      position: 'before-all', dedupe: 'none',
+      params: { stSource: { field: 'extensions.depth_prompt', depth: depthPromptSource?.depth ?? 4, role: depthPromptSource?.role ?? 0 } },
+    })
+    recordEntry({ sourceId: 'extensions.depth_prompt', sourceIndex: 0, targetId: 'st-depth-prompt',
+      layer: 'pre-step', order, role: ST_PRE_STEP_ROLE, position: 'before-all',
+      classification: 'degraded', codes: ['depth-prompt-group-only'] })
+    noteInfo('st-depth-prompt', 'ST 角色深度提示词只在群聊自动注入：本项目保留为默认禁用的 pre-step 配置，可由用户手动启用', { entryId: 'st-depth-prompt', field: 'extensions.depth_prompt' })
   }
   const firstMes = clean(bodyText('first_mes'))
   if (firstMes.length > 0) {

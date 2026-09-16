@@ -375,6 +375,16 @@ ST 依据：`world-info.js:4915` / `:4947` 匹配前对主键与副键执行 `su
 - **偏差说明**：①本项目的键已插值且 `filter(Boolean)`，而 ST 的 `getScore` 用原始 key（含空串、不 trim）——评分与匹配共用同一份键，一致性优先于逐字复刻（已在文档写明）。②3.3 节原稿称「现有代码读三顶层字段」，实测是**完全未读取**，已同步。③`preset-package-import.test.mjs` 的 `main` 配置断言因 R12 新增来源事实而更新。④`ST_CONVERTER_VERSION` 保持 `st-to-preset/3`（本轮统一版本），注释扩展为涵盖条件字段读取与诊断。
 - **遗留问题**：素材对 K4–K7 的字段多为默认值，`matchCreatorNotes` / `matchCharacterDepthPrompt` 的行为证据由 R9 用合成夹具补；旧产物需重新导入才有新字段与诊断。
 
+### 4.9 Task Summary：Wave 7（R13 / R9）
+
+- **完成状态**：完成。T20/T21 行为断言通过；`typecheck` / `lint`（0 warning）/ `test`（946/946）/ `build` 全绿。
+- **3.9 核实结论（核实点 4：`globalScanData` 填充点）**：唯一构造点是 `script.js:4626-4634`；`creatorNotes` ← `data.creator_notes`（`script.js:3427-3430`），`characterDepthPrompt` ← `data.extensions.depth_prompt.prompt`（`script.js:3423-3426`），二者都包 `baseChatReplace`。六个字段在 `WorldInfoBuffer.get`（`world-info.js:294-320`）按各自的 `match*` 开关**拼进同一个扫描串**（`JOINER = '\n\x01'`），随后作为唯一 haystack 参与子串/正则匹配，不是单独比较；缺省实参 `defaultGlobalScanData`（`:186-194`）全为空串，开关因此失效。C 类边界（本轮不做，留给 R14 文档化）：`extension_settings.note.allowWIScan` 为真时深度提示词会经 extension-prompt 通路**无条件**拼进扫描文本（`:4719-4726`、`:318-320`），与 `matchCharacterDepthPrompt` 无关且可能重复出现；`charDepthPrompt`/`creatorNotes` 的 resolver 不检查群卡覆盖。
+- **修改文件**：`src/host/sillytavern.ts`（`creator_notes` 变量登记、`depth_prompt` 禁用配置与 `depth_prompt` 变量登记、两个扫描开关写入）；`engine/st-world-book.mjs`（扫描字段开关接入 `creator_notes` / `depth_prompt`）；`test/host/st-compatibility.test.mjs`（T20）；`test/engine/st-world-book.test.mjs`（T20 不注入、T21 开关双向）；`docs/SillyTavern.md`、`docs/engine-reuse.md`、`CHANGELOG.md`。
+- **验证证据**：定向 `node --test test/engine/st-world-book.test.mjs test/host/st-compatibility.test.mjs` → `pass 39 / fail 0`。行为证据：带 `extensions.depth_prompt.prompt` 的卡产出 `st-depth-prompt` 配置且 `enabled === false`、`layer/role/position = pre-step/user/before-all`、`params.stSource.field = 'extensions.depth_prompt'`、报告条目 `degraded` + `['depth-prompt-group-only']`、`summary.disabled === 1`；运行时该配置存在但**不出现**在 `runPreStepBatch` 的注入消息里，同批的 `lore-1` 正常注入；`variables.depth_prompt`/`variables.creator_notes` 已登记，无该字段的卡片零配置零变量。开关双向：`match_creator_notes`/`match_character_depth_prompt` 开启时两条条目分别因 creator notes 与 depth prompt 命中并注入，关闭时同一批条目零注入，且既有 `match_character_description` 行为不变。
+- **关键决策**：①`depth_prompt` 保留为**禁用**配置而不是直接丢弃或默认注入——ST 只在群聊注入，本项目无群聊，默认注入会造成反向不等价；禁用配置同时满足「内容不丢」「可复核」「用户可启用」。②两个扫描开关只在**显式开启且变量为字符串**时并入扫描文本，因此未开启时扫描文本与既有断言逐字一致（不改变触发面）。③变量登记与配置生成共用同一份清洗结果（`clean`），避免正文与变量两份文本漂移。④不实现 `allowWIScan` 的 extension-prompt 通路（属 ST 扩展机制，超出本插件边界），列入 R14 的边界对照表。
+- **偏差说明**：`ST_CONVERTER_VERSION` 仍为 `st-to-preset/3`（本轮统一版本）；`depth_prompt` 配置的 `order = -50` 落在示例对话（-60）与开场白（-40）之间，禁用状态下不影响注入顺序。
+- **遗留问题**：旧卡片需重新导入才生成 `st-depth-prompt` 与两个变量；`allowWIScan` 与群聊注入的差异在 R14 表中标注为「未复刻」。
+
 ## 5. H1：历史会话恢复（单独授权，默认不执行）
 
 此操作拥有真实用户日志写入风险，不能因 R7–R14 完成或用户要求"修插件"而自动执行。先完成防复发，再由用户确认明确的会话文件清单与角色降级代价。
@@ -479,12 +489,12 @@ Wave 只有在全部必需子任务验收通过后才能标记 `[✔]`；文档 
   - [✔] R10：`characterFilter` 按真实形态读取并显式拒绝（T17）。
   - [✔] R11：`automationId` / `outletName` 双形态读取与自动化依赖诊断（T18）。
   - [✔] R12：`prompts[].system_prompt` 按核实结论处理并保留事实（T19）。
-- [ ] **Wave 7：P3 与扫描接线**
-  - [ ] R13：`depth_prompt` 保留为禁用配置并登记扫描变量（T20）。
-  - [ ] R9：`matchCreatorNotes` / `matchCharacterDepthPrompt` 扫描接线（T21）。
+- [✔] **Wave 7：P3 与扫描接线**
+  - [✔] R13：`depth_prompt` 保留为禁用配置并登记扫描变量（T20）。核实结论与行为证据见 4.9。
+  - [✔] R9：`matchCreatorNotes` / `matchCharacterDepthPrompt` 扫描接线（T21）。
 - [ ] **Wave 8：边界文档与集成**
   - [ ] R14：未复刻能力与降级对照文档化（T22）。
 - [ ] **最终集成验收**：T11–T23、完整门禁与合成夹具证据通过，未验证项明确披露。
 - [ ] **独立恢复 H1**：历史日志恢复，尚未授权；不计入代码修复完成率。
 
-当前进度：文档 1/1，代码修复 **5/8（R7、R8、R10、R11、R12 完成；R9、R13、R14 未开始）**；`selective` 默认值与 `use_regex` 已核实无缺陷不改；H1 未授权。
+当前进度：文档 1/1，代码修复 **7/8（R7、R8、R9、R10、R11、R12、R13 完成；R14 与最终集成验收未开始）**；`selective` 默认值与 `use_regex` 已核实无缺陷不改；H1 未授权。

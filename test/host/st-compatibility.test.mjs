@@ -248,6 +248,31 @@ test('T19 prompts[].system_prompt 只保留事实，层归属仍按 role', () =>
   assert.deepEqual([main.classification, main.layer], ['equivalent', 'system-section'])
 })
 
+test('T20 角色卡 depth_prompt 保留为默认禁用配置并登记扫描变量', () => {
+  const card = { data: { name: 'Ada', description: 'DESC', creator_notes: 'NOTES',
+    extensions: { depth_prompt: { prompt: 'DEEP', depth: 4, role: 0 } } } }
+  const { spec, report } = convertStToPresetWithReport(card, 'deepprompt')
+  const config = spec.promptConfigs.find(c => c.id === 'st-depth-prompt')
+  assert.equal(config.enabled, false, '默认禁用：ST 只在群聊自动注入，本项目不默认注入')
+  assert.equal(config.text, 'DEEP')
+  assert.deepEqual([config.layer, config.role, config.position], ['pre-step', 'user', 'before-all'])
+  assert.equal(config.params.stSource.field, 'extensions.depth_prompt')
+  assert.deepEqual([config.params.stSource.depth, config.params.stSource.role], [4, 0])
+  assert.equal(spec.variables.depth_prompt, 'DEEP', '登记为内容变量供扫描开关使用')
+  assert.equal(spec.variables.creator_notes, 'NOTES')
+  const entry = report.entries.find(item => item.targetId === 'st-depth-prompt')
+  assert.deepEqual([entry.classification, entry.layer], ['degraded', 'pre-step'])
+  assert.deepEqual(entry.codes, ['depth-prompt-group-only'])
+  assert.equal(report.diagnostics.filter(item => item.code === 'st-depth-prompt').length, 1)
+  assert.equal(report.summary.disabled, 1)
+
+  // 没有 depth_prompt / creator_notes 的卡片不产出该配置与变量（零噪音）。
+  const plain = convertStToPreset({ data: { name: 'Bob', description: 'D' } }, 'plain')
+  assert.equal(plain.promptConfigs.some(c => c.id === 'st-depth-prompt'), false)
+  assert.equal(plain.variables?.creator_notes, undefined)
+  assert.equal(plain.variables?.depth_prompt, undefined)
+})
+
 test('T11 世界书 keys 的未解析宏登记为空占位并产出可定位诊断', () => {
   const card = { data: { name: 'Ada', character_book: { entries: [keyMacroEntry({ keys: ['{{user}}'] })] } } }
   const { spec, report } = convertStToPresetWithReport(card, 'keymacro')

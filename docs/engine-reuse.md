@@ -198,6 +198,16 @@ ST 的两个条目级开关在引擎里按 `params.stWorldBook` 消费；未开�
 两处都对拍 ST 源码（测试内保留 `getScore` 与组内淘汰的抄写夹具），并断言「开关关闭时行为
 与既有断言逐条一致」。
 
+### 扫描字段开关（2026-09-17）
+
+世界书条目的角色字段扫描与 ST 的 `globalScanData` 对齐（`world-info.js:294-320`）：每个开关
+只在对应变量有值时把该字段并入本 pass 的扫描文本，未开启时不并入、既有触发面不变。
+除既有的 `matchCharacterDescription` / `matchCharacterPersonality` / `matchScenario` /
+`matchPersonaDescription` 外，本轮接入 `matchCreatorNotes`（变量 `creator_notes`，来源
+`data.creator_notes`）与 `matchCharacterDepthPrompt`（变量 `depth_prompt`，来源
+`data.extensions.depth_prompt.prompt`，`script.js:4626-4634`）。两个变量由 ST 导入期登记，
+缺省不存在时开关自动失效（零噪音）。
+
 字段映射集中在 `src/shared/engine-params.ts#ENGINE_PARAM_DEFINITIONS`；host 装配、bridge 回显与配置卡共享该目录。能力各自的 `includeSubagents`、`promoteOn`、启停和提示文本都可在所属卡片设置，依旧没有跨模块全局顺序；内部服务路径由生成器管理。
 
 自定义模型工具保持 `customTools` 资产及 `tool-config-engine` 模块链路。保存方与运行时复用 `engine/tool-definition.mjs`，保存前编译官方参数 DSL 并完整验证；`customToolRequireApproval` 控制需用户批准的执行器种类。工具预览只是有效工具面的只读视图，不承担安装、连接或注册职责。

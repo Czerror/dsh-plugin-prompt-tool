@@ -48,6 +48,8 @@
 | `first_mes` | 一次性开场白，`dedupe: session`；ST 的 assistant 侧降级为 user，原角色存 `params.stSource.role` |
 | `alternate_greetings` | 独立备用开场白，默认禁用，用户可切换；同样降级为 user |
 | `mes_example` | 按 `<START>` 和角色标记拆成一次性示例消息；assistant 轮次降级为 user（原角色存 `params.stSource.role`），无法识别的块保留为 user 文本 |
+| `extensions.depth_prompt` | 只在群聊自动注入（ST 语义），本项目没有群聊：保留为一条**默认禁用**的 pre-step 配置（`st-depth-prompt`，来源与原因码 `depth-prompt-group-only` 齐全），用户可手动启用；同时登记 `depth_prompt` 变量供扫描开关使用 |
+| `creator_notes` | 登记为 `creator_notes` 内容变量，供世界书条目按需扫描（ST 的 `globalScanData.creatorNotes` 同名来源） |
 | `character_book.entries` | ST world-book 配置 |
 | `extensions` 的 regex/TavernHelper/JS | 不执行、不放入提示正文，报告兼容提示 |
 
@@ -112,6 +114,8 @@ ST 导入在既有 `buildWorldBookEntry` 结构上添加 `params.stWorldBook`，
 | `automationId` / `automation_id` | 顶层驼峰与 extensions 蛇形都读；非空时保留事实并告警「依赖 STscript 自动化」，其中无主键且非常驻的条目额外说明「不会自动注入」 |
 | `outletName` / `outlet_name` | 双形态读取；非空时保留事实并计入不支持控制项（`unsupported-controls`） |
 | 角色描述/性格/场景/persona 扫描开关 | 显式开启时把相应声明字段加入扫描 |
+| `matchCreatorNotes` / `match_creator_notes` | 显式开启时把卡片 `creator_notes`（清洗后）加入扫描文本；未开启时不并入，既有触发面不变 |
+| `matchCharacterDepthPrompt` / `match_character_depth_prompt` | 显式开启时把 `extensions.depth_prompt.prompt`（清洗后）加入扫描文本；未开启时不并入 |
 | `probability/useProbability/use_probability` | 概率过滤；同一消息状态重复求值保持抽样结果 |
 | `group/group_override/group_weight` | 同组只选一个；override 优先选择高 order，否则按权重 |
 | `sticky/cooldown/delay` | 按真实对话消息数维护会话内窗口，实际插入后才提交激活状态 |

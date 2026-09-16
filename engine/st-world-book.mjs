@@ -101,7 +101,10 @@ export function selectStWorldBook(configs, session, messages, warn = () => {}) {
       if (material !== undefined) return material
       const depth = count(st.scanDepth, 2)
       const parts = depth === 0 ? [] : chat.slice(-depth).reverse().map(message => message.text)
-      for (const [flag, key] of [['matchCharacterDescription', 'description'], ['matchCharacterPersonality', 'personality'], ['matchScenario', 'scenario'], ['matchPersonaDescription', 'persona']]) {
+      // 角色字段扫描（ST globalScanData，world-info.js:294-320）：每个开关只在对应变量
+      // 有值时并入扫描文本；creator_notes / depth_prompt 由导入期登记（未开启不并入，
+      // 既有触发面不变）。
+      for (const [flag, key] of [['matchCharacterDescription', 'description'], ['matchCharacterPersonality', 'personality'], ['matchScenario', 'scenario'], ['matchPersonaDescription', 'persona'], ['matchCreatorNotes', 'creator_notes'], ['matchCharacterDepthPrompt', 'depth_prompt']]) {
         if (depth > 0 && st[flag] === true && typeof config.variables[key] === 'string') parts.push(config.variables[key])
       }
       if (pass > 0 && depth > 0) parts.push(...recursiveText)

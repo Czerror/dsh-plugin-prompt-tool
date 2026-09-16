@@ -302,6 +302,40 @@ test('读取诊断不改变入选集合、顺序、抽样次数与粘滞时间�
   assert.deepEqual(withRead, ['lore-1,lore-2', 'lore-2', 'lore-1,lore-2', 'lore-2'], '粘滞/概率窗口语义保持')
 })
 
+test('T20 depth_prompt 禁用配置保留在产物里但不进入注入结果', async () => {
+  const spec = convertStToPreset({ data: { name: 'Ada', extensions: { depth_prompt: { prompt: 'DEEP-ONLY', depth: 4, role: 0 } },
+    character_book: { entries: [entry(1, { keys: ['P'] })] } } }, 'deepprompt')
+  const configs = createPromptConfigs(spec.promptConfigs.map(c => ({ ...c, variables: spec.variables })))
+  assert.equal(configs.some(config => config.id === 'st-depth-prompt'), true, '禁用配置仍在产物里可复核')
+  const decision = await runPreStepBatch({ ctx: { get() {} }, agent: { session: { id: 'deep', header: {}, snapshotEvents: () => [] }, options: {} },
+    decision: { kind: 'enter', messages: [message('P')] }, configs, promotion, memo: new Map(), warnOnce() {} })
+  const ids = decision.messages.map(message => message.source?.plugin)
+  assert.equal(ids.includes('st-depth-prompt'), false, '禁用配置不注入')
+  assert.equal(ids.includes('lore-1'), true)
+})
+
+test('T21 matchCreatorNotes / matchCharacterDepthPrompt 扫描开关按需并入卡片全文', async () => {
+  const book = (entries) => ({ data: { name: 'Ada', creator_notes: 'NOTES-ONLY',
+    extensions: { depth_prompt: { prompt: 'DEEP-ONLY', depth: 4, role: 0 } }, character_book: { entries } } })
+  const on = await runBook(book([
+    entry(1, { keys: ['NOTES-ONLY'], extensions: { match_creator_notes: true } }),
+    entry(2, { keys: ['DEEP-ONLY'], extensions: { match_character_depth_prompt: true } }),
+  ]), ['N'])
+  assert.deepEqual(on.map(x => x.id), ['lore-1', 'lore-2'], '开关开启时按 creator notes / depth prompt 命中')
+
+  const off = await runBook(book([
+    entry(1, { keys: ['NOTES-ONLY'] }),
+    entry(2, { keys: ['DEEP-ONLY'] }),
+  ]), ['N'])
+  assert.deepEqual(off, [], '未开启开关时扫描文本保持既有范围（不改变触发面）')
+
+  // 关闭状态下普通键与既有角色字段扫描不回归。
+  const baseline = await runBook(book([
+    entry(3, { keys: ['P'], extensions: { match_character_description: true } }),
+  ]), ['P'])
+  assert.deepEqual(baseline.map(x => x.id), ['lore-3'])
+})
+
 test('T12 世界书键宏：未赋值不误触发，赋值后命中，同一轮重复求值幂等', async () => {
   const spec = convertStToPreset({ data: { name: 'Probe', character_book: { entries: [
     entry(25, { keys: ['{{user}}'], extensions: { scan_depth: 2 } }),

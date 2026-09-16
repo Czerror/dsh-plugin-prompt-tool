@@ -36,6 +36,15 @@
   把 `systemPrompt: true` 写入 `params.stSource` 并记 info 诊断，层归属仍按 `role`
   （素材 48 条中 38 条 role=system 进 system-section、10 条 role=user 进 pre-step，
   分类与定位稳定）。
+- **depth_prompt 与扫描字段开关（R13/R9/K8·K4·K5）**：`extensions.depth_prompt`
+  （`{ prompt, depth, role }`）此前被整体丢弃，素材 13 张卡带该字段且无任何来源元数据。
+  ST 只在群聊自动注入它，本项目没有群聊，因此保留为一条**默认禁用**的 pre-step 配置
+  （`st-depth-prompt`，来源标注 + `degraded` + 原因码 `depth-prompt-group-only`），
+  用户可手动启用，正文不进模型上下文；同时登记 `depth_prompt` 与 `creator_notes`
+  两个内容变量。世界书扫描开关随之接入 `matchCreatorNotes` /
+  `matchCharacterDepthPrompt`（对齐 `world-info.js:294-320`/`:5664-5666` 与
+  `script.js:4626-4634` 的来源字段）：仅在条目显式开启且变量有值时并入扫描文本，
+  未开启时不并入，既有触发面逐字不变。
 
 ### 导入确认、诊断可信度与会话完整性修复（2026-09-17）
 
