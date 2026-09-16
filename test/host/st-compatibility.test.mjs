@@ -71,3 +71,42 @@ test('日期宏不登记空值；转换不修改输入对象或执行扩展代�
   assert.equal(spec.variables?.time, undefined)
   assert.equal(spec.meta.stWarnings.length, 1)
 })
+
+test('世界书 extensions 蛇形别名写入 params，冲突按既有拼写优先且不修改源对象', () => {
+  const input = { entries: { 0: {
+    uid: 0, key: ['P'], keysecondary: ['S', 'T'], content: 'E0', disable: false,
+    extensions: { selective_logic: 3, use_probability: false, probability: 0 },
+  } } }
+  const snapshot = structuredClone(input)
+  const configs = convertStToPreset(input, 'book').promptConfigs
+  const config = configs.find(c => c.id === 'lore-0')
+  assert.deepEqual(config.params.keys, ['P'])
+  assert.deepEqual(config.params.secondaryKeys, ['S', 'T'])
+  assert.equal(config.params.selectiveLogic, 3)
+  assert.equal(config.params.stWorldBook.useProbability, false)
+  assert.equal(config.params.stWorldBook.probability, 0)
+  assert.deepEqual(input, snapshot)
+
+  // 冲突规则：extensions 内既有拼写优先于新增别名，extensions 整体优先于条目顶层。
+  const conflicted = convertStToPreset({ entries: { 0: {
+    uid: 0, key: ['P'], content: 'E0', selectiveLogic: 1, selective_logic: 1,
+    extensions: { selectiveLogic: 2, selective_logic: 3, useProbability: true, use_probability: false },
+  } } }, 'book').promptConfigs[0]
+  assert.equal(conflicted.params.selectiveLogic, 2)
+  assert.equal(conflicted.params.stWorldBook.useProbability, true)
+})
+
+test('独立世界书顶层 key/keysecondary/selective_logic 与角色卡内嵌等价字段产出一致', () => {
+  const shared = { keys: ['P'], secondary_keys: ['S', 'T'], content: 'E0', enabled: true, constant: false, selective: true }
+  const embedded = convertStToPreset({ data: { name: 'C', character_book: { entries: [
+    { ...shared, id: 0, extensions: { selective_logic: 3, use_probability: false, probability: 0 } },
+  ] } } }, 'card').promptConfigs.find(c => c.id === 'lore-0')
+  const standalone = convertStToPreset({ entries: { 0: { ...shared, uid: 0, key: shared.keys, keysecondary: shared.secondary_keys,
+    extensions: { selective_logic: 3, use_probability: false, probability: 0 } } } }, 'book').promptConfigs.find(c => c.id === 'lore-0')
+  for (const key of ['selectiveLogic', 'keys', 'secondaryKeys']) {
+    assert.deepEqual(standalone.params[key], embedded.params[key], key)
+  }
+  assert.equal(standalone.params.stWorldBook.useProbability, false)
+  assert.equal(embedded.params.stWorldBook.useProbability, false)
+  assert.equal(standalone.params.stWorldBook.probability, 0)
+})

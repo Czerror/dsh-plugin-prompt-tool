@@ -229,7 +229,14 @@ export function convertStToPreset(card: unknown, baseName: string): PresetSpec {
         : (typeof entry.order === 'number' ? entry.order : 100)
       const ext = entry.extensions !== null && typeof entry.extensions === 'object' && !Array.isArray(entry.extensions)
         ? entry.extensions as Record<string, unknown> : {}
-      const option = (key: string, alias = key): unknown => ext[key] ?? entry[key] ?? entry[alias]
+      // 字段别名收敛：每个作用域内按「主名 → 兼容别名」取首个非 undefined 值，
+      // extensions 整体优先于条目顶层；用 !== undefined 判定，false/0 不当缺省丢弃。
+      const option = (...names: string[]): unknown => {
+        for (const scope of [ext, entry]) {
+          for (const name of names) if (scope[name] !== undefined) return scope[name]
+        }
+        return undefined
+      }
       const position = option('position') ?? (entry.position === 'after_char' ? 1 : 0)
       const stWorldBook: Record<string, unknown> = {
         selective: entry.selective === true,
@@ -242,7 +249,8 @@ export function convertStToPreset(card: unknown, baseName: string): PresetSpec {
         recursive: 'recursive_scanning', excludeRecursion: 'exclude_recursion', preventRecursion: 'prevent_recursion',
         matchCharacterDescription: 'match_character_description', matchCharacterPersonality: 'match_character_personality',
         matchScenario: 'match_scenario', matchPersonaDescription: 'match_persona_description' })) {
-        const value = option(source, target)
+        // ST 内嵌 extensions 的导出形状为蛇形（use_probability）；既有驼峰拼写仍是主名。
+        const value = option(source, target, ...(target === 'useProbability' ? ['use_probability'] : []))
         if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'string') stWorldBook[target] = value
       }
       const sourceRole = stWorldBook.role
@@ -264,9 +272,9 @@ export function convertStToPreset(card: unknown, baseName: string): PresetSpec {
         ...(option('match_whole_words', 'matchWholeWords') === true ? { wholeWords: true } : {}),
         // selectiveLogic（ST world_info_logic 0/1/2/3）：选择性触发组合逻辑，
         // 由 anchor-match 引擎消费（any/all/not）。保留不再丢弃。
-        ...(typeof option('selectiveLogic') === 'number'
-          ? { selectiveLogic: option('selectiveLogic') as number }
-          : (typeof entry.selective_logic === 'number' ? { selectiveLogic: entry.selective_logic } : {})),
+        ...(typeof option('selectiveLogic', 'selective_logic') === 'number'
+          ? { selectiveLogic: option('selectiveLogic', 'selective_logic') as number }
+          : {}),
       })
       configs.push({ ...worldConfig, role: sourceRole === 2 ? 'assistant' : 'user',
         position: position === 4 ? 'after-all' : 'before-all',

@@ -101,10 +101,11 @@ ST 导入在既有 `buildWorldBookEntry` 结构上添加 `params.stWorldBook`，
 | 2 NOT_ANY | 主键命中且所有副键未命中 |
 | 3 AND_ALL | 主键命中且所有副键命中 |
 | `constant` / `add_always` | 常驻候选；概率、分组、延迟仍可限制 |
-| `extensions.selectiveLogic/case_sensitive/match_whole_words` | 与编辑器顶层别名一并读取 |
+| `selectiveLogic/selective_logic` | 副键组合逻辑；`extensions` 内两种拼写与条目顶层一并读取 |
+| `extensions.case_sensitive/match_whole_words` | 与编辑器顶层别名一并读取 |
 | `scan_depth` | 最近真实对话窗口（默认 2，0 不扫描聊天）；包含当前消息，排除插件注入和 reasoning 块 |
 | 角色描述/性格/场景/persona 扫描开关 | 显式开启时把相应声明字段加入扫描 |
-| `probability/useProbability` | 概率过滤；同一消息状态重复求值保持抽样结果 |
+| `probability/useProbability/use_probability` | 概率过滤；同一消息状态重复求值保持抽样结果 |
 | `group/group_override/group_weight` | 同组只选一个；override 优先选择高 order，否则按权重 |
 | `sticky/cooldown/delay` | 按真实对话消息数维护会话内窗口，实际插入后才提交激活状态 |
 | 显式 `recursive_scanning` | 有界重复匹配已选正文；支持 exclude/prevent recursion；不自动继承外部 ST 全局设置 |
@@ -113,6 +114,9 @@ ST 导入在既有 `buildWorldBookEntry` 结构上添加 `params.stWorldBook`，
 位置与角色仍有边界：pre-step 不能无损插入历史深度，也不能创建 system 角色消息。
 position=4 降级为当前消息批末尾；其他世界书位置落在消息批头部。assistant 保留，system
 降为 user；原位置/深度/角色仍在 stWorldBook 中并产生兼容提示，不冒充等价。
+
+别名冲突按固定优先级读取：同一作用域内既有拼写（驼峰主名）优先于兼容别名，`extensions`
+整体优先于条目顶层；显式 `false`/`0` 不当作缺省值丢弃。
 
 未复刻 token 预算、向量检索、outlet、Author's Note、生成类型触发、ST 插件正则、跨进程
 粘滞/冷却恢复等能力。角色卡中的源选项不会授权执行任意脚本。

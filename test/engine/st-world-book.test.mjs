@@ -7,12 +7,15 @@ import { runPreStepBatch } from '../../engine/executor.mjs'
 const entry = (id, extra = {}) => ({ id, keys: [], secondary_keys: [], content: `E${id}`, enabled: true, constant: false, selective: true, insertion_order: 100, position: 'before_char', extensions: {}, ...extra })
 const message = (text, id = text) => ({ id, role: 'user', content: [{ type: 'text', text }], source: { kind: 'user' } })
 const promotion = { main: { status: () => ({ promoted: true }) }, withSubagents: { status: () => ({ promoted: true }) } }
-async function run(entries, texts, history = [], extras = {}) {
-  const spec = convertStToPreset({ data: { name: 'Probe', character_book: { entries } } }, 'probe')
+async function runBook(book, texts, history = [], extras = {}) {
+  const spec = convertStToPreset(book, 'probe')
   const configs = createPromptConfigs(spec.promptConfigs.map(c => ({ ...c, variables: spec.variables })))
   const agent = { session: { id: 'probe', header: {}, snapshotEvents: () => history }, options: {} }
   const decision = await runPreStepBatch({ ctx: { get() {} }, agent, decision: { kind: 'enter', messages: texts.map(t => message(t)) }, configs, promotion, memo: new Map(), warnOnce() {}, ...extras })
   return decision.messages.filter(m => m.source?.plugin?.startsWith('lore-')).map(m => ({ id: m.source.plugin, role: m.role, text: m.content.map(c => c.text).join('') }))
+}
+async function run(entries, texts, history = [], extras = {}) {
+  return runBook({ data: { name: 'Probe', character_book: { entries } } }, texts, history, extras)
 }
 
 test('ST 世界书必须先命中主键；0/1/2/3 逻辑与 selective 开关正确', async () => {
@@ -95,4 +98,31 @@ test('ST 世界书递归仅显式开启，匹配角色字段；协调器复制�
   const result = await runPreStepBatch({ ctx: { get() {} }, agent: { session: { id: 'copy', header: {}, snapshotEvents: () => [] }, options: {} },
     decision: { kind: 'enter', messages: [message('N')] }, configs: copied, promotion, memo: new Map(), warnOnce() {} })
   assert.deepEqual(result.messages.filter(m => m.source?.plugin?.startsWith('lore-')).map(m => m.source.plugin), ['lore-1', 'lore-2', 'lore-3'])
+})
+
+test('ST 世界书 extensions 蛇形 selective_logic 与驼峰同义，四种逻辑与部分/全部副键命中一致', async () => {
+  const cases = [[0, 'P S', true], [0, 'P S T', true], [0, 'P', false], [0, 'S', false],
+    [1, 'P S', true], [1, 'P S T', false], [2, 'P S', false], [2, 'P Q', true],
+    [3, 'P S', false], [3, 'P S T', true]]
+  for (const [logic, text, expected] of cases) {
+    const snake = await run([entry(1, { keys: ['P'], secondary_keys: ['S', 'T'], extensions: { selective_logic: logic } })], [text])
+    const camel = await run([entry(1, { keys: ['P'], secondary_keys: ['S', 'T'], extensions: { selectiveLogic: logic } })], [text])
+    assert.equal(snake.length > 0, expected, `蛇形 logic=${logic}, text=${text}`)
+    assert.deepEqual(snake, camel, `两种拼写等价 logic=${logic}, text=${text}`)
+  }
+  // 编辑器/独立世界书形状：顶层 key/keysecondary + 顶层 selective_logic
+  const standalone = await runBook({ entries: { 0: { uid: 0, key: ['P'], keysecondary: ['S', 'T'], content: 'E0', selective: true, selective_logic: 3 } } }, ['P S'])
+  assert.equal(standalone.length, 0, '顶层蛇形 selective_logic=3 需要全部副键命中')
+  const standaloneAll = await runBook({ entries: { 0: { uid: 0, key: ['P'], keysecondary: ['S', 'T'], content: 'E0', selective: true, selective_logic: 3 } } }, ['P S T'])
+  assert.equal(standaloneAll.length, 1)
+})
+
+test('ST 世界书 use_probability 关闭时不执行概率过滤，false/0 与缺省不混淆', async () => {
+  const inject = extra => run([entry(1, { constant: true, ...extra })], ['N'])
+  assert.equal((await inject({ extensions: { use_probability: false, probability: 0 } })).length, 1, '关闭开关且概率 0 仍注入')
+  assert.equal((await inject({ extensions: { useProbability: false, probability: 0 } })).length, 1, '驼峰关闭开关保持既有行为')
+  assert.equal((await inject({ extensions: { use_probability: true, probability: 0 } })).length, 0, '开启开关且概率 0 不注入')
+  assert.equal((await inject({ extensions: { probability: 0 } })).length, 0, '缺省开关保持既有默认过滤')
+  assert.equal((await inject({ extensions: { use_probability: false, probability: 0 }, enabled: false })).length, 0, '禁用条目不因关闭概率过滤而启用')
+  assert.equal((await inject({ extensions: { use_probability: false } })).length, 1, '缺省概率为 100')
 })
