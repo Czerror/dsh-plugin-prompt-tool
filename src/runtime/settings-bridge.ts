@@ -51,6 +51,7 @@ import {
 } from '../host/characters.ts'
 import { convertStToPresetWithReport, mergeStConversionReports, mergeStPresets } from '../host/sillytavern.ts'
 import { previewCharacterCard } from '../host/characters.ts'
+import { lastWorldBookDiagnostics } from '../../engine/st-world-book.mjs'
 import { BRIDGE_ENDPOINTS, MAX_BRIDGE_BODY_BYTES, MAX_CHARACTER_CARD_STREAM_BYTES, SETTINGS_BRIDGE_PREFIX } from '../shared/bridge-contract.ts'
 import type { ModelSyncResult, StConversionReport } from '../shared/bridge-contract.ts'
 import { moduleParamFallbacks, validateEngineParamValues } from '../shared/engine-params.ts'
@@ -2259,6 +2260,35 @@ export function registerSettingsBridge(
           const message = error instanceof Error ? error.message : String(error)
           writeBridgeJson(res, 409, { ok: false, code: 'tool-surface-preset-failed', message })
         }
+      })
+      // 世界书诊断（只读）：返回当前会话最近一次选择的观测记录；读取不触发求值、抽样或时间窗推进。
+      register(BRIDGE_ENDPOINTS.worldBookDiagnostics, async (req, res) => {
+        if (!isLoopbackRequest(req)) {
+          writeBridgeJson(res, 403, { ok: false, code: 'settings-not-exposed', message: 'loopback requests only' })
+          return
+        }
+        if (req.method !== 'POST') {
+          writeBridgeJson(res, 405, { ok: false, code: 'settings-not-exposed', message: 'method not allowed: ' + (req.method ?? '') })
+          return
+        }
+        const parsedBody = await readBridgeBodyForHandler(req, res)
+        if (parsedBody === undefined) return
+        const session = readSessionIdField(parsedBody.body)
+        if (!session.ok) {
+          writeBridgeJson(res, 400, { ok: false, code: 'world-book-diagnostics-invalid', message: session.message })
+          return
+        }
+        const empty = { records: [], truncated: false, step: 0 }
+        const agent = session.sessionId === undefined ? undefined : stx.agents.get(session.sessionId as never) as { session?: unknown } | undefined
+        const snapshot = agent?.session === undefined ? empty : lastWorldBookDiagnostics(agent.session)
+        writeBridgeJson(res, 200, {
+          ok: true,
+          value: {
+            records: Array.isArray(snapshot.records) ? snapshot.records.slice(0, 200) : [],
+            truncated: snapshot.truncated === true,
+            step: typeof snapshot.step === 'number' ? snapshot.step : 0,
+          },
+        })
       })
       return () => {
         for (const dispose of disposers) dispose()

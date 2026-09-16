@@ -74,7 +74,10 @@ test('人设卡脱离公共配置分组，在模块列表下置顶显示', () =>
   const page = read('src/client/app/workspace/pages/MainSessionPage.tsx')
   assert.match(editor, /beforeCards\?: ReactNode/)
   assert.match(editor, /beforeCards=\{props\.beforeCards\}/)
-  assert.match(page, /beforeCards=\{\s*<PresetPersonaCard/)
+  const beforeCards = page.slice(page.indexOf('beforeCards={'), page.indexOf('commonCards='))
+  assert.ok(beforeCards.includes('<PresetPersonaCard'), '人设卡仍在卡片区最前')
+  assert.ok(beforeCards.indexOf('<PresetPersonaCard') < beforeCards.indexOf('WorldBookDiagnosticsCard'),
+    '世界书诊断卡排在人设卡之后')
 })
 
 test('原生元素不再使用浏览器 title 或 data-tip 说明', () => {

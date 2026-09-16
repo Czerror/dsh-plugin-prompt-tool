@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { convertStToPreset } from '../../src/host/sillytavern.ts'
 import { createPromptConfigs } from '../../engine/schema.mjs'
 import { runPreStepBatch } from '../../engine/executor.mjs'
-import { selectStWorldBook } from '../../engine/st-world-book.mjs'
+import { lastWorldBookDiagnostics, selectStWorldBook } from '../../engine/st-world-book.mjs'
 
 const entry = (id, extra = {}) => ({ id, keys: [], secondary_keys: [], content: `E${id}`, enabled: true, constant: false, selective: true, insertion_order: 100, position: 'before_char', extensions: {}, ...extra })
 const message = (text, id = text) => ({ id, role: 'user', content: [{ type: 'text', text }], source: { kind: 'user' } })
@@ -154,6 +154,11 @@ test('世界书诊断区分候选/入选/已提交与真实拒绝原因，且不
   for (const config of selection) selection.commit(config)
   assert.deepEqual(stages('lore-1'), ['candidate:key-match', 'selected:ungrouped', 'committed:injected'])
   assert.deepEqual(stages('lore-3'), ['rejected:probability'], '未入选条目不会记录已提交')
+  // 会话快照：与本次选择记录同源，供只读端点读取；读取本身不触发任何求值。
+  const snapshot = lastWorldBookDiagnostics(session)
+  assert.deepEqual(snapshot.records, selection.diagnostics.records)
+  assert.equal(snapshot.step, 1)
+  assert.equal(lastWorldBookDiagnostics({ id: 'cold', header: {}, snapshotEvents: () => [] }).records.length, 0)
 })
 
 test('世界书诊断记录扫描窗口、分组胜负与主要拒绝原因', async () => {

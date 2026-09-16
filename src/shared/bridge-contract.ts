@@ -58,6 +58,7 @@ export const BRIDGE_ENDPOINTS = {
   subagentToolPolicyPreview: '/subagent-tool-policy-preview',
   toolSurface: '/tool-surface',
   engineCapability: '/engine-capability',
+  worldBookDiagnostics: '/world-book-diagnostics',
 } as const
 
 export type BridgeEndpoint = (typeof BRIDGE_ENDPOINTS)[keyof typeof BRIDGE_ENDPOINTS]
@@ -139,6 +140,8 @@ export interface BridgeRequestMap {
   subagentToolPolicyPreview: { tool?: string; description?: string; prompt?: string; tool_profile?: string; character_id?: string; task_type?: string; additional_tools?: string[]; restrict_tools?: string[] }
   toolSurface: { sessionId: string; presetId?: never } | { presetId: string; sessionId?: never }
   engineCapability: ({ action: 'create' | 'remove'; capabilityId: string } | { action: 'create-recipe'; recipeId: string }) & { expectedPresetId?: string }
+  /** 只读世界书诊断：只回当前授权会话最近一次选择的观测记录。 */
+  worldBookDiagnostics: { sessionId?: string } | undefined
 }
 
 /** settings descriptor 的跨端最小结构。 */
@@ -232,6 +235,18 @@ export interface StConversionReport {
   truncated?: boolean
 }
 
+/** 世界书入选/落选诊断记录（只读派生数据，由引擎真实求值路径产生）。 */
+export interface WorldBookDiagnosticRecord {
+  /** 配置 id（`lore-<来源条目>`）。 */
+  id: string
+  stage: 'excluded' | 'rejected' | 'candidate' | 'selected' | 'committed'
+  /** 稳定原因码：disabled / delay / cooldown / recursion / primary-miss / secondary-miss /
+   *  probability / group-lost / group-occupied / match-error / sticky / constant / key-match /
+   *  ungrouped / group-winner / injected。 */
+  reason: string
+  [key: string]: unknown
+}
+
 /** 端点级响应 value 契约（value 字段形状；扩展字段仍以 value 旁可选字段出现）。 */
 export interface BridgeValueMap {
   meta: { meta: Record<string, unknown> }
@@ -281,6 +296,7 @@ export interface BridgeValueMap {
     tools: Array<{ name: string; description: string }>
   }
   engineCapability: { changed: boolean; addedModules?: string[]; removedModules?: string[]; capabilityIds: string[] }
+  worldBookDiagnostics: { records: WorldBookDiagnosticRecord[]; truncated: boolean; step: number }
 }
 /** 编译期断言：请求/响应映射与 BRIDGE_ENDPOINTS 键集合完全一致（漏改任一侧 typecheck 失败）。 */
 type AssertCoverage<K extends string, M extends object> =

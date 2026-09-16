@@ -23,10 +23,17 @@ export function stChatMessages(session, pending = []) {
 
 const sessions = new WeakMap()
 const matchers = new WeakMap()
+/** 每个会话只保留最近一次选择的诊断快照（随会话对象 GC 释放）。 */
+const lastRuns = new WeakMap()
 const count = (value, fallback = 0) => Number.isSafeInteger(value) && value >= 0 ? Math.min(value, 1000) : fallback
 
 /** 只读诊断上限：只截断观测记录，绝不改变入选、抽样与时间窗状态。 */
 const DIAGNOSTIC_LIMIT = 200
+
+/** 最近一次世界书选择诊断（只读快照；无记录时返回空集合，不触发任何求值）。 */
+export function lastWorldBookDiagnostics(session) {
+  return lastRuns.get(session) ?? { records: [], truncated: false, step: 0 }
+}
 
 export function selectStWorldBook(configs, session, messages, warn = () => {}) {
   const entries = configs.filter(config => config.enabled !== false && config.strategy === 'world-book' && config.params?.stWorldBook)
@@ -40,10 +47,13 @@ export function selectStWorldBook(configs, session, messages, warn = () => {}) {
     selection.diagnostics = { records, truncated }
     return selection
   }
-  if (!entries.length) return finish(new Set())
   // 被显式禁用的 ST 条目：由本层负责报告，不由 UI 猜测。
   for (const config of configs) {
     if (config.enabled === false && config.strategy === 'world-book' && config.params?.stWorldBook) note(config, 'excluded', 'disabled')
+  }
+  if (!entries.length) {
+    if (records.length > 0) lastRuns.set(session, { records, truncated, step: 0 })
+    return finish(new Set())
   }
   const chat = stChatMessages(session, messages)
   let state = sessions.get(session)
@@ -154,5 +164,6 @@ export function selectStWorldBook(configs, session, messages, warn = () => {}) {
     if (!entries.some(config => config.params.stWorldBook.recursive === true)) break
     recursiveText.push(...added.filter(config => config.params.stWorldBook.preventRecursion !== true).map(config => config.texts.join('\n')))
   }
+  if (records.length > 0) lastRuns.set(session, { records, truncated, step: chat.length })
   return finish(selected)
 }

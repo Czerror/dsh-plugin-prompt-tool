@@ -10,6 +10,7 @@ import type { PromptToolTranslate } from '../../locales.ts'
 import { DialogSurface } from '../../ui/DialogSurface.tsx'
 import { HintTooltip } from '../../ui/HintTooltip.tsx'
 import { ImportFileButton } from '../../ui/ImportFileButton.tsx'
+import { ImportPreviewCard, type ImportPreviewState } from '../../ui/ImportPreviewCard.tsx'
 import { StatusBadge } from '../../ui/StatusBadge.tsx'
 import sharedCss from '../../ui/controls.module.css'
 import featureCss from './presets.module.css'
@@ -24,19 +25,37 @@ export const PresetSwitcher = memo(function PresetSwitcher(props: { store: Promp
   const [importing, setImporting] = useState(false)
   const [confirmingDelete, setConfirmingDelete] = useState<string | undefined>(undefined)
   const [pickerOpen, setPickerOpen] = useState(false)
+  const [preview, setPreview] = useState<ImportPreviewState | undefined>(undefined)
   const pickerAnchorRef = useRef<HTMLButtonElement>(null)
 
-  /** 上传预设包：path 为相对路径（preset.yml 或文件夹内文件），服务端按 id 归入用户预设目录。 */
-  const uploadPreset = async (entries: Array<{ path: string; content: string }>): Promise<void> => {
-    if (entries.length === 0) return
+  /** 预览导入包：服务端同源转换并回报告，不写盘；确认后才带来源摘要提交。 */
+  const previewPreset = async (entries: Array<{ path: string; content: string }>): Promise<void> => {
     setImporting(true)
     try {
-      const res = await bridgeCall('importPresetPackage', { files: entries })
+      const res = await bridgeCall('importPresetPackage', { files: entries, preview: true })
+      if (res.ok) setPreview({ files: entries, sourceDigest: res.value.sourceDigest ?? '', report: res.value.report })
+      else store.showNotice('error', t('presetSwitcher.notice.importFailed', { reason: res.code === 'preset-preview-stale' ? t('importPreview.stale') : res.message ?? 'settings bridge unavailable' }))
+    } finally {
+      setImporting(false)
+    }
+  }
+
+  /** 确认导入：回传预览时的文件与来源摘要；服务端重算摘要拒绝过期预览。 */
+  const confirmPreset = async (): Promise<void> => {
+    if (preview === undefined) return
+    setImporting(true)
+    try {
+      const res = await bridgeCall('importPresetPackage', {
+        files: preview.files,
+        expectedSourceDigest: preview.sourceDigest,
+        ...(preview.groupCharacterId === undefined ? {} : { promptOrderCharacterId: preview.groupCharacterId }),
+      })
       if (res.ok) {
+        setPreview(undefined)
         store.showNotice('ok', t('presetSwitcher.notice.imported', { id: res.value.id }))
         await store.load()
       } else {
-        store.showNotice('error', t('presetSwitcher.notice.importFailed', { reason: res.message ?? 'settings bridge unavailable' }))
+        store.showNotice('error', t('presetSwitcher.notice.importFailed', { reason: res.code === 'preset-preview-stale' ? t('importPreview.stale') : res.message ?? 'settings bridge unavailable' }))
       }
     } finally {
       setImporting(false)
@@ -50,7 +69,7 @@ export const PresetSwitcher = memo(function PresetSwitcher(props: { store: Promp
     void (async () => {
       const [entry] = await readImportFiles([file], 'text')
       if (entry === undefined) return
-      await uploadPreset([{ ...entry, path: /\.json$/i.test(entry.path) ? entry.path : 'preset.yml' }])
+      await previewPreset([{ ...entry, path: /\.json$/i.test(entry.path) ? entry.path : 'preset.yml' }])
     })()
   }
 
@@ -58,7 +77,7 @@ export const PresetSwitcher = memo(function PresetSwitcher(props: { store: Promp
   const pickPresetDir = (files: File[]): void => {
     if (files.length === 0) return
     void (async () => {
-      await uploadPreset(await readImportFiles(files, 'text'))
+      await previewPreset(await readImportFiles(files, 'text'))
     })()
   }
 
@@ -156,6 +175,16 @@ export const PresetSwitcher = memo(function PresetSwitcher(props: { store: Promp
           </button>
         </span>
       </div>
+      {preview !== undefined && (
+        <ImportPreviewCard
+          t={t}
+          preview={preview}
+          busy={importing}
+          onGroupChange={(characterId) => setPreview({ ...preview, groupCharacterId: characterId })}
+          onConfirm={() => void confirmPreset()}
+          onCancel={() => setPreview(undefined)}
+        />
+      )}
       <div className={styles.presetGrid}>
         {presets.length === 0 ? (
           <p className={styles.readOnly} role="status">{t('presetSwitcher.empty')}</p>

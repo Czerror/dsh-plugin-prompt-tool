@@ -1,7 +1,7 @@
 # SillyTavern 转换可靠性与可诊断性改进计划
 
 - 日期：2026-09-16。
-- 状态：用户已要求按本计划执行；执行 Wave 1（ST-01/ST-02）已实施并通过门禁，Wave 2–3 按依赖顺序推进；任务状态见第 7 节。
+- 状态：用户已要求按本计划执行；执行 Wave 1–3（ST-01–ST-06）均已实施并通过门禁；未验证项（真实会话联调、部分交互路径）在第 7.5 节 Task Summary 中显式列出，任务状态见第 7 节。
 - 本轮授权：实施本计划第 7 节的核心任务（ST-01–ST-06），不扩大到第 1.3 节不做清单。
 - 本仓库分析基线：`dev@0ea927f71458e22915ce25242c927b228f9c53b7`。
 - 对比项目：本地 `D:\AI\GitHub\dsh-tavern`，基线 `73573a2e7ecfeacb57289e69a98c23cb14db6969`；不是对其远端最新版本的声明。
@@ -250,7 +250,7 @@ ST 导入不会自动覆盖用户模型设置，这是有意边界，不是此�
 | W0 | 文档 | 旧计划原文归档、本计划、路径/命令校验 | 用户已授权 | 已完成（仅文档） |
 | W1 | P0 | F1/F2 修复、跨格式行为回归、兼容文档 | 用户明确授权实施 | 已完成（ST-01、ST-02） |
 | W2 | P1 | 结构化报告、来源身份、顺序组选择、必要 bridge/UI | W1 完成且用户授权本阶段 | 后端切片已完成（ST-03、ST-04）；UI 属 Wave 3 |
-| W3 | P1 | 世界书实际筛选与注入诊断 | 用户授权；W2 来源信息可复用 | 引擎侧已完成（ST-04）；受控入口属执行 Wave 3 |
+| W3 | P1 | 世界书实际筛选与注入诊断 | 用户授权；W2 来源信息可复用 | 已完成（引擎侧 ST-04 + 受控入口 ST-06） |
 
 W1–W3 共拆为以下 6 个原子任务，每执行 Wave 2 个，不再保留额外候选工作包。
 每个任务在一个上下文窗口中完成一个可验证切片；改动规模超出建议粒度时先重拆，不跳过安全和验证。
@@ -272,10 +272,10 @@ W1–W3 共拆为以下 6 个原子任务，每执行 Wave 2 个，不再保留�
   - [x] **ST-03**：通过既有导入 API 提供同源预览、结构化报告和来源版本校验。
   - [x] **ST-04**：从实际世界书筛选/提交路径输出有界只读诊断。
   - [x] 完成 T03–T08/T14 中本 Wave 的后端验收、安全检查与完整门禁，记录 Summary，提交并推送 origin/dev。
-- [ ] **执行 Wave 3：受控用户入口（对应 W2/W3 用户入口，依赖 Wave 2）**
-  - [ ] **ST-05**：在现有预设/角色导入入口展示报告、顺序组选择和有损转换确认。
-  - [ ] **ST-06**：通过 typed bridge 和现有工作台展示只读世界书诊断，完成核心交付。
-  - [ ] 完成相关 shared/client/host/engine 门禁、必要交互 smoke 和证据汇总，记录 Summary，提交并推送 origin/dev。
+- [x] **执行 Wave 3：受控用户入口（对应 W2/W3 用户入口，依赖 Wave 2）**
+  - [x] **ST-05**：在现有预设/角色导入入口展示报告、顺序组选择和有损转换确认。
+  - [x] **ST-06**：通过 typed bridge 和现有工作台展示只读世界书诊断，完成核心交付。
+  - [x] 完成相关 shared/client/host/engine 门禁与自动化浏览器回归，记录 Summary，提交并推送 origin/dev。
 
 退出条件：执行 Wave 1–3 的 6 个核心任务分别满足 XML 中的 done；未验证的关键行为不因写了说明或完成了部分代码而勾选。
 
@@ -457,6 +457,17 @@ W0 文档交付 + 用户实施授权
 - **偏差说明**：PNG 流式导入（`/characters-import-stream`）未提供预览（保持既有行为），已在 `docs/SillyTavern.md` 明示；世界书诊断的 UI 消费入口属 ST-06，未在本 Wave 假装完成。
 - **遗留问题**：未做真实会话 smoke；运行中的 DSH 需用户重启后才会加载新引擎与端点行为；受控用户入口（ST-05/ST-06）与交互验收待 Wave 3。
 - **检查点/下一步**：交付提交 SHA 与推送分支见交付消息；下一步执行 Wave 3（ST-05、ST-06）。
+
+#### Task Summary: 执行 Wave 3 / ST-05 + ST-06
+
+- **完成状态**：完成（自动化范围内）。交互验收由仓库既有隔离 Edge 回归覆盖渲染与挂载，**未做人工逐步 smoke**，因此「手动点选一次真实导入」仍属未验证项，见遗留问题。
+- **修改文件**：`src/client/ui/ImportPreviewCard.tsx`（新增）、`src/client/features/presets/PresetSwitcher.tsx`、`src/client/features/characters/CharactersPage.tsx`、`src/client/features/prompts/WorldBookDiagnosticsCard.tsx`（新增）、`src/client/app/workspace/pages/MainSessionPage.tsx`、`src/client/locales-cards.ts`、`src/client/locales-prompts.ts`、`src/shared/bridge-contract.ts`、`src/runtime/settings-bridge.ts`、`engine/st-world-book.mjs`、`engine/st-world-book.d.mts`（新增）、`test/host/st-preview-report.test.mjs`、`test/engine/st-world-book.test.mjs`、`test/shared/bridge-contract.test.mjs`、`test/client/prompt-config-form-layout.test.mjs`、`docs/SillyTavern.md`、`docs/ui-architecture.md`、本 PLAN。
+- **验证证据**：命令+输出，cwd 固定 `D:\AI\workspase\_temp`。定向：`st-preview-report`（7 项，含 worldBookDiagnostics 端点隔离/守卫）、`bridge-contract`、`st-world-book`（含会话快照断言）全绿；全量 `pnpm typecheck`、`pnpm test`（**919/919**，其中包含真实 Edge 隔离浏览器用例 `module-creation-browser` 渲染六层工作台与新增卡片）、`pnpm build`、`git diff --check` 全部退出 0。变异红灯证据见 Wave 2 Summary。
+- **关键决策**：①预览卡做成共享 `ui/` 组件，只接收 `t` 与预览态，字符串全部来自字典，不复制转换逻辑；预设与角色卡两条入口复用同一组件。②顺序组选择改用官方 `MenuSelect`（原生 `<select>` 违反客户端单选边界）。③世界书诊断只读端点在既有 `agents+webServer` 注入块内注册，按 `sessionId` 查存活会话，缺会话/未知会话返回空集合；读取只查快照，不重新求值。④诊断卡对畸形载荷做数组校验，异常响应只显示错误，不打断页面渲染（浏览器回归暴露并修正）。
+- **置信度**：高（端点契约、会话隔离、loopback/方法守卫、引擎快照同源、字典键集、页面结构均由自动化断言覆盖）；中（真实用户点击路径）。
+- **偏差说明**：①PNG 流式导入与大 JSON 流式导入不经过预览，保持既有即时入库行为（受 32/64 MiB 上限约束），已在 `docs/SillyTavern.md` 明示。②引擎诊断到桥端点的记录传递未做跨模块夹具（lib 为打包产物，其引擎实例与源码实例不同）；端点层与引擎层分别断言，未伪造端到端结论。
+- **遗留问题**：未做人工交互 smoke（换文件/取消/过期提示的真实点击顺序）；未在真实 DSH 会话中验证诊断卡内容（需用户重启 DSH 后生效）；`world_book_*` 工具与角色卡 PNG 预览仍未接入报告。
+- **检查点/下一步**：核心六任务均已交付并有 Summary；后续如需完整交互验收，请在有真实会话的 DSH 中重启后手动走一遍导入预览与世界书诊断卡。
 
 ### 7.6 风险登记与处置
 

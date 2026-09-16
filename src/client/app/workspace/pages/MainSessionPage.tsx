@@ -3,6 +3,7 @@ import type { PromptToolStore } from '../../../data/use-prompt-tool-store.ts'
 import { usePromptToolFields } from '../../../data/use-prompt-tool-fields.ts'
 import type { PromptToolTranslate } from '../../../locales.ts'
 import { PromptConfigsEditor } from '../../../features/prompts/PromptConfigsEditor.tsx'
+import { WorldBookDiagnosticsCard } from '../../../features/prompts/WorldBookDiagnosticsCard.tsx'
 import { useTemplatePicker } from '../../../features/prompts/useTemplatePicker.ts'
 import { INSERTION_LAYERS, LAYER_LABEL_KEYS, translateLabel } from '../../../features/prompts/prompt-config-policy.ts'
 import { ModelRouteModuleCard } from '../../../features/models/ModelRouteCard.tsx'
@@ -102,7 +103,12 @@ export const MainSessionPage = memo(function MainSessionPage(props: { store: Pro
         variablesExpanded={variablesExpanded}
         onVariablesExpandedChange={setVariablesExpanded}
         beforeCards={
-          <PresetPersonaCard t={t} presetId={fields.presetTemplate} disabled={!canEditPreset} onNotice={store.showNotice} />
+          <>
+            <PresetPersonaCard t={t} presetId={fields.presetTemplate} disabled={!canEditPreset} onNotice={store.showNotice} />
+            <div hidden={viewFilter !== 'world-book'}>
+              <WorldBookDiagnosticsCard store={store} t={t} />
+            </div>
+          </>
         }
         commonCards={
           <div className={ui.configList}>

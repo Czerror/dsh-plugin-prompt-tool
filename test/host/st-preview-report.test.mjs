@@ -13,11 +13,14 @@ const { registerSettingsBridge } = await import('../../lib/index.mjs')
 const PREFIX = '/api/prompt-tool/settings'
 const PRESETS = join(home, '.agent-presets')
 
-function handlers() {
+function handlers(sessions = new Map()) {
   const registered = new Map()
   const sctx = {
     settings: { describe: () => [{ ns: 'prompt-tool', value: {}, base: {} }], mutate: async () => {} },
     webServer: { register: ({ path, handler }) => { registered.set(path, handler) } },
+    agents: { get: (id) => sessions.get(id) },
+    tools: { schemas: () => [] },
+    get: () => undefined,
     effect: (fn) => fn(),
   }
   registerSettingsBridge(
@@ -53,11 +56,14 @@ function fakeRes() {
   }
 }
 
-async function call(endpoint, body) {
-  const handler = handlers().get(`${PREFIX}${endpoint}`)
+async function call(endpoint, body, options = {}) {
+  const handler = handlers(options.sessions).get(`${PREFIX}${endpoint}`)
   assert.ok(handler, `${endpoint} 端点应注册`)
   const res = fakeRes()
-  await handler(fakeReq(body), res)
+  const req = fakeReq(body)
+  if (options.remoteAddress !== undefined) req.socket.remoteAddress = options.remoteAddress
+  if (options.method !== undefined) req.method = options.method
+  await handler(req, res)
   return { status: res.status, payload: JSON.parse(res.body) }
 }
 
@@ -205,3 +211,23 @@ test('charactersImport 预览只转换不写角色库，确认提交才入库', 
 })
 
 test.after(() => { rmSync(home, { recursive: true, force: true }) })
+
+test('worldBookDiagnostics 端点只读、按会话隔离并拒绝非 loopback/错误方法', async () => {
+  const session = { id: 'live', header: {}, snapshotEvents: () => [] }
+  const sessions = new Map([['live', { session }]])
+  // lib 是打包产物，其引擎模块实例与本测试导入的源码实例不同；这里只断言端点契约与隔离性，
+  // 「引擎真实记录」由 test/engine/st-world-book.test.mjs 的 lastWorldBookDiagnostics 断言覆盖。
+  const res = await call('/world-book-diagnostics', { sessionId: 'live' }, { sessions })
+  assert.equal(res.status, 200)
+  assert.deepEqual(res.payload.value.records, [], '无记录时返回空集合而不是报错')
+  assert.equal(res.payload.value.truncated, false)
+
+  const unknown = await call('/world-book-diagnostics', { sessionId: 'missing' }, { sessions })
+  assert.deepEqual(unknown.payload.value.records, [], '未知会话不返回其他会话记录')
+  const anonymous = await call('/world-book-diagnostics', {}, { sessions })
+  assert.deepEqual(anonymous.payload.value.records, [], '缺 sessionId 时返回空集合')
+  const remote = await call('/world-book-diagnostics', { sessionId: 'live' }, { sessions, remoteAddress: '10.0.0.5' })
+  assert.equal(remote.status, 403, '非 loopback 拒绝')
+  const wrongMethod = await call('/world-book-diagnostics', { sessionId: 'live' }, { sessions, method: 'GET' })
+  assert.equal(wrongMethod.status, 405)
+})

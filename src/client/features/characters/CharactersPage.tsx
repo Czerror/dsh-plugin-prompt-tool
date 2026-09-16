@@ -2,11 +2,12 @@
  *  库中角色卡不直接生成预设——点击「导入到当前预设」把角色卡参数
  *  （角色设定 / 系统提示 / 开场白 / 提示词库 / 采样参数）合并进当前激活预设，
  *  已导入的角色卡显示状态并可一键移除。 */
-import { memo, useEffect, useState, type ReactNode } from 'react'
+import { memo, useEffect, useRef, useState, type ReactNode } from 'react'
 import { IconFolderOpenOutline16, IconTrashOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { bridgeCall, bridgeUpload, shouldStreamJsonFile } from '../../data/bridge-client.ts'
 import { isPngSignature } from './character-card.ts'
 import { ImportFileButton } from '../../ui/ImportFileButton.tsx'
+import { ImportPreviewCard, type ImportPreviewState } from '../../ui/ImportPreviewCard.tsx'
 import { HintTooltip } from '../../ui/HintTooltip.tsx'
 import { StatusBadge } from '../../ui/StatusBadge.tsx'
 import type { PromptToolStore } from '../../data/use-prompt-tool-store.ts'
@@ -30,6 +31,19 @@ export const CharactersPage = memo(function CharactersPage(props: { store: Promp
   const [confirmingDelete, setConfirmingDelete] = useState<string | undefined>(undefined)
   const [busy, setBusy] = useState<string | undefined>(undefined)
   const [characters, setCharacters] = useState<CharacterCardItem[]>([])
+  const [preview, setPreview] = useState<ImportPreviewState | undefined>(undefined)
+  const confirmRef = useRef<((confirmed: boolean) => void) | undefined>(undefined)
+
+  /** 预览确认：逐文件串行询问，确认后带来源摘要提交；取消只跳过该文件。 */
+  const askPreview = (next: ImportPreviewState): Promise<boolean> =>
+    new Promise((resolve) => { confirmRef.current = resolve; setPreview(next) })
+
+  const settlePreview = (confirmed: boolean): void => {
+    const resolve = confirmRef.current
+    confirmRef.current = undefined
+    setPreview(undefined)
+    resolve?.(confirmed)
+  }
 
   const loadCharacters = async (): Promise<void> => {
     const res = await bridgeCall('charactersList')
@@ -53,13 +67,26 @@ export const CharactersPage = memo(function CharactersPage(props: { store: Promp
           continue
         }
         if (/\.json$/i.test(file.name)) {
-          const res = shouldStreamJsonFile(file)
-            ? await bridgeUpload(file, file.name)
-            : await bridgeCall('charactersImport', {
-              files: [{ path: file.name, content: await file.text() }],
-            })
-          if (res.ok) store.showNotice('ok', t('characters.notice.stored', { name: res.value.name }))
-          else store.showNotice('error', t('characters.notice.storeFailed', { reason: res.message ?? 'settings bridge unavailable' }))
+          // 大 JSON 走流式端点（无预览）；其余先预览报告，确认后才入库。
+          if (shouldStreamJsonFile(file)) {
+            const streamed = await bridgeUpload(file, file.name)
+            if (streamed.ok) store.showNotice('ok', t('characters.notice.stored', { name: streamed.value.name }))
+            else store.showNotice('error', t('characters.notice.storeFailed', { reason: streamed.message ?? 'settings bridge unavailable' }))
+            continue
+          }
+          const entries = [{ path: file.name, content: await file.text() }]
+          const previewRes = await bridgeCall('charactersImport', { files: entries, preview: true })
+          if (!previewRes.ok) {
+            store.showNotice('error', t('characters.notice.storeFailed', { reason: previewRes.message ?? 'settings bridge unavailable' }))
+            continue
+          }
+          const confirmed = await askPreview({ files: entries, sourceDigest: previewRes.value.sourceDigest ?? '', report: previewRes.value.report })
+          if (!confirmed) continue
+          const res = await bridgeCall('charactersImport', { files: entries, expectedSourceDigest: previewRes.value.sourceDigest })
+          if (res.ok) store.showNotice('ok', t('characters.notice.stored', { name: res.value.name ?? file.name }))
+          else store.showNotice('error', t('characters.notice.storeFailed', {
+            reason: res.code === 'characters-preview-stale' ? t('importPreview.stale') : res.message ?? 'settings bridge unavailable',
+          }))
           continue
         }
         store.showNotice('error', t('characters.notice.unsupported', { name: file.name }))
@@ -125,6 +152,16 @@ export const CharactersPage = memo(function CharactersPage(props: { store: Promp
 
   return (
     <section className={ui.section} aria-label={t('characters.aria')}>
+      {preview !== undefined && (
+        <ImportPreviewCard
+          t={t}
+          preview={preview}
+          busy={importing}
+          onGroupChange={(characterId) => setPreview({ ...preview, groupCharacterId: characterId })}
+          onConfirm={() => settlePreview(true)}
+          onCancel={() => settlePreview(false)}
+        />
+      )}
       <div className={ui.rowGroup}>
         <div className={ui.settingRowStack}>
           <span className={ui.settingCopy}>

@@ -526,6 +526,10 @@ promptConfigs 模块卡展开区按基础信息、注入规则、作用范围、
 - 2026-09-09：工作台迁移到官方右侧栏（DSH 0.1.5-alpha.1 两段注册），删除自建 overlay、几何探针与面板互斥事件；ToggleRow 改用官方 Switch。
 - 2026-09-09：恢复 shell.overlay 悬浮入口（触发器 + body portal 抽屉 + sidebar.footer.action 几何探针），抽屉经 body portal + fixed + z-index 置顶；官方右侧栏实测不适合本项目，随后移除。
 - 2026-09-13：悬浮入口改为可拖动（pointer capture + 4px 阈值 + 视口夹取 + 插件自有 localStorage 位置偏好），删除 SidebarGeometryProbe 与 `--pt-sidebar-edge`，不再观察宿主布局树。
+- 2026-09-16：导入改为「先预览后写入」——预设包（PresetSwitcher）与角色卡 JSON（CharactersPage）复用共享卡
+  `ui/ImportPreviewCard.tsx` 展示服务端同源转换报告与顺序组（官方 MenuSelect），确认后带 `sourceDigest` 提交；
+  世界书筛选视图新增只读诊断卡 `features/prompts/WorldBookDiagnosticsCard.tsx`，数据来自
+  `/world-book-diagnostics`，只读不触发求值。两处文案全部走 prompt-tool 字典（zh/en）。
 
 ## 13. 维护清单
 
