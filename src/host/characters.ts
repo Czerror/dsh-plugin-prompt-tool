@@ -7,10 +7,12 @@ import { readFileSync, writeFileSync, mkdirSync, mkdtempSync, renameSync, rmSync
 import { join, basename, dirname } from 'node:path'
 import { parse as parseYaml, parseDocument, stringify as stringifyYaml } from 'yaml'
 import { inflateSync } from 'node:zlib'
-import { convertStToPreset, mergeStPresets } from './sillytavern.ts'
+import { createHash } from 'node:crypto'
+import { convertStToPresetWithReport, mergeStConversionReports, mergeStPresets } from './sillytavern.ts'
 import { appendPresetModules, withPresetDoc } from './manifest.ts'
 import { buildWorldBookEntry } from './worldbook.ts'
 import type { PresetSpec } from './manifest.ts'
+import type { StConversionReport } from '../shared/bridge-contract.ts'
 
 /** 引擎六层注入顺序（与 schema 层序一致）：合并写盘时按此排序，数组序 = 引擎序。 */
 const LAYER_ORDER = ['pre-step', 'system-section', 'runtime-context', 'agent-request', 'llm-stream', 'tool-pipeline']
@@ -160,17 +162,31 @@ function cardNameFromJson(jsonText: string, fallback: string): string {
   return fallback
 }
 
-function convertCharacterJsons(jsons: CharacterImportFile[]): { converted: PresetSpec; jsonText: string } {
-  const converted = jsons.length > 1
-    ? mergeStPresets(jsons.map((entry) => {
-      const baseName = basename(entry.path).replace(/\.json$/i, '') || 'character'
-      return convertStToPreset(JSON.parse(entry.content), baseName)
-    }))
-    : convertStToPreset(
-      JSON.parse(jsons[0]!.content),
-      basename(jsons[0]!.path).replace(/\.json$/i, '') || 'character',
-    )
-  return { converted, jsonText: jsons[0]!.content }
+function convertCharacterJsons(jsons: CharacterImportFile[]): { converted: PresetSpec; jsonText: string; report: StConversionReport } {
+  const baseName = (entry: CharacterImportFile): string => basename(entry.path).replace(/\.json$/i, '') || 'character'
+  const parts = jsons.map((entry) => convertStToPresetWithReport(JSON.parse(entry.content), baseName(entry)))
+  const converted = parts.length > 1 ? mergeStPresets(parts.map((part) => part.spec)) : parts[0]!.spec
+  const report = parts.length > 1 ? mergeStConversionReports(parts.map((part) => part.report)) : parts[0]!.report
+  return { converted, jsonText: jsons[0]!.content, report }
+}
+
+/** 角色卡导入来源摘要：提交时由服务端按本次上传内容重算，预览身份不构成写入凭证。 */
+export function characterImportDigest(files: CharacterImportFile[]): string {
+  return createHash('sha256').update(files.map((entry) => `${entry.path}\u0000${entry.content}`).join('\u0000')).digest('hex')
+}
+
+/** 角色卡预览：与入库共用同一转换实现，只返回报告、不写角色库。 */
+export function previewCharacterCard(
+  files: CharacterImportFile[],
+): { ok: true; name: string; sourceDigest: string; report: StConversionReport } | { ok: false; message: string } {
+  const jsons = files.filter((entry) => /\.json$/i.test(entry.path))
+  if (jsons.length === 0) return { ok: false, message: '缺少角色卡 JSON（PNG 导入需同时携带解析出的角色卡 JSON）' }
+  try {
+    const { converted, report } = convertCharacterJsons(jsons)
+    return { ok: true, name: converted.name, sourceDigest: characterImportDigest(files), report }
+  } catch (error) {
+    return { ok: false, message: `角色卡转换失败：${error instanceof Error ? error.message : String(error)}` }
+  }
 }
 
 function persistCharacterCard(

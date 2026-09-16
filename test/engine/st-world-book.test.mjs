@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { convertStToPreset } from '../../src/host/sillytavern.ts'
 import { createPromptConfigs } from '../../engine/schema.mjs'
 import { runPreStepBatch } from '../../engine/executor.mjs'
+import { selectStWorldBook } from '../../engine/st-world-book.mjs'
 
 const entry = (id, extra = {}) => ({ id, keys: [], secondary_keys: [], content: `E${id}`, enabled: true, constant: false, selective: true, insertion_order: 100, position: 'before_char', extensions: {}, ...extra })
 const message = (text, id = text) => ({ id, role: 'user', content: [{ type: 'text', text }], source: { kind: 'user' } })
@@ -125,4 +126,102 @@ test('ST 世界书 use_probability 关闭时不执行概率过滤，false/0 与�
   assert.equal((await inject({ extensions: { probability: 0 } })).length, 0, '缺省开关保持既有默认过滤')
   assert.equal((await inject({ extensions: { use_probability: false, probability: 0 }, enabled: false })).length, 0, '禁用条目不因关闭概率过滤而启用')
   assert.equal((await inject({ extensions: { use_probability: false } })).length, 1, '缺省概率为 100')
+})
+
+/** 诊断夹具：同一批条目的「真实注入结果」与「诊断记录」必须来自同一路径。 */
+function diagConfigs(entries) {
+  const spec = convertStToPreset({ data: { name: 'Probe', character_book: { entries } } }, 'probe')
+  return createPromptConfigs(spec.promptConfigs.map(c => ({ ...c, variables: spec.variables })))
+}
+
+test('世界书诊断区分候选/入选/已提交与真实拒绝原因，且不改变注入结果', async () => {
+  const entries = [
+    entry(1, { keys: ['P'], extensions: { scan_depth: 1 } }),
+    entry(2, { constant: true, enabled: false }),
+    entry(3, { constant: true, extensions: { probability: 0 } }),
+    entry(4, { keys: ['P'], secondary_keys: ['S'], extensions: { scan_depth: 1, selectiveLogic: 3 } }),
+  ]
+  assert.deepEqual((await run(entries, ['P'])).map(x => x.id), ['lore-1'], '真实注入结果：只有 lore-1')
+  const session = { id: 'diag', header: {}, snapshotEvents: () => [] }
+  const selection = selectStWorldBook(diagConfigs(entries), session, [message('P')], () => {})
+  const stages = id => selection.diagnostics.records.filter(record => record.id === id).map(record => `${record.stage}:${record.reason}`)
+  assert.deepEqual(selection.diagnostics.records.map(record => record.id).length > 0, true)
+  assert.deepEqual(stages('lore-1'), ['candidate:key-match', 'selected:ungrouped'])
+  assert.deepEqual(stages('lore-2'), ['excluded:disabled'])
+  assert.deepEqual(stages('lore-3'), ['rejected:probability'], '概率过滤发生在进入候选之前')
+  assert.deepEqual(stages('lore-4'), ['rejected:secondary-miss'])
+  assert.equal(selection.diagnostics.truncated, false)
+  for (const config of selection) selection.commit(config)
+  assert.deepEqual(stages('lore-1'), ['candidate:key-match', 'selected:ungrouped', 'committed:injected'])
+  assert.deepEqual(stages('lore-3'), ['rejected:probability'], '未入选条目不会记录已提交')
+})
+
+test('世界书诊断记录扫描窗口、分组胜负与主要拒绝原因', async () => {
+  const entries = [
+    entry(1, { keys: ['Z'], extensions: { scan_depth: 3 } }),
+    entry(2, { constant: true, extensions: { delay: 5 } }),
+    entry(3, { constant: true, insertion_order: 200, extensions: { group: 'G', group_override: true } }),
+    entry(4, { constant: true, insertion_order: 100, extensions: { group: 'G', group_override: true } }),
+  ]
+  const session = { id: 'diag-reasons', header: {}, snapshotEvents: () => [] }
+  const selection = selectStWorldBook(diagConfigs(entries), session, [message('Q')], () => {})
+  const record = (id, stage) => selection.diagnostics.records.find(item => item.id === id && item.stage === stage)
+  assert.deepEqual(record('lore-1', 'rejected').reason, 'primary-miss')
+  assert.equal(record('lore-1', 'rejected').scanDepth, 3, '记录真实扫描窗口')
+  assert.equal(record('lore-2', 'excluded').reason, 'delay')
+  assert.equal(record('lore-2', 'excluded').delay, 5)
+  assert.deepEqual([...selection].map(config => config.id), ['lore-3'], '分组只选出高 order 者')
+  assert.equal(record('lore-3', 'selected').reason, 'group-winner')
+  assert.equal(record('lore-4', 'rejected').reason, 'group-lost')
+})
+
+test('世界书诊断有界截断，超量条目不影响入选集合', async () => {
+  const entries = Array.from({ length: 320 }, (_, index) => entry(index + 1, { constant: true, extensions: { probability: 0 } }))
+  const result = await run(entries, ['N'])
+  assert.deepEqual(result, [], '概率 0 全被过滤')
+  const session = { id: 'diag-limit', header: {}, snapshotEvents: () => [] }
+  const selection = selectStWorldBook(diagConfigs(entries), session, [message('N')], () => {})
+  assert.equal(selection.size, 0)
+  assert.equal(selection.diagnostics.records.length, 200, '记录有上限')
+  assert.equal(selection.diagnostics.truncated, true)
+})
+
+test('读取诊断不改变入选集合、顺序、抽样次数与粘滞时间窗', async () => {
+  const entries = [
+    entry(1, { keys: ['P'], extensions: { scan_depth: 1, sticky: 1 } }),
+    entry(2, { constant: true, extensions: { probability: 50 } }),
+  ]
+  const simulate = read => {
+    const configs = diagConfigs(entries)
+    const history = []
+    const session = { id: `diag-diff-${read}`, header: {}, snapshotEvents: () => history }
+    const steps = []
+    for (const [index, text] of ['P', 'N', 'P', 'N'].entries()) {
+      const msg = message(text, `${read ? 'read' : 'plain'}-${index}`)
+      const selection = selectStWorldBook(configs, session, [msg], () => {})
+      if (read) assert.ok(selection.diagnostics.records.length > 0)
+      steps.push([...selection].map(config => config.id).sort().join(','))
+      for (const config of selection) selection.commit(config)
+      history.push({ type: 'user/message', data: { message: msg } })
+    }
+    return steps
+  }
+  const original = Math.random
+  let calls = 0
+  const count = () => { calls += 1; return 0.4 }
+  Math.random = count
+  let withRead, withoutRead, readCalls, plainCalls
+  try {
+    calls = 0
+    withRead = simulate(true)
+    readCalls = calls
+    calls = 0
+    withoutRead = simulate(false)
+    plainCalls = calls
+  } finally {
+    Math.random = original
+  }
+  assert.deepEqual(withRead, withoutRead, '读取诊断不改变入选集合与顺序')
+  assert.equal(readCalls, plainCalls, '读取诊断不改变概率抽样次数')
+  assert.deepEqual(withRead, ['lore-1,lore-2', 'lore-2', 'lore-1,lore-2', 'lore-2'], '粘滞/概率窗口语义保持')
 })

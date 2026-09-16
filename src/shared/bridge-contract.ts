@@ -112,13 +112,24 @@ export interface BridgeRequestMap {
   persona: { persona?: PersonaSpec | null; expectedPresetId?: string } | undefined
   presetVariables: { variables?: Record<string, string>; enabled?: boolean; expectedPresetId?: string }
   customTools: { customTools?: unknown[]; expectedPresetId?: string } | undefined
-  importPresetPackage: { files: Array<{ path?: string; name?: string; content?: string }> }
+  /**
+   * 预设包导入（含 SillyTavern JSON）。`preview: true` 只做同源转换并返回报告，不落盘；
+   * 提交时若带 `expectedSourceDigest`，服务端用本次上传文件重算摘要并拒绝过期预览。
+   * `promptOrderCharacterId` 用于多顺序组包时显式选择（缺省仍按既有歧义拒绝规则）。
+   */
+  importPresetPackage: {
+    files: Array<{ path?: string; name?: string; content?: string }>
+    preview?: boolean
+    expectedSourceDigest?: string
+    promptOrderCharacterId?: string
+  }
   exportPreset: { id: string }
   presetDelete: { id: string }
   presetClone: { id: string; autoSuffix?: boolean }
   presetDuplicate: { id: string }
   presetOpen: { id: string }
-  charactersImport: { files?: Array<{ path: string; content: string }> }
+  /** 角色卡 JSON 导入；`preview: true` 只转换并返回报告（不写角色库）。 */
+  charactersImport: { files?: Array<{ path: string; content: string }>; preview?: boolean; expectedSourceDigest?: string }
   charactersImportStream: undefined
   charactersList: undefined
   charactersDelete: { id: string }
@@ -164,6 +175,63 @@ export interface ModelReasoningView {
   defaultEffort?: string
 }
 
+/**
+ * SillyTavern 转换报告（ST-03）：host 在真实转换路径上生成的**只读派生元数据**。
+ * 不落盘进 preset.yml、不进入模型上下文，也不是写入凭证——提交仍以本次上传文件重算的
+ * `sourceDigest` 为准；预览返回的摘要不能替代后端对目标/类型/大小的既有校验。
+ */
+export type StConversionClass = 'equivalent' | 'degraded' | 'unsupported' | 'excluded'
+
+export interface StConversionEntryReport {
+  /** 来源条目身份：上传文件显示名内的原 identifier/uid（不含绝对路径）。 */
+  sourceId: string
+  /** 来源在文件内的序号（prompts 数组下标或世界书 entries 序号）。 */
+  sourceIndex: number
+  /** 生成的目标配置 id（被排除的条目没有目标）。 */
+  targetId?: string
+  layer?: string
+  order?: number
+  role?: string
+  position?: string
+  classification: StConversionClass
+  /** 稳定原因码（如 depth-collapsed / system-role-downgrade / marker-dropped）。 */
+  codes: string[]
+}
+
+export interface StConversionDiagnostic {
+  code: string
+  severity: 'warning' | 'info'
+  message: string
+  entryId?: string
+  field?: string
+}
+
+export interface StConversionReport {
+  /** 转换器版本：解释本次生成使用了哪一版语义。 */
+  converter: string
+  /** 来源显示名（上传文件名，不含绝对路径）。 */
+  sourceName: string
+  /** prompt_order 分组；`selected` 标记本次实际采用的组。 */
+  orderGroups: Array<{ characterId: string; selected: boolean; entries: number }>
+  entries: StConversionEntryReport[]
+  diagnostics: StConversionDiagnostic[]
+  summary: {
+    /** 来源条目总数（prompts + 世界书条目 + 角色卡正文段）。 */
+    inputs: number
+    /** 生成的 promptConfigs 数量。 */
+    converted: number
+    /** 生成但被禁用的条目数。 */
+    disabled: number
+    excluded: number
+    unsupported: number
+    degraded: number
+    /** 需要用户确认的诊断数（warning 级）。 */
+    needsReview: number
+  }
+  /** 记录超出上限时为 true：只截断展示，不影响转换结果。 */
+  truncated?: boolean
+}
+
 /** 端点级响应 value 契约（value 字段形状；扩展字段仍以 value 旁可选字段出现）。 */
 export interface BridgeValueMap {
   meta: { meta: Record<string, unknown> }
@@ -192,13 +260,13 @@ export interface BridgeValueMap {
   persona: { persona: PersonaSpec | null }
   presetVariables: { variables: Record<string, string>; enabled: boolean }
   customTools: { customTools?: unknown[] }
-  importPresetPackage: { id: string }
+  importPresetPackage: { id?: string; backupPath?: string; preview?: boolean; sourceDigest?: string; report?: StConversionReport }
   exportPreset: { id: string; name: string; content: string }
   presetDelete: { id: string }
   presetClone: { id: string }
   presetDuplicate: { id: string }
   presetOpen: { path: string }
-  charactersImport: { id: string; name: string }
+  charactersImport: { id?: string; name?: string; preview?: boolean; sourceDigest?: string; report?: StConversionReport }
   charactersImportStream: { id: string; name: string }
   charactersList: { characters: Array<{ id: string; name: string; description?: string; hasAvatar: boolean; imported: boolean }> }
   charactersDelete: { id: string }

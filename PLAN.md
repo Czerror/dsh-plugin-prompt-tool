@@ -249,8 +249,8 @@ ST 导入不会自动覆盖用户模型设置，这是有意边界，不是此�
 |---|---|---|---|---|
 | W0 | 文档 | 旧计划原文归档、本计划、路径/命令校验 | 用户已授权 | 已完成（仅文档） |
 | W1 | P0 | F1/F2 修复、跨格式行为回归、兼容文档 | 用户明确授权实施 | 已完成（ST-01、ST-02） |
-| W2 | P1 | 结构化报告、来源身份、顺序组选择、必要 bridge/UI | W1 完成且用户授权本阶段 | 未开始 |
-| W3 | P1 | 世界书实际筛选与注入诊断 | 用户授权；W2 来源信息可复用 | 未开始 |
+| W2 | P1 | 结构化报告、来源身份、顺序组选择、必要 bridge/UI | W1 完成且用户授权本阶段 | 后端切片已完成（ST-03、ST-04）；UI 属 Wave 3 |
+| W3 | P1 | 世界书实际筛选与注入诊断 | 用户授权；W2 来源信息可复用 | 引擎侧已完成（ST-04）；受控入口属执行 Wave 3 |
 
 W1–W3 共拆为以下 6 个原子任务，每执行 Wave 2 个，不再保留额外候选工作包。
 每个任务在一个上下文窗口中完成一个可验证切片；改动规模超出建议粒度时先重拆，不跳过安全和验证。
@@ -268,10 +268,10 @@ W1–W3 共拆为以下 6 个原子任务，每执行 Wave 2 个，不再保留�
   - [x] **ST-01**：修复 selective_logic 别名，完成红灯到绿灯及独立/内嵌格式回归。
   - [x] **ST-02**：修复 use_probability 别名，锁定 false/0 与概率过滤语义。
   - [x] 完成 T01/T02、每任务完整门禁及兼容文档同步，记录 Summary，提交并推送 origin/dev。
-- [ ] **执行 Wave 2：可观测后端切片（对应 W2/W3 后端，依赖 Wave 1）**
-  - [ ] **ST-03**：通过既有导入 API 提供同源预览、结构化报告和来源版本校验。
-  - [ ] **ST-04**：从实际世界书筛选/提交路径输出有界只读诊断。
-  - [ ] 完成 T03–T08/T14 中本 Wave 的后端验收、安全检查与完整门禁，记录 Summary，提交并推送 origin/dev。
+- [x] **执行 Wave 2：可观测后端切片（对应 W2/W3 后端，依赖 Wave 1）**
+  - [x] **ST-03**：通过既有导入 API 提供同源预览、结构化报告和来源版本校验。
+  - [x] **ST-04**：从实际世界书筛选/提交路径输出有界只读诊断。
+  - [x] 完成 T03–T08/T14 中本 Wave 的后端验收、安全检查与完整门禁，记录 Summary，提交并推送 origin/dev。
 - [ ] **执行 Wave 3：受控用户入口（对应 W2/W3 用户入口，依赖 Wave 2）**
   - [ ] **ST-05**：在现有预设/角色导入入口展示报告、顺序组选择和有损转换确认。
   - [ ] **ST-06**：通过 typed bridge 和现有工作台展示只读世界书诊断，完成核心交付。
@@ -446,6 +446,17 @@ W0 文档交付 + 用户实施授权
 - **偏差说明**：无。修复落在计划指定的共同入口，所有 `convertStToPreset` 调用方（预设 JSON、角色卡内嵌世界书、独立世界书）共用同一结果。
 - **遗留问题**：已生成的旧 `preset.yml` 不因本次修复而补回源字段，需用户重新导入才生效；本轮未做真实会话 smoke，未改用户真实 DSH_HOME。
 - **检查点/下一步**：交付提交 SHA 与推送分支见交付消息与 Git 历史，不在本文件自引用；下一步执行 Wave 2（ST-03、ST-04）。
+
+#### Task Summary: 执行 Wave 2 / ST-03 + ST-04
+
+- **完成状态**：完成（可观测后端切片）。子代理通道在本会话不可用（spawn/followup 均收到空消息，含一行探针），按委派规范「无可用代理时主线程自己做」由主线程串行实施，未放弃任何验收项。
+- **修改文件**：`src/shared/bridge-contract.ts`、`src/host/sillytavern.ts`、`src/host/characters.ts`、`src/runtime/settings-bridge.ts`、`engine/st-world-book.mjs`、`test/host/st-preview-report.test.mjs`（新增）、`test/engine/st-world-book.test.mjs`、`docs/SillyTavern.md`、`docs/engine-reuse.md`、本 PLAN。
+- **验证证据**：命令+输出，cwd 固定 `D:\AI\workspase\_temp`。定向：`test/host/st-preview-report.test.mjs` 6/6、`test/engine/st-world-book.test.mjs` 13/13（含 4 项新增诊断差分/有界/原因断言）。变异红灯：临时禁用预览短路后 2/6 失败，恢复后 6/6。全量 `pnpm typecheck`、`pnpm lint`、`pnpm test`（918/918）、`pnpm build`、`git diff --check` 全部退出 0。
+- **关键决策**：①报告走 `convertStToPresetWithReport()` 同源纯函数，不进 `preset.yml`、不进模型上下文；`meta.stWarnings` 改由结构化诊断派生（同一事实来源、消息仍去重），既有字符串表现不变。②预览复用既有端点（`preview: true`）而不是新端点；提交用本次上传文件重算 `sourceDigest` 校验，预览身份不构成写入凭证。③世界书诊断挂在 `selectStWorldBook()` 返回集合上（`selection.diagnostics = { records, truncated }`），上限 200 条，不新增状态服务，不重跑选择器。
+- **置信度**：高（T03–T08/T14 的相关断言均以真实转换→物化→注入结果与真实端点响应为准；诊断差分断言含 `Math.random` 调用次数与粘滞窗口）。
+- **偏差说明**：PNG 流式导入（`/characters-import-stream`）未提供预览（保持既有行为），已在 `docs/SillyTavern.md` 明示；世界书诊断的 UI 消费入口属 ST-06，未在本 Wave 假装完成。
+- **遗留问题**：未做真实会话 smoke；运行中的 DSH 需用户重启后才会加载新引擎与端点行为；受控用户入口（ST-05/ST-06）与交互验收待 Wave 3。
+- **检查点/下一步**：交付提交 SHA 与推送分支见交付消息；下一步执行 Wave 3（ST-05、ST-06）。
 
 ### 7.6 风险登记与处置
 

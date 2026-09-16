@@ -127,6 +127,24 @@ pre-step 来源：
 
 ## 配置参考（params 扁平键 ↔ 模块行 config）
 
+## 世界书入选/落选诊断（2026-09-16）
+
+`selectStWorldBook()` 在既有判断分支旁记录只读诊断，执行器仍是真实注入与 commit 的最终
+权威。诊断挂在返回的入选集合上（`selection.diagnostics = { records, truncated }`），
+不新增后台状态服务，也不为解释结果重跑选择器。
+
+- 阶段区分：`excluded`（禁用/延迟/冷却/递归边界）、`rejected`（主键未命中、副键未满足、
+  概率过滤、分组落选、匹配失败）、`candidate`（进入候选及激活原因 sticky/constant/key-match）、
+  `selected`（组内胜出或未分组入选）、`committed`（执行器实际注入后才记录）。
+- 原因由实际负责层提供：扫描窗口、主/副键命中数、selective logic、probability/roll、
+  分组归属与 `delay` 等字段都取自真实求值结果，`primary-miss` 等不靠 UI 猜测。
+- 有界：记录上限 200 条，超出置 `truncated: true`；不持久化对话或世界书正文，
+  匹配异常只保留截断后的错误消息。
+- 一致性：记录只追加观测数据，不抽样、不调用宏、不推进 sticky/cooldown。
+  开关诊断的差分测试断言入选集合、顺序、`Math.random` 调用次数与粘滞窗口完全一致。
+- 消费入口：当前由确定性测试消费；工作台只读入口（typed bridge）见 `docs/SillyTavern.md`
+  的导入预览与诊断说明。
+
 字段映射集中在 `src/shared/engine-params.ts#ENGINE_PARAM_DEFINITIONS`；host 装配、bridge 回显与配置卡共享该目录。能力各自的 `includeSubagents`、`promoteOn`、启停和提示文本都可在所属卡片设置，依旧没有跨模块全局顺序；内部服务路径由生成器管理。
 
 自定义模型工具保持 `customTools` 资产及 `tool-config-engine` 模块链路。保存方与运行时复用 `engine/tool-definition.mjs`，保存前编译官方参数 DSL 并完整验证；`customToolRequireApproval` 控制需用户批准的执行器种类。工具预览只是有效工具面的只读视图，不承担安装、连接或注册职责。

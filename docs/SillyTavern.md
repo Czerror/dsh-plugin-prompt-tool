@@ -129,3 +129,22 @@ position=4 降级为当前消息批末尾；其他世界书位置落在消息批
 - 回归入口：`test/host/st-compatibility.test.mjs`、`test/engine/st-macros.test.mjs`、
   `test/engine/st-render.test.mjs`、`test/engine/st-world-book.test.mjs` 和
   `test/engine/official-variable-regression.test.mjs`。从仓库规定的隔离 cwd 运行完整测试。
+
+### 导入预览与转换报告（2026-09-16）
+
+`convertStToPreset()` 仍是唯一转换实现；`convertStToPresetWithReport()` 在同一路径上额外
+返回结构化报告。报告是派生元数据：不写入 `preset.yml`、不进入模型上下文、也不是写入凭证。
+
+- 预览与提交同源：`/import-preset-package`、`/characters-import` 带 `preview: true` 时
+  只做转换并返回 `report` + `sourceDigest`，不落盘、不重建、不执行宏。
+- 过期校验：提交带 `expectedSourceDigest` 时服务端按本次上传文件重算摘要，不一致返回
+  409（`preset-preview-stale` / `characters-preview-stale`）且不写盘。
+- 报告内容：来源身份（文件显示名、原 identifier/uid、序号、顺序组）、目标身份（生成的
+  配置 id、层、顺序、角色、位置）、分类（等价/降级/不支持/被排除，禁用与失败区分）、
+  结构化诊断（稳定 code + severity + 定位）、摘要计数、转换器版本。
+- 多顺序组：`prompt_order` 歧义保持拒绝；显式 `promptOrderCharacterId`（或文件内
+  `character_id`）才选择，未选中的组在报告中标记 `selected: false`。
+- 兼容：`meta.stWarnings` 由结构化诊断派生（同一事实来源，消息仍去重），有损映射在预览里
+  单独列为需确认项。条数上限：条目 500、诊断 200，超出标 `truncated`。
+- 边界：PNG 流式导入（`/characters-import-stream`）保持既有行为，暂不提供预览；
+  世界书运行期诊断见 [引擎复用](engine-reuse.md) 的入选/落选诊断一节。

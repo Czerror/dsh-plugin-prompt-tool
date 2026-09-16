@@ -49,9 +49,10 @@ import {
   listCharacterCards,
   removeCharacterFromPreset,
 } from '../host/characters.ts'
-import { convertStToPreset, mergeStPresets } from '../host/sillytavern.ts'
+import { convertStToPresetWithReport, mergeStConversionReports, mergeStPresets } from '../host/sillytavern.ts'
+import { previewCharacterCard } from '../host/characters.ts'
 import { BRIDGE_ENDPOINTS, MAX_BRIDGE_BODY_BYTES, MAX_CHARACTER_CARD_STREAM_BYTES, SETTINGS_BRIDGE_PREFIX } from '../shared/bridge-contract.ts'
-import type { ModelSyncResult } from '../shared/bridge-contract.ts'
+import type { ModelSyncResult, StConversionReport } from '../shared/bridge-contract.ts'
 import { moduleParamFallbacks, validateEngineParamValues } from '../shared/engine-params.ts'
 import { readPersonaSpec } from '../shared/persona-section.ts'
 import type { SkillToggleResult } from '../host/skill-toggle.ts'
@@ -1538,6 +1539,17 @@ export function registerSettingsBridge(
             })
             // 预设定义文件：顶层 preset.yml 优先；缺失时用顶层任意 *.yml/*.yaml
             // （排除 agent.cordis.yml 组合文件），支持自定义定义文件名导入。
+            // 来源摘要：对本次上传的规范化文件重算，作为预览过期校验的唯一样本。
+            const sourceDigest = createHash('sha256')
+              .update(normalized.map((entry) => `${entry.path}\u0000${entry.content}`).join('\u0000')).digest('hex')
+            if (typeof record.expectedSourceDigest === 'string' && record.expectedSourceDigest !== sourceDigest) {
+              writeBridgeJson(res, 409, { ok: false, code: 'preset-preview-stale', message: '预览已过期：文件或来源内容已变化，请重新预览后再导入' })
+              return
+            }
+            const promptOrderCharacterId = typeof record.promptOrderCharacterId === 'string' && record.promptOrderCharacterId.length > 0
+              ? record.promptOrderCharacterId : undefined
+            // SillyTavern 转换报告（仅转换路径产生）；预览与实际提交共用同一次纯转换结果。
+            let report: StConversionReport | undefined
             const topRel = (path: string): string => {
               const slash = path.indexOf('/')
               return slash > 0 ? path.slice(slash + 1) : path
@@ -1554,11 +1566,12 @@ export function registerSettingsBridge(
               const stJsons = normalized.filter((entry) => /\.json$/i.test(topRel(entry.path)))
               if (stJsons.length > 0) {
                 try {
-                  const converted = stJsons.map((entry) => {
+                  const parts = stJsons.map((entry) => {
                     const baseName = topRel(entry.path).replace(/\.json$/i, '') || 'sillytavern'
-                    return convertStToPreset(JSON.parse(entry.content), baseName)
+                    return convertStToPresetWithReport(JSON.parse(entry.content), baseName, { characterId: promptOrderCharacterId })
                   })
-                  const merged = converted.length > 1 ? mergeStPresets(converted) : converted[0]!
+                  const merged = parts.length > 1 ? mergeStPresets(parts.map((part) => part.spec)) : parts[0]!.spec
+                  report = parts.length > 1 ? mergeStConversionReports(parts.map((part) => part.report)) : parts[0]!.report
                   presetYaml = { path: 'preset.yml', content: stringifyYaml(merged, { lineWidth: 0 }) }
                   normalized = [
                     ...normalized.filter((entry) => !/\.json$/i.test(topRel(entry.path))),
@@ -1593,6 +1606,14 @@ export function registerSettingsBridge(
               return
             }
             // 预设 id 取自 preset.yml；缺失时用 preset.yml 所在目录名（单文件导入无目录段 → imported-preset）。
+            // 预览：与提交共用上面的转换结果，只回报告与来源摘要，不落盘、不重建、不执行宏。
+            if (record.preview === true) {
+              writeBridgeJson(res, 200, {
+                ok: true,
+                value: { preview: true, sourceDigest, ...(report === undefined ? {} : { report }) },
+              })
+              return
+            }
             const slashIdx = presetYaml.path.lastIndexOf('/')
             const topDir = slashIdx >= 0 ? presetYaml.path.slice(0, slashIdx) : ''
             const fallback = /^[a-zA-Z0-9][a-zA-Z0-9-]*$/.test(topDir) ? topDir : 'imported-preset'
@@ -1646,7 +1667,12 @@ export function registerSettingsBridge(
             afterPresetPackageImport?.(id)
             writeBridgeJson(res, 200, {
               ok: true,
-              value: { id, ...(backupDir !== undefined ? { backupPath: backupDir } : {}) },
+              value: {
+                id,
+                ...(backupDir !== undefined ? { backupPath: backupDir } : {}),
+                sourceDigest,
+                ...(report === undefined ? {} : { report }),
+              },
             })
           },
         }),
@@ -1813,6 +1839,25 @@ export function registerSettingsBridge(
             })
             if (normalized.length === 0) {
               writeBridgeJson(res, 400, { ok: false, code: 'characters-rejected', message: '未收到角色卡文件' })
+              return
+            }
+            const digest = createHash('sha256')
+              .update(normalized.map((entry) => `${entry.path}\u0000${entry.content}`).join('\u0000')).digest('hex')
+            if (typeof record.expectedSourceDigest === 'string' && record.expectedSourceDigest !== digest) {
+              writeBridgeJson(res, 409, { ok: false, code: 'characters-preview-stale', message: '预览已过期：文件或来源内容已变化，请重新预览后再导入' })
+              return
+            }
+            // 预览只转换并回报告，不写角色库；提交仍走既有导入路径（写入白名单校验不因预览放宽）。
+            if (record.preview === true) {
+              const preview = previewCharacterCard(normalized)
+              if (!preview.ok) {
+                writeBridgeJson(res, 400, { ok: false, code: 'characters-rejected', message: preview.message })
+                return
+              }
+              writeBridgeJson(res, 200, {
+                ok: true,
+                value: { preview: true, name: preview.name, sourceDigest: preview.sourceDigest, report: preview.report },
+              })
               return
             }
             if (!guardPresetWrite(dir, res)) return

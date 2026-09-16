@@ -17,8 +17,20 @@
 import { createHash } from 'node:crypto'
 import type { PresetSpec } from './manifest.ts'
 import type { PersonaSpec } from '../shared/persona-section.ts'
+import type {
+  StConversionDiagnostic,
+  StConversionEntryReport,
+  StConversionReport,
+} from '../shared/bridge-contract.ts'
 import { buildWorldBookEntry } from './worldbook.ts'
 import { prepareStText, renderStText } from '../../engine/st-macros.mjs'
+
+/** 转换器版本：报告用它解释本次生成使用了哪一版语义（语义调整时同步递增）。 */
+export const ST_CONVERTER_VERSION = 'st-to-preset/1'
+
+/** 报告的展示上限：只截断观测数据，不改变转换结果。 */
+const REPORT_ENTRY_LIMIT = 500
+const REPORT_DIAGNOSTIC_LIMIT = 200
 
 /** ST marker prompts（marker: true）：content 不发送给模型（仅标记注入位置，ST
  *  以运行时内容填充该位置）；SPresetSettings 是旧版 ST 的预设设置 dump（正则
@@ -91,8 +103,25 @@ export function mergeStPresets(specs: PresetSpec[]): PresetSpec {
   }
 }
 
+/** 转换选项：多 prompt_order 分组时显式选择来源角色，避免照搬「默认任取首组」。 */
+export interface StConversionOptions {
+  characterId?: string
+}
+
 /** SillyTavern JSON 预设卡片 → 本项目 PresetSpec（导入端点直接消费）。 */
-export function convertStToPreset(card: unknown, baseName: string): PresetSpec {
+export function convertStToPreset(card: unknown, baseName: string, options: StConversionOptions = {}): PresetSpec {
+  return convertStToPresetWithReport(card, baseName, options).spec
+}
+
+/**
+ * 同源转换 + 结构化报告：预览与实际提交共用这一个纯函数实现，
+ * 报告只是派生元数据（不进 preset.yml、不作写入凭证）。
+ */
+export function convertStToPresetWithReport(
+  card: unknown,
+  baseName: string,
+  options: StConversionOptions = {},
+): { spec: PresetSpec; report: StConversionReport } {
   const record = card !== null && typeof card === 'object' ? card as Record<string, unknown> : {}
   const prompts = Array.isArray(record.prompts)
     ? (record.prompts as Array<Record<string, unknown>>).filter((item) => item !== null && typeof item === 'object')
@@ -102,11 +131,16 @@ export function convertStToPreset(card: unknown, baseName: string): PresetSpec {
   // 缺失/无效时回退 prompts 数组顺序。enabled=false 的条目即使 prompts 内未标也禁用。
   const orderIndex = new Map<string, number>()
   const orderEnabled = new Map<string, boolean>()
+  const orderGroups: StConversionReport['orderGroups'] = []
   let ordered = false
   if (Array.isArray(record.prompt_order)) {
     const groups = record.prompt_order.filter((entry): entry is Record<string, unknown> => entry !== null && typeof entry === 'object' && Array.isArray(entry.order))
-    const group = groups.find(entry => String(entry.character_id) === String(record.character_id ?? 100001)) ?? (groups.length === 1 ? groups[0] : undefined)
+    const group = groups.find(entry => String(entry.character_id) === String(record.character_id ?? options.characterId ?? 100001))
+      ?? (groups.length === 1 ? groups[0] : undefined)
     if (groups.length > 1 && group === undefined) throw new TypeError('SillyTavern prompt_order 包含多个角色，请提供 character_id 或导出全局预设')
+    for (const entry of groups) {
+      orderGroups.push({ characterId: String(entry.character_id ?? ''), selected: entry === group, entries: (entry.order as unknown[]).length })
+    }
     const order = group === undefined ? record.prompt_order : group.order as unknown[]
     ordered = group !== undefined || order.some(entry => entry !== null && typeof entry === 'object' && typeof (entry as Record<string, unknown>).identifier === 'string')
     let rank = 0
@@ -121,6 +155,34 @@ export function convertStToPreset(card: unknown, baseName: string): PresetSpec {
   }
   const configs: Array<Record<string, unknown>> = []
   const droppedMarkers: string[] = []
+  const diagnostics: StConversionDiagnostic[] = []
+  const reportEntries: StConversionEntryReport[] = []
+  let reportTruncated = false
+  let sourceInputs = 0
+  // 结构化诊断是唯一事实来源：旧 meta.stWarnings 由它派生，避免两套判断漂移。
+  const note = (code: string, message: string, extra: { entryId?: string; field?: string } = {}): void => {
+    if (diagnostics.some((item) => item.code === code && item.entryId === extra.entryId)) return
+    if (diagnostics.length >= REPORT_DIAGNOSTIC_LIMIT) { reportTruncated = true; return }
+    diagnostics.push({
+      code, severity: 'warning', message,
+      ...(extra.entryId !== undefined ? { entryId: extra.entryId } : {}),
+      ...(extra.field !== undefined ? { field: extra.field } : {}),
+    })
+  }
+  const recordEntry = (entry: StConversionEntryReport): void => {
+    if (reportEntries.length >= REPORT_ENTRY_LIMIT) { reportTruncated = true; return }
+    reportEntries.push(entry)
+  }
+  /** info 级诊断：进入报告但**不**改变既有 stWarnings 表现。 */
+  const noteInfo = (code: string, message: string, extra: { entryId?: string; field?: string } = {}): void => {
+    if (diagnostics.some((item) => item.code === code && item.entryId === extra.entryId)) return
+    if (diagnostics.length >= REPORT_DIAGNOSTIC_LIMIT) { reportTruncated = true; return }
+    diagnostics.push({
+      code, severity: 'info', message,
+      ...(extra.entryId !== undefined ? { entryId: extra.entryId } : {}),
+      ...(extra.field !== undefined ? { field: extra.field } : {}),
+    })
+  }
   let systemSectionCount = 0
   // 角色卡正文：chara_card_v3 实际内容在 data 内层（顶层为同步冗余），旧版顶层直存。
   const body = (record.data !== null && typeof record.data === 'object' ? record.data as Record<string, unknown> : record) as Record<string, unknown>
@@ -128,9 +190,8 @@ export function convertStToPreset(card: unknown, baseName: string): PresetSpec {
   const extensions = body.extensions !== null && typeof body.extensions === 'object'
     ? body.extensions as Record<string, unknown>
     : undefined
-  const warnings = new Set<string>()
   if (extensions && Object.keys(extensions).some(key => /helper|script|regex|tavern/i.test(key))) {
-    warnings.add('ST 扩展脚本与正则不执行，依赖它们的界面或状态更新需要单独适配')
+    note('st-extension-scripts', 'ST 扩展脚本与正则不执行，依赖它们的界面或状态更新需要单独适配', { field: 'extensions' })
   }
   const bodyText = (key: string): string => typeof body[key] === 'string' ? (body[key] as string).trim() : ''
   const cardName = (typeof record.name === 'string' && record.name.trim().length > 0 ? record.name.trim()
@@ -158,19 +219,31 @@ export function convertStToPreset(card: unknown, baseName: string): PresetSpec {
     .filter((text) => text.length > 0).join('\n\n')
   const characterDefinitionClean = clean(characterDefinition)
   if (characterDefinitionClean.length > 0) {
+    sourceInputs += 1
     configs.push({ id: 'character-definition', name: '角色设定', strategy: 'static', order: -30, text: characterDefinitionClean, layer: 'system-section', mergeMode: 'merged' })
+    recordEntry({ sourceId: 'description/personality/scenario', sourceIndex: 0, targetId: 'character-definition',
+      layer: 'system-section', order: -30, classification: 'equivalent', codes: [] })
     systemSectionCount += 1
   }
   const systemPrompt = bodyText('system_prompt')
   const systemPromptClean = clean(systemPrompt)
   if (systemPromptClean.length > 0) {
+    sourceInputs += 1
     configs.push({ id: 'system-prompt', name: '系统提示', strategy: 'static', order: -20, text: systemPromptClean, layer: 'system-section', mergeMode: 'merged' })
+    recordEntry({ sourceId: 'system_prompt', sourceIndex: 0, targetId: 'system-prompt',
+      layer: 'system-section', order: -20, classification: 'equivalent', codes: [] })
     systemSectionCount += 1
   }
   const postHistory = bodyText('post_history_instructions')
   const postHistoryClean = clean(postHistory)
   if (postHistoryClean.length > 0) {
+    sourceInputs += 1
     configs.push({ id: 'post-history-instructions', name: '后续指令', strategy: 'static', order: -10, text: postHistoryClean, layer: 'system-section', mergeMode: 'merged' })
+    // ST 的 post_history_instructions 语义是「历史之后覆盖」，DSH 只能放 system-section。
+    // 只作 info 记录，不改变既有 stWarnings 表现（兼容旧展示与旧断言）。
+    noteInfo('st-post-history', 'ST post_history_instructions 放入 system-section，不等于历史后覆盖', { entryId: 'post-history-instructions', field: 'post_history_instructions' })
+    recordEntry({ sourceId: 'post_history_instructions', sourceIndex: 0, targetId: 'post-history-instructions',
+      layer: 'system-section', order: -10, classification: 'degraded', codes: ['post-history-position'] })
     systemSectionCount += 1
   }
   // 示例对话保留为一次性的角色消息，不与实际开场白拼成同一消息。
@@ -188,6 +261,7 @@ export function convertStToPreset(card: unknown, baseName: string): PresetSpec {
       for (const part of parts) {
         const text = clean(part.text)
         if (!text) continue
+        sourceInputs += 1
         configs.push({ id: `dialogue-example-${++index}`, name: `示例对话 ${index}`, strategy: 'static', text,
           layer: 'pre-step', role: part.role, position: 'before-all', dedupe: 'session', order: -60 + index / 1000 })
       }
@@ -211,7 +285,12 @@ export function convertStToPreset(card: unknown, baseName: string): PresetSpec {
     for (const [index, entry] of entryList.entries()) {
       if (entry === null || typeof entry !== 'object') continue
       const content = clean(typeof entry.content === 'string' ? entry.content : '')
-      if (content.length === 0) continue
+      sourceInputs += 1
+      const sourceId = String(entry.id ?? entry.uid ?? index)
+      if (content.length === 0) {
+        recordEntry({ sourceId, sourceIndex: index, classification: 'excluded', codes: ['empty-content'] })
+        continue
+      }
       const comment = typeof entry.comment === 'string' && entry.comment.trim().length > 0
         ? entry.comment.trim() : `世界书 ${String(entry.id ?? entry.uid ?? index)}`
       const rawKeys = entry.keys ?? entry.key
@@ -254,12 +333,25 @@ export function convertStToPreset(card: unknown, baseName: string): PresetSpec {
         if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'string') stWorldBook[target] = value
       }
       const sourceRole = stWorldBook.role
-      if (position === 4) warnings.add('ST 世界书深度位置无法映射到持久历史：保留 position/depth/role，降级为当前消息批末尾')
-      else if (![0, 1, 'before_char', 'after_char'].includes(position as number | string)) warnings.add('ST 世界书特殊插入点暂不可用：保留来源位置，降级为当前消息批头部')
-      if (sourceRole === 0) warnings.add('DSH pre-step 不接受 system 角色：世界书 system 消息降级为 user，原角色保留在 stWorldBook')
-      if (option('vectorized') === true || option('outlet_name') || (Array.isArray(option('triggers')) && (option('triggers') as unknown[]).length > 0) || option('automation_id')) warnings.add('ST 世界书向量、outlet、生成类型或自动化控制需要宿主专门适配')
+      const entryCodes: string[] = []
+      if (position === 4) {
+        entryCodes.push('depth-collapsed')
+        note('st-worldbook-depth', 'ST 世界书深度位置无法映射到持久历史：保留 position/depth/role，降级为当前消息批末尾', { entryId: sourceId, field: 'position' })
+      } else if (![0, 1, 'before_char', 'after_char'].includes(position as number | string)) {
+        entryCodes.push('position-downgraded')
+        note('st-worldbook-position', 'ST 世界书特殊插入点暂不可用：保留来源位置，降级为当前消息批头部', { entryId: sourceId, field: 'position' })
+      }
+      if (sourceRole === 0) {
+        entryCodes.push('system-role-downgrade')
+        note('st-worldbook-role', 'DSH pre-step 不接受 system 角色：世界书 system 消息降级为 user，原角色保留在 stWorldBook', { entryId: sourceId, field: 'role' })
+      }
+      if (option('vectorized') === true || option('outlet_name') || (Array.isArray(option('triggers')) && (option('triggers') as unknown[]).length > 0) || option('automation_id')) {
+        entryCodes.push('unsupported-controls')
+        note('st-worldbook-controls', 'ST 世界书向量、outlet、生成类型或自动化控制需要宿主专门适配', { entryId: sourceId, field: 'extensions' })
+      }
+      if (enabled === false) entryCodes.push('disabled')
       const worldConfig = buildWorldBookEntry({
-        id: `lore-${String(entry.id ?? entry.uid ?? index)}`,
+        id: `lore-${sourceId}`,
         name: comment,
         // 启用状态保留；非常驻且无主键的 ST 条目不再隐式常驻。
         enabled,
@@ -279,10 +371,17 @@ export function convertStToPreset(card: unknown, baseName: string): PresetSpec {
       configs.push({ ...worldConfig, role: sourceRole === 2 ? 'assistant' : 'user',
         position: position === 4 ? 'after-all' : 'before-all',
         params: { ...worldConfig.params as Record<string, unknown>, stWorldBook } })
+      recordEntry({ sourceId, sourceIndex: index, targetId: `lore-${sourceId}`,
+        layer: 'pre-step', order: stOrder, role: sourceRole === 2 ? 'assistant' : 'user',
+        position: position === 4 ? 'after-all' : 'before-all',
+        classification: entryCodes.includes('unsupported-controls') ? 'unsupported'
+          : entryCodes.some((code) => code !== 'disabled') ? 'degraded' : 'equivalent',
+        codes: entryCodes })
     }
   }
   const firstMes = clean(bodyText('first_mes'))
   if (firstMes.length > 0) {
+    sourceInputs += 1
     // 开场白：assistant 侧 + 每会话一次（dedupe=session 避免每轮重复注入）。
     configs.push({
       id: 'first-mes', name: '开场白', strategy: 'static', order: -40, text: firstMes,
@@ -295,6 +394,7 @@ export function convertStToPreset(card: unknown, baseName: string): PresetSpec {
     ? (body.alternate_greetings as unknown[]).map((item) => typeof item === 'string' ? item : '').map(clean).filter((item) => item.length > 0)
     : []
   for (const [index, greeting] of alternateGreetings.entries()) {
+    sourceInputs += 1
     configs.push({
       id: `first-mes-${index + 2}`,
       name: `开场白 ${index + 2}`,
@@ -312,6 +412,8 @@ export function convertStToPreset(card: unknown, baseName: string): PresetSpec {
 
   for (const [index, prompt] of prompts.entries()) {
     const rawId = typeof prompt.identifier === 'string' ? prompt.identifier : ''
+    const sourceId = rawId.length > 0 ? rawId : `prompt-${index + 1}`
+    sourceInputs += 1
     // ST 系统/标记条目丢弃（计数供 meta 审计）：
     //  - marker: true = ST 权威位置标记信号，content 不发送给模型（ST 以运行时
     //    内容填充该位置）——marker 标志优先于 identifier 判定；
@@ -321,10 +423,14 @@ export function convertStToPreset(card: unknown, baseName: string): PresetSpec {
     //    提示词的合法用法（enabled 状态照常转换）。
     if (prompt.marker === true || rawId === 'SPresetSettings') {
       if (rawId.length > 0) droppedMarkers.push(rawId)
+      recordEntry({ sourceId, sourceIndex: index, classification: 'excluded', codes: ['marker-dropped'] })
       continue
     }
     const content = clean(typeof prompt.content === 'string' ? prompt.content : '')
-    if (content.length === 0) continue
+    if (content.length === 0) {
+      recordEntry({ sourceId, sourceIndex: index, classification: 'excluded', codes: ['empty-content'] })
+      continue
+    }
     const id = rawId.length > 0 && !/^[0-9a-f-]{36}$/i.test(rawId) ? rawId : `st-prompt-${index + 1}`
     // ST 角色：system=系统消息（进 system-section 层，pre-step 无 system 角色）；
     // user/assistant 进 pre-step；'model'（第三方扩展角色，ST 官方枚举外）按
@@ -350,8 +456,16 @@ export function convertStToPreset(card: unknown, baseName: string): PresetSpec {
         ...(Array.isArray(prompt.injection_trigger) ? { triggers: prompt.injection_trigger } : {}),
       } } } : {}),
     }
-    if (prompt.injection_position === 1) warnings.add('ST prompt 深度注入暂按 DSH 插入点降级，原 position/depth/order/role 保留在 stSource')
-    if (Array.isArray(prompt.injection_trigger) && prompt.injection_trigger.length > 0) warnings.add('ST prompt 的生成类型触发条件在 DSH 不等价，保留在 stSource.triggers')
+    const codes: string[] = []
+    if (prompt.injection_position === 1) {
+      codes.push('depth-collapsed')
+      note('st-prompt-depth', 'ST prompt 深度注入暂按 DSH 插入点降级，原 position/depth/order/role 保留在 stSource', { entryId: sourceId, field: 'injection_position' })
+    }
+    if (Array.isArray(prompt.injection_trigger) && prompt.injection_trigger.length > 0) {
+      codes.push('generation-trigger')
+      note('st-prompt-triggers', 'ST prompt 的生成类型触发条件在 DSH 不等价，保留在 stSource.triggers', { entryId: sourceId, field: 'injection_trigger' })
+    }
+    if (base.enabled === false) codes.push(ordered && orderIndex.get(rawId) === undefined ? 'not-in-order-group' : 'disabled')
     if (role === 'system') {
       // 多个 system-section 可拼接：mergeMode=merged 时引擎按 order 升序拼为一条 system prompt。
       configs.push({ ...base, layer: 'system-section', mergeMode: 'merged' })
@@ -369,6 +483,12 @@ export function convertStToPreset(card: unknown, baseName: string): PresetSpec {
         dedupe: 'none',
       })
     }
+    recordEntry({ sourceId, sourceIndex: index, targetId: id,
+      layer: role === 'system' ? 'system-section' : 'pre-step', order: base.order,
+      role: role === 'system' ? undefined : role,
+      position: role === 'system' ? undefined : (prompt.injection_position === 0 ? 'before-all' : 'after-user'),
+      classification: codes.includes('depth-collapsed') || codes.includes('generation-trigger') ? 'degraded' : 'equivalent',
+      codes })
   }
 
   // modules 按需组装：prompt-config-engine 始终。
@@ -419,8 +539,27 @@ export function convertStToPreset(card: unknown, baseName: string): PresetSpec {
       }
     }
   }
+  // 结构化诊断 → 旧字符串表现（唯一事实来源；消息去重保持既有 stWarnings 语义）。
+  const stWarnings = [...new Set(diagnostics.filter((item) => item.severity === 'warning').map((item) => item.message))]
+  const report: StConversionReport = {
+    converter: ST_CONVERTER_VERSION,
+    sourceName: baseName,
+    orderGroups,
+    entries: reportEntries,
+    diagnostics,
+    summary: {
+      inputs: sourceInputs,
+      converted: configs.length,
+      disabled: configs.filter((config) => config.enabled === false).length,
+      excluded: reportEntries.filter((entry) => entry.classification === 'excluded').length,
+      unsupported: reportEntries.filter((entry) => entry.classification === 'unsupported').length,
+      degraded: reportEntries.filter((entry) => entry.classification === 'degraded').length,
+      needsReview: diagnostics.filter((item) => item.severity === 'warning').length,
+    },
+    ...(reportTruncated ? { truncated: true } : {}),
+  }
   // 预设名优先取卡片 name 字段；缺失/空白时回退文件名（去 .json 的 baseName）。
-  return {
+  const spec: PresetSpec = {
     id: presetId,
     name: `${cardName || baseName}（SillyTavern 转换）`,
     version: '1.0.0',
@@ -429,7 +568,7 @@ export function convertStToPreset(card: unknown, baseName: string): PresetSpec {
     // stDroppedMarkers 审计丢弃的系统/标记条目（SPresetSettings 等）。
     meta: {
       source: 'sillytavern',
-      ...(warnings.size > 0 ? { stWarnings: [...warnings] } : {}),
+      ...(stWarnings.length > 0 ? { stWarnings } : {}),
       ...(droppedMarkers.length > 0 ? { stDroppedMarkers: droppedMarkers } : {}),
     },
     ...(Object.keys(variables).length > 0 ? { variables } : {}),
@@ -437,6 +576,34 @@ export function convertStToPreset(card: unknown, baseName: string): PresetSpec {
     modules,
     moduleConfigs,
     promptConfigs: configs,
+  }
+  return { spec, report }
+}
+
+/** 多文件导入（角色卡 × 响应预设）合并各自报告：条目/诊断有界截断，计数求和。 */
+export function mergeStConversionReports(reports: StConversionReport[]): StConversionReport {
+  const entries = reports.flatMap((report) => report.entries).slice(0, REPORT_ENTRY_LIMIT)
+  const diagnostics = reports.flatMap((report) => report.diagnostics).slice(0, REPORT_DIAGNOSTIC_LIMIT)
+  const total = (pick: (summary: StConversionReport['summary']) => number): number =>
+    reports.reduce((sum, report) => sum + pick(report.summary), 0)
+  return {
+    converter: ST_CONVERTER_VERSION,
+    sourceName: reports.map((report) => report.sourceName).join(' + '),
+    orderGroups: reports.flatMap((report) => report.orderGroups),
+    entries,
+    diagnostics,
+    summary: {
+      inputs: total((summary) => summary.inputs),
+      converted: total((summary) => summary.converted),
+      disabled: total((summary) => summary.disabled),
+      excluded: total((summary) => summary.excluded),
+      unsupported: total((summary) => summary.unsupported),
+      degraded: total((summary) => summary.degraded),
+      needsReview: total((summary) => summary.needsReview),
+    },
+    ...(reports.some((report) => report.truncated === true)
+      || reports.flatMap((report) => report.entries).length > entries.length
+      || reports.flatMap((report) => report.diagnostics).length > diagnostics.length ? { truncated: true } : {}),
   }
 }
 

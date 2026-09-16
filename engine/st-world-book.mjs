@@ -25,9 +25,26 @@ const sessions = new WeakMap()
 const matchers = new WeakMap()
 const count = (value, fallback = 0) => Number.isSafeInteger(value) && value >= 0 ? Math.min(value, 1000) : fallback
 
+/** 只读诊断上限：只截断观测记录，绝不改变入选、抽样与时间窗状态。 */
+const DIAGNOSTIC_LIMIT = 200
+
 export function selectStWorldBook(configs, session, messages, warn = () => {}) {
   const entries = configs.filter(config => config.enabled !== false && config.strategy === 'world-book' && config.params?.stWorldBook)
-  if (!entries.length) return new Set()
+  const records = []
+  let truncated = false
+  const note = (config, stage, reason, extra) => {
+    if (records.length >= DIAGNOSTIC_LIMIT) { truncated = true; return }
+    records.push({ id: String(config.id ?? ''), stage, reason, ...extra })
+  }
+  const finish = selection => {
+    selection.diagnostics = { records, truncated }
+    return selection
+  }
+  if (!entries.length) return finish(new Set())
+  // 被显式禁用的 ST 条目：由本层负责报告，不由 UI 猜测。
+  for (const config of configs) {
+    if (config.enabled === false && config.strategy === 'world-book' && config.params?.stWorldBook) note(config, 'excluded', 'disabled')
+  }
   const chat = stChatMessages(session, messages)
   let state = sessions.get(session)
   if (!state) { state = new WeakMap(); sessions.set(session, state) }
@@ -35,6 +52,7 @@ export function selectStWorldBook(configs, session, messages, warn = () => {}) {
   const selected = new Set(), failed = new Set(), occupied = new Set(), stickyEntries = new Set(), candidates = []
   const updates = new Map()
   selected.commit = config => {
+    note(config, 'committed', 'injected')
     if (updates.has(config)) state.set(config, updates.get(config))
   }
   const priority = [...entries].sort((a, b) => b.order - a.order)
@@ -47,12 +65,13 @@ export function selectStWorldBook(configs, session, messages, warn = () => {}) {
       const p = config.params, st = p.stWorldBook
       const previous = state.get(config)
       const sticky = previous?.last !== undefined && count(st.sticky) > 0 && chat.length < previous.last + count(st.sticky)
-      if (sticky) stickyEntries.add(config)
-      if (chat.length < count(st.delay)) continue
+      if (sticky) { stickyEntries.add(config); note(config, 'candidate', 'sticky') }
+      if (chat.length < count(st.delay)) { note(config, 'excluded', 'delay', { delay: count(st.delay), messages: chat.length }); continue }
       if (!sticky && previous?.last !== undefined && count(st.cooldown) > 0 && chat.length > previous.last
-        && chat.length < previous.last + count(st.sticky) + count(st.cooldown)) continue
-      if (pass > 0 && (st.excludeRecursion === true || st.recursive !== true)) continue
+        && chat.length < previous.last + count(st.sticky) + count(st.cooldown)) { note(config, 'excluded', 'cooldown'); continue }
+      if (pass > 0 && (st.excludeRecursion === true || st.recursive !== true)) { note(config, 'excluded', 'recursion'); continue }
       let active = sticky || p.constant === true
+      let activation = sticky ? 'sticky' : p.constant === true ? 'constant' : 'key-match'
       if (!active) {
         const depth = count(st.scanDepth, 2)
         const parts = depth === 0 ? [] : chat.slice(-depth).reverse().map(message => message.text)
@@ -71,26 +90,40 @@ export function selectStWorldBook(configs, session, messages, warn = () => {}) {
           }
           const match = compiled.matcher.scan(parts.length ? '\x01' + parts.join('\n\x01') : '')
           active = match.primary > 0
+          const logic = p.selectiveLogic ?? 0
+          const detail = { scanDepth: depth, primary: match.primary, secondary: match.secondary, secondaryKeys: secondaryKeys.length, logic }
           if (active && st.selective === true && secondaryKeys.length > 0) {
-            const logic = p.selectiveLogic ?? 0
             active = logic === 1 ? match.secondary < secondaryKeys.length : logic === 2 ? match.secondary === 0
               : logic === 3 ? match.secondary === secondaryKeys.length : match.secondary > 0
+            if (!active) note(config, 'rejected', 'secondary-miss', detail)
+          } else if (!active) {
+            note(config, 'rejected', 'primary-miss', detail)
           }
-        } catch (error) { warn(`prompt-config-engine: 世界书 ${config.id} 匹配失败：${String(error?.message ?? error)}`); failed.add(config); continue }
+        } catch (error) {
+          note(config, 'rejected', 'match-error', { message: String(error?.message ?? error).slice(0, 120) })
+          warn(`prompt-config-engine: 世界书 ${config.id} 匹配失败：${String(error?.message ?? error)}`)
+          failed.add(config)
+          continue
+        }
       }
       if (!active) continue
       const probability = typeof st.probability === 'number' && Number.isFinite(st.probability) ? Math.max(0, Math.min(100, st.probability)) : 100
       const roll = previous?.generation === generation ? previous.roll : Math.random() * 100
       state.set(config, { ...previous, generation, roll })
-      if (!sticky && st.useProbability !== false && (probability <= 0 || roll >= probability)) { failed.add(config); continue }
+      if (!sticky && st.useProbability !== false && (probability <= 0 || roll >= probability)) {
+        note(config, 'rejected', 'probability', { probability, roll })
+        failed.add(config)
+        continue
+      }
+      note(config, 'candidate', activation, { probability, useProbability: st.useProbability !== false })
       candidates.push(config)
     }
     if (!candidates.length) break
     const groups = new Map()
     for (const config of candidates) {
       const names = String(config.params.stWorldBook.group ?? '').split(',').map(name => name.trim()).filter(Boolean)
-      if (!names.length) { selected.add(config); continue }
-      if (names.some(name => occupied.has(name))) { failed.add(config); continue }
+      if (!names.length) { selected.add(config); note(config, 'selected', 'ungrouped'); continue }
+      if (names.some(name => occupied.has(name))) { note(config, 'rejected', 'group-occupied'); failed.add(config); continue }
       for (const name of names) { const members = groups.get(name) ?? []; members.push(config); groups.set(name, members) }
     }
     for (const [name, members] of groups) {
@@ -107,8 +140,9 @@ export function selectStWorldBook(configs, session, messages, warn = () => {}) {
         for (const config of available) { roll -= weight(config); if (roll < 0) { choice = config; break } }
       }
       selected.add(choice)
+      note(choice, 'selected', 'group-winner', { group: String(choice.params.stWorldBook.group ?? '') })
       for (const group of String(choice.params.stWorldBook.group).split(',').map(value => value.trim()).filter(Boolean)) occupied.add(group)
-      for (const config of members) if (config !== choice) failed.add(config)
+      for (const config of members) if (config !== choice) { note(config, 'rejected', 'group-lost', { group: name }); failed.add(config) }
     }
     const added = candidates.filter(config => selected.has(config))
     if (!added.length) break
@@ -120,5 +154,5 @@ export function selectStWorldBook(configs, session, messages, warn = () => {}) {
     if (!entries.some(config => config.params.stWorldBook.recursive === true)) break
     recursiveText.push(...added.filter(config => config.params.stWorldBook.preventRecursion !== true).map(config => config.texts.join('\n')))
   }
-  return selected
+  return finish(selected)
 }
