@@ -227,6 +227,12 @@ export function apply(ctx: Context, configIn: Config): void {
           writePreset(readPromptFile(preset.id, runtime.fallbackText), {
             ...options,
             presetTemplate: preset.id,
+            // 补建的是**别的**预设：必须清空 promptConfigs 覆盖层。它承载的是激活预设的
+            // 编辑上下文（settings 层），writePreset 又把它当最高优先级——透传会把激活预设
+            // 的提示词配置写进目标预设，切换过去后注入的仍是旧预设内容；且目标组合带上
+            // 渲染标记后不再重建，污染被固化。目标预设的配置一律以自身 preset.yml +
+            // 包内模板默认为准（与 materializeImportedPreset 同源理由）。
+            promptConfigs: [],
             agentsInstructionText: '',
           })
         } catch (error) {
