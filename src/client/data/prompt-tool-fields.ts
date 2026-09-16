@@ -95,7 +95,7 @@ export const EMPTY_FIELDS: Fields = {
   presetOrder: 5,
   fallbackText: '',
   writePreset: true,
-  presetTemplate: 'anchored',
+  presetTemplate: 'standard',
   promptConfigs: [],
 }
 /** 编译期契约：所有引擎参数键都必须进入 Fields，防止 host 新增参数后 client 静默丢弃。 */

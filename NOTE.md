@@ -12,7 +12,7 @@
 - `engine/`：运行时提示词引擎（含通用 `instruction-hint.mjs`、schema / strategies / fillers / layers / executor）
 - `src/`：宿主侧 TypeScript
 - `src/client/`：Web 客户端
-- `preset/anchored/preset.yml`：anchored 单一参数预设
+- `preset/`：随包内置预设（`standard` / `ptc` / `minimal` / `creative` / `custom`；`presetTemplate` 默认 `standard`）
 - `engine/compositions/source/local/`：本地组合模块唯一源；`library/`：官方切块/变体生成物
 - `templates/`：提示词配置模板
 - `skills/`：随包技能

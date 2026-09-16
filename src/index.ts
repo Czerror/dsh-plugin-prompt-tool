@@ -111,9 +111,9 @@ export function apply(ctx: Context, configIn: Config): void {
   // settings.yaml 不再承载大文本（web 打开加载慢的根因）。
   const initialTemplate = typeof config.presetTemplate === 'string' && config.presetTemplate.length > 0
     ? config.presetTemplate
-    : 'anchored'
+    : 'standard'
   // 预设分离：每个预设 = 官方预设根（DEFAULT_PRESET_DIR）下的官方预设目录 <template>/。
-  const initialPresetDir = join(DEFAULT_PRESET_DIR, /^[a-zA-Z0-9_-]+$/.test(initialTemplate) ? initialTemplate : 'anchored')
+  const initialPresetDir = join(DEFAULT_PRESET_DIR, /^[a-zA-Z0-9_-]+$/.test(initialTemplate) ? initialTemplate : 'standard')
   // 引擎参数从激活预设 preset.yml 读（settings 不再承载参数；每预设独立，随预设走）。
   let initialParams: Record<string, unknown> = {}
   let initialSpec: PresetSpec | undefined
@@ -269,9 +269,9 @@ export function apply(ctx: Context, configIn: Config): void {
     }
   }
 
-  /** 激活预设目录（内容按预设根 <template>/ 隔离；非法名回退 anchored）。 */
+  /** 激活预设目录（内容按预设根 <template>/ 隔离；非法名回退 standard）。 */
   const activePresetDir = (): string =>
-    join(DEFAULT_PRESET_DIR, /^[a-zA-Z0-9\u4e00-\u9fff_-]+$/.test(runtime.presetTemplate) ? runtime.presetTemplate : 'anchored')
+    join(DEFAULT_PRESET_DIR, /^[a-zA-Z0-9\u4e00-\u9fff_-]+$/.test(runtime.presetTemplate) ? runtime.presetTemplate : 'standard')
 
   /** 预设目录是否需要（重新）渲染：组合缺失、旧布局（../engine 引用），或渲染契约版本过期。 */
   const needsPresetRender = (targetDir: string): boolean => {
@@ -517,7 +517,7 @@ export function apply(ctx: Context, configIn: Config): void {
       patchSkillsConfig,
       renameSkillInOrder: renameSkillOrderEntry,
     }),
-    // 模板专属策略目录：当前 anchored 策略为引擎内置，自定义模板可经此注入。
+    // 模板专属策略目录：当前内置策略全部随引擎提供，自定义模板可经此注入。
     () => '',
     () => {
       // 技能目录变化后立即重扫目录并失效官方 registry 缓存。
@@ -576,7 +576,7 @@ export function apply(ctx: Context, configIn: Config): void {
   const runtime: RuntimeOptions = {
     ...Object.fromEntries(ENGINE_PARAM_KEYS.map((key) => [key, initialParams[key]])),
     writePreset: config.writePreset,
-    presetTemplate: typeof config.presetTemplate === 'string' && config.presetTemplate.length > 0 ? config.presetTemplate : 'anchored',
+    presetTemplate: typeof config.presetTemplate === 'string' && config.presetTemplate.length > 0 ? config.presetTemplate : 'standard',
     // 引擎参数：激活预设 preset.yml（每预设独立，settings 不再承载）。
     firstTurnAnchor: initialParams.firstTurnAnchor === true,
     firstTurnText: asString(initialParams.firstTurnText),
@@ -786,7 +786,7 @@ registerTuiCommand(
     const nextRuntime: Pick<RuntimeOptions,
       'writePreset' | 'presetTemplate' | 'presetOrder' | 'fallbackText'> = {
       writePreset: typeof next.writePreset === 'boolean' ? next.writePreset : config.writePreset,
-      presetTemplate: typeof next.presetTemplate === 'string' && next.presetTemplate.length > 0 ? next.presetTemplate : 'anchored',
+      presetTemplate: typeof next.presetTemplate === 'string' && next.presetTemplate.length > 0 ? next.presetTemplate : 'standard',
       presetOrder: Number.isSafeInteger(next.presetOrder) && next.presetOrder >= 0 ? next.presetOrder : config.presetOrder,
       fallbackText: typeof next.fallbackText === 'string' ? next.fallbackText : config.fallbackText,
     }
@@ -801,9 +801,9 @@ registerTuiCommand(
     needsInitialApply = false
 
     // 切换预设：内容资产从新预设目录重读——否则 rebuildPreset 会把旧预设的
-    // preset.md/agents.md 内容复制进新预设（custom 空白预设被写入 anchored 文本）。
+    // preset.md/agents.md 内容复制进新预设（custom 空白预设被写入其他预设文本）。
     if (presetTemplateChanged) {
-      const newDir = join(DEFAULT_PRESET_DIR, /^[a-zA-Z0-9\u4e00-\u9fff_-]+$/.test(nextRuntime.presetTemplate) ? nextRuntime.presetTemplate : 'anchored')
+      const newDir = join(DEFAULT_PRESET_DIR, /^[a-zA-Z0-9\u4e00-\u9fff_-]+$/.test(nextRuntime.presetTemplate) ? nextRuntime.presetTemplate : 'standard')
       current = readGeneratedContent(newDir, 'preset.md') || readPromptFile(nextRuntime.presetTemplate, nextRuntime.fallbackText)
       currentAgents = readGeneratedContent(newDir, 'agents.md') || readAgents(nextRuntime.presetTemplate)
     }

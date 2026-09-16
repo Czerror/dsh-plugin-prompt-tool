@@ -7,8 +7,16 @@ import { join } from 'node:path'
 
 // 隔离 DSH_HOME：真实用户同名预设会遮蔽包内模板。
 process.env.DSH_HOME = mkdtempSync(join(tmpdir(), 'pt-mc-home-'))
-const { buildCordis } = await import('../../lib/preset-core.mjs')
+const { FIXTURE_PRESET_ID, installFixturePresetInHome } = await import('../fixtures/preset-template.mjs')
+// 夹具装进隔离 DSH_HOME 的官方预设根：本文件用「夹具模板 + renderComposition」替代已下线的 buildCordis 兼容层。
+installFixturePresetInHome(process.env.DSH_HOME)
 const { applyModuleConfigs, loadPresetSpec, renderComposition, resolvePresetDir, resolvePresetParams } = await import('../../lib/index.mjs')
+
+/** 用测试夹具模板渲染组合（等价于旧的 buildCordis：模板 spec + 运行时参数）。 */
+function fixtureComposition(runtime = {}) {
+  const dir = resolvePresetDir(FIXTURE_PRESET_ID)
+  return renderComposition(loadPresetSpec(dir), runtime, dir)
+}
 
 /** 递归收集指定 id 的嵌套行（delegation 组内工具行）。 */
 function findAllNested(rows, idSet) {
@@ -76,8 +84,8 @@ test('resolvePresetParams 模型路由/委派参数全扁平（preset.yml params
   assert.equal(empty.maxDepth, '')
 })
 
-test('anchored buildCordis 集成：moduleConfigs 合并与 token 渲染共存', () => {
-  const rows = parseYaml(buildCordis('P'))
+test('夹具模板组合集成：moduleConfigs 合并与 token 渲染共存', () => {
+  const rows = parseYaml(fixtureComposition())
   const bash = rows.find((row) => row?.id === 'tool-git-bash')
   const gate = rows.find((row) => row?.id === 'context-gate')
   const bootstrap = rows.find((row) => row?.id === 'tool-bootstrap')
@@ -91,11 +99,11 @@ test('anchored buildCordis 集成：moduleConfigs 合并与 token 渲染共存',
   // 子代理相位两行显式一致（tool-bootstrap 与 context-gate 保持同步）。
   assert.equal(bootstrap.config.includeSubagents, false)
   assert.equal(gate.config.includeSubagents, false)
-  assert.ok(!/__[A-Za-z0-9_]+__/.test(buildCordis('P')), '生成文本不应残留未解析 token')
+  assert.ok(!/__[A-Za-z0-9_]+__/.test(fixtureComposition()), '生成文本不应残留未解析 token')
 })
 
 test('子代理模型路由与委派完整自定义：toolFilter + maxDepth 渲染（官方 tool-subagent Config）', () => {
-  const rows = parseYaml(buildCordis('P', {
+  const rows = parseYaml(fixtureComposition({
     subagentModelProvider: 'my-provider',
     subagentModelName: 'deepseek-v4-flash-7013',
     toolFilterAllow: ['read', 'write', 'glob'],
@@ -131,19 +139,19 @@ test('实例策略启用后主过滤不下沉 delegation，模型路由与 maxDe
   assert.ok(subs.every((row) => row.config.toolFilter === undefined), '旧主过滤不再写入官方 delegation')
 })
 
-test('buildCordis 透传 allowKinds 覆盖模板默认', () => {
-  const rows = parseYaml(buildCordis('P', { allowKinds: ['skill-invocation'] }))
+test('参数桥透传 allowKinds 覆盖模板默认', () => {
+  const rows = parseYaml(fixtureComposition({ allowKinds: ['skill-invocation'] }))
   const gate = rows.find((row) => row?.id === 'context-gate')
   assert.ok(gate)
   assert.deepEqual(gate.config.allowKinds, ['skill-invocation'])
-  // 未传时用 preset.yml 模板默认（anchored allowKinds 白名单）。
-  const defaults = parseYaml(buildCordis('P'))
+  // 未传时用 preset.yml 模板默认（夹具模板 allowKinds 白名单）。
+  const defaults = parseYaml(fixtureComposition())
   const defaultGate = defaults.find((row) => row?.id === 'context-gate')
   assert.deepEqual(defaultGate.config.allowKinds, ['skill-invocation', 'near-anchor', 'router-guide'])
 })
 
 test('参数桥：anchor-turn / deliberation-gate / progress-reminder 行级配置映射', () => {
-  const rows = parseYaml(buildCordis('P', {
+  const rows = parseYaml(fixtureComposition({
     anchorTurn: true,
     anchorTurnText: '你是谁',
     deliberationGate: true,
@@ -171,7 +179,7 @@ test('参数桥：anchor-turn / deliberation-gate / progress-reminder 行级配�
   assert.equal(drip.config.maxPerTurn, 2)
 
   // 关闭开关与显式零值独立保留，重新启用后仍使用零值而非行默认。
-  const off = parseYaml(buildCordis('P', { anchorTurn: false, deliberationGate: false, cotDrip: false, deliberationMinChars: 0, cotDripEvery: 0 }))
+  const off = parseYaml(fixtureComposition({ anchorTurn: false, deliberationGate: false, cotDrip: false, deliberationMinChars: 0, cotDripEvery: 0 }))
   assert.equal(off.find((row) => row?.id === 'anchor-turn').config.enabled, false)
   assert.equal(off.find((row) => row?.id === 'deliberation-gate').config.enabled, false)
   assert.equal(off.find((row) => row?.id === 'progress-reminder').config.enabled, false)
@@ -180,7 +188,7 @@ test('参数桥：anchor-turn / deliberation-gate / progress-reminder 行级配�
 })
 
 test('参数桥：门控/状态机扁平键直达模块行 config（不 token 化）', () => {
-  const rows = parseYaml(buildCordis('P', {
+  const rows = parseYaml(fixtureComposition({
     promoteGate: true,
     maxPromoteSteps: 6,
     promoteAfterFirstResponse: true,
@@ -210,7 +218,7 @@ test('参数桥：门控/状态机扁平键直达模块行 config（不 token �
   const presentation = rows.find((row) => row?.id === 'promoted-code-mode')
   assert.equal(presentation.config.usePtcMode, false, 'usePtcMode=false 直达 promoted-code-mode 行')
   // 未声明的门控键不合并（行默认 / 引擎默认生效）。
-  const defaults = parseYaml(buildCordis('P'))
+  const defaults = parseYaml(fixtureComposition())
   const defaultBootstrap = defaults.find((row) => row?.id === 'tool-bootstrap')
   assert.equal(defaultBootstrap.config.promoteGate, undefined, '未声明不合并')
   assert.equal(defaultBootstrap.config.bootstrapMaxTokens, undefined, 'bootstrapMaxTokens 0/未声明不合并')
@@ -237,7 +245,7 @@ test('参数桥完整性：本地模块行 config 键 ⊆ ALLOWED_KEYS；stageAd
     'promoted-code-mode': new Set(['usePtcMode', 'includeSubagents', 'promoteOn']),
     'tool-filter': new Set(['allow', 'deny', 'includeSubagents', 'enabled']),
   }
-  const rows = parseYaml(buildCordis('P', {
+  const rows = parseYaml(fixtureComposition({
     stages: [{ name: '了解', tools: ['read', 'glob'] }],
     stagePreUnlock: 1,
     stageAdvanceTool: 'phase_advance',
@@ -261,7 +269,7 @@ test('参数桥完整性：本地模块行 config 键 ⊆ ALLOWED_KEYS；stageAd
   }))
   for (const [module, allow] of Object.entries(ALLOWED)) {
     const row = rows.find((r) => r?.id === module)
-    if (row === undefined) continue // 未挂载模块（anchored modules 无此行）
+    if (row === undefined) continue // 未挂载模块（夹具 modules 无此行）
     for (const key of Object.keys(row.config ?? {})) {
       assert.ok(allow.has(key), `${module} 行 config 键 ${key} 必须在 ALLOWED_KEYS 中（参数桥漏注册或行默认漂移）`)
     }
@@ -271,7 +279,7 @@ test('参数桥完整性：本地模块行 config 键 ⊆ ALLOWED_KEYS；stageAd
 })
 
 test('参数桥优先于 moduleConfigs 直写：UI 开关不被行级直写覆盖（旧作者锁定语义移除）', () => {
-  const spec = loadPresetSpec(resolvePresetDir('anchored'))
+  const spec = loadPresetSpec(resolvePresetDir(FIXTURE_PRESET_ID))
   // 模拟模板/ST 直写 tool-filter.includeSubagents（旧锁定语义会覆盖 UI，导致开关失效）。
   const withDirect = { ...spec, moduleConfigs: { 'tool-filter': { includeSubagents: false } } }
   // 1) 参数桥打开 toolFilterSubagents → 桥优先，直写不覆盖。

@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
-import { apply as applyGitBash } from '../../../engine/tool-git-bash.mjs'
+import { apply as applyGitBash } from '../../engine/tool-git-bash.mjs'
 
 function makeTool({ timeoutMs = 30, exitCode = 0, output = '', pending = false } = {}) {
   let registered
@@ -56,8 +56,8 @@ test('正常退出返回输出文本', async () => {
 import { Context } from '@deepseek-ai/cordis'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import { createScope } from '@deepseek-ai/dsh-scope'
-import { createPromptConfigs } from '../../../engine/schema.mjs'
-import { wireLayers } from '../../../engine/layers.mjs'
+import { createPromptConfigs } from '../../engine/schema.mjs'
+import { wireLayers } from '../../engine/layers.mjs'
 
 const MAIN_PERSONA = [
   'You are a helpful assistant.',
@@ -178,7 +178,7 @@ import {
   buildEnv,
   injectEnvPrefix,
   normalizeEnvKeys,
-} from '../../../engine/run-code-env.mjs'
+} from '../../engine/run-code-env.mjs'
 
 /** 从注入后的 code 里把 env 对象解出来。 */
 function parseInjectedEnv(code) {

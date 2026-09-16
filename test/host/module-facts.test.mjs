@@ -12,11 +12,14 @@ import {
   resolvePresetModuleFacts,
   validateCustomToolIdentities,
 } from '../../lib/index.mjs'
+// 内置 anchored 已随上游冻结下线；夹具模板承接它的显式模块装配
+// （含 filesystem-editor 与嵌套编辑器 row），用于校验显式清单的模块事实。
+import { FIXTURE_PRESET_SRC } from '../fixtures/preset-template.mjs'
 
 const preset = (id) => loadPresetSpec(fileURLToPath(new URL(`../../preset/${id}/`, import.meta.url)))
 
 test('modules: [] 是显式空装配，不再展开默认引擎能力', () => {
-  const explicit = resolvePresetModuleFacts(preset('anchored'))
+  const explicit = resolvePresetModuleFacts(loadPresetSpec(FIXTURE_PRESET_SRC))
   assert.equal(explicit.sourceMode, 'explicit')
   assert.ok(explicit.effectiveModules.includes('filesystem-editor'))
   assert.ok(explicit.rowIds.includes('str-replace-editor'), '嵌套编辑器 row 必须被收集')

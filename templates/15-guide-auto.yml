@@ -1,6 +1,6 @@
 # 模板：每轮引导（strategy=guide-auto）
 # 晋升后每轮用户消息后按复杂度注入弱/深度引导；modelScope=flash 表示仅 flash 模型会话注入。
-# 纯净模板：参数全部留空，由用户自定义；默认引导句文本见 anchored 预设 params。
+# 纯净模板：参数全部留空，由用户自定义；默认引导句文本见引擎内置策略默认值。
 # 提示：把本文件放入 promptConfigsDir 目录，或把对象写入 settings.promptConfigs 数组。
 id: example-guide-auto
 name: 示例：每轮引导
@@ -21,5 +21,5 @@ params:
   useCustom: false
   text: ""
   # 复杂任务判定 fallback 复用锚定卡的 complexPattern；留空 = 仅按文本长度 120 判定深/弱
-  guideWeak: ""             # 简单任务自动引导句（示例见 anchored preset.yml params.guideWeak）
-  guideDeep: ""             # 复杂任务自动引导句（示例见 anchored preset.yml params.guideDeep）
+  guideWeak: ""             # 简单任务自动引导句（留空 = 引擎内置默认引导句）
+  guideDeep: ""             # 复杂任务自动引导句（留空 = 引擎内置默认引导句）

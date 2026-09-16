@@ -165,7 +165,7 @@ moduleConfigs 仅补充参数桥未覆盖的键（如 ST 导入 tool-web.fetch�
 
 `engine/instruction-hint.mjs` 是通用内置能力：`strategy: instruction-hint`、
 `placeholder + fill: instruction-hint` 与 `context-gate.instructionHint` 共用同一组
-文件探测、提示文本与转换函数；它不属于 anchored 预设专属模块。
+文件探测、提示文本与转换函数；它不属于任何预设专属模块。
 
 `engine/strategies.mjs` 三个内容策略是**独立功能**，仅分类器在 fallback 层共用：
 

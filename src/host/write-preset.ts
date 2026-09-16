@@ -89,7 +89,7 @@ export interface WritePresetOptions extends PresetWriterParams {
   presetOrder: number
   /** settings 层用户自定义提示词配置(优先级最高)。 */
   promptConfigs: PromptConfigSpec[]
-  /** 预设模板名(preset/<name>);默认 anchored(兼容期)。 */
+  /** 预设模板名(preset/<name>);默认 standard。 */
   presetTemplate?: string
   /** 输出目录/预设 id 覆盖；缺省 = presetTemplate 同名输出。 */
   outputId?: string
@@ -139,7 +139,7 @@ function syncDirInPlace(srcDir: string, destDir: string): void {
 
 function runtimeOf(options: WritePresetOptions, prompt: string): Record<string, unknown> {
   return {
-    // 所有引擎参数可直接用于兼容 writePreset/buildCordis；undefined 不覆盖模板值。
+    // 所有引擎参数可直接用于 writePreset；undefined 不覆盖模板值。
     ...Object.fromEntries(ENGINE_PARAM_KEYS.map((key) => [key, options[key]])),
     promptText: prompt,
     firstTurnAnchor: options.firstTurnAnchor === true,
@@ -257,7 +257,7 @@ export function writePreset(prompt: string, options: WritePresetOptions): void {
   const presetDir = options.presetDir.trim().length > 0 ? options.presetDir : DEFAULT_PRESET_DIR
   const templateName = typeof options.presetTemplate === 'string' && options.presetTemplate.trim().length > 0
     ? options.presetTemplate.trim()
-    : 'anchored'
+    : 'standard'
   // 安全边界：templateName 现在是写入路径段（presetDir/<template>/），同时必须是
   // 官方 agent-presets 可发现的预设 id（PRESET_ID = /^[a-z0-9][a-z0-9-]*$/）——
   // 含中文等非法 id 会被宿主 discovery 静默跳过（会话 resume 报 preset not found），
@@ -427,7 +427,7 @@ export function writePreset(prompt: string, options: WritePresetOptions): void {
   const templateConfigs = Array.isArray(spec.promptConfigs) ? spec.promptConfigs as PromptConfigSpec[] : []
   let templateDefaults: PromptConfigSpec[]
   if (templateConfigs.length > 0) {
-    // 模板自带默认提示词配置：运行时只覆盖 anchored 动态字段，结构数据来自 preset.yml。
+    // 模板自带默认提示词配置：运行时只覆盖 near-anchor / router-guide 的动态字段，结构数据来自 preset.yml。
     templateDefaults = templateConfigs.map((config) => {
       const next: PromptConfigSpec = { ...config, params: { ...config.params } }
       if (next.id === 'near-anchor') {
@@ -466,7 +466,7 @@ export function writePreset(prompt: string, options: WritePresetOptions): void {
       return next
     })
   } else {
-    // 通用模板未提供 promptConfigs 时，writer 不注入任何 anchored 默认配置；
+    // 通用模板未提供 promptConfigs 时，writer 不注入任何引擎默认配置；
     // 全部内容由模板数据或用户 settings 提供。
     templateDefaults = []
   }

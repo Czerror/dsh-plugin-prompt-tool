@@ -14,7 +14,7 @@
 （`engine/compositions/source/local/filesystem-editor.yml`）：DSH `0.1.5-rc.2` 官方 minimal 已删除
 `filesystem` 行，只剩当前 OS 的持久 shell，因此内置 `preset/minimal` 同步为单 shell 工具基型；
 带隔离文件系统的 `fs-local` + `str-replace-editor`（同属一个 `fs` 隔离域）只由显式声明
-`filesystem-editor` 的预设装配，如内置 Anchored。官方 `agent.cordis.yml` 中同名 row 不作为
+`filesystem-editor` 的预设装配。官方 `agent.cordis.yml` 中同名 row 不作为
 可编辑插件能力；同一预设内仍禁止重复 row。
 
 ### 官方与本地分类

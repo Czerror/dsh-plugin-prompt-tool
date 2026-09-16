@@ -2,8 +2,8 @@
  * 引擎行为参数契约（单一来源）。
  *
  * 这是「可配置引擎参数」的类型唯一权威：所有消费引擎参数的接口（RuntimeOptions /
- * BuildCordisOptions / WritePresetOptions）从这里派生，不再各自手写一遍字段
- * （此前 5 处重复声明导致同字段签名漂移，如 maxDepth / usePtcMode）。
+ * WritePresetOptions）从这里派生，不再各自手写一遍字段
+ * （此前多处重复声明导致同字段签名漂移，如 maxDepth / usePtcMode）。
  *
  * 分层约定：
  *  - 本文件 = 引擎参数「契约层」（类型）：参数桥/模板/UI 可配置的键与类型；

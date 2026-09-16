@@ -67,7 +67,7 @@ export async function validatePromptConfigs(value: unknown, options: { strategyD
   if (errors.length > 0 || !Array.isArray(value)) return { valid: false, errors }
   const specs = value as PromptConfigSpec[]
   // 引擎与配置文件夹分离:包根 engine/ 与 lib/ 平级,../engine 相对路径成立。
-  // strategyDir 让模板专属策略也能通过同一权威校验(当前 anchored 全部内置)。
+  // strategyDir 让模板专属策略也能通过同一权威校验(内置策略当前全部随引擎提供)。
   const engineUrl = new URL('../engine/prompt-config-engine.mjs', import.meta.url)
   const { createPromptConfigs } = await import(engineUrl.href) as {
     createPromptConfigs: (specs: unknown[], options?: { strategyDir?: string }) => unknown

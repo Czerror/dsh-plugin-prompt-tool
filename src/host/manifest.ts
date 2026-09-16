@@ -7,7 +7,7 @@
  *   - 组合模块的行级 config 由参数桥 buildModuleConfigsFromParams 按 params
  *     构造对象合并（取代旧 __TOKEN__ 文本渲染，无占位符、无文本往返），
  *     params（UI/基础层）优先于 moduleConfigs 行级直写（旧作者锁定语义已移除）。
- * 本模块负责参数归一化与引擎模块配置装配;所有 anchored 专属行为都在引擎内部。
+ * 本模块负责参数归一化与引擎模块配置装配;所有预设专属行为都在引擎内部。
  */
 
 import { readFileSync, existsSync, readdirSync, mkdirSync, rmSync, writeFileSync, cpSync, renameSync, statSync } from 'node:fs'
@@ -174,7 +174,7 @@ export function loadPresetSpec(dir: string): PresetSpec {
 
 /** 读取预设模板内容资产(presetText / agentsText);模板缺失时静默降级。
  *  模板目录按 resolvePresetDir 解析（用户自定义预设优先，包内模板回退）。 */
-export function loadPresetContent(template = 'anchored', presetRoot = userPresetsDir()): { presetText: string; agentsText: string } {
+export function loadPresetContent(template = 'standard', presetRoot = userPresetsDir()): { presetText: string; agentsText: string } {
   try {
     const spec = loadPresetSpec(resolvePresetDir(template, presetRoot))
     return {

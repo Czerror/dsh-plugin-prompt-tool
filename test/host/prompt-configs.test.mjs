@@ -10,6 +10,7 @@ import { parse } from 'yaml'
 // 注意：paths 模块顶层缓存 DEFAULT_PRESET_DIR（join(DSH_HOME, ...)），
 // preset-core/index 必须全部在 env 设置后动态 import，否则读到真实用户根。
 process.env.DSH_HOME = mkdtempSync(join(tmpdir(), 'pt-pc-home-'))
+const { FIXTURE_PRESET_ID, installFixturePreset } = await import('../fixtures/preset-template.mjs')
 const {
   loadPromptConfigFiles,
   mergePromptConfigs,
@@ -17,12 +18,15 @@ const {
 } = await import('../../lib/preset-core.mjs')
 const { writePreset } = await import('../../lib/index.mjs')
 
-/** writePreset 生成 anchored 提示词配置（生产路径：preset.yml 数据 + 顶层 params 动态字段）。 */
+/** writePreset 生成夹具模板的提示词配置（生产路径：preset.yml 数据 + 顶层 params 动态字段）。 */
 function generatedConfigs(options = {}, prompt = 'PROMPT') {
   const dir = mkdtempSync(join(tmpdir(), 'pt-wp-configs-'))
   try {
+    // writePreset 的模板解析根 = presetDir：先把夹具模板装到输出根。
+    installFixturePreset(dir)
     writePreset(prompt, {
       presetDir: dir,
+      presetTemplate: FIXTURE_PRESET_ID,
       presetOrder: 5,
       firstTurnAnchor: options.firstTurnAnchor === true,
       firstTurnText: options.firstTurnText ?? '',
@@ -38,7 +42,7 @@ function generatedConfigs(options = {}, prompt = 'PROMPT') {
       usePtcMode: true,
       promptConfigs: [],
     })
-    const specs = loadPromptConfigFiles(join(dir, 'anchored', 'prompt-configs'))
+    const specs = loadPromptConfigFiles(join(dir, FIXTURE_PRESET_ID, 'prompt-configs'))
     const byId = Object.fromEntries(specs.map((spec) => [spec.id, spec]))
     return { specs, byId }
   } finally {
@@ -146,7 +150,7 @@ test('renderPromptConfigYaml 全字段开放：variables/identity/params 嵌套�
   assert.deepEqual(doc.params.patch, { maxTokens: 2048 })
 })
 
-test('writePreset 生成 anchored 提示词配置模块（人设走顶层 persona 段，不再生成 persona 配置卡），数字前缀决定执行顺序', () => {
+test('writePreset 生成夹具模板的提示词配置模块（人设走顶层 persona 段，不再生成 persona 配置卡），数字前缀决定执行顺序', () => {
   const { specs } = generatedConfigs()
   assert.deepEqual(specs.map((spec) => spec.id), ['near-anchor', 'router-guide', 'prompt-injector'])
   assert.deepEqual(specs.map((spec) => spec.id).filter((id) => id.startsWith('agents-file-')), [], '指令文件卡不再物化')

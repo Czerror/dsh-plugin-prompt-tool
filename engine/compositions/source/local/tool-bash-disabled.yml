@@ -2,7 +2,7 @@
 # source: engine/compositions/source/local/tool-bash-disabled.yml (本地适配)
 # based on: dsh-v0.1.5-rc.2 standard/agent.cordis.yml#tool-bash
 # commit: fb2c4b9e698e30edb738bca4cf0618587db7d203
-# Anchored 使用持久 bash 或 Windows Git Bash，本行保持显式禁用，不属于原样官方模块。
+# 声明本模块的预设改用持久 bash 或 Windows Git Bash，因此本行保持显式禁用，不属于原样官方模块。
 
 - id: tool-bash-disabled
   name: '@deepseek-ai/dsh-tool-bash'

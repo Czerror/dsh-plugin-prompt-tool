@@ -11,7 +11,6 @@
 import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { parse as parseYaml, stringify as stringifyYamlValue } from 'yaml'
-import type { EngineParams } from '../shared/engine-params.ts'
 
 export interface PromptConfigSpec {
   id: string
@@ -83,13 +82,6 @@ export interface PromptConfigFile {
   /** yml 文件内容。 */
   content: string
 }
-
-/**
- * buildCordis 兼容层的运行时选项（生产路径为 writePreset + preset.yml 数据驱动）。
- * 引擎参数契约单一来源见 shared/engine-params.ts（EngineParams），此处直接复用，
- * 不再逐字段手写（此前与 RuntimeOptions / WritePresetOptions 三处重复导致签名漂移）。
- */
-export type BuildCordisOptions = EngineParams
 
 /** 文本块缩进 n 个空格（YAML block scalar）。 */
 function indentBy(level: number, text: string): string {

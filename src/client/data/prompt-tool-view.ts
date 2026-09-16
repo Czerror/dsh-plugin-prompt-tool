@@ -107,7 +107,7 @@ export function fieldsFromView(res: BridgeResult<BridgeSettingsView>): Fields {
     presetOrder: readNumber(value, 'presetOrder', readNumber(base, 'presetOrder', 5)),
     fallbackText: readString(value, 'fallbackText') ?? readString(base, 'fallbackText') ?? '',
     writePreset: readBoolean(value, 'writePreset', readBoolean(base, 'writePreset', true)),
-    presetTemplate: readString(value, 'presetTemplate') ?? readString(base, 'presetTemplate') ?? 'anchored',
+    presetTemplate: readString(value, 'presetTemplate') ?? readString(base, 'presetTemplate') ?? 'standard',
     promptConfigs: value.promptConfigs !== undefined
       ? readPromptConfigs(value, 'promptConfigs')
       : readPromptConfigs(base, 'promptConfigs'),

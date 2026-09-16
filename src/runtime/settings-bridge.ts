@@ -635,7 +635,7 @@ export function registerSettingsBridge(
           // 缓存里的 presetTemplate——descriptor 有 30s TTL，切换预设后若缓存未失效，
           // 这里会读旧预设参数，与下方 readParamOverrides/readPromptConfigs(新目录) 不同源。
           const activeDir = getPresetConfigsDir?.() ?? ''
-          const templateName = activeDir.length > 0 ? basename(activeDir) : 'anchored'
+          const templateName = activeDir.length > 0 ? basename(activeDir) : 'standard'
           const spec = loadPresetSpec(activeDir.length > 0 ? activeDir : resolvePresetDir(templateName))
           presetParams = resolvePresetParams(spec, {})
           const resolvedFacts = resolvePresetModuleFacts(
@@ -1837,7 +1837,7 @@ export function registerSettingsBridge(
             if (parsedBody === undefined) return
             const { body } = parsedBody
             const record = (body ?? {}) as Record<string, unknown>
-            const id = typeof record.id === 'string' && record.id.trim().length > 0 ? record.id.trim() : 'anchored'
+            const id = typeof record.id === 'string' && record.id.trim().length > 0 ? record.id.trim() : 'standard'
             try {
               const dir = resolvePresetDir(id)
               const file = join(dir, 'preset.yml')

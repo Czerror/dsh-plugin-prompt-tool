@@ -2,6 +2,43 @@
 
 ## [未发布] - 2026-09-17
 
+### 移除上游预设、只保留引擎移植（2026-09-17）
+
+- **上游引擎核查（只读）**：`xiaobright/dsh-anchored-standard` 已于 2026-09-10 正式冻结（HEAD `dda23ef`，
+  `FAREWELL.md` 声明不再接受 issue/PR），本地内联快照当时已同步到该提交，**没有待移植的上游引擎更新**。
+  上游最后一批引擎修复——`751fd67` 的 `session.snapshotEvents()` 兼容、`78b4cbd`/`babc933` 的 Git Bash
+  路径运行时推断与 Windows workdir 归一、`b74543b`/`e3d330b` 的 instruction-hint 幂等 id 与建议式措辞——
+  在本地 `engine/` 中均已用更强的实现覆盖（`engine/shared.mjs#snapshotEvents`、`engine/tool-git-bash.mjs`、
+  `engine/instruction-hint.mjs`）。
+- **下线内容**：删除内置 `preset/anchored/`（含其内容资产）、`upstream/dsh-anchored-standard/` 内联快照与
+  `REVISION`、`scripts/sync-anchored.mjs` 与 `package.json#scripts["sync:anchored"]`。上游预设本体不再随包
+  分发，**引擎移植全部保留**：`engine/` 与 `engine/compositions/source/local/` 的 anchor-turn /
+  deliberation-gate / progress-reminder / context-gate / tool-bootstrap / promoted-code-mode / tool-git-bash
+  等仍按预设 `modules` 声明按需装配，行为不变。
+- **默认模板迁移**：`presetTemplate` 默认值由 `anchored` 改为 `standard`（`src/config.ts` 的 `Config` 与
+  `PromptSettingsSchema`、`src/index.ts` 的回退字面量、`src/host/write-preset.ts`、`src/host/manifest.ts`、
+  `src/runtime/settings-bridge.ts`、`src/client/data/prompt-tool-fields.ts` 与 `prompt-tool-view.ts`）。
+  内置模板集合收敛为 `standard / ptc / minimal / creative / custom`，`listBuiltinTemplates()` 与首次种子化
+  跟随目录自动生效。
+- **兼容层收敛**：`src/preset-core.ts` 删除强绑定 anchored 模板的 `buildCordis()` 与 `ANCHORED_TEMPLATE_DIR`
+  （`src/` 内零生产调用，仅测试消费），保留 `loadPromptConfigFiles` / `mergePromptConfigs` /
+  `renderPromptConfigYaml` 导出；`src/host/prompt-configs.ts` 同步删除只为它服务的 `BuildCordisOptions` 类型。
+- **测试迁移（不弱化断言）**：新增测试夹具 `test/fixtures/preset-template/`（只被 `test/` 引用的模板：锚定/门控
+  模块装配 + params + 三条提示词配置，**不含任何提示词正文**）与安装器 `test/fixtures/preset-template.mjs`
+  （`installFixturePreset(presetRoot)` 对应 `writePreset` 的 presetDir 解析根，`installFixturePresetInHome(dshHome)`
+  对应 `resolvePresetDir` 的 `$DSH_HOME/.agent-presets` 根）。`write-preset` / `module-configs` /
+  `prompt-configs` / `rematerialize-presets` / `wave1-safety` / `instructions-e2e` 等改由夹具或官方基型
+  `standard` 承载原断言；原 `test/presets/anchored/anchored-presets.test.mjs` 内容是 tool-git-bash / persona
+  层 / run-code-env 的引擎行为测试（与预设无关），迁移为 `test/engine/preset-engine-modules.test.mjs`；
+  buildCordis 专属测试文件与 `test/presets/` 目录删除。
+- **文档**：README 顶部改为「只移植引擎能力，不再分发上游预设」，删除 `pnpm sync:anchored` 命令并更新许可段；
+  `preset.yml` 根模板去掉 `upstream:` 段、示例引用改指现存内置预设；`templates/14-first-turn-anchor.yml` 与
+  `templates/15-guide-auto.yml` 注释不再引用 anchored；NOTE.md 目录清单同步。
+- **注意**：用户 `DSH_HOME/.agent-presets/anchored/` 既有的种子化副本与生成物**不会**被本插件删除（插件只写
+  自己拥有的目录）；不再需要时可在工作台预设页手动删除该目录。默认模板改为 `standard` 后，新建与重新物化
+  的预设以 `standard` 为基础；`standard` 模板自带 `promptConfigs: []`，因此不再自动生成 near-anchor /
+  router-guide / prompt-injector 三条卡片——需要锚定/引导/注入时按参数开关或在工作台按需添加配置卡。
+
 ### 预设补建串内容修复（2026-09-17）
 
 - **「切换预设后注入内容不变」的根因（P1）**：`applyState` 的补建循环为「非激活且需要

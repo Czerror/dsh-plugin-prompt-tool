@@ -2,9 +2,9 @@
 
 > 一切皆可注入：把 DSH 官方开放的全部注入层级收敛为一个可配置提示词注入引擎——注入什么、注入到哪一层、何时注入，全由提示词配置决定。
 
-DSH 生态的提示词注入标准层：一个 `prompt-config-engine.mjs` 接线官方六个插入点（`agent/pre-step`、`systemPrompt.section`、`systemPrompt.context`、`agent/request`、`llm/stream`、`tools/*`），内置 anchored 默认预设，开箱即用。
+DSH 生态的提示词注入标准层：一个 `prompt-config-engine.mjs` 接线官方六个插入点（`agent/pre-step`、`systemPrompt.section`、`systemPrompt.context`、`agent/request`、`llm/stream`、`tools/*`），内置五个预设（四个官方基型 + 自定义空白，默认 `standard`），开箱即用。
 
-> 策略来源：工具目录锚定 [dsh-anchored-standard](https://github.com/xiaobright/dsh-anchored-standard)、近距离引导 [dsh-router-standard](https://github.com/yjh051108/dsh-router-standard)、缓存铁律 [dsh-super-injector](https://github.com/yjh051108/dsh-super-injector)。
+> 能力来源：工具目录锚定与晋升门控移植自 [dsh-anchored-standard](https://github.com/xiaobright/dsh-anchored-standard)（MIT，上游已于 2026-09-10 冻结），近距离引导参考 [dsh-router-standard](https://github.com/yjh051108/dsh-router-standard)，缓存铁律参考 [dsh-super-injector](https://github.com/yjh051108/dsh-super-injector)。**本项目只移植引擎能力，不再分发上游预设**：锚定/深思链路以引擎模块与参数开关提供，由使用者在自己的预设里按需装配。
 
 ## 安装
 
@@ -44,7 +44,7 @@ dsh --profile prompt-tool
 - 🖥️ **可拖动悬浮工作台入口**：工作台经官方 `shell.overlay` 渲染悬浮触发器与 body portal 抽屉；按钮可拖动、位置存插件自己的 localStorage、窗口变化自动夹回可见区（不读宿主布局树，已移除 `sidebar.footer.action` 几何探针）；六页（主会话/子代理/工具预览/技能设置/预设配置/角色管理）在抽屉内渲染，抽屉用 fixed + z-index 置顶，不被宿主导航栏遮挡
 - 🧪 **七种内容策略**：`static / first-turn-anchor / guide-auto / custom-fallback / instruction-hint / placeholder / world-book`（world-book 支持 ST selectiveLogic 选择性触发：任一/副键全中/排除）
 - 🛡️ **失败不伤会话**：单条失败跳过 + `warnOnce`；配置错误挂载时 fail loud；`dedupe: session` 持久幂等
-- 🧭 **通用 instruction-hint 引擎**：所有预设都可通过 `strategy: instruction-hint` 或 `placeholder + fill: instruction-hint` 提示指令文件存在；实现位于 `engine/instruction-hint.mjs`，不绑定 anchored；`context-gate.instructionHint` 按模型可见 surface 去重，重挂不重复，被压缩遮蔽后才再次提示
+- 🧭 **通用 instruction-hint 引擎**：所有预设都可通过 `strategy: instruction-hint` 或 `placeholder + fill: instruction-hint` 提示指令文件存在；实现位于 `engine/instruction-hint.mjs`，不绑定任何预设；`context-gate.instructionHint` 按模型可见 surface 去重，重挂不重复，被压缩遮蔽后才再次提示
 - 📦 **Bridge 载荷**：JSON 请求统一 32 MiB 硬上限并明确返回 413；角色卡原始图片走 64 MiB 流式通道，按 PNG 魔数识别。
 - 📂 **技能目录管理**：Web UI 可用宿主目录选择器保存外部技能目录的绝对路径引用，也可用浏览器 `webkitdirectory` 导入文件夹内容到第一个当前生效技能目录；两种操作明确分开。
 - 🎭 **SillyTavern 导入**：JSON 预设、角色卡和独立世界书转换为本地预设——按官方顺序表保留启停，赋值模板运行时求值；不等价能力明确报告，采样参数由宿主管理
@@ -56,7 +56,7 @@ dsh --profile prompt-tool
 - 🧩 **模板变量**：仅从预设顶层 `variables` 段提供 `{{key}}` 插值默认值，单条提示词配置的 `variables` 可局部覆盖——模块列表顶部「模板变量」卡片统一编辑（可折叠/清空/停用/失焦自动保存）。`params` 中的旧内容变量及 `params.variables` 不再读取，也不自动迁移；旧预设需自行整理到顶层后重新物化。锚定匹配引擎（anchor-match）统一 custom-fallback 与 world-book 的匹配语义
 - 💬 **会话变量工具**：`session_var`（list/get/set/clear）——模型维护角色状态（`{{心情}}` 等），会话级覆盖预设默认；ST 运行时宏（`{{lastusermessage}}` / `{{lastcharmessage}}`）从会话事件提取
 - 🧩 **工具按模块装配**：角色卡、世界书、会话变量、自定义工具分别由 `character-tools` / `world-book-tools` / `session-var-tools` / `tool-config-engine` 模块提供；不再维护重复的顶层工具开关
-- 📐 **显式按需装配**：`modules: []` 保持空组合；四个官方基型的人设直接由顶层 `persona` 段生成官方行，不再经模块库；不附加其他增强模块。Minimal 保持官方单 shell 基型，Anchored 显式装配本地 `filesystem-editor`（`fs-local` + `str-replace-editor` 同隔离域），不预装 ST 管理工具
+- 📐 **显式按需装配**：`modules: []` 保持空组合；四个官方基型的人设直接由顶层 `persona` 段生成官方行，不再经模块库；不附加其他增强模块。Minimal 保持官方单 shell 基型；带隔离文件系统的本地 `filesystem-editor` 模块（`fs-local` + `str-replace-editor` 同隔离域）只由显式声明它的预设装配。锚定/深思链路（`context-gate` / `tool-bootstrap` / `promoted-code-mode` / `anchor-turn` / `deliberation-gate` / `progress-reminder`）同样按需声明，不预装 ST 管理工具
 
 ## Web 客户端结构
 
@@ -224,7 +224,6 @@ pnpm install && pnpm build
 pnpm test          # 全量契约与行为测试（隔离 cwd 运行）：参数契约/注入装配/六插入点/生成链路/引擎语义/组合重建/模型路由/UI 契约/安全边界
 pnpm typecheck && pnpm lint
 pnpm verify:host         # 官方包基线：声明范围、安装版本、解析目标（拒绝源码 link）、缺失声明与 inject peer
-pnpm sync:anchored       # 刷新 upstream/dsh-anchored-standard 内联快照
 pnpm sync:yaml           # 刷新 engine/vendor/yaml（生成目录运行时 YAML 解析器）
 pnpm rebuild:composition # 只生成官方切块/变体；source/local 本地源不复制（失败安全）
 ```
@@ -237,4 +236,4 @@ pnpm rebuild:composition # 只生成官方切块/变体；source/local 本地源
 
 ## 许可
 
-插件本体 MIT（Czerror）。默认预设策略来源见顶部引用；`preset/` 下 cordis 模板与脚本基于 DeepSeek Harness 官方 Standard 预设修改，版权声明见 `upstream/dsh-anchored-standard/`。
+插件本体 MIT（Czerror）。`engine/` 中移植自 [dsh-anchored-standard](https://github.com/xiaobright/dsh-anchored-standard) 的模块保留其 MIT 许可与来源注释（上游已冻结，本项目只保留引擎移植与本地改写）；`preset/` 下 cordis 模板与脚本基于 DeepSeek Harness 官方 Standard 等预设修改。上游预设本体不再随本包分发。

@@ -16,13 +16,14 @@ function rowsOf(id) {
 
 const idsOf = (rows) => rows.map((row) => row.id)
 
-test('内置预设集合移除 liangshen，保留 anchored + 四个官方基型 + custom', () => {
+test('内置预设集合移除 liangshen 与 anchored，保留四个官方基型 + custom', () => {
   const dirs = readdirSync(join(root, 'preset'), { withFileTypes: true })
     .filter((entry) => entry.isDirectory())
     .map((entry) => entry.name)
     .sort()
-  assert.deepEqual(dirs, ['anchored', 'creative', 'custom', 'minimal', 'ptc', 'standard'])
+  assert.deepEqual(dirs, ['creative', 'custom', 'minimal', 'ptc', 'standard'])
   assert.equal(existsSync(join(root, 'preset', 'liangshen')), false)
+  assert.equal(existsSync(join(root, 'preset', 'anchored')), false, 'anchored 预设已下线，不再随包分发')
 })
 
 test('standard 对齐官方 Standard，以官方 dsh-persona 行承载人设', () => {
@@ -87,22 +88,9 @@ test('minimal 对齐 rc.2 单 shell 基型，以顶层 persona 段驱动官方 d
   })
 })
 
-test('anchored 单文件显式声明上游核心与本项目保留差异', () => {
-  const rows = rowsOf('anchored')
-  const ids = idsOf(rows)
-  const gate = rows.find((row) => row.id === 'context-gate')
-  const bootstrap = rows.find((row) => row.id === 'tool-bootstrap')
-  const delegation = rows.find((row) => row.id === 'delegation')
-  const web = rows.find((row) => row.id === 'tool-web')
-  assert.equal(gate.config.promoteOn, 'either')
-  assert.equal(gate.config.includeSubagents, false, '本项目保留子代理首轮直通')
-  assert.deepEqual(bootstrap.config.bootstrapTools, ['bash', 'str_replace_editor'])
-  assert.deepEqual(bootstrap.config.compactionTools, ['read', 'write', 'edit', 'glob', 'grep', 'todo_write', 'ask_user_question'])
-  assert.equal(bootstrap.config.includeSubagents, false)
-  assert.equal(delegation.config.find((row) => row.id === 'tool-subagent').config.modelSelectionSettings, true)
-  assert.equal(delegation.config.find((row) => row.id === 'tool-subagent-codex').config.backgroundMode, 'one-shot')
-  assert.equal(web.config.fetch, true, '本项目保留 Web fetch 能力')
+test('官方基型不默认装配 ST 管理工具与自定义工具引擎', () => {
+  const ids = idsOf(rowsOf('standard'))
   for (const id of ['character-tools', 'world-book-tools', 'session-var-tools', 'tool-config-engine']) {
-    assert.equal(ids.includes(id), false, `anchored 不应默认装配 ST 工具 ${id}`)
+    assert.equal(ids.includes(id), false, `官方基型不应默认装配 ST 工具 ${id}`)
   }
 })

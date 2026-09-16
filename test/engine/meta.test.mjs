@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { getEngineMeta, KNOWN_STRATEGIES } from '../../engine/schema.mjs'
 
-test('getEngineMeta 返回引擎能力矩阵，anchored 策略为内置策略', () => {
+test('getEngineMeta 返回引擎能力矩阵，内置策略集合稳定', () => {
   const meta = getEngineMeta()
   assert.ok(meta.layers.includes('pre-step'))
   assert.ok(meta.layers.includes('tool-pipeline'))

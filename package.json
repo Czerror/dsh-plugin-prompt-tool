@@ -137,7 +137,6 @@
     "lint": "oxlint src test tsdown.config.ts",
     "test": "node scripts/run-tests.mjs",
     "link:profile": "node scripts/link-profile.mjs",
-    "sync:anchored": "node scripts/sync-anchored.mjs",
     "sync:yaml": "node scripts/sync-yaml-vendor.mjs",
     "rebuild:composition": "node scripts/rebuild-composition.mjs",
     "rematerialize:presets": "node scripts/rematerialize-presets.mjs",

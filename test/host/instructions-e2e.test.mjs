@@ -21,6 +21,12 @@ const previousHome = process.env.DSH_HOME
 process.env.DSH_HOME = home
 const { writePreset } = await import('../../lib/index.mjs')
 const { installPreStepCoordinator, PRE_STEP_COORDINATOR_SERVICE } = await import('../../src/runtime/pre-step-coordinator.ts')
+// 内置 anchored 预设随上游冻结下线后，本文件改用测试夹具模板：夹具不含官方
+// agent-instructions 行（等价于原 anchored 的「无官方指令行」装配事实），
+// 独立指令来源才会接管正文注入。standard 基型相反，用于下面的负责人冲突用例。
+// writePreset 的模板解析根 = options.presetDir（本文件的物化输出根），装到那里。
+const { FIXTURE_PRESET_ID, installFixturePreset } = await import('../fixtures/preset-template.mjs')
+installFixturePreset(join(home, 'preset'))
 
 const policyFile = join(home, '.prompt-tool', 'instructions.yml')
 mkdirSync(join(home, '.prompt-tool'), { recursive: true })
@@ -114,7 +120,7 @@ test('E2E 物化 preset + 引擎 + 协调器：按会话工作区注入文件正
   const workspace = join(workspaceRoot, 'workspace')
   mkdirSync(join(workspace, '.git'), { recursive: true })
   writeFileSync(join(workspace, 'AGENTS.md'), 'PROJECT RULES V1\n', 'utf8')
-  const { presetDir, mountDir } = materialize('e2e-anchored', 'anchored')
+  const { presetDir, mountDir } = materialize('e2e-fixture', FIXTURE_PRESET_ID)
 
   const agent = makeAgent(workspace)
   const app = await mountPreset(presetDir, mountDir, agent)
@@ -140,7 +146,7 @@ test('E2E 助手删掉文件：曾注入过 → 只发一次失效通知；策�
   const workspace = join(workspaceRoot, 'workspace-2')
   mkdirSync(join(workspace, '.git'), { recursive: true })
   writeFileSync(join(workspace, 'AGENTS.md'), 'TEMP RULES\n', 'utf8')
-  const { presetDir, mountDir } = materialize('e2e-anchored-2', 'anchored')
+  const { presetDir, mountDir } = materialize('e2e-fixture-2', FIXTURE_PRESET_ID)
   const agent = makeAgent(workspace)
   const app = await mountPreset(presetDir, mountDir, agent)
 

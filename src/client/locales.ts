@@ -27,7 +27,7 @@ const ZH_CORE = {
   'tab.label': '提示词工具',
 
   'settings.aria': '提示词工具基础设置',
-  'settings.writePreset.label': '生成锚定注入预设',
+  'settings.writePreset.label': '生成提示词注入预设',
   'settings.writePreset.hint': '关闭后移除各预设目录的生成物，参数与内容不再物化。',
   'settings.presetTemplate.title': '预设模板',
   'settings.presetTemplate.hint': '新会话默认挂载的预设；完整预设管理与提示词配置请点左上角的悬浮按钮（可拖动）打开「提示词工具」工作台。',
@@ -296,7 +296,7 @@ const EN_CORE: Record<keyof typeof ZH_CORE, string> = {
   'tab.label': 'Prompt Tool',
 
   'settings.aria': 'Prompt tool basic settings',
-  'settings.writePreset.label': 'Materialize anchored injection presets',
+  'settings.writePreset.label': 'Materialize prompt-tool injection presets',
   'settings.writePreset.hint': 'When off, generated preset files are removed and parameters/content stop being materialized.',
   'settings.presetTemplate.title': 'Preset template',
   'settings.presetTemplate.hint': 'Preset mounted by default for new sessions; open the draggable floating button at the top-left for full preset management and prompt configs.',

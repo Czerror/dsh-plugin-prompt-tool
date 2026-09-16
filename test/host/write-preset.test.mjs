@@ -11,7 +11,10 @@ import { parse as parseYaml, parseDocument } from 'yaml'
 const home = mkdtempSync(join(tmpdir(), 'pt-wp-home-'))
 process.env.DSH_HOME = home
 const ROOT = fileURLToPath(new URL('../..', import.meta.url))
+const { FIXTURE_PRESET_ID, FIXTURE_PRESET_SRC, installFixturePreset, installFixturePresetInHome } = await import('../fixtures/preset-template.mjs')
 const { writePreset, savePresetParams, loadPresetSpec } = await import('../../lib/index.mjs')
+// 夹具模板同时装进隔离 DSH_HOME 的官方预设根（resolvePresetDir 场景）与各测试的输出根（见 makeOptions）。
+installFixturePresetInHome(home)
 /** 指令文件正文 sentinel：任何预设产物都不得包含它（正文只属于用户文件）。 */
 const AGENTS_BODY_SENTINEL = 'AGENTS CONTENT SENTINEL 7f3a'
 test.after(() => rmSync(home, { recursive: true, force: true }))
@@ -33,6 +36,9 @@ test('writePreset 从指定预设根读取同名参数，不被默认根遮蔽',
 })
 
 function makeOptions(presetDir) {
+  // writePreset 的模板解析根 = options.presetDir（其次包内 preset/）：夹具缺失时安装；
+  // 测试已自行复制并改写过 preset.yml 时不覆盖。
+  if (!existsSync(join(presetDir, FIXTURE_PRESET_ID, 'preset.yml'))) installFixturePreset(presetDir)
   return {
     firstTurnAnchor: false,
     firstTurnText: '',
@@ -45,6 +51,7 @@ function makeOptions(presetDir) {
     bootstrapMaxTokens: 0,
     usePtcMode: true,
     presetDir,
+    presetTemplate: FIXTURE_PRESET_ID,
     presetOrder: 5,
     promptConfigs: [],
   }
@@ -69,13 +76,13 @@ test('writePreset 共享引擎 .engine：预设目录不复制 engine，组合�
     assert.ok(existsSync(join(engineDir, 'prompt-config-engine.mjs')), '容器根共享引擎存在')
     assert.ok(existsSync(join(engineDir, 'vendor', 'yaml', 'index.js')), '容器根共享引擎含 vendor')
     assert.equal(existsSync(join(engineDir, 'compositions')), false, '生成期 compositions 不复制')
-    assert.equal(existsSync(join(presetDir, 'anchored', 'engine')), false, '子预设不再复制 engine')
+    assert.equal(existsSync(join(presetDir, 'fixture', 'engine')), false, '子预设不再复制 engine')
     assert.equal(existsSync(join(presetDir, 'agent.cordis.yml')), false, '预设根不再写容器根转发')
     // 组合路径重写：引擎引用 ../.engine（相对预设目录 = 预设根/.engine），
-    // configsDir ../anchored/prompt-configs（相对 .engine = 预设目录/prompt-configs，数学可验证）。
-    const sub = readFileSync(join(presetDir, 'anchored', 'agent.cordis.yml'), 'utf8')
+    // configsDir ../fixture/prompt-configs（相对 .engine = 预设目录/prompt-configs，数学可验证）。
+    const sub = readFileSync(join(presetDir, 'fixture', 'agent.cordis.yml'), 'utf8')
     assert.match(sub, /name: \.\.\/\.engine\/prompt-config-engine\.mjs/, '预设引擎引用 ../.engine（预设根共享）')
-    assert.match(sub, /configsDir: \.\.\/anchored\/prompt-configs/, 'configsDir 相对 .engine 指向预设目录')
+    assert.match(sub, /configsDir: \.\.\/fixture\/prompt-configs/, 'configsDir 相对 .engine 指向预设目录')
     const engineRow = parseYaml(sub).find((row) => row?.id === 'prompt-config-engine')
     const engineFileUrl = pathToFileURL(join(presetDir, '.engine', 'prompt-config-engine.mjs'))
     const resolved = new URL(engineRow.config.configsDir + '/', engineFileUrl)
@@ -108,7 +115,7 @@ test('writePreset 输出不包含未解析的 __VARIABLE__ 残留', () => {
   const presetDir = join(dir, 'preset')
   try {
     writePreset('PROMPT', makeOptions(presetDir))
-    const agent = readFileSync(join(presetDir, 'anchored', 'agent.cordis.yml'), 'utf8')
+    const agent = readFileSync(join(presetDir, 'fixture', 'agent.cordis.yml'), 'utf8')
     assert.doesNotMatch(agent, /__[A-Za-z0-9_]+__/g)
   } finally {
     rmSync(dir, { recursive: true, force: true })
@@ -128,7 +135,7 @@ test('writePreset 模型参数（思维程度/温度/输出上限）→ agent-re
       subagentTemperature: '',
       subagentMaxTokens: '',
     })
-    const configsDir = join(presetDir, 'anchored', 'prompt-configs')
+    const configsDir = join(presetDir, 'fixture', 'prompt-configs')
     const files = readdirSync(configsDir).sort()
     const modelParams = files.find((file) => file.includes('model-params'))
     assert.ok(modelParams, `缺 model-params 配置，实际文件: ${files.join(', ')}`)
@@ -150,7 +157,7 @@ test('writePreset 模型参数全部留空 = 不生成 agent-request 配置', ()
   const presetDir = join(dir, 'preset')
   try {
     writePreset('PROMPT', makeOptions(presetDir))
-    const configsDir = join(presetDir, 'anchored', 'prompt-configs')
+    const configsDir = join(presetDir, 'fixture', 'prompt-configs')
     const files = readdirSync(configsDir)
     assert.ok(!files.some((file) => file.includes('model-params')), `不应生成 model-params，实际: ${files.join(', ')}`)
     assert.ok(!files.some((file) => file.includes('subagent-model-params')), `不应生成 subagent-model-params，实际: ${files.join(', ')}`)
@@ -163,13 +170,13 @@ test('模型参数改回留空：空串删除 preset.yml 旧键（渲染层空�
   const dir = join(tmpdir(), `prompt-tool-clear-${process.pid}-${Date.now()}`)
   const presetDir = join(dir, 'preset')
   try {
-    cpSync(join(ROOT, 'preset', 'anchored'), join(presetDir, 'anchored'), { recursive: true })
+    cpSync(FIXTURE_PRESET_SRC, join(presetDir, 'fixture'), { recursive: true })
     // 1) 先设置 high。
-    savePresetParams(presetDir, 'anchored', { modelReasoningEffort: 'high' }, undefined)
-    assert.equal(loadPresetSpec(join(presetDir, 'anchored')).params.modelReasoningEffort, 'high', '设置 high 写入预设参数')
+    savePresetParams(presetDir, 'fixture', { modelReasoningEffort: 'high' }, undefined)
+    assert.equal(loadPresetSpec(join(presetDir, 'fixture')).params.modelReasoningEffort, 'high', '设置 high 写入预设参数')
     // 2) 改回留空（UI 总是发送空串键）：preset.yml 旧键被删除，渲染不生成 patch。
-    savePresetParams(presetDir, 'anchored', { modelReasoningEffort: '' }, undefined)
-    assert.equal(loadPresetSpec(join(presetDir, 'anchored')).params.modelReasoningEffort, undefined, '改回留空删除旧键（渲染层无 patch）')
+    savePresetParams(presetDir, 'fixture', { modelReasoningEffort: '' }, undefined)
+    assert.equal(loadPresetSpec(join(presetDir, 'fixture')).params.modelReasoningEffort, undefined, '改回留空删除旧键（渲染层无 patch）')
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
@@ -179,27 +186,27 @@ test('savePresetParams 空值删键：空数组删除，stagePreUnlock=0 是合�
   const dir = join(tmpdir(), `prompt-tool-empty-${process.pid}-${Date.now()}`)
   const presetDir = join(dir, 'preset')
   try {
-    cpSync(join(ROOT, 'preset', 'anchored'), join(presetDir, 'anchored'), { recursive: true })
+    cpSync(FIXTURE_PRESET_SRC, join(presetDir, 'fixture'), { recursive: true })
     // 1) 设置有值：bootstrapTools / messageSources / stagePreUnlock / maxPromoteSteps。
-    savePresetParams(presetDir, 'anchored', {
+    savePresetParams(presetDir, 'fixture', {
       bootstrapTools: ['bash'],
       messageSources: ['user'],
       stagePreUnlock: 2,
       maxPromoteSteps: 6,
     }, undefined)
-    let spec = loadPresetSpec(join(presetDir, 'anchored'))
+    let spec = loadPresetSpec(join(presetDir, 'fixture'))
     assert.deepEqual(spec.params.bootstrapTools, ['bash'], 'bootstrapTools 写入')
     assert.deepEqual(spec.params.messageSources, ['user'], 'messageSources 写入')
     assert.equal(spec.params.stagePreUnlock, 2, 'stagePreUnlock 写入')
     assert.equal(spec.params.maxPromoteSteps, 6, 'maxPromoteSteps 写入')
     // 2) 改回空：空数组删除键；stagePreUnlock=0 是合法档位，不是空值。
-    savePresetParams(presetDir, 'anchored', {
+    savePresetParams(presetDir, 'fixture', {
       bootstrapTools: [],
       messageSources: [],
       stagePreUnlock: 0,
       maxPromoteSteps: 0,
     }, undefined)
-    spec = loadPresetSpec(join(presetDir, 'anchored'))
+    spec = loadPresetSpec(join(presetDir, 'fixture'))
     assert.equal(spec.params.bootstrapTools, undefined, 'bootstrapTools 空数组删键（引擎 stringList 空数组 fail）')
     assert.equal(spec.params.messageSources, undefined, 'messageSources 空数组删键（空列表 = 全拦注入）')
     assert.equal(spec.params.stagePreUnlock, 0, 'stagePreUnlock 0 保留（与 undefined->1 语义不同）')
@@ -215,7 +222,7 @@ test('writePreset 生成 agent.cordis.yml 注入 allowKinds', () => {
   const presetDir = join(dir, 'preset')
   try {
     writePreset('PROMPT', makeOptions(presetDir))
-    const agent = readFileSync(join(presetDir, 'anchored', 'agent.cordis.yml'), 'utf8')
+    const agent = readFileSync(join(presetDir, 'fixture', 'agent.cordis.yml'), 'utf8')
     const rows = parseYaml(agent)
     const contextGate = rows.find((row) => row?.id === 'context-gate')
     assert.ok(contextGate, 'agent.cordis.yml 应含 context-gate 行')
@@ -230,8 +237,8 @@ test('writePreset 将 preset.yml 的锚点/引导参数写入提示词配置', (
   const presetDir = join(dir, 'preset')
   try {
     writePreset('PROMPT', makeOptions(presetDir))
-    const near = readFileSync(join(presetDir, 'anchored', 'prompt-configs', '0000-near-anchor.yml'), 'utf8')
-    const guide = readFileSync(join(presetDir, 'anchored', 'prompt-configs', '0010-router-guide.yml'), 'utf8')
+    const near = readFileSync(join(presetDir, 'fixture', 'prompt-configs', '0000-near-anchor.yml'), 'utf8')
+    const guide = readFileSync(join(presetDir, 'fixture', 'prompt-configs', '0010-router-guide.yml'), 'utf8')
     assert.ok(near.includes('buildPattern'))
     assert.ok(near.includes('firstTurnBuild'))
     assert.ok(guide.includes('complexPattern'))
@@ -246,12 +253,12 @@ test('writePreset 透传 firstTurnWord 覆盖到 prompt-injector 配置', () => 
   const presetDir = join(dir, 'preset')
   try {
     writePreset('PROMPT', { ...makeOptions(presetDir), firstTurnWord: '开始' })
-    const injector = readFileSync(join(presetDir, 'anchored', 'prompt-configs', '0020-prompt-injector.yml'), 'utf8')
+    const injector = readFileSync(join(presetDir, 'fixture', 'prompt-configs', '0020-prompt-injector.yml'), 'utf8')
     assert.ok(injector.includes('firstTurnWord: |-') && injector.includes('开始'), injector)
     // 未传 firstTurnWord 时回退 preset.yml 模板默认（we），不写空值覆盖。
     const dir2 = join(dir, 'preset2')
     writePreset('PROMPT', makeOptions(dir2))
-    const injector2 = readFileSync(join(dir2, 'anchored', 'prompt-configs', '0020-prompt-injector.yml'), 'utf8')
+    const injector2 = readFileSync(join(dir2, 'fixture', 'prompt-configs', '0020-prompt-injector.yml'), 'utf8')
     assert.ok(injector2.includes('firstTurnWord: |-') && injector2.includes('we'), injector2)
   } finally {
     rmSync(dir, { recursive: true, force: true })
@@ -268,7 +275,7 @@ test('writePreset 内容资产单一事实源：settings 覆盖层带 text 也�
         { id: 'prompt-injector', name: '用户覆盖', enabled: true, strategy: 'custom-fallback', text: 'SETTINGS TEXT' },
       ],
     })
-    const injector = readFileSync(join(presetDir, 'anchored', 'prompt-configs', '0020-prompt-injector.yml'), 'utf8')
+    const injector = readFileSync(join(presetDir, 'fixture', 'prompt-configs', '0020-prompt-injector.yml'), 'utf8')
     assert.ok(injector.includes('text: |-') && injector.includes('FILE CONTENT'), injector)
     assert.ok(!injector.includes('SETTINGS TEXT'), injector)
     assert.ok(!injector.includes('texts:'), injector)
@@ -298,16 +305,16 @@ test('writePreset 不再物化任何 AGENTS 文件卡，指令正文不落预设
     mkdirSync(workspace, { recursive: true })
     writeFileSync(join(workspace, 'AGENTS.md'), `${AGENTS_BODY_SENTINEL}\n`, 'utf8')
     writePreset('PROMPT', { ...makeOptions(presetDir), agentsInstructionText: AGENTS_BODY_SENTINEL })
-    const configsDir = join(presetDir, 'anchored', 'prompt-configs')
+    const configsDir = join(presetDir, 'fixture', 'prompt-configs')
     const names = readdirSync(configsDir)
     assert.deepEqual(names.filter((name) => name.includes('agents-file-')), [], '生成目录不再出现文件卡')
-    const presetYml = readFileSync(join(presetDir, 'anchored', 'preset.yml'), 'utf8')
+    const presetYml = readFileSync(join(presetDir, 'fixture', 'preset.yml'), 'utf8')
     assert.ok(!presetYml.includes('agents-file-'), 'preset.yml 不含文件卡身份')
     const leaked = names
       .filter((name) => name.endsWith('.yml'))
       .filter((name) => readFileSync(join(configsDir, name), 'utf8').includes(AGENTS_BODY_SENTINEL))
     assert.deepEqual(leaked, [], '任何生成产物都不得包含指令正文')
-    assert.equal(existsSync(join(presetDir, 'anchored', 'agents-instruction.md')), false, '不再生成 agents-instruction.md')
+    assert.equal(existsSync(join(presetDir, 'fixture', 'agents-instruction.md')), false, '不再生成 agents-instruction.md')
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
@@ -341,10 +348,10 @@ test('writePreset 空 prompt/agents 不生成空内容资产，prompt-injector �
       injectPrompt: true,
       agentsInstructionText: '',
     })
-    assert.equal(existsSync(join(presetDir, 'anchored', 'preset.md')), false, '空内容不生成 preset.md')
-    assert.equal(existsSync(join(presetDir, 'anchored', 'agents.md')), false, '空内容不生成 agents.md')
-    assert.equal(existsSync(join(presetDir, 'anchored', 'agents-instruction.md')), false, '空内容不生成 agents-instruction.md')
-    const injector = readFileSync(join(presetDir, 'anchored', 'prompt-configs', '0020-prompt-injector.yml'), 'utf8')
+    assert.equal(existsSync(join(presetDir, 'fixture', 'preset.md')), false, '空内容不生成 preset.md')
+    assert.equal(existsSync(join(presetDir, 'fixture', 'agents.md')), false, '空内容不生成 agents.md')
+    assert.equal(existsSync(join(presetDir, 'fixture', 'agents-instruction.md')), false, '空内容不生成 agents-instruction.md')
+    const injector = readFileSync(join(presetDir, 'fixture', 'prompt-configs', '0020-prompt-injector.yml'), 'utf8')
     const parsed = parseYaml(injector)
     assert.equal(parsed.enabled, false, '空内容时 prompt-injector 应禁用（无内容可注入）')
   } finally {
@@ -408,10 +415,10 @@ test('writePreset outputId 覆盖：别名目录独立渲染（旧容器 id 兼�
   const dir = join(tmpdir(), `prompt-tool-alias-${process.pid}-${Date.now()}`)
   const presetDir = join(dir, 'preset')
   try {
-    writePreset('ALIAS PROMPT', { ...makeOptions(presetDir), presetTemplate: 'anchored', outputId: 'prompt-tool' })
+    writePreset('ALIAS PROMPT', { ...makeOptions(presetDir), presetTemplate: 'fixture', outputId: 'prompt-tool' })
     assert.ok(existsSync(join(presetDir, 'prompt-tool', 'agent.cordis.yml')), '别名目录组合本体生成')
     assert.ok(existsSync(join(presetDir, 'prompt-tool', 'preset.md')), '别名目录内容资产生成')
-    assert.equal(existsSync(join(presetDir, 'anchored', 'preset.md')), false, '模板同名目录不受别名渲染影响')
+    assert.equal(existsSync(join(presetDir, 'fixture', 'preset.md')), false, '模板同名目录不受别名渲染影响')
     const sub = readFileSync(join(presetDir, 'prompt-tool', 'agent.cordis.yml'), 'utf8')
     assert.match(sub, /configsDir: \.\.\/prompt-tool\/prompt-configs/, '组合 configsDir 重写到别名目录')
     assert.match(sub, /name: \.\.\/\.engine\/prompt-config-engine\.mjs/, '引擎引用共享 .engine')
@@ -449,8 +456,8 @@ test('writePreset 生成内容资产文件 preset.md / agents.md', () => {
   const presetDir = join(dir, 'preset')
   try {
     writePreset('PRESET CONTENT', { ...makeOptions(presetDir), agentsInstructionText: 'AGENTS CONTENT' })
-    assert.equal(readFileSync(join(presetDir, 'anchored', 'preset.md'), 'utf8'), 'PRESET CONTENT')
-    assert.equal(readFileSync(join(presetDir, 'anchored', 'agents.md'), 'utf8'), 'AGENTS CONTENT')
+    assert.equal(readFileSync(join(presetDir, 'fixture', 'preset.md'), 'utf8'), 'PRESET CONTENT')
+    assert.equal(readFileSync(join(presetDir, 'fixture', 'agents.md'), 'utf8'), 'AGENTS CONTENT')
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
@@ -459,11 +466,11 @@ test('writePreset 生成内容资产文件 preset.md / agents.md', () => {
 test('writePreset 失败时保留旧生成目录', () => {
   const dir = join(tmpdir(), `prompt-tool-wp-${process.pid}-${Date.now()}`)
   const presetDir = join(dir, 'preset')
-  mkdirSync(join(presetDir, 'anchored'), { recursive: true })
-  writeFileSync(join(presetDir, 'anchored', 'keep.txt'), 'old', 'utf8')
+  mkdirSync(join(presetDir, 'fixture'), { recursive: true })
+  writeFileSync(join(presetDir, 'fixture', 'keep.txt'), 'old', 'utf8')
   try {
     assert.throws(() => writePreset('PROMPT', { ...makeOptions(presetDir), presetTemplate: 'missing-template' }))
-    assert.equal(readFileSync(join(presetDir, 'anchored', 'keep.txt'), 'utf8'), 'old')
+    assert.equal(readFileSync(join(presetDir, 'fixture', 'keep.txt'), 'utf8'), 'old')
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
@@ -488,7 +495,7 @@ test('writePreset 拒绝非法 presetTemplate（路径穿越防护）', () => {
       /invalid presetTemplate/,
     )
     assert.throws(
-      () => writePreset('PROMPT', { ...makeOptions(presetDir), presetTemplate: 'Anchored' }),
+      () => writePreset('PROMPT', { ...makeOptions(presetDir), presetTemplate: 'Fixture' }),
       /invalid presetTemplate/,
     )
     assert.ok(!existsSync(join(dir, 'escape')), '不得写入容器根之外')
@@ -502,8 +509,8 @@ test('writePreset 预设变量只读顶层 variables，清空后不复活 params
   const presetDir = join(dir, 'preset')
   try {
     // 旧 params 内容键及嵌套 params.variables 保留原文件，但不再成为变量源。
-    cpSync(join(ROOT, 'preset', 'anchored'), join(presetDir, 'anchored'), { recursive: true })
-    const presetFile = join(presetDir, 'anchored', 'preset.yml')
+    cpSync(FIXTURE_PRESET_SRC, join(presetDir, 'fixture'), { recursive: true })
+    const presetFile = join(presetDir, 'fixture', 'preset.yml')
     const doc = parseDocument(readFileSync(presetFile, 'utf8'))
     doc.setIn(['params', 'legacyVar'], '旧值')
     doc.setIn(['params', 'legacyEmpty'], '')
@@ -512,7 +519,7 @@ test('writePreset 预设变量只读顶层 variables，清空后不复活 params
     doc.get('modules', true).add('tool-config-engine')
     writeFileSync(presetFile, doc.toString(), 'utf8')
     const variables = { wordsCloud: '1500字', 日期: '', usePtcMode: '同名内容变量' }
-    savePresetParams(presetDir, 'anchored', undefined, undefined, variables)
+    savePresetParams(presetDir, 'fixture', undefined, undefined, variables)
     const storedParams = parseYaml(readFileSync(presetFile, 'utf8')).params
     writePreset('PROMPT', {
       ...makeOptions(presetDir),
@@ -525,7 +532,7 @@ test('writePreset 预设变量只读顶层 variables，清空后不复活 params
       injectPrompt: true,
       bootstrapMaxTokens: 4096,
     })
-    const pcDir = join(presetDir, 'anchored', 'prompt-configs')
+    const pcDir = join(presetDir, 'fixture', 'prompt-configs')
     const file = readdirSync(pcDir).find((name) => name.endsWith('-near-anchor.yml'))
     assert.ok(file, '提示词配置文件存在')
     const parsed = parseYaml(readFileSync(join(pcDir, file), 'utf8'))
@@ -541,7 +548,7 @@ test('writePreset 预设变量只读顶层 variables，清空后不复活 params
     assert.deepEqual(vars, variables, '变量文件只包含顶层变量，保留空串与同名键')
     assert.equal(parsed.variables?.['wordsCloud'], undefined, '配置文件不再逐条展开内容变量')
     assert.equal(parsed.params?.wordsCloud, undefined, '内容变量不再进 params')
-    savePresetParams(presetDir, 'anchored', undefined, undefined, {})
+    savePresetParams(presetDir, 'fixture', undefined, undefined, {})
     writePreset('PROMPT', makeOptions(presetDir))
     assert.equal(existsSync(varsFile), false, '清空顶层变量后移除旧生成文件，params 内容键不复活')
     assert.deepEqual(parseYaml(readFileSync(presetFile, 'utf8')).params, storedParams, '不迁移或清理原 params')
@@ -554,8 +561,8 @@ test('writePreset 自定义工具渲染 custom-tools/<n>-<id>.yml（源 = preset
   const dir = join(tmpdir(), `prompt-tool-ctools-${process.pid}-${Date.now()}`)
   const presetDir = join(dir, 'preset')
   try {
-    cpSync(join(ROOT, 'preset', 'anchored'), join(presetDir, 'anchored'), { recursive: true })
-    const presetFile = join(presetDir, 'anchored', 'preset.yml')
+    cpSync(FIXTURE_PRESET_SRC, join(presetDir, 'fixture'), { recursive: true })
+    const presetFile = join(presetDir, 'fixture', 'preset.yml')
     const doc = parseDocument(readFileSync(presetFile, 'utf8'))
     doc.setIn(['customTools'], [
       {
@@ -571,7 +578,7 @@ test('writePreset 自定义工具渲染 custom-tools/<n>-<id>.yml（源 = preset
     doc.get('modules', true).add('tool-config-engine')
     writeFileSync(presetFile, doc.toString(), 'utf8')
     writePreset('PROMPT', makeOptions(presetDir))
-    const customToolsDir = join(presetDir, 'anchored', 'custom-tools')
+    const customToolsDir = join(presetDir, 'fixture', 'custom-tools')
     assert.ok(existsSync(customToolsDir), 'custom-tools 目录生成')
     const files = readdirSync(customToolsDir).sort()
     assert.deepEqual(files, ['0001-greet.yml'], '合法条目落盘；缺 output.schema 的坏条目在物化阶段跳过')
@@ -579,9 +586,9 @@ test('writePreset 自定义工具渲染 custom-tools/<n>-<id>.yml（源 = preset
     assert.equal(parsed.name, 'my_greet')
     assert.equal(parsed.execute.kind, 'shell')
     assert.deepEqual(parsed.parameters, { type: 'object', properties: { who: { type: 'string', description: '对象' } }, required: ['who'] }, '参数 DSL 经官方转换器物化为标准 JSON Schema')
-    const composition = parseYaml(readFileSync(join(presetDir, 'anchored', 'agent.cordis.yml'), 'utf8'))
+    const composition = parseYaml(readFileSync(join(presetDir, 'fixture', 'agent.cordis.yml'), 'utf8'))
     const toolRow = composition.find((row) => row?.id === 'tool-config-engine')
-    assert.equal(toolRow.config.configsDir, '../anchored/custom-tools', 'custom-tools 路径应重写到当前预设')
+    assert.equal(toolRow.config.configsDir, '../fixture/custom-tools', 'custom-tools 路径应重写到当前预设')
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
@@ -616,15 +623,15 @@ test('savePresetParams 清理空 key（VariablesEditor 待编辑行不落盘）'
   const dir = join(tmpdir(), `prompt-tool-emptyk-${process.pid}-${Date.now()}`)
   const presetDir = join(dir, 'preset')
   try {
-    mkdirSync(join(presetDir, 'anchored'), { recursive: true })
-    writeFileSync(join(presetDir, 'anchored', 'preset.yml'), 'id: anchored\nparams: {}\n', 'utf8')
+    mkdirSync(join(presetDir, 'fixture'), { recursive: true })
+    writeFileSync(join(presetDir, 'fixture', 'preset.yml'), 'id: fixture\nparams: {}\n', 'utf8')
     savePresetParams(
       presetDir,
-      'anchored',
+      'fixture',
       { '': 'x', wordsCloud: 'v' },
       [{ id: 'a', variables: { '': '', keep: '1' } }],
     )
-    const doc = parseYaml(readFileSync(join(presetDir, 'anchored', 'preset.yml'), 'utf8'))
+    const doc = parseYaml(readFileSync(join(presetDir, 'fixture', 'preset.yml'), 'utf8'))
     assert.equal(doc.params?.[''], undefined, 'params 空 key 不写入')
     assert.equal(doc.params?.wordsCloud, 'v', '有效 params 正常写入')
     assert.equal(doc.promptConfigs[0]?.variables?.[''], undefined, '配置 variables 空 key 不写入')
@@ -637,9 +644,9 @@ test('savePresetParams 清理空 key（VariablesEditor 待编辑行不落盘）'
 test('晋升门控/渐进披露/验证工具参数仅进入组合配置，不成为模板变量', () => {
   const dir = mkdtempSync(join(tmpdir(), 'pt-wp-paramkeys-'))
   try {
-    // 复制 anchored 模板，params 加新增参数键（模拟用户手写/UI 保存）。
-    cpSync(join(ROOT, 'preset', 'anchored'), join(dir, 'anchored'), { recursive: true })
-    const presetFile = join(dir, 'anchored', 'preset.yml')
+    // 复制夹具模板，params 加新增参数键（模拟用户手写/UI 保存）。
+    cpSync(FIXTURE_PRESET_SRC, join(dir, 'fixture'), { recursive: true })
+    const presetFile = join(dir, 'fixture', 'preset.yml')
     const doc = parseDocument(readFileSync(presetFile, 'utf8'))
     doc.setIn(['params', 'promoteGate'], true)
     doc.setIn(['params', 'maxPromoteSteps'], 6)
@@ -655,7 +662,7 @@ test('晋升门控/渐进披露/验证工具参数仅进入组合配置，不成
 
     writePreset('PROMPT', makeOptions(dir))
 
-    const pcDir = join(dir, 'anchored', 'prompt-configs')
+    const pcDir = join(dir, 'fixture', 'prompt-configs')
     const varsFile = join(pcDir, 'variables.yml')
     // 无内容变量（顶层 variables 段为空）时不生成 variables.yml；生成时不得含参数键。
     const vars = existsSync(varsFile) ? parseYaml(readFileSync(varsFile, 'utf8')) : {}
@@ -676,7 +683,7 @@ test('晋升门控/渐进披露/验证工具参数仅进入组合配置，不成
       }
     }
     // 参数桥落点：生成组合的 tool-bootstrap 行应含 promoteGate 等（params 声明生效）。
-    const cordis = readFileSync(join(dir, 'anchored', 'agent.cordis.yml'), 'utf8')
+    const cordis = readFileSync(join(dir, 'fixture', 'agent.cordis.yml'), 'utf8')
     assert.ok(cordis.includes('promoteGate: true'), '参数桥把 promoteGate 合并进 tool-bootstrap 行')
     assert.ok(cordis.includes('maxPromoteSteps: 6'))
     assert.ok(cordis.includes('messageSources'), 'context-gate 行含 messageSources')
@@ -734,9 +741,9 @@ test('模板变量插值开关：停用不生成 variables.yml 且剥离配置�
     texts: ['剧情{{wordsCloud}}字 {{DSH_HOME}}'],
   }]
   try {
-    cpSync(join(ROOT, 'preset', 'anchored'), join(presetDir, 'anchored'), { recursive: true })
-    savePresetParams(presetDir, 'anchored', undefined, undefined, { wordsCloud: '1500字' }, false)
-    const pcDir = join(presetDir, 'anchored', 'prompt-configs')
+    cpSync(FIXTURE_PRESET_SRC, join(presetDir, 'fixture'), { recursive: true })
+    savePresetParams(presetDir, 'fixture', undefined, undefined, { wordsCloud: '1500字' }, false)
+    const pcDir = join(presetDir, 'fixture', 'prompt-configs')
     writePreset('PROMPT', { ...makeOptions(presetDir), promptConfigs: varConfig() })
     const varsFile = join(pcDir, 'variables.yml')
     assert.equal(existsSync(varsFile), false, '停用时 variables.yml 不生成')
@@ -745,7 +752,7 @@ test('模板变量插值开关：停用不生成 variables.yml 且剥离配置�
     const parsed = parseYaml(readFileSync(join(pcDir, file), 'utf8'))
     assert.equal(parsed.text, '剧情字 {{DSH_HOME}}', '预设变量引用剥离、内置变量保留')
     // 重新启用：true = 删除开关键（缺省启用），变量文件恢复。
-    savePresetParams(presetDir, 'anchored', undefined, undefined, { wordsCloud: '1500字' }, true)
+    savePresetParams(presetDir, 'fixture', undefined, undefined, { wordsCloud: '1500字' }, true)
     writePreset('PROMPT', { ...makeOptions(presetDir), promptConfigs: varConfig() })
     assert.ok(existsSync(varsFile), '启用后 variables.yml 恢复生成')
     const vars = parseYaml(readFileSync(varsFile, 'utf8'))
@@ -815,7 +822,7 @@ test('writePreset 禁用大条目瘦身：enabled=false 超阈值正文不落产
       { id: 'normal-off', name: '普通禁用', enabled: false, strategy: 'static', layer: 'system-section', order: 110, text: '小段文本' },
       { id: 'normal-on', name: '启用大条目', enabled: true, strategy: 'static', layer: 'system-section', order: 120, text: bigText },
     ] })
-    const configsDir = join(presetDir, 'anchored', 'prompt-configs')
+    const configsDir = join(presetDir, 'fixture', 'prompt-configs')
     const read = (id) => {
       const file = readdirSync(configsDir).find((name) => name.endsWith(`-${id}.yml`))
       assert.ok(file, `应生成 ${id}`)
@@ -834,12 +841,12 @@ test('writePreset 禁用大条目瘦身：enabled=false 超阈值正文不落产
   }
 })
 
-test('writePreset anchored 不默认装配 ST 管理工具模块' , () => {
+test('writePreset 夹具模板不默认装配 ST 管理工具模块' , () => {
   const dir = join(tmpdir(), `prompt-tool-modules-${process.pid}-${Date.now()}`)
   const presetDir = join(dir, 'preset')
   try {
     writePreset('PROMPT', makeOptions(presetDir))
-    const rows = parseYaml(readFileSync(join(presetDir, 'anchored', 'agent.cordis.yml'), 'utf8'))
+    const rows = parseYaml(readFileSync(join(presetDir, 'fixture', 'agent.cordis.yml'), 'utf8'))
     const ids = rows.map((row) => row?.id).filter(Boolean)
     for (const id of ['character-tools', 'world-book-tools', 'session-var-tools', 'tool-config-engine']) {
       assert.equal(ids.includes(id), false, `${id} 应由 ST 转换按需装配`)
@@ -855,7 +862,7 @@ test('writePreset 目标目录被占用时退回原地合并写：内容刷新�
   const originalCwd = process.cwd()
   try {
     writePreset('PROMPT', makeOptions(presetDir))
-    const target = join(presetDir, 'anchored')
+    const target = join(presetDir, 'fixture')
     const stale = join(target, 'prompt-configs', '9999-stale.yml')
     mkdirSync(join(target, 'prompt-configs'), { recursive: true })
     writeFileSync(stale, 'id: stale\n', 'utf8')

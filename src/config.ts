@@ -10,9 +10,9 @@ export const NS = 'prompt-tool' as const
 export { PARAM_KEYS } from './shared/param-keys.ts'
 
 export interface Config {
-  /** 是否生成锚定注入 preset（默认 true）。 */
+  /** 是否生成注入预设（默认 true）。 */
   writePreset: boolean
-  /** 预设模板名（默认 anchored；其他模板时 anchored 专属 UI 可隐藏）。 */
+  /** 预设模板名（默认 standard）。 */
   presetTemplate: string
   /** 生成 preset 的显示顺序。 */
   presetOrder: number
@@ -24,7 +24,7 @@ export interface Config {
 // 框架在插件加载时校验并填充默认值。
 export const Config: z<Config> = z.object({
   writePreset: z.boolean().default(true),
-  presetTemplate: z.string().default('anchored'),
+  presetTemplate: z.string().default('standard'),
   presetOrder: z.natural().default(DEFAULT_PRESET_ORDER),
   fallbackText: z.string().default(''),
 })
@@ -109,7 +109,7 @@ export const PromptSettingsSchema: z<PromptSettings> = z.object({
   presetOrder: z.natural().default(DEFAULT_PRESET_ORDER),
   fallbackText: z.string().default(''),
   writePreset: z.boolean().default(true),
-  presetTemplate: z.string().default('anchored'),
+  presetTemplate: z.string().default('standard'),
 })
 
 /**

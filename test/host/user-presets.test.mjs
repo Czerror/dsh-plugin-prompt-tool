@@ -16,7 +16,7 @@ const {
 } = await import('../../lib/index.mjs')
 
 const PRESETS_DIR = join(root, '.agent-presets')
-const BUILTIN_IDS = ['anchored', 'creative', 'minimal', 'ptc', 'standard']
+const BUILTIN_IDS = ['creative', 'minimal', 'ptc', 'standard']
 
 test('removeUserPreset：删除用户预设目录', () => {
   mkdirSync(join(PRESETS_DIR, 'foo'), { recursive: true })
@@ -59,7 +59,7 @@ test('ensurePresetSeed：首次种子化全部内置模板，删除后自动补�
 
 test('listPresets：全部来自用户目录（种子化后内置模板即为用户预设）', () => {
   const presets = listPresets()
-  for (const id of ['anchored', 'creative', 'minimal', 'ptc', 'standard']) {
+  for (const id of ['creative', 'minimal', 'ptc', 'standard']) {
     const preset = presets.find((entry) => entry.id === id)
     assert.ok(preset !== undefined && preset.user === true, `${id} 应为用户目录预设`)
   }
@@ -69,14 +69,15 @@ test('listPresets：全部来自用户目录（种子化后内置模板即为用
 test('listPresets：prompt-tool 兼容快照仅供旧会话 resolve，不进入普通选择列表', () => {
   mkdirSync(join(PRESETS_DIR, 'prompt-tool'), { recursive: true })
   writeFileSync(join(PRESETS_DIR, 'prompt-tool', 'preset.yml'),
-    'id: prompt-tool\nname: Anchored（旧会话兼容）\n', 'utf8')
+    'id: prompt-tool\nname: Prompt Tool（旧会话兼容）\n', 'utf8')
   assert.ok(!listPresets().some((preset) => preset.id === 'prompt-tool'))
 })
 
 test('cloneBuiltinPreset：非内置/非法 id/用户目录已存在同名拒绝', () => {
   assert.equal(cloneBuiltinPreset('not-a-builtin').ok, false)
   assert.equal(cloneBuiltinPreset('a/b').ok, false)
-  assert.equal(cloneBuiltinPreset('anchored').ok, false, '种子化后用户目录已存在 anchored，应拒绝')
+  assert.equal(cloneBuiltinPreset('standard').ok, false, '种子化后用户目录已存在 standard，应拒绝')
+  assert.equal(cloneBuiltinPreset('anchored').ok, false, 'anchored 已下线，不再是内置模板')
 })
 
 test('cloneBuiltinPreset：删除后可新建还原', () => {

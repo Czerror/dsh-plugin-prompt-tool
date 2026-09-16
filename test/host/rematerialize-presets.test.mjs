@@ -6,6 +6,10 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parse as parseYaml, parseDocument } from 'yaml'
+// 内置 anchored 预设已随上游冻结下线；夹具模板承接它的「锚定/门控装配 + 三条
+// 提示词配置」结构。rematerialize 脚本按 $DSH_HOME/.agent-presets 扫描预设根，
+// 因此夹具必须装进隔离 DSH_HOME 的官方预设根（而非 writePreset 的输出根）。
+import { installFixturePresetInHome } from '../fixtures/preset-template.mjs'
 
 const ROOT = fileURLToPath(new URL('../..', import.meta.url))
 const SCRIPT = join(ROOT, 'scripts', 'rematerialize-presets.mjs')
@@ -104,7 +108,7 @@ test('rematerialize-presets：dry-run 只报告不写盘', () => {
 test('rematerialize-presets：引擎参数按 preset.yml 解析，不回落 writePreset 默认值', () => {
   const home = mkdtempSync(join(tmpdir(), 'pt-remat-'))
   try {
-    const dir = seedPreset(home, 'anchored', 'anchored')
+    const dir = installFixturePresetInHome(home)
     const doc = parseDocument(readFileSync(join(dir, 'preset.yml'), 'utf8'))
     doc.setIn(['params', 'firstTurnAnchor'], true)
     doc.setIn(['params', 'injectPrompt'], false)

@@ -18,18 +18,25 @@ const modulePath = (name) => {
 }
 const moduleText = (name) => readFileSync(modulePath(name), 'utf8')
 
-test('anchored 显式声明 27 个非 ST 默认模块，且全部存在', () => {
-  const preset = parse(read('preset/anchored/preset.yml'))
-  const modules = preset.modules
-  assert.ok(Array.isArray(modules))
-  assert.equal(modules.length, 27)
-  assert.ok(modules.includes('command-goal'), '官方 standard 系预设应接入 command-goal')
-  for (const name of ['character-tools', 'world-book-tools', 'session-var-tools', 'tool-config-engine']) {
-    assert.equal(modules.includes(name), false, `${name} 只由 ST 转换按需装配`)
+test('全部内置预设声明的模块都存在，且为合法 entry-list 模块', () => {
+  const presetRoot = join(root, 'preset')
+  const presetDirs = readdirSync(presetRoot, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+  assert.ok(presetDirs.length > 0, '至少存在一个内置预设')
+  for (const dir of presetDirs) {
+    const preset = parse(read(`preset/${dir}/preset.yml`), { logLevel: 'silent' })
+    const modules = preset.modules
+    if (!Array.isArray(modules)) continue
+    for (const name of modules) {
+      const file = modulePath(name)
+      assert.match(readFileSync(file, 'utf8'), /^- id:/m, `${dir}: ${name} must be a top-level entry-list module`)
+    }
   }
-  for (const name of modules) {
-    const file = modulePath(name)
-    assert.match(readFileSync(file, 'utf8'), /^- id:/m, `${name} must be a top-level entry-list module`)
+  const standard = parse(read('preset/standard/preset.yml'), { logLevel: 'silent' })
+  assert.ok(standard.modules.includes('command-goal'), '官方 standard 系预设应接入 command-goal')
+  for (const name of ['character-tools', 'world-book-tools', 'session-var-tools', 'tool-config-engine']) {
+    assert.equal(standard.modules.includes(name), false, `${name} 只由 ST 转换按需装配`)
   }
 })
 
@@ -113,8 +120,8 @@ test('组合库无 __TOKEN__ 残留：参数桥模块齐备且官方 alpha.4 变
   assert.match(pwsh, /disabled: !!js process\.platform !== 'win32'/, '普通 pwsh 只在 Windows 启用')
   const persistentShell = read('engine/compositions/source/local/persistent-shell-posix.yml')
   assert.match(persistentShell, /- id: persistent-shell-posix[\s\S]*?group: true\s+disabled: !!js process\.platform === 'win32'\s+isolate:/,
-    'anchored persistent-shell-posix 整组必须在 Windows 禁用，避免与普通 tool-pwsh 重复注册 pwsh')
-  assert.match(persistentShell, /shellPath: !!js/, 'anchored bash PTY 保留 /bin/bash → PATH 回退')
+    'persistent-shell-posix 整组必须在 Windows 禁用，避免与普通 tool-pwsh 重复注册 pwsh')
+  assert.match(persistentShell, /shellPath: !!js/, 'persistent-shell-posix 的 bash PTY 保留 /bin/bash → PATH 回退')
   const shellRows = parse(persistentShell, { logLevel: 'silent' })[0]
   assert.equal(shellRows.isolate.terminals, true)
   assert.deepEqual(shellRows.config.map((row) => row.id), ['pty', 'terminal-bash', 'persistent-bash', 'terminal-pwsh', 'persistent-pwsh'])

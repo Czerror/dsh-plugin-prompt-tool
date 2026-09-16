@@ -4,7 +4,7 @@
 # 本文件是【配置参数齐全、逐项注释】的预设模板，复制到
 #   ~/.dsh/.agent-presets/<你的预设名>/preset.yml
 # 或 preset/<预设名>/preset.yml 即可作为自定义预设起点。
-# 完整可用示例见 preset/anchored/preset.yml（含真实 prompt 文本）。
+# 完整可用示例见 preset/ 下的内置预设（preset/standard、preset/ptc 等）。
 #
 # 默认值体系（职责不重叠）：
 #   params        → 引擎行为参数（锚定/引导/PTC/门控/模型/工具），经参数桥落位组合行；
@@ -28,7 +28,7 @@ meta:
 # ── 内容：preset.md / AGENTS.md 文本（占位，替换为你自己的提示词）────────────
 content:
   # 系统提示词（写入生成目录 preset.md；支持官方 {{variable}} 渲染）。
-  # 完整示例见 preset/anchored/preset.yml 的 content.presetText。
+  # 完整示例见 preset/ 下内置预设的 content.presetText。
   presetText: >
     You are a helpful software assistant.
 
@@ -102,7 +102,7 @@ params:
   # deferredGraceSteps: 0         # 延迟注入宽限步数
   # instructionHint: false        # 晋升后 agent-instructions 全文 → 一次性 hint
 
-  # ── 锚定/深思可选模块（上游 dsh-anchored-standard 移植，全部 opt-in）──
+  # ── 锚定/深思可选模块（引擎内置能力，全部 opt-in）──
   # 对应 library 行默认 enabled: false（挂载即禁用，行为不变）；UI 开关打开
   # （或本段置 true）即写行 config.enabled: true 生效。前提：modules 已挂对应行。
   # anchorTurn: false             # 前置锚定轮（anchor-turn 行）：用户首条真实消息前 prepend 合成锚定轮，
@@ -468,9 +468,9 @@ modules:
   - tool-ask-user                # 提问工具
   - tool-todo                    # todo 工具
   - tool-web                     # web 搜索
-  # - anchor-turn                # 前置锚定轮（上游移植；行默认 enabled: false，开关见 params.anchorTurn）
-  # - deliberation-gate          # 轨迹深度门（上游移植；行默认 enabled: false，开关见 params.deliberationGate）
-  # - cot-drip                   # 深思维持节拍（上游移植；行默认 enabled: false，开关见 params.cotDrip）
+  # - anchor-turn                # 前置锚定轮（引擎内置；行默认 enabled: false，开关见 params.anchorTurn）
+  # - deliberation-gate          # 轨迹深度门（引擎内置；行默认 enabled: false，开关见 params.deliberationGate）
+  # - cot-drip                   # 深思维持节拍（引擎内置；行默认 enabled: false，开关见 params.cotDrip）
   # - tool-config-engine          # 自定义工具保存时自动加入；手动声明也可用
 
 # ── moduleConfigs（可选）：行级 config 直写通道 ──────────────────────────────
@@ -497,9 +497,5 @@ persona:
   # complete: true              # prefix 独占整个 system prompt（抑制其余段与 suffix）
   # includeRuntimeContext: false # 抑制该 scope 的动态 runtime-context 快照
 
-# ── 清理与上游（可选）───────────────────────────────────────────────────────
+# ── 清理（可选）─────────────────────────────────────────────────────────────
 legacyCleanup: []                # 历史残留文件清理列表
-upstream:
-  repo: dsh-anchored-standard    # 上游策略来源仓库
-  snapshot: upstream/dsh-anchored-standard  # 内联快照目录
-  sync: pnpm sync:anchored       # 快照刷新命令

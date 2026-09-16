@@ -1,7 +1,7 @@
 # module: filesystem-editor
 # source: engine/compositions/source/local/filesystem-editor.yml (本地能力)
 # rc.2 官方 minimal 只保留单 shell 工具，不再提供 filesystem 组；本模块保留为
-# 本插件自己的引导期文件系统能力，仍供 Anchored 与既有用户预设显式引用。
+# 本插件自己的引导期文件系统能力，只由显式声明本模块的预设装配（既有用户预设可继续引用）。
 
 # The bare local filesystem shadows the host's sandboxed provider only for this
 # preset. The editor shares that realm and requires absolute paths.
