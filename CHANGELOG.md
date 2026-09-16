@@ -2,6 +2,34 @@
 
 ## [未发布] - 2026-09-17
 
+### 子代理页创建入口对等 与 过滤/新建严格分离（2026-09-17）
+
+- **子代理页补齐与主会话同款的创建入口**：`SubagentPage` 接入合并创建菜单 `EngineModuleActions`
+  （引擎能力 / recipe、按插入点层级的模板、工具模板、模板变量）、能力卡 `EngineModuleCards`（含二次确认删除）、
+  自定义工具卡 `CustomToolsCard` 与模板变量卡（复用 `TemplateVariablesModuleCard`）。此前子代理页只有
+  「新建」按钮一条链路，缺少能力模块、自定义工具、按层模板与变量入口——因为全仓库唯一调用
+  `createEngineCapability` / `removeEngineCapability` 的组件是 `EngineModuleList.tsx`，而子代理页不引用它。
+- **新建即可见（受众代入，而不是改过滤）**：新增纯函数 `createConfigFromTemplate(entry, configs, scope)`
+  承载模板派生（id 去重 + identity 跟随 + `instruction-hint → placeholder` 降级 + 受众代入）。子代理列表
+  新建的配置写 `audience: subagent`，主会话列表新建的配置清除模板自带的「仅子代理」限制回落公用，避免
+  「提示已插入、列表里却没有」的静默消失；两条路径都不触碰过滤状态。
+- **过滤 / 新建严格分离（用户指定纪律，回归断言锁定）**：过滤下拉与搜索词只由用户手动改变，任何创建、
+  复制、删除路径都不写入 `viewFilter` / `innerViewFilter`；新建只做两件事——展开新卡并滚动定位到它。
+  新增 `src/client/ui/reveal-card.ts`（`scrollToCreatedCard`：`block: 'nearest'`，节点未就绪按上限重试后
+  静默退出），配置卡加 `data-config-id`、能力卡加 `data-module-card-id` 作为稳定锚点。
+- **重复创建同一能力不再失效**：定位信号由「能力 id」改为 `{ id, token }`，token 每次创建递增，因此同一
+  能力连续创建两次都会重新展开并滚动定位（旧实现第二次因 `revealKey` 值不变而不展开）。
+- **置顶卡片位置修正与过时文案**：`beforeCards`（人设、模板变量等单例卡）渲染在过滤行之前，与"置顶固定
+  卡片"的注释语义一致；`configList.emptyPreStep` 不再声称"作为 settings 覆盖层，切换预设后仍保留"——实际
+  写入激活预设 `preset.yml`（与 ADR-0001「预设定义即权威」一致），中英文案同步改写。
+- **指令文件卡作用域收敛**：`ConfigListWithTemplates` 只在 `scope=main`（或缺省）时下发指令文件卡相关
+  props，子代理页不再渲染同一指令文件（AGENTS.md / CLAUDE.md 及其 .local 变体）的第二编辑入口。
+- **测试**：新增 `test/client/scope-create-separation.test.mjs`（10 条断言：受众代入、id 去重与 identity
+  跟随、策略降级、子代理作用域可见性与仅主会话配置隔离、过滤写入点唯一、定位信号与滚动实现、复制不改受众、
+  子代理页入口对等且不下发指令卡、置顶卡顺序、空状态文案）；`engine-module-cards` 的展开用例改用新的
+  `{ id, token }` 信号并补「同一能力重复创建仍展开」断言。
+- **注意**：这是客户端改动，需刷新工作台页面生效。
+
 ### 移除上游预设、只保留引擎移植（2026-09-17）
 
 - **上游引擎核查（只读）**：`xiaobright/dsh-anchored-standard` 已于 2026-09-10 正式冻结（HEAD `dda23ef`，

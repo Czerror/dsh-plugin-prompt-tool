@@ -70,7 +70,7 @@ const ZH_CORE = {
   'main.newBlankTool': '新建空白工具',
   'subagent.aria': '子代理',
   'configList.create': '新建',
-  'configList.emptyPreStep': '当前预设模板消息批层无配置；可新建自定义配置（作为 settings 覆盖层，切换预设后仍保留）。',
+  'configList.emptyPreStep': '当前预设模板消息批层无配置；可新建自定义配置（写入激活预设 preset.yml，随预设走）。',
 
   'tools.aria': '工具预览',
   'tools.search.aria': '搜索工具',
@@ -339,7 +339,7 @@ const EN_CORE: Record<keyof typeof ZH_CORE, string> = {
   'main.newBlankTool': 'New blank tool',
   'subagent.aria': 'Subagent',
   'configList.create': 'New',
-  'configList.emptyPreStep': 'The current preset template has no message-batch configs; you can create a custom config (stored as a settings overlay and kept across preset switches).',
+  'configList.emptyPreStep': 'The current preset template has no message-batch configs; you can create a custom config (written into the active preset preset.yml, so it travels with that preset).',
 
   'tools.aria': 'Tool preview',
   'tools.search.aria': 'Search tools',

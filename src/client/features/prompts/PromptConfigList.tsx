@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { scrollToCreatedCard, cssEscapeId } from '../../ui/reveal-card.ts'
 import { bridgeCall, errorMessage } from '../../data/bridge-client.ts'
 import type { PromptToolTranslate } from '../../locales.ts'
 import { MenuSelect } from '../../ui/MenuSelect.tsx'
@@ -70,8 +71,9 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
   useEffect(() => {
     const created = configs.find((config) => config.id === props.createdConfigId)
     if (created === undefined) return
-    // 只展开新建的卡：不改动用户的层级筛选与搜索词。
+    // 只展开并定位新建的卡：不改动用户的层级筛选与搜索词。
     setExpanded(created.id)
+    return scrollToCreatedCard(`[data-config-id="${cssEscapeId(created.id)}"]`)
   }, [props.createdConfigId])
 
   const effectiveLayer = layer ?? (viewFilter !== 'all' && viewFilter !== 'world-book' ? viewFilter : undefined)
@@ -298,6 +300,9 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
           }}
         />
       )}
+      {/* 配置列表下的置顶固定卡片（人设、模板变量等单例配置，不参与层过滤与搜索）。 */}
+      {beforeCards}
+
       <div className={styles.listFilterRow}>
         <input
           className={styles.listFilter}
@@ -335,9 +340,6 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
           ))}
         </div>
       )}
-
-      {/* 配置列表下的置顶固定卡片（人设、模板变量等单例配置，不参与层过滤）。 */}
-      {beforeCards}
 
       {/* 模块卡（引擎能力、自定义工具）：与层级配置卡同款列表间距（configList），
           只调整视觉排序，层级配置卡仍按（层序, order, 声明序）注入。 */}

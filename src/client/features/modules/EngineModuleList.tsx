@@ -1,8 +1,9 @@
-import { useState, type ReactNode, type RefObject } from 'react'
+import { useEffect, useState, type ReactNode, type RefObject } from 'react'
 import { IconChevronDownOutline14, Menu } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PromptToolStore } from '../../data/use-prompt-tool-store.ts'
 import type { PromptToolTranslate } from '../../locales.ts'
 import { EngineModuleCard } from '../../ui/EngineModuleCard.tsx'
+import { cssEscapeId, scrollToCreatedCard } from '../../ui/reveal-card.ts'
 import { ENGINE_CAPABILITIES, ENGINE_RECIPES, engineRecipe, isEngineCapabilityPresent } from '../../../shared/engine-capabilities.ts'
 import { EngineParamFields } from './EngineParamFields.tsx'
 import styles from '../../ui/controls.module.css'
@@ -88,17 +89,28 @@ export function EngineModuleCards({
   showActions?: boolean
   showPromptDefaults?: boolean
   showStatus?: boolean
-  focusCapability?: string
+  /** 新建能力后的定位信号：token 每次创建都变化，保证同一能力重复创建仍会再次展开并跳转。 */
+  focusCapability?: { id: string; token: number }
 }): ReactNode {
   const capabilities = ENGINE_CAPABILITIES.filter(({ id, displayLayer }) =>
     (layerFilter === 'all' || layerFilter === displayLayer) && isEngineCapabilityPresent(id, store.moduleFacts))
   const editable = store.fields.writePreset && store.moduleFacts?.editable === true
+  const focus = focusCapability
+  const focusToken = focus?.token
+  const focusId = focus?.id
+  useEffect(() => {
+    if (focusId === undefined) return
+    // 新建只做两件事：展开（revealKey）与滚动定位；过滤状态一律不动。
+    // 依赖只取 token：避免同一信号因父级重渲染（新对象引用）反复触发滚动。
+    return scrollToCreatedCard(`[data-module-card-id="${cssEscapeId(focusId)}"]`)
+  }, [focusToken, focusId])
   return <>
     {showActions && <EngineModuleActions store={store} t={t} />}
     {capabilities.map((capability) => (
       <EngineModuleCard key={capability.id} name={capability.id} layer={capability.displayLayer}
         meta={capability.moduleKeys.join(' · ')}
-        revealKey={capability.id === focusCapability ? focusCapability : undefined}
+        revealKey={capability.id === focus?.id ? String(focus.token) : undefined}
+        anchorId={capability.id}
         onDelete={editable ? () => void store.removeEngineCapability(capability.id) : undefined}>
         <EngineParamFields store={store} card={capability.id} t={t} />
       </EngineModuleCard>

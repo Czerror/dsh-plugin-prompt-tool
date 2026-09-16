@@ -7,11 +7,48 @@ import type { PromptConfigDraft, PromptConfigTemplateEntry } from '../../prompt-
 /** 自定义工具模板条目：与提示词模板同一次 /templates 返回。 */
 export type ToolTemplateEntry = { file: string; spec: Record<string, unknown> }
 
+/** 列表作用域：决定新建配置的消息受众代入方向（过滤状态一律不动）。 */
+export type TemplatePickerScope = 'main' | 'subagent'
+
+/**
+ * 由模板条目派生一条新配置草稿（纯函数：不改动任何过滤/展开状态）。
+ *
+ * 规则：
+ * 1. id 与模板重复时追加 `-2`、`-3`… 后缀，且同名 identity 跟随新 id；
+ * 2. `instruction-hint` 策略降级为 `placeholder` + `fill: instruction-hint`；
+ * 3. 受众按列表作用域代入——子代理列表 → 仅子代理；主会话列表 → 清除模板自带的
+ *    「仅子代理」限制（缺省 = 公用，两侧都可见），从而"新建即可见"。
+ *
+ * @param entry - 模板条目（来自 `/templates`）。
+ * @param configs - 当前列表已有配置，用于 id 去重。
+ * @param scope - 列表作用域；不传则不改动模板自带受众。
+ * @returns 可直接追加进列表的新配置草稿。
+ */
+export function createConfigFromTemplate(
+  entry: PromptConfigTemplateEntry,
+  configs: readonly PromptConfigDraft[],
+  scope?: TemplatePickerScope,
+): PromptConfigDraft {
+  const clone = JSON.parse(JSON.stringify(entry.spec)) as PromptConfigDraft
+  let suffix = 2
+  while (configs.some((config) => config.id === clone.id)) clone.id = `${entry.spec.id}-${suffix++}`
+  if (clone.identity?.value === entry.spec.id) clone.identity = { ...clone.identity, value: clone.id }
+  if (clone.strategy === 'instruction-hint') {
+    clone.strategy = 'placeholder'
+    clone.fill = 'instruction-hint'
+  }
+  if (scope === 'subagent') clone.audience = 'subagent'
+  else if (scope === 'main' && clone.audience === 'subagent') clone.audience = null
+  return clone
+}
+
 export function useTemplatePicker(
   configs: PromptConfigDraft[],
   onPickConfig: (config: PromptConfigDraft) => void,
   onNotice: (kind: 'ok' | 'error', message: string) => void,
   t: PromptToolTranslate,
+  /** 传入列表作用域时，新建配置代入该受众，保证"新建即可见"；不传 = 不改动模板受众。 */
+  scope?: TemplatePickerScope,
 ): {
   anchorRef: RefObject<HTMLButtonElement>
   templates: PromptConfigTemplateEntry[]
@@ -73,14 +110,8 @@ export function useTemplatePicker(
   const closePicker = (): void => setOpen(false)
 
   const pickTemplate = (entry: PromptConfigTemplateEntry): void => {
-    const clone = JSON.parse(JSON.stringify(entry.spec)) as PromptConfigDraft
-    let suffix = 2
-    while (configs.some((config) => config.id === clone.id)) clone.id = `${entry.spec.id}-${suffix++}`
-    if (clone.identity?.value === entry.spec.id) clone.identity = { ...clone.identity, value: clone.id }
-    if (clone.strategy === 'instruction-hint') {
-      clone.strategy = 'placeholder'
-      clone.fill = 'instruction-hint'
-    }
+    // 纯函数派生草稿（id 去重 + 策略降级 + 受众代入）；本 hook 只负责通知与展开信号。
+    const clone = createConfigFromTemplate(entry, configs, scope)
     onPickConfig(clone)
     setCreatedConfigId(clone.id)
     onNotice('ok', t('templates.inserted', { file: entry.file, id: clone.id }))

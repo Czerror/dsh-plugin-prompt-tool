@@ -1,161 +1,149 @@
-# 移除 dsh-anchored-standard 预设、保留引擎移植 与 上游引擎核查
+# 子代理页创建入口对等 与 过滤/新建严格分离（F1–F5）
 
 - 编写日期：2026-09-17（UTC+8）。
-- 状态：方案已编写；用户已批准范围与默认模板选择，本轮直接执行代码、测试与文档改动。
-- 固定实现基线：`dev@0af985a`（ST 转译完整性 R7–R14 交付后的提交）。
-- 来源：用户指令——「dsh-anchored-standard 预设已经过时不再适用，可以移除；同时查询上游是否有引擎更新，保持只移植引擎，移除预设」。
-- 本轮范围：**下线上游预设与其全部引用通道 + 默认模板迁移到 `standard`**；引擎移植（`engine/` 与其本地组合模块）全部保留，不做行为回退。
+- 状态：方案已编写；用户已指定本轮执行 F1–F5，执行完成后用 `open-code-review-delegate`（ocr）委派审查。
+- 固定实现基线：`dev@f1b3621`（旧 PLAN 归档于 `.scratch/prompt-tool-framework/archive/plan-f1-f5-subagent-scope-f1b3621.md`，blob `e83aca2`，与 `f1b3621:PLAN.md` 逐字节一致）。
+- 来源：用户指令——「本项目之前存在子代理工具黑白名单功能，现在是否依然存在，目前没在 UI 发现」「这是模块引擎能力，当前方案是正确的，只是子代理目前没有完整支持主会话的新建模块/引擎/工具等能力，子代理还是使用的老版新建模块功能，并且存在严重 bug」「执行 F1~F5 修复，完成后使用 ocr 技能审查」。
 
-## 1. 上游引擎核查（只读，已完成）
+## 1. 用户的规则（本轮判据，最高优先级）
 
-### 1.1 核查方法
-
-- 克隆上游 `https://github.com/xiaobright/dsh-anchored-standard.git`（`--depth 100`）到 `D:\AI\workspase\dsh-anchored-standard-upstream`（隔离目录，不写仓库）。
-- 对照本地内联快照 `upstream/dsh-anchored-standard/REVISION`、本地 `engine/` 移植文件与上游 `shared/` 引擎源码。
-
-### 1.2 核查结论：无待移植的上游引擎更新
-
-| 事实 | 证据 |
-|---|---|
-| 上游已正式冻结 | `FAREWELL.md` 附记（2026-09-10）：不接受 issue、不接受 PR、无维护动作；HEAD 提交 `dda23ef docs: freeze the project — V4 Pro retires 2026-09-14` |
-| 本地快照即上游 HEAD | 工作树 `upstream/dsh-anchored-standard/REVISION` = `dda23ef119e3715f417d73f72eca407732846d1a`（已由既有 `pnpm sync:anchored` 刷新，未提交） |
-| 上游最后一批引擎修复已在本地覆盖 | `751fd67`（`session.snapshotEvents()` 兼容）：本地 `engine/shared.mjs#snapshotEvents()` 统一读取正式 API，`test/host-contract.test.mjs` 断言引擎源文件不得出现 `session.events`；`78b4cbd` / `babc933`（Git Bash 路径运行时推断 + Windows workdir 归一）：本地 `engine/tool-git-bash.mjs` 已实现候选探测链与 `normalizeGitBashWorkdir`；`b74543b` / `e3d330b`（instruction-hint 幂等 id 与建议式措辞）：本地 `engine/instruction-hint.mjs` 为独立实现 |
-| 本地移植普遍为超集 | `tool-bootstrap.mjs` 24558 B vs 上游 14882 B、`context-gate.mjs` 13424 B vs 9724 B、`compaction-epoch.mjs` 6866 B vs 3535 B；仅 `skill-search.mjs` 与上游逐字一致 |
-
-### 1.3 结论对后续动作的含义
-
-- 不新增引擎移植任务；本轮不动 `engine/`、`engine/compositions/`（除文档措辞外）。
-- 上游快照与同步脚本失去引擎比对价值（上游冻结、且快照只复制 `preset/` 而不含 `shared/` 引擎源码），按用户决策一并删除。
-
-## 2. 用户决策与范围
-
-| 决策点 | 用户选择 |
-|---|---|
-| 移除范围 | **预设 + 上游快照 + 同步脚本全删**：`preset/anchored/`、`upstream/dsh-anchored-standard/`、`scripts/sync-anchored.mjs` 与 `package.json#scripts.sync:anchored` |
-| 引擎移植 | 全部保留（`engine/` 与 `engine/compositions/source/local/` 中的 anchor-turn / deliberation-gate / progress-reminder / context-gate / tool-bootstrap / promoted-code-mode / tool-git-bash 等） |
-| 默认模板 | `presetTemplate` 默认值由 `anchored` 改为 **`standard`**（官方功能完整基型） |
-| 保留项（不属于上游预设语义） | `src/client/ui/anchored-popover*.ts`（弹层锚点定位几何）、`hasAnchoredReasoning` / `matchesAnchorWord`（锚定推理轨迹语义）、`near-anchor` 配置 id——全部保留，不改名 |
-
-## 3. 影响面与迁移设计
-
-### 3.1 删除清单
-
-| 路径 | 说明 |
-|---|---|
-| `preset/anchored/` | 内置 Anchored 预设（模板与内容资产） |
-| `upstream/dsh-anchored-standard/` | 内联快照（`preset/*` 引擎副本、`LICENSE`、`NOTICE`、`REVISION`） |
-| `scripts/sync-anchored.mjs` | 快照刷新脚本 |
-| `package.json#scripts["sync:anchored"]` | 脚本入口 |
-| `src/preset-core.ts#buildCordis` 与 `ANCHORED_TEMPLATE_DIR` | 硬编码读取 `../preset/anchored/` 的兼容层渲染函数；无生产调用者（`src/` 内零引用），仅测试消费 |
-
-### 3.2 默认模板迁移（`'anchored'` → `'standard'`）
-
-| 文件 | 位置 | 处理 |
+| 规则 | 含义 | 落地要求 |
 |---|---|---|
-| `src/config.ts` | 15 行注释、27 行 `Config` 默认、112 行 `PromptSettingsSchema` 默认 | 改 `standard`，注释改为「默认 standard」 |
-| `src/index.ts` | 114、116、274、806 行回退字面量；579、789 行运行时默认 | 改 `standard` |
-| `src/host/write-preset.ts` | 92 行注释、260 行回退 | 改 `standard` |
-| `src/host/manifest.ts` | 10 行注释、177 行 `loadPresetContent` 默认参数 | 改 `standard` |
-| `src/runtime/settings-bridge.ts` | 638、1840 行 `basename` / id 回退 | 改 `standard` |
-| `src/client/data/prompt-tool-fields.ts` | 98 行默认字段值 | 改 `standard` |
-| `src/client/data/prompt-tool-view.ts` | 110 行视图回退 | 改 `standard` |
-| `src/client/locales.ts` | 299 行 `settings.writePreset.label` | 文案去 anchored 化（`Materialize prompt-tool injection presets`） |
+| R1 过滤只能由用户手动改变 | 过滤框（`viewFilter` / `innerViewFilter`）与搜索词只响应人的操作 | 任何创建/复制/删除路径不得写入过滤状态；用回归断言锁死 |
+| R2 新建只做两件事 | 跳转到卡片 + 展开卡片 | 创建后：① 展开新对象 ② 滚动定位到新对象；不做别的 |
+| R3 新建即可见 | 新对象必须落在当前视图集合内 | 受众/作用域随创建位置代入，而不是把过滤框改成"全部" |
+| R4 子代理能力对等 | 子代理页要有主会话同款的新建模块/引擎/工具入口 | 复用现有创建组件与参数桥，不另起一套 |
 
-### 3.3 兼容层导出面收敛
+## 2. 只读查证结论（本轮改动依据）
 
-- `src/preset-core.ts` 保留：`loadPresetSpec` / `renderComposition` / `loadPromptConfigFiles` / `mergePromptConfigs` / `renderPromptConfigYaml` / 类型再导出。
-- 删除：`buildCordis()`、`ANCHORED_TEMPLATE_DIR`、`assertCompositionArray` 的 anchored 专用校验（仅 `buildCordis` 使用）。
-- `tsdown.config.ts` 的 `src/preset-core.ts` 入口保留（其余导出仍被测试与文档消费）。
+### 2.1 过滤侧现状：R1 已成立
 
-### 3.4 文档与模板
+- 过滤状态唯一写入口是下拉 `onChange`：`PromptConfigList.tsx:66-68`（`changeViewFilter`）← `:320`。
+- 创建/复制/删除路径（`useTemplatePicker.pickTemplate:75-88`、`handleDuplicate:182-197`、`handleDelete:198-203`）只操作 `configs` 列表，不写过滤状态。
+- `ad81b28` 期间的旧联动（筛选切到 `tool-pipeline` 时自动展开自定义工具）已删除，无残留。
 
-| 文件 | 处理 |
+### 2.2 新建侧现状：R2/R3 均未达成
+
+| 缺口 | 证据 |
 |---|---|
-| `preset.yml`（根模板） | 7、31 行「完整示例见 preset/anchored」改指内置预设（`preset/standard` 与 `preset/custom`）；105 行段标题与注释改为「引擎可选模块（opt-in）」；500–505 行 `upstream:` 段整段删除 |
-| `templates/14-first-turn-anchor.yml`、`templates/15-guide-auto.yml` | 注释中的「见 anchored 预设 params」改为「见内置预设 params / 引擎默认」 |
-| `README.md` | 5、7、47、59、227、240 行：去掉「内置 anchored 默认预设」「上游策略来源」表述，改为「引擎级锚定/门控能力，预设按需装配」与「引擎移植自 dsh-anchored-standard（MIT）」；删除 `pnpm sync:anchored` 行 |
-| `NOTE.md` | 15 行预设清单去掉 `preset/anchored` |
-| `docs/engine-reuse.md` | 17 行「如内置 Anchored」改为中性表述（本地 `filesystem-editor` 模块按需装配） |
-| `docs/architecture-params.md` | 168 行去 anchored 预设专属表述 |
-| `CHANGELOG.md` | 新增本轮条目（历史条目保留，不改写） |
+| 新建配置不写 `audience` | `useTemplatePicker.ts:75-88` 只做深拷贝/id 去重/identity 修正/`instruction-hint → placeholder`；子代理页新建 `audience: main` 的配置后立即被 `PromptConfigList.tsx:82-87` 的作用域过滤隐藏（"新建即消失"） |
+| 无滚动跳转 | 全仓库 `scrollIntoView` 零命中；`scroll` 相关代码只有 tooltip/popover 定位测量 |
+| 卡片无定位锚点 | `EngineModuleCard.tsx:37` 只有 `data-module-card="true"`；`PromptConfigCard` 无 `data-*`/`id` |
+| 能力卡展开信号一次性 | `MainSessionPage.tsx:27,29` 的 `focusCapability` 创建后不清空；再次创建同一能力时 `revealKey` 值不变（`EngineModuleCard.tsx:31-34`），第二次不展开 |
 
-### 3.5 测试迁移（实际执行）
+### 2.3 子代理页入口缺口（F1 依据）
 
-- **夹具方案（替代原计划的「改用 ROOT/preset/standard」）**：实测 `writePreset(options.presetDir)` 的模板解析根是 **`options.presetDir`**（其次包内 `preset/`），不读 `$DSH_HOME/.agent-presets`；而 `resolvePresetDir()` 的默认根才是 `$DSH_HOME/.agent-presets`。因此新增只被 `test/` 引用的夹具模板 `test/fixtures/preset-template/preset.yml`（id=`fixture`：锚定/门控模块装配 + params + 三条 promptConfigs + 顶层 persona 段，**不含任何提示词正文**）与安装器 `test/fixtures/preset-template.mjs`：
-  - `installFixturePreset(presetRoot)` → `<presetRoot>/fixture`（writePreset 场景）；
-  - `installFixturePresetInHome(dshHome)` → `<dshHome>/.agent-presets/fixture`（resolvePresetDir / rematerialize 场景）。
-- 内置预设集合断言：`['anchored','creative','custom','minimal','ptc','standard']` → `['creative','custom','minimal','ptc','standard']`（`builtin-presets-parity`、`writepreset-off`、`user-presets`）。
-- 夹具承载：`write-preset`（`makeOptions` 缺失时安装夹具、`presetTemplate: fixture`，含 4 处 `cpSync(FIXTURE_PRESET_SRC, …)` 改写场景）、`prompt-configs`、`module-configs`（新增 `fixtureComposition()` 等价替代已删除的 `buildCordis`）、`rematerialize-presets`、`module-facts`、`instructions-e2e`（夹具不含官方 `agent-instructions` 行，等价原 anchored 的装配事实；负责人冲突用例保持 `standard`）。
-- 官方基型承载：`wave1-safety` 的两处路径断言改用缺省模板 `standard`；`composition-modules` 改为遍历全部内置预设校验模块存在性（并用 `standard` 承接 `command-goal`/ST 工具断言）。
-- `buildCordis` 专属测试（`test/host/preset-core.test.mjs`、`test/presets/anchored/preset-core.test.mjs`）删除；`test/presets/anchored/anchored-presets.test.mjs` 实为引擎行为测试（tool-git-bash / persona 层 / run-code-env），迁移为 `test/engine/preset-engine-modules.test.mjs` 并修正相对导入，不删除覆盖。
-- `test/engine/yaml-vendor-parity.test.mjs` 的语料清单 `preset/anchored/preset.yml` → `preset/standard/preset.yml`。
-- 与预设无关的 anchored 字样（`anchored-popover*`、`hasAnchoredReasoning`、引擎插件名 `anchored-*`、上游来源注释）保持不变。
+主会话页有、子代理页没有：`EngineModuleActions`（能力模块/recipe 创建）、`EngineModuleCards`（能力卡与删除）、`CustomToolsCard`（自定义工具）、`create:variables`（插值变量）、`tpl:<layer>`（按插入点层级新建）。静态证据：全仓库唯一调用 `createEngineCapability` / `removeEngineCapability` 的组件是 `EngineModuleList.tsx`（`:45`、`:102`），子代理页不引用它。
+
+### 2.4 受众语义澄清（实现关键）
+
+- **"受众"（audience）是提示词配置的字段**（`audience: '' | 'main' | 'subagent'`），控制注入对象。
+- **`subagentToolPolicy` 是"每个子代理的工具档"**（工具授权配置，写在 preset.yml 顶层 `subagentToolPolicy` 段），两者不是同一个"受众"概念，本轮不混用。
+- 内置模板现状：`templates/70-subagent-maintenance.yml` 显式 `audience: subagent`；其余模板无 `audience` 键（缺省 = 公用，主会话与子代理都可见）。因此子代理页新建的可见性风险集中在"模板自带 `audience: main`"与后续人工改判。
+
+## 3. 修复方案（F1–F5）
+
+### F1 补齐子代理页创建入口（R4）
+
+- `SubagentPage.tsx` 接入与主会话同款入口：
+  - `EngineModuleActions`（合并菜单：引擎能力/recipe 创建）；
+  - `EngineModuleCards`（能力卡 + 删除；`layerFilter` 与页面视图联动）；
+  - `CustomToolsCard`（自定义工具新建/编辑）；
+  - 模板入口按插入点层级（`tpl:<layer>`）与变量入口。
+- 复用现有参数桥与既有组件，不新增数据通道；子代理页仍不重复主会话专有模块（`tool-bootstrap` / `context-gate` 的门控语义保持在主会话页，子代理相关开关仍由「工具与深度」卡承担）。
+- 新增对象按当前页面作用域代入（见 F2），保证满足 R3。
+
+### F2 受众/作用域代入 + 过滤零写入（R1/R3）
+
+- `useTemplatePicker` 增加作用域参数；`pickTemplate` 依据调用位置写入受众：
+  - 子代理页新建 → `audience: 'subagent'`；
+  - 主会话页新建 → 保持模板原样（缺省 = 公用，两边可见）。
+- 明确禁止：创建路径调用 `changeViewFilter` / 写 `viewFilter` / 改搜索词。
+
+### F3 跳转 + 展开（R2）
+
+- 给卡片加稳定定位锚点：`EngineModuleCard` 增加 `data-module-card-id`，`PromptConfigCard` 增加 `data-config-id`。
+- 创建成功后：先展开（沿用 `revealKey` / `createdConfigId`），渲染提交后滚动定位到锚点（`scrollIntoView({ block: 'nearest' })`，避免整页跳动）。
+- 清理一次性信号：`focusCapability` 在展开生效后清空，保证**重复创建同一能力仍会再次展开并跳转**。
+- 目标节点异步出现时（描述符有 30 秒缓存）在同一提交/下一帧重试，找不到则静默退出，不阻塞创建结果。
+
+### F4 修 `beforeCards` 位置与过时文案
+
+- `PromptConfigList` 的 `beforeCards` 渲染位置与注释不符（注释自称"置顶固定卡片"，实际渲染在标题与工具栏之后，`:339-340`）——移到列表顶部，或修正注释与语义一致。
+- 改写过时文案：`locales.ts:73`（`configList.emptyPreStep` 声称"作为 settings 覆盖层，切换预设后仍保留"）与 `ConfigListWithTemplates.tsx:32` 注释——实际 promptConfigs 按预设存储、写激活预设 `preset.yml`（`use-prompt-tool-store.ts:842`、ADR-0001），切换预设不会保留。
+
+### F5 指令文件卡作用域收敛 + 回归断言
+
+- 指令文件（AGENTS.md 等）是主会话概念：收敛为仅主会话页渲染，避免子代理页重复挂载产生双编辑入口。
+- 新增确定性回归测试（至少覆盖）：
+  1. 任意创建路径调用后，过滤状态与搜索词逐字节不变；
+  2. 子代理作用域新建的配置立刻出现在子代理列表且处于展开态；
+  3. 同一能力连续创建两次，每次都能展开并触发跳转信号；
+  4. 复制配置时 `audience` 原样透传，不被作用域改写。
 
 ## 4. 任务拆解与执行
 
-### Wave 1：上游通道下线
+### Wave 1：受众与作用域（F2 基础）
 
-- [ ] R1：删除 `preset/anchored/`、`upstream/`、`scripts/sync-anchored.mjs`，移除 `package.json` 的 `sync:anchored`。
-- [ ] R2：`preset.yml` 根模板去 anchored 引用与 `upstream:` 段。
+- [✔] T1：`useTemplatePicker` 增加作用域参数并代入 `audience`；`ConfigListWithTemplates` 透传 `scope`。
+- [✔] T2：主会话页创建链路保持缺省（公用），确认无过滤写入。
 
-### Wave 2：默认模板与代码迁移
+### Wave 2：跳转与展开（F3）
 
-- [ ] R3：`src` 层默认值迁移到 `standard`（3.2 表全部位置）。
-- [ ] R4：`src/preset-core.ts` 收敛导出面（删 `buildCordis` 与 anchored 模板常量）。
-- [ ] R5：`templates/` 注释引用更新。
+- [✔] T3：卡片锚点（`data-module-card-id` / `data-config-id`）。
+- [✔] T4：创建后滚动定位 + 一次性展开信号清理（含重复创建场景）。
 
-### Wave 3：测试迁移
+### Wave 3：子代理页入口对等（F1）
 
-- [ ] R6：内置预设集合与夹具迁移（3.5 前三项）。
-- [ ] R7：`buildCordis` 相关测试下线与改写。
+- [✔] T5：`SubagentPage` 接入能力创建菜单、能力卡、自定义工具卡、按层模板与变量入口。
+- [✔] T6：清理"老版新建模块"残留（若存在与新版重复的入口，保留单入口）。
 
-### Wave 4：文档与交付
+### Wave 4：位置与文案（F4）与收敛（F5）
 
-- [ ] R8：README / NOTE / docs / CHANGELOG 更新。
-- [ ] R9：完整门禁 `pnpm typecheck` + `pnpm lint` + `pnpm test` + `pnpm build` + `git diff --check`。
-- [ ] R10：提交并推送 `origin/dev`；交付说明标注真实 `DSH_HOME` 中已种子化 `anchored` 目录的处理方式（本插件不主动删除用户目录内容）。
+- [✔] T7：`beforeCards` 位置修正 + 过时文案改写（中文与英文文案同步）。
+- [✔] T8：指令文件卡作用域收敛为仅主会话页。
+- [✔] T9：回归测试 T1–T4 断言全部落地。
+
+### Wave 5：门禁与交付
+
+- [✔] T10：`pnpm typecheck` + `lint` + `test` + `build` + `git diff --check` 全绿。
+- [ ] T11：提交并推送 `origin/dev`（中文 Conventional Commit）。
+- [ ] T12：`open-code-review-delegate` 委派审查本轮改动，结果写入本文件与 `.ai-memory/`。
 
 ## 5. 验证与证据
 
-- 门禁：`pnpm --dir $Repo typecheck`、`lint`、`test`、`build` 全绿；`git -C $Repo diff --check` 无输出。
+- 门禁：`pnpm --dir $Repo typecheck`、`lint`、`test`、`build`、`git -C $Repo diff --check`。
 - 行为证据：
-  - `grep -rn "preset/anchored"` 无结果；`grep -rn "sync:anchored"` 无结果。
-  - `listBuiltinTemplates()` 返回 5 个内置模板（不含 anchored）——由 `test/host/builtin-presets-parity.test.mjs` 断言。
-  - 未传 `presetTemplate` 时运行时默认 `standard`——由 settings 默认值与 `preset-default-sync` 测试断言。
-  - 引擎移植未回退：`test/engine/*`（anchor-turn、deliberation-gate、promotion-gate、meta）与 `test/host-contract.test.mjs` 全绿。
-- 反例证据：`git status` 只含本轮文件；`lib/` 未提交；`.ai-memory/` 不入库。
+  - 子代理页新建配置后立即出现在子代理视图并展开（客户端测试断言）；
+  - 创建动作前后过滤状态不变（同一测试内断言）；
+  - 重复创建同一能力两次，展开/跳转信号两次都触发（组件测试断言）；
+  - 指令文件卡不再出现在子代理页（结构断言）。
+- 反例证据：`git status` 只含本轮文件；`lib/` 与 `.ai-memory/` 不入库。
 
 ## 6. 回滚与停止条件
 
-- 回滚：本轮为单次结构性删除，反向 `git revert` 本轮提交即可恢复预设、快照与同步脚本；不改写历史、不 reset、不 clean。
-- 不动运行中的 DSH：不停止/重启当前 dsh 与 dsh web，不抢占端口；生成目录由用户重启后按新默认模板物化。
-- 停止条件：门禁全绿并推送成功后停止；不扩展 scope 到引擎模块重构、不处理用户 `DSH_HOME` 内既有 `anchored` 目录（只在交付说明中提示）。
+- 回滚：本轮为前端行为修复 + 文案修正，反向 `git revert` 本轮提交即可；不改写历史、不 reset、不 clean。
+- 不动运行中的 DSH：不停止/重启当前 dsh 与 dsh web，不抢占端口；客户端改动需用户刷新页面（必要时本插件客户端 bundle 重建）。
+- 停止条件：门禁全绿、推送成功、OCR 审查完成并记录结论。
 
 ## 7. Wave 与任务完成状态
 
 `[✔]` = 已完成且对应验证通过；`[ ]` = 未完成。
 
-- [✔] **Wave 0：上游引擎核查（只读）**
-  - [✔] U1：上游已冻结于 `dda23ef`，本地快照即该提交，最后一批引擎修复已在本地覆盖 → 无待移植引擎更新（证据见 1.2）。
-- [✔] **Wave 1：上游通道下线**
-  - [✔] R1：删除预设、快照与同步脚本（`preset/anchored`、`upstream/`、`scripts/sync-anchored.mjs`、`package.json#scripts.sync:anchored`）。
-  - [✔] R2：根模板去 anchored 引用与 `upstream:` 段。
-- [✔] **Wave 2：默认模板与代码迁移**
-  - [✔] R3：`src` 默认值迁移到 `standard`（config / index / write-preset / manifest / settings-bridge / client fields+view+locales）。
-  - [✔] R4：`src/preset-core.ts` 导出面收敛（删 `buildCordis` 与 `ANCHORED_TEMPLATE_DIR`，`BuildCordisOptions` 一并删除）。
-  - [✔] R5：`templates/` 注释更新。
-- [✔] **Wave 3：测试迁移**
-  - [✔] R6：内置预设集合与夹具迁移（新增 `test/fixtures/preset-template{,.mjs}`；`write-preset` / `prompt-configs` / `module-configs` / `rematerialize-presets` / `module-facts` / `instructions-e2e` / `wave1-safety` / `composition-modules` / `user-presets` / `writepreset-off` / `builtin-presets-parity` 全部通过）。
-  - [✔] R7：`buildCordis` 测试下线与改写；`preset-engine-modules.test.mjs` 承接原 anchored-presets 的引擎覆盖。
-- [✔] **Wave 4：文档与交付**
-  - [✔] R8：文档更新（README / NOTE / docs×2 / CHANGELOG / preset.yml / templates）。
-  - [✔] R9：完整门禁——`typecheck` ✓、`lint` 0 warning/0 error ✓、`test` 930/930 ✓、`build` ✓、`git diff --check` 干净 ✓。
-  - [✔] R10：提交 `a406136`（`refactor(preset)!: 移除上游 anchored 预设，只保留引擎移植`）已推送 `origin/dev`（`0af985a..a406136`）。
-
-## 8. 交付与 OCR 委托审查记录
-
-- 提交：`a406136`，普通快进推送 `origin/dev`（`0af985a..a406136`）；未切 `main`、未建 PR、未提交本地记忆（`.ai-memory/` 被忽略）。
-- 审查入口：`ocr delegate preview --format json`（workspace 模式）判定 60 个变更文件中 **34 个可审查**（26 个被排除：md 文档、删除文件、`.scratch` 归档，以及 `test/fixtures/preset-template*` 两个夹具文件）；`ocr delegate rule --format json` 返回 3 组规则（YAML 键拼写 / package.json 依赖 / TS-JS 质量与安全）。
-- 覆盖：34/34 可审查文件逐文件审阅（`git diff` + 规则）；被规则排除的 `test/fixtures/preset-template/preset.yml` 与 `preset-template.mjs` 由本轮作者手工审阅（内容为测试夹具，不含提示词正文）。
-- 审查确认并修复 2 处漏改：①`src/client/locales.ts` 中文文案仍为「生成锚定注入预设」（EN 已改为 prompt-tool 口径）；②`src/config.ts` 的 `writePreset` 注释仍写「锚定注入 preset」。另同步清理 `src/host/write-preset.ts` 中仍引用已删除 `buildCordis` 的注释。
-- 审查确认的非缺陷取舍（记录备查）：原 anchored 测试中的 `tool-web.fetch: true` 本地保留差异断言随预设下线失去载体（`delegation` 的 `modelSelectionSettings` / `backgroundMode` 两条仍由 `composition-modules` 的库断言覆盖）；引擎侧 `anchored-*` 插件名、`hasAnchoredReasoning`、`anchored-popover*` 属「锚点/锚定推理」语义或上游来源注释，按计划保留不改名。
+- [✔] **Wave 1：受众与作用域（F2 基础）**
+  - [✔] T1：`useTemplatePicker` 新增 `TemplatePickerScope` 与纯函数 `createConfigFromTemplate`（受众代入 + id 去重 + identity 跟随 + 策略降级）；`ConfigListWithTemplates` 透传 `scope`。
+  - [✔] T2：主会话页两个入口（`PromptConfigList` 内建与合并菜单）均以 `scope='main'` 创建，保持公用缺省；创建链路无过滤写入。
+- [✔] **Wave 2：跳转与展开（F3）**
+  - [✔] T3：`PromptConfigCard` 加 `data-config-id`；`EngineModuleCard` 加 `anchorId` → `data-module-card-id`；新增 `src/client/ui/reveal-card.ts`。
+  - [✔] T4：`createdConfigId` 与 `focusCapability` 两处创建后均滚动定位；定位信号改为 `{ id, token }` 递增，重复创建同一能力仍展开。
+- [✔] **Wave 3：子代理页入口对等（F1）**
+  - [✔] T5：`SubagentPage` 接入 `EngineModuleActions`、`EngineModuleCards`、`CustomToolsCard`、按层模板与 `TemplateVariablesModuleCard`（后者由 `PromptConfigsEditor` 导出复用）。
+  - [✔] T6：子代理页不再只有老版单入口——创建链路统一走新组件；`ConfigListWithTemplates` 增加 `toolbarActions` / `moduleCards` / `onViewFilterChange` 三个受控口，未新增第二套实现。
+- [✔] **Wave 4：位置与文案（F4）与收敛（F5）**
+  - [✔] T7：`beforeCards` 移到过滤行之前且只渲染一次；`configList.emptyPreStep` 中英文案与源码注释改为"写入激活预设 preset.yml，随预设走"。
+  - [✔] T8：指令文件卡 props 按 `instructionScope` 收敛，子代理页不下发（单一编辑入口）。
+  - [✔] T9：新增 `test/client/scope-create-separation.test.mjs`（10 条断言）；`engine-module-cards` 展开用例改用新信号并补重复创建断言。
+- [✔] **Wave 5：门禁与交付**
+  - [✔] T10：`typecheck` ✓、`lint` 0 warning/0 error（257 文件）✓、`test` **940/940** ✓、`build` ✓、`git diff --check` 干净 ✓。
+  - [ ] T11：提交并推送 `origin/dev`（下一步执行）。
+  - [ ] T12：`open-code-review-delegate` 委派审查本轮改动（下一步执行）。

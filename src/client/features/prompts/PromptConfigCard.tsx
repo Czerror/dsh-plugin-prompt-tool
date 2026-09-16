@@ -79,6 +79,7 @@ export const PromptConfigCard = memo(function PromptConfigCard(props: {
       ref={cardRef}
       onBlur={autoSaveOnBlur}
       className={clsx(styles.configCard, props.expanded && styles.configCardOpen)}
+      data-config-id={config.id}
       data-dragging={props.dragging ? '' : undefined}
       data-drop-before={props.dropBefore ? '' : undefined}
       data-drop-after={props.dropAfter ? '' : undefined}

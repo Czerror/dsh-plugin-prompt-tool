@@ -24,10 +24,11 @@ export const MainSessionPage = memo(function MainSessionPage(props: { store: Pro
   }, [])
   const [variablesExpanded, setVariablesExpanded] = useState(false)
   const [toolCreate, setToolCreate] = useState<ToolCreateIntent>()
-  const [focusCapability, setFocusCapability] = useState<string>()
+  /** 新建能力后的定位信号：token 递增，保证重复创建同一能力仍会再次展开并跳转。 */
+  const [focusCapability, setFocusCapability] = useState<{ id: string; token: number }>()
   // 创建后只定位并展开新卡，不改动用户选定的列表筛选。
   const revealCapability = useCallback((id: string) => {
-    setFocusCapability(id)
+    setFocusCapability((current) => ({ id, token: (current?.token ?? 0) + 1 }))
   }, [])
   // 稳定回调：卡片 memo 的生效前提（store 引用已稳定）。
   const patchConfigs = useCallback((configs: PromptToolStore['fields']['promptConfigs']) => {
@@ -48,11 +49,13 @@ export const MainSessionPage = memo(function MainSessionPage(props: { store: Pro
     void store.updateInstructionPolicy(fileId, override)
   }, [store])
   // 模板浮层由页面持有：合并菜单按插入点层级平铺「添加模板 · 层级」入口，浮层只列该层模板。
+  // 作用域 = 主会话：新建配置清除模板自带的「仅子代理」限制（缺省 = 公用，两侧都可见）。
   const picker = useTemplatePicker(
     fields.promptConfigs,
     (config) => patchConfigs([...store.getFields().promptConfigs, config]),
     store.showNotice,
     t,
+    'main',
   )
   const canEditPreset = store.fields.writePreset && store.moduleFacts?.editable === true
   const pickVariables = useCallback(() => {

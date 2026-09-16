@@ -241,9 +241,14 @@ test('能力卡默认折叠，只有创建/定位到该能力才展开', () => {
   const collapsed = render(EngineModuleCards, { store: active, t, showPromptDefaults: false })
   assert.equal((collapsed.match(/aria-expanded="true"/g) ?? []).length, 0, '未创建/未定位时全部折叠')
   assert.doesNotMatch(collapsed, /aria-label="锚定轮文本"/, '折叠的卡不渲染参数表单')
-  const revealed = render(EngineModuleCards, { store: active, t, showPromptDefaults: false, focusCapability: 'anchor-turn' })
+  const revealed = render(EngineModuleCards, { store: active, t, showPromptDefaults: false, focusCapability: { id: 'anchor-turn', token: 1 } })
   assert.equal((revealed.match(/aria-expanded="true"/g) ?? []).length, 1, '只展开定位到的那张卡')
   assert.match(revealed, /aria-label="锚定轮文本"/, '定位目标的参数表单可见')
+  // 定位锚点与展开信号解耦：锚点始终是能力 id，展开信号只用于变化检测。
+  assert.match(revealed, /data-module-card-id="anchor-turn"/, '能力卡带稳定定位锚点')
+  // 重复创建同一能力：token 变化 → 重新展开（旧实现在第二次创建时不展开）。
+  const again = render(EngineModuleCards, { store: active, t, showPromptDefaults: false, focusCapability: { id: 'anchor-turn', token: 2 } })
+  assert.equal((again.match(/aria-expanded="true"/g) ?? []).length, 1, '同一能力重复创建仍展开')
 })
 
 test('创建菜单始终列出全部未添加能力，不按当前层过滤', async () => {

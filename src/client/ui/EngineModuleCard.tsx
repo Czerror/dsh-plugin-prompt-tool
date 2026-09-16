@@ -16,6 +16,8 @@ export function EngineModuleCard(props: {
   onDelete?: () => void
   /** 创建或选择另一个行为时展开；不因普通字段编辑反复展开。 */
   revealKey?: string
+  /** 稳定定位锚点（能力 id）：创建后滚动定位用，与展开状态无关。 */
+  anchorId?: string
   /** 纯开关卡：开关直接渲染在 header 顶层（右侧），卡片不展开、不折叠。 */
   topSwitch?: {
     id: string
@@ -34,7 +36,7 @@ export function EngineModuleCard(props: {
   }, [props.revealKey])
   const compact = props.topSwitch !== undefined
   return (
-    <article className={clsx(styles.configCard, styles.moduleCard)} data-module-card="true">
+    <article className={clsx(styles.configCard, styles.moduleCard)} data-module-card="true" data-module-card-id={props.anchorId}>
       <header className={styles.configHeader}>
         <button type="button" className={styles.configToggle} aria-expanded={expanded} onClick={() => setExpanded(!expanded)}>
           <span className={styles.configTitle}>

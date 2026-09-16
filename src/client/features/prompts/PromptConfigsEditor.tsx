@@ -62,7 +62,8 @@ export interface PromptConfigsEditorProps {
 /** 预设级模板变量模块卡片（归类于配置列表下）：{{key}} 插值源，非 promptConfig——
  *  不进配置保存路径，保存走 /preset-variables 写 preset.yml 顶层 variables 段。
  *  可折叠（chevron）/ 可删除（清空全部变量，两段式确认）/ 可新建（VariablesEditor 添加变量）。 */
-function TemplateVariablesModuleCard(props: {
+/** 模板变量卡（模块列表置顶单例）；子代理页的「添加模板变量」入口复用同一实现。 */
+export function TemplateVariablesModuleCard(props: {
   t: PromptToolTranslate
   templateVariables: Record<string, string>
   setTemplateVariables: (value: Record<string, string>) => void
