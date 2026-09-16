@@ -1,564 +1,595 @@
-# AGENTS 独立文件源与 pre-step 卡统一设计及修复计划
+# SillyTavern 转换可靠性与可诊断性改进计划
 
-- 日期：2026-09-14。
-- 初始审查基线：`dev@0779c13`，当时使用 DSH `0.1.5-rc.2`、Cordis `4.0.2`；这不是永久目标。后续官方组合跟随核验过的最新 master，发布包版本以 package.json 为准。
-- 状态：已有实现并进入审查修复；实现、确定性回归与真实 UI/会话验收分开记录，以第 8 节为准。
-- 授权范围：初始计划阶段仅交付文档；后续实现与本轮 13 项审查问题修复均由用户另行授权。
-- 目标：AGENTS 正文、指令卡策略与预设分别拥有独立存储和生命周期，同时复用现有 pre-step 卡组件与执行算法；修复本次审查确认的六项问题。
+- 日期：2026-09-16。
+- 状态：计划文档已完成并通过文档校验，业务代码尚未实施；任务状态见第 8 节。
+- 本轮授权：只归档旧计划、编写本计划并验证文档，不代表授权实施以下功能。
+- 本仓库分析基线：`dev@0ea927f71458e22915ce25242c927b228f9c53b7`。
+- 对比项目：本地 `D:\AI\GitHub\dsh-tavern`，基线 `73573a2e7ecfeacb57289e69a98c23cb14db6969`；不是对其远端最新版本的声明。
+- 目标：借鉴 dsh-tavern 的字段归一、转换报告、来源追踪和可解释筛选，提升现有注入引擎的导入可靠性，不移植整个酒馆运行时。
+- [旧计划归档](.scratch/prompt-tool-framework/archive/plan-agents-files-20260914-archived-20260916.md)：保留原文供历史核对，不再作为当前任务入口。归档内相对引用按原文件位于仓库根目录时解释，不作为本计划的现行契约。
 
-## 1. 执行入口与范围
+## 0. 项目启动与执行规范来源
 
-接手实现时先检查工作树和 HEAD，再读本节、缺陷清单、对应 Wave；不要将“计划已写入”当作“功能已实现”。
+### 0.1 项目启动信息
 
-### 1.1 本轮设计包含
+- **项目名称/类型**：dsh-plugin-prompt-tool；现有 DeepSeek Harness 插件的定向改进，不是新建酒馆应用。
+- **初始需求**：对比 dsh-tavern 的酒馆能力，尤其后端参数转换与实现；完整保存建议，归档过期 PLAN，并按用户指定 dev-expert 的任务拆解与执行规范形成可执行计划。
+- **本轮交付**：根 PLAN.md 与旧计划原文归档；只写文档，不实现以下业务任务。
+- **技术栈/运行环境**：现有 TypeScript、Node.js ESM、Cordis/DSH 公开服务、YAML Document API、React 工作台、pnpm 与 Node 内置 test runner；shell 固定 PowerShell 7，测试 cwd 固定隔离目录。
+- **输入/输出**：ST 预设 JSON、角色卡 PNG/JSON、内嵌/独立世界书 → 现有 PresetSpec、promptConfigs 与预设物化；新增报告仅作可观测结果，不是新的预设所有者。
+- **使用者与入口**：用户通过预设/角色导入入口操作；host 负责转换、bridge 负责受控传输、client 展示、engine 执行。
+- **是否存在终极功能**：是，但仅在用户后续授权的核心改进范围内实施，不包含完全 ST 兼容。
+- **终极功能定义**：受支持来源字段在实际注入中保持既定语义，每项有损转换和世界书筛选结果可追溯，且默认行为、数据所有权与安全边界不变；以第 10 节验收，不以“功能已写”计完成。
+- **默认循环轮次/安全最大轮次**：3 / 6；同一诊断方向连续失败 3 次立即停下分析，不借安全上限继续相同尝试。
+- **每轮最大改动点数**：3；单个任务建议不超过约 200 行业务代码，超过时先重拆任务和依赖，不把多个未验收能力混成一次提交。
+- **角色配置**：主执行者承担需求理解、架构、实现和测试复核职责。本轮不启用子代理；未来只有明确授权后才考虑互斥写区的并行任务。
+- **交付约束**：本轮 2 个版本化文档；本地 daily.md 仅作忽略的修改记忆，不产生第二份任务状态文件。
 
-1. 修复正文漏读、普通卡正文丢失、未修改文件被回写三个 P1。
-2. 分离预设卡与文件卡的读取、草稿、写盘、导出和重建。
-3. 提供独立的指令卡策略存储，支持启停、层内顺序、位置、晋升时机、受众和模型范围。
-4. 按本地 Agent 会话工作区探测文件，不使用预设构建时 cwd 决定所有会话的文件集合。
-5. 复用 pre-step 执行算法，解决文件版本去重、压缩恢复、主/子代理、disposer 和重复装配。
-6. 同步 AGENTS.md、领域/架构文档、README、CHANGELOG 与确定性测试。
+### 0.2 本次采用的技能规范
 
-### 1.2 不包含
+用户指定来源为 `D:\AI\CC-switch\skills\dev-expert\SKILL.md`，读取版本 `1.12.0`，不是仅引用默认技能目录的同名文件。
+本计划采用该目录下：
 
-- 不修改 DeepSeek Harness 源码、安装包或官方 system 预设。
-- 不创建“AGENTS 专用预设”，不复制正文到 preset.yml、settings、生成目录或策略文件。
-- 不引入数据库、通用文件管理框架、第二套工作台 store、第二套卡片 UI、全局跨插入点排序。
-- 不增加任意文件路径编辑、文件创建/删除/重命名、远程文件系统编辑或持久草稿功能。
-- 不新增旧参数/旧内容迁移与双读兼容代码；已有用户数据的升级由明确的切换步骤处理。
-- 不停止、重启当前 DSH，也不占用其端口；真实切换由用户安排。
+- `references/software-project.md`：先明确插件边界、输入输出、模块所有权、验证、发布与回滚。
+- `references/task-decomposition-and-execution.md`：2–7 个核心原子任务、每执行 Wave 2–5 个，XML 任务卡、依赖与写区冲突、任务摘要和失败回退。
+- `references/execution-safety.md`：PLAN-GATE、实码确认、审计与修复分离、安全自审及同方向失败计数。
+- `references/delivery-assurance.md`：证据类型、执行率自检、未验证项披露和收尾格式。
 
-### 1.3 必须保持的仓库契约
+遵循六步闭环：分析（第 1–3 节）→ 方案（第 3–7 节）→ 执行（第 8 节）→ 验证（第 10 节）→ 交付（第 12 节）→ 复盘（任务摘要与本地 daily.md）。
+仓库规则继续决定文件编辑入口、测试 cwd、运行服务保护、记忆落位和 Git 范围；不机械生成技能模板中的数据库、图谱、session_memory 或后台队列。
 
-- 入口只编排；host 管文件事实，runtime 管宿主装配，shared 管契约，client 管展示与草稿。
-- 仅在 pre-step 插入点内比较 order；其他五个插入点及已有预设策略不借本次工作重构。
-- YAML 写入使用 Document API，保留注释和未知字段；system 目录保持只读。
-- 监听器、注册表条目和临时实例由 effect/disposer 释放；不 monkey-patch 宿主服务。
-- 所有测试从 `D:\AI\workspase\_temp` 启动，并使用独立临时 DSH_HOME。
+### 0.3 架构取舍与撤销条件
 
-## 2. 审查问题、根因与修复对应
-
-以下为已确认问题，不把后续设计中的风险推演计作新增审查发现。行号以基线为准，后续以符号定位。
-
-| ID | 级别 | 已确认事实与定位 | 根因修复 | 验收 |
-|---|---|---|---|---|
-| F1 | P1 | `src/runtime/settings-bridge.ts:545` 的 /bootstrap 没有附带文件正文；:870 的 /prompt-configs 才补正文。工作台使用前者，空草稿随后可清空文件 | 两端点共用文件快照读取；读取失败不是空正文；文件保存要求成功读取状态和版本 | T01–T03 |
-| F2 | P1 | `src/client/data/prompt-config-content.ts:19` 无条件剥离 text/params.text；persistConfigs 对所有普通卡调用，文本丢失 | 只剥离确实另有文件通道的内容资产；普通卡完整往返 | T04 |
-| F3 | P1 | `src/client/data/use-prompt-tool-store.ts:519` 每次保存回写所有文件卡；旧副本覆盖外部新版本 | 分离文件草稿，只写 dirty 文件；服务端乐观版本校验；保存结果按文件返回 | T05–T08 |
-| F4 | P2 | `src/host/agents-cards.ts:101` 的 dedupe=session 在 `engine/executor.mjs:160` 提前跳过 resolver；文件变更及压缩后重晋升都不再注入 | 文件来源使用内容版本与可见上下文状态去重，不改变普通预设卡的 session 去重语义 | T15–T21 |
-| F5 | P2 | `AGENTS.md:69–70` 仍限定 DSH_HOME 写入及受管块，与直接编辑工作区文件契约冲突 | 删除受管块要求，明确经授权与白名单验证的指令文件编辑例外 | T28 |
-| F6 | P2 | `AGENTS.md:63` 禁止提交所有生成目录，但 Git 跟踪 library 25 个文件、yaml vendor 76 个文件；build 只执行 tsdown | 区分 lib 与版本化快照：前者忽略，后两者由对应脚本生成、验证、提交 | T28–T29 |
-
-基线证据：上一轮六个相关测试文件共 114/114 通过，但隔离复现仍确认 F1–F4；主会话和子代理均出现“首次 1 条、文件更新后 0 条、压缩后重晋升仍 0 条”。不能用这些旧绿灯替代新回归。
-
-## 3. 设计决策
-
-### 3.1 选择独立来源，不选择独立预设
-
-| 候选 | 取舍 | 结论 |
-|---|---|---|
-| 继续在 writePreset 生成文件卡，仅不写入 preset.yml | 改动少，但探测、启停、重建和会话范围仍依赖预设 | 否决 |
-| 将 AGENTS 放入专用预设并与其他预设组合 | 又引入预设切换/组合关系，不能满足文件独立 | 否决 |
-| 文件源独立，视图合并，写盘分流，同一 pre-step 执行算法 | 能支持完整卡片位置/时机/受众语义；需要显式来源契约与作用域接线 | 采用 |
-| 文件卡只做 UI 投影，继续由官方 agent-instructions 注入 | 最小方案，但卡片不能承诺由本插件统一排序及执行策略 | 仅作为缩减范围备选；不能实施中静默降级 |
-
-本计划按“正文与卡片行为均可编辑”设计，所以独立策略文件是实际需求，不是预留框架。若用户改为只编辑正文，可以删除策略存储 Wave，并将行为控件只读化。
-
-### 3.2 三个持久所有者
-
-| 数据 | 唯一来源 | 作用域 | 生命周期 |
+| 决策 | 选项与代价 | 推荐及反选理由 | 重新评审条件 |
 |---|---|---|---|
-| 预设参数、模块、普通提示词配置、预设正文 | 既有 preset.yml / preset.md 通道 | presetId | 预设切换与重建 |
-| 指令正文 | 原始 AGENTS.md / 已支持的指令候选文件 | 实际文件 | 用户文件生命周期 |
-| 指令文件卡策略 | 拟定 `$DSH_HOME/.prompt-tool/instructions.yml` | 同一 DSH_HOME 下共享，文件按 fileId 覆盖 | 独立于预设；修改不调用 rebuildPreset |
-| 卡片视图、正文草稿、读取版本 | 内存快照 | presetId 或 fileId | 当前工作台挂载期 |
-| 注入可见状态、未确认候选 | 会话持久事件及有界内存快路径 | 会话/Agent | 会话与可见上下文生命周期 |
+| 修字段归一还是重写导入器 | 局部补别名影响小；新转换框架能统一更多输入但扩大迁移和双轨风险 | 修现有共同入口，证据只有 F1/F2，不为两个字段重写框架 | 多个真实格式持续出现相同归一缺陷，局部方案已无法保持单一来源 |
+| 增加报告还是新增转换稿资源库 | 报告直接解释当前结果；资源库增加状态、同步和持久化所有者 | 报告作为派生结果，不再造可编辑预设实体 | 用户明确需要独立资源生命周期并接受数据模型变化 |
+| 插入点注入还是整份请求重建 | 注入沿用宿主生命周期；请求重建可表达更多 ST 历史语义但改变产品边界 | 保留官方插入点并标注降级，不搬兼容运行时 | 用户另行提出完整兼容产品目标并批准独立设计 |
 
-同一实际文件在多个预设/会话里只有一份正文、一份文件策略；不能按 presetId 创建指令副本。策略文件是本插件自有状态，不是新的正文真相源。
+模块方向保持 `client → shared bridge 契约 → host 转换/物化 → engine 消费`；shared 只定义契约，不反向调用 UI 或磁盘实现。报告/诊断读取不拥有第二份行为状态。
+当前只规划既有有界导入与诊断，不新增批量作业或后台队列。若后续需求明确超过 100 条处理或实测操作超过 3 秒，应先暂停该任务，按技能另拆 Init → Step → Poll（以及取消、恢复、幂等验证），不得用一个长阻塞端点硬做。
 
-同一 DSH_HOME 下的多个 profile 共享此策略；首版不增加 profile 级覆盖层。若需要 profile 隔离，应在实施前另行确认，不把共享路径描述为 profile 私有。
+## 1. 执行入口与产品边界
 
-### 3.3 独立策略格式与默认行为
+### 1.1 实施前必读
 
-拟新增文件示例（不存在时使用相同默认值，不因读取自动创建）：
+1. 检查工作树、分支和 HEAD，重新核对本计划记录的代码事实；不覆盖用户已有修改。
+2. 导入、角色卡、世界书以 [SillyTavern 兼容边界](docs/SillyTavern.md) 为准。
+3. 参数、变量、保存和生成以 [参数架构](docs/architecture-params.md) 为准。
+4. 插入点、运行时、去重和 disposer 以 [引擎复用](docs/engine-reuse.md) 为准。
+5. 如进入报告 UI 或 bridge 阶段，先读 [UI 架构](docs/ui-architecture.md)。
+6. 涉及宿主契约时先查 `D:\AI\GitHub\deepseek-harness\docs`，再核对当前安装包类型；不能把对方依赖版本下的实现直接当作本仓库契约。
 
-```yaml
-schemaVersion: 1
-enabled: false
-defaults:
-  order: 30
-  position: after-user
-  promotion: none
-  audience: null
-  modelScope: all
-files: {}
+### 1.2 必须保持
+
+- 项目仍是位置、时机与受众可配置的提示词注入引擎，不成为完整对话请求、游戏世界或聊天历史的所有者。
+- `preset.yml` 拥有预设行为；部署 settings、模板变量、会话变量、角色记忆与指令文件正文继续分属既有所有者。
+- 各官方插入点独立，不建立跨插入点的插件全局运行顺序。
+- 所有导入复用现有 host 转换器、`buildWorldBookEntry()`、角色应用和 `rebuildPreset()` 通道；客户端只采集输入和展示结果。
+- 新能力默认保持旧行为或显式 opt-in；导入文件中的开关不等于执行任意脚本的授权。
+- YAML 保存使用 Document API 保留注释和未知字段，沿用现有原子物化、只读 system 保护和 bridge 输入校验。
+- 不修改 DeepSeek Harness 源码，不启停或重启用户正在运行的 DSH 服务，不操作其端口。
+
+### 1.3 不做的事情
+
+- 不整体移植 TavernHelper、浏览器脚本宿主、EJS 执行、MVU 结算、Story Timeline、游戏存档或后台 Agent 系统。
+- 不为支持导入新增第二套工作台 store、角色卡库、转换入口、物化通道或通用配置框架。
+- 不把历史深度近似、system 角色降级、marker 丢弃描述成完整 ST 等价。
+- 不自动导入采样参数，不把未知 ST 顶层字段原样透传到模型请求。
+- 不自动重写已导入预设或重新导入用户素材；已有手工编辑必须保留。
+
+## 2. 对比结论与能力盘点
+
+以下对方文件均相对于 `D:\AI\GitHub\dsh-tavern\tavern-plugin\lib\domain`。
+
+| 项目 | 对方实现 | 本仓库现状 | 采用判断 |
+|---|---|---|---|
+| 世界书格式归一 | `worldbook-resource.js` 区分内嵌/独立格式，统一投影，保留 rawEntry/sourcePath，支持写回来源格式 | 已有别名映射与统一工厂，但复现两处 extensions 别名遗漏 | P0 补缺口并借鉴跨格式测试，不重写导入器 |
+| 转换报告 | `preset-conversion-preview.js` 返回来源行、顺序组、诊断、未转换项和统计 | 已有 stWarnings/stDroppedMarkers/stSource，但多数告警是字符串 | P1 增量结构化，保留现有转换函数和预设结构 |
+| 世界书筛选解释 | `worldbook-activation.js` 返回扫描来源、筛选原因和预算结果 | 已有完整的既定匹配路径，缺少逐条可解释结果 | P1 增加旁路诊断，不改变筛选 |
+| 世界书预算 | 对方支持估算成本、软预算与硬上限 | 当前明确未复刻 token 预算 | P2 按实际上下文压力引入，不照搬常数和策略 |
+| 声明式正则 | `tavern-regex-display.js` 分离原文、请求投影和展示投影 | ST 正则与扩展脚本均不执行 | 有真实资产需求后独立评估，不能捆绑 JS 运行时 |
+| 宏扩展 | `tavern-macro-engine.js` 增加条件块、has/delete 和简写表达式 | 已有有界宏求值、共享变量帧和副作用控制 | 只按样本补语义，不换引擎 |
+| 快照/来源 | `runtime-presets.js` 保留来源与 digest；兼容请求复制并冻结消息 | 已有共享宏帧及重建机制 | 借来源版本与请求一致性验收，不再造快照系统 |
+| 模型参数 | 预设转换稿忽略顶层参数 | 明确独立管理 model/subagentModel 并生成 agent-request patch | 保留本仓库所有权 |
+| 完整消息编排 | 独立兼容编译器重建消息列表 | 通过官方插入点注入 | 不移植；准确报告边界 |
+
+### 2.1 已有能力，不重复实现
+
+- 宏导入只 prepare，不执行赋值；实际运行时求值，同请求共享变量帧避免重复自增。
+- 禁用、受众不符、未命中世界书及未获执行资格的一次性卡不产生对应副作用；单卡失败不提交其变量修改。
+- 宏具备输入/输出 1 MiB、嵌套 32 层、总展开工作量、循环与危险变量键保护。
+- 世界书已有主副关键词、四种 selective logic、概率、分组、扫描深度、字段扫描、递归与 sticky/cooldown/delay。
+- 角色库保留原图、原始 JSON、转换定义和角色记忆，应用时复用现有命名空间及变量绑定。
+- 参数已有 `ENGINE_PARAM_DEFINITIONS`、`MODEL_SEGMENT_MAP` 和生成器消费链，不另建 ST 专属模型参数管理层。
+
+### 2.2 对方也不是完整兼容基准
+
+- 对方普通转换将深度注入收敛为中段并报告 `TAVERN_DEPTH_COLLAPSED`；独立兼容编译器才尝试重建历史顺序、marker 和角色边界。
+- 对方世界书激活器明确沿用自身 10 轮冷却，并非直接完整落实源 sticky/cooldown/delay；本仓库现有按源字段处理的行为必须保留。
+- 对方 token 成本是 Unicode 估算，软预算和两倍硬上限是其产品选择，不是模型实际 token 用量或必须复刻的标准。
+- 根许可证分别为对方 AGPL v3、本仓库 MIT。以独立实现字段语义、借鉴测试场景为主；直接复制实现或 vendor 代码前须另行核对许可义务。
+
+## 3. P0：世界书字段别名修复
+
+### 3.1 已确认的缺陷
+
+| 编号 | 输入 | 预期语义 | 基线实际行为 |
+|---|---|---|---|
+| F1 | `extensions.selective_logic: 3` | 主关键词命中且全部副关键词命中 | 没有写入 params.selectiveLogic，运行时回退 0，即 AND_ANY |
+| F2 | `extensions.use_probability: false` | 不执行概率过滤 | 没有写入 stWorldBook.useProbability，仍执行概率过滤；probability=0 时错误排除 |
+
+证据位置：
+
+- 本仓库 `src/host/sillytavern.ts:232–269`：选项读取与工厂参数构造；`engine/st-world-book.mjs:74–85`：缺省逻辑与概率开关的实际消费。
+- 对方 `worldbook-resource.js:48–90`：投影同时识别两种别名；`:226–248`：导出内嵌格式会产生对应蛇形字段。
+- 以上行号只对应本计划分析基线，实施时按符号重定位。
+
+### 3.2 已执行的最小行为复现
+
+使用主关键词 `dragon`、副关键词 `red` 与 `flying`，开启 selective，正文为普通世界书文本：
+
+| 输入条件 | 蛇形字段实际是否注入 | 驼峰字段实际是否注入 | 正确结果 |
+|---|---|---|---|
+| logic=3，消息仅含 dragon red | 是 | 否 | 否，缺少 flying |
+| useProbability=false、probability=0，消息含全部关键词 | 否 | 是 | 是，概率过滤已关闭 |
+
+验证通过 `convertStToPreset → createPromptConfigs → runPreStepBatch`，不是仅匹配源码字符串。
+另用对方 `exportCharacterBook()` 生成内嵌世界书后送入本仓库，确认这些字段形态能由真实转换通道产生。
+探针仅用于复现基线缺陷，不代表本仓库已经修复。
+
+### 3.3 最小实施方案
+
+1. 根因只在 `src/host/sillytavern.ts` 的字段归一层修复，让角色导入、预设 JSON 导入和世界书导入共用结果。
+2. 明确识别两种拼写；不修改世界书执行器默认语义来掩盖导入遗漏。
+3. 保持既有字段读取优先级；新旧别名同时出现时先列出冲突规则，再用测试固定，不能因真值判断丢失 false 或 0。
+4. 对其他别名做定向检查；只有存在真实输入、消费方和行为证据时扩大修复，不顺手设计通用字段转换 DSL。
+5. 核心回归不运行或依赖对方仓库。使用独立编写的最小 JSON 夹具，保证本仓库单独检出也能测试。
+6. 同步 `docs/SillyTavern.md` 的兼容说明；如参数字段契约改变，再同步参数权威文档。
+
+### 3.4 验收与停止条件
+
+- F1/F2 在修复前以正确语义断言失败，修复后通过；旧驼峰形态行为不变。
+- 独立世界书、角色卡内嵌世界书的等价字段产生相同触发结果。
+- 覆盖 false、0、缺省值、冲突别名、禁用条目和无主关键词场景，保留源对象不变。
+- 保持 order、role、位置降级、局部变量、宏副作用和原生非 ST world-book 行为。
+- 定向与全量门禁通过后结束本阶段，不自动开展报告 UI 或可选功能。
+
+## 4. P1：结构化转换报告与来源追踪
+
+### 4.1 目标与最小结果模型
+
+继续以 `convertStToPreset()` 为唯一转换实现，报告作为其结果或包装结果的增量，不成为第二份可执行预设。
+最少提供以下有明确消费方的信息；字段名在 shared 契约阶段确定，不因本计划直接冻结 API：
+
+| 信息 | 必须回答的问题 |
+|---|---|
+| 来源身份 | 来自哪个上传文件、哪个 JSON 字段/原条目、哪个顺序组？ |
+| 目标身份 | 生成哪个合法配置 id、插入点、层内顺序、角色和位置？ |
+| 转换分类 | 等价、降级、不支持或被排除？禁用与转换失败必须区分 |
+| 结构化诊断 | 稳定 code、severity、条目/字段定位及可读原因 |
+| 摘要 | 输入数、转换数、禁用数、未转换数及需要确认的降级 |
+| 来源版本 | 来源内容摘要与转换器版本，能解释本次生成使用的输入 |
+
+不默认保存绝对磁盘路径、整份敏感正文或无消费方的分析数据；来源身份优先采用文件显示名和文档内指针。
+
+### 4.2 行为要求
+
+- 预览与实际提交使用同一个后端转换函数；预览不写盘、不执行宏、不调用重建。
+- 原始 identifier、来源索引和生成 id 保持可追踪；重复 identifier 不得通过 Map 静默覆盖。产生合法不冲突的 id 或明确诊断，具体重复引用语义用夹具固定。
+- 多个 prompt_order 组允许用户明确选择；保留本仓库歧义时拒绝的安全行为，不照搬对方默认任取首组。
+- 报告区分已丢弃 marker、未编排条目、纯赋值条目、不支持脚本、深度/角色降级和未选择顺序组。
+- 保留纯赋值卡以及其启停状态；对不支持的宏/字段不能以空字符串伪装成成功转换。
+- 多文件合并继续保留每个来源的局部变量绑定，并将诊断映射到合并后的目标条目。
+- 预览后内容、所选顺序组或目标预设发生变化，应重新校验/重新预览，不能提交旧报告代表的新内容。
+- 兼容现有 stWarnings 展示和 warn 通道；同一告警只维护一个事实来源，再派生旧字符串表现，避免两套判断漂移。
+
+### 4.3 Bridge 与 UI
+
+1. 先检查既有导入接口能否携带预览/报告，只有不足时再增加端点。
+2. 先修改 `src/shared/bridge-contract.ts`，再同步 host、typed client 和 shared/client/host 契约测试。
+3. 请求沿用文件类型、大小、目标白名单和统一成功/失败包装；预览身份不替代写入授权。
+4. UI 复用预设/角色导入入口，只展示来源、转换结果、降级和顺序组选择，不重复执行转换。
+5. 错误阻止提交；有损映射须清楚展示并由用户明确确认，不以零解析错误宣称行为等价。
+6. 不建独立“转换稿资源库”，不将报告写进模型可见正文，不增加第二套工作台状态。
+
+### 4.4 快照借鉴的边界
+
+对方 `runtime-presets.js` 的 sources/digest 和 `compatibility-request.js` 的冻结请求可作为验收思路。
+本仓库继续复用现有重建结果与共享宏帧，不移植其前中后三段模型或请求重建系统。
+优先将来源摘要和版本用于导入报告、生成结果及调试定位；若发现同一请求读取混合版本，再在已有请求生命周期所有者处修复。
+同一请求不能因报告预览或调试读取再次执行宏副作用，配置更新应在明确的后续边界生效。
+
+## 5. P1：世界书入选与落选诊断
+
+### 5.1 实施位置
+
+在现有 `selectStWorldBook()` 判断分支旁记录可选诊断，执行器保留真实注入与 commit 的最终权威。
+不为解释结果另跑一次选择器，不重新抽样概率，不把“候选命中”当成“已经注入”。
+
+### 5.2 最小诊断内容
+
+- 配置 id、来源条目、所属会话/请求或 epoch 的必要标识。
+- 进入候选、最终入选、实际提交三个阶段的区别。
+- 扫描窗口及来源类别，主副关键词是否满足、selective logic、概率过滤、分组胜负。
+- 延迟、粘滞、冷却、递归边界、禁用/受众/门控/去重等相关原因；各原因由实际负责层提供，不能由 UI 猜测。
+- 后续预算启用时再附加估算成本与预算状态，不预造尚未实现的数据字段。
+
+### 5.3 安全、成本与验收
+
+- 默认不额外持久化完整对话和世界书正文；使用有上限的诊断记录，必要样本须截断/脱敏并由用户主动查看。
+- 调试数据不进入 preset.yml 预设行为、模板变量或模型上下文，不污染 settings descriptor。
+- 诊断关闭/开启应产生相同入选集合、正文、顺序、抽样次数、变量修改和激活状态。
+- 重复查看不推进 sticky/cooldown，不产生新递归，不让一次性卡重新注入。
+- 如需要展示入口，沿用 typed bridge 和工作台，不另起日志服务；无 UI 消费需求时先保留确定性测试/受控调试入口。
+
+## 6. P2：世界书预算控制
+
+仅在大世界书造成实测上下文压力或用户明确要求时启动，不能抢在参数正确性之前。
+
+### 6.1 设计约束
+
+- 默认未设置预算时，保持当前行为；预算配置归属具体预设/世界书策略，不放进部署 settings。
+- 区分来源声明的 token_budget 与本仓库实际支持的预算模式；尚未实现时在转换报告中标为不支持，不能只保存数值却暗示已生效。
+- 预算以实际准备注入的渲染结果计算，不能只按含宏/EJS 等源模板的字符数估计。
+- 使用宿主可用的计数能力或明确标注的有界估算；估算值不冒充 provider 实际用量。
+- 明确预算作用域、常驻条目是否计入、0 的含义、超限时是否停止及是否允许跨线；先用测试固定，不默认复制对方 8192/两倍上限。
+- 保持“选择优先级”和“最终正文排列顺序”分离，不因挑短条目随意改变作者优先级。
+- 被预算拒绝的条目不能提交宏变量修改或冷却/粘滞激活；复用现有变量帧和提交点，不能通过反复渲染试算制造副作用。
+- 如果无法在既有事务边界内安全试算，先延期，不交付会污染状态的预算近似实现。
+
+### 6.2 验收
+
+覆盖未配置、0、恰好到上限、单条超大、多条累计、渲染前后长度差异、中文/ASCII、分组与递归、常驻策略，以及被拒绝条目下一次仍可竞争。
+诊断同时提供所用估算器、作用域、成本和拒绝原因；跨请求重复求值不得重复扣减。
+
+## 7. 按需能力与明确不移植的部分
+
+### 7.1 声明式正则：独立 opt-in
+
+- 先识别、保留并预览规则；有真实角色卡需求后，才评估执行。
+- 借鉴 `tavern-regex-display.js` 的纯文本变换结构，分离 sourceText、模型请求投影和展示投影，不改写原始聊天记录。
+- 支持哪些 placement、depth、runOnEdit、promptOnly/markdownOnly 组合必须逐项声明；仅支持提示文本时，不冒充同时支持聊天 UI。
+- 保持规则数组顺序，提供命中计数和错误隔离，覆盖捕获组、空替换和 trimStrings。
+- 加入输入/输出规模、规则数量和正则执行风险控制；不能用普通异步 timeout 声称中断了同步灾难性回溯。
+- 无法满足受控执行时维持仅预览；不以正则支持为理由开放 JS、HTML 注入或 TavernHelper。
+
+### 7.2 条件宏和表达式：样本驱动
+
+- 对方 if/else、hasvar/deletevar 和变量简写是能力清单，不是必须全部实现的待办。
+- 只为确实被目标素材使用的语义补最小实现；沿用现有有界解析器，不直接引入整套 vendor 宏引擎。
+- 条件分支必须惰性求值，未选分支不产生赋值；保留失败回滚、受众、门控、一次性和共享帧语义。
+- 未支持语义应在报告中定位；不以静态字符串替换假装表达式求值。
+
+### 7.3 变量持久化：另行确认所有权
+
+- 当前 ST local/global 分表，但都是会话内 mount 生命周期状态；进程恢复或重挂不会自动恢复。这一限制必须继续如实展示。
+- 如用户确需持久化，先区分会话局部、预设默认值、角色记忆和 profile 全局变量，不把宏状态写回 preset.yml 默认变量。
+- 借鉴对方独立存储与乐观冲突检查的思路，而非搬入 Chat/Checkpoint 系统。
+- 明确恢复、清空、跨会话隔离、并发修改、损坏文件和版本冲突的规则，再使用宿主公开持久化能力或本插件拥有的状态目录。
+- 无明确持久化需求不实施，不为未来恢复预留一套状态数据库。
+
+### 7.4 模型参数：保留既有链路
+
+当前链路为 `ENGINE_PARAM_DEFINITIONS → 校验 → MODEL_SEGMENT_MAP → model/subagentModel → agent-request patch`。
+ST 导入不会自动覆盖用户模型设置，这是有意边界，不是此次需要补齐的兼容缺陷。
+以后若单独授权导入采样值，必须显式勾选、白名单映射、验证 provider/model 支持情况，并对已有值的覆盖单独确认；未知参数不可直通请求。
+
+### 7.5 完整 ST 消息兼容：不在本计划实施
+
+对方 `sillytavern-compatibility.js` 会展开 marker、重排历史、保留角色边界，并将人物卡 system_prompt/post_history_instructions 用于 main/jailbreak 覆盖。
+本仓库按官方插入点注入，不能据此承诺这些完全相同的可观察语义：
+
+- Prompt Order 的全局全序不能等同于各插入点内的 order。
+- injection_depth 不能靠 before-all/after-user 等当前消息批位置无损表达。
+- pre-step 不支持的 system 角色不能伪装成已保留。
+- post_history_instructions 放入 system-section 不等于 ST 后历史覆盖。
+
+保持原始来源字段和清晰降级说明。若未来用户要求完整兼容，应作为独立产品范围重新评审，而不是混入本注入引擎的局部修复。
+
+## 8. 任务拆解报告与执行状态
+
+### 8.1 需求概述与范围分组
+
+先修复真实字段丢失，再提供可解释导入和运行结果；本轮只交付可执行规划。
+下表 W0–W5 是功能范围分组，**不是实际执行 Wave 序号**；任务依赖与写区调度以 8.2–8.3 的 3 个执行 Wave 为准。
+
+| 工作包 | 优先级 | 交付物 | 开始条件 | 当前状态 |
+|---|---|---|---|---|
+| W0 | 文档 | 旧计划原文归档、本计划、路径/命令校验 | 用户已授权 | 已完成（仅文档） |
+| W1 | P0 | F1/F2 修复、跨格式行为回归、兼容文档 | 用户明确授权实施 | 未开始 |
+| W2 | P1 | 结构化报告、来源身份、顺序组选择、必要 bridge/UI | W1 完成且用户授权本阶段 | 未开始 |
+| W3 | P1 | 世界书实际筛选与注入诊断 | 用户授权；W2 来源信息可复用 | 未开始 |
+| W4 | P2 | 预算策略、事务边界、成本与落选解释 | 明确规模问题或用户需求 | 暂缓 |
+| W5 | 按需 | 正则/条件宏/持久变量中的单个已授权能力 | 真实样本与明确验收 | 暂缓，不打包实施 |
+
+W1–W3 共拆为以下 6 个原子任务，每执行 Wave 2 个。W4/W5 仅保留完整候选方案；触发后另行收敛为 2–7 个原子任务，不以模糊占位任务自动启动。
+每个任务在一个上下文窗口中完成一个可验证切片；预算超出建议粒度时先重拆，不跳过安全和验证。
+
+### 8.2 原子任务列表（XML）
+
+#### 执行 Wave 1：字段正确性（ST-01、ST-02；无业务依赖，写区重叠而串行）
+
+```xml
+<task type="auto" id="ST-01">
+  <name>修复内嵌世界书 selective_logic 别名及实际注入回归</name>
+  <files>src/host/sillytavern.ts；test/host/st-compatibility.test.mjs；test/engine/st-world-book.test.mjs；docs/SillyTavern.md</files>
+  <depends_on>无</depends_on>
+  <action>沿所有 convertStToPreset 调用方复核共同入口；先补 F1 的正确语义红灯，再只在字段读取处补别名；列明冲突优先级，保留独立/内嵌格式、禁用和原生 world-book 行为；同步稳定兼容说明。</action>
+  <verify>证据类型：命令+输出、测试报告。运行第 10.3 节定向命令；T01/T02 中 F1 的蛇形/驼峰、四种逻辑、副关键词部分/全部命中、冲突输入均须有行为断言；按 8.4 运行本任务门禁。</verify>
+  <security>验证外部 JSON 的 null/错误字段类型不会绕过既有输入校验；源对象不可变；无主关键词和禁用条目不得因缺省值误启用；不执行源扩展脚本，不修改真实用户素材。</security>
+  <rollback>保留原始输入；未提交时只撤回本任务补丁，已提交时通过新的反向提交回退，不覆盖其他改动；不会自动迁移用户预设。</rollback>
+  <done>F1 先红后绿、旧拼写与既有语义通过、全量门禁通过且 Task Summary 有原始证据；不能以探针显示两者不同代替正确语义验收。</done>
+</task>
 ```
 
-- `enabled: false` 是新独立注入源的安全缺省，UI 仍可查看和显式编辑文件。部署切换验收后由用户开启一次，不从各预设 agentsHints 自动推导。
-- `audience: null` 表示主会话和子代理；`main` / `subagent`、position、promotion、modelScope 使用当前引擎已存在的枚举。
-- `files.<fileId>` 只保存该文件相对 defaults 的行为覆盖；删除覆盖恢复默认，不删除正文。
-- 允许覆盖：enabled、name（可选显示名）、order、position、promotion、audience、modelScope。字段类型及数值边界复用现有校验，并拒绝非有限 order。
-- 固定不可编辑：文件身份/路径、layer=pre-step、role=user、form=instructions、文件内容填充绑定、来源归属、文件版本去重规则。初版不支持文件卡合并消息或任意策略切换。
-- 策略变更影响未来满足条件的贡献，不承诺重新排序或撤回已进入会话历史的消息。
-- 不存正文、文件读取版本、会话 ID、API 凭据或任意客户端路径。文件身份由服务端解析，fileId 不是写入授权本身。
-- 策略文件整体也有内容版本；部分字段保存走 Document API，未知文档字段保留，未知请求字段拒绝。
-- 策略文件缺失时 revision=null；首次显式保存可用 expectedRevision=null 创建。解析失败或不支持的 schemaVersion 不能当作空配置覆盖。
-- 原 `preset.yml#agentsHints` 不再是运行时开关。旧字段不自动迁移、不自动删除；升级说明明确其不再生效。
-- 新独立源开启后，空预设表示“没有预设贡献”，不表示“关闭部署级指令”；真正无指令环境通过独立开关关闭。这是需要记录的行为变化。
-
-### 3.4 来源契约，不复用消息 sourceKind
-
-拟新增 shared 类型；下列是目标契约草图，不是当前已存在接口：
-
-```ts
-type CardOrigin =
-  | { kind: 'preset'; presetId: string }
-  | { kind: 'instruction-file'; fileId: string; contextId: string }
-
-type InstructionContent =
-  | { status: 'ready'; text: string; revision: string }
-  | { status: 'unreadable' | 'missing' | 'too-large'; message: string }
+```xml
+<task type="auto" id="ST-02">
+  <name>修复 use_probability 别名并锁定 false/0 语义</name>
+  <files>src/host/sillytavern.ts；test/host/st-compatibility.test.mjs；test/engine/st-world-book.test.mjs；docs/SillyTavern.md</files>
+  <depends_on>无</depends_on>
+  <action>先补 F2 红灯；在同一转换入口补概率开关别名，禁止把 false 当缺省或把 probability=0 当空值；补独立/内嵌最小夹具及冲突输入，不调整执行器概率默认值。</action>
+  <verify>证据类型：命令+输出、测试报告。运行第 10.3 节定向命令；T01/T02 覆盖关闭开关且概率为0时入选、开启且概率为0时不入选、缺省开关、已禁用条目和源对象不变；按 8.4 运行门禁。</verify>
+  <security>测试缺失/null/错误类型与显式 false 的区别；外部布尔值不能扩权或启用脚本；失败转换不能修改原始 JSON、角色库或预设文件。</security>
+  <rollback>只回退本任务变更，不移除 ST-01 已验收修复；保留夹具、诊断和原始资产供再次实施。</rollback>
+  <done>F2 先红后绿；Wave 1 的 F1/F2 同时通过且全量门禁通过；记录旧转换产物需用户确认重新导入，不直接修改用户环境。</done>
+</task>
 ```
 
-- 复用现有 PromptConfigDraft 的显示/行为字段；origin 与 content 是视图元数据，不写进 preset.yml，也不混入 params。
-- origin 用于前端路由；运行时 sourceKind 用于消息来源。服务端不能只信任客户端提供的 origin。
-- 使用独立 ID 命名空间，例如 `instruction:<fileId>`；预设不能以同名 ID 覆盖文件来源。取消按 params.file 或字符串前缀猜所有者的逻辑。
-- fileId 由规范化的真实文件身份生成，不能继续无条件 toLowerCase 后截成 8 位。大小写敏感平台保留大小写；同一实际文件去重；服务端仍检查 ID 映射唯一性。
-- revision 为读取到的原始文件字节的 SHA-256；不能只用 mtime，不能对 trim 后正文计算。
-- 读取成功的空文本与读取失败严格区分；读取失败没有可保存的 text/revision。
+#### 执行 Wave 2：可观测后端切片（ST-03、ST-04；依赖 Wave 1）
 
-## 4. 文件来源：范围、读取与安全写入
+```xml
+<task type="auto" id="ST-03">
+  <name>通过现有导入 API 提供同源转换预览与结构化报告</name>
+  <files>src/shared/bridge-contract.ts；src/host/sillytavern.ts；src/host/characters.ts；src/host/write-preset.ts（仅需传递报告时）；src/runtime/settings-bridge.ts；test/shared、test/host 中实际契约文件；docs/SillyTavern.md</files>
+  <depends_on>ST-01, ST-02</depends_on>
+  <action>先冻结最小请求/响应契约，优先扩展现有入口；转换结果增加条目/字段来源、顺序组选择、降级分类和摘要；preview 与实际提交共用纯转换函数；为来源版本和过期预览定义拒绝或重算规则；通过 API 夹具走完整预览/提交路径，不创建第二份预设。</action>
+  <verify>证据类型：命令+输出、测试报告、API 响应（注明隔离 host 夹具或真实隔离服务）。T03–T06 覆盖预览不写盘、不重建、不执行宏，多个顺序组歧义拒绝，重复 identifier、多文件变量绑定、过期输入及统一成功/失败载荷。</verify>
+  <security>验证 loopback、Host/Origin、方法、类型、体积和目标白名单；只读 system 及未授权目标不可写；报告不泄露绝对路径或无必要正文；preview 身份不能作为写入凭证，非法或过期载荷不得产生写盘副作用。</security>
+  <rollback>报告是派生元数据；保留现有预设和 warn 兼容路径，回退本任务即可恢复旧导入表现；不得清理已存在资产或重写用户默认值。</rollback>
+  <done>后端预览/提交同源契约有可执行消费者夹具，T03–T06 和完整门禁通过；报告字段均有 API/UI 计划消费用途，无独立转换稿资源库。</done>
+</task>
+```
 
-### 4.1 统一探测与工作区解析
+```xml
+<task type="auto" id="ST-04">
+  <name>从实际世界书筛选与提交路径输出只读诊断</name>
+  <files>engine/st-world-book.mjs；engine/executor.mjs（仅需确认提交结果时）；test/engine/st-world-book.test.mjs；docs/engine-reuse.md</files>
+  <depends_on>ST-01, ST-02</depends_on>
+  <action>在实际谓词和提交点收集有上限的结构化原因，沿用配置 id 作为身份；先以现有可用回调/受控调试接口及行为测试消费，不新增无人消费的状态服务；明确候选、入选、已注入的区别。</action>
+  <verify>证据类型：命令+输出、测试报告。T07/T08/T14 对照诊断开关的输出集合、排序、随机调用次数、变量修改和窗口状态；覆盖主/子代理、压缩后重晋升、失败压缩、重复装配与 disposer。</verify>
+  <security>诊断只读，不扫描真实工作区或暴露完整聊天/世界书正文；超量记录必须有界；读取不再抽样、不触发宏、不推进冷却；检查禁用、受众、门控及去重不会被调试入口绕过。</security>
+  <rollback>新增诊断可撤回，不改变持久预设和原生 world-book 语义；失败时回到基线选择/提交路径，不保留半套新的行为状态。</rollback>
+  <done>有可运行诊断消费者与差分行为测试，T07/T08/T14 和完整门禁通过；开启或关闭诊断只改变观测结果，不改变模型输入及运行状态。</done>
+</task>
+```
 
-扩展既有 `src/host/agents-cards.ts`，将探测、读取、文件身份、读写校验集中在这一 Module；UI 与运行时使用同一规则，不各写一套转换器。
+#### 执行 Wave 3：受控用户入口（ST-05、ST-06；依赖 Wave 2）
 
-1. 全局候选保留 `$DSH_HOME/AGENTS.md`。
-2. 项目候选保留 AGENTS.md、CLAUDE.md、AGENTS.local.md、CLAUDE.local.md；按项目根到 cwd 的目录链排列，同目录沿既有候选顺序。
-3. 项目根暂沿用 `.git` 标记；无标记以会话 cwd 为根。本轮不扩大到额外上级用户目录。
-4. 运行时使用 `agent.session.header.cwd`；缺失不回退为另一会话/进程工作区，只保留可确认的全局范围。
-5. UI 提交当前 sessionId，服务端使用已发布的 Agent 能力解析本地会话 cwd，并返回 contextId。不得接受浏览器任意 cwd/path。
-6. 当前没有可解析的本地 Agent 时，首版提供全局文件及“项目范围不可用”提示；不拿部署 cwd 冒充当前工作区。远程 Agent/远程 FS 不在本轮支持范围。
-7. 只接受普通文件；目录、设备文件跳过并诊断。符号链接/重解析路径先解析真实路径，越出获准文件范围或无法稳定确认身份时，拒绝写入。
-8. 首版不加 watcher；打开/刷新工作台、进入符合条件的 pre-step 时重新探测和读取。读性能有实测问题后再加有界缓存。
+```xml
+<task type="auto" id="ST-05">
+  <name>在现有预设与角色导入入口展示预览并确认有损转换</name>
+  <files>src/client/features、src/client/data 中现有导入组件/facade/typed bridge；src/shared/bridge-contract.ts 和 src/runtime/settings-bridge.ts（仅同步必要契约）；test/client、test/shared、test/host 中相关测试；docs/SillyTavern.md、docs/ui-architecture.md</files>
+  <depends_on>ST-03</depends_on>
+  <action>读取服务端报告，展示条目来源、诊断和顺序组；接入错误阻止、有损确认与过期预览处理；复用现有导入按钮、store 与保存队列，不在客户端转换或另建资源库。</action>
+  <verify>证据类型：命令+输出、测试报告；交互 smoke 使用截图+步骤并记录浏览器/宿主版本。T03–T06 覆盖换文件/换目标/换顺序组、失败不提交、显式确认、关闭再打开、键盘可操作；未做真实 smoke 时单列未验证，不冒充已完成交互验收。</verify>
+  <security>以文本渲染导入名称和告警，恶意 HTML 不能执行；客户端禁止项仍由服务端复验；过期异步响应不能覆盖新草稿；大文件和超限报告有受控失败行为。</security>
+  <rollback>撤回新增展示与确认接线，不删除原始资产或改动已保存预设；涉及共用 facade 时仅撤回本任务补丁，保留其他任务结果。</rollback>
+  <done>实际入口能完成预览到受控导入闭环，契约/行为门禁与授权范围内的交互验收完成；没有第二套转换器或 store，所有未验证项明确记录。</done>
+</task>
+```
 
-### 4.2 单次读取形成一致快照
+```xml
+<task type="auto" id="ST-06">
+  <name>通过 typed bridge 暴露有界只读世界书诊断并完成核心交付</name>
+  <files>src/shared/bridge-contract.ts；src/runtime/settings-bridge.ts；src/client/features、src/client/data 中现有调试/世界书入口；test/shared、test/client、test/host、test/engine 中相关测试；docs/SillyTavern.md、docs/ui-architecture.md、PLAN.md</files>
+  <depends_on>ST-03, ST-04</depends_on>
+  <action>先定义最小只读载荷，再连接引擎诊断与既有工作台入口；把来源 id、真实原因和提交状态展示给用户；限制记录体积及生命周期；检查核心任务证据并汇总剩余 W4/W5 为延期，不把候选能力计为失败或已实现。</action>
+  <verify>证据类型：命令+输出、测试报告、API 响应；UI smoke 同 ST-05 单列。T06–T08/T14 覆盖同会话重复读取、换会话、越界请求、无记录/过期记录、超量记录、启停/卸载后的状态释放，以及完整 shared/client/engine/host 门禁。</verify>
+  <security>只返回当前授权会话诊断，不泄露其他会话或完整敏感正文；保留 Host/Origin/loopback 校验；读取接口不得写 preset.yml、改变变量或推进时间窗；UI 不把源文本当 HTML 或模型指令执行。</security>
+  <rollback>撤回诊断 bridge/UI，保留已验收的字段修复和转换报告；清理仅限本次拥有的临时记录，不能删除用户资产、历史或其他服务状态。</rollback>
+  <done>世界书原因可以从真实运行路径追溯到受控入口，安全/一致性/生命周期测试和完整门禁通过；6 个核心任务均有 Summary，交付明确未实施的按需能力。</done>
+</task>
+```
 
-- 一次读取同时得到正文、revision、文件身份和必要编码信息，避免“版本来自 V1、注入正文来自 V2”。
-- 只支持可正确解码的 UTF-8 指令文件；现有 BOM 不因无关保存消失。不支持的编码显示错误，不以替换字符后写回。
-- 拟定每文件正文上限 64 KiB，与固定版本官方指令行的 maxBytes 基线对齐；读写限制一致，超限显式报错，不能静默截断后覆盖。
-- 未编辑的文件字节必须完全不变。编辑框的换行归一仅用于视图/dirty 比较，不能触发后台“格式修复”。
-- 文本按原文注入，不继承 preset variables、ST 宏或其他预设插值；文件卡的 UI 正文快照不能成为运行时缓存真相。
+### 8.3 依赖、冲突与执行建议
 
-### 4.3 保存算法
+```text
+W0 文档交付 + 用户实施授权
+  └─ 执行 Wave 1：ST-01、ST-02（相同写区，串行）
+       └─ 执行 Wave 2：ST-03、ST-04（职责/写区可分，默认串行）
+            ├─ ST-03 → ST-05
+            └─ ST-03 + ST-04 → ST-06
+                 执行 Wave 3：ST-05、ST-06（共用 bridge/facade，串行）
+```
 
-1. UI 只提交 status=ready 且正文相对已读取基线改变的文件；用户明确清空正文允许保存。
-2. 服务端校验 method、loopback、Host/Origin、请求体上限、字段白名单和字段类型。
-3. 重新解析 sessionId/contextId 与文件白名单；旧工作区、未知 fileId、越界目标立即拒绝。
-4. 在同文件的串行写入段内重新读取文件，比较 expectedRevision；不一致返回 409，不写盘。
-5. 在目标同目录排他创建唯一临时文件，写完整 UTF-8 内容；最终替换前重新检查目标身份。保留合理的原文件权限，不让原子替换扩大访问权限。
-6. 原子 rename 成功后返回新 revision；失败保留目标原文件并清理本次临时文件，不将失败包装成成功。
-7. 不调用 afterPresetImport/rebuildPreset；运行时下一次读取直接看新文件。
+- 独立任务不等于已授权并行；本轮不启动任何子代理。未来有明确授权且写区互斥时，才可并行执行 Wave 2；主执行者先自行理解整体边界，不能将理解任务外包。
+- Wave 1 的两个修复没有语义依赖，但写同一转换器/测试/文档，必须在前一补丁回读验证后再做下一项。
+- ST-05/ST-06 开始前进一步圈定现有组件和测试文件；若共用文件不能拆出互斥写区，保持串行，不靠并行编辑后碰运气合并。
+- 任何前置任务处于失败、部分完成或证据不足状态，后续依赖不得开始；完成规划不计任何 ST 任务完成率。
+- W4/W5 不加入当前依赖链，不以预算/脚本等未实施能力阻塞已授权 P0/P1 的独立交付。
 
-版本校验是乐观并发控制，不宣称 Node 的“读后 rename”是跨外部编辑器的原子 CAS：不合作的外部进程仍有极短竞争窗口。不得通过自动备份正文到策略/预设目录掩盖该限制；若需要跨进程强事务，应另行设计写入协议。
+### 8.4 PLAN-GATE 与每任务闭环
 
-### 4.4 错误语义
+每项实施授权后，按以下门禁逐项确认；本轮文档校验不能代替未来代码任务门禁。
 
-| 情况 | 结果 |
+| 门禁 | 必须记录的证据 |
 |---|---|
-| 非法字段/类型/未知文件 ID | 400，文件不变 |
-| 非 loopback、非法 Host/Origin 或越界访问 | 403，文件不变 |
-| 原文件已删除或读取对象不可用 | 404/明确不可用错误，不自动重建文件 |
-| 文件版本、策略版本或工作区上下文过期 | 409，保留草稿，提供重新读取动作 |
-| 请求体或正文超限 | 413，不截断保存 |
-| 文件不可读、临时写或替换失败 | 明确错误，不返回空正文成功态 |
+| 范围与定制文件 | HEAD、工作树、该任务实际 files 清单，用户手工文件/旧数据处理范围 |
+| 实码与调用方 | 目标文件回读、共同入口所有调用方、相关测试；图谱若存在也必须用实际搜索复核 |
+| 架构与外部契约 | 唯一数据所有者、依赖方向、宿主安装版本、bridge 契约及消费方；无新库时注明不涉及许可证新增 |
+| 安全 | 对照每卡 security 执行类型/大小/授权/路径/脚本/XSS/敏感数据检查，不以“已检查”替代方法 |
+| 并发与生命周期 | 预览过期、请求一致性、重复求值、主/子代理、压缩和 disposer 的对应场景 |
+| 性能与批量 | 扫描/报告/正则的规模上限；超过约 200 行业务代码、3 个改动点或长任务阈值时重拆 |
+| 验证与恢复 | 最小红灯、定向及完整门禁命令、仅本任务可撤回的补丁/提交、恢复起点 |
+| 计划回读 | 任务 XML、依赖、路径和权限边界完整，跳过项说明原因，无乱码或截断 |
 
-## 5. Bridge 与 UI 设计
+执行顺序为：分析并确认授权 → 回读/搜索/冲突检查 → 更新本任务边界 → 最小修改 → verify 自测 → 逐项复核 → 记录 Summary → 达到 done 才更新状态。
+每个任务修改后立即运行其定向验证；业务任务标记完成或创建实施提交前，仍须通过第 10.3 节完整门禁，不因同 Wave 有其他任务而省略。
+关键验收或必要 smoke 未完成时，任务只能标记部分完成/阻塞，不能仅凭“已披露未验证项”就满足 done。
+单个方向连续失败 3 次，停止该方向，记录原始错误、差异和 2–3 个不同策略的选项，等待必要输入；不得悄悄跳过用例或将环境失败记为通过。
+实现中出现新增所有者、宿主 API 不足或大范围架构变化，先改计划并确认，不以“为了兼容”扩大授权。
 
-### 5.1 接口收口
+### 8.5 上下文、Task Summary 与检查点
 
-先改 `src/shared/bridge-contract.ts`，再同步 host/client。保留当前成功/失败包装，不借机整体改造 bootstrap 的 descriptor 结构。
+每次恢复只读本任务关联需求/设计、允许文件、关键决策和前置 Summary，不加载无关模块或完整历史聊天。
+如将来获准委派，简报必须包含目标、背景、互斥写区、约束、前置输入、验收和返回格式；主执行者复核后才可计入完成。
 
-| 端点 | 目标行为 |
-|---|---|
-| /bootstrap | 请求可带 sessionId；既有 promptConfigs 分支只返回预设卡，新增 instructions 分支返回 context、文件卡、正文状态、策略与版本 |
-| /prompt-configs | 与 bootstrap 共用读取入口；明确返回预设卡与 instructions 两个分支，不再独立补正文 |
-| /agents-file | 调整为单文件写请求 `{ sessionId?, contextId, fileId, expectedRevision, content }`，返回 `{ fileId, revision }`；不传 presetId |
-| /instructions-policy（拟新增） | 读取/保存独立策略；写请求带 expectedRevision，只允许白名单策略字段 |
-| /param-overrides | 只持久化预设卡；拒绝文件来源及保留身份，不以删正文的方式静默处理错误路由 |
-| /import-preset、预设复制/导出/删除 | 只处理预设资产，不携带文件卡、AGENTS 正文或独立策略 |
+```text
+## Task Summary: [ST-xx / 任务名]
+完成状态: 未开始 / 进行中 / 完成 / 部分完成 / 失败 / 阻塞
+修改文件: 实际文件清单，与计划范围不同须说明
+验证证据: 类型 + 命令/请求/步骤 + 退出码/状态码 + 关键输出或报告位置
+置信度: 高 / 中 / 低；低置信度说明原因
+关键决策: 所选方案、边界及必要的撤销条件
+偏差说明: 无偏差或实际差异与原因，禁止省略
+遗留问题: 未验证项、环境阻塞、失败明细
+检查点/下一步: 已验收提交或补丁状态，恢复需要的最小上下文
+```
 
-这是客户端与服务端同步更新的契约变更。旧 UI 载荷应明确失败并提示刷新，不做可能清空文件的兼容猜测。正文通道只保留 /agents-file 一个写入口，清点并移除仍可写 agents 的旧 importPreset 分支。
+本轮 W0 采用“命令+输出”证据：文档/任务卡解析、路径/scripts 检查、旧计划 blob 对比及 Git diff 检查；不伪造截图、API 响应或实施测试结果。
+运行 API 夹具需注明“隔离 host 夹具”，不能写成真实生产联调；UI 截图证据须带步骤和环境版本。
+任务状态和最小检查点更新到本计划；项目修改记忆仅追加 `.ai-memory/20260916/daily.md`（后续使用执行当日目录）。不把 handoff、图谱或第二份任务账本放入 `.ai-memory`。
 
-### 5.2 一套 facade，两个草稿池
+#### Task Summary: W0 / 按指定 dev-expert 规范编写计划
 
-- `fields.promptConfigs` 与 savedConfigs 仅承载预设卡，保持现有预设身份保护。
-- 在既有 usePromptToolStore 中维护按 fileId 索引的文件草稿：content、savedContent、revision、readStatus、dirty、保存状态。复用既有串行队列 helper，不新建全局 React Context/store 框架。
-- 指令策略另有自己的 draft/saved 基线和 policyRevision，不使用 savedSwitches 假装属于 preset params。
-- pre-step 展示列表是两类卡的派生视图；排序、筛选、展开可共用，但保存对象绝不能直接使用这个混合数组。
-- 来源徽标、文件路径与“直接修改原文件”提示常驻可见；不可编辑的绑定和版本去重规则只读化。
-- 单文件提供显式保存；不让 AGENTS 正文继承普通卡的 debounce 自动保存。保存全部也只保存用户已修改且可保存的对象。
-- 切换预设只刷新预设草稿，不清空、保存或复制指令草稿；同文件在新预设下继续显示同一份待保存内容。
-- 切换会话/工作区使用独立上下文序号，迟到响应不能覆盖当前视图。未存草稿先保留，旧上下文不可继续写；回到原上下文仍需重校验版本。
-- 保存期间继续编辑：成功只更新请求快照的 saved 基线，新输入仍 dirty；409/写失败不清草稿，也不自动重载覆盖用户输入。
-- 多文件“保存全部”按文件报告成功/失败，成功项更新版本、失败项保留草稿；不宣称文件与预设跨资源原子提交。
-- 活动 sessionId 复用 host-api.currentSessionId 与现有官方会话订阅能力；仅会话身份变化时刷新指令上下文，不因每次模型投影更新全量 reload。
+- **完成状态**：完成，仅限文档；ST-01–ST-06 均未开始，候选 W4/W5 保持暂缓。
+- **修改文件**：PLAN.md；`.scratch/prompt-tool-framework/archive/plan-agents-files-20260914-archived-20260916.md`；本地忽略的 daily.md 另记结果。
+- **验证证据**：命令+输出。隔离 cwd 的 PowerShell 只读校验退出 0：6 张 XML 任务卡必填字段非空、3 个 Wave 的依赖只指向前序 Wave、5 个 Markdown 链接和 26 个仓库路径存在、7 个 package scripts 有定义、UTF-8 无 BOM 且代码围栏配对；`git -C $Repo diff --check` 退出 0。
+- **归档证据**：`git -C $Repo rev-parse 0ea927f:PLAN.md` 与归档的 `git hash-object` 均为 `9935da145ef7552586ae9c1ba78f11c0ef803f8b`，旧计划原文未改写。
+- **置信度**：文档结构与路径验证为高；不将该置信度用于声称尚未实施的业务功能已正确。
+- **关键决策**：完整保留建议及兼容边界，核心改进拆成 6 个任务/3 个执行 Wave；按需能力不作为已授权任务。
+- **偏差说明**：无业务范围偏差；按用户追加指示采用 CC-switch 路径下的指定技能，补齐 XML 任务、安全、回滚、依赖及执行摘要，而非只保留阶段表。
+- **遗留问题**：无文档阻塞；本轮未运行业务测试、构建、真实 UI/API smoke，原因是没有业务代码改动。基线测试和对方缺依赖记录见第 11 节。
+- **检查点/下一步**：本计划是唯一当前任务入口；若用户授权 P0，从 ST-01 的红灯回归开始。提交 SHA 由交付消息和 Git 历史记录，不在计划内自引用。
 
-### 5.3 卡片编辑与保存分流
+### 8.6 风险登记与处置
 
-- 复用 PromptConfigCard / PromptConfigForm / PromptConfigList，使用 origin 决定允许编辑的字段及保存回调。
-- 修复 stripContentText：仅 `isContentAsset` 为真的 preset.md 卡剥离文件通道正文；普通卡的 text、texts、params.text 保持原有合法含义。
-- 预设序列化只排除 origin、读取/保存状态等视图元数据；这些字段不是再次删除普通正文的理由。服务端仍独立校验保留身份与写入契约。
-- 文件卡正文不再塞入 params.text；移除这一路的 lift/strip 特例，避免编辑态与运行态互相覆盖。
-- 文件卡不能被“删除卡片”按钮删除原文件；允许的禁用操作写独立策略。预设保存、模板应用、批量操作必须按 origin 明确分流。
-- 显示文件读取失败、过大、冲突和项目范围不可用的实际状态，不能用一个空 textarea 隐藏错误。
-
-## 6. 运行时：两个来源，一次 pre-step 执行
-
-### 6.1 装配平面与最小协调接口
-
-独立文件来源属于跨预设的部署能力；预设卡属于对应 Agent/standing scope。不能把所有会话的预设卡放进“当前 UI 选中预设”的全局变量。
-
-拟新增 `src/runtime/pre-step-coordinator.ts`，作为插件拥有的、作用域感知的薄装配层：
-
-- 在插件侧安装一个 `promptToolPreStep` 协调服务及其唯一 pre-step 监听器。
-- 对预设引擎只暴露最小注册操作：`registerPreset(ctx, sourceId, configs) -> disposer`。这是拟新增的本插件接口，不是已有宿主 API。
-- 预设来源保留在其注册 ctx 的作用域；独立文件来源根据本次 Agent 实时读取。
-- 使用已安装的 `@deepseek-ai/dsh-scope` 的 ScopedLayers / NamedEntries / scopeOf 处理可见性和 effect 归属，不手写一套作用域继承注册表。
-- 对当前 Agent 解析有效预设来源，合并本次文件候选，再交给从 `engine/executor.mjs` 提取复用的同一批执行算法。
-- 不增加可扩展 provider 框架、订阅总线或存储插件系统；这里只有实际存在的两类来源。
-
-固定版本证据：已安装 dsh-scope 的 README 和类型声明支持未标记监听器观察全局事件、作用域继承、ScopedLayers.merge/effect；dsh-agent 的类型声明提供 agent.ctx、agent.session 和 scoped agent/pre-step waterfall。引用见第 11 节。
-
-### 6.2 保持原有引擎可独立复用
-
-- `engine/prompt-config-engine.mjs` 在协调服务可用时，把 pre-step 配置注册到所属 scope，不再安装第二个本地 pre-step 执行监听器。
-- 其余五个层级继续由原 wireLayers 接线，不能因本次拆分重复注册或跨层排序。
-- 未安装宿主 prompt-tool 插件的独立引擎使用场景保留原来的本地执行路径，只执行自身预设配置；不强制依赖新的 host 源文件、host node_modules 或独立指令设置。
-- 协调服务迟到、卸载、HMR 的接管/释放必须先撤销旧 pre-step 接线，再启用新路径；一个实例在任何时刻只选择一种执行路径。
-- engine 不能静态 import `src/host`。文件快照由宿主协调层注入；作用域依赖留在宿主层，保持 engine 的自包含复制协议。
-- `src/index.ts` 只负责安装协调层及既有 bridge；不得把注册表、文件 IO 或会话状态实现塞进入口。
-
-### 6.3 生命周期接线必须先证明
-
-实现前在 W0 使用固定版本真实 Cordis/scope 类型与隔离 harness 证明：
-
-1. 全局协调器能收到不同本地 Agent 的 pre-step，读取其实际 scope 与 session，而不是最后一次 UI 选择。
-2. 两个 standing scope、父/子 Agent 的来源继承和遮蔽符合宿主规则；同名不同 scope 不串配置。
-3. 管理模式、独立模式、迟到服务与 disposer 切换都只有一个执行器；在途旧回调不能重注入。
-4. 使用真实 `PreStepDecision` 的 `kind: 'enter' | 'reject'`，保留 startsRequestSeries 和其他 decision 字段；不只用旧测试中的 kind=ok 假对象证明接线。
-5. 与 context-gate/压缩插件共同挂载时，没有因监听顺序变化让原预设消息绕过门控，也没有吞掉下游拒绝或消息。
-
-这五项是实现前置门槛，不是当前已完成的 smoke。如果固定版本无法安全完成，不得以“分别挂两个监听器但共用 order 名称”冒充统一执行；停止运行时 Wave，报告证据，并由用户决定调整挂载方案或采用第 3.1 节的 UI-only 备选。
-
-### 6.4 文件卡编译与候选合并
-
-- 文件源将同一次读取的正文/身份/版本/策略编译成执行器可消费的卡；沿用现有位置、晋升、受众及模型过滤算法。
-- 内部文件卡可使用 `dedupe: none` 进入公共算法，但其候选资格必须先经过专用“文件版本可见状态”判断；UI 显示“文件变化后更新”，不是一个可误改成 session 的通用下拉框。
-- 普通预设卡的 session/batch/none 不在本轮改变语义；不要为修 F4 全局重写去重规则。
-- 预设卡与文件卡的身份空间不互相覆盖。按 order 排序；相同 order 使用确定性 tie-break：保留预设来源顺序，再按文件的全局→项目根→cwd 探测顺序排列。
-- 不将文件卡与其他来源拼为一个 merged 消息，保留每文件独立身份、版本与定位。
-- 文件正文走 literal 内容路径，不经过 interpolateVariables。不能因共用执行器重新引入预设变量依赖。
-- 找不到 after-user 锚点时延后，不擅自改成 before-all；延后不能标记已经注入。
-- 独立存储不等于绕过已部署的会话门控。文件策略只能限定自身资格，不得借协调器绕过既有拒绝、安全限制或受众限制；作用域接线测试必须覆盖这些组合。
-
-### 6.5 文件版本与可见上下文去重
-
-最小身份为 `(sessionId, fileId, contentRevision, surfaceEpoch)`。会话事件是真相，内存只作有界快路径。
-
-| 条件 | 行为 |
-|---|---|
-| 文件可读、满足策略、该版本尚未可见 | 加入本次候选 |
-| 相同文件相同版本在当前 surface 已可见 | 不重复注入 |
-| 文件内容变更 | 下一次满足插入条件时发出该文件新版本，明确是更新，不改写旧持久日志 |
-| 成功压缩使原文退出可见上下文 | 新 epoch 重新具备注入资格；若有晋升条件，等待该 epoch 的晋升 |
-| 失败压缩 | 不推进 epoch，不重放同版本 |
-| pre-step 拒绝、缺少锚点、后续 prepare/admission 取消 | 不确认注入；下次仍可重试 |
-| 插件重挂或进程恢复 | 从当前可见 epoch 的持久消息重建；不能扫描到旧 epoch 的同 kind 消息就永久跳过 |
-| 文件不可读/超限 | 保留错误状态，不把错误当空文件；不将未知版本标记为已投递 |
-
-实现要求：
-
-- 文件消息使用稳定的文件来源身份；不同文件不能仅因同为 sourceKind=instruction-file 而互相去重。
-- 可通过本插件命名的合法 message.id 编码 fileId/revision/epoch/attempt，source.plugin 标识文件身份，避免凭空依赖宿主未声明的元数据字段。
-- 仅在本次消息真正形成持久准入事实后确认可见；“resolver 返回正文”或“插进临时数组”不等于已经注入。
-- 压缩后的可见性与 `compaction/end` 成功边界、现有 compaction-epoch helper 对齐；replay 不把已被压缩替换的旧全文当成仍可见。
-- 同会话主/子代理按各自实际 session/scope 处理，不共享一个全局 injected Set。缓存有界，Agent/插件 disposer 清理未确认状态和临时引用。
-- 清空/删除已注入文件不能抹掉历史：停止后续全文注入，并对已可见版本提供一次带文件身份的失效/更新通知。若用户要求完全撤回历史正文，必须使用宿主正式的 surface replacement 能力或开启新会话，不声称“清空文件就删除历史”。
-- 关闭独立来源/禁用卡影响后续贡献，不能撤销已经发给模型的内容；UI 说明这一点。
-
-### 6.6 官方注入唯一负责人
-
-当前 standard/ptc/creative 显式引用 official-agent-instructions。不能只因为文件卡使用另一个 sourceKind 就认为没有重复。
-
-- 目标部署采用本插件统一执行文件卡；必须在受控装配中确认同一 Agent 没有并行官方指令加载器。
-- 仓库自有模板的模块调整作为单独、可审查的变更；官方 library 快照本身保留原样，不能删改官方切块伪造来源。
-- 已有用户预设不自动批量修改。列出受影响预设，由用户通过既有预设编辑/复制路径去掉重复装配后再启用独立来源。
-- 对非本插件预设或无法确认的装配，显示负责人冲突/未知状态并拒绝启用插件文件注入，不同时执行、不靠同文案去重；普通预设功能仍可运行。
-- 装配事实必须针对实际 Agent scope，而非仅查看当前工作台 presetTemplate。W0 必须验证固定版本可取得的事实来源；不能以未验证的 loader 内部接口作为发布条件已满足的依据。
-- 无论由哪个负责人注入，UI 文件编辑都仍是原文件编辑；只有插件负责人激活时，才宣称独立卡策略会由本插件执行。
-
-## 7. 逐文件修改清单
-
-“新增”是计划路径，当前不存在；其余为已有文件。实现时按 Wave 细化补丁，不先创建空壳。
-
-| 文件/路径 | 动作 | 主要内容 |
+| 风险 | 影响 | 防线/停止条件 |
 |---|---|---|
-| `src/shared/bridge-contract.ts` | 修改 | 两类快照、session/context 身份、文件版本、单文件保存、独立策略端点、统一错误 |
-| `src/shared/instructions.ts` | 新增 | 仅放真实跨 host/client 共享的 origin、内容状态、策略和响应类型/白名单；不复制引擎枚举算法 |
-| `src/host/agents-cards.ts` | 修改 | 身份、统一探测/快照、读取错误状态、白名单与版本写入；删除 preset 生成专属假设 |
-| `src/host/instructions-policy.ts` | 新增 | 插件自有策略文件的 Document API 读写、默认值、校验与 revision |
-| `src/host/paths.ts` | 修改 | 独立策略路径，仅一个权威定义 |
-| `src/runtime/settings-bridge.ts` | 修改 | bootstrap 与单读共用快照；正文与策略单独端点；去除文件写入触发重建的回调 |
-| `src/client/data/prompt-config-content.ts` | 修改 | 修 F2；按 origin 路由；去掉文件正文借用 params.text 的协议 |
-| `src/client/data/use-prompt-tool-store.ts` | 修改 | 两类草稿、独立版本/dirty/保存、上下文切换、冲突与部分失败回执 |
-| `src/client/data/instruction-drafts.ts` | 新增 | 仅提取可独立测试的文件草稿/请求快照纯逻辑，避免 facade 继续堆积 |
-| `src/client/data/{prompt-tool-fields,prompt-tool-view,dirty-state,bridge-client,host-api}.ts` | 按消费点修改 | 响应映射、窄订阅、来源类型与当前会话身份；复用 save-queue helper |
-| `src/client/prompt-tool-types.ts` | 修改 | 视图卡 origin 与允许编辑能力，不把所有类型改造成通用文档框架 |
-| `src/client/features/prompts/{PromptConfigCard,PromptConfigForm,PromptConfigList,PromptConfigsEditor}.tsx` | 修改 | 来源徽标、正文显式保存、只读绑定、操作分流、文件卡错误态 |
-| `src/client/features/prompts/{prompt-config-policy,prompt-config-order}.ts` | 修改 | 按来源字段权限与确定性层内展示顺序 |
-| `src/client/app/workspace/PromptWorkspace.tsx`、`src/client/app/workspace/pages/ConfigListWithTemplates.tsx` | 按接线需要修改 | 当前会话/工作区变化刷新及派生混合视图，不增加全局 Context |
-| `src/client/locales-prompts.ts`、相关本地 CSS | 按实际呈现修改 | 来源、直接写文件、冲突、未启用、负责人状态及只读策略文案 |
-| `src/runtime/pre-step-coordinator.ts` | 新增 | 发布本插件协调能力、作用域注册、独立文件来源、单监听器与 disposer |
-| `src/index.ts` | 小改 | 安装协调层，接 bridge；移除过期 AGENTS 受管块注释/已无消费者的相关适配 |
-| `engine/executor.mjs` | 修改 | 提取复用批执行路径，保留普通卡语义；支持文件内容 literal 及准入确认接线 |
-| `engine/prompt-config-engine.mjs` | 修改 | 管理/独立模式 pre-step 接管；其他层级原样接线 |
-| `engine/instruction-hint.mjs` | 小改 | 与独立文件快照/消息身份契约对齐，保留无 file 时的建议式提示用途 |
-| `engine/compaction-epoch.mjs`、`engine/shared.mjs` | 按回归证据修改 | 优先复用；仅为确实缺少的 epoch/准入读取能力补窄改动 |
-| `src/host/write-preset.ts` | 修改 | 删除 agentsFiles 参数及自动文件卡合成；不再探测/拷贝正文；保持普通预设物化 |
-| `src/host/manifest.ts` 及其实际存储子模块 | 按引用复核修改 | 停止消费 agentsHints；预设导出/复制/删除只处理自身资产，保留未知 YAML 字段 |
-| `preset/{standard,ptc,creative,custom}/preset.yml`、根 `preset.yml` | 按确切字段修改 | 处理独立源切换说明与重复官方模块；不强制改变无关门控/模型增强 |
-| `package.json`、`tsdown.config.ts`、`cordis.patch.yml` | 仅实际需要时修改 | 核对公共运行时依赖、构建及 bundle 装配；不为新文件默认增加 patch 行 |
-| `AGENTS.md` | 修改 | 修 F5/F6，补两类数据所有者与测试边界，不复制完整设计正文 |
-| `CONTEXT.md`、`docs/adr/0003-instruction-files-independent.md` | 更新/新增 ADR | 明确“预设卡”“指令文件卡”及 ADR-0001 的适用范围 |
-| `README.md`、`CHANGELOG.md`、`docs/{ui-architecture,architecture-params,engine-reuse}.md` | 修改 | 写稳定行为、破坏性切换说明、独立生命周期及新验收 |
+| 补别名改变既有优先级或吞掉 false/0 | 错误启停、关键词误触发 | F1/F2 红灯、冲突输入及独立/内嵌行为对照；默认不扩大字段清单 |
+| 预览与提交重复实现或源版本不一致 | 用户确认的内容与写入内容不符 | 同一纯转换入口、输入/目标/顺序组版本校验、过期重预览 |
+| 诊断再次运行选择器或宏 | 抽样、变量与冷却状态改变 | 同一真实路径旁路记录，开关差分与重复读取测试 |
+| 跨层任务变大或共享文件并发修改 | 契约漂移、覆盖用户改动 | shared 先行、互斥写区/串行、每任务回读，超粒度重拆 |
+| 直接搬对方运行时/vendor | 许可证、宿主版本与产品边界风险 | 独立实现最小语义，许可和版本未核验不得直接复制 |
+| 缺依赖/未做 smoke 被记成通过 | 错报完成度 | 原始错误和未验证项单列，只有满足 done 的任务计完成 |
+| 旧导入产物被自动覆盖 | 用户手工改动丢失 | 保留原始资产、先预览并取得重新导入确认，不操作真实 DSH_HOME |
 
-测试文件：优先扩展现有 agents-cards、write-preset、prompt-configs、bridge-contract、prompt-config-engine、dirty-state、prompt-tool-view 等；只在缺少对应公共入口测试时新增 `test/host/instructions-policy.test.mjs`、`test/client/instruction-drafts.test.mjs`、`test/engine/instruction-lifecycle.test.mjs`、`test/host/pre-step-coordinator.test.mjs`。
+## 9. 预计文件影响与复用点
 
-不得手改 lib、library 或 yaml vendor。除明确改变组合源/依赖版本外，不刷新对应快照。
+本节是实施定位，不是本轮已修改清单；新文件只在职责无法落入已有模块时创建。
 
-## 8. 分阶段实施与完成条件
-
-阶段按依赖顺序执行。执行状态（2026-09-14）：
-
-- W0–W4 已有实现，原阶段提交已压缩为 `11a9e73`；审查发现的来源、保存与生命周期缺陷按下表补充修复和行为回归，不以原完成标记替代验收。
-- 下列勾选表示已有代码或对应确定性测试，不表示真实 UI、模型会话或用户运行中的 DSH 已验收。
-- W5 尚未完成：完整门禁与审查反例回归之外，真实浏览器交互及本地主/子会话 smoke 仍需单独执行；不操作当前运行中的 DSH。
-
-本轮审查修复证据入口（只覆盖对应反例，不等价于完整端到端验收）：
-
-| 审查项 | 修复行为 | 回归入口 |
+| 文件/目录 | 阶段 | 预计职责 |
 |---|---|---|
-| S1–S2 | 明确文件来源身份，保留普通文件参数卡；链接根与候选统一真实路径，仍拒绝越界 | `test/host/instruction-source-review.test.mjs` |
-| S3–S6 | 策略原始字节版本、严格解码、YAML 转换错误态、null 覆盖更新、用例隔离 | `test/host/instructions-policy.test.mjs`、`test/host/instructions-policy-endpoint.test.mjs` |
-| R1–R3 | 迟到门控、resolver 来源 ctx、服务实例 HMR 重登记及空来源生命周期 | `test/host/pre-step-wiring.test.mjs` |
-| R4–R7 | 迟到响应隔离、独立来源总开关、工作区往返保留基线、保存全部汇总失败 | `test/client/instruction-save-flow.test.mjs`、`test/client/instruction-drafts.test.mjs` |
+| `src/host/sillytavern.ts` | W1/W2 | 字段别名、来源定位、转换报告；所有调用方复用 |
+| `src/host/worldbook.ts` | 视契约需要 | 保持 buildWorldBookEntry 结构权威，不重复工厂 |
+| `src/host/characters.ts` | W2 | 角色导入/应用的报告传递与原始资产保留 |
+| `src/host/write-preset.ts` | W2 | 复用兼容 warn 与生成结果，不往正文混入报告 |
+| `src/shared/bridge-contract.ts` | W2/W3 | 先定义需传输的报告/诊断载荷与端点 |
+| `src/runtime/settings-bridge.ts` | W2/W3 | 复用现有入口、校验和目标写入守卫 |
+| `src/client/features`、`src/client/data` | W2/W3 | 在现有 facade/typed bridge 下展示，不建立第二个 store |
+| `engine/st-world-book.mjs` | W3/W4 | 旁路原因记录与按需预算，不改变原生 world-book |
+| `engine/st-render.mjs`、`engine/executor.mjs` | 仅实际需要时 | 保持宏求值和真实注入提交边界 |
+| `engine/st-macros.mjs` | W5 | 仅添加有样本的已授权宏语义 |
+| `test/host/st-compatibility.test.mjs` | W1/W2 | 来源归一、纯转换、变量绑定和不可变输入 |
+| `test/engine/st-world-book.test.mjs` | W1/W3/W4 | 实际入选、注入、时序和预算副作用 |
+| `test/engine/st-macros.test.mjs`、`test/engine/st-render.test.mjs` | 按影响面 | 宏语义、有界展开、失败隔离和同请求幂等 |
+| `test/shared`、`test/client`、`test/host` | W2/W3 | bridge 与导入/展示行为契约 |
+| `docs/SillyTavern.md` 及对应权威文档 | 各实施阶段 | 只沉淀已实现稳定行为，未实现内容留在本计划 |
 
-### W0：契约冻结与规范冲突处理
+本轮实际只应提交新 `PLAN.md` 和旧计划归档；本地 `.ai-memory` 追加文档工作记录但不入库。
 
-- [x] 复核工作树、用户已有改动、目标版本与第 2 节定位。
-- [x] 修正 AGENTS.md 的受管块/写盘例外与生成快照提交规则；建立指令来源独立 ADR，说明对 ADR-0001 的限定，不悄悄改写既有决策。
-- [x] 运行第 6.3 节的固定版本作用域接线验证，确认负责人检测与 context-gate 顺序。
-- [x] 确认本计划的默认禁用、独立策略、直接写文件、只支持本地 Agent 与历史不可撤回语义。
+## 10. 验收矩阵与验证命令
 
-完成条件：作用域/单执行器关键机制有确定性验证，所有拟用宿主能力能对应已发布契约；否则仅推进安全修复，不宣称运行时设计已验证。
+### 10.1 行为矩阵
 
-### W1：先止住数据丢失（F1–F3）
-
-- [x] 先添加 bootstrap→草稿→真实临时文件保存的失败回归，不只测单独 /prompt-configs。
-- [x] 收口正文读取；失败状态禁写，空文件仍可正常编辑。
-- [x] 修 stripContentText，只对内容资产剥离，普通卡正文保留。
-- [x] 改为 dirty 文件显式提交，加入文件 revision/context 校验；移除文件写后 rebuild 回调。
-- [x] 初步建立独立文件草稿池，保存期间继续编辑和冲突时不丢稿。
-
-完成条件：T01–T08、T11–T14 通过，原 F1–F3 反例转绿；这一阶段可以独立交付，不等待运行时重构。
-
-### W2：独立策略与统一卡片 UI
-
-- [x] 实现策略文件及 shared 合同，使用 Document API 与独立版本。
-- [x] bootstrap/单读分开两类来源；不依赖生成目录才能显示文件卡。
-- [x] origin 驱动 UI 字段、操作和保存分流；文件绑定只读，正文显式保存。
-- [x] 预设切换保留文件草稿，工作区切换建立独立上下文保护。
-
-完成条件：T09–T14 通过；卡片所有可编辑字段都有唯一持久化位置与读回证明，没有无效开关。
-
-### W3：统一 pre-step 接线与文件可见状态（F4）
-
-- [x] 提取并复用批执行算法，添加作用域协调服务与管理/独立模式接管。
-- [x] 指令来源按会话探测，合并后统一层内执行；正文 literal，预设卡其余语义不变。
-- [x] 根据持久准入和当前 epoch 确认文件版本；处理变更、空/删除、失败压缩、重挂与 disposer。
-- [x] 验证所有公共门控、主/子代理、不同预设并发及 HMR。
-
-完成条件：T15–T24 通过；没有第二套 pre-step 执行器、跨会话来源泄漏或新的外部 engine 依赖。
-
-### W4：从预设生命周期中移除文件来源
-
-- [x] 删除 writePreset 的文件探测/文件卡生成与 agentsHints 运行时依赖。
-- [x] 预设保存/复制/导出/删除不含文件卡；普通卡完整 round-trip。
-- [x] 处理仓库自有模板的官方指令重复装配，核对用户预设升级清单，不能静默修改 system/用户未知文件。
-- [x] 生成目录通过现有物化流程更新；只重建插件拥有的目录，不清理全局指令文件或用户原文。
-
-完成条件：T25–T27 通过；启用独立源后，各预设使用同一文件来源且只有一个注入负责人。
-
-### W5：全量验收、文档与交付
-
-- [x] 执行完整 typecheck/lint/test/build、diff 检查及本轮审查反例回归。
-- [ ] 完成第 9 节对应的真实 UI 和本地主/子会话端到端验收：使用隔离 profile/随机端口，不操作正在运行的服务。
-      （此前已验证：隔离 DSH_HOME + 独立 profile + OS 随机端口真机插件加载、/bootstrap、/agents-file 写入与 409、/instructions-policy；
-      未完成：浏览器内真实 UI 点击路径与本地主/子会话提示词注入观察——冷实例没有存活会话，需用户环境或后续 smoke。）
-- [x] 同步 README、CHANGELOG、权威文档、CONTEXT 和 ADR，核对路径与命令。
-- [x] 只暂存本 Wave 文件，创建中文 Conventional Commit，推送 origin/dev；报告 SHA、验证和用户切换步骤。
-
-完成条件：全部必需验收有证据，未验证项明确列出；真实服务尚未切换时不得写“已在用户运行环境生效”。
-
-## 9. 验收矩阵与验证命令
-
-### 9.1 确定性验收
-
-测试以公共读取/保存/执行入口为主；复用现有 Node test runner 和 helper。不用静态源码字符串匹配替代行为断言，不用模型回答措辞作为注入验收。
-
-| ID | 场景 | 必须断言 |
+| 编号 | 阶段 | 最小验收 |
 |---|---|---|
-| T01 | bootstrap 与单独读取同一文件 | 正文、文件身份、revision、读取状态一致；UI 能显示真实正文 |
-| T02 | 读取失败、无权限、非法编码 | 不生成 ready 空正文；客户端不可保存，其他卡正常工作 |
-| T03 | 原文件本就为空、用户主动清空 | 可读空文件仍 ready；明确清空成功，未编辑卡不写盘 |
-| T04 | 普通 static/placeholder 卡保存往返 | text、合法 texts、params.text 各自含义保留；仅 preset.md 内容资产剥离其文件正文 |
-| T05 | 修改普通卡/排序其他卡 | 所有未修改指令文件字节和时间信息不变，/agents-file 调用次数为 0 |
-| T06 | 外部编辑后旧草稿保存 | 409，外部版本字节不变；即使 mtime 相同也由字节 revision 检出 |
-| T07 | 保存中继续编辑、响应迟到 | 成功只更新请求快照的基线；新草稿保留 dirty，不被 reload 覆盖 |
-| T08 | 保存全部中一个文件失败 | 每文件独立结果；成功项更新 revision，失败项保留草稿；不报告全量成功 |
-| T09 | 文件策略读写/并发/恢复默认 | 只改独立策略文件，正文与所有 preset.yml 不变；注释/未知文档字段保留，旧 revision 被拒 |
-| T10 | 带未存文件草稿切换预设 | 文件内容、草稿、revision 不变；切换预设不隐式触发文件保存 |
-| T11 | 工作区 A→B、A 的迟到响应/保存 | B 不显示/写入 A 文件；旧 contextId 被拒；不使用进程 cwd 兜底 |
-| T12 | 两个本地 Agent、父/子代理、无本地会话 | 各取真实 scope/cwd；不存在项目范围时明确不可用；无跨会话文件/配置泄漏 |
-| T13 | 未知 ID、伪造 origin、目录、重解析越界、超限 | 拒绝且无文件变化；UTF-8 字节大小正确；Host/Origin/loopback 原防护未退化 |
-| T14 | 原子写失败/文件被删除/身份替换 | 原有效文件不被部分截断，不自动创建消失的文件；临时文件有确定清理与错误回执 |
-| T15 | 主会话与子代理首次满足文件策略 | 每文件注入一次，位置/角色/正文/身份正确；不依赖预设的 agentsHints |
-| T16 | 文件 V1→V2、内容保持不变 | V2 在下一合适 pre-step 更新一次；不变版本不按每轮重复；预设变量不改写正文 |
-| T17 | 成功压缩后重晋升、失败压缩 | 成功边界后当前版本恢复一次；失败压缩不推进 epoch、不重复注入 |
-| T18 | reject、无 after-user 锚点、prepare 取消 | 未形成持久准入不记已注入；条件恢复后仍可注入一次 |
-| T19 | 恢复会话/HMR 后读取历史 | 当前 epoch 已可见的版本不重复；旧 epoch 的同 kind 不能挡住恢复 |
-| T20 | 两个文件、一文件稍后出现/恢复可读 | 两个独立身份不互相去重；后出现文件能注入；同一真实路径不重复成两卡 |
-| T21 | 已注入文件清空/删除/禁用 | 无新全文；必要失效通知仅一次；旧持久日志不被篡改，不谎称历史已撤回 |
-| T22 | coordinator 迟到、独立模式、接管、释放 | 任一时刻每 scope 只有一个 pre-step 执行路径；disposer 后监听/来源/未确认状态归零 |
-| T23 | 与 context-gate、晋升、压缩共同装配 | 普通预设原门控语义不变；受众/拒绝不被绕过；保留 enter/reject、startsRequestSeries 与下游消息 |
-| T24 | engine 复制到无 host 源码的目录 | 普通预设可按原协议运行，不依赖 src/host 或协调服务强制存在；无隐式文件源 |
-| T25 | writePreset 与空预设 | 不探测/复制指令正文，不生成文件卡；空预设配置仍为空，文件来源由独立开关决定 |
-| T26 | 预设保存/复制/导出/删除 | 无文件身份/正文/策略混入；使用独特正文 sentinel 验证；不得简单禁止所有含 AGENTS 字样的普通文本 |
-| T27 | official-agent-instructions 与插件来源 | 已受控切换时正文只有一份；冲突/未知时独立源不偷跑，UI 明确负责人状态 |
-| T28 | 文档、术语、ADR、路径 | 无受管块旧契约、无统一禁止提交快照的规则；ADR-0001 的限定明确，链接和命令有效 |
-| T29 | 完整门禁及必要快照重建 | typecheck/lint/test/build/diff 检查通过；重建输入固定版本，生成物与来源对应 |
+| T01 | W1 | F1/F2 正确语义先红后绿，蛇形/驼峰等价且 false/0 不丢失 |
+| T02 | W1 | 独立/内嵌格式、别名冲突、禁用/无主键、源对象不变 |
+| T03 | W2 | 预览与提交同源，预览无写盘、无宏副作用、无重建 |
+| T04 | W2 | 多顺序组显式选择、歧义拒绝、重复 identifier 可定位且不静默覆盖 |
+| T05 | W2 | 深度/角色/marker/脚本降级准确，禁用与失败区分，合并变量不串来源 |
+| T06 | W2/W3 | shared/host/client 载荷一致，类型/大小/目标/只读校验与失败包装正确 |
+| T07 | W3 | 开关诊断不改变输出、抽样、宏副作用、去重或激活状态 |
+| T08 | W3/W4 | 候选、入选、真实提交可区分，重复求值与查看不推进时间窗 |
+| T09 | W4 | 默认行为不变；预算边界、渲染后成本、超大条目、递归与常驻策略明确 |
+| T10 | W4 | 预算拒绝不提交变量及冷却；下一轮仍可竞争 |
+| T11 | W5 正则 | 原文不变、目标组合、深度/编辑条件、规则顺序、捕获替换、错误与风险隔离 |
+| T12 | W5 宏 | 条件惰性、未选分支无副作用，1 MiB/32层/循环/危险键保护保持 |
+| T13 | W5 持久化 | 授权作用域、恢复/清空、并发冲突、隔离、损坏数据行为明确 |
+| T14 | 运行时变更 | 主会话、子代理、压缩后重晋升、失败压缩、重复装配与 disposer |
+| T15 | 生成/写盘变更 | 注释/未知字段、用户文件、只读目录、原子切换与失败回退保持 |
 
-建议落位：T01–T03/T05–T06/T13–T14 扩展 host agents-cards 与 shared bridge 测试；T04/T07–T11 扩展 client 纯逻辑及真实保存入口测试；T09 增加策略文件测试；T12/T22–T24/T27 在真实 Cordis scope harness 中验证；T15–T21 扩展引擎文件卡生命周期测试；T25–T26 扩展 writer/预设导出测试。
+验收以注入层、位置、时机、次数、受众、epoch 和实际输出断言为准，不用模型措辞、主观分数或源码字符串检查替代。
+优先 Node 内置 test runner 和现有 helper；文件系统测试使用独立临时目录与临时 DSH_HOME，并在结束后清理。
 
-### 9.2 实施时的命令
+### 10.2 本轮文档验证
 
-以下用于实现阶段，不代表编写本计划时已经执行。PowerShell 7 路径固定为 `D:\App\PowerShell\7\pwsh.exe`；在该 shell 内运行：
+只做文档时不需要为“看起来完整”运行构建或重建预设。验证：
+
+- 根计划状态、优先级、证据、文件影响、验收、未实施边界齐全。
+- 新计划的当前仓库路径/Markdown 链接存在，外部项目路径明确标为本地参考。
+- 旧计划归档内容与固定基线 `0ea927f:PLAN.md` 的 Git blob 一致；历史原文不偷偷改写，提交后不再用变化的 HEAD 作为旧计划来源。
+- 命令对应当前 package.json scripts，`.ai-memory` 未进入暂存。
+- `git -C $Repo diff --check`，提交前补 `git -C $Repo diff --cached --check`。
+
+### 10.3 后续实施的门禁
+
+所有测试和脚本从隔离 cwd 启动，不能在仓库目录中运行：
 
 ```powershell
 $Repo = 'D:\AI\GitHub\dsh-plugin-prompt-tool'
 Set-Location 'D:\AI\workspase\_temp'
-$env:TEMP = 'D:\AI\workspase\_temp'
-$env:TMP = 'D:\AI\workspase\_temp'
-$env:DSH_HOME = Join-Path $env:TEMP ('instructions-verify-' + [guid]::NewGuid().ToString('N'))
 
+# W1 与宏/世界书变更的定向回归
+node --test "$Repo\test\host\st-compatibility.test.mjs" `
+  "$Repo\test\engine\st-macros.test.mjs" `
+  "$Repo\test\engine\st-render.test.mjs" `
+  "$Repo\test\engine\st-world-book.test.mjs"
+
+# 任何业务代码实施完成后的完整门禁
 pnpm --dir $Repo typecheck
-if ($LASTEXITCODE -ne 0) { throw 'typecheck failed' }
 pnpm --dir $Repo lint
-if ($LASTEXITCODE -ne 0) { throw 'lint failed' }
 pnpm --dir $Repo test
-if ($LASTEXITCODE -ne 0) { throw 'test failed' }
 pnpm --dir $Repo build
-if ($LASTEXITCODE -ne 0) { throw 'build failed' }
 git -C $Repo diff --check
-if ($LASTEXITCODE -ne 0) { throw 'diff check failed' }
+
+# 涉及宿主接线时追加
+pnpm --dir $Repo verify:host
 ```
 
-- `pnpm --dir` 本身不能保证测试 cwd 隔离；当前 scripts/run-tests.mjs 会用临时 cwd 启动测试，TEMP/TMP 指向上述隔离根。验证时检查真实子进程 cwd，不只检查父 shell。
-- 临时环境变量只留在验证进程，不写系统环境；文件系统测试各自建立、清理独立目录。任何递归清理先验证绝对目标仍在本次临时目录内。
-- 定向测试也从隔离 cwd 运行，以绝对测试路径调用 node --test；依赖 lib 的用例先用既有 build 生成输入，不能拿旧 bundle 冒充新源码验证。
-- 同步官方组合时运行 `pnpm --dir $Repo rebuild:composition`：默认核验源码 checkout 与官方当前 master HEAD 一致且预设目录干净，再记录实际提交。离线回归使用 `$Repo/test/fixtures/dsh/current`，不将快照的已记录提交冒充实时最新。
-- yaml 依赖确实改变时才执行 `pnpm --dir $Repo sync:yaml`，并跑 vendor parity 测试；本设计不要求升级 yaml。
-- 实现交付时保存每条命令的退出码、测试总数及关键断言；临时审查复现脚本不是正式回归测试的依赖。
+若涉及组合或 vendor，按任务范围运行 `rebuild:composition` / `sync:yaml` 并检查版本化快照；不能手工编辑或删除分发目录。
+若涉及 bridge/UI/预设生成，追加对应 shared/client/host/presets 契约测试；最终仍跑完整 test。
+真实 smoke 只能使用隔离 DSH_HOME 和随机端口，不调用生产 rematerialize 或启停现有服务。
 
-### 9.3 真实 smoke
+## 11. 基线验证记录与证据限制
 
-使用隔离 DSH_HOME、独立 profile 与随机端口，至少验证：
+以下为 2026-09-16 只读对比阶段已执行的结果，不代表未来实现的验收：
 
-1. 打开工作台，查看真实全局/项目文件正文与来源标记；读取错误可见。
-2. 编辑并保存 AGENTS；磁盘变化而 preset.yml、预设生成文件指纹不变。
-3. 改普通卡、切换预设、导出预设；AGENTS 原文件不变，导出中没有正文 sentinel。
-4. 外部编辑制造 409，继续编辑期间保存，部分文件失败；草稿均按预期保留。
-5. 两个本地会话与一个子代理使用不同工作区；日志证明文件身份、位置、受众、版本和 epoch 正确。
-6. 压缩恢复、组件卸载/重挂、独立源开关与官方负责人冲突；无重复注入或残留监听。
+| 验证 | 结果 | 范围限制 |
+|---|---|---|
+| 本仓库 st-compatibility、st-macros、st-render、st-world-book 四个文件 | 35/35 通过 | 既有测试未覆盖 F1/F2 蛇形形态，不能据此否认缺陷 |
+| 对方 preset-conversion-preview、preset-reading、tavern-regex-display、worldbook-resource 四个文件 | 25/25 通过 | 仅这些局部测试，不是对方全量验收 |
+| 对方 worldbook-st-activation、worldbook-token-budget | 未能加载 | 缺少 marked 依赖；不记通过，也不能认定业务实现失败 |
+| F1/F2 单独探针 | 已复现不同注入结果 | 正确性回归仍须在 W1 写入本仓库 |
+| 两个仓库状态 | 对比结束时均干净 | 当时没有修改源码、用户数据或运行服务 |
 
-证据使用截图/操作步骤、实际桥响应与持久消息日志。没有实际 smoke 就明确写未验证，不能以构建成功替代。
+主要定位索引：
 
-## 10. 规范同步、切换与回滚
+- 本仓库：`src/host/sillytavern.ts`、`src/host/characters.ts`、`src/host/manifest.ts`、`src/host/write-preset.ts`、`src/shared/engine-params.ts`。
+- 本仓库运行时：`engine/st-macros.mjs`、`engine/st-render.mjs`、`engine/st-world-book.mjs`、`engine/executor.mjs`。
+- 对方转换：`worldbook-resource.js:48–90`、`:204–260`；`preset-conversion-preview.js:129–179`、`:290–360`。
+- 对方运行：`worldbook-activation.js:189–259`；`tavern-regex-display.js:21–85`；`tavern-macro-engine.js:67–188`。
+- 对方请求：`runtime-presets.js:381–464`；`compatibility-request.js:9–14`；`sillytavern-compatibility.js:56–89`、`:135–228`。
+- 模型参数边界：本仓库 `src/host/sillytavern.ts:11–13`、`src/host/manifest.ts:200–210`、`src/host/write-preset.ts:216`；对方 `tests/preset-conversion-preview.test.mjs`。
 
-### 10.1 规范变更
+## 12. 切换、回滚与交付
 
-- AGENTS.md：预设定义只拥有“预设行为”；指令文件与独立策略为独立所有者。明确只有用户授权编辑、当前上下文白名单及版本校验通过时才能写工作区文件。
-- 删除已移除的“常驻受管块”指令，仍保留不覆盖用户未知改动、不修改官方文件的保护。
-- `lib/` 继续忽略、不提交；`engine/compositions/library/` 与 `engine/vendor/yaml/` 是版本化分发快照，由脚本生成后按任务范围提交。不要顺手将它们 git rm 或加入 ignore。
-- ADR-0001 保持预设自身单一来源的原则，新增 ADR 明确指令文件不属于预设配置；ADR-0002 的插入点独立性不改变。
-- architecture-params 的 AGENTS 文件卡节迁为“独立指令来源”，ui-architecture 记录双草稿池与来源分流，engine-reuse 记录协调/独立模式和文件可见状态。
-- README/CHANGELOG 明确直接改原文件、默认禁用后的显式启用、旧 agentsHints 不再生效、旧 UI 需刷新、官方负责人切换和远程文件范围限制。
-
-### 10.2 用户环境切换
-
-1. 发布前先交付 W1，避免用户在旧读写链路继续丢失正文；如果单独回移 W1，必须同时包含读取状态和保存保护，不只修一个端点。
-2. 在隔离环境完成 W0–W5。列出用户预设中的官方指令模块与旧生成文件卡，不自动批量修改用户定义。
-3. 用户通过既有预设编辑/复制通道处理重复负责人；system 预设只读，必要时复制后使用。
-4. 更新插件并通过现有脚本重新生成插件拥有的预设产物；不重新创建或覆盖任何 AGENTS.md。
-5. 新 UI 刷新、独立策略正常读取、负责人事实确认后，用户显式启用独立源。所有预设共享这一设置，不按旧 agentsHints 建立例外表。
-6. 若 bundle、profile 或装配代码变化需要重载，交付注明“需要用户重启 DSH 服务后生效”；执行者不得自行重启当前服务。
-7. 对未切换的第三方/用户 scope 保持可诊断的冲突/未启用状态；不要为了发布完成度隐藏这些状态。
-
-### 10.3 回滚边界
-
-- 正文是用户文件，不随代码回滚、预设回滚或策略回滚恢复旧副本。用户在新 UI 中合法编辑的内容必须保留。
-- 回滚可先关闭独立注入源，再撤销本插件的协调/策略接线；必须确保官方与插件负责人不会同时恢复。
-- 需要回退到旧装配时，通过既有版本化来源重建插件拥有的生成目录；不清理其他 profile、system 目录或用户文件。
-- 独立策略文件保留原地，不导入 preset.yml；旧版本不识别时不启动迁移。
-- 不应回滚到重新引入 F1–F3 的版本。至少保留 W1 修复；否则禁用工作台文件保存并明确风险。
-- Git 回退采用新的可审查提交，不 reset --hard、clean、强推或覆盖已有历史；任何用户环境恢复需单独授权。
-
-### 10.4 已知限制与停止条件
-
-| 限制/风险 | 处理与停止条件 |
-|---|---|
-| 固定版本单执行器接管、门控顺序或负责人事实无法证明 | 停止 W3/W4；保留 W1 安全修复，不静默降级为双执行器 |
-| 外部编辑器不参与跨进程锁 | 仅承诺乐观冲突检测与完整文件替换，明确剩余竞争窗口 |
-| 远程/冷态会话无本地可验证工作区 | 显示范围不可用，不用部署 cwd 或用户输入裸路径兜底 |
-| 历史已包含旧指令 | 不篡改历史；更新/失效通知或新会话，不承诺物理撤回 |
-| 用户旧预设仍有官方指令模块 | 发布清单列明；负责人冲突解决前不激活插件文件注入 |
-| 独立策略文件损坏/版本未知 | 提示错误、禁止破坏性保存；不以默认空配置覆盖 |
-
-## 11. 资料来源与本计划验证
-
-### 11.1 仓库依据
-
-- [AGENTS.md](AGENTS.md)：修改、测试、交付及记忆规则；其 F5/F6 冲突是待修内容，不是本计划已完成的修改。
-- [CONTEXT.md](CONTEXT.md)、[ADR-0001](docs/adr/0001-preset-definition-is-authoritative.md)、[ADR-0002](docs/adr/0002-insertion-points-remain-independent.md)：领域词汇和稳定架构约束。
-- [UI 架构](docs/ui-architecture.md)、[参数架构](docs/architecture-params.md)、[引擎复用](docs/engine-reuse.md)、[组合编辑规范](preset/creative/skills/editing-cordis-compositions/SKILL.md)：状态、存储、作用域和物化约束。
-- [文件卡实现](src/host/agents-cards.ts)、[writer](src/host/write-preset.ts)、[bridge](src/runtime/settings-bridge.ts)、[shared 合同](src/shared/bridge-contract.ts)：当前来源及读写链。
-- [内容映射](src/client/data/prompt-config-content.ts)、[工作台 store](src/client/data/use-prompt-tool-store.ts)、[宿主能力接口](src/client/data/host-api.ts)：客户端保存和当前会话能力。
-- [执行器](engine/executor.mjs)、[指令填充](engine/instruction-hint.mjs)、[epoch](engine/compaction-epoch.mjs)：当前注入与去重行为。
-- [package.json](package.json)、[构建配置](tsdown.config.ts)、[测试入口](scripts/run-tests.mjs)、[组合重建](scripts/rebuild-composition.mjs)、[yaml 同步](scripts/sync-yaml-vendor.mjs)：实际命令与生成链。
-
-### 11.2 初始验收时的宿主依据（历史）
-
-本机于 2026-09-14 核对的已安装官方包（由 package.json 锁定版本），不是猜测新 API：
-
-- `node_modules/@deepseek-ai/dsh-scope/README.md` 与 `lib/types/{index,store}.d.ts`：scopeOf、ScopedLayers、NamedEntries、effect/disposer、未标记全局监听与作用域继承。
-- `node_modules/@deepseek-ai/dsh-agent/lib/types/runtime-types.d.ts:92–99,139–149,306–319`：PreStepDecision、Agent ctx/session、agent/pre-step waterfall。
-- `D:\AI\GitHub\deepseek-harness\docs\agent-lifecycle.zh.md`：生命周期说明仅作对照；若与安装版本不同，以固定包类型和隔离验证为准。
-- [当前上游快照出处](test/fixtures/dsh/current/PROVENANCE.md)、[官方指令组合快照](engine/compositions/library/agent-instructions.yml)：实际来源提交及指令配置；不锁定初始版本。
-
-### 11.3 原始计划提交的验收边界（历史记录）
-
-- 原始计划提交 `4887019` 只交付 PLAN.md：检查 Markdown 结构、现有引用路径、拟新增路径标记、命令对应的 scripts、F1–F6 到验收项/Wave 的对应关系，以及 git diff --check。
-- 当时 W0–W5、T01–T29 均待实施/待验证；文档校验不能代替实施证据，后续状态以第 8 节为准。
-- 项目修改记忆仅追加到被忽略的 `.ai-memory/{YYYYMMDD}/daily.md`；不放知识图谱或 handoff，也不纳入提交。
-- 原始计划仅提交文档；后续实施和修复仍只提交本轮任务文件并推送 origin/dev，报告 SHA，不创建 PR、不切换 main。
+- 计划文档本身不改变运行行为，不需要重启 DSH、重建预设或重新链接 profile。
+- 后续导入修复通常只影响新转换；已丢失源字段的旧产物不能靠重建恢复。用户需先预览，再明确确认重新导入和手工改动处理方式。
+- 引擎更新沿用现有构建和物化流程；若运行服务需重启才能生效，仅在交付说明提醒，由用户安排。
+- 每阶段保留默认行为与原始资产，写入失败沿用原子回退；不通过删除用户目录、reset --hard 或重装用户环境“回滚”。
+- 完成并验证后只暂存本次任务文件，创建中文 Conventional Commit，普通推送 origin/dev；不切 main、不创建 PR、不强推。
+- 本地 `.ai-memory/{YYYYMMDD}/daily.md` 记录文档或实施结果但不入库；报告验证命令、结果、提交 SHA、分支和未完成项。
+- 本轮停止条件：旧计划安全归档、新计划完整可执行、文档检查通过并完成文档交付；W1–W5 保持未实施状态，等待用户下一次授权。
