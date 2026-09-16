@@ -93,14 +93,13 @@ export function engineRecipe(id: string): EngineRecipe | undefined {
   return ENGINE_RECIPES.find((recipe) => recipe.id === id)
 }
 
-/** 只有显式 modules 才代表本插件按需装配的能力；官方组合行只作运行事实。
- *  判定以 `declaredModules` 为准（模块声明 = 唯一开关），避免"段存在即视为已装配"
- *  导致半状态无法补齐声明。 */
+/** 显式模块预设中的实际能力；包含历史策略段仍在运行的兼容装配。
+ *  创建补声明由 host 单独检查 declaredModules；官方组合行不伪装成可编辑能力。 */
 export function isEngineCapabilityPresent(id: string, facts: PresetModuleFacts | undefined): boolean {
   if (facts === undefined || facts.sourceMode !== 'explicit') return false
   const capability = engineCapability(id)
   if (capability === undefined) return false
-  const modules = facts.declaredModules ?? facts.effectiveModules
+  const modules = facts.effectiveModules ?? facts.declaredModules
   if (modules === null) return false
   return capability.moduleKeys.some((key) => modules.includes(key))
 }

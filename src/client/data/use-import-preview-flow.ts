@@ -49,8 +49,8 @@ export interface ImportPreviewFlow {
   preview?: ImportPreviewState
   /** 顺序组候选：确认不可用，用户选组后立即重新预览。 */
   candidates?: ImportOrderCandidates
-  /** 跑完一批文件（内部串行，取消只跳过当前文件）。 */
-  run: (files: Array<{ path: string; content: string }>) => Promise<void>
+  /** 默认把全部文件作为一个包；角色卡用 files 模式逐张排队，取消只跳过当前单元。 */
+  run: (files: Array<{ path: string; content: string }>, mode?: 'package' | 'files') => Promise<void>
   /** 选择顺序组：失效旧 ready 并发起同源预览。 */
   chooseGroup: (characterId: string) => void
   confirm: () => void
@@ -67,6 +67,7 @@ export function useImportPreviewFlow(handlers: ImportFlowHandlers): ImportPrevie
   const runningRef = useRef(false)
   const aliveRef = useRef(true)
   const seqRef = useRef(0)
+  const cancelPreviewRef = useRef<(() => void) | undefined>(undefined)
   /** 重预览期间用户改选的顺序组：在途响应返回后立即按它重新预览，旧响应作废。 */
   const pendingGroupRef = useRef<string | undefined>(undefined)
   const handlersRef = useRef(handlers)
@@ -77,6 +78,7 @@ export function useImportPreviewFlow(handlers: ImportFlowHandlers): ImportPrevie
 
   useEffect(() => () => {
     aliveRef.current = false
+    cancelPreviewRef.current?.()
     const resolve = decisionRef.current
     decisionRef.current = undefined
     resolve?.({ kind: 'cancel' })
@@ -103,12 +105,12 @@ export function useImportPreviewFlow(handlers: ImportFlowHandlers): ImportPrevie
     resolve(decision)
   }, [])
 
-  const run = useCallback(async (files: Array<{ path: string; content: string }>): Promise<void> => {
+  const run = useCallback(async (files: Array<{ path: string; content: string }>, mode: 'package' | 'files' = 'package'): Promise<void> => {
     if (files.length === 0 || runningRef.current) return
     runningRef.current = true
     const api = (): ImportFlowHandlers => handlersRef.current
     try {
-      for (const file of files) {
+      for (const batch of mode === 'files' ? files.map((file) => [file]) : [files]) {
         if (!aliveRef.current) return
         let order: string | undefined
         let repreview = false
@@ -116,7 +118,7 @@ export function useImportPreviewFlow(handlers: ImportFlowHandlers): ImportPrevie
         // 同一文件换组重预览：保留卡片（内容仍是这一份输入），只把确认置为不可用；
         // 换文件时才清空旧预览，避免把上一个文件的报告留在屏幕上。
         let keepPreview = false
-        // 每个文件：预览 → （候选/ready）→ 确认 → 提交；取消或过期即跳过该文件。
+        // 每个导入单元：预览 → （候选/ready）→ 确认 → 提交；取消或过期即跳过。
         for (;;) {
           setPhase('reading')
           if (!keepPreview) {
@@ -125,7 +127,14 @@ export function useImportPreviewFlow(handlers: ImportFlowHandlers): ImportPrevie
           }
           keepPreview = false
           const seq = ++seqRef.current
-          const outcome = await api().preview([file], order)
+          // 只读请求可以继续在网络中完成；取消立即结束当前单元，迟到结果由 race 丢弃。
+          const cancelled = new Promise<{ kind: 'cancel' }>((resolve) => {
+            cancelPreviewRef.current = () => resolve({ kind: 'cancel' })
+          })
+          const outcome = await Promise.race([api().preview(batch, order), cancelled])
+          cancelPreviewRef.current = undefined
+          if (!aliveRef.current || seq !== seqRef.current) return
+          if (outcome.kind === 'cancel') break
           // 重预览期间用户又改了顺序组：丢弃这次响应，立刻按最新选择重新预览。
           if (pendingGroupRef.current !== undefined) {
             order = pendingGroupRef.current
@@ -133,8 +142,6 @@ export function useImportPreviewFlow(handlers: ImportFlowHandlers): ImportPrevie
             keepPreview = true
             continue
           }
-          // 乱序响应与卸载后的响应都不得恢复旧状态。
-          if (!aliveRef.current || seq !== seqRef.current) return
           if (outcome.kind === 'error') {
             api().onError(outcome.message, outcome.stale === true)
             break
@@ -156,7 +163,7 @@ export function useImportPreviewFlow(handlers: ImportFlowHandlers): ImportPrevie
             break
           }
           const state: ImportPreviewState = {
-            files: [file],
+            files: batch,
             sourceDigest: outcome.sourceDigest ?? '',
             ...(outcome.previewRevision === undefined ? {} : { previewRevision: outcome.previewRevision }),
             ...(outcome.report === undefined ? {} : { report: outcome.report }),
@@ -214,6 +221,7 @@ export function useImportPreviewFlow(handlers: ImportFlowHandlers): ImportPrevie
       }
     } finally {
       runningRef.current = false
+      cancelPreviewRef.current = undefined
       if (aliveRef.current) {
         setPhase('idle')
         setPreview(undefined)
@@ -231,7 +239,13 @@ export function useImportPreviewFlow(handlers: ImportFlowHandlers): ImportPrevie
     settle({ kind: 'group', characterId })
   }, [settle])
   const confirm = useCallback((): void => { settle({ kind: 'confirm' }) }, [settle])
-  const cancel = useCallback((): void => { settle({ kind: 'cancel' }) }, [settle])
+  const cancel = useCallback((): void => {
+    pendingGroupRef.current = undefined
+    setPreview(undefined)
+    setCandidates(undefined)
+    cancelPreviewRef.current?.()
+    settle({ kind: 'cancel' })
+  }, [settle])
 
   return { phase, preview, candidates, run, chooseGroup, confirm, cancel }
 }

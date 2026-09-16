@@ -163,6 +163,21 @@ test('世界书诊断区分候选/入选/已提交与真实拒绝原因，且不
   assert.equal(lastWorldBookDiagnostics({ id: 'cold', header: {}, snapshotEvents: () => [] }).records.length, 0)
 })
 
+test('F11 混合注入的世界书诊断只提交实际入选的世界书', async () => {
+  const session = { id: 'mixed-diagnostics', header: {}, snapshotEvents: () => [] }
+  const configs = [
+    ...createPromptConfigs([{ id: 'plain', strategy: 'static', text: 'PLAIN', position: 'before-all' }]),
+    ...diagConfigs([entry(1, { constant: true }), entry(2, { keys: ['ABSENT'] })]),
+  ]
+  const decision = await runPreStepBatch({ ctx: { get() {} }, agent: { session, options: {} },
+    decision: { kind: 'enter', messages: [message('N')] }, configs, promotion, memo: new Map(), warnOnce() {} })
+  assert.deepEqual(decision.messages.map(item => item.source?.plugin).filter(Boolean), ['plain', 'lore-1'])
+  const snapshot = lastWorldBookDiagnostics(session)
+  assert.deepEqual(snapshot.records.filter(item => item.stage === 'committed').map(item => item.id), ['lore-1'])
+  assert.equal(snapshot.records.some(item => item.id === 'plain'), false)
+  assert.equal(snapshot.truncated, false)
+})
+
 test('T07 观测边界 199/200/201：截断标志在写入记录的同一次求值里置真', () => {
   const makeSession = (id) => ({ id, header: {}, snapshotEvents: () => [] })
   for (const [size, expected, truncated] of [[199, 199, false], [200, 200, false], [201, 200, true]]) {
@@ -357,6 +372,27 @@ test('T12 世界书键宏：未赋值不误触发，赋值后命中，同一轮�
   assert.deepEqual(await ids(assigned, 'Alice'), ['lore-25'], '同一轮重复求值幂等')
 })
 
+test('F10 空宏副键保留未命中条件，四种逻辑及赋值后行为正确', () => {
+  // 每行依次给出 AND_ANY / NOT_ALL / NOT_ANY / AND_ALL 的预期。
+  const cases = [
+    { keys: ['{{unknown}}'], value: '', text: 'P', expected: [false, true, true, false] },
+    { keys: ['{{unknown}}', 'S'], value: '', text: 'P', expected: [false, true, true, false] },
+    { keys: ['{{unknown}}', 'S'], value: '', text: 'P S', expected: [true, true, false, false] },
+    { keys: ['{{unknown}}'], value: 'M', text: 'P M', expected: [true, false, false, true] },
+    { keys: ['{{unknown}}', 'S'], value: 'M', text: 'P S M', expected: [true, false, false, true] },
+    { keys: ['{{unknown}}', 'S'], value: 'M', text: 'P S', expected: [true, true, false, false] },
+  ]
+  for (const { keys, value, text, expected } of cases) {
+    for (const [logic, active] of expected.entries()) {
+      const configs = diagConfigs([entry(1, { keys: ['P'], secondary_keys: keys, extensions: { selectiveLogic: logic } })])
+      assert.equal(configs[0].variables.unknown, '', '导入时未知宏登记为空占位')
+      configs[0].variables.unknown = value
+      const selection = selectStWorldBook(configs, { id: 'secondary-macro', snapshotEvents: () => [] }, [message(text)])
+      assert.equal(selection.has(configs[0]), active, `logic=${logic}, keys=${keys}, value=${value}, text=${text}`)
+    }
+  }
+})
+
 /** T16 对拍夹具：直接翻译 world-info.js:428-473（getScore）与 5292-5328（组内评分淘汰）。 */
 const stGetScore = (keys, secondaryKeys, logic, text) => {
   const primary = keys.filter(key => text.includes(key)).length
@@ -399,6 +435,17 @@ test('T16 delayUntilRecursion：非递归 pass 抑制、层级池推进与递归
   for (const value of [false, 0, undefined]) {
     const config = entry(3, { constant: true, extensions: value === undefined ? {} : { delay_until_recursion: value } })
     assert.deepEqual((await run([config], ['N'])).map(x => x.id), ['lore-3'], `delayUntilRecursion=${String(value)} 不抑制`)
+  }
+})
+
+test('F09 递归与延迟层级交替推进时所有层级都被扫描', async () => {
+  for (const size of [4, 8]) {
+    const entries = Array.from({ length: size }, (_, index) => entry(index, {
+      constant: true,
+      insertion_order: index,
+      extensions: { recursive_scanning: true, delay_until_recursion: index },
+    }))
+    assert.deepEqual((await run(entries, ['N'])).map(item => item.id), entries.map(item => `lore-${item.id}`))
   }
 })
 

@@ -149,6 +149,27 @@ test('报告上限有界，合并报告保留计数并截断条目', () => {
   assert.equal(merged.truncated, true)
 })
 
+test('报告展示截断不裁剪全量分类计数或后续兼容告警', () => {
+  const prompts = Array.from({ length: 600 }, (_, index) => ({
+    identifier: `assistant-${index}`, role: 'assistant', content: `A${index}`,
+  }))
+  const many = convertStToPresetWithReport({ prompts }, 'large-degraded')
+  assert.equal(many.report.entries.length, 500)
+  assert.equal(many.report.summary.degraded, 600)
+  assert.equal(mergeStConversionReports([many.report, many.report]).summary.degraded, 1200)
+  const risky = { identifier: 'late-warning', role: 'user', content: 'LATE', injection_position: 1,
+    injection_trigger: ['impersonate'] }
+  const late = convertStToPresetWithReport({ prompts: [...prompts.slice(0, 200), risky] }, 'late-warning')
+  const alone = convertStToPresetWithReport({ prompts: [risky] }, 'warning-only')
+  assert.equal(late.report.diagnostics.length, 200, '展示仍有界')
+  assert.equal(late.report.truncated, true)
+  assert.equal(late.report.summary.needsReview, alone.report.summary.needsReview, 'info 不挤掉后续 warning 计数')
+  assert.deepEqual(late.spec.meta.stWarnings, alone.spec.meta.stWarnings, '完整兼容告警仍物化到预设')
+  const excluded = convertStToPresetWithReport({ prompts: prompts.map((item) => ({ ...item, marker: true })) }, 'excluded')
+  assert.equal(excluded.report.summary.excluded, 600)
+  assert.equal(excluded.report.summary.converted, 0)
+})
+
 test('importPresetPackage 预览不落盘、返回报告，过期摘要提交被拒且不写盘', async () => {
   const files = [{ path: 'demo/demo.json', content: stJson() }]
   const preview = await call('/import-preset-package', { files, preview: true })

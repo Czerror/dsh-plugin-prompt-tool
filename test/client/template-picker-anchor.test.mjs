@@ -12,8 +12,7 @@ test('模板入口把按钮 ref 传给顶层浮层', () => {
   assert.match(main, /anchorRef=\{picker\.anchorRef\}/)
   assert.match(menu, /ref=\{anchorRef\}/)
   // 列表包装不再有独立「新建」按钮，浮层锚定到工具栏合并菜单按钮（ref 由页面下发）。
-  assert.match(scoped, /anchorRef=\{templatePicker\.anchorRef\}/)
-  assert.doesNotMatch(scoped, /ref=\{templatePicker\.anchorRef\}/)
+  assert.doesNotMatch(scoped, /useTemplatePicker|<TemplatePicker/, '列表包装不再持有无入口的第二份 picker')
   assert.match(subagent, /anchorRef=\{picker\.anchorRef\}/)
 })
 

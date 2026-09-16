@@ -236,4 +236,4 @@ pnpm rebuild:composition # 只生成官方切块/变体；source/local 本地源
 
 ## 许可
 
-插件本体 MIT（Czerror）。`engine/` 中移植自 [dsh-anchored-standard](https://github.com/xiaobright/dsh-anchored-standard) 的模块保留其 MIT 许可与来源注释（上游已冻结，本项目只保留引擎移植与本地改写）；`preset/` 下 cordis 模板与脚本基于 DeepSeek Harness 官方 Standard 等预设修改。上游预设本体不再随本包分发。
+插件本体 MIT（Czerror）。`engine/` 中移植自 [dsh-anchored-standard](https://github.com/xiaobright/dsh-anchored-standard) 的模块，其上游版权与 MIT 许可保存在 [engine/THIRD_PARTY_LICENSES](engine/THIRD_PARTY_LICENSES)，随包发布并复制到物化引擎目录；`preset/` 下 cordis 模板与脚本基于 DeepSeek Harness 官方 Standard 等预设修改。上游预设本体不再随本包分发。

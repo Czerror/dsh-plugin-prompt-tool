@@ -342,8 +342,9 @@ ST 转换（convertStToPreset）通过顶层 `persona: { prefix: '', complete: f
 - 策略未启用（段缺失）：参数桥照旧把 `toolFilterAllow/Deny` 同时写入主代理 `tool-filter` 与子代理 `delegation.toolFilter`（官方原行为）。
 - 策略启用（段非空）：参数桥只写主代理 `tool-filter`；子代理由 `subagent-tool-policy` 模块的 agent-local shadow 在创建窗口解析并冻结 toolFilter（不再热更新；需要更高权限时创建新实例）。
 - `subagent-tools/policy.yml` 是生成物（writePreset 从 preset.yml 顶层段物化）；preset.yml 仍是单一来源。
-- 保存链路：`/subagent-tool-policy` POST → `validateSubagentToolPolicy()` 校验 → 原子写盘 → 自动装配/移除 `subagent-tool-policy` 模块行。
-- writer 直接读取手写/导入的 `subagentToolPolicy` 时同样先校验，并自动装配运行时模块；策略启用后 `subagentModel` 路由、reasoningEffort、maxTokens 与 maxDepth 改写到策略模块，不再只落到被 shadow 的官方工具行。
+- 保存链路：`/subagent-tool-policy` POST → `validateSubagentToolPolicy()` 校验 → 原子写盘并补齐模块声明；关闭开关只删策略段并保留模块声明，删除能力才同时移除两者。
+- writer 直接读取手写/导入的 `subagentToolPolicy` 时同样先校验。历史“有段无模块”预设继续装配策略以保留既有授权；`effectiveModules` 和能力卡如实显示该装配，`declaredModules` 保持磁盘事实。显式创建或保存可补齐声明且不覆盖已有策略，删除能力会连段移除。其它 dormant 参数不隐式启用能力。
+- 策略启用后 `subagentModel` 路由、reasoningEffort、maxTokens 与 maxDepth 改写到策略模块，不再只落到被 shadow 的官方工具行。策略文件确实不存在时回落官方委派；现存文件解析或校验失败必须报错，错误文案不能作为缺文件依据。
 - 预览链路：`/subagent-tool-policy-preview` POST 与运行时 `resolveSubagentToolPolicy()` 同一 seam（不重复算法）；预览用 ceiling 工具宇宙。
 - 工具面：`/tool-surface` POST 接受互斥的 `{ sessionId }` 或 `{ presetId }`。前者只读返回当前存活本地 Agent 的 name/description 摘要；后者仅在用户明确选择预设时，经官方 `agentPresets.list()` 白名单、`standingKeyFor()` 和 `tools.schemas(scope)` 懒加载预设有效能力。两者均不下发完整 Schema、大文本或 secrets；PTC 下“预设工具能力”不等于模型 wire 直连工具。
 
@@ -385,8 +386,8 @@ ST 转换（convertStToPreset）通过顶层 `persona: { prefix: '', complete: f
 
 ### 模块事实与能力卡（2026-09-05）
 
-- `/bootstrap` 附带 `moduleFacts`：`declaredModules`（缺失为 `null`）、`effectiveModules`（`modules: []` 保持显式空装配）、递归 `rowIds`、`sourceMode` 和 `editable`；官方 `agent.cordis.yml` 行只作运行事实，不伪装成可编辑的插件能力。
-- 能力卡存在性只由显式 `modules` 命中 `moduleKeys` 决定，不能由 params 或官方组合 `rowIds` 推断；`moduleConfigs` 回显优先级保持 `params > moduleConfigs > 行默认`。
+- `/bootstrap` 附带 `moduleFacts`：`declaredModules`（缺失为 `null`）、`effectiveModules`（不展开默认骨架，但保留历史策略段的真实兼容装配）、递归 `rowIds`、`sourceMode` 和 `editable`；官方 `agent.cordis.yml` 行只作运行事实，不伪装成可编辑的插件能力。
+- 能力卡存在性来自显式 `modules`，以及实际仍在运行的历史子代理策略兼容装配；不能由其它 params 或官方组合 `rowIds` 推断。创建能力按磁盘声明检查，允许补齐历史策略的声明；`moduleConfigs` 回显优先级保持 `params > moduleConfigs > 行默认`。
 - `tool-filter`、`context-gate` 等参数各有唯一 UI owner；子代理委派卡只编辑 `maxDepth` 与 `subagentToolPolicy`，避免跨页失焦保存互相覆盖。
 - `engineCapability` bridge 只接受服务端白名单能力/recipe；recipe 不作为持久化实体，但展开结果一次写入目标 preset.yml，候选组合校验通过后才重建。
 

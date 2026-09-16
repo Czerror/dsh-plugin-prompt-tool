@@ -12,6 +12,7 @@ import { join, resolve, sep } from 'node:path'
 import { tmpdir } from 'node:os'
 import { createServer } from 'node:http'
 import { spawn } from 'node:child_process'
+import { once } from 'node:events'
 import { setTimeout as sleep } from 'node:timers/promises'
 
 const root = fileURLToPath(new URL('../../', import.meta.url))
@@ -44,6 +45,7 @@ test('浏览器：导入确认生命周期、顺序组候选与预览版本', { 
   const profile = mkdtempSync(join(tmpdir(), 'pt-import-browser-'))
   const filesDir = mkdtempSync(join(tmpdir(), 'pt-import-files-'))
   const browser = spawn(browserPath, ['--headless=new', '--no-first-run', '--disable-background-networking', '--remote-debugging-port=0', '--user-data-dir=' + profile, 'about:blank'], { windowsHide: true, stdio: 'ignore' })
+  const exited = once(browser, 'exit')
   let ws
   try {
     const portFile = join(profile, 'DevToolsActivePort')
@@ -58,6 +60,7 @@ test('浏览器：导入确认生命周期、顺序组候选与预览版本', { 
       const msg = JSON.parse(data)
       if (!msg.id) return
       const request = pending.get(msg.id)
+      if (request === undefined) return
       pending.delete(msg.id)
       if (msg.error) request.reject(msg.error)
       else request.resolve(msg.result)
@@ -288,12 +291,15 @@ test('浏览器：导入确认生命周期、顺序组候选与预览版本', { 
     await clickText('取消预览')
     await waitFor(`!(${previewOpen})`, '结束')
   } finally {
+    const forceClose = setTimeout(() => browser.kill(), 5000)
+    if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ id: 1_000_000, method: 'Browser.close' }))
+    else browser.kill()
+    await exited
+    clearTimeout(forceClose)
     ws?.close()
-    browser.kill()
-    server.close()
-    await sleep(500)
+    await new Promise((done) => server.close(done))
     assert.ok(resolve(profile).startsWith(resolve(tmpdir()) + sep))
-    rmSync(profile, { recursive: true, force: true, maxRetries: 8, retryDelay: 150 })
+    rmSync(profile, { recursive: true, force: true, maxRetries: 20, retryDelay: 200 })
     rmSync(filesDir, { recursive: true, force: true, maxRetries: 8, retryDelay: 150 })
   }
 })

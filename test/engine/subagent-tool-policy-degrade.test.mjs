@@ -75,3 +75,25 @@ test('策略文件存在但内容损坏：仍然 fail loud，不静默丢弃策�
     rmSync(dir, { recursive: true, force: true })
   }
 })
+
+test('F13 现存策略的校验或 YAML 错误含 ENOENT 仍然拒绝加载', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'pt-degrade-enoent-'))
+  try {
+    const file = join(dir, 'policy.yml')
+    const invalid = {
+      defaultProfile: 'ENOENT',
+      ceiling: { allow: ['read'] },
+      profiles: [{ id: 'default', name: 'Default', allow: ['read'] }],
+    }
+    for (const raw of [JSON.stringify(invalid), 'defaultProfile: [ENOENT']) {
+      writeFileSync(file, raw, 'utf8')
+      const { ctx, registered, listeners } = makeCtx()
+      assert.throws(() => applyToolPolicy(ctx, { policyFile: policyUrlOf(file) }), /cannot load policy/, '现存文件损坏不得退回普通委派')
+      assert.deepEqual(ctx.warnings, [], '不能谎报文件缺失')
+      assert.equal(registered.length, 0)
+      assert.equal(listeners.size, 0)
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})

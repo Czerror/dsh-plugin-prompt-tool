@@ -3,8 +3,6 @@ import type { PromptToolStore } from '../../../data/use-prompt-tool-store.ts'
 import { usePromptToolFields } from '../../../data/use-prompt-tool-fields.ts'
 import type { PromptToolTranslate } from '../../../locales.ts'
 import { PromptConfigList } from '../../../features/prompts/PromptConfigList.tsx'
-import { TemplatePicker } from '../../../ui/TemplatePicker.tsx'
-import { useTemplatePicker } from '../../../features/prompts/useTemplatePicker.ts'
 import type { InstructionPolicyFileOverride } from '../../../../shared/instructions.ts'
 /** 子代理配置列表（按 scope 过滤：subagent 只列子代理可见配置）。
  *  纪律：过滤状态只由用户手动改变；新建只做「展开新卡 + 滚动定位」两件事。
@@ -23,9 +21,12 @@ export const ConfigListWithTemplates = memo(function ConfigListWithTemplates(pro
   /** 模块卡（引擎能力、自定义工具）：渲染在层级配置卡之前。 */
   moduleCards?: ReactNode
   /** 受控视图过滤（页面持有）：不传时列表内部维护。 */
+  viewFilter?: string
   onViewFilterChange?: (value: string) => void
+  /** 与页面合并创建入口使用同一定位信号。 */
+  createdConfigId?: string
 }): ReactNode {
-  const { store, t, layer, scope, beforeCards, toolbarActions, moduleCards, onViewFilterChange } = props
+  const { store, t, layer, scope, beforeCards, toolbarActions, moduleCards, viewFilter, onViewFilterChange, createdConfigId } = props
   const fields = usePromptToolFields(store, (value) => value)
   // 稳定回调：卡片 memo 的生效前提（store 引用已稳定）。
   const patchConfigs = useCallback((configs: PromptToolStore['fields']['promptConfigs']) => {
@@ -49,39 +50,28 @@ export const ConfigListWithTemplates = memo(function ConfigListWithTemplates(pro
   // 当前预设模板消息批层无配置时，pre-step 层空状态追加提示（列表仍可自定义：
   // 新建配置写入激活预设 preset.yml 的 promptConfigs，随预设走、不随切换保留）。
   const preStepEmpty = store.templatePreStepCount === 0 && (layer === undefined || layer === 'pre-step')
-  const templatePicker = useTemplatePicker(
-    fields.promptConfigs,
-    (config) => store.patch({ promptConfigs: [...store.getFields().promptConfigs, config] }),
-    store.showNotice,
-    t,
-    scope,
-  )
   return (
-    <>
-      <PromptConfigList
-        t={t}
-        meta={store.meta}
-        configs={fields.promptConfigs}
-        createdConfigId={templatePicker.createdConfigId}
-        layer={layer}
-        scope={scope}
-        beforeCards={beforeCards}
-        moduleCards={moduleCards}
-        toolbarActions={toolbarActions}
-        onViewFilterChange={onViewFilterChange}
-        emptyHint={preStepEmpty ? t('configList.emptyPreStep') : undefined}
-        onPatchConfigs={patchConfigs}
-        onSaveConfigs={saveConfigs}
-        instructionPolicy={instructionScope ? store.instructionPolicy : undefined}
-        onToggleInstructionSource={instructionScope ? store.setInstructionSourceEnabled : undefined}
-        onSaveInstructionFile={instructionScope ? saveInstructionFile : undefined}
-        onReloadInstructionFile={instructionScope ? reloadInstructionFile : undefined}
-        onPatchInstructionPolicy={instructionScope ? patchInstructionPolicy : undefined}
-        onNotice={store.showNotice}
-      />
-      {templatePicker.open && (
-        <TemplatePicker t={t} anchorRef={templatePicker.anchorRef} templates={templatePicker.templates} layer={layer} onPick={templatePicker.pickTemplate} onClose={templatePicker.closePicker} />
-      )}
-    </>
+    <PromptConfigList
+      t={t}
+      meta={store.meta}
+      configs={fields.promptConfigs}
+      createdConfigId={createdConfigId}
+      layer={layer}
+      scope={scope}
+      beforeCards={beforeCards}
+      moduleCards={moduleCards}
+      toolbarActions={toolbarActions}
+      viewFilter={viewFilter}
+      onViewFilterChange={onViewFilterChange}
+      emptyHint={preStepEmpty ? t('configList.emptyPreStep') : undefined}
+      onPatchConfigs={patchConfigs}
+      onSaveConfigs={saveConfigs}
+      instructionPolicy={instructionScope ? store.instructionPolicy : undefined}
+      onToggleInstructionSource={instructionScope ? store.setInstructionSourceEnabled : undefined}
+      onSaveInstructionFile={instructionScope ? saveInstructionFile : undefined}
+      onReloadInstructionFile={instructionScope ? reloadInstructionFile : undefined}
+      onPatchInstructionPolicy={instructionScope ? patchInstructionPolicy : undefined}
+      onNotice={store.showNotice}
+    />
   )
 })

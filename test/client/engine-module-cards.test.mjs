@@ -100,6 +100,9 @@ test('卡片存在性来自装配事实，一项装配能力一张卡', () => {
   const anchored = render(EngineModuleCards, { store: { ...store, moduleFacts: withModules(['anchor-turn']) }, t, layerFilter: 'pre-step' })
   assert.ok(anchored.includes('class="configName">anchor-turn<'), 'pre-step 过滤只留本层能力卡')
   assert.doesNotMatch(render(EngineModuleCards, { store: { ...store, moduleFacts: withModules(['anchor-turn']) }, t, layerFilter: 'system-section' }), /class="configName">anchor-turn</)
+  const legacyPolicy = { ...store, moduleFacts: { ...withModules(['delegation']), effectiveModules: ['delegation', 'subagent-tool-policy'] } }
+  assert.match(render(EngineModuleCards, { store: legacyPolicy, t, layerFilter: 'tool-pipeline' }),
+    /class="configName">subagent-tool-policy</, '历史隐式策略仍在运行，必须显示能力卡以便管理授权')
   const official = render(EngineModuleCards, { store: { ...active, moduleFacts: { ...active.moduleFacts, sourceMode: 'official' } }, t })
   assert.doesNotMatch(official, /class="configName">tool-bootstrap</)
 })

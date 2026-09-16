@@ -152,6 +152,7 @@ pre-step 来源：
 - 阶段区分：`excluded`（禁用/延迟/冷却/递归边界）、`rejected`（主键未命中、副键未满足、
   概率过滤、分组落选、匹配失败）、`candidate`（进入候选及激活原因 sticky/constant/key-match）、
   `selected`（组内胜出或未分组入选）、`committed`（执行器实际注入后才记录）。
+- `committed` 只记录本次入选的 ST 世界书条目，普通提示词配置不占用世界书诊断额度。
 - 原因由实际负责层提供：扫描窗口、主/副键命中数、selective logic、probability/roll、
   分组归属与 `delay` 等字段都取自真实求值结果，`primary-miss` 等不靠 UI 猜测。
 - 有界：记录上限 200 条，超出置 `truncated: true`；不持久化对话或世界书正文，
@@ -189,6 +190,7 @@ ST 的两个条目级开关在引擎里按 `params.stWorldBook` 消费；未开�
   （sticky 命中例外，`constant` 也不例外）；递归 pass 中「条目值 > 当前层级」同样抑制，
   记录 `excluded: delay-until-recursion`（带 `delayUntilRecursion`/`level`/`pass`）。
   pass 推进与 ST 一致：有新正文可递归时层级保持不变，否则在层级池仍有剩余时打开下一层。
+  有界扫描预算同时计入条目激活和延迟层级推进，避免后续层级在打开前耗尽 pass。
 - `useGroupScoring`（对齐 `world-info.js:428-473`、`:5292-5328`）：组内存在显式开启的条目时
   整组按 `getScore` 等价实现评分（只统计命中键数，`NOT_ALL`/`NOT_ANY` 不参与加分，主键为空
   记 0 分）；只有**开启评分**的条目会被「严格小于最高分」淘汰，未开启者不被淘汰，但其分数
@@ -208,7 +210,7 @@ ST 的两个条目级开关在引擎里按 `params.stWorldBook` 消费；未开�
 `data.extensions.depth_prompt.prompt`，`script.js:4626-4634`）。两个变量由 ST 导入期登记，
 缺省不存在时开关自动失效（零噪音）。
 
-字段映射集中在 `src/shared/engine-params.ts#ENGINE_PARAM_DEFINITIONS`；host 装配、bridge 回显与配置卡共享该目录。能力各自的 `includeSubagents`、`promoteOn`、启停和提示文本都可在所属卡片设置，依旧没有跨模块全局顺序；内部服务路径由生成器管理。例外：`tool-filter.includeSubagents` 是**引擎兼容键但不再有 UI 绑定**——主会话与子代理已分离，主对话工具过滤不再下发给子代理，子代理工具面一律由实例级 `subagentToolPolicy` 授权。
+字段映射集中在 `src/shared/engine-params.ts#ENGINE_PARAM_DEFINITIONS`；host 装配、bridge 回显与配置卡共享该目录。能力各自的 `includeSubagents`、`promoteOn`、启停和提示文本都可在所属卡片设置，依旧没有跨模块全局顺序；内部服务路径由生成器管理。`tool-filter.includeSubagents` 保留为引擎兼容键，UI 不再提供绑定。启用 `subagentToolPolicy` 后，子代理工具面由实例策略授权，主过滤不再写入 delegation；没有实例策略时，参数桥保留将主过滤下发 delegation 的兼容行为，详见 [参数架构](architecture-params.md#9-子代理工具策略subagenttoolpolicy2026-09-02)。
 
 自定义模型工具保持 `customTools` 资产及 `tool-config-engine` 模块链路。保存方与运行时复用 `engine/tool-definition.mjs`，保存前编译官方参数 DSL 并完整验证；`customToolRequireApproval` 控制需用户批准的执行器种类。工具预览只是有效工具面的只读视图，不承担安装、连接或注册职责。
 

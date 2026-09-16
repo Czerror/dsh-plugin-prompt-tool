@@ -113,7 +113,7 @@ export const CharactersPage = memo(function CharactersPage(props: { store: Promp
       if (jsonFiles.length > 0) {
         const entries: Array<{ path: string; content: string }> = []
         for (const file of jsonFiles) entries.push({ path: file.name, content: await file.text() })
-        await flow.run(entries)
+        await flow.run(entries, 'files')
       }
       await loadCharacters()
     } catch (error) {

@@ -65,6 +65,7 @@ export function selectStWorldBook(configs, session, messages, warn = () => {}) {
   const selected = new Set(), failed = new Set(), occupied = new Set(), stickyEntries = new Set(), candidates = []
   const updates = new Map()
   selected.commit = config => {
+    if (!selected.has(config)) return
     note(config, 'committed', 'injected')
     if (updates.has(config)) state.set(config, updates.get(config))
   }
@@ -90,8 +91,9 @@ export function selectStWorldBook(configs, session, messages, warn = () => {}) {
     }
     return compiled.matcher
   }
-  // 每轮至多激活每条一次；有限传递闭包，不递归调用解析器。
-  for (let pass = 0; pass <= entries.length; pass++) {
+  // 每个继续的 pass 至少新增一条或消耗一个延迟层级；预算覆盖两种推进，仍是有限闭包。
+  const maxPasses = entries.length + delayLevels.length
+  for (let pass = 0; pass <= maxPasses; pass++) {
     candidates.length = 0
     // 每 pass 的扫描材料缓存：递归文本随 pass 变化，材料必须按 pass 重新构造；
     // 材料只被匹配与评分读取，构造本身不改变入选结果。
@@ -110,7 +112,8 @@ export function selectStWorldBook(configs, session, messages, warn = () => {}) {
       if (pass > 0 && depth > 0) parts.push(...recursiveText)
       const p = config.params
       const keys = (Array.isArray(p.keys) ? p.keys : []).map(key => interpolateVariables(String(key), config.variables, session)).filter(Boolean)
-      const secondaryKeys = (Array.isArray(p.secondaryKeys) ? p.secondaryKeys : []).map(key => interpolateVariables(String(key), config.variables, session)).filter(Boolean)
+      // 空宏仍是一项未命中的副键：匹配器忽略空值，但 AND_ALL/NOT_ALL 的总数不能缩水。
+      const secondaryKeys = (Array.isArray(p.secondaryKeys) ? p.secondaryKeys : []).map(key => interpolateVariables(String(key), config.variables, session))
       material = { depth, keys, secondaryKeys, text: parts.length ? '\x01' + parts.join('\n\x01') : '' }
       scanCache.set(config, material)
       return material

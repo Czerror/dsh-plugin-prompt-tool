@@ -11,7 +11,8 @@ import type { PromptToolTranslate } from '../../locales.ts'
 import { HintTooltip } from '../../ui/HintTooltip.tsx'
 import { MenuSelect } from '../../ui/MenuSelect.tsx'
 import { TagInput } from '../../ui/TagInput.tsx'
-import { asBool, asList, asNum, createEmptyPolicy, splitList, type PolicyDraft } from './subagent-policy-draft.ts'
+import { SUBAGENT_TOOL_POLICY_SKELETON } from '../../../shared/engine-capabilities.ts'
+import { asBool, asList, asNum, splitList, type PolicyDraft } from './subagent-policy-draft.ts'
 import sharedCss from '../../ui/controls.module.css'
 import featureCss from './subagents.module.css'
 
@@ -19,6 +20,12 @@ const styles = { ...sharedCss, ...featureCss }
 
 type Notice = (kind: 'ok' | 'error', message: string) => void
 interface CharacterItem { id: string; name: string }
+interface PolicyEditorState {
+  draft: PolicyDraft | null
+  saved: PolicyDraft | null
+  pending?: PolicyDraft | null
+  saving: boolean
+}
 
 export function SubagentToolPolicyCard(props: {
   t: PromptToolTranslate
@@ -30,61 +37,95 @@ export function SubagentToolPolicyCard(props: {
   const [loaded, setLoaded] = useState(false)
   /** 读取失败不能降级成「无策略」：否则再次打开开关会用新骨架整体覆盖磁盘中的既有策略。 */
   const [loadError, setLoadError] = useState('')
-  const [dirty, setDirty] = useState(false)
   const [saving, setSaving] = useState(false)
   const [preview, setPreview] = useState<unknown>(null)
   const [previewInput, setPreviewInput] = useState<Record<string, string | string[]>>({})
   const [characters, setCharacters] = useState<CharacterItem[]>([])
   /** 策略编辑区：焦点离开整块时自动写盘（与指令文件卡同款设计，无保存按钮）。 */
   const scopeRef = useRef<HTMLFieldSetElement>(null)
+  // 子控件 onBlur 会先提交标签，再冒泡到整卡；ref 同步更新，不等 React 完成下一次渲染。
+  const editorRef = useRef<PolicyEditorState | null>(null)
 
   const load = useCallback(() => {
+    const editor: PolicyEditorState = { draft: null, saved: null, saving: false }
+    editorRef.current = editor
+    setLoaded(false)
+    setPolicy(null)
+    setSaving(false)
+    setPreview(null)
+    setPreviewInput({})
     setLoadError('')
     void bridgeCall('subagentToolPolicy', { expectedPresetId: props.presetId }).then((result) => {
+      if (editorRef.current !== editor) return
       if (!result.ok) {
         setLoadError(result.message ?? t('policy.loadFailed'))
         setLoaded(true)
         return
       }
       const next = (result.value.policy ?? null) as PolicyDraft | null
+      editor.draft = next
+      editor.saved = next
       setPolicy(next)
-      setDirty(false)
       setLoaded(true)
     })
   }, [props.presetId, t])
 
-  useEffect(() => { load() }, [load])
   useEffect(() => {
+    load()
+    return () => { editorRef.current = null }
+  }, [load])
+  useEffect(() => {
+    let active = true
     void bridgeCall('charactersList').then((result) => {
-      if (result.ok) setCharacters(result.value.characters)
+      if (active && result.ok) setCharacters(result.value.characters)
     })
+    return () => { active = false }
   }, [])
 
-  /** 自动保存（无保存按钮）：编辑后防抖落盘；开关切换立即落盘。 */
-  const persist = useCallback((next: PolicyDraft | null): void => {
+  /** 只确认实际提交的快照；在途再次失焦保留最新待存快照，按顺序写入。 */
+  const persist = useCallback((): void => {
+    const editor = editorRef.current
+    if (editor === null || editor.draft === editor.saved) return
+    editor.pending = editor.draft
+    if (editor.saving) return
+    editor.saving = true
     setSaving(true)
-    void bridgeCall('subagentToolPolicy', { policy: next, expectedPresetId: props.presetId }).then((result) => {
-      setSaving(false)
-      if (result.ok) {
-        setDirty(false)
-        onNotice('ok', t('policy.notice.autosaved'))
-        return
+    void (async () => {
+      while (editor.pending !== undefined) {
+        const submitted = editor.pending
+        editor.pending = undefined
+        if (submitted === editor.saved) continue
+        const result = await bridgeCall('subagentToolPolicy', { policy: submitted, expectedPresetId: props.presetId })
+        // 预设切换、重新读取或卸载后，旧响应和未发送的草稿都失效。
+        if (editorRef.current !== editor) return
+        if (result.ok) {
+          editor.saved = submitted
+          if (editor.draft === submitted) onNotice('ok', t('policy.notice.autosaved'))
+        } else {
+          onNotice('error', result.message ?? t('policy.notice.saveFailed'))
+        }
       }
-      onNotice('error', ('message' in result ? result.message : undefined) ?? t('policy.notice.saveFailed'))
-    })
+      editor.saving = false
+      setSaving(false)
+    })()
   }, [onNotice, props.presetId, t])
 
-  const patch = (next: PolicyDraft): void => { setPolicy(next); setDirty(true) }
+  const patch = (next: PolicyDraft | null): void => {
+    if (editorRef.current === null) return
+    editorRef.current.draft = next
+    setPolicy(next)
+  }
   /** 单一开关：打开写入可用骨架并落盘；关闭删除策略段并落盘。 */
   const toggle = (next: boolean): void => {
-    const draft = next ? createEmptyPolicy('') : null
-    setPolicy(draft)
-    setDirty(false)
-    persist(draft)
+    const draft = next ? structuredClone(SUBAGENT_TOOL_POLICY_SKELETON) : null
+    patch(draft)
+    persist()
   }
 
   const runPreview = (): void => {
+    const editor = editorRef.current
     void bridgeCall('subagentToolPolicyPreview', previewInput).then((result) => {
+      if (editorRef.current !== editor) return
       if (result.ok) setPreview(result.value.result)
       else onNotice('error', ('message' in result ? result.message : undefined) ?? t('policy.notice.previewFailed'))
     })
@@ -99,11 +140,14 @@ export function SubagentToolPolicyCard(props: {
     binding.characterId.length === 0 || !characters.some((item) => item.id === binding.characterId))
   /** 失焦自动保存（复用既有设计）：焦点离开策略编辑区才落盘，内部换控件不触发。 */
   const autoSaveOnBlur = (event: FocusEvent<HTMLElement>): void => {
-    if (!dirty || saving || policy === null || loadError.length > 0) return
-    // 存在无效角色卡绑定时端点会拒绝，先不写盘；用户修正后失焦即保存。
-    if (invalidCharacterBindings.length > 0) return
     const next = event.relatedTarget
-    if (next === null || !scopeRef.current?.contains(next as Node)) persist(policy)
+    if (next !== null && scopeRef.current?.contains(next as Node)) return
+    const draft = editorRef.current?.draft
+    if (draft === undefined || draft === null || loadError.length > 0) return
+    // 存在无效角色卡绑定时端点会拒绝，先不写盘；用户修正后失焦即保存。
+    if ((draft.characterBindings ?? []).some((binding) =>
+      binding.characterId.length === 0 || !characters.some((item) => item.id === binding.characterId))) return
+    persist()
   }
   const moveProfile = (index: number, offset: -1 | 1): void => {
     if (policy === null) return
@@ -203,11 +247,11 @@ export function SubagentToolPolicyCard(props: {
           <TagInput id="pt-sp-ceiling-allow" label={t('policy.ceiling.allow.label')} hint={t('policy.ceiling.allow.hint')}
             value={ceilingAllow.join(', ')} placeholder="read, write, bash" disabled={false}
             onChange={(value) => patch({ ...policy, ceiling: { ...policy.ceiling, allow: splitList(value) } })}
-            onCommit={() => setDirty(true)} />
+            onCommit={() => {}} />
           <TagInput id="pt-sp-ceiling-deny" label={t('policy.ceiling.deny.label')} hint={t('policy.ceiling.deny.hint')}
             value={asList(policy.ceiling?.deny).join(', ')} placeholder="dangerous_tool" disabled={false}
             onChange={(value) => patch({ ...policy, ceiling: { ...policy.ceiling, deny: splitList(value) } })}
-            onCommit={() => setDirty(true)} />
+            onCommit={() => {}} />
           {/* 工具档 */}
           <p className={styles.configFieldHint}>{t('policy.profiles.hint')}</p>
           {profiles.map((profile, index) => (
@@ -232,10 +276,10 @@ export function SubagentToolPolicyCard(props: {
               </div>
               <TagInput id={`pt-sp-allow-${index}`} label="allow" hint="" value={asList(profile.allow).join(', ')} placeholder={ceilingAllow.join(', ') || t('policy.tagPlaceholder')}
                 onChange={(value) => patch({ ...policy, profiles: profiles.map((item, at) => at === index ? { ...item, allow: splitList(value) } : item) })}
-                onCommit={() => setDirty(true)} />
+                onCommit={() => {}} />
               <TagInput id={`pt-sp-deny-${index}`} label="deny" hint="" value={asList(profile.deny).join(', ')} placeholder="bash"
                 onChange={(value) => patch({ ...policy, profiles: profiles.map((item, at) => at === index ? { ...item, deny: splitList(value) } : item) })}
-                onCommit={() => setDirty(true)} />
+                onCommit={() => {}} />
             </div>
           ))}
           <span className={styles.configActions}>
@@ -323,7 +367,7 @@ export function SubagentToolPolicyCard(props: {
           <TagInput id="pt-sp-expand-allow" label={t('policy.expansion.allow.label')} hint={t('policy.expansion.allow.hint')}
             value={asList(policy.modelExpansion?.allow).join(', ')} placeholder="web_search, bash"
             onChange={(value) => patch({ ...policy, modelExpansion: { ...policy.modelExpansion, allow: splitList(value) } })}
-            onCommit={() => setDirty(true)} />
+            onCommit={() => {}} />
           {/* 实例预览 */}
           <div className={styles.policyGroup}>
             <span className={styles.settingCopy}><strong>{t('policy.preview.title')}</strong><small>{t('policy.preview.hint')}</small></span>

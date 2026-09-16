@@ -904,7 +904,7 @@ export function loadCompositionText(spec: PresetSpec, templateDir?: string): str
 
 /**
  * 解析预设的模块事实，供 UI 卡片存在性和受控创建共用。
- * 只有显式 modules 是可编辑插件能力；组合 row 仅保留为运行事实。
+ * 显式模块与历史策略兼容装配是可编辑插件能力；官方组合 row 仅保留为运行事实。
  */
 export function resolvePresetModuleFacts(
   spec: PresetSpec,
@@ -924,8 +924,6 @@ export function resolvePresetModuleFacts(
   const effectiveModules = sourceMode === 'explicit'
     ? [...(declaredModules ?? [])]
     : null
-  // 模块声明是唯一开关：`subagentToolPolicy` 段只承载数据，不再隐式装配模块
-  // （段存在但模块未声明 = 半状态；旧版本或手工编辑才会出现，由 UI 启用或保存时补齐声明）。
   if (sourceMode === 'unknown') {
     return { declaredModules, effectiveModules: null, rowIds: [], sourceMode, editable: false }
   }
@@ -967,6 +965,10 @@ export function resolvePresetModuleFacts(
   } catch {
     return { declaredModules, effectiveModules: null, rowIds: [], sourceMode: 'unknown', editable: false }
   }
+  // 历史策略段仍由 loadCompositionText 装配：保留已有授权，并让编辑卡展示真实运行状态。
+  // 仅这一兼容能力可隐式出现；其他 dormant 参数和官方组合行不推断为插件能力。
+  if (effectiveModules !== null && rowIds.includes('subagent-tool-policy')
+    && !effectiveModules.includes('subagent-tool-policy')) effectiveModules.push('subagent-tool-policy')
   const effectiveConfigs: Record<string, Record<string, unknown>> = {}
   for (const [id, config] of defaults) effectiveConfigs[id] = config
   for (const [id, config] of Object.entries(spec.moduleConfigs ?? {})) {
@@ -1015,8 +1017,10 @@ export function createEngineCapabilityInPreset(
     throw new Error(`未知引擎能力或 recipe：${request.action === 'create' ? request.capabilityId : request.recipeId}`)
   }
   const currentFacts = resolvePresetModuleFacts(source, presetDir, true)
+  // 创建检查磁盘声明，而不是实际装配：历史策略虽然已经运行，仍需允许补齐 modules。
+  const declaredFacts = { ...currentFacts, effectiveModules: currentFacts.declaredModules }
   const additions = capabilityIds
-    .filter((id) => !isEngineCapabilityPresent(id, currentFacts))
+    .filter((id) => !isEngineCapabilityPresent(id, declaredFacts))
     .flatMap((id) => engineCapability(id)?.moduleKeys.slice(0, 1) ?? [])
   const modules = source.modules.filter((item): item is string => typeof item === 'string' && item.length > 0)
   const addedModules: string[] = []

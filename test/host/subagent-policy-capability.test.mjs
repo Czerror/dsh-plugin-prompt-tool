@@ -110,7 +110,7 @@ test('半状态自愈：段已有用户策略但没有模块声明时，启用�
   const custom = loadPresetSpec(presetDir).subagentToolPolicy
   assert.equal(custom.defaultProfile, 'reader')
   // 关键：段的存在让 resolvePresetModuleFacts 会把模块算进 effectiveModules，
-  // 但声明的 modules 里没有它——判定必须只看 declaredModules，才能补齐声明。
+  // 实际运行能力与磁盘声明分开：创建必须按声明检查，才能补齐而不覆盖已有策略。
   const created = createEngineCapabilityInPreset(presetDir, { action: 'create', capabilityId: CAPABILITY_ID })
   assert.equal(created.changed, true, '半状态必须能补上模块声明')
   assert.deepEqual(created.addedModules, [CAPABILITY_ID])

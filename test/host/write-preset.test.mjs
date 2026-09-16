@@ -75,6 +75,8 @@ test('writePreset 共享引擎 .engine：预设目录不复制 engine，组合�
     const engineDir = join(presetDir, '.engine')
     assert.ok(existsSync(join(engineDir, 'prompt-config-engine.mjs')), '容器根共享引擎存在')
     assert.ok(existsSync(join(engineDir, 'vendor', 'yaml', 'index.js')), '容器根共享引擎含 vendor')
+    assert.equal(readFileSync(join(engineDir, 'THIRD_PARTY_LICENSES'), 'utf8'),
+      readFileSync(join(ROOT, 'engine', 'THIRD_PARTY_LICENSES'), 'utf8'), '上游版权与许可随物化引擎保留')
     assert.equal(existsSync(join(engineDir, 'compositions')), false, '生成期 compositions 不复制')
     assert.equal(existsSync(join(presetDir, 'fixture', 'engine')), false, '子预设不再复制 engine')
     assert.equal(existsSync(join(presetDir, 'agent.cordis.yml')), false, '预设根不再写容器根转发')

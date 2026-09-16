@@ -225,7 +225,7 @@ export function apply(ctx, config) {
     const message = error instanceof Error ? error.message : String(error)
     // 策略文件缺失 = 用户在能力卡里把开关关掉了（模块声明保留）：降级为官方委派行为，
     // 不注册 shadow 工具，也不让整个预设启动失败。文件在但内容损坏才是真错误——fail loud。
-    if (message.includes('ENOENT')) {
+    if (error?.code === 'ENOENT') {
       ctx.logger?.warn(`${name}: policy file missing, subagent tool policy disabled; official delegation behavior kept`)
       return
     }

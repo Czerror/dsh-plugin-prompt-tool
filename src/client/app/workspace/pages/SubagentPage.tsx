@@ -68,7 +68,6 @@ export const SubagentPage = memo(function SubagentPage(props: { store: PromptToo
   const revealCapability = useCallback((id: string) => {
     setFocusCapability((current) => ({ id, token: (current?.token ?? 0) + 1 }))
   }, [])
-  const showEngineCards = viewFilter === 'all' || viewFilter === 'pre-step' || viewFilter === 'system-section'
   const showCustomTools = viewFilter === 'all' || viewFilter === 'tool-pipeline'
   return (
     <>
@@ -83,6 +82,7 @@ export const SubagentPage = memo(function SubagentPage(props: { store: PromptToo
           store={store}
           t={t}
           scope="subagent"
+          createdConfigId={picker.createdConfigId}
           beforeCards={
             <TemplateVariablesModuleCard
               t={t}
@@ -108,7 +108,6 @@ export const SubagentPage = memo(function SubagentPage(props: { store: PromptToo
           }
           moduleCards={
             <>
-              {showEngineCards && (
                 <EngineModuleCards
                   store={store}
                   t={t}
@@ -131,7 +130,6 @@ export const SubagentPage = memo(function SubagentPage(props: { store: PromptToo
                     )
                     : undefined}
                 />
-              )}
               {showCustomTools && (
                 <CustomToolsCard
                   key={store.fields.presetTemplate}
@@ -145,6 +143,7 @@ export const SubagentPage = memo(function SubagentPage(props: { store: PromptToo
               )}
             </>
           }
+          viewFilter={viewFilter}
           onViewFilterChange={setViewFilter}
         />
       </div>

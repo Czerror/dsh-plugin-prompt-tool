@@ -1,126 +1,149 @@
-# subagentToolPolicy 改为模块类型能力（G1–G5）
+# ab2c5e1–21e8761 审查发现全量修复（F01–F15）
 
-- 编写日期：2026-09-17（UTC+8）。
-- 状态：方案已编写；用户已在交互确认三个决策点后授权执行。
-- 固定实现基线：`dev@6990bff`（旧 PLAN 归档于 `.scratch/prompt-tool-framework/archive/plan-subagent-policy-as-capability-6990bff.md`，blob `d3fccee`，与 `6990bff:PLAN.md` 逐字节一致）。
-- 来源：用户指令——「能否把 subagentToolPolicy 改为模块类型能力」「子代理不显示创建 tool-filter」。
+## 1. 需求与授权
 
-## 1. 用户的决策（本轮判据）
+- 日期：2026-09-17。基线：`dev@21e876106220c298b3236fa6bd955a7379204cb4`，开始时工作树干净。
+- 用户已明确要求“全量修复”，授权实施上一轮报告全部 15 项有效发现、必要行为回归、文档同步、中文 Conventional Commit 和推送 `origin/dev`。
+- 上一轮报告：`D:/AI/workspase/_temp/review-ab2c5e1-to-21e8761-20260917.md`；本方案以以下 F01–F15 表为可移植的范围记录，不依赖临时报告才能验收。
+- 旧 PLAN 已原文归档为 `.scratch/prompt-tool-framework/archive/plan-subagent-policy-ui-21e8761-20260917.md`，Git blob 与基线 PLAN 同为 `b895ae1244c6f889331c6a487a8251cde7915db7`。
+- 本轮保持插件边界：不改宿主，不操作用户预设数据，不停止或重启现有 DSH。验证采用隔离 cwd、DSH_HOME、浏览器 profile 与随机端口。
 
-| 决策点 | 用户选择 |
-|---|---|
-| 启用时写入什么 | **写入可用骨架**：`ceiling.allow` = 常用工具（read/write/edit/glob/grep/bash），一个 default 档全放行，`expansion` 开启且 `requireApproval: true`；启用后立即可用，用户再按需收窄 |
-| 能力卡位置 | **单独一张能力卡**：与 `tool-bootstrap`、`anchor-turn` 等并列，卡内嵌现有策略编辑器（档位/预览/保存） |
-| 删除语义 | **一并删除策略段**：移除模块声明 + 顶层 `subagentToolPolicy` 段，真正回到官方委派行为 |
+## 2. 修复方案与验收
 
-## 2. 现状与目标形态
+| ID | 问题 | 修复方向 | 确定性验收 |
+|---|---|---|---|
+| F01 | 目录预设包逐文件提交丢资源 | 预设包整包预览/提交，角色卡批次独立排队 | 两文件请求保持一个提交；实际 bridge 保留正文和附件；多 JSON 合并 |
+| F02 | 权限标签首次失焦不保存 | 子字段提交后读取最新草稿保存 | 输入黑名单后直接离开卡片，新标签确实进入请求 |
+| F03 | 旧保存响应清除新草稿 | 草稿与提交快照对应，只确认已提交版本；串行处理离焦期间待存修改 | 延迟旧响应期间继续编辑，最新草稿最终保存；失败仍可重试 |
+| F04 | 重启策略写空工具档 | 复用共享可用策略骨架 | off/on 后默认工具非空，策略通过校验 |
+| F05 | 子代理筛选状态断链 | 受控值与回调完整透传 | 切到 system-section 后 pre-step 卡不可见且选择值正确 |
+| F06 | 工具管线隐藏能力卡 | 让能力卡自身按层过滤 | tool-pipeline 中策略卡可见，其他层正确隐藏 |
+| F07 | 新建卡定位信号断链 | 页面创建 ID 传给列表，删除无入口重复 picker | 新卡展开并定位，筛选与搜索不被改写 |
+| F08 | 在途重预览取消无效 | 取消失效请求与当前文件，忽略迟到结果 | 延迟换组响应后取消不恢复卡、不提交，后续导入可用 |
+| F09 | 延迟递归漏层 | 有界循环同时计入条目与层级推进 | 延迟 0/1/2/3 四条全部选中，无无限循环 |
+| F10 | 空宏副键绕过条件 | 保留源副键约束及未命中语义 | AND_ANY/AND_ALL 未赋值副键不匹配，否定逻辑和正常宏保持语义 |
+| F11 | 世界书诊断混入普通配置 | commit 只记录选中世界书 | static + lore 的快照仅记录 lore 的 committed |
+| F12 | 隐式策略运行但 UI 隐藏 | 保留历史已有策略授权，如实暴露运行事实，显式创建可补齐声明 | 有段无模块的运行/UI事实一致；补模块幂等且不覆盖策略；删除真正停用 |
+| F13 | ENOENT 文本误判降级 | 只依据文件读取错误 code 判断缺失 | 缺文件可降级；现存无效 ENOENT 档名仍抛错，不解除限制 |
+| F14 | 展示截断污染计数和告警 | 全量计数/去重告警与展示数组分离 | 600 条降级计数 600，200 info 后 warning 仍统计与持久化 |
+| F15 | 删除保留代码的上游版权声明 | 上游 MIT 声明迁入随包发布的 engine 目录 | 原文版权/许可保留，包文件清单与物化包含声明 |
 
-现状：`subagent-tool-policy` **已经是模块**（`engine/compositions/source/local/subagent-tool-policy.yml` 物化 shadow 行），但未登记进 `ENGINE_CAPABILITIES`，所以能力菜单里没有它；启用靠预设顶层 `subagentToolPolicy` 段非空时由 `appendPresetModules` 自动追加模块；卡片住在「工具与深度」卡内。
+F12 兼容取舍：旧 PLAN 记录“已有段但模块未声明继续工作”，本轮不通过静默关闭历史策略来修复显示问题。正常能力仍以显式 modules 为准；历史策略实际隐式装配需被 UI 如实呈现，并能补齐声明。关闭开关仍只删段、保留卡片；删除能力同时删除段与模块。
 
-目标：把它做成**一等能力模块**——能力菜单可创建、能力卡可删除、`modules` 声明即存在；同时保留"段数据源"（`preset.yml` 顶层段 → 物化 `subagent-tools/policy.yml`），因为策略是结构化数据而非行 config。
+## 3. 影响面与依赖证据
 
-## 3. 影响面与改动设计
-
-| # | 文件 | 改动 |
+| 责任点 | 调用方/消费方 | 回归范围 |
 |---|---|---|
-| G1 | `src/shared/engine-capabilities.ts` | `EngineCapability` 增加可选 `ownSection?: { key: string; skeleton: Record<string, unknown> }`；登记 `subagent-tool-policy`（`moduleKeys`/`rowIds` = `subagent-tool-policy`，`displayLayer: 'tool-pipeline'`，`ownSection.key = 'subagentToolPolicy'`，`skeleton` = 可用骨架） |
-| G2 | `src/host/manifest.ts` | `createEngineCapabilityInPreset`：能力带 `ownSection` 且该段缺失时写入 `skeleton`（启用即一致）；`removeEngineCapabilityFromPreset`：能力带 `ownSection` 时一并删除该段 |
-| G3 | `src/client/features/modules/EngineModuleList.tsx` | 能力卡渲染：能力 id 为 `subagent-tool-policy` 时内嵌 `SubagentToolPolicyCard`（复用现有编辑器，不复制实现）；移除能力仍走「删除引擎能力」二次确认 |
-| G4 | `src/client/features/subagents/DelegationToolsCard.tsx` | 「工具与深度」卡不再内嵌策略编辑器（避免双入口），只保留深度与入口提示；策略编辑器唯一入口 = 能力卡 |
-| G5 | 测试/文档 | host 端：启用写骨架+模块、删除清段+模块、幂等、校验拒绝零落盘；client 端：能力卡内嵌策略编辑器、菜单含该能力；`CHANGELOG.md`、`docs/ui-architecture.md`、`docs/architecture-params.md` 同步 |
+| useImportPreviewFlow | PresetSwitcher、CharactersPage、ImportPreviewCard → importPresetPackage/charactersImport | client 浏览器、host 导入契约 |
+| SubagentToolPolicyCard | 两页 EngineModuleCards 插槽 → bridge → preset.yml → 策略编译器 | 浏览器失焦/并发、host 保存、引擎授权 |
+| SubagentPage/ConfigListWithTemplates | PromptConfigList、useTemplatePicker、EngineModuleCards | 真实组件筛选、创建、只读边界 |
+| selectStWorldBook | executor.runPreStepBatch → coordinator 或独立引擎 → bridge 诊断 | engine + host 主/子会话、epoch、disposer 既有回归 |
+| resolvePresetModuleFacts/isEngineCapabilityPresent | bootstrap、创建/移除、renderComposition、writePreset | host 能力事实、物化、参数与保存 |
+| convertStToPresetWithReport | convertStToPreset、角色导入、预设包合并、stWarnings | host 转换/报告/合并与完整测试 |
+| engine 许可 | package.json files 中的 engine、writePreset 引擎目录物化 | 文件包含检查、build |
 
-### 3.1 骨架形态（用户决策 1）
-
-```yaml
-subagentToolPolicy:
-  defaultProfile: default
-  ceiling:
-    allow: [read, write, edit, glob, grep, bash]
-    deny: []
-  profiles:
-    - id: default
-      name: 默认
-      allow: [read, write, edit, glob, grep, bash]
-      deny: []
-      modelSelectable: true
-  modelExpansion:
-    enabled: true
-    allow: [read, write, edit, glob, grep]
-    maxAdditionalTools: 2
-    requireApproval: true
-```
-
-（需用 `validateSubagentToolPolicy` 实测通过后再定稿。）
-
-### 3.2 一致性约束
-
-- **启用即一致**：能力创建时同时写模块声明与骨架段，避免"模块在、段不在"导致 shadow 行读不到 `policy.yml`。
-- **数据源不变**：策略仍以 `preset.yml` 顶层段为单一事实源，`writePreset` 继续物化 `subagent-tools/policy.yml`（不搬进 `moduleConfigs`）。
-- **兼容读取**：已有预设（段非空、模块未声明）继续按现有分支工作；下次保存会补上模块声明。
+已用 `rg` 复核上述调用关系。dev-expert 图谱脚本固定输出 `.ai-memory/knowledge-graph` 且无输出覆盖参数，与仓库“图谱不放 .ai-memory”边界冲突；本轮使用已验证的实际调用链和 rg 局部依赖替代，不运行该生成器。
 
 ## 4. 任务拆解与执行
 
-### Wave 1：能力登记与宿主写盘
+### Wave 1：最小修复与定向回归（五组写区互斥）
 
-- [ ] T1：`EngineCapability.ownSection` + 登记 `subagent-tool-policy` + 骨架定稿（经 `validateSubagentToolPolicy` 实测）。
-- [ ] T2：`createEngineCapabilityInPreset` 写骨架；`removeEngineCapabilityFromPreset` 删段。
-- [ ] T3：host 回归测试（启用/删除/幂等/拒绝）。
+```xml
+<task type="auto">
+  <name>T1 导入与子代理列表 F01/F05/F06/F07/F08</name>
+  <files>src/client/data/use-import-preview-flow.ts; features/presets/PresetSwitcher.tsx; features/characters/CharactersPage.tsx（仅必要调用适配）; app/workspace/pages/{SubagentPage,ConfigListWithTemplates}.tsx; test/client/import-preview-browser.test.mjs; test/client/scope-create-separation.test.mjs; 对应新增浏览器测试</files>
+  <action>复用既有流程与列表组件；以整包为导入单元，正确失效取消请求，接通受控筛选与创建信号。</action>
+  <verify>先重现既有反例；新增真实 React/浏览器行为断言；从隔离 cwd 运行对应 client 测试。</verify>
+  <security>取消和迟到响应不得产生额外写入；保留摘要/版本校验、预设身份与只读限制。</security>
+  <done>五项反例转绿，角色卡批次语义和筛选不被创建动作改写。</done>
+</task>
+<task type="auto">
+  <name>T2 策略编辑保存 F02/F03/F04</name>
+  <files>src/client/features/subagents/SubagentToolPolicyCard.tsx; subagent-policy-draft.ts（必要时）; test/client/subagent-policy-browser.test.mjs 及独占夹具</files>
+  <action>最新草稿保存、版本确认/待存队列、复用共享骨架；保持单开关与失焦自动保存。</action>
+  <verify>真实 DOM 首次标签失焦、保存中二次编辑、失败重试、关闭再打开、切预设/卸载隔离。</verify>
+  <security>权限黑白名单必须实际落盘；旧请求不覆盖新预设；禁止把失败显示成成功。</security>
+  <done>三个反例转绿，无并发覆盖或未提交草稿被标干净。</done>
+</task>
+<task type="auto">
+  <name>T3 世界书与策略读取 F09/F10/F11/F13</name>
+  <files>engine/st-world-book.mjs; engine/subagent-tool-policy.mjs; test/engine/{st-world-book,subagent-tool-policy-degrade}.test.mjs</files>
+  <action>修正层级推进预算、副键空值语义、commit 范围与 ENOENT 判定。</action>
+  <verify>四项最小反例转绿；正常触发、否定条件、概率/时窗、缺文件与损坏文件回归。</verify>
+  <security>损坏策略必须 fail loud；未赋值副键不得放宽匹配条件；循环仍有界。</security>
+  <done>四项行为修复且相关 engine 测试通过。</done>
+</task>
+<task type="auto">
+  <name>T4 历史策略事实一致 F12</name>
+  <files>src/host/manifest.ts; src/shared/engine-capabilities.ts; 必要的 test/host 能力事实/保存/物化测试</files>
+  <action>历史段隐式装配在实际模块事实中可见；创建补齐显式声明，移除删除数据。</action>
+  <verify>显式模块、历史半状态、关闭段、删除能力、幂等及策略内容不被覆盖。</verify>
+  <security>保留已有授权限制；不能因展示修复让历史策略失效，也不能误装配其他 dormant 配置。</security>
+  <done>界面存在性、组合运行和写盘事实一致。</done>
+</task>
+<task type="auto">
+  <name>T5 转换报告与许可 F14/F15</name>
+  <files>src/host/sillytavern.ts; test/host/st-preview-report.test.mjs; engine/THIRD_PARTY_LICENSES; README.md</files>
+  <action>在生成点累积全量分类和去重告警，仅截断展示；恢复保留代码对应的上游 MIT 声明。</action>
+  <verify>600 条分类、诊断越限后 warning、合并计数；原文许可及包/物化包含检查。</verify>
+  <security>报告不参与授权，不执行宏；许可修复不恢复已删除的上游运行预设。</security>
+  <done>摘要及 stWarnings 完整，许可随移植引擎分发。</done>
+</task>
+```
 
-### Wave 2：UI 落位
+### Wave 2：集成验证与交付（依赖 Wave 1 全部完成）
 
-- [ ] T4：能力卡内嵌 `SubagentToolPolicyCard`（唯一入口）。
-- [ ] T5：`DelegationToolsCard` 去掉内嵌编辑器，保留提示指向能力卡。
-- [ ] T6：client 回归测试（卡片内嵌、菜单含能力、单入口）。
+```xml
+<task type="auto">
+  <name>T6 集成、规范同步与审查</name>
+  <files>docs/{SillyTavern,ui-architecture,architecture-params,engine-reuse}.md; CHANGELOG.md; PLAN.md; 必要测试调整</files>
+  <action>主线程复核每组 diff/反例，同步稳定行为及相关旧文档矛盾；运行完整门禁与 OCR 委托复审。</action>
+  <verify>pnpm typecheck/lint/test/build，git diff --check；最终源码与回归匹配；已知浏览器清理 EPERM 若复现则修复本轮测试生命周期。</verify>
+  <security>全部测试在 _temp 与临时 DSH_HOME；不接管现有 DSH 端口；生成物按脚本处理。</security>
+  <done>15 项验收有证据，完整门禁通过，复审无未修复阻塞问题。</done>
+</task>
+<task type="auto">
+  <name>T7 记录、提交、推送</name>
+  <files>PLAN.md; .ai-memory/20260917/daily.md（仅本地）；本轮修改文件</files>
+  <action>更新 Wave 状态并追加项目记忆，仅暂存本轮文件，创建中文 Conventional Commit，推送 origin/dev。</action>
+  <verify>检查 staged diff、提交 SHA、远端 dev 对应提交与最终工作树。</verify>
+  <security>不提交 .ai-memory、临时 profile、凭证或 lib；不切换/推送 main。</security>
+  <done>本地提交与 origin/dev 一致，交付验证结果与生效步骤。</done>
+</task>
+```
 
-### Wave 3：门禁、交付与审查
+## 5. 验证与回滚
 
-- [ ] T7：`typecheck` + `lint` + `test` + `build` + `git diff --check` 全绿。
-- [ ] T8：文档同步（CHANGELOG / ui-architecture / architecture-params）。
-- [ ] T9：提交并推送 `origin/dev`。
-- [ ] T10：`open-code-review-delegate` 委派审查本轮改动并记录结论。
+- 验证命令全部从 `D:/AI/workspase/_temp` 启动，`TEMP/TMP` 指向该目录。子代理只运行定向测试；共享 lib 由主线程统一 build 后运行完整 test。
+- 必跑：`pnpm --dir $Repo typecheck`、`pnpm --dir $Repo lint`、`pnpm --dir $Repo test`、`pnpm --dir $Repo build`、`git -C $Repo diff --check`。
+- 仓库记录及已有用户文件均保留；每组修复可独立反向补丁或经授权 revert，不使用 reset/clean 覆盖历史。
+- 生效：客户端刷新；运行时引擎需通过既有重建链物化，现有 DSH 的模块缓存需要用户重启服务后生效。本轮不会操作该服务。
+- 停止条件：F01–F15 均有验证、完整门禁通过、复审结束、提交并推送 origin/dev。
 
-## 5. 验证与证据
+## 6. 阶段证据与复核
 
-- 行为证据：真实端点/宿主函数实测——启用后 `preset.yml` 同时含 `modules: subagent-tool-policy` 与骨架段；`writePreset` 产出 `subagent-tools/policy.yml`；组合装配 shadow 行；删除后两者都消失且组合无该行。
-- 反例证据：无 `modules` 数组时启用被拒；骨架若未通过校验则该用例必须红（防止写入非法策略）。
-- 门禁：`pnpm --dir $Repo typecheck|lint|test|build`、`git -C $Repo diff --check`。
-
-## 6. 回滚与停止条件
-
-- 回滚：反向 `git revert` 本轮提交；`ownSection` 为新增可选字段，不回写历史预设数据。
-- 不动运行中的 DSH：不停止/重启服务；客户端改动需用户刷新页面。
-- 停止条件：门禁全绿、推送成功、OCR 审查完成。
+- T1：五项目标浏览器反例修前均红；修复后与角色逐卡对照、取消继续队列、在途卸载、只读边界及旧导入流程共 26/26 通过。实际宿主附件写盘和多 JSON 合并由完整测试中的 preset-package-import/st-preview-report 契约覆盖。
+- T2：策略浏览器修复前 7 个子场景中 6 个失败；修复后 7/7 通过。主线程连同能力卡渲染测试重跑 20/20 通过，覆盖首标签失焦、保存中编辑/再次失焦、失败重试、共享骨架及切预设/卸载。
+- T3：四个新增回归先红后绿；引擎组 8 文件 133/133 通过，主线程再次定向重跑 F09/F10/F11/F13 为 4/4。保留单层延迟无递归驱动时不激活的既有 T16 契约。
+- T4/T5：历史策略事实及报告截断回归先红（能力隐藏、500≠600），修复后与既有报告用例 4/4 通过；独立复核另外覆盖四种策略状态及 600 unsupported/warning 的全量计数。
+- F15：上游 MIT 原文包含检查通过；`package.json#files` 包含 engine，实际 writePreset 物化后的声明与源文件一致（1/1 通过）。
+- 生产变更保持在既有模块内，没有新增依赖；新增测试使用现有 Node test runner 和已安装浏览器。
+- 完整门禁（主线程、隔离 cwd）：`pnpm --dir $Repo typecheck`、`lint`、`build` 均退出 0；`pnpm --dir $Repo test` **986/986 通过、0 失败、0 跳过**（含构建），`git diff --check` 退出 0。新增 23 条计入 Node 总数的测试。
+- 已确认的浏览器清理 EPERM 同时收口：新旧导入测试使用 Browser.close → 等待自身子进程退出 → 清理独占 profile；完整测试未再失败。
+- OCR 复审：workspace preview 共 33 文件，23 reviewable、10 excluded；23/23 逐文件按 rule 检查，另人工检查 8 份文档/归档和 2 份夹具，合计 reviewed=33、skipped=0、coverage=100%。主线程复跑各组反例并检查全部最终 diff；独立代理复核宿主、报告及客户端异步边界，没有新的未修复阻塞发现。
+- 未执行：真实用户 DSH 服务重启、真实预设重物化，由用户决定生效时机；所有行为验证均在隔离环境完成。图谱按本计划第 3 节降级为实际调用链核查。
 
 ## 7. Wave 与任务完成状态
 
-`[✔]` = 已完成且对应验证通过；`[ ]` = 未完成。
+`[✔]` 表示完成且验证通过；`[ ]` 表示未完成。
 
-- [✔] **Wave 1：能力登记与宿主写盘**
-  - [✔] T1：`EngineCapability.ownSection` + 登记 `subagent-tool-policy` + 骨架实测通过（校验零错误、解析出 6 个工具、扩权需审批）。
-  - [✔] T2：`createEngineCapabilityInPreset` 写骨架（段存在即不覆盖）；`removeEngineCapabilityFromPreset` 连段一起删。
-  - [✔] T3：`test/host/subagent-policy-capability.test.mjs` 7 条（目录登记/启用/幂等/半状态自愈/删除清段/残留清理）。
-- [✔] **Wave 2：UI 落位**
-  - [✔] T4：能力卡经 `renderCapabilityExtra` 插槽内嵌 `SubagentToolPolicyCard`（内嵌 feature 会违反 feature 边界，故用插槽）。
-  - [✔] T5：`DelegationToolsCard` 去掉内嵌编辑器，保留深度与入口提示（`policy.delegation.policyMoved`）。
-  - [✔] T6：client 断言更新（排除清单、单入口、`declaredModules` 夹具）。
-- [✔] **Wave 3：门禁、交付与审查**
-  - [✔] T7：`typecheck` ✓、`lint` 0 warning（261 文件）✓、`test` **959/959** ✓、`build` ✓、`git diff --check` ✓。
-  - [✔] T8：`CHANGELOG.md`、`docs/ui-architecture.md` 同步。
-  - [✔] T9：提交 `02d641f`（`feat(engine)!: subagentToolPolicy 改为模块类型能力，子代理页不再提供 tool-filter`），快进推送 `origin/dev`（`6990bff..02d641f`）。
-  - [✔] T10：`ocr delegate`（open-code-review v1.12.4）范围审查 `6990bff..02d641f`：16 个变更文件中 **12 个可审查**（4 个 md 被规则排除），12/12 逐文件审阅，**无 critical/high**；唯一一条 lint 级问题（测试内未使用变量）已当场清理。
-
-## 9. OCR 委托审查记录
-
-- 审查入口：`ocr delegate preview --from 6990bff --to 02d641f --format json -b "…"` → `mode: range`，`reviewable_count: 12`，`excluded_count: 4`（`PLAN.md`、`CHANGELOG.md`、`docs/ui-architecture.md`、`.scratch` 归档，均 `unsupported_ext`）；`ocr delegate rule` 返回单一系统规则组（拼写/死代码/代码质量/React 最佳实践/异步/安全）。
-- 覆盖 12/12：`MainSessionPage`、`SubagentPage`、`EngineModuleList`、`DelegationToolsCard`、`locales-cards`、`locales-params`、`host/manifest`、`shared/engine-capabilities`、`test/client/engine-module-cards`、`test/client/scope-create-separation`、`test/client/tools-preview`、`test/host/subagent-policy-capability`。
-- 结论：无 critical/high。命中项全部满足——无 `any`、无 `var`、无 `==`、无 `eval`/`innerHTML`、无组件内声明组件、无内联 style；effect 清理完整；`ownSection` 为可选字段、不改写历史预设数据；`section!` 非空断言由 `sectionPresent` 判定保证。
-- 记录备查的设计取舍（非缺陷）：①骨架 `requireApproval: true` 在宿主无批准通道时会让子代理扩权 fail closed（用户决策的骨架形态，可在卡片内改）；②`renderCapabilityExtra` 插槽以 capabilityId 过滤，未启用该能力时策略编辑器不可见（与"模块声明 = 唯一开关"一致）；③历史"段在、模块不在"的半状态需用户启用一次或保存一次才会补齐声明。
-
-## 8. 执行中发现并修复的额外缺陷
-
-- **半状态无法补齐模块声明**：`resolvePresetModuleFacts` 原先会因顶层 `subagentToolPolicy` 段存在而隐式把
-  `subagent-tool-policy` 追加进 `effectiveModules`，于是"段在、模块不在"被判成"已装配"，能力菜单永远补不上模块声明。
-  修复：移除该隐式追加，`isEngineCapabilityPresent` 以 `declaredModules` 判定（模块声明 = 唯一开关）。
-  已由「半状态自愈」用例锁定。
-- **骨架超限**：首版骨架把 `web_search` / `web_fetch` 放进 `modelExpansion.allow`，超出 `ceiling.allow`，
-  被 `writePreset` 拒绝。改为 ceiling 子集（`write`/`edit`/`glob`/`grep`），并由目录用例校验骨架合法性。
+- [✔] 前置：确认用户全量修复授权；旧 PLAN 原文归档并核对 Git blob。
+- [✔] Wave 1：修复与定向验证。
+  - [✔] T1：F01/F05/F06/F07/F08。
+  - [✔] T2：F02/F03/F04。
+  - [✔] T3：F09/F10/F11/F13。
+  - [✔] T4：F12。
+  - [✔] T5：F14/F15。
+- [ ] Wave 2：集成验证与交付。
+  - [✔] T6：文档、完整门禁、OCR 复审。
+  - [ ] T7：项目记忆、中文提交、推送 origin/dev。

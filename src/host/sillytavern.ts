@@ -258,19 +258,30 @@ export function convertStToPresetWithReport(
   const droppedMarkers: string[] = []
   const diagnostics: StConversionDiagnostic[] = []
   const reportEntries: StConversionEntryReport[] = []
+  const diagnosticKeys = new Set<string>()
+  const warnings = new Set<string>()
+  const classifications = { equivalent: 0, degraded: 0, unsupported: 0, excluded: 0 }
+  let needsReview = 0
   let reportTruncated = false
   let sourceInputs = 0
-  // 结构化诊断是唯一事实来源：旧 meta.stWarnings 由它派生，避免两套判断漂移。
-  const note = (code: string, message: string, extra: { entryId?: string; field?: string } = {}): void => {
-    if (diagnostics.some((item) => item.code === code && item.entryId === extra.entryId)) return
+  // 同一生成点维护完整事实；展示限长不能抹掉后续告警或兼容字段。
+  const note = (code: string, message: string, extra: { entryId?: string; field?: string } = {}, severity: StConversionDiagnostic['severity'] = 'warning'): void => {
+    const key = JSON.stringify([code, extra.entryId])
+    if (diagnosticKeys.has(key)) return
+    diagnosticKeys.add(key)
+    if (severity === 'warning') {
+      needsReview += 1
+      warnings.add(message)
+    }
     if (diagnostics.length >= REPORT_DIAGNOSTIC_LIMIT) { reportTruncated = true; return }
     diagnostics.push({
-      code, severity: 'warning', message,
+      code, severity, message,
       ...(extra.entryId !== undefined ? { entryId: extra.entryId } : {}),
       ...(extra.field !== undefined ? { field: extra.field } : {}),
     })
   }
   const recordEntry = (entry: StConversionEntryReport): void => {
+    classifications[entry.classification] += 1
     if (reportEntries.length >= REPORT_ENTRY_LIMIT) { reportTruncated = true; return }
     // 绑定同源生成配置的下标：多文件合并后报告据此把 targetId 重写为最终 id，
     // 不再按后缀规则另行推测（推测会在跨来源重名时给出错误的"看起来正确"的 id）。
@@ -284,13 +295,7 @@ export function convertStToPresetWithReport(
   }
   /** info 级诊断：进入报告但**不**改变既有 stWarnings 表现。 */
   const noteInfo = (code: string, message: string, extra: { entryId?: string; field?: string } = {}): void => {
-    if (diagnostics.some((item) => item.code === code && item.entryId === extra.entryId)) return
-    if (diagnostics.length >= REPORT_DIAGNOSTIC_LIMIT) { reportTruncated = true; return }
-    diagnostics.push({
-      code, severity: 'info', message,
-      ...(extra.entryId !== undefined ? { entryId: extra.entryId } : {}),
-      ...(extra.field !== undefined ? { field: extra.field } : {}),
-    })
+    note(code, message, extra, 'info')
   }
   let systemSectionCount = 0
   // 角色卡正文：chara_card_v3 实际内容在 data 内层（顶层为同步冗余），旧版顶层直存。
@@ -796,8 +801,7 @@ export function convertStToPresetWithReport(
       }
     }
   }
-  // 结构化诊断 → 旧字符串表现（唯一事实来源；消息去重保持既有 stWarnings 语义）。
-  const stWarnings = [...new Set(diagnostics.filter((item) => item.severity === 'warning').map((item) => item.message))]
+  const stWarnings = [...warnings]
   const report: StConversionReport = {
     converter: ST_CONVERTER_VERSION,
     sourceName: baseName,
@@ -808,10 +812,10 @@ export function convertStToPresetWithReport(
       inputs: sourceInputs,
       converted: configs.length,
       disabled: configs.filter((config) => config.enabled === false).length,
-      excluded: reportEntries.filter((entry) => entry.classification === 'excluded').length,
-      unsupported: reportEntries.filter((entry) => entry.classification === 'unsupported').length,
-      degraded: reportEntries.filter((entry) => entry.classification === 'degraded').length,
-      needsReview: diagnostics.filter((item) => item.severity === 'warning').length,
+      excluded: classifications.excluded,
+      unsupported: classifications.unsupported,
+      degraded: classifications.degraded,
+      needsReview,
     },
     ...(reportTruncated ? { truncated: true } : {}),
   }
