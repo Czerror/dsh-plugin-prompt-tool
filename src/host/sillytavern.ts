@@ -25,12 +25,21 @@ import type {
 import { buildWorldBookEntry } from './worldbook.ts'
 import { prepareStText, renderStText } from '../../engine/st-macros.mjs'
 
-/** 转换器版本：报告用它解释本次生成使用了哪一版语义（语义调整时同步递增）。 */
-export const ST_CONVERTER_VERSION = 'st-to-preset/1'
+/** 转换器版本：报告用它解释本次生成使用了哪一版语义（语义调整时同步递增）。
+ *  v2：pre-step 角色统一降级为 user（原角色只作来源元数据）+ 选组优先级修正常量事实。 */
+export const ST_CONVERTER_VERSION = 'st-to-preset/2'
 
 /** 报告的展示上限：只截断观测数据，不改变转换结果。 */
 const REPORT_ENTRY_LIMIT = 500
 const REPORT_DIAGNOSTIC_LIMIT = 200
+
+/**
+ * pre-step 只接受 user：宿主把本批消息逐条写成 `user/message` 事件，事件校验要求
+ * `role === 'user'`。ST 侧的 assistant/system 角色在导入期统一降级为 user，原角色
+ * 保留在 stSource.role / stWorldBook.role，条目按 degraded 记录并带同一原因码。
+ */
+const ST_PRE_STEP_ROLE = 'user'
+const ST_ROLE_DOWNGRADE_CODE = 'assistant-role-downgrade'
 
 /** ST marker prompts（marker: true）：content 不发送给模型（仅标记注入位置，ST
  *  以运行时内容填充该位置）；SPresetSettings 是旧版 ST 的预设设置 dump（正则
@@ -42,12 +51,21 @@ export function processStText(text: string, cardName: string, variables: Record<
   return renderStText(prepareStText(text, cardName), { variables, local: variables }).trim()
 }
 
-/** 合并多个转换结果为一个预设（角色卡 × 响应预设 → 单预设）。 */
-export function mergeStPresets(specs: PresetSpec[]): PresetSpec {
+/** 合并后的最终 id 映射：来源索引 → 该来源 promptConfigs 下标 → 合并后的配置 id。 */
+export type MergeIdMap = Map<number, Map<number, string>>
+
+/**
+ * 合并多个转换结果为一个预设，并返回「来源 + 生成配置下标 → 最终 id」的同一份映射。
+ *
+ * 报告必须消费这份映射，而不是按后缀规则另行推测：后缀分配只发生在这里一次。
+ */
+export function mergeStPresetsWithReport(specs: PresetSpec[]): { spec: PresetSpec; idMap: MergeIdMap } {
   const promptConfigs: Array<Record<string, unknown>> = []
   const seen = new Set<string>()
-  for (const spec of specs) {
-    for (const config of spec.promptConfigs ?? []) {
+  const idMap: MergeIdMap = new Map()
+  for (const [sourceIndex, spec] of specs.entries()) {
+    const perSource = new Map<number, string>()
+    for (const [entryIndex, config] of (spec.promptConfigs ?? []).entries()) {
       if (config === null || typeof config !== 'object' || Array.isArray(config)) continue
       const entry = config as Record<string, unknown>
       const base = String(entry.id ?? '')
@@ -56,8 +74,10 @@ export function mergeStPresets(specs: PresetSpec[]): PresetSpec {
       let id = base
       for (let suffix = 2; seen.has(id); suffix++) id = `${base}-${suffix}`
       seen.add(id)
+      perSource.set(entryIndex, id)
       promptConfigs.push({ ...entry, id, variables: { ...(spec.variablesEnabled === false ? {} : spec.variables), ...entry.variables as Record<string, string> | undefined } })
     }
+    idMap.set(sourceIndex, perSource)
   }
   const params: Record<string, unknown> = {}
   for (const spec of specs) Object.assign(params, spec.params ?? {})
@@ -87,10 +107,10 @@ export function mergeStPresets(specs: PresetSpec[]): PresetSpec {
   // 合并预设回落宿主部署人设，导入的 system-section 被 complete 人设抑制。
   const persona = specs.find((spec) => spec.persona !== undefined)?.persona
   const stripSuffix = (name: string): string => name.replace(/（SillyTavern 转换）$/, '')
-  return {
+  const spec: PresetSpec = {
     // 多源合并：id 拼接（2 + beta-2-42 → 2-beta-2-42），避免与任一源预设冲突。
-    id: specs.length > 1 ? specs.map((spec) => spec.id).join('-') : specs[0]!.id,
-    name: specs.map((spec) => stripSuffix(spec.name)).join(' × ') + '（SillyTavern 合并）',
+    id: specs.length > 1 ? specs.map((item) => item.id).join('-') : specs[0]!.id,
+    name: specs.map((item) => stripSuffix(item.name)).join(' × ') + '（SillyTavern 合并）',
     version: '1.0.0',
     engineCompat: '>=0.4.2',
     meta: { source: 'sillytavern', ...(warnings.length > 0 ? { stWarnings: warnings } : {}) },
@@ -101,11 +121,86 @@ export function mergeStPresets(specs: PresetSpec[]): PresetSpec {
     moduleConfigs,
     promptConfigs,
   }
+  return { spec, idMap }
+}
+
+/** 合并多个转换结果为一个预设（角色卡 × 响应预设 → 单预设）。 */
+export function mergeStPresets(specs: PresetSpec[]): PresetSpec {
+  return mergeStPresetsWithReport(specs).spec
 }
 
 /** 转换选项：多 prompt_order 分组时显式选择来源角色，避免照搬「默认任取首组」。 */
 export interface StConversionOptions {
   characterId?: string
+}
+
+/** prompt_order 分组候选：预览选组 UI 与实际转换消费同一份事实。 */
+export interface StOrderGroupSummary {
+  characterId: string
+  entries: number
+}
+
+/** prompt_order 选择结果：命中组、候选与拒绝原因三者互斥。 */
+interface StOrderResolution {
+  groups: Array<Record<string, unknown>>
+  /** 实际采用的顺序表；undefined = 无顺序表可用（回退 prompts 数组顺序）。 */
+  group?: Record<string, unknown>
+  /** 多组且按优先级无法明确选择时的有界候选（不宣称已转换）。 */
+  needsSelection?: StOrderGroupSummary[]
+  /** 输入本身非法（显式选择不存在、重复 character_id、多组歧义）。 */
+  error?: string
+}
+
+/**
+ * 选组优先级（唯一实现，转换与预览共用）：
+ *   请求显式选择 → 文件内 character_id → 全局组 100001 → 仅有一组时回退。
+ * 显式选择必须命中，命中失败不回落；重复 character_id 无法明确对应，一律拒绝。
+ */
+function resolveStOrder(record: Record<string, unknown>, options: StConversionOptions): StOrderResolution {
+  if (!Array.isArray(record.prompt_order)) return { groups: [] }
+  const groups = record.prompt_order.filter((entry): entry is Record<string, unknown> =>
+    entry !== null && typeof entry === 'object' && Array.isArray(entry.order))
+  const summaries = (list: Array<Record<string, unknown>>): StOrderGroupSummary[] =>
+    list.map((entry) => ({ characterId: String(entry.character_id ?? ''), entries: (entry.order as unknown[]).length }))
+  if (groups.length === 0) return { groups }
+  const explicit = typeof options.characterId === 'string' && options.characterId.length > 0 ? options.characterId : undefined
+  const fileCharacterId = record.character_id === undefined || record.character_id === null ? undefined : String(record.character_id)
+  const find = (id: string | undefined): Record<string, unknown> | undefined =>
+    id === undefined ? undefined : groups.find((entry) => String(entry.character_id) === id)
+  let group = find(explicit)
+  if (explicit !== undefined && group === undefined) {
+    return { groups, needsSelection: summaries(groups), error: `SillyTavern prompt_order 不包含 character_id ${JSON.stringify(explicit)} 的顺序表` }
+  }
+  group ??= find(fileCharacterId)
+  group ??= find('100001')
+  if (group === undefined && groups.length === 1) [group] = groups
+  if (group === undefined) {
+    return {
+      groups,
+      ...(groups.length > 1
+        ? { needsSelection: summaries(groups) }
+        : {}),
+    }
+  }
+  const picked = String(group.character_id ?? '')
+  if (groups.filter((entry) => String(entry.character_id ?? '') === picked).length > 1) {
+    return { groups, error: `SillyTavern prompt_order 中 character_id ${JSON.stringify(picked)} 重复，无法明确对应顺序表` }
+  }
+  return { groups, group }
+}
+
+/**
+ * 预览选组状态：多组且按优先级无法明确选择时给出候选，让 UI 先让用户选组再重新预览；
+ * 候选状态不代表已转换，调用方不得据此启用确认或提交。
+ */
+export function stOrderSelectionState(card: unknown, options: StConversionOptions = {}):
+  { needsSelection: true; candidates: StOrderGroupSummary[] }
+  | { needsSelection: false; error?: string } {
+  const record = card !== null && typeof card === 'object' ? card as Record<string, unknown> : {}
+  const resolved = resolveStOrder(record, options)
+  if (resolved.error !== undefined) return { needsSelection: false, error: resolved.error }
+  if (resolved.needsSelection !== undefined) return { needsSelection: true, candidates: resolved.needsSelection }
+  return { needsSelection: false }
 }
 
 /** SillyTavern JSON 预设卡片 → 本项目 PresetSpec（导入端点直接消费）。 */
@@ -133,24 +228,27 @@ export function convertStToPresetWithReport(
   const orderEnabled = new Map<string, boolean>()
   const orderGroups: StConversionReport['orderGroups'] = []
   let ordered = false
-  if (Array.isArray(record.prompt_order)) {
-    const groups = record.prompt_order.filter((entry): entry is Record<string, unknown> => entry !== null && typeof entry === 'object' && Array.isArray(entry.order))
-    const group = groups.find(entry => String(entry.character_id) === String(record.character_id ?? options.characterId ?? 100001))
-      ?? (groups.length === 1 ? groups[0] : undefined)
-    if (groups.length > 1 && group === undefined) throw new TypeError('SillyTavern prompt_order 包含多个角色，请提供 character_id 或导出全局预设')
+  {
+    const resolved = resolveStOrder(record, options)
+    // 预览已在候选状态下让用户选组；走到转换仍无法明确选择时 fail loud，不默认任取首组。
+    if (resolved.error !== undefined) throw new TypeError(resolved.error)
+    if (resolved.needsSelection !== undefined) throw new TypeError('SillyTavern prompt_order 包含多个角色，请提供 character_id 或导出全局预设')
+    const { groups, group } = resolved
     for (const entry of groups) {
       orderGroups.push({ characterId: String(entry.character_id ?? ''), selected: entry === group, entries: (entry.order as unknown[]).length })
     }
-    const order = group === undefined ? record.prompt_order : group.order as unknown[]
-    ordered = group !== undefined || order.some(entry => entry !== null && typeof entry === 'object' && typeof (entry as Record<string, unknown>).identifier === 'string')
-    let rank = 0
-    for (const entry of order as Array<Record<string, unknown>>) {
-      if (entry === null || typeof entry !== 'object') continue
-      const id = typeof entry.identifier === 'string' ? entry.identifier : ''
-      if (id.length === 0) continue
-      if (!orderIndex.has(id)) orderIndex.set(id, rank)
-      orderEnabled.set(id, entry.enabled === true)
-      rank += 1
+    if (Array.isArray(record.prompt_order)) {
+      const order = group === undefined ? record.prompt_order : group.order as unknown[]
+      ordered = group !== undefined || order.some(entry => entry !== null && typeof entry === 'object' && typeof (entry as Record<string, unknown>).identifier === 'string')
+      let rank = 0
+      for (const entry of order as Array<Record<string, unknown>>) {
+        if (entry === null || typeof entry !== 'object') continue
+        const id = typeof entry.identifier === 'string' ? entry.identifier : ''
+        if (id.length === 0) continue
+        if (!orderIndex.has(id)) orderIndex.set(id, rank)
+        orderEnabled.set(id, entry.enabled === true)
+        rank += 1
+      }
     }
   }
   const configs: Array<Record<string, unknown>> = []
@@ -171,7 +269,15 @@ export function convertStToPresetWithReport(
   }
   const recordEntry = (entry: StConversionEntryReport): void => {
     if (reportEntries.length >= REPORT_ENTRY_LIMIT) { reportTruncated = true; return }
-    reportEntries.push(entry)
+    // 绑定同源生成配置的下标：多文件合并后报告据此把 targetId 重写为最终 id，
+    // 不再按后缀规则另行推测（推测会在跨来源重名时给出错误的"看起来正确"的 id）。
+    let targetIndex: number | undefined
+    if (entry.targetId !== undefined) {
+      for (let index = configs.length - 1; index >= 0; index--) {
+        if (configs[index]?.id === entry.targetId) { targetIndex = index; break }
+      }
+    }
+    reportEntries.push(targetIndex === undefined ? entry : { ...entry, targetIndex })
   }
   /** info 级诊断：进入报告但**不**改变既有 stWarnings 表现。 */
   const noteInfo = (code: string, message: string, extra: { entryId?: string; field?: string } = {}): void => {
@@ -252,6 +358,7 @@ export function convertStToPresetWithReport(
     const escape = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
     const marker = new RegExp(`(?:^|\\n)\\s*(\\{\\{user\\}\\}|\\{\\{char\\}\\}|user|assistant${cardName ? `|${escape(cardName)}` : ''})\\s*:\\s*`, 'gi')
     let index = 0
+    let exampleDowngraded = false
     for (const block of examples.split(/<START>/gi).filter(text => text.trim().length > 0)) {
       const turns = [...block.matchAll(marker)]
       const parts = turns.length > 0 ? turns.map((turn, at) => ({
@@ -262,9 +369,23 @@ export function convertStToPresetWithReport(
         const text = clean(part.text)
         if (!text) continue
         sourceInputs += 1
-        configs.push({ id: `dialogue-example-${++index}`, name: `示例对话 ${index}`, strategy: 'static', text,
-          layer: 'pre-step', role: part.role, position: 'before-all', dedupe: 'session', order: -60 + index / 1000 })
+        const entryIndex = ++index
+        const targetId = `dialogue-example-${entryIndex}`
+        const order = -60 + entryIndex / 1000
+        // pre-step 只发出 user；示例对话的 assistant 轮次降级，原角色留在 stSource.role。
+        const downgraded = part.role === 'assistant'
+        exampleDowngraded ||= downgraded
+        configs.push({ id: targetId, name: `示例对话 ${entryIndex}`, strategy: 'static', text,
+          layer: 'pre-step', role: 'user', position: 'before-all', dedupe: 'session', order,
+          params: { stSource: { field: 'mes_example', role: part.role } } })
+        recordEntry({ sourceId: `mes_example[${entryIndex}]`, sourceIndex: entryIndex - 1, targetId,
+          layer: 'pre-step', order, role: 'user', position: 'before-all',
+          classification: downgraded ? 'degraded' : 'equivalent',
+          codes: downgraded ? [ST_ROLE_DOWNGRADE_CODE] : [] })
       }
+    }
+    if (exampleDowngraded) {
+      noteInfo('st-example-role', 'DSH pre-step 只接受 user 角色：示例对话的 assistant 轮次降级为 user，原角色保留在 stSource.role', { entryId: 'mes_example', field: 'mes_example' })
     }
   }
   // 世界书仍经同一工厂构造，ST 特有触发语义由 params.stWorldBook 显式启用。
@@ -344,6 +465,10 @@ export function convertStToPresetWithReport(
       if (sourceRole === 0) {
         entryCodes.push('system-role-downgrade')
         note('st-worldbook-role', 'DSH pre-step 不接受 system 角色：世界书 system 消息降级为 user，原角色保留在 stWorldBook', { entryId: sourceId, field: 'role' })
+      } else if (sourceRole === 2) {
+        // assistant 只能由模型侧事件产生：导入期就降级，运行时出口不会再出现非法角色。
+        entryCodes.push(ST_ROLE_DOWNGRADE_CODE)
+        noteInfo('st-worldbook-role-assistant', 'DSH pre-step 只接受 user 角色：世界书 assistant 消息降级为 user，原角色保留在 stWorldBook.role', { entryId: sourceId, field: 'role' })
       }
       if (option('vectorized') === true || option('outlet_name') || (Array.isArray(option('triggers')) && (option('triggers') as unknown[]).length > 0) || option('automation_id')) {
         entryCodes.push('unsupported-controls')
@@ -368,11 +493,11 @@ export function convertStToPresetWithReport(
           ? { selectiveLogic: option('selectiveLogic', 'selective_logic') as number }
           : {}),
       })
-      configs.push({ ...worldConfig, role: sourceRole === 2 ? 'assistant' : 'user',
+      configs.push({ ...worldConfig, role: ST_PRE_STEP_ROLE,
         position: position === 4 ? 'after-all' : 'before-all',
         params: { ...worldConfig.params as Record<string, unknown>, stWorldBook } })
       recordEntry({ sourceId, sourceIndex: index, targetId: `lore-${sourceId}`,
-        layer: 'pre-step', order: stOrder, role: sourceRole === 2 ? 'assistant' : 'user',
+        layer: 'pre-step', order: stOrder, role: ST_PRE_STEP_ROLE,
         position: position === 4 ? 'after-all' : 'before-all',
         classification: entryCodes.includes('unsupported-controls') ? 'unsupported'
           : entryCodes.some((code) => code !== 'disabled') ? 'degraded' : 'equivalent',
@@ -382,32 +507,47 @@ export function convertStToPresetWithReport(
   const firstMes = clean(bodyText('first_mes'))
   if (firstMes.length > 0) {
     sourceInputs += 1
-    // 开场白：assistant 侧 + 每会话一次（dedupe=session 避免每轮重复注入）。
+    // 开场白：ST 的 assistant 侧开场白在 pre-step 降级为 user + 每会话一次
+    // （dedupe=session 避免每轮重复注入），原角色保留在 stSource.role。
     configs.push({
       id: 'first-mes', name: '开场白', strategy: 'static', order: -40, text: firstMes,
-      layer: 'pre-step', mergeMode: 'merged', role: 'assistant', position: 'before-all', dedupe: 'session',
+      layer: 'pre-step', mergeMode: 'merged', role: ST_PRE_STEP_ROLE, position: 'before-all', dedupe: 'session',
+      params: { stSource: { field: 'first_mes', role: 'assistant' } },
     })
+    recordEntry({ sourceId: 'first_mes', sourceIndex: 0, targetId: 'first-mes',
+      layer: 'pre-step', order: -40, role: ST_PRE_STEP_ROLE, position: 'before-all',
+      classification: 'degraded', codes: [ST_ROLE_DOWNGRADE_CODE] })
+    noteInfo('st-first-mes-role', 'DSH pre-step 只接受 user 角色：ST 开场白降级为 user，原角色保留在 stSource.role', { entryId: 'first_mes', field: 'first_mes' })
   }
   // 备用开场白（alternate_greetings）：首条已启用；备用条目转禁用配置（UI 可切换启用，
   // fallback 起点——引擎按 order 排序，同一 dedupe=session 身份不重复注入）。
   const alternateGreetings = Array.isArray(body.alternate_greetings)
     ? (body.alternate_greetings as unknown[]).map((item) => typeof item === 'string' ? item : '').map(clean).filter((item) => item.length > 0)
     : []
+  if (alternateGreetings.length > 0) {
+    noteInfo('st-alternate-greetings-role', 'DSH pre-step 只接受 user 角色：备用开场白降级为 user，原角色保留在 stSource.role', { entryId: 'alternate_greetings', field: 'alternate_greetings' })
+  }
   for (const [index, greeting] of alternateGreetings.entries()) {
     sourceInputs += 1
+    const targetId = `first-mes-${index + 2}`
+    const order = -40 + index + 1
     configs.push({
-      id: `first-mes-${index + 2}`,
+      id: targetId,
       name: `开场白 ${index + 2}`,
       strategy: 'static',
       enabled: false,
-      order: -40 + index + 1,
+      order,
       text: greeting,
       layer: 'pre-step',
       mergeMode: 'merged',
-      role: 'assistant',
+      role: ST_PRE_STEP_ROLE,
       position: 'before-all',
       dedupe: 'session',
+      params: { stSource: { field: `alternate_greetings[${index}]`, role: 'assistant' } },
     })
+    recordEntry({ sourceId: `alternate_greetings[${index}]`, sourceIndex: index, targetId,
+      layer: 'pre-step', order, role: ST_PRE_STEP_ROLE, position: 'before-all',
+      classification: 'degraded', codes: [ST_ROLE_DOWNGRADE_CODE] })
   }
 
   for (const [index, prompt] of prompts.entries()) {
@@ -433,12 +573,12 @@ export function convertStToPresetWithReport(
     }
     const id = rawId.length > 0 && !/^[0-9a-f-]{36}$/i.test(rawId) ? rawId : `st-prompt-${index + 1}`
     // ST 角色：system=系统消息（进 system-section 层，pre-step 无 system 角色）；
-    // user/assistant 进 pre-step；'model'（第三方扩展角色，ST 官方枚举外）按
-    // getPromptRole 的 default 语义归 system，但本项目映射 assistant（模型侧）
-    // 更贴近其「模型思维链消息」用途。
-    const role = prompt.role === 'assistant' || prompt.role === 'model'
-      ? 'assistant'
-      : prompt.role === 'system' ? 'system' : 'user'
+    // user/assistant/model 进 pre-step，但 pre-step 只发出 user——ST 的 assistant
+    // 与 'model'（第三方扩展角色）在导入期统一降级，原角色保留在 stSource.role。
+    const stRole = typeof prompt.role === 'string' ? prompt.role : 'system'
+    const preStep = stRole !== 'system'
+    const role = preStep ? ST_PRE_STEP_ROLE : 'system'
+    const roleDowngraded = preStep && stRole !== 'user'
     const base = {
       id,
       name: typeof prompt.name === 'string' && prompt.name.length > 0 ? prompt.name : id,
@@ -450,13 +590,18 @@ export function convertStToPresetWithReport(
       // 无映射时按数组索引，保持 ST 预设内相对顺序。
       order: ((rawId.length > 0 ? orderIndex.get(rawId) : undefined) ?? (ordered ? orderIndex.size + index : index)) * 10,
       text: content,
-      ...((prompt.injection_position === 1 || Array.isArray(prompt.injection_trigger)) ? { params: { stSource: {
+      // stSource 除深度/触发外也承载角色降级事实：原角色必须可定位。
+      ...((prompt.injection_position === 1 || Array.isArray(prompt.injection_trigger) || roleDowngraded) ? { params: { stSource: {
         position: prompt.injection_position ?? 0, depth: prompt.injection_depth ?? 4,
-        order: prompt.injection_order ?? 100, role,
+        order: prompt.injection_order ?? 100, role: stRole,
         ...(Array.isArray(prompt.injection_trigger) ? { triggers: prompt.injection_trigger } : {}),
       } } } : {}),
     }
     const codes: string[] = []
+    if (roleDowngraded) {
+      codes.push(ST_ROLE_DOWNGRADE_CODE)
+      noteInfo('st-prompt-role', 'DSH pre-step 只接受 user 角色：ST prompt 的 assistant/model 角色降级为 user，原角色保留在 stSource.role', { entryId: sourceId, field: 'role' })
+    }
     if (prompt.injection_position === 1) {
       codes.push('depth-collapsed')
       note('st-prompt-depth', 'ST prompt 深度注入暂按 DSH 插入点降级，原 position/depth/order/role 保留在 stSource', { entryId: sourceId, field: 'injection_position' })
@@ -466,8 +611,7 @@ export function convertStToPresetWithReport(
       note('st-prompt-triggers', 'ST prompt 的生成类型触发条件在 DSH 不等价，保留在 stSource.triggers', { entryId: sourceId, field: 'injection_trigger' })
     }
     if (base.enabled === false) codes.push(ordered && orderIndex.get(rawId) === undefined ? 'not-in-order-group' : 'disabled')
-    if (role === 'system') {
-      // 多个 system-section 可拼接：mergeMode=merged 时引擎按 order 升序拼为一条 system prompt。
+    if (!preStep) {
       configs.push({ ...base, layer: 'system-section', mergeMode: 'merged' })
       systemSectionCount += 1
     } else {
@@ -476,18 +620,15 @@ export function convertStToPresetWithReport(
         layer: 'pre-step',
         mergeMode: 'merged',
         role,
-        // ST injection_position：0=相对（聊天气泡上方，按 prompt_order 排列）；
-        // 1=in-chat（注入对话内 depth 处）。本项目无深度注入，after-user 近似
-        // in-chat 的「贴近消息区」语义；相对注入用 before-all（对话前消息批）。
         position: prompt.injection_position === 0 ? 'before-all' : 'after-user',
         dedupe: 'none',
       })
     }
     recordEntry({ sourceId, sourceIndex: index, targetId: id,
-      layer: role === 'system' ? 'system-section' : 'pre-step', order: base.order,
-      role: role === 'system' ? undefined : role,
-      position: role === 'system' ? undefined : (prompt.injection_position === 0 ? 'before-all' : 'after-user'),
-      classification: codes.includes('depth-collapsed') || codes.includes('generation-trigger') ? 'degraded' : 'equivalent',
+      layer: preStep ? 'pre-step' : 'system-section', order: base.order,
+      role: preStep ? role : undefined,
+      position: preStep ? (prompt.injection_position === 0 ? 'before-all' : 'after-user') : undefined,
+      classification: codes.includes('depth-collapsed') || codes.includes('generation-trigger') || roleDowngraded ? 'degraded' : 'equivalent',
       codes })
   }
 
@@ -512,6 +653,14 @@ export function convertStToPresetWithReport(
   }
 
   const presetId = stPresetId(baseName)
+  // 出口不变量：pre-step 只发出 user。各来源路径已在生成时逐条降级（原角色进
+  // stSource / stWorldBook）；这里兜住任何遗漏，保证写进 preset.yml 的角色可注入。
+  for (const config of configs) {
+    if (config.layer !== 'pre-step' || config.role === ST_PRE_STEP_ROLE) continue
+    const requested = config.role
+    config.role = ST_PRE_STEP_ROLE
+    noteInfo('st-pre-step-role-fallback', `DSH pre-step 只接受 user 角色：${String(config.id)} 声明的 ${JSON.stringify(requested)} 已降级为 user`, { entryId: String(config.id), field: 'role' })
+  }
   // 未定义自定义宏登记：卡内文本引用了但无变量源的 {{key}}（非内置 / 非运行时宏）
   // → 预设 variables 空值占位——插值替换为空不留字面；模板变量卡片可编辑默认值；
   // 会话变量工具（session_var）可运行时覆盖（对应 ST 正则/STscript 更新语义）。
@@ -580,10 +729,44 @@ export function convertStToPresetWithReport(
   return { spec, report }
 }
 
-/** 多文件导入（角色卡 × 响应预设）合并各自报告：条目/诊断有界截断，计数求和。 */
-export function mergeStConversionReports(reports: StConversionReport[]): StConversionReport {
-  const entries = reports.flatMap((report) => report.entries).slice(0, REPORT_ENTRY_LIMIT)
-  const diagnostics = reports.flatMap((report) => report.diagnostics).slice(0, REPORT_DIAGNOSTIC_LIMIT)
+/** 合并报告的一个来源：显示名 + 该来源的最终 id 映射（来自 {@link mergeStPresetsWithReport}）。 */
+export interface MergeReportSource {
+  /** 来源显示名（上传文件显示名，不含绝对路径）。 */
+  sourceName: string
+  /** 该来源的 promptConfigs 下标 → 合并后的最终 id。 */
+  idMap?: Map<number, string>
+}
+
+/**
+ * 多文件导入合并各自报告：条目/诊断有界截断、计数求和。
+ *
+ * 传入 `sources` 时，条目的 `targetId` 被重写为**合并后的最终 id**（消费
+ * `mergeStPresetsWithReport` 的同一份映射），并补上来源显示名与来源序号；
+ * 诊断的 `targetId` 同样按映射定位。不传时保持旧行为（不重写）。
+ */
+export function mergeStConversionReports(
+  reports: StConversionReport[],
+  sources: MergeReportSource[] = [],
+): StConversionReport {
+  const finalIdOf = (sourceIndex: number, entry: StConversionEntryReport): string | undefined => {
+    if (entry.targetIndex === undefined) return undefined
+    return sources[sourceIndex]?.idMap?.get(entry.targetIndex)
+  }
+  const entries = reports.flatMap((report, sourceIndex) => report.entries.map((entry) => {
+    const source = sources[sourceIndex]
+    const finalId = finalIdOf(sourceIndex, entry)
+    return {
+      ...entry,
+      ...(source === undefined ? {} : { sourceName: source.sourceName, sourceFileIndex: sourceIndex }),
+      ...(finalId === undefined ? {} : { targetId: finalId }),
+    }
+  })).slice(0, REPORT_ENTRY_LIMIT)
+  const diagnostics = reports.flatMap((report, sourceIndex) => report.diagnostics.map((item) => {
+    if (item.entryId === undefined) return item
+    const entry = report.entries.find((candidate) => candidate.sourceId === item.entryId)
+    const finalId = entry === undefined ? undefined : finalIdOf(sourceIndex, entry)
+    return finalId === undefined ? item : { ...item, targetId: finalId }
+  })).slice(0, REPORT_DIAGNOSTIC_LIMIT)
   const total = (pick: (summary: StConversionReport['summary']) => number): number =>
     reports.reduce((sum, report) => sum + pick(report.summary), 0)
   return {

@@ -43,14 +43,17 @@ import {
 import type { PresetSpec } from '../host/manifest.ts'
 import {
   applyCharacterToPreset,
+  characterOrderSelectionState,
+  charactersDir,
   deleteCharacterCard,
   importCharacterCard,
   importCharacterCardFile,
   listCharacterCards,
   removeCharacterFromPreset,
 } from '../host/characters.ts'
-import { convertStToPresetWithReport, mergeStConversionReports, mergeStPresets } from '../host/sillytavern.ts'
+import { ST_CONVERTER_VERSION, convertStToPresetWithReport, mergeStConversionReports, mergeStPresetsWithReport, stOrderSelectionState } from '../host/sillytavern.ts'
 import { previewCharacterCard } from '../host/characters.ts'
+import { computePreviewRevision, directoryVersionOf } from '../host/preview-revision.ts'
 import { lastWorldBookDiagnostics } from '../../engine/st-world-book.mjs'
 import { BRIDGE_ENDPOINTS, MAX_BRIDGE_BODY_BYTES, MAX_CHARACTER_CARD_STREAM_BYTES, SETTINGS_BRIDGE_PREFIX } from '../shared/bridge-contract.ts'
 import type { ModelSyncResult, StConversionReport } from '../shared/bridge-contract.ts'
@@ -146,6 +149,72 @@ function readSessionIdField(body: unknown): { ok: true; sessionId?: string } | {
   if (trimmed.length === 0) return { ok: true }
   if (trimmed.length > 256) return { ok: false, message: 'sessionId 长度不能超过 256' }
   return { ok: true, sessionId: trimmed }
+}
+
+/** SHA-256 摘要（十六进制）：预览凭据字段的唯一合法形状。 */
+const SHA256_HEX_RE = /^[0-9a-f]{64}$/i
+/** promptOrderCharacterId 上界：ST character_id 实际很短，超长一律按非法输入拒绝。 */
+const MAX_ORDER_CHARACTER_ID_LENGTH = 128
+
+/** 导入端点（预设包 / 角色卡）的入口参数。 */
+interface ImportRequestParams {
+  /** 省略 / false = 显式提交；true = 只读预览（不落盘）。 */
+  preview: boolean
+  expectedSourceDigest?: string
+  /** 预览返回的版本凭据：绑定文件、选组、转换器与目标身份，服务端提交时重算。 */
+  expectedPreviewRevision?: string
+  promptOrderCharacterId?: string
+}
+
+/**
+ * 解析导入请求参数：严格区分「缺省」与「非法类型」，不做 truthy 转换。
+ * 字符串 "true"、数值、null、数组、对象都是错误请求，必须在 mkdir / rename /
+ * 写文件 / 备份 / rebuild 之前以 400 拒绝——预览参数不是权限凭证，也不能靠类型
+ * 静默回落成"直接写入"。
+ */
+function readImportRequestParams(record: Record<string, unknown>):
+  | { ok: true; params: ImportRequestParams }
+  | { ok: false; message: string } {
+  const preview = record.preview
+  if (preview !== undefined && typeof preview !== 'boolean') {
+    return { ok: false, message: 'preview 必须是布尔值（省略或 false = 提交，true = 只读预览）' }
+  }
+  const digest = record.expectedSourceDigest
+  if (digest !== undefined && (typeof digest !== 'string' || !SHA256_HEX_RE.test(digest))) {
+    return { ok: false, message: 'expectedSourceDigest 必须是 SHA-256 十六进制摘要' }
+  }
+  const characterId = record.promptOrderCharacterId
+  if (characterId !== undefined
+    && (typeof characterId !== 'string' || characterId.length === 0 || characterId.length > MAX_ORDER_CHARACTER_ID_LENGTH)) {
+    return { ok: false, message: `promptOrderCharacterId 必须是 1–${MAX_ORDER_CHARACTER_ID_LENGTH} 字符的非空字符串` }
+  }
+  const revision = record.expectedPreviewRevision
+  if (revision !== undefined && (typeof revision !== 'string' || !SHA256_HEX_RE.test(revision))) {
+    return { ok: false, message: 'expectedPreviewRevision 必须是 SHA-256 十六进制摘要' }
+  }
+  return {
+    ok: true,
+    params: {
+      preview: preview === true,
+      ...(digest === undefined ? {} : { expectedSourceDigest: digest as string }),
+      ...(revision === undefined ? {} : { expectedPreviewRevision: revision as string }),
+      ...(characterId === undefined ? {} : { promptOrderCharacterId: characterId as string }),
+    },
+  }
+}
+
+/** 上传条目容器：缺失 = 空；不是数组或含非对象条目一律 fail closed。 */
+function readBridgeFiles(files: unknown):
+  | { ok: true; files: Array<Record<string, unknown>> }
+  | { ok: false; message: string } {
+  if (files === undefined || files === null) return { ok: true, files: [] }
+  if (!Array.isArray(files)) return { ok: false, message: 'files 必须是数组' }
+  const entries: Array<Record<string, unknown>> = []
+  for (const entry of files) {
+    if (!isRecord(entry)) return { ok: false, message: 'files 条目必须是对象' }
+    entries.push(entry)
+  }
+  return { ok: true, files: entries }
 }
 
 /** 存活本地 Agent 的会话 cwd；无 agents 服务 / 未知 session / 无 cwd 时返回 undefined（不猜）。 */
@@ -1527,28 +1596,47 @@ export function registerSettingsBridge(
               return
             }
             const record = body as Record<string, unknown>
-            const files = Array.isArray(record.files) ? record.files : []
-            let normalized = files.flatMap((entry) => {
-              if (entry === null || typeof entry !== 'object') return []
+            // 入口校验先于任何转换与写盘：非法 preview/摘要/顺序组类型一律 400，
+            // 不静默回落到"直接写入"，也不在拒绝前创建目录或备份。
+            const request = readImportRequestParams(record)
+            if (!request.ok) {
+              writeBridgeJson(res, 400, { ok: false, code: 'preset-package-invalid', message: request.message })
+              return
+            }
+            const upload = readBridgeFiles(record.files)
+            if (!upload.ok) {
+              writeBridgeJson(res, 400, { ok: false, code: 'preset-package-invalid', message: upload.message })
+              return
+            }
+            let normalized: Array<{ path: string; content: string }> = []
+            for (const [index, entry] of upload.files.entries()) {
               const f = entry as { path?: unknown; name?: unknown; content?: unknown }
               const path = typeof f.path === 'string' && f.path.length > 0 ? f.path : (typeof f.name === 'string' ? f.name : '')
-              const content = typeof f.content === 'string' ? f.content : ''
-              if (path.length === 0) return []
+              if (typeof f.content !== 'string') {
+                writeBridgeJson(res, 400, { ok: false, code: 'preset-package-invalid', message: `files[${index}].content 必须是字符串` })
+                return
+              }
+              if (path.length === 0) {
+                writeBridgeJson(res, 400, { ok: false, code: 'preset-package-invalid', message: `files[${index}] 缺少 path/name` })
+                return
+              }
               // 路径穿越防护：仅允许扁平相对路径（不含 .. 与盘符）。
-              if (path.includes('..') || /^[a-zA-Z]:/.test(path) || path.startsWith('/') || path.startsWith('\\')) return []
-              return [{ path, content }]
-            })
+              if (path.includes('..') || /^[a-zA-Z]:/.test(path) || path.startsWith('/') || path.startsWith('\\')) {
+                writeBridgeJson(res, 400, { ok: false, code: 'preset-package-invalid', message: `files[${index}].path 非法` })
+                return
+              }
+              normalized.push({ path, content: f.content })
+            }
             // 预设定义文件：顶层 preset.yml 优先；缺失时用顶层任意 *.yml/*.yaml
             // （排除 agent.cordis.yml 组合文件），支持自定义定义文件名导入。
             // 来源摘要：对本次上传的规范化文件重算，作为预览过期校验的唯一样本。
             const sourceDigest = createHash('sha256')
               .update(normalized.map((entry) => `${entry.path}\u0000${entry.content}`).join('\u0000')).digest('hex')
-            if (typeof record.expectedSourceDigest === 'string' && record.expectedSourceDigest !== sourceDigest) {
+            if (request.params.expectedSourceDigest !== undefined && request.params.expectedSourceDigest !== sourceDigest) {
               writeBridgeJson(res, 409, { ok: false, code: 'preset-preview-stale', message: '预览已过期：文件或来源内容已变化，请重新预览后再导入' })
               return
             }
-            const promptOrderCharacterId = typeof record.promptOrderCharacterId === 'string' && record.promptOrderCharacterId.length > 0
-              ? record.promptOrderCharacterId : undefined
+            const promptOrderCharacterId = request.params.promptOrderCharacterId
             // SillyTavern 转换报告（仅转换路径产生）；预览与实际提交共用同一次纯转换结果。
             let report: StConversionReport | undefined
             const topRel = (path: string): string => {
@@ -1561,6 +1649,37 @@ export function registerSettingsBridge(
             }
             let presetYaml = normalized.find((entry) => topRel(entry.path) === 'preset.yml')
             if (presetYaml === undefined) presetYaml = normalized.find(isDefinition)
+            // 多顺序组且按优先级无法明确选择时：预览只回候选，UI 先让用户选组再重新预览；
+            // 提交仍拒绝——候选状态从未宣称已转换，也没有可用的预览版本凭据。
+            for (const entry of normalized) {
+              if (!/\.json$/i.test(topRel(entry.path))) continue
+              let parsed: unknown
+              try {
+                parsed = JSON.parse(entry.content)
+              } catch {
+                continue // 非法 JSON 由转换路径给出带上下文的错误
+              }
+              const state = stOrderSelectionState(parsed, { characterId: promptOrderCharacterId })
+              if (!state.needsSelection) continue
+              if (request.params.preview) {
+                writeBridgeJson(res, 200, {
+                  ok: true,
+                  value: {
+                    preview: true,
+                    state: 'needs-order-selection',
+                    sourceName: topRel(entry.path),
+                    candidates: state.candidates,
+                  },
+                })
+                return
+              }
+              writeBridgeJson(res, 400, {
+                ok: false,
+                code: 'preset-package-invalid',
+                message: 'SillyTavern prompt_order 包含多个角色，请先选择顺序组再提交',
+              })
+              return
+            }
             // SillyTavern JSON 预设：无定义文件时把所有 .json 交给转换引擎
             // （角色卡 × 响应预设多文件 → 合并为单个预设），转换消费的 json 不再落盘。
             if (presetYaml === undefined) {
@@ -1569,11 +1688,19 @@ export function registerSettingsBridge(
                 try {
                   const parts = stJsons.map((entry) => {
                     const baseName = topRel(entry.path).replace(/\.json$/i, '') || 'sillytavern'
-                    return convertStToPresetWithReport(JSON.parse(entry.content), baseName, { characterId: promptOrderCharacterId })
+                    return { path: topRel(entry.path), ...convertStToPresetWithReport(JSON.parse(entry.content), baseName, { characterId: promptOrderCharacterId }) }
                   })
-                  const merged = parts.length > 1 ? mergeStPresets(parts.map((part) => part.spec)) : parts[0]!.spec
-                  report = parts.length > 1 ? mergeStConversionReports(parts.map((part) => part.report)) : parts[0]!.report
-                  presetYaml = { path: 'preset.yml', content: stringifyYaml(merged, { lineWidth: 0 }) }
+                  // 合并与报告同源：报告里的 targetId 直接消费合并时的 id 映射。
+                  const mergedSpec = parts.length > 1
+                    ? mergeStPresetsWithReport(parts.map((part) => part.spec))
+                    : { spec: parts[0]!.spec, idMap: undefined }
+                  report = parts.length > 1
+                    ? mergeStConversionReports(parts.map((part) => part.report), parts.map((part, index) => ({
+                      sourceName: part.path,
+                      ...(mergedSpec.idMap?.get(index) === undefined ? {} : { idMap: mergedSpec.idMap.get(index)! }),
+                    })))
+                    : parts[0]!.report
+                  presetYaml = { path: 'preset.yml', content: stringifyYaml(mergedSpec.spec, { lineWidth: 0 }) }
                   normalized = [
                     ...normalized.filter((entry) => !/\.json$/i.test(topRel(entry.path))),
                     presetYaml,
@@ -1607,20 +1734,44 @@ export function registerSettingsBridge(
               return
             }
             // 预设 id 取自 preset.yml；缺失时用 preset.yml 所在目录名（单文件导入无目录段 → imported-preset）。
-            // 预览：与提交共用上面的转换结果，只回报告与来源摘要，不落盘、不重建、不执行宏。
-            if (record.preview === true) {
-              writeBridgeJson(res, 200, {
-                ok: true,
-                value: { preview: true, sourceDigest, ...(report === undefined ? {} : { report }) },
-              })
-              return
-            }
             const slashIdx = presetYaml.path.lastIndexOf('/')
             const topDir = slashIdx >= 0 ? presetYaml.path.slice(0, slashIdx) : ''
             const fallback = /^[a-zA-Z0-9][a-zA-Z0-9-]*$/.test(topDir) ? topDir : 'imported-preset'
             const id = parseImportedPresetId(presetYaml.content, fallback)
             const presetRoot = userPresetsDir()
             const targetDir = join(presetRoot, id)
+            // 预览版本：文件、实际选组、转换器版本与目标身份（含目标当前内容）一起参与，
+            // 由服务端计算；客户端只回传，凭据本身不是写入授权。
+            const previewRevision = computePreviewRevision({
+              files: normalized,
+              ...(promptOrderCharacterId === undefined ? {} : { orderCharacterId: promptOrderCharacterId }),
+              converter: ST_CONVERTER_VERSION,
+              target: {
+                kind: 'preset-package',
+                targetId: id,
+                targetVersion: directoryVersionOf(targetDir),
+                ownerPreset: basename(presetRoot),
+              },
+            })
+            // 预览：与提交共用上面的转换结果，只回报告与来源/版本凭据，不落盘、不重建、不执行宏。
+            if (request.params.preview) {
+              writeBridgeJson(res, 200, {
+                ok: true,
+                value: { preview: true, state: 'ready', sourceDigest, previewRevision, ...(report === undefined ? {} : { report }) },
+              })
+              return
+            }
+            // 提交：预览版本必须匹配（文件、选组、转换器、目标身份与目标当前内容）。
+            if (request.params.expectedPreviewRevision !== undefined) {
+              if (request.params.expectedPreviewRevision !== previewRevision) {
+                writeBridgeJson(res, 409, { ok: false, code: 'preset-preview-stale', message: '预览已过期：文件、顺序组或目标已变化，请重新预览后再导入' })
+                return
+              }
+            } else if (promptOrderCharacterId !== undefined) {
+              // 旧调用只带文件摘要、却要求新的选组覆盖：不授予新的选组保证，要求重新预览。
+              writeBridgeJson(res, 409, { ok: false, code: 'preset-preview-stale', message: '缺少预览版本凭据：请重新预览并选择顺序组后再导入' })
+              return
+            }
             // 同名预设已存在 → 先备份（导入失败时恢复，成功后保留备份供回退）。
             let backupDir: string | undefined
             if (existsSync(targetDir)) {
@@ -1826,43 +1977,99 @@ export function registerSettingsBridge(
               return
             }
             const record = body as Record<string, unknown>
-            const files = Array.isArray(record.files) ? record.files : []
-            const normalized = files.flatMap((entry) => {
-              if (entry === null || typeof entry !== 'object') return []
+            // 与预设包同一套入口校验：非法 preview/摘要一律 400，且发生在写入之前。
+            const request = readImportRequestParams(record)
+            if (!request.ok) {
+              writeBridgeJson(res, 400, { ok: false, code: 'characters-rejected', message: request.message })
+              return
+            }
+            const upload = readBridgeFiles(record.files)
+            if (!upload.ok) {
+              writeBridgeJson(res, 400, { ok: false, code: 'characters-rejected', message: upload.message })
+              return
+            }
+            const normalized: Array<{ path: string; content: string }> = []
+            for (const [index, entry] of upload.files.entries()) {
               const f = entry as { path?: unknown; content?: unknown }
-              const path = typeof f.path === 'string' && f.path.length > 0 ? f.path : ''
-              const content = typeof f.content === 'string' ? f.content : ''
-              if (path.length === 0) return []
+              const path = typeof f.path === 'string' ? f.path : ''
+              if (typeof f.content !== 'string') {
+                writeBridgeJson(res, 400, { ok: false, code: 'characters-rejected', message: `files[${index}].content 必须是字符串` })
+                return
+              }
+              if (path.length === 0) {
+                writeBridgeJson(res, 400, { ok: false, code: 'characters-rejected', message: `files[${index}] 缺少 path` })
+                return
+              }
               // 逐段校验防穿越：拒绝 .. 路径段与绝对路径；合法文件名含 '..'（如 a..b.json）不误伤。
-              if (/^[a-zA-Z]:/.test(path) || path.startsWith('/') || path.startsWith('\\')) return []
-              if (path.split(/[\\/]/).some((segment) => segment === '..')) return []
-              return [{ path, content }]
-            })
+              if (/^[a-zA-Z]:/.test(path) || path.startsWith('/') || path.startsWith('\\')
+                || path.split(/[\\/]/).some((segment) => segment === '..')) {
+                writeBridgeJson(res, 400, { ok: false, code: 'characters-rejected', message: `files[${index}].path 非法` })
+                return
+              }
+              normalized.push({ path, content: f.content })
+            }
             if (normalized.length === 0) {
               writeBridgeJson(res, 400, { ok: false, code: 'characters-rejected', message: '未收到角色卡文件' })
               return
             }
             const digest = createHash('sha256')
               .update(normalized.map((entry) => `${entry.path}\u0000${entry.content}`).join('\u0000')).digest('hex')
-            if (typeof record.expectedSourceDigest === 'string' && record.expectedSourceDigest !== digest) {
+            if (request.params.expectedSourceDigest !== undefined && request.params.expectedSourceDigest !== digest) {
               writeBridgeJson(res, 409, { ok: false, code: 'characters-preview-stale', message: '预览已过期：文件或来源内容已变化，请重新预览后再导入' })
               return
             }
-            // 预览只转换并回报告，不写角色库；提交仍走既有导入路径（写入白名单校验不因预览放宽）。
-            if (record.preview === true) {
-              const preview = previewCharacterCard(normalized)
-              if (!preview.ok) {
-                writeBridgeJson(res, 400, { ok: false, code: 'characters-rejected', message: preview.message })
+            const orderCharacterId = request.params.promptOrderCharacterId
+            const conversionOptions = orderCharacterId === undefined ? {} : { characterId: orderCharacterId }
+            // 与预设包同一选组事实：多组无法明确选择时预览只回候选，提交拒绝。
+            const orderState = characterOrderSelectionState(normalized, conversionOptions)
+            if (orderState.needsSelection) {
+              if (request.params.preview) {
+                writeBridgeJson(res, 200, {
+                  ok: true,
+                  value: { preview: true, state: 'needs-order-selection', candidates: orderState.candidates },
+                })
                 return
               }
+              writeBridgeJson(res, 400, { ok: false, code: 'characters-rejected', message: 'SillyTavern prompt_order 包含多个角色，请先选择顺序组再提交' })
+              return
+            }
+            const presetRoot = dirname(dir)
+            // 纯转换（不写盘）先算出目标身份：同一 options 供预览、版本与真正入库使用。
+            const converted = previewCharacterCard(normalized, conversionOptions)
+            if (!converted.ok) {
+              writeBridgeJson(res, 400, { ok: false, code: 'characters-rejected', message: converted.message })
+              return
+            }
+            const previewRevision = computePreviewRevision({
+              files: normalized,
+              ...(orderCharacterId === undefined ? {} : { orderCharacterId }),
+              converter: ST_CONVERTER_VERSION,
+              target: {
+                kind: 'character-card',
+                targetId: converted.id,
+                targetVersion: directoryVersionOf(join(charactersDir(presetRoot), converted.id)),
+                ownerPreset: basename(presetRoot),
+              },
+            })
+            // 预览只转换并回报告，不写角色库；提交仍走既有导入路径（写入白名单校验不因预览放宽）。
+            if (request.params.preview) {
               writeBridgeJson(res, 200, {
                 ok: true,
-                value: { preview: true, name: preview.name, sourceDigest: preview.sourceDigest, report: preview.report },
+                value: { preview: true, state: 'ready', name: converted.name, sourceDigest: converted.sourceDigest, previewRevision, report: converted.report },
               })
               return
             }
+            if (request.params.expectedPreviewRevision !== undefined) {
+              if (request.params.expectedPreviewRevision !== previewRevision) {
+                writeBridgeJson(res, 409, { ok: false, code: 'characters-preview-stale', message: '预览已过期：文件、顺序组或角色库目标已变化，请重新预览后再导入' })
+                return
+              }
+            } else if (orderCharacterId !== undefined) {
+              writeBridgeJson(res, 409, { ok: false, code: 'characters-preview-stale', message: '缺少预览版本凭据：请重新预览并选择顺序组后再导入' })
+              return
+            }
             if (!guardPresetWrite(dir, res)) return
-            const result = importCharacterCard(dirname(dir), normalized)
+            const result = importCharacterCard(presetRoot, normalized, conversionOptions)
             if (!result.ok) {
               writeBridgeJson(res, 400, { ok: false, code: 'characters-rejected', message: result.message })
               return
@@ -2278,7 +2485,7 @@ export function registerSettingsBridge(
           writeBridgeJson(res, 400, { ok: false, code: 'world-book-diagnostics-invalid', message: session.message })
           return
         }
-        const empty = { records: [], truncated: false, step: 0 }
+        const empty = { records: [], truncated: false, step: 0, evaluated: false }
         const agent = session.sessionId === undefined ? undefined : stx.agents.get(session.sessionId as never) as { session?: unknown } | undefined
         const snapshot = agent?.session === undefined ? empty : lastWorldBookDiagnostics(agent.session)
         writeBridgeJson(res, 200, {
@@ -2287,6 +2494,7 @@ export function registerSettingsBridge(
             records: Array.isArray(snapshot.records) ? snapshot.records.slice(0, 200) : [],
             truncated: snapshot.truncated === true,
             step: typeof snapshot.step === 'number' ? snapshot.step : 0,
+            evaluated: snapshot.evaluated === true,
           },
         })
       })

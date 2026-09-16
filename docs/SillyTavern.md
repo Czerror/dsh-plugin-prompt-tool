@@ -23,7 +23,7 @@
 | 顺序表的 `enabled` | 优先于 `prompts[].enabled`；未在所选表出现的条目禁用；无顺序表时才回退条目自身 |
 | 相对顺序 | 使用顺序表次序；无顺序表时使用数组次序。与原始 UUID 对应后再生成 id |
 | `role: system` | `system-section`，同层可合并 |
-| `role: user/assistant` | `pre-step`；相对位置映射到消息批头部或用户消息之后 |
+| `role: user/assistant/model` | `pre-step`；相对位置映射到消息批头部或用户消息之后。pre-step 只发出 user：assistant/model 在导入期降级，原角色保留在 `params.stSource.role` |
 | `marker: true` / `SPresetSettings` | 位置占位和扩展设置 dump 不作为正文注入；记录在 `meta.stDroppedMarkers` |
 | `injection_position: 1` | 不具备完整历史深度等价性；原 position/depth/order/role 存 `params.stSource`，报告降级 |
 | `injection_trigger` | 保留在 `params.stSource.triggers`；非空时报生成类型不兼容提示 |
@@ -44,9 +44,9 @@
 |---|---|
 | `description/personality/scenario` | 角色设定 system-section；同名内容变量可引用 |
 | `system_prompt/post_history_instructions` | system-section；不是 ST 对 main/jailbreak 的完整覆盖语义 |
-| `first_mes` | 一次性 assistant 开场白，`dedupe: session` |
-| `alternate_greetings` | 独立备用开场白，默认禁用，用户可切换 |
-| `mes_example` | 按 `<START>` 和角色标记拆成一次性示例消息；无法识别的块保留为 user 文本 |
+| `first_mes` | 一次性开场白，`dedupe: session`；ST 的 assistant 侧降级为 user，原角色存 `params.stSource.role` |
+| `alternate_greetings` | 独立备用开场白，默认禁用，用户可切换；同样降级为 user |
+| `mes_example` | 按 `<START>` 和角色标记拆成一次性示例消息；assistant 轮次降级为 user（原角色存 `params.stSource.role`），无法识别的块保留为 user 文本 |
 | `character_book.entries` | ST world-book 配置 |
 | `extensions` 的 regex/TavernHelper/JS | 不执行、不放入提示正文，报告兼容提示 |
 
@@ -112,8 +112,9 @@ ST 导入在既有 `buildWorldBookEntry` 结构上添加 `params.stWorldBook`，
 | `insertion_order/order` | 选择优先级高值优先；最终正文按 ST unshift 后的低值在前 |
 
 位置与角色仍有边界：pre-step 不能无损插入历史深度，也不能创建 system 角色消息。
-position=4 降级为当前消息批末尾；其他世界书位置落在消息批头部。assistant 保留，system
-降为 user；原位置/深度/角色仍在 stWorldBook 中并产生兼容提示，不冒充等价。
+position=4 降级为当前消息批末尾；其他世界书位置落在消息批头部。`role: 0`（system）与
+`role: 2`（assistant）都降级为 user；原位置/深度/角色仍在 stWorldBook 中并产生诊断，
+不冒充等价。
 
 别名冲突按固定优先级读取：同一作用域内既有拼写（驼峰主名）优先于兼容别名，`extensions`
 整体优先于条目顶层；显式 `false`/`0` 不当作缺省值丢弃。
@@ -126,9 +127,51 @@ position=4 降级为当前消息批末尾；其他世界书位置落在消息批
 - 新导入才能恢复源文件中的纯赋值卡、真实顺序表及遗漏字段；旧转换产物没有这些信息，
   单纯重新物化不能恢复，需用户重新导入并确认是否覆盖手工修改。
 - 引擎更新后通过现有重建流程物化；运行中的 DSH 是否重启由用户决定，插件不会自动重启。
-- 回归入口：`test/host/st-compatibility.test.mjs`、`test/engine/st-macros.test.mjs`、
+- 回归入口：`test/host/st-compatibility.test.mjs`、`test/host/pre-step-persistence.test.mjs`、
+  `test/engine/st-macros.test.mjs`、
   `test/engine/st-render.test.mjs`、`test/engine/st-world-book.test.mjs` 和
   `test/engine/official-variable-regression.test.mjs`。从仓库规定的隔离 cwd 运行完整测试。
+
+### pre-step 角色出口（2026-09-17）
+
+- 宿主把 pre-step 批次的每条消息写成 `user/message` 事件，事件校验要求 `role === "user"`；
+  assistant 只能来自模型侧 `assistant/message` 事件。因此 ST 的 assistant/system 角色在
+  **导入期**就降级为 user，**运行出口**再兜底一次：执行器创建消息时统一发出 user，旧预设里
+  声明的 assistant（含模板 patch 给出的角色）保留正文、只告警一次，原角色记入
+  `source.requestedRole`，不把非法值传给宿主。
+- 导入期降级逐条留痕：条目分类为 `degraded`、原因码 `assistant-role-downgrade`，原角色保留在
+  `params.stSource.role`（prompt / 开场白 / 示例对话）或 `params.stWorldBook.role`（世界书），
+  并产生 info 级诊断（同类来源只发一条，不刷屏）。预览报告因此不把这些条目报成「等价」。
+- 兼容边界：旧 `preset.yml` 里的 `role: assistant` 仍可加载（引擎接受 `user` 与 `assistant`
+  两种输入），但工作台角色选项只提供可发出角色 `user`；已有 assistant 条目在表单里显示降级提示，
+  不做自动回写。
+- 验收入口：`test/host/pre-step-persistence.test.mjs` 用已发布 `@deepseek-ai/dsh-session` 走
+  「注入 → 事件持久化 → 重新加载 → 派生请求」，旧 assistant 夹具必须在加载时触发真实角色校验错误。
+
+### 顺序组选择、预览版本与报告身份（2026-09-17）
+
+- 选组优先级（唯一实现，转换与预览共用）：请求显式 `promptOrderCharacterId` → 文件内
+  `character_id` → 全局组 `100001` → 仅有一组时回退。显式选择必须命中：找不到时明确报错，
+  不回落；同一 `character_id` 重复出现时拒绝（无法明确对应）。
+- 首次预览即歧义（多组且按优先级无法确定）时返回 `state: 'needs-order-selection'` 与有界候选
+  （`candidates: [{ characterId, entries }]` 加来源文件显示名），此时**没有**报告与写入凭据、
+  确认按钮禁用；用户在预览卡里选择顺序组后立即重新预览，`state: 'ready'` 才可确认。
+  提交仍拒绝歧义——候选状态从未宣称已转换。
+- 预览版本：预览除 `sourceDigest`（本次上传文件内容）外返回 `previewRevision`，由服务端对
+  预览协议版本、转换器版本、规范化文件有序数组、实际选组与目标身份（导入类型、目标 id、
+  目标**当前**内容版本、目标归属）计算。提交携带 `expectedPreviewRevision`，服务端重算：
+  文件、选组、转换器版本或目标（含预览期间被用户改动的目标）任一不符即 409
+  （`preset-preview-stale` / `characters-preview-stale`）且零写盘。目标"不存在"与"已存在"
+  必须可区分。旧调用只带 `expectedSourceDigest` 时仍按文件校验，但若要新的选组覆盖则必须重新预览。
+- 客户端不计算版本：换文件、换组、目标变化都让旧 ready 失效并重新预览；迟到的预览响应按
+  请求序号丢弃，重预览期间卡片保留但确认禁用（可继续换组）。
+- 报告身份：多文件合并的最终 id 只由合并分配一次，报告条目的 `targetId` 消费同一份映射
+  （`targetIndex` 关联到生成配置下标），并附 `sourceName` / `sourceFileIndex`；
+  `sourceId` 表达来源身份、`targetId` 表达目标身份，被排除条目没有目标身份。
+- 有损信息完整展示：预览卡渲染服务端返回的全部 warning、info 级降级与被排除条目
+  （长列表在容器内滚动，容器可键盘聚焦），每条带来源/目标定位，不存在前端二次截断。
+  服务端报告被截断时明确给出已展示条目数、诊断数与来源条目总数，并建议拆分导入复核，
+  不标成"全部已展示"。
 
 ### 导入预览与转换报告（2026-09-16）
 
@@ -137,6 +180,11 @@ position=4 降级为当前消息批末尾；其他世界书位置落在消息批
 
 - 预览与提交同源：`/import-preset-package`、`/characters-import` 带 `preview: true` 时
   只做转换并返回 `report` + `sourceDigest`，不落盘、不重建、不执行宏。
+- 入口参数严格区分缺省与非法类型：`preview` 只接受布尔（省略或 `false` = 显式提交，
+  `true` = 只读预览）；字符串 `"true"`、数值、`null`、数组、对象返回 400。
+  `expectedSourceDigest` 提供时必须是 SHA-256 十六进制摘要，`promptOrderCharacterId`
+  必须是有界非空字符串；`files` 容器与条目（path/content）类型错误一律 fail closed。
+  校验全部发生在创建目录、备份、写盘与重建之前，错误请求对目录树与重建回调零副作用。
 - 过期校验：提交带 `expectedSourceDigest` 时服务端按本次上传文件重算摘要，不一致返回
   409（`preset-preview-stale` / `characters-preview-stale`）且不写盘。
 - 报告内容：来源身份（文件显示名、原 identifier/uid、序号、顺序组）、目标身份（生成的

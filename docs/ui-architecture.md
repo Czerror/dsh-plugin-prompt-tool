@@ -530,6 +530,17 @@ promptConfigs 模块卡展开区按基础信息、注入规则、作用范围、
   `ui/ImportPreviewCard.tsx` 展示服务端同源转换报告与顺序组（官方 MenuSelect），确认后带 `sourceDigest` 提交；
   世界书筛选视图新增只读诊断卡 `features/prompts/WorldBookDiagnosticsCard.tsx`，数据来自
   `/world-book-diagnostics`，只读不触发求值。两处文案全部走 prompt-tool 字典（zh/en）。
+- 2026-09-17：导入确认生命周期显式分阶段（`reading → confirming → submitting`）。等待确认时
+  `ImportPreviewCard` 的确认/取消保持可用且可键盘聚焦，只有提交阶段才 `busy`；导入队列用同步标记
+  互斥，同一份预览只完成一次（连点确认最多一次提交）。提交失败保留文件与预览（再次确认即重试，
+  取消才跳过该文件），凭据过期直接要求重新导入；目标预设切换、页面卸载都会结束等待并让迟到响应失效。
+  两处入口（`PresetSwitcher`、`CharactersPage`）共用 `data/use-import-preview-flow.ts` 状态机。
+  回归入口：`test/client/import-preview-browser.test.mjs`（真实 Edge + 真实文件输入）与
+  `test/host/pre-step-persistence.test.mjs`。
+- 2026-09-17：同一流程覆盖顺序组候选与预览版本——`needs-order-selection` 只在候选卡里选组
+  （确认禁用），选组或换组都重新预览并把迟到的旧响应按请求序号丢弃；确认回传服务端
+  `previewRevision`。预览卡完整展示有损信息（warning / info / 被排除条目，各自滚动容器 +
+  定位行），不再有前端 20 条隐藏截断。
 
 ## 13. 维护清单
 

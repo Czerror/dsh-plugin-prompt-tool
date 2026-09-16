@@ -10,7 +10,8 @@ import type { PromptToolTranslate } from '../../locales.ts'
 import { DialogSurface } from '../../ui/DialogSurface.tsx'
 import { HintTooltip } from '../../ui/HintTooltip.tsx'
 import { ImportFileButton } from '../../ui/ImportFileButton.tsx'
-import { ImportPreviewCard, type ImportPreviewState } from '../../ui/ImportPreviewCard.tsx'
+import { ImportPreviewCard } from '../../ui/ImportPreviewCard.tsx'
+import { useImportPreviewFlow } from '../../data/use-import-preview-flow.ts'
 import { StatusBadge } from '../../ui/StatusBadge.tsx'
 import sharedCss from '../../ui/controls.module.css'
 import featureCss from './presets.module.css'
@@ -22,45 +23,48 @@ export const PresetSwitcher = memo(function PresetSwitcher(props: { store: Promp
   const fields = usePromptToolFields(store, (value) => value)
   const presets = store.meta.presets ?? []
   const templates = store.meta.builtinTemplates ?? []
-  const [importing, setImporting] = useState(false)
   const [confirmingDelete, setConfirmingDelete] = useState<string | undefined>(undefined)
   const [pickerOpen, setPickerOpen] = useState(false)
-  const [preview, setPreview] = useState<ImportPreviewState | undefined>(undefined)
   const pickerAnchorRef = useRef<HTMLButtonElement>(null)
 
-  /** 预览导入包：服务端同源转换并回报告，不写盘；确认后才带来源摘要提交。 */
-  const previewPreset = async (entries: Array<{ path: string; content: string }>): Promise<void> => {
-    setImporting(true)
-    try {
-      const res = await bridgeCall('importPresetPackage', { files: entries, preview: true })
-      if (res.ok) setPreview({ files: entries, sourceDigest: res.value.sourceDigest ?? '', report: res.value.report })
-      else store.showNotice('error', t('presetSwitcher.notice.importFailed', { reason: res.code === 'preset-preview-stale' ? t('importPreview.stale') : res.message ?? 'settings bridge unavailable' }))
-    } finally {
-      setImporting(false)
-    }
-  }
-
-  /** 确认导入：回传预览时的文件与来源摘要；服务端重算摘要拒绝过期预览。 */
-  const confirmPreset = async (): Promise<void> => {
-    if (preview === undefined) return
-    setImporting(true)
-    try {
+  // 预览流程（与角色卡 JSON 导入共用同一状态机）：确认回传来源摘要 + 预览版本。
+  const flow = useImportPreviewFlow({
+    preview: async (files, orderCharacterId) => {
+      const res = await bridgeCall('importPresetPackage', {
+        files,
+        preview: true,
+        ...(orderCharacterId === undefined ? {} : { promptOrderCharacterId: orderCharacterId }),
+      })
+      if (!res.ok) return { kind: 'error', message: res.message ?? 'settings bridge unavailable' }
+      const value = res.value
+      if (value.state === 'needs-order-selection') {
+        return { kind: 'candidates', candidates: value.candidates ?? [], ...(value.sourceName === undefined ? {} : { sourceName: value.sourceName }) }
+      }
+      return {
+        kind: 'ready',
+        ...(value.sourceDigest === undefined ? {} : { sourceDigest: value.sourceDigest }),
+        ...(value.previewRevision === undefined ? {} : { previewRevision: value.previewRevision }),
+        ...(value.report === undefined ? {} : { report: value.report }),
+      }
+    },
+    commit: async (preview) => {
       const res = await bridgeCall('importPresetPackage', {
         files: preview.files,
         expectedSourceDigest: preview.sourceDigest,
+        ...(preview.previewRevision === undefined ? {} : { expectedPreviewRevision: preview.previewRevision }),
         ...(preview.groupCharacterId === undefined ? {} : { promptOrderCharacterId: preview.groupCharacterId }),
       })
-      if (res.ok) {
-        setPreview(undefined)
-        store.showNotice('ok', t('presetSwitcher.notice.imported', { id: res.value.id }))
-        await store.load()
-      } else {
-        store.showNotice('error', t('presetSwitcher.notice.importFailed', { reason: res.code === 'preset-preview-stale' ? t('importPreview.stale') : res.message ?? 'settings bridge unavailable' }))
-      }
-    } finally {
-      setImporting(false)
-    }
-  }
+      if (res.ok) return { ok: true, ...(res.value.id === undefined ? {} : { label: res.value.id }) }
+      return { ok: false, stale: res.code === 'preset-preview-stale' || res.code === 'characters-preview-stale', message: res.message ?? 'settings bridge unavailable' }
+    },
+    onCommitted: async (label) => {
+      store.showNotice('ok', t('presetSwitcher.notice.imported', { id: label ?? '' }))
+      await store.load()
+    },
+    onError: (message, stale) => {
+      store.showNotice('error', t('presetSwitcher.notice.importFailed', { reason: stale ? t('importPreview.stale') : message }))
+    },
+  })
 
   /** 导入单个配置文件：preset.yml / 任意 *.yml/*.yaml / SillyTavern *.json（服务端按扩展名分流）。 */
   const pickPresetYaml = (files: File[]): void => {
@@ -69,7 +73,7 @@ export const PresetSwitcher = memo(function PresetSwitcher(props: { store: Promp
     void (async () => {
       const [entry] = await readImportFiles([file], 'text')
       if (entry === undefined) return
-      await previewPreset([{ ...entry, path: /\.json$/i.test(entry.path) ? entry.path : 'preset.yml' }])
+      await flow.run([{ ...entry, path: /\.json$/i.test(entry.path) ? entry.path : 'preset.yml' }])
     })()
   }
 
@@ -77,7 +81,7 @@ export const PresetSwitcher = memo(function PresetSwitcher(props: { store: Promp
   const pickPresetDir = (files: File[]): void => {
     if (files.length === 0) return
     void (async () => {
-      await previewPreset(await readImportFiles(files, 'text'))
+      await flow.run(await readImportFiles(files, 'text'))
     })()
   }
 
@@ -155,7 +159,7 @@ export const PresetSwitcher = memo(function PresetSwitcher(props: { store: Promp
           <ImportFileButton
             label={t('presetSwitcher.import')}
             busyLabel={t('presetSwitcher.importing')}
-            busy={importing}
+            busy={flow.phase !== 'idle'}
             accept=".yml,.yaml,.json"
             ariaLabel={t('presetSwitcher.import.aria')}
             className={styles.pillButton}
@@ -164,7 +168,7 @@ export const PresetSwitcher = memo(function PresetSwitcher(props: { store: Promp
           <ImportFileButton
             label={t('presetSwitcher.importDir')}
             busyLabel={t('presetSwitcher.importing')}
-            busy={importing}
+            busy={flow.phase !== 'idle'}
             directory
             ariaLabel={t('presetSwitcher.importDir.aria')}
             className={styles.pillButton}
@@ -175,14 +179,16 @@ export const PresetSwitcher = memo(function PresetSwitcher(props: { store: Promp
           </button>
         </span>
       </div>
-      {preview !== undefined && (
+      {(flow.preview !== undefined || flow.candidates !== undefined) && (
         <ImportPreviewCard
           t={t}
-          preview={preview}
-          busy={importing}
-          onGroupChange={(characterId) => setPreview({ ...preview, groupCharacterId: characterId })}
-          onConfirm={() => void confirmPreset()}
-          onCancel={() => setPreview(undefined)}
+          preview={flow.preview}
+          candidates={flow.candidates}
+          busy={flow.phase === 'submitting'}
+          confirmDisabled={flow.phase !== 'confirming'}
+          onGroupChange={flow.chooseGroup}
+          onConfirm={flow.confirm}
+          onCancel={flow.cancel}
         />
       )}
       <div className={styles.presetGrid}>

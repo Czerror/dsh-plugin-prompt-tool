@@ -91,6 +91,10 @@ export function PromptConfigForm(props: {
     if (Object.keys(next).length > 0) onPatchPolicy?.(next)
   }
   const policy = fieldPolicyFor(meta, config.layer)
+  // 可发出角色（引擎 EMITTABLE_ROLES）之外的值是旧输入：可加载、可保存，但运行时降级，
+  // 表单必须说明这一点，而不是把非法角色继续摆成可选新值。
+  const roleDowngraded = meta.roles.length > 0
+    && typeof config.role === 'string' && config.role.length > 0 && !meta.roles.includes(config.role)
   const strategy = instructionHint ? 'placeholder' : config.strategy ?? 'static'
   const placeholder = strategy === 'placeholder' && policy.placeholder
   const fillOptions = ['', ...meta.fills]
@@ -127,6 +131,7 @@ export function PromptConfigForm(props: {
       <div className={styles.configGrid}>
         <OptionField t={t} className={styles.fieldSpan3} label={t('form.kind.label')} hint={t('form.kind.hint')} value={config.configKind} options={meta.slotKinds} fallback="ordered" labelKeys={SLOT_KIND_LABEL_KEYS} disabled={locked} onChange={(value) => onPatch({ configKind: value })} />
         {policy.role && <OptionField t={t} className={styles.fieldSpan2} label={t('form.role.label')} hint={t('form.role.hint')} value={config.role} options={meta.roles} fallback="user" labelKeys={ROLE_LABEL_KEYS} disabled={locked} onChange={(value) => onPatch({ role: value })} />}
+        {policy.role && roleDowngraded && <p className={clsx(styles.configFieldHint, styles.fieldSpan9)}>{t('form.role.downgraded')}</p>}
         {policy.position && <OptionField t={t} className={styles.fieldSpan3} label={t('form.position.label')} hint={t('form.position.hint')} value={config.position} options={meta.positions} fallback="after-user" labelKeys={POSITION_LABEL_KEYS} onChange={(value) => onPatch({ position: value })} />}
         {policy.merge && <OptionField t={t} className={styles.fieldSpan2} label={t('form.merge.label')} hint={t('form.merge.hint')} value={config.mergeMode} options={meta.mergeModes} fallback="separate" labelKeys={MERGE_MODE_LABEL_KEYS} disabled={locked} onChange={(value) => onPatch({ mergeMode: value })} />}
         {policy.order && (locked

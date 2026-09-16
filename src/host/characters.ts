@@ -8,7 +8,8 @@ import { join, basename, dirname } from 'node:path'
 import { parse as parseYaml, parseDocument, stringify as stringifyYaml } from 'yaml'
 import { inflateSync } from 'node:zlib'
 import { createHash } from 'node:crypto'
-import { convertStToPresetWithReport, mergeStConversionReports, mergeStPresets } from './sillytavern.ts'
+import { convertStToPresetWithReport, mergeStConversionReports, mergeStPresetsWithReport, stOrderSelectionState } from './sillytavern.ts'
+import type { StConversionOptions, StOrderGroupSummary } from './sillytavern.ts'
 import { appendPresetModules, withPresetDoc } from './manifest.ts'
 import { buildWorldBookEntry } from './worldbook.ts'
 import type { PresetSpec } from './manifest.ts'
@@ -162,12 +163,40 @@ function cardNameFromJson(jsonText: string, fallback: string): string {
   return fallback
 }
 
-function convertCharacterJsons(jsons: CharacterImportFile[]): { converted: PresetSpec; jsonText: string; report: StConversionReport } {
+function convertCharacterJsons(
+  jsons: CharacterImportFile[],
+  options: StConversionOptions = {},
+): { converted: PresetSpec; jsonText: string; report: StConversionReport } {
   const baseName = (entry: CharacterImportFile): string => basename(entry.path).replace(/\.json$/i, '') || 'character'
-  const parts = jsons.map((entry) => convertStToPresetWithReport(JSON.parse(entry.content), baseName(entry)))
-  const converted = parts.length > 1 ? mergeStPresets(parts.map((part) => part.spec)) : parts[0]!.spec
-  const report = parts.length > 1 ? mergeStConversionReports(parts.map((part) => part.report)) : parts[0]!.report
-  return { converted, jsonText: jsons[0]!.content, report }
+  const parts = jsons.map((entry) => convertStToPresetWithReport(JSON.parse(entry.content), baseName(entry), options))
+  if (parts.length === 1) {
+    return { converted: parts[0]!.spec, jsonText: jsons[0]!.content, report: parts[0]!.report }
+  }
+  // 合并与报告消费同一份 id 映射：报告里的 targetId 必须是最终写盘的配置 id。
+  const { spec, idMap } = mergeStPresetsWithReport(parts.map((part) => part.spec))
+  const report = mergeStConversionReports(parts.map((part) => part.report), jsons.map((entry, index) => ({
+    sourceName: basename(entry.path),
+    ...(idMap.get(index) === undefined ? {} : { idMap: idMap.get(index)! }),
+  })))
+  return { converted: spec, jsonText: jsons[0]!.content, report }
+}
+
+/** 角色卡 JSON 的选组状态：与预设包共用同一实现，预览用候选、提交用拒绝。 */
+export function characterOrderSelectionState(files: CharacterImportFile[], options: StConversionOptions = {}):
+  { needsSelection: true; candidates: StOrderGroupSummary[] }
+  | { needsSelection: false; error?: string } {
+  for (const entry of files) {
+    if (!/\.json$/i.test(entry.path)) continue
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(entry.content)
+    } catch {
+      continue
+    }
+    const state = stOrderSelectionState(parsed, options)
+    if (state.needsSelection) return state
+  }
+  return { needsSelection: false }
 }
 
 /** 角色卡导入来源摘要：提交时由服务端按本次上传内容重算，预览身份不构成写入凭证。 */
@@ -175,15 +204,16 @@ export function characterImportDigest(files: CharacterImportFile[]): string {
   return createHash('sha256').update(files.map((entry) => `${entry.path}\u0000${entry.content}`).join('\u0000')).digest('hex')
 }
 
-/** 角色卡预览：与入库共用同一转换实现，只返回报告、不写角色库。 */
+/** 角色卡预览：与入库共用同一转换实现（含同一选组选项），只返回报告、不写角色库。 */
 export function previewCharacterCard(
   files: CharacterImportFile[],
-): { ok: true; name: string; sourceDigest: string; report: StConversionReport } | { ok: false; message: string } {
+  options: StConversionOptions = {},
+): { ok: true; name: string; id: string; sourceDigest: string; report: StConversionReport } | { ok: false; message: string } {
   const jsons = files.filter((entry) => /\.json$/i.test(entry.path))
   if (jsons.length === 0) return { ok: false, message: '缺少角色卡 JSON（PNG 导入需同时携带解析出的角色卡 JSON）' }
   try {
-    const { converted, report } = convertCharacterJsons(jsons)
-    return { ok: true, name: converted.name, sourceDigest: characterImportDigest(files), report }
+    const { converted, report } = convertCharacterJsons(jsons, options)
+    return { ok: true, name: converted.name, id: converted.id, sourceDigest: characterImportDigest(files), report }
   } catch (error) {
     return { ok: false, message: `角色卡转换失败：${error instanceof Error ? error.message : String(error)}` }
   }
@@ -281,13 +311,14 @@ function decodePngCharacterCard(buffer: Buffer): { jsonText: string; avatar: Buf
 export function importCharacterCard(
   presetRoot: string,
   files: CharacterImportFile[],
+  options: StConversionOptions = {},
 ): { ok: true; id: string; name: string } | { ok: false; message: string } {
   const jsons = files.filter((entry) => /\.json$/i.test(entry.path))
   if (jsons.length === 0) {
     return { ok: false, message: '缺少角色卡 JSON（PNG 导入需同时携带解析出的角色卡 JSON）' }
   }
   try {
-    const { converted, jsonText } = convertCharacterJsons(jsons)
+    const { converted, jsonText } = convertCharacterJsons(jsons, options)
     const avatar = files.find((entry) => /^avatar\.png$/i.test(entry.path))
     return persistCharacterCard(
       presetRoot,
@@ -305,6 +336,7 @@ export function importCharacterCardFile(
   presetRoot: string,
   filePath: string,
   fileName = basename(filePath),
+  options: StConversionOptions = {},
 ): { ok: true; id: string; name: string } | { ok: false; message: string } {
   try {
     const buffer = readFileSync(filePath)
@@ -312,12 +344,12 @@ export function importCharacterCardFile(
       const { jsonText, avatar } = decodePngCharacterCard(buffer)
       const fallback = basename(fileName).replace(/\.[^.]+$/, '') || 'character'
       const baseName = cardNameFromJson(jsonText, fallback)
-      const { converted } = convertCharacterJsons([{ path: `${baseName}.json`, content: jsonText }])
+      const { converted } = convertCharacterJsons([{ path: `${baseName}.json`, content: jsonText }], options)
       return persistCharacterCard(presetRoot, converted, jsonText, avatar)
     }
     const jsonText = buffer.toString('utf8')
     const fallback = basename(fileName).replace(/\.[^.]+$/, '') || 'character'
-    const { converted } = convertCharacterJsons([{ path: `${fallback}.json`, content: jsonText }])
+    const { converted } = convertCharacterJsons([{ path: `${fallback}.json`, content: jsonText }], options)
     return persistCharacterCard(presetRoot, converted, jsonText)
   } catch (error) {
     return { ok: false, message: `角色卡转换失败：${error instanceof Error ? error.message : String(error)}` }

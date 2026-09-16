@@ -1,4 +1,24 @@
 /** 客户端共享类型：提示词配置草稿、层能力矩阵与引擎 /meta 载荷。 */
+import type { StConversionReport, StOrderGroupCandidate } from '../shared/bridge-contract.ts'
+
+/**
+ * 导入预览态（预设包与角色卡 JSON 共用）：文件与凭据在确认时原样回传。
+ * `previewRevision` 是服务端算的版本（绑定文件、选组、转换器与目标身份），
+ * 客户端不计算、只回传；凭据本身不是写入授权。
+ */
+export interface ImportPreviewState {
+  files: Array<{ path: string; content: string }>
+  sourceDigest: string
+  previewRevision?: string
+  report?: StConversionReport
+  groupCharacterId?: string
+}
+
+/** 顺序组候选（多 prompt_order 组无法明确对应时先让用户选组，再重新预览）。 */
+export interface ImportOrderCandidates {
+  sourceName?: string
+  candidates: StOrderGroupCandidate[]
+}
 
 /** 卡片来源：预设卡，或指向用户磁盘指令文件的文件卡（服务端生成，客户端只读）。 */
 export type CardOrigin =
@@ -84,7 +104,10 @@ export interface EngineMeta {
   promotions: string[]
   audienceModes: string[]
   modelScopes: string[]
+  /** 实际可发出的注入角色（pre-step 只接受 user）；表单只提供这些值。 */
   roles: string[]
+  /** 仍可加载的旧输入角色（含 assistant）；不等于可以继续新建。 */
+  acceptedRoles?: string[]
   mergeModes: string[]
   fills: string[]
   layerFieldPolicies: Record<string, LayerFieldPolicy>

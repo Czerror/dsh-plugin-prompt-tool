@@ -131,7 +131,17 @@ export const KNOWN_PROMOTIONS = new Set(['none', 'main', 'include-subagents'])
 export const KNOWN_AUDIENCES = new Set(['main', 'subagent'])
 export const KNOWN_MERGE_MODES = new Set(['separate', 'merged'])
 export const KNOWN_MODEL_SCOPES = new Set(['all', 'pro', 'flash'])
+/**
+ * 可接受的输入角色（兼容读取）：旧预设与旧 ST 导入可能声明 assistant，
+ * 加载时不以收紧 schema 让整套旧预设失败。
+ */
 export const KNOWN_ROLES = new Set(['user', 'assistant'])
+/**
+ * 实际可发出的角色：pre-step 批次逐条写成宿主 `user/message` 事件，事件校验要求
+ * role === 'user'。assistant 只能在运行出口降级为 user 并告警（executor.downgradeRole），
+ * 不得直接断言宿主契约。UI 的角色面以本集合为准。
+ */
+export const EMITTABLE_ROLES = new Set(['user'])
 export const KNOWN_FILLS = new Set(['instruction-hint', 'env-facts', 'skill-catalog'])
 
 /** 层能力矩阵：每个字段只在对应注入层生效。客户端表单据此动态渲染。 */
@@ -165,7 +175,9 @@ export function getEngineMeta() {
     promotions: [...KNOWN_PROMOTIONS].sort(),
   audienceModes: [...KNOWN_AUDIENCES].sort(),
     modelScopes: [...KNOWN_MODEL_SCOPES].sort(),
-    roles: [...KNOWN_ROLES].sort(),
+    // roles = 可发出角色（UI 只提供这些）；acceptedRoles = 仍可加载的旧输入（含 assistant）。
+    roles: [...EMITTABLE_ROLES].sort(),
+    acceptedRoles: [...KNOWN_ROLES].sort(),
     mergeModes: [...KNOWN_MERGE_MODES].sort(),
     fills: [...KNOWN_FILLS].sort(),
     layerFieldPolicies: LAYER_FIELD_POLICIES,

@@ -74,6 +74,7 @@ export const EMPTY_META: EngineMeta = {
   audienceModes: [],
   modelScopes: [],
   roles: [],
+  acceptedRoles: [],
   mergeModes: [],
   fills: [],
   layerFieldPolicies: {},

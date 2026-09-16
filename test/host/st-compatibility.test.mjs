@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { parse, Document } from 'yaml'
-import { convertStToPreset, mergeStPresets } from '../../src/host/sillytavern.ts'
+import { convertStToPreset, convertStToPresetWithReport, mergeStPresets } from '../../src/host/sillytavern.ts'
 import { importCharacterCard, applyCharacterToPreset, removeCharacterFromPreset } from '../../src/host/characters.ts'
 
 test('ST 官方嵌套 prompt_order 决定启停和次序，缺席条目不误启用', () => {
@@ -55,11 +55,18 @@ test('角色应用把变量绑定到卡片，移除不破坏预设原变量', ()
   } finally { rmSync(root, { recursive: true, force: true }) }
 })
 
-test('角色卡 mes_example 保留角色、次序和一次性身份，不吞示例正文', () => {
-  const spec = convertStToPreset({ data: { name: 'Ada', mes_example: '<START>\n{{user}}: QUESTION\n{{char}}: ANSWER\n<START>\nUser: NEXT\nAda: REPLY', first_mes: 'HELLO' } }, 'examples')
+test('角色卡 mes_example 保留来源角色、次序和一次性身份，注入角色统一为 user', () => {
+  const { spec, report } = convertStToPresetWithReport({ data: { name: 'Ada', mes_example: '<START>\n{{user}}: QUESTION\n{{char}}: ANSWER\n<START>\nUser: NEXT\nAda: REPLY', first_mes: 'HELLO' } }, 'examples')
   const examples = spec.promptConfigs.filter(c => c.id.startsWith('dialogue-example-'))
-  assert.deepEqual(examples.map(c => [c.role, c.text]), [['user', 'QUESTION'], ['assistant', 'ANSWER'], ['user', 'NEXT'], ['assistant', 'REPLY']])
+  assert.deepEqual(examples.map(c => [c.role, c.text]), [['user', 'QUESTION'], ['user', 'ANSWER'], ['user', 'NEXT'], ['user', 'REPLY']])
+  // 原角色保留在 stSource.role，报告按 degraded 记录而不是宣称等价。
+  assert.deepEqual(examples.map(c => c.params.stSource.role), ['user', 'assistant', 'user', 'assistant'])
+  assert.deepEqual(
+    report.entries.filter(e => e.targetId.startsWith('dialogue-example-')).map(e => e.classification),
+    ['equivalent', 'degraded', 'equivalent', 'degraded'],
+  )
   assert.ok(examples.every(c => c.dedupe === 'session' && c.order < -40))
+  assert.equal(spec.promptConfigs.find(c => c.id === 'first-mes').role, 'user')
 })
 
 test('日期宏不登记空值；转换不修改输入对象或执行扩展代码', () => {

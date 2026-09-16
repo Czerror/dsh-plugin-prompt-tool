@@ -117,16 +117,18 @@ test('importPresetPackage：32MB 以内的大包（如含 .mjs 模块的官方�
   assert.ok(existsSync(join(PRESETS, 'large', 'big-data.txt')), '大文本文件应落盘')
 })
 
-test('importPresetPackage：路径穿越条目被过滤，不落盘', async () => {
-  const { status, payload } = await importPackage(presetPackage({
-    files: [
-      { path: 'demo/../evil.yml', content: 'x' },
-      { path: 'C:/evil2.yml', content: 'y' },
-      { path: '/abs-evil.yml', content: 'z' },
-    ],
-  }))
-  assert.equal(status, 200)
-  assert.equal(payload.value?.id, 'demo')
+test('importPresetPackage：路径穿越条目被明确拒绝，不落盘', async () => {
+  for (const files of [
+    [{ path: 'demo/../evil.yml', content: 'x' }],
+    [{ path: 'C:/evil2.yml', content: 'y' }],
+    [{ path: '/abs-evil.yml', content: 'z' }],
+    [{ path: '\\abs-evil.yml', content: 'z' }],
+  ]) {
+    const { status, payload } = await importPackage(presetPackage({ files }))
+    assert.equal(status, 400, `非法路径必须 fail closed：${files[0].path}`)
+    assert.equal(payload.code, 'preset-package-invalid')
+    assert.match(payload.message, /path 非法/)
+  }
   assert.ok(!existsSync(join(PRESETS, 'evil.yml')), '穿越条目不得写到预设目录之外')
   assert.ok(!existsSync(join(PRESETS, 'demo', 'evil.yml')), '穿越条目不得写入预设目录')
   assert.ok(!existsSync(join(PRESETS, 'demo', 'evil2.yml')))

@@ -86,25 +86,44 @@ function configMemo(memo, config) {
   return set
 }
 
-/** 构造默认 user/assistant 消息;策略返回完整 patch 时覆盖对应字段。 */
-function buildMessage(config, resolved) {
+/**
+ * pre-step 唯一可发出角色：宿主把本批消息逐条写成 `user/message` 事件，事件校验要求
+ * `role === 'user'`（assistant 只能由模型侧 assistant/message 事件产生）。
+ */
+const PRE_STEP_ROLE = 'user'
+
+/**
+ * 记录一次角色降级：保留原角色、明确告警、不改正文，也不把非法值传给宿主。
+ * 同一配置只告警一次（warnOnce），且不记录正文或用户内容。
+ */
+function downgradeRole(config, requested, warnOnce) {
+  if (typeof requested !== 'string' || requested === PRE_STEP_ROLE) return undefined
+  warnOnce(`${name}: config ${String(config?.id ?? '<unknown>')} role ${JSON.stringify(requested)} cannot be injected in pre-step, message downgraded to "${PRE_STEP_ROLE}"`)
+  return requested
+}
+
+/** 构造默认 user 消息;策略返回完整 patch 时覆盖对应字段,但非法角色在出口兜底降级。 */
+function buildMessage(config, resolved, warnOnce) {
   const text = typeof resolved.text === 'string' ? resolved.text : ''
   const defaultContent = config.texts.length > 0
     ? config.texts.map((item) => ({ type: 'text', text: item }))
     : [{ type: 'text', text }]
   const sourceValue = mergedIdentity(config)
+  // 策略 patch（templateFile 的 role 等）与配置声明都必须经过同一出口判定。
+  const requested = downgradeRole(config, typeof resolved.role === 'string' ? resolved.role : config.role, warnOnce)
+  const base = resolved.source !== null && typeof resolved.source === 'object'
+    ? resolved.source
+    : {
+        kind: config.sourceKind,
+        plugin: sourceValue,
+        ...(typeof config.form === 'string' ? { form: config.form } : {}),
+        ...(typeof config.summary === 'string' && config.summary.length > 0 ? { summary: config.summary } : {}),
+      }
   return {
     id: typeof resolved.id === 'string' && resolved.id.length > 0 ? resolved.id : newMessageId(config.id),
-    role: typeof resolved.role === 'string' ? resolved.role : config.role,
+    role: PRE_STEP_ROLE,
     content: Array.isArray(resolved.content) ? resolved.content : defaultContent,
-    source: resolved.source !== null && typeof resolved.source === 'object'
-      ? resolved.source
-      : {
-          kind: config.sourceKind,
-          plugin: sourceValue,
-          ...(typeof config.form === 'string' ? { form: config.form } : {}),
-          ...(typeof config.summary === 'string' && config.summary.length > 0 ? { summary: config.summary } : {}),
-        },
+    source: requested === undefined ? base : { ...base, requestedRole: requested },
   }
 }
 
@@ -222,7 +241,7 @@ export async function runPreStepBatch(options) {
     const planned = []
     for (const group of orderedGroups) {
       const base = group[0]
-      const message = buildMessage(base.config, base.resolved)
+      const message = buildMessage(base.config, base.resolved, warnOnce)
       if (group.length > 1) {
         message.content = group.flatMap((entry) => {
           if (Array.isArray(entry.resolved.content)) return entry.resolved.content
@@ -232,6 +251,13 @@ export async function runPreStepBatch(options) {
         })
         if (message.source !== null && typeof message.source === 'object') {
           message.source = { ...message.source, plugin: mergedIdentity(base.config) }
+        }
+        // 合并组的角色由首条配置决定;其余成员声明的非法角色同样要告警并留下降级事实。
+        for (const entry of group.slice(1)) {
+          const requested = downgradeRole(entry.config, typeof entry.resolved.role === 'string' ? entry.resolved.role : entry.config.role, warnOnce)
+          if (requested !== undefined && message.source.requestedRole === undefined) {
+            message.source = { ...message.source, requestedRole: requested }
+          }
         }
         if (new Set(group.map((entry) => entry.config.position)).size > 1) {
           warnOnce(`${name}: merged group mixes positions — using ${String(base.config.position)} from the first config`)

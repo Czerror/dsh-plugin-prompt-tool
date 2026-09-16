@@ -539,12 +539,13 @@ test('config.variables 与内置 {{WORKSPACE}} 变量在注入前插值', async 
   assert.equal(decision.messages[1].content[0].text, '用户 张三 在工作区 D:/repo（cwd=D:/repo）')
 })
 
-test('role=assistant 提示词配置按 assistant 消息构造', async () => {
+test('role=assistant 的旧配置可加载，但在出口降级为 user 并保留原角色', async () => {
   const { step } = makeHarness(createPromptConfigs([{
     id: 'asst', strategy: 'static', text: 'PREVIEW', role: 'assistant', position: 'after-all',
   }]))
   const decision = await step(agent())
-  assert.equal(decision.messages[1].role, 'assistant')
+  assert.equal(decision.messages[1].role, 'user')
+  assert.equal(decision.messages[1].source.requestedRole, 'assistant')
   assert.equal(decision.messages[1].content[0].text, 'PREVIEW')
 })
 

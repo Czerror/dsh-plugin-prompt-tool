@@ -116,12 +116,17 @@ export interface BridgeRequestMap {
   /**
    * 预设包导入（含 SillyTavern JSON）。`preview: true` 只做同源转换并返回报告，不落盘；
    * 提交时若带 `expectedSourceDigest`，服务端用本次上传文件重算摘要并拒绝过期预览。
-   * `promptOrderCharacterId` 用于多顺序组包时显式选择（缺省仍按既有歧义拒绝规则）。
+   * `expectedPreviewRevision` 是预览返回的版本凭据：绑定文件、实际选组、转换器版本与
+   * 目标身份（含目标当前内容），服务端提交时重算，不符返回 409 且零写盘。
+   * `promptOrderCharacterId` 用于多顺序组包时显式选择：预览缺省时先返回候选
+   * （`state: 'needs-order-selection'`），提交时仍无法明确对应则拒绝。
+   * 上述参数只接受声明的类型，其它类型一律 400（见 docs/SillyTavern.md）。
    */
   importPresetPackage: {
     files: Array<{ path?: string; name?: string; content?: string }>
     preview?: boolean
     expectedSourceDigest?: string
+    expectedPreviewRevision?: string
     promptOrderCharacterId?: string
   }
   exportPreset: { id: string }
@@ -129,8 +134,14 @@ export interface BridgeRequestMap {
   presetClone: { id: string; autoSuffix?: boolean }
   presetDuplicate: { id: string }
   presetOpen: { id: string }
-  /** 角色卡 JSON 导入；`preview: true` 只转换并返回报告（不写角色库）。 */
-  charactersImport: { files?: Array<{ path: string; content: string }>; preview?: boolean; expectedSourceDigest?: string }
+  /** 角色卡 JSON 导入；`preview: true` 只转换并返回报告（不写角色库）；版本/选组语义与预设包一致。 */
+  charactersImport: {
+    files?: Array<{ path: string; content: string }>
+    preview?: boolean
+    expectedSourceDigest?: string
+    expectedPreviewRevision?: string
+    promptOrderCharacterId?: string
+  }
   charactersImportStream: undefined
   charactersList: undefined
   charactersDelete: { id: string }
@@ -190,8 +201,14 @@ export interface StConversionEntryReport {
   sourceId: string
   /** 来源在文件内的序号（prompts 数组下标或世界书 entries 序号）。 */
   sourceIndex: number
-  /** 生成的目标配置 id（被排除的条目没有目标）。 */
+  /** 生成的目标配置 id（被排除的条目没有目标）。多文件合并后重写为**最终** id。 */
   targetId?: string
+  /** 同源生成的 promptConfigs 下标：合并重命名时用它把 targetId 关联到最终配置。 */
+  targetIndex?: number
+  /** 来源显示名（多文件合并时用于区分条目来自哪个上传文件）。 */
+  sourceName?: string
+  /** 来源在本次合并中的序号（0 起）。 */
+  sourceFileIndex?: number
   layer?: string
   order?: number
   role?: string
@@ -205,7 +222,10 @@ export interface StConversionDiagnostic {
   code: string
   severity: 'warning' | 'info'
   message: string
+  /** 源身份定位：来源条目 id（与 targetId 分开表达，不混用同一字段）。 */
   entryId?: string
+  /** 目标身份定位：生成/合并后的最终配置 id（源条目被排除时缺省）。 */
+  targetId?: string
   field?: string
 }
 
@@ -247,6 +267,15 @@ export interface WorldBookDiagnosticRecord {
   [key: string]: unknown
 }
 
+/** 顺序组候选：多 prompt_order 组需要用户先选择时的有界选项（不含转换结果）。 */
+export interface StOrderGroupCandidate {
+  characterId: string
+  entries: number
+}
+
+/** 导入预览状态：`ready` 才有报告与写入凭据；候选状态不得启用确认。 */
+export type ImportPreviewState = 'ready' | 'needs-order-selection'
+
 /** 端点级响应 value 契约（value 字段形状；扩展字段仍以 value 旁可选字段出现）。 */
 export interface BridgeValueMap {
   meta: { meta: Record<string, unknown> }
@@ -275,13 +304,33 @@ export interface BridgeValueMap {
   persona: { persona: PersonaSpec | null }
   presetVariables: { variables: Record<string, string>; enabled: boolean }
   customTools: { customTools?: unknown[] }
-  importPresetPackage: { id?: string; backupPath?: string; preview?: boolean; sourceDigest?: string; report?: StConversionReport }
+  importPresetPackage: {
+    id?: string
+    backupPath?: string
+    preview?: boolean
+    state?: ImportPreviewState
+    /** 候选状态下的歧义来源文件显示名（不含绝对路径）。 */
+    sourceName?: string
+    candidates?: StOrderGroupCandidate[]
+    sourceDigest?: string
+    previewRevision?: string
+    report?: StConversionReport
+  }
   exportPreset: { id: string; name: string; content: string }
   presetDelete: { id: string }
   presetClone: { id: string }
   presetDuplicate: { id: string }
   presetOpen: { path: string }
-  charactersImport: { id?: string; name?: string; preview?: boolean; sourceDigest?: string; report?: StConversionReport }
+  charactersImport: {
+    id?: string
+    name?: string
+    preview?: boolean
+    state?: ImportPreviewState
+    candidates?: StOrderGroupCandidate[]
+    sourceDigest?: string
+    previewRevision?: string
+    report?: StConversionReport
+  }
   charactersImportStream: { id: string; name: string }
   charactersList: { characters: Array<{ id: string; name: string; description?: string; hasAvatar: boolean; imported: boolean }> }
   charactersDelete: { id: string }
@@ -296,7 +345,8 @@ export interface BridgeValueMap {
     tools: Array<{ name: string; description: string }>
   }
   engineCapability: { changed: boolean; addedModules?: string[]; removedModules?: string[]; capabilityIds: string[] }
-  worldBookDiagnostics: { records: WorldBookDiagnosticRecord[]; truncated: boolean; step: number }
+  /** 只读世界书诊断：只回当前授权会话最近一次选择的观测记录（读取不重新求值）。 */
+  worldBookDiagnostics: { records: WorldBookDiagnosticRecord[]; truncated: boolean; step: number; evaluated: boolean }
 }
 /** 编译期断言：请求/响应映射与 BRIDGE_ENDPOINTS 键集合完全一致（漏改任一侧 typecheck 失败）。 */
 type AssertCoverage<K extends string, M extends object> =

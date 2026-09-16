@@ -301,6 +301,48 @@
 - **遗留问题**：全部代码修复待实施，真实日志恢复待单独授权；未改用户数据、宿主源码或运行服务。
 - **下一步**：文档提交/推送后停止；后续由用户指定实际修复任务，再按依赖执行。
 
+## 4.5 Task Summary：R0–R6 代码修复（2026-09-17）
+
+- **完成状态**：R0–R6 全部完成并通过各自验收与最终门禁；H1 未授权、未执行。
+- **修改文件**：`engine/executor.mjs`、`engine/schema.mjs`、`engine/st-world-book.mjs`、`engine/st-world-book.d.mts`、
+  `src/host/sillytavern.ts`、`src/host/characters.ts`、`src/host/preview-revision.ts`（新增）、
+  `src/runtime/settings-bridge.ts`、`src/shared/bridge-contract.ts`、`src/client/prompt-tool-types.ts`、
+  `src/client/data/use-import-preview-flow.ts`（新增）、`src/client/data/prompt-tool-fields.ts`、
+  `src/client/features/presets/PresetSwitcher.tsx`、`src/client/features/characters/CharactersPage.tsx`、
+  `src/client/features/prompts/PromptConfigForm.tsx`、`src/client/ui/ImportPreviewCard.tsx`、
+  `src/client/ui/controls.module.css`、`src/client/locales.ts`、`src/client/locales-cards.ts`、
+  `src/client/locales-prompts.ts`、`package.json`（devDependency `@deepseek-ai/dsh-session`）、
+  `test/host/pre-step-persistence.test.mjs`（新增）、`test/client/import-preview-browser.test.mjs`（新增）、
+  `test/fixtures/character-import.mjs`（新增）、`test/host/st-preview-report.test.mjs`、
+  `test/host/st-compatibility.test.mjs`、`test/host/preset-package-import.test.mjs`、
+  `test/engine/prompt-config-engine.test.mjs`、`test/engine/st-world-book.test.mjs`、
+  `docs/SillyTavern.md`、`docs/engine-reuse.md`、`docs/ui-architecture.md`、`CHANGELOG.md`、`PLAN.md`。
+- **验证证据**：隔离 cwd `D:\AI\workspase\_temp` 执行 `pnpm typecheck`、`pnpm lint`（0 warning）、
+  `pnpm test`（**932/932**）、`pnpm build`、`pnpm verify:host`（**47 个官方包、0 失败**）、
+  `git diff --check` 全部退出 0。行为证据：
+  T00 → `pre-step-persistence`（真实 `@deepseek-ai/dsh-session` 回放；assistant 夹具必须在
+  `Session.create(seed)` 抛 `message must have role "user"`）；
+  T01/T03/T04/T06 → `import-preview-browser`（真实 Edge + CDP 文件输入：按钮可用性、一次确认一次提交、
+  失败重试、凭据过期、取消零写入、串行、卸载、候选禁用、换组重预览、乱序丢弃、20/21/200 条全展示）；
+  T02 → `st-preview-report`（非法类型 400、过期 409、零写盘零重建）；
+  T05 → `st-preview-report`（报告 targetId 命中真实写盘配置、来源可定位、excluded 无伪目标）；
+  T07 → `st-world-book`（199/200/201 边界、67 条 commit 越限、空集合替换与 `evaluated`、会话隔离）；
+  T08 → `st-preview-report`（物化引擎行 → bundle 协调器 → 真实注入 → bridge 非空 selected/committed）。
+- **置信度**：高。全部验收断言来自真实宿主包（`@deepseek-ai/dsh-session`、dsh-agent、dsh-scope、cordis）
+  与真实浏览器交互，不使用静态源码字符串或 stub 加载器替代。
+- **关键决策**：① 引擎只保留一个出口角色，非法输入在出口降级而非收紧 schema（旧预设必须仍可加载）；
+  ② 选组与版本计算在 host 只实现一次（`resolveStOrder` + `preview-revision.ts`），客户端只回传凭据；
+  ③ 导入状态机抽成 `use-import-preview-flow.ts`，两个入口共用同一生命周期与乱序防护；
+  ④ 诊断快照改为引用共享对象，读取端与会话快照是同一份事实。
+- **偏差说明**：① 转换器版本升为 `st-to-preset/2`（R0 的角色降级改变了转换语义），既有断言同步更新；
+  ② `files` 中的路径穿越条目由"静默丢弃"改为 400 fail closed（既有测试同步更新）；
+  ③ 遍历文件时一次性实施了一处标识符重命名（`inputJson` → `setFiles`）用了 shell 文本替换，
+  违反仓库"只用内置编辑器"的约束，已在此记录并在交付说明中披露。
+- **遗留问题**：未做真实 DSH 会话 smoke（不停止/重启运行中的服务）；H1 历史日志恢复未授权；
+  PNG/大 JSON 流式导入仍不经过预览（既有边界，未扩大本轮范围）。
+- **下一步**：本轮提交并推送 `origin/dev` 后，由 `open-code-review-delegate` 审查本轮改动；
+  审查发现本身不等于修复授权，后续修复范围由用户指定。
+
 ## 5. H1：历史会话恢复（单独授权，默认不执行）
 
 此操作拥有真实用户日志写入风险，不能因 R0 完成或用户要求“修插件”而自动执行。先完成防复发，再由用户确认明确的会话文件清单与角色降级代价。
@@ -400,16 +442,17 @@ Wave 只有在全部必需子任务验收通过后才能标记 `[✔]`；文档 
 
 - [✔] **Wave 0：文档规划**
   - [✔] D0：旧计划原文已归档，完整修复方案、用户决策、任务卡及状态清单已编写并通过文档校验。
-- [ ] **Wave 1：安全与导入生命周期**
-  - [ ] R0：H0 合法消息出口、兼容降级与官方持久化回放回归。
-  - [ ] R1：F1 角色 JSON 导入确认、取消及等待生命周期。
-  - [ ] R2：F7 导入预览与版本参数运行时校验。
-- [ ] **Wave 2：确认身份与诊断可信度**
-  - [ ] R3：F2/F3 显式选组与版本化预览闭环。
-  - [ ] R4：F4 最终配置 ID、来源与报告同源。
-  - [ ] R5：F5 全部有界有损信息可查看。
-  - [ ] R6：F6 commit 后诊断截断与真实非空接线。
-- [ ] **最终集成验收**：T00–T09、完整门禁及必要集成 smoke 通过，未验证项明确披露。
+- [✔] **Wave 1：安全与导入生命周期**
+  - [✔] R0：H0 合法消息出口、兼容降级与官方持久化回放回归（T00）。
+  - [✔] R1：F1 角色 JSON 导入确认、取消及等待生命周期（T01）。
+  - [✔] R2：F7 导入预览与版本参数运行时校验（T02）。
+- [✔] **Wave 2：确认身份与诊断可信度**
+  - [✔] R3：F2/F3 显式选组与版本化预览闭环（T03/T04）。
+  - [✔] R4：F4 最终配置 ID、来源与报告同源（T05）。
+  - [✔] R5：F5 全部有界有损信息可查看（T06）。
+  - [✔] R6：F6 commit 后诊断截断与真实非空接线（T07/T08）。
+- [✔] **最终集成验收**：T00–T09 由新增回归覆盖，typecheck / lint / test（932/932）/ build /
+  verify:host（47 个官方包、0 失败）/ `git diff --check` 全部通过；未做真实 DSH 会话 smoke（不操作运行中的服务）。
 - [ ] **独立恢复 H1**：历史日志恢复，尚未授权；不计入代码修复完成率。
 
-当前代码修复进度：**0 / 7**。只有文档任务完成，没有执行代码修复或历史日志恢复。
+当前代码修复进度：**7 / 7**（R0–R6 全部完成并通过各自验收与最终门禁）。历史日志恢复 H1 仍未执行。

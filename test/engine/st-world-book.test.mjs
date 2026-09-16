@@ -57,7 +57,9 @@ test('独立ST世界书顶层entries可导入；不支持的插入点保存来�
   const config = spec.promptConfigs[0]
   assert.equal(config.params.stWorldBook.position, 4)
   assert.equal(config.params.stWorldBook.depth, 0)
-  assert.equal(config.role, 'assistant')
+  // role=2（assistant）在导入期降级为 user，原角色保留在 stWorldBook.role。
+  assert.equal(config.role, 'user')
+  assert.equal(config.params.stWorldBook.role, 2)
   assert.ok(spec.meta.stWarnings.some(w => w.includes('深度')))
 })
 
@@ -159,6 +161,75 @@ test('世界书诊断区分候选/入选/已提交与真实拒绝原因，且不
   assert.deepEqual(snapshot.records, selection.diagnostics.records)
   assert.equal(snapshot.step, 1)
   assert.equal(lastWorldBookDiagnostics({ id: 'cold', header: {}, snapshotEvents: () => [] }).records.length, 0)
+})
+
+test('T07 观测边界 199/200/201：截断标志在写入记录的同一次求值里置真', () => {
+  const makeSession = (id) => ({ id, header: {}, snapshotEvents: () => [] })
+  for (const [size, expected, truncated] of [[199, 199, false], [200, 200, false], [201, 200, true]]) {
+    const session = makeSession(`snap-${size}`)
+    const entries = Array.from({ length: size }, (_, index) => entry(index + 1, { constant: true, disable: true }))
+    const selection = selectStWorldBook(diagConfigs(entries), session, [message('N')], () => {})
+    assert.equal(selection.size, 0, `${size} 条禁用条目都不入选`)
+    assert.equal(selection.diagnostics.records.length, expected, `${size} 条观测的记录上限`)
+    assert.equal(selection.diagnostics.truncated, truncated, `${size} 条的截断标志`)
+    const snapshot = lastWorldBookDiagnostics(session)
+    assert.equal(snapshot, selection.diagnostics, '会话最近快照与本次选择是同一份事实')
+    assert.equal(snapshot.truncated, truncated)
+    assert.equal(snapshot.evaluated, true)
+  }
+})
+
+test('T07 67 条常驻配置在 commit 阶段越限时两个快照都报 truncated', () => {
+  const session = { id: 'snap-commit', header: {}, snapshotEvents: () => [] }
+  const configs = diagConfigs(Array.from({ length: 67 }, (_, index) => entry(index + 1, { constant: true })))
+  const selection = selectStWorldBook(configs, session, [message('N')], () => {})
+  assert.equal(selection.size, 67, '全部常驻条目入选')
+  const snapshot = lastWorldBookDiagnostics(session)
+  assert.equal(snapshot.truncated, false, '选择阶段尚未越限')
+  assert.equal(snapshot.records.length, 134, '67 条候选 + 67 条入选')
+
+  // 执行器在真正插入后才 commit：最后一条追加时越限，必须写回同一份快照。
+  for (const config of selection) selection.commit(config)
+  const committed = snapshot.records.filter((record) => record.stage === 'committed')
+  assert.equal(committed.length, 66, '第 67 条 commit 越限')
+  assert.equal(snapshot.truncated, true, 'commit 阶段越限必须更新同一快照的截断标志')
+  assert.equal(selection.diagnostics.truncated, true, '选择结果与读取端看到同一事实')
+  assert.equal(lastWorldBookDiagnostics(session).truncated, true)
+})
+
+test('T07 空集合替换历史快照，并与"尚未求值"可区分', () => {
+  const session = { id: 'snap-empty', header: {}, snapshotEvents: () => [] }
+  assert.deepEqual(lastWorldBookDiagnostics(session), { records: [], truncated: false, step: 0, evaluated: false }, '未求值时不伪报已检查')
+
+  const first = selectStWorldBook(diagConfigs([entry(1, { constant: true })]), session, [message('N')], () => {})
+  assert.equal(first.size, 1)
+  assert.ok(lastWorldBookDiagnostics(session).records.length > 0)
+  assert.equal(lastWorldBookDiagnostics(session).step, 1, '快照带本次 step 标识')
+
+  // 本次没有任何世界书配置：空结果替换历史快照，不能被读成「本次又注入了旧条目」。
+  const empty = selectStWorldBook([], session, [message('N')], () => {})
+  assert.equal(empty.size, 0)
+  const snapshot = lastWorldBookDiagnostics(session)
+  assert.equal(snapshot.evaluated, true)
+  assert.deepEqual(snapshot.records, [], '空选择替换历史快照')
+  assert.equal(snapshot.step, 0)
+  assert.equal(snapshot.truncated, false)
+})
+
+test('T07 会话之间互不串记录，重复读取返回同一份只读快照', () => {
+  const a = { id: 'snap-a', header: {}, snapshotEvents: () => [] }
+  const b = { id: 'snap-b', header: {}, snapshotEvents: () => [] }
+  selectStWorldBook(diagConfigs([entry(1, { constant: true })]), a, [message('N')], () => {})
+  selectStWorldBook(diagConfigs([entry(2, { constant: true })]), b, [message('N')], () => {})
+  const snapshotA = lastWorldBookDiagnostics(a)
+  const snapshotB = lastWorldBookDiagnostics(b)
+  assert.notEqual(snapshotA, snapshotB, '不同会话不共享快照')
+  assert.deepEqual(snapshotA.records.filter((record) => record.stage === 'selected').map((record) => record.id), ['lore-1'])
+  assert.deepEqual(snapshotB.records.filter((record) => record.stage === 'selected').map((record) => record.id), ['lore-2'])
+  const before = JSON.stringify(snapshotA.records)
+  assert.equal(lastWorldBookDiagnostics(a), snapshotA, '重复读取是同一对象')
+  assert.equal(lastWorldBookDiagnostics(a), lastWorldBookDiagnostics(a))
+  assert.equal(JSON.stringify(lastWorldBookDiagnostics(a).records), before, '只读读取不改变记录')
 })
 
 test('世界书诊断记录扫描窗口、分组胜负与主要拒绝原因', async () => {

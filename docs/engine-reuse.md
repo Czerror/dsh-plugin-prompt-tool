@@ -62,6 +62,22 @@
 | `compaction-epoch` | engine/compaction-epoch.mjs | 晋升状态机（被上面各模块共用；非插件行） |
 | `tool-filter` | engine/tool-filter.mjs | 常驻工具白名单/黑名单（与晋升无关的常量掩码） |
 
+## pre-step 消息角色出口（2026-09-17）
+
+宿主把本批 `decision.messages` 逐条写成 `user/message` 事件，事件校验要求 `role === "user"`
+（assistant 只能由模型侧 `assistant/message` 事件产生）。引擎因此只有一个出口角色：
+
+- `executor.mjs#buildMessage` 统一发出 `user`；配置声明或策略 patch（含 `templateFile` 的 role）
+  给出的其它值在出口降级，只 `warnOnce` 一次，原角色写入 `source.requestedRole`，正文、位置、
+  次数、dedupe、order 与变量副作用都不变。合并组按首条配置的角色发出，其余成员声明的非法角色
+  同样告警并留痕。
+- 引擎仍接受 `role: assistant` 作为**输入**（旧预设可加载，schema 不收紧），但 `getEngineMeta()`
+  的 `roles` 只返回可发出角色 `user`，`acceptedRoles` 另行列出仍可加载的旧角色供 UI 区分。
+- 想让消息以 assistant 出现在模型面前，只能走宿主 assistant 侧通道，不要在 pre-step 里伪造
+  assistant 历史：那会写出宿主无法重新加载的会话日志。
+- 验收入口：`test/host/pre-step-persistence.test.mjs`（真实 `@deepseek-ai/dsh-session` 的
+  持久化 → 重新加载 → 派生请求）。
+
 ## pre-step 协调器与独立指令文件来源（2026-09-14）
 
 `prompt-config-engine` 行不再无条件自建 pre-step 监听器：
@@ -130,8 +146,8 @@ pre-step 来源：
 ## 世界书入选/落选诊断（2026-09-16）
 
 `selectStWorldBook()` 在既有判断分支旁记录只读诊断，执行器仍是真实注入与 commit 的最终
-权威。诊断挂在返回的入选集合上（`selection.diagnostics = { records, truncated }`），
-不新增后台状态服务，也不为解释结果重跑选择器。
+权威。诊断挂在返回的入选集合上（`selection.diagnostics`），不新增后台状态服务，
+也不为解释结果重跑选择器。
 
 - 阶段区分：`excluded`（禁用/延迟/冷却/递归边界）、`rejected`（主键未命中、副键未满足、
   概率过滤、分组落选、匹配失败）、`candidate`（进入候选及激活原因 sticky/constant/key-match）、
@@ -144,6 +160,23 @@ pre-step 来源：
   开关诊断的差分测试断言入选集合、顺序、`Math.random` 调用次数与粘滞窗口完全一致。
 - 消费入口：当前由确定性测试消费；工作台只读入口（typed bridge）见 `docs/SillyTavern.md`
   的导入预览与诊断说明。
+
+### 快照真实性（2026-09-17）
+
+每次选择创建一个**有界快照对象**，`selection.diagnostics` 与会话最近快照
+（`lastWorldBookDiagnostics`）引用**同一对象**，因此 commit 阶段追加 `committed` 记录、
+或把 `truncated` 置真都写回同一份事实——不再复制布尔值（复制会让 commit 越限时读取端
+仍看到 `truncated: false`）。
+
+- 越限时机不受阶段影响：67 条常驻配置全部 commit 时，第 67 条触顶，快照与读取端同时为真。
+- 最近一次求值**总是**替换快照（含空集合），并附 `step`；空结果因此不会被读成
+  「本次又注入了旧条目」。
+- `evaluated` 区分"该会话尚未求值"与"已求值但本次没有参与/入选条目"：bridge 对未知会话
+  返回 `evaluated: false`，不伪报已检查。
+- 只读端点每次读取都在对象上限内切片，但快照对象本身仍是引擎内部事实，读取不触发求值、
+  抽样或时间窗推进。
+- 接线回归：`test/host/st-preview-report.test.mjs#T08` 用物化引擎行把来源交给 bundle
+  协调器，经真实 `agent/pre-step` 注入后由 bridge 读到非空 `selected`/`committed` 记录。
 
 字段映射集中在 `src/shared/engine-params.ts#ENGINE_PARAM_DEFINITIONS`；host 装配、bridge 回显与配置卡共享该目录。能力各自的 `includeSubagents`、`promoteOn`、启停和提示文本都可在所属卡片设置，依旧没有跨模块全局顺序；内部服务路径由生成器管理。
 

@@ -30,32 +30,35 @@ const count = (value, fallback = 0) => Number.isSafeInteger(value) && value >= 0
 /** 只读诊断上限：只截断观测记录，绝不改变入选、抽样与时间窗状态。 */
 const DIAGNOSTIC_LIMIT = 200
 
-/** 最近一次世界书选择诊断（只读快照；无记录时返回空集合，不触发任何求值）。 */
+/** 最近一次世界书选择诊断（只读快照；无记录时返回空集合，不触发任何求值）。
+ *  `evaluated: false` 表示该会话还没求值过，与"已求值但本次为空"区分开。 */
 export function lastWorldBookDiagnostics(session) {
-  return lastRuns.get(session) ?? { records: [], truncated: false, step: 0 }
+  return lastRuns.get(session) ?? { records: [], truncated: false, step: 0, evaluated: false }
 }
 
 export function selectStWorldBook(configs, session, messages, warn = () => {}) {
   const entries = configs.filter(config => config.enabled !== false && config.strategy === 'world-book' && config.params?.stWorldBook)
-  const records = []
-  let truncated = false
+  // 本次选择的有界观测快照：`selection.diagnostics` 与会话最近快照引用**同一对象**，
+  // 因此 commit 阶段追加记录或把 truncated 置真都写回同一份事实（不复制布尔值，
+  // 否则 commit 越限时读取端仍看到 truncated=false）。
+  const snapshot = { records: [], truncated: false, step: 0, evaluated: true }
   const note = (config, stage, reason, extra) => {
-    if (records.length >= DIAGNOSTIC_LIMIT) { truncated = true; return }
-    records.push({ id: String(config.id ?? ''), stage, reason, ...extra })
+    if (snapshot.records.length >= DIAGNOSTIC_LIMIT) { snapshot.truncated = true; return }
+    snapshot.records.push({ id: String(config.id ?? ''), stage, reason, ...extra })
   }
   const finish = selection => {
-    selection.diagnostics = { records, truncated }
+    selection.diagnostics = snapshot
+    // 最近一次求值总是替换快照（含空集合）：空结果不能被读成"本次又注入了旧条目"。
+    lastRuns.set(session, snapshot)
     return selection
   }
   // 被显式禁用的 ST 条目：由本层负责报告，不由 UI 猜测。
   for (const config of configs) {
     if (config.enabled === false && config.strategy === 'world-book' && config.params?.stWorldBook) note(config, 'excluded', 'disabled')
   }
-  if (!entries.length) {
-    if (records.length > 0) lastRuns.set(session, { records, truncated, step: 0 })
-    return finish(new Set())
-  }
+  if (!entries.length) return finish(new Set())
   const chat = stChatMessages(session, messages)
+  snapshot.step = chat.length
   let state = sessions.get(session)
   if (!state) { state = new WeakMap(); sessions.set(session, state) }
   const generation = JSON.stringify([chat.length, chat.at(-1)])
@@ -164,6 +167,5 @@ export function selectStWorldBook(configs, session, messages, warn = () => {}) {
     if (!entries.some(config => config.params.stWorldBook.recursive === true)) break
     recursiveText.push(...added.filter(config => config.params.stWorldBook.preventRecursion !== true).map(config => config.texts.join('\n')))
   }
-  if (records.length > 0) lastRuns.set(session, { records, truncated, step: chat.length })
   return finish(selected)
 }
