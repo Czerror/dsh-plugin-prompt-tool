@@ -343,6 +343,24 @@
 - **下一步**：本轮提交并推送 `origin/dev` 后，由 `open-code-review-delegate` 审查本轮改动；
   审查发现本身不等于修复授权，后续修复范围由用户指定。
 
+## 4.6 本轮自审结论（open-code-review-delegate，2026-09-17）
+
+审查范围 `784c546..c985769`（R0–R6 全部改动）；OCR 给出 35 个变更文件、28 个可审查、7 个排除
+（3 份文档 + PLAN/CHANGELOG + `.d.mts` + 测试夹具）；28/28 已逐文件审查，0 跳过。
+结论：**没有 critical / high**；新增回归与真实宿主包证据成立。以下发现**不构成本轮修复授权**，
+修复范围由用户指定。
+
+| # | 严重度 | 位置 | 问题 | 建议 |
+|---|---|---|---|---|
+| A1 | medium | `src/client/features/presets/PresetSwitcher.tsx`（`pickPresetYaml` / `pickPresetDir`） | 两个导入入口用 `void (async () => …)()` 且无 try/catch：文件读取或处理器抛错时导入静默失败并产生未处理拒绝（`CharactersPage` 已有 try/catch + showNotice，两处不一致） | 与 CharactersPage 对齐：捕获异常并 `showNotice('error', …)` |
+| A2 | medium | `src/host/sillytavern.ts#mergeStConversionReports` | 诊断定位用 `report.entries.find(entry => entry.sourceId === item.entryId)`；同一来源内 `sourceId` 不唯一（重复 identifier、世界书 uid 冲突）时可能定位到第一个匹配条目，显示错误的目标 id | 诊断自身记录 `targetIndex`，或按 (entryId, 序号) 匹配 |
+| A3 | medium | `src/host/preview-revision.ts#directoryVersionOf` | 预览与提交各做一次目标目录**全量内容哈希**，大预设目录会带来可观测延迟；读取失败返回 `null`，与「目标不存在」同形，该情形下降级为不检测预览期间改动 | 至少区分读取失败与不存在，或改用 `preset.yml` 版本代替整目录哈希 |
+| A4 | low | `engine/st-world-book.d.mts` | `selectStWorldBook` 返回类型由 `WorldBookDiagnosticsSnapshot` 弱化为内联 `{ records: unknown[]; truncated: boolean }`，丢失 `step` / `evaluated` | 恢复引用 `WorldBookDiagnosticsSnapshot` |
+| A5 | low | `src/shared/bridge-contract.ts` + `src/client/prompt-tool-types.ts` | 两处 `ImportPreviewState` 同名但语义不同（字符串联合 vs 预览对象） | 其一改名（如 `ImportPreviewPhase`） |
+| A6 | low | `src/runtime/settings-bridge.ts`（预设包上传条目） | 路径校验用 `path.includes('..')`：合法文件名含 `..` 会让整个导入 400；角色卡端点用逐段校验，两者不一致 | 两端统一为逐段 `..` 校验 |
+| A7 | low | `src/client/ui/ImportPreviewCard.tsx` | excluded 条目在 `codes` 为空时渲染 `来源条目 X（）` | codes 为空时不渲染括号 |
+| A8 | low | `src/client/features/prompts/WorldBookDiagnosticsCard.tsx` | 未消费新增的 `evaluated`：UI 上「已求值但本次为空」与「尚未求值」仍是同一个空态（语义已在文档中定义） | 卡片区分两种空态 |
+
 ## 5. H1：历史会话恢复（单独授权，默认不执行）
 
 此操作拥有真实用户日志写入风险，不能因 R0 完成或用户要求“修插件”而自动执行。先完成防复发，再由用户确认明确的会话文件清单与角色降级代价。
