@@ -168,6 +168,24 @@ test('子代理页创建入口对等，且不下发指令文件卡（单编辑�
   assert.match(list, /props\.instructionPolicy !== undefined && props\.onToggleInstructionSource !== undefined/)
 })
 
+test('模块列表只有一个创建入口：老「新建」按钮不再渲染，入口收敛到合并菜单', () => {
+  const zhDict = PROMPT_TOOL_DICTS.zh
+  // 行为断言：不传 extraActions（子代理页现状）时工具栏不再出现老「新建」按钮。
+  const withoutExtra = render(PromptConfigList, configListProps({}))
+  assert.doesNotMatch(withoutExtra, new RegExp(`>${zhDict['configList.create']}<`), '未传 extraActions 时不渲染老「新建」')
+  // 对照：传入时仍照常渲染（列表本身保留该插槽能力）。
+  const withExtra = render(PromptConfigList, configListProps({ extraActions: createElement('button', null, zhDict['configList.create']) }))
+  assert.match(withExtra, new RegExp(`>${zhDict['configList.create']}<`), '插槽语义保持不变')
+  // 结构断言：子代理页的列表包装不再下发 extraActions。
+  const wrapper = read('app/workspace/pages/ConfigListWithTemplates.tsx')
+  assert.doesNotMatch(wrapper, /extraActions=/, '列表包装不再注入第二个创建入口')
+  assert.doesNotMatch(wrapper, /configList\.create/, '不再引用老「新建」文案')
+  // 合并菜单仍是唯一入口，且已含模板插入项。
+  const subagent = read('app/workspace/pages/SubagentPage.tsx')
+  assert.match(subagent, /<EngineModuleActions/)
+  assert.match(subagent, /INSERTION_LAYERS\.map/)
+})
+
 test('置顶卡片渲染在过滤行之前（列表顶部语义）', () => {
   const list = read('features/prompts/PromptConfigList.tsx')
   const beforeIndex = list.indexOf('{beforeCards}')

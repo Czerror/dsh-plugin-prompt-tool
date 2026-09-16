@@ -9,6 +9,9 @@
   自定义工具卡 `CustomToolsCard` 与模板变量卡（复用 `TemplateVariablesModuleCard`）。此前子代理页只有
   「新建」按钮一条链路，缺少能力模块、自定义工具、按层模板与变量入口——因为全仓库唯一调用
   `createEngineCapability` / `removeEngineCapability` 的组件是 `EngineModuleList.tsx`，而子代理页不引用它。
+- **模块列表只保留一个创建入口**：移除「配置列表 + 新建模板」包装里残留的独立「新建」按钮
+  （`ConfigListWithTemplates` 只被子代理页使用），模板插入统一走工具栏合并菜单的
+  「添加模板 · 层级」/「添加工具模板…」/「添加模板变量」。
 - **新建即可见（受众代入，而不是改过滤）**：新增纯函数 `createConfigFromTemplate(entry, configs, scope)`
   承载模板派生（id 去重 + identity 跟随 + `instruction-hint → placeholder` 降级 + 受众代入）。子代理列表
   新建的配置写 `audience: subagent`，主会话列表新建的配置清除模板自带的「仅子代理」限制回落公用，避免

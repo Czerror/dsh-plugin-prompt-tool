@@ -5,10 +5,13 @@ import type { PromptToolTranslate } from '../../../locales.ts'
 import { PromptConfigList } from '../../../features/prompts/PromptConfigList.tsx'
 import { TemplatePicker } from '../../../ui/TemplatePicker.tsx'
 import { useTemplatePicker } from '../../../features/prompts/useTemplatePicker.ts'
-import ui from '../../../ui/controls.module.css'
 import type { InstructionPolicyFileOverride } from '../../../../shared/instructions.ts'
-/** 配置列表 + 新建模板：六层页按 layer 过滤，子代理页按 scope 过滤（subagent 只列子代理可见模板）。
- *  纪律：过滤状态只由用户手动改变；新建只做「展开新卡 + 滚动定位」两件事。 */
+/** 子代理配置列表（按 scope 过滤：subagent 只列子代理可见配置）。
+ *  纪律：过滤状态只由用户手动改变；新建只做「展开新卡 + 滚动定位」两件事。
+ *
+ *  本组件不再提供独立的「新建」按钮：创建入口统一收敛到工具栏的合并菜单
+ *  （`EngineModuleActions` 的「添加模板 · 层级」/「添加工具模板…」/「添加模板变量」），
+ *  避免同一列表出现两个创建入口。 */
 export const ConfigListWithTemplates = memo(function ConfigListWithTemplates(props: {
   store: PromptToolStore
   t: PromptToolTranslate
@@ -67,9 +70,6 @@ export const ConfigListWithTemplates = memo(function ConfigListWithTemplates(pro
         toolbarActions={toolbarActions}
         onViewFilterChange={onViewFilterChange}
         emptyHint={preStepEmpty ? t('configList.emptyPreStep') : undefined}
-        extraActions={
-          <button ref={templatePicker.anchorRef} type="button" className={ui.primaryPill} onClick={() => templatePicker.openPicker()}>{t('configList.create')}</button>
-        }
         onPatchConfigs={patchConfigs}
         onSaveConfigs={saveConfigs}
         instructionPolicy={instructionScope ? store.instructionPolicy : undefined}

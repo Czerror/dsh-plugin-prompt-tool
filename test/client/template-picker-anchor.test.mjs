@@ -8,10 +8,13 @@ test('模板入口把按钮 ref 传给顶层浮层', () => {
   const main = read('src/client/app/workspace/pages/MainSessionPage.tsx')
   const menu = read('src/client/features/modules/EngineModuleList.tsx')
   const scoped = read('src/client/app/workspace/pages/ConfigListWithTemplates.tsx')
+  const subagent = read('src/client/app/workspace/pages/SubagentPage.tsx')
   assert.match(main, /anchorRef=\{picker\.anchorRef\}/)
   assert.match(menu, /ref=\{anchorRef\}/)
-  assert.match(scoped, /ref=\{templatePicker\.anchorRef\}/)
+  // 列表包装不再有独立「新建」按钮，浮层锚定到工具栏合并菜单按钮（ref 由页面下发）。
   assert.match(scoped, /anchorRef=\{templatePicker\.anchorRef\}/)
+  assert.doesNotMatch(scoped, /ref=\{templatePicker\.anchorRef\}/)
+  assert.match(subagent, /anchorRef=\{picker\.anchorRef\}/)
 })
 
 test('锚定浮层层级高于工作台抽屉', () => {
