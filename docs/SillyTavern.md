@@ -137,6 +137,40 @@ position=4 降级为当前消息批末尾；其他世界书位置落在消息批
 「模板变量」里完成，写入 `variables.yml` 后按既有重建流程生效。本项目不猜测 `{{user}}`
 的值（它来自 ST 全局设置与 persona，卡内不存在，用同义词反推属猜测），也不在导入期执行宏。
 
+## 未复刻的 ST 能力与降级对照
+
+下表每行都与实现一致：**等价** = 行为与 ST 一致；**降级** = 内容保留但位置/角色/时机改变；
+**保留事实** = 只记录来源字段，行为不生效；**不支持 / 未复刻** = 本项目不执行该能力。
+诊断码列写的是真实产出（`st-*` 是导入期诊断码，括号内是报告条目的原因码或引擎原因码）。
+
+| ST 能力 / 字段 | ST 行为（源码位置） | 本项目处理 | 诊断码 |
+|---|---|---|---|
+| `world_info_budget`（默认 25）/ `budget_cap` / `ignoreBudget` | 按 token 预算裁剪注入（`world-info.js:73`、`:4095`） | **未复刻**：不做 token 预算裁剪，入选条目按顺序全部注入 | 无（不产生诊断） |
+| `forbid_overrides` | 保护 `main` / `jailbreak` 不被角色卡覆盖（`openai.js:1495-1513`） | **保留事实**：DSH 没有 prompt 覆盖机制，字段不产生行为 | 无 |
+| `min_activations` / `min_activations_depth_max`（默认 0） | 深度偏斜补足最少激活数（`world-info.js:5110-5126`） | **未复刻**：不实现深度偏斜 | 无 |
+| ST 全局开关 `recursive` / `use_group_scoring` / `case_sensitive` / `match_whole_words` | 全局默认 false（`world-info.js:69-82`），条目可继承 | **逐条目读取**：按条目字段判定，不读 ST 全局设置；缺省即按 false 语义 | 无 |
+| 位置 `ANTop(2)` / `ANBottom(3)` / `EMTop(5)` / `EMBottom(6)` | Author's Note / Example Messages 插入点（`world-info.js:855-864`） | **降级**：落到当前消息批头部，原位置保留在 `stWorldBook.position` | `st-worldbook-position`（`position-downgraded`） |
+| 位置 `atDepth(4)` | 插入历史深度 | **降级**：保留 position/depth/role，落到当前消息批末尾 | `st-worldbook-depth`（`depth-collapsed`） |
+| 位置 `outlet(7)` 与 `outletName` | outlet 注入通道 | **不支持**：保留 `outletName` 事实，内容不被误注入 | `st-worldbook-controls`（`unsupported-controls`） |
+| `vectorized` | 向量检索激活条目 | **不支持**：只保留字段 | `st-worldbook-controls`（`unsupported-controls`） |
+| `triggers`（生成类型触发） | 按生成类型过滤（`world-info.js:4807-4813`） | **不支持**：保留在 `stSource.triggers`，不按生成类型过滤 | `st-prompt-triggers` / `st-worldbook-controls` |
+| `automationId`（STscript 自动化） | 由自动化脚本激活条目 | **不支持**：保留事实并告警；无主键且非常驻时明确「不会自动注入」 | `st-worldbook-automation`（`automation-dependent`） |
+| `characterFilter`（角色 / 标签过滤） | 按当前角色头像名或标签过滤条目（`world-info.js:4815-4843`） | **不支持**：保留嵌套对象，条目对所有角色生效（不静默跳过） | `st-worldbook-character-filter`（`character-filter-unsupported`） |
+| `extensions.depth_prompt` | 只在群聊自动注入（`group-chats.js:459-464`） | **降级**：保留为默认禁用的 pre-step 配置，登记 `depth_prompt` 变量 | `st-depth-prompt`（`depth-prompt-group-only`） |
+| 群聊（多角色轮转） | `group-chats.js` 逐成员注入 | **未复刻**：本项目是单角色会话 | 无 |
+| 跨进程 sticky / cooldown 恢复 | 持久化在 `chat_metadata.timedWorldInfo`（`world-info.js:619-660`） | **未复刻**：时间窗状态只在会话内、随 mount 生命周期 | 无 |
+| ST 插件正则 / 扩展脚本 / TavernHelper | `regex_scripts` 等在 ST 内执行 | **不执行**：脚本不进入提示正文 | `st-extension-scripts` |
+| `allowWIScan` 的扩展提示词扫描 | `setExtensionPrompt(..., scan)` 让扩展文本无条件进入扫描（`world-info.js:4719-4726`） | **未复刻**：只按条目开关并入 `creator_notes` / `depth_prompt` | 无 |
+| `prompts[].system_prompt` | 仅作「内置/全局 prompt」管理位（`openai.js:1240-1257`） | **等价**：不改变层归属，只保留来源事实 | `st-prompt-system-flag`（info） |
+| `selective` 缺省值 | 求值用 `entry.selective &&`，`undefined`/`false` 都不过滤（`world-info.js:4925`） | **等价**：`entry.selective === true` 与 ST 求值路径一致 | 无 |
+| `use_regex` | 匹配器不消费该字段，只有 `/pattern/flags` 形态才当正则 | **等价**：缺省时自动检测 `/pattern/flags` | 无 |
+| `world_info_logic` / `world_info_position` 默认值、`scan_depth`、`case_sensitive`、`match_whole_words`、`recursive` 的条目级默认 | 与 ST 定义一致 | **等价** | 无 |
+
+预算类字段（`world_info_budget` / `budget_cap` / `ignoreBudget`）与 `min_activations` 需要官方
+tokenizer 与上下文预算通道，超出本插件的宿主边界；`forbid_overrides` 对应的覆盖机制在 DSH
+不存在。这些差异不会让内容静默丢失：来源字段保留在 `params.stWorldBook` / `params.stSource`，
+报告按「降级 / 不支持」分类，不冒充等价。
+
 ## 更新与验证
 
 - 新导入才能恢复源文件中的纯赋值卡、真实顺序表及遗漏字段；旧转换产物没有这些信息，

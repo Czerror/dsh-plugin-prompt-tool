@@ -45,6 +45,15 @@
   `matchCharacterDepthPrompt`（对齐 `world-info.js:294-320`/`:5664-5666` 与
   `script.js:4626-4634` 的来源字段）：仅在条目显式开启且变量有值时并入扫描文本，
   未开启时不并入，既有触发面逐字不变。
+- **未复刻能力与降级对照（R14/K9）**：`docs/SillyTavern.md` 新增「未复刻的 ST 能力与降级对照」
+  表，逐行给出 token 预算（`world_info_budget` / `budget_cap` / `ignoreBudget`）、
+  `forbid_overrides`、`min_activations`、ST 全局开关、位置枚举（`ANTop` / `ANBottom` /
+  `atDepth` / `EMTop` / `EMBottom` / `outlet`）、`vectorized`、`triggers`、`automationId`、
+  `characterFilter`、`extensions.depth_prompt`、群聊、跨进程粘滞时间窗与扩展脚本扫描的实际
+  处置（等价 / 降级 / 保留事实 / 不支持）与**真实诊断码**，不把「已降级」写成「等价」。
+  真实验收：素材 17 个文件全部转换成功；`{{user}}` 键条目在赋值前后从 0 条恢复到注入
+  （`V0.66.png` 的 lore-25/39 同时生效），注入批次经官方 `@deepseek-ai/dsh-session`
+  持久化与重载无非法角色。
 
 ### 导入确认、诊断可信度与会话完整性修复（2026-09-17）
 

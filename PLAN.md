@@ -29,7 +29,7 @@
 
 | 编号 | 严重度 | 根因与位置 | 已取得证据 |
 |---|---|---|---|
-| K1 | P1 | `src/host/sillytavern.ts` 的「未定义自定义宏登记」只扫描 `config.text` / `config.texts` / `params.text`，**不扫描 `params.keys` / `params.secondaryKeys`**；引擎 `engine/st-world-book.mjs` 的键求值 `interpolateVariables(key, config.variables, session)` 拿不到 `{{user}}` 的值，键按字面量参与匹配 | 素材实测 5 条条目的 key 含 `{{user}}`，渲染后仍是字面量；其中 `V0.66.png#25`（`keys=["{{user}}"]`、`constant=false`、无副键）**完全失效**；另 4 条有字面冗余键 |
+| K1 | P1 | `src/host/sillytavern.ts` 的「未定义自定义宏登记」只扫描 `config.text` / `config.texts` / `params.text`，**不扫描 `params.keys` / `params.secondaryKeys`**；引擎 `engine/st-world-book.mjs` 的键求值 `interpolateVariables(key, config.variables, session)` 拿不到 `{{user}}` 的值，键按字面量参与匹配 | 素材实测 **3 条**条目的 key 含 `{{user}}`（R7 实施时复核，原记录为 5 条；`V0.66.png` 的 `id=25`、`id=39` 各带该键，另 1 条在其他卡片），渲染后仍是字面量；其中 `V0.66.png#25`（`keys=["{{user}}"]`、`constant=false`、无副键）**完全失效**；`id=39` 另有字面冗余键 |
 
 ST 依据：`world-info.js:4915` / `:4947` 匹配前对主键与副键执行 `substituteParams(key)`；`:337-366#matchKeys` 展开后按 `parseRegexFromString` 自动识别正则，否则字面（含 `matchWholeWords` 分支）；`script.js:408` 说明 `{{user}}` 来自 ST 全局 `name1` 与用户 persona，**卡片内不存在该值**。
 
@@ -385,6 +385,22 @@ ST 依据：`world-info.js:4915` / `:4947` 匹配前对主键与副键执行 `su
 - **偏差说明**：`ST_CONVERTER_VERSION` 仍为 `st-to-preset/3`（本轮统一版本）；`depth_prompt` 配置的 `order = -50` 落在示例对话（-60）与开场白（-40）之间，禁用状态下不影响注入顺序。
 - **遗留问题**：旧卡片需重新导入才生成 `st-depth-prompt` 与两个变量；`allowWIScan` 与群聊注入的差异在 R14 表中标注为「未复刻」。
 
+### 4.10 Task Summary：Wave 8（R14）与最终集成验收
+
+- **完成状态**：完成。T22 文档逐项核对、T15 保持项与 T23 集成验收均通过；最终门禁 `typecheck` / `lint` / `test`（948/948）/ `build` / `verify:host` / `git diff --check` 全绿。
+- **修改文件**：`docs/SillyTavern.md`（新增「未复刻的 ST 能力与降级对照」表 + 本轮的字段行）；`README.md`（使用者可见的行为变化三条）；`CHANGELOG.md`（本轮汇总）；`test/host/st-integration-r14.test.mjs`（新增 T23 端到端）。
+- **T22 验证证据**：对照表 20 行逐项用源码位置或实现断言核对——`st-worldbook-position`（`position-downgraded`）、`st-worldbook-depth`（`depth-collapsed`）、`st-worldbook-controls`（`unsupported-controls`）、`st-worldbook-automation`（`automation-dependent`）、`st-worldbook-character-filter`（`character-filter-unsupported`）、`st-depth-prompt`（`depth-prompt-group-only`）、`st-extension-scripts`、`st-prompt-system-flag`（info）、`st-prompt-triggers` 全部与 `src/host/sillytavern.ts` 的实现一致（`note`/`noteInfo` 调用点与 `entryCodes` 逐条对照）；「等价」行只保留 `selective` 缺省语义、`use_regex` 自动识别、logic/position 默认值与 `system_prompt` 管理位四处，其余全部标「降级 / 保留事实 / 不支持 / 未复刻」，无「已降级却写成等价」。链接与路径有效。
+- **T15 保持项证据**：`selective` 缺省语义、`use_regex` 自动识别、logic/position 映射、概率/分组/sticky 时间窗、原子写盘与权限校验的既有断言全部保持（946 → 948 条仅新增本轮用例，无既有断言被放宽或删除；唯一修改是 `preset-package-import.test.mjs` 的 `main` 配置期望补上 R12 新增的 `stSource` 来源事实）。
+- **T23 集成证据（真实素材 17 文件，只读隔离探针，已清理）**：
+  - 转换：17/17 成功、0 失败；共 806 条报告条目、698 个生成配置、74 个变量；诊断分布 `st-worldbook-role` 214、`st-worldbook-depth` 94、`st-prompt-role` 23、`st-extension-scripts` 16、`st-prompt-system-flag` 14、`st-first-mes-role` 13、`st-alternate-greetings-role` 10、`st-key-macro` **3**、`st-prompt-depth` 1；`st-worldbook-character-filter` / `st-worldbook-automation` / `st-worldbook-controls` **均为 0**（素材这些字段的非空值为 0，无新增噪音）。
+  - `{{user}}` 键条目实测 **3 条**（`V0.66.png` 的 `id=25`、`id=39`，另有 1 条在其他卡片），与 R7 的 `st-key-macro` 诊断数一致；PLAN 1.2 原记录的「5 条」已在 1.2 节更正。
+  - `extensions.depth_prompt`：13 张卡带该字段（与 PLAN 一致），但 **`prompt` 全为空白** → 按「非空才生成」的判定不产出配置、不登记变量（零噪音，行为正确）；`creator_notes` 同样为空。
+  - 端到端：`V0.66.png` 走真实导入 → 转换 → 真实 `runPreStepBatch`。未赋值时 20 条注入且 `lore-25`/`lore-39` **都不出现**；把 `user` 赋值为 `Alice` 后 22 条注入且**两条同时出现**（同一宏的两条条目一起恢复）。注入批次经官方 `@deepseek-ai/dsh-session` 持久化后重载成功（21/23 条派生消息），角色集合只有 `user`。
+  - 合成夹具端到端（`test/host/st-integration-r14.test.mjs`）：覆盖 R7–R13 的全部新形态，转换 → 真实 pre-step 协调器注入 → 官方会话重载；`lore-25`（未赋值键宏）、`lore-26`（延迟到递归）、`st-depth-prompt`（禁用）不注入，`lore-28`（creator notes 扫描）、`lore-27`（评分组单成员）、`lore-29`（角色过滤保留）、`lore-30`（自动化保留）、`AUX-USER`（system_prompt 不改层归属）与 `GREETING` 正常注入。
+- **关键决策**：①对照表以「实现 + 真实诊断码」为准逐行核对，不引用素材正文；②README 只写使用者需要知道的三条行为变化（条件字段支持面、键宏恢复路径、depth_prompt 禁用配置），字段级细节留在 `docs/SillyTavern.md`；③真实素材验证走只读隔离探针（`D:\AI\workspase\_temp` 建临时 preset 根，结束即删），仓库内只保留不依赖用户素材的合成夹具测试。
+- **偏差说明**：①1.2 节 K1 的「素材实测 5 条 `{{user}}` 键条目」经复核为 **3 条**，已更正。②素材 `depth_prompt` 的 `role` 是字符串（如 `system`）而非数字，实现按原值保留、不做归一（不影响禁用配置的判定）。③未做真实浏览器 smoke 与真实模型调用（PLAN 6 节要求：只用隔离环境与合成素材）。
+- **遗留问题**：H1（历史会话恢复）未授权、未执行；`allowWIScan` 扩展提示词扫描与群聊注入保持「未复刻」并在表中标注；旧转换产物需重新导入才有本轮的新字段、新变量与新诊断。
+
 ## 5. H1：历史会话恢复（单独授权，默认不执行）
 
 此操作拥有真实用户日志写入风险，不能因 R7–R14 完成或用户要求"修插件"而自动执行。先完成防复发，再由用户确认明确的会话文件清单与角色降级代价。
@@ -492,9 +508,9 @@ Wave 只有在全部必需子任务验收通过后才能标记 `[✔]`；文档 
 - [✔] **Wave 7：P3 与扫描接线**
   - [✔] R13：`depth_prompt` 保留为禁用配置并登记扫描变量（T20）。核实结论与行为证据见 4.9。
   - [✔] R9：`matchCreatorNotes` / `matchCharacterDepthPrompt` 扫描接线（T21）。
-- [ ] **Wave 8：边界文档与集成**
-  - [ ] R14：未复刻能力与降级对照文档化（T22）。
-- [ ] **最终集成验收**：T11–T23、完整门禁与合成夹具证据通过，未验证项明确披露。
+- [✔] **Wave 8：边界文档与集成**
+  - [✔] R14：未复刻能力与降级对照文档化（T22）。逐项核对与真实验收证据见 4.10。
+- [✔] **最终集成验收**：T11–T23、完整门禁与合成夹具证据通过；真实素材 17 文件只读端到端通过，未验证项（浏览器 smoke、真实模型调用、H1）已在 4.10 明确披露。
 - [ ] **独立恢复 H1**：历史日志恢复，尚未授权；不计入代码修复完成率。
 
-当前进度：文档 1/1，代码修复 **7/8（R7、R8、R9、R10、R11、R12、R13 完成；R14 与最终集成验收未开始）**；`selective` 默认值与 `use_regex` 已核实无缺陷不改；H1 未授权。
+当前进度：文档 1/1，代码修复 **8/8（R7–R14 全部完成）**，最终集成验收通过；`selective` 默认值与 `use_regex` 已核实无缺陷不改；H1 未授权、未执行。

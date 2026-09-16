@@ -184,6 +184,9 @@ UI / 写盘展示顺序固定为 `pre-step → system-section → runtime-contex
 - ST 管理工具：始终装配 `character-tools`、`session-var-tools`、`tool-config-engine` 与空操作默认的 `tool-filter`
 - `enable_web_search`：`true` → 额外组装 `tool-web`（fetch 启用）；`false` → 复用 `tool-filter` 黑名单 `web_search / web_fetch`
 - 含有效 `character_book` 条目时自动追加 `world-book-tools` 模块，使导入预设可直接调用世界书管理工具
+- 世界书条目级条件：`delayUntilRecursion`（延迟到递归扫描的层级池）、`useGroupScoring`（组内评分淘汰）、`matchCreatorNotes` / `matchCharacterDepthPrompt`（按需扫描卡片备注与深度提示词）按 ST 语义求值；`characterFilter`（角色/标签过滤）、`automationId`（STscript 自动化）、`outletName` 与向量检索**不实现**，只保留来源事实并在预览卡里逐条告警
+- 触发键里的 ST 宏（例如只存在于 ST 全局 persona 的 `{{user}}`）登记为「模板变量」空占位并产出诊断：未赋值时该键不参与匹配（不会退化成字面量误判），在模板变量里赋值后按既有匹配路径生效
+- 角色卡 `extensions.depth_prompt` 保留为一条**默认禁用**的 pre-step 配置（ST 只在群聊自动注入），可在工作台手动启用
 - `modules` 按需装配：`prompt-config-engine` 与上述 ST 管理工具始终存在；含 system-section 时补 `persona`（`complete: false` 允许 system 段生效）；含有效世界书条目时补 `world-book-tools`
 
 转换结果是一个普通预设（id 由文件名生成），可在工作台预设切换器中直接使用。字段级参数对照与完整示例见 [SillyTavern.md](docs/SillyTavern.md)。
