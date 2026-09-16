@@ -106,8 +106,15 @@ subagentToolPolicy:
 - [✔] **Wave 3：门禁、交付与审查**
   - [✔] T7：`typecheck` ✓、`lint` 0 warning（261 文件）✓、`test` **959/959** ✓、`build` ✓、`git diff --check` ✓。
   - [✔] T8：`CHANGELOG.md`、`docs/ui-architecture.md` 同步。
-  - [ ] T9：提交并推送 `origin/dev`（下一步）。
-  - [ ] T10：`open-code-review-delegate` 委派审查（下一步）。
+  - [✔] T9：提交 `02d641f`（`feat(engine)!: subagentToolPolicy 改为模块类型能力，子代理页不再提供 tool-filter`），快进推送 `origin/dev`（`6990bff..02d641f`）。
+  - [✔] T10：`ocr delegate`（open-code-review v1.12.4）范围审查 `6990bff..02d641f`：16 个变更文件中 **12 个可审查**（4 个 md 被规则排除），12/12 逐文件审阅，**无 critical/high**；唯一一条 lint 级问题（测试内未使用变量）已当场清理。
+
+## 9. OCR 委托审查记录
+
+- 审查入口：`ocr delegate preview --from 6990bff --to 02d641f --format json -b "…"` → `mode: range`，`reviewable_count: 12`，`excluded_count: 4`（`PLAN.md`、`CHANGELOG.md`、`docs/ui-architecture.md`、`.scratch` 归档，均 `unsupported_ext`）；`ocr delegate rule` 返回单一系统规则组（拼写/死代码/代码质量/React 最佳实践/异步/安全）。
+- 覆盖 12/12：`MainSessionPage`、`SubagentPage`、`EngineModuleList`、`DelegationToolsCard`、`locales-cards`、`locales-params`、`host/manifest`、`shared/engine-capabilities`、`test/client/engine-module-cards`、`test/client/scope-create-separation`、`test/client/tools-preview`、`test/host/subagent-policy-capability`。
+- 结论：无 critical/high。命中项全部满足——无 `any`、无 `var`、无 `==`、无 `eval`/`innerHTML`、无组件内声明组件、无内联 style；effect 清理完整；`ownSection` 为可选字段、不改写历史预设数据；`section!` 非空断言由 `sectionPresent` 判定保证。
+- 记录备查的设计取舍（非缺陷）：①骨架 `requireApproval: true` 在宿主无批准通道时会让子代理扩权 fail closed（用户决策的骨架形态，可在卡片内改）；②`renderCapabilityExtra` 插槽以 capabilityId 过滤，未启用该能力时策略编辑器不可见（与"模块声明 = 唯一开关"一致）；③历史"段在、模块不在"的半状态需用户启用一次或保存一次才会补齐声明。
 
 ## 8. 执行中发现并修复的额外缺陷
 
