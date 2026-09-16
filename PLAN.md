@@ -409,6 +409,7 @@ ST 依据：`world-info.js:4915` / `:4947` 匹配前对主键与副键执行 `su
   2. **`engine/st-world-book.mjs`：评分淘汰条目被重复记录（medium）**。被组内评分淘汰的成员随后在 `group-lost` 循环里又被记一条 rejected，同一轮出现两个互相矛盾的原因（探针实测 `lore-1`/`lore-3` 各两条）。改为用 `scoreOut` 集合跳过，只保留 `group-score-lost`；T16 增加「每个被淘汰条目只有一个拒绝原因」的断言。
 - **丢弃的观察项（判定为非缺陷）**：①评分时对 active 条目构造扫描材料会执行 `interpolateVariables`（含 `pick`/`random` 宏）从而消耗随机数——只在条目显式开启 `useGroupScoring` 时发生，ST 的 `getScore` 同样要重算匹配，且材料按 pass 缓存（同一 pass 内每条目只插值一次）；②`delayUntil > delayLevel` 对非数字值走 JS 强制转换——ST 的字段类型是 number，畸形输入下 `pass === 0` 的抑制仍然成立；③两套测试夹具（`conditionEntry` / `keyMacroEntry`）默认值不同，保留以避免测试间耦合。
 - **修复后门禁**：`typecheck` / `lint`（0 warning）/ `test`（948/948）/ `build` / `git diff --check` 全部通过；`rebuild:composition` 与 `sync:yaml` 重跑后分发快照无变化（本轮不涉及组合模块与 yaml 供应商）。
+- **复审（覆盖最终交付状态 `062604b..ccc3375`）**：首轮范围止于 `eb58428`，修复提交本身未在首轮范围内，因此补做一次复审——`ocr delegate preview` 仍判定 8 个可审查文件，`reviewed 8 / skipped 0 / coverage 100%`。逐行核对 `eb58428..ccc3375` 的修复增量：①`scoreOut` 在组循环内声明（每组独立），评分淘汰全部成员时提前 `continue` 不产生 `group-lost`，多组条目在另一组仍按既有语义记 `group-lost`；②自动化字段改为「非空字符串」判定后，写入仍保留来源原值（与 `characterFilter` 的保留策略一致），`tsc` 类型收窄无告警。按「新增行里的强制转换与真值判定」全文巡查，未发现第二处同类误报（`delayLevels` 的数值排序、`?? 0`、`=== true` 判定均已有出处或类型守护）。**新增发现 0 处**；唯一 Low 项是测试数据 `[0, false, 0.0, {}]` 中 `0.0` 与 `0` 等价（冗余一项），判定为不值得单独提交的噪音，保留不改。
 
 ## 5. H1：历史会话恢复（单独授权，默认不执行）
 
