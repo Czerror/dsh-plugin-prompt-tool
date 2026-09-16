@@ -145,5 +145,16 @@
   - [✔] T9：新增 `test/client/scope-create-separation.test.mjs`（10 条断言）；`engine-module-cards` 展开用例改用新信号并补重复创建断言。
 - [✔] **Wave 5：门禁与交付**
   - [✔] T10：`typecheck` ✓、`lint` 0 warning/0 error（257 文件）✓、`test` **940/940** ✓、`build` ✓、`git diff --check` 干净 ✓。
-  - [ ] T11：提交并推送 `origin/dev`（下一步执行）。
-  - [ ] T12：`open-code-review-delegate` 委派审查本轮改动（下一步执行）。
+  - [✔] T11：提交 `9227c09`（`feat(client): 子代理页创建入口对等，过滤与新建严格分离`），快进推送 `origin/dev`（`f1b3621..9227c09`）。
+  - [✔] T12：`ocr delegate`（open-code-review v1.12.4）范围审查 `f1b3621..9227c09`：17 个变更文件中 **13 个可审查**（4 个 md 被规则排除），13/13 逐文件审阅，见第 8 节。
+
+## 8. 交付与 OCR 委托审查记录
+
+- 提交：`9227c09`，快进推送 `origin/dev`（`f1b3621..9227c09`）；未切 `main`、未建 PR、本地记忆（`.ai-memory/`）与 `lib/` 不入库。
+- 审查入口：`ocr delegate preview --from f1b3621 --to 9227c09 --format json -b "…"` → `mode: range`，`reviewable_count: 13`，`excluded_count: 4`（`PLAN.md`、`CHANGELOG.md`、`docs/ui-architecture.md`、`.scratch` 归档，均为 `unsupported_ext`）；`ocr delegate rule` 返回单一系统规则组（拼写/死代码/代码质量/React 最佳实践/异步/安全）。
+- 覆盖：13/13 可审查文件逐文件核对 diff + 规则（`ConfigListWithTemplates`、`MainSessionPage`、`SubagentPage`、`EngineModuleList`、`PromptConfigCard`、`PromptConfigList`、`PromptConfigsEditor`、`useTemplatePicker`、`locales`、`EngineModuleCard`、`reveal-card`、`engine-module-cards.test`、`scope-create-separation.test`）。
+- 结论：**无 critical/high 缺陷**。命中规则的检查项全部满足——无 `any`、无 `var`、无 `==`、无嵌套三元、无 `innerHTML`/`eval`、无组件内声明组件、无内联 style、effect 均有清理函数（`scrollToCreatedCard` 返回 disposer，`setTimeout`/`requestAnimationFrame` 均被取消）、异步路径无未处理拒绝。
+- 记录备查的设计取舍（非缺陷，用户规则下的预期行为）：目标卡被当前过滤挡掉时（例如在 `tool-pipeline` 视图新建能力、在 `runtime-context` 视图新建任何能力）卡片保持不可见、滚动重试约 2 秒后静默退出——这正是"过滤只能由用户手动改变、新建不得动过滤框"的直接结果，切到「全部」或对应层即可见。
+- 低优先改进候选（未改，等用户指定修复范围）：
+  1. `reveal-card.ts` 的重试窗口内若用户切页，重试仍会继续（组件卸载会取消；面板常驻时会有一次延迟跳转）。
+  2. `SubagentPage` 与主会话页的创建菜单弹层共用同一个 `anchorRef`，两个入口在不同位置触发时弹层锚点仍指向合并菜单按钮。
