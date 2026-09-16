@@ -117,3 +117,70 @@ test('独立世界书顶层 key/keysecondary/selective_logic 与角色卡内嵌�
   assert.equal(embedded.params.stWorldBook.useProbability, false)
   assert.equal(standalone.params.stWorldBook.probability, 0)
 })
+
+/** T11–T14 世界书触发键宏夹具：role=1 避免角色降级诊断干扰断言。 */
+const keyMacroEntry = (extra) => ({
+  id: 25, keys: [], secondary_keys: [], content: 'E25', enabled: true, constant: false,
+  selective: true, insertion_order: 100, position: 'before_char', role: 1, extensions: {}, ...extra,
+})
+
+test('T11 世界书 keys 的未解析宏登记为空占位并产出可定位诊断', () => {
+  const card = { data: { name: 'Ada', character_book: { entries: [keyMacroEntry({ keys: ['{{user}}'] })] } } }
+  const { spec, report } = convertStToPresetWithReport(card, 'keymacro')
+  assert.equal(spec.variables.user, '', '未定义宏登记为空占位')
+  const config = spec.promptConfigs.find(c => c.id === 'lore-25')
+  assert.deepEqual(config.params.keys, ['{{user}}'], '源键内容不被改写')
+  const diagnostics = report.diagnostics.filter(item => item.code === 'st-key-macro')
+  assert.equal(diagnostics.length, 1, '每个条目一条键宏诊断')
+  assert.deepEqual([diagnostics[0].severity, diagnostics[0].entryId, diagnostics[0].field],
+    ['warning', '25', 'keys'])
+  assert.match(diagnostics[0].message, /模板变量/)
+  assert.ok(spec.meta.stWarnings.includes(diagnostics[0].message), 'warning 进入 stWarnings')
+  assert.equal(report.summary.needsReview, 1, 'warning 计入 needsReview')
+})
+
+test('T13 键宏登记不覆盖既有变量，字面键、char 宏与已定义变量不回归', () => {
+  const card = { data: { name: 'Ada', description: 'DESC', character_book: { entries: [
+    keyMacroEntry({ keys: ['P', '{{char}}', '{{user}}'] }),
+  ] } } }
+  const spec = convertStToPreset(card, 'noregress')
+  assert.equal(spec.variables.char, 'Ada', 'char 变量不被空占位覆盖')
+  assert.equal(spec.variables.description, 'DESC', '卡片正文变量不被空占位覆盖')
+  assert.equal(spec.variables.user, '')
+  assert.equal(spec.variables.DSH_HOME, undefined, '内置路径变量不登记')
+  assert.deepEqual(spec.promptConfigs.find(c => c.id === 'lore-25').params.keys, ['P', '{{char}}', '{{user}}'])
+
+  // 正文已引用的宏同样不覆盖；键里的同名宏仍按条目产出诊断（可见性不因登记顺序丢失）。
+  const both = convertStToPresetWithReport({ data: { name: 'Ada', system_prompt: 'S {{user}}', character_book: {
+    entries: [keyMacroEntry({ keys: ['{{user}}'] })] } } }, 'bodyfirst')
+  assert.equal(both.spec.variables.user, '')
+  assert.equal(both.report.diagnostics.filter(item => item.code === 'st-key-macro').length, 1)
+})
+
+test('T14 键宏边界：secondaryKeys 登记、大小写不敏感、运行时宏不登记、畸形引用不抛错', () => {
+  const book = (entry) => ({ data: { name: 'Ada', character_book: { entries: [entry] } } })
+  const sec = convertStToPresetWithReport(book(keyMacroEntry({ keys: ['P'], secondary_keys: ['{{sidekick}}'] })), 'sec')
+  assert.equal(sec.spec.variables.sidekick, '')
+  assert.deepEqual(sec.report.diagnostics.filter(item => item.code === 'st-key-macro').map(item => item.field),
+    ['secondaryKeys'])
+
+  const upper = convertStToPreset(book(keyMacroEntry({ keys: ['{{USER}}'], secondary_keys: ['{{user}}'] })), 'upper')
+  assert.equal(Object.keys(upper.variables).filter(key => key.toLowerCase() === 'user').length, 1, '同一宏只登记一次')
+  assert.equal(upper.variables.USER, '')
+
+  const runtime = convertStToPresetWithReport(book(keyMacroEntry({ keys: ['{{time}}', '{{DSH_HOME}}', '{{random::a,b}}'] })), 'runtime')
+  assert.equal(runtime.report.diagnostics.filter(item => item.code === 'st-key-macro').length, 0)
+  assert.equal(runtime.spec.variables?.time, undefined)
+  assert.equal(runtime.spec.variables?.DSH_HOME, undefined)
+
+  const malformed = convertStToPresetWithReport(book(keyMacroEntry({ keys: ['{{', '{{}}', '{{a{{b}}', 'plain'] })), 'malformed')
+  assert.deepEqual(malformed.spec.promptConfigs.find(c => c.id === 'lore-25').params.keys, ['{{', '{{}}', '{{a{{b}}', 'plain'])
+  assert.equal(malformed.spec.variables.b, '', '畸形引用按可识别的最内层宏宽容处理，不抛错')
+
+  // 诊断上限与 truncated 语义不变：超限只截断观测，不改变生成的配置。
+  const many = convertStToPresetWithReport({ data: { name: 'Ada', character_book: { entries:
+    Array.from({ length: 250 }, (_, index) => keyMacroEntry({ id: index + 1, keys: [`{{macro${index}}}`] })) } } }, 'many')
+  assert.equal(many.spec.promptConfigs.length, 250)
+  assert.equal(many.report.diagnostics.length, 200)
+  assert.equal(many.report.truncated, true)
+})

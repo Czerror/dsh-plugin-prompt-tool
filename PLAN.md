@@ -334,6 +334,20 @@ ST 依据：`world-info.js:4915` / `:4947` 匹配前对主键与副键执行 `su
 - **偏差说明**：复盘期间曾把"无主键非常驻"误报为内容丢失、曾误判 `selective` 与 `use_regex`，均已在第 1.3 节更正；未运行业务测试或构建（纯文档）。
 - **遗留问题**：R7–R14 待授权；3.9 的 6 处核实点未做；素材对 K4–K7 的覆盖为默认值，需合成夹具补行为证据；H1 未授权。
 
+### 4.7 Task Summary：R7（Wave 5）
+
+- **完成状态**：完成。T11–T14 行为断言通过；`typecheck` / `lint` / `test`（936/936）/ `build` 全绿。
+- **修改文件**：`src/host/sillytavern.ts`（宏登记循环扩展到键 + `worldBookSources` 映射 + `ST_CONVERTER_VERSION` → `st-to-preset/3`）；`test/host/st-compatibility.test.mjs`（T11/T13/T14）；`test/engine/st-world-book.test.mjs`（T12）；`test/host/st-preview-report.test.mjs`、`test/fixtures/character-import.mjs`、`test/client/import-preview-browser.test.mjs`（转换器版本同步）；`docs/SillyTavern.md`；`CHANGELOG.md`。
+- **验证证据**：
+  - 定向：`node --test test/host/st-compatibility.test.mjs test/engine/st-world-book.test.mjs` → `pass 29 / fail 0`；改动前先跑红灯，T11/T13/T14 三条以 `undefined !== ''` 失败。
+  - 完整门禁（隔离 cwd `D:\AI\workspase\_temp`）：`pnpm typecheck` 退出 0、`pnpm lint` 退出 0（0 warning / 0 error）、`pnpm test` → `tests 936 / pass 936 / fail 0`、`pnpm build` 退出 0。
+  - 行为证据：`keys=['{{user}}']` 的条目 `spec.variables.user === ''`；`report.diagnostics` 含一条 `st-key-macro`（`entryId='25'`、`field='keys'`、severity=warning）；`report.summary.needsReview === 1`；`spec.meta.stWarnings` 含同文案。运行期未赋值时消息 `'Alice'` 与 `'{{user}}'` 都不注入；`variables.user='Alice'` 后 `'Alice'` 命中 `lore-25`、`'Bob'` 不命中、重复求值幂等；`params.keys` 原文未被改写。
+  - 边界证据：仅 `secondary_keys` 含宏时 `field='secondaryKeys'`；`{{USER}}`/`{{user}}` 只登记一个键；`{{time}}`/`{{DSH_HOME}}`/`{{random::a,b}}` 零诊断零登记；畸形引用（`{{`、`{{}}`、`{{a{{b}}`）不抛错（`b` 按最内层宏宽容登记）；250 条含宏条目时诊断截断为 200 且 `report.truncated === true`。
+- **核实点**：3.9 无 R7 依赖项。实施前按符号重新定位了宏登记循环（`src/host/sillytavern.ts`）、`buildWorldBookEntry` 的 params 键集（`src/host/worldbook.ts`）与引擎键求值 `interpolateVariables(...).filter(Boolean)`（`engine/st-world-book.mjs:95-96`），确认「未赋值不误触发」无需引擎改动。
+- **关键决策**：①诊断判定基准取**登记开始时的变量表快照**（`declaredKeys`），而不是「本次是否新登记」——否则同一宏在第二个条目出现时不再产出诊断，素材 5 条受影响条目只有 1 条可见，不满足 R7 的 done 标准。②复用 `note()` 原有的 `code + entryId` 去重：每个条目一条 warning，`field` 记录首个命中字段，`keys` 与 `secondaryKeys` 不重复刷屏。③诊断文案固定且不含键正文，只说明失效原因与恢复路径。④用显式 `Map<配置 id, 来源条目 id>` 关联，不按 `lore-` 前缀反推。
+- **偏差说明**：`ST_CONVERTER_VERSION` 升为 `st-to-preset/3`，连带同步 3 处测试夹具的版本字符串（`st-preview-report.test.mjs` 是硬断言，另两处是报告形状夹具）；`lib/` 由 `pnpm build` 重新生成。未做真实浏览器 smoke（T23 集成留到 Wave 8）。
+- **遗留问题**：旧转换产物不含新登记与新诊断，需用户重新导入才生效（不自动回写用户 `preset.yml`）。
+
 ## 5. H1：历史会话恢复（单独授权，默认不执行）
 
 此操作拥有真实用户日志写入风险，不能因 R7–R14 完成或用户要求"修插件"而自动执行。先完成防复发，再由用户确认明确的会话文件清单与角色降级代价。
@@ -431,8 +445,8 @@ Wave 只有在全部必需子任务验收通过后才能标记 `[✔]`；文档 
 
 - [✔] **Wave 4：文档规划**
   - [✔] D1：旧计划原文已归档（与 `f3539fa:PLAN.md` 字节一致），P1+P2+P3 方案、用户决策、任务卡与状态清单已编写并通过文档校验。
-- [ ] **Wave 5：P1 触发条件**
-  - [ ] R7：世界书 `keys` / `secondaryKeys` 的未解析宏登记为可赋值变量并产出可见诊断（T11–T14）。
+- [✔] **Wave 5：P1 触发条件**
+  - [✔] R7：世界书 `keys` / `secondaryKeys` 的未解析宏登记为可赋值变量并产出可见诊断（T11–T14）。行为矩阵与门禁证据见 4.7。
 - [ ] **Wave 6：P2 条件字段**
   - [ ] R8：`delayUntilRecursion` 与 `useGroupScoring` 求值支持（T16）。
   - [ ] R10：`characterFilter` 按真实形态读取并显式拒绝（T17）。
@@ -446,4 +460,4 @@ Wave 只有在全部必需子任务验收通过后才能标记 `[✔]`；文档 
 - [ ] **最终集成验收**：T11–T23、完整门禁与合成夹具证据通过，未验证项明确披露。
 - [ ] **独立恢复 H1**：历史日志恢复，尚未授权；不计入代码修复完成率。
 
-当前进度：文档 1/1，代码修复 **0/8（R7–R14 未开始）**；`selective` 默认值与 `use_regex` 已核实无缺陷不改；H1 未授权。
+当前进度：文档 1/1，代码修复 **1/8（R7 完成，R8/R9/R10/R11/R12/R13/R14 未开始）**；`selective` 默认值与 `use_regex` 已核实无缺陷不改；H1 未授权。

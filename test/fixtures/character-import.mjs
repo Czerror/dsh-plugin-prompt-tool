@@ -10,7 +10,7 @@ const t = (key, params = {}) => Object.entries(params)
   .reduce((text, [name, value]) => text.replaceAll(`{${name}}`, String(value)), PROMPT_TOOL_DICTS.zh[key] ?? key)
 
 const emptyReport = () => ({
-  converter: 'st-to-preset/2',
+  converter: 'st-to-preset/3',
   sourceName: 'card',
   orderGroups: [],
   entries: [],

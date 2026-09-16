@@ -26,8 +26,9 @@ import { buildWorldBookEntry } from './worldbook.ts'
 import { prepareStText, renderStText } from '../../engine/st-macros.mjs'
 
 /** 转换器版本：报告用它解释本次生成使用了哪一版语义（语义调整时同步递增）。
- *  v2：pre-step 角色统一降级为 user（原角色只作来源元数据）+ 选组优先级修正常量事实。 */
-export const ST_CONVERTER_VERSION = 'st-to-preset/2'
+ *  v2：pre-step 角色统一降级为 user（原角色只作来源元数据）+ 选组优先级修正常量事实。
+ *  v3：世界书触发键（keys/secondaryKeys）的未定义宏登记为空占位并产出可见诊断。 */
+export const ST_CONVERTER_VERSION = 'st-to-preset/3'
 
 /** 报告的展示上限：只截断观测数据，不改变转换结果。 */
 const REPORT_ENTRY_LIMIT = 500
@@ -252,6 +253,8 @@ export function convertStToPresetWithReport(
     }
   }
   const configs: Array<Record<string, unknown>> = []
+  // 世界书配置 id → 来源条目 id：键宏诊断必须定位到源条目，不按 id 前缀反推。
+  const worldBookSources = new Map<string, string>()
   const droppedMarkers: string[] = []
   const diagnostics: StConversionDiagnostic[] = []
   const reportEntries: StConversionEntryReport[] = []
@@ -496,6 +499,7 @@ export function convertStToPresetWithReport(
       configs.push({ ...worldConfig, role: ST_PRE_STEP_ROLE,
         position: position === 4 ? 'after-all' : 'before-all',
         params: { ...worldConfig.params as Record<string, unknown>, stWorldBook } })
+      worldBookSources.set(String(worldConfig.id), sourceId)
       recordEntry({ sourceId, sourceIndex: index, targetId: `lore-${sourceId}`,
         layer: 'pre-step', order: stOrder, role: ST_PRE_STEP_ROLE,
         position: position === 4 ? 'after-all' : 'before-all',
@@ -667,24 +671,44 @@ export function convertStToPresetWithReport(
   const RUNTIME_MACROS = new Set(['lastusermessage', 'lastcharmessage', 'charifnotgroup', 'time', 'date', 'weekday', 'isotime', 'isodate', 'random', 'pick', 'roll', 'chance', 'newline', 'pipe'])
   const BUILTIN_KEYS = new Set(['DSH_HOME', 'WORKSPACE', 'CWD'])
   const MACRO_RE = /\{\{([A-Za-z0-9_.\u4e00-\u9fff-]+)\}\}/g
-  const knownKeys = new Set(Object.keys(variables).map((key) => key.toLowerCase()))
+  // 判定基准是「登记开始时的变量表」：同一宏在后续条目里仍算未解析，诊断才能定位到
+  // 每一条受影响的条目；登记动作本身幂等。
+  const declaredKeys = new Set(Object.keys(variables).map((key) => key.toLowerCase()))
+  const knownKeys = new Set(declaredKeys)
+  const hasMacroSource = (key: string): boolean =>
+    declaredKeys.has(key.toLowerCase()) || RUNTIME_MACROS.has(key.toLowerCase()) || BUILTIN_KEYS.has(key)
+  /** 登记未定义宏为空占位；返回识别到的未解析宏名（空数组表示全部已有来源）。 */
+  const registerMacros = (raw: unknown): string[] => {
+    const missing: string[] = []
+    MACRO_RE.lastIndex = 0
+    for (const match of String(raw).matchAll(MACRO_RE)) {
+      const key = match[1]!
+      if (hasMacroSource(key)) continue
+      missing.push(key)
+      const lower = key.toLowerCase()
+      if (!knownKeys.has(lower)) { knownKeys.add(lower); variables[key] = '' }
+    }
+    return missing
+  }
+  /** 键宏诊断文案：不记录键正文与卡片内容，只说明失效原因与恢复路径。 */
+  const KEY_MACRO_MESSAGE = '世界书触发键含未解析的 ST 宏：已登记为空占位，在「模板变量」中赋值后该键才会命中'
   for (const config of configs) {
     config.params = { ...config.params as Record<string, unknown> | undefined, stMacros: true }
-    const configRecord = config as { params?: { text?: unknown } }
+    const configRecord = config as { params?: { text?: unknown; keys?: unknown; secondaryKeys?: unknown } }
     const texts = [
       ...(typeof config.text === 'string' && config.text.length > 0 ? [config.text] : []),
       ...(Array.isArray(config.texts) ? config.texts : []),
       ...(typeof configRecord.params?.text === 'string' ? [configRecord.params.text] : []),
     ]
-    for (const raw of texts) {
-      const text = String(raw)
-      MACRO_RE.lastIndex = 0
-      for (const match of text.matchAll(MACRO_RE)) {
-        const key = match[1]!
-        const lower = key.toLowerCase()
-        if (knownKeys.has(lower) || RUNTIME_MACROS.has(lower) || BUILTIN_KEYS.has(key)) continue
-        knownKeys.add(lower)
-        variables[key] = ''
+    for (const raw of texts) registerMacros(raw)
+    // 触发键与正文共用同一份排除集与同一张变量表：ST 匹配前会对主键/副键求值
+    // （world-info.js:4915/4947），键里的 {{user}} 之类无源宏在本项目同样按空值处理，
+    // 不再以字面量参与匹配；受影响条目逐条产出可定位诊断。
+    if (config.strategy === 'world-book') {
+      const entryId = worldBookSources.get(String(config.id))
+      for (const [field, value] of [['keys', configRecord.params?.keys], ['secondaryKeys', configRecord.params?.secondaryKeys]] as const) {
+        const missing = (Array.isArray(value) ? value : []).flatMap((key) => registerMacros(key))
+        if (missing.length > 0 && entryId !== undefined) note('st-key-macro', KEY_MACRO_MESSAGE, { entryId, field })
       }
     }
   }

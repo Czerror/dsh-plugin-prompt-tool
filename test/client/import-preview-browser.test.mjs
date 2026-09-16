@@ -195,7 +195,7 @@ test('浏览器：导入确认生命周期、顺序组候选与预览版本', { 
     assert.equal(submitBody.promptOrderCharacterId, '222', '提交沿用所选顺序组')
 
     // 换组：旧 ready 立即失效并重新预览（不是拿旧凭据换组提交）。
-    await evaluate(`window.__reportWithGroups = { converter: 'st-to-preset/2', sourceName: 'demo.json', orderGroups: [{ characterId: '111', selected: true, entries: 1 }, { characterId: '222', selected: false, entries: 2 }], entries: [], diagnostics: [], summary: { inputs: 2, converted: 2, disabled: 0, excluded: 0, unsupported: 0, degraded: 0, needsReview: 0 } }`)
+    await evaluate(`window.__reportWithGroups = { converter: 'st-to-preset/3', sourceName: 'demo.json', orderGroups: [{ characterId: '111', selected: true, entries: 1 }, { characterId: '222', selected: false, entries: 2 }], entries: [], diagnostics: [], summary: { inputs: 2, converted: 2, disabled: 0, excluded: 0, unsupported: 0, degraded: 0, needsReview: 0 } }`)
     await evaluate(`window.previewPlan = [{ ok: true, value: { preview: true, state: 'ready', sourceDigest: 'digest-x', previewRevision: 'rev-x', report: window.__reportWithGroups } }]`)
     await setPresetFiles()
     await waitFor(`${presetPreview} === 3`, '第三份预览')
@@ -210,7 +210,7 @@ test('浏览器：导入确认生命周期、顺序组候选与预览版本', { 
     // 队列互斥：等待确认时导入按钮 busy，先取消当前预览再选新文件。
     await clickText('取消预览')
     await waitFor(`!(${previewOpen})`, '取消后回到空闲')
-    await evaluate(`window.__groupReport = (id) => ({ converter: 'st-to-preset/2', sourceName: 'demo.json', orderGroups: [{ characterId: '111', selected: id === '111', entries: 1 }, { characterId: '222', selected: id === '222', entries: 2 }], entries: [], diagnostics: [], summary: { inputs: 2, converted: 2, disabled: 0, excluded: 0, unsupported: 0, degraded: 0, needsReview: 0 } })`)
+    await evaluate(`window.__groupReport = (id) => ({ converter: 'st-to-preset/3', sourceName: 'demo.json', orderGroups: [{ characterId: '111', selected: id === '111', entries: 1 }, { characterId: '222', selected: id === '222', entries: 2 }], entries: [], diagnostics: [], summary: { inputs: 2, converted: 2, disabled: 0, excluded: 0, unsupported: 0, degraded: 0, needsReview: 0 } })`)
     await evaluate(`window.previewPlan = [
       { value: { preview: true, state: 'ready', sourceDigest: 'digest-base', previewRevision: 'rev-base', report: window.__groupReport('111') } },
       { delay: 500, value: { preview: true, state: 'ready', sourceDigest: 'digest-slow', previewRevision: 'rev-slow', report: window.__groupReport('222') } },
@@ -236,7 +236,7 @@ test('浏览器：导入确认生命周期、顺序组候选与预览版本', { 
 
     // ---- T06 有损信息完整可查看：20/21/200 条、info、被排除条目、零告警与截断提示 ----
     await evaluate(`window.__makeReport = (n, opts = {}) => ({
-      converter: 'st-to-preset/2',
+      converter: 'st-to-preset/3',
       sourceName: 'demo.json',
       orderGroups: [],
       entries: opts.excluded === true

@@ -301,3 +301,24 @@ test('读取诊断不改变入选集合、顺序、抽样次数与粘滞时间�
   assert.equal(readCalls, plainCalls, '读取诊断不改变概率抽样次数')
   assert.deepEqual(withRead, ['lore-1,lore-2', 'lore-2', 'lore-1,lore-2', 'lore-2'], '粘滞/概率窗口语义保持')
 })
+
+test('T12 世界书键宏：未赋值不误触发，赋值后命中，同一轮重复求值幂等', async () => {
+  const spec = convertStToPreset({ data: { name: 'Probe', character_book: { entries: [
+    entry(25, { keys: ['{{user}}'], extensions: { scan_depth: 2 } }),
+  ] } } }, 'keymacro')
+  assert.equal(spec.variables.user, '', '转换期已登记空占位')
+  const agent = { session: { id: 'keymacro', header: {}, snapshotEvents: () => [] }, options: {} }
+  const ids = async (configs, text) => {
+    const decision = await runPreStepBatch({ ctx: { get() {} }, agent, decision: { kind: 'enter', messages: [message(text)] }, configs, promotion, memo: new Map(), warnOnce() {} })
+    return decision.messages.filter(m => m.source?.plugin?.startsWith('lore-')).map(m => m.source.plugin)
+  }
+  const build = (variables) => createPromptConfigs(spec.promptConfigs.map(c => ({ ...c, variables })))
+  const unset = build(spec.variables)
+  assert.deepEqual(await ids(unset, 'Alice'), [], '未赋值：键渲染为空，条目不被误触发')
+  assert.deepEqual(await ids(unset, '{{user}}'), [], '未赋值：字面量也不参与匹配')
+
+  const assigned = build({ ...spec.variables, user: 'Alice' })
+  assert.deepEqual(await ids(assigned, 'Alice'), ['lore-25'], '赋值后含该值的消息命中并注入')
+  assert.deepEqual(await ids(assigned, 'Bob'), [], '赋值后其他文本仍不命中')
+  assert.deepEqual(await ids(assigned, 'Alice'), ['lore-25'], '同一轮重复求值幂等')
+})

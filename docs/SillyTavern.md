@@ -95,6 +95,7 @@ ST 导入在既有 `buildWorldBookEntry` 结构上添加 `params.stWorldBook`，
 | ST 语义 | 导入后的处理 |
 |---|---|
 | `keys/key`、`secondary_keys/keysecondary` | 保留；只有主键命中才能进行选择性判断 |
+| `keys`/`secondary_keys` 里的 ST 宏 | 匹配前按同一变量表求值（对齐 ST 的 `substituteParams`）；卡内无源的宏（如只存在于 ST 全局 persona 的 `{{user}}`）登记为空占位并产出 `st-key-macro` 诊断：未赋值时该键不参与匹配（不会退化成字面量误判），在「模板变量」赋值后按既有匹配路径生效 |
 | `selective=false` | 不要求副键；非常驻且没有主键时不自动激活 |
 | 0 AND_ANY | 主键命中且至少一个副键命中 |
 | 1 NOT_ALL | 主键命中且至少一个副键未命中 |
@@ -121,6 +122,10 @@ position=4 降级为当前消息批末尾；其他世界书位置落在消息批
 
 未复刻 token 预算、向量检索、outlet、Author's Note、生成类型触发、ST 插件正则、跨进程
 粘滞/冷却恢复等能力。角色卡中的源选项不会授权执行任意脚本。
+
+键宏的恢复路径不新增通道：诊断只说明哪条条目的触发键需要赋值，赋值仍在工作台
+「模板变量」里完成，写入 `variables.yml` 后按既有重建流程生效。本项目不猜测 `{{user}}`
+的值（它来自 ST 全局设置与 persona，卡内不存在，用同义词反推属猜测），也不在导入期执行宏。
 
 ## 更新与验证
 

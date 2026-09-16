@@ -95,7 +95,7 @@ test('转换报告给出来源/目标身份、分类与摘要，且 stWarnings �
   const snapshot = structuredClone(input)
   const { spec, report } = convertStToPresetWithReport(input, 'demo')
   assert.deepEqual(input, snapshot, '转换不修改源对象')
-  assert.equal(report.converter, 'st-to-preset/2')
+  assert.equal(report.converter, 'st-to-preset/3')
   assert.equal(report.sourceName, 'demo')
   const bySource = new Map(report.entries.map((entry) => [entry.sourceId, entry]))
   assert.equal(bySource.get('main').classification, 'equivalent')
