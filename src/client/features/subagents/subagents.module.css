@@ -18,3 +18,17 @@
   gap: 8px;
   min-width: 0;
 }
+
+/* 策略编辑区作用域：无边框（内嵌在能力卡内），关闭开关时整块只读并视觉淡化。 */
+.policyScope {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.policyScope[disabled] {
+  opacity: 0.55;
+}

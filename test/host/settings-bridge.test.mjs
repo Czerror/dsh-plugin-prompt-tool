@@ -992,7 +992,7 @@ test('settings bridge /subagent-tool-policy 保存、停用与模块装配均为
     assert.equal(disable.status, 200)
     parsed = parseYaml(readFileSync(join(dir, 'preset.yml'), 'utf8'))
     assert.equal(parsed.subagentToolPolicy, undefined)
-    assert.ok(!parsed.modules.includes('subagent-tool-policy'))
+    assert.ok(parsed.modules.includes('subagent-tool-policy'), '关闭开关只删策略段，模块声明保留（能力卡可再次打开）')
     assert.equal(parsed.unknown, 'keep')
     assert.equal(rebuilds, 2)
   } finally {

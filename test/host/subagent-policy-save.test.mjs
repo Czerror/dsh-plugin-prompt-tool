@@ -165,13 +165,14 @@ test('UI 保存：写入预设段 + 自动装配模块 + 物化策略文件 + �
   writePreset('PROMPT', writeOptions())
   assert.deepEqual(parseYaml(readFileSync(policyFile, 'utf8')), WRITER_POLICY)
 
-  // 6) 清空策略：删除顶层段 + 移除模块声明 = 回到官方委派行为。
+  // 6) 关闭开关：只删除顶层段，**保留模块声明**（能力卡仍在，可再次打开）；
+  //    引擎在策略文件缺失时降级为官方委派行为（见 engine/subagent-tool-policy.mjs）。
   const cleared = await savePolicy(handler, null)
   assert.equal(cleared.status, 200)
   const disabled = loadPresetSpec(presetDir)
   assert.equal(disabled.subagentToolPolicy, undefined)
-  assert.equal(disabled.modules.includes('subagent-tool-policy'), false)
-  assert.deepEqual(findAllNested(parseYaml(renderComposition(disabled, {}, presetDir)), new Set(['subagent-tool-policy'])), [])
+  assert.ok(disabled.modules.includes('subagent-tool-policy'), '关闭开关后模块声明保留，能力卡不会消失')
+  assert.ok(findAllNested(parseYaml(renderComposition(disabled, {}, presetDir)), new Set(['subagent-tool-policy'])).length > 0, '组合仍装配该行')
 })
 
 test('保存被拒绝的两类输入：损坏策略 409 且不落盘；预设切换 409', async () => {
@@ -202,6 +203,21 @@ test('保存被拒绝的两类输入：损坏策略 409 且不落盘；预设切
   const read2 = fakeRes()
   await handler(fakeReq({ expectedPresetId: PRESET_ID }), read2)
   assert.deepEqual(JSON.parse(read2.body).value.policy, READER_POLICY)
+})
+
+test('关闭开关后重建：生成目录不再产出策略文件（引擎侧降级见 engine 测试）', async () => {
+  seedPreset()
+  const handler = registerBridge()
+  await savePolicy(handler, READER_POLICY)
+  writePreset('PROMPT', writeOptions())
+  const policyFile = join(presetDir, 'subagent-tools', 'policy.yml')
+  assert.ok(existsSync(policyFile), '启用时产出策略文件')
+
+  await savePolicy(handler, null)
+  writePreset('PROMPT', writeOptions())
+  assert.equal(loadPresetSpec(presetDir).subagentToolPolicy, undefined, '策略段已删除')
+  assert.equal(existsSync(policyFile), false, '关闭后不再产出策略文件（引擎据此降级）')
+  assert.ok(existsSync(join(presetDir, 'agent.cordis.yml')), '预设本体仍然物化成功，不因缺策略文件而失败')
 })
 
 test('编辑对象是激活预设：路径只由 getPresetConfigsDir 决定，客户端 ID 不参与构造', async () => {

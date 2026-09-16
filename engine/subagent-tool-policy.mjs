@@ -222,7 +222,14 @@ export function apply(ctx, config) {
   try {
     compiled = loadCompiledPolicy(config)
   } catch (error) {
-    throw new Error(`${name}: cannot load policy: ${error instanceof Error ? error.message : String(error)}`)
+    const message = error instanceof Error ? error.message : String(error)
+    // 策略文件缺失 = 用户在能力卡里把开关关掉了（模块声明保留）：降级为官方委派行为，
+    // 不注册 shadow 工具，也不让整个预设启动失败。文件在但内容损坏才是真错误——fail loud。
+    if (message.includes('ENOENT')) {
+      ctx.logger?.warn(`${name}: policy file missing, subagent tool policy disabled; official delegation behavior kept`)
+      return
+    }
+    throw new Error(`${name}: cannot load policy: ${message}`)
   }
   const compositionScope = scopeOf(ctx)
   if (compositionScope === undefined) throw new Error(`${name}: requires a preset scope`)

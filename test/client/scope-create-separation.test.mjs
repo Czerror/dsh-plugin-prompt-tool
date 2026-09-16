@@ -237,6 +237,27 @@ test('子代理页能力卡排除清单由页面下发（源码契约）', () =>
   assert.doesNotMatch(main, /excludeCapabilities/)
 })
 
+test('子代理工具策略卡：单一开关 + 关闭只读 + 复用失焦自动保存（无保存/停用按钮）', () => {
+  const card = read('features/subagents/SubagentToolPolicyCard.tsx')
+  // 无保存 / 停用 / 启用策略按钮（用户要求的简化设计）。
+  for (const key of ['policy.save', 'policy.saving', 'policy.enable', 'policy.disable']) {
+    assert.equal(card.includes(`t('${key}')`), false, `不渲染 ${key} 对应的按钮`)
+  }
+  assert.doesNotMatch(card, /toggleEnabled/, '旧的启用/停用分支已移除')
+  // 单开关：勾选 = 写入可用骨架并落盘，取消 = 删除策略段并落盘。
+  assert.match(card, /const toggle = \(next: boolean\): void => \{/)
+  assert.match(card, /const draft = next \? createEmptyPolicy\(''\) : null/)
+  assert.match(card, /aria-label=\{t\('policy\.toggleLabel'\)\}/)
+  // 关闭时整卡只读：统一 disabled 边界 + 作用域 disabled 属性。
+  assert.match(card, /const locked = !enabled/)
+  assert.match(card, /<fieldset ref=\{scopeRef\} className=\{styles\.policyScope\} disabled=\{locked\} onBlur=\{autoSaveOnBlur\}/)
+  // 复用既有失焦自动保存设计（与配置卡同款：焦点离开整块才写盘）。
+  assert.match(card, /if \(next === null \|\| !scopeRef\.current\?\.contains\(next as Node\)\) persist\(policy\)/)
+  assert.doesNotMatch(card, /setTimeout\(\(\) => persist/, '不用防抖，改为失焦保存')
+  const configCard = read('features/prompts/PromptConfigCard.tsx')
+  assert.match(configCard, /!cardRef\.current\?\.contains\(next as Node\)/, '对照：配置卡同款失焦语义')
+})
+
 test('置顶卡片渲染在过滤行之前（列表顶部语义）', () => {
   const list = read('features/prompts/PromptConfigList.tsx')
   const beforeIndex = list.indexOf('{beforeCards}')

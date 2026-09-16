@@ -2266,11 +2266,9 @@ export function registerSettingsBridge(
               if (!guardPresetIdentity(record, dir, res)) return
               withPresetDoc(dir, (doc) => {
                 if (isEmpty) {
+                  // 关闭开关：只删除策略段，**保留模块声明**——能力卡仍在，用户可再次打开；
+                  // 引擎在策略文件缺失时降级为官方委派行为（见 engine/subagent-tool-policy.mjs）。
                   doc.deleteIn(['subagentToolPolicy'])
-                  const source = doc.toJS() as { modules?: unknown }
-                  if (Array.isArray(source.modules)) {
-                    doc.set('modules', source.modules.filter((item) => item !== 'subagent-tool-policy'))
-                  }
                 } else {
                   doc.setIn(['subagentToolPolicy'], policy)
                   appendPresetModules(doc, ['subagent-tool-policy'])

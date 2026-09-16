@@ -1,10 +1,10 @@
 /** 子代理实例级工具策略（subagentToolPolicy）编辑区。
- *  数据源 = preset.yml 顶层 subagentToolPolicy 段（/subagent-tool-policy）；
- *  保存先经 host 统一 resolver 校验再原子写盘并重建。实例解析预览走同一
- *  /subagent-tool-policy-preview seam（不复制解析算法）。既有子代理不变，
- *  策略只影响后续新实例。布局 = 工作台合并行范式（sessionModelRow /
- *  switchGridItem 内联标签），与所属「工具与深度」模块卡同折叠、同风格。 */
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
+ *  数据源 = preset.yml 顶层 subagentToolPolicy 段（/subagent-tool-policy）。
+ *  交互：**只有一个启用开关**——打开即写入可用骨架并逐次自动保存；关闭即删除策略段
+ *  （模块声明保留，引擎在策略文件缺失时降级为官方委派行为），卡内所有内容只读。
+ *  实例解析预览走 /subagent-tool-policy-preview seam（不复制解析算法）。
+ *  既有子代理不变，策略只影响后续新实例。 */
+import { useCallback, useEffect, useMemo, useRef, useState, type FocusEvent, type ReactNode } from 'react'
 import clsx from 'clsx'
 import { bridgeCall } from '../../data/bridge-client.ts'
 import type { PromptToolTranslate } from '../../locales.ts'
@@ -23,20 +23,20 @@ interface CharacterItem { id: string; name: string }
 export function SubagentToolPolicyCard(props: {
   t: PromptToolTranslate
   onNotice: Notice
-  /** 现有 toolFilterAllow（首次启用时复制为 default profile 的 allow）。 */
-  seedAllow?: string
   presetId?: string
 }): ReactNode {
   const { onNotice, t } = props
   const [policy, setPolicy] = useState<PolicyDraft | null>(null)
   const [loaded, setLoaded] = useState(false)
-  /** 读取失败不能降级成「无策略」：否则重新启用后保存会用新策略整体覆盖磁盘中的既有策略。 */
+  /** 读取失败不能降级成「无策略」：否则再次打开开关会用新骨架整体覆盖磁盘中的既有策略。 */
   const [loadError, setLoadError] = useState('')
   const [dirty, setDirty] = useState(false)
   const [saving, setSaving] = useState(false)
   const [preview, setPreview] = useState<unknown>(null)
   const [previewInput, setPreviewInput] = useState<Record<string, string | string[]>>({})
   const [characters, setCharacters] = useState<CharacterItem[]>([])
+  /** 策略编辑区：焦点离开整块时自动写盘（与指令文件卡同款设计，无保存按钮）。 */
+  const scopeRef = useRef<HTMLFieldSetElement>(null)
 
   const load = useCallback(() => {
     setLoadError('')
@@ -46,7 +46,9 @@ export function SubagentToolPolicyCard(props: {
         setLoaded(true)
         return
       }
-      setPolicy((result.value.policy ?? null) as PolicyDraft | null)
+      const next = (result.value.policy ?? null) as PolicyDraft | null
+      setPolicy(next)
+      setDirty(false)
       setLoaded(true)
     })
   }, [props.presetId, t])
@@ -58,29 +60,29 @@ export function SubagentToolPolicyCard(props: {
     })
   }, [])
 
-  const patch = (next: PolicyDraft): void => { setPolicy(next); setDirty(true) }
-  const toggleEnabled = (enabled: boolean): void => {
-    if (enabled) {
-      if (policy === null) patch(createEmptyPolicy(props.seedAllow ?? ''))
-      else patch(policy)
-    } else {
-      setPolicy(null)
-      setDirty(true)
-    }
-  }
-  const save = (): void => {
+  /** 自动保存（无保存按钮）：编辑后防抖落盘；开关切换立即落盘。 */
+  const persist = useCallback((next: PolicyDraft | null): void => {
     setSaving(true)
-    void bridgeCall('subagentToolPolicy', { policy, expectedPresetId: props.presetId }).then((result) => {
+    void bridgeCall('subagentToolPolicy', { policy: next, expectedPresetId: props.presetId }).then((result) => {
       setSaving(false)
       if (result.ok) {
         setDirty(false)
-        onNotice('ok', t('policy.notice.saved'))
-        load()
-      } else {
-        onNotice('error', ('message' in result ? result.message : undefined) ?? t('policy.notice.saveFailed'))
+        onNotice('ok', t('policy.notice.autosaved'))
+        return
       }
+      onNotice('error', ('message' in result ? result.message : undefined) ?? t('policy.notice.saveFailed'))
     })
+  }, [onNotice, props.presetId, t])
+
+  const patch = (next: PolicyDraft): void => { setPolicy(next); setDirty(true) }
+  /** 单一开关：打开写入可用骨架并落盘；关闭删除策略段并落盘。 */
+  const toggle = (next: boolean): void => {
+    const draft = next ? createEmptyPolicy('') : null
+    setPolicy(draft)
+    setDirty(false)
+    persist(draft)
   }
+
   const runPreview = (): void => {
     void bridgeCall('subagentToolPolicyPreview', previewInput).then((result) => {
       if (result.ok) setPreview(result.value.result)
@@ -88,11 +90,21 @@ export function SubagentToolPolicyCard(props: {
     })
   }
   const enabled = policy !== null
+  /** 关闭开关时整卡只读：所有可编辑控件（含开关键与表单按钮）统一禁用。 */
+  const locked = !enabled
   const profiles = useMemo(() => policy?.profiles ?? [], [policy])
   const profileIds = profiles.map((profile) => profile.id)
   const ceilingAllow = asList(policy?.ceiling?.allow)
   const invalidCharacterBindings = (policy?.characterBindings ?? []).filter((binding) =>
     binding.characterId.length === 0 || !characters.some((item) => item.id === binding.characterId))
+  /** 失焦自动保存（复用既有设计）：焦点离开策略编辑区才落盘，内部换控件不触发。 */
+  const autoSaveOnBlur = (event: FocusEvent<HTMLElement>): void => {
+    if (!dirty || saving || policy === null || loadError.length > 0) return
+    // 存在无效角色卡绑定时端点会拒绝，先不写盘；用户修正后失焦即保存。
+    if (invalidCharacterBindings.length > 0) return
+    const next = event.relatedTarget
+    if (next === null || !scopeRef.current?.contains(next as Node)) persist(policy)
+  }
   const moveProfile = (index: number, offset: -1 | 1): void => {
     if (policy === null) return
     const next = [...profiles]
@@ -138,22 +150,29 @@ export function SubagentToolPolicyCard(props: {
 
   return (
     <>
+      {/* 单一开关：打开即启用并自动保存，关闭即删除策略段（模块声明保留、内容只读）。 */}
       <div className={styles.settingRowStack}>
         <div className={styles.sessionModelRow}>
           <HintTooltip label={t('policy.titleHint')}>
-            <span className={clsx(styles.switchGridItem, styles.sessionModelRowWide)}>
-              <span className={styles.switchGridLabel}>
-                <strong>{t('policy.title')}</strong>
-                {loaded && (
-                  <small className={styles.switchGridHint}>{enabled ? t('policy.status.enabled', { count: profiles.length }) : t('policy.status.disabled')}</small>
-                )}
-              </span>
+            <span className={styles.switchGridItem}>
+              <span className={styles.switchGridLabel}>{t('policy.toggleLabel')}</span>
             </span>
           </HintTooltip>
-          {enabled && <button type="button" className={styles.pillButton} data-danger onClick={() => toggleEnabled(false)}>{t('policy.disable')}</button>}
-          <button type="button" className={styles.pillButton} onClick={save} disabled={saving || !dirty || invalidCharacterBindings.length > 0 || loadError.length > 0}>
-            {saving ? t('policy.saving') : t('policy.save')}
-          </button>
+          <label className={styles.configEnable}>
+            <input
+              type="checkbox"
+              checked={enabled}
+              aria-label={t('policy.toggleLabel')}
+              disabled={!loaded || loadError.length > 0 || saving}
+              onChange={(event) => toggle(event.target.checked)}
+            />
+            <span className={styles.switch} aria-hidden="true"><i /></span>
+          </label>
+          {loaded && loadError.length === 0 && (
+            <small className={styles.switchGridHint}>
+              {enabled ? t('policy.status.enabled', { count: profiles.length }) : t('policy.status.disabled')}
+            </small>
+          )}
         </div>
       </div>
       {!loaded && <p className={styles.configFieldHint}>{t('policy.loading')}</p>}
@@ -163,15 +182,12 @@ export function SubagentToolPolicyCard(props: {
           <button type="button" className={styles.pillButton} onClick={() => { setLoaded(false); load() }}>{t('policy.retry')}</button>
         </p>
       )}
-      {loaded && loadError.length === 0 && !enabled && (
-        <div className={styles.settingRowStack}>
-          <p className={styles.configFieldHint}>{t('policy.disabledHint')}</p>
-          <span className={styles.configActions}>
-            <button type="button" className={styles.primaryPill} onClick={() => toggleEnabled(true)}>{t('policy.enable')}</button>
-          </span>
-        </div>
+      {loaded && loadError.length === 0 && locked && (
+        <p className={styles.configFieldHint}>{t('policy.disabledHint')}</p>
       )}
-      {loaded && loadError.length === 0 && enabled && policy !== null && (
+      {loaded && loadError.length === 0 && (
+        <fieldset ref={scopeRef} className={styles.policyScope} disabled={locked} onBlur={autoSaveOnBlur} aria-label={t('policy.title')}>
+        {enabled && policy !== null && (
         <>
           {invalidCharacterBindings.length > 0 && <p className={styles.noticeError}>{t('policy.invalidBindings')}</p>}
           {/* 总览：default + ceiling */}
@@ -353,6 +369,8 @@ export function SubagentToolPolicyCard(props: {
             )}
           </div>
         </>
+        )}
+        </fieldset>
       )}
     </>
   )
