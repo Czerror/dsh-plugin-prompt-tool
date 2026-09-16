@@ -1,402 +1,376 @@
-# 提交审查修复计划：导入确认、诊断可信度与会话完整性
+# ST 转译完整性修复计划：key 宏解析、条件字段补齐与边界显式化
 
-- 编写日期：2026-09-16（UTC）。
-- 状态：修复方案已编写并通过文档校验，代码修复未开始；本次只交付文档，**不授权执行以下代码修复、用户预设修改或历史日志恢复**。
-- 固定实现基线：`dev@f93182b0cbd1b611574d35ed9dd1ccaa77b1487c`。
-- 审查范围：`ec5b8e3650d2e451c3ea26d3070901da83ceab1d..f93182b0cbd1b611574d35ed9dd1ccaa77b1487c`，即 `177f128`、`203da1e`、`f93182b`。
-- 新增缺陷：F1–F7，共 1 项 P1、6 项 P2；历史会话角色缺陷 H0 另列 P1，不归因于这三次提交。
-- 完成口径：7 个核心修复任务 R0–R6 全部通过各自行为验收和最终门禁；历史数据恢复 H1 是单独授权的操作，不混入代码修复完成率。
-- 用户决策、审查结论与任务状态记录在本文件；[AGENTS.md](AGENTS.md) 只保存跨任务流程与边界，领域文档保存实施后的稳定行为。
+- 编写日期：2026-09-17（UTC）。
+- 状态：方案已编写并通过文档校验；**代码修复未开始**。按 `AGENTS.md`「编辑计划不等于授权执行修复」，本轮只交付本文件与旧计划归档。
+- 固定实现基线：`dev@f3539fa`（R0–R6 交付与自审结论之后的提交）。
+- 来源：`.scratch/prompt-tool-framework/issues/04-session-role-corruption.md` 的同类追查——以 ST 1.19.0 源码（`F:\ai\other\SillyTavern`，HEAD `7c3994196`）、参考项目 `D:\AI\GitHub\dsh-tavern`（`dsh-profile-tavern@1.8.0`）与真实素材 `F:\ai\other\AIcord\123`（17 个文件）复盘"是否还有其他 ST 转译问题"，结论见第 1.2–1.4 节。
+- 本轮修复范围：**P1 + P2 + P3**，共 8 个核心任务（R7–R14），分入 4 个 Wave：
+  - P1（K1）世界书 `keys` / `secondaryKeys` 的 ST 宏未解析；
+  - P2（K2–K7）ST 有而我们未读的条件字段：`delayUntilRecursion`、`useGroupScoring`、`matchCreatorNotes`、`matchCharacterDepthPrompt`、`characterFilter`、`prompts[].system_prompt`、`automationId` / `outletName` 形态；
+  - P3（K8–K9）边界显式化：`extensions.depth_prompt` 保留、token 预算 / `forbid_overrides` / AN·EM·outlet 位置文档化。
+- 完成口径：R7–R14 通过 T11–T23 行为验收与最终门禁；H1（历史日志恢复）仍是单独授权的操作，不计入本轮完成率。
 
-## 1. 归档、来源与证据边界
+## 1. 来源、证据与边界
 
 ### 1.1 旧计划原文归档
 
-旧根计划保存为 [plan-st-import-diagnostics-f93182b.md](.scratch/prompt-tool-framework/archive/plan-st-import-diagnostics-f93182b.md)。
+旧根计划保存为 [plan-import-lifecycle-r0-r6-f3539fa.md](.scratch/prompt-tool-framework/archive/plan-import-lifecycle-r0-r6-f3539fa.md)。
 
-- 原始 Git blob：`f93182b0cbd1b611574d35ed9dd1ccaa77b1487c:PLAN.md`。
-- 原文 blob SHA：`7ee731dd8f27a4f43a006ee99a93c24addad0a84`。
-- 归档字节必须与该 blob 相同；不添加归档头、不修改旧勾选状态或补写修复结论。
-- 归档中的相对链接按旧文件位于仓库根目录时解释；当时的“完成”声明不是本次验收依据。
-- 当前入口是本文件。已有更早归档继续保留，不覆盖、删除或重新整理。
+- 原始 Git blob：`f3539fa:PLAN.md`，blob SHA `bc4c316d85ca06d3541370a7ee5e5100e4bdd884`。
+- 归档字节与该 blob 相同（`git hash-object --no-filters` 实测一致）；不添加归档头、不修改旧勾选状态、不补写新结论。
+- 归档中的相对链接按旧文件位于仓库根目录时解释；R0–R6 的完成声明以该归档与提交历史为准，本文件不重复。
+- 已有更早归档（`plan-st-import-diagnostics-f93182b.md`、`plan-agents-files-20260914-archived-20260916.md`、`plan-module-list-refactor.md`、`plan-rc2-model-routing.md`）继续保留，不覆盖、不删除、不整理。
 
 ### 1.2 已核实的问题
 
-行号均对应固定实现基线，实施前按符号重新定位。
+行号对应 ST 1.19.0 与固定实现基线，实施前按符号重新定位。
 
-| 编号 | 严重度 / 归因 | 根因与位置 | 已取得证据 |
+#### P1：触发条件静默失效
+
+| 编号 | 严重度 | 根因与位置 | 已取得证据 |
 |---|---|---|---|
-| F1 | P1 / `f93182b` | `CharactersPage.tsx:83–85,159` 等待 `askPreview()` 时仍传 `busy={importing}` | 真实 Edge/React DOM：预览出现，确认和取消都 disabled，点击无效，预览请求 1 次、提交 0 次 |
-| F2 | P2 / `203da1e` | `sillytavern.ts:138–140` 中文件 `character_id` 优先于显式选组 | 文件指定 `100001`、显式请求 `2`，实际仍转换组 `100001` |
-| F3 | P2 / `f93182b`，涉及 `203da1e` 摘要设计 | `PresetSwitcher.tsx:183` 换组不重预览；`settings-bridge.ts:1544–1545` 摘要不含选组 | 预览组 `100001`，同一文件与旧摘要提交组 `2`，HTTP 200，落盘组 `2` 的启停结果 |
-| F4 | P2 / `203da1e` | `sillytavern.ts:584–585` 合并报告独立于配置 ID 重命名 | 实际目标 `same/same-2`，报告目标仍为 `same/same` |
-| F5 | P2 / `f93182b` | `ImportPreviewCard.tsx:49–56` 仅显示前 20 条告警 | 20 条全部显示；21 条只显示 20 条，无展开/截断提示，确认回调仍可执行 |
-| F6 | P2 / `203da1e`，`f93182b` 增加快照消费 | `st-world-book.mjs:42–47,64–65,167` 提前复制截断布尔值 | 67 条常驻配置均调用 commit，记录只含 66 条 committed，但两个快照均 `truncated=false` |
-| F7 | P2 / `203da1e` | `settings-bridge.ts:1611–1616,1852–1865` 未校验 preview 类型 | 两端点收到 `preview: "true"` 均 HTTP 200，并分别写出 preset.yml / converted.yml |
-| H0 | P1 / 基线前已存在 | `executor.mjs:90–109` 透传 role，`schema.mjs:134,139` 允许 assistant 进入 pre-step | 本地宿主将消息存为 user/message，回放要求 user；已安装 dsh-agent 声明 pre-step 的 messages 为 UserMessage[] |
+| K1 | P1 | `src/host/sillytavern.ts` 的「未定义自定义宏登记」只扫描 `config.text` / `config.texts` / `params.text`，**不扫描 `params.keys` / `params.secondaryKeys`**；引擎 `engine/st-world-book.mjs` 的键求值 `interpolateVariables(key, config.variables, session)` 拿不到 `{{user}}` 的值，键按字面量参与匹配 | 素材实测 5 条条目的 key 含 `{{user}}`，渲染后仍是字面量；其中 `V0.66.png#25`（`keys=["{{user}}"]`、`constant=false`、无副键）**完全失效**；另 4 条有字面冗余键 |
 
-主要实现：
-[转换器](src/host/sillytavern.ts)、
-[角色库](src/host/characters.ts)、
-[bridge](src/runtime/settings-bridge.ts)、
-[共享契约](src/shared/bridge-contract.ts)、
-[角色导入页](src/client/features/characters/CharactersPage.tsx)、
-[预设切换器](src/client/features/presets/PresetSwitcher.tsx)、
-[预览卡](src/client/ui/ImportPreviewCard.tsx)、
-[世界书选择器](engine/st-world-book.mjs)、
-[执行器](engine/executor.mjs)。
+ST 依据：`world-info.js:4915` / `:4947` 匹配前对主键与副键执行 `substituteParams(key)`；`:337-366#matchKeys` 展开后按 `parseRegexFromString` 自动识别正则，否则字面（含 `matchWholeWords` 分支）；`script.js:408` 说明 `{{user}}` 来自 ST 全局 `name1` 与用户 persona，**卡片内不存在该值**。
 
-### 1.3 历史会话报告的适用范围
+#### P2：条件字段未读取（ST 有、我们没有）
 
-用户提供的本地资料为 `C:\Users\Cz9nl\Desktop\DSH会话损坏诊断报告.md`，报告日期 2026-09-16；不复制用户日志、会话正文或具体会话 ID 到本仓库。
+| 编号 | 严重度 | 字段 | ST 依据与语义 | 素材实测 |
+|---|---|---|---|---|
+| K2 | P2 | `delayUntilRecursion` | `world-info.js:4860-4866`：非递归扫描中带该字段的条目**不激活**；递归扫描中若为数字且大于当前递归层数也抑制（`isSticky` 除外）；`:4755-4756` 参与递归候选构造；`:4104` 默认 0 | 字段存在、值全 0 |
+| K3 | P2 | `useGroupScoring` | `world-info.js:423-500#getScore`：按主键/副键命中数打分，组内选择改为取最高分（而非权重随机）；`:4115` 默认 null（继承全局，全局默认 false） | 字段存在、值全 false |
+| K4 | P2 | `matchCreatorNotes` | `world-info.js:4103` + 扫描 `:191,:193`（`globalScanData.creatorNotes`）→ 条目可匹配角色卡 `creator_notes` | 字段存在、值全 false |
+| K5 | P2 | `matchCharacterDepthPrompt` | `world-info.js:4101` + 扫描 `:308-309`（`#globalScanData.characterDepthPrompt`）→ 条目可匹配角色卡 `extensions.depth_prompt.prompt` | 字段存在、值全 false |
+| K6 | P2 | `characterFilter` | 真实形态是**嵌套对象** `entry.characterFilter = { names, tags, isExclude }`（`world-info.js:1279-1300` 的字段读取），不是三个顶层字段；语义：条目只对匹配的角色/标签生效 | 0 条使用 |
+| K7 | P2 | `prompts[].system_prompt`、`automationId`、`outletName` | `prompts[].system_prompt` 标记"系统提示区条目"（素材 540 条中 48 条 true，其中 10 条 `role=user`）；`automationId`/`outletName` 是 ST 独立世界书条目的**顶层驼峰**字段，而我们只查蛇形 `automation_id` / `outlet_name` | `automationId` 字段每条都有但**非空值 0**；`outletName` 非空值 0；`forbid_overrides` 2 条 true |
 
-- 已只读核对本地宿主 `packages/core/agent-loop/src/agent.ts:375–376` 的 user/message 写入和 `packages/core/session/src/index.ts:320–345` 的角色校验。
-- 已安装 `@deepseek-ai/dsh-agent@0.1.6-alpha.1` 的 `lib/types/runtime-types.d.ts:94–98,304–308` 明确声明 `messages: UserMessage[]`。
-- 报告的“56 个会话、3 个损坏、8 条异常”仅是历史扫描记录，本次未重扫，不代表当前影响面。
-- “没有检出角色错误”不等于完整回放通过；附录按魔数拆帧、吞解压/解析异常的脚本不能作为恢复工具或恢复验收。
-- 结论限定为当前核实的 pre-step 通道，不宣称所有未来宿主版本都没有合法 assistant 注入能力。
+#### P3：边界未显式化
 
-### 1.4 基线验证不等于修复完成
+| 编号 | 严重度 | 项 | ST 依据与语义 | 素材实测 |
+|---|---|---|---|---|
+| K8 | P3 | `extensions.depth_prompt` 完全未转换 | `char-data.js:73-76` 定义 `{ prompt, depth, role }`；`group-chats.js:459-464` 群聊注入；`world-info.js:191` 供世界书扫描 | **13 张卡带该字段**（现被整体丢弃，无来源元数据、无诊断） |
+| K9 | P3 | token 预算 / `ignoreBudget` / `forbid_overrides` / AN·EM·outlet 位置 | `world_info_budget=25`（`world-info.js:73`）、`ignoreBudget`（`:4095`）、`forbid_overrides`（ST prompt 覆盖保护）；`world_info_position` 含 `ANTop:2 / ANBottom:3 / atDepth:4 / EMTop:5 / EMBottom:6 / outlet:7`（`:855-864`） | `ignoreBudget` 字段存在、值全 false；outlet 全空；AN/EM/outlet 位置由既有降级逻辑覆盖但文档未成表 |
 
-审查阶段 typecheck、lint、build、diff --check 均通过；完整 test **919/919**，verify:host **46 个官方包、0 失败**。
-额外探针仍复现 F1–F7；探针“退出 0”表示成功证明缺陷，不是修复验收通过。临时探针已清理，实施必须把最小回归写入仓库测试。
+### 1.3 已核实**无缺陷**（明确不修，避免误伤）
 
-已排除“外部引擎与 bundle 的 WeakMap 不同导致诊断永远为空”：真实 Cordis scope 中，外部引擎交权给 bundle 协调器后注入 1 条，bridge 返回 3 条记录，包含 selected/committed；另一存活会话为空，重复读取不变。
-复用现有协调器，不增加全局诊断总线。真实物化 loader、协调器迟到、HMR/重挂仍是待验收路径。
+| 项 | 上一轮怀疑 | 核实结论（证据） |
+|---|---|---|
+| `selective` 默认值 | 认为我们 `entry.selective === true` 与 ST 模板默认 `true` 不一致 | **不成立**：ST 求值路径是 `entry.selective &&`（`world-info.js:4925`，注释 `//all entries are selective now`），`undefined`/`false` 都不过滤，与我们的 `=== true` 一致；`newWorldInfoEntryDefinition.selective.default = true`（`:4089`）只是新建条目模板默认值。素材 1919 条全部显式布尔（224 true / 1695 false），带副键的 4 条全 true |
+| `use_regex` | 认为 key 的正则语义未接线 | **不成立**：ST 匹配器不消费该字段（`src/endpoints/characters.js:681` 的 `use_regex: true // ST keys are always regex` 只是导出时写死），真正规则是"键形如 `/pattern/flags` 才当正则"，我们 `engine/anchor-match.mjs` 在 `useRegex` 缺省时**已按同语义自动检测**（三态 true/false/缺省） |
+| 世界书 logic / position / 默认值 | — | `world_info_logic`（AND_ANY/NOT_ALL/NOT_ANY/AND_ALL）与 `world_info_position` 逐一比对一致；`scan_depth` 默认 2、`case_sensitive`/`match_whole_words`/`recursive` 默认 false 一致 |
+| 「无主键非常驻条目永不触发」 | 曾报内容丢失（V0.66 的 45/89、萧谴的 6/19） | **误报**：这些条目 `automationId` 为空、`constant=false`、无主键，ST 侧同样不触发，属等价转译 |
+| 宿主消息不变量（issue 04 同类） | 是否还有别的形态写出不可加载日志 | 1919 条世界书 + 540 条 prompts + 1695 条大卡实测：注入消息 `id`/`role`/`source.kind`/`content` 全合法，官方 `Session.create(seed)` 重载通过；除已修的 H0 角色外无新发现 |
+
+### 1.4 复盘证据边界
+
+- 复盘为**只读**：未修改 ST 源码、DSH 源码、参考项目与用户数据；临时探针建在 `D:\AI\workspase\_temp` 并已清理；仓库工作树保持干净。
+- 素材只代表 `F:\ai\other\AIcord\123` 的 17 个文件；"素材实测 N 条"不宣称覆盖其他来源的全部形态。K4–K7 的字段在素材里多为默认值，实施后需用**合成夹具**补足行为证据。
+- 参考项目 `dsh-tavern` 的对照只作旁证：它读取了 `delayUntilRecursion` / `useGroupScoring`（佐证 K2/K3），同样未处理 `matchCreatorNotes` / `matchCharacterDepthPrompt` / `characterFilter` / `use_regex`；它的世界书 AN/EM/atDepth 由**自建编排**实现，本项目受"pre-step / system-section 两层注入"的产品边界约束，不照搬。
+- 本轮不复核 R0–R6 的验收结论；它们的证据在归档计划与提交历史中。
 
 ## 2. 用户决策与方案范围
 
 ### 用户已明确的决策
 
-1. 完整修复方案写入 `PLAN.md`；编写计划不等于授权执行修复。
-2. 审查完成后，由用户指定本轮修复任务；先原样归档旧 `PLAN.md`，再新建完整修改方案的全新 `PLAN.md`，不把旧计划当作新任务授权。
-3. 用户对修复范围、方案取舍和执行授权的决策写入 `PLAN.md`；审查结论不得写入 `AGENTS.md`。
-4. `AGENTS.md` 仅保留跨任务流程与边界；具体缺陷、技术修复方案和验收结论保留在本计划或对应权威文档。
-5. `PLAN.md` 使用指定 `dev-expert` 的「任务拆解与执行」格式编写，文末使用 `[✔]` / `[ ]` 统一标记 Wave 及任务完成状态。
+1. 追赶 issue 04 的同类问题，按"是否存在其他 ST 转译问题"出复盘结论，并据此创建本计划。
+2. P1 的两个候选方案取 **B 含 A**：既登记可赋值变量（恢复能力），也产出诊断（可见性）。
+3. **P2、P3 一并纳入本轮**（用户明确要求），不再只作候选记录。
+4. `selective` 默认值与 `use_regex` 按第 1.3 节记录为"已核实无缺陷"，**不修**。
+5. 本文件只写方案；**执行修复、改用户预设、历史日志恢复都需要用户后续单独授权**。
+6. 不改 DSH 宿主与 ST 源码；不实现跨插入点的全局顺序、持久历史深度插入或完整 ST 消息编排。
 
-下文技术方案是审查后提出的建议，不代表用户已逐项批准。实际修复任务及实施授权仍待用户指定；历史日志恢复须单独授权。
+### 2.1 方案取舍（P1）
 
-### 2.1 所有权与实施原则
+| 维度 | 方案 A：保留原键 + 报告诊断 | 方案 B：登记为可赋值变量（含 A 的诊断） |
+|---|---|---|
+| 解决的问题 | 可见性（不再静默失效） | 可恢复性（赋值后真正恢复触发） |
+| 是否改匹配行为 | 否 | 否（空值键被引擎 `filter(Boolean)` 丢弃，不会误触发） |
+| 与 ST 等价性 | 仍不等价 | 更接近等价 |
+| 成本 | 扫描 + 诊断 | 同一份扫描结果 + 登记（增量极小），A 是 B 的副产品 |
 
-1. **根因单点修复**：优先现有 helper、转换器、执行出口、预览卡和协调器；不重写导入框架，不新建转换稿资源库、后台队列、日志服务或第二套 store。
-2. **宿主契约优先**：插件最终输出必须合法；ST 原角色只作来源信息，不借错误事件类型伪造 assistant 历史。
-3. **预览代表完整转换输入**：文件、选组、转换器版本、目标上下文共同决定可确认的结果；摘要不是权限凭证。
-4. **报告与产物同源**：最终 ID 映射、数量、诊断与最终写入结果来自同一次计算；展示截断不能改变转换或伪造总计。
-5. **只读诊断不求值**：只追加真实执行路径的观察数据；不重抽概率、不重复执行宏、不推进 sticky/cooldown。
-6. **审计、修复、恢复分开**：本次只写文档；后续代码修复不自动授权真实用户数据修改或服务重启。
+结论：**单做 A 只能"看见失效"，单做 B 不知道哪些键需要赋值**；两者共用同一份识别逻辑，因此合并为一条最小改动（B 含 A）。
 
-### 2.2 有意不做
+### 2.2 P2/P3 的方案取舍
 
-- 不实现完整 ST 消息编排、持久历史深度插入、扩展脚本执行、向量检索或模型采样直通。
-- 不修改 DeepSeek Harness 源码；上游写入校验建议可单独提交，但不是插件修复前置条件。
-- 不批量改用户 preset.yml，不自动重导入素材，不运行生产 rematerialize，不触碰真实会话日志。
-- PNG 和大 JSON 流式导入继续保持已文档化的即时入库边界；本轮不扩展流式预览，界面不能暗示它们也经过预览确认。
-- 不为多源选组新增复杂映射编辑器：现有单组选项不能无歧义表示多源选择时明确拒绝，并提示拆分导入。
+| 项 | 采用 | 不采用（及理由） |
+|---|---|---|
+| K2 `delayUntilRecursion` | 引擎求值：非递归 pass 抑制 + 数字层数门槛（对齐 `world-info.js:4860-4866`），并记录 `excluded: delay-until-recursion` 诊断 | 不实现 ST 的 `min_activations` 深度偏斜（默认关闭，独立特性） |
+| K3 `useGroupScoring` | 抄 `getScore`（`:423-500`）实现评分，仅在**条目显式开启**时替换权重随机；未开启时保持现状 | 不把评分设为默认（ST 默认继承全局 false，改了会变更既有分组行为） |
+| K4/K5 扫描开关 | 转换期登记 `creator_notes` / `depth_prompt` 变量；引擎在对应开关为 true 时把它们并入扫描文本（与既有 `matchCharacterDescription` 等同一形状） | 不默认扫描（ST 默认 false，多扫会改变触发面） |
+| K6 `characterFilter` | 读取嵌套对象（含把旧的三字段误读改为对象形态）、保留到 `stWorldBook`、产出"按角色过滤不受支持"的 warning | 不实现真正的按角色过滤：本项目预设与角色是导入期绑定，没有"运行时切换角色"这一层，伪造过滤会产生错误的静默跳过 |
+| K7 `system_prompt` | 保留事实到 `stSource.systemPrompt` 并产出 info 诊断；**层归属仍按 `role`**（先核实 ST 注入方式再定，见 3.9） | 不把 `system_prompt: true` 一律改判为 system-section：会改变素材 48 条（其中 10 条 role=user）的实际注入位置，需先有 ST 证据 |
+| K7 `automationId` / `outletName` | 双形态读取（蛇形 + 驼峰）；`automationId` 非空且条目无键非常驻时产出"依赖 STscript 自动化"的 warning | 不实现 STscript 自动化触发（属"不实现完整 ST 消息编排"边界） |
+| K8 `depth_prompt` | 读取并生成一条**禁用**的 pre-step 配置（来源标注 + 诊断），用户可手动启用；同时登记 `depth_prompt` 变量供 K5 扫描 | 不默认注入（ST 只在群聊自动注入，本项目无群聊；默认注入会造成"ST 不注入而我们注入"的反向不等价） |
+| K9 预算等 | 文档化边界（`docs/SillyTavern.md` 新增边界表），不改行为 | 不实现 token 预算：需要官方 tokenizer 与上下文预算通道，超出本插件边界；不实现 `forbid_overrides`（DSH 无覆盖机制） |
 
-### 2.3 文档冲突处理
+### 2.3 有意不做
 
-[ADR-0001](docs/adr/0001-preset-definition-is-authoritative.md)、
-[ADR-0002](docs/adr/0002-insertion-points-remain-independent.md)、
-[ADR-0003](docs/adr/0003-instruction-files-independent.md) 的所有权和独立插入点决策不变。
-现有 [SillyTavern 文档](docs/SillyTavern.md) 中“assistant 保留”是 H0 涉及的旧实现描述，R0 实施时同步改为明确的 user 降级与来源保留；规划阶段不把未修行为改写为已生效。
+- 不在导入期猜测 `{{user}}` 的值（来自 ST 全局设置与 persona，卡内不存在；用 keys 里的同义词反推属猜测）。
+- 不新增 DSH 侧"用户名"配置项或 UI 控件：既有「模板变量」编辑器已能承载。
+- 不删改用户已导入的预设：登记与新诊断只作用于新的转换产物，旧产物需重新导入。
+- 不改引擎匹配语义（`anchor-match.mjs` 的正则/整词/大小写规则）、不改世界书求值顺序、抽样与 sticky/cooldown 时间窗。
+- 不把 key 里的**已登记**宏（`{{char}}` / `{{description}}` 等）纳入告警：ST 侧同样展开成文本，行为一致。
+- 不处理 `ignoreBudget` 的实际预算逻辑与 ST 全局设置（`world_info_budget` / `budget_cap` / `min_activations` / `use_group_scoring` 全局开关）。
+
+### 2.4 恢复路径的取舍（P1 设计前提）
+
+引擎对键的求值只读取**配置级变量**（`config.variables`，由 `loadPromptConfigFiles` 把预设级 `variables.yml` 合并进每条配置）。因此：
+
+- **默认（R7 采用）**：登记进**预设级 variables** → 用户在「模板变量」里赋值 → 写入 `variables.yml` → 重建后键生效。零引擎改动。
+- **不采用（需单独同意才做）**：让键同时读**会话变量**（`session_var` 工具维护的运行时表），需要改 `engine/st-world-book.mjs` 的键求值并扩大语义面（键匹配从静态变为随会话变化）。
 
 ## 3. 修复设计
 
-### 3.1 H0：合法消息出口与兼容降级
+### 3.1 R7：把 key / secondaryKeys 纳入宏登记（K1）
 
-- 在 `runPreStepBatch()` 最终创建插件消息的共同出口兜底，覆盖直接执行与协调器执行、静态配置与策略返回 patch、合并与非合并消息。最终 role 必须为 user，`resolved.role` 也不能绕过。
-- 既有 assistant 配置采用**保留正文、明确告警、运行时降级为 user**，不因收紧 schema 让整套旧预设无法加载；不自动回写用户定义。其余非法类型沿既有校验拒绝，策略非法值不得传给宿主。
-- 新 ST 转换统一生成合法 role；prompts、角色开场白、备用开场白、示例对话、世界书逐条覆盖。原角色放在已有 stSource/stWorldBook 或最小只读来源元数据中，并生成稳定降级原因；不得报告“等价”。
-- UI/schema 的可编辑角色面同步当前宿主契约；兼容读取旧 assistant 不等于继续鼓励新建非法配置。把“可接受的旧输入”和“实际可发出的角色”区分清楚，不用删除全部旧条目止血。
-- 不无提示移动到 system-section；位置、受众、正文、启停、order、dedupe、变量副作用保持原约定。告警复用 warnOnce/报告，不重复刷屏，不记录正文。
-- 验收必须实际走发布包 Session 的事件导入/回放 API；只检查 `decision.messages` 或 stub 一个“总成功”加载器不合格。所需官方包如未直接声明，先核对已安装版本并补精确测试依赖，不链接宿主源码。
-- 完成模型：合法注入 → 官方持久化/序列化 → 重新加载 → 再派生请求；旧非法夹具必须先能触发真实角色校验错误。
+- 位置：`src/host/sillytavern.ts#convertStToPresetWithReport` 内既有的「未定义自定义宏登记」循环（当前只遍历 `config.text` / `config.texts` / `params.text`）。
+- 做法：对每条 `strategy === 'world-book'` 的配置，额外读取 `params.keys` 与 `params.secondaryKeys`，与正文共用**同一个** `MACRO_RE` / `RUNTIME_MACROS` / `BUILTIN_KEYS` / `knownKeys` 判定：
+  - 命中运行时宏（`time`/`date`/`random`/`pick`/`roll`/`chance`/`lastusermessage` 等）或内置路径变量 → **不登记**（保持运行时求值）；
+  - 已存在于变量表（`char`、卡片正文变量、用户已填的模板变量）→ **不覆盖**；
+  - 其余未定义宏（如 `user`）→ 登记 `variables[宏名] = ''` 空占位。
+- 诊断：对含未解析宏的世界书条目各发一条 warning `note('st-key-macro', …, { entryId, field: 'keys' })`，文案说明"已登记空占位，可在「模板变量」赋值使其生效"，不记录正文。
+- 运行期无需改动：未赋值 → 键渲染为空串 → 引擎 `filter(Boolean)` 丢弃 → 不误触发；赋值后 → 走既有匹配。
+- `ST_CONVERTER_VERSION` 递增为 `st-to-preset/3`。
 
-### 3.2 F1：可结束的导入确认生命周期
+### 3.2 R8：`delayUntilRecursion` 与 `useGroupScoring`（K2/K3）
 
-保留现有串行导入，不引入状态管理依赖。界面阶段为：读取/预览请求 → 等待确认 → 提交 → 成功/失败；取消只跳过当前文件。
+- `delayUntilRecursion`：转换期把 `option('delay_until_recursion', 'delayUntilRecursion')` 写入 `params.stWorldBook.delayUntilRecursion`；引擎在候选循环中：
+  - `pass === 0` 且该字段为真 → 记 `excluded: delay-until-recursion` 并跳过（sticky 命中除外）；
+  - `pass > 0` 且字段为数字且大于当前 pass（递归层）→ 记同一原因并跳过。
+- `useGroupScoring`：转换期写入 `params.stWorldBook.useGroupScoring`；引擎在组选择分支里，当**该条目**开启评分时用 `getScore` 等价实现（主键命中数 + 副键命中数，按 `selectiveLogic` 合并，抄 `world-info.js:423-500`）替换权重随机；未开启时行为不变。
+- 两项都必须补齐诊断原因码与差分测试（同一条目在开启/关闭下抽样次数与入选集合的差异必须可解释）。
 
-- 等待确认时确认、取消可点击且可键盘触达；读取或提交阶段才禁用相应动作。导入队列仍需防重复启动，不能简单把全局 busy 全清掉后允许第二队列覆盖 resolver。
-- 每份预览只完成一次；连点确认最多一次提交。提交失败保留文件与可理解的错误状态。
-- 页面卸载、取消整次导入或目标上下文变化时结束等待并使迟到响应失效，不悬挂 Promise、不继续写下一文件。目标切换后不得把旧预览提交到新的角色库所属预设。
-- 角色 JSON 选组能力与 R3 同步，不能只把 groupCharacterId 写进 UI 却不传后端。
+### 3.3 R10：`characterFilter`（K6）
 
-### 3.3 F7：入口严格区分缺省与非法类型
+- 形态修正：读取 `entry.characterFilter`（对象 `{ names, tags, isExclude }`）——现有代码读的是不存在的三顶层字段，属形态错误（素材未暴露）。
+- 处理：原样保留到 `params.stWorldBook.characterFilter`（不解释成行为），并对使用该字段的条目发 warning："ST 角色过滤在本项目不受支持：条目会对所有角色生效"。
+- 不实现过滤（理由见 2.2）。
 
-先改 shared 契约，再改两个 host handler 与 typed client。
+### 3.4 R11：`automationId` / `outletName` 双形态与显式诊断（K7）
 
-- `preview`：缺省/false 维持显式提交语义；true 为只读预览；字符串、数值、null、数组、对象一律 HTTP 400。
-- `expectedSourceDigest`、新增预览版本字段：提供时只能是合法 SHA-256 摘要字符串；错误类型、空值、错误长度/字符不能被视作“未提供”。
-- `promptOrderCharacterId`：提供时为有界非空字符串；不使用 truthy 转换把 false/0/null 当缺省，不吞非法选项后回落默认组。
-- 外层 body、files 和条目类型错误时 fail closed；保留既有格式/大小/路径白名单、loopback、Host/Origin、只读目录与目标授权。合法零值/false 的 ST 字段语义不可回归。
-- 所有校验发生在 mkdir、rename、写文件、备份和 rebuild 之前；错误请求对目录树及回调计数均无变化。
-- 缺少 preview 的旧直接导入调用仍可使用既有写入口与权限规则；新 UI 一律显式发送 `preview: false` 和新版本凭据。不要把旧调用误说成“已预览确认”。
+- 读取改为 `option('automation_id', 'automationId')` 与 `option('outlet_name', 'outletName')`（extensions 蛇形 + 顶层驼峰）。
+- `automationId` 非空时：写入 `params.stWorldBook.automationId` 并产出 warning"该条目依赖 STscript 自动化触发，本项目不执行自动化"；若该条目同时无主键且非 `constant`，warning 文案明确"因此不会自动注入"。
+- `outletName` 非空时：沿用 `unsupported-controls` 诊断（内容不被误注入）。
 
-### 3.4 F2/F3：选组与预览版本闭环
+### 3.5 R12：`prompts[].system_prompt`（K7）
 
-**选组规则**
+- 先核实（3.9 第 3 项）ST 对 `system_prompt: true` 的注入方式，再二选一：
+  - 若 ST 仅把它作为"系统提示区归属"标记而不改变发送角色 → 我们**保持按 `role` 分层**，只把 `systemPrompt: true` 写入 `params.stSource` 并产出 info 诊断；
+  - 若 ST 确实改变注入位置（例如强制并入 system prompt）→ 把这类条目按 system-section 处理，并在报告里标 degraded。
+- 无论哪种，素材 48 条（38 条 `role=system` + 10 条 `role=user`）都必须有稳定分类与可复核定位。
 
-- 优先级：请求显式选择 → 文件内 character_id → 既有全局组 100001 → 仅有一组时回退。
-- 显式选择不存在时明确报错，不能落回全局/单组；重复同名组或多源不能明确对应时拒绝，不默认任取首组。
-- 对首次预览即歧义的输入，UI 必须能取得有界顺序组候选并重新预览；不能让选择器仅在“已经选组成功的报告”中出现。
-- 推荐在现有预览响应中用 `state: needs-order-selection | ready` 区分候选与完成报告。候选状态不宣称已转换、不得启用确认；提交仍拒绝歧义。只扩展现有 endpoint 的 typed value，不增加独立服务。
+### 3.6 R13：`depth_prompt` 保留与变量登记（K8）
 
-**版本与提交规则**
+- 读取 `body.extensions.depth_prompt`（`{ prompt, depth, role }`）：
+  - `prompt` 非空 → 生成一条**禁用**的 pre-step 配置（`id: st-depth-prompt`、`enabled: false`、来源标注 `params.stSource`、`classification: 'degraded'`、原因码 `depth-prompt-group-only`），并在报告里列出，用户可手动启用；
+  - 同时登记变量 `depth_prompt`（供 R9 的 `matchCharacterDepthPrompt` 扫描）与 `creator_notes`（供 `matchCreatorNotes`），两者都来自卡片全文（清洗后）。
+- 不默认注入（理由见 2.2）；旧卡重新导入才生效。
 
-- 保留现有 `sourceDigest` 的文件校验用途；新增 `previewRevision` / `expectedPreviewRevision`，避免把旧文件摘要悄悄改义导致旧消费者静默失配。
-- 版本由服务端对结构化、确定序列化的输入计算：规范化文件有序数组、实际选组选项、转换器版本、实际目标身份；文件顺序会影响合并，不能随意排序。
-- 目标身份包括导入类型、由内容解析的目标预设/角色 ID，以及角色库所属预设。目标覆盖前还需核对预览时记录的现有目标版本，防止预览期间用户编辑被覆盖；未存在与存在的目标必须可区分。
-- 前端不计算转换版本。确认回传当前 ready 预览的凭据；服务端重算，内容/选组/转换器/目标或其版本不符，HTTP 409 并要求重预览，零写盘。凭据从来不能替代写入授权。
-- 文件、选组、目标变化后立即失效旧 ready 状态；发起同源预览，成功前禁止确认。用现有 request sequence/状态隔离模式丢弃乱序响应。
-- 角色库与预设包共用同一选组/版本计算事实；`previewCharacterCard` 与真正转换使用一致的 options。取消、提交失败、过期处理都不能重新执行宏。
-- 对旧仅带 expectedSourceDigest 的调用继续校验文件，但不授予新选组/目标确认保证；如同时请求新的选组覆盖而缺少有效 expectedPreviewRevision，要求重新预览。
-- 修改协议后递增转换器/预览版本并同步 shared/client/host 契约与文档；不维护服务端预览资源库或无限缓存。
+### 3.7 R9：扫描开关接线（K4/K5）
 
-### 3.5 F4：最终配置与报告共享身份映射
+- 转换期把 `matchCreatorNotes` / `matchCharacterDepthPrompt` 写入 `params.stWorldBook`（`option('match_creator_notes', 'matchCreatorNotes')` 等）。
+- 引擎在构造扫描片段时（现有 `matchCharacterDescription` / `matchCharacterPersonality` / `matchScenario` / `matchPersonaDescription` 同一位置）按开关并入 `config.variables.creator_notes` / `config.variables.depth_prompt`。
+- 未开启时不并入（不得改变既有触发面）；R13 未落地时这两个开关保持关闭即可独立发布（但本计划按 R13 → R9 顺序执行）。
 
-- 保留 `mergeStPresets()` 的既有产物与每来源局部变量绑定；在它已有的 ID 分配处返回或携带同一映射，报告消费映射，不再独立推测后缀。
-- 映射键使用来源索引和条目/生成配置索引，不仅依赖可能重复的 sourceId。必要时提供一个小的同源合并入口，旧仅取 spec 的 API 可薄封装，不引入通用映射框架。
-- 报告每条可定位来源文件、sourceIndex/sourceId 和最终 targetId；诊断中“源身份”和“目标身份”分字段表达，不能把 entryId 同时当两者。
-- 覆盖跨文件重名、同一文件重复 identifier、预先存在后缀 ID、角色正文与 prompt 同名、无 target 的 excluded 条目；重复项明确诊断或分配合法唯一 ID，不静默覆盖。
-- 在截断前算全量计数和映射；报告展示上限不改变最终配置、计数及变量绑定。任何 role 等价分类同步 R0 的真实转换结果。
+### 3.8 R14：边界文档化（K9）
 
-### 3.6 F5：可查看完整有损信息
+- `docs/SillyTavern.md` 新增"未复刻的 ST 能力与降级对照"表：token 预算（`world_info_budget` / `budget_cap` / `ignoreBudget`）、`forbid_overrides`、`min_activations`、全局开关（`use_group_scoring` / `case_sensitive` / `match_whole_words` / `recursive` 的 ST 全局默认）、位置枚举 `ANTop/ANBottom/atDepth/EMTop/EMBottom/outlet` 的降级结果与诊断码、`vectorized` / `outlet` / `automationId` / `triggers` 的不支持口径。
+- 表格每行必须与实现一致（引用实际诊断码），不得把"已降级"写成"等价"。
 
-- 最小修法：删除额外的前端 20 条截断，显示服务端已有界的全部告警，长列表使用现有容器滚动。无需分页库或虚拟列表。
-- 显示来源/目标定位，不只重复同一句告警文字；被排除条目和 info 级降级也能查看，不能出现“有损计数大于零，但界面宣称无需检查”的矛盾。
-- 服务端截断时明确可见范围与全量计数，不能标成“全部已展示”；不支持完整复核时提示拆分导入。确认是用户对明确告知的结果作决定，不代表未显示部分已被审阅。
-- 保持 shared 预览卡、现有翻译字典和基本可访问性；20/21/200 条、零告警、被排除项、中文/英文都由实际渲染/交互断言覆盖。
+### 3.9 实施前必须核实（每个任务的第一步）
 
-### 3.7 F6：诊断快照在 commit 后仍真实
+| # | 核实点 | 位置 | 影响的任务 |
+|---|---|---|---|
+| 1 | `getScore` 的完整合并规则（各 `selectiveLogic` 分支如何合成最终分数、同分时如何取舍） | `world-info.js:423-500` | R8 |
+| 2 | `delayUntilRecursion` 与 `min_activations` 的交互、`isSticky` 例外边界、递归层计数起点 | `world-info.js:4755-4880` | R8 |
+| 3 | `prompts[].system_prompt` 在 prompt manager 中的注入方式与 `forbid_overrides` 的关系 | `openai.js`（prompt manager 段） | R12 |
+| 4 | `globalScanData` 的实参填充点：`creatorNotes` / `characterDepthPrompt` 分别取自哪个字段 | `script.js` / `openai.js` 的 `getWorldInfoPrompt` 调用 | R9、R13 |
+| 5 | `characterFilter` 的求值时机与"当前角色"来源（是否只在群聊生效） | `world-info.js`（判定段）与 `group-chats.js` | R10 |
+| 6 | R0–R6 之后的引擎写区现状（`runPreStepBatch` / `selectWorldBook` 签名与诊断快照结构） | `engine/executor.mjs`、`engine/st-world-book.mjs` | 全部 |
 
-- 每次选择创建一个有界快照对象，`selection.diagnostics` 与会话最近快照引用同一份事实；note 追加 records 或更新 truncated 都写回该对象。
-- 候选、入选、执行器实际 commit 后的已注入严格区分；最终提交失败不能报告成功注入。不为补诊断再调用选择器。
-- 空选择是否替换历史快照必须明确定义：最近一次求值返回空时不能被误认成“本次又注入了旧条目”；快照附本次必要 step 标识。
-- 保留现有 bundle 协调器对外部引擎的接管路径；不因不同模块实例而新增全局共享可变状态。类型声明与 shared 响应同步。
-- 测试边界覆盖 199/200/201 条观测、67 条常驻配置在 commit 才越限、选择阶段已越限、禁用/空集合、两个会话、重复查看以及释放/重挂。
-- 诊断开关/读取差分断言正文、顺序、抽样次数、宏修改、dedupe、sticky/cooldown 完全不变；记录不得持久化完整对话/世界书正文。
+核实结论必须写进对应任务的 Task Summary；与本节冲突时以 ST 源码为准并同步本节。
 
 ## 4. 任务拆解与执行
 
 格式依据：用户指定的 `D:\AI\CC-switch\skills\dev-expert\SKILL.md`，子技能 `references/task-decomposition-and-execution.md`。
 遵循需求分析 → 原子任务拆解 → Wave 分组 → 上下文隔离 → 执行/自测/复核/Task Summary → 项目记忆记录。
-任务卡使用 XML 的 name、files、action、verify、security、done 字段，并补充 depends_on 与 rollback；7 个核心任务按 3 + 4 分入两个代码 Wave。
+任务卡使用 XML 的 name、files、action、verify、security、done 字段，并补充 depends_on 与 rollback。
 
 ### 需求概述
 
-在现有插件边界内修复 F1–F7 与历史角色出口 H0，提供可验证的受控导入和真实诊断；历史日志恢复 H1 另行授权。
-文档任务 D0 不计代码修复进度。未来只有用户明确要求实施后，才进入 R0–R6；**完成状态只在文末第 9 节维护**。
+把 ST 转译从"结构可用"推进到"条件与边界可复核"：键里的宏能被赋值救回、ST 的条目级条件开关被真实读取或明确拒绝、未复刻能力成表可查。所有改动都在既有 host/engine 边界内，不新增服务、不复制 ST 运行时。
 
 | Wave | 任务 | 前置条件与执行顺序 |
 |---|---|---|
-| Wave 0：文档规划 | D0 | 归档旧计划、编写完整方案、记录用户决策并通过文档校验；不是代码修复 |
-| Wave 1：安全与导入生命周期 | R0、R1、R2 | 获得实施授权；优先 R0，其余按写区串行，逐项自测复核 |
-| Wave 2：确认身份与诊断可信度 | R3、R4、R5、R6 | Wave 1 验收通过；各任务继续遵守 XML depends_on 和写区冲突约束 |
-| 独立恢复操作 | H1 | 防复发生效、用户单独授权目标与恢复方式后才执行，不混入代码 Wave |
+| Wave 4：文档规划 | D1 | 归档旧计划、编写本方案、记录用户决策并完成文档校验；**不是代码修复** |
+| Wave 5：P1 触发条件 | R7 | 用户明确授权实施；独立可交付 |
+| Wave 6：P2 条件字段 | R8 → R10 → R11 → R12 | R8 只动 engine；R10/R11/R12 与 R7 共用 `sillytavern.ts`，必须串行 |
+| Wave 7：P3 与扫描接线 | R13 → R9 | R9 依赖 R13 登记的变量；R13 与 Wave 6 的 host 改动串行 |
+| Wave 8：边界文档与集成 | R14 → 验收 | R14 汇总 R7–R13 的实际诊断码与行为 |
+| 独立恢复操作 | H1 | 防复发生效且用户单独授权目标与恢复方式后才执行，不混入代码 Wave |
 
-### 4.1 Wave 1
+### 4.1 Wave 5
 
 ```xml
-<task id="R0" type="auto">
-  <name>封闭 pre-step 非法角色出口并验证持久化回放</name>
-  <depends_on>用户明确授权实施；无其他业务依赖</depends_on>
-  <files>engine/executor.mjs；engine/schema.mjs；src/host/sillytavern.ts；src/client/features/prompts/PromptConfigForm.tsx 与 prompt-config-policy.ts（需要时）；src/shared/bridge-contract.ts（来源报告需要时）；test/engine/prompt-config-engine.test.mjs；test/host/st-compatibility.test.mjs；test/host/pre-step-wiring.test.mjs；test/host/pre-step-persistence.test.mjs（拟新增）；docs/SillyTavern.md；docs/engine-reuse.md</files>
-  <action>按 3.1 节复核所有 buildMessage 调用及策略 patch；先复现官方回放红灯，再统一合法输出和新导入降级；保留旧定义读取兼容与明确告警，不写用户文件。</action>
-  <verify>T00；官方事件持久化往返和真实 Session 回放成功，主会话/子代理/压缩后 epoch/合并与非合并/disposer 均覆盖；转换分类和 UI 合法选项一致。</verify>
-  <security>不能把未知 role、source 或自定义策略输出直通非法事件；不篡改宿主已有消息、用户正文或真实会话；不修改宿主源码。</security>
-  <rollback>新提交反向回退，仅影响本插件代码；若旧版会再次写坏日志，先由用户停用受影响注入，不把不安全版本当作可直接上线的回滚。</rollback>
-  <done>非法夹具先失败、合法出口通过官方加载，历史配置不整体失效，文档同步且完整门禁通过；缺官方回放证据只能部分完成。</done>
-</task>
-
-<task id="R1" type="auto">
-  <name>让角色 JSON 预览确认与取消可结束</name>
-  <depends_on>用户明确授权实施；与 R0 业务独立</depends_on>
-  <files>src/client/features/characters/CharactersPage.tsx；src/client/ui/ImportPreviewCard.tsx（需要时）；test/client/import-preview-browser.test.mjs（拟新增）；docs/ui-architecture.md</files>
-  <action>按 3.2 节分离等待确认与网络 busy，保持导入队列互斥；处理一次性 resolver、取消、卸载、异常与目标切换。</action>
-  <verify>T01；真实文件输入触发组件 onFiles，确认写一次、取消零写入、双击不重入、多文件串行、请求失败/关闭/换目标可结束；使用现有隔离浏览器 helper。</verify>
-  <security>只读预览不写盘；迟到响应或卸载后不得提交旧文件；PNG/大 JSON 保持明确的既有非预览行为。</security>
-  <rollback>只回退本任务，保留其他入口修复；回退后已知死锁不得标为可用。</rollback>
-  <done>真实按钮和键盘路径均可完成确认/取消，回归稳定且完整门禁通过；只测渲染存在不算完成。</done>
-</task>
-
-<task id="R2" type="auto">
-  <name>导入入口对非法预览与版本参数 fail closed</name>
-  <depends_on>用户明确授权实施；与 R0/R1 业务独立</depends_on>
-  <files>src/shared/bridge-contract.ts；src/runtime/settings-bridge.ts；test/host/st-preview-report.test.mjs；test/shared/bridge-contract.test.mjs；docs/SillyTavern.md</files>
-  <action>按 3.3 节先冻结请求类型及失败码，再统一校验两个 handler；规范化与摘要计算都在校验成功后进行。</action>
-  <verify>T02；逐项错误类型 HTTP 400、错误摘要 HTTP 409；两端点的目录树、备份、写盘和重建计数均不变；合法缺省/false/true 行为分别验证。</verify>
-  <security>保留 loopback、Host/Origin、方法、体积与路径/目标白名单；预览参数不是权限凭证。</security>
-  <rollback>仅反向回退本次校验变更，不删除已存在资产；不得以放宽安全校验解决客户端失败。</rollback>
-  <done>字符串 true 无法写盘，其余非法字段不再静默回退；错误包装和旧合法提交兼容，完整门禁通过。</done>
+<task id="R7" type="auto">
+  <name>把世界书 key/secondaryKeys 纳入宏登记并产出可见诊断</name>
+  <depends_on>用户明确授权实施；无其他业务依赖（R0–R6 已交付）</depends_on>
+  <files>src/host/sillytavern.ts；test/host/st-compatibility.test.mjs；test/engine/st-world-book.test.mjs；test/host/st-preview-report.test.mjs（报告字段确有需要时）；docs/SillyTavern.md；CHANGELOG.md</files>
+  <action>按 3.1 节扩展既有「未定义自定义宏登记」循环到 params.keys / params.secondaryKeys，共用同一份排除集（运行时宏、内置路径变量、已登记变量）与同一 variables 表；对含未解析宏的世界书条目发一条 warning 诊断；递增 ST_CONVERTER_VERSION 并同步文档。</action>
+  <verify>T11/T12/T13/T14：转换期登记与诊断、运行期"未赋值不触发 / 赋值后命中 / 不误触发"、字面键与 `{{char}}` 不回归、secondaryKeys 与畸形宏边界；定向测试 + 完整门禁全绿。</verify>
+  <security>不执行宏、不重跑选择器、不写用户预设；诊断不记录正文；只新增 variables 键，不覆盖用户已有值，不改写盘结构与权限规则。</security>
+  <rollback>反向提交；旧转换产物不受影响，用户既有预设与变量不被修改。</rollback>
+  <done>含未解析 key 宏的条目在预览里可见、在模板变量赋值后能命中，字面键与已登记宏行为不变，文档同步且完整门禁通过。</done>
 </task>
 ```
 
-### 4.2 Wave 2
+### 4.2 Wave 6
 
 ```xml
-<task id="R3" type="auto">
-  <name>同一输入身份贯穿选组、预览与提交</name>
-  <depends_on>R0 的转换器版本；R1 的确认生命周期；R2 的参数校验</depends_on>
-  <files>src/shared/bridge-contract.ts；src/host/sillytavern.ts；src/host/characters.ts；src/runtime/settings-bridge.ts；src/client/features/presets/PresetSwitcher.tsx；src/client/features/characters/CharactersPage.tsx；src/client/ui/ImportPreviewCard.tsx；test/host/st-preview-report.test.mjs；test/client/import-preview-browser.test.mjs（R1 新增）；test/shared/bridge-contract.test.mjs；docs/SillyTavern.md</files>
-  <action>按 3.4 节实现明确选组、候选状态、ready 版本与提交重算；角色 JSON 和预设包共用规则；换文件/组/目标失效旧确认，丢弃乱序预览。</action>
-  <verify>T03/T04；显式组覆盖文件值，未知组拒绝，歧义初始入口可选择；旧组版本提交新组/新目标/修改后的目标均 HTTP 409，零写盘；新 ready 结果与实际写入等同。</verify>
-  <security>不缓存完整预览资源，不执行宏；版本不代替权限；错误或过期状态禁用确认；多源无法无歧义选择时拒绝。</security>
-  <rollback>shared/host/client 作为同一兼容切片回退；旧 UI 与新服务协议不匹配时明确要求刷新，不静默接受过期确认。</rollback>
-  <done>两入口都有“输入变化→重预览→确认→相同结果写入”的端到端证据；旧合法调用的兼容限制已文档化，完整门禁通过。</done>
+<task id="R8" type="auto">
+  <name>引擎支持 delayUntilRecursion 与 useGroupScoring</name>
+  <depends_on>用户授权实施；先完成 3.9 的核实点 1–2</depends_on>
+  <files>src/host/sillytavern.ts（字段写入）；engine/st-world-book.mjs；engine/st-world-book.d.mts（类型需要时）；test/engine/st-world-book.test.mjs；docs/engine-reuse.md</files>
+  <action>按 3.2 节写入并在求值中消费两个字段：非递归 pass 抑制 + 数字层数门槛；条目显式开启评分时用 getScore 等价实现替换权重随机。补齐稳定原因码与诊断字段。</action>
+  <verify>T16：非递归 pass 不激活、层数门槛生效、sticky 例外、开关关闭时行为与既有断言逐条一致；评分开启时同组选择结果与 ST 算法逐例对齐（用抄写的算法做对拍夹具）。</verify>
+  <security>不改变未开启条目的求值路径；抽样次数、sticky/cooldown 时间窗与入选集合的差异必须可解释；诊断不持久化正文。</security>
+  <rollback>反向提交；两字段只在新导入产物上出现，旧预设行为不变。</rollback>
+  <done>两个开关在开启与关闭两种状态下都有行为证据，诊断原因码稳定，完整门禁通过。</done>
 </task>
 
-<task id="R4" type="auto">
-  <name>合并配置与报告共享最终身份映射</name>
-  <depends_on>R3；写区与 R3 重叠，串行</depends_on>
-  <files>src/host/sillytavern.ts；src/host/characters.ts；src/runtime/settings-bridge.ts；src/shared/bridge-contract.ts；test/host/st-preview-report.test.mjs；test/host/st-compatibility.test.mjs；docs/SillyTavern.md</files>
-  <action>按 3.5 节复用配置合并时的唯一 ID 分配；来源索引、最终 targetId、诊断定位和全量计数一起派生。</action>
-  <verify>T05；same/same-2、已有后缀、重复 identifier、角色正文与 prompt 冲突、excluded 无目标、超过报告上限；报告每个 targetId 命中真实产物，变量不串来源。</verify>
-  <security>保留源对象不可变；报告不含绝对路径或正文；不能用 Map 静默丢弃重复身份。</security>
-  <rollback>回退报告/映射切片，保留原输入；不修改已导入用户预设或移除已有配置。</rollback>
-  <done>单文件与多文件 API 预览/提交报告均可追溯最终配置，旧变量绑定回归与完整门禁通过。</done>
+<task id="R10" type="auto">
+  <name>角色过滤字段按真实形态读取并显式拒绝</name>
+  <depends_on>用户授权实施；与 R7 串行（同一文件）</depends_on>
+  <files>src/host/sillytavern.ts；test/host/st-compatibility.test.mjs；docs/SillyTavern.md</files>
+  <action>按 3.3 节把误读的三个顶层字段改为读取 entry.characterFilter 对象，原样保留到 stWorldBook 并产出"按角色过滤不受支持"的 warning；未使用该字段时不产生诊断。</action>
+  <verify>T17：对象形态（names/tags/isExclude）完整保留；使用该字段的条目有一条 warning；未使用时零诊断；既有世界书断言不回归。</verify>
+  <security>不实现过滤、不据此跳过条目（避免静默丢失）；保留原始字段供复核。</security>
+  <rollback>反向提交，只影响诊断与保留字段。</rollback>
+  <done>形态读取与诊断都有断言，文档写明不支持口径，完整门禁通过。</done>
 </task>
 
-<task id="R5" type="auto">
-  <name>完整展示有界告警与有损条目</name>
-  <depends_on>R3/R4 冻结报告契约</depends_on>
-  <files>src/client/ui/ImportPreviewCard.tsx；src/client/locales-cards.ts；src/client/locales-prompts.ts（需要时）；test/client/import-preview-browser.test.mjs；docs/SillyTavern.md；docs/ui-architecture.md</files>
-  <action>按 3.6 节移除前端隐藏截断，展示定位及被排除/降级项，准确提示服务端截断；复用已有容器和翻译。</action>
-  <verify>T06；20/21/200 条真实 DOM 可查看，对照零告警、info 降级与 excluded；截断提示不隐瞒，键盘滚动与确认可操作。</verify>
-  <security>文本经 React 转义；不把源正文当 HTML，不新增未请求的正文预览；仅 ready、非 busy 可确认。</security>
-  <rollback>回退展示切片，不影响后端版本校验和用户资产；不能恢复后又宣称全量告警已展示。</rollback>
-  <done>有损项不存在无提示隐藏，报告计数与展示含义一致，两种语言与浏览器回归及完整门禁通过。</done>
+<task id="R11" type="auto">
+  <name>automationId / outletName 双形态读取与自动化依赖诊断</name>
+  <depends_on>用户授权实施；与 R7/R10 串行</depends_on>
+  <files>src/host/sillytavern.ts；test/host/st-compatibility.test.mjs；docs/SillyTavern.md</files>
+  <action>按 3.4 节改为蛇形 + 驼峰双读；非空 automationId 产出 warning（无键非常驻时文案明确"不会自动注入"）；outletName 沿用 unsupported-controls。</action>
+  <verify>T18：两种拼写都能读到；非空值触发诊断；空值与缺省零诊断；素材回归（非空值 0）不新增噪音。</verify>
+  <security>不执行自动化、不把 automationId 当作注入依据；不改变条目启用状态。</security>
+  <rollback>反向提交，只影响读取面与诊断。</rollback>
+  <done>双形态与诊断均有断言，文档同步，完整门禁通过。</done>
 </task>
 
-<task id="R6" type="auto">
-  <name>保持 commit 后诊断快照及真实接线可信</name>
-  <depends_on>R0 的执行出口已稳定；与 R3/R4/R5 共享文件时串行</depends_on>
-  <files>engine/st-world-book.mjs；engine/st-world-book.d.mts；src/shared/bridge-contract.ts（类型需要时）；test/engine/st-world-book.test.mjs；test/host/st-preview-report.test.mjs；test/host/pre-step-wiring.test.mjs；src/runtime/settings-bridge.ts（接线回归确有需要时）；docs/engine-reuse.md</files>
-  <action>按 3.7 节维护同一个可更新快照；补正式非空 bundle 协调器→执行→bridge 回归，保留已证实可用的接管结构。</action>
-  <verify>T07/T08；commit 后 201 条边界截断为 true；真实已注入/另一会话空/重复读不变；物化引擎、主子会话、压缩后 epoch、迟到服务、disposer/重挂纳入同层门禁。</verify>
-  <security>记录上限不改变业务求值；不持久化对话或重新执行选择器/宏；受控只读端点不跨会话泄露。</security>
-  <rollback>仅回退诊断切片，保留选择语义和角色安全出口；不清理用户历史。</rollback>
-  <done>有损截断标志正确，非空接线与隔离/生命周期有行为证据，差分及完整门禁通过；未跑的真实 smoke 单列且不冒充通过。</done>
+<task id="R12" type="auto">
+  <name>prompts[].system_prompt 按核实结论处理并保留事实</name>
+  <depends_on>用户授权实施；先完成 3.9 的核实点 3；与 R7/R10/R11 串行</depends_on>
+  <files>src/host/sillytavern.ts；test/host/st-compatibility.test.mjs；test/host/st-preview-report.test.mjs；docs/SillyTavern.md</files>
+  <action>按 3.5 节先核实 ST 注入方式，再选择"仅保留事实 + info 诊断"或"改判 system-section + degraded"；无论哪种都把 systemPrompt 事实写入 params.stSource 并保证 48 条素材条目分类稳定。</action>
+  <verify>T19：素材 48 条（38 role=system + 10 role=user）在两种结论下都有稳定分类与可复核定位；层归属变化（若采用改判）有前后对照断言；报告计数与 stWarnings 同源。</verify>
+  <security>不改写正文；不做未经验证的层改判（先有 ST 证据再改）。</security>
+  <rollback>反向提交；若采用改判，回滚后恢复按 role 分层。</rollback>
+  <done>核实结论写入 Task Summary，分类与诊断有断言，文档说明与实现一致，完整门禁通过。</done>
 </task>
 ```
 
-### 4.3 执行与冲突规则
+### 4.3 Wave 7
 
-- 默认串行执行；只有用户或适用技能明确要求代理时才委派，先声明目标、独占写区和验收，主线程复跑后采信。
-- R0/R2/R3/R4 可能共同修改 shared/转换器，R1/R3/R5 共用 UI 与浏览器测试，R4/R6 共用 host 测试；这些写区不能并行落码。
-- 每任务先读现有实现、grep 全部调用方并检查工作树，再写最小红灯测试；修复后跑定向测试和完整门禁。
-- 每次只加载当前任务的 spec、设计、责任文件与相关决策；前序 Wave 仅传递 `previous_summary`，不回灌无关源码或完整会话记录。
-- 同一诊断方向连续失败 3 次停止扩展，记录原因和替代路径；不能用跳过失败断言满足 done。
-- 完成勾选要求对应行为矩阵、原始命令/退出码与实际输出齐全；整套测试全绿不能替代新回归。
-- Task Summary 原地追加本节，包含完成状态、修改文件、验证证据、置信度、关键决策、偏差说明、遗留问题和下一步。执行后先自测、复核、记录 summary，再更新文末状态；部分完成、失败和受阻仍标 `[ ]` 并说明原因。
-- 本地 daily.md 仅记录修改记忆，不放第二份任务账本、图谱或 handoff；本文件的状态和提交是恢复检查点。
+```xml
+<task id="R13" type="auto">
+  <name>depth_prompt 保留为禁用配置并登记扫描变量</name>
+  <depends_on>用户授权实施；与 Wave 6 的 host 改动串行；先完成核实点 4</depends_on>
+  <files>src/host/sillytavern.ts；test/host/st-compatibility.test.mjs；test/host/st-preview-report.test.mjs；docs/SillyTavern.md</files>
+  <action>按 3.6 节读取 body.extensions.depth_prompt，生成一条禁用配置（来源标注 + degraded + 原因码 depth-prompt-group-only），并登记 depth_prompt / creator_notes 变量；不默认注入。</action>
+  <verify>T20：13 张素材卡各自的 depth_prompt 都被保留且 enabled=false；不注入（pre-step 结果不含它）；报告列出该条目；变量登记可被后续扫描开关使用。</verify>
+  <security>不执行宏、不改卡片、不默认注入；来源正文只进禁用配置，不进模型上下文。</security>
+  <rollback>反向提交；旧产物不含该配置，行为回到"丢弃"。</rollback>
+  <done>保留、不注入、可复核三件事都有断言，文档同步，完整门禁通过。</done>
+</task>
 
-### 4.4 Task Summary：D0 文档交付
+<task id="R9" type="auto">
+  <name>matchCreatorNotes / matchCharacterDepthPrompt 扫描接线</name>
+  <depends_on>R13（变量登记）；R8（同一引擎文件，串行）</depends_on>
+  <files>engine/st-world-book.mjs；src/host/sillytavern.ts（字段写入）；test/engine/st-world-book.test.mjs；test/host/st-compatibility.test.mjs；docs/engine-reuse.md</files>
+  <action>按 3.7 节：转换期写入两个开关；引擎在既有角色字段扫描处按开关并入 creator_notes / depth_prompt 变量；未开启时不并入。</action>
+  <verify>T21：开关开启时条目能因 creator notes / depth prompt 命中；关闭时不命中且扫描文本与既有断言逐字一致；扫描窗口与深度语义不变。</verify>
+  <security>不默认扫描、不改变既有触发面；不执行宏、不持久化扫描文本。</security>
+  <rollback>反向提交，回到不扫描状态。</rollback>
+  <done>开启/关闭双向行为都有断言，文档同步，完整门禁通过。</done>
+</task>
+```
 
-- **完成状态**：文档编写与校验完成；R0–R6 未开始，H1 未授权。
-- **修改文件**：本轮仅 PLAN.md 与 AGENTS.md；已有原文归档和 docs/ui-architecture.md 的计划入口未修改。
-- **验证证据**：两份文档本地链接、7 个 XML 任务字段及依赖、任务/验收编号、文末状态、现有测试路径与 package scripts 校验通过；归档与固定 Git blob 字节一致；UTF-8 无 BOM、代码围栏及 diff --check 通过。
-- **置信度**：高，文档内容与路径、归档、任务结构均经实际校验；不是对尚未实施修复的正确性背书。
-- **关键决策**：用户决策和审查结论归 PLAN；AGENTS 仅保留通用流程；按指定技能拆解，文末维护 `[✔]` / `[ ]`。
-- **偏差说明**：只调整记录归属和任务呈现，不改已有技术方案；未运行业务测试/构建，不把审查阶段的 919/919 当作未来修复结果。
-- **遗留问题**：全部代码修复待实施，真实日志恢复待单独授权；未改用户数据、宿主源码或运行服务。
-- **下一步**：文档提交/推送后停止；后续由用户指定实际修复任务，再按依赖执行。
+### 4.4 Wave 8
 
-## 4.5 Task Summary：R0–R6 代码修复（2026-09-17）
+```xml
+<task id="R14" type="auto">
+  <name>未复刻能力与降级对照文档化</name>
+  <depends_on>R7–R13 全部完成（要引用真实诊断码与行为）</depends_on>
+  <files>docs/SillyTavern.md；CHANGELOG.md；README.md（仅当行为变化需要使用者知晓时）</files>
+  <action>按 3.8 节新增边界对照表：token 预算 / ignoreBudget / forbid_overrides / min_activations / ST 全局开关 / 位置枚举降级 / vectorized·outlet·automationId·triggers 的不支持口径；每行引用实际诊断码并标注"降级/不支持/等价"。</action>
+  <verify>T22：文档每行与实现一致（逐项用源码位置或测试断言核对）；无"已降级却写成等价"的表述；链接与路径有效。</verify>
+  <security>只改文档，不改行为；不把用户数据或素材正文写入文档。</security>
+  <rollback>反向提交，仅文档回退。</rollback>
+  <done>对照表与实现逐项对齐，CHANGELOG 记录本轮范围，完整门禁（含 diff --check）通过。</done>
+</task>
+```
 
-- **完成状态**：R0–R6 全部完成并通过各自验收与最终门禁；H1 未授权、未执行。
-- **修改文件**：`engine/executor.mjs`、`engine/schema.mjs`、`engine/st-world-book.mjs`、`engine/st-world-book.d.mts`、
-  `src/host/sillytavern.ts`、`src/host/characters.ts`、`src/host/preview-revision.ts`（新增）、
-  `src/runtime/settings-bridge.ts`、`src/shared/bridge-contract.ts`、`src/client/prompt-tool-types.ts`、
-  `src/client/data/use-import-preview-flow.ts`（新增）、`src/client/data/prompt-tool-fields.ts`、
-  `src/client/features/presets/PresetSwitcher.tsx`、`src/client/features/characters/CharactersPage.tsx`、
-  `src/client/features/prompts/PromptConfigForm.tsx`、`src/client/ui/ImportPreviewCard.tsx`、
-  `src/client/ui/controls.module.css`、`src/client/locales.ts`、`src/client/locales-cards.ts`、
-  `src/client/locales-prompts.ts`、`package.json`（devDependency `@deepseek-ai/dsh-session`）、
-  `test/host/pre-step-persistence.test.mjs`（新增）、`test/client/import-preview-browser.test.mjs`（新增）、
-  `test/fixtures/character-import.mjs`（新增）、`test/host/st-preview-report.test.mjs`、
-  `test/host/st-compatibility.test.mjs`、`test/host/preset-package-import.test.mjs`、
-  `test/engine/prompt-config-engine.test.mjs`、`test/engine/st-world-book.test.mjs`、
-  `docs/SillyTavern.md`、`docs/engine-reuse.md`、`docs/ui-architecture.md`、`CHANGELOG.md`、`PLAN.md`。
-- **验证证据**：隔离 cwd `D:\AI\workspase\_temp` 执行 `pnpm typecheck`、`pnpm lint`（0 warning）、
-  `pnpm test`（**932/932**）、`pnpm build`、`pnpm verify:host`（**47 个官方包、0 失败**）、
-  `git diff --check` 全部退出 0。行为证据：
-  T00 → `pre-step-persistence`（真实 `@deepseek-ai/dsh-session` 回放；assistant 夹具必须在
-  `Session.create(seed)` 抛 `message must have role "user"`）；
-  T01/T03/T04/T06 → `import-preview-browser`（真实 Edge + CDP 文件输入：按钮可用性、一次确认一次提交、
-  失败重试、凭据过期、取消零写入、串行、卸载、候选禁用、换组重预览、乱序丢弃、20/21/200 条全展示）；
-  T02 → `st-preview-report`（非法类型 400、过期 409、零写盘零重建）；
-  T05 → `st-preview-report`（报告 targetId 命中真实写盘配置、来源可定位、excluded 无伪目标）；
-  T07 → `st-world-book`（199/200/201 边界、67 条 commit 越限、空集合替换与 `evaluated`、会话隔离）；
-  T08 → `st-preview-report`（物化引擎行 → bundle 协调器 → 真实注入 → bridge 非空 selected/committed）。
-- **置信度**：高。全部验收断言来自真实宿主包（`@deepseek-ai/dsh-session`、dsh-agent、dsh-scope、cordis）
-  与真实浏览器交互，不使用静态源码字符串或 stub 加载器替代。
-- **关键决策**：① 引擎只保留一个出口角色，非法输入在出口降级而非收紧 schema（旧预设必须仍可加载）；
-  ② 选组与版本计算在 host 只实现一次（`resolveStOrder` + `preview-revision.ts`），客户端只回传凭据；
-  ③ 导入状态机抽成 `use-import-preview-flow.ts`，两个入口共用同一生命周期与乱序防护；
-  ④ 诊断快照改为引用共享对象，读取端与会话快照是同一份事实。
-- **偏差说明**：① 转换器版本升为 `st-to-preset/2`（R0 的角色降级改变了转换语义），既有断言同步更新；
-  ② `files` 中的路径穿越条目由"静默丢弃"改为 400 fail closed（既有测试同步更新）；
-  ③ 遍历文件时一次性实施了一处标识符重命名（`inputJson` → `setFiles`）用了 shell 文本替换，
-  违反仓库"只用内置编辑器"的约束，已在此记录并在交付说明中披露。
-- **遗留问题**：未做真实 DSH 会话 smoke（不停止/重启运行中的服务）；H1 历史日志恢复未授权；
-  PNG/大 JSON 流式导入仍不经过预览（既有边界，未扩大本轮范围）。
-- **下一步**：本轮提交并推送 `origin/dev` 后，由 `open-code-review-delegate` 审查本轮改动；
-  审查发现本身不等于修复授权，后续修复范围由用户指定。
+### 4.5 执行与冲突规则
 
-## 4.6 本轮自审结论（open-code-review-delegate，2026-09-17）
+- 默认串行执行；只有用户或适用技能明确要求代理时才委派，先声明目标、独占写区与验收，主线程复跑后采信。
+- 写区冲突：`src/host/sillytavern.ts` 被 R7/R10/R11/R12/R13 共用，`engine/st-world-book.mjs` 被 R8/R9 共用，`docs/SillyTavern.md` 被 R7/R10/R11/R12/R13/R14 共用——这些文件**不得并行落码**。
+- 每任务先读现有实现、`grep` 全部调用方（`params.keys` / `secondaryKeys` / `knownKeys` / `stWorldBook` / `note(` / `getScore` 对应实现）并检查工作树，再写最小红灯测试；修复后跑定向测试与完整门禁。
+- 3.9 的核实点未完成前，不得按推测实现（尤其 R8 的评分算法与 R12 的层归属）。
+- 同一诊断方向连续失败 3 次停止扩展，记录原因与替代路径；不能用跳过失败断言满足 done。
+- 完成勾选要求行为矩阵、原始命令/退出码与实际输出齐全；整套测试全绿不能替代新回归。
+- Task Summary 原地追加到本节，包含完成状态、修改文件、验证证据、置信度、关键决策、偏差说明、遗留问题与下一步；执行后先自测、复核、记录 summary，再更新文末状态；部分完成、失败和受阻仍标 `[ ]` 并说明原因。
+- 本地 `daily.md` 只记修改记忆，不放第二份任务账本；本文件的状态与提交是恢复检查点。
 
-审查范围 `784c546..c985769`（R0–R6 全部改动）；OCR 给出 35 个变更文件、28 个可审查、7 个排除
-（3 份文档 + PLAN/CHANGELOG + `.d.mts` + 测试夹具）；28/28 已逐文件审查，0 跳过。
-结论：**没有 critical / high**；新增回归与真实宿主包证据成立。以下发现**不构成本轮修复授权**，
-修复范围由用户指定。
+### 4.6 Task Summary：D1 文档交付
 
-| # | 严重度 | 位置 | 问题 | 建议 |
-|---|---|---|---|---|
-| A1 | medium | `src/client/features/presets/PresetSwitcher.tsx`（`pickPresetYaml` / `pickPresetDir`） | 两个导入入口用 `void (async () => …)()` 且无 try/catch：文件读取或处理器抛错时导入静默失败并产生未处理拒绝（`CharactersPage` 已有 try/catch + showNotice，两处不一致） | 与 CharactersPage 对齐：捕获异常并 `showNotice('error', …)` |
-| A2 | medium | `src/host/sillytavern.ts#mergeStConversionReports` | 诊断定位用 `report.entries.find(entry => entry.sourceId === item.entryId)`；同一来源内 `sourceId` 不唯一（重复 identifier、世界书 uid 冲突）时可能定位到第一个匹配条目，显示错误的目标 id | 诊断自身记录 `targetIndex`，或按 (entryId, 序号) 匹配 |
-| A3 | medium | `src/host/preview-revision.ts#directoryVersionOf` | 预览与提交各做一次目标目录**全量内容哈希**，大预设目录会带来可观测延迟；读取失败返回 `null`，与「目标不存在」同形，该情形下降级为不检测预览期间改动 | 至少区分读取失败与不存在，或改用 `preset.yml` 版本代替整目录哈希 |
-| A4 | low | `engine/st-world-book.d.mts` | `selectStWorldBook` 返回类型由 `WorldBookDiagnosticsSnapshot` 弱化为内联 `{ records: unknown[]; truncated: boolean }`，丢失 `step` / `evaluated` | 恢复引用 `WorldBookDiagnosticsSnapshot` |
-| A5 | low | `src/shared/bridge-contract.ts` + `src/client/prompt-tool-types.ts` | 两处 `ImportPreviewState` 同名但语义不同（字符串联合 vs 预览对象） | 其一改名（如 `ImportPreviewPhase`） |
-| A6 | low | `src/runtime/settings-bridge.ts`（预设包上传条目） | 路径校验用 `path.includes('..')`：合法文件名含 `..` 会让整个导入 400；角色卡端点用逐段校验，两者不一致 | 两端统一为逐段 `..` 校验 |
-| A7 | low | `src/client/ui/ImportPreviewCard.tsx` | excluded 条目在 `codes` 为空时渲染 `来源条目 X（）` | codes 为空时不渲染括号 |
-| A8 | low | `src/client/features/prompts/WorldBookDiagnosticsCard.tsx` | 未消费新增的 `evaluated`：UI 上「已求值但本次为空」与「尚未求值」仍是同一个空态（语义已在文档中定义） | 卡片区分两种空态 |
+- **完成状态**：文档编写与校验完成；R7–R14 未开始，H1 未授权。
+- **修改文件**：本轮仅 `PLAN.md` 与旧计划归档 `.scratch/prompt-tool-framework/archive/plan-import-lifecycle-r0-r6-f3539fa.md`。
+- **验证证据**：归档与 `f3539fa:PLAN.md` 的 blob `bc4c316d85ca06d3541370a7ee5e5100e4bdd884` 字节一致（`git hash-object --no-filters`）；本文件本地链接、8 个 XML 任务字段与依赖、验收编号 T11–T23、文末状态与 package scripts 校验通过；UTF-8 无 BOM、`git diff --check` 通过。
+- **置信度**：高。第 1.2 节每项都带 ST 源码行号或素材实测；第 3.9 节把尚需核实的 6 处明确列出，不把推测写成方案。
+- **关键决策**：范围取 P1+P2+P3；P1 采用 B 含 A；K6 只保留不实现过滤；K8 保留为禁用配置不默认注入；K3 只在条目显式开启时生效；`selective`/`use_regex` 已核实无缺陷不改。
+- **偏差说明**：复盘期间曾把"无主键非常驻"误报为内容丢失、曾误判 `selective` 与 `use_regex`，均已在第 1.3 节更正；未运行业务测试或构建（纯文档）。
+- **遗留问题**：R7–R14 待授权；3.9 的 6 处核实点未做；素材对 K4–K7 的覆盖为默认值，需合成夹具补行为证据；H1 未授权。
 
 ## 5. H1：历史会话恢复（单独授权，默认不执行）
 
-此操作拥有真实用户日志写入风险，不能因 R0 完成或用户要求“修插件”而自动执行。先完成防复发，再由用户确认明确的会话文件清单与角色降级代价。
+此操作拥有真实用户日志写入风险，不能因 R7–R14 完成或用户要求"修插件"而自动执行。先完成防复发，再由用户确认明确的会话文件清单与角色降级代价。
 
-1. **只读盘点**：核对实际运行版本、日志格式及目标会话当前是否仍写入。使用匹配版本的正式帧解析和 Session 校验；任何解压/解析异常都记为失败，不吞掉。
-2. **授权和静止窗口**：用户明确同意把违规事件中的 assistant 角色改为 user，确认目标及备份位置。若仍有写入，要求用户自行安排停止或结束会话；本代理不停止/重启服务。
-3. **不可变备份**：保存原始字节与哈希，备份不得覆盖；修复前重新读取并比较版本，变化即退出。默认只修已确认 `user/message` 内的非法角色，不顺手修改其他结构。
-4. **最小变换**：不删除事件、不改变 seq、引用、正文、时间或未知字段；不把事件直接改成 assistant/message，因为两种事件的 envelope、结算字段与语义不同。
-5. **离线验证**：正式 zstd 帧解析/编码与校验和规则先在副本验证；用宿主实际加载器验证整份日志、引用及请求派生，不能只 grep 角色。逐条比较允许字段外完全不变，序号和事件数不变。
-6. **替换和回退**：仅在文件仍静止且哈希相同、全部验证通过后，以同目录临时文件原子替换目标；失败保留原文件与备份，不半修整批。成功后用户重新加载验证，恢复角色变更影响明确告知。
-7. **结果记录**：列成功/失败/未处理文件、校验与备份位置、重入策略。记录不含会话正文或凭证；不把生产日志纳入仓库或 `.ai-memory`。
+1. **只读盘点**：核对实际运行版本、日志格式及目标会话当前是否仍写入；使用匹配版本的正式帧解析与 Session 校验，任何解压/解析异常都记为失败。
+2. **授权与静止窗口**：用户明确同意把违规事件中的 `assistant` 角色改为 `user`，确认目标与备份位置；本代理不停止、不重启服务。
+3. **不可变备份**：保存原始字节与哈希，备份不得覆盖；修复前重读并比较版本，变化即退出；只修已确认 `user/message` 内的非法角色。
+4. **最小变换**：不删除事件、不改变 seq/引用/正文/时间/未知字段；不把事件改成 `assistant/message`（envelope、结算字段与语义不同）。
+5. **离线验证**：正式 zstd 帧解析与校验规则先在副本验证；用宿主实际加载器验证整份日志与请求派生；逐条比较允许字段外完全不变。
+6. **替换与回退**：仅在文件仍静止且哈希相同、全部验证通过后原子替换；失败保留原文件与备份。
+7. **结果记录**：列成功/失败/未处理文件、校验与备份位置、重入策略；记录不含会话正文或凭证，不纳入仓库与 `.ai-memory`。
 
-未获授权、宿主版本/完整校验器未确认、日志仍变化或任一校验失败时，H1 保持未执行。仅在正式开始 H1 时决定是否需要最小一次性恢复工具，本次不预建修复器。
+未获授权、宿主版本或完整校验器未确认、日志仍变化或任一校验失败时，H1 保持未执行。
 
 ## 6. 行为验收矩阵
 
 | 测试 | 对应任务 | 必须失败于旧实现、通过于新实现的观察结果 |
 |---|---|---|
-| T00 | R0 / H0 | legacy assistant、策略 patch、ST 五类角色来源、合并/非合并最终消息合法；正文/位置/次数不变；官方持久化回放可重新加载；主/子代理、压缩后 epoch 与释放覆盖 |
-| T01 | R1 / F1 | 等待确认按钮可用；确认一次写一次；取消零写；双击、批量串行、卸载、异常、换目标无悬挂/误写；不是源码字符串断言 |
-| T02 | R2 / F7 | 缺省/false/true 与 string/number/null/array/object 分开；非法字段 400、过期 409；文件/备份/重建零副作用；两个入口同约束 |
-| T03 | R3 / F2 | 显式组优先文件组；不存在/重复/歧义组拒绝；首次歧义可通过 UI 选组后获得 ready；角色 JSON 与预设包一致 |
-| T04 | R3 / F3 | 文件、组选项、版本、目标身份或目标内容变化后旧版本不可提交；乱序响应不能恢复旧 ready；重新预览再提交的结果一致 |
-| T05 | R4 / F4 | 所有报告目标命中实际配置；多源/同源重复及后缀唯一；来源可定位；excluded 无伪目标；变量绑定与全量计数不被截断破坏 |
-| T06 | R5 / F5 | 20/21/200 条与 info/excluded 真实可查看；服务端截断明确，来源定位可辨；确认是主动操作，未 ready 不可用 |
-| T07 | R6 / F6 | 199/200/201 观测边界正确；67 条 commit 越限时两个快照 truncated=true；selection 与 bridge 同源，空/禁用状态明确 |
-| T08 | R6 / 接线 | 外部引擎→bundle 协调器→真实注入→bridge 非空 committed；其他会话空；读诊断不改正文/抽样/变量/状态；迟到/HMR/disposer/重挂无重复 |
-| T09 | 全部 / 保持项 | selective_logic/use_probability 的驼峰/蛇形、false/0、独立/内嵌世界书、非 ST 原生策略、纯赋值卡、源对象不可变、权限/原子写盘不回归 |
-| T10 | H1 / 独立操作 | 原备份可恢复；仅授权角色字段变化，完整帧/事件/引用回放成功；并发修改拒绝；无吞错、无删事件；用户确认可加载 |
+| T11 | R7 / K1 转换期 | `keys` 含 `{{user}}`：`spec.variables.user === ''`；一条 `st-key-macro` warning 且定位到条目；`params.keys` 内容不被改写 |
+| T12 | R7 / K1 运行期 | 未赋值时该键不参与匹配、条目不误触发；赋实际值后含该值的消息能命中并注入；重复求值幂等 |
+| T13 | R7 / 不回归 | 字面键触发结果与既有断言一致；`{{char}}` / 卡片正文变量 / 用户已填模板变量不被覆盖；warning 进入 `needsReview` 与 `meta.stWarnings` 并在预览卡可见 |
+| T14 | R7 / 边界 | `secondaryKeys` 同样登记；宏名大小写不敏感；运行时宏与内置路径变量不登记；畸形引用（`{{`、`{{}}`、嵌套）不抛错；诊断上限与 `truncated` 语义不变 |
+| T16 | R8 / K2·K3 | 非递归 pass 抑制、数字层数门槛、sticky 例外；开关关闭时求值路径与既有断言逐条一致；评分开启时同组选择与 ST 算法对拍一致 |
+| T17 | R10 / K6 | `characterFilter` 嵌套对象完整保留；使用时有 warning；未使用时零诊断 |
+| T18 | R11 / K7 | 蛇形与驼峰都能读到；非空 `automationId` 产出 warning（无键非常驻时含"不会自动注入"）；空值零噪音 |
+| T19 | R12 / K7 | 素材 48 条 `system_prompt=true` 条目分类稳定且可定位；若采用层改判，前后对照有断言 |
+| T20 | R13 / K8 | 13 张卡的 `depth_prompt` 都保留为 `enabled=false` 配置；不注入；报告列出；变量可供扫描使用 |
+| T21 | R9 / K4·K5 | 开关开启时因 creator notes / depth prompt 命中；关闭时不命中且扫描文本与既有断言逐字一致 |
+| T22 | R14 / K9 | 边界对照表每行与实现一致，无"降级写成等价"；诊断码与实际一致 |
+| T15 | 全部 / 保持项 | `selective` 缺省语义、`use_regex` 自动识别、logic/position 映射、概率/分组/sticky、原子写盘与权限校验不回归 |
+| T23 | 全部 / 集成 | 真实素材 17 文件与合成夹具（K4–K7 形态）端到端：转换 → 引擎 pre-step → 官方 `Session.create` 重载通过；样例 `V0.66.png#25` 形态"未赋值不触发 → 赋值后触发" |
 
-真实 HTTP/浏览器 smoke 只用隔离 DSH_HOME、随机端口、合成素材，不调用真实模型或读取生产会话。
-UI HTTP 替身可证明按钮生命周期；host 内存 handler 可证明输入/写盘契约；二者不能冒充实际部署的端到端证据。
+真实 HTTP/浏览器 smoke 只用隔离 DSH_HOME、随机端口、合成素材，不调用真实模型或读取生产会话；素材回归用只读副本，不写用户 DSH_HOME。
 
 ## 7. 验证命令与证据要求
 
-所有 shell 使用 `D:\App\PowerShell\7\pwsh.exe`。以下路径均是现有路径；拟新增用例在任务卡显式标注，建成前不把它们的运行记为通过。
+所有 shell 使用 `D:\App\PowerShell\7\pwsh.exe`。测试与脚本从隔离 cwd 执行。
 
 ```powershell
 $Repo = 'D:\AI\GitHub\dsh-plugin-prompt-tool'
@@ -404,21 +378,19 @@ Set-Location 'D:\AI\workspase\_temp'
 $env:TEMP = 'D:\AI\workspase\_temp'
 $env:TMP = $env:TEMP
 
-# 只改本次文档：无需业务构建或运行用户环境
+# 只改本次文档：
 git -C $Repo diff --check
 git -C $Repo hash-object --no-filters `
-  "$Repo\.scratch\prompt-tool-framework\archive\plan-st-import-diagnostics-f93182b.md"
-# 结果必须为 7ee731dd8f27a4f43a006ee99a93c24addad0a84
+  "$Repo\.scratch\prompt-tool-framework\archive\plan-import-lifecycle-r0-r6-f3539fa.md"
+# 结果必须为 bc4c316d85ca06d3541370a7ee5e5100e4bdd884
 
-# 后续实施：lib 是 host 测试输入，先用 package script 构建
+# 代码任务（lib 是 host 测试输入，先构建）
 pnpm --dir $Repo build
-node --test "$Repo\test\host\st-preview-report.test.mjs" `
-  "$Repo\test\host\st-compatibility.test.mjs" `
+node --test "$Repo\test\host\st-compatibility.test.mjs" `
   "$Repo\test\engine\st-world-book.test.mjs" `
-  "$Repo\test\host\pre-step-wiring.test.mjs" `
-  "$Repo\test\shared\bridge-contract.test.mjs"
+  "$Repo\test\host\st-preview-report.test.mjs"
 
-# 每个代码任务与最终集成门禁；test 脚本会在临时 cwd 内运行用例
+# 每个代码任务与最终集成门禁
 pnpm --dir $Repo typecheck
 pnpm --dir $Repo lint
 pnpm --dir $Repo test
@@ -427,50 +399,51 @@ pnpm --dir $Repo verify:host
 git -C $Repo diff --check
 ```
 
-- R0/R1 新增正式回归后纳入定向与全量发现；R5 复用 R1 浏览器用例，避免重复搭测试框架。
-- 证据最少包含命令、退出码、通过/失败计数；浏览器额外记版本、操作步骤和实际按钮/请求行为；持久化额外记加载 API、事件数与回放结果。
-- 临时文件、浏览器 profile、隔离服务均结束后清理；Windows 递归删除前校验绝对目标归属隔离目录。只停止本次启动的隔离实例。
-- 生成分发快照有变化才按作用范围运行 rebuild:composition / sync:yaml；绝不手工编辑或删除版本化快照。
-- 新会话按本文件任务状态恢复；旧 919/919 不能复用为新补丁门禁。必要 smoke 未完成时任务只记部分完成。
+- 证据最少包含命令、退出码与通过/失败计数；行为证据额外记录输入消息、开关状态、赋值前后的命中结果与实际注入条目标识。
+- 临时文件与隔离环境结束后清理；不启停运行中的 DSH 服务，不写用户 DSH_HOME。
+- 生成分发快照（`engine/compositions/library/`、`engine/vendor/yaml/`）有变化才运行 `rebuild:composition` / `sync:yaml`；按任务范围提交，绝不手工编辑或删除。
+- 新会话按本文件任务状态恢复；R0–R6 的 932/932 与 47 包只作为基线，不能复用为本轮验收结论。
 
 ## 8. 发布、回滚与停止条件
 
 ### 本次文档交付
 
-- 本轮仅调整 PLAN 用户决策与 AGENTS 通用流程；已有完整修复方案、原文归档和 UI 权威文档入口保持不变。
-- 校验当前链接/源码定位/脚本名称、原文归档哈希、7 个 F 编号与 H0/H1 的任务和测试覆盖、拟新增文件标记、全部业务任务未完成状态。
-- 仅暂存本次文档，中文 Conventional Commit，普通推送 origin/dev；不切 main、不创建 PR、不提交本地记忆。推送失败保留提交并报告。
-- 文档变更不需要重启 DSH、重建预设或重新链接 profile。D0 仅代表文档编写与校验完成，提交/推送结果在交付时核对，不能因此勾选 R0–R6。
+- 本轮只新增本文件与旧计划归档；`AGENTS.md`、领域文档、生成目录与用户预设都不改。
+- 仅暂存这两个文件，中文 Conventional Commit，普通推送 `origin/dev`；不切 `main`、不创建 PR、不提交本地记忆。推送失败保留提交并报告。
+- 文档变更不需要重启 DSH、重建预设或重新链接 profile；D1 不代表任何代码任务开始。
 
-### 后续代码交付
+### 代码交付（授权后）
 
-- R0 优先，已知会损坏日志的旧版本不作为无条件回退方案。其余任务按 Wave 顺序独立提交，反向提交回退，不 reset/clean 用户工作树。
-- runtime/engine/bundle 变化按现有重建与物化通道发布；需要用户重启 DSH 服务后生效时明确提示，由用户安排。不得自行刷新生产目录或重启服务。
-- 新导入的角色降级和报告变化需明确告知；旧预设只在运行出口安全兼容，不自动保存、重导入或覆盖手工修改。
-- 完成条件：R0–R6 的 T00–T09、最终门禁和必要集成 smoke 通过；报告修改文件、证据、提交、分支和限制。H1 未授权必须注明“未执行”，不得把历史日志已经恢复写进结论。
+- 按 Wave 顺序独立提交，反向提交回退；不 reset/clean 用户工作树。
+- runtime/engine/bundle 变化按现有重建与物化通道发布；需要用户重启 DSH 时明确提示，由用户安排；不得自行刷新生产目录或重启服务。
+- 旧产物不受影响：已导入预设不会自动获得新登记、新诊断与新字段，需重新导入才生效——交付说明必须写明，不自动回写用户 `preset.yml`。
+- 行为变化（新增 variables 键、warning/info 诊断、字段保留与禁用配置）需明确告知；「模板变量」赋值后的生效路径依赖既有重建流程，不新增通道。
+- 完成条件：R7–R14 的 T11–T23、最终门禁与合成夹具证据齐备；报告修改文件、证据、提交、分支与限制。H1 未授权必须注明"未执行"。
 
 ### 本次停止条件
 
-完成用户决策记录、通用流程调整与文档提交后停止。所有代码修复保持未开始，历史数据恢复保持待单独授权。
+完成 D1 文档交付与提交推送后停止。R7–R14 保持未开始，H1 保持待单独授权。
 
 ## 9. Wave 与任务完成状态
 
 `[✔]` = 已完成且对应验证通过；`[ ]` = 未完成。进行中、部分完成、失败或受阻均保持 `[ ]`，原因记录在 Task Summary。
 Wave 只有在全部必需子任务验收通过后才能标记 `[✔]`；文档 Wave 完成不代表代码修复完成。
 
-- [✔] **Wave 0：文档规划**
-  - [✔] D0：旧计划原文已归档，完整修复方案、用户决策、任务卡及状态清单已编写并通过文档校验。
-- [✔] **Wave 1：安全与导入生命周期**
-  - [✔] R0：H0 合法消息出口、兼容降级与官方持久化回放回归（T00）。
-  - [✔] R1：F1 角色 JSON 导入确认、取消及等待生命周期（T01）。
-  - [✔] R2：F7 导入预览与版本参数运行时校验（T02）。
-- [✔] **Wave 2：确认身份与诊断可信度**
-  - [✔] R3：F2/F3 显式选组与版本化预览闭环（T03/T04）。
-  - [✔] R4：F4 最终配置 ID、来源与报告同源（T05）。
-  - [✔] R5：F5 全部有界有损信息可查看（T06）。
-  - [✔] R6：F6 commit 后诊断截断与真实非空接线（T07/T08）。
-- [✔] **最终集成验收**：T00–T09 由新增回归覆盖，typecheck / lint / test（932/932）/ build /
-  verify:host（47 个官方包、0 失败）/ `git diff --check` 全部通过；未做真实 DSH 会话 smoke（不操作运行中的服务）。
+- [✔] **Wave 4：文档规划**
+  - [✔] D1：旧计划原文已归档（与 `f3539fa:PLAN.md` 字节一致），P1+P2+P3 方案、用户决策、任务卡与状态清单已编写并通过文档校验。
+- [ ] **Wave 5：P1 触发条件**
+  - [ ] R7：世界书 `keys` / `secondaryKeys` 的未解析宏登记为可赋值变量并产出可见诊断（T11–T14）。
+- [ ] **Wave 6：P2 条件字段**
+  - [ ] R8：`delayUntilRecursion` 与 `useGroupScoring` 求值支持（T16）。
+  - [ ] R10：`characterFilter` 按真实形态读取并显式拒绝（T17）。
+  - [ ] R11：`automationId` / `outletName` 双形态读取与自动化依赖诊断（T18）。
+  - [ ] R12：`prompts[].system_prompt` 按核实结论处理并保留事实（T19）。
+- [ ] **Wave 7：P3 与扫描接线**
+  - [ ] R13：`depth_prompt` 保留为禁用配置并登记扫描变量（T20）。
+  - [ ] R9：`matchCreatorNotes` / `matchCharacterDepthPrompt` 扫描接线（T21）。
+- [ ] **Wave 8：边界文档与集成**
+  - [ ] R14：未复刻能力与降级对照文档化（T22）。
+- [ ] **最终集成验收**：T11–T23、完整门禁与合成夹具证据通过，未验证项明确披露。
 - [ ] **独立恢复 H1**：历史日志恢复，尚未授权；不计入代码修复完成率。
 
-当前代码修复进度：**7 / 7**（R0–R6 全部完成并通过各自验收与最终门禁）。历史日志恢复 H1 仍未执行。
+当前进度：文档 1/1，代码修复 **0/8（R7–R14 未开始）**；`selective` 默认值与 `use_regex` 已核实无缺陷不改；H1 未授权。
