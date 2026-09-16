@@ -20,10 +20,10 @@
  *
  * 预设内嵌 skills（官方 cordis 谱系的 `skill-filesystem-cordis` 行按 `baseUrl/skills/`
  * 读取）：writePreset 不管理它，建预设时复制一次后即冻结。本脚本默认只比对包内
- * 模板并报告漂移，不覆盖用户副本；显式 `--refresh-skills` 才刷新，且先把原目录
- * 改名为 `skills.bak-<时间戳>`（可恢复），预设独有的文件不删除。
+ * 模板并报告漂移，不覆盖用户副本；显式 `--refresh-skills` 才暂存模板与独有文件的
+ * 合并树，再把原目录改名为 `skills.bak-<时间戳>`（可恢复）并切换到新树。
  */
-import { cpSync, existsSync, readFileSync, readdirSync, renameSync } from 'node:fs'
+import { cpSync, existsSync, lstatSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync } from 'node:fs'
 import { join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -153,7 +153,7 @@ for (const [index, preset] of presets.entries()) {
 }
 
 // 3) 预设内嵌 skills 与包内模板比对：writePreset 不管这份副本，包更新后它会静默过期。
-//    默认只报告；--refresh-skills 先备份再按模板刷新（预设独有文件不删除）。
+//    默认只报告；--refresh-skills 暂存合并树后备份切换（预设独有文件不删除）。
 const staleSkills = []
 for (const preset of presets) {
   const drift = skillsDrift(preset.id, join(presetRoot, preset.id))
@@ -165,6 +165,10 @@ for (const drift of staleSkills) {
   if (drift.differing.length > 0) parts.push(`${drift.differing.length} 个内容不同`)
   if (drift.extra.length > 0) parts.push(`${drift.extra.length} 个预设独有`)
   const sample = [...drift.missing, ...drift.differing, ...drift.extra].slice(0, 3).join(', ')
+  if (drift.missing.length === 0 && drift.differing.length === 0) {
+    console.log(`stale skills ${drift.presetId}: ${parts.join('、')}（${sample}）；仅预设独有文件，无需刷新`)
+    continue
+  }
   if (args.refreshSkills && args.dryRun) {
     console.log(`[dry-run] would refresh skills ${drift.presetId}: ${parts.join('、')}（${sample}）`)
     continue
@@ -173,19 +177,51 @@ for (const drift of staleSkills) {
     console.log(`stale skills ${drift.presetId}: ${parts.join('、')}（${sample}）；加 --refresh-skills 先备份再按包内模板刷新`)
     continue
   }
+  let tempDir
   try {
+    const local = lstatSync(drift.skillsDir, { throwIfNoEntry: false })
+    if (local !== undefined && !local.isDirectory()) throw new Error(`拒绝刷新非普通 skills 目录：${drift.skillsDir}`)
+    tempDir = mkdtempSync(join(presetRoot, drift.presetId, '.skills-refresh-'))
+    const copyOptions = { recursive: true, dereference: false, verbatimSymlinks: true }
+    cpSync(drift.templateDir, tempDir, copyOptions)
+    if (local !== undefined) {
+      // 模板先入暂存树，只合入用户独有项；同名目录合并，不穿过任一侧的符号链接。
+      cpSync(drift.skillsDir, tempDir, {
+        ...copyOptions,
+        filter: (source, target) => {
+          const existing = lstatSync(target, { throwIfNoEntry: false })
+          return existing === undefined || (existing.isDirectory() && lstatSync(source).isDirectory())
+        },
+      })
+    }
     let backupDir
-    if (existsSync(drift.skillsDir)) {
+    if (local !== undefined) {
       backupDir = join(presetRoot, drift.presetId, `${SKILLS_BACKUP_PREFIX}${Date.now().toString(36)}`)
+      if (lstatSync(backupDir, { throwIfNoEntry: false }) !== undefined) throw new Error(`备份路径已存在：${backupDir}`)
       renameSync(drift.skillsDir, backupDir)
     }
-    cpSync(drift.templateDir, drift.skillsDir, { recursive: true, force: true })
+    try {
+      renameSync(tempDir, drift.skillsDir)
+    } catch (error) {
+      if (backupDir !== undefined) {
+        try {
+          if (lstatSync(drift.skillsDir, { throwIfNoEntry: false }) !== undefined) throw new Error('skills 路径已被占用，拒绝覆盖')
+          renameSync(backupDir, drift.skillsDir)
+        } catch (restoreError) {
+          throw new Error(`${String(error)}；回退失败：${String(restoreError)}；原副本保留在 ${backupDir}`, { cause: error })
+        }
+      }
+      throw error
+    }
+    tempDir = undefined
     console.log(`refreshed skills ${drift.presetId}${backupDir === undefined ? '' : `（原副本已备份为 ${relative(presetRoot, backupDir)}）`}`)
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     // 运行中的宿主会在 skills 目录里持有句柄，改名同样会 EPERM/EBUSY。
     const locked = /EPERM|EBUSY|EACCES/.test(message)
     failures.push(`${drift.presetId}: 刷新预设内嵌 skills 失败：${message}${locked ? '（目录被运行中的宿主进程锁定，重启 DSH 后重跑本脚本）' : ''}`)
+  } finally {
+    if (tempDir !== undefined) rmSync(tempDir, { recursive: true, force: true })
   }
 }
 
