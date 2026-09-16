@@ -543,4 +543,4 @@ promptConfigs 模块卡展开区按基础信息、注入规则、作用范围、
 6. 新 selector 必须有明确 CSS owner；新交互必须同时考虑键盘、焦点、错误和 reduced-motion。
 7. 完成 typecheck、lint、test、build 和 diff --check 后再提交；不要停止或重启当前 DSH 服务。
 
-本文是客户端结构的长期权威文档；根目录 PLAN.md 只跟踪进行中的计划（当前无），一次性计划的结论沉淀回本文及对应领域文档。
+本文是客户端结构的长期权威文档；根目录 [PLAN.md](../PLAN.md) 只跟踪当前计划与验收状态，实施后的稳定结论沉淀回本文及对应领域文档。
