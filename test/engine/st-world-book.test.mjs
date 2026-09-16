@@ -449,6 +449,11 @@ test('T16 useGroupScoring：与 ST getScore 对拍，未开启者不被淘汰但
   const lost = selection.diagnostics.records.filter(record => record.reason === 'group-score-lost')
   assert.deepEqual(lost.map(record => [record.id, record.score, record.maxScore]),
     [['lore-1', 1, 2], ['lore-3', 1, 2]], '诊断记录分数与最高分')
+  // 被评分淘汰的成员只记一条原因：不再附加 group-lost（它没有参与最后的组内竞争）。
+  for (const id of ['lore-1', 'lore-3']) {
+    assert.deepEqual(selection.diagnostics.records.filter(record => record.id === id && record.stage === 'rejected').map(record => record.reason),
+      ['group-score-lost'], `${id} 只有一个拒绝原因`)
+  }
 
   // 关闭评分时回到既有权重随机路径（Math.random=0 选中 available 首项），入选集合不受评分影响。
   const original = Math.random

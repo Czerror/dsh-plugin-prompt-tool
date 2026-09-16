@@ -111,7 +111,7 @@ ST 导入在既有 `buildWorldBookEntry` 结构上添加 `params.stWorldBook`，
 | `delayUntilRecursion` / `delay_until_recursion` | 延迟到递归扫描：非递归 pass 一律抑制（sticky 命中例外），递归 pass 中按层级池判断是否解锁；层级池取条目集合里的最小层级并逐个打开 |
 | `useGroupScoring` / `use_group_scoring` | 组内评分：组内存在显式开启的条目时整组按主/副键命中数评分，只有开启评分的条目会被淘汰（严格低于最高分），未开启者不被淘汰但其分数计入最高分 |
 | `characterFilter` | 真实形态是嵌套对象 `{ names, tags, isExclude }`（不是三个顶层字段）；原样保留到 `params.stWorldBook.characterFilter`，在两个维度至少一个非空时告警「按角色过滤不受支持」——不实现过滤、也不据此跳过条目 |
-| `automationId` / `automation_id` | 顶层驼峰与 extensions 蛇形都读；非空时保留事实并告警「依赖 STscript 自动化」，其中无主键且非常驻的条目额外说明「不会自动注入」 |
+| `automationId` / `automation_id` | 顶层驼峰与 extensions 蛇形都读；字段类型是字符串，非字符串形态（数字 0、布尔）视为未设置；非空时保留事实并告警「依赖 STscript 自动化」，其中无主键且非常驻的条目额外说明「不会自动注入」 |
 | `outletName` / `outlet_name` | 双形态读取；非空时保留事实并计入不支持控制项（`unsupported-controls`） |
 | 角色描述/性格/场景/persona 扫描开关 | 显式开启时把相应声明字段加入扫描 |
 | `matchCreatorNotes` / `match_creator_notes` | 显式开启时把卡片 `creator_notes`（清洗后）加入扫描文本；未开启时不并入，既有触发面不变 |

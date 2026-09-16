@@ -212,6 +212,15 @@ test('T18 automationId / outletName 双形态读取与自动化依赖诊断', ()
   assert.equal('automationId' in empty.spec.promptConfigs[0].params.stWorldBook, false)
   assert.equal('outletName' in empty.spec.promptConfigs[0].params.stWorldBook, false)
 
+  // 非字符串形态（数字 0 / 布尔 false）视为未设置：不得被 String() 归一成非空值而误报。
+  for (const value of [0, false, 0.0, {}]) {
+    const odd = convertStToPresetWithReport({ entries: { 0: conditionEntry({
+      uid: 0, key: ['P'], automationId: value, outletName: value }) } }, `odd-${typeof value}`)
+    assert.equal(odd.report.diagnostics.filter(item => item.code === 'st-worldbook-automation').length, 0, `automationId=${String(value)} 零诊断`)
+    assert.equal(odd.report.diagnostics.filter(item => item.code === 'st-worldbook-controls').length, 0, `outletName=${String(value)} 零诊断`)
+    assert.equal('automationId' in odd.spec.promptConfigs[0].params.stWorldBook, false)
+  }
+
   // outletName 沿用 unsupported-controls：保留事实但内容不被误注入。
   const outlet = convertStToPresetWithReport({ entries: { 0: conditionEntry({ uid: 0, key: ['P'], outletName: 'OUT' }) } }, 'outlet')
   assert.equal(outlet.spec.promptConfigs[0].params.stWorldBook.outletName, 'OUT')

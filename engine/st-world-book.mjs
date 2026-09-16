@@ -197,6 +197,7 @@ export function selectStWorldBook(configs, session, messages, warn = () => {}) {
       // 组内评分（ST filterGroupsByScoring 5292-5328）：无全局开关时，只要组内存在显式
       // 开启 useGroupScoring 的条目就整组参与评分；组内有 sticky 时整组跳过（5300-5305）。
       // 只有开启评分的条目会被淘汰（严格小于最高分）；未开启者不被淘汰，但其分数计入最高分。
+      const scoreOut = new Set()
       if (!sticky.length && remaining.some(config => config.params.stWorldBook.useGroupScoring === true)) {
         let scores
         try {
@@ -211,6 +212,7 @@ export function selectStWorldBook(configs, session, messages, warn = () => {}) {
           for (const [index, config] of remaining.entries()) {
             if (config.params.stWorldBook.useGroupScoring !== true || scores[index] >= maxScore) { survivors.push(config); continue }
             note(config, 'rejected', 'group-score-lost', { group: name, score: scores[index], maxScore })
+            scoreOut.add(config)
             failed.add(config)
           }
           remaining = survivors
@@ -228,7 +230,13 @@ export function selectStWorldBook(configs, session, messages, warn = () => {}) {
       selected.add(choice)
       note(choice, 'selected', 'group-winner', { group: String(choice.params.stWorldBook.group ?? '') })
       for (const group of String(choice.params.stWorldBook.group).split(',').map(value => value.trim()).filter(Boolean)) occupied.add(group)
-      for (const config of members) if (config !== choice) { note(config, 'rejected', 'group-lost', { group: name }); failed.add(config) }
+      for (const config of members) {
+        // 已按评分淘汰的成员只记 group-score-lost：它没有参与最后的组内竞争，
+        // 再记一条 group-lost 会让诊断给出两个互相矛盾的原因。
+        if (config === choice || scoreOut.has(config)) continue
+        note(config, 'rejected', 'group-lost', { group: name })
+        failed.add(config)
+      }
     }
     const added = candidates.filter(config => selected.has(config))
     if (!added.length && !delayLevels.length) break

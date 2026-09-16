@@ -401,6 +401,15 @@ ST 依据：`world-info.js:4915` / `:4947` 匹配前对主键与副键执行 `su
 - **偏差说明**：①1.2 节 K1 的「素材实测 5 条 `{{user}}` 键条目」经复核为 **3 条**，已更正。②素材 `depth_prompt` 的 `role` 是字符串（如 `system`）而非数字，实现按原值保留、不做归一（不影响禁用配置的判定）。③未做真实浏览器 smoke 与真实模型调用（PLAN 6 节要求：只用隔离环境与合成素材）。
 - **遗留问题**：H1（历史会话恢复）未授权、未执行；`allowWIScan` 扩展提示词扫描与群聊注入保持「未复刻」并在表中标注；旧转换产物需重新导入才有本轮的新字段、新变量与新诊断。
 
+### 4.11 交付后审查（open-code-review-delegate，范围 `062604b..eb58428`）
+
+- **范围与覆盖**：`ocr delegate preview` 判定 8 个可审查文件（14 个变更文件中 6 个为 Markdown/生成物被排除），**8/8 已审**（coverage 100%），无跳过项。
+- **发现与处置**（2 处均为本轮引入，已修复并补回归）：
+  1. **`src/host/sillytavern.ts`：`automationId` / `outletName` 的非字符串形态误报（medium）**。原实现用 `String(raw).trim()` 判空，`automationId: 0` 与 `automationId: false` 会被归一成 `'0'` / `'false'` 而判为非空——既写入 `stWorldBook.automationId`，又产出「依赖 STscript 自动化」的 warning。探针实测确认（`0 → 1 条诊断`）。改为只接受非空字符串（ST 的字段类型就是字符串），非字符串形态视为未设置；T18 增加 `0` / `false` / `{}` 三个形态的零诊断与不写入断言。
+  2. **`engine/st-world-book.mjs`：评分淘汰条目被重复记录（medium）**。被组内评分淘汰的成员随后在 `group-lost` 循环里又被记一条 rejected，同一轮出现两个互相矛盾的原因（探针实测 `lore-1`/`lore-3` 各两条）。改为用 `scoreOut` 集合跳过，只保留 `group-score-lost`；T16 增加「每个被淘汰条目只有一个拒绝原因」的断言。
+- **丢弃的观察项（判定为非缺陷）**：①评分时对 active 条目构造扫描材料会执行 `interpolateVariables`（含 `pick`/`random` 宏）从而消耗随机数——只在条目显式开启 `useGroupScoring` 时发生，ST 的 `getScore` 同样要重算匹配，且材料按 pass 缓存（同一 pass 内每条目只插值一次）；②`delayUntil > delayLevel` 对非数字值走 JS 强制转换——ST 的字段类型是 number，畸形输入下 `pass === 0` 的抑制仍然成立；③两套测试夹具（`conditionEntry` / `keyMacroEntry`）默认值不同，保留以避免测试间耦合。
+- **修复后门禁**：`typecheck` / `lint`（0 warning）/ `test`（948/948）/ `build` / `git diff --check` 全部通过；`rebuild:composition` 与 `sync:yaml` 重跑后分发快照无变化（本轮不涉及组合模块与 yaml 供应商）。
+
 ## 5. H1：历史会话恢复（单独授权，默认不执行）
 
 此操作拥有真实用户日志写入风险，不能因 R7–R14 完成或用户要求"修插件"而自动执行。先完成防复发，再由用户确认明确的会话文件清单与角色降级代价。

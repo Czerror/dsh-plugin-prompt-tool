@@ -510,8 +510,10 @@ export function convertStToPresetWithReport(
       // 会漏检真实信号。两者都只保留事实，不作为注入依据。
       const rawAutomationId = option('automation_id', 'automationId')
       const rawOutletName = option('outlet_name', 'outletName')
-      const automationId = rawAutomationId === undefined || rawAutomationId === null ? '' : String(rawAutomationId).trim()
-      const outletName = rawOutletName === undefined || rawOutletName === null ? '' : String(rawOutletName).trim()
+      // 两个字段的类型都是字符串（STscript 脚本名 / outlet 名）：非字符串形态（数字 0、
+      // 布尔、对象）视为未设置——否则 String(0)/String(false) 非空会被误报成依赖自动化。
+      const automationId = typeof rawAutomationId === 'string' ? rawAutomationId.trim() : ''
+      const outletName = typeof rawOutletName === 'string' ? rawOutletName.trim() : ''
       if (automationId.length > 0) stWorldBook.automationId = rawAutomationId
       if (outletName.length > 0) stWorldBook.outletName = rawOutletName
       if (option('vectorized') === true || outletName.length > 0
