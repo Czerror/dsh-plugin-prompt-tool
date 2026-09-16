@@ -1,6 +1,6 @@
 id: minimal
 name: 极简模式
-description: 仅提供持久 shell 的单工具编码 Agent（对齐 DSH 0.1.5-rc.2 minimal）。
+description: 仅提供持久 shell 的单工具编码 Agent。
 version: 1.0.0
 engineCompat: ">=0.4.2"
 modules:
