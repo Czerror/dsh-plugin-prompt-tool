@@ -118,10 +118,134 @@ test('独立世界书顶层 key/keysecondary/selective_logic 与角色卡内嵌�
   assert.equal(standalone.params.stWorldBook.probability, 0)
 })
 
+/** T16 世界书条件字段夹具：role=1 避免角色降级诊断干扰断言。 */
+const conditionEntry = (extra) => ({
+  id: 0, keys: ['P'], content: 'E0', enabled: true, constant: false, selective: true, role: 1, extensions: {}, ...extra,
+})
+
+test('T16 世界书条件字段：delayUntilRecursion 与 useGroupScoring 双拼写写入 stWorldBook', () => {
+  const snake = convertStToPreset({ entries: { 0: conditionEntry({
+    uid: 0, key: ['P'], extensions: { delay_until_recursion: 2, use_group_scoring: true } }) } }, 'cond').promptConfigs[0]
+  assert.equal(snake.params.stWorldBook.delayUntilRecursion, 2)
+  assert.equal(snake.params.stWorldBook.useGroupScoring, true)
+
+  const camel = convertStToPreset({ data: { name: 'C', character_book: { entries: [
+    conditionEntry({ delayUntilRecursion: 3, useGroupScoring: false }),
+  ] } } }, 'cond2').promptConfigs.find(c => c.id === 'lore-0')
+  assert.equal(camel.params.stWorldBook.delayUntilRecursion, 3)
+  assert.equal(camel.params.stWorldBook.useGroupScoring, false)
+
+  // 缺省不写键（引擎按缺省语义处理），显式 0/false 保留为事实。
+  const absent = convertStToPreset({ entries: { 0: conditionEntry({ uid: 0, key: ['P'] }) } }, 'cond3').promptConfigs[0]
+  assert.equal('delayUntilRecursion' in absent.params.stWorldBook, false)
+  assert.equal('useGroupScoring' in absent.params.stWorldBook, false)
+  const zero = convertStToPreset({ entries: { 0: conditionEntry({ uid: 0, key: ['P'], delayUntilRecursion: 0 }) } }, 'cond4').promptConfigs[0]
+  assert.equal(zero.params.stWorldBook.delayUntilRecursion, 0)
+})
+
 /** T11–T14 世界书触发键宏夹具：role=1 避免角色降级诊断干扰断言。 */
 const keyMacroEntry = (extra) => ({
   id: 25, keys: [], secondary_keys: [], content: 'E25', enabled: true, constant: false,
   selective: true, insertion_order: 100, position: 'before_char', role: 1, extensions: {}, ...extra,
+})
+
+test('T17 characterFilter 按真实嵌套对象形态保留并显式拒绝', () => {
+  const filter = { names: ['Ada', 'Bob'], tags: [12, 34], isExclude: true }
+  const { spec, report } = convertStToPresetWithReport({ entries: { 0: conditionEntry({
+    uid: 0, key: ['P'], characterFilter: filter }) } }, 'filter')
+  const config = spec.promptConfigs[0]
+  assert.deepEqual(config.params.stWorldBook.characterFilter, filter, '嵌套对象完整保留')
+  const diagnostics = report.diagnostics.filter(item => item.code === 'st-worldbook-character-filter')
+  assert.equal(diagnostics.length, 1)
+  assert.deepEqual([diagnostics[0].severity, diagnostics[0].entryId, diagnostics[0].field],
+    ['warning', '0', 'characterFilter'])
+  assert.match(diagnostics[0].message, /不受支持/)
+  assert.equal(report.summary.needsReview, 1)
+
+  // 未使用（缺省 / 两个数组都为空）零诊断；空对象仍按事实保留。
+  const unused = convertStToPresetWithReport({ entries: { 0: conditionEntry({ uid: 0, key: ['P'] }) } }, 'nofilter')
+  assert.equal(unused.report.diagnostics.filter(item => item.code === 'st-worldbook-character-filter').length, 0)
+  const empty = convertStToPresetWithReport({ entries: { 0: conditionEntry({
+    uid: 0, key: ['P'], characterFilter: { names: [], tags: [], isExclude: true } }) } }, 'emptyfilter')
+  assert.equal(empty.report.diagnostics.filter(item => item.code === 'st-worldbook-character-filter').length, 0)
+  assert.deepEqual(empty.spec.promptConfigs[0].params.stWorldBook.characterFilter, { names: [], tags: [], isExclude: true })
+
+  // 角色卡内嵌世界书与独立世界书同源；非法形态（数组 / 字符串）不当作过滤启用。
+  const embedded = convertStToPreset({ data: { name: 'C', character_book: { entries: [
+    conditionEntry({ id: 0, keys: ['P'], characterFilter: filter })] } } }, 'cardfilter').promptConfigs.find(c => c.id === 'lore-0')
+  assert.deepEqual(embedded.params.stWorldBook.characterFilter, filter)
+  const malformed = convertStToPresetWithReport({ entries: { 0: conditionEntry({
+    uid: 0, key: ['P'], characterFilter: ['Ada'] }) } }, 'badfilter')
+  assert.equal(malformed.report.diagnostics.filter(item => item.code === 'st-worldbook-character-filter').length, 0)
+  assert.equal('characterFilter' in malformed.spec.promptConfigs[0].params.stWorldBook, false)
+
+  // 仅 isExclude 非默认、两个维度都为空时 ST 同样不产生过滤，因此不告警。
+  const excludeOnly = convertStToPresetWithReport({ entries: { 0: conditionEntry({
+    uid: 0, key: ['P'], characterFilter: { names: [], tags: [], isExclude: false } }) } }, 'excludeonly')
+  assert.equal(excludeOnly.report.diagnostics.filter(item => item.code === 'st-worldbook-character-filter').length, 0)
+})
+
+test('T18 automationId / outletName 双形态读取与自动化依赖诊断', () => {
+  // 顶层驼峰（ST 独立世界书真实形态）与 extensions 蛇形都要读到。
+  const camel = convertStToPresetWithReport({ entries: { 0: conditionEntry({
+    uid: 0, key: ['P'], automationId: 'auto-1' }) } }, 'camel')
+  assert.equal(camel.spec.promptConfigs[0].params.stWorldBook.automationId, 'auto-1')
+  const camelDiag = camel.report.diagnostics.filter(item => item.code === 'st-worldbook-automation')
+  assert.equal(camelDiag.length, 1)
+  assert.deepEqual([camelDiag[0].severity, camelDiag[0].entryId, camelDiag[0].field], ['warning', '0', 'automationId'])
+  assert.doesNotMatch(camelDiag[0].message, /不会自动注入/, '有主键时不宣称不会注入')
+
+  const snake = convertStToPresetWithReport({ entries: { 0: conditionEntry({
+    uid: 0, key: ['P'], extensions: { automation_id: 'auto-2' } }) } }, 'snake')
+  assert.equal(snake.spec.promptConfigs[0].params.stWorldBook.automationId, 'auto-2')
+  assert.equal(snake.report.diagnostics.filter(item => item.code === 'st-worldbook-automation').length, 1)
+
+  // 无主键且非常驻：文案明确「不会自动注入」。
+  const orphan = convertStToPresetWithReport({ entries: { 0: conditionEntry({ uid: 0, keys: [], key: [], automationId: 'auto-3' }) } }, 'orphan')
+  assert.match(orphan.report.diagnostics.find(item => item.code === 'st-worldbook-automation').message, /不会自动注入/)
+
+  // 空值 / 缺省零噪音（素材实测 automationId 每条存在但非空值 0）。
+  const empty = convertStToPresetWithReport({ entries: { 0: conditionEntry({
+    uid: 0, key: ['P'], automationId: '', outletName: '' }) } }, 'empty')
+  assert.equal(empty.report.diagnostics.filter(item => item.code === 'st-worldbook-automation').length, 0)
+  assert.equal(empty.report.diagnostics.filter(item => item.code === 'st-worldbook-controls').length, 0)
+  assert.equal('automationId' in empty.spec.promptConfigs[0].params.stWorldBook, false)
+  assert.equal('outletName' in empty.spec.promptConfigs[0].params.stWorldBook, false)
+
+  // outletName 沿用 unsupported-controls：保留事实但内容不被误注入。
+  const outlet = convertStToPresetWithReport({ entries: { 0: conditionEntry({ uid: 0, key: ['P'], outletName: 'OUT' }) } }, 'outlet')
+  assert.equal(outlet.spec.promptConfigs[0].params.stWorldBook.outletName, 'OUT')
+  assert.equal(outlet.report.diagnostics.filter(item => item.code === 'st-worldbook-controls').length, 1)
+  assert.equal(outlet.report.entries.find(entry => entry.sourceId === '0').classification, 'unsupported')
+})
+
+test('T19 prompts[].system_prompt 只保留事实，层归属仍按 role', () => {
+  const { spec, report } = convertStToPresetWithReport({ prompts: [
+    { identifier: 'main', role: 'system', content: 'MAIN', system_prompt: true },
+    { identifier: 'aux', role: 'user', content: 'AUX', system_prompt: true },
+    { identifier: 'plain', role: 'user', content: 'PLAIN', system_prompt: false },
+  ] }, 'sysflag')
+  const byId = new Map(spec.promptConfigs.map(c => [c.id, c]))
+  // 核实结论（ST 1.19.0 openai.js:1240-1257）：system_prompt 只是「内置/全局 prompt」的管理位，
+  // 发送角色与位置仍由 role 与 prompt_order 决定，因此不改变层归属。
+  assert.equal(byId.get('main').layer, 'system-section')
+  assert.equal(byId.get('aux').layer, 'pre-step')
+  assert.equal(byId.get('aux').role, 'user')
+  assert.equal(byId.get('main').params.stSource.systemPrompt, true)
+  assert.equal(byId.get('aux').params.stSource.systemPrompt, true)
+  assert.equal(byId.get('plain').params?.stSource?.systemPrompt, undefined)
+
+  const info = report.diagnostics.filter(item => item.code === 'st-prompt-system-flag')
+  assert.deepEqual(info.map(item => [item.severity, item.entryId, item.field]),
+    [['info', 'main', 'system_prompt'], ['info', 'aux', 'system_prompt']])
+  assert.match(info[1].message, /不改变发送角色/)
+  // info 不改变既有 stWarnings 表现，也不改变报告分类。
+  assert.equal(report.summary.needsReview, 0)
+  assert.equal(spec.meta.stWarnings, undefined)
+  const aux = report.entries.find(entry => entry.sourceId === 'aux')
+  assert.deepEqual([aux.classification, aux.layer, aux.role], ['equivalent', 'pre-step', 'user'])
+  const main = report.entries.find(entry => entry.sourceId === 'main')
+  assert.deepEqual([main.classification, main.layer], ['equivalent', 'system-section'])
 })
 
 test('T11 世界书 keys 的未解析宏登记为空占位并产出可定位诊断', () => {

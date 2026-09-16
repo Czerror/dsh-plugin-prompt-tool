@@ -178,6 +178,26 @@ pre-step 来源：
 - 接线回归：`test/host/st-preview-report.test.mjs#T08` 用物化引擎行把来源交给 bundle
   协调器，经真实 `agent/pre-step` 注入后由 bridge 读到非空 `selected`/`committed` 记录。
 
+### 条目级条件字段：延迟到递归与组内评分（2026-09-17）
+
+ST 的两个条目级开关在引擎里按 `params.stWorldBook` 消费；未开启（缺省/假值）时求值路径与
+既有断言逐条一致，字段缺省不产生任何新诊断。
+
+- `delayUntilRecursion`（对齐 `world-info.js:4753-4762`、`:4860-4868`）：层级池只收真值、
+  `true` 归一为 1、升序去重；初始化即取走最小层级，层级只增不减，因此「延迟到第 N 层」的
+  条目在层级满足的那次递归 pass 就解锁（不是等 N 个 pass）。非递归 pass 一律抑制
+  （sticky 命中例外，`constant` 也不例外）；递归 pass 中「条目值 > 当前层级」同样抑制，
+  记录 `excluded: delay-until-recursion`（带 `delayUntilRecursion`/`level`/`pass`）。
+  pass 推进与 ST 一致：有新正文可递归时层级保持不变，否则在层级池仍有剩余时打开下一层。
+- `useGroupScoring`（对齐 `world-info.js:428-473`、`:5292-5328`）：组内存在显式开启的条目时
+  整组按 `getScore` 等价实现评分（只统计命中键数，`NOT_ALL`/`NOT_ANY` 不参与加分，主键为空
+  记 0 分）；只有**开启评分**的条目会被「严格小于最高分」淘汰，未开启者不被淘汰，但其分数
+  计入最高分；组内有 sticky 命中时整组跳过评分。淘汰记录 `rejected: group-score-lost`
+  （带 `score`/`maxScore`），入选结果不变时诊断不改变 `Math.random` 调用路径。
+
+两处都对拍 ST 源码（测试内保留 `getScore` 与组内淘汰的抄写夹具），并断言「开关关闭时行为
+与既有断言逐条一致」。
+
 字段映射集中在 `src/shared/engine-params.ts#ENGINE_PARAM_DEFINITIONS`；host 装配、bridge 回显与配置卡共享该目录。能力各自的 `includeSubagents`、`promoteOn`、启停和提示文本都可在所属卡片设置，依旧没有跨模块全局顺序；内部服务路径由生成器管理。
 
 自定义模型工具保持 `customTools` 资产及 `tool-config-engine` 模块链路。保存方与运行时复用 `engine/tool-definition.mjs`，保存前编译官方参数 DSL 并完整验证；`customToolRequireApproval` 控制需用户批准的执行器种类。工具预览只是有效工具面的只读视图，不承担安装、连接或注册职责。

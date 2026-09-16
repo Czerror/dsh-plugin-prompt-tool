@@ -14,6 +14,28 @@
   `st-key-macro` warning（进入 `needsReview` 与 `meta.stWarnings`）。未赋值时键渲染为空、由引擎
   `filter(Boolean)` 丢弃，不误触发；在「模板变量」赋值后按既有匹配路径生效，运行期零引擎改动，
   不猜测 `{{user}}` 的值。转换器版本升 `st-to-preset/3`。
+- **世界书条件字段（R8/K2·K3）**：ST 的 `delayUntilRecursion` 与 `useGroupScoring` 此前完全
+  未读取。现在两者按 ST 1.19.0 源码语义落地：延迟到递归按**层级池**求值
+  （`world-info.js:4753-4762`/`:4860-4868`：非递归 pass 抑制、sticky 例外、层级只增不减、
+  层级满足的那次递归 pass 即解锁），组内评分按 `getScore` 等价实现
+  （`:428-473`/`:5292-5328`：只统计命中键数、只有显式开启的条目被严格低于最高分淘汰、
+  未开启者不被淘汰但计入最高分、组内有 sticky 命中时整组跳过）。新增诊断原因码
+  `delay-until-recursion` 与 `group-score-lost`（带分数与最高分）。两个开关未开启时
+  求值路径与既有断言逐条一致，字段缺省不产生新诊断。测试内保留 ST 算法抄写夹具对拍。
+- **角色过滤与自动化字段（R10/R11/K6·K7）**：`characterFilter` 的真实形态是嵌套对象
+  `{ names, tags, isExclude }`（`world-info.js:2125-2132`、`:4815-4843`），此前完全未读取。
+  现在原样保留到 `params.stWorldBook.characterFilter`，并在两个维度至少一个非空（ST 实际
+  启用过滤的条件）时告警「按角色过滤不受支持」——本项目预设与角色在导入期绑定，没有运行时
+  切换角色这一层，因此不实现过滤、也不据此跳过条目（避免静默丢失）。`automationId` /
+  `outletName` 改为蛇形 + 驼峰双读（ST 独立世界书是顶层驼峰），非空 `automationId` 保留事实
+  并告警「依赖 STscript 自动化」，无主键且非常驻时文案明确「不会自动注入」；`outletName`
+  沿用 `unsupported-controls`。空值与缺省零噪音（素材实测非空值 0，不新增噪音）。
+- **prompts[].system_prompt（R12/K7）**：按 ST 1.19.0 源码核实（`openai.js:1240-1257`、
+  `PromptManager.js:1723-1729`）确认 `system_prompt` 只是「内置/全局 prompt」的管理位
+  （不可删除、不参与导出、不在 append 候选），**不改变发送角色与位置**。因此不做层改判：
+  把 `systemPrompt: true` 写入 `params.stSource` 并记 info 诊断，层归属仍按 `role`
+  （素材 48 条中 38 条 role=system 进 system-section、10 条 role=user 进 pre-step，
+  分类与定位稳定）。
 
 ### 导入确认、诊断可信度与会话完整性修复（2026-09-17）
 

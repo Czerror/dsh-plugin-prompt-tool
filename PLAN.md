@@ -134,16 +134,24 @@ ST 依据：`world-info.js:4915` / `:4947` 匹配前对主键与副键执行 `su
 
 ### 3.2 R8：`delayUntilRecursion` 与 `useGroupScoring`（K2/K3）
 
-- `delayUntilRecursion`：转换期把 `option('delay_until_recursion', 'delayUntilRecursion')` 写入 `params.stWorldBook.delayUntilRecursion`；引擎在候选循环中：
-  - `pass === 0` 且该字段为真 → 记 `excluded: delay-until-recursion` 并跳过（sticky 命中除外）；
-  - `pass > 0` 且字段为数字且大于当前 pass（递归层）→ 记同一原因并跳过。
-- `useGroupScoring`：转换期写入 `params.stWorldBook.useGroupScoring`；引擎在组选择分支里，当**该条目**开启评分时用 `getScore` 等价实现（主键命中数 + 副键命中数，按 `selectiveLogic` 合并，抄 `world-info.js:423-500`）替换权重随机；未开启时行为不变。
+> 本节已按 3.9 核实点 1–2 的 ST 源码结论修正（2026-09-17），实现以修正后的语义为准。
+
+- `delayUntilRecursion`：转换期把 `option('delay_until_recursion', 'delayUntilRecursion')` 写入 `params.stWorldBook.delayUntilRecursion`；引擎按 ST 的**层级池**语义求值（`world-info.js:4753-4762`、`:4860-4868`）：
+  - 层级池 = 条目集合里所有真值去重升序（`true` 归一为 1），初始化即取走最小层级，层级只增不减；
+  - `pass === 0`（非递归 pass）且该字段为真 → 记 `excluded: delay-until-recursion` 并跳过（sticky 命中除外，`constant` 也不例外）；
+  - `pass > 0` 且「条目原始值 > 当前层级」→ 记同一原因并跳过；
+  - pass 推进与 ST 一致：有新正文可递归时层级保持不变，否则在层级池仍有剩余时打开下一层（`:5129` 的判断不含全局 recursive）。
+- `useGroupScoring`：转换期写入 `params.stWorldBook.useGroupScoring`；引擎在组选择分支里按 `filterGroupsByScoring`（`:5292-5328`）实现——组内存在显式开启的条目时整组按 `getScore` 等价实现（`:428-473`：只统计命中键数，`NOT_ALL`/`NOT_ANY` 不参与加分）计算分数，**只有开启评分的条目**会被「严格小于最高分」淘汰，未开启者不被淘汰但其分数计入最高分；组内有 sticky 命中时整组跳过评分；淘汰后才走既有的 groupOverride / 权重随机。
 - 两项都必须补齐诊断原因码与差分测试（同一条目在开启/关闭下抽样次数与入选集合的差异必须可解释）。
 
 ### 3.3 R10：`characterFilter`（K6）
 
-- 形态修正：读取 `entry.characterFilter`（对象 `{ names, tags, isExclude }`）——现有代码读的是不存在的三顶层字段，属形态错误（素材未暴露）。
-- 处理：原样保留到 `params.stWorldBook.characterFilter`（不解释成行为），并对使用该字段的条目发 warning："ST 角色过滤在本项目不受支持：条目会对所有角色生效"。
+> 形态已按 3.9 核实点 5 修正：现有实现是**完全未读取**（不是误读三顶层字段），
+> `characterFilterNames/Tags/Exclude` 只是 slash 命令的字段名（`world-info.js:4121-4123`，
+> 且 `excludeFromTemplate: true`），存储形态始终是嵌套对象。
+
+- 形态修正：读取 `entry.characterFilter`（对象 `{ names, tags, isExclude }`，`world-info.js:2125-2132` 规范化、`:4815-4843` 求值）。
+- 处理：原样保留到 `params.stWorldBook.characterFilter`（不解释成行为），并对**实际启用过滤**的条目（`names`/`tags` 至少一个非空，与 ST 的判定条件一致）发 warning："ST 角色/标签过滤在本项目不受支持：该条目会对所有角色生效"。
 - 不实现过滤（理由见 2.2）。
 
 ### 3.4 R11：`automationId` / `outletName` 双形态与显式诊断（K7）
@@ -154,10 +162,14 @@ ST 依据：`world-info.js:4915` / `:4947` 匹配前对主键与副键执行 `su
 
 ### 3.5 R12：`prompts[].system_prompt`（K7）
 
-- 先核实（3.9 第 3 项）ST 对 `system_prompt: true` 的注入方式，再二选一：
-  - 若 ST 仅把它作为"系统提示区归属"标记而不改变发送角色 → 我们**保持按 `role` 分层**，只把 `systemPrompt: true` 写入 `params.stSource` 并产出 info 诊断；
-  - 若 ST 确实改变注入位置（例如强制并入 system prompt）→ 把这类条目按 system-section 处理，并在报告里标 degraded。
-- 无论哪种，素材 48 条（38 条 `role=system` + 10 条 `role=user`）都必须有稳定分类与可复核定位。
+> 已按 3.9 核实点 3 得出结论：`system_prompt` 是 ST 的**管理位**（标记内置/全局 prompt：
+> 不可删除、不参与导出、不在 append 候选），发送角色与位置完全由 `role` 与 `prompt_order`
+> 决定（`openai.js:1240-1257` 的运行时过滤、`:1187-1208` 的角色取用、`PromptManager.js:1723-1729`
+> 的图标判定）；`forbid_overrides` 与它无运行时耦合（只保护 `main`/`jailbreak` 不被角色卡覆盖，
+> `openai.js:1495-1513`）。因此采用下面的第一种处置。
+
+- 核实结论：ST 仅把它作为"内置/全局 prompt"标记，**不改变发送角色** → 我们**保持按 `role` 分层**，只把 `systemPrompt: true` 写入 `params.stSource` 并产出 info 诊断。
+- 不做层改判；素材 48 条（38 条 `role=system` + 10 条 `role=user`）的分类与定位由 T19 断言稳定。
 
 ### 3.6 R13：`depth_prompt` 保留与变量登记（K8）
 
@@ -348,6 +360,21 @@ ST 依据：`world-info.js:4915` / `:4947` 匹配前对主键与副键执行 `su
 - **偏差说明**：`ST_CONVERTER_VERSION` 升为 `st-to-preset/3`，连带同步 3 处测试夹具的版本字符串（`st-preview-report.test.mjs` 是硬断言，另两处是报告形状夹具）；`lib/` 由 `pnpm build` 重新生成。未做真实浏览器 smoke（T23 集成留到 Wave 8）。
 - **遗留问题**：旧转换产物不含新登记与新诊断，需用户重新导入才生效（不自动回写用户 `preset.yml`）。
 
+### 4.8 Task Summary：Wave 6（R8 / R10 / R11 / R12）
+
+- **完成状态**：完成。T16–T19 行为断言通过；`typecheck` / `lint`（0 warning）/ `test`（943/943）/ `build` 全绿。
+- **3.9 核实结论**（依据 ST 1.19.0 源码，行号经只读复核修正）：
+  1. **`getScore`（`world-info.js:428-473`，唯一调用点 `:5307`）**：只统计命中数，不做 tie-break、永不返回 -1（唯一提前返回是主键数组为空时的 `0`）。设 `P`/`S` 为主/副键命中数、`NS` 为副键总数：主键为空 → `0`；`NS === 0` → `P`；`AND_ANY(0)` → `P + S`；`AND_ALL(3)` → `S === NS ? P + S : P`；`NOT_ALL(1)`/`NOT_ANY(2)`/其他 → `P`（源码注释「Only positive logic influences the score」，否定逻辑只影响激活判定）。
+  2. **`filterGroupsByScoring`（`:5292-5328`）**：组级门控是「全局开关为真 **或** 组内至少一条 `useGroupScoring` 为真值」；组内有 sticky 时整组跳过（`:5300-5305`）；`scores = group.map(getScore)`、`maxScore = Math.max(...scores)`，只有 `useGroupScoring ?? false` 为真的条目会被 `scores[i] < maxScore` 淘汰——**显式 `false`/`null` 的条目不被淘汰，但其分数仍计入 `maxScore`**（`:5307-5317`）。淘汰后才走 `groupOverride` 与权重随机（`:5444-5473`）。
+  3. **`delayUntilRecursion`（`:4753-4762`、`:4860-4868`、`:5128-5133`）**：语义是**层级池**而不是 pass 序号——池 = 所有真值去重升序（`true` 归一为 1），初始化即 `shift` 取走最小层级，层级只增不减。门控为 `真值 && !isSticky && (scanState !== RECURSION || 条目原始值 > 当前层级)`：非递归 pass 一律抑制（`constant`/`@@activate`/外部激活都在其后，同样被抑制），sticky 是唯一例外。层级推进只在「本 pass 没有递归新正文」且池仍有剩余时发生，且该判断不含全局 `world_info_recursive`。`min_activations` 独立、默认 0，与延迟层级不叠加。
+  4. **`prompts[].system_prompt`（核实点 3）**：只是「内置/全局 prompt」的管理位（不可删除、不参与导出、不在 append 候选），发送角色与位置由 `role` 与 `prompt_order` 决定（`openai.js:1240-1257`、`:1187-1208`；`PromptManager.js:1723-1729` 只用于图标）。`forbid_overrides` 与它无运行时耦合（`openai.js:1495-1513` 只保护 `main`/`jailbreak` 被角色卡覆盖）。
+  5. **`characterFilter`（核实点 5）**：嵌套对象 `{ names, tags, isExclude }`（`:2125-2132` 规范化）；`names` 是**头像文件名去扩展名**、`tags` 是标签 id；`isExclude: false` 是白名单（names 与 tags 之间 AND）、`true` 是黑名单（OR）；`names`/`tags` 为空数组时不启用该维度（`:4816`/`:4826` 的 `length > 0` 前置），`tags` 分支还有 `if (tagKey)` 缺口。求值时机在 `disable`/`triggers` 之后、sticky/cooldown/delay 与 `constant` 之前。`characterFilterNames/Tags/Exclude` 只是 slash 命令字段名（`:4121-4123`，`excludeFromTemplate: true`），不是存储形态。
+- **修改文件**：`engine/st-world-book.mjs`（层级池与延迟门控、评分淘汰、扫描材料惰性缓存与 matcher 抽取）；`src/host/sillytavern.ts`（两个条件字段写入、`characterFilter` 读取、`automationId`/`outletName` 双形态与诊断、`systemPrompt` 事实与 info 诊断）；`test/engine/st-world-book.test.mjs`（T16 + ST 算法抄写夹具）；`test/host/st-compatibility.test.mjs`（T16/T17/T18/T19）；`test/host/preset-package-import.test.mjs`（`main` 配置断言补 `stSource`）；`docs/SillyTavern.md`、`docs/engine-reuse.md`、`CHANGELOG.md`。
+- **验证证据**：定向 `node --test test/engine/st-world-book.test.mjs test/host/st-compatibility.test.mjs test/host/st-preview-report.test.mjs` → `pass 26 / fail 0`（各任务先跑红灯）。行为证据：单层级无递归驱动时延迟条目不激活（`[]`）、有递归驱动时在下一 pass 解锁、层级 `1`/`3` 逐个打开后两条都注入；sticky 命中绕过延迟门控且无 `delay-until-recursion` 记录；评分对拍夹具 `[1,2,1] → [false,true,false]` 与引擎一致，诊断记录 `lore-1(1,2)`、`lore-3(1,2)`，关闭评分时回到权重随机且入选不变；`characterFilter` 嵌套对象完整保留、启用时一条 warning、空数组与非法形态零诊断；`automationId` 驼峰与蛇形都读到、无主键非常驻时文案含「不会自动注入」、空值零噪音；`system_prompt` 两条 info 且层归属 `main=system-section`/`aux=pre-step` 不变。
+- **关键决策**：①延迟层级用**层级池**语义（源码为准），并同步修正 3.2 节原稿的「pass 序号」写法。②延迟条目在层级满足时参与递归 pass，不受自身 `recursive` 限制——ST 的门控不要求全局 recursive（`:4860`/`:4865` 无该条件）。③评分只淘汰显式开启的条目，未开启者的分数仍计入最高分（照抄 `:5313-5317`）。④扫描材料改为按 pass 惰性构造并缓存（`scanOf`），评分复用同一份材料，`matcherOf` 的签名与原实现一致，因此不改变未开启条目的求值路径与 `Math.random` 调用次数。⑤评分构造异常时跳过整组评分并 warn，不改变入选集合。⑥`characterFilter` 只保留不实现（预设与角色在导入期绑定，没有运行时切换角色这一层），且**不据此跳过条目**以避免静默丢失。
+- **偏差说明**：①本项目的键已插值且 `filter(Boolean)`，而 ST 的 `getScore` 用原始 key（含空串、不 trim）——评分与匹配共用同一份键，一致性优先于逐字复刻（已在文档写明）。②3.3 节原稿称「现有代码读三顶层字段」，实测是**完全未读取**，已同步。③`preset-package-import.test.mjs` 的 `main` 配置断言因 R12 新增来源事实而更新。④`ST_CONVERTER_VERSION` 保持 `st-to-preset/3`（本轮统一版本），注释扩展为涵盖条件字段读取与诊断。
+- **遗留问题**：素材对 K4–K7 的字段多为默认值，`matchCreatorNotes` / `matchCharacterDepthPrompt` 的行为证据由 R9 用合成夹具补；旧产物需重新导入才有新字段与诊断。
+
 ## 5. H1：历史会话恢复（单独授权，默认不执行）
 
 此操作拥有真实用户日志写入风险，不能因 R7–R14 完成或用户要求"修插件"而自动执行。先完成防复发，再由用户确认明确的会话文件清单与角色降级代价。
@@ -447,11 +474,11 @@ Wave 只有在全部必需子任务验收通过后才能标记 `[✔]`；文档 
   - [✔] D1：旧计划原文已归档（与 `f3539fa:PLAN.md` 字节一致），P1+P2+P3 方案、用户决策、任务卡与状态清单已编写并通过文档校验。
 - [✔] **Wave 5：P1 触发条件**
   - [✔] R7：世界书 `keys` / `secondaryKeys` 的未解析宏登记为可赋值变量并产出可见诊断（T11–T14）。行为矩阵与门禁证据见 4.7。
-- [ ] **Wave 6：P2 条件字段**
-  - [ ] R8：`delayUntilRecursion` 与 `useGroupScoring` 求值支持（T16）。
-  - [ ] R10：`characterFilter` 按真实形态读取并显式拒绝（T17）。
-  - [ ] R11：`automationId` / `outletName` 双形态读取与自动化依赖诊断（T18）。
-  - [ ] R12：`prompts[].system_prompt` 按核实结论处理并保留事实（T19）。
+- [✔] **Wave 6：P2 条件字段**
+  - [✔] R8：`delayUntilRecursion` 与 `useGroupScoring` 求值支持（T16）。核实结论与行为证据见 4.8。
+  - [✔] R10：`characterFilter` 按真实形态读取并显式拒绝（T17）。
+  - [✔] R11：`automationId` / `outletName` 双形态读取与自动化依赖诊断（T18）。
+  - [✔] R12：`prompts[].system_prompt` 按核实结论处理并保留事实（T19）。
 - [ ] **Wave 7：P3 与扫描接线**
   - [ ] R13：`depth_prompt` 保留为禁用配置并登记扫描变量（T20）。
   - [ ] R9：`matchCreatorNotes` / `matchCharacterDepthPrompt` 扫描接线（T21）。
@@ -460,4 +487,4 @@ Wave 只有在全部必需子任务验收通过后才能标记 `[✔]`；文档 
 - [ ] **最终集成验收**：T11–T23、完整门禁与合成夹具证据通过，未验证项明确披露。
 - [ ] **独立恢复 H1**：历史日志恢复，尚未授权；不计入代码修复完成率。
 
-当前进度：文档 1/1，代码修复 **1/8（R7 完成，R8/R9/R10/R11/R12/R13/R14 未开始）**；`selective` 默认值与 `use_regex` 已核实无缺陷不改；H1 未授权。
+当前进度：文档 1/1，代码修复 **5/8（R7、R8、R10、R11、R12 完成；R9、R13、R14 未开始）**；`selective` 默认值与 `use_regex` 已核实无缺陷不改；H1 未授权。

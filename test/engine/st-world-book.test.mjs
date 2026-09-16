@@ -322,3 +322,129 @@ test('T12 世界书键宏：未赋值不误触发，赋值后命中，同一轮�
   assert.deepEqual(await ids(assigned, 'Bob'), [], '赋值后其他文本仍不命中')
   assert.deepEqual(await ids(assigned, 'Alice'), ['lore-25'], '同一轮重复求值幂等')
 })
+
+/** T16 对拍夹具：直接翻译 world-info.js:428-473（getScore）与 5292-5328（组内评分淘汰）。 */
+const stGetScore = (keys, secondaryKeys, logic, text) => {
+  const primary = keys.filter(key => text.includes(key)).length
+  const secondary = secondaryKeys.filter(key => text.includes(key)).length
+  if (keys.length === 0) return 0
+  if (secondaryKeys.length > 0) {
+    if (logic === 0) return primary + secondary
+    if (logic === 3) return secondary === secondaryKeys.length ? primary + secondary : primary
+  }
+  return primary
+}
+const stScoringKeeps = (members, scores) => {
+  if (!members.some(member => member.useGroupScoring)) return members.map(() => true)
+  const maxScore = Math.max(...scores)
+  return members.map((member, index) => !member.useGroupScoring || scores[index] >= maxScore)
+}
+
+test('T16 delayUntilRecursion：非递归 pass 抑制、层级池推进与递归驱动', async () => {
+  // 单层级且没有任何递归驱动时，pass 0 抑制后没有下一个 pass，条目保持未激活——对齐 ST：
+  // 层级池初始化即取走最小层级（world-info.js:4759），只有池里仍有剩余（:5129）或有递归
+  // 新正文（:5097）才会开下一个 pass。
+  assert.deepEqual(await run([entry(1, { constant: true, extensions: { delay_until_recursion: true } })], ['N']), [],
+    '没有递归驱动时延迟条目保持未激活')
+
+  // 有递归驱动（常驻递归条目提供新正文）时，下一次递归 pass 即解锁最小层级。
+  const driven = await run([
+    entry(1, { constant: true, insertion_order: 200, content: 'NEXT', extensions: { recursive_scanning: true } }),
+    entry(2, { keys: ['NEXT'], insertion_order: 100, extensions: { delay_until_recursion: true } }),
+  ], ['N'])
+  assert.deepEqual(driven.map(x => x.id), ['lore-2', 'lore-1'], '递归驱动使延迟条目在下一 pass 解锁')
+
+  // 多个层级：池中剩余层级逐个打开（1 → 3），两条都在层级满足后激活。
+  const layered = await run([
+    entry(1, { constant: true, insertion_order: 100, extensions: { delay_until_recursion: 1 } }),
+    entry(2, { constant: true, insertion_order: 200, extensions: { delay_until_recursion: 3 } }),
+  ], ['N'])
+  assert.deepEqual(layered.map(x => x.id), ['lore-1', 'lore-2'], '两个层级都打开后按 order 注入')
+
+  // 假值与缺省不受影响（既有行为不回归）。
+  for (const value of [false, 0, undefined]) {
+    const config = entry(3, { constant: true, extensions: value === undefined ? {} : { delay_until_recursion: value } })
+    assert.deepEqual((await run([config], ['N'])).map(x => x.id), ['lore-3'], `delayUntilRecursion=${String(value)} 不抑制`)
+  }
+})
+
+test('T16 delayUntilRecursion：sticky 命中绕过门控，诊断记录稳定原因码', () => {
+  const history = []
+  const session = { id: 'delay-sticky', header: {}, snapshotEvents: () => history }
+  const configs = diagConfigs([entry(1, { keys: ['P'], extensions: { scan_depth: 1, sticky: 3 } })])
+  const first = selectStWorldBook(configs, session, [message('P', 'm1')], () => {})
+  assert.deepEqual([...first].map(config => config.id), ['lore-1'])
+  for (const config of first) first.commit(config)
+  history.push({ type: 'user/message', data: { message: message('P', 'm1') } })
+
+  configs[0].params.stWorldBook.delayUntilRecursion = true
+  const second = selectStWorldBook(configs, session, [message('N', 'm2')], () => {})
+  assert.deepEqual([...second].map(config => config.id), ['lore-1'], 'sticky 命中时延迟门控被绕过')
+  assert.equal(second.diagnostics.records.some(record => record.reason === 'delay-until-recursion'), false)
+
+  // 非 sticky 的同类条目在 pass 0 被抑制并记录原因码（观测与真实结果同源）。
+  const other = selectStWorldBook(diagConfigs([entry(2, { constant: true, extensions: { delay_until_recursion: 2 } })]),
+    { id: 'delay-note', header: {}, snapshotEvents: () => [] }, [message('N')], () => {})
+  const record = other.diagnostics.records.find(item => item.reason === 'delay-until-recursion')
+  assert.equal(record?.stage, 'excluded')
+  assert.equal(record?.delayUntilRecursion, 2)
+})
+
+test('T16 useGroupScoring：与 ST getScore 对拍，未开启者不被淘汰但计入最高分', async () => {
+  const group = [
+    entry(1, { keys: ['P'], insertion_order: 300, extensions: { group: 'G', use_group_scoring: true } }),
+    entry(2, { keys: ['P', 'Q'], insertion_order: 200, extensions: { group: 'G' } }),
+    entry(3, { keys: ['P', 'R'], insertion_order: 100, extensions: { group: 'G', use_group_scoring: true } }),
+  ]
+  const text = 'P Q'
+  const members = [{ useGroupScoring: true }, { useGroupScoring: undefined }, { useGroupScoring: true }]
+  const scores = [
+    stGetScore(['P'], [], 0, text),
+    stGetScore(['P', 'Q'], [], 0, text),
+    stGetScore(['P', 'R'], [], 0, text),
+  ]
+  assert.deepEqual(scores, [1, 2, 1], '夹具分数：ST 按命中键数计分')
+  assert.deepEqual(stScoringKeeps(members, scores), [false, true, false], '夹具：只有开启评分者会被淘汰')
+
+  const selected = await run(group, [text])
+  assert.deepEqual(selected.map(x => x.id), ['lore-2'], '评分后只剩未开启评分的条目 2')
+
+  const session = { id: 'scoring', header: {}, snapshotEvents: () => [] }
+  const selection = selectStWorldBook(diagConfigs(group), session, [message(text)], () => {})
+  assert.deepEqual([...selection].map(config => config.id), ['lore-2'])
+  const lost = selection.diagnostics.records.filter(record => record.reason === 'group-score-lost')
+  assert.deepEqual(lost.map(record => [record.id, record.score, record.maxScore]),
+    [['lore-1', 1, 2], ['lore-3', 1, 2]], '诊断记录分数与最高分')
+
+  // 关闭评分时回到既有权重随机路径（Math.random=0 选中 available 首项），入选集合不受评分影响。
+  const original = Math.random
+  Math.random = () => 0
+  try {
+    const off = group.map(({ extensions, ...rest }) => ({ ...rest, extensions: { group: extensions.group } }))
+    assert.deepEqual((await run(off, [text])).map(x => x.id), ['lore-1'], '未开启评分时行为不变')
+
+    // 组内有 sticky 命中时整组跳过评分（ST filterGroupsByScoring 5300-5305）：
+    // 第二轮条目 4 的分数低于条目 5，但评分不执行，sticky 成员不被淘汰。
+    const stickyGroup = [
+      entry(4, { keys: ['P'], insertion_order: 200, extensions: { group: 'S', scan_depth: 1, sticky: 3, use_group_scoring: true } }),
+      entry(5, { keys: ['P', 'Q'], insertion_order: 100, extensions: { group: 'S' } }),
+    ]
+    const stickyHistory = []
+    const stickyConfigs = diagConfigs(stickyGroup)
+    const stickySession = { id: 'sticky-score', header: {}, snapshotEvents: () => stickyHistory }
+    const round = (text, id) => {
+      const msg = message(text, id)
+      const result = selectStWorldBook(stickyConfigs, stickySession, [msg], () => {})
+      const ids = [...result].map(config => config.id)
+      for (const config of result) result.commit(config)
+      stickyHistory.push({ type: 'user/message', data: { message: msg } })
+      return { ids, result }
+    }
+    assert.deepEqual(round('P', 's1').ids, ['lore-4'], '第一轮权重随机选中条目 4 并进入 sticky 窗口')
+    const second = round('P Q', 's2')
+    assert.deepEqual(second.ids, ['lore-4'], 'sticky 命中时跳过评分，不被条目 5 的高分淘汰')
+    assert.equal(second.result.diagnostics.records.some(record => record.reason === 'group-score-lost'), false)
+  } finally {
+    Math.random = original
+  }
+})

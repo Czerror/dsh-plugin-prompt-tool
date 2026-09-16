@@ -450,6 +450,9 @@ export function convertStToPresetWithReport(
       for (const [target, source] of Object.entries({ probability: 'probability', useProbability: 'useProbability', group: 'group',
         groupOverride: 'group_override', groupWeight: 'group_weight', sticky: 'sticky', cooldown: 'cooldown', delay: 'delay',
         recursive: 'recursive_scanning', excludeRecursion: 'exclude_recursion', preventRecursion: 'prevent_recursion',
+        // 条目级条件字段（ST 有而我们此前未读）：延迟到递归扫描与组内评分。
+        // 磁盘形态是驼峰顶层 / extensions 蛇形，两种拼写都读。
+        delayUntilRecursion: 'delay_until_recursion', useGroupScoring: 'use_group_scoring',
         matchCharacterDescription: 'match_character_description', matchCharacterPersonality: 'match_character_personality',
         matchScenario: 'match_scenario', matchPersonaDescription: 'match_persona_description' })) {
         // ST 内嵌 extensions 的导出形状为蛇形（use_probability）；既有驼峰拼写仍是主名。
@@ -457,7 +460,27 @@ export function convertStToPresetWithReport(
         if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'string') stWorldBook[target] = value
       }
       const sourceRole = stWorldBook.role
+      // 角色过滤（ST 1.19 条目级条件）：真实形态是嵌套对象 `{ names, tags, isExclude }`
+      // （world-info.js:2125-2132 规范化、:4815-4843 求值），不是三个顶层字段。本项目没有
+      // 「运行时切换角色」这一层（预设与角色在导入期绑定），因此不实现过滤、也不据此跳过
+      // 条目（避免静默丢失），只保留原始字段并对实际启用的条目显式告警。
+      const rawFilter = entry.characterFilter
+      const filterSource = rawFilter !== null && typeof rawFilter === 'object' && !Array.isArray(rawFilter)
+        ? rawFilter as Record<string, unknown> : undefined
+      const filterNames = Array.isArray(filterSource?.names) ? filterSource.names as unknown[] : []
+      const filterTags = Array.isArray(filterSource?.tags) ? filterSource.tags as unknown[] : []
+      if (filterSource !== undefined) {
+        stWorldBook.characterFilter = {
+          ...filterSource,
+          ...(Array.isArray(filterSource.names) ? { names: [...filterSource.names as unknown[]] } : {}),
+          ...(Array.isArray(filterSource.tags) ? { tags: [...filterSource.tags as unknown[]] } : {}),
+        }
+      }
       const entryCodes: string[] = []
+      if (filterNames.length > 0 || filterTags.length > 0) {
+        entryCodes.push('character-filter-unsupported')
+        note('st-worldbook-character-filter', 'ST 角色/标签过滤在本项目不受支持：该条目会对所有角色生效', { entryId: sourceId, field: 'characterFilter' })
+      }
       if (position === 4) {
         entryCodes.push('depth-collapsed')
         note('st-worldbook-depth', 'ST 世界书深度位置无法映射到持久历史：保留 position/depth/role，降级为当前消息批末尾', { entryId: sourceId, field: 'position' })
@@ -473,9 +496,28 @@ export function convertStToPresetWithReport(
         entryCodes.push(ST_ROLE_DOWNGRADE_CODE)
         noteInfo('st-worldbook-role-assistant', 'DSH pre-step 只接受 user 角色：世界书 assistant 消息降级为 user，原角色保留在 stWorldBook.role', { entryId: sourceId, field: 'role' })
       }
-      if (option('vectorized') === true || option('outlet_name') || (Array.isArray(option('triggers')) && (option('triggers') as unknown[]).length > 0) || option('automation_id')) {
+      // STscript 自动化与 outlet：ST 独立世界书的这两个字段是**顶层驼峰**
+      // （automationId / outletName），编辑器内部格式写在 extensions 蛇形别名里——只查蛇形
+      // 会漏检真实信号。两者都只保留事实，不作为注入依据。
+      const rawAutomationId = option('automation_id', 'automationId')
+      const rawOutletName = option('outlet_name', 'outletName')
+      const automationId = rawAutomationId === undefined || rawAutomationId === null ? '' : String(rawAutomationId).trim()
+      const outletName = rawOutletName === undefined || rawOutletName === null ? '' : String(rawOutletName).trim()
+      if (automationId.length > 0) stWorldBook.automationId = rawAutomationId
+      if (outletName.length > 0) stWorldBook.outletName = rawOutletName
+      if (option('vectorized') === true || outletName.length > 0
+        || (Array.isArray(option('triggers')) && (option('triggers') as unknown[]).length > 0)) {
         entryCodes.push('unsupported-controls')
-        note('st-worldbook-controls', 'ST 世界书向量、outlet、生成类型或自动化控制需要宿主专门适配', { entryId: sourceId, field: 'extensions' })
+        note('st-worldbook-controls', 'ST 世界书向量、outlet 或生成类型控制需要宿主专门适配', { entryId: sourceId, field: 'extensions' })
+      }
+      if (automationId.length > 0) {
+        entryCodes.push('automation-dependent')
+        // 无主键且非常驻的条目在 ST 侧同样只能靠自动化触发：文案必须说明它不会自动注入，
+        // 否则「保留了字段」会被读成「内容还在生效」。
+        const onlyAutomation = keys.length === 0 && secondaryKeys.length === 0 && constant !== true
+        note('st-worldbook-automation', onlyAutomation
+          ? '该条目依赖 STscript 自动化触发，本项目不执行自动化；它没有主键也非常驻，因此不会自动注入'
+          : '该条目依赖 STscript 自动化触发，本项目不执行自动化', { entryId: sourceId, field: 'automationId' })
       }
       if (enabled === false) entryCodes.push('disabled')
       const worldConfig = buildWorldBookEntry({
@@ -583,6 +625,10 @@ export function convertStToPresetWithReport(
     const preStep = stRole !== 'system'
     const role = preStep ? ST_PRE_STEP_ROLE : 'system'
     const roleDowngraded = preStep && stRole !== 'user'
+    // ST 的 prompts[].system_prompt 是「内置/全局 prompt」的管理位（不可删除、不参与导出、
+    // 不在 append 候选里），发送角色与位置仍由 role 与 prompt_order 决定
+    // （openai.js:1187-1257、PromptManager.js:1723-1729）。因此只保留事实、不改层归属。
+    const systemPromptFlag = prompt.system_prompt === true
     const base = {
       id,
       name: typeof prompt.name === 'string' && prompt.name.length > 0 ? prompt.name : id,
@@ -594,14 +640,18 @@ export function convertStToPresetWithReport(
       // 无映射时按数组索引，保持 ST 预设内相对顺序。
       order: ((rawId.length > 0 ? orderIndex.get(rawId) : undefined) ?? (ordered ? orderIndex.size + index : index)) * 10,
       text: content,
-      // stSource 除深度/触发外也承载角色降级事实：原角色必须可定位。
-      ...((prompt.injection_position === 1 || Array.isArray(prompt.injection_trigger) || roleDowngraded) ? { params: { stSource: {
+      // stSource 除深度/触发外也承载角色降级与 system_prompt 事实：原角色必须可定位。
+      ...((prompt.injection_position === 1 || Array.isArray(prompt.injection_trigger) || roleDowngraded || systemPromptFlag) ? { params: { stSource: {
         position: prompt.injection_position ?? 0, depth: prompt.injection_depth ?? 4,
         order: prompt.injection_order ?? 100, role: stRole,
         ...(Array.isArray(prompt.injection_trigger) ? { triggers: prompt.injection_trigger } : {}),
+        ...(systemPromptFlag ? { systemPrompt: true } : {}),
       } } } : {}),
     }
     const codes: string[] = []
+    if (systemPromptFlag) {
+      noteInfo('st-prompt-system-flag', 'ST 的 prompts[].system_prompt 只标记内置/全局 prompt，不改变发送角色：本条仍按 role 分层', { entryId: sourceId, field: 'system_prompt' })
+    }
     if (roleDowngraded) {
       codes.push(ST_ROLE_DOWNGRADE_CODE)
       noteInfo('st-prompt-role', 'DSH pre-step 只接受 user 角色：ST prompt 的 assistant/model 角色降级为 user，原角色保留在 stSource.role', { entryId: sourceId, field: 'role' })

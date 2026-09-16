@@ -302,7 +302,11 @@ test('importPresetPackage：SillyTavern JSON 单文件经转换引擎导入（�
     // RELATIVE 注入顺序 = prompt_order / 数组顺序（ST 忽略 injection_order）。
     id: 'main', name: '主提示', enabled: true, strategy: 'static', order: 0,
     text: '你是助手。', layer: 'system-section', mergeMode: 'merged',
-    params: { stMacros: true },
+    // system_prompt 只是 ST 的管理位（不改变发送角色）：保留为来源事实，层归属仍按 role。
+    params: {
+      stSource: { position: 0, depth: 4, order: 100, role: 'system', systemPrompt: true },
+      stMacros: true,
+    },
   })
   const nsfw = configs.find((config) => config.id === 'nsfw')
   assert.equal(nsfw.enabled, false, 'ST OFF 备用提示词保留 enabled: false')
