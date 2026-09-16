@@ -117,7 +117,7 @@ params:
   # cotDripEvery: 4               # 节拍间隔（工具结果数）；0 = 回落行默认 4
   # cotDripMaxPerTurn: 1          # 每轮最大提醒条数；0 = 回落行默认 1
 
-  # ── 工具集（主对话 tool-filter；策略未启用时也写子代理 delegation.toolFilter）──
+  # ── 工具集（只作用于主对话 tool-filter 行；子代理工具面由 subagentToolPolicy 独立授权）──
   toolFilterAllow: []            # 主对话工具白名单（数组或逗号/空格字符串；空=不过滤；
                                  # subagentToolPolicy 启用后子代理改由实例级策略解析授权，本键只作用于主对话）
   toolFilterDeny: []             # 主对话工具黑名单（数组或逗号/空格字符串；空=不过滤）

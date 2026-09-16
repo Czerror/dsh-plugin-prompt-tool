@@ -43,11 +43,11 @@ test('预设参数投影完整读回列表、阶段与 false；settings 不覆�
   const fields = fieldsFromView({ ok: true, value: { ns: 'prompt-tool', revision: 1, value: { usePtcMode: true }, base: {} } })
   assert.equal(fields.usePtcMode, false)
   const next = mergePresetParams(fields, {
-    guideEnabled: true, toolFilterSubagents: false, messageSources: ['user'],
+    guideEnabled: true, toolFilterEnabled: false, messageSources: ['user'],
     stages: [{ name: '读取', tools: ['read'] }], subagentTemperature: 0.2,
   })
   assert.equal(next.guideEnabled, true)
-  assert.equal(next.toolFilterSubagents, false)
+  assert.equal(next.toolFilterEnabled, false)
   assert.equal(next.messageSources, 'user')
   assert.deepEqual(next.stages, [{ name: '读取', tools: 'read' }])
   assert.equal(next.subagentTemperature, '0.2')

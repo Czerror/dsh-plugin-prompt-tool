@@ -34,7 +34,6 @@ const BRIDGE_SAMPLES = {
   stageAdvanceTool: 'x',
   stageAdvanceDescription: 'x',
   stageSectionTemplate: 'x',
-  toolFilterSubagents: true,
   strReplaceEditorMaxOutputChars: 20000,
   anchorTurn: true,
   anchorTurnText: 'x',

@@ -2,6 +2,22 @@
 
 ## [未发布] - 2026-09-17
 
+### 工具过滤卡只保留总开关（主/子代理分离）（2026-09-17）
+
+- **移除「子代理同过滤」开关**：删除引擎参数 `toolFilterSubagents` 及其
+  `tool-filter.includeSubagents` 参数桥绑定、中英文标签与开关键集合成员。主会话与子代理已分离——
+  主对话的工具过滤不再下发给子代理，子代理工具面一律由实例级 `subagentToolPolicy` 授权，
+  因此 `tool-filter` 能力卡只保留「启用工具过滤」（`toolFilterEnabled` → `tool-filter.enabled`）。
+- **引擎侧保持兼容**：`engine/tool-filter.mjs` 仍接受 `includeSubagents`（缺省 `false`），
+  `moduleConfigs` 直写仍可生效，只是不再有 UI 绑定；已把开关打开过的用户预设会在其
+  `tool-filter` 行留下 `includeSubagents: true`，本轮**不自动改写用户预设**——需要子代理不继承
+  主对话过滤时，删除该行级键即可。
+- **文档与模板**：`docs/engine-reuse.md` 明确"`tool-filter.includeSubagents` 是引擎兼容键但不再有
+  UI 绑定"；`preset.yml` 根模板的工具集段落注释改为"只作用于主对话 tool-filter 行"。
+- **测试**：`engine-param-schema` 的参数读回/装配回显用例改用 `toolFilterEnabled` 与 `workspaceLine`，
+  并新增「引擎保留但 UI 不绑定」白名单（仅 `tool-filter.includeSubagents`），仍禁止其他模块遗漏引擎键；
+  `module-configs` 的"参数桥优先于 moduleConfigs 直写"用例改用 `tool-filter.enabled` 验证同一机制。
+
 ### 子代理页创建入口对等 与 过滤/新建严格分离（2026-09-17）
 
 - **子代理页补齐与主会话同款的创建入口**：`SubagentPage` 接入合并创建菜单 `EngineModuleActions`

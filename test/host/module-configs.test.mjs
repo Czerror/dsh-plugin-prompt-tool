@@ -243,7 +243,7 @@ test('参数桥完整性：本地模块行 config 键 ⊆ ALLOWED_KEYS；stageAd
     'context-gate': new Set(['promoteOn', 'includeSubagents', 'enabled', 'allowKinds',
       'messageSources', 'deferredSources', 'deferredGraceSteps', 'instructionHint']),
     'promoted-code-mode': new Set(['usePtcMode', 'includeSubagents', 'promoteOn']),
-    'tool-filter': new Set(['allow', 'deny', 'includeSubagents', 'enabled']),
+    'tool-filter': new Set(['allow', 'deny', 'enabled']),
   }
   const rows = parseYaml(fixtureComposition({
     stages: [{ name: '了解', tools: ['read', 'glob'] }],
@@ -265,7 +265,6 @@ test('参数桥完整性：本地模块行 config 键 ⊆ ALLOWED_KEYS；stageAd
     usePtcMode: true,
     toolFilterAllow: ['read'],
     toolFilterDeny: ['bash'],
-    toolFilterSubagents: true,
   }))
   for (const [module, allow] of Object.entries(ALLOWED)) {
     const row = rows.find((r) => r?.id === module)
@@ -280,16 +279,16 @@ test('参数桥完整性：本地模块行 config 键 ⊆ ALLOWED_KEYS；stageAd
 
 test('参数桥优先于 moduleConfigs 直写：UI 开关不被行级直写覆盖（旧作者锁定语义移除）', () => {
   const spec = loadPresetSpec(resolvePresetDir(FIXTURE_PRESET_ID))
-  // 模拟模板/ST 直写 tool-filter.includeSubagents（旧锁定语义会覆盖 UI，导致开关失效）。
-  const withDirect = { ...spec, moduleConfigs: { 'tool-filter': { includeSubagents: false } } }
-  // 1) 参数桥打开 toolFilterSubagents → 桥优先，直写不覆盖。
-  const rows = parseYaml(renderComposition(withDirect, { toolFilterSubagents: true }))
+  // 模拟模板/ST 直写 tool-filter.enabled（旧锁定语义会覆盖 UI，导致开关失效）。
+  const withDirect = { ...spec, moduleConfigs: { 'tool-filter': { enabled: true } } }
+  // 1) 参数桥关闭工具过滤 → 桥优先，直写不覆盖。
+  const rows = parseYaml(renderComposition(withDirect, { toolFilterEnabled: false }))
   const tf = rows.find((r) => r?.id === 'tool-filter')
-  assert.equal(tf.config.includeSubagents, true, '参数桥（UI）优先于 moduleConfigs 直写，开关必须生效')
+  assert.equal(tf.config.enabled, false, '参数桥（UI）优先于 moduleConfigs 直写，开关必须生效')
   // 2) 参数桥未设置 → moduleConfigs 直写仍生效（桥未覆盖的键照常合并）。
   const rows2 = parseYaml(renderComposition(withDirect, {}))
   const tf2 = rows2.find((r) => r?.id === 'tool-filter')
-  assert.equal(tf2.config.includeSubagents, false, '桥未覆盖时 moduleConfigs 直写生效')
+  assert.equal(tf2.config.enabled, true, '桥未覆盖时 moduleConfigs 直写生效')
 })
 
 test('空白预设的 dormant moduleConfigs 不会隐式装配引擎能力', () => {

@@ -96,8 +96,6 @@ export interface EngineParams {
   stageAdvanceDescription?: string
   /** 阶段状态 section 模板（{{stage}}/{{stageName}}/{{unlocked}}/{{total}}；空 = 不注入）。 */
   stageSectionTemplate?: string
-  /** 子代理也启用主对话工具过滤。 */
-  toolFilterSubagents?: boolean
   /** str-replace-editor 最大输出字符数（参数桥默认官方值 16000；由引擎能力卡编辑）。 */
   strReplaceEditorMaxOutputChars?: number
   /** 前置锚定轮（anchor-turn 行）：用户首条真实消息前 prepend 合成锚定轮；false = 行挂载但禁用。 */
@@ -238,7 +236,6 @@ export const ENGINE_PARAM_DEFINITIONS: Record<EngineParamKey, EngineParamDefinit
   stageAdvanceTool: { kind: 'string', defaultValue: '', card: 'tool-bootstrap', module: { row: 'tool-bootstrap' } },
   stageAdvanceDescription: { kind: 'string', defaultValue: '', card: 'tool-bootstrap', module: { row: 'tool-bootstrap' } },
   stageSectionTemplate: { kind: 'string', defaultValue: '', card: 'tool-bootstrap', module: { row: 'tool-bootstrap' } },
-  toolFilterSubagents: { kind: 'boolean', defaultValue: false, card: 'tool-filter', module: { row: 'tool-filter', key: 'includeSubagents' } },
   strReplaceEditorMaxOutputChars: { kind: 'number', check: POSITIVE_INTEGER, defaultValue: 16000, card: 'str-replace-editor', module: { row: 'str-replace-editor', key: 'maxOutputChars', mode: 'editor-default' } },
   anchorTurn: { kind: 'boolean', defaultValue: false, card: 'anchor-turn', module: { row: 'anchor-turn', key: 'enabled' } },
   anchorTurnText: { kind: 'string', defaultValue: '', card: 'anchor-turn', module: { row: 'anchor-turn', key: 'text' } },

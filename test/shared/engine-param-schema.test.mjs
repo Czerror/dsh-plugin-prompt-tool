@@ -23,20 +23,20 @@ test('参数定义完整覆盖卡片归属、默认草稿与读写契约', () =>
 })
 
 test('参数读回保留 false、0、未设置开关以及 YAML 数值模型参数', () => {
-  const values = { toolFilterSubagents: false, guideEnabled: true, stagePreUnlock: 0, modelTemperature: 0.5, subagentMaxTokens: 8192 }
+  const values = { toolFilterEnabled: false, guideEnabled: true, stagePreUnlock: 0, modelTemperature: 0.5, subagentMaxTokens: 8192 }
   assert.deepEqual(readParamOverridesPatch(values), {
-    toolFilterSubagents: false, guideEnabled: true, stagePreUnlock: 0, modelTemperature: '0.5', subagentMaxTokens: '8192',
+    toolFilterEnabled: false, guideEnabled: true, stagePreUnlock: 0, modelTemperature: '0.5', subagentMaxTokens: '8192',
   })
   const fields = { ...EMPTY_FIELDS, ...readParamOverridesPatch(values) }
   assert.deepEqual(buildParamOverrides(fields, { loadedKeys: new Set(Object.keys(values)) }), {
-    guideEnabled: true, modelTemperature: '0.5', subagentMaxTokens: '8192', stagePreUnlock: 0, toolFilterSubagents: false,
+    guideEnabled: true, modelTemperature: '0.5', subagentMaxTokens: '8192', stagePreUnlock: 0, toolFilterEnabled: false,
   })
 })
 
 test('模块参数的装配与回显同源，完整覆盖门控列表与阶段', () => {
   const params = {
     allowKinds: ['prompt'], messageSources: ['user'], deferredSources: ['skills'], deferredGraceSteps: 2,
-    stages: [{ name: 'read', tools: ['read'] }], stagePreUnlock: 0, toolFilterSubagents: true,
+    stages: [{ name: 'read', tools: ['read'] }], stagePreUnlock: 0, workspaceLine: true,
   }
   const configs = buildEngineModuleParams(params)
   assert.deepEqual(configs['context-gate'], {
@@ -66,11 +66,12 @@ test('深度限制只接受非负安全整数、数字字符串、provider-manag
   }
 })
 
-test('清除可选开关恢复继承，关闭子代理过滤覆盖行级 true', () => {
+test('清除可选开关恢复继承，工具过滤开关与编辑器上限按类型落位', () => {
   const overrides = buildParamOverrides(EMPTY_FIELDS, { loadedKeys: new Set(['guideEnabled']) })
   assert.deepEqual(overrides, { guideEnabled: '' })
   assert.deepEqual(validateEngineParamValues(overrides), [])
-  assert.equal(buildEngineModuleParams({ toolFilterSubagents: false })['tool-filter'].includeSubagents, false)
+  // 工具过滤只保留总开关（主/子代理已分离，不再有「子代理同过滤」）。
+  assert.equal(buildEngineModuleParams({ toolFilterEnabled: false })['tool-filter'].enabled, false)
   assert.equal(buildEngineModuleParams({ strReplaceEditorMaxOutputChars: '32000' })['str-replace-editor'].maxOutputChars, 32000)
 })
 
@@ -95,6 +96,9 @@ test('模块重命名只改变行映射，保留参数键、工具名与消息�
 })
 
 test('能力卡覆盖引擎全部公开配置键，且新参数自动参与保存中脏检测', () => {
+  // 引擎保留但不再面向 UI 暴露的键：主/子代理已分离，工具过滤只保留总开关，
+  // 子代理工具面由实例级 subagentToolPolicy 授权，故 includeSubagents 不再有 UI 绑定。
+  const UI_UNBOUND_BY_DESIGN = { 'tool-filter': new Set(['includeSubagents']) }
   for (const module of ['tool-bootstrap', 'context-gate', 'promoted-code-mode', 'tool-filter', 'anchor-turn', 'deliberation-gate', 'progress-reminder']) {
     const source = readFileSync(new URL(`../../engine/${module}.mjs`, import.meta.url), 'utf8')
     const allowed = source.match(/const ALLOWED_KEYS = new Set\(\[([\s\S]*?)\]\)/)?.[1]
@@ -102,7 +106,14 @@ test('能力卡覆盖引擎全部公开配置键，且新参数自动参与保�
     const keys = [...allowed.matchAll(/'([^']+)'/g)].map((match) => match[1])
     const bindings = Object.entries(ENGINE_PARAM_DEFINITIONS).filter(([, definition]) => definition.module?.row === module)
       .map(([key, definition]) => definition.module.key ?? key)
-    assert.deepEqual(new Set(bindings), new Set(keys), `${module} 不得遗漏引擎参数`)
+    const unbound = keys.filter((key) => !bindings.includes(key))
+    const byDesign = UI_UNBOUND_BY_DESIGN[module] ?? new Set()
+    assert.deepEqual(new Set(unbound.filter((key) => !byDesign.has(key))), new Set(), `${module} 不得遗漏引擎参数`)
+    assert.deepEqual(
+      new Set(bindings.filter((key) => !keys.includes(key))),
+      new Set(),
+      `${module} 不得绑定引擎不接受的配置键`,
+    )
   }
   const before = snapshotSwitches(EMPTY_FIELDS)
   const after = snapshotSwitches({ ...EMPTY_FIELDS, bootstrapSubagents: true })
