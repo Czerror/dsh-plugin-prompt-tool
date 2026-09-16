@@ -13,6 +13,7 @@ import { registerHooks } from 'node:module'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import ts from 'typescript'
+import { EMPTY_FIELDS } from '../../src/client/data/prompt-tool-fields.ts'
 import { PROMPT_TOOL_DICTS } from '../../src/client/locales.ts'
 import { createConfigFromTemplate } from '../../src/client/features/prompts/useTemplatePicker.ts'
 
@@ -35,9 +36,17 @@ const loader = registerHooks({
   },
 })
 const { PromptConfigList } = await import('../../src/client/features/prompts/PromptConfigList.tsx')
+const { EngineCapabilityCreateMenu, EngineModuleCards } = await import('../../src/client/features/modules/EngineModuleList.tsx')
 loader.deregister()
 
 const render = (component, props) => renderToStaticMarkup(createElement(component, props))
+/** 渲染到元素树（读取 props，用于菜单项等无法从静态标记观察的断言）。 */
+const tree = (component, props) => {
+  let result
+  function Probe() { result = component(props); return null }
+  render(Probe)
+  return result
+}
 const zh = PROMPT_TOOL_DICTS.zh
 const t = (key, params) => {
   let text = zh[key] ?? key
@@ -184,6 +193,44 @@ test('模块列表只有一个创建入口：老「新建」按钮不再渲染�
   const subagent = read('app/workspace/pages/SubagentPage.tsx')
   assert.match(subagent, /<EngineModuleActions/)
   assert.match(subagent, /INSERTION_LAYERS\.map/)
+})
+
+test('子代理页不提供「仅主对话」能力：菜单排除 tool-filter、卡片不渲染、给出正确入口提示', () => {
+  const store = {
+    fields: { ...EMPTY_FIELDS, writePreset: true },
+    moduleFacts: { sourceMode: 'explicit', effectiveModules: [], declaredModules: [], editable: true, rowIds: [] },
+    createEngineCapability: async () => true,
+  }
+  // 菜单：排除 tool-filter 后不再列出它，其他能力照常。
+  const menu = tree(EngineCapabilityCreateMenu, { t, store, excludeCapabilities: ['tool-filter'] })
+  const ids = menu.props.items.map((item) => item.id)
+  assert.equal(ids.includes('cap:tool-filter'), false, '子代理页菜单不列 tool-filter')
+  assert.ok(ids.includes('cap:tool-bootstrap'), '其他能力仍可创建')
+  // 未排除时（主会话页语义）仍列出。
+  const mainMenu = tree(EngineCapabilityCreateMenu, { t, store })
+  assert.ok(mainMenu.props.items.map((item) => item.id).includes('cap:tool-filter'), '主会话页仍可创建 tool-filter')
+  // 已装配时本来就不列（排除逻辑不改变这条既有语义）。
+  const assembled = { ...store, moduleFacts: { ...store.moduleFacts, declaredModules: ['tool-filter'] } }
+  assert.equal(tree(EngineCapabilityCreateMenu, { t, store: assembled }).props.items.map((item) => item.id).includes('cap:tool-filter'), false)
+  // 配方：含被排除能力的 recipe 也一并隐藏。
+  const recipeIds = menu.props.items.filter((item) => item.id.startsWith('recipe:')).map((item) => item.id)
+  assert.equal(recipeIds.some((id) => id.includes('tool-filter')), false)
+  // 卡片：即使预设已装配 tool-filter，子代理页也不渲染该卡，并给出替代说明。
+  const active = { ...store, moduleFacts: { ...store.moduleFacts, effectiveModules: ['tool-filter'] } }
+  const cards = render(EngineModuleCards, { store: active, t, showPromptDefaults: false, excludeCapabilities: ['tool-filter'], emptyHint: zh['modules.subagentEmptyHint'] })
+  assert.doesNotMatch(cards, /data-module-card-id="tool-filter"/, '子代理页不显示 tool-filter 卡')
+  assert.match(cards, new RegExp(zh['modules.subagentEmptyHint'].slice(0, 12)), '给出替代入口说明')
+})
+
+test('子代理页能力卡排除清单由页面下发（源码契约）', () => {
+  const subagent = read('app/workspace/pages/SubagentPage.tsx')
+  assert.match(subagent, /const mainSessionOnly = \['tool-filter'\]/)
+  assert.match(subagent, /excludeCapabilities=\{mainSessionOnly\}/)
+  assert.match(subagent, /hint=\{t\('modules\.subagentScopeHint'\)\}/)
+  assert.match(subagent, /emptyHint=\{t\('modules\.subagentEmptyHint'\)\}/)
+  // 主会话页不排除任何能力。
+  const main = read('app/workspace/pages/MainSessionPage.tsx')
+  assert.doesNotMatch(main, /excludeCapabilities/)
 })
 
 test('置顶卡片渲染在过滤行之前（列表顶部语义）', () => {

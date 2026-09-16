@@ -10,6 +10,7 @@ import { ModelRouteModuleCard } from '../../../features/models/ModelRouteCard.ts
 import { PresetPersonaCard } from '../../../features/persona/PresetPersonaCard.tsx'
 import { EngineModuleActions, EngineModuleCards, EnginePromptDefaultsCard } from '../../../features/modules/EngineModuleList.tsx'
 import { CustomToolsCard, type ToolCreateIntent } from '../../../features/tools/CustomToolsCard.tsx'
+import { SubagentToolPolicyCard } from '../../../features/subagents/SubagentToolPolicyCard.tsx'
 import { TemplatePicker } from '../../../ui/TemplatePicker.tsx'
 import ui from '../../../ui/controls.module.css'
 import type { InstructionPolicyFileOverride } from '../../../../shared/instructions.ts'
@@ -122,7 +123,17 @@ export const MainSessionPage = memo(function MainSessionPage(props: { store: Pro
         toolbarActions={<EngineModuleActions store={store} t={t} anchorRef={picker.anchorRef} extraItems={createItems} onExtraSelect={onCreateSelect} onCreated={revealCapability} />}
         moduleCards={
           <>
-            <EngineModuleCards store={store} t={t} layerFilter={viewFilter} focusCapability={focusCapability} showActions={false} showPromptDefaults={false} showStatus={viewFilter !== 'all'} />
+            <EngineModuleCards store={store} t={t} layerFilter={viewFilter} focusCapability={focusCapability} showActions={false} showPromptDefaults={false} showStatus={viewFilter !== 'all'}
+              renderCapabilityExtra={({ capabilityId }) => capabilityId === 'subagent-tool-policy'
+                ? (
+                  <SubagentToolPolicyCard
+                    key={fields.presetTemplate}
+                    presetId={fields.presetTemplate}
+                    t={t}
+                    onNotice={store.showNotice}
+                  />
+                )
+                : undefined} />
             <div hidden={viewFilter !== 'all' && viewFilter !== 'tool-pipeline'}>
               <CustomToolsCard
                 key={fields.presetTemplate}

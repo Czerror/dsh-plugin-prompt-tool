@@ -924,10 +924,8 @@ export function resolvePresetModuleFacts(
   const effectiveModules = sourceMode === 'explicit'
     ? [...(declaredModules ?? [])]
     : null
-  if (effectiveModules !== null && spec.subagentToolPolicy !== undefined && spec.subagentToolPolicy !== null
-    && !effectiveModules.includes('subagent-tool-policy')) {
-    effectiveModules.push('subagent-tool-policy')
-  }
+  // 模块声明是唯一开关：`subagentToolPolicy` 段只承载数据，不再隐式装配模块
+  // （段存在但模块未声明 = 半状态；旧版本或手工编辑才会出现，由 UI 启用或保存时补齐声明）。
   if (sourceMode === 'unknown') {
     return { declaredModules, effectiveModules: null, rowIds: [], sourceMode, editable: false }
   }
@@ -1033,6 +1031,17 @@ export function createEngineCapabilityInPreset(
   for (const [key, value] of Object.entries(recipe?.initialParams ?? {})) {
     if (!Object.prototype.hasOwnProperty.call(source.params ?? {}, key)) doc.setIn(['params', key], value)
   }
+  // 拥有顶层数据段的能力（如 subagent-tool-policy → subagentToolPolicy）：启用即写入可用骨架，
+  // 保证"模块在 ⇒ 数据在"（否则 shadow 行会读不到物化后的 policy.yml）。
+  let sectionWritten = false
+  for (const id of capabilityIds) {
+    const section = engineCapability(id)?.ownSection
+    if (section === undefined) continue
+    const existing = (source as unknown as Record<string, unknown>)[section.key]
+    if (existing !== undefined && existing !== null) continue
+    doc.setIn([section.key], JSON.parse(JSON.stringify(section.skeleton)))
+    sectionWritten = true
+  }
   const candidate = doc.toJS() as PresetSpec
   const rendered = renderComposition(candidate, {}, presetDir)
   const rows = assertCompositionArray(rendered, candidate)
@@ -1058,7 +1067,7 @@ export function createEngineCapabilityInPreset(
     const capability = engineCapability(id)!
     if (!capability.rowIds.some((rowId) => rowPaths.has(rowId))) throw new Error(`能力 ${id} 的组合缺少预期 row`)
   }
-  if (addedModules.length === 0 && recipe === undefined) return { changed: false, addedModules, capabilityIds }
+  if (addedModules.length === 0 && recipe === undefined && !sectionWritten) return { changed: false, addedModules, capabilityIds }
   if (addedModules.length === 0 && recipe !== undefined && Object.entries(recipe.initialParams ?? {}).every(([key]) => Object.prototype.hasOwnProperty.call(source.params ?? {}, key))) {
     return { changed: false, addedModules, capabilityIds }
   }
@@ -1067,7 +1076,9 @@ export function createEngineCapabilityInPreset(
   return { changed: true, addedModules, capabilityIds }
 }
 
-/** 删除显式装配的能力模块；参数和 moduleConfigs 保留为 dormant 配置。 */
+/** 删除显式装配的能力模块；参数和 moduleConfigs 保留为 dormant 配置。
+ *  例外：拥有顶层数据段的能力（如 subagent-tool-policy → subagentToolPolicy）**连段一起删除**——
+ *  策略是结构化数据、留在磁盘上无法被任何 UI 编辑，属于"删除即失效"的语义（用户决策）。 */
 export function removeEngineCapabilityFromPreset(
   presetDir: string,
   capabilityId: string,
@@ -1075,14 +1086,17 @@ export function removeEngineCapabilityFromPreset(
   const file = join(presetDir, 'preset.yml')
   if (!existsSync(file)) throw new Error(`预设目录缺少 preset.yml：${presetDir}`)
   const doc = parseDocument(readFileSync(file, 'utf8'), { logLevel: 'silent' })
-  const source = doc.toJS() as PresetSpec
+  const source = doc.toJS() as unknown as PresetSpec & Record<string, unknown>
   if (!Array.isArray(source.modules)) throw new Error('当前预设没有可编辑的 modules 数组；官方组合不支持删除插件能力')
   const capability = engineCapability(capabilityId)
   if (capability === undefined) throw new Error(`未知引擎能力：${capabilityId}`)
   const modules = source.modules.filter((item): item is string => typeof item === 'string' && item.length > 0)
   const removedModules = modules.filter((module) => capability.moduleKeys.includes(module))
-  if (removedModules.length === 0) return { changed: false, removedModules, capabilityIds: [capabilityId] }
-  doc.set('modules', modules.filter((module) => !capability.moduleKeys.includes(module)))
+  const section = capability.ownSection
+  const sectionPresent = section !== undefined && source[section.key] !== undefined && source[section.key] !== null
+  if (removedModules.length === 0 && !sectionPresent) return { changed: false, removedModules, capabilityIds: [capabilityId] }
+  if (removedModules.length > 0) doc.set('modules', modules.filter((module) => !capability.moduleKeys.includes(module)))
+  if (sectionPresent) doc.deleteIn([section!.key])
   const candidate = doc.toJS() as PresetSpec
   assertCompositionArray(renderComposition(candidate, {}, presetDir), candidate)
   atomicWriteTextFile(file, doc.toString())

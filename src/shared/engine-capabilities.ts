@@ -16,6 +16,38 @@ export interface EngineCapability {
   moduleKeys: readonly string[]
   rowIds: readonly string[]
   displayLayer: 'pre-step' | 'system-section' | 'tool-pipeline'
+  /**
+   * 该能力拥有的 preset 顶层数据段（不是行级 config）。
+   * 创建时若段缺失则写入 `skeleton`（保证"模块在 ⇒ 数据在"）；删除时一并移除该段。
+   */
+  ownSection?: {
+    /** preset.yml 顶层键名。 */
+    key: string
+    /** 启用时写入的可用骨架（必须能通过该段的校验）。 */
+    skeleton: Readonly<Record<string, unknown>>
+  }
+}
+
+/** 子代理工具策略的启用骨架：常用工具全放行 + 扩权受限（用户决策，可在卡片内继续收窄）。 */
+export const SUBAGENT_TOOL_POLICY_SKELETON: Readonly<Record<string, unknown>> = {
+  defaultProfile: 'default',
+  ceiling: { allow: ['read', 'write', 'edit', 'glob', 'grep', 'bash'], deny: [] },
+  profiles: [
+    {
+      id: 'default',
+      name: '默认',
+      allow: ['read', 'write', 'edit', 'glob', 'grep', 'bash'],
+      deny: [],
+      modelSelectable: true,
+    },
+  ],
+  // 扩权必须严格 ⊆ ceiling.allow（校验会拒绝超限）；requireApproval 要求宿主有批准通道（无通道则 fail closed）。
+  modelExpansion: {
+    enabled: true,
+    allow: ['write', 'edit', 'glob', 'grep'],
+    maxAdditionalTools: 2,
+    requireApproval: true,
+  },
 }
 
 /** 首期只登记已有 typed editor 的能力，避免万能 key/value 表单。 */
@@ -25,6 +57,14 @@ export const ENGINE_CAPABILITIES: readonly EngineCapability[] = [
   { id: 'anchor-turn', moduleKeys: ['anchor-turn'], rowIds: ['anchor-turn'], displayLayer: 'pre-step' },
   { id: 'promoted-code-mode', moduleKeys: ['promoted-code-mode'], rowIds: ['promoted-code-mode'], displayLayer: 'tool-pipeline' },
   { id: 'tool-filter', moduleKeys: ['tool-filter'], rowIds: ['tool-filter'], displayLayer: 'tool-pipeline' },
+  // 子代理工具面：模块 + 顶层策略段（段是结构化数据，物化为 subagent-tools/policy.yml）。
+  {
+    id: 'subagent-tool-policy',
+    moduleKeys: ['subagent-tool-policy'],
+    rowIds: ['subagent-tool-policy'],
+    displayLayer: 'tool-pipeline',
+    ownSection: { key: 'subagentToolPolicy', skeleton: SUBAGENT_TOOL_POLICY_SKELETON },
+  },
   // filesystem-editor 同时提供 fs-local 与 str-replace-editor，二者必须同域。
   { id: 'str-replace-editor', moduleKeys: ['filesystem-editor'], rowIds: ['str-replace-editor'], displayLayer: 'tool-pipeline' },
   { id: 'deliberation-gate', moduleKeys: ['deliberation-gate'], rowIds: ['deliberation-gate'], displayLayer: 'tool-pipeline' },
@@ -53,13 +93,16 @@ export function engineRecipe(id: string): EngineRecipe | undefined {
   return ENGINE_RECIPES.find((recipe) => recipe.id === id)
 }
 
-/** 只有显式 modules 才代表本插件按需装配的能力；官方组合行只作运行事实。 */
+/** 只有显式 modules 才代表本插件按需装配的能力；官方组合行只作运行事实。
+ *  判定以 `declaredModules` 为准（模块声明 = 唯一开关），避免"段存在即视为已装配"
+ *  导致半状态无法补齐声明。 */
 export function isEngineCapabilityPresent(id: string, facts: PresetModuleFacts | undefined): boolean {
-  if (facts === undefined || facts.sourceMode !== 'explicit' || facts.effectiveModules === null) return false
+  if (facts === undefined || facts.sourceMode !== 'explicit') return false
   const capability = engineCapability(id)
   if (capability === undefined) return false
-  const modules = new Set(facts.effectiveModules ?? [])
-  return capability.moduleKeys.some((key) => modules.has(key))
+  const modules = facts.declaredModules ?? facts.effectiveModules
+  if (modules === null) return false
+  return capability.moduleKeys.some((key) => modules.includes(key))
 }
 
 export interface CustomToolIdentity {

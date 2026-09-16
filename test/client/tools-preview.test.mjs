@@ -86,7 +86,14 @@ test('子代理仅保留实例策略解析，旧工具面标签、session 输入
   assert.match(policy, /t\('policy\.preview\.title'\)/, '预览标题必须来自 prompt-tool 字典')
   assert.match(PROMPT_TOOL_DICTS.zh['policy.preview.title'], /实例解析预览/)
   assert.match(policy, /bridgeCall\('subagentToolPolicyPreview', previewInput\)/)
-  assert.match(delegation, /<SubagentToolPolicyCard/)
+  // 策略编辑器唯一入口 = subagent-tool-policy 能力卡（由页面经 renderCapabilityExtra 注入）；
+  // 「工具与深度」卡只保留深度与入口提示，避免双入口。
+  const chat = read('src/client/app/workspace/pages/MainSessionPage.tsx')
+  const subagent = read('src/client/app/workspace/pages/SubagentPage.tsx')
+  assert.match(chat, /renderCapabilityExtra=\{\(\{ capabilityId \}\) => capabilityId === 'subagent-tool-policy'/)
+  assert.match(subagent, /renderCapabilityExtra=\{\(\{ capabilityId \}\) => capabilityId === 'subagent-tool-policy'/)
+  assert.match(delegation, /policy\.delegation\.policyMoved/)
+  assert.doesNotMatch(delegation, /<SubagentToolPolicyCard/)
 })
 
 test('自定义工具按预设 key 重挂载，system 或关闭 writePreset 时禁用整个编辑区', () => {

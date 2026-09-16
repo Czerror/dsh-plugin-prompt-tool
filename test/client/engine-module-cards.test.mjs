@@ -64,6 +64,8 @@ const store = {
   fields: { ...EMPTY_FIELDS },
   moduleFacts: { sourceMode: 'explicit', effectiveModules: [], declaredModules: [], editable: true, rowIds: [] },
 }
+/** 能力存在性以显式 modules 声明为准：测试同时给出声明与生效清单，避免两处漂移。 */
+const withModules = (modules) => ({ ...store.moduleFacts, effectiveModules: modules, declaredModules: modules })
 
 test('模块字段从目录渲染，每个参数有且只有一个配置卡 owner', () => {
   const engineCards = new Set(ENGINE_CAPABILITIES.map(({ id }) => id))
@@ -84,7 +86,7 @@ test('模块字段从目录渲染，每个参数有且只有一个配置卡 owne
 test('卡片存在性来自装配事实，一项装配能力一张卡', () => {
   const absent = render(EngineModuleCards, { store, t })
   assert.doesNotMatch(absent, /class="configName">tool-bootstrap</)
-  const active = { ...store, moduleFacts: { ...store.moduleFacts, effectiveModules: ['tool-bootstrap', 'filesystem-editor', 'promoted-code-mode', 'progress-reminder'] } }
+  const active = { ...store, moduleFacts: withModules(['tool-bootstrap', 'filesystem-editor', 'promoted-code-mode', 'progress-reminder']) }
   const html = render(EngineModuleCards, { store: active, t, showPromptDefaults: false })
   assert.equal((html.match(/data-module-card="true"/g) ?? []).length, 4, '每项装配能力一张卡')
   for (const id of ['tool-bootstrap', 'promoted-code-mode', 'progress-reminder', 'str-replace-editor']) assert.match(html, new RegExp(`class="configName">${id}<`))
@@ -95,9 +97,9 @@ test('卡片存在性来自装配事实，一项装配能力一张卡', () => {
   assert.doesNotMatch(filtered, /class="configName">tool-bootstrap</)
   assert.doesNotMatch(filtered, /class="configName">str-replace-editor</)
   assert.doesNotMatch(filtered, /class="configName">(?:promoted-code-mode|progress-reminder)</)
-  const anchored = render(EngineModuleCards, { store: { ...store, moduleFacts: { ...store.moduleFacts, effectiveModules: ['anchor-turn'] } }, t, layerFilter: 'pre-step' })
+  const anchored = render(EngineModuleCards, { store: { ...store, moduleFacts: withModules(['anchor-turn']) }, t, layerFilter: 'pre-step' })
   assert.ok(anchored.includes('class="configName">anchor-turn<'), 'pre-step 过滤只留本层能力卡')
-  assert.doesNotMatch(render(EngineModuleCards, { store: { ...store, moduleFacts: { ...store.moduleFacts, effectiveModules: ['anchor-turn'] } }, t, layerFilter: 'system-section' }), /class="configName">anchor-turn</)
+  assert.doesNotMatch(render(EngineModuleCards, { store: { ...store, moduleFacts: withModules(['anchor-turn']) }, t, layerFilter: 'system-section' }), /class="configName">anchor-turn</)
   const official = render(EngineModuleCards, { store: { ...active, moduleFacts: { ...active.moduleFacts, sourceMode: 'official' } }, t })
   assert.doesNotMatch(official, /class="configName">tool-bootstrap</)
 })
@@ -112,11 +114,10 @@ test('能力与组合只引用新模块名，不接受旧模块名或编辑器�
   }
   assert.equal(engineCapability('code-presentation'), undefined)
   assert.equal(engineCapability('cot-drip'), undefined)
-  const legacy = { ...store, moduleFacts: {
-    ...store.moduleFacts,
-    effectiveModules: ['bootstrap-filesystem', 'str-replace-editor', 'custom-bash', 'code-presentation', 'cot-drip'],
-    rowIds: ['str-replace-editor', 'promoted-code-mode', 'progress-reminder'],
-  } }
+  const legacy = {
+    ...store,
+    moduleFacts: { ...withModules(['bootstrap-filesystem', 'str-replace-editor', 'custom-bash', 'code-presentation', 'cot-drip']), sourceMode: 'composition', rowIds: ['str-replace-editor', 'promoted-code-mode', 'progress-reminder'] },
+  }
   assert.doesNotMatch(render(EngineModuleCards, { store: legacy, t }), /class="configName">(?:str-replace-editor|promoted-code-mode|progress-reminder)</)
   assert.deepEqual(engineRecipe('phase-control-ptc'), {
     id: 'phase-control-ptc', capabilities: ['context-gate', 'tool-bootstrap', 'promoted-code-mode'], initialParams: { usePtcMode: true },
@@ -158,7 +159,7 @@ test('自定义工具编辑入口保留，能力删除仍需二次确认', () =>
     store: {
       ...store,
       fields: { ...store.fields, writePreset: true },
-      moduleFacts: { ...store.moduleFacts, effectiveModules: ['context-gate', 'anchor-turn'] },
+      moduleFacts: withModules(['context-gate', 'anchor-turn']),
       removeEngineCapability: (id) => removed.push(id),
     },
     t,
@@ -197,7 +198,7 @@ test('统一列表平铺渲染配置与能力卡，层级筛选只过滤不分�
     strategies: [], slotKinds: [], positions: [], dedupes: [], promotions: [], audienceModes: [], modelScopes: [], roles: [], mergeModes: [], fills: [],
     layerFieldPolicies: {}, layerLabels: {},
   }
-  const active = { ...store, moduleFacts: { ...store.moduleFacts, effectiveModules: ['anchor-turn'] } }
+  const active = { ...store, moduleFacts: withModules(['anchor-turn']) }
   const props = {
     t,
     meta,
@@ -237,7 +238,7 @@ test('统一列表平铺渲染配置与能力卡，层级筛选只过滤不分�
 })
 
 test('能力卡默认折叠，只有创建/定位到该能力才展开', () => {
-  const active = { ...store, moduleFacts: { ...store.moduleFacts, effectiveModules: ['context-gate', 'anchor-turn', 'tool-bootstrap'] } }
+  const active = { ...store, moduleFacts: withModules(['context-gate', 'anchor-turn', 'tool-bootstrap']) }
   const collapsed = render(EngineModuleCards, { store: active, t, showPromptDefaults: false })
   assert.equal((collapsed.match(/aria-expanded="true"/g) ?? []).length, 0, '未创建/未定位时全部折叠')
   assert.doesNotMatch(collapsed, /aria-label="锚定轮文本"/, '折叠的卡不渲染参数表单')

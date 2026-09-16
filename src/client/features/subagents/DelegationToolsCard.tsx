@@ -4,7 +4,6 @@ import type { PromptToolStore } from '../../data/use-prompt-tool-store.ts'
 import type { PromptToolTranslate } from '../../locales.ts'
 import { HintTooltip } from '../../ui/HintTooltip.tsx'
 import { MenuSelect } from '../../ui/MenuSelect.tsx'
-import { SubagentToolPolicyCard } from './SubagentToolPolicyCard.tsx'
 import { EngineModuleCard } from '../../ui/EngineModuleCard.tsx'
 import sharedCss from '../../ui/controls.module.css'
 import featureCss from './subagents.module.css'
@@ -42,14 +41,9 @@ export function DelegationToolsModuleCard(props: {
           </HintTooltip>
         </div>
       </div>
+      {/* 子代理工具策略已改为模块类型能力：编辑器住在能力卡内，此处只给出入口指引，避免双入口。 */}
       <div className={styles.configSectionTitle}>{t('policy.delegation.section')}</div>
-      <SubagentToolPolicyCard
-        key={fields.presetTemplate}
-        presetId={fields.presetTemplate}
-        t={t}
-        onNotice={(kind, message) => store.showNotice(kind, message)}
-        seedAllow={fields.toolFilterAllow}
-      />
+      <p className={styles.configFieldHint}>{t('policy.delegation.policyMoved')}</p>
     </EngineModuleCard>
   )
 }

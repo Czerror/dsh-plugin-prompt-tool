@@ -5,6 +5,7 @@ import { ModelRouteModuleCard } from '../../../features/models/ModelRouteCard.ts
 import { DelegationToolsModuleCard } from '../../../features/subagents/DelegationToolsCard.tsx'
 import { EngineModuleActions, EngineModuleCards } from '../../../features/modules/EngineModuleList.tsx'
 import { TemplateVariablesModuleCard } from '../../../features/prompts/PromptConfigsEditor.tsx'
+import { SubagentToolPolicyCard } from '../../../features/subagents/SubagentToolPolicyCard.tsx'
 import { INSERTION_LAYERS, LAYER_LABEL_KEYS, translateLabel } from '../../../features/prompts/prompt-config-policy.ts'
 import { useTemplatePicker } from '../../../features/prompts/useTemplatePicker.ts'
 import { CustomToolsCard, type ToolCreateIntent } from '../../../features/tools/CustomToolsCard.tsx'
@@ -17,7 +18,11 @@ import ui from '../../../ui/controls.module.css'
  *  入口对等（与主会话同款创建能力，只改作用域）：
  *  - 合并创建菜单：引擎能力/recipe、按插入点层级的模板、工具模板、模板变量；
  *  - 能力模块卡与自定义工具卡（与主会话同一份激活预设，视图过滤联动）；
- *  - 子代理独有：子代理模型、工具与深度（toolFilter / allowKinds / maxDepth）。
+ *  - 子代理独有：子代理模型、工具与深度（子代理工具策略 / allowKinds / maxDepth）。
+ *
+ *  例外：`tool-filter`（主对话常驻工具过滤）**不在本页创建、也不在本页显示卡片**——
+ *  它对子代理不生效（includeSubagents 缺省 false 且无 UI 开关）；子代理工具面由
+ *  「工具与深度」卡里的实例级「子代理工具策略」授权。
  *
  *  纪律：过滤抽屉与搜索词只由用户手动改变；新建只做「展开新卡 + 滚动定位」两件事。 */
 export const SubagentPage = memo(function SubagentPage(props: { store: PromptToolStore; t: PromptToolTranslate }): ReactNode {
@@ -28,6 +33,8 @@ export const SubagentPage = memo(function SubagentPage(props: { store: PromptToo
   const [toolCreate, setToolCreate] = useState<ToolCreateIntent>()
   const [variablesExpanded, setVariablesExpanded] = useState(false)
   const canEditPreset = store.fields.writePreset && store.moduleFacts?.editable === true
+  /** 仅主对话生效的能力：本页既不提供创建，也不渲染卡片。 */
+  const mainSessionOnly = ['tool-filter']
   // 合并创建菜单：按插入点层级平铺「添加模板 · 层级」入口，浮层只列该层模板。
   const picker = useTemplatePicker(
     store.fields.promptConfigs,
@@ -96,6 +103,8 @@ export const SubagentPage = memo(function SubagentPage(props: { store: PromptToo
               extraItems={createItems}
               onExtraSelect={onCreateSelect}
               onCreated={revealCapability}
+              excludeCapabilities={mainSessionOnly}
+              hint={t('modules.subagentScopeHint')}
             />
           }
           moduleCards={
@@ -109,6 +118,18 @@ export const SubagentPage = memo(function SubagentPage(props: { store: PromptToo
                   showPromptDefaults={false}
                   showStatus={viewFilter !== 'all'}
                   focusCapability={focusCapability}
+                  excludeCapabilities={mainSessionOnly}
+                  emptyHint={t('modules.subagentEmptyHint')}
+                  renderCapabilityExtra={({ capabilityId }) => capabilityId === 'subagent-tool-policy'
+                    ? (
+                      <SubagentToolPolicyCard
+                        key={store.fields.presetTemplate}
+                        presetId={store.fields.presetTemplate}
+                        t={t}
+                        onNotice={store.showNotice}
+                      />
+                    )
+                    : undefined}
                 />
               )}
               {showCustomTools && (

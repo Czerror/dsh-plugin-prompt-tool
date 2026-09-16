@@ -2,6 +2,33 @@
 
 ## [未发布] - 2026-09-17
 
+### subagentToolPolicy 改为模块类型能力（2026-09-17）
+
+- **能力化**：`subagent-tool-policy` 登记进引擎能力目录（`displayLayer: tool-pipeline`），于是它像其他能力一样：
+  在「添加能力 / 工具模块」菜单里可创建、在模块列表里有独立能力卡、可用「删除引擎能力」二次确认移除；
+  子代理页与主会话页都能操作（子代理页不再有"创建了却对子代理无效"的 `tool-filter`，见下）。
+- **启用即写入可用骨架**：`EngineCapability` 新增可选 `ownSection`（顶层数据段 + 骨架）；
+  创建该能力时若 `preset.yml` 顶层 `subagentToolPolicy` 段缺失，直接写入可用骨架
+  （`ceiling.allow` = read/write/edit/glob/grep/bash，一个 `default` 档全放行，`modelExpansion` 开启且
+  `requireApproval: true`），保证"模块在 ⇒ 数据在"，不会出现 shadow 行读不到 `subagent-tools/policy.yml` 的空档。
+- **删除即一并清段**：移除该能力时同时删除模块声明与顶层 `subagentToolPolicy` 段（策略是结构化数据，
+  留在磁盘上无法被任何 UI 编辑）；其它能力仍保持"删除只移除模块、参数留作 dormant"的既有语义。
+- **卡片位置**：策略编辑器唯一入口 = `subagent-tool-policy` 能力卡内部（页面经 `EngineModuleCards` 的
+  `renderCapabilityExtra` 插槽注入，避免 feature 间反向依赖）；「工具与深度」卡只保留递归深度与入口提示。
+- **模块声明成为唯一开关**：`resolvePresetModuleFacts` 不再因顶层段存在而隐式追加
+  `subagent-tool-policy`；`isEngineCapabilityPresent` 以 `declaredModules` 判定。这修掉了一个真实缺陷——
+  旧逻辑下"段在、模块不在"的半状态会被判成"已装配"，导致能力菜单永远补不上模块声明；现在启用会补齐声明，
+  且不覆盖既有策略内容。
+- **子代理页排除仅主对话能力**：`EngineModuleActions` / `EngineModuleCards` 新增 `excludeCapabilities`
+  与 `hint` / `emptyHint`；子代理页排除 `tool-filter`（主对话常驻过滤，对子代理不生效），并在菜单区提示
+  "子代理工具面请用「子代理工具策略」"。
+- **测试**：新增 `test/host/subagent-policy-capability.test.mjs`（7 条：目录登记+骨架校验、启用写骨架与物化、
+  幂等、半状态自愈、删除清段、残留清理）；`engine-module-cards` 夹具改为同时声明 `declaredModules`；
+  `scope-create-separation` 增补子代理页排除能力的菜单/卡片断言；`tools-preview` 的入口断言改为"编辑器由
+  页面注入能力卡"。
+- **注意**：历史预设若处于"段在、模块不在"的半状态，打开卡片保存或从菜单启用即可补齐模块声明；
+  客户端改动需刷新工作台页面。
+
 ### 工具过滤卡只保留总开关（主/子代理分离）（2026-09-17）
 
 - **移除「子代理同过滤」开关**：删除引擎参数 `toolFilterSubagents` 及其
