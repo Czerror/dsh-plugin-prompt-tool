@@ -12,8 +12,7 @@ import { parse, Document } from 'yaml'
 const home = mkdtempSync(join(tmpdir(), 'pt-st-home-'))
 const previousHome = process.env.DSH_HOME
 process.env.DSH_HOME = home
-const { buildWorldBookEntry } = await import('../../src/host/worldbook.ts')
-const { convertStToPreset, convertStToPresetWithReport, mergeStPresets, stPresetId } = await import('../../src/host/sillytavern.ts')
+const { convertStToPreset, convertStToPresetWithReport, mergeStPresets } = await import('../../src/host/sillytavern.ts')
 const { importCharacterCard, applyCharacterToPreset, removeCharacterFromPreset } = await import('../../src/host/characters.ts')
 const { Session, snapshotSessionEvent } = await import('@deepseek-ai/dsh-session')
 const { Context } = await import('@deepseek-ai/cordis')
