@@ -1,16 +1,29 @@
+// 合并自 module-configs.test.mjs(15) + param-contract.test.mjs(4) + scope-separation-audit.test.mjs(5)
+//（2026-09-17 测试归一精简 Wave 2）：三者都是「预设参数 → 组合行 config」这一条链路的核验，
+//  顶层 DSH_HOME 样板按 harness 统一为一份（见 isolatedHome），两份逐字相同的 findAllNested 合并为一份。
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { parse as parseYaml } from 'yaml'
-import { mkdtempSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { isolatedHome } from '../fixtures/host-harness.mjs'
 
-// 隔离 DSH_HOME：真实用户同名预设会遮蔽包内模板。
-process.env.DSH_HOME = mkdtempSync(join(tmpdir(), 'pt-mc-home-'))
+// 隔离 DSH_HOME：真实用户同名预设会遮蔽包内模板；harness 负责设置与 after() 还原。
+const { home } = isolatedHome('pt-params-bridge-')
 const { FIXTURE_PRESET_ID, installFixturePresetInHome } = await import('../fixtures/preset-template.mjs')
 // 夹具装进隔离 DSH_HOME 的官方预设根：本文件用「夹具模板 + renderComposition」替代已下线的 buildCordis 兼容层。
-installFixturePresetInHome(process.env.DSH_HOME)
-const { applyModuleConfigs, loadPresetSpec, renderComposition, resolvePresetDir, resolvePresetParams } = await import('../../lib/index.mjs')
+installFixturePresetInHome(home)
+const { ENGINE_PARAM_DEFINITIONS, buildEngineModuleParams } = await import('../../src/shared/engine-params.ts')
+const {
+  ENGINE_PARAM_KEYS,
+  WRITER_PARAM_KEYS,
+  PARAM_KEYS,
+  MODEL_SEGMENT_MAP,
+  applyModuleConfigs,
+  buildModuleConfigsFromParams,
+  loadPresetSpec,
+  renderComposition,
+  resolvePresetDir,
+  resolvePresetParams,
+} = await import('../../lib/index.mjs')
 
 /** 用测试夹具模板渲染组合（等价于旧的 buildCordis：模板 spec + 运行时参数）。 */
 function fixtureComposition(runtime = {}) {
@@ -44,6 +57,8 @@ const RAW = `# module: tool-git-bash
     mainPersona: "__MAIN_PERSONA__"
     hideSectionPrefixes: ["mnemon:"]
 `
+
+// —— moduleConfigs 合并与参数桥（原 module-configs.test.mjs） ——
 
 test('moduleConfigs 覆盖声明模块的行级 config（未覆盖键保留）', () => {
   const out = applyModuleConfigs(RAW, { 'tool-git-bash': { timeoutMs: 180000 } })
@@ -326,4 +341,225 @@ test('显式零值穿过组合默认与直写配置后仍禁用节拍、取消�
       assert.equal(pre.kind, 'accept')
     }
   }
+})
+
+// —— 参数目录与桥接契约（原 param-contract.test.mjs） ——
+
+/** 非 writer 键的合法样本值（类型与引擎消费一致；键缺失时测试报「无装配消费」）。 */
+const BRIDGE_SAMPLES = {
+  promoteGate: true,
+  promoteAfterFirstResponse: true,
+  maxPromoteSteps: 5,
+  bootstrapTools: ['bash'],
+  compactionTools: ['read'],
+  personaSectionsOnly: true,
+  workspaceLine: true,
+  phase1FirstCallInstruction: 'x',
+  messageSources: ['user'],
+  deferredSources: ['skill-catalog'],
+  deferredGraceSteps: 1,
+  instructionHint: true,
+  stages: [{ name: 's', tools: ['t'] }],
+  stagePreUnlock: 2,
+  stageAdvanceTool: 'x',
+  stageAdvanceDescription: 'x',
+  stageSectionTemplate: 'x',
+  strReplaceEditorMaxOutputChars: 20000,
+  anchorTurn: true,
+  anchorTurnText: 'x',
+  deliberationGate: true,
+  deliberationMinChars: 500,
+  deliberationMaxGatesPerTurn: 2,
+  cotDrip: true,
+  cotDripEvery: 3,
+  cotDripMaxPerTurn: 2,
+  bootstrapSubagents: true,
+  bootstrapPromoteOn: 'tool-call',
+  contextGateEnabled: false,
+  contextGateSubagents: true,
+  contextGatePromoteOn: 'assistant-message',
+  ptcSubagents: true,
+  ptcPromoteOn: 'either',
+  toolFilterEnabled: false,
+  anchorTurnSubagents: true,
+  deliberationSubagents: true,
+  deliberationGateText: '深思提示',
+  cotDripSubagents: true,
+  cotDripText: '保持思考',
+  customToolRequireApproval: ['shell', 'fs'],
+}
+
+test('PARAM_KEYS 派生一致性：= ENGINE_PARAM_KEYS + 锚定内容键 + promptConfigs', () => {
+  const EXTRA = new Set(['buildPattern', 'complexPattern', 'firstTurnBuild', 'firstTurnInspect', 'firstTurnDeep',
+    'guideWeak', 'guideDeep', 'promptConfigs'])
+  const engineKeys = new Set(ENGINE_PARAM_KEYS)
+  for (const key of PARAM_KEYS) {
+    assert.ok(engineKeys.has(key) || EXTRA.has(key), `${key} 应属于 ENGINE_PARAM_KEYS 或附加键`)
+  }
+  for (const key of ENGINE_PARAM_KEYS) {
+    assert.ok(PARAM_KEYS.has(key), `${key} 应从 ENGINE_PARAM_KEYS 派生进 PARAM_KEYS`)
+  }
+  for (const key of EXTRA) {
+    assert.ok(PARAM_KEYS.has(key), `${key} 附加键应存在`)
+  }
+  // 无重复。
+  assert.equal(PARAM_KEYS.size, ENGINE_PARAM_KEYS.length + EXTRA.size, 'PARAM_KEYS 无重复键')
+})
+
+test('ENGINE_PARAM_KEYS 每个非 writer 键都有参数桥装配消费（防「加键没装配」）', () => {
+  const writerKeys = new Set(WRITER_PARAM_KEYS)
+  const bridgeConsumed = new Set(Object.keys(buildModuleConfigsFromParams({})))
+  for (const key of ENGINE_PARAM_KEYS) {
+    if (writerKeys.has(key)) continue // writePreset.runtimeOf 透传（模型 patch / prompt-injector 等）。
+    assert.ok(BRIDGE_SAMPLES[key] !== undefined, `${key} 缺测试样本值`)
+    const configs = buildModuleConfigsFromParams({ [key]: BRIDGE_SAMPLES[key] })
+    assert.ok(Object.keys(configs).length > 0, `${key} 应被参数桥消费（产出组合行 config）`)
+    for (const id of Object.keys(configs)) bridgeConsumed.add(id)
+  }
+  const allConfigs = buildModuleConfigsFromParams(BRIDGE_SAMPLES)
+  assert.ok(Object.hasOwn(allConfigs, 'tool-bootstrap') && Object.hasOwn(allConfigs, 'context-gate'),
+    '参数桥应覆盖核心引擎行；writer 参数仍需由 runtimeOf 透传')
+})
+
+test('MODEL_SEGMENT_MAP 双向一致：展平读回 = 保存写回（段目标唯一）', () => {
+  const targets = new Set()
+  for (const [flatKey, [segment, segmentKey]] of Object.entries(MODEL_SEGMENT_MAP)) {
+    assert.ok(flatKey.length > 0 && segment.length > 0 && segmentKey.length > 0, `映射项非空: ${flatKey}`)
+    const target = `${segment}.${segmentKey}`
+    assert.ok(!targets.has(target), `段目标重复: ${target}（两个扁平键映射到同一段键）`)
+    targets.add(target)
+  }
+  assert.equal(Object.keys(MODEL_SEGMENT_MAP).length, 10, '模型段映射应覆盖 10 个扁平键')
+})
+
+test('字符串深度与数字同义，普通委派及实例策略均接收归一后的限制', () => {
+  for (const value of [0, 2, 'provider-managed']) {
+    for (const subagentPolicyEnabled of [false, true]) {
+      const options = { subagentPolicyEnabled }
+      const configs = buildModuleConfigsFromParams({ maxDepth: String(value) }, options)
+      assert.deepEqual(configs, buildModuleConfigsFromParams({ maxDepth: value }, options))
+      for (const id of ['tool-subagent', 'tool-subagent-fork', ...(subagentPolicyEnabled ? ['subagent-tool-policy'] : [])]) {
+        assert.equal(configs[id].maxDepth, value)
+      }
+    }
+  }
+  for (const maxDepth of ['', ' ', 'invalid', '-1', '1.5']) {
+    assert.equal(buildModuleConfigsFromParams({ maxDepth })['tool-subagent'], undefined)
+  }
+})
+
+// —— 主/子代理分离的设计一致性（原 scope-separation-audit.test.mjs） ——
+// 覆盖四层边界：
+// 1. 模块参数：子代理专属参数只落 `includeSubagents` 键，主会话侧开关不越界；
+// 2. 工具过滤：主对话 `tool-filter` 与子代理 `delegation.toolFilter` / 实例级策略互不串写；
+// 3. 模型参数：`model*` → `audience: main`，`subagent*` → `audience: subagent`（agent-request patch）；
+// 4. 提示词配置受众：`audience` 决定注入对象，主/子列表各自过滤。
+
+test('模块参数按行落位：子代理参与类参数只写 includeSubagents，且不污染无关键', () => {
+  const configs = buildEngineModuleParams({
+    bootstrapSubagents: true,
+    contextGateSubagents: true,
+    ptcSubagents: true,
+    anchorTurnSubagents: true,
+    deliberationSubagents: true,
+    cotDripSubagents: true,
+    toolFilterEnabled: false,
+    toolFilterAllow: ['read'],
+    toolFilterDeny: ['bash'],
+  })
+  // 每个「参与」开关只落在自己那一行的 includeSubagents 键上。
+  assert.deepEqual(configs['tool-bootstrap'].includeSubagents, true)
+  assert.deepEqual(configs['context-gate'].includeSubagents, true)
+  assert.deepEqual(configs['promoted-code-mode'].includeSubagents, true)
+  assert.deepEqual(configs['anchor-turn'].includeSubagents, true)
+  assert.deepEqual(configs['deliberation-gate'].includeSubagents, true)
+  assert.deepEqual(configs['progress-reminder'].includeSubagents, true)
+  // 工具过滤行：只剩总开关与白/黑名单，不再有 includeSubagents 绑定。
+  assert.deepEqual(Object.keys(configs['tool-filter']).sort(), ['allow', 'deny', 'enabled'])
+  assert.equal(configs['tool-filter'].enabled, false)
+  // 交叉污染检查：只有声明了子代理参与开关的行才有 includeSubagents，其余行不得出现。
+  const subagentAware = new Set(['tool-bootstrap', 'context-gate', 'promoted-code-mode', 'anchor-turn', 'deliberation-gate', 'progress-reminder'])
+  for (const [module, config] of Object.entries(configs)) {
+    if (subagentAware.has(module)) {
+      assert.equal(config.includeSubagents, true, `${module} 的 includeSubagents 来自自身开关`)
+      continue
+    }
+    assert.equal(Object.hasOwn(config, 'includeSubagents'), false, `${module} 不应出现 includeSubagents`)
+  }
+})
+
+test('参数目录层面：主/子代理专属参数绑定到不同行，工具过滤不再有子代理绑定', () => {
+  const bindingsOf = (card) => Object.entries(ENGINE_PARAM_DEFINITIONS)
+    .filter(([, definition]) => definition.card === card)
+    .map(([key]) => key)
+    .sort()
+  assert.deepEqual(bindingsOf('main-model'), ['modelMaxTokens', 'modelName', 'modelProvider', 'modelReasoningEffort', 'modelTemperature'])
+  assert.deepEqual(bindingsOf('subagent-model'), ['subagentMaxTokens', 'subagentModelName', 'subagentModelProvider', 'subagentReasoningEffort', 'subagentTemperature'])
+  assert.deepEqual(bindingsOf('tool-filter'), ['toolFilterAllow', 'toolFilterDeny', 'toolFilterEnabled'])
+  assert.deepEqual(bindingsOf('subagent-tools'), ['maxDepth'])
+  // 主/子模型参数一一对称且零交集（预设顶层 model / subagentModel 两段是唯一来源）。
+  const mainModel = new Set(bindingsOf('main-model'))
+  for (const key of bindingsOf('subagent-model')) assert.equal(mainModel.has(key), false, `${key} 不得同时属于主与子`)
+})
+
+test('工具过滤落位：策略启用后主对话过滤不下发给子代理，子代理由实例级策略授权', () => {
+  const params = { toolFilterAllow: ['read', 'write'], toolFilterDeny: ['bash'], maxDepth: 2 }
+  const mainFilter = { allow: ['read', 'write'], deny: ['bash'] }
+  // 未启用实例级策略：主对话过滤同时写入 delegation.toolFilter（兼容旧行为）。
+  const legacy = buildModuleConfigsFromParams(params, { subagentPolicyEnabled: false })
+  assert.deepEqual(legacy['tool-filter'], mainFilter)
+  assert.deepEqual(legacy['tool-subagent'].toolFilter, mainFilter)
+  assert.deepEqual(legacy['tool-subagent-fork'].toolFilter, mainFilter)
+  // 启用实例级策略：主对话过滤仍然落位，delegation 行不再接收它（授权改由 subagent-tool-policy 解析）。
+  const withPolicy = buildModuleConfigsFromParams(params, { subagentPolicyEnabled: true })
+  assert.deepEqual(withPolicy['tool-filter'], mainFilter, '主对话过滤仍然落位')
+  assert.equal(withPolicy['tool-subagent'].toolFilter, undefined, '策略启用后不得再写 delegation.toolFilter')
+  assert.equal(withPolicy['tool-subagent-fork'].toolFilter, undefined)
+  assert.equal(withPolicy['tool-subagent'].maxDepth, 2, '与过滤无关的委派参数不受影响')
+})
+
+test('组合端到端：子代理专属参数只出现在子代理行为，主对话行保持独立', () => {
+  const dir = resolvePresetDir(FIXTURE_PRESET_ID)
+  const spec = loadPresetSpec(dir)
+  const runtime = {
+    toolFilterAllow: ['read'],
+    toolFilterDeny: ['bash'],
+    toolFilterEnabled: true,
+    bootstrapSubagents: true,
+    contextGateSubagents: true,
+  }
+  const rendered = renderComposition(spec, runtime, dir)
+  const rows = parseYaml(rendered)
+  const toolFilter = rows.find((row) => row?.id === 'tool-filter')
+  const bootstrap = rows.find((row) => row?.id === 'tool-bootstrap')
+  const gate = rows.find((row) => row?.id === 'context-gate')
+  // 主对话过滤行只有主会话语义的键（过滤总开关 + 白/黑名单）。
+  assert.deepEqual(Object.keys(toolFilter.config).sort(), ['allow', 'deny', 'enabled'])
+  // 子代理参与开关落在各自行，不回流到主对话过滤行。
+  assert.equal(bootstrap.config.includeSubagents, true)
+  assert.equal(gate.config.includeSubagents, true)
+  assert.equal(Object.hasOwn(toolFilter.config, 'includeSubagents'), false)
+})
+
+test('实例级工具策略：声明后装配 shadow 行并指向生成目录策略文件，未声明则不装配', () => {
+  const dir = resolvePresetDir(FIXTURE_PRESET_ID)
+  const base = loadPresetSpec(dir)
+  const withPolicy = {
+    ...base,
+    subagentToolPolicy: {
+      defaultProfile: 'reader',
+      ceiling: { allow: ['read'], deny: [] },
+      profiles: [{ id: 'reader', name: '只读', allow: ['read'], deny: [], modelSelectable: true }],
+    },
+  }
+  const rows = parseYaml(renderComposition(withPolicy, {}, dir))
+  const [policyRow] = findAllNested(rows, new Set(['subagent-tool-policy']))
+  assert.ok(policyRow, '声明策略后必须装配 subagent-tool-policy 行')
+  assert.equal(policyRow.config.policyFile, '../subagent-tools/policy.yml', '策略文件指向生成目录')
+  assert.equal(policyRow.config.spawnProvider, 'spawn', 'shadow 覆盖 spawn 工具名')
+  assert.equal(policyRow.config.forkProvider, 'fork', 'shadow 覆盖 fork 工具名')
+  // 未声明策略时不装配该模块（opt-in），子代理工具面回落到 delegation 行。
+  const without = parseYaml(renderComposition(base, {}, dir))
+  assert.deepEqual(findAllNested(without, new Set(['subagent-tool-policy'])), [])
+  assert.ok(findAllNested(without, new Set(['tool-subagent'])).length > 0, '未启用策略时仍由官方委派行供工具')
 })

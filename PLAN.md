@@ -56,7 +56,8 @@
 ### Wave 2：host 合并（60 → 36）[ ]
 
 - 新建 `test/fixtures/host-harness.mjs`：`isolatedHome` / `tempDir` / `fakeReq`·`fakeRes` / `bridgeHarness` / `readBridge` / `seedPreset` / `pluginCtx` / `expectUnchanged` / `readPresetYaml`；re-export 既有 `fixtures/preset-template.mjs` 以免改 7 处 import。
-- 14 个合并组：write-preset（吸收 writepreset-off）、preset-render-variants、preset-prompt-configs、composition-library、engine-params-bridge、preset-capabilities、subagent-tool-policy、pre-step-injection、pre-step-wiring、skills-provider、sillytavern-convert、model-routing、profile-assembly、preset-content-assets。
+- 13 个合并组：preset-render-variants、preset-prompt-configs、composition-library、engine-params-bridge、preset-capabilities、subagent-tool-policy、pre-step-injection、pre-step-wiring、skills-provider、sillytavern-convert、model-routing、profile-assembly、preset-content-assets（`write-preset` 保持独立，见下偏差记录）。
+- **偏差记录（2026-09-17）**：`writepreset-off.test.mjs` 曾判定不可与 `write-preset.test.mjs` 共用同一 DSH_HOME（`write-preset` 顶层 `installFixturePresetInHome(home)` 会写入 `fixture`，而 `writepreset-off` 断言预设根精确等于五个内置预设，探针实测 `dirs=["fixture","standard"]`），host 目标一度改为 37。**最终处置**：该组以「复原前置条件」方式合并成功 —— 合并后的用例在开头 `rmSync(presetDir)` 清空预设根、重建 `standard` 并写入 `{ seeded: true }` 状态，从而恢复原文件「全新 HOME」的语义，而 `assert.deepEqual(dirs, ['creative','custom','minimal','ptc','standard'].sort())` 等断言**逐字未改**。故 host 目标回到 **36**，总计 **88**。
 - 4 个 KEEP（st-preview-report / tui / version-contract / preset-default-sync）+ **18 个整文件 NEVER-TOUCH**。
 - 2 条静态断言升级为行为断言：`models` 的 `llm/adapters-updated` 接线、`web-surface` 的 web-app 常量来源。
 - 2 处文档引用同步：`docs/architecture-params.md`（param-contract → engine-params-bridge）、`docs/SillyTavern.md`（st-compatibility → sillytavern-convert）。
@@ -68,6 +69,15 @@
 - 8 个 Edge smoke → 4（`ui-v2-page-smoke` / `import-smoke` / `module-policy-smoke` / `real-css-smoke`），先合 import 与 module+policy 两组，再合 ui-v2 三合一；每个成员的高风险流程逐条保留。
 - SSR 升级（用已有 6 个文件的 `react-dom/server` 范式）：`workspace-navigation`、`menu-select` 用例 1/3、`prompt-config-form-layout` 用例 1/2/3/5、`template-picker-anchor`、`review-fixes` 4 条、`scope-create-separation` 第 11 条；portal / 真实 CSS / 真实鼠标与焦点保留 Edge。
 - 保留独立：`style-ownership`、`locale-contract`、禁令类断言（无原生 select、无 `title`/`data-tip`、无宿主 DOM 选择器、依赖方向）。
+- **派发粒度**（实证教训：Wave 2 单代理 10-14 文件的粒度会让代理中途停滞，Wave 1 单代理 2-3 文件的粒度一次成功）：
+
+| 小组 | 内容 | 产出 |
+|---|---|---|
+| C1a | `ui-boundary` + `feature-boundary` + `structure-baseline` + `no-host-dom` → `client-structure-contract`；CSS 断言并入 `style-ownership` | 结构契约 8 条 |
+| C1b | `menu-select` / `prompt-config-form-layout` / `template-picker-anchor` / `workspace-navigation` / `dialog-focus`(2 条) / `review-fixes`(4 条) 的接线断言 → `client-wiring-contract`，其中 4-5 处改 SSR 渲染断言 | 接线契约约 12 条 |
+| C2a | `dirty-state` + `save-queue` + `prompt-tool-stages` → `editor-state`；`hint-tooltip-focus` + `hint-tooltip-position` → `hint-tooltip`；`anchored-popover` / `model-options` / `param-overrides` / `prompt-config-order` / `skill-status` / `tab-key` / `floating-trigger-position` 表驱动 | 编辑态与纯函数 |
+| C2b | `host-contract` + `declaration-bundle` + `client-bundle-facade` + `slot-workbench-contract` → `host-publish-contract` | 发布契约约 16 条 |
+| C3a | 8 个 Edge smoke → 4（`ui-v2-page-smoke` / `import-smoke` / `module-policy-smoke` / `real-css-smoke`） | smoke 4 文件 |
 
 ## 风险与回滚
 

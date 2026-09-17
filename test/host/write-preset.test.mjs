@@ -12,7 +12,7 @@ const home = mkdtempSync(join(tmpdir(), 'pt-wp-home-'))
 process.env.DSH_HOME = home
 const ROOT = fileURLToPath(new URL('../..', import.meta.url))
 const { FIXTURE_PRESET_ID, FIXTURE_PRESET_SRC, installFixturePreset, installFixturePresetInHome } = await import('../fixtures/preset-template.mjs')
-const { writePreset, savePresetParams, loadPresetSpec } = await import('../../lib/index.mjs')
+const { apply, writePreset, writePluginState, savePresetParams, loadPresetSpec } = await import('../../lib/index.mjs')
 // 夹具模板同时装进隔离 DSH_HOME 的官方预设根（resolvePresetDir 场景）与各测试的输出根（见 makeOptions）。
 installFixturePresetInHome(home)
 /** 指令文件正文 sentinel：任何预设产物都不得包含它（正文只属于用户文件）。 */
@@ -884,4 +884,116 @@ test('writePreset 目标目录被占用时退回原地合并写：内容刷新�
     process.chdir(originalCwd)
     rmSync(dir, { recursive: true, force: true })
   }
+})
+
+// —— 由 writepreset-off.test.mjs 并入（2026-09-17 测试归一精简 Wave 2） ——
+// 这两条走插件入口 apply()，需要一份 mock cordis ctx 与 settings 值；
+// 命名带 Off 前缀，避免与上面的 makeOptions / 其它局部名混淆。
+
+function offSettings(writePreset) {
+  return {
+    writePreset,
+    presetTemplate: 'standard',
+    skillOrder: [],
+    skillsDirs: [],
+    skillRankBase: 250,
+    presetOrder: 5,
+    fallbackText: '',
+  }
+}
+
+function makeOffCtx(settingsValue) {
+  const makeSctx = () => ({
+    settings: {
+      describe: () => [],
+      register: (_ns, _schema, opts) => {
+        try { opts.base() } catch { /* mock 环境无宿主上下文 */ }
+        return { get: () => settingsValue, watch: (cb) => cb(settingsValue) }
+      },
+      installSection: (_owner, _ns, _schema, _entry, hooks) => {
+        hooks.setSource(() => settingsValue)
+        hooks.onChange()
+      },
+      get: () => undefined,
+      mutate: async () => {},
+    },
+    webServer: { register: () => () => {} },
+    commands: { register: () => () => {} },
+    tools: { register: () => () => {} },
+    effect: (fn) => { const dispose = fn(); return typeof dispose === 'function' ? dispose : () => {} },
+    on: () => () => {},
+    get: () => undefined,
+  })
+  return {
+    logger: { warn: () => {} },
+    effect: (fn) => { fn(); return () => {} },
+    // 真实 cordis Context 提供事件订阅；本 mock 只覆盖插件订阅的 provider 拓扑事件。
+    on: () => () => {},
+    skills: { registerProvider: () => {} },
+    get: (name) => (name === 'webServer' ? {} : undefined),
+    provide: () => () => {},
+    baseUrl: 'http://localhost:3000',
+    inject: (deps, cb) => { cb(makeSctx()); return () => {} },
+  }
+}
+
+test('writePreset 关闭时清空组合为空数组，保留 preset.yml 与预设根（防误删回归 + 官方可挂载回归）', () => {
+  const presetDir = join(home, '.agent-presets')
+  // 本文件前序用例在同一 DSH_HOME 的预设根下留下了自己的产物（夹具预设 fixture、
+  // 以及 root-isolation 等），而本用例对预设根做「恰好五个内置模板」的精确断言：
+  // 清空预设根以恢复原用例的前置条件（原文件用的是全新 HOME），不放宽断言。
+  rmSync(presetDir, { recursive: true, force: true })
+  mkdirSync(join(presetDir, 'standard', 'prompt-configs'), { recursive: true })
+  // 预置已种子化状态：避免 ensurePresetSeed 复制全部内置模板干扰预设根断言。
+  writePluginState({ seeded: true })
+  writeFileSync(join(presetDir, 'standard', 'preset.yml'),
+    'id: standard\nname: Standard\nmodules: [prompt-config-engine]\n', 'utf8')
+  writeFileSync(join(presetDir, 'standard', 'agent.cordis.yml'),
+    '- id: x\n  name: ./engine/x.mjs\n', 'utf8')
+  writeFileSync(join(presetDir, 'standard', 'prompt-configs', '00-a.yml'), 'id: a\n', 'utf8')
+
+  const value = offSettings(false)
+  apply(makeOffCtx(value), value)
+
+  // 组合改写为空数组而非删除：官方 discovery 对缺 agent.cordis.yml 的目录仍占用
+  // id 并判 broken（挂载抛 agent-preset/invalid、picker 丢弃该行），导致无法新建
+  // 会话与无法切换预设；空组合零行可正常挂载，等价「停止注入」语义。
+  const compositionFile = join(presetDir, 'standard', 'agent.cordis.yml')
+  assert.equal(existsSync(compositionFile), true, 'agent.cordis.yml 应保留（空组合防 broken）')
+  const composition = readFileSync(compositionFile, 'utf8')
+  const rows = composition.split('\n').filter((line) => !line.startsWith('#') && line.trim().length > 0)
+  assert.equal(rows.length > 0 && rows.every((line) => line.trim() === '[]'), true,
+    '组合应为空数组（含注释头），实际为空组合')
+  assert.equal(existsSync(join(presetDir, 'standard', 'prompt-configs')), false, 'prompt-configs 应被清理')
+  // 参数源与预设根保留——绝不删除整个用户预设目录。
+  assert.equal(existsSync(join(presetDir, 'standard', 'preset.yml')), true, 'preset.yml 参数必须保留')
+  // 状态文件已移出预设根；ensurePresetSeed 会幂等补建全部内置预设目录，
+  // 清理必须逐个保留其 preset.yml，不能删预设目录本身（防误删回归）。
+  const dirs = readdirSync(presetDir).filter((name) => !name.startsWith('.')).sort()
+  assert.deepEqual(dirs, ['creative', 'custom', 'minimal', 'ptc', 'standard'].sort())
+  for (const dir of dirs) {
+    assert.equal(existsSync(join(presetDir, dir, 'preset.yml')), true, `${dir} 的 preset.yml 必须保留`)
+    // 每个预设目录的组合都必须是空数组（关闭开关作用于全部预设，不只是激活预设）。
+    const other = readFileSync(join(presetDir, dir, 'agent.cordis.yml'), 'utf8')
+    const otherRows = other.split('\n').filter((line) => !line.startsWith('#') && line.trim().length > 0)
+    assert.equal(otherRows.length > 0 && otherRows.every((line) => line.trim() === '[]'), true,
+      `${dir} 的组合应为空数组`)
+  }
+})
+
+test('writePreset 开启时不受影响：预设目录正常生成', () => {
+  const presetDir = join(home, '.agent-presets')
+  mkdirSync(join(presetDir, 'standard'), { recursive: true })
+  writePluginState({ seeded: true })
+  writeFileSync(join(presetDir, 'standard', 'preset.yml'),
+    'id: standard\nname: Standard\nmodules: [prompt-config-engine]\n', 'utf8')
+
+  const value = offSettings(true)
+  apply(makeOffCtx(value), value)
+
+  assert.equal(existsSync(join(presetDir, 'standard', 'preset.yml')), true, 'writePreset=true 预设参数保留')
+  const rows = readFileSync(join(presetDir, 'standard', 'agent.cordis.yml'), 'utf8')
+    .split('\n').filter((line) => !line.startsWith('#') && line.trim().length > 0)
+  assert.equal(rows.length > 0 && rows.every((line) => line.trim() === '[]'), false,
+    '重新开启后组合应恢复生成（不再停留在关闭期的空组合）')
 })

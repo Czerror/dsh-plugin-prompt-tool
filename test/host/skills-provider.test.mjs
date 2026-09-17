@@ -1,9 +1,24 @@
-import { test } from 'node:test'
+import { after, test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { parseFrontmatter, createCachedSkillsReader, readSkills, mergeSkillDirs, validSkills, SKILL_NAME_RE } from '../../lib/index.mjs'
+
+// Wave 2 合并（2026-09-17 测试归一精简）：合并自 skills-provider.test.mjs（11 条）、
+// profile-skills.test.mjs（3 条）、skills-watcher.test.mjs（1 条）。
+// 安装副本目标固定在 DSH_HOME 技能根（官方 user-dsh 来源）：隔离 DSH_HOME 必须在
+// 动态 import lib 之前生效（lib 在加载期解析技能根），否则会写到真实用户目录。
+const home = mkdtempSync(join(tmpdir(), `prompt-tool-skills-home-${process.pid}-`))
+const previousHome = process.env.DSH_HOME
+process.env.DSH_HOME = home
+const { parseFrontmatter, createCachedSkillsReader, readSkills, mergeSkillDirs, validSkills, SKILL_NAME_RE, resolveSkillsDir } =
+  await import('../../lib/index.mjs')
+after(() => {
+  if (previousHome === undefined) delete process.env.DSH_HOME
+  else process.env.DSH_HOME = previousHome
+  rmSync(home, { recursive: true, force: true })
+})
 
 const makeDir = () => {
   const dir = mkdtempSync(join(tmpdir(), 'prompt-tool-skills-'))
@@ -225,4 +240,120 @@ test('createCachedSkillsReader：内容未变化时复用同一次扫描结果�
   } finally {
     cleanup()
   }
+})
+
+// —— 包内技能安装副本（原 profile-skills.test.mjs，3 条） ——
+// 块作用域隔离：本组自带的 writeSkill 与上面的同名 helper 形态不同（不返回 dir），
+// 复用外层隔离 DSH_HOME 与已导入的 resolveSkillsDir，用例体逐字保留。
+{
+const TARGET_DIR = join(home, 'skills')
+const LEDGER = join(TARGET_DIR, '.prompt-tool-manifest.json')
+
+/** 每个用例独立的包内 skills 源目录（模拟包根下的 skills/）。 */
+function makeSource() {
+  const root = mkdtempSync(join(tmpdir(), `prompt-tool-skills-src-${process.pid}-`))
+  const sourceDir = join(root, 'skills')
+  mkdirSync(sourceDir, { recursive: true })
+  return { sourceDir, cleanup: () => rmSync(root, { recursive: true, force: true }) }
+}
+
+function writeSkill(root, folder, content) {
+  const dir = join(root, folder)
+  mkdirSync(dir, { recursive: true })
+  writeFileSync(join(dir, 'SKILL.md'), content, 'utf8')
+}
+
+function readLedger() {
+  return JSON.parse(readFileSync(LEDGER, 'utf8'))
+}
+
+test('resolveSkillsDir：首启把包内技能复制到 $DSH_HOME/skills 并写内容哈希账本', () => {
+  rmSync(TARGET_DIR, { recursive: true, force: true })
+  const { sourceDir, cleanup } = makeSource()
+  try {
+    writeSkill(sourceDir, 'demo-skill', '---\nname: demo-skill\n---\nV1')
+
+    const targetDir = resolveSkillsDir(sourceDir, () => {})
+    assert.equal(targetDir, TARGET_DIR)
+    assert.equal(readFileSync(join(targetDir, 'demo-skill', 'SKILL.md'), 'utf8'), '---\nname: demo-skill\n---\nV1')
+    const ledger = readLedger()
+    assert.equal(typeof ledger.deployed['demo-skill'], 'string')
+    assert.match(ledger.deployed['demo-skill'], /^[0-9a-f]{64}$/)
+    // 旧版行为（写 $DSH_HOME/profiles/<profile>/skills）必须已经停止。
+    assert.equal(existsSync(join(home, 'profiles')), false)
+  } finally {
+    cleanup()
+  }
+})
+
+test('resolveSkillsDir：包内容未变时不覆盖副本（用户本地改动保留）', () => {
+  rmSync(TARGET_DIR, { recursive: true, force: true })
+  const { sourceDir, cleanup } = makeSource()
+  try {
+    writeSkill(sourceDir, 'demo-skill', '---\nname: demo-skill\n---\nV1')
+    const targetDir = resolveSkillsDir(sourceDir, () => {})
+    writeFileSync(join(targetDir, 'demo-skill', 'SKILL.md'), '---\nname: demo-skill\n---\nLOCAL-EDIT', 'utf8')
+
+    resolveSkillsDir(sourceDir, () => {})
+    assert.equal(readFileSync(join(targetDir, 'demo-skill', 'SKILL.md'), 'utf8'), '---\nname: demo-skill\n---\nLOCAL-EDIT',
+      '包内容未变：本地改动不得被冲掉')
+
+    // 包内容变化 → 整体替换（升级），并更新账本。
+    writeSkill(sourceDir, 'demo-skill', '---\nname: demo-skill\n---\nV2-LONGER')
+    resolveSkillsDir(sourceDir, () => {})
+    assert.equal(readFileSync(join(targetDir, 'demo-skill', 'SKILL.md'), 'utf8'), '---\nname: demo-skill\n---\nV2-LONGER')
+  } finally {
+    cleanup()
+  }
+})
+
+test('resolveSkillsDir：升级保留停用态，用户自建技能目录不动', () => {
+  rmSync(TARGET_DIR, { recursive: true, force: true })
+  const { sourceDir, cleanup } = makeSource()
+  try {
+    writeSkill(sourceDir, 'demo-skill', '---\nname: demo-skill\n---\nV1')
+    const targetDir = resolveSkillsDir(sourceDir, () => {})
+
+    // 用户停用包内技能（磁盘事实）+ 用户自建技能
+    renameSync(join(targetDir, 'demo-skill', 'SKILL.md'), join(targetDir, 'demo-skill', 'SKILL.md.disabled'))
+    writeSkill(targetDir, 'user-custom', '---\nname: user-custom\n---\nKEEP')
+
+    // 包内技能升级
+    writeSkill(sourceDir, 'demo-skill', '---\nname: demo-skill\n---\nV2-LONGER')
+    resolveSkillsDir(sourceDir, () => {})
+
+    assert.equal(existsSync(join(targetDir, 'demo-skill', 'SKILL.md')), false, '升级不得把用户停用的技能悄悄打开')
+    assert.equal(readFileSync(join(targetDir, 'demo-skill', 'SKILL.md.disabled'), 'utf8'), '---\nname: demo-skill\n---\nV2-LONGER')
+    assert.equal(readFileSync(join(targetDir, 'user-custom', 'SKILL.md'), 'utf8'), '---\nname: user-custom\n---\nKEEP')
+  } finally {
+    cleanup()
+  }
+})
+}
+
+// —— watcher（原 skills-watcher.test.mjs，1 条） ——
+// 直接验证源码（watcher 未从 lib/index.mjs 导出），不依赖 build。
+const watcherUrl = new URL('../../src/runtime/skills-watcher.ts', import.meta.url).href
+
+test('watcher：技能目录被删除后释放句柄，进程能正常退出', () => {
+  // Windows 删除被 watch 的目录会持续上报事件（实测每秒十万级）：未关闭句柄时
+  // 防抖计时器被反复重置，进程永不退出（曾让 preset-default-sync 用例挂死）。
+  // 该症状只在进程退出时机上可见，所以用子进程断言「删目录后能自然退出」。
+  const script = `
+    import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+    import { tmpdir } from 'node:os'
+    import { join } from 'node:path'
+    import { createSkillsWatcher } from ${JSON.stringify(watcherUrl)}
+    const dir = mkdtempSync(join(tmpdir(), 'pt-watch-child-'))
+    mkdirSync(join(dir, 'skill-a'), { recursive: true })
+    createSkillsWatcher(() => [dir], () => {}).watch()
+    // 等待 OS 侧注册完成，否则删除动作可能早于 watch 生效而观察不到事件。
+    await new Promise((resolve) => setTimeout(resolve, 500))
+    rmSync(dir, { recursive: true, force: true })
+    // 模拟长活宿主：洪泛期间仍有 ref 计时器时，未关闭的 watcher 会永远重置防抖。
+    await new Promise((resolve) => setTimeout(resolve, 1500))
+  `
+  assert.doesNotThrow(() => {
+    execFileSync(process.execPath, ['--input-type=module', '-e', script], { stdio: 'pipe', timeout: 15000 })
+  }, '技能目录被删除后 watcher 必须释放句柄，否则进程无法退出')
 })

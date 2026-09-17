@@ -1,12 +1,24 @@
+/**
+ * profile 装配契约（来源：test/host/link-profile.test.mjs + test/host/web-surface.test.mjs）。
+ *
+ * 2026-09-17 测试归一精简 Wave 2（host 分片）：两组用例等价合并，用例标题与断言原样保留，
+ * 只把「ensureWebSurface 的 web-app 来源」那条从读 src/web-surface.ts 的静态正则匹配
+ * 升级为行为断言（清单里的误导性 requires 字段不得改变补进 bundles 的 bundle）。
+ */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { ensureWebSurface, scheduleWebSurfaceRepair } from '../../lib/index.mjs'
+import { isolatedHome, tempDir } from '../fixtures/host-harness.mjs'
+import { decideLinkAction, familyPackages, resolveDshHomeArg } from '../../scripts/link-profile.mjs'
 
-const webSurfaceSource = readFileSync(new URL('../../src/web-surface.ts', import.meta.url), 'utf8')
+// 隔离 DSH_HOME 必须在插件入口之前生效：插件在模块加载期解析 DSH_HOME 派生路径。
+// isolatedHome 同时登记 after() 还原原值并清理临时目录（本文件不直接读家目录，
+// 这是 host 分片统一的隔离语义）。
+isolatedHome('pt-profile-assembly-')
+const { ensureWebSurface, scheduleWebSurfaceRepair } = await import('../../lib/index.mjs')
 
 function makeProfile(root, { bundles = ['@deepseek-ai/dsh-base'] } = {}) {
   const profileDir = join(root, 'prompt-tool')
@@ -39,6 +51,40 @@ function effectCtxFor(profileDir) {
 
 const readBundles = (profileDir) =>
   JSON.parse(readFileSync(join(profileDir, 'package.json'), 'utf8')).dsh.profile.bundles
+
+test('decideLinkAction 四个分支', () => {
+  assert.equal(decideLinkAction('missing', '/a', null), 'create')
+  assert.equal(decideLinkAction('symlink', '/a', '/a'), 'keep')
+  assert.equal(decideLinkAction('symlink', '/a', '/b'), 'replace')
+  assert.equal(decideLinkAction('dir', '/a', null), 'skip-report')
+  assert.equal(decideLinkAction('file', '/a', null), 'skip-report')
+})
+
+test('familyPackages 只收 @linxin666 开头的包', () => {
+  const root = mkdtempSync(join(tmpdir(), 'lp-test-'))
+  const mk = (p, name) => {
+    mkdirSync(p, { recursive: true })
+    writeFileSync(join(p, 'package.json'), JSON.stringify({ name }))
+  }
+  mk(join(root, 'packages', 'dsh-web-ui-all'), '@linxin666/dsh-web-ui-all')
+  mk(join(root, 'packages', 'skins', 'skin-center'), '@linxin666/dsh-client-ui-skin-center')
+  mk(join(root, 'packages', 'other'), 'not-family')
+  mkdirSync(join(root, 'packages', 'no-pkg'))
+  const found = familyPackages(root).map((p) => p.name).sort()
+  assert.deepEqual(found, ['dsh-client-ui-skin-center', 'dsh-web-ui-all'])
+  rmSync(root, { recursive: true, force: true })
+})
+
+test('resolveDshHomeArg 优先级与官方 resolveDshHome 一致', () => {
+  // $DSH_HOME 命中
+  assert.equal(resolveDshHomeArg([], { DSH_HOME: 'D:\\AI\\DeepSeek harness\\.dsh' }), 'D:\\AI\\DeepSeek harness\\.dsh')
+  // --dsh-home 最高，且支持 ~ 展开
+  assert.equal(resolveDshHomeArg(['--dsh-home', '~/x'], { DSH_HOME: '/other' }), join(homedir(), 'x'))
+  // 空白 DSH_HOME 视为未设置 → ~/.dsh（不读 HOME）
+  assert.equal(resolveDshHomeArg([], { DSH_HOME: '   ', HOME: 'Z:\\fake' }), join(homedir(), '.dsh'))
+  // 无任何来源 → ~/.dsh
+  assert.equal(resolveDshHomeArg([], {}), join(homedir(), '.dsh'))
+})
 
 test('ensureWebSurface 为当前 profile 补 web-app 并写 .bak 备份', () => {
   const root = join(tmpdir(), `prompt-tool-web-${process.pid}-${Date.now()}`)
@@ -95,11 +141,34 @@ test('ensureWebSurface 在 webServer 已存在时不修改 manifest', () => {
 })
 
 test('ensureWebSurface 的 web-app 来源是文件常量，不再读 package.json#dsh.bundle.requires', () => {
-  assert.match(webSurfaceSource, /const WEB_APP_BUNDLE = '@deepseek-ai\/dsh-web-app'/)
-  // 只看代码，注释里保留“为什么不再读清单”的说明不算违规。
-  const code = webSurfaceSource.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '')
-  assert.doesNotMatch(code, /\.\.\/package\.json/, '不得再读插件自身 package.json 的私有 requires 字段')
-  assert.doesNotMatch(code, /requires/, '官方 DshBundleManifest 只有 patch，代码里不再有 requires 读取路径')
+  // 行为断言（取代原先读 src/web-surface.ts 做正则匹配的静态断言）：清单里放一个误导性的
+  // requires 字段 + 真实 profile 目录；若实现真按 requires 取 bundle，补进 bundles 的就会
+  // 是那个字段的值，而不是文件常量。
+  const root = tempDir('pt-web-requires-')
+  const profileDir = join(root, 'prompt-tool')
+  mkdirSync(profileDir, { recursive: true })
+  const manifest = {
+    name: 'prompt-tool',
+    dsh: {
+      bundle: { requires: ['@deepseek-ai/dsh-misleading-requires'] },
+      profile: { bundles: ['@deepseek-ai/dsh-base'] },
+    },
+  }
+  writeFileSync(join(profileDir, 'package.json'), JSON.stringify(manifest, null, 2) + '\n', 'utf8')
+
+  ensureWebSurface(ctxFor(profileDir, undefined), () => {})
+
+  const bundles = readBundles(profileDir)
+  assert.deepEqual(
+    bundles,
+    ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app'],
+    '补进 bundles 的必须是文件常量 @deepseek-ai/dsh-web-app（base 之后）',
+  )
+  assert.equal(
+    bundles.includes('@deepseek-ai/dsh-misleading-requires'),
+    false,
+    '官方 DshBundleManifest 只有 patch：requires 字段不得再被读取',
+  )
 })
 
 test('scheduleWebSurfaceRepair：延迟到本轮装配结束后补写，插件卸载后不再写盘', async () => {

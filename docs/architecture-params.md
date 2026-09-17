@@ -121,7 +121,7 @@ ST 导入配置显式带 `params.stMacros: true`，赋值模板保留到运行�
 3. 只有跨字段的模型／授权关系才修改 `host/manifest.ts`；普通模块参数不再额外手写双向映射。
 4. 存储：若走 model/subagentModel 顶层段 → `MODEL_SEGMENT_MAP` 加映射（展平/迁移共用）；否则 params 段。
 5. UI：现有模块普通字段自动渲染；新增特殊交互才扩展专用编辑器，禁止增加第二份参数清单。
-6. 测试：`test/host/param-contract.test.mjs` 的 BRIDGE_SAMPLES 加样本值（若为参数桥消费键）。
+6. 测试：`test/host/engine-params-bridge.test.mjs` 的 BRIDGE_SAMPLES 加样本值（若为参数桥消费键）。
 7. `docs/architecture-params.md` 如有语义变更同步；CHANGELOG 记条目。
 
 ## 6. 保存状态机（防保存期间编辑丢失）
@@ -409,5 +409,5 @@ buildSubagentToolParameters(c)     → 模型可见扩展参数 Schema
 
 ## 10. 契约测试
 
-- `test/host/param-contract.test.mjs`：PARAM_KEYS 派生一致性；每个 ENGINE_PARAM_KEYS 键有装配消费；MODEL_SEGMENT_MAP 段目标唯一。
+- `test/host/engine-params-bridge.test.mjs`：PARAM_KEYS 派生一致性；每个 ENGINE_PARAM_KEYS 键有装配消费；MODEL_SEGMENT_MAP 段目标唯一。
 - `test/host/write-preset.test.mjs`：模型参数 patch 生成/留空跳过；空值删键（''/[]，stagePreUnlock=0 保留）；变量文件只读顶层 variables，保留空串与同名键，清空后不回退旧 params。
