@@ -1,5 +1,6 @@
 /** 提示词工具客户端状态模型与稳定默认值（无网络、无 React）。 */
 import { ENGINE_PARAM_DEFINITIONS, ENGINE_PARAM_KEYS, type EngineParamKey, type EngineParams } from '../../shared/engine-params.ts'
+import type { SkillCatalogEntry } from '../../shared/skills.ts'
 import type { EngineMeta, PromptConfigDraft } from '../prompt-tool-types.ts'
 
 /** 宿主默认模型回显（agent-default-model settings：provider/model/reasoningEffort；插件参数未设置 = 继承宿主）。 */
@@ -9,21 +10,8 @@ export interface HostDefaultModel {
   reasoningEffort?: string
 }
 
-export interface SkillCatalogEntry {
-  folder: string
-  name: string
-  description: string
-  valid: boolean
-  /** 来源技能目录绝对路径。 */
-  dir?: string
-  /** 同名标记：多目录存在相同 folder 时 UI 标注。 */
-  duplicate?: boolean
-  issue?: string
-  /** 停用态：技能仍在磁盘上，标记文件为 SKILL.md.disabled（官方与本插件都不提供给模型）。 */
-  disabled?: boolean
-  modelInvocable: boolean
-  userInvocable: boolean
-}
+/** 技能目录条目：与服务端共用同一契约，避免客户端漏读稳定身份与来源字段。 */
+export type { SkillCatalogEntry } from '../../shared/skills.ts'
 
 /** 参数草稿类型从宿主契约派生，只转换 UI 的列表/阶段/深度形态。 */
 type EngineParamDrafts = {

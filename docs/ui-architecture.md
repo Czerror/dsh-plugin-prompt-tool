@@ -275,7 +275,7 @@ workspace-pages.ts 是页面元数据的唯一来源。默认页为 features，�
 | features | 主会话 | 主会话 ModelRouteCard、公共配置、预设人设卡、平铺的 PromptConfigList 与 EngineModuleList（下拉按插入点层级/策略筛选）、tool-pipeline 自定义工具卡、预设包导入预览 |
 | subagent | 子代理 | ModelRouteCard、DelegationToolsCard、与主会话同款的合并创建菜单（能力模块/recipe、按层模板、工具模板、模板变量）、EngineModuleCards 能力卡、CustomToolsCard 自定义工具卡、ConfigListWithTemplates（scope=subagent） |
 | tools | 工具预览 | 顶置统一搜索；当前会话／所选预设两个可折叠分组，预设选择位于分组标题右侧；双列展开详情卡，680px 以下单列 |
-| skills | 技能设置 | 目录与来源、状态筛选、SkillRow、目录引用/导入/排序 |
+| skills | 技能设置 | 受管实体库卡（位置/打开/导入/创建/rank 基数）、状态与来源筛选、SkillRow（完全停用、模型/用户调用、删除）、批量启停与排序 |
 | presets | 预设配置 | 全局生成开关、AGENTS 路径与生成顺序设置、PresetSwitcher 与预设 CRUD |
 | characters | 角色管理 | PNG/JSON 导入、角色卡库、应用/移除/删除与目录打开 |
 
@@ -326,7 +326,7 @@ workspace-pages.ts 是页面元数据的唯一来源。默认页为 features，�
 | 创建意图、菜单、删除/导入确认、拖拽 | 对应 feature | 仍随页面卸载失效；不恢复或重放危险操作 |
 | 保存队列、revision、草稿版本 | save-queue + store | 工作台挂载期 |
 | 大文本和角色卡原文件 | 文件通道/bridge | 不进入 settings descriptor |
-| 技能启停 / 技能顺序与目录 | 磁盘技能根 | 停用 = `SKILL.md.disabled` 标记；顺序/目录/rank 在 `$DSH_HOME/skills/.system/prompt-tool/config.yml`（settings 不承载技能状态） |
+| 技能启停 / 调用策略 / 顺序与 rank | 受管实体库（`$DSH_HOME/skills/.system/skills.yml` + 根链接） | 完全停用 = 取消受管链接（实体与资源保留）；模型/用户调用写 YAML 并同步实体 frontmatter；顺序/rank 写同一份 YAML（settings 不承载技能状态）。契约见 [skills-management.md](skills-management.md) |
 
 不新增 React Context 来广播整个 store。页面通过 usePromptToolFields selector 订阅窄切片，叶子组件接收显式值与 callback。
 
@@ -402,7 +402,7 @@ JSON bridge 的统一上限为 32 MiB；角色卡原始文件流独立限制为 
 6. 参数空字符串/空数组沿用删除键语义；variables 的空字符串仍是合法占位值。详细参数规则见 [architecture-params.md](architecture-params.md)。
 7. 预设写入携带 `expectedPresetId`，读回失败的自定义工具不降级为空列表供覆盖；跨预设旧草稿被拒绝，切换等待参数保存队列。
 8. 切换预设是事务：先保存当前预设草稿，保存未成功（失败/被拒）即取消切换并保留草稿；切换成功后等 settings 写入与随后的静默 load 完成才返回。切换或首次加载完成前，`loadedPresetRef` 拒绝参数、promptConfigs 与模板变量写盘——旧预设字段不会带新 `presetTemplate` 落盘；重新加载成功应用该预设数据后才恢复写入。
-9. 技能写入不进 settings：启停走 `/skill-toggle`（磁盘标记 `SKILL.md` ↔ `SKILL.md.disabled`），顺序/目录/rank 走 `/skills-config`（插件配置文件）；成功后静默 load，`describe` 事实（`skillSwitches` / `skillOrder` / `skillsDirs` / `skillRankBase` / `skillCatalog`）优先于 settings 旧字段。
+9. 技能写入不进 settings：完全停用走 `/skill-toggle`（受管链接）、调用策略走 `/skill-policy`、顺序/rank 走 `/skills-config`，创建/删除/导入走 `/skill-create`、`/skill-delete`、`/skills-import-directory`（契约与所有权见 [skills-management.md](skills-management.md)）。行操作一律携带稳定 id；成功后静默 load，`describe` 事实（`skillOrder` / `skillsRankBase` / `skillCatalog`）优先于 settings 旧字段。技能顺序与 rank 与设置同属一次保存：两个通道的结果分别检查，技能通道失败时技能字段保持 dirty，不因 settings 成功被标记为已保存。
 10. 指令文件正文走独立草稿池（`data/instruction-drafts.ts`），不与预设保存队列混用：预设 debounce 自动保存与预设切换一律不带文件正文；焦点离开指令文件卡（或列表「保存全部」）时提交 dirty 文件，成功只把请求时快照记为基线，冲突/失败保留草稿并显示「重新读取」。会话或工作区切换建立新的指令上下文（`instructions.context.contextId` 变化即新上下文）：旧上下文的迟到响应不覆盖当前视图，旧 `contextId` 的保存被服务端 409 拒绝。
 11. 指令负责人事实来自 `/bootstrap` 的 `instructions.owner.officialInstructions`（服务端从 pre-step 协调器观察结果取，`null` = 尚未观察到，不当冲突处理）：`true` 时文件卡显示「官方指令行仍在 → 独立来源不注入」，不做「已生效」暗示。
 12. 模块列表工具栏下的「独立指令文件来源」总开关复用 ToggleRow，只修改独立策略顶层 `enabled`，默认关闭；单文件开关不隐式开启总来源，也不改变官方负责人。策略不可读时禁用总开关；应答成功前不乐观显示已启用。
@@ -446,7 +446,7 @@ feature 只拥有自己的视图、瞬时状态、领域纯 helper 和 CSS：
 | modules | 引擎能力身份、存在性与参数卡；一项实际装配能力一张卡，消费 `/bootstrap.moduleFacts`（显式模块及仍在运行的历史策略兼容装配），统一列表的行为分类由工作区组合，卡片形态由 ui/EngineModuleCard.tsx 提供 |
 | subagents | 委派工具、实例级工具策略草稿及策略解析预览；不重复嵌入工具面 |
 | tools | 自定义工具编辑/保存、参数模板；独立工具预览页与只读工具面 |
-| skills | 技能目录引用/导入、状态筛选、排序、开关、修复和打开目录 |
+| skills | 受管实体库展示与导入/创建、状态与来源筛选、排序、完全停用开关、模型/用户调用策略、回收站删除与修复；契约见 [skills-management.md](skills-management.md) |
 | presets | 预设生成开关、路径、切换、导入导出、复制/删除/打开 |
 | characters | SillyTavern PNG/JSON 导入、角色卡库存、应用/移除/删除 |
 
@@ -596,7 +596,8 @@ promptConfigs 模块卡展开区按基础信息、注入规则、作用范围、
 | 模型选项与宿主默认同步提示 | model-options + model-sync-notice + session-model-face |
 | 悬浮入口位置与拖动判定 | floating-trigger-position |
 | 锚点浮层几何与窄视口适配 | anchored-popover |
-| 技能状态筛选与标签 | skill-status |
+| 技能状态筛选、标签与技能树 | skill-status |
+| 技能库事务、导入/创建/回收站、迁移 | skills-management（host 侧契约文档；测试见 `test/host/skills-*.test.mjs`） |
 | 子代理策略草稿 | subagent-policy-draft |
 | 过滤与新建严格分离（§5.2.1 规则） | scope-create-separation |
 | 能力卡、工具预览、自定义工具编辑 | engine-module-cards + tools-preview + custom-tool-editor |

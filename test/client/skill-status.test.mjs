@@ -3,7 +3,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { PROMPT_TOOL_DICTS } from '../../src/client/locales.ts'
-import { filterSkillCatalog, matchesSkillStatus, skillStatusLabel, skillStatusTone } from '../../src/client/features/skills/skill-status.ts'
+import { buildSkillTree, filterSkillCatalog, matchesSkillStatus, skillIdOf, skillParentOf, skillStatusLabel, skillStatusTone } from '../../src/client/features/skills/skill-status.ts'
 
 /** 中文命名空间翻译（mock 官方 Translate 的 {name} 插值，键缺失即失败）。 */
 const zh = (key, params) => {
@@ -79,6 +79,46 @@ for (const [name, run] of [
       filterSkillCatalog(nested, (item) => item.name === 'deep-hit').map((item) => item.folder),
       ['a', 'a/b', 'a/b/c'],
     )
+  }],
+  ['技能树挂到最近存在的技能祖先，缺祖先的嵌套项作为根行保留', () => {
+    // 中间目录没有 SKILL.md：子技能仍要展示，不能因为直接父技能缺失而消失。
+    const withGap = [
+      skill({ folder: 'parent', name: 'parent' }),
+      skill({ folder: 'parent/resources/child', name: 'child' }),
+    ]
+    assert.deepEqual(
+      buildSkillTree(withGap).rows.map((row) => [row.skill.folder, row.depth]),
+      [['parent', 0], ['parent/resources/child', 1]],
+    )
+    // 完全没有技能祖先：作为根行参与排序与拖拽，而不是被丢弃。
+    const orphan = [skill({ folder: 'resources/child', name: 'child' })]
+    assert.deepEqual(buildSkillTree(orphan).rows.map((row) => [row.skill.folder, row.depth]), [['resources/child', 0]])
+    assert.deepEqual(buildSkillTree(orphan).primary.map((item) => item.folder), ['resources/child'])
+    // 服务端 parentId 优先于路径前缀：身份可以不是路径关系。
+    const byParent = [
+      skill({ id: 'group', folder: 'group', name: 'group' }),
+      skill({ id: 'shared', folder: 'shared', name: 'shared', parentId: 'group' }),
+    ]
+    assert.deepEqual(
+      buildSkillTree(byParent).rows.map((row) => [row.skill.folder, row.depth]),
+      [['group', 0], ['shared', 1]],
+    )
+    // 祖先链与根行划分：根行按传入顺序展开，子项紧随其父。
+    const tree = buildSkillTree([
+      skill({ folder: 'alpha', name: 'alpha' }),
+      skill({ folder: 'alpha/sub', name: 'sub' }),
+      skill({ folder: 'beta', name: 'beta' }),
+    ])
+    assert.deepEqual(tree.rows.map((row) => row.skill.folder), ['alpha', 'alpha/sub', 'beta'])
+    assert.deepEqual(tree.primary.map((item) => item.folder), ['alpha', 'beta'])
+  }],
+  ['技能身份取服务端 id，缺失时回退 folder', () => {
+    assert.equal(skillIdOf(skill({ id: 'imported/demo', folder: 'demo' })), 'imported/demo')
+    assert.equal(skillIdOf(skill()), 'demo-skill')
+    const ids = new Set(['a', 'a/b'])
+    // parentId 指向自身时不构成父子关系，避免自环丢行。
+    assert.equal(skillParentOf(skill({ id: 'a', folder: 'a', parentId: 'a' }), ids), undefined)
+    assert.equal(skillParentOf(skill({ id: 'a/b', folder: 'a/b', parentId: 'a' }), ids), 'a')
   }],
 ]) {
   test(name, run)

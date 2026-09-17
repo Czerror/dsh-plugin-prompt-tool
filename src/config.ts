@@ -3,6 +3,8 @@ import z from '@deepseek-ai/schemastery'
 import type { PromptConfigSpec } from './host/prompt-configs.ts'
 import { DEFAULT_PRESET_ORDER } from './host/paths.ts'
 import type { PresetWriterParams } from './shared/engine-params.ts'
+import type { SkillCatalogEntry } from './shared/skills.ts'
+export type { SkillCatalogEntry } from './shared/skills.ts'
 
 export const NS = 'prompt-tool' as const
 
@@ -30,6 +32,12 @@ export const Config: z<Config> = z.object({
 })
 
 export interface SkillEntry {
+  id?: string
+  source?: string
+  entityPath?: string
+  linkPath?: string
+  parentId?: string
+  managed?: boolean
   /** 来源技能目录的绝对路径（多目录合并后用于修复定位与归属展示）。 */
   dir: string
   folder: string
@@ -45,31 +53,11 @@ export interface SkillEntry {
   issue?: string
   /** 通过符号链接/junction 挂入的目录（删除类操作需谨慎）。 */
   linked?: boolean
-  /** 停用态（磁盘上标记文件带 .disabled 后缀）：只进管理界面，不注册给模型。 */
+  /** 停用态（受管实体未暴露链接）：只进管理界面，不注册给模型。 */
   disabled?: boolean
   /** 官方调用策略：disable-model-invocation: true 时模型不可调用。 */
   modelInvocable: boolean
   /** 官方调用策略：user-invocable: false 时用户不可调用。 */
-  userInvocable: boolean
-}
-
-export interface SkillCatalogEntry {
-  folder: string
-  name: string
-  description: string
-  /** 是否通过官方 dsh-skill 候选校验；false 时 UI 灰显并展示 issue。 */
-  valid: boolean
-  /** 来源技能目录绝对路径（多目录管理：修复定位 / 归属展示 / 目录计数）。 */
-  dir?: string
-  /** 同名标记：多个目录存在相同 folder 时全部保留，UI 标注同名。 */
-  duplicate?: boolean
-  /** invalid 条目的原因。 */
-  issue?: string
-  /** 通过符号链接/junction 挂入的目录（删除类操作需谨慎）。 */
-  linked?: boolean
-  /** 停用态：技能实体仍在该目录，标记文件为 SKILL.md.disabled。 */
-  disabled?: boolean
-  modelInvocable: boolean
   userInvocable: boolean
 }
 

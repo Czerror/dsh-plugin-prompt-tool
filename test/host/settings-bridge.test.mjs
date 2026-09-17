@@ -3,12 +3,13 @@ import assert from 'node:assert/strict'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { Readable } from 'node:stream'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { parse as parseYaml } from 'yaml'
 
 const bridgeHome = mkdtempSync(join(tmpdir(), 'pt-settings-bridge-home-'))
 process.env.DSH_HOME = bridgeHome
 const { BRIDGE_ENDPOINTS, MAX_BRIDGE_BODY_BYTES, MAX_CHARACTER_CARD_STREAM_BYTES, registerSettingsBridge } = await import('../../lib/index.mjs')
+const { updateSkillsLibrary } = await import('../../src/host/skills-library.ts')
 after(() => rmSync(bridgeHome, { recursive: true, force: true }))
 
 const PREFIX = '/api/prompt-tool/settings'
@@ -144,7 +145,7 @@ test('settings bridge /skills-import 写入技能文件并触发目录刷新回�
     const payload = JSON.parse(res.body)
     assert.equal(payload.ok, true)
     assert.equal(payload.value.count, 1)
-    assert.equal(readFileSync(join(dir, 'demo', 'SKILL.md'), 'utf8'), '---\nname: demo\ndescription: demo\n---\n')
+    assert.equal(readFileSync(join(dir, '.system', 'bundle', 'demo', 'SKILL.md'), 'utf8'), '---\nname: demo\ndescription: demo\n---\n')
     assert.equal(refreshes, 1)
   } finally {
     rmSync(dir, { recursive: true, force: true })
@@ -1099,4 +1100,117 @@ test('settings bridge /persona 非法载荷 400，complete 与提示词配置「
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
+})
+
+/** 受管技能实体库根：新模型下所有写入都落在 <root>/.system。 */
+function makeSkillsRoot() {
+  const root = mkdtempSync(join(tmpdir(), `pt-skills-root-${process.pid}-`))
+  mkdirSync(join(root, '.system'), { recursive: true })
+  return root
+}
+
+function skillsPost(handlers, endpoint) {
+  return async (payload) => {
+    const res = fakeRes()
+    await handlers.get(PREFIX + BRIDGE_ENDPOINTS[endpoint])(fakeReq({
+      [Symbol.asyncIterator]: async function* () { yield Buffer.from(JSON.stringify(payload)) },
+    }), res)
+    return { status: res.status, body: JSON.parse(res.body) }
+  }
+}
+
+test('settings bridge 技能端点：创建 → 调用策略 → 回收站删除都落在受管实体库', async () => {
+  const root = makeSkillsRoot()
+  let refreshes = 0
+  try {
+    const { ctx, handlers } = makeHarness()
+    registerSettingsBridge(ctx, 'prompt-tool', () => ({ available: true, providers: [] }),
+      () => ({ activeSkillsDirs: [root], skillCatalog: [] }), () => '', () => { refreshes += 1 })
+    const post = skillsPost(handlers, 'skillCreate')
+    const postPolicy = skillsPost(handlers, 'skillPolicy')
+    const postDelete = skillsPost(handlers, 'skillDelete')
+    const config = () => parseYaml(readFileSync(join(root, '.system', 'skills.yml'), 'utf8'))
+
+    const created = await post({ name: 'demo-skill', description: 'Demo', content: '# demo\n' })
+    assert.equal(created.status, 200)
+    assert.equal(created.body.value.id, 'demo-skill')
+    const marker = join(root, '.system', 'demo-skill', 'SKILL.md')
+    assert.match(readFileSync(marker, 'utf8'), /name: demo-skill/)
+    assert.equal(statSync(join(root, 'demo-skill')).isDirectory(), true)
+    assert.equal(lstatSync(join(root, 'demo-skill')).isSymbolicLink(), true, '启用技能通过根链接暴露给官方 provider')
+    assert.equal(config().skills['demo-skill'].enabled, true)
+    // 非法创建：名称不是 kebab-case 时先于任何写盘拒绝。
+    assert.equal((await post({ name: 'Bad Name', description: 'x', content: '' })).status, 400)
+
+    const policy = await postPolicy({ id: 'demo-skill', policy: { modelInvocable: false } })
+    assert.equal(policy.status, 200, policy.body.message)
+    assert.match(readFileSync(marker, 'utf8'), /disable-model-invocation: true/, 'YAML 为准并同步实体 frontmatter')
+    assert.equal(config().skills['demo-skill'].modelInvocable, false)
+    assert.equal((await postPolicy({ id: 'demo-skill', policy: { modelInvocable: 'yes' } })).status, 400)
+    assert.equal((await postPolicy({ id: 'missing', policy: { enabled: false } })).status, 409)
+    assert.match(readFileSync(marker, 'utf8'), /user-invocable: true/, '两个调用策略字段都同步为 YAML 值，避免两边成为独立来源')
+
+    const removed = await postDelete({ id: 'demo-skill' })
+    assert.equal(removed.status, 200, removed.body.message)
+    assert.equal(existsSync(marker), false, '标记文件移入回收站')
+    const trash = readdirSync(join(root, '.system', '.trash'))
+    assert.equal(trash.length, 1)
+    assert.equal(existsSync(join(root, '.system', '.trash', trash[0], 'SKILL.md')), true)
+    assert.equal(existsSync(join(root, '.system', 'demo-skill')), true, '实体目录保留供人工恢复')
+    assert.deepEqual(config().skills ?? {}, {})
+    assert.equal((await postDelete({ id: '../escape' })).status, 400)
+    assert.equal(refreshes, 3, '创建 / 策略 / 删除各触发一次技能刷新')
+  } finally { rmSync(root, { recursive: true, force: true }) }
+})
+
+test('settings bridge /skills-import-directory 把宿主机目录复制进实体库并保持调用策略', async () => {
+  const root = makeSkillsRoot()
+  const source = mkdtempSync(join(tmpdir(), 'pt-skills-source-'))
+  try {
+    writeFileSync(join(source, 'SKILL.md'), '---\nname: imported\ndescription: imported skill\nuser-invocable: false\n---\nbody\n', 'utf8')
+    mkdirSync(join(source, 'references'))
+    writeFileSync(join(source, 'references', 'doc.md'), 'doc', 'utf8')
+    const { ctx, handlers } = makeHarness()
+    registerSettingsBridge(ctx, 'prompt-tool', () => ({ available: true, providers: [] }),
+      () => ({ activeSkillsDirs: [root], skillCatalog: [] }), () => '')
+    const post = skillsPost(handlers, 'skillsImportDirectory')
+    const result = await post({ path: source })
+    assert.equal(result.status, 200, result.body.message)
+    const name = source.split(/[\\/]/).at(-1)
+    assert.equal(result.body.value.count, 2)
+    assert.equal(readFileSync(join(root, '.system', name, 'references', 'doc.md'), 'utf8'), 'doc', '资源随技能包一起复制')
+    const record = parseYaml(readFileSync(join(root, '.system', 'skills.yml'), 'utf8')).skills[name]
+    assert.equal(record.userInvocable, false, 'frontmatter 调用策略进入 YAML')
+    assert.equal(lstatSync(join(root, name)).isSymbolicLink(), true, '导入默认启用并建立根链接')
+    assert.equal((await post({ path: join(root, 'missing-dir') })).status, 400)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+    rmSync(source, { recursive: true, force: true })
+  }
+})
+
+test('settings bridge /skills-config 只写顺序与 rank 基数，目录引用不再生效', async () => {
+  const root = makeSkillsRoot()
+  try {
+    const { ctx, handlers } = makeHarness()
+    const seen = []
+    registerSettingsBridge(ctx, 'prompt-tool', () => ({ available: true, providers: [] }),
+      () => ({
+        activeSkillsDirs: [root],
+        skillCatalog: [],
+        // 复刻 index.ts 的接线：受管库是唯一写入者（库层自己清空 dirs）。
+        patchSkillsConfig: (patch) => {
+          seen.push(patch)
+          return updateSkillsLibrary(root, (config) => ({ ...config, ...patch }))
+        },
+      }), () => '')
+    const post = skillsPost(handlers, 'skillsConfig')
+    const result = await post({ dirs: ['D:/elsewhere'], order: ['alpha'], rankBase: 300 })
+    assert.equal(result.status, 200, result.body.message)
+    assert.deepEqual(seen, [{ dirs: ['D:/elsewhere'], order: ['alpha'], rankBase: 300 }], '端点原样委托并返回真实生效值')
+    const parsed = parseYaml(readFileSync(join(root, '.system', 'skills.yml'), 'utf8'))
+    assert.equal(parsed.dirs, undefined, '外部目录不再是第二发现根')
+    assert.deepEqual(parsed.order, ['alpha'])
+    assert.equal(parsed.rankBase, 300)
+  } finally { rmSync(root, { recursive: true, force: true }) }
 })

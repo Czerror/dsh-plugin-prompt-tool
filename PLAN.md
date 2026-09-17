@@ -1,107 +1,119 @@
-# 测试归一精简（B 档）执行计划
+# 技能实体库与链接管理实施计划
 
 ## 授权与基线
 
-- 用户授权：2026-09-17 在「测试项目过多是否可以归一精简」评估后选择 **B 档（标准整理）**，并批准按 **engine → host → client** 三批执行；每批独立验证与提交，可随时叫停。
-- 基线：`dev@f669c501791e3986ee9017b474b92fe05a5c0fd4`，开始时工作树干净。
-- [旧 PLAN 原文归档](.scratch/prompt-tool-framework/archive/plan-ui-v2-f669c50-20260917.md)，Git blob 与基线 `f669c50:PLAN.md` 一致：`faad8853564782326eddc665d7b7cd563a47e92d`。
-- 参考项目（只读评估，结论见下）：`D:\AI\GitHub\dsh-tavern`、`D:\AI\GitHub\dsh-web`、`D:\AI\GitHub\dsh-mnemon`。
+- 用户在完成技能管理与 dsh-web 对比审查后明确要求「执行该方案」（2026-09-17）。
+- 基线：dev@a5f737f67e471fc62c8563921842fa518a9e2562，工作树干净。
+- [旧 PLAN 原文归档](.scratch/prompt-tool-framework/archive/plan-tests-a5f737f-20260917.md)；归档必须与基线 PLAN 的 Git blob 一致。
+- 审查证据：本项目 13 项问题（10 项行为复现、3 项调用链确认）；dsh-web 4 项反例；官方 provider 的隐藏/链接/取消链接 3 态探针通过。临时报告：D:/AI/workspase/_temp/skills-management-review-20260917.md。
 
-## 目标与不变量
+## 用户决策与最终行为
 
-| 指标 | 现状 | 目标 |
-|---|---|---|
-| `*.test.mjs` 文件 | 135 | **88** |
-| 运行用例 | 967 | **967（不减）** |
-| engine / host / client+shared+根 | 25 / 60 / 50 | 17 / 36 / 35 |
-| `test/types/*.ts` 编译期契约 | 2 | 2（不动） |
+1. 技能实体集中于 $DSH_HOME/skills/.system/；该根 skills.yml 是启停、排序、模型/用户调用权限的统一管理来源。
+2. 上层 skills 仅以目录链接暴露已启用条目；Windows 使用 junction。完全停用只取消本插件拥有的链接，保留实体与资源，不再持续使用 SKILL.md.disabled。
+3. YAML 同步实体 SKILL.md 的 disable-model-invocation/user-invocable；外部修改这两个字段时按 YAML 恢复并提示一次偏差，正文/未知字段/注释保持。
+4. 保留嵌套、批量启停、排序与 rank；每个独立嵌套技能有自己的启用链接。管理身份与官方 name 分开。
+5. 借鉴模型调用开关、来源筛选、创建与回收站删除；所有受管实体仍集中在 .system。外部目录作为导入来源，不成为绕过启停的第二发现根。
+6. 本轮授权代码实现与当前技能目录的可回滚迁移；不改 DSH 源码、不重启服务、不清理未知用户文件，不操作 main 或 PR。
+7. 本轮特定 .system 技能实体/YAML 写入是用户明确指定的范围；不扩大到官方预设 system 或其他 .system 所有者。旧的「不迁移」「仅标记改名」文档由本轮行为替换。
+8. 用户进一步明确：不再管理技能版本，由用户显式导入覆盖或手动更新；取消包内技能哈希账本和自动更新/恢复，不以包内内容回滚用户修改。迁移的完整性校验与失败恢复只保护原文件，不构成技能版本库。
+9. 用户明确废弃 .disabled 方案：普通读取、导入与迁移均不识别、不转换、不创建此标记；仅支持标准 SKILL.md。存在旧标记时要求用户先自行整理，不静默导入成已启用状态。
+10. 用户随后授权：交付前单独手动恢复现有 .disabled 标记为 SKILL.md；此操作不进入产品兼容代码。先完整盘点并核对目标冲突，两份并存时不覆盖；恢复后再验证受管状态。
 
-不变量（每批都必须成立）：
+## 范围与不变量
 
-1. **覆盖不减**：表驱动只压缩重复断言壳，每条原用例必须仍以一条用例存在；不得删除或弱化断言。
-2. **NEVER-TOUCH 零改动**：指令文件读写（授权/白名单/版本冲突/读取失败）、导入预览与回滚、路径穿越、大小上限、桥端点安全面、晋升门控/epoch/disposer、子代理策略、子进程脚手架文件，整文件不参与合并。
-3. **不新增测试框架或依赖**：继续用 Node 内置 test runner；不引入 vitest / jsdom / happy-dom / Testing Library（`AGENTS.md`「优先使用 Node 内置 test runner」、`docs/ui-architecture.md` §12.1）。
-4. **每批门禁**：`pnpm typecheck`、`pnpm lint`、`pnpm test`、`pnpm build`、`git diff --check` 全绿，且用例总数不少于上一批，才提交推送 `origin/dev`。
-5. 测试仍在隔离 cwd（`D:\AI\workspase\_temp`）执行，临时目录自建自清。
+- 文件夹导入、旧根迁移、单项修复统一落到实体库；包内技能仅作为用户可导入资源，不再自动同步。显式导入可覆盖同一受管实体，未确认归属的其他目录仍拒绝覆盖；不增加依赖，不新增通用文件管理器或第二注册表。
+- 账本外同名用户内容不被覆盖；导入不写保留命名空间；取消链接前同时核对路径与目标；实体/标记的符号链接不得绕过所有权边界。
+- YAML 使用 Document API；语法/类型/别名错误返回明确失败，逐技能错误不影响健康项。
+- YAML、frontmatter、链接更新串行并可回滚；失败不把 UI 草稿标为已保存；缺失/损坏配置不被默认值覆盖。
+- 迁移先预检与备份，逐项切换并验证；保留回滚记录与用户原内容。artifacts、其他插件配置、未经所有权确认的路径不迁移。
+- watcher 覆盖实体、YAML 与链接，变更先刷新缓存再发布；注册按 name 确定稳定优先级，管理按独立 id。
+- 所有测试在 D:/AI/workspase/_temp；临时 DSH_HOME；不重启或终止真实服务。
 
-## 参考项目结论（已评估，写入本计划以免重复调研）
+## 依赖与规划门禁
 
-| 借鉴 | 出处 | 落地 |
-|---|---|---|
-| 一个模块/主题一个文件，大文件是常态 | dsh-mnemon（`subagent.spec.ts` 83 用例/2526 行）、dsh-tavern（`inline-message-renderer` 81 用例/2238 行）、dsh-web（`host-ledger.spec.ts` 34 用例/724 行） | 合并单位=主题，不按行数设上限 |
-| harness 集中在 fixtures | dsh-tavern `tests/fixtures/helper-*.mjs`（30+）、dsh-mnemon `scripts/fixtures/` | 新增 `test/fixtures/host-harness.mjs`、`test/client/support/*.mjs`，不新建顶层 helpers 目录 |
-| 验证 lane 分离 | dsh-mnemon `verify:build` / `verify:headless` / `verify:package` / `verify:docs` | 沿用既有 `verify:host` 与 `scripts/run-tests.mjs`，不新建 lane |
-| 浏览器/e2e 与单测分离 | dsh-web `tests/e2e/mount.e2e.ts` + 独立 playwright 配置 | 8 个 Edge smoke 合为 4 个并按 `*-smoke.test.mjs` 命名，仍留在 `node:test` 内 |
-| **不采用** vitest / jsdom / RTL / 每包 tests/ | dsh-web、dsh-mnemon | 单包集中 `test/{engine,host,client}`，SSR 渲染 + Edge smoke 替代 jsdom |
+- 调用闭包：skills-config/skill-toggle/profile-skills/skills-import → index.ts provider 与 watcher → settings-bridge/shared bridge → client store/SkillsPage/SkillRow → host/shared/client tests。
+- 以 rg 全调用点复核。dev-expert 图谱工具固定输出 .ai-memory/knowledge-graph，违反仓库「流程产物不放 .ai-memory」规则，故不用该生成器，不扩大修改技能工具。
+- 已检查目标文件与工作树；无新库或数据库；所有写盘/链接操作安排冲突、回滚和边界反例；真实迁移在代码门禁通过后执行。
+- YAML 与已安装宿主契约为权威；不依据模型措辞验收。
 
-## Wave 拆解
+## Wave 1：存储与契约
 
-### Wave 1：engine 合并（25 → 17）[✔]
+<task type="auto">
+  <name>T1：共享技能状态与实体库事务</name>
+  <files>src/shared/skills.ts、src/host/skills-config.ts、src/host/skills-library.ts、src/host/skill-toggle.ts、test/host/skills-library.test.mjs、test/host/skills-config.test.mjs、test/host/skill-toggle.test.mjs</files>
+  <action>定义稳定技能身份、相对实体路径、链接名和调用策略；在 .system/skills.yml 读写；实现受管链接启停与官方字段同步、互斥/冲突/失败回滚、偏差修复，拒绝未知目标。</action>
+  <verify>真实临时文件系统：隐藏实体、启停幂等、策略同步且保留正文/注释、未知链接/目录保护、坏 YAML 和失败回滚、同名冲突。</verify>
+  <security>验证路径白名单、realpath/lstat、保留目录、参数类型/上限；删除仅作用于已确认的链接，不能递归删除实体。</security>
+  <done>核心 API 与最小确定性回归通过。</done>
+</task>
 
-7 个合并组，全部为等价搬迁；engine 分片静态断言升级为 0（25 个文件本就走真实模块行为断言）。
+<task type="auto">
+  <name>T2：导入、迁移及回收站，移除包自动同步</name>
+  <files>src/host/skills-import.ts、src/profile-skills.ts、src/host/skills-migration.ts、src/host/skills-actions.ts、scripts/migrate-skills.mjs、test/host/skills-import.test.mjs、test/host/skills-migration.test.mjs</files>
+  <action>复用 T1 API；单技能与容器导入保留正确布局；复制来源进隐藏实体库，拒绝覆盖未拥有目录；创建与回收站统一事务；旧根迁移支持 preview/apply/rollback，内容校验、备份清单和幂等重试。</action>
+  <verify>导入→扫描→启停→资源加载；同名用户文件不变；预览零写入、迁移后资源哈希不变、取消链接保留实体、回滚复原、嵌套技能与旧停用态。</verify>
+  <security>拒绝 .system/账本/上跳/绝对上传路径；迁移先验证绝对目标与所有权，保留备份，不清理未知文件。</security>
+  <done>所有资产入口只产生受管实体与状态；可执行迁移/回滚探针通过。</done>
+</task>
 
-| 组 | 成员 → 目标 | 用例 |
-|---|---|---|
-| E1-1 | anchor-match → `st-world-book.test.mjs` | 26+7=33 |
-| E1-2 | meta → `prompt-config-engine.test.mjs` | 62+1=63 |
-| E1-3 | tool-git-bash → `preset-engine-modules.test.mjs` | 21+2=23 |
-| E2-1 | st-macros + st-render → 新建 `st-render-macros.test.mjs`（表驱动压缩） | 22 |
-| E2-2 | session-vars → `interpolate.test.mjs`（表驱动 16→≈10） | 17 |
-| E3-1 | skill-search + tool-modules → 新建 `tool-module-mount.test.mjs` | 12 |
-| E3-2 | anchor-turn + deliberation-gate + progress-reminder → 新建 `injection-gates.test.mjs` | 10 |
+## Wave 2：宿主与界面（依赖 Wave 1 的共享契约）
 
-- 验收：engine 目录 17 个 `*.test.mjs`；engine 运行用例 275 条不减；全量门禁绿。
-- 调整说明：原方案把 helper 抽取放在批 1；实际以「helper 主要服务 host 分片」为由移到 Wave 2，使 Wave 1 成为**零新增抽象**的纯合并，便于独立验证与回滚。
+<task type="auto">
+  <name>T3：注册、watcher、bridge 与异常隔离</name>
+  <files>src/index.ts、src/runtime/settings-bridge.ts、src/runtime/skills-provider.ts、src/runtime/skills-parse.ts、src/runtime/skills-watcher.ts、src/runtime/skill-fix.ts、src/shared/bridge-contract.ts、src/config.ts、对应 host/shared tests</files>
+  <action>入口仅编排实体库；管理目录包含停用/无效项，模型 provider 仅按已启用链接/有效状态注册；按官方 name 去重，移除客户端任意 dir 授权；接通状态、策略、导入目录、创建、删除端点；逐文件隔离 YAML 错误与修复结果验证。</action>
+  <verify>真实 provider/bridge 的状态与路径行为；watcher 冷热重挂、配置与实体变更、disposer；审查 F3/F5/F6/F10/F12/F13 的反例转绿。</verify>
+  <security>loopback/Host/Origin/载荷上限与统一错误保持；写入只命中受管 id，不能把 .system 当模型自定义扫描根。</security>
+  <done>宿主所有调用链闭合且相关契约测试通过。</done>
+</task>
 
-### Wave 2：host 合并（60 → 36）[✔]
+<task type="auto">
+  <name>T4：技能管理页面与保存语义</name>
+  <files>src/client/features/skills/*、src/client/data/use-prompt-tool-store.ts、src/client/data/prompt-tool-fields.ts、src/client/data/prompt-tool-view.ts、相关 locales、client tests</files>
+  <action>使用稳定 id；完整展示缺祖先的嵌套项；完全停用/模型调用/用户调用分别操作；提供来源筛选、创建、回收站与目录导入；等待技能保存成功才更新保存基线。</action>
+  <verify>真实 SSR/store 回调断言正确目标、调用策略、嵌套渲染、创建/删除载荷、延迟/失败保存；保持既有技能管理与键盘交互。</verify>
+  <security>不由客户端拼任意写入路径；复用 bridge 与现有 UI 组件，正文不经 settings，失败保留草稿。</security>
+  <done>新交互可用，审查 F4/F8/F9 的行为回归通过。</done>
+</task>
 
-- 新建 `test/fixtures/host-harness.mjs`：`isolatedHome` / `tempDir` / `fakeReq`·`fakeRes` / `bridgeHarness` / `readBridge` / `seedPreset` / `pluginCtx` / `expectUnchanged` / `readPresetYaml`；re-export 既有 `fixtures/preset-template.mjs` 以免改 7 处 import。
-- 13 个合并组：preset-render-variants、preset-prompt-configs、composition-library、engine-params-bridge、preset-capabilities、subagent-tool-policy、pre-step-injection、pre-step-wiring、skills-provider、sillytavern-convert、model-routing、profile-assembly、preset-content-assets（`write-preset` 保持独立，见下偏差记录）。
-- **偏差记录（2026-09-17）**：`writepreset-off.test.mjs` 曾判定不可与 `write-preset.test.mjs` 共用同一 DSH_HOME（`write-preset` 顶层 `installFixturePresetInHome(home)` 会写入 `fixture`，而 `writepreset-off` 断言预设根精确等于五个内置预设，探针实测 `dirs=["fixture","standard"]`），host 目标一度改为 37。**最终处置**：该组以「复原前置条件」方式合并成功 —— 合并后的用例在开头 `rmSync(presetDir)` 清空预设根、重建 `standard` 并写入 `{ seeded: true }` 状态，从而恢复原文件「全新 HOME」的语义，而 `assert.deepEqual(dirs, ['creative','custom','minimal','ptc','standard'].sort())` 等断言**逐字未改**。故 host 目标回到 **36**，总计 **88**。
-- 4 个 KEEP（st-preview-report / tui / version-contract / preset-default-sync）+ **18 个整文件 NEVER-TOUCH**。
-- 2 条静态断言升级为行为断言：`models` 的 `llm/adapters-updated` 接线、`web-surface` 的 web-app 常量来源。
-- 2 处文档引用同步：`docs/architecture-params.md`（param-contract → engine-params-bridge）、`docs/SillyTavern.md`（st-compatibility → sillytavern-convert）。
-- 技术风险与要求：40+ 文件在模块顶层设 `process.env.DSH_HOME`，合并后每文件只能设一次，必须由 helper 统一设置并在 `after()` 还原原值；子进程脚手架（rematerialize / rebuild-composition / official-preset / skills-watcher）原样搬运。
+## Wave 3：验证、迁移与交付
 
-### Wave 3：client 合并（50 → 35）[✔]
+<task type="auto">
+  <name>T5：集成门禁与文档</name>
+  <files>README.md、docs/ui-architecture.md、docs/skills-management.md、PLAN.md、对应集成测试</files>
+  <action>同步权威行为与迁移命令；复核并行产出；运行 typecheck/lint/test/build/diff --check；以实际官方 provider 验证链接、策略与资源。</action>
+  <verify>完整门禁全通过，定向缺陷反例转绿；无未声明生成物/依赖/源码越界；报告所有未验证限制。</verify>
+  <security>安装副本所有权、保留路径、失败回滚与缓存隔离经过测试；未知用户文件不变。</security>
+  <done>集成可交付，所有必要行为与文档命令可验证。</done>
+</task>
 
-- 结构契约 4→1（`client-structure-contract`）、接线契约 5→1（`client-wiring-contract`）、CSS 断言并入 `style-ownership`、编辑态 3→1（`editor-state`）、`hint-tooltip` 2→1、根目录 4→1（`host-publish-contract`）。
-- 8 个 Edge smoke → 4（`ui-v2-page-smoke` / `import-smoke` / `module-policy-smoke` / `real-css-smoke`），先合 import 与 module+policy 两组，再合 ui-v2 三合一；每个成员的高风险流程逐条保留。
-- SSR 升级（用已有 6 个文件的 `react-dom/server` 范式）：`workspace-navigation`、`menu-select` 用例 1/3、`prompt-config-form-layout` 用例 1/2/3/5、`template-picker-anchor`、`review-fixes` 4 条、`scope-create-separation` 第 11 条；portal / 真实 CSS / 真实鼠标与焦点保留 Edge。
-- 保留独立：`style-ownership`、`locale-contract`、禁令类断言（无原生 select、无 `title`/`data-tip`、无宿主 DOM 选择器、依赖方向）。
-- **派发粒度**（实证教训：Wave 2 单代理 10-14 文件的粒度会让代理中途停滞，Wave 1 单代理 2-3 文件的粒度一次成功）：
+<task type="auto">
+  <name>T6：真实技能迁移、回滚证据与提交</name>
+  <files>D:/AI/DeepSeek harness/.dsh/skills 中预检确认的技能目录及本插件状态；PLAN.md；本地 daily.md</files>
+  <action>只读预览当前顶层与嵌套技能，核对预期哈希/冲突；使用已通过测试的迁移入口执行并保留备份/回滚记录；只读验证实际目录、官方发现与资源；中文 Conventional Commit 推送 origin/dev。</action>
+  <verify>迁移前后技能实体/资源内容与旧调用策略一致；启用链接与 YAML 一致，非技能/未知配置不变；Git 暂存只含本轮文件，远程 dev 推送成功。</verify>
+  <security>不停止/重启 DSH；不清理唯一备份；真实迁移前核验最终绝对路径；提交不含 .ai-memory 或真实 DSH 数据。</security>
+  <done>真实迁移结果与可回滚路径明确，提交 SHA/推送/重载要求完成交付。</done>
+</task>
 
-| 小组 | 内容 | 产出 |
-|---|---|---|
-| C1a | `ui-boundary` + `feature-boundary` + `structure-baseline` + `no-host-dom` → `client-structure-contract`；CSS 断言并入 `style-ownership` | 结构契约 8 条 |
-| C1b | `menu-select` / `prompt-config-form-layout` / `template-picker-anchor` / `workspace-navigation` / `dialog-focus`(2 条) / `review-fixes`(4 条) 的接线断言 → `client-wiring-contract`，其中 4-5 处改 SSR 渲染断言 | 接线契约约 12 条 |
-| C2a | `dirty-state` + `save-queue` + `prompt-tool-stages` → `editor-state`；`hint-tooltip-focus` + `hint-tooltip-position` → `hint-tooltip`；`anchored-popover` / `model-options` / `param-overrides` / `prompt-config-order` / `skill-status` / `tab-key` / `floating-trigger-position` 表驱动 | 编辑态与纯函数 |
-| C2b | `host-contract` + `declaration-bundle` + `client-bundle-facade` + `slot-workbench-contract` → `host-publish-contract` | 发布契约约 16 条 |
-| C3a | 8 个 Edge smoke → 4（`ui-v2-page-smoke` / `import-smoke` / `module-policy-smoke` / `real-css-smoke`） | smoke 4 文件 |
+## 回滚
 
-## 风险与回滚
+- 开发回滚保留用户历史；必要时 revert 本轮提交，不用 reset/clean/checkout 覆盖。
+- 数据回滚使用迁移记录与保留的原目录，先核对现有链接及实体内容；发生外部变更则报告冲突，不覆盖。
+- 包内更新与单项状态写失败恢复旧配置/标记/链接；清理仅限本次拥有的临时目录。
+- 服务保持运行；新宿主代码需用户重启 DSH 后加载，迁移不能依赖自动重启。
 
-- 合并后单文件断言量与等待步骤上升（smoke 超时预算需叠加），**失败定位粒度变粗**；Edge 缺失时 `skip` 粒度由单文件变整组。
-- 表驱动与 SSR 升级属于"等价重写"，是本计划唯一需要逐条核对覆盖的环节；核对方式：合并前后各跑定向 `node --test`，比较运行用例数与失败信息可定位性。
-- 回滚：每批一个中文 Conventional Commit，`git revert <sha>` 即可整批回退；文件内容以拼接与 `git mv` 为主，diff 可逐条核对。
+## Task Summary 与状态
 
-## 执行状态
+- 当前：T1–T5 完成并通过完整门禁。T6 的真实迁移先只读预览（87 个技能、0 个嵌套、旧 order 过滤后剩 2 项、无 rankBase），再由用户授权执行；实测真实技能根 0 个 `.disabled` 标记，无需恢复。
+- 验证：`typecheck` ✓ / `lint` 0 warning 0 error ✓ / `test` **1013/1013**（较基线 +5）✓ / `build` ✓ / `verify:host` 47 包 0 失败 ✓ / `git diff --check` ✓。
+- 偏差与说明：①迁移落在一次性运维脚本 `scripts/migrate-skills.mjs`（未新增运行时 `src/host/skills-migration.ts`）；②外部目录降级为导入来源后，客户端「目录引用」入口一并下线（`skillsDirs` 只读、新增来源筛选 / 创建 / 回收站 / 模型与用户调用开关）；③技能顺序与 rank 的写入结果纳入整体保存基线（审查 F9）；④`dirs` 清空下沉到受管库层，`patchSkillsConfig` 不再重复置空；⑤技能树按「最近存在的技能祖先」挂载，缺祖先的嵌套项作为根行（审查 F8）。
+- 回归入口：`docs/skills-management.md` §7 列出技能契约的全部测试与命令。
 
-| Wave | 状态 | 提交 |
-|---|---|---|
-| Wave 1：engine 25 → 17 | [✔] | `29a30e7` |
-| Wave 2：host 60 → 36 | [✔] | `089c427` |
-| Wave 3：client 50 → 35 | [✔] | `90e1f9b` |
-| C3a：8 个 Edge smoke → 4 | [✔] | `a3db038` |
-| SSR 升级：3 个文件的静态断言 | [✔] | `768913c` |
-
-### 实际结果与剩余项（2026-09-17 收尾）
-
-- 文件数：135 → **87**（engine 17 / host 36 / client 31 / shared 2 / root 1），优于目标 88。运行用例 **993 不变**（Wave 1/2/3 与 C3a 合并前后逐批实测一致，0 失败 0 跳过）。
-- **C3a 已完成**（提交 `a3db038`）：8 个 Edge smoke 合为 4 个 —— `import-smoke`(10) ← `import-preview-browser` + `import-scope-browser`、`module-policy-smoke`(9) ← `module-creation-browser` + `subagent-policy-browser`、`ui-v2-page-smoke`(3) ← `ui-v2-pages` + `ui-v2-cards-browser` + `ui-v2-drafts`、`real-css-smoke`(1) ← `ui-v2-badge-browser`（仅 `git mv` 改名）。三组均落在首选方案（一个 Edge 实例 + 多路由 server + 每成员一条 `test()` 顺序 `Page.navigate`），运行用例 23 = 23 零损失；按语义保留成员间差异（真实 CSS 解析 vs Proxy、两套 `waitFor` 预算、三套 CDP 辅助变体），清理统一为 `Browser.close` → 等退出 → profile EPERM 重试。
-- **SSR 升级已完成**（提交 `768913c`）：`menu-select`（20 条渲染断言 + 29 条按契约保留）、`prompt-config-form-layout`（用例 1/2/3 改渲染，用例 2 为双向差分断言）、`scope-create-separation` 第 11 条（真实渲染 `SubagentPage`，用两个能力区分"排除生效"与"列表本来就空"）—— 每处都做了反向验证（临时改坏期望值必须失败）。`tools-preview` 的接线断言未单独迁出：其接线部分已由 `client-wiring-contract`（14 条）覆盖，迁出收益低于风险。
-- 已完成的替代方案：接线契约按**整文件合并**执行（`workspace-navigation` / `template-picker-anchor` / `dialog-focus` / `review-fixes` → `client-wiring-contract` 14 条），牺牲了 SSR 升级，换取零风险与可验证性；`test/client/support/ssr-render.mjs` 已就绪（探针实测通过），C3a 与 SSR 升级可直接复用它。
-- 两条 4 → 1 / 3 → 1 的合并均经**标题级三向核对**（缺失 / 重复 / 多余各为 0）与逐组 `node --test` 实测，覆盖零损失。
-- 回滚：Wave 2 = `git revert 089c427`，Wave 3 = `git revert 90e1f9b`。
-
-（Wave 内任务完成后即时更新为 `[✔]`，并在交付说明中给出提交 SHA。）
+[✔] Wave 1 / T1：状态与链接事务
+[✔] Wave 1 / T2：资产入口与可回滚迁移
+[✔] Wave 2 / T3：宿主、provider、bridge
+[✔] Wave 2 / T4：界面与保存语义
+[✔] Wave 3 / T5：完整验证与文档
+[ ] Wave 3 / T6：真实迁移与提交推送

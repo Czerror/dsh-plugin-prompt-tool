@@ -19,6 +19,8 @@ window.t = t
 window.requests = []
 window.delay = 0
 window.rejectDelete = false
+window.rejectSkillDelete = false
+window.rejectSkillsConfig = false
 window.failedSkill = ''
 window.policyServer = structuredClone(SUBAGENT_TOOL_POLICY_SKELETON)
 window.policyInFlight = 0
@@ -26,7 +28,7 @@ window.policyMaxInFlight = 0
 let tools = [{ id: 'tool-one', name: 'demo', description: 'baseline', timeoutMs: 500, parameters: {}, output: { schema: { type: 'object' } }, execute: { kind: 'shell', command: 'echo test' } }]
 let persona = { prefix: 'original persona' }
 let presets = [{ id: 'test', name: 'Current' }, { id: 'other', name: 'Other' }]
-let skills = ['alpha', 'beta'].map((folder) => ({ folder, name: folder, description: folder, valid: true, modelInvocable: true, userInvocable: true, disabled: true, dir: 'D:/isolated/skills' }))
+let skills = ['alpha', 'beta'].map((id) => ({ id, folder: id, name: id, description: id, valid: true, modelInvocable: true, userInvocable: true, disabled: true, source: 'import', dir: 'D:/isolated/skills/.system' }))
 window.fetch = async (url, init) => {
   const endpoint = String(url).split('/').at(-1), body = JSON.parse(init?.body ?? '{}')
   window.requests.push({ endpoint, body })
@@ -35,6 +37,7 @@ window.fetch = async (url, init) => {
     value: { value: { presetTemplate: 'test', writePreset: true }, base: {}, revision: 1 },
     meta: { meta: { ...window.fixture.meta, presets } }, overrides: { overrides: {} }, variables: { variables: {}, enabled: true },
     promptConfigs: { promptConfigs: [] }, skillCatalog: skills, skillOrder: ['alpha', 'beta'], skillsDirs: ['D:/isolated/skills'],
+    activeSkillsDirs: ['D:/isolated/skills'],
     moduleFacts: { sourceMode: 'explicit', editable: true, effectiveModules: [], declaredModules: [], rowIds: [] },
   }))
   if (endpoint === 'instructions-policy') value = { policy: { enabled: false, files: {}, defaults: {} }, revision: 'p1' }
@@ -59,8 +62,32 @@ window.fetch = async (url, init) => {
   if (endpoint === 'characters-list') value = { characters: [] }
   if (endpoint === 'skill-toggle') {
     if (body.folder === window.failedSkill) return new Response(JSON.stringify({ ok: false, message: `failed ${body.folder}` }))
-    skills = skills.map((skill) => skill.folder === body.folder ? { ...skill, disabled: !body.enabled } : skill)
+    skills = skills.map((skill) => skill.id === body.folder ? { ...skill, disabled: !body.enabled } : skill)
     value = { changed: true }
+  }
+  if (endpoint === 'skill-policy') {
+    await new Promise((resolve) => setTimeout(resolve, window.delay))
+    if (body.id === window.failedSkill) return new Response(JSON.stringify({ ok: false, message: `failed ${body.id}` }))
+    skills = skills.map((skill) => skill.id === body.id ? { ...skill, ...body.policy } : skill)
+    value = { skillCatalog: skills }
+  }
+  if (endpoint === 'skill-delete') {
+    await new Promise((resolve) => setTimeout(resolve, window.delay))
+    if (window.rejectSkillDelete) return new Response(JSON.stringify({ ok: false, message: 'delete rejected' }))
+    skills = skills.filter((skill) => skill.id !== body.id)
+    value = { id: body.id, path: `D:/isolated/skills/.system/.trash/skill-${body.id}` }
+  }
+  if (endpoint === 'skill-create') {
+    skills = [...skills, { id: body.name, folder: body.name, name: body.name, description: body.description, valid: true, modelInvocable: true, userInvocable: true, disabled: false, source: 'import', dir: 'D:/isolated/skills/.system' }]
+    value = { id: body.name, path: `D:/isolated/skills/.system/${body.name}` }
+  }
+  if (endpoint === 'skills-import-directory') {
+    value = { path: body.path, count: 2 }
+  }
+  if (endpoint === 'skills-config') {
+    await new Promise((resolve) => setTimeout(resolve, window.delay))
+    if (window.rejectSkillsConfig) return new Response(JSON.stringify({ ok: false, message: 'skills config rejected' }))
+    value = { dirs: [], order: body.order ?? [], rankBase: body.rankBase ?? 250, activeSkillsDirs: ['D:/isolated/skills'], skillCatalog: skills }
   }
   if (endpoint === 'preset-delete') {
     await new Promise((resolve) => setTimeout(resolve, window.delay))

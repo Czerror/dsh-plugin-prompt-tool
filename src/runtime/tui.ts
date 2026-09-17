@@ -94,7 +94,7 @@ function renderTuiStatus(source: PromptSettings, params: Record<string, unknown>
   }
   lines.push('技能开关:')
   for (const skill of source.skillCatalog) {
-    // 启停 = 磁盘事实：SKILL.md.disabled 标记。
+    // 启停来自受管技能库的链接状态。
     const value = skill.disabled !== true
     const detail = skill.valid
       ? (skill.modelInvocable ? '模型可调用' : '模型不可调用')
@@ -187,7 +187,7 @@ function parseIdentifierAndAction(
 /** 参数保存回调：写激活预设 preset.yml；失败必须抛给命令层渲染为错误。 */
 export type SavePresetParam = (key: string, value: unknown) => void | Promise<void>
 
-/** 技能启停回调：改名磁盘标记 SKILL.md ↔ SKILL.md.disabled（隐藏策略唯一入口）。 */
+/** 技能启停回调：切换受管实体的根链接。 */
 export type ToggleSkillState = (folder: string, enabled: boolean) => { ok: boolean; message?: string }
 
 /** 通过 DSH 命令注册表暴露 /prompt-tool，Web 与 dsh-tui 都能执行。 */

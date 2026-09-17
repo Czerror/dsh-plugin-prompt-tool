@@ -369,16 +369,18 @@ test('/meta 预设下拉读 value.meta（不是顶层 meta 扩展字段）', () 
   assert.doesNotMatch(settings, /res\.meta\?\.meta/)
 })
 
-test('技能目录列表展示 skillsDirs 的全部配置项，空配置才使用默认副本', () => {
-  assert.match(skillsSettings, /const displaySkillsDirs = fields\.skillsDirs\.length > 0\s*\? fields\.skillsDirs\s*:\s*fields\.activeSkillsDirs/)
-  assert.match(skillsSettings, /meta=\{t\('skills\.dirs\.meta', \{ count: displaySkillsDirs\.length \}\)\}/)
-  assert.match(skillsSettings, /\{displaySkillsDirs\.length === 0 \?/)
-  assert.match(skillsSettings, /\{displaySkillsDirs\.map\(\(dir, index\) =>/)
+test('技能页展示受管实体库位置，不再维护可添加/移除的目录引用', () => {
+  assert.match(skillsSettings, /const entityRoot = libraryRoot === undefined \? undefined : `\$\{libraryRoot\}\\\\\.system`/)
+  assert.match(skillsSettings, /t\('skills\.library\.title'\)/)
+  assert.match(skillsSettings, /t\('skills\.library\.open'\)/)
+  assert.doesNotMatch(skillsSettings, /addSkillsDir|removeSkillsDir|displaySkillsDirs/, '目录引用入口已下线（外部目录只作一次性导入来源）')
+  assert.doesNotMatch(skillsSettings, /skills\.dirs\.(title|meta|add|empty|pick')/, '目录引用文案不再被引用（导入相关文案保留）')
 })
 
-test('技能目录同时提供绝对路径引用与文件夹内容导入', () => {
+test('技能页同时提供宿主机目录导入与浏览器文件夹导入', () => {
   assert.match(skillsSettings, /api\.pickDirectory\(\)/)
-  assert.match(skillsSettings, /t\('skills\.dirs\.pick'\)/)
+  assert.match(skillsSettings, /t\('skills\.import\.pick'\)/)
+  assert.match(skillsSettings, /store\.importSkillsDirectory\(/)
   assert.match(skillsSettings, /label=\{t\('skills\.dirs\.import'\)\}/)
   assert.match(skillsSettings, /\bdirectory\b/, '技能页仍应保留文件夹导入入口')
 })

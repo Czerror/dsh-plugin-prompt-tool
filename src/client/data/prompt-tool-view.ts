@@ -35,6 +35,7 @@ const readSkillCatalog = (source: Record<string, unknown>, key: string): SkillCa
     const folder = readString(record, 'folder')
     const name = readString(record, 'name')
     if (folder === undefined || name === undefined) return []
+    const id = readString(record, 'id')
     return [{
       folder,
       name,
@@ -42,10 +43,17 @@ const readSkillCatalog = (source: Record<string, unknown>, key: string): SkillCa
       // 向后兼容旧宿主：旧版 /describe 只返回 folder/name/description（且旧扫描
       // 已过滤非法名），缺字段按旧语义默认 true；新版宿主显式携带 valid=false。
       valid: readBoolean(record, 'valid', true),
+      ...(id !== undefined ? { id } : {}),
       ...(typeof record.dir === 'string' && record.dir.length > 0 ? { dir: record.dir } : {}),
       ...(record.duplicate === true ? { duplicate: true } : {}),
       ...(typeof record.issue === 'string' && record.issue.length > 0 ? { issue: record.issue } : {}),
       ...(record.disabled === true ? { disabled: true } : {}),
+      ...(record.linked === true ? { linked: true } : {}),
+      ...(readString(record, 'source') !== undefined ? { source: readString(record, 'source')! } : {}),
+      ...(readString(record, 'entityPath') !== undefined ? { entityPath: readString(record, 'entityPath')! } : {}),
+      ...(readString(record, 'linkPath') !== undefined ? { linkPath: readString(record, 'linkPath')! } : {}),
+      ...(readString(record, 'parentId') !== undefined ? { parentId: readString(record, 'parentId')! } : {}),
+      ...(record.managed === true ? { managed: true } : {}),
       modelInvocable: readBoolean(record, 'modelInvocable', true),
       userInvocable: readBoolean(record, 'userInvocable', true),
     }]
@@ -68,7 +76,7 @@ export function fieldsFromView(res: BridgeResult<BridgeSettingsView>): Fields {
   const value = asRecord(ns?.value)
   const base = asRecord(ns?.base)
   // 技能管理不在 settings：顺序/目录/rank 来自 describe 事实（插件配置文件），
-  // 启停来自 skillCatalog 的 disabled 标记（磁盘 SKILL.md.disabled）。
+  // 启停来自受管 skillCatalog 的链接状态。
   const extraSkillOrder = res.ok && Array.isArray(res.skillOrder) ? res.skillOrder : undefined
   const extraSkillDirs = res.ok && Array.isArray(res.skillsDirs) ? res.skillsDirs : undefined
   const extraSkillRankBase = res.ok && typeof res.skillRankBase === 'number' ? res.skillRankBase : undefined

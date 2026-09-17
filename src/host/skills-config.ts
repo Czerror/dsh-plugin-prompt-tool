@@ -1,141 +1,152 @@
-/**
- * 技能管理配置：技能管理状态从 settings.yaml 抽离后的唯一落点。
- *
- * 位置固定为默认技能根的 `.system` 区
- * （`<DSH_HOME>/skills/.system/prompt-tool/config.yml`）：官方
- * `dsh-skill-filesystem` 对用户根的 `.system` 段 `skipSystem`，本插件扫描也
- * 跳过点目录，因此它既在技能根里、又永远不会被当成技能（与
- * Fishquito7/dsh-skill-mcp-panel 把显示配置放 `.system/skill-viewer/` 同构）。
- *
- * 只承载"配置"（附加技能根 / 顺序 / rank 基数）：技能启停是磁盘事实
- * （SKILL.md ↔ SKILL.md.disabled），不在这里存开关，所以文件天然保持精简，
- * 手工编辑也即时生效。写入使用 yaml Document API 保留注释与未知字段，
- * 内容未变化时不落盘（避免 watcher 空转）。
- */
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+/** skills/.system/skills.yml 是受管技能状态的唯一来源。 */
+import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
+import { randomUUID } from 'node:crypto'
 import { dirname, join } from 'node:path'
-import { Document, parseDocument } from 'yaml'
+import { Document, isMap, parseDocument, visit } from 'yaml'
+import type { ManagedSkillState } from '../shared/skills.ts'
 import { DEFAULT_SKILL_RANK_BASE, DSH_HOME } from './paths.ts'
 
-/** 相对 DSH_HOME 的配置文件位置。 */
-export const SKILLS_CONFIG_RELATIVE = join('skills', '.system', 'prompt-tool', 'config.yml')
-
-/** 配置文件当前格式版本。 */
-export const SKILLS_CONFIG_VERSION = 1
+export const SKILLS_CONFIG_RELATIVE = join('skills', '.system', 'skills.yml')
+export const SKILLS_CONFIG_VERSION = 2
 
 export interface SkillsConfig {
-  /** 附加技能根（空 = 只用默认根 `<DSH_HOME>/skills`）。 */
   dirs: string[]
-  /** 技能展示顺序（目录相对路径；未列出的按名称排序）。 */
   order: string[]
-  /** 技能候选排序基数。 */
   rankBase: number
+  skills: Record<string, ManagedSkillState>
 }
 
 export type SkillsConfigRead =
   | { ok: true; config: SkillsConfig; exists: boolean }
   | { ok: false; config: SkillsConfig; message: string }
 
-/** 默认技能管理配置（文件缺失时使用）。 */
 export function defaultSkillsConfig(): SkillsConfig {
-  return { dirs: [], order: [], rankBase: DEFAULT_SKILL_RANK_BASE }
+  return { dirs: [], order: [], rankBase: DEFAULT_SKILL_RANK_BASE, skills: {} }
 }
 
 export function skillsConfigPath(dshHome: string = DSH_HOME): string {
   return join(dshHome, SKILLS_CONFIG_RELATIVE)
 }
 
-function asStringList(value: unknown): string[] {
-  return Array.isArray(value)
-    ? value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
-    : []
+/** 每段都必须是普通目录名；拒绝 Windows 盘符、设备名及隐藏管理目录。 */
+export function isSafeSkillPath(value: unknown, single = false): value is string {
+  if (typeof value !== 'string' || value.length === 0 || value.length > 1024 || value.includes('\\')) return false
+  const parts = value.split('/')
+  return (!single || parts.length === 1) && parts.every((part) =>
+    part.length > 0 && !part.startsWith('.') && !/[<>:"|?*]/u.test(part)
+    && ![...part].some((character) => character.charCodeAt(0) < 32)
+    && !/[. ]$/.test(part) && !/^(con|prn|aux|nul|com[0-9]|lpt[0-9])(?:\.|$)/i.test(part))
 }
 
-/**
- * 读取技能管理配置；文件缺失或字段非法时回退默认值。
- * YAML 损坏时 `ok: false`（调用方据此拒绝写入，避免覆盖用户手写的坏文件）。
- */
+function stringList(value: unknown, key: string): string[] {
+  if (value === undefined) return []
+  if (!Array.isArray(value) || value.some((item) => typeof item !== 'string' || item.trim().length === 0)) {
+    throw new Error(`${key} 必须是非空字符串数组`)
+  }
+  return value as string[]
+}
+
+/** 写入与读取共用验证，避免非法 YAML 状态获得文件系统写入权限。 */
+export function validateSkillsConfig(value: unknown): SkillsConfig {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) throw new Error('技能配置必须是 YAML 映射')
+  const data = value as Record<string, unknown>
+  if (data.version !== undefined && data.version !== SKILLS_CONFIG_VERSION) throw new Error('不支持的技能配置版本')
+  const rankBase = data.rankBase === undefined ? DEFAULT_SKILL_RANK_BASE : data.rankBase
+  if (typeof rankBase !== 'number' || !Number.isSafeInteger(rankBase) || rankBase < 0) throw new Error('rankBase 必须是非负安全整数')
+  const records = data.skills === undefined ? {} : data.skills
+  if (records === null || typeof records !== 'object' || Array.isArray(records)) throw new Error('skills 必须是 YAML 映射')
+  const skills: Record<string, ManagedSkillState> = {}
+  const paths = new Set<string>()
+  const links = new Set<string>()
+  for (const [id, value] of Object.entries(records)) {
+    if (!isSafeSkillPath(id) || ['__proto__', 'constructor', 'prototype'].includes(id)) throw new Error(`技能身份不合法：${id}`)
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) throw new Error(`技能 ${id} 必须是 YAML 映射`)
+    const item = value as Record<string, unknown>
+    if (!isSafeSkillPath(item.path) || !isSafeSkillPath(item.link, true)) throw new Error(`技能 ${id} 的实体或链接路径不合法`)
+    if (['enabled', 'modelInvocable', 'userInvocable'].some((key) => typeof item[key] !== 'boolean')) {
+      throw new Error(`技能 ${id} 的启停与调用权限必须是布尔值`)
+    }
+    if (item.source !== undefined && (typeof item.source !== 'string' || item.source.length > 4096)) throw new Error(`技能 ${id} 的来源不合法`)
+    const pathKey = process.platform === 'win32' ? item.path.toLowerCase() : item.path
+    const linkKey = process.platform === 'win32' ? item.link.toLowerCase() : item.link
+    if (paths.has(pathKey) || links.has(linkKey)) throw new Error(`技能 ${id} 的实体或链接路径重复`)
+    paths.add(pathKey)
+    links.add(linkKey)
+    skills[id] = {
+      path: item.path, link: item.link,
+      enabled: item.enabled as boolean,
+      modelInvocable: item.modelInvocable as boolean,
+      userInvocable: item.userInvocable as boolean,
+      ...(item.source !== undefined ? { source: item.source as string } : {}),
+    }
+  }
+  return { dirs: stringList(data.dirs, 'dirs'), order: stringList(data.order, 'order'), rankBase, skills }
+}
+
+function configDocument(raw: string): Document {
+  const doc = parseDocument(raw)
+  if (doc.errors.length > 0) throw new Error(`技能配置不是合法 YAML：${doc.errors[0]?.message ?? '解析失败'}`)
+  if (!isMap(doc.contents)) throw new Error('技能配置必须是 YAML 映射')
+  visit(doc, { Alias() { throw new Error('技能配置不支持 YAML 别名') } })
+  validateSkillsConfig(doc.toJS())
+  return doc
+}
+
 export function readSkillsConfig(file: string = skillsConfigPath()): SkillsConfigRead {
-  if (!existsSync(file)) return { ok: true, config: defaultSkillsConfig(), exists: false }
-  let raw: string
   try {
-    raw = readFileSync(file, 'utf8')
+    if (!existsSync(file)) return { ok: true, config: defaultSkillsConfig(), exists: false }
+    return { ok: true, config: validateSkillsConfig(configDocument(readFileSync(file, 'utf8')).toJS()), exists: true }
   } catch (error) {
     return { ok: false, config: defaultSkillsConfig(), message: `读取技能配置失败：${error instanceof Error ? error.message : String(error)}` }
   }
-  const doc = parseDocument(raw)
-  if (doc.errors.length > 0) {
-    return { ok: false, config: defaultSkillsConfig(), message: `技能配置不是合法 YAML：${doc.errors[0]?.message ?? '解析失败'}` }
-  }
-  const data = doc.toJS() as Record<string, unknown> | null
-  if (data === null || typeof data !== 'object' || Array.isArray(data)) {
-    return { ok: false, config: defaultSkillsConfig(), message: '技能配置必须是 YAML 映射' }
-  }
-  const rankBase = data.rankBase
-  return {
-    ok: true,
-    exists: true,
-    config: {
-      dirs: asStringList(data.dirs),
-      order: asStringList(data.order),
-      rankBase: typeof rankBase === 'number' && Number.isSafeInteger(rankBase) && rankBase >= 0
-        ? rankBase
-        : DEFAULT_SKILL_RANK_BASE,
-    },
-  }
 }
 
-/** tmp + rename 原子写：失败保留原文件。 */
-function writeFileAtomic(file: string, content: string): void {
-  const tmp = `${file}.tmp-${process.pid}-${Date.now().toString(36)}`
-  writeFileSync(tmp, content, 'utf8')
-  renameSync(tmp, file)
-}
-
-/**
- * 局部更新技能管理配置（只写传入的键）。空数组/null 视为删除该键，
- * 让文件只保留有意义的行。文件不存在时按初始模板创建。
- */
+/** 全量替换受管记录；逐节点更新保留注释、未知顶层字段与未知记录字段。 */
 export function writeSkillsConfig(
-  patch: { dirs?: string[]; order?: string[]; rankBase?: number },
+  patch: Partial<SkillsConfig>,
   file: string = skillsConfigPath(),
+  expectedContent?: string | null,
 ): SkillsConfigRead {
-  let doc: Document
-  if (existsSync(file)) {
-    try {
-      doc = parseDocument(readFileSync(file, 'utf8'))
-    } catch (error) {
-      return { ok: false, config: defaultSkillsConfig(), message: `读取技能配置失败：${error instanceof Error ? error.message : String(error)}` }
-    }
-    if (doc.errors.length > 0) {
-      return { ok: false, config: defaultSkillsConfig(), message: `技能配置不是合法 YAML，已拒绝覆盖：${doc.errors[0]?.message ?? '解析失败'}` }
-    }
-  } else {
-    doc = new Document({})
-    doc.commentBefore = ' prompt-tool 技能管理配置（技能管理已从 settings.yaml 抽离）\n'
-      + ' dirs: 附加技能根；order: 技能顺序；rankBase: 技能 rank 基数\n'
-      + ' 技能启停不在这里：停用 = 技能目录里的 SKILL.md 改名为 SKILL.md.disabled'
-    doc.set('version', SKILLS_CONFIG_VERSION)
-  }
-
-  const before = doc.toString()
-  for (const key of ['dirs', 'order'] as const) {
-    const value = patch[key]
-    if (value === undefined) continue
-    if (value.length === 0) doc.delete(key)
-    else doc.set(key, value)
-  }
-  if (patch.rankBase !== undefined) {
-    if (patch.rankBase === DEFAULT_SKILL_RANK_BASE) doc.delete('rankBase')
-    else doc.set('rankBase', patch.rankBase)
-  }
-  if (doc.toString() === before) return readSkillsConfig(file)
-
+  let temporary: string | undefined
   try {
-    mkdirSync(dirname(file), { recursive: true })
-    writeFileAtomic(file, doc.toString())
+    const raw = existsSync(file) ? readFileSync(file, 'utf8') : null
+    if (expectedContent !== undefined && raw !== expectedContent) throw new Error('技能配置内容版本冲突，请刷新后重试')
+    const doc = raw === null ? new Document({ version: SKILLS_CONFIG_VERSION }) : configDocument(raw)
+    const current = raw === null ? defaultSkillsConfig() : validateSkillsConfig(doc.toJS())
+    const next = validateSkillsConfig({ ...current, ...patch })
+    for (const key of ['dirs', 'order'] as const) {
+      if (patch[key] === undefined) continue
+      if (next[key].length === 0) doc.delete(key)
+      else doc.set(key, next[key])
+    }
+    if (patch.rankBase !== undefined) {
+      if (next.rankBase === DEFAULT_SKILL_RANK_BASE) doc.delete('rankBase')
+      else doc.set('rankBase', next.rankBase)
+    }
+    if (patch.skills !== undefined) {
+      if (!doc.has('skills')) doc.set('skills', doc.createNode({}))
+      for (const id of Object.keys(current.skills)) if (!Object.hasOwn(next.skills, id)) doc.deleteIn(['skills', id])
+      for (const [id, record] of Object.entries(next.skills)) {
+        if (!doc.hasIn(['skills', id])) doc.setIn(['skills', id], doc.createNode({}))
+        for (const key of ['path', 'link', 'enabled', 'modelInvocable', 'userInvocable', 'source'] as const) {
+          if (record[key] === undefined) doc.deleteIn(['skills', id, key])
+          else if (doc.getIn(['skills', id, key]) !== record[key]) doc.setIn(['skills', id, key], record[key])
+        }
+      }
+    }
+    const content = doc.toString()
+    if (content !== raw) {
+      mkdirSync(dirname(file), { recursive: true })
+      temporary = `${file}.tmp-${randomUUID()}`
+      writeFileSync(temporary, content, { encoding: 'utf8', flag: 'wx' })
+      if ((existsSync(file) ? readFileSync(file, 'utf8') : null) !== raw) throw new Error('技能配置内容版本冲突，请刷新后重试')
+      renameSync(temporary, file)
+      temporary = undefined
+    }
+    return { ok: true, config: next, exists: true }
   } catch (error) {
     return { ok: false, config: defaultSkillsConfig(), message: `写入技能配置失败：${error instanceof Error ? error.message : String(error)}` }
+  } finally {
+    if (temporary !== undefined && existsSync(temporary)) unlinkSync(temporary)
   }
-  return readSkillsConfig(file)
 }

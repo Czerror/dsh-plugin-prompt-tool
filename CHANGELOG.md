@@ -2,6 +2,30 @@
 
 ## [未发布] - 2026-09-17
 
+### 技能实体库与链接管理（2026-09-17）
+
+技能管理改为**单一受管实体库**（契约与迁移步骤见 [docs/skills-management.md](docs/skills-management.md)）：
+
+- **实体集中在 `$DSH_HOME/skills/.system/`**，启用项通过该根下的目录链接（Windows junction）暴露；
+  `skills.yml` 成为启停、顺序、rank 基数与调用权限的唯一管理来源（`version: 2`）。
+  **完全停用只取消链接**，实体、资源与调用策略全部保留；`SKILL.md.disabled` 方案废弃，
+  不再读取、不转换、不创建。
+- **模型 / 用户调用权限**各自独立开关：写 YAML 并同步实体 frontmatter 的
+  `disable-model-invocation` / `user-invocable`，正文、未知字段与注释保持；外部工具改动这两个字段后
+  按 YAML 恢复并各提示一次偏差。
+- **管理操作**：新增创建（标准 frontmatter，默认启用）、回收站删除（只移动 `SKILL.md` 到
+  `.system/.trash/`，实体目录保留）、宿主机目录导入与浏览器文件夹导入（一次性复制，不再保留目录引用），
+  列表新增**来源筛选**；外部目录不再是第二发现根。
+- **稳定身份贯穿**：目录/调用/选择/开关/修复/删除/拖拽一律按受管 `id`（相对 `.system` 的路径）定位，
+  注册给模型时按 frontmatter `name` 去重；技能顺序与 rank 与设置同属一次保存，
+  技能通道失败时技能字段保持 dirty。
+- **包内 `skills/` 不再自动同步或按内容哈希回滚**：它是用户可显式导入的资源；`.prompt-tool-manifest.json`
+  账本不再写入，也不删除既有文件。
+- **一次性迁移** `scripts/migrate-skills.mjs`：默认只读预览，`--apply` 先完整备份再搬迁实体、写 YAML、
+  建链接（含嵌套子技能各自的根链接），`--rollback <migration.json>` 校验哈希后复原。
+- **缺陷修复**：单个未定义 YAML 别名不再中断整批扫描；缓存签名覆盖完整相对路径；
+  watcher 同时监听实体库与状态文件；写盘统一走跨进程锁与可回滚事务（`.system/.skills.lock`）。
+
 ### 删除入口视觉统一（2026-09-17）
 
 - **预设卡删除按钮**改为与角色管理页同款的垃圾桶图标按钮（`IconTrashOutline16` + 图标按钮形态，

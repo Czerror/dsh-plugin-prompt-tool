@@ -9,8 +9,8 @@ import { dirname } from 'node:path'
  * 包内 skills 目录。
  * 源码位于 src/host/（../../skills = 包根/skills），构建后内联进 lib/（层级变浅）。
  * 统一向上查找最近的包根（同时含 package.json 与 skills/），两种形态都正确；
- * 不使用 skills/manifest.json 作锚点：包内技能不再有手写版本清单（见 profile-skills.ts
- * 的内容哈希账本）。
+ * 不使用 skills/manifest.json 作锚点：包内技能不再有手写版本清单，也不再有内容哈希账本
+ * （见 profile-skills.ts：包内 skills 只作为用户可显式导入的资源）。
  */
 export const SKILLS_DIR = (() => {
   let dir = dirname(fileURLToPath(import.meta.url))

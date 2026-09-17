@@ -168,6 +168,67 @@
   font: var(--dsw-font-xxs-12);
 }
 
+/* 来源标注：导入来源目录或通道，只读事实，不是写入授权。 */
+.skillCardSource {
+  color: var(--dsw-alias-label-tertiary);
+  font: var(--dsw-font-xxxs-11);
+  overflow-wrap: anywhere;
+}
+
+/* 调用策略开关组：模型 / 用户各自独立；完全停用时整体不可编辑。 */
+.skillPolicyGroup {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  border: 0.5px solid var(--dsw-alias-border-l1);
+  border-radius: 999px;
+  corner-shape: round;
+  padding: 2px 10px;
+  background: var(--dsw-alias-bg-layer-2);
+}
+.skillPolicyItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-xxxs-11);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.skillPolicyItem input {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: var(--dsw-alias-state-business-primary);
+  cursor: pointer;
+}
+.skillPolicyItem input:disabled { cursor: default; }
+.skillPolicyItem:has(input:disabled) { color: var(--dsw-alias-label-tertiary); cursor: default; }
+
+/* 创建技能表单：名称 / 描述 / 正文三段，正文为多行。 */
+.skillCreateForm {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 10px;
+}
+.skillCreateField {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-xxs-12);
+}
+.skillCreateField textarea {
+  resize: vertical;
+  min-height: 96px;
+  font-family: var(--ds-font-family-code, ui-monospace, monospace);
+}
+
 @container workspace (max-width: 620px) {
   .skillStatsRow .skillStats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
@@ -175,6 +236,7 @@
 @media (pointer: coarse) {
   .skillSelect,
   .skillSelect input { min-width: 44px; min-height: 44px; }
+  .skillPolicyItem input { width: 20px; height: 20px; }
 }
 
 @media (forced-colors: active) {

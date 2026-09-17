@@ -5,6 +5,7 @@
  * 改路径或载荷形状必须同步更新 test/shared/bridge-contract.test.mjs。
  */
 import type { PersonaSpec } from './persona-section.ts'
+import type { SkillStatePatch } from './skills.ts'
 import type {
   InstructionFileWriteResult,
   InstructionPolicy,
@@ -32,6 +33,10 @@ export const BRIDGE_ENDPOINTS = {
   skillsImport: '/skills-import',
   skillToggle: '/skill-toggle',
   skillsConfig: '/skills-config',
+  skillPolicy: '/skill-policy',
+  skillCreate: '/skill-create',
+  skillDelete: '/skill-delete',
+  skillsImportDirectory: '/skills-import-directory',
   templates: '/templates',
   promptConfigs: '/prompt-configs',
   agentsFile: '/agents-file',
@@ -81,12 +86,16 @@ export interface BridgeRequestMap {
   modelReasoning: { provider: string; model: string }
   mutate: { ops: unknown[]; expectedRevision?: number }
   configsValidate: { promptConfigs: unknown[]; strategyDir?: string }
-  skillFix: { folder: string }
+  skillFix: { folder: string; dir?: string }
   skillsImport: { files: Array<{ path: string; content: string }> }
-  /** 技能启停（隐藏策略）：改名磁盘标记 SKILL.md ↔ SKILL.md.disabled。 */
+  /** 完全停用仅移除受管链接，保留 .system 中的技能实体。 */
   skillToggle: { folder: string; enabled: boolean; dir?: string }
-  /** 技能管理配置（附加技能根 / 顺序 / rank 基数）：写 <DSH_HOME>/skills/.system/prompt-tool/config.yml。 */
+  /** 技能管理配置写 skills/.system/skills.yml。dirs 仅用于旧客户端明确拒绝。 */
   skillsConfig: { dirs?: string[]; order?: string[]; rankBase?: number }
+  skillPolicy: { id: string; policy: SkillStatePatch }
+  skillCreate: { name: string; description: string; content: string }
+  skillDelete: { id: string }
+  skillsImportDirectory: { path: string }
   templates: undefined
   /** 可选 sessionId：与 /bootstrap 同源解析当前工作区（单读与聚合读取必须一致）。 */
   promptConfigs: { sessionId?: string } | undefined
@@ -290,6 +299,10 @@ export interface BridgeValueMap {
   skillToggle: { folder: string; enabled: boolean; changed: boolean; file: string; skillCatalog: unknown[] }
   /** 写入后的技能管理配置 + 生效目录（客户端据此刷新字段与目录列表）。 */
   skillsConfig: { dirs: string[]; order: string[]; rankBase: number; activeSkillsDirs: string[]; skillCatalog: unknown[] }
+  skillPolicy: { skillCatalog: unknown[] }
+  skillCreate: { id: string; path: string }
+  skillDelete: { id: string; path: string }
+  skillsImportDirectory: { path: string; count: number }
   templates: { templates?: unknown[]; toolTemplates?: unknown[] }
   promptConfigs: { promptConfigs: unknown[]; instructions?: InstructionsSnapshot }
   agentsFile: InstructionFileWriteResult

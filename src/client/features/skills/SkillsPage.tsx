@@ -1,6 +1,7 @@
-/** 技能设置页（从 PromptWorkspace 拆出）：状态筛选 + 过滤 + 拖拽排序 + 目录管理。
+/** 技能设置页：受管实体库（.system）+ 根链接启停 + 调用策略 + 导入 / 创建 / 回收站。
  *  L3 selector 化：usePromptToolFields 订阅 fields 引用变化；技能行抽 SkillRow
- *  memo 组件——开关/筛选/拖拽 hover 只重渲染受影响行，不再全列表级联。 */
+ *  memo 组件——开关/筛选/拖拽 hover 只重渲染受影响行，不再全列表级联。
+ *  稳定身份：所有行操作（选择、开关、策略、修复、删除、拖拽）都传 id，不再用 folder 定位。 */
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import clsx from 'clsx'
 import type { SkillCatalogEntry } from '../../data/prompt-tool-fields.ts'
@@ -11,13 +12,21 @@ import { bridgeCall } from '../../data/bridge-client.ts'
 import { readImportFiles } from '../../data/import-files.ts'
 import { usePromptToolFields } from '../../data/use-prompt-tool-fields.ts'
 import { CollapsibleCard } from '../../ui/CollapsibleCard.tsx'
+import { ConfirmDialog } from '../../ui/ConfirmDialog.tsx'
 import { HintTooltip } from '../../ui/HintTooltip.tsx'
+import { MenuSelect } from '../../ui/MenuSelect.tsx'
 import { SettingInputRow } from '../../ui/SettingInputRow.tsx'
 import { SkillRow } from './SkillRow.tsx'
 import { ImportFileButton } from '../../ui/ImportFileButton.tsx'
 import sharedCss from '../../ui/controls.module.css'
 import featureCss from './skills.module.css'
-import { filterSkillCatalog, matchesSkillStatus, type SkillStatusTab } from './skill-status.ts'
+import {
+  buildSkillTree,
+  filterSkillCatalog,
+  matchesSkillStatus,
+  skillIdOf,
+  type SkillStatusTab,
+} from './skill-status.ts'
 
 const ui = { ...sharedCss, ...featureCss }
 
@@ -28,67 +37,87 @@ const SKILL_STATUS_TABS: Array<{ id: SkillStatusTab; labelKey: PromptToolLocaleK
   { id: 'disabled', labelKey: 'skills.tabs.disabled' },
 ]
 
+/** 创建表单的本地校验：与服务端 `SKILL_NAME_RE` 同规则（kebab-case）。 */
+const SKILL_NAME_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
+
 export const SkillsPage = memo(function SkillsPage(props: { store: PromptToolStore; api: PromptToolHostApi; t: PromptToolTranslate; browse?: { query: string; status: SkillStatusTab; selected: string[] } }): ReactNode {
   const { store, api, t } = props
   const fields = usePromptToolFields(store, (value) => value)
   const [pickingDir, setPickingDir] = useState(false)
   const [importingDir, setImportingDir] = useState(false)
-  const [dragFolder, setDragFolder] = useState<string | undefined>(undefined)
-  const [dropTarget, setDropTarget] = useState<{ folder: string; before: boolean } | undefined>(undefined)
+  const [dragId, setDragId] = useState<string | undefined>(undefined)
+  const [dropTarget, setDropTarget] = useState<{ id: string; before: boolean } | undefined>(undefined)
   const [skillFilter, setSkillFilter] = useState(props.browse?.query ?? '')
   const [statusTab, setStatusTab] = useState<SkillStatusTab>(props.browse?.status ?? 'all')
+  const [sourceFilter, setSourceFilter] = useState('')
   const [selected, setSelected] = useState<Set<string>>(new Set(props.browse?.selected))
   const [batchBusy, setBatchBusy] = useState(false)
   const batchRef = useRef(false)
   const mounted = useRef(true)
   useEffect(() => () => { mounted.current = false }, [])
-  const [removingDir, setRemovingDir] = useState<string | undefined>(undefined)
+  const [pendingDelete, setPendingDelete] = useState<SkillCatalogEntry | undefined>(undefined)
+  const [creating, setCreating] = useState(false)
+  const [createDraft, setCreateDraft] = useState({ name: '', description: '', content: '' })
+  /** 实体库根与实体目录（只读展示；外部目录只作为一次性导入来源）。 */
+  const libraryRoot = fields.activeSkillsDirs[0]
+  const entityRoot = libraryRoot === undefined ? undefined : `${libraryRoot}\\.system`
   const orderedSkills = useMemo(() => {
-    const index = new Map(fields.skillOrder.map((folder, at) => [folder, at]))
+    const index = new Map(fields.skillOrder.map((id, at) => [id, at]))
     return [...fields.skillCatalog].sort((left, right) => {
-      const leftAt = index.get(left.folder)
-      const rightAt = index.get(right.folder)
-      if (leftAt === undefined && rightAt === undefined) return left.folder.localeCompare(right.folder)
+      const leftAt = index.get(skillIdOf(left))
+      const rightAt = index.get(skillIdOf(right))
+      if (leftAt === undefined && rightAt === undefined) return skillIdOf(left).localeCompare(skillIdOf(right))
       if (leftAt === undefined) return 1
       if (rightAt === undefined) return -1
       return leftAt - rightAt
     })
   }, [fields.skillCatalog, fields.skillOrder])
-  // patch 路径从不原地 mutate：引用相等即内容未变，变化时再退内容比较。
-  // 启停不进脏检测：开关是磁盘事实（点一下即写盘并重载），只有顺序/目录/rank 需要保存。
-  const dirty = (fields.skillOrder !== store.savedSwitches.skillOrder
-      && JSON.stringify(fields.skillOrder) !== JSON.stringify(store.savedSwitches.skillOrder))
-    || (fields.skillsDirs !== store.savedSwitches.skillsDirs
-      && JSON.stringify(fields.skillsDirs) !== JSON.stringify(store.savedSwitches.skillsDirs))
-    || store.skillsDirDraft.trim().length > 0
+  // 顺序与 rank 由本地保存通道写 skills.yml；启停与调用策略是磁盘/链接事实（点一下即写盘并重载）。
+  const dirty = fields.skillOrder !== store.savedSwitches.skillOrder
+    && JSON.stringify(fields.skillOrder) !== JSON.stringify(store.savedSwitches.skillOrder)
+
+  const sources = useMemo(() => {
+    const found = new Set<string>()
+    for (const skill of orderedSkills) if (typeof skill.source === 'string' && skill.source.length > 0) found.add(skill.source)
+    return [...found].sort((left, right) => left.localeCompare(right))
+  }, [orderedSkills])
+  const sourceOptions = useMemo(() => [
+    { value: '', label: t('skills.source.all') },
+    ...sources.map((source) => ({ value: source, label: source })),
+  ], [sources, t])
+
+  const matches = useCallback((skill: SkillCatalogEntry): boolean => {
+    const id = skillIdOf(skill)
+    const keyword = skillFilter.trim().toLowerCase()
+    return matchesSkillStatus(skill, store.skillEnabled(id), statusTab)
+      && (sourceFilter.length === 0 || skill.source === sourceFilter)
+      && (keyword.length === 0
+        || [id, skill.name ?? '', skill.description ?? ''].join(' ').toLowerCase().includes(keyword))
+  }, [skillFilter, sourceFilter, statusTab, store])
 
   const tabCounts: Record<SkillStatusTab, number> = {
     all: orderedSkills.length,
-    model: orderedSkills.filter((skill) => matchesSkillStatus(skill, store.skillEnabled(skill.folder), 'model')).length,
-    user: orderedSkills.filter((skill) => matchesSkillStatus(skill, store.skillEnabled(skill.folder), 'user')).length,
-    disabled: orderedSkills.filter((skill) => matchesSkillStatus(skill, store.skillEnabled(skill.folder), 'disabled')).length,
+    model: orderedSkills.filter((skill) => matchesSkillStatus(skill, store.skillEnabled(skillIdOf(skill)), 'model')).length,
+    user: orderedSkills.filter((skill) => matchesSkillStatus(skill, store.skillEnabled(skillIdOf(skill)), 'user')).length,
+    disabled: orderedSkills.filter((skill) => matchesSkillStatus(skill, store.skillEnabled(skillIdOf(skill)), 'disabled')).length,
   }
 
-  const keyword = skillFilter.trim().toLowerCase()
-  // 命中子技能时父节点保留为树容器（否则 renderOrder 从顶层展开时丢行）。
-  const visibleSkills = filterSkillCatalog(orderedSkills, (skill) =>
-    matchesSkillStatus(skill, store.skillEnabled(skill.folder), statusTab)
-    && (keyword.length === 0
-      || [skill.folder, skill.name ?? '', skill.description ?? ''].join(' ').toLowerCase().includes(keyword)))
+  // 命中子技能时父节点保留为树容器（否则展开逻辑从根行出发会丢行）。
+  const visibleSkills = filterSkillCatalog(orderedSkills, matches)
+  const tree = useMemo(() => buildSkillTree(visibleSkills), [visibleSkills])
+  const orderedPrimaryAll = useMemo(() => buildSkillTree(orderedSkills).primary, [orderedSkills])
 
-  const toggleSelect = useCallback((folder: string) => {
+  const toggleSelect = useCallback((id: string) => {
     setSelected((prev) => {
       const next = new Set(prev)
-      if (next.has(folder)) next.delete(folder)
-      else next.add(folder)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
       return next
     })
   }, [])
-  /** 全选目标：当前筛选后的合法技能（同名/无效技能不可批量启用）。 */
-  const selectableSkills = visibleSkills.filter((skill) => skill.valid
-    && matchesSkillStatus(skill, store.skillEnabled(skill.folder), statusTab)
-    && (!keyword || [skill.folder, skill.name ?? '', skill.description ?? ''].join(' ').toLowerCase().includes(keyword)))
-  const visibleSelected = selectableSkills.filter((skill) => selected.has(skill.folder)).map((skill) => skill.folder)
+  /** 全选目标：当前筛选后的合法技能（无效技能不可批量启停）。 */
+  const selectableSkills = visibleSkills.filter((skill) => skill.valid && matches(skill))
+  const visibleSelected = selectableSkills.map(skillIdOf).filter((id) => selected.has(id))
   const selectionMode = visibleSelected.length > 0
   const selectionKey = visibleSelected.join('\0')
   useEffect(() => {
@@ -96,44 +125,19 @@ export const SkillsPage = memo(function SkillsPage(props: { store: PromptToolSto
     if (props.browse) Object.assign(props.browse, { query: skillFilter, status: statusTab, selected: visibleSelected })
   }, [selectionKey, selected.size, skillFilter, statusTab, props.browse])
   const allSelected = selectionMode && selectableSkills.length > 0
-    && selectableSkills.every((skill) => selected.has(skill.folder))
-  const toggleSelectAll = () => {
+    && selectableSkills.every((skill) => selected.has(skillIdOf(skill)))
+  const toggleSelectAll = (): void => {
     if (allSelected) setSelected(new Set())
-    else setSelected(new Set(selectableSkills.map((skill) => skill.folder)))
+    else setSelected(new Set(selectableSkills.map(skillIdOf)))
   }
-  const dirSkillCount = (dir: string): number =>
-    fields.skillCatalog.filter((skill) => skill.dir === dir).length
-  /** 配置列表是 UI 单一来源；仅空配置时展示实际生效的默认副本。 */
-  const displaySkillsDirs = fields.skillsDirs.length > 0 ? fields.skillsDirs : fields.activeSkillsDirs
-  /** 空配置 = 默认副本兜底（只读，不可移除）。 */
-  const isDefaultDir = (dir: string): boolean =>
-    fields.skillsDirs.length === 0 && fields.activeSkillsDirs[0] === dir
-  /** 嵌套技能：folder 含 /（相对路径）即子技能；渲染时父技能下递归展开。 */
-  const isNestedFolder = (folder: string): boolean => folder.includes('/')
-  /** 主技能序列（不嵌套）：拖拽/菜单排序只在主技能间进行，子技能跟随。 */
-  const orderedPrimary = orderedSkills.filter((skill) => !isNestedFolder(skill.folder))
-  const childrenByParent = new Map<string, SkillCatalogEntry[]>()
-  for (const skill of visibleSkills) {
-    if (!isNestedFolder(skill.folder)) continue
-    const slash = skill.folder.lastIndexOf('/')
-    const parent = skill.folder.slice(0, slash)
-    const list = childrenByParent.get(parent) ?? []
-    list.push(skill)
-    childrenByParent.set(parent, list)
-  }
-  for (const list of childrenByParent.values()) list.sort((a, b) => a.folder.localeCompare(b.folder))
-  const expandSkill = (skill: SkillCatalogEntry): SkillCatalogEntry[] =>
-    [skill, ...(childrenByParent.get(skill.folder) ?? []).flatMap(expandSkill)]
-  const renderOrder = visibleSkills.filter((skill) => !isNestedFolder(skill.folder)).flatMap(expandSkill)
-  const depthOf = (folder: string): number => folder.split('/').length - 1
 
-  /** 批量启停：逐个改磁盘标记（单个失败不阻断其余），结束后统一重载一次。 */
-  const batchSet = (enabled: boolean) => {
+  /** 批量启停：逐个切换受管链接，单个失败不阻断其余；结束后统一重载一次。 */
+  const batchSet = (enabled: boolean): void => {
     if (batchRef.current || !selectionMode) return
-    const folders = [...visibleSelected]
+    const ids = [...visibleSelected]
     batchRef.current = true
     setBatchBusy(true)
-    void store.toggleSkills(folders, enabled).then((failures) => {
+    void store.toggleSkills(ids, enabled).then((failures) => {
       if (mounted.current) setSelected(new Set(failures))
     }).finally(() => {
       batchRef.current = false
@@ -142,38 +146,41 @@ export const SkillsPage = memo(function SkillsPage(props: { store: PromptToolSto
   }
 
   const moveSkill = useCallback((from: string, to: string) => {
-    const folders = orderedSkills.map((skill) => skill.folder)
-    const fromAt = folders.indexOf(from)
-    const toAt = folders.indexOf(to)
+    const ids = orderedSkills.map(skillIdOf)
+    const fromAt = ids.indexOf(from)
+    const toAt = ids.indexOf(to)
     if (fromAt < 0 || toAt < 0 || fromAt === toAt) return
-    const [moved] = folders.splice(fromAt, 1)
-    folders.splice(toAt, 0, moved!)
-    store.patch({ skillOrder: folders })
-    store.persistSwitches()
+    const [moved] = ids.splice(fromAt, 1)
+    ids.splice(toAt, 0, moved!)
+    store.patch({ skillOrder: ids })
+    void store.persistSwitches()
   }, [orderedSkills, store])
 
   /** 拖拽插入：插到目标技能前/后（带放置方向指示）。 */
-  const moveSkillAt = (from: string, target: string, before: boolean) => {
-    const folders = orderedSkills.map((skill) => skill.folder)
-    const fromAt = folders.indexOf(from)
+  const moveSkillAt = (from: string, target: string, before: boolean): void => {
+    const ids = orderedSkills.map(skillIdOf)
+    const fromAt = ids.indexOf(from)
     if (fromAt < 0) return
-    let toAt = folders.indexOf(target)
+    let toAt = ids.indexOf(target)
     if (toAt < 0 || fromAt === toAt) return
-    const [moved] = folders.splice(fromAt, 1)
+    const [moved] = ids.splice(fromAt, 1)
     if (fromAt < toAt) toAt -= 1
     if (!before) toAt += 1
-    folders.splice(toAt, 0, moved!)
-    store.patch({ skillOrder: folders })
-    store.persistSwitches()
+    ids.splice(toAt, 0, moved!)
+    store.patch({ skillOrder: ids })
+    void store.persistSwitches()
   }
 
-  /** 选择并保存宿主机绝对路径；只保存引用，不复制目录内容。 */
-  const pickSkillsDir = async (): Promise<void> => {
-    if (pickingDir || importingDir || store.savingSkillsDir) return
+  /** 选择宿主机目录并把它作为一次性导入来源（复制到实体库，不保留引用）。 */
+  const pickImportDir = async (): Promise<void> => {
+    if (pickingDir || importingDir || store.skillsBusy) return
     setPickingDir(true)
     try {
       const path = await api.pickDirectory()
-      if (path !== null) store.addSkillsDir(path)
+      if (path !== null) {
+        store.setSkillsDirDraft(path)
+        if (await store.importSkillsDirectory(path)) store.setSkillsDirDraft('')
+      }
     } catch (error) {
       store.showNotice('error', t('skills.notice.dirPickFailed', { reason: error instanceof Error ? error.message : String(error) }))
     } finally {
@@ -199,37 +206,55 @@ export const SkillsPage = memo(function SkillsPage(props: { store: PromptToolSto
     }
   }
 
+  const submitCreate = async (): Promise<void> => {
+    const name = createDraft.name.trim()
+    if (!SKILL_NAME_RE.test(name) || createDraft.description.trim().length === 0) {
+      store.showNotice('error', t('skills.create.invalid'))
+      return
+    }
+    if (await store.createSkill({ name, description: createDraft.description.trim(), content: createDraft.content })) {
+      setCreateDraft({ name: '', description: '', content: '' })
+      setCreating(false)
+    }
+  }
+
   /** 行级稳定回调（memo 行只在自身 props 变化时重渲染）。 */
-  const onDragStart = useCallback((folder: string, event: React.DragEvent<HTMLDivElement>) => {
-    setDragFolder(folder)
+  const onDragStart = useCallback((id: string, event: React.DragEvent<HTMLDivElement>) => {
+    setDragId(id)
     event.dataTransfer.effectAllowed = 'move'
   }, [])
-  const onDragOver = useCallback((folder: string, event: React.DragEvent<HTMLDivElement>) => {
+  const onDragOver = useCallback((id: string, event: React.DragEvent<HTMLDivElement>) => {
     event.preventDefault()
-    if (dragFolder === undefined || dragFolder === folder || folder.includes('/')) return
+    if (dragId === undefined || dragId === id) return
     const rect = event.currentTarget.getBoundingClientRect()
-    setDropTarget({ folder, before: event.clientY < rect.top + rect.height / 2 })
-  }, [dragFolder])
-  const onDrop = useCallback((folder: string, event: React.DragEvent<HTMLDivElement>) => {
+    setDropTarget({ id, before: event.clientY < rect.top + rect.height / 2 })
+  }, [dragId])
+  const onDrop = useCallback((id: string, event: React.DragEvent<HTMLDivElement>) => {
     event.preventDefault()
     const target = dropTarget
-    if (dragFolder !== undefined && target !== undefined && dragFolder !== folder && !folder.includes('/')) {
-      moveSkillAt(dragFolder, target.folder, target.before)
+    if (dragId !== undefined && target !== undefined && dragId !== id) {
+      moveSkillAt(dragId, target.id, target.before)
     }
-    setDragFolder(undefined)
+    setDragId(undefined)
     setDropTarget(undefined)
-  }, [dragFolder, dropTarget])
-  const onDragEnd = useCallback(() => { setDragFolder(undefined); setDropTarget(undefined) }, [])
-  const onToggleSkill = useCallback((folder: string) => store.toggleSkill(folder), [store])
-  const onFix = useCallback((folder: string) => void store.fixSkill(folder), [store])
-  const onMoveUp = useCallback((folder: string) => {
-    const at = orderedPrimary.findIndex((skill) => skill.folder === folder)
-    if (at > 0) moveSkill(folder, orderedPrimary[at - 1]!.folder)
-  }, [orderedPrimary, moveSkill])
-  const onMoveDown = useCallback((folder: string) => {
-    const at = orderedPrimary.findIndex((skill) => skill.folder === folder)
-    if (at >= 0 && at < orderedPrimary.length - 1) moveSkill(folder, orderedPrimary[at + 1]!.folder)
-  }, [orderedPrimary, moveSkill])
+  }, [dragId, dropTarget])
+  const onDragEnd = useCallback(() => { setDragId(undefined); setDropTarget(undefined) }, [])
+  const onToggleSkill = useCallback((id: string) => store.toggleSkill(id), [store])
+  const onTogglePolicy = useCallback((id: string, policy: { modelInvocable?: boolean; userInvocable?: boolean }) => {
+    void store.setSkillPolicy(id, policy)
+  }, [store])
+  const onFix = useCallback((id: string) => void store.fixSkill(id), [store])
+  const onDelete = useCallback((id: string) => {
+    setPendingDelete(fields.skillCatalog.find((skill) => skillIdOf(skill) === id))
+  }, [fields.skillCatalog])
+  const onMoveUp = useCallback((id: string) => {
+    const at = orderedPrimaryAll.findIndex((skill) => skillIdOf(skill) === id)
+    if (at > 0) moveSkill(id, skillIdOf(orderedPrimaryAll[at - 1]!))
+  }, [orderedPrimaryAll, moveSkill])
+  const onMoveDown = useCallback((id: string) => {
+    const at = orderedPrimaryAll.findIndex((skill) => skillIdOf(skill) === id)
+    if (at >= 0 && at < orderedPrimaryAll.length - 1) moveSkill(id, skillIdOf(orderedPrimaryAll[at + 1]!))
+  }, [orderedPrimaryAll, moveSkill])
 
   return (
     <section className={ui.section} aria-label={t('skills.aria')}>
@@ -259,25 +284,38 @@ export const SkillsPage = memo(function SkillsPage(props: { store: PromptToolSto
         </div>
       )}
 
-      <CollapsibleCard id="pt-skills-dirs" title={t('skills.dirs.title')}
-        meta={t('skills.dirs.meta', { count: displaySkillsDirs.length })}>
+      <CollapsibleCard id="pt-skills-library" title={t('skills.library.title')}
+        meta={t('skills.library.meta', { count: orderedSkills.length })}>
+        <div className={ui.dirCard} data-invalid={entityRoot === undefined ? '' : undefined}>
+          <div className={ui.dirCardBody}>
+            <span className={ui.dirCardTitle}>
+              <code className={ui.dirPath}>{entityRoot ?? t('skills.library.unknown')}</code>
+            </span>
+            <span className={ui.dirCardMeta}>{t('skills.library.hint')}</span>
+          </div>
+          <div className={ui.dirCardActions}>
+            <button type="button" className={ui.pillButton} disabled={entityRoot === undefined}
+              onClick={() => void store.openSkillsDir(entityRoot)}>{t('skills.library.open')}</button>
+            <button type="button" className={ui.pillButton} onClick={() => void store.load()}>{t('skills.dir.rescan')}</button>
+          </div>
+        </div>
         <div className={ui.dirAddBar}>
-          <HintTooltip label={t('skills.dirs.pick.hint')}>
+          <HintTooltip label={t('skills.import.pick.hint')}>
             <button
               type="button"
               className={ui.primaryPill}
-              disabled={pickingDir || importingDir || store.savingSkillsDir}
-              onClick={() => void pickSkillsDir()}
+              disabled={pickingDir || importingDir || store.skillsBusy}
+              onClick={() => void pickImportDir()}
             >
               {pickingDir && <span className={ui.spinner} aria-hidden="true" />}
-              {pickingDir ? t('skills.dirs.picking') : t('skills.dirs.pick')}
+              {pickingDir ? t('skills.dirs.picking') : t('skills.import.pick')}
             </button>
           </HintTooltip>
           <ImportFileButton
             label={t('skills.dirs.import')}
             busyLabel={t('skills.dirs.importing')}
             busy={importingDir}
-            disabled={pickingDir || store.savingSkillsDir}
+            disabled={pickingDir || store.skillsBusy}
             directory
             ariaLabel={t('skills.dirs.import.aria')}
             title={t('skills.dirs.import.title')}
@@ -287,78 +325,89 @@ export const SkillsPage = memo(function SkillsPage(props: { store: PromptToolSto
           <div className={ui.dirAddInput}>
             <input
               className={ui.directoryInput}
-              aria-label={t('skills.dirs.input.aria')}
+              aria-label={t('skills.import.path.aria')}
               value={store.skillsDirDraft}
-              placeholder={t('skills.dirs.input.placeholder')}
+              placeholder={t('skills.import.path.placeholder')}
               spellCheck={false}
               onChange={(event) => store.setSkillsDirDraft(event.target.value)}
               onKeyDown={(event) => {
                 if (event.key === 'Enter' && store.skillsDirDraft.trim().length > 0) {
-                  store.addSkillsDir(store.skillsDirDraft)
-                  store.setSkillsDirDraft('')
+                  void store.importSkillsDirectory(store.skillsDirDraft).then((ok) => { if (ok) store.setSkillsDirDraft('') })
                 }
               }}
             />
             <button
               type="button"
               className={ui.pillButton}
-              disabled={store.savingSkillsDir || store.skillsDirDraft.trim().length === 0}
-              onClick={() => {
-                store.addSkillsDir(store.skillsDirDraft)
-                store.setSkillsDirDraft('')
-              }}
+              disabled={store.skillsBusy || store.skillsDirDraft.trim().length === 0}
+              onClick={() => { void store.importSkillsDirectory(store.skillsDirDraft).then((ok) => { if (ok) store.setSkillsDirDraft('') }) }}
             >
-              {store.savingSkillsDir && <span className={ui.spinner} aria-hidden="true" />}
-              {t('skills.dirs.add')}
+              {store.skillsBusy && <span className={ui.spinner} aria-hidden="true" />}
+              {t('skills.import.fromDir')}
             </button>
           </div>
         </div>
-        {displaySkillsDirs.length === 0 ? (
-          <p className={ui.readOnly} role="status">{t('skills.dirs.empty')}</p>
-        ) : (
-          <div className={ui.dirCardList}>
-            {displaySkillsDirs.map((dir, index) => {
-              const exists = fields.skillsDirExists[dir] === true
-              const count = dirSkillCount(dir)
-              const isDefault = isDefaultDir(dir)
-              return (
-                <div key={dir} className={ui.dirCard} data-invalid={!exists ? '' : undefined}>
-                  <HintTooltip label={t('skills.dir.rank', { index: index + 1 })}><span className={ui.skillRankBadge}>{index + 1}</span></HintTooltip>
-                  <div className={ui.dirCardBody}>
-                    <span className={ui.dirCardTitle}>
-                      <HintTooltip label={dir}><code className={ui.dirPath}>{dir}</code></HintTooltip>
-                      {isDefault && <HintTooltip label={t('skills.dir.default.hint')}><span className={ui.duplicateBadge}>{t('skills.dir.default')}</span></HintTooltip>}
-                    </span>
-                    <span className={ui.dirCardMeta}>
-                      {exists
-                        ? (count > 0 ? t('skills.dir.count', { count }) : t('skills.dir.empty'))
-                        : t('skills.dir.missing')}
-                      {!exists && t('skills.dir.missing.hint')}
-                    </span>
-                  </div>
-                  <div className={ui.dirCardActions}>
-                    <button type="button" className={ui.pillButton} onClick={() => void store.openSkillsDir(dir)}>{t('skills.dir.open')}</button>
-                    <button type="button" className={ui.pillButton} onClick={() => void store.load()}>{t('skills.dir.rescan')}</button>
-                    {!isDefault && (removingDir === dir ? (
-                      <>
-                        <button type="button" className={ui.pillButton} data-danger onClick={() => { store.removeSkillsDir(dir); setRemovingDir(undefined) }}>{t('skills.dir.confirmRemove')}</button>
-                        <button type="button" className={ui.pillButton} data-variant="secondary" onClick={() => setRemovingDir(undefined)}>{t('skills.dir.cancel')}</button>
-                      </>
-                    ) : (
-                      <button type="button" className={ui.pillButton} onClick={() => setRemovingDir(dir)}>{t('skills.dir.remove')}</button>
-                    ))}
-                  </div>
-                </div>
-              )
-            })}
+        <p className={ui.readOnly}>{t('skills.library.footnote')}</p>
+        <div className={ui.cardDivider} />
+        <div className={ui.dirAddBar}>
+          <button type="button" className={ui.pillButton} aria-expanded={creating}
+            onClick={() => setCreating((value) => !value)}>
+            {creating ? t('skills.create.close') : t('skills.create.open')}
+          </button>
+        </div>
+        {creating && (
+          <div className={ui.skillCreateForm}>
+            <label className={ui.skillCreateField}>
+              <span>{t('skills.create.name')}</span>
+              <input
+                className={ui.configInput}
+                value={createDraft.name}
+                aria-label={t('skills.create.name')}
+                aria-invalid={createDraft.name.length > 0 && !SKILL_NAME_RE.test(createDraft.name.trim())}
+                placeholder={t('skills.create.namePlaceholder')}
+                spellCheck={false}
+                onChange={(event) => setCreateDraft((draft) => ({ ...draft, name: event.target.value }))}
+              />
+            </label>
+            <label className={ui.skillCreateField}>
+              <span>{t('skills.create.description')}</span>
+              <input
+                className={ui.configInput}
+                value={createDraft.description}
+                aria-label={t('skills.create.description')}
+                placeholder={t('skills.create.descriptionPlaceholder')}
+                onChange={(event) => setCreateDraft((draft) => ({ ...draft, description: event.target.value }))}
+              />
+            </label>
+            <label className={ui.skillCreateField}>
+              <span>{t('skills.create.content')}</span>
+              <textarea
+                className={ui.configInput}
+                rows={6}
+                value={createDraft.content}
+                aria-label={t('skills.create.content')}
+                placeholder={t('skills.create.contentPlaceholder')}
+                spellCheck={false}
+                onChange={(event) => setCreateDraft((draft) => ({ ...draft, content: event.target.value }))}
+              />
+            </label>
+            <div className={ui.dirCardActions}>
+              <button type="button" className={ui.primaryPill} disabled={store.skillsBusy} onClick={() => void submitCreate()}>
+                {store.skillsBusy && <span className={ui.spinner} aria-hidden="true" />}
+                {t('skills.create.submit')}
+              </button>
+              <button type="button" className={ui.pillButton} onClick={() => { setCreating(false); setCreateDraft({ name: '', description: '', content: '' }) }}>
+                {t('skills.dir.cancel')}
+              </button>
+            </div>
+            <p className={ui.configFieldHint}>{t('skills.create.hint')}</p>
           </div>
         )}
-        <p className={ui.readOnly}>{t('skills.dir.footnote')}</p>
         <div className={ui.cardDivider} />
         <SettingInputRow id="pt-skill-rank-base" label={t('skills.rankBase.label')} hint={t('skills.rankBase.hint')}
           type="number" value={String(fields.skillRankBase)}
           onInput={(value) => store.patch({ skillRankBase: Number(value) || 0 })}
-          onCommit={store.persistSwitches} />
+          onCommit={() => void store.persistSwitches()} />
       </CollapsibleCard>
 
       {fields.skillCatalog.length > 0 && (
@@ -371,6 +420,15 @@ export const SkillsPage = memo(function SkillsPage(props: { store: PromptToolSto
             placeholder={t('skills.filter.placeholder')}
             spellCheck={false}
             onChange={(event) => setSkillFilter(event.target.value)}
+          />
+          <MenuSelect
+            value={sourceFilter}
+            options={sourceOptions}
+            onChange={setSourceFilter}
+            ariaLabel={t('skills.source.aria')}
+            placeholder={t('skills.source.all')}
+            className={ui.listFilter}
+            compact
           />
           <span className={ui.selectionCount} role="status">{t('skills.selected', { count: visibleSelected.length })}</span>
           {selectableSkills.length > 0 && (
@@ -388,38 +446,41 @@ export const SkillsPage = memo(function SkillsPage(props: { store: PromptToolSto
         id="pt-skills-panel"
       >
       {fields.skillCatalog.length === 0 ? (
-        <div className={ui.emptyState}><span className={ui.emptyGlyph} aria-hidden="true">◇</span><div><h3>{t('skills.empty.title')}</h3><p>{t('skills.empty.hint')}</p><button type="button" className={ui.pillButton} disabled={pickingDir} onClick={() => void pickSkillsDir()}>{t('skills.dirs.pick')}</button></div></div>
+        <div className={ui.emptyState}><span className={ui.emptyGlyph} aria-hidden="true">◇</span><div><h3>{t('skills.empty.title')}</h3><p>{t('skills.empty.hint')}</p><button type="button" className={ui.pillButton} disabled={pickingDir} onClick={() => void pickImportDir()}>{t('skills.import.pick')}</button></div></div>
       ) : visibleSkills.length === 0 ? (
-        <p className={ui.readOnly} role="status">{t('skills.noMatch')} <button type="button" className={ui.pillButton} onClick={() => { setSkillFilter(''); setStatusTab('all') }}>{t('configs.clearFilters')}</button></p>
+        <p className={ui.readOnly} role="status">{t('skills.noMatch')} <button type="button" className={ui.pillButton} onClick={() => { setSkillFilter(''); setStatusTab('all'); setSourceFilter('') }}>{t('configs.clearFilters')}</button></p>
       ) : (
         <>
-          <div className={ui.skillCardList} data-dragging={dragFolder !== undefined ? '' : undefined}>
-            {renderOrder.map((skill) => {
-              const depth = depthOf(skill.folder)
-              const primaryIndex = depth === 0 ? orderedPrimary.indexOf(skill) : 0
+          <div className={ui.skillCardList} data-dragging={dragId !== undefined ? '' : undefined}>
+            {tree.rows.map(({ skill, depth }) => {
+              const id = skillIdOf(skill)
+              const primaryIndex = depth === 0 ? orderedPrimaryAll.findIndex((item) => skillIdOf(item) === id) : 0
               return (
                 <SkillRow
-                  key={skill.folder}
+                  key={id}
                   skill={skill}
                   t={t}
                   depth={depth}
                   primaryIndex={primaryIndex}
-                  enabled={store.skillEnabled(skill.folder)}
-                  isSelected={selected.has(skill.folder)}
-                  selectable={selectableSkills.some((item) => item.folder === skill.folder)}
-                  dragging={dragFolder === skill.folder}
-                  dropBefore={dropTarget?.folder === skill.folder && dropTarget?.before === true}
-                  dropAfter={dropTarget?.folder === skill.folder && dropTarget?.before === false}
-                  fixing={store.fixingSkill === skill.folder}
+                  enabled={store.skillEnabled(id)}
+                  isSelected={selected.has(id)}
+                  selectable={selectableSkills.some((item) => skillIdOf(item) === id)}
+                  dragging={dragId === id}
+                  dropBefore={dropTarget?.id === id && dropTarget?.before === true}
+                  dropAfter={dropTarget?.id === id && dropTarget?.before === false}
+                  fixing={store.fixingSkill === id}
+                  busy={store.skillsBusy}
                   canMoveUp={depth === 0 && primaryIndex > 0}
-                  canMoveDown={depth === 0 && primaryIndex < orderedPrimary.length - 1}
+                  canMoveDown={depth === 0 && primaryIndex >= 0 && primaryIndex < orderedPrimaryAll.length - 1}
                   onDragStart={onDragStart}
                   onDragOver={onDragOver}
                   onDrop={onDrop}
                   onDragEnd={onDragEnd}
                   onToggleSelect={toggleSelect}
                   onToggleSkill={onToggleSkill}
+                  onTogglePolicy={onTogglePolicy}
                   onFix={onFix}
+                  onDelete={onDelete}
                   onMoveUp={onMoveUp}
                   onMoveDown={onMoveDown}
                 />
@@ -431,6 +492,17 @@ export const SkillsPage = memo(function SkillsPage(props: { store: PromptToolSto
       </div>
 
       {dirty && <p className={ui.readOnly} role="status">{t('skills.dirty')}</p>}
+
+      {pendingDelete && (
+        <ConfirmDialog
+          title={t('skills.delete.title', { name: pendingDelete.name || skillIdOf(pendingDelete) })}
+          description={t('skills.delete.description')}
+          confirmLabel={t('skills.delete.confirm')}
+          cancelLabel={t('skills.dir.cancel')}
+          onConfirm={async () => { await store.deleteSkill(skillIdOf(pendingDelete)) }}
+          onCancel={() => setPendingDelete(undefined)}
+        />
+      )}
     </section>
   )
 })

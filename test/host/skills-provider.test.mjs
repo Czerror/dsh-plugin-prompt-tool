@@ -1,7 +1,7 @@
 import { after, test } from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -247,7 +247,6 @@ test('createCachedSkillsReader：内容未变化时复用同一次扫描结果�
 // 复用外层隔离 DSH_HOME 与已导入的 resolveSkillsDir，用例体逐字保留。
 {
 const TARGET_DIR = join(home, 'skills')
-const LEDGER = join(TARGET_DIR, '.prompt-tool-manifest.json')
 
 /** 每个用例独立的包内 skills 源目录（模拟包根下的 skills/）。 */
 function makeSource() {
@@ -263,11 +262,7 @@ function writeSkill(root, folder, content) {
   writeFileSync(join(dir, 'SKILL.md'), content, 'utf8')
 }
 
-function readLedger() {
-  return JSON.parse(readFileSync(LEDGER, 'utf8'))
-}
-
-test('resolveSkillsDir：首启把包内技能复制到 $DSH_HOME/skills 并写内容哈希账本', () => {
+test('resolveSkillsDir：不再自动复制或写入技能版本账本', () => {
   rmSync(TARGET_DIR, { recursive: true, force: true })
   const { sourceDir, cleanup } = makeSource()
   try {
@@ -275,10 +270,8 @@ test('resolveSkillsDir：首启把包内技能复制到 $DSH_HOME/skills 并写�
 
     const targetDir = resolveSkillsDir(sourceDir, () => {})
     assert.equal(targetDir, TARGET_DIR)
-    assert.equal(readFileSync(join(targetDir, 'demo-skill', 'SKILL.md'), 'utf8'), '---\nname: demo-skill\n---\nV1')
-    const ledger = readLedger()
-    assert.equal(typeof ledger.deployed['demo-skill'], 'string')
-    assert.match(ledger.deployed['demo-skill'], /^[0-9a-f]{64}$/)
+    assert.equal(existsSync(join(targetDir, 'demo-skill', 'SKILL.md')), false)
+    assert.equal(existsSync(join(targetDir, '.prompt-tool-manifest.json')), false)
     // 旧版行为（写 $DSH_HOME/profiles/<profile>/skills）必须已经停止。
     assert.equal(existsSync(join(home, 'profiles')), false)
   } finally {
@@ -286,45 +279,35 @@ test('resolveSkillsDir：首启把包内技能复制到 $DSH_HOME/skills 并写�
   }
 })
 
-test('resolveSkillsDir：包内容未变时不覆盖副本（用户本地改动保留）', () => {
+test('resolveSkillsDir：包内容更新不会覆盖用户实体', () => {
   rmSync(TARGET_DIR, { recursive: true, force: true })
   const { sourceDir, cleanup } = makeSource()
   try {
     writeSkill(sourceDir, 'demo-skill', '---\nname: demo-skill\n---\nV1')
     const targetDir = resolveSkillsDir(sourceDir, () => {})
-    writeFileSync(join(targetDir, 'demo-skill', 'SKILL.md'), '---\nname: demo-skill\n---\nLOCAL-EDIT', 'utf8')
-
-    resolveSkillsDir(sourceDir, () => {})
-    assert.equal(readFileSync(join(targetDir, 'demo-skill', 'SKILL.md'), 'utf8'), '---\nname: demo-skill\n---\nLOCAL-EDIT',
-      '包内容未变：本地改动不得被冲掉')
-
-    // 包内容变化 → 整体替换（升级），并更新账本。
+    mkdirSync(join(targetDir, 'demo-skill'), { recursive: true })
+    writeFileSync(join(targetDir, 'demo-skill', 'SKILL.md'), 'USER-EDIT', 'utf8')
     writeSkill(sourceDir, 'demo-skill', '---\nname: demo-skill\n---\nV2-LONGER')
     resolveSkillsDir(sourceDir, () => {})
-    assert.equal(readFileSync(join(targetDir, 'demo-skill', 'SKILL.md'), 'utf8'), '---\nname: demo-skill\n---\nV2-LONGER')
+    assert.equal(readFileSync(join(targetDir, 'demo-skill', 'SKILL.md'), 'utf8'), 'USER-EDIT')
   } finally {
     cleanup()
   }
 })
 
-test('resolveSkillsDir：升级保留停用态，用户自建技能目录不动', () => {
+test('resolveSkillsDir：不创建或恢复旧 .disabled 标记', () => {
   rmSync(TARGET_DIR, { recursive: true, force: true })
   const { sourceDir, cleanup } = makeSource()
   try {
     writeSkill(sourceDir, 'demo-skill', '---\nname: demo-skill\n---\nV1')
     const targetDir = resolveSkillsDir(sourceDir, () => {})
 
-    // 用户停用包内技能（磁盘事实）+ 用户自建技能
-    renameSync(join(targetDir, 'demo-skill', 'SKILL.md'), join(targetDir, 'demo-skill', 'SKILL.md.disabled'))
-    writeSkill(targetDir, 'user-custom', '---\nname: user-custom\n---\nKEEP')
-
-    // 包内技能升级
+    mkdirSync(join(targetDir, 'demo-skill'), { recursive: true })
+    writeFileSync(join(targetDir, 'demo-skill', 'SKILL.md.disabled'), 'OLD', 'utf8')
     writeSkill(sourceDir, 'demo-skill', '---\nname: demo-skill\n---\nV2-LONGER')
     resolveSkillsDir(sourceDir, () => {})
-
-    assert.equal(existsSync(join(targetDir, 'demo-skill', 'SKILL.md')), false, '升级不得把用户停用的技能悄悄打开')
-    assert.equal(readFileSync(join(targetDir, 'demo-skill', 'SKILL.md.disabled'), 'utf8'), '---\nname: demo-skill\n---\nV2-LONGER')
-    assert.equal(readFileSync(join(targetDir, 'user-custom', 'SKILL.md'), 'utf8'), '---\nname: user-custom\n---\nKEEP')
+    assert.equal(existsSync(join(targetDir, 'demo-skill', 'SKILL.md')), false)
+    assert.equal(readFileSync(join(targetDir, 'demo-skill', 'SKILL.md.disabled'), 'utf8'), 'OLD')
   } finally {
     cleanup()
   }

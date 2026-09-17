@@ -10,6 +10,7 @@ import {
   EMPTY_META,
   type Fields,
   type HostDefaultModel,
+  type SkillCatalogEntry,
 } from './prompt-tool-fields.ts'
 import { bridgeViewFromBoot, fieldsFromView, mergePresetParams } from './prompt-tool-view.ts'
 import {
@@ -88,7 +89,7 @@ export interface PromptToolStore {
   ensureModelReasoning: (provider: string, model: string) => void
   hostDefaultModel?: HostDefaultModel
   moduleFacts?: PresetModuleFacts
-  /** 新技能目录路径输入（多目录卡片：输入路径添加）。 */
+  /** 技能导入来源路径输入（宿主机目录；导入即复制，不再维护目录引用）。 */
   skillsDirDraft: string
   /** 当前预设模板消息批层（pre-step）配置数；0 = 模板无配置（入口开关联动关闭）。 */
   templatePreStepCount: number
@@ -112,14 +113,16 @@ export interface PromptToolStore {
   updateInstructionPolicy: (fileId: string, override: InstructionPolicyFileOverride | null) => Promise<boolean>
   /** 独立来源总开关：仅写策略顶层 enabled，不改变官方负责人或单文件覆盖。 */
   setInstructionSourceEnabled: (enabled: boolean) => Promise<boolean>
-  savingSkillsDir: boolean
+  /** 技能库写入忙碌态（导入 / 创建 / 删除）。 */
+  skillsBusy: boolean
   fixingSkill: string | undefined
   notice: string
   noticeKind: 'ok' | 'error'
   load: () => Promise<Fields>
   showNotice: (kind: 'ok' | 'error', message: string) => void
   patch: (partial: Partial<Fields>) => void
-  persistSwitches: () => void
+  /** 保存全局开关与技能顺序/rank；返回两个通道是否都成功（失败字段保持 dirty）。 */
+  persistSwitches: (onSaved?: () => void) => Promise<boolean>
   persistParamOverrides: () => Promise<void>
   /** 保存提示词配置；返回 false 表示未写入（预设切换中、跨预设旧草稿或失败）。 */
   persistConfigs: (configs: PromptConfigDraft[]) => Promise<boolean>
@@ -135,17 +138,22 @@ export interface PromptToolStore {
   setPresetTemplate: (id: string) => void
   createEngineCapability: (action: 'create' | 'create-recipe', id: string) => Promise<boolean>
   removeEngineCapability: (id: string) => Promise<boolean>
-  /** 门控回退步数草稿（数字输入，失焦提交；0 = 引擎默认 4）。 */
+  /** 导入来源路径草稿（宿主机目录；导入即复制到实体库，不保留引用）。 */
   setSkillsDirDraft: (value: string) => void
-  /** 追加技能目录（按添加顺序；重复路径拒绝）。 */
-  addSkillsDir: (dir: string) => void
-  /** 移除技能目录引用（只删引用，不删原文件）。 */
-  removeSkillsDir: (dir: string) => void
-  toggleSkill: (folder: string) => void
-  /** 批量启停（磁盘标记）；失败项提示但不阻断其余。 */
-  toggleSkills: (folders: string[], enabled: boolean) => Promise<string[]>
-  skillEnabled: (folder: string) => boolean
-  fixSkill: (folder: string) => void
+  /** 从宿主机目录导入技能包到实体库（复制来源，不建立第二发现根）。 */
+  importSkillsDirectory: (path: string) => Promise<boolean>
+  /** 创建标准技能实体并默认启用；失败不改动实体库。 */
+  createSkill: (input: { name: string; description: string; content: string }) => Promise<boolean>
+  /** 回收站删除：SKILL.md 移入 .system/.trash，实体目录保留供人工恢复。 */
+  deleteSkill: (id: string) => Promise<boolean>
+  /** 完全停用 = 创建/取消受管实体的 skills 根链接；以稳定 id 定位。 */
+  toggleSkill: (id: string) => void
+  /** 批量启停；失败项提示但不阻断其余，返回失败 id。 */
+  toggleSkills: (ids: string[], enabled: boolean) => Promise<string[]>
+  skillEnabled: (id: string) => boolean
+  /** 模型 / 用户调用策略：写 skills.yml 并同步实体 frontmatter。 */
+  setSkillPolicy: (id: string, policy: { modelInvocable?: boolean; userInvocable?: boolean }) => Promise<boolean>
+  fixSkill: (id: string) => void
   /** 打开指定技能目录；不传 = 打开第一个生效目录。 */
   openSkillsDir: (path?: string) => Promise<void>
   dirtySwitches: boolean
@@ -259,7 +267,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
   const savedTemplateVariablesRef = useRef<Record<string, string>>({})
   const [templateVariablesEnabled, setTemplateVariablesEnabled] = useState(true)
   const [loading, setLoading] = useState(false)
-  const [savingSkillsDir, setSavingSkillsDir] = useState(false)
+  const [skillsBusy, setSkillsBusy] = useState(false)
   const [fixingSkill, setFixingSkill] = useState<string | undefined>(undefined)
   const [notice, setNotice] = useState('')
   const [noticeKind, setNoticeKind] = useState<'ok' | 'error'>('ok')
@@ -567,7 +575,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     publishFields(next)
   }, [publishFields, publishInstructions])
 
-  const enqueueSave = useCallback((ops: SettingsPathOpView[], okMessage: string | undefined, onSaved: () => void, setBusy?: (busy: boolean) => void): Promise<void> => {
+  const enqueueSave = useCallback((ops: SettingsPathOpView[], okMessage: string | undefined, onSaved: () => void, setBusy?: (busy: boolean) => void): Promise<boolean> => {
     setBusy?.(true)
     return saveQueueRef.current.enqueue(async () => {
       try {
@@ -575,6 +583,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
         revisionRef.current = settings.scope.getSnapshot().revision
         onSaved()
         if (okMessage) showNotice('ok', okMessage)
+        return true
       } catch (error) {
         // settings 注册重建（fiber reload）会把 namespace revision 归零，客户端
         // 持有的版本号随即过期：冲突时重试一次不带 expectedRevision（官方语义 =
@@ -586,6 +595,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
             revisionRef.current = settings.scope.getSnapshot().revision
             onSaved()
             if (okMessage) showNotice('ok', okMessage)
+            return true
           } catch (retryError) {
             await refreshRevision()
             showNotice('error', '保存失败：' + errorMessage(retryError) + '（已刷新配置版本，可重试）')
@@ -594,36 +604,56 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
           await refreshRevision()
           showNotice('error', '保存失败：' + message + '（已刷新配置版本，可重试）')
         }
+        return false
       } finally {
         setBusy?.(false)
       }
     })
   }, [refreshRevision, settings, showNotice])
 
-  const persistSwitches = useCallback((onSaved?: () => void) => {
+  /** 技能快照键：走 `/skills-config` 的字段与 settings 分开推进保存基线。 */
+  const SKILL_SNAPSHOT_KEYS = ['skillOrder', 'skillsDirs', 'skillRankBase'] as const
+  const advanceSavedSwitches = useCallback((patch: Partial<SwitchSnapshot>) => {
+    setSavedSwitches((previous) => {
+      const next = { ...previous } as Record<string, unknown>
+      for (const [key, value] of Object.entries(patch)) next[key] = structuredClone(value)
+      return next as SwitchSnapshot
+    })
+  }, [])
+
+  /** 全局开关 + 技能顺序/rank：两个通道的结果都检查，只推进各自成功的字段基线。
+   *  技能通道失败时技能字段保持 dirty，不因 settings 成功而被标记为已保存。 */
+  const persistSwitches = useCallback((onSaved?: () => void): Promise<boolean> => {
     const savedSnapshot = snapshotSwitches(fieldsRef.current)
-    // 技能管理已从 settings.yaml 抽离：顺序/目录/rank 写插件配置文件，
-    // settings 只留部署轴（AGENTS.md / 预设）；启停是磁盘事实，不经这里。
-    void bridgeCall('skillsConfig', {
+    const skillsPart = Object.fromEntries(SKILL_SNAPSHOT_KEYS.map((key) => [key, savedSnapshot[key]])) as Partial<SwitchSnapshot>
+    const settingsPart = Object.fromEntries(Object.entries(savedSnapshot)
+      .filter(([key]) => !(SKILL_SNAPSHOT_KEYS as readonly string[]).includes(key))) as Partial<SwitchSnapshot>
+    // 技能管理已从 settings.yaml 抽离：顺序/rank 写 skills.yml，settings 只留部署轴；启停是链接事实，不经这里。
+    const skillsWrite = bridgeCall('skillsConfig', {
       order: fieldsRef.current.skillOrder,
-      dirs: fieldsRef.current.skillsDirs,
       rankBase: fieldsRef.current.skillRankBase,
     }).then((res) => {
-      if (!res.ok) showNotice('error', '技能配置保存失败：' + (res.message ?? 'settings bridge unavailable'))
+      if (!res.ok) {
+        showNotice('error', '技能配置保存失败：' + (res.message ?? 'settings bridge unavailable'))
+        return false
+      }
+      advanceSavedSwitches(skillsPart)
+      return true
     })
-    return enqueueSave(
+    const settingsWrite = enqueueSave(
       [
         { op: 'set', path: ['presetOrder'], value: fieldsRef.current.presetOrder },
         { op: 'set', path: ['fallbackText'], value: fieldsRef.current.fallbackText },
         { op: 'set', path: ['writePreset'], value: fieldsRef.current.writePreset },
       ],
       undefined,
-      () => {
-        setSavedSwitches(savedSnapshot)
-        onSaved?.()
-      },
+      () => advanceSavedSwitches(settingsPart),
     )
-  }, [enqueueSave])
+    return Promise.all([skillsWrite, settingsWrite]).then(([skillsOk, settingsOk]) => {
+      if (skillsOk && settingsOk) onSaved?.()
+      return skillsOk && settingsOk
+    })
+  }, [advanceSavedSwitches, enqueueSave, showNotice])
 
   /** 参数类设置：写入激活预设 preset.yml（savePresetParams；随预设隔离）。
    *  与提示词配置共用预设队列；请求成功只把「发起时快照」标记为已保存。若用户在请求期间
@@ -903,8 +933,8 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     if (PARAM_SWITCH_KEYS.has(key)) void persistParamOverrides()
     // writePreset 关闭/开启会重建或移除生成目录：保存后必须重新加载，
     // 否则模块卡片仍显示旧配置（不刷新）。
-    else if (key === 'writePreset') persistSwitches(() => { void load({ silent: true }) })
-    else persistSwitches()
+    else if (key === 'writePreset') void persistSwitches(() => { void load({ silent: true }) })
+    else void persistSwitches()
   }, [patch, persistParamOverrides, persistSwitches, load])
 
   const setPresetTemplate = useCallback(async (id: string) => {
@@ -968,95 +998,135 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     return true
   }, [load, showNotice])
 
-  const addSkillsDir = useCallback((dir: string) => {
-    const next = dir.trim()
-    if (next.length === 0) return
-    const current = fieldsRef.current.skillsDirs
-    if (current.includes(next)) {
-      showNotice('error', '该目录已在列表中')
-      return
+  /** 受管身份查找：稳定 id 优先；folder 回退只用于兼容旧快照。 */
+  const skillById = useCallback((id: string): SkillCatalogEntry | undefined =>
+    fieldsRef.current.skillCatalog.find((item) => (item.id ?? item.folder) === id), [])
+
+  /** 从宿主机目录导入技能包：来源只作一次性复制输入，不注册为第二发现根。 */
+  const importSkillsDirectory = useCallback(async (path: string): Promise<boolean> => {
+    const source = path.trim()
+    if (source.length === 0) {
+      showNotice('error', '请先填写要导入的目录路径')
+      return false
     }
-    const dirs = [...current, next]
-    patch({ skillsDirs: dirs })
-    setSavingSkillsDir(true)
-    void bridgeCall('skillsConfig', { dirs }).then((res) => {
-      setSavingSkillsDir(false)
+    setSkillsBusy(true)
+    try {
+      const res = await bridgeCall('skillsImportDirectory', { path: source })
       if (!res.ok) {
-        showNotice('error', '技能目录保存失败：' + (res.message ?? 'settings bridge unavailable'))
-        return
+        showNotice('error', '导入技能目录失败：' + (res.message ?? 'settings bridge unavailable'))
+        return false
       }
-      showNotice('ok', `技能目录已添加：${next}`)
-      setSavedSwitches(snapshotSwitches(fieldsRef.current))
-      void load({ silent: true })
-    })
-  }, [load, patch, showNotice])
+      showNotice('ok', `已从 ${source} 导入 ${res.value.count} 个文件到技能实体库`)
+      await load({ silent: true })
+      return true
+    } catch (error) {
+      showNotice('error', '导入技能目录失败：' + errorMessage(error))
+      return false
+    } finally {
+      setSkillsBusy(false)
+    }
+  }, [load, showNotice])
 
-  const removeSkillsDir = useCallback((dir: string) => {
-    const dirs = fieldsRef.current.skillsDirs.filter((item) => item !== dir)
-    patch({ skillsDirs: dirs })
-    setSavingSkillsDir(true)
-    void bridgeCall('skillsConfig', { dirs }).then((res) => {
-      setSavingSkillsDir(false)
+  /** 创建标准技能实体：frontmatter 由服务端生成并默认启用。 */
+  const createSkill = useCallback(async (input: { name: string; description: string; content: string }): Promise<boolean> => {
+    setSkillsBusy(true)
+    try {
+      const res = await bridgeCall('skillCreate', input)
       if (!res.ok) {
-        showNotice('error', '技能目录保存失败：' + (res.message ?? 'settings bridge unavailable'))
-        return
+        showNotice('error', '创建技能失败：' + (res.message ?? 'settings bridge unavailable'))
+        return false
       }
-      showNotice('ok', `已移除技能目录引用：${dir}`)
-      setSavedSwitches(snapshotSwitches(fieldsRef.current))
-      void load({ silent: true })
-    })
-  }, [load, patch, showNotice])
+      showNotice('ok', `已创建技能：${res.value.id}`)
+      await load({ silent: true })
+      return true
+    } catch (error) {
+      showNotice('error', '创建技能失败：' + errorMessage(error))
+      return false
+    } finally {
+      setSkillsBusy(false)
+    }
+  }, [load, showNotice])
 
-  /** 启停状态取自扫描事实：skillCatalog 条目的 disabled（磁盘 SKILL.md.disabled）。 */
+  /** 回收站删除：只把标记文件移入 .system/.trash，实体目录与资源保留供人工恢复。 */
+  const deleteSkill = useCallback(async (id: string): Promise<boolean> => {
+    setSkillsBusy(true)
+    try {
+      const res = await bridgeCall('skillDelete', { id })
+      if (!res.ok) {
+        showNotice('error', `删除技能 ${id} 失败：` + (res.message ?? 'settings bridge unavailable'))
+        return false
+      }
+      showNotice('ok', `已删除技能 ${id}；标记文件保留在 ${res.value.path}，可人工恢复`)
+      await load({ silent: true })
+      return true
+    } catch (error) {
+      showNotice('error', `删除技能 ${id} 失败：` + errorMessage(error))
+      return false
+    } finally {
+      setSkillsBusy(false)
+    }
+  }, [load, showNotice])
+
+  /** 启停状态取自受管实体是否暴露链接。 */
   const skillEnabled = useCallback(
-    (folder: string) => fieldsRef.current.skillCatalog.find((item) => item.folder === folder)?.disabled !== true,
+    (id: string) => fieldsRef.current.skillCatalog.find((item) => (item.id ?? item.folder) === id)?.disabled !== true,
     [],
   )
 
-  /** 技能启停 = 磁盘标记改名（SKILL.md ↔ SKILL.md.disabled）：官方 provider 与本插件
-   *  同时看不到/恢复该技能；成功后静默重载，用服务端扫描结果刷新开关与目录状态。 */
-  const toggleSkill = useCallback((folder: string) => {
-    const entry = fieldsRef.current.skillCatalog.find((item) => item.folder === folder)
+  /** 技能启停 = 创建/取消受管实体链接；实体正文与资源保持不变。 */
+  const toggleSkill = useCallback((id: string) => {
+    const entry = skillById(id)
     const enabled = entry === undefined ? true : entry.disabled !== true
-    void bridgeCall('skillToggle', {
-      folder,
-      enabled: !enabled,
-      ...(entry?.dir !== undefined && entry.dir.length > 0 ? { dir: entry.dir } : {}),
-    }).then((res) => {
+    void bridgeCall('skillToggle', { folder: id, enabled: !enabled }).then((res) => {
       if (!res.ok) {
-        showNotice('error', `技能 ${folder} 切换失败：` + (res.message ?? 'settings bridge unavailable'))
+        showNotice('error', `技能 ${id} 切换失败：` + (res.message ?? 'settings bridge unavailable'))
         return
       }
-      showNotice('ok', `已${enabled ? '停用' : '启用'}技能：${folder}`)
+      showNotice('ok', `已${enabled ? '停用' : '启用'}技能：${id}`)
       void load({ silent: true })
     })
-  }, [load, showNotice])
+  }, [load, showNotice, skillById])
 
-  /** 批量启停：逐个改磁盘标记（单个失败不阻断其余），结束后统一重载一次。 */
-  const toggleSkills = useCallback(async (folders: string[], enabled: boolean): Promise<string[]> => {
+  /** 批量启停：逐个切换受管链接（单个失败不阻断其余），结束后统一重载一次。 */
+  const toggleSkills = useCallback(async (ids: string[], enabled: boolean): Promise<string[]> => {
     const failures: string[] = []
-    for (const folder of folders) {
-      const entry = fieldsRef.current.skillCatalog.find((item) => item.folder === folder)
-      const res = await bridgeCall('skillToggle', {
-        folder,
-        enabled,
-        ...(entry?.dir !== undefined && entry.dir.length > 0 ? { dir: entry.dir } : {}),
-      })
-      if (!res.ok) failures.push(folder)
+    for (const id of ids) {
+      const res = await bridgeCall('skillToggle', { folder: id, enabled })
+      if (!res.ok) failures.push(id)
     }
     await load({ silent: true })
     if (failures.length > 0) {
       showNotice('error', `部分技能切换失败：${failures.join('、')}`)
     } else {
-      showNotice('ok', `${enabled ? '已启用' : '已停用'} ${folders.length} 个技能`)
+      showNotice('ok', `${enabled ? '已启用' : '已停用'} ${ids.length} 个技能`)
     }
     return failures
   }, [load, showNotice])
 
-  const fixSkill = useCallback(async (folder: string) => {
-    setFixingSkill(folder)
+  /** 模型 / 用户调用策略：YAML 是唯一管理来源，服务端同步回实体 frontmatter。 */
+  const setSkillPolicy = useCallback(async (
+    id: string,
+    policy: { modelInvocable?: boolean; userInvocable?: boolean },
+  ): Promise<boolean> => {
     try {
-      const res = await bridgeCall('skillFix', { folder })
+      const res = await bridgeCall('skillPolicy', { id, policy })
+      if (!res.ok) {
+        showNotice('error', `技能 ${id} 调用策略保存失败：` + (res.message ?? 'settings bridge unavailable'))
+        return false
+      }
+      showNotice('ok', `已更新技能 ${id} 的调用策略`)
+      await load({ silent: true })
+      return true
+    } catch (error) {
+      showNotice('error', `技能 ${id} 调用策略保存失败：` + errorMessage(error))
+      return false
+    }
+  }, [load, showNotice])
+
+  const fixSkill = useCallback(async (id: string) => {
+    setFixingSkill(id)
+    try {
+      const res = await bridgeCall('skillFix', { folder: id })
       if (res.ok) {
         showNotice('ok', `已修复技能 ${res.value.folder} → ${res.value.fixedFolder}：${res.value.actions.join('；') || '无需改动'}`)
         await load()
@@ -1131,7 +1201,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     getInstructionPolicy: () => instructionPolicyRef.current,
     updateInstructionPolicy,
     setInstructionSourceEnabled,
-    savingSkillsDir,
+    skillsBusy,
     fixingSkill,
     notice,
     noticeKind,
@@ -1151,11 +1221,13 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     createEngineCapability,
     removeEngineCapability,
     setSkillsDirDraft,
-    addSkillsDir,
-    removeSkillsDir,
+    importSkillsDirectory,
+    createSkill,
+    deleteSkill,
     toggleSkill,
     toggleSkills,
     skillEnabled,
+    setSkillPolicy,
     fixSkill,
     openSkillsDir,
     dirtySwitches,

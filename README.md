@@ -22,13 +22,20 @@ dsh --profile prompt-tool
 
 从 web 模板初始化会让 profile 自带 `@deepseek-ai/dsh-base` 与 `@deepseek-ai/dsh-web-app` 两层，无需额外的 Web 自愈步骤。`--from-default-profile` 只在 profile 不存在时创建，不要对既有 profile 反复执行；已初始化的 profile 不会被改写。
 
-包内 `skills/` 会在启动时同步到 `$DSH_HOME/skills`（官方 `dsh-skill-filesystem` 的 `user-dsh` 技能根，所有 profile 共享）：没有手写版本清单，插件按**内容哈希账本**（副本里的 `.prompt-tool-manifest.json`）判断——包内容没变就不动你本地那份，包内容更新才整体覆盖（保留 `SKILL.md.disabled` 停用态），你在该目录里自建的技能不会被删改。配置了自定义技能目录时不做复制。
+技能实体集中存放在 `$DSH_HOME/skills/.system/`（官方 `dsh-skill-filesystem` 扫描跳过 `.system` 段），启用项通过该根下的目录链接（Windows junction）暴露给官方 provider 与模型。包内 `skills/` 不再自动同步或回滚：它是**用户可显式导入的资源**，导入即把内容复制进实体库，之后由你自行覆盖更新或手动修改。
 
-技能状态不再是 settings 数据：**停用 = 把技能目录里的 `SKILL.md` 改名为 `SKILL.md.disabled`**（官方 provider 与本插件同时看不到，开关热生效、可手工还原），技能顺序 / 附加目录 / rank 基数写在 `$DSH_HOME/skills/.system/prompt-tool/config.yml`（官方扫描跳过 `.system` 段），`settings.yaml` 只保留部署轴（预设 / AGENTS.md 等）。
+技能状态不再是 settings 数据：`$DSH_HOME/skills/.system/skills.yml` 是启停、顺序、rank 基数与**模型/用户调用权限**的唯一管理来源；**完全停用只取消受管链接**，实体与资源保留，不再使用 `SKILL.md.disabled`。frontmatter 的 `disable-model-invocation` / `user-invocable` 是面向官方 provider 的同步结果，外部工具改动这两个字段后按 YAML 恢复并提示一次偏差。`settings.yaml` 只保留部署轴（预设 / AGENTS.md 等）。详见 [docs/skills-management.md](docs/skills-management.md)。
 
 ### 从旧版本升级
 
-本项目**不含任何旧参数/旧内容迁移代码**（既没有运行时兼容，也没有迁移脚本）：升级前请自行把旧数据整理成当前契约——技能实体放 `$DSH_HOME/skills`（停用 = `SKILL.md.disabled`），技能顺序/目录写 `$DSH_HOME/skills/.system/prompt-tool/config.yml`，预设参数只认 `preset.yml` 的当前字段。
+预设参数只认 `preset.yml` 的当前字段，没有运行时兼容层。技能目录布局有一次**一次性迁移**：把 `$DSH_HOME/skills` 下的普通技能目录搬进 `.system` 并建立启用链接、由旧配置生成 `skills.yml`（默认只预览，`--apply` 才写入，`--rollback <记录>` 可复原）：
+
+```powershell
+node scripts/migrate-skills.mjs --root "$env:DSH_HOME\skills"            # 只读预览
+node scripts/migrate-skills.mjs --root "$env:DSH_HOME\skills" --apply    # 实际迁移（自动备份）
+```
+
+迁移前请先停用旧的 `SKILL.md.disabled` 标记（本版本不再识别它，也不会静默当成已启用导入）。
 
 旧的 base-only profile（只有 `dsh-base`）首次启动时，插件会把 `@deepseek-ai/dsh-web-app` 补进该 profile 的 `dsh.profile.bundles`（写前留 `.bak`，幂等），并提示重启；需要重启 DSH 服务后生效，插件不会替你重启运行中的服务。
 
@@ -46,7 +53,7 @@ dsh --profile prompt-tool
 - 🛡️ **失败不伤会话**：单条失败跳过 + `warnOnce`；配置错误挂载时 fail loud；`dedupe: session` 持久幂等
 - 🧭 **通用 instruction-hint 引擎**：所有预设都可通过 `strategy: instruction-hint` 或 `placeholder + fill: instruction-hint` 提示指令文件存在；实现位于 `engine/instruction-hint.mjs`，不绑定任何预设；`context-gate.instructionHint` 按模型可见 surface 去重，重挂不重复，被压缩遮蔽后才再次提示
 - 📦 **Bridge 载荷**：JSON 请求统一 32 MiB 硬上限并明确返回 413；角色卡原始图片走 64 MiB 流式通道，按 PNG 魔数识别。
-- 📂 **技能目录管理**：Web UI 可用宿主目录选择器保存外部技能目录的绝对路径引用，也可用浏览器 `webkitdirectory` 导入文件夹内容到第一个当前生效技能目录；两种操作明确分开。
+- 📂 **技能实体库**：实体集中在 `$DSH_HOME/skills/.system`，根链接控制启停；管理页提供来源筛选、模型/用户调用开关、创建、回收站删除，以及「选择宿主机目录并导入」「浏览器 `webkitdirectory` 导入」两种一次性导入（外部目录不再作为第二发现根）。
 - 🎭 **SillyTavern 导入**：JSON 预设、角色卡和独立世界书转换为本地预设——按官方顺序表保留启停，赋值模板运行时求值；不等价能力明确报告，采样参数由宿主管理
 - 🎴 **角色卡库**：SillyTavern 角色卡（PNG tEXt chunk `ccv3`/`chara`，或 chara_card JSON）导入独立库（`.characters/<id>/`，含原图/转换参数/角色记忆），按 PNG 魔数识别图片并经原始文件流上传，避免头像 base64 膨胀；按需「导入到当前预设」（`chara-<卡>-` 前缀合并、幂等可移除），多文件自动合并
 - 📚 **世界书**：`character_book` 转 world-book 策略配置（`keys` 命中触发 / `constant` 常驻 / 正则键自动检测 / `selectiveLogic` 组合逻辑），与模块卡片同一存储与编辑（模块列表「世界书」过滤 + 批量启用/禁用）
