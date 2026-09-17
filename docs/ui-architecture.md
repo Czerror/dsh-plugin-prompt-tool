@@ -1,7 +1,7 @@
 # Web 客户端 UI 结构框架
 
 > 适用范围：dsh-plugin-prompt-tool 的 src/client/ 结构、宿主 SlotRegistry 接入、工作台页面编排、客户端状态与 bridge 边界、共享交互和样式所有权。
-> 当前状态：Wave 0-9 已完成；本文是 2026-09-04 起的现行架构说明，不是实施计划。
+> 本文描述当前实现，不是实施计划；与代码不一致时以代码为准。
 > 相关代码：src/client/index.ts、src/client/app/、src/client/data/、src/client/features/、src/client/ui/、src/shared/bridge-contract.ts。
 
 本文将已完成的 UI 重构结论固化为长期维护契约。preset、params、promptConfigs、variables、customTools、角色卡和子代理策略的存储及生成语义仍以现有 host/engine 文档为准；本文只说明客户端如何承载这些能力。
@@ -62,6 +62,10 @@
 
     src/client/
     ├─ index.ts
+    ├─ locales.ts
+    ├─ locales-cards.ts
+    ├─ locales-params.ts
+    ├─ locales-prompts.ts
     ├─ prompt-tool-types.ts
     ├─ app/
     │  ├─ workbench/
@@ -71,11 +75,12 @@
     │  │  ├─ SettingsTab.tsx
     │  │  ├─ Workbench.module.css
     │  │  ├─ WorkbenchOverlay.tsx
-    │  │  ├─ workspace-controller.ts
-    │  │  └─ workbench-face.ts
+    │  │  ├─ workbench-face.ts
+    │  │  └─ workspace-controller.ts
     │  └─ workspace/
     │     ├─ PromptWorkspace.module.css
     │     ├─ PromptWorkspace.tsx
+    │     ├─ workspace-browse-state.ts
     │     ├─ WorkspaceFrame.tsx
     │     ├─ WorkspaceNavigation.tsx
     │     ├─ workspace-pages.ts
@@ -89,23 +94,32 @@
     │  ├─ dirty-state.ts
     │  ├─ host-api.ts
     │  ├─ import-files.ts
+    │  ├─ instruction-drafts.ts
+    │  ├─ instruction-policy.ts
+    │  ├─ model-sync-notice.ts
     │  ├─ param-overrides.ts
     │  ├─ prompt-config-content.ts
     │  ├─ prompt-tool-fields.ts
     │  ├─ prompt-tool-view.ts
     │  ├─ save-queue.ts
     │  ├─ session-model-face.ts
+    │  ├─ use-import-preview-flow.ts
     │  ├─ use-prompt-tool-fields.ts
-    │  └─ use-prompt-tool-store.ts
+    │  ├─ use-prompt-tool-store.ts
+    │  └─ workspace-drafts.ts
     ├─ features/
     │  ├─ characters/
     │  │  ├─ character-card.ts
     │  │  ├─ characters.module.css
     │  │  └─ CharactersPage.tsx
     │  ├─ models/
+    │  │  ├─ model-options.ts
     │  │  └─ ModelRouteCard.tsx
     │  ├─ modules/
-    │  │  └─ EngineModuleList.tsx
+    │  │  ├─ EngineModuleList.tsx
+    │  │  └─ EngineParamFields.tsx
+    │  ├─ persona/
+    │  │  └─ PresetPersonaCard.tsx
     │  ├─ presets/
     │  │  ├─ presets.module.css
     │  │  ├─ PresetsPage.tsx
@@ -120,7 +134,8 @@
     │  │  ├─ PromptConfigList.tsx
     │  │  ├─ PromptConfigsEditor.tsx
     │  │  ├─ textarea-resize.ts
-    │  │  └─ useTemplatePicker.ts
+    │  │  ├─ useTemplatePicker.ts
+    │  │  └─ WorldBookDiagnosticsCard.tsx
     │  ├─ skills/
     │  │  ├─ skill-status.ts
     │  │  ├─ skills.module.css
@@ -132,14 +147,18 @@
     │  │  ├─ subagents.module.css
     │  │  └─ SubagentToolPolicyCard.tsx
     │  └─ tools/
+    │     ├─ custom-tool-parameters.ts
     │     ├─ CustomToolEditor.tsx
     │     ├─ CustomToolsCard.tsx
     │     ├─ tools.module.css
+    │     ├─ ToolsPreviewPage.tsx
+    │     ├─ tool-surface-request.ts
     │     └─ ToolSurfaceView.tsx
     └─ ui/
        ├─ anchored-popover-fit.ts
        ├─ anchored-popover.ts
        ├─ CollapsibleCard.tsx
+       ├─ ConfirmDialog.tsx
        ├─ controls.module.css
        ├─ dialog-focus.ts
        ├─ DialogSurface.tsx
@@ -150,7 +169,10 @@
        ├─ hint-tooltip-focus.ts
        ├─ hint-tooltip-position.ts
        ├─ ImportFileButton.tsx
+       ├─ ImportPreviewCard.tsx
        ├─ MenuSelect.tsx
+       ├─ menu-focus.ts
+       ├─ reveal-card.ts
        ├─ SettingInputRow.tsx
        ├─ StatusBadge.module.css
        ├─ StatusBadge.tsx
@@ -161,7 +183,7 @@
        ├─ TemplatePicker.tsx
        └─ ToggleRow.tsx
 
-生成目录 lib/ 不属于源码 owner，不手工编辑。客户端样式已按 owner 分开，PromptUi.module.css 不再存在。
+共 105 个源文件：app 15、data 18、features 40、ui 27、顶层 5。生成目录 lib/ 不属于源码 owner，不手工编辑。客户端样式已按 owner 分开，PromptUi.module.css 不再存在。
 
 ## 4. 宿主接入与生命周期
 
@@ -180,11 +202,11 @@ src/client/index.ts 的 inject 列表是：
 
 apply(ctx) 依次构造：
 
-1. locale 字典注册：`ctx.effect(() => registerPromptToolLocale(ctx.locale))` 把 `src/client/locales.ts` 的 zh/en 字典注册进官方命名空间 `prompt-tool`；卸载/重挂由 effect 释放，不重复注册。
-2. prompt-tool SettingsScope transport，用于标准部署设置的 mirror、ensure 和 mutate。
-3. PromptToolHostApi，封装目录选择、打开路径、预设切换和当前会话模型选择。
-4. session-model-face，读取官方 sessions projection，并经 remote.session.selectModel 写回。
-5. PromptToolWorkbenchFace：controller / api / settings / `t`（`ctx.locale.bind('prompt-tool')`，引用稳定、调用时读当前语言）。
+1. locale 字典注册：`ctx.effect(() => registerPromptToolLocale(ctx.locale))` 把 `src/client/locales.ts` 的 zh/en 字典注册进官方命名空间 `prompt-tool`；卸载/重挂由 effect 释放，不重复注册。随后 `ctx.locale.bind(LOCALE_NS)` 得到引用稳定的 `t`。
+2. 连接世代重建：`ctx.on('connection/reset')` 触发一次 `bridgeCall('models', { refresh: true })`，让宿主重连后丢弃陈旧的模型目录缓存；失败静默，不阻塞启动。
+3. prompt-tool SettingsScope transport，用于标准部署设置的 mirror、ensure 和 mutate。
+4. PromptToolHostApi，封装目录选择、打开路径、预设切换和当前会话模型选择；session-model-face 在这里**内联构造**为 `api.sessionModel` 字段（不单独成步），内部读取官方 sessions projection 并经 `remote.session.selectModel` 写回。
+5. PromptToolWorkbenchFace：controller / api / settings / `t`。
 6. registerWorkbenchSlots(ctx, face)，唯一负责 shell.overlay 悬浮入口与 settings.plugins.tab 的注册。
 
 入口不直接导入页面、bridge endpoint 或业务卡片；需要新宿主能力时先扩展 data/host-api.ts 或 shared 契约。
@@ -206,8 +228,8 @@ apply(ctx) 依次构造：
 - 组件树很深，不逐层重建 i18n 上下文：入口组件用注入的 `t`，`PromptToolWorkbenchFace.t` 作为同一 bind 结果的稳定引用向下传递（页面与卡片按需加 `t` prop）。
 - 渲染时才求值（`t('key', params)`），不做模块级缓存；语言切换由 renderer 订阅 locale revision 后整体重渲染跟进。
 - 不进字典的内容：provider/model id、文件路径、用户内容、协议 code 与 bridge 错误码；动态拼接用 `{name}` 占位参数。
-- 已迁移：工作台外壳与悬浮入口、设置页、六页外壳、引擎参数卡与模块列表（标签按 shared 键推导成 `param.<键>` 词条）、提示词配置与人设区、角色库页、子代理「工具与深度」模块卡与实例级工具策略、自定义工具卡。子代理策略的档位显示名（首次启用写入 preset.yml 的 seed 值）属于用户可改内容，保持原值不入字典。
-- 仍未迁移：`ui/` 控件回退文案（`TagInput` / `MenuSelect` / `DialogSurface` / `EngineModuleCard`），以及 `features/models/**` 与 `data/**` 的状态提示（这两个目录属模型路由任务的文件边界）。迁移时同步加入 `test/client/locale-contract.test.mjs` 的 `MIGRATED_UI_FILES` 清单。
+- 已迁移：工作台外壳与悬浮入口、设置页、六页外壳、引擎参数卡与模块列表（标签按 shared 键推导成 `param.<键>` 词条）、提示词配置与人设区、角色库页、子代理「工具与深度」模块卡与实例级工具策略、自定义工具卡、导入预览卡。子代理策略的档位显示名（首次启用写入 preset.yml 的 seed 值）属于用户可改内容，保持原值不入字典。
+- 仍未迁移：`ui/` 控件的回退文案（`MenuSelect` / `TagInput` / `DialogSurface` / `EngineModuleCard`），以及 `features/models/**` 与 `data/**` 的状态提示（这两个目录属模型路由任务的文件边界）。`test/client/locale-contract.test.mjs` 的 `MIGRATED_UI_FILES` 是迁移范围的单一事实源；新增已迁移文件时必须同步登记，否则契约测试不会守卫它的文案。
 
 ### 4.3 悬浮入口与关闭行为
 
@@ -222,7 +244,7 @@ apply(ctx) 依次构造：
 - 采用：shell.overlay 可拖动悬浮入口、官方 Switch / Tag。
 - 已满足、无需接入：`host-open-in-app`。`PromptToolHostApi.openPath` 走 `remote.session.openWorkspacePath`，其契约就是宿主交给原生打开器；官方 `ui-open-in-app` 客户端包不提供跨插件服务，只是会话头部的分割按钮。
 - 不适用：`ctx.workspaceFiles` 只覆盖 workspace 根，插件的读写路径域是 DSH_HOME（预设、技能、角色卡）。
-- 不采用：官方右侧栏（`ui-sidebar-right`）实测不适合本项目，已移除；`client-resources` 资源 tab 需要自建 provider 与第二个 tab 类型，而工作台已在抽屉内就地编辑这些文件，重复呈现没有收益。
+- 不采用：官方右侧栏（`ui-sidebar-right`）实测不适合本项目，已移除（决策见 §4.3）；`client-resources` 资源 tab 需要自建 provider 与第二个 tab 类型，而工作台已在抽屉内就地编辑这些文件，重复呈现没有收益。
 
 ## 5. 工作台与页面信息架构
 
@@ -250,12 +272,22 @@ workspace-pages.ts 是页面元数据的唯一来源。默认页为 features，�
 
 | id | 标题 | 主要组合 |
 |---|---|---|
-| features | 主会话 | 主会话 ModelRouteCard、公共配置、平铺的 PromptConfigList 与 EngineModuleList（下拉按插入点层级/策略筛选）、tool-pipeline 自定义工具卡 |
+| features | 主会话 | 主会话 ModelRouteCard、公共配置、预设人设卡、平铺的 PromptConfigList 与 EngineModuleList（下拉按插入点层级/策略筛选）、tool-pipeline 自定义工具卡、预设包导入预览 |
 | subagent | 子代理 | ModelRouteCard、DelegationToolsCard、与主会话同款的合并创建菜单（能力模块/recipe、按层模板、工具模板、模板变量）、EngineModuleCards 能力卡、CustomToolsCard 自定义工具卡、ConfigListWithTemplates（scope=subagent） |
 | tools | 工具预览 | 顶置统一搜索；当前会话／所选预设两个可折叠分组，预设选择位于分组标题右侧；双列展开详情卡，680px 以下单列 |
 | skills | 技能设置 | 目录与来源、状态筛选、SkillRow、目录引用/导入/排序 |
 | presets | 预设配置 | 全局生成开关、AGENTS 路径与生成顺序设置、PresetSwitcher 与预设 CRUD |
 | characters | 角色管理 | PNG/JSON 导入、角色卡库、应用/移除/删除与目录打开 |
+
+预设人设卡（`features/persona/PresetPersonaCard.tsx`）编辑 preset.yml 顶层 `persona` 段的四个可编辑项：`prefix`、`suffix`，以及 `complete`（独占）与 `includeRuntimeContext`（动态运行时上下文）两个开关（后者默认开启）。读写都走 `/persona`，写由 host 校验并原子写盘；`complete` 与提示词配置的「独占」互斥，由 bridge 在写盘前 fail loud。卡头 meta 区分「存在 persona 段」与「继承预设」——空对象 `{}` 也算存在，不等于有实际内容。四项均未改动时保存落成删除语义（不带 persona 写盘）；二次确认的移除入口只在 persona 段已存在时渲染。它只在主会话页出现，不在子代理页渲染。
+
+### 5.2.1 创建入口与过滤的分工
+
+工具栏的「添加能力 / 工具模块」是唯一创建入口，始终提供全部六层模板、工具和可添加能力，不按当前列表层级过滤。菜单内部平铺，不折叠二级入口；「添加模板 · 层级」打开该层模板浮层，另有「添加工具模板…」「添加模板变量」、新建空白工具、添加模块和连锁创建。
+
+**过滤与新建严格分离**：过滤下拉与搜索词只由用户手动改变，创建路径一律不写入过滤状态；新建只做两件事——展开新卡并滚动定位到它（能力卡定位锚点是能力 id，配置卡锚点是配置 id，节点未就绪时按上限重试后静默退出）。因此目标卡落在被筛掉的层或作用域时保持不可见，切到该层或「全部」即可见；同一能力重复创建每次都重新展开（定位信号带递增 token，不依赖 id 变化）。模板重复创建时分配唯一标识，不覆盖原配置。
+
+**新建即可见由受众代入保证**：子代理列表新建的配置写 `audience: subagent`，主会话列表新建的配置清除模板自带的「仅子代理」限制回落公用，二者都不改动过滤框。工具模板选中后关闭浮层，创建意图绑定发起预设，不能切换预设后重放；空白工具的 id 和模型可见名均不重复。子代理页复用同一套创建入口与纪律。
 
 主会话页中的卡片顺序是 UI 分组，不表示六个官方注入 seam 的运行顺序。六个插入点彼此独立，运行时顺序和参数语义见 [engine-reuse.md](engine-reuse.md)。
 
@@ -288,6 +320,9 @@ workspace-pages.ts 是页面元数据的唯一来源。默认页为 features，�
 | 当前会话模型 | session-model-face | 官方 sessions projection 生命周期 |
 | filter、search、列表展开、页滚动 | workspace-browse-state | 工作台实例期，配置视图按页面/预设区分；异步资源就绪后一次恢复滚动 |
 | 工具、人设、策略、原始 JSON/数字草稿 | store.editorDrafts / workspace-drafts | 按预设和字段身份保留；未存草稿或保存中阻止预设切换；改名迁移、删除清理对应字段 |
+| 指令文件正文草稿 | instruction-drafts | 与预设保存队列分离；按指令上下文（`contextId`）隔离，旧上下文迟到响应不覆盖当前视图 |
+| 导入预览与提交阶段 | use-import-preview-flow | 每次 `run()` 独立生命周期；卸载结束等待、不悬挂 Promise |
+| 模型同步提示 | model-sync-notice | 纯函数，从保存结果推导提示，不持有状态 |
 | 创建意图、菜单、删除/导入确认、拖拽 | 对应 feature | 仍随页面卸载失效；不恢复或重放危险操作 |
 | 保存队列、revision、草稿版本 | save-queue + store | 工作台挂载期 |
 | 大文本和角色卡原文件 | 文件通道/bridge | 不进入 settings descriptor |
@@ -323,6 +358,11 @@ use-prompt-tool-store.ts 是唯一工作台 facade，负责把 SettingsScope mir
 | prompt-config-content.ts | preset.md 内容资产的提升与剥离；AGENTS 文件卡（`params.file`）的正文提升与文件写回分流 |
 | save-queue.ts | 串行保存任务的最小队列 |
 | import-files.ts | 浏览器文件导入的纯读取辅助 |
+| use-import-preview-flow.ts | 导入的预览→确认→提交流程状态机（预设包与角色卡共用） |
+| workspace-drafts.ts | 按预设身份的跨页草稿池：人设、工具、策略与展开状态 |
+| instruction-drafts.ts | 指令文件正文的独立草稿池与版本基线 |
+| instruction-policy.ts | 指令策略的读写、默认值与单文件开关推导 |
+| model-sync-notice.ts | 预设保存后的宿主默认模型同步提示推导 |
 | session-model-face.ts | 官方会话模型 projection 与选择动作 |
 
 这些模块不重复实现页面渲染，也不把 feature 专属网络流程塞回通用 transport。
@@ -369,13 +409,39 @@ JSON bridge 的统一上限为 32 MiB；角色卡原始文件流独立限制为 
 13. bootstrap 与策略快照均读取完成后再应用，异步边界复核请求序号、会话与草稿状态。暂时离开工作区只暂停文件写资格，保留草稿与版本基线；返回并读取时，版本未变可继续保存，版本变化仍须解决冲突。
 14. 列表保存按钮等待真实 `Promise<boolean>` 结果；文件或预设部分失败时不显示整体成功、不以静默重载清除错误。已经成功保存的文件立即更新其基线，不因后续失败回滚或丢失确认。
 
+### 7.4 导入预览与提交
+
+预设包导入与角色卡 PNG/JSON 导入共用同一状态机（`data/use-import-preview-flow.ts`），两处入口（`features/presets/PresetSwitcher.tsx`、`features/characters/CharactersPage.tsx`）只注入自己的 `preview` / `commit` 处理器。**导入从不直接写盘**：先只读预览，服务端同源转换并回报有损信息与版本，用户确认后才提交。
+
+阶段与「按钮可用」是两件事：
+
+| 阶段 | 含义 | 界面行为 |
+|---|---|---|
+| idle | 无在途导入 | — |
+| reading | 正在读取／预览（可能是重新预览） | 卡片保留上一次内容；换文件才清空旧预览 |
+| confirming | 有 `ready` 预览或顺序组候选，等待用户决定 | 确认与取消可用且可键盘聚焦；只有确实禁用的动作变灰（候选未选组时确认禁用） |
+| submitting | 已提交，等待服务端结果 | 确认与取消禁用；成功后刷新事实 |
+
+失败与失效分支：
+
+| 触发 | 行为 |
+|---|---|
+| 需要选顺序组（`candidates`） | 只呈现候选卡，确认不可用；选组或换组都重新预览，旧 `ready` 作废 |
+| 预览响应迟到 | 按请求序号丢弃，不覆盖更新的状态；重预览期间的改选记在 `pendingGroupRef`，在途响应返回后按最新选择重预览 |
+| 提交返回 `stale`（`previewRevision` 不符） | 保留文件与预览，提示需重新导入；不再自动重试 |
+| 提交非过期失败 | 保留文件与预览：再次确认即重试，取消才跳过该文件 |
+| 目标预设切换、页面卸载 | 结束等待、让迟到响应失效，不继续写下一个文件；不悬挂 Promise |
+
+同一份预览只完成一次：`decisionRef` 在 settle 时清空，连点确认最多产生一次提交。每次 `run()` 是独立的生命周期，角色卡的 `files` 模式逐张排队，取消只跳过当前单元。
+
 ## 8. 业务 Feature
 
 feature 只拥有自己的视图、瞬时状态、领域纯 helper 和 CSS：
 
 | feature | 责任边界 |
 |---|---|
-| prompts | 六层配置卡、字段策略、排序、模板插入、变量编辑和内容配置 |
+| prompts | 六层配置卡、字段策略、排序、模板插入、变量编辑和内容配置；世界书只读诊断卡 |
+| persona | preset.yml 顶层 persona 段的编辑卡；prefix/suffix 与 complete 互斥校验，写盘经 host 校验与重建 |
 | models | 当前预设的主/子代理模型路由卡；模型下拉展示完整目录并按服务商分组，选择模型时内部回写 provider + model，不提供独立服务商选择控件 |
 | modules | 引擎能力身份、存在性与参数卡；一项实际装配能力一张卡，消费 `/bootstrap.moduleFacts`（显式模块及仍在运行的历史策略兼容装配），统一列表的行为分类由工作区组合，卡片形态由 ui/EngineModuleCard.tsx 提供 |
 | subagents | 委派工具、实例级工具策略草稿及策略解析预览；不重复嵌入工具面 |
@@ -394,6 +460,8 @@ ui/ 只接收 props/callback，当前真实共享 seam 包括：
 
 - FormField：label/id、说明与错误关联；MenuSelect转发id到真实触发器，hint可内联或使用HintTooltip。
 - SettingInputRow、ToggleRow、TagInput：设置和字段编辑形态；ToggleRow 的开关使用官方 Switch。
+- ImportPreviewCard：导入预览卡，展示服务端同源转换报告与有损信息（warning/info/被排除条目各自滚动容器）；预设包与角色卡 JSON 两处入口共用。
+- reveal-card.ts：创建后的「展开并定位到新卡」纯逻辑，能力卡与配置卡共用。
 - MenuSelect：直接封装官方 Menu 的单选胶囊；支持连续选项的 `group` 分组标题。标准设置使用 36px，模块卡内使用 28px 紧凑形态，浮层统一 portal。
 - CollapsibleCard、EngineModuleCard：具体可复用的折叠/模块卡形态，不是万能 Card。
 - StatusDot：6px实心状态点与3px柔和静态光晕，含success/neutral/danger/warning，语义由相邻文字表达，不使用循环动画。
@@ -402,6 +470,8 @@ ui/ 只接收 props/callback，当前真实共享 seam 包括：
 - ImportFileButton：隐藏原生 file input 的导入入口。
 - TemplatePicker、DialogSurface：模板和预设操作的portal浮层；ConfirmDialog复用DialogSurface的警告对话、初始焦点与还焦能力，不叠加第二套焦点陷阱。ConfirmDialog 的两个按钮是同一个本地胶囊 `.pillButton`（确认按钮加 `data-danger`）：官方 Button 没有 danger 变体，`<Button data-danger>` 不会染红，且取消按钮需要原生 ref 承载初始焦点与 busy 还焦，因此这一对按钮不包官方 Button。
 - anchored-popover.ts / anchored-popover-fit.ts：锚点位置和窄视口适配。
+- hint-tooltip-focus.ts / hint-tooltip-position.ts：HintTooltip 的键盘读取与视口翻转定位。
+- menu-focus.ts：菜单浮层的首项焦点补位（官方 portal 先隐藏后定位，需在定位帧补焦点）。
 - tab-key.ts、dialog-focus.ts：纯键盘索引及弹窗焦点行为。
 
 单行 input 与 textarea 继续使用原生元素；下拉单选统一使用官方 Menu，经 MenuSelect 保持触发器、浮层和 ARIA 一致。新按钮优先使用官方 Button/Pill/icon primitive，不创建本地 Button wrapper。
@@ -416,11 +486,11 @@ Menu显式启用autoFocus；已发布0.1.6-alpha.1的portal先隐藏后定位，
 
 promptConfigs 模块卡展开区按基础信息、注入规则、作用范围、内容、策略参数和高级元数据分区；短字段使用基于卡片宽度的容器网格，高级来源/幂等元数据使用原生 details 收纳。字段说明统一使用 HintTooltip；视觉沿用宿主 Tooltip，定位由本插件处理。布局变化不得改变字段默认值、未知枚举兼容或保存载荷。
 
-主会话使用单一模块列表，视觉顺序为：人设卡（脱离「公共配置」分组，不参与层过滤）→ 各能力卡 → 自定义工具卡 → 层级配置卡；公共配置（当前会话模型、模板变量和提示词生成默认值）位于列表顶部。视觉顺序不建立跨插入点的全局执行顺序，`anchor-turn` 的实际 hook 同样不受展示影响。工具栏提供插入点层级与策略筛选、合并创建菜单和提示词配置操作；列表筛选只影响展示，仍是同一份平铺列表，不按插入点分区块。能力与提示词配置保留各自保存、排序和删除语义，不建立第二份字段状态。
+主会话使用单一模块列表，视觉顺序为：预设人设卡（脱离「公共配置」分组，不参与层过滤）→ 各能力卡 → 自定义工具卡 → 层级配置卡；公共配置（当前会话模型、模板变量和提示词生成默认值）位于列表顶部。视觉顺序不建立跨插入点的全局执行顺序，`anchor-turn` 的实际 hook 同样不受展示影响。工具栏提供插入点层级与策略筛选、合并创建菜单和提示词配置操作；列表筛选只影响展示，仍是同一份平铺列表，不按插入点分区块。能力与提示词配置保留各自保存、排序和删除语义，不建立第二份字段状态。
 
 模块卡（能力卡、提示词生成默认值卡、自定义工具卡）与层级配置卡共用同一个 `configList` 列表容器与卡间距；world-book 视图只隐藏模块卡容器，不卸载工具草稿。能力卡与工具卡默认折叠，只有创建/定位（工具栏「添加能力 / 工具模块」创建能力、新建或插入工具）才自动展开目标卡，其余展开与折叠完全由用户点击决定；创建动作不改动层级筛选与搜索词。只读预设（system 或关闭 `writePreset`）下工具卡同样默认折叠：卡头操作区与表单各自是独立的 `fieldset` 禁用边界，折叠按钮留在边界之外保持可点。
 
-工具栏的「添加能力 / 工具模块」是唯一创建入口，始终提供全部六层模板、工具和可添加能力，不按当前列表层级过滤。菜单内部平铺，不折叠二级入口；「添加模板 · 层级」打开该层模板浮层，另有「添加工具模板…」「添加模板变量」、新建空白工具、添加模块和连锁创建。**过滤与新建严格分离**：过滤下拉与搜索词只由用户手动改变，创建路径一律不写入过滤状态；新建只做两件事——展开新卡并滚动定位到它（能力卡定位锚点是能力 id，配置卡锚点是配置 id，节点未就绪时按上限重试后静默退出）。因此目标卡落在被筛掉的层或作用域时保持不可见，切到该层或「全部」即可见；同一能力重复创建每次都重新展开（定位信号带递增 token，不依赖 id 变化）。模板重复创建时分配唯一标识，不覆盖原配置。**新建即可见由受众代入保证**：子代理列表新建的配置写 `audience: subagent`，主会话列表新建的配置清除模板自带的「仅子代理」限制回落公用，二者都不改动过滤框。工具模板选中后关闭浮层，创建意图绑定发起预设，不能切换预设后重放。空白工具的 id 和模型可见名均不重复。子代理页复用同一套创建入口与纪律；指令文件卡属于主会话概念，只在 `scope=main`（或缺省）时下发，子代理页不渲染，避免同一指令文件出现两个编辑入口。
+工具栏的「添加能力 / 工具模块」是唯一创建入口，创建路径的过滤与受众规则见 §5.2.1。指令文件卡属于主会话概念，只在 `scope=main`（或缺省）时下发，子代理页不渲染，避免同一指令文件出现两个编辑入口。
 
 世界书是提示词策略筛选，能力卡不混入该视图；自定义工具卡只在「全部」和「工具链」筛选下显示。筛选通过隐藏保留工具编辑器挂载，不卸载其未保存草稿；保存失败保留原输入。提示词搜索只作用于提示词配置，计数、批量启停和保存按钮不操作能力卡。
 
@@ -467,12 +537,13 @@ promptConfigs 模块卡展开区按基础信息、注入规则、作用范围、
 - HintTooltip 通过 `body` portal 与 `position: fixed` 定位：鼠标悬停延迟 500ms 后在指针附近显示并随指针移动；键盘聚焦即时读取控件 `getBoundingClientRect()`，紧邻控件显示（鼠标点击产生的聚焦不锁定说明，失焦后回到悬停延迟）；视口边缘自动翻转或收敛。
 - `HintTooltip.module.css` 使用宿主 `--dsw-alias-tooltip-bg` 和静态前景 token，并与宿主尺寸一致；背景混入工作台底色以降低透明度。业务组件不得再使用原生 `title` 或自制 `data-tip` 伪元素。
 - 字段错误、只读警告、保存状态和空状态不是帮助说明，继续就地显示，不藏入 Tooltip。
-- 系统提示段配置卡保留「段名」「独占」「动态抑制」三个字段（人设已迁到 preset.yml 顶层 `persona` 段，由工作台「预设人设」卡编辑）；字段各占三格，720px 以上保持同一行，620px 以下改为单列。
+- 系统提示段配置卡保留「段名」「独占」「动态抑制」三个字段；人设内容不在这张卡上编辑，改由主会话页的预设人设卡承载 preset.yml 顶层 `persona` 段（见 §5.2）。字段各占三格，720px 以上保持同一行，620px 以下改为单列。
 
 ## 10. 样式所有权
 
 样式使用 CSS Modules 和 DSH 语义 token，当前 owner 为：
 
+    app/workbench/Workbench.module.css
     app/workspace/PromptWorkspace.module.css
     ui/controls.module.css
     ui/HintTooltip.module.css
@@ -509,18 +580,35 @@ promptConfigs 模块卡展开区按基础信息、注入规则、作用范围、
 
 ### 12.1 契约测试
 
-客户端测试仍按 test/client/*.test.mjs 平铺维护，重点包括：
+客户端测试平铺在 test/client/*.test.mjs（31 个文件），另有 test/host-publish-contract.test.mjs 与 test/shared/bridge-contract.test.mjs 覆盖发布与共享契约。按**改了什么**找要跑的测试：
 
-- structure-baseline、feature-boundary、ui-boundary：目录、依赖方向和入口边界；
-- slot-workbench-contract、no-host-dom：悬浮入口注册、抽屉置顶、disposer 和无宿主 DOM 操作；
-- host-contract：0.1.5 版本声明、客户端 slot 面、非 pre-step 五层注入时序与已移除宿主 API；
-- bridge-client 与 test/shared/bridge-contract：前缀、端点映射、统一载荷和 bootstrap 聚合；
-- prompt-tool-view、dirty-state、param-overrides、save-queue、session-model-face：映射、快照、空值、队列和引用稳定；
-- tab-key、workspace-navigation、dialog-focus、anchored-popover：键盘、ARIA、焦点和锚点行为；
-- style-ownership：CSS Modules、token、0.5px、reduced-motion 和全局污染边界；
-- prompt-config-order、skill-status、subagent-policy-draft：领域纯逻辑。
+| 改动类型 | 必跑测试 |
+|---|---|
+| 目录、依赖方向、入口边界、无宿主 DOM 禁令 | client-structure-contract |
+| slot 注册、抽屉接线、模板浮层锚点、弹窗焦点 | client-wiring-contract |
+| 客户端 slot 面、0.1.5 版本声明、bundle facade | host-publish-contract |
+| 桥接路径、端点映射、统一载荷 | bridge-client + test/shared/bridge-contract |
+| Fields、快照、空值、保存队列、阶段草稿 | editor-state + prompt-tool-view + param-overrides |
+| 提示词配置内容资产、排序、表单分区 | prompt-config-content + prompt-config-order + prompt-config-form-layout |
+| 指令文件正文与策略 | instruction-drafts + instruction-save-flow |
+| 导入预览生命周期与顺序组 | import-smoke（真实 Edge + 真实文件输入） |
+| 菜单、下拉、模板浮层的键盘与 ARIA | menu-select + tab-key + hint-tooltip |
+| 模型选项与宿主默认同步提示 | model-options + model-sync-notice + session-model-face |
+| 悬浮入口位置与拖动判定 | floating-trigger-position |
+| 锚点浮层几何与窄视口适配 | anchored-popover |
+| 技能状态筛选与标签 | skill-status |
+| 子代理策略草稿 | subagent-policy-draft |
+| 过滤与新建严格分离（§5.2.1 规则） | scope-create-separation |
+| 能力卡、工具预览、自定义工具编辑 | engine-module-cards + tools-preview + custom-tool-editor |
+| 中文文案覆盖与字典键完整性 | locale-contract |
+| CSS Modules、token、0.5px、reduced-motion、全局污染 | style-ownership |
+| 六页导航、草稿跨页、配置筛选与保存反馈 | ui-v2-page-smoke（真实 Edge） |
+| 能力创建与子代理策略卡的真实交互 | module-policy-smoke（真实 Edge） |
+| 真实 CSS 解析下的呈现 | real-css-smoke（真实 Edge） |
 
-交互 DOM 行为由纯 helper、静态契约和隔离浏览器 smoke 共同覆盖，不新增 Jest、Vitest、jsdom 或 happy-dom。
+**NEVER-TOUCH 边界**：指令文件读写（授权、上下文白名单、内容版本冲突、读取失败）、导入预览与回滚、路径穿越、大小上限、桥端点安全面、晋升门控与 epoch、子代理策略、子进程脚手架文件，这些测试整文件不参与任何合并或表驱动压缩，改动它们需要独立授权。
+
+交互 DOM 行为由纯 helper、静态契约和隔离浏览器 smoke 共同覆盖，不新增 Jest、Vitest、jsdom 或 happy-dom。结构类契约保持源码/目录断言形式而非渲染断言——它们的价值就是低成本快速守卫禁令。
 
 ### 12.2 验证命令
 
@@ -537,30 +625,10 @@ promptConfigs 模块卡展开区按基础信息、注入规则、作用范围、
 
 浏览器 smoke 使用隔离 DSH_HOME 和随机端口，不接触当前运行中的 DSH 服务；覆盖悬浮入口开关、抽屉置顶、六页切换、明暗主题、窄宽度、reduced-motion、预设/配置/技能/角色卡高风险流程。
 
-### 12.3 已完成记录
+本文只列与结构契约相关的必跑项，完整清单以 test/client/ 目录为准，不在文档里复制易变的文件名录。
 
-- Wave 0-9 于 2026-09-04 完成，结构重构、模型状态和顶层锚定浮层已验收。
-- typecheck、lint、test、build 均已通过；后续改动以当前命令重新取得测试数量，不在本文固定易变的计数。
-- Edge 隔离 smoke 已验证新建预设浮层的 body parent、fixed 定位、层级、按钮锚定和滚动跟随，且无 console/page error。
-- Archify 1440×900 与 2048×1320 明暗图的 containment、captures、showcase 均通过；自动收据 visualReview=pending 仍表示需要人工查看截图，不等同于渲染失败。
-- 2026-09-09：工作台迁移到官方右侧栏（DSH 0.1.5-alpha.1 两段注册），删除自建 overlay、几何探针与面板互斥事件；ToggleRow 改用官方 Switch。
-- 2026-09-09：恢复 shell.overlay 悬浮入口（触发器 + body portal 抽屉 + sidebar.footer.action 几何探针），抽屉经 body portal + fixed + z-index 置顶；官方右侧栏实测不适合本项目，随后移除。
-- 2026-09-13：悬浮入口改为可拖动（pointer capture + 4px 阈值 + 视口夹取 + 插件自有 localStorage 位置偏好），删除 SidebarGeometryProbe 与 `--pt-sidebar-edge`，不再观察宿主布局树。
-- 2026-09-16：导入改为「先预览后写入」——预设包（PresetSwitcher）与角色卡 JSON（CharactersPage）复用共享卡
-  `ui/ImportPreviewCard.tsx` 展示服务端同源转换报告与顺序组（官方 MenuSelect），确认后带 `sourceDigest` 提交；
-  世界书筛选视图新增只读诊断卡 `features/prompts/WorldBookDiagnosticsCard.tsx`，数据来自
-  `/world-book-diagnostics`，只读不触发求值。两处文案全部走 prompt-tool 字典（zh/en）。
-- 2026-09-17：导入确认生命周期显式分阶段（`reading → confirming → submitting`）。等待确认时
-  `ImportPreviewCard` 的确认/取消保持可用且可键盘聚焦，只有提交阶段才 `busy`；导入队列用同步标记
-  互斥，同一份预览只完成一次（连点确认最多一次提交）。提交失败保留文件与预览（再次确认即重试，
-  取消才跳过该文件），凭据过期直接要求重新导入；目标预设切换、页面卸载都会结束等待并让迟到响应失效。
-  两处入口（`PresetSwitcher`、`CharactersPage`）共用 `data/use-import-preview-flow.ts` 状态机。
-  回归入口：`test/client/import-smoke.test.mjs`（真实 Edge + 真实文件输入）与
-  `test/host/pre-step-persistence.test.mjs`。
-- 2026-09-17：同一流程覆盖顺序组候选与预览版本——`needs-order-selection` 只在候选卡里选组
-  （确认禁用），选组或换组都重新预览并把迟到的旧响应按请求序号丢弃；确认回传服务端
-  `previewRevision`。预览卡完整展示有损信息（warning / info / 被排除条目，各自滚动容器 +
-  定位行），不再有前端 20 条隐藏截断。
+> [!NOTE]
+> 2026-09-17 的 UI V2 重构有三份设计输入（前端、页面、模块卡布局），现已归档到 `.scratch/prompt-tool-framework/archive/design-ui-v2-*.md`。**它们是设计目标，不是规格**：静态状态圆点光晕、危险按钮形态等决定在实施中被用户改判覆盖。对照代码时以本文与实际源码为准，不要拿设计稿当验收依据。
 
 ## 13. 维护清单
 
@@ -572,6 +640,7 @@ promptConfigs 模块卡展开区按基础信息、注入规则、作用范围、
 4. 若涉及引擎层或插入点，核对 [engine-reuse.md](engine-reuse.md)，不要用 UI 顺序推导运行时顺序。
 5. 若涉及 SillyTavern、角色卡或世界书，遵循 [SillyTavern.md](SillyTavern.md) 的转换契约。
 6. 新 selector 必须有明确 CSS owner；新交互必须同时考虑键盘、焦点、错误和 reduced-motion。
-7. 完成 typecheck、lint、test、build 和 diff --check 后再提交；不要停止或重启当前 DSH 服务。
+7. 新增或改造面向用户的文案时，同步更新 `MIGRATED_UI_FILES` 与 zh/en 两份字典；改动结构、接线或发布面时，按 §12.1 的索引表跑对应契约测试。
+8. 完成 typecheck、lint、test、build 和 diff --check 后再提交；不要停止或重启当前 DSH 服务。
 
 本文是客户端结构的长期权威文档；根目录 [PLAN.md](../PLAN.md) 只跟踪当前计划与验收状态，实施后的稳定结论沉淀回本文及对应领域文档。
