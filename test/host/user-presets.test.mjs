@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -12,11 +12,12 @@ const {
   cloneBuiltinPreset,
   ensurePresetSeed,
   listPresets,
+  mergeOccupiedPresetIds,
   removeUserPreset,
 } = await import('../../lib/index.mjs')
 
 const PRESETS_DIR = join(root, '.agent-presets')
-const BUILTIN_IDS = ['creative', 'minimal', 'ptc', 'standard']
+const BUILTIN_IDS = ['cordis', 'minimal', 'ptc', 'standard']
 
 test('removeUserPreset：删除用户预设目录', () => {
   mkdirSync(join(PRESETS_DIR, 'foo'), { recursive: true })
@@ -59,7 +60,7 @@ test('ensurePresetSeed：首次种子化全部内置模板，删除后自动补�
 
 test('listPresets：全部来自用户目录（种子化后内置模板即为用户预设）', () => {
   const presets = listPresets()
-  for (const id of ['creative', 'minimal', 'ptc', 'standard']) {
+  for (const id of ['cordis', 'minimal', 'ptc', 'standard']) {
     const preset = presets.find((entry) => entry.id === id)
     assert.ok(preset !== undefined && preset.user === true, `${id} 应为用户目录预设`)
   }
@@ -141,7 +142,7 @@ test('ensurePresetSeed：与宿主内置重名的模板改用安全 id，不产�
   try {
     const occupied = new Set(['standard', 'minimal', 'ptc'])
     const { created } = ensurePresetSeed(safeRoot, occupied)
-    for (const id of ['pt-standard', 'pt-minimal', 'pt-ptc', 'creative', 'custom']) {
+    for (const id of ['pt-standard', 'pt-minimal', 'pt-ptc', 'cordis', 'custom']) {
       assert.ok(created.includes(id), `${id} 应种子化（实际：${created.join(',')}）`)
       assert.ok(existsSync(join(safeRoot, id, 'preset.yml')), `${id} 目录应存在`)
     }
@@ -177,9 +178,39 @@ test('cloneBuiltinPreset：撞名落到安全 id、重复新建递增，未撞�
     const second = cloneBuiltinPreset('standard', true, cloneRoot, occupied)
     assert.equal(second.ok && second.id, 'pt-standard-2')
     // 未撞名模板不受占用集合影响。
-    const plain = cloneBuiltinPreset('creative', false, cloneRoot, occupied)
-    assert.equal(plain.ok && plain.id, 'creative')
+    const plain = cloneBuiltinPreset('cordis', false, cloneRoot, occupied)
+    assert.equal(plain.ok && plain.id, 'cordis')
   } finally {
     rmSync(cloneRoot, { recursive: true, force: true })
+  }
+})
+
+test('ensurePresetSeed：官方保留名表生效，创造模式模板（cordis）落 pt-cordis 且 id 收口', () => {
+  const reserveRoot = mkdtempSync(join(tmpdir(), 'pt-seed-reserve-'))
+  try {
+    const { created } = ensurePresetSeed(reserveRoot, mergeOccupiedPresetIds())
+    for (const id of ['pt-cordis', 'pt-standard', 'pt-minimal', 'pt-ptc']) {
+      assert.ok(created.includes(id), `${id} 应种子化（实际：${created.join(',')}）`)
+    }
+    assert.equal(existsSync(join(reserveRoot, 'cordis')), false, '裸 cordis 不得生成（与官方创造模式同名）')
+    // 目录名与 preset.yml 的 id 收口一致。
+    for (const id of ['pt-cordis', 'pt-standard', 'pt-minimal', 'pt-ptc']) {
+      assert.match(readFileSync(join(reserveRoot, id, 'preset.yml'), 'utf8'), new RegExp(`^id: ${id}$`, 'm'), `${id} 的 id 应等于目录名`)
+    }
+    // 未撞名模板的 id 保持原样。
+    assert.match(readFileSync(join(reserveRoot, 'custom', 'preset.yml'), 'utf8'), /^id: custom$/m)
+  } finally {
+    rmSync(reserveRoot, { recursive: true, force: true })
+  }
+})
+
+test('cloneBuiltinPreset：保留名表下创造模式模板落 pt-cordis', () => {
+  const reserveCloneRoot = mkdtempSync(join(tmpdir(), 'pt-clone-reserve-'))
+  try {
+    const result = cloneBuiltinPreset('cordis', false, reserveCloneRoot, mergeOccupiedPresetIds())
+    assert.equal(result.ok && result.id, 'pt-cordis')
+    assert.match(readFileSync(join(reserveCloneRoot, 'pt-cordis', 'preset.yml'), 'utf8'), /^id: pt-cordis$/m)
+  } finally {
+    rmSync(reserveCloneRoot, { recursive: true, force: true })
   }
 })

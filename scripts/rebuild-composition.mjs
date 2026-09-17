@@ -57,7 +57,8 @@ function discoverOfficialPresets() {
 
 const OFFICIAL_PRESETS = discoverOfficialPresets()
 if (OFFICIAL_PRESETS.length === 0) throw new Error(`no official presets with agent.cordis.yml found in ${presetsDir}`)
-const TARGET_PRESET_OVERRIDES = new Map([['cordis', 'creative']])
+// 本地模板已与官方预设同名（cordis 对齐官方命名），不再需要目标覆盖；保留本表以备将来再改名。
+const TARGET_PRESET_OVERRIDES = new Map()
 const OFFICIAL_PRESET_TARGETS = new Map(
   OFFICIAL_PRESETS.map((preset) => [preset, TARGET_PRESET_OVERRIDES.get(preset) ?? preset]),
 )
@@ -155,9 +156,12 @@ const OFFICIAL_MODULES = [
   { id: 'tool-web', preset: 'standard' },
   // rc.2 起 standard / ptc / cordis 都在末尾挂 present 行，语义完全相同，只保留一份。
   { id: 'tool-present', preset: 'standard', sourceId: 'present' },
+  // standard / ptc 的 plugin-manager 行是 disabled 态，cordis 的是启用态：同 id 两版，各留一个模块。
+  { id: 'tool-plugin-manager-disabled', preset: 'standard', sourceId: 'tool-plugin-manager' },
   { id: 'tool-presentation', preset: 'ptc' },
   { id: 'tool-cordis', preset: 'cordis' },
   { id: 'skill-filesystem-cordis', preset: 'cordis', sourceId: 'skill-filesystem' },
+  { id: 'tool-plugin-manager', preset: 'cordis' },
   { id: 'persistent-shell', preset: 'minimal' },
 ]
 
@@ -169,10 +173,12 @@ const OFFICIAL_MODULES = [
 const TARGET_MODULE_OVERRIDES = {
   standard: {
     present: 'tool-present',
+    'tool-plugin-manager': 'tool-plugin-manager-disabled',
   },
   ptc: {
     delegation: 'delegation-ptc',
     present: 'tool-present',
+    'tool-plugin-manager': 'tool-plugin-manager-disabled',
   },
   cordis: {
     'skill-filesystem': 'skill-filesystem-cordis',
@@ -211,7 +217,8 @@ function duplicateValues(values) {
 /**
  * 目标预设显式跳过的官方行：tool-cordis 注册进程全局的 cordisInspect
  * provider（id "Service"），与官方 shipped「创造模式」(cordis) 预设同时
- * 挂载必然重复注册；该能力由官方预设提供，本地 creative 不再复制。
+ * 挂载必然重复注册；该能力由官方预设提供，本地 cordis 模板不再复制。
+ * （`tool-plugin-manager` 已随官方 cordis 一并拆解并挂载，不再跳过。）
  */
 const TARGET_SKIPPED_ROWS = { cordis: new Set(['tool-cordis']) }
 

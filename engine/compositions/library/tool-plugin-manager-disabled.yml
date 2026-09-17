@@ -1,7 +1,8 @@
-# module: tool-present
+# module: tool-plugin-manager-disabled
 # source: master/packages/preset/agent-presets/presets/standard/agent.cordis.yml
 # commit: ddefc45fbc7f8e46dd73185e68295696d1297887
 # local patches: 0
 
-- id: present
-  name: '@deepseek-ai/dsh-tool-present'
+- id: tool-plugin-manager
+  name: '@deepseek-ai/dsh-plugin-manager/tools'
+  disabled: true

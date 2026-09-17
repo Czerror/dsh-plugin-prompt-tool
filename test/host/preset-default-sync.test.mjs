@@ -110,7 +110,7 @@ function makeHarness(initial, options = {}) {
 
 test('官方 agent-presets.default 变化反向同步 prompt-tool.presetTemplate 且不回环', async () => {
   preset('anchored')
-  preset('creative')
+  preset('demo-preset')
   writePluginState({ seeded: true })
   const initial = {
     writePreset: false,
@@ -125,18 +125,18 @@ test('官方 agent-presets.default 变化反向同步 prompt-tool.presetTemplate
   apply(harness.ctx, initial)
   assert.equal(harness.mutations.length, 0, '初始默认一致，不应产生同步写入')
 
-  harness.emitOfficialDefault('creative')
+  harness.emitOfficialDefault('demo-preset')
   await Promise.resolve()
 
   const promptWrites = harness.mutations.filter((item) => item.ns === 'prompt-tool')
   assert.equal(promptWrites.length, 1, '官方默认切换应回写一次 prompt-tool settings')
   assert.deepEqual(promptWrites[0].ops,
-    [{ op: 'set', path: ['presetTemplate'], value: 'creative' }])
-  assert.equal(harness.getPromptState().presetTemplate, 'creative')
+    [{ op: 'set', path: ['presetTemplate'], value: 'demo-preset' }])
+  assert.equal(harness.getPromptState().presetTemplate, 'demo-preset')
   assert.equal(harness.mutations.filter((item) => item.ns === 'agent-presets').length, 0,
     '反向同步后官方值已一致，不得再正向写回形成事件回环')
 
-  harness.emitOfficialDefault('creative')
+  harness.emitOfficialDefault('demo-preset')
   await Promise.resolve()
   assert.equal(harness.mutations.filter((item) => item.ns === 'prompt-tool').length, 1,
     '相同官方默认值重复通知不得重复写入')
@@ -146,7 +146,7 @@ test('官方 agent-presets.default 变化反向同步 prompt-tool.presetTemplate
 test('宿主关闭模式选择时：不假装同步，跟随服务生效默认值并只告警一次', async () => {
   rmSync(presetDir, { recursive: true, force: true })
   preset('anchored')
-  preset('creative')
+  preset('demo-preset')
   preset('minimal')
   writePluginState({ seeded: true })
   const initial = {
@@ -158,12 +158,12 @@ test('宿主关闭模式选择时：不假装同步，跟随服务生效默认�
     presetOrder: 5,
     fallbackText: '',
   }
-  // 宿主关掉模式选择：存储值仍是 anchored，但生效默认值由 config.default 决定（creative）。
-  const harness = makeHarness(initial, { modeSelectionEnabled: false, serviceDefaultId: 'creative' })
+  // 宿主关掉模式选择：存储值仍是 anchored，但生效默认值由 config.default 决定（demo-preset）。
+  const harness = makeHarness(initial, { modeSelectionEnabled: false, serviceDefaultId: 'demo-preset' })
   apply(harness.ctx, initial)
   await Promise.resolve()
 
-  assert.equal(harness.getPromptState().presetTemplate, 'creative',
+  assert.equal(harness.getPromptState().presetTemplate, 'demo-preset',
     '关闭策略后应跟随服务生效默认值，而不是存储值')
   assert.equal(harness.mutations.filter((item) => item.ns === 'agent-presets').length, 0,
     '策略关闭时不得写入 default')
@@ -182,7 +182,7 @@ test('宿主关闭模式选择时：不假装同步，跟随服务生效默认�
 test('宿主未声明策略时保持原行为：正向写入 default，反向跟随存储值', async () => {
   rmSync(presetDir, { recursive: true, force: true })
   preset('anchored')
-  preset('creative')
+  preset('demo-preset')
   writePluginState({ seeded: true })
   const initial = {
     writePreset: false,
@@ -199,11 +199,11 @@ test('宿主未声明策略时保持原行为：正向写入 default，反向跟
   assert.equal(harness.getPromptState().presetTemplate, 'anchored', '缺省策略下初始值不变')
   assert.equal(harness.mutations.length, 0, '初始一致不写入')
 
-  harness.switchPreset('creative')
+  harness.switchPreset('demo-preset')
   await Promise.resolve()
   const writes = harness.mutations.filter((item) => item.ns === 'agent-presets')
   assert.equal(writes.length, 1, '缺省策略下切换仍需写入宿主 default')
-  assert.deepEqual(writes[0].ops, [{ op: 'set', path: ['default'], value: 'creative' }])
+  assert.deepEqual(writes[0].ops, [{ op: 'set', path: ['default'], value: 'demo-preset' }])
   assert.equal(harness.warnings.filter((message) => message.includes('modeSelectionEnabled')).length, 0,
     '未声明策略时不得误报')
 })
@@ -211,7 +211,7 @@ test('宿主未声明策略时保持原行为：正向写入 default，反向跟
 test('兼容快照已处理后，官方预设切换不会创建或复活 prompt-tool 目录', async () => {
   rmSync(presetDir, { recursive: true, force: true })
   preset('anchored')
-  preset('creative')
+  preset('demo-preset')
   writePluginState({ seeded: true })
   const initial = {
     writePreset: true,
@@ -227,11 +227,11 @@ test('兼容快照已处理后，官方预设切换不会创建或复活 prompt-
   assert.equal(existsSync(join(presetDir, 'prompt-tool')), false,
     '初始 rebuild 不得创建已处理的兼容快照')
 
-  harness.emitOfficialDefault('creative')
+  harness.emitOfficialDefault('demo-preset')
   await Promise.resolve()
   await new Promise((resolve) => setTimeout(resolve, 20))
 
-  assert.equal(harness.getPromptState().presetTemplate, 'creative')
+  assert.equal(harness.getPromptState().presetTemplate, 'demo-preset')
   assert.equal(existsSync(join(presetDir, 'prompt-tool')), false,
     '切换预设后不得创建或复活 prompt-tool 兼容目录')
 })

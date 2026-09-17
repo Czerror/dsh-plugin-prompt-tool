@@ -2,6 +2,25 @@
 
 ## [未发布] - 2026-09-17
 
+### 创造模式对齐官方命名（`creative` → `cordis`）与官方保留名表（2026-09-18）
+
+- **模板对齐官方命名**：包内模板 `preset/creative` 改名为 `preset/cordis`（`id: cordis`，`skills/` 随目录移动）。
+  官方那个「创造模式」预设的 id 就是 `cordis`，改名后本地模板与官方同名，`rebuild:composition` 的
+  `cordis → creative` 目标覆盖表随之取消，官方 `cordis` 的行改为逐行拆解。
+- **官方语义保留名表**：`cordis` / `minimal` / `ptc` / `standard` / `creative` 一律视为保留名，与运行时探测、
+  宿主服务结果取并集 ⇒ 种子化与工作台「新建」在创造模式模板上产出 **`pt-cordis`**
+  （与 `pt-standard` / `pt-ptc` / `pt-minimal` 同族命名）。
+- **生成物 id 收口**：种子化与「新建」复制后同步把 `preset.yml` 的 `id` 写成目标目录名，消除目录名与 id 不一致
+  （此前 `pt-standard/preset.yml` 里仍写着 `id: standard`）。
+- **补建保护**：补建循环遇到目录名属于保留名的旧目录时跳过并告警，不再让一次白写中断其它预设的重建；
+  宿主服务就绪后拿到更全的占用集合时会补建缺失的安全副本。
+- **官方漂移同步**（`dsh-0.1.6-alpha.2`，`ddefc45f`）：`cordis` persona 新增四段（`plugin_manager` 用法、Creator 模式下的
+  UI 插件目标、`cordis_inspect_*` 只读探查、MCP server 与 installed bundles 约定）；`standard`/`ptc`/`cordis` 末尾新增
+  `tool-plugin-manager` 行（前两者 `disabled: true`）；`cordis` 两个技能正文精简。新增库模块 `tool-plugin-manager`
+  与 `tool-plugin-manager-disabled`，引擎快照与 `test/fixtures/dsh/current` 离线快照（含 PROVENANCE 指纹与来源提交）同批更新。
+- **用户数据**（不入库）：本机 `.agent-presets/creative` → `pt-cordis`，四个 `pt-*` 预设按新模板重物化，
+  默认预设切到 `pt-standard`。
+
 ### 预设 id 安全化：与宿主内置预设重名时自动落到 `pt-` 前缀（2026-09-18）
 
 插件生成的用户预设不再可能落在「被宿主内置预设遮蔽、永远不会被挂载」的 id 上：

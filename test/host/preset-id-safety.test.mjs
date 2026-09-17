@@ -11,6 +11,8 @@ const {
   SAFE_PRESET_PREFIX,
   assertOutputIdSafe,
   detectShippedPresetIdsFromDisk,
+  SHIPPED_PRESET_ID_RESERVATIONS,
+  mergeOccupiedPresetIds,
   safePresetId,
   templateNameFor,
 } = await import('../../lib/index.mjs')
@@ -36,6 +38,18 @@ test('templateNameFor：包内精确命中优先 → 剥前缀 → 原样', () =
   // 包内自带同名安全模板时精确命中优先（不使用剥前缀结果）。
   const withSafeTemplate = (name) => name === 'pt-creative' || name === 'creative'
   assert.equal(templateNameFor('pt-creative', withSafeTemplate), 'pt-creative')
+})
+
+test('保留名表：官方语义保留 id 与各来源取并集（来源缺失时仍避让）', () => {
+  for (const id of ['cordis', 'minimal', 'ptc', 'standard', 'creative']) {
+    assert.ok(SHIPPED_PRESET_ID_RESERVATIONS.has(id), `${id} 应属官方语义保留名`)
+  }
+  const merged = mergeOccupiedPresetIds(new Set(['standard', 'extra']), undefined, new Set(['cordis']))
+  for (const id of ['standard', 'cordis', 'creative', 'extra']) {
+    assert.ok(merged.has(id), `${id} 应在并集里`)
+  }
+  assert.deepEqual([...mergeOccupiedPresetIds()].sort(), [...SHIPPED_PRESET_ID_RESERVATIONS].sort())
+  assert.ok(mergeOccupiedPresetIds(undefined).has('creative'), '所有来源缺失时仍按保留名避让')
 })
 
 test('assertOutputIdSafe：占用即 fail loud 且给出安全替代，未占用放行', () => {

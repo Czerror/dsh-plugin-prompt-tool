@@ -1,11 +1,10 @@
 # module: tool-cordis
 # source: master/packages/preset/agent-presets/presets/cordis/agent.cordis.yml
-# commit: 0d1f50007f9bca3f52b06e1c3074fa14d5fb0720
+# commit: ddefc45fbc7f8e46dd73185e68295696d1297887
 # local patches: 0
 
 # ── self-modification ───────────────────────────────────────────────────────
 
-# Read the live runtime, mount a temporary plugin, unmount it. The toolset is a
-# trust boundary, not a sandbox — see this file's header.
+# Discover the Host and Client APIs used by installed plugins.
 - id: tool-cordis
   name: '@deepseek-ai/dsh-tool-cordis'

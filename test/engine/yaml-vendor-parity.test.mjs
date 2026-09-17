@@ -47,7 +47,7 @@ function collectCorpus() {
     .map((file) => readFileSync(file, 'utf8'))
 }
 
-/** 仓库内全部真实 SKILL.md：`preset/creative/skills` 与 `test/fixtures` 下的技能夹具。
+/** 仓库内全部真实 SKILL.md：`preset/cordis/skills` 与 `test/fixtures` 下的技能夹具。
  *  包内不再内置技能（`skills/` 已移除），但这些真实文件是 frontmatter 一致性的语料来源。 */
 function listSkillFiles() {
   const files = []

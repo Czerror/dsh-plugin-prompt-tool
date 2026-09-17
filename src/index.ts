@@ -50,6 +50,7 @@ import {
 import { DEFAULT_PRESET_ID } from './shared/preset-ids.ts'
 import {
   detectShippedPresetIdsFromDisk,
+  mergeOccupiedPresetIds,
   safePresetId,
   templateNameFor,
   type OccupiedPresetIds,
@@ -115,18 +116,21 @@ function warn(ctx: Context, message: string): void {
 export function apply(ctx: Context, configIn: Config): void {
   // 被宿主其他预设根（内置 shipped 预设）占用的 id：同名用户目录永远不会被挂载，
   // 生成与激活路径据此改用 `pt-` 前缀的安全 id（见 host/preset-id-safety.ts）。
-  // 启动先用文件系统探测兜底，agentPresets 服务就绪后再用官方 settings() 覆盖。
-  let occupiedPresetIds: OccupiedPresetIds = detectShippedPresetIdsFromDisk()
+  // 占用集合 = 官方语义保留名表 ∪ 磁盘探测；agentPresets 服务就绪后再并入其权威结果。
+  let occupiedPresetIds: OccupiedPresetIds = mergeOccupiedPresetIds(detectShippedPresetIdsFromDisk())
   const normalizePresetTemplate = (id: string): string => safePresetId(id, occupiedPresetIds)
   // 包内模板判定：模板名与输出目录名分离后，安全 id 要能反查回包内模板。
   const hasPackagedTemplate = (name: string): boolean => existsSync(join(packagePresetDir(), name))
-  // 首次启动种子化：全部内置模板复制到预设根（之后只经「新建」还原）。
+  // 补建缺失的包内模板：占用名落 `pt-` 前缀的安全 id（启动一次；服务给出更全集合后再跑一次）。
   // 旧布局/旧参数/旧内容的迁移不在运行时做（本项目不含迁移代码）。
-  try {
-    ensurePresetSeed(DEFAULT_PRESET_DIR, occupiedPresetIds)
-  } catch (error) {
-    warn(ctx, `prompt-tool: preset seed failed: ${error instanceof Error ? error.message : String(error)}`)
+  const seedMissingPresets = (): void => {
+    try {
+      ensurePresetSeed(DEFAULT_PRESET_DIR, occupiedPresetIds)
+    } catch (error) {
+      warn(ctx, `prompt-tool: preset seed failed: ${error instanceof Error ? error.message : String(error)}`)
+    }
   }
+  seedMissingPresets()
   const config = { ...configIn }
   const modelsState = (): ModelDetection => detectModels(ctx)
   const getModelsState = (): ModelDetection => modelsState()
@@ -242,6 +246,12 @@ export function apply(ctx: Context, configIn: Config): void {
         if (preset.id === runtime.presetTemplate) continue
         const targetDir = join(DEFAULT_PRESET_DIR, preset.id)
         if (!needsPresetRender(targetDir)) continue
+        // 目录名属于官方保留名（用户手工留下的旧目录）：宿主永远不会挂载它，
+        // 重渲染只会白写一次并让整个补建循环失败——跳过并告警。
+        if (occupiedPresetIds.has(preset.id)) {
+          warn(ctx, `prompt-tool: 预设 ${preset.id} 与官方预设同名（不会被挂载），跳过重建`)
+          continue
+        }
         // 手写/官方格式预设（无 modules/params）不自动重渲染：参数桥无从下手，
         // 重渲染只会覆盖用户手写组合；其 persona 契约由就地迁移修正。
         try {
@@ -833,13 +843,15 @@ registerTuiCommand(
     if (service === undefined || typeof service.settings !== 'function') return
     try {
       const snapshot = await service.settings() as { presets?: Array<{ id?: unknown; trust?: unknown }> } | undefined
-      const ids = new Set<string>(detectShippedPresetIdsFromDisk())
+      const fromHost = new Set<string>()
       for (const preset of snapshot?.presets ?? []) {
-        if (preset?.trust === 'system' && typeof preset.id === 'string' && preset.id.length > 0) ids.add(preset.id)
+        if (preset?.trust === 'system' && typeof preset.id === 'string' && preset.id.length > 0) fromHost.add(preset.id)
       }
+      const ids = mergeOccupiedPresetIds(detectShippedPresetIdsFromDisk(), fromHost)
       if (ids.size === occupiedPresetIds.size && [...ids].every((id) => occupiedPresetIds.has(id))) return
       occupiedPresetIds = ids
-      // 占用集合变化后重跑一次：激活预设命中占用即归一化 + 写回 + 重建生成物。
+      // 服务集合更全时先把新识别的占用名补成安全副本，再归一化激活预设（写回 + 重建生成物）。
+      seedMissingPresets()
       applyState()
     } catch (error) {
       warn(ctx, `prompt-tool: 读取宿主预设册失败（安全 id 避让退回磁盘探测）：${error instanceof Error ? error.message : String(error)}`)
@@ -973,8 +985,10 @@ export type { SkillFrontmatter } from './runtime/skills-parse.ts'
 // 预设 id 安全化：判据与内置预设探测（三条生成路径与回归测试共用）。
 export {
   EMPTY_OCCUPIED_PRESET_IDS,
+  SHIPPED_PRESET_ID_RESERVATIONS,
   assertOutputIdSafe,
   detectShippedPresetIdsFromDisk,
+  mergeOccupiedPresetIds,
   safePresetId,
   templateNameFor,
 } from './host/preset-id-safety.ts'

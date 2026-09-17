@@ -22,6 +22,7 @@ modules:
   - tool-web
   - tool-presentation
   - tool-present
+  - tool-plugin-manager-disabled
   - prompt-config-engine
 model:
   provider: ""

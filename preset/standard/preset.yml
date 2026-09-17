@@ -21,6 +21,7 @@ modules:
   - tool-todo
   - tool-web
   - tool-present
+  - tool-plugin-manager-disabled
   - prompt-config-engine
 model:
   provider: ""

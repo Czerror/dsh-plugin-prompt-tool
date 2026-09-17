@@ -22,6 +22,34 @@ export type OccupiedPresetIds = ReadonlySet<string>
 export const EMPTY_OCCUPIED_PRESET_IDS: OccupiedPresetIds = new Set()
 
 /**
+ * 官方语义上的保留 id：这些名字属于宿主/上游预设，用户目录用它们会与官方撞名。
+ * 其中 `cordis` 就是官方的「创造模式」（`presets/cordis/preset.yml` 的 `name: 创造模式`），
+ * `creative` 是同源模板的上游名（插件包内模板即此形态）——本部署尚未安装它，但上游随时可能发布，
+ * 因此与运行时探测结果一起并入占用集合（探测漏项由本表兜住）。
+ */
+export const SHIPPED_PRESET_ID_RESERVATIONS: ReadonlySet<string> = new Set([
+  'cordis',
+  'minimal',
+  'ptc',
+  'standard',
+  'creative',
+])
+
+/**
+ * 合并占用集合：保留名表 ∪ 各来源（磁盘探测 / 宿主服务），忽略未提供的来源。
+ * @param sources - 依次并入的集合；undefined 表示该来源不可用。
+ * @returns 新的并集（调用方持有，不被修改）。
+ */
+export function mergeOccupiedPresetIds(...sources: Array<ReadonlySet<string> | undefined>): OccupiedPresetIds {
+  const merged = new Set<string>(SHIPPED_PRESET_ID_RESERVATIONS)
+  for (const source of sources) {
+    if (source === undefined) continue
+    for (const id of source) merged.add(id)
+  }
+  return merged
+}
+
+/**
  * 与内置预设重名时改用的安全 id。
  * @param id - 期望的预设 id（模板名或用户目录名）。
  * @param occupied - 被其他根占用的 id 集合；空集 = 不避让。

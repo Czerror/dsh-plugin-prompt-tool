@@ -361,6 +361,27 @@ export function writePluginState(state: PromptToolState): void {
   renameSync(tmp, file)
 }
 
+/** 把预设目录的 `preset.yml` 的 `id` 收口为目标目录名。
+ *  安全 id（`pt-standard`）与目录同名，才不会被 `findPresetDir` 的「目录名优先、id 兜底」匹配拧到别的目录；
+ *  只用 yaml Document API 改这一个键（注释与未知字段保留），内容无变化不落盘，失败不抛错。
+ *  @returns 是否写入了新值。 */
+export function retargetPresetId(dir: string, id: string): boolean {
+  const file = join(dir, 'preset.yml')
+  try {
+    if (!existsSync(file)) return false
+    const raw = readFileSync(file, 'utf8')
+    if (raw.trim().length === 0) return false
+    const doc = parseDocument(raw, { logLevel: 'silent' })
+    if (doc.get('id') === id) return false
+    doc.set('id', id)
+    writeFileSync(file, doc.toString(), 'utf8')
+    return true
+  } catch {
+    // 只读目录/半写文件：复制结果仍可用，目录名始终是唯一权威。
+    return false
+  }
+}
+
 /** 首次启动种子化：把插件目录全部内置模板复制到预设根（state.seeded 后不再自动补）。
  *  用户删除的预设不会自动复活；升级新增的模板用「新建」按需复制。
  *  与宿主内置预设重名的模板改用安全 id（`standard` → `pt-standard`）：同名用户目录会被宿主
@@ -375,6 +396,7 @@ export function ensurePresetSeed(root = userPresetsDir(), occupied: OccupiedPres
       const target = join(root, targetId)
       if (existsSync(target)) continue
       cpSync(join(packagePresetDir(), entry.name), target, { recursive: true })
+      retargetPresetId(target, targetId)
       created.push(targetId)
     }
     writePluginState({ ...readPluginState(), seeded: true })
@@ -412,6 +434,7 @@ export function cloneBuiltinPreset(id: string, autoSuffix = false, presetRoot = 
   try {
     mkdirSync(presetRoot, { recursive: true })
     cpSync(builtin, target, { recursive: true, force: true })
+    retargetPresetId(target, targetId)
     return { ok: true, id: targetId }
   } catch (error) {
     return { ok: false, message: `新建预设失败：${error instanceof Error ? error.message : String(error)}` }

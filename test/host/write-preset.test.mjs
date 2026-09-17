@@ -326,7 +326,7 @@ test('所有模板都不物化 AGENTS 文件卡，custom 保持显式空白', ()
   const dir = join(tmpdir(), `prompt-tool-hints-${process.pid}-${Date.now()}`)
   const presetDir = join(dir, 'preset')
   try {
-    for (const template of ['standard', 'minimal', 'ptc', 'creative']) {
+    for (const template of ['standard', 'minimal', 'ptc', 'cordis']) {
       writePreset('', { ...makeOptions(presetDir), presetTemplate: template, injectPrompt: false })
       const configsDir = join(presetDir, template, 'prompt-configs')
       const names = readdirSync(configsDir)
@@ -362,7 +362,7 @@ test('writePreset 空 prompt/agents 不生成空内容资产，prompt-injector �
 })
 
 test('writePreset 四个官方基型以顶层 persona 段渲染官方 dsh-persona 行', () => {
-  for (const template of ['standard', 'minimal', 'ptc', 'creative']) {
+  for (const template of ['standard', 'minimal', 'ptc', 'cordis']) {
     const dir = join(tmpdir(), `prompt-tool-${template}-${process.pid}-${Date.now()}`)
     const presetDir = join(dir, 'preset')
     try {
@@ -389,13 +389,13 @@ test('writePreset 四个官方基型以顶层 persona 段渲染官方 dsh-person
       assert.ok(!/__[A-Za-z0-9_]+__/.test(agent), `${template}: 不应残留未解析 token`)
       assert.match(agent, /^# prompt-tool:render v\d+$/m, `${template}: 组合应带渲染契约版本标记`)
       assert.ok(rows.length >= 2, `${template}: 组合行数异常（${rows.length}）`)
-      if (template === 'creative') {
-        const persona = readPersonaRow(presetDir, 'creative')
-        assert.ok(persona.config.prefix.includes('{{model}}'), 'creative 人设应保留 {{model}} 变量')
-        assert.ok(persona.config.prefix.includes('editing-cordis-compositions'), 'creative 人设应引用创作 skill')
-        assert.equal(persona.config.suffix, 'Your working directory is {{cwd}}.', 'creative 人设 suffix 应对齐官方原文')
-        assert.ok(existsSync(join(presetDir, 'creative', 'skills', 'editing-cordis-compositions', 'SKILL.md')), 'editing-cordis-compositions skill 应随预设复制')
-        assert.ok(existsSync(join(presetDir, 'creative', 'skills', 'cordis-plugin-development', 'SKILL.md')), 'cordis-plugin-development skill 应随预设复制')
+      if (template === 'cordis') {
+        const persona = readPersonaRow(presetDir, 'cordis')
+        assert.ok(persona.config.prefix.includes('{{model}}'), 'cordis 人设应保留 {{model}} 变量')
+        assert.ok(persona.config.prefix.includes('editing-cordis-compositions'), 'cordis 人设应引用创作 skill')
+        assert.equal(persona.config.suffix, 'Your working directory is {{cwd}}.', 'cordis 人设 suffix 应对齐官方原文')
+        assert.ok(existsSync(join(presetDir, 'cordis', 'skills', 'editing-cordis-compositions', 'SKILL.md')), 'editing-cordis-compositions skill 应随预设复制')
+        assert.ok(existsSync(join(presetDir, 'cordis', 'skills', 'cordis-plugin-development', 'SKILL.md')), 'cordis-plugin-development skill 应随预设复制')
       } else if (template === 'standard' || template === 'ptc') {
         const persona = readPersonaRow(presetDir, template)
         assert.equal(persona.config.prefix, 'You are a coding agent powered by the {{model}} model.', `${template}: prefix 应对齐官方原文`)
@@ -970,7 +970,7 @@ test('writePreset 关闭时清空组合为空数组，保留 preset.yml 与预�
   // 状态文件已移出预设根；ensurePresetSeed 会幂等补建全部内置预设目录，
   // 清理必须逐个保留其 preset.yml，不能删预设目录本身（防误删回归）。
   const dirs = readdirSync(presetDir).filter((name) => !name.startsWith('.')).sort()
-  assert.deepEqual(dirs, ['creative', 'custom', 'minimal', 'ptc', 'standard'].sort())
+  assert.deepEqual(dirs, ['custom', 'pt-cordis', 'pt-minimal', 'pt-ptc', 'pt-standard', 'standard'].sort())
   for (const dir of dirs) {
     assert.equal(existsSync(join(presetDir, dir, 'preset.yml')), true, `${dir} 的 preset.yml 必须保留`)
     // 每个预设目录的组合都必须是空数组（关闭开关作用于全部预设，不只是激活预设）。
@@ -983,16 +983,17 @@ test('writePreset 关闭时清空组合为空数组，保留 preset.yml 与预�
 
 test('writePreset 开启时不受影响：预设目录正常生成', () => {
   const presetDir = join(home, '.agent-presets')
-  mkdirSync(join(presetDir, 'standard'), { recursive: true })
+  // 激活预设 id 用默认值 pt-standard（与插件默认 presetTemplate 同源）。
+  mkdirSync(join(presetDir, 'pt-standard'), { recursive: true })
   writePluginState({ seeded: true })
-  writeFileSync(join(presetDir, 'standard', 'preset.yml'),
-    'id: standard\nname: Standard\nmodules: [prompt-config-engine]\n', 'utf8')
+  writeFileSync(join(presetDir, 'pt-standard', 'preset.yml'),
+    'id: pt-standard\nname: Standard\nmodules: [prompt-config-engine]\n', 'utf8')
 
   const value = offSettings(true)
   apply(makeOffCtx(value), value)
 
-  assert.equal(existsSync(join(presetDir, 'standard', 'preset.yml')), true, 'writePreset=true 预设参数保留')
-  const rows = readFileSync(join(presetDir, 'standard', 'agent.cordis.yml'), 'utf8')
+  assert.equal(existsSync(join(presetDir, 'pt-standard', 'preset.yml')), true, 'writePreset=true 预设参数保留')
+  const rows = readFileSync(join(presetDir, 'pt-standard', 'agent.cordis.yml'), 'utf8')
     .split('\n').filter((line) => !line.startsWith('#') && line.trim().length > 0)
   assert.equal(rows.length > 0 && rows.every((line) => line.trim() === '[]'), false,
     '重新开启后组合应恢复生成（不再停留在关闭期的空组合）')

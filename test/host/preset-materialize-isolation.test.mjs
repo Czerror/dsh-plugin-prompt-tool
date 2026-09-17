@@ -88,18 +88,18 @@ test('补建其他预设不得携带激活预设的 promptConfigs（切换目标
   mkdirSync(join(presetDir, 'anchored'), { recursive: true })
   writeFileSync(join(presetDir, 'anchored', 'preset.yml'), presetYml('anchored', 'anchored-only', 'ANCHORED-ONLY-TEXT'), 'utf8')
   // 目标预设：组合缺失 → needsPresetRender 为真 → 走补建循环；自身也有一条独有配置。
-  mkdirSync(join(presetDir, 'standard'), { recursive: true })
-  writeFileSync(join(presetDir, 'standard', 'preset.yml'), presetYml('standard', 'standard-only', 'STANDARD-ONLY-TEXT'), 'utf8')
+  mkdirSync(join(presetDir, 'target-preset'), { recursive: true })
+  writeFileSync(join(presetDir, 'target-preset', 'preset.yml'), presetYml('target-preset', 'standard-only', 'STANDARD-ONLY-TEXT'), 'utf8')
 
   const value = settings('anchored')
   apply(makeCtx(value), value)
 
   // 目标预设：自身配置保留，激活预设的配置一个字都不能出现。
-  const target = readConfigs(presetDir, 'standard')
+  const target = readConfigs(presetDir, 'target-preset')
   assert.match(target, /standard-only/, '目标预设自身配置必须渲染')
   assert.doesNotMatch(target, /anchored-only/, '不得携带激活预设的配置 id')
   assert.doesNotMatch(target, /ANCHORED-ONLY-TEXT/, '不得携带激活预设的配置正文')
-  assert.equal(existsSync(join(presetDir, 'standard', 'agent.cordis.yml')), true, '补建应产出可挂载的组合')
+  assert.equal(existsSync(join(presetDir, 'target-preset', 'agent.cordis.yml')), true, '补建应产出可挂载的组合')
 
   // 激活预设照常渲染自己的配置（修复不得反向影响当前预设路径）。
   const active = readConfigs(presetDir, 'anchored')

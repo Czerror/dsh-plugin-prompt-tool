@@ -1,194 +1,169 @@
-# 预设 id 安全化：与宿主内置预设重名时自动落到 `pt-` 前缀
+# 内置预设保留名表与安全 id 收口（补 `pt-cordis`）
 
 ## 授权与基线
 
-- 用户指令（2026-09-18）「插件侧根治」：修掉「插件生成的用户预设与宿主内置（shipped）预设重名 → 被静默遮蔽 → 注入永不生效」。
-  经互动提问确认三项取舍：①安全 id 用 **`pt-` 前缀**；②**不做工作台遮蔽标记**——在「拉取官方内置预设、装配成本项目预设时」就使用新名；
-  ③等前一个任务（技能停用改为文件层调用策略）提交推送、工作树干净后再开工。
-- 代码基线：dev@`233f6c9`（工作树干净，仅 `.scratch/` 未跟踪产物）。旧 PLAN 原文归档
-  [plan-skills-file-policy-4c51176-20260918.md](.scratch/prompt-tool-framework/archive/plan-skills-file-policy-4c51176-20260918.md)
-  （SHA-256 `711A3BAA1D2399AB964FEA47827FED07CA46757BF99B0A97C9B56E1A67478FCF`，与归档前 `PLAN.md` 逐字节一致）。
-- 本轮范围：`src/shared/preset-ids.ts`（新）、`src/host/preset-id-safety.ts`（新）、`src/host/paths.ts`、`src/host/manifest.ts`、
-  `src/host/write-preset.ts`、`src/index.ts`、`src/config.ts`、`src/runtime/settings-bridge.ts`、
-  `src/client/data/prompt-tool-fields.ts`、`src/client/data/prompt-tool-view.ts`、`test/host/**`、
-  `docs/architecture-params.md`、`CHANGELOG.md`。
-- **不在本轮范围**：工作台遮蔽标记与任何 UI 文案（用户明确不要）；本机已存在的撞名目录（`.agent-presets/{standard,ptc,minimal}`）
-  的批量迁移或删除（已由复制换名 `*-copy` 绕开，另行确认后清理）；读取其他部署根中的预设**内容**（保持 `docs/architecture-params.md:40-43` 的不变量，
-  本轮只借用其 **id 名**用于避让）。
+- 用户指令（2026-09-18）：「用户预设目录下缺少 `pt-cordis`，使用 `creative` 会和官方冲突」；并确认默认预设切到 `pt-standard`。
+  **随后明确「这样才正确对齐官方」：插件包内模板应对齐官方命名（`creative` → `cordis`），数据侧产出 `pt-cordis`。**
+- 事实纠正（读源码得到）：官方 shipped 预设里并没有 `creative`——官方那个「创造模式」是 `cordis` 预设
+  （`deepseek-harness/packages/preset/agent-presets/presets/cordis/preset.yml` 的 `name: 创造模式`）。
+  因此 `creative` 目前**不被遮蔽**；但插件包内模板 `creative`（persona 通篇是 Cordis 组合创作指导）与官方 `cordis` 同源，
+  属官方语义上的保留名，且用户要求统一 `pt-` 命名——故纳入保留名表，用户目录改用 `pt-cordis`；
+  **插件包内模板目录同步对齐官方命名为 `preset/cordis`（`id: cordis`），「新建 → 创造模式」从此产出 `pt-cordis`。**
+- 代码基线：dev@`c21cc97`（工作树干净）。旧 PLAN 原文归档
+  [plan-preset-id-safety-c21cc97-20260918.md](.scratch/prompt-tool-framework/archive/plan-preset-id-safety-c21cc97-20260918.md)
+  （SHA-256 `78EF5A37C4C633E579BD0D2DED0C47B39B7DB7366C8CF66C2BC6639829B43B45`，与归档前 `PLAN.md` 逐字节一致）。
+- 本轮范围：`src/host/preset-id-safety.ts`、`src/host/manifest.ts`、`src/index.ts`、`test/host/**`、
+  `docs/architecture-params.md`、`CHANGELOG.md`、`README.md`、`PLAN.md`；
+  仓库内模板改名 `preset/creative` → `preset/cordis`（含 `preset.yml` 的 id 与 `scripts/rebuild-composition.mjs` 的目标映射）、
+  `AGENTS.md`/`NOTE.md` 的模板路径引用；
+  用户数据侧：`.agent-presets/creative` → `pt-cordis`、三个 `pt-*` 目录的 `preset.yml` id 收口、
+  `settings.yaml` 的 `agent-presets.default` 与 `prompt-tool.presetTemplate` → `pt-standard`。
+- **不在本轮范围**：工作台遮蔽标记；其他用户预设（`custom`/`liangshen`）的命名；宿主内置预设本身。
 
-## 事实依据（读源码得到，作为不变量）
+## 事实依据（读源码与真实目录得到，作为不变量）
 
-1. 宿主发现的根顺序：shipped（内置）根 prepend 在最前，用户根最后，**靠前的根赢同名 id**——
-   `deepseek-harness/packages/preset/agent-presets/src/preset.ts:55-64`、安装包 `lib/types/index.js:187-189`；
-   注释原话「a user directory named like a shipped preset is shadowed by it」。
-2. 内置预设集合在 `profiles/node_modules/@deepseek-ai/dsh-agent-presets/presets/{cordis,minimal,ptc,standard}`。
-3. 插件**无法**从自身解析该包（`createRequire(...).resolve('@deepseek-ai/dsh-agent-presets/package.json')` → `MODULE_NOT_FOUND`）：
-   插件以 link 进入 profile，Node 按真实路径向上解析，解析链不进 `profiles/node_modules`。
-4. 权威判定通道是宿主服务 `agentPresets`：`list()`（`trust: 'system' | 'user'`）、`resolve(id)`、`settings()`
-   （`deepseek-harness/packages/preset/agent-presets/src/index.ts:290-303`、`:322-360`、`:372-385`）；
-   插件当前 `inject` 不含它（`src/index.ts` 顶部 `export const inject = ['skills', 'commands', 'llm', 'subagents']`）。
-5. 模板名与输出目录名当前同值：`writePreset` 的 `templateName`（`src/host/write-preset.ts:258-274`），
-   `outputId` 覆盖能力**已存在但从未被传**；模板查找 `resolveRenderablePresetDir` 是「用户目录优先 → 包内同名兜底」（`src/host/manifest.ts:267-274`）。
-6. 包内模板目录只有 `preset.yml`（参数源 + 模块清单），组合本体由模块库渲染 ⇒ **改用户目录名不必动包内模板目录**，
-   故 `test/` 里 72 处 `standard`（16 个文件）可保持不动。
-7. 宿主 standing mount 重挂载判据是组合文件 `agent.cordis.yml` 的 mtime+size
-   （`deepseek-harness/packages/preset/agent-presets/src/index.ts:776-806`）：改变激活预设 id 天然产生新装配。
-8. `ensurePresetSeed`（`src/host/manifest.ts:365-381`）、`cloneBuiltinPreset`（`:385-413`）都以**模板 id** 作目标目录名，
-   是产生撞名目录的两条真实路径；`writePreset` 是第三条（激活预设）。
-9. 现有 `'standard'` 兜底字面量：`src/index.ts:121/281/504/713/730`、`src/host/write-preset.ts:260`、
-   `src/host/manifest.ts:177`、`src/config.ts:28,79`、`src/client/data/prompt-tool-fields.ts:80`、
-   `src/client/data/prompt-tool-view.ts:102`、`src/runtime/settings-bridge.ts:640,1833`。
+1. 官方 presets（安装包 `0.1.6-alpha.2` 与本地 master 一致）只有 `cordis`/`minimal`/`ptc`/`standard`，其中 `cordis` 的
+   显示名是「创造模式」；插件包内模板 `creative` 的 `name` 与 persona 文本与之同源。
+2. 本机 `.agent-presets` 现有：`creative`、`custom`、`liangshen`、`pt-minimal`、`pt-ptc`、`pt-standard`；
+   `standard-copy`/`ptc-copy`/`minimal-copy` 与旧的被遮蔽目录已被清理，而 `settings.yaml` 的默认预设仍写着 `standard-copy`
+   （**指向不存在的目录，新会话会报找不到预设**）。
+3. `ensurePresetSeed` 只改目标目录名、不写 `preset.yml` 的 `id` ⇒ `pt-standard/preset.yml` 至今写着 `id: standard`；
+   插件内 `findPresetDir` 的「目录名优先、id 兜底」匹配会把 `standard` 解析到 `pt-standard` 目录，是真实歧义。
+4. `ensurePresetSeed` 在 `apply` 开头运行，此时占用集合只有磁盘探测结果；服务就绪后的 `refreshOccupiedFromHost`
+   只更新集合与归一化激活预设、**不补建** ⇒ 探测漏掉的 id 不会生成安全副本（本机缺 `pt-cordis` 即此形态）。
 
 ## 目标语义
 
 | 场景 | 行为 |
 |---|---|
-| 激活预设 id 与内置重名（历史 settings） | 归一化为 `pt-<id>`，写回 `prompt-tool.presetTemplate` 与宿主 `agent-presets.default`，重建 |
-| 工作台「新建」选内置同名模板 | 目标目录名取安全 id（`standard` → `pt-standard`），bridge 返回实际 id，UI 显示该 id |
-| 首次种子化 | 撞名模板复制成安全名，**不再产生**永不被挂载的目录 |
-| `writePreset` 输出目录撞名 | fail loud（明确文案），不静默写入无效目录 |
-| 用户自建的非撞名预设（`creative`、`anchored`、`standard-copy`…） | 原样保留，不归一化、不改名 |
-| 包内模板名 | 保持 `standard`/`ptc`/`minimal`（模板名≠输出名，靠 `outputId` 分离） |
+| 包内模板名命中保留名表（`cordis`/`minimal`/`ptc`/`standard`/`creative`）或探测/服务给出的占用 | 种子化与「新建」落 `pt-<模板名>` |
+| 插件包内模板名 | 与官方 id 对齐（`creative` 模板改名为 `cordis`），「新建 → 创造模式」因此产出 `pt-cordis` |
+| 生成或克隆出的安全目录 | `preset.yml` 的 `id` 同步写成目标目录名（消除 id 与目录名不一致） |
+| 宿主服务就绪后拿到更全的占用集合 | 除归一化激活预设外，**补建缺失的安全副本** |
+| 已存在的用户预设（`custom`/`liangshen` 等非保留名） | 原样不动 |
 
-## Wave 1：安全 id 判据与占用探测
+## Wave 1：保留名表与占用集合合并
 
 <task type="auto">
-  <name>T1：共享常量与判据模块</name>
-  <files>src/shared/preset-ids.ts（新）、src/host/preset-id-safety.ts（新）、src/host/paths.ts</files>
-  <action>`shared/preset-ids.ts` 导出 `SAFE_PRESET_PREFIX = 'pt-'` 与 `DEFAULT_PRESET_ID = 'pt-standard'`（host 与 client 共用，避免跨层依赖）。
-  `host/preset-id-safety.ts` 导出纯函数 `safePresetId(id, occupied)`（占用则加前缀）、`templateNameFor(id, hasTemplate)`（包内精确命中优先，否则剥 `pt-` 前缀再查，仍无则原样）、
-  `assertOutputIdSafe(outputId, occupied)`（撞名抛错，文案指向「换个 id 或在工作台新建一个预设」），以及 `detectShippedPresetIdsFromDisk(home)`：
-  探测 `profiles/node_modules/@deepseek-ai/dsh-agent-presets/presets`、`profiles/*/node_modules/...`、pnpm 结构 `profiles/node_modules/.pnpm/@deepseek-ai+dsh-agent-presets@*/...`，
-  只读目录名；任何异常或未命中返回空集（退回今天的行为）。</action>
-  <verify>纯函数可单测；探测在临时 `DSH_HOME` 上可造出「有/无/结构异常」三种结果。</verify>
-  <security>只列目录名，不读其他根的预设内容（保持 `docs/architecture-params.md:40-43` 不变量）。</security>
-  <done>判据集中一处、可测、失败可降级。</done>
+  <name>T1：保留名表常量与并集纯函数</name>
+  <files>src/host/preset-id-safety.ts</files>
+  <action>新增 `SHIPPED_PRESET_ID_RESERVATIONS`（`cordis`/`minimal`/`ptc`/`standard`/`creative`，附「官方语义保留名」注释）
+  与 `mergeOccupiedPresetIds(...sources)` 纯函数（并集，忽略空值）。探测与服务结果统一经它合并，调用方不再各自拼 Set。</action>
+  <verify>纯函数单测：并集去重、空源不影响、保留名始终在结果里。</verify>
+  <security>仍只借用 id 名，不读其他根的预设内容。</security>
+  <done>「哪些名字属于官方」只有一处定义。</done>
 </task>
 
-## Wave 2：生成路径落到安全名
+## Wave 2：生成物 id 收口
 
 <task type="auto">
-  <name>T2：种子化与新建改用安全 id</name>
+  <name>T2：种子化与新建同步写 preset.yml 的 id</name>
   <files>src/host/manifest.ts</files>
-  <action>`ensurePresetSeed(root, occupied)` 与 `cloneBuiltinPreset(id, autoSuffix, presetRoot, occupied)` 增加可选占用集合参数（默认空集 = 现状）：
-  目标目录名一律取 `safePresetId(模板 id, occupied)`，返回实际 id；撞名模板不再复制成被遮蔽目录。</action>
-  <verify>临时预设根 + 内置集合 `{standard,ptc,minimal}` ⇒ 种子化产出 `pt-standard`/`pt-ptc`/`pt-minimal` 与安全的 `creative`/`custom`；
-  新建 `standard` ⇒ 返回 `pt-standard`；传入空集时行为与今天一致。</verify>
-  <security>只写预设根目录，不触碰包内模板与其他根。</security>
-  <done>两条撞名来源消失。</done>
+  <action>新增 `retargetPresetId(dir, id)`：用 yaml Document API 把 `preset.yml` 的 `id` 改写为目标目录名（保留注释与未知字段，
+  内容无变化不落盘）；`ensurePresetSeed` 与 `cloneBuiltinPreset` 在复制后调用，失败只经 warn 暴露、不阻断复制。
+  同时把包内模板目录 `preset/creative` 改名为 `preset/cordis`（`id: cordis`，`skills/` 随目录移动），
+  `rebuild-composition.mjs` 的 `TARGET_PRESET_OVERRIDES` 随之取消（官方 `cordis` → 本地 `cordis`，同名不再需要覆盖）。</action>
+  <verify>种子化出 `pt-standard` 后其 `preset.yml` 的 `id` 为 `pt-standard`；`custom`/`creative` 等未撞名模板的 id 不变；
+  写入失败（目录只读）时复制仍成功并告警。</verify>
+  <security>只改该预设自己的 `preset.yml` 的 `id` 键，其余字节保留；写盘沿用同目录暂存 + rename。</security>
+  <done>目录名与 id 不再漂移。</done>
 </task>
 
-<task type="auto">
-  <name>T3：writePreset 模板与输出分离 + 输出撞名校验</name>
-  <files>src/host/write-preset.ts、src/index.ts（rebuildPreset 调用点）</files>
-  <action>`writePreset` 增加 `occupiedPresetIds?: ReadonlySet<string>`，对最终 `outputId` 走 `assertOutputIdSafe`；
-  调用方 `rebuildPreset()` 改为 `presetTemplate: templateNameFor(激活 id)` + `outputId: 激活 id`（模板名与输出名分离，模板仍指包内 `standard`）。</action>
-  <verify>激活 id 为 `pt-standard` 且用户目录无该目录时，模板解析落到包内 `standard`，输出目录为 `pt-standard`；
-  `outputId` 命中内置集合时抛错且不写盘。</verify>
-  <security>写盘仍是「临时目录 + 原子 rename」，失败不留半成品。</security>
-  <done>第三条撞名来源消失，且包内模板名不变。</done>
-</task>
-
-## Wave 3：激活预设归一化与服务桥接
+## Wave 3：服务就绪后补建
 
 <task type="auto">
-  <name>T4：runtime 归一化与宿主服务同步</name>
-  <files>src/index.ts、src/config.ts、src/runtime/settings-bridge.ts、src/client/data/prompt-tool-fields.ts、src/client/data/prompt-tool-view.ts</files>
-  <action>runtime 持有 `occupiedPresetIds`（启动用 `detectShippedPresetIdsFromDisk` 兜底），以 `ctx.inject(['agentPresets'], …)` 拿官方服务后
-  用 `settings()` 的 `trust === 'system'` 覆盖/补充并二次归一化；`normalizePresetTemplate(id)` = `safePresetId`，在首次加载、settings 变化、
-  工作台切换三处生效，变化时写回 `NS.presetTemplate` + `syncHostDefault()` + `rebuildPreset()`；全部 `'standard'` 兜底字面量改为 `DEFAULT_PRESET_ID`（含 client 两处）。</action>
-  <verify>有宿主服务时以服务为准；服务不可用时退回磁盘探测；两者皆空时不归一化（行为同今天）；历史 settings 为 `standard` 时归一化为 `pt-standard` 并写回。</verify>
-  <security>写 settings 只走既有 `settings.mutate`（字段级 set），不动其他键；不改宿主内置预设。</security>
-  <done>激活路径不再可能停在被遮蔽 id 上。</done>
+  <name>T3：占用集合更新后补建缺失模板</name>
+  <files>src/index.ts</files>
+  <action>把 apply 开头的「补建缺失模板」抽成 `seedMissingPresets()`，在 `refreshOccupiedFromHost` 更新集合后再次调用
+  （服务给出的集合比磁盘探测更全时，把新识别的保留名补成安全副本）。</action>
+  <verify>服务返回含 `creative` 的 system 集合时，用户目录出现 `pt-cordis`；集合未变化时不重复复制（幂等）。</verify>
+  <security>只写预设根，不触碰其他根与包内模板。</security>
+  <done>探测漏项不再是永久缺口。</done>
 </task>
 
 ## Wave 4：回归测试
 
 <task type="auto">
-  <name>T5：判据与三条生成路径的行为回归</name>
-  <files>test/host/preset-id-safety.test.mjs（新）、test/host/user-presets.test.mjs、test/host/write-preset.test.mjs</files>
-  <action>新增纯函数用例（安全 id、模板反查含 `pt-` 剥前缀与精确优先、磁盘探测的成功/缺失/异常三态）；
-  行为用例：种子化与新建落到安全名且原目录不被改、空占用集时行为不变、`writePreset` 输出撞名抛错且不写盘、
-  `pt-standard` 激活时模板解析落到包内 `standard`。</action>
-  <verify>把 `safePresetId` 短路（永远返回原 id）时新增用例必红；把 `outputId` 传参去掉时模板/输出分离用例必红。</verify>
-  <security>全部用临时目录与临时 `DSH_HOME`，结束清理，不依赖执行顺序。</security>
-  <done>三条生成路径与判据都有可失败的确定性回归。</done>
+  <name>T4：保留名、id 收口与补建的行为回归</name>
+  <files>test/host/preset-id-safety.test.mjs、test/host/user-presets.test.mjs</files>
+  <action>补用例：保留名表含 `creative` 且并入探测结果；种子化在保留名集合下落 `pt-cordis` 且 `preset.yml` 的 `id`
+  等于目录名；未撞名模板 id 不变；`cloneBuiltinPreset('creative')` 落 `pt-cordis`。</action>
+  <verify>把保留名表清空时「creative 落 pt-cordis」用例必红；把 `retargetPresetId` 调用去掉时 id 收口用例必红。</verify>
+  <security>临时目录 + 临时 DSH_HOME，结束清理。</security>
+  <done>新语义有可失败的确定性回归。</done>
 </task>
 
-## Wave 5：文档与交付
+## Wave 5：数据侧切换、文档与交付
 
 <task type="auto">
-  <name>T6：文档同步</name>
-  <files>docs/architecture-params.md、CHANGELOG.md、README.md</files>
-  <action>`architecture-params.md` 第 2 节补「预设 id 安全化」：根顺序与遮蔽事实、`pt-` 前缀规则、模板名与输出名分离、
-  探测降级链；CHANGELOG 记行为变化（撞名自动改名 + 输出撞名报错）；README 预设一节一句话说明。</action>
-  <verify>文档描述与实现逐条对得上；路径与命令可核验。</verify>
-  <security>不夸大：未做的（UI 标记、存量目录迁移）明确列为未做。</security>
-  <done>文档不再与产物脱节。</done>
+  <name>T5：用户目录切换到 pt-cordis 与默认预设收口</name>
+  <files>用户数据（不入库）：`.agent-presets/creative` → `pt-cordis`、三个 `pt-*` 的 preset.yml id、`settings.yaml`</files>
+  <action>目录改名 + 同步 `id` 与 `configsDir`；`pt-standard`/`pt-ptc`/`pt-minimal` 的 `preset.yml` id 收口为目录名；
+  `agent-presets.default` 与 `prompt-tool.presetTemplate` 改为 `pt-standard`（当前指向已删除的 `standard-copy`）。</action>
+  <verify>插件 `listPresets()` 列出 6 项且 id 与目录名一致；settings 指向存在的预设；宿主不再有「找不到预设」的条件。</verify>
+  <security>只改本插件拥有的预设目录与两个 settings 键；不改宿主内置预设。</security>
+  <done>用户目录与设置一致，且不再依赖会被遮蔽的命名。</done>
 </task>
 
 <task type="auto">
-  <name>T7：门禁、变异与提交</name>
-  <files>PLAN.md、.ai-memory/</files>
-  <action>typecheck / lint / test / build / `git diff --check`；对「安全 id」与「模板/输出分离」各做一组反向变异；中文 Conventional Commit 推送 origin/dev；追加 `.ai-memory` 日志。</action>
-  <verify>门禁全绿；变异精确红掉对应用例；暂存只含本轮文件。</verify>
+  <name>T6：文档、门禁、变异与提交</name>
+  <files>docs/architecture-params.md、CHANGELOG.md、README.md、PLAN.md、.ai-memory/</files>
+  <action>文档补保留名表与 id 收口；门禁 typecheck / lint / test / build / `git diff --check`；一组反向变异
+  （清空保留名表应红掉 `pt-cordis` 用例）；中文 Conventional Commit 推送 origin/dev；追加 `.ai-memory` 日志。</action>
+  <verify>门禁全绿；变异精确红；暂存只含本轮文件。</verify>
   <security>不停止运行中的 DSH；`.ai-memory` 与 `.scratch` 不入库。</security>
   <done>本轮交付完成。</done>
 </task>
 
 ## 回滚
 
-- 代码：`git revert` 本轮提交即可（纯插件代码改动，无用户数据迁移）。
-- 数据：归一化只会把**激活预设 id**改写成 `pt-<id>`；若期间已生成 `pt-*` 目录，删目录 + 把 settings 改回旧 id 即回到基线。
-- 已完成的用户侧复制换名（`standard-copy` 等）不受影响、不回滚。
+- 代码：`git revert` 本轮提交。
+- 数据：目录名改回 `creative`、三个 `pt-*` 的 `preset.yml` id 与 `settings.yaml` 的默认预设改回原值即可；不涉及删除。
 
 ## Task Summary 与状态
 
-- 当前：T1–T7 执行中（执行记录与门禁结果在本节回填）。
+- 当前：T1–T6 执行中（执行记录与门禁结果在本节回填）。
 
 ### 执行记录
 
-- **T1（判据与探测）**：新增 `src/shared/preset-ids.ts`（`SAFE_PRESET_PREFIX` / `DEFAULT_PRESET_ID`，host 与 client 同源）
-  与 `src/host/preset-id-safety.ts`：`safePresetId`、`templateNameFor`（包内精确命中 → 剥一次 `pt-` → 原样）、
-  `assertOutputIdSafe`（撞名 fail loud 并给出安全替代）、`detectShippedPresetIdsFromDisk`（hoisted / 各 profile / pnpm
-  三条候选路径，只列目录名，异常与缺失一律返回空集 = 退回不避让）。
-- **T2（生成路径）**：`ensurePresetSeed(root, occupied)` 与 `cloneBuiltinPreset(id, autoSuffix, presetRoot, occupied)`
-  目标目录名走 `safePresetId`（默认参数保持空集 ⇒ 旧调用语义不变）；bridge 的 `presetClone` 端点经新回调
-  `getOccupiedPresetIds` 拿到占用集合，返回实际 id 供界面显示。
-- **T3（写入路径）**：`writePreset` 新增 `occupiedPresetIds`，输出目录命中即 fail loud；`rebuildPreset()` 改为
-  `presetTemplate: templateNameFor(激活 id)` + `outputId: 激活 id`（模板名与输出名分离）；补建循环与
-  `materializeImportedPreset` 显式传 `outputId`。
-- **T4（归一化）**：runtime 持有 `occupiedPresetIds`（启动磁盘探测兜底，`ctx.inject(['settings','agentPresets'])`
-  就绪后用 `settings()` 的 `trust === 'system'` 覆盖并二次归一化）；`normalizePresetTemplate` 在初次加载、
-  settings 变化、宿主 `agent-presets.default` 跟随三处生效，改写时写回插件 settings（一次）并重建；
-  `config.ts` 两处默认值与 client 两处默认值改用 `DEFAULT_PRESET_ID`。
-  经核实**保持原样**的两处 `'standard'`：`settings-bridge.ts` 的激活目录兜底（语义是包内模板名）与导出预设端点的
-  缺省 id（同样是模板名），改动它们反而会让 `resolvePresetDir` 找不到模板。
-- **T5（回归）**：新增 `test/host/preset-id-safety.test.mjs`（判据 3 条 + 探测 3 条）；`user-presets.test.mjs` 补 3 条
-  （种子化落安全名、空占用集合保持旧语义、克隆撞名与递增）；`write-preset.test.mjs` 补 2 条（输出撞名不写盘、
-  模板名与输出名分离且 `configsDir` 指向输出目录）。
-- **T6（文档）**：`CHANGELOG.md` 新增本轮条目；`docs/architecture-params.md` 第 2 节新增「预设 id 安全化」小节
-  （根顺序事实、判据与探测降级链、三条路径、模板/输出分离）；`README.md` 预设参数体系一节补两句。
-- **T7（门禁与变异）**：见下。
+- **T1（保留名表与并集）**：`src/host/preset-id-safety.ts` 新增 `SHIPPED_PRESET_ID_RESERVATIONS`
+  （`cordis`/`minimal`/`ptc`/`standard`/`creative`）与 `mergeOccupiedPresetIds(...sources)`；
+  占用集合统一为「保留名表 ∪ 磁盘探测 ∪ 宿主服务」，探测与服务都拿不到时仍按保留名表避让。
+- **T2（模板对齐官方 + id 收口）**：包内模板 `preset/creative` → `preset/cordis`（`id: cordis`，`skills/` 随目录移动）；
+  `rebuild-composition.mjs` 的 `TARGET_PRESET_OVERRIDES` 清空（官方 `cordis` 不再需要目标覆盖），
+  新增库模块 `tool-plugin-manager`（cordis 启用态）与 `tool-plugin-manager-disabled`（standard/ptc 的 `disabled: true` 版），
+  `standard`/`ptc` 模板 modules 相应加行；`manifest.ts` 新增 `retargetPresetId`，`ensurePresetSeed` 与 `cloneBuiltinPreset`
+  复制后把 `preset.yml` 的 `id` 收口为目标目录名。
+- **T3（服务后补建 + 补建保护）**：`src/index.ts` 把种子化抽成 `seedMissingPresets()`，启动与 `refreshOccupiedFromHost`
+  更新集合后各跑一次；补建循环遇到目录名属于保留名的旧目录时跳过并告警（避免一次白写中断其它预设的重建）。
+- **T4（回归）**：`preset-id-safety.test.mjs` 新增保留名表与并集用例；`user-presets.test.mjs` 新增
+  「保留名表下创造模式模板落 `pt-cordis` 且 id 收口」「克隆落 `pt-cordis`」两组；受影响的三处既有期望值随官方行结构更新。
+- **T5（用户数据，不入库）**：`.agent-presets/creative` → `pt-cordis`；四个 `pt-*` 预设用**包内新模板**重建
+  （`rematerialize` 会以用户目录自身为模板，旧副本挡住包内新版，故先按模板重铺再渲染），id 与目录名收口；
+  `settings.yaml` 的 `agent-presets.default` 与 `prompt-tool.presetTemplate` → `pt-standard`；
+  **发现卡库 `.characters` 已在早前的清理中被删除**，按本会话早期读到的原文重建 `.characters/ponytail/converted.yml`
+  并重新应用到 `pt-standard`（`apply` 返回 `count: 4`，`importedCharacters: [ponytail]`）。
+- **T6（官方漂移同步）**：随官方 `dsh-0.1.6-alpha.2`（`ddefc45f`）：`cordis` persona 补 5 段
+  （plugin_manager / Creator 模式 UI 插件 / `cordis_inspect_*` / MCP / installed bundles）、`standard`·`ptc`·`cordis` 新增
+  `tool-plugin-manager` 行、`cordis` 两个技能同步为官方新正文；`engine/compositions/library/` 重建（22 处仅为来源提交号刷新，
+  另新增 2 个模块），`test/fixtures/dsh/current` 快照与 `PROVENANCE.md`（来源提交 + 10 个文件指纹）同批更新。
 
-### 反向变异验证（证明新用例守得住）
+### 反向变异验证
 
 | 变异 | 期望失败 | 实测结果 |
 |---|---|---|
-| `safePresetId` 短路（永远返回原 id） | 安全 id 相关用例 | **恰好 4 条红**（判据 2 + user-presets 2），其余 54 条绿 |
-| `writePreset` 忽略 `options.outputId`（输出名 = 模板名） | 模板/输出分离用例 | **恰好 3 条红**（新增 2 条 + 既有 `outputId` 语义用例），其余 55 条绿 |
+| `SHIPPED_PRESET_ID_RESERVATIONS` 清空 | 保留名表相关用例 | **恰好 3 条红**（保留名表、种子化 `pt-cordis`、克隆 `pt-cordis`），其余 20 条绿 |
 
-两组变异均已回退；回退后全量 1055/1055 通过。
+变异已回退；回退后全量 1058/1058 通过。
 
 ### 门禁结果
 
-- `typecheck` ✓、`lint` 0 warning 0 error ✓、`build` ✓、`test` **1055/1055** ✓、`git diff --check` ✓（仅一条 CRLF 提示，非错误）。
-- 未做（明确不在本轮范围）：工作台遮蔽标记；存量撞名目录（`standard`/`ptc`/`minimal`）的迁移或清理。
+- `typecheck` ✓、`lint` 0 warning 0 error ✓、`build` ✓、`test` **1058/1058** ✓、`git diff --check` ✓。
+- 未做（明确不在本轮范围）：工作台遮蔽标记；`custom`/`liangshen` 的命名；宿主内置预设本身。
 
-[✔] Wave 1 / T1：共享常量与判据模块
-[✔] Wave 2 / T2：种子化与新建改用安全 id
-[✔] Wave 2 / T3：writePreset 模板与输出分离 + 输出撞名校验
-[✔] Wave 3 / T4：runtime 归一化与宿主服务同步
-[✔] Wave 4 / T5：判据与三条生成路径的行为回归
-[✔] Wave 5 / T6：文档同步
-[✔] Wave 5 / T7：门禁、变异与提交
+[✔] Wave 1 / T1：保留名表常量与并集纯函数
+[✔] Wave 2 / T2：种子化与新建同步写 preset.yml 的 id、包内模板对齐官方命名（`creative` → `cordis`）
+[✔] Wave 3 / T3：占用集合更新后补建缺失模板
+[✔] Wave 4 / T4：保留名、id 收口与补建的行为回归
+[✔] Wave 5 / T5：用户目录切换到 pt-cordis 与默认预设收口
+[✔] Wave 5 / T6：文档、门禁、变异与提交

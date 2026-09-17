@@ -93,6 +93,7 @@ test('官方行变体仅保留确有语义差异的重复行', () => {
   assert.deepEqual(duplicates, {
     delegation: ['delegation', 'delegation-ptc'],
     'skill-filesystem': ['skill-filesystem', 'skill-filesystem-cordis'],
+    'tool-plugin-manager': ['tool-plugin-manager', 'tool-plugin-manager-disabled'],
   })
   for (const name of [
     'official-agent-instructions', 'official-tool-bash', 'official-tool-skill',
@@ -273,7 +274,7 @@ test('rebuild-composition：动态发现官方预设并拒绝缺行、重复和�
     assert.equal(existsSync(join(localModules, 'tool-bash-disabled.yml')), true)
     assert.equal(existsSync(join(localModules, 'persistent-shell-posix.yml')), true)
     const generated = readdirSync(library).filter((name) => name.endsWith('.yml'))
-    assert.equal(generated.length, 22)
+    assert.equal(generated.length, 24)
     const upstreamRows = ['standard', 'minimal', 'ptc', 'cordis'].flatMap((name) =>
       parse(readFileSync(join(FIXTURE_PRESETS, name, 'agent.cordis.yml'), 'utf8'), { logLevel: 'silent' }))
     for (const name of generated) {
@@ -304,7 +305,7 @@ test('rebuild-composition：动态发现官方预设并拒绝缺行、重复和�
     assert.notEqual(duplicate.status, 0)
     assert.match(duplicate.stderr + duplicate.stdout, /duplicate modules: tool-web/)
 
-    writeFileSync(file, original.replace('  - tool-present\n  - prompt-config-engine\n', '  - prompt-config-engine\n  - tool-present\n'), 'utf8')
+    writeFileSync(file, original.replace('  - tool-present\n  - tool-plugin-manager-disabled\n  - prompt-config-engine\n', '  - prompt-config-engine\n  - tool-plugin-manager-disabled\n  - tool-present\n'), 'utf8')
     const reordered = run(root, upstream)
     assert.notEqual(reordered.status, 0)
     assert.match(reordered.stderr + reordered.stdout, /modules do not match official standard order/)
@@ -317,7 +318,7 @@ test('rebuild-composition：缺失官方预设或必要技能资产时 fail loud
   const root = fixture()
   try {
     const upstream = upstreamFixture(root)
-    rmSync(join(root, 'preset', 'creative', 'skills', 'editing-cordis-compositions', 'SKILL.md'))
+    rmSync(join(root, 'preset', 'cordis', 'skills', 'editing-cordis-compositions', 'SKILL.md'))
     const missingAsset = run(root, upstream)
     assert.notEqual(missingAsset.status, 0)
     assert.match(missingAsset.stderr + missingAsset.stdout, /required asset missing/)
