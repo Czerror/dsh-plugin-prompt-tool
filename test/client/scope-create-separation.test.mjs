@@ -29,6 +29,11 @@ const loader = registerHooks({
       const names = [...new Set([...source.matchAll(/\.([A-Za-z_][\w-]*)/g)].map(([, name]) => name))]
       return { format: 'module', shortCircuit: true, source: `export default ${JSON.stringify(Object.fromEntries(names.map((name) => [name, name])))}` }
     }
+    // 模型路由卡在服务端渲染必然抛错（`useSyncExternalStore` 只传两个参数、缺 getServerSnapshot），
+    // 它与本文件所有断言无关：桩成 null 组件后，子代理页其余链路（能力卡排除清单下发）仍走真实实现。
+    if (url.endsWith('/features/models/ModelRouteCard.tsx')) {
+      return { format: 'module', shortCircuit: true, source: 'export function ModelRouteModuleCard() { return null }' }
+    }
     if (url.endsWith('.tsx')) return { format: 'module', shortCircuit: true, source: ts.transpileModule(readFileSync(new URL(url), 'utf8'), {
       compilerOptions: { jsx: ts.JsxEmit.ReactJSX, module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2024 },
     }).outputText }
@@ -37,6 +42,7 @@ const loader = registerHooks({
 })
 const { PromptConfigList } = await import('../../src/client/features/prompts/PromptConfigList.tsx')
 const { EngineCapabilityCreateMenu, EngineModuleCards } = await import('../../src/client/features/modules/EngineModuleList.tsx')
+const { SubagentPage } = await import('../../src/client/app/workspace/pages/SubagentPage.tsx')
 loader.deregister()
 
 const render = (component, props) => renderToStaticMarkup(createElement(component, props))
@@ -65,6 +71,8 @@ const meta = {
   strategies: [], slotKinds: [], positions: [], dedupes: [], promotions: [], audienceModes: [], modelScopes: [], roles: [], mergeModes: [], fills: [],
   layerFieldPolicies: {}, layerLabels: {},
 }
+/** 会话模型投影桩：服务端渲染要求 getServerSnapshot，且快照必须是稳定引用。 */
+const SESSION_SNAPSHOT = { selection: undefined }
 const configListProps = (overrides = {}) => ({
   t,
   meta,
@@ -241,13 +249,42 @@ test('子代理页不提供「仅主对话」能力：菜单排除 tool-filter�
   assert.match(cards, new RegExp(zh['modules.subagentEmptyHint'].slice(0, 12)), '给出替代入口说明')
 })
 
-test('子代理页能力卡排除清单由页面下发（源码契约）', () => {
-  const subagent = read('app/workspace/pages/SubagentPage.tsx')
-  assert.match(subagent, /const mainSessionOnly = \['tool-filter'\]/)
-  assert.match(subagent, /excludeCapabilities=\{mainSessionOnly\}/)
-  assert.match(subagent, /emptyHint=\{t\('modules\.subagentEmptyHint'\)\}/)
+test('子代理页能力卡排除清单由页面下发', () => {
+  // SSR 渲染真实子代理页：同一份 moduleFacts 下，页面下发的 mainSessionOnly 被真正消费 ——
+  // 被排除的 tool-filter 不渲染卡片，策略卡照常渲染。由渲染结果证明，而不是读源码文本。
+  const active = {
+    fields: { ...EMPTY_FIELDS, writePreset: true, presetTemplate: 'demo', promptConfigs: [] },
+    moduleFacts: {
+      sourceMode: 'explicit', editable: true, rowIds: [],
+      effectiveModules: ['tool-filter', 'subagent-tool-policy'],
+      declaredModules: ['tool-filter', 'subagent-tool-policy'],
+    },
+    api: { sessionModel: { subscribe: () => () => {}, snapshot: () => SESSION_SNAPSHOT, getServerSnapshot: () => SESSION_SNAPSHOT } },
+    hostDefaultModel: undefined, modelCatalog: [], modelReasoning: {}, templatePreStepCount: 0,
+    notice: undefined, noticeKind: undefined, meta,
+    templateVariables: {}, templateVariablesEnabled: false,
+    editorDrafts: { tools: new Map(), persona: new Map(), fields: new Map(), policyProfiles: new Map(), expanded: new Map() },
+    instructionPolicy: undefined,
+    patch() {}, getFields() { return active.fields }, showNotice() {},
+    setTemplateVariables() {}, setTemplateVariablesEnabled() {}, saveTemplateVariables: async () => {},
+    createEngineCapability: async () => true, removeEngineCapability: async () => true,
+    load: async () => {}, setPresetTemplate() {},
+    persistConfigs: async () => true, persistInstructionFiles: async () => true, persistParamOverrides: async () => true,
+    reloadInstructionFile: async () => true, setInstructionSourceEnabled: async () => true, updateInstructionPolicy: async () => true,
+  }
+  const html = render(SubagentPage, { t, store: active })
+  assert.doesNotMatch(html, /data-module-card-id="tool-filter"/, '子代理页不渲染被排除的 tool-filter 卡')
+  assert.match(html, /data-module-card-id="subagent-tool-policy"/, '排除只作用于清单内能力：策略卡照常渲染')
+  assert.ok(html.includes(t('modules.subagentScopeHint')), '替代入口说明由能力卡列表侧渲染')
+  // 空装配 + 非 all 视图（页面 showStatus 分支）时给出去哪里授权的说明
+  // （emptyHint 被真正消费，而不是只传了 prop）。
+  const empty = render(SubagentPage, {
+    t,
+    store: { ...active, moduleFacts: { ...active.moduleFacts, effectiveModules: [], declaredModules: [] } },
+    browse: { viewFilter: 'pre-step' },
+  })
+  assert.ok(empty.includes(t('modules.subagentEmptyHint').slice(0, 12)), '空清单时渲染替代入口说明')
   // 说明文字挂在能力卡列表侧，不得塞进工具栏按钮行（曾导致按钮偏移）。
-  assert.match(subagent, /<EngineModuleCards[\s\S]*?hint=\{t\('modules\.subagentScopeHint'\)\}/)
   const modulesSource = read('features/modules/EngineModuleList.tsx')
   const actionsBlock = modulesSource.slice(0, modulesSource.indexOf('export function EnginePromptDefaultsCard'))
   assert.doesNotMatch(actionsBlock, /configFieldHint/, '工具栏只放按钮，说明文字由卡片列表渲染')

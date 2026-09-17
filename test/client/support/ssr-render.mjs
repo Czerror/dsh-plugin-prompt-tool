@@ -13,12 +13,17 @@
  * SSR 能断言真实 DOM 属性、文案、结构与顺序；**不能**断言 portal 内容、
  * 真实 CSS 计算值、真实事件与焦点——那些必须留在 Edge smoke。
  *
- * 用法：
+ * 用法（**推荐传以调用方文件为基准的绝对 URL**，可避免相对路径的基准歧义）：
  *
  *     import { withSsr, renderElement, makeTranslate } from './support/ssr-render.mjs'
  *     const t = makeTranslate()
- *     const { PromptConfigList } = await withSsr(['../../src/client/features/prompts/PromptConfigList.tsx'])
+ *     const { PromptConfigList } = await withSsr([
+ *       new URL('../../src/client/features/prompts/PromptConfigList.tsx', import.meta.url).href,
+ *     ])
  *     const html = renderElement(PromptConfigList, { t, ...props })
+ *
+ * 也可以直接写相对路径，但那种写法按**本 harness 文件**（`test/client/support/`）解析，
+ * 引用仓库源码需要 `'../../../src/...'`（三层回到仓库根）。
  */
 import { readFileSync } from 'node:fs'
 import { registerHooks } from 'node:module'
@@ -31,8 +36,10 @@ const REACT_MODULES = ['react', 'react/jsx-runtime', 'react-dom', 'react-dom/ser
 
 /**
  * 注册内存转译 loader 并动态 import 指定模块，返回**扁平化的具名导出**集合
- * （`const { ToolSurfaceView } = await withSsr([...])`）。路径写法与其它测试一致
- * （相对 `test/client/`，例如 `'../../src/client/ui/X.tsx'`）。
+ * （`const { ToolSurfaceView } = await withSsr([...])`）。
+ * **路径基准**：说明符由本模块 `await import()`，因此相对路径按 `test/client/support/`
+ * 解析（不是按调用方文件）—— 引用仓库源码请写 `'../../../src/client/ui/X.tsx'`；
+ * 也可以直接传绝对 `file://` URL，那种写法不受基准影响。
  * loader 在本函数返回前注销，不污染后续用例；导出名冲突即抛错，避免静默取错组件。
  */
 export async function withSsr(specifiers) {
