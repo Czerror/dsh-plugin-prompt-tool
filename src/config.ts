@@ -37,8 +37,6 @@ export interface PromptSettings {
   skillCatalog: SkillCatalogEntry[]
   /** 用户技能根（技能实体的落点；其余来源由官方各自发现）。 */
   activeSkillsDirs: string[]
-  /** 生效目录存在性（path → 目录是否存在，供 UI 状态徽章）。 */
-  skillsDirExists: Record<string, boolean>
   /** 生成 preset 的显示顺序。 */
   presetOrder: number
   /** preset.md 缺失或不可读时使用的文本。 */
@@ -75,7 +73,6 @@ export const PromptSettingsSchema: z<PromptSettings> = z.object({
     path: z.string().default(''),
   })).default([]),
   activeSkillsDirs: z.array(z.string()).default([]),
-  skillsDirExists: z.dict(z.boolean()).default({}),
   presetOrder: z.natural().default(DEFAULT_PRESET_ORDER),
   fallbackText: z.string().default(''),
   writePreset: z.boolean().default(true),

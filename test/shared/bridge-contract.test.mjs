@@ -132,9 +132,9 @@ test('契约：/bootstrap 聚合 meta + overrides + variables + promptConfigs �
   assert.ok(Array.isArray(payload.overrides.overrides) || typeof payload.overrides.overrides === 'object')
   assert.ok(typeof payload.variables.variables === 'object' && typeof payload.variables.enabled === 'boolean')
   assert.ok(Array.isArray(payload.promptConfigs.promptConfigs))
-  // 技能事实也在同一聚合响应里下发：清单 + 屏蔽表 + 引用目录 + 用户技能根。
+  // 技能事实在同一聚合响应里下发：清单 + 引用目录 + 用户技能根。
+  // 屏蔽状态不单独下发——它已经逐条表达在 skillCatalog 条目的按端标志里。
   assert.deepEqual(payload.activeSkillsDirs, ['D:/isolated/skills'])
-  assert.deepEqual(payload.skillBlocked, blocked)
   assert.deepEqual(payload.skillFolders, ['D:/referenced'])
   assert.deepEqual(payload.skillCatalog, [entry])
   assert.ok(payload.moduleFacts === undefined || payload.moduleFacts.effectiveConfigs === undefined, 'bootstrap 不应暴露完整行级配置')

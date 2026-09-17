@@ -54,8 +54,18 @@ import {
   type SkillsStateRead,
 } from './host/skills-config.ts'
 import { createSkillsProvider } from './host/skills-provider.ts'
-import { createSkillsRefresh } from './host/skills-refresh.ts'
-import { catalogFromScan, scanRoot, scanRoots, skillRoots, type ScannedSkill } from './host/skills-scan.ts'
+import { createSkillsReloader, type SkillsReloader } from './host/skills-refresh.ts'
+import {
+  catalogFromScan,
+  resolveAgentsHome,
+  resolveBundledSkillsDir,
+  rootsFingerprint,
+  scanRoot,
+  scanRoots,
+  skillRoots,
+  type ScanRoot,
+  type ScannedSkill,
+} from './host/skills-scan.ts'
 import { blockRecordFor, blockScopeOf, type SkillBlockScope, type SkillCatalogEntry, type SkillsState } from './shared/skills.ts'
 
 export const name = 'prompt-tool'
@@ -301,26 +311,38 @@ export function apply(ctx: Context, configIn: Config): void {
   const skillsRoot = USER_SKILLS_DIR
   const blockedScopes = (): Map<string, SkillBlockScope> =>
     new Map(skillsState.blocked.map((item) => [item.name, blockScopeOf(item)]))
-  /** 用户显式引用的技能文件夹里的技能（自定义来源，只读扫描）。 */
-  const scanReferencedSkills = (): ScannedSkill[] =>
-    skillsState.folders.flatMap((path) => scanRoot({ kind: 'custom', path }))
-  /** 清单缓存：按工作目录分桶，状态或文件变化时整体失效。 */
-  const catalogCache = new Map<string, SkillCatalogEntry[]>()
+  /** 用户显式引用的技能文件夹里的技能（自定义来源，只读扫描）：按引用目录指纹缓存，避免每次列候选都重读正文。 */
+  let referencedCache: { fingerprint: string; skills: ScannedSkill[] } | undefined
+  const scanReferencedSkills = (): ScannedSkill[] => {
+    const roots: ScanRoot[] = skillsState.folders.map((path) => ({ kind: 'custom', path }))
+    const fingerprint = rootsFingerprint(roots)
+    if (referencedCache !== undefined && referencedCache.fingerprint === fingerprint) return referencedCache.skills
+    const skills = roots.flatMap((root) => scanRoot(root))
+    referencedCache = { fingerprint, skills }
+    return skills
+  }
+  /** 清单缓存：按工作目录分桶，用六类技能根的指纹判失效（状态变化与手工增删都能兜住）。 */
+  const catalogCache = new Map<string, { fingerprint: string; entries: SkillCatalogEntry[] }>()
   const listSkills = (cwd?: string): SkillCatalogEntry[] => {
     const key = cwd ?? ''
-    const cached = catalogCache.get(key)
-    if (cached !== undefined) return cached
-    const entries = catalogFromScan(scanRoots(skillRoots({
+    const roots = skillRoots({
       ...(cwd === undefined || cwd.length === 0 ? {} : { cwd }),
       dshHome: DSH_HOME,
       folders: skillsState.folders,
-    })), blockedScopes())
+    })
+    const fingerprint = rootsFingerprint(roots)
+    const cached = catalogCache.get(key)
+    if (cached !== undefined && cached.fingerprint === fingerprint) return cached.entries
+    const entries = catalogFromScan(scanRoots(roots), blockedScopes())
     if (catalogCache.size >= 8) catalogCache.clear()
-    catalogCache.set(key, entries)
+    catalogCache.set(key, { fingerprint, entries })
     return entries
   }
+  /** 只失效清单缓存：引用目录里的普通文件变化不影响候选集合，不必让官方提供者重扫。 */
+  const invalidateCatalogCache = (): void => { catalogCache.clear() }
+  /** 失效清单缓存与官方注册表缓存：屏蔽表或引用集合变化时必须两个都失效。 */
   const invalidateCatalog = (): void => {
-    catalogCache.clear()
+    invalidateCatalogCache()
     invalidateSkills?.()
   }
   /** 写屏蔽范围并热应用：只改插件状态，不改任何技能文件。scope = 'none' 表示恢复该技能。 */
@@ -354,22 +376,35 @@ export function apply(ctx: Context, configIn: Config): void {
     return written
   }
 
-  // 状态文件与引用目录的热更新：任一事件都失效清单缓存，只有状态快照变化时才重挂 watcher
-  // （引用目录集合可能变了）。技能实体的即时性由官方 skill 提供者负责；策略见 skills-refresh。
-  const reloadSkillsState = createSkillsRefresh({
-    read: () => {
-      const state = readSkillsStateSafe()
-      return { state, snapshot: JSON.stringify(state) }
-    },
+  // 状态文件与引用目录的热更新：任一事件都失效清单缓存，只有状态成功读取且快照变化时才替换
+  // 内存状态、失效候选缓存并重挂 watcher（引用目录集合可能变了）。读盘失败沿用上一次有效状态，
+  // 不会因为一个瞬时坏文件把屏蔽表与引用目录清空；策略与理由见 skills-refresh。
+  //
+  // watcher 先建、回调里用可选链访问 reloader：两者互相引用，这样任何一方都不会踩到
+  // 「块级变量在初始化前被读取」的隐式时序依赖。
+  const bundledSkillsDir = resolveBundledSkillsDir()
+  let reloadSkillsState: SkillsReloader | undefined
+  const skillsWatcher = createSkillsWatcher(
+    () => [
+      // 监听范围：插件状态目录、用户引用的技能文件夹、用户技能根、用户 agents 根与内置根。
+      // 项目根随会话 cwd 变化，静态 watcher 覆盖不到全部工作区，那部分由 rootsFingerprint 兜住。
+      dirname(skillsStateFile),
+      ...skillsState.folders,
+      USER_SKILLS_DIR,
+      join(resolveAgentsHome(), 'skills'),
+      ...(bundledSkillsDir === undefined ? [] : [bundledSkillsDir]),
+    ],
+    () => { reloadSkillsState?.reload() },
+  )
+  reloadSkillsState = createSkillsReloader({
+    stateFile: skillsStateFile,
     currentSnapshot: () => skillsStateSnapshot,
     accept: (state, snapshot) => { skillsState = state; skillsStateSnapshot = snapshot },
     rewatch: () => skillsWatcher.watch(),
-    invalidate: () => invalidateCatalog(),
+    invalidateList: () => invalidateCatalogCache(),
+    invalidateCandidates: () => invalidateSkills?.(),
+    warn: (message) => warn(ctx, `prompt-tool: ${message}`),
   })
-  const skillsWatcher = createSkillsWatcher(
-    () => [dirname(skillsStateFile), ...skillsState.folders],
-    () => { reloadSkillsState() },
-  )
   skillsWatcher.watch()
   // 插件卸载时关闭状态与引用目录 watcher，避免泄漏与对已卸载 provider 的无效刷新。
   ctx.effect(() => () => skillsWatcher.close())
@@ -601,7 +636,6 @@ export function apply(ctx: Context, configIn: Config): void {
     modelsAvailable: getModelsState().available,
     skillCatalog: listSkills(),
     activeSkillsDirs: [skillsRoot],
-    skillsDirExists: { [skillsRoot]: existsSync(skillsRoot) },
     presetOrder: runtime.presetOrder,
     fallbackText: runtime.fallbackText,
     writePreset: runtime.writePreset,
@@ -847,7 +881,7 @@ export { registerTuiCommand } from './runtime/tui.ts'
 export { readSkillsState, writeSkillsState, skillsStatePath, SKILL_NAME_PATTERN } from './host/skills-config.ts'
 export type { BlockedSkill, SkillBlockScope, SkillCatalogEntry, SkillsState } from './shared/skills.ts'
 export { blockRecordFor, blockScopeOf } from './shared/skills.ts'
-export { createSkillsRefresh } from './host/skills-refresh.ts'
+export { createSkillsReloader } from './host/skills-refresh.ts'
 export { catalogFromScan, resolveProjectRoot, scanRoot, scanRoots, skillRoots } from './host/skills-scan.ts'
 export { PARAM_KEYS } from './config.ts'
 export { BRIDGE_ENDPOINTS, MAX_BRIDGE_BODY_BYTES, MAX_CHARACTER_CARD_STREAM_BYTES, SETTINGS_BRIDGE_PREFIX } from './shared/bridge-contract.ts'

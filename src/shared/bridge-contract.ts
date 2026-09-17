@@ -297,10 +297,10 @@ export interface BridgeValueMap {
   skillsList: { skills: unknown[]; blocked: string[]; folders: string[]; roots: string[] }
   skillBlock: { skills: unknown[]; blocked: string[] }
   skillsFolders: { skills: unknown[]; folders: string[] }
-  skillsImport: { path: string; count: number }
+  skillsImport: { path: string; count: number; overwritten: number }
   skillCreate: { id: string; path: string }
   skillDelete: { id: string; path: string }
-  skillsImportDirectory: { path: string; count: number }
+  skillsImportDirectory: { path: string; count: number; overwritten: number }
   templates: { templates?: unknown[]; toolTemplates?: unknown[] }
   promptConfigs: { promptConfigs: unknown[]; instructions?: InstructionsSnapshot }
   agentsFile: InstructionFileWriteResult

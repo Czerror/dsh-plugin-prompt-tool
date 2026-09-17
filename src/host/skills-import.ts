@@ -7,7 +7,7 @@ import { parseFrontmatter } from '../runtime/skills-parse.ts'
 import { SKILL_NAME_PATTERN } from './skills-config.ts'
 
 export interface SkillsImportFile { path?: unknown; content?: unknown }
-export type SkillsImportResult = { ok: true; path: string; count: number } | { ok: false; message: string }
+export type SkillsImportResult = { ok: true; path: string; count: number; overwritten: number } | { ok: false; message: string }
 export interface SkillFile { path: string; buffer: Buffer }
 const key = (path: string): string => process.platform === 'win32' ? path.toLowerCase() : path
 const MAX_FILES = 10_000
@@ -60,6 +60,24 @@ function assertOverwritable(target: string): void {
   if (!existsSync(join(target, 'SKILL.md'))) throw new Error(`拒绝覆盖非技能目录（缺少 SKILL.md）：${target}`)
 }
 
+/** 覆盖导入前把旧技能移入回收站（与 deleteSkill 同一目录），而不是就地删除。
+ *  导入是批量动作、用户没有逐项确认，被替换掉的旧版本必须仍然可以人工恢复。 */
+function moveToTrash(base: string, name: string, source: string): { path: string; container: string } {
+  const recycle = join(base, '.system', 'prompt-tool', '.trash')
+  mkdirSync(recycle, { recursive: true })
+  const container = mkdtempSync(join(recycle, `${name}-`))
+  writeFileSync(join(container, 'record.json'), JSON.stringify({
+    folder: name,
+    source,
+    origin: 'import-overwrite',
+    at: new Date().toISOString(),
+    files: readdirSync(source),
+  }, null, 2), { flag: 'wx' })
+  const path = join(container, name)
+  renameSync(source, path)
+  return { path, container }
+}
+
 /** 落盘事务：先写暂存目录，再逐顶层项切换；失败时把备份放回原处。 */
 function importFiles(root: string, files: SkillFile[], overwrite: boolean): SkillsImportResult {
   let stage: string | undefined
@@ -90,11 +108,13 @@ function importFiles(root: string, files: SkillFile[], overwrite: boolean): Skil
       writeFileSync(target, file.buffer, { flag: 'wx' })
     }
     const tops = [...new Set(files.map((file) => file.path.split('/')[0]!))]
-    const backups: Array<[string, string]> = []
+    // 被替换的旧技能先移入回收站：覆盖失败时从这里放回原处，成功时它就是用户的恢复点。
+    const replaced: Array<{ target: string; trashed: string; container: string }> = []
     const restore = (): void => {
-      for (const [target, backup] of [...backups].reverse()) {
-        if (existsSync(target)) rmSync(target, { recursive: true, force: true })
-        if (existsSync(backup)) renameSync(backup, target)
+      for (const entry of [...replaced].reverse()) {
+        if (existsSync(entry.target)) rmSync(entry.target, { recursive: true, force: true })
+        if (existsSync(entry.trashed)) renameSync(entry.trashed, entry.target)
+        rmSync(entry.container, { recursive: true, force: true })
       }
     }
     try {
@@ -104,9 +124,8 @@ function importFiles(root: string, files: SkillFile[], overwrite: boolean): Skil
         if (existsSync(target)) {
           if (!overwrite) throw new Error(`技能已存在：${name}`)
           assertOverwritable(target)
-          const backup = join(stage, `.backup-${name}`)
-          renameSync(target, backup)
-          backups.push([target, backup])
+          const trashed = moveToTrash(base, name, target)
+          replaced.push({ target, trashed: trashed.path, container: trashed.container })
         }
         renameSync(join(stage, name), target)
       }
@@ -114,8 +133,7 @@ function importFiles(root: string, files: SkillFile[], overwrite: boolean): Skil
       restore()
       throw error
     }
-    for (const [, backup] of backups) rmSync(backup, { recursive: true, force: true })
-    return { ok: true, path: base, count: files.length }
+    return { ok: true, path: base, count: files.length, overwritten: replaced.length }
   } catch (error) {
     return { ok: false, message: `技能导入失败：${error instanceof Error ? error.message : String(error)}` }
   } finally {
@@ -148,13 +166,19 @@ export function importSkillsPackage(root: string, files: SkillsImportFile[], ove
   }
 }
 
-/** 宿主机目录导入：读取来源目录（校验符号链接与容量）后按目录名复制进用户根。
- *  来源必须是绝对路径：`resolve('')` 会退化成进程工作目录，等于把整个 cwd 当技能导入。 */
+/** 校验宿主机导入来源并规范化：必须是非空绝对路径。
+ *  空串会让 `resolve('')` 退化成进程工作目录，等于把整个 cwd 当技能导入。
+ *  端点与实现层共用这一个入口，拒绝文案只有一份。 */
+export function assertImportableSource(source: unknown): string {
+  if (typeof source !== 'string' || source.trim().length === 0) throw new Error('来源目录路径为空')
+  if (!isAbsolute(source)) throw new Error('来源目录必须是绝对路径')
+  return resolve(source)
+}
+
+/** 宿主机目录导入：读取来源目录（校验符号链接与容量）后按目录名复制进用户根。 */
 export function importSkillsDirectory(root: string, source: string): SkillsImportResult {
   try {
-    if (typeof source !== 'string' || source.trim().length === 0) throw new Error('来源目录路径为空')
-    if (!isAbsolute(source)) throw new Error('来源目录必须是绝对路径')
-    const directory = resolve(source)
+    const directory = assertImportableSource(source)
     const name = basename(directory)
     if (!SKILL_NAME_PATTERN.test(name)) throw new Error('来源目录名称必须是 kebab-case')
     return importFiles(root, readSkillDirectory(directory).map((file) => ({ ...file, path: `${name}/${file.path}` })), true)

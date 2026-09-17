@@ -76,11 +76,19 @@ test('技能状态筛选区分模型、用户、已停用与全部', () => {
   assert.equal(matchesSkillStatus(modelBlocked, 'user'), true, '只屏蔽模型端：用户仍可调用')
   assert.equal(matchesSkillStatus(userBlocked, 'user'), false, '只屏蔽用户端：用户不可调用')
   assert.equal(matchesSkillStatus(userBlocked, 'model'), true, '只屏蔽用户端：模型仍可调用')
-  // 「已停用」只收两端都关的技能：否则只关一端的技能会同时出现在「用户」与「已停用」两个页签。
+  // 「不可用」只收两端都不可用的技能：只关一端的技能留在「模型」或「用户」页签里。
   assert.equal(matchesSkillStatus(modelBlocked, 'blocked'), false)
   assert.equal(matchesSkillStatus(userBlocked, 'blocked'), false)
+  // 技能自身声明两端都不可调用时也要收进「不可用」，否则它只出现在「全部」，用户会以为技能丢了。
+  const declaredOff = skill({ modelInvocable: false, userInvocable: false })
+  assert.equal(matchesSkillStatus(declaredOff, 'blocked'), true)
+  assert.equal(matchesSkillStatus(declaredOff, 'model'), false)
+  assert.equal(matchesSkillStatus(declaredOff, 'user'), false)
+  for (const candidate of [both, modelOnly, userOnly, blocked, modelBlocked, userBlocked, declaredOff]) {
+    assert.equal(['model', 'user', 'blocked'].some((tab) => matchesSkillStatus(candidate, tab)), true, '每个有效技能至少落在一个页签')
+  }
   assert.equal(matchesSkillStatus(invalid, 'model'), false)
-  assert.equal(matchesSkillStatus(invalid, 'blocked'), false, '无效不等于被屏蔽')
+  assert.equal(matchesSkillStatus(invalid, 'blocked'), false, '无效技能有自己的原因展示，不混进不可用')
 })
 
 test('技能状态徽章色调随注册、屏蔽、遮蔽与调用范围变化', () => {

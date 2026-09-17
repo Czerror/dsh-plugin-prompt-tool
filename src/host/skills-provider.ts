@@ -6,16 +6,17 @@
  *  对这个行为做回归，而不是只测一份替身。 */
 import { join } from 'node:path'
 import type { SkillCandidate, SkillDefinition, SkillLookupOptions, SkillProvider } from '@deepseek-ai/dsh-skill'
-import { SKILL_BLOCK_RANK, SKILL_SOURCES, blockScopeOf, type BlockedSkill } from '../shared/skills.ts'
+import { SKILL_BLOCK_RANK, SKILL_SOURCES, blockScopeOf, type BlockedSkill, type SkillBlockScope } from '../shared/skills.ts'
 import type { ScannedSkill } from './skills-scan.ts'
 
 /** 影子候选的描述：清单与目录里都能看出这是插件的注册层屏蔽，不是技能自身的声明。 */
 export const BLOCKED_SKILL_DESCRIPTION = '已由 prompt-tool 在注册层屏蔽（未修改任何技能文件）'
 export const SKILL_PROVIDER_NAME = 'prompt-tool'
 
-/** 屏蔽记录 → 影子候选：只关被屏蔽的那一端（两端都关等于完全停用）；'none' 不产生候选。 */
-export function blockedCandidate(item: BlockedSkill): SkillCandidate | undefined {
-  const scope = blockScopeOf(item)
+/** 屏蔽记录 → 影子候选：只关被屏蔽的那一端（两端都关等于完全停用）。
+ *  scope 可由调用方传入以免重复计算；'none' 在状态校验下不可达（两端都为 false 的记录会被拒绝），
+ *  这里保留判断是为了让这个导出函数对任何输入都自洽。 */
+export function blockedCandidate(item: BlockedSkill, scope: SkillBlockScope = blockScopeOf(item)): SkillCandidate | undefined {
   if (scope === 'none') return undefined
   return {
     name: item.name,
@@ -60,15 +61,18 @@ export function createSkillsProvider(deps: SkillsProviderDeps): SkillProvider {
     name: SKILL_PROVIDER_NAME,
     list: async (options: SkillLookupOptions): Promise<readonly SkillCandidate[]> => {
       if (options.signal?.aborted) return []
-      const scopes = new Map(deps.blocked().map((item) => [item.name, blockScopeOf(item)]))
+      // 一次取值：屏蔽记录在本次 list 内保持一致，scope 也只算一次。
+      const records = deps.blocked()
+      const blockedNames = new Set<string>()
       const candidates: SkillCandidate[] = []
-      for (const item of deps.blocked()) {
+      for (const item of records) {
+        blockedNames.add(item.name)
         const candidate = blockedCandidate(item)
         if (candidate !== undefined) candidates.push(candidate)
       }
       for (const skill of deps.referenced()) {
         // 被屏蔽的名字不再提供引用候选：屏蔽优先级高于引用。
-        if (!skill.valid || scopes.has(skill.name)) continue
+        if (!skill.valid || blockedNames.has(skill.name)) continue
         candidates.push(referencedCandidate(skill))
       }
       return candidates
@@ -76,6 +80,8 @@ export function createSkillsProvider(deps: SkillsProviderDeps): SkillProvider {
     get: async (candidate: SkillCandidate, options: SkillLookupOptions): Promise<SkillDefinition | undefined> => {
       if (options.signal?.aborted) return undefined
       // 影子候选永不加载内容：即使有人绕过调用策略直接 get，也拿不到正文。
+      // 显式拒绝没有 path 的候选，不依赖「file 一定存在」这种隐式不变量去反查正文。
+      if (candidate.path === undefined) return undefined
       const skill = deps.referenced().find((entry) => entry.file === candidate.path)
       if (skill === undefined || !skill.valid) return undefined
       return {

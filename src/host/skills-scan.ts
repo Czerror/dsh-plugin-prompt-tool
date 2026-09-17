@@ -132,6 +132,27 @@ export function scanRoots(roots: readonly ScanRoot[]): ScannedSkill[] {
   return roots.flatMap((root) => scanRoot(root))
 }
 
+/** 技能根指纹：各根下技能目录与标记文件的修改时间。
+ *  清单与候选缓存据此在文件系统变化后失效——项目根随会话 cwd 变化，静态 watcher 覆盖不到
+ *  全部工作区，指纹是唯一能兜住六类来源（含手工增删）的判据。 */
+export function rootsFingerprint(roots: readonly ScanRoot[]): string {
+  return roots.map((root) => {
+    let stamp = '-'
+    try {
+      stamp = readdirSync(root.path, { withFileTypes: true })
+        .filter((entry) => entry.isDirectory())
+        .map((entry) => {
+          let marker = '-'
+          try { marker = String(statSync(join(root.path, entry.name, SKILL_MARKER)).mtimeMs) } catch { /* 缺标记文件的目录按 '-' 计 */ }
+          return `${entry.name}:${marker}`
+        })
+        .sort()
+        .join(',')
+    } catch { /* 根不存在或不可读：空指纹 */ }
+    return `${root.kind}|${root.path}|${stamp}`
+  }).join(';')
+}
+
 /** 同名裁决：按来源优先级升序取首个有效技能，其余标注"被遮蔽"。 */
 export function markWinners(skills: readonly ScannedSkill[]): Map<string, string> {
   const winners = new Map<string, string>()

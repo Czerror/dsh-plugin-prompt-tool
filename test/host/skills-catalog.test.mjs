@@ -68,6 +68,8 @@ const catalog = catalogFromScan(scanRoots(roots), BLOCKED)
 
 const listSkills = (sessionCwd) => catalogFromScan(scanRoots(skillRoots({ cwd: sessionCwd, dshHome, folders: FOLDERS })), BLOCKED)
 
+// 分工：逐条扫描规则（一层发现、有效性、调用声明、根指纹）由 test/host/skills-scan.test.mjs 覆盖，
+// 这里验证六类技能根同时存在时的整体投影与清单事实——两者互补，不是重复。
 test('skillRoots：六类技能根按官方优先级排列，无 cwd 时不解析项目来源', () => {
   assert.deepEqual(roots.map((root) => [root.kind, root.path]), [
     ['project-dsh', join(project, '.dsh', 'skills')],

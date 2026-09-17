@@ -191,7 +191,7 @@ after(async () => {
   for (let i = 0; i < 12; i++) { try { rmSync(s.profile, { recursive: true, force: true }); break } catch { await sleep(100) } }
 })
 
-test('V2 页面：导航、浏览恢复、配置筛选与保存反馈', { skip: !existsSync(browserPath), timeout: 90000 }, async () => {
+test('V2 页面：导航、浏览恢复、配置筛选与保存反馈', { skip: !existsSync(browserPath) && '设置 PROMPT_TOOL_TEST_BROWSER 指向 Edge/Chrome 可执行文件', timeout: 90000 }, async () => {
   const { evaluate, waitFor, click, clickText, inputPage, navigate, send } = await ensureSession()
   await navigate('pages')
   await waitFor(`document.querySelectorAll('[data-config-id]').length===36`)
@@ -369,7 +369,7 @@ test('V2 卡片：展开语义、菜单焦点、删除/丢弃确认、portal保�
   assert.equal(await evaluate(`document.querySelector('[role="tooltip"]')===null`), true)
 })
 
-test('V2 草稿与资源：原文恢复、快照保存、技能目标及危险删除', { skip: !existsSync(browserPath), timeout: 90000 }, async () => {
+test('V2 草稿与资源：原文恢复、快照保存、技能目标及危险删除', { skip: !existsSync(browserPath) && '设置 PROMPT_TOOL_TEST_BROWSER 指向 Edge/Chrome 可执行文件', timeout: 90000 }, async () => {
   const { evaluate, waitFor, clickFocused: click, clickKey, clickAria, field, inputDraft: input, blurDraft: blur, count, navigate } = await ensureSession()
   await navigate('drafts')
   await waitFor(`document.querySelector('[data-tool-card]')!==null`)
@@ -521,6 +521,11 @@ test('V2 草稿与资源：原文恢复、快照保存、技能目标及危险�
   assert.equal(await evaluate(`window.store.getFields().skillFolders.length`), 0, '失败不写入引用列表')
   assert.equal(await evaluate(`document.querySelector('[aria-label="'+window.t('skills.folders.aria')+'"]').value`), 'D:/referenced/broken', '失败保留输入草稿')
   await evaluate('window.rejectSkillsFolders=false')
+  // 故障复位后重放同一次提交：草稿还在，成功路径必须走通（失败后的可恢复性）。
+  await clickKey('skills.folders.add')
+  await waitFor(`${count('skills-folders')}===4`)
+  await waitFor(`window.store.getFields().skillFolders.length===1`)
+  assert.equal(await evaluate(`JSON.stringify(window.store.getFields().skillFolders)`), JSON.stringify(['D:/referenced/broken']))
 
   // 回收站删除：确认后按目录名提交，失败保留技能行与错误提示。
   await click('[data-skill-delete="alpha"]')

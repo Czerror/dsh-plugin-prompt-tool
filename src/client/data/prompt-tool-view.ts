@@ -120,7 +120,6 @@ export function bridgeViewFromBoot(boot: BridgeResult<BridgeSettingsView>): Brid
     providers: boot.providers,
     modelCatalog: boot.modelCatalog,
     activeSkillsDirs: boot.activeSkillsDirs,
-    skillsDirExists: boot.skillsDirExists,
     skillCatalog: boot.skillCatalog,
     skillFolders: boot.skillFolders,
     templatePreStepCount: boot.templatePreStepCount,

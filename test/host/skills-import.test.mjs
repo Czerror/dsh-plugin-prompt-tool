@@ -41,8 +41,9 @@ test('importSkillsPackage：覆盖前要求目标是技能目录，非技能目�
   try {
     const first = importSkillsPackage(root, [file('demo/SKILL.md', '---\nname: demo\ndescription: demo\n---\nold\n')])
     assert.equal(first.ok, true)
-    const overwritten = importSkillsPackage(root, [file('demo/SKILL.md', '---\nname: demo\ndescription: demo\n---\nnew\n')])
-    assert.equal(overwritten.ok, true)
+    const replacement = importSkillsPackage(root, [file('demo/SKILL.md', '---\nname: demo\ndescription: demo\n---\nnew\n')])
+    assert.equal(replacement.ok, true)
+    assert.equal(replacement.overwritten, 1, '覆盖导入如实报告替换数量')
     assert.match(readFileSync(join(root, 'demo', 'SKILL.md'), 'utf8'), /new/)
     assert.equal(importSkillsPackage(root, [file('demo/SKILL.md', 'x')], false).ok, false, 'overwrite=false 时拒绝已存在的技能')
 
@@ -95,6 +96,39 @@ test('importSkillsDirectory：复制宿主机目录内容到用户技能根并�
     assert.deepEqual(readdirSync(root), [name], '被拒绝的导入不向用户技能根写入任何内容')
   } finally {
     cleanup()
+    source.cleanup()
+  }
+})
+
+test('importSkillsDirectory：覆盖同名技能时旧版本进回收站而不是被删除', () => {
+  const target = makeRoot()
+  const source = makeRoot('pt-skills-source')
+  const root = target.root
+  try {
+    writeFileSync(join(source.root, 'SKILL.md'), '---\nname: imported\ndescription: first\n---\nfirst body\n', 'utf8')
+    const first = importSkillsDirectory(root, source.root)
+    assert.equal(first.ok, true, first.ok ? '' : first.message)
+    if (!first.ok) return
+    assert.equal(first.overwritten, 0, '首次导入没有覆盖任何技能')
+    const name = source.root.split(/[\\/]/).at(-1)
+
+    // 改来源内容后再次导入：同名技能被替换，旧版本必须仍可人工恢复。
+    writeFileSync(join(source.root, 'SKILL.md'), '---\nname: imported\ndescription: second\n---\nsecond body\n', 'utf8')
+    const second = importSkillsDirectory(root, source.root)
+    assert.equal(second.ok, true, second.ok ? '' : second.message)
+    if (!second.ok) return
+    assert.equal(second.overwritten, 1, '覆盖计数如实返回')
+    assert.match(readFileSync(join(root, name, 'SKILL.md'), 'utf8'), /second body/)
+
+    const trash = join(root, '.system', 'prompt-tool', '.trash')
+    const containers = readdirSync(trash)
+    assert.equal(containers.length, 1, '被替换的旧版本进回收站')
+    assert.match(readFileSync(join(trash, containers[0], name, 'SKILL.md'), 'utf8'), /first body/, '回收站里留的是旧版本')
+    const record = JSON.parse(readFileSync(join(trash, containers[0], 'record.json'), 'utf8'))
+    assert.equal(record.folder, name)
+    assert.equal(record.origin, 'import-overwrite', '记录覆盖来源，便于区分回收站条目的成因')
+  } finally {
+    target.cleanup()
     source.cleanup()
   }
 })

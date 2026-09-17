@@ -153,6 +153,20 @@ test('被屏蔽的名字不再提供引用候选，屏蔽优先级高于引用',
   assert.equal(await registry.get('ref-skill'), undefined)
 })
 
+test('影子候选的 rank 装配：等于 SKILL_BLOCK_RANK 且必须小于全部官方来源', async () => {
+  const item = blockRecordFor('demo-skill', 'all', AT)
+  assert.equal(blockedCandidate(item).rank, SKILL_BLOCK_RANK)
+
+  const provider = createSkillsProvider({ blocked: () => [item], referenced: () => [] })
+  const candidates = await provider.list({})
+  assert.equal(candidates.length, 1)
+  assert.equal(candidates[0].rank, SKILL_BLOCK_RANK, 'provider 实际产出的候选沿用同一常量')
+
+  const officialRanks = Object.values(SKILL_SOURCES).map((source) => source.rank)
+  assert.equal(Math.min(...officialRanks) > SKILL_BLOCK_RANK, true,
+    '影子 rank 必须小于最低的官方档（项目来源 100），否则同名技能压不掉')
+})
+
 test('无效的引用技能不产生候选', async () => {
   const registry = makeRegistry([], {
     blocked: () => [],

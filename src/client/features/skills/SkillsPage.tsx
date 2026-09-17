@@ -101,7 +101,10 @@ export const SkillsPage = memo(function SkillsPage(props: { store: PromptToolSto
     try {
       const res = await bridgeCall('skillsImport', { files: await readImportFiles(files, 'base64') })
       if (res.ok) {
-        store.showNotice('ok', t('skills.notice.imported', { count: res.value.count, path: res.value.path }))
+        const { count, path, overwritten } = res.value
+        store.showNotice('ok', overwritten > 0
+          ? t('skills.notice.importedOverwrite', { count, path, overwritten })
+          : t('skills.notice.imported', { count, path }))
         await store.load()
       } else {
         store.showNotice('error', t('skills.notice.importFailed', { reason: res.message ?? 'settings bridge unavailable' }))

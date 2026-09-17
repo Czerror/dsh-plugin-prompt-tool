@@ -13,14 +13,15 @@ export type SkillSourceKind =
   | 'user-agents'
   | 'bundled'
 
-/** 来源元信息：优先级与展示名集中在这里，界面与清单共用。 */
-export const SKILL_SOURCES: Record<SkillSourceKind, { rank: number; label: string }> = {
-  'project-dsh': { rank: 100, label: '项目 .dsh/skills' },
-  'project-agents': { rank: 200, label: '项目 .agents/skills' },
-  custom: { rank: 300, label: '已添加的技能文件夹' },
-  'user-dsh': { rank: 400, label: '用户 skills 目录' },
-  'user-agents': { rank: 500, label: '用户 .agents/skills' },
-  bundled: { rank: 600, label: '官方内置' },
+/** 来源优先级：与官方六类技能根的次序一致（数值越小越优先）。
+ *  展示名不在这里——标题由界面按 `skills.source.<kind>` 取字典，避免同一批文案出现两处真相。 */
+export const SKILL_SOURCES: Record<SkillSourceKind, { rank: number }> = {
+  'project-dsh': { rank: 100 },
+  'project-agents': { rank: 200 },
+  custom: { rank: 300 },
+  'user-dsh': { rank: 400 },
+  'user-agents': { rank: 500 },
+  bundled: { rank: 600 },
 }
 
 /** 屏蔽记录的影子候选优先级：小于全部官方根（最小 100），因此任何来源的同名技能都会被压掉。 */

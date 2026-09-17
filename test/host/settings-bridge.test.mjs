@@ -1254,9 +1254,11 @@ test('settings bridge /skills-import-directory 把宿主机目录复制进用户
     // 把整个 cwd 当成技能导入（曾实测复制成功）。断言不能依赖 cwd 的名字恰好不是 kebab-case。
     const emptyPath = await post({ path: '' })
     assert.equal(emptyPath.status, 400)
-    assert.match(emptyPath.body.message, /绝对路径/u)
+    assert.match(emptyPath.body.message, /路径为空/u, '空串按「路径为空」拒绝')
     assert.equal((await post({ path: '   ' })).status, 400, '纯空白路径同样拒绝')
-    assert.equal((await post({ path: 'relative-skill-dir' })).status, 400, '相对路径拒绝，避免以 cwd 解析')
+    const relative = await post({ path: 'relative-skill-dir' })
+    assert.equal(relative.status, 400, '相对路径拒绝，避免以 cwd 解析')
+    assert.match(relative.body.message, /绝对路径/u, '相对路径按「必须是绝对路径」拒绝')
     assert.equal((await post({ path: 42 })).status, 400, '非字符串路径拒绝')
     assert.deepEqual(readdirSync(root), [name], '被拒绝的导入不向用户技能根写入任何内容')
   } finally {

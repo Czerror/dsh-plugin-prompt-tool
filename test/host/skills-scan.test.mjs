@@ -4,13 +4,14 @@
  *  或者漏掉真实存在的技能。用例全部在独立临时目录里构造真实文件，不依赖共享状态。 */
 import { after, test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import {
   catalogFromScan,
   markWinners,
   resolveProjectRoot,
+  rootsFingerprint,
   scanRoot,
   scanRoots,
   skillRoots,
@@ -186,4 +187,61 @@ test('scanRoots 按根顺序拼接各来源结果', () => {
     { kind: 'user-dsh', path: userRoot },
   ])
   assert.deepEqual(skills.map((skill) => [skill.name, skill.source]), [['alpha', 'project-dsh'], ['beta', 'user-dsh']])
+})
+
+test('同名裁决：rank 并列时按 id 次序稳定取首个，输入顺序不影响结果', () => {
+  const sameRank = [
+    scanned({ id: 'user-dsh:/a:demo', rank: SKILL_SOURCES['user-dsh'].rank, name: 'demo' }),
+    scanned({ id: 'user-dsh:/b:demo', rank: SKILL_SOURCES['user-dsh'].rank, name: 'demo' }),
+  ]
+  assert.equal(markWinners(sameRank).get('demo'), 'user-dsh:/a:demo', '并列时 id 字典序在前者胜出')
+  assert.equal(markWinners([...sameRank].reverse()).get('demo'), 'user-dsh:/a:demo', '裁决不依赖输入顺序')
+})
+
+test('未配置内置技能根时不产生 bundled 来源（未设或空串都一样）', () => {
+  const dshHome = makeRoot('pt-scan-nobundled-')
+  const previousBundled = process.env.DSH_BUNDLED_SKILL_DIR
+  const previousAgents = process.env.DSH_AGENTS_HOME
+  process.env.DSH_AGENTS_HOME = join(dshHome, 'agents')
+  try {
+    delete process.env.DSH_BUNDLED_SKILL_DIR
+    assert.deepEqual(skillRoots({ dshHome, folders: [] }).map((root) => root.kind), ['user-dsh', 'user-agents'])
+    process.env.DSH_BUNDLED_SKILL_DIR = ''
+    assert.deepEqual(skillRoots({ dshHome, folders: [] }).map((root) => root.kind), ['user-dsh', 'user-agents'],
+      '空串同样视为未配置内置根')
+  } finally {
+    if (previousBundled === undefined) delete process.env.DSH_BUNDLED_SKILL_DIR
+    else process.env.DSH_BUNDLED_SKILL_DIR = previousBundled
+    if (previousAgents === undefined) delete process.env.DSH_AGENTS_HOME
+    else process.env.DSH_AGENTS_HOME = previousAgents
+  }
+})
+
+test('根指纹：技能集合或标记文件变化后失效，无变化时保持相同', () => {
+  const root = makeRoot('pt-scan-fingerprint-')
+  writeSkill(root, 'alpha', 'name: alpha\ndescription: A')
+  const roots = [{ kind: 'custom', path: root }]
+  const initial = rootsFingerprint(roots)
+  assert.equal(rootsFingerprint(roots), initial, '没有变化时指纹必须稳定（否则缓存白失效）')
+
+  // 新增技能目录 → 指纹变化（这是「手工往用户根里放技能，管理页却看不到」的判据）。
+  writeSkill(root, 'beta', 'name: beta\ndescription: B')
+  const added = rootsFingerprint(roots)
+  assert.notEqual(added, initial, '新增技能目录必须改变指纹')
+
+  // 修改既有技能：显式回拨标记文件时间，避免依赖写入间隔的毫秒精度。
+  const marker = join(root, 'alpha', 'SKILL.md')
+  const past = new Date(Date.now() - 60_000)
+  utimesSync(marker, past, past)
+  assert.notEqual(rootsFingerprint(roots), added, '既有技能内容变化必须改变指纹')
+
+  // 删除技能目录 → 指纹变化。
+  const current = rootsFingerprint(roots)
+  rmSync(join(root, 'beta'), { recursive: true, force: true })
+  assert.notEqual(rootsFingerprint(roots), current, '删除技能目录必须改变指纹')
+
+  // 根不存在时指纹稳定为固定值，不抛错。
+  const missing = [{ kind: 'custom', path: join(root, 'not-there') }]
+  assert.equal(rootsFingerprint(missing), rootsFingerprint(missing))
+  assert.match(rootsFingerprint(missing), /not-there/u)
 })

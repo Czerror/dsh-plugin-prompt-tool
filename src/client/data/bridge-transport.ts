@@ -13,7 +13,6 @@ interface BridgeSuccessExtras {
   providers?: string[]
   modelCatalog?: Record<string, string[]>
   activeSkillsDirs?: string[]
-  skillsDirExists?: Record<string, boolean>
   skillCatalog?: SkillCatalogEntry[]
   /** 用户添加的技能文件夹（只引用，不复制）。 */
   skillFolders?: string[]

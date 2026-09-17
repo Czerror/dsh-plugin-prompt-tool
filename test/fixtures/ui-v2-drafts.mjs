@@ -43,10 +43,9 @@ window.fetch = async (url, init) => {
   if (endpoint === 'bootstrap') return new Response(JSON.stringify({ ok: true,
     // descriptor.value 里同时给出用户技能根：客户端当前只从 descriptor 值读 activeSkillsDirs
     // （顶层字段是服务端真实形状，两条路径都给，页面上的用户根与删除入口才可用）。
-    value: { value: { presetTemplate: 'test', writePreset: true, activeSkillsDirs: [skillsRoot], skillsDirExists: { [skillsRoot]: true } }, base: {}, revision: 1 },
+    value: { value: { presetTemplate: 'test', writePreset: true, activeSkillsDirs: [skillsRoot] }, base: {}, revision: 1 },
     meta: { meta: { ...window.fixture.meta, presets } }, overrides: { overrides: {} }, variables: { variables: {}, enabled: true },
     promptConfigs: { promptConfigs: [] }, skillCatalog: skills, skillFolders,
-    skillsDirExists: { [skillsRoot]: true },
     activeSkillsDirs: [skillsRoot],
     moduleFacts: { sourceMode: 'explicit', editable: true, effectiveModules: [], declaredModules: [], rowIds: [] },
   }))

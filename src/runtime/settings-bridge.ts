@@ -2,7 +2,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { createHash } from 'node:crypto'
-import { basename, dirname, isAbsolute, join, resolve, sep } from 'node:path'
+import { basename, dirname, join, resolve, sep } from 'node:path'
 import { createWriteStream, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { Transform } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
@@ -14,7 +14,7 @@ import type { SkillBlockScope, SkillCatalogEntry } from '../shared/skills.ts'
 import { loadPromptConfigFiles } from '../host/prompt-configs.ts'
 import { validatePromptConfigs } from './configs-validate.ts'
 import { loadPromptTemplates, loadToolTemplates } from '../host/templates.ts'
-import { importSkillsDirectory, importSkillsPackage } from '../host/skills-import.ts'
+import { assertImportableSource, importSkillsDirectory, importSkillsPackage } from '../host/skills-import.ts'
 import { createSkill, deleteSkill } from '../host/skills-actions.ts'
 import {
   appendPresetModules,
@@ -677,10 +677,9 @@ export function registerSettingsBridge(
           modelCatalog,
           modelsError: detection.error,
           activeSkillsDirs: [skillsState.skillsRoot],
-          skillsDirExists: { [skillsState.skillsRoot]: existsSync(skillsState.skillsRoot) },
           skillCatalog: skillsState.listSkills(),
-          // 注册层状态随 describe 下发：屏蔽表 + 引用目录，客户端「技能设置」页据此渲染。
-          skillBlocked: skillsState.blocked,
+          // 引用目录随 describe 下发。屏蔽状态不再单独发一份：它已经逐条表达在 skillCatalog 的
+          // 按端标志（blockedModel / blockedUser）里，重复下发只会制造第二个真相。
           skillFolders: skillsState.folders,
         }
       }
@@ -1041,9 +1040,11 @@ export function registerSettingsBridge(
             const body = parsedBody.body
             const source = body !== null && typeof body === 'object' && !Array.isArray(body) && typeof (body as Record<string, unknown>).path === 'string'
               ? (body as Record<string, unknown>).path as string : ''
-            // 空串不能落到 resolve：它会退化成进程工作目录，把整个 cwd 当成技能导入。
-            if (source.trim().length === 0 || !isAbsolute(source)) {
-              writeBridgeJson(res, 400, { ok: false, code: 'skills-import-rejected', message: '技能导入失败：来源目录必须是绝对路径且非空' })
+            // 与实现层共用同一个校验入口：空串不能落到 resolve，否则会退化成进程工作目录。
+            try {
+              assertImportableSource(source)
+            } catch (error) {
+              writeBridgeJson(res, 400, { ok: false, code: 'skills-import-rejected', message: `技能导入失败：${error instanceof Error ? error.message : String(error)}` })
               return
             }
             const result = importSkillsDirectory(getSkillsState().skillsRoot, source)

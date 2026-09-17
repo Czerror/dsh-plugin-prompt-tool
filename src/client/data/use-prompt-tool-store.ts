@@ -145,7 +145,9 @@ export interface PromptToolStore {
   createSkill: (input: { name: string; description: string; content: string }) => Promise<boolean>
   /** 回收站删除用户技能根里的技能目录。 */
   deleteSkill: (folder: string) => Promise<boolean>
-  /** 注册层屏蔽开关：模型端与用户端各自独立，scope='none' 表示恢复该技能。 */
+  /** 注册层屏蔽开关：模型端与用户端各自独立，scope='none' 表示恢复该技能。
+   *  返回 false 表示没有提交成功——可能是写盘失败，也可能是上一次保存仍在飞（此时会给出提示，
+   *  调用方不需要区分这两种情况，界面状态由随后的清单刷新决定）。 */
   setSkillBlocked: (name: string, scope: SkillBlockScope) => Promise<boolean>
   /** 添加 / 移除引用的技能文件夹（只记引用，不复制文件）。 */
   patchSkillFolders: (folders: string[]) => Promise<boolean>
@@ -262,7 +264,12 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
   const savedTemplateVariablesRef = useRef<Record<string, string>>({})
   const [templateVariablesEnabled, setTemplateVariablesEnabled] = useState(true)
   const [loading, setLoading] = useState(false)
-  const [skillsBusy, setSkillsBusy] = useState(false)
+  // 技能写入用并发计数而不是单一布尔：多个写操作同时在飞时，任何一个先结束都不能把界面
+  // 重新放开，否则用户会在另一个操作仍在写盘时点到开关，而那次点击会被忙期守卫丢弃。
+  const [skillsBusyCount, setSkillsBusyCount] = useState(0)
+  const skillsBusy = skillsBusyCount > 0
+  const beginSkillWrite = useCallback(() => { setSkillsBusyCount((count) => count + 1) }, [])
+  const endSkillWrite = useCallback(() => { setSkillsBusyCount((count) => Math.max(0, count - 1)) }, [])
   const [notice, setNotice] = useState('')
   const [noticeKind, setNoticeKind] = useState<'ok' | 'error'>('ok')
   const fieldsRef = useRef<Fields>(EMPTY_FIELDS)
@@ -972,27 +979,30 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
       showNotice('error', '请先填写要导入的目录路径')
       return false
     }
-    setSkillsBusy(true)
+    beginSkillWrite()
     try {
       const res = await bridgeCall('skillsImportDirectory', { path: source })
       if (!res.ok) {
         showNotice('error', '导入技能目录失败：' + (res.message ?? 'settings bridge unavailable'))
         return false
       }
-      showNotice('ok', `已从 ${source} 复制 ${res.value.count} 个文件到用户技能目录`)
+      const { count, overwritten } = res.value
+      showNotice('ok', overwritten > 0
+        ? `已从 ${source} 复制 ${count} 个文件到用户技能目录，覆盖 ${overwritten} 个同名技能（旧版本已进回收站）`
+        : `已从 ${source} 复制 ${count} 个文件到用户技能目录`)
       await load({ silent: true })
       return true
     } catch (error) {
       showNotice('error', '导入技能目录失败：' + errorMessage(error))
       return false
     } finally {
-      setSkillsBusy(false)
+      endSkillWrite()
     }
   }, [load, showNotice])
 
   /** 创建标准技能：写进用户技能根，官方自动发现。 */
   const createSkill = useCallback(async (input: { name: string; description: string; content: string }): Promise<boolean> => {
-    setSkillsBusy(true)
+    beginSkillWrite()
     try {
       const res = await bridgeCall('skillCreate', input)
       if (!res.ok) {
@@ -1006,13 +1016,13 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
       showNotice('error', '创建技能失败：' + errorMessage(error))
       return false
     } finally {
-      setSkillsBusy(false)
+      endSkillWrite()
     }
   }, [load, showNotice])
 
   /** 回收站删除：整个技能目录移入用户根的 .system/prompt-tool/.trash，可人工恢复。 */
   const deleteSkill = useCallback(async (folder: string): Promise<boolean> => {
-    setSkillsBusy(true)
+    beginSkillWrite()
     try {
       const res = await bridgeCall('skillDelete', { folder })
       if (!res.ok) {
@@ -1026,7 +1036,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
       showNotice('error', `删除技能 ${folder} 失败：` + errorMessage(error))
       return false
     } finally {
-      setSkillsBusy(false)
+      endSkillWrite()
     }
   }, [load, showNotice])
 
@@ -1036,9 +1046,12 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
   // 同时置起 skillsBusy，让写盘期间界面上的开关与删除按钮一起禁用。
   const skillBlockRef = useRef(false)
   const setSkillBlocked = useCallback(async (name: string, scope: SkillBlockScope): Promise<boolean> => {
-    if (skillBlockRef.current) return false
+    if (skillBlockRef.current) {
+      showNotice('error', '技能屏蔽正在保存，请稍候再试')
+      return false
+    }
     skillBlockRef.current = true
-    setSkillsBusy(true)
+    beginSkillWrite()
     try {
       const res = await bridgeCall('skillBlock', { name, scope })
       if (!res.ok) {
@@ -1053,13 +1066,13 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
       return false
     } finally {
       skillBlockRef.current = false
-      setSkillsBusy(false)
+      endSkillWrite()
     }
   }, [load, showNotice])
 
   /** 添加 / 移除引用的技能文件夹：只记引用，不复制文件。 */
   const patchSkillFolders = useCallback(async (folders: string[]): Promise<boolean> => {
-    setSkillsBusy(true)
+    beginSkillWrite()
     try {
       const res = await bridgeCall('skillsFolders', { folders })
       if (!res.ok) {
@@ -1073,7 +1086,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
       showNotice('error', '技能文件夹保存失败：' + errorMessage(error))
       return false
     } finally {
-      setSkillsBusy(false)
+      endSkillWrite()
     }
   }, [load, showNotice])
 

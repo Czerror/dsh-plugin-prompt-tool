@@ -27,10 +27,16 @@ export const skillShadowed = (skill: SkillCatalogEntry): boolean => skillEnabled
 export const blockScopeFor = (modelBlocked: boolean, userBlocked: boolean): SkillBlockScope =>
   modelBlocked && userBlocked ? 'all' : modelBlocked ? 'model' : userBlocked ? 'user' : 'none'
 
+/** 两端都不可用（有效技能）：既包含插件两端屏蔽，也包含技能自身声明两端都不可调用。
+ *  「已停用」页签按这个口径收技能，保证每个有效技能至少落在一个页签里，而不是只出现在「全部」。
+ *  无效技能不在此列——它有自己的原因展示。 */
+export const skillUnavailable = (skill: SkillCatalogEntry): boolean =>
+  skill.valid && !skillModelAvailable(skill) && !skillUserAvailable(skill)
+
 export function matchesSkillStatus(skill: SkillCatalogEntry, tab: SkillStatusTab): boolean {
   if (tab === 'model') return skillModelAvailable(skill)
   if (tab === 'user') return skillUserAvailable(skill)
-  if (tab === 'blocked') return skillFullyBlocked(skill)
+  if (tab === 'blocked') return skillUnavailable(skill)
   return true
 }
 
