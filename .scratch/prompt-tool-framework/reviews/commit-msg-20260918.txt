@@ -1,0 +1,27 @@
+fix(skills): 技能停用改为文件层调用策略，废弃失效的注册层屏蔽
+
+注册层影子候选在本插件的真实装配下会被预设层官方候选覆盖：官方注册表按
+「全局层 → … → 最近层」依次合并、最近层无视 rank 直接胜出，而官方 skill-filesystem
+由预设常驻组合挂在预设层、本插件的提供方在 profile 全局层。停用开关因此只改了界面与
+状态文件，模型侧仍可见、仍可加载（已在运行中的 DSH 用临时探针技能真机复现）。
+
+- 停用 = 改写该技能 SKILL.md 的官方两个键（模型端 disable-model-invocation、用户端
+  user-invocable），两端独立、恢复写显式值；只用 Document API 改目标键，注释、未知字段、
+  其余键与正文逐字保留；内容无变化不落盘，写盘先同目录暂存再原子 rename
+- 状态文件升 v4：只保留 folders；v3 的 blocked 弃用（读取忽略、不校验其内容，写入时删除
+  并把版本抬到 4）
+- 端点 /skill-block → /skill-policy：请求带 name/path/scope，身份校验下移为可直测纯函数
+  policyTarget（同名同路径且有效才放行，陈旧界面或伪造路径 409 且磁盘不变）
+- 客户端：徽章与开关按 frontmatter 事实，文案改为说明改写行为；两端都不可用才置灰
+- 文档：docs/skills-management.md 重写（三代表格 + 写入边界），CHANGELOG / README /
+  docs/ui-architecture.md 同步
+- 测试：新增 test/host/skills-policy.test.mjs（11 条，含九类拒绝条件与身份校验）与
+  skill-policy-e2e.test.mjs（真实 SkillRegistry + 磁盘提供方替身），删除已无对象的
+  skill-block-shadow.test.mjs；宿主机与客户端用例按新语义改造
+
+门禁：typecheck / lint（0 警告）/ build / verify:host（47 包 0 失败）/ 全量 test 1044/1044 /
+git diff --check 全部通过；三组反向变异（丢弃注释整段重写、去掉模型键取反、去掉身份校验
+陈旧分支）各自精确红掉对应用例后还原。
+
+行为变化提示：插件代码改动需重启 DSH 后生效；停用会改写技能文件 frontmatter，字段与
+dsh-web 技能中心一致，可互操作；状态文件升级无数据损失。
