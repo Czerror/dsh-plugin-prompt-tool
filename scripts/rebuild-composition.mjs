@@ -57,10 +57,8 @@ function discoverOfficialPresets() {
 
 const OFFICIAL_PRESETS = discoverOfficialPresets()
 if (OFFICIAL_PRESETS.length === 0) throw new Error(`no official presets with agent.cordis.yml found in ${presetsDir}`)
-// 本地模板已与官方预设同名（cordis 对齐官方命名），不再需要目标覆盖；保留本表以备将来再改名。
-const TARGET_PRESET_OVERRIDES = new Map()
 const OFFICIAL_PRESET_TARGETS = new Map(
-  OFFICIAL_PRESETS.map((preset) => [preset, TARGET_PRESET_OVERRIDES.get(preset) ?? preset]),
+  OFFICIAL_PRESETS.map((preset) => [preset, `pt-${preset}`]),
 )
 const targetOwners = new Map()
 for (const [sourcePreset, targetPreset] of OFFICIAL_PRESET_TARGETS) {

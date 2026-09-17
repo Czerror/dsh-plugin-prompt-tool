@@ -14,6 +14,7 @@ import assert from 'node:assert/strict'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { Context } from '@deepseek-ai/cordis'
 import { SkillRegistry, isModelInvocable, isUserInvocable } from '@deepseek-ai/dsh-skill'
 import { parseFrontmatter } from '../../src/runtime/skills-parse.ts'
@@ -109,6 +110,32 @@ const winnerOf = async (registry, name) => {
   assert.equal(matches.length, 1, `同名技能必须只有一个候选（真实注册表按层内 rank 合并）：${matches.map((s) => s.provider).join(',')}`)
   return matches[0]
 }
+
+test('真实 filesystem provider：旧策略键写入后可被官方发现并正确限制调用', {
+  skip: process.env.DSH_SKILL_FILESYSTEM_ENTRY === undefined ? '设置 DSH_SKILL_FILESYSTEM_ENTRY 可验证已发布 provider' : false,
+}, async () => {
+  const { FileSystemSkillProvider } = await import(pathToFileURL(process.env.DSH_SKILL_FILESYSTEM_ENTRY).href)
+  const root = join(sandbox, 'official-provider')
+  const file = join(root, 'legacy', SKILL_MARKER)
+  mkdirSync(join(root, 'legacy'), { recursive: true })
+  writeFileSync(file, '---\nname: legacy\ndescription: legacy\ndisableModelInvocation: false\nuserInvocable: true\nmodelInvocable: true\n---\nlegacy body\n')
+  const warnings = []
+  const provider = new FileSystemSkillProvider({ get() {}, logger: { warn: (message) => warnings.push(message) } }, {
+    signal: new AbortController().signal, invalidate() {},
+  }, { includeDefaultRoots: false, customSkillDirs: [root], watch: false, dshHome: sandbox, agentsHome: sandbox })
+  try {
+    assert.deepEqual(await provider.list({ cwd: sandbox }), [], '官方 provider 先拒绝旧策略键')
+    assert.ok(warnings.some((message) => message.includes('unsupported')))
+    assert.equal(setSkillInvocation(file, 'model').ok, true)
+    const candidates = await provider.list({ cwd: sandbox })
+    assert.equal(candidates.length, 1)
+    assert.equal(candidates[0].name, 'legacy')
+    assert.deepEqual(candidates[0].invocation, { modelInvocable: false, userInvocable: true })
+    const loaded = await provider.get(candidates[0], {})
+    assert.equal(loaded.content, 'legacy body', '官方 provider 会 trim 正文')
+    assert.ok(readFileSync(file, 'utf8').endsWith('legacy body\n'), '磁盘正文换行保持原样')
+  } finally { await provider.dispose() }
+})
 
 test('setSkillInvocation 之后重新 list()：模型端不可调用、用户端仍可调用', async () => {
   const registry = new SkillRegistry(new Context())

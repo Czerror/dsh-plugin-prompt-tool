@@ -12,7 +12,6 @@ import {
   asString,
   loadPresetContent,
   loadPresetSpec,
-  packagePresetDir,
   resolvePresetDir,
   resolvePresetParams,
   savePresetParams,
@@ -28,7 +27,7 @@ import { registerWorldBookTools } from './runtime/world-book-tools.ts'
 import { registerSessionVarTools } from './runtime/session-var-tools.ts'
 import { installPreStepCoordinator } from './runtime/pre-step-coordinator.ts'
 import { registerTuiCommand } from './runtime/tui.ts'
-import { RENDER_STAMP, writePreset } from './host/write-preset.ts'
+import { writePreset } from './host/write-preset.ts'
 import type { WritePresetOptions } from './host/write-preset.ts'
 import { ENGINE_PARAM_KEYS } from './shared/engine-params.ts'
 import {
@@ -48,13 +47,6 @@ import {
   USER_SKILLS_DIR,
 } from './host/paths.ts'
 import { DEFAULT_PRESET_ID } from './shared/preset-ids.ts'
-import {
-  detectShippedPresetIdsFromDisk,
-  mergeOccupiedPresetIds,
-  safePresetId,
-  templateNameFor,
-  type OccupiedPresetIds,
-} from './host/preset-id-safety.ts'
 import {
   readSkillsState,
   skillsStatePath,
@@ -114,33 +106,16 @@ function warn(ctx: Context, message: string): void {
 }
 
 export function apply(ctx: Context, configIn: Config): void {
-  // 被宿主其他预设根（内置 shipped 预设）占用的 id：同名用户目录永远不会被挂载，
-  // 生成与激活路径据此改用 `pt-` 前缀的安全 id（见 host/preset-id-safety.ts）。
-  // 占用集合 = 官方语义保留名表 ∪ 磁盘探测；agentPresets 服务就绪后再并入其权威结果。
-  let occupiedPresetIds: OccupiedPresetIds = mergeOccupiedPresetIds(detectShippedPresetIdsFromDisk())
-  const normalizePresetTemplate = (id: string): string => safePresetId(id, occupiedPresetIds)
-  // 包内模板判定：模板名与输出目录名分离后，安全 id 要能反查回包内模板。
-  const hasPackagedTemplate = (name: string): boolean => existsSync(join(packagePresetDir(), name))
-  // 补建缺失的包内模板：占用名落 `pt-` 前缀的安全 id（启动一次；服务给出更全集合后再跑一次）。
-  // 旧布局/旧参数/旧内容的迁移不在运行时做（本项目不含迁移代码）。
-  const seedMissingPresets = (): void => {
-    try {
-      ensurePresetSeed(DEFAULT_PRESET_DIR, occupiedPresetIds)
-    } catch (error) {
-      warn(ctx, `prompt-tool: preset seed failed: ${error instanceof Error ? error.message : String(error)}`)
-    }
-  }
-  seedMissingPresets()
+  // 包内目录与输出目录同名；启动只复制缺失项，现有用户定义不被重新铺写。
+  const seededPresets = new Set(ensurePresetSeed(DEFAULT_PRESET_DIR).created)
   const config = { ...configIn }
   const modelsState = (): ModelDetection => detectModels(ctx)
   const getModelsState = (): ModelDetection => modelsState()
   // 内容资产优先读生成目录文件（writePreset 落盘），模板 content 作回退；
   // settings.yaml 不再承载大文本（web 打开加载慢的根因）。
-  const initialTemplate = normalizePresetTemplate(
-    typeof config.presetTemplate === 'string' && config.presetTemplate.length > 0
+  const initialTemplate = typeof config.presetTemplate === 'string' && config.presetTemplate.length > 0
       ? config.presetTemplate
-      : DEFAULT_PRESET_ID,
-  )
+      : DEFAULT_PRESET_ID
   // 预设分离：每个预设 = 官方预设根（DEFAULT_PRESET_DIR）下的官方预设目录 <template>/。
   const initialPresetDir = join(DEFAULT_PRESET_DIR, /^[a-zA-Z0-9_-]+$/.test(initialTemplate) ? initialTemplate : DEFAULT_PRESET_ID)
   // 引擎参数从激活预设 preset.yml 读（settings 不再承载参数；每预设独立，随预设走）。
@@ -199,7 +174,7 @@ export function apply(ctx: Context, configIn: Config): void {
   }
 
   /** 重建生成目录（文本/组合/引擎/提示词配置）；writePreset 关闭时移除旧目录。 */
-  const rebuildPreset = (): void => {
+  const rebuildPreset = (initial = false): void => {
     // 先重读激活预设参数（/param-overrides 保存、TUI 开关、预设切换后生效）。
     reloadPresetParams()
     if (runtime.writePreset) {
@@ -234,24 +209,16 @@ export function apply(ctx: Context, configIn: Config): void {
         presetDir: DEFAULT_PRESET_DIR,
         presetOrder: runtime.presetOrder,
         promptConfigs: runtime.promptConfigs,
-        // 模板名与输出目录名分离：激活 id 可能是安全 id（pt-standard），模板仍取包内 standard。
-        presetTemplate: templateNameFor(runtime.presetTemplate, hasPackagedTemplate),
+        presetTemplate: runtime.presetTemplate,
         outputId: runtime.presetTemplate,
-        occupiedPresetIds,
         warn: (message) => warn(ctx, message),
       }
-      // 补建缺失/旧布局的预设目录（切换目标就绪；内容用模板默认）。
-      // 仅补建缺失项与旧布局组合（../engine 引用），已就绪的预设由切换时更新。
+      // 初始化只物化刚补建的目录；全局开关恢复时只恢复曾被该开关清空的组合。
       for (const preset of listPresets()) {
         if (preset.id === runtime.presetTemplate) continue
         const targetDir = join(DEFAULT_PRESET_DIR, preset.id)
-        if (!needsPresetRender(targetDir)) continue
-        // 目录名属于官方保留名（用户手工留下的旧目录）：宿主永远不会挂载它，
-        // 重渲染只会白写一次并让整个补建循环失败——跳过并告警。
-        if (occupiedPresetIds.has(preset.id)) {
-          warn(ctx, `prompt-tool: 预设 ${preset.id} 与官方预设同名（不会被挂载），跳过重建`)
-          continue
-        }
+        if (!seededPresets.has(preset.id)
+          && !readGeneratedContent(targetDir, 'agent.cordis.yml').startsWith('# prompt-tool writePreset disabled')) continue
         // 手写/官方格式预设（无 modules/params）不自动重渲染：参数桥无从下手，
         // 重渲染只会覆盖用户手写组合；其 persona 契约由就地迁移修正。
         try {
@@ -263,7 +230,9 @@ export function apply(ctx: Context, configIn: Config): void {
         }
         try {
           writePreset(readPromptFile(preset.id, runtime.fallbackText), {
-            ...options,
+            ...resolvePresetParams(loadPresetSpec(resolvePresetDir(preset.id)), {}),
+            presetDir: DEFAULT_PRESET_DIR,
+            presetOrder: runtime.presetOrder,
             presetTemplate: preset.id,
             outputId: preset.id,
             // 补建的是**别的**预设：必须清空 promptConfigs 覆盖层。它承载的是激活预设的
@@ -278,7 +247,11 @@ export function apply(ctx: Context, configIn: Config): void {
           warn(ctx, `prompt-tool: 补建预设 ${preset.id} 失败（切换时可重试）：${error instanceof Error ? error.message : String(error)}`)
         }
       }
-      writePreset(presetPrompt, options)
+      if (!initial || seededPresets.has(runtime.presetTemplate)
+        || readGeneratedContent(activePresetDir(), 'agent.cordis.yml').startsWith('# prompt-tool writePreset disabled')) {
+        writePreset(presetPrompt, options)
+      }
+      seededPresets.clear()
     } else {
       // writePreset 关闭时清空各预设目录的生成物，保留 preset.yml 参数源与预设根本身。
       // agent.cordis.yml 改写为空组合而非删除：官方 discovery 对缺组合文件的目录
@@ -311,19 +284,6 @@ export function apply(ctx: Context, configIn: Config): void {
   /** 激活预设目录（内容按预设根 <template>/ 隔离；非法名回退 standard）。 */
   const activePresetDir = (): string =>
     join(DEFAULT_PRESET_DIR, /^[a-zA-Z0-9\u4e00-\u9fff_-]+$/.test(runtime.presetTemplate) ? runtime.presetTemplate : DEFAULT_PRESET_ID)
-
-  /** 预设目录是否需要（重新）渲染：组合缺失、旧布局（../engine 引用），或渲染契约版本过期。 */
-  const needsPresetRender = (targetDir: string): boolean => {
-    const compositionFile = join(targetDir, 'agent.cordis.yml')
-    if (!existsSync(compositionFile)) return true
-    try {
-      const raw = readFileSync(compositionFile, 'utf8')
-      if (raw.includes('../engine/') || raw.includes('./engine/')) return true
-      return !raw.includes(RENDER_STAMP)
-    } catch {
-      return true
-    }
-  }
 
   // 技能管理（文件层调用策略）：
   //  实体层——技能留在官方各自的技能根里（项目 .dsh/skills、项目 .agents/skills、
@@ -397,7 +357,7 @@ export function apply(ctx: Context, configIn: Config): void {
 
   /** 添加 / 移除引用的技能文件夹：只记状态，不复制也不移动任何文件。 */
   const patchSkillFolders = (folders: string[]): SkillsStateRead => {
-    const written = writeSkillsState({ folders }, skillsStateFile, skillsStateSnapshot)
+    const written = writeSkillsState({ folders }, skillsStateFile)
     if (written.ok === false) {
       warn(ctx, `prompt-tool: ${written.message}`)
       return written
@@ -435,11 +395,10 @@ export function apply(ctx: Context, configIn: Config): void {
   reloadSkillsState = createSkillsReloader({
     stateFile: skillsStateFile,
     currentSnapshot: () => skillsStateSnapshot,
-    candidatesFingerprint: () => referencedFingerprint(),
     accept: (state, snapshot) => { skillsState = state; skillsStateSnapshot = snapshot },
     rewatch: () => skillsWatcher.watch(),
     invalidateList: () => invalidateCatalogCache(),
-    invalidateCandidates: () => invalidateSkills?.(),
+    invalidateCandidates: () => { referencedCache = undefined; invalidateSkills?.() },
     warn: (message) => warn(ctx, `prompt-tool: ${message}`),
   })
   skillsWatcher.watch()
@@ -512,8 +471,6 @@ export function apply(ctx: Context, configIn: Config): void {
       rebuildPreset()
       return applyDefaultModel()
     },
-    // 「新建」入口选目标 id 时避让被内置遮蔽的模板名（standard → pt-standard）。
-    () => occupiedPresetIds,
   )
 
   // 首次以 base-only profile 启动时自动补 @deepseek-ai/dsh-web-app：
@@ -575,8 +532,6 @@ export function apply(ctx: Context, configIn: Config): void {
   /** 官方 agent-presets 服务面（只读 getter）：本项目不声明该包依赖，只依赖最小形状。 */
   type AgentPresetsPolicyService = {
     readonly defaultId?: unknown
-    /** 官方预设定册（含 trust）：trust=system 即内置预设，用户同名目录会被它遮蔽。 */
-    settings?: () => Promise<unknown>
   }
   let agentPresetsService: AgentPresetsPolicyService | undefined
   let modeSelectionWarned = false
@@ -636,19 +591,21 @@ export function apply(ctx: Context, configIn: Config): void {
         warn(ctx, `prompt-tool: 同步宿主 agent-presets default 失败：${error instanceof Error ? error.message : String(error)}`)
       })
   }
-  const syncTemplateFromHostDefault = (value?: unknown): void => {
+  const syncTemplateFromHostDefault = (value?: unknown, initial = false): void => {
     const s = hostSettingsService
     if (s === undefined) return
     // 跟随的是「生效默认」而不是存储值：策略关闭时存储值已不再决定新会话。
     const raw = effectiveHostDefault(value)
     if (raw === undefined) return
-    // 宿主默认指向被内置遮蔽的 id（历史值）时，跟随归一化后的安全 id。
-    const template = normalizePresetTemplate(raw)
+    const template = raw
     if (template === runtime.presetTemplate) return
     // 官方设置可列出插件未管理的 shipped/第三方预设；只跟随本项目能解析/编辑的预设，
     // 避免把不存在的 presetTemplate 写进本插件后导致 writePreset 失败。
-    // 归一化改写过的 id（raw → pt-<raw>）由本插件接管，目录随后由重建生成。
-    if (template === raw && !managedPresetExists(template)) {
+    if (!managedPresetExists(template)) {
+      if (initial && managedPresetExists(runtime.presetTemplate)) {
+        syncHostDefault()
+        return
+      }
       warn(ctx, `prompt-tool: 官方 agent-presets default 已切换为 ${JSON.stringify(template)}，但该预设不在提示词工具管理目录中，跳过反向同步`)
       return
     }
@@ -704,7 +661,9 @@ registerTuiCommand(
   },
   // 技能启停：改写技能文件的调用策略键（正文不动），失败原因回给命令层。
   (name, enabled) => {
-    const entry = listSkills().find((skill) => skill.name === name)
+    const matches = listSkills().filter((skill) => skill.name === name)
+    if (matches.length !== 1) return { ok: false, message: `技能 ${name} 不存在或有多个同名条目，请在技能管理页选择具体文件` }
+    const entry = matches[0]
     if (entry?.path === undefined) return { ok: false, message: `未找到技能或其文件路径：${name}` }
     const result = setSkillPolicy(name, entry.path, enabled ? 'none' : 'all')
     return result.ok ? { ok: true } : { ok: false, message: result.message }
@@ -738,10 +697,9 @@ registerTuiCommand(
       // 导入预设的配置以自身 preset.yml promptConfigs 为准（settings 覆盖层
       // 属于激活预设的编辑上下文，不得污染导入预设）。
       promptConfigs: [],
-      // 导入预设的输出目录就是它自己的 id：与内置同名时由 writePreset fail loud（不静默产出被遮蔽目录）。
+      // 导入预设始终使用自己的定义与输出 id。
       presetTemplate: id,
       outputId: id,
-      occupiedPresetIds,
     }
     writePreset('', options)
   }
@@ -749,18 +707,9 @@ registerTuiCommand(
   let needsInitialApply = true
   const applyState = (): void => {
     const next = currentSource()
-    const rawTemplate = typeof next.presetTemplate === 'string' && next.presetTemplate.length > 0
+    const nextTemplate = typeof next.presetTemplate === 'string' && next.presetTemplate.length > 0
       ? next.presetTemplate
       : DEFAULT_PRESET_ID
-    const nextTemplate = normalizePresetTemplate(rawTemplate)
-    // 归一化只在真正改写时落盘一次（写回后 settings 与 runtime 同源，不会反复触发）。
-    if (nextTemplate !== rawTemplate) {
-      warn(ctx, `prompt-tool: 预设 ${JSON.stringify(rawTemplate)} 被宿主其他预设根占用（通常是内置预设），已改用 ${JSON.stringify(nextTemplate)}`)
-      void hostSettingsService?.mutate(NS, [{ op: 'set', path: ['presetTemplate'], value: nextTemplate }])
-        .catch((error: unknown) => {
-          warn(ctx, `prompt-tool: 写回安全预设 id 失败：${error instanceof Error ? error.message : String(error)}`)
-        })
-    }
     const nextRuntime: Pick<RuntimeOptions,
       'writePreset' | 'presetTemplate' | 'presetOrder' | 'fallbackText'> = {
       writePreset: typeof next.writePreset === 'boolean' ? next.writePreset : config.writePreset,
@@ -774,8 +723,9 @@ registerTuiCommand(
       || runtime.presetTemplate !== nextRuntime.presetTemplate
       || runtime.presetOrder !== nextRuntime.presetOrder
       || fallbackTextChanged
-    // 首次必须写入：settings 与文件/config 一致时也不能跳过 preset/AGENTS 生成。
+    // 首次只补建新目录；后续设置变更正常生成当前预设。
     if (!needsInitialApply && !settingsChanged) return
+    const initial = needsInitialApply
     needsInitialApply = false
 
     // 切换预设：内容资产从新预设目录重读——否则 rebuildPreset 会把旧预设的
@@ -790,7 +740,7 @@ registerTuiCommand(
     runtime.presetOrder = nextRuntime.presetOrder
     runtime.fallbackText = nextRuntime.fallbackText
 
-    rebuildPreset()
+    rebuildPreset(initial)
     if (presetTemplateChanged) {
       syncHostDefault()
       // 内置工具面随组合行走（per-session 挂载），无需宿主平面重挂。
@@ -833,31 +783,6 @@ registerTuiCommand(
   // 策略缺省 enabled=false；服务缺失时引擎只执行预设卡（独立引擎复制场景）。
   installPreStepCoordinator(ctx)
 
-  /**
-   * 用官方 agentPresets.settings() 刷新「被其他根占用的预设 id」（trust=system 即内置预设），
-   * 并据此重新归一化激活预设：历史 settings 里的 standard 会在这里被改成 pt-standard。
-   * 服务缺失或读取失败时保留磁盘探测结果（失败不影响启动）。
-   */
-  const refreshOccupiedFromHost = async (): Promise<void> => {
-    const service = agentPresetsService
-    if (service === undefined || typeof service.settings !== 'function') return
-    try {
-      const snapshot = await service.settings() as { presets?: Array<{ id?: unknown; trust?: unknown }> } | undefined
-      const fromHost = new Set<string>()
-      for (const preset of snapshot?.presets ?? []) {
-        if (preset?.trust === 'system' && typeof preset.id === 'string' && preset.id.length > 0) fromHost.add(preset.id)
-      }
-      const ids = mergeOccupiedPresetIds(detectShippedPresetIdsFromDisk(), fromHost)
-      if (ids.size === occupiedPresetIds.size && [...ids].every((id) => occupiedPresetIds.has(id))) return
-      occupiedPresetIds = ids
-      // 服务集合更全时先把新识别的占用名补成安全副本，再归一化激活预设（写回 + 重建生成物）。
-      seedMissingPresets()
-      applyState()
-    } catch (error) {
-      warn(ctx, `prompt-tool: 读取宿主预设册失败（安全 id 避让退回磁盘探测）：${error instanceof Error ? error.message : String(error)}`)
-    }
-  }
-
   // settings 注册 base 与运行时快照同源（单一组装，避免双份字段漂移）。
   const settingsEntry: PromptSettings = currentSource()
 
@@ -865,8 +790,7 @@ registerTuiCommand(
   // 若本插件先 attach settings，首次读取会得到 undefined；等 agentPresets 服务就绪后再对齐一次。
   ctx.inject(['settings', 'agentPresets'], (apctx: Context) => {
     agentPresetsService = apctx.get('agentPresets') as AgentPresetsPolicyService | undefined
-    syncTemplateFromHostDefault()
-    void refreshOccupiedFromHost()
+    syncTemplateFromHostDefault(undefined, true)
   })
   ctx.inject(['settings'], (sctx: Context) => {
     hostSettingsService = sctx.settings
@@ -889,7 +813,7 @@ registerTuiCommand(
       },
     })
     // 以官方 agent-presets.default 为共享事实反向对齐本插件。
-    syncTemplateFromHostDefault()
+    syncTemplateFromHostDefault(undefined, true)
   })
 }
 
@@ -982,15 +906,4 @@ export { ENGINE_CAPABILITIES, ENGINE_RECIPES, engineCapability, engineRecipe, is
 export type { EngineCapability, ModuleSourceMode, PresetModuleFacts } from './shared/engine-capabilities.ts'
 export { parseFrontmatter } from './runtime/skills-parse.ts'
 export type { SkillFrontmatter } from './runtime/skills-parse.ts'
-// 预设 id 安全化：判据与内置预设探测（三条生成路径与回归测试共用）。
-export {
-  EMPTY_OCCUPIED_PRESET_IDS,
-  SHIPPED_PRESET_ID_RESERVATIONS,
-  assertOutputIdSafe,
-  detectShippedPresetIdsFromDisk,
-  mergeOccupiedPresetIds,
-  safePresetId,
-  templateNameFor,
-} from './host/preset-id-safety.ts'
-export type { OccupiedPresetIds } from './host/preset-id-safety.ts'
-export { DEFAULT_PRESET_ID, SAFE_PRESET_PREFIX } from './shared/preset-ids.ts'
+export { DEFAULT_PRESET_ID } from './shared/preset-ids.ts'

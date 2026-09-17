@@ -70,6 +70,25 @@ test('createSkill 对非普通目录的用户根直接拒绝，不在链接目�
   } finally { rmSync(root, { recursive: true, force: true }) }
 })
 
+test('createSkill 拒绝链接根时不删除链接目标里已存在的同名技能和资源', () => {
+  const root = makeRoot()
+  try {
+    const real = join(root, 'real-root')
+    mkdirSync(join(real, 'demo-skill', 'references'), { recursive: true })
+    const marker = join(real, 'demo-skill', 'SKILL.md')
+    const resource = join(real, 'demo-skill', 'references', 'note.md')
+    writeFileSync(marker, 'original skill')
+    writeFileSync(resource, 'original resource')
+    const linked = join(root, 'linked-root')
+    symlinkSync(real, linked, process.platform === 'win32' ? 'junction' : 'dir')
+    const result = createSkill(linked, { name: 'demo-skill', description: 'demo', content: 'replacement' })
+    assert.equal(result.ok, false)
+    assert.equal(readFileSync(marker, 'utf8'), 'original skill')
+    assert.equal(readFileSync(resource, 'utf8'), 'original resource')
+    assert.deepEqual(readdirSync(real), ['demo-skill'])
+  } finally { rmSync(root, { recursive: true, force: true }) }
+})
+
 test('deleteSkill 把整个技能目录移入回收站并可人工恢复', () => {
   const root = makeRoot()
   try {

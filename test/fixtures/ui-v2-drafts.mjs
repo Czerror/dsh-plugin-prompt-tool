@@ -23,6 +23,7 @@ window.rejectDelete = false
 window.rejectSkillDelete = false
 window.rejectSkillsFolders = false
 window.failedSkill = ''
+window.skillImportConflicts = []
 window.policyServer = structuredClone(SUBAGENT_TOOL_POLICY_SKELETON)
 window.policyInFlight = 0
 window.policyMaxInFlight = 0
@@ -96,10 +97,14 @@ window.fetch = async (url, init) => {
     value = { id: body.name, path: `${skillsRoot}/${body.name}` }
   }
   if (endpoint === 'skills-import') {
-    value = { path: skillsRoot, count: 1 }
+    const conflicts = window.skillImportConflicts.filter((name) => !body.overwrite?.includes(name))
+    if (conflicts.length > 0) return new Response(JSON.stringify({ ok: false, code: 'skills-overwrite-required', conflicts }), { status: 409 })
+    value = { path: skillsRoot, count: 1, overwritten: body.overwrite?.length ?? 0 }
   }
   if (endpoint === 'skills-import-directory') {
-    value = { path: skillsRoot, count: 2 }
+    const conflicts = window.skillImportConflicts.filter((name) => !body.overwrite?.includes(name))
+    if (conflicts.length > 0) return new Response(JSON.stringify({ ok: false, code: 'skills-overwrite-required', conflicts }), { status: 409 })
+    value = { path: skillsRoot, count: 2, overwritten: body.overwrite?.length ?? 0 }
   }
   if (endpoint === 'preset-delete') {
     await new Promise((resolve) => setTimeout(resolve, window.delay))

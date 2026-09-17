@@ -691,7 +691,7 @@ test('E2E 负责人冲突：standard 模板仍挂着官方指令行 → 文件�
   mkdirSync(join(workspace, '.git'), { recursive: true })
   writeFileSync(join(workspace, 'AGENTS.md'), 'CONFLICT RULES\n', 'utf8')
   writeFileSync(e2ePolicyFile, 'schemaVersion: 1\nenabled: true\n', 'utf8')
-  const { presetDir, mountDir } = materialize('e2e-standard', 'standard')
+  const { presetDir, mountDir } = materialize('e2e-standard', 'pt-standard')
   const agent = makeAgent(workspace)
   const app = await mountPreset(presetDir, mountDir, agent)
 

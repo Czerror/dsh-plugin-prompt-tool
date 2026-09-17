@@ -70,7 +70,8 @@
 - **必需项兜底**：`prompt-config-engine` 始终补齐——缺少该行时 `promptConfigs` 不会生效，且不会有任何报错；
   卡含 `world-book` 策略配置时补 `world-book-tools`。因此未声明 `modules` 的手写卡只会得到必需项。
 - **来源记录**：应用时把「追加前没有、追加后有」的差集写入 `preset.yml` 的 `meta.characterModules[<卡 id>]`；
-  预设原本就有的模块不会被记成这张卡引入的。
+  预设原本就有的模块不会被记成这张卡引入的。来源记录保留到模块完成回退；首次引入它的卡先被移除时，
+  记录仍保留给后续消费者，因此两张卡按任意顺序全部移除都能回退共享模块。
 - **移除回退**：按记录删除模块，删除前检查消费者——其他已导入卡仍引用（各自的记录或 `converted.yml` 里的声明）、
   或预设内容仍需要它（还有 `promptConfigs` / `world-book` 配置 / `params.stMacros` / 顶层 `customTools` /
   非空 `toolFilterAllow`|`toolFilterDeny`）时保留。**改造前应用过的卡没有记录，移除时不会回退模块**：

@@ -1,5 +1,7 @@
 /** 自建 loopback settings bridge：Web 设置页数据通道（提示词配置数组经此输出到 UI）。 */
 import type { Context } from '@deepseek-ai/cordis'
+import { scopeOf } from '@deepseek-ai/dsh-scope'
+import type { SkillRegistry } from '@deepseek-ai/dsh-skill'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { createHash } from 'node:crypto'
 import { basename, dirname, join, resolve, sep } from 'node:path'
@@ -60,7 +62,9 @@ import { BRIDGE_ENDPOINTS, MAX_BRIDGE_BODY_BYTES, MAX_CHARACTER_CARD_STREAM_BYTE
 import type { ModelSyncResult, StConversionReport } from '../shared/bridge-contract.ts'
 import { moduleParamFallbacks, validateEngineParamValues } from '../shared/engine-params.ts'
 import { readPersonaSpec } from '../shared/persona-section.ts'
-import type { SkillsStateRead } from '../host/skills-config.ts'
+import { SKILL_NAME_PATTERN, type SkillsStateRead } from '../host/skills-config.ts'
+import { withSkillWinners } from '../host/skills-scan.ts'
+import { DEFAULT_PRESET_ID } from '../shared/preset-ids.ts'
 import type { PresetModuleFacts } from '../shared/engine-capabilities.ts'
 import { validateCustomTools } from '../host/custom-tools.ts'
 import {
@@ -132,6 +136,14 @@ function writeBridgeJson(res: ServerResponse, status: number, body: unknown): vo
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === 'object' && !Array.isArray(value)
+
+/** 确认名单只授权已展示的目录；不是允许覆盖任意同名目标的总开关。 */
+function readSkillOverwrite(value: unknown): string[] | undefined {
+  if (value === undefined) return []
+  return Array.isArray(value) && value.length <= 10_000
+    && value.every((name) => typeof name === 'string' && SKILL_NAME_PATTERN.test(name))
+    ? [...new Set(value as string[])] : undefined
+}
 
 /**
  * 解析请求体里的可选 sessionId：缺失/undefined 合法（= 无本地会话），
@@ -516,8 +528,6 @@ export function registerSettingsBridge(
   afterPresetPackageImport?: (id: string) => void,
   /** 能力/recipe 原子创建后重建回调；抛错时调用方恢复 preset.yml。 */
   afterCapabilityChange?: () => void,
-  /** 被宿主其他预设根占用的预设 id（内置预设）：新建/复制选目标 id 时避让，缺省 = 不避让。 */
-  getOccupiedPresetIds?: () => ReadonlySet<string>,
 ): { invalidateDescriptor: () => void } {
   let invalidateCachedDescriptor: () => void = () => {}
   let capabilityQueue: Promise<void> = Promise.resolve()
@@ -599,7 +609,22 @@ export function registerSettingsBridge(
 
       /** describe 运行时事实（describe 端点与 /bootstrap 共用）：检测状态、技能快照、
        *  宿主默认模型、模型目录缓存、激活预设参数。不触网（模型目录只读 10min 缓存）。 */
-      const collectDescribeExtras = (): Record<string, unknown> => {
+      const collectSkills = async (sessionId?: string): Promise<SkillCatalogEntry[]> => {
+        const cwd = sessionId === undefined ? undefined : localAgentCwd(sctx, sessionId)
+        const entries = getSkillsState().listSkills(cwd)
+        const registry = (sctx.get?.('skills') ?? ctx.skills) as Pick<SkillRegistry, 'list'> | undefined
+        if (typeof registry?.list !== 'function') return entries
+        const agents = sctx.get?.('agents') as { get?: (id: string) => { ctx?: Context } | undefined } | undefined
+        const agent = sessionId === undefined ? undefined : agents?.get?.(sessionId)
+        const scope = agent?.ctx === undefined ? undefined : scopeOf(agent.ctx)
+        try {
+          return withSkillWinners(entries, await registry.list({ cwd, scope }))
+        } catch (error) {
+          ctx.logger?.warn(`prompt-tool: 无法读取技能注册表，暂不标注同名遮蔽：${String(error)}`)
+          return entries
+        }
+      }
+      const collectDescribeExtras = async (sessionId?: string): Promise<Record<string, unknown>> => {
         const detection = getModelsState()
         const skillsState = getSkillsState()
         // 宿主默认模型（agent-default-model settings：主对话新会话默认）：
@@ -638,7 +663,7 @@ export function registerSettingsBridge(
           // 缓存里的 presetTemplate——descriptor 有 30s TTL，切换预设后若缓存未失效，
           // 这里会读旧预设参数，与下方 readParamOverrides/readPromptConfigs(新目录) 不同源。
           const activeDir = getPresetConfigsDir?.() ?? ''
-          const templateName = activeDir.length > 0 ? basename(activeDir) : 'standard'
+          const templateName = activeDir.length > 0 ? basename(activeDir) : DEFAULT_PRESET_ID
           const spec = loadPresetSpec(activeDir.length > 0 ? activeDir : resolvePresetDir(templateName))
           presetParams = resolvePresetParams(spec, {})
           const resolvedFacts = resolvePresetModuleFacts(
@@ -676,7 +701,7 @@ export function registerSettingsBridge(
           modelCatalog,
           modelsError: detection.error,
           activeSkillsDirs: [skillsState.skillsRoot],
-          skillCatalog: skillsState.listSkills(),
+          skillCatalog: await collectSkills(sessionId),
           // 引用目录随 describe 下发。调用策略不再单独发一份：它已经逐条表达在 skillCatalog 的
           // modelInvocable / userInvocable 里（取自各技能文件的 frontmatter），重复下发只会制造第二个真相。
           skillFolders: skillsState.folders,
@@ -748,7 +773,7 @@ export function registerSettingsBridge(
             try {
               const meta = await loadEngineMeta()
               const dir = getPresetConfigsDir?.() ?? ''
-              const extras = collectDescribeExtras()
+              const extras = await collectDescribeExtras(session.sessionId)
               const scope = resolveInstructionScope(sctx, session.sessionId)
               writeBridgeJson(res, 200, {
                 ok: true,
@@ -785,7 +810,7 @@ export function registerSettingsBridge(
               writeBridgeJson(res, 404, { ok: false, code: 'settings-not-exposed', message: 'prompt-tool settings namespace is not registered' })
               return
             }
-            writeBridgeJson(res, 200, { ok: true, value: descriptor, ...collectDescribeExtras() })
+            writeBridgeJson(res, 200, { ok: true, value: descriptor, ...await collectDescribeExtras() })
           },
         }),
         sctx.webServer.register({
@@ -905,12 +930,11 @@ export function registerSettingsBridge(
               return
             }
             // 项目技能按会话工作目录解析；没有存活会话时只列用户根与内置来源。
-            const cwd = session.sessionId === undefined ? undefined : localAgentCwd(sctx, session.sessionId)
             const state = getSkillsState()
             writeBridgeJson(res, 200, {
               ok: true,
               value: {
-                skills: state.listSkills(cwd),
+                skills: await collectSkills(session.sessionId),
                 folders: state.folders,
                 roots: [state.skillsRoot],
               },
@@ -931,10 +955,16 @@ export function registerSettingsBridge(
             }
             const record = body as Record<string, unknown>
             const files = Array.isArray(record.files) ? record.files : []
+            const overwrite = readSkillOverwrite(record.overwrite)
+            if (overwrite === undefined) {
+              writeBridgeJson(res, 400, { ok: false, code: 'skills-import-rejected', message: 'overwrite 必须是已确认的技能目录名数组' })
+              return
+            }
             const root = getSkillsState().skillsRoot
-            const result = importSkillsPackage(root, files)
+            const result = importSkillsPackage(root, files, overwrite)
             if (!result.ok) {
-              writeBridgeJson(res, 400, { ok: false, code: 'skills-import-rejected', message: result.message })
+              writeBridgeJson(res, result.code === 'skills-overwrite-required' ? 409 : 400,
+                { ...result, code: result.code ?? 'skills-import-rejected' })
               return
             }
             afterSkillsChange?.()
@@ -971,7 +1001,7 @@ export function registerSettingsBridge(
               return
             }
             afterSkillsChange?.()
-            writeBridgeJson(res, 200, { ok: true, value: { skills: getSkillsState().listSkills(cwd) } })
+            writeBridgeJson(res, 200, { ok: true, value: { skills: await collectSkills(session.sessionId) } })
           },
         }),
         sctx.webServer.register({
@@ -996,7 +1026,7 @@ export function registerSettingsBridge(
             afterSkillsChange?.()
             writeBridgeJson(res, 200, {
               ok: true,
-              value: { skills: getSkillsState().listSkills(), folders: written.state.folders },
+              value: { skills: await collectSkills(), folders: written.state.folders },
             })
           },
         }),
@@ -1048,8 +1078,17 @@ export function registerSettingsBridge(
               writeBridgeJson(res, 400, { ok: false, code: 'skills-import-rejected', message: `技能导入失败：${error instanceof Error ? error.message : String(error)}` })
               return
             }
-            const result = importSkillsDirectory(getSkillsState().skillsRoot, source)
-            if (!result.ok) { writeBridgeJson(res, 400, { ok: false, code: 'skills-import-rejected', message: result.message }); return }
+            const overwrite = readSkillOverwrite(isRecord(body) ? body.overwrite : undefined)
+            if (overwrite === undefined) {
+              writeBridgeJson(res, 400, { ok: false, code: 'skills-import-rejected', message: 'overwrite 必须是已确认的技能目录名数组' })
+              return
+            }
+            const result = importSkillsDirectory(getSkillsState().skillsRoot, source, overwrite)
+            if (!result.ok) {
+              writeBridgeJson(res, result.code === 'skills-overwrite-required' ? 409 : 400,
+                { ...result, code: result.code ?? 'skills-import-rejected' })
+              return
+            }
             afterSkillsChange?.()
             writeBridgeJson(res, 200, { ok: true, value: result })
           },
@@ -1833,7 +1872,7 @@ export function registerSettingsBridge(
             if (parsedBody === undefined) return
             const { body } = parsedBody
             const record = (body ?? {}) as Record<string, unknown>
-            const id = typeof record.id === 'string' && record.id.trim().length > 0 ? record.id.trim() : 'standard'
+            const id = typeof record.id === 'string' && record.id.trim().length > 0 ? record.id.trim() : DEFAULT_PRESET_ID
             try {
               const dir = resolvePresetDir(id)
               const file = join(dir, 'preset.yml')
@@ -1902,7 +1941,7 @@ export function registerSettingsBridge(
               writeBridgeJson(res, 400, { ok: false, code: 'preset-clone-rejected', message: '缺少预设 id' })
               return
             }
-            const result = cloneBuiltinPreset(id, record.autoSuffix === true, undefined, getOccupiedPresetIds?.())
+            const result = cloneBuiltinPreset(id, record.autoSuffix === true)
             if (!result.ok) {
               writeBridgeJson(res, 400, { ok: false, code: 'preset-clone-rejected', message: result.message })
               return

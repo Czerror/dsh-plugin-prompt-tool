@@ -19,7 +19,7 @@ import { DEFAULT_PRESET_DIR, DSH_HOME } from './paths.ts'
 import { engineCapability, engineRecipe, isEngineCapabilityPresent, type ModuleSourceMode, type PresetModuleFacts } from '../shared/engine-capabilities.ts'
 import { buildEngineModuleParams, engineParamList, normalizeMaxDepth } from '../shared/engine-params.ts'
 import { personaRowConfig, readPersonaSpec, type PersonaSpec } from '../shared/persona-section.ts'
-import { EMPTY_OCCUPIED_PRESET_IDS, safePresetId, type OccupiedPresetIds } from './preset-id-safety.ts'
+import { DEFAULT_PRESET_ID } from '../shared/preset-ids.ts'
 
 export interface PresetSpec {
   id: string
@@ -175,7 +175,7 @@ export function loadPresetSpec(dir: string): PresetSpec {
 
 /** 读取预设模板内容资产(presetText / agentsText);模板缺失时静默降级。
  *  模板目录按 resolvePresetDir 解析（用户自定义预设优先，包内模板回退）。 */
-export function loadPresetContent(template = 'standard', presetRoot = userPresetsDir()): { presetText: string; agentsText: string } {
+export function loadPresetContent(template = DEFAULT_PRESET_ID, presetRoot = userPresetsDir()): { presetText: string; agentsText: string } {
   try {
     const spec = loadPresetSpec(resolvePresetDir(template, presetRoot))
     return {
@@ -318,7 +318,7 @@ export function listBuiltinTemplates(): Array<{ id: string; name: string }> {
     return readdirSync(packagePresetDir(), { withFileTypes: true })
       .filter((entry) => entry.isDirectory())
       // 自定义预设走「新建」顶部专用入口（autoSuffix），不重复出现在普通模板列表。
-      .filter((entry) => entry.name !== 'custom')
+      .filter((entry) => entry.name !== 'pt-custom')
       .flatMap((entry) => {
         try {
           const spec = loadPresetSpec(join(packagePresetDir(), entry.name))
@@ -361,43 +361,17 @@ export function writePluginState(state: PromptToolState): void {
   renameSync(tmp, file)
 }
 
-/** 把预设目录的 `preset.yml` 的 `id` 收口为目标目录名。
- *  安全 id（`pt-standard`）与目录同名，才不会被 `findPresetDir` 的「目录名优先、id 兜底」匹配拧到别的目录；
- *  只用 yaml Document API 改这一个键（注释与未知字段保留），内容无变化不落盘，失败不抛错。
- *  @returns 是否写入了新值。 */
-export function retargetPresetId(dir: string, id: string): boolean {
-  const file = join(dir, 'preset.yml')
-  try {
-    if (!existsSync(file)) return false
-    const raw = readFileSync(file, 'utf8')
-    if (raw.trim().length === 0) return false
-    const doc = parseDocument(raw, { logLevel: 'silent' })
-    if (doc.get('id') === id) return false
-    doc.set('id', id)
-    writeFileSync(file, doc.toString(), 'utf8')
-    return true
-  } catch {
-    // 只读目录/半写文件：复制结果仍可用，目录名始终是唯一权威。
-    return false
-  }
-}
-
-/** 首次启动种子化：把插件目录全部内置模板复制到预设根（state.seeded 后不再自动补）。
- *  用户删除的预设不会自动复活；升级新增的模板用「新建」按需复制。
- *  与宿主内置预设重名的模板改用安全 id（`standard` → `pt-standard`）：同名用户目录会被宿主
- *  shipped 根遮蔽、永远不会被挂载（见 preset-id-safety.ts）。 */
-export function ensurePresetSeed(root = userPresetsDir(), occupied: OccupiedPresetIds = EMPTY_OCCUPIED_PRESET_IDS): { created: string[] } {
+/** 按包内同名目录补建缺失预设；已有目录的定义、生成物和资源保持原样。 */
+export function ensurePresetSeed(root = userPresetsDir()): { created: string[] } {
   const created: string[] = []
   try {
     mkdirSync(root, { recursive: true })
     for (const entry of readdirSync(packagePresetDir(), { withFileTypes: true })) {
       if (!entry.isDirectory() || entry.name.startsWith('.')) continue
-      const targetId = safePresetId(entry.name, occupied)
-      const target = join(root, targetId)
+      const target = join(root, entry.name)
       if (existsSync(target)) continue
       cpSync(join(packagePresetDir(), entry.name), target, { recursive: true })
-      retargetPresetId(target, targetId)
-      created.push(targetId)
+      created.push(entry.name)
     }
     writePluginState({ ...readPluginState(), seeded: true })
   } catch {
@@ -406,10 +380,8 @@ export function ensurePresetSeed(root = userPresetsDir(), occupied: OccupiedPres
   return { created }
 }
 
-/** 从插件目录复制内置预设到预设根（新建/还原）。
- *  与宿主内置预设重名时改用安全 id（`standard` → `pt-standard`），避免生成被遮蔽的目录；
- *  autoSuffix=true（自定义预设入口）时同名自动递增（custom → custom-2 → …）；否则同名拒绝。 */
-export function cloneBuiltinPreset(id: string, autoSuffix = false, presetRoot = userPresetsDir(), occupied: OccupiedPresetIds = EMPTY_OCCUPIED_PRESET_IDS): { ok: true; id: string } | { ok: false; message: string } {
+/** 从包内同名目录复制预设；autoSuffix=true 时递增目录名，定义正文原样保留。 */
+export function cloneBuiltinPreset(id: string, autoSuffix = false, presetRoot = userPresetsDir()): { ok: true; id: string } | { ok: false; message: string } {
   if (typeof id !== 'string' || id.length === 0 || id === '.' || id === '..'
     || id.includes('/') || id.includes('\\')) {
     return { ok: false, message: `非法预设 id：${id}` }
@@ -418,15 +390,14 @@ export function cloneBuiltinPreset(id: string, autoSuffix = false, presetRoot = 
   if (builtin === undefined) {
     return { ok: false, message: `预设 ${id} 不是包内置预设` }
   }
-  const baseId = safePresetId(id, occupied)
-  let targetId = baseId
+  let targetId = id
   let target = join(presetRoot, targetId)
   if (existsSync(target)) {
     if (!autoSuffix) {
       return { ok: false, message: `用户目录已存在同名预设 ${targetId}，请先删除再新建` }
     }
     for (let suffix = 2; ; suffix++) {
-      targetId = `${baseId}-${suffix}`
+      targetId = `${id}-${suffix}`
       target = join(presetRoot, targetId)
       if (!existsSync(target)) break
     }
@@ -434,7 +405,6 @@ export function cloneBuiltinPreset(id: string, autoSuffix = false, presetRoot = 
   try {
     mkdirSync(presetRoot, { recursive: true })
     cpSync(builtin, target, { recursive: true, force: true })
-    retargetPresetId(target, targetId)
     return { ok: true, id: targetId }
   } catch (error) {
     return { ok: false, message: `新建预设失败：${error instanceof Error ? error.message : String(error)}` }

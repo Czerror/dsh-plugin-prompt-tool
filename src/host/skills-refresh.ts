@@ -21,15 +21,13 @@ export interface SkillsReloaderDeps {
   stateFile: string
   /** 当前内存里的状态快照。 */
   currentSnapshot: () => string
-  /** 状态文件之外的候选来源（用户引用的技能文件夹）指纹。 */
-  candidatesFingerprint: () => string
   /** 接受新状态与其快照。 */
   accept: (state: SkillsState, snapshot: string) => void
   /** 引用目录集合可能变化时重挂 watcher。 */
   rewatch: () => void
   /** 失效清单缓存；任何文件系统事件都要调用。 */
   invalidateList: () => void
-  /** 失效候选缓存；状态或候选来源确实变化时才调用。 */
+  /** 文件事件已证明来源可能变化，直接失效候选缓存。 */
   invalidateCandidates: () => void
   /** 报告异常；同一故障窗口只会调用一次。 */
   warn: (message: string) => void
@@ -43,7 +41,6 @@ export interface SkillsReloader {
 export function createSkillsReloader(deps: SkillsReloaderDeps): SkillsReloader {
   let readFailed = false
   let fileMissing = false
-  let candidates = deps.candidatesFingerprint()
   return {
     reload: () => {
       const read = readSkillsState(deps.stateFile)
@@ -70,12 +67,9 @@ export function createSkillsReloader(deps: SkillsReloaderDeps): SkillsReloader {
           deps.rewatch()
         }
       }
-      // 统一出口：读失败也要比对候选指纹——坏文件窗口里引用目录的增删同样会让模型侧候选过期。
-      const nextCandidates = deps.candidatesFingerprint()
-      const candidatesChanged = nextCandidates !== candidates
-      candidates = nextCandidates
+      // 事件本身即失效依据；同一时间戳粒度内的等长改写也不能复用旧候选。
       deps.invalidateList()
-      if (stateChanged || candidatesChanged) deps.invalidateCandidates()
+      deps.invalidateCandidates()
     },
   }
 }

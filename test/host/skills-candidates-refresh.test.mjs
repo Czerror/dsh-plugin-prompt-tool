@@ -48,12 +48,11 @@ function makeRig(useInvalidate) {
   const reloader = createSkillsReloader({
     stateFile,
     currentSnapshot: () => snapshot,
-    candidatesFingerprint: fingerprint,
     accept: (_state, next) => { snapshot = next },
     rewatch: () => {},
     invalidateList: () => {},
     // 负向对照：不失效候选缓存，等价于「只看状态快照」的旧分流。
-    invalidateCandidates: () => { if (useInvalidate) control.invalidate() },
+    invalidateCandidates: () => { if (useInvalidate) { referencedCache = undefined; control.invalidate() } },
     warn: () => {},
   })
   return { registry, reloader, referenceDir }

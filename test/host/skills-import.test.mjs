@@ -2,7 +2,8 @@
 // 随注册层屏蔽模型移除：`.system` 物化目标与受管记录不再存在；覆盖前只允许替换技能目录。
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import fs, { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { syncBuiltinESMExports } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { importSkillsPackage, importSkillsDirectory, readSkillDirectory } from '../../src/host/skills-import.ts'
@@ -14,6 +15,7 @@ const makeRoot = (prefix = 'prompt-tool-skills-import') => {
 }
 
 const file = (path, text) => ({ path, content: Buffer.from(text).toString('base64') })
+const skill = (name, body = name) => `---\nname: ${name}\ndescription: ${name}\n---\n${body}\n`
 
 test('importSkillsPackage：目录导入保留顶层文件夹并落在用户技能根', () => {
   const { root, cleanup } = makeRoot()
@@ -40,22 +42,23 @@ test('importSkillsPackage：覆盖前要求目标是技能目录，非技能目�
   try {
     const first = importSkillsPackage(root, [file('demo/SKILL.md', '---\nname: demo\ndescription: demo\n---\nold\n')])
     assert.equal(first.ok, true)
-    const replacement = importSkillsPackage(root, [file('demo/SKILL.md', '---\nname: demo\ndescription: demo\n---\nnew\n')])
+    const files = [file('demo/SKILL.md', skill('demo', 'new'))]
+    const conflict = importSkillsPackage(root, files)
+    assert.equal(conflict.ok, false)
+    assert.equal(conflict.code, 'skills-overwrite-required')
+    assert.deepEqual(conflict.conflicts, ['demo'])
+    assert.match(readFileSync(join(root, 'demo', 'SKILL.md'), 'utf8'), /old/)
+    assert.deepEqual(readdirSync(root), ['demo'], '未确认时没有暂存或回收站写入')
+    const replacement = importSkillsPackage(root, files, ['demo'])
     assert.equal(replacement.ok, true)
     assert.equal(replacement.overwritten, 1, '覆盖导入如实报告替换数量')
     assert.match(readFileSync(join(root, 'demo', 'SKILL.md'), 'utf8'), /new/)
-    // 上传入口与宿主机目录导入共用同一套回收站逻辑：旧版本同样必须可恢复。
-    const trash = join(root, '.system', 'prompt-tool', '.trash')
-    const containers = readdirSync(trash)
-    assert.equal(containers.length, 1, '被替换的旧版本进回收站')
-    assert.match(readFileSync(join(trash, containers[0], 'demo', 'SKILL.md'), 'utf8'), /old/, '回收站里留的是旧版本')
-    assert.equal(JSON.parse(readFileSync(join(trash, containers[0], 'record.json'), 'utf8')).origin, 'import-overwrite')
-    assert.equal(importSkillsPackage(root, [file('demo/SKILL.md', 'x')], false).ok, false, 'overwrite=false 时拒绝已存在的技能')
+    assert.deepEqual(readdirSync(root), ['demo'], '确认覆盖成功不保留技能历史版本')
 
     // 用户根里的普通目录不是技能目录：覆盖导入必须拒绝且不改动它。
     mkdirSync(join(root, 'plain'))
     writeFileSync(join(root, 'plain', 'note.txt'), 'keep', 'utf8')
-    const rejected = importSkillsPackage(root, [file('plain/SKILL.md', '---\nname: plain\ndescription: plain\n---\nbody\n')])
+    const rejected = importSkillsPackage(root, [file('plain/SKILL.md', skill('plain'))], ['plain'])
     assert.equal(rejected.ok, false)
     assert.equal(readFileSync(join(root, 'plain', 'note.txt'), 'utf8'), 'keep')
     assert.equal(existsSync(join(root, 'plain', 'SKILL.md')), false)
@@ -105,7 +108,7 @@ test('importSkillsDirectory：复制宿主机目录内容到用户技能根并�
   }
 })
 
-test('importSkillsDirectory：覆盖同名技能时旧版本进回收站而不是被删除', () => {
+test('importSkillsDirectory：同名技能必须先确认，成功覆盖后不保留历史版本', () => {
   const target = makeRoot()
   const source = makeRoot('pt-skills-source')
   const root = target.root
@@ -117,47 +120,131 @@ test('importSkillsDirectory：覆盖同名技能时旧版本进回收站而不�
     assert.equal(first.overwritten, 0, '首次导入没有覆盖任何技能')
     const name = source.root.split(/[\\/]/).at(-1)
 
-    // 改来源内容后再次导入：同名技能被替换，旧版本必须仍可人工恢复。
+    // 改来源内容后再次导入：未确认时完整保留旧技能。
     writeFileSync(join(source.root, 'SKILL.md'), '---\nname: imported\ndescription: second\n---\nsecond body\n', 'utf8')
-    const second = importSkillsDirectory(root, source.root)
+    const conflict = importSkillsDirectory(root, source.root)
+    assert.equal(conflict.ok, false)
+    assert.equal(conflict.code, 'skills-overwrite-required')
+    assert.deepEqual(conflict.conflicts, [name])
+    assert.match(readFileSync(join(root, name, 'SKILL.md'), 'utf8'), /first body/)
+    const second = importSkillsDirectory(root, source.root, [name])
     assert.equal(second.ok, true, second.ok ? '' : second.message)
     if (!second.ok) return
     assert.equal(second.overwritten, 1, '覆盖计数如实返回')
     assert.match(readFileSync(join(root, name, 'SKILL.md'), 'utf8'), /second body/)
 
-    const trash = join(root, '.system', 'prompt-tool', '.trash')
-    const containers = readdirSync(trash)
-    assert.equal(containers.length, 1, '被替换的旧版本进回收站')
-    assert.match(readFileSync(join(trash, containers[0], name, 'SKILL.md'), 'utf8'), /first body/, '回收站里留的是旧版本')
-    const record = JSON.parse(readFileSync(join(trash, containers[0], 'record.json'), 'utf8'))
-    assert.equal(record.folder, name)
-    assert.equal(record.origin, 'import-overwrite', '记录覆盖来源，便于区分回收站条目的成因')
+    assert.deepEqual(readdirSync(root), [name], '成功后临时备份已清理，不创建回收站条目')
   } finally {
     target.cleanup()
     source.cleanup()
   }
 })
 
-test('覆盖导入中途失败：已进回收站的旧技能被放回，目标不留半成品', () => {
+test('整批预检：非法目录名被拒绝时新建和现存技能均无写入', () => {
   const target = makeRoot()
   const root = target.root
   try {
     mkdirSync(join(root, 'demo-skill'), { recursive: true })
     writeFileSync(join(root, 'demo-skill', 'SKILL.md'), '---\nname: demo-skill\ndescription: old\n---\nold body\n', 'utf8')
 
-    // 两个顶层：第一个会被覆盖（先移入回收站），第二个目录名非法 → 在切换中途抛错。
     const result = importSkillsPackage(root, [
+      file('new-skill/SKILL.md', skill('new-skill')),
       file('demo-skill/SKILL.md', '---\nname: demo-skill\ndescription: new\n---\nnew body\n'),
       file('Bad Name/SKILL.md', '---\nname: bad\ndescription: bad\n---\nbody\n'),
-    ])
+    ], ['demo-skill'])
     assert.equal(result.ok, false)
     assert.match(result.ok ? '' : result.message, /kebab-case/u, '失败原因仍是原始错误')
     assert.match(readFileSync(join(root, 'demo-skill', 'SKILL.md'), 'utf8'), /old body/, '旧技能必须被放回原处')
-    assert.deepEqual(readdirSync(root).filter((name) => name !== '.system'), ['demo-skill'], '目标里不留半成品')
-    assert.deepEqual(readdirSync(join(root, '.system', 'prompt-tool', '.trash')), [], '回滚成功后回收站不留残留')
+    assert.deepEqual(readdirSync(root), ['demo-skill'], '预检失败不创建暂存目录或回收站')
   } finally {
     target.cleanup()
   }
+})
+
+test('importSkillsPackage：每个顶层必须有有效 SKILL.md，整批拒绝前零写盘', () => {
+  const { root, cleanup } = makeRoot()
+  try {
+    for (const bad of [
+      file('bad/note.md', 'missing marker'),
+      file('bad/SKILL.md', 'missing frontmatter'),
+      file('bad/SKILL.md', '---\nname: bad\ndescription: [\n---\nbody'),
+      file('bad/SKILL.md', '---\nname: Bad_Name\ndescription: bad\n---\nbody'),
+      file('bad/SKILL.md', '---\nname: bad\n---\nbody'),
+    ]) {
+      assert.equal(importSkillsPackage(root, [file('good/SKILL.md', skill('good')), bad]).ok, false, bad.path)
+      assert.deepEqual(readdirSync(root), [], '一个无效技能应阻止整批写盘')
+    }
+  } finally { cleanup() }
+})
+
+test('浏览器容器外壳剥离后技能在根下一层，单技能与 rootless 资源保持归属', () => {
+  const { root, cleanup } = makeRoot()
+  try {
+    assert.equal(importSkillsPackage(root, [
+      file('skill-pack/alpha/SKILL.md', skill('alpha')),
+      file('skill-pack/alpha/references/doc.md', 'alpha doc'),
+      file('skill-pack/beta/SKILL.md', skill('beta')),
+    ]).ok, true)
+    assert.deepEqual(readdirSync(root).sort(), ['alpha', 'beta'])
+    assert.equal(readFileSync(join(root, 'alpha/references/doc.md'), 'utf8'), 'alpha doc')
+    assert.equal(importSkillsPackage(root, [file('gamma/SKILL.md', skill('declared-name'))]).ok, true)
+    assert.equal(existsSync(join(root, 'gamma/SKILL.md')), true, '单技能目录名不换成声明名')
+    assert.equal(importSkillsPackage(root, [
+      file('SKILL.md', skill('rootless')),
+      file('references/doc.md', 'rootless doc'),
+      file('assets/nested/data.json', '{}'),
+    ]).ok, true)
+    assert.equal(readFileSync(join(root, 'rootless/references/doc.md'), 'utf8'), 'rootless doc')
+    assert.equal(readFileSync(join(root, 'rootless/assets/nested/data.json'), 'utf8'), '{}')
+    assert.deepEqual(readdirSync(root).sort(), ['alpha', 'beta', 'gamma', 'rootless'])
+  } finally { cleanup() }
+})
+
+test('确认名单只授权已展示目录：新增冲突会再次阻止整批写盘', () => {
+  const { root, cleanup } = makeRoot()
+  try {
+    assert.equal(importSkillsPackage(root, [file('alpha/SKILL.md', skill('alpha', 'old alpha'))]).ok, true)
+    const files = [file('alpha/SKILL.md', skill('alpha', 'new alpha')), file('beta/SKILL.md', skill('beta', 'new beta'))]
+    assert.deepEqual(importSkillsPackage(root, files).conflicts, ['alpha'])
+    assert.equal(existsSync(join(root, 'beta')), false)
+    assert.equal(importSkillsPackage(root, [file('beta/SKILL.md', skill('beta', 'old beta'))]).ok, true)
+    const refused = importSkillsPackage(root, files, ['alpha'])
+    assert.equal(refused.code, 'skills-overwrite-required')
+    assert.deepEqual(refused.conflicts, ['beta'])
+    assert.match(readFileSync(join(root, 'alpha/SKILL.md'), 'utf8'), /old alpha/)
+    assert.match(readFileSync(join(root, 'beta/SKILL.md'), 'utf8'), /old beta/)
+    assert.deepEqual(readdirSync(root).sort(), ['alpha', 'beta'])
+    assert.equal(importSkillsPackage(root, files, ['alpha', 'beta']).overwritten, 2)
+    assert.deepEqual(readdirSync(root).sort(), ['alpha', 'beta'])
+  } finally { cleanup() }
+})
+
+test('切换中途失败：回滚已覆盖技能并清理已新增技能，资源字节保留', (t) => {
+  const { root, cleanup } = makeRoot()
+  try {
+    assert.equal(importSkillsPackage(root, [
+      file('existing/SKILL.md', skill('existing', 'old')),
+      file('existing/assets/data.bin', 'old asset'),
+    ]).ok, true)
+    const rename = fs.renameSync
+    const mocked = t.mock.method(fs, 'renameSync', (source, target) => {
+      if (target === join(root, 'failure')) throw new Error('模拟第三项切换失败')
+      return rename(source, target)
+    })
+    syncBuiltinESMExports()
+    const result = importSkillsPackage(root, [
+      file('new-skill/SKILL.md', skill('new-skill')),
+      file('existing/SKILL.md', skill('existing', 'new')),
+      file('failure/SKILL.md', skill('failure')),
+    ], ['existing'])
+    mocked.mock.restore()
+    syncBuiltinESMExports()
+    assert.equal(result.ok, false)
+    assert.match(result.message, /模拟第三项切换失败/)
+    assert.deepEqual(readdirSync(root), ['existing'])
+    assert.equal(readFileSync(join(root, 'existing/SKILL.md'), 'utf8'), skill('existing', 'old'))
+    assert.equal(readFileSync(join(root, 'existing/assets/data.bin'), 'utf8'), 'old asset')
+  } finally { t.mock.restoreAll(); syncBuiltinESMExports(); cleanup() }
 })
 
 test('importSkillsPackage：拒绝路径穿越且不落盘', () => {

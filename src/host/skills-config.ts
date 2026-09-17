@@ -74,17 +74,15 @@ export function readSkillsState(file: string = skillsStatePath()): SkillsStateRe
   }
 }
 
-/** 写状态：Document API 保留注释与未知字段；内容无变化时不落盘；写前核对版本，失败清理暂存文件。
+/** 写状态：Document API 保留注释与未知字段；内容无变化时不落盘；提交前核对本次读取的原文，失败清理暂存文件。
  *  版本号一并抬到 v4，并删除 v3 留下的 `blocked` 键。 */
 export function writeSkillsState(
   patch: Partial<Pick<SkillsState, 'folders'>>,
   file: string = skillsStatePath(),
-  expectedContent?: string | null,
 ): SkillsStateRead {
   let temporary: string | undefined
   try {
     const raw = existsSync(file) ? readFileSync(file, 'utf8') : null
-    if (expectedContent !== undefined && raw !== expectedContent) throw new Error('技能状态内容版本冲突，请刷新后重试')
     const doc = raw === null ? new Document({ version: SKILLS_STATE_VERSION }) : stateDocument(raw)
     const current = raw === null ? defaultSkillsState() : validateSkillsState(doc.toJS())
     const next = validateSkillsState({

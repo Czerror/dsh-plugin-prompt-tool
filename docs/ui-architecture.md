@@ -386,7 +386,11 @@ data/bridge-client.ts 提供泛型 bridgeCall(endpoint key, typed body) 和角�
 bridge-transport.ts 只负责 HTTP/Blob 传输和结果 shape guard：
 
     成功：{ ok: true, value, ...可选扩展 }
-    失败：{ ok: false, code?, message? }
+    失败：{ ok: false, code?, message?, conflicts? }
+
+技能导入同名时返回 `skills-overwrite-required` 与目录名单，由技能页复用 ConfirmDialog 等待用户选择。
+确认后以 `overwrite` 名单重发原载荷；取消或页面卸载结束等待，不发覆盖请求。两个导入入口共用
+`data/skill-import.ts` 的确认协议；该协议不使用内容版本或历史备份。
 
 JSON bridge 的统一上限为 32 MiB；角色卡原始文件流独立限制为 64 MiB，避免 base64 膨胀。transport 不解析 feature 数据，也不拥有 Fields。
 

@@ -5,7 +5,8 @@
 // 旧 v2 受管实体库 schema（dirs / order / rankBase / skills 记录）不是状态形状，仍按「不支持的版本」拒绝。
 import { after, test } from 'node:test'
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import fs, { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { syncBuiltinESMExports } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { parse as parseYaml, stringify as toYaml } from 'yaml'
@@ -191,14 +192,35 @@ test('非映射、别名、非法类型与非法路径统一拒绝且保留原�
   assert.equal(readFileSync(file, 'utf8'), bulk)
 })
 
-test('调用者携带的内容版本不匹配时拒绝写入', () => {
-  const file = configFile('version')
-  writeSkillsState({ folders: [referenced] }, file)
-  const before = readFileSync(file, 'utf8')
-  assert.equal(writeSkillsState({ folders: [] }, file, 'stale').ok, false)
-  assert.equal(readFileSync(file, 'utf8'), before)
-  // 版本一致时允许写入（同一份内容快照可以继续改）。
-  assert.equal(writeSkillsState({ folders: [] }, file, before).ok, true)
+test('首次与后续增删引用目录都读取当前 YAML，不需要跨调用内容版本', () => {
+  const file = configFile('current-state')
+  const second = resolve(home, 'second-reference')
+  for (const folders of [[referenced], [referenced, second], [second], []]) {
+    const result = writeSkillsState({ folders }, file)
+    assert.equal(result.ok, true, result.message)
+    assert.deepEqual(readSkillsState(file).state.folders, folders)
+    assert.equal(readSkillsState(file).state.version, 4, 'schema 版本与内容变化无关')
+  }
+})
+
+test('原子事务提交前发现外部改动时不覆盖，并清理本次暂存文件', (t) => {
+  const file = configFile('transaction-conflict')
+  assert.equal(writeSkillsState({ folders: [referenced] }, file).ok, true)
+  const external = '# external edit\nversion: 4\nunknown: retained\n'
+  const read = fs.readFileSync
+  let reads = 0
+  const mocked = t.mock.method(fs, 'readFileSync', (...args) => {
+    if (args[0] === file && ++reads === 2) writeFileSync(file, external)
+    return read(...args)
+  })
+  syncBuiltinESMExports()
+  try {
+    const result = writeSkillsState({ folders: [] }, file)
+    assert.equal(result.ok, false)
+    assert.match(result.message, /冲突/)
+    assert.equal(read(file, 'utf8'), external)
+    assert.deepEqual(readdirSync(join(file, '..')), ['skills.yml'])
+  } finally { mocked.mock.restore(); syncBuiltinESMExports() }
 })
 
 test('重复写入同样内容不落盘（幂等）', async () => {

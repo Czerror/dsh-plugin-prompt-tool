@@ -23,7 +23,7 @@ function assertSameParse(raw) {
 /** 语料 1：仓库内全部真实 YAML（含注释、块标量、!!js 标签、中文、CRLF）。 */
 function collectCorpus() {
   const files = [
-    'preset/standard/preset.yml',
+    'preset/pt-standard/preset.yml',
     ...readdirSync(join(root, 'templates'), { withFileTypes: true })
       .filter((entry) => entry.isFile() && /\.ya?ml$/i.test(entry.name))
       .sort((a, b) => a.name.localeCompare(b.name))

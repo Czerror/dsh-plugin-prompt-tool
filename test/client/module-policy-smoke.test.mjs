@@ -88,8 +88,17 @@ before(async () => {
   browser = spawn(browserPath, ['--headless=new', '--no-first-run', '--disable-background-networking', '--remote-debugging-port=0', '--user-data-dir=' + profile, 'about:blank'], { windowsHide: true, stdio: 'ignore' })
   browserExit = new Promise((done) => browser.once('exit', done))
   const portFile = join(profile, 'DevToolsActivePort')
-  for (let i = 0; !existsSync(portFile) && i < 150; i++) await sleep(100)
-  const port = readFileSync(portFile, 'utf8').split('\n')[0]
+  let port
+  for (let i = 0; i < 150; i++) {
+    try {
+      const candidate = readFileSync(portFile, 'utf8').split('\n')[0].trim()
+      if (/^\d+$/.test(candidate)) { port = candidate; break }
+    } catch (error) {
+      if (!['ENOENT', 'EBUSY'].includes(error.code)) throw error
+    }
+    await sleep(100)
+  }
+  assert.ok(port, '等待浏览器写完 DevToolsActivePort')
   const pages = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json()
   ws = new WebSocket(pages.find((page) => page.type === 'page').webSocketDebuggerUrl)
   await new Promise((done) => ws.addEventListener('open', done, { once: true }))

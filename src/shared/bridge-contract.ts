@@ -68,7 +68,7 @@ export const BRIDGE_ENDPOINTS = {
 export type BridgeEndpoint = (typeof BRIDGE_ENDPOINTS)[keyof typeof BRIDGE_ENDPOINTS]
 
 /** 失败载荷：两端共用。 */
-export type BridgeErrorPayload = { ok: false; code?: string; message?: string }
+export type BridgeErrorPayload = { ok: false; code?: string; message?: string; conflicts?: string[] }
 
 /**
  * 端点级请求体契约（body 形状；无请求体端点 = undefined）。
@@ -92,8 +92,9 @@ export interface BridgeRequestMap {
   skillPolicy: { name: string; path: string; scope: SkillPolicyScope; sessionId?: string }
   /** 添加 / 移除引用的技能文件夹（只记状态，不复制文件）。 */
   skillsFolders: { folders: string[] }
-  skillsImport: { files: Array<{ path: string; content: string }> }
-  skillsImportDirectory: { path: string }
+  /** overwrite 仅包含用户已确认覆盖的技能目录名；缺省时遇到同名返回冲突且不写盘。 */
+  skillsImport: { files: Array<{ path: string; content: string }>; overwrite?: string[] }
+  skillsImportDirectory: { path: string; overwrite?: string[] }
   skillCreate: { name: string; description: string; content: string }
   skillDelete: { folder: string }
   templates: undefined

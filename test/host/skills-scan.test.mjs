@@ -7,9 +7,13 @@ import assert from 'node:assert/strict'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
+import { Context } from '@deepseek-ai/cordis'
+import { SkillRegistry } from '@deepseek-ai/dsh-skill'
+import { createScope } from '@deepseek-ai/dsh-scope'
+import { createSkillsProvider } from '../../src/host/skills-provider.ts'
 import {
   catalogFromScan,
-  markWinners,
+  withSkillWinners,
   resolveProjectRoot,
   rootsFingerprint,
   scanRoot,
@@ -141,23 +145,23 @@ test('项目根：向上找第一个含 .git 的目录，找不到时退回工�
   assert.equal(resolveProjectRoot(lone), resolve(lone))
 })
 
-test('同名裁决：按优先级取首个有效技能，无效者不参与', () => {
+test('无注册表结果时清单不猜测同名赢家，无效条目仍保留', () => {
   const skills = [
     scanned({ id: 'user-dsh:/u:demo', source: 'user-dsh', rank: SKILL_SOURCES['user-dsh'].rank }),
     scanned({ id: 'project-dsh:/p:demo', source: 'project-dsh', rank: SKILL_SOURCES['project-dsh'].rank }),
   ]
-  assert.equal(markWinners(skills).get('demo'), 'project-dsh:/p:demo', '项目根优先于用户根')
+  assert.ok(catalogFromScan(skills).every((entry) => entry.winnerId === undefined))
 
   const withInvalid = [
     scanned({ id: 'project-dsh:/p:demo', source: 'project-dsh', rank: SKILL_SOURCES['project-dsh'].rank, valid: false, issue: 'x' }),
     scanned({ id: 'user-dsh:/u:demo', source: 'user-dsh', rank: SKILL_SOURCES['user-dsh'].rank }),
   ]
-  assert.equal(markWinners(withInvalid).get('demo'), 'user-dsh:/u:demo', '无效技能让位给下一个同名有效技能')
+  assert.equal(catalogFromScan(withInvalid)[0].valid, false)
 })
 
 test('清单投影：调用策略直接取自 frontmatter，被遮蔽条目带 winnerId', () => {
-  const project = scanned({ id: 'project-dsh:/p:demo', source: 'project-dsh', rank: SKILL_SOURCES['project-dsh'].rank })
-  const bundled = scanned({ id: 'bundled:/b:demo', source: 'bundled', rank: SKILL_SOURCES.bundled.rank })
+  const project = scanned({ id: 'project-dsh:/p:demo', file: '/p/demo/SKILL.md', source: 'project-dsh', rank: SKILL_SOURCES['project-dsh'].rank })
+  const bundled = scanned({ id: 'bundled:/b:demo', file: '/b/demo/SKILL.md', source: 'bundled', rank: SKILL_SOURCES.bundled.rank })
 
   // 单参调用：没有屏蔽表，策略整段来自扫描结果。
   const [onlyModelOff] = catalogFromScan([scanned({
@@ -182,7 +186,7 @@ test('清单投影：调用策略直接取自 frontmatter，被遮蔽条目带 w
   })])
   assert.deepEqual([bothOff.modelInvocable, bothOff.userInvocable], [false, false])
 
-  const catalog = catalogFromScan([project, bundled])
+  const catalog = withSkillWinners(catalogFromScan([project, bundled]), [{ name: project.name, path: project.file }])
   assert.equal(catalog.length, 2, '单参调用不做任何过滤：无效与遮蔽条目都保留')
   const winner = catalog.find((item) => item.id === project.id)
   const shadowed = catalog.find((item) => item.id === bundled.id)
@@ -203,17 +207,29 @@ test('scanRoots 按根顺序拼接各来源结果', () => {
   assert.deepEqual(skills.map((skill) => [skill.name, skill.source]), [['alpha', 'project-dsh'], ['beta', 'user-dsh']])
 })
 
-test('同名裁决：rank 并列时按 id 次序稳定取首个，输入顺序不影响结果', () => {
-  const sameRank = [
-    scanned({ id: 'user-dsh:/a:demo', rank: SKILL_SOURCES['user-dsh'].rank, name: 'demo' }),
-    scanned({ id: 'user-dsh:/b:demo', rank: SKILL_SOURCES['user-dsh'].rank, name: 'demo' }),
-    scanned({ id: 'user-dsh:/c:demo', rank: SKILL_SOURCES['user-dsh'].rank, name: 'demo' }),
-  ]
-  assert.equal(markWinners(sameRank).get('demo'), 'user-dsh:/a:demo', '并列时 id 字典序在前者胜出')
-  // 压到排序次键的关键是「输入顺序与 id 顺序不一致」：正序时 V8 对全等比较器的小数组排序
-  // 保序，删掉次键也看不出来；乱序样本才暴露问题（2 个元素的反序就够，这里用 3 个加一个轮转）。
-  assert.equal(markWinners([sameRank[1], sameRank[2], sameRank[0]]).get('demo'), 'user-dsh:/a:demo', 'a 仍应胜出')
-  assert.equal(markWinners([...sameRank].reverse()).get('demo'), 'user-dsh:/a:demo', '裁决不依赖输入顺序')
+test('同名标注跟随真实 registry 的根顺序和 scope 覆盖，不用 rank 猜测', async () => {
+  const app = new Context()
+  const registry = new SkillRegistry(app)
+  const z = scanned({ id: 'z', dir: '/z', file: '/z/demo/SKILL.md', source: 'custom', rank: 300 })
+  const a = scanned({ id: 'a', dir: '/a', file: '/a/demo/SKILL.md', source: 'custom', rank: 300 })
+  const user = scanned({ id: 'user', dir: '/user', file: '/user/demo/SKILL.md', rank: 400 })
+  const dispose = registry.registerProvider(() => createSkillsProvider({ referenced: () => [z, a] }))
+  const key = {}
+  const scope = createScope(app, key)
+  try {
+    const entries = catalogFromScan([z, a, user])
+    const global = withSkillWinners(entries, await registry.list())
+    assert.equal(global.find((entry) => entry.id === 'z').winnerId, undefined)
+    assert.equal(global.find((entry) => entry.id === 'a').winnerId, 'z', '同层按根顺序，反字典序仍取 z')
+    scope.ctx.skills.registerProvider(() => ({ name: 'filesystem',
+      list: async () => [{ name: user.name, description: 'user', rank: 400, source: 'user-dsh', provider: 'filesystem',
+        invocation: { modelInvocable: true, userInvocable: true }, locator: user.file, path: user.file }],
+      get: async () => undefined,
+    }))
+    const scoped = withSkillWinners(entries, await registry.list({ scope: key }))
+    assert.equal(scoped.find((entry) => entry.id === 'user').winnerId, undefined)
+    assert.equal(scoped.find((entry) => entry.id === 'z').winnerId, 'user', 'scope 优先于全局 rank')
+  } finally { await scope.dispose(); dispose() }
 })
 
 test('未配置内置技能根时不产生 bundled 来源（未设或空串都一样）', () => {

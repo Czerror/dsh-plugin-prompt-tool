@@ -167,7 +167,7 @@ test('删除最后一项能力后保持显式空组合', () => {
 
 // —— 模块事实（原 module-facts.test.mjs） ——
 
-const preset = (id) => loadPresetSpec(fileURLToPath(new URL(`../../preset/${id}/`, import.meta.url)))
+const preset = (id) => loadPresetSpec(fileURLToPath(new URL(`../../preset/pt-${id}/`, import.meta.url)))
 
 test('modules: [] 是显式空装配，不再展开默认引擎能力', () => {
   const explicit = resolvePresetModuleFacts(loadPresetSpec(FIXTURE_PRESET_SRC))
@@ -209,7 +209,7 @@ test('能力事实覆盖本地 filesystem module 与 nested row id', () => {
     rmSync(dir, { recursive: true, force: true })
   }
 
-  const minimal = resolvePresetModuleFacts(preset('minimal'), fileURLToPath(new URL('../../preset/minimal/', import.meta.url)), true)
+  const minimal = resolvePresetModuleFacts(preset('minimal'), fileURLToPath(new URL('../../preset/pt-minimal/', import.meta.url)), true)
   assert.equal(minimal.effectiveModules.includes('filesystem-editor'), false, 'rc.2 minimal 不再装配编辑器能力')
   assert.equal(isEngineCapabilityPresent('str-replace-editor', minimal), false)
 })

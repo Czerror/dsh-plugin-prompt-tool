@@ -130,13 +130,13 @@ test('catalogFromScan：一层发现、来源优先级、调用策略投影与�
   assert.equal(userSkill.modelInvocable, true)
   assert.equal(userSkill.userInvocable, true)
 
-  // 同名裁决：项目来源胜出，用户来源标注被遮蔽。
+  // 扫描没有注册表作用域，不能仅凭来源 rank 标注遮蔽。
   const shared = catalog.filter((entry) => entry.name === 'shared-name')
   assert.equal(shared.length, 2)
   const winner = shared.find((entry) => entry.source === 'project-dsh')
   const shadowed = shared.find((entry) => entry.source === 'user-dsh')
   assert.equal(winner.winnerId, undefined)
-  assert.equal(shadowed.winnerId, winner.id)
+  assert.equal(shadowed.winnerId, undefined)
 
   // 坏技能只展示原因，不参与同名裁决。
   const broken = byName('broken-skill')

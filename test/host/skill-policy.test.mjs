@@ -122,13 +122,13 @@ const LF_BODY = LF_FIXTURE.slice(LF_FIXTURE.indexOf('\n---\n', 20) + 5)
 /** 同一 fixture 里的 frontmatter 段（第二个 `---` 之前，首行 `---` 之后）。 */
 const LF_FRONTMATTER = LF_FIXTURE.slice(4, LF_FIXTURE.indexOf('\n---\n', 20))
 
-test('只写目标键：注释、未知字段、其余键与正文逐字保留（LF + camelCase 就地改写）', () => {
+test('旧驼峰策略归一官方键：注释、未知字段、其余键与正文保留', () => {
   const file = write(makeMarker(), LF_FIXTURE)
   const before = readFileSync(file, 'utf8')
   assert.equal(before, LF_FIXTURE, 'fixture 必须能被解析出 frontmatter（首行是 ---）')
 
   // fixture 已有驼峰键 `disableModelInvocation: true`（= 模型端已停用）与 `userInvocable: false`。
-  // scope=model 的目标是「模型端停用、用户端可用」：只有用户端需要变，模型键必须保持零改动。
+  // scope=model 的目标是「模型端停用、用户端可用」，两个旧键都必须归一成官方键。
   const written = setSkillInvocation(file, 'model')
   assert.equal(written.ok, true, written.message)
   assert.equal(written.changed, true, '用户端需要从不可调用改为可调用')
@@ -139,38 +139,54 @@ test('只写目标键：注释、未知字段、其余键与正文逐字保留�
   )
   const text = assertPreserved(file, {
     body: LF_BODY,
-    extras: ['disableModelInvocation: true', 'name: demo-skill', 'whenToUse: 需要演示时', 'quoted: "双引号值"', "single: '单引号值'", 'flow: { a: 1, b: 2 }', 'block: |'],
+    extras: ['disable-model-invocation: true', 'name: demo-skill', 'whenToUse: 需要演示时', 'quoted: "双引号值"', "single: '单引号值'", 'flow: { a: 1, b: 2 }', 'block: |'],
   })
   const flags = flagsOf(text)
-  assert.deepEqual([flags.modelInvocable, flags.userInvocable], [false, true], 'camelCase 键就地改写后按真值表解读')
+  assert.deepEqual([flags.modelInvocable, flags.userInvocable], [false, true], '归一官方键后按真值表解读')
   assert.deepEqual([flags.rawModel, flags.rawUser], [true, true], '落盘的原始值')
-  assert.equal(text.includes('user-invocable'), false, '不新增连字符键去和已声明的驼峰键打对台')
-  assert.equal(text.includes('disable-model-invocation'), false, '已声明的驼峰模型键不得被改写或另起一份')
-  // 逐行比较：值行只允许 `userInvocable` 变；`trailing` 行的行尾空格被 yaml Document 规范化，
-  // 属于「注释/结构保留、行内多余空白折叠」的已知行为，其余行必须逐字节不变。
+  assert.equal(text.includes('userInvocable'), false, '官方 provider 拒绝旧键，即使官方键同时存在')
+  assert.equal(text.includes('disableModelInvocation'), false)
+  // 两个策略键归一；Document API 会折叠行尾注释前的多余空白。
   const beforeLines = before.split('\n')
   const afterLines = text.split('\n')
   assert.equal(afterLines.length, beforeLines.length)
   const changed = beforeLines.filter((line, index) => line !== afterLines[index])
-  assert.deepEqual(changed.sort(), ['trailing: value      # 行尾注释：也保留我', 'userInvocable: false'].sort(),
-    `只允许这两行变化：${changed.join(' | ')}`)
-  const valueChanges = beforeLines.filter((line, index) => line.replace(/\s+/gu, ' ') !== afterLines[index].replace(/\s+/gu, ' '))
-  assert.deepEqual(valueChanges, ['userInvocable: false'], '归一空白后只有 userInvocable 的值变了')
-  assert.equal(afterLines[beforeLines.indexOf('userInvocable: false')], 'userInvocable: true', 'camelCase 键就地改写')
+  assert.deepEqual(changed.sort(), ['disableModelInvocation: true', 'trailing: value      # 行尾注释：也保留我', 'userInvocable: false'].sort())
+  assert.equal(afterLines[beforeLines.indexOf('userInvocable: false')], 'user-invocable: true')
   assert.match(afterLines[beforeLines.indexOf('trailing: value      # 行尾注释：也保留我')], /^trailing: value # 行尾注释：也保留我$/, '只有键后的多余空白被折叠')
-  assert.equal(afterLines.includes('disableModelInvocation: true'), true, '模型端驼峰键逐字保留')
   // frontmatter 段之外的每个字节都不变：正文与第二个 --- 之前的所有行原样保留。
   assert.equal(text.slice(text.indexOf('\n---\n', 20) + 5), LF_BODY)
-  assert.equal(text.slice(4, text.indexOf('\n---\n', 20)), LF_FRONTMATTER.replace('userInvocable: false', 'userInvocable: true').replace('trailing: value      #', 'trailing: value #'))
+  assert.equal(text.slice(4, text.indexOf('\n---\n', 20)), LF_FRONTMATTER.replace('disableModelInvocation:', 'disable-model-invocation:').replace('userInvocable: false', 'user-invocable: true').replace('trailing: value      #', 'trailing: value #'))
 
   // 目标状态已达成时零写入：同一 scope 再写一次不得落盘。
   const stamp = statSync(file).mtimeMs
   const again = setSkillInvocation(file, 'model')
   assert.equal(again.ok, true, again.message)
-  assert.equal(again.changed, false, '驼峰键已表达「模型端不可调用」，不该产生写入')
+  assert.equal(again.changed, false, '官方键已表达目标策略，不该产生写入')
   assert.equal(readFileSync(file, 'utf8'), text, '无变化时文件必须逐字节不变')
   assert.equal(statSync(file).mtimeMs, stamp, '零写入不得更新 mtimeMs')
   assert.deepEqual(leftovers(file), [], '成功写入不留暂存文件')
+})
+
+test('官方键与旧策略键共存时删除全部旧键，归一过程保留策略注释', () => {
+  const file = write(makeMarker(), [
+    '---', 'name: demo', 'description: D',
+    'disable-model-invocation: true # 官方模型注释',
+    '# 旧模型前置注释', 'disableModelInvocation: false # 旧模型行尾注释',
+    'modelInvocable: true # 另一旧模型注释',
+    'user-invocable: false', 'userInvocable: true # 旧用户注释',
+    'unknown: { keep: true }', '---', '正文\r\n',
+  ].join('\n'))
+  const result = setSkillInvocation(file, 'all')
+  assert.equal(result.ok, true, result.message)
+  assert.equal(result.changed, true, '策略值相同仍需清理旧键')
+  const text = readFileSync(file, 'utf8')
+  assert.doesNotMatch(text, /^(?:disableModelInvocation|modelInvocable|userInvocable):/m)
+  for (const comment of ['官方模型注释', '旧模型前置注释', '旧模型行尾注释', '另一旧模型注释', '旧用户注释']) assert.ok(text.includes(comment), comment)
+  assert.match(text, /unknown: \{ keep: true \}/)
+  assert.ok(text.endsWith('正文\r\n'))
+  assert.deepEqual(readSkillInvocation(file).invocation, { modelInvocable: false, userInvocable: false })
+  assert.equal(setSkillInvocation(file, 'all').changed, false)
 })
 
 test('两端独立：scope 只关对应的一端，none 两端恢复且写显式 true', () => {

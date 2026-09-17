@@ -529,6 +529,30 @@ test('V2 草稿与资源：原文恢复、快照保存、技能目标及危险�
   assert.equal(await evaluate(`JSON.stringify(window.requests.find(r=>r.endpoint==='skills-import-directory').body)`), '{"path":"D:/drop/gamma"}')
   await waitFor(`document.querySelector('[aria-label="'+window.t('skills.import.path.aria')+'"]').value===''`)
 
+  // 宿主目录与浏览器上传都先等待覆盖确认；取消不重发，确认只携带列出的目录。
+  await evaluate(`window.skillImportConflicts=['gamma']`)
+  await input('skills.import.path.aria', 'D:/drop/gamma')
+  await clickKey('skills.import.fromDir')
+  await waitFor(`document.querySelector('[role="alertdialog"]')!==null`)
+  assert.equal(await evaluate(count('skills-import-directory')), 2, '确认前只有一次探测请求')
+  await click('[role="alertdialog"] button:not([data-danger])')
+  await waitFor(`window.store.skillsBusy===false`)
+  assert.equal(await evaluate(count('skills-import-directory')), 2, '取消不覆盖')
+  await clickKey('skills.import.fromDir')
+  await waitFor(`document.querySelector('[role="alertdialog"]')!==null`)
+  await click('[role="alertdialog"] button[data-danger]')
+  await waitFor(`${count('skills-import-directory')}===4 && window.store.skillsBusy===false`)
+  assert.equal(await evaluate(`JSON.stringify(window.requests.filter(r=>r.endpoint==='skills-import-directory').at(-1).body)`),
+    '{"path":"D:/drop/gamma","overwrite":["gamma"]}')
+  await evaluate(`(()=>{const input=document.querySelector('input[webkitdirectory]');const files=new DataTransfer();const f=new File(['skill body'],'SKILL.md');Object.defineProperty(f,'webkitRelativePath',{value:'pack/gamma/SKILL.md'});files.items.add(f);input.files=files.files;input.dispatchEvent(new Event('change',{bubbles:true}))})()`)
+  await waitFor(`document.querySelector('[role="alertdialog"]')!==null`)
+  assert.equal(await evaluate(count('skills-import')), 1)
+  await click('[role="alertdialog"] button[data-danger]')
+  await waitFor(`${count('skills-import')}===2`)
+  assert.equal(await evaluate(`JSON.stringify(window.requests.filter(r=>r.endpoint==='skills-import').at(-1).body.overwrite)`), '["gamma"]')
+  assert.equal(await evaluate(`window.requests.filter(r=>r.endpoint==='skills-import')[0].body.files[0].content === window.requests.filter(r=>r.endpoint==='skills-import')[1].body.files[0].content`), true, '确认重用同一上传载荷')
+  await evaluate('window.skillImportConflicts=[]')
+
   // 文件夹引用：只登记路径，不复制文件；移除只删记录。
   await input('skills.folders.aria', 'D:/referenced/skills')
   await clickKey('skills.folders.add')

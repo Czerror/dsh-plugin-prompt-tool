@@ -10,6 +10,7 @@ import type { PromptToolLocaleKey, PromptToolTranslate } from '../../locales.ts'
 import type { SkillPolicyScope } from '../../../shared/skills.ts'
 import { bridgeCall } from '../../data/bridge-client.ts'
 import { readImportFiles } from '../../data/import-files.ts'
+import { requestSkillImport } from '../../data/skill-import.ts'
 import { usePromptToolFields } from '../../data/use-prompt-tool-fields.ts'
 import { CollapsibleCard } from '../../ui/CollapsibleCard.tsx'
 import { ConfirmDialog } from '../../ui/ConfirmDialog.tsx'
@@ -53,8 +54,29 @@ export const SkillsPage = memo(function SkillsPage(props: { store: PromptToolSto
   const [createDraft, setCreateDraft] = useState({ name: '', description: '', content: '' })
   const [folderDraft, setFolderDraft] = useState('')
   const [pendingDelete, setPendingDelete] = useState<SkillCatalogEntry | undefined>(undefined)
+  const [overwriteNames, setOverwriteNames] = useState<string[]>()
+  const overwriteDecision = useRef<((confirmed: boolean) => void) | undefined>(undefined)
   const mounted = useRef(true)
-  useEffect(() => () => { mounted.current = false }, [])
+  useEffect(() => {
+    mounted.current = true
+    return () => {
+      mounted.current = false
+      overwriteDecision.current?.(false)
+      overwriteDecision.current = undefined
+    }
+  }, [])
+  const confirmOverwrite = useCallback((names: string[]): Promise<boolean> => {
+    if (!mounted.current) return Promise.resolve(false)
+    overwriteDecision.current?.(false)
+    setOverwriteNames(names)
+    return new Promise((resolve) => { overwriteDecision.current = resolve })
+  }, [])
+  const settleOverwrite = (confirmed: boolean): void => {
+    const decide = overwriteDecision.current
+    overwriteDecision.current = undefined
+    setOverwriteNames(undefined)
+    decide?.(confirmed)
+  }
 
   const keyword = skillFilter.trim().toLowerCase()
   const visible = useMemo(() => fields.skillCatalog.filter((skill) => {
@@ -94,7 +116,7 @@ export const SkillsPage = memo(function SkillsPage(props: { store: PromptToolSto
     setPickingDir(true)
     try {
       const path = await api.pickDirectory()
-      if (path !== null && await store.importSkillsDirectory(path)) store.setSkillsDirDraft('')
+      if (path !== null && await store.importSkillsDirectory(path, confirmOverwrite)) store.setSkillsDirDraft('')
     } catch (error) {
       store.showNotice('error', t('skills.notice.dirPickFailed', { reason: error instanceof Error ? error.message : String(error) }))
     } finally {
@@ -107,14 +129,17 @@ export const SkillsPage = memo(function SkillsPage(props: { store: PromptToolSto
     if (files.length === 0) return
     setImportingDir(true)
     try {
-      const res = await bridgeCall('skillsImport', { files: await readImportFiles(files, 'base64') })
+      const payload = await readImportFiles(files, 'base64')
+      const res = await requestSkillImport((overwrite) => bridgeCall('skillsImport', {
+        files: payload, ...(overwrite === undefined ? {} : { overwrite }),
+      }), confirmOverwrite)
       if (res.ok) {
         const { count, path, overwritten } = res.value
         store.showNotice('ok', overwritten > 0
           ? t('skills.notice.importedOverwrite', { count, path, overwritten })
           : t('skills.notice.imported', { count, path }))
         await store.load()
-      } else {
+      } else if (res.code !== 'skills-import-cancelled') {
         store.showNotice('error', t('skills.notice.importFailed', { reason: importFailureReason(res.message) }))
       }
     } catch (error) {
@@ -222,14 +247,14 @@ export const SkillsPage = memo(function SkillsPage(props: { store: PromptToolSto
               onChange={(event) => store.setSkillsDirDraft(event.target.value)}
               onKeyDown={(event) => {
                 if (event.key !== 'Enter' || store.skillsDirDraft.trim().length === 0) return
-                void store.importSkillsDirectory(store.skillsDirDraft).then((ok) => { if (ok) store.setSkillsDirDraft('') })
+                void store.importSkillsDirectory(store.skillsDirDraft, confirmOverwrite).then((ok) => { if (ok) store.setSkillsDirDraft('') })
               }}
             />
             <button
               type="button"
               className={ui.pillButton}
               disabled={store.skillsBusy || store.skillsDirDraft.trim().length === 0}
-              onClick={() => { void store.importSkillsDirectory(store.skillsDirDraft).then((ok) => { if (ok) store.setSkillsDirDraft('') }) }}
+              onClick={() => { void store.importSkillsDirectory(store.skillsDirDraft, confirmOverwrite).then((ok) => { if (ok) store.setSkillsDirDraft('') }) }}
             >
               {store.skillsBusy && <span className={ui.spinner} aria-hidden="true" />}
               {t('skills.import.fromDir')}
@@ -391,6 +416,16 @@ export const SkillsPage = memo(function SkillsPage(props: { store: PromptToolSto
         ))
       )}
 
+      {overwriteNames !== undefined && (
+        <ConfirmDialog
+          title={t('skills.overwrite.title')}
+          description={t('skills.overwrite.description', { names: overwriteNames.join('、') })}
+          confirmLabel={t('skills.overwrite.confirm')}
+          cancelLabel={t('skills.dir.cancel')}
+          onConfirm={() => settleOverwrite(true)}
+          onCancel={() => settleOverwrite(false)}
+        />
+      )}
       {pendingDelete && (
         <ConfirmDialog
           title={t('skills.delete.title', { name: pendingDelete.name })}

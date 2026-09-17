@@ -17,7 +17,7 @@ const preset = (id) => {
 
 function makeHarness(initial, options = {}) {
   let promptState = { ...initial }
-  let hostDefault = initial.presetTemplate
+  let hostDefault = options.hostDefault ?? initial.presetTemplate
   let promptWatcher
   const listeners = new Map()
   const mutations = []
@@ -93,6 +93,7 @@ function makeHarness(initial, options = {}) {
     mutations,
     warnings,
     getPromptState: () => promptState,
+    getHostDefault: () => hostDefault,
     /** 模拟工作台里切换预设：写入本插件 settings 并触发 onChange → applyState → 正向同步。 */
     switchPreset: (id) => {
       const previous = promptState
@@ -235,4 +236,18 @@ test('兼容快照已处理后，官方预设切换不会创建或复活 prompt-
   assert.equal(existsSync(join(presetDir, 'prompt-tool')), false,
     '切换预设后不得创建或复活 prompt-tool 兼容目录')
 })
+test('启动时插件选 pt-standard 而宿主指向官方 standard：同步实际用户预设且幂等', async () => {
+  preset('pt-standard')
+  const initial = { writePreset: true, presetTemplate: 'pt-standard', presetOrder: 5, fallbackText: '' }
+  const harness = makeHarness(initial, { hostDefault: 'standard' })
+  apply(harness.ctx, initial)
+  await Promise.resolve()
+  assert.equal(harness.getHostDefault(), 'pt-standard')
+  assert.equal(harness.getPromptState().presetTemplate, 'pt-standard')
+  assert.equal(harness.mutations.filter((entry) => entry.ns === 'agent-presets').length, 1)
+  harness.emitOfficialDefault('pt-standard')
+  await Promise.resolve()
+  assert.equal(harness.mutations.filter((entry) => entry.ns === 'agent-presets').length, 1)
+})
+
 test.after(() => { rmSync(home, { recursive: true, force: true }) })

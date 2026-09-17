@@ -99,7 +99,7 @@ function renderTuiStatus(source: PromptSettings, params: Record<string, unknown>
     const detail = skill.valid
       ? (skill.modelInvocable ? '模型可调用' : '模型不可调用')
       : `未注册:${skill.issue ?? '不合法'}`
-    lines.push(`${('skill ' + skill.folder).padEnd(22)}${onOff(value)}  ${skill.name || skill.folder}  [${detail}]`)
+    lines.push(`${('skill ' + skill.name).padEnd(22)}${onOff(value)}  ${skill.folder}  [${detail}]`)
   }
   return lines.join('\n')
 }
@@ -205,13 +205,13 @@ export function registerTuiCommand(
     return sctx.commands.register({
       name: 'prompt-tool',
       description: '提示词工具：查看或切换本插件开关',
-      input: { hint: 'status | on/off/toggle <开关> | skill <目录名> on/off/toggle | config <id> [on/off/toggle]' },
+      input: { hint: 'status | on/off/toggle <开关> | skill <技能名> on/off/toggle | config <id> [on/off/toggle]' },
       handler: async (invocation): Promise<CommandResult> => {
         const usage = (): CommandResult => ({
           kind: 'error',
           text: '用法：/prompt-tool status\n' +
             '      /prompt-tool on|off|toggle <writePreset|injectPrompt|firstTurnAnchor|firstTurnCustom|guideEnabled|guideCustom|usePtcMode>\n' +
-            '      /prompt-tool skill <技能目录名> on|off|toggle（目录名可含空格）\n' +
+            '      /prompt-tool skill <frontmatter 技能名> on|off|toggle\n' +
             '      /prompt-tool config <id>（id 可含空格）\n' +
             '      /prompt-tool config <id> on|off|toggle\n' +
             '      /prompt-tool bootstrapMaxTokens <正整数|0（关闭）>',
@@ -247,8 +247,12 @@ export function registerTuiCommand(
         if (tokens[0] === 'skill') {
           const { id, action } = parseIdentifierAndAction(tokens.slice(1), () => true)
           if (id.length === 0) return usage()
-          const found = source.skillCatalog.find((skill) => skill.name === id)
-          const current = found !== undefined && (found.modelInvocable || found.userInvocable)
+          const matches = source.skillCatalog.filter((skill) => skill.name === id)
+          if (matches.length !== 1) return { kind: 'error', text: matches.length === 0
+            ? `未找到技能：${id}` : `存在多个同名技能：${id}，请在技能管理页选择具体文件` }
+          const found = matches[0]!
+          if (!found.valid) return { kind: 'error', text: `技能无效：${found.issue ?? id}` }
+          const current = found.modelInvocable || found.userInvocable
           const next = parseTuiBoolean(action, current)
           if (next === undefined) return usage()
           if (toggleSkillState === undefined) {

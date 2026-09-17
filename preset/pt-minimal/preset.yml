@@ -1,4 +1,4 @@
-id: minimal
+id: pt-minimal
 name: 极简模式
 description: 仅提供持久 shell 的单工具编码 Agent。
 version: 1.0.0

@@ -15,7 +15,7 @@ import { parseDocument, stringify as stringifyYaml } from 'yaml'
 // @ts-expect-error 仓库根 ESM 引擎文件由 tsdown 作为源码依赖打包，无独立声明文件。
 import { validateSubagentToolPolicy } from '../../engine/subagent-tool-policy-core.mjs'
 import { DEFAULT_PRESET_DIR } from './paths.ts'
-import { EMPTY_OCCUPIED_PRESET_IDS, assertOutputIdSafe, type OccupiedPresetIds } from './preset-id-safety.ts'
+import { DEFAULT_PRESET_ID } from '../shared/preset-ids.ts'
 import { compileCustomTool } from './custom-tools.ts'
 import { validateCustomToolIdentities } from '../shared/engine-capabilities.ts'
 import { ENGINE_PARAM_KEYS, type PresetWriterParams } from '../shared/engine-params.ts'
@@ -90,12 +90,10 @@ export interface WritePresetOptions extends PresetWriterParams {
   presetOrder: number
   /** settings 层用户自定义提示词配置(优先级最高)。 */
   promptConfigs: PromptConfigSpec[]
-  /** 预设模板名(preset/<name>);默认 standard。 */
+  /** 当前预设目录名；默认 pt-standard。 */
   presetTemplate?: string
   /** 输出目录/预设 id 覆盖；缺省 = presetTemplate 同名输出。 */
   outputId?: string
-  /** 被宿主其他预设根占用的 id（通常是内置预设）：输出命中即 fail loud，不生成永不被挂载的目录。 */
-  occupiedPresetIds?: OccupiedPresetIds
   /** 目录加载失败等非致命告警回调。 */
   warn?: (message: string) => void
 }
@@ -260,7 +258,7 @@ export function writePreset(prompt: string, options: WritePresetOptions): void {
   const presetDir = options.presetDir.trim().length > 0 ? options.presetDir : DEFAULT_PRESET_DIR
   const templateName = typeof options.presetTemplate === 'string' && options.presetTemplate.trim().length > 0
     ? options.presetTemplate.trim()
-    : 'standard'
+    : DEFAULT_PRESET_ID
   // 安全边界：templateName 现在是写入路径段（presetDir/<template>/），同时必须是
   // 官方 agent-presets 可发现的预设 id（PRESET_ID = /^[a-z0-9][a-z0-9-]*$/）——
   // 含中文等非法 id 会被宿主 discovery 静默跳过（会话 resume 报 preset not found），
@@ -275,8 +273,6 @@ export function writePreset(prompt: string, options: WritePresetOptions): void {
   if (!/^[a-z0-9][a-z0-9-]*$/.test(outputId)) {
     throw new Error(`invalid outputId ${JSON.stringify(outputId)}: must match official agent-presets id /^[a-z0-9][a-z0-9-]*$/`)
   }
-  // 撞名输出目录会被宿主 shipped 根遮蔽：写盘前 fail loud，不静默产出永不挂载的目录。
-  assertOutputIdSafe(outputId, options.occupiedPresetIds ?? EMPTY_OCCUPIED_PRESET_IDS)
   // 可渲染性回退：旧版种子副本（仅元数据 + 本地 .mjs，无 modules/composition/
   // agent.cordis.yml）遮蔽包内新版模板时，直接物化必失败——回退包内模板渲染并
   // warn；纯元数据参数源在第 2 步升级为包内新版（闭环后不再回退）。

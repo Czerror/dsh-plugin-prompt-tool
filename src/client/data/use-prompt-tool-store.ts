@@ -6,6 +6,7 @@ import type { PromptToolHostApi } from './host-api.ts'
 import type { PresetModuleFacts } from '../../shared/engine-capabilities.ts'
 import type { SkillPolicyScope } from '../../shared/skills.ts'
 import { bridgeCall, errorMessage, type BridgeResult, type BridgeSettingsView } from './bridge-client.ts'
+import { requestSkillImport, type ConfirmSkillOverwrite } from './skill-import.ts'
 import {
   EMPTY_FIELDS,
   EMPTY_META,
@@ -140,7 +141,7 @@ export interface PromptToolStore {
   /** 导入来源路径草稿（宿主机目录；导入即复制，不保留引用）。 */
   setSkillsDirDraft: (value: string) => void
   /** 从宿主机目录复制导入到用户技能根。 */
-  importSkillsDirectory: (path: string) => Promise<boolean>
+  importSkillsDirectory: (path: string, confirm?: ConfirmSkillOverwrite) => Promise<boolean>
   /** 创建标准技能到用户技能根。 */
   createSkill: (input: { name: string; description: string; content: string }) => Promise<boolean>
   /** 回收站删除用户技能根里的技能目录。 */
@@ -975,7 +976,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
   }, [load, showNotice])
 
   /** 从宿主机目录导入技能包：复制进用户技能根，之后由官方提供者直接发现。 */
-  const importSkillsDirectory = useCallback(async (path: string): Promise<boolean> => {
+  const importSkillsDirectory = useCallback(async (path: string, confirm?: ConfirmSkillOverwrite): Promise<boolean> => {
     const source = path.trim()
     if (source.length === 0) {
       showNotice('error', '请先填写要导入的目录路径')
@@ -983,8 +984,11 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     }
     beginSkillWrite()
     try {
-      const res = await bridgeCall('skillsImportDirectory', { path: source })
+      const res = await requestSkillImport((overwrite) => bridgeCall('skillsImportDirectory', {
+        path: source, ...(overwrite === undefined ? {} : { overwrite }),
+      }), confirm)
       if (!res.ok) {
+        if (res.code === 'skills-import-cancelled') return false
         // 服务端消息自带「技能导入失败：」前缀，剥掉后由这里补类别前缀，避免两层；空串兜底成可读文案。
         const reason = (res.message ?? '').trim().replace(/^技能导入失败：/u, '') || 'settings bridge unavailable'
         showNotice('error', `导入技能目录失败：${reason}`)
@@ -992,7 +996,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
       }
       const { count, overwritten } = res.value
       showNotice('ok', overwritten > 0
-        ? `已从 ${source} 复制 ${count} 个文件到用户技能目录，覆盖 ${overwritten} 个同名技能（旧版本已进回收站）`
+        ? `已从 ${source} 复制 ${count} 个文件到用户技能目录，覆盖 ${overwritten} 个已确认的同名技能`
         : `已从 ${source} 复制 ${count} 个文件到用户技能目录`)
       await load({ silent: true })
       return true

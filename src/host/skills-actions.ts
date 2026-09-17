@@ -13,7 +13,7 @@ function assertPlainDirectory(path: string): void {
   if (info.isSymbolicLink() || !info.isDirectory()) throw new Error(`技能目录不是普通目录：${path}`)
 }
 
-/** 回收站目录（相对技能根）。删除与「覆盖导入」共用同一处，也共用同一套记录字段。 */
+/** 回收站目录（相对技能根），仅用于用户显式删除。 */
 const TRASH_SEGMENTS = ['.system', 'prompt-tool', '.trash'] as const
 
 export interface TrashedSkill {
@@ -26,7 +26,7 @@ export interface TrashedSkill {
 /** 把技能目录移入回收站：命名唯一、记录来源与时间，可人工恢复。
  *  失败时清理自己刚创建的容器，不在回收站里留下空条目。
  *  自带目录名校验：导出函数不依赖调用方先验，否则直接调用方可以用 '..' 把容器外的目录搬走。 */
-export function trashSkill(base: string, folder: string, origin: 'delete' | 'import-overwrite'): TrashedSkill {
+export function trashSkill(base: string, folder: string, origin: 'delete'): TrashedSkill {
   if (!SKILL_NAME_PATTERN.test(folder)) throw new Error(`技能目录名不合法：${folder}`)
   const root = resolve(base)
   const recycle = join(root, ...TRASH_SEGMENTS)
@@ -56,18 +56,19 @@ export function createSkill(root: string, input: { name: unknown; description: u
   }
   const base = resolve(root)
   const target = join(base, input.name)
+  let created = false
   try {
     mkdirSync(base, { recursive: true })
     assertPlainDirectory(base)
     if (existsSync(target)) return { ok: false, message: `技能已存在：${input.name}` }
     mkdirSync(target)
+    created = true
     const frontmatter = new Document({ name: input.name, description: input.description }).toString()
     writeFileSync(join(target, 'SKILL.md'), `---\n${frontmatter}---\n${input.content}`, { encoding: 'utf8', flag: 'wx' })
     return { ok: true, id: input.name, path: target }
   } catch (error) {
-    // 半成品目录不留在用户根里：正常路径下 target 只可能由本次 mkdirSync 创建，
-    // 这段兜底的是磁盘或权限故障导致的中途失败（前面的校验拒绝根本不会创建目录）。
-    try { if (existsSync(target)) rmSync(target, { recursive: true, force: true }) } catch { /* 保留现场供人工检查 */ }
+    // 只回收本次 mkdir 成功创建的目录；根校验或同名竞争失败不能删除原有技能。
+    try { if (created) rmSync(target, { recursive: true, force: true }) } catch { /* 保留现场供人工检查 */ }
     return { ok: false, message: `创建技能失败：${error instanceof Error ? error.message : String(error)}` }
   }
 }

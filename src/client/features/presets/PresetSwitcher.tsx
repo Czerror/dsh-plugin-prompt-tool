@@ -202,7 +202,7 @@ export const PresetSwitcher = memo(function PresetSwitcher(props: { store: Promp
           {templates.length === 0 && <p className={styles.configFieldHint}>{t('presetSwitcher.dialog.noTemplates')}</p>}
           <HintTooltip label={t('presetSwitcher.custom.hint')}>
             <button type="button" className={styles.templateModalItem} data-custom
-              onClick={() => void clonePreset('custom', true)}>
+              onClick={() => void clonePreset('pt-custom', true)}>
               <strong>{t('presetSwitcher.custom.title')}</strong>
               <small>{t('presetSwitcher.custom.detail')}</small>
             </button>

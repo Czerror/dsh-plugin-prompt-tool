@@ -18,7 +18,7 @@
 |---|---|
 | 修改 src/client、SlotRegistry、SettingsScope、工作台、客户端 bridge、状态、共享 UI、CSS 或 UI 测试 | [docs/ui-architecture.md](docs/ui-architecture.md) |
 | 修改 params、preset.yml、预设存储、writePreset、迁移、空值或参数生成链路 | [docs/architecture-params.md](docs/architecture-params.md) |
-| 修改 engine、晋升门控、PTC、插入点、组合来源或重建 | [docs/engine-reuse.md](docs/engine-reuse.md)；组合编辑同时读 [preset/cordis/skills/editing-cordis-compositions/SKILL.md](preset/cordis/skills/editing-cordis-compositions/SKILL.md) |
+| 修改 engine、晋升门控、PTC、插入点、组合来源或重建 | [docs/engine-reuse.md](docs/engine-reuse.md)；组合编辑同时读 [preset/pt-cordis/skills/editing-cordis-compositions/SKILL.md](preset/pt-cordis/skills/editing-cordis-compositions/SKILL.md) |
 | 修改 SillyTavern、角色卡或世界书转换 | [docs/SillyTavern.md](docs/SillyTavern.md) |
 | 涉及宿主 API、Cordis 生命周期、Settings、Slot 或官方预设契约 | 先在 `D:\AI\GitHub\deepseek-harness\docs` 搜索对应服务或 API；本地文档缺失或与已安装包版本不符时，再查 [在线镜像](https://github.com/deepseek-ai/deepseek-harness/tree/master/docs) |
 

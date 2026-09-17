@@ -42,28 +42,19 @@ UI fields
 该目录不只是输出位置，也是预设定义的读取根；不存在对应定义时回退包内模板，
 不读取其他部署根中的同名用户副本。
 
-### 预设 id 安全化（2026-09-18）
+### 预设目录与独立补建（2026-09-18）
 
-宿主的 agent-presets 按「shipped（内置）根 → 配置根 → 用户根」顺序扫描，**靠前的根赢同名 id**：用户预设根里
-与内置预设或被保留名表挡下的名字（`cordis`/`minimal`/`ptc`/`standard`/`creative`）同名的目录永远不会被挂载，
-其上的注入与定制静默失效。插件据此做三件事：
+宿主内置根会遮蔽同名用户预设，因此插件包内目录和 `preset.yml.id` 直接使用
+`pt-standard`、`pt-ptc`、`pt-minimal`、`pt-cordis`、`pt-custom`。默认值为 `pt-standard`。
+官方原始预设名只在构建脚本读取上游时映射到这些目标，不参与运行时探测、转换或重命名。
 
-- **判据与探测**（`host/preset-id-safety.ts`）：`safePresetId(id, occupied)` 命中占用集合即加 `pt-` 前缀；
-  `templateNameFor(id, hasTemplate)` 把安全 id 反查回包内模板名（包内精确命中优先 → 剥一次前缀 → 原样）。
-  占用集合 = **官方语义保留名表**（`SHIPPED_PRESET_ID_RESERVATIONS`：`cordis`/`minimal`/`ptc`/`standard`/`creative`）
-  ∪ 宿主 `agentPresets.settings()` 的 `trust === 'system'` ∪ 服务不可用时的
-  `profiles/**/node_modules/@deepseek-ai/dsh-agent-presets/presets` 目录名探测；前两者都拿不到时仍按保留名表避让。
-  **只读 id 名，不读其他根的预设内容**——上一段「不读取其他部署根」的不变量保持不变。
-- **生成路径**：`ensurePresetSeed`（首次种子化）与 `cloneBuiltinPreset`（工作台新建）在模板名被占用时落成
-  `pt-<模板名>`，并用 `retargetPresetId` 把生成目录 `preset.yml` 的 `id` 收口为目录名；`writePreset` 的输出目录命中
-  占用集合时 fail loud，不静默产出永不挂载的目录；补建循环遇到目录名属于保留名的旧目录时跳过并告警，
-  宿主服务就绪后补建缺失的安全副本。
-- **激活路径**：runtime 的 `presetTemplate` 在首次加载、settings 变化与工作台切换时归一化，命中占用即改写为
-  安全 id，并写回插件 settings + 同步宿主 `agent-presets.default` + 重建；模板名与输出目录名经
-  `writePreset({ presetTemplate, outputId })` 分离，`pt-standard` 输出仍渲染包内 `standard` 模板。
-
-因此默认激活预设 id 是 `pt-standard`（`shared/preset-ids.ts#DEFAULT_PRESET_ID`），不再是会被遮蔽的 `standard`；
-包内模板名与官方对齐（创造模式的 `creative` 已改名 `cordis`），所以「新建 → 创造模式」产出 `pt-cordis`。
+- **初始化**：`ensurePresetSeed` 按包内同名目录检查，缺哪个只复制哪个；已有目录的定义、组合与资源保持原样。
+  初次复制的定义由现有 writer 物化。删除单个 `pt-*` 目录后，下次启动只补回该目录，无需删除其他预设。
+- **保存**：当前预设以自身目录为唯一来源生成，模块、人设、变量、工具和子代理策略都从该目录读取。
+  保存当前预设不会为了更新渲染版本而重铺其他预设；全局生成开关恢复时，会恢复先前被该开关清空的组合。
+- **新建**：直接复制包内同名目录；显式要求递增副本时仍沿用现有目录后缀规则。
+- **默认同步**：启动时若宿主默认不在插件可管理的预设中，则同步到当前有效用户预设；官方模式选择关闭时不写无效默认值。
+  宿主后续选择已管理预设仍反向同步，已存在的用户目录不自动改名。
 
 ## 3. 空值语义（统一规则）
 

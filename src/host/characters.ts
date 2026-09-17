@@ -44,7 +44,7 @@ function buildCharacterMemoryEntry(spec: PresetSpec, memory: string): Record<str
   })
 }
 
-/** meta 下记录「每张卡引入了哪些模块」的键（移除时按此回退）。 */
+/** meta 下记录「每张卡引入了哪些模块」的键；来源保留到模块不再被消费并完成回退。 */
 export const CHARACTER_MODULES_KEY = 'characterModules'
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -130,7 +130,7 @@ function modulesClaimedByOtherCards(
 ): Set<string> {
   const claimed = new Set<string>()
   for (const [id, modules] of Object.entries(recordedCharacterModules(meta))) {
-    if (id === cardId) continue
+    if (id === cardId || !importedCards.includes(id)) continue
     for (const module of modules) claimed.add(module)
   }
   for (const id of importedCards) {
@@ -636,9 +636,10 @@ export function removeCharacterFromPreset(
       const list = Array.isArray(current.meta?.importedCharacters) ? current.meta.importedCharacters : []
       const remainingCards = list.map(String).filter((entry) => entry !== cardId)
       doc.setIn(['meta', 'importedCharacters'], remainingCards)
-      // 模块回退：只回退本卡记录过、且移除后没有其他卡引用、也没有其他消费者的模块。
-      // 老卡（无记录）不回退——无从判断归属，宁可留下模块也不误删用户或引擎要用的装配。
-      const recorded = recordedCharacterModules(current.meta)[cardId] ?? []
+      // 检查所有已知的卡引入模块：首张卡先移除时，其来源仍须保留到最后消费者移除。
+      // 没有任何来源记录的老卡或预设自带模块不回退。
+      const records = recordedCharacterModules(current.meta)
+      const recorded = Object.values(records).flat()
       if (recorded.length > 0) {
         const others = modulesClaimedByOtherCards(presetRoot, remainingCards, current.meta, cardId)
         const after = doc.toJS() as { params?: unknown; customTools?: unknown }
@@ -652,7 +653,11 @@ export function removeCharacterFromPreset(
         const next = modules.filter((module) => !recorded.includes(module)
           || others.has(module) || characterModuleStillNeeded(module, context))
         if (next.length !== modules.length) doc.set('modules', next)
-        doc.deleteIn(['meta', CHARACTER_MODULES_KEY, cardId])
+        for (const [owner, ownedModules] of Object.entries(records)) {
+          const retained = ownedModules.filter((module) => next.includes(module))
+          if (retained.length === 0) doc.deleteIn(['meta', CHARACTER_MODULES_KEY, owner])
+          else doc.setIn(['meta', CHARACTER_MODULES_KEY, owner], retained)
+        }
         if (Object.keys(recordedCharacterModules((doc.toJS() as { meta?: unknown }).meta)).length === 0) {
           doc.deleteIn(['meta', CHARACTER_MODULES_KEY])
         }

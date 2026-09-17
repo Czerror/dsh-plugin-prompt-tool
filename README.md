@@ -2,7 +2,7 @@
 
 > 一切皆可注入：把 DSH 官方开放的全部注入层级收敛为一个可配置提示词注入引擎——注入什么、注入到哪一层、何时注入，全由提示词配置决定。
 
-DSH 生态的提示词注入标准层：一个 `prompt-config-engine.mjs` 接线官方六个插入点（`agent/pre-step`、`systemPrompt.section`、`systemPrompt.context`、`agent/request`、`llm/stream`、`tools/*`），内置五个预设（四个官方基型 + 自定义空白，默认 `standard`），开箱即用。
+DSH 生态的提示词注入标准层：一个 `prompt-config-engine.mjs` 接线官方六个插入点（`agent/pre-step`、`systemPrompt.section`、`systemPrompt.context`、`agent/request`、`llm/stream`、`tools/*`），内置五个预设（四个官方基型 + 自定义空白，默认 `pt-standard`），开箱即用。
 
 > 能力来源：工具目录锚定与晋升门控移植自 [dsh-anchored-standard](https://github.com/xiaobright/dsh-anchored-standard)（MIT，上游已于 2026-09-10 冻结），近距离引导参考 [dsh-router-standard](https://github.com/yjh051108/dsh-router-standard)，缓存铁律参考 [dsh-super-injector](https://github.com/yjh051108/dsh-super-injector)。**本项目只移植引擎能力，不再分发上游预设**：锚定/深思链路以引擎模块与参数开关提供，由使用者在自己的预设里按需装配。
 
@@ -22,7 +22,7 @@ dsh --profile prompt-tool
 
 从 web 模板初始化会让 profile 自带 `@deepseek-ai/dsh-base` 与 `@deepseek-ai/dsh-web-app` 两层，无需额外的 Web 自愈步骤。`--from-default-profile` 只在 profile 不存在时创建，不要对既有 profile 反复执行；已初始化的 profile 不会被改写。
 
-技能**留在官方各自的技能根里**（项目 `.dsh/skills`、项目 `.agents/skills`、你添加的技能文件夹、`$DSH_HOME/skills`、`~/.agents/skills`、官方内置），插件不搬迁、不建链接、不改任何 `SKILL.md`。管理页按来源分组展示全部技能，标注来源优先级、调用状态与「是否被同名技能遮蔽」。插件**不内置任何技能**：包内没有 `skills/` 目录，也没有安装副本与内容哈希账本（`.prompt-tool-manifest.json` 已废弃并删除）；要什么技能就自己创建，或用管理页把已有技能包复制进来。
+技能**留在官方各自的技能根里**（项目 `.dsh/skills`、项目 `.agents/skills`、你添加的技能文件夹、`$DSH_HOME/skills`、`~/.agents/skills`、官方内置），插件不搬迁、不建链接，开关只改写技能的调用策略。管理页按来源分组展示文件，并按当前会话官方注册表标注同名遮蔽。插件不分发顶层 `skills/`：要什么技能就自行创建或复制导入。导入遇到同名目录时先提醒，用户确认后覆盖；成功后不保存技能历史版本。
 
 **停用 = 改写技能文件的调用策略**：模型端写 `disable-model-invocation`、用户端写 `user-invocable`，两端独立——模型目录、`skill` 工具与 `/名称` 命令各自生效，恢复写回显式 `false` / `true`。只改这两个键，注释、未知字段、其余键与正文逐字保留；写盘先同目录暂存再原子 rename。曾经用过的「注册层影子候选」方案已废弃：官方注册表按最近层无视优先级胜出，而官方文件提供方由预设常驻组合挂在预设层、本插件的提供方在全局层，影子候选必被覆盖（已在运行中的 DSH 真机复现）。状态文件 `$DSH_HOME/skills/.system/prompt-tool/skills.yml` 现在只保存引用目录 `folders`（v4），`settings.yaml` 只保留部署轴（预设 / AGENTS.md 等）。详见 [docs/skills-management.md](docs/skills-management.md)。
 
@@ -107,9 +107,9 @@ src/client/
 
 ## 预设参数体系
 
-预设目录名（预设 id）避开宿主内置预设：与内置同名（`cordis` / `minimal` / `ptc` / `standard`）的用户目录会被内置根遮蔽、
-永远不会被挂载，因此插件默认使用 `pt-standard`，并在种子化与工作台「新建」时把被占用的模板名落成 `pt-<模板名>`
-（创造模式的模板已对齐官方改名为 `cordis`，因此产出 `pt-cordis`）；激活到被占用的 id 时会自动归一化并写回设置。
+包内目录及定义 id 统一为 `pt-standard` / `pt-ptc` / `pt-minimal` / `pt-cordis` / `pt-custom`，默认 `pt-standard`。
+初始化直接按同名复制：缺哪个目录只补哪个，已有目录不覆盖，也不运行时探测官方名称或重命名。
+用户保存时以当前预设自身的 `preset.yml` 生成运行产物；现有用户预设不自动改名。
 
 预设行为由一份 `preset.yml` 单一配置源下发，共四层默认值，各层职责不重叠：
 

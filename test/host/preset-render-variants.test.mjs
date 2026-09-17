@@ -22,7 +22,7 @@ test.after(() => rmSync(home, { recursive: true, force: true }))
 // —— 内置基型对齐官方预设（原 builtin-presets-parity.test.mjs） ——
 
 function rowsOf(id) {
-  const dir = join(root, 'preset', id)
+  const dir = join(root, 'preset', `pt-${id}`)
   return parse(renderComposition(loadPresetSpec(dir), {}, dir), { logLevel: 'silent' })
 }
 
@@ -33,7 +33,7 @@ test('内置预设集合移除 liangshen 与 anchored，保留四个官方基型
     .filter((entry) => entry.isDirectory())
     .map((entry) => entry.name)
     .sort()
-  assert.deepEqual(dirs, ['cordis', 'custom', 'minimal', 'ptc', 'standard'])
+  assert.deepEqual(dirs, ['pt-cordis', 'pt-custom', 'pt-minimal', 'pt-ptc', 'pt-standard'])
   assert.equal(existsSync(join(root, 'preset', 'liangshen')), false)
   assert.equal(existsSync(join(root, 'preset', 'anchored')), false, 'anchored 预设已下线，不再随包分发')
 })
@@ -80,7 +80,7 @@ test('cordis 基础行顺序对齐官方 Cordis，但不再复制 tool-cordis（
     'tool-plugin-manager', 'prompt-config-engine',
   ])
   assert.ok(!ids.includes('tool-cordis'), 'tool-cordis 由官方 shipped「创造模式」(cordis) 预设提供')
-  const skill = readFileSync(join(root, 'preset/cordis/skills/editing-cordis-compositions/SKILL.md'), 'utf8')
+  const skill = readFileSync(join(root, 'preset/pt-cordis/skills/editing-cordis-compositions/SKILL.md'), 'utf8')
   assert.match(skill, /supplies `standard`, `ptc`, `minimal`, and `cordis`/)
   assert.doesNotMatch(skill, /supplies `standard`, `code`, `minimal`/)
 })
@@ -89,7 +89,7 @@ test('minimal 对齐 rc.2 单 shell 基型，以顶层 persona 段驱动官方 d
   const rows = rowsOf('minimal')
   const ids = idsOf(rows)
   assert.deepEqual(ids, ['persona', 'persistent-shell', 'prompt-config-engine'])
-  const spec = loadPresetSpec(join(root, 'preset', 'minimal'))
+  const spec = loadPresetSpec(join(root, 'preset', 'pt-minimal'))
   assert.equal(spec.persona.prefix, 'You are a helpful software engineer assistant.')
   assert.equal(spec.persona.complete, true)
   assert.equal(spec.persona.includeRuntimeContext, false)

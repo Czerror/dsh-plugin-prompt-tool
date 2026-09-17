@@ -23,7 +23,7 @@ const {
   removeCharacterFromPreset,
   requiredCharacterModules,
   syncImportedCharacterMemory,
-} = await import('../../lib/index.mjs')
+} = await import('../../src/host/characters.ts')
 
 const root = mkdtempSync(join(tmpdir(), 'pt-chara-root-'))
 const template = 'anchored'
@@ -362,7 +362,7 @@ test('移除：回退由本卡引入的模块，并清记录与导入标记', ()
   }
 })
 
-test('移除：另一张已导入卡也声明同一模块时不夺走', () => {
+for (const order of [['card-a', 'card-b'], ['card-b', 'card-a']]) test(`共享模块按 ${order.join(' → ')} 移除：最后一张卡移除后回退`, () => {
   const root = makeRoot({ modules: ['prompt-config-engine'] })
   try {
     for (const id of ['card-a', 'card-b']) {
@@ -375,12 +375,14 @@ test('移除：另一张已导入卡也声明同一模块时不夺走', () => {
     // 第二张卡的模块已在磁盘上，差集为空 → 不进记录，但它的 converted.yml 仍声明该模块。
     assert.deepEqual(root.read().meta.characterModules, { 'card-a': ['session-var-tools'] })
 
-    removeCharacterFromPreset(root.dir, root.template, 'card-a')
+    removeCharacterFromPreset(root.dir, root.template, order[0])
     assert.ok(root.read().modules.includes('session-var-tools'), '另一张卡仍声明该模块 → 保留')
+    assert.deepEqual(root.read().meta.characterModules, { 'card-a': ['session-var-tools'] },
+      '已知来源必须保留到最后一个消费者移除，即使引入卡先移除')
 
-    // 第二张卡没有引入记录（模块不是它加的）→ 不回退，宁可留模块也不误删。
-    removeCharacterFromPreset(root.dir, root.template, 'card-b')
-    assert.ok(root.read().modules.includes('session-var-tools'), '无引入记录的卡不回退模块')
+    removeCharacterFromPreset(root.dir, root.template, order[1])
+    assert.deepEqual(root.read().modules, ['prompt-config-engine'], '最后消费者移除后回退，预设原有模块保留')
+    assert.equal(root.read().meta.characterModules, undefined, '完成回退后清理来源记录')
   } finally {
     rmSync(root.dir, { recursive: true, force: true })
   }
@@ -465,5 +467,4 @@ test('判据纯函数：记录容错、未知模块保守保留、消费者判�
   assert.equal(characterModuleStillNeeded('tool-config-engine', { ...empty, customTools: true }), true)
   assert.equal(characterModuleStillNeeded('unknown-module', empty), true, '未知模块保守保留')
 })
-
 

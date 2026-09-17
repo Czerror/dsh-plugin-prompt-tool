@@ -144,14 +144,16 @@ test('TUI：未知 id 与缺 id 分别给出错误与用法', async () => {
   assert.match(usage.text, /config <id> on\|off\|toggle/)
 })
 
-test('TUI：/prompt-tool skill 支持带空格的技能目录名', async () => {
+test('TUI：声明名与目录名不同，展示与操作都使用声明名', async () => {
   const { run, skillToggles } = makeTui({
-    skillCatalog: [{ folder: 'web ui', name: 'Web UI', valid: true, modelInvocable: true }],
+    skillCatalog: [{ folder: 'web ui', name: 'web-ui', valid: true, modelInvocable: true }],
   })
-  const result = await run('skill web ui on')
+  assert.match((await run('status')).text, /skill web-ui/)
+  assert.equal((await run('skill web ui on')).kind, 'error')
+  const result = await run('skill web-ui on')
   assert.equal(result.kind, 'success')
-  assert.match(result.text, /已把技能 web ui 设为 开/)
-  assert.deepEqual(skillToggles, [['web ui', true]])
+  assert.match(result.text, /已把技能 web-ui 设为 开/)
+  assert.deepEqual(skillToggles, [['web-ui', true]])
 })
 
 test('TUI：/prompt-tool config 支持带空格的 id', async () => {

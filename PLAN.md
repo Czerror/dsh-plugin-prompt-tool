@@ -1,169 +1,132 @@
-# 内置预设保留名表与安全 id 收口（补 `pt-cordis`）
+# 全量审查修复：预设同名复制与技能导入确认
 
-## 授权与基线
+## 授权、基线与最新语义
 
-- 用户指令（2026-09-18）：「用户预设目录下缺少 `pt-cordis`，使用 `creative` 会和官方冲突」；并确认默认预设切到 `pt-standard`。
-  **随后明确「这样才正确对齐官方」：插件包内模板应对齐官方命名（`creative` → `cordis`），数据侧产出 `pt-cordis`。**
-- 事实纠正（读源码得到）：官方 shipped 预设里并没有 `creative`——官方那个「创造模式」是 `cordis` 预设
-  （`deepseek-harness/packages/preset/agent-presets/presets/cordis/preset.yml` 的 `name: 创造模式`）。
-  因此 `creative` 目前**不被遮蔽**；但插件包内模板 `creative`（persona 通篇是 Cordis 组合创作指导）与官方 `cordis` 同源，
-  属官方语义上的保留名，且用户要求统一 `pt-` 命名——故纳入保留名表，用户目录改用 `pt-cordis`；
-  **插件包内模板目录同步对齐官方命名为 `preset/cordis`（`id: cordis`），「新建 → 创造模式」从此产出 `pt-cordis`。**
-- 代码基线：dev@`c21cc97`（工作树干净）。旧 PLAN 原文归档
-  [plan-preset-id-safety-c21cc97-20260918.md](.scratch/prompt-tool-framework/archive/plan-preset-id-safety-c21cc97-20260918.md)
-  （SHA-256 `78EF5A37C4C633E579BD0D2DED0C47B39B7DB7366C8CF66C2BC6639829B43B45`，与归档前 `PLAN.md` 逐字节一致）。
-- 本轮范围：`src/host/preset-id-safety.ts`、`src/host/manifest.ts`、`src/index.ts`、`test/host/**`、
-  `docs/architecture-params.md`、`CHANGELOG.md`、`README.md`、`PLAN.md`；
-  仓库内模板改名 `preset/creative` → `preset/cordis`（含 `preset.yml` 的 id 与 `scripts/rebuild-composition.mjs` 的目标映射）、
-  `AGENTS.md`/`NOTE.md` 的模板路径引用；
-  用户数据侧：`.agent-presets/creative` → `pt-cordis`、三个 `pt-*` 目录的 `preset.yml` id 收口、
-  `settings.yaml` 的 `agent-presets.default` 与 `prompt-tool.presetTemplate` → `pt-standard`。
-- **不在本轮范围**：工作台遮蔽标记；其他用户预设（`custom`/`liangshen`）的命名；宿主内置预设本身。
+- 用户授权（2026-09-18）：按本次审查结论执行所有修复，包含 4 项 P1、7 项 P2、导入失败残留风险、同名覆盖确认与预设命名简化。
+- 用户最新纠正覆盖此前表述：**某个包内 `pt-*` 预设目录不存在时，只补建该预设；其余现存目录不覆盖，不等待全部删除，也不全量重建。** 用户保存参数、模块、人设后正常物化当前预设。
+- 包内预设目录与 `preset.yml.id` 统一为 `pt-*`，初始化按同名复制，删除运行时官方占用探测、前缀转换及复制后重命名。现有用户预设目录不自动改名；定义复制后由既有生成器物化缺失产物，不额外引入发布预生成系统。
+- 技能不做内容版本管理。导入遇到同名目标时先列出冲突，用户确认后才覆盖；无冲突直接导入。成功覆盖不积累历史版本；失败事务仍恢复原文件。回收站删除保留既有语义。
+- 基线：`dev@015ac62267aec75d00072204bdb6ef395a5c4441`，工作树干净。旧 PLAN 已原文归档到 [plan-review-fixes-015ac62-20260918.md](.scratch/prompt-tool-framework/archive/plan-review-fixes-015ac62-20260918.md)，Git blob 与归档前一致：`a6f346f083621497417e3e0c839486cfccbfec9d`。
+- 不增加依赖，不修改宿主仓库，不改正在运行的 DSH 数据与服务；用户已授权最终中文 Conventional Commit 并推送 `origin/dev`。
 
-## 事实依据（读源码与真实目录得到，作为不变量）
+## 问题与验收映射
 
-1. 官方 presets（安装包 `0.1.6-alpha.2` 与本地 master 一致）只有 `cordis`/`minimal`/`ptc`/`standard`，其中 `cordis` 的
-   显示名是「创造模式」；插件包内模板 `creative` 的 `name` 与 persona 文本与之同源。
-2. 本机 `.agent-presets` 现有：`creative`、`custom`、`liangshen`、`pt-minimal`、`pt-ptc`、`pt-standard`；
-   `standard-copy`/`ptc-copy`/`minimal-copy` 与旧的被遮蔽目录已被清理，而 `settings.yaml` 的默认预设仍写着 `standard-copy`
-   （**指向不存在的目录，新会话会报找不到预设**）。
-3. `ensurePresetSeed` 只改目标目录名、不写 `preset.yml` 的 `id` ⇒ `pt-standard/preset.yml` 至今写着 `id: standard`；
-   插件内 `findPresetDir` 的「目录名优先、id 兜底」匹配会把 `standard` 解析到 `pt-standard` 目录，是真实歧义。
-4. `ensurePresetSeed` 在 `apply` 开头运行，此时占用集合只有磁盘探测结果；服务就绪后的 `refreshOccupiedFromHost`
-   只更新集合与归一化激活预设、**不补建** ⇒ 探测漏掉的 id 不会生成安全副本（本机缺 `pt-cordis` 即此形态）。
+| 编号 | 修复范围 | 验收行为 |
+|---|---|---|
+| R1 | 新建技能失败清理 | 链接根拒绝后原有技能和资源完整保留 |
+| R2 | 引用目录保存 | 首次与后续增删成功；不把 JSON 快照当 YAML 原文版本 |
+| R3 | 预设读取来源 | 现有 pt 预设自己的 modules/persona/variables/tools 参与生成 |
+| R4 | 启动默认同步 | 插件与宿主指向同一个实际存在的用户预设 |
+| R5 | 预设服务契约 | 删除已无用途的占用探测与不存在的 settings() 调用 |
+| R6 | 无效导入包 | 缺少或无效 SKILL.md 的目标在写盘前整批拒绝 |
+| R7 | 浏览器包路径 | 选中技能容器后每个技能直接落在用户技能根下一层，资源相对位置不变 |
+| R8 | 调用策略兼容 | 旧驼峰键在写入时转成官方连字符键；正文与其他字段保留 |
+| R9 | 同名技能裁决 | 清单与实际 registry 胜出路径一致，不用跨层 rank 或字典序猜测 |
+| R10 | TUI 身份 | 展示、帮助、处理器使用同一身份，目录名与声明名不同仍可操作 |
+| R11 | 角色模块回退 | 两卡正反顺序全部移除均回到原模块集；用户自带模块不删 |
+| R12 | 导入事务 | 任一项失败时覆盖项恢复、新增项清理，不留下活动技能 |
+| R13 | 覆盖确认 | 未确认零覆盖；取消零覆盖；仅确认的同名目标可覆盖；不留历史版本 |
+| R14 | 独立补建 | 单个 pt 目录缺失只补单个；现有预设字节保留；重复启动幂等 |
+| R15 | 候选刷新 | 文件事件失效不会被时间戳粒度阻挡，回归不依赖偶然时钟变化 |
 
-## 目标语义
+## 依赖与规划门禁
 
-| 场景 | 行为 |
-|---|---|
-| 包内模板名命中保留名表（`cordis`/`minimal`/`ptc`/`standard`/`creative`）或探测/服务给出的占用 | 种子化与「新建」落 `pt-<模板名>` |
-| 插件包内模板名 | 与官方 id 对齐（`creative` 模板改名为 `cordis`），「新建 → 创造模式」因此产出 `pt-cordis` |
-| 生成或克隆出的安全目录 | `preset.yml` 的 `id` 同步写成目标目录名（消除 id 与目录名不一致） |
-| 宿主服务就绪后拿到更全的占用集合 | 除归一化激活预设外，**补建缺失的安全副本** |
-| 已存在的用户预设（`custom`/`liangshen` 等非保留名） | 原样不动 |
+- 代码调用链已按审查证据与 rg 复核：host 资产函数 → index 协调器 → shared bridge → settings-bridge → store/SkillsPage；manifest/writePreset → preset 模板与生成脚本；characters apply/remove → preset modules；扫描/provider → registry → 清单/TUI。
+- 图谱仅作可选加速器，本轮复用已完成的全量审查定位与真实调用点，不生成违反仓库边界的 `.ai-memory` 流程产物。
+- [✔] 范围与执行授权；[✔] 写区互斥；[✔] 回归证据与失败回滚；[✔] 保留共享服务；[✔] 无新增依赖；[✔] 保留用户文件；[✔] 官方 API 按已安装包核对。
+- 导入契约先改 shared：请求增加可选 `overwrite: string[]`（用户确认的目标目录名），冲突失败载荷 `code: skills-overwrite-required` 与 `conflicts: string[]`。不使用版本 hash 或确认 token。
 
-## Wave 1：保留名表与占用集合合并
+## Wave 1：独立核心修复
 
 <task type="auto">
-  <name>T1：保留名表常量与并集纯函数</name>
-  <files>src/host/preset-id-safety.ts</files>
-  <action>新增 `SHIPPED_PRESET_ID_RESERVATIONS`（`cordis`/`minimal`/`ptc`/`standard`/`creative`，附「官方语义保留名」注释）
-  与 `mergeOccupiedPresetIds(...sources)` 纯函数（并集，忽略空值）。探测与服务结果统一经它合并，调用方不再各自拼 Set。</action>
-  <verify>纯函数单测：并集去重、空源不影响、保留名始终在结果里。</verify>
-  <security>仍只借用 id 名，不读其他根的预设内容。</security>
-  <done>「哪些名字属于官方」只有一处定义。</done>
-</task>
-
-## Wave 2：生成物 id 收口
-
-<task type="auto">
-  <name>T2：种子化与新建同步写 preset.yml 的 id</name>
-  <files>src/host/manifest.ts</files>
-  <action>新增 `retargetPresetId(dir, id)`：用 yaml Document API 把 `preset.yml` 的 `id` 改写为目标目录名（保留注释与未知字段，
-  内容无变化不落盘）；`ensurePresetSeed` 与 `cloneBuiltinPreset` 在复制后调用，失败只经 warn 暴露、不阻断复制。
-  同时把包内模板目录 `preset/creative` 改名为 `preset/cordis`（`id: cordis`，`skills/` 随目录移动），
-  `rebuild-composition.mjs` 的 `TARGET_PRESET_OVERRIDES` 随之取消（官方 `cordis` → 本地 `cordis`，同名不再需要覆盖）。</action>
-  <verify>种子化出 `pt-standard` 后其 `preset.yml` 的 `id` 为 `pt-standard`；`custom`/`creative` 等未撞名模板的 id 不变；
-  写入失败（目录只读）时复制仍成功并告警。</verify>
-  <security>只改该预设自己的 `preset.yml` 的 `id` 键，其余字节保留；写盘沿用同目录暂存 + rename。</security>
-  <done>目录名与 id 不再漂移。</done>
-</task>
-
-## Wave 3：服务就绪后补建
-
-<task type="auto">
-  <name>T3：占用集合更新后补建缺失模板</name>
-  <files>src/index.ts</files>
-  <action>把 apply 开头的「补建缺失模板」抽成 `seedMissingPresets()`，在 `refreshOccupiedFromHost` 更新集合后再次调用
-  （服务给出的集合比磁盘探测更全时，把新识别的保留名补成安全副本）。</action>
-  <verify>服务返回含 `creative` 的 system 集合时，用户目录出现 `pt-cordis`；集合未变化时不重复复制（幂等）。</verify>
-  <security>只写预设根，不触碰其他根与包内模板。</security>
-  <done>探测漏项不再是永久缺口。</done>
-</task>
-
-## Wave 4：回归测试
-
-<task type="auto">
-  <name>T4：保留名、id 收口与补建的行为回归</name>
-  <files>test/host/preset-id-safety.test.mjs、test/host/user-presets.test.mjs</files>
-  <action>补用例：保留名表含 `creative` 且并入探测结果；种子化在保留名集合下落 `pt-cordis` 且 `preset.yml` 的 `id`
-  等于目录名；未撞名模板 id 不变；`cloneBuiltinPreset('creative')` 落 `pt-cordis`。</action>
-  <verify>把保留名表清空时「creative 落 pt-cordis」用例必红；把 `retargetPresetId` 调用去掉时 id 收口用例必红。</verify>
-  <security>临时目录 + 临时 DSH_HOME，结束清理。</security>
-  <done>新语义有可失败的确定性回归。</done>
-</task>
-
-## Wave 5：数据侧切换、文档与交付
-
-<task type="auto">
-  <name>T5：用户目录切换到 pt-cordis 与默认预设收口</name>
-  <files>用户数据（不入库）：`.agent-presets/creative` → `pt-cordis`、三个 `pt-*` 的 preset.yml id、`settings.yaml`</files>
-  <action>目录改名 + 同步 `id` 与 `configsDir`；`pt-standard`/`pt-ptc`/`pt-minimal` 的 `preset.yml` id 收口为目录名；
-  `agent-presets.default` 与 `prompt-tool.presetTemplate` 改为 `pt-standard`（当前指向已删除的 `standard-copy`）。</action>
-  <verify>插件 `listPresets()` 列出 6 项且 id 与目录名一致；settings 指向存在的预设；宿主不再有「找不到预设」的条件。</verify>
-  <security>只改本插件拥有的预设目录与两个 settings 键；不改宿主内置预设。</security>
-  <done>用户目录与设置一致，且不再依赖会被遮蔽的命名。</done>
+  <name>T1：技能写盘、包规范化与覆盖事务</name>
+  <files>src/host/skills-actions.ts、skills-config.ts、skills-import.ts、skills-policy.ts；对应 host 测试</files>
+  <action>仅清理本次新建目录；撤掉错误的跨调用内容版本参数；新包整批验证并按技能根规范化；冲突未确认返回名单；覆盖旧内容暂存在事务目录、成功清理、失败同时回滚覆盖与新增；旧策略键归一官方键。</action>
+  <verify>先复现 R1/R6/R7/R8/R12/R13，再运行现有资产、策略和状态测试；确认失败/取消/恶意路径均零越界写入。</verify>
+  <security>路径白名单、链接拒绝、大小限制、原子切换与异常回滚必须保留；不写实际 DSH_HOME。</security>
+  <done>所有定向行为回归通过，接口形状交主线程接线。</done>
 </task>
 
 <task type="auto">
-  <name>T6：文档、门禁、变异与提交</name>
-  <files>docs/architecture-params.md、CHANGELOG.md、README.md、PLAN.md、.ai-memory/</files>
-  <action>文档补保留名表与 id 收口；门禁 typecheck / lint / test / build / `git diff --check`；一组反向变异
-  （清空保留名表应红掉 `pt-cordis` 用例）；中文 Conventional Commit 推送 origin/dev；追加 `.ai-memory` 日志。</action>
-  <verify>门禁全绿；变异精确红；暂存只含本轮文件。</verify>
-  <security>不停止运行中的 DSH；`.ai-memory` 与 `.scratch` 不入库。</security>
-  <done>本轮交付完成。</done>
+  <name>T2：包内预设命名与自身定义生成</name>
+  <files>preset/、src/host/manifest.ts、paths.ts、write-preset.ts、preset-id-safety.ts、src/shared/preset-ids.ts、scripts/rebuild-composition.mjs；对应 preset/host/engine 测试</files>
+  <action>包内目录和 id 统一 pt 前缀；种子与克隆直接同名复制；删除占用探测和反向模板映射；按单个缺失目录补建；已有预设使用自身定义生成。生成器的官方来源映射仅留在构建阶段。</action>
+  <verify>包内 id 与目录一致；单个缺失只补单个；已有内容保持；生成变量与模块来自自身；官方组合快照重建后契约一致。</verify>
+  <security>不移动、覆盖用户实际预设；不修改宿主、官方 fixture 的原始 id；生成快照只用固定脚本。</security>
+  <done>核心预设回归通过，index 接线迁移要点明确。</done>
+</task>
+
+<task type="auto">
+  <name>T3：角色卡共享模块来源回退</name>
+  <files>src/host/characters.ts、test/host/characters.test.mjs</files>
+  <action>保留卡引入模块的来源直到最后消费者移除，避免第一张卡移除时丢失回退依据；区分用户自带模块与无记录老卡。</action>
+  <verify>两卡按正序/逆序移除均回原模块集；单卡、重应用、预设自带模块与仍有消费者的反例通过。</verify>
+  <security>不删用户原模块，不改角色原文件，不重建实际预设。</security>
+  <done>角色卡应用/移除对称且与顺序无关。</done>
+</task>
+
+## Wave 2：运行时与界面接线
+
+<task type="auto">
+  <name>T4：真实候选裁决、刷新与 TUI 身份</name>
+  <files>src/host/skills-scan.ts、skills-refresh.ts、skills-provider.ts、src/runtime/tui.ts；对应扫描、候选、TUI 测试</files>
+  <action>同名标注消费 registry 的实际结果；同层相同 rank 遵循原顺序；文件事件真实失效缓存；TUI 使用展示一致的声明名并处理同名歧义。</action>
+  <verify>两个引用根反字典序、跨 scope 同名、等长即时改写、目录与声明名不同；使用真实 registry 的行为断言。</verify>
+  <security>未知作用域不伪造胜出者，不改变官方注册行为；watcher 由 disposer 清理。</security>
+  <done>R9/R10/R15 及对应接线通过。</done>
+</task>
+
+<task type="auto">
+  <name>T5：协调器、bridge 与覆盖确认交互</name>
+  <files>src/index.ts、src/shared/bridge-contract.ts、src/runtime/settings-bridge.ts、src/client/data/、src/client/features/skills/、src/client/locales.ts；shared/host/client 契约与 smoke</files>
+  <action>同步预设简化接口并修正启动宿主 default；引用文件夹保存不再传错版本；bridge 严格校验确认名单，返回 409 冲突；store 保存本次导入载荷，复用 ConfirmDialog，确认后再提交，取消丢弃在途意图。</action>
+  <verify>真实 apply 与宿主形状；真实 handler 首次冲突零写入、确认成功、取消不写、新增冲突再次提示；浏览器两个导入入口、失败恢复、忙期与同名提示。</verify>
+  <security>确认仅授权已展示目录；不得自动确认；保留 loopback/Origin/Host/body 上限与其他指令文件版本保护。</security>
+  <done>R2/R3/R4/R5/R9/R13/R14 端到端闭合。</done>
+</task>
+
+## Wave 3：生成、完整验证与交付
+
+<task type="auto">
+  <name>T6：文档、生成快照与全量门禁</name>
+  <files>README.md、docs/skills-management.md、docs/architecture-params.md、docs/SillyTavern.md、docs/ui-architecture.md、NOTE.md、CHANGELOG.md、AGENTS.md 路径引用、PLAN.md；生成物</files>
+  <action>同步稳定行为与新模板路径；按固定输入运行 rebuild:composition、sync:yaml、build；主线程复核全部补丁和原反例，运行 typecheck/lint/test/build/diff --check。</action>
+  <verify>完整 test 全绿；原反例均转绿；版本化快照无手工修改；未产生额外部署改动。</verify>
+  <security>测试 cwd 与临时 DSH_HOME 在 D:/AI/workspase/_temp，清理本轮临时文件，不停止共享 DSH。</security>
+  <done>所有审查项有已验证状态，无遗留失败。</done>
+</task>
+
+<task type="auto">
+  <name>T7：项目记忆、提交与推送</name>
+  <files>PLAN.md、.ai-memory/20260918/daily.md、本轮任务文件</files>
+  <action>追加最新逐项补建纠正与修复证据，更新旧错误记忆；只暂存本次文件（排除 .ai-memory），创建中文 Conventional Commit 并推送 origin/dev。</action>
+  <verify>暂存 diff、工作树、提交 SHA 与远端分支一致；交付说明需要用户重启 DSH 后生效。</verify>
+  <security>不推 main、不创建 PR；推送失败保留本地提交并报告；不写任何凭证。</security>
+  <done>提交与推送完成，交付可追溯。</done>
 </task>
 
 ## 回滚
 
-- 代码：`git revert` 本轮提交。
-- 数据：目录名改回 `creative`、三个 `pt-*` 的 `preset.yml` id 与 `settings.yaml` 的默认预设改回原值即可；不涉及删除。
+- 代码通过本次提交的 git revert 回滚，不重写历史。
+- 新导入在确认前无磁盘变化；确认后事务失败即恢复原目录，成功后不保存技能历史版本。
+- 预设只创建缺失的本插件目录，已有用户定义不被初始化覆盖；运行中 DSH 不做重启或数据迁移。
 
-## Task Summary 与状态
+## Task Summary 与执行状态
 
-- 当前：T1–T6 执行中（执行记录与门禁结果在本节回填）。
+- 基线验证：审查轮 typecheck/lint/build/diff --check 通过，test 1058/1058；缺陷探针均已复现。
+- R1/R6/R7/R8/R12/R13：技能资产与调用策略回归通过；创建失败保留原件、容器路径归一、无效包整批拒绝、覆盖先确认、新增及覆盖项一起回滚、旧键转官方键。成功覆盖不留历史目录。
+- R2/R3/R4/R5/R9/R14：真实 apply、writer、handler 与 registry 回归通过；引用保存、自身变量/模块生成、启动默认同步、会话 cwd/scope、单项补建均已验证。运行时占用探测整层删除。
+- R10/R11/R15：TUI 声明名操作、角色卡正反移除顺序、文件事件强制失效候选回归通过。
+- 两个导入入口的真实 Edge smoke 已验证确认前无覆盖重发、取消不写、确认携带准确名单并复用上传载荷；真实已安装 alpha.2 filesystem provider 验证旧键转换后可发现且调用策略正确。
+- 完整门禁：typecheck、lint、test **1070/1070（0 跳过）**、build、diff --check 通过。`rebuild:composition` 使用仓库固定 DSH fixture；`sync:yaml` 使用已安装 yaml@2.9.0，两份分发快照无额外内容漂移。
+- 执行偏差：三个子代理因服务 403（余额不足）中断，已由主线程接管、复核并完成。完整测试期间发现浏览器 DevToolsActivePort 的 EBUSY 竞态，最小修复为等待文件可读且端口完整；前轮旧路径/契约失败已消除。未修改运行中的 DSH 或真实用户预设。
+- 当前仅余提交与 origin/dev 推送；需要用户重启 DSH 后加载新插件代码。
 
-### 执行记录
-
-- **T1（保留名表与并集）**：`src/host/preset-id-safety.ts` 新增 `SHIPPED_PRESET_ID_RESERVATIONS`
-  （`cordis`/`minimal`/`ptc`/`standard`/`creative`）与 `mergeOccupiedPresetIds(...sources)`；
-  占用集合统一为「保留名表 ∪ 磁盘探测 ∪ 宿主服务」，探测与服务都拿不到时仍按保留名表避让。
-- **T2（模板对齐官方 + id 收口）**：包内模板 `preset/creative` → `preset/cordis`（`id: cordis`，`skills/` 随目录移动）；
-  `rebuild-composition.mjs` 的 `TARGET_PRESET_OVERRIDES` 清空（官方 `cordis` 不再需要目标覆盖），
-  新增库模块 `tool-plugin-manager`（cordis 启用态）与 `tool-plugin-manager-disabled`（standard/ptc 的 `disabled: true` 版），
-  `standard`/`ptc` 模板 modules 相应加行；`manifest.ts` 新增 `retargetPresetId`，`ensurePresetSeed` 与 `cloneBuiltinPreset`
-  复制后把 `preset.yml` 的 `id` 收口为目标目录名。
-- **T3（服务后补建 + 补建保护）**：`src/index.ts` 把种子化抽成 `seedMissingPresets()`，启动与 `refreshOccupiedFromHost`
-  更新集合后各跑一次；补建循环遇到目录名属于保留名的旧目录时跳过并告警（避免一次白写中断其它预设的重建）。
-- **T4（回归）**：`preset-id-safety.test.mjs` 新增保留名表与并集用例；`user-presets.test.mjs` 新增
-  「保留名表下创造模式模板落 `pt-cordis` 且 id 收口」「克隆落 `pt-cordis`」两组；受影响的三处既有期望值随官方行结构更新。
-- **T5（用户数据，不入库）**：`.agent-presets/creative` → `pt-cordis`；四个 `pt-*` 预设用**包内新模板**重建
-  （`rematerialize` 会以用户目录自身为模板，旧副本挡住包内新版，故先按模板重铺再渲染），id 与目录名收口；
-  `settings.yaml` 的 `agent-presets.default` 与 `prompt-tool.presetTemplate` → `pt-standard`；
-  **发现卡库 `.characters` 已在早前的清理中被删除**，按本会话早期读到的原文重建 `.characters/ponytail/converted.yml`
-  并重新应用到 `pt-standard`（`apply` 返回 `count: 4`，`importedCharacters: [ponytail]`）。
-- **T6（官方漂移同步）**：随官方 `dsh-0.1.6-alpha.2`（`ddefc45f`）：`cordis` persona 补 5 段
-  （plugin_manager / Creator 模式 UI 插件 / `cordis_inspect_*` / MCP / installed bundles）、`standard`·`ptc`·`cordis` 新增
-  `tool-plugin-manager` 行、`cordis` 两个技能同步为官方新正文；`engine/compositions/library/` 重建（22 处仅为来源提交号刷新，
-  另新增 2 个模块），`test/fixtures/dsh/current` 快照与 `PROVENANCE.md`（来源提交 + 10 个文件指纹）同批更新。
-
-### 反向变异验证
-
-| 变异 | 期望失败 | 实测结果 |
-|---|---|---|
-| `SHIPPED_PRESET_ID_RESERVATIONS` 清空 | 保留名表相关用例 | **恰好 3 条红**（保留名表、种子化 `pt-cordis`、克隆 `pt-cordis`），其余 20 条绿 |
-
-变异已回退；回退后全量 1058/1058 通过。
-
-### 门禁结果
-
-- `typecheck` ✓、`lint` 0 warning 0 error ✓、`build` ✓、`test` **1058/1058** ✓、`git diff --check` ✓。
-- 未做（明确不在本轮范围）：工作台遮蔽标记；`custom`/`liangshen` 的命名；宿主内置预设本身。
-
-[✔] Wave 1 / T1：保留名表常量与并集纯函数
-[✔] Wave 2 / T2：种子化与新建同步写 preset.yml 的 id、包内模板对齐官方命名（`creative` → `cordis`）
-[✔] Wave 3 / T3：占用集合更新后补建缺失模板
-[✔] Wave 4 / T4：保留名、id 收口与补建的行为回归
-[✔] Wave 5 / T5：用户目录切换到 pt-cordis 与默认预设收口
-[✔] Wave 5 / T6：文档、门禁、变异与提交
+[✔] Wave 0：授权、最新语义、旧 PLAN 原文归档与新计划
+[✔] Wave 1 / T1：技能资产与策略修复
+[✔] Wave 1 / T2：包内预设命名与生成来源
+[✔] Wave 1 / T3：角色卡模块回退
+[✔] Wave 2 / T4：候选、刷新与 TUI
+[✔] Wave 2 / T5：协调器、bridge 与 UI
+[✔] Wave 3 / T6：文档与完整门禁
+[ ] Wave 3 / T7：记忆、提交与 origin/dev 推送

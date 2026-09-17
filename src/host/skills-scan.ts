@@ -3,6 +3,7 @@
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
+import type { SkillSummary } from '@deepseek-ai/dsh-skill'
 import { parseFrontmatter } from '../runtime/skills-parse.ts'
 import {
   SKILL_MARKER,
@@ -158,21 +159,9 @@ export function rootsFingerprint(roots: readonly ScanRoot[]): string {
   }).join(';')
 }
 
-/** 同名裁决：按来源优先级升序取首个有效技能，其余标注"被遮蔽"。 */
-export function markWinners(skills: readonly ScannedSkill[]): Map<string, string> {
-  const winners = new Map<string, string>()
-  for (const skill of [...skills].sort((left, right) => left.rank - right.rank || left.id.localeCompare(right.id))) {
-    if (!skill.valid || winners.has(skill.name)) continue
-    winners.set(skill.name, skill.id)
-  }
-  return winners
-}
-
-/** 扫描结果 → 清单条目（附加同名遮蔽信息；调用策略直接取自 frontmatter）。 */
+/** 扫描只提供文件事实；作用域内谁胜出由官方注册表提供。 */
 export function catalogFromScan(skills: readonly ScannedSkill[]): SkillCatalogEntry[] {
-  const winners = markWinners(skills)
   return skills.map((skill) => {
-    const winnerId = winners.get(skill.name)
     return {
       id: skill.id,
       name: skill.name,
@@ -185,8 +174,21 @@ export function catalogFromScan(skills: readonly ScannedSkill[]): SkillCatalogEn
       ...(skill.issue !== undefined ? { issue: skill.issue } : {}),
       modelInvocable: skill.modelInvocable,
       userInvocable: skill.userInvocable,
-      ...(winnerId !== undefined && winnerId !== skill.id ? { winnerId } : {}),
       path: skill.file,
     }
+  })
+}
+
+/** 将当前会话官方注册表的胜出路径映射回文件清单，不重新实现它的作用域与顺序规则。 */
+export function withSkillWinners(entries: readonly SkillCatalogEntry[], resolved: readonly Pick<SkillSummary, 'name' | 'path'>[]): SkillCatalogEntry[] {
+  const pathKey = (path: string): string => process.platform === 'win32' ? resolve(path).toLowerCase() : resolve(path)
+  const winners = new Map(resolved.map((skill) => [skill.name, skill]))
+  return entries.map(({ winnerId: _previous, ...entry }) => {
+    const winner = winners.get(entry.name)
+    if (!entry.valid || winner === undefined) return entry
+    if (winner.path !== undefined && entry.path !== undefined && pathKey(winner.path) === pathKey(entry.path)) return entry
+    const visible = entries.find((other) => other.name === winner.name && other.path !== undefined
+      && winner.path !== undefined && pathKey(other.path) === pathKey(winner.path))
+    return { ...entry, winnerId: visible?.id ?? `registry:${winner.name}` }
   })
 }

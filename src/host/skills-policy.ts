@@ -10,14 +10,14 @@ import { existsSync, lstatSync, readFileSync, renameSync, unlinkSync, writeFileS
 import { randomUUID } from 'node:crypto'
 import { basename, dirname, join } from 'node:path'
 import { isAbsolute } from 'node:path'
-import { Document, isMap, parseDocument, visit } from 'yaml'
+import { Document, isMap, isNode, isScalar, parseDocument, visit } from 'yaml'
 import { SKILL_MARKER, invocationForScope, type SkillCatalogEntry, type SkillInvocation, type SkillPolicyScope } from '../shared/skills.ts'
 
 const BOM = '\ufeff'
 /** 与 runtime/skills-parse.ts 同一套 frontmatter 边界（容忍 CRLF 与缺失尾换行）。 */
 const FRONTMATTER = /^---\r?\n([\s\S]*?)\r?\n---(\r?\n|$)/
 
-/** 官方键与历史驼峰写法：已有哪个就改哪个，都没有才新增官方连字符键。 */
+/** 读取兼容旧驼峰写法，写入统一为官方连字符键。 */
 const MODEL_KEYS = ['disable-model-invocation', 'disableModelInvocation'] as const
 const USER_KEYS = ['user-invocable', 'userInvocable'] as const
 
@@ -85,18 +85,29 @@ export function readSkillInvocation(file: string): SkillPolicyRead {
   }
 }
 
-/** 写入一个键：已有键（含驼峰写法）就地改写，都没有才新增官方连字符键。
- *  返回是否真的变化，供「内容无变化不落盘」判定。 */
+/** 保留 YAML 节点与注释，把旧策略键归一为官方键；共存的旧键必须删除。 */
 function writeKey(doc: Document, keys: readonly string[], value: boolean): boolean {
-  for (const key of keys) {
-    const existing = asBoolean(doc.get(key))
-    if (existing === value) return false
-    if (doc.has(key)) {
-      doc.set(key, value)
-      return true
-    }
+  const canonical = keys[0]!
+  const legacy = keys.slice(1).filter((key) => doc.has(key))
+  if (legacy.length === 0 && asBoolean(doc.get(canonical)) === value) return false
+  if (!isMap(doc.contents)) throw new Error('frontmatter 必须是 YAML 映射')
+  const pairs = doc.contents.items
+  const pairFor = (key: string) => pairs.find((pair) => isScalar(pair.key) && pair.key.value === key)
+  if (!doc.has(canonical) && legacy.length > 0) {
+    const pair = pairFor(legacy.shift()!)!
+    if (isScalar(pair.key)) pair.key.value = canonical
   }
-  doc.set(keys[0]!, value)
+  doc.set(canonical, value)
+  const target = pairFor(canonical)!
+  for (const key of legacy) {
+    const pair = pairFor(key)!
+    // 重复策略键上的说明仍是用户内容，删除键前把说明移到官方键前面。
+    const comments = [pair.key, pair.value].flatMap((node) => isNode(node) ? [node.commentBefore, node.comment] : []).filter(Boolean)
+    if (isScalar(target.key) && comments.length > 0) {
+      target.key.commentBefore = [target.key.commentBefore, ...comments].filter(Boolean).join('\n')
+    }
+    doc.delete(key)
+  }
   return true
 }
 
@@ -122,7 +133,7 @@ export function setSkillInvocation(file: string, scope: SkillPolicyScope): Skill
     const target = invocationForScope(scope)
     // 两个键的语义不同：`disable-model-invocation` 表达的是「禁用模型调用」，`user-invocable` 表达的是
     // 「允许用户调用」。前者必须取反写入——写成原值会让两端语义整体反转（探针实测过这个错误）。
-    const modelChanged = writeKey(parsed.doc, MODEL_KEYS, !target.modelInvocable)
+    const modelChanged = writeKey(parsed.doc, [...MODEL_KEYS, 'modelInvocable'], !target.modelInvocable)
     const userChanged = writeKey(parsed.doc, USER_KEYS, target.userInvocable)
     if (!modelChanged && !userChanged) return { ok: true, changed: false, invocation: target }
     const content = `${parsed.bom}---\n${parsed.doc.toString()}---${parsed.rest}`

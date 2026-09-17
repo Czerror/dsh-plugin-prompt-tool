@@ -43,7 +43,7 @@ test('全部内置预设声明的模块都存在，且为合法 entry-list 模�
       assert.match(readFileSync(file, 'utf8'), /^- id:/m, `${dir}: ${name} must be a top-level entry-list module`)
     }
   }
-  const standard = parse(read('preset/standard/preset.yml'), { logLevel: 'silent' })
+  const standard = parse(read('preset/pt-standard/preset.yml'), { logLevel: 'silent' })
   assert.ok(standard.modules.includes('command-goal'), '官方 standard 系预设应接入 command-goal')
   for (const name of ['character-tools', 'world-book-tools', 'session-var-tools', 'tool-config-engine']) {
     assert.equal(standard.modules.includes(name), false, `${name} 只由 ST 转换按需装配`)
@@ -290,7 +290,7 @@ test('rebuild-composition：动态发现官方预设并拒绝缺行、重复和�
     assert.match(present, /^# source: .*\/packages\/preset\/agent-presets\/presets\/standard\/agent\.cordis\.yml$/m)
 
     const before = readFileSync(join(library, 'tool-web.yml'), 'utf8')
-    const file = join(root, 'preset', 'standard', 'preset.yml')
+    const file = join(root, 'preset', 'pt-standard', 'preset.yml')
     const original = readFileSync(file, 'utf8')
     writeFileSync(file, original.replace('  - tool-web\n', ''), 'utf8')
     const missing = run(root, upstream)
@@ -318,7 +318,7 @@ test('rebuild-composition：缺失官方预设或必要技能资产时 fail loud
   const root = fixture()
   try {
     const upstream = upstreamFixture(root)
-    rmSync(join(root, 'preset', 'cordis', 'skills', 'editing-cordis-compositions', 'SKILL.md'))
+    rmSync(join(root, 'preset', 'pt-cordis', 'skills', 'editing-cordis-compositions', 'SKILL.md'))
     const missingAsset = run(root, upstream)
     assert.notEqual(missingAsset.status, 0)
     assert.match(missingAsset.stderr + missingAsset.stdout, /required asset missing/)
@@ -328,7 +328,7 @@ test('rebuild-composition：缺失官方预设或必要技能资产时 fail loud
     writeFileSync(join(extra, 'agent.cordis.yml'), '- id: demo\n  name: demo\n', 'utf8')
     const missingTarget = run(root, upstream)
     assert.notEqual(missingTarget.status, 0)
-    assert.match(missingTarget.stderr + missingTarget.stdout, /no local target preset\/new-preset\/preset\.yml/)
+    assert.match(missingTarget.stderr + missingTarget.stdout, /no local target preset\/pt-new-preset\/preset\.yml/)
   } finally {
     rmSync(root, { recursive: true, force: true })
   }

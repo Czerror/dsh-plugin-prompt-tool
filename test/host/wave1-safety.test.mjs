@@ -142,7 +142,7 @@ test('writePreset：13+ 配置生成 4 位零填充文件名，字典序稳定',
     }))
     writePreset('PROMPT', { presetDir, presetOrder: 5, promptConfigs: many })
     // 缺省 presetTemplate = standard；standard 基型无自带 promptConfigs。
-    const files = readdirSync(join(presetDir, 'standard', 'prompt-configs'))
+    const files = readdirSync(join(presetDir, 'pt-standard', 'prompt-configs'))
       .filter((name) => name !== 'variables.yml' && name.endsWith('.yml'))
       .sort()
     // 全部 4 位前缀且字典序 = 数值序（00 与 100+ 不串位）。
@@ -159,7 +159,6 @@ test('writePreset：13+ 配置生成 4 位零填充文件名，字典序稳定',
 })
 
 rmSync(home, { recursive: true, force: true })
-
 
 
 

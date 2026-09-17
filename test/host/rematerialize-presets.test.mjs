@@ -37,7 +37,7 @@ function runWithFsMock(home, setup) {
 }
 
 /** 用包内模板播种一个插件格式用户预设目录。 */
-function seedPreset(home, name, template = 'minimal') {
+function seedPreset(home, name, template = 'pt-minimal') {
   const dir = join(home, '.agent-presets', name)
   mkdirSync(dir, { recursive: true })
   cpSync(join(ROOT, 'preset', template), dir, { recursive: true })
@@ -83,7 +83,7 @@ test('rematerialize-presets：手写/官方格式预设（无 modules/params）�
 test('rematerialize-presets：dry-run 只报告不写盘', () => {
   const home = mkdtempSync(join(tmpdir(), 'pt-remat-'))
   try {
-    const dir = seedPreset(home, 'cordis', 'cordis')
+    const dir = seedPreset(home, 'pt-cordis', 'pt-cordis')
     const skill = join(dir, 'skills', 'editing-cordis-compositions', 'SKILL.md')
     writeFileSync(skill, 'dry-run 不刷新\n', 'utf8')
     mkdirSync(join(dir, 'skills', 'extra'))
@@ -92,8 +92,8 @@ test('rematerialize-presets：dry-run 只报告不写盘', () => {
     const entries = readdirSync(home, { recursive: true }).sort()
     const output = run(home, '--dry-run', '--refresh-skills')
     assert.match(output, /dry-run/)
-    assert.match(output, /would materialize cordis/)
-    assert.match(output, /would refresh skills cordis/)
+    assert.match(output, /would materialize pt-cordis/)
+    assert.match(output, /would refresh skills pt-cordis/)
     assert.equal(readFileSync(skill, 'utf8'), 'dry-run 不刷新\n')
     assert.equal(readFileSync(join(dir, 'skills', 'extra', 'SKILL.md'), 'utf8'), '独有技能\n')
     assert.deepEqual(readdirSync(home, { recursive: true }).sort(), entries, '不创建暂存目录或备份')
@@ -127,13 +127,13 @@ test('rematerialize-presets：引擎参数按 preset.yml 解析，不回落 writ
 test('rematerialize-presets：预设内嵌 skills 漂移只报告，不覆盖本机副本', () => {
   const home = mkdtempSync(join(tmpdir(), 'pt-remat-'))
   try {
-    const dir = seedPreset(home, 'cordis', 'cordis')
+    const dir = seedPreset(home, 'pt-cordis', 'pt-cordis')
     const skill = join(dir, 'skills', 'editing-cordis-compositions', 'SKILL.md')
     assert.ok(existsSync(skill), '模板自带预设内嵌技能')
     writeFileSync(skill, '本机改动\n', 'utf8')
 
     const output = run(home)
-    assert.match(output, /stale skills cordis/, '漂移必须被报告')
+    assert.match(output, /stale skills pt-cordis/, '漂移必须被报告')
     assert.match(output, /1 stale skills/)
     assert.equal(readFileSync(skill, 'utf8'), '本机改动\n', '默认不得覆盖用户副本')
     assert.equal(readdirSync(dir).filter((name) => name.startsWith('skills.bak-')).length, 0)
@@ -145,13 +145,13 @@ test('rematerialize-presets：预设内嵌 skills 漂移只报告，不覆盖本
 test('rematerialize-presets：--refresh-skills 先备份再按包内模板刷新', () => {
   const home = mkdtempSync(join(tmpdir(), 'pt-remat-'))
   try {
-    const dir = seedPreset(home, 'cordis', 'cordis')
+    const dir = seedPreset(home, 'pt-cordis', 'pt-cordis')
     const skill = join(dir, 'skills', 'editing-cordis-compositions', 'SKILL.md')
     const packaged = readFileSync(skill, 'utf8')
     writeFileSync(skill, '本机改动\n', 'utf8')
 
     const output = run(home, '--refresh-skills')
-    assert.match(output, /refreshed skills cordis/)
+    assert.match(output, /refreshed skills pt-cordis/)
     assert.equal(readFileSync(skill, 'utf8'), packaged, '按包内模板刷新')
     const backups = readdirSync(dir).filter((name) => name.startsWith('skills.bak-'))
     assert.equal(backups.length, 1, '原副本先备份为 skills.bak-<时间戳>')
@@ -168,7 +168,7 @@ test('rematerialize-presets：--refresh-skills 先备份再按包内模板刷新
 test('rematerialize-presets：刷新保留独有文件和目录，只有 extra 时不重复备份', () => {
   const home = mkdtempSync(join(tmpdir(), 'pt-remat-'))
   try {
-    const dir = seedPreset(home, 'cordis', 'cordis')
+    const dir = seedPreset(home, 'pt-cordis', 'pt-cordis')
     const skills = join(dir, 'skills')
     const shared = join('editing-cordis-compositions', 'SKILL.md')
     const packaged = readFileSync(join(skills, shared), 'utf8')
@@ -178,7 +178,7 @@ test('rematerialize-presets：刷新保留独有文件和目录，只有 extra �
     writeFileSync(join(skills, shared), '原同名技能\n', 'utf8')
     const before = readdirSync(skills, { recursive: true }).sort()
 
-    assert.match(run(home, '--refresh-skills'), /refreshed skills cordis/)
+    assert.match(run(home, '--refresh-skills'), /refreshed skills pt-cordis/)
     assert.equal(readFileSync(join(skills, shared), 'utf8'), packaged, '同名文件按模板刷新')
     for (const extra of extras) {
       assert.equal(readFileSync(join(skills, extra), 'utf8'), `用户文件 ${extra}\n`, '独有文件仍在有效 skills 中')
@@ -202,7 +202,7 @@ test('rematerialize-presets：刷新保留独有文件和目录，只有 extra �
 test('rematerialize-presets：新 skills 切换失败时恢复旧目录，只清理本次暂存目录', () => {
   const home = mkdtempSync(join(tmpdir(), 'pt-remat-'))
   try {
-    const dir = seedPreset(home, 'cordis', 'cordis')
+    const dir = seedPreset(home, 'pt-cordis', 'pt-cordis')
     const skills = join(dir, 'skills')
     const skill = join(skills, 'editing-cordis-compositions', 'SKILL.md')
     writeFileSync(skill, '切换前原文\n', 'utf8')
@@ -239,13 +239,13 @@ test('rematerialize-presets：新 skills 切换失败时恢复旧目录，只清
 test('rematerialize-presets：暂存复制失败时 live 未被移走，不留下半成品或备份', () => {
   const home = mkdtempSync(join(tmpdir(), 'pt-remat-'))
   try {
-    const dir = seedPreset(home, 'cordis', 'cordis')
+    const dir = seedPreset(home, 'pt-cordis', 'pt-cordis')
     const skill = join(dir, 'skills', 'editing-cordis-compositions', 'SKILL.md')
     writeFileSync(skill, '复制前原文\n', 'utf8')
     const result = runWithFsMock(home, `
       const copy = fs.cpSync
       mock.method(fs, 'cpSync', (source, target, options) => {
-        if (source === ${JSON.stringify(join(ROOT, 'preset', 'cordis', 'skills'))}) {
+        if (source === ${JSON.stringify(join(ROOT, 'preset', 'pt-cordis', 'skills'))}) {
           if (fs.readFileSync(${JSON.stringify(skill)}, 'utf8') !== '复制前原文\\n') {
             throw new Error('live moved before staging completed')
           }
@@ -271,7 +271,7 @@ test('rematerialize-presets：暂存复制失败时 live 未被移走，不留�
 test('rematerialize-presets：刷新不沿同名目录链接外写，独有链接和旧链接保留', () => {
   const home = mkdtempSync(join(tmpdir(), 'pt-remat-'))
   try {
-    const dir = seedPreset(home, 'cordis', 'cordis')
+    const dir = seedPreset(home, 'pt-cordis', 'pt-cordis')
     // skills 刷新也适用于手写预设；跳过 writePreset，直接验证本脚本的链接边界。
     writeFileSync(join(dir, 'preset.yml'), 'name: cordis\norder: 0\n', 'utf8')
     const skills = join(dir, 'skills')
@@ -286,7 +286,7 @@ test('rematerialize-presets：刷新不沿同名目录链接外写，独有链�
     const target = readlinkSync(linked)
     const entries = readdirSync(outside, { recursive: true }).sort()
 
-    assert.match(run(home, '--refresh-skills'), /refreshed skills cordis/)
+    assert.match(run(home, '--refresh-skills'), /refreshed skills pt-cordis/)
     assert.equal(lstatSync(linked).isSymbolicLink(), false, '包内同名目录从模板刷新')
     assert.equal(readFileSync(join(linked, 'SKILL.md'), 'utf8'), packaged)
     assert.equal(readlinkSync(join(skills, 'extra-link')), target, '独有链接原样保留')

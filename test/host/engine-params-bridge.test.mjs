@@ -136,7 +136,7 @@ test('子代理模型路由与委派完整自定义：toolFilter + maxDepth 渲�
 })
 
 test('实例策略启用后主过滤不下沉 delegation，模型路由与 maxDepth 转交策略模块', () => {
-  const base = loadPresetSpec(resolvePresetDir('minimal'))
+  const base = loadPresetSpec(resolvePresetDir('pt-minimal'))
   const policy = {
     defaultProfile: 'base', ceiling: { allow: ['read'], deny: [] },
     profiles: [{ id: 'base', name: '基础', allow: ['read'], deny: [], modelSelectable: false }],
@@ -307,7 +307,7 @@ test('参数桥优先于 moduleConfigs 直写：UI 开关不被行级直写覆�
 })
 
 test('空白预设的 dormant moduleConfigs 不会隐式装配引擎能力', () => {
-  const base = loadPresetSpec(resolvePresetDir('custom'))
+  const base = loadPresetSpec(resolvePresetDir('pt-custom'))
   const spec = {
     ...base,
     moduleConfigs: {

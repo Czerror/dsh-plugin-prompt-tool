@@ -1,16 +1,10 @@
-// 补建其他预设时的内容隔离：激活预设的 promptConfigs 覆盖层不得写进目标预设。
-//
-// 背景（真实事故）：`applyState` 的补建循环为「非激活且需要重渲染」的预设调用
-// writePreset 时，原来透传了激活预设的 `options.promptConfigs`（settings 覆盖层）。
-// writePreset 把该覆盖层当作最高优先级，于是目标预设的 prompt-configs 被写成激活
-// 预设的内容——切换预设后注入的仍是旧预设文本，且组合带上渲染标记后不再重建（固化）。
-//
-// 观测点在插件入口：补建循环是内部闭包，只有驱动 apply() 才能覆盖调用方传参。
+// 入口行为回归：保存只物化当前预设，补建不改动任何已有目录。
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { parse } from 'yaml'
 
 // 隔离 DSH_HOME：paths.ts 模块级常量在 import 时求值，必须先设 env 再动态 import lib。
 const home = mkdtempSync(join(tmpdir(), 'pt-preset-isolation-'))
@@ -18,6 +12,7 @@ process.env.DSH_HOME = home
 const { apply, writePluginState } = await import('../../lib/index.mjs')
 
 function makeCtx(settingsValue) {
+  let onChange
   const makeSctx = () => ({
     settings: {
       describe: () => [],
@@ -28,6 +23,7 @@ function makeCtx(settingsValue) {
       installSection: (_owner, _ns, _schema, _entry, hooks) => {
         hooks.setSource(() => settingsValue)
         hooks.onChange()
+        onChange = hooks.onChange
       },
       get: () => undefined,
       mutate: async () => {},
@@ -40,6 +36,7 @@ function makeCtx(settingsValue) {
     get: () => undefined,
   })
   return {
+    save: () => { settingsValue.presetOrder += 1; onChange() },
     logger: { warn: () => {} },
     effect: (fn) => { fn(); return () => {} },
     on: () => () => {},
@@ -80,29 +77,57 @@ const readConfigs = (presetDir, id) => {
   return readdirSync(dir).map((name) => readFileSync(join(dir, name), 'utf8')).join('\n')
 }
 
-test('补建其他预设不得携带激活预设的 promptConfigs（切换目标内容隔离）', (t) => {
+test('补建只创建缺失目录，已有非当前预设的定义与资源保持原样', (t) => {
   t.after(() => rmSync(home, { recursive: true, force: true }))
   const presetDir = join(home, '.agent-presets')
   writePluginState({ seeded: true })
   // 激活预设：有一条独有配置，切换前它是「当前编辑上下文」。
   mkdirSync(join(presetDir, 'anchored'), { recursive: true })
   writeFileSync(join(presetDir, 'anchored', 'preset.yml'), presetYml('anchored', 'anchored-only', 'ANCHORED-ONLY-TEXT'), 'utf8')
-  // 目标预设：组合缺失 → needsPresetRender 为真 → 走补建循环；自身也有一条独有配置。
+  // 已有目录缺组合也不能自动重建；只有切换/保存当前预设才物化。
   mkdirSync(join(presetDir, 'target-preset'), { recursive: true })
   writeFileSync(join(presetDir, 'target-preset', 'preset.yml'), presetYml('target-preset', 'standard-only', 'STANDARD-ONLY-TEXT'), 'utf8')
 
   const value = settings('anchored')
-  apply(makeCtx(value), value)
+  const ctx = makeCtx(value)
+  apply(ctx, value)
+  assert.equal(readConfigs(presetDir, 'anchored'), '', '启动保留已有目录')
+  ctx.save()
 
-  // 目标预设：自身配置保留，激活预设的配置一个字都不能出现。
+  const original = readFileSync(join(presetDir, 'target-preset', 'preset.yml'), 'utf8')
   const target = readConfigs(presetDir, 'target-preset')
-  assert.match(target, /standard-only/, '目标预设自身配置必须渲染')
-  assert.doesNotMatch(target, /anchored-only/, '不得携带激活预设的配置 id')
-  assert.doesNotMatch(target, /ANCHORED-ONLY-TEXT/, '不得携带激活预设的配置正文')
-  assert.equal(existsSync(join(presetDir, 'target-preset', 'agent.cordis.yml')), true, '补建应产出可挂载的组合')
+  assert.equal(original, presetYml('target-preset', 'standard-only', 'STANDARD-ONLY-TEXT'))
+  assert.equal(target, '', '已有非当前预设不自动生成 prompt-configs')
+  assert.equal(existsSync(join(presetDir, 'target-preset', 'agent.cordis.yml')), false)
 
   // 激活预设照常渲染自己的配置（修复不得反向影响当前预设路径）。
   const active = readConfigs(presetDir, 'anchored')
   assert.match(active, /anchored-only/, '激活预设自身配置照常渲染')
   assert.doesNotMatch(active, /standard-only/, '激活预设也不应携带目标预设的配置')
+})
+
+test('当前 pt-standard 保存物化自身的变量和能力模块，其他预设不受影响', (t) => {
+  const presetDir = join(home, '.agent-presets')
+  t.after(() => rmSync(home, { recursive: true, force: true }))
+  for (const [id, value, module] of [
+    ['pt-standard', 'ACTIVE', 'promoted-code-mode'],
+    ['standard', 'OTHER', 'tool-bootstrap'],
+  ]) {
+    mkdirSync(join(presetDir, id), { recursive: true })
+    writeFileSync(join(presetDir, id, 'preset.yml'),
+      `id: ${id}\nname: ${id}\nmodules: [prompt-config-engine, ${module}]\nvariables:\n  owner: ${value}\n`, 'utf8')
+  }
+  writePluginState({ seeded: true })
+  const other = readFileSync(join(presetDir, 'standard', 'preset.yml'), 'utf8')
+  const value = settings('pt-standard')
+  const ctx = makeCtx(value)
+  apply(ctx, value)
+  assert.equal(existsSync(join(presetDir, 'pt-standard', 'agent.cordis.yml')), false, '启动不重建已有目录')
+  ctx.save()
+  const rows = parse(readFileSync(join(presetDir, 'pt-standard', 'agent.cordis.yml'), 'utf8'))
+  assert.ok(rows.some((row) => row.id === 'promoted-code-mode'))
+  assert.ok(!rows.some((row) => row.id === 'tool-bootstrap'))
+  assert.deepEqual(parse(readFileSync(join(presetDir, 'pt-standard', 'prompt-configs', 'variables.yml'), 'utf8')), { owner: 'ACTIVE' })
+  assert.equal(readFileSync(join(presetDir, 'standard', 'preset.yml'), 'utf8'), other)
+  assert.equal(existsSync(join(presetDir, 'standard', 'agent.cordis.yml')), false)
 })

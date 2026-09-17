@@ -43,9 +43,10 @@ function makeUserPresetDir(prefix) {
   return mkdtempSync(join(userPresetRoot, prefix))
 }
 
-function makeHarness() {
+function makeHarness(services = {}) {
   const handlers = new Map()
   const sctx = {
+    get: (name) => services[name],
     settings: {
       describe: () => [{ ns: 'prompt-tool', value: { promptText: 'P' }, base: {} }],
       get: (ns) => ns === 'agent-default-model'
@@ -168,12 +169,101 @@ test('settings bridge /skills-import 写入技能文件并触发目录刷新回�
     const payload = JSON.parse(res.body)
     assert.equal(payload.ok, true)
     assert.equal(payload.value.count, 1)
-    assert.equal(readFileSync(join(dir, 'bundle', 'demo', 'SKILL.md'), 'utf8'), '---\nname: demo\ndescription: demo\n---\n')
+    assert.equal(readFileSync(join(dir, 'demo', 'SKILL.md'), 'utf8'), '---\nname: demo\ndescription: demo\n---\n')
     assert.equal(existsSync(join(dir, '.system')), false, '导入不落受管实体库')
     assert.equal(refreshes, 1)
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
+})
+
+test('两个技能导入端点先报告冲突，确认名单才能覆盖，非法确认零写入', async () => {
+  const dir = mkdtempSync(join(bridgeHome, 'overwrite-'))
+  const source = join(dir, 'drop', 'demo')
+  const root = join(dir, 'skills')
+  mkdirSync(source, { recursive: true })
+  const marker = (body) => `---\nname: demo\ndescription: demo\n---\n${body}\n`
+  writeFileSync(join(source, 'SKILL.md'), marker('new'))
+  const { ctx, handlers } = makeHarness()
+  let refreshes = 0
+  registerSettingsBridge(ctx, 'prompt-tool', () => ({ available: false, providers: [] }),
+    () => skillsStateStub({ skillsRoot: root }), () => '', () => { refreshes += 1 })
+  for (const [endpoint, body] of [
+    ['skillsImport', { files: [{ path: 'demo/SKILL.md', content: Buffer.from(marker('new')).toString('base64') }] }],
+    ['skillsImportDirectory', { path: source }],
+  ]) {
+    mkdirSync(join(root, 'demo'), { recursive: true })
+    const target = join(root, 'demo', 'SKILL.md')
+    writeFileSync(target, marker('old'))
+    const call = async (extra = {}) => {
+      const res = fakeRes()
+      await handlers.get(PREFIX + BRIDGE_ENDPOINTS[endpoint])(fakeReq({
+        async *[Symbol.asyncIterator]() { yield Buffer.from(JSON.stringify({ ...body, ...extra })) },
+      }), res)
+      return { status: res.status, body: JSON.parse(res.body) }
+    }
+    const before = refreshes
+    const waiting = await call()
+    assert.equal(waiting.status, 409)
+    assert.equal(waiting.body.code, 'skills-overwrite-required')
+    assert.deepEqual(waiting.body.conflicts, ['demo'])
+    assert.equal(readFileSync(target, 'utf8'), marker('old'))
+    assert.equal(refreshes, before)
+    for (const overwrite of [true, null, 'demo', ['../demo'], [42]]) {
+      assert.equal((await call({ overwrite })).status, 400)
+      assert.equal(readFileSync(target, 'utf8'), marker('old'))
+    }
+    assert.equal((await call({ overwrite: ['different'] })).status, 409)
+    const saved = await call({ overwrite: ['demo'] })
+    assert.equal(saved.status, 200, JSON.stringify(saved.body))
+    assert.equal(saved.body.value.overwritten, 1)
+    assert.equal(readFileSync(target, 'utf8'), marker('new'))
+    assert.deepEqual(readdirSync(root), ['demo'], '成功覆盖不保存历史目录')
+    assert.equal(refreshes, before + 1)
+  }
+})
+
+test('bootstrap 与技能清单使用同一会话 cwd 和真实 registry scope 胜出结果', async () => {
+  const { Context } = await import('@deepseek-ai/cordis')
+  const { SkillRegistry } = await import('@deepseek-ai/dsh-skill')
+  const { createScope } = await import('@deepseek-ai/dsh-scope')
+  const app = new Context()
+  const registry = new SkillRegistry(app)
+  const key = {}
+  const scope = createScope(app, key)
+  const entries = ['custom', 'user-dsh'].map((source, i) => ({
+    id: source, source, rank: 300 + i * 100, name: 'demo', folder: 'demo', description: source,
+    dir: join(bridgeHome, source), path: join(bridgeHome, source, 'demo', 'SKILL.md'),
+    valid: true, modelInvocable: true, userInvocable: true,
+  }))
+  const provider = (entry) => ({ name: entry.source, list: async () => [{
+    name: entry.name, description: entry.description, provider: entry.source, source: entry.source,
+    rank: entry.rank, locator: entry.path, path: entry.path,
+    invocation: { modelInvocable: true, userInvocable: true },
+  }], get: async () => undefined })
+  const dispose = registry.registerProvider(() => provider(entries[0]))
+  scope.ctx.skills.registerProvider(() => provider(entries[1]))
+  const cwd = join(bridgeHome, 'project')
+  const { ctx, handlers } = makeHarness({ skills: registry, agents: {
+    get: (id) => id === 'current' ? { ctx: scope.ctx, session: { header: { cwd } } } : undefined,
+  } })
+  const seen = []
+  registerSettingsBridge(ctx, 'prompt-tool', () => ({ available: false, providers: [] }),
+    () => skillsStateStub({ listSkills: (dir) => { seen.push(dir); return entries } }), () => '')
+  try {
+    for (const endpoint of ['bootstrap', 'skillsList']) {
+      const res = fakeRes()
+      await handlers.get(PREFIX + BRIDGE_ENDPOINTS[endpoint])(fakeReq({
+        async *[Symbol.asyncIterator]() { yield Buffer.from(JSON.stringify({ sessionId: 'current' })) },
+      }), res)
+      assert.equal(res.status, 200, res.body)
+      const body = JSON.parse(res.body)
+      const skills = endpoint === 'bootstrap' ? body.skillCatalog : body.value.skills
+      assert.equal(skills.find((entry) => entry.id === 'custom').winnerId, 'user-dsh')
+      assert.equal(skills.find((entry) => entry.id === 'user-dsh').winnerId, undefined)
+      assert.equal(seen.at(-1), cwd)
+    }
+  } finally { await scope.dispose(); dispose() }
 })
 
 test('settings bridge /skills-import 拒绝空文件列表且不触发刷新', async () => {
@@ -507,7 +597,7 @@ test('预设列表、导出、复制、删除、新建与导入都作用于官�
   assert.equal(readFileSync(join(userPresetRoot, copied.id, 'preset.yml'), 'utf8'), exported.content)
   await call('presetDelete', { id: copied.id })
   assert.equal(existsSync(join(userPresetRoot, copied.id)), false)
-  const cloned = await call('presetClone', { id: 'custom' })
+  const cloned = await call('presetClone', { id: 'pt-custom' })
   assert.ok(existsSync(join(userPresetRoot, cloned.id, 'preset.yml')))
   const imported = await call('importPresetPackage', {
     files: [{ path: 'preset.yml', content: 'id: root-import\nmodules: []\n' }],
