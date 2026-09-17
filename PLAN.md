@@ -111,9 +111,19 @@
 - 偏差与说明：①迁移落在一次性运维脚本 `scripts/migrate-skills.mjs`（未新增运行时 `src/host/skills-migration.ts`）；②外部目录降级为导入来源后，客户端「目录引用」入口一并下线（`skillsDirs` 只读、新增来源筛选 / 创建 / 回收站 / 模型与用户调用开关）；③技能顺序与 rank 的写入结果纳入整体保存基线（审查 F9）；④`dirs` 清空下沉到受管库层，`patchSkillsConfig` 不再重复置空；⑤技能树按「最近存在的技能祖先」挂载，缺祖先的嵌套项作为根行（审查 F8）。
 - 回归入口：`docs/skills-management.md` §7 列出技能契约的全部测试与命令。
 
+## 真实迁移记录（T6，2026-09-17）
+
+- **只读预检**：真实技能根 90 个顶层项（87 个含 `SKILL.md` 的普通技能目录 + `artifacts` + `.prompt-tool-manifest.json`），0 个链接、0 个嵌套技能、0 个 `.disabled` 标记；旧状态在 `.system/prompt-tool/config.yml`（order 7 项，其中 5 项目录已不存在；无 rankBase）。
+- **执行**：`node scripts/migrate-skills.mjs --root "D:\AI\DeepSeek harness\.dsh\skills" --apply`；备份 `.skills-migration/20260917150416526`（87 个技能目录副本 + `migration.json`），回滚入口 `node scripts/migrate-skills.mjs --rollback "<该目录>\migration.json"`。
+- **验收（只读探针）**：`readManagedSkills` 87 条全部 valid、87 条 linked、0 条无效；87 份实体 `SKILL.md` 与备份逐字节哈希一致（0 漂移）；87 个根链接目标正确，`skills/<link>/SKILL.md` 可读；`artifacts`、旧账本与旧配置未被改动。
+- **迁移中发现并修复的缺陷**：真实技能库含名为 `prototype` 的技能，被身份黑名单拒绝导致 `skills.yml` 整库读取失败（`readManagedSkills` 返回 0 条）。修复：容器改为无原型对象、只拒绝 `__proto__`，并补两处回归（提交 `88a6b61`）。
+- **提交**：`b7f380f`（技能实体库与链接管理）、`88a6b61`（身份修复），均已推送 `origin/dev`。
+- **待用户操作**：重启 DSH 后新代码生效；重启前旧界面仍按「改名标记」语义操作实体，**此期间不要使用技能启停开关**（会改到 `.system/<id>/SKILL.md`）。
+- `.disabled` 恢复：实测 0 个标记，无需恢复。
+
 [✔] Wave 1 / T1：状态与链接事务
 [✔] Wave 1 / T2：资产入口与可回滚迁移
 [✔] Wave 2 / T3：宿主、provider、bridge
 [✔] Wave 2 / T4：界面与保存语义
 [✔] Wave 3 / T5：完整验证与文档
-[ ] Wave 3 / T6：真实迁移与提交推送
+[✔] Wave 3 / T6：真实迁移与提交推送
