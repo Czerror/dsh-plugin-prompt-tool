@@ -1,6 +1,9 @@
+// 由 skill-search.test.mjs 与 tool-modules.test.mjs 并入（2026-09-17 测试归一精简）。
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { apply as applySkillSearch } from '../../engine/skill-search.mjs'
+
+// —— 技能检索与加载（原 skill-search.test.mjs） ——
 
 /** 捕获注册工具 + mock skills 服务的桩 ctx。 */
 function makeCtx(skills) {
@@ -108,3 +111,47 @@ test('skill_load：不存在 / 无 agent 上下文给出明确文案', async () 
   const noAgent = await registered[1].execute({ name: 'pdf-tools' }, {})
   assert.ok(noAgent.text.includes('requires an agent context'))
 })
+
+// —— 内置工具模块挂载（原 tool-modules.test.mjs） ——
+
+const modules = [
+  ["character-tools", "pt-character-tools"],
+  ["world-book-tools", "pt-world-book-tools"],
+  ["session-var-tools", "pt-session-var-tools"],
+]
+
+/** tool-modules 组专用桩 ctx（与上面的 makeCtx 同名不同责，故分开命名）。 */
+function makeToolModuleCtx(serviceKey, service) {
+  const state = { warnings: [], disposers: [] }
+  state.ctx = {
+    get: (key) => key === serviceKey ? service : undefined,
+    logger: { warn: (message) => state.warnings.push(message) },
+    effect: (fn) => {
+      const dispose = fn()
+      if (typeof dispose === "function") state.disposers.push(dispose)
+      return dispose
+    },
+  }
+  return state
+}
+
+for (const [id, serviceKey] of modules) {
+  const mod = await import("../../engine/" + id + ".mjs")
+  test(id + "：按模块挂载对应工具服务", () => {
+    const calls = []
+    const state = makeToolModuleCtx(serviceKey, { mount: (ctx) => { calls.push(ctx); return () => calls.push("disposed") } })
+    mod.apply(state.ctx)
+    assert.deepEqual(calls, [state.ctx])
+    assert.equal(state.disposers.length, 1)
+    state.disposers[0]()
+    assert.deepEqual(calls, [state.ctx, "disposed"])
+  })
+
+  test(id + "：服务缺失时降级", () => {
+    const state = makeToolModuleCtx(serviceKey, undefined)
+    mod.apply(state.ctx)
+    assert.equal(state.disposers.length, 0)
+    assert.equal(state.warnings.length, 1)
+    assert.match(state.warnings[0], /service unavailable/)
+  })
+}

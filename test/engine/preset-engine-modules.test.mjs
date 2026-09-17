@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
-import { apply as applyGitBash } from '../../engine/tool-git-bash.mjs'
+import { apply as applyGitBash, bashCandidates, normalizeGitBashWorkdir } from '../../engine/tool-git-bash.mjs'
 
 function makeTool({ timeoutMs = 30, exitCode = 0, output = '', pending = false } = {}) {
   let registered
@@ -359,4 +359,24 @@ test('buildEnv 直接调用同样合并 shellEnv 与工作区', () => {
   assert.equal(env.DSH_HOME, '/h')
   assert.equal(env.DSH_WORKSPACE, '/repo')
   if (process.env.HOME !== undefined) assert.equal(env.HOME, process.env.HOME)
+})
+
+// 由 tool-git-bash.test.mjs 并入（2026-09-17 测试归一精简）：
+// Git Bash 盘符路径归一与 bash 候选派生（与上面的 applyGitBash 同属该模块）。
+
+test('tool-git-bash：normalizeGitBashWorkdir 转换 Git Bash 盘符路径（win32）', () => {
+  assert.equal(normalizeGitBashWorkdir('/e/foo/bar', 'win32'), 'E:\\foo\\bar')
+  assert.equal(normalizeGitBashWorkdir('/c', 'win32'), 'C:\\')
+  assert.equal(normalizeGitBashWorkdir('C:\\foo', 'win32'), 'C:\\foo')
+  assert.equal(normalizeGitBashWorkdir('/usr/bin', 'win32'), '/usr/bin')
+  assert.equal(normalizeGitBashWorkdir('/e/foo', 'linux'), '/e/foo')
+  assert.equal(normalizeGitBashWorkdir('', 'win32'), '')
+})
+
+test('tool-git-bash：bashCandidates 从 git 安装根派生候选并去重', () => {
+  const c = bashCandidates({ ProgramFiles: 'C:\\Program Files' }, 'C:\\Program Files\\Git\\cmd\\git.exe')
+  assert.ok(c.includes('C:\\Program Files\\Git\\bin\\bash.exe'))
+  assert.ok(c.includes('C:\\Program Files\\Git\\cmd\\bash.exe'))
+  assert.ok(c.includes('C:\\Program Files\\Git\\bin\\bash.exe'))
+  assert.equal(new Set(c).size, c.length, '候选去重')
 })

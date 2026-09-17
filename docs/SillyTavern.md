@@ -177,8 +177,7 @@ tokenizer 与上下文预算通道，超出本插件的宿主边界；`forbid_ov
   单纯重新物化不能恢复，需用户重新导入并确认是否覆盖手工修改。
 - 引擎更新后通过现有重建流程物化；运行中的 DSH 是否重启由用户决定，插件不会自动重启。
 - 回归入口：`test/host/st-compatibility.test.mjs`、`test/host/pre-step-persistence.test.mjs`、
-  `test/engine/st-macros.test.mjs`、
-  `test/engine/st-render.test.mjs`、`test/engine/st-world-book.test.mjs` 和
+  `test/engine/st-render-macros.test.mjs`、`test/engine/st-world-book.test.mjs` 和
   `test/engine/official-variable-regression.test.mjs`。从仓库规定的隔离 cwd 运行完整测试。
 
 ### pre-step 角色出口（2026-09-17）

@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { applyPromptConfigs, createPromptConfigs as createPromptConfigsCore, inject, loadPromptConfigFiles, parsePromptConfigYaml } from '../../engine/prompt-config-engine.mjs'
+import { getEngineMeta, KNOWN_STRATEGIES } from '../../engine/schema.mjs'
 import { extractText } from '../../engine/shared.mjs'
 import { setSessionVar } from '../../engine/session-vars.mjs'
 // 官方渲染器：回归「我方解析后的出口文本不再触发官方严格插值抛错」。
@@ -1081,4 +1082,22 @@ test('wireLayers 只装配实际声明的插入点：未声明 seam 无监听器
   for (const seam of ['agent/request', 'llm/stream', 'tools/pre-execute', 'tools/post-execute', 'system-prompt/assemble']) {
     assert.equal(declared.has(seam), false, `${seam} 未声明时不应有监听器`)
   }
+})
+
+// 由 meta.test.mjs 并入（2026-09-17 测试归一精简）：引擎能力矩阵与内置策略集合契约。
+
+test('getEngineMeta 返回引擎能力矩阵，内置策略集合稳定', () => {
+  const meta = getEngineMeta()
+  assert.ok(meta.layers.includes('pre-step'))
+  assert.ok(meta.layers.includes('tool-pipeline'))
+  assert.ok(meta.strategies.includes('custom-fallback'))
+  assert.ok(!meta.strategies.includes('anchor-fallback'))
+  assert.ok(!meta.strategies.includes('we-fallback'))
+  assert.deepEqual(meta.strategies, ['custom-fallback', 'first-turn-anchor', 'guide-auto', 'instruction-hint', 'placeholder', 'static', 'world-book'])
+  assert.ok(meta.fills.includes('instruction-hint'))
+  assert.ok(meta.fills.includes('skill-catalog'))
+  assert.ok(meta.layerFieldPolicies['pre-step'].position === true)
+  assert.ok(meta.layerFieldPolicies['agent-request'].order === true)
+  assert.ok(meta.layerLabels['pre-step'].title.length > 0)
+  assert.deepEqual([...KNOWN_STRATEGIES].sort(), meta.strategies)
 })
