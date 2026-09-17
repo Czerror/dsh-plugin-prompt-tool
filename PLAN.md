@@ -235,8 +235,49 @@
 [✔] Wave 2 / T5：端点与契约改造
 [✔] Wave 3 / T6：store 调用改造
 [✔] Wave 3 / T7：状态纯逻辑与页面文案
-[ ] Wave 4 / T8：文件写入行为回归
-[ ] Wave 4 / T9：端到端与既有用例改造
-[ ] Wave 4 / T10：客户端用例
+[✔] Wave 4 / T8：文件写入行为回归
+[✔] Wave 4 / T9：端到端与既有用例改造
+[✔] Wave 4 / T10：客户端用例
 [✔] Wave 5 / T11：文档同步
-[ ] Wave 5 / T12：门禁、变异与提交
+[✔] Wave 5 / T12：门禁、变异与提交
+
+### Wave 4 / T12 执行记录
+
+- **T8（写入回归）**：新增 `test/host/skills-policy.test.mjs`（11 条：只写目标键与逐字保留、两端独立真值表、
+  显式值恢复、零写入（mtime + 内容双断言）、CRLF/BOM、九类拒绝条件、非绝对路径与 basename、目录与不存在、
+  符号链接、底层写入失败与暂存文件清理、身份校验纯函数）。
+- **T9（端到端与既有用例）**：新增 `test/host/skill-policy-e2e.test.mjs`（真实 `SkillRegistry` + 从磁盘读
+  frontmatter 的官方提供方替身：写盘后重新 `list()` 断言两端可用性，并证明不存在影子候选）；删除
+  `skill-block-shadow.test.mjs`；`skills-config` / `skills-catalog` / `skills-scan` / `settings-bridge` /
+  `skills-refresh` / `shared/bridge-contract` / `host-publish-contract` 与各处 stub 形状全部改到 v4 语义。
+- **T10（客户端用例）**：`skill-status`（纯逻辑 + 往返不变量）、`prompt-tool-view`（旧 blocked 字段不进投影）、
+  `ui-v2-page-smoke`（`skill-policy` 载荷精确形状、开关与字段同步、两端停用才置灰、失败不乐观更新）、
+  fixture 的 `skill-policy` stub（按 `invocationForScope` 改写条目并按 name+path 校验）。
+- **T12（门禁与变异）**：见下。
+
+### 反向变异验证（证明新用例守得住）
+
+| 变异 | 期望失败 | 实测结果 |
+|---|---|---|
+| 写入时丢弃注释、按解析结果重写整段 frontmatter | 逐字保留用例 | **恰好 1 条红**（9/10 通过），还原后全绿 |
+| 去掉模型端键的取反（把「可调用」当 `disable-model-invocation` 的值写） | 落盘真值与零写入用例 | **恰好 4 条红**（40/44 通过），还原后全绿 |
+| 去掉身份校验的「陈旧分支」 | 身份校验用例 | **恰好 1 条红**（10/11 通过），还原后全绿 |
+
+第三组变异第一次**没有变红**（当时身份校验写在 `index.ts` 闭包里，而端点测试用的是替身），于是把校验下移为
+可直测的纯函数 `policyTarget`（`src/host/skills-policy.ts`）并补真实用例，再变异才精确变红——这是本轮唯一
+因变异结果而改动产品代码的地方。
+
+### 门禁结果
+
+- `typecheck` ✓ / `lint` 0 警告 0 错误 ✓ / `build` ✓ / `verify:host`（官方包 47 个，失败 0）✓ /
+  `git diff --check` ✓。
+- `test`：**1044/1044 通过、0 失败**（上一轮记录的既有失败「等长改写 + 还原 mtime 的根指纹判据」在本轮
+  测试改造中修掉：原断言用 `statSync().size`（字节）对比 `String.length`（UTF-16 码元），正文含中文时必然不等）。
+- 提交：`4c51176`（39 个文件，+1930 / −990），已推送 `origin/dev`。
+
+### 未做（明确不在本轮范围）
+
+- P1：旧 `config.yml` 的 `order` / `rankBase` 迁移，旧 `SKILL.md.disabled` 的识别与告警。
+- P1：清单盲区（注册表来源 / 扁平 `.md` / 符号链接技能「模型可见、界面不可见」）。
+- P2：多工作区视图、项目根创建、远程配对放行、回收站恢复入口。
+- 与 dsh-web 同装时的调用策略归属（两边现在写同一组字段、语义一致，但「谁拥有」尚未定义）。
