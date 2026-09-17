@@ -6,7 +6,7 @@
  *  对这个行为做回归，而不是只测一份替身。 */
 import { join } from 'node:path'
 import type { SkillCandidate, SkillDefinition, SkillLookupOptions, SkillProvider } from '@deepseek-ai/dsh-skill'
-import { SKILL_BLOCK_RANK, SKILL_SOURCES, blockScopeOf, type BlockedSkill, type SkillBlockScope } from '../shared/skills.ts'
+import { SKILL_BLOCK_RANK, SKILL_SOURCES, blockScopeOf, type BlockedSkill } from '../shared/skills.ts'
 import type { ScannedSkill } from './skills-scan.ts'
 
 /** 影子候选的描述：清单与目录里都能看出这是插件的注册层屏蔽，不是技能自身的声明。 */
@@ -14,9 +14,10 @@ export const BLOCKED_SKILL_DESCRIPTION = '已由 prompt-tool 在注册层屏蔽�
 export const SKILL_PROVIDER_NAME = 'prompt-tool'
 
 /** 屏蔽记录 → 影子候选：只关被屏蔽的那一端（两端都关等于完全停用）。
- *  scope 可由调用方传入以免重复计算；'none' 在状态校验下不可达（两端都为 false 的记录会被拒绝），
- *  这里保留判断是为了让这个导出函数对任何输入都自洽。 */
-export function blockedCandidate(item: BlockedSkill, scope: SkillBlockScope = blockScopeOf(item)): SkillCandidate | undefined {
+ *  'none' 在状态校验下不可达（两端都为 false 的记录会被拒绝），保留判断是为了让这个导出
+ *  函数对任何输入都自洽。 */
+export function blockedCandidate(item: BlockedSkill): SkillCandidate | undefined {
+  const scope = blockScopeOf(item)
   if (scope === 'none') return undefined
   return {
     name: item.name,
@@ -92,7 +93,7 @@ export function createSkillsProvider(deps: SkillsProviderDeps): SkillProvider {
         source: candidate.source,
         provider: candidate.provider,
         ...(candidate.resourceBase !== undefined ? { resourceBase: candidate.resourceBase } : {}),
-        path: candidate.path ?? skill.file,
+        path: candidate.path,
         ...(candidate.metadata !== undefined ? { metadata: candidate.metadata } : {}),
         content: skill.body,
       }

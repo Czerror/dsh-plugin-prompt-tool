@@ -311,13 +311,15 @@ export function apply(ctx: Context, configIn: Config): void {
   const skillsRoot = USER_SKILLS_DIR
   const blockedScopes = (): Map<string, SkillBlockScope> =>
     new Map(skillsState.blocked.map((item) => [item.name, blockScopeOf(item)]))
-  /** 用户显式引用的技能文件夹里的技能（自定义来源，只读扫描）：按引用目录指纹缓存，避免每次列候选都重读正文。 */
+  /** 用户显式引用的技能文件夹（自定义来源，只读扫描）。 */
+  const referencedRoots = (): ScanRoot[] => skillsState.folders.map((path) => ({ kind: 'custom', path }))
+  /** 引用来源的指纹：候选缓存与注册表缓存都按它判失效（引用目录的内容变化不改变状态文件快照）。 */
+  const referencedFingerprint = (): string => rootsFingerprint(referencedRoots())
   let referencedCache: { fingerprint: string; skills: ScannedSkill[] } | undefined
   const scanReferencedSkills = (): ScannedSkill[] => {
-    const roots: ScanRoot[] = skillsState.folders.map((path) => ({ kind: 'custom', path }))
-    const fingerprint = rootsFingerprint(roots)
+    const fingerprint = referencedFingerprint()
     if (referencedCache !== undefined && referencedCache.fingerprint === fingerprint) return referencedCache.skills
-    const skills = roots.flatMap((root) => scanRoot(root))
+    const skills = referencedRoots().flatMap((root) => scanRoot(root))
     referencedCache = { fingerprint, skills }
     return skills
   }
@@ -381,16 +383,18 @@ export function apply(ctx: Context, configIn: Config): void {
   // 不会因为一个瞬时坏文件把屏蔽表与引用目录清空；策略与理由见 skills-refresh。
   //
   // watcher 先建、回调里用可选链访问 reloader：两者互相引用，这样任何一方都不会踩到
-  // 「块级变量在初始化前被读取」的隐式时序依赖。
+  // 「块级变量在初始化前被读取」的隐式时序依赖。官方 provider 的 invalidate 也在这里先声明，
+  // 免得闭包引用一个在更后面才初始化的绑定。
+  let invalidateSkills: (() => void) | undefined
   const bundledSkillsDir = resolveBundledSkillsDir()
   let reloadSkillsState: SkillsReloader | undefined
   const skillsWatcher = createSkillsWatcher(
     () => [
-      // 监听范围：插件状态目录、用户引用的技能文件夹、用户技能根、用户 agents 根与内置根。
-      // 项目根随会话 cwd 变化，静态 watcher 覆盖不到全部工作区，那部分由 rootsFingerprint 兜住。
-      dirname(skillsStateFile),
-      ...skillsState.folders,
+      // 监听范围：用户技能根（递归，插件状态目录 `.system/prompt-tool` 在它里面）、用户引用的
+      // 技能文件夹、用户 agents 根与内置根。项目根随会话 cwd 变化，静态 watcher 覆盖不到全部
+      // 工作区，那部分由 rootsFingerprint 兜住。
       USER_SKILLS_DIR,
+      ...skillsState.folders,
       join(resolveAgentsHome(), 'skills'),
       ...(bundledSkillsDir === undefined ? [] : [bundledSkillsDir]),
     ],
@@ -399,6 +403,7 @@ export function apply(ctx: Context, configIn: Config): void {
   reloadSkillsState = createSkillsReloader({
     stateFile: skillsStateFile,
     currentSnapshot: () => skillsStateSnapshot,
+    candidatesFingerprint: () => referencedFingerprint(),
     accept: (state, snapshot) => { skillsState = state; skillsStateSnapshot = snapshot },
     rewatch: () => skillsWatcher.watch(),
     invalidateList: () => invalidateCatalogCache(),
@@ -415,7 +420,6 @@ export function apply(ctx: Context, configIn: Config): void {
   //     达到"不注册给 dsh"；技能文件一个字节都不改，删除记录即恢复；
   //  2) 用户添加的技能文件夹——按自定义来源优先级提供候选。
   // 项目根、用户根与官方内置一律交给官方 skill 提供者，插件不重复提供。
-  let invalidateSkills: (() => void) | undefined
   ctx.skills.registerProvider((control: SkillProviderControl): SkillProvider => {
     invalidateSkills = control.invalidate
     return createSkillsProvider({
@@ -437,7 +441,6 @@ export function apply(ctx: Context, configIn: Config): void {
       listSkills,
       setSkillBlocked,
       patchSkillFolders,
-      invalidateCatalog,
     }),
     // 模板专属策略目录：当前内置策略全部随引擎提供，自定义模板可经此注入。
     () => '',

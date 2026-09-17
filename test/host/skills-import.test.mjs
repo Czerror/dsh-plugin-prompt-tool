@@ -45,6 +45,12 @@ test('importSkillsPackage：覆盖前要求目标是技能目录，非技能目�
     assert.equal(replacement.ok, true)
     assert.equal(replacement.overwritten, 1, '覆盖导入如实报告替换数量')
     assert.match(readFileSync(join(root, 'demo', 'SKILL.md'), 'utf8'), /new/)
+    // 上传入口与宿主机目录导入共用同一套回收站逻辑：旧版本同样必须可恢复。
+    const trash = join(root, '.system', 'prompt-tool', '.trash')
+    const containers = readdirSync(trash)
+    assert.equal(containers.length, 1, '被替换的旧版本进回收站')
+    assert.match(readFileSync(join(trash, containers[0], 'demo', 'SKILL.md'), 'utf8'), /old/, '回收站里留的是旧版本')
+    assert.equal(JSON.parse(readFileSync(join(trash, containers[0], 'record.json'), 'utf8')).origin, 'import-overwrite')
     assert.equal(importSkillsPackage(root, [file('demo/SKILL.md', 'x')], false).ok, false, 'overwrite=false 时拒绝已存在的技能')
 
     // 用户根里的普通目录不是技能目录：覆盖导入必须拒绝且不改动它。

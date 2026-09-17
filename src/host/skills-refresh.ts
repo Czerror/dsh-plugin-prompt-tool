@@ -1,13 +1,16 @@
-/** 技能状态刷新装配：读状态文件 → 比较快照 → 重挂 watcher → 失效缓存。
+/** 技能状态刷新装配：读状态文件 → 比较快照与候选指纹 → 重挂 watcher → 按需失效缓存。
  *
- *  为什么单独成模块：这里有两条必须显式锁住的规则。
+ *  为什么单独成模块：这里有四条必须显式锁住的规则。
  *
  *  1. **读盘失败不能回落默认状态**。`readSkillsState` 失败时仍会返回一个默认状态，直接 accept
- *     会让瞬时坏文件（手工编辑到一半、写入被中断）把内存里的屏蔽表与引用目录一起清空，
- *     用户看到的是「设置全没了」。失败时保留上一份有效状态，只告警一次。
- *  2. **任何文件系统事件都要失效清单缓存**。watcher 同时监听状态文件与用户引用的技能目录，
- *     只有前者会改变状态快照；若按「快照没变就直接返回」短路，引用目录里新增或删除的技能
- *     会永远留在缓存里。
+ *     会让瞬时坏文件（手工编辑到一半、写入被中断）把内存里的屏蔽表与引用目录一起清空。
+ *     失败时保留上一份有效状态，只告警一次。
+ *  2. **候选来源的内容变化也要失效候选缓存**。状态快照只来自 `skills.yml`，而用户引用的技能
+ *     文件夹里新增 / 删除 / 改写技能都不改变快照；官方 `SkillRegistry` 按 revision 缓存合并结果，
+ *     不主动失效就永远看不到新技能（界面有、模型没有）。所以候选指纹变化与状态变化同等对待。
+ *  3. **任何文件系统事件都要失效清单缓存**，否则引用目录里的增删改不会反映到清单。
+ *  4. **状态文件消失不算读失败**（`exists:false`），按用户重置处理，但必须留下一条告警，
+ *     不让「设置悄悄消失」。
  *
  *  依赖在这里显式传入，便于用真实状态文件与真实 watcher 做行为回归。 */
 import { readSkillsState } from './skills-config.ts'
@@ -18,52 +21,60 @@ export interface SkillsReloaderDeps {
   stateFile: string
   /** 当前内存里的状态快照。 */
   currentSnapshot: () => string
+  /** 状态文件之外的候选来源（用户引用的技能文件夹）指纹。 */
+  candidatesFingerprint: () => string
   /** 接受新状态与其快照。 */
   accept: (state: SkillsState, snapshot: string) => void
   /** 引用目录集合可能变化时重挂 watcher。 */
   rewatch: () => void
   /** 失效清单缓存；任何文件系统事件都要调用。 */
   invalidateList: () => void
-  /** 屏蔽表或引用集合变化时额外失效候选缓存；只有状态确实变化时才调用。 */
+  /** 失效候选缓存；状态或候选来源确实变化时才调用。 */
   invalidateCandidates: () => void
-  /** 报告读取失败；同一故障窗口只会调用一次。 */
+  /** 报告异常；同一故障窗口只会调用一次。 */
   warn: (message: string) => void
 }
 
 export interface SkillsReloader {
   /** watcher 回调：任何文件系统事件都走这里。 */
   reload: () => void
-  /** 当前是否处于「读失败、沿用上一次有效状态」的降级状态。 */
-  degraded: () => boolean
 }
 
 export function createSkillsReloader(deps: SkillsReloaderDeps): SkillsReloader {
-  let degraded = false
+  let readFailed = false
+  let fileMissing = false
+  let candidates = deps.candidatesFingerprint()
   return {
     reload: () => {
       const read = readSkillsState(deps.stateFile)
       if (read.ok === false) {
-        if (!degraded) {
-          degraded = true
+        if (!readFailed) {
+          readFailed = true
           deps.warn(`${read.message}（保留上一次有效状态，修好后自动恢复）`)
         }
-        // 读失败也说明文件系统动过：清单缓存必须失效，否则引用目录里的新技能永远不出现。
         deps.invalidateList()
         return
       }
-      degraded = false
+      readFailed = false
+      if (read.exists === false) {
+        if (!fileMissing) {
+          fileMissing = true
+          deps.warn('技能状态文件不存在，已按空状态处理（屏蔽表与引用目录已重置）')
+        }
+      } else {
+        fileMissing = false
+      }
       const snapshot = JSON.stringify(read.state)
-      if (snapshot !== deps.currentSnapshot()) {
+      const stateChanged = snapshot !== deps.currentSnapshot()
+      if (stateChanged) {
         deps.accept(read.state, snapshot)
         deps.rewatch()
-        deps.invalidateList()
-        deps.invalidateCandidates()
-        return
       }
-      // 状态没变（例如只是引用目录里的普通文件变了）：候选集合不变，只需失效清单缓存，
-      // 不让官方 skill 提供者跟着做一次全量重扫。
+      const nextCandidates = deps.candidatesFingerprint()
+      const candidatesChanged = nextCandidates !== candidates
+      candidates = nextCandidates
       deps.invalidateList()
+      if (stateChanged || candidatesChanged) deps.invalidateCandidates()
     },
-    degraded: () => degraded,
   }
 }

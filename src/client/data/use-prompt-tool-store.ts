@@ -269,6 +269,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
   const [skillsBusyCount, setSkillsBusyCount] = useState(0)
   const skillsBusy = skillsBusyCount > 0
   const beginSkillWrite = useCallback(() => { setSkillsBusyCount((count) => count + 1) }, [])
+  // 计数成对进出；Math.max 只是兜底，避免任何漏写 begin 的路径把计数压成负数而永久卡住界面。
   const endSkillWrite = useCallback(() => { setSkillsBusyCount((count) => Math.max(0, count - 1)) }, [])
   const [notice, setNotice] = useState('')
   const [noticeKind, setNoticeKind] = useState<'ok' | 'error'>('ok')
@@ -983,7 +984,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     try {
       const res = await bridgeCall('skillsImportDirectory', { path: source })
       if (!res.ok) {
-        showNotice('error', '导入技能目录失败：' + (res.message ?? 'settings bridge unavailable'))
+        showNotice('error', res.message ?? '导入技能目录失败')
         return false
       }
       const { count, overwritten } = res.value
@@ -1046,6 +1047,8 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
   // 同时置起 skillsBusy，让写盘期间界面上的开关与删除按钮一起禁用。
   const skillBlockRef = useRef(false)
   const setSkillBlocked = useCallback(async (name: string, scope: SkillBlockScope): Promise<boolean> => {
+    // 界面在 busy 期间会禁用开关，但 React 的状态更新是异步的：极快的连点在 disabled 生效前
+    // 仍可能触发第二次提交，这一步是真守卫，不是不可达的防御。
     if (skillBlockRef.current) {
       showNotice('error', '技能屏蔽正在保存，请稍候再试')
       return false

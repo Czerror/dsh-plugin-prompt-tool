@@ -5,6 +5,7 @@ import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSyn
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { parseFrontmatter } from '../runtime/skills-parse.ts'
 import { SKILL_NAME_PATTERN } from './skills-config.ts'
+import { trashSkill } from './skills-actions.ts'
 
 export interface SkillsImportFile { path?: unknown; content?: unknown }
 export type SkillsImportResult = { ok: true; path: string; count: number; overwritten: number } | { ok: false; message: string }
@@ -60,24 +61,6 @@ function assertOverwritable(target: string): void {
   if (!existsSync(join(target, 'SKILL.md'))) throw new Error(`拒绝覆盖非技能目录（缺少 SKILL.md）：${target}`)
 }
 
-/** 覆盖导入前把旧技能移入回收站（与 deleteSkill 同一目录），而不是就地删除。
- *  导入是批量动作、用户没有逐项确认，被替换掉的旧版本必须仍然可以人工恢复。 */
-function moveToTrash(base: string, name: string, source: string): { path: string; container: string } {
-  const recycle = join(base, '.system', 'prompt-tool', '.trash')
-  mkdirSync(recycle, { recursive: true })
-  const container = mkdtempSync(join(recycle, `${name}-`))
-  writeFileSync(join(container, 'record.json'), JSON.stringify({
-    folder: name,
-    source,
-    origin: 'import-overwrite',
-    at: new Date().toISOString(),
-    files: readdirSync(source),
-  }, null, 2), { flag: 'wx' })
-  const path = join(container, name)
-  renameSync(source, path)
-  return { path, container }
-}
-
 /** 落盘事务：先写暂存目录，再逐顶层项切换；失败时把备份放回原处。 */
 function importFiles(root: string, files: SkillFile[], overwrite: boolean): SkillsImportResult {
   let stage: string | undefined
@@ -110,12 +93,19 @@ function importFiles(root: string, files: SkillFile[], overwrite: boolean): Skil
     const tops = [...new Set(files.map((file) => file.path.split('/')[0]!))]
     // 被替换的旧技能先移入回收站：覆盖失败时从这里放回原处，成功时它就是用户的恢复点。
     const replaced: Array<{ target: string; trashed: string; container: string }> = []
-    const restore = (): void => {
+    /** 逐条回滚：单条失败不影响其余条目，返回放不回去的路径供失败消息引用。 */
+    const restore = (): string[] => {
+      const stuck: string[] = []
       for (const entry of [...replaced].reverse()) {
-        if (existsSync(entry.target)) rmSync(entry.target, { recursive: true, force: true })
-        if (existsSync(entry.trashed)) renameSync(entry.trashed, entry.target)
-        rmSync(entry.container, { recursive: true, force: true })
+        try {
+          if (existsSync(entry.target)) rmSync(entry.target, { recursive: true, force: true })
+          if (existsSync(entry.trashed)) renameSync(entry.trashed, entry.target)
+          rmSync(entry.container, { recursive: true, force: true })
+        } catch {
+          stuck.push(entry.trashed)
+        }
       }
+      return stuck
     }
     try {
       for (const name of tops) {
@@ -124,14 +114,18 @@ function importFiles(root: string, files: SkillFile[], overwrite: boolean): Skil
         if (existsSync(target)) {
           if (!overwrite) throw new Error(`技能已存在：${name}`)
           assertOverwritable(target)
-          const trashed = moveToTrash(base, name, target)
+          const trashed = trashSkill(base, name, 'import-overwrite')
           replaced.push({ target, trashed: trashed.path, container: trashed.container })
         }
         renameSync(join(stage, name), target)
       }
     } catch (error) {
-      restore()
-      throw error
+      const stuck = restore()
+      const reason = error instanceof Error ? error.message : String(error)
+      // 回滚本身失败时不能掩盖原始原因：两者都报，并指出手动恢复的位置。
+      throw new Error(stuck.length === 0
+        ? reason
+        : `${reason}；回滚未完成，请在回收站手动恢复：${stuck.join('、')}`)
     }
     return { ok: true, path: base, count: files.length, overwritten: replaced.length }
   } catch (error) {

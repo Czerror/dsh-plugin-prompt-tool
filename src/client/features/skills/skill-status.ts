@@ -73,9 +73,10 @@ export function skillStatusLabel(skill: SkillCatalogEntry, t: PromptToolTranslat
   return audiences.length > 0 ? t('skills.status.callable', { audiences: audiences.join('/') }) : t('skills.status.notCallable')
 }
 
-/** 徽章色调：非法=红；屏蔽、被同名遮蔽或不可调用=灰；其余=绿。 */
+/** 徽章色调：非法=红；屏蔽、被同名遮蔽或两端都不可用=灰；其余=绿。
+ *  「两端都不可用」与页签用同一个谓词，插件屏蔽与技能自身声明不再各算一套。 */
 export function skillStatusTone(skill: SkillCatalogEntry): StatusBadgeTone {
   if (!skill.valid) return 'danger'
-  if (skill.blocked || skillShadowed(skill) || (!skill.modelInvocable && !skill.userInvocable)) return 'neutral'
+  if (skill.blocked || skillShadowed(skill) || skillUnavailable(skill)) return 'neutral'
   return 'success'
 }

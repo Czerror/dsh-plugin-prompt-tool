@@ -193,8 +193,11 @@ test('同名裁决：rank 并列时按 id 次序稳定取首个，输入顺序�
   const sameRank = [
     scanned({ id: 'user-dsh:/a:demo', rank: SKILL_SOURCES['user-dsh'].rank, name: 'demo' }),
     scanned({ id: 'user-dsh:/b:demo', rank: SKILL_SOURCES['user-dsh'].rank, name: 'demo' }),
+    scanned({ id: 'user-dsh:/c:demo', rank: SKILL_SOURCES['user-dsh'].rank, name: 'demo' }),
   ]
   assert.equal(markWinners(sameRank).get('demo'), 'user-dsh:/a:demo', '并列时 id 字典序在前者胜出')
+  // 三个以上元素才不会只靠 V8 小数组排序的稳定性兜住：删掉 id 第二键后这两条都必须失败。
+  assert.equal(markWinners([sameRank[1], sameRank[2], sameRank[0]]).get('demo'), 'user-dsh:/a:demo', 'a 仍应胜出')
   assert.equal(markWinners([...sameRank].reverse()).get('demo'), 'user-dsh:/a:demo', '裁决不依赖输入顺序')
 })
 
@@ -240,8 +243,7 @@ test('根指纹：技能集合或标记文件变化后失效，无变化时保�
   rmSync(join(root, 'beta'), { recursive: true, force: true })
   assert.notEqual(rootsFingerprint(roots), current, '删除技能目录必须改变指纹')
 
-  // 根不存在时指纹稳定为固定值，不抛错。
+  // 根不存在时指纹是固定值（kind|路径|-），不是「只是两次相等」。
   const missing = [{ kind: 'custom', path: join(root, 'not-there') }]
-  assert.equal(rootsFingerprint(missing), rootsFingerprint(missing))
-  assert.match(rootsFingerprint(missing), /not-there/u)
+  assert.equal(rootsFingerprint(missing), `custom|${join(root, 'not-there')}|-`)
 })

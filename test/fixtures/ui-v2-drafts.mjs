@@ -34,7 +34,6 @@ let skills = [
   { id: 'project-dsh:D:/workspace:.dsh:beta', folder: 'beta', name: 'beta', description: 'beta description', dir: 'D:/workspace/.dsh/skills', source: 'project-dsh', rank: 100, valid: true, blocked: false, blockedModel: false, blockedUser: false, modelInvocable: true, userInvocable: true },
   { id: `user-dsh:${skillsRoot}:alpha`, folder: 'alpha', name: 'alpha', description: 'alpha description', dir: skillsRoot, source: 'user-dsh', rank: 400, valid: true, blocked: false, blockedModel: false, blockedUser: false, modelInvocable: true, userInvocable: true },
 ]
-let blockedSkills = []
 let skillFolders = []
 window.fetch = async (url, init) => {
   const endpoint = String(url).split('/').at(-1), body = JSON.parse(init?.body ?? '{}')
@@ -80,8 +79,7 @@ window.fetch = async (url, init) => {
       blockedModel: scope === 'all' || scope === 'model',
       blockedUser: scope === 'all' || scope === 'user',
     } : skill)
-    blockedSkills = skills.filter((skill) => skill.blocked).map((skill) => skill.name)
-    value = { skills, blocked: blockedSkills }
+    value = { skills, blocked: skills.filter((skill) => skill.blocked).map((skill) => skill.name) }
   }
   if (endpoint === 'skills-folders') {
     await new Promise((resolve) => setTimeout(resolve, window.delay))

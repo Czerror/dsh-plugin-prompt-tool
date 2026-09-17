@@ -73,6 +73,41 @@ test('fields view：技能清单、引用目录与用户根都取 describe 事�
   assert.deepEqual(missing.skillCatalog, [])
 })
 
+test('fields view：扩展字段优先级为「顶层 → descriptor value → base」', () => {
+  const path = 'D:\\AI\\CC-switch\\skills'
+  const fromValue = fieldsFromView({
+    ok: true,
+    value: {
+      ns: 'prompt-tool',
+      revision: 1,
+      value: { activeSkillsDirs: [path], skillFolders: ['D:\\from-value'] },
+      base: { activeSkillsDirs: ['D:\\ignored-base'] },
+    },
+  })
+  assert.equal(fromValue.skillsRoot, path, 'descriptor value 覆盖 base')
+  assert.deepEqual(fromValue.skillFolders, ['D:\\from-value'])
+
+  const fromBase = fieldsFromView({
+    ok: true,
+    value: { ns: 'prompt-tool', revision: 1, value: {}, base: { activeSkillsDirs: ['D:\\from-base'] } },
+  })
+  assert.equal(fromBase.skillsRoot, 'D:\\from-base', 'value 缺失时退回 base')
+
+  const fromTop = fieldsFromView({
+    ok: true,
+    value: {
+      ns: 'prompt-tool',
+      revision: 1,
+      value: { activeSkillsDirs: ['D:\\from-value'] },
+      base: { activeSkillsDirs: ['D:\\from-base'] },
+    },
+    activeSkillsDirs: ['D:\\from-top'],
+    skillFolders: ['D:\\top-folder'],
+  })
+  assert.equal(fromTop.skillsRoot, 'D:\\from-top', '顶层扩展字段优先于 descriptor')
+  assert.deepEqual(fromTop.skillFolders, ['D:\\top-folder'])
+})
+
 test('预设参数投影完整读回列表、阶段与 false；settings 不覆盖预设行为', () => {
   const fields = fieldsFromView({ ok: true, value: { ns: 'prompt-tool', revision: 1, value: { usePtcMode: true }, base: {} } })
   assert.equal(fields.usePtcMode, false)

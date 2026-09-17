@@ -88,8 +88,6 @@ export interface SkillsBridgeState {
   setSkillBlocked: (name: string, scope: SkillBlockScope) => SkillsStateRead
   /** 添加 / 移除引用的技能文件夹。 */
   patchSkillFolders: (folders: string[]) => SkillsStateRead
-  /** 清单缓存失效（资产写盘后调用）。 */
-  invalidateCatalog: () => void
 }
 
 /** 仅允许本机回环请求，镜像官方 settings bridge 的边界。 */

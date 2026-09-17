@@ -143,7 +143,11 @@ export function rootsFingerprint(roots: readonly ScanRoot[]): string {
         .filter((entry) => entry.isDirectory())
         .map((entry) => {
           let marker = '-'
-          try { marker = String(statSync(join(root.path, entry.name, SKILL_MARKER)).mtimeMs) } catch { /* 缺标记文件的目录按 '-' 计 */ }
+          try {
+            const info = statSync(join(root.path, entry.name, SKILL_MARKER))
+            // 同时取 size：保留 mtime 的复制或还原不会让清单漏失效。
+            marker = `${info.mtimeMs}:${info.size}`
+          } catch { /* 缺标记文件的目录按 '-' 计 */ }
           return `${entry.name}:${marker}`
         })
         .sort()

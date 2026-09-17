@@ -93,6 +93,7 @@ test('deleteSkill 把整个技能目录移入回收站并可人工恢复', () =>
     assert.equal(record.source, join(root, 'demo-skill'))
     assert.deepEqual(record.files.sort(), ['SKILL.md', 'assets'])
     assert.equal(typeof record.deletedAt, 'string')
+    assert.equal(record.origin, 'delete', '删除与覆盖导入共用同一套记录字段')
     // 用户根里的其他内容不受影响，删除不是「清空目录」。
     writeFileSync(join(root, 'unrelated.txt'), 'keep', 'utf8')
     assert.equal(deleteSkill(root, 'unrelated').ok, false, '不是技能目录（缺少 SKILL.md）')
@@ -111,5 +112,15 @@ test('importSkillsPackage 支持无顶层容器的单技能包并写入用户技
     assert.equal(result.ok, true, result.ok ? '' : result.message)
     assert.equal(existsSync(join(root, 'one-skill', 'SKILL.md')), true)
     assert.equal(existsSync(join(root, '.system')), false, '导入不落受管实体库')
+  } finally { rmSync(root, { recursive: true, force: true }) }
+})
+
+test('trashSkill 失败时清理自己创建的容器，不在回收站留空条目', async () => {
+  const root = makeRoot()
+  try {
+    const { trashSkill } = await import('../../src/host/skills-actions.ts')
+    assert.throws(() => trashSkill(root, 'missing-skill', 'delete'), /ENOENT/u, '源目录不存在时抛错')
+    const trashRoot = join(root, '.system', 'prompt-tool', '.trash')
+    assert.deepEqual(readdirSync(trashRoot), [], '失败不留「只有 record.json」的空条目')
   } finally { rmSync(root, { recursive: true, force: true }) }
 })

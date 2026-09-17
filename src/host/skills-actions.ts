@@ -13,6 +13,40 @@ function assertPlainDirectory(path: string): void {
   if (info.isSymbolicLink() || !info.isDirectory()) throw new Error(`技能目录不是普通目录：${path}`)
 }
 
+/** 回收站目录（相对技能根）。删除与「覆盖导入」共用同一处，也共用同一套记录字段。 */
+const TRASH_SEGMENTS = ['.system', 'prompt-tool', '.trash'] as const
+
+export interface TrashedSkill {
+  folder: string
+  /** 技能目录在回收站里的完整路径（人工恢复时从这里搬回）。 */
+  path: string
+  /** 容器目录（含 record.json）；恢复完成后可整体删除。 */
+  container: string
+  deletedAt: string
+}
+
+/** 把技能目录移入回收站：命名唯一、记录来源与时间，可人工恢复。
+ *  失败时清理自己刚创建的容器，不在回收站里留下「只有 record.json」的空条目。 */
+export function trashSkill(base: string, folder: string, origin: 'delete' | 'import-overwrite'): TrashedSkill {
+  const root = resolve(base)
+  const recycle = join(root, ...TRASH_SEGMENTS)
+  mkdirSync(recycle, { recursive: true })
+  const container = mkdtempSync(join(recycle, `${folder}-`))
+  try {
+    const source = join(root, folder)
+    const deletedAt = new Date().toISOString()
+    writeFileSync(join(container, 'record.json'), JSON.stringify({
+      folder, source, origin, deletedAt, files: readdirSync(source),
+    }, null, 2), { flag: 'wx' })
+    const path = join(container, folder)
+    renameSync(source, path)
+    return { folder, path, container, deletedAt }
+  } catch (error) {
+    try { rmSync(container, { recursive: true, force: true }) } catch { /* 保留现场供人工检查 */ }
+    throw error
+  }
+}
+
 /** 创建标准技能：`<根>/<技能名>/SKILL.md`，frontmatter 只含 name 与 description。 */
 export function createSkill(root: string, input: { name: unknown; description: unknown; content: unknown }): SkillActionResult {
   if (input === null || typeof input !== 'object' || typeof input.name !== 'string' || !SKILL_NAME_PATTERN.test(input.name)
@@ -48,14 +82,8 @@ export function deleteSkill(root: string, folder: string): SkillActionResult {
     if (!existsSync(source)) return { ok: false, message: `技能目录不存在：${folder}` }
     assertPlainDirectory(source)
     if (!existsSync(join(source, 'SKILL.md'))) return { ok: false, message: `不是技能目录（缺少 SKILL.md）：${folder}` }
-    const recycle = join(base, '.system', 'prompt-tool', '.trash')
-    mkdirSync(recycle, { recursive: true })
-    const target = mkdtempSync(join(recycle, `${folder}-`))
-    writeFileSync(join(target, 'record.json'), JSON.stringify({
-      folder, source, deletedAt: new Date().toISOString(), files: readdirSync(source),
-    }, null, 2), { flag: 'wx' })
-    renameSync(source, join(target, folder))
-    return { ok: true, id: folder, path: join(target, folder) }
+    const trashed = trashSkill(base, folder, 'delete')
+    return { ok: true, id: folder, path: trashed.path }
   } catch (error) {
     return { ok: false, message: `删除技能失败：${error instanceof Error ? error.message : String(error)}` }
   }

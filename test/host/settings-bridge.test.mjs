@@ -1252,14 +1252,16 @@ test('settings bridge /skills-import-directory 把宿主机目录复制进用户
     assert.equal((await post({ path: join(root, 'missing-dir') })).status, 400)
     // 空路径与相对路径必须在入口被拒绝：空串若落到 resolve 会退化成进程工作目录，
     // 把整个 cwd 当成技能导入（曾实测复制成功）。断言不能依赖 cwd 的名字恰好不是 kebab-case。
-    const emptyPath = await post({ path: '' })
-    assert.equal(emptyPath.status, 400)
-    assert.match(emptyPath.body.message, /路径为空/u, '空串按「路径为空」拒绝')
-    assert.equal((await post({ path: '   ' })).status, 400, '纯空白路径同样拒绝')
-    const relative = await post({ path: 'relative-skill-dir' })
-    assert.equal(relative.status, 400, '相对路径拒绝，避免以 cwd 解析')
-    assert.match(relative.body.message, /绝对路径/u, '相对路径按「必须是绝对路径」拒绝')
-    assert.equal((await post({ path: 42 })).status, 400, '非字符串路径拒绝')
+    for (const [label, payload, reason] of [
+      ['空串', '', /路径为空/u],
+      ['纯空白', '   ', /路径为空/u],
+      ['相对路径', 'relative-skill-dir', /绝对路径/u],
+      ['非字符串', 42, /路径为空/u],
+    ]) {
+      const rejected = await post({ path: payload })
+      assert.equal(rejected.status, 400, `${label}必须被拒绝`)
+      assert.match(rejected.body.message, reason, `${label}的拒绝理由`)
+    }
     assert.deepEqual(readdirSync(root), [name], '被拒绝的导入不向用户技能根写入任何内容')
   } finally {
     rmSync(root, { recursive: true, force: true })
