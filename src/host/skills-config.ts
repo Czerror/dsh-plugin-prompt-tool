@@ -20,8 +20,19 @@ export type SkillsConfigRead =
   | { ok: true; config: SkillsConfig; exists: boolean }
   | { ok: false; config: SkillsConfig; message: string }
 
+/** 记录容器不带原型：`constructor` / `prototype` 等 Object.prototype 上的名字是合法技能名，
+ *  带原型容器会把 `config.skills['constructor']` 误读成继承属性而不是「不存在」。 */
+const emptySkills = (): Record<string, ManagedSkillState> => Object.create(null) as Record<string, ManagedSkillState>
+
 export function defaultSkillsConfig(): SkillsConfig {
-  return { dirs: [], order: [], rankBase: DEFAULT_SKILL_RANK_BASE, skills: {} }
+  return { dirs: [], order: [], rankBase: DEFAULT_SKILL_RANK_BASE, skills: emptySkills() }
+}
+
+/** 深拷贝配置并保留无原型记录容器；`structuredClone` 会退回 `Object.prototype`，不能用于此处。 */
+export function cloneSkillsConfig(config: SkillsConfig): SkillsConfig {
+  const skills = emptySkills()
+  for (const [id, record] of Object.entries(config.skills)) skills[id] = { ...record }
+  return { dirs: [...config.dirs], order: [...config.order], rankBase: config.rankBase, skills }
 }
 
 export function skillsConfigPath(dshHome: string = DSH_HOME): string {
@@ -55,11 +66,13 @@ export function validateSkillsConfig(value: unknown): SkillsConfig {
   if (typeof rankBase !== 'number' || !Number.isSafeInteger(rankBase) || rankBase < 0) throw new Error('rankBase 必须是非负安全整数')
   const records = data.skills === undefined ? {} : data.skills
   if (records === null || typeof records !== 'object' || Array.isArray(records)) throw new Error('skills 必须是 YAML 映射')
-  const skills: Record<string, ManagedSkillState> = {}
+  const skills: Record<string, ManagedSkillState> = emptySkills()
   const paths = new Set<string>()
   const links = new Set<string>()
   for (const [id, value] of Object.entries(records)) {
-    if (!isSafeSkillPath(id) || ['__proto__', 'constructor', 'prototype'].includes(id)) throw new Error(`技能身份不合法：${id}`)
+    // `__proto__` 在对象字面量与 JSON 往返中会改写原型，仍然拒绝；
+    // `constructor` / `prototype` 是普通技能名，容器无原型即可安全承载。
+    if (!isSafeSkillPath(id) || id === '__proto__') throw new Error(`技能身份不合法：${id}`)
     if (value === null || typeof value !== 'object' || Array.isArray(value)) throw new Error(`技能 ${id} 必须是 YAML 映射`)
     const item = value as Record<string, unknown>
     if (!isSafeSkillPath(item.path) || !isSafeSkillPath(item.link, true)) throw new Error(`技能 ${id} 的实体或链接路径不合法`)

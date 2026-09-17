@@ -28,7 +28,8 @@ test('配置文件缺失时回退默认值（默认技能根 + 默认 rank 基�
   const read = readSkillsConfig(file)
   assert.equal(read.ok, true)
   assert.equal(read.exists, false)
-  assert.deepEqual(read.config, { dirs: [], order: [], rankBase: 250, skills: {} })
+  assert.deepEqual({ ...read.config, skills: {} }, { dirs: [], order: [], rankBase: 250, skills: {} })
+  assert.deepEqual(Object.keys(read.config.skills), [])
   assert.equal(defaultSkillsConfig().rankBase, 250)
 })
 
@@ -58,7 +59,7 @@ test('空数组与默认 rank 基数删除对应键，文件保持精简', () =>
   assert.equal(/^dirs:/m.test(text), false)
   assert.equal(/^order:/m.test(text), false)
   assert.equal(/^rankBase:/m.test(text), false)
-  assert.deepEqual(readSkillsConfig(file).config, { dirs: [], order: [], rankBase: 250, skills: {} })
+  assert.deepEqual({ ...readSkillsConfig(file).config, skills: {} }, { dirs: [], order: [], rankBase: 250, skills: {} })
 })
 
 test('YAML 损坏时拒绝覆盖并报错（不丢用户手写内容）', () => {
@@ -103,4 +104,24 @@ test('调用者携带的内容版本不匹配时拒绝写入', () => {
   const before = readFileSync(file, 'utf8')
   assert.equal(writeSkillsConfig({ order: ['second'] }, file, 'stale').ok, false)
   assert.equal(readFileSync(file, 'utf8'), before)
+})
+
+test('Object.prototype 上的名字是合法技能身份，__proto__ 仍被拒绝', () => {
+  const file = configFile('proto-names')
+  const record = (id) => ({ path: id, link: id, enabled: true, modelInvocable: true, userInvocable: true })
+  // 真实技能库存在名为 prototype 的技能：身份校验不能把它当成保留名拒绝。
+  const written = writeSkillsConfig({ skills: { prototype: record('prototype'), constructor: record('constructor') } }, file)
+  assert.equal(written.ok, true, written.message)
+  const read = readSkillsConfig(file)
+  assert.equal(read.ok, true, read.message)
+  assert.deepEqual(Object.keys(read.config.skills).sort(), ['constructor', 'prototype'])
+  // 记录容器无原型：继承属性不会被误读成「存在的技能」。
+  assert.equal(Object.getPrototypeOf(read.config.skills), null)
+  assert.equal(read.config.skills.tostring, undefined)
+  assert.equal(read.config.skills.valueOf, undefined)
+  // __proto__ 在对象展开与 JSON 往返中会改写原型，仍然拒绝。
+  const malicious = JSON.parse(`{"__proto__": ${JSON.stringify(record('evil'))}}`)
+  assert.equal(Object.hasOwn(malicious, '__proto__'), true)
+  assert.equal(writeSkillsConfig({ skills: malicious }, file).ok, false)
+  assert.deepEqual(Object.keys(readSkillsConfig(file).config.skills).sort(), ['constructor', 'prototype'])
 })

@@ -39,7 +39,7 @@ skills:
 ```
 
 - 写入使用 yaml Document API，逐节点更新，保留注释与未知字段；内容无变化时不落盘。
-- `validateSkillsConfig` 同时服务读写：类型、身份、路径、布尔值、重复路径都在写盘前校验；`__proto__` / `constructor` / `prototype` 与保留设备名被拒绝。
+- `validateSkillsConfig` 同时服务读写：类型、身份、路径、布尔值、重复路径都在写盘前校验；`__proto__` 与保留设备名被拒绝。`constructor` / `prototype` 等 `Object.prototype` 上的名字是**合法技能名**（真实技能库中就有 `prototype`），因此记录容器不带原型——否则 `skills['constructor']` 会读到继承属性而被误判成"已存在的技能"。
 - 读取失败（语法、别名、非映射根、类型错误）返回统一失败载荷，**不用默认值覆盖**损坏文件。
 - 一次事务 = 整批前置校验 → 实体 frontmatter → 链接增删 → YAML，任一步失败按回滚栈复原并报告未完成项；事务期间由 `.system/.skills.lock` 跨进程互斥，无法证明已释放的锁不会自动抢占（提示人工确认后删除）。
 

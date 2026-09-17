@@ -24,7 +24,9 @@
 - **一次性迁移** `scripts/migrate-skills.mjs`：默认只读预览，`--apply` 先完整备份再搬迁实体、写 YAML、
   建链接（含嵌套子技能各自的根链接），`--rollback <migration.json>` 校验哈希后复原。
 - **缺陷修复**：单个未定义 YAML 别名不再中断整批扫描；缓存签名覆盖完整相对路径；
-  watcher 同时监听实体库与状态文件；写盘统一走跨进程锁与可回滚事务（`.system/.skills.lock`）。
+  watcher 同时监听实体库与状态文件；写盘统一走跨进程锁与可回滚事务（`.system/.skills.lock`）；
+  技能身份允许 `constructor` / `prototype` 等 `Object.prototype` 上的名字（真实技能库存在 `prototype` 技能，
+  旧黑名单会让整库读不出来），记录容器改为无原型对象，仅 `__proto__` 仍被拒绝。
 
 ### 删除入口视觉统一（2026-09-17）
 

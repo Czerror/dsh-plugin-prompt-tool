@@ -6,7 +6,7 @@ import { isMap, parseDocument } from 'yaml'
 import type { SkillEntry } from '../config.ts'
 import type { ManagedSkillState } from '../shared/skills.ts'
 import { readSkills, SKILL_NAME_RE } from '../runtime/skills-provider.ts'
-import { defaultSkillsConfig, readSkillsConfig, validateSkillsConfig, writeSkillsConfig, type SkillsConfig, type SkillsConfigRead } from './skills-config.ts'
+import { cloneSkillsConfig, defaultSkillsConfig, readSkillsConfig, validateSkillsConfig, writeSkillsConfig, type SkillsConfig, type SkillsConfigRead } from './skills-config.ts'
 
 const driftWarnings = new Set<string>()
 const pathKey = (path: string): string => process.platform === 'win32' ? resolve(path).toLowerCase() : resolve(path)
@@ -135,7 +135,7 @@ function applySkillsLibrary(
       current = read.config
       const before = fileInfo === undefined ? null : readFileSync(file, 'utf8')
       // 受管库只拥有实体、链接、顺序与 rank：外部目录不再作为第二发现根，dirs 一律清空。
-      const next = validateSkillsConfig({ ...update(structuredClone(current)), dirs: [] })
+      const next = validateSkillsConfig({ ...update(cloneSkillsConfig(current)), dirs: [] })
       const previousLinks = new Map(Object.values(current.skills).map((record) =>
         [pathKey(join(root, record.link)), join(root, '.system', record.path)]))
       const nextLinks = new Map(Object.values(next.skills).map((record) =>

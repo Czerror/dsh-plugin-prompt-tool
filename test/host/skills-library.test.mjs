@@ -181,3 +181,24 @@ test('parentId 使用实体路径最近受管祖先，与不相关稳定 ID 分�
   assert.equal(entries.get('second').parentId, 'unrelated')
   assert.equal(entries.get('third').parentId, 'second')
 })
+
+test('技能身份可以是 Object.prototype 上的名字，整库仍完整可读可启停', () => {
+  const root = join(home, 'proto-names', 'skills')
+  for (const id of ['prototype', 'constructor']) {
+    const dir = join(root, '.system', id)
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, 'SKILL.md'), `---\nname: ${id}\ndescription: ${id}\n---\nbody\n`)
+  }
+  const state = (id) => ({ path: id, link: id, enabled: true, modelInvocable: true, userInvocable: true })
+  const result = updateSkillsLibrary(root, (config) => ({ ...config, skills: { prototype: state('prototype'), constructor: state('constructor') } }))
+  assert.equal(result.ok, true, result.message)
+  const entries = new Map(readManagedSkills(root).map((entry) => [entry.id, entry]))
+  assert.deepEqual([...entries.keys()].sort(), ['constructor', 'prototype'], '两个技能都进入管理面，不被当成保留名丢弃')
+  assert.equal(entries.get('prototype').valid, true)
+  assert.equal(entries.get('prototype').linked, true)
+  // 停用 / 重新启用按稳定 id 定位，继承属性不会伪造出不存在的技能。
+  assert.equal(updateSkillsLibrary(root, (config) => { config.skills.prototype.enabled = false; return config }).ok, true)
+  assert.equal(existsSync(join(root, 'prototype')), false)
+  assert.equal(readManagedSkills(root).find((entry) => entry.id === 'prototype').disabled, true)
+  assert.equal(readManagedSkills(root).some((entry) => entry.id === 'tostring'), false)
+})
