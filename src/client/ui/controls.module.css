@@ -16,43 +16,23 @@
   min-width: 0;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 18px;
+  gap: 16px;
   flex-wrap: wrap;
-  animation: pt-rise .3s cubic-bezier(.22, 1, .36, 1) both;
 }
 
 .pageHeader h1,
 .pageHeader h2 {
-  position: relative;
   margin: 0;
-  padding-left: 14px;
   color: var(--dsw-alias-label-primary);
-  font-size: 17px;
-  font-weight: 600;
-  line-height: 24px;
-  letter-spacing: -.01em;
-}
-
-.pageHeader h1::before,
-.pageHeader h2::before {
-  position: absolute;
-  top: 4px;
-  bottom: 4px;
-  left: 0;
-  width: 4px;
-  border-radius: 999px;
-  corner-shape: round;
-  content: "";
-  background: linear-gradient(180deg, var(--dsw-alias-state-business-primary), color-mix(in srgb, var(--dsw-alias-state-business-primary) 35%, transparent));
-  box-shadow: 0 0 12px color-mix(in srgb, var(--dsw-alias-state-business-primary) 45%, transparent);
+  font: var(--dsw-font-base-strong-16);
+  overflow-wrap: anywhere;
 }
 
 .pageHeader p {
   max-width: 64ch;
   margin: 8px 0 0;
-  color: var(--dsw-alias-label-tertiary);
-  font-size: 14px;
-  line-height: 22px;
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-xxs-12);
 }
 
 .section {
@@ -60,7 +40,6 @@
   min-width: 0;
   flex-direction: column;
   gap: 12px;
-  animation: pt-rise .32s cubic-bezier(.22, 1, .36, 1) both;
 }
 
 /* 子代理页 / 注入层开关页：上方卡片区与下方模块列表之间的间距（与 section gap 一致）。 */
@@ -71,64 +50,56 @@
   min-width: 0;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 18px;
+  gap: 16px;
   flex-wrap: wrap;
   padding: 10px 14px;
   border: 0.5px solid var(--dsw-alias-border-l2);
   border-radius: 12px;
-  background: linear-gradient(180deg, color-mix(in srgb, var(--dsw-alias-state-business-primary) 5%, transparent), transparent 60%), var(--dsw-alias-bg-layer-3);
+  background: var(--dsw-alias-bg-layer-3);
 }
 
 .sectionHeading > div { min-width: 0; flex: 1; }
 
-.sectionHeading h2 {
+.sectionHeading h2,
+.sectionHeading h3 {
   margin: 0;
   color: var(--dsw-alias-label-primary);
-  font-size: 14px;
-  font-weight: 600;
-  line-height: 22px;
-  letter-spacing: -.005em;
-}
-
-.sectionHeading h2::after {
-  display: inline-block;
-  width: 5px;
-  height: 5px;
-  margin: 0 0 2px 7px;
-  border-radius: 50%;
-  corner-shape: round;
-  content: "";
-  background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 70%, transparent);
-  box-shadow: 0 0 8px color-mix(in srgb, var(--dsw-alias-state-business-primary) 55%, transparent);
+  font: var(--dsw-font-xs-strong-13);
+  overflow-wrap: anywhere;
 }
 
 .sectionHeading p {
   max-width: 66ch;
   margin: 1px 0 0;
-  color: var(--dsw-alias-label-tertiary);
-  font-size: 12px;
-  line-height: 18px;
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-xxs-12);
 }
 
 .modalBackdrop {
   position: fixed;
   inset: 0;
-  z-index: 100;
+  z-index: 1300;
   display: grid;
   place-items: center;
+  box-sizing: border-box;
+  padding: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+  max-height: 100dvh;
+  overflow-y: auto;
   background: var(--dsw-alias-bg-mask-1);
   backdrop-filter: var(--dsw-mask-blur);
 }
 
 .templateModal {
   display: flex;
-  width: min(440px, 92vw);
-  max-height: 72vh;
+  width: min(440px, 100%);
+  max-height: calc(100dvh - 24px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
   flex-direction: column;
   overflow: hidden;
   border: 0;
   border-radius: 14px;
   background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-primary);
+  font: var(--dsw-font-xxs-12);
   box-shadow: var(--dsw-elevation-prominent);
 }
 
@@ -137,29 +108,32 @@
   z-index: 1200;
   display: flex;
   width: min(440px, calc(100vw - 24px));
-  max-height: min(72vh, calc(100vh - 24px));
+  max-height: min(72dvh, calc(100dvh - 24px));
   flex-direction: column;
   overflow: hidden;
   border: 0;
   border-radius: 14px;
   background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-primary);
+  font: var(--dsw-font-xxs-12);
   box-shadow: var(--dsw-elevation-prominent);
 }
 .templateModalHead {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
-  gap: 10px;
+  gap: 12px;
+  flex-wrap: nowrap;
   padding: 12px 16px;
   border-bottom: 0.5px solid var(--dsw-alias-border-l1);
 }
+.templateModalHead > strong { flex: 1 1 0; min-width: 0; font: var(--dsw-font-xs-strong-13); overflow-wrap: anywhere; }
 
 .dialogClose {
-  width: 28px;
+  flex: none;
   min-width: 28px;
+  min-height: 28px;
   padding: 0;
-  font-size: 18px;
-  line-height: 1;
 }
 .templateModalList {
   display: grid;
@@ -183,28 +157,23 @@
 }
 
 .templateModalItem strong {
-  font-size: 13px;
-  font-weight: 600;
-  line-height: 1.5;
-  letter-spacing: -0.005em;
+  font: var(--dsw-font-xs-strong-13);
   overflow-wrap: anywhere;
 }
 
 .templateModalItem small {
-  color: var(--dsw-alias-label-tertiary);
-  font-size: 12px;
-  line-height: 1.5;
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-xxs-12);
   overflow-wrap: anywhere;
 }
 
 .templateModalItem:hover {
-  border-color: color-mix(in srgb, var(--dsw-alias-state-business-primary) 28%, var(--dsw-alias-border-l2));
-  box-shadow: 0 8px 22px -16px color-mix(in srgb, var(--dsw-alias-state-business-primary) 50%, transparent);
-  transform: translateY(-1px);
+  border-color: var(--dsw-alias-border-l3);
+  background: var(--dsw-alias-interactive-bg-hover);
 }
 
 .templateModalItem:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--dsw-alias-state-business-primary) 45%, var(--dsw-alias-border-l2));
+  outline: 2px solid var(--dsw-alias-state-business-primary);
   outline-offset: 2px;
 }
 
@@ -213,7 +182,7 @@
   appearance: none;
   display: inline-flex;
   box-sizing: border-box;
-  height: 36px;
+  min-height: 36px;
   align-items: center;
   justify-content: center;
   gap: 4px;
@@ -222,33 +191,27 @@
   corner-shape: round;
   padding: 0 14px;
   color: var(--dsw-alias-label-primary);
-  background: var(--dsw-alias-fill-field, var(--dsw-alias-bg-layer-3));
+  background: transparent;
   cursor: pointer;
-  font-size: 14px;
-  line-height: 22px;
-  white-space: nowrap;
-  transition: transform .14s ease, background-color .14s ease, border-color .14s ease, box-shadow .14s ease;
+  font: var(--dsw-font-s-14);
+  overflow-wrap: anywhere;
+  transition: background-color var(--ds-transition-duration-fast) var(--ds-ease-in-out), border-color var(--ds-transition-duration-fast) var(--ds-ease-in-out);
 }
 
 .pillButton:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover-solid); }
-.pillButton:active:not(:disabled),
-.primaryPill:active:not(:disabled) { transform: translateY(1px); }
 .pillButton:disabled,
 .primaryPill:disabled { cursor: default; opacity: .4; }
 .primaryPill,
 .save {
-  /* !important：覆盖宿主按钮默认 token，主按钮实底反色必须无条件生效。 */
-  border-color: transparent !important;
-  color: var(--dsw-alias-label-primary-foreground) !important;
-  background: var(--dsw-alias-button-primary-fill) !important;
+  border-color: transparent;
+  color: var(--dsw-alias-label-primary-foreground);
+  background: var(--dsw-alias-button-primary-fill);
 }
 .primaryPill:hover:not(:disabled),
-.save:hover:not(:disabled) { background: var(--dsw-alias-button-primary-hover) !important; }
-.primaryPill:not(:disabled),
-.save:not(:disabled) { box-shadow: 0 6px 18px -10px color-mix(in srgb, var(--dsw-alias-state-business-primary) 85%, transparent); }
+.save:hover:not(:disabled) { background: var(--dsw-alias-button-primary-hover); }
 
 .pillButton[data-danger] {
-  color: var(--dsw-alias-state-error-primary);
+  color: color-mix(in srgb, var(--dsw-alias-state-error-primary) 80%, var(--dsw-alias-label-primary));
   border-color: color-mix(in srgb, var(--dsw-alias-state-error-primary) 34%, var(--dsw-alias-border-l2));
 }
 .pillButton[data-danger]:hover:not(:disabled) {
@@ -260,12 +223,12 @@
   display: flex;
   position: relative;
   min-width: 0;
-  min-height: 62px;
+  min-height: 48px;
   align-items: center;
   justify-content: space-between;
-  gap: 18px;
-  border-top: 0.5px solid var(--dsw-alias-border-l2);
-  padding: 11px 0;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 8px 0;
 }
 
 /* 窄面板（侧边栏工作台）里的设置行：标题说明在上，控件独占一行，避免被长路径挤成竖排。 */
@@ -274,9 +237,8 @@
   min-width: 0;
   flex-direction: column;
   align-items: stretch;
-  gap: 8px;
-  border-top: 0.5px solid var(--dsw-alias-border-l2);
-  padding: 11px 0;
+  gap: 4px;
+  padding: 4px 0;
 }
 
 .settingRowStack .directoryControl {
@@ -293,6 +255,7 @@
 }
 
 .sessionModelRow > .menuSelect,
+.sessionModelRow > .menuSelectOwner,
 .sessionModelRow > input {
   flex: 1 1 120px;
   min-width: 0;
@@ -305,6 +268,7 @@
 .sessionModelRow > .switchGridField { flex: 1 1 150px; }
 
 .switchGridItem > .menuSelect,
+.switchGridItem > .menuSelectOwner,
 .switchGridItem > input {
   flex: 1 1 72px;
   min-width: 0;
@@ -328,14 +292,13 @@
 
 .switchGridLabel {
   color: var(--dsw-alias-label-primary);
-  font-size: 13px;
-  line-height: 20px;
+  font: var(--dsw-font-xxs-12);
   overflow-wrap: anywhere;
 }
 
 .settingCopy { display: flex; min-width: 0; flex: 1; flex-direction: column; }
-.settingCopy strong { color: var(--dsw-alias-label-primary); font-size: 14px; font-weight: 500; line-height: 21px; }
-.settingCopy small { color: var(--dsw-alias-label-tertiary); font-size: 11px; line-height: 17px; }
+.settingCopy strong { color: var(--dsw-alias-label-primary); font: var(--dsw-font-xxs-strong-12); }
+.settingCopy small { color: var(--dsw-alias-label-secondary); font: var(--dsw-font-xxs-12); overflow-wrap: anywhere; }
 .settingCopy code { font-family: var(--ds-font-family-code, ui-monospace, monospace); }
 
 .directoryControl {
@@ -350,26 +313,21 @@
 .directoryInput {
   width: 100%;
   min-width: 0;
-  height: 38px;
-  border: 0.5px solid var(--dsw-alias-border-l2);
-  border-radius: 10px;
-  outline: none;
-  padding: 0 11px;
+  min-height: 32px;
+  border: 0.5px solid var(--dsw-alias-label-tertiary);
+  border-radius: 8px;
+  padding: 4px 8px;
   color: var(--dsw-alias-label-primary);
-  background: var(--dsw-alias-bg-layer-3);
-  font-family: var(--ds-font-family-code, ui-monospace, monospace);
-  font-size: 12px;
-  line-height: 20px;
+  background: var(--dsw-alias-bg-layer-1);
+  font: var(--dsw-font-s-14);
 }
 .directoryInput::placeholder { color: var(--dsw-alias-label-caption); }
 .directoryInput:disabled { cursor: default; opacity: .46; }
 
-.rowGroup { border-bottom: 0.5px solid var(--dsw-alias-border-l2); }
-.section > .rowGroup + .rowGroup .toggleRow:first-child { border-top: 0; }
-.toggleRow:first-child { border-top: 0.5px solid var(--dsw-alias-border-l2); }
+.rowGroup { min-width: 0; }
 
 /* 技能管理卡片：选择框 + 手柄 + 序号 + 主体 + 开关 + 行操作。 */
-.skillCardList { display: flex; min-width: 0; flex-direction: column; gap: 8px; }
+.skillCardList { display: flex; min-width: 0; flex-direction: column; gap: 12px; }
 .skillCard {
   display: flex;
   position: relative;
@@ -380,9 +338,9 @@
   border-radius: 12px;
   padding: 9px 12px;
   background: var(--dsw-alias-bg-layer-3);
-  transition: border-color .16s ease, box-shadow .16s ease, opacity .16s ease;
+  flex-wrap: wrap;
 }
-.skillCard:hover { border-color: color-mix(in srgb, var(--dsw-alias-state-business-primary) 28%, var(--dsw-alias-border-l2)); }
+.skillCard:hover { border-color: var(--dsw-alias-border-l3); }
 .skillCard[data-dragging] { opacity: .4; }
 .skillCard[data-nested] { margin-left: 26px; }
 .skillCard[data-nested]::before {
@@ -390,28 +348,25 @@
   top: 0;
   bottom: 0;
   left: -13px;
-  width: 1px;
+  width: 0.5px;
   content: "";
-  background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 22%, var(--dsw-alias-border-l2));
+  background: var(--dsw-alias-border-l2);
 }
 .skillCard[data-drop-before] { box-shadow: 0 -2px 0 0 var(--dsw-alias-state-business-primary); }
 .skillCard[data-drop-after] { box-shadow: 0 2px 0 0 var(--dsw-alias-state-business-primary); }
 .skillCard[data-selected] {
-  border-color: color-mix(in srgb, var(--dsw-alias-state-business-primary) 55%, var(--dsw-alias-border-l2));
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--dsw-alias-state-business-primary) 16%, transparent);
+  border-color: var(--dsw-alias-state-business-primary);
 }
 /* 拖拽进行中禁用卡片过渡：避免整列表重渲染时所有卡片闪动动画。 */
 .skillCardList[data-dragging] .skillCard { transition: none; }
-.skillCard:has(.skillSwitch input:disabled) .switch { opacity: .55; }
 
 /* 未通过官方校验的技能：弱化主体文字，状态徽章与修复按钮保持满对比度。 */
-.skillRowInvalid .skillCardBody { opacity: .55; }
+.skillRowInvalid .skillCardBody { color: var(--dsw-alias-label-secondary); }
 .skillRowInvalid .dragHandle { opacity: .4; cursor: not-allowed; }
-.skillRowInvalid .switch { opacity: .55; }
 /* 预设卡片：对齐官方主菜单 agent 预设（自定义预设组）的卡片样式。 */
 .presetGrid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(268px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 268px), 1fr));
   /* 同行卡片等高，短描述不把卡片压矮。 */
   grid-auto-rows: 1fr;
   min-width: 0;
@@ -422,54 +377,42 @@
   display: flex;
   min-width: 0;
   flex-direction: column;
-  /* 无描边：透明边框占位防 hover 布局跳动，聚焦/选中全靠 accent 光影表达。 */
-  border: 1px solid transparent;
-  border-radius: 12px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: 14px;
   background: var(--dsw-alias-bg-layer-3);
-  transition: border-color .16s ease, box-shadow .16s ease, transform .16s ease, background .16s ease;
 }
 .presetCard:hover:not([data-active]) {
-  box-shadow: 0 8px 22px -16px color-mix(in srgb, var(--dsw-alias-state-business-primary) 50%, transparent);
-  transform: translateY(-1px);
+  border-color: var(--dsw-alias-border-l3);
 }
 .presetCard[data-active] {
-  /* accent 光圈替代描边 + 同款 tint 底：本插件激活状态。 */
-  background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 6%, var(--dsw-alias-bg-layer-3));
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--dsw-alias-state-business-primary) 45%, transparent);
+  border-color: var(--dsw-alias-state-business-primary);
 }
 .presetCardHead {
   display: flex;
   min-width: 0;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
 }
 .presetCardName {
+  flex: 1 1 auto;
   color: var(--dsw-alias-label-primary);
   min-width: 0;
-  font-size: 15px;
-  font-weight: 600;
-  line-height: 1.4;
+  font: var(--dsw-font-xs-strong-13);
   overflow-wrap: anywhere;
 }
 .presetCardId {
   margin-top: auto;
-  color: var(--dsw-alias-label-dimmed);
-  font-family: var(--dsw-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
-  font-size: 11px;
-  line-height: 1.5;
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-markdown-code);
+  font-family: var(--ds-font-family-code, ui-monospace, monospace);
   overflow-wrap: anywhere;
 }
 .presetCardDesc {
-  display: -webkit-box;
-  min-height: 42px;
+  min-height: 36px;
   margin: 0;
-  overflow: hidden;
   color: var(--dsw-alias-label-secondary);
-  font-size: 13px;
-  line-height: 1.55;
+  font: var(--dsw-font-xxs-12);
   overflow-wrap: anywhere;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 4;
 }
 .presetCardFooter {
   display: flex;
@@ -484,7 +427,7 @@
 /* 卡片标题行右侧状态徽章槽位（胶囊外观由 StatusBadge 提供）。 */
 .presetHeadBadge { flex: none; margin-left: auto; }
 .presetCardFooter .pillButton {
-  height: 28px;
+  min-height: 28px;
   padding: 0 10px;
   border-radius: 14px;
   font-size: 12px;
@@ -496,10 +439,12 @@
   display: inline-flex;
   align-items: center;
   border: 0;
-  border-radius: 7px;
+  min-width: 28px;
+  min-height: 28px;
+  border-radius: 8px;
   padding: 6px;
   background: none;
-  color: var(--dsw-alias-label-tertiary);
+  color: var(--dsw-alias-label-secondary);
   cursor: pointer;
 }
 .presetIconButton:hover:not(:disabled) {
@@ -507,22 +452,18 @@
   color: var(--dsw-alias-label-primary);
 }
 .presetIconButton:focus-visible {
-  outline: 2px solid var(--dsw-alias-brand-primary);
-  outline-offset: -1px;
+  outline: 2px solid var(--dsw-alias-state-business-primary);
+  outline-offset: 2px;
 }
 .dirCardActions { display: flex; flex: 0 0 auto; align-items: center; gap: 6px; flex-wrap: wrap; }
-.dirCardActions .pillButton { height: 28px; padding: 0 11px; font-size: 12px; }
+.dirCardActions .pillButton { min-height: 28px; padding: 0 10px; font: var(--dsw-font-xxs-12); }
 .dirAddInput { display: flex; min-width: 0; flex: 1 1 280px; align-items: center; gap: 8px; }
 .dirAddInput .directoryInput { flex: 1; }
-
-/* 过滤行：搜索框 + 全选按钮同排。 */
-.listFilterRow { display: flex; min-width: 0; align-items: center; gap: 8px; }
-.listFilterRow .listFilter { max-width: none; flex: 1; }
 
 .skillCardBody {
   display: flex;
   min-width: 0;
-  flex: 1;
+  flex: 1 1 140px;
   flex-direction: column;
   gap: 2px;
 }
@@ -544,19 +485,19 @@
   gap: 4px;
 }
 .skillOrderButtons .pillButton {
-  height: 22px;
+  min-width: 28px;
+  min-height: 28px;
   padding: 0 9px;
-  border-radius: 11px;
-  font-size: 12px;
-  line-height: 1;
+  border-radius: 14px;
+  corner-shape: round;
+  font: var(--dsw-font-xxs-12);
 }
 
 /* 全选按钮选中态：与统计筛选卡选中态同语言（accent 边框 + ring）。 */
 .listFilterRow .pillButton[data-active] {
-  border-color: color-mix(in srgb, var(--dsw-alias-state-business-primary) 45%, var(--dsw-alias-border-l2));
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--dsw-alias-state-business-primary) 18%, transparent);
-  color: color-mix(in srgb, var(--dsw-alias-state-business-primary) 80%, var(--dsw-alias-label-primary));
-  background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 8%, transparent);
+  border-color: var(--dsw-alias-state-business-primary);
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-interactive-bg-active);
 }
 
 .dragHandle {
@@ -567,40 +508,28 @@
   place-items: center;
   border: 1px solid transparent;
   border-radius: 8px;
-  color: var(--dsw-alias-label-tertiary);
+  color: var(--dsw-alias-label-secondary);
   background: transparent;
   cursor: grab;
-  font-size: 15px;
-  letter-spacing: -.04em;
+  font: var(--dsw-font-s-14);
   user-select: none;
-  transition: color .14s ease, background-color .14s ease, border-color .14s ease, transform .14s ease;
 }
 
 .skillCard:hover .dragHandle {
-  color: var(--dsw-alias-state-business-primary);
-  border-color: color-mix(in srgb, var(--dsw-alias-state-business-primary) 22%, var(--dsw-alias-border-l2));
-  background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 7%, transparent);
-  transform: translateY(-1px);
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-interactive-bg-hover);
 }
 
-.dragHandle:active { cursor: grabbing; transform: scale(.94); }
+.dragHandle:active { cursor: grabbing; }
 
 .configEnable {
   display: inline-flex;
+  position: relative;
+  flex: 0 0 auto;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
+  min-height: 28px;
   cursor: pointer;
-}
-
-.configEnable > input,
-.skillSwitch input {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip: rect(0 0 0 0);
-  clip-path: inset(50%);
-  white-space: nowrap;
 }
 
 /* 数字框 + 开关组成的右侧控件组：窄面板内保持同一行。 */
@@ -611,63 +540,6 @@
   gap: 8px;
 }
 
-.switch {
-  display: block;
-  position: relative;
-  width: 40px;
-  height: 24px;
-  flex: 0 0 auto;
-  border-radius: 999px;
-  corner-shape: round;
-  background: var(--dsw-alias-bg-layer-2);
-  box-shadow: inset 0 0 0 1px var(--dsw-alias-border-l2);
-  transition: background-color .18s cubic-bezier(.22, 1, .36, 1), box-shadow .18s ease;
-}
-
-.switch i {
-  position: absolute;
-  top: 3px;
-  left: 3px;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  corner-shape: round;
-  background: var(--dsw-alias-bg-layer-3);
-  box-shadow: 0 1px 3px color-mix(in srgb, var(--dsw-alias-label-primary) 22%, transparent);
-  transition: transform .18s cubic-bezier(.22, 1, .36, 1);
-}
-
-.configEnable:hover .switch,
-.skillSwitch:hover .switch { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--dsw-alias-state-business-primary) 45%, var(--dsw-alias-border-l2)); }
-
-.configEnable > input:checked + .switch,
-.skillSwitch input:checked + .switch { background: var(--dsw-alias-state-business-primary); box-shadow: none; }
-.configEnable > input:checked + .switch i,
-.skillSwitch input:checked + .switch i { transform: translateX(16px); }
-
-/* 模块/工具卡内布尔项使用紧凑开关；普通卡保留标准触控尺寸。 */
-.moduleCard .configEnable,
-.toolCard .configEnable {
-  min-height: 28px;
-  gap: 6px;
-  padding: 5px 0;
-}
-.moduleCard .switch,
-.toolCard .switch {
-  width: 32px;
-  height: 18px;
-  border-radius: 9px;
-}
-.moduleCard .switch i,
-.toolCard .switch i {
-  top: 2px;
-  left: 2px;
-  width: 14px;
-  height: 14px;
-}
-.moduleCard .configEnable > input:checked + .switch i,
-.toolCard .configEnable > input:checked + .switch i { transform: translateX(14px); }
-
 /* 标签输入：chip 增删 + 输入框；底层仍为逗号分隔字符串。 */
 .tagInput {
   display: flex;
@@ -675,16 +547,15 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 6px;
-  border: 0.5px solid var(--dsw-alias-border-l2);
-  border-radius: 10px;
+  border: 0.5px solid var(--dsw-alias-label-tertiary);
+  border-radius: 8px;
   padding: 6px 8px;
-  background: var(--dsw-alias-bg-layer-3);
-  transition: border-color .14s ease, box-shadow .14s ease;
+  background: var(--dsw-alias-bg-layer-1);
 }
 
 .tagInput:focus-within {
-  border-color: color-mix(in srgb, var(--dsw-alias-state-business-primary) 55%, var(--dsw-alias-border-l2));
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--dsw-alias-state-business-primary) 20%, transparent);
+  outline: 2px solid var(--dsw-alias-state-business-primary);
+  outline-offset: 2px;
 }
 
 .tagInput[data-disabled] { opacity: .46; }
@@ -693,22 +564,23 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  border: 1px solid color-mix(in srgb, var(--dsw-alias-state-business-primary) 26%, var(--dsw-alias-border-l2));
+  max-width: 100%;
+  border: 0.5px solid var(--dsw-alias-border-l2);
   border-radius: 999px;
   corner-shape: round;
   padding: 2px 9px;
   color: var(--dsw-alias-label-primary);
-  background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 8%, transparent);
-  font-size: 11px;
-  line-height: 17px;
-  white-space: nowrap;
+  background: var(--dsw-alias-bg-layer-2);
+  font: var(--dsw-font-xxs-12);
+  overflow-wrap: anywhere;
 }
 
 .tagChipRemove {
   appearance: none;
   display: grid;
-  width: 14px;
-  height: 14px;
+  min-width: 24px;
+  min-height: 24px;
+  flex: none;
   place-items: center;
   border: 0;
   border-radius: 50%;
@@ -717,8 +589,7 @@
   color: var(--dsw-alias-label-tertiary);
   background: transparent;
   cursor: pointer;
-  font-size: 12px;
-  line-height: 1;
+  font: var(--dsw-font-xxs-12);
 }
 
 .tagChipRemove:hover {
@@ -727,64 +598,63 @@
 }
 
 .tagInputField {
-  min-width: 90px;
+  min-width: min(90px, 100%);
+  min-height: 28px;
   flex: 1;
   border: 0;
-  outline: none;
   padding: 4px 2px;
   color: var(--dsw-alias-label-primary);
   background: transparent;
-  font: inherit;
-  font-size: 12px;
-  line-height: 18px;
+  font: var(--dsw-font-xxs-12);
 }
 
 .tagInputField::placeholder { color: var(--dsw-alias-label-caption); }
 
-.notice { font-size: 12px; color: var(--dsw-alias-state-success-primary); overflow-wrap: anywhere; }
-.noticeError { color: var(--dsw-alias-state-error-primary); }
+.notice { font: var(--dsw-font-xxs-12); color: color-mix(in srgb, var(--dsw-alias-state-success-primary) 60%, var(--dsw-alias-label-primary)); overflow-wrap: anywhere; }
+.noticeError { color: color-mix(in srgb, var(--dsw-alias-state-error-primary) 80%, var(--dsw-alias-label-primary)); }
 
 /* 提示词配置列表：卡片 + 开关 + 四按钮 + 表单。 */
 .configList { display: flex; min-width: 0; flex-direction: column; gap: 10px; }
 /* 模块卡容器同时承担 world-book 视图的 hidden 隐藏：作者样式不得盖掉 UA 的 hidden。 */
 .configList[hidden] { display: none; }
 .configCard {
+  container: config-card / inline-size;
   display: flex;
+  min-width: 0;
   flex-direction: column;
   border: 0.5px solid var(--dsw-alias-border-l2);
   border-radius: 14px;
   background: var(--dsw-alias-bg-layer-3);
-  overflow: hidden;
-  transition: border-color .16s ease, box-shadow .16s ease, transform .16s ease;
+  scroll-margin-block: 8px;
 }
-.configCard:hover { border-color: color-mix(in srgb, var(--dsw-alias-state-business-primary) 28%, var(--dsw-alias-border-l2)); box-shadow: 0 8px 22px -16px color-mix(in srgb, var(--dsw-alias-state-business-primary) 50%, transparent); transform: translateY(-1px); }
+.configCard:hover { border-color: var(--dsw-alias-border-l3); }
 .configCard[data-dragging] { opacity: .4; }
 .configCard[data-drop-before] { box-shadow: 0 -2px 0 0 var(--dsw-alias-state-business-primary); }
 .configCard[data-drop-after] { box-shadow: 0 2px 0 0 var(--dsw-alias-state-business-primary); }
-.configCardOpen { border-color: color-mix(in srgb, var(--dsw-alias-state-business-primary) 38%, var(--dsw-alias-border-l2)); box-shadow: 0 10px 26px -18px color-mix(in srgb, var(--dsw-alias-state-business-primary) 55%, transparent); }
-.configHeader { display: flex; align-items: center; gap: 10px; padding: 10px 12px; flex-wrap: wrap; }
+.configCardOpen { border-color: var(--dsw-alias-border-l3); }
+.configHeader { display: flex; min-width: 0; min-height: 48px; align-items: center; gap: 12px; padding: 8px 12px 8px 14px; flex-wrap: wrap; }
 .configHeaderActions {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 12px;
   flex: 0 0 auto;
   margin-left: auto;
 }
-.configToggle { flex: 1; min-width: 160px; appearance: none; border: 0; background: none; font: inherit; color: inherit; text-align: left; cursor: pointer; display: flex; align-items: center; gap: 8px; padding: 4px 0; }
+.configToggle { flex: 1 1 160px; min-width: 0; min-height: 28px; appearance: none; border: 0; background: none; font: inherit; color: inherit; text-align: left; cursor: pointer; display: flex; align-items: center; gap: 8px; padding: 4px 0; }
+.configToggle[data-static] { cursor: default; }
 .configToggle:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary); outline-offset: 2px; }
 .configTitle { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .configTitleRow { display: flex; align-items: center; gap: 6px; min-width: 0; flex-wrap: wrap; }
-.configName { font-size: 13px; font-weight: 600; line-height: 1.5; color: var(--dsw-alias-label-primary); overflow-wrap: anywhere; letter-spacing: -.005em; }
-.configMeta { font-size: 12px; line-height: 1.5; color: var(--dsw-alias-label-tertiary); overflow-wrap: anywhere; }
-.configChip { padding: 1px 8px; border-radius: 999px; corner-shape: round; font-size: 11px; line-height: 1.6; color: var(--dsw-alias-label-brand); background: color-mix(in srgb, var(--dsw-alias-label-brand) 12%, transparent); }
-.configSectionTitle { margin: 12px 0 4px; padding-top: 10px; border-top: 0.5px solid var(--dsw-alias-border-l2); font-size: 11px; font-weight: 600; line-height: 1.4; color: var(--dsw-alias-label-tertiary); letter-spacing: .02em; }
+.configName { font: var(--dsw-font-xs-strong-13); color: var(--dsw-alias-label-primary); overflow-wrap: anywhere; }
+.configMeta { font: var(--dsw-font-xxs-12); color: var(--dsw-alias-label-secondary); overflow-wrap: anywhere; }
+.configChip { max-width: 100%; padding: 1px 8px; border: 0.5px solid var(--dsw-alias-border-l2); border-radius: 999px; corner-shape: round; font: var(--dsw-font-xxxs-11); color: var(--dsw-alias-label-secondary); background: transparent; overflow-wrap: anywhere; }
+.configSectionTitle { margin: 16px 0 8px; padding-top: 16px; border-top: 0.5px solid var(--dsw-alias-border-l2); font: var(--dsw-font-xxs-strong-12); color: var(--dsw-alias-label-secondary); }
 .configSectionTitle:first-child { margin-top: 0; padding-top: 0; border-top: 0; }
-.chevron { flex: none; color: var(--dsw-alias-label-tertiary); transition: transform .18s cubic-bezier(.22, 1, .36, 1); }
-.chevronOpen { transform: rotate(180deg); color: var(--dsw-alias-state-business-primary); }
+.chevron { flex: none; color: var(--dsw-alias-label-secondary); transition: transform var(--ds-transition-duration-fast) var(--ds-ease-in-out); }
+.chevronOpen { transform: rotate(180deg); }
 
-.configEnable { display: inline-flex; position: relative; flex: 0 0 auto; cursor: pointer; }
 .configActions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-left: auto; }
-.configActions .pillButton { height: 30px; padding: 0 11px; font-size: 12px; border-radius: 15px; }
+.configActions .pillButton { min-height: 28px; padding: 0 10px; font: var(--dsw-font-xxs-12); border-radius: 14px; corner-shape: round; }
 
 .configForm {
   display: flex;
@@ -793,81 +663,78 @@
   margin: 0;
   min-width: 0;
   border: 0;
-  border-top: 1px solid color-mix(in srgb, var(--dsw-alias-state-business-primary) 16%, var(--dsw-alias-border-l2));
-  padding: 12px 14px;
-  background: linear-gradient(180deg, color-mix(in srgb, var(--dsw-alias-state-business-primary) 4%, transparent), transparent 28%), var(--dsw-alias-bg-layer-2);
+  border-top: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: 0 0 14px 14px;
+  padding: 14px 16px;
+  background: var(--dsw-alias-bg-layer-2);
 }
+.configForm[hidden] { display: none; }
 .configField { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
-.configFieldLabel { font-size: 12px; font-weight: 500; line-height: 1.5; color: var(--dsw-alias-label-primary); }
-.configFieldHint { margin: 0; font-size: 12px; line-height: 1.5; color: var(--dsw-alias-label-tertiary); }
+.configFieldLabel { font: var(--dsw-font-xxs-strong-12); color: var(--dsw-alias-label-primary); }
+.configFieldHint { margin: 0; font: var(--dsw-font-xxs-12); color: var(--dsw-alias-label-secondary); overflow-wrap: anywhere; }
 .configFieldControlAnchor { min-width: 0; }
 .configFieldStack { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .configFieldStack > textarea { margin-top: 2px; }
 .configInput {
+  min-width: 0;
   max-width: 100%;
   box-sizing: border-box;
-  border: 0.5px solid var(--dsw-alias-border-l2);
-  background: var(--dsw-alias-bg-layer-3);
-  height: 34px;
-  font: inherit;
+  border: 0.5px solid var(--dsw-alias-label-tertiary);
+  background: var(--dsw-alias-bg-layer-1);
+  min-height: 32px;
+  font: var(--dsw-font-s-14);
   color: var(--dsw-alias-label-primary);
-  border-radius: 9px;
-  padding: 0 8px;
-  font-size: 12px;
-  line-height: 1.5;
+  border-radius: 8px;
+  padding: 4px 8px;
 }
-.configInput:focus-visible { border-color: var(--dsw-alias-state-business-primary); outline: none; }
 .configInput:disabled { color: var(--dsw-alias-label-tertiary); cursor: default; }
 .moduleCard .configInput,
-.toolCard .configInput { height: 28px; border-radius: 7px; padding: 0 7px; }
+.toolCard .configInput,
+.configForm .configInput { min-height: 28px; padding: 4px 8px; font: var(--dsw-font-xxs-12); }
+.configNumberInput { width: 12ch; max-width: 100%; }
+.settingRowStack > .menuSelect,
+.settingRowStack > .menuSelectOwner { width: min(100%, 280px); }
 .configTextarea {
   width: 100%;
   min-height: 72px;
   /* 随内容自适应拉高（长文本不再挤在小编辑框）；resize: vertical 仍可手动覆盖。 */
   field-sizing: content;
-  max-height: 60vh;
+  max-height: max(72px, 60dvh);
   box-sizing: border-box;
+  font: var(--dsw-font-markdown-code);
   font-family: var(--ds-font-family-code, ui-monospace, monospace);
-  font-size: 12px;
-  line-height: 1.6;
   color: var(--dsw-alias-label-primary);
-  background: var(--dsw-specific-input-major, var(--dsw-alias-bg-layer-2));
-  border: 0.5px solid var(--dsw-alias-border-l2);
-  border-radius: 9px;
+  background: var(--dsw-alias-bg-layer-1);
+  border: 0.5px solid var(--dsw-alias-label-tertiary);
+  border-radius: 8px;
   padding: 8px 10px;
   resize: vertical;
 }
-.configTextarea:focus-visible { border-color: var(--dsw-alias-state-business-primary); outline: none; }
 
 .emptyState {
   display: flex;
   min-height: 150px;
   align-items: center;
   justify-content: center;
-  gap: 18px;
+  gap: 16px;
   padding: 24px;
-  border: 1px dashed color-mix(in srgb, var(--dsw-alias-state-business-primary) 24%, var(--dsw-alias-border-l2));
-  border-radius: 13px;
-  background:
-    radial-gradient(90% 160% at 50% 0%, color-mix(in srgb, var(--dsw-alias-state-business-primary) 5%, transparent), transparent 60%),
-    color-mix(in srgb, var(--dsw-alias-bg-layer-1) 50%, transparent);
+  flex-wrap: wrap;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: 14px;
+  background: var(--dsw-alias-bg-layer-3);
 }
 .emptyGlyph {
   display: grid;
-  width: 42px;
-  height: 42px;
+  width: 36px;
+  height: 36px;
   flex: 0 0 auto;
   place-items: center;
-  border: 1px solid color-mix(in srgb, var(--dsw-alias-state-business-primary) 24%, var(--dsw-alias-border-l1));
-  border-radius: 11px;
-  color: var(--dsw-alias-state-business-primary);
-  background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 6%, var(--dsw-alias-bg-layer-1));
-  font-size: 20px;
-  box-shadow: 0 0 18px -10px color-mix(in srgb, var(--dsw-alias-state-business-primary) 70%, transparent);
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-base-16);
 }
-.emptyState h3 { margin: 0 0 5px; font-size: 15px; line-height: 1.4; }
-.emptyState p { max-width: 520px; margin: 0; color: var(--dsw-alias-label-tertiary); font-size: 12px; line-height: 1.6; }
-.readOnly { color: var(--dsw-alias-label-tertiary); font-size: 12px; line-height: 18px; }
+.emptyState h3 { margin: 0 0 4px; font: var(--dsw-font-xs-strong-13); }
+.emptyState p { max-width: 520px; margin: 0; color: var(--dsw-alias-label-secondary); font: var(--dsw-font-xxs-12); overflow-wrap: anywhere; }
+.readOnly { color: var(--dsw-alias-label-secondary); font: var(--dsw-font-xxs-12); overflow-wrap: anywhere; }
 
 /* 次级按钮语义变体：显式声明，避免未来主按钮规则误伤。 */
 .pillButton[data-variant='secondary'] {
@@ -880,38 +747,41 @@
 .listFilterRow { display: flex; min-width: 0; align-items: center; gap: 8px; flex-wrap: wrap; }
 .listFilter {
   width: 100%;
-  max-width: 320px;
+  min-width: 0;
+  flex: 1 1 200px;
   box-sizing: border-box;
-  height: 32px;
-  border: 0.5px solid var(--dsw-alias-border-l2);
-  border-radius: 9px;
-  outline: none;
-  padding: 0 10px;
+  min-height: 32px;
+  border: 0.5px solid var(--dsw-alias-label-tertiary);
+  border-radius: 8px;
+  padding: 4px 8px;
   color: var(--dsw-alias-label-primary);
-  background: var(--dsw-alias-bg-layer-3);
-  font: inherit;
-  font-size: 12px;
-  line-height: 1.5;
-}
-.listFilter:focus-visible {
-  border-color: color-mix(in srgb, var(--dsw-alias-state-business-primary) 55%, var(--dsw-alias-border-l2));
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--dsw-alias-state-business-primary) 20%, transparent);
+  background: var(--dsw-alias-bg-layer-1);
+  font: var(--dsw-font-s-14);
 }
 .listFilter::placeholder { color: var(--dsw-alias-label-caption); }
-.listFilterRow .menuSelect.listFilter { flex: 0 0 auto; width: auto; max-width: none; }
+.listFilterRow .menuSelect.listFilter,
+.listFilterRow .menuSelectOwner.listFilter { flex: 0 1 auto; width: auto; max-width: 100%; }
 
 /* 官方 Settings Menu 选择器：卡片内使用紧凑触发器，菜单由 primitive portal 渲染。 */
-.menuSelect {
+.menuSelect,
+.menuSelectOwner {
   display: inline-flex;
   min-width: 0;
+  max-width: 100%;
 }
+.menuSelectOwner > .menuSelect { width: 100%; }
+.configFieldControlAnchor > .menuSelectOwner { width: 100%; }
+.listFilterRow > .menuSelectOwner { flex: 0 1 auto; }
 
-.menuSelectCompact { height: 28px; }
-.menuSelectStandard { height: 36px; }
+.menuSelectCompact { min-height: 28px; }
+.menuSelectStandard { min-height: 36px; }
 
 .menuSelect.configInput,
 .menuSelect.directoryInput,
-.menuSelect.listFilter {
+.menuSelect.listFilter,
+.menuSelectOwner.configInput,
+.menuSelectOwner.directoryInput,
+.menuSelectOwner.listFilter {
   border: 0;
   border-radius: 0;
   padding: 0;
@@ -924,29 +794,29 @@
   min-width: 0;
   align-items: center;
   justify-content: space-between;
-  border: 0;
-  background: var(--dsw-alias-bg-module-platform);
+  border: 0.5px solid var(--dsw-alias-label-tertiary);
+  background: transparent;
   color: var(--dsw-alias-label-primary);
   cursor: pointer;
   font: inherit;
 }
 
 .menuSelectTriggerCompact {
-  height: 28px;
+  min-height: 28px;
   gap: 8px;
-  padding: 0 10px;
+  padding: 4px 10px;
   border-radius: 14px;
-  font-size: 12px;
-  line-height: 18px;
+  corner-shape: round;
+  font: var(--dsw-font-xxs-12);
 }
 
 .menuSelectTriggerStandard {
-  height: 36px;
+  min-height: 36px;
   gap: 12px;
-  padding: 0 14px;
+  padding: 6px 14px;
   border-radius: 18px;
-  font-size: 14px;
-  line-height: 22px;
+  corner-shape: round;
+  font: var(--dsw-font-s-14);
 }
 
 .menuSelectTrigger:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover); }
@@ -958,9 +828,8 @@
 
 .menuSelectLabel {
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  text-align: left;
+  overflow-wrap: anywhere;
 }
 
 .menuSelectChevron { flex: none; }
@@ -969,17 +838,18 @@
   display: flex;
   align-items: center;
   gap: 6px;
+  flex-wrap: wrap;
   margin-left: auto;
 }
 .batchControls .pillButton {
-  height: 32px;
-  padding: 0 12px;
-  border-radius: 16px;
-  font-size: 12px;
-  line-height: 18px;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 14px;
+  corner-shape: round;
+  font: var(--dsw-font-xxs-12);
 }
 
-/* 加载骨架屏：行状 shimmer 占位，替代加载期空白。 */
+/* 加载骨架保留布局占位，不使用循环装饰动画。 */
 .skeletonStack {
   display: grid;
   gap: 10px;
@@ -987,15 +857,9 @@
 }
 .skeletonRow {
   height: 46px;
-  border-radius: 11px;
-  background: linear-gradient(90deg, var(--dsw-alias-bg-layer-2) 25%, var(--dsw-alias-bg-layer-3) 50%, var(--dsw-alias-bg-layer-2) 75%);
-  background-size: 200% 100%;
-  animation: pt-shimmer 1.4s linear infinite;
-}
-
-@keyframes pt-shimmer {
-  from { background-position: 200% 0; }
-  to { background-position: -200% 0; }
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: 12px;
+  background: var(--dsw-alias-bg-layer-2);
 }
 
 /* 忙碌状态小圆环：currentColor 自适应主/次按钮前景色。 */
@@ -1016,54 +880,48 @@
 .pillButton:focus-visible,
 .primaryPill:focus-visible,
 .directoryInput:focus-visible,
-.configEnable > input:focus-visible + .switch,
-.skillSwitch input:focus-visible + .switch {
-  outline: none;
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--dsw-alias-state-business-primary) 45%, transparent);
+.configInput:focus-visible,
+.configTextarea:focus-visible,
+.listFilter:focus-visible,
+.tagChipRemove:focus-visible,
+.tagInputField:focus-visible,
+.dragHandle:focus-visible {
+  outline: 2px solid var(--dsw-alias-state-business-primary);
+  outline-offset: 2px;
 }
 
-@keyframes pt-rise {
-  from { opacity: 0; transform: translateY(8px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-@media (max-width: 620px) {
-  .toggleRow { align-items: stretch; flex-direction: column; gap: 9px; }
+@container workspace (max-width: 620px) {
+  .toggleRow { align-items: flex-start; }
   .directoryControl { max-width: none; justify-content: space-between; }
   .configActions { width: 100%; }
-  .configActions .pillButton { flex: 1; }
+  .configActions { justify-content: flex-end; }
   .configHeader { align-items: flex-start; }
   .emptyState { flex-direction: column; gap: 12px; text-align: center; }
 }
 
 
 @media (prefers-reduced-motion: reduce) {
-  .switch,
-.switch i,
-.chevron,
-.pageHeader,
-.section,
-.skeletonRow,
-.spinner,
-.pillButton,
-.primaryPill { transition: none; animation: none; }
+  .chevron,
+  .spinner,
+  .pillButton,
+  .primaryPill { transition: none; animation: none; }
 }
 
 
 /* 模板变量键值对行：两输入 + 删除按钮水平排列。 */
-.variableRow { display: flex; align-items: center; gap: 6px; }
-.variableRow .configInput { min-width: 0; flex: 1; }
+.variableRow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.variableRow .configInput { min-width: 0; flex: 1 1 100px; }
 .variableRow .pillButton { flex: 0 0 auto; }
 
 /* 模板选择弹窗按层分组。 */
 .templateGroup { display: flex; flex-direction: column; gap: 4px; }
 .templateGroup + .templateGroup { margin-top: 12px; }
-.templateGroupTitle { font-size: 12px; color: var(--dsw-alias-label-tertiary); padding: 0 4px; }
+.templateGroupTitle { font: var(--dsw-font-xxs-12); color: var(--dsw-alias-label-secondary); padding: 0 4px; }
 
 /* 导入预览的有损信息列表：服务端有界数据全部展示，长列表在容器内滚动
    （可聚焦，支持键盘滚动），不做二次截断，也不隐藏条目。 */
 .previewGroup { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; }
-.previewGroupTitle { font-size: 12px; color: var(--dsw-alias-label-tertiary); }
+.previewGroupTitle { font: var(--dsw-font-xxs-12); color: var(--dsw-alias-label-secondary); }
 .previewList {
   max-height: 12rem;
   overflow-y: auto;
@@ -1075,4 +933,58 @@
 }
 .previewList:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
 .previewItem { overflow-wrap: anywhere; }
-.previewLocation { display: block; font-size: 12px; color: var(--dsw-alias-label-tertiary); }
+.previewLocation { display: block; font: var(--dsw-font-xxs-12); color: var(--dsw-alias-label-secondary); }
+
+/* 列表操作区高度由页面 owner 测量，短视口解除 sticky。 */
+.pageActions { position: sticky; top: 0; z-index: 1; isolation: isolate; display: flex; flex-direction: column; gap: 8px; min-width: 0; padding: 8px 0; background: Canvas; border-bottom: .5px solid var(--dsw-alias-border-l2); }
+/* 第三方主题可把表面设为透明：语义表面叠在系统不透明基底上，滚动正文不会透出。 */
+.pageActions::before { content: ''; position: absolute; inset: 0; z-index: -1; pointer-events: none; background: var(--dsw-alias-bg-layer-2, var(--dsw-alias-bg-base, Canvas)); }
+[data-sticky-disabled='true'] .pageActions { position: relative; top: auto; }
+.actionFeedback { min-width: 0; font: var(--dsw-font-xxs-12); overflow-wrap: anywhere; }
+.actionHint { margin: 0; color: var(--dsw-alias-label-secondary); font: var(--dsw-font-xxs-12); overflow-wrap: anywhere; }
+.configStatus { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 14px; border-top: 0.5px solid var(--dsw-alias-border-l2); font: var(--dsw-font-xxs-12); overflow-wrap: anywhere; }
+.configFullName { margin: 0; padding: 8px 14px; border-top: 0.5px solid var(--dsw-alias-border-l2); color: var(--dsw-alias-label-secondary); font: var(--dsw-font-xxs-12); white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; }
+.configStatus > p { margin: 0; }
+.configFieldError,
+.confirmError { margin: 0; color: color-mix(in srgb, var(--dsw-alias-state-error-primary) 80%, var(--dsw-alias-label-primary)); font: var(--dsw-font-xxs-12); overflow-wrap: anywhere; }
+.confirmDescription { margin: 0; padding: 12px 16px; color: var(--dsw-alias-label-primary); font: var(--dsw-font-xxs-12); overflow-wrap: anywhere; }
+.confirmActions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px; padding: 12px 16px; }
+
+@media (pointer: coarse) {
+  .configInput,
+  .moduleCard .configInput,
+  .toolCard .configInput,
+  .configForm .configInput { min-width: 44px; min-height: 44px; }
+  .pillButton,
+  .primaryPill,
+  .configActions .pillButton,
+  .batchControls .pillButton,
+  .skillOrderButtons .pillButton,
+  .presetCardFooter .pillButton,
+  .dirCardActions .pillButton,
+  .presetIconButton,
+  .tagChipRemove,
+  .dragHandle,
+  .dialogClose,
+  .configEnable,
+  .skillSwitch,
+  .menuSelectTrigger { min-width: 44px; min-height: 44px; }
+  .dragHandle { width: 44px; height: 44px; }
+  .configHeaderActions { flex-wrap: wrap; }
+}
+
+@media (forced-colors: active) {
+  .configCard,
+  .presetCard,
+  .skillCard,
+  .tagChip,
+  .emptyState { border-color: CanvasText; }
+  .templatePopover,
+  .templateModal { outline: 1px solid CanvasText; }
+  .configCard[data-drop-before],
+  .configCard[data-drop-after],
+  .skillCard[data-drop-before],
+  .skillCard[data-drop-after] { outline: 2px solid Highlight; }
+  .presetCard[data-active],
+  .skillCard[data-selected] { border-color: Highlight; }
+}

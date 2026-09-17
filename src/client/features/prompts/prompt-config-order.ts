@@ -8,6 +8,7 @@ export function viewOrderedIds(
   layer: string | undefined,
   layers: readonly string[],
   strategy?: string,
+  visibleIds?: readonly string[],
 ): string[] {
   const layerRank = (config: PromptConfigDraft): number => {
     const index = layers.indexOf(promptConfigLayer(config))
@@ -17,6 +18,7 @@ export function viewOrderedIds(
     .map((config, index) => ({ config, index }))
     .filter((entry) => layer === undefined || promptConfigLayer(entry.config) === layer)
     .filter((entry) => strategy === undefined || entry.config.strategy === strategy)
+    .filter((entry) => visibleIds === undefined || visibleIds.includes(entry.config.id))
     .sort((a, b) => {
       const byLayer = layerRank(a.config) - layerRank(b.config)
       if (byLayer !== 0) return byLayer
@@ -39,10 +41,12 @@ export function moveWithinLayer(
   layer?: string,
   layers?: readonly string[],
   strategy?: string,
+  visibleIds?: readonly string[],
 ): PromptConfigDraft[] {
-  const currentId = all[globalIndex]?.id
-  if (currentId === undefined) return all
-  const view = viewOrderedIds(all, layer, layers ?? [], strategy)
+  const source = all[globalIndex]
+  if (source === undefined || (layer !== undefined && promptConfigLayer(source) !== layer)) return all
+  const currentId = source.id
+  const view = viewOrderedIds(all, promptConfigLayer(source), layers ?? [], strategy, visibleIds)
   const viewIndex = view.indexOf(currentId)
   const targetViewIndex = viewIndex + delta
   if (viewIndex < 0 || targetViewIndex < 0 || targetViewIndex >= view.length) return all
@@ -71,8 +75,11 @@ export function moveToView(
   layer?: string,
   layers?: readonly string[],
   strategy?: string,
+  visibleIds?: readonly string[],
 ): PromptConfigDraft[] {
-  const view = viewOrderedIds(all, layer, layers ?? [], strategy)
+  const source = all.find((config) => config.id === sourceId)
+  if (source === undefined || (layer !== undefined && promptConfigLayer(source) !== layer)) return all
+  const view = viewOrderedIds(all, promptConfigLayer(source), layers ?? [], strategy, visibleIds)
   const sourceIndex = view.indexOf(sourceId)
   if (sourceIndex < 0) return all
   const rest = view.filter((id) => id !== sourceId)
@@ -86,7 +93,7 @@ export function moveToView(
   for (let step = 0; step < Math.abs(steps); step++) {
     const globalIndex = current.findIndex((config) => config.id === sourceId)
     if (globalIndex < 0) break
-    current = moveWithinLayer(current, globalIndex, delta, layer, layers, strategy)
+    current = moveWithinLayer(current, globalIndex, delta, layer, layers, strategy, visibleIds)
   }
   return current
 }

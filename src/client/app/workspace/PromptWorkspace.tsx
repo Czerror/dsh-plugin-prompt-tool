@@ -1,4 +1,4 @@
-import { useEffect, useState, useSyncExternalStore, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import type { PromptToolHostApi } from '../../data/host-api.ts'
 import type { PromptToolTranslate } from '../../locales.ts'
 import { usePromptToolStore, type PromptToolSettingsTransport } from '../../data/use-prompt-tool-store.ts'
@@ -11,6 +11,7 @@ import { MainSessionPage } from './pages/MainSessionPage.tsx'
 import { SubagentPage } from './pages/SubagentPage.tsx'
 import { WorkspaceFrame } from './WorkspaceFrame.tsx'
 import type { WorkspacePage } from './workspace-pages.ts'
+import { configPageBrowse, createWorkspaceBrowseState } from './workspace-browse-state.ts'
 
 export interface PromptWorkspaceProps {
   api: PromptToolHostApi
@@ -26,6 +27,20 @@ export function PromptWorkspace(props: PromptWorkspaceProps): ReactNode {
   const { t } = props
   const store = usePromptToolStore(props.api, props.settings)
   const [page, setPage] = useState<WorkspacePage>('features')
+  const browse = useRef(createWorkspaceBrowseState()).current
+  const [focusPage, setFocusPage] = useState(0)
+  const [readyPage, setReadyPage] = useState<WorkspacePage>()
+  const changePage = (target: WorkspacePage): void => {
+    if (target !== page) setReadyPage(undefined)
+    setPage(target)
+  }
+  const markReady = useCallback(() => setReadyPage(page), [page])
+  const navigate = (target: WorkspacePage): void => {
+    changePage(target)
+    setFocusPage((value) => value + 1)
+  }
+  const presetId = store.fields.presetTemplate
+  const scrollKey = page === 'features' || page === 'subagent' ? `${page}:${presetId}` : page
   const open = useSyncExternalStore(
     props.controller.subscribe,
     props.controller.getSnapshot,
@@ -47,16 +62,16 @@ export function PromptWorkspace(props: PromptWorkspaceProps): ReactNode {
           : page === 'tools' ? t('meta.tools') : t('meta.subagent')
 
   const content = page === 'features'
-    ? <MainSessionPage store={store} t={t} />
+    ? <MainSessionPage key={presetId} store={store} t={t} browse={configPageBrowse(browse, scrollKey)} onNavigate={navigate} />
     : page === 'subagent'
-      ? <SubagentPage store={store} t={t} />
+      ? <SubagentPage key={presetId} store={store} t={t} browse={configPageBrowse(browse, scrollKey)} onNavigate={navigate} />
       : page === 'tools'
-        ? <ToolsPreviewPage api={props.api} presetId={store.fields.presetTemplate} t={t} />
+        ? <ToolsPreviewPage api={props.api} presetId={presetId} t={t} browse={browse.tools} onNavigate={navigate} onReady={markReady} />
         : page === 'skills'
-          ? <SkillsPage store={store} api={props.api} t={t} />
+          ? <SkillsPage store={store} api={props.api} t={t} browse={browse.skills} />
           : page === 'presets'
             ? <PresetsPage store={store} t={t} />
-            : <CharactersPage store={store} t={t} />
+            : <CharactersPage store={store} t={t} onReady={markReady} />
 
   return (
     <WorkspaceFrame
@@ -64,7 +79,11 @@ export function PromptWorkspace(props: PromptWorkspaceProps): ReactNode {
       page={page}
       pageMeta={pageMeta}
       t={t}
-      onPageChange={setPage}
+      onPageChange={changePage}
+      scrollKey={scrollKey}
+      scrollPositions={browse.scroll}
+      focusPage={focusPage}
+      contentReady={page !== 'characters' && page !== 'tools' || readyPage === page}
       onClose={props.onClose}
     >
       {content}

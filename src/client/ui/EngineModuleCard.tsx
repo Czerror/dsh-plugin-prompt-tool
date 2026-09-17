@@ -1,7 +1,8 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import clsx from 'clsx'
-import { IconChevronDownOutline14, IconTrashOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconChevronDownOutline14, IconTrashOutline16, Switch } from '@deepseek-ai/dsh-client-ui-primitives'
 import { HintTooltip } from './HintTooltip.tsx'
+import { ConfirmDialog } from './ConfirmDialog.tsx'
 import styles from './controls.module.css'
 /** 引擎模块可折叠卡片：与模块列表（PromptConfigList）同款形态——
  *  configCard + configToggle + chevron，点击展开 configForm 编辑组合行 config
@@ -13,7 +14,12 @@ export function EngineModuleCard(props: {
   meta: string
   layer?: string
   children?: ReactNode
-  onDelete?: () => void
+  onDelete?: () => void | Promise<void>
+  deleteLabels?: { title: string; description: string; confirm: string; cancel: string; failure: string }
+  readOnlyReason?: string
+  expanded?: boolean
+  defaultExpanded?: boolean
+  onExpandedChange?: (expanded: boolean) => void
   /** 创建或选择另一个行为时展开；不因普通字段编辑反复展开。 */
   revealKey?: string
   /** 稳定定位锚点（能力 id）：创建后滚动定位用，与展开状态无关。 */
@@ -28,56 +34,58 @@ export function EngineModuleCard(props: {
     onToggle: () => void
   }
 }): ReactNode {
-  const [expanded, setExpanded] = useState(props.revealKey !== undefined)
+  const [localExpanded, setLocalExpanded] = useState(props.defaultExpanded ?? props.revealKey !== undefined)
+  const expanded = props.expanded ?? localExpanded
+  const setExpanded = (next: boolean): void => { setLocalExpanded(next); props.onExpandedChange?.(next) }
   const [confirmingDelete, setConfirmingDelete] = useState(false)
+  const deleteRef = useRef<HTMLButtonElement>(null)
+  const panelId = useId()
   useEffect(() => {
     if (props.revealKey !== undefined) setExpanded(true)
     setConfirmingDelete(false)
   }, [props.revealKey])
   const compact = props.topSwitch !== undefined
+  const title = <span className={styles.configTitle}>
+    <span className={styles.configTitleRow}>
+      <span className={styles.configName}>{props.name}</span>
+      {props.layer !== undefined && <span className={styles.configChip}>{props.layer}</span>}
+    </span>
+    <span className={styles.configMeta}>{props.meta}</span>
+  </span>
   return (
-    <article className={clsx(styles.configCard, styles.moduleCard)} data-module-card="true" data-module-card-id={props.anchorId}>
+    <article className={clsx(styles.configCard, styles.moduleCard, !compact && expanded && styles.configCardOpen)} data-module-card="true" data-module-card-id={props.anchorId}>
       <header className={styles.configHeader}>
-        <button type="button" className={styles.configToggle} aria-expanded={expanded} onClick={() => setExpanded(!expanded)}>
-          <span className={styles.configTitle}>
-            <span className={styles.configTitleRow}>
-              <span className={styles.configName}>{props.name}</span>
-              {props.layer !== undefined && <span className={styles.configChip}>{props.layer}</span>}
-            </span>
-            <span className={styles.configMeta}>{props.meta}</span>
-          </span>
-          {!compact && <IconChevronDownOutline14 className={clsx(styles.chevron, expanded && styles.chevronOpen)} />}
-        </button>
+        {compact ? <span className={styles.configToggle} data-static>{title}</span> :
+          <button type="button" className={styles.configToggle} aria-expanded={expanded} aria-controls={panelId} onClick={() => setExpanded(!expanded)}>
+            {title}<IconChevronDownOutline14 className={clsx(styles.chevron, expanded && styles.chevronOpen)} />
+          </button>}
         {(props.topSwitch !== undefined || props.onDelete !== undefined) && (
           <span className={styles.configHeaderActions}>
             {props.topSwitch !== undefined && <HintTooltip label={props.topSwitch.hint}>
-              <label className={styles.configEnable} htmlFor={props.topSwitch.id}>
-                <input
-                  id={props.topSwitch.id}
-                  type="checkbox"
+              <span className={styles.configEnable}>
+                <Switch
                   checked={props.topSwitch.checked}
                   disabled={props.topSwitch.disabled}
-                  aria-label={props.topSwitch.label}
+                  label={props.topSwitch.label}
                   onChange={props.topSwitch.onToggle}
                 />
-                <span className={styles.switch} aria-hidden="true"><i /></span>
-              </label>
+              </span>
             </HintTooltip>}
-            {props.onDelete !== undefined && (confirmingDelete ? (
-              <>
-                <button type="button" className={styles.pillButton} data-danger onClick={props.onDelete}>确认删除</button>
-                <button type="button" className={styles.pillButton} data-variant="secondary" onClick={() => setConfirmingDelete(false)}>取消</button>
-              </>
-            ) : (
-              <HintTooltip label={`删除 ${props.name}`}>
-                <button type="button" className={styles.pillButton} data-danger aria-label={`删除引擎能力 ${props.name}`}
+            {props.onDelete !== undefined && (
+              <HintTooltip label={props.deleteLabels?.title ?? `删除 ${props.name}`}>
+                <button ref={deleteRef} type="button" className={styles.pillButton} data-danger aria-label={props.deleteLabels?.title ?? `删除引擎能力 ${props.name}`}
                   onClick={() => setConfirmingDelete(true)}><IconTrashOutline16 /></button>
               </HintTooltip>
-            ))}
+            )}
           </span>
         )}
       </header>
-      {expanded && !compact && <div className={styles.configForm}>{props.children}</div>}
+      {props.readOnlyReason && <p className={styles.configFieldHint}>{props.readOnlyReason}</p>}
+      {!compact && <div id={panelId} hidden={!expanded} className={styles.configForm}>{expanded && <><p className={styles.configFullName}>{props.name}{props.anchorId && ` · ${props.anchorId}`}</p>{props.children}</>}</div>}
+      {confirmingDelete && props.onDelete && <ConfirmDialog
+        title={props.deleteLabels?.title ?? `删除 ${props.name}`} description={props.deleteLabels?.description ?? `从当前预设移除“${props.name}”能力。`}
+        confirmLabel={props.deleteLabels?.confirm ?? '确认删除'} cancelLabel={props.deleteLabels?.cancel ?? '取消'}
+        failureMessage={props.deleteLabels?.failure} returnFocusRef={deleteRef} onConfirm={props.onDelete} onCancel={() => setConfirmingDelete(false)} />}
     </article>
   )
 }

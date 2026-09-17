@@ -1,9 +1,10 @@
-import { useRef, useState, type FocusEvent, type ReactNode } from 'react'
+import { useId, useRef, useState, type FocusEvent, type ReactNode } from 'react'
 import clsx from 'clsx'
-import { IconChevronDownOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconChevronDownOutline14, Switch } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PromptToolTranslate } from '../../locales.ts'
-import { PromptConfigList } from './PromptConfigList.tsx'
+import { PromptConfigList, type PromptConfigListProps } from './PromptConfigList.tsx'
 import { HintTooltip } from '../../ui/HintTooltip.tsx'
+import { ConfirmDialog } from '../../ui/ConfirmDialog.tsx'
 import { VariablesEditor } from './PromptConfigFields.tsx'
 import sharedCss from '../../ui/controls.module.css'
 import featureCss from './prompts.module.css'
@@ -22,12 +23,13 @@ export { SOURCE_FORMS, SOURCE_KINDS, fieldPolicyFor } from './prompt-config-poli
 
 export type { PromptConfigTemplateEntry } from '../../prompt-tool-types.ts'
 
-export interface PromptConfigsEditorProps {
+export interface PromptConfigsEditorProps extends Pick<PromptConfigListProps, 'browse' | 'fieldDrafts' | 'draftScope' | 'notice' | 'noticeKind' | 'readOnlyReason' | 'onChoosePreset' | 'onCreate' | 'createdHidden' | 'onShowCreated'> {
   t: PromptToolTranslate
   meta: EngineMeta
   configs: PromptConfigDraft[]
   onPatchConfigs: (configs: PromptConfigDraft[]) => void
   onSaveConfigs: (configs: PromptConfigDraft[]) => Promise<boolean>
+  onSaveInstructions?: () => Promise<boolean>
   instructionPolicy?: InstructionPolicySnapshot
   onToggleInstructionSource?: (enabled: boolean) => Promise<boolean>
   /** 指令文件卡：显式写盘 / 重新读取（不经预设保存路径）。 */
@@ -42,7 +44,7 @@ export interface PromptConfigsEditorProps {
   templateVariablesEnabled: boolean
   setTemplateVariablesEnabled: (value: boolean) => void
   /** 保存模板变量；开关变更时把新值一并传入，避免读到上一帧 enabled。 */
-  saveTemplateVariables: (next?: Record<string, string>, enabled?: boolean) => Promise<void>
+  saveTemplateVariables: (next?: Record<string, string>, enabled?: boolean) => Promise<boolean | void>
   viewFilter: string
   onViewFilterChange: (value: string) => void
   createdConfigId?: string
@@ -69,25 +71,29 @@ export function TemplateVariablesModuleCard(props: {
   setTemplateVariables: (value: Record<string, string>) => void
   templateVariablesEnabled: boolean
   setTemplateVariablesEnabled: (value: boolean) => void
-  saveTemplateVariables: (next?: Record<string, string>, enabled?: boolean) => Promise<void>
+  saveTemplateVariables: (next?: Record<string, string>, enabled?: boolean) => Promise<boolean | void>
   expanded: boolean
   onToggleExpanded: () => void
 }): ReactNode {
   const t = props.t
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const cardRef = useRef<HTMLElement>(null)
+  const deleteRef = useRef<HTMLButtonElement>(null)
+  const panelId = useId()
   const count = Object.keys(props.templateVariables).length
   const enabled = props.templateVariablesEnabled
   // 无变量时不显示卡片（模块列表恢复干净；「新建 → Variables」添加空行后自动出现）。
   if (count === 0) return null
-  const clearAll = (): void => {
+  const clearAll = async (): Promise<void> => {
+    if (await props.saveTemplateVariables({}) === false) throw new Error(t('variables.deleteFailed'))
     props.setTemplateVariables({})
-    void props.saveTemplateVariables({})
     setConfirmingDelete(false)
     if (props.expanded) props.onToggleExpanded()
+    requestAnimationFrame(() => document.querySelector<HTMLElement>('[data-module-toolbar] button')?.focus())
   }
   /** 失焦自动保存：焦点离开卡片容器（含收起/切换开关/点击删除）即持久化。 */
   const autoSaveOnBlur = (event: FocusEvent<HTMLElement>): void => {
+    if (confirmingDelete) return
     const next = event.relatedTarget
     if (next === null || !cardRef.current?.contains(next as Node)) {
       void props.saveTemplateVariables()
@@ -96,7 +102,7 @@ export function TemplateVariablesModuleCard(props: {
   return (
     <article ref={cardRef} className={styles.configCard} onBlur={autoSaveOnBlur}>
       <header className={styles.configHeader}>
-        <button type="button" className={styles.configToggle} aria-expanded={props.expanded} onClick={props.onToggleExpanded}>
+        <button type="button" className={styles.configToggle} aria-expanded={props.expanded} aria-controls={props.expanded ? panelId : undefined} onClick={props.onToggleExpanded}>
           <span className={styles.configTitle}>
             <span className={styles.configName}>{t('variables.title')}</span>
             <span className={styles.configMeta}>{t('variables.cardMeta', { count })}</span>
@@ -105,37 +111,25 @@ export function TemplateVariablesModuleCard(props: {
         </button>
         <span className={styles.configHeaderActions}>
           <HintTooltip label={enabled ? t('variables.toggleDisable') : t('variables.toggleEnable')}>
-            <label className={styles.configEnable}>
-              <input
-                type="checkbox"
-                aria-label={t('variables.enableAria')}
-                checked={enabled}
-                onChange={(e) => {
-                  props.setTemplateVariablesEnabled(e.target.checked)
-                  void props.saveTemplateVariables(undefined, e.target.checked)
-                }}
-              />
-              <span className={styles.switch} aria-hidden="true"><i /></span>
-            </label>
+            <Switch label={t('variables.enableAria')} checked={enabled} onChange={(value) => {
+              props.setTemplateVariablesEnabled(value)
+              void props.saveTemplateVariables(undefined, value)
+            }} />
           </HintTooltip>
           <span className={styles.configActions}>
-            {confirmingDelete ? (
-              <>
-                <button type="button" className={styles.pillButton} data-danger onClick={clearAll}>{t('variables.confirmClear')}</button>
-                <button type="button" className={styles.pillButton} data-variant="secondary" onClick={() => setConfirmingDelete(false)}>{t('variables.cancel')}</button>
-              </>
-            ) : (
-              <button type="button" className={styles.pillButton} data-danger onClick={() => setConfirmingDelete(true)}>{t('variables.delete')}</button>
-            )}
+            <button ref={deleteRef} type="button" className={styles.pillButton} data-danger onClick={() => setConfirmingDelete(true)}>{t('variables.delete')}</button>
           </span>
         </span>
       </header>
       {props.expanded && (
-        <div className={styles.configForm}>
+        <div id={panelId} className={styles.configForm}>
           {!enabled && <p className={styles.configFieldHint}>{t('variables.disabledHint')}</p>}
           <VariablesEditor t={t} value={props.templateVariables} onChange={(next) => props.setTemplateVariables(next ?? {})} />
         </div>
       )}
+      {confirmingDelete && <ConfirmDialog title={t('variables.deleteTitle')} description={t('variables.deleteDescription')}
+        confirmLabel={t('variables.confirmClear')} cancelLabel={t('variables.cancel')} failureMessage={t('variables.deleteFailed')}
+        returnFocusRef={deleteRef} onConfirm={clearAll} onCancel={() => setConfirmingDelete(false)} />}
     </article>
   )
 }
@@ -146,21 +140,32 @@ export function PromptConfigsEditor(props: PromptConfigsEditorProps): ReactNode 
   const t = props.t
   return (
     <section className={styles.page} aria-label={t('configs.editor.aria')} data-module-list="true">
-      <div className={styles.commonCards} aria-label={t('configs.common.aria')} data-module-category="common">
-        {props.commonCards}
-        <TemplateVariablesModuleCard
-          t={t}
-          templateVariables={props.templateVariables}
-          setTemplateVariables={props.setTemplateVariables}
-          templateVariablesEnabled={props.templateVariablesEnabled}
-          setTemplateVariablesEnabled={props.setTemplateVariablesEnabled}
-          saveTemplateVariables={props.saveTemplateVariables}
-          expanded={props.variablesExpanded}
-          onToggleExpanded={() => props.onVariablesExpandedChange(!props.variablesExpanded)}
-        />
-      </div>
       <PromptConfigList
         t={t}
+        scope="main"
+        browse={props.browse}
+        fieldDrafts={props.fieldDrafts}
+        draftScope={props.draftScope}
+        notice={props.notice}
+        noticeKind={props.noticeKind}
+        readOnlyReason={props.readOnlyReason}
+        onChoosePreset={props.onChoosePreset}
+        onCreate={props.onCreate}
+        createdHidden={props.createdHidden}
+        onShowCreated={props.onShowCreated}
+        commonCards={<div className={styles.commonCards} aria-label={t('configs.common.aria')} data-module-category="common">
+          {props.commonCards}
+          <TemplateVariablesModuleCard
+            t={t}
+            templateVariables={props.templateVariables}
+            setTemplateVariables={props.setTemplateVariables}
+            templateVariablesEnabled={props.templateVariablesEnabled}
+            setTemplateVariablesEnabled={props.setTemplateVariablesEnabled}
+            saveTemplateVariables={props.saveTemplateVariables}
+            expanded={props.variablesExpanded}
+            onToggleExpanded={() => props.onVariablesExpandedChange(!props.variablesExpanded)}
+          />
+        </div>}
         meta={props.meta}
         configs={props.configs}
         viewFilter={props.viewFilter}
@@ -171,6 +176,7 @@ export function PromptConfigsEditor(props: PromptConfigsEditorProps): ReactNode 
         moduleCards={props.moduleCards}
         onPatchConfigs={props.onPatchConfigs}
         onSaveConfigs={props.onSaveConfigs}
+        onSaveInstructions={props.onSaveInstructions}
         instructionPolicy={props.instructionPolicy}
         onToggleInstructionSource={props.onToggleInstructionSource}
         onSaveInstructionFile={props.onSaveInstructionFile}

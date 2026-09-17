@@ -269,9 +269,11 @@ workspace-pages.ts 是页面元数据的唯一来源。默认页为 features，�
 
 - loading：保留已有数据；只有没有可展示数据时才显示骨架。
 - saving：只禁用冲突动作，不冻结其他草稿输入。
-- notice：工作台公共状态使用 role=status；字段校验贴近字段显示。
-- destructive action：先进入局部确认状态，再执行删除；确认过程中保持焦点可达。
-- 长路径、模型名和预设名使用单行省略，完整值通过 title 或可读描述保留。
+- notice：配置保存/校验反馈位于操作区，字段错误用 aria-invalid/aria-describedby 关联；同一结果只由一个 live region 播报。
+- destructive action：配置、能力、预设、角色库删除以及丢弃文件草稿使用 ConfirmDialog；取消先聚焦、请求中防重复提交，失败保留确认面，关闭后还焦。
+- 长路径与名称允许换行或在展开区提供完整可选择文本，不以原生 title 作为唯一读取入口。
+- 配置操作区与列表共用 canvas 滚动根，sticky 高度由自身 ResizeObserver 测量；短视口退回普通流，焦点与定位避开操作区。
+- 吸顶操作区用系统Canvas作为不透明基底，其上叠宿主语义表面；第三方主题将背景设为透明/半透明或省略变量时，正文仍不会透出。
 
 ## 6. 状态与数据流
 
@@ -279,17 +281,21 @@ workspace-pages.ts 是页面元数据的唯一来源。默认页为 features，�
 
 | 状态 | Owner | 生命周期/规则 |
 |---|---|---|
-| 工作台 tab 开关 | 官方 sidebarRight store | 官方 per-session 内存态；刷新回落 |
+| 工作台抽屉开关 | workspace-controller | 工作台实例内存态；刷新回落 |
 | 当前顶层页 | PromptWorkspace | 工作台挂载期；不写 URL 或 localStorage |
 | fields、meta、catalog | usePromptToolStore | 工作台挂载期；打开时重新同步 |
 | 标准设置值 | 官方 SettingsScope | 宿主 mirror 生命周期 |
 | 当前会话模型 | session-model-face | 官方 sessions projection 生命周期 |
-| filter、search、展开、确认 | 对应 feature | 页面或 feature 局部生命周期 |
+| filter、search、列表展开、页滚动 | workspace-browse-state | 工作台实例期，配置视图按页面/预设区分；异步资源就绪后一次恢复滚动 |
+| 工具、人设、策略、原始 JSON/数字草稿 | store.editorDrafts / workspace-drafts | 按预设和字段身份保留；未存草稿或保存中阻止预设切换；改名迁移、删除清理对应字段 |
+| 创建意图、菜单、删除/导入确认、拖拽 | 对应 feature | 仍随页面卸载失效；不恢复或重放危险操作 |
 | 保存队列、revision、草稿版本 | save-queue + store | 工作台挂载期 |
 | 大文本和角色卡原文件 | 文件通道/bridge | 不进入 settings descriptor |
 | 技能启停 / 技能顺序与目录 | 磁盘技能根 | 停用 = `SKILL.md.disabled` 标记；顺序/目录/rank 在 `$DSH_HOME/skills/.system/prompt-tool/config.yml`（settings 不承载技能状态） |
 
 不新增 React Context 来广播整个 store。页面通过 usePromptToolFields selector 订阅窄切片，叶子组件接收显式值与 callback。
+
+业务草稿不写 localStorage，不靠常驻六页保留。工具、人设与策略只确认提交快照，保存途中继续编辑仍待存；同预设重挂共享在途状态，策略卸载清除未发送队列。干净重挂重新读取远端事实，脏草稿优先保留。技能批量作用于当前结果中合法已选项，固定目标快照，完成后刷新磁盘事实并保留失败选择。
 
 ### 6.2 首屏读取与更新
 
@@ -386,18 +392,25 @@ feature 只拥有自己的视图、瞬时状态、领域纯 helper 和 CSS：
 
 ui/ 只接收 props/callback，当前真实共享 seam 包括：
 
-- FormField：label/id 配对；hint 可内联，也可通过 HintTooltip 在悬停或聚焦时显示。
+- FormField：label/id、说明与错误关联；MenuSelect转发id到真实触发器，hint可内联或使用HintTooltip。
 - SettingInputRow、ToggleRow、TagInput：设置和字段编辑形态；ToggleRow 的开关使用官方 Switch。
 - MenuSelect：直接封装官方 Menu 的单选胶囊；支持连续选项的 `group` 分组标题。标准设置使用 36px，模块卡内使用 28px 紧凑形态，浮层统一 portal。
 - CollapsibleCard、EngineModuleCard：具体可复用的折叠/模块卡形态，不是万能 Card。
-- StatusDot：6px 实心核心 + 3px 同色光晕的状态圆点，与工作台顶部「N 配置 · M 启用」在线指示同款；`pulse` 仅用于该在线指示。
+- StatusDot：6px实心状态点与3px柔和静态光晕，含success/neutral/danger/warning，语义由相邻文字表达，不使用循环动画。
 - StatusBadge：只读状态徽章，StatusDot + 官方 Tag 胶囊；tone 同时驱动两者颜色，技能卡、工具预览、预设「使用中」与角色卡「已导入当前预设」共用。
+- 状态徽章与内部Tag均不参与flex收缩，短状态文字保持单行；预设/角色标题承担剩余宽度并允许换行，长名称不把「使用中」挤成竖排胶囊。
 - ImportFileButton：隐藏原生 file input 的导入入口。
-- TemplatePicker、DialogSurface：模板和预设操作的 portal 浮层。
+- TemplatePicker、DialogSurface：模板和预设操作的portal浮层；ConfirmDialog复用DialogSurface的警告对话、初始焦点与还焦能力，不叠加第二套焦点陷阱。
 - anchored-popover.ts / anchored-popover-fit.ts：锚点位置和窄视口适配。
 - tab-key.ts、dialog-focus.ts：纯键盘索引及弹窗焦点行为。
 
 单行 input 与 textarea 继续使用原生元素；下拉单选统一使用官方 Menu，经 MenuSelect 保持触发器、浮层和 ARIA 一致。新按钮优先使用官方 Button/Pill/icon primitive，不创建本地 Button wrapper。
+
+Menu显式启用autoFocus；已发布0.1.6-alpha.1的portal先隐藏后定位，因此menu-focus只通过调用方自己传入的首项label ref，在定位帧补首项焦点。fieldset禁用时MenuSelect同时拒绝portal中的选择。Tooltip兼容官方函数控件，键盘说明绑定实际聚焦目标，Escape关闭说明。
+
+菜单失焦通过relatedTarget识别自己的触发器/portal条目，跨React portal的焦点归属在下一帧复核；不在focusout微任务中先卸载菜单，以免真实鼠标的click丢失。该回归使用原生pointer按下/抬起，不能仅用element.click代替。
+
+卡头自然增高，compact纯开关卡用静态标题；操作区与展开按钮互为兄弟。多项低频操作收进Menu，保留上移/下移点击及键盘替代。层内排序限于同一插入点和当前策略/受众集合，搜索时暂停排序。数字和JSON错误原文跨折叠/切页保留，原生输入允许粘贴；指令卡自己的portal焦点移动不视为离卡写盘。
 
 模块卡内的选择器、开关及小型文本/数字输入使用紧凑尺寸；大文本和 JSON 编辑器保留 `field-sizing: content`、手动纵向缩放与现有自动测高，不随紧凑控件一起压缩。
 
@@ -443,6 +456,7 @@ promptConfigs 模块卡展开区按基础信息、注入规则、作用范围、
 - 数值输入在提交点解析，草稿期保留字符串，避免输入中间态跳动。
 - 提示词、技能和阶段排序同时提供 pointer drag 与上移/下移键盘替代；边界按钮有明确 aria-label。
 - reduced-motion 下关闭平移和过渡；focus-visible 必须清晰。
+- 外层抽屉和工作台壳使用overflow: clip；程序化定位只滚动canvas，不能把页头和导航滚出固定面板。
 
 ### 9.4 模块参数命名与说明
 

@@ -14,14 +14,14 @@ test('工作台 tabs：roving tabindex 与 tab/tabpanel 关系完整', () => {
   assert.match(frame, /aria-labelledby=\{`pt-workspace-tab-\$\{item\.id\}`\}/)
 })
 
-test('技能筛选 tabs：roving tabindex 与共享 panel 关系完整', () => {
+test('技能筛选是命名按钮组，按普通 Tab 顺序可达并声明选中状态', () => {
   const source = read('src/client/features/skills/SkillsPage.tsx')
-  assert.match(source, /id=\{`pt-skills-tab-\$\{tab\.id\}`\}/)
-  assert.match(source, /tabIndex=\{statusTab === tab\.id \? 0 : -1\}/)
-  assert.match(source, /aria-controls="pt-skills-panel"/)
+  assert.match(source, /role="group" aria-label=\{t\('skills\.tabs\.aria'\)\}/)
+  assert.match(source, /<button\s+key=\{tab\.id\}[\s\S]*?type="button"\s+aria-pressed=\{statusTab === tab\.id\}/)
+  assert.match(source, /onClick=\{\(\) => setStatusTab\(tab\.id\)\}/)
+  assert.doesNotMatch(source, /role="(?:tablist|tab|tabpanel)"|tabIndex=|aria-controls="pt-skills-panel"|aria-labelledby=|nextTabIndex/)
   assert.match(source, /id="pt-skills-panel"/)
-  assert.match(source, /aria-labelledby=\{`pt-skills-tab-\$\{statusTab\}`\}/)
-  // 标签改走字典键（渲染时求值）：断言键存在，且状态文案不被硬编码进 tabs。
+  // 筛选标签仍走字典键（渲染时求值），不硬编码状态文案。
   for (const key of ['all', 'model', 'user', 'disabled']) assert.match(source, new RegExp(`labelKey: 'skills\\.tabs\\.${key}'`))
   assert.doesNotMatch(source, /label: '模型可调用'|label: '未注册'/)
 })

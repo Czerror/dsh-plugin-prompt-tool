@@ -2,10 +2,11 @@
  *  库中角色卡不直接生成预设——点击「导入到当前预设」把角色卡参数
  *  （角色设定 / 系统提示 / 开场白 / 提示词库 / 采样参数）合并进当前激活预设，
  *  已导入的角色卡显示状态并可一键移除。 */
-import { memo, useEffect, useState, type ReactNode } from 'react'
+import { memo, useEffect, useRef, useState, type ReactNode } from 'react'
 import { IconFolderOpenOutline16, IconTrashOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { bridgeCall, bridgeUpload, shouldStreamJsonFile } from '../../data/bridge-client.ts'
 import { useImportPreviewFlow } from '../../data/use-import-preview-flow.ts'
+import { ConfirmDialog } from '../../ui/ConfirmDialog.tsx'
 import { isPngSignature } from './character-card.ts'
 import { ImportFileButton } from '../../ui/ImportFileButton.tsx'
 import { ImportPreviewCard } from '../../ui/ImportPreviewCard.tsx'
@@ -26,21 +27,33 @@ interface CharacterCardItem {
   imported: boolean
 }
 
-export const CharactersPage = memo(function CharactersPage(props: { store: PromptToolStore; t: PromptToolTranslate }): ReactNode {
+export const CharactersPage = memo(function CharactersPage(props: { store: PromptToolStore; t: PromptToolTranslate; onReady?: () => void }): ReactNode {
   const { store, t } = props
   const [confirmingDelete, setConfirmingDelete] = useState<string | undefined>(undefined)
   const [busy, setBusy] = useState<string | undefined>(undefined)
   /** 文件读取/上传阶段（预览请求之前）：与预览流程的阶段分开表达。 */
   const [preparing, setPreparing] = useState(false)
   const [characters, setCharacters] = useState<CharacterCardItem[]>([])
+  const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState('')
+  const loadSequence = useRef(0)
+  const importArea = useRef<HTMLDivElement>(null)
 
   const loadCharacters = async (): Promise<void> => {
+    const sequence = ++loadSequence.current
+    setLoading(true)
+    setLoadError('')
     const res = await bridgeCall('charactersList')
+    if (sequence !== loadSequence.current) return
     if (res.ok) setCharacters(res.value.characters)
+    else setLoadError(res.message ?? t('card.operationFailed'))
+    setLoading(false)
   }
   useEffect(() => {
     void loadCharacters()
+    return () => { loadSequence.current += 1 }
   }, [])
+  useEffect(() => { if (!loading) props.onReady?.() }, [loading, props.onReady])
 
   // 角色 JSON 导入复用与预设包相同的预览流程：等待确认时按钮可用，只有提交阶段禁用。
   const flow = useImportPreviewFlow({
@@ -160,11 +173,11 @@ export const CharactersPage = memo(function CharactersPage(props: { store: Promp
   const deleteCard = async (id: string): Promise<void> => {
     const res = await bridgeCall('charactersDelete', { id })
     if (res.ok) {
-      setConfirmingDelete(undefined)
       store.showNotice('ok', t('characters.notice.deleted', { id }))
       await loadCharacters()
+      setConfirmingDelete((current) => current === id ? undefined : current)
     } else {
-      store.showNotice('error', t('characters.notice.deleteFailed', { reason: res.message ?? 'settings bridge unavailable' }))
+      throw new Error(t('characters.notice.deleteFailed', { reason: res.message ?? 'settings bridge unavailable' }))
     }
   }
 
@@ -188,7 +201,7 @@ export const CharactersPage = memo(function CharactersPage(props: { store: Promp
           onCancel={flow.cancel}
         />
       )}
-      <div className={ui.rowGroup}>
+      <div ref={importArea} className={ui.rowGroup}>
         <div className={ui.settingRowStack}>
           <span className={ui.settingCopy}>
             <strong>{t('characters.library.title')}</strong>
@@ -219,12 +232,18 @@ export const CharactersPage = memo(function CharactersPage(props: { store: Promp
         </div>
       </div>
 
-      {characters.length === 0 ? (
+      {loadError && <p className={ui.noticeError} role="alert">{loadError} <button type="button" className={ui.pillButton} onClick={() => void loadCharacters()}>{t('workspace.retry')}</button></p>}
+      {loading && <p role="status">{t('app.loading')}</p>}
+      {!loading && !loadError && characters.length === 0 ? (
         <div className={ui.emptyState}>
           <span className={ui.emptyGlyph} aria-hidden="true">⌁</span>
           <div>
             <h3>{t('characters.empty.title')}</h3>
             <p>{t('characters.empty.hint')}</p>
+            <button type="button" className={ui.pillButton} onClick={() => {
+              const input = importArea.current?.querySelector<HTMLInputElement>('input[type="file"]')
+              input?.click()
+            }}>{t('characters.importImage')}</button>
           </div>
         </div>
       ) : (
@@ -232,7 +251,7 @@ export const CharactersPage = memo(function CharactersPage(props: { store: Promp
           {characters.map((card) => {
             const confirming = confirmingDelete === card.id
             return (
-              <div key={card.id} className={ui.presetCard}>
+              <article key={card.id} className={ui.presetCard}>
                 <div className={ui.presetCardBody}>
                   <span className={ui.presetCardHead}>
                     <strong className={ui.presetCardName}>{card.name}</strong>
@@ -261,14 +280,13 @@ export const CharactersPage = memo(function CharactersPage(props: { store: Promp
                       <IconFolderOpenOutline16 />
                     </button>
                   </HintTooltip>
-                  {confirming ? (
-                    <>
-                      <button type="button" className={ui.pillButton} data-danger
-                        onClick={() => void deleteCard(card.id)}>{t('characters.confirmDelete')}</button>
-                      <button type="button" className={ui.pillButton} data-variant="secondary"
-                        onClick={() => setConfirmingDelete(undefined)}>{t('characters.cancel')}</button>
-                    </>
-                  ) : (
+                  {confirming && (
+                    <ConfirmDialog title={t('card.deleteTitle', { name: card.name })}
+                      description={t('characters.delete.description', { name: card.name })}
+                      confirmLabel={t('characters.confirmDelete')} cancelLabel={t('characters.cancel')}
+                      onConfirm={() => deleteCard(card.id)} onCancel={() => setConfirmingDelete((current) => current === card.id ? undefined : current)} />
+                  )}
+                  {(
                     <HintTooltip label={t('characters.delete.label')}>
                       <button type="button" className={ui.presetIconButton}
                         aria-label={t('characters.delete.aria', { name: card.name })}
@@ -278,7 +296,7 @@ export const CharactersPage = memo(function CharactersPage(props: { store: Promp
                     </HintTooltip>
                   )}
                 </span>
-              </div>
+              </article>
             )
           })}
         </div>

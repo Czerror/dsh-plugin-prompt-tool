@@ -1,8 +1,9 @@
-import { useEffect, useState, type ReactNode, type RefObject } from 'react'
+import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { IconChevronDownOutline14, Menu } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PromptToolStore } from '../../data/use-prompt-tool-store.ts'
 import type { PromptToolTranslate } from '../../locales.ts'
 import { EngineModuleCard } from '../../ui/EngineModuleCard.tsx'
+import { useMenuFocus } from '../../ui/menu-focus.ts'
 import { cssEscapeId, scrollToCreatedCard } from '../../ui/reveal-card.ts'
 import { ENGINE_CAPABILITIES, ENGINE_RECIPES, engineRecipe, isEngineCapabilityPresent } from '../../../shared/engine-capabilities.ts'
 import { EngineParamFields } from './EngineParamFields.tsx'
@@ -35,6 +36,9 @@ export function EngineCapabilityCreateMenu(props: {
 }): ReactNode {
   const { store, t, anchorRef, extraItems = [], onExtraSelect, excludeCapabilities = [] } = props
   const [open, setOpen] = useState(false)
+  const firstItemRef = useMenuFocus(open)
+  const fallbackAnchor = useRef<HTMLButtonElement>(null)
+  const trigger = anchorRef ?? fallbackAnchor
   const editable = store.fields.writePreset && store.moduleFacts?.editable === true
   const excluded = new Set(excludeCapabilities)
   if (!editable && extraItems.length === 0) return null
@@ -49,9 +53,16 @@ export function EngineCapabilityCreateMenu(props: {
       ]
       : []),
   ]
-  return <Menu open={open} onClose={() => setOpen(false)} items={items} align="end" portal compact
+  return <span onKeyDown={(event) => {
+    if (!open || !['Escape', 'Tab'].includes(event.key)) return
+    event.stopPropagation()
+    if (event.key === 'Escape') event.preventDefault()
+    trigger.current?.focus()
+    setOpen(false)
+  }}><Menu open={open} onClose={() => setOpen(false)} items={items.map((item, index) => ({ ...item, label: <span ref={index === 0 ? firstItemRef : undefined}>{item.label}</span> }))} align="end" portal compact autoFocus
     onSelect={(id) => {
       setOpen(false)
+      trigger.current?.focus()
       const [kind, value] = id.split(':', 2)
       if (kind === 'cap' || kind === 'recipe') {
         if (value !== undefined) void store.createEngineCapability(kind === 'recipe' ? 'create-recipe' : 'create', value).then((created) => {
@@ -60,9 +71,9 @@ export function EngineCapabilityCreateMenu(props: {
         })
       } else onExtraSelect?.(id)
     }}
-    anchor={<button ref={anchorRef} type="button" className={styles.pillButton} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(!open)}>
+    anchor={<button ref={trigger} type="button" className={styles.pillButton} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(!open)}>
       {t('modules.addCapability')}<IconChevronDownOutline14 />
-    </button>} />
+    </button>} /></span>
 }
 
 export function EngineModuleActions(props: {
@@ -82,7 +93,9 @@ export function EngineModuleActions(props: {
 
 export function EnginePromptDefaultsCard({ store, t }: { store: PromptToolStore; t: PromptToolTranslate }): ReactNode {
   return (
-    <EngineModuleCard name={t('modules.promptDefaults.name')} meta={t('modules.promptDefaults.meta')}>
+    <EngineModuleCard name={t('modules.promptDefaults.name')} meta={t('modules.promptDefaults.meta')}
+      defaultExpanded={store.editorDrafts?.expanded.get(`${store.fields.presetTemplate}:prompt-defaults`)}
+      onExpandedChange={(value) => store.editorDrafts?.expanded.set(`${store.fields.presetTemplate}:prompt-defaults`, value)}>
       <EngineParamFields store={store} card="prompt-defaults" t={t} />
     </EngineModuleCard>
   )
@@ -140,7 +153,11 @@ export function EngineModuleCards({
         meta={capability.moduleKeys.join(' · ')}
         revealKey={capability.id === focus?.id ? String(focus.token) : undefined}
         anchorId={capability.id}
-        onDelete={editable ? () => void store.removeEngineCapability(capability.id) : undefined}>
+        defaultExpanded={store.editorDrafts?.expanded.get(`${store.fields.presetTemplate}:capability:${capability.id}`)}
+        onExpandedChange={(value) => store.editorDrafts?.expanded.set(`${store.fields.presetTemplate}:capability:${capability.id}`, value)}
+        deleteLabels={{ title: t('card.deleteTitle', { name: capability.id }), description: t('card.deleteDescription', { name: capability.id }), confirm: t('toolEditor.confirmRemove'), cancel: t('toolEditor.cancel'), failure: t('card.operationFailed') }}
+        readOnlyReason={!editable ? t('configs.readOnly.system') : undefined}
+        onDelete={editable ? async () => { if (!await store.removeEngineCapability(capability.id)) throw new Error(t('card.operationFailed')) } : undefined}>
         <EngineParamFields store={store} card={capability.id} t={t} />
         {renderCapabilityExtra?.({ capabilityId: capability.id, store, t })}
       </EngineModuleCard>

@@ -8,6 +8,7 @@ import { readImportFiles } from '../../data/import-files.ts'
 import type { PromptToolStore } from '../../data/use-prompt-tool-store.ts'
 import type { PromptToolTranslate } from '../../locales.ts'
 import { DialogSurface } from '../../ui/DialogSurface.tsx'
+import { ConfirmDialog } from '../../ui/ConfirmDialog.tsx'
 import { HintTooltip } from '../../ui/HintTooltip.tsx'
 import { ImportFileButton } from '../../ui/ImportFileButton.tsx'
 import { ImportPreviewCard } from '../../ui/ImportPreviewCard.tsx'
@@ -106,11 +107,11 @@ export const PresetSwitcher = memo(function PresetSwitcher(props: { store: Promp
   const deletePreset = async (id: string): Promise<void> => {
     const res = await bridgeCall('presetDelete', { id })
     if (res.ok) {
-      setConfirmingDelete(undefined)
       store.showNotice('ok', t('presetSwitcher.notice.deleted', { id }))
       await store.load()
+      setConfirmingDelete((current) => current === id ? undefined : current)
     } else {
-      store.showNotice('error', t('presetSwitcher.notice.deleteFailed', { reason: res.message ?? 'settings bridge unavailable' }))
+      throw new Error(t('presetSwitcher.notice.deleteFailed', { reason: res.message ?? 'settings bridge unavailable' }))
     }
   }
 
@@ -226,7 +227,7 @@ export const PresetSwitcher = memo(function PresetSwitcher(props: { store: Promp
     // 提示还原路径——避免点击后宿主挂载失败的哑弹。
     const blocked = preset.renderable === false
     return (
-      <div key={preset.id} className={clsx(styles.presetCard, blocked && styles.presetCardBlocked)}
+      <article key={preset.id} className={clsx(styles.presetCard, blocked && styles.presetCardBlocked)}
         data-active={active ? '' : undefined}>
         <HintTooltip label={blocked
             ? t('presetSwitcher.card.blocked.hint')
@@ -258,22 +259,20 @@ export const PresetSwitcher = memo(function PresetSwitcher(props: { store: Promp
               <IconFolderOpenOutline16 />
             </button>
           </HintTooltip>
-          {confirming ? (
-            <span className={styles.presetCardActions}>
-              <HintTooltip label={t('presetSwitcher.delete.confirmHint')}>
-                <button type="button" className={styles.pillButton} data-danger disabled={active}
-                  onClick={() => void deletePreset(preset.id)}>{t('presetSwitcher.delete.confirm')}</button>
-              </HintTooltip>
-              <button type="button" className={styles.pillButton} data-variant="secondary" onClick={() => setConfirmingDelete(undefined)}>{t('presetSwitcher.delete.cancel')}</button>
-            </span>
-          ) : (
+          {confirming && (
+            <ConfirmDialog title={t('card.deleteTitle', { name: preset.name })}
+              description={t('presetSwitcher.delete.description', { name: preset.name })}
+              confirmLabel={t('presetSwitcher.delete.confirm')} cancelLabel={t('presetSwitcher.delete.cancel')}
+              onConfirm={() => deletePreset(preset.id)} onCancel={() => setConfirmingDelete((current) => current === preset.id ? undefined : current)} />
+          )}
+          {(
             <HintTooltip label={active ? t('presetSwitcher.delete.hintActive') : t('presetSwitcher.delete.hint')}>
               <button type="button" className={styles.pillButton} data-danger disabled={active}
                 onClick={() => setConfirmingDelete(preset.id)}>{t('presetSwitcher.delete')}</button>
             </HintTooltip>
           )}
         </span>
-      </div>
+      </article>
     )
   }
 })

@@ -4,8 +4,8 @@
   width: 100%;
   min-width: 0;
   flex-direction: column;
-  gap: 28px;
-  padding-bottom: 28px;
+  gap: 24px;
+  padding-bottom: 16px;
   color: var(--dsw-alias-label-primary);
   font-family: inherit;
 }
@@ -13,11 +13,6 @@
 .page *,
 .page *::before,
 .page *::after { box-sizing: border-box; }
-
-.page button,
-.page input,
-.page select,
-.page textarea { color: inherit; font: inherit; }
 
 .sectionActions {
   display: flex;
@@ -28,9 +23,8 @@
   justify-content: flex-end;
   margin-left: auto;
 }
-.configFormLayout {
-  container-type: inline-size;
-}
+.configFormLayout { container: prompt-form / inline-size; }
+.configFieldset { min-width: 0; padding: 0; margin: 0; border: 0; }
 .configGrid {
   display: grid;
   grid-template-columns: repeat(12, minmax(0, 1fr));
@@ -60,12 +54,9 @@
   padding-top: 10px;
 }
 .configAdvancedSummary {
-  color: var(--dsw-alias-label-tertiary);
+  color: var(--dsw-alias-label-secondary);
   cursor: pointer;
-  font-size: 11px;
-  font-weight: 600;
-  line-height: 1.4;
-  letter-spacing: .02em;
+  font: var(--dsw-font-xxs-strong-12);
 }
 .configAdvancedSummary::marker { color: var(--dsw-alias-label-tertiary); }
 .configAdvanced[open] > .configAdvancedSummary { margin-bottom: 10px; }
@@ -78,22 +69,7 @@
 }
 .variableHeaderCopy { display: flex; min-width: 0; flex-direction: column; gap: 2px; }
 
-@container (min-width: 640px) {
-  .configGrid { grid-template-columns: repeat(12, minmax(0, 1fr)); }
-}
-
-@container (min-width: 960px) {
-  .configGrid { grid-template-columns: repeat(12, minmax(0, 1fr)); }
-  .fieldSpan2 { grid-column: span 2; }
-  .fieldSpan3 { grid-column: span 3; }
-  .fieldSpan4 { grid-column: span 4; }
-  .fieldSpan5 { grid-column: span 5; }
-  .fieldSpan6 { grid-column: span 6; }
-  .fieldSpan9 { grid-column: span 9; }
-}
-
-/* 容器查询不可用时，按视口保留同一套紧凑布局。 */
-@media (max-width: 720px) {
+@container prompt-form (max-width: 720px) {
   .configGrid { grid-template-columns: repeat(6, minmax(0, 1fr)); }
   .fieldSpan2,
   .fieldSpan3,
@@ -104,7 +80,7 @@
   .fieldSpan9 { grid-column: span 6; }
 }
 
-@media (max-width: 620px) {
+@container prompt-form (max-width: 620px) {
   .configGrid { grid-template-columns: minmax(0, 1fr); }
   .fieldSpan2,
   .fieldSpan3,
@@ -114,18 +90,25 @@
   .fieldSpan8,
   .fieldSpan9 { grid-column: 1 / -1; }
 }
-.configInputError { /* !important：错误态必须压过 :focus-visible 边框。 */ border-color: var(--dsw-alias-label-error) !important; }
+.configInputError { border-color: var(--dsw-alias-state-error-primary); }
 .configJsonInput { min-height: 88px; }
-.configJsonError { color: var(--dsw-alias-state-error-primary); font-weight: 400; }
-.configErrorBox { display: flex; flex-direction: column; gap: 4px; border: 1px solid var(--dsw-alias-label-error); border-radius: 10px; padding: 8px 10px; background: var(--dsw-alias-bg-layer-2); }
-.configErrorLine { font-family: var(--ds-font-family-code, ui-monospace, monospace); font-size: 12px; line-height: 1.5; color: var(--dsw-alias-state-error-primary); overflow-wrap: anywhere; }
+.configJsonError { color: color-mix(in srgb, var(--dsw-alias-state-error-primary) 80%, var(--dsw-alias-label-primary)); font-weight: 400; }
+.configErrorBox { display: flex; flex-direction: column; gap: 4px; border: 0.5px solid var(--dsw-alias-state-error-primary); border-radius: 8px; padding: 8px 10px; background: var(--dsw-alias-bg-layer-2); }
+.configErrorLine { font: var(--dsw-font-xxs-12); font-family: var(--ds-font-family-code, ui-monospace, monospace); color: color-mix(in srgb, var(--dsw-alias-state-error-primary) 80%, var(--dsw-alias-label-primary)); overflow-wrap: anywhere; }
 
-.settingsNote { margin: -14px 0 0; color: var(--dsw-alias-label-tertiary); font-size: 10px; line-height: 16px; }
+.settingsNote { margin: 0; color: var(--dsw-alias-label-secondary); font: var(--dsw-font-xxs-12); overflow-wrap: anywhere; }
 .settingsNote code { color: var(--dsw-alias-label-secondary); font-family: var(--ds-font-family-code, ui-monospace, monospace); }
 
 .commonCards { display: flex; min-width: 0; flex-direction: column; gap: 10px; }
 
-@media (max-width: 620px) {
-  .page { gap: 24px; }
-  .sectionActions { flex-wrap: wrap; }
+@supports not (container-type: inline-size) {
+  @media (max-width: 720px) {
+    .configGrid { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+    .fieldSpan2, .fieldSpan3, .fieldSpan4, .fieldSpan5 { grid-column: span 3; }
+    .fieldSpan6, .fieldSpan8, .fieldSpan9 { grid-column: span 6; }
+  }
+  @media (max-width: 620px) {
+    .configGrid { grid-template-columns: minmax(0, 1fr); }
+    .fieldSpan2, .fieldSpan3, .fieldSpan4, .fieldSpan5, .fieldSpan6, .fieldSpan8, .fieldSpan9 { grid-column: 1 / -1; }
+  }
 }

@@ -11,8 +11,7 @@
   corner-shape: round;
   color: var(--dsw-alias-label-tertiary);
   background: var(--dsw-alias-bg-layer-2);
-  font-size: 10px;
-  line-height: 1;
+  font: var(--dsw-font-xxxs-11);
 }
 
 .duplicateBadge {
@@ -23,16 +22,14 @@
   border-radius: 999px;
   corner-shape: round;
   padding: 1px 8px;
-  color: var(--dsw-alias-state-error-primary);
+  color: color-mix(in srgb, var(--dsw-alias-state-error-primary) 80%, var(--dsw-alias-label-primary));
   background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 7%, transparent);
-  font-size: 10px;
-  font-weight: 650;
-  line-height: 16px;
-  white-space: nowrap;
+  font: var(--dsw-font-xxs-12);
+  overflow-wrap: anywhere;
 }
 
 /* 多目录卡片：路径 + 状态 + 计数 + 行操作。 */
-.dirCardList { display: flex; min-width: 0; flex-direction: column; gap: 8px; }
+.dirCardList { display: flex; min-width: 0; flex-direction: column; gap: 12px; }
 .dirCard {
   display: flex;
   min-width: 0;
@@ -42,22 +39,19 @@
   border-radius: 12px;
   padding: 9px 12px;
   background: var(--dsw-alias-bg-layer-3);
-  transition: border-color .16s ease;
+  flex-wrap: wrap;
 }
 .dirCard[data-invalid] { border-color: color-mix(in srgb, var(--dsw-alias-state-error-primary) 38%, var(--dsw-alias-border-l2)); }
 .dirCardBody { display: flex; min-width: 0; flex: 1; flex-direction: column; gap: 2px; }
 .dirCardTitle { display: flex; min-width: 0; align-items: center; gap: 8px; flex-wrap: wrap; }
 .dirPath {
   min-width: 0;
-  overflow: hidden;
   color: var(--dsw-alias-label-primary);
+  font: var(--dsw-font-markdown-code);
   font-family: var(--ds-font-family-code, ui-monospace, monospace);
-  font-size: 12px;
-  line-height: 1.5;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
-.dirCardMeta { color: var(--dsw-alias-label-tertiary); font-size: 11px; line-height: 1.5; }
+.dirCardMeta { color: var(--dsw-alias-label-secondary); font: var(--dsw-font-xxs-12); overflow-wrap: anywhere; }
 
 /* 添加目录行：选择器主按钮 + 输入路径次要。 */
 .dirAddBar {
@@ -79,32 +73,33 @@
   corner-shape: round;
   color: var(--dsw-alias-label-secondary);
   background: var(--dsw-alias-bg-layer-2);
-  font-size: 10px;
-  font-weight: 700;
-  line-height: 1;
+  font: var(--dsw-font-xxxs-11);
   font-variant-numeric: tabular-nums;
 }
 .skillCardTitleRow { display: flex; min-width: 0; align-items: center; gap: 8px; flex-wrap: wrap; }
-.skillCardTitleRow strong { font-size: 13px; font-weight: 600; line-height: 1.5; color: var(--dsw-alias-label-primary); overflow-wrap: anywhere; }
-.skillCardMeta { color: var(--dsw-alias-label-tertiary); font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }
+.skillCardTitleRow strong { font: var(--dsw-font-xs-strong-13); color: var(--dsw-alias-label-primary); overflow-wrap: anywhere; }
+.skillCardMeta { color: var(--dsw-alias-label-secondary); font: var(--dsw-font-xxs-12); overflow-wrap: anywhere; }
 
 /* 勾选框：只选择（职责分离——技能开关由 Switch 与批量按钮控制）。 */
 .skillSelect {
   display: inline-flex;
   flex: 0 0 auto;
   align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  min-height: 24px;
   cursor: pointer;
 }
 .skillSelect input {
-  width: 15px;
-  height: 15px;
+  width: 24px;
+  height: 24px;
   margin: 0;
   accent-color: var(--dsw-alias-state-business-primary);
   cursor: pointer;
 }
 .skillSelect input:disabled { cursor: default; }
 
-/* 状态统计卡：点击即切筛选（兼作筛选 Tabs）。 */
+/* 状态筛选按钮与批量操作占据稳定的位置。 */
 .skillStats {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -113,11 +108,12 @@
 .skillStatsRow {
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin-bottom: 10px;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
 }
 .skillStatsRow .skillStats {
-  flex: 1;
+  flex: 1 1 280px;
   min-width: 0;
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
@@ -137,15 +133,13 @@
   background: var(--dsw-alias-bg-layer-2);
   font: inherit;
   cursor: pointer;
-  transition: border-color .16s ease, box-shadow .16s ease, transform .16s ease;
 }
-.skillStats button:hover { border-color: color-mix(in srgb, var(--dsw-alias-state-business-primary) 30%, var(--dsw-alias-border-l2)); transform: translateY(-1px); }
+.skillStats button:hover { border-color: var(--dsw-alias-border-l3); }
 .skillStats button[data-active] {
-  border-color: color-mix(in srgb, var(--dsw-alias-state-business-primary) 45%, var(--dsw-alias-border-l2));
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--dsw-alias-state-business-primary) 18%, transparent);
+  border-color: var(--dsw-alias-state-business-primary);
 }
-.skillStats strong { font-size: 18px; font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; }
-.skillStats small { color: var(--dsw-alias-label-tertiary); font-size: 11px; line-height: 1.3; }
+.skillStats strong { font: var(--dsw-font-base-strong-16); font-variant-numeric: tabular-nums; }
+.skillStats small { color: var(--dsw-alias-label-secondary); font: var(--dsw-font-xxs-12); overflow-wrap: anywhere; }
 .skillStatDot { width: 8px; height: 8px; margin-bottom: 1px; border-radius: 50%; corner-shape: round; background: var(--chip); }
 .skillStatAll { --chip: var(--dsw-alias-label-tertiary); }
 .skillStatusModel { --chip: var(--dsw-alias-state-business-primary); }
@@ -156,10 +150,8 @@
 .selectionCount {
   flex: 0 0 auto;
   color: var(--dsw-alias-label-secondary);
-  font-size: 12px;
-  font-weight: 600;
-  line-height: 1.5;
-  white-space: nowrap;
+  font: var(--dsw-font-xxs-strong-12);
+  font-variant-numeric: tabular-nums;
 }
 
 /* 卡片内部分隔（configForm 内的次级设置分区）。 */
@@ -172,11 +164,19 @@
   margin: 0;
   padding-left: 2px;
   overflow-wrap: anywhere;
-  color: var(--dsw-alias-state-error-primary);
-  font-size: 12px;
-  line-height: 1.5;
+  color: color-mix(in srgb, var(--dsw-alias-state-error-primary) 80%, var(--dsw-alias-label-primary));
+  font: var(--dsw-font-xxs-12);
 }
 
-@media (max-width: 620px) {
+@container workspace (max-width: 620px) {
   .skillStatsRow .skillStats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (pointer: coarse) {
+  .skillSelect,
+  .skillSelect input { min-width: 44px; min-height: 44px; }
+}
+
+@media (forced-colors: active) {
+  .skillStats button[data-active] { border-color: Highlight; }
 }

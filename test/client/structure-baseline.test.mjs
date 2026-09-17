@@ -40,9 +40,9 @@ test('导入入口统一复用 ImportFileButton，不在业务页重复实现 fi
   ]) {
     const source = read(file)
     assert.match(source, /from ['"]\.\.\/\.\.\/ui\/ImportFileButton\.tsx['"]/, `${file} 应复用共享导入按钮`)
-    assert.doesNotMatch(source, /type="file"/, `${file} 不应手写 file input`)
+    assert.doesNotMatch(source, /<input\b[^>]*\btype\s*=\s*(?:["']file["']|\{\s*["']file["']\s*\})/, `${file} 不应手写 file input；允许定位共享组件已有输入`)
   }
   const button = read('ui/ImportFileButton.tsx')
-  assert.match(button, /type="file"/, '共享导入按钮应保留唯一 file input')
+  assert.match(button, /<input\b[^>]*\btype="file"/, '共享导入按钮应保留唯一 file input')
   assert.match(button, /webkitdirectory/, '共享导入按钮应支持目录模式')
 })

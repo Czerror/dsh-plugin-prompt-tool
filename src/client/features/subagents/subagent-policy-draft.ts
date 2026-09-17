@@ -1,11 +1,5 @@
-export interface PolicyDraft {
-  defaultProfile?: string
-  ceiling?: { allow?: string[]; deny?: string[] }
-  profiles?: Array<{ id: string; name?: string; allow?: string[]; deny?: string[]; modelSelectable?: boolean }>
-  characterBindings?: Array<{ characterId: string; profile: string; modelSelectable?: boolean }>
-  taskRules?: Array<{ id: string; name?: string; pattern: string; profile: string; order?: number; modelSelectable?: boolean }>
-  modelExpansion?: { enabled?: boolean; allow?: string[]; maxAdditionalTools?: number; requireApproval?: boolean }
-}
+import type { PolicyDraft } from '../../data/workspace-drafts.ts'
+export type { PolicyDraft } from '../../data/workspace-drafts.ts'
 
 export const asList = (value: unknown): string[] => Array.isArray(value) ? value.map(String) : []
 export const asBool = (value: unknown): boolean => value === true

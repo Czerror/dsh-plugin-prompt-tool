@@ -1,5 +1,5 @@
 /** 通用折叠卡片：设置区块统一折叠入口（除模块列表外全部卡片化）。 */
-import { useState, type ReactNode } from 'react'
+import { useId, useState, type ReactNode } from 'react'
 import clsx from 'clsx'
 import { IconChevronDownOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
 import styles from './controls.module.css'
@@ -12,10 +12,11 @@ export function CollapsibleCard(props: {
   defaultOpen?: boolean
 }): ReactNode {
   const [open, setOpen] = useState(props.defaultOpen ?? false)
+  const panelId = useId()
   return (
     <article className={clsx(styles.configCard, open && styles.configCardOpen)}>
       <header className={styles.configHeader}>
-        <button type="button" className={styles.configToggle} aria-expanded={open} onClick={() => setOpen((value) => !value)}>
+        <button type="button" className={styles.configToggle} aria-expanded={open} aria-controls={panelId} onClick={() => setOpen((value) => !value)}>
           <span className={styles.configTitle}>
             <span className={styles.configName}>{props.title}</span>
             {props.meta !== undefined && <span className={styles.configMeta}>{props.meta}</span>}
@@ -23,7 +24,7 @@ export function CollapsibleCard(props: {
           <IconChevronDownOutline14 className={clsx(styles.chevron, open && styles.chevronOpen)} />
         </button>
       </header>
-      {open && <div className={styles.configForm}>{props.children}</div>}
+      <div id={panelId} hidden={!open} className={styles.configForm}>{open && props.children}</div>
     </article>
   )
 }

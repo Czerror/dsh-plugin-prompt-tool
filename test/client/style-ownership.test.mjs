@@ -64,6 +64,11 @@ test('样式遵循宿主 token、发丝边框与圆角契约', () => {
     assert.doesNotMatch(source, /:root\s*\{/, `${path} 不得定义插件全局主题`)
     assert.doesNotMatch(source, /#[0-9a-fA-F]{3,8}|rgba?\(/, `${path} 不得写静态色板`)
     assert.doesNotMatch(source, /border(?:-(?:top|right|bottom|left))?:\s*1px solid var\(--dsw-alias-border-/, `${path} 中性边框必须使用 0.5px`)
+    assert.doesNotMatch(source, /(?:linear|radial)-gradient\(/, `${path} 不得恢复装饰渐变`)
+    assert.doesNotMatch(source, /--dsw-alias-(?:fill-field|label-brand|label-error)\b|--dsw-font-mono\b/, `${path} 使用已发布的语义变量`)
+    assert.doesNotMatch(source, /outline:\s*none|outline-offset:\s*-/, `${path} 不得隐藏或内缩焦点轮廓`)
+    assert.doesNotMatch(source, /::-webkit-scrollbar|scrollbar-color:/, `${path} 滚动条由宿主主题所有`)
+    assert.doesNotMatch(source, /transition:\s*all|translateY\(-1px\)/, `${path} 不得恢复整属性过渡或装饰位移`)
     for (const block of source.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
       if (/border-radius:\s*(?:999px|50%)/.test(block[2])) {
         assert.match(block[2], /corner-shape:\s*round/, `${path} 的圆形/胶囊缺 corner-shape: round`)

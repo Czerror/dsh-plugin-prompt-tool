@@ -18,7 +18,9 @@ export function DelegationToolsModuleCard(props: {
   const fields = store.fields
   const maxDepthOptions = ['', 'provider-managed', '0', '1', '2', '3', '5']
   return (
-    <EngineModuleCard name={t('policy.delegation.name')} meta={t('policy.delegation.meta')}>
+    <EngineModuleCard name={t('policy.delegation.name')} meta={t('policy.delegation.meta')}
+      defaultExpanded={store.editorDrafts?.expanded.get(`${fields.presetTemplate}:delegation`)}
+      onExpandedChange={(value) => store.editorDrafts?.expanded.set(`${fields.presetTemplate}:delegation`, value)}>
       <p className={styles.configFieldHint}>{t('policy.delegation.hint')}</p>
       <div className={styles.settingRowStack}>
         <div className={styles.switchGrid}>

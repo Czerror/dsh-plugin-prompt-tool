@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps, type ReactNode } from 'react'
 import { scrollToCreatedCard, cssEscapeId } from '../../ui/reveal-card.ts'
 import { bridgeCall, errorMessage } from '../../data/bridge-client.ts'
+import { instructionFileIdOf } from '../../data/prompt-config-content.ts'
 import type { PromptToolTranslate } from '../../locales.ts'
 import { MenuSelect } from '../../ui/MenuSelect.tsx'
 import { ToggleRow } from '../../ui/ToggleRow.tsx'
@@ -18,6 +19,17 @@ export interface PromptConfigListProps {
   t: PromptToolTranslate
   meta: EngineMeta
   configs: PromptConfigDraft[]
+  browse?: { filter: string; expanded?: string; feedback?: { kind: 'ok' | 'error'; message: string } }
+  fieldDrafts?: ComponentProps<typeof PromptConfigCard>['fieldDrafts']
+  draftScope?: string
+  commonCards?: ReactNode
+  notice?: string
+  noticeKind?: 'ok' | 'error'
+  readOnlyReason?: string
+  onCreate?: () => void
+  onChoosePreset?: () => void
+  createdHidden?: boolean
+  onShowCreated?: () => void
   /** 传入 layer 时只展示该层配置；不传展示全部配置。 */
   layer?: string
   /** 传入 scope 时按 audience 作用域过滤：main = 非仅子代理（主会话可见）；subagent = 非仅主会话（子代理可见；缺省公用两边都可见）。 */
@@ -39,6 +51,7 @@ export interface PromptConfigListProps {
   emptyHint?: string
   onPatchConfigs: (configs: PromptConfigDraft[]) => void
   onSaveConfigs: (configs: PromptConfigDraft[]) => Promise<boolean>
+  onSaveInstructions?: () => Promise<boolean>
   instructionPolicy?: InstructionPolicySnapshot
   onToggleInstructionSource?: (enabled: boolean) => Promise<boolean>
   /** 指令文件卡：显式写盘与重新读取（不经预设保存路径）。 */
@@ -52,12 +65,37 @@ export interface PromptConfigListProps {
 /** 共享的提示词配置列表：校验、保存、脏检测、复制、删除、层内移动。 */
 export function PromptConfigList(props: PromptConfigListProps): ReactNode {
   const { t, meta, configs, layer, scope, extraActions, beforeCards, moduleCards, toolbarActions, viewFilter: viewFilterProp, onViewFilterChange, emptyHint, onPatchConfigs, onSaveConfigs, onSaveInstructionFile, onReloadInstructionFile, onPatchInstructionPolicy, onNotice } = props
-  const [expanded, setExpanded] = useState<string | undefined>(undefined)
+  const [expanded, setExpanded] = useState<string | undefined>(props.browse?.expanded)
   const [errors, setErrors] = useState<ValidationErrorEntry[]>([])
   const [validating, setValidating] = useState(false)
   const [saving, setSaving] = useState(false)
   const [savingSource, setSavingSource] = useState(false)
-  const [filter, setFilter] = useState('')
+  const [filter, setFilter] = useState(props.browse?.filter ?? '')
+  const changeFilter = (value: string): void => {
+    if (props.browse !== undefined) props.browse.filter = value
+    setFilter(value)
+  }
+  const [createdId, setCreatedId] = useState<string>()
+  const busyRef = useRef(false)
+  const [feedback, setFeedback] = useState<{ kind: 'ok' | 'error'; message: string } | undefined>(props.browse?.feedback)
+  const lastNotice = useRef(props.notice)
+  const report = (kind: 'ok' | 'error', message: string): void => {
+    setFeedback({ kind, message })
+    onNotice(kind, message)
+  }
+  useEffect(() => {
+    if (props.notice && props.notice !== lastNotice.current) setFeedback({ kind: props.noticeKind ?? 'ok', message: props.notice })
+    lastNotice.current = props.notice
+  }, [props.notice, props.noticeKind])
+  useEffect(() => {
+    if (props.browse !== undefined) props.browse.feedback = feedback
+  }, [feedback, props.browse])
+  useEffect(() => {
+    if (props.browse !== undefined) props.browse.expanded = expanded
+  }, [expanded, props.browse])
+  useEffect(() => {
+    if (expanded !== undefined && !configs.some((config) => config.id === expanded)) setExpanded(undefined)
+  }, [configs, expanded])
   /** 拖拽排序状态：源卡片 id + 落点（目标 id + 前/后）。 */
   const [dragId, setDragId] = useState<string | undefined>(undefined)
   const [dropTarget, setDropTarget] = useState<{ id: string; before: boolean } | undefined>(undefined)
@@ -71,6 +109,7 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
   useEffect(() => {
     const created = configs.find((config) => config.id === props.createdConfigId)
     if (created === undefined) return
+    setCreatedId(created.id)
     // 只展开并定位新建的卡：不改动用户的层级筛选与搜索词。
     setExpanded(created.id)
     return scrollToCreatedCard(`[data-config-id="${cssEscapeId(created.id)}"]`)
@@ -95,8 +134,7 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
     ? byStrategy
     : byStrategy.filter((config) =>
       [config.id, config.name ?? '', config.strategy ?? ''].join(' ').toLowerCase().includes(keyword))
-  // 显示顺序 = 引擎注入顺序：按（层序, order, 声明序）稳定排序，跨层全量视图
-  // 也一致；order 相同时保持数组原序（同值稳定）。
+  // 插入点分组只用于阅读；order 仅在同一插入点内比较。
   const layerRank = (config: PromptConfigDraft): number => {
     const index = allLayers.indexOf(promptConfigLayer(config))
     return index < 0 ? allLayers.length : index
@@ -113,22 +151,24 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
     .map((entry) => entry.config)
   /** 按过滤后可见配置一次性启用/禁用（批量开关）。 */
   const batchSetEnabled = (enabled: boolean): void => {
+    if (props.readOnlyReason !== undefined) return
     const visibleIds = new Set(ordered.map((config) => config.id))
     onPatchConfigs(configs.map((config) => visibleIds.has(config.id) ? { ...config, enabled } : config))
   }
 
-  const runValidate = async (target: PromptConfigDraft[]): Promise<boolean> => {
+  const runValidate = async (target: PromptConfigDraft[], announceSuccess = true): Promise<boolean> => {
     setValidating(true)
     try {
       const res = await bridgeCall('configsValidate', { promptConfigs: target })
       if (!res.ok) {
-        onNotice('error', t('configs.notice.validateFailed', { reason: res.message ?? 'settings bridge unavailable' }))
+        report('error', t('configs.notice.validateFailed', { reason: res.message ?? 'settings bridge unavailable' }))
         return false
       }
       setErrors(res.value.valid ? [] : res.value.errors ?? [])
+      if (!res.value.valid || announceSuccess) report(res.value.valid ? 'ok' : 'error', res.value.valid ? t('configs.notice.valid') : t('configs.notice.validateFailed', { reason: (res.value.errors ?? []).map((error) => error.message).join('；') }))
       return res.value.valid
     } catch (error) {
-      onNotice('error', t('configs.notice.validateFailed', { reason: errorMessage(error) }))
+      report('error', t('configs.notice.validateFailed', { reason: errorMessage(error) }))
       return false
     } finally {
       setValidating(false)
@@ -136,18 +176,27 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
   }
 
   const save = async (): Promise<boolean> => {
+    if (busyRef.current || (props.readOnlyReason !== undefined && props.onSaveInstructions === undefined)) return false
+    busyRef.current = true
     setSaving(true)
     try {
-      if (!await runValidate(configs)) return false
+      if (props.readOnlyReason !== undefined) {
+        const saved = await props.onSaveInstructions!()
+        report(saved ? 'ok' : 'error', t(saved ? 'configs.notice.savedSnapshot' : 'configs.notice.saveIncomplete'))
+        return saved
+      }
+      if (!await runValidate(configs, false)) return false
       setErrors([])
       const saved = await onSaveConfigs(configs)
-      if (saved) onNotice('ok', t('configs.notice.saved', { count: configs.length }))
+      if (saved) report('ok', t('configs.notice.savedSnapshot'))
+      else setFeedback({ kind: 'error', message: t('configs.notice.saveIncomplete') })
       return saved
     } catch (error) {
-      onNotice('error', t('configs.notice.saveFailed', { reason: errorMessage(error) }))
+      report('error', t('configs.notice.saveFailed', { reason: errorMessage(error) }))
       return false
     } finally {
       setSaving(false)
+      busyRef.current = false
     }
   }
 
@@ -157,14 +206,13 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
   // 避免与不可见配置交换顺序。
   const viewStrategy = viewFilter === 'world-book' ? 'world-book' : undefined
   const viewIds = useMemo(
-    () => viewOrderedIds(configs, effectiveLayer, allLayers, viewStrategy),
-    [configs, effectiveLayer, allLayers, viewStrategy],
+    () => viewOrderedIds(configs, effectiveLayer, allLayers, viewStrategy, ordered.map((config) => config.id)),
+    [configs, effectiveLayer, allLayers, viewStrategy, ordered],
   )
-  const positionOf = useMemo(() => new Map(viewIds.map((id, at) => [id, at])), [viewIds])
 
   /** 卡片稳定回调（memo 生效前提）：经 liveRef 读最新列表状态，回调引用跨渲染不变。 */
-  const liveRef = useRef({ configs, layer: effectiveLayer, metaLayers: allLayers, strategy: viewStrategy, dragId, dropTarget })
-  liveRef.current = { configs, layer: effectiveLayer, metaLayers: allLayers, strategy: viewStrategy, dragId, dropTarget }
+  const liveRef = useRef({ configs, layer: effectiveLayer, metaLayers: allLayers, strategy: viewStrategy, dragId, dropTarget, viewIds, keyword, readOnly: props.readOnlyReason !== undefined })
+  liveRef.current = { configs, layer: effectiveLayer, metaLayers: allLayers, strategy: viewStrategy, dragId, dropTarget, viewIds, keyword, readOnly: props.readOnlyReason !== undefined }
   const handleToggleExpanded = useCallback((id: string) => {
     setExpanded((current) => current === id ? undefined : id)
   }, [])
@@ -173,13 +221,22 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
     if (index >= 0) onPatchConfigs(liveRef.current.configs.map((item, at) => at === index ? { ...item, enabled } : item))
   }, [onPatchConfigs])
   const handlePatch = useCallback((id: string, patch: Partial<PromptConfigDraft>) => {
+    if (patch.id !== undefined && patch.id !== id) {
+      const prefix = `${props.draftScope}:${id}:`
+      const previousFields = [...(props.fieldDrafts ?? [])] // Map迭代器会看到新键；改名必须使用旧条目的快照。
+      for (const [key, field] of previousFields) if (key.startsWith(prefix)) {
+        props.fieldDrafts?.set(`${props.draftScope}:${patch.id}:${key.slice(prefix.length)}`, field)
+        props.fieldDrafts?.delete(key)
+      }
+    }
     const index = liveRef.current.configs.findIndex((item) => item.id === id)
     if (index >= 0) onPatchConfigs(liveRef.current.configs.map((item, at) => at === index ? { ...item, ...patch } : item))
-  }, [onPatchConfigs])
+  }, [onPatchConfigs, props.draftScope, props.fieldDrafts])
   const handleMove = useCallback((id: string, delta: -1 | 1) => {
-    const { configs: current, layer: currentLayer, metaLayers, strategy } = liveRef.current
+    const { configs: current, layer: currentLayer, metaLayers, strategy, viewIds: ids, keyword: query, readOnly } = liveRef.current
+    if (query || readOnly) return
     const index = current.findIndex((item) => item.id === id)
-    if (index >= 0) onPatchConfigs(moveWithinLayer(current, index, delta, currentLayer, metaLayers, strategy))
+    if (index >= 0) onPatchConfigs(moveWithinLayer(current, index, delta, currentLayer, metaLayers, strategy, ids))
   }, [onPatchConfigs])
   const handleDuplicate = useCallback((id: string) => {
     const current = liveRef.current.configs
@@ -195,14 +252,26 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
     clone.id = nextId
     onPatchConfigs([...current, clone])
     setExpanded(nextId)
+    setCreatedId(nextId)
     onNotice('ok', t('configs.notice.copied'))
   }, [onNotice, onPatchConfigs, t])
   const handleDelete = useCallback((id: string) => {
     const current = liveRef.current.configs
+    const ids = liveRef.current.viewIds
+    const index = ids.indexOf(id)
+    const nextId = ids[index + 1] ?? ids[index - 1]
+    const prefix = `${props.draftScope}:${id}:`
+    for (const key of props.fieldDrafts?.keys() ?? []) {
+      if (key.startsWith(prefix)) props.fieldDrafts?.delete(key)
+    }
     onPatchConfigs(current.filter((item) => item.id !== id))
     setExpanded((value) => value === id ? undefined : value)
     onNotice('ok', t('configs.notice.deleted'))
-  }, [onNotice, onPatchConfigs, t])
+    requestAnimationFrame(() => {
+      const target = nextId === undefined ? document.querySelector<HTMLElement>('[data-module-toolbar] button') : document.querySelector<HTMLElement>(`[data-config-id="${cssEscapeId(nextId)}"] button[aria-expanded]`)
+      target?.focus()
+    })
+  }, [onNotice, onPatchConfigs, props.draftScope, props.fieldDrafts, t])
   const handleDragStart = useCallback((id: string, event: React.DragEvent<HTMLElement>) => {
     setDragId(id)
     event.dataTransfer.effectAllowed = 'move'
@@ -216,9 +285,10 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
   }, [])
   const handleDrop = useCallback((id: string, event: React.DragEvent<HTMLElement>) => {
     event.preventDefault()
-    const { configs: current, layer: currentLayer, metaLayers, strategy, dragId: source, dropTarget: target } = liveRef.current
+    const { configs: current, layer: currentLayer, metaLayers, strategy, dragId: source, dropTarget: target, viewIds: ids, keyword: query, readOnly } = liveRef.current
+    if (query || readOnly) return
     if (source !== undefined && target !== undefined && source !== id) {
-      onPatchConfigs(moveToView(current, source, target.id, target.before, currentLayer, metaLayers, strategy))
+      onPatchConfigs(moveToView(current, source, target.id, target.before, currentLayer, metaLayers, strategy, ids))
     }
     setDragId(undefined)
     setDropTarget(undefined)
@@ -231,16 +301,22 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
   const handleMoveDown = useCallback((id: string) => handleMove(id, 1), [handleMove])
 
   const renderCard = (config: PromptConfigDraft) => {
-    const position = positionOf.get(config.id) ?? -1
+    const layerIds = ordered.filter((item) => promptConfigLayer(item) === promptConfigLayer(config)).map((item) => item.id)
+    const position = layerIds.indexOf(config.id)
+    const sorting = keyword.length === 0 && props.readOnlyReason === undefined
     return (
       <PromptConfigCard
         key={config.id}
         t={t}
         meta={meta}
         config={config}
+        fieldDrafts={props.fieldDrafts}
+        draftScope={props.draftScope}
+        disabled={props.readOnlyReason !== undefined && instructionFileIdOf(config) === undefined}
+        readOnlyReason={instructionFileIdOf(config) !== undefined ? undefined : props.readOnlyReason}
         expanded={expanded === config.id}
-        canMoveUp={position > 0}
-        canMoveDown={position >= 0 && position < viewIds.length - 1}
+        canMoveUp={sorting && position > 0}
+        canMoveDown={sorting && position >= 0 && position < layerIds.length - 1}
         dragging={dragId === config.id}
         dropBefore={dropTarget?.id === config.id && dropTarget.before}
         dropAfter={dropTarget?.id === config.id && !dropTarget.before}
@@ -254,7 +330,7 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
         onSaveInstructionFile={onSaveInstructionFile}
         onReloadInstructionFile={onReloadInstructionFile}
         onPatchInstructionPolicy={onPatchInstructionPolicy}
-        onDragStart={handleDragStart}
+        onDragStart={sorting ? handleDragStart : undefined}
         onDragOver={handleDragOver}
         onDrop={handleDrop}
         onDragEnd={handleDragEnd}
@@ -262,18 +338,57 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
     )
   }
 
+  const clearFilters = (): void => {
+    changeFilter('')
+    changeViewFilter('all')
+  }
+  const hiddenCreated = props.createdHidden === true || (createdId !== undefined && configs.some((config) => config.id === createdId) && !ordered.some((config) => config.id === createdId))
+  const filteredView = keyword.length > 0 || viewFilter !== 'all'
+
   return (
     <section className={styles.section} aria-labelledby="prompt-tool-configs-heading">
-      <div className={styles.sectionHeading}>
-      <div><h2 id="prompt-tool-configs-heading">{layer === undefined ? t('configs.heading.all') : t('configs.heading.layer')}</h2><p>{t('configs.meta', { total: scoped.length, enabled: scoped.filter((config) => config.enabled !== false).length })}</p></div>
-        <div className={styles.sectionActions} data-module-toolbar="true">
-          {extraActions}
-          {toolbarActions}
-          <button type="button" className={styles.pillButton} disabled={validating} onClick={() => void runValidate(configs)}>{validating && <span className={styles.spinner} aria-hidden="true" />}{validating ? t('configs.validating') : t('configs.validate')}</button>
-          <button type="button" className={styles.primaryPill} disabled={saving || validating} onClick={save}>{saving && <span className={styles.spinner} aria-hidden="true" />}{saving ? t('configs.saving') : t('configs.save')}</button>
+      <div className={styles.pageActions} data-workspace-sticky>
+        <div className={styles.sectionHeading}>
+          <div><h3 id="prompt-tool-configs-heading">{layer === undefined ? t('configs.heading.all') : t('configs.heading.layer')}</h3><p>{t('configs.meta', { total: scoped.length, enabled: scoped.filter((config) => config.enabled !== false).length })}</p></div>
+          <div className={styles.sectionActions} data-module-toolbar="true">
+            {extraActions}
+            {toolbarActions}
+            <button type="button" className={styles.pillButton} disabled={validating || saving} onClick={() => void runValidate(configs)}>{validating && <span className={styles.spinner} aria-hidden="true" />}{validating ? t('configs.validating') : t('configs.validate')}</button>
+            <button type="button" className={styles.primaryPill} disabled={saving || validating || (props.readOnlyReason !== undefined && props.onSaveInstructions === undefined)} onClick={save}>{saving && <span className={styles.spinner} aria-hidden="true" />}{saving ? t('configs.saving') : t('configs.save')}</button>
+          </div>
         </div>
+        <div className={styles.listFilterRow}>
+          <input type="search" className={styles.listFilter} value={filter}
+            aria-label={t('configs.filter.aria')} placeholder={t('configs.filter.placeholder')}
+            spellCheck={false} onChange={(event) => changeFilter(event.target.value)} />
+          {layer === undefined && <MenuSelect className={styles.listFilter} value={viewFilter} ariaLabel={t('configs.view.aria')}
+            options={[
+              { value: 'all', label: t('configs.view.all') },
+              { value: 'world-book', label: t('configs.view.worldBook'), group: t('configs.view.strategy') },
+              ...allLayers.map((item) => ({ value: item, label: t('configs.view.layer', { layer: translateLabel(t, LAYER_LABEL_KEYS, item) }), group: t('configs.view.insertion') })),
+            ]} onChange={changeViewFilter} />}
+          <span className={styles.batchControls}>
+            <button type="button" className={styles.pillButton} disabled={ordered.length === 0 || props.readOnlyReason !== undefined}
+              onClick={() => batchSetEnabled(true)}>{t('configs.batch.enableVisible', { count: ordered.length })}</button>
+            <button type="button" className={styles.pillButton} disabled={ordered.length === 0 || props.readOnlyReason !== undefined}
+              onClick={() => batchSetEnabled(false)}>{t('configs.batch.disableVisible', { count: ordered.length })}</button>
+          </span>
+        </div>
+        <p className={styles.actionHint}>{t('configs.saveScope')}</p>
+        {props.readOnlyReason !== undefined && <p className={styles.actionHint}>{props.readOnlyReason} <button type="button" className={styles.pillButton} onClick={props.onChoosePreset}>{t('configs.chooseEditable')}</button></p>}
+        {keyword.length > 0 && <p className={styles.actionHint}>{t('configs.searchSorting')}</p>}
+        {feedback !== undefined && <p className={feedback.kind === 'error' ? styles.noticeError : styles.actionFeedback} role="status">{feedback.message}</p>}
+        {hiddenCreated && <p className={styles.actionHint}>{t('configs.createdHidden')} <button type="button" className={styles.pillButton} onClick={() => {
+          clearFilters()
+          props.onShowCreated?.()
+          if (createdId !== undefined) scrollToCreatedCard(`[data-config-id="${cssEscapeId(createdId)}"]`)
+        }}>{t('configs.showAll')}</button></p>}
+        {errors.length > 0 && <div className={styles.configErrorBox}>
+          {errors.map((error, index) => <div key={`${error.index}-${index}`} className={styles.configErrorLine}>[{error.index}] {error.id || t('configs.error.missingId')}：{error.message}</div>)}
+        </div>}
       </div>
 
+      {props.commonCards}
       {props.instructionPolicy !== undefined && props.onToggleInstructionSource !== undefined && (
         <ToggleRow
           id="prompt-tool-instruction-source"
@@ -303,66 +418,21 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
       {/* 配置列表下的置顶固定卡片（人设、模板变量等单例配置，不参与层过滤与搜索）。 */}
       {beforeCards}
 
-      <div className={styles.listFilterRow}>
-        <input
-          className={styles.listFilter}
-          value={filter}
-          aria-label={t('configs.filter.aria')}
-          placeholder={t('configs.filter.placeholder')}
-          spellCheck={false}
-          onChange={(event) => setFilter(event.target.value)}
-        />
-        {layer === undefined && (
-          <MenuSelect
-            className={styles.listFilter}
-            value={viewFilter}
-            ariaLabel={t('configs.view.aria')}
-            options={[
-              { value: 'all', label: t('configs.view.all') },
-              { value: 'world-book', label: t('configs.view.worldBook') },
-              ...allLayers.map((item) => ({ value: item, label: t('configs.view.layer', { layer: translateLabel(t, LAYER_LABEL_KEYS, item) }) })),
-            ]}
-            onChange={changeViewFilter}
-          />
-        )}
-        <span className={styles.batchControls}>
-          <button type="button" className={styles.pillButton} disabled={ordered.length === 0}
-            onClick={() => batchSetEnabled(true)}>{t('configs.batch.enable')}</button>
-          <button type="button" className={styles.pillButton} disabled={ordered.length === 0}
-            onClick={() => batchSetEnabled(false)}>{t('configs.batch.disable')}</button>
-        </span>
-      </div>
-
-      {errors.length > 0 && (
-        <div className={styles.configErrorBox}>
-          {errors.map((error, index) => (
-            <div key={`${error.index}-${index}`} className={styles.configErrorLine}>[{error.index}] {error.id || t('configs.error.missingId')}：{error.message}</div>
-          ))}
-        </div>
-      )}
-
       {/* 模块卡（引擎能力、自定义工具）：与层级配置卡同款列表间距（configList），
-          只调整视觉排序，层级配置卡仍按（层序, order, 声明序）注入。 */}
+          这里只定义展示分组，不建立插入点间运行顺序。 */}
       {moduleCards !== undefined && <div className={styles.configList} hidden={viewFilter === 'world-book'}>{moduleCards}</div>}
 
-      {moduleCards === undefined ? (
-        scoped.length === 0 ? (
-          <div className={styles.emptyState}><span className={styles.emptyGlyph} aria-hidden="true">⌁</span><div><h3>{scope === 'subagent' ? t('configs.empty.subagent.title') : effectiveLayer === undefined ? t('configs.empty.all.title') : t('configs.empty.layer.title')}</h3><p>{scope === 'subagent' ? t('configs.empty.subagent.desc') : effectiveLayer === undefined ? t('configs.empty.all.desc') : t('configs.empty.layer.desc')}</p>{emptyHint !== undefined && <p className={styles.readOnly}>{emptyHint}</p>}</div></div>
-        ) : filtered.length === 0 && keyword.length > 0 ? (
-          <p className={styles.readOnly} role="status">{t('configs.noMatch', { keyword: filter.trim() })}</p>
-        ) : (
-          <div className={styles.configList}>
-            {ordered.map((config) => renderCard(config))}
-          </div>
-        )
+      {ordered.length === 0 ? filteredView ? (
+        <p className={styles.readOnly}>{t('configs.noMatch', { keyword: filter.trim() || translateLabel(t, LAYER_LABEL_KEYS, viewFilter) })} <button type="button" className={styles.pillButton} onClick={clearFilters}>{t('configs.clearFilters')}</button></p>
       ) : (
-        <>
-          {filtered.length === 0 && keyword.length > 0 && <p className={styles.readOnly} role="status">{t('configs.noMatch.modules', { keyword: filter.trim() })}</p>}
-          <div className={styles.configList}>
-            {ordered.map((config) => renderCard(config))}
-          </div>
-        </>
-      )}
+        <div className={styles.emptyState}><span className={styles.emptyGlyph} aria-hidden="true">⌁</span><div>
+          <h3>{scope === 'subagent' ? t('configs.empty.subagent.title') : t('configs.empty.all.title')}</h3>
+          <p>{scope === 'subagent' ? t('configs.empty.subagent.desc') : t('configs.empty.all.desc')}</p>
+          {emptyHint !== undefined && <p className={styles.readOnly}>{emptyHint}</p>}
+          {props.readOnlyReason === undefined && props.onCreate !== undefined && <button type="button" className={styles.pillButton} onClick={props.onCreate}>{t('configs.createFirst')}</button>}
+          {props.readOnlyReason !== undefined && props.onChoosePreset !== undefined && <button type="button" className={styles.pillButton} onClick={props.onChoosePreset}>{t('configs.chooseEditable')}</button>}
+        </div></div>
+      ) : <div className={styles.configList}>{ordered.map((config) => renderCard(config))}</div>}
 
     </section>
   )

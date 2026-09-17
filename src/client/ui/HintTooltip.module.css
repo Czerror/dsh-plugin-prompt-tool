@@ -7,12 +7,11 @@
   border-radius: 8px;
   background: color-mix(in srgb, var(--dsw-alias-tooltip-bg) 94%, var(--dsw-alias-bg-base));
   color: var(--dsw-static-neutral-bluish-00);
-  font-size: 13px;
-  line-height: 20px;
+  font: var(--dsw-font-xs-13);
   white-space: pre-line;
   overflow-wrap: break-word;
-  pointer-events: none;
-  animation: hint-tooltip-in 150ms var(--ds-ease-in-out);
+  pointer-events: auto;
+  animation: hint-tooltip-in var(--ds-transition-duration-fast) var(--ds-ease-in-out);
 }
 
 @keyframes hint-tooltip-in {
@@ -21,4 +20,8 @@
 
 @media (prefers-reduced-motion: reduce) {
   .bubble { animation: none; }
+}
+
+@media (forced-colors: active) {
+  .bubble { border: 1px solid CanvasText; background: Canvas; color: CanvasText; }
 }

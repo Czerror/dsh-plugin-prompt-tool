@@ -1,21 +1,24 @@
-import { memo, useRef, useState, type FocusEvent, type ReactNode } from 'react'
+import { memo, useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import clsx from 'clsx'
-import { IconChevronDownOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, IconChevronDownOutline14, Menu, Switch, type MenuEntry } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PromptToolTranslate } from '../../locales.ts'
 import type { EngineMeta, PromptConfigDraft } from '../../prompt-tool-types.ts'
 import type { InstructionPolicyFileOverride } from '../../../shared/instructions.ts'
+import type { FieldDraft } from '../../data/workspace-drafts.ts'
 import { HintTooltip } from '../../ui/HintTooltip.tsx'
+import { ConfirmDialog } from '../../ui/ConfirmDialog.tsx'
+import { StatusBadge } from '../../ui/StatusBadge.tsx'
+import { useMenuFocus } from '../../ui/menu-focus.ts'
 import { PromptConfigForm } from './PromptConfigForm.tsx'
 import { instructionFileIdOf } from '../../data/prompt-config-content.ts'
-import { FILL_LABEL_KEYS, LAYER_LABEL_KEYS, POSITION_LABEL_KEYS, STRATEGY_LABEL_KEYS, fieldPolicyFor, translateLabel } from './prompt-config-policy.ts'
+import { AUDIENCE_LABEL_KEYS, LAYER_LABEL_KEYS, POSITION_LABEL_KEYS, STRATEGY_LABEL_KEYS, fieldPolicyFor, translateLabel } from './prompt-config-policy.ts'
 import sharedCss from '../../ui/controls.module.css'
 import featureCss from './prompts.module.css'
 
 const styles = { ...sharedCss, ...featureCss }
-
 export type { PromptConfigDraft, LayerFieldPolicy } from '../../prompt-tool-types.ts'
-/** 列表卡片（memo 化）：props 全部为数据或稳定回调——config 引用变化才重渲染该卡，
- *  129 卡列表编辑/拖拽 hover 时不再整列表级联渲染。 */
+
+/** 卡片拥有正文及其 portal 的逻辑焦点边界，真正离开时才提交指令正文。 */
 export const PromptConfigCard = memo(function PromptConfigCard(props: {
   t: PromptToolTranslate
   meta: EngineMeta
@@ -23,6 +26,10 @@ export const PromptConfigCard = memo(function PromptConfigCard(props: {
   expanded: boolean
   canMoveUp: boolean
   canMoveDown: boolean
+  disabled?: boolean
+  readOnlyReason?: string
+  fieldDrafts?: Map<string, FieldDraft>
+  draftScope?: string
   dragging?: boolean
   dropBefore?: boolean
   dropAfter?: boolean
@@ -32,12 +39,9 @@ export const PromptConfigCard = memo(function PromptConfigCard(props: {
   onMoveUp: (id: string) => void
   onMoveDown: (id: string) => void
   onDuplicate: (id: string) => void
-  onDelete: (id: string) => void
-  /** 指令文件卡的显式写盘（不经预设保存路径）。 */
+  onDelete: (id: string) => void | Promise<void>
   onSaveInstructionFile?: (fileId: string) => void
-  /** 指令文件卡的重新读取（冲突/不可读时丢弃本地草稿，采纳磁盘版本）。 */
-  onReloadInstructionFile?: (fileId: string) => void
-  /** 指令文件卡的行为策略改动（独立策略存储；null 字段不提交）。 */
+  onReloadInstructionFile?: (fileId: string) => void | Promise<void>
   onPatchInstructionPolicy?: (fileId: string, override: InstructionPolicyFileOverride) => void
   onDragStart?: (id: string, event: React.DragEvent<HTMLElement>) => void
   onDragOver?: (id: string, event: React.DragEvent<HTMLElement>) => void
@@ -45,121 +49,121 @@ export const PromptConfigCard = memo(function PromptConfigCard(props: {
   onDragEnd?: () => void
 }): ReactNode {
   const { t, meta, config } = props
-  const [confirmingDelete, setConfirmingDelete] = useState(false)
+  const [confirmation, setConfirmation] = useState<'delete' | 'reload'>()
+  const [menuOpen, setMenuOpen] = useState(false)
+  const firstItemRef = useMenuFocus(menuOpen)
+  useEffect(() => { setMenuOpen(false); setConfirmation(undefined) }, [props.draftScope, config.id])
   const cardRef = useRef<HTMLElement>(null)
+  const actionRef = useRef<HTMLSpanElement>(null)
+  const reloadRef = useRef<HTMLSpanElement>(null)
+  const ownsFocus = useRef(false)
+  const panelId = useId()
   const enabled = config.enabled !== false
+  const name = config.name || config.id
   const instructionFileId = instructionFileIdOf(config)
   const fileNotWritable = config.contentStatus !== undefined && config.contentStatus !== 'ready'
-  /** 指令文件正文失焦即写回原文件（与模板变量卡同款）：焦点离开整张卡才提交，卡内切换控件不触发。 */
-  const autoSaveOnBlur = (event: FocusEvent<HTMLElement>): void => {
-    if (instructionFileId === undefined || props.onSaveInstructionFile === undefined) return
-    if (config.contentDirty !== true || config.contentSaving === true) return
-    const next = event.relatedTarget
-    if (next === null || !cardRef.current?.contains(next as Node)) props.onSaveInstructionFile(instructionFileId)
-  }
+  const focusAction = (): void => { actionRef.current?.querySelector('button')?.focus() }
   const policy = fieldPolicyFor(meta, config.layer)
-  const layer = config.layer ?? 'pre-step'
   const strategy = config.strategy === 'instruction-hint' ? 'placeholder' : config.strategy ?? 'static'
-  const chips = [translateLabel(t, LAYER_LABEL_KEYS, layer), translateLabel(t, STRATEGY_LABEL_KEYS, strategy)]
-  const fill = config.fill ?? (config.strategy === 'instruction-hint' ? 'instruction-hint' : undefined)
-  if (fill) chips.push(translateLabel(t, FILL_LABEL_KEYS, fill))
-  if (policy.position) {
-    const position = config.position ?? 'after-user'
-    chips.push(t('card.chip.position', { value: translateLabel(t, POSITION_LABEL_KEYS, position) }))
+  const chips = [translateLabel(t, LAYER_LABEL_KEYS, config.layer ?? 'pre-step'), translateLabel(t, STRATEGY_LABEL_KEYS, strategy)]
+  if (policy.position) chips.push(t('card.chip.position', { value: translateLabel(t, POSITION_LABEL_KEYS, config.position ?? 'after-user') }))
+  if (config.audience && config.audience !== 'all') chips.push(t('card.chip.audience', { value: translateLabel(t, AUDIENCE_LABEL_KEYS, config.audience) }))
+  const status = config.contentConflict === true ? t('card.chip.fileConflict')
+    : fileNotWritable ? (config.contentStatus === 'missing' ? t('card.fileMissing') : config.contentStatus === 'too-large' ? t('card.fileTooLarge') : t('card.chip.fileUnavailable'))
+      : config.contentSaving === true ? t('card.chip.fileSaving') : config.contentDirty === true ? t('card.chip.fileDirty') : undefined
+  const menuItems: MenuEntry[] = [
+    { id: 'up', label: t('card.moveUp'), disabled: props.disabled || !props.canMoveUp },
+    { id: 'down', label: t('card.moveDown'), disabled: props.disabled || !props.canMoveDown },
+    ...(instructionFileId === undefined ? [
+      { id: 'duplicate', label: t('card.duplicate'), disabled: props.disabled },
+      { id: 'delete', label: <span className={styles.configFieldError}>{t('card.delete')}</span>, danger: true, disabled: props.disabled },
+    ] : []),
+  ]
+  const firstItem = menuItems.find((item) => !('type' in item) && !item.disabled)
+  if (firstItem && !('type' in firstItem)) firstItem.label = <span ref={firstItemRef}>{firstItem.label}</span>
+  const reload = (): void => {
+    if (instructionFileId === undefined) return
+    if (config.contentDirty) setConfirmation('reload')
+    else void props.onReloadInstructionFile?.(instructionFileId)
   }
-  if (config.mergeMode === 'merged') chips.push(t('card.chip.merged'))
-  if ((config.order ?? 0) !== 0) chips.push(t('card.chip.order', { order: config.order ?? 0 }))
-  if (config.group) chips.push(t(config.exclusive === true ? 'card.chip.exclusiveGroup' : 'card.chip.group', { name: config.group }))
-  // 指令文件卡：读取状态与未保存/冲突必须常驻可见，不用空 textarea 掩盖读取失败。
-  if (config.contentStatus !== undefined && config.contentStatus !== 'ready') chips.push(t('card.chip.fileUnavailable'))
-  if (config.contentConflict === true) chips.push(t('card.chip.fileConflict'))
-  else if (config.contentDirty === true) chips.push(t(config.contentSaving === true ? 'card.chip.fileSaving' : 'card.chip.fileDirty'))
-  return (
-    <article
-      ref={cardRef}
-      onBlur={autoSaveOnBlur}
-      className={clsx(styles.configCard, props.expanded && styles.configCardOpen)}
-      data-config-id={config.id}
-      data-dragging={props.dragging ? '' : undefined}
-      data-drop-before={props.dropBefore ? '' : undefined}
-      data-drop-after={props.dropAfter ? '' : undefined}
-      onDragOver={props.onDragOver === undefined ? undefined : (event) => props.onDragOver!(config.id, event)}
-      onDrop={props.onDrop === undefined ? undefined : (event) => props.onDrop!(config.id, event)}
-      onDragEnd={props.onDragEnd}
-    >
-      <header className={styles.configHeader}>
-        {props.onDragStart !== undefined && (
-          <HintTooltip label={t('card.dragHint')}>
-            <span
-              className={styles.dragHandle}
-              aria-hidden="true"
-              draggable
-              onDragStart={(event) => props.onDragStart!(config.id, event)}
-            >⠿</span>
-          </HintTooltip>
-        )}
-        <button type="button" className={styles.configToggle} aria-expanded={props.expanded} onClick={() => props.onToggleExpanded(config.id)}>
-          <span className={styles.configTitle}>
-            <span className={styles.configTitleRow}>
-              <span className={styles.configName}>{config.name && config.name !== config.id ? `${config.id} · ${config.name}` : config.id}</span>
-            </span>
-            <span className={styles.configMeta}>{chips.join(' · ')}</span>
-          </span>
-          <IconChevronDownOutline14 className={clsx(styles.chevron, props.expanded && styles.chevronOpen)} />
-        </button>
-        <span className={styles.configHeaderActions}>
-          <HintTooltip label={enabled ? t('card.disableHint') : t('card.enableHint')}>
-            <label className={styles.configEnable}>
-              <input
-                type="checkbox"
-                checked={enabled}
-                aria-label={t('card.enableAria', { name: config.name ?? config.id })}
-                onChange={(e) => {
-                  // 文件卡的启停属于独立策略：写 preset 卡字段会被静默丢弃。
-                  if (instructionFileId !== undefined) props.onPatchInstructionPolicy?.(instructionFileId, { enabled: e.target.checked })
-                  else props.onToggleEnabled(config.id, e.target.checked)
-                }}
-              />
-              <span className={styles.switch} aria-hidden="true"><i /></span>
-            </label>
-          </HintTooltip>
-          <span className={styles.configActions}>
-            {instructionFileId !== undefined && (config.contentConflict === true || fileNotWritable) && (
-              <button
-                type="button"
-                className={styles.pillButton}
-                data-variant="secondary"
-                onClick={() => props.onReloadInstructionFile?.(instructionFileId)}
-              >{t('card.reloadFile')}</button>
-            )}
-            <button type="button" className={styles.pillButton} disabled={!props.canMoveUp} onClick={() => props.onMoveUp(config.id)}>{t('card.moveUp')}</button>
-            <button type="button" className={styles.pillButton} disabled={!props.canMoveDown} onClick={() => props.onMoveDown(config.id)}>{t('card.moveDown')}</button>
-            <button type="button" className={styles.pillButton} onClick={() => props.onDuplicate(config.id)}>{t('card.duplicate')}</button>
-            {confirmingDelete ? (
-              <>
-                <button type="button" className={styles.pillButton} data-danger onClick={() => props.onDelete(config.id)}>{t('card.confirmDelete')}</button>
-                <button type="button" className={styles.pillButton} data-variant="secondary" onClick={() => setConfirmingDelete(false)}>{t('card.cancel')}</button>
-              </>
-            ) : (
-              <button type="button" className={styles.pillButton} data-danger onClick={() => setConfirmingDelete(true)}>{t('card.delete')}</button>
-            )}
-          </span>
+  return <article ref={cardRef} className={clsx(styles.configCard, props.expanded && styles.configCardOpen)}
+    data-config-id={config.id} data-dragging={props.dragging ? '' : undefined}
+    data-drop-before={props.dropBefore ? '' : undefined} data-drop-after={props.dropAfter ? '' : undefined}
+    onFocus={() => { ownsFocus.current = true }}
+    onBlur={() => {
+      ownsFocus.current = false
+      requestAnimationFrame(() => {
+        if (!ownsFocus.current) setMenuOpen(false)
+        if (!ownsFocus.current && instructionFileId !== undefined && config.contentDirty === true
+          && config.contentSaving !== true && config.contentConflict !== true && !fileNotWritable && !props.disabled && confirmation === undefined) {
+          props.onSaveInstructionFile?.(instructionFileId)
+        }
+      })
+    }}
+    onDragOver={props.onDragOver === undefined ? undefined : (event) => props.onDragOver!(config.id, event)}
+    onDrop={props.onDrop === undefined ? undefined : (event) => props.onDrop!(config.id, event)} onDragEnd={props.onDragEnd}>
+    <span className={styles.visuallyHidden} role="status" aria-atomic="true">{status && !fileNotWritable && !config.contentConflict ? `${name}：${status}` : ''}</span>
+    <header className={styles.configHeader}>
+      {props.onDragStart !== undefined && <HintTooltip label={t('card.dragHint')}>
+        <span className={styles.dragHandle} aria-hidden="true" draggable onDragStart={(event) => props.onDragStart!(config.id, event)}>⠿</span>
+      </HintTooltip>}
+      <button type="button" className={styles.configToggle} aria-expanded={props.expanded} aria-controls={panelId} onClick={() => props.onToggleExpanded(config.id)}>
+        <span className={styles.configTitle}>
+          <span className={styles.configTitleRow}><span className={styles.configName}>{name}</span></span>
+          <span className={styles.configMeta}>{chips.join(' · ')}</span>
         </span>
-      </header>
-      {props.expanded && config.contentMessage !== undefined && (
-        <p className={styles.configFieldHint}>{t('card.fileStatusDetail', { message: config.contentMessage })}</p>
-      )}
-      {props.expanded && (
-        <PromptConfigForm
-          t={t}
-          meta={meta}
-          config={config}
+        <IconChevronDownOutline14 className={clsx(styles.chevron, props.expanded && styles.chevronOpen)} />
+      </button>
+      {status && <StatusBadge tone={config.contentConflict ? 'warning' : fileNotWritable ? 'danger' : 'neutral'} label={status} />}
+      <span className={styles.configHeaderActions}>
+        <Switch className={styles.configEnable} checked={enabled} label={t('card.enableAria', { name })} disabled={props.disabled || (instructionFileId !== undefined && config.contentSaving === true)}
+          onChange={(next) => {
+            if (instructionFileId !== undefined) props.onPatchInstructionPolicy?.(instructionFileId, { enabled: next })
+            else props.onToggleEnabled(config.id, next)
+          }} />
+        <span ref={actionRef} tabIndex={-1} onKeyDown={(event) => {
+          if (!menuOpen || (event.key !== 'Escape' && event.key !== 'Tab')) return
+          event.stopPropagation()
+          if (event.key === 'Escape') event.preventDefault()
+          focusAction()
+          setMenuOpen(false)
+        }}>
+          <Menu open={menuOpen} portal autoFocus compact align="end" items={menuItems} onClose={() => setMenuOpen(false)}
+            onSelect={(action) => {
+              setMenuOpen(false)
+              focusAction()
+              if (action === 'delete') setConfirmation('delete')
+              else if (action === 'up') props.onMoveUp(config.id)
+              else if (action === 'down') props.onMoveDown(config.id)
+              else if (action === 'duplicate') props.onDuplicate(config.id)
+            }}
+            anchor={<Button size="sm" variant="ghost" aria-label={t('card.actionsAria', { name })} aria-haspopup="menu" aria-expanded={menuOpen} onClick={() => setMenuOpen(!menuOpen)}>⋯</Button>} />
+        </span>
+      </span>
+    </header>
+    {(config.contentConflict || fileNotWritable || config.contentMessage || config.contentOwnerConflict || props.readOnlyReason) && <div className={styles.configStatus}>
+      {config.contentConflict && <p>{t('card.fileConflictDetail')}</p>}
+      {config.contentDirty && (config.contentConflict || fileNotWritable) && <p>{t('card.chip.fileDirty')}</p>}
+      {config.contentMessage && <p>{t('card.fileStatusDetail', { message: config.contentMessage })}</p>}
+      {config.contentOwnerConflict && <p>{t('file.ownerConflict')}</p>}
+      {props.readOnlyReason && <p>{props.readOnlyReason}</p>}
+      {instructionFileId !== undefined && (config.contentConflict || fileNotWritable) && <span ref={reloadRef} tabIndex={-1}>
+        <Button size="sm" variant="outline" disabled={config.contentSaving} onClick={reload}>{t('card.reloadFile')}</Button>
+      </span>}
+    </div>}
+    <div id={panelId} hidden={!props.expanded}>
+      {props.expanded && <>
+        <p className={styles.configFullName}>{config.id}{config.name && config.name !== config.id ? ` · ${config.name}` : ''}</p>
+        <PromptConfigForm t={t} meta={meta} config={config} disabled={props.disabled} fieldDrafts={props.fieldDrafts} draftScope={`${props.draftScope}:${config.id}`}
           onPatch={(patch) => props.onPatch(config.id, patch)}
-          {...(instructionFileId === undefined
-            ? {}
-            : { onPatchPolicy: (patch: InstructionPolicyFileOverride) => props.onPatchInstructionPolicy?.(instructionFileId, patch) })}
-        />
-      )}
-    </article>
-  )
+          {...(instructionFileId === undefined ? {} : { onPatchPolicy: (patch: InstructionPolicyFileOverride) => props.onPatchInstructionPolicy?.(instructionFileId, patch) })} />
+      </>}
+    </div>
+    {confirmation && <ConfirmDialog title={t(confirmation === 'delete' ? 'card.deleteTitle' : 'card.reloadTitle', { name })}
+      description={t(confirmation === 'delete' ? 'card.deleteDescription' : 'card.reloadDescription', { name })}
+      confirmLabel={t(confirmation === 'delete' ? 'card.confirmDelete' : 'card.reloadFile')} cancelLabel={t('card.cancel')}
+      failureMessage={t('card.operationFailed')} returnFocusRef={confirmation === 'delete' ? actionRef : reloadRef}
+      onCancel={() => { setConfirmation(undefined); if (confirmation === 'delete') focusAction(); else reloadRef.current?.querySelector('button')?.focus() }}
+      onConfirm={() => confirmation === 'delete' ? props.onDelete(config.id) : props.onReloadInstructionFile?.(instructionFileId!)} />}
+  </article>
 })

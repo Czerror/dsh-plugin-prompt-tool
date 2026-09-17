@@ -1,7 +1,7 @@
 /** 技能设置页（从 PromptWorkspace 拆出）：状态筛选 + 过滤 + 拖拽排序 + 目录管理。
  *  L3 selector 化：usePromptToolFields 订阅 fields 引用变化；技能行抽 SkillRow
  *  memo 组件——开关/筛选/拖拽 hover 只重渲染受影响行，不再全列表级联。 */
-import { memo, useCallback, useMemo, useState, type ReactNode } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import clsx from 'clsx'
 import type { SkillCatalogEntry } from '../../data/prompt-tool-fields.ts'
 import type { PromptToolStore } from '../../data/use-prompt-tool-store.ts'
@@ -10,7 +10,6 @@ import type { PromptToolLocaleKey, PromptToolTranslate } from '../../locales.ts'
 import { bridgeCall } from '../../data/bridge-client.ts'
 import { readImportFiles } from '../../data/import-files.ts'
 import { usePromptToolFields } from '../../data/use-prompt-tool-fields.ts'
-import { tabKeyHandler } from '../../ui/tab-key.ts'
 import { CollapsibleCard } from '../../ui/CollapsibleCard.tsx'
 import { HintTooltip } from '../../ui/HintTooltip.tsx'
 import { SettingInputRow } from '../../ui/SettingInputRow.tsx'
@@ -29,16 +28,20 @@ const SKILL_STATUS_TABS: Array<{ id: SkillStatusTab; labelKey: PromptToolLocaleK
   { id: 'disabled', labelKey: 'skills.tabs.disabled' },
 ]
 
-export const SkillsPage = memo(function SkillsPage(props: { store: PromptToolStore; api: PromptToolHostApi; t: PromptToolTranslate }): ReactNode {
+export const SkillsPage = memo(function SkillsPage(props: { store: PromptToolStore; api: PromptToolHostApi; t: PromptToolTranslate; browse?: { query: string; status: SkillStatusTab; selected: string[] } }): ReactNode {
   const { store, api, t } = props
   const fields = usePromptToolFields(store, (value) => value)
   const [pickingDir, setPickingDir] = useState(false)
   const [importingDir, setImportingDir] = useState(false)
   const [dragFolder, setDragFolder] = useState<string | undefined>(undefined)
   const [dropTarget, setDropTarget] = useState<{ folder: string; before: boolean } | undefined>(undefined)
-  const [skillFilter, setSkillFilter] = useState('')
-  const [statusTab, setStatusTab] = useState<SkillStatusTab>('all')
-  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [skillFilter, setSkillFilter] = useState(props.browse?.query ?? '')
+  const [statusTab, setStatusTab] = useState<SkillStatusTab>(props.browse?.status ?? 'all')
+  const [selected, setSelected] = useState<Set<string>>(new Set(props.browse?.selected))
+  const [batchBusy, setBatchBusy] = useState(false)
+  const batchRef = useRef(false)
+  const mounted = useRef(true)
+  useEffect(() => () => { mounted.current = false }, [])
   const [removingDir, setRemovingDir] = useState<string | undefined>(undefined)
   const orderedSkills = useMemo(() => {
     const index = new Map(fields.skillOrder.map((folder, at) => [folder, at]))
@@ -73,7 +76,6 @@ export const SkillsPage = memo(function SkillsPage(props: { store: PromptToolSto
     && (keyword.length === 0
       || [skill.folder, skill.name ?? '', skill.description ?? ''].join(' ').toLowerCase().includes(keyword)))
 
-  const selectionMode = selected.size > 0
   const toggleSelect = useCallback((folder: string) => {
     setSelected((prev) => {
       const next = new Set(prev)
@@ -83,7 +85,16 @@ export const SkillsPage = memo(function SkillsPage(props: { store: PromptToolSto
     })
   }, [])
   /** 全选目标：当前筛选后的合法技能（同名/无效技能不可批量启用）。 */
-  const selectableSkills = visibleSkills.filter((skill) => skill.valid)
+  const selectableSkills = visibleSkills.filter((skill) => skill.valid
+    && matchesSkillStatus(skill, store.skillEnabled(skill.folder), statusTab)
+    && (!keyword || [skill.folder, skill.name ?? '', skill.description ?? ''].join(' ').toLowerCase().includes(keyword)))
+  const visibleSelected = selectableSkills.filter((skill) => selected.has(skill.folder)).map((skill) => skill.folder)
+  const selectionMode = visibleSelected.length > 0
+  const selectionKey = visibleSelected.join('\0')
+  useEffect(() => {
+    if (selected.size !== visibleSelected.length) setSelected(new Set(visibleSelected))
+    if (props.browse) Object.assign(props.browse, { query: skillFilter, status: statusTab, selected: visibleSelected })
+  }, [selectionKey, selected.size, skillFilter, statusTab, props.browse])
   const allSelected = selectionMode && selectableSkills.length > 0
     && selectableSkills.every((skill) => selected.has(skill.folder))
   const toggleSelectAll = () => {
@@ -118,9 +129,16 @@ export const SkillsPage = memo(function SkillsPage(props: { store: PromptToolSto
 
   /** 批量启停：逐个改磁盘标记（单个失败不阻断其余），结束后统一重载一次。 */
   const batchSet = (enabled: boolean) => {
-    const folders = [...selected]
-    void store.toggleSkills(folders, enabled)
-    setSelected(new Set())
+    if (batchRef.current || !selectionMode) return
+    const folders = [...visibleSelected]
+    batchRef.current = true
+    setBatchBusy(true)
+    void store.toggleSkills(folders, enabled).then((failures) => {
+      if (mounted.current) setSelected(new Set(failures))
+    }).finally(() => {
+      batchRef.current = false
+      if (mounted.current) setBatchBusy(false)
+    })
   }
 
   const moveSkill = useCallback((from: string, to: string) => {
@@ -217,19 +235,15 @@ export const SkillsPage = memo(function SkillsPage(props: { store: PromptToolSto
     <section className={ui.section} aria-label={t('skills.aria')}>
       {fields.skillCatalog.length > 0 && (
         <div className={ui.skillStatsRow}>
-          <div className={ui.skillStats} role="tablist" aria-label={t('skills.tabs.aria')}>
+          <div className={ui.skillStats} role="group" aria-label={t('skills.tabs.aria')}>
             {SKILL_STATUS_TABS.map((tab) => (
               <button
                 key={tab.id}
                 id={`pt-skills-tab-${tab.id}`}
                 type="button"
-                role="tab"
-                tabIndex={statusTab === tab.id ? 0 : -1}
-                aria-selected={statusTab === tab.id}
-                aria-controls="pt-skills-panel"
+                aria-pressed={statusTab === tab.id}
                 data-active={statusTab === tab.id ? '' : undefined}
                 onClick={() => setStatusTab(tab.id)}
-                onKeyDown={tabKeyHandler(SKILL_STATUS_TABS.map((entry) => entry.id), statusTab, setStatusTab)}
               >
                 <i className={clsx(ui.skillStatDot,
                   tab.id === 'model' ? ui.skillStatusModel
@@ -350,6 +364,7 @@ export const SkillsPage = memo(function SkillsPage(props: { store: PromptToolSto
       {fields.skillCatalog.length > 0 && (
         <div className={ui.listFilterRow}>
           <input
+            type="search"
             className={ui.listFilter}
             value={skillFilter}
             aria-label={t('skills.filter.aria')}
@@ -357,27 +372,25 @@ export const SkillsPage = memo(function SkillsPage(props: { store: PromptToolSto
             spellCheck={false}
             onChange={(event) => setSkillFilter(event.target.value)}
           />
-          {selected.size > 0 && <span className={ui.selectionCount}>{t('skills.selected', { count: selected.size })}</span>}
+          <span className={ui.selectionCount} role="status">{t('skills.selected', { count: visibleSelected.length })}</span>
           {selectableSkills.length > 0 && (
             <button type="button" className={ui.pillButton} data-active={allSelected ? '' : undefined} onClick={toggleSelectAll}>
               {allSelected ? t('skills.unselectAll') : t('skills.selectAll')}
             </button>
           )}
-          <button type="button" className={ui.pillButton} disabled={!selectionMode} onClick={() => batchSet(true)}>{t('skills.batchEnable')}</button>
-          <button type="button" className={ui.pillButton} disabled={!selectionMode} onClick={() => batchSet(false)}>{t('skills.batchDisable')}</button>
+          <button type="button" className={ui.pillButton} disabled={!selectionMode || batchBusy} onClick={() => batchSet(true)}>{t('skills.batchEnable')}</button>
+          <button type="button" className={ui.pillButton} disabled={!selectionMode || batchBusy} onClick={() => batchSet(false)}>{t('skills.batchDisable')}</button>
+          {!selectionMode && <span className={ui.configFieldHint}>{t('skills.selectHint')}</span>}
         </div>
       )}
 
       <div
         id="pt-skills-panel"
-        role="tabpanel"
-        aria-labelledby={`pt-skills-tab-${statusTab}`}
-        tabIndex={0}
       >
       {fields.skillCatalog.length === 0 ? (
-        <div className={ui.emptyState}><span className={ui.emptyGlyph} aria-hidden="true">◇</span><div><h3>{t('skills.empty.title')}</h3><p>{t('skills.empty.hint')}</p></div></div>
+        <div className={ui.emptyState}><span className={ui.emptyGlyph} aria-hidden="true">◇</span><div><h3>{t('skills.empty.title')}</h3><p>{t('skills.empty.hint')}</p><button type="button" className={ui.pillButton} disabled={pickingDir} onClick={() => void pickSkillsDir()}>{t('skills.dirs.pick')}</button></div></div>
       ) : visibleSkills.length === 0 ? (
-        <p className={ui.readOnly} role="status">{t('skills.noMatch')}</p>
+        <p className={ui.readOnly} role="status">{t('skills.noMatch')} <button type="button" className={ui.pillButton} onClick={() => { setSkillFilter(''); setStatusTab('all') }}>{t('configs.clearFilters')}</button></p>
       ) : (
         <>
           <div className={ui.skillCardList} data-dragging={dragFolder !== undefined ? '' : undefined}>
@@ -393,6 +406,7 @@ export const SkillsPage = memo(function SkillsPage(props: { store: PromptToolSto
                   primaryIndex={primaryIndex}
                   enabled={store.skillEnabled(skill.folder)}
                   isSelected={selected.has(skill.folder)}
+                  selectable={selectableSkills.some((item) => item.folder === skill.folder)}
                   dragging={dragFolder === skill.folder}
                   dropBefore={dropTarget?.folder === skill.folder && dropTarget?.before === true}
                   dropAfter={dropTarget?.folder === skill.folder && dropTarget?.before === false}

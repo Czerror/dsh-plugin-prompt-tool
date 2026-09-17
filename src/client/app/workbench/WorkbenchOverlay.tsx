@@ -16,7 +16,7 @@ export function WorkbenchOverlay(props: OverlayProps): ReactNode {
   useEffect(() => {
     if (!open) return
     const onKey = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') { event.preventDefault(); controller.close() }
+      if (event.key === 'Escape' && !event.defaultPrevented) { event.preventDefault(); controller.close() }
     }
     // 与其他面板互斥：兼容仍在 DOM 面板上的 taskboard / ssh 事件总线。
     const onOther = (event: Event): void => {
@@ -63,7 +63,7 @@ export function WorkbenchOverlay(props: OverlayProps): ReactNode {
   const drawer = (
     <div className={css.drawerLayer} data-open={open ? '' : undefined}>
       <div className={css.drawerBackdrop} onClick={() => controller.close()} aria-hidden="true" />
-      <section ref={drawerRef} className={css.drawerPanel} data-dsh-part="workspace-drawer" role="dialog" aria-modal="true" aria-label={t('app.panelAria')} tabIndex={-1} onKeyDown={onDrawerKeyDown}>
+      <section id="pt-workbench-drawer" ref={drawerRef} className={css.drawerPanel} data-dsh-part="workspace-drawer" role="dialog" aria-modal="true" aria-label={t('app.panelAria')} tabIndex={-1} onKeyDown={onDrawerKeyDown}>
         <PromptWorkspace api={api} settings={settings} controller={controller} t={t} onClose={() => controller.close()} />
       </section>
     </div>

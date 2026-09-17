@@ -258,8 +258,10 @@ test('能力卡默认折叠，只有创建/定位到该能力才展开', () => {
 test('创建菜单始终列出全部未添加能力，不按当前层过滤', async () => {
   const created = []
   const revealed = []
-  const menu = tree(EngineCapabilityCreateMenu, { t, store: { ...store, fields: { ...store.fields, writePreset: true },
+  const menuTree = tree(EngineCapabilityCreateMenu, { t, store: { ...store, fields: { ...store.fields, writePreset: true },
     createEngineCapability: async (...args) => { created.push(args); return true } }, onCreated: (id) => revealed.push(id) })
+  const menu = find(menuTree, (node) => Array.isArray(node.props.items))
+  assert.ok(menu, '键盘焦点容器内保留官方创建菜单')
   assert.deepEqual(menu.props.items.filter(({ id }) => id.startsWith('cap:')).map(({ id }) => id.slice(4)), ENGINE_CAPABILITIES.map(({ id }) => id))
   menu.props.onSelect('cap:tool-filter')
   await Promise.resolve()

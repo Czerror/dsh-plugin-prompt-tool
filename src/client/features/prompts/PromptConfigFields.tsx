@@ -1,5 +1,7 @@
 import { useEffect, useId, useMemo, useState, type ReactNode } from 'react'
 import clsx from 'clsx'
+import { Switch } from '@deepseek-ai/dsh-client-ui-primitives'
+import type { FieldDraft } from '../../data/workspace-drafts.ts'
 import { FormField } from '../../ui/FormField.tsx'
 import { HintTooltip } from '../../ui/HintTooltip.tsx'
 import { MenuSelect } from '../../ui/MenuSelect.tsx'
@@ -27,22 +29,16 @@ function selectOptions(t: PromptToolTranslate, options: readonly string[], value
   return entries
 }
 
-function selectValue(options: readonly string[], value: string | undefined, fallback: string): string {
-  return options.includes(value ?? '') ? value ?? fallback : fallback
-}
-
 /** 共享枚举下拉：保持未知当前值可见，避免旧配置无法编辑。 */
 export function OptionField(props: { t: PromptToolTranslate; label: string; hint?: string; className?: string; value: string | undefined; options: readonly string[]; fallback: string; onChange: (value: string) => void; keepCurrent?: boolean; labelKeys?: Record<string, PromptToolLocaleKey>; disabled?: boolean }): ReactNode {
-  const options = props.keepCurrent === true ? selectOptions(props.t, props.options, props.value) : props.options.map((item) => ({ value: item, label: item }))
+  const options = selectOptions(props.t, props.options, props.value)
   return (
     <FormField label={props.label} hint={props.hint} hintMode="tooltip" className={props.className}>
       <MenuSelect
         className={clsx(styles.configInput, styles.fieldControl)}
         ariaLabel={props.label}
         disabled={props.disabled}
-        value={props.keepCurrent === true
-          ? (props.value ?? props.fallback)
-          : selectValue(props.options, props.value, props.fallback)}
+        value={props.value ?? props.fallback}
         options={options.map((item) => ({ ...item, label: props.labelKeys === undefined ? item.label : translateLabel(props.t, props.labelKeys, item.value) }))}
         onChange={props.onChange}
       />
@@ -50,51 +46,74 @@ export function OptionField(props: { t: PromptToolTranslate; label: string; hint
   )
 }
 /** JSON 对象文本域：解析失败只在本地标红，不污染草稿。 */
-export function JsonField(props: { t: PromptToolTranslate; label: string; value: Record<string, unknown> | undefined; onChange: (value: Record<string, unknown> | undefined) => void }): ReactNode {
-  const [text, setText] = useState(JSON.stringify(props.value ?? {}, null, 2))
-  const [error, setError] = useState('')
+export function JsonField(props: { t: PromptToolTranslate; label: string; value: Record<string, unknown> | undefined; onChange: (value: Record<string, unknown> | undefined) => void; fieldDrafts?: Map<string, FieldDraft>; draftKey?: string; disabled?: boolean }): ReactNode {
   // 依赖序列化结果而非对象引用：父级 patch 会让 params 产生新引用（即使内容未变），
   // 旧写法会把用户未提交的编辑重置；引用不变时 useMemo 不再重复序列化。
   const serialized = useMemo(() => JSON.stringify(props.value ?? {}, null, 2), [props.value])
-  useEffect(() => {
-    setText(serialized)
-    setError('')
-  }, [serialized])
+  const [draft, updateDraft] = useFieldDraft(props.fieldDrafts, props.draftKey, serialized)
+  const { text, error } = draft
   const commit = () => {
     try {
       const parsed = JSON.parse(text) as unknown
       if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
-        setError(props.t('field.json.mustBeObject'))
+        updateDraft({ ...draft, error: props.t('field.json.mustBeObject') })
         return
       }
       props.onChange(parsed as Record<string, unknown>)
-      setError('')
+      const canonical = JSON.stringify(parsed, null, 2)
+      updateDraft({ source: canonical, text: canonical, error: '' })
     } catch {
-      setError(props.t('field.json.invalid'))
+      updateDraft({ ...draft, error: props.t('field.json.invalid') })
     }
   }
   return (
-    <span className={styles.configFieldStack}>
-      <span className={styles.configFieldLabel}>{props.label}{error && <span className={styles.configJsonError}> {error}</span>}</span>
+    <FormField className={styles.fieldFull} label={props.label} error={error}>
       <textarea
         className={clsx(styles.configTextarea, styles.configJsonInput, error && styles.configInputError)}
         aria-label={props.label}
         value={text}
+        readOnly={props.disabled}
         spellCheck={false}
-        onChange={(e) => { autoResizeTextarea(e); setText(e.target.value) }}
+        onChange={(e) => { autoResizeTextarea(e); updateDraft({ ...draft, text: e.target.value, error: '' }) }}
         onBlur={commit}
       />
-    </span>
+    </FormField>
   )
+}
+
+/** 原始输入归工作台；视图卸载不清理尚未接受的 JSON 或数字中间态。 */
+function useFieldDraft(fields: Map<string, FieldDraft> | undefined, key: string | undefined, source: string): [FieldDraft, (next: FieldDraft) => void] {
+  const [draft, setDraft] = useState<FieldDraft>(() => (key === undefined ? undefined : fields?.get(key)) ?? { source, text: source, error: '' })
+  const update = (next: FieldDraft): void => { if (key !== undefined) fields?.set(key, next); setDraft(next) }
+  useEffect(() => {
+    if (draft.source !== source && draft.text === draft.source && !draft.error) update({ source, text: source, error: '' })
+  }, [source])
+  return [draft, update]
+}
+
+export function NumberField(props: { t: PromptToolTranslate; label: string; hint?: string; className?: string; value: number | string | undefined; fallback?: number | string; integer?: boolean; min?: number; disabled?: boolean; fieldDrafts?: Map<string, FieldDraft>; draftKey?: string; onChange: (value: number | string | undefined) => void }): ReactNode {
+  const [draft, update] = useFieldDraft(props.fieldDrafts, props.draftKey, String(props.value ?? props.fallback ?? ''))
+  const commit = (): void => {
+    if (props.disabled) return
+    const next = draft.text.trim() === '' ? props.fallback : Number(draft.text)
+    if (typeof next === 'number' && (!Number.isFinite(next) || (props.integer && !Number.isSafeInteger(next)) || (props.min !== undefined && next < props.min))) {
+      update({ ...draft, error: props.t(props.integer ? 'field.number.integer' : 'field.number.invalid') })
+      return
+    }
+    props.onChange(next)
+    const accepted = String(next ?? '')
+    update({ source: accepted, text: accepted, error: '' })
+  }
+  return <FormField label={props.label} hint={props.hint} hintMode="tooltip" className={props.className} error={draft.error}>
+    <input className={clsx(styles.configInput, styles.fieldControl, styles.configNumberInput)} inputMode={props.integer ? 'numeric' : 'decimal'}
+      value={draft.text} readOnly={props.disabled} onChange={(event) => update({ ...draft, text: event.target.value, error: '' })} onBlur={commit} />
+  </FormField>
 }
 
 /** 布尔开关行（params 结构化编辑用）。 */
 function ParamToggle(props: { label: string; hint?: string; className?: string; checked: boolean; onChange: (checked: boolean) => void }): ReactNode {
   const control = (
-    <label className={styles.configEnable}>
-      <input type="checkbox" aria-label={props.label} checked={props.checked} onChange={(e) => props.onChange(e.target.checked)} />
-      <span className={styles.switch} aria-hidden="true"><i /></span>
-    </label>
+    <span className={styles.configEnable}><Switch label={props.label} checked={props.checked} onChange={props.onChange} /></span>
   )
   return (
     <div className={clsx(styles.configToggleField, props.className)}>
@@ -136,10 +155,11 @@ function ParamInput(props: { label: string; hint?: string; className?: string; v
  *   placeholder / instruction-hint → fill 模板参数（text/envKeys/limit/fields/providers/emptyBehavior/emptyText）；
  * 无固定字段的策略回退 JSON 编辑（保留任意 params 能力）。
  */
-export function StrategyParamsFields(props: { t: PromptToolTranslate; strategy: string; layer?: string; params: Record<string, unknown> | undefined; onPatch: (params: Record<string, unknown>) => void; id?: string }): ReactNode {
+export function StrategyParamsFields(props: { t: PromptToolTranslate; strategy: string; layer?: string; params: Record<string, unknown> | undefined; onPatch: (params: Record<string, unknown>) => void; id?: string; fieldDrafts?: Map<string, FieldDraft>; draftScope?: string }): ReactNode {
   const { strategy, layer, params, onPatch, id } = props
   const t = props.t
   const value = params ?? {}
+  const keyId = useId()
   const str = (key: string): string => (typeof value[key] === 'string' ? value[key] as string : '')
   const bool = (key: string): boolean => value[key] === true
   const set = (key: string, next: unknown): void => onPatch({ ...value, [key]: next })
@@ -210,7 +230,6 @@ export function StrategyParamsFields(props: { t: PromptToolTranslate; strategy: 
     )
   }
   if (strategy === 'world-book') {
-    const keyId = useId()
     const list = (key: string): string => Array.isArray(value[key])
       ? (value[key] as unknown[]).map(String).join(', ') : str(key)
     const setList = (key: string, next: string): void => set(key, next.split(',').map((item) => item.trim()).filter((item) => item.length > 0))
@@ -250,8 +269,9 @@ export function StrategyParamsFields(props: { t: PromptToolTranslate; strategy: 
           value={str('text')} onChange={(next) => set('text', next)} />
         <ParamInput className={styles.fieldSpan5} label={t('strategyParam.envKeys.label')} hint={t('strategyParam.envKeys.hint')}
           value={str('envKeys')} onChange={(next) => set('envKeys', next)} />
-        <ParamInput className={styles.fieldSpan2} label={t('strategyParam.limit.label')} hint={t('strategyParam.limit.hint')}
-          value={str('limit')} onChange={(next) => set('limit', next === '' ? '' : Number(next))} />
+        <NumberField t={t} className={styles.fieldSpan2} label={t('strategyParam.limit.label')} hint={t('strategyParam.limit.hint')}
+          value={typeof value.limit === 'number' || typeof value.limit === 'string' ? value.limit : ''} fallback=""
+          fieldDrafts={props.fieldDrafts} draftKey={`${props.draftScope}:params.limit`} onChange={(next) => set('limit', next)} />
         <ParamInput className={styles.fieldSpan5} label={t('strategyParam.fields.label')} hint={t('strategyParam.fields.hint')}
           value={str('fields')} onChange={(next) => set('fields', next)} />
         <ParamInput className={styles.fieldSpan6} label={t('strategyParam.providers.label')} hint={t('strategyParam.providers.hint')}
@@ -269,11 +289,11 @@ export function StrategyParamsFields(props: { t: PromptToolTranslate; strategy: 
   if (Object.keys(value).length === 0) {
     return <p className={styles.configFieldHint}>{t('strategyParam.noParams')}</p>
   }
-  return <JsonField t={t} label={t('field.json.advanced')} value={value} onChange={(next) => { if (next !== undefined) onPatch(next) }} />
+  return <JsonField t={t} label={t('field.json.advanced')} value={value} fieldDrafts={props.fieldDrafts} draftKey={`${props.draftScope}:params`} onChange={(next) => { if (next !== undefined) onPatch(next) }} />
 }
 
 /** 模板变量键值对编辑器（替代 JSON）：每行 key + value，可增删。工作台「模板变量」卡片复用。 */
-export function VariablesEditor(props: { t: PromptToolTranslate; value: Record<string, string> | undefined; onChange: (value: Record<string, string> | undefined) => void }): ReactNode {
+export function VariablesEditor(props: { t: PromptToolTranslate; value: Record<string, string> | undefined; disabled?: boolean; onChange: (value: Record<string, string> | undefined) => void }): ReactNode {
   const t = props.t
   const entries = Object.entries(props.value ?? {})
   const commit = (next: Array<[string, string]>) => {
@@ -291,15 +311,15 @@ export function VariablesEditor(props: { t: PromptToolTranslate; value: Record<s
           <span className={styles.configFieldLabel}>{t('variables.title')}</span>
           {entries.length === 0 && <span className={styles.configFieldHint}>{t('variables.empty')}</span>}
         </span>
-        <button type="button" className={styles.pillButton} onClick={() => commit([...entries, ['', '']])}>{t('variables.add')}</button>
+        <button type="button" className={styles.pillButton} disabled={props.disabled} onClick={() => commit([...entries, ['', '']])}>{t('variables.add')}</button>
       </span>
       {entries.map(([key, value], index) => (
         <span key={`${key}-${index}`} className={styles.variableRow}>
-          <input className={styles.configInput} aria-label={t('variables.nameAria')} value={key} spellCheck={false} placeholder={t('variables.namePlaceholder')}
+          <input className={styles.configInput} aria-label={t('variables.nameAria')} value={key} spellCheck={false} placeholder={t('variables.namePlaceholder')} readOnly={props.disabled}
             onChange={(e) => setEntry(index, e.target.value, value)} />
-          <input className={styles.configInput} aria-label={t('variables.valueAria')} value={value} spellCheck={false} placeholder={t('variables.valuePlaceholder')}
+          <input className={styles.configInput} aria-label={t('variables.valueAria')} value={value} spellCheck={false} placeholder={t('variables.valuePlaceholder')} readOnly={props.disabled}
             onChange={(e) => setEntry(index, key, e.target.value)} />
-          <button type="button" className={styles.pillButton} data-danger aria-label={t('variables.removeAria', { name: key || index })}
+          <button type="button" className={styles.pillButton} data-danger aria-label={t('variables.removeAria', { name: key || index })} disabled={props.disabled}
             onClick={() => commit(entries.filter((_, at) => at !== index))}>{t('variables.delete')}</button>
         </span>
       ))}

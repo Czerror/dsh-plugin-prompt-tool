@@ -141,7 +141,7 @@ test('浏览器：子代理策略失焦保存与草稿隔离', { skip: !existsSy
 
     await t.test('关闭再打开复用共享可用骨架', async () => {
       await reset()
-      const toggle = 'input[aria-label="启用子代理工具策略"]'
+      const toggle = '[role="switch"][aria-label="启用子代理工具策略"]'
       await evaluate(`document.querySelector(${JSON.stringify(toggle)}).click(); true`)
       await waitFor(`window.writes.length === 1 && !document.querySelector(${JSON.stringify(toggle)}).disabled`)
       assert.equal(await evaluate('window.writes[0].policy'), null)

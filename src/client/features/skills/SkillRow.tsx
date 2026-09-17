@@ -1,5 +1,6 @@
 import { memo, type ReactNode } from 'react'
 import clsx from 'clsx'
+import { Switch } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SkillCatalogEntry } from '../../data/prompt-tool-fields.ts'
 import { HintTooltip } from '../../ui/HintTooltip.tsx'
 import { StatusBadge } from '../../ui/StatusBadge.tsx'
@@ -17,6 +18,7 @@ export interface SkillRowProps {
   primaryIndex: number
   enabled: boolean
   isSelected: boolean
+  selectable?: boolean
   dragging: boolean
   dropBefore: boolean
   dropAfter: boolean
@@ -56,7 +58,7 @@ export const SkillRow = memo(function SkillRow(props: SkillRowProps): ReactNode 
     >
       {/* 勾选框：只选择（职责分离——开关状态由行内 Switch 与上方批量按钮控制）。 */}
       <label className={ui.skillSelect} aria-label={t('skills.row.select.aria', { name: skill.name || skill.folder })}>
-        <input type="checkbox" checked={isSelected} disabled={!skill.valid} onChange={() => props.onToggleSelect(skill.folder)} />
+        <input type="checkbox" checked={isSelected} disabled={!skill.valid || props.selectable === false} onChange={() => props.onToggleSelect(skill.folder)} />
       </label>
       {nested
         ? <HintTooltip label={t('skills.row.nested')}><span className={ui.skillNestedMark} aria-hidden="true">▸</span></HintTooltip>
@@ -76,10 +78,7 @@ export const SkillRow = memo(function SkillRow(props: SkillRowProps): ReactNode 
         {!skill.valid && skill.issue && <span className={ui.skillIssue} role="note">{skill.issue}</span>}
       </div>
       {/* Switch：独立切换技能开关。 */}
-      <label className={ui.skillSwitch} htmlFor={`pt-skill-${skill.folder}`}>
-        <input id={`pt-skill-${skill.folder}`} type="checkbox" checked={enabled} disabled={!skill.valid} aria-label={t('skills.row.enable.aria', { name: skill.name || skill.folder })} onChange={() => props.onToggleSkill(skill.folder)} />
-        <span className={ui.switch} aria-hidden="true"><i /></span>
-      </label>
+      <Switch checked={enabled} disabled={!skill.valid} label={t('skills.row.enable.aria', { name: skill.name || skill.folder })} onChange={() => props.onToggleSkill(skill.folder)} />
       {!skill.valid ? (
         <button type="button" className={ui.pillButton} disabled={fixing} onClick={() => props.onFix(skill.folder)}>
           {fixing && <span className={ui.spinner} aria-hidden="true" />}

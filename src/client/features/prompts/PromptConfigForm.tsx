@@ -1,11 +1,13 @@
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import clsx from 'clsx'
+import { Switch } from '@deepseek-ai/dsh-client-ui-primitives'
+import type { FieldDraft } from '../../data/workspace-drafts.ts'
 import { FormField } from '../../ui/FormField.tsx'
 import { HintTooltip } from '../../ui/HintTooltip.tsx'
 import type { PromptToolTranslate } from '../../locales.ts'
 import type { EngineMeta, PromptConfigDraft } from '../../prompt-tool-types.ts'
 import type { InstructionPolicyFileOverride } from '../../../shared/instructions.ts'
-import { OptionField, StrategyParamsFields, VariablesEditor } from './PromptConfigFields.tsx'
+import { NumberField, OptionField, StrategyParamsFields, VariablesEditor } from './PromptConfigFields.tsx'
 import { autoResizeTextarea } from './textarea-resize.ts'
 import { instructionFileIdOf } from '../../data/prompt-config-content.ts'
 import {
@@ -33,16 +35,16 @@ import featureCss from './prompts.module.css'
 const styles = { ...sharedCss, ...featureCss }
 const inputClass = clsx(styles.configInput, styles.fieldControl)
 /** identity 结构化编辑（替代 JSON）：field 下拉 + value 输入；value 留空 = 使用默认（等于配置 id）。 */
-function IdentityFields(props: { t: PromptToolTranslate; identity: { field: string; value: string } | undefined; onPatch: (identity: { field: string; value: string } | undefined) => void }): ReactNode {
+function IdentityFields(props: { t: PromptToolTranslate; identity: { field: string; value: string } | undefined; disabled?: boolean; onPatch: (identity: { field: string; value: string } | undefined) => void }): ReactNode {
   const t = props.t
   const field = props.identity?.field ?? 'plugin'
   const value = props.identity?.value ?? ''
   return (
     <>
       <OptionField t={t} className={styles.fieldSpan3} label={t('form.identity.scope.label')} hint={t('form.identity.scope.hint')}
-        value={field} options={['plugin', 'kind']} fallback="plugin" labelKeys={IDENTITY_FIELD_LABEL_KEYS} onChange={(next) => props.onPatch({ field: next, value })} />
+        value={field} options={['plugin', 'kind']} fallback="plugin" labelKeys={IDENTITY_FIELD_LABEL_KEYS} disabled={props.disabled} onChange={(next) => props.onPatch({ field: next, value })} />
       <FormField className={styles.fieldSpan9} label={t('form.identity.value.label')} hint={t('form.identity.value.hint')} hintMode="tooltip">
-        <input className={inputClass} value={value} spellCheck={false}
+        <input className={inputClass} value={value} spellCheck={false} readOnly={props.disabled}
           onChange={(e) => props.onPatch(e.target.value.length > 0 ? { field, value: e.target.value } : undefined)} />
       </FormField>
     </>
@@ -56,6 +58,9 @@ export function PromptConfigForm(props: {
   t: PromptToolTranslate
   meta: EngineMeta
   config: PromptConfigDraft
+  disabled?: boolean
+  fieldDrafts?: Map<string, FieldDraft>
+  draftScope?: string
   onPatch: (patch: Partial<PromptConfigDraft>) => void
   /** 指令文件卡：行为策略写独立策略存储（不写 preset.yml）。 */
   onPatchPolicy?: (patch: InstructionPolicyFileOverride) => void
@@ -65,6 +70,7 @@ export function PromptConfigForm(props: {
   // 与写盘路径共用同一身份判定：origin 或 sourceKind+params.fileId 都算指令文件卡。
   const isInstructionFile = config.contentStatus !== undefined || instructionFileIdOf(config) !== undefined
   const locked = isInstructionFile
+  const disabled = props.disabled === true
   const filePath = typeof config.params?.displayPath === 'string' && config.params.displayPath.length > 0
     ? config.params.displayPath
     : typeof config.params?.file === 'string' ? config.params.file : ''
@@ -73,6 +79,7 @@ export function PromptConfigForm(props: {
   const instructionHint = config.strategy === 'instruction-hint'
   /** 普通卡写 preset 卡字段；指令文件卡的绑定由文件来源固定，只有策略字段落到独立策略。 */
   const onPatch = (patch: Partial<PromptConfigDraft>): void => {
+    if (disabled) return
     if (!locked) {
       patchConfig(instructionHint ? { strategy: 'placeholder', fill: 'instruction-hint', ...patch } : patch)
       return
@@ -105,58 +112,55 @@ export function PromptConfigForm(props: {
     config.templateFile,
     config.identity !== undefined && (config.identity.field !== 'plugin' || config.identity.value.length > 0),
   ].filter(Boolean).length
+  const [advancedOpen, setAdvancedOpen] = useState(advancedCount > 0)
   return (
     <div className={clsx(styles.configForm, styles.configFormLayout)}>
       <div className={styles.configSectionTitle}>{t('form.section.basic')}</div>
       <div className={styles.configGrid}>
         <FormField className={styles.fieldSpan3} label={t('form.id.label')} hint={t('form.id.hint')} hintMode="tooltip">
-          <input className={inputClass} value={config.id} spellCheck={false} disabled={locked} onChange={(e) => onPatch({ id: e.target.value })} />
+          <input className={inputClass} value={config.id} spellCheck={false} readOnly={locked || disabled} onChange={(e) => onPatch({ id: e.target.value })} />
         </FormField>
         <FormField className={styles.fieldSpan3} label={t('form.name.label')} hint={t('form.name.hint')} hintMode="tooltip">
-          <input className={inputClass} value={config.name ?? ''} spellCheck={false} onChange={(e) => onPatch({ name: e.target.value })} />
+          <input className={inputClass} value={config.name ?? ''} spellCheck={false} readOnly={disabled} onChange={(e) => onPatch({ name: e.target.value })} />
         </FormField>
-        <OptionField t={t} className={styles.fieldSpan3} label={t('form.layer.label')} hint={t('form.layer.hint')} value={config.layer} options={meta.layers} fallback="pre-step" labelKeys={LAYER_LABEL_KEYS} disabled={locked} onChange={(value) => onPatch({ layer: value })} />
-        <OptionField t={t} className={styles.fieldSpan3} label={t('form.strategy.label')} hint={t('form.strategy.hint')} value={strategy} options={meta.strategies.filter((value) => value !== 'instruction-hint')} fallback="static" labelKeys={STRATEGY_LABEL_KEYS} disabled={locked} onChange={(value) => onPatch({ strategy: value, fill: value === 'placeholder' ? (config.fill ?? (instructionHint ? 'instruction-hint' : 'env-facts')) : undefined })} />
+        <OptionField t={t} className={styles.fieldSpan3} label={t('form.layer.label')} hint={t('form.layer.hint')} value={config.layer} options={meta.layers} fallback="pre-step" labelKeys={LAYER_LABEL_KEYS} disabled={locked || disabled} onChange={(value) => onPatch({ layer: value })} />
+        <OptionField t={t} className={styles.fieldSpan3} label={t('form.strategy.label')} hint={t('form.strategy.hint')} value={strategy} options={meta.strategies.filter((value) => value !== 'instruction-hint')} fallback="static" labelKeys={STRATEGY_LABEL_KEYS} disabled={locked || disabled} onChange={(value) => onPatch({ strategy: value, fill: value === 'placeholder' ? (config.fill ?? (instructionHint ? 'instruction-hint' : 'env-facts')) : undefined })} />
       </div>
       {locked && (
         <>
           <p className={styles.configFieldHint}>{t('form.text.fileTarget', { path: filePath })}</p>
           <p className={styles.configFieldHint}>{t('file.bindingLocked')}</p>
-          {config.contentOwnerConflict === true && <p className={styles.configFieldHint}>{t('file.ownerConflict')}</p>}
           <p className={styles.configFieldHint}>{t('file.policyNote')}</p>
         </>
       )}
 
       <div className={styles.configSectionTitle}>{t('form.section.rules')}</div>
       <div className={styles.configGrid}>
-        <OptionField t={t} className={styles.fieldSpan3} label={t('form.kind.label')} hint={t('form.kind.hint')} value={config.configKind} options={meta.slotKinds} fallback="ordered" labelKeys={SLOT_KIND_LABEL_KEYS} disabled={locked} onChange={(value) => onPatch({ configKind: value })} />
-        {policy.role && <OptionField t={t} className={styles.fieldSpan2} label={t('form.role.label')} hint={t('form.role.hint')} value={config.role} options={meta.roles} fallback="user" labelKeys={ROLE_LABEL_KEYS} disabled={locked} onChange={(value) => onPatch({ role: value })} />}
+        <OptionField t={t} className={styles.fieldSpan3} label={t('form.kind.label')} hint={t('form.kind.hint')} value={config.configKind} options={meta.slotKinds} fallback="ordered" labelKeys={SLOT_KIND_LABEL_KEYS} disabled={locked || disabled} onChange={(value) => onPatch({ configKind: value })} />
+        {policy.role && <OptionField t={t} className={styles.fieldSpan2} label={t('form.role.label')} hint={t('form.role.hint')} value={config.role} options={meta.roles} fallback="user" labelKeys={ROLE_LABEL_KEYS} disabled={locked || disabled} onChange={(value) => onPatch({ role: value })} />}
         {policy.role && roleDowngraded && <p className={clsx(styles.configFieldHint, styles.fieldSpan9)}>{t('form.role.downgraded')}</p>}
-        {policy.position && <OptionField t={t} className={styles.fieldSpan3} label={t('form.position.label')} hint={t('form.position.hint')} value={config.position} options={meta.positions} fallback="after-user" labelKeys={POSITION_LABEL_KEYS} onChange={(value) => onPatch({ position: value })} />}
-        {policy.merge && <OptionField t={t} className={styles.fieldSpan2} label={t('form.merge.label')} hint={t('form.merge.hint')} value={config.mergeMode} options={meta.mergeModes} fallback="separate" labelKeys={MERGE_MODE_LABEL_KEYS} disabled={locked} onChange={(value) => onPatch({ mergeMode: value })} />}
-        {policy.order && (locked
-          ? <FormField className={styles.fieldSpan2} label={t('form.order.label')} hint={t('form.order.hint')} hintMode="tooltip"><input className={inputClass} type="number" min={0} step={1} defaultValue={config.order ?? 30} onBlur={(event) => onPatch({ order: Number(event.target.value) })} /></FormField>
-          : <FormField className={styles.fieldSpan2} label={t('form.order.label')} hint={t('form.order.hint')} hintMode="tooltip"><input className={inputClass} type="number" step={1} value={config.order ?? 0} onChange={(e) => onPatch({ order: Number(e.target.value) })} /></FormField>)}
-        <FormField className={styles.fieldSpan6} label={t('form.group.label')} hint={t('form.group.hint')} hintMode="tooltip"><input className={inputClass} value={config.group ?? ''} spellCheck={false} disabled={locked} onChange={(e) => onPatch({ group: e.target.value })} /></FormField>
+        {policy.position && <OptionField t={t} className={styles.fieldSpan3} label={t('form.position.label')} hint={t('form.position.hint')} value={config.position} options={meta.positions} fallback="after-user" labelKeys={POSITION_LABEL_KEYS} disabled={disabled} onChange={(value) => onPatch({ position: value })} />}
+        {policy.merge && <OptionField t={t} className={styles.fieldSpan2} label={t('form.merge.label')} hint={t('form.merge.hint')} value={config.mergeMode} options={meta.mergeModes} fallback="separate" labelKeys={MERGE_MODE_LABEL_KEYS} disabled={locked || disabled} onChange={(value) => onPatch({ mergeMode: value })} />}
+        {policy.order && <NumberField t={t} className={styles.fieldSpan2} label={t('form.order.label')} hint={t('form.order.hint')}
+          value={config.order} fallback={locked ? 30 : 0} integer min={locked ? 0 : undefined} disabled={disabled}
+          fieldDrafts={props.fieldDrafts} draftKey={`${props.draftScope}:order`} onChange={(value) => { if (typeof value === 'number') onPatch({ order: value }) }} />}
+        <FormField className={styles.fieldSpan6} label={t('form.group.label')} hint={t('form.group.hint')} hintMode="tooltip"><input className={inputClass} value={config.group ?? ''} spellCheck={false} readOnly={locked || disabled} onChange={(e) => onPatch({ group: e.target.value })} /></FormField>
         <div className={clsx(styles.configToggleField, styles.fieldSpan2)}>
           <span className={styles.configFieldLabel}>{t('form.exclusive.label')}</span>
           <HintTooltip label={t('form.exclusive.hint')}>
-            <label className={styles.configEnable}>
-            <input type="checkbox" aria-label={t('form.exclusive.label')} checked={config.exclusive === true} disabled={locked} onChange={(e) => onPatch({ exclusive: e.target.checked })} />
-            <span className={styles.switch} aria-hidden="true"><i /></span>
-            </label>
+            <span className={styles.configEnable}><Switch label={t('form.exclusive.label')} checked={config.exclusive === true} disabled={locked || disabled} onChange={(next) => onPatch({ exclusive: next })} /></span>
           </HintTooltip>
         </div>
-        {policy.dedupe && <OptionField t={t} className={styles.fieldSpan4} label={t('form.dedupe.label')} hint={t('form.dedupe.hint')} value={config.dedupe} options={meta.dedupes} fallback="none" labelKeys={DEDUPE_LABEL_KEYS} disabled={locked} onChange={(value) => onPatch({ dedupe: value })} />}
+        {policy.dedupe && <OptionField t={t} className={styles.fieldSpan4} label={t('form.dedupe.label')} hint={t('form.dedupe.hint')} value={config.dedupe} options={meta.dedupes} fallback="none" labelKeys={DEDUPE_LABEL_KEYS} disabled={locked || disabled} onChange={(value) => onPatch({ dedupe: value })} />}
       </div>
 
       {(policy.promotion || policy.audience || policy.modelScope) && (
         <>
           <div className={styles.configSectionTitle}>{t('form.section.scope')}</div>
           <div className={styles.configGrid}>
-            {policy.promotion && <OptionField t={t} className={styles.fieldSpan3} label={t('form.promotion.label')} hint={t('form.promotion.hint')} value={config.promotion} options={meta.promotions} fallback="none" labelKeys={PROMOTION_LABEL_KEYS} onChange={(value) => onPatch({ promotion: value })} />}
-            {policy.audience && <OptionField t={t} className={styles.fieldSpan6} label={t('form.audience.label')} hint={t('form.audience.hint')} value={config.audience ?? undefined} options={['', ...meta.audienceModes]} fallback="" labelKeys={AUDIENCE_LABEL_KEYS} onChange={(value) => onPatch(value === '' ? { audience: null } : { audience: value })} />}
-            {policy.modelScope && <OptionField t={t} className={styles.fieldSpan3} label={t('form.modelScope.label')} hint={t('form.modelScope.hint')} value={config.modelScope} options={meta.modelScopes} fallback="all" labelKeys={MODEL_SCOPE_LABEL_KEYS} onChange={(value) => onPatch({ modelScope: value })} />}
+            {policy.promotion && <OptionField t={t} className={styles.fieldSpan3} label={t('form.promotion.label')} hint={t('form.promotion.hint')} value={config.promotion} options={meta.promotions} fallback="none" labelKeys={PROMOTION_LABEL_KEYS} disabled={disabled} onChange={(value) => onPatch({ promotion: value })} />}
+            {policy.audience && <OptionField t={t} className={styles.fieldSpan6} label={t('form.audience.label')} hint={t('form.audience.hint')} value={config.audience ?? undefined} options={['', ...meta.audienceModes]} fallback="" labelKeys={AUDIENCE_LABEL_KEYS} disabled={disabled} onChange={(value) => onPatch(value === '' ? { audience: null } : { audience: value })} />}
+            {policy.modelScope && <OptionField t={t} className={styles.fieldSpan3} label={t('form.modelScope.label')} hint={t('form.modelScope.hint')} value={config.modelScope} options={meta.modelScopes} fallback="all" labelKeys={MODEL_SCOPE_LABEL_KEYS} disabled={disabled} onChange={(value) => onPatch({ modelScope: value })} />}
           </div>
         </>
       )}
@@ -169,7 +173,7 @@ export function PromptConfigForm(props: {
           aria-label={t('form.text.aria')}
           value={[config.text ?? '', ...(config.texts ?? [])].filter((item) => item.length > 0).join('\n')}
           spellCheck={false}
-          readOnly={locked && textReadOnly}
+          readOnly={disabled || (locked && textReadOnly)}
           onChange={(e) => {
             autoResizeTextarea(e)
             const next = e.target.value
@@ -184,30 +188,30 @@ export function PromptConfigForm(props: {
           }}
         />
       </FormField>
-      {!locked && <VariablesEditor t={t} value={config.variables} onChange={(value) => onPatch({ variables: value })} />}
+      {!locked && <VariablesEditor t={t} value={config.variables} disabled={disabled} onChange={(value) => onPatch({ variables: value })} />}
 
       <div className={styles.configSectionTitle}>{t('form.section.strategy')}</div>
-      <div className={clsx(styles.configGrid, styles.strategyGrid)}>
+      <fieldset disabled={disabled} className={clsx(styles.configGrid, styles.strategyGrid, styles.configFieldset)}>
         {placeholder && (
-          <OptionField t={t} className={styles.fieldSpan3} label={t('form.fill.label')} hint={t('form.fill.hint')} value={config.fill ?? (instructionHint ? 'instruction-hint' : undefined)} options={fillOptions} fallback="" labelKeys={FILL_LABEL_KEYS} disabled={locked} onChange={(value) => onPatch({ fill: value || undefined })} />
+          <OptionField t={t} className={styles.fieldSpan3} label={t('form.fill.label')} hint={t('form.fill.hint')} value={config.fill ?? (instructionHint ? 'instruction-hint' : undefined)} options={fillOptions} fallback="" labelKeys={FILL_LABEL_KEYS} disabled={locked || disabled} onChange={(value) => onPatch({ fill: value || undefined })} />
         )}
-        {!locked && <StrategyParamsFields t={t} strategy={strategy} layer={config.layer} params={config.params} id={config.id} onPatch={(value) => onPatch({ params: value })} />}
-      </div>
+        {!locked && <StrategyParamsFields t={t} strategy={strategy} layer={config.layer} params={config.params} id={config.id} fieldDrafts={props.fieldDrafts} draftScope={props.draftScope} onPatch={(value) => onPatch({ params: value })} />}
+      </fieldset>
 
-      <details className={styles.configAdvanced} open={advancedCount > 0 || undefined}>
+      <details className={styles.configAdvanced} open={advancedOpen} onToggle={(event) => setAdvancedOpen(event.currentTarget.open)}>
         <summary className={styles.configAdvancedSummary}>{advancedCount > 0 ? t('form.advanced.setCount', { count: advancedCount }) : t('form.advanced.label')}</summary>
         <div className={styles.configGrid}>
-          <OptionField t={t} className={styles.fieldSpan3} label={t('form.sourceKind.label')} hint={t('form.sourceKind.hint')} value={config.sourceKind} options={SOURCE_KINDS} fallback="" keepCurrent labelKeys={SOURCE_KIND_LABEL_KEYS} disabled={locked} onChange={(value) => onPatch({ sourceKind: value || undefined })} />
-          <OptionField t={t} className={styles.fieldSpan3} label={t('form.form.label')} hint={t('form.form.hint')} value={config.form} options={SOURCE_FORMS} fallback="notice" keepCurrent labelKeys={SOURCE_FORM_LABEL_KEYS} disabled={locked} onChange={(value) => onPatch({ form: value || undefined })} />
+          <OptionField t={t} className={styles.fieldSpan3} label={t('form.sourceKind.label')} hint={t('form.sourceKind.hint')} value={config.sourceKind} options={SOURCE_KINDS} fallback="" keepCurrent labelKeys={SOURCE_KIND_LABEL_KEYS} disabled={locked || disabled} onChange={(value) => onPatch({ sourceKind: value || undefined })} />
+          <OptionField t={t} className={styles.fieldSpan3} label={t('form.form.label')} hint={t('form.form.hint')} value={config.form} options={SOURCE_FORMS} fallback="notice" keepCurrent labelKeys={SOURCE_FORM_LABEL_KEYS} disabled={locked || disabled} onChange={(value) => onPatch({ form: value || undefined })} />
           {!locked && (
             <>
               <FormField className={styles.fieldSpan3} label={t('form.summary.label')} hint={t('form.summary.hint')} hintMode="tooltip">
-                <input className={inputClass} value={config.summary ?? ''} spellCheck={false} onChange={(e) => onPatch({ summary: e.target.value })} />
+                <input className={inputClass} value={config.summary ?? ''} spellCheck={false} readOnly={disabled} onChange={(e) => onPatch({ summary: e.target.value })} />
               </FormField>
               <FormField className={styles.fieldSpan3} label={t('form.templateFile.label')} hint={t('form.templateFile.hint')} hintMode="tooltip">
-                <input className={inputClass} value={config.templateFile ?? ''} spellCheck={false} onChange={(e) => onPatch({ templateFile: e.target.value })} />
+                <input className={inputClass} value={config.templateFile ?? ''} spellCheck={false} readOnly={disabled} onChange={(e) => onPatch({ templateFile: e.target.value })} />
               </FormField>
-              <IdentityFields t={t} identity={config.identity} onPatch={(value) => onPatch({ identity: value })} />
+              <IdentityFields t={t} identity={config.identity} disabled={disabled} onPatch={(value) => onPatch({ identity: value })} />
             </>
           )}
         </div>

@@ -2,7 +2,7 @@ import { memo, useCallback, type ReactNode } from 'react'
 import type { PromptToolStore } from '../../../data/use-prompt-tool-store.ts'
 import { usePromptToolFields } from '../../../data/use-prompt-tool-fields.ts'
 import type { PromptToolTranslate } from '../../../locales.ts'
-import { PromptConfigList } from '../../../features/prompts/PromptConfigList.tsx'
+import { PromptConfigList, type PromptConfigListProps } from '../../../features/prompts/PromptConfigList.tsx'
 import type { InstructionPolicyFileOverride } from '../../../../shared/instructions.ts'
 /** 子代理配置列表（按 scope 过滤：subagent 只列子代理可见配置）。
  *  纪律：过滤状态只由用户手动改变；新建只做「展开新卡 + 滚动定位」两件事。
@@ -10,7 +10,7 @@ import type { InstructionPolicyFileOverride } from '../../../../shared/instructi
  *  本组件不再提供独立的「新建」按钮：创建入口统一收敛到工具栏的合并菜单
  *  （`EngineModuleActions` 的「添加模板 · 层级」/「添加工具模板…」/「添加模板变量」），
  *  避免同一列表出现两个创建入口。 */
-export const ConfigListWithTemplates = memo(function ConfigListWithTemplates(props: {
+export const ConfigListWithTemplates = memo(function ConfigListWithTemplates(props: Pick<PromptConfigListProps, 'browse' | 'commonCards' | 'onCreate' | 'onChoosePreset' | 'createdHidden' | 'onShowCreated'> & {
   store: PromptToolStore
   t: PromptToolTranslate
   layer?: string
@@ -55,6 +55,17 @@ export const ConfigListWithTemplates = memo(function ConfigListWithTemplates(pro
       t={t}
       meta={store.meta}
       configs={fields.promptConfigs}
+      browse={props.browse}
+      commonCards={props.commonCards}
+      fieldDrafts={store.editorDrafts?.fields}
+      draftScope={fields.presetTemplate}
+      notice={store.notice}
+      noticeKind={store.noticeKind}
+      readOnlyReason={!fields.writePreset ? t('configs.readOnly.disabled') : store.moduleFacts?.editable !== true ? t('configs.readOnly.system') : undefined}
+      onCreate={props.onCreate}
+      onChoosePreset={props.onChoosePreset}
+      createdHidden={props.createdHidden}
+      onShowCreated={props.onShowCreated}
       createdConfigId={createdConfigId}
       layer={layer}
       scope={scope}
@@ -66,6 +77,7 @@ export const ConfigListWithTemplates = memo(function ConfigListWithTemplates(pro
       emptyHint={preStepEmpty ? t('configList.emptyPreStep') : undefined}
       onPatchConfigs={patchConfigs}
       onSaveConfigs={saveConfigs}
+      onSaveInstructions={instructionScope ? store.persistInstructionFiles : undefined}
       instructionPolicy={instructionScope ? store.instructionPolicy : undefined}
       onToggleInstructionSource={instructionScope ? store.setInstructionSourceEnabled : undefined}
       onSaveInstructionFile={instructionScope ? saveInstructionFile : undefined}

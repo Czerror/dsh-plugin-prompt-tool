@@ -1,4 +1,6 @@
 import { useState, type ReactNode } from 'react'
+import clsx from 'clsx'
+import { Switch } from '@deepseek-ai/dsh-client-ui-primitives'
 import { ENGINE_PARAM_DEFINITIONS, ENGINE_PARAM_KEYS, type EngineParamKey } from '../../../shared/engine-params.ts'
 import type { PromptToolStore } from '../../data/use-prompt-tool-store.ts'
 import type { StageDraft } from '../../data/prompt-tool-fields.ts'
@@ -24,8 +26,10 @@ function EngineParamField({ store, param, t }: { store: PromptToolStore; param: 
   const definition = ENGINE_PARAM_DEFINITIONS[param]
   const value = store.fields[param]
   const disabled = !store.fields.writePreset || store.moduleFacts?.editable !== true
-  const [numberDraft, setNumberDraft] = useState<string | undefined>()
-  const [error, setError] = useState<string>()
+  const draftKey = `${store.fields.presetTemplate}:param:${param}`
+  const retained = store.editorDrafts?.fields.get(draftKey)
+  const [numberDraft, setNumberDraft] = useState<string | undefined>(retained?.text)
+  const [error, setError] = useState<string | undefined>(retained?.error || undefined)
   const save = (): void => { void store.persistParamOverrides() }
   const patch = (next: unknown): void => { store.patch({ [param]: next }) }
   const id = `pt-param-${param}`
@@ -84,33 +88,38 @@ function EngineParamField({ store, param, t }: { store: PromptToolStore; param: 
       options={[{ value: '', label: t('param.inheritAnchorSwitch') }, { value: 'true', label: t('param.on') }, { value: 'false', label: t('param.off') }]}
       onChange={(next) => { patch(next === '' ? undefined : next === 'true'); save() }} />
   } else if (definition.kind === 'boolean') {
-    control = <label className={styles.configEnable} htmlFor={id}>
-      <input id={id} type="checkbox" checked={value === true} disabled={disabled} aria-label={label}
-        onChange={(event) => { patch(event.target.checked); save() }} />
-      <span className={styles.switch} aria-hidden="true"><i /></span>
-    </label>
+    control = <Switch className={styles.configEnable} checked={value === true} disabled={disabled} label={label}
+      onChange={(next) => { patch(next); save() }} />
   } else if (definition.kind === 'number') {
-    control = <input id={id} className={styles.configInput} type="number" step="any" aria-label={label}
+    control = <input id={id} className={clsx(styles.configInput, styles.configNumberInput)} inputMode="decimal" aria-label={label}
       aria-invalid={error !== undefined} aria-describedby={error === undefined ? undefined : `${id}-error`}
-      value={numberDraft ?? String(value ?? '')} disabled={disabled}
-      onChange={(event) => { setNumberDraft(event.target.value); setError(undefined) }}
+      value={numberDraft ?? String(value ?? '')} readOnly={disabled}
+      onChange={(event) => {
+        setNumberDraft(event.target.value)
+        setError(undefined)
+        store.editorDrafts?.fields.set(draftKey, { source: String(value ?? ''), text: event.target.value, error: '' })
+      }}
       onBlur={() => {
-        if (numberDraft === undefined) return
+        if (numberDraft === undefined || disabled) return
         const next = numberDraft.trim() === '' ? definition.defaultValue : Number(numberDraft)
         const reason = typeof next === 'number' ? definition.check(next) : undefined
-        if (reason !== undefined) { setError(reason); return }
+        if (reason !== undefined) {
+          setError(reason)
+          store.editorDrafts?.fields.set(draftKey, { source: String(value ?? ''), text: numberDraft, error: reason })
+          return
+        }
         patch(next)
+        store.editorDrafts?.fields.delete(draftKey)
         setNumberDraft(undefined)
         save()
       }} />
   } else {
     control = <textarea id={id} className={styles.configTextarea} rows={2} aria-label={label} value={String(value ?? '')}
-      disabled={disabled} onChange={(event) => patch(event.target.value)} onBlur={save} />
+      readOnly={disabled} onChange={(event) => patch(event.target.value)} onBlur={() => { if (!disabled) save() }} />
   }
   return <div className={styles.settingRowStack} data-param-key={param}>
     <HintTooltip label={hint}><span className={styles.settingCopy}>
-      {menuField ? <span>{label}</span> : <label htmlFor={id}>{label}</label>}
-      <small>{param}</small>
+      {menuField || definition.kind === 'boolean' ? <span>{label}</span> : <label htmlFor={id}>{label}</label>}
     </span></HintTooltip>
     {control}
     {error !== undefined && <small id={`${id}-error`} role="alert">{error}</small>}

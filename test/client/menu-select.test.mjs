@@ -28,12 +28,13 @@ test('客户端单选统一复用官方 Menu 选择器', () => {
 
 test('模块控件紧凑且长文本继续自适应', () => {
   const css = read('ui/controls.module.css')
-  assert.match(css, /\.configInput\s*\{[^}]*height:\s*28px/s)
-  assert.match(css, /\.moduleCard \.switch[\s\S]*?width:\s*32px;[\s\S]*?height:\s*18px/s)
-  assert.match(css, /\.configInput\s*\{[^}]*height:\s*34px/s)
-  assert.match(css, /\.menuSelectTriggerCompact\s*\{[^}]*height:\s*28px/s)
-  assert.match(css, /\.menuSelectTriggerStandard\s*\{[^}]*height:\s*36px/s)
-  assert.match(css, /\.configTextarea\s*\{[^}]*field-sizing:\s*content;[^}]*max-height:\s*60vh/s)
+  assert.match(css, /\.configInput\s*\{[^}]*min-height:\s*32px/s)
+  assert.match(css, /\.moduleCard \.configInput,\s*\.toolCard \.configInput,\s*\.configForm \.configInput\s*\{[^}]*min-height:\s*28px/s)
+  assert.doesNotMatch(css, /\.switch\b/, '开关几何由官方 Switch 拥有')
+  assert.match(read('ui/EngineModuleCard.tsx'), /<Switch\s/)
+  assert.match(css, /\.menuSelectTriggerCompact\s*\{[^}]*min-height:\s*28px/s)
+  assert.match(css, /\.menuSelectTriggerStandard\s*\{[^}]*min-height:\s*36px/s)
+  assert.match(css, /\.configTextarea\s*\{[^}]*field-sizing:\s*content;[^}]*max-height:\s*max\(72px,\s*60dvh\)/s)
   assert.match(read('features/prompts/PromptConfigFields.tsx'), /autoResizeTextarea/)
 })
 
@@ -44,13 +45,15 @@ test('主会话使用平铺模块列表与合并创建菜单', () => {
   assert.doesNotMatch(editor, /viewMode|通用设置|引擎能力设置/)
   assert.doesNotMatch(page, /viewMode|onViewModeChange/)
   assert.match(editor, /moduleCards\?: ReactNode/)
-  assert.match(list, /moduleCards === undefined \?/)
+  assert.match(list, /moduleCards !== undefined && <div className=\{styles\.configList\} hidden=\{viewFilter === 'world-book'\}/)
   assert.doesNotMatch(list, /renderLayer|data-insertion-point/)
   // 自动保存（store debounce）取代浮动未保存提示/放弃/保存条；工具栏保留校验与保存入口。
   assert.doesNotMatch(list, /放弃修改|保存提示词配置|有未保存提示词配置修改/)
   assert.match(list, /t\('configs\.validating'\) : t\('configs\.validate'\)/)
   assert.match(list, /t\('configs\.saving'\) : t\('configs\.save'\)/)
-  assert.match(list, /t\('configs\.noMatch\.modules'/)
+  assert.match(list, /ordered\.length === 0 \? filteredView \?/)
+  assert.match(list, /t\('configs\.noMatch'/)
+  assert.match(list, /onClick=\{clearFilters\}>\{t\('configs\.clearFilters'\)\}/)
   // 下拉仍保留插入点层级分类（只过滤、不生成分类区块）。
   assert.match(list, /LAYER_LABEL_KEYS/)
   assert.match(list, /\.\.\.allLayers\.map\(/)

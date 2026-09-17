@@ -4,9 +4,12 @@
  *  （模块声明保留，引擎在策略文件缺失时降级为官方委派行为），卡内所有内容只读。
  *  实例解析预览走 /subagent-tool-policy-preview seam（不复制解析算法）。
  *  既有子代理不变，策略只影响后续新实例。 */
-import { useCallback, useEffect, useMemo, useRef, useState, type FocusEvent, type ReactNode } from 'react'
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type FocusEvent, type ReactNode } from 'react'
 import clsx from 'clsx'
+import { Switch } from '@deepseek-ai/dsh-client-ui-primitives'
+import type { FieldDraft, PolicyEditorDraft, WorkspaceDrafts } from '../../data/workspace-drafts.ts'
 import { bridgeCall } from '../../data/bridge-client.ts'
+import { deepEqual } from '../../data/dirty-state.ts'
 import type { PromptToolTranslate } from '../../locales.ts'
 import { HintTooltip } from '../../ui/HintTooltip.tsx'
 import { MenuSelect } from '../../ui/MenuSelect.tsx'
@@ -20,17 +23,39 @@ const styles = { ...sharedCss, ...featureCss }
 
 type Notice = (kind: 'ok' | 'error', message: string) => void
 interface CharacterItem { id: string; name: string }
-interface PolicyEditorState {
-  draft: PolicyDraft | null
-  saved: PolicyDraft | null
-  pending?: PolicyDraft | null
-  saving: boolean
+
+function PolicyNumberInput(props: { value: number; label: string; draftKey: string; drafts?: Map<string, FieldDraft>; t: PromptToolTranslate; min?: number; onChange: (value: number) => void }): ReactNode {
+  const retained = props.drafts?.get(props.draftKey)
+  const initial = retained && (retained.error || retained.text !== retained.source) ? retained : { source: String(props.value), text: String(props.value), error: '' }
+  const [draft, setDraft] = useState(initial)
+  const errorId = useId()
+  const update = (next: FieldDraft): void => { props.drafts?.set(props.draftKey, next); setDraft(next) }
+  useEffect(() => {
+    setDraft((current) => current.error || current.text !== current.source ? current : { source: String(props.value), text: String(props.value), error: '' })
+  }, [props.value])
+  return <span className={styles.configFieldStack}>
+    <input className={styles.configInput} inputMode="numeric" aria-label={props.label} value={draft.text}
+      aria-invalid={!!draft.error} aria-describedby={draft.error ? errorId : undefined}
+      onChange={(event) => update({ ...draft, text: event.target.value, error: '' })}
+      onBlur={() => {
+        const value = Number(draft.text)
+        if (!draft.text.trim() || !Number.isSafeInteger(value) || (props.min !== undefined && value < props.min)) {
+          update({ ...draft, error: props.t('field.number.integer') }); return
+        }
+        update({ source: String(value), text: String(value), error: '' })
+        props.drafts?.delete(props.draftKey)
+        props.onChange(value)
+      }} />
+    {draft.error && <small id={errorId} role="alert">{draft.error}</small>}
+  </span>
 }
 
 export function SubagentToolPolicyCard(props: {
   t: PromptToolTranslate
   onNotice: Notice
   presetId?: string
+  drafts?: WorkspaceDrafts
+  disabled?: boolean
 }): ReactNode {
   const { onNotice, t } = props
   const [policy, setPolicy] = useState<PolicyDraft | null>(null)
@@ -43,12 +68,24 @@ export function SubagentToolPolicyCard(props: {
   const [characters, setCharacters] = useState<CharacterItem[]>([])
   /** 策略编辑区：焦点离开整块时自动写盘（与指令文件卡同款设计，无保存按钮）。 */
   const scopeRef = useRef<HTMLFieldSetElement>(null)
+  const scopeFocused = useRef(false)
   // 子控件 onBlur 会先提交标签，再冒泡到整卡；ref 同步更新，不等 React 完成下一次渲染。
-  const editorRef = useRef<PolicyEditorState | null>(null)
+  const editorRef = useRef<PolicyEditorDraft | null>(null)
 
   const load = useCallback(() => {
-    const editor: PolicyEditorState = { draft: null, saved: null, saving: false }
+    const editor = props.drafts?.policies.get(props.presetId ?? '') ?? { draft: null, saved: null, saving: false, loaded: false }
     editorRef.current = editor
+    props.drafts?.policies.set(props.presetId ?? '', editor)
+    editor.refresh = () => { setPolicy(editor.draft); setSaving(editor.saving); setLoaded(editor.loaded) }
+    editor.report = onNotice
+    const rawDirty = [...(props.drafts?.fields ?? [])].some(([key, field]) => key.startsWith(`${props.presetId ?? ''}:policy:`) && (field.error || field.text !== field.source))
+    if (editor.loaded && (editor.saving || !deepEqual(editor.draft, editor.saved) || rawDirty)) {
+      setPolicy(editor.draft)
+      setLoaded(true)
+      setSaving(editor.saving)
+      setLoadError('')
+      return
+    }
     setLoaded(false)
     setPolicy(null)
     setSaving(false)
@@ -65,14 +102,19 @@ export function SubagentToolPolicyCard(props: {
       const next = (result.value.policy ?? null) as PolicyDraft | null
       editor.draft = next
       editor.saved = next
+      editor.loaded = true
       setPolicy(next)
       setLoaded(true)
     })
-  }, [props.presetId, t])
+  }, [onNotice, props.drafts, props.presetId, t])
 
   useEffect(() => {
     load()
-    return () => { editorRef.current = null }
+    return () => {
+      const editor = editorRef.current
+      if (editor !== null) { editor.pending = undefined; editor.refresh = undefined; editor.report = undefined }
+      editorRef.current = null
+    }
   }, [load])
   useEffect(() => {
     let active = true
@@ -85,7 +127,7 @@ export function SubagentToolPolicyCard(props: {
   /** 只确认实际提交的快照；在途再次失焦保留最新待存快照，按顺序写入。 */
   const persist = useCallback((): void => {
     const editor = editorRef.current
-    if (editor === null || editor.draft === editor.saved) return
+    if (editor === null || props.disabled || deepEqual(editor.draft, editor.saved)) return
     editor.pending = editor.draft
     if (editor.saving) return
     editor.saving = true
@@ -94,29 +136,33 @@ export function SubagentToolPolicyCard(props: {
       while (editor.pending !== undefined) {
         const submitted = editor.pending
         editor.pending = undefined
-        if (submitted === editor.saved) continue
+        if (deepEqual(submitted, editor.saved)) continue
         const result = await bridgeCall('subagentToolPolicy', { policy: submitted, expectedPresetId: props.presetId })
-        // 预设切换、重新读取或卸载后，旧响应和未发送的草稿都失效。
-        if (editorRef.current !== editor) return
+        // 已发请求只确认自身快照；卸载取消未发队列，同预设重挂仍共享串行状态。
         if (result.ok) {
           editor.saved = submitted
-          if (editor.draft === submitted) onNotice('ok', t('policy.notice.autosaved'))
+          if (editor.draft === submitted) editor.report?.('ok', t('policy.notice.autosaved'))
         } else {
-          onNotice('error', result.message ?? t('policy.notice.saveFailed'))
+          editor.report?.('error', result.message ?? t('policy.notice.saveFailed'))
         }
+        if (editor.refresh === undefined) editor.pending = undefined
       }
       editor.saving = false
-      setSaving(false)
+      editor.refresh?.()
     })()
-  }, [onNotice, props.presetId, t])
+  }, [props.disabled, props.presetId, t])
 
   const patch = (next: PolicyDraft | null): void => {
-    if (editorRef.current === null) return
+    if (editorRef.current === null || props.disabled) return
     editorRef.current.draft = next
     setPolicy(next)
   }
   /** 单一开关：打开写入可用骨架并落盘；关闭删除策略段并落盘。 */
   const toggle = (next: boolean): void => {
+    if (props.disabled) return
+    if (!next) for (const key of props.drafts?.fields.keys() ?? []) {
+      if (key.startsWith(`${props.presetId ?? ''}:policy:`)) props.drafts?.fields.delete(key)
+    }
     const draft = next ? structuredClone(SUBAGENT_TOOL_POLICY_SKELETON) : null
     patch(draft)
     persist()
@@ -132,7 +178,7 @@ export function SubagentToolPolicyCard(props: {
   }
   const enabled = policy !== null
   /** 关闭开关时整卡只读：所有可编辑控件（含开关键与表单按钮）统一禁用。 */
-  const locked = !enabled
+  const locked = !enabled || props.disabled === true
   const profiles = useMemo(() => policy?.profiles ?? [], [policy])
   const profileIds = profiles.map((profile) => profile.id)
   const ceilingAllow = asList(policy?.ceiling?.allow)
@@ -142,12 +188,17 @@ export function SubagentToolPolicyCard(props: {
   const autoSaveOnBlur = (event: FocusEvent<HTMLElement>): void => {
     const next = event.relatedTarget
     if (next !== null && scopeRef.current?.contains(next as Node)) return
+    scopeFocused.current = false
+    requestAnimationFrame(() => {
+    if (scopeFocused.current) return
+    if ([...(props.drafts?.fields ?? [])].some(([key, field]) => key.startsWith(`${props.presetId ?? ''}:policy:`) && (field.error || field.text !== field.source))) return
     const draft = editorRef.current?.draft
     if (draft === undefined || draft === null || loadError.length > 0) return
     // 存在无效角色卡绑定时端点会拒绝，先不写盘；用户修正后失焦即保存。
     if ((draft.characterBindings ?? []).some((binding) =>
       binding.characterId.length === 0 || !characters.some((item) => item.id === binding.characterId))) return
     persist()
+    })
   }
   const moveProfile = (index: number, offset: -1 | 1): void => {
     if (policy === null) return
@@ -176,10 +227,7 @@ export function SubagentToolPolicyCard(props: {
     <HintTooltip label={hint}>
       <span className={styles.switchGridItem}>
         <span className={styles.switchGridLabel}>{label}</span>
-        <label className={styles.configEnable}>
-          <input type="checkbox" checked={checked} aria-label={ariaLabel ?? label} onChange={(event) => onToggle(event.target.checked)} />
-          <span className={styles.switch} aria-hidden="true"><i /></span>
-        </label>
+        <Switch checked={checked} label={ariaLabel ?? label} onChange={onToggle} disabled={locked} />
       </span>
     </HintTooltip>
   )
@@ -202,16 +250,8 @@ export function SubagentToolPolicyCard(props: {
               <span className={styles.switchGridLabel}>{t('policy.toggleLabel')}</span>
             </span>
           </HintTooltip>
-          <label className={styles.configEnable}>
-            <input
-              type="checkbox"
-              checked={enabled}
-              aria-label={t('policy.toggleLabel')}
-              disabled={!loaded || loadError.length > 0 || saving}
-              onChange={(event) => toggle(event.target.checked)}
-            />
-            <span className={styles.switch} aria-hidden="true"><i /></span>
-          </label>
+          <Switch checked={enabled} label={t('policy.toggleLabel')}
+            disabled={props.disabled || !loaded || loadError.length > 0 || saving} onChange={toggle} />
           {loaded && loadError.length === 0 && (
             <small className={styles.switchGridHint}>
               {enabled ? t('policy.status.enabled', { count: profiles.length }) : t('policy.status.disabled')}
@@ -230,7 +270,7 @@ export function SubagentToolPolicyCard(props: {
         <p className={styles.configFieldHint}>{t('policy.disabledHint')}</p>
       )}
       {loaded && loadError.length === 0 && (
-        <fieldset ref={scopeRef} className={styles.policyScope} disabled={locked} onBlur={autoSaveOnBlur} aria-label={t('policy.title')}>
+        <fieldset ref={scopeRef} className={styles.policyScope} disabled={locked} onFocus={() => { scopeFocused.current = true }} onBlur={autoSaveOnBlur} aria-label={t('policy.title')}>
         {enabled && policy !== null && (
         <>
           {invalidCharacterBindings.length > 0 && <p className={styles.noticeError}>{t('policy.invalidBindings')}</p>}
@@ -323,7 +363,15 @@ export function SubagentToolPolicyCard(props: {
               <div className={styles.sessionModelRow}>
                 {inlineField('id', t('policy.rule.id.hint'), (
                   <input className={styles.configInput} aria-label={t('policy.rule.idAria')} value={rule.id} placeholder="id" spellCheck={false}
-                    onChange={(event) => patch({ ...policy, taskRules: (policy.taskRules ?? []).map((item, at) => at === index ? { ...item, id: event.target.value } : item) })} />
+                    onChange={(event) => {
+                      const oldKey = `${props.presetId ?? ''}:policy:rule:${rule.id}:order`
+                      const retained = props.drafts?.fields.get(oldKey)
+                      if (retained !== undefined) {
+                        props.drafts?.fields.set(`${props.presetId ?? ''}:policy:rule:${event.target.value}:order`, retained)
+                        props.drafts?.fields.delete(oldKey)
+                      }
+                      patch({ ...policy, taskRules: (policy.taskRules ?? []).map((item, at) => at === index ? { ...item, id: event.target.value } : item) })
+                    }} />
                 ))}
                 {inlineField(t('policy.rule.name'), t('policy.rule.name.hint'), (
                   <input className={styles.configInput} aria-label={t('policy.rule.nameAria')} value={rule.name ?? ''} placeholder={t('policy.rule.name')} spellCheck={false}
@@ -334,8 +382,9 @@ export function SubagentToolPolicyCard(props: {
                     onChange={(event) => patch({ ...policy, taskRules: (policy.taskRules ?? []).map((item, at) => at === index ? { ...item, pattern: event.target.value } : item) })} />
                 ))}
                 {inlineField('order', t('policy.rule.order.hint'), (
-                  <input className={styles.configInput} type="number" aria-label="order" value={String(rule.order ?? 100)}
-                    onChange={(event) => patch({ ...policy, taskRules: (policy.taskRules ?? []).map((item, at) => at === index ? { ...item, order: Number(event.target.value) } : item) })} />
+                  <PolicyNumberInput label="order" value={rule.order ?? 100} t={t} drafts={props.drafts?.fields}
+                    draftKey={`${props.presetId ?? ''}:policy:rule:${rule.id}:order`}
+                    onChange={(value) => patch({ ...policy, taskRules: (policy.taskRules ?? []).map((item, at) => at === index ? { ...item, order: value } : item) })} />
                 ))}
                 {inlineField(t('policy.rule.profile'), t('policy.rule.profile.hint'), (
                   <MenuSelect className={styles.configInput} compact ariaLabel={t('policy.rule.profileAria')} placeholder={t('policy.menu.empty')} value={rule.profile}
@@ -345,7 +394,10 @@ export function SubagentToolPolicyCard(props: {
                 {policyChip(t('policy.profile.modelSelectable'), t('policy.rule.modelSelectable.hint'), asBool(rule.modelSelectable), (next) => patch({ ...policy, taskRules: (policy.taskRules ?? []).map((item, at) => at === index ? { ...item, modelSelectable: next } : item) }), t('policy.rule.modelSelectableAria'))}
                 {rule.pattern.length > 0 && (() => { try { new RegExp(rule.pattern); return null } catch { return <small className={styles.noticeError}>{t('policy.rule.invalidPattern')}</small> } })()}
                 <HintTooltip label={t('policy.remove')}><button type="button" className={styles.pillButton} data-danger aria-label={t('policy.rule.removeAria')}
-                  onClick={() => patch({ ...policy, taskRules: (policy.taskRules ?? []).filter((_, at) => at !== index) })}>×</button></HintTooltip>
+                  onClick={() => {
+                    props.drafts?.fields.delete(`${props.presetId ?? ''}:policy:rule:${rule.id}:order`)
+                    patch({ ...policy, taskRules: (policy.taskRules ?? []).filter((_, at) => at !== index) })
+                  }}>×</button></HintTooltip>
               </div>
             </div>
           ))}
@@ -359,8 +411,9 @@ export function SubagentToolPolicyCard(props: {
               {policyChip(t('policy.expansion.enabled'), t('policy.expansion.enabled.hint'), asBool(policy.modelExpansion?.enabled), (next) => patch({ ...policy, modelExpansion: { ...policy.modelExpansion, enabled: next } }), t('policy.expansion.enabledAria'))}
               {policyChip(t('policy.expansion.approval'), t('policy.expansion.approval.hint'), asBool(policy.modelExpansion?.requireApproval), (next) => patch({ ...policy, modelExpansion: { ...policy.modelExpansion, requireApproval: next } }))}
               {inlineField(t('policy.expansion.max'), t('policy.expansion.max.hint'), (
-                <input className={styles.configInput} type="number" min={0} aria-label={t('policy.expansion.maxAria')} value={String(asNum(policy.modelExpansion?.maxAdditionalTools))}
-                  onChange={(event) => patch({ ...policy, modelExpansion: { ...policy.modelExpansion, maxAdditionalTools: Number(event.target.value) } })} />
+                <PolicyNumberInput min={0} label={t('policy.expansion.maxAria')} value={asNum(policy.modelExpansion?.maxAdditionalTools)}
+                  t={t} drafts={props.drafts?.fields} draftKey={`${props.presetId ?? ''}:policy:maxAdditionalTools`}
+                  onChange={(value) => patch({ ...policy, modelExpansion: { ...policy.modelExpansion, maxAdditionalTools: value } })} />
               ))}
             </div>
           </div>

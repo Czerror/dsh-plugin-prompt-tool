@@ -1,4 +1,4 @@
-import { useRef, type ReactNode, type RefObject } from 'react'
+import { useId, useRef, type ReactNode, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
 import { Button, useDismissOnOutsidePointer } from '@deepseek-ai/dsh-client-ui-primitives'
 import { useAnchoredPopoverStyle } from './anchored-popover.ts'
@@ -10,11 +10,17 @@ export function DialogSurface(props: {
   title: string
   ariaLabel?: string
   closeLabel?: string
+  role?: 'dialog' | 'alertdialog'
+  description?: string
+  initialFocusRef?: RefObject<HTMLElement | null>
+  returnFocusRef?: RefObject<HTMLElement | null>
   anchorRef?: RefObject<HTMLElement | null>
   onClose: () => void
   children: ReactNode
 }): ReactNode {
-  const { dialogRef, onDialogKeyDown } = useDialogFocus<HTMLDivElement>(true, props.onClose)
+  const { dialogRef, onDialogKeyDown } = useDialogFocus<HTMLDivElement>(true, props.onClose, props)
+  const titleId = useId()
+  const descriptionId = useId()
   const fallbackAnchorRef = useRef<HTMLElement>(null)
   const anchorRef = props.anchorRef ?? fallbackAnchorRef
   const panelRef = dialogRef as RefObject<HTMLElement | null>
@@ -33,14 +39,17 @@ export function DialogSurface(props: {
       ref={dialogRef}
       className={anchored ? styles.templatePopover : styles.templateModal}
       style={anchored ? position ?? { visibility: 'hidden' } : undefined}
-      role="dialog"
+      role={props.role ?? 'dialog'}
+      tabIndex={-1}
       aria-modal={anchored ? undefined : true}
-      aria-label={props.ariaLabel ?? props.title}
+      aria-label={props.ariaLabel}
+      aria-labelledby={props.ariaLabel === undefined ? titleId : undefined}
+      aria-describedby={props.description === undefined ? undefined : descriptionId}
       onClick={(event) => event.stopPropagation()}
       onKeyDown={onDialogKeyDown}
     >
       <div className={styles.templateModalHead}>
-        <strong>{props.title}</strong>
+        <strong id={titleId}>{props.title}</strong>
         <Button
           variant="ghost"
           size="sm"
@@ -51,6 +60,7 @@ export function DialogSurface(props: {
           ×
         </Button>
       </div>
+      {props.description !== undefined && <p id={descriptionId} className={styles.confirmDescription}>{props.description}</p>}
       <div className={styles.templateModalList}>{props.children}</div>
     </div>
   )

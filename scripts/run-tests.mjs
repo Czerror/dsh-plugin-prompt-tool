@@ -43,10 +43,11 @@ function run(command, args, options = {}) {
   return result.status ?? 1
 }
 
-/** 优先用包管理器自己的 JS 入口（pnpm test 会提供 npm_execpath），避免跨 shell。 */
+/** 优先使用包管理器入口；pnpm 12可提供原生exe，而非Node脚本。 */
 function buildInvocation() {
   const execPath = process.env.npm_execpath
   if (typeof execPath === 'string' && execPath.length > 0 && existsSync(execPath)) {
+    if (/\.exe$/i.test(execPath)) return { command: execPath, args: ['--dir', root, 'build'], shell: false }
     return { command: process.execPath, args: [execPath, '--dir', root, 'build'], shell: false }
   }
   return { command: 'pnpm', args: ['--dir', root, 'build'], shell: true }

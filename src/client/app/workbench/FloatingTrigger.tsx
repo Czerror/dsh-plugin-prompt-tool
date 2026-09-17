@@ -115,6 +115,8 @@ export function FloatingTrigger(props: { controller: PromptToolWorkspaceControll
           data-dsh-part="floating-trigger"
           aria-label={label}
           aria-pressed={open}
+          aria-expanded={open}
+          aria-controls="pt-workbench-drawer"
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
           onPointerUp={endDrag}

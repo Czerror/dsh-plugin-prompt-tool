@@ -72,7 +72,8 @@ test('编辑保留在主会话，工具预览没有保存或安装管理入口',
     'src/client/features/subagents/DelegationToolsCard.tsx',
   ]) assert.doesNotMatch(read(path), /<ToolSurfaceView|listAgentPresets|currentSessionId/)
   assert.match(read('src/client/features/tools/CustomToolsCard.tsx'), /if \(!active\) return/)
-  assert.match(read('src/client/features/tools/CustomToolsCard.tsx'), /return \(\) => \{ active = false \}/)
+  assert.match(read('src/client/features/tools/CustomToolsCard.tsx'), /const cleanup = \(\): void => \{\s+active = false/)
+  assert.match(read('src/client/features/tools/CustomToolsCard.tsx'), /return cleanup\s+\}, \[editor, revision\]\)/)
   for (const path of ['ToolsPreviewPage.tsx', 'ToolSurfaceView.tsx', 'tool-surface-request.ts']) {
     const source = read(`src/client/features/tools/${path}`)
     assert.doesNotMatch(source, /CustomToolCard|hiddenNames|bridgeCall\('customTools'|switchPreset|\.resume\(|PluginCard\.(?:tsx|module\.css)/)
@@ -96,7 +97,7 @@ test('子代理仅保留实例策略解析，旧工具面标签、session 输入
   assert.doesNotMatch(delegation, /<SubagentToolPolicyCard/)
 })
 
-test('自定义工具按预设 key 重挂载，system 或关闭 writePreset 时禁用整个编辑区', () => {
+test('自定义工具按预设隔离，system 或关闭 writePreset 时禁用写入但保留展开与草稿身份', () => {
   const main = read('src/client/app/workspace/pages/MainSessionPage.tsx')
   assert.match(main, /<CustomToolsCard\s+key=\{fields\.presetTemplate\}/)
   assert.match(main, /const canEditPreset = store\.fields\.writePreset && store\.moduleFacts\?\.editable === true/)
@@ -105,8 +106,8 @@ test('自定义工具按预设 key 重挂载，system 或关闭 writePreset 时�
   const html = render(CustomToolsCard, { disabled: true, onNotice() {}, t })
   assert.match(html, /当前预设工具只读/)
   assert.match(html, /<fieldset[^>]*aria-label="自定义工具配置"/)
-  assert.match(source, /const disabled = props\.disabled === true \|\| loading/)
-  assert.match(source, /<fieldset key=\{disabled \? 'readonly' : 'editable'\}/)
+  assert.match(source, /const disabled = props\.disabled === true \|\| loading \|\| loadError\.length > 0/)
+  assert.doesNotMatch(source, /<fieldset[^>]*\bkey=/, '只读切换不能重挂工具草稿')
   assert.match(source, /disabled=\{disabled\}/, '只读边界下发给每张卡')
   // 只读边界下移到卡内：卡头操作区与表单各为 fieldset，折叠按钮留在边界外保持可点。
   const editor = read('src/client/features/tools/CustomToolEditor.tsx')
@@ -116,7 +117,7 @@ test('自定义工具按预设 key 重挂载，system 或关闭 writePreset 时�
   assert.doesNotMatch(toggle, /disabled=\{props\.disabled/, '折叠按钮不得进入只读边界')
   assert.match(source, /props\.createIntent/)
   assert.match(source, /if \(disabled\) return/)
-  assert.match(source, /const save = \(\): void => \{\s+if \(disabled \|\| saving\) return/)
+  assert.match(source, /const save = \(\): void => \{\s+if \(disabled \|\| editor\.saving\) return/)
   assert.match(source, /const updateTools = \(next: ToolDraft\[\]\): void => \{\s+if \(!disabled\) setTools\(next\)/)
   assert.equal((source.match(/\bsetTools\(/g) ?? []).length, 2, '只有初始加载和受保护的编辑入口可更新工具草稿')
 })
@@ -176,10 +177,11 @@ test('完整显示所有工具：同名自定义、第三方、空描述与长�
   assert.doesNotMatch(read('src/client/features/tools/tools.module.css'), /max-height:|line-clamp/)
 })
 
-test('工具卡双列网格、窄屏单列与键盘展开属性参照官方 inventory', () => {
+test('工具卡双列网格按页面容器收为单列，并保留键盘展开属性', () => {
   const css = read('src/client/features/tools/tools.module.css')
   assert.match(css, /grid-template-columns: repeat\(2, minmax\(0, 1fr\)\)/)
-  assert.match(css, /@media \(max-width: 680px\)[\s\S]*grid-template-columns: minmax\(0, 1fr\)/)
+  assert.match(css, /\.toolsPreviewPage\s*\{[^}]*container: tool-preview \/ inline-size/)
+  assert.match(css, /@container tool-preview \(max-width: 680px\)\s*\{\s*\.toolSurfaceCards\s*\{[^}]*grid-template-columns: minmax\(0, 1fr\)/)
   assert.match(css, /\.toolCardToggle:focus-visible/)
   const closed = render(ToolSurfaceList, { tools: [{ name: 'read', description: '读取' }], filter: '', t })
   assert.match(closed, /aria-expanded="false" aria-controls=/)
@@ -192,7 +194,11 @@ test('工具卡双列网格、窄屏单列与键盘展开属性参照官方 inve
 test('状态胶囊统一复用 StatusBadge：StatusDot + 官方 Tag', () => {
   const dot = read('src/client/ui/StatusDot.tsx')
   assert.match(dot, /data-tone=\{props\.tone\}/)
-  assert.match(read('src/client/ui/StatusDot.module.css'), /box-shadow: 0 0 0 3px color-mix\(in srgb, var\(--status-dot\) 15%, transparent\)/)
+  assert.match(dot, /aria-hidden="true"/)
+  const dotCss = read('src/client/ui/StatusDot.module.css')
+  assert.match(dotCss, /background: var\(--status-dot\)/)
+  assert.match(dotCss, /box-shadow: 0 0 0 3px color-mix/, '状态点按用户反馈保留柔和静态光晕')
+  assert.doesNotMatch(dotCss, /animation:|@keyframes/, '状态点不使用循环动画')
   const badge = read('src/client/ui/StatusBadge.tsx')
   assert.match(badge, /import \{ StatusDot, type StatusDotTone \} from '\.\/StatusDot\.tsx'/)
   assert.match(badge, /<StatusDot tone=\{props\.tone\} \/>/)
@@ -209,7 +215,7 @@ test('状态胶囊统一复用 StatusBadge：StatusDot + 官方 Tag', () => {
   assert.match(read('src/client/features/presets/PresetSwitcher.tsx'), /<StatusBadge className=\{styles\.presetHeadBadge\} tone="success" label=\{t\('presetSwitcher\.badge\.active'\)\} \/>/)
   assert.match(read('src/client/features/characters/CharactersPage.tsx'), /<StatusBadge className=\{ui\.presetHeadBadge\} tone="success" label=\{t\('characters\.badge\.imported'\)\} \/>/)
   assert.doesNotMatch(read('src/client/ui/controls.module.css'), /presetInUse/)
-  assert.match(read('src/client/app/workspace/WorkspaceFrame.tsx'), /<StatusDot tone=\{store\.loading \? 'neutral' : 'success'\} pulse=\{!store\.loading\} \/>/)
+  assert.match(read('src/client/app/workspace/WorkspaceFrame.tsx'), /<StatusDot tone=\{store\.loading \? 'neutral' : 'success'\}[^>]*\/>/)
   assert.doesNotMatch(read('src/client/app/workspace/PromptWorkspace.module.css'), /\.statusDot|pt-pulse/)
   assert.doesNotMatch(read('src/client/features/tools/tools.module.css'), /toolVisibleDot/)
   assert.doesNotMatch(read('src/client/ui/controls.module.css'), /skillStatusChip|skillStatusDot/)

@@ -3,9 +3,8 @@
 /* 内联标签内的次级说明（策略状态等小字）。 */
 .switchGridHint {
   display: block;
-  color: var(--dsw-alias-label-tertiary);
-  font-size: 11px;
-  line-height: 16px;
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-xxs-12);
 }
 
 /* 子代理工具策略编辑器分组（profile / 角色绑定 / 任务规则 / 预览）：细边框分组，内部纵向排布。 */
@@ -29,6 +28,4 @@
   flex-direction: column;
   gap: 8px;
 }
-.policyScope[disabled] {
-  opacity: 0.55;
-}
+.policyScope[disabled] { color: var(--dsw-alias-label-secondary); }

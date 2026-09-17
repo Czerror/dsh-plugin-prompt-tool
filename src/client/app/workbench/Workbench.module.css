@@ -5,6 +5,7 @@
   --pt-drawer-width: min(920px, 100vw);
   position: fixed;
   inset: 0;
+  max-height: 100dvh;
   z-index: 1000;
   visibility: hidden;
   pointer-events: none;
@@ -19,7 +20,6 @@
   opacity: 0;
   background: var(--dsw-alias-bg-mask-1);
   backdrop-filter: var(--dsw-mask-blur);
-  transition: opacity .22s ease;
 }
 
 .drawerLayer:not([data-open]) .drawerBackdrop { pointer-events: none; }
@@ -31,17 +31,16 @@
   right: 0;
   bottom: 0;
   width: var(--pt-drawer-width);
+  box-sizing: border-box;
+  border: 0;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
   min-width: 0;
   min-height: 0;
-  overflow: hidden;
+  overflow: clip;
   pointer-events: auto;
   background: var(--dsw-alias-bg-layer-2);
-  transform: translateX(100%);
   box-shadow: var(--dsw-elevation-prominent);
-  transition: transform .26s cubic-bezier(.22, 1, .36, 1);
 }
-
-.drawerLayer[data-open] .drawerPanel { transform: translateX(0); }
 
 .floatingTriggerLayer {
   position: fixed;
@@ -69,8 +68,8 @@
   cursor: pointer;
   /* 拖动中不要 transition，否则位置滞后于指针。 */
   transition:
-    background var(--ds-transition-duration-slow, .18s) var(--ds-ease-in-out, ease),
-    color var(--ds-transition-duration-slow, .18s) var(--ds-ease-in-out, ease);
+    background-color var(--ds-transition-duration-fast) var(--ds-ease-in-out),
+    color var(--ds-transition-duration-fast) var(--ds-ease-in-out);
 }
 
 .floatingTrigger:hover {
@@ -92,11 +91,16 @@
   /* 抽屉已占满视口时隐藏重复入口；焦点由 WorkbenchOverlay 移入 drawerPanel。 */
   .floatingTrigger[data-open] { visibility: hidden; pointer-events: none; }
 }
-@media (max-width: 520px) {
-  .floatingTrigger { width: 40px; height: 40px; }
+@media (pointer: coarse) {
+  .floatingTrigger { width: 44px; height: 44px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .floatingTrigger { transition: none; }
-  .drawerPanel { transition: none; animation: none; }
+}
+
+@media (forced-colors: active) {
+  .drawerPanel { outline: 1px solid CanvasText; }
+  .floatingTrigger { outline: 1px solid ButtonText; }
+  .floatingTrigger:focus-visible { outline: 2px solid Highlight; }
 }

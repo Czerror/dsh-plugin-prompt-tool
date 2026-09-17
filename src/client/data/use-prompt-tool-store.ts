@@ -49,6 +49,7 @@ import type { InstructionPolicyFileOverride, InstructionPolicyPatch, Instruction
 import { buildParamOverrides, isCurrentPresetDraft, readParamOverridesPatch, updateLoadedParamKeys } from './param-overrides.ts'
 import { modelSyncNotice } from './model-sync-notice.ts'
 import { createSerialTaskQueue } from './save-queue.ts'
+import { createWorkspaceDrafts, hasWorkspaceDrafts, type WorkspaceDrafts } from './workspace-drafts.ts'
 import { modelChoiceValue } from '../features/models/model-options.ts'
 import type { ModelReasoningView } from '../../shared/bridge-contract.ts'
 
@@ -71,6 +72,7 @@ const PARAM_SWITCH_KEYS: ReadonlySet<SwitchKey> = new Set(['firstTurnAnchor', 'f
 const PRESET_PENDING_MESSAGE = '预设数据尚未加载完成，本次修改未保存；请稍后重试或重新打开工作台'
 
 export interface PromptToolStore {
+  editorDrafts: WorkspaceDrafts
   api: PromptToolHostApi
   fields: Fields
   /** fields 外部订阅通道（usePromptToolFields）：patch/load 变更后通知。
@@ -128,11 +130,11 @@ export interface PromptToolStore {
   templateVariablesEnabled: boolean
   setTemplateVariablesEnabled: (value: boolean) => void
   /** 保存模板变量；可显式传入下一份值与开关状态（避免 setState 未生效时的旧闭包）。 */
-  saveTemplateVariables: (next?: Record<string, string>, enabled?: boolean) => Promise<void>
+  saveTemplateVariables: (next?: Record<string, string>, enabled?: boolean) => Promise<boolean>
   toggle: (key: SwitchKey) => void
   setPresetTemplate: (id: string) => void
   createEngineCapability: (action: 'create' | 'create-recipe', id: string) => Promise<boolean>
-  removeEngineCapability: (id: string) => Promise<void>
+  removeEngineCapability: (id: string) => Promise<boolean>
   /** 门控回退步数草稿（数字输入，失焦提交；0 = 引擎默认 4）。 */
   setSkillsDirDraft: (value: string) => void
   /** 追加技能目录（按添加顺序；重复路径拒绝）。 */
@@ -141,7 +143,7 @@ export interface PromptToolStore {
   removeSkillsDir: (dir: string) => void
   toggleSkill: (folder: string) => void
   /** 批量启停（磁盘标记）；失败项提示但不阻断其余。 */
-  toggleSkills: (folders: string[], enabled: boolean) => Promise<void>
+  toggleSkills: (folders: string[], enabled: boolean) => Promise<string[]>
   skillEnabled: (folder: string) => boolean
   fixSkill: (folder: string) => void
   /** 打开指定技能目录；不传 = 打开第一个生效目录。 */
@@ -234,6 +236,7 @@ function policyFields(
 }
 
 export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolSettingsTransport): PromptToolStore {
+  const editorDrafts = useRef(createWorkspaceDrafts()).current
   const [modelCatalog, setModelCatalog] = useState<Record<string, string[]>>({})
   const [modelReasoning, setModelReasoning] = useState<Record<string, ModelReasoningView>>({})
   const [hostDefaultModel, setHostDefaultModel] = useState<HostDefaultModel | undefined>(undefined)
@@ -870,11 +873,11 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
   }, [api, load, persistInstructionFiles, savedConfigs, savedSwitches, showNotice])
 
   /** 模板变量：写激活预设 preset.yml 内容变量（后端 savePresetParams + afterOverridesChange 触发重建）。 */
-  const saveTemplateVariables = useCallback(async (next?: Record<string, string>, enabledOverride?: boolean) => {
+  const saveTemplateVariables = useCallback(async (next?: Record<string, string>, enabledOverride?: boolean): Promise<boolean> => {
     // 切换进行中（目标预设数据未应用）：变量仍是旧预设值，拒绝写入 presetTemplate。
     if (loadedPresetRef.current !== undefined && loadedPresetRef.current !== fieldsRef.current.presetTemplate) {
       showNotice('error', PRESET_PENDING_MESSAGE)
-      return
+      return false
     }
     const expectedPresetId = fieldsRef.current.presetTemplate
     // 空 key 行不落盘，但必须保留在本地草稿，不能把编辑中的整张卡清掉。
@@ -889,9 +892,10 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     })
     if (!res.ok) {
       showNotice('error', `模板变量保存失败：${res.message ?? '未知错误'}`)
-      return
+      return false
     }
     if (expectedPresetId === fieldsRef.current.presetTemplate) savedTemplateVariablesRef.current = cleaned
+    return expectedPresetId === fieldsRef.current.presetTemplate
   }, [templateVariablesEnabled, showNotice])
 
   const toggle = useCallback((key: SwitchKey) => {
@@ -905,6 +909,10 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
 
   const setPresetTemplate = useCallback(async (id: string) => {
     if (fieldsRef.current.presetTemplate === id) return
+    if (hasWorkspaceDrafts(editorDrafts, fieldsRef.current.presetTemplate)) {
+      showNotice('error', '当前预设仍有未保存的工具、人设、策略或字段草稿，请返回对应页面保存或修正后再切换')
+      return
+    }
     await presetSaveQueueRef.current.enqueue(async () => {})
     // 切换即保存：模块列表有未保存的提示词配置修改时先提交（写当前激活预设），
     // 避免切换后 load() 重置 fields 丢失修改。已保存/无修改则直接切换；
@@ -935,7 +943,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     )
     // 队列完成后再刷新：新数据应用前 fields 仍是旧预设字段，写路径守卫以此拦截误写。
     await load({ silent: true })
-  }, [enqueueSave, load, patch, persistConfigs, savedConfigs, showNotice])
+  }, [editorDrafts, enqueueSave, load, patch, persistConfigs, savedConfigs, showNotice])
 
   const createEngineCapability = useCallback(async (action: 'create' | 'create-recipe', id: string): Promise<boolean> => {
     const request = action === 'create' ? { action: 'create' as const, capabilityId: id } : { action: 'create-recipe' as const, recipeId: id }
@@ -949,14 +957,15 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     return true
   }, [load, showNotice])
 
-  const removeEngineCapability = useCallback(async (id: string): Promise<void> => {
+  const removeEngineCapability = useCallback(async (id: string): Promise<boolean> => {
     const result = await bridgeCall('engineCapability', { action: 'remove', capabilityId: id, expectedPresetId: fieldsRef.current.presetTemplate })
     if (!result.ok) {
       showNotice('error', '引擎能力删除失败：' + (result.message ?? 'settings bridge unavailable'))
-      return
+      return false
     }
     showNotice('ok', result.value.changed ? `已删除引擎能力：${id}` : `引擎能力不存在：${id}`)
     await load({ silent: true })
+    return true
   }, [load, showNotice])
 
   const addSkillsDir = useCallback((dir: string) => {
@@ -1024,7 +1033,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
   }, [load, showNotice])
 
   /** 批量启停：逐个改磁盘标记（单个失败不阻断其余），结束后统一重载一次。 */
-  const toggleSkills = useCallback(async (folders: string[], enabled: boolean): Promise<void> => {
+  const toggleSkills = useCallback(async (folders: string[], enabled: boolean): Promise<string[]> => {
     const failures: string[] = []
     for (const folder of folders) {
       const entry = fieldsRef.current.skillCatalog.find((item) => item.folder === folder)
@@ -1035,12 +1044,13 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
       })
       if (!res.ok) failures.push(folder)
     }
+    await load({ silent: true })
     if (failures.length > 0) {
       showNotice('error', `部分技能切换失败：${failures.join('、')}`)
     } else {
       showNotice('ok', `${enabled ? '已启用' : '已停用'} ${folders.length} 个技能`)
     }
-    await load({ silent: true })
+    return failures
   }, [load, showNotice])
 
   const fixSkill = useCallback(async (folder: string) => {
@@ -1096,6 +1106,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
   // 化依赖稳定 store 引用）；每次渲染重建内容对象但复用 ref 外壳。
   const storeRef = useRef<PromptToolStore>()
   storeRef.current = {
+    editorDrafts,
     api,
     fields,
     getFields,

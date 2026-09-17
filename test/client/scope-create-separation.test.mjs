@@ -10,7 +10,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { registerHooks } from 'node:module'
-import { createElement } from 'react'
+import { createElement, isValidElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import ts from 'typescript'
 import { EMPTY_FIELDS } from '../../src/client/data/prompt-tool-fields.ts'
@@ -46,6 +46,11 @@ const tree = (component, props) => {
   function Probe() { result = component(props); return null }
   render(Probe)
   return result
+}
+const find = (node, predicate) => {
+  if (Array.isArray(node)) return node.map((child) => find(child, predicate)).find(Boolean)
+  if (!isValidElement(node)) return undefined
+  return predicate(node) ? node : find(node.props.children, predicate)
 }
 const zh = PROMPT_TOOL_DICTS.zh
 const t = (key, params) => {
@@ -105,7 +110,7 @@ test('新建派生保留策略降级（instruction-hint → placeholder）', () 
   assert.equal(draft.fill, 'instruction-hint')
 })
 
-test('子代理作用域新建的配置立刻可见并处于展开态', () => {
+test('子代理作用域新建的配置立刻可见、可定位且默认启用', () => {
   const created = { id: 'sub-new', layer: 'pre-step', strategy: 'static', audience: 'subagent', text: 'hello' }
   const html = render(PromptConfigList, configListProps({
     configs: [created],
@@ -115,7 +120,7 @@ test('子代理作用域新建的配置立刻可见并处于展开态', () => {
   assert.match(html, /data-config-id="sub-new"/, '新建的配置带稳定定位锚点')
   // 展开由 useEffect 依据 createdConfigId 设置；静态标记只验证定位信号已下发，
   // 展开/滚动行为由源码断言与 engine-module-cards 的展开用例共同覆盖。
-  assert.match(html, /checked=""/, '新建的配置默认启用')
+  assert.match(html, /role="switch"[^>]*aria-checked="true"/, '官方 Switch 表达新建配置默认启用')
   // 对照：仅主会话可见的配置不会出现在子代理视图（作用域过滤仍然生效）。
   const hidden = render(PromptConfigList, configListProps({
     configs: [{ id: 'main-only', layer: 'pre-step', strategy: 'static', audience: 'main', text: 'secret' }],
@@ -124,15 +129,28 @@ test('子代理作用域新建的配置立刻可见并处于展开态', () => {
   assert.doesNotMatch(hidden, /data-config-id="main-only"/, '仅主会话配置不进子代理视图')
 })
 
-test('创建与过滤分离：创建路径不写过滤状态，过滤只由下拉写入', () => {
+test('创建与过滤分离：创建路径不写过滤状态，过滤由用户显式操作改变', () => {
   const list = read('features/prompts/PromptConfigList.tsx')
   const picker = read('features/prompts/useTemplatePicker.ts')
-  // 过滤状态只有受控与内部两条通道，且都由下拉触发。
+  // 过滤状态只有受控与内部两条通道，下拉和清除筛选均通过显式操作触发。
   const change = list.slice(list.indexOf('const changeViewFilter'), list.indexOf('const effectiveLayer'))
   assert.match(change, /if \(onViewFilterChange !== undefined\) onViewFilterChange\(value\)/)
   assert.match(change, /setInnerViewFilter\(value\)/)
   assert.equal([...list.matchAll(/setInnerViewFilter\(/g)].length, 1, '过滤状态只有一处写入')
-  assert.match(list, /value=\{viewFilter\}[\s\S]{0,400}onChange=\{changeViewFilter\}/, '过滤下拉是唯一入口')
+  const changes = []
+  const browse = { filter: '保留搜索' }
+  const view = tree(PromptConfigList, configListProps({ browse, viewFilter: 'pre-step', onViewFilterChange: (value) => changes.push(value) }))
+  const select = find(view, (node) => node.props.ariaLabel === t('configs.view.aria'))
+  assert.equal(select.props.value, 'pre-step')
+  assert.deepEqual(changes, [], '渲染不自动清除视图')
+  assert.equal(browse.filter, '保留搜索', '渲染不自动清除搜索词')
+  select.props.onChange('system-section')
+  assert.deepEqual(changes, ['system-section'], '下拉操作仍走受控回调')
+  const clear = find(view, (node) => node.type === 'button' && node.props.children === t('configs.clearFilters'))
+  assert.ok(clear, '无匹配时提供显式清除入口')
+  clear.props.onClick()
+  assert.deepEqual(changes, ['system-section', 'all'])
+  assert.equal(browse.filter, '', '仅显式清除操作重置搜索词')
   // 创建链路：派生纯函数与 hook 都不得出现过滤相关标识。
   assert.doesNotMatch(picker, /ViewFilter|setFilter\(/, '新建派生不触碰过滤状态')
   assert.doesNotMatch(picker, /setExpanded|scrollIntoView/, '展开与滚动由列表按 createdConfigId 统一处理')
@@ -202,16 +220,17 @@ test('子代理页不提供「仅主对话」能力：菜单排除 tool-filter�
     createEngineCapability: async () => true,
   }
   // 菜单：排除 tool-filter 后不再列出它，其他能力照常。
-  const menu = tree(EngineCapabilityCreateMenu, { t, store, excludeCapabilities: ['tool-filter'] })
+  const menu = find(tree(EngineCapabilityCreateMenu, { t, store, excludeCapabilities: ['tool-filter'] }), (node) => Array.isArray(node.props.items))
   const ids = menu.props.items.map((item) => item.id)
   assert.equal(ids.includes('cap:tool-filter'), false, '子代理页菜单不列 tool-filter')
   assert.ok(ids.includes('cap:tool-bootstrap'), '其他能力仍可创建')
   // 未排除时（主会话页语义）仍列出。
-  const mainMenu = tree(EngineCapabilityCreateMenu, { t, store })
+  const mainMenu = find(tree(EngineCapabilityCreateMenu, { t, store }), (node) => Array.isArray(node.props.items))
   assert.ok(mainMenu.props.items.map((item) => item.id).includes('cap:tool-filter'), '主会话页仍可创建 tool-filter')
   // 已装配时本来就不列（排除逻辑不改变这条既有语义）。
   const assembled = { ...store, moduleFacts: { ...store.moduleFacts, declaredModules: ['tool-filter'], effectiveModules: ['tool-filter'] } }
-  assert.equal(tree(EngineCapabilityCreateMenu, { t, store: assembled }).props.items.map((item) => item.id).includes('cap:tool-filter'), false)
+  const assembledMenu = find(tree(EngineCapabilityCreateMenu, { t, store: assembled }), (node) => Array.isArray(node.props.items))
+  assert.equal(assembledMenu.props.items.map((item) => item.id).includes('cap:tool-filter'), false)
   // 配方：含被排除能力的 recipe 也一并隐藏。
   const recipeIds = menu.props.items.filter((item) => item.id.startsWith('recipe:')).map((item) => item.id)
   assert.equal(recipeIds.some((id) => id.includes('tool-filter')), false)
@@ -244,17 +263,26 @@ test('子代理工具策略卡：单一开关，无额外保存/停用按钮', (
     assert.equal(card.includes(`t('${key}')`), false, `不渲染 ${key} 对应的按钮`)
   }
   assert.doesNotMatch(card, /toggleEnabled/, '旧的启用/停用分支已移除')
-  assert.match(card, /aria-label=\{t\('policy\.toggleLabel'\)\}/)
+  assert.match(card, /<Switch checked=\{enabled\} label=\{t\('policy\.toggleLabel'\)\}/)
+  assert.match(card, /disabled=\{props\.disabled \|\| !loaded \|\| loadError\.length > 0 \|\| saving\} onChange=\{toggle\}/)
   // 开关骨架、只读、标签失焦与异步保存由 subagent-policy-browser 的真实 DOM 行为验证。
 })
 
-test('置顶卡片渲染在过滤行之前（列表顶部语义）', () => {
-  const list = read('features/prompts/PromptConfigList.tsx')
-  const beforeIndex = list.indexOf('{beforeCards}')
-  const filterIndex = list.indexOf('styles.listFilterRow')
-  assert.ok(beforeIndex > 0 && filterIndex > 0)
-  assert.ok(beforeIndex < filterIndex, 'beforeCards 在过滤行之前')
-  assert.equal([...list.matchAll(/\{beforeCards\}/g)].length, 1, '置顶卡片只渲染一次')
+test('工具栏先于公共区与置顶卡，置顶卡不参与过滤且只渲染一次', () => {
+  const html = render(PromptConfigList, configListProps({
+    viewFilter: 'pre-step',
+    browse: { filter: '无匹配' },
+    commonCards: createElement('div', { 'data-common-card': true }),
+    beforeCards: createElement('div', { 'data-pinned-card': true }),
+    moduleCards: createElement('div', { 'data-capability-card': true }),
+  }))
+  const filterIndex = html.indexOf('class="listFilterRow"')
+  const commonIndex = html.indexOf('data-common-card="true"')
+  const pinnedIndex = html.indexOf('data-pinned-card="true"')
+  const capabilityIndex = html.indexOf('data-capability-card="true"')
+  assert.ok(filterIndex > 0 && commonIndex > filterIndex, '工具栏在公共区之前')
+  assert.ok(pinnedIndex > commonIndex && capabilityIndex > pinnedIndex, '置顶卡在公共区之后、能力卡之前')
+  assert.equal((html.match(/data-pinned-card="true"/g) ?? []).length, 1, '过滤时置顶卡仍只渲染一次')
 })
 
 test('空状态文案不再承诺 settings 覆盖层语义', () => {

@@ -12,6 +12,8 @@ import { CustomToolsCard, type ToolCreateIntent } from '../../../features/tools/
 import { TemplatePicker } from '../../../ui/TemplatePicker.tsx'
 import { ConfigListWithTemplates } from './ConfigListWithTemplates.tsx'
 import ui from '../../../ui/controls.module.css'
+import type { ConfigPageBrowse } from '../workspace-browse-state.ts'
+import type { WorkspacePage } from '../workspace-pages.ts'
 /** 子代理页：子代理引擎模块区块（列表上方，与主会话同构）+ 子代理配置列表
  *  （audience != main 即公用或仅子代理）。
  *
@@ -25,13 +27,18 @@ import ui from '../../../ui/controls.module.css'
  *  「工具与深度」卡里的实例级「子代理工具策略」授权。
  *
  *  纪律：过滤抽屉与搜索词只由用户手动改变；新建只做「展开新卡 + 滚动定位」两件事。 */
-export const SubagentPage = memo(function SubagentPage(props: { store: PromptToolStore; t: PromptToolTranslate }): ReactNode {
+export const SubagentPage = memo(function SubagentPage(props: { store: PromptToolStore; t: PromptToolTranslate; browse?: ConfigPageBrowse; onNavigate?: (page: WorkspacePage) => void }): ReactNode {
   const { store, t } = props
-  const [viewFilter, setViewFilter] = useState('all')
+  const [viewFilter, setViewFilter] = useState(props.browse?.viewFilter ?? 'all')
+  const changeViewFilter = (value: string): void => {
+    if (props.browse !== undefined) props.browse.viewFilter = value
+    setViewFilter(value)
+  }
   /** 新建能力后的定位信号：token 递增，保证重复创建同一能力仍会再次展开并跳转。 */
   const [focusCapability, setFocusCapability] = useState<{ id: string; token: number }>()
   const [toolCreate, setToolCreate] = useState<ToolCreateIntent>()
-  const [variablesExpanded, setVariablesExpanded] = useState(false)
+  const [variablesExpanded, setVariablesExpanded] = useState(props.browse?.variablesExpanded ?? false)
+  const [createdHidden, setCreatedHidden] = useState(false)
   const canEditPreset = store.fields.writePreset && store.moduleFacts?.editable === true
   /** 仅主对话生效的能力：本页既不提供创建，也不渲染卡片。 */
   const mainSessionOnly = ['tool-filter']
@@ -45,9 +52,10 @@ export const SubagentPage = memo(function SubagentPage(props: { store: PromptToo
   )
   const pickVariables = useCallback(() => {
     store.setTemplateVariables({ ...store.templateVariables, '': '' })
+    if (props.browse !== undefined) props.browse.variablesExpanded = true
     setVariablesExpanded(true)
     picker.closePicker()
-  }, [picker, store])
+  }, [picker, store, props.browse])
   const createItems = [
     ...INSERTION_LAYERS.map((layer) => ({ id: `tpl:${layer}`, label: t('main.addTemplate', { layer: translateLabel(t, LAYER_LABEL_KEYS, layer) }) })),
     { id: 'create:tool-template', label: t('main.addToolTemplate') },
@@ -58,31 +66,39 @@ export const SubagentPage = memo(function SubagentPage(props: { store: PromptToo
     if (id.startsWith('tpl:')) picker.openPicker(id.slice(4))
     else if (id === 'create:tool-template') picker.openTools()
     else if (id === 'create:variables') pickVariables()
-    else if (id === 'create:blank-tool') setToolCreate({ kind: 'blank', presetId: store.fields.presetTemplate })
-  }, [picker, pickVariables, store])
+    else if (id === 'create:blank-tool') {
+      setCreatedHidden(viewFilter !== 'all' && viewFilter !== 'tool-pipeline')
+      setToolCreate({ kind: 'blank', presetId: store.fields.presetTemplate })
+    }
+  }, [picker, pickVariables, store, viewFilter])
   const insertToolTemplate = useCallback((spec: Record<string, unknown>) => {
+    setCreatedHidden(viewFilter !== 'all' && viewFilter !== 'tool-pipeline')
     setToolCreate({ kind: 'template', spec, presetId: store.fields.presetTemplate })
     picker.closePicker()
-  }, [picker, store])
+  }, [picker, store, viewFilter])
   // 能力创建成功后只定位并展开新卡；不改动用户选定的视图过滤。
   const revealCapability = useCallback((id: string) => {
+    setCreatedHidden(viewFilter !== 'all')
     setFocusCapability((current) => ({ id, token: (current?.token ?? 0) + 1 }))
-  }, [])
+  }, [viewFilter])
   const showCustomTools = viewFilter === 'all' || viewFilter === 'tool-pipeline'
   return (
     <>
       <section className={ui.section} aria-label={t('subagent.aria')}>
-        <div className={ui.configList}>
-          <ModelRouteModuleCard store={store} scope="subagent" />
-          <DelegationToolsModuleCard store={store} t={t} />
-        </div>
-      </section>
-      <div className={ui.subagentConfigs}>
         <ConfigListWithTemplates
           store={store}
           t={t}
           scope="subagent"
+          browse={props.browse}
+          onChoosePreset={() => props.onNavigate?.('presets')}
+          onCreate={() => picker.openPicker('pre-step')}
+          createdHidden={createdHidden}
+          onShowCreated={() => { changeViewFilter('all'); setCreatedHidden(false) }}
           createdConfigId={picker.createdConfigId}
+          commonCards={<div className={ui.configList}>
+            <ModelRouteModuleCard store={store} scope="subagent" />
+            <DelegationToolsModuleCard store={store} t={t} />
+          </div>}
           beforeCards={
             <TemplateVariablesModuleCard
               t={t}
@@ -92,7 +108,10 @@ export const SubagentPage = memo(function SubagentPage(props: { store: PromptToo
               setTemplateVariablesEnabled={store.setTemplateVariablesEnabled}
               saveTemplateVariables={store.saveTemplateVariables}
               expanded={variablesExpanded}
-              onToggleExpanded={() => setVariablesExpanded((value) => !value)}
+              onToggleExpanded={() => {
+                if (props.browse !== undefined) props.browse.variablesExpanded = !variablesExpanded
+                setVariablesExpanded(!variablesExpanded)
+              }}
             />
           }
           toolbarActions={
@@ -124,29 +143,32 @@ export const SubagentPage = memo(function SubagentPage(props: { store: PromptToo
                       <SubagentToolPolicyCard
                         key={store.fields.presetTemplate}
                         presetId={store.fields.presetTemplate}
+                        disabled={!canEditPreset}
                         t={t}
                         onNotice={store.showNotice}
+                        drafts={store.editorDrafts}
                       />
                     )
                     : undefined}
                 />
-              {showCustomTools && (
+              <div hidden={!showCustomTools}>
                 <CustomToolsCard
                   key={store.fields.presetTemplate}
                   presetId={store.fields.presetTemplate}
                   t={t}
                   onNotice={store.showNotice}
+                  drafts={store.editorDrafts}
                   disabled={!canEditPreset}
                   createIntent={toolCreate}
                   onIntentConsumed={() => setToolCreate(undefined)}
                 />
-              )}
+              </div>
             </>
           }
           viewFilter={viewFilter}
-          onViewFilterChange={setViewFilter}
+          onViewFilterChange={changeViewFilter}
         />
-      </div>
+      </section>
       {picker.open && (
         <TemplatePicker
           t={t}

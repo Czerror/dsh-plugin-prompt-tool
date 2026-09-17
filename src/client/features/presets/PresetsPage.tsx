@@ -17,6 +17,8 @@ export const PresetsPage = memo(function PresetsPage(props: { store: PromptToolS
   const fields = usePromptToolFields(store, (value) => value)
   return (
     <>
+      {!fields.writePreset && <p className={ui.configFieldHint}>{t('configs.readOnly.disabled')}</p>}
+      <PresetSwitcher store={store} t={t} />
       <section className={ui.section} aria-label={t('presets.aria')}>
         <div className={ui.rowGroup}>
           <ToggleRow id="pt-write-preset" label={t('presets.writePreset.label')} hint={t('presets.writePreset.hint')}
@@ -29,7 +31,6 @@ export const PresetsPage = memo(function PresetsPage(props: { store: PromptToolS
           onInput={(value) => store.patch({ presetOrder: Number(value) || 0 })}
           onCommit={store.persistSwitches} />
       </CollapsibleCard>
-      <PresetSwitcher store={store} t={t} />
     </>
   )
 })

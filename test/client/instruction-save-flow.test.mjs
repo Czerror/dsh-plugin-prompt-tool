@@ -36,7 +36,7 @@ const { ToggleRow } = await import('../../src/client/ui/ToggleRow.tsx')
 const { PromptConfigCard } = await import('../../src/client/features/prompts/PromptConfigCard.tsx')
 const { PromptConfigForm } = await import('../../src/client/features/prompts/PromptConfigForm.tsx')
 const { FormField } = await import('../../src/client/ui/FormField.tsx')
-const { OptionField } = await import('../../src/client/features/prompts/PromptConfigFields.tsx')
+const { OptionField, NumberField } = await import('../../src/client/features/prompts/PromptConfigFields.tsx')
 const { MenuSelect } = await import('../../src/client/ui/MenuSelect.tsx')
 const { getEngineMeta } = await import('../../engine/schema.mjs')
 loader.deregister()
@@ -55,7 +55,7 @@ const findElement = (node, predicate) => {
   return predicate(node) ? node : findElement(node.props.children, predicate)
 }
 const listFromPage = (Page, store, onNotice) => {
-  const view = { ...store, fields: store.getFields(), instructionPolicy: store.getInstructionPolicy(), showNotice: onNotice ?? store.showNotice }
+  const view = { ...store, fields: store.getFields(), moduleFacts: store.moduleFacts ?? { editable: true }, instructionPolicy: store.getInstructionPolicy(), showNotice: onNotice ?? store.showNotice }
   const tree = componentTree(Page, { store: view, t })
   const editor = findElement(tree, (node) => node.type === PromptConfigsEditor)
   const list = findElement(editor ? componentTree(editor.type, editor.props) : tree, (node) => node.type === PromptConfigList)
@@ -100,7 +100,8 @@ const fileSnapshot = (over = {}) => ({
 
 const bootstrapPayload = (options = {}) => ({
   ok: true,
-  value: { value: { presetTemplate: options.presetTemplate ?? 'A' }, base: {}, revision: 1 },
+  value: { value: { presetTemplate: options.presetTemplate ?? 'A', writePreset: true }, base: {}, revision: 1 },
+  moduleFacts: { editable: true, sourceMode: 'explicit', declaredModules: [], effectiveModules: [], rowIds: [] },
   promptConfigs: { promptConfigs: options.cards ?? [fileCard()] },
   instructions: {
     context: { contextId: options.contextId ?? 'ctx-1', cwd: 'D:/repo', source: 'session' },
@@ -755,7 +756,7 @@ test('R5：来源总开关等待写入结果，失败/缺少快照不假成功�
   } finally { restore() }
 })
 
-test('R7：实际页面保存按钮等待真实 store 布尔结果，失败不能提前报成功', async () => {
+test('R7：实际页面保存按钮等待真实 store 布尔结果，失败不能提前报成功', { timeout: 5000 }, async () => {
   for (const Page of [MainSessionPage, ConfigListWithTemplates]) {
     for (const succeeds of [false, true]) {
       const gate = Promise.withResolvers()
@@ -972,11 +973,11 @@ test('指令文件与普通前置步骤卡共用同一套表单字段：绑定�
   }
   const fileTree = treeOf(fileCard())
   const controlDisabled = (label) => {
-    const field = findElement(fileTree, (node) => (node.type === FormField || node.type === OptionField) && node.props.label === label)
+    const field = findElement(fileTree, (node) => (node.type === FormField || node.type === OptionField || node.type === NumberField) && node.props.label === label)
     assert.ok(field, `找不到字段 ${label}`)
-    const body = field.type === OptionField ? componentTree(OptionField, field.props) : field.props.children
+    const body = field.type === FormField ? field.props.children : componentTree(field.type, field.props)
     const control = findElement(body, (node) => node.type === MenuSelect || node.type === 'input')
-    return control?.props.disabled === true
+    return control?.props.disabled === true || control?.props.readOnly === true
   }
   for (const label of ['标识', '注入层', '内容策略', '配置类型', '消息角色', '合并方式', '去重方式', '填充来源', '来源类型', '消息形式']) {
     assert.equal(controlDisabled(label), true, `${label} 由指令文件来源固定，应只读`)
@@ -987,6 +988,8 @@ test('指令文件与普通前置步骤卡共用同一套表单字段：绑定�
 })
 
 test('指令文件正文失焦自动写回：无「保存到文件」按钮，脏草稿在焦点离开卡片时提交', async () => {
+  const previousFrame = globalThis.requestAnimationFrame
+  globalThis.requestAnimationFrame = (callback) => setTimeout(callback, 0)
   const requests = []
   const restore = installFetch(requests, { 'agents-file': { ok: true, value: { fileId: 'f1', revision: 'saved' } } })
   try {
@@ -1005,5 +1008,5 @@ test('指令文件正文失焦自动写回：无「保存到文件」按钮，�
     }
     assert.deepEqual(fileCalls(requests).map(({ body }) => body.fileId), ['f1'])
     assert.equal(store.getInstructionPool().drafts[0].savedContent, 'edited')
-  } finally { restore() }
+  } finally { restore(); globalThis.requestAnimationFrame = previousFrame }
 })

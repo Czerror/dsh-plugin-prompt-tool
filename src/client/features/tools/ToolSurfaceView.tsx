@@ -5,7 +5,7 @@ import type { PromptToolTranslate } from '../../locales.ts'
 import { loadToolSurface, type ToolSurfaceEntry, type ToolSurfaceResult, type ToolSurfaceSource } from './tool-surface-request.ts'
 import css from './tools.module.css'
 
-type ToolSurfaceProps = ToolSurfaceSource & { label: string; t: PromptToolTranslate; query?: string; headerAction?: ReactNode; children?: ReactNode }
+type ToolSurfaceProps = ToolSurfaceSource & { label: string; t: PromptToolTranslate; query?: string; headerAction?: ReactNode; children?: ReactNode; expandedState?: Record<string, boolean>; onReady?: () => void }
 const matches = (entry: ToolSurfaceEntry, query: string): boolean =>
   entry.name.toLowerCase().includes(query) || entry.description.toLowerCase().includes(query)
 
@@ -57,17 +57,22 @@ function ToolSurfaceContent(props: ToolSurfaceProps): ReactNode {
   const { sessionId, presetId, query = '' } = props
   const [result, setResult] = useState<ToolSurfaceResult | null>(null)
   const [revision, setRevision] = useState(0)
-  const [expanded, setExpanded] = useState(true)
+  const groupKey = sessionId !== undefined ? `session:${sessionId}` : `preset:${presetId}`
+  const [expanded, setExpanded] = useState(props.expandedState?.[groupKey] ?? true)
   const contentId = useId()
   const sourceId = sessionId ?? presetId ?? ''
   const loading = sourceId.length > 0 && result === null
   const open = expanded || query.trim().length > 0
+  useEffect(() => { if (!loading) props.onReady?.() }, [loading, props.onReady])
   useEffect(() => loadToolSurface(sessionId !== undefined ? { sessionId } : { presetId: presetId! }, setResult), [sessionId, presetId, revision])
   const count = result?.ok ? result.value.tools.filter((entry) => matches(entry, query.trim().toLowerCase())).length : undefined
 
   return <section className={css.toolGroup} aria-label={props.label} aria-busy={loading}>
     <div className={css.toolGroupHeading}>
-      <button type="button" className={css.toolGroupToggle} aria-expanded={open} aria-controls={contentId} onClick={() => setExpanded(!open)}>
+      <button type="button" className={css.toolGroupToggle} aria-expanded={open} aria-controls={contentId} onClick={() => {
+        setExpanded(!open)
+        if (props.expandedState) props.expandedState[groupKey] = !open
+      }}>
         <IconChevronDownOutline14 className={css.toolChevron} aria-hidden="true" /><span>{props.label}</span>
       </button>
       <div className={css.toolHeaderAction}>{props.headerAction}</div>

@@ -84,7 +84,9 @@ export function ModelRouteModuleCard(props: { store: PromptToolStore; scope: 'ma
     ? `未设置：展开选择模型（当前继承宿主默认 ${host.model}）`
     : scopeMeta.idle
   return (
-    <EngineModuleCard name={scopeMeta.title} meta={active ? scopeMeta.active : idleMeta}>
+    <EngineModuleCard name={scopeMeta.title} meta={active ? scopeMeta.active : idleMeta}
+      defaultExpanded={store.editorDrafts?.expanded.get(`${fields.presetTemplate}:model:${props.scope}`)}
+      onExpandedChange={(value) => store.editorDrafts?.expanded.set(`${fields.presetTemplate}:model:${props.scope}`, value)}>
       {props.scope === 'main' && (
         <div className={styles.settingRowStack}>
           <span className={styles.settingCopy}>

@@ -1,6 +1,9 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import clsx from 'clsx'
-import { IconChevronDownOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, IconChevronDownOutline14, Menu, Switch } from '@deepseek-ai/dsh-client-ui-primitives'
+import type { FieldDraft } from '../../data/workspace-drafts.ts'
+import { ConfirmDialog } from '../../ui/ConfirmDialog.tsx'
+import { useMenuFocus } from '../../ui/menu-focus.ts'
 import { FormField } from '../../ui/FormField.tsx'
 import { HintTooltip } from '../../ui/HintTooltip.tsx'
 import { MenuSelect } from '../../ui/MenuSelect.tsx'
@@ -52,11 +55,8 @@ function ParameterRowsEditor(props: { t: PromptToolTranslate; value: ToolDraft |
             options={SCHEMA_TYPES.map((type) => ({ value: type, label: type }))}
             onChange={(type) => setRow(index, { type })} />
           <HintTooltip label={t('toolEditor.params.requiredHint')}>
-            <label className={styles.configEnable}>
-              <input type="checkbox" aria-label={t('toolEditor.params.requiredAria')} checked={record.required === true}
-                onChange={(e) => setRow(index, { required: e.target.checked })} />
-              <span className={styles.switch} aria-hidden="true"><i /></span>
-            </label>
+            <Switch label={t('toolEditor.params.requiredAria')} checked={record.required === true}
+              onChange={(checked) => setRow(index, { required: checked })} />
           </HintTooltip>
           <input className={styles.configInput} aria-label={t('toolEditor.params.descriptionAria')} value={typeof record.description === 'string' ? record.description : ''} spellCheck={false} placeholder={t('toolEditor.params.descriptionPlaceholder')}
             onChange={(e) => setRow(index, { description: e.target.value })} />
@@ -74,24 +74,36 @@ function ParameterRowsEditor(props: { t: PromptToolTranslate; value: ToolDraft |
 }
 
 /** 本 feature 内的 JSON 草稿：非法中间态不回弹，失焦后只提交对象。 */
-function ToolJsonField(props: { t: PromptToolTranslate; label: string; value: ToolDraft; onChange: (value: ToolDraft) => void }): ReactNode {
+function ToolJsonField(props: { t: PromptToolTranslate; label: string; value: ToolDraft; drafts?: Map<string, FieldDraft>; draftKey: string; onChange: (value: ToolDraft) => void }): ReactNode {
   const { t } = props
   const serialized = JSON.stringify(props.value, null, 2)
-  const [text, setText] = useState(serialized)
-  const [error, setError] = useState('')
-  useEffect(() => { setText(serialized); setError('') }, [serialized])
+  const retained = props.drafts?.get(props.draftKey)
+  const [text, setText] = useState(retained?.text ?? serialized)
+  const [error, setError] = useState(retained?.error ?? '')
+  const errorId = useId()
+  const remember = (nextText: string, nextError: string, source = serialized): void => {
+    props.drafts?.set(props.draftKey, { source, text: nextText, error: nextError })
+    setText(nextText); setError(nextError)
+  }
+  useEffect(() => {
+    const field = props.drafts?.get(props.draftKey)
+    if (field !== undefined && field.text !== field.source) return
+    remember(serialized, '')
+  }, [serialized, props.draftKey])
   return <FormField label={props.label} hint={t('toolEditor.json.hint')}>
     <textarea className={styles.configTextarea} rows={5} aria-label={props.label} aria-invalid={error.length > 0}
-      value={text} spellCheck={false} onChange={(event) => { setText(event.target.value); setError('') }}
+      aria-describedby={error ? errorId : undefined}
+      value={text} spellCheck={false} onChange={(event) => remember(event.target.value, '')}
       onBlur={() => {
         try {
           const value: unknown = JSON.parse(text.trim() || '{}')
-          if (value === null || typeof value !== 'object' || Array.isArray(value)) { setError(t('toolEditor.json.mustBeObject')); return }
+          if (value === null || typeof value !== 'object' || Array.isArray(value)) { remember(text, t('toolEditor.json.mustBeObject')); return }
+          const accepted = JSON.stringify(value, null, 2)
+          remember(accepted, '', accepted)
           props.onChange(value as ToolDraft)
-          setError('')
-        } catch { setError(t('toolEditor.json.invalid')) }
+        } catch { remember(text, t('toolEditor.json.invalid')) }
       }} />
-    {error && <small role="alert">{error}</small>}
+    {error && <small id={errorId} role="alert">{error}</small>}
   </FormField>
 }
 
@@ -99,6 +111,7 @@ function ToolJsonField(props: { t: PromptToolTranslate; label: string; value: To
 export function CustomToolCard(props: {
   t: PromptToolTranslate
   tool: ToolDraft
+  fieldDrafts?: Map<string, FieldDraft>
   index: number
   expanded: boolean
   /** 只读（system 预设或关闭 writePreset）：禁掉写操作，但保留卡片展开/折叠。 */
@@ -115,8 +128,17 @@ export function CustomToolCard(props: {
 }): ReactNode {
   const { tool, index, t } = props
   const [confirmingDelete, setConfirmingDelete] = useState(false)
-  const [timeoutDraft, setTimeoutDraft] = useState<string | undefined>()
-  const [timeoutError, setTimeoutError] = useState('')
+  const [menuOpen, setMenuOpen] = useState(false)
+  const firstItemRef = useMenuFocus(menuOpen)
+  const actionRef = useRef<HTMLSpanElement>(null)
+  const focusAction = (): void => { actionRef.current?.querySelector('button')?.focus() }
+  const bodyId = useId()
+  const timeoutKey = `${String(tool.id ?? index)}:timeout`
+  const timeoutRetained = props.fieldDrafts?.get(timeoutKey)
+  const [timeoutDraft, setTimeoutDraft] = useState<string | undefined>(timeoutRetained?.text)
+  const [timeoutError, setTimeoutError] = useState(timeoutRetained?.error ?? '')
+  const timeoutErrorId = useId()
+  useEffect(() => { if (props.disabled) { setMenuOpen(false); setConfirmingDelete(false) } }, [props.disabled])
   const execute = asRecord(tool.execute)
   const kind = typeof execute.kind === 'string' ? execute.kind : 'shell'
   const name = typeof tool.name === 'string' ? tool.name : ''
@@ -133,7 +155,7 @@ export function CustomToolCard(props: {
   return (
     <article className={clsx(styles.configCard, styles.toolCard, props.expanded && styles.configCardOpen)} data-tool-card="true">
       <header className={styles.configHeader}>
-        <button type="button" className={styles.configToggle} aria-expanded={props.expanded} onClick={props.onToggleExpanded}>
+        <button type="button" className={styles.configToggle} aria-expanded={props.expanded} aria-controls={bodyId} onClick={props.onToggleExpanded}>
           <span className={styles.configTitle}>
             <span className={styles.configTitleRow}>
               <span className={styles.configName}>{name.length > 0 ? `${id} · ${name}` : id}</span>
@@ -146,28 +168,42 @@ export function CustomToolCard(props: {
         <div className={styles.configHeaderActions}>
           <fieldset className={styles.cardScopeActions} disabled={props.disabled === true}>
             <HintTooltip label={enabled ? t('toolEditor.enable.hint.on') : t('toolEditor.enable.hint.off')}>
-              <label className={styles.configEnable}>
-                <input type="checkbox" aria-label={t('toolEditor.enable.aria', { id })} checked={enabled}
-                  onChange={(e) => props.onToggleEnabled(e.target.checked)} />
-                <span className={styles.switch} aria-hidden="true"><i /></span>
-              </label>
+              <Switch label={t('toolEditor.enable.aria', { id })} checked={enabled} disabled={props.disabled}
+                onChange={props.onToggleEnabled} />
             </HintTooltip>
-            <span className={styles.configActions}>
-              <button type="button" className={styles.pillButton} disabled={!props.canMoveUp} onClick={props.onMoveUp}>{t('toolEditor.moveUp')}</button>
-              <button type="button" className={styles.pillButton} disabled={!props.canMoveDown} onClick={props.onMoveDown}>{t('toolEditor.moveDown')}</button>
-              <button type="button" className={styles.pillButton} onClick={props.onDuplicate}>{t('toolEditor.duplicate')}</button>
-              {confirmingDelete ? (
-                <>
-                  <button type="button" className={styles.pillButton} data-danger onClick={props.onRemove}>{t('toolEditor.confirmRemove')}</button>
-                  <button type="button" className={styles.pillButton} data-variant="secondary" onClick={() => setConfirmingDelete(false)}>{t('toolEditor.cancel')}</button>
-                </>
-              ) : (
-                <button type="button" className={styles.pillButton} data-danger onClick={() => setConfirmingDelete(true)}>{t('toolEditor.remove')}</button>
-              )}
-            </span>
+            <span ref={actionRef} tabIndex={-1} onKeyDown={(event) => {
+              if (!menuOpen || !['Escape', 'Tab'].includes(event.key)) return
+              event.stopPropagation()
+              if (event.key === 'Escape') event.preventDefault()
+              focusAction()
+              setMenuOpen(false)
+            }}><Menu open={menuOpen && !props.disabled} portal autoFocus compact
+              anchor={<Button size="sm" variant="ghost" aria-label={t('card.actionsAria', { name: name || id })}
+                aria-haspopup="menu" aria-expanded={menuOpen} disabled={props.disabled} onClick={() => setMenuOpen((open) => !open)}>⋯</Button>}
+              onClose={() => setMenuOpen(false)}
+              items={[
+                { id: 'up', label: <span ref={props.canMoveUp ? firstItemRef : undefined}>{t('toolEditor.moveUp')}</span>, disabled: !props.canMoveUp },
+                { id: 'down', label: <span ref={!props.canMoveUp && props.canMoveDown ? firstItemRef : undefined}>{t('toolEditor.moveDown')}</span>, disabled: !props.canMoveDown },
+                { id: 'copy', label: <span ref={!props.canMoveUp && !props.canMoveDown ? firstItemRef : undefined}>{t('toolEditor.duplicate')}</span> },
+                { id: 'delete', label: t('toolEditor.remove'), danger: true },
+              ]}
+              onSelect={(action) => {
+                setMenuOpen(false)
+                focusAction()
+                if (action === 'up') props.onMoveUp()
+                else if (action === 'down') props.onMoveDown()
+                else if (action === 'copy') props.onDuplicate()
+                else setConfirmingDelete(true)
+              }} /></span>
           </fieldset>
         </div>
       </header>
+      {confirmingDelete && <ConfirmDialog title={t('card.deleteTitle', { name: name || id })}
+        description={t('card.deleteDescription', { name: name || id })}
+        confirmLabel={t('toolEditor.confirmRemove')} cancelLabel={t('toolEditor.cancel')}
+        returnFocusRef={actionRef}
+        onConfirm={props.onRemove} onCancel={() => setConfirmingDelete(false)} />}
+      <div id={bodyId} hidden={!props.expanded}>
       {props.expanded && (
         <fieldset className={styles.configForm} disabled={props.disabled === true}>
           <span className={styles.variableRow}>
@@ -261,27 +297,32 @@ export function CustomToolCard(props: {
             value={asRecord(tool.parameters)}
             onChange={(next) => props.onPatch({ parameters: next })}
           />
-          <ToolJsonField t={t} label={t('toolEditor.json.advanced')} value={asRecord(tool.parameters)} onChange={(parameters) => props.onPatch({ parameters })} />
-          <ToolJsonField t={t} label={t('toolEditor.json.output')} value={asRecord(tool.output)} onChange={(output) => props.onPatch({
+          <ToolJsonField t={t} drafts={props.fieldDrafts} draftKey={`${id}:parameters`} label={t('toolEditor.json.advanced')} value={asRecord(tool.parameters)} onChange={(parameters) => props.onPatch({ parameters })} />
+          <ToolJsonField t={t} drafts={props.fieldDrafts} draftKey={`${id}:output`} label={t('toolEditor.json.output')} value={asRecord(tool.output)} onChange={(output) => props.onPatch({
             output: Object.keys(output).length > 0 ? output : { schema: { type: 'object', additionalProperties: true } },
           })} />
           <FormField label="timeoutMs" hint={t('toolEditor.timeout.hint')}>
-            <input className={styles.configInput} type="number" min={1} max={2_147_483_647} step={1} aria-label={t('toolEditor.timeoutAria')}
-              aria-invalid={timeoutError.length > 0} value={timeoutDraft ?? String(tool.timeoutMs ?? '')}
-              onChange={(event) => { setTimeoutDraft(event.target.value); setTimeoutError('') }}
+            <input className={styles.configInput} type="text" inputMode="decimal" aria-label={t('toolEditor.timeoutAria')}
+              aria-invalid={timeoutError.length > 0} aria-describedby={timeoutError ? timeoutErrorId : undefined} value={timeoutDraft ?? String(tool.timeoutMs ?? '')}
+              onChange={(event) => { setTimeoutDraft(event.target.value); setTimeoutError(''); props.fieldDrafts?.set(timeoutKey, { source: String(tool.timeoutMs ?? ''), text: event.target.value, error: '' }) }}
               onBlur={() => {
                 if (timeoutDraft === undefined) return
                 const timeoutMs = timeoutDraft.trim() === '' ? undefined : Number(timeoutDraft)
                 if (timeoutMs !== undefined && (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0 || timeoutMs > 2_147_483_647)) {
-                  setTimeoutError(t('toolEditor.timeout.invalid')); return
+                  const error = t('toolEditor.timeout.invalid')
+                  setTimeoutError(error)
+                  props.fieldDrafts?.set(timeoutKey, { source: String(tool.timeoutMs ?? ''), text: timeoutDraft, error })
+                  return
                 }
                 props.onPatch({ timeoutMs })
+                props.fieldDrafts?.delete(timeoutKey)
                 setTimeoutDraft(undefined)
               }} />
-            {timeoutError && <small role="alert">{timeoutError}</small>}
+            {timeoutError && <small id={timeoutErrorId} role="alert">{timeoutError}</small>}
           </FormField>
         </fieldset>
       )}
+      </div>
     </article>
   )
 }
