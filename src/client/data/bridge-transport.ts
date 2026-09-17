@@ -15,8 +15,7 @@ interface BridgeSuccessExtras {
   activeSkillsDirs?: string[]
   skillsDirExists?: Record<string, boolean>
   skillCatalog?: SkillCatalogEntry[]
-  /** 注册层技能状态：被屏蔽的技能名与用户添加的技能文件夹。 */
-  skillBlocked?: string[]
+  /** 用户添加的技能文件夹（只引用，不复制）。 */
   skillFolders?: string[]
   templatePreStepCount?: number
   presetParams?: Record<string, unknown>

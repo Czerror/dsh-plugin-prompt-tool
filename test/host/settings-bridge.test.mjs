@@ -17,6 +17,7 @@ const {
 } = await import('../../lib/index.mjs')
 after(() => {
   rmSync(bridgeHome, { recursive: true, force: true })
+  delete process.env.DSH_HOME
   delete process.env.DSH_AGENTS_HOME
   delete process.env.DSH_BUNDLED_SKILL_DIR
 })
@@ -1249,7 +1250,15 @@ test('settings bridge /skills-import-directory 把宿主机目录复制进用户
     assert.equal(existsSync(join(root, '.system')), false, '复制导入不落受管实体库')
     assert.equal(lstatSync(join(root, name)).isSymbolicLink(), false, '技能实体是普通目录，不是根链接')
     assert.equal((await post({ path: join(root, 'missing-dir') })).status, 400)
-    assert.equal((await post({ path: '' })).status, 400)
+    // 空路径与相对路径必须在入口被拒绝：空串若落到 resolve 会退化成进程工作目录，
+    // 把整个 cwd 当成技能导入（曾实测复制成功）。断言不能依赖 cwd 的名字恰好不是 kebab-case。
+    const emptyPath = await post({ path: '' })
+    assert.equal(emptyPath.status, 400)
+    assert.match(emptyPath.body.message, /绝对路径/u)
+    assert.equal((await post({ path: '   ' })).status, 400, '纯空白路径同样拒绝')
+    assert.equal((await post({ path: 'relative-skill-dir' })).status, 400, '相对路径拒绝，避免以 cwd 解析')
+    assert.equal((await post({ path: 42 })).status, 400, '非字符串路径拒绝')
+    assert.deepEqual(readdirSync(root), [name], '被拒绝的导入不向用户技能根写入任何内容')
   } finally {
     rmSync(root, { recursive: true, force: true })
     rmSync(workspace, { recursive: true, force: true })

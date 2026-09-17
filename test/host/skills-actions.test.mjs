@@ -3,7 +3,7 @@
 //  删除改为整体移动技能目录进 `<root>/.system/prompt-tool/.trash`，只处理用户根里的实体。
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -53,6 +53,20 @@ test('createSkill 拒绝重复、非法输入与非普通目录且不留半成�
       if (input.name === 'other-skill') assert.equal(existsSync(join(root, 'other-skill')), false, '失败不留半成品目录')
     }
     assert.deepEqual(readdirSync(root), ['demo-skill'])
+  } finally { rmSync(root, { recursive: true, force: true }) }
+})
+
+test('createSkill 对非普通目录的用户根直接拒绝，不在链接目标里留下任何目录', () => {
+  const root = makeRoot()
+  try {
+    const real = join(root, 'real-root')
+    mkdirSync(real)
+    const linked = join(root, 'linked-root')
+    symlinkSync(real, linked, process.platform === 'win32' ? 'junction' : 'dir')
+    const result = createSkill(linked, { name: 'demo-skill', description: 'demo', content: 'body' })
+    assert.equal(result.ok, false, '符号链接用户根不是普通目录')
+    assert.deepEqual(readdirSync(real), [], '拒绝创建时不改动链接目标')
+    assert.equal(existsSync(join(linked, 'demo-skill')), false)
   } finally { rmSync(root, { recursive: true, force: true }) }
 })
 

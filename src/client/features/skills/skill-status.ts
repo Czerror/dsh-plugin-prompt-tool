@@ -16,6 +16,10 @@ export const skillModelAvailable = (skill: SkillCatalogEntry): boolean =>
 export const skillUserAvailable = (skill: SkillCatalogEntry): boolean =>
   skill.valid && skill.blockedUser !== true && skill.userInvocable
 
+/** 两端都被屏蔽才是「已停用」：只关一端时技能仍从另一端可用，不能同时算进「已停用」。 */
+export const skillFullyBlocked = (skill: SkillCatalogEntry): boolean =>
+  skill.blockedModel === true && skill.blockedUser === true
+
 /** 是否被同名技能遮蔽（同名裁决只保留来源优先级最高的那一个）。 */
 export const skillShadowed = (skill: SkillCatalogEntry): boolean => skillEnabled(skill) && skill.winnerId !== undefined
 
@@ -26,18 +30,18 @@ export const blockScopeFor = (modelBlocked: boolean, userBlocked: boolean): Skil
 export function matchesSkillStatus(skill: SkillCatalogEntry, tab: SkillStatusTab): boolean {
   if (tab === 'model') return skillModelAvailable(skill)
   if (tab === 'user') return skillUserAvailable(skill)
-  if (tab === 'blocked') return skill.blocked
+  if (tab === 'blocked') return skillFullyBlocked(skill)
   return true
 }
 
 export interface SkillGroup {
   source: SkillSourceKind
-  label: string
   rank: number
   skills: SkillCatalogEntry[]
 }
 
-/** 按来源分组，顺序与官方优先级一致（项目 > 引用目录 > 用户 > 内置）；空分组不返回。 */
+/** 按来源分组，顺序与官方优先级一致（项目 > 引用目录 > 用户 > 内置）；空分组不返回。
+ *  分组只回传来源类型，标题文案由界面按 `skills.source.<kind>` 取，避免把中文写进共享常量。 */
 export function groupBySource(catalog: readonly SkillCatalogEntry[]): SkillGroup[] {
   const kinds = (Object.keys(SKILL_SOURCES) as SkillSourceKind[])
     .sort((left, right) => SKILL_SOURCES[left].rank - SKILL_SOURCES[right].rank)
@@ -45,13 +49,16 @@ export function groupBySource(catalog: readonly SkillCatalogEntry[]): SkillGroup
     const skills = catalog
       .filter((skill) => skill.source === source)
       .sort((left, right) => left.name.localeCompare(right.name))
-    return skills.length === 0 ? [] : [{ source, label: SKILL_SOURCES[source].label, rank: SKILL_SOURCES[source].rank, skills }]
+    return skills.length === 0 ? [] : [{ source, rank: SKILL_SOURCES[source].rank, skills }]
   })
 }
 
+/** 状态徽章文案：按端如实区分「只关了一端」与「两端都关」。 */
 export function skillStatusLabel(skill: SkillCatalogEntry, t: PromptToolTranslate): string {
   if (!skill.valid) return t('skills.status.invalid')
-  if (skill.blocked) return t('skills.status.blocked')
+  if (skillFullyBlocked(skill)) return t('skills.status.blocked')
+  if (skill.blockedModel === true) return t('skills.status.blockedModel')
+  if (skill.blockedUser === true) return t('skills.status.blockedUser')
   if (skillShadowed(skill)) return t('skills.status.shadowed')
   const audiences = [
     skill.modelInvocable ? t('skills.status.audience.model') : '',

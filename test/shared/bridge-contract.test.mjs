@@ -111,7 +111,14 @@ test('契约：所有端点路径全部注册且无多余', () => {
 })
 
 test('契约：/bootstrap 聚合 meta + overrides + variables + promptConfigs 供客户端单请求消费', async () => {
-  const handlers = register()
+  // 技能事实用非空数据断言透传：stub 的默认空表无法区分「如实下发」与「兜底成空」。
+  const blocked = [{ name: 'demo-skill', at: '2026-09-17T00:00:00.000Z', model: false }]
+  const entry = { id: 'user-dsh:D:/isolated/skills:demo-skill', name: 'demo-skill', source: 'user-dsh', rank: 400, valid: true, blocked: true }
+  const handlers = register(makeSkillsState({
+    blocked,
+    folders: ['D:/referenced'],
+    listSkills: () => [entry],
+  }))
   const handler = handlers.get(SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.bootstrap)
   assert.ok(handler, '/bootstrap 端点未注册')
   const res = fakeRes()
@@ -127,9 +134,9 @@ test('契约：/bootstrap 聚合 meta + overrides + variables + promptConfigs �
   assert.ok(Array.isArray(payload.promptConfigs.promptConfigs))
   // 技能事实也在同一聚合响应里下发：清单 + 屏蔽表 + 引用目录 + 用户技能根。
   assert.deepEqual(payload.activeSkillsDirs, ['D:/isolated/skills'])
-  assert.deepEqual(payload.skillBlocked, [])
-  assert.deepEqual(payload.skillFolders, [])
-  assert.ok(Array.isArray(payload.skillCatalog))
+  assert.deepEqual(payload.skillBlocked, blocked)
+  assert.deepEqual(payload.skillFolders, ['D:/referenced'])
+  assert.deepEqual(payload.skillCatalog, [entry])
   assert.ok(payload.moduleFacts === undefined || payload.moduleFacts.effectiveConfigs === undefined, 'bootstrap 不应暴露完整行级配置')
 })
 

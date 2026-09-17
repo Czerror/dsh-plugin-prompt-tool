@@ -23,7 +23,6 @@ import { spawn } from 'node:child_process'
 import { once } from 'node:events'
 import { setTimeout as sleep } from 'node:timers/promises'
 import { getEngineMeta } from '../../engine/schema.mjs'
-import { SKILL_SOURCES } from '../../src/shared/skills.ts'
 
 const root = fileURLToPath(new URL('../../', import.meta.url))
 const require = createRequire(new URL('../../package.json', import.meta.url))
@@ -427,12 +426,12 @@ test('V2 草稿与资源：原文恢复、快照保存、技能目标及危险�
   await click('[data-page="skills"]')
   await waitFor(`document.querySelector('[data-skill-delete]')!==null`)
 
-  // 来源分组：按官方优先级分组渲染，标签与优先级都取 describe 事实。
   // 来源分组：按官方优先级分组渲染（drafts fixture 的 CSS 是 Proxy，断言只用语义属性与文案）。
-  // 分组标题取共享来源契约（SKILL_SOURCES.label）；行内来源徽章单独走 locales。
-  assert.deepEqual(
-    await evaluate(`[...document.querySelectorAll('section[aria-label]')].map(s=>s.getAttribute('aria-label')).filter(l=>[${JSON.stringify(SKILL_SOURCES['project-dsh'].label)},${JSON.stringify(SKILL_SOURCES['user-dsh'].label)}].includes(l))`),
-    [SKILL_SOURCES['project-dsh'].label, SKILL_SOURCES['user-dsh'].label], '来源分组顺序与官方优先级一致')
+  // 分组标题走字典键，不再取共享常量的中文标签；期望值在页面里用同一个 t 求值，断言里不写死文案。
+  assert.equal(
+    await evaluate(`JSON.stringify([...document.querySelectorAll('section[aria-label]')].map(s=>s.getAttribute('aria-label')).filter(l=>l===window.t('skills.source.project-dsh')||l===window.t('skills.source.user-dsh')))`),
+    await evaluate(`JSON.stringify([window.t('skills.source.project-dsh'),window.t('skills.source.user-dsh')])`),
+    '来源分组顺序与官方优先级一致')
   assert.equal(await evaluate(`document.querySelectorAll('[role="switch"][aria-label]').length`), 4, '两个技能行各有模型与用户两个注册层开关')
   assert.equal(await evaluate(`document.body.innerText.includes(window.t('skills.group.meta',{count:1,rank:100}))`), true, '分组头部展示来源优先级 100')
   assert.equal(await evaluate(`document.body.innerText.includes(window.t('skills.group.meta',{count:1,rank:400}))`), true, '分组头部展示来源优先级 400')
@@ -512,6 +511,16 @@ test('V2 草稿与资源：原文恢复、快照保存、技能目标及危险�
   await waitFor(`${count('skills-folders')}===2`)
   assert.equal(await evaluate(`JSON.stringify(window.requests.filter(r=>r.endpoint==='skills-folders')[1].body)`), '{"folders":[]}')
   await waitFor(`window.store.getFields().skillFolders.length===0`)
+
+  // 引用目录保存失败：错误进入通知、引用列表不变、输入草稿保留（失败不半提交、不静默清空）。
+  await evaluate('window.rejectSkillsFolders=true')
+  await input('skills.folders.aria', 'D:/referenced/broken')
+  await clickKey('skills.folders.add')
+  await waitFor(`${count('skills-folders')}===3`)
+  await waitFor(`document.querySelector('[data-notice]').textContent.includes('skills folders rejected')`)
+  assert.equal(await evaluate(`window.store.getFields().skillFolders.length`), 0, '失败不写入引用列表')
+  assert.equal(await evaluate(`document.querySelector('[aria-label="'+window.t('skills.folders.aria')+'"]').value`), 'D:/referenced/broken', '失败保留输入草稿')
+  await evaluate('window.rejectSkillsFolders=false')
 
   // 回收站删除：确认后按目录名提交，失败保留技能行与错误提示。
   await click('[data-skill-delete="alpha"]')

@@ -14,14 +14,14 @@ test('fields view：当前值覆盖 base，缺省字段保留稳定默认', () =
   })
   assert.equal(fields.writePreset, false)
   assert.equal(fields.presetTemplate, 'active')
-  // 注册层技能状态不在 settings：缺省时保留稳定空默认，不会被 base 里的同名键带出。
-  assert.deepEqual(fields.skillBlocked, [], '技能屏蔽表不是 settings 事实')
+  // 注册层技能事实不在 settings：缺省时保留稳定空默认，不会被 base 里的同名键带出。
   assert.deepEqual(fields.skillFolders, [])
   assert.deepEqual(fields.skillCatalog, [])
   assert.equal(fields.skillsRoot, '')
+  assert.equal('skillBlocked' in fields, false, '技能屏蔽事实只随技能条目下发，settings 无法注入')
 })
 
-test('fields view：技能清单、屏蔽表、引用目录与用户根存在性都取 describe 事实', () => {
+test('fields view：技能清单、引用目录与用户根都取 describe 事实', () => {
   const path = 'D:\\AI\\CC-switch\\skills'
   const entry = {
     id: `user-dsh:${path}:demo-skill`,
@@ -49,17 +49,14 @@ test('fields view：技能清单、屏蔽表、引用目录与用户根存在性
         activeSkillsDirs: [path],
         skillsDirExists: { [path]: true },
         skillCatalog: [entry, { id: 'broken-entry' }],
-        skillBlocked: ['demo-skill'],
         skillFolders: ['D:\\referenced-skills'],
       },
     },
   }))
   assert.deepEqual(fields.skillCatalog, [entry], '缺身份字段的条目被丢弃，其余原样投影')
-  assert.deepEqual(fields.skillBlocked, ['demo-skill'])
   assert.deepEqual(fields.skillFolders, ['D:\\referenced-skills'])
   assert.equal(fields.skillsRoot, path)
-  assert.equal(fields.skillsRootExists, true)
-  // 用户技能根不存在时如实标注（界面据此提示重新读取）。
+  // 用户技能根只由 activeSkillsDirs 决定：根不存在时仍如实给出路径，界面据此提示重新读取。
   const missing = fieldsFromView(bridgeViewFromBoot({
     ok: true,
     value: {
@@ -69,7 +66,6 @@ test('fields view：技能清单、屏蔽表、引用目录与用户根存在性
     },
   }))
   assert.equal(missing.skillsRoot, path)
-  assert.equal(missing.skillsRootExists, false)
 })
 
 test('预设参数投影完整读回列表、阶段与 false；settings 不覆盖预设行为', () => {

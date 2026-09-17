@@ -2,7 +2,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { createHash } from 'node:crypto'
-import { basename, dirname, join, resolve, sep } from 'node:path'
+import { basename, dirname, isAbsolute, join, resolve, sep } from 'node:path'
 import { createWriteStream, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { Transform } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
@@ -417,12 +417,15 @@ async function readBridgeBodyForHandler(req: IncomingMessage, res: ServerRespons
 }
 
 class StreamBodyTooLargeError extends Error {
-  constructor(
-    readonly receivedBytes: number,
-    readonly maxBytes: number,
-  ) {
+  // 显式字段赋值而不是构造器参数属性：参数属性需要代码生成，Node 的 strip-only 类型剥离
+  // 会在加载本文件时直接报错，测试就没法从 src 直接导入 bridge（只能依赖构建产物）。
+  readonly receivedBytes: number
+  readonly maxBytes: number
+  constructor(receivedBytes: number, maxBytes: number) {
     super(`stream body exceeds ${maxBytes} bytes`)
     this.name = 'StreamBodyTooLargeError'
+    this.receivedBytes = receivedBytes
+    this.maxBytes = maxBytes
   }
 }
 
@@ -1038,6 +1041,11 @@ export function registerSettingsBridge(
             const body = parsedBody.body
             const source = body !== null && typeof body === 'object' && !Array.isArray(body) && typeof (body as Record<string, unknown>).path === 'string'
               ? (body as Record<string, unknown>).path as string : ''
+            // 空串不能落到 resolve：它会退化成进程工作目录，把整个 cwd 当成技能导入。
+            if (source.trim().length === 0 || !isAbsolute(source)) {
+              writeBridgeJson(res, 400, { ok: false, code: 'skills-import-rejected', message: '技能导入失败：来源目录必须是绝对路径且非空' })
+              return
+            }
             const result = importSkillsDirectory(getSkillsState().skillsRoot, source)
             if (!result.ok) { writeBridgeJson(res, 400, { ok: false, code: 'skills-import-rejected', message: result.message }); return }
             afterSkillsChange?.()

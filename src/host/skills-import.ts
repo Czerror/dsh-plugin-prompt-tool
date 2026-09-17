@@ -2,7 +2,7 @@
  *  两种入口共用同一实现：浏览器上传的文件列表、宿主机目录读取。
  *  复制完成后技能由官方 skill 文件提供者直接发现，插件不需要登记任何状态。 */
 import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
-import { basename, dirname, join, relative, resolve, sep } from 'node:path'
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { parseFrontmatter } from '../runtime/skills-parse.ts'
 import { SKILL_NAME_PATTERN } from './skills-config.ts'
 
@@ -146,9 +146,12 @@ export function importSkillsPackage(root: string, files: SkillsImportFile[], ove
   }
 }
 
-/** 宿主机目录导入：读取来源目录（校验符号链接与容量）后按目录名复制进用户根。 */
+/** 宿主机目录导入：读取来源目录（校验符号链接与容量）后按目录名复制进用户根。
+ *  来源必须是绝对路径：`resolve('')` 会退化成进程工作目录，等于把整个 cwd 当技能导入。 */
 export function importSkillsDirectory(root: string, source: string): SkillsImportResult {
   try {
+    if (typeof source !== 'string' || source.trim().length === 0) throw new Error('来源目录路径为空')
+    if (!isAbsolute(source)) throw new Error('来源目录必须是绝对路径')
     const directory = resolve(source)
     const name = basename(directory)
     if (!SKILL_NAME_PATTERN.test(name)) throw new Error('来源目录名称必须是 kebab-case')

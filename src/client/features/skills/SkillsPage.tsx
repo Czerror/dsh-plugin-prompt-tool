@@ -33,7 +33,7 @@ const SKILL_STATUS_TABS: Array<{ id: SkillStatusTab; labelKey: PromptToolLocaleK
 /** 创建表单的本地校验：与官方 `SKILL_NAME` 同规则（kebab-case）。 */
 const SKILL_NAME_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 
-export const SkillsPage = memo(function SkillsPage(props: { store: PromptToolStore; api: PromptToolHostApi; t: PromptToolTranslate; browse?: { query: string; status: SkillStatusTab; selected: string[] } }): ReactNode {
+export const SkillsPage = memo(function SkillsPage(props: { store: PromptToolStore; api: PromptToolHostApi; t: PromptToolTranslate; browse?: { query: string; status: SkillStatusTab } }): ReactNode {
   const { store, api, t } = props
   const fields = usePromptToolFields(store, (value) => value)
   const [skillFilter, setSkillFilter] = useState(props.browse?.query ?? '')
@@ -63,12 +63,14 @@ export const SkillsPage = memo(function SkillsPage(props: { store: PromptToolSto
     blocked: fields.skillCatalog.filter((skill) => matchesSkillStatus(skill, 'blocked')).length,
   }
   const sourceOptions = useMemo(() => {
-    const seen = new Map<string, string>()
-    for (const group of groupBySource(fields.skillCatalog)) seen.set(group.source, group.label)
-    return [{ value: '', label: t('skills.source.all') }, ...[...seen].map(([value, label]) => ({ value, label }))]
+    const present = groupBySource(fields.skillCatalog).map((group) => group.source)
+    return [
+      { value: '', label: t('skills.source.all') },
+      ...present.map((source) => ({ value: source, label: t(`skills.source.${source}` as never) })),
+    ]
   }, [fields.skillCatalog, t])
   useEffect(() => {
-    if (props.browse) Object.assign(props.browse, { query: skillFilter, status: statusTab, selected: [] })
+    if (props.browse) Object.assign(props.browse, { query: skillFilter, status: statusTab })
   }, [skillFilter, statusTab, props.browse])
 
   const onSetScope = useCallback((name: string, scope: SkillBlockScope) => {
@@ -356,9 +358,9 @@ export const SkillsPage = memo(function SkillsPage(props: { store: PromptToolSto
         </p>
       ) : (
         groups.map((group) => (
-          <section key={group.source} className={ui.skillGroup} aria-label={group.label}>
+          <section key={group.source} className={ui.skillGroup} aria-label={t(`skills.source.${group.source}` as never)}>
             <header className={ui.skillGroupHead}>
-              <strong>{group.label}</strong>
+              <strong>{t(`skills.source.${group.source}` as never)}</strong>
               <span className={ui.configFieldHint}>{t('skills.group.meta', { count: group.skills.length, rank: group.rank })}</span>
             </header>
             <div className={ui.skillCardList}>

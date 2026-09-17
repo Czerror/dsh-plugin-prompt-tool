@@ -31,7 +31,8 @@ export function createSkill(root: string, input: { name: unknown; description: u
     writeFileSync(join(target, 'SKILL.md'), `---\n${frontmatter}---\n${input.content}`, { encoding: 'utf8', flag: 'wx' })
     return { ok: true, id: input.name, path: target }
   } catch (error) {
-    // 半成品目录不留在用户根里（写入失败时回滚本次创建的目录）。
+    // 半成品目录不留在用户根里：正常路径下 target 只可能由本次 mkdirSync 创建，
+    // 这段兜底的是磁盘或权限故障导致的中途失败（前面的校验拒绝根本不会创建目录）。
     try { if (existsSync(target)) rmSync(target, { recursive: true, force: true }) } catch { /* 保留现场供人工检查 */ }
     return { ok: false, message: `创建技能失败：${error instanceof Error ? error.message : String(error)}` }
   }

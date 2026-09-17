@@ -1,9 +1,6 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type SettingsService from '@deepseek-ai/dsh-settings'
 import type {
-  SkillCandidate,
-  SkillDefinition,
-  SkillLookupOptions,
   SkillProvider,
   SkillProviderControl,
 } from '@deepseek-ai/dsh-skill'
@@ -56,8 +53,10 @@ import {
   SKILL_NAME_PATTERN,
   type SkillsStateRead,
 } from './host/skills-config.ts'
+import { createSkillsProvider } from './host/skills-provider.ts'
+import { createSkillsRefresh } from './host/skills-refresh.ts'
 import { catalogFromScan, scanRoot, scanRoots, skillRoots, type ScannedSkill } from './host/skills-scan.ts'
-import { SKILL_BLOCK_RANK, SKILL_SOURCES, blockRecordFor, blockScopeOf, type SkillBlockScope, type SkillCatalogEntry, type SkillsState } from './shared/skills.ts'
+import { blockRecordFor, blockScopeOf, type SkillBlockScope, type SkillCatalogEntry, type SkillsState } from './shared/skills.ts'
 
 export const name = 'prompt-tool'
 // 内容走 user 层（AGENTS.md 常驻层 + skill 按需层），
@@ -355,17 +354,18 @@ export function apply(ctx: Context, configIn: Config): void {
     return written
   }
 
-  // 状态文件热更新（手工编辑或界面写入）→ 重扫清单并让官方注册表缓存失效。
-  // 技能文件本身的即时性由官方 skill 提供者的 watcher 负责，插件不重复监听。
-  const reloadSkillsState = (): void => {
-    const next = readSkillsStateSafe()
-    const snapshot = JSON.stringify(next)
-    if (snapshot === skillsStateSnapshot) return
-    skillsState = next
-    skillsStateSnapshot = snapshot
-    invalidateCatalog()
-    skillsWatcher.watch()
-  }
+  // 状态文件与引用目录的热更新：任一事件都失效清单缓存，只有状态快照变化时才重挂 watcher
+  // （引用目录集合可能变了）。技能实体的即时性由官方 skill 提供者负责；策略见 skills-refresh。
+  const reloadSkillsState = createSkillsRefresh({
+    read: () => {
+      const state = readSkillsStateSafe()
+      return { state, snapshot: JSON.stringify(state) }
+    },
+    currentSnapshot: () => skillsStateSnapshot,
+    accept: (state, snapshot) => { skillsState = state; skillsStateSnapshot = snapshot },
+    rewatch: () => skillsWatcher.watch(),
+    invalidate: () => invalidateCatalog(),
+  })
   const skillsWatcher = createSkillsWatcher(
     () => [dirname(skillsStateFile), ...skillsState.folders],
     () => { reloadSkillsState() },
@@ -383,66 +383,10 @@ export function apply(ctx: Context, configIn: Config): void {
   let invalidateSkills: (() => void) | undefined
   ctx.skills.registerProvider((control: SkillProviderControl): SkillProvider => {
     invalidateSkills = control.invalidate
-    return {
-      name: 'prompt-tool',
-      list: async (options: SkillLookupOptions): Promise<readonly SkillCandidate[]> => {
-        if (options.signal?.aborted) return []
-        const candidates: SkillCandidate[] = []
-        // 影子候选：按屏蔽范围只关被屏蔽的那一端（两端都关 = 完全停用）。
-        for (const item of skillsState.blocked) {
-          const scope = blockScopeOf(item)
-          if (scope === 'none') continue
-          candidates.push({
-            name: item.name,
-            description: '已由 prompt-tool 在注册层屏蔽（未修改任何技能文件）',
-            invocation: {
-              modelInvocable: !(scope === 'all' || scope === 'model'),
-              userInvocable: !(scope === 'all' || scope === 'user'),
-            },
-            source: 'prompt-tool-blocked',
-            provider: 'prompt-tool',
-            rank: SKILL_BLOCK_RANK,
-            locator: `blocked:${item.name}`,
-          })
-        }
-        const blocked = blockedScopes()
-        for (const skill of scanReferencedSkills()) {
-          if (!skill.valid || blocked.has(skill.name)) continue
-          candidates.push({
-            name: skill.name,
-            description: skill.description || skill.folder,
-            ...(skill.whenToUse !== undefined ? { whenToUse: skill.whenToUse } : {}),
-            invocation: { modelInvocable: skill.modelInvocable, userInvocable: skill.userInvocable },
-            source: 'custom',
-            provider: 'prompt-tool',
-            resourceBase: { kind: 'directory', path: join(skill.dir, skill.folder) },
-            rank: SKILL_SOURCES.custom.rank,
-            locator: `folder:${skill.file}`,
-            path: skill.file,
-            ...(skill.metadata !== undefined ? { metadata: skill.metadata } : {}),
-          })
-        }
-        return candidates
-      },
-      get: async (candidate: SkillCandidate, options: SkillLookupOptions): Promise<SkillDefinition | undefined> => {
-        if (options.signal?.aborted) return undefined
-        // 影子候选永不加载内容；引用候选按标记文件精确匹配。
-        const skill = scanReferencedSkills().find((entry) => entry.file === candidate.path)
-        if (skill === undefined || !skill.valid) return undefined
-        return {
-          name: candidate.name,
-          description: candidate.description,
-          ...(candidate.whenToUse !== undefined ? { whenToUse: candidate.whenToUse } : {}),
-          invocation: candidate.invocation,
-          source: candidate.source,
-          provider: candidate.provider,
-          resourceBase: candidate.resourceBase,
-          ...(candidate.path !== undefined ? { path: candidate.path } : { path: skill.file }),
-          ...(candidate.metadata !== undefined ? { metadata: candidate.metadata } : {}),
-          content: skill.body,
-        }
-      },
-    }
+    return createSkillsProvider({
+      blocked: () => skillsState.blocked,
+      referenced: scanReferencedSkills,
+    })
   })
 
   // 在线编辑不再经 ctx.llm 暴露 settings namespace：改为自建 loopback bridge，
@@ -903,6 +847,7 @@ export { registerTuiCommand } from './runtime/tui.ts'
 export { readSkillsState, writeSkillsState, skillsStatePath, SKILL_NAME_PATTERN } from './host/skills-config.ts'
 export type { BlockedSkill, SkillBlockScope, SkillCatalogEntry, SkillsState } from './shared/skills.ts'
 export { blockRecordFor, blockScopeOf } from './shared/skills.ts'
+export { createSkillsRefresh } from './host/skills-refresh.ts'
 export { catalogFromScan, resolveProjectRoot, scanRoot, scanRoots, skillRoots } from './host/skills-scan.ts'
 export { PARAM_KEYS } from './config.ts'
 export { BRIDGE_ENDPOINTS, MAX_BRIDGE_BODY_BYTES, MAX_CHARACTER_CARD_STREAM_BYTES, SETTINGS_BRIDGE_PREFIX } from './shared/bridge-contract.ts'

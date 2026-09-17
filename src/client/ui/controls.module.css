@@ -476,23 +476,6 @@
   cursor: pointer;
 }
 
-/* 行内排序按钮：垂直双箭头，仅主技能显示。 */
-.skillOrderButtons {
-  display: inline-flex;
-  flex: 0 0 auto;
-  flex-direction: column;
-  align-self: center;
-  gap: 4px;
-}
-.skillOrderButtons .pillButton {
-  min-width: 28px;
-  min-height: 28px;
-  padding: 0 9px;
-  border-radius: 14px;
-  corner-shape: round;
-  font: var(--dsw-font-xxs-12);
-}
-
 /* 全选按钮选中态：与统计筛选卡选中态同语言（accent 边框 + ring）。 */
 .listFilterRow .pillButton[data-active] {
   border-color: var(--dsw-alias-state-business-primary);
@@ -959,7 +942,6 @@
   .primaryPill,
   .configActions .pillButton,
   .batchControls .pillButton,
-  .skillOrderButtons .pillButton,
   .presetCardFooter .pillButton,
   .dirCardActions .pillButton,
   .presetIconButton,

@@ -1,131 +1,177 @@
-# 技能管理重新设计：注册层屏蔽（撤销受管实体库）
+# 注册层屏蔽的审查修复：安全洞、缓存失效、口径与测试补强
 
 ## 授权与基线
 
-- 用户指令（2026-09-17）：「重新设计方案，本项目技能管理重新设计，改为在技能注册层屏蔽，而不是使用受管库」。
-- 基线：dev@5dd0a2a68e15f383113d2291827a21b62522bfd7，工作树干净。
-- [旧 PLAN 原文归档](.scratch/prompt-tool-framework/archive/plan-skills-entity-library-5dd0a2a.md)（blob `73799038d5bbfeca8c52a0d0a1bbf7fabcc09d8b`，与基线 `PLAN.md` 逐字节一致）。
-- 已完成的受管库改造（提交 `b7f380f`、`88a6b61`、`5dd0a2a`）在本轮被**取代**：实体库、根链接、迁移脚本都不再是产品行为。
+- 用户指令（2026-09-17）：对 OCR 审查报告（`5dd0a2a..15dd1b4`）选择「High + Medium + Low 全清」。
+- 基线：dev@15dd1b4，工作树干净（除 gitignored `.ai-memory`）。
+- [旧 PLAN 原文归档](.scratch/prompt-tool-framework/archive/plan-skills-registration-block-15dd1b4-20260917.md)（blob `37e0ef8b4911b75a59a51e8ef6fc175fb338bec6`，与基线 `PLAN.md` 逐字节一致）。
+- 审查轮次只读、未改任何文件；本轮才是修复授权，范围以本文件为准。
 
-## 机制前提（已实测）
+## 审查结论摘要
 
-`skill` 注册表在同一层内按 rank 升序合并同名候选，只保留第一个（`collectLayer`）；模型目录生成时过滤 `isModelInvocable`（`tool-skill:226`），`skill` 工具加载时再次拒绝非模型可调用项（`tool-skill:138`）。隔离探针结论：
+上一提交把技能管理改成「注册层屏蔽」：插件为被屏蔽的技能名返回 rank 0 的影子候选，注册表按 rank 升序合并同名候选时官方候选被丢弃；模型目录过滤 `isModelInvocable`，`skill` 工具加载时再次拒绝。方向经实测成立，真实环境已回到「技能实体原地 + 注册层屏蔽」。
 
-| 影子 rank | 胜出者 | 模型目录 | 用户 `/名称` |
-|---|---|---|---|
-| 0（本轮取值） | 插件影子 | 不出现 | 不可用 |
-| 250（对照） | 官方项目候选 | 照常出现 | 照常可用 |
+但该轮留下三类问题，本轮全部处理：
 
-官方根优先级：项目 `.dsh/skills` 100、项目 `.agents/skills` 200、自定义目录 300、用户 `$DSH_HOME/skills` 400、用户 `~/.agents/skills` 500、内置 600。影子取 0，压过全部六档。
+| 编号 | 严重度 | 结论 |
+|---|---|---|
+| H1 | High（安全） | 空路径导入把进程 cwd 整树复制进技能根，已在隔离 cwd 复现 |
+| H2 | High | 该端点的 400 断言与实现相反，靠共享 cwd 污染偶然变绿 |
+| H3 | High | 影子屏蔽这一核心机制**零测试**，文档引用的两个测试文件不存在 |
+| M1–M7 | Medium | 「已停用」口径、开关连点竞态、引用目录缓存不刷新、中文分组泄漏、三处恒真断言 |
+| L1–L13 | Low | 类型谎言、只算不用、busy 语义、死开关、弱守卫、孤儿 i18n/CSS/state、测试卫生 |
 
-## 用户决策与最终行为
+## H1 复现记录（修复依据）
 
-1. 技能实体**留在原地**：项目根、用户根、自定义目录、官方内置。插件不搬迁、不建链接、不建实体库。
-2. 停用 = **注册层屏蔽**：插件为被屏蔽的技能名返回一个 rank 0、模型与用户调用同时关闭的影子候选；官方那个候选在合并时被丢弃。**不改任何 `SKILL.md`**。
-3. 恢复 = 删除屏蔽记录，官方候选立刻回到胜出位置。
-4. 插件的技能提供者只负责两件事：屏蔽名单的影子候选；用户显式「添加技能文件夹」引用进来的目录里的技能（自定义来源，优先级 300）。
-5. 写文件动作只保留三类：**创建**（写用户根）、**导入**（两种：引用技能文件夹 / 复制到 `$DSH_HOME/skills`）、**删除**（用户根实体移入回收站；引用型只删引用）。「一键修复」移除，坏技能只展示原因。
-6. 排序与「技能排序基数」移除：插件不再注册真实技能，顺序由官方按技能名决定。
-7. 交付顺序：先写代码与测试 → **回滚已完成的受管库迁移并验证** → 提交推送 → 用户重启 DSH。
-8. 已知限制（写入界面与文档）：屏蔽按**技能名全局**生效，同名技能在任何工作区都会被压掉；停用后官方仍能发现该技能，只是任何入口都用不了（与旧的"官方也发现不到"不同）。
+隔离 cwd `_temp/probe-empty-path`（目录名恰为 kebab-case）下调用 `importSkillsDirectory(target, '')`：
+
+- `resolve('')` 退化为 `process.cwd()`，`basename(cwd)` 恰好通过 `SKILL_NAME_PATTERN`；
+- 返回 `{ok:true, count:2}`，把 cwd 下 `secret-dir/SKILL.md` 与 `probe.mjs` 复制进技能根；
+- 端点 handler 只校验 `typeof path === 'string'`，空串直接放行。
+
+结论：**任意可读文件都能被做成模型可加载的技能**，且 loopback 端点上本机任意页面可触发。
 
 ## 范围与不变量
 
-- 状态文件 `$DSH_HOME/skills/.system/prompt-tool/skills.yml`（点目录，官方一层扫描天然跳过）：`version: 3`、`blocked`、`folders`。写入使用 yaml Document API，保留注释与未知字段；损坏时拒绝覆盖。
-- 插件提供者内**不得**调用 `ctx.skills.list/snapshot`（会递归进自己）；只读状态文件。
-- 清单展示由宿主端点扫描六类来源生成，标注来源、优先级、是否被屏蔽、模型与用户可调用状态。
-- 不改宿主源码；不重启运行中的 DSH；不删除用户未确认的文件。
-- 测试一律在 `D:/AI/workspase/_temp` 发起，使用隔离临时 `DSH_HOME`，结束后清理。
+- 只改本插件；不改宿主源码；不重启运行中的 DSH。
+- 影子机制与状态文件格式（v3）**不变**：本轮不引入新状态、不改 `skills.yml` 结构、不改端点集合。
+- 修复不得削弱既有安全边界：loopback/Host/Origin 校验、请求体上限、写盘归属校验、system 目录只读。
+- 测试一律从 `D:/AI/workspase/_temp` 发起，使用隔离临时 `DSH_HOME` 与独立临时目录，结束后清理，不依赖共享状态与执行顺序。
+- 每处修复先能失败（或先证明现状错误），再改实现。
 
-## 依赖与规划门禁
-
-- 调用闭包：skills-config（状态）→ index.ts provider（影子 + 引用候选）→ settings-bridge（清单/屏蔽/创建/导入/删除端点）→ shared bridge-contract → client store/SkillsPage/SkillRow → host/client tests。
-- 已用 rg 复核调用点；现有受管库相关模块（`skills-library.ts`、`skill-toggle.ts`、受管库迁移路径）在本轮删除或改写。
-- 实施前核实项：①回滚迁移后官方能否重新发现 87 个技能；②影子候选与「引用文件夹」候选共存时同名裁决；③状态文件从 v2（受管库）切换到 v3 时的处理（受管库 `skills.yml` 在回滚时被删除，新文件位于 `prompt-tool/` 子目录，两者不冲突）。
-
-## Wave 1：状态与候选
+## Wave 1：安全与热更新正确性
 
 <task type="auto">
-  <name>T1：屏蔽表与技能文件夹引用的状态文件</name>
-  <files>src/host/skills-config.ts、src/shared/skills.ts、test/host/skills-config.test.mjs</files>
-  <action>把状态文件改为 version 3：`blocked`（技能名 + 记录时间 + 可选备注）与 `folders`（宿主机绝对目录）。Document API 读写、结构校验、注释与未知字段保留、损坏拒绝、跨进程锁。</action>
-  <verify>真实临时文件系统：往返一致、注释保留、空数组删键、坏 YAML / 别名 / 非映射根 / 非法技能名 / 相对路径 / 重复目录全部拒绝且不覆盖原文件。</verify>
-  <security>名字必须 kebab-case；目录必须是绝对路径且拒绝点目录；不写入状态文件以外的任何路径。</security>
-  <done>状态读写与校验的确定性回归通过。</done>
+  <name>T1：空路径与相对路径导入拒绝（H1）</name>
+  <files>src/runtime/settings-bridge.ts、src/host/skills-import.ts、test/host/settings-bridge.test.mjs</files>
+  <action>`importSkillsDirectory` 入口拒绝非字符串、空串与纯空白来源，并要求绝对路径后再 `resolve`；`skills-import-directory` handler 在调用前同样校验 `trim()` 非空且 `isAbsolute`，不合法直接 400 且零读盘。错误消息区分「路径为空」与「必须是绝对路径」。</action>
+  <verify>空串、纯空白、相对路径、非字符串四类载荷一律 400 且技能根无任何新增；绝对路径合法目录仍可导入；断言不依赖 cwd 内容（用隔离临时目录构造来源）。</verify>
+  <security>拒绝一切把进程工作目录当作导入源的路径形态；不因校验放宽而允许目录穿越。</security>
+  <done>空路径导入不再可能，端点与实现双层拒绝且有行为回归。</done>
 </task>
 
 <task type="auto">
-  <name>T2：技能提供者改为影子屏蔽 + 引用候选</name>
-  <files>src/index.ts、src/host/skills-scan.ts（新）、test/host/skill-block-shadow.test.mjs（新）</files>
-  <action>移除受管实体候选；为 `blocked` 里每个名字生成影子候选（rank 0、`modelInvocable`/`userInvocable` 均 false、source 标记为屏蔽）；为 `folders` 引用的目录生成自定义来源候选（rank 300）。提供者内不调用注册表查询。</action>
-  <verify>真实 `SkillRegistry`：影子压过官方六档 rank（100/200/300/400/500/600）；rank 250 负向对照压不过；引用目录的技能可列出并加载；屏蔽名不存在时不牵连其他技能；屏蔽表为空时提供者返回空列表。</verify>
-  <security>引用目录必须是绝对路径普通目录；拒绝符号链接穿越；不读取状态文件之外的写权限。</security>
-  <done>候选生成与压制的行为回归通过。</done>
-</task>
-
-## Wave 2：宿主端点与界面
-
-<task type="auto">
-  <name>T3：技能清单、屏蔽开关与资产入口端点</name>
-  <files>src/host/skills-import.ts、src/host/skills-actions.ts、src/runtime/settings-bridge.ts、src/shared/bridge-contract.ts、src/runtime/skills-watcher.ts、src/runtime/tui.ts、对应 host 测试</files>
-  <action>清单端点扫描六类来源并标注来源与优先级、是否被屏蔽、调用状态；屏蔽开关端点写状态文件；创建（用户根）与两种导入（引用目录 / 复制到用户根）与删除（用户根实体移入回收站、引用型只删引用）；移除修复端点与受管库端点。</action>
-  <verify>真实 handler + 隔离 DSH_HOME：来源分组与优先级正确、屏蔽写盘幂等且可恢复、复制导入后落在用户根、引用导入不动源目录、删除只影响目标且失败可回滚、非法载荷 400 且零写盘。</verify>
-  <security>loopback/Host/Origin 与载荷上限保持；写盘先校验目标归属；不删除用户未确认文件。</security>
-  <done>宿主调用链闭合，相关契约测试通过。</done>
+  <name>T2：引用目录变化必须刷新清单（M3）</name>
+  <files>src/index.ts、src/host/skills-refresh.ts（新）、test/host/skills-refresh.test.mjs（新）</files>
+  <action>watcher 回调无论状态快照是否变化都执行 `invalidateCatalog()`；仅在快照变化时重读状态与重挂 watcher（引用目录集合可能变）。修正注释：文件系统事件与状态变化是两件事。</action>
+  <verify>在引用目录里新增 / 删除技能后，同一 cwd 的清单不再返回缓存旧值；状态文件未变时不清空状态对象；重复事件幂等。</verify>
+  <security>不清空用户文件；只失效内存缓存。</security>
+  <done>引用目录的增删能反映到清单，状态重挂语义不变。</done>
 </task>
 
 <task type="auto">
-  <name>T4：技能页重构</name>
-  <files>src/client/features/skills/*、src/client/data/use-prompt-tool-store.ts、src/client/data/prompt-tool-fields.ts、src/client/data/prompt-tool-view.ts、locales、client tests</files>
-  <action>移除实体库卡、排序与排序基数；按来源分组展示（项目 / 自定义引用 / 用户 / 内置），每条显示优先级、调用状态与"是否被同名技能遮蔽"；屏蔽开关一个；创建表单；两种导入入口；删除确认。</action>
-  <verify>真实浏览器 smoke + store：分组渲染与计数、屏蔽开关载荷、创建与两种导入载荷、删除确认与失败保留、移除的旧入口不再出现。</verify>
-  <security>不由客户端拼任意写入路径；失败保留草稿与错误提示。</security>
-  <done>新旧交互回归通过。</done>
+  <name>T3：屏蔽开关的并发语义（M2 + L3）</name>
+  <files>src/client/data/use-prompt-tool-store.ts、src/client/features/skills/*、client tests</files>
+  <action>`setSkillBlocked` 与其它技能写操作统一：进入时置 busy、结束（含失败）复位；用即时生效的 ref 守卫丢弃忙期内的重复点击，避免两次连点都用旧 props 重算整个 scope 后互相覆盖。</action>
+  <verify>忙期内的第二次调用不发出第二个请求；失败后 busy 复位且可重试；成功路径仍触发清单刷新。</verify>
+  <security>客户端不拼写盘路径；失败保留原开关状态与错误提示。</security>
+  <done>连点不再产生覆盖写，busy 语义与其它技能写操作一致。</done>
 </task>
 
-## Wave 3：验证、回滚与交付
+## Wave 2：口径、国际化与死代码
 
 <task type="auto">
-  <name>T5：完整门禁与文档</name>
+  <name>T4：「已停用」口径按端拆分（M1）</name>
+  <files>src/client/features/skills/skill-status.ts、src/client/features/skills/SkillsPage.tsx、src/client/locales.ts、client tests</files>
+  <action>新增「两端都被屏蔽」判定；`blocked` tab 只收两端停用的技能，只关一端不再同时出现在「用户 / 模型」与「已停用」；状态徽章按端区分文案（模型端已停用 / 用户端已停用 / 已停用），中英双语补齐。</action>
+  <verify>四类技能（未屏蔽、只关模型、只关用户、两端关）在三个 tab 的归属唯一且计数自洽；徽章文案与 `blockedModel`/`blockedUser` 一致。</verify>
+  <security>仅展示层口径，不改屏蔽写入语义。</security>
+  <done>筛选口径互斥完备，徽章如实反映按端屏蔽。</done>
+</task>
+
+<task type="auto">
+  <name>T5：分组标题与来源筛选走 i18n（M4）</name>
+  <files>src/client/features/skills/skill-status.ts、src/client/features/skills/SkillsPage.tsx、client tests</files>
+  <action>`groupBySource` 不再回传中文标签，只回传来源类型与优先级；界面统一用 `skills.source.<kind>` 键渲染分组标题与来源筛选选项，英文界面不再出现中文。</action>
+  <verify>英文 locale 下分组标题与筛选项全部为英文；分组顺序仍按官方优先级；空分组不返回。</verify>
+  <security>不引入新的硬编码文案。</security>
+  <done>技能页文案全部来自 locale 表。</done>
+</task>
+
+<task type="auto">
+  <name>T6：客户端类型与孤儿清理（L1、L2、L11–L13）</name>
+  <files>src/client/data/prompt-tool-fields.ts、src/client/data/prompt-tool-view.ts、src/client/locales-prompts.ts、src/client/ui/controls.module.css、src/client/data/workspace-browse-state.ts</files>
+  <action>删除与服务端载荷不符且无人消费的 `skillBlocked: string[]` 字段；删除只计算不使用的 `skillsRootExists` 及其注释；删除孤儿 i18n 键、孤儿 CSS 类与浏览状态里的死字段。</action>
+  <verify>删除后 typecheck 与 lint 全绿；grep 确认无残留引用；被删键在源码中不存在。</verify>
+  <security>只删死代码，不动任何被引用的导出。</security>
+  <done>死类型、死字段、死样式清零。</done>
+</task>
+
+## Wave 3：测试补强
+
+<task type="auto">
+  <name>T7：核心机制回归测试与文档引用（H3 + H2）</name>
+  <files>test/host/skills-scan.test.mjs（新）、test/host/skill-block-shadow.test.mjs（新）、test/host/settings-bridge.test.mjs、docs/skills-management.md</files>
+  <action>补「六类官方技能根的一层发现 + 同名裁决 + 来源标注」与「影子女候选压制官方候选」两组行为回归；影子测试用真实注册表合并路径断言 rank 0 胜出、按端调用标志生效、`get()` 不返回正文、删除记录即恢复；空路径载荷断言改为不依赖 cwd 内容的真断言。</action>
+  <verify>两个新测试文件存在且被文档引用一致；影子测试在移除 rank 0 取值时会失败（负向对照 rank 250 压不过）；空路径用例单独运行也通过。</verify>
+  <security>测试使用隔离临时 DSH_HOME 与临时目录，不改真实环境。</security>
+  <done>核心机制有可失败的行为回归，文档引用的文件真实存在。</done>
+</task>
+
+<task type="auto">
+  <name>T8：恒真断言与测试卫生（M5–M7 + L4–L10）</name>
+  <files>test/host/bridge-contract.test.mjs、test/host/editor-state.test.mjs、test/host/client-wiring-contract.test.mjs、test/host/skills-config.test.mjs、test/host/skills-catalog.test.mjs、test/host/ui-v2-page-smoke.test.mjs、test helpers/fixtures</files>
+  <action>把三处恒真断言改为真断言（技能字段确实进入 / 不进入快照、锚点确实存在）；移除 fixture 里没有实现的死开关；补 `createSkill` 半成品目录回滚分支覆盖；yaml 语料守卫从「至少 2 条」提升为与用例表一致的下限；恢复被测试改动的环境变量；清理重复注释与 src/lib 混用导入。</action>
+  <verify>每条改后断言在人为破坏实现时确实失败；全套测试通过；不残留被修改的进程级环境变量。</verify>
+  <security>测试不写真实用户目录。</security>
+  <done>不再有恒真断言与死开关，测试对实现变化敏感。</done>
+</task>
+
+## Wave 4：门禁与交付
+
+<task type="auto">
+  <name>T9：完整门禁、文档与提交</name>
   <files>README.md、docs/skills-management.md、docs/ui-architecture.md、CHANGELOG.md、PLAN.md</files>
-  <action>改写技能管理权威文档为注册层屏蔽模型；同步界面与端点说明；运行 typecheck / lint / test / build / verify:host / diff --check。</action>
-  <verify>完整门禁全绿，文档中的路径、命令与端点全部有效。</verify>
-  <security>不遗留受管库描述；不夸大"官方发现不到"。</security>
-  <done>文档与实现一致，门禁通过。</done>
-</task>
-
-<task type="auto">
-  <name>T6：回滚迁移、真实环境验收与提交</name>
-  <files>D:/AI/DeepSeek harness/.dsh/skills、PLAN.md、本地 daily.md</files>
-  <action>用迁移记录回滚 87 个技能到 `skills` 根并删除受管库状态文件；只读验收实体内容与迁移前一致；提交推送 origin/dev。</action>
-  <verify>回滚后顶层技能目录数量与备份一致、无链接残留、哈希逐项一致；新代码下清单能列出全部来源；Git 暂存只含本轮文件。</verify>
-  <security>回滚前核验哈希；不回滚内容已变化项；不删除唯一备份；不停止 DSH。</security>
-  <done>真实环境回到"技能在原地 + 注册层屏蔽"状态，提交与推送完成。</done>
+  <action>同步行为变化到权威文档与 CHANGELOG；运行 typecheck / lint / test / build（必要时 verify:host）/ diff --check；中文 Conventional Commit 推送 origin/dev；追加 `.ai-memory` 日志。</action>
+  <verify>全部门禁通过且输出留档；git 暂存只含本轮文件；文档中的路径、命令、端点全部有效。</verify>
+  <security>不提交 `.ai-memory`；不停止 DSH。</security>
+  <done>修复交付完成，真实环境需用户重启 DSH 后生效。</done>
 </task>
 
 ## 回滚
 
-- 代码回滚：revert 本轮提交，恢复受管库实现（`b7f380f`/`88a6b61` 仍在历史里）。
-- 数据回滚：`scripts/migrate-skills.mjs --rollback "<备份目录>\migration.json"` 幂等可重跑；迁移备份 `.skills-migration/20260917150416526` 保留，交付时不删除。
-- 状态文件：新 `skills.yml`（v3）与受管库 `skills.yml`（v2）位于不同目录，互不覆盖；回滚迁移只删除 v2。
-- 服务保持运行；新宿主代码需用户重启 DSH 后加载。
+- 代码回滚：`git revert` 本轮提交即可回到 `15dd1b4`；本轮不改状态文件格式，不需要数据回滚。
+- 行为回滚：T1/T2 的加固若误伤合法导入，只需放宽 `importSkillsDirectory` 的绝对路径校验，端点拒绝空路径的部分必须保留。
+- 状态文件 `skills.yml`（v3）在本轮不变；真实环境 87 个技能目录与 0 链接的布局不变。
 
 ## Task Summary 与状态
 
-- 当前：T1–T5 完成；T6 的迁移回滚已执行并验收。真实环境处于「技能实体在技能根 + 插件只做注册层屏蔽」的目标形态。
-- 验证：`typecheck` ✓ / `lint` 0 warning 0 error ✓ / `test` 见下方执行记录 / `build` ✓ / `verify:host` ✓ / `git diff --check` ✓。
+- 当前：T1–T9 全部完成并验证。
+- 验证：`typecheck` ✓ / `lint` 0 warning 0 error ✓ / `test` 1010/1010 ✓ / `build` ✓ / `verify:host`（官方包 47 个，失败 0）✓ / `git diff --check` ✓。
 
 ### 执行记录
 
-- **注册层屏蔽落地**：新增 `src/host/skills-scan.ts`（六类官方技能根的一层发现 + 同名裁决），`skills-config.ts` 改写为 v3 状态（`blocked` + `folders`），`index.ts` 提供者只返回「屏蔽影子候选（rank 0）+ 引用目录候选（rank 300）」，`settings-bridge` 换成 `skills-list` / `skill-block` / `skills-folders` / `skill-create` / `skill-delete` / `skills-import[-directory]` 七个端点；删除 `skills-library.ts`、`skill-toggle.ts`、`skill-fix.ts`、`skills-provider.ts` 与 `profile-skills.ts`。
-- **客户端**：技能页按来源分组、单一注册层开关、创建、两种导入（复制导入 / 文件夹引用）、回收站删除；移除排序、rank 基数、受管库与一键修复界面。
-- **迁移回滚（一次事故与修复）**：首轮回滚在 `writing-shape` 处因「内容哈希变化」中止，留下半回滚状态（链接已删、1 个实体搬回、86 个仍在 `.system`）。根因是脚本把「内容变化」当成了拒绝条件，而回滚的目标是恢复布局。修复：内容变化只记录不阻止，原位置被占用才跳过；重跑后 87 个实体全部回到技能根、0 链接、v2 状态文件删除，与迁移前快照逐字节一致 64 个、内容有变化 23 个（用户迁移后的更新，照常搬回）、缺失 0 个、备份完整保留。回归见 `test/host/skills-migration.test.mjs` 第 2 条。
-- **不再内置任何技能**（用户追加决策）：删除包内 `skills/`（原 `sandboxmod`、`web ui`）与 `package.json` 发布清单里的 `skills` 条目；删除真实环境里废弃的安装副本账本 `.prompt-tool-manifest.json`；`paths.ts` 去掉死代码 `SKILLS_DIR` / `DEFAULT_SKILLS_DIR` / `DEFAULT_SKILL_RANK_BASE`，改用 `USER_SKILLS_DIR`。
-- **子代理修复的真实缺陷**（已修）：`prompt-tool-view.ts` 的 `activeSkillsDirs` 缺少响应顶层回退，真实宿主下 `skillsRoot` 为空 → 技能页显示「用户技能目录未知」且删除按钮永不出现。修复后技能根的来源为「响应顶层 → descriptor.value → descriptor.base」。
+- **T1（H1）**：`importSkillsDirectory` 增加空路径与绝对路径校验，`skills-import-directory` 端点同样前置拒绝。
+  修复前 `path: ''` 会把整个 cwd 复制进技能根；修复后空串、纯空白、相对路径、非字符串四类载荷一律 400，
+  断言改为「技能根无任何新增」，不再依赖 cwd 名字恰好不是 kebab-case。
+- **T2（M3）**：刷新策略抽到 `src/host/skills-refresh.ts`（`createSkillsRefresh`）：文件系统事件无条件失效清单缓存，
+  只有状态快照变化才重挂 watcher；新增 `test/host/skills-refresh.test.mjs` 锁住「状态未变也必须失效」。
+- **T3（M2 + L3）**：`setSkillBlocked` 置 busy 并用即时 ref 守卫丢弃忙期内的重复提交，与其它技能写操作语义一致。
+- **T4（M1）**：新增 `skillFullyBlocked`，「已停用」页签只收两端都关的技能；徽章按端区分并补齐中英字典键。
+- **T5（M4）**：`groupBySource` 不再回传中文标签，分组标题与来源筛选统一走 `skills.source.<kind>`；
+  冒烟测试的来源分组断言改为在页面内用同一个 `t` 求值，不再写死文案。
+- **T6（L1/L2/L11–L13）**：删除客户端 `skillBlocked`（服务端发对象数组而类型写成 `string[]`，且无人消费）与
+  `skillsRootExists`（只算不用）、孤儿字典键 `skills.selectHint`、孤儿样式 `.skillOrderButtons`、
+  浏览状态里的死字段 `skills.selected`。
+- **T7（H3 + H2）**：新增 `test/host/skills-scan.test.mjs`（一层发现、技能根顺序、有效性、同名裁决、清单投影）与
+  `test/host/skill-block-shadow.test.mjs`（真实 `SkillRegistry`：影子压过 100–600 六档、按端调用标志、
+  `get()` 永不返回正文、rank 250 对照、引用候选）；`docs/skills-management.md` 的回归表指向真实存在的文件并补上刷新策略一行。
+  核对中修正了我自己的两处错误认知：同层 rank **升序**小者胜（250 压得过 400、压不过 100），
+  以及 `registry.list()` 返回的摘要**不含 rank**。
+- **T8（M5–M7 + L4–L10）**：bootstrap 技能事实改用非空数据断言透传；参数快照断言改为「键集合恰好等于参数键」；
+  客户端接线锚点改用真实存在的 `pt-skills-library` 并先断言锚点存在；`rejectSkillBlock` 死开关删除、
+  `rejectSkillsFolders` 补失败路径用例；创建技能补符号链接用户根用例并如实注释回滚分支的触发条件；
+  yaml 语料守卫从「至少 2 条」改为「每个真实 SKILL.md 都必须产出语料」；恢复被测试改动的 `DSH_HOME`；
+  清理重复注释与 src/lib 混用（顺带把 `settings-bridge` 的构造器参数属性改成显式字段赋值，
+  让该文件可被 Node 直接类型剥离导入，测试不必再依赖构建产物）。
+- **T9**：门禁全绿；CHANGELOG 与 `docs/skills-management.md` 同步本轮行为变化。
 
-[✔] Wave 1 / T1：状态文件（屏蔽表 + 引用目录）
-[✔] Wave 1 / T2：提供者影子屏蔽与引用候选
-[✔] Wave 2 / T3：清单、屏蔽与资产端点
-[✔] Wave 2 / T4：技能页重构
-[✔] Wave 3 / T5：门禁与文档
-[✔] Wave 3 / T6：回滚迁移与交付
+[✔] Wave 1 / T1：空路径导入拒绝
+[✔] Wave 1 / T2：引用目录缓存失效
+[✔] Wave 1 / T3：开关并发语义
+[✔] Wave 2 / T4：已停用口径
+[✔] Wave 2 / T5：分组 i18n
+[✔] Wave 2 / T6：死代码清理
+[✔] Wave 3 / T7：核心机制回归与文档引用
+[✔] Wave 3 / T8：恒真断言与测试卫生
+[✔] Wave 4 / T9：门禁与交付

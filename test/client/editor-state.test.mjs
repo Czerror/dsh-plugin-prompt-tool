@@ -7,6 +7,7 @@ import { readFileSync } from 'node:fs'
 import { EMPTY_FIELDS, hasIncompleteStageDrafts } from '../../src/client/data/prompt-tool-fields.ts'
 import {
   deepEqual,
+  EMPTY_SWITCHES,
   hasPendingVariableRows,
   promptConfigsDirty,
   shouldReloadAfterParamSave,
@@ -15,6 +16,7 @@ import {
   switchesEqual,
 } from '../../src/client/data/dirty-state.ts'
 import { createSerialTaskQueue } from '../../src/client/data/save-queue.ts'
+import { ENGINE_PARAM_KEYS } from '../../src/shared/engine-params.ts'
 
 // —— 脏状态比较（原 dirty-state.test.mjs） ——
 
@@ -37,12 +39,16 @@ test('dirty state：snapshot 深拷贝可变集合并比较全字段', () => {
   assert.deepEqual(snapshot.stages, [{ name: 'a', tools: 'read' }], 'snapshot 深拷贝，隔离保存期间的继续编辑')
   assert.equal(switchesEqual(snapshot, snapshotSwitches({ ...EMPTY_FIELDS, stages: [{ name: 'a', tools: 'read' }] })), true)
   assert.equal(switchesEqual(snapshot, snapshotSwitches({ ...EMPTY_FIELDS, stages: [{ name: 'a', tools: 'write' }] })), false)
-  // 注册层技能状态（清单 / 屏蔽表 / 引用目录）不属于 settings：刷新技能事实不产生参数脏状态。
-  for (const key of ['skillCatalog', 'skillBlocked', 'skillFolders', 'skillsRoot']) {
-    assert.equal(Object.hasOwn(snapshot, key), false, `${key} 不应进入参数保存快照`)
-  }
-  const blocked = { ...EMPTY_FIELDS, skillBlocked: ['alpha'], skillFolders: ['D:/referenced'] }
-  assert.equal(switchesEqual(snapshotSwitches(blocked), snapshotSwitches(EMPTY_FIELDS)), true, '技能屏蔽不进入参数保存快照')
+  // 注册层技能事实（清单 / 引用目录 / 用户根）不属于 settings 参数。这里断言快照的键集合
+  // 恰好是参数键：写 Object.hasOwn(snapshot, key) 只会恒真（快照本就只挑参数键），
+  // 有人把技能字段塞进 snapshotSwitches 时不会失败。
+  assert.deepEqual(
+    Object.keys(snapshot).sort(),
+    [...ENGINE_PARAM_KEYS, 'presetOrder', 'fallbackText', 'writePreset'].sort(),
+    '参数快照只包含引擎参数与设置快照键',
+  )
+  const withSkills = { ...EMPTY_FIELDS, skillCatalog: [{ id: 'x' }], skillFolders: ['D:/referenced'], skillsRoot: 'D:/skills' }
+  assert.equal(switchesEqual(snapshotSwitches(withSkills), EMPTY_SWITCHES), true, '技能事实变化不产生参数脏状态')
 })
 
 test('dirty state：空 key 变量待编辑行单独识别（保存后不静默重载）', () => {

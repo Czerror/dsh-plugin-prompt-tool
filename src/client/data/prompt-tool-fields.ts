@@ -26,16 +26,12 @@ export interface Fields extends EngineParamDrafts {
   promptPath: string
   agentsText: string
   agentsPath: string
-  /** 技能清单：官方六类技能根 + 注册层屏蔽状态。 */
+  /** 技能清单：官方六类技能根 + 注册层屏蔽状态（每条自带按端屏蔽标志，不需要额外的屏蔽表）。 */
   skillCatalog: SkillCatalogEntry[]
-  /** 当前被屏蔽的技能名（注册层停用，不改技能文件）。 */
-  skillBlocked: string[]
   /** 用户添加的技能文件夹（只引用，不复制）。 */
   skillFolders: string[]
   /** 用户技能根（创建、复制导入与回收站的落点）。 */
   skillsRoot: string
-  /** 用户技能根是否存在。 */
-  skillsRootExists: boolean
   presetOrder: number
   fallbackText: string
   writePreset: boolean
@@ -76,10 +72,8 @@ export const EMPTY_FIELDS: Fields = {
   agentsText: '',
   agentsPath: '',
   skillCatalog: [],
-  skillBlocked: [],
   skillFolders: [],
   skillsRoot: '',
-  skillsRootExists: false,
   presetOrder: 5,
   fallbackText: '',
   writePreset: true,

@@ -28,7 +28,7 @@ const { catalogFromScan, resolveProjectRoot, scanRoot, scanRoots, skillRoots } =
 const { SKILL_SOURCES } = await import('../../src/shared/skills.ts')
 const { groupBySource } = await import('../../src/client/features/skills/skill-status.ts')
 const { BRIDGE_ENDPOINTS, SETTINGS_BRIDGE_PREFIX } = await import('../../src/shared/bridge-contract.ts')
-const { registerSettingsBridge } = await import('../../lib/index.mjs')
+const { registerSettingsBridge } = await import('../../src/runtime/settings-bridge.ts')
 
 after(() => {
   for (const [key, value] of Object.entries(previous)) {
@@ -135,14 +135,10 @@ test('groupBySource：分组顺序与来源优先级一致，空分组不返回'
   const groups = groupBySource(catalog)
   assert.deepEqual(groups.map((group) => group.source), ['project-dsh', 'project-agents', 'custom', 'user-dsh', 'user-agents', 'bundled'])
   assert.deepEqual(groups.map((group) => group.rank), [100, 200, 300, 400, 500, 600])
-  assert.deepEqual(groups.map((group) => group.label), [
-    SKILL_SOURCES['project-dsh'].label,
-    SKILL_SOURCES['project-agents'].label,
-    SKILL_SOURCES.custom.label,
-    SKILL_SOURCES['user-dsh'].label,
-    SKILL_SOURCES['user-agents'].label,
-    SKILL_SOURCES.bundled.label,
-  ])
+  // 分组只回传来源类型与优先级：标题由界面按 `skills.source.<kind>` 取字典。
+  // 共享常量里的中文标签不再流到 UI，否则英文界面会显示中文分组名。
+  assert.deepEqual(Object.keys(groups[0]).sort(), ['rank', 'skills', 'source'])
+  assert.equal(groups.every((group) => !('label' in group)), true, '分组不携带文案')
   assert.deepEqual(groups.find((group) => group.source === 'project-dsh').skills.map((skill) => skill.name), ['project-skill', 'shared-name'])
   assert.equal(groups.every((group) => group.skills.length > 0), true)
   const only = groupBySource(catalog.filter((entry) => entry.source === 'bundled'))

@@ -13,7 +13,7 @@ export function createWorkspaceBrowseState() {
   return {
     configs: new Map<string, ConfigPageBrowse>(),
     scroll: new Map<string, number>(),
-    skills: { query: '', status: 'all' as SkillStatusTab, selected: [] as string[] },
+    skills: { query: '', status: 'all' as SkillStatusTab },
     tools: { query: '', selectedId: '', expanded: {} as Record<string, boolean> },
   }
 }

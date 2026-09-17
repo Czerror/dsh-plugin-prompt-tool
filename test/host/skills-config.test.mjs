@@ -159,10 +159,11 @@ test('Object.prototype 上的名字是合法技能身份，__proto__ 仍被拒�
   const read = readSkillsState(file)
   assert.equal(read.ok, true, read.message)
   assert.deepEqual(read.state.blocked.map((item) => item.name).sort(), ['constructor', 'prototype'])
-  // 屏蔽表是数组：继承属性不会被误读成「存在的屏蔽记录」。
-  assert.equal(Object.getPrototypeOf(read.state.blocked), Array.prototype)
-  assert.equal(Object.hasOwn(read.state.blocked, 'tostring'), false)
-  assert.equal(Object.hasOwn(read.state.blocked, 'valueOf'), false)
+  // 屏蔽表按索引元素读取：非索引的自有属性或继承属性都不会被当成一条屏蔽记录。
+  assert.equal(Array.isArray(read.state.blocked), true)
+  const withExtraProperty = { version: 3, blocked: [], folders: [] }
+  Object.defineProperty(withExtraProperty.blocked, 'inherited', { value: { name: 'evil', at: AT }, enumerable: true })
+  assert.deepEqual(validateSkillsState(withExtraProperty).blocked, [], '非索引属性不进入屏蔽表')
   // __proto__ 既不是合法技能名，也不能借记录载体的原型改写绕过校验。
   const malicious = JSON.parse(`[{"__proto__": {"name": "evil", "at": "${AT}"}}]`)
   assert.equal(Object.hasOwn(malicious[0], '__proto__'), true)

@@ -95,6 +95,12 @@ node scripts/migrate-skills.mjs --rollback "<备份目录>\migration.json"
 ## 6. 失败与边界
 
 - 无效技能（缺 frontmatter、非法技能名、frontmatter 解析失败）：清单里标红并显示原因，不注册给模型；插件不改文件。
+- 宿主机目录导入必须是**绝对路径**：空、纯空白与相对路径在端点与实现两层拒绝（400），且不读盘、不写盘。
+  空串若落到 `path.resolve('')` 会退化成进程工作目录，等于把整个 cwd 当成技能导入。
+- 清单缓存随文件系统事件失效：在引用文件夹里增删技能后再次读取清单即反映变化，不需要重启或手工重扫；
+  状态文件未变时只失效缓存、不重挂 watcher。
+- 「已停用」页签只收**两端都被屏蔽**的技能：只关模型端时它留在「用户」页签，只关用户端时留在「模型」页签；
+  状态徽章按端显示「模型端已停用 / 用户端已停用 / 已停用」。
 - 状态文件损坏或含别名：读取失败并报告，屏蔽功能停用但清单照常显示（不静默重置用户状态）。
 - 引用目录不存在或不是普通目录：该来源不产生候选，清单里不出现该分组。
 - 影子候选永不加载内容：即使有人绕过调用策略直接 `get`，也拿不到正文。
@@ -105,10 +111,11 @@ node scripts/migrate-skills.mjs --rollback "<备份目录>\migration.json"
 | 行为 | 测试 |
 |---|---|
 | 状态文件 schema 与写盘事务 | `test/host/skills-config.test.mjs` |
-| 六类来源扫描、同名裁决、清单条目 | `test/host/skills-scan.test.mjs`（若存在）与 `test/host/skills-import.test.mjs` |
+| 六类来源扫描、同名裁决、清单条目 | `test/host/skills-scan.test.mjs`、`test/host/skills-import.test.mjs` |
 | 创建 / 回收站删除 | `test/host/skills-actions.test.mjs` |
 | 端点（真实 handler + 写盘） | `test/host/settings-bridge.test.mjs` |
 | 注册层压制（影子候选） | `test/host/skill-block-shadow.test.mjs` |
+| 状态 / 引用目录变化后的清单刷新 | `test/host/skills-refresh.test.mjs` |
 | 页面分组、屏蔽开关与资产入口 | `test/client/ui-v2-page-smoke.test.mjs`（fixture：`test/fixtures/ui-v2-drafts.mjs`） |
 | 状态筛选与徽章纯逻辑 | `test/client/skill-status.test.mjs` |
 

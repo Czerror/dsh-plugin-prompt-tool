@@ -89,7 +89,12 @@ test('技能筛选是命名按钮组，按普通 Tab 顺序可达并声明选中
 
 test('技能目录与来源卡片位于过滤编辑框上方', () => {
   const source = read('src/client/features/skills/SkillsPage.tsx')
-  assert.ok(source.indexOf('id="pt-skills-dirs"') < source.indexOf('className={ui.listFilterRow}'))
+  const library = source.indexOf('id="pt-skills-library"')
+  const filterRow = source.indexOf('className={ui.listFilterRow}')
+  // 两个锚点都必须真实存在：直接写 indexOf(a) < indexOf(b)，a 缺失时会退化成 -1 < N 的恒真断言。
+  assert.ok(library >= 0, '技能目录卡片锚点 pt-skills-library 必须存在')
+  assert.ok(filterRow >= 0, '过滤编辑框必须存在')
+  assert.ok(library < filterRow, '技能目录与来源卡片位于过滤编辑框上方')
 })
 
 // —— 模板浮层锚点（原 template-picker-anchor.test.mjs） ——

@@ -47,10 +47,9 @@ function collectCorpus() {
     .map((file) => readFileSync(file, 'utf8'))
 }
 
-/** 语料 2：仓库内真实 SKILL.md frontmatter（BOM 剥离后两个解析器仍一致）。
- *  语料来源：`preset/creative/skills` 与 `test/fixtures` 下的真实技能夹具——
- *  包内不再内置技能（`skills/` 已移除），但 frontmatter 一致性断言必须继续覆盖真实技能文件。 */
-function collectFrontmatter() {
+/** 仓库内全部真实 SKILL.md：`preset/creative/skills` 与 `test/fixtures` 下的技能夹具。
+ *  包内不再内置技能（`skills/` 已移除），但这些真实文件是 frontmatter 一致性的语料来源。 */
+function listSkillFiles() {
   const files = []
   const walk = (dir) => {
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
@@ -63,8 +62,12 @@ function collectFrontmatter() {
     const dir = join(root, start)
     if (existsSync(dir)) walk(dir)
   }
-  return files
-    .sort((left, right) => left.localeCompare(right))
+  return files.sort((left, right) => left.localeCompare(right))
+}
+
+/** 语料 2：真实 SKILL.md 的 frontmatter（BOM 剥离后两个解析器仍必须一致）。 */
+function collectFrontmatter() {
+  return listSkillFiles()
     .map((file) => readFileSync(file, 'utf8'))
     .map((text) => (text.charCodeAt(0) === 0xfeff ? text.slice(1) : text))
     .map((text) => /^---\r?\n([\s\S]*?)\r?\n---/.exec(text)?.[1])
@@ -82,8 +85,12 @@ const trickyCases = [
 ].map((raw) => raw.replace(/\n/g, '\r\n')) // CRLF 版本也测一遍
 
 test('yaml 双解析器语料一致：宿主 npm yaml 与 vendored yaml', () => {
+  const skillFiles = listSkillFiles()
   const frontmatter = collectFrontmatter()
-  assert.ok(frontmatter.length >= 2, `frontmatter 语料必须覆盖真实 SKILL.md，got ${frontmatter.length}`)
+  // 守卫不是「至少两条」：仓库里每个真实 SKILL.md 都必须产出一段 frontmatter 语料，
+  // 数量对不上说明扫描路径或 frontmatter 提取坏了，而不是语料变少了。
+  assert.ok(skillFiles.length >= 2, `仓库应保留真实技能夹具，got ${skillFiles.length}`)
+  assert.equal(frontmatter.length, skillFiles.length, `真实 SKILL.md 全部进入语料，got ${frontmatter.length}/${skillFiles.length}`)
   const corpus = [...collectCorpus(), ...frontmatter, ...trickyCases]
   assert.ok(corpus.length >= 30, `corpus should cover real files, got ${corpus.length}`)
   for (const [index, raw] of corpus.entries()) {

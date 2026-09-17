@@ -20,7 +20,6 @@ window.requests = []
 window.delay = 0
 window.rejectDelete = false
 window.rejectSkillDelete = false
-window.rejectSkillBlock = false
 window.rejectSkillsFolders = false
 window.failedSkill = ''
 window.policyServer = structuredClone(SUBAGENT_TOOL_POLICY_SKELETON)
@@ -46,7 +45,7 @@ window.fetch = async (url, init) => {
     // （顶层字段是服务端真实形状，两条路径都给，页面上的用户根与删除入口才可用）。
     value: { value: { presetTemplate: 'test', writePreset: true, activeSkillsDirs: [skillsRoot], skillsDirExists: { [skillsRoot]: true } }, base: {}, revision: 1 },
     meta: { meta: { ...window.fixture.meta, presets } }, overrides: { overrides: {} }, variables: { variables: {}, enabled: true },
-    promptConfigs: { promptConfigs: [] }, skillCatalog: skills, skillBlocked: blockedSkills, skillFolders,
+    promptConfigs: { promptConfigs: [] }, skillCatalog: skills, skillFolders,
     skillsDirExists: { [skillsRoot]: true },
     activeSkillsDirs: [skillsRoot],
     moduleFacts: { sourceMode: 'explicit', editable: true, effectiveModules: [], declaredModules: [], rowIds: [] },
@@ -73,7 +72,7 @@ window.fetch = async (url, init) => {
   if (endpoint === 'characters-list') value = { characters: [] }
   if (endpoint === 'skill-block') {
     await new Promise((resolve) => setTimeout(resolve, window.delay))
-    if (window.rejectSkillBlock || body.name === window.failedSkill) return new Response(JSON.stringify({ ok: false, message: `failed ${body.name}` }))
+    if (body.name === window.failedSkill) return new Response(JSON.stringify({ ok: false, message: `failed ${body.name}` }))
     // 注册层屏蔽按范围生效：两端各自独立，'none' 表示恢复。
     const scope = body.scope
     skills = skills.map((skill) => skill.name === body.name ? {

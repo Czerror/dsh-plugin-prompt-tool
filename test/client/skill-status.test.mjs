@@ -43,8 +43,11 @@ test('技能状态胶囊显示注册层屏蔽、同名遮蔽与模型/用户调�
   assert.equal(skillStatusLabel(skill({ modelInvocable: false }), zh), zh('skills.status.callable', { audiences: zh('skills.status.audience.user') }))
   assert.equal(skillStatusLabel(skill({ modelInvocable: false, userInvocable: false }), zh), zh('skills.status.notCallable'))
   // 注册层屏蔽优先于 frontmatter 的调用范围：影子候选压掉官方候选。
-  assert.equal(skillStatusLabel(skill({ blocked: true }), zh), zh('skills.status.blocked'))
-  assert.equal(skillStatusLabel(skill({ blocked: true, modelInvocable: false }), zh), zh('skills.status.blocked'))
+  // 文案按端区分：只关一端时技能仍从另一端可用，不能笼统显示「已停用」。
+  assert.equal(skillStatusLabel(skill({ blocked: true, blockedModel: true, blockedUser: true }), zh), zh('skills.status.blocked'))
+  assert.equal(skillStatusLabel(skill({ blocked: true, blockedModel: true }), zh), zh('skills.status.blockedModel'))
+  assert.equal(skillStatusLabel(skill({ blocked: true, blockedUser: true }), zh), zh('skills.status.blockedUser'))
+  assert.equal(skillStatusLabel(skill({ blocked: true, blockedModel: true, blockedUser: true, modelInvocable: false }), zh), zh('skills.status.blocked'))
   assert.equal(skillStatusLabel(skill({ winnerId: 'project-dsh:C:\\repo:.dsh:demo-skill' }), zh), zh('skills.status.shadowed'))
   assert.equal(skillStatusLabel(skill({ valid: false, issue: 'frontmatter 缺少 name' }), zh), zh('skills.status.invalid'))
   assert.equal(skillStatusLabel(skill({ valid: false, winnerId: 'x' }), zh), zh('skills.status.invalid'), '无效技能先报无效')
@@ -73,6 +76,9 @@ test('技能状态筛选区分模型、用户、已停用与全部', () => {
   assert.equal(matchesSkillStatus(modelBlocked, 'user'), true, '只屏蔽模型端：用户仍可调用')
   assert.equal(matchesSkillStatus(userBlocked, 'user'), false, '只屏蔽用户端：用户不可调用')
   assert.equal(matchesSkillStatus(userBlocked, 'model'), true, '只屏蔽用户端：模型仍可调用')
+  // 「已停用」只收两端都关的技能：否则只关一端的技能会同时出现在「用户」与「已停用」两个页签。
+  assert.equal(matchesSkillStatus(modelBlocked, 'blocked'), false)
+  assert.equal(matchesSkillStatus(userBlocked, 'blocked'), false)
   assert.equal(matchesSkillStatus(invalid, 'model'), false)
   assert.equal(matchesSkillStatus(invalid, 'blocked'), false, '无效不等于被屏蔽')
 })

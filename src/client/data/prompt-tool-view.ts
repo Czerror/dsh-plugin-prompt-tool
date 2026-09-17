@@ -74,8 +74,7 @@ export function fieldsFromView(res: BridgeResult<BridgeSettingsView>): Fields {
   const ns = res.ok ? res.value : undefined
   const value = asRecord(ns?.value)
   const base = asRecord(ns?.base)
-  // 技能清单不在 settings：来源、优先级与屏蔽状态来自 describe 事实（注册层扫描结果）。
-  const extraBlocked = res.ok && Array.isArray(res.skillBlocked) ? res.skillBlocked : undefined
+  // 技能清单不在 settings：来源、优先级与按端屏蔽状态都来自 describe 事实（注册层扫描结果）。
   const extraFolders = res.ok && Array.isArray(res.skillFolders) ? res.skillFolders : undefined
   // 技能根与清单都在响应顶层（describe/bootstrap 的扩展字段），descriptor 内的同名键只作兜底。
   const extraDirs = res.ok && Array.isArray(res.activeSkillsDirs) && res.activeSkillsDirs.length > 0
@@ -95,17 +94,8 @@ export function fieldsFromView(res: BridgeResult<BridgeSettingsView>): Fields {
       : readSkillCatalog(value, 'skillCatalog').length > 0
         ? readSkillCatalog(value, 'skillCatalog')
         : readSkillCatalog(base, 'skillCatalog'),
-    skillBlocked: extraBlocked ?? readStringArray(value, 'skillBlocked'),
     skillFolders: extraFolders ?? readStringArray(value, 'skillFolders'),
     skillsRoot: dirs[0] ?? '',
-    skillsRootExists: (() => {
-      const merged: Record<string, unknown> = {}
-      for (const entry of [base, value, res.ok ? { skillsDirExists: res.skillsDirExists } : {}]) {
-        const exists = entry.skillsDirExists
-        if (exists !== null && typeof exists === 'object' && !Array.isArray(exists)) Object.assign(merged, exists)
-      }
-      return dirs.length > 0 && merged[dirs[0]!] === true
-    })(),
     presetOrder: readNumber(value, 'presetOrder', readNumber(base, 'presetOrder', 5)),
     fallbackText: readString(value, 'fallbackText') ?? readString(base, 'fallbackText') ?? '',
     writePreset: readBoolean(value, 'writePreset', readBoolean(base, 'writePreset', true)),
@@ -132,7 +122,6 @@ export function bridgeViewFromBoot(boot: BridgeResult<BridgeSettingsView>): Brid
     activeSkillsDirs: boot.activeSkillsDirs,
     skillsDirExists: boot.skillsDirExists,
     skillCatalog: boot.skillCatalog,
-    skillBlocked: boot.skillBlocked,
     skillFolders: boot.skillFolders,
     templatePreStepCount: boot.templatePreStepCount,
     presetParams: boot.presetParams,

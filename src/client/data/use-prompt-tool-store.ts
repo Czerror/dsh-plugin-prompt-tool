@@ -1031,7 +1031,14 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
   }, [load, showNotice])
 
   /** 注册层屏蔽开关：只写插件状态，不改任何技能文件；scope='none' 表示恢复该技能。 */
+  // 屏蔽开关的并发守卫：scope 由「另一端当前状态 + 本次点击」算出，两次连点若都基于旧状态
+  // 就会互相覆盖（后一次带着过期的一端提交）。这里用即时生效的 ref 挡住忙期内的重复提交，
+  // 同时置起 skillsBusy，让写盘期间界面上的开关与删除按钮一起禁用。
+  const skillBlockRef = useRef(false)
   const setSkillBlocked = useCallback(async (name: string, scope: SkillBlockScope): Promise<boolean> => {
+    if (skillBlockRef.current) return false
+    skillBlockRef.current = true
+    setSkillsBusy(true)
     try {
       const res = await bridgeCall('skillBlock', { name, scope })
       if (!res.ok) {
@@ -1044,6 +1051,9 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     } catch (error) {
       showNotice('error', `技能 ${name} 屏蔽设置失败：` + errorMessage(error))
       return false
+    } finally {
+      skillBlockRef.current = false
+      setSkillsBusy(false)
     }
   }, [load, showNotice])
 
