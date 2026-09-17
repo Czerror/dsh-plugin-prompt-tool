@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -133,5 +133,53 @@ test('listPresets：不可渲染预设标记 renderable=false；包内同名可�
     assert.equal(minimal.renderable, true, '包内同名模板可回退 → 可渲染')
   } finally {
     rmSync(broken, { recursive: true, force: true })
+  }
+})
+
+test('ensurePresetSeed：与宿主内置重名的模板改用安全 id，不产生被遮蔽目录', () => {
+  const safeRoot = mkdtempSync(join(tmpdir(), 'pt-seed-safe-'))
+  try {
+    const occupied = new Set(['standard', 'minimal', 'ptc'])
+    const { created } = ensurePresetSeed(safeRoot, occupied)
+    for (const id of ['pt-standard', 'pt-minimal', 'pt-ptc', 'creative', 'custom']) {
+      assert.ok(created.includes(id), `${id} 应种子化（实际：${created.join(',')}）`)
+      assert.ok(existsSync(join(safeRoot, id, 'preset.yml')), `${id} 目录应存在`)
+    }
+    for (const id of ['standard', 'minimal', 'ptc']) {
+      assert.equal(existsSync(join(safeRoot, id)), false, `${id} 不应生成被遮蔽目录`)
+    }
+  } finally {
+    rmSync(safeRoot, { recursive: true, force: true })
+  }
+})
+
+test('ensurePresetSeed：占用集合缺省（空集）时保持旧语义，模板原名不变', () => {
+  const plainRoot = mkdtempSync(join(tmpdir(), 'pt-seed-plain-'))
+  try {
+    const { created } = ensurePresetSeed(plainRoot)
+    assert.ok(created.includes('standard'), '空占用集合下仍按模板原名种子化')
+    assert.ok(existsSync(join(plainRoot, 'standard', 'preset.yml')))
+  } finally {
+    rmSync(plainRoot, { recursive: true, force: true })
+  }
+})
+
+test('cloneBuiltinPreset：撞名落到安全 id、重复新建递增，未撞名保持原名', () => {
+  const cloneRoot = mkdtempSync(join(tmpdir(), 'pt-clone-safe-'))
+  try {
+    const occupied = new Set(['standard'])
+    const safe = cloneBuiltinPreset('standard', false, cloneRoot, occupied)
+    assert.equal(safe.ok, true)
+    assert.equal(safe.ok && safe.id, 'pt-standard')
+    assert.ok(existsSync(join(cloneRoot, 'pt-standard', 'preset.yml')))
+    // 安全目标已存在：非 autoSuffix 拒绝，autoSuffix 在安全 id 上递增。
+    assert.equal(cloneBuiltinPreset('standard', false, cloneRoot, occupied).ok, false)
+    const second = cloneBuiltinPreset('standard', true, cloneRoot, occupied)
+    assert.equal(second.ok && second.id, 'pt-standard-2')
+    // 未撞名模板不受占用集合影响。
+    const plain = cloneBuiltinPreset('creative', false, cloneRoot, occupied)
+    assert.equal(plain.ok && plain.id, 'creative')
+  } finally {
+    rmSync(cloneRoot, { recursive: true, force: true })
   }
 })

@@ -3,6 +3,7 @@ import type { PromptConfigDraft } from '../prompt-tool-types.ts'
 import type { BridgeResult, BridgeSettingsView } from './bridge-transport.ts'
 import { EMPTY_FIELDS, type Fields, type SkillCatalogEntry } from './prompt-tool-fields.ts'
 import { readParamOverridesPatch } from './param-overrides.ts'
+import { DEFAULT_PRESET_ID } from '../../shared/preset-ids.ts'
 const asRecord = (value: unknown): Record<string, unknown> =>
   value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
 
@@ -96,7 +97,7 @@ export function fieldsFromView(res: BridgeResult<BridgeSettingsView>): Fields {
     presetOrder: readNumber(value, 'presetOrder', readNumber(base, 'presetOrder', 5)),
     fallbackText: readString(value, 'fallbackText') ?? readString(base, 'fallbackText') ?? '',
     writePreset: readBoolean(value, 'writePreset', readBoolean(base, 'writePreset', true)),
-    presetTemplate: readString(value, 'presetTemplate') ?? readString(base, 'presetTemplate') ?? 'standard',
+    presetTemplate: readString(value, 'presetTemplate') ?? readString(base, 'presetTemplate') ?? DEFAULT_PRESET_ID,
     promptConfigs: value.promptConfigs !== undefined
       ? readPromptConfigs(value, 'promptConfigs')
       : readPromptConfigs(base, 'promptConfigs'),

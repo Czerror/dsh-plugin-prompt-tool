@@ -42,6 +42,25 @@ UI fields
 该目录不只是输出位置，也是预设定义的读取根；不存在对应定义时回退包内模板，
 不读取其他部署根中的同名用户副本。
 
+### 预设 id 安全化（2026-09-18）
+
+宿主的 agent-presets 按「shipped（内置）根 → 配置根 → 用户根」顺序扫描，**靠前的根赢同名 id**：用户预设根里
+与内置预设（`cordis`/`minimal`/`ptc`/`standard`）同名的目录永远不会被挂载，其上的注入与定制静默失效。
+插件据此做三件事：
+
+- **判据与探测**（`host/preset-id-safety.ts`）：`safePresetId(id, occupied)` 命中占用集合即加 `pt-` 前缀；
+  `templateNameFor(id, hasTemplate)` 把安全 id 反查回包内模板名（包内精确命中优先 → 剥一次前缀 → 原样）。
+  占用集合以宿主 `agentPresets.settings()` 的 `trust === 'system'` 为准，服务不可用时用
+  `profiles/**/node_modules/@deepseek-ai/dsh-agent-presets/presets` 的目录名兜底，两者都不可用则不避让（退回旧行为）。
+  **只读 id 名，不读其他根的预设内容**——上一段「不读取其他部署根」的不变量保持不变。
+- **生成路径**：`ensurePresetSeed`（首次种子化）与 `cloneBuiltinPreset`（工作台新建）在模板名被占用时落成
+  `pt-<模板名>`；`writePreset` 的输出目录命中占用集合时 fail loud，不静默产出永不挂载的目录。
+- **激活路径**：runtime 的 `presetTemplate` 在首次加载、settings 变化与工作台切换时归一化，命中占用即改写为
+  安全 id，并写回插件 settings + 同步宿主 `agent-presets.default` + 重建；模板名与输出目录名经
+  `writePreset({ presetTemplate, outputId })` 分离，`pt-standard` 输出仍渲染包内 `standard` 模板。
+
+因此默认激活预设 id 是 `pt-standard`（`shared/preset-ids.ts#DEFAULT_PRESET_ID`），不再是会被遮蔽的 `standard`。
+
 ## 3. 空值语义（统一规则）
 
 `savePresetParams` 对空值统一处理（2026-08-25 起）：

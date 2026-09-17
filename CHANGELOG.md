@@ -2,6 +2,29 @@
 
 ## [未发布] - 2026-09-17
 
+### 预设 id 安全化：与宿主内置预设重名时自动落到 `pt-` 前缀（2026-09-18）
+
+插件生成的用户预设不再可能落在「被宿主内置预设遮蔽、永远不会被挂载」的 id 上：
+
+- **根因**：宿主 agent-presets 的发现根顺序是「shipped（内置）根 → 配置根 → 用户根」，**靠前的根赢同名 id**，
+  用户预设根里与内置同名的目录永远不会被挂载。本机的 `standard`/`ptc`/`minimal` 三个目录正因此长期失效——
+  连角色卡的 4 条 `chara-ponytail-*` 注入配置一起静默失效（解压最近 24 个会话取证：`system/message` 全无注入正文）。
+- **默认值**：激活预设默认 id 从 `standard` 改为 `pt-standard`（插件 config 与客户端 Fields 默认值同源，
+  `shared/preset-ids.ts#DEFAULT_PRESET_ID`）。
+- **生成路径**：首次种子化（`ensurePresetSeed`）与工作台「新建」（`cloneBuiltinPreset`）在模板名被内置占用时
+  生成 `pt-<模板名>`，bridge 返回实际 id 供界面显示；`writePreset` 的输出目录命中占用集合时 **fail loud**，
+  不再静默产出永不挂载的目录。
+- **激活路径**：runtime 的 `presetTemplate` 在首次加载、settings 变化与工作台切换时归一化；命中占用即改写为
+  安全 id，写回插件 settings、同步宿主 `agent-presets.default` 并重建生成物。
+- **模板名与输出名分离**：`writePreset` 早已支持 `outputId`，本轮才真正用上——`pt-standard` 输出仍渲染包内
+  `standard` 模板，包内模板目录与既有用例不受影响。
+- **占用探测**：以宿主 `agentPresets.settings()` 的 `trust === 'system'` 为准；服务不可用时用
+  `profiles/**/node_modules/@deepseek-ai/dsh-agent-presets/presets` 的目录名兜底；两者都不可用则不避让（旧行为）。
+  只读 id 名，不读其他部署根的预设内容。
+- **测试**：新增 `test/host/preset-id-safety.test.mjs`；`user-presets` / `write-preset` 各补行为用例
+  （种子化与新建落到安全名、空占用集合时行为不变、输出撞名不写盘、模板名与输出名分离）。
+- **未做**：工作台遮蔽标记与存量撞名目录的自动迁移/清理（用户明确不要标记；存量目录另行确认后清理）。
+
 ### 技能停用改为文件层调用策略（2026-09-18）
 
 「技能停用」从注册层屏蔽改为改写技能文件自己的调用策略键——**因为注册层屏蔽在本插件的真实装配下不生效**：

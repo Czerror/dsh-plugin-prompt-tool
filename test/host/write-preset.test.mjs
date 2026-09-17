@@ -997,3 +997,30 @@ test('writePreset 开启时不受影响：预设目录正常生成', () => {
   assert.equal(rows.length > 0 && rows.every((line) => line.trim() === '[]'), false,
     '重新开启后组合应恢复生成（不再停留在关闭期的空组合）')
 })
+
+test('writePreset：输出目录命中内置占用集合时 fail loud 且不写盘', () => {
+  const outputRoot = mkdtempSync(join(home, 'occupied-'))
+  assert.throws(
+    () => writePreset('', {
+      ...makeOptions(outputRoot),
+      presetTemplate: FIXTURE_PRESET_ID,
+      outputId: 'standard',
+      occupiedPresetIds: new Set(['standard']),
+    }),
+    /永远不会被挂载/,
+  )
+  assert.equal(existsSync(join(outputRoot, 'standard')), false, '撞名输出不得落盘')
+})
+
+test('writePreset：模板名与输出目录名分离，安全 id 输出仍渲染包内模板', () => {
+  const outputRoot = mkdtempSync(join(home, 'split-'))
+  writePreset('', {
+    ...makeOptions(outputRoot),
+    presetTemplate: FIXTURE_PRESET_ID,
+    outputId: 'pt-safe',
+    occupiedPresetIds: new Set(['standard']),
+  })
+  const composition = readFileSync(join(outputRoot, 'pt-safe', 'agent.cordis.yml'), 'utf8')
+  assert.match(composition, /configsDir: \.\.\/pt-safe\/prompt-configs/, '引擎配置目录应指向输出目录自身')
+  assert.equal(existsSync(join(outputRoot, 'standard')), false, '模板名不会被当成输出目录')
+})

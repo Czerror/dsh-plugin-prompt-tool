@@ -2,6 +2,7 @@
 import z from '@deepseek-ai/schemastery'
 import type { PromptConfigSpec } from './host/prompt-configs.ts'
 import { DEFAULT_PRESET_ORDER } from './host/paths.ts'
+import { DEFAULT_PRESET_ID } from './shared/preset-ids.ts'
 import type { PresetWriterParams } from './shared/engine-params.ts'
 import type { SkillCatalogEntry } from './shared/skills.ts'
 
@@ -13,7 +14,7 @@ export { PARAM_KEYS } from './shared/param-keys.ts'
 export interface Config {
   /** 是否生成注入预设（默认 true）。 */
   writePreset: boolean
-  /** 预设模板名（默认 standard）。 */
+  /** 预设模板名（默认 pt-standard：与宿主内置 standard 同名的用户目录会被遮蔽）。 */
   presetTemplate: string
   /** 生成 preset 的显示顺序。 */
   presetOrder: number
@@ -25,7 +26,7 @@ export interface Config {
 // 框架在插件加载时校验并填充默认值。
 export const Config: z<Config> = z.object({
   writePreset: z.boolean().default(true),
-  presetTemplate: z.string().default('standard'),
+  presetTemplate: z.string().default(DEFAULT_PRESET_ID),
   presetOrder: z.natural().default(DEFAULT_PRESET_ORDER),
   fallbackText: z.string().default(''),
 })
@@ -73,7 +74,7 @@ export const PromptSettingsSchema: z<PromptSettings> = z.object({
   presetOrder: z.natural().default(DEFAULT_PRESET_ORDER),
   fallbackText: z.string().default(''),
   writePreset: z.boolean().default(true),
-  presetTemplate: z.string().default('standard'),
+  presetTemplate: z.string().default(DEFAULT_PRESET_ID),
 })
 
 /**

@@ -19,6 +19,7 @@ import { DEFAULT_PRESET_DIR, DSH_HOME } from './paths.ts'
 import { engineCapability, engineRecipe, isEngineCapabilityPresent, type ModuleSourceMode, type PresetModuleFacts } from '../shared/engine-capabilities.ts'
 import { buildEngineModuleParams, engineParamList, normalizeMaxDepth } from '../shared/engine-params.ts'
 import { personaRowConfig, readPersonaSpec, type PersonaSpec } from '../shared/persona-section.ts'
+import { EMPTY_OCCUPIED_PRESET_IDS, safePresetId, type OccupiedPresetIds } from './preset-id-safety.ts'
 
 export interface PresetSpec {
   id: string
@@ -361,17 +362,20 @@ export function writePluginState(state: PromptToolState): void {
 }
 
 /** 首次启动种子化：把插件目录全部内置模板复制到预设根（state.seeded 后不再自动补）。
- *  用户删除的预设不会自动复活；升级新增的模板用「新建」按需复制。 */
-export function ensurePresetSeed(root = userPresetsDir()): { created: string[] } {
+ *  用户删除的预设不会自动复活；升级新增的模板用「新建」按需复制。
+ *  与宿主内置预设重名的模板改用安全 id（`standard` → `pt-standard`）：同名用户目录会被宿主
+ *  shipped 根遮蔽、永远不会被挂载（见 preset-id-safety.ts）。 */
+export function ensurePresetSeed(root = userPresetsDir(), occupied: OccupiedPresetIds = EMPTY_OCCUPIED_PRESET_IDS): { created: string[] } {
   const created: string[] = []
   try {
     mkdirSync(root, { recursive: true })
     for (const entry of readdirSync(packagePresetDir(), { withFileTypes: true })) {
       if (!entry.isDirectory() || entry.name.startsWith('.')) continue
-      const target = join(root, entry.name)
+      const targetId = safePresetId(entry.name, occupied)
+      const target = join(root, targetId)
       if (existsSync(target)) continue
       cpSync(join(packagePresetDir(), entry.name), target, { recursive: true })
-      created.push(entry.name)
+      created.push(targetId)
     }
     writePluginState({ ...readPluginState(), seeded: true })
   } catch {
@@ -381,8 +385,9 @@ export function ensurePresetSeed(root = userPresetsDir()): { created: string[] }
 }
 
 /** 从插件目录复制内置预设到预设根（新建/还原）。
+ *  与宿主内置预设重名时改用安全 id（`standard` → `pt-standard`），避免生成被遮蔽的目录；
  *  autoSuffix=true（自定义预设入口）时同名自动递增（custom → custom-2 → …）；否则同名拒绝。 */
-export function cloneBuiltinPreset(id: string, autoSuffix = false, presetRoot = userPresetsDir()): { ok: true; id: string } | { ok: false; message: string } {
+export function cloneBuiltinPreset(id: string, autoSuffix = false, presetRoot = userPresetsDir(), occupied: OccupiedPresetIds = EMPTY_OCCUPIED_PRESET_IDS): { ok: true; id: string } | { ok: false; message: string } {
   if (typeof id !== 'string' || id.length === 0 || id === '.' || id === '..'
     || id.includes('/') || id.includes('\\')) {
     return { ok: false, message: `非法预设 id：${id}` }
@@ -391,14 +396,15 @@ export function cloneBuiltinPreset(id: string, autoSuffix = false, presetRoot = 
   if (builtin === undefined) {
     return { ok: false, message: `预设 ${id} 不是包内置预设` }
   }
-  let targetId = id
+  const baseId = safePresetId(id, occupied)
+  let targetId = baseId
   let target = join(presetRoot, targetId)
   if (existsSync(target)) {
     if (!autoSuffix) {
-      return { ok: false, message: `用户目录已存在同名预设 ${id}，请先删除再新建` }
+      return { ok: false, message: `用户目录已存在同名预设 ${targetId}，请先删除再新建` }
     }
     for (let suffix = 2; ; suffix++) {
-      targetId = `${id}-${suffix}`
+      targetId = `${baseId}-${suffix}`
       target = join(presetRoot, targetId)
       if (!existsSync(target)) break
     }

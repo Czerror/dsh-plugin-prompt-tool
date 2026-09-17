@@ -516,6 +516,8 @@ export function registerSettingsBridge(
   afterPresetPackageImport?: (id: string) => void,
   /** 能力/recipe 原子创建后重建回调；抛错时调用方恢复 preset.yml。 */
   afterCapabilityChange?: () => void,
+  /** 被宿主其他预设根占用的预设 id（内置预设）：新建/复制选目标 id 时避让，缺省 = 不避让。 */
+  getOccupiedPresetIds?: () => ReadonlySet<string>,
 ): { invalidateDescriptor: () => void } {
   let invalidateCachedDescriptor: () => void = () => {}
   let capabilityQueue: Promise<void> = Promise.resolve()
@@ -1900,7 +1902,7 @@ export function registerSettingsBridge(
               writeBridgeJson(res, 400, { ok: false, code: 'preset-clone-rejected', message: '缺少预设 id' })
               return
             }
-            const result = cloneBuiltinPreset(id, record.autoSuffix === true)
+            const result = cloneBuiltinPreset(id, record.autoSuffix === true, undefined, getOccupiedPresetIds?.())
             if (!result.ok) {
               writeBridgeJson(res, 400, { ok: false, code: 'preset-clone-rejected', message: result.message })
               return
