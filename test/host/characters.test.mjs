@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, 
 import { deflateSync } from 'node:zlib'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { parse as parseYaml } from 'yaml'
+import { parse as parseYaml, stringify as stringifyYaml } from 'yaml'
 
 // 隔离 DSH_HOME：角色卡库操作全部走显式 presetRoot 参数。
 const home = mkdtempSync(join(tmpdir(), 'pt-chara-home-'))
@@ -13,9 +13,15 @@ const {
   appendCharacterMemory,
   appendMemoryFile,
   applyCharacterToPreset,
+  CHARACTER_MODULES_KEY,
+  characterModuleStillNeeded,
+  declaredCharacterModules,
   importCharacterCard,
   importCharacterCardFile,
   listCharacterCards,
+  recordedCharacterModules,
+  removeCharacterFromPreset,
+  requiredCharacterModules,
   syncImportedCharacterMemory,
 } = await import('../../lib/index.mjs')
 
@@ -75,7 +81,11 @@ test('importCharacterCard + applyCharacterToPreset：卡入库并导入预设（
   assert.deepEqual(preset.modules, [
     'prompt-config-engine', 'character-tools', 'world-book-tools',
     'session-var-tools', 'tool-config-engine', 'tool-filter',
-  ], '角色卡应用只补 ST 管理工具，不带入其他引擎能力')
+  ], 'ST 卡按自身 modules 声明装配（声明优先），行为与改造前一致')
+  // 模块来源记录：预设原本只有 prompt-config-engine，其余五个是这张卡引入的（移除时据此回退）。
+  assert.deepEqual(preset.meta.characterModules[cardId], [
+    'character-tools', 'world-book-tools', 'session-var-tools', 'tool-config-engine', 'tool-filter',
+  ], 'apply 记录由该卡引入的模块')
 
   const listed = listCharacterCards(root, template)
   assert.equal(listed.length, 1)
@@ -233,6 +243,227 @@ test('importCharacterCardFile：PNG 解压输出超限（zip bomb）干净失败
     rmSync(cardRoot, { recursive: true, force: true })
     rmSync(file, { force: true })
   }
+})
+
+// ── 模块按需装配与回退（手写「类角色卡」：只放 converted.yml，与 ponytail 卡同一路径）──────────
+
+/** 手写卡：不经 ST 转换，直接写 converted.yml（PresetSpec 片段）。 */
+function writeManualCard(root, id, spec) {
+  const dir = join(root, '.characters', id)
+  mkdirSync(dir, { recursive: true })
+  writeFileSync(join(dir, 'converted.yml'), stringifyYaml(spec, { lineWidth: 0 }), 'utf8')
+}
+
+/** 独立预设根：modules 与 params 由用例指定，用于观察按需追加与回退。 */
+function makeRoot({ modules = ['prompt-config-engine'], params } = {}) {
+  const dir = mkdtempSync(join(tmpdir(), 'pt-chara-mod-'))
+  const template = 'anchored'
+  const presetDir = join(dir, template)
+  mkdirSync(presetDir, { recursive: true })
+  const lines = [
+    'id: anchored',
+    'name: 测试预设',
+    'version: 1.0.0',
+    'engineCompat: ">=0.4.2"',
+    `modules: [${modules.join(', ')}]`,
+  ]
+  if (params !== undefined) {
+    lines.push('params:')
+    for (const [key, value] of Object.entries(params)) lines.push(`  ${key}: ${value}`)
+  }
+  lines.push('promptConfigs: []', '')
+  writeFileSync(join(presetDir, 'preset.yml'), lines.join('\n'), 'utf8')
+  return {
+    dir,
+    template,
+    read: () => parseYaml(readFileSync(join(presetDir, 'preset.yml'), 'utf8')),
+  }
+}
+
+const manual = (id, extra = {}) => ({
+  id,
+  name: `${id} 卡`,
+  version: '1.0.0',
+  engineCompat: '>=0.4.2',
+  ...extra,
+})
+const staticConfig = (id, text) => ({ id, strategy: 'static', layer: 'system-section', order: 200, text })
+
+test('手写卡未声明 modules：只补必需项 prompt-config-engine，并记录来源', () => {
+  const root = makeRoot({ modules: ['tool-fs'] })
+  try {
+    writeManualCard(root.dir, 'ponytail', manual('ponytail', {
+      promptConfigs: [staticConfig('ponytail-full', '规则正文')],
+    }))
+    const applied = applyCharacterToPreset(root.dir, root.template, 'ponytail')
+    assert.equal(applied.ok, true)
+    const preset = root.read()
+    assert.deepEqual(preset.modules, ['tool-fs', 'prompt-config-engine'],
+      '纯文本卡只补必需引擎，不引入用不到的工具模块')
+    assert.deepEqual(preset.meta.characterModules.ponytail, ['prompt-config-engine'])
+  } finally {
+    rmSync(root.dir, { recursive: true, force: true })
+  }
+})
+
+test('手写卡声明 modules：按声明追加，必需项去重', () => {
+  const root = makeRoot({ modules: ['prompt-config-engine'] })
+  try {
+    writeManualCard(root.dir, 'ponytail', manual('ponytail', {
+      modules: ['session-var-tools'],
+      promptConfigs: [staticConfig('ponytail-full', '规则正文')],
+    }))
+    applyCharacterToPreset(root.dir, root.template, 'ponytail')
+    const preset = root.read()
+    assert.deepEqual(preset.modules, ['prompt-config-engine', 'session-var-tools'],
+      '声明优先，已存在的必需项不重复追加')
+    assert.deepEqual(preset.meta.characterModules.ponytail, ['session-var-tools'])
+  } finally {
+    rmSync(root.dir, { recursive: true, force: true })
+  }
+})
+
+test('手写卡带 world-book 策略配置：自动补 world-book-tools', () => {
+  const root = makeRoot({ modules: ['prompt-config-engine'] })
+  try {
+    writeManualCard(root.dir, 'lorecard', manual('lorecard', {
+      promptConfigs: [{ id: 'lore', strategy: 'world-book', layer: 'pre-step', order: 1, text: '关键词条目' }],
+    }))
+    applyCharacterToPreset(root.dir, root.template, 'lorecard')
+    const preset = root.read()
+    assert.deepEqual(preset.modules, ['prompt-config-engine', 'world-book-tools'])
+    assert.deepEqual(preset.meta.characterModules.lorecard, ['world-book-tools'])
+  } finally {
+    rmSync(root.dir, { recursive: true, force: true })
+  }
+})
+
+test('移除：回退由本卡引入的模块，并清记录与导入标记', () => {
+  const root = makeRoot({ modules: ['tool-fs'] })
+  try {
+    writeManualCard(root.dir, 'ponytail', manual('ponytail', {
+      modules: ['session-var-tools', 'tool-filter'],
+      promptConfigs: [staticConfig('ponytail-full', '规则正文')],
+    }))
+    applyCharacterToPreset(root.dir, root.template, 'ponytail')
+    assert.deepEqual(root.read().modules,
+      ['tool-fs', 'session-var-tools', 'tool-filter', 'prompt-config-engine'])
+
+    const removed = removeCharacterFromPreset(root.dir, root.template, 'ponytail')
+    assert.equal(removed.ok, true)
+    assert.equal(removed.count, 1)
+    const preset = root.read()
+    assert.deepEqual(preset.modules, ['tool-fs'], '三个由卡引入的模块全部回退')
+    assert.equal(preset.meta.characterModules, undefined, '记录随卡清理，不留空对象')
+    assert.deepEqual(preset.meta.importedCharacters, [])
+    assert.deepEqual(preset.promptConfigs, [])
+  } finally {
+    rmSync(root.dir, { recursive: true, force: true })
+  }
+})
+
+test('移除：另一张已导入卡也声明同一模块时不夺走', () => {
+  const root = makeRoot({ modules: ['prompt-config-engine'] })
+  try {
+    for (const id of ['card-a', 'card-b']) {
+      writeManualCard(root.dir, id, manual(id, {
+        modules: ['session-var-tools'],
+        promptConfigs: [staticConfig(`${id}-cfg`, `${id} 正文`)],
+      }))
+      applyCharacterToPreset(root.dir, root.template, id)
+    }
+    // 第二张卡的模块已在磁盘上，差集为空 → 不进记录，但它的 converted.yml 仍声明该模块。
+    assert.deepEqual(root.read().meta.characterModules, { 'card-a': ['session-var-tools'] })
+
+    removeCharacterFromPreset(root.dir, root.template, 'card-a')
+    assert.ok(root.read().modules.includes('session-var-tools'), '另一张卡仍声明该模块 → 保留')
+
+    // 第二张卡没有引入记录（模块不是它加的）→ 不回退，宁可留模块也不误删。
+    removeCharacterFromPreset(root.dir, root.template, 'card-b')
+    assert.ok(root.read().modules.includes('session-var-tools'), '无引入记录的卡不回退模块')
+  } finally {
+    rmSync(root.dir, { recursive: true, force: true })
+  }
+})
+
+test('移除：预设自带模块与无记录的老卡都不回退', () => {
+  const root = makeRoot({ modules: ['prompt-config-engine', 'character-tools'] })
+  try {
+    writeManualCard(root.dir, 'legacy', manual('legacy', {
+      modules: ['character-tools'],
+      promptConfigs: [staticConfig('legacy-cfg', '老卡正文')],
+    }))
+    applyCharacterToPreset(root.dir, root.template, 'legacy')
+    assert.equal(root.read().meta.characterModules, undefined, '差集为空 → 不产生引入记录')
+    removeCharacterFromPreset(root.dir, root.template, 'legacy')
+    assert.deepEqual(root.read().modules, ['prompt-config-engine', 'character-tools'],
+      '预设自带模块永不被回退')
+  } finally {
+    rmSync(root.dir, { recursive: true, force: true })
+  }
+})
+
+test('移除：params 里仍有工具名单时保留 tool-filter', () => {
+  const root = makeRoot({ modules: ['prompt-config-engine'], params: { toolFilterDeny: 'web_search' } })
+  try {
+    writeManualCard(root.dir, 'filtercard', manual('filtercard', {
+      modules: ['tool-filter'],
+      promptConfigs: [staticConfig('filtercard-cfg', '名单卡正文')],
+    }))
+    applyCharacterToPreset(root.dir, root.template, 'filtercard')
+    assert.ok(root.read().modules.includes('tool-filter'))
+    removeCharacterFromPreset(root.dir, root.template, 'filtercard')
+    assert.ok(root.read().modules.includes('tool-filter'), '预设自己设的名单仍需该模块 → 保留')
+  } finally {
+    rmSync(root.dir, { recursive: true, force: true })
+  }
+})
+
+test('重复 apply 与重复 remove 都幂等', () => {
+  const root = makeRoot({ modules: ['tool-fs'] })
+  try {
+    writeManualCard(root.dir, 'ponytail', manual('ponytail', {
+      promptConfigs: [staticConfig('ponytail-full', '规则正文')],
+    }))
+    applyCharacterToPreset(root.dir, root.template, 'ponytail')
+    applyCharacterToPreset(root.dir, root.template, 'ponytail')
+    const afterApply = root.read()
+    assert.deepEqual(afterApply.modules, ['tool-fs', 'prompt-config-engine'], '模块不重复追加')
+    assert.deepEqual(afterApply.meta.characterModules.ponytail, ['prompt-config-engine'], '记录不重复')
+    assert.equal(afterApply.promptConfigs.length, 1, '配置不重复并入')
+
+    assert.equal(removeCharacterFromPreset(root.dir, root.template, 'ponytail').count, 1)
+    const afterRemove = readFileSync(join(root.dir, root.template, 'preset.yml'), 'utf8')
+    const second = removeCharacterFromPreset(root.dir, root.template, 'ponytail')
+    assert.equal(second.ok, true)
+    assert.equal(second.count, 0, '再次移除没有可删配置')
+    assert.equal(readFileSync(join(root.dir, root.template, 'preset.yml'), 'utf8'), afterRemove,
+      '第二次移除不改动预设文件')
+  } finally {
+    rmSync(root.dir, { recursive: true, force: true })
+  }
+})
+
+test('判据纯函数：记录容错、未知模块保守保留、消费者判据', () => {
+  assert.deepEqual(recordedCharacterModules(undefined), {})
+  assert.deepEqual(recordedCharacterModules({ [CHARACTER_MODULES_KEY]: 'x' }), {})
+  assert.deepEqual(recordedCharacterModules({ [CHARACTER_MODULES_KEY]: { a: ['m1', 2, '', 'm1'], b: [] } }),
+    { a: ['m1'] }, '非法项丢弃、重复去重、空记录不返回')
+  assert.deepEqual(declaredCharacterModules({ id: 'x', name: 'x', modules: ['a', '', 3, 'a'] }), ['a'])
+  assert.deepEqual(requiredCharacterModules([{ strategy: 'world-book' }]),
+    ['prompt-config-engine', 'world-book-tools'])
+  assert.deepEqual(requiredCharacterModules([{ strategy: 'static' }]), ['prompt-config-engine'])
+
+  const empty = { configs: [], params: {}, customTools: false, importedCharacters: [] }
+  assert.equal(characterModuleStillNeeded('prompt-config-engine', empty), false)
+  assert.equal(characterModuleStillNeeded('prompt-config-engine', { ...empty, configs: [{ id: 'x' }] }), true)
+  assert.equal(characterModuleStillNeeded('tool-filter', { ...empty, params: { toolFilterAllow: [] } }), false)
+  assert.equal(characterModuleStillNeeded('tool-filter', { ...empty, params: { toolFilterAllow: ['read'] } }), true)
+  assert.equal(characterModuleStillNeeded('tool-filter', { ...empty, params: { toolFilterDeny: '  ' } }), false)
+  assert.equal(characterModuleStillNeeded('session-var-tools',
+    { ...empty, configs: [{ id: 'x', params: { stMacros: true } }] }), true)
+  assert.equal(characterModuleStillNeeded('tool-config-engine', { ...empty, customTools: true }), true)
+  assert.equal(characterModuleStillNeeded('unknown-module', empty), true, '未知模块保守保留')
 })
 
 

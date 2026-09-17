@@ -2,6 +2,24 @@
 
 ## [未发布] - 2026-09-17
 
+### 角色卡模块按需装配与回退（2026-09-18）
+
+把「类角色卡」注入任意预设时不再固定追加四件套模块，改为按卡的实际需要装配，并让移除对称回退：
+
+- **装配由卡与内容决定**：卡顶层 `modules` 声明优先（ST 转换产物自带六件套声明，ST 卡行为不变）；未声明时只补必需项——
+  `prompt-config-engine` 始终补齐（缺失会让 `promptConfigs` 静默失效，此前无人检查），卡含 `world-book` 策略配置时补
+  `world-book-tools`。手写纯文本卡（例如 ponytail 规则卡）因此只得到 `prompt-config-engine`，不再被塞进
+  `session-var-tools` / `tool-config-engine` / `tool-filter` 等用不到的模块。
+- **来源可追溯**：应用时把「本次由该卡新增的模块」差集写进 `meta.characterModules[<卡 id>]`，重复应用与已有记录求并集；
+  预设原本就有的模块不会被记成卡引入的。
+- **移除正确回退**：按记录回退模块，回退前检查消费者——其他已导入卡仍引用（各自的记录或 `converted.yml` 声明），
+  或预设内容仍需要（还有 `promptConfigs` / `world-book` 配置 / `params.stMacros` / 顶层 `customTools` /
+  非空 `toolFilterAllow|Deny`）时保留。改造前应用过的老卡没有记录，移除时不回退，宁可留下模块也不误删。
+- **ST 导入路径不变**：`convertStToPreset` 仍按 ST 语义写入自己的模块清单（宏与状态变量确实需要变量通道），
+  两条路径的差异见 `docs/SillyTavern.md`。
+- **回归**：`test/host/characters.test.mjs` 新增 9 条用例（纯文本卡零追加、声明优先、世界书自动补、回退与记录清理、
+  两张卡共用模块不夺走、预设自带模块不动、`tool-filter` 消费者保护、重复应用与移除幂等、判据纯函数）。
+
 ### 第四轮审查修复（2026-09-18）
 
 对第三轮改动做完整审查（含 13 组变异实验 + AST 级断言检查）后的修复：

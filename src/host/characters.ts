@@ -44,6 +44,110 @@ function buildCharacterMemoryEntry(spec: PresetSpec, memory: string): Record<str
   })
 }
 
+/** meta 下记录「每张卡引入了哪些模块」的键（移除时按此回退）。 */
+export const CHARACTER_MODULES_KEY = 'characterModules'
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+}
+
+/** 读取 preset.yml `meta.modules` 之外的模块来源记录；非法形状一律视为无记录（老卡与手改文件不报错）。 */
+export function recordedCharacterModules(meta: unknown): Record<string, string[]> {
+  if (!isRecord(meta)) return {}
+  const raw = meta[CHARACTER_MODULES_KEY]
+  if (!isRecord(raw)) return {}
+  const out: Record<string, string[]> = {}
+  for (const [cardId, value] of Object.entries(raw)) {
+    if (!Array.isArray(value)) continue
+    const modules = [...new Set(value.filter((item): item is string => typeof item === 'string' && item.length > 0))]
+    if (modules.length > 0) out[cardId] = modules
+  }
+  return out
+}
+
+/** 卡自身声明的模块（声明优先：ST 转换产物自带六件套声明，行为因此不变）。
+ *  只丢弃非字符串与空串；模块名合法性仍由 appendPresetModules 校验（非法名 fail loud）。 */
+export function declaredCharacterModules(spec: PresetSpec): string[] {
+  const list = Array.isArray(spec.modules) ? spec.modules : []
+  return [...new Set(list.filter((item): item is string => typeof item === 'string' && item.length > 0))]
+}
+
+/** 必需模块：`prompt-config-engine` 缺失会让 promptConfigs 静默失效，因此始终补齐；
+ *  卡内含 world-book 策略配置时另需 `world-book-tools`（与旧实现同判据）。 */
+export function requiredCharacterModules(configs: readonly unknown[]): string[] {
+  const required = ['prompt-config-engine']
+  if (configs.some((config) => isRecord(config) && config.strategy === 'world-book')) required.push('world-book-tools')
+  return required
+}
+
+/** 移除一张卡之后，某个模块是否仍被预设内容或其他卡需要（需要则不回退）。 */
+export interface CharacterModuleContext {
+  /** 移除本卡前缀配置之后的提示词配置。 */
+  configs: readonly Record<string, unknown>[]
+  /** 移除本卡声明的 params 键之后的预设参数。 */
+  params: Record<string, unknown>
+  /** 预设顶层是否仍有自定义工具。 */
+  customTools: boolean
+  /** 移除本卡之后仍标记为已导入的角色卡 id。 */
+  importedCharacters: readonly string[]
+}
+
+/** `string | string[]` 形态的引擎参数是否非空（空串 / 空列表 = 删键语义，视为未设置）。 */
+function nonEmptyParam(value: unknown): boolean {
+  if (Array.isArray(value)) return value.length > 0
+  if (typeof value === 'string') return value.trim().length > 0
+  return value !== undefined && value !== null
+}
+
+/** 模块的消费者判据。未知模块保守保留：宁可留一个无消费者的模块，也不误删用户或引擎要用的装配。 */
+export function characterModuleStillNeeded(module: string, context: CharacterModuleContext): boolean {
+  switch (module) {
+    case 'prompt-config-engine':
+      return context.configs.length > 0
+    case 'world-book-tools':
+      return context.configs.some((config) => config.strategy === 'world-book')
+    case 'session-var-tools':
+      return context.configs.some((config) => isRecord(config.params) && config.params.stMacros === true)
+    case 'tool-config-engine':
+      return context.customTools
+    case 'tool-filter':
+      return nonEmptyParam(context.params.toolFilterAllow) || nonEmptyParam(context.params.toolFilterDeny)
+    case 'character-tools':
+      return context.importedCharacters.length > 0
+        || context.configs.some((config) => String(config.id ?? '').startsWith('chara-'))
+    default:
+      return true
+  }
+}
+
+/** 其他已导入卡「引入过」或「声明过」的模块：移除本卡时不得夺走别人要用的模块。
+ *  声明这一路必须读卡库的 converted.yml——第二张卡声明同一模块时差集为空、不会留下引入记录。 */
+function modulesClaimedByOtherCards(
+  presetRoot: string,
+  importedCards: readonly string[],
+  meta: unknown,
+  cardId: string,
+): Set<string> {
+  const claimed = new Set<string>()
+  for (const [id, modules] of Object.entries(recordedCharacterModules(meta))) {
+    if (id === cardId) continue
+    for (const module of modules) claimed.add(module)
+  }
+  for (const id of importedCards) {
+    if (id === cardId || !validCardId(id)) continue
+    const spec = loadConverted(cardDir(presetRoot, id))
+    if (spec === undefined) continue
+    for (const module of declaredCharacterModules(spec)) claimed.add(module)
+  }
+  return claimed
+}
+
+/** 读 preset.yml 顶层 modules（非数组或含非字符串项时按已过滤结果处理）。 */
+function readPresetModules(doc: ReturnType<typeof parseDocument>): string[] {
+  const source = doc.toJS() as { modules?: unknown }
+  return Array.isArray(source.modules) ? source.modules.filter((item): item is string => typeof item === 'string') : []
+}
+
 /** 角色卡记忆变更后同步已导入预设的 chara-<id>-memory 注入条目
  *  （world_book note 写入卡记忆后调用；未导入当前预设的卡返回 synced=false）。 */
 export function syncImportedCharacterMemory(
@@ -475,13 +579,19 @@ export function applyCharacterToPreset(
         ...added,
         ...(memoryEntry !== undefined ? [{ ...memoryEntry, id: memoryId }] : []),
       ])
-      appendPresetModules(doc, [
-        'character-tools',
-        ...(merged.some((config) => config.strategy === 'world-book') ? ['world-book-tools'] : []),
-        'session-var-tools',
-        'tool-config-engine',
-        'tool-filter',
-      ])
+      // 模块按卡的实际需要装配：卡声明优先（ST 产物自带六件套声明，行为不变），必需项兜底
+      // （prompt-config-engine 缺失会让 promptConfigs 静默失效）。只把「追加前没有、追加后
+      // 有」的差集写进 meta.characterModules[cardId]，移除时按此回退，不误删预设自带模块。
+      const before = readPresetModules(doc)
+      appendPresetModules(doc, [...new Set([
+        ...declaredCharacterModules(spec),
+        ...requiredCharacterModules(merged),
+      ])])
+      const addedModules = readPresetModules(doc).filter((module) => !before.includes(module))
+      if (addedModules.length > 0) {
+        const recorded = recordedCharacterModules(current.meta)[cardId] ?? []
+        doc.setIn(['meta', CHARACTER_MODULES_KEY, cardId], [...new Set([...recorded, ...addedModules])])
+      }
       doc.setIn(['promptConfigs'], merged)
       if (Array.isArray(spec.meta?.stWarnings) && spec.meta.stWarnings.length > 0) {
         const warnings = Array.isArray(current.meta?.stWarnings) ? current.meta.stWarnings : []
@@ -524,7 +634,29 @@ export function removeCharacterFromPreset(
         if (doc.getIn(['params', key]) === value) doc.deleteIn(['params', key])
       }
       const list = Array.isArray(current.meta?.importedCharacters) ? current.meta.importedCharacters : []
-      doc.setIn(['meta', 'importedCharacters'], list.filter((entry) => String(entry) !== cardId))
+      const remainingCards = list.map(String).filter((entry) => entry !== cardId)
+      doc.setIn(['meta', 'importedCharacters'], remainingCards)
+      // 模块回退：只回退本卡记录过、且移除后没有其他卡引用、也没有其他消费者的模块。
+      // 老卡（无记录）不回退——无从判断归属，宁可留下模块也不误删用户或引擎要用的装配。
+      const recorded = recordedCharacterModules(current.meta)[cardId] ?? []
+      if (recorded.length > 0) {
+        const others = modulesClaimedByOtherCards(presetRoot, remainingCards, current.meta, cardId)
+        const after = doc.toJS() as { params?: unknown; customTools?: unknown }
+        const context: CharacterModuleContext = {
+          configs: kept.filter(isRecord),
+          params: isRecord(after.params) ? after.params : {},
+          customTools: Array.isArray(after.customTools) && after.customTools.length > 0,
+          importedCharacters: remainingCards,
+        }
+        const modules = readPresetModules(doc)
+        const next = modules.filter((module) => !recorded.includes(module)
+          || others.has(module) || characterModuleStillNeeded(module, context))
+        if (next.length !== modules.length) doc.set('modules', next)
+        doc.deleteIn(['meta', CHARACTER_MODULES_KEY, cardId])
+        if (Object.keys(recordedCharacterModules((doc.toJS() as { meta?: unknown }).meta)).length === 0) {
+          doc.deleteIn(['meta', CHARACTER_MODULES_KEY])
+        }
+      }
     })
     return { ok: true, count: removed }
   } catch (error) {

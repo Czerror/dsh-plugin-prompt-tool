@@ -869,14 +869,20 @@ export {
   appendCharacterMemory,
   appendMemoryFile,
   applyCharacterToPreset,
+  CHARACTER_MODULES_KEY,
+  characterModuleStillNeeded,
+  declaredCharacterModules,
   deleteCharacterCard,
   importCharacterCard,
   importCharacterCardFile,
   listCharacterCards,
   readCharacterMemory,
+  recordedCharacterModules,
   removeCharacterFromPreset,
+  requiredCharacterModules,
   syncImportedCharacterMemory,
 } from './host/characters.ts'
+export type { CharacterModuleContext } from './host/characters.ts'
 export { deleteWorldBookEntry, listWorldBookEntries, upsertWorldBookEntry } from './host/worldbook.ts'
 export type { PromptConfigValidationError, PromptConfigValidationResult } from './runtime/configs-validate.ts'
 export { loadPromptTemplates, loadToolTemplates } from './host/templates.ts'

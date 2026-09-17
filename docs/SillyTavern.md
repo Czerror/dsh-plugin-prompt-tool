@@ -60,6 +60,26 @@
 `world_book_*` 工具的 note 写入角色 `memory.md`；应用时作为常驻条目注入。
 这是 DSH 的附加管理能力，不等同于 ST 扩展脚本或 MVU 状态更新。
 
+### 应用与移除的模块语义（2026-09-18）
+
+「应用到当前预设」按卡的实际需要装配模块，不再固定追加四件套；移除时对称回退：
+
+- **声明优先**：卡顶层 `modules` 存在时按声明追加。ST 转换产物自带 `prompt-config-engine`、`character-tools`、
+  `world-book-tools`（有世界书时）、`session-var-tools`、`tool-config-engine`、`tool-filter` 的声明，
+  所以 ST 卡的应用行为与改造前一致。
+- **必需项兜底**：`prompt-config-engine` 始终补齐——缺少该行时 `promptConfigs` 不会生效，且不会有任何报错；
+  卡含 `world-book` 策略配置时补 `world-book-tools`。因此未声明 `modules` 的手写卡只会得到必需项。
+- **来源记录**：应用时把「追加前没有、追加后有」的差集写入 `preset.yml` 的 `meta.characterModules[<卡 id>]`；
+  预设原本就有的模块不会被记成这张卡引入的。
+- **移除回退**：按记录删除模块，删除前检查消费者——其他已导入卡仍引用（各自的记录或 `converted.yml` 里的声明）、
+  或预设内容仍需要它（还有 `promptConfigs` / `world-book` 配置 / `params.stMacros` / 顶层 `customTools` /
+  非空 `toolFilterAllow`|`toolFilterDeny`）时保留。**改造前应用过的卡没有记录，移除时不会回退模块**：
+  无从判断归属，宁可留下模块也不误删用户或引擎要用的装配。
+- **手写卡的档位**：用 `group` + `exclusive`（同一互斥组只运行排序最前的启用配置）表达档位三选一；
+  本项目没有 `/命令` 式切换通道，切换在工作台的提示词配置页完成（关闭当前档、打开目标档）。
+- 两条路径的取舍：ST 导入路径保持原有模块清单不变（ST 的宏与状态变量确实需要 `session-var-tools`），
+  角色卡应用路径按声明与必需项装配。二者共用同一份移除回退逻辑。
+
 ## ST 宏与变量
 
 导入只做 `prepareStText`：清理注释、trim/ERA、替换默认 user/已知 char、归一宏拼写。
