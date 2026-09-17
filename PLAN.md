@@ -53,7 +53,7 @@
 - 验收：engine 目录 17 个 `*.test.mjs`；engine 运行用例 275 条不减；全量门禁绿。
 - 调整说明：原方案把 helper 抽取放在批 1；实际以「helper 主要服务 host 分片」为由移到 Wave 2，使 Wave 1 成为**零新增抽象**的纯合并，便于独立验证与回滚。
 
-### Wave 2：host 合并（60 → 36）[ ]
+### Wave 2：host 合并（60 → 36）[✔]
 
 - 新建 `test/fixtures/host-harness.mjs`：`isolatedHome` / `tempDir` / `fakeReq`·`fakeRes` / `bridgeHarness` / `readBridge` / `seedPreset` / `pluginCtx` / `expectUnchanged` / `readPresetYaml`；re-export 既有 `fixtures/preset-template.mjs` 以免改 7 处 import。
 - 13 个合并组：preset-render-variants、preset-prompt-configs、composition-library、engine-params-bridge、preset-capabilities、subagent-tool-policy、pre-step-injection、pre-step-wiring、skills-provider、sillytavern-convert、model-routing、profile-assembly、preset-content-assets（`write-preset` 保持独立，见下偏差记录）。
@@ -63,7 +63,7 @@
 - 2 处文档引用同步：`docs/architecture-params.md`（param-contract → engine-params-bridge）、`docs/SillyTavern.md`（st-compatibility → sillytavern-convert）。
 - 技术风险与要求：40+ 文件在模块顶层设 `process.env.DSH_HOME`，合并后每文件只能设一次，必须由 helper 统一设置并在 `after()` 还原原值；子进程脚手架（rematerialize / rebuild-composition / official-preset / skills-watcher）原样搬运。
 
-### Wave 3：client 合并（50 → 35）[ ]
+### Wave 3：client 合并（50 → 35）[✔]
 
 - 结构契约 4→1（`client-structure-contract`）、接线契约 5→1（`client-wiring-contract`）、CSS 断言并入 `style-ownership`、编辑态 3→1（`editor-state`）、`hint-tooltip` 2→1、根目录 4→1（`host-publish-contract`）。
 - 8 个 Edge smoke → 4（`ui-v2-page-smoke` / `import-smoke` / `module-policy-smoke` / `real-css-smoke`），先合 import 与 module+policy 两组，再合 ui-v2 三合一；每个成员的高风险流程逐条保留。
@@ -90,7 +90,16 @@
 | Wave | 状态 | 提交 |
 |---|---|---|
 | Wave 1：engine 25 → 17 | [✔] | `29a30e7` |
-| Wave 2：host 60 → 36 | [ ] | — |
-| Wave 3：client 50 → 35 | [ ] | — |
+| Wave 2：host 60 → 36 | [✔] | `089c427` |
+| Wave 3：client 50 → 35 | [✔]（C1a/C1b/C2a/C2b 完成；C3a 未执行） | `90e1f9b` |
+
+### 实际结果与剩余项（2026-09-17 收尾）
+
+- 文件数：135 → **91**（engine 17 / host 36 / client 35 / shared 2 / root 1）。运行用例 **993 不变**（Wave 1/2/3 合并前后逐批实测一致，0 失败 0 跳过）。
+- 与目标 88 的差额 3 来自 **C3a 未执行**：8 个 Edge smoke（`ui-v2-pages` / `ui-v2-cards` / `ui-v2-drafts` / `import-preview` / `import-scope` / `module-creation` / `subagent-policy` / `ui-v2-badge`）仍是 8 个文件，未合并为 4 个。
+- 同样未执行的还有 `menu-select` / `prompt-config-form-layout` / `tools-preview` 的部分迁出与 SSR 升级（原计划不改文件数，属"把静态断言升级为渲染断言"的质量项）；`scope-create-separation` 第 11 条同属该项。
+- 已完成的替代方案：接线契约按**整文件合并**执行（`workspace-navigation` / `template-picker-anchor` / `dialog-focus` / `review-fixes` → `client-wiring-contract` 14 条），牺牲了 SSR 升级，换取零风险与可验证性；`test/client/support/ssr-render.mjs` 已就绪（探针实测通过），C3a 与 SSR 升级可直接复用它。
+- 两条 4 → 1 / 3 → 1 的合并均经**标题级三向核对**（缺失 / 重复 / 多余各为 0）与逐组 `node --test` 实测，覆盖零损失。
+- 回滚：Wave 2 = `git revert 089c427`，Wave 3 = `git revert 90e1f9b`。
 
 （Wave 内任务完成后即时更新为 `[✔]`，并在交付说明中给出提交 SHA。）
