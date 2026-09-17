@@ -47,13 +47,24 @@ function collectCorpus() {
     .map((file) => readFileSync(file, 'utf8'))
 }
 
-/** 语料 2：包内 SKILL.md frontmatter（BOM 剥离后两个解析器仍一致）。 */
+/** 语料 2：仓库内真实 SKILL.md frontmatter（BOM 剥离后两个解析器仍一致）。
+ *  语料来源：`preset/creative/skills` 与 `test/fixtures` 下的真实技能夹具——
+ *  包内不再内置技能（`skills/` 已移除），但 frontmatter 一致性断言必须继续覆盖真实技能文件。 */
 function collectFrontmatter() {
-  const dirs = readdirSync(join(root, 'skills'), { withFileTypes: true })
-    .filter((entry) => entry.isDirectory())
-    .map((entry) => join(root, 'skills', entry.name, 'SKILL.md'))
-  return dirs
-    .filter((file) => existsSync(file))
+  const files = []
+  const walk = (dir) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const full = join(dir, entry.name)
+      if (entry.isDirectory()) walk(full)
+      else if (entry.name === 'SKILL.md') files.push(full)
+    }
+  }
+  for (const start of ['preset', 'test']) {
+    const dir = join(root, start)
+    if (existsSync(dir)) walk(dir)
+  }
+  return files
+    .sort((left, right) => left.localeCompare(right))
     .map((file) => readFileSync(file, 'utf8'))
     .map((text) => (text.charCodeAt(0) === 0xfeff ? text.slice(1) : text))
     .map((text) => /^---\r?\n([\s\S]*?)\r?\n---/.exec(text)?.[1])
@@ -71,7 +82,9 @@ const trickyCases = [
 ].map((raw) => raw.replace(/\n/g, '\r\n')) // CRLF 版本也测一遍
 
 test('yaml 双解析器语料一致：宿主 npm yaml 与 vendored yaml', () => {
-  const corpus = [...collectCorpus(), ...collectFrontmatter(), ...trickyCases]
+  const frontmatter = collectFrontmatter()
+  assert.ok(frontmatter.length >= 2, `frontmatter 语料必须覆盖真实 SKILL.md，got ${frontmatter.length}`)
+  const corpus = [...collectCorpus(), ...frontmatter, ...trickyCases]
   assert.ok(corpus.length >= 30, `corpus should cover real files, got ${corpus.length}`)
   for (const [index, raw] of corpus.entries()) {
     assertSameParse(raw)

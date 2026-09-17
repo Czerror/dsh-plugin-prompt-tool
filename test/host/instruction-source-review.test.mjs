@@ -71,7 +71,16 @@ function makeHarness(dir = '', cwd) {
     { inject: (_deps, callback) => callback(sctx) },
     'prompt-tool',
     () => ({ available: true, providers: [] }),
-    () => ({ activeSkillsDirs: [], skillCatalog: [] }),
+    // 注册层屏蔽模型的技能状态：技能实体留在官方技能根，插件只提供屏蔽表、引用目录与清单。
+    () => ({
+      skillsRoot: join(home, 'skills'),
+      blocked: [],
+      folders: [],
+      listSkills: () => [],
+      setSkillBlocked: () => ({ ok: true, state: { version: 3, blocked: [], folders: [] }, exists: true }),
+      patchSkillFolders: () => ({ ok: true, state: { version: 3, blocked: [], folders: [] }, exists: true }),
+      invalidateCatalog: () => {},
+    }),
     () => '',
     undefined,
     () => dir,

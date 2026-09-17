@@ -229,6 +229,47 @@
   font-family: var(--ds-font-family-code, ui-monospace, monospace);
 }
 
+/* 来源徽章与行操作区（屏蔽开关 + 删除）。 */
+.skillSourceBadge {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: 999px;
+  corner-shape: round;
+  padding: 1px 8px;
+  color: var(--dsw-alias-label-secondary);
+  background: var(--dsw-alias-bg-layer-2);
+  font: var(--dsw-font-xxxs-11);
+  white-space: nowrap;
+}
+.skillRowActions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+}
+
+/* 来源分组：标题给出优先级，列表沿用共享技能卡。 */
+.skillGroup {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 18px;
+}
+.skillGroupHead {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.skillGroupHead strong {
+  color: var(--dsw-alias-label-primary);
+  font: var(--dsw-font-xs-strong-13);
+}
+
 @container workspace (max-width: 620px) {
   .skillStatsRow .skillStats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }

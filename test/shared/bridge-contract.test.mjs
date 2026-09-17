@@ -35,13 +35,28 @@ function makeHarness() {
   return { ctx, handlers }
 }
 
-function register() {
+/** 注册层屏蔽模型的技能状态替身：技能实体留在官方技能根，插件只提供屏蔽表、引用目录与清单。 */
+function makeSkillsState(overrides = {}) {
+  const state = { version: 3, blocked: [], folders: [] }
+  return {
+    skillsRoot: 'D:/isolated/skills',
+    blocked: [],
+    folders: [],
+    listSkills: () => [],
+    setSkillBlocked: () => ({ ok: true, state, exists: true }),
+    patchSkillFolders: () => ({ ok: true, state, exists: true }),
+    invalidateCatalog: () => {},
+    ...overrides,
+  }
+}
+
+function register(skillsState = makeSkillsState()) {
   const { ctx, handlers } = makeHarness()
   registerSettingsBridge(
     ctx,
     'prompt-tool',
     () => ({ available: true, providers: ['deepseek-official'] }),
-    () => ({ activeSkillsDirs: [], skillCatalog: [] }),
+    () => skillsState,
     () => '',
   )
   return handlers
@@ -82,7 +97,14 @@ test('契约：client 前缀与 server 注册前缀同源', () => {
 test('契约：所有端点路径全部注册且无多余', () => {
   const handlers = register()
   const expected = Object.values(BRIDGE_ENDPOINTS)
-  assert.equal(expected.length, 42, 'BRIDGE_ENDPOINTS 应包含当前登记的 42 个端点')
+  // 注册层屏蔽模型：skillFix / skillToggle / skillsConfig / skillPolicy 已删除，技能端点收敛为 7 个。
+  assert.equal(expected.length, 41, 'BRIDGE_ENDPOINTS 应包含当前登记的 41 个端点')
+  for (const removed of ['skillFix', 'skillToggle', 'skillsConfig', 'skillPolicy']) {
+    assert.equal(Object.hasOwn(BRIDGE_ENDPOINTS, removed), false, `${removed} 已随注册层屏蔽模型移除`)
+  }
+  for (const kept of ['skillsList', 'skillBlock', 'skillsFolders', 'skillsImport', 'skillsImportDirectory', 'skillCreate', 'skillDelete']) {
+    assert.equal(typeof BRIDGE_ENDPOINTS[kept], 'string', `${kept} 端点必须存在`)
+  }
   const registered = [...handlers.keys()].sort()
   const wanted = expected.map((p) => SETTINGS_BRIDGE_PREFIX + p).sort()
   assert.deepEqual(registered, wanted)
@@ -103,6 +125,11 @@ test('契约：/bootstrap 聚合 meta + overrides + variables + promptConfigs �
   assert.ok(Array.isArray(payload.overrides.overrides) || typeof payload.overrides.overrides === 'object')
   assert.ok(typeof payload.variables.variables === 'object' && typeof payload.variables.enabled === 'boolean')
   assert.ok(Array.isArray(payload.promptConfigs.promptConfigs))
+  // 技能事实也在同一聚合响应里下发：清单 + 屏蔽表 + 引用目录 + 用户技能根。
+  assert.deepEqual(payload.activeSkillsDirs, ['D:/isolated/skills'])
+  assert.deepEqual(payload.skillBlocked, [])
+  assert.deepEqual(payload.skillFolders, [])
+  assert.ok(Array.isArray(payload.skillCatalog))
   assert.ok(payload.moduleFacts === undefined || payload.moduleFacts.effectiveConfigs === undefined, 'bootstrap 不应暴露完整行级配置')
 })
 

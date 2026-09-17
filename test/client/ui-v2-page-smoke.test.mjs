@@ -23,6 +23,7 @@ import { spawn } from 'node:child_process'
 import { once } from 'node:events'
 import { setTimeout as sleep } from 'node:timers/promises'
 import { getEngineMeta } from '../../engine/schema.mjs'
+import { SKILL_SOURCES } from '../../src/shared/skills.ts'
 
 const root = fileURLToPath(new URL('../../', import.meta.url))
 const require = createRequire(new URL('../../package.json', import.meta.url))
@@ -424,40 +425,49 @@ test('V2 草稿与资源：原文恢复、快照保存、技能目标及危险�
 
   await evaluate('window.delay=0')
   await click('[data-page="skills"]')
-  await clickKey('skills.selectAll')
-  await input('skills.filter.aria', 'alpha')
-  await input('skills.filter.aria', '')
-  assert.equal(await evaluate(`document.querySelectorAll('[data-skill-select] input[type="checkbox"]:checked').length`), 1, '隐藏选择被剔除')
-  await clickKey('skills.selectAll')
-  await evaluate(`window.failedSkill='beta'`)
-  const beforeBatch = await evaluate(count('skill-toggle'))
-  await clickKey('skills.batchEnable')
-  await waitFor(`${count('skill-toggle')}===${beforeBatch + 2}`)
-  await waitFor(`document.querySelectorAll('[data-skill-select] input[type="checkbox"]:checked').length===1`)
-  assert.equal(await evaluate(`document.querySelector('[data-skill-select] input[type="checkbox"]:checked').parentElement.getAttribute('aria-label')`), '选择 beta', '只保留失败目标')
-  // 调用策略复选框不再干扰选择态断言：选择框由 [data-skill-select] 定位。
-  assert.equal(await evaluate(`document.querySelectorAll('[data-skill-policy] input[type="checkbox"]').length`), 4, '每行两个调用策略开关（模型 / 用户）')
-  await waitFor(`window.store.getFields().skillCatalog.find(s=>s.folder==='alpha').disabled===false`)
-  assert.equal(await evaluate(`window.store.getFields().skillCatalog.find(s=>s.folder==='beta').disabled`), true, '真实 store 刷新后保留失败项的磁盘状态')
-  assert.equal(await evaluate(`document.querySelector('[role="switch"][aria-label="'+window.t('skills.row.enable.aria',{name:'alpha'})+'"]').getAttribute('aria-checked')`), 'true', '成功批量后开关立即反映刷新事实')
+  await waitFor(`document.querySelector('[data-skill-delete]')!==null`)
 
-  // 调用策略：YAML 是唯一管理来源，载荷带稳定 id 且只提交被切换的那一项。
-  const modelLabel = await evaluate(`window.t('skills.row.model.aria',{name:'alpha'})`)
-  await click(`[data-skill-policy-key="model"][aria-label="${modelLabel}"]`)
-  await waitFor(`${count('skill-policy')}===1`)
-  assert.equal(await evaluate(`JSON.stringify(window.requests.find(r=>r.endpoint==='skill-policy').body)`),
-    '{"id":"alpha","policy":{"modelInvocable":false}}', '只提交模型调用这一项')
-  await waitFor(`window.store.getFields().skillCatalog.find(s=>s.id==='alpha').modelInvocable===false`)
-  assert.equal(await evaluate(`window.store.getFields().skillCatalog.find(s=>s.id==='alpha').userInvocable`), true, '用户调用不受模型开关影响')
-  // 完全停用的行调用策略只读：beta 批量启用失败后仍停用。
-  assert.equal(await evaluate(`document.querySelector('[data-skill-policy-key="model"][aria-label="'+window.t('skills.row.model.aria',{name:'beta'})+'"]').disabled`), true, '停用行的调用策略保持只读')
+  // 来源分组：按官方优先级分组渲染，标签与优先级都取 describe 事实。
+  // 来源分组：按官方优先级分组渲染（drafts fixture 的 CSS 是 Proxy，断言只用语义属性与文案）。
+  // 分组标题取共享来源契约（SKILL_SOURCES.label）；行内来源徽章单独走 locales。
+  assert.deepEqual(
+    await evaluate(`[...document.querySelectorAll('section[aria-label]')].map(s=>s.getAttribute('aria-label')).filter(l=>[${JSON.stringify(SKILL_SOURCES['project-dsh'].label)},${JSON.stringify(SKILL_SOURCES['user-dsh'].label)}].includes(l))`),
+    [SKILL_SOURCES['project-dsh'].label, SKILL_SOURCES['user-dsh'].label], '来源分组顺序与官方优先级一致')
+  assert.equal(await evaluate(`document.querySelectorAll('[role="switch"][aria-label]').length`), 2, '每个技能行一个注册层开关')
+  assert.equal(await evaluate(`document.body.innerText.includes(window.t('skills.group.meta',{count:1,rank:100}))`), true, '分组头部展示来源优先级 100')
+  assert.equal(await evaluate(`document.body.innerText.includes(window.t('skills.group.meta',{count:1,rank:400}))`), true, '分组头部展示来源优先级 400')
 
-  // 实体库卡默认折叠：展开后才是导入与创建入口。
-  await evaluate(`(()=>{const b=[...document.querySelectorAll('button[aria-expanded]')].find(e=>e.textContent.includes(window.t('skills.library.title')));if(b.getAttribute('aria-expanded')!=='true')b.click()})()`)
+  // 注册层屏蔽：开关只提交 skill-block 载荷，技能实体与技能文件都留在原处。
+  await clickAria(`window.t('skills.row.block.aria',{name:'alpha'})`)
+  await waitFor(`${count('skill-block')}===1`)
+  assert.equal(await evaluate(`JSON.stringify(window.requests.find(r=>r.endpoint==='skill-block').body)`),
+    '{"name":"alpha","blocked":true}', '屏蔽载荷只有技能名与开关值')
+  await waitFor(`window.store.getFields().skillCatalog.find(s=>s.name==='alpha').blocked===true`)
+  assert.equal(await evaluate(`document.querySelector('[role="switch"][aria-label="'+window.t('skills.row.block.aria',{name:'alpha'})+'"]').getAttribute('aria-checked')`), 'false', '开关反映注册层屏蔽状态')
+  assert.equal(await evaluate(`document.querySelectorAll('[data-blocked]').length`), 1)
+
+  // 恢复 = 删除屏蔽记录，官方候选回到胜出位置。
+  await clickAria(`window.t('skills.row.block.aria',{name:'alpha'})`)
+  await waitFor(`${count('skill-block')}===2`)
+  assert.equal(await evaluate(`JSON.stringify(window.requests.filter(r=>r.endpoint==='skill-block')[1].body)`),
+    '{"name":"alpha","blocked":false}')
+  await waitFor(`window.store.getFields().skillCatalog.find(s=>s.name==='alpha').blocked===false`)
+
+  // 写盘失败不乐观更新：开关保持磁盘事实，错误进入通知。
+  await evaluate(`window.failedSkill='alpha'`)
+  await clickAria(`window.t('skills.row.block.aria',{name:'alpha'})`)
+  await waitFor(`${count('skill-block')}===3`)
+  await waitFor(`document.querySelector('[data-notice]').textContent.includes('failed alpha')`)
+  assert.equal(await evaluate(`window.store.getFields().skillCatalog.find(s=>s.name==='alpha').blocked`), false, '失败不乐观更新客户端事实')
+  await evaluate(`window.failedSkill=''`)
+
+  // 技能资产卡默认折叠：展开后才是导入、创建与引用入口。
+  await evaluate(`(()=>{const b=[...document.querySelectorAll('button[aria-expanded]')].find(e=>e.textContent.includes(window.t('skills.library.title')));if(b&&b.getAttribute('aria-expanded')!=='true')b.click()})()`)
   await sleep(80)
-  assert.equal(await evaluate(`document.querySelector('[data-skill-policy-key="model"]')!==null`), true, '技能行仍在实体库卡之外渲染')
+  assert.equal(await evaluate(`document.querySelector('[aria-label="'+window.t('skills.import.path.aria')+'"]')!==null`), true, '展开后出现复制导入入口')
+  assert.equal(await evaluate(`document.querySelector('[aria-label="'+window.t('skills.folders.aria')+'"]')!==null`), true, '展开后出现文件夹引用入口')
 
-  // 创建技能：写实体库并默认启用。
+  // 创建技能：写用户技能根，提交成功后收起表单。
   await clickKey('skills.create.open')
   await input('skills.create.name', 'gamma')
   await input('skills.create.description', 'created by test')
@@ -466,33 +476,48 @@ test('V2 草稿与资源：原文恢复、快照保存、技能目标及危险�
   await waitFor(`${count('skill-create')}===1`)
   assert.equal(await evaluate(`JSON.stringify(window.requests.find(r=>r.endpoint==='skill-create').body)`),
     '{"name":"gamma","description":"created by test","content":"# gamma"}')
-  await waitFor(`window.store.getFields().skillCatalog.some(s=>s.id==='gamma')`)
+  await waitFor(`window.store.getFields().skillCatalog.some(s=>s.name==='gamma')`)
+  assert.equal(await evaluate(`${field('skills.create.name')}===null`), true, '成功后收起创建表单')
 
-  // 宿主机目录导入：只作一次性复制来源，不建立第二发现根。
+  // 复制导入：宿主机目录只作一次性复制来源，不建立第二发现根。
   await input('skills.import.path.aria', 'D:/drop/gamma')
   await clickKey('skills.import.fromDir')
   await waitFor(`${count('skills-import-directory')}===1`)
   assert.equal(await evaluate(`JSON.stringify(window.requests.find(r=>r.endpoint==='skills-import-directory').body)`), '{"path":"D:/drop/gamma"}')
+  await waitFor(`document.querySelector('[aria-label="'+window.t('skills.import.path.aria')+'"]').value===''`)
 
-  // 保存基线：技能配置写入失败时技能字段保持 dirty，不因 settings 成功被标记为已保存。
-  await evaluate('window.rejectSkillsConfig=true')
-  const beforeSkillsConfig = await evaluate(count('skills-config'))
-  await clickAria(`window.t('skills.row.moveUp.aria',{name:'gamma'})`)
-  await waitFor(`${count('skills-config')}===${beforeSkillsConfig + 1}`)
-  await waitFor(`document.querySelector('[data-notice]').textContent.includes('skills config rejected')`)
-  assert.equal(await evaluate('window.store.dirtySwitches'), true, '技能配置写入失败不推进保存基线')
-  await evaluate('window.rejectSkillsConfig=false')
-  await clickAria(`window.t('skills.row.moveDown.aria',{name:'gamma'})`)
-  await waitFor(`${count('skills-config')}===${beforeSkillsConfig + 2}`)
-  await waitFor('window.store.dirtySwitches===false')
+  // 文件夹引用：只登记路径，不复制文件；移除只删记录。
+  await input('skills.folders.aria', 'D:/referenced/skills')
+  await clickKey('skills.folders.add')
+  await waitFor(`${count('skills-folders')}===1`)
+  assert.equal(await evaluate(`JSON.stringify(window.requests.find(r=>r.endpoint==='skills-folders').body)`), '{"folders":["D:/referenced/skills"]}')
+  await waitFor(`window.store.getFields().skillFolders.length===1`)
+  await clickKey('skills.folders.remove')
+  await waitFor(`${count('skills-folders')}===2`)
+  assert.equal(await evaluate(`JSON.stringify(window.requests.filter(r=>r.endpoint==='skills-folders')[1].body)`), '{"folders":[]}')
+  await waitFor(`window.store.getFields().skillFolders.length===0`)
 
-  // 回收站删除：确认后按稳定 id 提交，行从列表消失。
-  await click('[data-skill-delete="beta"]')
+  // 回收站删除：确认后按目录名提交，失败保留技能行与错误提示。
+  await click('[data-skill-delete="alpha"]')
   await waitFor(`document.querySelector('[role="alertdialog"]')!==null`)
   await click('[role="alertdialog"] button[data-danger]')
   await waitFor(`${count('skill-delete')}===1`)
-  assert.equal(await evaluate(`JSON.stringify(window.requests.find(r=>r.endpoint==='skill-delete').body)`), '{"id":"beta"}')
-  await waitFor(`window.store.getFields().skillCatalog.every(s=>s.id!=='beta')`)
+  assert.equal(await evaluate(`JSON.stringify(window.requests.find(r=>r.endpoint==='skill-delete').body)`), '{"folder":"alpha"}')
+  await waitFor(`window.store.getFields().skillCatalog.every(s=>s.name!=='alpha')`)
+
+  await evaluate('window.rejectSkillDelete=true')
+  await click('[data-skill-delete="gamma"]')
+  await waitFor(`document.querySelector('[role="alertdialog"]')!==null`)
+  await click('[role="alertdialog"] button[data-danger]')
+  await waitFor(`${count('skill-delete')}===2`)
+  await waitFor(`document.querySelector('[data-notice]').textContent.includes('delete rejected')`)
+  assert.equal(await evaluate(`window.store.getFields().skillCatalog.some(s=>s.name==='gamma')`), true, '删除失败保留技能行')
+  await evaluate('window.rejectSkillDelete=false')
+  await click('[data-skill-delete="gamma"]')
+  await waitFor(`document.querySelector('[role="alertdialog"]')!==null`)
+  await click('[role="alertdialog"] button[data-danger]')
+  await waitFor(`${count('skill-delete')}===3`)
+  await waitFor(`window.store.getFields().skillCatalog.every(s=>s.name!=='gamma')`)
 
   await click('[data-page="presets"]')
   await clickAria(`window.t('presetSwitcher.delete.aria',{name:'Other'})`)

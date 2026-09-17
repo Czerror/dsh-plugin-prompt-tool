@@ -369,12 +369,19 @@ test('/meta 预设下拉读 value.meta（不是顶层 meta 扩展字段）', () 
   assert.doesNotMatch(settings, /res\.meta\?\.meta/)
 })
 
-test('技能页展示受管实体库位置，不再维护可添加/移除的目录引用', () => {
-  assert.match(skillsSettings, /const entityRoot = libraryRoot === undefined \? undefined : `\$\{libraryRoot\}\\\\\.system`/)
+test('技能页展示用户技能根与注册层屏蔽开关，引用目录只登记路径', () => {
+  assert.match(skillsSettings, /fields\.skillsRoot/)
   assert.match(skillsSettings, /t\('skills\.library\.title'\)/)
   assert.match(skillsSettings, /t\('skills\.library\.open'\)/)
-  assert.doesNotMatch(skillsSettings, /addSkillsDir|removeSkillsDir|displaySkillsDirs/, '目录引用入口已下线（外部目录只作一次性导入来源）')
-  assert.doesNotMatch(skillsSettings, /skills\.dirs\.(title|meta|add|empty|pick')/, '目录引用文案不再被引用（导入相关文案保留）')
+  // 停用 = 注册层屏蔽：只写插件状态（setSkillBlocked），不改技能文件。
+  assert.match(skillsSettings, /store\.setSkillBlocked\(/)
+  assert.doesNotMatch(skillsSettings, /entityRoot|libraryRoot|\.system/, '受管实体库随注册层屏蔽模型移除')
+  assert.doesNotMatch(skillsSettings, /rankBase|moveUp|moveDown|skills\.row\.move/, '排序与排序基数随注册层屏蔽模型移除')
+  // 引用文件夹只登记路径（patchSkillFolders），不再是可增删的发现根管理界面。
+  assert.match(skillsSettings, /store\.patchSkillFolders\(/)
+  assert.match(skillsSettings, /t\('skills\.folders\.add'\)/)
+  assert.doesNotMatch(skillsSettings, /addSkillsDir|removeSkillsDir|displaySkillsDirs/, '目录引用入口已下线（外部目录只作一次性复制来源或路径引用）')
+  assert.doesNotMatch(skillsSettings, /skills\.dirs\.(title|meta|add|empty)/, '旧发现根文案不再被引用（导入相关文案保留）')
 })
 
 test('技能页同时提供宿主机目录导入与浏览器文件夹导入', () => {

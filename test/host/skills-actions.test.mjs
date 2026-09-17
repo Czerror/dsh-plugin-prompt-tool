@@ -1,46 +1,101 @@
+// 技能资产操作（注册层屏蔽模型）：创建与回收站删除都落在用户技能根 `<root>/<目录名>/SKILL.md`。
+// 随注册层屏蔽模型移除：受管实体库（`.system/<技能>` 物化 + 根链接 + 状态记录）不再是产品行为，
+//  删除改为整体移动技能目录进 `<root>/.system/prompt-tool/.trash`，只处理用户根里的实体。
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-const { createManagedSkill, deleteManagedSkill } = await import('../../src/host/skills-actions.ts')
+const { createSkill, deleteSkill, readSkillMarker } = await import('../../src/host/skills-actions.ts')
 
-test('createManagedSkill 物化到 .system 并创建链接', () => {
-  const root = mkdtempSync(join(tmpdir(), 'pt-actions-'))
+const makeRoot = () => mkdtempSync(join(tmpdir(), 'pt-actions-'))
+
+test('createSkill 落在用户技能根，不做实体库也不建链接', () => {
+  const root = makeRoot()
   try {
-    const created = createManagedSkill(root, { name: 'demo-skill', description: 'demo', content: 'body' })
-    assert.equal(created.ok, true, created.message)
-    assert.equal(existsSync(join(root, '.system', 'demo-skill', 'SKILL.md')), true)
-    assert.equal(lstatSync(join(root, 'demo-skill')).isSymbolicLink(), true)
+    const created = createSkill(root, { name: 'demo-skill', description: 'demo', content: 'body' })
+    assert.equal(created.ok, true, created.ok ? '' : created.message)
+    if (!created.ok) return
+    assert.equal(created.id, 'demo-skill')
+    assert.equal(created.path, join(root, 'demo-skill'))
+    const marker = join(root, 'demo-skill', 'SKILL.md')
+    assert.equal(existsSync(marker), true)
+    assert.equal(readSkillMarker(created.path), readFileSync(marker, 'utf8'))
+    assert.match(readFileSync(marker, 'utf8'), /^---\nname: demo-skill\ndescription: demo\n---\nbody$/)
+    // 技能实体就是用户根里的普通目录：不建 .system 实体库、不建符号链接。
+    assert.equal(existsSync(join(root, '.system')), false, '创建不落受管实体库')
+    assert.equal(lstatSync(join(root, 'demo-skill')).isSymbolicLink(), false)
+    assert.deepEqual(readdirSync(root), ['demo-skill'])
   } finally { rmSync(root, { recursive: true, force: true }) }
 })
 
-test('importSkillsPackage 支持无顶层容器的单技能包', async () => {
-  const root = mkdtempSync(join(tmpdir(), 'pt-actions-'))
+test('createSkill 拒绝重复、非法输入与非普通目录且不留半成品', () => {
+  const root = makeRoot()
+  try {
+    assert.equal(createSkill(root, { name: 'demo-skill', description: 'demo', content: 'body' }).ok, true)
+    const marker = join(root, 'demo-skill', 'SKILL.md')
+    const original = readFileSync(marker, 'utf8')
+    assert.equal(createSkill(root, { name: 'demo-skill', description: 'other', content: 'other' }).ok, false, '同名技能不覆盖')
+    assert.equal(readFileSync(marker, 'utf8'), original)
+    for (const input of [
+      { name: 'Bad Name', description: 'x', content: '' },
+      { name: '', description: 'x', content: '' },
+      { name: 'demo--skill', description: 'x', content: '' },
+      { name: 42, description: 'x', content: '' },
+      { name: 'other-skill', description: '   ', content: '' },
+      { name: 'other-skill', description: 'x', content: 42 },
+      { name: 'other-skill', description: 'x'.repeat(8193), content: '' },
+      { name: 'other-skill', description: 'x', content: 'y'.repeat(1024 * 1024 + 1) },
+    ]) {
+      const result = createSkill(root, input)
+      assert.equal(result.ok, false, JSON.stringify(input).slice(0, 60))
+      if (input.name === 'other-skill') assert.equal(existsSync(join(root, 'other-skill')), false, '失败不留半成品目录')
+    }
+    assert.deepEqual(readdirSync(root), ['demo-skill'])
+  } finally { rmSync(root, { recursive: true, force: true }) }
+})
+
+test('deleteSkill 把整个技能目录移入回收站并可人工恢复', () => {
+  const root = makeRoot()
+  try {
+    createSkill(root, { name: 'demo-skill', description: 'demo', content: 'body' })
+    mkdirSync(join(root, 'demo-skill', 'assets'), { recursive: true })
+    writeFileSync(join(root, 'demo-skill', 'assets', 'note.md'), 'keep', 'utf8')
+
+    const deleted = deleteSkill(root, 'demo-skill')
+    assert.equal(deleted.ok, true, deleted.ok ? '' : deleted.message)
+    if (!deleted.ok) return
+    assert.equal(existsSync(join(root, 'demo-skill')), false, '技能目录整体移走')
+    const trashRoot = join(root, '.system', 'prompt-tool', '.trash')
+    const entries = readdirSync(trashRoot)
+    assert.equal(entries.length, 1)
+    assert.match(entries[0], /^demo-skill-/)
+    const trashed = join(trashRoot, entries[0])
+    assert.equal(deleted.path, join(trashed, 'demo-skill'))
+    assert.equal(readFileSync(join(trashed, 'demo-skill', 'assets', 'note.md'), 'utf8'), 'keep', '资源随技能目录一起进回收站')
+    const record = JSON.parse(readFileSync(join(trashed, 'record.json'), 'utf8'))
+    assert.equal(record.folder, 'demo-skill')
+    assert.equal(record.source, join(root, 'demo-skill'))
+    assert.deepEqual(record.files.sort(), ['SKILL.md', 'assets'])
+    assert.equal(typeof record.deletedAt, 'string')
+    // 用户根里的其他内容不受影响，删除不是「清空目录」。
+    writeFileSync(join(root, 'unrelated.txt'), 'keep', 'utf8')
+    assert.equal(deleteSkill(root, 'unrelated').ok, false, '不是技能目录（缺少 SKILL.md）')
+    assert.equal(existsSync(join(root, 'unrelated.txt')), true)
+    assert.equal(deleteSkill(root, 'missing-skill').ok, false)
+    assert.equal(deleteSkill(root, '../escape').ok, false)
+    assert.equal(deleteSkill(root, 'Bad Name').ok, false)
+  } finally { rmSync(root, { recursive: true, force: true }) }
+})
+
+test('importSkillsPackage 支持无顶层容器的单技能包并写入用户技能根', async () => {
+  const root = makeRoot()
   try {
     const { importSkillsPackage } = await import('../../src/host/skills-import.ts')
     const result = importSkillsPackage(root, [{ path: 'SKILL.md', content: Buffer.from('---\nname: one-skill\ndescription: one\n---\nbody').toString('base64') }])
-    assert.equal(result.ok, true, result.message)
-    assert.equal(existsSync(join(root, '.system', 'one-skill', 'SKILL.md')), true)
-  } finally { rmSync(root, { recursive: true, force: true }) }
-})
-
-test('deleteManagedSkill 只移走标记并留下可恢复回收站记录', () => {
-  const root = mkdtempSync(join(tmpdir(), 'pt-actions-'))
-  try {
-    mkdirSync(join(root, '.system', 'demo-skill', 'assets'), { recursive: true })
-    writeFileSync(join(root, '.system', 'demo-skill', 'SKILL.md'), '---\nname: demo-skill\ndescription: demo\n---\nbody')
-    const created = createManagedSkill(root, { name: 'demo-skill', description: 'demo', content: 'body' })
-    assert.equal(created.ok, false, '未登记实体不能被创建覆盖')
-    // 先注册后删除，验证删除只处理标记文件。
-    const config = join(root, '.system', 'skills.yml')
-    mkdirSync(join(root, '.system'), { recursive: true })
-    writeFileSync(config, 'version: 2\nskills:\n  demo-skill:\n    path: demo-skill\n    link: demo-skill\n    enabled: true\n    modelInvocable: true\n    userInvocable: true\n')
-    const deleted = deleteManagedSkill(root, 'demo-skill')
-    assert.equal(deleted.ok, true, deleted.message)
-    if (deleted.ok) assert.equal(existsSync(join(deleted.path, 'record.json')), true)
-    assert.equal(existsSync(join(root, '.system', 'demo-skill', 'assets')), true)
-    assert.equal(existsSync(join(root, '.system', 'demo-skill', 'SKILL.md')), false)
+    assert.equal(result.ok, true, result.ok ? '' : result.message)
+    assert.equal(existsSync(join(root, 'one-skill', 'SKILL.md')), true)
+    assert.equal(existsSync(join(root, '.system')), false, '导入不落受管实体库')
   } finally { rmSync(root, { recursive: true, force: true }) }
 })

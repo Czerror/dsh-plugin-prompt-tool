@@ -56,3 +56,34 @@ test('技能迁移默认预览，apply 保留备份并可按哈希回滚', () =>
     assert.equal(existsSync(join(root, '.system', 'prompt-tool', 'config.yml')), true)
   } finally { rmSync(root, { recursive: true, force: true }) }
 })
+
+test('回滚不因迁移后的内容变化中止，只在原位置被占用时跳过', () => {
+  const root = mkdtempSync(join(tmpdir(), 'pt-migration-drift-'))
+  try {
+    for (const name of ['changed-skill', 'blocked-skill']) {
+      mkdirSync(join(root, name), { recursive: true })
+      writeFileSync(join(root, name, 'SKILL.md'), `---\nname: ${name}\ndescription: ${name}\n---\nbody`)
+    }
+    const applied = migration.applyMigration(root)
+    // 迁移后用户自行更新了一个技能的内容：记录哈希与现内容不一致。
+    writeFileSync(join(root, '.system', 'changed-skill', 'SKILL.md'), '---\nname: changed-skill\ndescription: 用户后来改过\n---\nnew body')
+    // 另一个技能在根上的启用链接被换成了真实目录：回滚不得覆盖它。
+    rmSync(join(root, 'blocked-skill'))
+    mkdirSync(join(root, 'blocked-skill'), { recursive: true })
+    writeFileSync(join(root, 'blocked-skill', 'SKILL.md'), '---\nname: blocked-skill\ndescription: 占用者\n---\nkeep me')
+
+    const result = migration.rollbackMigration(applied.record)
+    assert.equal(result.rolledBack, true)
+    assert.equal(result.restored, 1, '内容变化不阻止回滚')
+    assert.equal(result.contentChanged.length, 1)
+    assert.match(result.contentChanged[0], /changed-skill$/)
+    assert.deepEqual(result.conflicts.map((path) => path.replaceAll('\\', '/').split('/').at(-1)), ['blocked-skill'])
+    // 内容变化项照常搬回，且带回用户更新后的正文。
+    assert.equal(existsSync(join(root, 'changed-skill', 'SKILL.md')), true)
+    assert.match(readFileSync(join(root, 'changed-skill', 'SKILL.md'), 'utf8'), /用户后来改过/)
+    // 冲突项留在原处，占用者的内容一个字节都不改。
+    assert.equal(existsSync(join(root, '.system', 'blocked-skill', 'SKILL.md')), true, '冲突项不搬回')
+    assert.match(readFileSync(join(root, 'blocked-skill', 'SKILL.md'), 'utf8'), /keep me/)
+    assert.equal(existsSync(join(root, '.system', 'skills.yml')), true, '存在冲突时保留状态文件供人工处理')
+  } finally { rmSync(root, { recursive: true, force: true }) }
+})

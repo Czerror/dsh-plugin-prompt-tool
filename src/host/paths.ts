@@ -1,27 +1,6 @@
 /** host 数据层的部署路径与序数常量（settings 层与运行时共用，避免 host→config 反向依赖）。 */
-import { fileURLToPath } from 'node:url'
 import { join, resolve } from 'node:path'
 import { homedir } from 'node:os'
-import { existsSync } from 'node:fs'
-import { dirname } from 'node:path'
-
-/**
- * 包内 skills 目录。
- * 源码位于 src/host/（../../skills = 包根/skills），构建后内联进 lib/（层级变浅）。
- * 统一向上查找最近的包根（同时含 package.json 与 skills/），两种形态都正确；
- * 不使用 skills/manifest.json 作锚点：包内技能不再有手写版本清单，也不再有内容哈希账本
- * （见 profile-skills.ts：包内 skills 只作为用户可显式导入的资源）。
- */
-export const SKILLS_DIR = (() => {
-  let dir = dirname(fileURLToPath(import.meta.url))
-  for (let depth = 0; depth < 6; depth += 1) {
-    if (existsSync(join(dir, 'package.json')) && existsSync(join(dir, 'skills'))) return join(dir, 'skills')
-    const parent = dirname(dir)
-    if (parent === dir) break
-    dir = parent
-  }
-  return join(dir, 'skills')
-})()
 
 /**
  * 部署路径默认值；凡是不同部署可能需要不同值的参数都通过 Config 暴露，
@@ -42,6 +21,9 @@ function resolveDshHome(): string {
 }
 
 export const DSH_HOME = resolveDshHome()
+/** 用户技能根：官方 `user-dsh` 技能根，也是本插件创建、复制导入与回收站的落点。
+ *  插件不再内置任何技能：包内没有 skills 目录，也不再有安装副本与内容账本。 */
+export const USER_SKILLS_DIR = join(DSH_HOME, 'skills')
 /**
  * 预设根：官方 USER_PRESET_DIR（DSH_HOME/.agent-presets）。
  * 每个预设一个官方预设目录（agent.cordis.yml 组合本体 + preset.yml 参数），
@@ -50,6 +32,4 @@ export const DSH_HOME = resolveDshHome()
 export const DEFAULT_PRESET_DIR = join(DSH_HOME, '.agent-presets')
 /** 共享引擎目录（点前缀：官方 PRESET_ID 校验跳过，不占预设槽）。 */
 export const SHARED_ENGINE_DIR = join(DEFAULT_PRESET_DIR, '.engine')
-export const DEFAULT_SKILLS_DIR = SKILLS_DIR
 export const DEFAULT_PRESET_ORDER = 5
-export const DEFAULT_SKILL_RANK_BASE = 250

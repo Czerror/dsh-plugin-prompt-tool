@@ -129,18 +129,27 @@ export function applyMigration(skillsRoot) {
 export function rollbackMigration(recordFile) {
   const record = JSON.parse(readFileSync(resolve(recordFile), 'utf8'))
   if (!Array.isArray(record.moved) || typeof record.root !== 'string') throw new Error('迁移记录无效')
-  const recorded = Array.isArray(record.links) ? record.links : record.moved.map((item) => ({ path: join(record.root, relative(record.root, item.source).split(sep).join('/')), target: undefined }))
+  const recorded = Array.isArray(record.links) ? record.links : record.moved.map((item) => ({ path: item.source, target: undefined }))
   for (const link of [...recorded].reverse()) {
     try { if (existsSync(link.path) && lstatSync(link.path).isSymbolicLink()) unlinkSync(link.path) } catch { /* 链接已被外部改动时保留现场 */ }
   }
+  // 逐项恢复：回滚的目标是恢复"实体在技能根"的布局，不是回退内容。
+  // 迁移后被外部改过的实体照常搬回（只记录），根上原位置已被占用时才跳过并交给人工处理。
+  const restored = []
+  const conflicts = []
+  const contentChanged = []
   for (const item of [...record.moved].reverse()) {
     if (!existsSync(item.target)) continue
-    if (hashFile(join(item.target, 'SKILL.md')) !== item.hash) throw new Error(`内容哈希变化，拒绝回滚：${item.target}`)
-    if (existsSync(item.source)) throw new Error(`原路径已被占用：${item.source}`)
+    if (existsSync(item.source)) { conflicts.push(item.source); continue }
+    let changed = false
+    try { changed = hashFile(join(item.target, 'SKILL.md')) !== item.hash } catch { changed = true }
+    if (changed) contentChanged.push(item.source)
     renameSync(item.target, item.source)
+    restored.push(item.source)
   }
-  if (record.createdConfig && existsSync(record.createdConfig)) rmSync(record.createdConfig, { force: true })
-  return { rolledBack: true, root: record.root }
+  // 只在没有遗留冲突时删除本次迁移创建的状态文件，避免留下的实体失去状态记录。
+  if (record.createdConfig && existsSync(record.createdConfig) && conflicts.length === 0) rmSync(record.createdConfig, { force: true })
+  return { rolledBack: true, root: record.root, restored: restored.length, conflicts, contentChanged }
 }
 
 if (process.argv[1] !== undefined && resolve(process.argv[1]) === resolve(fileURLToPath(import.meta.url))) {

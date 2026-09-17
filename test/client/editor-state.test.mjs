@@ -30,13 +30,19 @@ test('dirty state：两个独立空配置数组不误判脏', () => {
 })
 
 test('dirty state：snapshot 深拷贝可变集合并比较全字段', () => {
-  const fields = { ...EMPTY_FIELDS, stages: [{ name: 'a', tools: 'read' }], skillOrder: ['a'] }
+  const fields = { ...EMPTY_FIELDS, stages: [{ name: 'a', tools: 'read' }] }
   const snapshot = snapshotSwitches(fields)
   fields.stages[0].name = 'changed'
-  fields.skillOrder.push('b')
-  assert.deepEqual(snapshot.stages, [{ name: 'a', tools: 'read' }])
-  assert.deepEqual(snapshot.skillOrder, ['a'])
-  assert.equal(switchesEqual(snapshot, snapshotSwitches({ ...EMPTY_FIELDS, stages: [{ name: 'a', tools: 'read' }], skillOrder: ['a'] })), true)
+  fields.stages.push({ name: 'b', tools: 'write' })
+  assert.deepEqual(snapshot.stages, [{ name: 'a', tools: 'read' }], 'snapshot 深拷贝，隔离保存期间的继续编辑')
+  assert.equal(switchesEqual(snapshot, snapshotSwitches({ ...EMPTY_FIELDS, stages: [{ name: 'a', tools: 'read' }] })), true)
+  assert.equal(switchesEqual(snapshot, snapshotSwitches({ ...EMPTY_FIELDS, stages: [{ name: 'a', tools: 'write' }] })), false)
+  // 注册层技能状态（清单 / 屏蔽表 / 引用目录）不属于 settings：刷新技能事实不产生参数脏状态。
+  for (const key of ['skillCatalog', 'skillBlocked', 'skillFolders', 'skillsRoot']) {
+    assert.equal(Object.hasOwn(snapshot, key), false, `${key} 不应进入参数保存快照`)
+  }
+  const blocked = { ...EMPTY_FIELDS, skillBlocked: ['alpha'], skillFolders: ['D:/referenced'] }
+  assert.equal(switchesEqual(snapshotSwitches(blocked), snapshotSwitches(EMPTY_FIELDS)), true, '技能屏蔽不进入参数保存快照')
 })
 
 test('dirty state：空 key 变量待编辑行单独识别（保存后不静默重载）', () => {

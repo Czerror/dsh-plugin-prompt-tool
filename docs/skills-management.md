@@ -1,111 +1,109 @@
-# 技能实体库管理
+# 技能管理：注册层屏蔽
 
-本插件把技能管理从「配置文件 + 磁盘标记」改为**单一受管实体库**：技能实体集中在 `$DSH_HOME/skills/.system/`，启用项通过该根下的目录链接暴露给官方 `dsh-skill-filesystem` provider 与模型；`skills.yml` 是启停、顺序、rank 基数与调用权限的唯一管理来源。本文是该行为的权威说明，改动 `src/host/skills-*.ts`、`src/host/skill-toggle.ts`、`src/runtime/skills-*`、`src/client/features/skills/*`、`src/shared/skills.ts` 或 `scripts/migrate-skills.mjs` 前先读本文。
+本插件的技能管理只做三件事：**看清技能来自哪里**、**在注册层停用/恢复**、**把技能复制进用户技能根**。技能实体始终留在官方各自的技能根里，插件不搬迁、不建链接、不改任何 `SKILL.md`。
 
-## 1. 磁盘布局与所有权
+本文是该行为的权威说明。改动 `src/shared/skills.ts`、`src/host/skills-*.ts`、`src/runtime/settings-bridge.ts` 的技能端点、`src/index.ts` 的技能提供者或 `src/client/features/skills/*` 前先读本文。
 
-```text
-$DSH_HOME/skills/
-├─ .system/                        # 官方扫描跳过点目录；只有本插件写入
-│  ├─ skills.yml                   # 受管状态（无技能正文）
-│  ├─ .skills.lock                 # 跨进程事务锁（存在即表示有活动事务）
-│  ├─ .trash/skill-<id>/           # 回收站：SKILL.md + record.json
-│  ├─ <skill>/SKILL.md             # 技能实体与全部资源
-│  ├─ <pkg>/<sub>/SKILL.md         # 嵌套技能即包内子目录
-│  └─ prompt-tool/config.yml       # 旧版配置，迁移后仅作人工核对，不再读取
-├─ <skill> → .system/<skill>       # 启用链接（Windows junction）
-├─ <pkg>--<sub> → .system/<pkg>/<sub>
-└─ artifacts/ …                    # 非技能目录：不迁移、不改动
-```
+## 1. 技能从哪来
 
-- 实体、链接与 `skills.yml` 都由本插件拥有；**外部目录不再作为第二发现根**，只能作为一次性导入来源。
-- `.system` 只供管理层枚举实体，**不得**配置成 provider 的自定义发现根，否则停用技能会绕过链接重新暴露。
-- 包内 `skills/` 不再是自动同步源：它只是用户可显式导入的资源。
+官方 `dsh-skill-filesystem` 按六类根发现技能（优先级数值越小越优先，同名裁决只在同一层内按此顺序取首个）：
 
-## 2. skills.yml 契约
+| 来源（`source`） | 位置 | 优先级 |
+|---|---|---|
+| `project-dsh` | `<项目根>/.dsh/skills` | 100 |
+| `project-agents` | `<项目根>/.agents/skills` | 200 |
+| `custom` | 用户在管理页添加的技能文件夹 | 300 |
+| `user-dsh` | `$DSH_HOME/skills` | 400 |
+| `user-agents` | `$DSH_AGENTS_HOME/skills`（默认 `~/.agents/skills`） | 500 |
+| `bundled` | 官方内置技能目录 | 600 |
+
+项目根 = 从会话工作目录向上找到的第一个含 `.git` 的目录。发现规则与官方一致：**只认 `<根>/<目录名>/SKILL.md`，不递归嵌套**。
+
+插件自己**只提供两类候选**：屏蔽名单的影子候选，以及 `custom` 引用目录里的技能；其余来源全部交给官方发现。
+
+插件**不内置任何技能**：包内没有 `skills/` 目录，也没有安装副本或内容哈希账本。要新增技能，用管理页创建、从目录复制导入，或添加文件夹引用。
+
+## 2. 停用 = 注册层屏蔽
+
+停用不写任何技能文件：插件提供者为该技能名返回一个**影子候选**——同名、优先级 `0`（小于全部官方根）、`modelInvocable` 与 `userInvocable` 同时为 false。官方注册表在同一层内按优先级升序合并同名候选、只保留第一个，于是：
+
+- 模型的技能目录（`<available_skills>`）不再列出它；
+- `skill` 工具加载时被拒绝（`not available for model invocation`）；
+- 用户 `/名称` 命令也不可用。
+
+删除屏蔽记录后官方候选立刻回到生效位置。**已知限制**：屏蔽按技能名在全局生效，同名技能在任何工作区都会被一起压掉；停用后官方仍能发现该技能，只是任何入口都用不了（这一点与旧的"官方也发现不到"不同）。
+
+## 3. 状态文件
+
+`$DSH_HOME/skills/.system/prompt-tool/skills.yml`（点目录，官方一层扫描天然跳过）：
 
 ```yaml
-version: 2
-order: [dev-expert, web ui]   # 展示顺序与 rank 序号；默认 250 起
-rankBase: 250                 # 可省略（默认值写盘时删除）
-skills:
-  dev-expert:                 # 键 = 稳定身份 id = 相对 .system 的实体路径
-    path: dev-expert          # 实体路径（禁止绝对路径、上跳、点目录）
-    link: dev-expert          # skills 根中的单段链接名（唯一）
-    enabled: true             # 完全启用/停用（只影响链接）
-    modelInvocable: true      # 模型可调用
-    userInvocable: true       # 用户可调用
-    source: import            # 仅用于管理展示，不作为写入授权
+version: 3
+blocked:
+  - name: some-skill          # 必须是与官方同规则的 kebab-case
+    at: '2026-09-17T15:04:16.000Z'
+    note: 可选备注
+folders:                      # 用户添加的技能文件夹（绝对路径，只登记不复制）
+  - D:\work\my-skill-pack
 ```
 
-- 写入使用 yaml Document API，逐节点更新，保留注释与未知字段；内容无变化时不落盘。
-- `validateSkillsConfig` 同时服务读写：类型、身份、路径、布尔值、重复路径都在写盘前校验；`__proto__` 与保留设备名被拒绝。`constructor` / `prototype` 等 `Object.prototype` 上的名字是**合法技能名**（真实技能库中就有 `prototype`），因此记录容器不带原型——否则 `skills['constructor']` 会读到继承属性而被误判成"已存在的技能"。
-- 读取失败（语法、别名、非映射根、类型错误）返回统一失败载荷，**不用默认值覆盖**损坏文件。
-- 一次事务 = 整批前置校验 → 实体 frontmatter → 链接增删 → YAML，任一步失败按回滚栈复原并报告未完成项；事务期间由 `.system/.skills.lock` 跨进程互斥，无法证明已释放的锁不会自动抢占（提示人工确认后删除）。
+- 写入走 yaml Document API：保留注释与未知字段，内容无变化时不落盘；写前核对版本，失败清理暂存文件。
+- 读取与写入共用校验：结构类型、技能名规则、绝对路径、重复项；损坏或别名一律拒绝，**不覆盖**损坏文件。
+- 技能文件本身的即时性由官方 watcher 负责；插件只监听状态文件与引用目录（300ms 防抖）来刷新自己的清单。
 
-## 3. 启停与调用策略
+## 4. 管理页能做什么
 
-| 操作 | 落点 | 语义 |
+| 操作 | 端点 | 说明 |
 |---|---|---|
-| 完全停用 | 取消 `skills/<link>` | 官方 provider 与本插件都不再发现；实体、资源、正文、调用策略全部保留 |
-| 重新启用 | 重建 `skills/<link>` | 与停用前逐项一致 |
-| 模型可调用 | YAML + 实体 `disable-model-invocation` | 关闭后模型不可发现/加载，用户仍可调用 |
-| 用户可调用 | YAML + 实体 `user-invocable` | 关闭后用户命令不可加载 |
+| 清单 | `/skills-list` | 按会话工作目录扫描六类来源，标注来源、优先级、是否被屏蔽、是否被同名技能遮蔽、调用状态 |
+| 停用 / 恢复 | `/skill-block` | 只写状态文件，幂等；恢复即删除记录 |
+| 添加 / 移除技能文件夹 | `/skills-folders` | 只登记路径；这些目录里的技能按 `custom` 优先级注册，源目录更新即时生效 |
+| 创建技能 | `/skill-create` | 在 `$DSH_HOME/skills/<名称>/SKILL.md` 建标准 frontmatter，官方即刻发现 |
+| 复制导入 | `/skills-import`（浏览器文件夹）、`/skills-import-directory`（宿主机目录） | 复制进用户技能根；覆盖前要求目标是技能目录（含 `SKILL.md`） |
+| 删除 | `/skill-delete` | 只处理用户技能根里的技能：整个目录移入 `<根>/.system/prompt-tool/.trash/<名称>-随机/`（含 `record.json`），可人工恢复 |
 
-- YAML 是唯一管理来源：写策略时**两个字段都同步**为 YAML 值，避免两边成为独立来源；正文、未知字段、注释与换行保持原样。
-- 外部工具（例如 dsh-web）改动这两个字段后，下一次事务按 YAML 恢复并各提示一次偏差（进程内按 `根:技能` 去重）。
-- 完全停用的行在 UI 上调用策略只读，需先启用再改。
-- 注册给模型时按 frontmatter `name` 去重（首个受管记录胜出）、`rank = rankBase + 顺序序号`、`resourceBase` 取启用链接路径（官方 candidate 解析到实体，两者不能要求父目录相同）。
+只有用户技能根里的技能提供删除按钮；项目、引用目录与官方内置的技能是只读的（要改就去改那些文件）。
 
-## 4. 导入、创建与回收站
+## 5. 与旧的受管实体库模型的关系
 
-| 入口 | 端点 | 行为 |
+上一轮实现过「实体集中到 `skills/.system` + 根链接启停 + `skills.yml` 状态」的受管库模型（提交 `b7f380f`、`88a6b61`、`5dd0a2a`），本轮**整体取代**：
+
+| 维度 | 受管实体库（旧） | 注册层屏蔽（现） |
 |---|---|---|
-| 浏览器文件夹导入 | `/skills-import` | base64 上传，单技能包按 `frontmatter.name` 归类，容器目录按顶层名归类 |
-| 宿主机目录导入 | `/skills-import-directory` | 读取源目录（拒绝符号链接/硬链接/超限）后按目录名复制进实体库 |
-| 创建技能 | `/skill-create` | 生成标准 frontmatter 的实体并默认启用；名称 kebab-case、描述必填、正文 ≤ 1 MiB |
-| 回收站删除 | `/skill-delete` | 只把 `SKILL.md` 移入 `.system/.trash/skill-<随机>/`（含 `record.json`），实体目录与资源保留 |
+| 实体位置 | 全部搬进 `skills/.system` | 原地不动 |
+| 停用手段 | 删除根目录链接 | 影子候选压制 |
+| 官方是否仍发现 | 停用后看不到 | 仍发现，但被同名影子压掉 |
+| 顺序 / 优先级 | 插件用 `order` + `rankBase` 控制 | 由官方按技能名与来源优先级决定（插件不再控制） |
+| 一键修复 | 改目录名 / 补 frontmatter | 已移除（坏技能只展示原因） |
+| 状态文件 | `skills/.system/skills.yml`（v2） | `skills/.system/prompt-tool/skills.yml`（v3） |
 
-- 导入拒绝 `.system` / `.skills-migration` 首段、上跳、绝对路径、超限文件与重复路径。
-- 覆盖规则：目标已存在且**未被受管记录拥有**时拒绝；已受管实体可被显式导入覆盖。
-- 导入的 frontmatter 调用策略（`disable-model-invocation` / `user-invocable`）进入 YAML。
-- 回收站是文件系统事实，没有恢复端点；`record.json` 保留原记录与原文供人工恢复。
-
-## 5. 迁移与回滚
-
-`scripts/migrate-skills.mjs` 把旧布局（顶层普通技能目录 + `.system/prompt-tool/config.yml`）迁移到受管实体库：
+如果本机还留有旧的受管库布局，用上轮的一次性迁移脚本回滚（它会按记录删链接、校验哈希后把实体搬回 `skills` 根，并删除旧的 v2 状态文件）：
 
 ```powershell
-node scripts/migrate-skills.mjs --root "$env:DSH_HOME\skills"          # 只读预览：列出实体、嵌套技能、顺序与 rank
-node scripts/migrate-skills.mjs --root "$env:DSH_HOME\skills" --apply  # 执行：复制备份 → 移动实体 → 写 YAML → 建链接
-node scripts/migrate-skills.mjs --rollback "<备份目录>\migration.json" # 回滚：按记录删链接并校验哈希后还原
+node scripts/migrate-skills.mjs --rollback "<备份目录>\migration.json"
 ```
 
-- 只迁移「非链接、非点目录、自带 `SKILL.md`」的顶层目录；嵌套技能各建一条记录与一个根链接（`<pkg>--<sub>`）。
-- 备份先完整复制到 `.skills-migration/<时间戳>/`，**不删除唯一备份**；迁移失败时回滚已移动的实体与已建链接。
-- `skills.yml` 已存在时拒绝覆盖（幂等失败，不产生半状态）。
-- 回滚前对每个实体校验 `SKILL.md` 哈希；内容变化即拒绝，不覆盖外部改动。
-- 旧账本 `.prompt-tool-manifest.json` 与 `artifacts` 等非技能内容一律不动。
+该脚本只用于回滚历史迁移，不是本轮的运行时代码。
 
 ## 6. 失败与边界
 
-- 无效实体（缺 frontmatter、非法 name、frontmatter 解析失败）：保留管理面条目（`valid=false` + `issue`），启动时**隔离其受管链接**并各提示一次，其余技能照常注册。
-- 单个技能的 YAML/frontmatter 错误不阻断健康项的批量操作；`/skill-fix` 可修复目录名/BOM/缺 name，修复结果以重新解析为准。
-- watcher 递归监听 skills 根与 `.system`（300ms 防抖）：实体、YAML 与链接变化都会先失效缓存再重建目录。
-- 非 loopback 请求、非法载荷、路径越权、目录链接冲突都在写盘前拒绝；删除只作用于已确认归属的链接，不递归删除实体。
-- 不支持：`SKILL.md.disabled`（旧标记一律不识别、不转换）、扁平 `<name>.md` 技能、群聊专属注入、正文在线编辑。
+- 无效技能（缺 frontmatter、非法技能名、frontmatter 解析失败）：清单里标红并显示原因，不注册给模型；插件不改文件。
+- 状态文件损坏或含别名：读取失败并报告，屏蔽功能停用但清单照常显示（不静默重置用户状态）。
+- 引用目录不存在或不是普通目录：该来源不产生候选，清单里不出现该分组。
+- 影子候选永不加载内容：即使有人绕过调用策略直接 `get`，也拿不到正文。
+- 不支持：嵌套子技能（与官方一致，只扫一层）、扁平 `<name>.md`、按工作区区分同名屏蔽。
 
 ## 7. 回归入口
 
 | 行为 | 测试 |
 |---|---|
-| 状态契约与事务（隐藏实体、幂等、策略同步、冲突与回滚） | `test/host/skills-library.test.mjs`、`test/host/skills-config.test.mjs`、`test/host/skill-toggle.test.mjs` |
-| 导入 / 创建 / 回收站 | `test/host/skills-actions.test.mjs`、`test/host/skills-import.test.mjs` |
-| 迁移与回滚 | `test/host/skills-migration.test.mjs` |
-| provider 扫描、去重与缓存签名 | `test/host/skills-provider.test.mjs` |
-| bridge 端点（真实 handler 与写盘） | `test/host/settings-bridge.test.mjs` |
-| 技能树 / 筛选纯逻辑 | `test/client/skill-status.test.mjs` |
-| 页面行为（真实浏览器 + store） | `test/client/ui-v2-page-smoke.test.mjs`（fixture：`test/fixtures/ui-v2-drafts.mjs`） |
+| 状态文件 schema 与写盘事务 | `test/host/skills-config.test.mjs` |
+| 六类来源扫描、同名裁决、清单条目 | `test/host/skills-scan.test.mjs`（若存在）与 `test/host/skills-import.test.mjs` |
+| 创建 / 回收站删除 | `test/host/skills-actions.test.mjs` |
+| 端点（真实 handler + 写盘） | `test/host/settings-bridge.test.mjs` |
+| 注册层压制（影子候选） | `test/host/skill-block-shadow.test.mjs` |
+| 页面分组、屏蔽开关与资产入口 | `test/client/ui-v2-page-smoke.test.mjs`（fixture：`test/fixtures/ui-v2-drafts.mjs`） |
+| 状态筛选与徽章纯逻辑 | `test/client/skill-status.test.mjs` |
 
 ```powershell
 $Repo = 'D:\AI\GitHub\dsh-plugin-prompt-tool'

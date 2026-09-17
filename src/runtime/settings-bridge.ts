@@ -10,14 +10,12 @@ import { parse as parseYaml, stringify as stringifyYaml } from 'yaml'
 import type { SettingsDescriptor, SettingsPathOp } from '@deepseek-ai/dsh-settings'
 import { PARAM_KEYS } from '../config.ts'
 import { invalidateModelCatalog, listAdvertisedModels, peekModelCatalog, refreshModelReasoning, type ModelDetection } from './models.ts'
-import type { SkillCatalogEntry } from '../config.ts'
+import type { SkillCatalogEntry } from '../shared/skills.ts'
 import { loadPromptConfigFiles } from '../host/prompt-configs.ts'
 import { validatePromptConfigs } from './configs-validate.ts'
 import { loadPromptTemplates, loadToolTemplates } from '../host/templates.ts'
-import { fixSkillEntry } from './skill-fix.ts'
 import { importSkillsDirectory, importSkillsPackage } from '../host/skills-import.ts'
-import { createManagedSkill, deleteManagedSkill } from '../host/skills-actions.ts'
-import { updateSkillsLibrary } from '../host/skills-library.ts'
+import { createSkill, deleteSkill } from '../host/skills-actions.ts'
 import {
   appendPresetModules,
   atomicWriteTextFile,
@@ -61,9 +59,7 @@ import { BRIDGE_ENDPOINTS, MAX_BRIDGE_BODY_BYTES, MAX_CHARACTER_CARD_STREAM_BYTE
 import type { ModelSyncResult, StConversionReport } from '../shared/bridge-contract.ts'
 import { moduleParamFallbacks, validateEngineParamValues } from '../shared/engine-params.ts'
 import { readPersonaSpec } from '../shared/persona-section.ts'
-import type { SkillToggleResult } from '../host/skill-toggle.ts'
-import type { SkillStatePatch } from '../shared/skills.ts'
-import type { SkillsConfigRead } from '../host/skills-config.ts'
+import type { SkillsStateRead } from '../host/skills-config.ts'
 import type { PresetModuleFacts } from '../shared/engine-capabilities.ts'
 import { validateCustomTools } from '../host/custom-tools.ts'
 import {
@@ -80,18 +76,20 @@ import { PRE_STEP_COORDINATOR_SERVICE } from './pre-step-coordinator.ts'
 
 
 export interface SkillsBridgeState {
-  activeSkillsDirs: string[]
-  skillCatalog: SkillCatalogEntry[]
-  /** 技能管理配置快照（顺序 / 附加目录 / rank 基数）与派生开关：describe 事实来源。 */
-  skillOrder: string[]
-  skillDirs: string[]
-  skillRankBase: number
-  /** 技能启停：切换受管实体的 skills 根链接。 */
-  toggleSkill: (folder: string, enabled: boolean, dir?: string) => SkillToggleResult
-  /** 技能管理配置写入（附加根 / 顺序 / rank 基数），热应用并返回生效值。 */
-  patchSkillsConfig: (patch: { dirs?: string[]; order?: string[]; rankBase?: number }) => SkillsConfigRead
-  /** 技能目录改名后同步配置里的顺序项（未列出该技能时不写盘）。 */
-  renameSkillInOrder: (from: string, to: string) => SkillsConfigRead
+  /** 用户技能根（技能实体的落点）。 */
+  skillsRoot: string
+  /** 当前屏蔽的技能名。 */
+  blocked: string[]
+  /** 用户添加的技能文件夹（只引用，不复制）。 */
+  folders: string[]
+  /** 技能清单：按会话工作区扫描官方六类技能根并叠加屏蔽状态。 */
+  listSkills: (cwd?: string) => SkillCatalogEntry[]
+  /** 注册层屏蔽开关：只写插件状态，不改技能文件。 */
+  setSkillBlocked: (name: string, blocked: boolean) => SkillsStateRead
+  /** 添加 / 移除引用的技能文件夹。 */
+  patchSkillFolders: (folders: string[]) => SkillsStateRead
+  /** 清单缓存失效（资产写盘后调用）。 */
+  invalidateCatalog: () => void
 }
 
 /** 仅允许本机回环请求，镜像官方 settings bridge 的边界。 */
@@ -675,14 +673,12 @@ export function registerSettingsBridge(
           providers: detection.providers,
           modelCatalog,
           modelsError: detection.error,
-          activeSkillsDirs: skillsState.activeSkillsDirs,
-          skillsDirExists: Object.fromEntries(skillsState.activeSkillsDirs.map((dir) => [dir, existsSync(dir)])),
-          skillCatalog: skillsState.skillCatalog,
-          // 技能管理配置随 describe 下发（settings 已不承载技能键）：客户端字段与
-          // 「技能设置」页据此渲染，与磁盘标记/配置文件保持同源。
-          skillOrder: skillsState.skillOrder,
-          skillsDirs: skillsState.skillDirs,
-          skillRankBase: skillsState.skillRankBase,
+          activeSkillsDirs: [skillsState.skillsRoot],
+          skillsDirExists: { [skillsState.skillsRoot]: existsSync(skillsState.skillsRoot) },
+          skillCatalog: skillsState.listSkills(),
+          // 注册层状态随 describe 下发：屏蔽表 + 引用目录，客户端「技能设置」页据此渲染。
+          skillBlocked: skillsState.blocked,
+          skillFolders: skillsState.folders,
         }
       }
 
@@ -897,43 +893,26 @@ export function registerSettingsBridge(
         }),
         sctx.webServer.register({
           kind: 'exact',
-          path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.skillFix,
+          path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.skillsList,
           handler: async (req, res) => {
             if (!guard(req, res)) return
             const parsedBody = await readBridgeBodyForHandler(req, res)
             if (parsedBody === undefined) return
-            const { body } = parsedBody
-            if (body === null || body === undefined || typeof body !== 'object') {
-              writeBridgeJson(res, 400, { ok: false, code: 'settings-rejected', message: 'unreadable JSON body' })
+            const session = readSessionIdField(parsedBody.body)
+            if (!session.ok) {
+              writeBridgeJson(res, 400, { ok: false, code: 'skills-list-rejected', message: session.message })
               return
             }
-            const record = body as Record<string, unknown>
-            const folder = typeof record.folder === 'string' ? record.folder : ''
-            // 多目录：优先按条目来源目录修复；目录不存在/条目缺失时回退第一个目录。
+            // 项目技能按会话工作目录解析；没有存活会话时只列用户根与内置来源。
+            const cwd = session.sessionId === undefined ? undefined : localAgentCwd(sctx, session.sessionId)
             const state = getSkillsState()
-            const sourceDir = state.activeSkillsDirs[0] === undefined ? undefined : join(state.activeSkillsDirs[0], '.system')
-            const result = fixSkillEntry(sourceDir ?? '', folder)
-            if (!result.fixed) {
-              writeBridgeJson(res, 400, { ok: false, code: 'skill-fix-failed', message: result.error ?? '修复失败' })
-              return
-            }
-            // 目录重命名后同步技能配置里的顺序（技能状态在磁盘上，无 settings 键可迁移）。
-            if (result.folder !== result.fixedFolder) {
-              const renamed = getSkillsState().renameSkillInOrder(result.folder, result.fixedFolder)
-              if (renamed.ok === false) {
-                writeBridgeJson(res, 409, { ok: false, code: 'settings-rejected', message: `技能文件已修复，但技能配置顺序同步失败：${renamed.message}` })
-                return
-              }
-            }
-            afterSkillsChange?.()
             writeBridgeJson(res, 200, {
               ok: true,
               value: {
-                folder: result.folder,
-                fixedFolder: result.fixedFolder,
-                name: result.name,
-                actions: result.actions,
-                skillCatalog: getSkillsState().skillCatalog,
+                skills: state.listSkills(cwd),
+                blocked: state.blocked,
+                folders: state.folders,
+                roots: [state.skillsRoot],
               },
             })
           },
@@ -952,13 +931,8 @@ export function registerSettingsBridge(
             }
             const record = body as Record<string, unknown>
             const files = Array.isArray(record.files) ? record.files : []
-            const state = getSkillsState()
-            const skillsDir = state.activeSkillsDirs[0]
-            if (skillsDir === undefined || skillsDir.length === 0) {
-              writeBridgeJson(res, 400, { ok: false, code: 'skills-import-rejected', message: '当前技能目录不可用' })
-              return
-            }
-            const result = importSkillsPackage(skillsDir, files)
+            const root = getSkillsState().skillsRoot
+            const result = importSkillsPackage(root, files)
             if (!result.ok) {
               writeBridgeJson(res, 400, { ok: false, code: 'skills-import-rejected', message: result.message })
               return
@@ -969,139 +943,57 @@ export function registerSettingsBridge(
         }),
         sctx.webServer.register({
           kind: 'exact',
-          path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.skillToggle,
-          handler: async (req, res) => {
-            if (!guard(req, res)) return
-            const parsedBody = await readBridgeBodyForHandler(req, res)
-            if (parsedBody === undefined) return
-            const { body } = parsedBody
-            if (body === null || body === undefined || typeof body !== 'object') {
-              writeBridgeJson(res, 400, { ok: false, code: 'settings-rejected', message: 'unreadable JSON body' })
-              return
-            }
-            const record = body as Record<string, unknown>
-            const folder = typeof record.folder === 'string' ? record.folder : ''
-            const dir = typeof record.dir === 'string' && record.dir.length > 0 ? record.dir : undefined
-            if (folder.length === 0 || typeof record.enabled !== 'boolean') {
-              writeBridgeJson(res, 400, { ok: false, code: 'skill-toggle-rejected', message: 'folder 与 enabled 必填' })
-              return
-            }
-            // 完全停用 = 删除受管链接；实体仍保留在 .system。
-            const result = getSkillsState().toggleSkill(folder, record.enabled, dir)
-            if (result.ok === false) {
-              writeBridgeJson(res, result.code === 'not-found' ? 404 : 409, {
-                ok: false,
-                code: `skill-toggle-${result.code}`,
-                message: result.message,
-              })
-              return
-            }
-            afterSkillsChange?.()
-            writeBridgeJson(res, 200, {
-              ok: true,
-              value: {
-                folder: result.folder,
-                enabled: result.enabled,
-                changed: result.changed,
-                file: result.file,
-                skillCatalog: getSkillsState().skillCatalog,
-              },
-            })
-          },
-        }),
-        sctx.webServer.register({
-          kind: 'exact',
-          path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.skillsConfig,
-          handler: async (req, res) => {
-            if (!guard(req, res)) return
-            const parsedBody = await readBridgeBodyForHandler(req, res)
-            if (parsedBody === undefined) return
-            const { body } = parsedBody
-            const record = (body ?? {}) as Record<string, unknown>
-            const patch: { dirs?: string[]; order?: string[]; rankBase?: number } = {}
-            if (record.dirs !== undefined) {
-              if (!Array.isArray(record.dirs) || record.dirs.some((item) => typeof item !== 'string')) {
-                writeBridgeJson(res, 400, { ok: false, code: 'skills-config-rejected', message: 'dirs 必须是字符串数组' })
-                return
-              }
-              patch.dirs = (record.dirs as string[]).filter((dir) => dir.trim().length > 0)
-            }
-            if (record.order !== undefined) {
-              if (!Array.isArray(record.order) || record.order.some((item) => typeof item !== 'string')) {
-                writeBridgeJson(res, 400, { ok: false, code: 'skills-config-rejected', message: 'order 必须是字符串数组' })
-                return
-              }
-              patch.order = (record.order as string[]).filter((folder) => folder.length > 0)
-            }
-            if (record.rankBase !== undefined) {
-              if (typeof record.rankBase !== 'number' || !Number.isSafeInteger(record.rankBase) || record.rankBase < 0) {
-                writeBridgeJson(res, 400, { ok: false, code: 'skills-config-rejected', message: 'rankBase 必须是非负整数' })
-                return
-              }
-              patch.rankBase = record.rankBase
-            }
-            const written = getSkillsState().patchSkillsConfig(patch)
-            if (written.ok === false) {
-              writeBridgeJson(res, 409, { ok: false, code: 'skills-config-rejected', message: written.message })
-              return
-            }
-            afterSkillsChange?.()
-            const state = getSkillsState()
-            writeBridgeJson(res, 200, {
-              ok: true,
-              value: {
-                dirs: written.config.dirs,
-                order: written.config.order,
-                rankBase: written.config.rankBase,
-                activeSkillsDirs: state.activeSkillsDirs,
-                skillCatalog: state.skillCatalog,
-              },
-            })
-          },
-        }),
-        sctx.webServer.register({
-          kind: 'exact',
-          path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.skillPolicy,
+          path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.skillBlock,
           handler: async (req, res) => {
             if (!guard(req, res)) return
             const parsedBody = await readBridgeBodyForHandler(req, res)
             if (parsedBody === undefined) return
             const body = parsedBody.body
-            if (body === null || typeof body !== 'object' || Array.isArray(body)) {
-              writeBridgeJson(res, 400, { ok: false, code: 'skill-policy-rejected', message: '技能策略请求无效' })
+            const record = body !== null && typeof body === 'object' && !Array.isArray(body) ? body as Record<string, unknown> : {}
+            if (typeof record.name !== 'string' || record.name.length === 0 || typeof record.blocked !== 'boolean') {
+              writeBridgeJson(res, 400, { ok: false, code: 'skill-block-rejected', message: 'name 与 blocked 必填' })
               return
             }
-            const record = body as Record<string, unknown>
-            const id = typeof record.id === 'string' ? record.id : ''
-            const policy = record.policy
-            if (id.length === 0 || policy === null || typeof policy !== 'object' || Array.isArray(policy)) {
-              writeBridgeJson(res, 400, { ok: false, code: 'skill-policy-rejected', message: '需要 id 与 policy' })
-              return
-            }
-            const patch: SkillStatePatch = {}
-            for (const key of ['enabled', 'modelInvocable', 'userInvocable'] as const) {
-              if (key in (policy as Record<string, unknown>)) {
-                const value = (policy as Record<string, unknown>)[key]
-                if (typeof value !== 'boolean') {
-                  writeBridgeJson(res, 400, { ok: false, code: 'skill-policy-rejected', message: `${key} 必须是布尔值` })
-                  return
-                }
-                patch[key] = value
-              }
-            }
-            const root = getSkillsState().activeSkillsDirs[0]
-            const result = root === undefined ? { ok: false, config: {} as never, message: '技能目录不可用' } : updateSkillsLibrary(root, (config) => {
-              const current = config.skills[id]
-              if (current === undefined) throw new Error(`未找到受管技能：${id}`)
-              config.skills[id] = { ...current, ...patch }
-              return config
-            })
-            if (result.ok === false) {
-              writeBridgeJson(res, 409, { ok: false, code: 'skill-policy-rejected', message: result.message })
+            // 注册层屏蔽：只写插件状态，不改任何技能文件。
+            const written = getSkillsState().setSkillBlocked(record.name, record.blocked)
+            if (written.ok === false) {
+              writeBridgeJson(res, 409, { ok: false, code: 'skill-block-rejected', message: written.message })
               return
             }
             afterSkillsChange?.()
-            writeBridgeJson(res, 200, { ok: true, value: { skillCatalog: getSkillsState().skillCatalog } })
+            writeBridgeJson(res, 200, {
+              ok: true,
+              value: {
+                skills: getSkillsState().listSkills(),
+                blocked: written.state.blocked.map((item) => item.name),
+              },
+            })
+          },
+        }),
+        sctx.webServer.register({
+          kind: 'exact',
+          path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.skillsFolders,
+          handler: async (req, res) => {
+            if (!guard(req, res)) return
+            const parsedBody = await readBridgeBodyForHandler(req, res)
+            if (parsedBody === undefined) return
+            const body = parsedBody.body
+            const record = body !== null && typeof body === 'object' && !Array.isArray(body) ? body as Record<string, unknown> : {}
+            if (!Array.isArray(record.folders) || record.folders.some((item) => typeof item !== 'string')) {
+              writeBridgeJson(res, 400, { ok: false, code: 'skills-folders-rejected', message: 'folders 必须是字符串数组' })
+              return
+            }
+            // 只记引用，不复制也不移动任何文件。
+            const written = getSkillsState().patchSkillFolders(record.folders as string[])
+            if (written.ok === false) {
+              writeBridgeJson(res, 409, { ok: false, code: 'skills-folders-rejected', message: written.message })
+              return
+            }
+            afterSkillsChange?.()
+            writeBridgeJson(res, 200, {
+              ok: true,
+              value: { skills: getSkillsState().listSkills(), folders: written.state.folders },
+            })
           },
         }),
         sctx.webServer.register({
@@ -1113,8 +1005,7 @@ export function registerSettingsBridge(
             if (parsedBody === undefined) return
             const body = parsedBody.body
             const record = body !== null && typeof body === 'object' && !Array.isArray(body) ? body as Record<string, unknown> : {}
-            const root = getSkillsState().activeSkillsDirs[0]
-            const result = root === undefined ? { ok: false, message: '技能目录不可用' } : createManagedSkill(root, record as { name: unknown; description: unknown; content: unknown })
+            const result = createSkill(getSkillsState().skillsRoot, record as { name: unknown; description: unknown; content: unknown })
             if (!result.ok) { writeBridgeJson(res, 400, { ok: false, code: 'skill-create-rejected', message: result.message }); return }
             afterSkillsChange?.()
             writeBridgeJson(res, 200, { ok: true, value: result })
@@ -1128,10 +1019,9 @@ export function registerSettingsBridge(
             const parsedBody = await readBridgeBodyForHandler(req, res)
             if (parsedBody === undefined) return
             const body = parsedBody.body
-            const id = body !== null && typeof body === 'object' && !Array.isArray(body) && typeof (body as Record<string, unknown>).id === 'string'
-              ? (body as Record<string, unknown>).id as string : ''
-            const root = getSkillsState().activeSkillsDirs[0]
-            const result = root === undefined ? { ok: false, message: '技能目录不可用' } : deleteManagedSkill(root, id)
+            const folder = body !== null && typeof body === 'object' && !Array.isArray(body) && typeof (body as Record<string, unknown>).folder === 'string'
+              ? (body as Record<string, unknown>).folder as string : ''
+            const result = deleteSkill(getSkillsState().skillsRoot, folder)
             if (!result.ok) { writeBridgeJson(res, 400, { ok: false, code: 'skill-delete-rejected', message: result.message }); return }
             afterSkillsChange?.()
             writeBridgeJson(res, 200, { ok: true, value: result })
@@ -1147,8 +1037,7 @@ export function registerSettingsBridge(
             const body = parsedBody.body
             const source = body !== null && typeof body === 'object' && !Array.isArray(body) && typeof (body as Record<string, unknown>).path === 'string'
               ? (body as Record<string, unknown>).path as string : ''
-            const root = getSkillsState().activeSkillsDirs[0]
-            const result = root === undefined ? { ok: false, message: '技能目录不可用' } : importSkillsDirectory(root, source)
+            const result = importSkillsDirectory(getSkillsState().skillsRoot, source)
             if (!result.ok) { writeBridgeJson(res, 400, { ok: false, code: 'skills-import-rejected', message: result.message }); return }
             afterSkillsChange?.()
             writeBridgeJson(res, 200, { ok: true, value: result })

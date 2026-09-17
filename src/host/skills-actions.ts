@@ -1,62 +1,66 @@
-/** 受管技能创建与回收站删除。 */
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+/** 技能资产操作：创建与回收站删除，全部落在用户技能根（$DSH_HOME/skills）。
+ *  技能实体就是 `<根>/<目录名>/SKILL.md`；本模块不写插件状态，也不碰其他来源的技能。 */
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { Document } from 'yaml'
-import { SKILL_NAME_RE } from '../runtime/skills-provider.ts'
-import { isSafeSkillPath } from './skills-config.ts'
-import { assertSkillDirectory, importSkillsPackage } from './skills-import.ts'
-import { updateSkillsLibrary } from './skills-library.ts'
+import { SKILL_NAME_PATTERN } from './skills-config.ts'
 
 export type SkillActionResult = { ok: true; id: string; path: string } | { ok: false; message: string }
 
-export function createManagedSkill(root: string, input: { name: unknown; description: unknown; content: unknown }): SkillActionResult {
-  if (input === null || typeof input !== 'object' || typeof input.name !== 'string' || !SKILL_NAME_RE.test(input.name)
+/** 拒绝符号链接与其他非普通目录：资产操作只作用于用户自己建的实体目录。 */
+function assertPlainDirectory(path: string): void {
+  const info = lstatSync(path)
+  if (info.isSymbolicLink() || !info.isDirectory()) throw new Error(`技能目录不是普通目录：${path}`)
+}
+
+/** 创建标准技能：`<根>/<技能名>/SKILL.md`，frontmatter 只含 name 与 description。 */
+export function createSkill(root: string, input: { name: unknown; description: unknown; content: unknown }): SkillActionResult {
+  if (input === null || typeof input !== 'object' || typeof input.name !== 'string' || !SKILL_NAME_PATTERN.test(input.name)
     || typeof input.description !== 'string' || input.description.trim().length === 0 || input.description.length > 8192
     || typeof input.content !== 'string' || Buffer.byteLength(input.content) > 1024 * 1024) {
     return { ok: false, message: '技能名须为 kebab-case，描述必填，正文不能超过 1 MiB' }
   }
-  const frontmatter = new Document({ name: input.name, description: input.description }).toString()
-  const text = `---\n${frontmatter}---\n${input.content}`
-  const result = importSkillsPackage(root, [{ path: `${input.name}/SKILL.md`, content: Buffer.from(text).toString('base64') }], false)
-  return result.ok ? { ok: true, id: input.name, path: join(resolve(root), '.system', input.name) } : result
+  const base = resolve(root)
+  const target = join(base, input.name)
+  try {
+    mkdirSync(base, { recursive: true })
+    assertPlainDirectory(base)
+    if (existsSync(target)) return { ok: false, message: `技能已存在：${input.name}` }
+    mkdirSync(target)
+    const frontmatter = new Document({ name: input.name, description: input.description }).toString()
+    writeFileSync(join(target, 'SKILL.md'), `---\n${frontmatter}---\n${input.content}`, { encoding: 'utf8', flag: 'wx' })
+    return { ok: true, id: input.name, path: target }
+  } catch (error) {
+    // 半成品目录不留在用户根里（写入失败时回滚本次创建的目录）。
+    try { if (existsSync(target)) rmSync(target, { recursive: true, force: true }) } catch { /* 保留现场供人工检查 */ }
+    return { ok: false, message: `创建技能失败：${error instanceof Error ? error.message : String(error)}` }
+  }
 }
 
-export function deleteManagedSkill(root: string, id: string): SkillActionResult {
-  if (!isSafeSkillPath(id)) return { ok: false, message: '技能身份不合法' }
-  let trash: string | undefined
-  let marker: string | undefined
-  let moved = false
-  const restore = (): void => {
-    if (moved && trash !== undefined && marker !== undefined && !existsSync(marker)) {
-      renameSync(join(trash, 'SKILL.md'), marker)
-      moved = false
-    }
-  }
-  const result = updateSkillsLibrary(root, (config) => {
-    const record = config.skills[id]
-    if (record === undefined) throw new Error('技能不在受管库中')
-    let entity = join(resolve(root), '.system')
-    assertSkillDirectory(entity)
-    for (const part of record.path.split('/')) { entity = join(entity, part); assertSkillDirectory(entity) }
-    marker = join(entity, 'SKILL.md')
-    const info = lstatSync(marker)
-    if (!info.isFile() || info.isSymbolicLink() || info.nlink > 1) throw new Error('技能标记不是独立普通文件')
-    const recycle = join(resolve(root), '.system', '.trash')
+/** 回收站删除：整个技能目录移入 `<根>/.system/prompt-tool/.trash/`，可人工恢复。 */
+export function deleteSkill(root: string, folder: string): SkillActionResult {
+  if (!SKILL_NAME_PATTERN.test(folder)) return { ok: false, message: '技能目录名不合法' }
+  const base = resolve(root)
+  const source = join(base, folder)
+  try {
+    assertPlainDirectory(base)
+    if (!existsSync(source)) return { ok: false, message: `技能目录不存在：${folder}` }
+    assertPlainDirectory(source)
+    if (!existsSync(join(source, 'SKILL.md'))) return { ok: false, message: `不是技能目录（缺少 SKILL.md）：${folder}` }
+    const recycle = join(base, '.system', 'prompt-tool', '.trash')
     mkdirSync(recycle, { recursive: true })
-    trash = mkdtempSync(join(recycle, 'skill-'))
-    writeFileSync(join(trash, 'record.json'), JSON.stringify({ id, record, marker, deletedAt: new Date().toISOString(), content: readFileSync(marker, 'utf8') }), { flag: 'wx' })
-    renameSync(marker, join(trash, 'SKILL.md'))
-    moved = true
-    delete config.skills[id]
-    config.order = config.order.filter((item) => item !== id)
-    return config
-  }, undefined, { rollback: restore })
-  if (!result.ok) {
-    if (moved && trash !== undefined && marker !== undefined && !existsSync(marker)) {
-      try { renameSync(join(trash, 'SKILL.md'), marker) } catch { /* 保留回收站证据 */ }
-    }
-    if (trash !== undefined && !moved) rmSync(trash, { recursive: true, force: true })
-    return { ok: false, message: result.message }
+    const target = mkdtempSync(join(recycle, `${folder}-`))
+    writeFileSync(join(target, 'record.json'), JSON.stringify({
+      folder, source, deletedAt: new Date().toISOString(), files: readdirSync(source),
+    }, null, 2), { flag: 'wx' })
+    renameSync(source, join(target, folder))
+    return { ok: true, id: folder, path: join(target, folder) }
+  } catch (error) {
+    return { ok: false, message: `删除技能失败：${error instanceof Error ? error.message : String(error)}` }
   }
-  return { ok: true, id, path: trash! }
+}
+
+/** 读取技能标记文件（供预览与测试使用）。 */
+export function readSkillMarker(path: string): string {
+  return readFileSync(join(path, 'SKILL.md'), 'utf8')
 }

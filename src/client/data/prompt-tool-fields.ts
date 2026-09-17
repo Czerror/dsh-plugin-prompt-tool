@@ -10,7 +10,7 @@ export interface HostDefaultModel {
   reasoningEffort?: string
 }
 
-/** 技能目录条目：与服务端共用同一契约，避免客户端漏读稳定身份与来源字段。 */
+/** 技能目录条目：与服务端共用同一契约（来源、优先级、屏蔽状态、同名遮蔽）。 */
 export type { SkillCatalogEntry } from '../../shared/skills.ts'
 
 /** 参数草稿类型从宿主契约派生，只转换 UI 的列表/阶段/深度形态。 */
@@ -26,15 +26,16 @@ export interface Fields extends EngineParamDrafts {
   promptPath: string
   agentsText: string
   agentsPath: string
-  skillOrder: string[]
+  /** 技能清单：官方六类技能根 + 注册层屏蔽状态。 */
   skillCatalog: SkillCatalogEntry[]
-  /** 用户技能目录列表（按添加顺序）；空 = 默认副本。 */
-  skillsDirs: string[]
-  /** 实际生效目录列表（空配置 = [默认副本路径]）。 */
-  activeSkillsDirs: string[]
-  /** 生效目录存在性（path → 是否存在）。 */
-  skillsDirExists: Record<string, boolean>
-  skillRankBase: number
+  /** 当前被屏蔽的技能名（注册层停用，不改技能文件）。 */
+  skillBlocked: string[]
+  /** 用户添加的技能文件夹（只引用，不复制）。 */
+  skillFolders: string[]
+  /** 用户技能根（创建、复制导入与回收站的落点）。 */
+  skillsRoot: string
+  /** 用户技能根是否存在。 */
+  skillsRootExists: boolean
   presetOrder: number
   fallbackText: string
   writePreset: boolean
@@ -74,12 +75,11 @@ export const EMPTY_FIELDS: Fields = {
   promptPath: '',
   agentsText: '',
   agentsPath: '',
-  skillOrder: [],
   skillCatalog: [],
-  skillsDirs: [],
-  activeSkillsDirs: [],
-  skillsDirExists: {},
-  skillRankBase: 250,
+  skillBlocked: [],
+  skillFolders: [],
+  skillsRoot: '',
+  skillsRootExists: false,
   presetOrder: 5,
   fallbackText: '',
   writePreset: true,

@@ -1,37 +1,70 @@
+/** 技能管理的共享契约：技能实体由官方发现，插件只维护屏蔽表与引用目录。 */
 export const SKILL_MARKER = 'SKILL.md'
 
-/** 受管技能的稳定身份与磁盘状态；正文只属于实体 SKILL.md。 */
-export interface ManagedSkillState {
-  /** 相对 skills/.system 的实体目录，允许嵌套。 */
-  path: string
-  /** skills 根中的单段链接名；与注册名称是不同身份。 */
-  link: string
-  enabled: boolean
-  modelInvocable: boolean
-  userInvocable: boolean
-  /** 来源类别/原目录仅用于管理展示，不作为写入授权。 */
-  source?: string
+/** 技能状态文件版本（v3 = 注册层屏蔽模型）。 */
+export const SKILLS_STATE_VERSION = 3
+
+/** 官方技能根分类；数值越小越优先，与官方 rank 一致。 */
+export type SkillSourceKind =
+  | 'project-dsh'
+  | 'project-agents'
+  | 'custom'
+  | 'user-dsh'
+  | 'user-agents'
+  | 'bundled'
+
+/** 来源元信息：优先级与展示名集中在这里，界面与清单共用。 */
+export const SKILL_SOURCES: Record<SkillSourceKind, { rank: number; label: string }> = {
+  'project-dsh': { rank: 100, label: '项目 .dsh/skills' },
+  'project-agents': { rank: 200, label: '项目 .agents/skills' },
+  custom: { rank: 300, label: '已添加的技能文件夹' },
+  'user-dsh': { rank: 400, label: '用户 skills 目录' },
+  'user-agents': { rank: 500, label: '用户 .agents/skills' },
+  bundled: { rank: 600, label: '官方内置' },
 }
 
-export type SkillStatePatch = Partial<Pick<ManagedSkillState, 'enabled' | 'modelInvocable' | 'userInvocable'>>
+/** 屏蔽记录的影子候选优先级：小于全部官方根（最小 100），因此任何来源的同名技能都会被压掉。 */
+export const SKILL_BLOCK_RANK = 0
 
+/** 一条屏蔽记录；只按技能名生效，不改动任何技能文件。 */
+export interface BlockedSkill {
+  /** 技能名（frontmatter name，kebab-case）。 */
+  name: string
+  /** 记录时间（ISO 字符串）。 */
+  at: string
+  note?: string
+}
+
+/** 插件技能状态：屏蔽表 + 用户显式引用的技能文件夹（绝对路径，按引用顺序）。 */
+export interface SkillsState {
+  version: number
+  blocked: BlockedSkill[]
+  folders: string[]
+}
+
+/** 清单条目：由插件扫描六类官方技能根得到，是管理面的事实来源。 */
 export interface SkillCatalogEntry {
-  /** 受管项的稳定键；folder 为兼容现有列表保留的同值字段。 */
-  id?: string
-  folder: string
+  /** 稳定键：来源类别 + 来源根 + 目录名。 */
+  id: string
+  /** frontmatter name（缺失时回退目录名）。 */
   name: string
   description: string
+  /** 技能目录名（一层扫描，与官方发现规则一致）。 */
+  folder: string
+  /** 来源根的绝对路径。 */
+  dir: string
+  source: SkillSourceKind
+  /** 来源优先级（越小越优先）。 */
+  rank: number
   valid: boolean
-  dir?: string
-  duplicate?: boolean
   issue?: string
-  linked?: boolean
-  disabled?: boolean
+  /** 是否被屏蔽（注册层影子候选生效中）。 */
+  blocked: boolean
+  /** frontmatter 声明的调用策略；被屏蔽时实际以屏蔽为准。 */
   modelInvocable: boolean
   userInvocable: boolean
-  source?: string
-  entityPath?: string
-  linkPath?: string
-  parentId?: string
-  managed?: boolean
+  /** 同名技能中的胜出者 id；本项未胜出时用于提示"被同名技能遮蔽"。 */
+  winnerId?: string
+  /** 标记文件绝对路径。 */
+  path?: string
 }

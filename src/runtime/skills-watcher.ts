@@ -19,8 +19,8 @@ export function createSkillsWatcher(dirs: () => string[], onRefresh: () => void)
     close()
     for (const dir of dirs()) {
       try {
-        // recursive: true 监听嵌套技能目录（skills/<skill>/SKILL.md 等深层变更），
-        // 与 skills-provider 的扫描结果一致；不可递归 watch 的平台抛错时跳过该目录。
+        // recursive: true 监听嵌套目录（状态文件与引用技能文件夹的深层变更），
+        // 与插件清单扫描的范围一致；不可递归 watch 的平台抛错时跳过该目录。
         const watcher = watch(dir, { persistent: false, recursive: true }, () => {
           // 目录被删除/改名后 Windows 会持续上报事件（实测每秒十万级）：句柄已无
           // 意义，继续防抖只会空转 CPU 并让刷新计时器永久存活，直接关闭该目录。

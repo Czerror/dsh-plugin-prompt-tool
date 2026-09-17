@@ -4,7 +4,6 @@ import type { PromptConfigSpec } from './host/prompt-configs.ts'
 import { DEFAULT_PRESET_ORDER } from './host/paths.ts'
 import type { PresetWriterParams } from './shared/engine-params.ts'
 import type { SkillCatalogEntry } from './shared/skills.ts'
-export type { SkillCatalogEntry } from './shared/skills.ts'
 
 export const NS = 'prompt-tool' as const
 
@@ -31,42 +30,12 @@ export const Config: z<Config> = z.object({
   fallbackText: z.string().default(''),
 })
 
-export interface SkillEntry {
-  id?: string
-  source?: string
-  entityPath?: string
-  linkPath?: string
-  parentId?: string
-  managed?: boolean
-  /** 来源技能目录的绝对路径（多目录合并后用于修复定位与归属展示）。 */
-  dir: string
-  folder: string
-  file: string
-  name: string
-  description: string
-  whenToUse?: string
-  metadata?: Record<string, unknown>
-  body: string
-  /** 是否通过官方 dsh-skill 候选校验；false 时只进管理界面，不注册给模型。 */
-  valid: boolean
-  /** invalid 条目的原因（可为空）。 */
-  issue?: string
-  /** 通过符号链接/junction 挂入的目录（删除类操作需谨慎）。 */
-  linked?: boolean
-  /** 停用态（受管实体未暴露链接）：只进管理界面，不注册给模型。 */
-  disabled?: boolean
-  /** 官方调用策略：disable-model-invocation: true 时模型不可调用。 */
-  modelInvocable: boolean
-  /** 官方调用策略：user-invocable: false 时用户不可调用。 */
-  userInvocable: boolean
-}
-
 export interface PromptSettings {
   /** 运行时检测：是否检测到任何模型服务商（不写入 settings）。 */
   modelsAvailable: boolean
-  /** 技能目录全量条目（含停用态）：启停与顺序的唯一事实来源由技能根与配置文件提供。 */
+  /** 技能清单：按官方六类技能根扫描的结果 + 注册层屏蔽状态。 */
   skillCatalog: SkillCatalogEntry[]
-  /** 当前实际生效的技能目录列表（配置为空 = [$DSH_HOME/skills]）。 */
+  /** 用户技能根（技能实体的落点；其余来源由官方各自发现）。 */
   activeSkillsDirs: string[]
   /** 生效目录存在性（path → 目录是否存在，供 UI 状态徽章）。 */
   skillsDirExists: Record<string, boolean>
@@ -81,16 +50,27 @@ export interface PromptSettings {
 export const PromptSettingsSchema: z<PromptSettings> = z.object({
   modelsAvailable: z.boolean().default(true),
   skillCatalog: z.array(z.object({
-    folder: z.string(),
+    id: z.string(),
     name: z.string(),
     description: z.string().default(''),
+    folder: z.string(),
+    dir: z.string(),
+    source: z.union([
+      z.const('project-dsh'),
+      z.const('project-agents'),
+      z.const('custom'),
+      z.const('user-dsh'),
+      z.const('user-agents'),
+      z.const('bundled'),
+    ]),
+    rank: z.number(),
     valid: z.boolean().default(false),
-    dir: z.string().default(''),
-    duplicate: z.boolean().default(false),
     issue: z.string().default(''),
-    disabled: z.boolean().default(false),
+    blocked: z.boolean().default(false),
     modelInvocable: z.boolean().default(false),
     userInvocable: z.boolean().default(false),
+    winnerId: z.string().default(''),
+    path: z.string().default(''),
   })).default([]),
   activeSkillsDirs: z.array(z.string()).default([]),
   skillsDirExists: z.dict(z.boolean()).default({}),

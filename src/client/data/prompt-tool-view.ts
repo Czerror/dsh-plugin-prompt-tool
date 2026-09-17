@@ -32,30 +32,27 @@ const readSkillCatalog = (source: Record<string, unknown>, key: string): SkillCa
   return value.flatMap((entry) => {
     if (entry === null || typeof entry !== 'object') return []
     const record = entry as Record<string, unknown>
-    const folder = readString(record, 'folder')
-    const name = readString(record, 'name')
-    if (folder === undefined || name === undefined) return []
     const id = readString(record, 'id')
+    const name = readString(record, 'name')
+    const folder = readString(record, 'folder')
+    const dir = readString(record, 'dir')
+    const kind = readString(record, 'source')
+    if (id === undefined || name === undefined || folder === undefined || dir === undefined || kind === undefined) return []
     return [{
-      folder,
+      id,
       name,
+      folder,
+      dir,
+      source: kind as SkillCatalogEntry['source'],
+      rank: readNumber(record, 'rank', 0),
       description: readString(record, 'description') ?? '',
-      // 向后兼容旧宿主：旧版 /describe 只返回 folder/name/description（且旧扫描
-      // 已过滤非法名），缺字段按旧语义默认 true；新版宿主显式携带 valid=false。
       valid: readBoolean(record, 'valid', true),
-      ...(id !== undefined ? { id } : {}),
-      ...(typeof record.dir === 'string' && record.dir.length > 0 ? { dir: record.dir } : {}),
-      ...(record.duplicate === true ? { duplicate: true } : {}),
-      ...(typeof record.issue === 'string' && record.issue.length > 0 ? { issue: record.issue } : {}),
-      ...(record.disabled === true ? { disabled: true } : {}),
-      ...(record.linked === true ? { linked: true } : {}),
-      ...(readString(record, 'source') !== undefined ? { source: readString(record, 'source')! } : {}),
-      ...(readString(record, 'entityPath') !== undefined ? { entityPath: readString(record, 'entityPath')! } : {}),
-      ...(readString(record, 'linkPath') !== undefined ? { linkPath: readString(record, 'linkPath')! } : {}),
-      ...(readString(record, 'parentId') !== undefined ? { parentId: readString(record, 'parentId')! } : {}),
-      ...(record.managed === true ? { managed: true } : {}),
+      blocked: record.blocked === true,
       modelInvocable: readBoolean(record, 'modelInvocable', true),
       userInvocable: readBoolean(record, 'userInvocable', true),
+      ...(readString(record, 'issue') !== undefined ? { issue: readString(record, 'issue')! } : {}),
+      ...(readString(record, 'winnerId') !== undefined ? { winnerId: readString(record, 'winnerId')! } : {}),
+      ...(readString(record, 'path') !== undefined ? { path: readString(record, 'path')! } : {}),
     }]
   })
 }
@@ -75,43 +72,38 @@ export function fieldsFromView(res: BridgeResult<BridgeSettingsView>): Fields {
   const ns = res.ok ? res.value : undefined
   const value = asRecord(ns?.value)
   const base = asRecord(ns?.base)
-  // 技能管理不在 settings：顺序/目录/rank 来自 describe 事实（插件配置文件），
-  // 启停来自受管 skillCatalog 的链接状态。
-  const extraSkillOrder = res.ok && Array.isArray(res.skillOrder) ? res.skillOrder : undefined
-  const extraSkillDirs = res.ok && Array.isArray(res.skillsDirs) ? res.skillsDirs : undefined
-  const extraSkillRankBase = res.ok && typeof res.skillRankBase === 'number' ? res.skillRankBase : undefined
+  // 技能清单不在 settings：来源、优先级与屏蔽状态来自 describe 事实（注册层扫描结果）。
+  const extraBlocked = res.ok && Array.isArray(res.skillBlocked) ? res.skillBlocked : undefined
+  const extraFolders = res.ok && Array.isArray(res.skillFolders) ? res.skillFolders : undefined
+  // 技能根与清单都在响应顶层（describe/bootstrap 的扩展字段），descriptor 内的同名键只作兜底。
+  const extraDirs = res.ok && Array.isArray(res.activeSkillsDirs) && res.activeSkillsDirs.length > 0
+    ? res.activeSkillsDirs
+    : undefined
+  const dirs = extraDirs ?? (readStringArray(value, 'activeSkillsDirs').length > 0
+    ? readStringArray(value, 'activeSkillsDirs')
+    : readStringArray(base, 'activeSkillsDirs'))
   const next: Fields = {
     ...EMPTY_FIELDS,
     promptText: readString(value, 'promptText') ?? readString(base, 'promptText') ?? '',
     promptPath: readString(value, 'promptPath') ?? readString(base, 'promptPath') ?? '',
     agentsText: readString(value, 'agentsText') ?? readString(base, 'agentsText') ?? '',
     agentsPath: readString(value, 'agentsPath') ?? readString(base, 'agentsPath') ?? '',
-    skillOrder: extraSkillOrder ?? [],
     skillCatalog: res.ok && res.skillCatalog !== undefined && res.skillCatalog.length > 0
       ? res.skillCatalog
       : readSkillCatalog(value, 'skillCatalog').length > 0
         ? readSkillCatalog(value, 'skillCatalog')
         : readSkillCatalog(base, 'skillCatalog'),
-    skillsDirs: extraSkillDirs ?? [],
-    activeSkillsDirs: readStringArray(value, 'activeSkillsDirs').length > 0
-      ? readStringArray(value, 'activeSkillsDirs')
-      : readStringArray(base, 'activeSkillsDirs'),
-    skillsDirExists: (() => {
-      const merged: Record<string, boolean> = {}
+    skillBlocked: extraBlocked ?? readStringArray(value, 'skillBlocked'),
+    skillFolders: extraFolders ?? readStringArray(value, 'skillFolders'),
+    skillsRoot: dirs[0] ?? '',
+    skillsRootExists: (() => {
+      const merged: Record<string, unknown> = {}
       for (const entry of [base, value, res.ok ? { skillsDirExists: res.skillsDirExists } : {}]) {
-        const record = entry
-        const exists = record.skillsDirExists
-        if (exists !== null && typeof exists === 'object' && !Array.isArray(exists)) {
-          Object.assign(merged, exists as Record<string, unknown>)
-        }
+        const exists = entry.skillsDirExists
+        if (exists !== null && typeof exists === 'object' && !Array.isArray(exists)) Object.assign(merged, exists)
       }
-      const result: Record<string, boolean> = {}
-      for (const [path, ok] of Object.entries(merged)) {
-        if (typeof ok === 'boolean') result[path] = ok
-      }
-      return result
+      return dirs.length > 0 && merged[dirs[0]!] === true
     })(),
-    skillRankBase: extraSkillRankBase ?? 250,
     presetOrder: readNumber(value, 'presetOrder', readNumber(base, 'presetOrder', 5)),
     fallbackText: readString(value, 'fallbackText') ?? readString(base, 'fallbackText') ?? '',
     writePreset: readBoolean(value, 'writePreset', readBoolean(base, 'writePreset', true)),
@@ -138,9 +130,8 @@ export function bridgeViewFromBoot(boot: BridgeResult<BridgeSettingsView>): Brid
     activeSkillsDirs: boot.activeSkillsDirs,
     skillsDirExists: boot.skillsDirExists,
     skillCatalog: boot.skillCatalog,
-    skillOrder: boot.skillOrder,
-    skillsDirs: boot.skillsDirs,
-    skillRankBase: boot.skillRankBase,
+    skillBlocked: boot.skillBlocked,
+    skillFolders: boot.skillFolders,
     templatePreStepCount: boot.templatePreStepCount,
     presetParams: boot.presetParams,
     hostDefaultModel: boot.hostDefaultModel,

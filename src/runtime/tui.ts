@@ -95,7 +95,7 @@ function renderTuiStatus(source: PromptSettings, params: Record<string, unknown>
   lines.push('技能开关:')
   for (const skill of source.skillCatalog) {
     // 启停来自受管技能库的链接状态。
-    const value = skill.disabled !== true
+    const value = skill.blocked !== true
     const detail = skill.valid
       ? (skill.modelInvocable ? '模型可调用' : '模型不可调用')
       : `未注册:${skill.issue ?? '不合法'}`
@@ -245,20 +245,20 @@ export function registerTuiCommand(
           return { kind: 'success', text: renderTuiStatus(source, params, promptConfigs) + '\n' + providersLine + '\n' + modelsLine }
         }
         if (tokens[0] === 'skill') {
-          const { id: folder, action } = parseIdentifierAndAction(tokens.slice(1), () => true)
-          if (folder.length === 0) return usage()
-          const current = source.skillCatalog.find((skill) => skill.folder === folder)?.disabled !== true
+          const { id, action } = parseIdentifierAndAction(tokens.slice(1), () => true)
+          if (id.length === 0) return usage()
+          const current = source.skillCatalog.find((skill) => skill.name === id)?.blocked !== true
           const next = parseTuiBoolean(action, current)
           if (next === undefined) return usage()
           if (toggleSkillState === undefined) {
-            return { kind: 'error', text: `无法切换技能 ${folder}：技能启停回调不可用` }
+            return { kind: 'error', text: `无法切换技能 ${id}：技能启停回调不可用` }
           }
-          // 技能启停是磁盘事实（标记改名），不再写 settings。
-          const toggled = toggleSkillState(folder, next)
+          // 技能启停 = 写注册层屏蔽表（不改技能文件），不再写 settings。
+          const toggled = toggleSkillState(id, next)
           if (toggled.ok === false) {
-            return { kind: 'error', text: toggled.message ?? `技能 ${folder} 切换失败` }
+            return { kind: 'error', text: toggled.message ?? `技能 ${id} 切换失败` }
           }
-          return { kind: 'success', text: `已把技能 ${folder} 设为 ${next ? '开' : '关'}
+          return { kind: 'success', text: `已把技能 ${id} 设为 ${next ? '开' : '关'}
 
 ${renderTuiStatus(getSource(), readPresetParams(getPresetConfigsDir?.()), resolvePromptConfigs(getPresetConfigsDir?.(), []))}` }
         }

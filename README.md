@@ -22,20 +22,21 @@ dsh --profile prompt-tool
 
 从 web 模板初始化会让 profile 自带 `@deepseek-ai/dsh-base` 与 `@deepseek-ai/dsh-web-app` 两层，无需额外的 Web 自愈步骤。`--from-default-profile` 只在 profile 不存在时创建，不要对既有 profile 反复执行；已初始化的 profile 不会被改写。
 
-技能实体集中存放在 `$DSH_HOME/skills/.system/`（官方 `dsh-skill-filesystem` 扫描跳过 `.system` 段），启用项通过该根下的目录链接（Windows junction）暴露给官方 provider 与模型。包内 `skills/` 不再自动同步或回滚：它是**用户可显式导入的资源**，导入即把内容复制进实体库，之后由你自行覆盖更新或手动修改。
+技能**留在官方各自的技能根里**（项目 `.dsh/skills`、项目 `.agents/skills`、你添加的技能文件夹、`$DSH_HOME/skills`、`~/.agents/skills`、官方内置），插件不搬迁、不建链接、不改任何 `SKILL.md`。管理页按来源分组展示全部技能，标注来源优先级、调用状态与「是否被同名技能遮蔽」。插件**不内置任何技能**：包内没有 `skills/` 目录，也没有安装副本与内容哈希账本（`.prompt-tool-manifest.json` 已废弃并删除）；要什么技能就自己创建，或用管理页把已有技能包复制进来。
 
-技能状态不再是 settings 数据：`$DSH_HOME/skills/.system/skills.yml` 是启停、顺序、rank 基数与**模型/用户调用权限**的唯一管理来源；**完全停用只取消受管链接**，实体与资源保留，不再使用 `SKILL.md.disabled`。frontmatter 的 `disable-model-invocation` / `user-invocable` 是面向官方 provider 的同步结果，外部工具改动这两个字段后按 YAML 恢复并提示一次偏差。`settings.yaml` 只保留部署轴（预设 / AGENTS.md 等）。详见 [docs/skills-management.md](docs/skills-management.md)。
+**停用 = 注册层屏蔽**：插件为被停用的技能名返回一个同名的空候选（模型与用户调用同时关闭），在技能注册表合并时压掉官方候选——模型目录不列、`skill` 工具拒绝、`/名称` 也不可用；技能文件一个字节都不改，恢复即删除记录。已知限制：屏蔽按技能名全局生效，同名技能在任何工作区都会被一起压掉。状态只写在 `$DSH_HOME/skills/.system/prompt-tool/skills.yml`（`blocked` + `folders`），`settings.yaml` 只保留部署轴（预设 / AGENTS.md 等）。详见 [docs/skills-management.md](docs/skills-management.md)。
 
 ### 从旧版本升级
 
-预设参数只认 `preset.yml` 的当前字段，没有运行时兼容层。技能目录布局有一次**一次性迁移**：把 `$DSH_HOME/skills` 下的普通技能目录搬进 `.system` 并建立启用链接、由旧配置生成 `skills.yml`（默认只预览，`--apply` 才写入，`--rollback <记录>` 可复原）：
+预设参数只认 `preset.yml` 的当前字段，没有运行时兼容层。
+
+技能管理经历过一次模型替换：上一版把技能实体集中到 `skills/.system` 并用目录链接启停。若本机还留着那套布局，用迁移脚本回滚到「实体留在各技能根」的形态（按记录删链接、校验哈希后把实体搬回 `skills` 根，并删除旧的 v2 状态文件）：
 
 ```powershell
-node scripts/migrate-skills.mjs --root "$env:DSH_HOME\skills"            # 只读预览
-node scripts/migrate-skills.mjs --root "$env:DSH_HOME\skills" --apply    # 实际迁移（自动备份）
+node scripts/migrate-skills.mjs --rollback "<备份目录>\migration.json"
 ```
 
-迁移前请先停用旧的 `SKILL.md.disabled` 标记（本版本不再识别它，也不会静默当成已启用导入）。
+该脚本只用于回滚历史迁移，不是运行时代码。
 
 旧的 base-only profile（只有 `dsh-base`）首次启动时，插件会把 `@deepseek-ai/dsh-web-app` 补进该 profile 的 `dsh.profile.bundles`（写前留 `.bak`，幂等），并提示重启；需要重启 DSH 服务后生效，插件不会替你重启运行中的服务。
 
@@ -53,7 +54,7 @@ node scripts/migrate-skills.mjs --root "$env:DSH_HOME\skills" --apply    # 实�
 - 🛡️ **失败不伤会话**：单条失败跳过 + `warnOnce`；配置错误挂载时 fail loud；`dedupe: session` 持久幂等
 - 🧭 **通用 instruction-hint 引擎**：所有预设都可通过 `strategy: instruction-hint` 或 `placeholder + fill: instruction-hint` 提示指令文件存在；实现位于 `engine/instruction-hint.mjs`，不绑定任何预设；`context-gate.instructionHint` 按模型可见 surface 去重，重挂不重复，被压缩遮蔽后才再次提示
 - 📦 **Bridge 载荷**：JSON 请求统一 32 MiB 硬上限并明确返回 413；角色卡原始图片走 64 MiB 流式通道，按 PNG 魔数识别。
-- 📂 **技能实体库**：实体集中在 `$DSH_HOME/skills/.system`，根链接控制启停；管理页提供来源筛选、模型/用户调用开关、创建、回收站删除，以及「选择宿主机目录并导入」「浏览器 `webkitdirectory` 导入」两种一次性导入（外部目录不再作为第二发现根）。
+- 📂 **技能管理（注册层屏蔽）**：按官方六类技能根分组展示全部技能（含来源优先级与同名遮蔽判定），停用/恢复只写插件状态——同名空候选在注册层压掉官方候选，技能文件一个字节都不改；另提供创建、两种导入（宿主机目录复制 / 浏览器文件夹上传）、技能文件夹引用与回收站删除。
 - 🎭 **SillyTavern 导入**：JSON 预设、角色卡和独立世界书转换为本地预设——按官方顺序表保留启停，赋值模板运行时求值；不等价能力明确报告，采样参数由宿主管理
 - 🎴 **角色卡库**：SillyTavern 角色卡（PNG tEXt chunk `ccv3`/`chara`，或 chara_card JSON）导入独立库（`.characters/<id>/`，含原图/转换参数/角色记忆），按 PNG 魔数识别图片并经原始文件流上传，避免头像 base64 膨胀；按需「导入到当前预设」（`chara-<卡>-` 前缀合并、幂等可移除），多文件自动合并
 - 📚 **世界书**：`character_book` 转 world-book 策略配置（`keys` 命中触发 / `constant` 常驻 / 正则键自动检测 / `selectiveLogic` 组合逻辑），与模块卡片同一存储与编辑（模块列表「世界书」过滤 + 批量启用/禁用）

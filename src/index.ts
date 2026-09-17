@@ -21,9 +21,7 @@ import {
 } from './host/manifest.ts'
 import type { PresetSpec } from './host/manifest.ts'
 import type { PromptConfigSpec } from './host/prompt-configs.ts'
-import { createCachedSkillsReader } from './runtime/skills-provider.ts'
 import { scheduleWebSurfaceRepair } from './web-surface.ts'
-import { resolveSkillsDir } from './profile-skills.ts'
 import { detectModels, installDefaultModelRoute, invalidateModelCatalog, listAdvertisedModels } from './runtime/models.ts'
 import type { ModelDetection } from './runtime/models.ts'
 import { registerSettingsBridge } from './runtime/settings-bridge.ts'
@@ -45,21 +43,21 @@ import {
   PromptSettings,
   PromptSettingsSchema,
   RuntimeOptions,
-  SkillCatalogEntry,
-  SkillEntry,
 } from './config.ts'
 import {
   DEFAULT_PRESET_DIR,
-  DEFAULT_SKILLS_DIR,
+  DSH_HOME,
+  USER_SKILLS_DIR,
 } from './host/paths.ts'
-import { setSkillEnabled, type SkillToggleResult } from './host/skill-toggle.ts'
 import {
-  readSkillsConfig,
-  skillsConfigPath,
-  type SkillsConfig,
-  type SkillsConfigRead,
+  readSkillsState,
+  skillsStatePath,
+  writeSkillsState,
+  SKILL_NAME_PATTERN,
+  type SkillsStateRead,
 } from './host/skills-config.ts'
-import { readManagedSkills, reconcileSkillsLibrary, updateSkillsLibrary } from './host/skills-library.ts'
+import { catalogFromScan, scanRoot, scanRoots, skillRoots, type ScannedSkill } from './host/skills-scan.ts'
+import { SKILL_BLOCK_RANK, SKILL_SOURCES, type SkillCatalogEntry, type SkillsState } from './shared/skills.ts'
 
 export const name = 'prompt-tool'
 // 内容走 user 层（AGENTS.md 常驻层 + skill 按需层），
@@ -286,177 +284,101 @@ export function apply(ctx: Context, configIn: Config): void {
     }
   }
 
-  // 技能管理框架（技能状态已从 settings.yaml 抽离）：
-  //  实体层——包内 skills/ 增量复制到 $DSH_HOME/skills（官方 user-dsh 根，全
-  //    profile 共享），用户技能与引用目录留在各自根，插件不维护隐藏仓库；
-  //  启停层——磁盘事实：停用 = 移除 skills 根中的受管链接，
-  //    官方 provider 与本插件同时看不到，热生效且可逆；
-  //  配置层——<DSH_HOME>/skills/.system/skills.yml（实体 / 链接 / 顺序 /
-  //    rank 基数）；官方该根的 .system 段被 skipSystem，本插件也跳过点目录，
-  //    所以配置文件永远不会被当成技能。
-  const skillsConfigFile = skillsConfigPath()
-  const readSkillsConfigSafe = (): SkillsConfig => {
-    const read = readSkillsConfig(skillsConfigFile)
+  // 技能管理（注册层屏蔽模型）：
+  //  实体层——技能留在官方各自的技能根里（项目 .dsh/skills、项目 .agents/skills、
+  //    用户 $DSH_HOME/skills、用户 ~/.agents/skills、官方内置），插件不搬迁、不建链接；
+  //  状态层——<DSH_HOME>/skills/.system/prompt-tool/skills.yml 只记录"哪些技能名不注册
+  //    给 dsh"（blocked）与"用户添加了哪些技能文件夹"（folders）；
+  //  生效层——插件提供者为每个 blocked 名字返回 rank 0 的影子候选（模型与用户调用同时
+  //    关闭），注册表合并时压掉官方候选；删除记录即恢复，全程不改技能文件。
+  const skillsStateFile = skillsStatePath()
+  const readSkillsStateSafe = (): SkillsState => {
+    const read = readSkillsState(skillsStateFile)
     if (read.ok === false) warn(ctx, `prompt-tool: ${read.message}`)
-    return read.config
+    return read.state
   }
-  // 技能配置只有两个来源：默认技能根 + 该配置文件。旧 settings 键与旧 per-profile
-  // 副本不做兼容也不迁移（本项目不含迁移代码）。
-  let skillsConfig = readSkillsConfigSafe()
-  let skillsConfigSnapshot = JSON.stringify(skillsConfig)
-  let skillsOrder: string[] = [...skillsConfig.order]
-  let skillsRankBase = skillsConfig.rankBase
-  /** 配置里的附加根 → 实际生效目录列表（空配置 = $DSH_HOME/skills 副本兜底）。 */
-  const resolveActiveSkillsDirs = (dirs: string[]): string[] =>
-    dirs.length > 0
-      ? dirs
-      : [resolveSkillsDir(DEFAULT_SKILLS_DIR, (message) => warn(ctx, message))]
-  const skillsRoot = resolveSkillsDir(DEFAULT_SKILLS_DIR, (message) => warn(ctx, message))
-  const activeSkillsDirs = [skillsRoot]
-  // 实体库与启用链接是新的唯一来源；不再复制或回滚包内 skills。
-  const reconciled = reconcileSkillsLibrary(skillsRoot, (message) => warn(ctx, message))
-  if (reconciled.ok) {
-    skillsConfig = reconciled.config
-    skillsConfigSnapshot = JSON.stringify(skillsConfig)
-    skillsOrder = [...skillsConfig.order]
-    skillsRankBase = skillsConfig.rankBase
+  let skillsState = readSkillsStateSafe()
+  let skillsStateSnapshot = JSON.stringify(skillsState)
+  const skillsRoot = USER_SKILLS_DIR
+  const blockedNames = (): Set<string> => new Set(skillsState.blocked.map((item) => item.name))
+  /** 用户显式引用的技能文件夹里的技能（自定义来源，只读扫描）。 */
+  const scanReferencedSkills = (): ScannedSkill[] =>
+    skillsState.folders.flatMap((path) => scanRoot({ kind: 'custom', path }))
+  /** 清单缓存：按工作目录分桶，状态或文件变化时整体失效。 */
+  const catalogCache = new Map<string, SkillCatalogEntry[]>()
+  const listSkills = (cwd?: string): SkillCatalogEntry[] => {
+    const key = cwd ?? ''
+    const cached = catalogCache.get(key)
+    if (cached !== undefined) return cached
+    const entries = catalogFromScan(scanRoots(skillRoots({
+      ...(cwd === undefined || cwd.length === 0 ? {} : { cwd }),
+      dshHome: DSH_HOME,
+      folders: skillsState.folders,
+    })), blockedNames())
+    if (catalogCache.size >= 8) catalogCache.clear()
+    catalogCache.set(key, entries)
+    return entries
   }
-  // 外部 roots 已降级为显式导入来源，不再作为第二发现根。
-  skillsConfig = { ...skillsConfig, dirs: [] }
-  skillsConfigSnapshot = JSON.stringify(skillsConfig)
-  // 三层结构：
-  //  1) 扫描层宽松——坏技能也进 catalog（valid=false + issue），UI 可见可修；
-  //  2) provider 层严格——只有 valid=true 的候选注册给模型；
-  //  3) 文件 watcher——目录变化时重扫 catalog 并 invalidateSkills。
-  const cachedSkills = createCachedSkillsReader()
-  const catalogOf = (skills: SkillEntry[]): SkillCatalogEntry[] => {
-    // 同名以注册名计：受管身份（folder/id）唯一，重名只可能来自不同技能的 frontmatter.name。
-    const counts = new Map<string, number>()
-    for (const skill of skills) counts.set(skill.name, (counts.get(skill.name) ?? 0) + 1)
-    return skills.map((skill) => {
-      const id = skill.id ?? skill.folder
-      return {
-        id,
-        folder: skill.folder,
-        name: skill.name,
-        description: skill.description,
-        valid: skill.valid,
-        dir: skill.dir,
-        ...(counts.get(skill.name)! > 1 ? { duplicate: true } : {}),
-        ...(skill.issue !== undefined ? { issue: skill.issue } : {}),
-        ...(skill.linked === true ? { linked: true } : {}),
-        ...(skill.disabled === true ? { disabled: true } : {}),
-        ...(skill.source !== undefined ? { source: skill.source } : {}),
-        ...(skill.entityPath !== undefined ? { entityPath: skill.entityPath } : {}),
-        ...(skill.linkPath !== undefined ? { linkPath: skill.linkPath } : {}),
-        ...(skill.parentId !== undefined ? { parentId: skill.parentId } : {}),
-        ...(skill.managed === true ? { managed: true } : {}),
-        modelInvocable: skill.modelInvocable,
-        userInvocable: skill.userInvocable,
-      }
-    })
-  }
-  /** 全量合并：多目录条目全部保留（同名不跳过，catalog 全量展示）。 */
-  const readAllSkillsChecked = (): SkillEntry[] => readManagedSkills(skillsRoot)
-  let skillCatalog: SkillCatalogEntry[] = catalogOf(readAllSkillsChecked())
-
-  /** 切换生效技能目录列表并刷新目录快照（供 describe / TUI 显示）。 */
-  const applyActiveSkillsDirs = (dirs: string[]): void => {
-    void dirs
-    cachedSkills.invalidate()
-    skillCatalog = catalogOf(readAllSkillsChecked())
-    skillsWatcher.watch()
-  }
-
-  /** 配置文件变化（手工编辑或 UI 写入）→ 重新应用目录/顺序/rank，热生效无需重启。 */
-  const reloadSkillsConfig = (): void => {
-    const next = { ...readSkillsConfigSafe(), dirs: [] }
-    const snapshot = JSON.stringify(next)
-    if (snapshot === skillsConfigSnapshot) return
-    skillsConfig = next
-    skillsConfigSnapshot = snapshot
-    skillsOrder = [...next.order]
-    skillsRankBase = next.rankBase
-    const wanted = resolveActiveSkillsDirs(next.dirs)
-    if (JSON.stringify(wanted) === JSON.stringify(activeSkillsDirs)) {
-      cachedSkills.invalidate()
-      skillCatalog = catalogOf(readAllSkillsChecked())
-    } else {
-      applyActiveSkillsDirs(wanted)
-    }
+  const invalidateCatalog = (): void => {
+    catalogCache.clear()
     invalidateSkills?.()
   }
-
-  // 技能目录热更新：任一目录新增/删除/改名后，catalog 与注册表缓存一起刷新；
-  // 配置文件与技能标记改名同样走这条热路径（无需重启 DSH）。
-  const skillsWatcher = createSkillsWatcher(() => [skillsRoot, join(skillsRoot, '.system')], () => {
-    reloadSkillsConfig()
-    skillCatalog = catalogOf(readAllSkillsChecked())
-    cachedSkills.invalidate(); invalidateSkills?.()
-  })
-  skillsWatcher.watch()
-  // 插件卸载时关闭技能目录 watcher，避免泄漏与对已卸载 provider 的无效刷新。
-  ctx.effect(() => () => skillsWatcher.close())
-
-  /**
-   * 技能启停（插件侧隐藏策略的唯一入口）：改名磁盘标记文件后重扫 catalog，
-   * 并让 ctx.skills 注册表缓存失效，模型目录即时反映停用/启用。
-   */
-  const toggleSkill = (folder: string, enabled: boolean, _dir?: string): SkillToggleResult => {
-    const result = setSkillEnabled(skillsRoot, folder, enabled)
-    if (result.ok) {
-      cachedSkills.invalidate()
-      skillCatalog = catalogOf(readAllSkillsChecked())
-      invalidateSkills?.()
-    }
-    return result
-  }
-
-  /** 写技能管理配置（顺序 / rank 基数）并热应用；外部目录已由受管库统一清空。 */
-  const patchSkillsConfig = (patch: { dirs?: string[]; order?: string[]; rankBase?: number }): SkillsConfigRead => {
-    const written = updateSkillsLibrary(skillsRoot, (config) => ({ ...config, ...patch }))
+  /** 写屏蔽表并热应用：只改插件状态，不改任何技能文件。 */
+  const setSkillBlocked = (name: string, blocked: boolean): SkillsStateRead => {
+    if (!SKILL_NAME_PATTERN.test(name)) return { ok: false, state: skillsState, message: `技能名不合法：${name}` }
+    const rest = skillsState.blocked.filter((item) => item.name !== name)
+    const written = writeSkillsState({
+      blocked: blocked ? [...rest, { name, at: new Date().toISOString() }] : rest,
+    }, skillsStateFile, skillsStateSnapshot)
     if (written.ok === false) {
       warn(ctx, `prompt-tool: ${written.message}`)
       return written
     }
-    skillsConfig = written.config
-    skillsConfigSnapshot = JSON.stringify(written.config)
-    skillsOrder = [...written.config.order]
-    skillsRankBase = written.config.rankBase
-    const wanted = resolveActiveSkillsDirs(written.config.dirs)
-    if (JSON.stringify(wanted) !== JSON.stringify(activeSkillsDirs)) {
-      applyActiveSkillsDirs(wanted)
-    } else {
-      cachedSkills.invalidate()
-      skillCatalog = catalogOf(readAllSkillsChecked())
-      skillsWatcher.watch()
-    }
-    invalidateSkills?.()
+    skillsState = written.state
+    skillsStateSnapshot = JSON.stringify(written.state)
+    invalidateCatalog()
     return written
   }
 
-  /** 技能目录改名后同步配置里的顺序项；该技能不在显式顺序里时不写盘。 */
-  const renameSkillOrderEntry = (from: string, to: string): SkillsConfigRead => {
-    if (from === to || !skillsConfig.order.includes(from)) {
-      return { ok: true, config: skillsConfig, exists: existsSync(skillsConfigFile) }
+  /** 添加 / 移除引用的技能文件夹：只记状态，不复制也不移动任何文件。 */
+  const patchSkillFolders = (folders: string[]): SkillsStateRead => {
+    const written = writeSkillsState({ folders }, skillsStateFile, skillsStateSnapshot)
+    if (written.ok === false) {
+      warn(ctx, `prompt-tool: ${written.message}`)
+      return written
     }
-    return patchSkillsConfig({ order: skillsConfig.order.map((item) => item === from ? to : item) })
+    skillsState = written.state
+    skillsStateSnapshot = JSON.stringify(written.state)
+    invalidateCatalog()
+    skillsWatcher.watch()
+    return written
   }
 
-  // 1) 按需层：注册已启用链接指向的 .system/SKILL.md，
-  //    name/description/whenToUse/metadata 全部来自各自 frontmatter；停用条目
-  //    只进管理界面，不注册给模型。content 只包含技能自身正文；preset.md 不拼进技能正文。
-  const orderSkills = (skills: readonly SkillEntry[]): SkillEntry[] => {
-    const index = new Map(skillsOrder.map((folder, at) => [folder, at]))
-    return [...skills].sort((left, right) => {
-      const leftAt = index.get(left.folder)
-      const rightAt = index.get(right.folder)
-      if (leftAt === undefined && rightAt === undefined) return left.folder.localeCompare(right.folder)
-      if (leftAt === undefined) return 1
-      if (rightAt === undefined) return -1
-      return leftAt - rightAt
-    })
+  // 状态文件热更新（手工编辑或界面写入）→ 重扫清单并让官方注册表缓存失效。
+  // 技能文件本身的即时性由官方 skill 提供者的 watcher 负责，插件不重复监听。
+  const reloadSkillsState = (): void => {
+    const next = readSkillsStateSafe()
+    const snapshot = JSON.stringify(next)
+    if (snapshot === skillsStateSnapshot) return
+    skillsState = next
+    skillsStateSnapshot = snapshot
+    invalidateCatalog()
+    skillsWatcher.watch()
   }
+  const skillsWatcher = createSkillsWatcher(
+    () => [dirname(skillsStateFile), ...skillsState.folders],
+    () => { reloadSkillsState() },
+  )
+  skillsWatcher.watch()
+  // 插件卸载时关闭状态与引用目录 watcher，避免泄漏与对已卸载 provider 的无效刷新。
+  ctx.effect(() => () => skillsWatcher.close())
+
+  // 技能提供者只做两件事：
+  //  1) 屏蔽名单——每个名字返回 rank 0 的影子候选（模型与用户调用同时关闭），
+  //     注册表在同一层内按 rank 升序合并同名候选，影子因此压掉官方候选，
+  //     达到"不注册给 dsh"；技能文件一个字节都不改，删除记录即恢复；
+  //  2) 用户添加的技能文件夹——按自定义来源优先级提供候选。
+  // 项目根、用户根与官方内置一律交给官方 skill 提供者，插件不重复提供。
   let invalidateSkills: (() => void) | undefined
   ctx.skills.registerProvider((control: SkillProviderControl): SkillProvider => {
     invalidateSkills = control.invalidate
@@ -464,36 +386,41 @@ export function apply(ctx: Context, configIn: Config): void {
       name: 'prompt-tool',
       list: async (options: SkillLookupOptions): Promise<readonly SkillCandidate[]> => {
         if (options.signal?.aborted) return []
-        // 多目录同名技能：catalog 全量展示，模型注册只保留首个目录（添加顺序优先）。
-        const unique: SkillEntry[] = []
-        const seen = new Set<string>()
-        for (const skill of readAllSkillsChecked()) {
-          if (seen.has(skill.name)) continue
-          seen.add(skill.name)
-          unique.push(skill)
+        const candidates: SkillCandidate[] = []
+        for (const item of skillsState.blocked) {
+          candidates.push({
+            name: item.name,
+            description: '已由 prompt-tool 在注册层停用（未修改任何技能文件）',
+            invocation: { modelInvocable: false, userInvocable: false },
+            source: 'prompt-tool-blocked',
+            provider: 'prompt-tool',
+            rank: SKILL_BLOCK_RANK,
+            locator: `blocked:${item.name}`,
+          })
         }
-        return orderSkills(unique)
-          .filter((skill) => skill.valid && skill.disabled !== true)
-          .map((skill, index): SkillCandidate => ({
+        for (const skill of scanReferencedSkills()) {
+          if (!skill.valid || skillsState.blocked.some((item) => item.name === skill.name)) continue
+          candidates.push({
             name: skill.name,
             description: skill.description || skill.folder,
             ...(skill.whenToUse !== undefined ? { whenToUse: skill.whenToUse } : {}),
             invocation: { modelInvocable: skill.modelInvocable, userInvocable: skill.userInvocable },
-            source: 'runtime',
+            source: 'custom',
             provider: 'prompt-tool',
-            resourceBase: { kind: 'directory', path: skill.linkPath ?? join(skill.dir, skill.folder) },
-            rank: skillsRankBase + index,
-            locator: skill.id ?? skill.folder,
+            resourceBase: { kind: 'directory', path: join(skill.dir, skill.folder) },
+            rank: SKILL_SOURCES.custom.rank,
+            locator: `folder:${skill.file}`,
             path: skill.file,
             ...(skill.metadata !== undefined ? { metadata: skill.metadata } : {}),
-          }))
+          })
+        }
+        return candidates
       },
       get: async (candidate: SkillCandidate, options: SkillLookupOptions): Promise<SkillDefinition | undefined> => {
         if (options.signal?.aborted) return undefined
-        // 精确匹配来源文件；同名回退 folder（保留首个目录条目）。
-        const skill = readAllSkillsChecked().find((entry) => entry.file === candidate.path)
-          ?? readAllSkillsChecked().find((entry) => entry.id === candidate.locator || entry.name === candidate.name)
-        if (skill === undefined || !skill.valid || skill.disabled === true) return undefined
+        // 影子候选永不加载内容；引用候选按标记文件精确匹配。
+        const skill = scanReferencedSkills().find((entry) => entry.file === candidate.path)
+        if (skill === undefined || !skill.valid) return undefined
         return {
           name: candidate.name,
           description: candidate.description,
@@ -517,21 +444,19 @@ export function apply(ctx: Context, configIn: Config): void {
     NS,
     getModelsState,
     () => ({
-      activeSkillsDirs,
-      skillCatalog,
-      skillOrder: [...skillsOrder],
-      skillDirs: [...skillsConfig.dirs],
-      skillRankBase: skillsRankBase,
-      toggleSkill,
-      patchSkillsConfig,
-      renameSkillInOrder: renameSkillOrderEntry,
+      skillsRoot,
+      blocked: skillsState.blocked.map((item) => item.name),
+      folders: [...skillsState.folders],
+      listSkills,
+      setSkillBlocked,
+      patchSkillFolders,
+      invalidateCatalog,
     }),
     // 模板专属策略目录：当前内置策略全部随引擎提供，自定义模板可经此注入。
     () => '',
     () => {
-      // 技能目录变化后立即重扫目录并失效官方 registry 缓存。
-      skillCatalog = catalogOf(readAllSkillsChecked())
-      cachedSkills.invalidate(); invalidateSkills?.()
+      // 技能状态或引用目录变化后立即重扫清单并失效官方 registry 缓存。
+      invalidateCatalog()
     },
     // 激活预设目录：内容资产/提示词配置按预设隔离在预设根 <template>/。
     () => activePresetDir(),
@@ -722,9 +647,9 @@ export function apply(ctx: Context, configIn: Config): void {
 
   let currentSource = (): PromptSettings => ({
     modelsAvailable: getModelsState().available,
-    skillCatalog,
-    activeSkillsDirs,
-    skillsDirExists: Object.fromEntries(activeSkillsDirs.map((dir) => [dir, existsSync(dir)])),
+    skillCatalog: listSkills(),
+    activeSkillsDirs: [skillsRoot],
+    skillsDirExists: { [skillsRoot]: existsSync(skillsRoot) },
     presetOrder: runtime.presetOrder,
     fallbackText: runtime.fallbackText,
     writePreset: runtime.writePreset,
@@ -750,9 +675,9 @@ registerTuiCommand(
     reloadPresetParams()
     rebuildPreset()
   },
-  // 技能启停：切换受管实体链接，失败原因回给命令层。
-  (folder, enabled) => {
-    const result = toggleSkill(folder, enabled)
+  // 技能启停：写注册层屏蔽表（不改技能文件），失败原因回给命令层。
+  (name, enabled) => {
+    const result = setSkillBlocked(name, !enabled)
     return result.ok ? { ok: true } : { ok: false, message: result.message }
   },
 )
@@ -941,7 +866,7 @@ export {
 } from './host/manifest.ts'
 export { buildWorldBookEntry } from './host/worldbook.ts'
 export { ensureWebSurface, resolveProfileDir, scheduleWebSurfaceRepair } from './web-surface.ts'
-export { resolveSkillsDir } from './profile-skills.ts'
+export { USER_SKILLS_DIR } from './host/paths.ts'
 export { importSkillsPackage } from './host/skills-import.ts'
 export { detectModels, installDefaultModelRoute, invalidateModelCatalog, listAdvertisedModels, peekModelCatalog, resolveSubagentStartOptions } from './runtime/models.ts'
 export type { PluginSubagentSeam } from './runtime/models.ts'
@@ -967,12 +892,10 @@ export type { PromptConfigValidationError, PromptConfigValidationResult } from '
 export { loadPromptTemplates, loadToolTemplates } from './host/templates.ts'
 export type { PromptConfigTemplate, ToolTemplate } from './host/templates.ts'
 export { registerTuiCommand } from './runtime/tui.ts'
-export { createCachedSkillsReader, readSkills, mergeSkillDirs, listSkillFolders, isValidSkill, validSkills, SKILL_NAME_RE } from './runtime/skills-provider.ts'
-export type { CachedSkillsReader } from './runtime/skills-provider.ts'
-export { fixSkillEntry, toKebabName } from './runtime/skill-fix.ts'
-export type { SkillFixResult } from './runtime/skill-fix.ts'
+export { readSkillsState, writeSkillsState, skillsStatePath, SKILL_NAME_PATTERN } from './host/skills-config.ts'
+export type { BlockedSkill, SkillCatalogEntry, SkillsState } from './shared/skills.ts'
+export { catalogFromScan, resolveProjectRoot, scanRoot, scanRoots, skillRoots } from './host/skills-scan.ts'
 export { PARAM_KEYS } from './config.ts'
-export type { SkillEntry, SkillCatalogEntry } from './config.ts'
 export { BRIDGE_ENDPOINTS, MAX_BRIDGE_BODY_BYTES, MAX_CHARACTER_CARD_STREAM_BYTES, SETTINGS_BRIDGE_PREFIX } from './shared/bridge-contract.ts'
 export type { BridgeEndpoint, BridgeErrorPayload, BridgeRequestMap, BridgeValueMap } from './shared/bridge-contract.ts'
 export { ENGINE_CAPABILITIES, ENGINE_RECIPES, engineCapability, engineRecipe, isEngineCapabilityPresent, validateCustomToolIdentities } from './shared/engine-capabilities.ts'

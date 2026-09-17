@@ -4,7 +4,6 @@ import { ENGINE_PARAM_KEYS, type EngineParamKey } from '../../shared/engine-para
 import { EMPTY_FIELDS, hasIncompleteStageDrafts, type Fields } from './prompt-tool-fields.ts'
 
 const SETTINGS_SNAPSHOT_KEYS = [
-  'skillOrder', 'skillsDirs', 'skillRankBase',
   'presetOrder', 'fallbackText', 'writePreset',
 ] as const
 export type SwitchSnapshot = Pick<Fields, EngineParamKey | typeof SETTINGS_SNAPSHOT_KEYS[number]>

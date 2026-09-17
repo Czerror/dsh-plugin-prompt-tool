@@ -20,7 +20,8 @@ window.requests = []
 window.delay = 0
 window.rejectDelete = false
 window.rejectSkillDelete = false
-window.rejectSkillsConfig = false
+window.rejectSkillBlock = false
+window.rejectSkillsFolders = false
 window.failedSkill = ''
 window.policyServer = structuredClone(SUBAGENT_TOOL_POLICY_SKELETON)
 window.policyInFlight = 0
@@ -28,16 +29,26 @@ window.policyMaxInFlight = 0
 let tools = [{ id: 'tool-one', name: 'demo', description: 'baseline', timeoutMs: 500, parameters: {}, output: { schema: { type: 'object' } }, execute: { kind: 'shell', command: 'echo test' } }]
 let persona = { prefix: 'original persona' }
 let presets = [{ id: 'test', name: 'Current' }, { id: 'other', name: 'Other' }]
-let skills = ['alpha', 'beta'].map((id) => ({ id, folder: id, name: id, description: id, valid: true, modelInvocable: true, userInvocable: true, disabled: true, source: 'import', dir: 'D:/isolated/skills/.system' }))
+const skillsRoot = 'D:/isolated/skills'
+// 注册层屏蔽模型的技能事实：实体留在各自来源根，插件只提供清单、屏蔽表与引用目录。
+let skills = [
+  { id: 'project-dsh:D:/workspace:.dsh:beta', folder: 'beta', name: 'beta', description: 'beta description', dir: 'D:/workspace/.dsh/skills', source: 'project-dsh', rank: 100, valid: true, blocked: false, modelInvocable: true, userInvocable: true },
+  { id: `user-dsh:${skillsRoot}:alpha`, folder: 'alpha', name: 'alpha', description: 'alpha description', dir: skillsRoot, source: 'user-dsh', rank: 400, valid: true, blocked: false, modelInvocable: true, userInvocable: true },
+]
+let blockedSkills = []
+let skillFolders = []
 window.fetch = async (url, init) => {
   const endpoint = String(url).split('/').at(-1), body = JSON.parse(init?.body ?? '{}')
   window.requests.push({ endpoint, body })
   let value = {}
   if (endpoint === 'bootstrap') return new Response(JSON.stringify({ ok: true,
-    value: { value: { presetTemplate: 'test', writePreset: true }, base: {}, revision: 1 },
+    // descriptor.value 里同时给出用户技能根：客户端当前只从 descriptor 值读 activeSkillsDirs
+    // （顶层字段是服务端真实形状，两条路径都给，页面上的用户根与删除入口才可用）。
+    value: { value: { presetTemplate: 'test', writePreset: true, activeSkillsDirs: [skillsRoot], skillsDirExists: { [skillsRoot]: true } }, base: {}, revision: 1 },
     meta: { meta: { ...window.fixture.meta, presets } }, overrides: { overrides: {} }, variables: { variables: {}, enabled: true },
-    promptConfigs: { promptConfigs: [] }, skillCatalog: skills, skillOrder: ['alpha', 'beta'], skillsDirs: ['D:/isolated/skills'],
-    activeSkillsDirs: ['D:/isolated/skills'],
+    promptConfigs: { promptConfigs: [] }, skillCatalog: skills, skillBlocked: blockedSkills, skillFolders,
+    skillsDirExists: { [skillsRoot]: true },
+    activeSkillsDirs: [skillsRoot],
     moduleFacts: { sourceMode: 'explicit', editable: true, effectiveModules: [], declaredModules: [], rowIds: [] },
   }))
   if (endpoint === 'instructions-policy') value = { policy: { enabled: false, files: {}, defaults: {} }, revision: 'p1' }
@@ -60,34 +71,34 @@ window.fetch = async (url, init) => {
     value = { policy: window.policyServer }
   }
   if (endpoint === 'characters-list') value = { characters: [] }
-  if (endpoint === 'skill-toggle') {
-    if (body.folder === window.failedSkill) return new Response(JSON.stringify({ ok: false, message: `failed ${body.folder}` }))
-    skills = skills.map((skill) => skill.id === body.folder ? { ...skill, disabled: !body.enabled } : skill)
-    value = { changed: true }
-  }
-  if (endpoint === 'skill-policy') {
+  if (endpoint === 'skill-block') {
     await new Promise((resolve) => setTimeout(resolve, window.delay))
-    if (body.id === window.failedSkill) return new Response(JSON.stringify({ ok: false, message: `failed ${body.id}` }))
-    skills = skills.map((skill) => skill.id === body.id ? { ...skill, ...body.policy } : skill)
-    value = { skillCatalog: skills }
+    if (window.rejectSkillBlock || body.name === window.failedSkill) return new Response(JSON.stringify({ ok: false, message: `failed ${body.name}` }))
+    blockedSkills = body.blocked ? [...new Set([...blockedSkills, body.name])] : blockedSkills.filter((name) => name !== body.name)
+    skills = skills.map((skill) => skill.name === body.name ? { ...skill, blocked: blockedSkills.includes(skill.name) } : skill)
+    value = { skills, blocked: blockedSkills }
+  }
+  if (endpoint === 'skills-folders') {
+    await new Promise((resolve) => setTimeout(resolve, window.delay))
+    if (window.rejectSkillsFolders) return new Response(JSON.stringify({ ok: false, message: 'skills folders rejected' }))
+    skillFolders = [...body.folders]
+    value = { skills, folders: skillFolders }
   }
   if (endpoint === 'skill-delete') {
     await new Promise((resolve) => setTimeout(resolve, window.delay))
     if (window.rejectSkillDelete) return new Response(JSON.stringify({ ok: false, message: 'delete rejected' }))
-    skills = skills.filter((skill) => skill.id !== body.id)
-    value = { id: body.id, path: `D:/isolated/skills/.system/.trash/skill-${body.id}` }
+    skills = skills.filter((skill) => skill.folder !== body.folder)
+    value = { id: body.folder, path: `${skillsRoot}/.system/prompt-tool/.trash/skill-${body.folder}` }
   }
   if (endpoint === 'skill-create') {
-    skills = [...skills, { id: body.name, folder: body.name, name: body.name, description: body.description, valid: true, modelInvocable: true, userInvocable: true, disabled: false, source: 'import', dir: 'D:/isolated/skills/.system' }]
-    value = { id: body.name, path: `D:/isolated/skills/.system/${body.name}` }
+    skills = [...skills, { id: `user-dsh:${skillsRoot}:${body.name}`, folder: body.name, name: body.name, description: body.description, dir: skillsRoot, source: 'user-dsh', rank: 400, valid: true, blocked: false, modelInvocable: true, userInvocable: true }]
+    value = { id: body.name, path: `${skillsRoot}/${body.name}` }
+  }
+  if (endpoint === 'skills-import') {
+    value = { path: skillsRoot, count: 1 }
   }
   if (endpoint === 'skills-import-directory') {
-    value = { path: body.path, count: 2 }
-  }
-  if (endpoint === 'skills-config') {
-    await new Promise((resolve) => setTimeout(resolve, window.delay))
-    if (window.rejectSkillsConfig) return new Response(JSON.stringify({ ok: false, message: 'skills config rejected' }))
-    value = { dirs: [], order: body.order ?? [], rankBase: body.rankBase ?? 250, activeSkillsDirs: ['D:/isolated/skills'], skillCatalog: skills }
+    value = { path: skillsRoot, count: 2 }
   }
   if (endpoint === 'preset-delete') {
     await new Promise((resolve) => setTimeout(resolve, window.delay))
