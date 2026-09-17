@@ -2,7 +2,7 @@
 import { memo, useRef, useState, type ReactNode } from 'react'
 import { usePromptToolFields } from '../../data/use-prompt-tool-fields.ts'
 import clsx from 'clsx'
-import { IconCopyOutline16, IconFolderOpenOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconCopyOutline16, IconFolderOpenOutline16, IconTrashOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { bridgeCall } from '../../data/bridge-client.ts'
 import { readImportFiles } from '../../data/import-files.ts'
 import type { PromptToolStore } from '../../data/use-prompt-tool-store.ts'
@@ -267,8 +267,12 @@ export const PresetSwitcher = memo(function PresetSwitcher(props: { store: Promp
           )}
           {(
             <HintTooltip label={active ? t('presetSwitcher.delete.hintActive') : t('presetSwitcher.delete.hint')}>
-              <button type="button" className={styles.pillButton} data-danger disabled={active}
-                onClick={() => setConfirmingDelete(preset.id)}>{t('presetSwitcher.delete')}</button>
+              <button type="button" className={styles.presetIconButton}
+                aria-label={t('presetSwitcher.delete.aria', { name: preset.name })}
+                disabled={active}
+                onClick={() => setConfirmingDelete(preset.id)}>
+                <IconTrashOutline16 />
+              </button>
             </HintTooltip>
           )}
         </span>

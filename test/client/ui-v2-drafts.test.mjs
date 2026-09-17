@@ -60,6 +60,7 @@ test('V2 草稿与资源：原文恢复、快照保存、技能目标及危险�
     const waitFor = async (expression) => { for (let i = 0; i < 100; i++) { if (await evaluate(expression)) return; await sleep(50) } assert.fail(`等待超时：${expression}\n${await evaluate('document.body.innerText')}`) }
     const click = async (selector) => { await evaluate(`(()=>{const e=document.querySelector(${JSON.stringify(selector)});e.focus();e.click()})()`); await sleep(60) }
     const clickKey = async (key) => { assert.equal(await evaluate(`(()=>{const b=[...document.querySelectorAll('button')].find(e=>!e.disabled&&e.getClientRects().length&&e.textContent.trim()===window.t(${JSON.stringify(key)}));if(!b)return false;b.focus();b.click();return true})()`), true, key); await sleep(60) }
+    const clickAria = async (expression) => { assert.equal(await evaluate(`(()=>{const b=[...document.querySelectorAll('button')].find(e=>!e.disabled&&e.getClientRects().length&&e.getAttribute('aria-label')===${expression});if(!b)return false;b.focus();b.click();return true})()`), true, expression); await sleep(60) }
     const field = (key) => `document.querySelector('[aria-label="'+window.t(${JSON.stringify(key)})+'"]')`
     const input = async (key, value) => { await evaluate(`(()=>{const e=${field(key)};e.focus();Object.getOwnPropertyDescriptor(e.tagName==='TEXTAREA'?HTMLTextAreaElement.prototype:HTMLInputElement.prototype,'value').set.call(e,${JSON.stringify(value)});e.dispatchEvent(new Event('input',{bubbles:true}));e.dispatchEvent(new Event('change',{bubbles:true}))})()`); await sleep(30) }
     const blur = async (key) => { await evaluate(`(()=>{const e=${field(key)};e.dispatchEvent(new FocusEvent('focusout',{bubbles:true,relatedTarget:document.querySelector('nav button')}));e.blur()})()`); await sleep(30) }
@@ -133,12 +134,12 @@ test('V2 草稿与资源：原文恢复、快照保存、技能目标及危险�
     assert.equal(await evaluate(`document.querySelector('[role="switch"][aria-label="'+window.t('skills.row.enable.aria',{name:'alpha'})+'"]').getAttribute('aria-checked')`), 'true', '成功批量后开关立即反映刷新事实')
 
     await click('[data-page="presets"]')
-    await clickKey('presetSwitcher.delete')
+    await clickAria(`window.t('presetSwitcher.delete.aria',{name:'Other'})`)
     await waitFor(`document.querySelector('[role="alertdialog"]')!==null`)
     await clickKey('presetSwitcher.delete.cancel')
     assert.equal(await evaluate(count('preset-delete')), 0, '取消删除零请求')
     await evaluate('window.rejectDelete=true;window.delay=100')
-    await clickKey('presetSwitcher.delete')
+    await clickAria(`window.t('presetSwitcher.delete.aria',{name:'Other'})`)
     await clickKey('presetSwitcher.delete.confirm')
     await waitFor(`document.querySelector('[role="alertdialog"]')?.innerText.includes('delete rejected')`)
     await evaluate('window.rejectDelete=false;window.delay=200')
