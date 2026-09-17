@@ -86,6 +86,13 @@ test('importSkillsDirectory：复制宿主机目录内容到用户技能根并�
     assert.equal(rejected.ok, false)
     assert.equal(existsSync(join(root, 'Bad Name')), false)
     rmSync(bad.root, { recursive: true, force: true })
+    // 来源必须是绝对路径：空串会经 resolve('') 退化成进程工作目录，等于把整个 cwd 当技能导入。
+    for (const [label, invalid] of [['空串', ''], ['纯空白', '   '], ['相对路径', 'pt-skills-source']]) {
+      const guarded = importSkillsDirectory(root, invalid)
+      assert.equal(guarded.ok, false, `${label}必须被拒绝`)
+      assert.match(guarded.ok ? '' : guarded.message, /绝对路径|路径为空/u, label)
+    }
+    assert.deepEqual(readdirSync(root), [name], '被拒绝的导入不向用户技能根写入任何内容')
   } finally {
     cleanup()
     source.cleanup()

@@ -62,9 +62,11 @@ function assertOverwritable(target: string): void {
 
 /** 落盘事务：先写暂存目录，再逐顶层项切换；失败时把备份放回原处。 */
 function importFiles(root: string, files: SkillFile[], overwrite: boolean): SkillsImportResult {
-  const base = resolve(root)
   let stage: string | undefined
   try {
+    // 技能根由插件状态提供，这里仍要求绝对路径：空串会解析成进程工作目录，把 cwd 当技能根写。
+    if (typeof root !== 'string' || root.trim().length === 0 || !isAbsolute(root)) throw new Error('技能根必须是绝对路径')
+    const base = resolve(root)
     if (files.length === 0) throw new Error('未收到技能文件')
     for (const file of files) {
       const path = file.path.replaceAll('\\', '/')
