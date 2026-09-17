@@ -1,68 +1,86 @@
-# 前端 UI V2 重构执行总管
+# 测试归一精简（B 档）执行计划
 
 ## 授权与基线
 
-- 用户授权：使用 artifacts 中三份 V2 方案执行重构；PLAN.md 只总管，不复制设计细则。
-- 基线：`dev@0bbe9869dca212e73c9fef5872c6a659861e1930`，开始时工作树干净。
-- [旧 PLAN 原文归档](.scratch/prompt-tool-framework/archive/plan-review-f01-f15-0bbe9869-20260917.md)，Git blob 与基线一致：`ba26ae91efebed332949d2dfe3bdcf44882cf572`。
-- 具体目标、取舍和验收直接读取下表方案；仓库安全、宿主与持久化边界仍遵循 AGENTS.md 和 docs/ui-architecture.md。
+- 用户授权：2026-09-17 在「测试项目过多是否可以归一精简」评估后选择 **B 档（标准整理）**，并批准按 **engine → host → client** 三批执行；每批独立验证与提交，可随时叫停。
+- 基线：`dev@f669c501791e3986ee9017b474b92fe05a5c0fd4`，开始时工作树干净。
+- [旧 PLAN 原文归档](.scratch/prompt-tool-framework/archive/plan-ui-v2-f669c50-20260917.md)，Git blob 与基线 `f669c50:PLAN.md` 一致：`faad8853564782326eddc665d7b7cd563a47e92d`。
+- 参考项目（只读评估，结论见下）：`D:\AI\GitHub\dsh-tavern`、`D:\AI\GitHub\dsh-web`、`D:\AI\GitHub\dsh-mnemon`。
 
-## 方案路由与分工
+## 目标与不变量
 
-| 执行面 | 唯一设计输入 | 写区负责人 |
+| 指标 | 现状 | 目标 |
 |---|---|---|
-| 通用视觉、控件复用、主题与响应式 | [前端 V2](artifacts/dsh-plugin-prompt-tool-前端设计方案.md) §§2–9 | 视觉代理：全部 CSS；主线程：跨域控件集成 |
-| 六页布局、导航、浏览状态、草稿和资源页 | [页面 V2](artifacts/dsh-plugin-prompt-tool-页面设计方案.md) §§3–10 | 页面代理：app/workspace、PromptConfigsEditor/List；主线程：资源页、业务草稿与本地化 |
-| 模块卡、菜单、确认、表单与排序 | [模块卡 V2](artifacts/dsh-plugin-prompt-tool-模块卡布局设计.md) §§2–7 | 卡片代理：单卡、共享交互、字段与排序 helper |
+| `*.test.mjs` 文件 | 135 | **88** |
+| 运行用例 | 967 | **967（不减）** |
+| engine / host / client+shared+根 | 25 / 60 / 50 | 17 / 36 / 35 |
+| `test/types/*.ts` 编译期契约 | 2 | 2（不动） |
 
-每个任务直接按所路由 V2 的验收清单执行和验证。可选迁移按方案门槛决定；有依据的偏差记在下方，不复制一份新规格。代理写区互斥，跨区接口先协调；主线程统一构建、全量验证和交付。
+不变量（每批都必须成立）：
 
-## 执行顺序
+1. **覆盖不减**：表驱动只压缩重复断言壳，每条原用例必须仍以一条用例存在；不得删除或弱化断言。
+2. **NEVER-TOUCH 零改动**：指令文件读写（授权/白名单/版本冲突/读取失败）、导入预览与回滚、路径穿越、大小上限、桥端点安全面、晋升门控/epoch/disposer、子代理策略、子进程脚手架文件，整文件不参与合并。
+3. **不新增测试框架或依赖**：继续用 Node 内置 test runner；不引入 vitest / jsdom / happy-dom / Testing Library（`AGENTS.md`「优先使用 Node 内置 test runner」、`docs/ui-architecture.md` §12.1）。
+4. **每批门禁**：`pnpm typecheck`、`pnpm lint`、`pnpm test`、`pnpm build`、`git diff --check` 全绿，且用例总数不少于上一批，才提交推送 `origin/dev`。
+5. 测试仍在隔离 cwd（`D:\AI\workspase\_temp`）执行，临时目录自建自清。
 
-1. Wave 0：归档、基线与调用链确认。
-2. Wave 1：草稿/危险操作/焦点保护优先；页面、卡片、CSS 按互斥写区并行，主线程完成资源与草稿集成。
-3. Wave 2：真实浏览器验证三稿验收项、独立 diff 复核、同步稳定行为至 UI 权威文档。
-4. Wave 3：完整门禁、更新本计划和本地项目记忆，只暂存本次文件，中文 Conventional Commit，推送 origin/dev。
+## 参考项目结论（已评估，写入本计划以免重复调研）
 
-## 验证与回滚
+| 借鉴 | 出处 | 落地 |
+|---|---|---|
+| 一个模块/主题一个文件，大文件是常态 | dsh-mnemon（`subagent.spec.ts` 83 用例/2526 行）、dsh-tavern（`inline-message-renderer` 81 用例/2238 行）、dsh-web（`host-ledger.spec.ts` 34 用例/724 行） | 合并单位=主题，不按行数设上限 |
+| harness 集中在 fixtures | dsh-tavern `tests/fixtures/helper-*.mjs`（30+）、dsh-mnemon `scripts/fixtures/` | 新增 `test/fixtures/host-harness.mjs`、`test/client/support/*.mjs`，不新建顶层 helpers 目录 |
+| 验证 lane 分离 | dsh-mnemon `verify:build` / `verify:headless` / `verify:package` / `verify:docs` | 沿用既有 `verify:host` 与 `scripts/run-tests.mjs`，不新建 lane |
+| 浏览器/e2e 与单测分离 | dsh-web `tests/e2e/mount.e2e.ts` + 独立 playwright 配置 | 8 个 Edge smoke 合为 4 个并按 `*-smoke.test.mjs` 命名，仍留在 `node:test` 内 |
+| **不采用** vitest / jsdom / RTL / 每包 tests/ | dsh-web、dsh-mnemon | 单包集中 `test/{engine,host,client}`，SSR 渲染 + Edge smoke 替代 jsdom |
 
-所有命令使用 PowerShell 7，测试和脚本 cwd 为 `D:/AI/workspase/_temp`：
+## Wave 拆解
 
-```powershell
-$Repo = 'D:\AI\GitHub\dsh-plugin-prompt-tool'
-Set-Location 'D:\AI\workspase\_temp'
-pnpm --dir $Repo typecheck
-pnpm --dir $Repo lint
-pnpm --dir $Repo test
-pnpm --dir $Repo build
-git -C $Repo diff --check
-```
+### Wave 1：engine 合并（25 → 17）[ ]
 
-每项非平凡交互以最小行为反例验证；浏览器复用现有 Edge/CDP fixture、独占 profile 和随机端口。截图与详细测试产物放临时目录，计划只索引结果。运行中的 DSH 不停止或重启。
+7 个合并组，全部为等价搬迁；engine 分片静态断言升级为 0（25 个文件本就走真实模块行为断言）。
 
-回滚以任务差异的反向补丁或后续 revert 为单位，不回滚用户预设/指令正文，不覆盖用户新改动。客户端构建后刷新生效；若实际涉及服务重载只在交付说明中标注。
+| 组 | 成员 → 目标 | 用例 |
+|---|---|---|
+| E1-1 | anchor-match → `st-world-book.test.mjs` | 26+7=33 |
+| E1-2 | meta → `prompt-config-engine.test.mjs` | 62+1=63 |
+| E1-3 | tool-git-bash → `preset-engine-modules.test.mjs` | 21+2=23 |
+| E2-1 | st-macros + st-render → 新建 `st-render-macros.test.mjs`（表驱动压缩） | 22 |
+| E2-2 | session-vars → `interpolate.test.mjs`（表驱动 16→≈10） | 17 |
+| E3-1 | skill-search + tool-modules → 新建 `tool-module-mount.test.mjs` | 12 |
+| E3-2 | anchor-turn + deliberation-gate + progress-reminder → 新建 `injection-gates.test.mjs` | 10 |
 
-## 进度、证据与偏差
+- 验收：engine 目录 17 个 `*.test.mjs`；engine 运行用例 275 条不减；全量门禁绿。
+- 调整说明：原方案把 helper 抽取放在批 1；实际以「helper 主要服务 host 分片」为由移到 Wave 2，使 Wave 1 成为**零新增抽象**的纯合并，便于独立验证与回滚。
 
-- 基线 `pnpm --dir $Repo test`：986/986 通过，0 失败/跳过；包括构建。
-- 2026-09-17 用户纠正：PLAN 仅路由与总管，设计细则以 artifacts V2 为准；已执行。
-- 用户追加截图问题：长预设名挤压「使用中」胶囊；修复共享徽章收缩与换行，实际CSS浏览器回归覆盖原图两个名称、160/240px容器与200%文字放大，先红后绿。
-- 用户视觉取舍：恢复状态圆点原有6px核心和3px柔和静态光晕，覆盖V2去光晕建议；胶囊不收缩/不换行的修复保留，不恢复循环动画。
-- 用户追加主题问题：模块列表吸顶操作区在透明背景主题下难辨识；改为系统Canvas不透明基底叠宿主表面，透明/半透明/缺省变量在明暗配色下均有真实CSS回归，先红后绿。
-- 用户追加过滤问题：真实鼠标focusout后的微任务提前卸载菜单，使选项click丢失。MenuSelect识别菜单内relatedTarget，卡片/策略离焦延后一帧确认逻辑归属；新增原生鼠标按下/抬起回归，选择不再固定为「全部」。
-- 已实现三稿路由中的卡片、页面、草稿、资源与视觉改造；可选Input/DisclosureRow/Modal/StateDot整体迁移未强行采用，保留已有行为并复用官方Switch、Menu、Tag与按钮。
-- 最终typecheck、lint、test、build与diff --check均通过；静态光晕恢复后的test为992/992，0失败/跳过。指令文件保存链路31/31；真实页面、草稿、卡片与胶囊回归通过。
-- 真实样式证据：`D:/AI/workspase/_temp/ui-v2-visual/report.json`及同目录截图，64个明暗/窄宽/短视口/中英文/文字放大/触控/forced-colors/reduced-motion场景；主线程已回读截图并修正定位导致外层容器滚动的问题。使用实际CSS Modules及0.1.6-alpha.1主题/primitives；不将此覆盖称为屏幕阅读器或所有平台认证。
-- 门禁环境适配：pnpm当前提供原生exe的npm_execpath，测试入口补原生启动分支，避免Node把exe当脚本；测试/生产行为不变。
-- 三份artifacts/V2输入随本轮纳入版本控制，保证PLAN路由链接可复现；不改变artifacts其他生成物的忽略规则。源码无需重启DSH，客户端刷新加载新构建。
-- 实现提交`e4d421739c417cfb39a5100eeb142146ce5214f5`已推送origin/dev，远端SHA核对一致；本次收尾仅更新执行状态，产品代码与最终992项通过的版本一致。
+### Wave 2：host 合并（60 → 36）[ ]
 
-## Wave 状态
+- 新建 `test/fixtures/host-harness.mjs`：`isolatedHome` / `tempDir` / `fakeReq`·`fakeRes` / `bridgeHarness` / `readBridge` / `seedPreset` / `pluginCtx` / `expectUnchanged` / `readPresetYaml`；re-export 既有 `fixtures/preset-template.mjs` 以免改 7 处 import。
+- 14 个合并组：write-preset（吸收 writepreset-off）、preset-render-variants、preset-prompt-configs、composition-library、engine-params-bridge、preset-capabilities、subagent-tool-policy、pre-step-injection、pre-step-wiring、skills-provider、sillytavern-convert、model-routing、profile-assembly、preset-content-assets。
+- 4 个 KEEP（st-preview-report / tui / version-contract / preset-default-sync）+ **18 个整文件 NEVER-TOUCH**。
+- 2 条静态断言升级为行为断言：`models` 的 `llm/adapters-updated` 接线、`web-surface` 的 web-app 常量来源。
+- 2 处文档引用同步：`docs/architecture-params.md`（param-contract → engine-params-bridge）、`docs/SillyTavern.md`（st-compatibility → sillytavern-convert）。
+- 技术风险与要求：40+ 文件在模块顶层设 `process.env.DSH_HOME`，合并后每文件只能设一次，必须由 helper 统一设置并在 `after()` 还原原值；子进程脚手架（rematerialize / rebuild-composition / official-preset / skills-watcher）原样搬运。
 
-- [✔] Wave 0：旧 PLAN 完整归档、基线验证、设计路由与写区明确。
-- [✔] Wave 1：卡片交互与排序。
-- [✔] Wave 1：工作台、列表与浏览上下文。
-- [✔] Wave 1：业务草稿、资源页与文案。
-- [✔] Wave 1：视觉与响应式。
-- [✔] Wave 2：集成、浏览器验收、独立复核与权威文档。
-- [✔] Wave 3：完整门禁、项目记忆、中文提交与推送。
+### Wave 3：client 合并（50 → 35）[ ]
+
+- 结构契约 4→1（`client-structure-contract`）、接线契约 5→1（`client-wiring-contract`）、CSS 断言并入 `style-ownership`、编辑态 3→1（`editor-state`）、`hint-tooltip` 2→1、根目录 4→1（`host-publish-contract`）。
+- 8 个 Edge smoke → 4（`ui-v2-page-smoke` / `import-smoke` / `module-policy-smoke` / `real-css-smoke`），先合 import 与 module+policy 两组，再合 ui-v2 三合一；每个成员的高风险流程逐条保留。
+- SSR 升级（用已有 6 个文件的 `react-dom/server` 范式）：`workspace-navigation`、`menu-select` 用例 1/3、`prompt-config-form-layout` 用例 1/2/3/5、`template-picker-anchor`、`review-fixes` 4 条、`scope-create-separation` 第 11 条；portal / 真实 CSS / 真实鼠标与焦点保留 Edge。
+- 保留独立：`style-ownership`、`locale-contract`、禁令类断言（无原生 select、无 `title`/`data-tip`、无宿主 DOM 选择器、依赖方向）。
+
+## 风险与回滚
+
+- 合并后单文件断言量与等待步骤上升（smoke 超时预算需叠加），**失败定位粒度变粗**；Edge 缺失时 `skip` 粒度由单文件变整组。
+- 表驱动与 SSR 升级属于"等价重写"，是本计划唯一需要逐条核对覆盖的环节；核对方式：合并前后各跑定向 `node --test`，比较运行用例数与失败信息可定位性。
+- 回滚：每批一个中文 Conventional Commit，`git revert <sha>` 即可整批回退；文件内容以拼接与 `git mv` 为主，diff 可逐条核对。
+
+## 执行状态
+
+| Wave | 状态 | 提交 |
+|---|---|---|
+| Wave 1：engine 25 → 17 | [ ] | — |
+| Wave 2：host 60 → 36 | [ ] | — |
+| Wave 3：client 50 → 35 | [ ] | — |
+
+（Wave 内任务完成后即时更新为 `[✔]`，并在交付说明中给出提交 SHA。）
