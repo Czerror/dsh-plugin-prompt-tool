@@ -61,7 +61,7 @@ writeFileSync(join(skillsRoot, 'broken-skill', 'SKILL.md'), '---\ndescription: �
 // 插件状态文件的点目录由官方一层扫描天然跳过，不得出现在清单里。
 mkdirSync(join(skillsRoot, '.system', 'prompt-tool'), { recursive: true })
 
-const BLOCKED = new Set(['agents-skill'])
+const BLOCKED = new Map([['agents-skill', 'all']])
 const FOLDERS = [referenced]
 const roots = skillRoots({ cwd, dshHome, folders: FOLDERS })
 const catalog = catalogFromScan(scanRoots(roots), BLOCKED)
@@ -104,8 +104,12 @@ test('catalogFromScan：一层发现、来源优先级、屏蔽标记与同名�
   // 屏蔽是注册层状态，不改技能文件：文件仍在原处且内容不变。
   const blockedEntry = byName('agents-skill')
   assert.equal(blockedEntry.blocked, true)
+  assert.equal(blockedEntry.blockedModel, true, '完全屏蔽：模型端被屏蔽')
+  assert.equal(blockedEntry.blockedUser, true, '完全屏蔽：用户端被屏蔽')
   assert.equal(blockedEntry.source, 'project-agents')
   assert.equal(byName('user-skill').blocked, false)
+  assert.equal(byName('user-skill').blockedModel, false)
+  assert.equal(byName('user-skill').blockedUser, false)
 
   // 同名裁决：项目来源胜出，用户来源标注被遮蔽。
   const shared = catalog.filter((entry) => entry.name === 'shared-name')
@@ -149,7 +153,7 @@ test('/skills-list 端点：按会话 cwd 解析项目来源，无存活会话�
   const handlers = new Map()
   const state = {
     skillsRoot,
-    blocked: [...BLOCKED],
+    blocked: [...BLOCKED.keys()],
     folders: [...FOLDERS],
     listSkills,
     setSkillBlocked: () => ({ ok: true, state: { version: 3, blocked: [], folders: FOLDERS }, exists: true }),

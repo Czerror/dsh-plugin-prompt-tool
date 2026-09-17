@@ -1,12 +1,13 @@
 import { memo, type ReactNode } from 'react'
 import { Switch } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SkillCatalogEntry } from '../../data/prompt-tool-fields.ts'
+import type { SkillBlockScope } from '../../../shared/skills.ts'
 import { HintTooltip } from '../../ui/HintTooltip.tsx'
 import { StatusBadge } from '../../ui/StatusBadge.tsx'
 import type { PromptToolTranslate } from '../../locales.ts'
 import sharedCss from '../../ui/controls.module.css'
 import featureCss from './skills.module.css'
-import { skillEnabled, skillShadowed, skillStatusLabel, skillStatusTone } from './skill-status.ts'
+import { blockScopeFor, skillShadowed, skillStatusLabel, skillStatusTone } from './skill-status.ts'
 
 const ui = { ...sharedCss, ...featureCss }
 
@@ -16,14 +17,14 @@ export interface SkillRowProps {
   busy: boolean
   /** 只有用户技能根里的技能可以删除；其他来源只读（改文件请到对应目录）。 */
   deletable: boolean
-  onToggleBlock: (name: string, blocked: boolean) => void
+  /** 设置注册层屏蔽范围：'none' 表示恢复该技能。 */
+  onSetScope: (name: string, scope: SkillBlockScope) => void
   onDelete: (folder: string) => void
 }
 
-/** 技能行 memo：屏蔽开关与删除是仅有的写操作，其余全部只读展示。 */
+/** 技能行 memo：两个注册层开关与删除是仅有的写操作，其余全部只读展示。 */
 export const SkillRow = memo(function SkillRow(props: SkillRowProps): ReactNode {
   const { skill, t, busy } = props
-  const enabled = skillEnabled(skill)
   const status = skillStatusLabel(skill, t)
   const hint = skill.path ?? `${skill.dir}\\${skill.folder}`
   return (
@@ -42,15 +43,32 @@ export const SkillRow = memo(function SkillRow(props: SkillRowProps): ReactNode 
         {skillShadowed(skill) && <span className={ui.skillIssue} role="note">{t('skills.row.shadowedHint')}</span>}
         {!skill.valid && skill.issue && <span className={ui.skillIssue} role="note">{skill.issue}</span>}
       </div>
-      <div className={ui.skillRowActions}>
-        <HintTooltip label={skill.blocked ? t('skills.row.block.hintOn') : t('skills.row.block.hintOff')}>
-          <Switch
-            checked={enabled}
-            disabled={busy || !skill.valid}
-            label={t('skills.row.block.aria', { name: skill.name })}
-            onChange={() => props.onToggleBlock(skill.name, !skill.blocked)}
-          />
-        </HintTooltip>
+      {/* 注册层开关：技能自身的声明由上面的徽章与描述如实展示，这里只控制插件是否屏蔽该端。 */}
+      <div className={ui.skillRowActions} data-skill-block-group="">
+        <span className={ui.skillPolicyGroup} role="group" aria-label={t('skills.row.toggles.aria', { name: skill.name })}>
+          <HintTooltip label={t('skills.row.modelToggle.hint')}>
+            <span className={ui.skillPolicyItem}>
+              <Switch
+                checked={skill.blockedModel !== true}
+                disabled={busy || !skill.valid}
+                label={t('skills.row.modelToggle.aria', { name: skill.name })}
+                onChange={() => props.onSetScope(skill.name, blockScopeFor(skill.blockedModel !== true, skill.blockedUser === true))}
+              />
+              <span>{t('skills.row.modelToggle')}</span>
+            </span>
+          </HintTooltip>
+          <HintTooltip label={t('skills.row.userToggle.hint')}>
+            <span className={ui.skillPolicyItem}>
+              <Switch
+                checked={skill.blockedUser !== true}
+                disabled={busy || !skill.valid}
+                label={t('skills.row.userToggle.aria', { name: skill.name })}
+                onChange={() => props.onSetScope(skill.name, blockScopeFor(skill.blockedModel === true, skill.blockedUser !== true))}
+              />
+              <span>{t('skills.row.userToggle')}</span>
+            </span>
+          </HintTooltip>
+        </span>
         {props.deletable && (
           <HintTooltip label={t('skills.row.delete.hint')}>
             <button

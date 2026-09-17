@@ -5,6 +5,7 @@
  * 改路径或载荷形状必须同步更新 test/shared/bridge-contract.test.mjs。
  */
 import type { PersonaSpec } from './persona-section.ts'
+import type { SkillBlockScope } from './skills.ts'
 import type {
   InstructionFileWriteResult,
   InstructionPolicy,
@@ -86,8 +87,8 @@ export interface BridgeRequestMap {
   configsValidate: { promptConfigs: unknown[]; strategyDir?: string }
   /** 技能清单：按会话工作区扫描官方六类技能根，并叠加注册层屏蔽状态。 */
   skillsList: { sessionId?: string } | undefined
-  /** 注册层屏蔽开关：只写插件状态，不改任何技能文件。 */
-  skillBlock: { name: string; blocked: boolean }
+  /** 注册层屏蔽开关：只写插件状态，不改任何技能文件；scope 让模型端与用户端独立。 */
+  skillBlock: { name: string; scope: SkillBlockScope }
   /** 添加 / 移除引用的技能文件夹（只记状态，不复制文件）。 */
   skillsFolders: { folders: string[] }
   skillsImport: { files: Array<{ path: string; content: string }> }

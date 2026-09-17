@@ -39,9 +39,20 @@ function readBlocked(value: unknown): BlockedSkill[] {
     if (typeof record.name !== 'string' || !SKILL_NAME_PATTERN.test(record.name)) throw new Error(`屏蔽记录的技能名不合法：${String(record.name)}`)
     if (typeof record.at !== 'string' || record.at.length === 0) throw new Error(`屏蔽记录缺少时间：${record.name}`)
     if (record.note !== undefined && (typeof record.note !== 'string' || record.note.length > 512)) throw new Error(`屏蔽记录备注不合法：${record.name}`)
+    for (const key of ['model', 'user'] as const) {
+      if (record[key] !== undefined && typeof record[key] !== 'boolean') throw new Error(`屏蔽记录的 ${key} 必须是布尔值：${record.name}`)
+    }
+    // 两端都不屏蔽等价于没有记录，应当删除而不是留一条空记录。
+    if (record.model === false && record.user === false) throw new Error(`屏蔽记录至少要屏蔽一端：${record.name}`)
     if (seen.has(record.name)) throw new Error(`屏蔽记录重复：${record.name}`)
     seen.add(record.name)
-    return { name: record.name, at: record.at, ...(record.note === undefined ? {} : { note: record.note }) }
+    return {
+      name: record.name,
+      at: record.at,
+      ...(record.note === undefined ? {} : { note: record.note }),
+      ...(record.model === undefined ? {} : { model: record.model as boolean }),
+      ...(record.user === undefined ? {} : { user: record.user as boolean }),
+    }
   })
 }
 
@@ -106,7 +117,11 @@ export function writeSkillsState(
     if (patch.blocked !== undefined) {
       if (next.blocked.length === 0) doc.delete('blocked')
       else doc.set('blocked', doc.createNode(next.blocked.map((item) => ({
-        name: item.name, at: item.at, ...(item.note === undefined ? {} : { note: item.note }),
+        name: item.name,
+        at: item.at,
+        ...(item.note === undefined ? {} : { note: item.note }),
+        ...(item.model === undefined ? {} : { model: item.model }),
+        ...(item.user === undefined ? {} : { user: item.user }),
       }))))
     }
     if (patch.folders !== undefined) {

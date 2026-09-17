@@ -67,6 +67,8 @@ export const PromptSettingsSchema: z<PromptSettings> = z.object({
     valid: z.boolean().default(false),
     issue: z.string().default(''),
     blocked: z.boolean().default(false),
+    blockedModel: z.boolean().default(false),
+    blockedUser: z.boolean().default(false),
     modelInvocable: z.boolean().default(false),
     userInvocable: z.boolean().default(false),
     winnerId: z.string().default(''),

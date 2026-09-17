@@ -1,5 +1,5 @@
 import type { SkillCatalogEntry } from '../../data/prompt-tool-fields.ts'
-import { SKILL_SOURCES, type SkillSourceKind } from '../../../shared/skills.ts'
+import { SKILL_SOURCES, type SkillBlockScope, type SkillSourceKind } from '../../../shared/skills.ts'
 import type { StatusBadgeTone } from '../../ui/StatusBadge.tsx'
 import type { PromptToolTranslate } from '../../locales.ts'
 
@@ -8,12 +8,24 @@ export type SkillStatusTab = 'all' | 'model' | 'user' | 'blocked'
 /** 实际生效判定：非法技能不注册；被屏蔽的技能在注册层被影子候选压掉。 */
 export const skillEnabled = (skill: SkillCatalogEntry): boolean => skill.valid && skill.blocked !== true
 
+/** 模型端是否可用：技能自身声明与插件屏蔽叠加。 */
+export const skillModelAvailable = (skill: SkillCatalogEntry): boolean =>
+  skill.valid && skill.blockedModel !== true && skill.modelInvocable
+
+/** 用户端是否可用：技能自身声明与插件屏蔽叠加。 */
+export const skillUserAvailable = (skill: SkillCatalogEntry): boolean =>
+  skill.valid && skill.blockedUser !== true && skill.userInvocable
+
 /** 是否被同名技能遮蔽（同名裁决只保留来源优先级最高的那一个）。 */
 export const skillShadowed = (skill: SkillCatalogEntry): boolean => skillEnabled(skill) && skill.winnerId !== undefined
 
+/** 两个开关状态 → 注册层屏蔽范围（两端都开 = 恢复该技能）。 */
+export const blockScopeFor = (modelBlocked: boolean, userBlocked: boolean): SkillBlockScope =>
+  modelBlocked && userBlocked ? 'all' : modelBlocked ? 'model' : userBlocked ? 'user' : 'none'
+
 export function matchesSkillStatus(skill: SkillCatalogEntry, tab: SkillStatusTab): boolean {
-  if (tab === 'model') return skillEnabled(skill) && skill.modelInvocable
-  if (tab === 'user') return skillEnabled(skill) && skill.userInvocable
+  if (tab === 'model') return skillModelAvailable(skill)
+  if (tab === 'user') return skillUserAvailable(skill)
   if (tab === 'blocked') return skill.blocked
   return true
 }

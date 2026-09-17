@@ -4,6 +4,7 @@ import type { SettingsScope, SettingsScopeSnapshot } from '@deepseek-ai/dsh-clie
 import type { EngineMeta, PromptConfigDraft } from '../prompt-tool-types.ts'
 import type { PromptToolHostApi } from './host-api.ts'
 import type { PresetModuleFacts } from '../../shared/engine-capabilities.ts'
+import type { SkillBlockScope } from '../../shared/skills.ts'
 import { bridgeCall, errorMessage, type BridgeResult, type BridgeSettingsView } from './bridge-client.ts'
 import {
   EMPTY_FIELDS,
@@ -144,8 +145,8 @@ export interface PromptToolStore {
   createSkill: (input: { name: string; description: string; content: string }) => Promise<boolean>
   /** 回收站删除用户技能根里的技能目录。 */
   deleteSkill: (folder: string) => Promise<boolean>
-  /** 注册层屏蔽开关：只写插件状态，不改任何技能文件。 */
-  setSkillBlocked: (name: string, blocked: boolean) => Promise<boolean>
+  /** 注册层屏蔽开关：模型端与用户端各自独立，scope='none' 表示恢复该技能。 */
+  setSkillBlocked: (name: string, scope: SkillBlockScope) => Promise<boolean>
   /** 添加 / 移除引用的技能文件夹（只记引用，不复制文件）。 */
   patchSkillFolders: (folders: string[]) => Promise<boolean>
   /** 打开用户技能根。 */
@@ -1029,19 +1030,19 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     }
   }, [load, showNotice])
 
-  /** 注册层屏蔽开关：只写插件状态，不改任何技能文件；恢复即时生效。 */
-  const setSkillBlocked = useCallback(async (name: string, blocked: boolean): Promise<boolean> => {
+  /** 注册层屏蔽开关：只写插件状态，不改任何技能文件；scope='none' 表示恢复该技能。 */
+  const setSkillBlocked = useCallback(async (name: string, scope: SkillBlockScope): Promise<boolean> => {
     try {
-      const res = await bridgeCall('skillBlock', { name, blocked })
+      const res = await bridgeCall('skillBlock', { name, scope })
       if (!res.ok) {
-        showNotice('error', `技能 ${name} ${blocked ? '停用' : '恢复'}失败：` + (res.message ?? 'settings bridge unavailable'))
+        showNotice('error', `技能 ${name} 屏蔽设置失败：` + (res.message ?? 'settings bridge unavailable'))
         return false
       }
-      showNotice('ok', `已${blocked ? '在注册层停用' : '恢复'}技能：${name}`)
+      showNotice('ok', scope === 'none' ? `已恢复技能：${name}` : `已更新技能 ${name} 的注册层屏蔽`)
       await load({ silent: true })
       return true
     } catch (error) {
-      showNotice('error', `技能 ${name} 切换失败：` + errorMessage(error))
+      showNotice('error', `技能 ${name} 屏蔽设置失败：` + errorMessage(error))
       return false
     }
   }, [load, showNotice])

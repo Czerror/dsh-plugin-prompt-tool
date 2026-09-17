@@ -57,7 +57,7 @@ import {
   type SkillsStateRead,
 } from './host/skills-config.ts'
 import { catalogFromScan, scanRoot, scanRoots, skillRoots, type ScannedSkill } from './host/skills-scan.ts'
-import { SKILL_BLOCK_RANK, SKILL_SOURCES, type SkillCatalogEntry, type SkillsState } from './shared/skills.ts'
+import { SKILL_BLOCK_RANK, SKILL_SOURCES, blockRecordFor, blockScopeOf, type SkillBlockScope, type SkillCatalogEntry, type SkillsState } from './shared/skills.ts'
 
 export const name = 'prompt-tool'
 // 内容走 user 层（AGENTS.md 常驻层 + skill 按需层），
@@ -300,7 +300,8 @@ export function apply(ctx: Context, configIn: Config): void {
   let skillsState = readSkillsStateSafe()
   let skillsStateSnapshot = JSON.stringify(skillsState)
   const skillsRoot = USER_SKILLS_DIR
-  const blockedNames = (): Set<string> => new Set(skillsState.blocked.map((item) => item.name))
+  const blockedScopes = (): Map<string, SkillBlockScope> =>
+    new Map(skillsState.blocked.map((item) => [item.name, blockScopeOf(item)]))
   /** 用户显式引用的技能文件夹里的技能（自定义来源，只读扫描）。 */
   const scanReferencedSkills = (): ScannedSkill[] =>
     skillsState.folders.flatMap((path) => scanRoot({ kind: 'custom', path }))
@@ -314,7 +315,7 @@ export function apply(ctx: Context, configIn: Config): void {
       ...(cwd === undefined || cwd.length === 0 ? {} : { cwd }),
       dshHome: DSH_HOME,
       folders: skillsState.folders,
-    })), blockedNames())
+    })), blockedScopes())
     if (catalogCache.size >= 8) catalogCache.clear()
     catalogCache.set(key, entries)
     return entries
@@ -323,12 +324,12 @@ export function apply(ctx: Context, configIn: Config): void {
     catalogCache.clear()
     invalidateSkills?.()
   }
-  /** 写屏蔽表并热应用：只改插件状态，不改任何技能文件。 */
-  const setSkillBlocked = (name: string, blocked: boolean): SkillsStateRead => {
+  /** 写屏蔽范围并热应用：只改插件状态，不改任何技能文件。scope = 'none' 表示恢复该技能。 */
+  const setSkillBlocked = (name: string, scope: SkillBlockScope): SkillsStateRead => {
     if (!SKILL_NAME_PATTERN.test(name)) return { ok: false, state: skillsState, message: `技能名不合法：${name}` }
     const rest = skillsState.blocked.filter((item) => item.name !== name)
     const written = writeSkillsState({
-      blocked: blocked ? [...rest, { name, at: new Date().toISOString() }] : rest,
+      blocked: scope === 'none' ? rest : [...rest, blockRecordFor(name, scope, new Date().toISOString())],
     }, skillsStateFile, skillsStateSnapshot)
     if (written.ok === false) {
       warn(ctx, `prompt-tool: ${written.message}`)
@@ -387,19 +388,26 @@ export function apply(ctx: Context, configIn: Config): void {
       list: async (options: SkillLookupOptions): Promise<readonly SkillCandidate[]> => {
         if (options.signal?.aborted) return []
         const candidates: SkillCandidate[] = []
+        // 影子候选：按屏蔽范围只关被屏蔽的那一端（两端都关 = 完全停用）。
         for (const item of skillsState.blocked) {
+          const scope = blockScopeOf(item)
+          if (scope === 'none') continue
           candidates.push({
             name: item.name,
-            description: '已由 prompt-tool 在注册层停用（未修改任何技能文件）',
-            invocation: { modelInvocable: false, userInvocable: false },
+            description: '已由 prompt-tool 在注册层屏蔽（未修改任何技能文件）',
+            invocation: {
+              modelInvocable: !(scope === 'all' || scope === 'model'),
+              userInvocable: !(scope === 'all' || scope === 'user'),
+            },
             source: 'prompt-tool-blocked',
             provider: 'prompt-tool',
             rank: SKILL_BLOCK_RANK,
             locator: `blocked:${item.name}`,
           })
         }
+        const blocked = blockedScopes()
         for (const skill of scanReferencedSkills()) {
-          if (!skill.valid || skillsState.blocked.some((item) => item.name === skill.name)) continue
+          if (!skill.valid || blocked.has(skill.name)) continue
           candidates.push({
             name: skill.name,
             description: skill.description || skill.folder,
@@ -677,7 +685,7 @@ registerTuiCommand(
   },
   // 技能启停：写注册层屏蔽表（不改技能文件），失败原因回给命令层。
   (name, enabled) => {
-    const result = setSkillBlocked(name, !enabled)
+    const result = setSkillBlocked(name, enabled ? 'none' : 'all')
     return result.ok ? { ok: true } : { ok: false, message: result.message }
   },
 )
@@ -893,7 +901,8 @@ export { loadPromptTemplates, loadToolTemplates } from './host/templates.ts'
 export type { PromptConfigTemplate, ToolTemplate } from './host/templates.ts'
 export { registerTuiCommand } from './runtime/tui.ts'
 export { readSkillsState, writeSkillsState, skillsStatePath, SKILL_NAME_PATTERN } from './host/skills-config.ts'
-export type { BlockedSkill, SkillCatalogEntry, SkillsState } from './shared/skills.ts'
+export type { BlockedSkill, SkillBlockScope, SkillCatalogEntry, SkillsState } from './shared/skills.ts'
+export { blockRecordFor, blockScopeOf } from './shared/skills.ts'
 export { catalogFromScan, resolveProjectRoot, scanRoot, scanRoots, skillRoots } from './host/skills-scan.ts'
 export { PARAM_KEYS } from './config.ts'
 export { BRIDGE_ENDPOINTS, MAX_BRIDGE_BODY_BYTES, MAX_CHARACTER_CARD_STREAM_BYTES, SETTINGS_BRIDGE_PREFIX } from './shared/bridge-contract.ts'

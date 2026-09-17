@@ -433,32 +433,48 @@ test('V2 草稿与资源：原文恢复、快照保存、技能目标及危险�
   assert.deepEqual(
     await evaluate(`[...document.querySelectorAll('section[aria-label]')].map(s=>s.getAttribute('aria-label')).filter(l=>[${JSON.stringify(SKILL_SOURCES['project-dsh'].label)},${JSON.stringify(SKILL_SOURCES['user-dsh'].label)}].includes(l))`),
     [SKILL_SOURCES['project-dsh'].label, SKILL_SOURCES['user-dsh'].label], '来源分组顺序与官方优先级一致')
-  assert.equal(await evaluate(`document.querySelectorAll('[role="switch"][aria-label]').length`), 2, '每个技能行一个注册层开关')
+  assert.equal(await evaluate(`document.querySelectorAll('[role="switch"][aria-label]').length`), 4, '两个技能行各有模型与用户两个注册层开关')
   assert.equal(await evaluate(`document.body.innerText.includes(window.t('skills.group.meta',{count:1,rank:100}))`), true, '分组头部展示来源优先级 100')
   assert.equal(await evaluate(`document.body.innerText.includes(window.t('skills.group.meta',{count:1,rank:400}))`), true, '分组头部展示来源优先级 400')
 
-  // 注册层屏蔽：开关只提交 skill-block 载荷，技能实体与技能文件都留在原处。
-  await clickAria(`window.t('skills.row.block.aria',{name:'alpha'})`)
+  // 注册层屏蔽：两个开关各自独立，只提交 skill-block 载荷，技能实体与技能文件都留在原处。
+  const modelToggle = (name) => `window.t('skills.row.modelToggle.aria',{name:'${name}'})`
+  const userToggle = (name) => `window.t('skills.row.userToggle.aria',{name:'${name}'})`
+  const fieldOf = (name) => `window.store.getFields().skillCatalog.find(s=>s.name==='${name}')`
+  await clickAria(userToggle('alpha'))
   await waitFor(`${count('skill-block')}===1`)
   assert.equal(await evaluate(`JSON.stringify(window.requests.find(r=>r.endpoint==='skill-block').body)`),
-    '{"name":"alpha","blocked":true}', '屏蔽载荷只有技能名与开关值')
-  await waitFor(`window.store.getFields().skillCatalog.find(s=>s.name==='alpha').blocked===true`)
-  assert.equal(await evaluate(`document.querySelector('[role="switch"][aria-label="'+window.t('skills.row.block.aria',{name:'alpha'})+'"]').getAttribute('aria-checked')`), 'false', '开关反映注册层屏蔽状态')
+    '{"name":"alpha","scope":"user"}', '只关用户端时载荷带 scope=user')
+  await waitFor(`${fieldOf('alpha')}.blockedUser===true`)
+  assert.equal(await evaluate(`${fieldOf('alpha')}.blockedModel`), false, '模型端不受影响')
+  assert.equal(await evaluate(`document.querySelector('[role="switch"][aria-label="'+${userToggle('alpha')}+'"]').getAttribute('aria-checked')`), 'false', '用户开关反映屏蔽状态')
+  assert.equal(await evaluate(`document.querySelector('[role="switch"][aria-label="'+${modelToggle('alpha')}+'"]').getAttribute('aria-checked')`), 'true', '模型开关保持开启')
   assert.equal(await evaluate(`document.querySelectorAll('[data-blocked]').length`), 1)
 
-  // 恢复 = 删除屏蔽记录，官方候选回到胜出位置。
-  await clickAria(`window.t('skills.row.block.aria',{name:'alpha'})`)
+  // 再关模型端 → 两端都关（scope=all，等价完全停用）。
+  await clickAria(modelToggle('alpha'))
   await waitFor(`${count('skill-block')}===2`)
   assert.equal(await evaluate(`JSON.stringify(window.requests.filter(r=>r.endpoint==='skill-block')[1].body)`),
-    '{"name":"alpha","blocked":false}')
-  await waitFor(`window.store.getFields().skillCatalog.find(s=>s.name==='alpha').blocked===false`)
+    '{"name":"alpha","scope":"all"}')
+  await waitFor(`${fieldOf('alpha')}.blockedModel===true`)
+
+  // 恢复 = 两端都打开（scope=none，删除屏蔽记录）。
+  await clickAria(userToggle('alpha'))
+  await waitFor(`${count('skill-block')}===3`)
+  assert.equal(await evaluate(`JSON.stringify(window.requests.filter(r=>r.endpoint==='skill-block')[2].body)`),
+    '{"name":"alpha","scope":"model"}', '先恢复用户端时只剩模型端被屏蔽')
+  await clickAria(modelToggle('alpha'))
+  await waitFor(`${count('skill-block')}===4`)
+  assert.equal(await evaluate(`JSON.stringify(window.requests.filter(r=>r.endpoint==='skill-block')[3].body)`),
+    '{"name":"alpha","scope":"none"}')
+  await waitFor(`${fieldOf('alpha')}.blocked===false`)
 
   // 写盘失败不乐观更新：开关保持磁盘事实，错误进入通知。
   await evaluate(`window.failedSkill='alpha'`)
-  await clickAria(`window.t('skills.row.block.aria',{name:'alpha'})`)
-  await waitFor(`${count('skill-block')}===3`)
+  await clickAria(userToggle('alpha'))
+  await waitFor(`${count('skill-block')}===5`)
   await waitFor(`document.querySelector('[data-notice]').textContent.includes('failed alpha')`)
-  assert.equal(await evaluate(`window.store.getFields().skillCatalog.find(s=>s.name==='alpha').blocked`), false, '失败不乐观更新客户端事实')
+  assert.equal(await evaluate(`${fieldOf('alpha')}.blocked`), false, '失败不乐观更新客户端事实')
   await evaluate(`window.failedSkill=''`)
 
   // 技能资产卡默认折叠：展开后才是导入、创建与引用入口。

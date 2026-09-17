@@ -33,6 +33,8 @@ test('fields view：技能清单、屏蔽表、引用目录与用户根存在性
     rank: 400,
     valid: true,
     blocked: true,
+    blockedModel: true,
+    blockedUser: true,
     modelInvocable: true,
     userInvocable: true,
     path: `${path}\\demo-skill\\SKILL.md`,

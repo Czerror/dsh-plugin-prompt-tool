@@ -7,6 +7,7 @@ import { parseFrontmatter } from '../runtime/skills-parse.ts'
 import {
   SKILL_MARKER,
   SKILL_SOURCES,
+  type SkillBlockScope,
   type SkillCatalogEntry,
   type SkillSourceKind,
 } from '../shared/skills.ts'
@@ -141,11 +142,12 @@ export function markWinners(skills: readonly ScannedSkill[]): Map<string, string
   return winners
 }
 
-/** 扫描结果 → 清单条目（叠加屏蔽状态与同名遮蔽信息）。 */
-export function catalogFromScan(skills: readonly ScannedSkill[], blocked: ReadonlySet<string>): SkillCatalogEntry[] {
+/** 扫描结果 → 清单条目（叠加注册层屏蔽范围与同名遮蔽信息）。 */
+export function catalogFromScan(skills: readonly ScannedSkill[], blocked: ReadonlyMap<string, SkillBlockScope>): SkillCatalogEntry[] {
   const winners = markWinners(skills)
   return skills.map((skill) => {
     const winnerId = winners.get(skill.name)
+    const scope = blocked.get(skill.name)
     return {
       id: skill.id,
       name: skill.name,
@@ -156,7 +158,9 @@ export function catalogFromScan(skills: readonly ScannedSkill[], blocked: Readon
       rank: skill.rank,
       valid: skill.valid,
       ...(skill.issue !== undefined ? { issue: skill.issue } : {}),
-      blocked: blocked.has(skill.name),
+      blocked: scope !== undefined,
+      blockedModel: scope === 'all' || scope === 'model',
+      blockedUser: scope === 'all' || scope === 'user',
       modelInvocable: skill.modelInvocable,
       userInvocable: skill.userInvocable,
       ...(winnerId !== undefined && winnerId !== skill.id ? { winnerId } : {}),

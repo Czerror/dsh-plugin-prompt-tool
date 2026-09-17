@@ -32,8 +32,8 @@ let presets = [{ id: 'test', name: 'Current' }, { id: 'other', name: 'Other' }]
 const skillsRoot = 'D:/isolated/skills'
 // 注册层屏蔽模型的技能事实：实体留在各自来源根，插件只提供清单、屏蔽表与引用目录。
 let skills = [
-  { id: 'project-dsh:D:/workspace:.dsh:beta', folder: 'beta', name: 'beta', description: 'beta description', dir: 'D:/workspace/.dsh/skills', source: 'project-dsh', rank: 100, valid: true, blocked: false, modelInvocable: true, userInvocable: true },
-  { id: `user-dsh:${skillsRoot}:alpha`, folder: 'alpha', name: 'alpha', description: 'alpha description', dir: skillsRoot, source: 'user-dsh', rank: 400, valid: true, blocked: false, modelInvocable: true, userInvocable: true },
+  { id: 'project-dsh:D:/workspace:.dsh:beta', folder: 'beta', name: 'beta', description: 'beta description', dir: 'D:/workspace/.dsh/skills', source: 'project-dsh', rank: 100, valid: true, blocked: false, blockedModel: false, blockedUser: false, modelInvocable: true, userInvocable: true },
+  { id: `user-dsh:${skillsRoot}:alpha`, folder: 'alpha', name: 'alpha', description: 'alpha description', dir: skillsRoot, source: 'user-dsh', rank: 400, valid: true, blocked: false, blockedModel: false, blockedUser: false, modelInvocable: true, userInvocable: true },
 ]
 let blockedSkills = []
 let skillFolders = []
@@ -74,8 +74,15 @@ window.fetch = async (url, init) => {
   if (endpoint === 'skill-block') {
     await new Promise((resolve) => setTimeout(resolve, window.delay))
     if (window.rejectSkillBlock || body.name === window.failedSkill) return new Response(JSON.stringify({ ok: false, message: `failed ${body.name}` }))
-    blockedSkills = body.blocked ? [...new Set([...blockedSkills, body.name])] : blockedSkills.filter((name) => name !== body.name)
-    skills = skills.map((skill) => skill.name === body.name ? { ...skill, blocked: blockedSkills.includes(skill.name) } : skill)
+    // 注册层屏蔽按范围生效：两端各自独立，'none' 表示恢复。
+    const scope = body.scope
+    skills = skills.map((skill) => skill.name === body.name ? {
+      ...skill,
+      blocked: scope !== 'none',
+      blockedModel: scope === 'all' || scope === 'model',
+      blockedUser: scope === 'all' || scope === 'user',
+    } : skill)
+    blockedSkills = skills.filter((skill) => skill.blocked).map((skill) => skill.name)
     value = { skills, blocked: blockedSkills }
   }
   if (endpoint === 'skills-folders') {

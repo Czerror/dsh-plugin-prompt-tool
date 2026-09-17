@@ -48,6 +48,8 @@ const readSkillCatalog = (source: Record<string, unknown>, key: string): SkillCa
       description: readString(record, 'description') ?? '',
       valid: readBoolean(record, 'valid', true),
       blocked: record.blocked === true,
+      blockedModel: record.blockedModel === true,
+      blockedUser: record.blockedUser === true,
       modelInvocable: readBoolean(record, 'modelInvocable', true),
       userInvocable: readBoolean(record, 'userInvocable', true),
       ...(readString(record, 'issue') !== undefined ? { issue: readString(record, 'issue')! } : {}),

@@ -7,6 +7,7 @@ import type { SkillCatalogEntry } from '../../data/prompt-tool-fields.ts'
 import type { PromptToolStore } from '../../data/use-prompt-tool-store.ts'
 import type { PromptToolHostApi } from '../../data/host-api.ts'
 import type { PromptToolLocaleKey, PromptToolTranslate } from '../../locales.ts'
+import type { SkillBlockScope } from '../../../shared/skills.ts'
 import { bridgeCall } from '../../data/bridge-client.ts'
 import { readImportFiles } from '../../data/import-files.ts'
 import { usePromptToolFields } from '../../data/use-prompt-tool-fields.ts'
@@ -70,8 +71,8 @@ export const SkillsPage = memo(function SkillsPage(props: { store: PromptToolSto
     if (props.browse) Object.assign(props.browse, { query: skillFilter, status: statusTab, selected: [] })
   }, [skillFilter, statusTab, props.browse])
 
-  const onToggleBlock = useCallback((name: string, blocked: boolean) => {
-    void store.setSkillBlocked(name, blocked)
+  const onSetScope = useCallback((name: string, scope: SkillBlockScope) => {
+    void store.setSkillBlocked(name, scope)
   }, [store])
   const onDelete = useCallback((folder: string) => {
     setPendingDelete(fields.skillCatalog.find((skill) => skill.folder === folder))
@@ -368,7 +369,7 @@ export const SkillsPage = memo(function SkillsPage(props: { store: PromptToolSto
                   t={t}
                   busy={store.skillsBusy}
                   deletable={skill.source === 'user-dsh' && skill.dir === fields.skillsRoot}
-                  onToggleBlock={onToggleBlock}
+                  onSetScope={onSetScope}
                   onDelete={onDelete}
                 />
               ))}

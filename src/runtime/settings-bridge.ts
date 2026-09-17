@@ -10,7 +10,7 @@ import { parse as parseYaml, stringify as stringifyYaml } from 'yaml'
 import type { SettingsDescriptor, SettingsPathOp } from '@deepseek-ai/dsh-settings'
 import { PARAM_KEYS } from '../config.ts'
 import { invalidateModelCatalog, listAdvertisedModels, peekModelCatalog, refreshModelReasoning, type ModelDetection } from './models.ts'
-import type { SkillCatalogEntry } from '../shared/skills.ts'
+import type { SkillBlockScope, SkillCatalogEntry } from '../shared/skills.ts'
 import { loadPromptConfigFiles } from '../host/prompt-configs.ts'
 import { validatePromptConfigs } from './configs-validate.ts'
 import { loadPromptTemplates, loadToolTemplates } from '../host/templates.ts'
@@ -84,8 +84,8 @@ export interface SkillsBridgeState {
   folders: string[]
   /** 技能清单：按会话工作区扫描官方六类技能根并叠加屏蔽状态。 */
   listSkills: (cwd?: string) => SkillCatalogEntry[]
-  /** 注册层屏蔽开关：只写插件状态，不改技能文件。 */
-  setSkillBlocked: (name: string, blocked: boolean) => SkillsStateRead
+  /** 注册层屏蔽范围：'none' 表示恢复该技能；模型端与用户端各自独立。 */
+  setSkillBlocked: (name: string, scope: SkillBlockScope) => SkillsStateRead
   /** 添加 / 移除引用的技能文件夹。 */
   patchSkillFolders: (folders: string[]) => SkillsStateRead
   /** 清单缓存失效（资产写盘后调用）。 */
@@ -950,12 +950,13 @@ export function registerSettingsBridge(
             if (parsedBody === undefined) return
             const body = parsedBody.body
             const record = body !== null && typeof body === 'object' && !Array.isArray(body) ? body as Record<string, unknown> : {}
-            if (typeof record.name !== 'string' || record.name.length === 0 || typeof record.blocked !== 'boolean') {
-              writeBridgeJson(res, 400, { ok: false, code: 'skill-block-rejected', message: 'name 与 blocked 必填' })
+            if (typeof record.name !== 'string' || record.name.length === 0
+              || typeof record.scope !== 'string' || !['none', 'model', 'user', 'all'].includes(record.scope)) {
+              writeBridgeJson(res, 400, { ok: false, code: 'skill-block-rejected', message: 'name 与 scope（none/model/user/all）必填' })
               return
             }
             // 注册层屏蔽：只写插件状态，不改任何技能文件。
-            const written = getSkillsState().setSkillBlocked(record.name, record.blocked)
+            const written = getSkillsState().setSkillBlocked(record.name, record.scope as SkillBlockScope)
             if (written.ok === false) {
               writeBridgeJson(res, 409, { ok: false, code: 'skill-block-rejected', message: written.message })
               return
