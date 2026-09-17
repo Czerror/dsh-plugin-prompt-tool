@@ -8,6 +8,7 @@ import { PROMPT_TOOL_DICTS } from '../../src/client/locales.ts'
 import {
   groupBySource,
   matchesSkillStatus,
+  scopeAfterToggle,
   skillEnabled,
   skillShadowed,
   skillStatusLabel,
@@ -89,6 +90,17 @@ test('技能状态筛选区分模型、用户、已停用与全部', () => {
   }
   assert.equal(matchesSkillStatus(invalid, 'model'), false)
   assert.equal(matchesSkillStatus(invalid, 'blocked'), false, '无效技能有自己的原因展示，不混进不可用')
+})
+
+test('开关往返：两端屏蔽后仍能逐端恢复（这段曾被误判为死端）', () => {
+  const both = { blockedModel: true, blockedUser: true }
+  assert.equal(scopeAfterToggle(both, 'model'), 'user', '点模型端 → 只屏蔽用户端，模型端恢复')
+  assert.equal(scopeAfterToggle(both, 'user'), 'model', '点用户端 → 只屏蔽模型端，用户端恢复')
+  assert.equal(scopeAfterToggle({ blockedModel: false, blockedUser: false }, 'model'), 'model')
+  assert.equal(scopeAfterToggle({ blockedModel: false, blockedUser: false }, 'user'), 'user')
+  assert.equal(scopeAfterToggle({ blockedModel: true, blockedUser: false }, 'user'), 'all', '再关用户端 → 两端都屏蔽')
+  assert.equal(scopeAfterToggle({ blockedModel: false, blockedUser: true }, 'model'), 'all', '再关模型端 → 两端都屏蔽')
+  assert.equal(scopeAfterToggle({ blockedModel: true, blockedUser: false }, 'model'), 'none', '再点模型端 → 完全恢复')
 })
 
 test('技能状态徽章色调随注册、屏蔽、遮蔽与调用范围变化', () => {

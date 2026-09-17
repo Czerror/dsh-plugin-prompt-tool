@@ -269,7 +269,8 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
   const [skillsBusyCount, setSkillsBusyCount] = useState(0)
   const skillsBusy = skillsBusyCount > 0
   const beginSkillWrite = useCallback(() => { setSkillsBusyCount((count) => count + 1) }, [])
-  // 计数成对进出；Math.max 只是兜底，避免任何漏写 begin 的路径把计数压成负数而永久卡住界面。
+  // 计数成对进出（每个技能写操作一次 begin、finally 里一次 end）。Math.max 防的是亏空累积：
+  // 一旦某条路径漏写 begin，负数会先抵消下一次 begin，让写盘期间的 busy 错误地变回 false。
   const endSkillWrite = useCallback(() => { setSkillsBusyCount((count) => Math.max(0, count - 1)) }, [])
   const [notice, setNotice] = useState('')
   const [noticeKind, setNoticeKind] = useState<'ok' | 'error'>('ok')
@@ -984,7 +985,9 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     try {
       const res = await bridgeCall('skillsImportDirectory', { path: source })
       if (!res.ok) {
-        showNotice('error', res.message ?? '导入技能目录失败')
+        // 服务端消息自带「技能导入失败：」前缀，剥掉后由这里补类别前缀，避免两层；空串兜底成可读文案。
+        const reason = (res.message ?? '').trim().replace(/^技能导入失败：/u, '') || 'settings bridge unavailable'
+        showNotice('error', `导入技能目录失败：${reason}`)
         return false
       }
       const { count, overwritten } = res.value

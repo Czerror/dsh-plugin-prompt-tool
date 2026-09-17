@@ -115,6 +115,15 @@ test('importSkillsPackage 支持无顶层容器的单技能包并写入用户技
   } finally { rmSync(root, { recursive: true, force: true }) }
 })
 
+test('trashSkill 拒绝不合法的目录名，不把容器外的目录搬走', async () => {
+  const root = makeRoot()
+  try {
+    const { trashSkill } = await import('../../src/host/skills-actions.ts')
+    assert.throws(() => trashSkill(root, '../escape', 'delete'), /技能目录名不合法/u)
+    assert.equal(existsSync(join(root, '.system')), false, '拒绝时连回收站目录都不创建')
+  } finally { rmSync(root, { recursive: true, force: true }) }
+})
+
 test('trashSkill 失败时清理自己创建的容器，不在回收站留空条目', async () => {
   const root = makeRoot()
   try {

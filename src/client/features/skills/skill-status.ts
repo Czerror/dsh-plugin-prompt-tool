@@ -23,9 +23,21 @@ export const skillFullyBlocked = (skill: SkillCatalogEntry): boolean =>
 /** 是否被同名技能遮蔽（同名裁决只保留来源优先级最高的那一个）。 */
 export const skillShadowed = (skill: SkillCatalogEntry): boolean => skillEnabled(skill) && skill.winnerId !== undefined
 
-/** 两个开关状态 → 注册层屏蔽范围（两端都开 = 恢复该技能）。 */
+/** 两端「点击后是否屏蔽」→ 注册层屏蔽范围（两端都为 false = 恢复该技能）。
+ *  参数不是「当前是否被屏蔽」，调用点传的是点击之后的目标状态——两者只差一次取反，
+ *  读错就会误以为两端都屏蔽时开关是死端。 */
 export const blockScopeFor = (modelBlocked: boolean, userBlocked: boolean): SkillBlockScope =>
   modelBlocked && userBlocked ? 'all' : modelBlocked ? 'model' : userBlocked ? 'user' : 'none'
+
+/** 点击某一端开关后的目标屏蔽范围：本端取反，另一端保持当前状态。
+ *  放在这里而不是组件内，是为了让「两端都屏蔽之后仍能逐端恢复」这件事可以被直接单测。 */
+export const scopeAfterToggle = (
+  skill: Pick<SkillCatalogEntry, 'blockedModel' | 'blockedUser'>,
+  side: 'model' | 'user',
+): SkillBlockScope =>
+  side === 'model'
+    ? blockScopeFor(skill.blockedModel !== true, skill.blockedUser === true)
+    : blockScopeFor(skill.blockedModel === true, skill.blockedUser !== true)
 
 /** 两端都不可用（有效技能）：既包含插件两端屏蔽，也包含技能自身声明两端都不可调用。
  *  「已停用」页签按这个口径收技能，保证每个有效技能至少落在一个页签里，而不是只出现在「全部」。

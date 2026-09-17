@@ -33,6 +33,14 @@ const SKILL_STATUS_TABS: Array<{ id: SkillStatusTab; labelKey: PromptToolLocaleK
 /** 创建表单的本地校验：与官方 `SKILL_NAME` 同规则（kebab-case）。 */
 const SKILL_NAME_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 
+/** 导入失败的可见原因：服务端消息自带「技能导入失败：」前缀，剥掉后由本页补类别前缀，
+ *  避免出现两层；传输层失败（空响应/网络异常）没有前缀也不至于丢失类别语境，
+ *  空串则兜底成一句可读文案——空串会让通知整条不渲染。 */
+const importFailureReason = (raw: unknown): string => {
+  const text = typeof raw === 'string' ? raw.trim() : ''
+  return text.replace(/^技能导入失败：/u, '') || 'settings bridge unavailable'
+}
+
 export const SkillsPage = memo(function SkillsPage(props: { store: PromptToolStore; api: PromptToolHostApi; t: PromptToolTranslate; browse?: { query: string; status: SkillStatusTab } }): ReactNode {
   const { store, api, t } = props
   const fields = usePromptToolFields(store, (value) => value)
@@ -107,10 +115,10 @@ export const SkillsPage = memo(function SkillsPage(props: { store: PromptToolSto
           : t('skills.notice.imported', { count, path }))
         await store.load()
       } else {
-        store.showNotice('error', t('skills.notice.importFailed', { reason: res.message ?? 'settings bridge unavailable' }))
+        store.showNotice('error', t('skills.notice.importFailed', { reason: importFailureReason(res.message) }))
       }
     } catch (error) {
-      store.showNotice('error', t('skills.notice.importFailed', { reason: error instanceof Error ? error.message : String(error) }))
+      store.showNotice('error', t('skills.notice.importFailed', { reason: importFailureReason(error instanceof Error ? error.message : String(error)) }))
     } finally {
       if (mounted.current) setImportingDir(false)
     }

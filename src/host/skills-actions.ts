@@ -17,17 +17,17 @@ function assertPlainDirectory(path: string): void {
 const TRASH_SEGMENTS = ['.system', 'prompt-tool', '.trash'] as const
 
 export interface TrashedSkill {
-  folder: string
   /** 技能目录在回收站里的完整路径（人工恢复时从这里搬回）。 */
   path: string
   /** 容器目录（含 record.json）；恢复完成后可整体删除。 */
   container: string
-  deletedAt: string
 }
 
 /** 把技能目录移入回收站：命名唯一、记录来源与时间，可人工恢复。
- *  失败时清理自己刚创建的容器，不在回收站里留下「只有 record.json」的空条目。 */
+ *  失败时清理自己刚创建的容器，不在回收站里留下空条目。
+ *  自带目录名校验：导出函数不依赖调用方先验，否则直接调用方可以用 '..' 把容器外的目录搬走。 */
 export function trashSkill(base: string, folder: string, origin: 'delete' | 'import-overwrite'): TrashedSkill {
+  if (!SKILL_NAME_PATTERN.test(folder)) throw new Error(`技能目录名不合法：${folder}`)
   const root = resolve(base)
   const recycle = join(root, ...TRASH_SEGMENTS)
   mkdirSync(recycle, { recursive: true })
@@ -40,7 +40,7 @@ export function trashSkill(base: string, folder: string, origin: 'delete' | 'imp
     }, null, 2), { flag: 'wx' })
     const path = join(container, folder)
     renameSync(source, path)
-    return { folder, path, container, deletedAt }
+    return { path, container }
   } catch (error) {
     try { rmSync(container, { recursive: true, force: true }) } catch { /* 保留现场供人工检查 */ }
     throw error

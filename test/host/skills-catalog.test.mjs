@@ -157,7 +157,6 @@ test('/skills-list 端点：按会话 cwd 解析项目来源，无存活会话�
     listSkills,
     setSkillBlocked: () => ({ ok: true, state: { version: 3, blocked: [], folders: FOLDERS }, exists: true }),
     patchSkillFolders: () => ({ ok: true, state: { version: 3, blocked: [], folders: FOLDERS }, exists: true }),
-    invalidateCatalog: () => {},
   }
   const sctx = {
     settings: { describe: () => [], get: () => undefined, mutate: async () => {} },

@@ -47,29 +47,30 @@ export function createSkillsReloader(deps: SkillsReloaderDeps): SkillsReloader {
   return {
     reload: () => {
       const read = readSkillsState(deps.stateFile)
+      let stateChanged = false
       if (read.ok === false) {
         if (!readFailed) {
           readFailed = true
           deps.warn(`${read.message}（保留上一次有效状态，修好后自动恢复）`)
         }
-        deps.invalidateList()
-        return
-      }
-      readFailed = false
-      if (read.exists === false) {
-        if (!fileMissing) {
-          fileMissing = true
-          deps.warn('技能状态文件不存在，已按空状态处理（屏蔽表与引用目录已重置）')
-        }
       } else {
-        fileMissing = false
+        readFailed = false
+        if (read.exists === false) {
+          if (!fileMissing) {
+            fileMissing = true
+            deps.warn('技能状态文件不存在，已按空状态处理（屏蔽表与引用目录已重置）')
+          }
+        } else {
+          fileMissing = false
+        }
+        const snapshot = JSON.stringify(read.state)
+        stateChanged = snapshot !== deps.currentSnapshot()
+        if (stateChanged) {
+          deps.accept(read.state, snapshot)
+          deps.rewatch()
+        }
       }
-      const snapshot = JSON.stringify(read.state)
-      const stateChanged = snapshot !== deps.currentSnapshot()
-      if (stateChanged) {
-        deps.accept(read.state, snapshot)
-        deps.rewatch()
-      }
+      // 统一出口：读失败也要比对候选指纹——坏文件窗口里引用目录的增删同样会让模型侧候选过期。
       const nextCandidates = deps.candidatesFingerprint()
       const candidatesChanged = nextCandidates !== candidates
       candidates = nextCandidates

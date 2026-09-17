@@ -92,7 +92,6 @@ function makeHarness(sessionCwd) {
       listSkills: () => [],
       setSkillBlocked: () => ({ ok: true, state: { version: 3, blocked: [], folders: [] }, exists: true }),
       patchSkillFolders: () => ({ ok: true, state: { version: 3, blocked: [], folders: [] }, exists: true }),
-      invalidateCatalog: () => {},
     }),
     () => '',
     undefined,

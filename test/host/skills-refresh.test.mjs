@@ -89,7 +89,8 @@ test('状态文件损坏：保留上一次有效状态、只告警一次，修�
   const valid = readSkillsState(file)
   assert.equal(valid.ok, true)
 
-  const { reloader, calls } = makeReloader(file, valid.state)
+  let fingerprint = 'refs:v1'
+  const { reloader, calls } = makeReloader(file, valid.state, () => fingerprint)
   writeFileSync(file, 'version: 3\nblocked: [oops\n', 'utf8')
   reloader.reload()
   assert.deepEqual(calls.accepted, [], '坏文件不得清空内存里的屏蔽表与引用目录')
@@ -101,6 +102,12 @@ test('状态文件损坏：保留上一次有效状态、只告警一次，修�
   reloader.reload()
   assert.equal(calls.warns.length, 1, '同一故障窗口只告警一次，不刷日志')
   assert.equal(calls.invalidateList, 2)
+
+  // 坏文件窗口里引用目录也在变：读失败不该成为候选失效的盲区。
+  fingerprint = 'refs:v2'
+  reloader.reload()
+  assert.equal(calls.warns.length, 1, '仍在同一故障窗口内，不重复告警')
+  assert.equal(calls.invalidateCandidates, 1, '读失败也要比对候选指纹')
 
   rmSync(file, { force: true })
   writeSkillsState({ blocked: [], folders: [] }, file)
@@ -132,6 +139,23 @@ test('状态文件被删除：按空状态处理，但要告警一次', () => {
   reloader.reload()
   assert.equal(calls.accepted.length, 2, '文件回来后状态恢复')
   assert.equal(calls.warns.length, 1, '恢复本身不再额外告警')
+})
+
+test('watcher：无法监听的目录只报告一次，不阻断其他目录', () => {
+  const { dir } = makeStateFile()
+  const missing = join(dir, 'not-there')
+  const errors = []
+  const watcher = createSkillsWatcher(() => [missing, dir], () => {}, (message) => { errors.push(message) })
+  try {
+    watcher.watch()
+    assert.equal(errors.length, 1, '监听失败的目录必须被报告，否则覆盖不完整对调用方不可见')
+    assert.match(errors[0], /不会自动刷新/u)
+    assert.match(errors[0], /not-there/u)
+    watcher.watch()
+    assert.equal(errors.length, 1, '重复挂载同一失败目录不重复告警')
+  } finally {
+    watcher.close()
+  }
 })
 
 test('真实装配：状态文件写入经 watcher 走完整条刷新链路', async () => {

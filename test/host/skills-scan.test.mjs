@@ -4,7 +4,7 @@
  *  或者漏掉真实存在的技能。用例全部在独立临时目录里构造真实文件，不依赖共享状态。 */
 import { after, test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import {
@@ -196,7 +196,8 @@ test('同名裁决：rank 并列时按 id 次序稳定取首个，输入顺序�
     scanned({ id: 'user-dsh:/c:demo', rank: SKILL_SOURCES['user-dsh'].rank, name: 'demo' }),
   ]
   assert.equal(markWinners(sameRank).get('demo'), 'user-dsh:/a:demo', '并列时 id 字典序在前者胜出')
-  // 三个以上元素才不会只靠 V8 小数组排序的稳定性兜住：删掉 id 第二键后这两条都必须失败。
+  // 压到排序次键的关键是「输入顺序与 id 顺序不一致」：正序时 V8 对全等比较器的小数组排序
+  // 保序，删掉次键也看不出来；乱序样本才暴露问题（2 个元素的反序就够，这里用 3 个加一个轮转）。
   assert.equal(markWinners([sameRank[1], sameRank[2], sameRank[0]]).get('demo'), 'user-dsh:/a:demo', 'a 仍应胜出')
   assert.equal(markWinners([...sameRank].reverse()).get('demo'), 'user-dsh:/a:demo', '裁决不依赖输入顺序')
 })
@@ -236,7 +237,14 @@ test('根指纹：技能集合或标记文件变化后失效，无变化时保�
   const marker = join(root, 'alpha', 'SKILL.md')
   const past = new Date(Date.now() - 60_000)
   utimesSync(marker, past, past)
-  assert.notEqual(rootsFingerprint(roots), added, '既有技能内容变化必须改变指纹')
+  const afterTouch = rootsFingerprint(roots)
+  assert.notEqual(afterTouch, added, '既有技能内容变化必须改变指纹')
+
+  // 等长改写 + 把 mtime 还原：size 与 mtime 都一样，判据仍必须变化（ctime 抓得住）。
+  const original = readFileSync(marker, 'utf8')
+  writeFileSync(marker, original.replace('description: A', 'description: B'), 'utf8')
+  utimesSync(marker, past, past)
+  assert.notEqual(rootsFingerprint(roots), afterTouch, '等长改写并还原 mtime 也必须让指纹变化')
 
   // 删除技能目录 → 指纹变化。
   const current = rootsFingerprint(roots)

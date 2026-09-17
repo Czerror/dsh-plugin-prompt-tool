@@ -73,7 +73,7 @@ test('fields view：技能清单、引用目录与用户根都取 describe 事�
   assert.deepEqual(missing.skillCatalog, [])
 })
 
-test('fields view：扩展字段优先级为「顶层 → descriptor value → base」', () => {
+test('fields view：技能事实的取值优先级（顶层 → descriptor value；技能根再兜底 base）', () => {
   const path = 'D:\\AI\\CC-switch\\skills'
   const fromValue = fieldsFromView({
     ok: true,
@@ -92,6 +92,14 @@ test('fields view：扩展字段优先级为「顶层 → descriptor value → b
     value: { ns: 'prompt-tool', revision: 1, value: {}, base: { activeSkillsDirs: ['D:\\from-base'] } },
   })
   assert.equal(fromBase.skillsRoot, 'D:\\from-base', 'value 缺失时退回 base')
+
+  // 引用目录只从顶层扩展字段或 descriptor value 读，没有 base 兜底——这是实现事实，一并钉住，
+  // 免得后来人以为 base 也是它的来源。
+  const foldersFromBase = fieldsFromView({
+    ok: true,
+    value: { ns: 'prompt-tool', revision: 1, value: {}, base: { skillFolders: ['D:\\base-only'] } },
+  })
+  assert.deepEqual(foldersFromBase.skillFolders, [], 'skillFolders 不读 base')
 
   const fromTop = fieldsFromView({
     ok: true,

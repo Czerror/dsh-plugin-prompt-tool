@@ -45,7 +45,6 @@ function makeSkillsState(overrides = {}) {
     listSkills: () => [],
     setSkillBlocked: () => ({ ok: true, state, exists: true }),
     patchSkillFolders: () => ({ ok: true, state, exists: true }),
-    invalidateCatalog: () => {},
     ...overrides,
   }
 }

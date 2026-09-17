@@ -7,7 +7,7 @@ import { StatusBadge } from '../../ui/StatusBadge.tsx'
 import type { PromptToolTranslate } from '../../locales.ts'
 import sharedCss from '../../ui/controls.module.css'
 import featureCss from './skills.module.css'
-import { blockScopeFor, skillShadowed, skillStatusLabel, skillStatusTone } from './skill-status.ts'
+import { scopeAfterToggle, skillShadowed, skillStatusLabel, skillStatusTone } from './skill-status.ts'
 
 const ui = { ...sharedCss, ...featureCss }
 
@@ -27,13 +27,10 @@ export const SkillRow = memo(function SkillRow(props: SkillRowProps): ReactNode 
   const { skill, t, busy } = props
   const status = skillStatusLabel(skill, t)
   const hint = skill.path ?? `${skill.dir}\\${skill.folder}`
-  /** 点击某一端开关后的目标屏蔽范围：本端取反，另一端保持当前状态。
-   *  注意 blockScopeFor 的两个参数都是「点击之后该端是否屏蔽」，不是「当前是否屏蔽」——
-   *  两者只差一次取反，读错就会误以为两端都屏蔽时开关是死端（其实照样能恢复单端）。 */
-  const scopeAfterToggle = (side: 'model' | 'user'): SkillBlockScope =>
-    side === 'model'
-      ? blockScopeFor(skill.blockedModel !== true, skill.blockedUser === true)
-      : blockScopeFor(skill.blockedModel === true, skill.blockedUser !== true)
+  // 先归一成两个布尔：同一个表达式在 checked 与 scopeAfterToggle 里含义相反（当前未屏蔽 / 点击后已屏蔽），
+  // 直接内联正是上一轮被读反的地方。
+  const modelBlocked = skill.blockedModel === true
+  const userBlocked = skill.blockedUser === true
   return (
     <div className={ui.skillCard} data-blocked={skill.blocked ? '' : undefined} data-invalid={!skill.valid ? '' : undefined}>
       <div className={ui.skillCardBody}>
@@ -56,10 +53,10 @@ export const SkillRow = memo(function SkillRow(props: SkillRowProps): ReactNode 
           <HintTooltip label={t('skills.row.modelToggle.hint')}>
             <span className={ui.skillPolicyItem}>
               <Switch
-                checked={skill.blockedModel !== true}
+                checked={!modelBlocked}
                 disabled={busy || !skill.valid}
                 label={t('skills.row.modelToggle.aria', { name: skill.name })}
-                onChange={() => props.onSetScope(skill.name, scopeAfterToggle('model'))}
+                onChange={() => props.onSetScope(skill.name, scopeAfterToggle(skill, 'model'))}
               />
               <span>{t('skills.row.modelToggle')}</span>
             </span>
@@ -67,10 +64,10 @@ export const SkillRow = memo(function SkillRow(props: SkillRowProps): ReactNode 
           <HintTooltip label={t('skills.row.userToggle.hint')}>
             <span className={ui.skillPolicyItem}>
               <Switch
-                checked={skill.blockedUser !== true}
+                checked={!userBlocked}
                 disabled={busy || !skill.valid}
                 label={t('skills.row.userToggle.aria', { name: skill.name })}
-                onChange={() => props.onSetScope(skill.name, scopeAfterToggle('user'))}
+                onChange={() => props.onSetScope(skill.name, scopeAfterToggle(skill, 'user'))}
               />
               <span>{t('skills.row.userToggle')}</span>
             </span>

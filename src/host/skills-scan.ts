@@ -145,8 +145,10 @@ export function rootsFingerprint(roots: readonly ScanRoot[]): string {
           let marker = '-'
           try {
             const info = statSync(join(root.path, entry.name, SKILL_MARKER))
-            // 同时取 size：保留 mtime 的复制或还原不会让清单漏失效。
-            marker = `${info.mtimeMs}:${info.size}`
+            // 三个字段都来自同一次 stat：size 抓「内容长度变了」，mtimeMs 抓普通改写，
+            // ctimeMs 抓「等长改写 + mtime 被还原或落在同一刻度」——utimes 改不动 ctime。
+            // 这是启发式判据：绝对精确要读全文哈希，代价是每个技能一次读盘。
+            marker = `${info.mtimeMs}:${info.size}:${info.ctimeMs}`
           } catch { /* 缺标记文件的目录按 '-' 计 */ }
           return `${entry.name}:${marker}`
         })

@@ -399,6 +399,7 @@ export function apply(ctx: Context, configIn: Config): void {
       ...(bundledSkillsDir === undefined ? [] : [bundledSkillsDir]),
     ],
     () => { reloadSkillsState?.reload() },
+    (message) => warn(ctx, `prompt-tool: ${message}`),
   )
   reloadSkillsState = createSkillsReloader({
     stateFile: skillsStateFile,

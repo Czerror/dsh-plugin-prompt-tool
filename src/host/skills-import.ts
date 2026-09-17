@@ -93,19 +93,24 @@ function importFiles(root: string, files: SkillFile[], overwrite: boolean): Skil
     const tops = [...new Set(files.map((file) => file.path.split('/')[0]!))]
     // 被替换的旧技能先移入回收站：覆盖失败时从这里放回原处，成功时它就是用户的恢复点。
     const replaced: Array<{ target: string; trashed: string; container: string }> = []
-    /** 逐条回滚：单条失败不影响其余条目，返回放不回去的路径供失败消息引用。 */
-    const restore = (): string[] => {
-      const stuck: string[] = []
+    /** 逐条回滚：单条失败不影响其余条目，并把两类后果分开报告——
+     *  「技能没放回原处」需要用户去回收站手动恢复，「容器没清干净」只是残留垃圾。
+     *  两者混成一句话会让用户去回收站找一个其实已经恢复的技能。 */
+    const restore = (): { notRestored: string[]; containerLeft: string[] } => {
+      const notRestored: string[] = []
+      const containerLeft: string[] = []
       for (const entry of [...replaced].reverse()) {
         try {
           if (existsSync(entry.target)) rmSync(entry.target, { recursive: true, force: true })
           if (existsSync(entry.trashed)) renameSync(entry.trashed, entry.target)
+          else notRestored.push(entry.trashed)
           rmSync(entry.container, { recursive: true, force: true })
         } catch {
-          stuck.push(entry.trashed)
+          if (existsSync(entry.target) && !existsSync(entry.trashed)) containerLeft.push(entry.container)
+          else notRestored.push(entry.trashed)
         }
       }
-      return stuck
+      return { notRestored, containerLeft }
     }
     try {
       for (const name of tops) {
@@ -120,12 +125,13 @@ function importFiles(root: string, files: SkillFile[], overwrite: boolean): Skil
         renameSync(join(stage, name), target)
       }
     } catch (error) {
-      const stuck = restore()
+      const { notRestored, containerLeft } = restore()
       const reason = error instanceof Error ? error.message : String(error)
-      // 回滚本身失败时不能掩盖原始原因：两者都报，并指出手动恢复的位置。
-      throw new Error(stuck.length === 0
-        ? reason
-        : `${reason}；回滚未完成，请在回收站手动恢复：${stuck.join('、')}`)
+      // 回滚本身失败时不能掩盖原始原因：两类后果分别表述，原错误始终在最前面。
+      const notes: string[] = []
+      if (notRestored.length > 0) notes.push(`有技能未放回原处，请在回收站手动恢复：${notRestored.join('、')}`)
+      if (containerLeft.length > 0) notes.push(`回收站残留空容器，可忽略或手动删除：${containerLeft.join('、')}`)
+      throw new Error(notes.length === 0 ? reason : `${reason}；${notes.join('；')}`)
     }
     return { ok: true, path: base, count: files.length, overwritten: replaced.length }
   } catch (error) {

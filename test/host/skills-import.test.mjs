@@ -5,8 +5,7 @@ import assert from 'node:assert/strict'
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { importSkillsPackage } from '../../lib/index.mjs'
-import { importSkillsDirectory, readSkillDirectory } from '../../src/host/skills-import.ts'
+import { importSkillsPackage, importSkillsDirectory, readSkillDirectory } from '../../src/host/skills-import.ts'
 
 const makeRoot = (prefix = 'prompt-tool-skills-import') => {
   const root = join(tmpdir(), `${prefix}-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`)
@@ -136,6 +135,28 @@ test('importSkillsDirectory：覆盖同名技能时旧版本进回收站而不�
   } finally {
     target.cleanup()
     source.cleanup()
+  }
+})
+
+test('覆盖导入中途失败：已进回收站的旧技能被放回，目标不留半成品', () => {
+  const target = makeRoot()
+  const root = target.root
+  try {
+    mkdirSync(join(root, 'demo-skill'), { recursive: true })
+    writeFileSync(join(root, 'demo-skill', 'SKILL.md'), '---\nname: demo-skill\ndescription: old\n---\nold body\n', 'utf8')
+
+    // 两个顶层：第一个会被覆盖（先移入回收站），第二个目录名非法 → 在切换中途抛错。
+    const result = importSkillsPackage(root, [
+      file('demo-skill/SKILL.md', '---\nname: demo-skill\ndescription: new\n---\nnew body\n'),
+      file('Bad Name/SKILL.md', '---\nname: bad\ndescription: bad\n---\nbody\n'),
+    ])
+    assert.equal(result.ok, false)
+    assert.match(result.ok ? '' : result.message, /kebab-case/u, '失败原因仍是原始错误')
+    assert.match(readFileSync(join(root, 'demo-skill', 'SKILL.md'), 'utf8'), /old body/, '旧技能必须被放回原处')
+    assert.deepEqual(readdirSync(root).filter((name) => name !== '.system'), ['demo-skill'], '目标里不留半成品')
+    assert.deepEqual(readdirSync(join(root, '.system', 'prompt-tool', '.trash')), [], '回滚成功后回收站不留残留')
+  } finally {
+    target.cleanup()
   }
 })
 
