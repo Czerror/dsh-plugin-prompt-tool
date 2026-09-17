@@ -91,12 +91,13 @@
 |---|---|---|
 | Wave 1：engine 25 → 17 | [✔] | `29a30e7` |
 | Wave 2：host 60 → 36 | [✔] | `089c427` |
-| Wave 3：client 50 → 35 | [✔]（C1a/C1b/C2a/C2b 完成；C3a 未执行） | `90e1f9b` |
+| Wave 3：client 50 → 35 | [✔] | `90e1f9b` |
+| C3a：8 个 Edge smoke → 4 | [✔] | `a3db038` |
 
 ### 实际结果与剩余项（2026-09-17 收尾）
 
-- 文件数：135 → **91**（engine 17 / host 36 / client 35 / shared 2 / root 1）。运行用例 **993 不变**（Wave 1/2/3 合并前后逐批实测一致，0 失败 0 跳过）。
-- 与目标 88 的差额 3 来自 **C3a 未执行**：8 个 Edge smoke（`ui-v2-pages` / `ui-v2-cards` / `ui-v2-drafts` / `import-preview` / `import-scope` / `module-creation` / `subagent-policy` / `ui-v2-badge`）仍是 8 个文件，未合并为 4 个。
+- 文件数：135 → **87**（engine 17 / host 36 / client 31 / shared 2 / root 1），优于目标 88。运行用例 **993 不变**（Wave 1/2/3 与 C3a 合并前后逐批实测一致，0 失败 0 跳过）。
+- **C3a 已完成**（提交 `a3db038`）：8 个 Edge smoke 合为 4 个 —— `import-smoke`(10) ← `import-preview-browser` + `import-scope-browser`、`module-policy-smoke`(9) ← `module-creation-browser` + `subagent-policy-browser`、`ui-v2-page-smoke`(3) ← `ui-v2-pages` + `ui-v2-cards-browser` + `ui-v2-drafts`、`real-css-smoke`(1) ← `ui-v2-badge-browser`（仅 `git mv` 改名）。三组均落在首选方案（一个 Edge 实例 + 多路由 server + 每成员一条 `test()` 顺序 `Page.navigate`），运行用例 23 = 23 零损失；按语义保留成员间差异（真实 CSS 解析 vs Proxy、两套 `waitFor` 预算、三套 CDP 辅助变体），清理统一为 `Browser.close` → 等退出 → profile EPERM 重试。
 - 同样未执行的还有 `menu-select` / `prompt-config-form-layout` / `tools-preview` 的部分迁出与 SSR 升级（原计划不改文件数，属"把静态断言升级为渲染断言"的质量项）；`scope-create-separation` 第 11 条同属该项。
 - 已完成的替代方案：接线契约按**整文件合并**执行（`workspace-navigation` / `template-picker-anchor` / `dialog-focus` / `review-fixes` → `client-wiring-contract` 14 条），牺牲了 SSR 升级，换取零风险与可验证性；`test/client/support/ssr-render.mjs` 已就绪（探针实测通过），C3a 与 SSR 升级可直接复用它。
 - 两条 4 → 1 / 3 → 1 的合并均经**标题级三向核对**（缺失 / 重复 / 多余各为 0）与逐组 `node --test` 实测，覆盖零损失。
