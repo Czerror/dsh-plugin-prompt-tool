@@ -120,7 +120,7 @@
 - 两个导入入口的真实 Edge smoke 已验证确认前无覆盖重发、取消不写、确认携带准确名单并复用上传载荷；真实已安装 alpha.2 filesystem provider 验证旧键转换后可发现且调用策略正确。
 - 完整门禁：typecheck、lint、test **1070/1070（0 跳过）**、build、diff --check 通过。`rebuild:composition` 使用仓库固定 DSH fixture；`sync:yaml` 使用已安装 yaml@2.9.0，两份分发快照无额外内容漂移。
 - 执行偏差：三个子代理因服务 403（余额不足）中断，已由主线程接管、复核并完成。完整测试期间发现浏览器 DevToolsActivePort 的 EBUSY 竞态，最小修复为等待文件可读且端口完整；前轮旧路径/契约失败已消除。未修改运行中的 DSH 或真实用户预设。
-- 当前仅余提交与 origin/dev 推送；需要用户重启 DSH 后加载新插件代码。
+- 修复提交 `4e5b852` 已推送 `origin/dev`（`015ac62..4e5b852`）；本节回填交付状态。需要用户重启 DSH 后加载新插件代码。
 
 [✔] Wave 0：授权、最新语义、旧 PLAN 原文归档与新计划
 [✔] Wave 1 / T1：技能资产与策略修复
@@ -129,4 +129,4 @@
 [✔] Wave 2 / T4：候选、刷新与 TUI
 [✔] Wave 2 / T5：协调器、bridge 与 UI
 [✔] Wave 3 / T6：文档与完整门禁
-[ ] Wave 3 / T7：记忆、提交与 origin/dev 推送
+[✔] Wave 3 / T7：项目记录、修复提交与 origin/dev 推送
