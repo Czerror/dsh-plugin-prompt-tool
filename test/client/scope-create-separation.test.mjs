@@ -265,7 +265,7 @@ test('子代理工具策略卡：单一开关，无额外保存/停用按钮', (
   assert.doesNotMatch(card, /toggleEnabled/, '旧的启用/停用分支已移除')
   assert.match(card, /<Switch checked=\{enabled\} label=\{t\('policy\.toggleLabel'\)\}/)
   assert.match(card, /disabled=\{props\.disabled \|\| !loaded \|\| loadError\.length > 0 \|\| saving\} onChange=\{toggle\}/)
-  // 开关骨架、只读、标签失焦与异步保存由 subagent-policy-browser 的真实 DOM 行为验证。
+  // 开关骨架、只读、标签失焦与异步保存由 module-policy-smoke 的真实 DOM 行为验证。
 })
 
 test('工具栏先于公共区与置顶卡，置顶卡不参与过滤且只渲染一次', () => {
