@@ -47,9 +47,6 @@ const readSkillCatalog = (source: Record<string, unknown>, key: string): SkillCa
       rank: readNumber(record, 'rank', 0),
       description: readString(record, 'description') ?? '',
       valid: readBoolean(record, 'valid', true),
-      blocked: record.blocked === true,
-      blockedModel: record.blockedModel === true,
-      blockedUser: record.blockedUser === true,
       modelInvocable: readBoolean(record, 'modelInvocable', true),
       userInvocable: readBoolean(record, 'userInvocable', true),
       ...(readString(record, 'issue') !== undefined ? { issue: readString(record, 'issue')! } : {}),
@@ -74,7 +71,7 @@ export function fieldsFromView(res: BridgeResult<BridgeSettingsView>): Fields {
   const ns = res.ok ? res.value : undefined
   const value = asRecord(ns?.value)
   const base = asRecord(ns?.base)
-  // 技能清单不在 settings：来源、优先级与按端屏蔽状态都来自 describe 事实（注册层扫描结果）。
+  // 技能清单不在 settings：来源、优先级与两端调用策略都来自 describe 事实（插件按官方技能根扫描的结果）。
   const extraFolders = res.ok && Array.isArray(res.skillFolders) ? res.skillFolders : undefined
   // 技能根与清单都在响应顶层（describe/bootstrap 的扩展字段），descriptor 内的同名键只作兜底。
   const extraDirs = res.ok && Array.isArray(res.activeSkillsDirs) && res.activeSkillsDirs.length > 0

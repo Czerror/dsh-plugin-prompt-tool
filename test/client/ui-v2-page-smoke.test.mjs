@@ -432,49 +432,77 @@ test('V2 草稿与资源：原文恢复、快照保存、技能目标及危险�
     await evaluate(`JSON.stringify([...document.querySelectorAll('section[aria-label]')].map(s=>s.getAttribute('aria-label')).filter(l=>l===window.t('skills.source.project-dsh')||l===window.t('skills.source.user-dsh')))`),
     await evaluate(`JSON.stringify([window.t('skills.source.project-dsh'),window.t('skills.source.user-dsh')])`),
     '来源分组顺序与官方优先级一致')
-  assert.equal(await evaluate(`document.querySelectorAll('[role="switch"][aria-label]').length`), 4, '两个技能行各有模型与用户两个注册层开关')
+  assert.equal(await evaluate(`document.querySelectorAll('[role="switch"][aria-label]').length`), 4, '两个技能行各有模型与用户两个调用策略开关')
   assert.equal(await evaluate(`document.body.innerText.includes(window.t('skills.group.meta',{count:1,rank:100}))`), true, '分组头部展示来源优先级 100')
   assert.equal(await evaluate(`document.body.innerText.includes(window.t('skills.group.meta',{count:1,rank:400}))`), true, '分组头部展示来源优先级 400')
 
-  // 注册层屏蔽：两个开关各自独立，只提交 skill-block 载荷，技能实体与技能文件都留在原处。
+  // 文件层调用策略：两个开关各自独立，只提交 skill-policy 载荷（name + 标记文件 path + scope），
+  // 由服务端改写该技能 SKILL.md 的 frontmatter；技能实体留在原处，写盘失败不做乐观更新。
   const modelToggle = (name) => `window.t('skills.row.modelToggle.aria',{name:'${name}'})`
   const userToggle = (name) => `window.t('skills.row.userToggle.aria',{name:'${name}'})`
   const fieldOf = (name) => `window.store.getFields().skillCatalog.find(s=>s.name==='${name}')`
-  await clickAria(userToggle('alpha'))
-  await waitFor(`${count('skill-block')}===1`)
-  assert.equal(await evaluate(`JSON.stringify(window.requests.find(r=>r.endpoint==='skill-block').body)`),
-    '{"name":"alpha","scope":"user"}', '只关用户端时载荷带 scope=user')
-  await waitFor(`${fieldOf('alpha')}.blockedUser===true`)
-  assert.equal(await evaluate(`${fieldOf('alpha')}.blockedModel`), false, '模型端不受影响')
-  assert.equal(await evaluate(`document.querySelector('[role="switch"][aria-label="'+${userToggle('alpha')}+'"]').getAttribute('aria-checked')`), 'false', '用户开关反映屏蔽状态')
-  assert.equal(await evaluate(`document.querySelector('[role="switch"][aria-label="'+${modelToggle('alpha')}+'"]').getAttribute('aria-checked')`), 'true', '模型开关保持开启')
-  assert.equal(await evaluate(`document.querySelectorAll('[data-blocked]').length`), 1)
+  const switchOf = (label) => `document.querySelector('[role="switch"][aria-label="'+${label}+'"]')`
+  // 只有写盘空闲（skillsBusy=false）时开关才可用：每次点击前先等它可用，顺带证明上一次写入已完全收尾。
+  const clickToggle = async (label) => { await waitFor(`${switchOf(label)}.disabled===false`); await clickAria(label) }
+  const alphaPath = 'D:/isolated/skills/alpha/SKILL.md'
 
-  // 再关模型端 → 两端都关（scope=all，等价完全停用）。
-  await clickAria(modelToggle('alpha'))
-  await waitFor(`${count('skill-block')}===2`)
-  assert.equal(await evaluate(`JSON.stringify(window.requests.filter(r=>r.endpoint==='skill-block')[1].body)`),
-    '{"name":"alpha","scope":"all"}')
-  await waitFor(`${fieldOf('alpha')}.blockedModel===true`)
+  // 关用户端：scope=user 只停用用户端，模型端事实与开关都不动；只关一端不出现 data-blocked。
+  await clickToggle(userToggle('alpha'))
+  await waitFor(`${count('skill-policy')}===1`)
+  assert.equal(await evaluate(`JSON.stringify(window.requests.find(r=>r.endpoint==='skill-policy').body)`),
+    `{"name":"alpha","path":"${alphaPath}","scope":"user"}`, '只关用户端时载荷带该技能自己的标记文件路径')
+  await waitFor(`${fieldOf('alpha')}.userInvocable===false`)
+  assert.equal(await evaluate(`${fieldOf('alpha')}.modelInvocable`), true, '模型端事实不受影响')
+  assert.equal(await evaluate(`${switchOf(userToggle('alpha'))}.getAttribute('aria-checked')`), 'false', '用户开关反映停用后的 frontmatter 事实')
+  assert.equal(await evaluate(`${switchOf(modelToggle('alpha'))}.getAttribute('aria-checked')`), 'true', '模型开关保持开启')
+  assert.equal(await evaluate(`document.querySelectorAll('[data-blocked]').length`), 0, '只关一端不算两端不可用')
 
-  // 恢复 = 两端都打开（scope=none，删除屏蔽记录）。
-  await clickAria(userToggle('alpha'))
-  await waitFor(`${count('skill-block')}===3`)
-  assert.equal(await evaluate(`JSON.stringify(window.requests.filter(r=>r.endpoint==='skill-block')[2].body)`),
-    '{"name":"alpha","scope":"model"}', '先恢复用户端时只剩模型端被屏蔽')
-  await clickAria(modelToggle('alpha'))
-  await waitFor(`${count('skill-block')}===4`)
-  assert.equal(await evaluate(`JSON.stringify(window.requests.filter(r=>r.endpoint==='skill-block')[3].body)`),
-    '{"name":"alpha","scope":"none"}')
-  await waitFor(`${fieldOf('alpha')}.blocked===false`)
+  // 再关模型端 → scope=all：两端都停用，卡片才出现 data-blocked，徽章改报两端停用。
+  await clickToggle(modelToggle('alpha'))
+  await waitFor(`${count('skill-policy')}===2`)
+  assert.equal(await evaluate(`JSON.stringify(window.requests.filter(r=>r.endpoint==='skill-policy')[1].body)`),
+    `{"name":"alpha","path":"${alphaPath}","scope":"all"}`)
+  await waitFor(`${fieldOf('alpha')}.modelInvocable===false`)
+  await waitFor(`document.querySelectorAll('[data-blocked]').length===1`)
+  assert.equal(await evaluate(`document.querySelector('[data-blocked]').innerText.includes(window.t('skills.status.blocked'))`), true, '两端不可用卡片显示整体停用文案')
+  // 两端都停用后开关仍可用：逐端恢复必须留在界面上，不能被写成死端。
+  await waitFor(`${switchOf(modelToggle('alpha'))}.disabled===false`)
+  assert.equal(await evaluate(`${switchOf(userToggle('alpha'))}.disabled`), false, '两端都停用时用户开关仍可用')
+  // 页签归类与状态谓词同源：两端都停用的技能在「两端不可用」页签里仍可见、仍可操作。
+  await click('#pt-skills-tab-blocked')
+  assert.equal(await evaluate(`document.body.innerText.includes(window.t('skills.visible',{count:1}))`), true, '「两端不可用」页签只收两端都停用的技能')
+  assert.equal(await evaluate(`${switchOf(modelToggle('alpha'))}!==null`), true, '两端不可用的技能在该页签里仍可操作')
+  await click('#pt-skills-tab-all')
+  assert.equal(await evaluate(`document.body.innerText.includes(window.t('skills.visible',{count:2}))`), true, '回到「全部」页签看到两个技能')
 
-  // 写盘失败不乐观更新：开关保持磁盘事实，错误进入通知。
-  await evaluate(`window.failedSkill='alpha'`)
-  await clickAria(userToggle('alpha'))
-  await waitFor(`${count('skill-block')}===5`)
+  // 恢复：两端都停用后逐端恢复——先点用户端只剩模型端停用（scope=model）。
+  await clickToggle(userToggle('alpha'))
+  await waitFor(`${count('skill-policy')}===3`)
+  assert.equal(await evaluate(`JSON.stringify(window.requests.filter(r=>r.endpoint==='skill-policy')[2].body)`),
+    `{"name":"alpha","path":"${alphaPath}","scope":"model"}`, '先恢复用户端时只剩模型端被停用')
+  await waitFor(`${fieldOf('alpha')}.userInvocable===true`)
+  assert.equal(await evaluate(`${fieldOf('alpha')}.modelInvocable`), false, '模型端仍停用')
+  await clickToggle(modelToggle('alpha'))
+  await waitFor(`${count('skill-policy')}===4`)
+  assert.equal(await evaluate(`JSON.stringify(window.requests.filter(r=>r.endpoint==='skill-policy')[3].body)`),
+    `{"name":"alpha","path":"${alphaPath}","scope":"none"}`)
+  await waitFor(`${fieldOf('alpha')}.modelInvocable===true`)
+  assert.equal(await evaluate(`${switchOf(modelToggle('alpha'))}.getAttribute('aria-checked')`), 'true')
+  assert.equal(await evaluate(`${switchOf(userToggle('alpha'))}.getAttribute('aria-checked')`), 'true')
+  assert.equal(await evaluate(`document.querySelectorAll('[data-blocked]').length`), 0, '两端恢复后不再有 data-blocked')
+
+  // 写盘失败不乐观更新：在途期间条目字段与开关都还是磁盘事实，失败后同样不变，错误进入通知。
+  await evaluate(`window.failedSkill='alpha';window.delay=300`)
+  await clickToggle(userToggle('alpha'))
+  await waitFor(`${count('skill-policy')}===5`)
+  assert.equal(await evaluate(`${fieldOf('alpha')}.userInvocable`), true, '在途期间不乐观更新客户端事实')
+  assert.equal(await evaluate(`${switchOf(userToggle('alpha'))}.getAttribute('aria-checked')`), 'true', '在途期间开关保持磁盘事实')
   await waitFor(`document.querySelector('[data-notice]').textContent.includes('failed alpha')`)
-  assert.equal(await evaluate(`${fieldOf('alpha')}.blocked`), false, '失败不乐观更新客户端事实')
-  await evaluate(`window.failedSkill=''`)
+  assert.equal(await evaluate(`${fieldOf('alpha')}.userInvocable`), true, '失败不乐观更新客户端事实')
+  assert.equal(await evaluate(`${fieldOf('alpha')}.modelInvocable`), true)
+  assert.equal(await evaluate(`${switchOf(userToggle('alpha'))}.getAttribute('aria-checked')`), 'true', '失败后开关回到磁盘事实')
+  assert.equal(await evaluate(`document.querySelectorAll('[data-blocked]').length`), 0)
+  await evaluate(`window.failedSkill='';window.delay=0`)
 
   // 技能资产卡默认折叠：展开后才是导入、创建与引用入口。
   await evaluate(`(()=>{const b=[...document.querySelectorAll('button[aria-expanded]')].find(e=>e.textContent.includes(window.t('skills.library.title')));if(b&&b.getAttribute('aria-expanded')!=='true')b.click()})()`)

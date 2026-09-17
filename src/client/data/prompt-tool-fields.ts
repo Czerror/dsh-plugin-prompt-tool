@@ -10,7 +10,7 @@ export interface HostDefaultModel {
   reasoningEffort?: string
 }
 
-/** 技能目录条目：与服务端共用同一契约（来源、优先级、屏蔽状态、同名遮蔽）。 */
+/** 技能目录条目：与服务端共用同一契约（来源、优先级、两端调用策略、同名遮蔽）。 */
 export type { SkillCatalogEntry } from '../../shared/skills.ts'
 
 /** 参数草稿类型从宿主契约派生，只转换 UI 的列表/阶段/深度形态。 */
@@ -26,7 +26,7 @@ export interface Fields extends EngineParamDrafts {
   promptPath: string
   agentsText: string
   agentsPath: string
-  /** 技能清单：官方六类技能根 + 注册层屏蔽状态（每条自带按端屏蔽标志，不需要额外的屏蔽表）。 */
+  /** 技能清单：官方六类技能根扫描结果（两端调用策略直接来自各技能文件的 frontmatter）。 */
   skillCatalog: SkillCatalogEntry[]
   /** 用户添加的技能文件夹（只引用，不复制）。 */
   skillFolders: string[]

@@ -1,179 +1,242 @@
-# 角色卡模块按需装配与回退（Ponytail 卡落地）
+# 技能停用改为文件层调用策略（P0 修复）
 
 ## 授权与基线
 
-- 用户指令（2026-09-18）：把 ponytail 的功能做成「类角色卡」注入任意预设。经互动提问确认：
-  ① 路径 A——手写 `.characters/<id>/converted.yml`（PresetSpec 片段）当卡，工作台「角色管理」列出并应用到任意预设；
-  ② 6 个技能走全局技能根 `$DSH_HOME/skills`（跨预设可用），不做「卡携带技能」的代码扩展；
-  ③ 模块改为**按卡的实际需要追加**（推翻现在固定的四件套）；
-  ④ **移除时必须正确删除添加的引擎或模块**。
-- 代码基线：dev@fb18c9a（工作树干净）；[旧 PLAN 原文归档](.scratch/prompt-tool-framework/archive/plan-skills-review-round4-fb18c9a-20260918.md)（SHA-256 与基线 `PLAN.md` 逐字节一致）。
-- 本轮范围：`src/host/characters.ts`（apply / remove 的模块语义）、`test/host/characters.test.mjs`（更新既有断言 + 新增用例）、`docs/SillyTavern.md`、`CHANGELOG.md`；用户数据侧写 `ponytail` 卡与 6 个技能。
-- **不在本轮范围**：ST 导入路径（`src/host/sillytavern.ts`）的模块清单、bridge 端点契约、引擎（`engine/`）、工作台 UI。
+- 用户指令（2026-09-18）：审查确认 P0——「注册层屏蔽」在真实装配下失效（影子候选在全局层，被预设层官方候选按
+  「最近层无视优先级胜出」覆盖），已在运行中的 DSH 用临时探针技能真机坐实。用户选定**方向 B**：改回文件层
+  （改写技能 `SKILL.md` 的 frontmatter），与 dsh-web 技能中心同机制；**本轮只修 P0**。
+- 经互动提问确认的三项取舍：①**所有来源**的技能都可停用（写各自的 `SKILL.md`；只读目标或符号链接目标失败时
+  如实报错）；②恢复写**显式值**（`disable-model-invocation: false` / `user-invocable: true`）；③v3 状态文件里的
+  `blocked` 记录**直接弃用**（本机无存量），状态版本升 4。
+- 代码基线：dev@`4eca311`（工作树仅新增未跟踪的审查报告目录）；旧 PLAN 原文归档
+  [plan-character-modules-4eca311-20260918.md](.scratch/prompt-tool-framework/archive/plan-character-modules-4eca311-20260918.md)
+  （SHA-256 与基线 `PLAN.md` 逐字节一致）。审查结论见
+  [2026-09-18-skills-management-review.md](.scratch/prompt-tool-framework/reviews/2026-09-18-skills-management-review.md)。
+- 本轮范围：`src/shared/skills.ts`、`src/shared/bridge-contract.ts`、`src/host/skills-config.ts`、
+  `src/host/skills-policy.ts`（新）、`src/host/skills-provider.ts`、`src/host/skills-scan.ts`、`src/index.ts`、
+  `src/runtime/settings-bridge.ts`、`src/client/**`（技能页 / store / 状态纯逻辑）、`test/**`（技能相关）、
+  `docs/skills-management.md`、`CHANGELOG.md`、`README.md`。
+- **不在本轮范围**：P1 迁移缺口（旧 `config.yml` 的 `order`/`rankBase`、旧 `SKILL.md.disabled`）、P1 清单盲区
+  （注册表来源 / 扁平 `.md` / 符号链接技能）、P2 对照能力（多工作区、项目根创建、远程配对放行、回收站恢复入口）、
+  与 dsh-web 同装时的调用策略归属。
 
 ## 事实依据（读源码得到，作为不变量）
 
-1. ST 转换生成的 `converted.yml` **本身就带 `modules` 声明**（`sillytavern.ts:728-731` 写入 `prompt-config-engine`、`character-tools`、`world-book-tools?`、`session-var-tools`、`tool-config-engine`、`tool-filter`），而 `applyCharacterToPreset` 从不读它，只按硬编码的四件套追加（`characters.ts:478-484`）。
-2. `session-vars` 插值不依赖 `session-var-tools`：执行器每次都取会话变量快照，表为空时按声明值渲染（`engine/executor.mjs:184-192`、`engine/session-vars.mjs:26-29`）。该模块只注册 `session_var` 工具。
-3. `tool-filter` 两个名单都空 = 不过滤、零开销（`engine/tool-filter.mjs:21`）；`toolFilterAllow/Deny` 是引擎参数（`shared/engine-params.ts:52-54`）。
-4. `prompt-config-engine` 缺失 = `promptConfigs` 静默失效（无人检查，属既有缺口）。
-5. 官方手写预设（无 `modules` 数组）在 `appendPresetModules` 里 fail loud（`manifest.ts:608`），维持现状。
+1. 官方 frontmatter 契约：`disable-model-invocation: true` 把技能排除出模型目录与 loader，`user-invocable: false`
+   排除用户命令，缺省即可调用（`deepseek-harness/packages/skill/skill-filesystem/README.zh.md:36-40`）。
+2. 文件层写入**跨层天然有效**：官方 provider 在每次 `list()` 重新解析 frontmatter（同文 `:42`、`:110`），预设层与
+   全局层读的是同一批文件，不存在「层覆盖」问题。
+3. 现有 `SkillCatalogEntry.path` 已是标记文件绝对路径（`src/host/skills-scan.ts:194`），可直接作为写入目标与身份校验依据。
+4. 仓库硬约束：YAML 修改必须走 Document API 保留注释与未知字段，写盘先暂存再原子 rename（`AGENTS.md`）。
+5. 注册层影子机制的全部落点都在本轮改造范围内：`SKILL_BLOCK_RANK`、`blockScopeOf`、`blockRecordFor`、
+   `blockedCandidate`、`createSkillsProvider({ blocked })`、`/skill-block` 端点与客户端的 `blocked*` 判定。
+6. `folders`（引用目录）与状态文件本身仍然需要：引用目录不在官方六类根里，靠插件 watcher + 指纹失效
+   （`src/host/skills-refresh.ts`），与调用策略无关，原样保留。
 
 ## 目标语义
 
-| 项 | 语义 |
+| 操作 | 文件效果（唯一真相在技能文件里） |
 |---|---|
-| 卡声明 `modules` | **优先**：按声明追加（ST 卡行为不变） |
-| 卡未声明 `modules` | 只追加必需项 |
-| 必需项 | `prompt-config-engine` 始终；卡含 `world-book` 策略配置时加 `world-book-tools` |
-| 追加记录 | `meta.characterModules[<cardId>]` 记下「本次由该卡新增的模块」（相对追加前差集），重复 apply 与已有记录求并集 |
-| 移除回退 | 只回退记录里的模块；回退前做「仍需性」检查：其他卡记录仍引用、或预设内容仍需要（见下）→ 保留 |
-| 仍需性判据 | `prompt-config-engine`：移除后仍有 `promptConfigs`；`world-book-tools`：仍有 `world-book` 策略配置；`session-var-tools`：仍有 `params.stMacros === true` 的配置；`tool-config-engine`：预设顶层仍有 `customTools`；`tool-filter`：`params.toolFilterAllow/Deny` 非空；`character-tools`：仍有 `chara-*` 前缀配置或仍导入着其他卡 |
-| 无记录的老卡 | 移除时不回退模块（无从判断归属），保持既有行为，不误删 |
+| 模型端停用 | `disable-model-invocation: true` |
+| 模型端恢复 | `disable-model-invocation: false` |
+| 用户端停用 | `user-invocable: false` |
+| 用户端恢复 | `user-invocable: true` |
+| 完全停用 | 两个字段都写停用值 |
+| 状态文件 v4 | 只保留 `folders`；`blocked` 弃用（读到 v3 时接受并升级，不迁移数据） |
 
-## Wave 1：模块装配与回退
+写入规则：只用 Document API 改这两个键；保留注释、未知字段、其余键与正文；**内容无变化不落盘**；原子写
+（同目录暂存文件 + rename）；失败时原文件不变。
+
+拒绝与报错（如实、不静默）：缺 frontmatter、frontmatter 不是映射、含 YAML 别名、目标是符号链接、目标只读或写入失败。
+
+身份校验：端点要求 `{ name, path, scope }`；服务端重新扫描清单，必须存在**同名且同路径**的有效条目，否则 409，
+防止陈旧界面把操作落到被替换过的同名技能上。
+
+## Wave 1：共享契约与状态文件
 
 <task type="auto">
-  <name>T1：判据纯函数与卡声明解析</name>
-  <files>src/host/characters.ts</files>
-  <action>新增导出纯函数：`requiredCharacterModules(configs)`（必需项，含 world-book 判据）、`characterModuleStillNeeded(module, ctx)`（仍需性表）、`recordedCharacterModules(meta)`（读取记录，容错非法形状）；卡声明 `modules` 走白名单过滤（非字符串/空串丢弃），最终追加集 = 声明 ∪ 必需项。</action>
-  <verify>纯函数可被直接单测；非法声明不抛错但被丢弃。</verify>
-  <security>模块名仍由 `appendPresetModules` 校验，非法名 fail loud。</security>
-  <done>判据集中一处，可测、无隐式状态。</done>
+  <name>T1：共享契约改为调用策略事实</name>
+  <files>src/shared/skills.ts</files>
+  <action>删除 `BlockedSkill`、`blockScopeOf`、`blockRecordFor`、`SKILL_BLOCK_RANK` 与 `SkillCatalogEntry` 上的
+  `blocked`/`blockedModel`/`blockedUser`；`SkillsState` 只保留 `version` + `folders`；`SkillBlockScope` 重命名语义为
+  「目标调用策略范围」（`none`/`model`/`user`/`all`，含义不变：分别表示该端不可调用），供端点与 UI 复用。</action>
+  <verify>类型收敛后编译期能指出所有旧落点；不再存在任何「影子候选优先级」常量。</verify>
+  <security>契约里不再暴露「按名字全局屏蔽」这种跨来源写操作。</security>
+  <done>调用策略只有一处真相：技能文件的 frontmatter。</done>
 </task>
 
 <task type="auto">
-  <name>T2：apply 按需追加并记录来源</name>
-  <files>src/host/characters.ts</files>
-  <action>`applyCharacterToPreset` 改为：读 `spec.modules`（无则空）→ 并入必需项 → `appendPresetModules` 追加 → 把「追加前没有、追加后有的模块」并入 `meta.characterModules[cardId]`。幂等：重复 apply 不重复记录、不重复追加。</action>
-  <verify>纯文本手写卡只得到 `prompt-config-engine`；带世界书的卡得到 `world-book-tools`；ST 卡仍得到它自己声明的六个。</verify>
-  <security>只写 `$DSH_HOME` 下当前预设目录与角色卡库，沿用 `withPresetDoc` 原子写。</security>
-  <done>追加行为由卡与内容决定，来源可追溯。</done>
+  <name>T2：状态文件升到 v4</name>
+  <files>src/host/skills-config.ts</files>
+  <action>`SKILLS_STATE_VERSION = 4`；`validateSkillsState` 接受 v3（丢弃 `blocked`，保留 `folders`）与 v4，其余版本拒绝；
+  写入时删除 `blocked` 键；`folders` 的校验、注释保留、内容无变化不落盘、版本冲突与暂存文件清理全部沿用。</action>
+  <verify>v3 文件读入后 folders 保留、blocked 被忽略；再次写入后文件里没有 blocked 且 version 为 4；损坏文件仍被拒绝且不覆盖。</verify>
+  <security>非法状态不获得写入权限；不覆盖损坏文件。</security>
+  <done>旧版本可读、新版本可写、无数据迁移风险。</done>
+</task>
+
+## Wave 2：文件写入与装配
+
+<task type="auto">
+  <name>T3：技能调用策略写入模块</name>
+  <files>src/host/skills-policy.ts（新）</files>
+  <action>导出 `setSkillInvocation(file, effects)`：读文件 → 提取 frontmatter（容忍 BOM、CRLF）→ `parseDocument` 且必须是映射、
+  拒绝别名 → 按需 `doc.set('disable-model-invocation', …)` / `doc.set('user-invocable', …)` → 内容无变化直接返回成功 →
+  否则同目录暂存文件（`flag:'wx'`）+ `renameSync` 原子替换 → 失败清理暂存文件并返回结构化失败。
+  另外导出 `scopeEffects(scope)`（范围 → 两个字段的写入意图）与 `readSkillInvocation(file)`（供清单/测试复用）。
+  拒绝条件：路径非绝对、basename 不是 `SKILL.md`、目标不存在、`lstat` 是符号链接、frontmatter 缺失或非法。</action>
+  <verify>注释、未知字段、正文、其余键逐字保留；两端字段互不影响；恢复写显式值；无变化时 mtime 不变。</verify>
+  <security>只写调用方给出的、已由清单校验过的技能文件；不做目录遍历、不建目录、不删文件。</security>
+  <done>文件层写入具备与状态文件同级的原子性与可诊断性。</done>
 </task>
 
 <task type="auto">
-  <name>T3：remove 正确回退模块</name>
-  <files>src/host/characters.ts</files>
-  <action>`removeCharacterFromPreset` 在删除 `chara-<id>-` 配置与 params 键之后，按记录回退模块：先算移除后的 `promptConfigs` 与 `params`，再逐个判断「其他卡仍引用」或 `characterModuleStillNeeded` → 保留，否则从 `modules` 删除；最后清理 `meta.characterModules[cardId]`（该键为空时删键）。无记录时不回退。</action>
-  <verify>apply → remove 后模块回退到应用前状态；两张卡共用同一模块时移除一张不误删；预设自带模块永不被删。</verify>
-  <security>只删本卡记录过的模块，不触碰其他模块。</security>
-  <done>apply 与 remove 对称，符合用户「移除时要正确删除添加的引擎或模块」的要求。</done>
-</task>
-
-## Wave 2：回归测试
-
-<task type="auto">
-  <name>T4：模块装配与回退的行为回归</name>
-  <files>test/host/characters.test.mjs</files>
-  <action>更新既有断言（原「固定六件套」改为按声明的语义）；新增用例：①手写纯文本卡（无 `modules`）→ 只有 `prompt-config-engine`；②手写卡声明 `modules: []` → 同上；③手写卡含 world-book 配置 → 自动补 `world-book-tools`；④手写卡声明可选模块 → 按声明追加；⑤缺 `prompt-config-engine` 的预设被补齐；⑥remove 回退全部由卡引入的模块并清 `meta.characterModules`；⑦两张卡共用模块时只移除一张、模块保留；⑧重复 apply / 重复 remove 幂等；⑨老卡（无记录）remove 不回退模块。</action>
-  <verify>把「按需」退回「固定四件套」时用例③⑨必红；把回退整段删掉时用例⑥必红。</verify>
-  <security>测试只用临时目录与临时 `DSH_HOME`，结束后清理。</security>
-  <done>装配与回退都有可失败的确定性回归。</done>
-</task>
-
-## Wave 3：Ponytail 卡与技能落地（用户数据）
-
-<task type="auto">
-  <name>T5：写 ponytail 卡</name>
-  <files>$DSH_HOME/.agent-presets/.characters/ponytail/converted.yml（用户数据，不入库）</files>
-  <action>手写 PresetSpec 片段：`modules: [prompt-config-engine]`；三条 `system-section` 配置同 `group: ponytail-level` + `exclusive: true`（lite / full / ultra，默认只启用 full），`audience` 缺省 = 主会话 + 子代理；正文用简体中文（保留 `ponytail:` 注释标记与必要术语的中文解释）；`params` 与 `variables` 留空以免污染目标预设。</action>
-  <verify>经工作台「角色管理」可列出（`converted.yml` 可解析、`name` 非空）；应用后 `modules` 只多 `prompt-config-engine`；三条配置只生效一条。</verify>
-  <security>只写角色卡库目录，不改任何预设文件。</security>
-  <done>卡可被工作台列出并应用到任意预设。</done>
+  <name>T4：装配与身份校验</name>
+  <files>src/index.ts</files>
+  <action>技能提供方只保留「引用目录候选」（删除影子候选与 `blocked` 依赖）；新增 `setSkillPolicy(name, path, scope)`：
+  重新 `listSkills(cwd)` 校验同名同路径且条目有效 → 调 `setSkillInvocation` → 成功后失效清单缓存与官方 registry 缓存 →
+  返回统一结果（含失败原因）。删除 `blockedScopes`/`setSkillBlocked`/状态文件里的 blocked 读写。</action>
+  <verify>陈旧 path 被拒绝（409 语义）；写入成功后清单与模型侧候选同时反映新策略。</verify>
+  <security>写入目标必须来自服务端自己的扫描结果，客户端不能凭 path 自授权。</security>
+  <done>停用不再经过注册层，任何预设装配下都生效。</done>
 </task>
 
 <task type="auto">
-  <name>T6：导入 6 个技能到全局技能根</name>
-  <files>$DSH_HOME/skills/{ponytail,ponytail-review,ponytail-audit,ponytail-debt,ponytail-gain,ponytail-help}/SKILL.md（用户数据，不入库）</files>
-  <action>逐字移植 ponytail 仓库的 6 个技能；`description` 追加中文触发词（过度设计 / 最简方案 / 能不写就不写等）以便中文提问命中；不引入任何脚本依赖（这些技能只用 grep / 读文件）。</action>
-  <verify>技能名均为 kebab-case；工作台技能页可见；`standard` / `ptc` / `creative` 预设（装配 `tool-skill`）模型可见。</verify>
-  <security>不改动技能根里既有的 87 个技能；不覆盖同名目录。</security>
-  <done>6 个技能跨预设可用。</done>
+  <name>T5：端点与契约改造</name>
+  <files>src/shared/bridge-contract.ts、src/runtime/settings-bridge.ts</files>
+  <action>`skillBlock` 端点改为 `skillPolicy`（`/skill-policy`，请求 `{ name, path, scope }`，响应 `{ skills }`）；
+  `/skills-list`、`/skills-folders` 响应删除 `blocked` 字段；端点沿用回环 / Host / Origin 守卫与请求体上限；
+  409 用于身份校验失败，400 用于参数与写入拒绝。</action>
+  <verify>契约类型断言（请求/响应映射与端点键集合一致）通过；真实 handler 写盘回归通过。</verify>
+  <security>成功/失败载荷保持统一包装；不在错误消息里泄露磁盘路径之外的信息。</security>
+  <done>桥契约与文件层语义一致。</done>
 </task>
 
-## Wave 4：文档与交付
+## Wave 3：客户端语义
 
 <task type="auto">
-  <name>T7：文档同步</name>
-  <files>docs/SillyTavern.md、CHANGELOG.md</files>
-  <action>角色卡一节写明新的模块语义（声明优先、必需项兜底、记录来源、回退规则与仍需性判据），并注明 ST 导入路径本轮不变、两条路径的差异；CHANGELOG 记录行为变化与「移除现在会回退模块」。</action>
-  <verify>文档描述与实现逐条对得上；路径与命令可核验。</verify>
-  <security>不夸大行为，未做的（批量应用、卡携带技能、UI 命令切换）明确列为未做。</security>
-  <done>文档不再与产物脱节。</done>
+  <name>T6：store 调用改造</name>
+  <files>src/client/data/use-prompt-tool-store.ts、src/client/data/host-api.ts（如涉及）</files>
+  <action>`setSkillBlocked(name, scope)` 改为 `setSkillPolicy(name, path, scope)`；把服务端失败原因转成用户可见通知；
+  成功后重新拉取清单。</action>
+  <verify>失败路径有可见提示且不清空列表。</verify>
+  <security>不新增客户端状态来源，仍以服务端清单为准。</security>
+  <done>客户端只表达意图，不做本地策略推断。</done>
 </task>
 
 <task type="auto">
-  <name>T8：门禁、变异验证与提交</name>
+  <name>T7：状态纯逻辑与页面文案</name>
+  <files>src/client/features/skills/skill-status.ts、SkillRow.tsx、SkillsPage.tsx、src/client/locales.ts</files>
+  <action>可用性判定改为只看 frontmatter 事实（`valid && modelInvocable` / `valid && userInvocable`）；`blockScopeFor` /
+  `scopeAfterToggle` 保留但输入改为当前可调用状态；徽章与开关提示改为「改写该技能 SKILL.md 的 frontmatter，不改正文」；
+  删除按钮口径不变（仅用户根）；无效技能与符号链接技能禁用开关并显示原因。</action>
+  <verify>页签计数、徽章与开关往返（none→all→model→user→none）在纯逻辑单测下自洽。</verify>
+  <security>不把「已停用」表达成插件的私有状态，文案如实说明是文件声明。</security>
+  <done>界面事实与磁盘事实一致。</done>
+</task>
+
+## Wave 4：回归测试
+
+<task type="auto">
+  <name>T8：文件写入行为回归</name>
+  <files>test/host/skills-policy.test.mjs（新）</files>
+  <action>覆盖：①只写目标键，注释 / 未知字段 / 其余键 / 正文逐字保留；②两端独立；③恢复写显式值；④无变化不落盘（mtime 不变）；
+  ⑤缺 frontmatter、非映射、含别名、非绝对路径、basename 不符、目标不存在、符号链接目标各自被拒绝且文件不变；
+  ⑥写入失败（只读文件 / 目录占位）不留暂存文件、原文件不变；⑦CRLF 与 BOM 文件可写且正文字节保留。</action>
+  <verify>去掉「只写目标键」改为整段重写时用例①必红；去掉「无变化不落盘」时用例④必红。</verify>
+  <security>测试只用临时目录与临时 DSH_HOME，结束后清理。</security>
+  <done>写入边界有可失败的确定性回归。</done>
+</task>
+
+<task type="auto">
+  <name>T9：端到端与既有用例改造</name>
+  <files>test/host/settings-bridge.test.mjs、skills-config.test.mjs、skills-catalog.test.mjs、skills-scan.test.mjs、
+  skills-refresh.test.mjs、skills-import.test.mjs、skills-actions.test.mjs、skills-migration.test.mjs、
+  skill-block-shadow.test.mjs（删）→ skill-policy-registry.test.mjs（新）</files>
+  <action>删除影子候选相关用例；新增端到端：真实 `SkillRegistry` + 官方文件提供方替身，写入 frontmatter 后重新
+  `list()`，断言被停用的一端不可调用、另一端仍可调用，并断言提供方未因同名影子而改变来源；端点用例改为
+  `{name, path, scope}` 与 409 身份校验；状态文件用例改为 v4 语义。</action>
+  <verify>把写入换成「只改状态文件」时端到端用例必红；把身份校验去掉时 409 用例必红。</verify>
+  <security>不依赖共享状态或执行顺序，临时目录隔离。</security>
+  <done>「停用在任何装配下都生效」有行为证明。</done>
+</task>
+
+<task type="auto">
+  <name>T10：客户端用例</name>
+  <files>test/client/skill-status.test.mjs、test/client/ui-v2-page-smoke.test.mjs、test/fixtures/ui-v2-drafts.mjs</files>
+  <action>状态纯逻辑改为 frontmatter 事实并补往返断言；页面冒烟改为新的开关语义与文案；fixture 去掉 blocked 字段。</action>
+  <verify>把可用性判定换回旧的 blocked 字段时对应用例必红。</verify>
+  <security>不引入新的浏览器依赖。</security>
+  <done>界面行为有回归。</done>
+</task>
+
+## Wave 5：文档与交付
+
+<task type="auto">
+  <name>T11：文档同步</name>
+  <files>docs/skills-management.md、CHANGELOG.md、README.md</files>
+  <action>重写技能管理文档的第 2 节（停用＝改写 frontmatter）、第 3 节（状态文件 v4 只留引用目录）、第 5 节（与旧模型的关系，
+  含「为什么放弃注册层屏蔽」的一句事实说明），新增调用策略与边界一节；CHANGELOG 记录行为变化与「屏蔽曾失效」的事实；
+  README 技能管理条目改为文件层表述。</action>
+  <verify>文档描述与实现逐条对得上；路径、命令、字段名可核验。</verify>
+  <security>不夸大：写入边界、只读目标失败、与 dsh-web 的字段共用关系如实写明。</security>
+  <done>文档不再描述已废弃的机制。</done>
+</task>
+
+<task type="auto">
+  <name>T12：门禁、变异与提交</name>
   <files>PLAN.md、.ai-memory/</files>
-  <action>typecheck / lint / test / build / git diff --check；对「按需装配」与「回退」各做一组反向变异，证明新用例守得住；中文 Conventional Commit 推送 origin/dev；追加 `.ai-memory` 日志。</action>
+  <action>typecheck / lint / test / build / git diff --check；对「只写目标键」与「身份校验」各做一组反向变异证明用例守得住；
+  中文 Conventional Commit 推送 origin/dev；追加 `.ai-memory` 日志。</action>
   <verify>门禁全绿；变异各自精确红掉对应用例；暂存只含本轮文件。</verify>
-  <security>不停止运行中的 DSH；`.ai-memory` 不入库。</security>
+  <security>不停止运行中的 DSH；`.ai-memory` 与 `.scratch` 不入库。</security>
   <done>本轮交付完成。</done>
 </task>
 
 ## 回滚
 
-- 代码：`git revert` 本轮提交回到 `fb18c9a`；被改动的只有 `characters.ts` 的两个函数与测试。
-- 数据：用户侧的卡与技能是新增文件，删除目录即可回退；若卡已应用到某预设，先在工作台「移除」再删库（移除会回退模块）。
-- 已应用过卡的历史预设不受影响：模块已在磁盘上，回退只作用于「之后」的应用与移除。
+- 代码：`git revert` 本轮提交即回到 `4eca311`（注册层屏蔽模型）。
+- 数据：状态文件 v4 只少一个已弃用的 `blocked` 键（无数据损失）；技能文件上被写入的 `disable-model-invocation` /
+  `user-invocable` 两个键可手工删除或改回，插件不再依赖它们之外的任何状态。
+- 兼容：本轮写入的就是 dsh-web 技能中心使用的同一组字段，两者可互操作。
 
 ## Task Summary 与状态
 
-- 当前：T1–T8 全部完成（T8 的 `test` 门禁含 1 条**既有失败**，见「门禁结果」）。
+- 当前：Wave 1–3 与 T11 已完成；Wave 4（测试改造）与 T12（门禁/变异/提交）进行中。
 
 ### 执行记录
 
-- **T1（判据纯函数）**：`src/host/characters.ts` 新增 `CHARACTER_MODULES_KEY`、`recordedCharacterModules`（非法形状容错）、
-  `declaredCharacterModules`（卡声明过滤去重）、`requiredCharacterModules`（`prompt-config-engine` 始终 + 有 world-book
-  配置时 `world-book-tools`）、`CharacterModuleContext` / `characterModuleStillNeeded`（消费者判据，未知模块保守保留）、
-  `modulesClaimedByOtherCards`（其他已导入卡的记录 ∪ 声明的并集）；`src/index.ts` 导出这些符号供测试消费。
-- **T2（apply 按需装配 + 记录）**：追加集 = 卡声明 ∪ 必需项；把「追加前没有、追加后有」的差集并与
-  `meta.characterModules[cardId]` 合并写回。ST 卡因自带六件套声明，装配结果与改造前逐项一致（既有断言保留并补记录断言）。
-- **T3（remove 回退）**：按记录回退模块，保留条件 = 其他卡仍引用（记录或 `converted.yml` 声明）或消费者仍在
-  （`promptConfigs` / world-book 配置 / `params.stMacros` / `customTools` / 非空工具名单）；随后清理
-  `meta.characterModules[cardId]`，该键为空时删父键；老卡无记录则不回退。
-- **T4（回归）**：`test/host/characters.test.mjs` 从 7 条扩到 16 条，覆盖纯文本卡零追加、声明优先、世界书自动补、
-  回退与记录清理、两张卡共用模块不夺走、预设自带模块不动、`tool-filter` 消费者保护、重复应用与移除幂等、判据纯函数。
-- **T5（ponytail 卡）**：`$DSH_HOME/.agent-presets/.characters/ponytail/converted.yml`（用户数据，不入库）：
-  `modules: [prompt-config-engine]` + 四条 `system-section` 配置——`ponytail-rules`（常驻公共规则，order 190）
-  与三条 `group: ponytail-level` / `exclusive: true` 的档位（full 默认启用，lite / ultra 默认禁用，order 200/201/202）。
-  只读校验：`listCharacterCards` 能列出该卡（`hasAvatar: false`、`imported: false`）。
-- **T6（技能）**：6 个技能写入 `$DSH_HOME/skills/{ponytail,ponytail-review,ponytail-audit,ponytail-debt,ponytail-gain,ponytail-help}/SKILL.md`
-  （用户数据，不入库）：正文忠实移植，`description` 补中文触发词；主技能与 `ponytail-help` 增加 DSH 适配段
-  （档位由预设提示词配置的互斥组控制，本项目没有 `/命令` 通道）。运行时技能目录已识别全部 6 个。
-- **T7（文档）**：`docs/SillyTavern.md` 角色卡一节新增「应用与移除的模块语义（2026-09-18）」；`CHANGELOG.md` 新增同题一节。
-- **T8（门禁与变异）**：见下。
+- **T1（共享契约）**：`src/shared/skills.ts` 删除 `BlockedSkill` / `blockScopeOf` / `blockRecordFor` / `SKILL_BLOCK_RANK`
+  与条目上的 `blocked` / `blockedModel` / `blockedUser`；`SkillsState` 只留 `version` + `folders`；新增
+  `SkillPolicyScope`、`invocationForScope`、`scopeOfInvocation`；条目的 `modelInvocable` / `userInvocable` 成为唯一调用策略事实。
+- **T2（状态文件 v4）**：`src/host/skills-config.ts` 升到 v4；`validateSkillsState` 接受缺失版本、v3（忽略 `blocked`
+  且不校验其内容）与 v4；写入时 `doc.set('version', 4)` + `doc.delete('blocked')`，注释保留、内容无变化不落盘、
+  版本冲突与暂存文件清理全部沿用。
+- **T3（写入模块）**：新增 `src/host/skills-policy.ts`：`readSkillInvocation` / `setSkillInvocation`——只改目标键
+  （已有驼峰键就地改写，两种写法都没有才新增官方连字符键），保留注释、未知字段、其余键与正文，内容无变化不落盘，
+  同目录暂存 + rename 原子写，失败清理暂存文件；七类拒绝条件（非绝对路径、basename 不是 `SKILL.md`、不存在、
+  符号链接、非普通文件、缺 frontmatter、非映射或含别名）。
+- **T4（装配与身份校验）**：`src/index.ts` 的技能提供方只剩引用目录候选；新增
+  `setSkillPolicy(name, path, scope, cwd?)`——按同一工作目录重扫清单并要求同名、同路径且有效，写入成功后失效清单
+  与官方 registry 缓存；TUI 技能启停改为先按名查 `path` 再写入。
+- **T5（端点与契约）**：`/skill-block` → `/skill-policy`（请求 `{ name, path, scope, sessionId? }`，响应 `{ skills }`），
+  `skillsList` 响应去掉 `blocked`；参数缺失 400，身份校验失败或写入失败 409；`SkillsBridgeState` 与
+  `BridgeRequestMap` / `BridgeValueMap` 同步（编译期覆盖断言通过）。
+- **T6 / T7（客户端）**：store 的 `setSkillBlocked` → `setSkillPolicy`（带 `sessionId`，失败给出可见原因，忙期守卫保留）；
+  `skill-status.ts` 改为只看 frontmatter 事实、`scopeAfterToggle` 按「该端当前是否可调用」取反；SkillRow 的开关
+  `checked` 直接取可调用状态、无 `path` 或无效技能禁用写入；中英文案、README 与 `docs/ui-architecture.md` 描述同步。
+- **T11（文档）**：`docs/skills-management.md` 重写（文件层调用策略、状态文件 v4、v2/v3/v4 对照表、写入边界、回归入口）；
+  `CHANGELOG.md` 新增「技能停用改为文件层调用策略」；`README.md` 两处技能管理描述同步。
 
-### 反向变异验证（证明新用例守得住）
-
-| 变异 | 期望失败 | 实测结果 |
-|---|---|---|
-| apply 退回固定四件套（按需逻辑失效） | 装配与回退相关用例 | **恰好 8 条红**，其余 8 条绿 |
-| remove 的回退整段短路 | 回退用例 | **恰好 1 条红**，其余 15 条绿 |
-| `characterModuleStillNeeded` 的 `tool-filter` 分支改成「两侧名单都非空才算需要」 | 消费者保护用例 + 判据纯函数 | **恰好 2 条红**，其余 14 条绿 |
-
-三组变异均已回退，回退后角色卡测试 16/16 通过。另有第四组在开发中真实发生：`modulesClaimedByOtherCards`
-未读其他卡的 `converted.yml` 声明时，「另一张已导入卡也声明同一模块时不夺走」当场变红——该用例正是为这个缺口写的。
-
-### 门禁结果
-
-- `typecheck` ✓ / `lint` 0 warning 0 error ✓ / `build` ✓ / `git diff --check` ✓。
-- `test`：1036/1037。唯一失败是 **`test/host/skills-scan.test.mjs:247`「等长改写并还原 mtime 也必须让指纹变化」**，
-  与本轮改动无关，**用户决定本轮不修、如实记录**。证据：独立探针显示本机 Windows 上 `writeFileSync` 写入数据后
-  `ctimeMs` 不变（`utimesSync` 才更新 ctime），该断言三次重跑稳定失败；本轮改动文件不含 `skills-scan`。
-  实际影响有限：引用目录的内容变化由插件 watcher 事件兜底，指纹只在 watcher 覆盖不到时才是唯一判据。
-
-### 未做（明确不在本轮范围）
-
-- 卡携带技能：角色卡应用仍不复制 `skills/`，技能走全局技能根（跨预设可用）。
-- 批量应用到多个预设、`/命令` 式档位切换：切换仍在工作台的提示词配置页完成。
-- ST 导入路径的模块清单按需化：其宏与状态变量确实需要 `session-var-tools`，本轮保持原样。
-
-[✔] Wave 1 / T1：判据纯函数与卡声明解析
-[✔] Wave 1 / T2：apply 按需追加并记录来源
-[✔] Wave 1 / T3：remove 正确回退模块
-[✔] Wave 2 / T4：模块装配与回退的行为回归
-[✔] Wave 3 / T5：写 ponytail 卡
-[✔] Wave 3 / T6：导入 6 个技能到全局技能根
-[✔] Wave 4 / T7：文档同步
-[✔] Wave 4 / T8：门禁、变异验证与提交
+[✔] Wave 1 / T1：共享契约改为调用策略事实
+[✔] Wave 1 / T2：状态文件升到 v4
+[✔] Wave 2 / T3：技能调用策略写入模块
+[✔] Wave 2 / T4：装配与身份校验
+[✔] Wave 2 / T5：端点与契约改造
+[✔] Wave 3 / T6：store 调用改造
+[✔] Wave 3 / T7：状态纯逻辑与页面文案
+[ ] Wave 4 / T8：文件写入行为回归
+[ ] Wave 4 / T9：端到端与既有用例改造
+[ ] Wave 4 / T10：客户端用例
+[✔] Wave 5 / T11：文档同步
+[ ] Wave 5 / T12：门禁、变异与提交

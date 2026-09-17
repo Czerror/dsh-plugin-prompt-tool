@@ -1,8 +1,13 @@
-/** 技能管理的共享契约：技能实体由官方发现，插件只维护屏蔽表与引用目录。 */
+/** 技能管理的共享契约：技能实体由官方发现，**调用策略写在技能文件自己的 frontmatter 里**。
+ *
+ *  为什么不再有「屏蔽表」：注册层的同名裁决是「最近层无视优先级直接胜出」（官方 `dsh-skill` 的
+ *  `collectFresh`），而本插件的提供方在 profile/全局层、官方文件提供方由预设常驻组合挂在预设层，
+ *  影子候选必然被预设层候选覆盖。停用改为改写技能文件的两个官方调用策略键后，任何装配下都成立。 */
 export const SKILL_MARKER = 'SKILL.md'
 
-/** 技能状态文件版本（v3 = 注册层屏蔽模型）。 */
-export const SKILLS_STATE_VERSION = 3
+/** 技能状态文件版本（v4：状态文件只保存引用目录，调用策略回到技能文件）。
+ *  v3 里的 `blocked` 屏蔽表已弃用，读取时忽略、写入时删除。 */
+export const SKILLS_STATE_VERSION = 4
 
 /** 官方技能根分类；数值越小越优先，与官方 rank 一致。 */
 export type SkillSourceKind =
@@ -24,46 +29,37 @@ export const SKILL_SOURCES: Record<SkillSourceKind, { rank: number }> = {
   bundled: { rank: 600 },
 }
 
-/** 屏蔽记录的影子候选优先级：小于全部官方根（最小 100），因此任何来源的同名技能都会被压掉。 */
-export const SKILL_BLOCK_RANK = 0
-
-/** 一条屏蔽记录；只按技能名生效，不改动任何技能文件。 */
-export interface BlockedSkill {
-  /** 技能名（frontmatter name，kebab-case）。 */
-  name: string
-  /** 记录时间（ISO 字符串）。 */
-  at: string
-  note?: string
-  /** false = 不屏蔽模型端（即只屏蔽用户端）。 */
-  model?: boolean
-  /** false = 不屏蔽用户端（即只屏蔽模型端）。 */
-  user?: boolean
+/** 两个官方调用策略键：值就是「该端是否可调用」。 */
+export interface SkillInvocation {
+  /** `disable-model-invocation`：false 时模型不可发现、不可加载。 */
+  modelInvocable: boolean
+  /** `user-invocable`：false 时用户斜杠命令不可加载。 */
+  userInvocable: boolean
 }
 
-/** 屏蔽范围：两端独立控制，全部在注册层生效（不改技能文件）。 */
-export type SkillBlockScope = 'none' | 'model' | 'user' | 'all'
+/** 两端调用策略的目标范围：'model' = 只让模型端不可调用，'user' = 只让用户端不可调用，
+ *  'all' = 两端都不可调用，'none' = 两端都恢复可调用。语义是「点击之后的目标状态」。 */
+export type SkillPolicyScope = 'none' | 'model' | 'user' | 'all'
 
-/** 记录 → 范围（缺省视为屏蔽该端）。 */
-export function blockScopeOf(record: BlockedSkill): SkillBlockScope {
-  const model = record.model !== false
-  const user = record.user !== false
-  if (model && user) return 'all'
-  if (model) return 'model'
-  if (user) return 'user'
-  return 'none'
+/** 目标范围 → 两个键的写入意图（true = 该端可调用）。 */
+export function invocationForScope(scope: SkillPolicyScope): SkillInvocation {
+  return {
+    modelInvocable: scope === 'none' || scope === 'user',
+    userInvocable: scope === 'none' || scope === 'model',
+  }
 }
 
-/** 范围 → 记录；两端都不屏蔽时没有记录，调用方应删除该条。 */
-export function blockRecordFor(name: string, scope: Exclude<SkillBlockScope, 'none'>, at: string): BlockedSkill {
-  if (scope === 'model') return { name, at, user: false }
-  if (scope === 'user') return { name, at, model: false }
-  return { name, at }
+/** 当前两端状态 → 范围（两端都可调用时为 'none'）。 */
+export function scopeOfInvocation(invocation: SkillInvocation): SkillPolicyScope {
+  if (invocation.modelInvocable && invocation.userInvocable) return 'none'
+  if (!invocation.modelInvocable && !invocation.userInvocable) return 'all'
+  return invocation.modelInvocable ? 'user' : 'model'
 }
 
-/** 插件技能状态：屏蔽表 + 用户显式引用的技能文件夹（绝对路径，按引用顺序）。 */
+/** 插件技能状态：只剩用户显式引用的技能文件夹（绝对路径，按引用顺序）。
+ *  技能是否可调用由技能文件自己声明，不再进状态文件。 */
 export interface SkillsState {
   version: number
-  blocked: BlockedSkill[]
   folders: string[]
 }
 
@@ -83,17 +79,12 @@ export interface SkillCatalogEntry {
   rank: number
   valid: boolean
   issue?: string
-  /** 是否被屏蔽（至少一端，注册层影子候选生效中）。 */
-  blocked: boolean
-  /** 插件是否屏蔽了模型端。 */
-  blockedModel: boolean
-  /** 插件是否屏蔽了用户端。 */
-  blockedUser: boolean
-  /** frontmatter 声明的调用策略（只读事实，不受插件屏蔽影响）。 */
+  /** frontmatter 声明的模型端调用策略（唯一事实，缺省为可调用）。 */
   modelInvocable: boolean
+  /** frontmatter 声明的用户端调用策略（唯一事实，缺省为可调用）。 */
   userInvocable: boolean
   /** 同名技能中的胜出者 id；本项未胜出时用于提示"被同名技能遮蔽"。 */
   winnerId?: string
-  /** 标记文件绝对路径。 */
+  /** 标记文件绝对路径（调用策略的写入目标与身份校验依据）。 */
   path?: string
 }

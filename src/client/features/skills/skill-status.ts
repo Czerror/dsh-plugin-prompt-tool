@@ -1,49 +1,36 @@
 import type { SkillCatalogEntry } from '../../data/prompt-tool-fields.ts'
-import { SKILL_SOURCES, type SkillBlockScope, type SkillSourceKind } from '../../../shared/skills.ts'
+import { SKILL_SOURCES, scopeOfInvocation, type SkillPolicyScope, type SkillSourceKind } from '../../../shared/skills.ts'
 import type { StatusBadgeTone } from '../../ui/StatusBadge.tsx'
 import type { PromptToolTranslate } from '../../locales.ts'
 
 export type SkillStatusTab = 'all' | 'model' | 'user' | 'blocked'
 
-/** 实际生效判定：非法技能不注册；被屏蔽的技能在注册层被影子候选压掉。 */
-export const skillEnabled = (skill: SkillCatalogEntry): boolean => skill.valid && skill.blocked !== true
+/** 实际生效判定：非法技能不注册；调用策略直接来自技能文件的 frontmatter。 */
+export const skillEnabled = (skill: SkillCatalogEntry): boolean =>
+  skill.valid && (skill.modelInvocable || skill.userInvocable)
 
-/** 模型端是否可用：技能自身声明与插件屏蔽叠加。 */
-export const skillModelAvailable = (skill: SkillCatalogEntry): boolean =>
-  skill.valid && skill.blockedModel !== true && skill.modelInvocable
+/** 模型端是否可用：只看 frontmatter 的 `disable-model-invocation`。 */
+export const skillModelAvailable = (skill: SkillCatalogEntry): boolean => skill.valid && skill.modelInvocable
 
-/** 用户端是否可用：技能自身声明与插件屏蔽叠加。 */
-export const skillUserAvailable = (skill: SkillCatalogEntry): boolean =>
-  skill.valid && skill.blockedUser !== true && skill.userInvocable
+/** 用户端是否可用：只看 frontmatter 的 `user-invocable`。 */
+export const skillUserAvailable = (skill: SkillCatalogEntry): boolean => skill.valid && skill.userInvocable
 
-/** 两端都被屏蔽才是「已停用」：只关一端时技能仍从另一端可用，不能同时算进「已停用」。 */
-export const skillFullyBlocked = (skill: SkillCatalogEntry): boolean =>
-  skill.blockedModel === true && skill.blockedUser === true
+/** 两端都不可用：插件写入的两端停用与技能自身声明都走同一套事实，不再区分来源。 */
+export const skillUnavailable = (skill: SkillCatalogEntry): boolean =>
+  skill.valid && !skillModelAvailable(skill) && !skillUserAvailable(skill)
 
 /** 是否被同名技能遮蔽（同名裁决只保留来源优先级最高的那一个）。 */
 export const skillShadowed = (skill: SkillCatalogEntry): boolean => skillEnabled(skill) && skill.winnerId !== undefined
 
-/** 两端「点击后是否屏蔽」→ 注册层屏蔽范围（两端都为 false = 恢复该技能）。
- *  参数不是「当前是否被屏蔽」，调用点传的是点击之后的目标状态——两者只差一次取反，
- *  读错就会误以为两端都屏蔽时开关是死端。 */
-export const blockScopeFor = (modelBlocked: boolean, userBlocked: boolean): SkillBlockScope =>
-  modelBlocked && userBlocked ? 'all' : modelBlocked ? 'model' : userBlocked ? 'user' : 'none'
-
-/** 点击某一端开关后的目标屏蔽范围：本端取反，另一端保持当前状态。
- *  放在这里而不是组件内，是为了让「两端都屏蔽之后仍能逐端恢复」这件事可以被直接单测。 */
+/** 点击某一端开关后的目标范围：本端取反，另一端保持当前状态。
+ *  参数不是「当前是否被屏蔽」，而是各端当前是否可调用——两者只差一次取反，
+ *  读错就会误以为两端都停用后开关是死端。 */
 export const scopeAfterToggle = (
-  skill: Pick<SkillCatalogEntry, 'blockedModel' | 'blockedUser'>,
+  skill: Pick<SkillCatalogEntry, 'modelInvocable' | 'userInvocable'>,
   side: 'model' | 'user',
-): SkillBlockScope =>
-  side === 'model'
-    ? blockScopeFor(skill.blockedModel !== true, skill.blockedUser === true)
-    : blockScopeFor(skill.blockedModel === true, skill.blockedUser !== true)
-
-/** 两端都不可用（有效技能）：既包含插件两端屏蔽，也包含技能自身声明两端都不可调用。
- *  「已停用」页签按这个口径收技能，保证每个有效技能至少落在一个页签里，而不是只出现在「全部」。
- *  无效技能不在此列——它有自己的原因展示。 */
-export const skillUnavailable = (skill: SkillCatalogEntry): boolean =>
-  skill.valid && !skillModelAvailable(skill) && !skillUserAvailable(skill)
+): SkillPolicyScope => scopeOfInvocation(side === 'model'
+  ? { modelInvocable: !skill.modelInvocable, userInvocable: skill.userInvocable }
+  : { modelInvocable: skill.modelInvocable, userInvocable: !skill.userInvocable })
 
 export function matchesSkillStatus(skill: SkillCatalogEntry, tab: SkillStatusTab): boolean {
   if (tab === 'model') return skillModelAvailable(skill)
@@ -71,24 +58,26 @@ export function groupBySource(catalog: readonly SkillCatalogEntry[]): SkillGroup
   })
 }
 
-/** 状态徽章文案：按端如实区分「只关了一端」与「两端都关」。 */
+/** 状态徽章文案：按端如实区分「只关了一端」与「两端都关」，措辞说明这是技能文件自己的声明。 */
 export function skillStatusLabel(skill: SkillCatalogEntry, t: PromptToolTranslate): string {
   if (!skill.valid) return t('skills.status.invalid')
-  if (skillFullyBlocked(skill)) return t('skills.status.blocked')
-  if (skill.blockedModel === true) return t('skills.status.blockedModel')
-  if (skill.blockedUser === true) return t('skills.status.blockedUser')
+  if (!skill.modelInvocable && !skill.userInvocable) return t('skills.status.blocked')
+  if (!skill.modelInvocable) return t('skills.status.blockedModel')
+  if (!skill.userInvocable) return t('skills.status.blockedUser')
   if (skillShadowed(skill)) return t('skills.status.shadowed')
+  // 走到这里至少一端可调用：两端都关在上一段已经返回「已停用」，所以不再需要 notCallable 兜底分支
+  // （该键仍保留在字典里，供将来出现「有效但两端都不可调用且不是停用」的语义时复用）。
   const audiences = [
     skill.modelInvocable ? t('skills.status.audience.model') : '',
     skill.userInvocable ? t('skills.status.audience.user') : '',
   ].filter(Boolean)
-  return audiences.length > 0 ? t('skills.status.callable', { audiences: audiences.join('/') }) : t('skills.status.notCallable')
+  return t('skills.status.callable', { audiences: audiences.join('/') })
 }
 
-/** 徽章色调：非法=红；屏蔽、被同名遮蔽或两端都不可用=灰；其余=绿。
- *  「两端都不可用」与页签用同一个谓词，插件屏蔽与技能自身声明不再各算一套。 */
+/** 徽章色调：非法=红；被同名遮蔽或两端都不可用=灰；其余=绿。
+ *  「两端都不可用」与页签用同一个谓词，插件写入与技能自身声明不再各算一套。 */
 export function skillStatusTone(skill: SkillCatalogEntry): StatusBadgeTone {
   if (!skill.valid) return 'danger'
-  if (skill.blocked || skillShadowed(skill) || skillUnavailable(skill)) return 'neutral'
+  if (skillShadowed(skill) || skillUnavailable(skill)) return 'neutral'
   return 'success'
 }

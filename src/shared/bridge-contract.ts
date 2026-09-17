@@ -5,7 +5,7 @@
  * 改路径或载荷形状必须同步更新 test/shared/bridge-contract.test.mjs。
  */
 import type { PersonaSpec } from './persona-section.ts'
-import type { SkillBlockScope } from './skills.ts'
+import type { SkillPolicyScope } from './skills.ts'
 import type {
   InstructionFileWriteResult,
   InstructionPolicy,
@@ -30,7 +30,7 @@ export const BRIDGE_ENDPOINTS = {
   mutate: '/mutate',
   configsValidate: '/configs-validate',
   skillsList: '/skills-list',
-  skillBlock: '/skill-block',
+  skillPolicy: '/skill-policy',
   skillsFolders: '/skills-folders',
   skillsImport: '/skills-import',
   skillsImportDirectory: '/skills-import-directory',
@@ -85,10 +85,11 @@ export interface BridgeRequestMap {
   modelReasoning: { provider: string; model: string }
   mutate: { ops: unknown[]; expectedRevision?: number }
   configsValidate: { promptConfigs: unknown[]; strategyDir?: string }
-  /** 技能清单：按会话工作区扫描官方六类技能根，并叠加注册层屏蔽状态。 */
+  /** 技能清单：按会话工作区扫描官方六类技能根，调用策略取自各技能文件的 frontmatter。 */
   skillsList: { sessionId?: string } | undefined
-  /** 注册层屏蔽开关：只写插件状态，不改任何技能文件；scope 让模型端与用户端独立。 */
-  skillBlock: { name: string; scope: SkillBlockScope }
+  /** 调用策略开关：改写该技能 SKILL.md frontmatter 的官方两个键（正文不动）；
+   *  path 必须命中服务端当次扫描的同名条目，否则按陈旧界面拒绝。 */
+  skillPolicy: { name: string; path: string; scope: SkillPolicyScope; sessionId?: string }
   /** 添加 / 移除引用的技能文件夹（只记状态，不复制文件）。 */
   skillsFolders: { folders: string[] }
   skillsImport: { files: Array<{ path: string; content: string }> }
@@ -293,9 +294,9 @@ export interface BridgeValueMap {
   modelReasoning: { reasoning: ModelReasoningView }
   mutate: BridgeSettingsView
   configsValidate: { valid: boolean; errors: Array<{ index: number; id: string; message: string }>; configs?: unknown[]; files?: unknown[] }
-  /** 技能清单 + 屏蔽表 + 引用目录 + 技能根（客户端据此渲染来源分组）。 */
-  skillsList: { skills: unknown[]; blocked: string[]; folders: string[]; roots: string[] }
-  skillBlock: { skills: unknown[]; blocked: string[] }
+  /** 技能清单 + 引用目录 + 技能根（客户端据此渲染来源分组与调用策略）。 */
+  skillsList: { skills: unknown[]; folders: string[]; roots: string[] }
+  skillPolicy: { skills: unknown[] }
   skillsFolders: { skills: unknown[]; folders: string[] }
   skillsImport: { path: string; count: number; overwritten: number }
   skillCreate: { id: string; path: string }

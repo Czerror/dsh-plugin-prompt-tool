@@ -94,8 +94,8 @@ function renderTuiStatus(source: PromptSettings, params: Record<string, unknown>
   }
   lines.push('技能开关:')
   for (const skill of source.skillCatalog) {
-    // 启停来自受管技能库的链接状态。
-    const value = skill.blocked !== true
+    // 启停来自技能文件的调用策略：两端都被关掉才算停用。
+    const value = skill.modelInvocable || skill.userInvocable
     const detail = skill.valid
       ? (skill.modelInvocable ? '模型可调用' : '模型不可调用')
       : `未注册:${skill.issue ?? '不合法'}`
@@ -247,13 +247,14 @@ export function registerTuiCommand(
         if (tokens[0] === 'skill') {
           const { id, action } = parseIdentifierAndAction(tokens.slice(1), () => true)
           if (id.length === 0) return usage()
-          const current = source.skillCatalog.find((skill) => skill.name === id)?.blocked !== true
+          const found = source.skillCatalog.find((skill) => skill.name === id)
+          const current = found !== undefined && (found.modelInvocable || found.userInvocable)
           const next = parseTuiBoolean(action, current)
           if (next === undefined) return usage()
           if (toggleSkillState === undefined) {
             return { kind: 'error', text: `无法切换技能 ${id}：技能启停回调不可用` }
           }
-          // 技能启停 = 写注册层屏蔽表（不改技能文件），不再写 settings。
+          // 技能启停 = 改写技能文件的调用策略键（正文不动），不再写 settings。
           const toggled = toggleSkillState(id, next)
           if (toggled.ok === false) {
             return { kind: 'error', text: toggled.message ?? `技能 ${id} 切换失败` }

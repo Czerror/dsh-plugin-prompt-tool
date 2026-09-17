@@ -7,6 +7,7 @@ import { PresetSwitcher } from '../../src/client/features/presets/PresetSwitcher
 import { PromptConfigList } from '../../src/client/features/prompts/PromptConfigList.tsx'
 import { SubagentToolPolicyCard } from '../../src/client/features/subagents/SubagentToolPolicyCard.tsx'
 import { SUBAGENT_TOOL_POLICY_SKELETON } from '../../src/shared/engine-capabilities.ts'
+import { invocationForScope } from '../../src/shared/skills.ts'
 import { usePromptToolStore } from '../../src/client/data/use-prompt-tool-store.ts'
 import { hasWorkspaceDrafts } from '../../src/client/data/workspace-drafts.ts'
 import { PROMPT_TOOL_DICTS } from '../../src/client/locales.ts'
@@ -29,10 +30,10 @@ let tools = [{ id: 'tool-one', name: 'demo', description: 'baseline', timeoutMs:
 let persona = { prefix: 'original persona' }
 let presets = [{ id: 'test', name: 'Current' }, { id: 'other', name: 'Other' }]
 const skillsRoot = 'D:/isolated/skills'
-// 注册层屏蔽模型的技能事实：实体留在各自来源根，插件只提供清单、屏蔽表与引用目录。
+// 文件层调用策略的技能事实：实体留在各自来源根，条目只带 frontmatter 的两个调用策略事实与可写的标记文件路径。
 let skills = [
-  { id: 'project-dsh:D:/workspace:.dsh:beta', folder: 'beta', name: 'beta', description: 'beta description', dir: 'D:/workspace/.dsh/skills', source: 'project-dsh', rank: 100, valid: true, blocked: false, blockedModel: false, blockedUser: false, modelInvocable: true, userInvocable: true },
-  { id: `user-dsh:${skillsRoot}:alpha`, folder: 'alpha', name: 'alpha', description: 'alpha description', dir: skillsRoot, source: 'user-dsh', rank: 400, valid: true, blocked: false, blockedModel: false, blockedUser: false, modelInvocable: true, userInvocable: true },
+  { id: 'project-dsh:D:/workspace:.dsh:beta', folder: 'beta', name: 'beta', description: 'beta description', dir: 'D:/workspace/.dsh/skills', source: 'project-dsh', rank: 100, valid: true, modelInvocable: true, userInvocable: true, path: 'D:/workspace/.dsh/skills/beta/SKILL.md' },
+  { id: `user-dsh:${skillsRoot}:alpha`, folder: 'alpha', name: 'alpha', description: 'alpha description', dir: skillsRoot, source: 'user-dsh', rank: 400, valid: true, modelInvocable: true, userInvocable: true, path: `${skillsRoot}/alpha/SKILL.md` },
 ]
 let skillFolders = []
 window.fetch = async (url, init) => {
@@ -68,18 +69,15 @@ window.fetch = async (url, init) => {
     value = { policy: window.policyServer }
   }
   if (endpoint === 'characters-list') value = { characters: [] }
-  if (endpoint === 'skill-block') {
+  if (endpoint === 'skill-policy') {
     await new Promise((resolve) => setTimeout(resolve, window.delay))
     if (body.name === window.failedSkill) return new Response(JSON.stringify({ ok: false, message: `failed ${body.name}` }))
-    // 注册层屏蔽按范围生效：两端各自独立，'none' 表示恢复。
-    const scope = body.scope
-    skills = skills.map((skill) => skill.name === body.name ? {
-      ...skill,
-      blocked: scope !== 'none',
-      blockedModel: scope === 'all' || scope === 'model',
-      blockedUser: scope === 'all' || scope === 'user',
-    } : skill)
-    value = { skills, blocked: skills.filter((skill) => skill.blocked).map((skill) => skill.name) }
+    // 身份校验与服务端同形：name + path 必须指向清单里的同一条目（写错目标比写失败更危险）。
+    const target = skills.find((skill) => skill.name === body.name && skill.path === body.path)
+    if (target === undefined) return new Response(JSON.stringify({ ok: false, message: `unknown skill target: ${body.name}` }))
+    // 文件层调用策略：scope 只改写该条目自身的两个 frontmatter 事实，标记文件路径与其余字段不动。
+    skills = skills.map((skill) => (skill === target ? { ...skill, ...invocationForScope(body.scope) } : skill))
+    value = { skills }
   }
   if (endpoint === 'skills-folders') {
     await new Promise((resolve) => setTimeout(resolve, window.delay))
@@ -94,7 +92,7 @@ window.fetch = async (url, init) => {
     value = { id: body.folder, path: `${skillsRoot}/.system/prompt-tool/.trash/skill-${body.folder}` }
   }
   if (endpoint === 'skill-create') {
-    skills = [...skills, { id: `user-dsh:${skillsRoot}:${body.name}`, folder: body.name, name: body.name, description: body.description, dir: skillsRoot, source: 'user-dsh', rank: 400, valid: true, blocked: false, modelInvocable: true, userInvocable: true }]
+    skills = [...skills, { id: `user-dsh:${skillsRoot}:${body.name}`, folder: body.name, name: body.name, description: body.description, dir: skillsRoot, source: 'user-dsh', rank: 400, valid: true, modelInvocable: true, userInvocable: true, path: `${skillsRoot}/${body.name}/SKILL.md` }]
     value = { id: body.name, path: `${skillsRoot}/${body.name}` }
   }
   if (endpoint === 'skills-import') {

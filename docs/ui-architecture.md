@@ -275,7 +275,7 @@ workspace-pages.ts 是页面元数据的唯一来源。默认页为 features，�
 | features | 主会话 | 主会话 ModelRouteCard、公共配置、预设人设卡、平铺的 PromptConfigList 与 EngineModuleList（下拉按插入点层级/策略筛选）、tool-pipeline 自定义工具卡、预设包导入预览 |
 | subagent | 子代理 | ModelRouteCard、DelegationToolsCard、与主会话同款的合并创建菜单（能力模块/recipe、按层模板、工具模板、模板变量）、EngineModuleCards 能力卡、CustomToolsCard 自定义工具卡、ConfigListWithTemplates（scope=subagent） |
 | tools | 工具预览 | 顶置统一搜索；当前会话／所选预设两个可折叠分组，预设选择位于分组标题右侧；双列展开详情卡，680px 以下单列 |
-| skills | 技能设置 | 技能根与资产卡（用户技能根、创建、复制导入、技能文件夹引用）、状态与来源筛选、按来源分组的 SkillRow（注册层停用开关、删除） |
+| skills | 技能设置 | 技能根与资产卡（用户技能根、创建、复制导入、技能文件夹引用）、状态与来源筛选、按来源分组的 SkillRow（调用策略开关、删除） |
 | presets | 预设配置 | 全局生成开关、AGENTS 路径与生成顺序设置、PresetSwitcher 与预设 CRUD |
 | characters | 角色管理 | PNG/JSON 导入、角色卡库、应用/移除/删除与目录打开 |
 
@@ -326,7 +326,7 @@ workspace-pages.ts 是页面元数据的唯一来源。默认页为 features，�
 | 创建意图、菜单、删除/导入确认、拖拽 | 对应 feature | 仍随页面卸载失效；不恢复或重放危险操作 |
 | 保存队列、revision、草稿版本 | save-queue + store | 工作台挂载期 |
 | 大文本和角色卡原文件 | 文件通道/bridge | 不进入 settings descriptor |
-| 技能停用 / 技能文件夹引用 | 插件状态文件（`$DSH_HOME/skills/.system/prompt-tool/skills.yml`） | 停用 = 注册层影子候选压制官方候选（不改技能文件）；引用只登记路径。技能实体归官方各技能根所有，插件不搬迁。契约见 [skills-management.md](skills-management.md) |
+| 技能调用策略 / 技能文件夹引用 | 技能文件（`SKILL.md` 的两个官方键）+ 插件状态文件（`$DSH_HOME/skills/.system/prompt-tool/skills.yml`，只存 `folders`） | 停用 = 改写该技能 frontmatter 的 `disable-model-invocation` / `user-invocable`（正文与其余字段逐字保留）；引用只登记路径。技能实体归官方各技能根所有，插件不搬迁。契约见 [skills-management.md](skills-management.md) |
 
 不新增 React Context 来广播整个 store。页面通过 usePromptToolFields selector 订阅窄切片，叶子组件接收显式值与 callback。
 
@@ -402,7 +402,7 @@ JSON bridge 的统一上限为 32 MiB；角色卡原始文件流独立限制为 
 6. 参数空字符串/空数组沿用删除键语义；variables 的空字符串仍是合法占位值。详细参数规则见 [architecture-params.md](architecture-params.md)。
 7. 预设写入携带 `expectedPresetId`，读回失败的自定义工具不降级为空列表供覆盖；跨预设旧草稿被拒绝，切换等待参数保存队列。
 8. 切换预设是事务：先保存当前预设草稿，保存未成功（失败/被拒）即取消切换并保留草稿；切换成功后等 settings 写入与随后的静默 load 完成才返回。切换或首次加载完成前，`loadedPresetRef` 拒绝参数、promptConfigs 与模板变量写盘——旧预设字段不会带新 `presetTemplate` 落盘；重新加载成功应用该预设数据后才恢复写入。
-9. 技能写入不进 settings：注册层停用/恢复走 `/skill-block`、技能文件夹引用走 `/skills-folders`、清单走 `/skills-list`，创建/复制导入/删除走 `/skill-create`、`/skills-import`、`/skills-import-directory`、`/skill-delete`（契约与所有权见 [skills-management.md](skills-management.md)）。这些操作不修改任何技能文件（创建与复制导入除外），也不再由插件控制技能注册顺序——顺序由官方按技能名与来源优先级决定。
+9. 技能写入不进 settings：调用策略走 `/skill-policy`（请求带 `name` / `path` / `scope`，服务端按同一工作区重新扫描校验身份，陈旧界面按 409 拒绝）、技能文件夹引用走 `/skills-folders`、清单走 `/skills-list`，创建/复制导入/删除走 `/skill-create`、`/skills-import`、`/skills-import-directory`、`/skill-delete`（契约与所有权见 [skills-management.md](skills-management.md)）。调用策略只改技能文件的两个官方键（正文与其余字段逐字保留），也不再由插件控制技能注册顺序——顺序由官方按技能名与来源优先级决定。
 10. 指令文件正文走独立草稿池（`data/instruction-drafts.ts`），不与预设保存队列混用：预设 debounce 自动保存与预设切换一律不带文件正文；焦点离开指令文件卡（或列表「保存全部」）时提交 dirty 文件，成功只把请求时快照记为基线，冲突/失败保留草稿并显示「重新读取」。会话或工作区切换建立新的指令上下文（`instructions.context.contextId` 变化即新上下文）：旧上下文的迟到响应不覆盖当前视图，旧 `contextId` 的保存被服务端 409 拒绝。
 11. 指令负责人事实来自 `/bootstrap` 的 `instructions.owner.officialInstructions`（服务端从 pre-step 协调器观察结果取，`null` = 尚未观察到，不当冲突处理）：`true` 时文件卡显示「官方指令行仍在 → 独立来源不注入」，不做「已生效」暗示。
 12. 模块列表工具栏下的「独立指令文件来源」总开关复用 ToggleRow，只修改独立策略顶层 `enabled`，默认关闭；单文件开关不隐式开启总来源，也不改变官方负责人。策略不可读时禁用总开关；应答成功前不乐观显示已启用。
@@ -446,7 +446,7 @@ feature 只拥有自己的视图、瞬时状态、领域纯 helper 和 CSS：
 | modules | 引擎能力身份、存在性与参数卡；一项实际装配能力一张卡，消费 `/bootstrap.moduleFacts`（显式模块及仍在运行的历史策略兼容装配），统一列表的行为分类由工作区组合，卡片形态由 ui/EngineModuleCard.tsx 提供 |
 | subagents | 委派工具、实例级工具策略草稿及策略解析预览；不重复嵌入工具面 |
 | tools | 自定义工具编辑/保存、参数模板；独立工具预览页与只读工具面 |
-| skills | 按官方六类技能根分组展示清单、来源与遮蔽判定、注册层停用开关、技能文件夹引用、创建与两种复制导入、回收站删除；契约见 [skills-management.md](skills-management.md) |
+| skills | 按官方六类技能根分组展示清单、来源与遮蔽判定、调用策略开关、技能文件夹引用、创建与两种复制导入、回收站删除；契约见 [skills-management.md](skills-management.md) |
 | presets | 预设生成开关、路径、切换、导入导出、复制/删除/打开 |
 | characters | SillyTavern PNG/JSON 导入、角色卡库存、应用/移除/删除 |
 
@@ -597,7 +597,7 @@ promptConfigs 模块卡展开区按基础信息、注入规则、作用范围、
 | 悬浮入口位置与拖动判定 | floating-trigger-position |
 | 锚点浮层几何与窄视口适配 | anchored-popover |
 | 技能状态筛选、徽章与来源分组 | skill-status |
-| 技能状态文件、清单扫描、注册层压制与资产入口 | skills-management（host 侧契约文档；测试见 `test/host/skills-*.test.mjs`） |
+| 技能状态文件、清单扫描、调用策略写入与资产入口 | skills-management（host 侧契约文档；测试见 `test/host/skills-*.test.mjs`） |
 | 子代理策略草稿 | subagent-policy-draft |
 | 过滤与新建严格分离（§5.2.1 规则） | scope-create-separation |
 | 能力卡、工具预览、自定义工具编辑 | engine-module-cards + tools-preview + custom-tool-editor |

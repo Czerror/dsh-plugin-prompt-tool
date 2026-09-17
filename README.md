@@ -24,7 +24,7 @@ dsh --profile prompt-tool
 
 技能**留在官方各自的技能根里**（项目 `.dsh/skills`、项目 `.agents/skills`、你添加的技能文件夹、`$DSH_HOME/skills`、`~/.agents/skills`、官方内置），插件不搬迁、不建链接、不改任何 `SKILL.md`。管理页按来源分组展示全部技能，标注来源优先级、调用状态与「是否被同名技能遮蔽」。插件**不内置任何技能**：包内没有 `skills/` 目录，也没有安装副本与内容哈希账本（`.prompt-tool-manifest.json` 已废弃并删除）；要什么技能就自己创建，或用管理页把已有技能包复制进来。
 
-**停用 = 注册层屏蔽**：插件为被停用的技能名返回一个同名的空候选（模型与用户调用同时关闭），在技能注册表合并时压掉官方候选——模型目录不列、`skill` 工具拒绝、`/名称` 也不可用；技能文件一个字节都不改，恢复即删除记录。已知限制：屏蔽按技能名全局生效，同名技能在任何工作区都会被一起压掉。状态只写在 `$DSH_HOME/skills/.system/prompt-tool/skills.yml`（`blocked` + `folders`），`settings.yaml` 只保留部署轴（预设 / AGENTS.md 等）。详见 [docs/skills-management.md](docs/skills-management.md)。
+**停用 = 改写技能文件的调用策略**：模型端写 `disable-model-invocation`、用户端写 `user-invocable`，两端独立——模型目录、`skill` 工具与 `/名称` 命令各自生效，恢复写回显式 `false` / `true`。只改这两个键，注释、未知字段、其余键与正文逐字保留；写盘先同目录暂存再原子 rename。曾经用过的「注册层影子候选」方案已废弃：官方注册表按最近层无视优先级胜出，而官方文件提供方由预设常驻组合挂在预设层、本插件的提供方在全局层，影子候选必被覆盖（已在运行中的 DSH 真机复现）。状态文件 `$DSH_HOME/skills/.system/prompt-tool/skills.yml` 现在只保存引用目录 `folders`（v4），`settings.yaml` 只保留部署轴（预设 / AGENTS.md 等）。详见 [docs/skills-management.md](docs/skills-management.md)。
 
 ### 从旧版本升级
 
@@ -54,7 +54,7 @@ node scripts/migrate-skills.mjs --rollback "<备份目录>\migration.json"
 - 🛡️ **失败不伤会话**：单条失败跳过 + `warnOnce`；配置错误挂载时 fail loud；`dedupe: session` 持久幂等
 - 🧭 **通用 instruction-hint 引擎**：所有预设都可通过 `strategy: instruction-hint` 或 `placeholder + fill: instruction-hint` 提示指令文件存在；实现位于 `engine/instruction-hint.mjs`，不绑定任何预设；`context-gate.instructionHint` 按模型可见 surface 去重，重挂不重复，被压缩遮蔽后才再次提示
 - 📦 **Bridge 载荷**：JSON 请求统一 32 MiB 硬上限并明确返回 413；角色卡原始图片走 64 MiB 流式通道，按 PNG 魔数识别。
-- 📂 **技能管理（注册层屏蔽）**：按官方六类技能根分组展示全部技能（含来源优先级与同名遮蔽判定），停用/恢复只写插件状态——同名空候选在注册层压掉官方候选，技能文件一个字节都不改；另提供创建、两种导入（宿主机目录复制 / 浏览器文件夹上传）、技能文件夹引用与回收站删除。
+- 📂 **技能管理（文件层调用策略）**：按官方六类技能根分组展示全部技能（含来源优先级与同名遮蔽判定），停用/恢复改写该技能 `SKILL.md` 的官方两个调用策略键（模型端与用户端各自独立），只动这两个键、正文与其余字段逐字保留；另提供创建、两种导入（宿主机目录复制 / 浏览器文件夹上传）、技能文件夹引用与回收站删除。
 - 🎭 **SillyTavern 导入**：JSON 预设、角色卡和独立世界书转换为本地预设——按官方顺序表保留启停，赋值模板运行时求值；不等价能力明确报告，采样参数由宿主管理
 - 🎴 **角色卡库**：SillyTavern 角色卡（PNG tEXt chunk `ccv3`/`chara`，或 chara_card JSON）导入独立库（`.characters/<id>/`，含原图/转换参数/角色记忆），按 PNG 魔数识别图片并经原始文件流上传，避免头像 base64 膨胀；按需「导入到当前预设」（`chara-<卡>-` 前缀合并、幂等可移除），多文件自动合并
 - 📚 **世界书**：`character_book` 转 world-book 策略配置（`keys` 命中触发 / `constant` 常驻 / 正则键自动检测 / `selectiveLogic` 组合逻辑），与模块卡片同一存储与编辑（模块列表「世界书」过滤 + 批量启用/禁用）

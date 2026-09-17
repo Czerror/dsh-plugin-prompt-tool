@@ -33,7 +33,7 @@ export const Config: z<Config> = z.object({
 export interface PromptSettings {
   /** 运行时检测：是否检测到任何模型服务商（不写入 settings）。 */
   modelsAvailable: boolean
-  /** 技能清单：按官方六类技能根扫描的结果 + 注册层屏蔽状态。 */
+  /** 技能清单：按官方六类技能根扫描的结果 + 各技能 frontmatter 的调用策略。 */
   skillCatalog: SkillCatalogEntry[]
   /** 用户技能根（技能实体的落点；其余来源由官方各自发现）。 */
   activeSkillsDirs: string[]
@@ -64,9 +64,6 @@ export const PromptSettingsSchema: z<PromptSettings> = z.object({
     rank: z.number(),
     valid: z.boolean().default(false),
     issue: z.string().default(''),
-    blocked: z.boolean().default(false),
-    blockedModel: z.boolean().default(false),
-    blockedUser: z.boolean().default(false),
     modelInvocable: z.boolean().default(false),
     userInvocable: z.boolean().default(false),
     winnerId: z.string().default(''),

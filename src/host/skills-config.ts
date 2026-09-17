@@ -1,25 +1,27 @@
-/** 技能插件状态：屏蔽表 + 引用的技能文件夹（注册层屏蔽模型，v3）。
- *  技能实体始终留在官方各技能根里；本文件只记录"哪些技能名不注册给 dsh"和"用户添加了哪些技能文件夹"。 */
+/** 技能插件状态（v4）：只保存用户显式引用的技能文件夹。
+ *
+ *  调用策略（模型端 / 用户端是否可调用）写在技能文件自己的 frontmatter 里，不进状态文件。
+ *  v3 的 `blocked` 屏蔽表已弃用（注册层影子候选被最近层覆盖，见 docs/skills-management.md）：
+ *  读取时忽略该键，写入时删除它——留着一个不再生效的键只会误导。 */
 import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { Document, isMap, parseDocument, visit } from 'yaml'
-import type { BlockedSkill, SkillsState } from '../shared/skills.ts'
+import type { SkillsState } from '../shared/skills.ts'
 import { SKILLS_STATE_VERSION } from '../shared/skills.ts'
 import { DSH_HOME } from './paths.ts'
 
 export const SKILLS_STATE_RELATIVE = join('skills', '.system', 'prompt-tool', 'skills.yml')
-/** 与官方 `SKILL_NAME` 同规则；屏蔽记录按技能名匹配，必须是合法技能名。 */
+/** 与官方 `SKILL_NAME` 同规则；技能目录名、引用校验与调用策略写入共用。 */
 export const SKILL_NAME_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 const MAX_FOLDERS = 200
-const MAX_BLOCKED = 5_000
 
 export type SkillsStateRead =
   | { ok: true; state: SkillsState; exists: boolean }
   | { ok: false; state: SkillsState; message: string }
 
 export function defaultSkillsState(): SkillsState {
-  return { version: SKILLS_STATE_VERSION, blocked: [], folders: [] }
+  return { version: SKILLS_STATE_VERSION, folders: [] }
 }
 
 export function skillsStatePath(dshHome: string = DSH_HOME): string {
@@ -27,34 +29,6 @@ export function skillsStatePath(dshHome: string = DSH_HOME): string {
 }
 
 const pathKey = (value: string): string => process.platform === 'win32' ? value.toLowerCase() : value
-
-function readBlocked(value: unknown): BlockedSkill[] {
-  if (value === undefined) return []
-  if (!Array.isArray(value)) throw new Error('blocked 必须是数组')
-  if (value.length > MAX_BLOCKED) throw new Error('blocked 记录过多')
-  const seen = new Set<string>()
-  return value.map((item) => {
-    if (item === null || typeof item !== 'object' || Array.isArray(item)) throw new Error('blocked 记录必须是映射')
-    const record = item as Record<string, unknown>
-    if (typeof record.name !== 'string' || !SKILL_NAME_PATTERN.test(record.name)) throw new Error(`屏蔽记录的技能名不合法：${String(record.name)}`)
-    if (typeof record.at !== 'string' || record.at.length === 0) throw new Error(`屏蔽记录缺少时间：${record.name}`)
-    if (record.note !== undefined && (typeof record.note !== 'string' || record.note.length > 512)) throw new Error(`屏蔽记录备注不合法：${record.name}`)
-    for (const key of ['model', 'user'] as const) {
-      if (record[key] !== undefined && typeof record[key] !== 'boolean') throw new Error(`屏蔽记录的 ${key} 必须是布尔值：${record.name}`)
-    }
-    // 两端都不屏蔽等价于没有记录，应当删除而不是留一条空记录。
-    if (record.model === false && record.user === false) throw new Error(`屏蔽记录至少要屏蔽一端：${record.name}`)
-    if (seen.has(record.name)) throw new Error(`屏蔽记录重复：${record.name}`)
-    seen.add(record.name)
-    return {
-      name: record.name,
-      at: record.at,
-      ...(record.note === undefined ? {} : { note: record.note }),
-      ...(record.model === undefined ? {} : { model: record.model as boolean }),
-      ...(record.user === undefined ? {} : { user: record.user as boolean }),
-    }
-  })
-}
 
 function readFolders(value: unknown): string[] {
   if (value === undefined) return []
@@ -71,12 +45,15 @@ function readFolders(value: unknown): string[] {
   })
 }
 
-/** 读写共用校验：非法状态不获得文件系统写入权限。 */
+/** 读写共用校验：非法状态不获得文件系统写入权限。
+ *  接受缺失版本、v3（`blocked` 一并忽略，不校验其内容——它已经不影响任何行为）与 v4。 */
 export function validateSkillsState(value: unknown): SkillsState {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) throw new Error('技能状态必须是映射')
   const data = value as Record<string, unknown>
-  if (data.version !== undefined && data.version !== SKILLS_STATE_VERSION) throw new Error(`不支持的技能状态版本：${String(data.version)}`)
-  return { version: SKILLS_STATE_VERSION, blocked: readBlocked(data.blocked), folders: readFolders(data.folders) }
+  if (data.version !== undefined && data.version !== 3 && data.version !== SKILLS_STATE_VERSION) {
+    throw new Error(`不支持的技能状态版本：${String(data.version)}`)
+  }
+  return { version: SKILLS_STATE_VERSION, folders: readFolders(data.folders) }
 }
 
 function stateDocument(raw: string): Document {
@@ -97,9 +74,10 @@ export function readSkillsState(file: string = skillsStatePath()): SkillsStateRe
   }
 }
 
-/** 写状态：Document API 保留注释与未知字段；内容无变化时不落盘；写前核对版本，失败清理暂存文件。 */
+/** 写状态：Document API 保留注释与未知字段；内容无变化时不落盘；写前核对版本，失败清理暂存文件。
+ *  版本号一并抬到 v4，并删除 v3 留下的 `blocked` 键。 */
 export function writeSkillsState(
-  patch: Partial<Pick<SkillsState, 'blocked' | 'folders'>>,
+  patch: Partial<Pick<SkillsState, 'folders'>>,
   file: string = skillsStatePath(),
   expectedContent?: string | null,
 ): SkillsStateRead {
@@ -111,19 +89,10 @@ export function writeSkillsState(
     const current = raw === null ? defaultSkillsState() : validateSkillsState(doc.toJS())
     const next = validateSkillsState({
       version: SKILLS_STATE_VERSION,
-      blocked: patch.blocked ?? current.blocked,
       folders: patch.folders ?? current.folders,
     })
-    if (patch.blocked !== undefined) {
-      if (next.blocked.length === 0) doc.delete('blocked')
-      else doc.set('blocked', doc.createNode(next.blocked.map((item) => ({
-        name: item.name,
-        at: item.at,
-        ...(item.note === undefined ? {} : { note: item.note }),
-        ...(item.model === undefined ? {} : { model: item.model }),
-        ...(item.user === undefined ? {} : { user: item.user }),
-      }))))
-    }
+    doc.set('version', SKILLS_STATE_VERSION)
+    doc.delete('blocked')
     if (patch.folders !== undefined) {
       if (next.folders.length === 0) doc.delete('folders')
       else doc.set('folders', doc.createNode(next.folders))

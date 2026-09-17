@@ -8,13 +8,14 @@ test('fields view：当前值覆盖 base，缺省字段保留稳定默认', () =
     value: {
       ns: 'prompt-tool',
       revision: 3,
+      // base 里残留的旧注册层屏蔽键（skillBlocked）已被弃用：读取时忽略，不会造出清单或调用策略事实。
       base: { writePreset: true, presetTemplate: 'base', skillBlocked: ['base-skill'] },
       value: { writePreset: false, presetTemplate: 'active' },
     },
   })
   assert.equal(fields.writePreset, false)
   assert.equal(fields.presetTemplate, 'active')
-  // 注册层技能事实不在 settings：缺省时保留稳定空默认，不会被 base 里的同名键带出。
+  // 调用策略是技能文件 frontmatter 的事实，不在 settings：缺省时保留稳定空默认，不会被 base 里的旧键带出。
   assert.deepEqual(fields.skillFolders, [])
   assert.deepEqual(fields.skillCatalog, [])
   assert.equal(fields.skillsRoot, '')
@@ -37,11 +38,9 @@ test('fields view：技能清单、引用目录与用户根都取 describe 事�
     source: 'user-dsh',
     rank: 400,
     valid: true,
-    blocked: true,
-    blockedModel: true,
-    blockedUser: true,
+    // 清单条目只带 frontmatter 的调用策略事实：两端各自独立，缺省即两端可调用。
     modelInvocable: true,
-    userInvocable: true,
+    userInvocable: false,
     path: `${path}\\demo-skill\\SKILL.md`,
   }
   const fields = fieldsFromView(bridgeViewFromBoot({
@@ -49,7 +48,8 @@ test('fields view：技能清单、引用目录与用户根都取 describe 事�
     value: {
       ns: 'prompt-tool',
       revision: 1,
-      // describe 载荷：清单、引用目录与用户根都来自注册层扫描事实（屏蔽状态逐条在清单条目上）。
+      // describe 载荷：清单、引用目录与用户根都来自插件对六类官方技能根的扫描事实
+      // （调用策略逐条在清单条目上，且只来自该技能文件自己的 frontmatter）。
       value: {
         activeSkillsDirs: [path],
         skillCatalog: [entry, { id: 'broken-entry' }],
@@ -57,9 +57,22 @@ test('fields view：技能清单、引用目录与用户根都取 describe 事�
       },
     },
   }))
-  assert.deepEqual(fields.skillCatalog, [entry], '缺身份字段的条目被丢弃，其余原样投影')
+  assert.deepEqual(fields.skillCatalog, [entry], '缺身份字段的条目被丢弃，其余按调用策略字段原样投影')
   assert.deepEqual(fields.skillFolders, ['D:\\referenced-skills'])
   assert.equal(fields.skillsRoot, path)
+  // 旧注册层屏蔽字段即使仍留在载荷里也不进投影：条目上只有 frontmatter 的调用策略事实。
+  const legacy = fieldsFromView(bridgeViewFromBoot({
+    ok: true,
+    value: {
+      ns: 'prompt-tool',
+      revision: 1,
+      value: { skillCatalog: [{ ...entry, blocked: true, blockedModel: true, blockedUser: true }] },
+    },
+  }))
+  assert.deepEqual(legacy.skillCatalog, [entry])
+  assert.equal('blocked' in legacy.skillCatalog[0], false, '投影不携带 blocked')
+  assert.equal('blockedModel' in legacy.skillCatalog[0], false, '投影不携带 blockedModel')
+  assert.equal('blockedUser' in legacy.skillCatalog[0], false, '投影不携带 blockedUser')
   // 用户技能根只由 activeSkillsDirs 决定：没有它时根为空，界面据此提示重新读取。
   const missing = fieldsFromView(bridgeViewFromBoot({
     ok: true,

@@ -5,10 +5,11 @@
  *     引用目录里新增或删除的技能会永远留在缓存里；
  *  2. **引用目录的候选指纹变化同样要失效候选缓存**——状态快照只来自 skills.yml，引用目录里
  *     新增 / 改写技能不改变快照，不失效就让模型侧永远看不到（界面有、模型没有）；
- *  3. 状态文件读失败不得回落默认状态——否则一个瞬时坏文件会把屏蔽表与引用目录一起清空；
+ *  3. 状态文件读失败不得回落默认状态——否则一个瞬时坏文件会把状态与引用目录一起清空；
  *  4. 状态文件被删除（`exists:false`）按用户重置处理，但必须留下一条告警。
  *
- *  断言全部落在可观察输出上：accept 收到的状态、各依赖的调用次数与告警文本。 */
+ *  断言全部落在可观察输出上：accept 收到的状态、各依赖的调用次数与告警文本。
+ *  状态文件是 v4（只有引用目录）：调用策略逐条写在技能文件里，不再进这个文件。 */
 import { after, test } from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
@@ -18,7 +19,6 @@ import { setTimeout as sleep } from 'node:timers/promises'
 import { createSkillsReloader, readSkillsState, writeSkillsState } from '../../lib/index.mjs'
 import { createSkillsWatcher } from '../../src/runtime/skills-watcher.ts'
 
-const AT = '2026-09-18T00:00:00.000Z'
 const tempDirs = []
 function makeStateFile() {
   const dir = mkdtempSync(join(tmpdir(), 'pt-skills-refresh-'))
@@ -47,23 +47,23 @@ function makeReloader(file, initialState, candidatesFingerprint = () => 'refs:v1
 
 test('状态文件变化：替换状态、重挂 watcher 并失效清单与候选缓存', () => {
   const { file } = makeStateFile()
-  const written = writeSkillsState({ blocked: [{ name: 'demo', at: AT }], folders: ['D:/referenced'] }, file)
+  const written = writeSkillsState({ folders: ['D:/referenced'] }, file)
   assert.equal(written.ok, true, written.ok ? '' : written.message)
 
-  const { reloader, calls } = makeReloader(file, { version: 3, blocked: [], folders: [] })
+  const { reloader, calls } = makeReloader(file, { version: 4, folders: [] })
   reloader.reload()
   assert.equal(calls.accepted.length, 1)
-  assert.deepEqual(calls.accepted[0].blocked.map((item) => item.name), ['demo'])
+  assert.equal('blocked' in calls.accepted[0], false, 'v4 状态不再有屏蔽表')
   assert.deepEqual(calls.accepted[0].folders, [resolve('D:/referenced')], '引用目录按宿主机绝对路径规范化')
   assert.equal(calls.rewatch, 1, '引用目录集合可能变了，必须重挂')
   assert.equal(calls.invalidateList, 1)
-  assert.equal(calls.invalidateCandidates, 1, '屏蔽表变了，候选缓存必须失效')
+  assert.equal(calls.invalidateCandidates, 1, '状态变了，候选缓存必须失效')
   assert.deepEqual(calls.warns, [])
 })
 
 test('引用目录指纹变化（状态未变）也必须失效候选缓存', () => {
   const { file } = makeStateFile()
-  writeSkillsState({ blocked: [{ name: 'demo', at: AT }], folders: [] }, file)
+  writeSkillsState({ folders: [] }, file)
   const current = readSkillsState(file)
   assert.equal(current.ok, true)
 
@@ -85,15 +85,16 @@ test('引用目录指纹变化（状态未变）也必须失效候选缓存', ()
 
 test('状态文件损坏：保留上一次有效状态、只告警一次，修好后自动恢复', () => {
   const { file } = makeStateFile()
-  writeSkillsState({ blocked: [{ name: 'demo', at: AT }], folders: ['D:/referenced'] }, file)
+  writeSkillsState({ folders: ['D:/referenced'] }, file)
   const valid = readSkillsState(file)
   assert.equal(valid.ok, true)
 
   let fingerprint = 'refs:v1'
   const { reloader, calls } = makeReloader(file, valid.state, () => fingerprint)
-  writeFileSync(file, 'version: 3\nblocked: [oops\n', 'utf8')
+  // v4 的坏点必须落在 folders（v3 的 blocked 现在被忽略，写坏它不会让读取失败）。
+  writeFileSync(file, 'version: 4\nfolders: [oops\n', 'utf8')
   reloader.reload()
-  assert.deepEqual(calls.accepted, [], '坏文件不得清空内存里的屏蔽表与引用目录')
+  assert.deepEqual(calls.accepted, [], '坏文件不得清空内存里的状态与引用目录')
   assert.equal(calls.invalidateList, 1, '文件系统确实动过，清单缓存仍要失效')
   assert.equal(calls.invalidateCandidates, 0, '读不出状态就不该动候选缓存')
   assert.equal(calls.warns.length, 1)
@@ -110,16 +111,17 @@ test('状态文件损坏：保留上一次有效状态、只告警一次，修�
   assert.equal(calls.invalidateCandidates, 1, '读失败也要比对候选指纹')
 
   rmSync(file, { force: true })
-  writeSkillsState({ blocked: [], folders: [] }, file)
+  writeSkillsState({ folders: [] }, file)
   reloader.reload()
   assert.equal(calls.accepted.length, 1, '恢复后接受新的合法状态')
-  assert.deepEqual(calls.accepted[0].blocked, [])
+  assert.deepEqual(calls.accepted[0].folders, [])
   assert.equal(calls.warns.length, 1, '恢复后不再新增告警')
 })
 
 test('状态文件被删除：按空状态处理，但要告警一次', () => {
   const { file } = makeStateFile()
-  writeSkillsState({ blocked: [{ name: 'demo', at: AT }], folders: [] }, file)
+  // 初始状态必须非平凡：空状态与「文件消失后的默认状态」逐字相同，就观察不到重置。
+  writeSkillsState({ folders: [resolve('D:/referenced')] }, file)
   const valid = readSkillsState(file)
   assert.equal(valid.ok, true)
 
@@ -127,7 +129,7 @@ test('状态文件被删除：按空状态处理，但要告警一次', () => {
   rmSync(file, { force: true })
   reloader.reload()
   assert.equal(calls.accepted.length, 1, '文件消失按用户重置处理')
-  assert.deepEqual(calls.accepted[0].blocked, [])
+  assert.deepEqual(calls.accepted[0].folders, [])
   assert.equal(calls.warns.length, 1, '不能让设置悄悄消失')
   assert.match(calls.warns[0], /状态文件不存在/u)
 
@@ -135,9 +137,10 @@ test('状态文件被删除：按空状态处理，但要告警一次', () => {
   assert.equal(calls.warns.length, 1, '同一缺失状态只告警一次')
   assert.equal(calls.invalidateCandidates, 1, '第二次快照已同步，不再算变化')
 
-  writeSkillsState({ blocked: [{ name: 'demo', at: AT }], folders: [] }, file)
+  writeSkillsState({ folders: [resolve('D:/referenced')] }, file)
   reloader.reload()
   assert.equal(calls.accepted.length, 2, '文件回来后状态恢复')
+  assert.deepEqual(calls.accepted[1].folders, [resolve('D:/referenced')])
   assert.equal(calls.warns.length, 1, '恢复本身不再额外告警')
 })
 
@@ -160,7 +163,7 @@ test('watcher：无法监听的目录只报告一次，不阻断其他目录', (
 
 test('真实装配：状态文件写入经 watcher 走完整条刷新链路', async () => {
   const { dir, file } = makeStateFile()
-  writeSkillsState({ blocked: [], folders: [] }, file)
+  writeSkillsState({ folders: [] }, file)
   const initial = readSkillsState(file)
   assert.equal(initial.ok, true)
 
@@ -168,12 +171,12 @@ test('真实装配：状态文件写入经 watcher 走完整条刷新链路', as
   const watcher = createSkillsWatcher(() => [dir], () => { reloader.reload() })
   try {
     watcher.watch()
-    writeSkillsState({ blocked: [{ name: 'demo', at: AT }], folders: [] }, file)
+    writeSkillsState({ folders: [resolve('D:/referenced')] }, file)
     const deadline = Date.now() + 5000
     while (calls.accepted.length === 0 && Date.now() < deadline) await sleep(50)
     assert.equal(calls.accepted.length, 1,
       `watcher 事件必须走完整个刷新装配（invalidateList=${calls.invalidateList}，warns=${calls.warns.length}）`)
-    assert.deepEqual(calls.accepted[0].blocked.map((item) => item.name), ['demo'])
+    assert.deepEqual(calls.accepted[0].folders, [resolve('D:/referenced')])
     assert.equal(calls.invalidateList >= 1, true)
   } finally {
     watcher.close()

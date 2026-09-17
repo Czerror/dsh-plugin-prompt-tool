@@ -1,9 +1,12 @@
-// 技能清单扫描与来源分组（注册层屏蔽模型）。
-// 技能实体留在官方各自技能根里；本文件覆盖注册层屏蔽模型新增的必要行为：
-// 六类官方技能根的优先级与顺序、一层发现规则、按会话 cwd 解析项目来源、同名遮蔽与屏蔽标记。
+// 技能清单扫描与来源分组（文件层调用策略模型）。
+// 技能实体留在官方各自技能根里；调用策略的唯一真相是各技能文件自己的 frontmatter：
+//  - catalogFromScan 只接收扫描结果一个参数（没有屏蔽表）；
+//  - 清单条目携带 modelInvocable / userInvocable 与写入目标 path，没有 blocked* 字段；
+//  - 「停用」是改技能文件，不改任何插件状态，也不产生第二个候选。
+// 本文件覆盖：六类官方技能根的优先级与顺序、一层发现规则、按会话 cwd 解析项目来源、同名遮蔽与调用策略投影。
 import { after, test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -25,7 +28,7 @@ process.env.DSH_AGENTS_HOME = agentsHome
 process.env.DSH_BUNDLED_SKILL_DIR = bundledDir
 
 const { catalogFromScan, resolveProjectRoot, scanRoot, scanRoots, skillRoots } = await import('../../src/host/skills-scan.ts')
-const { SKILL_SOURCES } = await import('../../src/shared/skills.ts')
+const { SKILLS_STATE_VERSION, SKILL_SOURCES } = await import('../../src/shared/skills.ts')
 const { groupBySource } = await import('../../src/client/features/skills/skill-status.ts')
 const { BRIDGE_ENDPOINTS, SETTINGS_BRIDGE_PREFIX } = await import('../../src/shared/bridge-contract.ts')
 const { registerSettingsBridge } = await import('../../src/runtime/settings-bridge.ts')
@@ -49,7 +52,9 @@ mkdirSync(join(project, '.git'), { recursive: true })
 mkdirSync(cwd, { recursive: true })
 writeSkill(join(project, '.dsh', 'skills'), 'project-skill', { name: 'project-skill', description: '项目技能' })
 writeSkill(join(project, '.dsh', 'skills'), 'shared', { name: 'shared-name', description: '项目同名技能' })
-writeSkill(join(project, '.agents', 'skills'), 'agents-skill', { name: 'agents-skill', description: '项目 agents 技能' })
+// 项目 agents 技能：文件里声明「模型端不可调用」，清单必须直接投影这个事实。
+writeSkill(join(project, '.agents', 'skills'), 'agents-skill',
+  { name: 'agents-skill', description: '项目 agents 技能', 'disable-model-invocation': true, 'user-invocable': false })
 writeSkill(referenced, 'ref-skill', { name: 'ref-skill', description: '引用目录技能' })
 writeSkill(skillsRoot, 'user-skill', { name: 'user-skill', description: '用户技能' })
 writeSkill(skillsRoot, 'shared', { name: 'shared-name', description: '用户同名技能' })
@@ -61,12 +66,11 @@ writeFileSync(join(skillsRoot, 'broken-skill', 'SKILL.md'), '---\ndescription: �
 // 插件状态文件的点目录由官方一层扫描天然跳过，不得出现在清单里。
 mkdirSync(join(skillsRoot, '.system', 'prompt-tool'), { recursive: true })
 
-const BLOCKED = new Map([['agents-skill', 'all']])
 const FOLDERS = [referenced]
 const roots = skillRoots({ cwd, dshHome, folders: FOLDERS })
-const catalog = catalogFromScan(scanRoots(roots), BLOCKED)
+const catalog = catalogFromScan(scanRoots(roots))
 
-const listSkills = (sessionCwd) => catalogFromScan(scanRoots(skillRoots({ cwd: sessionCwd, dshHome, folders: FOLDERS })), BLOCKED)
+const listSkills = (sessionCwd) => catalogFromScan(scanRoots(skillRoots({ cwd: sessionCwd, dshHome, folders: FOLDERS })))
 
 // 分工：逐条扫描规则（一层发现、有效性、调用声明、根指纹）由 test/host/skills-scan.test.mjs 覆盖，
 // 这里验证六类技能根同时存在时的整体投影与清单事实——两者互补，不是重复。
@@ -87,32 +91,44 @@ test('skillRoots：六类技能根按官方优先级排列，无 cwd 时不解�
   assert.equal(resolveProjectRoot(sandbox), sandbox)
 })
 
-test('catalogFromScan：一层发现、来源优先级、屏蔽标记与同名遮蔽', () => {
+test('catalogFromScan：一层发现、来源优先级、调用策略投影与同名遮蔽', () => {
   const byName = (name, source) => catalog.find((entry) => entry.name === name && (source === undefined || entry.source === source))
   const projectEntry = byName('project-skill')
   assert.equal(projectEntry.source, 'project-dsh')
   assert.equal(projectEntry.rank, 100)
   assert.equal(projectEntry.valid, true)
-  assert.equal(projectEntry.blocked, false)
+  // 调用策略字段是唯一事实：缺省两端都可调用；写入目标 path 就是技能文件本身。
   assert.equal(projectEntry.modelInvocable, true)
   assert.equal(projectEntry.userInvocable, true)
-  assert.equal(projectEntry.winnerId, undefined)
   assert.equal(projectEntry.path, join(project, '.dsh', 'skills', 'project-skill', 'SKILL.md'))
+  assert.equal(projectEntry.winnerId, undefined)
+  // 屏蔽相关的旧字段彻底消失（它们在注册层模型里存在过）。
+  for (const gone of ['blocked', 'blockedModel', 'blockedUser']) {
+    assert.equal(gone in projectEntry, false, `${gone} 不再是清单字段`)
+  }
+  assert.deepEqual(Object.keys(projectEntry).sort(), [
+    'description', 'dir', 'folder', 'id', 'modelInvocable', 'name', 'path', 'rank', 'source', 'userInvocable', 'valid',
+  ])
 
   // 引用目录按自定义来源注册（只读引用，实体留在原处）。
   assert.equal(byName('ref-skill').source, 'custom')
   assert.equal(byName('ref-skill').rank, 300)
   assert.equal(byName('bundled-skill').rank, 600)
 
-  // 屏蔽是注册层状态，不改技能文件：文件仍在原处且内容不变。
-  const blockedEntry = byName('agents-skill')
-  assert.equal(blockedEntry.blocked, true)
-  assert.equal(blockedEntry.blockedModel, true, '完全屏蔽：模型端被屏蔽')
-  assert.equal(blockedEntry.blockedUser, true, '完全屏蔽：用户端被屏蔽')
-  assert.equal(blockedEntry.source, 'project-agents')
-  assert.equal(byName('user-skill').blocked, false)
-  assert.equal(byName('user-skill').blockedModel, false)
-  assert.equal(byName('user-skill').blockedUser, false)
+  // 「停用」写在技能文件里：清单如实投影两个端，不改技能文件本身。
+  const declaredOff = byName('agents-skill')
+  assert.equal(declaredOff.source, 'project-agents')
+  assert.equal(declaredOff.modelInvocable, false, 'frontmatter 声明模型端不可调用')
+  assert.equal(declaredOff.userInvocable, false, 'frontmatter 声明用户端不可调用')
+  assert.equal(declaredOff.path, join(project, '.agents', 'skills', 'agents-skill', 'SKILL.md'))
+  const raw = readFileSync(declaredOff.path, 'utf8')
+  assert.match(raw, /^disable-model-invocation: true$/m)
+  assert.match(raw, /^user-invocable: false$/m)
+  assert.match(raw, /^body$/m, '扫描不改技能文件正文')
+  // 只声明一端时另一端仍是可调用。
+  const userSkill = byName('user-skill')
+  assert.equal(userSkill.modelInvocable, true)
+  assert.equal(userSkill.userInvocable, true)
 
   // 同名裁决：项目来源胜出，用户来源标注被遮蔽。
   const shared = catalog.filter((entry) => entry.name === 'shared-name')
@@ -128,6 +144,7 @@ test('catalogFromScan：一层发现、来源优先级、屏蔽标记与同名�
   assert.equal(broken.issue, 'frontmatter 缺少 name')
   assert.equal(broken.name, 'broken-skill')
   assert.equal(broken.winnerId, undefined)
+  assert.equal(broken.modelInvocable, true, '无效技能的策略字段仍如实读出（判据是 valid）')
 
   // 点目录不参与发现。
   assert.equal(catalog.some((entry) => entry.folder === '.system'), false)
@@ -148,15 +165,34 @@ test('groupBySource：分组顺序与来源优先级一致，空分组不返回'
   assert.deepEqual(only.map((group) => group.source), ['bundled'])
 })
 
+test('调用策略写入后清单随之变化：catalogFromScan 读的就是文件事实', async () => {
+  const { setSkillInvocation } = await import('../../src/host/skills-policy.ts')
+  const file = join(referenced, 'ref-skill', 'SKILL.md')
+  const before = readFileSync(file, 'utf8')
+  try {
+    const entry = (sessionCwd) => listSkills(sessionCwd).find((item) => item.name === 'ref-skill')
+    assert.deepEqual([entry(cwd).modelInvocable, entry(cwd).userInvocable], [true, true], '起始两端可调用')
+    assert.equal(setSkillInvocation(file, 'model').ok, true)
+    assert.deepEqual([entry(cwd).modelInvocable, entry(cwd).userInvocable], [false, true], '只改模型端')
+    assert.equal(setSkillInvocation(file, 'all').ok, true)
+    assert.deepEqual([entry(cwd).modelInvocable, entry(cwd).userInvocable], [false, false], '两端都停用')
+    assert.equal(setSkillInvocation(file, 'none').ok, true)
+    assert.deepEqual([entry(cwd).modelInvocable, entry(cwd).userInvocable], [true, true], '恢复两端')
+    // 同一次发现里同名条目始终只有一个：不存在影子/覆盖候选。
+    assert.equal(listSkills(cwd).filter((item) => item.name === 'ref-skill').length, 1)
+  } finally {
+    writeFileSync(file, before, 'utf8')
+  }
+})
+
 test('/skills-list 端点：按会话 cwd 解析项目来源，无存活会话时只列用户与内置来源', async () => {
   const handlers = new Map()
   const state = {
     skillsRoot,
-    blocked: [...BLOCKED.keys()],
     folders: [...FOLDERS],
     listSkills,
-    setSkillBlocked: () => ({ ok: true, state: { version: 3, blocked: [], folders: FOLDERS }, exists: true }),
-    patchSkillFolders: () => ({ ok: true, state: { version: 3, blocked: [], folders: FOLDERS }, exists: true }),
+    setSkillPolicy: () => ({ ok: true, changed: true, invocation: { modelInvocable: false, userInvocable: false } }),
+    patchSkillFolders: () => ({ ok: true, state: { version: SKILLS_STATE_VERSION, folders: FOLDERS }, exists: true }),
   }
   const sctx = {
     settings: { describe: () => [], get: () => undefined, mutate: async () => {} },
@@ -192,8 +228,15 @@ test('/skills-list 端点：按会话 cwd 解析项目来源，无存活会话�
     ['project-dsh', 'project-agents', 'custom', 'user-dsh', 'user-agents', 'bundled'])
   assert.equal(value.skills.some((skill) => skill.name === 'project-skill'), true)
   assert.deepEqual(value.roots, [skillsRoot])
-  assert.deepEqual(value.blocked, ['agents-skill'])
   assert.deepEqual(value.folders, [referenced])
+  assert.equal('blocked' in value, false, '响应里不再有屏蔽表（避免第二个真相）')
+  // 按端事实随清单下发：声明停用的技能如实带 modelInvocable/userInvocable。
+  const agentsEntry = value.skills.find((skill) => skill.name === 'agents-skill')
+  assert.deepEqual([agentsEntry.modelInvocable, agentsEntry.userInvocable], [false, false])
+  for (const skill of value.skills) {
+    assert.equal(typeof skill.modelInvocable, 'boolean', '每条清单都必须带按端调用策略')
+    assert.equal(typeof skill.userInvocable, 'boolean')
+  }
 
   // 无存活会话（未给 sessionId / sessionId 未知）：不拿进程 cwd 兜底，项目来源整组缺席。
   for (const body of [{}, { sessionId: 'gone' }]) {

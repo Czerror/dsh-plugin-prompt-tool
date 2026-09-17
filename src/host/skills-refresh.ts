@@ -3,7 +3,7 @@
  *  为什么单独成模块：这里有四条必须显式锁住的规则。
  *
  *  1. **读盘失败不能回落默认状态**。`readSkillsState` 失败时仍会返回一个默认状态，直接 accept
- *     会让瞬时坏文件（手工编辑到一半、写入被中断）把内存里的屏蔽表与引用目录一起清空。
+ *     会让瞬时坏文件（手工编辑到一半、写入被中断）把内存里的状态与引用目录一起清空。
  *     失败时保留上一份有效状态，只告警一次。
  *  2. **候选来源的内容变化也要失效候选缓存**。状态快照只来自 `skills.yml`，而用户引用的技能
  *     文件夹里新增 / 删除 / 改写技能都不改变快照；官方 `SkillRegistry` 按 revision 缓存合并结果，
@@ -58,7 +58,7 @@ export function createSkillsReloader(deps: SkillsReloaderDeps): SkillsReloader {
         if (read.exists === false) {
           if (!fileMissing) {
             fileMissing = true
-            deps.warn('技能状态文件不存在，已按空状态处理（屏蔽表与引用目录已重置）')
+            deps.warn('技能状态文件不存在，已按空状态处理（引用目录已重置）')
           }
         } else {
           fileMissing = false

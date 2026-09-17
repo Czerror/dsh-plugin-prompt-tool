@@ -35,15 +35,14 @@ function makeHarness() {
   return { ctx, handlers }
 }
 
-/** 注册层屏蔽模型的技能状态替身：技能实体留在官方技能根，插件只提供屏蔽表、引用目录与清单。 */
+/** 文件层调用策略的技能状态替身：技能实体留在官方技能根，插件只提供引用目录、清单与策略写入。 */
 function makeSkillsState(overrides = {}) {
-  const state = { version: 3, blocked: [], folders: [] }
+  const state = { version: 4, folders: [] }
   return {
     skillsRoot: 'D:/isolated/skills',
-    blocked: [],
     folders: [],
     listSkills: () => [],
-    setSkillBlocked: () => ({ ok: true, state, exists: true }),
+    setSkillPolicy: () => ({ ok: true, changed: true, invocation: { modelInvocable: true, userInvocable: true } }),
     patchSkillFolders: () => ({ ok: true, state, exists: true }),
     ...overrides,
   }
@@ -96,12 +95,12 @@ test('契约：client 前缀与 server 注册前缀同源', () => {
 test('契约：所有端点路径全部注册且无多余', () => {
   const handlers = register()
   const expected = Object.values(BRIDGE_ENDPOINTS)
-  // 注册层屏蔽模型：skillFix / skillToggle / skillsConfig / skillPolicy 已删除，技能端点收敛为 7 个。
+  // 文件层调用策略：skillFix / skillToggle / skillsConfig / skillBlock 已删除，技能端点收敛为 7 个。
   assert.equal(expected.length, 41, 'BRIDGE_ENDPOINTS 应包含当前登记的 41 个端点')
-  for (const removed of ['skillFix', 'skillToggle', 'skillsConfig', 'skillPolicy']) {
-    assert.equal(Object.hasOwn(BRIDGE_ENDPOINTS, removed), false, `${removed} 已随注册层屏蔽模型移除`)
+  for (const removed of ['skillFix', 'skillToggle', 'skillsConfig', 'skillBlock']) {
+    assert.equal(Object.hasOwn(BRIDGE_ENDPOINTS, removed), false, `${removed} 已随旧技能模型移除`)
   }
-  for (const kept of ['skillsList', 'skillBlock', 'skillsFolders', 'skillsImport', 'skillsImportDirectory', 'skillCreate', 'skillDelete']) {
+  for (const kept of ['skillsList', 'skillPolicy', 'skillsFolders', 'skillsImport', 'skillsImportDirectory', 'skillCreate', 'skillDelete']) {
     assert.equal(typeof BRIDGE_ENDPOINTS[kept], 'string', `${kept} 端点必须存在`)
   }
   const registered = [...handlers.keys()].sort()
@@ -111,10 +110,8 @@ test('契约：所有端点路径全部注册且无多余', () => {
 
 test('契约：/bootstrap 聚合 meta + overrides + variables + promptConfigs 供客户端单请求消费', async () => {
   // 技能事实用非空数据断言透传：stub 的默认空表无法区分「如实下发」与「兜底成空」。
-  const blocked = [{ name: 'demo-skill', at: '2026-09-17T00:00:00.000Z', model: false }]
-  const entry = { id: 'user-dsh:D:/isolated/skills:demo-skill', name: 'demo-skill', source: 'user-dsh', rank: 400, valid: true, blocked: true }
+  const entry = { id: 'user-dsh:D:/isolated/skills:demo-skill', name: 'demo-skill', source: 'user-dsh', rank: 400, valid: true, modelInvocable: false, userInvocable: true, path: 'D:/isolated/skills/demo-skill/SKILL.md' }
   const handlers = register(makeSkillsState({
-    blocked,
     folders: ['D:/referenced'],
     listSkills: () => [entry],
   }))
@@ -132,7 +129,7 @@ test('契约：/bootstrap 聚合 meta + overrides + variables + promptConfigs �
   assert.ok(typeof payload.variables.variables === 'object' && typeof payload.variables.enabled === 'boolean')
   assert.ok(Array.isArray(payload.promptConfigs.promptConfigs))
   // 技能事实在同一聚合响应里下发：清单 + 引用目录 + 用户技能根。
-  // 屏蔽状态不单独下发——它已经逐条表达在 skillCatalog 条目的按端标志里。
+  // 调用策略不单独下发——它已经逐条表达在 skillCatalog 条目的 modelInvocable / userInvocable 里。
   assert.deepEqual(payload.activeSkillsDirs, ['D:/isolated/skills'])
   assert.deepEqual(payload.skillFolders, ['D:/referenced'])
   assert.deepEqual(payload.skillCatalog, [entry])

@@ -4,7 +4,7 @@ import type { SettingsScope, SettingsScopeSnapshot } from '@deepseek-ai/dsh-clie
 import type { EngineMeta, PromptConfigDraft } from '../prompt-tool-types.ts'
 import type { PromptToolHostApi } from './host-api.ts'
 import type { PresetModuleFacts } from '../../shared/engine-capabilities.ts'
-import type { SkillBlockScope } from '../../shared/skills.ts'
+import type { SkillPolicyScope } from '../../shared/skills.ts'
 import { bridgeCall, errorMessage, type BridgeResult, type BridgeSettingsView } from './bridge-client.ts'
 import {
   EMPTY_FIELDS,
@@ -145,10 +145,10 @@ export interface PromptToolStore {
   createSkill: (input: { name: string; description: string; content: string }) => Promise<boolean>
   /** 回收站删除用户技能根里的技能目录。 */
   deleteSkill: (folder: string) => Promise<boolean>
-  /** 注册层屏蔽开关：模型端与用户端各自独立，scope='none' 表示恢复该技能。
-   *  返回 false 表示没有提交成功——可能是写盘失败，也可能是上一次保存仍在飞（此时会给出提示，
-   *  调用方不需要区分这两种情况，界面状态由随后的清单刷新决定）。 */
-  setSkillBlocked: (name: string, scope: SkillBlockScope) => Promise<boolean>
+  /** 调用策略开关：改写该技能 SKILL.md frontmatter 的官方两个键，模型端与用户端各自独立，
+   *  scope='none' 表示两端恢复。返回 false 表示没有提交成功——可能是写盘失败（只读目标、链接技能、
+   *  界面陈旧），也可能是上一次保存仍在飞（此时会给出提示）；界面状态由随后的清单刷新决定。 */
+  setSkillPolicy: (name: string, path: string, scope: SkillPolicyScope) => Promise<boolean>
   /** 添加 / 移除引用的技能文件夹（只记引用，不复制文件）。 */
   patchSkillFolders: (folders: string[]) => Promise<boolean>
   /** 打开用户技能根。 */
@@ -614,7 +614,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     })
   }, [refreshRevision, settings, showNotice])
 
-  /** 全局开关保存：技能状态已不进 settings（注册层屏蔽表由自己的端点写入）。 */
+  /** 全局开关保存：技能状态已不进 settings（调用策略直接写技能文件，走自己的端点）。 */
   const persistSwitches = useCallback((onSaved?: () => void): Promise<boolean> => {
     const savedSnapshot = snapshotSwitches(fieldsRef.current)
     return enqueueSave(
@@ -1045,36 +1045,40 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
   }, [load, showNotice])
 
   /** 注册层屏蔽开关：只写插件状态，不改任何技能文件；scope='none' 表示恢复该技能。 */
-  // 屏蔽开关的并发守卫：scope 由「另一端当前状态 + 本次点击」算出，两次连点若都基于旧状态
+  // 调用策略开关的并发守卫：目标范围由「另一端当前状态 + 本次点击」算出，两次连点若都基于旧状态
   // 就会互相覆盖（后一次带着过期的一端提交）。这里用即时生效的 ref 挡住忙期内的重复提交，
   // 同时置起 skillsBusy，让写盘期间界面上的开关与删除按钮一起禁用。
-  const skillBlockRef = useRef(false)
-  const setSkillBlocked = useCallback(async (name: string, scope: SkillBlockScope): Promise<boolean> => {
+  const skillPolicyRef = useRef(false)
+  const setSkillPolicy = useCallback(async (name: string, path: string, scope: SkillPolicyScope): Promise<boolean> => {
     // 界面在 busy 期间会禁用开关，但 React 的状态更新是异步的：极快的连点在 disabled 生效前
     // 仍可能触发第二次提交，这一步是真守卫，不是不可达的防御。
-    if (skillBlockRef.current) {
-      showNotice('error', '技能屏蔽正在保存，请稍候再试')
+    if (skillPolicyRef.current) {
+      showNotice('error', '技能调用策略正在保存，请稍候再试')
       return false
     }
-    skillBlockRef.current = true
+    skillPolicyRef.current = true
     beginSkillWrite()
     try {
-      const res = await bridgeCall('skillBlock', { name, scope })
+      // sessionId 与清单同源：服务端的身份校验必须在同一个工作区视图里做，否则项目技能会被判成陈旧。
+      const sessionId = api.currentSessionId()
+      const res = await bridgeCall('skillPolicy', { name, path, scope, ...(sessionId === undefined ? {} : { sessionId }) })
       if (!res.ok) {
-        showNotice('error', `技能 ${name} 屏蔽设置失败：` + (res.message ?? 'settings bridge unavailable'))
+        showNotice('error', `技能 ${name} 调用策略写入失败：` + (res.message ?? 'settings bridge unavailable'))
         return false
       }
-      showNotice('ok', scope === 'none' ? `已恢复技能：${name}` : `已更新技能 ${name} 的注册层屏蔽`)
+      showNotice('ok', scope === 'none'
+        ? `已恢复技能：${name}`
+        : `已更新技能 ${name} 的调用策略（改写 SKILL.md frontmatter，正文未改动）`)
       await load({ silent: true })
       return true
     } catch (error) {
-      showNotice('error', `技能 ${name} 屏蔽设置失败：` + errorMessage(error))
+      showNotice('error', `技能 ${name} 调用策略写入失败：` + errorMessage(error))
       return false
     } finally {
-      skillBlockRef.current = false
+      skillPolicyRef.current = false
       endSkillWrite()
     }
-  }, [load, showNotice])
+  }, [api, load, showNotice])
 
   /** 添加 / 移除引用的技能文件夹：只记引用，不复制文件。 */
   const patchSkillFolders = useCallback(async (folders: string[]): Promise<boolean> => {
@@ -1179,7 +1183,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     importSkillsDirectory,
     createSkill,
     deleteSkill,
-    setSkillBlocked,
+    setSkillPolicy,
     patchSkillFolders,
     openSkillsDir,
     dirtySwitches,

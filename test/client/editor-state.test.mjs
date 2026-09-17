@@ -39,7 +39,7 @@ test('dirty state：snapshot 深拷贝可变集合并比较全字段', () => {
   assert.deepEqual(snapshot.stages, [{ name: 'a', tools: 'read' }], 'snapshot 深拷贝，隔离保存期间的继续编辑')
   assert.equal(switchesEqual(snapshot, snapshotSwitches({ ...EMPTY_FIELDS, stages: [{ name: 'a', tools: 'read' }] })), true)
   assert.equal(switchesEqual(snapshot, snapshotSwitches({ ...EMPTY_FIELDS, stages: [{ name: 'a', tools: 'write' }] })), false)
-  // 注册层技能事实（清单 / 引用目录 / 用户根）不属于 settings 参数。这里断言快照的键集合
+  // 技能事实（清单 / 引用目录 / 用户根）不属于 settings 参数。这里断言快照的键集合
   // 恰好是参数键：写 Object.hasOwn(snapshot, key) 只会恒真（快照本就只挑参数键），
   // 有人把技能字段塞进 snapshotSwitches 时不会失败。
   assert.deepEqual(

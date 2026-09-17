@@ -13,7 +13,7 @@ process.env.DSH_AGENTS_HOME = join(bridgeHome, 'agents')
 process.env.DSH_BUNDLED_SKILL_DIR = join(bridgeHome, 'bundled-skills')
 const {
   BRIDGE_ENDPOINTS, MAX_BRIDGE_BODY_BYTES, MAX_CHARACTER_CARD_STREAM_BYTES, registerSettingsBridge,
-  blockRecordFor, blockScopeOf, catalogFromScan, readSkillsState, scanRoots, skillRoots, writeSkillsState,
+  catalogFromScan, readSkillInvocation, readSkillsState, scanRoots, setSkillInvocation, skillRoots, writeSkillsState,
 } = await import('../../lib/index.mjs')
 after(() => {
   rmSync(bridgeHome, { recursive: true, force: true })
@@ -22,15 +22,14 @@ after(() => {
   delete process.env.DSH_BUNDLED_SKILL_DIR
 })
 
-/** 注册层屏蔽模型的技能状态替身：技能实体留在官方技能根，插件只提供屏蔽表、引用目录与清单。 */
+/** 文件层调用策略模型的技能状态替身：技能实体留在官方技能根，插件只提供引用目录与清单。 */
 function skillsStateStub(overrides = {}) {
-  const state = { version: 3, blocked: [], folders: [] }
+  const state = { version: 4, folders: [] }
   return {
     skillsRoot: join(bridgeHome, 'skills'),
-    blocked: [],
     folders: [],
     listSkills: () => [],
-    setSkillBlocked: () => ({ ok: true, state, exists: true }),
+    setSkillPolicy: () => ({ ok: true, changed: true, invocation: { modelInvocable: false, userInvocable: false } }),
     patchSkillFolders: () => ({ ok: true, state, exists: true }),
     ...overrides,
   }
@@ -1142,26 +1141,51 @@ function skillsPost(handlers, endpoint) {
   }
 }
 
-test('settings bridge 技能端点：创建 → 注册层屏蔽 → 恢复 → 回收站删除都落在用户技能根', async () => {
+test('settings bridge 技能端点：创建 → 调用策略写入 → 恢复 → 回收站删除都落在用户技能根', async () => {
   const root = makeSkillsRoot()
-  const stateFile = join(root, '.system', 'prompt-tool', 'skills.yml')
   let refreshes = 0
   try {
     const { ctx, handlers } = makeHarness()
-    // 屏蔽开关用真实状态读写（写盘幂等与恢复靠文件事实断言，不用替身假装成功）。
-    const setSkillBlocked = (name, scope) => {
-      const current = readSkillsState(stateFile).state
-      const rest = current.blocked.filter((item) => item.name !== name)
-      return writeSkillsState({
-        blocked: scope === 'none' ? rest : [...rest, blockRecordFor(name, scope, new Date().toISOString())],
-      }, stateFile)
+    // 调用策略用真实文件读写（写盘幂等与恢复靠文件字节断言，不用替身假装成功）。
+    // 身份校验与生产一致：path 必须命中当次扫描的同名有效条目，否则按陈旧界面拒绝。
+    // 用户技能根在下文用 temp 目录直接给出：dshHome 不含它，所以显式列入引用目录参与扫描
+    // （.system 是点目录，一层发现天然跳过，不会被当成技能）。
+    //
+    // 清单缓存也照生产抄（index.ts：按 cwd 缓存 + 写盘后失效）：少了失效这一步，
+    // 端点返回的「新清单」就是写盘前的旧值——这正是被测用例要抓住的行为。
+    const stateFile = join(root, '.system', 'prompt-tool', 'skills.yml')
+    let catalogCache = new Map()
+    const listSkills = (cwd) => {
+      const key = String(cwd)
+      const cached = catalogCache.get(key)
+      if (cached !== undefined) return cached
+      const entries = catalogFromScan(scanRoots(skillRoots({
+        ...(cwd === undefined ? {} : { cwd }),
+        dshHome: root,
+        folders: [root, ...readSkillsState(stateFile).state.folders],
+      })))
+      catalogCache.set(key, entries)
+      return entries
+    }
+    const setSkillPolicy = (name, path, scope, cwd) => {
+      const fresh = listSkills(cwd).find((entry) => entry.name === name && entry.path === path)
+      if (fresh === undefined) return { ok: false, message: `技能已变化，请刷新后重试：${name}` }
+      if (!fresh.valid) return { ok: false, message: `技能无效，无法写入调用策略：${fresh.issue ?? name}` }
+      const written = setSkillInvocation(path, scope)
+      if (written.ok === false) return written
+      catalogCache = new Map()
+      return written
     }
     registerSettingsBridge(ctx, 'prompt-tool', () => ({ available: true, providers: [] }),
-      () => skillsStateStub({ skillsRoot: root, setSkillBlocked }), () => '', () => { refreshes += 1 })
+      () => skillsStateStub({ skillsRoot: root, listSkills, setSkillPolicy }), () => '', () => { refreshes += 1 })
     const postCreate = skillsPost(handlers, 'skillCreate')
-    const postBlock = skillsPost(handlers, 'skillBlock')
+    const postPolicy = skillsPost(handlers, 'skillPolicy')
     const postDelete = skillsPost(handlers, 'skillDelete')
-    const blockedNames = () => readSkillsState(stateFile).state.blocked.map((item) => item.name)
+    const policyOf = (marker) => {
+      const read = readSkillInvocation(marker)
+      assert.equal(read.ok, true, read.message)
+      return read.invocation
+    }
 
     const created = await postCreate({ name: 'demo-skill', description: 'Demo', content: '# demo\n' })
     assert.equal(created.status, 200, created.body.message)
@@ -1177,40 +1201,69 @@ test('settings bridge 技能端点：创建 → 注册层屏蔽 → 恢复 → �
     assert.equal(existsSync(join(root, 'other-skill')), false)
     assert.equal(refreshes, 1, '创建触发一次技能刷新')
 
-    // 屏蔽 = 注册层影子候选：只写插件状态，一个字节的技能文件都不改。
-    const blocked = await postBlock({ name: 'demo-skill', scope: 'all' })
+    // 正常写入：200 并返回**新清单**，清单里的按端事实与文件字节一致。
+    const blocked = await postPolicy({ name: 'demo-skill', path: marker, scope: 'all' })
     assert.equal(blocked.status, 200, blocked.body.message)
-    assert.deepEqual(blocked.body.value.blocked, ['demo-skill'])
-    assert.equal(readFileSync(marker, 'utf8'), body, '屏蔽不改任何技能文件')
-    assert.deepEqual(blockedNames(), ['demo-skill'])
-    // 幂等：重复屏蔽同一技能不产生重复记录。
-    const again = await postBlock({ name: 'demo-skill', scope: 'all' })
-    assert.equal(again.status, 200, again.body.message)
-    assert.deepEqual(again.body.value.blocked, ['demo-skill'])
-    assert.deepEqual(blockedNames(), ['demo-skill'])
-    // 两端独立：只屏蔽模型端时记录显式写 user: false，用户端仍然可调用。
-    const modelOnly = await postBlock({ name: 'demo-skill', scope: 'model' })
-    assert.equal(modelOnly.status, 200, modelOnly.body.message)
-    assert.deepEqual(readSkillsState(stateFile).state.blocked, [{ name: 'demo-skill', at: readSkillsState(stateFile).state.blocked[0].at, user: false }])
-    assert.equal(readFileSync(marker, 'utf8'), body)
-    // 反向：只屏蔽用户端时写 model: false。
-    const userOnly = await postBlock({ name: 'demo-skill', scope: 'user' })
-    assert.equal(userOnly.status, 200, userOnly.body.message)
-    assert.equal(readSkillsState(stateFile).state.blocked[0].model, false)
-    assert.equal(readSkillsState(stateFile).state.blocked[0].user, undefined)
-    // 非法载荷先于写盘拒绝：非法技能名、缺失 scope、非法取值。
-    assert.equal((await postBlock({ name: 'Bad Name', scope: 'all' })).status, 409)
-    assert.equal((await postBlock({ name: 'demo-skill' })).status, 400)
-    assert.equal((await postBlock({ name: 'demo-skill', scope: 'yes' })).status, 400)
-    assert.equal(readSkillsState(stateFile).state.blocked.length, 1)
+    const blockedEntry = blocked.body.value.skills.find((skill) => skill.name === 'demo-skill')
+    assert.ok(blockedEntry, '响应必须带回新清单')
+    assert.deepEqual([blockedEntry.modelInvocable, blockedEntry.userInvocable], [false, false], '两端都停用')
+    assert.deepEqual(policyOf(marker), { modelInvocable: false, userInvocable: false })
+    assert.match(readFileSync(marker, 'utf8'), /^disable-model-invocation: true$/m)
+    assert.match(readFileSync(marker, 'utf8'), /^user-invocable: false$/m)
+    assert.equal(readFileSync(marker, 'utf8').includes('# demo'), true, '正文不得被改写')
 
-    // 恢复：删除屏蔽记录，官方候选立刻回到胜出位置。
-    const restored = await postBlock({ name: 'demo-skill', scope: 'none' })
+    // 幂等：同一 scope 重复写入不产生额外变化（第二次是零写入）。
+    const again = await postPolicy({ name: 'demo-skill', path: marker, scope: 'all' })
+    assert.equal(again.status, 200, again.body.message)
+    assert.equal(again.body.value.skills.find((skill) => skill.name === 'demo-skill').modelInvocable, false)
+    assert.deepEqual(policyOf(marker), { modelInvocable: false, userInvocable: false })
+
+    // 两端独立：只关模型端时用户端仍可调用。
+    const modelOnly = await postPolicy({ name: 'demo-skill', path: marker, scope: 'model' })
+    assert.equal(modelOnly.status, 200, modelOnly.body.message)
+    assert.deepEqual(policyOf(marker), { modelInvocable: false, userInvocable: true })
+    assert.match(readFileSync(marker, 'utf8'), /^user-invocable: true$/m)
+    // 反向：只关用户端时模型端仍可调用。
+    const userOnly = await postPolicy({ name: 'demo-skill', path: marker, scope: 'user' })
+    assert.equal(userOnly.status, 200, userOnly.body.message)
+    assert.deepEqual(policyOf(marker), { modelInvocable: true, userInvocable: false })
+
+    // 参数缺失或非法：400，先于任何写盘。
+    const beforeInvalid = readFileSync(marker, 'utf8')
+    assert.equal((await postPolicy({ name: 'demo-skill', scope: 'all' })).status, 400, '缺 path')
+    assert.equal((await postPolicy({ path: marker, scope: 'all' })).status, 400, '缺 name')
+    assert.equal((await postPolicy({ name: 'demo-skill', path: marker })).status, 400, '缺 scope')
+    assert.equal((await postPolicy({ name: 'demo-skill', path: marker, scope: 'yes' })).status, 400, '非法 scope')
+    assert.equal((await postPolicy({ name: '', path: marker, scope: 'all' })).status, 400, '空 name')
+    assert.equal((await postPolicy({ name: 'demo-skill', path: '', scope: 'all' })).status, 400, '空 path')
+    assert.equal(readFileSync(marker, 'utf8'), beforeInvalid, '非法参数不得写盘')
+
+    // path 与最新扫描不一致（陈旧界面 / 伪造路径）：409，且磁盘文件逐字节不变。
+    const stale = await postPolicy({ name: 'demo-skill', path: join(root, 'demo-skill', 'OTHER.md'), scope: 'all' })
+    assert.equal(stale.status, 409, stale.body.message)
+    assert.equal(stale.body.code, 'skill-policy-rejected')
+    assert.equal(readFileSync(marker, 'utf8'), beforeInvalid, '身份校验失败不得写盘')
+    // 同名的另一个真实文件与不存在的技能名同样 409。
+    assert.equal((await postPolicy({ name: 'missing-skill', path: marker, scope: 'all' })).status, 409)
+    assert.equal((await postPolicy({ name: 'demo-skill', path: join(root, 'not-there', 'SKILL.md'), scope: 'all' })).status, 409)
+    assert.equal(readFileSync(marker, 'utf8'), beforeInvalid)
+    // 刷新次数（此处）：创建 1 次 + 4 次成功的策略写入（含内容无变化的幂等重写：
+    // 端点按「写入成功」回调，不区分是否真的改了字节）= 5；被拒的 400/409 请求一次都不触发。
+    assert.equal(refreshes, 5,
+      `创建与每次成功策略写入各触发一次刷新（当前 ${refreshes}）；被拒请求不触发`)
+
+    // 恢复：两端回到可调用。
+    const restored = await postPolicy({ name: 'demo-skill', path: marker, scope: 'none' })
     assert.equal(restored.status, 200, restored.body.message)
-    assert.deepEqual(restored.body.value.blocked, [])
-    assert.deepEqual(blockedNames(), [])
-    assert.equal(readFileSync(marker, 'utf8'), body)
-    assert.equal(refreshes, 6, '创建 / 屏蔽 / 重复屏蔽 / 只屏蔽模型 / 只屏蔽用户 / 恢复各触发一次技能刷新')
+    const restoredEntry = restored.body.value.skills.find((skill) => skill.name === 'demo-skill')
+    assert.deepEqual([restoredEntry.modelInvocable, restoredEntry.userInvocable], [true, true])
+    assert.deepEqual(policyOf(marker), { modelInvocable: true, userInvocable: true })
+    assert.match(readFileSync(marker, 'utf8'), /^disable-model-invocation: false$/m)
+    assert.match(readFileSync(marker, 'utf8'), /^user-invocable: true$/m)
+    // 恢复本身也是一次成功写入：5（创建 + 4 次策略写入）+ 1 = 6。
+    assert.equal(refreshes, 6)
+    // 整轮写入都不得在技能目录里留下暂存文件。
+    assert.deepEqual(readdirSync(join(root, 'demo-skill')), ['SKILL.md'])
 
     // 回收站删除：整个技能目录移入用户根下的 .system/prompt-tool/.trash。
     const removed = await postDelete({ folder: 'demo-skill' })
@@ -1221,6 +1274,7 @@ test('settings bridge 技能端点：创建 → 注册层屏蔽 → 恢复 → �
     assert.equal(existsSync(join(root, '.system', 'prompt-tool', '.trash', trash[0], 'demo-skill', 'SKILL.md')), true, '技能目录可人工恢复')
     assert.equal((await postDelete({ folder: '../escape' })).status, 400)
     assert.equal((await postDelete({ folder: 'missing-skill' })).status, 400)
+    // 删除成功 = 6 + 1 = 7（紧随其后的 400 拒绝请求不触发刷新）。
     assert.equal(refreshes, 7, '回收站删除再触发一次刷新')
   } finally { rmSync(root, { recursive: true, force: true }) }
 })
@@ -1278,11 +1332,12 @@ test('settings bridge /skills-folders 只登记引用路径，不复制也不改
     const before = readFileSync(join(referenced, 'ref-skill', 'SKILL.md'), 'utf8')
     const { ctx, handlers } = makeHarness()
     // 引用目录进入扫描来源（custom 优先级 300），与状态文件同源。
+    // 用户技能根是 dshHome 下的 skills/：这里显式给根目录，让用户根与会话无关地可扫描。
     const listSkills = (cwd) => catalogFromScan(scanRoots(skillRoots({
       cwd,
       dshHome: root,
       folders: readSkillsState(stateFile).state.folders,
-    })), new Map(readSkillsState(stateFile).state.blocked.map((item) => [item.name, blockScopeOf(item)])))
+    })))
     registerSettingsBridge(ctx, 'prompt-tool', () => ({ available: true, providers: [] }),
       () => skillsStateStub({
         skillsRoot: root,

@@ -4,7 +4,7 @@
  *  或者漏掉真实存在的技能。用例全部在独立临时目录里构造真实文件，不依赖共享状态。 */
 import { after, test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import {
@@ -155,26 +155,40 @@ test('同名裁决：按优先级取首个有效技能，无效者不参与', ()
   assert.equal(markWinners(withInvalid).get('demo'), 'user-dsh:/u:demo', '无效技能让位给下一个同名有效技能')
 })
 
-test('清单投影：屏蔽范围映射到两端标志，被遮蔽条目带 winnerId', () => {
+test('清单投影：调用策略直接取自 frontmatter，被遮蔽条目带 winnerId', () => {
   const project = scanned({ id: 'project-dsh:/p:demo', source: 'project-dsh', rank: SKILL_SOURCES['project-dsh'].rank })
   const bundled = scanned({ id: 'bundled:/b:demo', source: 'bundled', rank: SKILL_SOURCES.bundled.rank })
 
-  const [onlyModelBlocked] = catalogFromScan([project], new Map([['demo', 'model']]))
-  assert.deepEqual(
-    [onlyModelBlocked.blocked, onlyModelBlocked.blockedModel, onlyModelBlocked.blockedUser],
-    [true, true, false],
-    '只关模型端时用户端仍可用',
-  )
+  // 单参调用：没有屏蔽表，策略整段来自扫描结果。
+  const [onlyModelOff] = catalogFromScan([scanned({
+    id: 'project-dsh:/p:demo',
+    source: 'project-dsh',
+    rank: SKILL_SOURCES['project-dsh'].rank,
+    modelInvocable: false,
+    userInvocable: true,
+  })])
+  assert.deepEqual([onlyModelOff.modelInvocable, onlyModelOff.userInvocable], [false, true], '只关模型端时用户端仍可用')
+  assert.equal(onlyModelOff.path, '/u/demo/SKILL.md', '清单条目带写入目标路径（身份校验依据）')
+  for (const gone of ['blocked', 'blockedModel', 'blockedUser']) {
+    assert.equal(gone in onlyModelOff, false, `${gone} 不再是清单字段`)
+  }
 
-  const [allBlocked] = catalogFromScan([project], new Map([['demo', 'all']]))
-  assert.deepEqual([allBlocked.blocked, allBlocked.blockedModel, allBlocked.blockedUser], [true, true, true])
+  const [bothOff] = catalogFromScan([scanned({
+    id: 'project-dsh:/p:demo',
+    source: 'project-dsh',
+    rank: SKILL_SOURCES['project-dsh'].rank,
+    modelInvocable: false,
+    userInvocable: false,
+  })])
+  assert.deepEqual([bothOff.modelInvocable, bothOff.userInvocable], [false, false])
 
-  const catalog = catalogFromScan([project, bundled], new Map())
+  const catalog = catalogFromScan([project, bundled])
+  assert.equal(catalog.length, 2, '单参调用不做任何过滤：无效与遮蔽条目都保留')
   const winner = catalog.find((item) => item.id === project.id)
   const shadowed = catalog.find((item) => item.id === bundled.id)
   assert.equal(winner.winnerId, undefined, '胜出者不标注被遮蔽')
   assert.equal(shadowed.winnerId, project.id, '失败者标注胜出者 id')
-  assert.equal(shadowed.blocked, false, '没有被屏蔽就不带屏蔽标志')
+  assert.deepEqual([shadowed.modelInvocable, shadowed.userInvocable], [true, true], '被遮蔽不等于被停用')
 })
 
 test('scanRoots 按根顺序拼接各来源结果', () => {
@@ -240,11 +254,31 @@ test('根指纹：技能集合或标记文件变化后失效，无变化时保�
   const afterTouch = rootsFingerprint(roots)
   assert.notEqual(afterTouch, added, '既有技能内容变化必须改变指纹')
 
-  // 等长改写 + 把 mtime 还原：size 与 mtime 都一样，判据仍必须变化（ctime 抓得住）。
+  // 等长改写 + 把 mtime 还原：size 与 mtime 都一样，判据只能靠 ctime。
+  // Windows/NTFS 的 ctime 不保证亚毫秒级推进（实测同一次写入前后可能拿到同一个 ctime），
+  // 所以先确认「这次改写确实让 ctime 前进」，再断言指纹变化——避免把文件系统粒度误报成产品缺陷。
+  // 注意 stat.size 是字节数、String.length 是 UTF-16 码元数：正文含中文时两者不等，比较必须同单位。
   const original = readFileSync(marker, 'utf8')
+  const sizeBeforeRewrite = statSync(marker).size
+  const ctimeBefore = statSync(marker).ctimeMs
   writeFileSync(marker, original.replace('description: A', 'description: B'), 'utf8')
   utimesSync(marker, past, past)
-  assert.notEqual(rootsFingerprint(roots), afterTouch, '等长改写并还原 mtime 也必须让指纹变化')
+  assert.equal(statSync(marker).size, sizeBeforeRewrite, '改写必须等长（size 帮不上忙，才轮到 ctime）')
+  assert.equal(readFileSync(marker, 'utf8').includes('description: B'), true, '改写必须真的生效')
+  if (statSync(marker).ctimeMs === ctimeBefore) {
+    // ctime 判据不可用：显式记录并退化为「判据确实是启发式」的断言（不假装成功）。
+    process.stderr.write('[skills-scan] 提示：本次等长改写的 ctimeMs 未变化（文件系统时间戳粒度），跳过 ctime 专属断言\n')
+    assert.equal(rootsFingerprint(roots), afterTouch, 'ctime 未变时指纹相同是正确行为（判据是启发式）')
+  } else {
+    assert.notEqual(rootsFingerprint(roots), afterTouch, '等长改写并还原 mtime 也必须让指纹变化')
+  }
+
+  // 追加内容使 size 变化：与时间戳粒度无关的强判据，必须改变指纹。
+  const beforeAppend = rootsFingerprint(roots)
+  const sizeBeforeAppend = statSync(marker).size
+  writeFileSync(marker, `${readFileSync(marker, 'utf8')}# 追加一行\n`, 'utf8')
+  assert.notEqual(statSync(marker).size, sizeBeforeAppend, 'size 必须真的变了（这是本判据的前提）')
+  assert.notEqual(rootsFingerprint(roots), beforeAppend, 'size 变化必须改变指纹')
 
   // 删除技能目录 → 指纹变化。
   const current = rootsFingerprint(roots)

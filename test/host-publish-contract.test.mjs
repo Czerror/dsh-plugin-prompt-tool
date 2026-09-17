@@ -369,14 +369,14 @@ test('/meta 预设下拉读 value.meta（不是顶层 meta 扩展字段）', () 
   assert.doesNotMatch(settings, /res\.meta\?\.meta/)
 })
 
-test('技能页展示用户技能根与注册层屏蔽开关，引用目录只登记路径', () => {
+test('技能页展示用户技能根与调用策略开关，引用目录只登记路径', () => {
   assert.match(skillsSettings, /fields\.skillsRoot/)
   assert.match(skillsSettings, /t\('skills\.library\.title'\)/)
   assert.match(skillsSettings, /t\('skills\.library\.open'\)/)
-  // 停用 = 注册层屏蔽：只写插件状态（setSkillBlocked），不改技能文件。
-  assert.match(skillsSettings, /store\.setSkillBlocked\(/)
-  assert.doesNotMatch(skillsSettings, /entityRoot|libraryRoot|\.system/, '受管实体库随注册层屏蔽模型移除')
-  assert.doesNotMatch(skillsSettings, /rankBase|moveUp|moveDown|skills\.row\.move/, '排序与排序基数随注册层屏蔽模型移除')
+  // 停用 = 改写技能文件 frontmatter 的两个官方键：写入调用带 name 与 path（服务端再校验身份）。
+  assert.match(skillsSettings, /store\.setSkillPolicy\(/)
+  assert.doesNotMatch(skillsSettings, /entityRoot|libraryRoot|\.system/, '受管实体库随旧技能模型移除')
+  assert.doesNotMatch(skillsSettings, /rankBase|moveUp|moveDown|skills\.row\.move/, '排序与排序基数随旧技能模型移除')
   // 引用文件夹只登记路径（patchSkillFolders），不再是可增删的发现根管理界面。
   assert.match(skillsSettings, /store\.patchSkillFolders\(/)
   assert.match(skillsSettings, /t\('skills\.folders\.add'\)/)

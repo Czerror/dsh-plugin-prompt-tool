@@ -1,13 +1,13 @@
 import { memo, type ReactNode } from 'react'
 import { Switch } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SkillCatalogEntry } from '../../data/prompt-tool-fields.ts'
-import type { SkillBlockScope } from '../../../shared/skills.ts'
+import type { SkillPolicyScope } from '../../../shared/skills.ts'
 import { HintTooltip } from '../../ui/HintTooltip.tsx'
 import { StatusBadge } from '../../ui/StatusBadge.tsx'
 import type { PromptToolTranslate } from '../../locales.ts'
 import sharedCss from '../../ui/controls.module.css'
 import featureCss from './skills.module.css'
-import { scopeAfterToggle, skillShadowed, skillStatusLabel, skillStatusTone } from './skill-status.ts'
+import { scopeAfterToggle, skillShadowed, skillStatusLabel, skillStatusTone, skillUnavailable } from './skill-status.ts'
 
 const ui = { ...sharedCss, ...featureCss }
 
@@ -17,22 +17,23 @@ export interface SkillRowProps {
   busy: boolean
   /** 只有用户技能根里的技能可以删除；其他来源只读（改文件请到对应目录）。 */
   deletable: boolean
-  /** 设置注册层屏蔽范围：'none' 表示恢复该技能。 */
-  onSetScope: (name: string, scope: SkillBlockScope) => void
+  /** 写调用策略：'none' 表示两端恢复。path 由清单提供，服务端会再校验一次身份。 */
+  onSetScope: (name: string, path: string, scope: SkillPolicyScope) => void
   onDelete: (folder: string) => void
 }
 
-/** 技能行 memo：两个注册层开关与删除是仅有的写操作，其余全部只读展示。 */
+/** 技能行 memo：两个调用策略开关与删除是仅有的写操作，其余全部只读展示。 */
 export const SkillRow = memo(function SkillRow(props: SkillRowProps): ReactNode {
   const { skill, t, busy } = props
   const status = skillStatusLabel(skill, t)
   const hint = skill.path ?? `${skill.dir}\\${skill.folder}`
-  // 先归一成两个布尔：同一个表达式在 checked 与 scopeAfterToggle 里含义相反（当前未屏蔽 / 点击后已屏蔽），
-  // 直接内联正是上一轮被读反的地方。
-  const modelBlocked = skill.blockedModel === true
-  const userBlocked = skill.blockedUser === true
+  // 两个布尔是「该端当前可调用」：开关的 checked 直接取它，scopeAfterToggle 也按同一含义取反。
+  const modelInvocable = skill.modelInvocable
+  const userInvocable = skill.userInvocable
+  // 无有效 frontmatter 或没有可写路径（例如来源未提供标记文件）时不给写入口。
+  const writable = !busy && skill.valid && skill.path !== undefined
   return (
-    <div className={ui.skillCard} data-blocked={skill.blocked ? '' : undefined} data-invalid={!skill.valid ? '' : undefined}>
+    <div className={ui.skillCard} data-blocked={skillUnavailable(skill) ? '' : undefined} data-invalid={!skill.valid ? '' : undefined}>
       <div className={ui.skillCardBody}>
         <span className={ui.skillCardTitleRow}>
           <strong>{skill.name}</strong>
@@ -47,16 +48,18 @@ export const SkillRow = memo(function SkillRow(props: SkillRowProps): ReactNode 
         {skillShadowed(skill) && <span className={ui.skillIssue} role="note">{t('skills.row.shadowedHint')}</span>}
         {!skill.valid && skill.issue && <span className={ui.skillIssue} role="note">{skill.issue}</span>}
       </div>
-      {/* 注册层开关：技能自身的声明由上面的徽章与描述如实展示，这里只控制插件是否屏蔽该端。 */}
+      {/* 调用策略开关：直接写技能文件 frontmatter 的官方两个键，正文与其余字段不动。 */}
       <div className={ui.skillRowActions} data-skill-block-group="">
         <span className={ui.skillPolicyGroup} role="group" aria-label={t('skills.row.toggles.aria', { name: skill.name })}>
           <HintTooltip label={t('skills.row.modelToggle.hint')}>
             <span className={ui.skillPolicyItem}>
               <Switch
-                checked={!modelBlocked}
-                disabled={busy || !skill.valid}
+                checked={modelInvocable}
+                disabled={!writable}
                 label={t('skills.row.modelToggle.aria', { name: skill.name })}
-                onChange={() => props.onSetScope(skill.name, scopeAfterToggle(skill, 'model'))}
+                onChange={() => {
+                  if (skill.path !== undefined) props.onSetScope(skill.name, skill.path, scopeAfterToggle(skill, 'model'))
+                }}
               />
               <span>{t('skills.row.modelToggle')}</span>
             </span>
@@ -64,10 +67,12 @@ export const SkillRow = memo(function SkillRow(props: SkillRowProps): ReactNode 
           <HintTooltip label={t('skills.row.userToggle.hint')}>
             <span className={ui.skillPolicyItem}>
               <Switch
-                checked={!userBlocked}
-                disabled={busy || !skill.valid}
+                checked={userInvocable}
+                disabled={!writable}
                 label={t('skills.row.userToggle.aria', { name: skill.name })}
-                onChange={() => props.onSetScope(skill.name, scopeAfterToggle(skill, 'user'))}
+                onChange={() => {
+                  if (skill.path !== undefined) props.onSetScope(skill.name, skill.path, scopeAfterToggle(skill, 'user'))
+                }}
               />
               <span>{t('skills.row.userToggle')}</span>
             </span>

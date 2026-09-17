@@ -1,13 +1,13 @@
-/** 技能设置页：注册层屏蔽模型。
+/** 技能设置页：文件层调用策略。
  *  技能实体留在官方各自的技能根里；本页只做三件事——列清单（按来源分组）、
- *  在注册层停用/恢复（写插件状态，不改任何技能文件）、以及把技能复制进用户技能根。 */
+ *  改写技能文件 frontmatter 的两个官方调用策略键（正文与其余字段不动）、以及把技能复制进用户技能根。 */
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import clsx from 'clsx'
 import type { SkillCatalogEntry } from '../../data/prompt-tool-fields.ts'
 import type { PromptToolStore } from '../../data/use-prompt-tool-store.ts'
 import type { PromptToolHostApi } from '../../data/host-api.ts'
 import type { PromptToolLocaleKey, PromptToolTranslate } from '../../locales.ts'
-import type { SkillBlockScope } from '../../../shared/skills.ts'
+import type { SkillPolicyScope } from '../../../shared/skills.ts'
 import { bridgeCall } from '../../data/bridge-client.ts'
 import { readImportFiles } from '../../data/import-files.ts'
 import { usePromptToolFields } from '../../data/use-prompt-tool-fields.ts'
@@ -81,8 +81,8 @@ export const SkillsPage = memo(function SkillsPage(props: { store: PromptToolSto
     if (props.browse) Object.assign(props.browse, { query: skillFilter, status: statusTab })
   }, [skillFilter, statusTab, props.browse])
 
-  const onSetScope = useCallback((name: string, scope: SkillBlockScope) => {
-    void store.setSkillBlocked(name, scope)
+  const onSetScope = useCallback((name: string, path: string, scope: SkillPolicyScope) => {
+    void store.setSkillPolicy(name, path, scope)
   }, [store])
   const onDelete = useCallback((folder: string) => {
     setPendingDelete(fields.skillCatalog.find((skill) => skill.folder === folder))

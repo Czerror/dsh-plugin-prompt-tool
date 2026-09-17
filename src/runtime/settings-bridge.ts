@@ -10,12 +10,13 @@ import { parse as parseYaml, stringify as stringifyYaml } from 'yaml'
 import type { SettingsDescriptor, SettingsPathOp } from '@deepseek-ai/dsh-settings'
 import { PARAM_KEYS } from '../config.ts'
 import { invalidateModelCatalog, listAdvertisedModels, peekModelCatalog, refreshModelReasoning, type ModelDetection } from './models.ts'
-import type { SkillBlockScope, SkillCatalogEntry } from '../shared/skills.ts'
+import type { SkillCatalogEntry, SkillPolicyScope } from '../shared/skills.ts'
 import { loadPromptConfigFiles } from '../host/prompt-configs.ts'
 import { validatePromptConfigs } from './configs-validate.ts'
 import { loadPromptTemplates, loadToolTemplates } from '../host/templates.ts'
 import { assertImportableSource, importSkillsDirectory, importSkillsPackage } from '../host/skills-import.ts'
 import { createSkill, deleteSkill } from '../host/skills-actions.ts'
+import type { SkillPolicyWrite } from '../host/skills-policy.ts'
 import {
   appendPresetModules,
   atomicWriteTextFile,
@@ -78,14 +79,12 @@ import { PRE_STEP_COORDINATOR_SERVICE } from './pre-step-coordinator.ts'
 export interface SkillsBridgeState {
   /** 用户技能根（技能实体的落点）。 */
   skillsRoot: string
-  /** 当前屏蔽的技能名。 */
-  blocked: string[]
   /** 用户添加的技能文件夹（只引用，不复制）。 */
   folders: string[]
-  /** 技能清单：按会话工作区扫描官方六类技能根并叠加屏蔽状态。 */
+  /** 技能清单：按会话工作区扫描官方六类技能根，调用策略取自各技能文件的 frontmatter。 */
   listSkills: (cwd?: string) => SkillCatalogEntry[]
-  /** 注册层屏蔽范围：'none' 表示恢复该技能；模型端与用户端各自独立。 */
-  setSkillBlocked: (name: string, scope: SkillBlockScope) => SkillsStateRead
+  /** 调用策略写入：scope 的 'none' 表示两端恢复；path 必须命中当次扫描的同名条目。 */
+  setSkillPolicy: (name: string, path: string, scope: SkillPolicyScope, cwd?: string) => SkillPolicyWrite
   /** 添加 / 移除引用的技能文件夹。 */
   patchSkillFolders: (folders: string[]) => SkillsStateRead
 }
@@ -676,8 +675,8 @@ export function registerSettingsBridge(
           modelsError: detection.error,
           activeSkillsDirs: [skillsState.skillsRoot],
           skillCatalog: skillsState.listSkills(),
-          // 引用目录随 describe 下发。屏蔽状态不再单独发一份：它已经逐条表达在 skillCatalog 的
-          // 按端标志（blockedModel / blockedUser）里，重复下发只会制造第二个真相。
+          // 引用目录随 describe 下发。调用策略不再单独发一份：它已经逐条表达在 skillCatalog 的
+          // modelInvocable / userInvocable 里（取自各技能文件的 frontmatter），重复下发只会制造第二个真相。
           skillFolders: skillsState.folders,
         }
       }
@@ -910,7 +909,6 @@ export function registerSettingsBridge(
               ok: true,
               value: {
                 skills: state.listSkills(cwd),
-                blocked: state.blocked,
                 folders: state.folders,
                 roots: [state.skillsRoot],
               },
@@ -943,7 +941,7 @@ export function registerSettingsBridge(
         }),
         sctx.webServer.register({
           kind: 'exact',
-          path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.skillBlock,
+          path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.skillPolicy,
           handler: async (req, res) => {
             if (!guard(req, res)) return
             const parsedBody = await readBridgeBodyForHandler(req, res)
@@ -951,24 +949,27 @@ export function registerSettingsBridge(
             const body = parsedBody.body
             const record = body !== null && typeof body === 'object' && !Array.isArray(body) ? body as Record<string, unknown> : {}
             if (typeof record.name !== 'string' || record.name.length === 0
+              || typeof record.path !== 'string' || record.path.length === 0
               || typeof record.scope !== 'string' || !['none', 'model', 'user', 'all'].includes(record.scope)) {
-              writeBridgeJson(res, 400, { ok: false, code: 'skill-block-rejected', message: 'name 与 scope（none/model/user/all）必填' })
+              writeBridgeJson(res, 400, { ok: false, code: 'skill-policy-rejected', message: 'name、path 与 scope（none/model/user/all）必填' })
               return
             }
-            // 注册层屏蔽：只写插件状态，不改任何技能文件。
-            const written = getSkillsState().setSkillBlocked(record.name, record.scope as SkillBlockScope)
+            const session = readSessionIdField(body)
+            if (!session.ok) {
+              writeBridgeJson(res, 400, { ok: false, code: 'skill-policy-rejected', message: session.message })
+              return
+            }
+            // 身份校验在与清单相同的工作区视图里做：客户端提交的 path 只有命中服务端当次扫描的
+            // 同名条目才被接受，陈旧界面因此改不到被替换过的同名技能。
+            const cwd = session.sessionId === undefined ? undefined : localAgentCwd(sctx, session.sessionId)
+            const written = getSkillsState().setSkillPolicy(record.name, record.path, record.scope as SkillPolicyScope, cwd)
             if (written.ok === false) {
-              writeBridgeJson(res, 409, { ok: false, code: 'skill-block-rejected', message: written.message })
+              // 界面陈旧、技能无效、只读或链接目标等都在这里如实回报，不静默。
+              writeBridgeJson(res, 409, { ok: false, code: 'skill-policy-rejected', message: written.message })
               return
             }
             afterSkillsChange?.()
-            writeBridgeJson(res, 200, {
-              ok: true,
-              value: {
-                skills: getSkillsState().listSkills(),
-                blocked: written.state.blocked.map((item) => item.name),
-              },
-            })
+            writeBridgeJson(res, 200, { ok: true, value: { skills: getSkillsState().listSkills(cwd) } })
           },
         }),
         sctx.webServer.register({

@@ -81,7 +81,7 @@ test('技能筛选是命名按钮组，按普通 Tab 顺序可达并声明选中
   // 每个筛选按钮持有稳定 id（不再有被关联的面板 id，选中状态由 aria-pressed 表达）。
   assert.match(source, /id=\{`pt-skills-tab-\$\{tab\.id\}`\}/)
   assert.doesNotMatch(source, /id="pt-skills-panel"/)
-  // 筛选标签仍走字典键（渲染时求值），不硬编码状态文案；注册层模型的标签是 blocked 而不是 disabled。
+  // 筛选标签仍走字典键（渲染时求值），不硬编码状态文案；文件层调用策略模型的标签是 blocked（两端不可用）而不是 disabled。
   for (const key of ['all', 'model', 'user', 'blocked']) assert.match(source, new RegExp(`labelKey: 'skills\\.tabs\\.${key}'`))
   assert.doesNotMatch(source, /labelKey: 'skills\.tabs\.disabled'/)
   assert.doesNotMatch(source, /label: '模型可调用'|label: '未注册'/)

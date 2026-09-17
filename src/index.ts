@@ -53,6 +53,7 @@ import {
   SKILL_NAME_PATTERN,
   type SkillsStateRead,
 } from './host/skills-config.ts'
+import { policyTarget, setSkillInvocation, type SkillPolicyWrite } from './host/skills-policy.ts'
 import { createSkillsProvider } from './host/skills-provider.ts'
 import { createSkillsReloader, type SkillsReloader } from './host/skills-refresh.ts'
 import {
@@ -66,7 +67,7 @@ import {
   type ScanRoot,
   type ScannedSkill,
 } from './host/skills-scan.ts'
-import { blockRecordFor, blockScopeOf, type SkillBlockScope, type SkillCatalogEntry, type SkillsState } from './shared/skills.ts'
+import type { SkillCatalogEntry, SkillPolicyScope, SkillsState } from './shared/skills.ts'
 
 export const name = 'prompt-tool'
 // 内容走 user 层（AGENTS.md 常驻层 + skill 按需层），
@@ -293,13 +294,14 @@ export function apply(ctx: Context, configIn: Config): void {
     }
   }
 
-  // 技能管理（注册层屏蔽模型）：
+  // 技能管理（文件层调用策略）：
   //  实体层——技能留在官方各自的技能根里（项目 .dsh/skills、项目 .agents/skills、
   //    用户 $DSH_HOME/skills、用户 ~/.agents/skills、官方内置），插件不搬迁、不建链接；
-  //  状态层——<DSH_HOME>/skills/.system/prompt-tool/skills.yml 只记录"哪些技能名不注册
-  //    给 dsh"（blocked）与"用户添加了哪些技能文件夹"（folders）；
-  //  生效层——插件提供者为每个 blocked 名字返回 rank 0 的影子候选（模型与用户调用同时
-  //    关闭），注册表合并时压掉官方候选；删除记录即恢复，全程不改技能文件。
+  //  策略层——停用/恢复只改写该技能 SKILL.md frontmatter 的官方两个键
+  //    （disable-model-invocation / user-invocable），正文与其余字段逐字保留；
+  //  状态层——<DSH_HOME>/skills/.system/prompt-tool/skills.yml 只记录用户添加的技能
+  //    文件夹（folders）；v3 的 blocked 屏蔽表已弃用——注册层的影子候选会被预设层的
+  //    官方候选按「最近层胜出」覆盖，停用在文件层才成立。
   const skillsStateFile = skillsStatePath()
   const readSkillsStateSafe = (): SkillsState => {
     const read = readSkillsState(skillsStateFile)
@@ -309,8 +311,6 @@ export function apply(ctx: Context, configIn: Config): void {
   let skillsState = readSkillsStateSafe()
   let skillsStateSnapshot = JSON.stringify(skillsState)
   const skillsRoot = USER_SKILLS_DIR
-  const blockedScopes = (): Map<string, SkillBlockScope> =>
-    new Map(skillsState.blocked.map((item) => [item.name, blockScopeOf(item)]))
   /** 用户显式引用的技能文件夹（自定义来源，只读扫描）。 */
   const referencedRoots = (): ScanRoot[] => skillsState.folders.map((path) => ({ kind: 'custom', path }))
   /** 引用来源的指纹：候选缓存与注册表缓存都按它判失效（引用目录的内容变化不改变状态文件快照）。 */
@@ -335,31 +335,31 @@ export function apply(ctx: Context, configIn: Config): void {
     const fingerprint = rootsFingerprint(roots)
     const cached = catalogCache.get(key)
     if (cached !== undefined && cached.fingerprint === fingerprint) return cached.entries
-    const entries = catalogFromScan(scanRoots(roots), blockedScopes())
+    const entries = catalogFromScan(scanRoots(roots))
     if (catalogCache.size >= 8) catalogCache.clear()
     catalogCache.set(key, { fingerprint, entries })
     return entries
   }
   /** 只失效清单缓存：引用目录里的普通文件变化不影响候选集合，不必让官方提供者重扫。 */
   const invalidateCatalogCache = (): void => { catalogCache.clear() }
-  /** 失效清单缓存与官方注册表缓存：屏蔽表或引用集合变化时必须两个都失效。 */
+  /** 失效清单缓存与官方注册表缓存：调用策略或引用集合变化时必须两个都失效。 */
   const invalidateCatalog = (): void => {
     invalidateCatalogCache()
     invalidateSkills?.()
   }
-  /** 写屏蔽范围并热应用：只改插件状态，不改任何技能文件。scope = 'none' 表示恢复该技能。 */
-  const setSkillBlocked = (name: string, scope: SkillBlockScope): SkillsStateRead => {
-    if (!SKILL_NAME_PATTERN.test(name)) return { ok: false, state: skillsState, message: `技能名不合法：${name}` }
-    const rest = skillsState.blocked.filter((item) => item.name !== name)
-    const written = writeSkillsState({
-      blocked: scope === 'none' ? rest : [...rest, blockRecordFor(name, scope, new Date().toISOString())],
-    }, skillsStateFile, skillsStateSnapshot)
+  /** 写调用策略并热应用：改写技能文件自己的 frontmatter（唯一真相），正文与其余字段不动。
+   *  路径必须能在同一工作目录的清单里找到同名且同路径的有效条目：客户端不能凭 path 自授权，
+   *  陈旧界面也不能把操作落到被替换过的同名技能上。 */
+  const setSkillPolicy = (name: string, path: string, scope: SkillPolicyScope, cwd?: string): SkillPolicyWrite => {
+    if (!SKILL_NAME_PATTERN.test(name)) return { ok: false, message: `技能名不合法：${name}` }
+    if (typeof path !== 'string' || path.length === 0) return { ok: false, message: '缺少技能文件路径' }
+    const check = policyTarget(listSkills(cwd), name, path)
+    if (check.ok === false) return check
+    const written = setSkillInvocation(path, scope)
     if (written.ok === false) {
-      warn(ctx, `prompt-tool: ${written.message}`)
+      warn(ctx, `prompt-tool: 写入技能调用策略失败：${written.message}`)
       return written
     }
-    skillsState = written.state
-    skillsStateSnapshot = JSON.stringify(written.state)
     invalidateCatalog()
     return written
   }
@@ -380,7 +380,7 @@ export function apply(ctx: Context, configIn: Config): void {
 
   // 状态文件与引用目录的热更新：任一事件都失效清单缓存，只有状态成功读取且快照变化时才替换
   // 内存状态、失效候选缓存并重挂 watcher（引用目录集合可能变了）。读盘失败沿用上一次有效状态，
-  // 不会因为一个瞬时坏文件把屏蔽表与引用目录清空；策略与理由见 skills-refresh。
+  // 不会因为一个瞬时坏文件把状态与引用目录清空；策略与理由见 skills-refresh。
   //
   // watcher 先建、回调里用可选链访问 reloader：两者互相引用，这样任何一方都不会踩到
   // 「块级变量在初始化前被读取」的隐式时序依赖。官方 provider 的 invalidate 也在这里先声明，
@@ -415,16 +415,13 @@ export function apply(ctx: Context, configIn: Config): void {
   // 插件卸载时关闭状态与引用目录 watcher，避免泄漏与对已卸载 provider 的无效刷新。
   ctx.effect(() => () => skillsWatcher.close())
 
-  // 技能提供者只做两件事：
-  //  1) 屏蔽名单——每个名字返回 rank 0 的影子候选（模型与用户调用同时关闭），
-  //     注册表在同一层内按 rank 升序合并同名候选，影子因此压掉官方候选，
-  //     达到"不注册给 dsh"；技能文件一个字节都不改，删除记录即恢复；
-  //  2) 用户添加的技能文件夹——按自定义来源优先级提供候选。
+  // 技能提供者只做一件事：用户添加的技能文件夹——按自定义来源优先级提供候选
+  // （这些目录不在官方六类技能根里，官方提供方看不到它们）。
+  // 调用策略不在这里：停用/恢复改写技能文件自己的 frontmatter，见 setSkillPolicy。
   // 项目根、用户根与官方内置一律交给官方 skill 提供者，插件不重复提供。
   ctx.skills.registerProvider((control: SkillProviderControl): SkillProvider => {
     invalidateSkills = control.invalidate
     return createSkillsProvider({
-      blocked: () => skillsState.blocked,
       referenced: scanReferencedSkills,
     })
   })
@@ -437,10 +434,9 @@ export function apply(ctx: Context, configIn: Config): void {
     getModelsState,
     () => ({
       skillsRoot,
-      blocked: skillsState.blocked.map((item) => item.name),
       folders: [...skillsState.folders],
       listSkills,
-      setSkillBlocked,
+      setSkillPolicy,
       patchSkillFolders,
     }),
     // 模板专属策略目录：当前内置策略全部随引擎提供，自定义模板可经此注入。
@@ -665,9 +661,11 @@ registerTuiCommand(
     reloadPresetParams()
     rebuildPreset()
   },
-  // 技能启停：写注册层屏蔽表（不改技能文件），失败原因回给命令层。
+  // 技能启停：改写技能文件的调用策略键（正文不动），失败原因回给命令层。
   (name, enabled) => {
-    const result = setSkillBlocked(name, enabled ? 'none' : 'all')
+    const entry = listSkills().find((skill) => skill.name === name)
+    if (entry?.path === undefined) return { ok: false, message: `未找到技能或其文件路径：${name}` }
+    const result = setSkillPolicy(name, entry.path, enabled ? 'none' : 'all')
     return result.ok ? { ok: true } : { ok: false, message: result.message }
   },
 )
@@ -889,8 +887,10 @@ export { loadPromptTemplates, loadToolTemplates } from './host/templates.ts'
 export type { PromptConfigTemplate, ToolTemplate } from './host/templates.ts'
 export { registerTuiCommand } from './runtime/tui.ts'
 export { readSkillsState, writeSkillsState, skillsStatePath, SKILL_NAME_PATTERN } from './host/skills-config.ts'
-export type { BlockedSkill, SkillBlockScope, SkillCatalogEntry, SkillsState } from './shared/skills.ts'
-export { blockRecordFor, blockScopeOf } from './shared/skills.ts'
+export type { SkillCatalogEntry, SkillPolicyScope, SkillsState } from './shared/skills.ts'
+export { invocationForScope, scopeOfInvocation } from './shared/skills.ts'
+export { readSkillInvocation, setSkillInvocation } from './host/skills-policy.ts'
+export type { SkillPolicyRead, SkillPolicyWrite } from './host/skills-policy.ts'
 export { createSkillsReloader } from './host/skills-refresh.ts'
 export { catalogFromScan, resolveProjectRoot, scanRoot, scanRoots, skillRoots } from './host/skills-scan.ts'
 export { PARAM_KEYS } from './config.ts'
