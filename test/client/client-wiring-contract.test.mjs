@@ -1,19 +1,22 @@
-// 前端审查修复回归（2026-09-14）：
-// - 预设切换的事务性：草稿保存失败不切换；切换中拒绝把旧预设字段写进新预设；
-// - 模板变量开关在保存同帧传出新值；
-// - 子代理策略读取失败进入错误态（不降级成“无策略”）、抽屉 aria-modal 的 Tab 循环；
-// - 角色卡选择器与 PNG 解析范围一致。
+// 合并自 workspace-navigation.test.mjs(3) + template-picker-anchor.test.mjs(2)
+//      + dialog-focus.test.mjs(3) + review-fixes.test.mjs(6)
+//（2026-09-17 测试归一精简 Wave 3）：四者同属「客户端接线、键盘焦点与审查修复契约」主题，
+//  以源码/行为契约断言为主。三份语义相同的 read helper 合并为一份，其余顶层样板原样保留；
+//  用例标题与断言逐条未改，源码契约类断言保持源码形式（本组不做 SSR 升级）。
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { setImmediate } from 'node:timers/promises'
+import { nextDialogFocusIndex } from '../../src/client/ui/dialog-focus.ts'
 import { usePromptToolStore } from '../../src/client/data/use-prompt-tool-store.ts'
+
+/** 三份源文件各自定义的 `read` 语义完全相同（仓库根相对路径 → UTF-8 文本），合并为一份。 */
+const read = (path) => readFileSync(new URL(`../../${path}`, import.meta.url), 'utf8')
 
 const require = createRequire(new URL('../../package.json', import.meta.url))
 const React = require('react')
 const { renderToString } = require('react-dom/server')
-const read = (path) => readFileSync(new URL(`../../${path}`, import.meta.url), 'utf8')
 
 const waitFor = async (predicate) => {
   for (let index = 0; index < 200; index += 1) {
@@ -56,6 +59,98 @@ const makeApi = (onSwitch) => ({
     return { applied: true }
   },
 })
+
+// —— 工作台导航与技能筛选（原 workspace-navigation.test.mjs） ——
+
+test('工作台 tabs：roving tabindex 与 tab/tabpanel 关系完整', () => {
+  const navigation = read('src/client/app/workspace/WorkspaceNavigation.tsx')
+  const frame = read('src/client/app/workspace/WorkspaceFrame.tsx')
+  assert.match(navigation, /tabIndex=\{active \? 0 : -1\}/)
+  assert.match(navigation, /id=\{`pt-workspace-tab-\$\{item\.id\}`\}/)
+  assert.match(navigation, /aria-controls=\{`pt-workspace-panel-\$\{item\.id\}`\}/)
+  assert.match(frame, /role="tabpanel"/)
+  assert.match(frame, /aria-labelledby=\{`pt-workspace-tab-\$\{item\.id\}`\}/)
+})
+
+test('技能筛选是命名按钮组，按普通 Tab 顺序可达并声明选中状态', () => {
+  const source = read('src/client/features/skills/SkillsPage.tsx')
+  assert.match(source, /role="group" aria-label=\{t\('skills\.tabs\.aria'\)\}/)
+  assert.match(source, /<button\s+key=\{tab\.id\}[\s\S]*?type="button"\s+aria-pressed=\{statusTab === tab\.id\}/)
+  assert.match(source, /onClick=\{\(\) => setStatusTab\(tab\.id\)\}/)
+  assert.doesNotMatch(source, /role="(?:tablist|tab|tabpanel)"|tabIndex=|aria-controls="pt-skills-panel"|aria-labelledby=|nextTabIndex/)
+  assert.match(source, /id="pt-skills-panel"/)
+  // 筛选标签仍走字典键（渲染时求值），不硬编码状态文案。
+  for (const key of ['all', 'model', 'user', 'disabled']) assert.match(source, new RegExp(`labelKey: 'skills\\.tabs\\.${key}'`))
+  assert.doesNotMatch(source, /label: '模型可调用'|label: '未注册'/)
+})
+
+test('技能目录与来源卡片位于过滤编辑框上方', () => {
+  const source = read('src/client/features/skills/SkillsPage.tsx')
+  assert.ok(source.indexOf('id="pt-skills-dirs"') < source.indexOf('className={ui.listFilterRow}'))
+})
+
+// —— 模板浮层锚点（原 template-picker-anchor.test.mjs） ——
+
+test('模板入口把按钮 ref 传给顶层浮层', () => {
+  const main = read('src/client/app/workspace/pages/MainSessionPage.tsx')
+  const menu = read('src/client/features/modules/EngineModuleList.tsx')
+  const scoped = read('src/client/app/workspace/pages/ConfigListWithTemplates.tsx')
+  const subagent = read('src/client/app/workspace/pages/SubagentPage.tsx')
+  assert.match(main, /anchorRef=\{picker\.anchorRef\}/)
+  assert.match(menu, /const trigger = anchorRef \?\? fallbackAnchor/)
+  assert.match(menu, /anchor=\{<button ref=\{trigger\}/)
+  // 列表包装不再有独立「新建」按钮，浮层锚定到工具栏合并菜单按钮（ref 由页面下发）。
+  assert.doesNotMatch(scoped, /useTemplatePicker|<TemplatePicker/, '列表包装不再持有无入口的第二份 picker')
+  assert.match(subagent, /anchorRef=\{picker\.anchorRef\}/)
+})
+
+test('锚定浮层层级高于工作台抽屉', () => {
+  const css = read('src/client/ui/controls.module.css')
+  const block = css.match(/\.templatePopover\s*\{([^}]*)\}/s)?.[1] ?? ''
+  assert.match(block, /position:\s*fixed/)
+  assert.match(block, /z-index:\s*1200/)
+})
+
+// —— 对话框焦点（原 dialog-focus.test.mjs） ——
+
+test('dialog focus：只在越过边界或焦点位于弹窗外时循环', () => {
+  assert.equal(nextDialogFocusIndex(0, -1, false), undefined)
+  assert.equal(nextDialogFocusIndex(3, -1, false), 0)
+  assert.equal(nextDialogFocusIndex(3, -1, true), 2)
+  assert.equal(nextDialogFocusIndex(3, 0, true), 2)
+  assert.equal(nextDialogFocusIndex(3, 2, false), 0)
+  assert.equal(nextDialogFocusIndex(3, 1, false), undefined)
+})
+
+test('模块与工具模板选择器使用 body 顶层锚定浮层', () => {
+  const picker = readFileSync(new URL('../../src/client/ui/TemplatePicker.tsx', import.meta.url), 'utf8')
+  assert.match(picker, /useAnchoredPopoverStyle/)
+  assert.match(picker, /useDismissOnOutsidePointer/)
+  assert.match(picker, /className=\{styles\.templatePopover\}/)
+  assert.match(picker, /createPortal\(surface, document\.body\)/)
+  assert.doesNotMatch(picker, /modalBackdrop|DialogSurface/)
+})
+
+test('新建预设使用可锚定的 body-portaled DialogSurface', () => {
+  const preset = readFileSync(new URL('../../src/client/features/presets/PresetSwitcher.tsx', import.meta.url), 'utf8')
+  const surface = readFileSync(new URL('../../src/client/ui/DialogSurface.tsx', import.meta.url), 'utf8')
+  const geometry = readFileSync(new URL('../../src/client/ui/anchored-popover.ts', import.meta.url), 'utf8')
+  assert.match(preset, /ref=\{pickerAnchorRef\}/)
+  assert.match(preset, /anchorRef=\{pickerAnchorRef\}/)
+  assert.match(surface, /useAnchoredPopoverStyle/)
+  assert.match(surface, /useDismissOnOutsidePointer/)
+  assert.match(surface, /createPortal\(surface, document\.body\)/)
+  assert.match(geometry, /useAnchoredPosition/)
+  assert.ok(geometry.includes("{ visibility: 'hidden', maxHeight: fit.maxHeight }"))
+  // 异步内容（模板列表）加载后补测：面板被 max-height 锁住时 ResizeObserver 不再触发。
+  assert.match(geometry, /measureRef\.current = measure/)
+  assert.match(geometry, /measureRef\.current\(\)/)
+})
+
+// —— 前端审查修复回归（原 review-fixes.test.mjs，2026-09-14） ——
+// 预设切换的事务性：草稿保存失败不切换；切换中拒绝把旧预设字段写进新预设；
+// 模板变量开关在保存同帧传出新值；子代理策略读取失败进入错误态（不降级成“无策略”）；
+// 抽屉 aria-modal 的 Tab 循环；角色卡选择器与 PNG 解析范围一致。
 
 test('预设切换：当前草稿保存失败时不切换、不丢草稿', async () => {
   const originalFetch = globalThis.fetch

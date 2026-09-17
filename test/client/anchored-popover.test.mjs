@@ -1,39 +1,21 @@
-import test from 'node:test'
+//（2026-09-17 测试归一精简 Wave 3 C2a 组）：前三条几何用例改参数化表（每行仍是一条独立 test，
+//  固定参数只写一次），异步内容与真实测量两条保留独立 test；断言逐条未改，运行用例数仍 5。
+import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { measurePanelContentHeight, resolveAnchoredPopoverFit } from '../../src/client/ui/anchored-popover-fit.ts'
 
-test('锚定浮层：下方空间较大时限制高度并保持贴在按钮下方', () => {
-  assert.deepEqual(resolveAnchoredPopoverFit({
-    anchorTop: 378,
-    anchorBottom: 414,
-    desiredHeight: 512,
-    viewportHeight: 900,
-    gap: 8,
-    margin: 12,
-  }), { side: 'bottom', maxHeight: 466 })
-})
+/** 前三条用例共用的固定输入（锚点高度由表提供）。 */
+const fixed = { desiredHeight: 512, viewportHeight: 900, gap: 8, margin: 12 }
 
-test('锚定浮层：按钮靠近底部时改为向上展开', () => {
-  assert.deepEqual(resolveAnchoredPopoverFit({
-    anchorTop: 800,
-    anchorBottom: 836,
-    desiredHeight: 512,
-    viewportHeight: 900,
-    gap: 8,
-    margin: 12,
-  }), { side: 'top', maxHeight: 780 })
-})
-
-test('锚定浮层：上下空间都不足时选择空间更大的一侧', () => {
-  assert.deepEqual(resolveAnchoredPopoverFit({
-    anchorTop: 440,
-    anchorBottom: 476,
-    desiredHeight: 512,
-    viewportHeight: 900,
-    gap: 8,
-    margin: 12,
-  }), { side: 'top', maxHeight: 420 })
-})
+for (const [name, anchorTop, anchorBottom, expected] of [
+  ['锚定浮层：下方空间较大时限制高度并保持在按钮下方', 378, 414, { side: 'bottom', maxHeight: 466 }],
+  ['锚定浮层：按钮靠近底部时改为向上展开', 800, 836, { side: 'top', maxHeight: 780 }],
+  ['锚定浮层：上下空间都不足时选择空间更大的一侧', 440, 476, { side: 'top', maxHeight: 420 }],
+]) {
+  test(name, () => {
+    assert.deepEqual(resolveAnchoredPopoverFit({ anchorTop, anchorBottom, ...fixed }), expected)
+  })
+}
 
 test('锚定浮层：maxHeight 只取可用空间，内容异步变多后仍可展开', () => {
   const input = { anchorTop: 100, anchorBottom: 136, viewportHeight: 900, gap: 8, margin: 12 }

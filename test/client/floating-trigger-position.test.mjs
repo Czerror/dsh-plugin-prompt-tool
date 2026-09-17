@@ -3,6 +3,10 @@
  *
  * 这些纯函数是拖动交互的判定核心（拖动 vs 单击、按钮始终完整可见、位置跨刷新保持），
  * 在 Node 里用最小 window/localStorage 替身验证，不启动浏览器也不读宿主 DOM。
+ *
+ *（2026-09-17 测试归一精简 Wave 3 C2a 组）：clampPoint 的 6 个场景与 isDragGesture 的 4 个场景
+ *  收进各自用例内的参数表（固定夹具与调用样板只写一次，失败信息带场景名），
+ *  第 4 条「拖动实现不读宿主布局」是源码禁令，按要求保持原样；运行用例数仍 4。
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
@@ -19,32 +23,28 @@ import {
 } from '../../src/client/app/workbench/floating-trigger-position.ts'
 
 test('clampPoint：按钮始终完整可见（含窄屏 40px 尺寸与极小视口）', () => {
-  assert.deepEqual(
-    clampPoint({ x: -20, y: -5 }, { width: 1000, height: 800 }),
-    { x: TRIGGER_MARGIN_PX, y: TRIGGER_MARGIN_PX },
-    '左上角同样保留边缘留白',
-  )
-  assert.deepEqual(clampPoint({ x: 5000, y: 5000 }, { width: 1000, height: 800 }), { x: 964, y: 764 })
-  assert.deepEqual(
-    clampPoint({ x: 5000, y: 5000 }, { width: 320, height: 400 }, { width: 40, height: 40 }),
-    { x: 272, y: 352 },
-    '窄屏按钮是 40px，夹取必须用实际渲染尺寸',
-  )
-  assert.deepEqual(clampPoint({ x: 10, y: 10 }, { width: 20, height: 10 }), { x: 0, y: 0 }, '视口小于按钮时不产生负坐标')
-  assert.deepEqual(
-    clampPoint({ x: 500, y: 500 }, { width: 30, height: 30 }),
-    { x: 0, y: 0 },
-    '留白放不下时退化为按钮完整可见，仍不越出视口',
-  )
-  assert.deepEqual(clampPoint(DEFAULT_TRIGGER, { width: 1200, height: 900 }), DEFAULT_TRIGGER, '默认位置在常规视口内不变')
+  for (const [label, point, viewport, size, expected] of [
+    ['左上角同样保留边缘留白', { x: -20, y: -5 }, { width: 1000, height: 800 }, undefined, { x: TRIGGER_MARGIN_PX, y: TRIGGER_MARGIN_PX }],
+    ['右下角夹取到视口内', { x: 5000, y: 5000 }, { width: 1000, height: 800 }, undefined, { x: 964, y: 764 }],
+    ['窄屏按钮是 40px，夹取必须用实际渲染尺寸', { x: 5000, y: 5000 }, { width: 320, height: 400 }, { width: 40, height: 40 }, { x: 272, y: 352 }],
+    ['视口小于按钮时不产生负坐标', { x: 10, y: 10 }, { width: 20, height: 10 }, undefined, { x: 0, y: 0 }],
+    ['留白放不下时退化为按钮完整可见，仍不越出视口', { x: 500, y: 500 }, { width: 30, height: 30 }, undefined, { x: 0, y: 0 }],
+    ['默认位置在常规视口内不变', DEFAULT_TRIGGER, { width: 1200, height: 900 }, undefined, DEFAULT_TRIGGER],
+  ]) {
+    assert.deepEqual(clampPoint(point, viewport, size), expected, label)
+  }
 })
 
 test('isDragGesture：位移超过阈值才算拖动（小于阈值保留单击）', () => {
   const start = { x: 100, y: 100 }
-  assert.equal(isDragGesture(start, { x: 100, y: 100 }), false)
-  assert.equal(isDragGesture(start, { x: 100 + DRAG_THRESHOLD_PX, y: 100 }), false, '等于阈值仍算单击')
-  assert.equal(isDragGesture(start, { x: 100 + DRAG_THRESHOLD_PX + 1, y: 100 }), true)
-  assert.equal(isDragGesture(start, { x: 100, y: 100 - DRAG_THRESHOLD_PX - 1 }), true, '向上拖动同样成立')
+  for (const [label, point, expected] of [
+    ['原地不动是单击', { x: 100, y: 100 }, false],
+    ['等于阈值仍算单击', { x: 100 + DRAG_THRESHOLD_PX, y: 100 }, false],
+    ['刚过阈值算拖动', { x: 100 + DRAG_THRESHOLD_PX + 1, y: 100 }, true],
+    ['向上拖动同样成立', { x: 100, y: 100 - DRAG_THRESHOLD_PX - 1 }, true],
+  ]) {
+    assert.equal(isDragGesture(start, point), expected, label)
+  }
 })
 
 test('位置持久化：写入后可读回；损坏与缺失数据回退默认位置', () => {

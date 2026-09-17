@@ -235,7 +235,7 @@ pnpm rebuild:composition # 只生成官方切块/变体；source/local 本地源
 
 依赖升级后的验证顺序：`pnpm install` → `pnpm verify:host` → `pnpm typecheck && pnpm lint` → `pnpm test`。官方源码联调请使用不入库的显式本地 override，不要恢复 `pnpm-workspace.yaml` 里的 `link:` 默认配置。
 
-发布类型声明通过 `deps.dts.neverBundle` 引用官方 SDK，不内联其品牌类型与相对模块扩充；公开类型引用的包须声明为生产或 peer 依赖，不能仅存在于 devDependencies。`deps.onlyBundle` 显式约束内联依赖（服务端为空，客户端仅 `clsx`），新增依赖需重新核对打包边界。`test/declaration-bundle.test.mjs` 直接校验 `lib/*.d.mts` 与官方 SDK 的类型兼容性；客户端仍保留宿主 loader 要求的 CJS 协议，不为消除通用 ESM 建议而切换格式。
+发布类型声明通过 `deps.dts.neverBundle` 引用官方 SDK，不内联其品牌类型与相对模块扩充；公开类型引用的包须声明为生产或 peer 依赖，不能仅存在于 devDependencies。`deps.onlyBundle` 显式约束内联依赖（服务端为空，客户端仅 `clsx`），新增依赖需重新核对打包边界。`test/host-publish-contract.test.mjs` 直接校验 `lib/*.d.mts` 与官方 SDK 的类型兼容性；客户端仍保留宿主 loader 要求的 CJS 协议，不为消除通用 ESM 建议而切换格式。
 
 ## 许可
 

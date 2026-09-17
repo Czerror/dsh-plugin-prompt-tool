@@ -1,7 +1,7 @@
 /**
  * 编译期 manifest 契约：本插件 package.json#dsh 段必须保持官方 `DshManifest` 形状。
  *
- * 运行期 JSON 断言在 test/client-bundle-facade.test.mjs；这里锁定字段名与类型，
+ * 运行期 JSON 断言在 test/host-publish-contract.test.mjs；这里锁定字段名与类型，
  * 不用 `as DshManifest` 强转冒充校验。DshBundleManifest 只有 `patch` 字段，
  * 因此 web-app 这类装配事实由 src/web-surface.ts 的常量承载，不再写回 package.json。
  *
