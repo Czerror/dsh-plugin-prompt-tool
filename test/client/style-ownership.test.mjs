@@ -76,3 +76,21 @@ test('样式遵循宿主 token、发丝边框与圆角契约', () => {
     }
   }
 })
+
+test('删除确认按钮：实心 error 底，与取消按钮同族几何', () => {
+  const source = readFileSync(join(root, 'ui', 'controls.module.css'), 'utf8')
+  // 同族几何：两者共用同一胶囊块，避免尺寸/字号/圆角/描边各走一套（按钮视觉不一致的根因）。
+  assert.match(source, /\.pillButton,[^{}]*\.confirmDanger[^{}]*\{/, '确认按钮必须与取消按钮共用几何块')
+  const blocks = [...source.matchAll(/\.confirmDanger[^{}]*\{([^{}]*)\}/g)].map((match) => match[1])
+  assert.ok(blocks.some((block) => /background:\s*var\(--dsw-alias-state-error-primary\)/.test(block)), '确认删除必须有实心 error 底色')
+  assert.ok(blocks.some((block) => /color:\s*var\(--dsw-alias-label-primary-foreground\)/.test(block)), '确认删除的前景必须是实心按钮的反色 token')
+  assert.match(source, /\.confirmDanger:hover:not\(:disabled\)/)
+  assert.match(source, /\.confirmDanger:disabled/)
+  assert.match(source, /\.confirmDanger:focus-visible/)
+  assert.match(source, /\.confirmDanger \{ transition: none/, '危险按钮必须有 reduced-motion 分支')
+  // 组件必须真的用上这两个类：官方 Button 的 data-danger 没有任何视觉后果，不得退回。
+  const dialog = readFileSync(join(root, 'ui', 'ConfirmDialog.tsx'), 'utf8')
+  assert.match(dialog, /styles\.confirmDanger/)
+  assert.match(dialog, /styles\.pillButton/)
+  assert.doesNotMatch(dialog, /data-danger/)
+})
