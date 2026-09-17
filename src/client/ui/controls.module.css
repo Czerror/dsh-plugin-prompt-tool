@@ -178,8 +178,7 @@
 }
 
 .pillButton,
-.primaryPill,
-.confirmDanger {
+.primaryPill {
   appearance: none;
   display: inline-flex;
   box-sizing: border-box;
@@ -201,8 +200,7 @@
 
 .pillButton:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover-solid); }
 .pillButton:disabled,
-.primaryPill:disabled,
-.confirmDanger:disabled { cursor: default; opacity: .4; }
+.primaryPill:disabled { cursor: default; opacity: .4; }
 .primaryPill,
 .save {
   border-color: transparent;
@@ -211,22 +209,6 @@
 }
 .primaryPill:hover:not(:disabled),
 .save:hover:not(:disabled) { background: var(--dsw-alias-button-primary-hover); }
-
-/* 危险主操作（删除确认的「确认删除」）：与取消按钮同族的胶囊几何，实心 error 底 +
-   反色前景。官方 Button 没有 danger 变体，且取消按钮需要原生 ref 承载「取消先聚焦」，
-   故这一对按钮同为本地原生 button 形态，只以语义色区分主次。 */
-.confirmDanger {
-  border-color: transparent;
-  color: var(--dsw-alias-label-primary-foreground);
-  background: var(--dsw-alias-state-error-primary);
-}
-.confirmDanger:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 88%, var(--dsw-alias-label-primary));
-}
-.confirmDanger:focus-visible {
-  outline: 2px solid var(--dsw-alias-state-error-secondary);
-  outline-offset: 2px;
-}
 
 .pillButton[data-danger] {
   color: color-mix(in srgb, var(--dsw-alias-state-error-primary) 80%, var(--dsw-alias-label-primary));
@@ -922,8 +904,7 @@
   .chevron,
   .spinner,
   .pillButton,
-  .primaryPill,
-  .confirmDanger { transition: none; animation: none; }
+  .primaryPill { transition: none; animation: none; }
 }
 
 
@@ -976,7 +957,6 @@
   .configForm .configInput { min-width: 44px; min-height: 44px; }
   .pillButton,
   .primaryPill,
-  .confirmDanger,
   .configActions .pillButton,
   .batchControls .pillButton,
   .skillOrderButtons .pillButton,

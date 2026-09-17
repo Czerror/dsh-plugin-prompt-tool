@@ -6,10 +6,13 @@
 
 - **预设卡删除按钮**改为与角色管理页同款的垃圾桶图标按钮（`IconTrashOutline16` + 图标按钮形态，
   含 `aria-label`「删除预设：{name}」），不再是卡片底部的文字胶囊；「使用中」禁用与二次确认流程不变。
-- **删除确认对话框**（预设、角色卡、能力、配置等共用 `ConfirmDialog`）的「确认删除」改为**实心 error 底**
-  的危险主操作，与「取消」共用同一胶囊几何（尺寸、圆角、字号一致），只以语义色区分主次。
+- **危险按钮统一为「描边染红」**：所有 `data-danger` 按钮共用同一形态——透明底、error 混色的文字与描边，
+  hover 时描边加深并带极淡红底（`.pillButton[data-danger]`）。
+- **删除确认对话框**（预设、角色卡、能力、配置等共用 `ConfirmDialog`）的「确认删除」改为与「取消」
+  同一个 `.pillButton` 胶囊（尺寸、圆角、字号、描边一致），只以 `data-danger` 区分主次。
   此前确认按钮走官方 `Button variant="outline" data-danger`，而官方 Button 没有 danger 变体，
-  渲染结果与取消按钮既不同高也不同色。危险按钮的 hover、disabled、`focus-visible` 与 reduced-motion 分支同步补齐。
+  渲染结果既不染红，也与取消按钮不同高。人设卡的「移除」按钮同样从无效的官方 `Button data-danger`
+  换成本地胶囊，全项目不再存在「看着危险、实际不染红」的按钮。
 
 ### ab2c5e1–21e8761 全量审查修复
 

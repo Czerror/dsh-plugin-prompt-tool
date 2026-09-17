@@ -3,8 +3,8 @@ import { DialogSurface } from './DialogSurface.tsx'
 import styles from './controls.module.css'
 
 /** 危险操作确认：取消先聚焦；请求中拒绝重复提交，失败保留当前确认面。
- *  取消与确认同族几何（`.pillButton` / `.confirmDanger`，同一胶囊尺寸与字号），
- *  主次只由语义色区分：取消是中性的描边胶囊，确认删除是实心 error 底。
+ *  取消与确认同为 `.pillButton` 胶囊（同尺寸、同字号、同描边），确认按钮加 `data-danger`
+ *  走全项目统一的「描边染红」危险形态（透明底、红调描边与文字）。
  *  两处入口（预设、角色卡等）共用本组件，因此删除确认的外观不会各走一套。 */
 export function ConfirmDialog(props: {
   title: string
@@ -42,7 +42,7 @@ export function ConfirmDialog(props: {
     {error !== undefined && <p className={styles.confirmError} role="alert">{error}</p>}
     <div className={styles.confirmActions} aria-busy={busy}>
       <button ref={cancelRef} type="button" className={styles.pillButton} aria-disabled={busy} onClick={cancel}>{props.cancelLabel}</button>
-      <button type="button" className={styles.confirmDanger} disabled={busy} onClick={() => { void confirm() }}>{props.confirmLabel}</button>
+      <button type="button" className={styles.pillButton} data-danger disabled={busy} onClick={() => { void confirm() }}>{props.confirmLabel}</button>
     </div>
   </DialogSurface>
 }

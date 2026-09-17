@@ -270,7 +270,7 @@ workspace-pages.ts 是页面元数据的唯一来源。默认页为 features，�
 - loading：保留已有数据；只有没有可展示数据时才显示骨架。
 - saving：只禁用冲突动作，不冻结其他草稿输入。
 - notice：配置保存/校验反馈位于操作区，字段错误用 aria-invalid/aria-describedby 关联；同一结果只由一个 live region 播报。
-- destructive action：配置、能力、预设、角色库删除以及丢弃文件草稿使用 ConfirmDialog；取消先聚焦、请求中防重复提交，失败保留确认面，关闭后还焦。确认按钮是实心 error 底的危险主操作，与取消按钮共用同一胶囊几何（尺寸、圆角、字号一致），两者只以语义色区分主次；所有删除入口共用该组件，外观不各走一套。
+- destructive action：配置、能力、预设、角色库删除以及丢弃文件草稿使用 ConfirmDialog；取消先聚焦、请求中防重复提交，失败保留确认面，关闭后还焦。危险按钮统一为「描边染红」形态（`.pillButton[data-danger]`：透明底 + error 混色的文字与描边），确认按钮与取消按钮是同一个 `.pillButton` 胶囊（尺寸、圆角、字号一致），只以 `data-danger` 区分主次；所有删除入口共用该组件，外观不各走一套。
 - 长路径与名称允许换行或在展开区提供完整可选择文本，不以原生 title 作为唯一读取入口。
 - 配置操作区与列表共用 canvas 滚动根，sticky 高度由自身 ResizeObserver 测量；短视口退回普通流，焦点与定位避开操作区。
 - 吸顶操作区用系统Canvas作为不透明基底，其上叠宿主语义表面；第三方主题将背景设为透明/半透明或省略变量时，正文仍不会透出。
@@ -400,7 +400,7 @@ ui/ 只接收 props/callback，当前真实共享 seam 包括：
 - StatusBadge：只读状态徽章，StatusDot + 官方 Tag 胶囊；tone 同时驱动两者颜色，技能卡、工具预览、预设「使用中」与角色卡「已导入当前预设」共用。
 - 状态徽章与内部Tag均不参与flex收缩，短状态文字保持单行；预设/角色标题承担剩余宽度并允许换行，长名称不把「使用中」挤成竖排胶囊。
 - ImportFileButton：隐藏原生 file input 的导入入口。
-- TemplatePicker、DialogSurface：模板和预设操作的portal浮层；ConfirmDialog复用DialogSurface的警告对话、初始焦点与还焦能力，不叠加第二套焦点陷阱。ConfirmDialog 的两个按钮是本地胶囊（`.pillButton` / `.confirmDanger`）：官方 Button 没有 danger 变体，且取消按钮需要原生 ref 承载初始焦点与 busy 还焦，因此这一对按钮不包官方 Button，只以语义色区分主次。
+- TemplatePicker、DialogSurface：模板和预设操作的portal浮层；ConfirmDialog复用DialogSurface的警告对话、初始焦点与还焦能力，不叠加第二套焦点陷阱。ConfirmDialog 的两个按钮是同一个本地胶囊 `.pillButton`（确认按钮加 `data-danger`）：官方 Button 没有 danger 变体，`<Button data-danger>` 不会染红，且取消按钮需要原生 ref 承载初始焦点与 busy 还焦，因此这一对按钮不包官方 Button。
 - anchored-popover.ts / anchored-popover-fit.ts：锚点位置和窄视口适配。
 - tab-key.ts、dialog-focus.ts：纯键盘索引及弹窗焦点行为。
 

@@ -138,8 +138,10 @@ test('V2 草稿与资源：原文恢复、快照保存、技能目标及危险�
     await waitFor(`document.querySelector('[role="alertdialog"]')!==null`)
     const confirmButton = `[...document.querySelector('[role="alertdialog"]').querySelectorAll('button')].find(e=>e.textContent.trim()===window.t('presetSwitcher.delete.confirm'))`
     const cancelButton = `[...document.querySelector('[role="alertdialog"]').querySelectorAll('button')].find(e=>e.textContent.trim()===window.t('presetSwitcher.delete.cancel'))`
-    assert.equal(await evaluate(`${confirmButton}?.className`), 'confirmDanger', '确认删除使用实心危险按钮样式')
+    assert.equal(await evaluate(`${confirmButton}?.className`), 'pillButton', '确认删除与取消同为胶囊按钮')
+    assert.equal(await evaluate(`${confirmButton}?.hasAttribute('data-danger')`), true, '确认删除使用统一的描边染红危险形态')
     assert.equal(await evaluate(`${cancelButton}?.className`), 'pillButton', '取消按钮与确认按钮同族几何')
+    assert.equal(await evaluate(`${cancelButton}?.hasAttribute('data-danger')`), false, '取消按钮不是危险形态')
     await clickKey('presetSwitcher.delete.cancel')
     assert.equal(await evaluate(count('preset-delete')), 0, '取消删除零请求')
     await evaluate('window.rejectDelete=true;window.delay=100')

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { readdirSync, readFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import ts from 'typescript'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../../src/client')
 
@@ -77,20 +78,41 @@ test('样式遵循宿主 token、发丝边框与圆角契约', () => {
   }
 })
 
-test('删除确认按钮：实心 error 底，与取消按钮同族几何', () => {
-  const source = readFileSync(join(root, 'ui', 'controls.module.css'), 'utf8')
-  // 同族几何：两者共用同一胶囊块，避免尺寸/字号/圆角/描边各走一套（按钮视觉不一致的根因）。
-  assert.match(source, /\.pillButton,[^{}]*\.confirmDanger[^{}]*\{/, '确认按钮必须与取消按钮共用几何块')
-  const blocks = [...source.matchAll(/\.confirmDanger[^{}]*\{([^{}]*)\}/g)].map((match) => match[1])
-  assert.ok(blocks.some((block) => /background:\s*var\(--dsw-alias-state-error-primary\)/.test(block)), '确认删除必须有实心 error 底色')
-  assert.ok(blocks.some((block) => /color:\s*var\(--dsw-alias-label-primary-foreground\)/.test(block)), '确认删除的前景必须是实心按钮的反色 token')
-  assert.match(source, /\.confirmDanger:hover:not\(:disabled\)/)
-  assert.match(source, /\.confirmDanger:disabled/)
-  assert.match(source, /\.confirmDanger:focus-visible/)
-  assert.match(source, /\.confirmDanger \{ transition: none/, '危险按钮必须有 reduced-motion 分支')
-  // 组件必须真的用上这两个类：官方 Button 的 data-danger 没有任何视觉后果，不得退回。
+test('危险按钮统一为描边染红：data-danger 只落在 .pillButton 上', () => {
+  // 官方 Button 没有 danger 变体（primary|ghost|outline|toolbar），data-danger 在它上面
+  // 没有任何样式后果；删除确认的确认按钮也曾因此与取消按钮不同高、不同色。
+  for (const file of sourceFiles(root)) {
+    const source = readFileSync(file, 'utf8')
+    const parsed = ts.createSourceFile(file, source, ts.ScriptTarget.ES2024, true,
+      file.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS)
+    const visit = (node) => {
+      if (ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) {
+        const attribute = (name) => node.attributes.properties.find(
+          (property) => ts.isJsxAttribute(property) && property.name.getText(parsed) === name,
+        )
+        if (attribute('data-danger') !== undefined) {
+          const tag = node.tagName.getText(parsed)
+          assert.notEqual(tag, 'Button', `${file.slice(root.length + 1)}：官方 Button 没有 danger 变体，data-danger 不会染红`)
+          if (tag === 'button') {
+            assert.match(attribute('className')?.initializer?.getText(parsed) ?? '', /pillButton/,
+              `${file.slice(root.length + 1)}：危险按钮必须用 .pillButton 才拿到描边染红规则`)
+          }
+        }
+      }
+      ts.forEachChild(node, visit)
+    }
+    visit(parsed)
+  }
+  // 统一的危险形态是描边染红：透明底 + error 混色的文字与描边，不是实心红底。
+  const css = readFileSync(join(root, 'ui', 'controls.module.css'), 'utf8')
+  const rule = css.match(/\.pillButton\[data-danger\]\s*\{([^{}]*)\}/)
+  assert.ok(rule, '缺少 .pillButton[data-danger] 危险形态规则')
+  assert.match(rule[1], /color:\s*color-mix\(in srgb, var\(--dsw-alias-state-error-primary\)/)
+  assert.match(rule[1], /border-color:\s*color-mix\(in srgb, var\(--dsw-alias-state-error-primary\)/)
+  assert.doesNotMatch(rule[1], /background:\s*var\(--dsw-alias-state-error-primary\)/, '危险形态是描边染红，不是实心红底')
+  assert.match(css, /\.pillButton\[data-danger\]:hover:not\(:disabled\)/, '危险按钮的 hover 仍走同一形态')
+  // 取消与确认必须同族：两者都是 .pillButton，只在 data-danger 上分主次。
   const dialog = readFileSync(join(root, 'ui', 'ConfirmDialog.tsx'), 'utf8')
-  assert.match(dialog, /styles\.confirmDanger/)
-  assert.match(dialog, /styles\.pillButton/)
-  assert.doesNotMatch(dialog, /data-danger/)
+  assert.match(dialog, /styles\.pillButton\}/)
+  assert.match(dialog, /className=\{styles\.pillButton\} data-danger/)
 })
