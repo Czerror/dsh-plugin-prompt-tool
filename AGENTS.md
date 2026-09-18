@@ -80,7 +80,6 @@
 - 每个修复轮次在 `.scratch/plan/` 下创建唯一一份 PLAN，文件名用 `YYYY-MM-DD-plan-<主题>-<基线>.md`，章节骨架与验收标准见 [PLAN 格式规范](docs/agents/plan-format.md)。
 - PLAN 完成即归档：收尾时填满 `## 状态`，把 PLAN 原样复制到 `.scratch/archive/`（保留其中的历史互链）后从 `.scratch/plan/` 移除，随本轮代码改动同一个提交推送。
 - `.scratch/archive/` 只收 plan 归档；设计稿放 `.scratch/designs/`，同样以归档日为前缀。
-- 用户对修复范围、方案取舍和执行授权的决策写入 PLAN；审查结论不得写入 `AGENTS.md`。具体缺陷、技术修复方案和验收结论写入 PLAN 或对应权威文档，`AGENTS.md` 只保留跨任务的流程与边界。
 
 ## 运行中的 DSH 服务
 
