@@ -1,0 +1,94 @@
+# 客户端会话 id 来源修复（指令文件卡消失根因）
+
+## 需求与授权
+
+- 2026-09-18 用户提供根因审查报告 `C:\Users\Cz9nl\Desktop\指令文件模块卡无法创建-根因审查-20260918.md`，要求「根据这份审查结果创建为 plan」。本轮只产出 PLAN，不含实施授权。
+- 基线：`dev@0dbce47`，起始工作树干净。
+- 采纳的问题定义（报告第一、三节）：客户端 `currentSessionId` 读官方已删除的 `SessionListState.current`，恒为 `undefined`；指令文件链路因此静默降级为「只有全局文件」，工作区指令文件卡整体不可见、不可写。
+- 待用户拍板：① 修复范围是否含同一死字段连带的模型选择卡与 `switchPreset`（报告第五节另两处受害）；② 是否按报告建议 A+B 同做，还是先只做宿主侧 B。
+- 未决前提：修复方向 A 依赖「官方是否提供可用的当前会话事件／接口」，报告自述未穷尽全部 slot 契约，由 T1 核实。T1 结论为「无可用来源」时 A 不可行，本轮退化为 B 单方案并回写本节。
+
+## 影响面、依赖与护栏
+
+- 调用链：`src/client/index.ts:54` → `src/client/data/use-prompt-tool-store.ts:421` → `src/runtime/settings-bridge.ts:336-348` `resolveInstructionScope` → `:292` `mergeInstructionCards` → `detectAgentsFiles` → 文件卡与写通道白名单。
+- 同一死字段的另两处读取：`src/client/data/session-model-face.ts:59`、`:82`，以及 `src/client/index.ts:84` 的 `switchPreset`。
+- 依赖顺序：T1 → T2 → T3 → T4 串行；T2 的用例必须保持红灯直到 T3 落地。
+- 硬约束：契约变更先改 `src/shared/bridge-contract.ts`，再同步 host、client 与契约测试；bridge 写入端点保留白名单、类型、数值与大小校验。
+- 护栏：写通道白名单不放宽；不改 DeepSeek Harness 源码仓库；不停止、重启运行中的 dsh / dsh web；测试从隔离 cwd 与临时 `DSH_HOME` 执行。
+
+## Wave 1：确认来源并立红灯
+
+<task type="auto">
+  <name>T1：核实官方「当前会话」可用来源</name>
+  <files>已安装的 @deepseek-ai/dsh-api-session-controller 与 ui-workspace 类型、会话 slot 契约、src/client/index.ts</files>
+  <action>逐个核对候选来源——会话 slot 上下文、连接层事件、导航层快照——确认可读性、会话切换时机与订阅方式，选定 A 方案的具体接入点。</action>
+  <verify>产出候选清单与选定依据（含类型定义出处）；全部不可用时给出「无可用来源」结论与已核范围。</verify>
+  <security>不涉及，原因：只读已安装类型与本地源码，不触碰写盘、外部输入或权限路径。</security>
+  <done>接入点已选定，或已给出可复核的否定结论。</done>
+</task>
+
+<task type="auto">
+  <name>T2：建立会先红的防复发回归</name>
+  <files>test/client/ 新增用例；形状参照 test/host/instruction-scope-guard.test.mjs</files>
+  <action>用真实 SessionListState 形状（ids／byId／phase／subagentsByParent／jobsBySession，不含 current）构造 client face，断言 currentSessionId() 返回有效会话 id。</action>
+  <verify>该用例在修复前失败，保留红灯输出作为证据；现有 instruction-scope-guard 用例因使用自造假 harness 不会红，以其对照说明覆盖缺口。</verify>
+  <security>不涉及，原因：测试使用隔离临时目录与临时 DSH_HOME，不写真实预设或用户目录。</security>
+  <done>红灯可复现并留档。</done>
+</task>
+
+## Wave 2：客户端会话 id 源（治本 A）
+
+<task type="auto">
+  <name>T3：替换三处失效取值</name>
+  <files>src/client/index.ts、src/client/data/session-model-face.ts、按 T1 结论新增或复用的会话 id 模块、对应 client 测试</files>
+  <action>按 T1 选定的接入点维护 currentSessionId 源，会话切换时同步；替换指令文件、模型投影与 switchPreset 三处读取。已有的 instructionSessionRef 上下文切换与草稿保护保持不动。</action>
+  <verify>T2 用例转绿；模型卡 selectable 与 switchPreset 返回值的回归通过；会话切换后取到的 id 跟随更新。</verify>
+  <security>只读会话 id，不新增写盘权限；白名单判断不落到客户端。</security>
+  <done>三处取值不再依赖 SessionListState.current。</done>
+</task>
+
+## Wave 3：宿主读侧兜底（B）
+
+<task type="auto">
+  <name>T4：resolveInstructionScope 读放宽、写不放宽</name>
+  <files>src/shared/bridge-contract.ts、src/runtime/settings-bridge.ts、对应 host 与契约测试</files>
+  <action>拿不到 sessionId 时按官方 agent-instructions 的口径回退到会话 header cwd（缺失再退部署进程 cwd），并如实标记来源（如 deploy-cwd）；mergeInstructionCards 与写通道白名单维持不变。</action>
+  <verify>无 sessionId 的请求返回工作区文件且来源标记正确；写通道仍拒绝白名单外路径；部署 cwd 与会话工作区不一致时 UI 能辨别来源。</verify>
+  <security>读放宽、写不放宽：白名单、真实路径校验与请求体上限保持不变，部署 cwd 不转化为写授权。</security>
+  <done>id 异常时工作区文件卡不再消失，且来源可辨。</done>
+</task>
+
+## Wave 4：实测与交付
+
+<task type="auto">
+  <name>T5：UI 实测、门禁与文档同步</name>
+  <files>测试套件、docs/ui-architecture.md、CHANGELOG.md、PLAN</files>
+  <action>按报告第七节实测；跑 typecheck、lint、完整 test、build 与 diff --check；行为变化同步权威文档并回填本 PLAN 的 `## 状态` 与 `## 验收记录`。</action>
+  <verify>/prompt-configs 请求体带 sessionId；返回 source: session 且 cwd 等于当前工作区；模块列表出现工作区 AGENTS 文件卡并能保存成功。门禁全绿。</verify>
+  <security>不重启运行中的 DSH，只刷新页面与只读探测；本地记忆不提交。</security>
+  <done>实测与门禁均有输出留档，交付 SHA 与推送分支明确。</done>
+</task>
+
+## 回滚与检查点
+
+- 回滚：本轮只改插件代码，无数据迁移，`git revert` 对应提交即可；已生成的预设与用户数据不受影响。
+- 检查点：Wave 边界把中断摘要写入 `.scratch/`，不把流程产物放 `.ai-memory`。
+
+## 状态
+
+- [ ] Wave 1 / T1：核实官方「当前会话」可用来源。
+- [ ] Wave 1 / T2：建立会先红的防复发回归。
+- [ ] Wave 2 / T3：替换三处失效取值。
+- [ ] Wave 3 / T4：宿主读侧兜底。
+- [ ] Wave 4 / T5：UI 实测、门禁与文档同步。
+
+## 验收记录
+
+- 待执行后回填：实际命令、退出码与实测输出，以及红灯用例在修复前的失败输出。
+
+## 实施取舍与已知边界
+
+- A 与 B 的分工：A 让常规路径正确，B 保证任何 id 异常时工作区卡不再凭空消失。只做 A 则 id 异常场景仍静默降级，只做 B 则客户端仍读死字段，报告建议两者同做。
+- 报告自述未做浏览器抓包，结论由运行中的 lib/client.js、已安装官方类型缺字段、bridge「传对 id 即恢复」三方互证；修复后以 T5 的实测取代该推断。
+- 官方包升级后需重新核对 `SessionListState` 字段；T2 的用例即为该核对的前置告警。
+- 部署进程 cwd 与当前会话工作区可能不同，B 方案的来源差异必须在 UI 可见。
