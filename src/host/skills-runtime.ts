@@ -10,7 +10,7 @@ import { readSkillsState, skillsStatePath, writeSkillsState, type SkillsStateRea
 import { policyTarget, setSkillInvocation, type SkillPolicyWrite } from './skills-policy.ts'
 import { createSkillsProvider } from './skills-provider.ts'
 import { createSkillsReloader } from './skills-refresh.ts'
-import { catalogFromScan, resolveBundledSkillsDir, scanRoots, skillPathKey, skillRoots, skillWriteRestriction, withSkillWinners } from './skills-scan.ts'
+import { catalogFromScan, resolveBundledSkillsDir, scanRoots, skillPathKey, skillRoots, skillWriteRestriction, withGlobalSkillFallback, withSkillWinners } from './skills-scan.ts'
 import { DSH_HOME } from './paths.ts'
 
 export interface SkillsRuntime {
@@ -117,7 +117,21 @@ export function createSkillsRuntime(ctx: Context, options: { dshHome?: string } 
       for (;;) {
         const observedPending = pending
         await observedPending
-        const observed = await ctx.skills.snapshot(view)
+        // 带 scope 的查询只读该视图层（官方 SkillViewOptions 注释：omitted reads the
+        // global layer alone）；技能装在全局层时它整表为空，而空 resolved 会让
+        // withSkillWinners 把每个条目判成 unregistered——技能页于是整页显示
+        // 「当前会话未注册」。视图为空时回退到不带 scope 的全局视图。
+        const scoped = await ctx.skills.snapshot(view)
+        const observed = view.scope === undefined
+          ? scoped
+          : await withGlobalSkillFallback(scoped, () => ctx.skills.snapshot({ ...view, scope: undefined }))
+        // 诊断出口：视图异常为空是「整页未注册」的唯一成因，留下可定位的一行。
+        if (view.scope !== undefined && observed !== scoped) {
+          ctx.logger?.warn(`prompt-tool: 带 scope 的技能视图为空，已改用全局视图（cwd=${view.cwd ?? ''}）`)
+        }
+        if (view.scope !== undefined && observed.skills.length === 0) {
+          ctx.logger?.warn(`prompt-tool: 技能注册表视图为空，技能页将显示未注册（cwd=${view.cwd ?? ''}；scope 视图与全局视图均为空）`)
+        }
         if (observedPending !== pending) continue
         const entries = listSkills(view.cwd)
         if (observedPending !== pending) continue

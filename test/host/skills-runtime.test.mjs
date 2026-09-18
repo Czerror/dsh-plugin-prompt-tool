@@ -163,3 +163,30 @@ test('官方 watcher 启动失败保留可读取候选并向管理快照传播 c
     assert.equal((await h.registry.get('readable')).content, 'body')
   } finally { chokidar.watch = original; await h.close() }
 })
+
+test('技能视图回退：带 scope 的视图为空时改用全局视图，条目不再被判成未注册', async (t) => {
+  // 复现故障现场：宿主 registry 带 scope 时只读该视图层，技能装在全局层时整表为空，
+  // 空 resolved 会让 withSkillWinners 把每个条目判成 unregistered，技能页于是整页
+  // 显示「当前会话未注册」。
+  const h = rig('scope-fallback')
+  const root = join(sandbox, 'scope-fallback-skills')
+  const skillPath = write(root, 'fallback-skill')
+  h.runtime.setFolders([root])
+
+  const views = []
+  t.mock.method(h.registry, 'snapshot', async (view = {}) => {
+    views.push(view)
+    return view.scope === undefined
+      ? { skills: [{ name: 'fallback-skill', path: skillPath, provider: 'filesystem' }], complete: true }
+      : { skills: [], complete: true }
+  })
+
+  const result = await h.runtime.snapshot({ cwd: root, scope: 'agent:test' })
+  const entry = result.skills.find((item) => item.name === 'fallback-skill')
+  assert.ok(entry, '本地扫描条目必须保留')
+  assert.equal(entry.availability, 'active', '回退全局视图后应为 active')
+  assert.equal(views.length, 2, '视图为空才追加一次全局查询')
+  assert.equal(views[0].scope, 'agent:test', '首次查询带 scope')
+  assert.equal(views[1].scope, undefined, '回退查询不得带 scope')
+  await h.close()
+})
