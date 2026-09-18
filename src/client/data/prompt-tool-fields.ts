@@ -29,6 +29,8 @@ export interface Fields extends EngineParamDrafts {
   agentsPath: string
   /** 技能清单：官方六类技能根扫描结果（两端调用策略直接来自各技能文件的 frontmatter）。 */
   skillCatalog: SkillCatalogEntry[]
+  /** 当前会话的注册表观测是否完整；false 不能解释成技能不存在。 */
+  skillsComplete: boolean
   /** 用户添加的技能文件夹（只引用，不复制）。 */
   skillFolders: string[]
   /** 用户技能根（创建、复制导入与回收站的落点）。 */
@@ -73,6 +75,7 @@ export const EMPTY_FIELDS: Fields = {
   agentsText: '',
   agentsPath: '',
   skillCatalog: [],
+  skillsComplete: false,
   skillFolders: [],
   skillsRoot: '',
   presetOrder: 5,

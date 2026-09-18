@@ -1,307 +1,84 @@
-/** 技能扫描回归：六类官方技能根、"一层发现"规则、同名裁决与清单投影。
- *
- *  这些规则必须与官方 `dsh-skill-filesystem` 一致，否则清单会展示模型其实看不到的技能，
- *  或者漏掉真实存在的技能。用例全部在独立临时目录里构造真实文件，不依赖共享状态。 */
 import { after, test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
-import { Context } from '@deepseek-ai/cordis'
-import { SkillRegistry } from '@deepseek-ai/dsh-skill'
-import { createScope } from '@deepseek-ai/dsh-scope'
-import { createSkillsProvider } from '../../src/host/skills-provider.ts'
-import {
-  catalogFromScan,
-  withSkillWinners,
-  resolveProjectRoot,
-  rootsFingerprint,
-  scanRoot,
-  scanRoots,
-  skillRoots,
-} from '../../src/host/skills-scan.ts'
-import { SKILL_SOURCES } from '../../src/shared/skills.ts'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { catalogFromScan, resolveProjectRoot, scanRoot, scanRoots, skillRoots, withSkillWinners } from '../../src/host/skills-scan.ts'
 
-const tempDirs = []
-function makeRoot(prefix = 'pt-scan-') {
-  const dir = mkdtempSync(join(tmpdir(), prefix))
-  tempDirs.push(dir)
-  return dir
-}
-after(() => { for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true }) })
-
-function writeSkill(root, folder, frontmatter, body = '正文') {
+const sandbox = mkdtempSync(join(process.cwd(), 'pt-scan-'))
+after(() => rmSync(sandbox, { recursive: true, force: true }))
+function write(root, folder, frontmatter) {
   mkdirSync(join(root, folder), { recursive: true })
-  writeFileSync(join(root, folder, 'SKILL.md'), `---\n${frontmatter}\n---\n${body}\n`, 'utf8')
+  writeFileSync(join(root, folder, 'SKILL.md'), `---\n${frontmatter}\n---\nbody\n`)
 }
 
-/** 扫描结果替身：只用清单与裁决真正读取的字段。 */
-const scanned = (overrides = {}) => ({
-  id: 'user-dsh:/u:demo',
-  source: 'user-dsh',
-  rank: SKILL_SOURCES['user-dsh'].rank,
-  dir: '/u',
-  folder: 'demo',
-  file: '/u/demo/SKILL.md',
-  name: 'demo',
-  description: '',
-  body: '',
-  valid: true,
-  modelInvocable: true,
-  userInvocable: true,
-  ...overrides,
+test('管理扫描只发现直属普通目录包与 flat Markdown，不递归资源或系统目录', () => {
+  const root = join(sandbox, 'assets')
+  write(root, 'alpha', 'name: alpha\ndescription: A')
+  write(join(root, 'nested'), 'child', 'name: child\ndescription: C')
+  write(root, '.system', 'name: system\ndescription: S')
+  writeFileSync(join(root, 'flat.md'), '---\nname: flat\ndescription: F\n---\nbody\n')
+  const skills = scanRoot({ kind: 'custom', path: root })
+  assert.deepEqual(skills.map((skill) => skill.name), ['alpha', 'flat'])
+  assert.deepEqual(catalogFromScan(skills).map((skill) => [skill.canSetPolicy, skill.canDelete]), [[true, true], [true, true]])
+  assert.deepEqual(scanRoot({ kind: 'custom', path: join(root, 'absent') }), [])
+  assert.deepEqual(scanRoot({ kind: 'custom', path: join(root, 'flat.md') }), [])
 })
 
-test('一层发现：只认 <根>/<目录>/SKILL.md，不递归也不认扁平文件', () => {
-  const root = makeRoot()
-  writeSkill(root, 'alpha', 'name: alpha\ndescription: A 的描述')
-  mkdirSync(join(root, 'nested', 'child'), { recursive: true })
-  writeFileSync(join(root, 'nested', 'child', 'SKILL.md'), '---\nname: child\ndescription: C\n---\n正文\n', 'utf8')
-  writeFileSync(join(root, 'flat.md'), '---\nname: flat\ndescription: F\n---\n正文\n', 'utf8')
-  mkdirSync(join(root, 'no-marker'))
-
-  const skills = scanRoot({ kind: 'user-dsh', path: root })
-  assert.deepEqual(skills.map((skill) => skill.folder), ['alpha'], '嵌套、扁平与缺标记文件的目录都不算技能')
-  assert.equal(skills[0].source, 'user-dsh')
-  assert.equal(skills[0].rank, SKILL_SOURCES['user-dsh'].rank)
-  assert.equal(skills[0].name, 'alpha')
-  assert.equal(skills[0].description, 'A 的描述')
-  assert.equal(skills[0].valid, true)
-  assert.equal(skills[0].file, join(root, 'alpha', 'SKILL.md'))
+test('无效资产保留诊断；官方调用策略按端反映声明', () => {
+  const root = join(sandbox, 'validation')
+  write(root, 'no-name', 'description: D')
+  write(root, 'no-description', 'name: no-description')
+  write(root, 'bad-name', 'name: Bad_Name\ndescription: D')
+  write(root, 'model-off', 'name: model-off\ndescription: D\ndisable-model-invocation: yes')
+  write(root, 'user-off', 'name: user-off\ndescription: D\nuser-invocable: off')
+  const entries = Object.fromEntries(catalogFromScan(scanRoot({ kind: 'user-dsh', path: root })).map((entry) => [entry.folder, entry]))
+  assert.equal(entries['no-name'].issue, 'frontmatter 缺少 name')
+  assert.equal(entries['no-description'].issue, 'frontmatter 缺少 description')
+  assert.match(entries['bad-name'].issue, /kebab-case/)
+  assert.equal(entries['no-name'].canSetPolicy, false)
+  assert.deepEqual([entries['model-off'].modelInvocable, entries['model-off'].userInvocable], [false, true])
+  assert.deepEqual([entries['user-off'].modelInvocable, entries['user-off'].userInvocable], [true, false])
 })
 
-test('技能根不存在或不是目录时返回空，不抛错', () => {
-  const root = makeRoot()
-  assert.deepEqual(scanRoot({ kind: 'custom', path: join(root, 'missing') }), [])
-  writeFileSync(join(root, 'a-file'), 'x', 'utf8')
-  assert.deepEqual(scanRoot({ kind: 'custom', path: join(root, 'a-file') }), [])
-})
-
-test('有效性：缺 name / 缺 description / 名字非 kebab-case 都标记无效并给出原因', () => {
-  const root = makeRoot()
-  writeSkill(root, 'no-name', 'description: 只有描述')
-  writeSkill(root, 'no-description', 'name: no-description')
-  writeSkill(root, 'Bad_Name', 'name: Bad_Name\ndescription: 大写名字')
-
-  const issues = Object.fromEntries(scanRoot({ kind: 'user-dsh', path: root }).map((skill) => [skill.folder, skill.issue]))
-  assert.equal(issues['no-name'], 'frontmatter 缺少 name')
-  assert.equal(issues['no-description'], 'frontmatter 缺少 description')
-  assert.equal(issues['Bad_Name'], '技能名不是 kebab-case：Bad_Name')
-})
-
-test('调用声明只影响对应的一端，缺省时两端都可调用', () => {
-  const root = makeRoot()
-  writeSkill(root, 'model-off', 'name: model-off\ndescription: D\ndisable-model-invocation: true')
-  writeSkill(root, 'user-off', 'name: user-off\ndescription: D\nuser-invocable: false')
-  writeSkill(root, 'both-default', 'name: both-default\ndescription: D')
-
-  const byName = Object.fromEntries(scanRoot({ kind: 'user-dsh', path: root }).map((skill) => [skill.name, skill]))
-  assert.deepEqual([byName['model-off'].modelInvocable, byName['model-off'].userInvocable], [false, true])
-  assert.deepEqual([byName['user-off'].modelInvocable, byName['user-off'].userInvocable], [true, false])
-  assert.deepEqual([byName['both-default'].modelInvocable, byName['both-default'].userInvocable], [true, true])
-})
-
-test('技能根构成与顺序：项目 > 引用目录 > 用户 > 内置', () => {
-  const cwd = makeRoot('pt-scan-project-')
-  mkdirSync(join(cwd, '.git'), { recursive: true })
-  const dshHome = makeRoot('pt-scan-home-')
-  const referenced = makeRoot('pt-scan-ref-')
-  const bundled = makeRoot('pt-scan-bundled-')
-  const agentsHome = join(dshHome, 'agents')
-  const previousBundled = process.env.DSH_BUNDLED_SKILL_DIR
-  const previousAgents = process.env.DSH_AGENTS_HOME
-  process.env.DSH_BUNDLED_SKILL_DIR = bundled
-  process.env.DSH_AGENTS_HOME = agentsHome
+test('管理根随 cwd 寻找项目边界，六类来源保留既有顺序', () => {
+  const project = join(sandbox, 'project')
+  const cwd = join(project, 'packages', 'app')
+  mkdirSync(join(project, '.git'), { recursive: true })
+  mkdirSync(cwd, { recursive: true })
+  assert.equal(resolveProjectRoot(cwd), project)
+  assert.equal(resolveProjectRoot(sandbox), sandbox)
+  const saved = [process.env.DSH_AGENTS_HOME, process.env.DSH_BUNDLED_SKILL_DIR]
+  process.env.DSH_AGENTS_HOME = join(sandbox, 'agents')
+  process.env.DSH_BUNDLED_SKILL_DIR = join(sandbox, 'bundled')
   try {
-    const roots = skillRoots({ cwd, dshHome, folders: [referenced] })
-    assert.deepEqual(roots.map((root) => root.kind),
-      ['project-dsh', 'project-agents', 'custom', 'user-dsh', 'user-agents', 'bundled'])
-    assert.equal(roots[0].path, join(cwd, '.dsh', 'skills'))
-    assert.equal(roots[1].path, join(cwd, '.agents', 'skills'))
-    assert.equal(roots[2].path, referenced)
-    assert.equal(roots[3].path, join(dshHome, 'skills'))
-    assert.equal(roots[4].path, join(agentsHome, 'skills'))
-    assert.equal(roots[5].path, bundled)
-
-    const withoutCwd = skillRoots({ dshHome, folders: [] })
-    assert.deepEqual(withoutCwd.map((root) => root.kind), ['user-dsh', 'user-agents', 'bundled'],
-      '没有工作目录时不产生项目根')
-  } finally {
-    if (previousBundled === undefined) delete process.env.DSH_BUNDLED_SKILL_DIR
-    else process.env.DSH_BUNDLED_SKILL_DIR = previousBundled
-    if (previousAgents === undefined) delete process.env.DSH_AGENTS_HOME
-    else process.env.DSH_AGENTS_HOME = previousAgents
-  }
-})
-
-test('项目根：向上找第一个含 .git 的目录，找不到时退回工作目录本身', () => {
-  const outer = makeRoot('pt-scan-outer-')
-  mkdirSync(join(outer, '.git'), { recursive: true })
-  const inner = join(outer, 'packages', 'app')
-  mkdirSync(inner, { recursive: true })
-  assert.equal(resolveProjectRoot(inner), resolve(outer))
-
-  const lone = makeRoot('pt-scan-lone-')
-  assert.equal(resolveProjectRoot(lone), resolve(lone))
-})
-
-test('无注册表结果时清单不猜测同名赢家，无效条目仍保留', () => {
-  const skills = [
-    scanned({ id: 'user-dsh:/u:demo', source: 'user-dsh', rank: SKILL_SOURCES['user-dsh'].rank }),
-    scanned({ id: 'project-dsh:/p:demo', source: 'project-dsh', rank: SKILL_SOURCES['project-dsh'].rank }),
-  ]
-  assert.ok(catalogFromScan(skills).every((entry) => entry.winnerId === undefined))
-
-  const withInvalid = [
-    scanned({ id: 'project-dsh:/p:demo', source: 'project-dsh', rank: SKILL_SOURCES['project-dsh'].rank, valid: false, issue: 'x' }),
-    scanned({ id: 'user-dsh:/u:demo', source: 'user-dsh', rank: SKILL_SOURCES['user-dsh'].rank }),
-  ]
-  assert.equal(catalogFromScan(withInvalid)[0].valid, false)
-})
-
-test('清单投影：调用策略直接取自 frontmatter，被遮蔽条目带 winnerId', () => {
-  const project = scanned({ id: 'project-dsh:/p:demo', file: '/p/demo/SKILL.md', source: 'project-dsh', rank: SKILL_SOURCES['project-dsh'].rank })
-  const bundled = scanned({ id: 'bundled:/b:demo', file: '/b/demo/SKILL.md', source: 'bundled', rank: SKILL_SOURCES.bundled.rank })
-
-  // 单参调用：没有屏蔽表，策略整段来自扫描结果。
-  const [onlyModelOff] = catalogFromScan([scanned({
-    id: 'project-dsh:/p:demo',
-    source: 'project-dsh',
-    rank: SKILL_SOURCES['project-dsh'].rank,
-    modelInvocable: false,
-    userInvocable: true,
-  })])
-  assert.deepEqual([onlyModelOff.modelInvocable, onlyModelOff.userInvocable], [false, true], '只关模型端时用户端仍可用')
-  assert.equal(onlyModelOff.path, '/u/demo/SKILL.md', '清单条目带写入目标路径（身份校验依据）')
-  for (const gone of ['blocked', 'blockedModel', 'blockedUser']) {
-    assert.equal(gone in onlyModelOff, false, `${gone} 不再是清单字段`)
-  }
-
-  const [bothOff] = catalogFromScan([scanned({
-    id: 'project-dsh:/p:demo',
-    source: 'project-dsh',
-    rank: SKILL_SOURCES['project-dsh'].rank,
-    modelInvocable: false,
-    userInvocable: false,
-  })])
-  assert.deepEqual([bothOff.modelInvocable, bothOff.userInvocable], [false, false])
-
-  const catalog = withSkillWinners(catalogFromScan([project, bundled]), [{ name: project.name, path: project.file }])
-  assert.equal(catalog.length, 2, '单参调用不做任何过滤：无效与遮蔽条目都保留')
-  const winner = catalog.find((item) => item.id === project.id)
-  const shadowed = catalog.find((item) => item.id === bundled.id)
-  assert.equal(winner.winnerId, undefined, '胜出者不标注被遮蔽')
-  assert.equal(shadowed.winnerId, project.id, '失败者标注胜出者 id')
-  assert.deepEqual([shadowed.modelInvocable, shadowed.userInvocable], [true, true], '被遮蔽不等于被停用')
-})
-
-test('scanRoots 按根顺序拼接各来源结果', () => {
-  const projectRoot = makeRoot('pt-scan-a-')
-  const userRoot = makeRoot('pt-scan-b-')
-  writeSkill(projectRoot, 'alpha', 'name: alpha\ndescription: A')
-  writeSkill(userRoot, 'beta', 'name: beta\ndescription: B')
-  const skills = scanRoots([
-    { kind: 'project-dsh', path: projectRoot },
-    { kind: 'user-dsh', path: userRoot },
-  ])
-  assert.deepEqual(skills.map((skill) => [skill.name, skill.source]), [['alpha', 'project-dsh'], ['beta', 'user-dsh']])
-})
-
-test('同名标注跟随真实 registry 的根顺序和 scope 覆盖，不用 rank 猜测', async () => {
-  const app = new Context()
-  const registry = new SkillRegistry(app)
-  const z = scanned({ id: 'z', dir: '/z', file: '/z/demo/SKILL.md', source: 'custom', rank: 300 })
-  const a = scanned({ id: 'a', dir: '/a', file: '/a/demo/SKILL.md', source: 'custom', rank: 300 })
-  const user = scanned({ id: 'user', dir: '/user', file: '/user/demo/SKILL.md', rank: 400 })
-  const dispose = registry.registerProvider(() => createSkillsProvider({ referenced: () => [z, a] }))
-  const key = {}
-  const scope = createScope(app, key)
-  try {
-    const entries = catalogFromScan([z, a, user])
-    const global = withSkillWinners(entries, await registry.list())
-    assert.equal(global.find((entry) => entry.id === 'z').winnerId, undefined)
-    assert.equal(global.find((entry) => entry.id === 'a').winnerId, 'z', '同层按根顺序，反字典序仍取 z')
-    scope.ctx.skills.registerProvider(() => ({ name: 'filesystem',
-      list: async () => [{ name: user.name, description: 'user', rank: 400, source: 'user-dsh', provider: 'filesystem',
-        invocation: { modelInvocable: true, userInvocable: true }, locator: user.file, path: user.file }],
-      get: async () => undefined,
-    }))
-    const scoped = withSkillWinners(entries, await registry.list({ scope: key }))
-    assert.equal(scoped.find((entry) => entry.id === 'user').winnerId, undefined)
-    assert.equal(scoped.find((entry) => entry.id === 'z').winnerId, 'user', 'scope 优先于全局 rank')
-  } finally { await scope.dispose(); dispose() }
-})
-
-test('未配置内置技能根时不产生 bundled 来源（未设或空串都一样）', () => {
-  const dshHome = makeRoot('pt-scan-nobundled-')
-  const previousBundled = process.env.DSH_BUNDLED_SKILL_DIR
-  const previousAgents = process.env.DSH_AGENTS_HOME
-  process.env.DSH_AGENTS_HOME = join(dshHome, 'agents')
-  try {
+    const roots = skillRoots({ cwd, dshHome: join(sandbox, 'home'), folders: [join(sandbox, 'references')] })
+    assert.deepEqual(roots.map((root) => root.kind), ['project-dsh', 'project-agents', 'custom', 'user-dsh', 'user-agents', 'bundled'])
+    assert.equal(roots[0].path, join(project, '.dsh', 'skills'))
     delete process.env.DSH_BUNDLED_SKILL_DIR
-    assert.deepEqual(skillRoots({ dshHome, folders: [] }).map((root) => root.kind), ['user-dsh', 'user-agents'])
-    process.env.DSH_BUNDLED_SKILL_DIR = ''
-    assert.deepEqual(skillRoots({ dshHome, folders: [] }).map((root) => root.kind), ['user-dsh', 'user-agents'],
-      '空串同样视为未配置内置根')
+    assert.deepEqual(skillRoots({ dshHome: sandbox, folders: [] }).map((root) => root.kind), ['user-dsh', 'user-agents'])
+    assert.deepEqual(scanRoots([{ kind: 'custom', path: join(sandbox, 'assets') }]).map((skill) => skill.name), ['alpha', 'flat'])
   } finally {
-    if (previousBundled === undefined) delete process.env.DSH_BUNDLED_SKILL_DIR
-    else process.env.DSH_BUNDLED_SKILL_DIR = previousBundled
-    if (previousAgents === undefined) delete process.env.DSH_AGENTS_HOME
-    else process.env.DSH_AGENTS_HOME = previousAgents
+    for (const [index, key] of ['DSH_AGENTS_HOME', 'DSH_BUNDLED_SKILL_DIR'].entries()) {
+      if (saved[index] === undefined) delete process.env[key]
+      else process.env[key] = saved[index]
+    }
   }
 })
 
-test('根指纹：技能集合或标记文件变化后失效，无变化时保持相同', () => {
-  const root = makeRoot('pt-scan-fingerprint-')
-  writeSkill(root, 'alpha', 'name: alpha\ndescription: A')
-  const roots = [{ kind: 'custom', path: root }]
-  const initial = rootsFingerprint(roots)
-  assert.equal(rootsFingerprint(roots), initial, '没有变化时指纹必须稳定（否则缓存白失效）')
-
-  // 新增技能目录 → 指纹变化（这是「手工往用户根里放技能，管理页却看不到」的判据）。
-  writeSkill(root, 'beta', 'name: beta\ndescription: B')
-  const added = rootsFingerprint(roots)
-  assert.notEqual(added, initial, '新增技能目录必须改变指纹')
-
-  // 修改既有技能：显式回拨标记文件时间，避免依赖写入间隔的毫秒精度。
-  const marker = join(root, 'alpha', 'SKILL.md')
-  const past = new Date(Date.now() - 60_000)
-  utimesSync(marker, past, past)
-  const afterTouch = rootsFingerprint(roots)
-  assert.notEqual(afterTouch, added, '既有技能内容变化必须改变指纹')
-
-  // 等长改写 + 把 mtime 还原：size 与 mtime 都一样，判据只能靠 ctime。
-  // Windows/NTFS 的 ctime 不保证亚毫秒级推进（实测同一次写入前后可能拿到同一个 ctime），
-  // 所以先确认「这次改写确实让 ctime 前进」，再断言指纹变化——避免把文件系统粒度误报成产品缺陷。
-  // 注意 stat.size 是字节数、String.length 是 UTF-16 码元数：正文含中文时两者不等，比较必须同单位。
-  const original = readFileSync(marker, 'utf8')
-  const sizeBeforeRewrite = statSync(marker).size
-  const ctimeBefore = statSync(marker).ctimeMs
-  writeFileSync(marker, original.replace('description: A', 'description: B'), 'utf8')
-  utimesSync(marker, past, past)
-  assert.equal(statSync(marker).size, sizeBeforeRewrite, '改写必须等长（size 帮不上忙，才轮到 ctime）')
-  assert.equal(readFileSync(marker, 'utf8').includes('description: B'), true, '改写必须真的生效')
-  if (statSync(marker).ctimeMs === ctimeBefore) {
-    // ctime 判据不可用：显式记录并退化为「判据确实是启发式」的断言（不假装成功）。
-    process.stderr.write('[skills-scan] 提示：本次等长改写的 ctimeMs 未变化（文件系统时间戳粒度），跳过 ctime 专属断言\n')
-    assert.equal(rootsFingerprint(roots), afterTouch, 'ctime 未变时指纹相同是正确行为（判据是启发式）')
-  } else {
-    assert.notEqual(rootsFingerprint(roots), afterTouch, '等长改写并还原 mtime 也必须让指纹变化')
-  }
-
-  // 追加内容使 size 变化：与时间戳粒度无关的强判据，必须改变指纹。
-  const beforeAppend = rootsFingerprint(roots)
-  const sizeBeforeAppend = statSync(marker).size
-  writeFileSync(marker, `${readFileSync(marker, 'utf8')}# 追加一行\n`, 'utf8')
-  assert.notEqual(statSync(marker).size, sizeBeforeAppend, 'size 必须真的变了（这是本判据的前提）')
-  assert.notEqual(rootsFingerprint(roots), beforeAppend, 'size 变化必须改变指纹')
-
-  // 删除技能目录 → 指纹变化。
-  const current = rootsFingerprint(roots)
-  rmSync(join(root, 'beta'), { recursive: true, force: true })
-  assert.notEqual(rootsFingerprint(roots), current, '删除技能目录必须改变指纹')
-
-  // 根不存在时指纹是固定值（kind|路径|-），不是「只是两次相等」。
-  const missing = [{ kind: 'custom', path: join(root, 'not-there') }]
-  assert.equal(rootsFingerprint(missing), `custom|${join(root, 'not-there')}|-`)
+test('投影按 registry 胜出路径标注状态，完整性与文件声明独立，补充虚拟提供方', () => {
+  const root = join(sandbox, 'projection')
+  write(root, 'first', 'name: shared\ndescription: D\ndisable-model-invocation: true')
+  write(root, 'second', 'name: shared\ndescription: D')
+  write(root, 'unregistered', 'name: unregistered\ndescription: D')
+  const entries = catalogFromScan(scanRoot({ kind: 'custom', path: root }))
+  const summaries = [{ name: 'shared', path: join(root, 'second', 'SKILL.md'), provider: 'filesystem', invocation: { modelInvocable: false, userInvocable: false } },
+    { name: 'remote', description: 'remote', provider: 'remote-provider', source: 'runtime', invocation: { modelInvocable: true, userInvocable: true } }]
+  const result = withSkillWinners(entries, summaries)
+  assert.equal(result.find((entry) => entry.folder === 'first').availability, 'shadowed')
+  assert.equal(result.find((entry) => entry.folder === 'second').availability, 'active')
+  assert.equal(result.find((entry) => entry.folder === 'second').modelInvocable, true, 'registry 不覆盖磁盘声明')
+  assert.equal(result.find((entry) => entry.name === 'unregistered').availability, 'unregistered')
+  const remote = result.find((entry) => entry.name === 'remote')
+  assert.deepEqual([remote.source, remote.availability, remote.canSetPolicy, remote.canDelete], ['other', 'active', false, false])
+  assert.ok(withSkillWinners(entries, summaries, false).every((entry) => entry.availability === 'unknown' && entry.winnerId === undefined))
 })

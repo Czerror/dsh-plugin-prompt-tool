@@ -3,11 +3,11 @@
 //  删除改为整体移动技能目录进 `<root>/.system/prompt-tool/.trash`，只处理用户根里的实体。
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-const { createSkill, deleteSkill, readSkillMarker } = await import('../../src/host/skills-actions.ts')
+const { createSkill, deleteSkill, deleteSkillTarget, readSkillMarker } = await import('../../src/host/skills-actions.ts')
 
 const makeRoot = () => mkdtempSync(join(tmpdir(), 'pt-actions-'))
 
@@ -150,5 +150,55 @@ test('trashSkill 失败时清理自己创建的容器，不在回收站留空条
     assert.throws(() => trashSkill(root, 'missing-skill', 'delete'), /ENOENT/u, '源目录不存在时抛错')
     const trashRoot = join(root, '.system', 'prompt-tool', '.trash')
     assert.deepEqual(readdirSync(trashRoot), [], '失败不留「只有 record.json」的空条目')
+  } finally { rmSync(root, { recursive: true, force: true }) }
+})
+
+test('引用根删除目录包和 flat 文件：回收记录完整，其他资源不动', () => {
+  const root = makeRoot()
+  try {
+    createSkill(root, { name: 'demo', description: 'D', content: 'body' })
+    writeFileSync(join(root, 'flat.md'), '---\nname: flat\ndescription: D\n---\nbody\n')
+    writeFileSync(join(root, 'keep.txt'), 'keep')
+    for (const target of [join(root, 'demo', 'SKILL.md'), join(root, 'flat.md')]) {
+      const result = deleteSkillTarget([root], target)
+      assert.equal(result.ok, true, result.message)
+      assert.equal(existsSync(target), false)
+      assert.equal(existsSync(result.path), true)
+      const record = JSON.parse(readFileSync(join(result.path, '..', 'record.json'), 'utf8'))
+      assert.equal(record.origin, 'delete')
+      assert.equal(record.source, target.endsWith('SKILL.md') ? join(root, 'demo') : target)
+    }
+    assert.equal(readFileSync(join(root, 'keep.txt'), 'utf8'), 'keep')
+  } finally { rmSync(root, { recursive: true, force: true }) }
+})
+
+test('引用根删除拒绝越界、移除的根、非技能、只读和所有链接边界', () => {
+  const root = makeRoot()
+  try {
+    const allowed = join(root, 'allowed')
+    const outside = join(root, 'outside')
+    mkdirSync(allowed)
+    mkdirSync(outside)
+    createSkill(allowed, { name: 'demo', description: 'D', content: 'body' })
+    createSkill(outside, { name: 'other', description: 'D', content: 'body' })
+    const marker = join(allowed, 'demo', 'SKILL.md')
+    assert.equal(deleteSkillTarget([], marker).ok, false)
+    assert.equal(deleteSkillTarget([allowed], join(outside, 'other', 'SKILL.md')).ok, false)
+    writeFileSync(join(allowed, 'plain.md'), 'not a skill')
+    assert.equal(deleteSkillTarget([allowed], join(allowed, 'plain.md')).ok, false)
+    chmodSync(marker, 0o444)
+    try { assert.equal(deleteSkillTarget([allowed], marker).ok, false) } finally { chmodSync(marker, 0o666) }
+    const link = join(root, 'linked')
+    symlinkSync(allowed, link, process.platform === 'win32' ? 'junction' : 'dir')
+    assert.equal(deleteSkillTarget([link], join(link, 'demo', 'SKILL.md')).ok, false)
+    assert.equal(deleteSkillTarget([join(link, 'demo')], join(link, 'demo', 'SKILL.md')).ok, false)
+    symlinkSync(join(outside, 'other'), join(allowed, 'linked-skill'), process.platform === 'win32' ? 'junction' : 'dir')
+    assert.equal(deleteSkillTarget([allowed], join(allowed, 'linked-skill', 'SKILL.md')).ok, false)
+    symlinkSync(join(outside, 'other', 'SKILL.md'), join(allowed, 'linked.md'), 'file')
+    assert.equal(deleteSkillTarget([allowed], join(allowed, 'linked.md')).ok, false)
+    symlinkSync(outside, join(allowed, '.system'), process.platform === 'win32' ? 'junction' : 'dir')
+    assert.equal(deleteSkillTarget([allowed], marker).ok, false)
+    assert.equal(existsSync(marker), true)
+    assert.deepEqual(readdirSync(outside), ['other'])
   } finally { rmSync(root, { recursive: true, force: true }) }
 })

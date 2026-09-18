@@ -1,11 +1,27 @@
-/** 技能资产操作：创建与回收站删除，全部落在用户技能根（$DSH_HOME/skills）。
- *  技能实体就是 `<根>/<目录名>/SKILL.md`；本模块不写插件状态，也不碰其他来源的技能。 */
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+/** 技能资产操作：创建落在用户根；删除只处理宿主确认的用户根与引用根中的直属技能。 */
+import { accessSync, constants, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
 import { Document } from 'yaml'
 import { SKILL_NAME_PATTERN } from './skills-config.ts'
+import { parseFrontmatter } from '../runtime/skills-parse.ts'
 
 export type SkillActionResult = { ok: true; id: string; path: string } | { ok: false; message: string }
+
+/** 检查完整祖先链，防止普通文件通过链接父目录落到授权根之外。不存在的尾段允许稍后创建。 */
+export function assertUnlinkedPath(path: string): void {
+  let current = resolve(path)
+  for (;;) {
+    if (lstatSync(current, { throwIfNoEntry: false })?.isSymbolicLink()) throw new Error(`拒绝符号链接路径：${current}`)
+    const parent = dirname(current)
+    if (parent === current) return
+    current = parent
+  }
+}
+
+function assertWritable(path: string): void {
+  if ((lstatSync(path).mode & 0o222) === 0) throw new Error(`技能路径只读：${path}`)
+  accessSync(path, constants.W_OK)
+}
 
 /** 拒绝符号链接与其他非普通目录：资产操作只作用于用户自己建的实体目录。 */
 function assertPlainDirectory(path: string): void {
@@ -28,15 +44,28 @@ export interface TrashedSkill {
  *  自带目录名校验：导出函数不依赖调用方先验，否则直接调用方可以用 '..' 把容器外的目录搬走。 */
 export function trashSkill(base: string, folder: string, origin: 'delete'): TrashedSkill {
   if (!SKILL_NAME_PATTERN.test(folder)) throw new Error(`技能目录名不合法：${folder}`)
+  return trashTarget(base, folder, origin)
+}
+
+function trashTarget(base: string, folder: string, origin: 'delete'): TrashedSkill {
   const root = resolve(base)
   const recycle = join(root, ...TRASH_SEGMENTS)
+  assertUnlinkedPath(recycle)
+  assertPlainDirectory(root)
+  assertWritable(root)
+  for (const path of [join(root, '.system'), join(root, '.system', 'prompt-tool'), recycle]) {
+    if (existsSync(path)) { assertPlainDirectory(path); assertWritable(path) }
+  }
   mkdirSync(recycle, { recursive: true })
+  assertUnlinkedPath(recycle)
   const container = mkdtempSync(join(recycle, `${folder}-`))
   try {
     const source = join(root, folder)
+    assertUnlinkedPath(source)
+    assertWritable(source)
     const deletedAt = new Date().toISOString()
     writeFileSync(join(container, 'record.json'), JSON.stringify({
-      folder, source, origin, deletedAt, files: readdirSync(source),
+      folder, source, origin, deletedAt, files: lstatSync(source).isDirectory() ? readdirSync(source) : [folder],
     }, null, 2), { flag: 'wx' })
     const path = join(container, folder)
     renameSync(source, path)
@@ -76,14 +105,33 @@ export function createSkill(root: string, input: { name: unknown; description: u
 /** 回收站删除：整个技能目录移入 `<根>/.system/prompt-tool/.trash/`，可人工恢复。 */
 export function deleteSkill(root: string, folder: string): SkillActionResult {
   if (!SKILL_NAME_PATTERN.test(folder)) return { ok: false, message: '技能目录名不合法' }
-  const base = resolve(root)
-  const source = join(base, folder)
+  return deleteSkillTarget([root], join(resolve(root), folder, 'SKILL.md'))
+}
+
+/** 根集合只接受宿主当前白名单；支持直属目录包和 flat 文件，删除一律进入来源根回收站。 */
+export function deleteSkillTarget(allowedRoots: readonly string[], path: string): SkillActionResult {
   try {
+    if (typeof path !== 'string' || !isAbsolute(path)) throw new Error('技能路径必须是绝对路径')
+    const target = resolve(path)
+    const same = (left: string, right: string): boolean => process.platform === 'win32' ? left.toLowerCase() === right.toLowerCase() : left === right
+    const base = allowedRoots.filter((root) => typeof root === 'string' && isAbsolute(root)).map((root) => resolve(root))
+      .find((root) => same(dirname(target), root) || (basename(target) === 'SKILL.md' && same(dirname(dirname(target)), root)))
+    if (base === undefined) throw new Error('技能不在当前允许的直属技能根中')
+    assertUnlinkedPath(target)
     assertPlainDirectory(base)
-    if (!existsSync(source)) return { ok: false, message: `技能目录不存在：${folder}` }
-    assertPlainDirectory(source)
-    if (!existsSync(join(source, 'SKILL.md'))) return { ok: false, message: `不是技能目录（缺少 SKILL.md）：${folder}` }
-    const trashed = trashSkill(base, folder, 'delete')
+    const isFlat = same(dirname(target), base)
+    const source = isFlat ? target : dirname(target)
+    const folder = basename(source)
+    if (isFlat ? !folder.endsWith('.md') || !SKILL_NAME_PATTERN.test(folder.slice(0, -3)) : folder === '.system') throw new Error('不是可删除的直属技能')
+    if (!isFlat) assertPlainDirectory(source)
+    if (!lstatSync(target).isFile()) throw new Error('技能标记不是普通文件')
+    assertWritable(base)
+    assertWritable(source)
+    assertWritable(target)
+    const parsed = parseFrontmatter(readFileSync(target, 'utf8'))
+    if (parsed.issue !== undefined || typeof parsed.data.name !== 'string' || !SKILL_NAME_PATTERN.test(parsed.data.name)
+      || typeof parsed.data.description !== 'string' || parsed.data.description.length === 0) throw new Error(`不是有效技能：${parsed.issue ?? target}`)
+    const trashed = trashTarget(base, folder, 'delete')
     return { ok: true, id: folder, path: trashed.path }
   } catch (error) {
     return { ok: false, message: `删除技能失败：${error instanceof Error ? error.message : String(error)}` }

@@ -107,7 +107,7 @@ test('catalogFromScan：一层发现、来源优先级、调用策略投影与�
     assert.equal(gone in projectEntry, false, `${gone} 不再是清单字段`)
   }
   assert.deepEqual(Object.keys(projectEntry).sort(), [
-    'description', 'dir', 'folder', 'id', 'modelInvocable', 'name', 'path', 'rank', 'source', 'userInvocable', 'valid',
+    'availability', 'canDelete', 'canSetPolicy', 'description', 'dir', 'folder', 'id', 'modelInvocable', 'name', 'path', 'rank', 'source', 'userInvocable', 'valid',
   ])
 
   // 引用目录按自定义来源注册（只读引用，实体留在原处）。

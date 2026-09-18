@@ -450,7 +450,7 @@ test('V2 草稿与资源：原文恢复、快照保存、技能目标及危险�
   await clickToggle(userToggle('alpha'))
   await waitFor(`${count('skill-policy')}===1`)
   assert.equal(await evaluate(`JSON.stringify(window.requests.find(r=>r.endpoint==='skill-policy').body)`),
-    `{"name":"alpha","path":"${alphaPath}","scope":"user"}`, '只关用户端时载荷带该技能自己的标记文件路径')
+    `{"name":"alpha","path":"${alphaPath}","side":"user","enabled":false}`, '只关用户端时载荷带该技能自己的标记文件路径')
   await waitFor(`${fieldOf('alpha')}.userInvocable===false`)
   assert.equal(await evaluate(`${fieldOf('alpha')}.modelInvocable`), true, '模型端事实不受影响')
   assert.equal(await evaluate(`${switchOf(userToggle('alpha'))}.getAttribute('aria-checked')`), 'false', '用户开关反映停用后的 frontmatter 事实')
@@ -461,7 +461,7 @@ test('V2 草稿与资源：原文恢复、快照保存、技能目标及危险�
   await clickToggle(modelToggle('alpha'))
   await waitFor(`${count('skill-policy')}===2`)
   assert.equal(await evaluate(`JSON.stringify(window.requests.filter(r=>r.endpoint==='skill-policy')[1].body)`),
-    `{"name":"alpha","path":"${alphaPath}","scope":"all"}`)
+    `{"name":"alpha","path":"${alphaPath}","side":"model","enabled":false}`)
   await waitFor(`${fieldOf('alpha')}.modelInvocable===false`)
   await waitFor(`document.querySelectorAll('[data-blocked]').length===1`)
   assert.equal(await evaluate(`document.querySelector('[data-blocked]').innerText.includes(window.t('skills.status.blocked'))`), true, '两端不可用卡片显示整体停用文案')
@@ -479,13 +479,13 @@ test('V2 草稿与资源：原文恢复、快照保存、技能目标及危险�
   await clickToggle(userToggle('alpha'))
   await waitFor(`${count('skill-policy')}===3`)
   assert.equal(await evaluate(`JSON.stringify(window.requests.filter(r=>r.endpoint==='skill-policy')[2].body)`),
-    `{"name":"alpha","path":"${alphaPath}","scope":"model"}`, '先恢复用户端时只剩模型端被停用')
+    `{"name":"alpha","path":"${alphaPath}","side":"user","enabled":true}`, '恢复用户端只提交本端状态')
   await waitFor(`${fieldOf('alpha')}.userInvocable===true`)
   assert.equal(await evaluate(`${fieldOf('alpha')}.modelInvocable`), false, '模型端仍停用')
   await clickToggle(modelToggle('alpha'))
   await waitFor(`${count('skill-policy')}===4`)
   assert.equal(await evaluate(`JSON.stringify(window.requests.filter(r=>r.endpoint==='skill-policy')[3].body)`),
-    `{"name":"alpha","path":"${alphaPath}","scope":"none"}`)
+    `{"name":"alpha","path":"${alphaPath}","side":"model","enabled":true}`)
   await waitFor(`${fieldOf('alpha')}.modelInvocable===true`)
   assert.equal(await evaluate(`${switchOf(modelToggle('alpha'))}.getAttribute('aria-checked')`), 'true')
   assert.equal(await evaluate(`${switchOf(userToggle('alpha'))}.getAttribute('aria-checked')`), 'true')
@@ -552,6 +552,12 @@ test('V2 草稿与资源：原文恢复、快照保存、技能目标及危险�
   assert.equal(await evaluate(`JSON.stringify(window.requests.filter(r=>r.endpoint==='skills-import').at(-1).body.overwrite)`), '["gamma"]')
   assert.equal(await evaluate(`window.requests.filter(r=>r.endpoint==='skills-import')[0].body.files[0].content === window.requests.filter(r=>r.endpoint==='skills-import')[1].body.files[0].content`), true, '确认重用同一上传载荷')
   await evaluate('window.skillImportConflicts=[]')
+  await evaluate('window.skillImportWarning="retained-backup"')
+  await input('skills.import.path.aria', 'D:/drop/cleanup-warning')
+  await clickKey('skills.import.fromDir')
+  await waitFor('window.store.skillsBusy===false')
+  assert.equal(await evaluate('document.querySelector("[data-notice]").textContent.includes("导入已完成，清理提示：retained-backup")'), true)
+  await evaluate('window.skillImportWarning=undefined')
 
   // 文件夹引用：只登记路径，不复制文件；移除只删记录。
   await input('skills.folders.aria', 'D:/referenced/skills')
@@ -584,7 +590,7 @@ test('V2 草稿与资源：原文恢复、快照保存、技能目标及危险�
   await waitFor(`document.querySelector('[role="alertdialog"]')!==null`)
   await click('[role="alertdialog"] button[data-danger]')
   await waitFor(`${count('skill-delete')}===1`)
-  assert.equal(await evaluate(`JSON.stringify(window.requests.find(r=>r.endpoint==='skill-delete').body)`), '{"folder":"alpha"}')
+  assert.equal(await evaluate(`JSON.stringify(window.requests.find(r=>r.endpoint==='skill-delete').body)`), `{"name":"alpha","path":"${alphaPath}"}`)
   await waitFor(`window.store.getFields().skillCatalog.every(s=>s.name!=='alpha')`)
 
   await evaluate('window.rejectSkillDelete=true')
@@ -595,11 +601,48 @@ test('V2 草稿与资源：原文恢复、快照保存、技能目标及危险�
   await waitFor(`document.querySelector('[data-notice]').textContent.includes('delete rejected')`)
   assert.equal(await evaluate(`window.store.getFields().skillCatalog.some(s=>s.name==='gamma')`), true, '删除失败保留技能行')
   await evaluate('window.rejectSkillDelete=false')
-  await click('[data-skill-delete="gamma"]')
   await waitFor(`document.querySelector('[role="alertdialog"]')!==null`)
   await click('[role="alertdialog"] button[data-danger]')
   await waitFor(`${count('skill-delete')}===3`)
   await waitFor(`window.store.getFields().skillCatalog.every(s=>s.name!=='gamma')`)
+
+  // 局部刷新只改技能字段；同名目录的确认与请求必须绑定点击的条目。
+  const bootstrapBefore = await evaluate(count('bootstrap'))
+  await evaluate(`window.store.patch({modelName:'unsaved-model',stages:[{name:'draft-stage',tools:'read'}]});window.keptConfigs=window.store.getFields().promptConfigs`)
+  await evaluate(`(()=>{const base=window.getSkills()[0];window.setSkills([
+    {...base,id:'project-common',name:'project-helper',folder:'common',path:'D:/project/skills/common/SKILL.md',canDelete:false},
+    {...base,id:'custom-common',name:'custom-helper',folder:'common',dir:'D:/referenced/skills',path:'D:/referenced/skills/common/SKILL.md',source:'custom',availability:'unknown',canDelete:true},
+    {...base,id:'user-common',name:'user-helper',folder:'common',dir:'D:/isolated/skills',path:'D:/isolated/skills/common/SKILL.md',source:'user-dsh',canDelete:true}
+  ]);window.skillsComplete=false;return window.store.refreshSkills()})()`)
+  assert.equal(await evaluate('window.store.getFields().modelName'), 'unsaved-model')
+  assert.equal(await evaluate('window.store.getFields().stages[0].name'), 'draft-stage')
+  assert.equal(await evaluate('window.store.getFields().promptConfigs===window.keptConfigs'), true)
+  assert.equal(await evaluate(count('bootstrap')), bootstrapBefore, '技能刷新不重新读取整个工作台')
+  assert.equal(await evaluate('document.body.innerText.includes(window.t("skills.incomplete"))'), true)
+  assert.equal(await evaluate(`${switchOf(modelToggle('custom-helper'))}.disabled`), false, '观测未知不禁止引用技能文件开关')
+  await clickToggle(modelToggle('custom-helper'))
+  await waitFor(`${fieldOf('custom-helper')}.modelInvocable===false && window.store.skillsBusy===false`)
+  await click('[data-skill-path="D:/isolated/skills/common/SKILL.md"]')
+  await waitFor('document.querySelector("[role=alertdialog]")!==null')
+  assert.equal(await evaluate('document.querySelector("[role=alertdialog]").innerText.includes(window.t("skills.delete.title",{name:"user-helper"}))'), true)
+  assert.equal(await evaluate('document.querySelector("[role=alertdialog]").innerText.includes("D:/isolated/skills/common/SKILL.md")'), true)
+  await click('[role="alertdialog"] button[data-danger]')
+  await waitFor(`window.store.getFields().skillCatalog.every(s=>s.name!=='user-helper') && window.store.skillsBusy===false`)
+  assert.equal(await evaluate(`JSON.stringify(window.requests.filter(r=>r.endpoint==='skill-delete').at(-1).body)`), '{"name":"user-helper","path":"D:/isolated/skills/common/SKILL.md"}')
+  assert.equal(await evaluate(`window.store.getFields().skillCatalog.some(s=>s.name==='project-helper')`), true)
+  await click('[data-skill-path="D:/referenced/skills/common/SKILL.md"]')
+  await waitFor('document.querySelector("[role=alertdialog]")!==null')
+  await click('[role="alertdialog"] button[data-danger]')
+  await waitFor(`window.store.getFields().skillCatalog.every(s=>s.name!=='custom-helper') && window.store.skillsBusy===false`)
+  assert.equal(await evaluate(`JSON.stringify(window.requests.filter(r=>r.endpoint==='skill-delete').at(-1).body)`), '{"name":"custom-helper","path":"D:/referenced/skills/common/SKILL.md"}')
+
+  // 较慢旧响应不能复活已清空的清单；会话身份随请求传递。
+  await evaluate(`(async()=>{window.skillsListDelay=120;const old=window.store.refreshSkills();window.setSkills([]);window.skillsComplete=true;window.skillsListDelay=0;window.currentSessionId='next-session';await window.store.refreshSkills();await old})()`)
+  assert.equal(await evaluate('window.store.getFields().skillCatalog.length'), 0)
+  assert.equal(await evaluate('window.store.getFields().skillsComplete'), true)
+  assert.equal(await evaluate(`window.requests.filter(r=>r.endpoint==='skills-list').at(-1).body.sessionId`), 'next-session')
+  assert.equal(await evaluate('window.store.getFields().modelName'), 'unsaved-model')
+  assert.equal(await evaluate(count('bootstrap')), bootstrapBefore)
 
   await click('[data-page="presets"]')
   await clickAria(`window.t('presetSwitcher.delete.aria',{name:'Other'})`)

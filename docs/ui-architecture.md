@@ -341,7 +341,7 @@ workspace-pages.ts 是页面元数据的唯一来源。默认页为 features，�
       -> /models 按需加载并缓存模型目录
       -> page selector 订阅 fields 引用
 
-bootstrap 是首屏聚合请求，不因筛选或输入字符增加 bridge 请求。模型目录保持惰性加载；技能筛选、状态筛选和搜索在客户端完成。
+bootstrap 是首屏聚合请求，不因筛选或输入字符增加 bridge 请求。模型目录保持惰性加载；技能筛选、状态筛选和搜索在客户端完成。技能写入后局部刷新 `/skills-list`，不重载预设或指令草稿；两个技能导入入口统一经过数据层的覆盖确认与写入流程。
 
 同一预设的后台刷新同时保护请求开始前已有的未保存提示词配置与模板变量草稿，以及请求期间新增的编辑。保存后同步元数据时，已确认写入的提示词定义不被暂时为空的生成快照覆盖。未填写名称的变量行只在写入载荷中清理，本地编辑行保留；预设身份切换仍按原保存与上下文边界处理。
 
@@ -406,7 +406,7 @@ JSON bridge 的统一上限为 32 MiB；角色卡原始文件流独立限制为 
 6. 参数空字符串/空数组沿用删除键语义；variables 的空字符串仍是合法占位值。详细参数规则见 [architecture-params.md](architecture-params.md)。
 7. 预设写入携带 `expectedPresetId`，读回失败的自定义工具不降级为空列表供覆盖；跨预设旧草稿被拒绝，切换等待参数保存队列。
 8. 切换预设是事务：先保存当前预设草稿，保存未成功（失败/被拒）即取消切换并保留草稿；切换成功后等 settings 写入与随后的静默 load 完成才返回。切换或首次加载完成前，`loadedPresetRef` 拒绝参数、promptConfigs 与模板变量写盘——旧预设字段不会带新 `presetTemplate` 落盘；重新加载成功应用该预设数据后才恢复写入。
-9. 技能写入不进 settings：调用策略走 `/skill-policy`（请求带 `name` / `path` / `scope`，服务端按同一工作区重新扫描校验身份，陈旧界面按 409 拒绝）、技能文件夹引用走 `/skills-folders`、清单走 `/skills-list`，创建/复制导入/删除走 `/skill-create`、`/skills-import`、`/skills-import-directory`、`/skill-delete`（契约与所有权见 [skills-management.md](skills-management.md)）。调用策略只改技能文件的两个官方键（正文与其余字段逐字保留），也不再由插件控制技能注册顺序——顺序由官方按技能名与来源优先级决定。
+9. 技能清单和策略均不进 settings：单端调用策略走 `/skill-policy`（`name/path/side/enabled/sessionId?`，服务器在同工作区重新校验身份；显式两端操作可用 `scope`），引用走 `/skills-folders`，清单走 `/skills-list`。快照保留 `complete`，空数组是权威空结果；调用声明和当前会话注册状态分别呈现。创建/导入走既有端点；删除提交 `name/path/sessionId?`，确认框与请求使用同一条目，用户根及显式引用根按服务器能力开放回收站删除。契约见 [skills-management.md](skills-management.md)。
 10. 指令文件正文走独立草稿池（`data/instruction-drafts.ts`），不与预设保存队列混用：预设 debounce 自动保存与预设切换一律不带文件正文；焦点离开指令文件卡（或列表「保存全部」）时提交 dirty 文件，成功只把请求时快照记为基线，冲突/失败保留草稿并显示「重新读取」。会话或工作区切换建立新的指令上下文（`instructions.context.contextId` 变化即新上下文）：旧上下文的迟到响应不覆盖当前视图，旧 `contextId` 的保存被服务端 409 拒绝。
 11. 指令负责人事实来自 `/bootstrap` 的 `instructions.owner.officialInstructions`（服务端从 pre-step 协调器观察结果取，`null` = 尚未观察到，不当冲突处理）：`true` 时文件卡显示「官方指令行仍在 → 独立来源不注入」，不做「已生效」暗示。
 12. 模块列表工具栏下的「独立指令文件来源」总开关复用 ToggleRow，只修改独立策略顶层 `enabled`，默认关闭；单文件开关不隐式开启总来源，也不改变官方负责人。策略不可读时禁用总开关；应答成功前不乐观显示已启用。
@@ -528,7 +528,7 @@ promptConfigs 模块卡展开区按基础信息、注入规则、作用范围、
 - 工作台抽屉（shell.overlay，role=dialog + aria-modal）在抽屉内提供首尾 Tab 循环，复用 dialog-focus 的 `FOCUSABLE` / `nextDialogFocusIndex`；焦点位于 body portal 弹窗内时由弹窗自身循环接管，抽屉不拦截。
 - 弹窗只操作自己的 ref，不查询宿主页面结构。
 - 数值输入在提交点解析，草稿期保留字符串，避免输入中间态跳动。
-- 提示词、技能和阶段排序同时提供 pointer drag 与上移/下移键盘替代；边界按钮有明确 aria-label。
+- 提示词和阶段排序同时提供 pointer drag 与上移/下移键盘替代；边界按钮有明确 aria-label。技能列表跟随官方来源与会话裁决，不提供自定义注册顺序。
 - reduced-motion 下关闭平移和过渡；focus-visible 必须清晰。
 - 外层抽屉和工作台壳使用overflow: clip；程序化定位只滚动canvas，不能把页头和导航滚出固定面板。
 

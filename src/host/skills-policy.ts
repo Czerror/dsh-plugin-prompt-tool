@@ -11,7 +11,10 @@ import { randomUUID } from 'node:crypto'
 import { basename, dirname, join } from 'node:path'
 import { isAbsolute } from 'node:path'
 import { Document, isMap, isNode, isScalar, parseDocument, visit } from 'yaml'
-import { SKILL_MARKER, invocationForScope, type SkillCatalogEntry, type SkillInvocation, type SkillPolicyScope } from '../shared/skills.ts'
+import { SKILL_MARKER, invocationForScope, type SkillCatalogEntry, type SkillInvocation, type SkillPolicyChange, type SkillPolicyScope } from '../shared/skills.ts'
+import { parseSkillBoolean } from '../runtime/skills-parse.ts'
+import { assertUnlinkedPath } from './skills-actions.ts'
+import { SKILL_NAME_PATTERN } from './skills-config.ts'
 
 const BOM = '\ufeff'
 /** 与 runtime/skills-parse.ts 同一套 frontmatter 边界（容忍 CRLF 与缺失尾换行）。 */
@@ -30,6 +33,7 @@ export type SkillPolicyWrite =
   | { ok: false; message: string }
 
 interface ParsedMarker {
+  raw: string
   /** frontmatter 正文（不含 --- 行）。 */
   frontmatter: string
   /** `---` 之后的原始内容（换行 + 正文），逐字保留。 */
@@ -39,13 +43,16 @@ interface ParsedMarker {
   doc: Document
 }
 
-/** 校验写入目标：绝对路径、名为 SKILL.md、存在、普通文件（拒绝符号链接以免写到根外）。 */
-function assertWritableMarker(file: string): string {
+/** runtime 已核对根与身份；此处继续检查文件名、所有祖先和普通可写文件。 */
+function assertWritableMarker(file: string, writable = false): string {
   if (typeof file !== 'string' || file.length === 0 || !isAbsolute(file)) throw new Error('技能文件必须是绝对路径')
-  if (basename(file) !== SKILL_MARKER) throw new Error(`技能文件必须以 ${SKILL_MARKER} 结尾：${file}`)
+  const name = basename(file)
+  if (name !== SKILL_MARKER && !(name.endsWith('.md') && SKILL_NAME_PATTERN.test(name.slice(0, -3)))) throw new Error(`技能文件必须是 ${SKILL_MARKER} 或合法的 <name>.md：${file}`)
+  assertUnlinkedPath(file)
   const info = lstatSync(file)
   if (info.isSymbolicLink()) throw new Error(`拒绝改写符号链接技能：${file}`)
   if (!info.isFile()) throw new Error(`技能文件不是普通文件：${file}`)
+  if (writable && (info.mode & 0o222) === 0) throw new Error(`技能文件只读：${file}`)
   return file
 }
 
@@ -61,17 +68,17 @@ function parseMarker(file: string): ParsedMarker {
   if (document.errors.length > 0) throw new Error(`frontmatter 不是合法 YAML：${document.errors[0]?.message ?? '解析失败'}`)
   if (!isMap(document.contents)) throw new Error('frontmatter 必须是 YAML 映射')
   visit(document, { Alias() { throw new Error('frontmatter 不支持 YAML 别名') } })
-  return { frontmatter: match[1]!, rest: source.slice(match[0].length - match[2]!.length), bom, doc: document }
+  return { raw, frontmatter: match[1]!, rest: source.slice(match[0].length - match[2]!.length), bom, doc: document }
 }
-
-/** 归一已声明的值：只认布尔；官方接受的 yes/no/on/off/1/0 等写法由官方 provider 解释，
- *  本插件在写入时统一写成规范布尔值。 */
-const asBoolean = (value: unknown): boolean | undefined => (typeof value === 'boolean' ? value : undefined)
 
 function currentInvocation(doc: Document): SkillInvocation {
   // 键语义不同：`disable-model-invocation: true` 表示模型不可调用，`user-invocable: false` 表示用户不可调用。
-  const disabled = MODEL_KEYS.map((key) => asBoolean(doc.get(key))).find((value) => value !== undefined)
-  const user = USER_KEYS.map((key) => asBoolean(doc.get(key))).find((value) => value !== undefined)
+  const read = (keys: readonly string[]): boolean | undefined => {
+    const key = keys.find((key) => doc.has(key))
+    return key === undefined ? undefined : parseSkillBoolean(doc.get(key), key)
+  }
+  const disabled = read(MODEL_KEYS) ?? (doc.has('modelInvocable') ? !parseSkillBoolean(doc.get('modelInvocable'), 'modelInvocable') : undefined)
+  const user = read(USER_KEYS)
   return { modelInvocable: disabled !== true, userInvocable: user !== false }
 }
 
@@ -89,7 +96,7 @@ export function readSkillInvocation(file: string): SkillPolicyRead {
 function writeKey(doc: Document, keys: readonly string[], value: boolean): boolean {
   const canonical = keys[0]!
   const legacy = keys.slice(1).filter((key) => doc.has(key))
-  if (legacy.length === 0 && asBoolean(doc.get(canonical)) === value) return false
+  if (legacy.length === 0 && doc.get(canonical) === value) return false
   if (!isMap(doc.contents)) throw new Error('frontmatter 必须是 YAML 映射')
   const pairs = doc.contents.items
   const pairFor = (key: string) => pairs.find((pair) => isScalar(pair.key) && pair.key.value === key)
@@ -126,19 +133,29 @@ export function policyTarget(
 }
 
 /** 把技能文件的调用策略写到目标范围；返回是否发生写入。 */
-export function setSkillInvocation(file: string, scope: SkillPolicyScope): SkillPolicyWrite {
+export function setSkillInvocation(file: string, change: SkillPolicyChange | SkillPolicyScope): SkillPolicyWrite {
   let temporary: string | undefined
   try {
     const parsed = parseMarker(file)
-    const target = invocationForScope(scope)
+    assertWritableMarker(file, true)
+    const operation = typeof change === 'string' ? { scope: change } : change
+    if (operation === null || typeof operation !== 'object'
+      || ('scope' in operation ? !['none', 'model', 'user', 'all'].includes(operation.scope)
+        : !['model', 'user'].includes(operation.side) || typeof operation.enabled !== 'boolean')) throw new Error('技能调用策略操作无效')
+    const target = 'scope' in operation ? invocationForScope(operation.scope) : {
+      ...currentInvocation(parsed.doc),
+      [operation.side === 'model' ? 'modelInvocable' : 'userInvocable']: operation.enabled,
+    }
     // 两个键的语义不同：`disable-model-invocation` 表达的是「禁用模型调用」，`user-invocable` 表达的是
     // 「允许用户调用」。前者必须取反写入——写成原值会让两端语义整体反转（探针实测过这个错误）。
-    const modelChanged = writeKey(parsed.doc, [...MODEL_KEYS, 'modelInvocable'], !target.modelInvocable)
-    const userChanged = writeKey(parsed.doc, USER_KEYS, target.userInvocable)
+    const modelChanged = ('scope' in operation || operation.side === 'model') && writeKey(parsed.doc, [...MODEL_KEYS, 'modelInvocable'], !target.modelInvocable)
+    const userChanged = ('scope' in operation || operation.side === 'user') && writeKey(parsed.doc, USER_KEYS, target.userInvocable)
     if (!modelChanged && !userChanged) return { ok: true, changed: false, invocation: target }
     const content = `${parsed.bom}---\n${parsed.doc.toString()}---${parsed.rest}`
     temporary = join(dirname(file), `.${basename(file)}.tmp-${randomUUID()}`)
-    writeFileSync(temporary, content, { encoding: 'utf8', flag: 'wx' })
+    writeFileSync(temporary, content, { encoding: 'utf8', flag: 'wx', mode: lstatSync(file).mode & 0o777 })
+    assertWritableMarker(file, true)
+    if (readFileSync(file, 'utf8') !== parsed.raw) throw new Error('技能内容版本冲突，请刷新后重试')
     renameSync(temporary, file)
     temporary = undefined
     return { ok: true, changed: true, invocation: target }

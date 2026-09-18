@@ -4,6 +4,8 @@ import type { BridgeResult, BridgeSettingsView } from './bridge-transport.ts'
 import { EMPTY_FIELDS, type Fields, type SkillCatalogEntry } from './prompt-tool-fields.ts'
 import { readParamOverridesPatch } from './param-overrides.ts'
 import { DEFAULT_PRESET_ID } from '../../shared/preset-ids.ts'
+import { SKILL_SOURCES } from '../../shared/skills.ts'
+import type { BridgeValueMap } from '../../shared/bridge-contract.ts'
 const asRecord = (value: unknown): Record<string, unknown> =>
   value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
 
@@ -44,15 +46,21 @@ const readSkillCatalog = (source: Record<string, unknown>, key: string): SkillCa
       name,
       folder,
       dir,
-      source: kind as SkillCatalogEntry['source'],
+      source: Object.hasOwn(SKILL_SOURCES, kind) ? kind as SkillCatalogEntry['source'] : 'other',
       rank: readNumber(record, 'rank', 0),
       description: readString(record, 'description') ?? '',
-      valid: readBoolean(record, 'valid', true),
+      valid: readBoolean(record, 'valid', false),
       modelInvocable: readBoolean(record, 'modelInvocable', true),
       userInvocable: readBoolean(record, 'userInvocable', true),
       ...(readString(record, 'issue') !== undefined ? { issue: readString(record, 'issue')! } : {}),
       ...(readString(record, 'winnerId') !== undefined ? { winnerId: readString(record, 'winnerId')! } : {}),
       ...(readString(record, 'path') !== undefined ? { path: readString(record, 'path')! } : {}),
+      availability: ['active', 'shadowed', 'unregistered', 'unknown'].includes(String(record.availability))
+        ? record.availability as SkillCatalogEntry['availability'] : 'unknown',
+      ...(typeof record.canSetPolicy === 'boolean' ? { canSetPolicy: record.canSetPolicy } : {}),
+      ...(typeof record.canDelete === 'boolean' ? { canDelete: record.canDelete } : {}),
+      ...(readString(record, 'provider') !== undefined ? { provider: readString(record, 'provider')! } : {}),
+      ...(readString(record, 'readonlyReason') !== undefined ? { readonlyReason: readString(record, 'readonlyReason')! } : {}),
     }]
   })
 }
@@ -68,32 +76,33 @@ const readPromptConfigs = (source: Record<string, unknown>, key: string): Prompt
 }
 
 
+/** 技能快照只更新自身字段，供首屏与局部刷新共用。空数组也是权威结果。 */
+export function skillFieldsFromSnapshot(snapshot: BridgeValueMap['skillsList']): Pick<Fields, 'skillCatalog' | 'skillsComplete' | 'skillFolders' | 'skillsRoot'> {
+  const catalog = readSkillCatalog({ skills: snapshot.skills }, 'skills')
+  return {
+    skillCatalog: snapshot.complete === true ? catalog : catalog.map((skill) => ({ ...skill, availability: 'unknown' })),
+    skillsComplete: snapshot.complete === true,
+    skillFolders: readStringArray({ folders: snapshot.folders }, 'folders'),
+    skillsRoot: readStringArray({ roots: snapshot.roots }, 'roots')[0] ?? '',
+  }
+}
+
 export function fieldsFromView(res: BridgeResult<BridgeSettingsView>): Fields {
   const ns = res.ok ? res.value : undefined
   const value = asRecord(ns?.value)
   const base = asRecord(ns?.base)
-  // 技能清单不在 settings：来源、优先级与两端调用策略都来自 describe 事实（插件按官方技能根扫描的结果）。
-  const extraFolders = res.ok && Array.isArray(res.skillFolders) ? res.skillFolders : undefined
-  // 技能根与清单都在响应顶层（describe/bootstrap 的扩展字段），descriptor 内的同名键只作兜底。
-  const extraDirs = res.ok && Array.isArray(res.activeSkillsDirs) && res.activeSkillsDirs.length > 0
-    ? res.activeSkillsDirs
-    : undefined
-  const dirs = extraDirs ?? (readStringArray(value, 'activeSkillsDirs').length > 0
-    ? readStringArray(value, 'activeSkillsDirs')
-    : readStringArray(base, 'activeSkillsDirs'))
   const next: Fields = {
     ...EMPTY_FIELDS,
     promptText: readString(value, 'promptText') ?? readString(base, 'promptText') ?? '',
     promptPath: readString(value, 'promptPath') ?? readString(base, 'promptPath') ?? '',
     agentsText: readString(value, 'agentsText') ?? readString(base, 'agentsText') ?? '',
     agentsPath: readString(value, 'agentsPath') ?? readString(base, 'agentsPath') ?? '',
-    skillCatalog: res.ok && res.skillCatalog !== undefined && res.skillCatalog.length > 0
-      ? res.skillCatalog
-      : readSkillCatalog(value, 'skillCatalog').length > 0
-        ? readSkillCatalog(value, 'skillCatalog')
-        : readSkillCatalog(base, 'skillCatalog'),
-    skillFolders: extraFolders ?? readStringArray(value, 'skillFolders'),
-    skillsRoot: dirs[0] ?? '',
+    ...skillFieldsFromSnapshot({
+      skills: res.ok ? res.skillCatalog ?? [] : [],
+      complete: res.ok && res.skillsComplete === true,
+      folders: res.ok ? res.skillFolders ?? [] : [],
+      roots: res.ok ? res.activeSkillsDirs ?? [] : [],
+    }),
     presetOrder: readNumber(value, 'presetOrder', readNumber(base, 'presetOrder', 5)),
     fallbackText: readString(value, 'fallbackText') ?? readString(base, 'fallbackText') ?? '',
     writePreset: readBoolean(value, 'writePreset', readBoolean(base, 'writePreset', true)),
@@ -119,6 +128,7 @@ export function bridgeViewFromBoot(boot: BridgeResult<BridgeSettingsView>): Brid
     modelCatalog: boot.modelCatalog,
     activeSkillsDirs: boot.activeSkillsDirs,
     skillCatalog: boot.skillCatalog,
+    skillsComplete: boot.skillsComplete,
     skillFolders: boot.skillFolders,
     templatePreStepCount: boot.templatePreStepCount,
     presetParams: boot.presetParams,

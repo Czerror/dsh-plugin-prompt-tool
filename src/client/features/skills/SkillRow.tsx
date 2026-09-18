@@ -1,13 +1,13 @@
 import { memo, type ReactNode } from 'react'
 import { Switch } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SkillCatalogEntry } from '../../data/prompt-tool-fields.ts'
-import type { SkillPolicyScope } from '../../../shared/skills.ts'
+import type { SkillPolicyChange } from '../../../shared/skills.ts'
 import { HintTooltip } from '../../ui/HintTooltip.tsx'
 import { StatusBadge } from '../../ui/StatusBadge.tsx'
 import type { PromptToolTranslate } from '../../locales.ts'
 import sharedCss from '../../ui/controls.module.css'
 import featureCss from './skills.module.css'
-import { scopeAfterToggle, skillShadowed, skillStatusLabel, skillStatusTone, skillUnavailable } from './skill-status.ts'
+import { policyAfterToggle, skillShadowed, skillStatusLabel, skillStatusTone, skillUnavailable } from './skill-status.ts'
 
 const ui = { ...sharedCss, ...featureCss }
 
@@ -15,23 +15,20 @@ export interface SkillRowProps {
   skill: SkillCatalogEntry
   t: PromptToolTranslate
   busy: boolean
-  /** 只有用户技能根里的技能可以删除；其他来源只读（改文件请到对应目录）。 */
-  deletable: boolean
-  /** 写调用策略：'none' 表示两端恢复。path 由清单提供，服务端会再校验一次身份。 */
-  onSetScope: (name: string, path: string, scope: SkillPolicyScope) => void
-  onDelete: (folder: string) => void
+  onSetPolicy: (name: string, path: string, change: SkillPolicyChange) => void
+  onDelete: (skill: SkillCatalogEntry) => void
 }
 
 /** 技能行 memo：两个调用策略开关与删除是仅有的写操作，其余全部只读展示。 */
 export const SkillRow = memo(function SkillRow(props: SkillRowProps): ReactNode {
   const { skill, t, busy } = props
   const status = skillStatusLabel(skill, t)
-  const hint = skill.path ?? `${skill.dir}\\${skill.folder}`
-  // 两个布尔是「该端当前可调用」：开关的 checked 直接取它，scopeAfterToggle 也按同一含义取反。
+  const hint = skill.path ?? (skill.dir.length > 0 ? `${skill.dir}/${skill.folder}` : skill.provider ?? '')
+  // 两个开关只表示文件声明；实际会话注册状态单独显示在徽章里。
   const modelInvocable = skill.modelInvocable
   const userInvocable = skill.userInvocable
   // 无有效 frontmatter 或没有可写路径（例如来源未提供标记文件）时不给写入口。
-  const writable = !busy && skill.valid && skill.path !== undefined
+  const writable = !busy && skill.canSetPolicy === true && skill.valid && skill.path !== undefined
   return (
     <div className={ui.skillCard} data-blocked={skillUnavailable(skill) ? '' : undefined} data-invalid={!skill.valid ? '' : undefined}>
       <div className={ui.skillCardBody}>
@@ -47,6 +44,7 @@ export const SkillRow = memo(function SkillRow(props: SkillRowProps): ReactNode 
         <small className={ui.skillCardSource}>{hint}</small>
         {skillShadowed(skill) && <span className={ui.skillIssue} role="note">{t('skills.row.shadowedHint')}</span>}
         {!skill.valid && skill.issue && <span className={ui.skillIssue} role="note">{skill.issue}</span>}
+        {skill.readonlyReason && <span className={ui.skillCardSource} role="note">{skill.readonlyReason}</span>}
       </div>
       {/* 调用策略开关：直接写技能文件 frontmatter 的官方两个键，正文与其余字段不动。 */}
       <div className={ui.skillRowActions} data-skill-block-group="">
@@ -58,7 +56,7 @@ export const SkillRow = memo(function SkillRow(props: SkillRowProps): ReactNode 
                 disabled={!writable}
                 label={t('skills.row.modelToggle.aria', { name: skill.name })}
                 onChange={() => {
-                  if (skill.path !== undefined) props.onSetScope(skill.name, skill.path, scopeAfterToggle(skill, 'model'))
+                  if (skill.path !== undefined) props.onSetPolicy(skill.name, skill.path, policyAfterToggle(skill, 'model'))
                 }}
               />
               <span>{t('skills.row.modelToggle')}</span>
@@ -71,22 +69,23 @@ export const SkillRow = memo(function SkillRow(props: SkillRowProps): ReactNode 
                 disabled={!writable}
                 label={t('skills.row.userToggle.aria', { name: skill.name })}
                 onChange={() => {
-                  if (skill.path !== undefined) props.onSetScope(skill.name, skill.path, scopeAfterToggle(skill, 'user'))
+                  if (skill.path !== undefined) props.onSetPolicy(skill.name, skill.path, policyAfterToggle(skill, 'user'))
                 }}
               />
               <span>{t('skills.row.userToggle')}</span>
             </span>
           </HintTooltip>
         </span>
-        {props.deletable && (
+        {skill.canDelete === true && skill.path !== undefined && (
           <HintTooltip label={t('skills.row.delete.hint')}>
             <button
               type="button"
               className={ui.pillButton}
               data-danger
               data-skill-delete={skill.folder}
+              data-skill-path={skill.path}
               disabled={busy}
-              onClick={() => props.onDelete(skill.folder)}
+              onClick={() => props.onDelete(skill)}
             >
               {t('skills.row.delete')}
             </button>

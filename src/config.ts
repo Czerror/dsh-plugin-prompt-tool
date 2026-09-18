@@ -4,7 +4,6 @@ import type { PromptConfigSpec } from './host/prompt-configs.ts'
 import { DEFAULT_PRESET_ORDER } from './host/paths.ts'
 import { DEFAULT_PRESET_ID } from './shared/preset-ids.ts'
 import type { PresetWriterParams } from './shared/engine-params.ts'
-import type { SkillCatalogEntry } from './shared/skills.ts'
 
 export const NS = 'prompt-tool' as const
 
@@ -34,10 +33,6 @@ export const Config: z<Config> = z.object({
 export interface PromptSettings {
   /** 运行时检测：是否检测到任何模型服务商（不写入 settings）。 */
   modelsAvailable: boolean
-  /** 技能清单：按官方六类技能根扫描的结果 + 各技能 frontmatter 的调用策略。 */
-  skillCatalog: SkillCatalogEntry[]
-  /** 用户技能根（技能实体的落点；其余来源由官方各自发现）。 */
-  activeSkillsDirs: string[]
   /** 生成 preset 的显示顺序。 */
   presetOrder: number
   /** preset.md 缺失或不可读时使用的文本。 */
@@ -48,29 +43,6 @@ export interface PromptSettings {
 
 export const PromptSettingsSchema: z<PromptSettings> = z.object({
   modelsAvailable: z.boolean().default(true),
-  skillCatalog: z.array(z.object({
-    id: z.string(),
-    name: z.string(),
-    description: z.string().default(''),
-    folder: z.string(),
-    dir: z.string(),
-    source: z.union([
-      z.const('project-dsh'),
-      z.const('project-agents'),
-      z.const('custom'),
-      z.const('user-dsh'),
-      z.const('user-agents'),
-      z.const('bundled'),
-    ]),
-    rank: z.number(),
-    valid: z.boolean().default(false),
-    issue: z.string().default(''),
-    modelInvocable: z.boolean().default(false),
-    userInvocable: z.boolean().default(false),
-    winnerId: z.string().default(''),
-    path: z.string().default(''),
-  })).default([]),
-  activeSkillsDirs: z.array(z.string()).default([]),
   presetOrder: z.natural().default(DEFAULT_PRESET_ORDER),
   fallbackText: z.string().default(''),
   writePreset: z.boolean().default(true),

@@ -15,6 +15,7 @@ const {
   BRIDGE_ENDPOINTS, MAX_BRIDGE_BODY_BYTES, MAX_CHARACTER_CARD_STREAM_BYTES, registerSettingsBridge,
   catalogFromScan, readSkillInvocation, readSkillsState, scanRoots, setSkillInvocation, skillRoots, writeSkillsState,
 } = await import('../../lib/index.mjs')
+const { deleteSkillTarget } = await import('../../src/host/skills-actions.ts')
 after(() => {
   rmSync(bridgeHome, { recursive: true, force: true })
   delete process.env.DSH_HOME
@@ -25,7 +26,7 @@ after(() => {
 /** 文件层调用策略模型的技能状态替身：技能实体留在官方技能根，插件只提供引用目录与清单。 */
 function skillsStateStub(overrides = {}) {
   const state = { version: 4, folders: [] }
-  return {
+  const result = {
     skillsRoot: join(bridgeHome, 'skills'),
     folders: [],
     listSkills: () => [],
@@ -33,6 +34,11 @@ function skillsStateStub(overrides = {}) {
     patchSkillFolders: () => ({ ok: true, state, exists: true }),
     ...overrides,
   }
+  result.deleteSkill ??= (name, path, cwd) => {
+    if (!result.listSkills(cwd).some((entry) => entry.name === name && entry.path === path)) return { ok: false, message: '技能已变化' }
+    return deleteSkillTarget([result.skillsRoot, ...result.folders], path)
+  }
+  return result
 }
 
 const PREFIX = '/api/prompt-tool/settings'
@@ -1356,7 +1362,7 @@ test('settings bridge 技能端点：创建 → 调用策略写入 → 恢复 �
     assert.deepEqual(readdirSync(join(root, 'demo-skill')), ['SKILL.md'])
 
     // 回收站删除：整个技能目录移入用户根下的 .system/prompt-tool/.trash。
-    const removed = await postDelete({ folder: 'demo-skill' })
+    const removed = await postDelete({ name: 'demo-skill', path: marker })
     assert.equal(removed.status, 200, removed.body.message)
     assert.equal(existsSync(marker), false)
     const trash = readdirSync(join(root, '.system', 'prompt-tool', '.trash'))

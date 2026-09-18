@@ -7,10 +7,7 @@ import type { SkillCatalogEntry } from '../../data/prompt-tool-fields.ts'
 import type { PromptToolStore } from '../../data/use-prompt-tool-store.ts'
 import type { PromptToolHostApi } from '../../data/host-api.ts'
 import type { PromptToolLocaleKey, PromptToolTranslate } from '../../locales.ts'
-import type { SkillPolicyScope } from '../../../shared/skills.ts'
-import { bridgeCall } from '../../data/bridge-client.ts'
-import { readImportFiles } from '../../data/import-files.ts'
-import { requestSkillImport } from '../../data/skill-import.ts'
+import type { SkillPolicyChange } from '../../../shared/skills.ts'
 import { usePromptToolFields } from '../../data/use-prompt-tool-fields.ts'
 import { CollapsibleCard } from '../../ui/CollapsibleCard.tsx'
 import { ConfirmDialog } from '../../ui/ConfirmDialog.tsx'
@@ -33,14 +30,6 @@ const SKILL_STATUS_TABS: Array<{ id: SkillStatusTab; labelKey: PromptToolLocaleK
 
 /** 创建表单的本地校验：与官方 `SKILL_NAME` 同规则（kebab-case）。 */
 const SKILL_NAME_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
-
-/** 导入失败的可见原因：服务端消息自带「技能导入失败：」前缀，剥掉后由本页补类别前缀，
- *  避免出现两层；传输层失败（空响应/网络异常）没有前缀也不至于丢失类别语境，
- *  空串则兜底成一句可读文案——空串会让通知整条不渲染。 */
-const importFailureReason = (raw: unknown): string => {
-  const text = typeof raw === 'string' ? raw.trim() : ''
-  return text.replace(/^技能导入失败：/u, '') || 'settings bridge unavailable'
-}
 
 export const SkillsPage = memo(function SkillsPage(props: { store: PromptToolStore; api: PromptToolHostApi; t: PromptToolTranslate; browse?: { query: string; status: SkillStatusTab } }): ReactNode {
   const { store, api, t } = props
@@ -103,12 +92,10 @@ export const SkillsPage = memo(function SkillsPage(props: { store: PromptToolSto
     if (props.browse) Object.assign(props.browse, { query: skillFilter, status: statusTab })
   }, [skillFilter, statusTab, props.browse])
 
-  const onSetScope = useCallback((name: string, path: string, scope: SkillPolicyScope) => {
-    void store.setSkillPolicy(name, path, scope)
+  const onSetPolicy = useCallback((name: string, path: string, change: SkillPolicyChange) => {
+    void store.setSkillPolicy(name, path, change)
   }, [store])
-  const onDelete = useCallback((folder: string) => {
-    setPendingDelete(fields.skillCatalog.find((skill) => skill.folder === folder))
-  }, [fields.skillCatalog])
+  const onDelete = useCallback((skill: SkillCatalogEntry) => { setPendingDelete(skill) }, [])
 
   /** 选择宿主机目录并复制进用户技能根。 */
   const pickAndCopyDir = async (): Promise<void> => {
@@ -129,21 +116,7 @@ export const SkillsPage = memo(function SkillsPage(props: { store: PromptToolSto
     if (files.length === 0) return
     setImportingDir(true)
     try {
-      const payload = await readImportFiles(files, 'base64')
-      const res = await requestSkillImport((overwrite) => bridgeCall('skillsImport', {
-        files: payload, ...(overwrite === undefined ? {} : { overwrite }),
-      }), confirmOverwrite)
-      if (res.ok) {
-        const { count, path, overwritten } = res.value
-        store.showNotice('ok', overwritten > 0
-          ? t('skills.notice.importedOverwrite', { count, path, overwritten })
-          : t('skills.notice.imported', { count, path }))
-        await store.load()
-      } else if (res.code !== 'skills-import-cancelled') {
-        store.showNotice('error', t('skills.notice.importFailed', { reason: importFailureReason(res.message) }))
-      }
-    } catch (error) {
-      store.showNotice('error', t('skills.notice.importFailed', { reason: importFailureReason(error instanceof Error ? error.message : String(error)) }))
+      await store.importSkillsFiles(files, confirmOverwrite)
     } finally {
       if (mounted.current) setImportingDir(false)
     }
@@ -173,6 +146,7 @@ export const SkillsPage = memo(function SkillsPage(props: { store: PromptToolSto
 
   return (
     <section className={ui.section} aria-label={t('skills.aria')}>
+      {!fields.skillsComplete && <p className={ui.readOnly} role="status">{t('skills.incomplete')}</p>}
       {fields.skillCatalog.length > 0 && (
         <div className={ui.skillStatsRow}>
           <div className={ui.skillStats} role="group" aria-label={t('skills.tabs.aria')}>
@@ -195,7 +169,7 @@ export const SkillsPage = memo(function SkillsPage(props: { store: PromptToolSto
               </button>
             ))}
           </div>
-          <button type="button" className={ui.pillButton} onClick={() => void store.load()}>{t('skills.refresh')}</button>
+          <button type="button" className={ui.pillButton} disabled={store.skillsBusy} onClick={() => void store.refreshSkills()}>{t('skills.refresh')}</button>
         </div>
       )}
 
@@ -211,7 +185,7 @@ export const SkillsPage = memo(function SkillsPage(props: { store: PromptToolSto
           <div className={ui.dirCardActions}>
             <button type="button" className={ui.pillButton} disabled={fields.skillsRoot.length === 0}
               onClick={() => void store.openSkillsDir()}>{t('skills.library.open')}</button>
-            <button type="button" className={ui.pillButton} onClick={() => void store.load()}>{t('skills.dir.rescan')}</button>
+            <button type="button" className={ui.pillButton} disabled={store.skillsBusy} onClick={() => void store.refreshSkills()}>{t('skills.dir.rescan')}</button>
           </div>
         </div>
         <div className={ui.dirAddBar}>
@@ -382,7 +356,7 @@ export const SkillsPage = memo(function SkillsPage(props: { store: PromptToolSto
         <div className={ui.emptyState}>
           <span className={ui.emptyGlyph} aria-hidden="true">◇</span>
           <div>
-            <h3>{t('skills.empty.title')}</h3>
+            <h3>{t(fields.skillsComplete ? 'skills.empty.title' : 'skills.status.unknown')}</h3>
             <p>{t('skills.empty.hint')}</p>
             <button type="button" className={ui.pillButton} disabled={pickingDir} onClick={() => void pickAndCopyDir()}>{t('skills.import.pick')}</button>
           </div>
@@ -406,8 +380,7 @@ export const SkillsPage = memo(function SkillsPage(props: { store: PromptToolSto
                   skill={skill}
                   t={t}
                   busy={store.skillsBusy}
-                  deletable={skill.source === 'user-dsh' && skill.dir === fields.skillsRoot}
-                  onSetScope={onSetScope}
+                  onSetPolicy={onSetPolicy}
                   onDelete={onDelete}
                 />
               ))}
@@ -429,10 +402,10 @@ export const SkillsPage = memo(function SkillsPage(props: { store: PromptToolSto
       {pendingDelete && (
         <ConfirmDialog
           title={t('skills.delete.title', { name: pendingDelete.name })}
-          description={t('skills.delete.description')}
+          description={t('skills.delete.description', { path: pendingDelete.path ?? pendingDelete.dir })}
           confirmLabel={t('skills.delete.confirm')}
           cancelLabel={t('skills.dir.cancel')}
-          onConfirm={async () => { await store.deleteSkill(pendingDelete.folder) }}
+          onConfirm={async () => { if (!await store.deleteSkill(pendingDelete)) throw new Error(t('skills.delete.failed')) }}
           onCancel={() => setPendingDelete(undefined)}
         />
       )}

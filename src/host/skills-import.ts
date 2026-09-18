@@ -7,7 +7,7 @@ import { parseFrontmatter } from '../runtime/skills-parse.ts'
 import { SKILL_NAME_PATTERN } from './skills-config.ts'
 
 export interface SkillsImportFile { path?: unknown; content?: unknown }
-export type SkillsImportResult = { ok: true; path: string; count: number; overwritten: number }
+export type SkillsImportResult = { ok: true; path: string; count: number; overwritten: number; warning?: string }
   | { ok: false; message: string; code?: 'skills-overwrite-required'; conflicts?: string[] }
 export interface SkillFile { path: string; buffer: Buffer }
 const key = (path: string): string => process.platform === 'win32' ? path.toLowerCase() : path
@@ -43,6 +43,7 @@ export function readSkillDirectory(directory: string): SkillFile[] {
       if (info.isDirectory()) walk(full)
       else if (info.isFile()) {
         if (info.nlink > 1) throw new Error(`技能资源不能是硬链接：${path}`)
+        if (files.length >= MAX_FILES || bytes + info.size > MAX_BYTES) throw new Error('技能目录超过文件数或容量上限')
         const buffer = readFileSync(full)
         bytes += buffer.length
         if (files.length >= MAX_FILES || bytes > MAX_BYTES) throw new Error('技能目录超过文件数或容量上限')
@@ -67,6 +68,7 @@ function importFiles(root: string, files: SkillFile[], overwrite: readonly strin
   let stage: string | undefined
   let keepStage = false
   let conflicts: string[] = []
+  let result: SkillsImportResult | undefined
   try {
     // 技能根由插件状态提供，这里仍要求绝对路径：空串会解析成进程工作目录，把 cwd 当技能根写。
     if (typeof root !== 'string' || root.trim().length === 0 || !isAbsolute(root)) throw new Error('技能根必须是绝对路径')
@@ -154,13 +156,20 @@ function importFiles(root: string, files: SkillFile[], overwrite: readonly strin
       const reason = error instanceof Error ? error.message : String(error)
       throw new Error(keepStage ? `${reason}；回滚未完成：${notRestored.join('、')}；临时备份保留在 ${backup}` : reason)
     }
-    return { ok: true, path: base, count: files.length, overwritten: switched.filter((entry) => entry.backup !== undefined).length }
+    result = { ok: true, path: base, count: files.length, overwritten: switched.filter((entry) => entry.backup !== undefined).length }
   } catch (error) {
-    return { ok: false, message: `技能导入失败：${error instanceof Error ? error.message : String(error)}`,
+    result = { ok: false, message: `技能导入失败：${error instanceof Error ? error.message : String(error)}`,
       ...(conflicts.length > 0 && !keepStage ? { code: 'skills-overwrite-required', conflicts } as const : {}) }
   } finally {
-    if (stage !== undefined && !keepStage) rmSync(stage, { recursive: true, force: true })
+    if (stage !== undefined && !keepStage) {
+      try { rmSync(stage, { recursive: true, force: true }) } catch (error) {
+        const warning = `暂存清理失败，保留在 ${stage}：${error instanceof Error ? error.message : String(error)}`
+        if (result?.ok) result.warning = warning
+        else if (result !== undefined) result.message += `；${warning}`
+      }
+    }
   }
+  return result!
 }
 
 /** 浏览器上传：base64 文件列表；单技能包（无顶层目录）按 frontmatter.name 归类。 */

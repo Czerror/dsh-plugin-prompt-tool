@@ -14,7 +14,8 @@
  *  端到端「写完重新 list() 得到什么」在 `skill-policy-e2e.test.mjs`。 */
 import { after, test } from 'node:test'
 import assert from 'node:assert/strict'
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
+import fs, { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
+import { syncBuiltinESMExports } from 'node:module'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { setTimeout as sleep } from 'node:timers/promises'
@@ -344,7 +345,7 @@ test('路径不是绝对路径时拒绝，且不去碰相对路径解析出来�
 })
 
 test('basename 不是 SKILL.md 时拒绝，目标文件逐字节不变', () => {
-  for (const marker of ['skill.md', 'SKILL.MD', 'SKILL.md.bak', 'OTHER.md', 'SKILL']) {
+  for (const marker of ['SKILL.MD', 'SKILL.md.bak', 'OTHER.md', 'SKILL']) {
     const file = write(makeMarker(marker), '---\nname: demo\ndescription: D\n---\n正文\n')
     const before = readFileSync(file, 'utf8')
     const read = readSkillInvocation(file)
@@ -456,4 +457,35 @@ test('身份校验（真实实现）：陈旧路径、无效技能与空清单�
   assert.equal(policyTarget([], 'demo-skill', 'D:/skills/demo-skill/SKILL.md').ok, false)
   // 没有 path 的条目不会因为 undefined 比较而误命中。
   assert.equal(policyTarget([{ name: 'demo-skill', valid: true }], 'demo-skill', 'D:/skills/demo-skill/SKILL.md').ok, false)
+})
+
+test('单端操作保留另一端最新声明，支持官方字符串布尔值与 flat 技能', () => {
+  const file = write(makeMarker('demo.md'), '---\nname: demo\ndescription: D\ndisable-model-invocation: yes\nuser-invocable: off # 用户端保持关闭\n---\n正文\r\n')
+  assert.deepEqual(readSkillInvocation(file).invocation, { modelInvocable: false, userInvocable: false })
+  const result = setSkillInvocation(file, { side: 'model', enabled: true })
+  assert.equal(result.ok, true, result.message)
+  assert.deepEqual(result.invocation, { modelInvocable: true, userInvocable: false })
+  assert.match(readFileSync(file, 'utf8'), /user-invocable: off # 用户端保持关闭/)
+  assert.ok(readFileSync(file, 'utf8').endsWith('正文\r\n'))
+  assert.equal(setSkillInvocation(file, { side: 'user', enabled: true }).ok, true)
+  assert.deepEqual(readSkillInvocation(file).invocation, { modelInvocable: true, userInvocable: true })
+})
+
+test('事务内外部改写导致冲突，原文新内容保留且暂存被清理', (t) => {
+  const file = write(makeMarker(), '---\nname: demo\ndescription: D\n---\n旧正文\n')
+  const newer = '---\nname: demo\ndescription: D\n---\n外部最新正文\n'
+  const originalWrite = fs.writeFileSync
+  t.mock.method(fs, 'writeFileSync', (path, ...args) => {
+    const result = originalWrite(path, ...args)
+    if (String(path).includes('.SKILL.md.tmp-')) originalWrite(file, newer)
+    return result
+  })
+  syncBuiltinESMExports()
+  try {
+    const result = setSkillInvocation(file, { side: 'model', enabled: false })
+    assert.equal(result.ok, false)
+    assert.match(result.message, /冲突/)
+    assert.equal(readFileSync(file, 'utf8'), newer)
+    assert.deepEqual(leftovers(file), [])
+  } finally { t.mock.restoreAll(); syncBuiltinESMExports() }
 })

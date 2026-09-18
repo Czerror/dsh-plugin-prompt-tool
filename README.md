@@ -22,9 +22,9 @@ dsh --profile prompt-tool
 
 从 web 模板初始化会让 profile 自带 `@deepseek-ai/dsh-base` 与 `@deepseek-ai/dsh-web-app` 两层，无需额外的 Web 自愈步骤。`--from-default-profile` 只在 profile 不存在时创建，不要对既有 profile 反复执行；已初始化的 profile 不会被改写。
 
-技能**留在官方各自的技能根里**（项目 `.dsh/skills`、项目 `.agents/skills`、你添加的技能文件夹、`$DSH_HOME/skills`、`~/.agents/skills`、官方内置），插件不搬迁、不建链接，开关只改写技能的调用策略。管理页按来源分组展示文件，并按当前会话官方注册表标注同名遮蔽。插件不分发顶层 `skills/`：要什么技能就自行创建或复制导入。导入遇到同名目录时先提醒，用户确认后覆盖；成功后不保存技能历史版本。
+技能**留在各自的来源目录里**（项目 `.dsh/skills`、项目 `.agents/skills`、你添加的技能文件夹、`$DSH_HOME/skills`、`~/.agents/skills`、官方内置）。引用目录复用官方 filesystem provider 发现与监听；管理页按当前会话快照标注生效、同名遮蔽和未确认状态。用户根与显式引用目录中的普通技能均可开关、删除；删除移入对应来源根的回收站，保留资源和恢复记录。插件不分发顶层 `skills/`，新增技能可创建或复制导入；同名导入先确认，成功后不保存技能历史版本。
 
-**停用 = 改写技能文件的调用策略**：模型端写 `disable-model-invocation`、用户端写 `user-invocable`，两端独立——模型目录、`skill` 工具与 `/名称` 命令各自生效，恢复写回显式 `false` / `true`。只改这两个键，注释、未知字段、其余键与正文逐字保留；写盘先同目录暂存再原子 rename。曾经用过的「注册层影子候选」方案已废弃：官方注册表按最近层无视优先级胜出，而官方文件提供方由预设常驻组合挂在预设层、本插件的提供方在全局层，影子候选必被覆盖（已在运行中的 DSH 真机复现）。状态文件 `$DSH_HOME/skills/.system/prompt-tool/skills.yml` 现在只保存引用目录 `folders`（v4），`settings.yaml` 只保留部署轴（预设 / AGENTS.md 等）。详见 [docs/skills-management.md](docs/skills-management.md)。
+**停用 = 改写技能文件的调用策略**：模型端写 `disable-model-invocation`、用户端写 `user-invocable`。单端开关只修改该端，保留另一端的最新状态；正文、注释和未知字段保留，提交前校验原文并原子替换。官方工具与可选 `skill_search/skill_load` 都执行调用策略。状态文件 `$DSH_HOME/skills/.system/prompt-tool/skills.yml` 只保存引用目录 `folders`（v4）；技能清单与调用策略均不进入 settings。详见 [docs/skills-management.md](docs/skills-management.md)。
 
 ### 从旧版本升级
 
@@ -54,7 +54,7 @@ node scripts/migrate-skills.mjs --rollback "<备份目录>\migration.json"
 - 🛡️ **失败不伤会话**：单条失败跳过 + `warnOnce`；配置错误挂载时 fail loud；`dedupe: session` 持久幂等
 - 🧭 **通用 instruction-hint 引擎**：所有预设都可通过 `strategy: instruction-hint` 或 `placeholder + fill: instruction-hint` 提示指令文件存在；实现位于 `engine/instruction-hint.mjs`，不绑定任何预设；`context-gate.instructionHint` 按模型可见 surface 去重，重挂不重复，被压缩遮蔽后才再次提示
 - 📦 **Bridge 载荷**：JSON 请求统一 32 MiB 硬上限并明确返回 413；角色卡原始图片走 64 MiB 流式通道，按 PNG 魔数识别。
-- 📂 **技能管理（文件层调用策略）**：按官方六类技能根分组展示全部技能（含来源优先级与同名遮蔽判定），停用/恢复改写该技能 `SKILL.md` 的官方两个调用策略键（模型端与用户端各自独立），只动这两个键、正文与其余字段逐字保留；另提供创建、两种导入（宿主机目录复制 / 浏览器文件夹上传）、技能文件夹引用与回收站删除。
+- 📂 **技能管理**：官方发现与会话快照统一技能来源、生效和遮蔽状态；单端开关写回技能文件。支持目录包与直属 Markdown 技能、创建、两种复制导入，以及用户根和引用根的可恢复删除；技能局部刷新保留其他页面草稿。
 - 🎭 **SillyTavern 导入**：JSON 预设、角色卡和独立世界书转换为本地预设——按官方顺序表保留启停，赋值模板运行时求值；不等价能力明确报告，采样参数由宿主管理
 - 🎴 **角色卡库**：SillyTavern 角色卡（PNG tEXt chunk `ccv3`/`chara`，或 chara_card JSON）导入独立库（`.characters/<id>/`，含原图/转换参数/角色记忆），按 PNG 魔数识别图片并经原始文件流上传，避免头像 base64 膨胀；按需「导入到当前预设」（`chara-<卡>-` 前缀合并、幂等可移除），多文件自动合并
 - 📚 **世界书**：`character_book` 转 world-book 策略配置（`keys` 命中触发 / `constant` 常驻 / 正则键自动检测 / `selectiveLogic` 组合逻辑），与模块卡片同一存储与编辑（模块列表「世界书」过滤 + 批量启用/禁用）

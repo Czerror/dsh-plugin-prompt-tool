@@ -5,7 +5,7 @@
  * 改路径或载荷形状必须同步更新 test/shared/bridge-contract.test.mjs。
  */
 import type { PersonaSpec } from './persona-section.ts'
-import type { SkillPolicyScope } from './skills.ts'
+import type { SkillPolicyChange, SkillsCatalogSnapshot } from './skills.ts'
 import type {
   InstructionFileWriteResult,
   InstructionPolicy,
@@ -89,14 +89,14 @@ export interface BridgeRequestMap {
   skillsList: { sessionId?: string } | undefined
   /** 调用策略开关：改写该技能 SKILL.md frontmatter 的官方两个键（正文不动）；
    *  path 必须命中服务端当次扫描的同名条目，否则按陈旧界面拒绝。 */
-  skillPolicy: { name: string; path: string; scope: SkillPolicyScope; sessionId?: string }
+  skillPolicy: { name: string; path: string; sessionId?: string } & SkillPolicyChange
   /** 添加 / 移除引用的技能文件夹（只记状态，不复制文件）。 */
-  skillsFolders: { folders: string[] }
+  skillsFolders: { folders: string[]; sessionId?: string }
   /** overwrite 仅包含用户已确认覆盖的技能目录名；缺省时遇到同名返回冲突且不写盘。 */
   skillsImport: { files: Array<{ path: string; content: string }>; overwrite?: string[] }
   skillsImportDirectory: { path: string; overwrite?: string[] }
   skillCreate: { name: string; description: string; content: string }
-  skillDelete: { folder: string }
+  skillDelete: { name: string; path: string; sessionId?: string }
   templates: undefined
   /** 可选 sessionId：与 /bootstrap 同源解析当前工作区（单读与聚合读取必须一致）。 */
   promptConfigs: { sessionId?: string } | undefined
@@ -296,13 +296,13 @@ export interface BridgeValueMap {
   mutate: BridgeSettingsView
   configsValidate: { valid: boolean; errors: Array<{ index: number; id: string; message: string }>; configs?: unknown[]; files?: unknown[] }
   /** 技能清单 + 引用目录 + 技能根（客户端据此渲染来源分组与调用策略）。 */
-  skillsList: { skills: unknown[]; folders: string[]; roots: string[] }
-  skillPolicy: { skills: unknown[] }
-  skillsFolders: { skills: unknown[]; folders: string[] }
-  skillsImport: { path: string; count: number; overwritten: number }
+  skillsList: SkillsCatalogSnapshot & { folders: string[]; roots: string[] }
+  skillPolicy: SkillsCatalogSnapshot
+  skillsFolders: SkillsCatalogSnapshot & { folders: string[] }
+  skillsImport: { path: string; count: number; overwritten: number; warning?: string }
   skillCreate: { id: string; path: string }
   skillDelete: { id: string; path: string }
-  skillsImportDirectory: { path: string; count: number; overwritten: number }
+  skillsImportDirectory: { path: string; count: number; overwritten: number; warning?: string }
   templates: { templates?: unknown[]; toolTemplates?: unknown[] }
   promptConfigs: { promptConfigs: unknown[]; instructions?: InstructionsSnapshot }
   agentsFile: InstructionFileWriteResult

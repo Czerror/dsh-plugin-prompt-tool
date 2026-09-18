@@ -133,6 +133,7 @@ test('契约：/bootstrap 聚合 meta + overrides + variables + promptConfigs �
   assert.deepEqual(payload.activeSkillsDirs, ['D:/isolated/skills'])
   assert.deepEqual(payload.skillFolders, ['D:/referenced'])
   assert.deepEqual(payload.skillCatalog, [entry])
+  assert.equal(payload.skillsComplete, false, '无注册表观测时不得宣称会话技能清单完整')
   assert.equal('skillBlocked' in payload, false, '屏蔽表不再单独下发，避免第二个真相')
   assert.equal('skillsDirExists' in payload, false, '目录存在性字段已删除')
   assert.ok(payload.moduleFacts === undefined || payload.moduleFacts.effectiveConfigs === undefined, 'bootstrap 不应暴露完整行级配置')

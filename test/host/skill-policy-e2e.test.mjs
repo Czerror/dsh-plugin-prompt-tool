@@ -3,20 +3,18 @@
  *  为什么必须用真实 `SkillRegistry`：整套机制成立与否取决于注册表怎么合并候选、怎么把
  *  `invocation` 一路透传到摘要。自造一份合并逻辑等于自证，测不出「停用是否真的生效」。
  *
- *  官方文件提供方用**从磁盘读 frontmatter** 的替身（`parseFrontmatter` 与
- *  `dsh-skill-filesystem` 同一套字段来源）。这条替身的关键性质是：它每次 list() 都重读盘，
- *  所以「策略写在文件里」这件事一旦不成立，本文件立刻红——而不是被内存缓存掩盖。
+ *  使用锁定的已发布 filesystem provider；它独立解析磁盘，不复用插件解析器做替身。
  *
  *  同时断言候选**直接来自文件内容**：同一次发现里同名技能只出现一次，不存在第二个候选去覆盖它，
  *  这正是影子候选方案失败的地方（注册层「最近层胜出」会无视 rank 覆盖影子候选）。 */
 import { after, test } from 'node:test'
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
-import { pathToFileURL } from 'node:url'
 import { Context } from '@deepseek-ai/cordis'
 import { SkillRegistry, isModelInvocable, isUserInvocable } from '@deepseek-ai/dsh-skill'
+import { FileSystemSkillProvider } from '@deepseek-ai/dsh-skill-filesystem'
 import { parseFrontmatter } from '../../src/runtime/skills-parse.ts'
 import { readSkillInvocation, setSkillInvocation } from '../../src/host/skills-policy.ts'
 import { SKILL_MARKER } from '../../src/shared/skills.ts'
@@ -28,7 +26,7 @@ const MODEL_KEY = 'disable-model-invocation'
 const USER_KEY = 'user-invocable'
 
 mkdirSync(sandbox, { recursive: true })
-// 项目根要能被官方提供方替身按 cwd 解析到：放一个 .git 目录即可（与 skills-scan 同规则）。
+// 项目根要能被官方提供方按 cwd 解析到。
 mkdirSync(join(sandbox, '.git'), { recursive: true })
 const skillsRoot = join(sandbox, '.dsh', 'skills')
 const skillDir = join(skillsRoot, 'demo-skill')
@@ -50,56 +48,16 @@ writeFileSync(marker, [
   '',
 ].join('\n'), 'utf8')
 
-/** 官方 `dsh-skill-filesystem` 的替身：**每次 list() 都从磁盘读 frontmatter**，不做任何缓存。 */
-function createFilesystemProvider() {
-  const readSkill = (folder) => {
-    const file = join(skillsRoot, folder, SKILL_MARKER)
-    if (!existsSync(file)) return undefined
-    const raw = readFileSync(file, 'utf8')
-    const { data, body, issue } = parseFrontmatter(raw)
-    if (issue !== undefined) return undefined
-    const name = typeof data.name === 'string' && data.name.length > 0 ? data.name : folder
-    return {
-      folder,
-      file,
-      name,
-      description: typeof data.description === 'string' ? data.description : '',
-      invocation: {
-        // 与官方 filesystem provider 同一套语义：缺省即可调用。
-        modelInvocable: data.disableModelInvocation !== true,
-        userInvocable: data.userInvocable !== false,
-      },
-      body,
-    }
-  }
-  // 每次 list() 都重扫目录：文件变化立刻反映到候选上，不给「内存缓存掩盖策略未生效」留空间。
-  const list = () => readdirSync(skillsRoot, { withFileTypes: true })
-    .filter((entry) => entry.isDirectory())
-    .map((entry) => readSkill(entry.name))
-    .filter((skill) => skill !== undefined)
-
-  return {
-    name: 'dsh-skill-filesystem',
-    list: async () => list().map((skill) => ({
-      name: skill.name,
-      description: skill.description,
-      invocation: skill.invocation,
-      source: 'project-dsh',
-      provider: 'dsh-skill-filesystem',
-      resourceBase: { kind: 'directory', path: join(skillsRoot, skill.folder) },
-      rank: 100,
-      locator: { file: skill.file },
-      path: skill.file,
-    })),
-    get: async (candidate) => {
-      const skill = list().find((entry) => entry.name === candidate.name)
-      if (skill === undefined) return undefined
-      return { ...candidate, content: skill.body }
-    },
-  }
+function createFilesystemProvider(control) {
+  const provider = new FileSystemSkillProvider({ get() {}, logger: { warn() {} } }, control, {
+    providerName: 'dsh-skill-filesystem', includeDefaultRoots: false, customSkillDirs: [skillsRoot],
+    dshHome: sandbox, agentsHome: sandbox, watch: false,
+  })
+  after(() => provider.dispose())
+  return provider
 }
 
-/** 真实注册表 + 官方替身；必须显式给 cwd，否则不触发项目根发现。 */
+/** 真实注册表与官方 provider 使用相同查找上下文。 */
 function listSkills(registry) {
   return registry.list({ cwd: sandbox })
 }
@@ -111,10 +69,7 @@ const winnerOf = async (registry, name) => {
   return matches[0]
 }
 
-test('真实 filesystem provider：旧策略键写入后可被官方发现并正确限制调用', {
-  skip: process.env.DSH_SKILL_FILESYSTEM_ENTRY === undefined ? '设置 DSH_SKILL_FILESYSTEM_ENTRY 可验证已发布 provider' : false,
-}, async () => {
-  const { FileSystemSkillProvider } = await import(pathToFileURL(process.env.DSH_SKILL_FILESYSTEM_ENTRY).href)
+test('真实 filesystem provider：旧策略键写入后可被官方发现并正确限制调用', async () => {
   const root = join(sandbox, 'official-provider')
   const file = join(root, 'legacy', SKILL_MARKER)
   mkdirSync(join(root, 'legacy'), { recursive: true })
@@ -140,7 +95,7 @@ test('真实 filesystem provider：旧策略键写入后可被官方发现并正
 test('setSkillInvocation 之后重新 list()：模型端不可调用、用户端仍可调用', async () => {
   const registry = new SkillRegistry(new Context())
   let control
-  registry.registerProvider((providerControl) => { control = providerControl; return createFilesystemProvider() })
+  registry.registerProvider((providerControl) => { control = providerControl; return createFilesystemProvider(providerControl) })
 
   // 初始：文件没有声明任何调用策略键。
   const initial = await winnerOf(registry, 'demo-skill')
@@ -236,7 +191,7 @@ test('候选直接来自文件内容：手工改文件与插件写文件走同�
 
   const registry = new SkillRegistry(new Context())
   let control
-  registry.registerProvider((providerControl) => { control = providerControl; return createFilesystemProvider() })
+  registry.registerProvider((providerControl) => { control = providerControl; return createFilesystemProvider(providerControl) })
   const first = await winnerOf(registry, 'demo-skill')
   assert.equal(first.invocation.modelInvocable, false, '文件声明关模型端')
 
@@ -252,4 +207,29 @@ test('候选直接来自文件内容：手工改文件与插件写文件走同�
   assert.equal(onDisk.invocation.modelInvocable, second.invocation.modelInvocable)
   assert.equal(onDisk.invocation.userInvocable, second.invocation.userInvocable)
   assert.equal(marker, resolve(marker), '技能文件路径是绝对路径（写入前置校验的同一不变量）')
+})
+
+test('插件解析器与已发布 provider 对照：官方布尔、旧键、非法值和 frontmatter 边界', async () => {
+  const root = join(sandbox, 'parity')
+  mkdirSync(join(root, 'demo'), { recursive: true })
+  const file = join(root, 'demo', SKILL_MARKER)
+  const provider = new FileSystemSkillProvider({ get() {}, logger: { warn() {} } }, {
+    signal: new AbortController().signal, invalidate() {},
+  }, { includeDefaultRoots: false, customSkillDirs: [root], watch: false, dshHome: sandbox, agentsHome: sandbox })
+  try {
+    const frontmatter = (line) => `---\nname: demo\ndescription: D\n${line}\n---\nbody\n`
+    const cases = [
+      ...['true', 'false', 'yes', 'no', 'ON', 'off', '1', '0', '"true"', '"false"'].map((value) => frontmatter(`disable-model-invocation: ${value}\nuser-invocable: ${value}`)),
+      ...['disable-model-invocation: nope', 'disableModelInvocation: false', 'userInvocable: true', 'modelInvocable: true', 'user-invocable: []'].map(frontmatter),
+      '---\nname: demo\ndescription: D\n---trailing\nbody',
+      '\ufeff' + frontmatter(''),
+    ]
+    for (const source of cases) {
+      writeFileSync(file, source)
+      const ours = parseFrontmatter(source)
+      const official = await provider.list({ cwd: sandbox })
+      assert.equal(ours.issue === undefined, official.length === 1, source)
+      if (official.length === 1) assert.deepEqual({ modelInvocable: ours.data.disableModelInvocation !== true, userInvocable: ours.data.userInvocable !== false }, official[0].invocation, source)
+    }
+  } finally { await provider.dispose() }
 })

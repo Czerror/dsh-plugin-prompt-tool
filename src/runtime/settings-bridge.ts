@@ -1,7 +1,7 @@
 /** 自建 loopback settings bridge：Web 设置页数据通道（提示词配置数组经此输出到 UI）。 */
 import type { Context } from '@deepseek-ai/cordis'
 import { scopeOf } from '@deepseek-ai/dsh-scope'
-import type { SkillRegistry } from '@deepseek-ai/dsh-skill'
+import type { SkillRegistry, SkillViewOptions } from '@deepseek-ai/dsh-skill'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { createHash } from 'node:crypto'
 import { basename, dirname, join, resolve, sep } from 'node:path'
@@ -12,12 +12,12 @@ import { parse as parseYaml, stringify as stringifyYaml } from 'yaml'
 import type { SettingsDescriptor, SettingsPathOp } from '@deepseek-ai/dsh-settings'
 import { PARAM_KEYS } from '../config.ts'
 import { invalidateModelCatalog, listAdvertisedModels, peekModelCatalog, refreshModelReasoning, type ModelDetection } from './models.ts'
-import type { SkillCatalogEntry, SkillPolicyScope } from '../shared/skills.ts'
+import type { SkillCatalogEntry, SkillPolicyChange, SkillPolicyScope, SkillsCatalogSnapshot } from '../shared/skills.ts'
 import { loadPromptConfigFiles } from '../host/prompt-configs.ts'
 import { validatePromptConfigs } from './configs-validate.ts'
 import { loadPromptTemplates, loadToolTemplates } from '../host/templates.ts'
 import { assertImportableSource, importSkillsDirectory, importSkillsPackage } from '../host/skills-import.ts'
-import { createSkill, deleteSkill } from '../host/skills-actions.ts'
+import { createSkill, type SkillActionResult } from '../host/skills-actions.ts'
 import type { SkillPolicyWrite } from '../host/skills-policy.ts'
 import {
   appendPresetModules,
@@ -87,10 +87,12 @@ export interface SkillsBridgeState {
   folders: string[]
   /** 技能清单：按会话工作区扫描官方六类技能根，调用策略取自各技能文件的 frontmatter。 */
   listSkills: (cwd?: string) => SkillCatalogEntry[]
-  /** 调用策略写入：scope 的 'none' 表示两端恢复；path 必须命中当次扫描的同名条目。 */
-  setSkillPolicy: (name: string, path: string, scope: SkillPolicyScope, cwd?: string) => SkillPolicyWrite
+  snapshot?: (options: SkillViewOptions) => Promise<SkillsCatalogSnapshot>
+  /** 单端写入只提交本端意图；路径必须命中当前来源白名单。 */
+  setSkillPolicy: (name: string, path: string, change: SkillPolicyChange, cwd?: string) => SkillPolicyWrite
+  deleteSkill: (name: string, path: string, cwd?: string) => SkillActionResult
   /** 添加 / 移除引用的技能文件夹。 */
-  patchSkillFolders: (folders: string[]) => SkillsStateRead
+  patchSkillFolders: (folders: string[]) => SkillsStateRead | Promise<SkillsStateRead>
 }
 
 /** 仅允许本机回环请求，镜像官方 settings bridge 的边界。 */
@@ -609,24 +611,28 @@ export function registerSettingsBridge(
 
       /** describe 运行时事实（describe 端点与 /bootstrap 共用）：检测状态、技能快照、
        *  宿主默认模型、模型目录缓存、激活预设参数。不触网（模型目录只读 10min 缓存）。 */
-      const collectSkills = async (sessionId?: string): Promise<SkillCatalogEntry[]> => {
+      const collectSkills = async (sessionId?: string): Promise<SkillsCatalogSnapshot> => {
         const cwd = sessionId === undefined ? undefined : localAgentCwd(sctx, sessionId)
-        const entries = getSkillsState().listSkills(cwd)
-        const registry = (sctx.get?.('skills') ?? ctx.skills) as Pick<SkillRegistry, 'list'> | undefined
-        if (typeof registry?.list !== 'function') return entries
         const agents = sctx.get?.('agents') as { get?: (id: string) => { ctx?: Context } | undefined } | undefined
         const agent = sessionId === undefined ? undefined : agents?.get?.(sessionId)
         const scope = agent?.ctx === undefined ? undefined : scopeOf(agent.ctx)
+        const state = getSkillsState()
         try {
-          return withSkillWinners(entries, await registry.list({ cwd, scope }))
+          if (state.snapshot !== undefined) return await state.snapshot({ cwd, scope })
+          const entries = state.listSkills(cwd)
+          const registry = (sctx.get?.('skills') ?? ctx.skills) as Pick<SkillRegistry, 'snapshot'> | undefined
+          if (typeof registry?.snapshot !== 'function') return { skills: entries, complete: false }
+          const snapshot = await registry.snapshot({ cwd, scope })
+          return { skills: withSkillWinners(entries, snapshot.skills, snapshot.complete), complete: snapshot.complete }
         } catch (error) {
           ctx.logger?.warn(`prompt-tool: 无法读取技能注册表，暂不标注同名遮蔽：${String(error)}`)
-          return entries
+          return { skills: withSkillWinners(state.listSkills(cwd), [], false), complete: false }
         }
       }
       const collectDescribeExtras = async (sessionId?: string): Promise<Record<string, unknown>> => {
         const detection = getModelsState()
         const skillsState = getSkillsState()
+        const skillsSnapshot = await collectSkills(sessionId)
         // 宿主默认模型（agent-default-model settings：主对话新会话默认）：
         // 插件参数未设置（空 = 继承宿主）时回显给客户端（模型名下拉候选/状态行）。
         let hostDefaultModel: { provider?: string; model?: string; reasoningEffort?: string } | undefined
@@ -701,7 +707,8 @@ export function registerSettingsBridge(
           modelCatalog,
           modelsError: detection.error,
           activeSkillsDirs: [skillsState.skillsRoot],
-          skillCatalog: await collectSkills(sessionId),
+          skillCatalog: skillsSnapshot.skills,
+          skillsComplete: skillsSnapshot.complete,
           // 引用目录随 describe 下发。调用策略不再单独发一份：它已经逐条表达在 skillCatalog 的
           // modelInvocable / userInvocable 里（取自各技能文件的 frontmatter），重复下发只会制造第二个真相。
           skillFolders: skillsState.folders,
@@ -934,7 +941,7 @@ export function registerSettingsBridge(
             writeBridgeJson(res, 200, {
               ok: true,
               value: {
-                skills: await collectSkills(session.sessionId),
+                ...await collectSkills(session.sessionId),
                 folders: state.folders,
                 roots: [state.skillsRoot],
               },
@@ -980,10 +987,15 @@ export function registerSettingsBridge(
             if (parsedBody === undefined) return
             const body = parsedBody.body
             const record = body !== null && typeof body === 'object' && !Array.isArray(body) ? body as Record<string, unknown> : {}
+            const change: SkillPolicyChange | undefined = record.scope === undefined
+              ? ((record.side === 'model' || record.side === 'user') && typeof record.enabled === 'boolean'
+                ? { side: record.side, enabled: record.enabled } : undefined)
+              : (record.side === undefined && record.enabled === undefined && typeof record.scope === 'string'
+                && ['none', 'model', 'user', 'all'].includes(record.scope)
+                ? { scope: record.scope as SkillPolicyScope } : undefined)
             if (typeof record.name !== 'string' || record.name.length === 0
-              || typeof record.path !== 'string' || record.path.length === 0
-              || typeof record.scope !== 'string' || !['none', 'model', 'user', 'all'].includes(record.scope)) {
-              writeBridgeJson(res, 400, { ok: false, code: 'skill-policy-rejected', message: 'name、path 与 scope（none/model/user/all）必填' })
+              || typeof record.path !== 'string' || record.path.length === 0 || change === undefined) {
+              writeBridgeJson(res, 400, { ok: false, code: 'skill-policy-rejected', message: 'name、path 与单端 side/enabled 或显式 scope 必填' })
               return
             }
             const session = readSessionIdField(body)
@@ -994,14 +1006,14 @@ export function registerSettingsBridge(
             // 身份校验在与清单相同的工作区视图里做：客户端提交的 path 只有命中服务端当次扫描的
             // 同名条目才被接受，陈旧界面因此改不到被替换过的同名技能。
             const cwd = session.sessionId === undefined ? undefined : localAgentCwd(sctx, session.sessionId)
-            const written = getSkillsState().setSkillPolicy(record.name, record.path, record.scope as SkillPolicyScope, cwd)
+            const written = getSkillsState().setSkillPolicy(record.name, record.path, change, cwd)
             if (written.ok === false) {
               // 界面陈旧、技能无效、只读或链接目标等都在这里如实回报，不静默。
               writeBridgeJson(res, 409, { ok: false, code: 'skill-policy-rejected', message: written.message })
               return
             }
             afterSkillsChange?.()
-            writeBridgeJson(res, 200, { ok: true, value: { skills: await collectSkills(session.sessionId) } })
+            writeBridgeJson(res, 200, { ok: true, value: await collectSkills(session.sessionId) })
           },
         }),
         sctx.webServer.register({
@@ -1017,8 +1029,13 @@ export function registerSettingsBridge(
               writeBridgeJson(res, 400, { ok: false, code: 'skills-folders-rejected', message: 'folders 必须是字符串数组' })
               return
             }
+            const session = readSessionIdField(body)
+            if (!session.ok) {
+              writeBridgeJson(res, 400, { ok: false, code: 'skills-folders-rejected', message: session.message })
+              return
+            }
             // 只记引用，不复制也不移动任何文件。
-            const written = getSkillsState().patchSkillFolders(record.folders as string[])
+            const written = await getSkillsState().patchSkillFolders(record.folders as string[])
             if (written.ok === false) {
               writeBridgeJson(res, 409, { ok: false, code: 'skills-folders-rejected', message: written.message })
               return
@@ -1026,7 +1043,7 @@ export function registerSettingsBridge(
             afterSkillsChange?.()
             writeBridgeJson(res, 200, {
               ok: true,
-              value: { skills: await collectSkills(), folders: written.state.folders },
+              value: { ...await collectSkills(session.sessionId), folders: written.state.folders },
             })
           },
         }),
@@ -1053,9 +1070,15 @@ export function registerSettingsBridge(
             const parsedBody = await readBridgeBodyForHandler(req, res)
             if (parsedBody === undefined) return
             const body = parsedBody.body
-            const folder = body !== null && typeof body === 'object' && !Array.isArray(body) && typeof (body as Record<string, unknown>).folder === 'string'
-              ? (body as Record<string, unknown>).folder as string : ''
-            const result = deleteSkill(getSkillsState().skillsRoot, folder)
+            const record = isRecord(body) ? body : {}
+            const session = readSessionIdField(body)
+            if (!session.ok || typeof record.name !== 'string' || record.name.length === 0
+              || typeof record.path !== 'string' || record.path.length === 0) {
+              writeBridgeJson(res, 400, { ok: false, code: 'skill-delete-rejected', message: session.ok ? 'name、path 必填' : session.message })
+              return
+            }
+            const cwd = session.sessionId === undefined ? undefined : localAgentCwd(sctx, session.sessionId)
+            const result = getSkillsState().deleteSkill(record.name, record.path, cwd)
             if (!result.ok) { writeBridgeJson(res, 400, { ok: false, code: 'skill-delete-rejected', message: result.message }); return }
             afterSkillsChange?.()
             writeBridgeJson(res, 200, { ok: true, value: result })

@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { bridgeViewFromBoot, fieldsFromView, mergePresetParams } from '../../src/client/data/prompt-tool-view.ts'
+import { bridgeViewFromBoot, fieldsFromView, mergePresetParams, skillFieldsFromSnapshot } from '../../src/client/data/prompt-tool-view.ts'
 
 test('fields view：当前值覆盖 base，缺省字段保留稳定默认', () => {
   const fields = fieldsFromView({
@@ -27,7 +27,7 @@ test('fields view：当前值覆盖 base，缺省字段保留稳定默认', () =
   )
 })
 
-test('fields view：技能清单、引用目录与用户根都取 describe 事实', () => {
+test('fields view：技能清单、调用能力与完整性只取 bridge 顶层事实', () => {
   const path = 'D:\\AI\\CC-switch\\skills'
   const entry = {
     id: `user-dsh:${path}:demo-skill`,
@@ -42,37 +42,24 @@ test('fields view：技能清单、引用目录与用户根都取 describe 事�
     modelInvocable: true,
     userInvocable: false,
     path: `${path}\\demo-skill\\SKILL.md`,
+    availability: 'unknown', provider: 'filesystem', canSetPolicy: true, canDelete: true,
   }
   const fields = fieldsFromView(bridgeViewFromBoot({
     ok: true,
     value: {
       ns: 'prompt-tool',
       revision: 1,
-      // describe 载荷：清单、引用目录与用户根都来自插件对六类官方技能根的扫描事实
-      // （调用策略逐条在清单条目上，且只来自该技能文件自己的 frontmatter）。
-      value: {
-        activeSkillsDirs: [path],
-        skillCatalog: [entry, { id: 'broken-entry' }],
-        skillFolders: ['D:\\referenced-skills'],
-      },
+      value: {},
     },
+    activeSkillsDirs: [path],
+    skillCatalog: [entry, { id: 'broken-entry' }],
+    skillFolders: ['D:\\referenced-skills'],
+    skillsComplete: false,
   }))
   assert.deepEqual(fields.skillCatalog, [entry], '缺身份字段的条目被丢弃，其余按调用策略字段原样投影')
   assert.deepEqual(fields.skillFolders, ['D:\\referenced-skills'])
   assert.equal(fields.skillsRoot, path)
-  // 旧注册层屏蔽字段即使仍留在载荷里也不进投影：条目上只有 frontmatter 的调用策略事实。
-  const legacy = fieldsFromView(bridgeViewFromBoot({
-    ok: true,
-    value: {
-      ns: 'prompt-tool',
-      revision: 1,
-      value: { skillCatalog: [{ ...entry, blocked: true, blockedModel: true, blockedUser: true }] },
-    },
-  }))
-  assert.deepEqual(legacy.skillCatalog, [entry])
-  assert.equal('blocked' in legacy.skillCatalog[0], false, '投影不携带 blocked')
-  assert.equal('blockedModel' in legacy.skillCatalog[0], false, '投影不携带 blockedModel')
-  assert.equal('blockedUser' in legacy.skillCatalog[0], false, '投影不携带 blockedUser')
+  assert.equal(fields.skillsComplete, false)
   // 用户技能根只由 activeSkillsDirs 决定：没有它时根为空，界面据此提示重新读取。
   const missing = fieldsFromView(bridgeViewFromBoot({
     ok: true,
@@ -86,47 +73,28 @@ test('fields view：技能清单、引用目录与用户根都取 describe 事�
   assert.deepEqual(missing.skillCatalog, [])
 })
 
-test('fields view：技能事实的取值优先级（顶层 → descriptor value；技能根再兜底 base）', () => {
-  const path = 'D:\\AI\\CC-switch\\skills'
-  const fromValue = fieldsFromView({
-    ok: true,
-    value: {
-      ns: 'prompt-tool',
-      revision: 1,
-      value: { activeSkillsDirs: [path], skillFolders: ['D:\\from-value'] },
-      base: { activeSkillsDirs: ['D:\\ignored-base'] },
-    },
-  })
-  assert.equal(fromValue.skillsRoot, path, 'descriptor value 覆盖 base')
-  assert.deepEqual(fromValue.skillFolders, ['D:\\from-value'])
+test('fields view：权威空快照与字段缺失都不回退旧 settings 技能事实', () => {
+  const old = { id: 'old', name: 'old', folder: 'old', dir: 'D:/old', source: 'user-dsh' }
+  const stale = { skillCatalog: [old], skillFolders: ['D:/old'], activeSkillsDirs: ['D:/old'] }
+  for (const extras of [{}, { skillCatalog: [], skillFolders: [], activeSkillsDirs: [], skillsComplete: true }]) {
+    const fields = fieldsFromView(bridgeViewFromBoot({
+      ok: true, value: { ns: 'prompt-tool', revision: 1, value: stale, base: stale }, ...extras,
+    }))
+    assert.deepEqual(fields.skillCatalog, [])
+    assert.deepEqual(fields.skillFolders, [])
+    assert.equal(fields.skillsRoot, '')
+    assert.equal(fields.skillsComplete, extras.skillsComplete === true)
+  }
+})
 
-  const fromBase = fieldsFromView({
-    ok: true,
-    value: { ns: 'prompt-tool', revision: 1, value: {}, base: { activeSkillsDirs: ['D:\\from-base'] } },
-  })
-  assert.equal(fromBase.skillsRoot, 'D:\\from-base', 'value 缺失时退回 base')
-
-  // 引用目录只从顶层扩展字段或 descriptor value 读，没有 base 兜底——这是实现事实，一并钉住，
-  // 免得后来人以为 base 也是它的来源。
-  const foldersFromBase = fieldsFromView({
-    ok: true,
-    value: { ns: 'prompt-tool', revision: 1, value: {}, base: { skillFolders: ['D:\\base-only'] } },
-  })
-  assert.deepEqual(foldersFromBase.skillFolders, [], 'skillFolders 不读 base')
-
-  const fromTop = fieldsFromView({
-    ok: true,
-    value: {
-      ns: 'prompt-tool',
-      revision: 1,
-      value: { activeSkillsDirs: ['D:\\from-value'] },
-      base: { activeSkillsDirs: ['D:\\from-base'] },
-    },
-    activeSkillsDirs: ['D:\\from-top'],
-    skillFolders: ['D:\\top-folder'],
-  })
-  assert.equal(fromTop.skillsRoot, 'D:\\from-top', '顶层扩展字段优先于 descriptor')
-  assert.deepEqual(fromTop.skillFolders, ['D:\\top-folder'])
+test('技能局部快照不包含预设字段，观测不完整时保留操作能力但不声称可用', () => {
+  const entry = { id: 'custom:demo', name: 'demo', folder: 'demo', dir: 'D:/refs', source: 'custom', valid: true,
+    modelInvocable: true, userInvocable: true, availability: 'active', canSetPolicy: true, canDelete: true }
+  const patch = skillFieldsFromSnapshot({ skills: [entry], complete: false, folders: ['D:/refs'], roots: ['D:/skills'] })
+  assert.deepEqual(Object.keys(patch).sort(), ['skillCatalog', 'skillFolders', 'skillsComplete', 'skillsRoot'])
+  assert.equal(patch.skillCatalog[0].availability, 'unknown')
+  assert.equal(patch.skillCatalog[0].canSetPolicy, true)
+  assert.equal(patch.skillCatalog[0].canDelete, true)
 })
 
 test('预设参数投影完整读回列表、阶段与 false；settings 不覆盖预设行为', () => {

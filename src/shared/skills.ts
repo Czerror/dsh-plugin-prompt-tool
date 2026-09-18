@@ -17,6 +17,7 @@ export type SkillSourceKind =
   | 'user-dsh'
   | 'user-agents'
   | 'bundled'
+  | 'other'
 
 /** 来源优先级：与官方六类技能根的次序一致（数值越小越优先）。
  *  展示名不在这里——标题由界面按 `skills.source.<kind>` 取字典，避免同一批文案出现两处真相。 */
@@ -27,6 +28,7 @@ export const SKILL_SOURCES: Record<SkillSourceKind, { rank: number }> = {
   'user-dsh': { rank: 400 },
   'user-agents': { rank: 500 },
   bundled: { rank: 600 },
+  other: { rank: 700 },
 }
 
 /** 两个官方调用策略键：值就是「该端是否可调用」。 */
@@ -40,6 +42,15 @@ export interface SkillInvocation {
 /** 两端调用策略的目标范围：'model' = 只让模型端不可调用，'user' = 只让用户端不可调用，
  *  'all' = 两端都不可调用，'none' = 两端都恢复可调用。语义是「点击之后的目标状态」。 */
 export type SkillPolicyScope = 'none' | 'model' | 'user' | 'all'
+
+/** 单端操作不携带另一端的旧快照；显式 scope 供两端批量操作和 TUI 使用。 */
+export type SkillPolicyChange = { side: 'model' | 'user'; enabled: boolean } | { scope: SkillPolicyScope }
+
+export interface SkillsCatalogSnapshot {
+  skills: SkillCatalogEntry[]
+  /** false 表示观测不完整，不能把未发现解释成不存在。 */
+  complete: boolean
+}
 
 /** 目标范围 → 两个键的写入意图（true = 该端可调用）。 */
 export function invocationForScope(scope: SkillPolicyScope): SkillInvocation {
@@ -87,4 +98,10 @@ export interface SkillCatalogEntry {
   winnerId?: string
   /** 标记文件绝对路径（调用策略的写入目标与身份校验依据）。 */
   path?: string
+  /** 当前会话实际注册结果，与文件声明的调用策略分开。 */
+  availability?: 'active' | 'shadowed' | 'unregistered' | 'unknown'
+  provider?: string
+  canSetPolicy?: boolean
+  canDelete?: boolean
+  readonlyReason?: string
 }

@@ -271,3 +271,49 @@ test('importSkillsPackage：空文件列表直接失败', () => {
     cleanup()
   }
 })
+
+test('目录导入在读取超限资源前拒绝，已有技能不变', (t) => {
+  const source = makeRoot('pt-skills-capacity')
+  const stat = fs.lstatSync
+  let attempted = false
+  writeFileSync(join(source.root, 'huge.bin'), 'fixture')
+  t.mock.method(fs, 'lstatSync', (path, ...args) => {
+    const info = stat(path, ...args)
+    if (String(path).endsWith('huge.bin')) info.size = 1024 * 1024 * 1024
+    return info
+  })
+  t.mock.method(fs, 'readFileSync', () => { attempted = true; throw new Error('不得读取超限文件') })
+  syncBuiltinESMExports()
+  try {
+    assert.throws(() => readSkillDirectory(source.root), /容量上限/)
+    assert.equal(attempted, false)
+  } finally { t.mock.restoreAll(); syncBuiltinESMExports(); source.cleanup() }
+})
+
+test('提交后清理失败仍返回成功与残留提示，目标技能已生效', (t) => {
+  const { root, cleanup } = makeRoot()
+  const remove = fs.rmSync
+  t.mock.method(fs, 'rmSync', (path, options) => {
+    if (String(path).includes('.skills-import-')) throw new Error('cleanup-EACCES')
+    return remove(path, options)
+  })
+  syncBuiltinESMExports()
+  try {
+    const result = importSkillsPackage(root, [file('demo/SKILL.md', skill('demo'))])
+    assert.equal(result.ok, true, result.message)
+    assert.match(result.warning, /cleanup-EACCES/)
+    assert.match(result.warning, /\.skills-import-/)
+    assert.equal(readFileSync(join(root, 'demo', 'SKILL.md'), 'utf8'), skill('demo'))
+  } finally { t.mock.restoreAll(); syncBuiltinESMExports(); cleanup() }
+})
+
+test('无效与旧策略字段整批拒绝，不能把官方无法发现的技能导入', () => {
+  const { root, cleanup } = makeRoot()
+  try {
+    for (const line of ['disable-model-invocation: nope', 'user-invocable: []', 'disableModelInvocation: false', 'modelInvocable: true', 'userInvocable: false']) {
+      const result = importSkillsPackage(root, [file('demo/SKILL.md', `---\nname: demo\ndescription: D\n${line}\n---\nbody\n`)])
+      assert.equal(result.ok, false, line)
+      assert.deepEqual(readdirSync(root), [], line)
+    }
+  } finally { cleanup() }
+})

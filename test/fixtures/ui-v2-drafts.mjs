@@ -7,13 +7,12 @@ import { PresetSwitcher } from '../../src/client/features/presets/PresetSwitcher
 import { PromptConfigList } from '../../src/client/features/prompts/PromptConfigList.tsx'
 import { SubagentToolPolicyCard } from '../../src/client/features/subagents/SubagentToolPolicyCard.tsx'
 import { SUBAGENT_TOOL_POLICY_SKELETON } from '../../src/shared/engine-capabilities.ts'
-import { invocationForScope } from '../../src/shared/skills.ts'
 import { usePromptToolStore } from '../../src/client/data/use-prompt-tool-store.ts'
 import { hasWorkspaceDrafts } from '../../src/client/data/workspace-drafts.ts'
 import { PROMPT_TOOL_DICTS } from '../../src/client/locales.ts'
 
 const session = {}
-const api = { sessionModel: { snapshot: () => session, subscribe: () => () => {} }, currentSessionId: () => undefined, pickDirectory: async () => null }
+const api = { sessionModel: { snapshot: () => session, subscribe: () => () => {} }, currentSessionId: () => window.currentSessionId, pickDirectory: async () => null }
 const settings = { scope: { getSnapshot: () => ({ status: 'ready', revision: 1 }) }, ensure: async () => {}, mutate: async () => {} }
 const t = (key, params = {}) => Object.entries(params).reduce((text, [key, value]) => text.replaceAll(`{${key}}`, String(value)), PROMPT_TOOL_DICTS.zh[key] ?? key)
 window.t = t
@@ -24,6 +23,8 @@ window.rejectSkillDelete = false
 window.rejectSkillsFolders = false
 window.failedSkill = ''
 window.skillImportConflicts = []
+window.skillsComplete = true
+window.skillsListDelay = 0
 window.policyServer = structuredClone(SUBAGENT_TOOL_POLICY_SKELETON)
 window.policyInFlight = 0
 window.policyMaxInFlight = 0
@@ -35,22 +36,26 @@ const skillsRoot = 'D:/isolated/skills'
 let skills = [
   { id: 'project-dsh:D:/workspace:.dsh:beta', folder: 'beta', name: 'beta', description: 'beta description', dir: 'D:/workspace/.dsh/skills', source: 'project-dsh', rank: 100, valid: true, modelInvocable: true, userInvocable: true, path: 'D:/workspace/.dsh/skills/beta/SKILL.md' },
   { id: `user-dsh:${skillsRoot}:alpha`, folder: 'alpha', name: 'alpha', description: 'alpha description', dir: skillsRoot, source: 'user-dsh', rank: 400, valid: true, modelInvocable: true, userInvocable: true, path: `${skillsRoot}/alpha/SKILL.md` },
-]
+].map((skill) => ({ ...skill, availability: 'active', canSetPolicy: true, canDelete: skill.source === 'user-dsh' }))
+window.getSkills = () => structuredClone(skills)
+window.setSkills = (next) => { skills = structuredClone(next) }
 let skillFolders = []
 window.fetch = async (url, init) => {
   const endpoint = String(url).split('/').at(-1), body = JSON.parse(init?.body ?? '{}')
   window.requests.push({ endpoint, body })
   let value = {}
   if (endpoint === 'bootstrap') return new Response(JSON.stringify({ ok: true,
-    // descriptor.value 里同时给出用户技能根：客户端当前只从 descriptor 值读 activeSkillsDirs
-    // （顶层字段是服务端真实形状，两条路径都给，页面上的用户根与删除入口才可用）。
-    value: { value: { presetTemplate: 'test', writePreset: true, activeSkillsDirs: [skillsRoot] }, base: {}, revision: 1 },
+    value: { value: { presetTemplate: 'test', writePreset: true }, base: {}, revision: 1 },
     meta: { meta: { ...window.fixture.meta, presets } }, overrides: { overrides: {} }, variables: { variables: {}, enabled: true },
-    promptConfigs: { promptConfigs: [] }, skillCatalog: skills, skillFolders,
+    promptConfigs: { promptConfigs: [] }, skillCatalog: skills, skillFolders, skillsComplete: window.skillsComplete,
     activeSkillsDirs: [skillsRoot],
     moduleFacts: { sourceMode: 'explicit', editable: true, effectiveModules: [], declaredModules: [], rowIds: [] },
   }))
   if (endpoint === 'instructions-policy') value = { policy: { enabled: false, files: {}, defaults: {} }, revision: 'p1' }
+  if (endpoint === 'skills-list') {
+    value = { skills: structuredClone(skills), folders: [...skillFolders], roots: [skillsRoot], complete: window.skillsComplete }
+    await new Promise((resolve) => setTimeout(resolve, window.skillsListDelay))
+  }
   if (endpoint === 'custom-tools') {
     if (body.customTools) { await new Promise((resolve) => setTimeout(resolve, window.delay)); tools = body.customTools }
     value = { customTools: tools }
@@ -76,35 +81,37 @@ window.fetch = async (url, init) => {
     // 身份校验与服务端同形：name + path 必须指向清单里的同一条目（写错目标比写失败更危险）。
     const target = skills.find((skill) => skill.name === body.name && skill.path === body.path)
     if (target === undefined) return new Response(JSON.stringify({ ok: false, message: `unknown skill target: ${body.name}` }))
-    // 文件层调用策略：scope 只改写该条目自身的两个 frontmatter 事实，标记文件路径与其余字段不动。
-    skills = skills.map((skill) => (skill === target ? { ...skill, ...invocationForScope(body.scope) } : skill))
-    value = { skills }
+    if (!['model', 'user'].includes(body.side) || typeof body.enabled !== 'boolean') return new Response(JSON.stringify({ ok: false, message: 'single-side policy required' }))
+    skills = skills.map((skill) => (skill === target ? { ...skill, [body.side === 'model' ? 'modelInvocable' : 'userInvocable']: body.enabled } : skill))
+    value = { skills, complete: window.skillsComplete }
   }
   if (endpoint === 'skills-folders') {
     await new Promise((resolve) => setTimeout(resolve, window.delay))
     if (window.rejectSkillsFolders) return new Response(JSON.stringify({ ok: false, message: 'skills folders rejected' }))
     skillFolders = [...body.folders]
-    value = { skills, folders: skillFolders }
+    value = { skills, complete: window.skillsComplete, folders: skillFolders }
   }
   if (endpoint === 'skill-delete') {
     await new Promise((resolve) => setTimeout(resolve, window.delay))
     if (window.rejectSkillDelete) return new Response(JSON.stringify({ ok: false, message: 'delete rejected' }))
-    skills = skills.filter((skill) => skill.folder !== body.folder)
-    value = { id: body.folder, path: `${skillsRoot}/.system/prompt-tool/.trash/skill-${body.folder}` }
+    const target = skills.find((skill) => skill.name === body.name && skill.path === body.path && skill.canDelete)
+    if (!target) return new Response(JSON.stringify({ ok: false, message: 'delete identity rejected' }))
+    skills = skills.filter((skill) => skill !== target)
+    value = { id: target.folder, path: `${target.dir}/.system/prompt-tool/.trash/skill-${target.folder}` }
   }
   if (endpoint === 'skill-create') {
-    skills = [...skills, { id: `user-dsh:${skillsRoot}:${body.name}`, folder: body.name, name: body.name, description: body.description, dir: skillsRoot, source: 'user-dsh', rank: 400, valid: true, modelInvocable: true, userInvocable: true, path: `${skillsRoot}/${body.name}/SKILL.md` }]
+    skills = [...skills, { id: `user-dsh:${skillsRoot}:${body.name}`, folder: body.name, name: body.name, description: body.description, dir: skillsRoot, source: 'user-dsh', rank: 400, valid: true, modelInvocable: true, userInvocable: true, path: `${skillsRoot}/${body.name}/SKILL.md`, availability: 'active', canSetPolicy: true, canDelete: true }]
     value = { id: body.name, path: `${skillsRoot}/${body.name}` }
   }
   if (endpoint === 'skills-import') {
     const conflicts = window.skillImportConflicts.filter((name) => !body.overwrite?.includes(name))
     if (conflicts.length > 0) return new Response(JSON.stringify({ ok: false, code: 'skills-overwrite-required', conflicts }), { status: 409 })
-    value = { path: skillsRoot, count: 1, overwritten: body.overwrite?.length ?? 0 }
+    value = { path: skillsRoot, count: 1, overwritten: body.overwrite?.length ?? 0, warning: window.skillImportWarning }
   }
   if (endpoint === 'skills-import-directory') {
     const conflicts = window.skillImportConflicts.filter((name) => !body.overwrite?.includes(name))
     if (conflicts.length > 0) return new Response(JSON.stringify({ ok: false, code: 'skills-overwrite-required', conflicts }), { status: 409 })
-    value = { path: skillsRoot, count: 2, overwritten: body.overwrite?.length ?? 0 }
+    value = { path: skillsRoot, count: 2, overwritten: body.overwrite?.length ?? 0, warning: window.skillImportWarning }
   }
   if (endpoint === 'preset-delete') {
     await new Promise((resolve) => setTimeout(resolve, window.delay))

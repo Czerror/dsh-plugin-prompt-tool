@@ -4,16 +4,17 @@ import type { SettingsScope, SettingsScopeSnapshot } from '@deepseek-ai/dsh-clie
 import type { EngineMeta, PromptConfigDraft } from '../prompt-tool-types.ts'
 import type { PromptToolHostApi } from './host-api.ts'
 import type { PresetModuleFacts } from '../../shared/engine-capabilities.ts'
-import type { SkillPolicyScope } from '../../shared/skills.ts'
+import type { SkillCatalogEntry, SkillPolicyChange } from '../../shared/skills.ts'
 import { bridgeCall, errorMessage, type BridgeResult, type BridgeSettingsView } from './bridge-client.ts'
 import { requestSkillImport, type ConfirmSkillOverwrite } from './skill-import.ts'
+import { readImportFiles, type ImportFileEntry } from './import-files.ts'
 import {
   EMPTY_FIELDS,
   EMPTY_META,
   type Fields,
   type HostDefaultModel,
 } from './prompt-tool-fields.ts'
-import { bridgeViewFromBoot, fieldsFromView, mergePresetParams } from './prompt-tool-view.ts'
+import { bridgeViewFromBoot, fieldsFromView, mergePresetParams, skillFieldsFromSnapshot } from './prompt-tool-view.ts'
 import {
   EMPTY_SWITCHES,
   deepEqual,
@@ -142,14 +143,16 @@ export interface PromptToolStore {
   setSkillsDirDraft: (value: string) => void
   /** 从宿主机目录复制导入到用户技能根。 */
   importSkillsDirectory: (path: string, confirm?: ConfirmSkillOverwrite) => Promise<boolean>
+  /** 浏览器文件夹复制导入；与宿主目录入口共用忙期和覆盖确认。 */
+  importSkillsFiles: (files: readonly File[], confirm?: ConfirmSkillOverwrite) => Promise<boolean>
+  /** 只刷新技能事实，不重读预设或覆盖其它草稿。 */
+  refreshSkills: () => Promise<boolean>
   /** 创建标准技能到用户技能根。 */
   createSkill: (input: { name: string; description: string; content: string }) => Promise<boolean>
-  /** 回收站删除用户技能根里的技能目录。 */
-  deleteSkill: (folder: string) => Promise<boolean>
-  /** 调用策略开关：改写该技能 SKILL.md frontmatter 的官方两个键，模型端与用户端各自独立，
-   *  scope='none' 表示两端恢复。返回 false 表示没有提交成功——可能是写盘失败（只读目标、链接技能、
-   *  界面陈旧），也可能是上一次保存仍在飞（此时会给出提示）；界面状态由随后的清单刷新决定。 */
-  setSkillPolicy: (name: string, path: string, scope: SkillPolicyScope) => Promise<boolean>
+  /** 按准确文件身份删除服务端允许管理的技能。 */
+  deleteSkill: (skill: Pick<SkillCatalogEntry, 'name' | 'path'>) => Promise<boolean>
+  /** 开关只提交 side/enabled；完整 scope 仅供明确的双端操作。失败保持已读取事实。 */
+  setSkillPolicy: (name: string, path: string, change: SkillPolicyChange) => Promise<boolean>
   /** 添加 / 移除引用的技能文件夹（只记引用，不复制文件）。 */
   patchSkillFolders: (folders: string[]) => Promise<boolean>
   /** 打开用户技能根。 */
@@ -265,14 +268,9 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
   const savedTemplateVariablesRef = useRef<Record<string, string>>({})
   const [templateVariablesEnabled, setTemplateVariablesEnabled] = useState(true)
   const [loading, setLoading] = useState(false)
-  // 技能写入用并发计数而不是单一布尔：多个写操作同时在飞时，任何一个先结束都不能把界面
-  // 重新放开，否则用户会在另一个操作仍在写盘时点到开关，而那次点击会被忙期守卫丢弃。
-  const [skillsBusyCount, setSkillsBusyCount] = useState(0)
-  const skillsBusy = skillsBusyCount > 0
-  const beginSkillWrite = useCallback(() => { setSkillsBusyCount((count) => count + 1) }, [])
-  // 计数成对进出（每个技能写操作一次 begin、finally 里一次 end）。Math.max 防的是亏空累积：
-  // 一旦某条路径漏写 begin，负数会先抵消下一次 begin，让写盘期间的 busy 错误地变回 false。
-  const endSkillWrite = useCallback(() => { setSkillsBusyCount((count) => Math.max(0, count - 1)) }, [])
+  const [skillsBusy, setSkillsBusy] = useState(false)
+  // ref 同步守卫覆盖按钮、Enter 与浏览器导入，React disabled 尚未渲染时也不会重复提交。
+  const skillWriteRef = useRef(false)
   const [notice, setNotice] = useState('')
   const [noticeKind, setNoticeKind] = useState<'ok' | 'error'>('ok')
   const fieldsRef = useRef<Fields>(EMPTY_FIELDS)
@@ -312,6 +310,8 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
   const saveQueueRef = useRef(createSerialTaskQueue())
   const presetSaveQueueRef = useRef(createSerialTaskQueue())
   const loadSeqRef = useRef(0)
+  const skillsSeqRef = useRef(0)
+  const skillsSessionRef = useRef<string | undefined>(undefined)
   /** 用户草稿版本：patch 时递增。load 应答返回时若版本变化，跳过覆盖，避免
    *  保存后的静默刷新吞掉用户在读取期间的编辑。 */
   const draftVersionRef = useRef(0)
@@ -358,12 +358,16 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     })()
   }, [])
 
-  const applyView = useCallback((res: BridgeResult<BridgeSettingsView>): Fields => {
+  const applyView = useCallback((res: BridgeResult<BridgeSettingsView>, skillsSeq: number): Fields => {
     setTemplatePreStepCount(res.ok && typeof res.templatePreStepCount === 'number' ? res.templatePreStepCount : 0)
     setModelCatalog(res.ok ? res.modelCatalog ?? {} : {})
     setHostDefaultModel(res.ok ? res.hostDefaultModel : undefined)
     setModuleFacts(res.ok ? res.moduleFacts : undefined)
     const next = mergePresetParams(fieldsFromView(res), res.ok ? res.presetParams : undefined)
+    if (skillsSeq !== skillsSeqRef.current) {
+      const current = fieldsRef.current
+      Object.assign(next, { skillCatalog: current.skillCatalog, skillsComplete: current.skillsComplete, skillFolders: current.skillFolders, skillsRoot: current.skillsRoot })
+    }
     // 检测到 DeepSeek 路由且用户未设置服务商时，直接预选第一个检测到的 provider
     // （模型名为空则路由不激活，继承主会话语义不变；用户后续选择模型名即生效）。
     // 自动预选值记录到 ref：它只是显示兜底，不作为用户显式参数写进 preset.yml。
@@ -391,6 +395,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
   const load = useCallback(async (options?: { silent?: boolean; presetConfigs?: PromptConfigDraft[] }) => {
     // 并发保护：慢的旧请求不得覆盖新请求（last-good 语义保留旧数据）。
     const seq = ++loadSeqRef.current
+    const skillsSeq = skillsSeqRef.current
     const draftVersion = draftVersionRef.current
     const samePreset = loadedPresetRef.current === fieldsRef.current.presetTemplate
     const localConfigs = fieldsRef.current.promptConfigs.filter(isPresetCard)
@@ -430,7 +435,8 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
       // 主源，不再 await settings.ensure()——宿主全量 describe mirror 是切换预设后
       // 配置卡十几秒才出现的瓶颈。
       const res = bridgeViewFromBoot(boot)
-      applyView(res)
+      applyView(res, skillsSeq)
+      if (skillsSeq === skillsSeqRef.current) skillsSessionRef.current = sessionId
       // 用户参数覆盖（激活预设 preset.yml params；settings 不再承载参数）。
       if (boot.ok && boot.overrides !== undefined) {
         const o = boot.overrides.overrides
@@ -975,134 +981,95 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     return true
   }, [load, showNotice])
 
-  /** 从宿主机目录导入技能包：复制进用户技能根，之后由官方提供者直接发现。 */
-  const importSkillsDirectory = useCallback(async (path: string, confirm?: ConfirmSkillOverwrite): Promise<boolean> => {
+  const refreshSkills = useCallback(async (): Promise<boolean> => {
+    const seq = ++skillsSeqRef.current
+    const sessionId = api.currentSessionId()
+    const res = await bridgeCall('skillsList', sessionId === undefined ? {} : { sessionId })
+    if (seq !== skillsSeqRef.current || sessionId !== api.currentSessionId()) return false
+    if (!res.ok) {
+      showNotice('error', '技能列表刷新失败：' + (res.message ?? 'settings bridge unavailable'))
+      return false
+    }
+    skillsSessionRef.current = sessionId
+    skillsSeqRef.current += 1
+    publishFields({ ...fieldsRef.current, ...skillFieldsFromSnapshot(res.value) })
+    return true
+  }, [api, publishFields, showNotice])
+
+  /** 所有技能写操作共用即时忙期守卫与局部刷新，覆盖确认期间也保持忙碌。 */
+  const writeSkill = useCallback(async <T,>(
+    submit: () => Promise<BridgeResult<T>>, success: (value: T) => string, failure: string,
+  ): Promise<boolean> => {
+    if (skillWriteRef.current) { showNotice('error', '技能正在保存，请稍候再试'); return false }
+    skillWriteRef.current = true
+    setSkillsBusy(true)
+    try {
+      const res = await submit()
+      if (!res.ok) {
+        if (res.code !== 'skills-import-cancelled') showNotice('error', failure + '：' + (res.message ?? 'settings bridge unavailable'))
+        return false
+      }
+      const refreshed = await refreshSkills()
+      showNotice(refreshed ? 'ok' : 'error', success(res.value) + (refreshed ? '' : '；技能列表刷新失败，请重新读取'))
+      return true
+    } catch (error) {
+      showNotice('error', failure + '：' + errorMessage(error))
+      return false
+    } finally {
+      skillWriteRef.current = false
+      setSkillsBusy(false)
+    }
+  }, [refreshSkills, showNotice])
+
+  const importSkills = useCallback((submit: Parameters<typeof requestSkillImport>[0], confirm?: ConfirmSkillOverwrite) =>
+    writeSkill(() => requestSkillImport(submit, confirm), ({ count, path, overwritten, warning }) =>
+      `已复制 ${count} 个技能文件到 ${path}` + (overwritten > 0 ? `，覆盖 ${overwritten} 个已确认的同名技能` : '')
+      + (warning ? `；导入已完成，清理提示：${warning}` : ''), '导入技能目录失败'), [writeSkill])
+
+  const importSkillsDirectory = useCallback((path: string, confirm?: ConfirmSkillOverwrite): Promise<boolean> => {
     const source = path.trim()
-    if (source.length === 0) {
-      showNotice('error', '请先填写要导入的目录路径')
-      return false
-    }
-    beginSkillWrite()
-    try {
-      const res = await requestSkillImport((overwrite) => bridgeCall('skillsImportDirectory', {
-        path: source, ...(overwrite === undefined ? {} : { overwrite }),
-      }), confirm)
-      if (!res.ok) {
-        if (res.code === 'skills-import-cancelled') return false
-        // 服务端消息自带「技能导入失败：」前缀，剥掉后由这里补类别前缀，避免两层；空串兜底成可读文案。
-        const reason = (res.message ?? '').trim().replace(/^技能导入失败：/u, '') || 'settings bridge unavailable'
-        showNotice('error', `导入技能目录失败：${reason}`)
-        return false
-      }
-      const { count, overwritten } = res.value
-      showNotice('ok', overwritten > 0
-        ? `已从 ${source} 复制 ${count} 个文件到用户技能目录，覆盖 ${overwritten} 个已确认的同名技能`
-        : `已从 ${source} 复制 ${count} 个文件到用户技能目录`)
-      await load({ silent: true })
-      return true
-    } catch (error) {
-      showNotice('error', '导入技能目录失败：' + errorMessage(error))
-      return false
-    } finally {
-      endSkillWrite()
-    }
-  }, [load, showNotice])
+    if (source.length === 0) { showNotice('error', '请先填写要导入的目录路径'); return Promise.resolve(false) }
+    return importSkills((overwrite) => bridgeCall('skillsImportDirectory', { path: source, ...(overwrite === undefined ? {} : { overwrite }) }), confirm)
+  }, [importSkills, showNotice])
 
-  /** 创建标准技能：写进用户技能根，官方自动发现。 */
-  const createSkill = useCallback(async (input: { name: string; description: string; content: string }): Promise<boolean> => {
-    beginSkillWrite()
-    try {
-      const res = await bridgeCall('skillCreate', input)
-      if (!res.ok) {
-        showNotice('error', '创建技能失败：' + (res.message ?? 'settings bridge unavailable'))
-        return false
-      }
-      showNotice('ok', `已创建技能：${res.value.id}`)
-      await load({ silent: true })
-      return true
-    } catch (error) {
-      showNotice('error', '创建技能失败：' + errorMessage(error))
-      return false
-    } finally {
-      endSkillWrite()
-    }
-  }, [load, showNotice])
+  const importSkillsFiles = useCallback((files: readonly File[], confirm?: ConfirmSkillOverwrite): Promise<boolean> => {
+    if (files.length === 0) return Promise.resolve(false)
+    let payload: ImportFileEntry[] | undefined
+    return importSkills(async (overwrite) => {
+      payload ??= await readImportFiles(files, 'base64')
+      return bridgeCall('skillsImport', { files: payload, ...(overwrite === undefined ? {} : { overwrite }) })
+    }, confirm)
+  }, [importSkills])
 
-  /** 回收站删除：整个技能目录移入用户根的 .system/prompt-tool/.trash，可人工恢复。 */
-  const deleteSkill = useCallback(async (folder: string): Promise<boolean> => {
-    beginSkillWrite()
-    try {
-      const res = await bridgeCall('skillDelete', { folder })
-      if (!res.ok) {
-        showNotice('error', `删除技能 ${folder} 失败：` + (res.message ?? 'settings bridge unavailable'))
-        return false
-      }
-      showNotice('ok', `已删除技能 ${folder}；目录已移入回收站 ${res.value.path}，可人工恢复`)
-      await load({ silent: true })
-      return true
-    } catch (error) {
-      showNotice('error', `删除技能 ${folder} 失败：` + errorMessage(error))
-      return false
-    } finally {
-      endSkillWrite()
-    }
-  }, [load, showNotice])
+  const createSkill = useCallback((input: { name: string; description: string; content: string }) =>
+    writeSkill(() => bridgeCall('skillCreate', input), ({ id }) => `已创建技能：${id}`, '创建技能失败'), [writeSkill])
 
-  /** 注册层屏蔽开关：只写插件状态，不改任何技能文件；scope='none' 表示恢复该技能。 */
-  // 调用策略开关的并发守卫：目标范围由「另一端当前状态 + 本次点击」算出，两次连点若都基于旧状态
-  // 就会互相覆盖（后一次带着过期的一端提交）。这里用即时生效的 ref 挡住忙期内的重复提交，
-  // 同时置起 skillsBusy，让写盘期间界面上的开关与删除按钮一起禁用。
-  const skillPolicyRef = useRef(false)
-  const setSkillPolicy = useCallback(async (name: string, path: string, scope: SkillPolicyScope): Promise<boolean> => {
-    // 界面在 busy 期间会禁用开关，但 React 的状态更新是异步的：极快的连点在 disabled 生效前
-    // 仍可能触发第二次提交，这一步是真守卫，不是不可达的防御。
-    if (skillPolicyRef.current) {
-      showNotice('error', '技能调用策略正在保存，请稍候再试')
-      return false
+  const deleteSkill = useCallback((skill: Pick<SkillCatalogEntry, 'name' | 'path'>): Promise<boolean> => {
+    const sessionId = api.currentSessionId()
+    const path = skill.path
+    if (path === undefined || sessionId !== skillsSessionRef.current) {
+      showNotice('error', '技能上下文已变化，请刷新后重试')
+      return Promise.resolve(false)
     }
-    skillPolicyRef.current = true
-    beginSkillWrite()
-    try {
-      // sessionId 与清单同源：服务端的身份校验必须在同一个工作区视图里做，否则项目技能会被判成陈旧。
-      const sessionId = api.currentSessionId()
-      const res = await bridgeCall('skillPolicy', { name, path, scope, ...(sessionId === undefined ? {} : { sessionId }) })
-      if (!res.ok) {
-        showNotice('error', `技能 ${name} 调用策略写入失败：` + (res.message ?? 'settings bridge unavailable'))
-        return false
-      }
-      showNotice('ok', scope === 'none'
-        ? `已恢复技能：${name}`
-        : `已更新技能 ${name} 的调用策略（改写 SKILL.md frontmatter，正文未改动）`)
-      await load({ silent: true })
-      return true
-    } catch (error) {
-      showNotice('error', `技能 ${name} 调用策略写入失败：` + errorMessage(error))
-      return false
-    } finally {
-      skillPolicyRef.current = false
-      endSkillWrite()
-    }
-  }, [api, load, showNotice])
+    return writeSkill(() => bridgeCall('skillDelete', { name: skill.name, path, ...(sessionId === undefined ? {} : { sessionId }) }),
+      ({ path }) => `已删除技能 ${skill.name}；文件已移入回收站 ${path}，可人工恢复`, `删除技能 ${skill.name} 失败`)
+  }, [api, showNotice, writeSkill])
 
-  /** 添加 / 移除引用的技能文件夹：只记引用，不复制文件。 */
-  const patchSkillFolders = useCallback(async (folders: string[]): Promise<boolean> => {
-    beginSkillWrite()
-    try {
-      const res = await bridgeCall('skillsFolders', { folders })
-      if (!res.ok) {
-        showNotice('error', '技能文件夹保存失败：' + (res.message ?? 'settings bridge unavailable'))
-        return false
-      }
-      showNotice('ok', `已更新技能文件夹引用（${folders.length} 个）`)
-      await load({ silent: true })
-      return true
-    } catch (error) {
-      showNotice('error', '技能文件夹保存失败：' + errorMessage(error))
-      return false
-    } finally {
-      endSkillWrite()
+  const setSkillPolicy = useCallback((name: string, path: string, change: SkillPolicyChange): Promise<boolean> => {
+    const sessionId = api.currentSessionId()
+    if (sessionId !== skillsSessionRef.current) {
+      showNotice('error', '技能上下文已变化，请刷新后重试')
+      return Promise.resolve(false)
     }
-  }, [load, showNotice])
+    return writeSkill(() => bridgeCall('skillPolicy', { name, path, ...change, ...(sessionId === undefined ? {} : { sessionId }) }),
+      () => `已更新技能 ${name} 的调用策略`, `技能 ${name} 调用策略写入失败`)
+  }, [api, showNotice, writeSkill])
+
+  const patchSkillFolders = useCallback((folders: string[]) => {
+    const sessionId = api.currentSessionId()
+    return writeSkill(() => bridgeCall('skillsFolders', { folders, ...(sessionId === undefined ? {} : { sessionId }) }),
+      () => `已更新技能文件夹引用（${folders.length} 个）`, '技能文件夹保存失败')
+  }, [api, writeSkill])
 
   const openSkillsDir = useCallback(async (path?: string) => {
     const target = path ?? fieldsRef.current.skillsRoot
@@ -1185,6 +1152,8 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     removeEngineCapability,
     setSkillsDirDraft,
     importSkillsDirectory,
+    importSkillsFiles,
+    refreshSkills,
     createSkill,
     deleteSkill,
     setSkillPolicy,

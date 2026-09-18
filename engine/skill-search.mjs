@@ -24,6 +24,9 @@
  * NOTE: this plugin REPLACES the `dsh-tool-skill` row in the composition —
  * the composition must NOT mount both, or the catalog injection returns.
  */
+import { importHostPackage } from './host-package.mjs'
+
+const { isModelInvocable, renderSkillContent } = await importHostPackage('@deepseek-ai/dsh-skill')
 
 /** Cordis plugin name used by loader diagnostics. */
 export const name = 'skill-search'
@@ -49,7 +52,7 @@ function toJsonSchema(spec) {
 /** Register the two on-demand skill tools. */
 export function apply(ctx) {
   /** Normalize a query into lowercase tokens for simple substring matching. */
-  const tokens = (text) => (text || '').toLowerCase().split(/[^a-z0-9_-]+/).filter(Boolean)
+  const tokens = (text) => (text || '').toLowerCase().split(/[^\p{L}\p{N}_-]+/u).filter(Boolean)
 
   ctx.tools.register({
     name: 'skill_search',
@@ -65,12 +68,13 @@ export function apply(ctx) {
       const wanted = tokens(args.query)
       const scope = exec?.agent ?? ctx
       try {
-        const all = await ctx.skills.list({
+        const snapshot = await ctx.skills.snapshot({
           scope,
           cwd: exec?.agent?.session?.header?.cwd,
           signal: exec?.signal,
         })
-        const matches = all.filter((skill) => {
+        exec?.signal?.throwIfAborted()
+        const matches = snapshot.skills.filter(isModelInvocable).filter((skill) => {
           if (wanted.length === 0) return true
           const haystack = tokens(`${skill.name} ${skill.description ?? ''} ${skill.whenToUse ?? ''}`).join(' ')
           return wanted.every((token) => haystack.includes(token))
@@ -80,9 +84,12 @@ export function apply(ctx) {
           const desc = (skill.description || '').split('\n')[0]
           return `- ${skill.name}: ${desc}`
         })
-        if (lines.length === 0) return { text: `No skills match "${args.query}". Use skill_search with other keywords.` }
+        if (lines.length === 0) return { text: snapshot.complete
+          ? `No skills match "${args.query}". Use skill_search with other keywords.`
+          : 'Skill discovery is incomplete. Retry skill_search before concluding no skills match.' }
         const extra = matches.length > MAX_RESULTS ? `\n…(${matches.length - MAX_RESULTS} more)` : ''
-        return { text: `Matching skills (${matches.length}):\n${lines.join('\n')}${extra}\n\nLoad one with skill_load (exact name).` }
+        const incomplete = snapshot.complete ? '' : '\nSkill discovery is incomplete; these results may be partial.'
+        return { text: `Matching skills (${matches.length}):\n${lines.join('\n')}${extra}${incomplete}\n\nLoad one with skill_load (exact name).` }
       } catch (error) {
         return { text: `skill_search unavailable: ${String((error && error.message) || error)}` }
       }
@@ -103,16 +110,27 @@ export function apply(ctx) {
       try {
         const agent = exec?.agent
         if (agent === undefined) return { text: 'skill_load requires an agent context.' }
-        const skill = await ctx.skills.get(args.name, {
+        const options = {
           scope: agent,
           cwd: agent.session.header.cwd,
           signal: exec?.signal,
-        })
-        if (skill === undefined) {
-          return { text: `No skill named "${args.name}". Run skill_search to list available skills.` }
         }
-        const body = extractSkillBody(skill)
-        if (body.length === 0) {
+        const snapshot = await ctx.skills.snapshot(options)
+        options.signal?.throwIfAborted()
+        const summary = snapshot.skills.find((entry) => entry.name === args.name)
+        if (summary === undefined) {
+          return { text: snapshot.complete
+            ? `No skill named "${args.name}". Run skill_search to list available skills.`
+            : 'Skill discovery is incomplete. Retry skill_search before loading this skill.' }
+        }
+        if (!isModelInvocable(summary)) return { text: `Skill "${args.name}" is not available for model invocation.` }
+        const skill = await ctx.skills.get(args.name, options)
+        options.signal?.throwIfAborted()
+        if (skill === undefined) {
+          return { text: `Skill "${args.name}" is no longer available. Run skill_search again.` }
+        }
+        if (!isModelInvocable(skill)) return { text: `Skill "${args.name}" is not available for model invocation.` }
+        if (skill.content.trim().length === 0) {
           return { text: `Skill "${args.name}" has no loadable body.` }
         }
         // Queue the skill content as a non-waking next-step context message,
@@ -120,7 +138,7 @@ export function apply(ctx) {
         agent.inject({
           id: `skill-load-${args.name}-${Date.now()}`,
           role: 'user',
-          content: [{ type: 'text', text: body }],
+          content: [{ type: 'text', text: renderSkillContent(skill) }],
           source: { kind: 'skill-invocation', name: args.name, form: 'instructions' },
         })
         return { text: `Skill "${args.name}" loaded; its instructions will be injected for the next request.` }
@@ -129,14 +147,4 @@ export function apply(ctx) {
       }
     },
   })
-}
-
-/** Extract the model-facing body of a loaded skill definition. */
-function extractSkillBody(skill) {
-  const content = skill?.content ?? skill?.instructions ?? skill?.body
-  if (typeof content === 'string') return content
-  if (Array.isArray(content)) {
-    return content.map((part) => (typeof part === 'string' ? part : JSON.stringify(part))).join('\n')
-  }
-  return ''
 }

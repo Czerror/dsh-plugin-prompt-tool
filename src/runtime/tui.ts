@@ -4,6 +4,7 @@ import type { CommandResult } from '@deepseek-ai/dsh-commands'
 import { join } from 'node:path'
 import type { ModelDetection } from './models.ts'
 import type { PromptSettings } from '../config.ts'
+import type { SkillCatalogEntry } from '../shared/skills.ts'
 import type { PromptConfigSpec } from '../host/prompt-configs.ts'
 import { loadPromptConfigFiles } from '../host/prompt-configs.ts'
 import { loadPresetSpec, resolvePresetParams } from '../host/manifest.ts'
@@ -63,7 +64,9 @@ function readPresetParams(presetDir: string | undefined): Record<string, unknown
   }
 }
 
-function renderTuiStatus(source: PromptSettings, params: Record<string, unknown>, promptConfigs: PromptConfigSpec[]): string {
+type TuiSource = PromptSettings & { skillCatalog: SkillCatalogEntry[]; activeSkillsDirs: string[] }
+
+function renderTuiStatus(source: TuiSource, params: Record<string, unknown>, promptConfigs: PromptConfigSpec[]): string {
   const onOff = (value: boolean): string => value ? '开' : '关'
   const paramBoolean = (key: string): boolean => params[key] === true
   const paramText = (key: string): string => {
@@ -194,7 +197,7 @@ export type ToggleSkillState = (folder: string, enabled: boolean) => { ok: boole
 export function registerTuiCommand(
   ctx: Context,
   ns: 'prompt-tool',
-  getSource: () => PromptSettings,
+  getSource: () => TuiSource,
   getModelsState: () => ModelDetection,
   getModelCatalog: () => Promise<Record<string, string[]>>,
   getPresetConfigsDir?: () => string,

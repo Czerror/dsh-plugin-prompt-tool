@@ -14,6 +14,7 @@ interface BridgeSuccessExtras {
   modelCatalog?: Record<string, string[]>
   activeSkillsDirs?: string[]
   skillCatalog?: SkillCatalogEntry[]
+  skillsComplete?: boolean
   /** 用户添加的技能文件夹（只引用，不复制）。 */
   skillFolders?: string[]
   templatePreStepCount?: number
