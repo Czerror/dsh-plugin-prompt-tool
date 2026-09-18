@@ -9,7 +9,10 @@ import { parse as parseYaml } from 'yaml'
 // 因此本文件用动态 import 加载 lib，避免污染真实用户预设目录。
 const home = mkdtempSync(join(tmpdir(), 'pt-package-import-'))
 process.env.DSH_HOME = home
-const { MAX_BRIDGE_BODY_BYTES, registerSettingsBridge, stPresetId } = await import('../../lib/index.mjs')
+const { MAX_BRIDGE_BODY_BYTES } = await import('../../src/shared/bridge-contract.ts')
+const { registerSettingsBridge } = await import('../../src/runtime/settings-bridge.ts')
+const { stPresetId } = await import('../../src/host/sillytavern.ts')
+const bridgeDisposers = []
 
 const PREFIX = '/api/prompt-tool/settings'
 const PRESETS = join(home, '.agent-presets')
@@ -22,11 +25,11 @@ function makeHarness() {
       mutate: async () => {},
     },
     webServer: {
-      register: ({ path, handler }) => { handlers.set(path, handler) },
+      register: ({ path, handler }) => { handlers.set(path, handler); return () => {} },
     },
-    effect: (fn) => fn(),
+    effect: (fn) => { const dispose = fn(); if (dispose) bridgeDisposers.push(dispose) },
   }
-  const ctx = { inject: (_deps, cb) => cb(sctx) }
+  const ctx = { inject: (deps, cb) => { if (deps.includes('settings')) cb(sctx) } }
   return { ctx, handlers }
 }
 
@@ -34,6 +37,7 @@ function register() {
   const { ctx, handlers } = makeHarness()
   registerSettingsBridge(
     ctx,
+    'prompt-tool',
     () => ({ available: true, providers: [] }),
     () => ({ activeSkillsDirs: [], skillCatalog: [] }),
     () => '',
@@ -68,7 +72,13 @@ async function importPackage(body) {
   const handler = register().get(`${PREFIX}/import-preset-package`)
   assert.ok(handler, '/import-preset-package 端点应注册')
   const res = fakeRes()
-  await handler(fakeReq(body), res)
+  // 本文件覆盖转换与资源回归；覆盖场景显式授权，并经实际预览取得本次提交凭据。
+  const request = { ...body, overwrite: true }
+  await handler(fakeReq({ ...request, preview: true }), res)
+  if (res.status === 200 && JSON.parse(res.body).value?.state === 'ready') {
+    const { sourceDigest, previewRevision } = JSON.parse(res.body).value
+    await handler(fakeReq({ ...request, expectedSourceDigest: sourceDigest, expectedPreviewRevision: previewRevision }), res)
+  }
   return { status: res.status, payload: JSON.parse(res.body) }
 }
 
@@ -127,7 +137,7 @@ test('importPresetPackage：路径穿越条目被明确拒绝，不落盘', asyn
     const { status, payload } = await importPackage(presetPackage({ files }))
     assert.equal(status, 400, `非法路径必须 fail closed：${files[0].path}`)
     assert.equal(payload.code, 'preset-package-invalid')
-    assert.match(payload.message, /path 非法/)
+    assert.match(payload.message, /非法|路径/)
   }
   assert.ok(!existsSync(join(PRESETS, 'evil.yml')), '穿越条目不得写到预设目录之外')
   assert.ok(!existsSync(join(PRESETS, 'demo', 'evil.yml')), '穿越条目不得写入预设目录')
@@ -159,11 +169,11 @@ test('importPresetPackage：组合无法解析（modules 引用缺失）→ 400 
   }))
   assert.equal(status, 400)
   assert.equal(payload.code, 'preset-package-invalid')
-  assert.match(payload.value?.backupPath ?? '', /$^/, '失败响应不含 backupPath')
+  assert.equal(payload.value?.backupPath, undefined, '失败响应不含 backupPath')
   assert.ok(!existsSync(join(PRESETS, 'bad-module')), '校验失败后目标目录应回滚删除')
 })
 
-test('importPresetPackage：同名覆盖先备份且返回 backupPath', async () => {
+test('importPresetPackage：显式同名覆盖安装完整候选，成功清理备份', async () => {
   const first = await importPackage(presetPackage())
   assert.equal(first.status, 200)
   const second = await importPackage(presetPackage({
@@ -171,13 +181,8 @@ test('importPresetPackage：同名覆盖先备份且返回 backupPath', async ()
   }))
   assert.equal(second.status, 200)
   assert.equal(second.payload.value?.id, 'demo')
-  const backupPath = second.payload.value?.backupPath
-  assert.ok(typeof backupPath === 'string' && backupPath.length > 0, '覆盖导入应返回 backupPath')
-  assert.ok(existsSync(backupPath), `备份目录应存在: ${backupPath}`)
-  assert.ok(existsSync(join(backupPath, 'agent.cordis.yml')), '备份目录应含旧版组合文件')
+  assert.equal(second.payload.value?.backupPath, undefined)
   assert.ok(existsSync(join(PRESETS, 'demo', 'version2.txt')), '新版文件应写入目标目录')
-  // 清理备份目录，避免残留。
-  rmSync(backupPath, { recursive: true, force: true })
 })
 
 test('importPresetPackage：单文件 preset.yml 导入 id 回退 imported-preset', async () => {
@@ -236,11 +241,9 @@ test('importPresetPackage：顶层多个 yml 时仅被选中的定义文件改�
   assert.equal(payload.value?.id, 'multi')
   assert.ok(existsSync(join(PRESETS, 'multi', 'preset.yml')), '被选中的定义文件应改名为 preset.yml')
   assert.ok(existsSync(join(PRESETS, 'multi', 'notes.yaml')), '其余 yml 保留原名')
-  assert.equal(
-    readFileSync(join(PRESETS, 'multi', 'preset.yml'), 'utf8'),
-    'id: multi\nname: 多 yml 预设\n',
-    'preset.yml 内容应来自被选中的定义文件',
-  )
+  const definition = parseYaml(readFileSync(join(PRESETS, 'multi', 'preset.yml'), 'utf8'))
+  assert.equal(definition.id, 'multi')
+  assert.equal(definition.name, '多 yml 预设')
 })
 
 test('importPresetPackage：写入后目录内容完整（顶层 + 子目录文件计数）', async () => {
@@ -360,7 +363,7 @@ test('importPresetPackage：SillyTavern JSON 非法内容返回 400 且不落盘
   })
   assert.equal(status, 400)
   assert.equal(payload.code, 'preset-package-invalid')
-  assert.match(payload.message, /SillyTavern JSON 转换失败/)
+  assert.match(payload.message, /broken\.json/)
   assert.ok(!existsSync(join(PRESETS, 'broken')), '转换失败不得写入')
 })
 
@@ -524,5 +527,6 @@ test('importPresetPackage：世界书 entries 为对象（键为字符串序数�
 })
 
 test.after(() => {
+  for (const dispose of bridgeDisposers) dispose()
   rmSync(home, { recursive: true, force: true })
 })

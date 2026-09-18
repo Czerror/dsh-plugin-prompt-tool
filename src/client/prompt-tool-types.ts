@@ -1,17 +1,18 @@
 /** 客户端共享类型：提示词配置草稿、层能力矩阵与引擎 /meta 载荷。 */
 import type { StConversionReport, StOrderGroupCandidate } from '../shared/bridge-contract.ts'
+import type { AssetImportRequest, AssetSummary } from '../shared/asset-transfer.ts'
 
 /**
  * 导入预览态（预设包与角色卡 JSON 共用）：文件与凭据在确认时原样回传。
  * `previewRevision` 是服务端算的版本（绑定文件、选组、转换器与目标身份），
  * 客户端不计算、只回传；凭据本身不是写入授权。
  */
-export interface ImportPreviewState {
-  files: Array<{ path: string; content: string }>
+export interface ImportPreviewState extends AssetImportRequest {
   sourceDigest: string
   previewRevision?: string
   report?: StConversionReport
   groupCharacterId?: string
+  summary?: AssetSummary
 }
 
 /** 顺序组候选（多 prompt_order 组无法明确对应时先让用户选组，再重新预览）。 */

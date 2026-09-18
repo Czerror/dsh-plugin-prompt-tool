@@ -56,7 +56,8 @@ node scripts/migrate-skills.mjs --rollback "<备份目录>\migration.json"
 - 📦 **Bridge 载荷**：JSON 请求统一 32 MiB 硬上限并明确返回 413；角色卡原始图片走 64 MiB 流式通道，按 PNG 魔数识别。
 - 📂 **技能管理**：官方发现与会话快照统一技能来源、生效和遮蔽状态；单端开关写回技能文件。支持目录包与直属 Markdown 技能、创建、两种复制导入，以及用户根和引用根的可恢复删除；技能局部刷新保留其他页面草稿。
 - 🎭 **SillyTavern 导入**：JSON 预设、角色卡和独立世界书转换为本地预设——按官方顺序表保留启停，赋值模板运行时求值；不等价能力明确报告，采样参数由宿主管理
-- 🎴 **角色卡库**：SillyTavern 角色卡（PNG tEXt chunk `ccv3`/`chara`，或 chara_card JSON）导入独立库（`.characters/<id>/`，含原图/转换参数/角色记忆），按 PNG 魔数识别图片并经原始文件流上传，避免头像 base64 膨胀；按需「导入到当前预设」（`chara-<卡>-` 前缀合并、幂等可移除），多文件自动合并
+- 🎴 **角色卡库**：PNG／JSON／YAML 角色卡与原生角色片段经统一预览后逐张入库；PNG 保留原图，更新保留角色记忆，按需应用到当前预设。
+- 📦 **预设交换**：文件夹、ZIP、原生 JSON/YAML 与 ST 来源共用识别、预览和完整候选安装；导出可选完整 ZIP 或仅定义 YAML。资源、覆盖及分享边界见 [资产交换文档](docs/asset-transfer.md)。
 - 📚 **世界书**：`character_book` 转 world-book 策略配置（`keys` 命中触发 / `constant` 常驻 / 正则键自动检测 / `selectiveLogic` 组合逻辑），与模块卡片同一存储与编辑（模块列表「世界书」过滤 + 批量启用/禁用）
 - 🛠️ **自定义工具**：preset.yml `customTools` 段声明式定义模型工具（执行器 shell/http/delegate/fs/ask-user，`{{args.x}}` 参数插值）；参数与输出经官方 `dsh-tools` 转换器物化为标准 JSON Schema，非法参数产生标准工具错误，delegate 经 `ctx.tools.execute` 嵌套调度走完整官方工具管线；`customTools.scope` 暂不支持（显式拒绝）
 - 🛡️ **子代理工具策略**：preset.yml 顶层 `subagentToolPolicy` 段（opt-in）声明 ceiling、profiles、角色卡绑定、有序任务规则与受控模型扩权；`subagent` 固定走 spawn、`subagent_fork` 固定走 fork，按官方 `SubagentRun`/continuable 契约创建并在窗口内冻结 toolFilter；模型选择器和扩权参数在工具 body 前校验，模型路由经过 LLM preflight；UI 从官方 sessions snapshot 读取当前会话，并可编辑、停用、预览策略及查询存活 Agent 工具面
@@ -191,7 +192,7 @@ UI / 写盘展示顺序固定为 `pre-step → system-section → runtime-contex
 
 ## SillyTavern 导入
 
-工作台「预设配置」页导入 SillyTavern JSON 预设卡片（导入包无定义文件、仅含单个 `.json` 时自动识别转换），按注入层级映射为本地预设：
+工作台「预设配置」页按内容识别原生预设与 SillyTavern 来源；ST JSON/YAML 预设卡片经预览确认后，按注入层级映射为本地预设：
 
 - `prompts[]` → `promptConfigs`：system 角色进入 `system-section`，其余进入 `pre-step`；官方 `prompt_order[].order[]` 决定启停与相对顺序，深度位置保留来源并报告降级
 - 采样参数（`temperature` / `openai_max_tokens` / `reasoning_effort`）**剥离**——模型参数统一由「模型设置」UI / 宿主默认管理
@@ -210,8 +211,8 @@ UI / 写盘展示顺序固定为 `pre-step → system-section → runtime-contex
 
 工作台「角色管理」页导入角色卡到**角色卡库**（`~/.dsh/.agent-presets/.characters/<id>/`）：
 
-- **PNG**：tEXt chunk（`ccv3` 优先 / `chara` 兜底）base64 解析；图片按 PNG 魔数识别，原始文件走流式导入（单文件 64 MiB 上限），避免头像 base64 膨胀 JSON bridge
-- **JSON**：chara_card_v2/v3 直接转换；小于 32 MiB 的载荷走 JSON bridge，接近上限时改走原始文件流；多文件（角色卡 × 响应预设）自动合并
+- **PNG**：`ccv3` 优先 / `chara` 兜底；按魔数识别并受限解码，原始文件先暂存、预览确认后入库，保留原图。
+- **JSON／YAML**：支持 ST 角色数据和自包含原生角色片段。批次逐张预览，不把多份来源合并成一张角色卡；所有大小的文件都先预览再提交。
 - 正文映射：`first_mes` → 开场白（`dedupe: session`）、`alternate_greetings` → 备用开场白、
   `description/personality/scenario` → 角色设定；采样参数剥离（模型设置 UI 管理）
 - **导入到当前预设**：参数合并进当前预设 promptConfigs（`chara-<卡>-` 前缀、幂等）；可一键移除

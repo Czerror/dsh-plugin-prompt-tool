@@ -294,7 +294,8 @@ export function createPromptConfigs(specs, options = {}) {
         throw new TypeError(`${name}: ${label} strategy=placeholder requires fill in [${[...KNOWN_FILLS].sort().join(', ')}]`)
       }
     }
-    const template = loadTemplate(spec.templateFile)
+    // 安装预检可把文件读取定向到尚未提交的候选目录，默认运行期仍走原解析器。
+    const template = (options.loadTemplate ?? loadTemplate)(spec.templateFile)
     const templatePatch = template !== null && typeof template === 'object'
       ? { id: template.id, role: template.role, content: template.content, source: template.source }
       : undefined

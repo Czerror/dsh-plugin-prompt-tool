@@ -1,6 +1,16 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { BRIDGE_ENDPOINTS, SETTINGS_BRIDGE_PREFIX, registerSettingsBridge } from '../../lib/index.mjs'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { join } from 'node:path'
+const home = mkdtempSync(join(process.cwd(), 'pt-contract-'))
+process.env.DSH_HOME = home
+const { BRIDGE_ENDPOINTS, SETTINGS_BRIDGE_PREFIX } = await import('../../src/shared/bridge-contract.ts')
+const { registerSettingsBridge } = await import('../../src/runtime/settings-bridge.ts')
+const bridgeDisposers = []
+test.after(() => {
+  for (const dispose of bridgeDisposers) dispose()
+  rmSync(home, { recursive: true, force: true })
+})
 
 // 跨端契约测试：shared 常量（client 消费）必须与 server 注册路由逐点一致。
 
@@ -25,7 +35,7 @@ function makeHarness() {
       schemas: () => [{ name: 'bash', description: '运行命令' }],
     },
     get: (name) => name === 'agentPresets' ? agentPresets : undefined,
-    effect: (fn) => fn(),
+    effect: (fn) => { const dispose = fn(); if (dispose) bridgeDisposers.push(dispose) },
   }
   // Cordis 语义：未 inject 的服务属性访问直接抛错，可选服务只能经 ctx.get 解析。
   Object.defineProperty(sctx, 'agentPresets', {
@@ -96,7 +106,7 @@ test('契约：所有端点路径全部注册且无多余', () => {
   const handlers = register()
   const expected = Object.values(BRIDGE_ENDPOINTS)
   // 文件层调用策略：skillFix / skillToggle / skillsConfig / skillBlock 已删除，技能端点收敛为 7 个。
-  assert.equal(expected.length, 41, 'BRIDGE_ENDPOINTS 应包含当前登记的 41 个端点')
+  assert.equal(expected.length, 43, 'BRIDGE_ENDPOINTS 应包含当前登记的 43 个端点')
   for (const removed of ['skillFix', 'skillToggle', 'skillsConfig', 'skillBlock']) {
     assert.equal(Object.hasOwn(BRIDGE_ENDPOINTS, removed), false, `${removed} 已随旧技能模型移除`)
   }
@@ -142,7 +152,7 @@ test('契约：/bootstrap 聚合 meta + overrides + variables + promptConfigs �
 test('契约：成功载荷统一为 { ok: true, value }', async () => {
   const handlers = register()
   // 抽样无需 settings/descriptor 依赖的端点，断言客户端 typed bridge 消费形状（res.value.*）。
-  for (const path of [SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.meta, SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.templates]) {
+  for (const path of [SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.meta, SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.skillsList]) {
     const handler = handlers.get(path)
     assert.ok(handler, `端点未注册: ${path}`)
     const res = fakeRes()

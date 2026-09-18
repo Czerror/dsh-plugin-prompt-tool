@@ -111,7 +111,7 @@ const ZH_CORE = {
 
   'characters.aria': '角色管理',
   'characters.library.title': '角色卡库',
-  'characters.library.hint': '导入 SillyTavern 角色卡（PNG tEXt chunk：ccv3 / chara，或 chara_card JSON）到独立库。角色卡参数不直接生成预设——点击「导入到当前预设」把角色设定 / 系统提示 / 开场白 / 提示词库合并进当前激活预设，可随时移除。',
+  'characters.library.hint': '导入角色卡到独立库，逐张检查后保存；支持 PNG、JSON、YAML 和资源包。入库后可显式应用到当前预设，也可随时移除。',
   'characters.importImage': '导入角色卡图片',
   'characters.importJson': '导入角色卡 JSON',
   'characters.importing': '导入中…',
@@ -250,7 +250,7 @@ const ZH_CORE = {
   'presets.order.hint': '生成 preset.yml 的 order；数值小的 preset 在宿主列表中靠前。',
 
   'presetSwitcher.title': '预设模板',
-  'presetSwitcher.hint': '预设保存在用户目录（首次启动自动内置全部模板）；点击卡片即切换并按新模板重建生成目录。删除后可从内置模板「新建」还原；导入预设 = 选择 preset.yml / 任意 *.yml/*.yaml / SillyTavern *.json 配置文件，或整个预设文件夹。',
+  'presetSwitcher.hint': '管理预设及其自有资源。导入支持 ZIP、JSON、PNG、YAML 和文件夹，确认后创建或更新；每个预设可导出完整 ZIP 或仅定义 YAML。',
   'presetSwitcher.new': '新建预设',
   'presetSwitcher.import': '导入预设',
   'presetSwitcher.importing': '导入中…',
@@ -404,7 +404,7 @@ const EN_CORE: Record<keyof typeof ZH_CORE, string> = {
 
   'characters.aria': 'Characters',
   'characters.library.title': 'Character card library',
-  'characters.library.hint': 'Import SillyTavern character cards (PNG tEXt chunk: ccv3 / chara, or chara_card JSON) into a separate library. Card parameters never generate presets directly — use "Import to current preset" to merge the character sheet / system prompt / greeting / prompt library into the active preset, and remove them at any time.',
+  'characters.library.hint': 'Review and import character cards one at a time into the library. Supports PNG, JSON, YAML and resource packages. Apply explicitly to the current preset after importing, or remove at any time.',
   'characters.importImage': 'Import card image',
   'characters.importJson': 'Import card JSON',
   'characters.importing': 'Importing…',
@@ -543,7 +543,7 @@ const EN_CORE: Record<keyof typeof ZH_CORE, string> = {
   'presets.order.hint': 'The order written into preset.yml; smaller values appear earlier in the host preset list.',
 
   'presetSwitcher.title': 'Preset templates',
-  'presetSwitcher.hint': 'Presets live in the user directory (all built-in templates are seeded on first start); clicking a card switches to it and rebuilds the generated directories from that template. Deleted presets can be restored from a built-in template with "New preset"; importing accepts a preset.yml, any *.yml/*.yaml, a SillyTavern *.json config, or a whole preset folder.',
+  'presetSwitcher.hint': 'Manage presets and their owned resources. Import ZIP, JSON, PNG, YAML or folders, then confirm creation or update. Export each preset as a complete ZIP or definition YAML.',
   'presetSwitcher.new': 'New preset',
   'presetSwitcher.import': 'Import preset',
   'presetSwitcher.importing': 'Importing…',

@@ -1,130 +1,136 @@
-# 技能管理框架：官方发现、会话快照与可恢复资产操作
+# 导入导出模块化与统一 UI 实施
 
-## 需求概述与授权
+## 需求与授权
 
-- 用户授权（2026-09-18）：按审查推荐方案完整实施，并明确要求「引用的技能目录中的技能也要能正常开关删除」。本轮直接执行、验证、中文 Conventional Commit 并推送 `origin/dev`。
-- 基线：`dev@f485a28a326715f64db922cd65b367b8524911b0`，工作树干净。旧 PLAN 原文归档到 [.scratch/prompt-tool-framework/archive/plan-before-skills-framework-f485a28-20260918.md](.scratch/prompt-tool-framework/archive/plan-before-skills-framework-f485a28-20260918.md)，归档 Git blob 与原文一致：`c82b796248f58770826f93c1c995380abb3c42af`。
-- 保留 v4 布局：技能位于原来源，调用策略写入 SKILL.md 官方 frontmatter；skills.yml 只保存 folders。沿用同名导入确认、失败回滚和回收站；不引入技能内容历史或自动搬迁。
-- 引用目录技能的开关作用于原文件；删除操作经服务器核验当前引用白名单、条目身份和普通文件/目录边界后，将所选资产移入同一来源根的 `.system/prompt-tool/.trash`，资源随包保留，可人工恢复。确认框显示名称和准确路径。移除文件夹引用仅取消登记，不删除来源内容。
-- 发布版 `@deepseek-ai/dsh-skill-filesystem@0.1.6-alpha.1` 已验证支持 custom-only provider、缺失根恢复、观察完整性及 disposer；本轮将其纳入明确依赖，不依赖宿主源码或偶然上层包解析。
-- 运行中的 DSH 不停止、不重启；测试只用隔离 cwd/DSH_HOME/随机端口。禁止修改宿主源码，禁止手工修改 lib 或版本化生成快照。
+- 2026-09-18 用户明确“按照这份计划执行修改”，授权执行 [设计稿](.scratch/prompt-tool-framework/design-import-export-2026-09-18.md) 的 W1–W4，包括建议的覆盖、批次、记忆来源证明及依赖校验语义；无需重复征求实现许可。
+- 基线：`dev@03b5e4c`，起始工作树干净。旧 PLAN 原文归档到 [归档](.scratch/prompt-tool-framework/archive/plan-before-import-export-03b5e4c-20260918.md)。
+- 目标：原生与 ST JSON/YAML、PNG、文件夹和 ZIP 经统一识别／预览／确认；安装有完整验证及恢复；Web/CLI 共享可移植导出与身份规则；角色记忆和用户指令独立所有权不变。
+- UI 沿用 DSH primitives、CSS Modules 与主题，落实 ui-skills 设计的来源、检查、结果、覆盖和导出范围流程。
+- 完整 ZIP 与单独定义导出已获确认。角色库原生片段先支持自包含内容，文件引用明确拒绝；带附件的内容通过完整预设入口处理。
 
-## 审查项与验收
+## 影响面、依赖与护栏
 
-| 编号 | 任务 | 验收 |
-|---|---|---|
-| S1 | 模型调用边界 | 搜索不显示模型停用项；直接按名加载也拒绝；加载前后策略变更不能绕过 |
-| S2 | 官方解析一致性 | yes/no/on/off/1/0 等官方策略与实际候选一致，非法值不被当成正常技能 |
-| S3 | 单端写入 | 两个旧页面分别关闭不同端，最终两端均关闭；不覆盖另一端或外部正文修改 |
-| S4 | 官方候选生命周期 | 缺失根创建、删除、恢复均失效；folders 变更释放旧注册与 watcher；失败保留可读项并标 complete=false |
-| S5 | 会话快照 | 同 cwd/scope 的清单与官方胜出项一致；未知/不完整不冒充生效；空清单不回退旧 settings |
-| S6 | 搜索与资源 | 中文关键词实际筛选；加载保留官方资源基址和渲染格式 |
-| S7 | 导入边界 | 超限在读取前拒绝；提交后清理失败报告已提交和清理提示；提交前失败仍恢复原件 |
-| S8 | 引用目录操作 | 引用技能可单端开关、恢复、删除；重复名称/目录名只操作确认的准确路径；目录、资源可恢复 |
-| S9 | 写入白名单 | 伪造路径、移除后的引用、路径穿越、符号链接与只读目标被拒绝；失败不误删其他用户文件 |
-| S10 | 客户端收口 | 资产操作走数据层；局部技能刷新不重载其他草稿；删除确认与提交来自同一条目 |
+- `client → shared contract → runtime bridge → host source / package / characters / manifest / writer`；预览版本绑定字节、用户选择与目标版本。
+- writer 与 manifest 先修源资产、ID 和目录安全；识别与角色更新并行；随后集成安装、ZIP 和 UI，最终完整验证。
+- 主线程写 shared、runtime bridge、index 接线、ZIP/package、构建出口、依赖、文档与 PLAN；代理独占 writer/manifest、角色/识别、客户端及各自测试。并行期间不 build，不提交。
+- 图谱脚本固定写 `.ai-memory/knowledge-graph`，与仓库禁止将图谱放入记忆目录的规则冲突，本轮以已审查调用图＋rg 全调用者复核替代；不执行该生成器。
+- 所有编辑通过 apply_patch；shell 使用 PowerShell 7；测试和脚本 cwd 位于 `D:/AI/workspase/_temp`，合成临时 DSH_HOME。禁止改宿主、停止共享 DSH、改真实预设／角色资源。
+- 不增加通用任务平台；受限上传暂存与预览句柄满足本次流程。未知／越界／超量／链接／过期请求零目标写入。
 
-## 影响面与规划门禁
-
-- 读取：官方 provider → SkillRegistry.snapshot → host 清单投影 → bridge → client；本地扫描只负责管理资产/诊断，不再贡献自己的解析候选。
-- 写入：shared 身份及单端意图 → bridge 白名单 → host YAML/资产事务 → 官方失效 → 新会话快照。策略字段不进入 settings。
-- engine 消费通过既有 host-package 解析官方包，复用 isModelInvocable/renderSkillContent；保持 skill-search 可选。
-- 主线程拥有 shared、index、bridge、依赖、文档和最终集成；子任务独占 host 资产、provider 生命周期或 engine 消费写区。并行期不运行 build。
-- 沿用 Node test runner，覆盖缺陷红绿、真实发布 provider/registry、跨窗口操作和 UI 行为，不新增测试框架。
-- [✔] 执行授权及引用删除范围；[✔] 文件/宿主边界；[✔] 发布 API 实测；[✔] 原缺陷复现；[✔] 回滚路径；[✔] 写区互斥。调用方由审查及 rg 复核，图谱只作加速、不替代调用证据。
-
-## Wave 1：共享契约与核心行为
+## Wave 1：数据边界
 
 <task type="auto">
-  <name>T1：模型消费与官方调用策略</name>
-  <files>engine/skill-search.mjs、test/engine/tool-module-mount.test.mjs</files>
-  <action>搜索/加载执行模型调用策略，支持中文关键词，复用官方资源渲染和宿主包解析。</action>
-  <verify>真实 registry 四种策略、直接加载拒绝、策略变更、中文搜索、相对资源、主子会话 scope 与 disposer。</verify>
-  <security>停用内容不进入注入消息；保留 abort、scope/cwd 与模型边界。</security>
-  <done>S1/S6 红绿闭合，模块保持 opt-in。</done>
+  <name>T1：预设身份、源资产和候选物化</name>
+  <files>src/host/manifest.ts、write-preset.ts、预设安装 helper、相关 host 测试</files>
+  <action>统一合法 ID 与根归属；复制同步定义身份；正文与自有 engine 保留；去掉兄弟清理；提供不触碰共享引擎和不原地覆盖的候选物化入口。</action>
+  <verify>数据风险回归先红后绿；真实 writer 保留正文、PNG、模块与兄弟目录；ID 越界、链接及 rename 故障拒绝。</verify>
+  <security>根内 canonical 路径、无无主清理、旧目录恢复、Windows 占用不退化为破坏性安装。</security>
+  <done>F01/F05/F06 的共享根因闭合，候选入口可用于导入。</done>
 </task>
 
 <task type="auto">
-  <name>T2：单端文件写入与引用资产删除</name>
-  <files>src/runtime/skills-parse.ts、src/host/skills-policy.ts、skills-actions.ts、skills-import.ts；对应 host 测试</files>
-  <action>收敛官方策略校验；支持单端意图并保留另一端；事务内外部修改检查；回收站支持经核验的引用来源；修复读取前限额与提交后清理状态。</action>
-  <verify>两旧页面、官方布尔写法、原文保留、链接/越界拒绝、回收站恢复、读取前限额、提交后 EACCES、导入回滚。</verify>
-  <security>不碰真实用户目录；同目录暂存与原子切换；删除保留资源与恢复记录。</security>
-  <done>S2/S3/S7/S8/S9 核心操作通过。</done>
+  <name>T2：角色来源与长期记忆独立</name>
+  <files>src/host/characters.ts、PNG helper、相关角色测试</files>
+  <action>来源更新保留记忆、未知文件和未替换头像；原生片段保留合法自包含配置；自动记忆使用无冲突 ID 和可核验来源记录。</action>
+  <verify>JSON/PNG/YAML 重导入记忆字节不变；普通 memory ID 不被覆盖；真实应用计数、来源版本和错误恢复。</verify>
+  <security>不把同名导入当成删除记忆授权；不可读取目标不能当作目标不存在。</security>
+  <done>F02/F10/F13 与记忆导出证明可用。</done>
+</task>
+
+## Wave 2：统一识别、预览与提交
+
+<task type="auto">
+  <name>T3：字节来源和识别</name>
+  <files>src/shared/asset-transfer.ts、bridge-contract.ts、src/host/import-source.ts、preview-revision.ts、源暂存与相关测试</files>
+  <action>显式编码、内容判别、唯一根与候选；复用 ST 转换及 PNG 解码；原始流只暂存；转换／目标／覆盖模式均绑定预览版本。</action>
+  <verify>格式矩阵、PNG 字节、未知形状、附件不参与识别、枚举顺序、大小及路径边界。</verify>
+  <security>有界读取／解压、编码校验、句柄不授予目标写权限。</security>
+  <done>所有载体具有同源预览，取消零提交。</done>
 </task>
 
 <task type="auto">
-  <name>T3：官方 provider 与技能运行时归位</name>
-  <files>src/host/skills-provider.ts、skills-refresh.ts、skills-scan.ts、skills-runtime.ts、src/runtime/skills-watcher.ts；对应 host 测试</files>
-  <action>custom-only 官方 provider 取代自建候选与根监听；状态/缓存/生命周期移出 index；坏状态文件保留有效配置，保留官方 complete。</action>
-  <verify>真实 provider 缺失根创建/删除/恢复、配置替换、失败完整性、跨 scope 胜出项、卸载无晚到刷新。</verify>
-  <security>只注册引用根，不重复提供默认根；注册和 watcher 随 Cordis disposer 释放。</security>
-  <done>S4 与统一 host 清单入口可接线。</done>
+  <name>T4：安装事务与桥接接线</name>
+  <files>src/host/preset-package.ts、src/runtime/settings-bridge.ts、src/index.ts、shared/runtime/host 测试</files>
+  <action>复用候选验证和物化，版本复检后交换目标；错误传播；区分安装结果与刷新失败；把业务规则从 bridge 下沉。</action>
+  <verify>坏工具／配置拒绝、候选附件正确定位、物化／交换／恢复故障、旧页面冲突与读失败。</verify>
+  <security>白名单、Host/Origin、统一失败载荷及请求体上限保留。</security>
+  <done>F03/F04/F07/F11/F12/F14/F16 闭合。</done>
 </task>
 
-## Wave 2：bridge 与 UI 接线
+## Wave 3：可移植导出
 
 <task type="auto">
-  <name>T4：契约、服务端身份与会话快照</name>
-  <files>src/shared/skills.ts、src/shared/bridge-contract.ts、src/index.ts、src/runtime/settings-bridge.ts、src/runtime/tui.ts；shared/host 测试</files>
-  <action>先定义单端写入、删除身份与 complete；从 settings 删除技能 facts；同会话 scope/cwd 投影快照；写入目标重新命中当前来源，只允许用户根及显式引用根删除。</action>
-  <verify>真实 handler 引用操作、伪造/同名/陈旧引用/只读源拒绝、空/未知/不完整快照、TUI 两端启停。</verify>
-  <security>保留 loopback、Origin/Host、body 限额；请求不能凭 path 自授权。</security>
-  <done>S5/S8/S9 服务端闭合。</done>
+  <name>T5：ZIP、定义与 CLI 共用资源规则</name>
+  <files>src/host/preset-package.ts、scripts/export-preset.mjs、构建出口、ZIP 依赖及包测试</files>
+  <action>收集权威定义及自有资源；保留复制身份；ZIP 清单验证；两种分享出口排除有证明的自动记忆，历史歧义要求明确选择。</action>
+  <verify>另一临时 DSH_HOME 真实导入／物化；正文与附件哈希；新旧根共存；ZIP 越界／碰撞／超限；源目录不变。</verify>
+  <security>指令正文／策略、角色记忆文件、技能库不进入包；不复制共享引擎或根外资源。</security>
+  <done>F08/F09 及完整往返通过，Web/CLI 同源。</done>
 </task>
 
-<task type="auto">
-  <name>T5：技能数据层与管理页</name>
-  <files>src/client/data/、src/client/features/skills/、src/client/locales.ts；client 测试与 UI fixture</files>
-  <action>统一导入入口及局部刷新；单端提交明确值；空快照清空；按能力开放引用删除；确认显示准确路径；区分声明权限与实际会话状态。</action>
-  <verify>引用开关/删除、跨源同 folder、取消零写入、空列表、刷新错误/草稿保护、覆盖确认与无障碍。</verify>
-  <security>客户端能力仅呈现，服务器重新核验；UI 不复制资产转换或写盘。</security>
-  <done>S3/S5/S8/S10 可操作且有行为测试。</done>
-</task>
-
-## Wave 3：验证与交付
+## Wave 4：客户端与交付
 
 <task type="auto">
-  <name>T6：完整验证、稳定文档与生成产物</name>
-  <files>docs/skills-management.md、docs/ui-architecture.md、README.md、PLAN.md；固定脚本生成物</files>
-  <action>复核子任务并同步稳定行为，执行 rebuild:composition/sync:yaml/typecheck/lint/test/build/diff --check；完成真实 UI 及隔离宿主检查。</action>
-  <verify>反例全绿，完整测试通过，引用来源权限/删除白名单闭合，生成快照来源固定。</verify>
-  <security>cwd 与临时 DSH_HOME 在 D:/AI/workspase/_temp；不停止共享 DSH，不写真实技能目录。</security>
-  <done>证据齐全，未验证项显式披露。</done>
+  <name>T6：共用导入面板、覆盖与导出范围</name>
+  <files>src/client/data、预设/角色 feature、共享导入 UI、CSS、locale、client 测试</files>
+  <action>读取纳入状态机，文件/文件夹选择、目标与资源摘要、选组、覆盖确认、批次跳过/结束、过期重预览、成功后显式切换；ZIP/定义导出范围与依赖提示。</action>
+  <verify>真实 Edge 文件输入、PNG、大文件、失败与过期、键盘焦点、明暗/窄屏、卸载不提交下一项。</verify>
+  <security>文本转义、焦点陷阱复用、UI 不自授权、危险覆盖明确目标。</security>
+  <done>新 UI 接入实际 host 行为，无第二套状态或主题。</done>
 </task>
 
 <task type="auto">
-  <name>T7：记录、提交与推送</name>
-  <files>PLAN.md、.ai-memory/20260918/daily.md、本轮任务文件</files>
-  <action>追加项目记录及状态，只暂存任务文件，中文 Conventional Commit 并推送 origin/dev。</action>
-  <verify>暂存 diff 与验收一致、提交与远端 SHA 对齐、工作树清晰。</verify>
-  <security>.ai-memory 不入库；不推 main、不创建 PR、不重写历史。</security>
-  <done>交付修改、验证、SHA、分支及重启说明。</done>
+  <name>T7：稳定文档、完整门禁与交付</name>
+  <files>README、docs/ui-architecture.md、SillyTavern.md、architecture-params.md、CHANGELOG、PLAN</files>
+  <action>同步最终行为与限制；复核所有代理产出；生成分发快照；只提交任务文件并推送 origin/dev。</action>
+  <verify>typecheck、lint、完整 test、build、diff --check；需要时 verify:host；临时数据清理。</verify>
+  <security>本地记忆不提交；不重启运行中 DSH；不改 main。</security>
+  <done>全部门禁通过，交付 SHA、分支与用户重启说明。</done>
 </task>
 
-## 回滚
+## 回滚与检查点
 
-- 代码以 git revert 回滚本轮提交，不重写历史。
-- 技能布局及 v4 状态兼容；引用删除可从对应来源根回收站恢复整个包。
-- 导入提交前失败恢复旧资产；提交成功但清理失败明确报告已提交和残留信息。
-- 不操作实际技能和运行中服务；新代码需要用户重启 DSH 后加载。
+- 每个目标在同文件系统暂存完整新目录；失败恢复该目标旧目录，恢复失败保留可定位备份。共享引擎与兄弟预设不属于导入清理范围。
+- Git 回滚仅回代码，不回滚用户后续数据。保留格式适配，不用数据全量重写作为迁移。
+- Wave 检查点记录本 PLAN；较长中断摘要写 `.scratch/prompt-tool-framework/`，不把流程产物放 `.ai-memory`。
+- 验证命令均从临时 cwd：`pnpm --dir $Repo typecheck`、`lint`、`test`、`build`；`git -C $Repo diff --check`。
 
-## Task Summary 与执行状态
+## 状态
 
-- 共享调用链：官方发布 provider → 真实 registry → 会话 snapshot → bridge → UI 已接通，移除 index 中的自建候选/指纹缓存与 settings 技能副本。
-- 主线程复核：模型入口 16/16、文件与官方解析对照 42/42、runtime + 真实 bridge 8/8；显式引用其他工作区 `.agents/skills` 的删除红灯已转绿。
-- 真实 Edge 三组 smoke 通过，覆盖引用条目开关/删除、同 folder 跨来源身份、局部刷新保留草稿、慢响应与会话切换。
-- 完整门禁：`pnpm typecheck`、`pnpm lint`、`pnpm test`（1077/1077，零失败零跳过）、`pnpm build`、`git diff --check` 全部通过，所有命令从隔离 cwd 启动。
-- 生成物：`rebuild:composition` 按仓库 `test/fixtures/dsh/current` 固定输入重建 24 份官方组合，`sync:yaml` 按已安装 yaml@2.9.0 同步；版本化快照无内容变化，lib 不提交。
-- 新依赖仅为已发布官方能力 `dsh-skill-filesystem` 与其 `fs/observed` 类型归属 `dsh-fs`，均锁定 0.1.6-alpha.1。
-- 运行中 DSH 和真实用户技能未操作；新插件代码需用户重启 DSH 服务后生效。审查轮的临时 provider 依赖目录清理曾被自动审批拦截，未绕过；本轮测试创建的隔离资产由测试清理。
-- 实现提交 `74dd3fc` 已推送 `origin/dev`（`f485a28..74dd3fc`）；本节回填已验证的交付状态。
+- [✔] 已取得完整执行授权，核对基线与工作树，原文归档旧 PLAN。
+- [✔] W1 / T1：身份、源资产与候选物化；复制和另存同步自有 templateFile 引用。
+- [✔] W1 / T2：角色、记忆、头像与未知文件所有权；并发和恢复故障回归。
+- [✔] W2 / T3：原生/ST/PNG/YAML 识别、单次剥根、显式字节与预览版本。
+- [✔] W2 / T4：原始上传暂存、完整安装与桥接；提交结果和刷新结果分开。
+- [✔] W3 / T5：ZIP、定义、CLI 文件夹出口；当前根优先与跨目录往返。
+- [✔] W4 / T6：实际 UI、双语、覆盖确认、过期／批次控制和真实 Edge 验证。
+- [✔] W4 / T7：完整门禁与稳定文档已验证；提交 SHA 与推送结果以本轮最终交付和 Git 历史为准。
 
-[✔] Wave 0：授权、范围、旧 PLAN 原文归档及新方案
-[✔] Wave 1 / T1：模型消费（主线程复跑 16/16，含真实 registry 与四种调用策略）
-[✔] Wave 1 / T2：文件策略与资产事务（主线程复跑 42/42，含发布 provider 对照、引用回收站及失败事务）
-[✔] Wave 1 / T3：官方 provider 与运行时
-[✔] Wave 2 / T4：shared、index 与 bridge
-[✔] Wave 2 / T5：客户端
-[✔] Wave 3 / T6：完整验证与文档
-[✔] Wave 3 / T7：提交与 origin/dev 推送
+## 验收记录
+
+- 证据类型：命令及退出码、Node 行为测试、真实 Edge 交互与截图检查。
+- `pnpm --dir $Repo typecheck`：通过；`lint`：0 错误、0 警告。
+- `pnpm --dir $Repo test`：**1119/1119，通过；0 失败、0 跳过**。包含已发布 CLI 三种出口、字节往返、事务故障、角色记忆、路径边界及浏览器交互。
+- `pnpm --dir $Repo build`：通过；新增 `lib/preset-transfer.mjs` 供 CLI 共用，lib 不提交。
+- `rebuild:composition` 使用固定 `test/fixtures/dsh/current`：重建 24 个官方模块，19 个本地来源保留；`sync:yaml` 重放 yaml@2.9.0；两个版本化快照目录无内容漂移。
+- `verify:host`：51 项官方包契约检查，失败 0；`git diff --check` 通过。
+- 真实 Edge 定向 27 项通过（其中浏览器条目 14 项），包括实际 CSS、320px、键盘焦点与 reduced-motion；另查看 1280px 截图。未连接用户运行中的 DSH。
+- 归档 Git blob 与旧 PLAN 一致：`fbb4a06d8e441f4923043195a345081349b7d16d`。
+
+## 实施取舍与已知边界
+
+- ZIP 采用 `@zip.js/zip.js@2.15.0`（BSD-3-Clause），复用条目属性、流式有界解压与 CRC 校验；未保留最初考虑的 fflate。
+- 模块按职责拆为来源识别、PNG 解码、字节暂存、ZIP 载体、预设交换和目录身份，复用原 writer／角色持久化；未建立 service/repository 或格式 registry。
+- 保留既有无 ID 行为：单个原生 preset.yml 回退 imported-preset，官方目录定义可从文件夹名获得身份。多个定义和未知对象仍拒绝。
+- 收紧身份校验后，将旧测试夹具的随机大小写目录／固定 ID 改为一致合法身份；未放宽生产路径约束。共享选择器改用既有 MenuSelect。
+- 自包含角色片段支持 text/texts/控制配置；角色附件引用明确拒绝。任意用户 JS 动态路径的依赖完整性无法静态证明，见资产交换文档。
+- 生效：依赖、宿主和客户端 bundle 已更新，**需要用户重启 DSH 服务后生效**；不要求重新链接 profile。已有预设由正常加载／重建通道更新，未对真实用户预设批量写盘。
+
+## 测试现场与清理限制
+
+- 一次旧 ST 测试的静态导入先于临时 DSH_HOME，曾在默认预设根生成 `demo`、`rev`、`one-two` 三个合成预设。已核对创建时间与内容后移入隔离恢复目录；未覆盖既有目标。已修正为设置隔离环境后动态导入，主线程复检默认根中三项均不存在。
+- 自动审批拒绝临时目录及截图删除，原因仅为 `blocked by policy`；不通过其他通道绕过。残留如下，业务回归均已通过：
+  - `D:/AI/workspase/_temp/pt-st-preview-recovery-20260918-172732`（上述三个合成预设）。
+  - 系统 Temp 下 `pt-chara-home-118jYG`、`pt-chara-home-yxpWUB`、`pt-chara-open-4scnKY`、`pt-chara-open-jVAhu5`、`pt-chara-root-SzvPFt`、`pt-chara-root-tAcyBu`。
+  - `D:/AI/workspase/_temp/pt-import-20260918.png`（本轮 UI 验证截图）。
+- 其余本轮新测试通过自身 teardown 清理；最终全量测试使用隔离 TEMP/TMP 与 DSH_HOME，未停止或重启用户 DSH。

@@ -126,7 +126,7 @@ export interface PromptToolStore {
   persistSwitches: (onSaved?: () => void) => Promise<boolean>
   persistParamOverrides: () => Promise<void>
   /** 保存提示词配置；返回 false 表示未写入（预设切换中、跨预设旧草稿或失败）。 */
-  persistConfigs: (configs: PromptConfigDraft[]) => Promise<boolean>
+  persistConfigs: (configs: PromptConfigDraft[], options?: { reload?: boolean; rebuild?: boolean; includeInstructions?: boolean }) => Promise<boolean>
   /** 预设级模板变量（preset.yml 内容变量；writePreset 展开进 variables.yml，引擎合并进每条配置）。 */
   templateVariables: Record<string, string>
   setTemplateVariables: (value: Record<string, string>) => void

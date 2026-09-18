@@ -18,6 +18,7 @@ export const ImportPreviewCard = memo(function ImportPreviewCard(props: {
   busy: boolean
   /** 重新预览进行中：旧 ready 已失效，只有确认禁用（仍可继续换组）。 */
   confirmDisabled?: boolean
+  hideActions?: boolean
   onGroupChange: (characterId: string) => void
   onConfirm: () => void
   onCancel: () => void
@@ -57,7 +58,7 @@ export const ImportPreviewCard = memo(function ImportPreviewCard(props: {
             : (
               <p>
                 {report === undefined
-                  ? t('importPreview.noReport')
+                  ? null
                   : t('importPreview.summary', {
                     inputs: report.summary.inputs, converted: report.summary.converted, disabled: report.summary.disabled,
                     degraded: report.summary.degraded, unsupported: report.summary.unsupported, excluded: report.summary.excluded,
@@ -77,6 +78,13 @@ export const ImportPreviewCard = memo(function ImportPreviewCard(props: {
             placeholder={t('importPreview.pickGroup')}
             disabled={busy}
           />
+        </div>
+      )}
+      {!candidateMode && groups.length > 1 && (
+        <div>
+          <span>{t('importPreview.groups')}</span>
+          <MenuSelect value={selectedGroup} options={groups.map((group) => groupOption(group.characterId, group.entries))}
+            onChange={props.onGroupChange} ariaLabel={t('importPreview.groupsAria')} disabled={busy} />
         </div>
       )}
       {!candidateMode && report !== undefined && warnings.length > 0 && (
@@ -129,26 +137,14 @@ export const ImportPreviewCard = memo(function ImportPreviewCard(props: {
           })}
         </p>
       )}
-      {!candidateMode && groups.length > 1 && (
-        <div>
-          <span>{t('importPreview.groups')}</span>
-          <MenuSelect
-            value={selectedGroup}
-            options={groups.map((group) => groupOption(group.characterId, group.entries))}
-            onChange={props.onGroupChange}
-            ariaLabel={t('importPreview.groupsAria')}
-            disabled={busy}
-          />
-        </div>
-      )}
-      <div>
+      {!props.hideActions && <div>
         <button type="button" className={sharedCss.primaryPill} disabled={confirmDisabled} onClick={props.onConfirm}>
           {t('importPreview.confirm')}
         </button>
         <button type="button" className={sharedCss.pillButton} disabled={busy} onClick={props.onCancel}>
           {t('importPreview.cancel')}
         </button>
-      </div>
+      </div>}
     </div>
   )
 })

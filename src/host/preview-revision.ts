@@ -7,7 +7,7 @@
  * 客户端只回传；凭据不构成写入授权，服务端每次提交都重算。
  */
 import { createHash } from 'node:crypto'
-import { existsSync, readFileSync, readdirSync } from 'node:fs'
+import { lstatSync, readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 
 /** 预览协议版本：字段语义变化时递增，纳入 revision 计算。 */
@@ -60,10 +60,16 @@ export function computePreviewRevision(input: PreviewRevisionInput): string {
  * 只用于目标身份的"是否被改过"判断，不持久化、不缓存。
  */
 export function directoryVersionOf(dir: string): string | null {
-  if (!existsSync(dir)) return null
+  try {
+    if (!lstatSync(dir).isDirectory() || lstatSync(dir).isSymbolicLink()) throw new Error('目标不是普通目录')
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
+    throw error
+  }
   const hash = createHash('sha256')
   const walk = (current: string, prefix: string): void => {
     for (const entry of readdirSync(current, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+      if (entry.isSymbolicLink()) throw new Error(`目标包含链接：${entry.name}`)
       const rel = prefix.length === 0 ? entry.name : `${prefix}/${entry.name}`
       if (entry.isDirectory()) {
         hash.update(`D\u0000${rel}\u0000`)
@@ -75,11 +81,7 @@ export function directoryVersionOf(dir: string): string | null {
       hash.update(readFileSync(join(current, entry.name)))
     }
   }
-  try {
-    walk(dir, '')
-  } catch {
-    // 读取失败（权限/竞态）视为无法确认版本：调用方据此要求重新预览。
-    return null
-  }
+  // 读取失败不可冒充“目标不存在”，提交方必须 fail closed。
+  walk(dir, '')
   return hash.digest('hex')
 }

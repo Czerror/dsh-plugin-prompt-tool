@@ -1,4 +1,4 @@
-import { test } from 'node:test'
+import { after, test } from 'node:test'
 import assert from 'node:assert/strict'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { deflateSync } from 'node:zlib'
@@ -28,6 +28,10 @@ const {
 const root = mkdtempSync(join(tmpdir(), 'pt-chara-root-'))
 const template = 'anchored'
 const presetDir = join(root, template)
+after(() => {
+  rmSync(root, { recursive: true, force: true })
+  rmSync(home, { recursive: true, force: true })
+})
 
 // 预建激活预设（applyCharacterToPreset 只更新不创建）。
 mkdirSync(presetDir, { recursive: true })
@@ -92,9 +96,10 @@ test('importCharacterCard + applyCharacterToPreset：卡入库并导入预设（
   assert.equal(listed[0].imported, true)
 })
 
-test('applyCharacterToPreset：导入含 system-section 的卡自动开放顶层 persona complete（ST system prompt 层级开放）', () => {
+test('applyCharacterToPreset：导入含 system-section 的卡自动开放顶层 persona complete（ST system prompt 层级开放）', t => {
   // 预建含顶层 persona complete: true 的激活预设。
   const dir = mkdtempSync(join(tmpdir(), 'pt-chara-open-'))
+  t.after(() => rmSync(dir, { recursive: true, force: true }))
   const template = 'anchored'
   const presetDir = join(dir, template)
   mkdirSync(presetDir, { recursive: true })
@@ -467,4 +472,3 @@ test('判据纯函数：记录容错、未知模块保守保留、消费者判�
   assert.equal(characterModuleStillNeeded('tool-config-engine', { ...empty, customTools: true }), true)
   assert.equal(characterModuleStillNeeded('unknown-module', empty), true, '未知模块保守保留')
 })
-

@@ -603,6 +603,7 @@ test('writePreset 自动校验并装配 subagentToolPolicy，非法策略拒绝'
     cpSync(join(ROOT, 'preset', 'pt-minimal'), join(presetDir, 'minimal'), { recursive: true })
     const presetFile = join(presetDir, 'minimal', 'preset.yml')
     const doc = parseDocument(readFileSync(presetFile, 'utf8'))
+    doc.set('id', 'minimal')
     doc.setIn(['subagentToolPolicy'], {
       defaultProfile: 'base', ceiling: { allow: ['read'], deny: [] },
       profiles: [{ id: 'base', name: '基础', allow: ['read'], deny: [], modelSelectable: false }],

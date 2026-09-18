@@ -3,17 +3,18 @@
  *  由用户按需「导入到当前预设」合并进激活预设 preset.yml（promptConfigs 带
  *  chara-<cardId>- 前缀防冲突，params 合并，meta.importedCharacters 记录来源），
  *  并可一键移除。 */
-import { readFileSync, writeFileSync, mkdirSync, mkdtempSync, renameSync, rmSync, existsSync, readdirSync, appendFileSync } from 'node:fs'
-import { join, basename, dirname } from 'node:path'
-import { parse as parseYaml, parseDocument, stringify as stringifyYaml } from 'yaml'
-import { inflateSync } from 'node:zlib'
-import { createHash } from 'node:crypto'
-import { convertStToPresetWithReport, mergeStConversionReports, mergeStPresetsWithReport, stOrderSelectionState } from './sillytavern.ts'
+import { readFileSync, writeFileSync, mkdirSync, mkdtempSync, renameSync, rmSync, existsSync, readdirSync, appendFileSync, lstatSync, cpSync } from 'node:fs'
+import { join, basename, dirname, resolve } from 'node:path'
+import { parse as parseYaml, parseDocument, stringify as stringifyYaml, YAMLSeq } from 'yaml'
+import { createHash, randomUUID } from 'node:crypto'
 import type { StConversionOptions, StOrderGroupSummary } from './sillytavern.ts'
+import { prepareImport, assetSourceDigest, normalizeAssetFiles, validateCharacterSpec } from './import-source.ts'
+import { assertPresetId, assertPresetTree, presetPathExists } from './preset-install.ts'
 import { appendPresetModules, withPresetDoc } from './manifest.ts'
 import { buildWorldBookEntry } from './worldbook.ts'
 import type { PresetSpec } from './manifest.ts'
 import type { StConversionReport } from '../shared/bridge-contract.ts'
+import type { AssetFile, ImportChoices, ImportKind } from '../shared/asset-transfer.ts'
 
 /** 引擎六层注入顺序（与 schema 层序一致）：合并写盘时按此排序，数组序 = 引擎序。 */
 const LAYER_ORDER = ['pre-step', 'system-section', 'runtime-context', 'agent-request', 'llm-stream', 'tool-pipeline']
@@ -42,6 +43,69 @@ function buildCharacterMemoryEntry(spec: PresetSpec, memory: string): Record<str
     text: `【${spec.name} 的关系记忆】\n${memory}`,
     constant: true,
   })
+}
+
+const CHARACTER_MEMORIES_KEY = 'characterMemories'
+interface CharacterMemoryRecord { characterId: string; configId: string; contentHash: string }
+
+function contentHash(value: unknown): string {
+  const canonical = (item: unknown): unknown => Array.isArray(item) ? item.map(canonical)
+    : isRecord(item) ? Object.fromEntries(Object.keys(item).sort().map(key => [key, canonical(item[key])])) : item
+  return createHash('sha256').update(JSON.stringify(canonical(value))).digest('hex')
+}
+
+function memoryRecords(meta: unknown): Record<string, CharacterMemoryRecord> {
+  if (!isRecord(meta) || !isRecord(meta[CHARACTER_MEMORIES_KEY])) return {}
+  return Object.fromEntries(Object.entries(meta[CHARACTER_MEMORIES_KEY]).filter(([id, record]) => isRecord(record)
+    && record.characterId === id && typeof record.configId === 'string' && typeof record.contentHash === 'string')) as Record<string, CharacterMemoryRecord>
+}
+
+function recordMemory(doc: ReturnType<typeof parseDocument>, cardId: string, config: Record<string, unknown>): void {
+  doc.setIn(['meta', CHARACTER_MEMORIES_KEY, cardId], { characterId: cardId, configId: String(config.id), contentHash: contentHash(config) })
+}
+
+function availableMemoryId(configs: readonly Record<string, unknown>[], cardId: string): string {
+  const base = `chara-${cardId}-memory`
+  const used = new Set(configs.map(config => config.id))
+  let id = base
+  for (let suffix = 2; used.has(id); suffix += 1) id = `${base}-${suffix}`
+  return id
+}
+
+/** 分享副本：只排除本机生成证明仍匹配的记忆；旧项与已编辑项须明确选择。 */
+export function projectCharacterMemories(
+  source: ReturnType<typeof parseDocument>,
+  choices: Record<string, 'include' | 'exclude'> = {},
+  presetRoot?: string,
+): { doc: ReturnType<typeof parseDocument>; excludedMemoryCount: number; memoryConflicts: Array<{ id: string; name: string }> } {
+  const doc = source.clone()
+  const spec = doc.toJS() as PresetSpec
+  const records = memoryRecords(spec.meta)
+  const imported = Array.isArray(spec.meta?.importedCharacters) ? spec.meta.importedCharacters.filter((id): id is string => typeof id === 'string') : []
+  const conflicts: Array<{ id: string; name: string }> = []
+  const excluded = new Set<number>()
+  for (const [index, config] of (spec.promptConfigs ?? []).entries()) {
+    if (!isRecord(config) || typeof config.id !== 'string') continue
+    const id = config.id
+    const proof = Object.values(records).find(record => record.configId === id)
+    if (proof !== undefined && proof.contentHash === contentHash(config)) { excluded.add(index); continue }
+    const cardId = imported.find(card => id === `chara-${card}-memory` || id.startsWith(`chara-${card}-memory-`)) ?? proof?.characterId
+    if (cardId === undefined) continue
+    // 原生卡定义的同名普通配置是独立内容，不按 ID 猜作记忆。
+    if (presetRoot !== undefined && validCardId(cardId)) {
+      const original = loadConverted(cardDir(presetRoot, cardId))
+      if (original?.promptConfigs?.some(entry => isRecord(entry) && `chara-${cardId}-${String(entry.id)}` === id)) continue
+      const memory = original === undefined ? undefined : buildCharacterMemoryEntry(original, readCharacterMemory(presetRoot, cardId))
+      if (memory !== undefined && contentHash({ ...memory, id }) === contentHash(config)) { excluded.add(index); continue }
+    }
+    if (choices[id] === 'exclude') excluded.add(index)
+    else if (choices[id] !== 'include') conflicts.push({ id, name: String(config.name ?? id) })
+  }
+  const configs = doc.get('promptConfigs', true)
+  if (configs instanceof YAMLSeq) for (const index of [...excluded].sort((a, b) => b - a)) configs.delete(index)
+  else if (excluded.size > 0) doc.set('promptConfigs', (spec.promptConfigs ?? []).filter((_, index) => !excluded.has(index)))
+  if (doc.hasIn(['meta', CHARACTER_MEMORIES_KEY])) doc.deleteIn(['meta', CHARACTER_MEMORIES_KEY])
+  return { doc, excludedMemoryCount: excluded.size, memoryConflicts: conflicts }
 }
 
 /** meta 下记录「每张卡引入了哪些模块」的键；来源保留到模块不再被消费并完成回退。 */
@@ -156,12 +220,11 @@ export function syncImportedCharacterMemory(
   cardId: string,
 ): { ok: true; synced: boolean } | { ok: false; message: string } {
   if (!validCardId(cardId)) return { ok: false, message: `非法角色卡 id：${cardId}` }
-  const spec = loadConverted(cardDir(presetRoot, cardId))
-  if (spec === undefined) return { ok: false, message: `角色卡 ${cardId} 不存在或参数损坏` }
-  const memory = readCharacterMemory(presetRoot, cardId)
-  const memoryId = `chara-${cardId}-memory`
   let synced = false
   try {
+    const spec = loadConverted(cardDir(presetRoot, cardId))
+    if (spec === undefined) return { ok: false, message: `角色卡 ${cardId} 不存在或参数损坏` }
+    const memory = readCharacterMemory(presetRoot, cardId)
     withPresetDoc(join(presetRoot, templateName), (doc) => {
       const current = doc.toJS() as { promptConfigs?: unknown[]; meta?: { importedCharacters?: unknown[] } }
       const imported = Array.isArray(current.meta?.importedCharacters)
@@ -172,18 +235,19 @@ export function syncImportedCharacterMemory(
         ? current.promptConfigs as Array<Record<string, unknown>>
         : []
       const entry = buildCharacterMemoryEntry(spec, memory)
-      const at = configs.findIndex((config) => config !== null && typeof config === 'object'
-        && String(config.id ?? '') === memoryId)
+      const proof = memoryRecords(current.meta)[cardId]
+      const at = configs.findIndex(config => proof !== undefined && config.id === proof.configId && contentHash(config) === proof.contentHash)
       if (entry === undefined) {
         if (at >= 0) {
           configs.splice(at, 1)
+          doc.deleteIn(['meta', CHARACTER_MEMORIES_KEY, cardId])
           synced = true
         }
-      } else if (at >= 0) {
-        configs[at] = { ...entry, id: memoryId }
-        synced = true
       } else {
-        configs.push({ ...entry, id: memoryId })
+        const config = { ...entry, id: at >= 0 ? configs[at]!.id : availableMemoryId(configs, cardId) }
+        if (at >= 0) configs[at] = config
+        else configs.push(config)
+        recordMemory(doc, cardId, config)
         synced = true
       }
       if (synced) doc.setIn(['promptConfigs'], sortConfigs(configs))
@@ -205,26 +269,32 @@ function cardDir(presetRoot: string, id: string): string {
 
 function loadConverted(dir: string): PresetSpec | undefined {
   const file = join(dir, 'converted.yml')
-  if (!existsSync(file)) return undefined
-  try {
-    const parsed = parseYaml(readFileSync(file, 'utf8'), { logLevel: 'silent' })
-    return parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)
-      ? parsed as PresetSpec
-      : undefined
-  } catch {
-    return undefined
-  }
+  assertNoLinks(file)
+  if (!presetPathExists(file)) return undefined
+  const parsed = parseYaml(readFileSync(file, 'utf8'), { logLevel: 'silent' })
+  if (!isRecord(parsed)) throw new Error(`角色定义不是对象：${file}`)
+  return parsed as unknown as PresetSpec
 }
 
 /** 追加角色卡本地记忆（.characters/<id>/memory.md，跟随角色卡跨预设）。 */
 export function appendCharacterMemory(presetRoot: string, cardId: string, note: string): void {
+  assertPresetId(cardId)
   appendMemoryFile(join(cardDir(presetRoot, cardId), 'memory.md'), note, '# 角色记忆')
+}
+
+/** 检查现有祖先和最终文件，不能通过角色目录 junction 或单文件链接越界。 */
+function assertNoLinks(path: string): void {
+  const absolute = resolve(path)
+  const parent = dirname(absolute)
+  if (parent !== absolute) assertNoLinks(parent)
+  if (presetPathExists(absolute) && lstatSync(absolute).isSymbolicLink()) throw new Error(`角色路径包含链接：${absolute}`)
 }
 
 /** 追加记忆文件（时间戳列表格式；header 标注文件类型）。世界书工具与角色卡共用。 */
 export function appendMemoryFile(file: string, note: string, header = '# 本地记忆'): void {
   const content = note.trim()
   if (content.length === 0) return
+  assertNoLinks(file)
   mkdirSync(dirname(file), { recursive: true })
   const stamp = new Date().toISOString().slice(0, 19).replace('T', ' ')
   const line = `\n- [${stamp}] ${content}\n`
@@ -234,90 +304,47 @@ export function appendMemoryFile(file: string, note: string, header = '# 本地�
 
 /** 读角色卡本地记忆文本（无记忆返回空串）。 */
 export function readCharacterMemory(presetRoot: string, cardId: string): string {
-  try {
-    const file = join(cardDir(presetRoot, cardId), 'memory.md')
-    return existsSync(file) ? readFileSync(file, 'utf8').trim() : ''
-  } catch {
-    return ''
-  }
+  assertPresetId(cardId)
+  const file = join(cardDir(presetRoot, cardId), 'memory.md')
+  assertNoLinks(file)
+  return presetPathExists(file) ? readFileSync(file, 'utf8').trim() : ''
 }
 
 /** 校验角色卡 id 可作目录名（防路径穿越）。 */
 function validCardId(id: string): boolean {
-  return typeof id === 'string' && id.length > 0 && id !== '.' && id !== '..'
-    && !id.includes('/') && !id.includes('\\') && !id.startsWith('.')
+  try { assertPresetId(id); return true } catch { return false }
 }
 
-interface CharacterImportFile {
-  path: string
-  content: string
-}
-
-function cardNameFromJson(jsonText: string, fallback: string): string {
-  try {
-    const parsed = JSON.parse(jsonText) as { name?: unknown; data?: { name?: unknown } }
-    if (typeof parsed.name === 'string' && parsed.name.trim().length > 0) return parsed.name.trim()
-    if (parsed.data !== null && typeof parsed.data === 'object'
-      && typeof parsed.data.name === 'string' && parsed.data.name.trim().length > 0) {
-      return parsed.data.name.trim()
-    }
-  } catch {
-    // 转换阶段会返回带上下文的 JSON 错误，这里只负责生成稳定的 fallback 名称。
-  }
-  return fallback
-}
-
-function convertCharacterJsons(
-  jsons: CharacterImportFile[],
-  options: StConversionOptions = {},
-): { converted: PresetSpec; jsonText: string; report: StConversionReport } {
-  const baseName = (entry: CharacterImportFile): string => basename(entry.path).replace(/\.json$/i, '') || 'character'
-  const parts = jsons.map((entry) => convertStToPresetWithReport(JSON.parse(entry.content), baseName(entry), options))
-  if (parts.length === 1) {
-    return { converted: parts[0]!.spec, jsonText: jsons[0]!.content, report: parts[0]!.report }
-  }
-  // 合并与报告消费同一份 id 映射：报告里的 targetId 必须是最终写盘的配置 id。
-  const { spec, idMap } = mergeStPresetsWithReport(parts.map((part) => part.spec))
-  const report = mergeStConversionReports(parts.map((part) => part.report), jsons.map((entry, index) => ({
-    sourceName: basename(entry.path),
-    ...(idMap.get(index) === undefined ? {} : { idMap: idMap.get(index)! }),
-  })))
-  return { converted: spec, jsonText: jsons[0]!.content, report }
+type CharacterImportOptions = StConversionOptions & ImportChoices
+type CharacterImportResult = { ok: true; id: string; name: string; warning?: string } | { ok: false; message: string }
+function importChoices(options: CharacterImportOptions): ImportChoices {
+  return { ...options, promptOrderCharacterId: options.promptOrderCharacterId ?? options.characterId }
 }
 
 /** 角色卡 JSON 的选组状态：与预设包共用同一实现，预览用候选、提交用拒绝。 */
-export function characterOrderSelectionState(files: CharacterImportFile[], options: StConversionOptions = {}):
+export function characterOrderSelectionState(files: AssetFile[], options: CharacterImportOptions = {}):
   { needsSelection: true; candidates: StOrderGroupSummary[] }
   | { needsSelection: false; error?: string } {
-  for (const entry of files) {
-    if (!/\.json$/i.test(entry.path)) continue
-    let parsed: unknown
-    try {
-      parsed = JSON.parse(entry.content)
-    } catch {
-      continue
-    }
-    const state = stOrderSelectionState(parsed, options)
-    if (state.needsSelection) return state
-  }
-  return { needsSelection: false }
+  try {
+    const prepared = prepareImport(files, 'character', importChoices(options))
+    return prepared.state === 'needs-order-selection' ? { needsSelection: true, candidates: prepared.candidates } : { needsSelection: false }
+  } catch (error) { return { needsSelection: false, error: error instanceof Error ? error.message : String(error) } }
 }
 
 /** 角色卡导入来源摘要：提交时由服务端按本次上传内容重算，预览身份不构成写入凭证。 */
-export function characterImportDigest(files: CharacterImportFile[]): string {
-  return createHash('sha256').update(files.map((entry) => `${entry.path}\u0000${entry.content}`).join('\u0000')).digest('hex')
+export function characterImportDigest(files: AssetFile[]): string {
+  return assetSourceDigest(normalizeAssetFiles(files))
 }
 
 /** 角色卡预览：与入库共用同一转换实现（含同一选组选项），只返回报告、不写角色库。 */
 export function previewCharacterCard(
-  files: CharacterImportFile[],
-  options: StConversionOptions = {},
-): { ok: true; name: string; id: string; sourceDigest: string; report: StConversionReport } | { ok: false; message: string } {
-  const jsons = files.filter((entry) => /\.json$/i.test(entry.path))
-  if (jsons.length === 0) return { ok: false, message: '缺少角色卡 JSON（PNG 导入需同时携带解析出的角色卡 JSON）' }
+  files: AssetFile[],
+  options: CharacterImportOptions = {},
+): { ok: true; name: string; id: string; sourceDigest: string; report?: StConversionReport; kind: ImportKind; files: AssetFile[]; sourceName: string } | { ok: false; message: string } {
   try {
-    const { converted, report } = convertCharacterJsons(jsons, options)
-    return { ok: true, name: converted.name, id: converted.id, sourceDigest: characterImportDigest(files), report }
+    const prepared = prepareImport(files, 'character', importChoices(options))
+    if (prepared.state !== 'ready') return { ok: false, message: '请先选择角色内容类型或提示顺序组' }
+    return { ok: true, name: prepared.spec.name, id: prepared.spec.id, sourceDigest: prepared.sourceDigest, report: prepared.report, kind: prepared.kind, files: prepared.files, sourceName: prepared.sourceName }
   } catch (error) {
     return { ok: false, message: `角色卡转换失败：${error instanceof Error ? error.message : String(error)}` }
   }
@@ -326,110 +353,88 @@ export function previewCharacterCard(
 function persistCharacterCard(
   presetRoot: string,
   converted: PresetSpec,
-  jsonText: string,
+  sourceText: string,
   avatar?: Buffer,
-): { ok: true; id: string; name: string } | { ok: false; message: string } {
+  convertedYaml = stringifyYaml(converted, { lineWidth: 0 }),
+): CharacterImportResult {
   if (!validCardId(converted.id)) return { ok: false, message: `非法角色卡 id：${converted.id}` }
   const parent = charactersDir(presetRoot)
   const dir = cardDir(presetRoot, converted.id)
-  mkdirSync(parent, { recursive: true })
-  // 三文件（avatar.png / card.json / converted.yml）先在临时目录完整写好后
-  // 整目录原子 rename 替换；失败恢复旧目录并清理临时目录，防部分写。
-  const tmp = mkdtempSync(join(parent, `.${converted.id}.tmp-`))
+  let tmp: string | undefined
+  let installed = false
   try {
+    assertNoLinks(dir)
+    const before = characterDirectoryDigest(dir)
+    if (presetPathExists(join(dir, 'memory.md'))) readCharacterMemory(presetRoot, converted.id)
+    mkdirSync(parent, { recursive: true })
+    tmp = mkdtempSync(join(parent, `.${converted.id}.tmp-`))
+    // 同步调用在当前进程与记忆追加串行；保留未知资产，交换前再次核对所有字节。
+    if (before !== undefined) {
+      cpSync(dir, tmp, { recursive: true })
+      assertPresetTree(tmp)
+    }
     if (avatar !== undefined) writeFileSync(join(tmp, 'avatar.png'), avatar)
-    writeFileSync(join(tmp, 'card.json'), jsonText, 'utf8')
-    writeFileSync(join(tmp, 'converted.yml'), stringifyYaml(converted, { lineWidth: 0 }), 'utf8')
-    const backup = join(parent, `.${converted.id}.bak-${Date.now().toString(36)}`)
+    let sourceFile = 'card.json'
+    try { JSON.parse(sourceText) } catch { sourceFile = 'card.yml' }
+    for (const name of ['card.json', 'card.yml']) if (name !== sourceFile && presetPathExists(join(tmp, name))) rmSync(join(tmp, name))
+    writeFileSync(join(tmp, sourceFile), sourceText, 'utf8')
+    writeFileSync(join(tmp, 'converted.yml'), convertedYaml, 'utf8')
+    if (characterDirectoryDigest(dir) !== before) throw new Error('角色卡或记忆在准备期间改变，请重新预览')
+    const backup = join(parent, `.${converted.id}.bak-${randomUUID()}`)
     let hadOld = false
-    if (existsSync(dir)) {
+    if (before !== undefined) {
       renameSync(dir, backup)
       hadOld = true
     }
     try {
       renameSync(tmp, dir)
+      installed = true
     } catch (error) {
       if (hadOld) {
-        try { renameSync(backup, dir) } catch { /* 恢复失败保留 backup 供人工处理 */ }
+        try { renameSync(backup, dir) } catch (restoreError) {
+          throw new Error(`安装与恢复均失败；旧数据保留在 ${backup}：${String(error)}；恢复：${String(restoreError)}`)
+        }
       }
       throw error
     }
-    if (hadOld) rmSync(backup, { recursive: true, force: true })
+    if (hadOld) {
+      try { rmSync(backup, { recursive: true, force: true }) } catch (error) {
+        return { ok: true, id: converted.id, name: converted.name, warning: `角色卡已安装；旧备份清理失败，保留在 ${backup}：${String(error)}` }
+      }
+    }
     return { ok: true, id: converted.id, name: converted.name }
   } catch (error) {
-    rmSync(tmp, { recursive: true, force: true })
+    if (tmp !== undefined && !installed) rmSync(tmp, { recursive: true, force: true })
     return { ok: false, message: `角色卡写入失败：${error instanceof Error ? error.message : String(error)}` }
   }
 }
 
-const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]
-
-function isPngBuffer(buffer: Buffer): boolean {
-  return buffer.length >= PNG_SIGNATURE.length && PNG_SIGNATURE.every((value, index) => buffer[index] === value)
-}
-
-/** PNG 角色卡解压输出大小上限（防 zip bomb 膨胀内存）。 */
-const MAX_PNG_CARD_DECOMPRESSED_BYTES = 16 * 1024 * 1024
-
-function decodePngCharacterCard(buffer: Buffer): { jsonText: string; avatar: Buffer } {
-  if (!isPngBuffer(buffer)) throw new Error('不是有效的 PNG 文件')
-  const chunks: Array<{ keyword: string; text: string }> = []
-  let offset = PNG_SIGNATURE.length
-  while (offset + 12 <= buffer.length) {
-    const length = buffer.readUInt32BE(offset)
-    const dataStart = offset + 8
-    const dataEnd = dataStart + length
-    const next = dataEnd + 4
-    if (dataEnd > buffer.length || next > buffer.length) throw new Error('PNG chunk 越界')
-    const type = buffer.toString('latin1', offset + 4, offset + 8)
-    if (type === 'tEXt') {
-      let separator = dataStart
-      while (separator < dataEnd && buffer[separator] !== 0) separator += 1
-      if (separator < dataEnd && separator > dataStart) {
-        chunks.push({
-          keyword: buffer.toString('latin1', dataStart, separator).toLowerCase(),
-          text: buffer.toString('latin1', separator + 1, dataEnd),
-        })
-      }
+function characterDirectoryDigest(dir: string): string | undefined {
+  if (!presetPathExists(dir)) return undefined
+  assertPresetTree(dir)
+  const hash = createHash('sha256')
+  const visit = (path: string): void => {
+    for (const name of readdirSync(path).sort()) {
+      const file = join(path, name)
+      hash.update(JSON.stringify(file.slice(dir.length)))
+      if (lstatSync(file).isDirectory()) visit(file)
+      else hash.update(readFileSync(file))
     }
-    if (type === 'IEND') break
-    offset = next
   }
-  const card = chunks.find((chunk) => chunk.keyword === 'ccv3') ?? chunks.find((chunk) => chunk.keyword === 'chara')
-  if (card === undefined) throw new Error('PNG 不含角色卡数据（无 chara/ccv3 tEXt chunk）')
-  const encoded = Buffer.from(card.text, 'base64')
-  try {
-    const jsonText = inflateSync(encoded, { maxOutputLength: MAX_PNG_CARD_DECOMPRESSED_BYTES }).toString('utf8')
-    JSON.parse(jsonText)
-    return { jsonText, avatar: buffer }
-  } catch {
-    // 非压缩（原始 utf8）卡片：inflate 失败回落直接解析；解压超限（zip bomb）
-    // 时 inflate 抛错、raw 解析失败同样干净报错，不膨胀内存。
-    const jsonText = encoded.toString('utf8')
-    JSON.parse(jsonText)
-    return { jsonText, avatar: buffer }
-  }
+  visit(dir)
+  return hash.digest('hex')
 }
 
 /** 角色卡入库：PNG 原图（可选）+ 角色卡 JSON → 转换参数存 converted.yml。 */
 export function importCharacterCard(
   presetRoot: string,
-  files: CharacterImportFile[],
-  options: StConversionOptions = {},
-): { ok: true; id: string; name: string } | { ok: false; message: string } {
-  const jsons = files.filter((entry) => /\.json$/i.test(entry.path))
-  if (jsons.length === 0) {
-    return { ok: false, message: '缺少角色卡 JSON（PNG 导入需同时携带解析出的角色卡 JSON）' }
-  }
+  files: AssetFile[],
+  options: CharacterImportOptions = {},
+): CharacterImportResult {
   try {
-    const { converted, jsonText } = convertCharacterJsons(jsons, options)
-    const avatar = files.find((entry) => /^avatar\.png$/i.test(entry.path))
-    return persistCharacterCard(
-      presetRoot,
-      converted,
-      jsonText,
-      avatar === undefined ? undefined : Buffer.from(avatar.content, 'base64'),
-    )
+    const prepared = prepareImport(files, 'character', importChoices(options))
+    if (prepared.state !== 'ready') return { ok: false, message: '请先选择角色内容类型或提示顺序组' }
+    return persistCharacterCard(presetRoot, prepared.spec, prepared.sourceText ?? prepared.yaml, prepared.avatar, prepared.yaml)
   } catch (error) {
     return { ok: false, message: `角色卡转换失败：${error instanceof Error ? error.message : String(error)}` }
   }
@@ -440,21 +445,11 @@ export function importCharacterCardFile(
   presetRoot: string,
   filePath: string,
   fileName = basename(filePath),
-  options: StConversionOptions = {},
-): { ok: true; id: string; name: string } | { ok: false; message: string } {
+  options: CharacterImportOptions = {},
+): CharacterImportResult {
   try {
     const buffer = readFileSync(filePath)
-    if (isPngBuffer(buffer)) {
-      const { jsonText, avatar } = decodePngCharacterCard(buffer)
-      const fallback = basename(fileName).replace(/\.[^.]+$/, '') || 'character'
-      const baseName = cardNameFromJson(jsonText, fallback)
-      const { converted } = convertCharacterJsons([{ path: `${baseName}.json`, content: jsonText }], options)
-      return persistCharacterCard(presetRoot, converted, jsonText, avatar)
-    }
-    const jsonText = buffer.toString('utf8')
-    const fallback = basename(fileName).replace(/\.[^.]+$/, '') || 'character'
-    const { converted } = convertCharacterJsons([{ path: `${fallback}.json`, content: jsonText }], options)
-    return persistCharacterCard(presetRoot, converted, jsonText)
+    return importCharacterCard(presetRoot, [{ path: basename(fileName), content: buffer.toString('base64'), encoding: 'base64' }], options)
   } catch (error) {
     return { ok: false, message: `角色卡转换失败：${error instanceof Error ? error.message : String(error)}` }
   }
@@ -485,27 +480,23 @@ export function listCharacterCards(
       : undefined
     const list = meta?.importedCharacters
     importedIds = new Set(Array.isArray(list) ? list.map(String) : [])
-  } catch {
-    importedIds = new Set()
-  }
-  try {
-    return readdirSync(root, { withFileTypes: true })
-      .filter((entry) => entry.isDirectory() && !entry.name.startsWith('.'))
-      .flatMap((entry) => {
-        const spec = loadConverted(join(root, entry.name))
-        if (spec === undefined) return []
-        return [{
-          id: entry.name,
-          name: spec.name,
-          ...(typeof spec.description === 'string' && spec.description.length > 0 ? { description: spec.description } : {}),
-          hasAvatar: existsSync(join(root, entry.name, 'avatar.png')),
-          imported: importedIds.has(entry.name),
-        }]
-      })
-      .sort((a, b) => a.id.localeCompare(b.id))
-  } catch {
-    return []
-  }
+  } catch (error) { throw new Error(`读取当前预设角色状态失败：${String(error)}`) }
+  if (!presetPathExists(root)) return []
+  assertNoLinks(root)
+  return readdirSync(root, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() && !entry.name.startsWith('.'))
+    .flatMap((entry) => {
+      const spec = loadConverted(join(root, entry.name))
+      if (spec === undefined) return []
+      return [{
+        id: entry.name,
+        name: spec.name,
+        ...(typeof spec.description === 'string' && spec.description.length > 0 ? { description: spec.description } : {}),
+        hasAvatar: existsSync(join(root, entry.name, 'avatar.png')),
+        imported: importedIds.has(entry.name),
+      }]
+    })
+    .sort((a, b) => a.id.localeCompare(b.id))
 }
 
 /** 删除角色卡库条目。 */
@@ -514,6 +505,7 @@ export function deleteCharacterCard(presetRoot: string, id: string): { ok: true 
   const dir = cardDir(presetRoot, id)
   if (!existsSync(dir)) return { ok: false, message: `角色卡 ${id} 不存在` }
   try {
+    assertNoLinks(dir)
     rmSync(dir, { recursive: true, force: true })
     return { ok: true }
   } catch (error) {
@@ -529,18 +521,18 @@ export function applyCharacterToPreset(
   cardId: string,
 ): { ok: true; count: number; personaOpened?: boolean } | { ok: false; message: string } {
   if (!validCardId(cardId)) return { ok: false, message: `非法角色卡 id：${cardId}` }
-  const spec = loadConverted(cardDir(presetRoot, cardId))
-  if (spec === undefined) return { ok: false, message: `角色卡 ${cardId} 不存在或参数损坏` }
   const prefix = `chara-${cardId}-`
   // ST system-section 开放：导入卡含 system-section 段（角色设定/系统提示/后续指令）
   // 时，激活预设 persona.complete: true 会在 assembly 抑制这些段（官方 complete
   // 只保留 persona 段）——自动置 complete: false 开放（与 ST 转换自身的
   // persona.complete = false 语义对齐）。
-  const hasSystemSections = (spec.promptConfigs ?? []).some((config) =>
-    config !== null && typeof config === 'object' && !Array.isArray(config)
-    && (config as Record<string, unknown>).layer === 'system-section')
   let personaOpened = false
   try {
+    const spec = loadConverted(cardDir(presetRoot, cardId))
+    if (spec === undefined) return { ok: false, message: `角色卡 ${cardId} 不存在或参数损坏` }
+    validateCharacterSpec(spec)
+    const hasSystemSections = (spec.promptConfigs ?? []).some(config => isRecord(config) && config.layer === 'system-section')
+    let count = 0
     withPresetDoc(join(presetRoot, templateName), (doc) => {
       const current = doc.toJS() as { persona?: unknown; promptConfigs?: unknown[]; meta?: { importedCharacters?: unknown[]; stWarnings?: unknown[] } }
       if (hasSystemSections) {
@@ -559,8 +551,7 @@ export function applyCharacterToPreset(
       const added = (spec.promptConfigs ?? []).flatMap((config) => {
         if (config === null || typeof config !== 'object' || Array.isArray(config)) return []
         const entry = config as Record<string, unknown>
-        // 世界书（world-book 策略）与普通配置一起带前缀并入；空文本跳过。
-        if (entry.text === undefined || String(entry.text).trim().length === 0) return []
+        // 已经权威校验的内嵌 text/texts 与控制配置全部保留。
         return [{ ...entry, id: `${prefix}${String(entry.id ?? '')}`, variables: {
           ...(spec.variablesEnabled === false ? {} : spec.variables),
           ...entry.variables as Record<string, string> | undefined,
@@ -571,14 +562,17 @@ export function applyCharacterToPreset(
       }
       // 角色卡本地记忆（memory.md）合并为 world-book constant 配置（chara-<卡>-memory）。
       const memory = readCharacterMemory(presetRoot, cardId)
-      const memoryId = `${prefix}memory`
       const memoryEntry = buildCharacterMemoryEntry(spec, memory)
+      const memoryConfig = memoryEntry === undefined ? undefined : { ...memoryEntry, id: availableMemoryId([...existing, ...added], cardId) }
+      if (memoryConfig !== undefined) recordMemory(doc, cardId, memoryConfig)
+      else if (doc.hasIn(['meta', CHARACTER_MEMORIES_KEY, cardId])) doc.deleteIn(['meta', CHARACTER_MEMORIES_KEY, cardId])
       // 合并后按（层序, order）排序写盘：UI 列表与引擎注入顺序一致。
       const merged = sortConfigs([
         ...existing,
         ...added,
-        ...(memoryEntry !== undefined ? [{ ...memoryEntry, id: memoryId }] : []),
+        ...(memoryConfig === undefined ? [] : [memoryConfig]),
       ])
+      count = added.length + (memoryConfig === undefined ? 0 : 1)
       // 模块按卡的实际需要装配：卡声明优先（ST 产物自带六件套声明，行为不变），必需项兜底
       // （prompt-config-engine 缺失会让 promptConfigs 静默失效）。只把「追加前没有、追加后
       // 有」的差集写进 meta.characterModules[cardId]，移除时按此回退，不误删预设自带模块。
@@ -601,7 +595,7 @@ export function applyCharacterToPreset(
       if (!list.map(String).includes(cardId)) list.push(cardId)
       doc.setIn(['meta', 'importedCharacters'], list)
     })
-    return { ok: true, count: (spec.promptConfigs ?? []).length, ...(personaOpened ? { personaOpened: true } : {}) }
+    return { ok: true, count, ...(personaOpened ? { personaOpened: true } : {}) }
   } catch (error) {
     return { ok: false, message: `导入失败：${error instanceof Error ? error.message : String(error)}` }
   }
@@ -615,9 +609,9 @@ export function removeCharacterFromPreset(
   cardId: string,
 ): { ok: true; count: number } | { ok: false; message: string } {
   if (!validCardId(cardId)) return { ok: false, message: `非法角色卡 id：${cardId}` }
-  const spec = loadConverted(cardDir(presetRoot, cardId))
   const prefix = `chara-${cardId}-`
   try {
+    const spec = loadConverted(cardDir(presetRoot, cardId))
     let removed = 0
     withPresetDoc(join(presetRoot, templateName), (doc) => {
       const current = doc.toJS() as { promptConfigs?: unknown[]; meta?: { importedCharacters?: unknown[] } }
@@ -628,6 +622,7 @@ export function removeCharacterFromPreset(
         return !isCard
       })
       doc.setIn(['promptConfigs'], kept)
+      if (doc.hasIn(['meta', CHARACTER_MEMORIES_KEY, cardId])) doc.deleteIn(['meta', CHARACTER_MEMORIES_KEY, cardId])
       // 删除该卡声明的 params 键（若曾覆盖预设原值无法恢复——文档说明）。
       // 现值判断：仅当当前值仍等于卡声明值才删——用户手改过或他卡同键覆盖过的值不误删。
       for (const [key, value] of Object.entries(spec?.params ?? {})) {

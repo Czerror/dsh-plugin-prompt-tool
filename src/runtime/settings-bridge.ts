@@ -5,10 +5,8 @@ import type { SkillRegistry, SkillViewOptions } from '@deepseek-ai/dsh-skill'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { createHash } from 'node:crypto'
 import { basename, dirname, join, resolve, sep } from 'node:path'
-import { createWriteStream, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
-import { Transform } from 'node:stream'
-import { pipeline } from 'node:stream/promises'
-import { parse as parseYaml, stringify as stringifyYaml } from 'yaml'
+import { pathToFileURL } from 'node:url'
+import { mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import type { SettingsDescriptor, SettingsPathOp } from '@deepseek-ai/dsh-settings'
 import { PARAM_KEYS } from '../config.ts'
 import { invalidateModelCatalog, listAdvertisedModels, peekModelCatalog, refreshModelReasoning, type ModelDetection } from './models.ts'
@@ -22,7 +20,6 @@ import type { SkillPolicyWrite } from '../host/skills-policy.ts'
 import {
   appendPresetModules,
   atomicWriteTextFile,
-  assertCompositionArray,
   cloneBuiltinPreset,
   createEngineCapabilityInPreset,
   duplicateUserPreset,
@@ -31,10 +28,9 @@ import {
   loadPresetSpec,
   invalidatePresetSpec,
   openPresetLocation,
-  parseImportedPresetId,
+  packageEngineDir,
   removeEngineCapabilityFromPreset,
   removeUserPreset,
-  renderComposition,
   resolvePresetParams,
   resolvePresetModuleFacts,
   resolvePresetDir,
@@ -43,23 +39,25 @@ import {
   userPresetsDir,
   withPresetDoc,
 } from '../host/manifest.ts'
-import type { PresetSpec } from '../host/manifest.ts'
 import {
   applyCharacterToPreset,
-  characterOrderSelectionState,
   charactersDir,
   deleteCharacterCard,
   importCharacterCard,
-  importCharacterCardFile,
   listCharacterCards,
   removeCharacterFromPreset,
 } from '../host/characters.ts'
-import { ST_CONVERTER_VERSION, convertStToPresetWithReport, mergeStConversionReports, mergeStPresetsWithReport, stOrderSelectionState } from '../host/sillytavern.ts'
 import { previewCharacterCard } from '../host/characters.ts'
 import { computePreviewRevision, directoryVersionOf } from '../host/preview-revision.ts'
+import { createAssetSources } from '../host/asset-sources.ts'
+import { expandPresetSource, exportPresetPackage, installPresetPackage, presetImportPreview } from '../host/preset-package.ts'
+import { decodeAssetFile, prepareImport } from '../host/import-source.ts'
+import { assertPresetDirectory, assertPresetId, canonicalPresetRoot, presetPathExists } from '../host/preset-install.ts'
+import { DSH_HOME } from '../host/paths.ts'
+import type { AssetFile, AssetImportRequest, ImportKind, PresetExportRequest } from '../shared/asset-transfer.ts'
 import { lastWorldBookDiagnostics } from '../../engine/st-world-book.mjs'
-import { BRIDGE_ENDPOINTS, MAX_BRIDGE_BODY_BYTES, MAX_CHARACTER_CARD_STREAM_BYTES, SETTINGS_BRIDGE_PREFIX } from '../shared/bridge-contract.ts'
-import type { ModelSyncResult, StConversionReport } from '../shared/bridge-contract.ts'
+import { BRIDGE_ENDPOINTS, MAX_BRIDGE_BODY_BYTES, SETTINGS_BRIDGE_PREFIX } from '../shared/bridge-contract.ts'
+import type { ModelSyncResult } from '../shared/bridge-contract.ts'
 import { moduleParamFallbacks, validateEngineParamValues } from '../shared/engine-params.ts'
 import { readPersonaSpec } from '../shared/persona-section.ts'
 import { SKILL_NAME_PATTERN, type SkillsStateRead } from '../host/skills-config.ts'
@@ -169,7 +167,7 @@ const SHA256_HEX_RE = /^[0-9a-f]{64}$/i
 const MAX_ORDER_CHARACTER_ID_LENGTH = 128
 
 /** 导入端点（预设包 / 角色卡）的入口参数。 */
-interface ImportRequestParams {
+interface ImportRequestParams extends AssetImportRequest {
   /** 省略 / false = 显式提交；true = 只读预览（不落盘）。 */
   preview: boolean
   expectedSourceDigest?: string
@@ -187,6 +185,15 @@ interface ImportRequestParams {
 function readImportRequestParams(record: Record<string, unknown>):
   | { ok: true; params: ImportRequestParams }
   | { ok: false; message: string } {
+  const allowed = new Set(['preview', 'files', 'sourceId', 'expectedSourceDigest', 'expectedPreviewRevision', 'promptOrderCharacterId', 'targetId', 'targetName', 'overwrite', 'sourceKind'])
+  if (Object.keys(record).some((key) => !allowed.has(key))) return { ok: false, message: '导入请求包含未知字段' }
+  if ((record.files === undefined) === (record.sourceId === undefined)) return { ok: false, message: 'files 与 sourceId 必须且只能提供一个' }
+  if (record.sourceId !== undefined && (typeof record.sourceId !== 'string' || !/^[0-9a-f-]{36}$/i.test(record.sourceId))) return { ok: false, message: 'sourceId 必须是有效上传来源标识' }
+  if (record.overwrite !== undefined && typeof record.overwrite !== 'boolean') return { ok: false, message: 'overwrite 必须是布尔值' }
+  if (record.targetId !== undefined && (typeof record.targetId !== 'string' || record.targetId.length > 128 || !/^[a-z0-9][a-z0-9-]*$/.test(record.targetId))) return { ok: false, message: 'targetId 必须是合法小写预设 ID（最多 128 字符）' }
+  if (record.targetName !== undefined && (typeof record.targetName !== 'string' || record.targetName.trim().length === 0 || record.targetName.length > 256)) return { ok: false, message: 'targetName 必须是 1–256 字符的非空字符串' }
+  const kinds: ImportKind[] = ['native-preset', 'native-character', 'st-preset', 'st-character', 'world-book']
+  if (record.sourceKind !== undefined && !kinds.includes(record.sourceKind as ImportKind)) return { ok: false, message: 'sourceKind 不是支持的内容类型' }
   const preview = record.preview
   if (preview !== undefined && typeof preview !== 'boolean') {
     return { ok: false, message: 'preview 必须是布尔值（省略或 false = 提交，true = 只读预览）' }
@@ -208,6 +215,11 @@ function readImportRequestParams(record: Record<string, unknown>):
     ok: true,
     params: {
       preview: preview === true,
+      ...(record.sourceId === undefined ? {} : { sourceId: record.sourceId as string }),
+      ...(record.targetId === undefined ? {} : { targetId: record.targetId as string }),
+      ...(record.targetName === undefined ? {} : { targetName: record.targetName as string }),
+      ...(record.overwrite === undefined ? {} : { overwrite: record.overwrite as boolean }),
+      ...(record.sourceKind === undefined ? {} : { sourceKind: record.sourceKind as ImportKind }),
       ...(digest === undefined ? {} : { expectedSourceDigest: digest as string }),
       ...(revision === undefined ? {} : { expectedPreviewRevision: revision as string }),
       ...(characterId === undefined ? {} : { promptOrderCharacterId: characterId as string }),
@@ -216,17 +228,16 @@ function readImportRequestParams(record: Record<string, unknown>):
 }
 
 /** 上传条目容器：缺失 = 空；不是数组或含非对象条目一律 fail closed。 */
-function readBridgeFiles(files: unknown):
-  | { ok: true; files: Array<Record<string, unknown>> }
-  | { ok: false; message: string } {
-  if (files === undefined || files === null) return { ok: true, files: [] }
-  if (!Array.isArray(files)) return { ok: false, message: 'files 必须是数组' }
-  const entries: Array<Record<string, unknown>> = []
+function readBridgeFiles(files: unknown): AssetFile[] {
+  if (!Array.isArray(files) || files.length === 0) throw new Error('files 必须是非空数组')
+  const entries: AssetFile[] = []
   for (const entry of files) {
-    if (!isRecord(entry)) return { ok: false, message: 'files 条目必须是对象' }
-    entries.push(entry)
+    if (!isRecord(entry) || typeof entry.path !== 'string' || typeof entry.content !== 'string'
+      || (entry.encoding !== undefined && entry.encoding !== 'utf8' && entry.encoding !== 'base64')
+      || Object.keys(entry).some((key) => !['path', 'content', 'encoding'].includes(key))) throw new Error('files 条目必须包含字符串 path/content 及合法 encoding')
+    entries.push({ path: entry.path, content: entry.content, ...(entry.encoding === undefined ? {} : { encoding: entry.encoding }) })
   }
-  return { ok: true, files: entries }
+  return entries
 }
 
 /** 存活本地 Agent 的会话 cwd；无 agents 服务 / 未知 session / 无 cwd 时返回 undefined（不猜）。 */
@@ -427,64 +438,14 @@ async function readBridgeBodyForHandler(req: IncomingMessage, res: ServerRespons
   return { body: result.body }
 }
 
-class StreamBodyTooLargeError extends Error {
-  // 显式字段赋值而不是构造器参数属性：参数属性需要代码生成，Node 的 strip-only 类型剥离
-  // 会在加载本文件时直接报错，测试就没法从 src 直接导入 bridge（只能依赖构建产物）。
-  readonly receivedBytes: number
-  readonly maxBytes: number
-  constructor(receivedBytes: number, maxBytes: number) {
-    super(`stream body exceeds ${maxBytes} bytes`)
-    this.name = 'StreamBodyTooLargeError'
-    this.receivedBytes = receivedBytes
-    this.maxBytes = maxBytes
-  }
-}
-
-async function writeStreamBody(
-  req: IncomingMessage,
-  filePath: string,
-  maxBytes: number,
-): Promise<number> {
-  let receivedBytes = 0
-  const limiter = new Transform({
-    transform(chunk, _encoding, callback) {
-      const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
-      receivedBytes += buffer.length
-      if (receivedBytes > maxBytes) {
-        callback(new StreamBodyTooLargeError(receivedBytes, maxBytes))
-        return
-      }
-      callback(null, buffer)
-    },
-  })
-  await pipeline(req, limiter, createWriteStream(filePath, { flags: 'wx' }))
-  return receivedBytes
-}
-
 function uploadFileName(req: IncomingMessage): string {
   const value = req.headers['x-file-name']
   const raw = Array.isArray(value) ? value[0] : value
-  if (typeof raw !== 'string' || raw.length === 0) return 'character-card.bin'
+  if (typeof raw !== 'string' || raw.length === 0 || raw.length > 1024) throw new Error('缺少合法 X-File-Name 上传文件名')
   try {
     return decodeURIComponent(raw)
   } catch {
-    return raw
-  }
-}
-
-/** 预设导入失败回滚：删除新目录并恢复同名预设备份（如有）。 */
-function restorePresetImport(targetDir: string, backupDir: string | undefined): void {
-  try {
-    rmSync(targetDir, { recursive: true, force: true })
-  } catch {
-    // 删除失败不阻断恢复
-  }
-  if (backupDir !== undefined) {
-    try {
-      renameSync(backupDir, targetDir)
-    } catch {
-      // 恢复失败保留备份目录供人工处理
-    }
+    throw new Error('上传文件名编码无效')
   }
 }
 
@@ -526,8 +487,8 @@ export function registerSettingsBridge(
    * 其余调用点不需要该结果。
    */
   afterOverridesChange?: () => ModelSyncResult | Promise<ModelSyncResult>,
-  /** 预设包导入完成回调（物化导入预设：组合/配置目录/共享引擎落盘，宿主 discovery 可见）。 */
-  afterPresetPackageImport?: (id: string) => void,
+  /** 预设已完整安装后的刷新回调；失败只返回 refreshWarning，不再物化或撤销安装。 */
+  afterPresetPackageImport?: (id: string) => void | Promise<void>,
   /** 能力/recipe 原子创建后重建回调；抛错时调用方恢复 preset.yml。 */
   afterCapabilityChange?: () => void,
 ): { invalidateDescriptor: () => void } {
@@ -551,6 +512,7 @@ export function registerSettingsBridge(
   // ensureWebSurface 会把 bundle 补进 manifest，重启后本子插件自动激活。
   ctx.inject(['settings', 'webServer'], (sctx: Context) => {
     sctx.effect(() => {
+      const assetSources = createAssetSources(join(DSH_HOME, '.prompt-tool-uploads'))
       // descriptor 缓存（30s TTL）：宿主 settings.describe 是同步全量遍历——
       // 遍历所有注册 namespace + section 读取 + structuredClone 深度克隆 + schema
       // 序列化；插件越多越慢且阻塞事件循环。每个桥端点（meta/describe/delete/export…）
@@ -599,7 +561,7 @@ export function registerSettingsBridge(
       }
       /** 引擎能力矩阵（meta 端点与 /bootstrap 共用）：动态 import 引擎 schema。 */
       const loadEngineMeta = async (): Promise<Record<string, unknown>> => {
-        const engineMetaUrl = new URL('../engine/schema.mjs', import.meta.url)
+        const engineMetaUrl = pathToFileURL(join(packageEngineDir(), 'schema.mjs'))
         const { getEngineMeta } = await import(engineMetaUrl.href) as {
           getEngineMeta: () => Record<string, unknown>
         }
@@ -756,6 +718,7 @@ export function registerSettingsBridge(
       }
 
       const disposers = [
+        assetSources.dispose,
         sctx.webServer.register({
           kind: 'exact',
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.bootstrap,
@@ -1643,6 +1606,36 @@ export function registerSettingsBridge(
         }),
         sctx.webServer.register({
           kind: 'exact',
+          path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.assetUpload,
+          handler: async (req, res) => {
+            if (!guard(req, res)) return
+            try {
+              const value = await assetSources.upload(uploadFileName(req), req)
+              writeBridgeJson(res, 200, { ok: true, value })
+            } catch (error) {
+              const message = error instanceof Error ? error.message : String(error)
+              writeBridgeJson(res, message.includes('64 MiB') ? 413 : 400, { ok: false, code: 'asset-upload-rejected', message })
+            }
+          },
+        }),
+        sctx.webServer.register({
+          kind: 'exact',
+          path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.assetRelease,
+          handler: async (req, res) => {
+            if (!guard(req, res)) return
+            const parsed = await readBridgeBodyForHandler(req, res)
+            if (parsed === undefined) return
+            const record = parsed.body
+            if (!isRecord(record) || Object.keys(record).length !== 1 || typeof record.sourceId !== 'string' || !/^[0-9a-f-]{36}$/i.test(record.sourceId)) {
+              writeBridgeJson(res, 400, { ok: false, code: 'asset-release-rejected', message: 'sourceId 必须是有效上传来源标识' })
+              return
+            }
+            try { writeBridgeJson(res, 200, { ok: true, value: { released: assetSources.release(record.sourceId) } }) }
+            catch (error) { writeBridgeJson(res, 400, { ok: false, code: 'asset-release-rejected', message: String(error) }) }
+          },
+        }),
+        sctx.webServer.register({
+          kind: 'exact',
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.importPresetPackage,
           handler: async (req, res) => {
             if (!guard(req, res)) return
@@ -1661,229 +1654,29 @@ export function registerSettingsBridge(
               writeBridgeJson(res, 400, { ok: false, code: 'preset-package-invalid', message: request.message })
               return
             }
-            const upload = readBridgeFiles(record.files)
-            if (!upload.ok) {
-              writeBridgeJson(res, 400, { ok: false, code: 'preset-package-invalid', message: upload.message })
-              return
-            }
-            let normalized: Array<{ path: string; content: string }> = []
-            for (const [index, entry] of upload.files.entries()) {
-              const f = entry as { path?: unknown; name?: unknown; content?: unknown }
-              const path = typeof f.path === 'string' && f.path.length > 0 ? f.path : (typeof f.name === 'string' ? f.name : '')
-              if (typeof f.content !== 'string') {
-                writeBridgeJson(res, 400, { ok: false, code: 'preset-package-invalid', message: `files[${index}].content 必须是字符串` })
+            try {
+              const files = await expandPresetSource(request.params.sourceId === undefined ? readBridgeFiles(record.files) : assetSources.read(request.params.sourceId))
+              const preview = presetImportPreview(userPresetsDir(), files, request.params)
+              if (!('prepared' in preview)) {
+                if (!request.params.preview) throw new Error('请先选择内容类型或提示顺序组并重新预览')
+                writeBridgeJson(res, 200, { ok: true, value: { preview: true, ...preview } })
                 return
               }
-              if (path.length === 0) {
-                writeBridgeJson(res, 400, { ok: false, code: 'preset-package-invalid', message: `files[${index}] 缺少 path/name` })
-                return
-              }
-              // 路径穿越防护：仅允许扁平相对路径（不含 .. 与盘符）。
-              if (path.includes('..') || /^[a-zA-Z]:/.test(path) || path.startsWith('/') || path.startsWith('\\')) {
-                writeBridgeJson(res, 400, { ok: false, code: 'preset-package-invalid', message: `files[${index}].path 非法` })
-                return
-              }
-              normalized.push({ path, content: f.content })
-            }
-            // 预设定义文件：顶层 preset.yml 优先；缺失时用顶层任意 *.yml/*.yaml
-            // （排除 agent.cordis.yml 组合文件），支持自定义定义文件名导入。
-            // 来源摘要：对本次上传的规范化文件重算，作为预览过期校验的唯一样本。
-            const sourceDigest = createHash('sha256')
-              .update(normalized.map((entry) => `${entry.path}\u0000${entry.content}`).join('\u0000')).digest('hex')
-            if (request.params.expectedSourceDigest !== undefined && request.params.expectedSourceDigest !== sourceDigest) {
-              writeBridgeJson(res, 409, { ok: false, code: 'preset-preview-stale', message: '预览已过期：文件或来源内容已变化，请重新预览后再导入' })
-              return
-            }
-            const promptOrderCharacterId = request.params.promptOrderCharacterId
-            // SillyTavern 转换报告（仅转换路径产生）；预览与实际提交共用同一次纯转换结果。
-            let report: StConversionReport | undefined
-            const topRel = (path: string): string => {
-              const slash = path.indexOf('/')
-              return slash > 0 ? path.slice(slash + 1) : path
-            }
-            const isDefinition = (entry: { path: string }): boolean => {
-              const rel = topRel(entry.path)
-              return /\.ya?ml$/i.test(rel) && rel !== 'agent.cordis.yml'
-            }
-            let presetYaml = normalized.find((entry) => topRel(entry.path) === 'preset.yml')
-            if (presetYaml === undefined) presetYaml = normalized.find(isDefinition)
-            // 多顺序组且按优先级无法明确选择时：预览只回候选，UI 先让用户选组再重新预览；
-            // 提交仍拒绝——候选状态从未宣称已转换，也没有可用的预览版本凭据。
-            for (const entry of normalized) {
-              if (!/\.json$/i.test(topRel(entry.path))) continue
-              let parsed: unknown
-              try {
-                parsed = JSON.parse(entry.content)
-              } catch {
-                continue // 非法 JSON 由转换路径给出带上下文的错误
-              }
-              const state = stOrderSelectionState(parsed, { characterId: promptOrderCharacterId })
-              if (!state.needsSelection) continue
+              const { prepared, summary, sourceDigest, previewRevision } = preview
               if (request.params.preview) {
-                writeBridgeJson(res, 200, {
-                  ok: true,
-                  value: {
-                    preview: true,
-                    state: 'needs-order-selection',
-                    sourceName: topRel(entry.path),
-                    candidates: state.candidates,
-                  },
-                })
+                writeBridgeJson(res, 200, { ok: true, value: { preview: true, state: 'ready', summary, sourceDigest, previewRevision, ...(prepared.report === undefined ? {} : { report: prepared.report }) } })
                 return
               }
-              writeBridgeJson(res, 400, {
-                ok: false,
-                code: 'preset-package-invalid',
-                message: 'SillyTavern prompt_order 包含多个角色，请先选择顺序组再提交',
-              })
-              return
-            }
-            // SillyTavern JSON 预设：无定义文件时把所有 .json 交给转换引擎
-            // （角色卡 × 响应预设多文件 → 合并为单个预设），转换消费的 json 不再落盘。
-            if (presetYaml === undefined) {
-              const stJsons = normalized.filter((entry) => /\.json$/i.test(topRel(entry.path)))
-              if (stJsons.length > 0) {
-                try {
-                  const parts = stJsons.map((entry) => {
-                    const baseName = topRel(entry.path).replace(/\.json$/i, '') || 'sillytavern'
-                    return { path: topRel(entry.path), ...convertStToPresetWithReport(JSON.parse(entry.content), baseName, { characterId: promptOrderCharacterId }) }
-                  })
-                  // 合并与报告同源：报告里的 targetId 直接消费合并时的 id 映射。
-                  const mergedSpec = parts.length > 1
-                    ? mergeStPresetsWithReport(parts.map((part) => part.spec))
-                    : { spec: parts[0]!.spec, idMap: undefined }
-                  report = parts.length > 1
-                    ? mergeStConversionReports(parts.map((part) => part.report), parts.map((part, index) => ({
-                      sourceName: part.path,
-                      ...(mergedSpec.idMap?.get(index) === undefined ? {} : { idMap: mergedSpec.idMap.get(index)! }),
-                    })))
-                    : parts[0]!.report
-                  presetYaml = { path: 'preset.yml', content: stringifyYaml(mergedSpec.spec, { lineWidth: 0 }) }
-                  normalized = [
-                    ...normalized.filter((entry) => !/\.json$/i.test(topRel(entry.path))),
-                    presetYaml,
-                  ]
-                } catch (error) {
-                  const message = error instanceof Error ? error.message : String(error)
-                  writeBridgeJson(res, 400, { ok: false, code: 'preset-package-invalid', message: `SillyTavern JSON 转换失败：${message}` })
-                  return
-                }
-              }
-            }
-            if (presetYaml === undefined) {
-              writeBridgeJson(res, 400, { ok: false, code: 'preset-package-invalid', message: '导入包缺少预设定义文件（preset.yml / 任意 *.yml/*.yaml / SillyTavern *.json）' })
-              return
-            }
-            if (presetYaml.content.trim().length === 0) {
-              writeBridgeJson(res, 400, { ok: false, code: 'preset-package-invalid', message: 'preset.yml 内容为空' })
-              return
-            }
-            // 导入前校验：preset.yml 必须可解析为 YAML 映射（fail loud，避免坏包导入后静默消失）。
-            let parsedSpec: Record<string, unknown>
-            try {
-              const parsed = parseYaml(presetYaml.content, { logLevel: 'silent' })
-              if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
-                throw new Error('preset.yml 不是 YAML 映射')
-              }
-              parsedSpec = parsed as Record<string, unknown>
+              const installed = await installPresetPackage(userPresetsDir(), files, request.params)
+              invalidateDescriptor()
+              let refreshWarning: string | undefined
+              try { await afterPresetPackageImport?.(installed.id) }
+              catch (error) { refreshWarning = `预设已安装，但刷新失败：${error instanceof Error ? error.message : String(error)}` }
+              writeBridgeJson(res, 200, { ok: true, value: { ...installed, sourceDigest, ...(prepared.report === undefined ? {} : { report: prepared.report }), ...(refreshWarning === undefined ? {} : { refreshWarning }) } })
             } catch (error) {
-              const message = error instanceof Error ? error.message : String(error)
-              writeBridgeJson(res, 400, { ok: false, code: 'preset-package-invalid', message: `preset.yml 解析失败：${message}` })
-              return
+              const code = typeof (error as { code?: unknown }).code === 'string' ? String((error as { code: string }).code) : 'preset-package-invalid'
+              writeBridgeJson(res, code === 'preset-preview-stale' ? 409 : 400, { ok: false, code, message: error instanceof Error ? error.message : String(error) })
             }
-            // 预设 id 取自 preset.yml；缺失时用 preset.yml 所在目录名（单文件导入无目录段 → imported-preset）。
-            const slashIdx = presetYaml.path.lastIndexOf('/')
-            const topDir = slashIdx >= 0 ? presetYaml.path.slice(0, slashIdx) : ''
-            const fallback = /^[a-zA-Z0-9][a-zA-Z0-9-]*$/.test(topDir) ? topDir : 'imported-preset'
-            const id = parseImportedPresetId(presetYaml.content, fallback)
-            const presetRoot = userPresetsDir()
-            const targetDir = join(presetRoot, id)
-            // 预览版本：文件、实际选组、转换器版本与目标身份（含目标当前内容）一起参与，
-            // 由服务端计算；客户端只回传，凭据本身不是写入授权。
-            const previewRevision = computePreviewRevision({
-              files: normalized,
-              ...(promptOrderCharacterId === undefined ? {} : { orderCharacterId: promptOrderCharacterId }),
-              converter: ST_CONVERTER_VERSION,
-              target: {
-                kind: 'preset-package',
-                targetId: id,
-                targetVersion: directoryVersionOf(targetDir),
-                ownerPreset: basename(presetRoot),
-              },
-            })
-            // 预览：与提交共用上面的转换结果，只回报告与来源/版本凭据，不落盘、不重建、不执行宏。
-            if (request.params.preview) {
-              writeBridgeJson(res, 200, {
-                ok: true,
-                value: { preview: true, state: 'ready', sourceDigest, previewRevision, ...(report === undefined ? {} : { report }) },
-              })
-              return
-            }
-            // 提交：预览版本必须匹配（文件、选组、转换器、目标身份与目标当前内容）。
-            if (request.params.expectedPreviewRevision !== undefined) {
-              if (request.params.expectedPreviewRevision !== previewRevision) {
-                writeBridgeJson(res, 409, { ok: false, code: 'preset-preview-stale', message: '预览已过期：文件、顺序组或目标已变化，请重新预览后再导入' })
-                return
-              }
-            } else if (promptOrderCharacterId !== undefined) {
-              // 旧调用只带文件摘要、却要求新的选组覆盖：不授予新的选组保证，要求重新预览。
-              writeBridgeJson(res, 409, { ok: false, code: 'preset-preview-stale', message: '缺少预览版本凭据：请重新预览并选择顺序组后再导入' })
-              return
-            }
-            // 同名预设已存在 → 先备份（导入失败时恢复，成功后保留备份供回退）。
-            let backupDir: string | undefined
-            if (existsSync(targetDir)) {
-              backupDir = join(presetRoot, `.${id}.bak-${Date.now().toString(36)}`)
-              renameSync(targetDir, backupDir)
-            }
-            try {
-              mkdirSync(targetDir, { recursive: true })
-              for (const entry of normalized) {
-                // 唯一剥离点：去掉顶层目录段（文件夹导入时 webkitRelativePath 的顶层）；
-                // preset.yml 在顶层或单文件导入时无目录段。客户端不再剥离，防止双重剥层。
-                const slash = entry.path.indexOf('/')
-                const rel = slash > 0 ? entry.path.slice(slash + 1) : entry.path
-                if (rel.length === 0) continue
-                // 被选中的定义文件统一落盘为 preset.yml（自定义文件名导入后按项目约定归一）。
-                const dest = join(targetDir, entry === presetYaml ? 'preset.yml' : rel)
-                // 子目录（如 engine/、agent.cordis.yml 同层）逐级创建。
-                mkdirSync(dirname(dest), { recursive: true })
-                // 角色卡 PNG（客户端已转 base64 上传）解码落盘为头像资产 avatar.png。
-                if (/\.png$/i.test(rel)) {
-                  writeFileSync(dest, Buffer.from(entry.content, 'base64'))
-                } else {
-                  writeFileSync(dest, entry.content, 'utf8')
-                }
-              }
-            } catch (error) {
-              const message = error instanceof Error ? error.message : String(error)
-              restorePresetImport(targetDir, backupDir)
-              writeBridgeJson(res, 500, { ok: false, code: 'preset-import-failed', message: `预设写入失败：${message}` })
-              return
-            }
-            // 组合路径可解析校验（modules 存在性 / composition / agent.cordis.yml 回退）。
-            try {
-              const spec = { ...parsedSpec, id } as PresetSpec
-              const composition = renderComposition(spec, {}, targetDir)
-              assertCompositionArray(composition, spec)
-            } catch (error) {
-              const message = error instanceof Error ? error.message : String(error)
-              restorePresetImport(targetDir, backupDir)
-              writeBridgeJson(res, 400, { ok: false, code: 'preset-package-invalid', message: `预设组合校验失败：${message}` })
-              return
-            }
-            // 物化导入预设：仅写 preset.yml 时宿主 discovery 不可见（缺 agent.cordis.yml
-            // 组合本体 / prompt-configs / 共享引擎），导入成功即触发宿主重建该预设。
-            afterPresetPackageImport?.(id)
-            writeBridgeJson(res, 200, {
-              ok: true,
-              value: {
-                id,
-                ...(backupDir !== undefined ? { backupPath: backupDir } : {}),
-                sourceDigest,
-                ...(report === undefined ? {} : { report }),
-              },
-            })
           },
         }),
         sctx.webServer.register({
@@ -1895,24 +1688,22 @@ export function registerSettingsBridge(
             if (parsedBody === undefined) return
             const { body } = parsedBody
             const record = (body ?? {}) as Record<string, unknown>
-            const id = typeof record.id === 'string' && record.id.trim().length > 0 ? record.id.trim() : DEFAULT_PRESET_ID
             try {
-              const dir = resolvePresetDir(id)
-              const file = join(dir, 'preset.yml')
-              if (!existsSync(file)) throw new Error(`模板 ${id} 无 preset.yml`)
-              const content = readFileSync(file, 'utf8')
-              const spec = parseYaml(content, { logLevel: 'silent' }) as { id?: unknown; name?: unknown } | null
-              writeBridgeJson(res, 200, {
-                ok: true,
-                value: {
-                  id: typeof spec?.id === 'string' ? spec.id : id,
-                  name: typeof spec?.name === 'string' ? spec.name : id,
-                  content,
-                },
-              })
+              const allowed = new Set(['id', 'mode', 'preview', 'expectedRevision', 'memoryChoices'])
+              if (Object.keys(record).some((key) => !allowed.has(key))) throw new Error('导出请求包含未知字段')
+              assertPresetId(record.id)
+              if (record.id.length > 128) throw new Error('预设 ID 过长')
+              if (record.mode !== undefined && record.mode !== 'definition' && record.mode !== 'zip') throw new Error('mode 必须是 definition 或 zip')
+              if (record.preview !== undefined && typeof record.preview !== 'boolean') throw new Error('preview 必须是布尔值')
+              if (record.expectedRevision !== undefined && (typeof record.expectedRevision !== 'string' || !SHA256_HEX_RE.test(record.expectedRevision))) throw new Error('expectedRevision 必须是 SHA-256 摘要')
+              if (record.memoryChoices !== undefined && (!isRecord(record.memoryChoices) || Object.keys(record.memoryChoices).length > 2048
+                || Object.entries(record.memoryChoices).some(([key, value]) => key.length === 0 || key.length > 256 || (value !== 'include' && value !== 'exclude')))) throw new Error('memoryChoices 必须包含合法条目 ID 和 include/exclude 选择')
+              const value = await exportPresetPackage(userPresetsDir(), record as unknown as PresetExportRequest)
+              writeBridgeJson(res, 200, { ok: true, value })
             } catch (error) {
               const message = error instanceof Error ? error.message : String(error)
-              writeBridgeJson(res, 500, { ok: false, code: 'preset-export-failed', message })
+              const code = typeof (error as { code?: unknown }).code === 'string' ? String((error as { code: string }).code) : 'preset-export-failed'
+              writeBridgeJson(res, code.includes('stale') ? 409 : 400, { ok: false, code, message })
             }
           },
         }),
@@ -2041,98 +1832,55 @@ export function registerSettingsBridge(
               writeBridgeJson(res, 400, { ok: false, code: 'characters-rejected', message: request.message })
               return
             }
-            const upload = readBridgeFiles(record.files)
-            if (!upload.ok) {
-              writeBridgeJson(res, 400, { ok: false, code: 'characters-rejected', message: upload.message })
-              return
-            }
-            const normalized: Array<{ path: string; content: string }> = []
-            for (const [index, entry] of upload.files.entries()) {
-              const f = entry as { path?: unknown; content?: unknown }
-              const path = typeof f.path === 'string' ? f.path : ''
-              if (typeof f.content !== 'string') {
-                writeBridgeJson(res, 400, { ok: false, code: 'characters-rejected', message: `files[${index}].content 必须是字符串` })
-                return
-              }
-              if (path.length === 0) {
-                writeBridgeJson(res, 400, { ok: false, code: 'characters-rejected', message: `files[${index}] 缺少 path` })
-                return
-              }
-              // 逐段校验防穿越：拒绝 .. 路径段与绝对路径；合法文件名含 '..'（如 a..b.json）不误伤。
-              if (/^[a-zA-Z]:/.test(path) || path.startsWith('/') || path.startsWith('\\')
-                || path.split(/[\\/]/).some((segment) => segment === '..')) {
-                writeBridgeJson(res, 400, { ok: false, code: 'characters-rejected', message: `files[${index}].path 非法` })
-                return
-              }
-              normalized.push({ path, content: f.content })
-            }
-            if (normalized.length === 0) {
-              writeBridgeJson(res, 400, { ok: false, code: 'characters-rejected', message: '未收到角色卡文件' })
-              return
-            }
-            const digest = createHash('sha256')
-              .update(normalized.map((entry) => `${entry.path}\u0000${entry.content}`).join('\u0000')).digest('hex')
-            if (request.params.expectedSourceDigest !== undefined && request.params.expectedSourceDigest !== digest) {
-              writeBridgeJson(res, 409, { ok: false, code: 'characters-preview-stale', message: '预览已过期：文件或来源内容已变化，请重新预览后再导入' })
-              return
-            }
-            const orderCharacterId = request.params.promptOrderCharacterId
-            const conversionOptions = orderCharacterId === undefined ? {} : { characterId: orderCharacterId }
-            // 与预设包同一选组事实：多组无法明确选择时预览只回候选，提交拒绝。
-            const orderState = characterOrderSelectionState(normalized, conversionOptions)
-            if (orderState.needsSelection) {
-              if (request.params.preview) {
-                writeBridgeJson(res, 200, {
-                  ok: true,
-                  value: { preview: true, state: 'needs-order-selection', candidates: orderState.candidates },
-                })
-                return
-              }
-              writeBridgeJson(res, 400, { ok: false, code: 'characters-rejected', message: 'SillyTavern prompt_order 包含多个角色，请先选择顺序组再提交' })
-              return
-            }
-            const presetRoot = dirname(dir)
-            // 纯转换（不写盘）先算出目标身份：同一 options 供预览、版本与真正入库使用。
-            const converted = previewCharacterCard(normalized, conversionOptions)
-            if (!converted.ok) {
-              writeBridgeJson(res, 400, { ok: false, code: 'characters-rejected', message: converted.message })
-              return
-            }
-            const previewRevision = computePreviewRevision({
-              files: normalized,
-              ...(orderCharacterId === undefined ? {} : { orderCharacterId }),
-              converter: ST_CONVERTER_VERSION,
-              target: {
-                kind: 'character-card',
-                targetId: converted.id,
-                targetVersion: directoryVersionOf(join(charactersDir(presetRoot), converted.id)),
-                ownerPreset: basename(presetRoot),
-              },
-            })
-            // 预览只转换并回报告，不写角色库；提交仍走既有导入路径（写入白名单校验不因预览放宽）。
-            if (request.params.preview) {
-              writeBridgeJson(res, 200, {
-                ok: true,
-                value: { preview: true, state: 'ready', name: converted.name, sourceDigest: converted.sourceDigest, previewRevision, report: converted.report },
-              })
-              return
-            }
-            if (request.params.expectedPreviewRevision !== undefined) {
-              if (request.params.expectedPreviewRevision !== previewRevision) {
-                writeBridgeJson(res, 409, { ok: false, code: 'characters-preview-stale', message: '预览已过期：文件、顺序组或角色库目标已变化，请重新预览后再导入' })
-                return
-              }
-            } else if (orderCharacterId !== undefined) {
-              writeBridgeJson(res, 409, { ok: false, code: 'characters-preview-stale', message: '缺少预览版本凭据：请重新预览并选择顺序组后再导入' })
-              return
-            }
             if (!guardPresetWrite(dir, res)) return
-            const result = importCharacterCard(presetRoot, normalized, conversionOptions)
-            if (!result.ok) {
-              writeBridgeJson(res, 400, { ok: false, code: 'characters-rejected', message: result.message })
-              return
+            try {
+              const files = await expandPresetSource(request.params.sourceId === undefined ? readBridgeFiles(record.files) : assetSources.read(request.params.sourceId))
+              if (getPresetConfigsDir?.() !== dir) {
+                writeBridgeJson(res, 409, { ok: false, code: 'characters-preview-stale', message: '当前预设已切换，请重新预览' })
+                return
+              }
+              const prepared = prepareImport(files, 'character', request.params)
+              if (prepared.state !== 'ready') {
+                if (!request.params.preview) throw new Error('请先选择内容类型或提示顺序组并重新预览')
+                writeBridgeJson(res, 200, { ok: true, value: { preview: true, ...prepared } })
+                return
+              }
+              const root = canonicalPresetRoot(userPresetsDir())
+              if (assertPresetDirectory(root, basename(dir)) !== realpathSync(dir)) throw new Error('当前预设不属于可写的官方预设根')
+              const cards = canonicalPresetRoot(charactersDir(root), true)
+              let targetId = request.params.targetId ?? prepared.spec.id
+              if (request.params.targetId === undefined && request.params.overwrite !== true) {
+                const wanted = targetId
+                for (let n = 1; presetPathExists(join(cards, targetId)); n++) targetId = `${wanted}-copy${n === 1 ? '' : '-' + n}`
+              }
+              assertPresetId(targetId)
+              const options = { ...request.params, targetId }
+              const converted = previewCharacterCard(files, options)
+              if (!converted.ok) throw new Error(converted.message)
+              const version = directoryVersionOf(join(cards, targetId))
+              const previewRevision = computePreviewRevision({
+                files: [{ path: 'source', content: converted.sourceDigest }, { path: 'choices', content: JSON.stringify([targetId, request.params.targetName ?? '', request.params.overwrite === true, request.params.sourceKind ?? null]) }],
+                ...(request.params.promptOrderCharacterId === undefined ? {} : { orderCharacterId: request.params.promptOrderCharacterId }),
+                converter: 'asset-character/1',
+                target: { kind: 'character-card', targetId, targetVersion: version, ownerPreset: JSON.stringify([root, basename(dir), directoryVersionOf(dir)]) },
+              })
+              if (request.params.preview) {
+                const summary = { sourceName: converted.sourceName, kind: converted.kind, targetId, targetName: converted.name, exists: version !== null,
+                  files: files.map((file) => ({ path: file.path, bytes: decodeAssetFile(file).length })), configCount: prepared.spec.promptConfigs?.length ?? 0, warnings: [] }
+                writeBridgeJson(res, 200, { ok: true, value: { preview: true, state: 'ready', name: converted.name, summary, sourceDigest: converted.sourceDigest, previewRevision, ...(converted.report === undefined ? {} : { report: converted.report }) } })
+                return
+              }
+              if (request.params.expectedPreviewRevision !== previewRevision || request.params.expectedSourceDigest !== converted.sourceDigest) {
+                writeBridgeJson(res, 409, { ok: false, code: 'characters-preview-stale', message: '预览已过期：来源、选择或目标版本已变化，请重新预览' })
+                return
+              }
+              if (version !== null && request.params.overwrite !== true) throw new Error('角色已存在，请明确选择更新或另存')
+              const result = importCharacterCard(root, files, options)
+              if (!result.ok) throw new Error(result.message)
+              writeBridgeJson(res, 200, { ok: true, value: { id: result.id, name: result.name } })
+            } catch (error) {
+              writeBridgeJson(res, 400, { ok: false, code: 'characters-rejected', message: error instanceof Error ? error.message : String(error) })
             }
-            writeBridgeJson(res, 200, { ok: true, value: { id: result.id, name: result.name } })
           },
         }),
         sctx.webServer.register({
@@ -2140,46 +1888,7 @@ export function registerSettingsBridge(
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.charactersImportStream,
           handler: async (req, res) => {
             if (!guard(req, res)) return
-            const dir = getPresetConfigsDir?.() ?? ''
-            if (dir.length === 0) {
-              writeBridgeJson(res, 400, { ok: false, code: 'preset-dir-unavailable', message: 'presetDir 未配置' })
-              return
-            }
-            if (!guardPresetWrite(dir, res)) return
-            const presetRoot = dirname(dir)
-            mkdirSync(presetRoot, { recursive: true })
-            const tempRoot = mkdtempSync(join(presetRoot, '.characters-upload-'))
-            const tempFile = join(tempRoot, 'upload.bin')
-            try {
-              let receivedBytes = 0
-              try {
-                receivedBytes = await writeStreamBody(req, tempFile, MAX_CHARACTER_CARD_STREAM_BYTES)
-              } catch (error) {
-                if (error instanceof StreamBodyTooLargeError) {
-                  writeBridgeJson(res, 413, {
-                    ok: false,
-                    code: 'character-stream-too-large',
-                    message: `角色卡文件超过 ${Math.round(error.maxBytes / 1024 / 1024)}MB 流式上限（已收到 ${error.receivedBytes} 字节）`,
-                  })
-                  return
-                }
-                throw error
-              }
-              const result = importCharacterCardFile(presetRoot, tempFile, uploadFileName(req))
-              if (!result.ok) {
-                writeBridgeJson(res, 400, { ok: false, code: 'characters-rejected', message: result.message })
-                return
-              }
-              writeBridgeJson(res, 200, {
-                ok: true,
-                value: { id: result.id, name: result.name, receivedBytes },
-              })
-            } catch (error) {
-              const message = error instanceof Error ? error.message : String(error)
-              writeBridgeJson(res, 500, { ok: false, code: 'characters-stream-failed', message: `角色卡流式导入失败：${message}` })
-            } finally {
-              rmSync(tempRoot, { recursive: true, force: true })
-            }
+            writeBridgeJson(res, 410, { ok: false, code: 'asset-client-upgrade-required', message: '请刷新页面：角色卡需先上传暂存并预览，再确认导入' })
           },
         }),
         sctx.webServer.register({
@@ -2311,7 +2020,7 @@ export function registerSettingsBridge(
             if (!guardPresetWrite(dir, res)) return
             try {
               const policy = record.policy
-              const policyUrl = new URL('../engine/subagent-tool-policy-core.mjs', import.meta.url)
+              const policyUrl = pathToFileURL(join(packageEngineDir(), 'subagent-tool-policy-core.mjs'))
               const core = await import(policyUrl.href) as {
                 validateSubagentToolPolicy: (raw: unknown) => string[]
               }
@@ -2360,7 +2069,7 @@ export function registerSettingsBridge(
                 writeBridgeJson(res, 400, { ok: false, code: 'subagent-tool-policy-missing', message: '当前预设未配置 subagentToolPolicy' })
                 return
               }
-              const policyUrl = new URL('../engine/subagent-tool-policy-core.mjs', import.meta.url)
+              const policyUrl = pathToFileURL(join(packageEngineDir(), 'subagent-tool-policy-core.mjs'))
               const core = await import(policyUrl.href) as {
                 compileSubagentToolPolicy: (raw: unknown) => unknown
                 resolveSubagentToolPolicy: (compiled: unknown, request: Record<string, unknown>, available: string[]) => unknown

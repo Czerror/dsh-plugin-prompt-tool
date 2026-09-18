@@ -209,7 +209,7 @@ export function apply(ctx: Context, configIn: Config): void {
             // 编辑上下文（settings 层），writePreset 又把它当最高优先级——透传会把激活预设
             // 的提示词配置写进目标预设，切换过去后注入的仍是旧预设内容；且目标组合带上
             // 渲染标记后不再重建，污染被固化。目标预设的配置一律以自身 preset.yml +
-            // 包内模板默认为准（与 materializeImportedPreset 同源理由）。
+            // 包内模板默认为准（与导入候选物化同源理由）。
             promptConfigs: [],
             agentsInstructionText: '',
           })
@@ -300,13 +300,14 @@ export function apply(ctx: Context, configIn: Config): void {
       // 默认模型同步结果回给参数覆盖端点：预设已保存与默认模型同步失败分开表达。
       return applyDefaultModel()
     },
-    // 预设包导入后物化该预设：组合/配置目录/共享引擎落盘，宿主 discovery 立即可见。
+    // host 已安装完整候选；这里只刷新内存，不能二次物化覆盖导入资产。
     (id) => {
-      try {
-        materializeImportedPreset(id)
-      } catch (error) {
-        warn(ctx, `prompt-tool: imported preset materialize failed: ${String(error)}`)
+      if (id === runtime.presetTemplate) {
+        current = readGeneratedContent(activePresetDir(), 'preset.md')
+        currentAgents = readGeneratedContent(activePresetDir(), 'agents.md')
+        reloadPresetParams()
       }
+      skillsRuntime.invalidate()
     },
     () => {
       rebuildPreset()
@@ -509,40 +510,6 @@ registerTuiCommand(
   },
 )
 
-  /**
-   * 物化导入的预设：用其自身 preset.yml（spec 参数 + modules + promptConfigs）渲染
-   * 组合本体 agent.cordis.yml / prompt-configs / 共享引擎，不携带激活预设的
-   * settings 参数（导入预设参数自洽；promptConfigs=[] 避免 settings 覆盖层挤掉
-   * 导入预设自身配置）。宿主 agent-presets discovery 以 agent.cordis.yml 为准，
-   * 不物化则导入的预设从宿主主菜单不可见。
-   */
-  const materializeImportedPreset = (id: string): void => {
-    if (!runtime.writePreset) return
-    const options: WritePresetOptions = {
-      firstTurnAnchor: false,
-      firstTurnText: '',
-      firstTurnCustom: false,
-      guideText: '',
-      guideCustom: false,
-      injectPrompt: false,
-      modelProvider: '',
-      modelName: '',
-      subagentModelProvider: '',
-      subagentModelName: '',
-      bootstrapMaxTokens: undefined,
-      usePtcMode: false,
-      presetDir: DEFAULT_PRESET_DIR,
-      presetOrder: runtime.presetOrder,
-      // 导入预设的配置以自身 preset.yml promptConfigs 为准（settings 覆盖层
-      // 属于激活预设的编辑上下文，不得污染导入预设）。
-      promptConfigs: [],
-      // 导入预设始终使用自己的定义与输出 id。
-      presetTemplate: id,
-      outputId: id,
-    }
-    writePreset('', options)
-  }
-
   let needsInitialApply = true
   const applyState = (): void => {
     const next = currentSource()
@@ -698,6 +665,7 @@ export {
   writePluginState,
 } from './host/manifest.ts'
 export { buildWorldBookEntry } from './host/worldbook.ts'
+export { expandPresetSource, exportPresetPackage, presetImportPreview, installPresetPackage } from './host/preset-package.ts'
 export { ensureWebSurface, resolveProfileDir, scheduleWebSurfaceRepair } from './web-surface.ts'
 export { USER_SKILLS_DIR } from './host/paths.ts'
 export { importSkillsPackage } from './host/skills-import.ts'

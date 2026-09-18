@@ -165,9 +165,11 @@ test('S1：明确的旧生成卡身份仍按当前白名单刷新，外来生成
 for (const endpoint of [BRIDGE_ENDPOINTS.bootstrap, BRIDGE_ENDPOINTS.promptConfigs]) {
   test(`S1：${endpoint} 读取后再保存，不丢合法普通文件填充卡`, async () => {
     mkdirSync(userPresetsDir(), { recursive: true })
-    const dir = mkdtempSync(join(userPresetsDir(), 'preset-'))
+    const id = endpoint === BRIDGE_ENDPOINTS.bootstrap ? 'source-review-bootstrap' : 'source-review-configs'
+    const dir = join(userPresetsDir(), id)
+    mkdirSync(dir)
     mkdirSync(join(dir, 'prompt-configs'))
-    writeFileSync(join(dir, 'preset.yml'), new Document({ id: 'source-review', modules: [], promptConfigs: ordinaryCards }).toString())
+    writeFileSync(join(dir, 'preset.yml'), new Document({ id, modules: [], promptConfigs: ordinaryCards }).toString())
     const validation = await validatePromptConfigs(ordinaryCards)
     assert.equal(validation.valid, true, JSON.stringify(validation.errors))
     for (const file of validation.files) writeFileSync(join(dir, 'prompt-configs', file.file), file.content)

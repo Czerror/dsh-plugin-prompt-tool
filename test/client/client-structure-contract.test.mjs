@@ -85,10 +85,11 @@ test('导入入口统一复用 ImportFileButton，不在业务页重复实现 fi
     'features/characters/CharactersPage.tsx',
   ]) {
     const source = read(file)
-    assert.match(source, /from ['"]\.\.\/\.\.\/ui\/ImportFileButton\.tsx['"]/, `${file} 应复用共享导入按钮`)
+    assert.match(source, /from ['"]\.\.\/\.\.\/ui\/Import(?:FileButton|Dialog)\.tsx['"]/, `${file} 应复用共享导入入口`)
     assert.doesNotMatch(source, /<input\b[^>]*\btype\s*=\s*(?:["']file["']|\{\s*["']file["']\s*\})/, `${file} 不应手写 file input；允许定位共享组件已有输入`)
   }
   const button = read('ui/ImportFileButton.tsx')
+  assert.match(read('ui/ImportDialog.tsx'), /from ['"]\.\/ImportFileButton\.tsx['"]/, '共享弹窗复用唯一文件输入')
   assert.match(button, /<input\b[^>]*\btype="file"/, '共享导入按钮应保留唯一 file input')
   assert.match(button, /webkitdirectory/, '共享导入按钮应支持目录模式')
 })
@@ -116,16 +117,11 @@ test('客户端装配层不自建 root 或观察宿主 DOM（官方 slot + shell
   assert.ok(!css.includes('data-dsh-workspace-slot'), 'CSS 不应探测官方 workspace DOM 槽位')
 })
 
-test('角色卡导入按 PNG 魔数与载荷大小分流', () => {
+test('角色卡与预设导入共用先暂存后预览的字节传输入口', () => {
   const page = readFromRoot('src/client/features/characters/CharactersPage.tsx')
   const client = readFromRoot('src/client/data/bridge-client.ts')
-  const transport = readFromRoot('src/client/data/bridge-transport.ts')
-  assert.match(page, /isPngSignature/)
-  assert.match(page, /bridgeUpload\(file, file\.name\)/)
-  // 选择器与解析范围一致：仅 PNG（JPG/JPEG 会被 importCard 判为不支持）。
-  assert.match(page, /accept="\.png,image\/png"/)
-  assert.doesNotMatch(page, /image\/jpeg/)
-  assert.match(client, /BRIDGE_ENDPOINTS\.charactersImportStream/)
-  assert.match(transport, /export async function uploadBridge/)
-  assert.match(transport, /export function shouldStreamJsonFile/)
+  assert.match(page, /useImportPreviewFlow/)
+  assert.doesNotMatch(page, /bridgeUpload|charactersImportStream/)
+  assert.match(client, /BRIDGE_ENDPOINTS\.assetUpload/)
+  assert.doesNotMatch(client, /BRIDGE_ENDPOINTS\.charactersImportStream/)
 })

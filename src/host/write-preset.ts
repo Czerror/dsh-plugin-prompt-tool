@@ -16,6 +16,7 @@ import { parseDocument, stringify as stringifyYaml } from 'yaml'
 import { validateSubagentToolPolicy } from '../../engine/subagent-tool-policy-core.mjs'
 import { DEFAULT_PRESET_DIR } from './paths.ts'
 import { DEFAULT_PRESET_ID } from '../shared/preset-ids.ts'
+import { assertPresetDirectory, assertPresetId, assertPresetTree, canonicalPresetRoot, presetPathExists, rewritePresetEngineReferences } from './preset-install.ts'
 import { compileCustomTool } from './custom-tools.ts'
 import { validateCustomToolIdentities } from '../shared/engine-capabilities.ts'
 import { ENGINE_PARAM_KEYS, type PresetWriterParams } from '../shared/engine-params.ts'
@@ -94,6 +95,10 @@ export interface WritePresetOptions extends PresetWriterParams {
   presetTemplate?: string
   /** 输出目录/预设 id 覆盖；缺省 = presetTemplate 同名输出。 */
   outputId?: string
+  /** 隔离的定义/资源来源；与最终 outputId 分离，不回退同名已安装预设。 */
+  sourceDir?: string
+  /** 只生成并返回暂存目录；调用方负责安装或清理，不更新共享引擎及目标目录。 */
+  materializeOnly?: boolean
   /** 目录加载失败等非致命告警回调。 */
   warn?: (message: string) => void
 }
@@ -114,6 +119,49 @@ function withLockRetry<T>(action: () => T, retries = 3): T {
 function isLockError(error: unknown): boolean {
   const code = (error as NodeJS.ErrnoException | undefined)?.code
   return code === 'EPERM' || code === 'EACCES' || code === 'EBUSY'
+}
+
+/** 共享引擎是安装级资产；独立于单预设候选物化，指纹不变时不写盘。 */
+export function syncPresetEngine(root: string): void {
+  const presetDir = canonicalPresetRoot(root, true)
+  mkdirSync(presetDir, { recursive: true })
+  const sharedEngine = join(presetDir, '.engine')
+  if (presetPathExists(sharedEngine)) assertPresetTree(sharedEngine)
+  const fingerprint = engineFingerprint()
+  let currentMarker = ''
+  try {
+    currentMarker = readFileSync(join(sharedEngine, ENGINE_FINGERPRINT_MARKER), 'utf8')
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+  }
+  if (currentMarker === fingerprint) return
+  const stagedEngine = mkdtempSync(join(presetDir, '.engine.tmp-'))
+  let committed = false
+  try {
+    for (const entry of readdirSync(ENGINE_DIR, { withFileTypes: true })) {
+      if (entry.name === 'compositions') continue
+      cpSync(join(ENGINE_DIR, entry.name), join(stagedEngine, entry.name), { recursive: true, force: true })
+    }
+    writeFileSync(join(stagedEngine, ENGINE_FINGERPRINT_MARKER), fingerprint, 'utf8')
+    const engineBackup = join(presetDir, `.engine.bak-${Date.now().toString(36)}`)
+    let oldMoved = false
+    if (presetPathExists(sharedEngine)) {
+      withLockRetry(() => renameSync(sharedEngine, engineBackup))
+      oldMoved = true
+    }
+    try {
+      withLockRetry(() => renameSync(stagedEngine, sharedEngine))
+    } catch (error) {
+      if (oldMoved) {
+        try { withLockRetry(() => renameSync(engineBackup, sharedEngine)) } catch { /* 保留 backup 供人工恢复 */ }
+      }
+      throw error
+    }
+    committed = true
+    if (oldMoved) rmSync(engineBackup, { recursive: true, force: true })
+  } finally {
+    if (!committed) rmSync(stagedEngine, { recursive: true, force: true })
+  }
 }
 
 /**
@@ -253,7 +301,7 @@ function materializeCustomTool(tool: Record<string, unknown>, warn: (message: st
 }
 
 /** 把任意单一参数预设模板物化到生成目录;全部失败 fail loud。 */
-export function writePreset(prompt: string, options: WritePresetOptions): void {
+export function writePreset(prompt: string, options: WritePresetOptions): string {
   // 空路径兜底:旧版 UI 保存的空串 presetDir 不得传入 mkdirSync('')。
   const presetDir = options.presetDir.trim().length > 0 ? options.presetDir : DEFAULT_PRESET_DIR
   const templateName = typeof options.presetTemplate === 'string' && options.presetTemplate.trim().length > 0
@@ -273,11 +321,16 @@ export function writePreset(prompt: string, options: WritePresetOptions): void {
   if (!/^[a-z0-9][a-z0-9-]*$/.test(outputId)) {
     throw new Error(`invalid outputId ${JSON.stringify(outputId)}: must match official agent-presets id /^[a-z0-9][a-z0-9-]*$/`)
   }
+  assertPresetId(templateName)
+  assertPresetId(outputId)
   // 可渲染性回退：旧版种子副本（仅元数据 + 本地 .mjs，无 modules/composition/
   // agent.cordis.yml）遮蔽包内新版模板时，直接物化必失败——回退包内模板渲染并
   // warn；纯元数据参数源在第 2 步升级为包内新版（闭环后不再回退）。
-  const resolvedTemplate = resolveRenderablePresetDir(templateName, presetDir)
+  const resolvedTemplate = options.sourceDir === undefined
+    ? resolveRenderablePresetDir(templateName, presetDir)
+    : { dir: options.sourceDir, fallback: false }
   const templateDir = resolvedTemplate.dir
+  assertPresetTree(templateDir)
   if (resolvedTemplate.fallback) {
     options.warn?.(`prompt-tool: 预设 ${templateName} 用户副本缺组合源（modules/agent.cordis.yml），已回退包内模板渲染`)
   }
@@ -297,7 +350,7 @@ export function writePreset(prompt: string, options: WritePresetOptions): void {
   // 官方对齐布局：presetDir 是预设根（官方 USER_PRESET_DIR），每个预设一个
   // 官方预设目录 presetDir/<template>/（agent.cordis.yml 组合本体直接可挂载），
   // 共享引擎物化一份于 presetDir/.engine（点前缀，官方 discovery 跳过）。
-  const targetDir = join(presetDir, outputId)
+  const targetDir = assertPresetDirectory(presetDir, outputId, true)
   mkdirSync(presetDir, { recursive: true })
   const tmpDir = mkdtempSync(join(presetDir, `.${outputId}.tmp-`))
   const outDir = tmpDir
@@ -308,23 +361,23 @@ export function writePreset(prompt: string, options: WritePresetOptions): void {
   // 共享引擎路径重写（引擎只物化一份于预设根 .engine）：组合的引擎引用
   // ./engine/ → ../.engine/（相对预设目录 = 预设根/.engine）；configsDir 相对
   // 引擎文件（.engine/）解析 → ../<template>/{prompt-configs,custom-tools}（指向本预设目录）。
-  let subComposition = composition
-    .replaceAll('./engine/', '../.engine/')
-    .replaceAll('../prompt-configs', `../${outputId}/prompt-configs`)
-    .replaceAll('../custom-tools', `../${outputId}/custom-tools`)
-    .replaceAll('../subagent-tools', `../${outputId}/subagent-tools`)
+  const subComposition = rewritePresetEngineReferences(composition, outputId,
+    new Set(readdirSync(ENGINE_DIR).filter((name) => name.endsWith('.mjs'))), templateDir)
   writeFileSync(join(outDir, 'agent.cordis.yml'), `${RENDER_STAMP}\n${subComposition}`, 'utf8')
 
   // 2) 宿主预设元数据：新布局 preset.yml = 参数 + 元数据一体。
   //    已存在参数文件（种子化/新建复制）时只合并元数据键（name/description/order/meta），
   //    保留 params/modules/promptConfigs/content——不得整体覆盖（会摧毁参数源）。
   const meta = spec.meta !== null && typeof spec.meta === 'object' ? spec.meta as Record<string, unknown> : {}
-  const sourceYamlPath = join(targetDir, 'preset.yml')
+  const sourceYamlPath = options.sourceDir !== undefined || !existsSync(join(targetDir, 'preset.yml'))
+    ? join(templateDir, 'preset.yml') : join(targetDir, 'preset.yml')
   const existingPresetYaml = existsSync(sourceYamlPath)
     ? readFileSync(sourceYamlPath, 'utf8')
     : undefined
   if (existingPresetYaml !== undefined && existingPresetYaml.trim().length > 0) {
     const doc = parseDocument(existingPresetYaml, { logLevel: 'silent' })
+    if (doc.errors.length > 0) throw new Error(`invalid preset.yml: ${doc.errors[0]!.message}`)
+    doc.set('id', outputId)
     doc.setIn(['order'], options.presetOrder)
     // 元数据合并：参数源已有值优先——正常场景 spec 与 existing 同源（写回同值
     // 幂等）；回退渲染场景 spec 来自包内模板，不得覆盖用户命名与 meta。
@@ -349,9 +402,13 @@ export function writePreset(prompt: string, options: WritePresetOptions): void {
   //      空白预设（custom 等无 content）不生成空内容资产——prompt-injector 无文本即禁用。
   if (prompt.trim().length > 0) {
     writeFileSync(join(outDir, 'preset.md'), prompt, 'utf8')
+  } else if (existsSync(join(templateDir, 'preset.md'))) {
+    cpSync(join(templateDir, 'preset.md'), join(outDir, 'preset.md'))
   }
   if (typeof options.agentsInstructionText === 'string' && options.agentsInstructionText.trim().length > 0) {
     writeFileSync(join(outDir, 'agents.md'), options.agentsInstructionText, 'utf8')
+  } else if (existsSync(join(templateDir, 'agents.md'))) {
+    cpSync(join(templateDir, 'agents.md'), join(outDir, 'agents.md'))
   }
 
   // 2.6) 模板目录本地文件复制（官方格式预设的组合引用 ./xxx.mjs 等相对路径模块，
@@ -365,60 +422,6 @@ export function writePreset(prompt: string, options: WritePresetOptions): void {
     const target = join(outDir, entry.name)
     if (entry.isDirectory()) cpSync(source, target, { recursive: true, force: true })
     else cpSync(source, target, { force: true })
-  }
-
-  // 3) 共享引擎：引擎代码只物化一份于预设根 .engine（全部预设组合以 ../.engine 引用）。
-  //    每次写入重刷保证与包内引擎一致，并清理旧版子预设的 engine/ 残留
-  //    （全量/按需复制时代的迁移）。compositions/（生成期资产）不复制。
-  //    指纹标记：包内引擎未变时跳过 rmSync+cpSync（settings 每次变更都会重建，
-  //    引擎重刷是纯浪费且引入 Windows 锁等待）。
-  const sharedEngine = join(presetDir, '.engine')
-  const fingerprint = engineFingerprint()
-  let currentMarker = ''
-  try {
-    currentMarker = readFileSync(join(sharedEngine, ENGINE_FINGERPRINT_MARKER), 'utf8')
-  } catch {
-    // 无标记 = 首次写入或旧版布局，重刷。
-  }
-  if (currentMarker !== fingerprint) {
-    // 先在同一父目录构建完整引擎，再交换目录；复制失败时保留旧引擎，
-    // 避免先 rmSync 造成全局半成品（所有预设共用此目录）。
-    const stagedEngine = mkdtempSync(join(presetDir, '.engine.tmp-'))
-    let committed = false
-    try {
-      for (const entry of readdirSync(ENGINE_DIR, { withFileTypes: true })) {
-        if (entry.name === 'compositions') continue
-        cpSync(join(ENGINE_DIR, entry.name), join(stagedEngine, entry.name), { recursive: true, force: true })
-      }
-      writeFileSync(join(stagedEngine, ENGINE_FINGERPRINT_MARKER), fingerprint, 'utf8')
-
-      const engineBackup = join(presetDir, `.engine.bak-${Date.now().toString(36)}`)
-      let oldMoved = false
-      if (existsSync(sharedEngine)) {
-        withLockRetry(() => renameSync(sharedEngine, engineBackup))
-        oldMoved = true
-      }
-      try {
-        withLockRetry(() => renameSync(stagedEngine, sharedEngine))
-      } catch (error) {
-        if (oldMoved) {
-          try { withLockRetry(() => renameSync(engineBackup, sharedEngine)) } catch { /* 保留 backup 供人工恢复 */ }
-        }
-        throw error
-      }
-      committed = true
-      if (oldMoved) rmSync(engineBackup, { recursive: true, force: true })
-    } finally {
-      if (!committed) rmSync(stagedEngine, { recursive: true, force: true })
-    }
-  }
-  for (const entry of readdirSync(presetDir, { withFileTypes: true })) {
-    if (!entry.isDirectory() || entry.name === 'engine' || entry.name.startsWith('.')) continue
-    try {
-      rmSync(join(presetDir, entry.name, 'engine'), { recursive: true, force: true })
-    } catch {
-      // Windows 瞬时锁：残留无害（无引用），下次写入再试。
-    }
   }
 
   // 4) 提示词配置:引擎默认(按 params)< 模板覆盖 < settings。
@@ -586,6 +589,10 @@ export function writePreset(prompt: string, options: WritePresetOptions): void {
     writeFileSync(join(subagentToolsDir, 'policy.yml'), stringifyYaml(spec.subagentToolPolicy, { lineWidth: 0 }), 'utf8')
   }
 
+  // 候选模式在此结束，安装事务由调用方单独执行，绝不进入原地覆盖回退。
+  if (options.materializeOnly) return outDir
+  syncPresetEngine(presetDir)
+
   // 7) 原子提交:新目录完全写好后替换旧目录;失败时恢复旧目录并清理临时目录。
   //    目录被占用（Windows 打开句柄/进程 cwd 拒绝整目录改名，如预设内 skills 被
   //    技能监听器持有）时退回原地合并写，语义与整目录交换一致：同名项覆盖、
@@ -620,6 +627,7 @@ export function writePreset(prompt: string, options: WritePresetOptions): void {
     }
     if (oldMoved) rmSync(backupDir, { recursive: true, force: true })
   }
+  return targetDir
   } catch (error) {
     rmSync(tmpDir, { recursive: true, force: true })
     throw error

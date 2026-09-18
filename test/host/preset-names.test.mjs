@@ -44,14 +44,14 @@ test('种子化仅补缺失的单个目录，已有定义、组合和资源逐�
   assert.equal(readFileSync(join(root, 'standard', 'legacy.txt'), 'utf8'), 'legacy stays')
 })
 
-test('新建按包内同名复制，递增副本也不改写定义正文', () => {
+test('新建按包内同名复制，递增副本同步定义 ID 并保留其余字段', () => {
   const root = mkdtempSync(join(home, 'clone-'))
   const source = readFileSync(join(packagePresetDir(), 'pt-custom', 'preset.yml'), 'utf8')
   assert.deepEqual(cloneBuiltinPreset('pt-custom', false, root), { ok: true, id: 'pt-custom' })
   assert.equal(readFileSync(join(root, 'pt-custom', 'preset.yml'), 'utf8'), source)
   assert.equal(cloneBuiltinPreset('pt-custom', false, root).ok, false)
   assert.deepEqual(cloneBuiltinPreset('pt-custom', true, root), { ok: true, id: 'pt-custom-2' })
-  assert.equal(readFileSync(join(root, 'pt-custom-2', 'preset.yml'), 'utf8'), source)
+  assert.deepEqual(parse(readFileSync(join(root, 'pt-custom-2', 'preset.yml'), 'utf8')), { ...parse(source), id: 'pt-custom-2' })
   assert.equal(cloneBuiltinPreset('custom', false, root).ok, false)
 })
 

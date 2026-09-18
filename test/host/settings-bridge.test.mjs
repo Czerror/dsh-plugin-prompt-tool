@@ -1,9 +1,9 @@
 import { after, test } from 'node:test'
 import assert from 'node:assert/strict'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { Readable } from 'node:stream'
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { parse as parseYaml } from 'yaml'
 
 const bridgeHome = mkdtempSync(join(tmpdir(), 'pt-settings-bridge-home-'))
@@ -44,9 +44,12 @@ function skillsStateStub(overrides = {}) {
 const PREFIX = '/api/prompt-tool/settings'
 const userPresetRoot = join(bridgeHome, '.agent-presets')
 
+let presetSequence = 0
 function makeUserPresetDir(prefix) {
   mkdirSync(userPresetRoot, { recursive: true })
-  return mkdtempSync(join(userPresetRoot, prefix))
+  const dir = join(userPresetRoot, `${prefix}${++presetSequence}`)
+  mkdirSync(dir)
+  return dir
 }
 
 function makeHarness(services = {}) {
@@ -393,7 +396,7 @@ test('settings bridge /param-overrides 接受 >64KB promptConfigs 载荷（不�
   // handler 写路径 = dirname(getPresetConfigsDir())/basename(...)/preset.yml：
   // 激活预设目录就是 preset.yml 所在目录，fixture 直接建在 dir 下。
   const dir = makeUserPresetDir('pt-overrides-big-')
-  writeFileSync(join(dir, 'preset.yml'), 'id: beta\n', 'utf8')
+  writeFileSync(join(dir, 'preset.yml'), `id: ${basename(dir)}\n`, 'utf8')
   try {
     registerSettingsBridge(
       ctx,
@@ -426,7 +429,7 @@ test('settings bridge /param-overrides 接受 >64KB promptConfigs 载荷（不�
 test('settings bridge /param-overrides 拒绝未知引擎参数键（防死键落盘）', async () => {
   const { ctx, handlers } = makeHarness()
   const dir = makeUserPresetDir('pt-overrides-unknown-')
-  writeFileSync(join(dir, 'preset.yml'), 'id: beta\n', 'utf8')
+  writeFileSync(join(dir, 'preset.yml'), `id: ${basename(dir)}\n`, 'utf8')
   try {
     registerSettingsBridge(
       ctx,
@@ -448,7 +451,7 @@ test('settings bridge /param-overrides 拒绝未知引擎参数键（防死键�
     assert.equal(payload.ok, false)
     assert.equal(payload.code, 'overrides-unknown-key')
     assert.match(payload.message, /notAnEngineParam/)
-    assert.equal(readFileSync(join(dir, 'preset.yml'), 'utf8'), 'id: beta\n', '未知键不得写入 preset.yml')
+    assert.equal(readFileSync(join(dir, 'preset.yml'), 'utf8'), `id: ${basename(dir)}\n`, '未知键不得写入 preset.yml')
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
@@ -457,7 +460,7 @@ test('settings bridge /param-overrides 拒绝未知引擎参数键（防死键�
 test('settings bridge /param-overrides 数值参数保存前校验（temperature/maxTokens 响亮失败）', async () => {
   const { ctx, handlers } = makeHarness()
   const dir = makeUserPresetDir('pt-overrides-invalid-')
-  writeFileSync(join(dir, 'preset.yml'), 'id: beta\n', 'utf8')
+  writeFileSync(join(dir, 'preset.yml'), `id: ${basename(dir)}\n`, 'utf8')
   try {
     registerSettingsBridge(
       ctx,
@@ -484,7 +487,7 @@ test('settings bridge /param-overrides 数值参数保存前校验（temperature
     assert.match(payload.message, /modelMaxTokens/)
     assert.match(payload.message, /subagentTemperature/)
     assert.match(payload.message, /subagentMaxTokens/)
-    assert.equal(readFileSync(join(dir, 'preset.yml'), 'utf8'), 'id: beta\n', '非法值不得写入 preset.yml')
+    assert.equal(readFileSync(join(dir, 'preset.yml'), 'utf8'), `id: ${basename(dir)}\n`, '非法值不得写入 preset.yml')
 
     // 合法值（含空串 = 删键回落、number 直写两通道）照常 200。
     const res2 = fakeRes()
@@ -502,7 +505,7 @@ test('参数保存拒绝空工具阶段和非法深度，失败不写盘、不�
   const { ctx, handlers } = makeHarness()
   const dir = makeUserPresetDir('pt-param-validation-')
   const file = join(dir, 'preset.yml')
-  const original = '# keep comment\nid: validation\nmodules: [tool-bootstrap]\nunknown: keep\n'
+  const original = `# keep comment\nid: ${basename(dir)}\nmodules: [tool-bootstrap]\nunknown: keep\n`
   writeFileSync(file, original, 'utf8')
   let rebuilds = 0
   registerSettingsBridge(ctx, 'prompt-tool', () => ({ available: true, providers: [] }),
@@ -543,7 +546,7 @@ test('模板变量与参数独立保存，读取与 bootstrap 不回退旧 param
   const dir = makeUserPresetDir('pt-variable-isolation-')
   const file = join(dir, 'preset.yml')
   const params = { usePtcMode: false, stagePreUnlock: 0, legacyOnly: '旧值', variables: { nested: '嵌套旧值' } }
-  writeFileSync(file, `# keep comment\nid: variable-isolation\nparams: ${JSON.stringify(params)}\n`, 'utf8')
+  writeFileSync(file, `# keep comment\nid: ${basename(dir)}\nparams: ${JSON.stringify(params)}\n`, 'utf8')
   registerSettingsBridge(ctx, 'prompt-tool', () => ({ available: true, providers: [] }),
     () => skillsStateStub(), () => '', undefined, () => dir)
   const write = handlers.get(PREFIX + BRIDGE_ENDPOINTS.presetVariables)
@@ -597,17 +600,17 @@ test('预设列表、导出、复制、删除、新建与导入都作用于官�
   }
   const meta = await call('meta')
   assert.ok(meta.meta.presets.some(preset => preset.id === id), '预设列表应含官方预设根下的预设')
-  const exported = await call('exportPreset', { id })
+  const exported = await call('exportPreset', { id, mode: 'definition' })
   assert.equal(exported.content, readFileSync(join(activeDir, 'preset.yml'), 'utf8'))
   const copied = await call('presetDuplicate', { id })
-  assert.equal(readFileSync(join(userPresetRoot, copied.id, 'preset.yml'), 'utf8'), exported.content)
+  assert.deepEqual(parseYaml(readFileSync(join(userPresetRoot, copied.id, 'preset.yml'), 'utf8')), { ...parseYaml(exported.content), id: copied.id })
   await call('presetDelete', { id: copied.id })
   assert.equal(existsSync(join(userPresetRoot, copied.id)), false)
   const cloned = await call('presetClone', { id: 'pt-custom' })
   assert.ok(existsSync(join(userPresetRoot, cloned.id, 'preset.yml')))
-  const imported = await call('importPresetPackage', {
-    files: [{ path: 'preset.yml', content: 'id: root-import\nmodules: []\n' }],
-  })
+  const files = [{ path: 'preset.yml', content: 'id: root-import\nname: Root Import\nmodules: []\n' }]
+  const preview = await call('importPresetPackage', { files, preview: true })
+  const imported = await call('importPresetPackage', { files, expectedSourceDigest: preview.sourceDigest, expectedPreviewRevision: preview.previewRevision })
   assert.ok(existsSync(join(userPresetRoot, imported.id, 'preset.yml')))
   assert.equal(readFileSync(join(activeDir, 'preset.yml'), 'utf8'), presetContent, '管理操作不得改动源预设')
 })
@@ -637,7 +640,7 @@ test('settings bridge /configs-validate 接受 >64KB promptConfigs 载荷（不�
 test('settings bridge：非法 JSON 与错误写入结构返回 400 且不落盘', async () => {
   const dir = makeUserPresetDir('pt-invalid-body-')
   const presetFile = join(dir, 'preset.yml')
-  const original = 'id: beta\nparams:\n  firstTurnAnchor: false\n'
+  const original = `id: ${basename(dir)}\nparams:\n  firstTurnAnchor: false\n`
   writeFileSync(presetFile, original, 'utf8')
   try {
     const { ctx, handlers } = makeHarness()
@@ -685,7 +688,6 @@ test('settings bridge：system 预设拒绝全部当前预设写入', async () =
       [BRIDGE_ENDPOINTS.importPreset, { contents: [{ scope: 'preset', content: 'changed' }] }],
       [BRIDGE_ENDPOINTS.customTools, { customTools: [] }],
       [BRIDGE_ENDPOINTS.charactersImport, { files: [{ path: 'card.json', content: '{}' }] }],
-      [BRIDGE_ENDPOINTS.charactersImportStream, 'raw'],
       [BRIDGE_ENDPOINTS.charactersDelete, { id: 'card' }],
       [BRIDGE_ENDPOINTS.charactersApply, { id: 'card' }],
       [BRIDGE_ENDPOINTS.charactersRemove, { id: 'card' }],
@@ -712,7 +714,7 @@ test('settings bridge：system 预设拒绝全部当前预设写入', async () =
 test('settings bridge /param-overrides rebuild=false 只落盘不重建（预设切换免双重建）', async () => {
   const { ctx, handlers } = makeHarness()
   const dir = makeUserPresetDir('pt-overrides-no-rebuild-')
-  writeFileSync(join(dir, 'preset.yml'), 'id: beta\n', 'utf8')
+  writeFileSync(join(dir, 'preset.yml'), `id: ${basename(dir)}\n`, 'utf8')
   let rebuildCount = 0
   try {
     registerSettingsBridge(
@@ -784,7 +786,7 @@ test('settings bridge：JSON 端点限制 32 MiB，角色卡原始流限制 64 M
   assert.match(payload.message, /32MB/)
 })
 
-test('settings bridge：角色卡原始文件流接受 64 MiB 边界 PNG 并清理临时文件', async () => {
+test('settings bridge：原始来源上传接受 64 MiB 边界，只暂存并可显式释放', async () => {
   const { ctx, handlers } = makeHarness()
   const root = makeUserPresetDir('pt-character-stream-')
   const activeDir = join(root, 'anchored')
@@ -799,8 +801,8 @@ test('settings bridge：角色卡原始文件流接受 64 MiB 边界 PNG 并清�
       undefined,
       () => activeDir,
     )
-    const handler = handlers.get(PREFIX + BRIDGE_ENDPOINTS.charactersImportStream)
-    assert.ok(handler, '角色卡流式端点应注册')
+    const handler = handlers.get(PREFIX + BRIDGE_ENDPOINTS.assetUpload)
+    assert.ok(handler, '上传暂存端点应注册')
     const png = makePngCharacterCard()
     const req = Readable.from([png, Buffer.alloc(MAX_CHARACTER_CARD_STREAM_BYTES - png.length)])
     req.method = 'POST'
@@ -811,16 +813,17 @@ test('settings bridge：角色卡原始文件流接受 64 MiB 边界 PNG 并清�
     assert.equal(res.status, 200)
     const payload = JSON.parse(res.body)
     assert.equal(payload.ok, true)
-    assert.equal(payload.value.receivedBytes, MAX_CHARACTER_CARD_STREAM_BYTES)
-    const cardDir = join(root, '.characters', payload.value.id)
-    assert.equal(statSync(join(cardDir, 'avatar.png')).size, MAX_CHARACTER_CARD_STREAM_BYTES)
-    assert.equal(JSON.parse(readFileSync(join(cardDir, 'card.json'), 'utf8')).name, '流式测试卡')
-    assert.deepEqual(readdirSync(root).filter((name) => name.startsWith('.characters-upload-')), [])
+    assert.equal(payload.value.bytes, MAX_CHARACTER_CARD_STREAM_BYTES)
+    assert.equal(existsSync(join(root, '.characters')), false, '上传不进入角色库')
+    const release = fakeRes()
+    await handlers.get(PREFIX + BRIDGE_ENDPOINTS.assetRelease)(fakeReq({ [Symbol.asyncIterator]: async function* () { yield Buffer.from(JSON.stringify({ sourceId: payload.value.sourceId })) } }), release)
+    assert.equal(release.status, 200)
+    assert.equal(JSON.parse(release.body).value.released, true)
   } finally {
     rmSync(root, { recursive: true, force: true })
   }
 })
-test('settings bridge：角色卡流式导入超过 64 MiB 返回 413 并清理临时文件', async () => {
+test('settings bridge：原始来源上传超过 64 MiB 返回 413 并清理临时文件', async () => {
   const { ctx, handlers } = makeHarness()
   const root = makeUserPresetDir('pt-character-stream-limit-')
   const activeDir = join(root, 'anchored')
@@ -835,8 +838,8 @@ test('settings bridge：角色卡流式导入超过 64 MiB 返回 413 并清理�
       undefined,
       () => activeDir,
     )
-    const handler = handlers.get(PREFIX + BRIDGE_ENDPOINTS.charactersImportStream)
-    assert.ok(handler, '角色卡流式端点应注册')
+    const handler = handlers.get(PREFIX + BRIDGE_ENDPOINTS.assetUpload)
+    assert.ok(handler, '上传暂存端点应注册')
     const chunk = Buffer.alloc(1024 * 1024, 0x78)
     const req = Readable.from((async function* () {
       for (let index = 0; index < 65; index += 1) yield chunk
@@ -849,9 +852,9 @@ test('settings bridge：角色卡流式导入超过 64 MiB 返回 413 并清理�
     assert.equal(res.status, 413)
     const payload = JSON.parse(res.body)
     assert.equal(payload.ok, false)
-    assert.equal(payload.code, 'character-stream-too-large')
-    assert.match(payload.message, /64MB/)
-    assert.deepEqual(readdirSync(root).filter((name) => name.startsWith('.characters-upload-')), [])
+    assert.equal(payload.code, 'asset-upload-rejected')
+    assert.match(payload.message, /64 MiB/)
+    assert.deepEqual(readdirSync(join(bridgeHome, '.prompt-tool-uploads')), [])
   } finally {
     rmSync(root, { recursive: true, force: true })
   }
@@ -882,7 +885,7 @@ test('settings bridge Origin 完整校验 scheme/host/port（端口不匹配拒�
 test('settings bridge /custom-tools 保存时自动追加工具模块', async () => {
   const dir = makeUserPresetDir('pt-custom-tools-modules-')
   try {
-    writeFileSync(join(dir, 'preset.yml'), ['id: beta', 'modules: []', ''].join(String.fromCharCode(10)), 'utf8')
+    writeFileSync(join(dir, 'preset.yml'), [`id: ${basename(dir)}`, 'modules: []', ''].join(String.fromCharCode(10)), 'utf8')
     const { ctx, handlers } = makeHarness()
     registerSettingsBridge(ctx, 'prompt-tool',
       () => ({ available: true, providers: [] }),
@@ -913,7 +916,7 @@ test('settings bridge /custom-tools 保存时自动追加工具模块', async ()
 test('settings bridge /custom-tools 拒绝缺少 modules 的预设', async () => {
   const dir = makeUserPresetDir('pt-custom-tools-no-modules-')
   try {
-    writeFileSync(join(dir, 'preset.yml'), 'id: plain' + String.fromCharCode(10), 'utf8')
+    writeFileSync(join(dir, 'preset.yml'), `id: ${basename(dir)}\n`, 'utf8')
     const { ctx, handlers } = makeHarness()
     registerSettingsBridge(ctx, 'prompt-tool',
       () => ({ available: true, providers: [] }),
@@ -939,9 +942,9 @@ test('settings bridge /custom-tools 拒绝缺少 modules 的预设', async () =>
 test('settings bridge /engine-capability 删除显式能力并只重建一次', async () => {
   const presetRoot = join(bridgeHome, '.agent-presets')
   mkdirSync(presetRoot, { recursive: true })
-  const dir = mkdtempSync(join(presetRoot, 'pt-engine-capability-bridge-'))
+  const dir = makeUserPresetDir('pt-engine-capability-bridge-')
   try {
-    writeFileSync(join(dir, 'preset.yml'), 'id: beta\nname: beta\nversion: "1"\nengineCompat: ">=0"\nmodules: [context-gate, tool-filter]\n', 'utf8')
+    writeFileSync(join(dir, 'preset.yml'), `id: ${basename(dir)}\nname: beta\nversion: "1"\nengineCompat: ">=0"\nmodules: [context-gate, tool-filter]\n`, 'utf8')
     const { ctx, handlers } = makeHarness()
     let rebuilds = 0
     registerSettingsBridge(ctx, 'prompt-tool',
@@ -976,7 +979,7 @@ test('settings bridge /engine-capability 删除显式能力并只重建一次', 
 test('自定义工具完整校验失败不写盘、不重建，合法工具只重建一次', async () => {
   const dir = makeUserPresetDir('pt-custom-tool-validation-')
   const file = join(dir, 'preset.yml')
-  const original = '# 用户注释\nid: beta\nmodules: []\nunknown: keep\n'
+  const original = `# 用户注释\nid: ${basename(dir)}\nmodules: []\nunknown: keep\n`
   writeFileSync(file, original, 'utf8')
   const { ctx, handlers } = makeHarness()
   let rebuilds = 0
@@ -1016,7 +1019,7 @@ test('自定义工具完整校验失败不写盘、不重建，合法工具只�
 test('预设身份拦截跨预设旧请求及请求体读取期间的切换，任何通道都不串写', async () => {
   const a = makeUserPresetDir('pt-identity-a-')
   const b = makeUserPresetDir('pt-identity-b-')
-  for (const dir of [a, b]) writeFileSync(join(dir, 'preset.yml'), 'id: test\nmodules: []\n', 'utf8')
+  for (const dir of [a, b]) writeFileSync(join(dir, 'preset.yml'), `id: ${basename(dir)}\nmodules: []\n`, 'utf8')
   const original = readFileSync(join(b, 'preset.yml'), 'utf8')
   let active = b
   let rebuilds = 0
@@ -1063,7 +1066,7 @@ test('预设身份拦截跨预设旧请求及请求体读取期间的切换，�
 test('公开晋升信号与门控开关冲突在落盘前拒绝，保留旧参数', async () => {
   const dir = makeUserPresetDir('pt-gate-conflict-')
   const file = join(dir, 'preset.yml')
-  const original = 'id: test\nmodules: [tool-bootstrap]\nmoduleConfigs:\n  tool-bootstrap:\n    promoteOn: tool-call\n'
+  const original = `id: ${basename(dir)}\nmodules: [tool-bootstrap]\nmoduleConfigs:\n  tool-bootstrap:\n    promoteOn: tool-call\n`
   writeFileSync(file, original, 'utf8')
   const { ctx, handlers } = makeHarness()
   registerSettingsBridge(ctx, 'prompt-tool', () => ({ available: true, providers: [] }),
@@ -1088,7 +1091,7 @@ test('公开晋升信号与门控开关冲突在落盘前拒绝，保留旧参�
 test('settings bridge /subagent-tool-policy 保存、停用与模块装配均为原子操作', async () => {
   const dir = makeUserPresetDir('pt-subagent-policy-')
   try {
-    writeFileSync(join(dir, 'preset.yml'), 'id: beta\nmodules: []\nunknown: keep\n', 'utf8')
+    writeFileSync(join(dir, 'preset.yml'), `id: ${basename(dir)}\nmodules: []\nunknown: keep\n`, 'utf8')
     const { ctx, handlers } = makeHarness()
     let rebuilds = 0
     registerSettingsBridge(ctx, 'prompt-tool', () => ({ available: true, providers: [] }),
@@ -1124,7 +1127,7 @@ test('settings bridge /subagent-tool-policy 保存、停用与模块装配均为
 test('settings bridge /persona 读写顶层 persona 段（官方 dsh-persona config 同构）并重建', async () => {
   const { ctx, handlers } = makeHarness()
   const dir = makeUserPresetDir('pt-persona-')
-  writeFileSync(join(dir, 'preset.yml'), 'id: beta\nname: beta\nunknown: keep\n', 'utf8')
+  writeFileSync(join(dir, 'preset.yml'), `id: ${basename(dir)}\nname: beta\nunknown: keep\n`, 'utf8')
   let rebuilds = 0
   try {
     registerSettingsBridge(ctx, 'prompt-tool',
@@ -1179,7 +1182,7 @@ test('settings bridge /persona 非法载荷 400，complete 与提示词配置「
       () => {},
     )
     // 非法载荷：缺 required prefix。
-    writeFileSync(join(dir, 'preset.yml'), 'id: beta\n', 'utf8')
+    writeFileSync(join(dir, 'preset.yml'), `id: ${basename(dir)}\n`, 'utf8')
     register(dir)
     const handler = handlers.get(PREFIX + BRIDGE_ENDPOINTS.persona)
     const invalid = fakeRes()
@@ -1190,7 +1193,7 @@ test('settings bridge /persona 非法载荷 400，complete 与提示词配置「
     assert.equal(JSON.parse(invalid.body).code, 'preset-persona-invalid')
     assert.equal(parseYaml(readFileSync(join(dir, 'preset.yml'), 'utf8')).persona, undefined, '非法载荷不得写盘')
     // 方向一：顶层 persona 已独占 → 保存带 complete 的提示词配置被拒。
-    writeFileSync(join(dir, 'preset.yml'), 'id: beta\npersona:\n  prefix: P\n  complete: true\n', 'utf8')
+    writeFileSync(join(dir, 'preset.yml'), `id: ${basename(dir)}\npersona:\n  prefix: P\n  complete: true\n`, 'utf8')
     const overrides = handlers.get(PREFIX + BRIDGE_ENDPOINTS.paramOverrides)
     const conflict = fakeRes()
     await overrides(fakeReq({ [Symbol.asyncIterator]: async function* () {
@@ -1200,7 +1203,7 @@ test('settings bridge /persona 非法载荷 400，complete 与提示词配置「
     assert.equal(JSON.parse(conflict.body).code, 'overrides-invalid-value')
     // 方向二：提示词配置已独占 → 保存 complete 顶层人设被拒。
     writeFileSync(join(dir, 'preset.yml'), [
-      'id: beta',
+      `id: ${basename(dir)}`,
       'promptConfigs:',
       '  - id: exclusive',
       '    layer: system-section',

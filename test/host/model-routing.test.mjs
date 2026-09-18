@@ -15,7 +15,7 @@
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { isolatedHome } from '../fixtures/host-harness.mjs'
 
@@ -527,8 +527,9 @@ function paramSyncReq(payload) {
 
 test('/param-overrides 回传 modelSync 四态；rebuild:false 不带同步事实', async () => {
   mkdirSync(presetRoot, { recursive: true })
-  const dir = mkdtempSync(join(presetRoot, 'pt-overrides-sync-'))
-  writeFileSync(join(dir, 'preset.yml'), 'id: beta\n', 'utf8')
+  const dir = join(presetRoot, 'pt-overrides-sync')
+  mkdirSync(dir)
+  writeFileSync(join(dir, 'preset.yml'), 'id: pt-overrides-sync\n', 'utf8')
   const { ctx, handlers } = makeParamSyncHarness()
   let next = { status: 'synced' }
   try {

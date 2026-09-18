@@ -28,7 +28,7 @@ export function registerCharacterTools(ctx: Context, host: CharacterToolHost): (
     const disposers: Array<() => void> = []
     disposers.push(toolsCtx.tools.register(defineTool({
       name: 'character_list',
-      description: '列出 SillyTavern 角色卡库：每张卡（id / 名称 / 描述 / 是否已导入当前预设）。'
+      description: '列出角色卡库：每张卡（id / 名称 / 描述 / 是否已导入当前预设）。'
         + '导入角色卡、应用到当前预设或移除前先调用本工具获取 id。',
       parameters: {},
       output: {
@@ -61,7 +61,7 @@ export function registerCharacterTools(ctx: Context, host: CharacterToolHost): (
 
     disposers.push(toolsCtx.tools.register(defineTool({
       name: 'character_import',
-      description: '导入 SillyTavern 角色卡（chara_card_v2/v3 JSON）到角色卡库：接收角色卡 JSON 文本内容'
+      description: '导入一张 SillyTavern 角色卡或自包含原生角色片段到角色卡库：接收 JSON / YAML 文本内容'
         + '（可先读取文件）。PNG 角色卡请让用户从 UI 角色管理页导入。导入后需调用 character_apply 应用到当前预设。',
       parameters: {
         name: {
@@ -72,7 +72,7 @@ export function registerCharacterTools(ctx: Context, host: CharacterToolHost): (
         content: {
           type: 'string',
           required: true,
-          description: '角色卡 JSON 文本（spec: chara_card_v2/v3，含 name/description/data 等字段）。',
+          description: '角色卡 JSON / YAML 文本：SillyTavern chara_card_v2/v3，或含 id/name/promptConfigs 的原生片段。原生片段只支持内嵌 text/texts 和控制配置，不支持外部文件。',
         },
       },
       output: {
@@ -95,7 +95,7 @@ export function registerCharacterTools(ctx: Context, host: CharacterToolHost): (
 
     disposers.push(toolsCtx.tools.register(defineTool({
       name: 'character_apply',
-      description: '把角色卡库中一张角色卡的参数（角色设定 / 系统提示 / 开场白 / 世界书 / 提示词库 / 采样参数）'
+      description: '把角色卡库中一张角色卡的参数（角色设定 / 系统提示 / 开场白 / 世界书 / 提示词配置）'
         + '合并进当前激活预设（promptConfigs 带 chara-<id>- 前缀防冲突，params 合并，meta.importedCharacters 记录），'
         + '并立即重建生成目录。重复应用幂等。',
       parameters: {

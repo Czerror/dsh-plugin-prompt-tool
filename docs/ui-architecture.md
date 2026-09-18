@@ -277,7 +277,7 @@ workspace-pages.ts 是页面元数据的唯一来源。默认页为 features，�
 | tools | 工具预览 | 顶置统一搜索；当前会话／所选预设两个可折叠分组，预设选择位于分组标题右侧；双列展开详情卡，680px 以下单列 |
 | skills | 技能设置 | 技能根与资产卡（用户技能根、创建、复制导入、技能文件夹引用）、状态与来源筛选、按来源分组的 SkillRow（调用策略开关、删除） |
 | presets | 预设配置 | 全局生成开关、AGENTS 路径与生成顺序设置、PresetSwitcher 与预设 CRUD |
-| characters | 角色管理 | PNG/JSON 导入、角色卡库、应用/移除/删除与目录打开 |
+| characters | 角色管理 | PNG/JSON/YAML 预览导入、角色卡库、应用/移除/删除与目录打开 |
 
 预设人设卡（`features/persona/PresetPersonaCard.tsx`）编辑 preset.yml 顶层 `persona` 段的四个可编辑项：`prefix`、`suffix`，以及 `complete`（独占）与 `includeRuntimeContext`（动态运行时上下文）两个开关（后者默认开启）。读写都走 `/persona`，写由 host 校验并原子写盘；`complete` 与提示词配置的「独占」互斥，由 bridge 在写盘前 fail loud。卡头 meta 区分「存在 persona 段」与「继承预设」——空对象 `{}` 也算存在，不等于有实际内容。四项均未改动时保存落成删除语义（不带 persona 写盘）；二次确认的移除入口只在 persona 段已存在时渲染。它只在主会话页出现，不在子代理页渲染。
 
@@ -415,28 +415,31 @@ JSON bridge 的统一上限为 32 MiB；角色卡原始文件流独立限制为 
 
 ### 7.4 导入预览与提交
 
-预设包导入与角色卡 PNG/JSON 导入共用同一状态机（`data/use-import-preview-flow.ts`），两处入口（`features/presets/PresetSwitcher.tsx`、`features/characters/CharactersPage.tsx`）只注入自己的 `preview` / `commit` 处理器。**导入从不直接写盘**：先只读预览，服务端同源转换并回报有损信息与版本，用户确认后才提交。
+预设与角色卡的文件读取、上传、预览、确认和结果共用 `data/use-import-preview-flow.ts`；`ui/ImportDialog.tsx` 只接 props/callback，业务入口注入各自的处理器。原始上传仅写暂存区，所有大小的 PNG/JSON/YAML 和预设 ZIP／文件夹都先预览，确认后才更新目标。协议和边界见 [资产交换](asset-transfer.md)。
 
 阶段与「按钮可用」是两件事：
 
 | 阶段 | 含义 | 界面行为 |
 |---|---|---|
-| idle | 无在途导入 | — |
+| idle | 无在途导入 | 选择文件／文件夹 |
 | reading | 正在读取／预览（可能是重新预览） | 卡片保留上一次内容；换文件才清空旧预览 |
 | confirming | 有 `ready` 预览或顺序组候选，等待用户决定 | 确认与取消可用且可键盘聚焦；只有确实禁用的动作变灰（候选未选组时确认禁用） |
 | submitting | 已提交，等待服务端结果 | 确认与取消禁用；成功后刷新事实 |
+| stale | 来源或目标版本改变 | 保留所选来源，必须重新预览 |
+| error | 读取／预览／提交失败 | 就地错误与重试入口，不自动覆盖 |
+| complete | 提交完成 | 显示结果；列表刷新失败单独重试，不重复安装 |
 
 失败与失效分支：
 
 | 触发 | 行为 |
 |---|---|
-| 需要选顺序组（`candidates`） | 只呈现候选卡，确认不可用；选组或换组都重新预览，旧 `ready` 作废 |
-| 预览响应迟到 | 按请求序号丢弃，不覆盖更新的状态；重预览期间的改选记在 `pendingGroupRef`，在途响应返回后按最新选择重预览 |
-| 提交返回 `stale`（`previewRevision` 不符） | 保留文件与预览，提示需重新导入；不再自动重试 |
+| 需要选类型／顺序组 | 只呈现真实候选，确认不可用；选择后重新预览，旧 ready 作废 |
+| 预览响应迟到 | 按请求序号丢弃，不覆盖较新的来源或选择 |
+| 提交返回 stale（previewRevision 不符） | 保留来源与选择，旧确认失效，提供“重新预览” |
 | 提交非过期失败 | 保留文件与预览：再次确认即重试，取消才跳过该文件 |
 | 目标预设切换、页面卸载 | 结束等待、让迟到响应失效，不继续写下一个文件；不悬挂 Promise |
 
-同一份预览只完成一次：`decisionRef` 在 settle 时清空，连点确认最多产生一次提交。每次 `run()` 是独立的生命周期，角色卡的 `files` 模式逐张排队，取消只跳过当前单元。
+同一份预览只提交一次，读取与提交期间拒绝重复操作。角色卡逐张排队，“跳过这张”与“结束本次导入”分开；卸载释放暂存来源，不提交后续项。同名默认另存，覆盖使用现有 ConfirmDialog。导出范围是互斥单选：完整 ZIP／仅定义 YAML；显示资源清单、缺失依赖与需明确决定的历史记忆项。弹窗复用 DialogSurface 焦点逻辑，宽预览只增加 size 修饰，不建立第二套浮层系统。
 
 ## 8. 业务 Feature
 

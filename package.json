@@ -146,6 +146,7 @@
     "verify:host": "node scripts/verify-host-contracts.mjs"
   },
   "dependencies": {
+    "@zip.js/zip.js": "2.15.0",
     "yaml": "^2.9.0"
   }
 }

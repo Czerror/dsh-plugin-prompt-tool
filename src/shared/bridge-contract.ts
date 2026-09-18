@@ -5,6 +5,7 @@
  * 改路径或载荷形状必须同步更新 test/shared/bridge-contract.test.mjs。
  */
 import type { PersonaSpec } from './persona-section.ts'
+import type { AssetImportRequest, AssetSummary, ImportKind, PresetExportRequest, PresetExportResult } from './asset-transfer.ts'
 import type { SkillPolicyChange, SkillsCatalogSnapshot } from './skills.ts'
 import type {
   InstructionFileWriteResult,
@@ -47,6 +48,8 @@ export const BRIDGE_ENDPOINTS = {
   presetVariables: '/preset-variables',
   customTools: '/custom-tools',
   importPresetPackage: '/import-preset-package',
+  assetUpload: '/asset-upload',
+  assetRelease: '/asset-release',
   exportPreset: '/export-preset',
   presetDelete: '/preset-delete',
   presetClone: '/preset-clone',
@@ -124,34 +127,24 @@ export interface BridgeRequestMap {
   presetVariables: { variables?: Record<string, string>; enabled?: boolean; expectedPresetId?: string }
   customTools: { customTools?: unknown[]; expectedPresetId?: string } | undefined
   /**
-   * 预设包导入（含 SillyTavern JSON）。`preview: true` 只做同源转换并返回报告，不落盘；
-   * 提交时若带 `expectedSourceDigest`，服务端用本次上传文件重算摘要并拒绝过期预览。
+   * 预设包导入（原生/ST/PNG/ZIP）。`preview: true` 只转换并返回报告，不写目标；
+   * 提交必须携带 expectedSourceDigest 和 expectedPreviewRevision，服务端重算并拒绝过期预览。
    * `expectedPreviewRevision` 是预览返回的版本凭据：绑定文件、实际选组、转换器版本与
    * 目标身份（含目标当前内容），服务端提交时重算，不符返回 409 且零写盘。
    * `promptOrderCharacterId` 用于多顺序组包时显式选择：预览缺省时先返回候选
    * （`state: 'needs-order-selection'`），提交时仍无法明确对应则拒绝。
    * 上述参数只接受声明的类型，其它类型一律 400（见 docs/SillyTavern.md）。
    */
-  importPresetPackage: {
-    files: Array<{ path?: string; name?: string; content?: string }>
-    preview?: boolean
-    expectedSourceDigest?: string
-    expectedPreviewRevision?: string
-    promptOrderCharacterId?: string
-  }
-  exportPreset: { id: string }
+  importPresetPackage: AssetImportRequest
+  assetUpload: undefined
+  assetRelease: { sourceId: string }
+  exportPreset: PresetExportRequest
   presetDelete: { id: string }
   presetClone: { id: string; autoSuffix?: boolean }
   presetDuplicate: { id: string }
   presetOpen: { id: string }
-  /** 角色卡 JSON 导入；`preview: true` 只转换并返回报告（不写角色库）；版本/选组语义与预设包一致。 */
-  charactersImport: {
-    files?: Array<{ path: string; content: string }>
-    preview?: boolean
-    expectedSourceDigest?: string
-    expectedPreviewRevision?: string
-    promptOrderCharacterId?: string
-  }
+  /** 角色卡 PNG/JSON/YAML 导入；预览不写角色库，提交必验版本，目标和选组均绑定预览。 */
+  charactersImport: AssetImportRequest
   charactersImportStream: undefined
   charactersList: undefined
   charactersDelete: { id: string }
@@ -284,7 +277,7 @@ export interface StOrderGroupCandidate {
 }
 
 /** 导入预览状态：`ready` 才有报告与写入凭据；候选状态不得启用确认。 */
-export type ImportPreviewState = 'ready' | 'needs-order-selection'
+export type ImportPreviewState = 'ready' | 'needs-order-selection' | 'needs-kind-selection'
 
 /** 端点级响应 value 契约（value 字段形状；扩展字段仍以 value 旁可选字段出现）。 */
 export interface BridgeValueMap {
@@ -328,8 +321,13 @@ export interface BridgeValueMap {
     sourceDigest?: string
     previewRevision?: string
     report?: StConversionReport
+    summary?: AssetSummary
+    kinds?: ImportKind[]
+    refreshWarning?: string
   }
-  exportPreset: { id: string; name: string; content: string }
+  assetUpload: { sourceId: string; name: string; bytes: number }
+  assetRelease: { released: boolean }
+  exportPreset: PresetExportResult
   presetDelete: { id: string }
   presetClone: { id: string }
   presetDuplicate: { id: string }
@@ -343,6 +341,8 @@ export interface BridgeValueMap {
     sourceDigest?: string
     previewRevision?: string
     report?: StConversionReport
+    summary?: AssetSummary
+    kinds?: ImportKind[]
   }
   charactersImportStream: { id: string; name: string }
   charactersList: { characters: Array<{ id: string; name: string; description?: string; hasAvatar: boolean; imported: boolean }> }

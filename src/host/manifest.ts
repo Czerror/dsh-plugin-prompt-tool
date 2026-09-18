@@ -10,7 +10,7 @@
  * 本模块负责参数归一化与引擎模块配置装配;所有预设专属行为都在引擎内部。
  */
 
-import { readFileSync, existsSync, readdirSync, mkdirSync, rmSync, writeFileSync, cpSync, renameSync, statSync } from 'node:fs'
+import { readFileSync, existsSync, readdirSync, mkdirSync, mkdtempSync, rmSync, writeFileSync, cpSync, renameSync, statSync } from 'node:fs'
 import { spawn } from 'node:child_process'
 import { basename, join, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -20,6 +20,7 @@ import { engineCapability, engineRecipe, isEngineCapabilityPresent, type ModuleS
 import { buildEngineModuleParams, engineParamList, normalizeMaxDepth } from '../shared/engine-params.ts'
 import { personaRowConfig, readPersonaSpec, type PersonaSpec } from '../shared/persona-section.ts'
 import { DEFAULT_PRESET_ID } from '../shared/preset-ids.ts'
+import { assertPresetDirectory, assertPresetId, assertPresetTree, presetPathExists, rewritePresetEngineReferences, setPresetDefinitionId } from './preset-install.ts'
 
 export interface PresetSpec {
   id: string
@@ -140,7 +141,7 @@ export function loadPresetSpec(dir: string): PresetSpec {
   } catch (error) {
     throw new Error(`preset ${file} YAML 解析失败: ${String((error as Error).message ?? error)}`)
   }
-  if (parsed === null || typeof parsed !== 'object') {
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
     throw new Error(`preset ${join(dir, 'preset.yml')} is not a YAML map`)
   }
   // 官方用户预设格式：preset.yml 仅元数据（name/description/order），id 回退目录名。
@@ -216,29 +217,15 @@ export function userPresetsDir(): string {
   return DEFAULT_PRESET_DIR
 }
 
-/** 在指定扫描目录内按 template 定位预设目录：目录名精确匹配优先，preset.yml 的 id 匹配兜底。 */
+/** 只按合法目录身份定位；现存坏身份必须报错，不能绕到同名模板。 */
 function findPresetDir(scanDir: string, template: string): string | undefined {
-  const exact = join(scanDir, template)
-  if (existsSync(join(exact, 'preset.yml'))) return exact
-  try {
-    for (const entry of readdirSync(scanDir, { withFileTypes: true })) {
-      if (!entry.isDirectory()) continue
-      const dir = join(scanDir, entry.name)
-      try {
-        if (loadPresetSpec(dir).id === template) return dir
-      } catch {
-        // 目录无有效 preset.yml，跳过
-      }
-    }
-  } catch {
-    // 扫描目录不可读
-  }
-  return undefined
+  const exact = assertPresetDirectory(scanDir, template, true)
+  return presetPathExists(exact) ? exact : undefined
 }
 
 /**
  * 解析预设模板目录：当前预设根优先，包内模板回退；不读取其他部署根的同名预设。
- * 目录名与 preset.yml id 双匹配（UI 切换值=目录名；旧 settings 存量值=id 也兼容）。
+ * 目录名与声明的 preset.yml id 一致；不扫描其他目录的 id 别名。
  */
 export function resolvePresetDir(template: string, presetRoot = userPresetsDir()): string {
   const found = findPresetDir(presetRoot, template) ?? findPresetDir(packagePresetDir(), template)
@@ -280,12 +267,12 @@ export function listPresets(presetRoot = userPresetsDir()): Array<{ id: string; 
   const scan = (dir: string): Array<{ id: string; name: string; user: boolean; renderable: boolean; description?: string; meta?: Record<string, unknown> }> => {
     try {
       return readdirSync(dir, { withFileTypes: true })
-        .filter((entry) => entry.isDirectory() && !entry.name.startsWith('.'))
+        .filter((entry) => entry.isDirectory() && /^[a-z0-9][a-z0-9-]*$/.test(entry.name))
         // 旧容器 id 兼容快照仅供历史会话 resolve，不参与普通预设选择/重建。
         .filter((entry) => entry.name !== 'prompt-tool')
         .flatMap((entry) => {
           try {
-            const spec = loadPresetSpec(join(dir, entry.name))
+            const spec = loadPresetSpec(assertPresetDirectory(dir, entry.name))
             if (typeof spec.id !== 'string' || spec.id.length === 0) return []
             // 切换值用目录名（与 resolvePresetDir 路径一致）；name 保持 spec.name 契约。
             // 可渲染性：用户副本缺组合源时，包内同名模板可回退渲染（writePreset
@@ -380,31 +367,67 @@ export function ensurePresetSeed(root = userPresetsDir()): { created: string[] }
   return { created }
 }
 
-/** 从包内同名目录复制预设；autoSuffix=true 时递增目录名，定义正文原样保留。 */
-export function cloneBuiltinPreset(id: string, autoSuffix = false, presetRoot = userPresetsDir()): { ok: true; id: string } | { ok: false; message: string } {
-  if (typeof id !== 'string' || id.length === 0 || id === '.' || id === '..'
-    || id.includes('/') || id.includes('\\')) {
-    return { ok: false, message: `非法预设 id：${id}` }
-  }
-  const builtin = findPresetDir(packagePresetDir(), id)
-  if (builtin === undefined) {
-    return { ok: false, message: `预设 ${id} 不是包内置预设` }
-  }
-  let targetId = id
-  let target = join(presetRoot, targetId)
-  if (existsSync(target)) {
-    if (!autoSuffix) {
-      return { ok: false, message: `用户目录已存在同名预设 ${targetId}，请先删除再新建` }
-    }
-    for (let suffix = 2; ; suffix++) {
-      targetId = `${id}-${suffix}`
-      target = join(presetRoot, targetId)
-      if (!existsSync(target)) break
-    }
-  }
+/** 完整复制到隐藏候选；只更新定义 ID 和已知共享引擎配置位置。 */
+function copyPresetDirectory(source: string, root: string, targetId: string): void {
+  assertPresetTree(source)
+  const target = assertPresetDirectory(root, targetId, true)
+  if (presetPathExists(target)) throw new Error(`目标预设已存在：${targetId}`)
+  mkdirSync(root, { recursive: true })
+  const candidate = mkdtempSync(join(root, `.${targetId}.copy-`))
   try {
-    mkdirSync(presetRoot, { recursive: true })
-    cpSync(builtin, target, { recursive: true, force: true })
+    cpSync(source, candidate, { recursive: true })
+    const definition = join(candidate, 'preset.yml')
+    const doc = parseDocument(readFileSync(definition, 'utf8'), { logLevel: 'silent' })
+    if (doc.errors.length > 0 || !(doc.contents instanceof YAMLMap)) throw new Error('预设定义必须是合法 YAML 对象')
+    const oldId = doc.get('id')
+    if (oldId !== targetId) {
+      setPresetDefinitionId(doc, targetId)
+      writeFileSync(definition, doc.toString(), 'utf8')
+    }
+    const files = new Set(readdirSync(packageEngineDir()).filter((name) => name.endsWith('.mjs')))
+    for (const relative of ['agent.cordis.yml', typeof doc.get('composition') === 'string' && String(doc.get('composition')).startsWith('./') ? String(doc.get('composition')) : '']) {
+      if (!relative) continue
+      const file = resolve(candidate, relative)
+      if (!file.startsWith(resolve(candidate) + sep)) throw new Error('组合文件路径越界')
+      if (presetPathExists(file)) {
+        const before = readFileSync(file, 'utf8')
+        const after = rewritePresetEngineReferences(before, targetId, files, candidate)
+        if (after !== before) writeFileSync(file, after, 'utf8')
+      }
+    }
+    const composition = doc.get('composition')
+    if (typeof composition === 'string' && composition.includes('\n')) {
+      const rewritten = rewritePresetEngineReferences(composition, targetId, files, candidate)
+      if (rewritten !== composition) { doc.set('composition', rewritten); writeFileSync(definition, doc.toString(), 'utf8') }
+    }
+    if (presetPathExists(target)) throw new Error(`目标预设已存在：${targetId}`)
+    renameSync(candidate, target)
+  } finally {
+    rmSync(candidate, { recursive: true, force: true })
+  }
+}
+
+/** 从包内同名目录复制预设；autoSuffix=true 时递增目录名并同步定义身份。 */
+export function cloneBuiltinPreset(id: string, autoSuffix = false, presetRoot = userPresetsDir()): { ok: true; id: string } | { ok: false; message: string } {
+  try {
+    assertPresetId(id)
+    const builtin = findPresetDir(packagePresetDir(), id)
+    if (builtin === undefined) {
+      return { ok: false, message: `预设 ${id} 不是包内置预设` }
+    }
+    let targetId = id
+    let target = join(presetRoot, targetId)
+    if (presetPathExists(target)) {
+      if (!autoSuffix) {
+        return { ok: false, message: `用户目录已存在同名预设 ${targetId}，请先删除再新建` }
+      }
+      for (let suffix = 2; ; suffix++) {
+        targetId = `${id}-${suffix}`
+        target = join(presetRoot, targetId)
+        if (!presetPathExists(target)) break
+      }
+    }
+    copyPresetDirectory(builtin, presetRoot, targetId)
     return { ok: true, id: targetId }
   } catch (error) {
     return { ok: false, message: `新建预设失败：${error instanceof Error ? error.message : String(error)}` }
@@ -415,28 +438,17 @@ export function cloneBuiltinPreset(id: string, autoSuffix = false, presetRoot = 
  *  复制的是用户目录完整副本（preset.yml / agent.cordis.yml / prompt-configs /
  *  内容资产 / 覆盖文件），与「从内置模板新建」互补：后者还原模板，前者备份现状。 */
 export function duplicateUserPreset(id: string, presetRoot = userPresetsDir()): { ok: true; id: string } | { ok: false; message: string } {
-  if (typeof id !== 'string' || id.length === 0 || id === '.' || id === '..'
-    || id.includes('/') || id.includes('\\')) {
-    return { ok: false, message: `非法预设 id：${id}` }
-  }
-  const root = resolve(presetRoot)
-  const source = resolve(join(root, id))
-  const rootResolved = resolve(root)
-  if (source !== rootResolved && !source.startsWith(rootResolved + sep)) {
-    return { ok: false, message: `预设路径越界：${id}` }
-  }
-  if (!existsSync(source)) {
-    return { ok: false, message: `预设 ${id} 不存在` }
-  }
-  let targetId = `${id}-copy`
-  let target = join(root, targetId)
-  for (let suffix = 2; existsSync(target); suffix++) {
-    targetId = `${id}-copy${suffix}`
-    target = join(root, targetId)
-  }
   try {
-    mkdirSync(root, { recursive: true })
-    cpSync(source, target, { recursive: true, force: true })
+    assertPresetId(id)
+    const root = resolve(presetRoot)
+    const source = assertPresetDirectory(root, id)
+    let targetId = `${id}-copy`
+    let target = join(root, targetId)
+    for (let suffix = 2; presetPathExists(target); suffix++) {
+      targetId = `${id}-copy${suffix}`
+      target = join(root, targetId)
+    }
+    copyPresetDirectory(source, root, targetId)
     return { ok: true, id: targetId }
   } catch (error) {
     return { ok: false, message: `复制预设失败：${error instanceof Error ? error.message : String(error)}` }
@@ -446,8 +458,7 @@ export function duplicateUserPreset(id: string, presetRoot = userPresetsDir()): 
 /** 在系统文件管理器中打开预设目录（尽力而为：无桌面环境时打开失败也返回路径供 UI 展示）。 */
 export function openPresetLocation(id: string, presetRoot = userPresetsDir()): { ok: true; path: string } | { ok: false; message: string; path: string } {
   // 普通预设 id（裸目录名）或角色卡库子路径（/.characters/<cardId>）两种形态。
-  const isBareId = typeof id === 'string' && id.length > 0 && id !== '.' && id !== '..'
-    && !id.includes('/') && !id.includes('\\')
+  const isBareId = typeof id === 'string' && /^[a-z0-9][a-z0-9-]*$/.test(id)
   const isCardPath = typeof id === 'string' && /^\/\.[a-zA-Z0-9_-]+\/[^/\\]+$/.test(id)
   if (!isBareId && !isCardPath) {
     return { ok: false, message: `非法预设 id：${id}`, path: '' }
@@ -461,6 +472,7 @@ export function openPresetLocation(id: string, presetRoot = userPresetsDir()): {
     return { ok: false, message: `预设 ${id} 不存在`, path: dir }
   }
   try {
+    if (isBareId) assertPresetDirectory(presetRoot, id)
     const command = process.platform === 'win32' ? 'explorer'
       : process.platform === 'darwin' ? 'open' : 'xdg-open'
     const child = spawn(command, [dir], { detached: true, stdio: 'ignore' })
@@ -496,7 +508,7 @@ export function savePresetParams(
 ): void {
   // 模型参数写入顶层段（model / subagentModel，官方 agent-default-model 同构）：
   // params 旧扁平键同步清理（保存即迁移）。映射 = MODEL_SEGMENT_MAP（与展平共用）。
-  const file = join(presetRoot, templateName, 'preset.yml')
+  const file = join(assertPresetDirectory(presetRoot, templateName), 'preset.yml')
   if (!existsSync(file)) throw new Error(`preset ${templateName} 无 preset.yml`)
   const doc = parseDocument(readFileSync(file, 'utf8'), { logLevel: 'silent' })
   // 空值 = 删除键（回落模板/引擎默认）：''（字符串清空）、[]（列表清空）。
@@ -564,7 +576,7 @@ export function savePresetParams(
  * null = 删除该段（回落宿主部署人设）；默认值不落键（见 personaRowConfig）。
  */
 export function savePresetPersona(presetRoot: string, templateName: string, persona: PersonaSpec | null): void {
-  const file = join(presetRoot, templateName, 'preset.yml')
+  const file = join(assertPresetDirectory(presetRoot, templateName), 'preset.yml')
   if (!existsSync(file)) throw new Error(`preset ${templateName} 无 preset.yml`)
   const doc = parseDocument(readFileSync(file, 'utf8'), { logLevel: 'silent' })
   if (persona === null) doc.deleteIn(['persona'])
@@ -614,39 +626,29 @@ export function appendPresetModules(
   doc.set('modules', modules)
 }
 
-/** 删除预设目录（预设根/<id>；含同名导入的 .bak-* 备份目录）。
+/** 删除具有合法身份的预设目录（预设根/<id>）；隐藏备份不经公共接口删除。
  *  仅作用于预设根（官方 USER_PRESET_DIR），包内置模板天然不受影响；路径越界与非法 id 拒绝。
  *  删除后宿主 agent-presets 目录列表自然不再出现该预设（官方 roster 即目录列表）。 */
 export function removeUserPreset(id: string, presetRoot = userPresetsDir()): { ok: true } | { ok: false; message: string } {
-  if (typeof id !== 'string' || id.length === 0 || id === '.' || id === '..'
-    || id.includes('/') || id.includes('\\')) {
-    return { ok: false, message: `非法预设 id：${id}` }
+  try {
+    const target = assertPresetDirectory(presetRoot, id)
+    assertPresetTree(target)
+    rmSync(target, { recursive: true, force: true })
+    invalidatePresetSpec(target)
+    return { ok: true }
+  } catch (error) {
+    return { ok: false, message: `删除失败：${error instanceof Error ? error.message : String(error)}` }
   }
-  const root = presetRoot
-  const target = resolve(join(root, id))
-  const rootResolved = resolve(root)
-  if (target !== rootResolved && !target.startsWith(rootResolved + sep)) {
-    return { ok: false, message: `预设路径越界：${id}` }
-  }
-  if (existsSync(target)) {
-    try {
-      rmSync(target, { recursive: true, force: true })
-      return { ok: true }
-    } catch (error) {
-      return { ok: false, message: `删除失败：${error instanceof Error ? error.message : String(error)}` }
-    }
-  }
-  return { ok: false, message: `预设 ${id} 不存在（预设根 ~/.dsh/.agent-presets）` }
 }
 
-/** 从导入的 preset.yml 文本解析预设 id（非法/缺失回退目录名）。 */
+/** 从导入的 preset.yml 读取合法 ID；仅缺失时使用同样合法的目录名。 */
 export function parseImportedPresetId(presetYaml: string, fallback: string): string {
-  try {
-    const parsed = parseYaml(presetYaml, { logLevel: 'silent' }) as { id?: unknown } | null
-    return typeof parsed?.id === 'string' && /^[a-zA-Z0-9\u4e00-\u9fff][a-zA-Z0-9\u4e00-\u9fff-]*$/.test(parsed.id) ? parsed.id : fallback
-  } catch {
-    return fallback
-  }
+  const doc = parseDocument(presetYaml, { logLevel: 'silent' })
+  if (doc.errors.length > 0 || !(doc.contents instanceof YAMLMap)) throw new Error('预设定义必须是合法 YAML 对象')
+  const declared = doc.get('id')
+  const id = declared === undefined ? fallback : declared
+  assertPresetId(id)
+  return id
 }
 
 /** on/off 等字面开关归一化为布尔。 */

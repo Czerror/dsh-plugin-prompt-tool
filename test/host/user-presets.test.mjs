@@ -26,11 +26,11 @@ test('removeUserPreset：删除用户预设目录', () => {
   assert.equal(existsSync(join(PRESETS_DIR, 'foo')), false)
 })
 
-test('removeUserPreset：.bak 备份目录可删除（垃圾清理）', () => {
+test('removeUserPreset：公共删除入口不能清理隐藏备份目录', () => {
   mkdirSync(join(PRESETS_DIR, '.foo.bak-mt12345'), { recursive: true })
   writeFileSync(join(PRESETS_DIR, '.foo.bak-mt12345', 'preset.yml'), 'id: foo\n', 'utf8')
-  assert.deepEqual(removeUserPreset('.foo.bak-mt12345'), { ok: true })
-  assert.equal(existsSync(join(PRESETS_DIR, '.foo.bak-mt12345')), false)
+  assert.equal(removeUserPreset('.foo.bak-mt12345').ok, false)
+  assert.equal(existsSync(join(PRESETS_DIR, '.foo.bak-mt12345')), true)
 })
 
 test('removeUserPreset：非法 id 与路径越界拒绝', () => {

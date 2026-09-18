@@ -1,17 +1,20 @@
 /** 预设切换器：预设全部在用户目录（首次启动种子化），列表点击切换；新建 = 从内置模板复制还原。 */
 import { memo, useRef, useState, type ReactNode } from 'react'
 import { usePromptToolFields } from '../../data/use-prompt-tool-fields.ts'
+import { EMPTY_FIELDS } from '../../data/prompt-tool-fields.ts'
 import clsx from 'clsx'
 import { IconCopyOutline16, IconFolderOpenOutline16, IconTrashOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { bridgeCall } from '../../data/bridge-client.ts'
-import { readImportFiles } from '../../data/import-files.ts'
+import { previewAsset, commitAsset } from '../../data/asset-import.ts'
+import { hasWorkspaceDrafts } from '../../data/workspace-drafts.ts'
+import { deepEqual } from '../../data/dirty-state.ts'
 import type { PromptToolStore } from '../../data/use-prompt-tool-store.ts'
 import type { PromptToolTranslate } from '../../locales.ts'
 import { DialogSurface } from '../../ui/DialogSurface.tsx'
 import { ConfirmDialog } from '../../ui/ConfirmDialog.tsx'
 import { HintTooltip } from '../../ui/HintTooltip.tsx'
-import { ImportFileButton } from '../../ui/ImportFileButton.tsx'
-import { ImportPreviewCard } from '../../ui/ImportPreviewCard.tsx'
+import { ImportDialog } from '../../ui/ImportDialog.tsx'
+import { PresetExportDialog } from './PresetExportDialog.tsx'
 import { useImportPreviewFlow } from '../../data/use-import-preview-flow.ts'
 import { StatusBadge } from '../../ui/StatusBadge.tsx'
 import sharedCss from '../../ui/controls.module.css'
@@ -26,82 +29,35 @@ export const PresetSwitcher = memo(function PresetSwitcher(props: { store: Promp
   const templates = store.meta.builtinTemplates ?? []
   const [confirmingDelete, setConfirmingDelete] = useState<string | undefined>(undefined)
   const [pickerOpen, setPickerOpen] = useState(false)
+  const [importOpen, setImportOpen] = useState(false)
+  const [exportTarget, setExportTarget] = useState<{ id: string; name: string }>()
   const pickerAnchorRef = useRef<HTMLButtonElement>(null)
 
   // 预览流程（与角色卡 JSON 导入共用同一状态机）：确认回传来源摘要 + 预览版本。
   const flow = useImportPreviewFlow({
-    preview: async (files, orderCharacterId) => {
-      const res = await bridgeCall('importPresetPackage', {
-        files,
-        preview: true,
-        ...(orderCharacterId === undefined ? {} : { promptOrderCharacterId: orderCharacterId }),
-      })
-      if (!res.ok) return { kind: 'error', message: res.message ?? 'settings bridge unavailable' }
-      const value = res.value
-      if (value.state === 'needs-order-selection') {
-        return { kind: 'candidates', candidates: value.candidates ?? [], ...(value.sourceName === undefined ? {} : { sourceName: value.sourceName }) }
-      }
-      return {
-        kind: 'ready',
-        ...(value.sourceDigest === undefined ? {} : { sourceDigest: value.sourceDigest }),
-        ...(value.previewRevision === undefined ? {} : { previewRevision: value.previewRevision }),
-        ...(value.report === undefined ? {} : { report: value.report }),
-      }
-    },
+    directoryTooLarge: t('assetImport.directoryTooLarge'),
+    preview: (request) => previewAsset('importPresetPackage', request),
     commit: async (preview) => {
-      const res = await bridgeCall('importPresetPackage', {
-        files: preview.files,
-        expectedSourceDigest: preview.sourceDigest,
-        ...(preview.previewRevision === undefined ? {} : { expectedPreviewRevision: preview.previewRevision }),
-        ...(preview.groupCharacterId === undefined ? {} : { promptOrderCharacterId: preview.groupCharacterId }),
-      })
-      if (res.ok) return { ok: true, ...(res.value.id === undefined ? {} : { label: res.value.id }) }
-      return { ok: false, stale: res.code === 'preset-preview-stale' || res.code === 'characters-preview-stale', message: res.message ?? 'settings bridge unavailable' }
+      if (preview.overwrite && preview.summary?.targetId === store.fields.presetTemplate) {
+        if (hasWorkspaceDrafts(store.editorDrafts, store.fields.presetTemplate)) return { ok: false, message: t('assetImport.draftBlocked') }
+        const presetConfigs = store.fields.promptConfigs.filter((config) => config.origin?.kind !== 'instruction-file')
+        const savedConfigs = store.savedConfigs.filter((config) => config.origin?.kind !== 'instruction-file')
+        if (!deepEqual(presetConfigs, savedConfigs)) {
+          if (!await store.persistConfigs(store.fields.promptConfigs, { includeInstructions: false, reload: false, rebuild: false })) return { ok: false, message: t('assetImport.draftBlocked') }
+          return { ok: false, stale: true, message: t('importPreview.stale') }
+        }
+        if (store.dirtySwitches) return { ok: false, message: t('assetImport.draftBlocked') }
+      }
+      return commitAsset('importPresetPackage', preview)
     },
     onCommitted: async (label) => {
       store.showNotice('ok', t('presetSwitcher.notice.imported', { id: label ?? '' }))
-      await store.load()
+      if (await store.load() === EMPTY_FIELDS) throw new Error(t('card.operationFailed'))
     },
     onError: (message, stale) => {
       store.showNotice('error', t('presetSwitcher.notice.importFailed', { reason: stale ? t('importPreview.stale') : message }))
     },
   })
-
-  /** 导入单个配置文件：preset.yml / 任意 *.yml/*.yaml / SillyTavern *.json（服务端按扩展名分流）。 */
-  const pickPresetYaml = (files: File[]): void => {
-    const file = files[0]
-    if (file === undefined) return
-    void (async () => {
-      const [entry] = await readImportFiles([file], 'text')
-      if (entry === undefined) return
-      await flow.run([{ ...entry, path: /\.json$/i.test(entry.path) ? entry.path : 'preset.yml' }])
-    })()
-  }
-
-  /** 导入整个预设文件夹（webkitdirectory；传原始相对路径，顶层目录段由服务端剥离）。 */
-  const pickPresetDir = (files: File[]): void => {
-    if (files.length === 0) return
-    void (async () => {
-      await flow.run(await readImportFiles(files, 'text'))
-    })()
-  }
-
-  /** 导出当前预设为单文件配置（浏览器下载，可保存到任意目录）。 */
-  const exportPreset = async (): Promise<void> => {
-    const res = await bridgeCall('exportPreset', { id: fields.presetTemplate })
-    if (!res.ok) {
-      store.showNotice('error', t('presetSwitcher.notice.exportFailed', { reason: res.message ?? 'settings bridge unavailable' }))
-      return
-    }
-    const blob = new Blob([res.value.content], { type: 'application/yaml' })
-    const url = URL.createObjectURL(blob)
-    const anchor = document.createElement('a')
-    anchor.href = url
-    anchor.download = `${res.value.id}.preset.yml`
-    anchor.click()
-    URL.revokeObjectURL(url)
-    store.showNotice('ok', t('presetSwitcher.notice.exported', { file: `${res.value.id}.preset.yml` }))
-  }
 
   /** 删除预设（物理删除用户目录副本；插件目录模板保留，可经「新建预设」还原）。 */
   const deletePreset = async (id: string): Promise<void> => {
@@ -157,41 +113,15 @@ export const PresetSwitcher = memo(function PresetSwitcher(props: { store: Promp
         </span>
         <span className={styles.inlineControls}>
           <button ref={pickerAnchorRef} type="button" className={styles.primaryPill} onClick={() => setPickerOpen(true)}>{t('presetSwitcher.new')}</button>
-          <ImportFileButton
-            label={t('presetSwitcher.import')}
-            busyLabel={t('presetSwitcher.importing')}
-            busy={flow.phase !== 'idle'}
-            accept=".yml,.yaml,.json"
-            ariaLabel={t('presetSwitcher.import.aria')}
-            className={styles.pillButton}
-            onFiles={pickPresetYaml}
-          />
-          <ImportFileButton
-            label={t('presetSwitcher.importDir')}
-            busyLabel={t('presetSwitcher.importing')}
-            busy={flow.phase !== 'idle'}
-            directory
-            ariaLabel={t('presetSwitcher.importDir.aria')}
-            className={styles.pillButton}
-            onFiles={pickPresetDir}
-          />
-          <button type="button" className={styles.pillButton} onClick={() => void exportPreset()}>
-            {t('presetSwitcher.export')}
-          </button>
+          <button type="button" className={styles.pillButton} onClick={() => setImportOpen(true)}>{t('assetImport.presetTitle')}…</button>
         </span>
       </div>
-      {(flow.preview !== undefined || flow.candidates !== undefined) && (
-        <ImportPreviewCard
-          t={t}
-          preview={flow.preview}
-          candidates={flow.candidates}
-          busy={flow.phase === 'submitting'}
-          confirmDisabled={flow.phase !== 'confirming'}
-          onGroupChange={flow.chooseGroup}
-          onConfirm={flow.confirm}
-          onCancel={flow.cancel}
-        />
-      )}
+      {importOpen && <ImportDialog t={t} destination="preset" {...flow} targets={presets}
+        onFiles={(files) => { void flow.run(files) }} onChoices={flow.updateChoices} onConfirm={() => { void flow.confirm() }}
+        onClose={() => { flow.cancel(); setImportOpen(false) }} onReset={flow.cancel} onSkip={flow.skip} onEnd={flow.end}
+        onRepreview={() => { void flow.repreview() }} onRefresh={() => { void flow.retryRefresh() }}
+        onUse={flow.resultLabel === undefined ? undefined : () => { store.setPresetTemplate(flow.resultLabel!); flow.cancel(); setImportOpen(false) }} />}
+      {exportTarget && <PresetExportDialog t={t} preset={exportTarget} onClose={() => setExportTarget(undefined)} />}
       <div className={styles.presetGrid}>
         {presets.length === 0 ? (
           <p className={styles.readOnly} role="status">{t('presetSwitcher.empty')}</p>
@@ -245,6 +175,7 @@ export const PresetSwitcher = memo(function PresetSwitcher(props: { store: Promp
           </button>
         </HintTooltip>
         <span className={styles.presetCardFooter}>
+          <button type="button" className={styles.pillButton} onClick={() => setExportTarget({ id: preset.id, name: preset.name })}>{t('presetSwitcher.export')}…</button>
           <HintTooltip label={t('presetSwitcher.duplicate.label')}>
             <button type="button" className={styles.presetIconButton}
               aria-label={t('presetSwitcher.duplicate.aria', { name: preset.name })}

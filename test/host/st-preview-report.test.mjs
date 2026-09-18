@@ -4,34 +4,37 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { parse as parseYaml } from 'yaml'
-import { convertStToPreset, convertStToPresetWithReport, mergeStConversionReports } from '../../src/host/sillytavern.ts'
 
 // DSH_HOME 必须先于 lib 加载设置，避免污染真实用户目录（与 preset-package-import 同款）。
 const home = mkdtempSync(join(tmpdir(), 'pt-st-preview-'))
 process.env.DSH_HOME = home
-const { registerSettingsBridge } = await import('../../lib/index.mjs')
+const { convertStToPreset, convertStToPresetWithReport, mergeStConversionReports } = await import('../../src/host/sillytavern.ts')
+const { registerSettingsBridge } = await import('../../src/runtime/settings-bridge.ts')
+const bridgeDisposers = []
 
 const PREFIX = '/api/prompt-tool/settings'
 const PRESETS = join(home, '.agent-presets')
+mkdirSync(join(PRESETS, 'demo-preset'), { recursive: true })
+writeFileSync(join(PRESETS, 'demo-preset/preset.yml'), 'id: demo-preset\nname: Demo\nmodules: []\n')
 
 function handlers(sessions = new Map(), hooks = {}) {
   const registered = new Map()
   const sctx = {
     settings: { describe: () => [{ ns: 'prompt-tool', value: {}, base: {} }], mutate: async () => {} },
-    webServer: { register: ({ path, handler }) => { registered.set(path, handler) } },
+    webServer: { register: ({ path, handler }) => { registered.set(path, handler); return () => {} } },
     agents: { get: (id) => sessions.get(id) },
     tools: { schemas: () => [] },
     get: () => undefined,
-    effect: (fn) => fn(),
+    effect: (fn) => { const dispose = fn(); if (dispose) bridgeDisposers.push(dispose) },
   }
   registerSettingsBridge(
     { inject: (_deps, cb) => cb(sctx) },
+    'prompt-tool',
     () => ({ available: true, providers: [] }),
     () => ({ activeSkillsDirs: [], skillCatalog: [] }),
     () => '',
     undefined,
-    undefined,
-    () => join(PRESETS, 'demo-preset', 'prompt-configs'),
+    () => join(PRESETS, 'demo-preset'),
     undefined,
     undefined,
     (id) => { hooks.materialized = [...(hooks.materialized ?? []), id] },
@@ -190,7 +193,7 @@ test('importPresetPackage 预览不落盘、返回报告，过期摘要提交被
   })
   assert.equal(changed.status, 409, '换文件后旧摘要失效')
 
-  const commit = await call('/import-preset-package', { files, expectedSourceDigest: preview.payload.value.sourceDigest })
+  const commit = await call('/import-preset-package', { files, expectedSourceDigest: preview.payload.value.sourceDigest, expectedPreviewRevision: preview.payload.value.previewRevision })
   assert.equal(commit.status, 200)
   assert.equal(commit.payload.value.id, 'demo')
   assert.equal(commit.payload.value.sourceDigest, preview.payload.value.sourceDigest)
@@ -233,12 +236,12 @@ test('T03 预览先给顺序组候选，选组后重新预览才 ready；带选�
   assert.equal(noRevision.status, 409)
   assert.equal(noRevision.payload.code, 'preset-preview-stale')
 
-  // 无选组歧义、无版本凭据的旧直连提交仍按文件摘要工作（兼容既有调用）。
+  // 所有提交都必须经过预览，旧直连调用不能绕过确认。
   const legacy = await call('/import-preset-package', {
     files: [{ path: 'single/single.json', content: JSON.stringify({ prompts: [{ identifier: 'a', role: 'system', content: 'A', enabled: true }] }) }],
   })
-  assert.equal(legacy.status, 200)
-  assert.equal(existsSync(join(PRESETS, 'single', 'preset.yml')), true)
+  assert.equal(legacy.status, 409)
+  assert.equal(existsSync(join(PRESETS, 'single', 'preset.yml')), false)
 
   // 提交仍拒绝歧义。
   const commit = await call('/import-preset-package', { files })
@@ -254,12 +257,12 @@ test('charactersImport 预览只转换不写角色库，确认提交才入库', 
   assert.equal(preview.payload.value.preview, true)
   assert.equal(preview.payload.value.name.includes('Ada'), true)
   assert.equal(preview.payload.value.report.summary.converted > 0, true)
-  const charactersDir = join(PRESETS, 'demo-preset', '.characters')
+  const charactersDir = join(PRESETS, '.characters')
   assert.equal(existsSync(charactersDir), false, '预览不得写角色库')
 
   const stale = await call('/characters-import', { files, expectedSourceDigest: 'f'.repeat(64) })
   assert.equal(stale.status, 409)
-  const commit = await call('/characters-import', { files, expectedSourceDigest: preview.payload.value.sourceDigest })
+  const commit = await call('/characters-import', { files, expectedSourceDigest: preview.payload.value.sourceDigest, expectedPreviewRevision: preview.payload.value.previewRevision })
   assert.equal(commit.status, 200)
   assert.equal(typeof commit.payload.value.id, 'string')
   assert.equal(existsSync(join(charactersDir, commit.payload.value.id, 'card.json')), true, '确认提交才入库')
@@ -312,17 +315,17 @@ test('T02 两个导入端点对缺省与非法类型分开处理：非法 400、
   assert.equal(existsSync(join(PRESETS, 'typed')), false, '非法请求零写盘')
   assert.equal(hooks.materialized, undefined, '非法请求不触发重建')
 
-  // 合法语义保持：显式 false = 提交，true = 只读预览，缺省 = 旧直连提交。
+  // 显式 false 和缺省都表示提交，必须携带刚才预览的版本凭据。
   const preview = await call('/import-preset-package', { files, preview: true }, options)
   assert.equal(preview.status, 200)
   assert.equal(existsSync(join(PRESETS, 'typed')), false, '预览不落盘')
-  const commit = await call('/import-preset-package', { files, preview: false, expectedSourceDigest: preview.payload.value.sourceDigest }, options)
+  const commit = await call('/import-preset-package', { files, preview: false, expectedSourceDigest: preview.payload.value.sourceDigest, expectedPreviewRevision: preview.payload.value.previewRevision }, options)
   assert.equal(commit.status, 200)
-  assert.deepEqual(hooks.materialized, ['typed'], '提交触发一次重建')
+  assert.deepEqual(hooks.materialized, ['typed'], '安装后触发一次刷新')
   assert.equal(existsSync(join(PRESETS, 'typed', 'preset.yml')), true)
   const legacy = await call('/import-preset-package', { files: [{ path: 'legacy/legacy.json', content: stJson() }] }, options)
-  assert.equal(legacy.status, 200)
-  assert.equal(existsSync(join(PRESETS, 'legacy', 'preset.yml')), true, '缺省 preview 的旧调用仍可提交')
+  assert.equal(legacy.status, 409)
+  assert.equal(existsSync(join(PRESETS, 'legacy', 'preset.yml')), false, '缺少预览版本的旧调用不得提交')
 })
 
 test('T04 预览版本绑定文件、选组与目标身份：任一变化即 409 且零写盘', async () => {
@@ -339,7 +342,7 @@ test('T04 预览版本绑定文件、选组与目标身份：任一变化即 409
   assert.equal(existsSync(join(target, 'preset.yml')), true)
 
   // 目标内容参与身份：从"不存在"到"存在"必须改变版本，反之无法发现覆盖风险。
-  const afterCommit = await call('/import-preset-package', { files, preview: true })
+  const afterCommit = await call('/import-preset-package', { files, preview: true, targetId: 'rev', overwrite: true })
   assert.notEqual(afterCommit.payload.value.previewRevision, previewRevision, '目标已存在 → 版本必须不同')
   const replayed = await call('/import-preset-package', { files, expectedSourceDigest: sourceDigest, expectedPreviewRevision: previewRevision })
   assert.equal(replayed.status, 409, '旧版本（目标尚不存在时取得）不得再覆盖已存在的目标')
@@ -350,7 +353,7 @@ test('T04 预览版本绑定文件、选组与目标身份：任一变化即 409
   const marker = join(target, 'prompt-configs', 'user-edit.yml')
   mkdirSync(dirname(marker), { recursive: true })
   writeFileSync(marker, 'id: user-edit\n', 'utf8')
-  const edited = await call('/import-preset-package', { files, expectedSourceDigest: sourceDigest, expectedPreviewRevision: freshRevision })
+  const edited = await call('/import-preset-package', { files, targetId: 'rev', overwrite: true, expectedSourceDigest: sourceDigest, expectedPreviewRevision: freshRevision })
   assert.equal(edited.status, 409, '目标被改动后旧预览不得写入')
   assert.equal(readFileSync(marker, 'utf8'), 'id: user-edit\n', '失败提交不动用户改动')
 
@@ -445,7 +448,7 @@ test('T08 外部引擎交权给 bundle 协调器后，bridge 读到非空 commit
   const { Context } = await import('@deepseek-ai/cordis')
   const { createScope } = await import('@deepseek-ai/dsh-scope')
   const { agentEvents } = await import('@deepseek-ai/dsh-agent')
-  const { installPreStepCoordinator } = await import('../../lib/index.mjs')
+  const { installPreStepCoordinator } = await import('../../src/runtime/pre-step-coordinator.ts')
   const { applyPromptConfigs, createPromptConfigs } = await import('../../engine/prompt-config-engine.mjs')
 
   const app = new Context()
@@ -488,7 +491,10 @@ test('T08 外部引擎交权给 bundle 协调器后，bridge 读到非空 commit
   await scope.dispose()
 })
 
-test.after(() => { rmSync(home, { recursive: true, force: true }) })
+test.after(() => {
+  for (const dispose of bridgeDisposers) dispose()
+  rmSync(home, { recursive: true, force: true })
+})
 
 test('worldBookDiagnostics 端点只读、按会话隔离并拒绝非 loopback/错误方法', async () => {
   const session = { id: 'live', header: {}, snapshotEvents: () => [] }

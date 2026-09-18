@@ -279,7 +279,7 @@ test('契约：aria-modal 抽屉提供 Tab 焦点循环并复用 dialog-focus he
 })
 
 test('契约：角色卡图片选择器与 PNG 解析范围一致', () => {
-  const source = read('src/client/features/characters/CharactersPage.tsx')
-  assert.match(source, /accept="\.png,image\/png"/)
+  const source = read('src/client/ui/ImportDialog.tsx')
+  assert.match(source, /accept="\.zip,\.json,\.png,\.yml,\.yaml"/)
   assert.doesNotMatch(source, /image\/jpeg/, 'JPG/JPEG 会被 importCard 判为不支持，选择器不得声明')
 })

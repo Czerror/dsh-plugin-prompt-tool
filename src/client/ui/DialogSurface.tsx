@@ -15,6 +15,8 @@ export function DialogSurface(props: {
   initialFocusRef?: RefObject<HTMLElement | null>
   returnFocusRef?: RefObject<HTMLElement | null>
   anchorRef?: RefObject<HTMLElement | null>
+  size?: 'wide'
+  footer?: ReactNode
   onClose: () => void
   children: ReactNode
 }): ReactNode {
@@ -37,7 +39,7 @@ export function DialogSurface(props: {
   const panel = (
     <div
       ref={dialogRef}
-      className={anchored ? styles.templatePopover : styles.templateModal}
+      className={`${anchored ? styles.templatePopover : styles.templateModal}${props.size === 'wide' ? ` ${styles.templateModalWide}` : ''}`}
       style={anchored ? position ?? { visibility: 'hidden' } : undefined}
       role={props.role ?? 'dialog'}
       tabIndex={-1}
@@ -62,6 +64,7 @@ export function DialogSurface(props: {
       </div>
       {props.description !== undefined && <p id={descriptionId} className={styles.confirmDescription}>{props.description}</p>}
       <div className={styles.templateModalList}>{props.children}</div>
+      {props.footer !== undefined && <div className={styles.dialogFooter}>{props.footer}</div>}
     </div>
   )
   const surface = anchored ? panel : <div className={styles.modalBackdrop} onClick={props.onClose}>{panel}</div>

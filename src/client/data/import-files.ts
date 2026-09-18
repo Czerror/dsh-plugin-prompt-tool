@@ -2,6 +2,7 @@
 export interface ImportFileEntry {
   path: string
   content: string
+  encoding?: 'utf8' | 'base64'
 }
 
 function readFile(file: File, encoding: 'text' | 'base64'): Promise<string> {
@@ -29,5 +30,6 @@ export async function readImportFiles(
   return Promise.all(files.map(async (file) => ({
     path: file.webkitRelativePath || file.name,
     content: await readFile(file, encoding),
+    encoding: encoding === 'text' ? 'utf8' : 'base64',
   })))
 }

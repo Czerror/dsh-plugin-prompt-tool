@@ -41,6 +41,10 @@ function seedPreset(home, name, template = 'pt-minimal') {
   const dir = join(home, '.agent-presets', name)
   mkdirSync(dir, { recursive: true })
   cpSync(join(ROOT, 'preset', template), dir, { recursive: true })
+  const file = join(dir, 'preset.yml')
+  const doc = parseDocument(readFileSync(file, 'utf8'))
+  doc.set('id', name)
+  writeFileSync(file, doc.toString(), 'utf8')
   return dir
 }
 

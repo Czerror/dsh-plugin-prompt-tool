@@ -20,8 +20,8 @@ export function bridgeCall<K extends BridgeKey>(
   return postBridge<BridgeValueMap[K]>(BRIDGE_ENDPOINTS[endpoint], args[0])
 }
 
-export function bridgeUpload(file: Blob, fileName: string): Promise<BridgeResult<BridgeValueMap['charactersImportStream']>> {
-  return uploadBridge<BridgeValueMap['charactersImportStream']>(BRIDGE_ENDPOINTS.charactersImportStream, file, fileName)
+export function bridgeUpload(file: Blob, fileName: string): Promise<BridgeResult<BridgeValueMap['assetUpload']>> {
+  return uploadBridge<BridgeValueMap['assetUpload']>(BRIDGE_ENDPOINTS.assetUpload, file, fileName)
 }
 
 export { errorMessage, shouldStreamJsonFile } from './bridge-transport.ts'
