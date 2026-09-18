@@ -76,7 +76,7 @@
 
 ### 审查后的决策
 
-- 审查完成后，由用户指定本轮修复任务；审查发现本身不等于修复授权。
+- 审查完成后，由用户指定本轮修复任务；审查发现本身不等于修复授权，其结论写入 PLAN 的「审查结论」章节，不另行落盘。
 - 每个修复轮次在 `.scratch/plan/` 下创建唯一一份 PLAN，文件名用 `YYYY-MM-DD-plan-<主题>-<基线>.md`，章节骨架与验收标准见 [PLAN 格式规范](docs/agents/plan-format.md)。
 - PLAN 完成即归档：收尾时填满 `## 状态`，把 PLAN 原样复制到 `.scratch/archive/`（保留其中的历史互链）后从 `.scratch/plan/` 移除，随本轮代码改动同一个提交推送。
 - `.scratch/archive/` 只收 plan 归档。

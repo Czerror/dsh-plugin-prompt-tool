@@ -3,17 +3,35 @@
 ## 需求与授权
 
 - 2026-09-18 用户提供根因审查报告 `C:\Users\Cz9nl\Desktop\指令文件模块卡无法创建-根因审查-20260918.md`，要求「根据这份审查结果创建为 plan」。本轮只产出 PLAN，不含实施授权。
-- 2026-09-18 用户点名 `dev-expert` + `open-code-review-delegate` 复核该报告，结论见 [复核报告](.scratch/reviews/2026-09-18-instruction-card-rootcause-review.md)；用户拍板「三条建议全部并入」，故本轮范围含依赖版本漂移（Critical-1）。
+- 2026-09-18 用户点名 `dev-expert` + `open-code-review-delegate` 复核该报告，复核结论并入下面「审查结论」；用户拍板「三条建议全部并入」，故本轮范围含依赖版本漂移（C1）。
 - 基线：`dev@0dbce47`，起始工作树干净。
 - 采纳的问题定义（原报告第一、三节 + 复核报告第三节）：客户端 `currentSessionId` 读 alpha.2 已删除的 `SessionListState.current`，恒为 `undefined`；指令文件链路因此静默降级为「只有全局文件」，工作区指令文件卡整体不可见、不可写。
 - 待用户拍板：① 修复范围是否含同一死字段连带的模型选择卡与 `switchPreset`；② 是否按原报告建议 A+B 同做，还是先只做宿主侧 B。
 - 未决前提：修复方向 A 依赖「alpha.2 下官方是否提供可用的当前会话接口」，由 T2 核实。T2 结论为「无可用来源」时 A 不可行，本轮退化为 B 单方案并回写本节。
 
+## 审查结论
+
+审查方式：`dev-expert` 代码审查 + OCR `delegate` 委派模式（以 `ocr delegate rule` 解析的系统规则作检查清单）。BUG 所在的 `src/client/index.ts` 与 `src/client/data/session-model-face.ts` 自引入点 `11a9e73` 起从未改动、无 diff，故按 delegate 对未跟踪文件的同一处理做全文审查。
+
+| # | 问题 | 位置 | 严重度 | 与原报告的关系 |
+|---|---|---|---|---|
+| C1 | 开发依赖与运行时版本漂移，`typecheck` 永久假绿 | `package.json` devDependencies | critical | 本次新增 |
+| C2 | 客户端读取官方已删除的 `SessionListState.current` | `src/client/index.ts:54`、`:84`；`session-model-face.ts:24`、`:59`、`:82`、`:102` | critical | 原报告已述；本次补 `:102` 与 `:24` |
+| H3 | 宿主侧静默降级 `global-only`，无来源告警 | `src/runtime/settings-bridge.ts:336-348` | high | 原报告已述 |
+| M4 | 回归覆盖缺口：自造假 harness，不覆盖客户端取值环节 | `test/host/instruction-scope-guard.test.mjs:52-90`、`:176-178` | medium | 原报告已述 |
+
+决定性证据：
+
+- `pnpm why @deepseek-ai/dsh-api-session-controller` → `0.1.6-alpha.1`（来自 devDependencies），其 `service.d.ts:66` **有** `current: SessionId | undefined`。
+- 真实 DSH profile 实装 `0.1.6-alpha.2`，其 `sessions/service.d.ts:42-56` **只剩** `ids／byId／phase／subagentsByParent／jobsBySession`。
+- `pnpm typecheck` → **exit 0**：类型层看得到 `current`、运行时看不到，静态门禁对此类漂移永久失效，故 C1 必须与 C2 同轮修。
+- `session-model-face.ts:24` 用插件自造的结构类型把 `current` 写死，不随官方类型演进，是漂移被掩盖的第二层原因。
+- 未发现安全问题：写盘白名单、越界符号链接防护、跨会话上下文 409 经复核均健全。
+
 ## 影响面、依赖与护栏
 
 - 调用链：`src/client/index.ts:54` → `src/client/data/use-prompt-tool-store.ts:421` → `src/runtime/settings-bridge.ts:336-348` `resolveInstructionScope` → `:292` `mergeInstructionCards` → `detectAgentsFiles` → 文件卡与写通道白名单。
-- 同一死字段的全部读取点（复核定稿为四处）：`src/client/index.ts:54`、`:84`；`src/client/data/session-model-face.ts:59`、`:82`、`:102`，以及 `:24` 把 `current` 写死的自造结构类型。
-- **版本漂移（Critical-1）**：`package.json` devDependencies 钉 `@deepseek-ai/dsh-api-session-controller@0.1.6-alpha.1`（类型含 `current`），运行时 profile 实装 `0.1.6-alpha.2`（已删）；`pnpm typecheck` 当前 exit 0，属假绿。T1 对齐后 typecheck 预期转红，T4 修复后恢复绿——红灯期是预期状态，不是回归。
+- **版本漂移的红灯期**：T1 对齐依赖后 `pnpm typecheck` 预期转红，T4 修复后恢复绿——红灯期是预期状态，不是回归。
 - 依赖顺序：T1 → T2 → T3 → T4 → T5 → T6 串行；T3 的用例必须保持红灯直到 T4 落地。
 - 硬约束：契约变更先改 `src/shared/bridge-contract.ts`，再同步 host、client 与契约测试；bridge 写入端点保留白名单、类型、数值与大小校验。
 - 护栏：写通道白名单不放宽；不改 DeepSeek Harness 源码仓库；不停止、重启运行中的 dsh / dsh web；测试从隔离 cwd 与临时 `DSH_HOME` 执行。
