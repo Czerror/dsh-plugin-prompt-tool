@@ -286,15 +286,24 @@ UI 文档称 PNG/JSON 均预览，代码和 SillyTavern 文档说明 PNG/大 JSO
 
 **建议与验收**：实施完成后统一描述最终行为；文档不反向覆盖已经验证的事实。更新时同时核对取消、过期、重试和流式用例。
 
-### F16［建议］：PNG 解码维护了三份实现，客户端完整解析没有生产调用者
+### F16［建议］：PNG 角色卡解析必须保留，客户端完整解析函数未接入当前上传链路
 
 **位置**：[characters.ts:374](../../../src/host/characters.ts#L374)、[character-card.ts:51](../../../src/client/features/characters/character-card.ts#L51)、[extract-st-character.mjs:31](../../../scripts/extract-st-character.mjs#L31)。
 
-**证据**：定义、引用搜索与三个实现的静态核对。
+**证据**：定义、引用搜索与实际 client/bridge/host 调用链静态核对；经用户指出表述歧义后补充复核。
 
-实际页面只使用 PNG 魔数判断，完整客户端 `parseCharacterCardPng()` 无生产调用；host 有 chunk 越界检查和 16 MiB 解压上限，其他实现规则不同。
+**能力结论**：PNG 解析是 ST 角色卡导入的必要能力，当前 PNG 导入确实使用了该能力。`character-card.ts` 文件也并非整体未使用。
 
-**建议与验收**：删除无调用实现，把受限解码集中在 host，CLI 复用；保留客户端必要的轻量魔数判断。用 PNG V1/V2/V3、错误 chunk、无卡数据和解压超限验证同一 implementation。
+当前调用事实：
+
+1. [CharactersPage.tsx:107](../../../src/client/features/characters/CharactersPage.tsx#L107) 调用客户端 `isPngSignature()`，识别 PNG 后以 `bridgeUpload(file, file.name)` 上传原始文件。
+2. [bridge-client.ts:23](../../../src/client/data/bridge-client.ts#L23) 将原始文件交给 `charactersImportStream`。
+3. [settings-bridge.ts:2168](../../../src/runtime/settings-bridge.ts#L2168) 调用 `importCharacterCardFile()`。
+4. [characters.ts:448](../../../src/host/characters.ts#L448) 调用宿主 `decodePngCharacterCard()`，提取 ccv3/chara 角色 JSON 并保留原图，再转换及入库。
+
+**“未调用”的限定**：全仓引用搜索仅发现客户端完整解析函数 `parseCharacterCardPng()` 的定义，当前页面没有调用该函数。这个结论仅针对该函数在当前仓库调用链中的接线，不能推导为“PNG 解析未使用”“PNG 导入不需要解析”或“可以删除整个客户端文件”。
+
+**修订后的建议与验收**：撤回直接删除客户端完整解析函数的建议。重设计必须保留 PNG 角色卡的识别、角色数据提取、原图保留、转换与入库，并接入用户要求的预设导入入口。现有 host 解析具备 chunk 越界检查和 16 MiB 解压上限，可作为复用依据；新链路的解析职责及消费者确认、PNG 正常输入与错误输入行为测试完成后，再评估是否合并重复 implementation。本轮不删除任何解析代码。
 
 ## 六、可复用、模块化重设计建议
 
@@ -398,7 +407,7 @@ export-preset 接受 ../outside-preset-root 并返回预设根外的合成测试
 
 ## 八、Karpathy 建议与审查总结
 
-**Karpathy 建议**：删除未使用的客户端 PNG 解析；复用既有 ST 转换器、报告、世界书工厂及导入状态机；按“一个预设包含什么”“一个角色更新能替换什么”集中规则。无需新增依赖、万能格式 registry、所有领域共用的事务框架或 UI 内第二套转换器。
+**Karpathy 建议**：保留必需的 PNG 角色卡解析能力，先核对新旧入口的实际消费者与职责，再评估重复实现合并；不因单个函数当前未接线便直接删除所需功能。复用既有 ST 转换器、报告、世界书工厂及导入状态机；按“一个预设包含什么”“一个角色更新能替换什么”集中规则。无需新增依赖、万能格式 registry、所有领域共用的事务框架或 UI 内第二套转换器。
 
 **整体评分**：不打分。没有可复核的数值评分基准，严重性与行为证据足以表达风险。
 
