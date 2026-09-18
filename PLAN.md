@@ -2,8 +2,8 @@
 
 ## 需求与授权
 
-- 2026-09-18 用户明确“按照这份计划执行修改”，授权执行 [设计稿](.scratch/prompt-tool-framework/design-import-export-2026-09-18.md) 的 W1–W4，包括建议的覆盖、批次、记忆来源证明及依赖校验语义；无需重复征求实现许可。
-- 基线：`dev@03b5e4c`，起始工作树干净。旧 PLAN 原文归档到 [归档](.scratch/prompt-tool-framework/archive/plan-before-import-export-03b5e4c-20260918.md)。
+- 2026-09-18 用户明确“按照这份计划执行修改”，授权执行 [设计稿](.scratch/prompt-tool-framework/designs/design-import-export-2026-09-18.md) 的 W1–W4，包括建议的覆盖、批次、记忆来源证明及依赖校验语义；无需重复征求实现许可。
+- 基线：`dev@03b5e4c`，起始工作树干净。旧 PLAN 原文归档到 [归档](.scratch/prompt-tool-framework/archive/2026-09-18-plan-before-import-export-03b5e4c.md)。
 - 目标：原生与 ST JSON/YAML、PNG、文件夹和 ZIP 经统一识别／预览／确认；安装有完整验证及恢复；Web/CLI 共享可移植导出与身份规则；角色记忆和用户指令独立所有权不变。
 - UI 沿用 DSH primitives、CSS Modules 与主题，落实 ui-skills 设计的来源、检查、结果、覆盖和导出范围流程。
 - 完整 ZIP 与单独定义导出已获确认。角色库原生片段先支持自包含内容，文件引用明确拒绝；带附件的内容通过完整预设入口处理。

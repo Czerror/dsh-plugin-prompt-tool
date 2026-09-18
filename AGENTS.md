@@ -77,7 +77,7 @@
 ### 审查后的决策
 
 - 审查完成后，由用户指定本轮修复任务；审查发现本身不等于修复授权。
-- 用户指定修复任务后，先将旧 `PLAN.md` 原文归档到 `.scratch/prompt-tool-framework/archive/`（文件名带日期或基线，避免覆盖已有归档），再新建完整修改方案的全新 [PLAN.md](PLAN.md)，明确本轮任务范围、修复方案、验证与回滚。
+- 用户指定修复任务后，先将旧 `PLAN.md` 原文归档到 `.scratch/prompt-tool-framework/archive/`（文件名以归档日 `YYYY-MM-DD-` 为前缀，后接原主题与基线，如 `2026-09-18-plan-before-import-export-03b5e4c.md`，避免覆盖已有归档），再新建完整修改方案的全新 [PLAN.md](PLAN.md)，明确本轮任务范围、修复方案、验证与回滚。
 - `PLAN.md` 按用户指定 `dev-expert` 的「任务拆解与执行」格式编写，文末统一用 `[✔]`（已验证完成）和 `[ ]`（未完成）标记 Wave 及任务状态。
 - 用户对修复范围、方案取舍和执行授权的决策写入 `PLAN.md`；审查结论不得写入 `AGENTS.md`。具体缺陷、技术修复方案和验收结论写入 `PLAN.md` 或对应权威文档，`AGENTS.md` 只保留跨任务的流程与边界。
 

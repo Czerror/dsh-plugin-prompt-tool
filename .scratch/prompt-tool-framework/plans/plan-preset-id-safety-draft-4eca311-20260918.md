@@ -60,6 +60,6 @@
 ## 接手步骤（前一任务提交后）
 
 1. `git -C D:\AI\GitHub\dsh-plugin-prompt-tool status --short` 确认为空（工作树干净）。
-2. 归档技能任务的 `PLAN.md` 到 `.scratch/prompt-tool-framework/archive/plan-skills-file-policy-<其提交SHA>-20260918.md`（先核 SHA-256）。
+2. 归档技能任务的 `PLAN.md` 到 `.scratch/prompt-tool-framework/archive/<归档日 YYYY-MM-DD>-plan-skills-file-policy-<其提交SHA>.md`（先核 SHA-256）。
 3. 用本草稿正式化新 `PLAN.md`（dev-expert「任务拆解与执行」格式，Wave 末尾 `[✔]`/`[ ]` 标记）。
 4. 按 W1→W5 执行，门禁全绿后提交推送，并追加 `.ai-memory/{YYYYMMDD}/daily.md`。
