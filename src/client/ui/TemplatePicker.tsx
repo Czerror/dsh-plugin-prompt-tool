@@ -16,6 +16,9 @@ const TEMPLATE_LAYER_LABEL_KEYS: Record<string, PromptToolLocaleKey> = {
   'agent-request': 'templates.layer.agent-request',
   'llm-stream': 'templates.layer.llm-stream',
   'tool-pipeline': 'templates.layer.tool-pipeline',
+  'turn-stop': 'templates.layer.turn-stop',
+  'subagent-start': 'templates.layer.subagent-start',
+  'subagent-end': 'templates.layer.subagent-end',
 }
 
 export function TemplatePicker(props: {

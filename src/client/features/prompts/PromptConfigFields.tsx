@@ -7,8 +7,9 @@ import { HintTooltip } from '../../ui/HintTooltip.tsx'
 import { MenuSelect } from '../../ui/MenuSelect.tsx'
 import { TagInput } from '../../ui/TagInput.tsx'
 import type { PromptToolLocaleKey, PromptToolTranslate } from '../../locales.ts'
+import type { PromptConfigMatch } from '../../prompt-tool-types.ts'
 import { autoResizeTextarea } from './textarea-resize.ts'
-import { EMPTY_BEHAVIOR_LABEL_KEYS, translateLabel } from './prompt-config-policy.ts'
+import { EMPTY_BEHAVIOR_LABEL_KEYS, MATCH_LOGIC_LABEL_KEYS, MATCH_LOGICS, MATCH_REGEX_MODE_LABEL_KEYS, MATCH_REGEX_MODES, normalizeMatch, translateLabel } from './prompt-config-policy.ts'
 import sharedCss from '../../ui/controls.module.css'
 import featureCss from './prompts.module.css'
 
@@ -110,16 +111,59 @@ export function NumberField(props: { t: PromptToolTranslate; label: string; hint
   </FormField>
 }
 
-/** 布尔开关行（params 结构化编辑用）。 */
-function ParamToggle(props: { label: string; hint?: string; className?: string; checked: boolean; onChange: (checked: boolean) => void }): ReactNode {
+/** 布尔开关行（params 结构化编辑与条件判定开关共用）；disabled 只用于条件判定区（策略区整体在 fieldset 内）。 */
+function ParamToggle(props: { label: string; hint?: string; className?: string; checked: boolean; disabled?: boolean; onChange: (checked: boolean) => void }): ReactNode {
   const control = (
-    <span className={styles.configEnable}><Switch label={props.label} checked={props.checked} onChange={props.onChange} /></span>
+    <span className={styles.configEnable}><Switch label={props.label} checked={props.checked} disabled={props.disabled} onChange={props.onChange} /></span>
   )
   return (
     <div className={clsx(styles.configToggleField, props.className)}>
       <span className={styles.configFieldLabel}>{props.label}</span>
       {props.hint === undefined ? control : <HintTooltip label={props.hint}>{control}</HintTooltip>}
     </div>
+  )
+}
+
+/**
+ * 条件判定的 match 编辑器（网格片段，由表单的注入规则区承载）：
+ * 主键 / 副键集合 + 组合逻辑 + 三个匹配开关。键按字面文本匹配，`/pattern/flags`
+ * 形态或「正则匹配」开关才走正则；每次编辑都经 {@link normalizeMatch} 归一，
+ * 无有效键时整段 match 被清空（引擎要求至少一个非空键）。
+ */
+export function MatchFields(props: { t: PromptToolTranslate; value: PromptConfigMatch | undefined; disabled?: boolean; onChange: (value: PromptConfigMatch | undefined) => void }): ReactNode {
+  const t = props.t
+  const value = props.value
+  const keyId = useId()
+  const listOf = (key: 'keys' | 'secondaryKeys'): string => (value?.[key] ?? []).join(', ')
+  const setKeys = (key: 'keys' | 'secondaryKeys', next: string): void => {
+    // TagInput 以逗号分隔字符串承载键集合（与世界书参数编辑器同形态）。
+    props.onChange(normalizeMatch({ ...value, [key]: next.split(',').map((item) => item.trim()).filter((item) => item.length > 0) }))
+  }
+  const setFlag = (key: 'caseSensitive' | 'wholeWords', next: boolean): void => {
+    props.onChange(normalizeMatch({ ...value, [key]: next }))
+  }
+  const regexMode = value?.useRegex === undefined ? 'auto' : (value.useRegex === true ? 'force' : 'literal')
+  return (
+    <>
+      <p className={clsx(styles.configFieldHint, styles.fieldFull)}>{t('form.match.hint')}</p>
+      <div className={styles.fieldSpan6}><TagInput id={`${keyId}-match-keys`} label={t('form.match.keys.label')} hint={t('form.match.keys.hint')} hintMode="tooltip" disabled={props.disabled} onCommit={() => {}}
+        value={listOf('keys')} placeholder={t('form.match.keys.placeholder')} onChange={(next) => setKeys('keys', next)} /></div>
+      <div className={styles.fieldSpan6}><TagInput id={`${keyId}-match-secondary-keys`} label={t('form.match.secondaryKeys.label')} hint={t('form.match.secondaryKeys.hint')} hintMode="tooltip" disabled={props.disabled} onCommit={() => {}}
+        value={listOf('secondaryKeys')} placeholder={t('form.match.secondaryKeys.placeholder')} onChange={(next) => setKeys('secondaryKeys', next)} /></div>
+      <OptionField t={t} className={styles.fieldSpan3} label={t('form.match.logic.label')} hint={t('form.match.logic.hint')}
+        value={value?.logic} options={MATCH_LOGICS} fallback="any" labelKeys={MATCH_LOGIC_LABEL_KEYS} disabled={props.disabled}
+        onChange={(next) => props.onChange(normalizeMatch({ ...value, logic: next as PromptConfigMatch['logic'] }))} />
+      <ParamToggle className={styles.fieldSpan3} label={t('form.match.caseSensitive.label')} hint={t('form.match.caseSensitive.hint')} disabled={props.disabled}
+        checked={value?.caseSensitive === true} onChange={(next) => setFlag('caseSensitive', next)} />
+      <ParamToggle className={styles.fieldSpan3} label={t('form.match.wholeWords.label')} hint={t('form.match.wholeWords.hint')} disabled={props.disabled}
+        checked={value?.wholeWords === true} onChange={(next) => setFlag('wholeWords', next)} />
+      <OptionField t={t} className={styles.fieldSpan3} label={t('form.match.useRegex.label')} hint={t('form.match.useRegex.hint')}
+        value={regexMode} options={MATCH_REGEX_MODES} fallback="auto" labelKeys={MATCH_REGEX_MODE_LABEL_KEYS} disabled={props.disabled}
+        onChange={(next) => props.onChange(normalizeMatch({
+          ...value,
+          useRegex: next === 'auto' ? undefined : next === 'force',
+        }))} />
+    </>
   )
 }
 

@@ -150,6 +150,8 @@ test('renderPromptConfigYaml 全字段开放：variables/identity/params 嵌套�
     dedupe: 'batch',
     promotion: 'main',
     modelScope: 'pro',
+    subject: 'toolArgs',
+    match: { keys: ['a', 'b'], secondaryKeys: ['c'], logic: 'all', caseSensitive: true, wholeWords: true, useRegex: false },
     sourceKind: 'full-kind',
     form: 'hint',
     summary: '摘要',
@@ -164,10 +166,17 @@ test('renderPromptConfigYaml 全字段开放：variables/identity/params 嵌套�
   assert.equal(doc.id, 'full')
   assert.equal(doc.layer, 'tool-pipeline')
   assert.equal(doc.text, '第一行\n第二行')
+  assert.equal(doc.subject, 'toolArgs')
+  assert.deepEqual(doc.match, { keys: ['a', 'b'], secondaryKeys: ['c'], logic: 'all', caseSensitive: true, wholeWords: true, useRegex: false })
   assert.deepEqual(doc.identity, { field: 'plugin', value: 'full-kind' })
   assert.deepEqual(doc.variables, { WHO: '李雷' })
   assert.equal(doc.params.toolNames, 'bash,run_code')
   assert.deepEqual(doc.params.patch, { maxTokens: 2048 })
+})
+
+test('renderPromptConfigYaml：空 match 不落盘半成品（引擎会在挂载期拒绝空键集合）', () => {
+  const yaml = renderPromptConfigYaml({ id: 'empty-match', layer: 'tool-pipeline', strategy: 'static', text: 'x', match: { keys: [] } })
+  assert.doesNotMatch(yaml, /^match:$/m)
 })
 
 test('writePreset 生成夹具模板的提示词配置模块（人设走顶层 persona 段，不再生成 persona 配置卡），数字前缀决定执行顺序', () => {
@@ -327,13 +336,13 @@ test('validatePromptConfigs：未知 layer / strategy / fill 由引擎权威校�
   assert.match(result.errors[2].message, /requires fill/)
 })
 
-test('validatePromptConfigs：placeholder 层限制与坏 templateFile 由引擎校验', async () => {
+test('validatePromptConfigs：策略层限制与坏 templateFile 由引擎校验', async () => {
   const result = await validatePromptConfigs([
     { id: 'bad-placeholder-layer', layer: 'system-section', strategy: 'placeholder', fill: 'env-facts' },
     { id: 'bad-template', strategy: 'static', templateFile: './missing-template.yml' },
   ])
   assert.equal(result.valid, false)
-  assert.match(result.errors[0].message, /supports layer pre-step or runtime-context only/)
+  assert.match(result.errors[0].message, /only takes effect on layer/)
   assert.match(result.errors[1].message, /templateFile "\.\/missing-template\.yml" is not readable/)
 })
 
@@ -384,7 +393,7 @@ test('validatePromptConfigs：预览文件名统一 4 位零填充前缀', async
 
 test('loadPromptTemplates：按文件名数字前缀顺序返回包内模板库', () => {
   const templates = loadPromptTemplates()
-  assert.equal(templates.length, 11)
+  assert.equal(templates.length, 13)
   assert.deepEqual(templates.map((template) => template.file), [
     '10-pre-step.yml',
     '14-first-turn-anchor.yml',
@@ -396,6 +405,8 @@ test('loadPromptTemplates：按文件名数字前缀顺序返回包内模板库'
     '40-agent-request.yml',
     '50-llm-stream.yml',
     '60-tool-pipeline.yml',
+    '65-turn-stop.yml',
+    '66-subagent-start.yml',
     '70-subagent-maintenance.yml',
   ])
 })
@@ -423,7 +434,7 @@ test('loadToolTemplates：返回工具模板库（id/name/execute.kind 合法）
   }
 })
 
-test('模板库覆盖六个注入层级与两个 placeholder 数据源', () => {
+test('模板库覆盖六个常用注入层级、两个事件层与一个 placeholder 数据源', () => {
   const specs = loadPromptTemplates().map((template) => template.spec)
   const byId = new Map(specs.map((spec) => [spec.id, spec]))
   assert.equal(byId.get('example-pre-step').layer, 'pre-step')
@@ -432,6 +443,8 @@ test('模板库覆盖六个注入层级与两个 placeholder 数据源', () => {
   assert.equal(byId.get('example-agent-request').layer, 'agent-request')
   assert.equal(byId.get('example-llm-stream').layer, 'llm-stream')
   assert.equal(byId.get('example-tool-pipeline').layer, 'tool-pipeline')
+  assert.equal(byId.get('example-turn-stop').layer, 'turn-stop')
+  assert.equal(byId.get('example-subagent-start').layer, 'subagent-start')
   assert.equal(byId.get('example-placeholder').fill, 'env-facts')
 })
 

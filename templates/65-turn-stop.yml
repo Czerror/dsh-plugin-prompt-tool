@@ -1,0 +1,18 @@
+# 模板：turn-stop 轮次停止层（命中条件时阻止本轮停止，强制模型续跑一步）
+# 接入：subject 缺省 assistantText（匹配最后一条 assistant 消息文本）；不写 match
+#       即无条件续跑。续跑上限固定在引擎内——每轮 1 次、每会话 3 次，配置关不掉。
+id: example-turn-stop
+name: 未完成时强制续跑
+layer: turn-stop
+strategy: static
+order: 0
+modelScope: all
+text: |-
+  上一轮还没有给出完整交付。请继续把当前任务做完：不要停在中途，
+  也不要用「接下来我会…」的计划代替实际执行。
+match:
+  keys:
+    - 接下来我会
+    - 稍后继续
+    - 待办如下
+params: {}

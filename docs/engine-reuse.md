@@ -125,11 +125,41 @@ pre-step 来源：
 
 ## 提示词配置插入点与顺序
 
-- 六个插入点彼此独立，没有跨层全局运行顺序。
+- 九个插入点彼此独立，没有跨层全局运行顺序。
 - `order` 只在同一插入点内生效。
-- UI / 写盘展示顺序固定为 `pre-step → system-section → runtime-context → agent-request → llm-stream → tool-pipeline`；这是展示与写盘顺序，不是运行时优先级。
-- 模型实际收到的提示词文本顺序更接近 `system-section → runtime-context → pre-step`；`agent-request` / `llm-stream` / `tool-pipeline` 是控制通道，不构成提示词文本优先级。
+- UI / 写盘展示顺序固定为 `pre-step → system-section → runtime-context → agent-request → llm-stream → tool-pipeline → turn-stop → subagent-start → subagent-end`；这是展示与写盘顺序，不是运行时优先级。
+- 模型实际收到的提示词文本顺序更接近 `system-section → runtime-context → pre-step`；`agent-request` / `llm-stream` / `tool-pipeline` / `turn-stop` / `subagent-start` / `subagent-end` 是控制通道，不构成提示词文本优先级。
 - 生成文件名使用 4 位零填充前缀（`0000-`），避免大角色卡 / 大预设超过 10 条后字典序错乱。
+
+### 条件判定与事件层（2026-09-19）
+
+`pre-step`、`tool-pipeline` 与三个事件层支持声明式条件：`subject` 决定匹配对象，`match`
+复用 `engine/anchor-match.mjs` 的匹配语义（主键 / 副键 / `any|all|not|notAny` / 大小写 /
+整词 / 正则）；未声明 `match` 即保持无条件行为。键按**字面文本**匹配，正则元字符会被
+自动转义，要写正则必须用 `/pattern/flags` 形态或 `useRegex: true`。非法 `logic`、空键集合
+与非法正则在挂载期 fail loud（`engine/schema.mjs#normalizeMatch`），不在运行时静默不命中。
+
+| 层 | 扩展点 | 缺省 subject | 命中后的行为 |
+|---|---|---|---|
+| `pre-step` | `agent/pre-step` | `userMessage` | 与本层其余配置一致的消息批注入 |
+| `tool-pipeline` | `tools/pre-execute` / `tools/post-execute` | `toolArgs` | `preDecision` / `postAction` 按条件裁决 |
+| `turn-stop` | `agent/turn-stopping` | `assistantText` | 阻止本轮停止并强制续跑一步 |
+| `subagent-start` | `subagent/start` | `subagentInfo` | 向该子代理注入一条上下文 |
+| `subagent-end` | `subagent/end` | `subagentInfo` | 只记录，无注入通道 |
+
+- `turn-stop` 的续跑上限固定在引擎内（每轮 1 次、每会话 3 次：`engine/layers.mjs` 的
+  `TURN_STOP_MAX_PER_TURN` / `TURN_STOP_MAX_PER_SESSION`），**不暴露为配置**——强制续跑
+  失控会把会话卡在停不下来的循环里，官方 hook 桥在同等位置也只留了 `TODO(stop-loop-guard)`。
+- `tool-pipeline` 的 `params.toolNames` 是逗号分隔字符串；写数组会在挂载期归一化为逗号串，
+  避免被解析成空列表（= 匹配所有工具），把一条定向门扩大成全工具门。
+- 条件层以外的层声明 `subject` / `match` 会在挂载期报错，不会静默忽略。
+- **策略只在消费它的层生效**：`config.resolve` 只由 pre-step（`executor.mjs`）与 runtime-context
+  的 placeholder（`layers.mjs`）调用，其余层声明非 `static` 策略会在挂载期报错
+  （`schema.mjs#STRATEGY_LAYER_SUPPORT`）。模板专属策略（`strategyDir` 懒加载）同样只允许
+  pre-step 与 runtime-context——此前这些组合会绑定 resolver 却无人调用，表现为「配了没效果也不报错」。
+- 条件判定的共享实现是 `engine/condition.mjs`：pre-step 缺省匹配本批用户消息，其余层按各自
+  `subject` 取文本；`match` 的匹配器在 `schema.mjs` 挂载期预编译一次（`config.matchScan`），
+  校验与执行同源。未命中的配置**不写入 session 去重**，条件恢复后仍能注入。
 
 ## 晋升语义（epoch-aware）
 

@@ -28,6 +28,10 @@ export interface PromptConfigSpec {
   promotion?: 'none' | 'main' | 'include-subagents'
   /** 消息受众：缺省（省略/null）= 公用（主会话+子代理）；main=仅主会话；subagent=仅子代理。 */
   audience?: 'main' | 'subagent' | null
+  /** 条件判定的匹配对象；缺省由层决定（engine/schema.mjs 的 LAYER_DEFAULT_SUBJECT）。 */
+  subject?: 'toolArgs' | 'toolResult' | 'userMessage' | 'assistantText' | 'subagentInfo'
+  /** 条件判定的键集合；省略 = 无条件（旧行为）。 */
+  match?: PromptConfigMatch
   modelScope?: 'all' | 'pro' | 'flash'
   sourceKind?: string
   form?: string
@@ -81,6 +85,19 @@ export interface PromptConfigFile {
   file: string
   /** yml 文件内容。 */
   content: string
+}
+
+/**
+ * 条件判定的键集合：与 `engine/anchor-match.mjs` 的匹配语义同构。
+ * 键按字面文本匹配（正则元字符会被转义）；要写正则须用 `/pattern/flags` 形态或 `useRegex: true`。
+ */
+export interface PromptConfigMatch {
+  keys?: string[]
+  secondaryKeys?: string[]
+  logic?: 'any' | 'all' | 'not' | 'notAny'
+  caseSensitive?: boolean
+  wholeWords?: boolean
+  useRegex?: boolean
 }
 
 /** 文本块缩进 n 个空格（YAML block scalar）。 */
@@ -151,6 +168,19 @@ export function renderPromptConfigYaml(spec: PromptConfigSpec): string {
   if (typeof spec.summary === 'string' && spec.summary.length > 0) lines.push(yamlScalar('summary', 0, spec.summary))
   if (typeof spec.templateFile === 'string' && spec.templateFile.length > 0) lines.push(`templateFile: ${yamlSafeScalar(spec.templateFile)}`)
   if (typeof spec.fill === 'string' && spec.fill.length > 0) lines.push(`fill: ${yamlSafeScalar(spec.fill)}`)
+  if (typeof spec.subject === 'string' && spec.subject.length > 0) lines.push(`subject: ${yamlSafeScalar(spec.subject)}`)
+  // 条件判定：只输出有内容的键集合；空 match 会在挂载期被引擎拒绝，不落盘半成品。
+  const match = spec.match
+  if (match !== undefined && match !== null
+    && ((Array.isArray(match.keys) && match.keys.length > 0) || (Array.isArray(match.secondaryKeys) && match.secondaryKeys.length > 0))) {
+    lines.push('match:')
+    if (Array.isArray(match.keys) && match.keys.length > 0) lines.push(`  keys: ${JSON.stringify(match.keys)}`)
+    if (Array.isArray(match.secondaryKeys) && match.secondaryKeys.length > 0) lines.push(`  secondaryKeys: ${JSON.stringify(match.secondaryKeys)}`)
+    if (typeof match.logic === 'string' && match.logic.length > 0 && match.logic !== 'any') lines.push(`  logic: ${match.logic}`)
+    if (match.caseSensitive === true) lines.push('  caseSensitive: true')
+    if (match.wholeWords === true) lines.push('  wholeWords: true')
+    if (match.useRegex !== undefined) lines.push(`  useRegex: ${match.useRegex === true}`)
+  }
   // text/texts 统一：单段输出 text（对齐官方 PromptSection.text 单字符串语义），
   // 多段保留 texts 数组（pre-step 多 content block / mergeMode=merged 拼接）。
   const texts = [

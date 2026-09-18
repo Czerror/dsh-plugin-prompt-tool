@@ -7,7 +7,7 @@ import { HintTooltip } from '../../ui/HintTooltip.tsx'
 import type { PromptToolTranslate } from '../../locales.ts'
 import type { EngineMeta, PromptConfigDraft } from '../../prompt-tool-types.ts'
 import type { InstructionPolicyFileOverride } from '../../../shared/instructions.ts'
-import { NumberField, OptionField, StrategyParamsFields, VariablesEditor } from './PromptConfigFields.tsx'
+import { MatchFields, NumberField, OptionField, StrategyParamsFields, VariablesEditor } from './PromptConfigFields.tsx'
 import { autoResizeTextarea } from './textarea-resize.ts'
 import { instructionFileIdOf } from '../../data/prompt-config-content.ts'
 import {
@@ -27,7 +27,10 @@ import {
   SOURCE_KIND_LABEL_KEYS,
   SOURCE_KINDS,
   STRATEGY_LABEL_KEYS,
+  SUBJECT_LABEL_KEYS,
+  clearedConditionPatch,
   fieldPolicyFor,
+  translateLabel,
 } from './prompt-config-policy.ts'
 import sharedCss from '../../ui/controls.module.css'
 import featureCss from './prompts.module.css'
@@ -98,6 +101,11 @@ export function PromptConfigForm(props: {
     if (Object.keys(next).length > 0) onPatchPolicy?.(next)
   }
   const policy = fieldPolicyFor(meta, config.layer)
+  // 条件判定（subject / match）只在引擎字段矩阵允许的层可编辑；指令文件卡的绑定不可改，
+  // 且独立指令策略不承载这两项，故整块隐藏，避免做出被 onPatch 静默丢弃的假入口。
+  const conditional = !locked && (policy.subject || policy.match)
+  const defaultSubject = meta.layerDefaultSubjects?.[config.layer ?? 'pre-step']
+  const layerDetail = meta.layerLabels[config.layer ?? '']?.detail
   // 可发出角色（引擎 EMITTABLE_ROLES）之外的值是旧输入：可加载、可保存，但运行时降级，
   // 表单必须说明这一点，而不是把非法角色继续摆成可选新值。
   const roleDowngraded = meta.roles.length > 0
@@ -123,9 +131,11 @@ export function PromptConfigForm(props: {
         <FormField className={styles.fieldSpan3} label={t('form.name.label')} hint={t('form.name.hint')} hintMode="tooltip">
           <input className={inputClass} value={config.name ?? ''} spellCheck={false} readOnly={disabled} onChange={(e) => onPatch({ name: e.target.value })} />
         </FormField>
-        <OptionField t={t} className={styles.fieldSpan3} label={t('form.layer.label')} hint={t('form.layer.hint')} value={config.layer} options={meta.layers} fallback="pre-step" labelKeys={LAYER_LABEL_KEYS} disabled={locked || disabled} onChange={(value) => onPatch({ layer: value })} />
+        <OptionField t={t} className={styles.fieldSpan3} label={t('form.layer.label')} hint={t('form.layer.hint')} value={config.layer} options={meta.layers} fallback="pre-step" labelKeys={LAYER_LABEL_KEYS} disabled={locked || disabled} onChange={(value) => onPatch({ layer: value, ...clearedConditionPatch(meta, value) })} />
         <OptionField t={t} className={styles.fieldSpan3} label={t('form.strategy.label')} hint={t('form.strategy.hint')} value={strategy} options={meta.strategies.filter((value) => value !== 'instruction-hint')} fallback="static" labelKeys={STRATEGY_LABEL_KEYS} disabled={locked || disabled} onChange={(value) => onPatch({ strategy: value, fill: value === 'placeholder' ? (config.fill ?? (instructionHint ? 'instruction-hint' : 'env-facts')) : undefined })} />
       </div>
+      {/* 层说明由引擎 LAYER_LABELS 下发（新增层无需在客户端重抄一遍语义）。 */}
+      {layerDetail !== undefined && <p className={styles.configFieldHint}>{layerDetail}</p>}
       {locked && (
         <>
           <p className={styles.configFieldHint}>{t('form.text.fileTarget', { path: filePath })}</p>
@@ -152,6 +162,18 @@ export function PromptConfigForm(props: {
           </HintTooltip>
         </div>
         {policy.dedupe && <OptionField t={t} className={styles.fieldSpan4} label={t('form.dedupe.label')} hint={t('form.dedupe.hint')} value={config.dedupe} options={meta.dedupes} fallback="none" labelKeys={DEDUPE_LABEL_KEYS} disabled={locked || disabled} onChange={(value) => onPatch({ dedupe: value })} />}
+        {conditional && (
+          <>
+            <p className={clsx(styles.configFieldLabel, styles.fieldFull)}>{t('form.match.group')}</p>
+            <OptionField t={t} className={styles.fieldSpan3} label={t('form.subject.label')} hint={t('form.subject.hint')}
+              value={config.subject} options={['', ...(meta.subjects ?? [])]} fallback="" labelKeys={SUBJECT_LABEL_KEYS} disabled={disabled}
+              onChange={(value) => onPatch({ subject: value === '' ? undefined : value })} />
+            {config.subject === undefined && defaultSubject !== undefined && (
+              <p className={clsx(styles.configFieldHint, styles.fieldSpan9)}>{t('form.subject.defaultHint', { value: translateLabel(t, SUBJECT_LABEL_KEYS, defaultSubject) })}</p>
+            )}
+            <MatchFields t={t} value={config.match} disabled={disabled} onChange={(value) => onPatch({ match: value })} />
+          </>
+        )}
       </div>
 
       {(policy.promotion || policy.audience || policy.modelScope) && (

@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { applyPromptConfigs, createPromptConfigs as createPromptConfigsCore, inject, loadPromptConfigFiles, parsePromptConfigYaml } from '../../engine/prompt-config-engine.mjs'
 import { getEngineMeta, KNOWN_STRATEGIES } from '../../engine/schema.mjs'
+import { TURN_STOP_MAX_PER_SESSION } from '../../engine/layers.mjs'
 import { extractText } from '../../engine/shared.mjs'
 import { setSessionVar } from '../../engine/session-vars.mjs'
 // 官方渲染器：回归「我方解析后的出口文本不再触发官方严格插值抛错」。
@@ -508,6 +509,193 @@ test('tool-pipeline 提示词配置接入 pre/post 官方事件（execute 为透
   assert.deepEqual(await post(other, { isError: false, content: [] }, async () => ({ kind: 'accept' })), { kind: 'accept' })
 })
 
+test('tool-pipeline 条件判定：工具参数命中才裁决，未命中透传', async () => {
+  const { listeners } = makeWiredHarness([{
+    id: 'no-review-reports', layer: 'tool-pipeline', strategy: 'static', text: 'x',
+    params: { toolNames: 'write,edit', preDecision: 'deny', denyReason: '审查结论写入 PLAN' },
+    match: { keys: ['.scratch/reviews/'] },
+  }])
+  const agentStub = { session: { header: { delegationDepth: 0 } }, options: { model: 'deepseek-v4-pro-8013' } }
+  const pre = listeners.get('tools/pre-execute')
+  const hitPath = { name: 'write', arguments: { file_path: '.scratch/reviews/x.md' }, agent: agentStub }
+  const missPath = { name: 'write', arguments: { file_path: 'docs/plan.md' }, agent: agentStub }
+  const missTool = { name: 'read', arguments: { file_path: '.scratch/reviews/x.md' }, agent: agentStub }
+
+  assert.deepEqual(await pre(hitPath, async () => ({ kind: 'allow' })), { kind: 'deny', reason: '审查结论写入 PLAN' })
+  assert.deepEqual(await pre(missPath, async () => ({ kind: 'allow' })), { kind: 'allow' })
+  assert.deepEqual(await pre(missTool, async () => ({ kind: 'allow' })), { kind: 'allow' })
+})
+
+test('tool-pipeline 条件判定：数组 toolNames 归一化，不扩大成全工具门', async () => {
+  const { listeners } = makeWiredHarness([{
+    id: 'array-names', layer: 'tool-pipeline', strategy: 'static', text: 'x',
+    params: { toolNames: ['write'], preDecision: 'deny', denyReason: 'no write' },
+  }])
+  const agentStub = { session: { header: { delegationDepth: 0 } }, options: { model: 'deepseek-v4-pro-8013' } }
+  const pre = listeners.get('tools/pre-execute')
+  assert.deepEqual(await pre({ name: 'read', arguments: {}, agent: agentStub }, async () => ({ kind: 'allow' })), { kind: 'allow' })
+  assert.deepEqual(await pre({ name: 'write', arguments: {}, agent: agentStub }, async () => ({ kind: 'allow' })), { kind: 'deny', reason: 'no write' })
+})
+
+test('tool-pipeline 条件判定：post 侧按工具结果文本裁决', async () => {
+  const { listeners } = makeWiredHarness([{
+    id: 'flag-unregistered', layer: 'tool-pipeline', strategy: 'static', text: 'SEEN',
+    params: { toolNames: 'grep', postAction: 'replace' },
+    subject: 'toolResult',
+    match: { keys: ['未注册'] },
+  }])
+  const agentStub = { session: { header: { delegationDepth: 0 } }, options: { model: 'deepseek-v4-pro-8013' } }
+  const exec = { name: 'grep', arguments: { pattern: 'x' }, agent: agentStub }
+  const post = listeners.get('tools/post-execute')
+  assert.deepEqual(
+    await post(exec, { content: [{ type: 'text', text: '技能状态：未注册' }] }, async () => ({ kind: 'accept' })),
+    { kind: 'accept', content: [{ type: 'text', text: 'SEEN' }] },
+  )
+  assert.deepEqual(
+    await post(exec, { content: [{ type: 'text', text: '一切正常' }] }, async () => ({ kind: 'accept' })),
+    { kind: 'accept' },
+  )
+})
+
+test('tool-pipeline 条件判定：组合逻辑生效（all 要求主副键同时命中）', async () => {
+  const { listeners } = makeWiredHarness([{
+    id: 'combo', layer: 'tool-pipeline', strategy: 'static', text: 'x',
+    params: { preDecision: 'deny', denyReason: 'combo' },
+    match: { keys: ['.scratch/'], secondaryKeys: ['reviews'], logic: 'all' },
+  }])
+  const agentStub = { session: { header: { delegationDepth: 0 } }, options: { model: 'deepseek-v4-pro-8013' } }
+  const pre = listeners.get('tools/pre-execute')
+  const partial = { name: 'write', arguments: { file_path: '.scratch/plan/x.md' }, agent: agentStub }
+  const both = { name: 'write', arguments: { file_path: '.scratch/reviews/x.md' }, agent: agentStub }
+  assert.deepEqual(await pre(partial, async () => ({ kind: 'allow' })), { kind: 'allow' })
+  assert.deepEqual(await pre(both, async () => ({ kind: 'allow' })), { kind: 'deny', reason: 'combo' })
+})
+
+test('turn-stop：命中条件时强制续跑一次，同一轮不越过每轮上限', async () => {
+  const steered = []
+  const { listeners } = makeWiredHarness([{
+    id: 'keep-going', layer: 'turn-stop', strategy: 'static', text: '继续本轮',
+    match: { keys: ['还没做完'] },
+  }])
+  const listener = listeners.get('agent/turn-stopping')
+  assert.ok(listener)
+  const agentStub = {
+    session: {
+      id: 'session-turn-stop',
+      header: { delegationDepth: 0 },
+      snapshotEvents: () => [{ type: 'assistant/message', data: { message: { content: [{ type: 'text', text: '还没做完' }] } } }],
+    },
+    options: { model: 'deepseek-v4-pro-8013' },
+    steer(message) { steered.push(message) },
+  }
+  await listener({ agent: agentStub, turn: 1 })
+  assert.equal(steered.length, 1)
+  assert.equal(steered[0].role, 'user')
+  assert.equal(steered[0].content[0].text, '继续本轮')
+
+  await listener({ agent: agentStub, turn: 1 })
+  assert.equal(steered.length, 1, '同一轮第二次不再续跑')
+})
+
+test('turn-stop：会话级上限拦住连续续跑（死循环护栏）', async () => {
+  const steered = []
+  const { listeners } = makeWiredHarness([{
+    id: 'loop-guard', layer: 'turn-stop', strategy: 'static', text: 'go',
+    match: { keys: ['继续'] },
+  }])
+  const listener = listeners.get('agent/turn-stopping')
+  const agentStub = {
+    session: {
+      id: 'session-loop-guard',
+      header: { delegationDepth: 0 },
+      snapshotEvents: () => [{ type: 'assistant/message', data: { message: { content: [{ type: 'text', text: '继续' }] } } }],
+    },
+    options: {},
+    steer(message) { steered.push(message) },
+  }
+  for (let turn = 1; turn <= 10; turn += 1) await listener({ agent: agentStub, turn })
+  assert.equal(steered.length, TURN_STOP_MAX_PER_SESSION)
+})
+
+test('turn-stop：未命中条件时不续跑', async () => {
+  const steered = []
+  const { listeners } = makeWiredHarness([{
+    id: 'no-match', layer: 'turn-stop', strategy: 'static', text: 'x',
+    match: { keys: ['绝不会出现的锚点'] },
+  }])
+  const listener = listeners.get('agent/turn-stopping')
+  const agentStub = {
+    session: {
+      id: 'session-no-match',
+      header: { delegationDepth: 0 },
+      snapshotEvents: () => [{ type: 'assistant/message', data: { message: { content: [{ type: 'text', text: '做完了' }] } } }],
+    },
+    options: {},
+    steer(message) { steered.push(message) },
+  }
+  await listener({ agent: agentStub, turn: 1 })
+  assert.equal(steered.length, 0)
+})
+
+test('subagent-start：命中条件时向子代理注入，未命中零注入', async () => {
+  const injected = []
+  const child = { session: { header: { delegationDepth: 1 } }, options: {}, inject(message) { injected.push(message) } }
+  const { listeners } = makeWiredHarness([{
+    id: 'sub-brief', layer: 'subagent-start', strategy: 'static', text: '先取证再动手',
+    match: { keys: ['child-1'] },
+  }], { agents: { get: () => child } })
+  const listener = listeners.get('subagent/start')
+  assert.ok(listener)
+  listener({ id: 'child-1', runId: 'r1' })
+  assert.equal(injected.length, 1)
+  assert.equal(injected[0].content[0].text, '先取证再动手')
+
+  listener({ id: 'child-2', runId: 'r2' })
+  assert.equal(injected.length, 1, '未命中条件不注入')
+})
+
+test('subagent-end：命中只观察，不产生注入', async () => {
+  const injected = []
+  const child = { session: { header: { delegationDepth: 1 } }, options: {}, inject(message) { injected.push(message) } }
+  const { listeners } = makeWiredHarness([{
+    id: 'sub-end-watch', layer: 'subagent-end', strategy: 'static', text: 'x',
+    match: { keys: ['child-1'] },
+  }], { agents: { get: () => child } })
+  const listener = listeners.get('subagent/end')
+  assert.ok(listener)
+  listener({ id: 'child-1', runId: 'r1' })
+  assert.equal(injected.length, 0)
+})
+
+test('条件层拒绝不适用的字段：subagent-start 不接受 audience', () => {
+  assert.throws(
+    () => createPromptConfigs([{ id: 'bad-audience', layer: 'subagent-start', audience: 'main' }]),
+    /does not support/,
+  )
+})
+
+test('pre-step 条件判定：用户消息命中才注入，未命中不占用 session 去重', async () => {
+  const harness = makeHarness(createPromptConfigs([{
+    id: 'bug-only', layer: 'pre-step', strategy: 'static', dedupe: 'session', text: '先取证再动手',
+    match: { keys: ['报错'] },
+  }]))
+  const probe = agent({ session: { id: 's-condition', header: { delegationDepth: 0 }, snapshotEvents: () => [] } })
+  // after-user 的插入锚点是 source.kind === 'user' 的消息。
+  const say = (id, text) => [{ id, role: 'user', content: [{ type: 'text', text }], source: { kind: 'user' } }]
+
+  const miss = await harness.step(probe, say('u1', '帮我加个按钮'))
+  assert.equal(miss.messages.length, 1, '未命中时不注入')
+
+  const hit = await harness.step(probe, say('u2', '这东西报错了'))
+  assert.ok(
+    hit.messages.some((message) => JSON.stringify(message).includes('先取证再动手')),
+    '未命中不写入 session 去重，条件恢复后仍能注入',
+  )
+
+  const repeat = await harness.step(probe, say('u3', '又报错了'))
+  assert.equal(repeat.messages.length, 1, '命中过一次后 session 去重照常生效')
+})
+
 test('configKind/order 排序：anchor 提示词配置保持文件序在前，ordered 提示词配置按 order 升序', () => {
   const runtime = createPromptConfigs([
     { id: 'z-last', configKind: 'ordered', order: 30, strategy: 'static' },
@@ -726,7 +914,14 @@ test('runtime-context placeholder：skill-catalog 每次 assembly 动态填充',
 })
 
 test('placeholder 仅允许 pre-step 或 runtime-context 层', () => {
-  assert.throws(() => createPromptConfigs([{ id: 'bad', strategy: 'placeholder', fill: 'env-facts', layer: 'system-section' }]), /supports layer pre-step or runtime-context only/)
+  assert.throws(() => createPromptConfigs([{ id: 'bad', strategy: 'placeholder', fill: 'env-facts', layer: 'system-section' }]), /only takes effect on layer/)
+  // 策略 × 层：非 static 策略只在消费它的层生效，其他层声明即挂载期报错（不再静默无效）。
+  assert.throws(() => createPromptConfigs([{ id: 'bad-world', strategy: 'world-book', layer: 'tool-pipeline' }]), /only takes effect on layer/)
+  assert.throws(() => createPromptConfigs([{ id: 'bad-anchor', strategy: 'first-turn-anchor', layer: 'turn-stop' }]), /only takes effect on layer/)
+  assert.throws(() => createPromptConfigs([{ id: 'bad-hint', strategy: 'instruction-hint', layer: 'subagent-start' }]), /only takes effect on layer/)
+  // 合法组合不受影响：static 全层可用，条件策略留在 pre-step。
+  assert.equal(createPromptConfigs([{ id: 'ok-static', strategy: 'static', layer: 'turn-stop' }])[0].layer, 'turn-stop')
+  assert.equal(createPromptConfigs([{ id: 'ok-world', strategy: 'world-book', layer: 'pre-step' }])[0].layer, 'pre-step')
 })
 
 test('audience=subagent 的 pre-step 配置：仅子代理注入，主会话跳过', async () => {

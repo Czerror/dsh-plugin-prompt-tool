@@ -9,6 +9,7 @@ import { sep } from 'node:path'
 import { parse as parseYaml } from './vendor/yaml/index.js'
 import { bindResolver } from './strategies.mjs'
 import { attachStRenderers } from './st-render.mjs'
+import { MATCH_LOGIC, createAnchorMatcher } from './anchor-match.mjs'
 
 const name = 'prompt-config-engine'
 
@@ -122,8 +123,43 @@ export function loadPromptConfigFiles(dirUrl) {
 }
 
 export const KNOWN_STRATEGIES = new Set(['static', 'placeholder', 'instruction-hint', 'first-turn-anchor', 'guide-auto', 'custom-fallback', 'world-book'])
+/**
+ * 策略 × 层支持矩阵：`config.resolve` 只在 pre-step（executor）与 runtime-context 的
+ * placeholder（layers）被消费，其他层声明非 static 策略会绑定 resolver 却无人调用，
+ * 表现为「配了没效果、也不报错」。这里把该事实写成校验：不支持的组合挂载期 fail loud。
+ * `static: null` 表示全层可用；模板专属策略（strategyDir 懒加载）与内置策略同样受限。
+ */
+export const STRATEGY_LAYER_SUPPORT = {
+  static: null,
+  placeholder: ['pre-step', 'runtime-context'],
+  'instruction-hint': ['pre-step'],
+  'first-turn-anchor': ['pre-step'],
+  'guide-auto': ['pre-step'],
+  'custom-fallback': ['pre-step'],
+  'world-book': ['pre-step'],
+}
+/** 模板专属策略允许的层：resolver 同样只在 pre-step / runtime-context 被调用。 */
+const TEMPLATE_STRATEGY_LAYERS = ['pre-step', 'runtime-context']
 export const KNOWN_SLOT_KINDS = new Set(['ordered', 'anchor'])
-export const KNOWN_LAYERS = new Set(['pre-step', 'system-section', 'runtime-context', 'agent-request', 'llm-stream', 'tool-pipeline'])
+export const KNOWN_LAYERS = new Set([
+  'pre-step', 'system-section', 'runtime-context', 'agent-request', 'llm-stream', 'tool-pipeline',
+  'turn-stop', 'subagent-start', 'subagent-end',
+])
+/**
+ * 条件判定的匹配对象：决定把哪段文本交给 anchor-match 匹配器。
+ * 取值与 DSH 扩展点一一对应，各层缺省值见 LAYER_DEFAULT_SUBJECT。
+ */
+export const KNOWN_SUBJECTS = new Set(['toolArgs', 'toolResult', 'userMessage', 'assistantText', 'subagentInfo'])
+/** 各条件层的缺省匹配对象；不在此表的层没有匹配对象。 */
+export const LAYER_DEFAULT_SUBJECT = {
+  'pre-step': 'userMessage',
+  'tool-pipeline': 'toolArgs',
+  'turn-stop': 'assistantText',
+  'subagent-start': 'subagentInfo',
+  'subagent-end': 'subagentInfo',
+}
+/** 支持 subject / match 的层；其余层声明这两个字段即 fail loud（避免误以为是门）。 */
+export const CONDITIONAL_LAYERS = new Set(Object.keys(LAYER_DEFAULT_SUBJECT))
 export const KNOWN_POSITIONS = new Set(['after-user', 'before-all', 'after-all'])
 export const KNOWN_DEDUPES = new Set(['session', 'batch', 'none'])
 export const KNOWN_PROMOTIONS = new Set(['none', 'main', 'include-subagents'])
@@ -146,12 +182,15 @@ export const KNOWN_FILLS = new Set(['instruction-hint', 'env-facts', 'skill-cata
 
 /** 层能力矩阵：每个字段只在对应注入层生效。客户端表单据此动态渲染。 */
 export const LAYER_FIELD_POLICIES = {
-  'pre-step': { position: true, dedupe: true, promotion: true, audience: true, modelScope: true, merge: true, order: true, role: true, placeholder: true },
-  'system-section': { position: false, dedupe: false, promotion: false, audience: true, modelScope: false, merge: true, order: true, role: false, placeholder: false },
-  'runtime-context': { position: false, dedupe: false, promotion: false, audience: false, modelScope: false, merge: true, order: true, role: false, placeholder: true },
-  'agent-request': { position: false, dedupe: false, promotion: false, audience: true, modelScope: true, merge: false, order: true, role: false, placeholder: false },
-  'llm-stream': { position: false, dedupe: false, promotion: false, audience: false, modelScope: true, merge: false, order: true, role: false, placeholder: false },
-  'tool-pipeline': { position: false, dedupe: false, promotion: false, audience: true, modelScope: true, merge: false, order: true, role: false, placeholder: false },
+  'pre-step': { position: true, dedupe: true, promotion: true, audience: true, modelScope: true, merge: true, order: true, role: true, placeholder: true, subject: true, match: true },
+  'system-section': { position: false, dedupe: false, promotion: false, audience: true, modelScope: false, merge: true, order: true, role: false, placeholder: false, subject: false, match: false },
+  'runtime-context': { position: false, dedupe: false, promotion: false, audience: false, modelScope: false, merge: true, order: true, role: false, placeholder: true, subject: false, match: false },
+  'agent-request': { position: false, dedupe: false, promotion: false, audience: true, modelScope: true, merge: false, order: true, role: false, placeholder: false, subject: false, match: false },
+  'llm-stream': { position: false, dedupe: false, promotion: false, audience: false, modelScope: true, merge: false, order: true, role: false, placeholder: false, subject: false, match: false },
+  'tool-pipeline': { position: false, dedupe: false, promotion: false, audience: true, modelScope: true, merge: false, order: true, role: false, placeholder: false, subject: true, match: true },
+  'turn-stop': { position: false, dedupe: false, promotion: false, audience: false, modelScope: true, merge: false, order: true, role: false, placeholder: false, subject: true, match: true },
+  'subagent-start': { position: false, dedupe: false, promotion: false, audience: false, modelScope: true, merge: false, order: true, role: false, placeholder: false, subject: true, match: true },
+  'subagent-end': { position: false, dedupe: false, promotion: false, audience: false, modelScope: true, merge: false, order: true, role: false, placeholder: false, subject: true, match: true },
 }
 
 /** 层显示名与说明：由引擎统一下发，客户端不再各自维护。 */
@@ -161,7 +200,10 @@ export const LAYER_LABELS = {
   'runtime-context': { title: '运行上下文', detail: 'runtime-context 层：static 按 order 注册，placeholder 单条生效，由 params.contextName 控制。' },
   'agent-request': { title: '调用配置层', detail: 'agent-request 层：按 order 注册，params.patch 改写请求配置。' },
   'llm-stream': { title: '模型流层', detail: 'llm/stream 层：按 order 注册，params.mode = pass | replace。' },
-  'tool-pipeline': { title: '工具管线层', detail: 'tools/* 层：按 order 注册，params.toolNames 与 preDecision / postAction 控制。' },
+  'tool-pipeline': { title: '工具管线层', detail: 'tools/* 层：按 order 注册，params.toolNames 与 preDecision / postAction 控制；subject / match 可选，命中才裁决。' },
+  'turn-stop': { title: '轮次停止层', detail: 'agent/turn-stopping 层：命中条件时强制续跑一步；引擎内置续跑上限，不可用配置关闭。' },
+  'subagent-start': { title: '子代理启动层', detail: 'subagent/start 层：命中条件时向该子代理注入上下文。' },
+  'subagent-end': { title: '子代理结束层', detail: 'subagent/end 层：命中条件时只记录，不注入。' },
 }
 
 /** 引擎能力矩阵：作为 /meta 的唯一数据源，客户端表单据此动态渲染。 */
@@ -180,9 +222,60 @@ export function getEngineMeta() {
     acceptedRoles: [...KNOWN_ROLES].sort(),
     mergeModes: [...KNOWN_MERGE_MODES].sort(),
     fills: [...KNOWN_FILLS].sort(),
+    subjects: [...KNOWN_SUBJECTS].sort(),
+    layerDefaultSubjects: { ...LAYER_DEFAULT_SUBJECT },
     layerFieldPolicies: LAYER_FIELD_POLICIES,
     layerLabels: LAYER_LABELS,
   }
+}
+
+/**
+ * 归一化并预编译条件判定的 match 段：键集合直接交给 anchor-match 的匹配器，
+ * 非法 logic、非法正则与空键集合都在挂载期 fail loud——运行时静默不命中会让
+ * "配了门却没拦住"变成不可见的失效。
+ * @returns 归一化后的匹配参数；未声明 match 时返回 undefined（= 无条件）。
+ */
+function normalizeMatch(raw, label) {
+  if (raw === undefined || raw === null) return undefined
+  if (typeof raw !== 'object' || Array.isArray(raw)) {
+    throw new TypeError(`${label}.match must be an object when present`)
+  }
+  const stringList = (value, field) => {
+    if (value === undefined || value === null) return []
+    if (!Array.isArray(value) || value.some((item) => typeof item !== 'string')) {
+      throw new TypeError(`${label}.match.${field} must be an array of strings when present`)
+    }
+    return value.map((item) => item.trim()).filter((item) => item.length > 0)
+  }
+  const keys = stringList(raw.keys, 'keys')
+  const secondaryKeys = stringList(raw.secondaryKeys, 'secondaryKeys')
+  if (keys.length === 0 && secondaryKeys.length === 0) {
+    throw new TypeError(`${label}.match needs at least one non-empty key`)
+  }
+  const logic = raw.logic ?? MATCH_LOGIC.ANY
+  if (!Object.values(MATCH_LOGIC).includes(logic)) {
+    throw new TypeError(`${label}.match.logic must be one of ${Object.values(MATCH_LOGIC).join(', ')}`)
+  }
+  for (const field of ['caseSensitive', 'wholeWords', 'useRegex']) {
+    if (raw[field] !== undefined && typeof raw[field] !== 'boolean') {
+      throw new TypeError(`${label}.match.${field} must be a boolean when present`)
+    }
+  }
+  const match = {
+    keys,
+    secondaryKeys,
+    logic,
+    caseSensitive: raw.caseSensitive === true,
+    wholeWords: raw.wholeWords === true,
+    useRegex: raw.useRegex,
+  }
+  // 预编译：useRegex、/pattern/flags 形态与整词包装里的正则错误在此暴露。
+  try {
+    createAnchorMatcher(match)
+  } catch (error) {
+    throw new TypeError(`${label}.match is not compilable: ${error instanceof Error ? error.message : String(error)}`)
+  }
+  return match
 }
 
 /** 从 YAML 提示词配置描述构造运行时提示词配置。配置错误必须在挂载时暴露(fail loud)。 */
@@ -224,9 +317,14 @@ export function createPromptConfigs(specs, options = {}) {
     if (!KNOWN_LAYERS.has(layer)) {
       throw new TypeError(`${name}: ${label} unknown layer ${JSON.stringify(layer)} — known layers: ${[...KNOWN_LAYERS].sort().join(', ')}`)
     }
+    // 策略只在消费它的层生效：不支持的组合必须报错，不能静默变成"配了没效果"。
+    const strategyLayers = KNOWN_STRATEGIES.has(strategy) ? STRATEGY_LAYER_SUPPORT[strategy] : TEMPLATE_STRATEGY_LAYERS
+    if (strategyLayers !== null && !strategyLayers.includes(layer)) {
+      throw new TypeError(`${name}: ${label} strategy ${JSON.stringify(strategy)} only takes effect on layer(s) ${strategyLayers.join(', ')} — got layer ${JSON.stringify(layer)}`)
+    }
     // 层能力矩阵同时是引擎校验源：矩阵标记 false 的字段在对应层不生效，
     // 显式提供时 fail loud（UI 表单已按矩阵隐藏，此处兜底手写配置）。
-    const restricted = ['position', 'dedupe', 'promotion', 'audience', 'modelScope', 'merge', 'role']
+    const restricted = ['position', 'dedupe', 'promotion', 'audience', 'modelScope', 'merge', 'role', 'subject', 'match']
       .filter((field) => LAYER_FIELD_POLICIES[layer][field] === false && spec[field === 'merge' ? 'mergeMode' : field] != null)
     if (restricted.length > 0) {
       throw new TypeError(`${name}: ${label} layer ${JSON.stringify(layer)} does not support field(s): ${restricted.join(', ')}`)
@@ -255,6 +353,12 @@ export function createPromptConfigs(specs, options = {}) {
     if (!KNOWN_ROLES.has(role)) {
       throw new TypeError(`${name}: ${label} unknown role ${JSON.stringify(role)}`)
     }
+    // 条件判定：subject 决定把哪段文本交给匹配器（缺省由层决定），match 缺省 = 无条件。
+    if (spec.subject !== undefined && !KNOWN_SUBJECTS.has(spec.subject)) {
+      throw new TypeError(`${name}: ${label} unknown subject ${JSON.stringify(spec.subject)} — known subjects: ${[...KNOWN_SUBJECTS].sort().join(', ')}`)
+    }
+    const subject = spec.subject ?? LAYER_DEFAULT_SUBJECT[layer]
+    const match = normalizeMatch(spec.match, `${name}: ${label}`)
   // identity 仅支持 plugin 命名空间（kind 模式与 sourceKind 重复，已归一）。
   const identity = spec.identity ?? { field: 'plugin', value: spec.id }
   if (identity === null || typeof identity !== 'object' || Array.isArray(identity)
@@ -284,9 +388,7 @@ export function createPromptConfigs(specs, options = {}) {
     if (!KNOWN_MERGE_MODES.has(mergeMode)) {
       throw new TypeError(`${name}: ${label} unknown mergeMode ${JSON.stringify(mergeMode)}`)
     }
-    if (strategy === 'placeholder' && layer !== 'pre-step' && layer !== 'runtime-context') {
-      throw new TypeError(`${name}: ${label} strategy=placeholder supports layer pre-step or runtime-context only, got ${JSON.stringify(layer)}`)
-    }
+    // placeholder 的层限制由上面的 STRATEGY_LAYER_SUPPORT 统一校验（此处不再重复）。
     let fill
     if (strategy === 'placeholder') {
       fill = typeof spec.fill === 'string' && spec.fill.length > 0 ? spec.fill : undefined
@@ -299,6 +401,13 @@ export function createPromptConfigs(specs, options = {}) {
     const templatePatch = template !== null && typeof template === 'object'
       ? { id: template.id, role: template.role, content: template.content, source: template.source }
       : undefined
+    // tool-pipeline 的 toolNames 是逗号分隔字符串（parseToolNames 只认字符串）：
+    // 数组写法会被静默解析为空 = 匹配所有工具，把一条定向门扩大成全工具门，
+    // 与条件判定叠加后危害更大，这里归一化而不是留给运行时。
+    const rawParams = spec.params !== null && typeof spec.params === 'object' && !Array.isArray(spec.params) ? spec.params : {}
+    const params = layer === 'tool-pipeline' && Array.isArray(rawParams.toolNames)
+      ? { ...rawParams, toolNames: rawParams.toolNames.filter((item) => typeof item === 'string').join(',') }
+      : rawParams
     const config = {
       id: spec.id,
       name: typeof spec.name === 'string' ? spec.name : spec.id,
@@ -316,6 +425,8 @@ export function createPromptConfigs(specs, options = {}) {
       promotion,
       audience,
       modelScope,
+      subject,
+      match,
       sourceKind: typeof spec.sourceKind === 'string' && spec.sourceKind.length > 0 ? spec.sourceKind : spec.id,
       form: typeof spec.form === 'string' ? spec.form : 'notice',
       summary: typeof spec.summary === 'string' ? spec.summary : '',
@@ -332,8 +443,11 @@ export function createPromptConfigs(specs, options = {}) {
       mergeMode,
       variables: spec.variables !== null && typeof spec.variables === 'object' && !Array.isArray(spec.variables) ? spec.variables : {},
       templatePatch,
-      params: spec.params !== null && typeof spec.params === 'object' && !Array.isArray(spec.params) ? spec.params : {},
+      params,
     }
+    // 条件判定的匹配器在挂载期编译一次，执行侧（condition.mjs）直接复用：
+    // normalizeMatch 已用同一份参数试编译过，这里是同源的第二句（失败会抛出）。
+    config.matchScan = match === undefined ? undefined : createAnchorMatcher(match).scan
     config.resolve = bindResolver(config, options.strategyDir)
     return config
   })

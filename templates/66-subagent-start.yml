@@ -1,0 +1,14 @@
+# 模板：subagent-start 子代理启动层（向该子代理注入一条上下文）
+# 接入：subject 缺省 subagentInfo（事件载荷序列化文本，含子代理 id/runId）；不写
+#       match 即每个子代理都注入。载荷里没有稳定的角色名，按 id 筛选通常不实用——
+#       需要筛的时候再按实际 runId 补 match。
+id: example-subagent-start
+name: 子代理通用守则
+layer: subagent-start
+strategy: static
+order: 0
+modelScope: all
+text: |-
+  开始编辑之前，先确认你改的这条路径在运行时会真的被执行：查调用链，
+  或用探针跑一次看它动。找不到证据就继续查，不要凭「看起来像」就动手。
+params: {}

@@ -22,6 +22,7 @@ import {
   sessionEvents,
 } from './shared.mjs'
 import { interpolateVariables } from './interpolate.mjs'
+import { conditionHit, userMessagesText } from './condition.mjs'
 import { createEpochPromotion } from './compaction-epoch.mjs'
 import { wireLayers } from './layers.mjs'
 import { sessionVarsSnapshot } from './session-vars.mjs'
@@ -150,6 +151,8 @@ export async function runPreStepBatch(options) {
   const { main, withSubagents } = promotion
   try {
     const messages = Array.isArray(decision.messages) ? [...decision.messages] : []
+    // 条件判定的匹配对象在本批进入时取定：批次内后续注入不改变本批的判定依据。
+    const userText = userMessagesText(messages)
     let changed = false
 
     const due = []
@@ -157,7 +160,8 @@ export async function runPreStepBatch(options) {
       && !(config.audience === 'main' && isDelegated(session)) && !(config.audience === 'subagent' && !isDelegated(session))
       && matchesModel(config.modelScope, agent.options?.model)
       && (config.promotion !== 'main' || main.status(agent).promoted)
-      && (config.promotion !== 'include-subagents' || withSubagents.status(agent).promoted)), session, messages, warnOnce)
+      && (config.promotion !== 'include-subagents' || withSubagents.status(agent).promoted)
+      && conditionHit(config, { userText })), session, messages, warnOnce)
     for (const config of configs) {
       try {
         if (config.layer !== 'pre-step') continue
@@ -167,6 +171,8 @@ export async function runPreStepBatch(options) {
         if (!matchesModel(config.modelScope, agent.options?.model)) continue
         if (config.promotion === 'main' && !main.status(agent).promoted) continue
         if (config.promotion === 'include-subagents' && !withSubagents.status(agent).promoted) continue
+        // 条件判定放在去重之前：未命中的配置不算"已注入"，条件恢复后仍应能注入。
+        if (!conditionHit(config, { userText })) continue
 
         const configSessions = configMemo(memo, config)
         if (config.dedupe === 'session') {

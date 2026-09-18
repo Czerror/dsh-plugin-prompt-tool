@@ -4,14 +4,18 @@
  */
 
 import {
+  MAX_TRACKED_SESSIONS,
+  extractText,
   getService,
   isDelegated,
   keepDisposer,
   matchesModel,
+  newMessageId,
   parseToolNames,
 } from './shared.mjs'
 import { interpolateVariables, stripUnresolvedRefs, RUNTIME_FACTS, runtimeFactValue } from './interpolate.mjs'
 import { getSessionVar, sessionVarsSnapshot } from './session-vars.mjs'
+import { conditionHit, lastAssistantText, subagentTextOf, toolArgsText } from './condition.mjs'
 
 const name = 'prompt-config-engine'
 
@@ -307,6 +311,31 @@ function wireLlmStreams(ctx, configs, warnOnce) {
   }
 }
 
+/** 条件判定的匹配器与取文本逻辑由 condition.mjs 承载（pre-step 与其他层共用）。 */
+
+/** 插件来源的 user 消息：与 anchor-turn / progress-reminder 同一形状。 */
+function pluginMessage(prefix, text, summary) {
+  return {
+    id: newMessageId(prefix),
+    role: 'user',
+    content: [{ type: 'text', text }],
+    source: { kind: 'plugin', plugin: name, form: 'notice', summary },
+  }
+}
+
+/** 层级文本：按声明变量插值后按空行拼接；不走官方插值通道（非 system-section）。 */
+function layerText(config, agent, warnOnce) {
+  try {
+    return config.texts
+      .map((item) => interpolateVariables(item, config.variables, agent?.session))
+      .filter((item) => item.length > 0)
+      .join('\n\n')
+  } catch (error) {
+    warnOnce(`${name}: ${config.layer} ${config.id} text failed: ${String(error?.message ?? error)}`)
+    return ''
+  }
+}
+
 /** tool-pipeline:pre-execute 判定、execute 包装、post-execute 结果替换/阻断。 */
 function wireToolPipelines(ctx, configs, warnOnce) {
   for (const config of configs) {
@@ -315,6 +344,7 @@ function wireToolPipelines(ctx, configs, warnOnce) {
     ctx.on('tools/pre-execute', async (exec, next) => {
       try {
         if (!matchesTool(exec) || !matchesAgentScope(config, exec?.agent)) return next()
+        if (!conditionHit(config, { argsText: toolArgsText(exec?.arguments) })) return next()
         const decision = config.params?.preDecision ?? 'allow'
         if (decision === 'allow') return next()
         if (decision === 'deny') {
@@ -330,6 +360,7 @@ function wireToolPipelines(ctx, configs, warnOnce) {
     ctx.on('tools/post-execute', async (exec, result, next) => {
       try {
         if (!matchesTool(exec) || !matchesAgentScope(config, exec?.agent)) return next()
+        if (!conditionHit(config, { argsText: toolArgsText(exec?.arguments), resultText: extractText(result) })) return next()
         const action = config.params?.postAction ?? 'accept'
         if (action === 'accept') return next()
         if (action === 'replace' && config.texts.length > 0) {
@@ -347,6 +378,103 @@ function wireToolPipelines(ctx, configs, warnOnce) {
   }
 }
 
+/**
+ * 轮次停止层的续跑上限：每轮 1 次、每会话 3 次，均为引擎常量。
+ * 不暴露为配置——强制续跑失控会把会话卡在停不下来的循环里；官方桥在同一位置
+ * 也只留了 TODO(stop-loop-guard) 而未实现上限。
+ */
+export const TURN_STOP_MAX_PER_TURN = 1
+export const TURN_STOP_MAX_PER_SESSION = 3
+
+/** 会话内保留的轮次计数上限（与 deliberation-gate 同规模）。 */
+const TURN_STOP_MAX_TRACKED_TURNS = 8
+
+/** turn-stop：命中条件时阻止本轮停止并强制续跑一步，上限在引擎内。 */
+function wireTurnStops(ctx, configs, warnOnce) {
+  if (configs.length === 0) return
+  /** sessionId -> { turns: Map<turn, count>, total } */
+  const state = new Map()
+
+  const stateOf = (sessionId, turn) => {
+    let entry = state.get(sessionId)
+    if (entry === undefined) {
+      if (state.size >= MAX_TRACKED_SESSIONS) state.clear()
+      entry = { turns: new Map(), total: 0 }
+      state.set(sessionId, entry)
+    }
+    if (!Number.isFinite(turn)) return entry
+    if (!entry.turns.has(turn) && entry.turns.size >= TURN_STOP_MAX_TRACKED_TURNS) {
+      const oldest = [...entry.turns.keys()].sort((a, b) => a - b)
+      for (const key of oldest.slice(0, entry.turns.size - TURN_STOP_MAX_TRACKED_TURNS + 1)) entry.turns.delete(key)
+    }
+    if (!entry.turns.has(turn)) entry.turns.set(turn, 0)
+    return entry
+  }
+
+  for (const config of configs) {
+    ctx.on('agent/turn-stopping', ({ agent, turn } = {}) => {
+      try {
+        const session = agent?.session
+        if (session?.id === undefined || typeof agent.steer !== 'function') return
+        if (!matchesAgentScope(config, agent)) return
+        const entry = stateOf(session.id, turn)
+        const turnCount = Number.isFinite(turn) ? (entry.turns.get(turn) ?? 0) : 0
+        if (turnCount >= TURN_STOP_MAX_PER_TURN || entry.total >= TURN_STOP_MAX_PER_SESSION) return
+        if (!conditionHit(config, { assistantText: lastAssistantText(session) })) return
+        const text = layerText(config, agent, warnOnce)
+        if (text.length === 0) return
+        // 计数在 steer 之前落账：steer 抛错也不允许下一步重试越过预算。
+        if (Number.isFinite(turn)) entry.turns.set(turn, turnCount + 1)
+        entry.total += 1
+        agent.steer(pluginMessage(`turn-stop-${config.id}`, text, `turn-stop ${config.id}`))
+      } catch (error) {
+        warnOnce(`${name}: turn-stop config ${config.id} failed: ${String(error?.message ?? error)}`)
+      }
+    })
+  }
+}
+
+/** subagent-start：命中条件时向该子代理注入上下文；subagent-end 只能观察。 */
+function wireSubagentEvents(ctx, configs, warnOnce) {
+  const startConfigs = configs.filter((config) => config.layer === 'subagent-start')
+  const endConfigs = configs.filter((config) => config.layer === 'subagent-end')
+  if (startConfigs.length > 0) {
+    ctx.on('subagent/start', (info) => {
+      try {
+        const child = getService(ctx, 'agents')?.get?.(info?.id)
+        if (child === undefined) return
+        const subagentText = subagentTextOf(info)
+        for (const config of startConfigs) {
+          if (!matchesAgentScope(config, child)) continue
+          if (!conditionHit(config, { subagentText })) continue
+          if (typeof child.inject !== 'function') continue
+          const text = layerText(config, child, warnOnce)
+          if (text.length === 0) continue
+          child.inject(pluginMessage(`subagent-start-${config.id}`, text, `subagent-start ${config.id}`))
+        }
+      } catch (error) {
+        warnOnce(`${name}: subagent-start failed: ${String(error?.message ?? error)}`)
+      }
+    })
+  }
+  if (endConfigs.length > 0) {
+    ctx.on('subagent/end', (info) => {
+      try {
+        const child = getService(ctx, 'agents')?.get?.(info?.id)
+        const subagentText = subagentTextOf(info)
+        for (const config of endConfigs) {
+          if (!matchesAgentScope(config, child)) continue
+          if (!conditionHit(config, { subagentText })) continue
+          // 该事件只观察、没有注入通道：命中即留一条记录，不产生模型可见副作用。
+          warnOnce(`${name}: subagent-end ${config.id} matched (observe only)`)
+        }
+      } catch (error) {
+        warnOnce(`${name}: subagent-end failed: ${String(error?.message ?? error)}`)
+      }
+    })
+  }
+}
+
 /** 把非 pre-step 提示词配置接入其声明的官方层级通道。 */
 export function wireLayers(ctx, configs, warnOnce) {
   // 官方插值两层共享一份变量注册：运行时事实按 assembly 求值，非法名走别名改写。
@@ -356,4 +484,6 @@ export function wireLayers(ctx, configs, warnOnce) {
   wireAgentRequests(ctx, configs.filter((config) => config.layer === 'agent-request'), warnOnce)
   wireLlmStreams(ctx, configs.filter((config) => config.layer === 'llm-stream'), warnOnce)
   wireToolPipelines(ctx, configs.filter((config) => config.layer === 'tool-pipeline'), warnOnce)
+  wireTurnStops(ctx, configs.filter((config) => config.layer === 'turn-stop'), warnOnce)
+  wireSubagentEvents(ctx, configs.filter((config) => config.layer === 'subagent-start' || config.layer === 'subagent-end'), warnOnce)
 }

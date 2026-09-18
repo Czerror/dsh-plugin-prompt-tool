@@ -17,7 +17,7 @@ import type { StConversionReport } from '../shared/bridge-contract.ts'
 import type { AssetFile, ImportChoices, ImportKind } from '../shared/asset-transfer.ts'
 
 /** 引擎六层注入顺序（与 schema 层序一致）：合并写盘时按此排序，数组序 = 引擎序。 */
-const LAYER_ORDER = ['pre-step', 'system-section', 'runtime-context', 'agent-request', 'llm-stream', 'tool-pipeline']
+const LAYER_ORDER = ['pre-step', 'system-section', 'runtime-context', 'agent-request', 'llm-stream', 'tool-pipeline', 'turn-stop', 'subagent-start', 'subagent-end']
 
 function sortConfigs(configs: Array<Record<string, unknown>>): Array<Record<string, unknown>> {
   return [...configs].sort((a, b) => {

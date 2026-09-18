@@ -26,12 +26,30 @@ export type CardOrigin =
   | { kind: 'preset'; presetId: string }
   | { kind: 'instruction-file'; fileId: string; contextId: string | null }
 
+/**
+ * 条件判定的匹配段（与引擎 match 同构，字段全部可选）：
+ * 键默认按字面文本匹配（正则元字符自动转义），`/pattern/flags` 形态或 `useRegex` 才走正则；
+ * 引擎要求主键与副键至少有一个非空，`logic` 缺省 any。
+ */
+export interface PromptConfigMatch {
+  keys: string[]
+  secondaryKeys?: string[]
+  logic?: 'any' | 'all' | 'not' | 'notAny'
+  caseSensitive?: boolean
+  wholeWords?: boolean
+  useRegex?: boolean
+}
+
 /** 客户端侧的提示词配置草稿：与宿主 PromptConfigSpec 同构，字段全部宽松。 */
 export interface PromptConfigDraft {
   id: string
   name?: string
   enabled?: boolean
   layer?: string
+  /** 条件判定的匹配对象（缺省由层决定）；仅条件层可写，其余层声明即引擎报错。 */
+  subject?: string
+  /** 条件判定的匹配段；缺省 = 无条件命中。仅条件层可写。 */
+  match?: PromptConfigMatch
   strategy?: string
   position?: string
   dedupe?: string
@@ -89,6 +107,8 @@ export interface LayerFieldPolicy {
   order: boolean
   role: boolean
   placeholder: boolean
+  subject: boolean
+  match: boolean
 }
 
 /** settings bridge /meta 返回的引擎能力矩阵。 */
@@ -111,6 +131,10 @@ export interface EngineMeta {
   acceptedRoles?: string[]
   mergeModes: string[]
   fills: string[]
+  /** 条件判定的匹配对象清单；旧宿主可能不下发。 */
+  subjects?: string[]
+  /** 层 → 缺省匹配对象映射（「层缺省」选项的说明文本）；旧宿主可能不下发。 */
+  layerDefaultSubjects?: Record<string, string>
   layerFieldPolicies: Record<string, LayerFieldPolicy>
   layerLabels: Record<string, { title: string; detail: string }>
 }

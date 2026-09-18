@@ -7,7 +7,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import ts from 'typescript'
 import { ENGINE_CAPABILITIES, engineCapability, engineRecipe } from '../../src/shared/engine-capabilities.ts'
 import { ENGINE_PARAM_DEFINITIONS, ENGINE_PARAM_KEYS } from '../../src/shared/engine-params.ts'
-import { displayLayers } from '../../src/client/features/prompts/prompt-config-policy.ts'
+import { displayLayers, INSERTION_LAYERS } from '../../src/client/features/prompts/prompt-config-policy.ts'
 import { EMPTY_FIELDS } from '../../src/client/data/prompt-tool-fields.ts'
 import { PROMPT_TOOL_DICTS } from '../../src/client/locales.ts'
 import { useTemplatePicker } from '../../src/client/features/prompts/useTemplatePicker.ts'
@@ -174,13 +174,29 @@ test('自定义工具编辑入口保留，能力删除仍需二次确认', () =>
   assert.deepEqual(removed, ['anchor-turn'], '删除回调只操作本卡对应的能力')
 })
 
-test('插入点顺序恒为六层，公共默认值不伪装成 pre-step 能力', () => {
-  assert.deepEqual(displayLayers([]), ['pre-step', 'system-section', 'runtime-context', 'agent-request', 'llm-stream', 'tool-pipeline'])
+test('插入点顺序恒为九层（含三个新层），公共默认值不伪装成 pre-step 能力', () => {
+  const order = ['pre-step', 'system-section', 'runtime-context', 'agent-request', 'llm-stream', 'tool-pipeline', 'turn-stop', 'subagent-start', 'subagent-end']
+  assert.deepEqual(displayLayers([]), order)
+  // 引擎 /meta 下发的层必须全部落在固定顺序里：只加一端会让下拉/模板菜单露出裸 id。
+  const engineMeta = getEngineMeta()
+  for (const layer of engineMeta.layers) assert.ok(order.includes(layer), `引擎层 ${layer} 未进入客户端固定顺序`)
+  for (const layer of ['turn-stop', 'subagent-start', 'subagent-end']) assert.ok(engineMeta.layers.includes(layer), `引擎未下发新层 ${layer}`)
+  // 固定顺序之外的层仍追加在末尾，不丢未知配置。
+  assert.deepEqual(displayLayers(['future-layer']), [...order, 'future-layer'])
   const list = read('features/modules/EngineModuleList.tsx')
   assert.match(list, /EnginePromptDefaultsCard/)
   assert.doesNotMatch(list, /name="提示词生成默认值" layer="pre-step"/)
   const editor = read('features/prompts/PromptConfigsEditor.tsx')
   assert.match(editor, /aria-label=\{t\('configs\.common\.aria'\)\}/)
+})
+
+test('模板菜单覆盖九个插入层：新层分组标题来自字典而不是裸层名', () => {
+  const templates = [...INSERTION_LAYERS].map((layer) => ({ file: `${layer}.yml`, spec: { id: `example-${layer}`, layer } }))
+  const html = render(TemplatePicker, { t, anchorRef: { current: null }, templates, onPick() {}, onClose() {} })
+  for (const layer of INSERTION_LAYERS) {
+    assert.ok(html.includes(zh[`templates.layer.${layer}`]), `模板菜单缺 ${layer} 的分组标题文案`)
+    assert.ok(html.includes(`${layer}.yml`), `模板菜单缺 ${layer} 的模板条目`)
+  }
 })
 
 test('模板浮层按层级只列该层模板，不再渲染分组标题', () => {
