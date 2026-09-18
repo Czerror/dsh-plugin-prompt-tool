@@ -2,7 +2,7 @@ import { after, test } from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { catalogFromScan, resolveProjectRoot, scanRoot, scanRoots, skillRoots, withSkillWinners } from '../../src/host/skills-scan.ts'
+import { catalogFromScan, resolveProjectRoot, scanRoot, scanRoots, skillRoots, withGlobalSkillFallback, withSkillWinners } from '../../src/host/skills-scan.ts'
 
 const sandbox = mkdtempSync(join(process.cwd(), 'pt-scan-'))
 after(() => rmSync(sandbox, { recursive: true, force: true }))
@@ -81,4 +81,32 @@ test('投影按 registry 胜出路径标注状态，完整性与文件声明独�
   const remote = result.find((entry) => entry.name === 'remote')
   assert.deepEqual([remote.source, remote.availability, remote.canSetPolicy, remote.canDelete], ['other', 'active', false, false])
   assert.ok(withSkillWinners(entries, summaries, false).every((entry) => entry.availability === 'unknown' && entry.winnerId === undefined))
+})
+
+test('技能视图回退：scope 视图为空时改用全局视图，避免整页误判为未注册', async () => {
+  // 故障现场：带 scope 的 registry 视图只读该视图层，技能装在全局层时整表为空，
+  // 空 resolved 会让 withSkillWinners 把每个条目判成 unregistered，技能页于是
+  // 整页显示「当前会话未注册」。
+  const root = join(sandbox, 'scope-fallback')
+  write(root, 'global-only', 'name: global-only\ndescription: D')
+  const entries = catalogFromScan(scanRoot({ kind: 'custom', path: root }))
+  const resolved = [{ name: 'global-only', path: join(root, 'global-only', 'SKILL.md'), provider: 'filesystem' }]
+
+  assert.equal(withSkillWinners(entries, [], true)[0].availability, 'unregistered', '空视图即故障现场')
+
+  let globalReads = 0
+  const readGlobal = async () => { globalReads += 1; return { skills: resolved, complete: true } }
+  const scopedEmpty = { skills: [], complete: true }
+
+  const view = await withGlobalSkillFallback(scopedEmpty, readGlobal)
+  assert.equal(globalReads, 1, '视图为空时才查全局')
+  assert.equal(withSkillWinners(entries, view.skills, view.complete)[0].availability, 'active', '回退后恢复 active')
+
+  globalReads = 0
+  const nonEmpty = { skills: resolved, complete: true }
+  assert.equal(await withGlobalSkillFallback(nonEmpty, readGlobal), nonEmpty, '非空视图原样返回')
+  assert.equal(globalReads, 0, '非空视图不得再查全局')
+
+  const bothEmpty = await withGlobalSkillFallback(scopedEmpty, async () => ({ skills: [], complete: true }))
+  assert.equal(bothEmpty, scopedEmpty, '两者皆空时保留原视图，不虚构条目')
 })

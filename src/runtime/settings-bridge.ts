@@ -61,7 +61,7 @@ import type { ModelSyncResult } from '../shared/bridge-contract.ts'
 import { moduleParamFallbacks, validateEngineParamValues } from '../shared/engine-params.ts'
 import { readPersonaSpec } from '../shared/persona-section.ts'
 import { SKILL_NAME_PATTERN, type SkillsStateRead } from '../host/skills-config.ts'
-import { withSkillWinners } from '../host/skills-scan.ts'
+import { withGlobalSkillFallback, withSkillWinners } from '../host/skills-scan.ts'
 import { DEFAULT_PRESET_ID } from '../shared/preset-ids.ts'
 import type { PresetModuleFacts } from '../shared/engine-capabilities.ts'
 import { validateCustomTools } from '../host/custom-tools.ts'
@@ -588,8 +588,10 @@ export function registerSettingsBridge(
           const entries = state.listSkills(cwd)
           const registry = (sctx.get?.('skills') ?? ctx.skills) as Pick<SkillRegistry, 'snapshot'> | undefined
           if (typeof registry?.snapshot !== 'function') return { skills: entries, complete: false }
-          const snapshot = await registry.snapshot({ cwd, scope })
-          return { skills: withSkillWinners(entries, snapshot.skills, snapshot.complete), complete: snapshot.complete }
+          const view = scope === undefined
+            ? await registry.snapshot({ cwd })
+            : await withGlobalSkillFallback(await registry.snapshot({ cwd, scope }), () => registry.snapshot({ cwd }))
+          return { skills: withSkillWinners(entries, view.skills, view.complete), complete: view.complete }
         } catch (error) {
           ctx.logger?.warn(`prompt-tool: 无法读取技能注册表，暂不标注同名遮蔽：${String(error)}`)
           return { skills: withSkillWinners(state.listSkills(cwd), [], false), complete: false }

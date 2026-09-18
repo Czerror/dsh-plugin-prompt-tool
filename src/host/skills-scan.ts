@@ -139,6 +139,26 @@ export function catalogFromScan(skills: readonly ScannedSkill[]): SkillCatalogEn
 
 export const skillPathKey = (path: string): string => process.platform === 'win32' ? resolve(path).toLowerCase() : resolve(path)
 
+/**
+ * 技能视图回退：带 scope 的查询只读该视图层（官方 SkillViewOptions 注释：
+ * omitted reads the global layer alone），技能装在全局层时它整表为空；而空
+ * resolved 会让 withSkillWinners 把每个条目判成 unregistered，整个技能页显示
+ * 「当前会话未注册」。视图为空时改用全局视图，与全局层技能的存放位置一致；
+ * 全局视图同样为空时保留原视图，不虚构条目。
+ *
+ * @param scoped - 带 scope 的查询结果。
+ * @param readGlobal - 惰性读取不带 scope 的全局视图；仅在 scoped 为空时调用。
+ * @returns 非空的那个视图；两者皆空时返回 scoped。
+ */
+export async function withGlobalSkillFallback<T extends { skills: readonly unknown[] }>(
+  scoped: T,
+  readGlobal: () => Promise<T>,
+): Promise<T> {
+  if (scoped.skills.length > 0) return scoped
+  const global = await readGlobal()
+  return global.skills.length > 0 ? global : scoped
+}
+
 type ResolvedSkill = Pick<SkillSummary, 'name' | 'path'> & Partial<SkillSummary>
 
 /** 当前会话快照负责胜出关系；不完整观测不能宣称任何条目已经生效或确定缺席。 */
