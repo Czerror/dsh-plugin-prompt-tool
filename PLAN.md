@@ -118,6 +118,7 @@
 - 生成物：`rebuild:composition` 按仓库 `test/fixtures/dsh/current` 固定输入重建 24 份官方组合，`sync:yaml` 按已安装 yaml@2.9.0 同步；版本化快照无内容变化，lib 不提交。
 - 新依赖仅为已发布官方能力 `dsh-skill-filesystem` 与其 `fs/observed` 类型归属 `dsh-fs`，均锁定 0.1.6-alpha.1。
 - 运行中 DSH 和真实用户技能未操作；新插件代码需用户重启 DSH 服务后生效。审查轮的临时 provider 依赖目录清理曾被自动审批拦截，未绕过；本轮测试创建的隔离资产由测试清理。
+- 实现提交 `74dd3fc` 已推送 `origin/dev`（`f485a28..74dd3fc`）；本节回填已验证的交付状态。
 
 [✔] Wave 0：授权、范围、旧 PLAN 原文归档及新方案
 [✔] Wave 1 / T1：模型消费（主线程复跑 16/16，含真实 registry 与四种调用策略）
@@ -126,4 +127,4 @@
 [✔] Wave 2 / T4：shared、index 与 bridge
 [✔] Wave 2 / T5：客户端
 [✔] Wave 3 / T6：完整验证与文档
-[ ] Wave 3 / T7：提交与 origin/dev 推送
+[✔] Wave 3 / T7：提交与 origin/dev 推送
