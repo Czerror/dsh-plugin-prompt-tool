@@ -1010,3 +1010,43 @@ test('指令文件正文失焦自动写回：无「保存到文件」按钮，�
     assert.equal(store.getInstructionPool().drafts[0].savedContent, 'edited')
   } finally { restore(); globalThis.requestAnimationFrame = previousFrame }
 })
+
+test('指令文件卡折叠：展开时先落盘再折叠，未展开时不重复请求保存', async () => {
+  // 折叠按钮在卡片内部：点击它时焦点没有离开卡片，ownsFocus 判据放行不了；
+  // 编辑区又随折叠卸载，字段 commit 也不会再冒泡出失焦。所以折叠动作本身必须先
+  // 请求保存一次，否则用户改完直接收卡就等于丢弃修改。
+  const requests = []
+  const restore = installFetch(requests, {})
+  try {
+    const store = mountStore(makeApi(), makeSettings())
+    await store.load()
+    const tree = listFromPage(MainSessionPage, store)
+    const card = findElement(tree, (node) => node.type === PromptConfigCard && node.props.config?.id === 'agents-file-f1')
+    assert.ok(card, '必须能路由到指令文件卡')
+
+    const saved = []
+    const toggled = []
+    const expanded = componentTree(PromptConfigCard, {
+      ...card.props,
+      expanded: true,
+      onSaveInstructionFile: (fileId) => saved.push(fileId),
+      onToggleExpanded: (id) => toggled.push(id),
+    })
+    const openToggle = findElement(expanded, (node) => node.type === 'button' && node.props['aria-expanded'] === true)
+    assert.ok(openToggle, '展开态的折叠按钮必须存在')
+    openToggle.props.onClick()
+    assert.deepEqual(saved, ['f1'], '折叠前必须先请求落盘')
+    assert.deepEqual(toggled, ['agents-file-f1'], '折叠动作本身仍要执行')
+
+    const collapsed = componentTree(PromptConfigCard, {
+      ...card.props,
+      expanded: false,
+      onSaveInstructionFile: (fileId) => saved.push(fileId),
+      onToggleExpanded: () => {},
+    })
+    const closedToggle = findElement(collapsed, (node) => node.type === 'button' && node.props['aria-expanded'] === false)
+    assert.ok(closedToggle, '收起态的折叠按钮必须存在')
+    closedToggle.props.onClick()
+    assert.deepEqual(saved, ['f1'], '展开动作不涉及落盘')
+  } finally { restore() }
+})

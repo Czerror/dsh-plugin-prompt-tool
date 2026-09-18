@@ -86,6 +86,17 @@ export const PromptConfigCard = memo(function PromptConfigCard(props: {
     if (config.contentDirty) setConfirmation('reload')
     else void props.onReloadInstructionFile?.(instructionFileId)
   }
+  // 主动请求保存当前指令文件。
+  //
+  // 唯一不能读的是 contentDirty：失焦时字段的 commit 刚 setState、重渲染尚未发生，
+  // rAF 回调读到的还是上一帧的 false——那正是「点卡片外面不保存」的原因。是否真的
+  // 有东西要写交给 store 判断（无未保存草稿的调用直接返回 true）。
+  // contentSaving／contentConflict 与本次编辑无关，不会因 commit 落后一帧，保留作并发保护。
+  const flushInstructionSave = (): void => {
+    if (instructionFileId === undefined || props.disabled || fileNotWritable || confirmation !== undefined) return
+    if (config.contentSaving === true || config.contentConflict === true) return
+    props.onSaveInstructionFile?.(instructionFileId)
+  }
   return <article ref={cardRef} className={clsx(styles.configCard, props.expanded && styles.configCardOpen)}
     data-config-id={config.id} data-dragging={props.dragging ? '' : undefined}
     data-drop-before={props.dropBefore ? '' : undefined} data-drop-after={props.dropAfter ? '' : undefined}
@@ -93,11 +104,9 @@ export const PromptConfigCard = memo(function PromptConfigCard(props: {
     onBlur={() => {
       ownsFocus.current = false
       requestAnimationFrame(() => {
-        if (!ownsFocus.current) setMenuOpen(false)
-        if (!ownsFocus.current && instructionFileId !== undefined && config.contentDirty === true
-          && config.contentSaving !== true && config.contentConflict !== true && !fileNotWritable && !props.disabled && confirmation === undefined) {
-          props.onSaveInstructionFile?.(instructionFileId)
-        }
+        if (ownsFocus.current) return
+        setMenuOpen(false)
+        flushInstructionSave()
       })
     }}
     onDragOver={props.onDragOver === undefined ? undefined : (event) => props.onDragOver!(config.id, event)}
@@ -107,7 +116,12 @@ export const PromptConfigCard = memo(function PromptConfigCard(props: {
       {props.onDragStart !== undefined && <HintTooltip label={t('card.dragHint')}>
         <span className={styles.dragHandle} aria-hidden="true" draggable onDragStart={(event) => props.onDragStart!(config.id, event)}>⠿</span>
       </HintTooltip>}
-      <button type="button" className={styles.configToggle} aria-expanded={props.expanded} aria-controls={panelId} onClick={() => props.onToggleExpanded(config.id)}>
+      <button type="button" className={styles.configToggle} aria-expanded={props.expanded} aria-controls={panelId}
+        onClick={() => {
+          // 折叠会让编辑区卸载、焦点仍留在卡片内，失焦保存不会触发；先落盘再切换。
+          if (props.expanded) flushInstructionSave()
+          props.onToggleExpanded(config.id)
+        }}>
         <span className={styles.configTitle}>
           <span className={styles.configTitleRow}><span className={styles.configName}>{name}</span></span>
           <span className={styles.configMeta}>{chips.join(' · ')}</span>
