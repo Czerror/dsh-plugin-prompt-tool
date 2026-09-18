@@ -26,10 +26,11 @@ export interface ScopeBindingLike {
   readonly ctx?: unknown
 }
 
-/** ui-session 适配器的结构面：当前作用域绑定快照。 */
+/** ui-session 适配器的结构面：当前作用域绑定快照与变化通知。 */
 export interface SessionIdAdapterLike {
   readonly current: {
     getSnapshot(): ScopeBindingLike
+    subscribe(listener: () => void): () => void
   }
 }
 
@@ -49,4 +50,31 @@ export function readCurrentSessionId(adapter: SessionIdAdapterLike, sessions: Se
   }
   const key = binding.key
   return key === undefined || key.length === 0 ? undefined : key
+}
+
+/**
+ * 订阅当前会话 id 的变化。
+ *
+ * 作用域绑定要等主视图 retain 该会话之后才有值（官方 `publishMain` 以
+ * `retainedBy.mainView > 0` 为准），所以它晚于工作台首次打开——这是必须在
+ * id 就绪时补一次加载的原因。只在 id **实际变化**时通知：绑定对象换引用
+ * 不算变化，否则会空转重载。
+ *
+ * @param adapter - ui-session 的 `ctx.uiSession.adapter`。
+ * @param sessions - `ctx.sessions`。
+ * @param onChange - id 实际变化时回调（无参，调用方自行读取当前值）。
+ * @returns 退订函数。
+ */
+export function subscribeSessionIdChange(
+  adapter: SessionIdAdapterLike,
+  sessions: SessionIdSessionsLike,
+  onChange: () => void,
+): () => void {
+  let last = readCurrentSessionId(adapter, sessions)
+  return adapter.current.subscribe(() => {
+    const next = readCurrentSessionId(adapter, sessions)
+    if (next === last) return
+    last = next
+    onChange()
+  })
 }

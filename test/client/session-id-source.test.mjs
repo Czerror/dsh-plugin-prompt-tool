@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 // lib/client.js 是宿主 ModuleLoader 注册格式（不可 import）；Node 26 直接类型剥离加载 .ts 源。
-import { readCurrentSessionId } from '../../src/client/data/session-id-source.ts'
+import { readCurrentSessionId, subscribeSessionIdChange } from '../../src/client/data/session-id-source.ts'
 
 /**
  * 防复发回归：官方在 0.1.6-alpha.2 删除了 `SessionListState.current`
@@ -63,4 +63,32 @@ test('防复发：真实 alpha.2 列表快照（无 current）下仍能取到会
     list: { getSnapshot: () => listSnapshot },
   }
   assert.equal(readCurrentSessionId(adapter, sessions), 'session-x', '不得依赖已删除的 current')
+})
+
+test('会话 id 订阅：id 就绪时通知一次；绑定换引用与退订后都不再通知', () => {
+  // 复现真实时序：工作台打开时作用域绑定还没有会话（主视图尚未 retain），
+  // 之后主视图 retain 该会话，绑定才带上 id。缺这次通知，首屏就会一直停在
+  // 「只有全局文件」的范围，直到用户关掉工作台重开。
+  const scopeCtx = {}
+  const adapter = mockAdapter({ key: undefined })
+  const sessions = mockSessions((ctx) => (ctx === scopeCtx ? 'session-late' : undefined))
+  let fired = 0
+  const stop = subscribeSessionIdChange(adapter, sessions, () => { fired += 1 })
+
+  assert.equal(fired, 0, '订阅时不立即通知')
+  adapter.push({ key: undefined })
+  assert.equal(fired, 0, 'id 未变化不得通知')
+
+  adapter.push({ key: 'session-late', ctx: scopeCtx })
+  assert.equal(fired, 1, 'id 就绪必须通知')
+
+  adapter.push({ key: 'session-late', ctx: scopeCtx })
+  assert.equal(fired, 1, '绑定换引用不得重复通知')
+
+  adapter.push({ key: undefined })
+  assert.equal(fired, 2, '会话关闭时通知')
+
+  stop()
+  adapter.push({ key: 'session-other', ctx: scopeCtx })
+  assert.equal(fired, 2, '退订后静默')
 })

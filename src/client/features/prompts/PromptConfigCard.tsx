@@ -141,11 +141,10 @@ export const PromptConfigCard = memo(function PromptConfigCard(props: {
         </span>
       </span>
     </header>
-    {(config.contentConflict || fileNotWritable || config.contentMessage || config.contentOwnerConflict || props.readOnlyReason) && <div className={styles.configStatus}>
+    {(config.contentConflict || fileNotWritable || config.contentMessage || props.readOnlyReason) && <div className={styles.configStatus}>
       {config.contentConflict && <p>{t('card.fileConflictDetail')}</p>}
       {config.contentDirty && (config.contentConflict || fileNotWritable) && <p>{t('card.chip.fileDirty')}</p>}
       {config.contentMessage && <p>{t('card.fileStatusDetail', { message: config.contentMessage })}</p>}
-      {config.contentOwnerConflict && <p>{t('file.ownerConflict')}</p>}
       {props.readOnlyReason && <p>{props.readOnlyReason}</p>}
       {instructionFileId !== undefined && (config.contentConflict || fileNotWritable) && <span ref={reloadRef} tabIndex={-1}>
         <Button size="sm" variant="outline" disabled={config.contentSaving} onClick={reload}>{t('card.reloadFile')}</Button>

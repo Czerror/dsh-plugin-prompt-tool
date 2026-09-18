@@ -517,6 +517,12 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     void loadModels()
   }, [loadModels])
 
+  // 会话 id 晚于工作台首次打开就绪时（页面加载、会话恢复）补一次加载。
+  // ui-session 的作用域绑定要等主视图 retain 该会话之后才有值（官方 publishMain
+  // 以 retainedBy.mainView > 0 为准），否则首屏会一直停在「只有全局文件」的范围，
+  // 直到用户关掉工作台重开。
+  useEffect(() => api.subscribeSessionChange(() => { void load() }), [api, load])
+
   // 目录就绪后补查当前可见路由的推理档位（会话选择 / 预设主模型 / 子代理模型 / 宿主默认）。
   // 只查这几条可见路由：不遍历整个目录，也不把目录当授权白名单。
   useEffect(() => {

@@ -7,6 +7,7 @@ const session = {}
 const api = {
   sessionModel: { snapshot: () => session, subscribe: () => () => {} },
   currentSessionId: () => undefined,
+  subscribeSessionChange: () => () => {},
   listAgentPresets: async () => { window.previewRequests++; return [{ id: 'test', name: 'Test' }] },
 }
 const settings = { scope: { getSnapshot: () => ({ status: 'ready', revision: 1 }) }, ensure: async () => {}, mutate: async () => {} }

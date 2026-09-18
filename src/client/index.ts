@@ -9,7 +9,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import type { PromptToolSettingsTransport } from './data/use-prompt-tool-store.ts'
 import { createSessionModelFace } from './data/session-model-face.ts'
-import { readCurrentSessionId } from './data/session-id-source.ts'
+import { readCurrentSessionId, subscribeSessionIdChange } from './data/session-id-source.ts'
 import { bridgeCall } from './data/bridge-client.ts'
 import { registerWorkbenchSlots } from './app/workbench/register-workbench.tsx'
 import { PromptToolWorkspaceController } from './app/workbench/workspace-controller.ts'
@@ -59,6 +59,7 @@ export function apply(ctx: ClientContext): void {
   const currentSessionId = (): string | undefined => readCurrentSessionId(ctx.uiSession.adapter, ctx.sessions)
   const hostApi: PromptToolHostApi = {
     currentSessionId,
+    subscribeSessionChange: (listener) => subscribeSessionIdChange(ctx.uiSession.adapter, ctx.sessions, listener),
     listAgentPresets: async () => {
       try {
         const result = await ctx.remote.agentPresets.list()

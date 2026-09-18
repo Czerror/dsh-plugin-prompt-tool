@@ -6,7 +6,7 @@ import { usePromptToolStore } from '../../src/client/data/use-prompt-tool-store.
 import { PROMPT_TOOL_DICTS } from '../../src/client/locales.ts'
 const fixture = window.fixture
 const session = {}
-const api = { sessionModel: { snapshot: () => session, subscribe: () => () => {} }, currentSessionId: () => undefined }
+const api = { sessionModel: { snapshot: () => session, subscribe: () => () => {} }, currentSessionId: () => undefined, subscribeSessionChange: () => () => {} }
 const settings = { scope: { getSnapshot: () => ({ status: 'ready', revision: 1 }) }, ensure: async () => {}, mutate: async () => {} }
 const t = (key, params = {}) => Object.entries(params).reduce((text, [key, value]) => text.replaceAll(`{${key}}`, String(value)), PROMPT_TOOL_DICTS.zh[key] ?? key)
 // 两条指令文件（全局 + 项目）：与真实探测结果同形，用于验证它们复用标准配置卡渲染。
