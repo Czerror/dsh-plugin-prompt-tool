@@ -135,7 +135,12 @@ export function createSkillsRuntime(ctx: Context, options: { dshHome?: string } 
         if (observedPending !== pending) continue
         const entries = listSkills(view.cwd)
         if (observedPending !== pending) continue
-        const complete = observed.complete && !mountFailed
+        // 注册表只作补充、不作否决（与参照实现 dsh-web 的 collectSkills 同策略）：
+        // 插件这一层只有引用 provider，看不到宿主注册的官方 provider，注册表因此可能
+        // 整体为空——「观测完整但没有条目」并不等于「技能都没注册」。此时按观测不可用
+        // 处理，条目保留 unknown，而不是把整页误报成 unregistered。
+        const registryInformed = observed.skills.length > 0 || entries.length === 0
+        const complete = observed.complete && !mountFailed && registryInformed
         return { skills: withSkillWinners(entries, observed.skills, complete), complete }
       }
     },
