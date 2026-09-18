@@ -77,8 +77,7 @@
 ### 审查后的决策
 
 - 审查完成后，由用户指定本轮修复任务；审查发现本身不等于修复授权。
-- 每个修复轮次在 `.scratch/plan/` 下创建唯一一份 PLAN，文件名用 `YYYY-MM-DD-plan-<主题>-<基线>.md`，写明本轮任务范围、修复方案、验证与回滚。
-- PLAN 按 `dev-expert` 的「任务拆解与执行」格式编写，文末用 `[✔]`（已验证完成）和 `[ ]`（未完成）标记 Wave 及任务状态。
+- 每个修复轮次在 `.scratch/plan/` 下创建唯一一份 PLAN，文件名用 `YYYY-MM-DD-plan-<主题>-<基线>.md`，章节骨架与验收标准见 [PLAN 格式规范](docs/agents/plan-format.md)。
 - 轮次完成后把 PLAN 原样复制到 `.scratch/archive/`（保留其中的历史互链），腾空 `.scratch/plan/` 给下一轮。
 - `.scratch/archive/` 只收 plan 归档；设计稿放 `.scratch/designs/`，同样以归档日为前缀。
 - 用户对修复范围、方案取舍和执行授权的决策写入 PLAN；审查结论不得写入 `AGENTS.md`。具体缺陷、技术修复方案和验收结论写入 PLAN 或对应权威文档，`AGENTS.md` 只保留跨任务的流程与边界。
