@@ -191,10 +191,12 @@ test('技能视图回退：带 scope 的视图为空时改用全局视图，条�
   await h.close()
 })
 
-test('注册表为空而本地有条目时不作否决：条目保留 unknown，不整页误报未注册', async (t) => {
-  // 复现真实故障：插件这一层只有引用 provider，看不到宿主注册的官方 provider，
-  // 注册表于是整体为空。此时「观测完整但没有条目」并不等于「技能都没注册」——
-  // 参照实现 dsh-web 的 collectSkills 同样只把注册表当补充，不作否决。
+test('注册表对这一层没有信息时，本地条目按文件声明为事实（重构前语义）', async (t) => {
+  // 插件这一层只有「只报引用目录」的 provider，看不到宿主注册的官方 provider，
+  // 注册表常常一条都不报。重构前的实现（以及参照实现 dsh-web 的 collectSkills）
+  // 都只把注册表当补充：本地扫描到的技能按文件声明为事实，既不产生 unregistered，
+  // 也不降级成 unknown——后者会让状态徽章停在「未确认」，并让「模型可用／用户可用」
+  // 两个页签计数归零。
   const h = rig('registry-silent')
   write(join(h.home, 'skills'), 'silent-registry-skill')
   // 打桩成「观测完整但一条都不报」，复现插件层的真实处境。
@@ -202,7 +204,7 @@ test('注册表为空而本地有条目时不作否决：条目保留 unknown，
   const snapshot = await h.runtime.snapshot()
   const entry = snapshot.skills.find((item) => item.name === 'silent-registry-skill')
   assert.ok(entry, '本地扫描必须列出该技能')
-  assert.equal(entry.availability, 'unknown', '注册表无信息时不得判成未注册')
-  assert.equal(snapshot.complete, false, '注册表未提供信息时观测不算完整')
+  assert.equal(entry.availability, 'active', '注册表无信息时按文件声明为事实')
+  assert.equal(entry.rank, 400, '来源优先级不因注册表缺席而丢失')
   await h.close()
 })

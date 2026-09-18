@@ -80,7 +80,11 @@ const readPromptConfigs = (source: Record<string, unknown>, key: string): Prompt
 export function skillFieldsFromSnapshot(snapshot: BridgeValueMap['skillsList']): Pick<Fields, 'skillCatalog' | 'skillsComplete' | 'skillFolders' | 'skillsRoot'> {
   const catalog = readSkillCatalog({ skills: snapshot.skills }, 'skills')
   return {
-    skillCatalog: snapshot.complete === true ? catalog : catalog.map((skill) => ({ ...skill, availability: 'unknown' })),
+    // 观测是否完整只影响 skillsComplete 提示，不再据此把条目降级成 unknown：
+    // 本地扫描到的技能按文件声明为事实（重构前语义，与参照实现 dsh-web 的
+    // collectSkills 一致）。降级会让状态徽章停在「未确认」，并让「模型可用／
+    // 用户可用」两个页签计数归零。
+    skillCatalog: catalog,
     skillsComplete: snapshot.complete === true,
     skillFolders: readStringArray({ folders: snapshot.folders }, 'folders'),
     skillsRoot: readStringArray({ roots: snapshot.roots }, 'roots')[0] ?? '',

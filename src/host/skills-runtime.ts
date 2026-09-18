@@ -125,23 +125,23 @@ export function createSkillsRuntime(ctx: Context, options: { dshHome?: string } 
         const observed = view.scope === undefined
           ? scoped
           : await withGlobalSkillFallback(scoped, () => ctx.skills.snapshot({ ...view, scope: undefined }))
-        // 诊断出口：视图异常为空是「整页未注册」的唯一成因，留下可定位的一行。
+        // 诊断出口：这一层注册表为空曾是「整页误判」的成因，留一行可定位。
         if (view.scope !== undefined && observed !== scoped) {
           ctx.logger?.warn(`prompt-tool: 带 scope 的技能视图为空，已改用全局视图（cwd=${view.cwd ?? ''}）`)
-        }
-        if (view.scope !== undefined && observed.skills.length === 0) {
-          ctx.logger?.warn(`prompt-tool: 技能注册表视图为空，技能页将显示未注册（cwd=${view.cwd ?? ''}；scope 视图与全局视图均为空）`)
         }
         if (observedPending !== pending) continue
         const entries = listSkills(view.cwd)
         if (observedPending !== pending) continue
-        // 注册表只作补充、不作否决（与参照实现 dsh-web 的 collectSkills 同策略）：
-        // 插件这一层只有引用 provider，看不到宿主注册的官方 provider，注册表因此可能
-        // 整体为空——「观测完整但没有条目」并不等于「技能都没注册」。此时按观测不可用
-        // 处理，条目保留 unknown，而不是把整页误报成 unregistered。
-        const registryInformed = observed.skills.length > 0 || entries.length === 0
-        const complete = observed.complete && !mountFailed && registryInformed
-        return { skills: withSkillWinners(entries, observed.skills, complete), complete }
+        const complete = observed.complete && !mountFailed
+        // 注册表只作补充、不作否决（重构前语义，与参照实现 dsh-web 的 collectSkills 一致）：
+        // 插件这一层只有「只报引用目录」的 provider，看不到宿主注册的官方 provider，
+        // 注册表对这一层常常毫无信息。此时本地条目按文件声明为事实——不产生
+        // unregistered，也不因观测不完整把条目降级成 unknown（那会让状态徽章停在
+        // 「未确认」，并让「模型可用／用户可用」两个页签计数归零）。
+        const skills = observed.skills.length > 0
+          ? withSkillWinners(entries, observed.skills, complete)
+          : entries.map((entry) => ({ ...entry, availability: 'active' as const }))
+        return { skills, complete }
       }
     },
     setPolicy: (name, path, change, cwd) => {

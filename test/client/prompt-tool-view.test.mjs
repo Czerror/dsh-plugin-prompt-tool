@@ -87,12 +87,16 @@ test('fields view：权威空快照与字段缺失都不回退旧 settings 技�
   }
 })
 
-test('技能局部快照不包含预设字段，观测不完整时保留操作能力但不声称可用', () => {
+test('技能局部快照不包含预设字段；观测完整性只由 skillsComplete 表达，不降级条目', () => {
   const entry = { id: 'custom:demo', name: 'demo', folder: 'demo', dir: 'D:/refs', source: 'custom', valid: true,
     modelInvocable: true, userInvocable: true, availability: 'active', canSetPolicy: true, canDelete: true }
   const patch = skillFieldsFromSnapshot({ skills: [entry], complete: false, folders: ['D:/refs'], roots: ['D:/skills'] })
   assert.deepEqual(Object.keys(patch).sort(), ['skillCatalog', 'skillFolders', 'skillsComplete', 'skillsRoot'])
-  assert.equal(patch.skillCatalog[0].availability, 'unknown')
+  // 观测完整性只由 skillsComplete 表达，不再把条目降级成 unknown（重构前语义，与参照实现
+  // dsh-web 的 collectSkills 一致）。降级会让状态徽章停在「未确认」，并让「模型可用／
+  // 用户可用」两个页签计数归零。
+  assert.equal(patch.skillCatalog[0].availability, 'active')
+  assert.equal(patch.skillsComplete, false)
   assert.equal(patch.skillCatalog[0].canSetPolicy, true)
   assert.equal(patch.skillCatalog[0].canDelete, true)
 })
