@@ -42,16 +42,19 @@ const skill = (overrides = {}) => ({
   ...overrides,
 })
 
-test('技能状态胶囊按 frontmatter 两端事实显示可用范围、逐端停用与同名遮蔽', () => {
+test('技能状态胶囊按 frontmatter 两端事实显示可用范围与同名遮蔽', () => {
   const both = zh('skills.status.callable', { audiences: `${zh('skills.status.audience.model')}/${zh('skills.status.audience.user')}` })
   assert.equal(skillStatusLabel(skill(), zh), both, '两端都可调用时列出两个受众')
-  assert.equal(skillStatusLabel(skill({ modelInvocable: false }), zh), zh('skills.status.blockedModel'), '只关模型端：文案指向模型端')
-  assert.equal(skillStatusLabel(skill({ userInvocable: false }), zh), zh('skills.status.blockedUser'), '只关用户端：文案指向用户端')
+  // 只关一端时报【仍可用的那一端】：状态行要回答「现在还能怎么用」，而不是复述被关掉的
+  // 那一端——后者会让一端仍可用的技能读起来像坏了。
+  const userOnly = zh('skills.status.callable', { audiences: zh('skills.status.audience.user') })
+  const modelOnly = zh('skills.status.callable', { audiences: zh('skills.status.audience.model') })
+  assert.equal(skillStatusLabel(skill({ modelInvocable: false }), zh), userOnly, '只关模型端：列出仍可用的用户端')
+  assert.equal(skillStatusLabel(skill({ userInvocable: false }), zh), modelOnly, '只关用户端：列出仍可用的模型端')
   assert.equal(skillStatusLabel(skill({ modelInvocable: false, userInvocable: false }), zh), zh('skills.status.blocked'), '两端都关才报整体停用')
-  // 按端如实区分：只关一端时技能仍从另一端可用，不能笼统显示「已停用」，也不能退化成泛化的「不可调用」。
+  // 按端如实区分：只关一端时技能仍从另一端可用，不能笼统显示「已停用」。
   assert.notEqual(skillStatusLabel(skill({ userInvocable: false }), zh), zh('skills.status.blocked'))
   assert.notEqual(skillStatusLabel(skill({ modelInvocable: false }), zh), zh('skills.status.blocked'))
-  assert.notEqual(skillStatusLabel(skill({ userInvocable: false }), zh), zh('skills.status.blockedModel'))
   assert.notEqual(skillStatusLabel(skill({ modelInvocable: false, userInvocable: false }), zh), zh('skills.status.notCallable'))
   assert.equal(skillStatusLabel(skill({ availability: 'shadowed', winnerId: 'project-dsh:C:\\repo:.dsh:demo-skill' }), zh), zh('skills.status.shadowed'))
   assert.equal(skillStatusLabel(skill({ availability: 'shadowed', winnerId: 'x', userInvocable: false }), zh), zh('skills.status.shadowed'), '注册状态与文件声明分开表达')

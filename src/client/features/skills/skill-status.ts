@@ -61,8 +61,8 @@ export function skillStatusLabel(skill: SkillCatalogEntry, t: PromptToolTranslat
   if (skill.availability === 'unregistered') return t('skills.status.unregistered')
   if (skill.availability !== 'active') return t('skills.status.unknown')
   if (!skill.modelInvocable && !skill.userInvocable) return t('skills.status.blocked')
-  if (!skill.modelInvocable) return t('skills.status.blockedModel')
-  if (!skill.userInvocable) return t('skills.status.blockedUser')
+  // 只关一端时列出【仍可用的那一端】，而不是被关掉的那一端：状态行要回答的是
+  // 「这个技能现在还能怎么用」，报「模型端已停用」会让一端仍可用的技能读起来像坏了。
   const audiences = [
     skill.modelInvocable ? t('skills.status.audience.model') : '',
     skill.userInvocable ? t('skills.status.audience.user') : '',
