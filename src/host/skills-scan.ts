@@ -130,7 +130,7 @@ export function catalogFromScan(skills: readonly ScannedSkill[]): SkillCatalogEn
       dir: skill.dir, source: skill.source, rank: skill.rank, valid: skill.valid,
       ...(skill.issue === undefined ? {} : { issue: skill.issue }),
       modelInvocable: skill.modelInvocable, userInvocable: skill.userInvocable, path: skill.file,
-      availability: 'unknown', canSetPolicy: readonlyReason === undefined,
+      canSetPolicy: readonlyReason === undefined,
       canDelete: skill.valid && restriction === undefined && (skill.source === 'custom' || skill.source === 'user-dsh'),
       ...(readonlyReason === undefined ? {} : { readonlyReason }),
     }
@@ -161,8 +161,14 @@ export async function withGlobalSkillFallback<T extends { skills: readonly unkno
 
 type ResolvedSkill = Pick<SkillSummary, 'name' | 'path'> & Partial<SkillSummary>
 
-/** 当前会话快照负责胜出关系；不完整观测不能宣称任何条目已经生效或确定缺席。 */
-export function withSkillWinners(entries: readonly SkillCatalogEntry[], resolved: readonly ResolvedSkill[], complete = true): SkillCatalogEntry[] {
+/**
+ * 把注册表报出的同名技能合进本地目录：命中同名则标注遮蔽，其余条目按文件声明为事实。
+ *
+ * 注册表**不作否决**——它没报同名技能时（插件这一层只有「只报引用目录」的 provider，
+ * 看不到宿主注册的官方 provider），条目直接算可用，而不是判成「未注册」或「未确认」。
+ * 这与重构前的实现、以及参照实现 dsh-web 的 collectSkills 同策略。
+ */
+export function withSkillWinners(entries: readonly SkillCatalogEntry[], resolved: readonly ResolvedSkill[]): SkillCatalogEntry[] {
   const matches = (entry: SkillCatalogEntry, skill: ResolvedSkill): boolean => entry.name === skill.name
     && entry.path !== undefined && skill.path !== undefined && skillPathKey(entry.path) === skillPathKey(skill.path)
   const catalog = [...entries]
@@ -184,8 +190,8 @@ export function withSkillWinners(entries: readonly SkillCatalogEntry[], resolved
   const winners = new Map(resolved.map((skill) => [skill.name, skill]))
   return catalog.map(({ winnerId: _previous, ...entry }) => {
     const winner = winners.get(entry.name)
-    if (!complete) return { ...entry, availability: 'unknown' }
-    if (!entry.valid || winner === undefined) return { ...entry, availability: 'unregistered' }
+    // 注册表没报同名技能：按文件声明为事实，不判「未注册」。
+    if (winner === undefined) return { ...entry, availability: 'active' }
     const active = matches(entry, winner) || entry.id === `registry:${winner.provider ?? ''}:${winner.name}`
     if (active) return {
       ...entry, availability: 'active',

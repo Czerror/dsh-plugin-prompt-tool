@@ -611,7 +611,7 @@ test('V2 草稿与资源：原文恢复、快照保存、技能目标及危险�
   await evaluate(`window.store.patch({modelName:'unsaved-model',stages:[{name:'draft-stage',tools:'read'}]});window.keptConfigs=window.store.getFields().promptConfigs`)
   await evaluate(`(()=>{const base=window.getSkills()[0];window.setSkills([
     {...base,id:'project-common',name:'project-helper',folder:'common',path:'D:/project/skills/common/SKILL.md',canDelete:false},
-    {...base,id:'custom-common',name:'custom-helper',folder:'common',dir:'D:/referenced/skills',path:'D:/referenced/skills/common/SKILL.md',source:'custom',availability:'unknown',canDelete:true},
+    {...base,id:'custom-common',name:'custom-helper',folder:'common',dir:'D:/referenced/skills',path:'D:/referenced/skills/common/SKILL.md',source:'custom',availability:'active',canDelete:true},
     {...base,id:'user-common',name:'user-helper',folder:'common',dir:'D:/isolated/skills',path:'D:/isolated/skills/common/SKILL.md',source:'user-dsh',canDelete:true}
   ]);window.skillsComplete=false;return window.store.refreshSkills()})()`)
   assert.equal(await evaluate('window.store.getFields().modelName'), 'unsaved-model')

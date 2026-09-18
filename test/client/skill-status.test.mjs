@@ -141,16 +141,19 @@ test('生效、两端不可用与遮蔽判定：都以 frontmatter 两端事实�
   assert.equal(skillShadowed(skill({ winnerId: 'x', valid: false })), false)
 })
 
-test('未注册或观测未知的技能不会声称会话可调用', () => {
-  for (const availability of ['unknown', 'unregistered', undefined]) {
-    const entry = skill({ availability, canSetPolicy: true, canDelete: true })
-    assert.equal(skillEnabled(entry), false)
-    assert.equal(matchesSkillStatus(entry, 'model'), false)
-    assert.equal(matchesSkillStatus(entry, 'user'), false)
-    assert.equal(skillStatusTone(entry), 'neutral')
-    assert.equal(skillStatusLabel(entry, zh), zh(availability === 'unregistered' ? 'skills.status.unregistered' : 'skills.status.unknown'))
-    assert.deepEqual(policyAfterToggle(entry, 'model'), { side: 'model', enabled: false }, '未知注册状态不妨碍文件调用策略操作')
-  }
+test('注册表缺乏观测不否认可扫描到的技能：availability 缺省即视为生效', () => {
+  // 文件系统扫描是技能的唯一事实源，注册表只补充同名遮蔽结论。注册表读不到（缺省）时
+  // 技能照旧可调用，页面不得因此打出「未注册」「未确认」这类把观测缺失说成不可用的状态。
+  const entry = skill({ availability: undefined, canSetPolicy: true, canDelete: true })
+  assert.equal(skillEnabled(entry), true)
+  assert.equal(matchesSkillStatus(entry, 'model'), true)
+  assert.equal(matchesSkillStatus(entry, 'user'), true)
+  assert.equal(skillStatusTone(entry), 'success')
+  assert.equal(skillShadowed(entry), false)
+  assert.equal(skillStatusLabel(entry, zh), zh('skills.status.callable', {
+    audiences: `${zh('skills.status.audience.model')}/${zh('skills.status.audience.user')}`,
+  }))
+  assert.deepEqual(policyAfterToggle(entry, 'model'), { side: 'model', enabled: false }, '观测缺失不妨碍文件调用策略操作')
 })
 
 test('来源分组：顺序与官方优先级一致，空分组不返回，组内按技能名排序', () => {

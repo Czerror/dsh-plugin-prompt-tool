@@ -102,12 +102,13 @@ test('catalogFromScan：一层发现、来源优先级、调用策略投影与�
   assert.equal(projectEntry.userInvocable, true)
   assert.equal(projectEntry.path, join(project, '.dsh', 'skills', 'project-skill', 'SKILL.md'))
   assert.equal(projectEntry.winnerId, undefined)
-  // 屏蔽相关的旧字段彻底消失（它们在注册层模型里存在过）。
-  for (const gone of ['blocked', 'blockedModel', 'blockedUser']) {
-    assert.equal(gone in projectEntry, false, `${gone} 不再是清单字段`)
+  // 屏蔽相关的旧字段彻底消失（它们在注册层模型里存在过）；可用状态也不在扫描层产生，
+  // 它由 withSkillWinners 按注册表胜出路径投影——扫描本身只报文件事实。
+  for (const gone of ['blocked', 'blockedModel', 'blockedUser', 'availability']) {
+    assert.equal(gone in projectEntry, false, `${gone} 不是扫描层字段`)
   }
   assert.deepEqual(Object.keys(projectEntry).sort(), [
-    'availability', 'canDelete', 'canSetPolicy', 'description', 'dir', 'folder', 'id', 'modelInvocable', 'name', 'path', 'rank', 'source', 'userInvocable', 'valid',
+    'canDelete', 'canSetPolicy', 'description', 'dir', 'folder', 'id', 'modelInvocable', 'name', 'path', 'rank', 'source', 'userInvocable', 'valid',
   ])
 
   // 引用目录按自定义来源注册（只读引用，实体留在原处）。

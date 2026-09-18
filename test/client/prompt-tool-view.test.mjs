@@ -42,7 +42,7 @@ test('fields view：技能清单、调用能力与完整性只取 bridge 顶层�
     modelInvocable: true,
     userInvocable: false,
     path: `${path}\\demo-skill\\SKILL.md`,
-    availability: 'unknown', provider: 'filesystem', canSetPolicy: true, canDelete: true,
+    availability: 'active', provider: 'filesystem', canSetPolicy: true, canDelete: true,
   }
   const fields = fieldsFromView(bridgeViewFromBoot({
     ok: true,
@@ -57,6 +57,15 @@ test('fields view：技能清单、调用能力与完整性只取 bridge 顶层�
     skillsComplete: false,
   }))
   assert.deepEqual(fields.skillCatalog, [entry], '缺身份字段的条目被丢弃，其余按调用策略字段原样投影')
+  // 旧载荷里注册表观测不到的 availability 在投影层归一为 active：文件扫描是唯一事实源，
+  // 卡片不再有「未确认」这种把观测缺失说成不可用的状态。
+  const legacy = fieldsFromView(bridgeViewFromBoot({
+    ok: true,
+    value: { ns: 'prompt-tool', revision: 1, value: {} },
+    activeSkillsDirs: [path],
+    skillCatalog: [{ ...entry, availability: 'unobserved' }],
+  }))
+  assert.equal(legacy.skillCatalog[0].availability, 'active')
   assert.deepEqual(fields.skillFolders, ['D:\\referenced-skills'])
   assert.equal(fields.skillsRoot, path)
   assert.equal(fields.skillsComplete, false)

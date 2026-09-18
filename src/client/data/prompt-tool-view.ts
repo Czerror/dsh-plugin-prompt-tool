@@ -55,8 +55,8 @@ const readSkillCatalog = (source: Record<string, unknown>, key: string): SkillCa
       ...(readString(record, 'issue') !== undefined ? { issue: readString(record, 'issue')! } : {}),
       ...(readString(record, 'winnerId') !== undefined ? { winnerId: readString(record, 'winnerId')! } : {}),
       ...(readString(record, 'path') !== undefined ? { path: readString(record, 'path')! } : {}),
-      availability: ['active', 'shadowed', 'unregistered', 'unknown'].includes(String(record.availability))
-        ? record.availability as SkillCatalogEntry['availability'] : 'unknown',
+      // 只有遮蔽是注册表带来的事实；其余条目按文件声明为事实（不再有未注册／未确认）。
+      availability: record.availability === 'shadowed' ? 'shadowed' : 'active',
       ...(typeof record.canSetPolicy === 'boolean' ? { canSetPolicy: record.canSetPolicy } : {}),
       ...(typeof record.canDelete === 'boolean' ? { canDelete: record.canDelete } : {}),
       ...(readString(record, 'provider') !== undefined ? { provider: readString(record, 'provider')! } : {}),

@@ -356,7 +356,7 @@ export const SkillsPage = memo(function SkillsPage(props: { store: PromptToolSto
         <div className={ui.emptyState}>
           <span className={ui.emptyGlyph} aria-hidden="true">◇</span>
           <div>
-            <h3>{t(fields.skillsComplete ? 'skills.empty.title' : 'skills.status.unknown')}</h3>
+            <h3>{t('skills.empty.title')}</h3>
             <p>{t('skills.empty.hint')}</p>
             <button type="button" className={ui.pillButton} disabled={pickingDir} onClick={() => void pickAndCopyDir()}>{t('skills.import.pick')}</button>
           </div>

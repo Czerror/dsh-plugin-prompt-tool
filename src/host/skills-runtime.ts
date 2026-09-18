@@ -135,13 +135,8 @@ export function createSkillsRuntime(ctx: Context, options: { dshHome?: string } 
         const complete = observed.complete && !mountFailed
         // 注册表只作补充、不作否决（重构前语义，与参照实现 dsh-web 的 collectSkills 一致）：
         // 插件这一层只有「只报引用目录」的 provider，看不到宿主注册的官方 provider，
-        // 注册表对这一层常常毫无信息。此时本地条目按文件声明为事实——不产生
-        // unregistered，也不因观测不完整把条目降级成 unknown（那会让状态徽章停在
-        // 「未确认」，并让「模型可用／用户可用」两个页签计数归零）。
-        const skills = observed.skills.length > 0
-          ? withSkillWinners(entries, observed.skills, complete)
-          : entries.map((entry) => ({ ...entry, availability: 'active' as const }))
-        return { skills, complete }
+        // 它没报同名技能时条目按文件声明为事实，不再产生未注册／未确认状态。
+        return { skills: withSkillWinners(entries, observed.skills), complete }
       }
     },
     setPolicy: (name, path, change, cwd) => {

@@ -5,9 +5,9 @@ import type { PromptToolTranslate } from '../../locales.ts'
 
 export type SkillStatusTab = 'all' | 'model' | 'user' | 'blocked'
 
-/** 会话可用必须同时满足官方注册结果与文件调用策略。 */
+/** 会话可用必须同时满足「未被同名遮蔽」与文件调用策略。 */
 export const skillEnabled = (skill: SkillCatalogEntry): boolean =>
-  skill.valid && skill.availability === 'active' && (skill.modelInvocable || skill.userInvocable)
+  skill.valid && !skillShadowed(skill) && (skill.modelInvocable || skill.userInvocable)
 
 /** 模型端可用：会话已注册且文件允许模型调用。 */
 export const skillModelAvailable = (skill: SkillCatalogEntry): boolean => skillEnabled(skill) && skill.modelInvocable
@@ -58,8 +58,6 @@ export function groupBySource(catalog: readonly SkillCatalogEntry[]): SkillGroup
 export function skillStatusLabel(skill: SkillCatalogEntry, t: PromptToolTranslate): string {
   if (!skill.valid) return t('skills.status.invalid')
   if (skillShadowed(skill)) return t('skills.status.shadowed')
-  if (skill.availability === 'unregistered') return t('skills.status.unregistered')
-  if (skill.availability !== 'active') return t('skills.status.unknown')
   if (!skill.modelInvocable && !skill.userInvocable) return t('skills.status.blocked')
   // 只关一端时列出【仍可用的那一端】，而不是被关掉的那一端：状态行要回答的是
   // 「这个技能现在还能怎么用」，报「模型端已停用」会让一端仍可用的技能读起来像坏了。

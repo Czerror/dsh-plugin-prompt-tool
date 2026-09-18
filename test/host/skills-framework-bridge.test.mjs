@@ -141,7 +141,7 @@ test('显式引用另一个工作区的用户技能根也允许管理其普通�
   } finally { await h.close() }
 })
 
-test('注册表读取失败时 bridge 返回未确认资产，不让页面或已提交写入误报失败', async (t) => {
+test('注册表读取失败时 bridge 仍返回可扫描资产并标记 complete=false，不让页面或已提交写入误报失败', async (t) => {
   const root = join(sandbox, 'snapshot-reference')
   const path = marker(root, 'readable')
   const h = harness(join(sandbox, 'snapshot-home'))
@@ -151,7 +151,8 @@ test('注册表读取失败时 bridge 返回未确认资产，不让页面或已
     const list = await h.post('skillsList')
     assert.equal(list.status, 200)
     assert.equal(list.body.value.complete, false)
-    assert.equal(list.body.value.skills.find((entry) => entry.path === path).availability, 'unknown')
+    // 注册表读不到只降完整性标记：磁盘上读到的技能照旧是事实，不能报成「未确认」。
+    assert.equal(list.body.value.skills.find((entry) => entry.path === path).availability, 'active')
     const saved = await h.post('skillPolicy', { name: 'readable', path, side: 'model', enabled: false })
     assert.equal(saved.status, 200)
     assert.equal(saved.body.value.complete, false)

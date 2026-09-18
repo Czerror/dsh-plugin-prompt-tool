@@ -98,8 +98,8 @@ export interface SkillCatalogEntry {
   winnerId?: string
   /** 标记文件绝对路径（调用策略的写入目标与身份校验依据）。 */
   path?: string
-  /** 当前会话实际注册结果，与文件声明的调用策略分开。 */
-  availability?: 'active' | 'shadowed' | 'unregistered' | 'unknown'
+  /** 同名遮蔽事实：只有注册表确实报了同名技能时才标注；其余条目按文件声明为事实。 */
+  availability?: 'active' | 'shadowed'
   provider?: string
   canSetPolicy?: boolean
   canDelete?: boolean

@@ -101,7 +101,7 @@ function renderTuiStatus(source: TuiSource, params: Record<string, unknown>, pro
     const value = skill.modelInvocable || skill.userInvocable
     const detail = skill.valid
       ? (skill.modelInvocable ? '模型可调用' : '模型不可调用')
-      : `未注册:${skill.issue ?? '不合法'}`
+      : `无效:${skill.issue ?? '不合法'}`
     lines.push(`${('skill ' + skill.name).padEnd(22)}${onOff(value)}  ${skill.folder}  [${detail}]`)
   }
   return lines.join('\n')

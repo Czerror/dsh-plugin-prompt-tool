@@ -78,7 +78,7 @@ test('同 cwd 的主/子 scope 由真实 registry 决定胜出，未注册、虚
   const scopedRoot = join(sandbox, 'scoped-root')
   const globalPath = write(globalRoot, 'shared')
   const scopedPath = write(scopedRoot, 'shared')
-  write(join(h.home, 'skills'), 'unregistered')
+  write(join(h.home, 'skills'), 'unobserved')
   const parentKey = {}
   const childKey = {}
   const parent = createScope(h.ctx, parentKey)
@@ -93,7 +93,8 @@ test('同 cwd 的主/子 scope 由真实 registry 决定胜出，未注册、虚
     h.runtime.setFolders([globalRoot])
     const global = await h.runtime.snapshot({ cwd: sandbox })
     assert.equal(global.skills.find((entry) => entry.path === globalPath).availability, 'active')
-    assert.equal(global.skills.find((entry) => entry.name === 'unregistered').availability, 'unregistered')
+    // 注册表没观测到的技能照旧 active：注册表只补充同名遮蔽结论，不否定磁盘上的技能。
+    assert.equal(global.skills.find((entry) => entry.name === 'unobserved').availability, 'active')
     for (const scope of [parentKey, childKey]) {
       const snapshot = await h.runtime.snapshot({ cwd: sandbox, scope })
       assert.equal(snapshot.skills.find((entry) => entry.path === globalPath).availability, 'shadowed')
@@ -105,8 +106,11 @@ test('同 cwd 的主/子 scope 由真实 registry 决定胜出，未注册、虚
     ] }), get: async () => undefined }))
     const incomplete = await h.runtime.snapshot({ cwd: sandbox, scope: childKey })
     assert.equal(incomplete.complete, false)
-    assert.ok(incomplete.skills.every((entry) => entry.availability === 'unknown'))
-    assert.deepEqual([incomplete.skills.find((entry) => entry.name === 'virtual').source, incomplete.skills.find((entry) => entry.name === 'virtual').canDelete], ['other', false])
+    // 提供方报 complete=false 只影响完整性标记：条目照旧按文件声明为事实，不降级成未确认。
+    // （这一层里 global 的 shared 被 session-files 遮蔽，所以只断言虚拟条目本身。）
+    const virtual = incomplete.skills.find((entry) => entry.name === 'virtual')
+    assert.equal(virtual.availability, 'active', '不完整快照不降级条目状态')
+    assert.deepEqual([virtual.source, virtual.canDelete], ['other', false])
   } finally {
     stopFailure?.()
     await child.dispose()
@@ -159,15 +163,15 @@ test('官方 watcher 启动失败保留可读取候选并向管理快照传播 c
     h.runtime.setFolders([root])
     const snapshot = await h.runtime.snapshot()
     assert.equal(snapshot.complete, false)
-    assert.equal(snapshot.skills.find((entry) => entry.name === 'readable').availability, 'unknown')
+    // watcher 起不来只影响完整性标记；已扫描到的候选照旧按文件声明为事实。
+    assert.equal(snapshot.skills.find((entry) => entry.name === 'readable').availability, 'active')
     assert.equal((await h.registry.get('readable')).content, 'body')
   } finally { chokidar.watch = original; await h.close() }
 })
 
-test('技能视图回退：带 scope 的视图为空时改用全局视图，条目不再被判成未注册', async (t) => {
-  // 复现故障现场：宿主 registry 带 scope 时只读该视图层，技能装在全局层时整表为空，
-  // 空 resolved 会让 withSkillWinners 把每个条目判成 unregistered，技能页于是整页
-  // 显示「当前会话未注册」。
+test('技能视图回退：带 scope 的视图为空时改用全局视图', async (t) => {
+  // 背景：宿主 registry 带 scope 时只读该视图层，技能装在全局层时整表为空。
+  // 空视图不再让本地条目降级（注册表只补充同名遮蔽结论），回退的作用是拿回真实的遮蔽事实。
   const h = rig('scope-fallback')
   const root = join(sandbox, 'scope-fallback-skills')
   const skillPath = write(root, 'fallback-skill')

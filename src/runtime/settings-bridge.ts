@@ -591,10 +591,10 @@ export function registerSettingsBridge(
           const view = scope === undefined
             ? await registry.snapshot({ cwd })
             : await withGlobalSkillFallback(await registry.snapshot({ cwd, scope }), () => registry.snapshot({ cwd }))
-          return { skills: withSkillWinners(entries, view.skills, view.complete), complete: view.complete }
+          return { skills: withSkillWinners(entries, view.skills), complete: view.complete }
         } catch (error) {
           ctx.logger?.warn(`prompt-tool: 无法读取技能注册表，暂不标注同名遮蔽：${String(error)}`)
-          return { skills: withSkillWinners(state.listSkills(cwd), [], false), complete: false }
+          return { skills: withSkillWinners(state.listSkills(cwd), []), complete: false }
         }
       }
       const collectDescribeExtras = async (sessionId?: string): Promise<Record<string, unknown>> => {

@@ -69,7 +69,7 @@ test('投影按 registry 胜出路径标注状态，完整性与文件声明独�
   const root = join(sandbox, 'projection')
   write(root, 'first', 'name: shared\ndescription: D\ndisable-model-invocation: true')
   write(root, 'second', 'name: shared\ndescription: D')
-  write(root, 'unregistered', 'name: unregistered\ndescription: D')
+  write(root, 'unobserved', 'name: unobserved\ndescription: D')
   const entries = catalogFromScan(scanRoot({ kind: 'custom', path: root }))
   const summaries = [{ name: 'shared', path: join(root, 'second', 'SKILL.md'), provider: 'filesystem', invocation: { modelInvocable: false, userInvocable: false } },
     { name: 'remote', description: 'remote', provider: 'remote-provider', source: 'runtime', invocation: { modelInvocable: true, userInvocable: true } }]
@@ -77,22 +77,23 @@ test('投影按 registry 胜出路径标注状态，完整性与文件声明独�
   assert.equal(result.find((entry) => entry.folder === 'first').availability, 'shadowed')
   assert.equal(result.find((entry) => entry.folder === 'second').availability, 'active')
   assert.equal(result.find((entry) => entry.folder === 'second').modelInvocable, true, 'registry 不覆盖磁盘声明')
-  assert.equal(result.find((entry) => entry.name === 'unregistered').availability, 'unregistered')
+  // 注册表没观测到的技能照旧 active：注册表只补充同名遮蔽结论，不否认可扫描到的文件。
+  assert.equal(result.find((entry) => entry.name === 'unobserved').availability, 'active')
   const remote = result.find((entry) => entry.name === 'remote')
   assert.deepEqual([remote.source, remote.availability, remote.canSetPolicy, remote.canDelete], ['other', 'active', false, false])
-  assert.ok(withSkillWinners(entries, summaries, false).every((entry) => entry.availability === 'unknown' && entry.winnerId === undefined))
+  // 遮蔽只由 registry 明确指认的胜出路径决定：没有胜出路径就没有 winnerId。
+  assert.ok(result.filter((entry) => entry.availability === 'active').every((entry) => entry.winnerId === undefined))
 })
 
-test('技能视图回退：scope 视图为空时改用全局视图，避免整页误判为未注册', async () => {
-  // 故障现场：带 scope 的 registry 视图只读该视图层，技能装在全局层时整表为空，
-  // 空 resolved 会让 withSkillWinners 把每个条目判成 unregistered，技能页于是
-  // 整页显示「当前会话未注册」。
+test('技能视图回退：scope 视图为空时改用全局视图', async () => {
+  // 背景：带 scope 的 registry 视图只读该视图层，技能装在全局层时整表为空。
+  // 空视图本身不再让条目降级（注册表只补充同名遮蔽结论），回退的意义是拿回真实的遮蔽事实。
   const root = join(sandbox, 'scope-fallback')
   write(root, 'global-only', 'name: global-only\ndescription: D')
   const entries = catalogFromScan(scanRoot({ kind: 'custom', path: root }))
   const resolved = [{ name: 'global-only', path: join(root, 'global-only', 'SKILL.md'), provider: 'filesystem' }]
 
-  assert.equal(withSkillWinners(entries, [], true)[0].availability, 'unregistered', '空视图即故障现场')
+  assert.equal(withSkillWinners(entries, [])[0].availability, 'active', '空视图不降级条目')
 
   let globalReads = 0
   const readGlobal = async () => { globalReads += 1; return { skills: resolved, complete: true } }
@@ -100,7 +101,7 @@ test('技能视图回退：scope 视图为空时改用全局视图，避免整�
 
   const view = await withGlobalSkillFallback(scopedEmpty, readGlobal)
   assert.equal(globalReads, 1, '视图为空时才查全局')
-  assert.equal(withSkillWinners(entries, view.skills, view.complete)[0].availability, 'active', '回退后恢复 active')
+  assert.equal(withSkillWinners(entries, view.skills)[0].availability, 'active', '回退后仍为 active')
 
   globalReads = 0
   const nonEmpty = { skills: resolved, complete: true }
