@@ -241,14 +241,17 @@ test('bridge 读取：/bootstrap 与 /prompt-configs 对同一文件返回一致
   assert.equal(single.body.value.instructions.context.contextId, boot.body.instructions.context.contextId)
 })
 
-test('bridge 读取：无本地会话时只返回全局文件（不拿进程 cwd 兜底，T11/T12）', async () => {
+test('bridge 读取：无本地会话时回退部署 cwd 并标记来源（T11/T12）', async () => {
   const { call } = makeHarness(nested)
   const global = await call(BRIDGE_ENDPOINTS.bootstrap, undefined)
   assert.equal(global.status, 200)
-  assert.equal(global.body.instructions.context.source, 'global-only')
-  assert.equal(global.body.instructions.context.cwd, null)
+  // 读放宽：会话不可用时回退部署进程 cwd（与官方 agent-instructions 同口径），
+  // 并如实标记来源；不借用别的会话工作区。
+  assert.equal(global.body.instructions.context.source, 'deploy-cwd')
+  assert.equal(global.body.instructions.context.cwd, process.cwd())
   assert.deepEqual(global.body.instructions.files.map((file) => file.scope), ['global'])
   const unknown = await call(BRIDGE_ENDPOINTS.bootstrap, { sessionId: 'session-9' })
+  assert.equal(unknown.body.instructions.context.source, 'deploy-cwd')
   assert.deepEqual(unknown.body.instructions.files.map((file) => file.scope), ['global'])
   const badType = await call(BRIDGE_ENDPOINTS.bootstrap, { sessionId: 42 })
   assert.equal(badType.status, 400, '非法 sessionId 不静默按无会话处理')

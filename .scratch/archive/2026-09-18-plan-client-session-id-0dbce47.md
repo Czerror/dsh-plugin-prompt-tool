@@ -6,8 +6,8 @@
 - 2026-09-18 用户点名 `dev-expert` + `open-code-review-delegate` 复核该报告，复核结论并入下面「审查结论」；用户拍板「三条建议全部并入」，故本轮范围含依赖版本漂移（C1）。
 - 基线：`dev@0dbce47`，起始工作树干净。
 - 采纳的问题定义（原报告第一、三节 + 复核报告第三节）：客户端 `currentSessionId` 读 alpha.2 已删除的 `SessionListState.current`，恒为 `undefined`；指令文件链路因此静默降级为「只有全局文件」，工作区指令文件卡整体不可见、不可写。
-- 待用户拍板：① 修复范围是否含同一死字段连带的模型选择卡与 `switchPreset`；② 是否按原报告建议 A+B 同做，还是先只做宿主侧 B。
-- 未决前提：修复方向 A 依赖「alpha.2 下官方是否提供可用的当前会话接口」，由 T2 核实。T2 结论为「无可用来源」时 A 不可行，本轮退化为 B 单方案并回写本节。
+- 2026-09-18 用户拍板：**A+B 同做、全量修复**——范围含模型选择卡与 `switchPreset`，四处读取点全部修；本轮已获实施授权。
+- T2 结论（2026-09-18）：官方**无**直接的非 React「当前会话」API——`ISessions` 的注释明示 `navigation belongs to view owners`，全接口已无读取入口；`UiWorkspace` 只暴露导航动作；`UiSession` 的 `current`／`mainRetainId` 均为 private；`useSessions` 返回的 `SessionListState` 在 alpha.2 里也不再含 `current`。**可行接入点**：`ctx.uiSession.adapter.current`（`SlotScopeAdapter.current`，公开只读）给出当前会话作用域绑定，经 `ctx.sessions.scopeOf(binding.ctx)` 或绑定的 `key` 取回 sessionId。A 方案可行，按用户决定与 B 同做。
 
 ## 审查结论
 
@@ -105,16 +105,21 @@
 
 ## 状态
 
-- [ ] Wave 1 / T1：对齐官方包版本，让漂移可见。
-- [ ] Wave 1 / T2：核实 alpha.2 下「当前会话」可用来源。
-- [ ] Wave 1 / T3：建立会先红的防复发回归。
-- [ ] Wave 2 / T4：替换四处失效取值与写死的类型声明。
-- [ ] Wave 3 / T5：宿主读侧兜底。
-- [ ] Wave 4 / T6：UI 实测、门禁与文档同步。
+- [✔] Wave 1 / T1：对齐官方包版本（26 个包升 alpha.2，另补 3 个未声明依赖），typecheck 由假绿转红并精确指向 4 处 `current` 读取。
+- [✔] Wave 1 / T2：核实 alpha.2 无直接读取 API；接入点定为 `ctx.uiSession.adapter.current` 的作用域绑定。
+- [✔] Wave 1 / T3：新增 session-id-source 回归（5 例），并改造 session-model-face 的 mock 去掉列表快照。
+- [✔] Wave 2 / T4：四处取值改走作用域来源；`SessionModelSessionsLike` 不再声明官方字段。
+- [✔] Wave 3 / T5：`resolveInstructionScope` 读放宽到部署 cwd（`deploy-cwd`），写通道白名单不变。
+- [✔] Wave 4 / T6：typecheck／lint／1124 项测试／build／verify:host／diff --check 全绿；**UI 实测为唯一未验证项**，需用户在真实 DSH 执行。
 
 ## 验收记录
 
-- 待执行后回填：实际命令、退出码与实测输出；T3 用例修复前的失败输出；T1 后 typecheck 转红与 T4 后恢复绿的对照。
+- `pnpm typecheck`：exit 0。T1 对齐依赖后曾精确报出 4 处错误（`src/client/index.ts:54`、`:84` 两处的 `SessionListState.current`，以及 `:78` 的 `ISessions` 不再满足 `SessionModelSessionsLike`），T4 修复后恢复绿——这正是本轮要的红灯轨迹。
+- `pnpm lint`：exit 0，0 警告 0 错误。
+- `pnpm test`：**1124/1124 通过，0 失败 0 跳过**。对齐前基线为 1031 例；差额来自此前因客户端依赖缺失（`simple-icons`）而整个文件无法 import 的用例。
+- `pnpm build`：exit 0。`pnpm verify:host`：55 个官方包契约检查，失败 0 项。`git diff --check`：exit 0。
+- 红灯证据：在 alpha.2 真实形状 `{ids, byId, phase, subagentsByParent, jobsBySession}` 下，旧读法 `list.getSnapshot().current` 实测返回 `undefined`，且该形状不含 `current` 键。
+- **未验证项**：真实 DSH 中的 UI 实测——`/prompt-configs` 请求体带 `sessionId`、返回 `source: session` 且 `cwd` 等于当前工作区、模块列表出现工作区文件卡并可保存。本机未重启运行中的 dsh，隔离 smoke 环境亦未搭建，改由用户刷新页面后确认。
 
 ## 实施取舍与已知边界
 

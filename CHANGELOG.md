@@ -1,5 +1,14 @@
 # Changelog
 
+## 会话 id 来源修复与官方依赖对齐（2026-09-18）
+
+- 官方 `0.1.6-alpha.2` 删除了 `SessionListState.current`（当前选中会话移出 Session Controller），客户端 `currentSessionId` 因此恒为 `undefined`：工作区指令文件卡整体不可见、不可写，模型选择卡 `selectable` 恒 false，预设切换恒返回未应用。
+- 当前会话 id 改由 `ctx.uiSession.adapter.current` 的作用域绑定读取（`scopeOf(binding.ctx)`，退化用绑定的作用域 `key`），不再依赖已删除字段；类型上也不再自行声明官方字段，官方再次变动时类型检查会报错而非静默降级。
+- 宿主侧读取放宽：拿不到会话工作区时回退部署进程 cwd，并如实标记 `source: deploy-cwd`，工作区指令文件卡不再凭空消失；**写通道白名单不随之放宽**，回退不构成写授权。
+- 漂移根因：`pnpm-workspace.yaml` 的 `minimumReleaseAgeExclude` 只放行了 `alpha.1`，pnpm 最小发布年龄机制因此拒绝安装 `alpha.2`，开发依赖被长期钉在旧版本。该清单已随升级更新，并补入 `dsh-client-store`／`dsh-client-ui-session`／`dsh-skill-filesystem`。
+- 开发依赖对齐运行时实装版本（26 个官方包升到 `0.1.6-alpha.2`），并补上三处此前未声明的依赖：`@deepseek-ai/dsh-client-store`（session-controller 的类型声明引用了它却无人声明，配合 `skipLibCheck` 使类型检查对快照漂移永久失效）、`@deepseek-ai/dsh-client-ui-session`、`simple-icons`。
+- 新增防复发回归：以官方真实快照形状（不含 `current`）构造，断言仍能取到会话 id。
+
 ## 导入导出模块化（2026-09-18）
 
 - 原生 JSON/YAML、ST 来源、PNG、文件夹与 ZIP 共用内容识别和预览；原始上传不再直接入库。

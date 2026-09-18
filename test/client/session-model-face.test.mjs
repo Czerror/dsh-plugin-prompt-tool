@@ -3,23 +3,26 @@ import assert from 'node:assert/strict'
 // lib/client.js 是宿主 ModuleLoader 注册格式（不可 import）；Node 26 直接类型剥离加载 .ts 源。
 import { createSessionModelFace } from '../../src/client/data/session-model-face.ts'
 
-/** 构造结构 mock：list 快照 + binding 投影 + 子代理地址 + selectModel 记录。 */
+/**
+ * 构造结构 mock：当前会话来源 + 投影 + 子代理地址 + selectModel 记录。
+ *
+ * 当前会话 id 由作用域绑定提供——alpha.2 起 `SessionListState` 已删除 `current`，
+ * 因此这里**不提供任何 list 快照**：旧的「读列表快照 current」实现会取不到会话。
+ */
 function mockSessions() {
   const state = { current: undefined }
-  const listListeners = new Set()
+  const currentListeners = new Set()
   const projections = new Map()
   return {
     state,
     projections,
-    list: {
-      getSnapshot: () => ({ current: state.current }),
-      subscribe: (listener) => { listListeners.add(listener); return () => listListeners.delete(listener) },
-    },
+    currentSessionId: () => state.current,
+    subscribeCurrent: (listener) => { currentListeners.add(listener); return () => currentListeners.delete(listener) },
     binding: (id) => projections.has(id)
       ? { session: { projections: { faceOf: () => projections.get(id) } } }
       : undefined,
     subagentAddress: (id) => (id === 'sub-1' ? { parent: 'p' } : undefined),
-    emitList: () => { for (const listener of listListeners) listener() },
+    emitCurrentChange: () => { for (const listener of currentListeners) listener() },
   }
 }
 
@@ -93,14 +96,14 @@ test('session-model-face：订阅覆盖会话切换与投影帧；退订后全�
   sessions.projections.get('s1').push({ next: { provider: 'p', model: 'm' } })
   assert.equal(fired, 1, '当前会话投影帧触发')
   sessions.state.current = 's2'
-  sessions.emitList()
+  sessions.emitCurrentChange()
   assert.equal(fired, 2, '会话切换触发')
   assert.equal(sessions.projections.get('s1').listenerCount(), 0, '旧会话投影必须退订')
   sessions.projections.get('s2').push({ next: { provider: 'p', model: 'm2' } })
   assert.equal(fired, 3, '新会话投影帧触发')
   unsubscribe()
   sessions.projections.get('s2').push({ next: { provider: 'p', model: 'm3' } })
-  sessions.emitList()
+  sessions.emitCurrentChange()
   assert.equal(fired, 3, '退订后全部静默')
 })
 

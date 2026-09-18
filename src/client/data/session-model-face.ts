@@ -19,9 +19,17 @@ interface SnapshotLike<T> {
   subscribe(listener: () => void): () => void
 }
 
-/** 客户端 sessions 服务的使用子集（list 快照 + binding 投影 + 子代理地址探测）。 */
+/**
+ * 客户端 sessions 服务与当前会话来源的使用子集。
+ *
+ * `currentSessionId`／`subscribeCurrent` 由 session-id-source 的作用域绑定提供：
+ * 官方在 alpha.2 删除了 `SessionListState.current`，列表快照不再承载当前选中项，
+ * 这里不再声明该字段，让官方字段再次变动时类型检查能够报错。
+ */
 export interface SessionModelSessionsLike {
-  list: SnapshotLike<{ current: string | undefined }>
+  currentSessionId(): string | undefined
+  /** 会话切换信号（作用域绑定变化）；退订后静默。 */
+  subscribeCurrent(listener: () => void): () => void
   binding(id: string): { session: { projections: { faceOf(key: string): SnapshotLike<unknown> } } } | undefined
   subagentAddress(id: string): unknown
 }
@@ -56,7 +64,7 @@ function projectionSelection(value: unknown): SessionModelSnapshot['selection'] 
 export function createSessionModelFace(sessions: SessionModelSessionsLike, selectModel: SessionModelSelectFn): SessionModelFace {
   let cached: SessionModelSnapshot = { selectable: false }
   const snapshot = (): SessionModelSnapshot => {
-    const sessionId = sessions.list.getSnapshot().current
+    const sessionId = sessions.currentSessionId()
     const selectable = sessionId !== undefined && sessions.subagentAddress(sessionId) === undefined
     const selection = sessionId === undefined
       ? undefined
@@ -79,7 +87,7 @@ export function createSessionModelFace(sessions: SessionModelSessionsLike, selec
       let watched: string | undefined
       let stopProjection: (() => void) | undefined
       const watchCurrent = (): void => {
-        const id = sessions.list.getSnapshot().current
+        const id = sessions.currentSessionId()
         if (id === watched) return
         watched = id
         stopProjection?.()
@@ -89,7 +97,7 @@ export function createSessionModelFace(sessions: SessionModelSessionsLike, selec
         }
       }
       watchCurrent()
-      const stopList = sessions.list.subscribe(() => {
+      const stopList = sessions.subscribeCurrent(() => {
         watchCurrent()
         listener()
       })
@@ -99,7 +107,7 @@ export function createSessionModelFace(sessions: SessionModelSessionsLike, selec
       }
     },
     async select(selection) {
-      const sessionId = sessions.list.getSnapshot().current
+      const sessionId = sessions.currentSessionId()
       if (sessionId === undefined) throw new Error('当前没有活动会话')
       const result = await selectModel({ sessionId, ...selection })
       if (!result.ok) throw new Error(`${result.error.code ?? 'session/model-unavailable'}: ${result.error.message ?? 'selectModel failed'}`)

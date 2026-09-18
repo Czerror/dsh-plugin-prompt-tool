@@ -5,9 +5,11 @@ import type {} from '@deepseek-ai/dsh-api-session-controller/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
+import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import type { PromptToolSettingsTransport } from './data/use-prompt-tool-store.ts'
 import { createSessionModelFace } from './data/session-model-face.ts'
+import { readCurrentSessionId } from './data/session-id-source.ts'
 import { bridgeCall } from './data/bridge-client.ts'
 import { registerWorkbenchSlots } from './app/workbench/register-workbench.tsx'
 import { PromptToolWorkspaceController } from './app/workbench/workspace-controller.ts'
@@ -20,6 +22,7 @@ export const inject = [
   'slots',
   'settingsScope',
   'uiWorkspace',
+  'uiSession',
   'remote',
   'remote.agentPresets',
   'remote.session',
@@ -50,8 +53,12 @@ export function apply(ctx: ClientContext): void {
       await scope.mutate(ops, expectedRevision)
     },
   }
+  // 当前会话 id：官方在 alpha.2 把「当前选中会话」移出 Session Controller
+  // （ISessions 注释：navigation belongs to view owners），SessionListState 不再
+  // 有 current；改由 ui-session 的作用域绑定读取。
+  const currentSessionId = (): string | undefined => readCurrentSessionId(ctx.uiSession.adapter, ctx.sessions)
   const hostApi: PromptToolHostApi = {
-    currentSessionId: () => ctx.sessions.list.getSnapshot().current,
+    currentSessionId,
     listAgentPresets: async () => {
       try {
         const result = await ctx.remote.agentPresets.list()
@@ -75,13 +82,19 @@ export function apply(ctx: ClientContext): void {
     // 当前会话模型选择：投影 modelSelection.next ?? 宿主默认（UI 回退）；
     // 写入走官方 session.selectModel（对当前会话生效 + 宿主持久化为新会话默认）。
     sessionModel: createSessionModelFace(
-      ctx.sessions,
-      // sessionId 是官方 brand 字符串：结构同源，按 selectModel 入参类型断言对齐。
+      {
+        currentSessionId,
+        subscribeCurrent: (listener) => ctx.uiSession.adapter.current.subscribe(listener),
+        // sessionId 是官方 brand 字符串：结构同源，按官方签名断言对齐。
+        binding: (id) => ctx.sessions.binding(id as Parameters<typeof ctx.sessions.binding>[0]),
+        subagentAddress: (id) => ctx.sessions.subagentAddress(id as Parameters<typeof ctx.sessions.subagentAddress>[0]),
+      },
       (request) => ctx.remote.session.selectModel(request as Parameters<typeof ctx.remote.session.selectModel>[0]),
     ),
     switchPreset: async (id) => {
+      const sessionId = currentSessionId()
       const list = ctx.sessions.list.getSnapshot()
-      const session = list.current === undefined ? undefined : list.byId[list.current]
+      const session = sessionId === undefined ? undefined : list.byId[sessionId as keyof typeof list.byId]
       if (session === undefined) return { applied: false }
       if (!session.blank) {
         return { applied: false, message: t('settings.switchReason.sessionNotBlank') }

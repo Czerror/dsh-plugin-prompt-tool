@@ -36,8 +36,11 @@ export interface InstructionDraft {
 export interface InstructionDraftPool {
   contextId: string | null
   cwd: string | null
-  /** session = 由存活本地 Agent 解析；global-only = 项目范围不可用，只含全局文件。 */
-  source: 'session' | 'global-only'
+  /**
+   * session = 由存活本地 Agent 的会话 cwd 解析；deploy-cwd = 会话不可用，
+   * 退回部署进程 cwd；global-only = 客户端尚无服务端解析结果时的空池标记。
+   */
+  source: 'session' | 'deploy-cwd' | 'global-only'
   /** 上下文序号：迟到响应按序号丢弃，不写入新上下文。 */
   seq: number
   drafts: InstructionDraft[]

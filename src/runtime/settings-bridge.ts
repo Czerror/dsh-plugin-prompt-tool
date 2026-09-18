@@ -334,14 +334,18 @@ function instructionOwner(ctx: Context, sessionId: string | undefined): Instruct
 }
 
 function resolveInstructionScope(ctx: Context, sessionId: string | undefined): ResolvedInstructionScope {
-  const cwd = sessionId === undefined ? undefined : localAgentCwd(ctx, sessionId)
-  const cards = cwd === undefined ? detectAgentsFiles({ projects: false }) : detectAgentsFiles({ cwd })
+  // 读放宽、写不放宽：拿不到会话工作区时按官方 agent-instructions 的口径回退到
+  // 部署进程 cwd，并如实标记来源；写通道白名单仍只由本次探测到的文件构成，
+  // 回退不扩大可写范围。
+  const sessionCwd = sessionId === undefined ? undefined : localAgentCwd(ctx, sessionId)
+  const cwd = sessionCwd ?? process.cwd()
+  const cards = detectAgentsFiles({ cwd })
   const contextId = createHash('sha256')
-    .update([cwd ?? '', ...cards.map((card) => card.fileId)].join('\n'))
+    .update([cwd, ...cards.map((card) => card.fileId)].join('\n'))
     .digest('hex')
     .slice(0, 16)
   return {
-    context: { contextId, cwd: cwd ?? null, source: cwd === undefined ? 'global-only' : 'session' },
+    context: { contextId, cwd, source: sessionCwd === undefined ? 'deploy-cwd' : 'session' },
     cards,
     files: cards.map(readAgentsFileSnapshot),
   }

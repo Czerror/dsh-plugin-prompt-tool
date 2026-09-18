@@ -195,6 +195,7 @@ src/client/index.ts 的 inject 列表是：
     slots
     settingsScope
     uiWorkspace
+    uiSession
     remote
     remote.agentPresets
     remote.session
@@ -205,7 +206,7 @@ apply(ctx) 依次构造：
 1. locale 字典注册：`ctx.effect(() => registerPromptToolLocale(ctx.locale))` 把 `src/client/locales.ts` 的 zh/en 字典注册进官方命名空间 `prompt-tool`；卸载/重挂由 effect 释放，不重复注册。随后 `ctx.locale.bind(LOCALE_NS)` 得到引用稳定的 `t`。
 2. 连接世代重建：`ctx.on('connection/reset')` 触发一次 `bridgeCall('models', { refresh: true })`，让宿主重连后丢弃陈旧的模型目录缓存；失败静默，不阻塞启动。
 3. prompt-tool SettingsScope transport，用于标准部署设置的 mirror、ensure 和 mutate。
-4. PromptToolHostApi，封装目录选择、打开路径、预设切换和当前会话模型选择；session-model-face 在这里**内联构造**为 `api.sessionModel` 字段（不单独成步），内部读取官方 sessions projection 并经 `remote.session.selectModel` 写回。
+4. PromptToolHostApi，封装目录选择、打开路径、预设切换和当前会话模型选择；`currentSessionId()` 经 `session-id-source.ts` 读 `ctx.uiSession.adapter.current` 的作用域绑定——官方在 `0.1.6-alpha.2` 删除了 `SessionListState.current`（当前选中会话已移出 Session Controller，`ISessions` 注释：navigation belongs to view owners），视图层的 selection 均为 private，作用域绑定是唯一公开读取路径。session-model-face 在这里**内联构造**为 `api.sessionModel` 字段（不单独成步），内部经 `remote.session.selectModel` 写回。
 5. PromptToolWorkbenchFace：controller / api / settings / `t`。
 6. registerWorkbenchSlots(ctx, face)，唯一负责 shell.overlay 悬浮入口与 settings.plugins.tab 的注册。
 

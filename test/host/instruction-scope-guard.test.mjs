@@ -172,8 +172,8 @@ test('两个本地会话各自解析工作区：文件集与 contextId 不串，
   assert.equal(readFileSync(join(rootB, 'CLAUDE.md'), 'utf8'), 'WORKSPACE B\n', 'B 的文件未被改动')
   assert.equal(readFileSync(join(rootA, 'AGENTS.md'), 'utf8'), 'WORKSPACE A\n', 'A 的文件未被改动')
 
-  // 未存活的会话不借用别的会话工作区。
+  // 未存活的会话不借用别的会话工作区：回退部署 cwd，并如实标记来源。
   const cold = await call(BRIDGE_ENDPOINTS.bootstrap, { sessionId: 'session-gone' })
-  assert.equal(cold.body.instructions.context.source, 'global-only')
+  assert.equal(cold.body.instructions.context.source, 'deploy-cwd')
   assert.deepEqual(cold.body.instructions.files.map((file) => file.scope), ['global'])
 })

@@ -33,13 +33,21 @@ export interface InstructionFileSnapshot {
   message?: string
 }
 
-/** 本次工作区上下文：由存活本地 Agent 的会话 cwd 解析，而不是部署进程 cwd。 */
+/**
+ * 本次工作区上下文：优先由存活本地 Agent 的会话 cwd 解析；拿不到会话时回退到
+ * 部署进程 cwd（与官方 agent-instructions 的 `session.header.cwd ?? process.cwd()`
+ * 同口径），并如实标记来源，让 UI 能辨别两种范围。
+ */
 export interface InstructionContextView {
   /** 上下文 id（cwd + 文件身份集派生）；无可解析本地会话时为 null。 */
   contextId: string | null
   cwd: string | null
-  /** session = 由存活本地 Agent 解析；global-only = 项目范围不可用，只含全局文件。 */
-  source: 'session' | 'global-only'
+  /**
+   * session = 由存活本地 Agent 的会话 cwd 解析；
+   * deploy-cwd = 会话不可用，退回部署进程 cwd（范围提示，不构成写授权）；
+   * global-only = 客户端尚无服务端解析结果时的空池标记。
+   */
+  source: 'session' | 'deploy-cwd' | 'global-only'
 }
 
 export interface InstructionsSnapshot {

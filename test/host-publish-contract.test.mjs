@@ -266,6 +266,7 @@ test('client bundle registers through queue/live facade', () => {
     'slots',
     'settingsScope',
     'uiWorkspace',
+    'uiSession',
     'remote',
     'remote.agentPresets',
     'remote.session',
@@ -297,7 +298,7 @@ test('manifest 合同：bundle 只有 patch、client 面使用包名说明边', 
   assert.equal(manifest.dsh.client.platform, 'web')
 
   // inject 是包名说明边，不是 Cordis 服务名；服务名由运行时 ctx.inject 负责。
-  const serviceNames = ['slots', 'settingsScope', 'uiWorkspace', 'remote', 'remote.agentPresets', 'remote.session', 'sessions']
+  const serviceNames = ['slots', 'settingsScope', 'uiWorkspace', 'uiSession', 'remote', 'remote.agentPresets', 'remote.session', 'sessions']
   for (const entry of manifest.dsh.client.inject) {
     assert.ok(entry.startsWith('@'), `inject 必须是包名：${entry}`)
     assert.ok(!serviceNames.includes(entry), `inject 不得混入服务名：${entry}`)
