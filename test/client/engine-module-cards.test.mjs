@@ -625,8 +625,8 @@ test('层设置内容：参数分组按共享契约派生，能力装配状态�
   assert.match(html, /data-layer-capability="deliberation-gate"/)
   assert.match(html, /data-layer-capability="tool-filter"/)
   assert.ok(html.includes(t('modules.layer.assembled')))
-  // 镜像控件的 DOM id 带层前缀：与能力卡默认渲染点、其他层的镜像都不冲突。
-  assert.match(html, /id="pt-param-layer-tool-pipeline-deliberation-gate-deliberationMinChars"/)
+  // 镜像控件的 DOM id 带「层 + 卡身份」前缀：同层多张卡、能力卡默认渲染点都不冲突。
+  assert.match(html, /id="pt-param-layer-tool-pipeline-standalone-deliberation-gate-deliberationMinChars"/)
   // 只读预设：仍显示装配状态，但不提供移除入口。
   const readOnly = render(LayerSettingsContent, { store: { ...active, fields: { ...EMPTY_FIELDS, presetTemplate: 'pt-layer', writePreset: false } }, t, layer: 'tool-pipeline' })
   assert.ok(readOnly.includes(t('modules.layer.capability', { id: 'tool-filter' })))
@@ -638,6 +638,13 @@ test('层设置内容：参数分组按共享契约派生，能力装配状态�
     layer: 'llm-stream',
   })
   assert.equal(empty, '')
+  // 同层两张实例卡各渲染一份：带卡身份的 DOM id 互不重复（同源同步靠同一 store 字段）。
+  const cardA = render(LayerSettingsContent, { store: active, t, layer: 'tool-pipeline', configId: 'rule-a' })
+  const cardB = render(LayerSettingsContent, { store: active, t, layer: 'tool-pipeline', configId: 'rule-b' })
+  const idOf = (html) => html.match(/id="(pt-param-layer-tool-pipeline-[^"]*deliberationMinChars)"/)?.[1]
+  assert.equal(idOf(cardA), 'pt-param-layer-tool-pipeline-rule-a-deliberation-gate-deliberationMinChars')
+  assert.equal(idOf(cardB), 'pt-param-layer-tool-pipeline-rule-b-deliberation-gate-deliberationMinChars')
+  assert.notEqual(idOf(cardA), idOf(cardB), '同层多卡的镜像控件 DOM id 必须不同')
 })
 
 test('本层无配置卡时用不写盘的兜底容器承载引擎设置', () => {

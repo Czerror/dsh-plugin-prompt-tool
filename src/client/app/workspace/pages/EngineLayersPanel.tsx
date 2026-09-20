@@ -7,13 +7,14 @@
  *
  * 展示归属只是导航：这里不新增第二份映射，也不改变任何运行时 hook、注册顺序或保存通道。
  */
-import { useRef, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { ENGINE_CAPABILITIES, ENGINE_EDITOR_GROUP_MAP, engineCapability, engineGroupParamKeys, isEditorGroupVisible, isEngineCapabilityPresent, type EngineLayer } from '../../../../shared/engine-capabilities.ts'
+import type { PromptConfigDraft } from '../../../prompt-tool-types.ts'
 import type { PromptToolStore } from '../../../data/use-prompt-tool-store.ts'
 import type { PromptToolLocaleKey, PromptToolTranslate } from '../../../locales.ts'
 import { ConfirmDialog } from '../../../ui/ConfirmDialog.tsx'
 import { EngineModuleCard } from '../../../ui/EngineModuleCard.tsx'
-import { EngineModuleCards, EnginePromptDefaultsCard, type CapabilityEditorSlot } from '../../../features/modules/EngineModuleList.tsx'
+import { EnginePromptDefaultsCard, type CapabilityEditorSlot } from '../../../features/modules/EngineModuleList.tsx'
 import { EngineParamFields, matchesEditorGroup } from '../../../features/modules/EngineParamFields.tsx'
 import { ModelRouteModuleCard } from '../../../features/models/ModelRouteCard.tsx'
 import { PresetPersonaCard } from '../../../features/persona/PresetPersonaCard.tsx'
@@ -22,6 +23,7 @@ import { WorldBookDiagnosticsCard } from '../../../features/prompts/WorldBookDia
 import { TemplateVariablesModuleCard } from '../../../features/prompts/PromptConfigsEditor.tsx'
 import { CustomToolsCard, type ToolCreateIntent } from '../../../features/tools/CustomToolsCard.tsx'
 import { LayerCard } from '../../../ui/LayerCard.tsx'
+import { cssEscapeId, scrollToCreatedCard } from '../../../ui/reveal-card.ts'
 import ui from '../../../ui/controls.module.css'
 
 export { isEditorGroupVisible }
@@ -121,9 +123,11 @@ const CARD_LABEL_KEYS: Record<string, PromptToolLocaleKey> = {
  * 专用编辑组（提示词生成默认值等）不依赖模块装配，始终可编辑。
  * 参数键仍由 `ENGINE_PARAM_DEFINITIONS` 给出，这里不另抄键表，也不按层硬编码。
  */
-export function layerParamCards(store: PromptToolStore, layer: string): readonly string[] {
+export function layerParamCards(store: PromptToolStore, layer: string, exclude: readonly string[] = []): readonly string[] {
+  const excluded = new Set(exclude)
   return ENGINE_EDITOR_GROUP_MAP
     .filter((group) => group.displayLayer === layer
+      && !excluded.has(group.id)
       && engineGroupParamKeys(group.id).length > 0
       && (engineCapability(group.id) === undefined || isEngineCapabilityPresent(group.id, store.moduleFacts)))
     .map((group) => group.id)
@@ -176,10 +180,12 @@ function LayerCapabilityRow(props: { store: PromptToolStore; t: PromptToolTransl
  * 由 `engineLayerSlots` 注入到每张本层实例卡的折叠区（以及无实例卡时的兜底容器）；
  * 同层多处渲染共用同一 `store.fields` 与同一草稿键，任一处修改同步。
  */
-export function LayerSettingsContent(props: { store: PromptToolStore; t: PromptToolTranslate; layer: string }): ReactNode {
+export function LayerSettingsContent(props: { store: PromptToolStore; t: PromptToolTranslate; layer: string; configId?: string; excludeCapabilities?: readonly string[] }): ReactNode {
   const { store, t, layer } = props
-  const cards = layerParamCards(store, layer)
-  const capabilities = layerAssembledCapabilities(store, layer)
+  const cards = layerParamCards(store, layer, props.excludeCapabilities ?? [])
+  const capabilities = layerAssembledCapabilities(store, layer).filter((id) => !(props.excludeCapabilities ?? []).includes(id))
+  // 同层每张实例卡各渲染一份设置内容：instanceId 带上卡身份，DOM id 才不会互相冲突。
+  const instanceId = `layer-${layer}-${props.configId ?? 'standalone'}`
   if (cards.length === 0 && capabilities.length === 0) return null
   return (
     <>
@@ -187,7 +193,7 @@ export function LayerSettingsContent(props: { store: PromptToolStore; t: PromptT
         <section key={card} className={ui.settingRowStack} data-layer-param-group={card}
           aria-label={t(CARD_LABEL_KEYS[card] ?? 'modules.group.other')}>
           <strong>{t(CARD_LABEL_KEYS[card] ?? 'modules.group.other')}</strong>
-          <EngineParamFields store={store} card={card} t={t} instanceId={`layer-${layer}-${card}`} />
+          <EngineParamFields store={store} card={card} t={t} instanceId={`${instanceId}-${card}`} />
         </section>
       ))}
       {capabilities.length > 0 && (
@@ -200,12 +206,22 @@ export function LayerSettingsContent(props: { store: PromptToolStore; t: PromptT
   )
 }
 
+/** 新建能力后的定位：滚动到该层实例卡内的设置折叠区（能力卡已退场，锚点改在设置区）。 */
+function LayerSettingsFocus(props: { layer?: string; token: number }): ReactNode {
+  const { layer, token } = props
+  useEffect(() => {
+    if (layer === undefined) return
+    return scrollToCreatedCard(`[data-layer-settings="${cssEscapeId(layer)}"]`)
+  }, [layer, token])
+  return null
+}
+
 export interface EngineLayerSlots {
   beforeCards: ReactNode
   commonCards: ReactNode
   moduleCards: ReactNode
-  /** 本层引擎设置内容（注入到每张本层实例卡的折叠区）。 */
-  renderLayerSettings: (layer: string) => ReactNode
+  /** 本层引擎设置内容（注入到每张本层实例卡的折叠区；兜底容器传 `__layer-settings__`）。 */
+  renderLayerSettings: (layer: string, config: PromptConfigDraft) => ReactNode
   /** 该层是否有可编辑设置：决定「本层无配置卡」时是否渲染兜底容器。 */
   hasLayerSettings: (layer: string) => boolean
 }
@@ -219,8 +235,8 @@ export interface EngineLayerSlotsInput {
   keyword?: string
   /** 受众视图：主会话与子代理是同源视图，不改 audience，也不隐式启用 includeSubagents。 */
   audience: 'main' | 'subagent'
-  /** 新建能力后的定位信号（token 递增，重复创建同一能力仍会再次展开）。 */
-  focusCapability?: { id: string; token: number }
+  /** 新建能力后的定位信号（token 递增；layer 用于滚动到该层实例卡内的设置区）。 */
+  focusCapability?: { id: string; token: number; layer?: string }
   /** 自定义工具创建意图（两页共用同一张卡，不各维护一份编辑器）。 */
   toolCreate?: ToolCreateIntent
   onToolIntentConsumed?: () => void
@@ -298,25 +314,12 @@ export function engineLayerSlots(input: EngineLayerSlotsInput): EngineLayerSlots
   )
   const moduleCards = (
     <>
-      <EngineModuleCards
-        store={store}
-        t={t}
-        layerFilter={viewFilter}
-        keyword={input.keyword}
-        showActions={false}
-        showPromptDefaults={false}
-        showStatus={viewFilter !== 'all'}
-        focusCapability={input.focusCapability}
-        excludeCapabilities={input.excludeCapabilities}
-        hint={input.moduleHint}
-        emptyHint={input.moduleEmptyHint}
-        renderCapabilityExtra={input.renderCapabilityExtra}
-      />
-      {main && (
-        <LayerCard visible={isEditorGroupVisible('tool-filter', viewFilter)}>
-          <ToolPipelineSettingsCard store={store} t={t} keyword={input.keyword} />
-        </LayerCard>
-      )}
+      {/* 独立的能力卡与单例引擎参数卡已退场：参数与装配状态由本层实例卡内的设置区承载。
+          页面级提示（子代理作用域说明、无装配能力说明）仍在这里渲染，不进工具栏按钮行。 */}
+      {input.moduleHint !== undefined && <p className={ui.configFieldHint}>{input.moduleHint}</p>}
+      {input.moduleEmptyHint !== undefined && !ENGINE_CAPABILITIES.some(({ id }) => !(input.excludeCapabilities ?? []).includes(id) && isEngineCapabilityPresent(id, store.moduleFacts))
+        && <p className={ui.configFieldHint} role="status">{input.moduleEmptyHint}</p>}
+      <LayerSettingsFocus layer={input.focusCapability?.layer} token={input.focusCapability?.token ?? 0} />
       <LayerCard visible={shows('custom-tools')}>
         <CustomToolsCard
           key={store.fields.presetTemplate}
@@ -335,7 +338,8 @@ export function engineLayerSlots(input: EngineLayerSlotsInput): EngineLayerSlots
     beforeCards,
     commonCards,
     moduleCards,
-    renderLayerSettings: (layer: string) => <LayerSettingsContent store={store} t={t} layer={layer} />,
-    hasLayerSettings: (layer: string) => layerHasSettings(store, layer),
+    renderLayerSettings: (layer: string, config: PromptConfigDraft) => <LayerSettingsContent store={store} t={t} layer={layer} configId={config?.id} excludeCapabilities={input.excludeCapabilities} />,
+    hasLayerSettings: (layer: string) => layerParamCards(store, layer, input.excludeCapabilities ?? []).length > 0
+      || layerAssembledCapabilities(store, layer).some((id) => !(input.excludeCapabilities ?? []).includes(id)),
   }
 }

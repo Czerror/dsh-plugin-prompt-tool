@@ -7,6 +7,7 @@ import { INSERTION_LAYERS, LAYER_LABEL_KEYS, translateLabel } from '../../../fea
 import { useTemplatePicker } from '../../../features/prompts/useTemplatePicker.ts'
 import type { ToolCreateIntent } from '../../../features/tools/CustomToolsCard.tsx'
 import { TemplatePicker } from '../../../ui/TemplatePicker.tsx'
+import { engineCapability } from '../../../../shared/engine-capabilities.ts'
 import { engineLayerSlots } from './EngineLayersPanel.tsx'
 import { ConfigListWithTemplates } from './ConfigListWithTemplates.tsx'
 import ui from '../../../ui/controls.module.css'
@@ -79,7 +80,9 @@ export const SubagentPage = memo(function SubagentPage(props: { store: PromptToo
   // 能力创建成功后只定位并展开新卡；不改动用户选定的视图过滤。
   const revealCapability = useCallback((id: string) => {
     setCreatedHidden(viewFilter !== 'all')
-    setFocusCapability((current) => ({ id, token: (current?.token ?? 0) + 1 }))
+    // 能力卡已退场：定位锚改到该层实例卡内的设置区（层从共享契约派生）。
+    const layer = engineCapability(id)?.displayLayer
+    setFocusCapability((current) => ({ id, layer, token: (current?.token ?? 0) + 1 }))
   }, [viewFilter])
   // 与主会话同源的层内装配：本页只声明受众视图与子代理专属编排。
   const layers = engineLayerSlots({

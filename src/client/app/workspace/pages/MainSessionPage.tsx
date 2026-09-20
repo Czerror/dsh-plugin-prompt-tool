@@ -6,6 +6,7 @@ import { PromptConfigsEditor } from '../../../features/prompts/PromptConfigsEdit
 import { useTemplatePicker } from '../../../features/prompts/useTemplatePicker.ts'
 import { INSERTION_LAYERS, LAYER_LABEL_KEYS, translateLabel } from '../../../features/prompts/prompt-config-policy.ts'
 import { EngineModuleActions } from '../../../features/modules/EngineModuleList.tsx'
+import { engineCapability } from '../../../../shared/engine-capabilities.ts'
 import { engineLayerSlots } from './EngineLayersPanel.tsx'
 import { SubagentToolPolicyCard } from '../../../features/subagents/SubagentToolPolicyCard.tsx'
 import { TemplatePicker } from '../../../ui/TemplatePicker.tsx'
@@ -38,7 +39,9 @@ export const MainSessionPage = memo(function MainSessionPage(props: { store: Pro
   // 创建后只定位并展开新卡，不改动用户选定的列表筛选。
   const revealCapability = useCallback((id: string) => {
     setCreatedHidden(viewFilter !== 'all')
-    setFocusCapability((current) => ({ id, token: (current?.token ?? 0) + 1 }))
+    // 能力卡已退场：定位锚改到该层实例卡内的设置区（层从共享契约派生）。
+    const layer = engineCapability(id)?.displayLayer
+    setFocusCapability((current) => ({ id, layer, token: (current?.token ?? 0) + 1 }))
   }, [viewFilter])
   // 稳定回调：卡片 memo 的生效前提（store 引用已稳定）。
   const patchConfigs = useCallback((configs: PromptToolStore['fields']['promptConfigs']) => {

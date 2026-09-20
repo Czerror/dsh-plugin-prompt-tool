@@ -41,7 +41,8 @@ const loader = registerHooks({
   },
 })
 const { PromptConfigList } = await import('../../src/client/features/prompts/PromptConfigList.tsx')
-const { EngineCapabilityCreateMenu, EngineModuleCards } = await import('../../src/client/features/modules/EngineModuleList.tsx')
+const { EngineCapabilityCreateMenu } = await import('../../src/client/features/modules/EngineModuleList.tsx')
+const { layerParamCards } = await import('../../src/client/app/workspace/pages/EngineLayersPanel.tsx')
 const { SubagentPage } = await import('../../src/client/app/workspace/pages/SubagentPage.tsx')
 loader.deregister()
 
@@ -164,16 +165,16 @@ test('创建与过滤分离：创建路径不写过滤状态，过滤由用户�
   assert.doesNotMatch(picker, /setExpanded|scrollIntoView/, '展开与滚动由列表按 createdConfigId 统一处理')
 })
 
-test('创建后的定位信号与滚动实现：重复创建同一能力仍会再次触发展开', () => {
+test('创建后的定位信号与滚动实现：重复创建同一能力仍会再次触发定位', () => {
   const page = read('app/workspace/pages/MainSessionPage.tsx')
-  // 一次性信号：token 递增，避免"同 id 第二次创建不展开"。
-  assert.match(page, /setFocusCapability\(\(current\) => \(\{ id, token: \(current\?\.token \?\? 0\) \+ 1 \}\)\)/)
+  // 一次性信号：token 递增，避免"同 id 第二次创建不定位"。
+  assert.match(page, /setFocusCapability\(\(current\) => \(\{ id, layer, token: \(current\?\.token \?\? 0\) \+ 1 \}\)\)/)
+  assert.match(page, /const layer = engineCapability\(id\)\?\.displayLayer/)
   assert.match(page, /focusCapability,/)
-  // 选中能力卡后滚动定位到稳定锚点；不修改任何筛选状态。
-  const modules = read('features/modules/EngineModuleList.tsx')
-  assert.match(modules, /scrollToCreatedCard\(`\[data-module-card-id="\$\{cssEscapeId\(focusId\)\}"\]`\)/)
-  assert.match(modules, /anchorId=\{capability\.id\}/)
-  assert.doesNotMatch(modules, /setViewFilter|changeViewFilter/, '定位不动过滤')
+  // 能力卡已退场：定位锚改到该层实例卡内的设置折叠区；不修改任何筛选状态。
+  const panel = read('app/workspace/pages/EngineLayersPanel.tsx')
+  assert.match(panel, /scrollToCreatedCard\(`\[data-layer-settings="\$\{cssEscapeId\(layer\)\}"\]`\)/)
+  assert.doesNotMatch(panel, /setViewFilter|changeViewFilter/, '定位不动过滤')
   const reveal = read('ui/reveal-card.ts')
   assert.match(reveal, /scrollIntoView\(\{ block: 'nearest', inline: 'nearest' \}\)/, '块级对齐用 nearest，避免整页跳动')
   assert.match(reveal, /SCROLL_MAX_ATTEMPTS/, '节点未就绪按上限重试后静默退出')
@@ -192,9 +193,9 @@ test('子代理页创建入口对等，且不下发指令文件卡（单编辑�
   for (const needle of ['EngineModuleActions', 'INSERTION_LAYERS']) {
     assert.ok(subagent.includes(needle), `子代理页具备 ${needle} 入口`)
   }
-  // 能力卡、模板变量卡与自定义工具卡由统一层装配入口按受众视图渲染（两页同源）。
+  // 引擎设置、模板变量卡与自定义工具卡由统一层装配入口按受众视图渲染（两页同源）。
   const panel = read('app/workspace/pages/EngineLayersPanel.tsx')
-  for (const needle of ['EngineModuleCards', 'CustomToolsCard', 'TemplateVariablesModuleCard']) {
+  for (const needle of ['LayerSettingsContent', 'CustomToolsCard', 'TemplateVariablesModuleCard']) {
     assert.ok(panel.includes(needle), `共享层装配提供 ${needle}`)
   }
   assert.match(subagent, /audience: 'subagent'/)
@@ -248,16 +249,16 @@ test('子代理页不提供「仅主对话」能力：菜单排除 tool-filter�
   // 配方：含被排除能力的 recipe 也一并隐藏。
   const recipeIds = menu.props.items.filter((item) => item.id.startsWith('recipe:')).map((item) => item.id)
   assert.equal(recipeIds.some((id) => id.includes('tool-filter')), false)
-  // 卡片：即使预设已装配 tool-filter，子代理页也不渲染该卡，并给出替代说明。
+  // 卡片：即使预设已装配 tool-filter，子代理页也不提供它（能力卡已退场，排除语义保留在参数层）。
   const active = { ...store, moduleFacts: { ...store.moduleFacts, effectiveModules: ['tool-filter'] } }
-  const cards = render(EngineModuleCards, { store: active, t, showPromptDefaults: false, excludeCapabilities: ['tool-filter'], emptyHint: zh['modules.subagentEmptyHint'] })
-  assert.doesNotMatch(cards, /data-module-card-id="tool-filter"/, '子代理页不显示 tool-filter 卡')
-  assert.match(cards, new RegExp(zh['modules.subagentEmptyHint'].slice(0, 12)), '给出替代入口说明')
+  assert.deepEqual(layerParamCards(active, 'tool-pipeline', ['tool-filter']), [], '对子代理不生效的 tool-filter 参数不进子代理页')
+  // 不排除时（主会话页语义）仍可取到它的参数。
+  assert.deepEqual(layerParamCards(active, 'tool-pipeline'), ['tool-filter'])
 })
 
 test('子代理页能力卡排除清单由页面下发', () => {
   // SSR 渲染真实子代理页：同一份 moduleFacts 下，页面下发的 mainSessionOnly 被真正消费 ——
-  // 被排除的 tool-filter 不渲染卡片，策略卡照常渲染。由渲染结果证明，而不是读源码文本。
+  // 独立能力卡已退场，被排除的能力既不出现在参数层，也不出现在装配清单。
   const active = {
     fields: { ...EMPTY_FIELDS, writePreset: true, presetTemplate: 'demo', promptConfigs: [] },
     moduleFacts: {
@@ -279,9 +280,11 @@ test('子代理页能力卡排除清单由页面下发', () => {
     reloadInstructionFile: async () => true, setInstructionSourceEnabled: async () => true, updateInstructionPolicy: async () => true,
   }
   const html = render(SubagentPage, { t, store: active })
-  assert.doesNotMatch(html, /data-module-card-id="tool-filter"/, '子代理页不渲染被排除的 tool-filter 卡')
-  assert.match(html, /data-module-card-id="subagent-tool-policy"/, '排除只作用于清单内能力：策略卡照常渲染')
-  assert.ok(html.includes(t('modules.subagentScopeHint')), '替代入口说明由能力卡列表侧渲染')
+  assert.doesNotMatch(html, /data-module-card-id/, '独立能力卡已退场：子代理页不再有卡片形态的能力入口')
+  // 被排除的能力连参数一起排除，未排除的能力正常进入本层设置内容。
+  assert.deepEqual(layerParamCards(active, 'tool-pipeline', ['tool-filter']), [])
+  assert.deepEqual(layerParamCards({ ...active, moduleFacts: { ...active.moduleFacts, effectiveModules: ['tool-filter', 'deliberation-gate'] } }, 'tool-pipeline', ['tool-filter']), ['deliberation-gate'])
+  assert.ok(html.includes(t('modules.subagentScopeHint')), '替代入口说明仍随页面提示渲染')
   // 空装配 + 非 all 视图（页面 showStatus 分支）时给出去哪里授权的说明
   // （emptyHint 被真正消费，而不是只传了 prop）。
   const empty = render(SubagentPage, {

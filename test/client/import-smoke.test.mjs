@@ -259,8 +259,11 @@ test('浏览器：子代理筛选、模板创建与只读边界保持', { skip: 
   assert.equal(await evaluate('document.querySelector("[data-config-id=pre-config]") === null'), true)
   assert.equal(await evaluate('document.querySelector("[data-config-id=system-config]") !== null'), true)
   await choose('层级：工具链')
-  assert.equal(await evaluate('document.querySelector("[data-module-card-id=subagent-tool-policy]") !== null'), true)
-  assert.equal(await evaluate('document.querySelector("[data-module-card-id=anchor-turn]") === null'), true)
+  // 该层没有配置卡：用不写盘的兜底容器列出本层已装配能力（能力卡已退场）。
+  await waitFor('document.querySelector("[data-layer-settings-standalone=tool-pipeline]") !== null')
+  assert.equal(await evaluate('document.querySelector("[data-layer-capability=subagent-tool-policy]") !== null'), true, '兜底容器列出本层已装配能力')
+  assert.equal(await evaluate('document.querySelector("[data-layer-capability=anchor-turn]") === null'), true, '只列本层能力，不列其他层')
+  assert.equal(await evaluate('document.querySelector("[data-module-card-id]") === null'), true, '独立能力卡已退场')
   await choose('层级：前置步骤')
   await evaluate(`document.querySelector('input[aria-label="过滤提示词配置"]').focus(); true`); await send('Input.insertText', { text: 'created' })
   await click('添加能力 / 工具模块'); await click('添加模板 · 前置步骤')

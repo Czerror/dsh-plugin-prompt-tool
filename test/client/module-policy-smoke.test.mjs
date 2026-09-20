@@ -228,10 +228,17 @@ test('浏览器：六层空卡、跨层工具创建、筛选草稿与能力卡�
   await waitFor(`window.store.moduleFacts.effectiveModules.includes('context-gate')`)
   await click('添加能力 / 工具模块')
   await click('添加模块 · anchor-turn')
-  await waitFor(`document.body.innerText.includes('anchor-turn')`)
-  // 一项能力一张卡：两张独立卡片，创建的那张展开；筛选与页面入口不变。
-  assert.equal(await evaluate(`[...document.querySelectorAll('[data-module-card="true"]')].filter((card)=>['context-gate','anchor-turn'].some((id)=>card.textContent.includes(id))).length`), 2)
-  assert.equal(await evaluate(`[...document.querySelectorAll('[data-module-card="true"]')].some((card)=>card.textContent.includes('anchor-turn')&&card.querySelector('[aria-expanded="true"]')!==null)`), true, '创建的能力卡展开')
+  await waitFor(`window.store.moduleFacts.effectiveModules.includes('anchor-turn')`)
+  // 能力卡已退场：本层引擎设置嵌在实例卡内，展开任一 pre-step 卡即可看到本层已装配能力。
+  assert.equal(await evaluate(`[...document.querySelectorAll('[data-module-card="true"]')].some((card)=>card.textContent.includes('context-gate')||card.textContent.includes('anchor-turn'))`), false, '能力不再以独立卡片出现')
+  await evaluate(`document.querySelector('[data-config-id] header button[aria-expanded]').click(); true`)
+  await waitFor(`document.querySelector('[data-layer-settings="pre-step"]') !== null`)
+  await evaluate(`document.querySelector('[data-layer-settings="pre-step"] summary').click(); true`)
+  await waitFor(`document.querySelector('[data-layer-capability="context-gate"]') !== null`)
+  assert.equal(await evaluate(`document.querySelectorAll('[data-layer-capability]').length`), 2, '本层两个已装配能力都列出')
+  assert.equal(await evaluate(`document.querySelector('[data-layer-capability="anchor-turn"]') !== null`), true, '另一个能力同区可见')
+  // 参数也在同一设置区里：与本层其余实例卡同源。
+  assert.equal(await evaluate(`document.querySelector('[data-layer-param-group="context-gate"]') !== null`), true, '参数组随能力装配出现')
   assert.equal(await evaluate(`document.querySelector('[aria-label="编辑行为"]')===null`), true, '不再有编辑目标下拉')
   assert.equal(await evaluate(`document.querySelector('[aria-label="按层级或策略过滤"]').textContent.trim()`), '全部')
   assert.deepEqual(await evaluate('window.store.moduleFacts.effectiveModules'), ['context-gate', 'anchor-turn'])
@@ -360,39 +367,54 @@ test('浏览器：参数镜像控件同步半成品输入与错误态，一次�
   }
   await navigate('/')
   await waitFor('window.store?.moduleFacts?.editable === true')
-  // 创建「深思门」能力：deliberationMinChars 同时出现在能力卡与工具管线共享设置区。
+  // 装配「上下文门控」能力：deferredGraceSteps 属于 pre-step 层，随后会出现在该层每张实例卡里。
   await click('添加能力 / 工具模块')
-  await click('添加模块 · deliberation-gate')
-  await chooseView('层级：工具链')
-  await waitFor(`document.querySelector('#pt-param-deliberationMinChars') !== null`)
-  // 能力卡由创建定位自动展开；共享设置卡需要手动展开才渲染镜像控件。
-  await evaluate(`[...document.querySelectorAll('button[aria-expanded]')].find((button) => button.textContent.includes('工具能力设置'))?.click(); true`)
-  const primary = '#pt-param-deliberationMinChars'
-  const mirror = '#pt-param-tool-pipeline-deliberation-gate-deliberationMinChars'
-  await waitFor(`document.querySelector(${JSON.stringify(mirror)}) !== null`)
-  // module fixture 没有额外的焦点目标，直接 blur 元素本身即可触发卡片的 onBlur 保存语义。
+  await click('添加模块 · context-gate')
+  await waitFor(`window.store.moduleFacts.effectiveModules.includes('context-gate')`)
+  // 同层两张实例卡：每张卡内部各有一份「本层引擎设置」，两处读同一份值。
+  await evaluate(`window.store.patch({ promptConfigs: [
+    { id: 'mirror-a', name: '镜像 A', layer: 'pre-step', strategy: 'static', order: 0, enabled: true, text: 'A' },
+    { id: 'mirror-b', name: '镜像 B', layer: 'pre-step', strategy: 'static', order: 10, enabled: true, text: 'B' }
+  ] }); true`)
+  await chooseView('层级：前置步骤')
+  await waitFor(`document.querySelector('[data-config-id="mirror-a"]') !== null`)
+  // 列表是手风琴（一次展开一张卡）：在 A 卡里编辑，切到 B 卡验证读到同一份共享草稿。
+  const openSettings = async (id) => {
+    await evaluate(`document.querySelector('[data-config-id="${id}"] header button[aria-expanded]').click(); true`)
+    await waitFor(`document.querySelector('[data-config-id="${id}"] [data-layer-settings="pre-step"]') !== null`)
+    await evaluate(`document.querySelector('[data-config-id="${id}"] [data-layer-settings="pre-step"] summary').click(); true`)
+  }
+  const primary = '#pt-param-layer-pre-step-mirror-a-context-gate-deferredGraceSteps'
+  const mirror = '#pt-param-layer-pre-step-mirror-b-context-gate-deferredGraceSteps'
+  await openSettings('mirror-a')
+  await waitFor(`document.querySelector(${JSON.stringify(primary)}) !== null`)
+  // module fixture 没有额外的焦点目标，直接 blur 元素本身即可触发字段的 onBlur 保存语义。
   const blurField = (selector) => evaluate(`document.querySelector(${JSON.stringify(selector)}).blur(); true`)
   const saves = `window.requests.filter((request) => request.endpoint === 'param-overrides').length`
   const before = await evaluate(saves)
-  assert.notEqual(await evaluate(`document.querySelector(${JSON.stringify(primary)}).id`),
-    await evaluate(`document.querySelector(${JSON.stringify(mirror)}).id`), '两处渲染点的 DOM id 不同')
-  // 半成品输入：另一处立即读到同一个值（同一草稿键），且尚未落盘。
-  await edit(mirror, '12a')
-  await waitFor(`document.querySelector(${JSON.stringify(primary)}).value === '12a'`)
+  // 半成品输入：写进共享草稿，尚未落盘。
+  await edit(primary, '12a')
   assert.equal(await evaluate(saves), before, '未完成的输入不保存')
-  // 失焦校验失败：错误态同为共享草稿，两处一起 aria-invalid 并各播报同一条错误。
-  await blurField(mirror)
-  await waitFor(`document.querySelector(${JSON.stringify(primary)}).getAttribute('aria-invalid') === 'true'`)
-  assert.equal(await evaluate(`document.querySelector(${JSON.stringify(mirror)}).getAttribute('aria-invalid')`), 'true')
-  assert.equal(await evaluate(`[...document.querySelectorAll('[role="alert"]')].filter((node) => node.textContent.includes('必须是非负整数')).length`), 2)
-  assert.equal(await evaluate(saves), before, '校验失败不落盘')
-  // 合法值：一次失焦只提交一次参数保存，两处回落到同一个字段值。
-  await edit(primary, '20')
+  // 失焦校验失败：字段进入 aria-invalid 并播报错误。
   await blurField(primary)
+  await waitFor(`document.querySelector(${JSON.stringify(primary)}).getAttribute('aria-invalid') === 'true'`)
+  assert.equal(await evaluate(`[...document.querySelectorAll('[role="alert"]')].filter((node) => node.textContent.includes('必须是非负整数')).length`), 1)
+  assert.equal(await evaluate(saves), before, '校验失败不落盘')
+  // 切到同层另一张卡：读到同一份半成品与同一条错误（同源同步，不是第二份状态）。
+  await openSettings('mirror-b')
+  await waitFor(`document.querySelector(${JSON.stringify(mirror)}) !== null`)
+  assert.equal(await evaluate(`document.querySelector(${JSON.stringify(mirror)}).value`), '12a', '另一张卡读到同一份未完成输入')
+  assert.equal(await evaluate(`document.querySelector(${JSON.stringify(mirror)}).getAttribute('aria-invalid')`), 'true', '错误态同样同步')
+  // 在 B 卡改成合法值并失焦：一次语义变更只提交一次保存。
+  await edit(mirror, '3')
+  await blurField(mirror)
   await waitFor(`${saves} === ${before + 1}`)
   await sleep(200)
   assert.equal(await evaluate(saves), before + 1, '一次语义变更只保存一次')
-  assert.equal(await evaluate(`document.querySelector(${JSON.stringify(mirror)}).value`), '20')
-  assert.equal(await evaluate('window.store.fields.deliberationMinChars'), 20)
+  assert.equal(await evaluate('window.store.fields.deferredGraceSteps'), 3)
   assert.equal(await evaluate(`document.querySelectorAll('[role="alert"]').length`), 0, '保存成功后清掉错误态')
+  // 切回 A 卡：读到保存后的同一份值。
+  await openSettings('mirror-a')
+  await waitFor(`document.querySelector(${JSON.stringify(primary)}) !== null`)
+  assert.equal(await evaluate(`document.querySelector(${JSON.stringify(primary)}).value`), '3', '两张卡始终读同一份值')
 })
