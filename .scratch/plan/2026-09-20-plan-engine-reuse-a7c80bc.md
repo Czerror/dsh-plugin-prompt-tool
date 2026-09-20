@@ -10,8 +10,9 @@
 - 随后澄清：`预设中同一层拥有不同配置时 可创建多张同层卡片 这是目前合理的设计.比方说系统提示段,在某些自定义预设中 可存在几十张不同设置的卡片`，并指定本地 beta-2-42 预设作为参考。最终约束为九种层类型、每层可有多张独立配置卡；能力设置进入对应层卡，但不收拢或减少配置实例数量。前述“固定数量容器”的推断已撤回。
 - 最新补充：`多实例设计是合理的,唯一引擎功能的设置参数 可采用 同步或互斥,在多张同层或跨层卡中同步`。据此改为唯一存储所有者、多处同步编辑；只有真实不兼容的功能采用后端校验的互斥，不以“唯一功能”为由强制单一可写控件。
 - 本次方案增补基线：`dev / d415d4a`（上一轮 PLAN 提交）；保留文件名中的原始审查基线，不新建第二份计划。
-- 已授权：审查、验证反例、将结论与候选任务写入本 PLAN，以及九层参数编辑收敛的方案设计。文档按仓库规则验证、提交并推送 `origin/dev`。
-- 未授权：实施以下任何引擎、生成器、参数或界面重构。Wave 1—4、6—9 都是候选实施范围；Wave 5 仅编写本次方案，不因列出方案自动开始修复。
+- 2026-09-20 18:00 授权补录：用户原话 `根据plan执行`，经互动提问选定范围 **Wave 1+2（T2—T6，R1、R2、R3、R5、R4）**；随后明确 `PLAN中 所有wave全部完成才能归档`。据此本轮实施 T2—T6，Wave 3、4、6—9 仍未授权，PLAN 保留在 `.scratch/plan/`，不归档。
+- 已授权：审查、验证反例、将结论与候选任务写入本 PLAN，九层参数编辑收敛的方案设计，以及本轮 T2—T6 的实现与其回归、文档同步、提交推送。文档与代码按仓库规则验证、提交并推送 `origin/dev`。
+- 未授权：Wave 3（T7—T9）、Wave 4（T10）、Wave 6—9（T12—T17）的任何实现；PLAN 归档须待全部 Wave 完成。
 - 本文件是本次审查的唯一 PLAN；结论集中在「审查结论」，不另建审查报告。仅建计划不等于修复完成，因此保留在 `.scratch/plan/`；选定任务完成并验收后才按仓库规则归档。
 - 保留起始工作树中的用户未跟踪目录 `skills/`；本轮不修改宿主源码，不启停服务，不安装依赖。
 - 格式依据：[PLAN 格式规范](../../docs/agents/plan-format.md)；授权、归档与交付依据：[仓库规则](../../AGENTS.md)。
@@ -418,17 +419,35 @@ T15 按 pre-step 来源绑定、系统段/变量、模型/委派分组检查点�
 ## 状态
 
 - [✔] Wave 0 / T1：审查证据、PLAN 补录与文档核对完成；本轮仅交付计划，Git 提交推送凭据见交付回执。
-- [ ] Wave 1 / T2、T3（R1、R2）：未启动，等待用户指定修复范围。
-- [ ] Wave 2 / T4、T5、T6（R3、R5、R4）：未启动，等待用户指定修复范围。
+- [✔] Wave 1 / T2、T3（R1、R2）：2026-09-20 实施完成并验收（见「本轮修复验收」）；R1 改为「候选生成 vs 宿主接纳确认」，R2 改为「执行器判定获准集合驱动 ST 预求值」。
+- [✔] Wave 2 / T4、T5、T6（R3、R5、R4）：2026-09-20 实施完成并验收；runtimeOf 未提供参数不覆盖定义、参数桥 editor-default 只投影已提供值、引擎指纹含内容摘要。
 - [ ] Wave 3 / T7、T8、T9（R6、R7、R8）：未启动，等待用户指定修复范围。
-- [ ] Wave 4 / T10（A1 与选定范围验收）：未启动，依赖范围授权和所选实现通过。
+- [ ] Wave 4 / T10（A1 与选定范围验收）：未启动；本轮已在 T2—T6 交付内完成所选范围的文档同步与完整门禁，但 A1 三类依赖说明与归档仍待全部 Wave 完成后执行。
 - [✔] Wave 5 / T11：已完成九层多实例、共享参数同步/互斥方案、64+7 参数盘点和本地 beta-2-42 结构核对；本轮文档校验与交付记录见下。
 - [ ] Wave 6 / T12、T13：元数据与七键保存闭环未实施，等待用户确认方案和相关前置修复范围。
 - [ ] Wave 7 / T14：tool-pipeline 整卡切片未实施，依赖 T12；以用户给出的 tool-config/tool-filter/自定义工具归并为首个样板。
 - [ ] Wave 8 / T15、T16：其余八层能力接管和九层交互未实施，依赖工具管线切片通过及所选参数保真前置。
-- [ ] Wave 9 / T17：清理旧入口、完整门禁及现有 GUI 验证未实施；最终归档与 T10 合并一次执行。
+- [ ] Wave 9 / T17：清理旧入口、完整门禁及现有 GUI 验证未实施。
+- 归档条件（用户 2026-09-20 明确）：PLAN 内全部 Wave 完成后才归档；本轮保持在本目录。
 
 ## 验收记录
+
+### 本轮修复验收（Wave 1+2 / T2—T6，基线 25f70d1）
+
+执行目录 `D:\AI\workspase\_temp`（隔离 cwd），Node `v26.7.0`；文件系统用例使用临时目录与临时 `DSH_HOME`，`finally` 清理。命令前先 `pnpm --dir $Repo build` 重建 `lib/`（write-preset / preset-render 类测试 import 构建产物）。
+
+| 任务 | 修改 | 回归证据 | 结果 |
+|---|---|---|---|
+| T2（R1） | `engine/executor.mjs`：`dedupe=session` 改为「宿主接纳确认」——新增 `confirmDelivered(memo, session, event)`，删除候选入批时的记账；`src/runtime/pre-step-coordinator.ts` 管理路径接入同一确认 | `test/host/pre-step-wiring.test.mjs` 新增 4 条：门控剥离→晋升补发（管理/独立双路径）、接纳后只注入一次 + 快路径独立生效、重挂按持久事实恢复、reject 不记账；`test/engine/prompt-config-engine.test.mjs` 两条旧用例改为「未确认不记账 / 接纳后去重」 | 25/25、76/76 通过 |
+| T3（R2） | `engine/executor.mjs`：抽出唯一资格判定 `qualified` 并产出 `eligible` 集合传给渲染器；`engine/st-render.mjs` 预求值改用该集合（无集合时退回保守判定） | `test/engine/prompt-config-engine.test.mjs` 新增 R2 用例：未命中的 setter 不改变量帧（reader 读 fallback），命中时按 order 先行求值 | 通过 |
+| T4（R3） | `src/host/write-preset.ts#runtimeOf`：未提供的布尔/字符串参数保持 `undefined`（不再补 `false` / `''` / `true`），显式值（含 `''`）仍生效 | `test/host/write-preset.test.mjs` 新增 R3 用例：省略时保留 `firstTurnAnchor: true` / `firstTurnText` / `injectPrompt: false` / 子代理路由；显式 `false` / `true` / `''` 对照 | 通过 |
+| T5（R5） | `src/shared/engine-params.ts#buildEngineModuleParams`：`editor-default` 只投影已提供的正值，非法值不写行配置 | `test/shared/engine-param-schema.test.mjs` 与 `test/host/preset-render-variants.test.mjs` 各新增用例：缺参不补 16000（行级 32000 生效）、显式 48000 优先、非法值回落行配置 | 通过 |
+| T6（R4） | `src/host/write-preset.ts#engineFingerprint`：`路径:大小` → 有序路径 + `sha256` 内容摘要（排除 `compositions` 约定不变） | `test/host/write-preset.test.mjs` 新增 R4 用例：等字节内容变化必须改指纹、不变稳定、新增/删除刷新、`compositions` 不计入 | 通过 |
+
+完整门禁（隔离 cwd，`pnpm --dir $Repo …`）：`typecheck`、`lint`、`build`、`git diff --check` 全部通过；`test` 为 **1156 测试全通过（fail 0）**。文档同步：`docs/engine-reuse.md`（会话去重以宿主接纳为准、ST 预求值只对获准配置）、`docs/architecture-params.md`（物化缺省语义「未提供 ≠ 显式空值」、引擎指纹含内容摘要）。
+
+未实施：Wave 3、4、6—9 全部任务；A1 的三类依赖说明仍待 T10；本轮未做 UI 重构、未跑性能基准、未重启或抢占运行中的 DSH 服务。
+
 
 ### 审查阶段已执行（基线 a7c80bc，非修复验收）
 

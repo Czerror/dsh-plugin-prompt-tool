@@ -75,6 +75,21 @@ test('清除可选开关恢复继承，工具过滤开关与编辑器上限按�
   assert.equal(buildEngineModuleParams({ strReplaceEditorMaxOutputChars: '32000' })['str-replace-editor'].maxOutputChars, 32000)
 })
 
+test('R5 编辑器上限只投影已提供的合法值，缺参不补默认覆盖行级配置', () => {
+  // 缺参：参数桥不产生该行配置（moduleConfigs/行默认生效），回显同样为空。
+  assert.deepEqual(buildEngineModuleParams({}), {})
+  assert.deepEqual(moduleParamFallbacks(buildEngineModuleParams({})), {})
+  // 显式合法值：参数桥优先（数字与数字字符串同义）。
+  assert.deepEqual(buildEngineModuleParams({ strReplaceEditorMaxOutputChars: 48000 })['str-replace-editor'], { maxOutputChars: 48000 })
+  assert.deepEqual(buildEngineModuleParams({ strReplaceEditorMaxOutputChars: '32000' })['str-replace-editor'], { maxOutputChars: 32000 })
+  // 非法值不写（渲染层宽容，回落行默认），保存层仍响亮拒绝。
+  for (const bad of [0, -1, 1.5, Number.NaN, 'abc', '', ' ']) {
+    assert.equal(buildEngineModuleParams({ strReplaceEditorMaxOutputChars: bad })['str-replace-editor'], undefined, String(bad))
+  }
+  assert.ok(validateEngineParamValues({ strReplaceEditorMaxOutputChars: 0 }).length > 0)
+  assert.deepEqual(validateEngineParamValues({ strReplaceEditorMaxOutputChars: '' }), [])
+})
+
 test('模块重命名只改变行映射，保留参数键、工具名与消息来源身份', () => {
   const params = {
     usePtcMode: true, ptcSubagents: true, ptcPromoteOn: 'tool-call',

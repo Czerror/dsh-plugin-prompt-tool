@@ -286,9 +286,12 @@ export function buildEngineModuleParams(params: Record<string, unknown>): Record
     const binding = definition.module
     if (binding === undefined) continue
     let value = params[key]
+    // editor-default：只投影调用方真正提供的合法值。缺参不补目录默认值——参数桥
+    // 优先级高于 moduleConfigs 与行默认，补值会把「未配置」写成显式覆盖，压掉
+    // 模板/导入预设的行级 maxOutputChars；非法值同样不写，交给行默认兜底。
     if (binding.mode === 'editor-default') {
       if (typeof value === 'string' && value.trim().length > 0) value = Number(value)
-      value = typeof value === 'number' && Number.isSafeInteger(value) && value > 0 ? value : definition.defaultValue
+      if (typeof value !== 'number' || !Number.isSafeInteger(value) || value <= 0) continue
     }
     if (value === undefined || value === null) continue
     if (definition.kind === 'boolean') value = value === true

@@ -12,6 +12,7 @@
  */
 
 import {
+  MAX_TRACKED_SESSIONS,
   PROMOTE_EVENTS,
   createWarnOnce,
   getService,
@@ -30,8 +31,8 @@ import { selectStWorldBook } from './st-world-book.mjs'
 
 const name = 'prompt-config-engine'
 
-/** 每提示词配置每会话的进程内快路径上限;真相在持久事件流。 */
-// ponytail: 配置条数上限防无界增长（Map 按 config.id 累积）；若需精确淘汰改 LRU。
+/** 已确认投递身份的进程内快路径上限;真相在持久事件流。 */
+// ponytail: 身份条数上限防无界增长（Map 按投递身份累积）；若需精确淘汰改 LRU。
 const MAX_MEMO_CONFIGS = 4096
 
 /**
@@ -59,8 +60,13 @@ function mergedIdentity(config) {
   return `merged:${config.position}`
 }
 
+/** 去重身份:merged 组用位置命名空间,独立配置用自身身份。 */
+function identityOf(config) {
+  return config.mergeMode === 'merged' ? mergedIdentity(config) : config.identity.value
+}
+
 function hasInjected(config, session) {
-  const value = config.mergeMode === 'merged' ? mergedIdentity(config) : config.identity.value
+  const value = identityOf(config)
   return sessionEvents(session).some((event) => {
     const message = eventMessage(event)
     // 双通道去重：kind（外来/第三方消息，如 context-gate 的 instruction-hint）或
@@ -71,20 +77,48 @@ function hasInjected(config, session) {
 
 /** 当前消息批内是否已有该提示词配置注入(每轮去重)。 */
 function hasInBatch(config, messages) {
-  const value = config.mergeMode === 'merged' ? mergedIdentity(config) : config.identity.value
+  const value = identityOf(config)
   return messages.some((message) =>
     message?.source?.kind === config.sourceKind || message?.source?.plugin === value)
 }
 
-/** 按提示词配置 id 取会话去重快路径集合；超限时整体清空（真相在持久事件流）。 */
-function configMemo(memo, config) {
-  let set = memo.get(config.id)
+/**
+ * 按投递身份取「已确认投递」的会话集合。记账只发生在宿主真正接纳并持久化该消息之后
+ * （见 confirmDelivered）：候选在瀑布外层被门控/策略剥离时不算已投递，否则晋升后
+ * （门控放行时）正文会永久缺失。集合上限按会话数截断，真相仍在持久事件流。
+ */
+function deliveredSessions(memo, key) {
+  let set = memo.get(key)
   if (set === undefined) {
     if (memo.size >= MAX_MEMO_CONFIGS) memo.clear()
     set = new Set()
-    memo.set(config.id, set)
+    memo.set(key, set)
   }
+  if (set.size >= MAX_TRACKED_SESSIONS) set.clear()
   return set
+}
+
+/**
+ * 记录一次宿主已接纳的注入消息（由调用方在 session/event 里转发）。
+ * plugin（本引擎身份，merged 组用 merged:<position>）与 kind（外来通道，如
+ * context-gate 的 instruction-hint）都以会话为界记账，与 hasInjected 的双通道语义一致。
+ */
+export function confirmDelivered(memo, session, event) {
+  if (memo === null || memo === undefined || session === null || session === undefined) return
+  const source = eventMessage(event)?.source
+  if (source === null || typeof source !== 'object') return
+  for (const key of [source.plugin, source.kind]) {
+    if (typeof key !== 'string' || key.length === 0) continue
+    deliveredSessions(memo, key).add(session.id)
+  }
+}
+
+/** dedupe=session：本会话是否已有该身份的已确认投递（快路径 + 持久事件真相）。 */
+function alreadyDelivered(config, session, memo) {
+  const confirmed = (key) => memo.get(key)?.has(session.id) === true
+  if (confirmed(identityOf(config))) return true
+  if (typeof config.sourceKind === 'string' && confirmed(config.sourceKind)) return true
+  return hasInjected(config, session)
 }
 
 /**
@@ -138,7 +172,7 @@ function buildMessage(config, resolved, warnOnce) {
  *
  * @param options.configs 已过滤 enabled 与互斥组的最终提示词配置列表。
  * @param options.promotion { main, withSubagents } 晋升追踪器(真相在持久事件流)。
- * @param options.memo 按提示词配置 id 的进程内 session 去重快路径。
+ * @param options.memo 已确认投递身份的进程内 session 去重快路径（见 confirmDelivered）。
  * @returns 注入后的 decision；reject、缺 agent/session、全部跳过或异常时原样返回。
  */
 export async function runPreStepBatch(options) {
@@ -156,30 +190,27 @@ export async function runPreStepBatch(options) {
     let changed = false
 
     const due = []
-    const stWorldBook = selectStWorldBook(configs.filter(config => config.layer === 'pre-step'
-      && !(config.audience === 'main' && isDelegated(session)) && !(config.audience === 'subagent' && !isDelegated(session))
+    // 本批资格判定（唯一实现）：层通道、受众、模型、晋升与声明式条件。
+    // 条件判定放在去重之前：未命中的配置不算「已注入」，条件恢复后仍应能注入。
+    // ST 模板的跨配置变量帧按 order 预求值，但只有这里的获准集合才允许产生副作用
+    // （未命中的 setter 提前 setvar 会污染同批 reader）——渲染器不再复制判定。
+    const delegated = isDelegated(session)
+    const qualified = (config) => config.layer === 'pre-step'
+      && !(config.audience === 'main' && delegated)
+      && !(config.audience === 'subagent' && !delegated)
       && matchesModel(config.modelScope, agent.options?.model)
       && (config.promotion !== 'main' || main.status(agent).promoted)
       && (config.promotion !== 'include-subagents' || withSubagents.status(agent).promoted)
-      && conditionHit(config, { userText })), session, messages, warnOnce)
+      && conditionHit(config, { userText })
+    const qualifiedConfigs = configs.filter(qualified)
+    const eligible = new Set(qualifiedConfigs)
+    const stWorldBook = selectStWorldBook(qualifiedConfigs, session, messages, warnOnce)
     for (const config of configs) {
       try {
-        if (config.layer !== 'pre-step') continue
-        const delegated = isDelegated(session)
-        if (config.audience === 'main' && delegated) continue
-        if (config.audience === 'subagent' && !delegated) continue
-        if (!matchesModel(config.modelScope, agent.options?.model)) continue
-        if (config.promotion === 'main' && !main.status(agent).promoted) continue
-        if (config.promotion === 'include-subagents' && !withSubagents.status(agent).promoted) continue
-        // 条件判定放在去重之前：未命中的配置不算"已注入"，条件恢复后仍应能注入。
-        if (!conditionHit(config, { userText })) continue
+        if (!qualified(config)) continue
 
-        const configSessions = configMemo(memo, config)
         if (config.dedupe === 'session') {
-          if (configSessions.has(session.id) || hasInjected(config, session)) {
-            configSessions.add(session.id)
-            continue
-          }
+          if (alreadyDelivered(config, session, memo)) continue
         } else if (config.dedupe === 'batch' && hasInBatch(config, messages)) {
           continue
         }
@@ -197,7 +228,7 @@ export async function runPreStepBatch(options) {
           ...(resolved.variables !== null && typeof resolved.variables === 'object' ? resolved.variables : {}),
         }
         if (typeof config.renderSt === 'function') {
-          patched.text = config.renderSt(agent, messages, warnOnce, options)
+          patched.text = config.renderSt(agent, messages, warnOnce, options, eligible)
           patched.content = patched.text.length > 0 ? [{ type: 'text', text: patched.text }] : []
         } else if (typeof patched.text === 'string') {
           // 提示词配置级模板变量 + filler 变量 + 内置环境变量插值。
@@ -273,11 +304,9 @@ export async function runPreStepBatch(options) {
     }
 
     // 同位置批量插入:planned 已按 order 升序,多元素 splice/unshift/push 保持该顺序。
+    // 去重记账不在这里：候选被外层门控剥离时也必须保持「未投递」，由 confirmDelivered 确认。
     const markGroup = (group) => {
-      for (const entry of group) {
-        stWorldBook.commit?.(entry.config)
-        if (entry.config.dedupe === 'session') configMemo(memo, entry.config).add(session.id)
-      }
+      for (const entry of group) stWorldBook.commit?.(entry.config)
     }
     const beforeAll = planned.filter((item) => item.position === 'before-all')
     const afterUser = planned.filter((item) => item.position !== 'before-all' && item.position !== 'after-all')
@@ -330,14 +359,16 @@ export function applyPromptConfigs(ctx, configs, options = {}) {
     }
     return true
   })
+  const injectedMemo = new Map()
   const main = createEpochPromotion(PROMOTE_EVENTS.either, { includeSubagents: false })
   const withSubagents = createEpochPromotion(PROMOTE_EVENTS.either, { includeSubagents: true })
   ctx.on('session/event', (session, event) => {
     main.observe(session, event)
     withSubagents.observe(session, event)
+    // 独立路径的去重记账：只有宿主真正持久化的注入消息才确认投递（门控剥离的候选不算）。
+    confirmDelivered(injectedMemo, session, event)
   })
 
-  const injectedMemo = new Map()
   const warnOnce = createWarnOnce(ctx, name)
   const prepend = options.prepend === true || list.some((config) => config.prepend === true)
   const promotion = { main, withSubagents }

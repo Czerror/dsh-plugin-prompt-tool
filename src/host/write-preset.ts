@@ -8,7 +8,8 @@
  * 直接可挂载）+ presetDir/.engine/（共享引擎，点前缀不占预设槽）。
  */
 
-import { writeFileSync, mkdirSync, rmSync, cpSync, mkdtempSync, renameSync, existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
+import { writeFileSync, mkdirSync, rmSync, cpSync, mkdtempSync, renameSync, existsSync, readdirSync, readFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
 import { join } from 'node:path'
 import { parseDocument, stringify as stringifyYaml } from 'yaml'
 // 纯策略模块同时由 host writer 与生成运行时消费；保持校验算法单一来源。
@@ -46,24 +47,33 @@ const ENGINE_DIR = packageEngineDir()
 export const RENDER_VERSION = 4
 export const RENDER_STAMP = `# prompt-tool:render v${RENDER_VERSION}`
 
-/** 包内引擎指纹（相对路径 + size）：引擎文件未变时共享引擎不重刷。
+/** 包内引擎指纹（有序相对路径 + 内容摘要）：引擎文件未变时共享引擎不重刷。
  *  每次 settings 变更都会 rebuildPreset → writePreset，引擎重刷（130 文件复制 +
- *  Windows 锁等待）是纯浪费；指纹 stat 遍历约 2-5ms，远小于复制成本。 */
-function engineFingerprint(): string {
+ *  Windows 锁等待）是纯浪费；指纹遍历 + 摘要约十几毫秒，远小于复制成本。
+ *  只看路径与大小会漏掉等字节内容更新（改版本号、改同长度常量），用户目录里
+ *  的旧引擎会一直不刷新——所以摘要必须覆盖内容。 */
+export function engineFingerprint(dir: string = ENGINE_DIR): string {
   const parts: string[] = []
   const walk = (rel: string): void => {
-    for (const entry of readdirSync(join(ENGINE_DIR, rel), { withFileTypes: true })) {
+    for (const entry of readdirSync(join(dir, rel), { withFileTypes: true })) {
       const child = rel.length === 0 ? entry.name : `${rel}/${entry.name}`
       if (entry.isDirectory()) {
         // 生成期资产（组合库/源）运行时不需要，不复制也不计入指纹。
         if (rel.length === 0 && entry.name === 'compositions') continue
         walk(child)
       }
-      else parts.push(`${child}:${statSync(join(ENGINE_DIR, child)).size}`)
+      else parts.push(child)
     }
   }
   walk('')
-  return parts.sort().join('|')
+  const digest = createHash('sha256')
+  for (const rel of parts.sort()) {
+    digest.update(rel)
+    digest.update('\0')
+    digest.update(readFileSync(join(dir, rel)))
+    digest.update('\0')
+  }
+  return digest.digest('hex')
 }
 
 const ENGINE_FINGERPRINT_MARKER = '.pt-engine-fingerprint'
@@ -187,52 +197,37 @@ function syncDirInPlace(srcDir: string, destDir: string): void {
 }
 
 function runtimeOf(options: WritePresetOptions, prompt: string): Record<string, unknown> {
+  /** 未提供的参数保持 undefined：resolvePresetParams 跳过 undefined 键，
+   *  预设 preset.yml 的 params/model 段才是缺省值来源。写成 false/''/true 会把
+   *  「调用方没给」冒充成「调用方要求」，导入与离线物化时覆盖作者定义。 */
+  const providedBoolean = (value: boolean | undefined): boolean | undefined =>
+    typeof value === 'boolean' ? value : undefined
   return {
     // 所有引擎参数可直接用于 writePreset；undefined 不覆盖模板值。
     ...Object.fromEntries(ENGINE_PARAM_KEYS.map((key) => [key, options[key]])),
     promptText: prompt,
-    firstTurnAnchor: options.firstTurnAnchor === true,
-    firstTurnCustom: options.firstTurnCustom === true,
-    firstTurnText: typeof options.firstTurnText === 'string' ? options.firstTurnText : '',
-    guideCustom: options.guideCustom === true,
-    guideText: typeof options.guideText === 'string' ? options.guideText : '',
+    firstTurnAnchor: providedBoolean(options.firstTurnAnchor),
+    firstTurnCustom: providedBoolean(options.firstTurnCustom),
+    firstTurnText: typeof options.firstTurnText === 'string' ? options.firstTurnText : undefined,
+    guideCustom: providedBoolean(options.guideCustom),
+    guideText: typeof options.guideText === 'string' ? options.guideText : undefined,
     // 每轮引导独立开关：undefined = 跟随 firstTurnAnchor（兼容旧行为）。
-    guideEnabled: typeof options.guideEnabled === 'boolean' ? options.guideEnabled : undefined,
-    injectPrompt: options.injectPrompt !== false,
+    guideEnabled: providedBoolean(options.guideEnabled),
+    injectPrompt: providedBoolean(options.injectPrompt),
     // 透传：未声明 = 模板 preset.yml params / 引擎默认（false）兜底，不再强制 true。
     usePtcMode: typeof options.usePtcMode === 'boolean' ? options.usePtcMode : undefined,
     bootstrapMaxTokens: Number.isSafeInteger(options.bootstrapMaxTokens) ? options.bootstrapMaxTokens : undefined,
-    modelProvider: typeof options.modelProvider === 'string' && options.modelProvider.length > 0
-      ? options.modelProvider
-      : '',
-    modelName: typeof options.modelName === 'string' && options.modelName.length > 0
-      ? options.modelName
-      : '',
-    subagentModelProvider: typeof options.subagentModelProvider === 'string' && options.subagentModelProvider.length > 0
-      ? options.subagentModelProvider
-      : '',
-    subagentModelName: typeof options.subagentModelName === 'string' && options.subagentModelName.length > 0
-      ? options.subagentModelName
-      : '',
-    // 模型参数空值不覆盖：spec.params（预设模板默认）保留，settings 显式值优先。
-    modelReasoningEffort: typeof options.modelReasoningEffort === 'string' && options.modelReasoningEffort.length > 0
-      ? options.modelReasoningEffort
-      : undefined,
-    modelTemperature: typeof options.modelTemperature === 'string' && options.modelTemperature.length > 0
-      ? options.modelTemperature
-      : undefined,
-    modelMaxTokens: typeof options.modelMaxTokens === 'string' && options.modelMaxTokens.length > 0
-      ? options.modelMaxTokens
-      : undefined,
-    subagentReasoningEffort: typeof options.subagentReasoningEffort === 'string' && options.subagentReasoningEffort.length > 0
-      ? options.subagentReasoningEffort
-      : undefined,
-    subagentTemperature: typeof options.subagentTemperature === 'string' && options.subagentTemperature.length > 0
-      ? options.subagentTemperature
-      : undefined,
-    subagentMaxTokens: typeof options.subagentMaxTokens === 'string' && options.subagentMaxTokens.length > 0
-      ? options.subagentMaxTokens
-      : undefined,
+    // 字符串键：调用方给了就用它（'' = 显式不设置），没给才回落到 preset.yml 定义。
+    modelProvider: typeof options.modelProvider === 'string' ? options.modelProvider : undefined,
+    modelName: typeof options.modelName === 'string' ? options.modelName : undefined,
+    subagentModelProvider: typeof options.subagentModelProvider === 'string' ? options.subagentModelProvider : undefined,
+    subagentModelName: typeof options.subagentModelName === 'string' ? options.subagentModelName : undefined,
+    modelReasoningEffort: typeof options.modelReasoningEffort === 'string' ? options.modelReasoningEffort : undefined,
+    modelTemperature: typeof options.modelTemperature === 'string' ? options.modelTemperature : undefined,
+    modelMaxTokens: typeof options.modelMaxTokens === 'string' ? options.modelMaxTokens : undefined,
+    subagentReasoningEffort: typeof options.subagentReasoningEffort === 'string' ? options.subagentReasoningEffort : undefined,
+    subagentTemperature: typeof options.subagentTemperature === 'string' ? options.subagentTemperature : undefined,
+    subagentMaxTokens: typeof options.subagentMaxTokens === 'string' ? options.subagentMaxTokens : undefined,
     // 工具过滤空值不覆盖：spec.params（预设模板默认）保留，settings/overrides 显式值优先。
     toolFilterAllow: options.toolFilterAllow !== undefined
       && (Array.isArray(options.toolFilterAllow) ? options.toolFilterAllow.length > 0 : String(options.toolFilterAllow).trim().length > 0)
@@ -243,8 +238,8 @@ function runtimeOf(options: WritePresetOptions, prompt: string): Record<string, 
       ? options.toolFilterDeny
       : undefined,
     maxDepth: options.maxDepth,
-    // firstTurnWord 空应回退 preset.yml 模板默认（we）。
     allowKinds: options.allowKinds,
+    // firstTurnWord 空应回退 preset.yml 模板默认（we）。
     firstTurnWord: typeof options.firstTurnWord === 'string' && options.firstTurnWord.length > 0
       ? options.firstTurnWord
       : undefined,

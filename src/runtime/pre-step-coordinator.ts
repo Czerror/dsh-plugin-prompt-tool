@@ -28,7 +28,7 @@ import { createEpochPromotion, isSuccessfulCompactionEnd } from '../../engine/co
 // @ts-expect-error
 import { PROMOTE_EVENTS, createWarnOnce, sessionEvents } from '../../engine/shared.mjs'
 // @ts-expect-error
-import { runPreStepBatch } from '../../engine/executor.mjs'
+import { runPreStepBatch, confirmDelivered } from '../../engine/executor.mjs'
 import { detectAgentsFiles, readAgentsFileSnapshot } from '../host/agents-cards.ts'
 import { instructionPolicyPath, readInstructionPolicy, resolveInstructionPolicy } from '../host/instructions-policy.ts'
 import type { InstructionPolicy } from '../shared/instructions.ts'
@@ -353,13 +353,16 @@ export function installPreStepCoordinator(
     main: createEpochPromotion(PROMOTE_EVENTS.either, { includeSubagents: false }),
     withSubagents: createEpochPromotion(PROMOTE_EVENTS.either, { includeSubagents: true }),
   }
+  const memo = new Map<string, Set<string>>()
   ctx.on('session/event', (session: unknown, event: unknown) => {
     promotion.main.observe(session, event)
     promotion.withSubagents.observe(session, event)
+    // 管理路径的去重记账与独立路径同源：以宿主真正接纳的消息确认投递，
+    // 被外层门控剥离的候选不算已注入（晋升后仍可补发）。
+    confirmDelivered(memo, session, event)
   })
 
   const warnOnce = createWarnOnce(ctx, WARN_LABEL)
-  const memo = new Map<string, Set<string>>()
   const officialOwner = new Map<string, boolean>()
   const readPolicy = createPolicyReader(options.policyFile)
   const collectFiles = options.collectFiles ?? defaultCollectFiles(readPolicy, options.home)

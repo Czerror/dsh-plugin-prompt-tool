@@ -160,6 +160,26 @@ pre-step 来源：
 - 条件判定的共享实现是 `engine/condition.mjs`：pre-step 缺省匹配本批用户消息，其余层按各自
   `subject` 取文本；`match` 的匹配器在 `schema.mjs` 挂载期预编译一次（`config.matchScan`），
   校验与执行同源。未命中的配置**不写入 session 去重**，条件恢复后仍能注入。
+- ST 宏模板（`params.stMacros`）的跨配置变量帧按 `order` 预求值，但只对 **本批获准的配置**
+  执行副作用：`executor.mjs#runPreStepBatch` 把判定出的获准集合（层、受众、模型、晋升与
+  条件）传给渲染器，未命中条件的 setter 不再提前 `setvar` 污染同批 reader；非执行器调用
+  （如 system-section 走官方通道）退回「可见 + 无晋升约束」的保守判定，仍保持既有语义。
+  验收入口：`test/engine/prompt-config-engine.test.mjs`（未命中不改变量 + 命中对照）。
+
+## 会话去重以「宿主接纳」为准（2026-09-20）
+
+`dedupe: session` 的候选生成与投递确认分开记账（`engine/executor.mjs`）：
+
+- 候选只决定这一步注入什么；只有宿主把消息真正写进会话事件流（`session/event`）之后，
+  该身份才记入本会话的去重快路径（`confirmDelivered`）。持久事件流仍是唯一真相
+  （`snapshotEvents()`），快路径只省去每步全量扫描。
+- 被外层门控（`context-gate` 的 `allowKinds` / `messageSources`）在**本步剥离**的候选
+  不算已注入：晋升或门控放行后仍会补发，不会出现「日志里从来没有这条正文，去重却认为
+  已注入」的永久缺失；`reject` 步同样不记账。
+- 独立执行路径与管理路径（协调器）共用同一确认实现，两条路径的去重语义一致；重挂或
+  进程恢复直接从持久记录重建，不依赖进程内已投递集合。
+- 验收入口：`test/host/pre-step-wiring.test.mjs`（门控剥离→晋升补发的独立/管理双路径、
+  接纳后不重复、重挂按持久事实恢复、reject 不记账）与 `test/engine/prompt-config-engine.test.mjs`。
 
 ## 晋升语义（epoch-aware）
 

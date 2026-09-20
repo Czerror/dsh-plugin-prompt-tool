@@ -275,6 +275,21 @@ test('本地 filesystem-editor 行：装配嵌套编辑器并覆盖 maxOutputCha
   }
 })
 
+test('R5 缺参不覆盖行级 maxOutputChars，显式参数与非法值分别生效', () => {
+  const spec = {
+    id: 'editor-bridge',
+    modules: ['filesystem-editor'],
+    moduleConfigs: { 'str-replace-editor': { maxOutputChars: 32000 } },
+  }
+  const editorRow = (runtime) => {
+    const rows = parse(renderComposition(spec, runtime), { logLevel: 'silent' })
+    return rows[0].config.find((row) => row.id === 'str-replace-editor')
+  }
+  assert.equal(editorRow({}).config.maxOutputChars, 32000, '缺参时作者行级配置生效（不再被 16000 覆盖）')
+  assert.equal(editorRow({ strReplaceEditorMaxOutputChars: 48000 }).config.maxOutputChars, 48000, '显式参数优先于行级配置')
+  assert.equal(editorRow({ strReplaceEditorMaxOutputChars: 0 }).config.maxOutputChars, 32000, '非法值不写，回落行级配置')
+})
+
 test('旧 str-replace-editor 模块名明确拒绝，不归一也不改写预设', () => {
   const home = mkdtempSync(join(tmpdir(), 'pt-editor-alias-'))
   try {

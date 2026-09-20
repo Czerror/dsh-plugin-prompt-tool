@@ -188,6 +188,70 @@ test('T23 与 context-gate 共挂：未晋升步注入被门控剥离，reject �
   assert.deepEqual(reject, { kind: 'reject' }, 'reject 不被协调器或引擎吞掉')
 })
 
+/** 宿主写入路径：本步承认的消息逐条成为持久事件（快照 + session/event 双通道）。 */
+const persist = (app, session, events, messages) => {
+  for (const message of messages) {
+    const event = { type: 'user/message', seq: events.length + 1, data: { message } }
+    events.push(event)
+    app.emit('session/event', session, event)
+  }
+}
+
+const onceSpec = (id, text) => staticSpec(id, text, { dedupe: 'session' })
+
+// R1：候选生成与投递确认分离。门控在瀑布外层剥离候选时不得记账，
+// 否则晋升后（门控放行）正文永久缺失。
+for (const managed of [false, true]) {
+  test(`R1 首阶段剥离的候选不算已投递，晋升后补发（${managed ? '管理' : '独立'}路径）`, async () => {
+    const app = new Context()
+    if (managed) installPreStepCoordinator(app, { collectFiles: () => [] })
+    const events = []
+    const mount = scopedAgent(app, `r1-gated-${managed}`, events)
+    installEngine(app, mount, [onceSpec('once-card', 'ONCE')], { sourceId: `r1:${managed}` })
+    // gate 后注册 = prepend 更外层：剥离本步注入的候选消息。
+    applyContextGate(app, { allowKinds: ['user'] })
+    assert.deepEqual(textsOf(await dispatch(app, mount.agent)), ['claimed'], '未晋升步：候选被外层门控剥离')
+    app.emit('session/event', mount.agent.session, { type: 'tool/call', seq: 1, data: {} })
+    assert.deepEqual(textsOf(await dispatch(app, mount.agent)), ['claimed', 'ONCE'], '晋升后必须补发，候选未被误记为已投递')
+  })
+}
+
+test('R1 宿主接纳后只注入一次，重挂按持久事实恢复', async () => {
+  const app = new Context()
+  installPreStepCoordinator(app, { collectFiles: () => [] })
+  const events = []
+  const mount = scopedAgent(app, 'r1-admitted', events)
+  const spec = onceSpec('once-card', 'ONCE')
+  installEngine(app, mount, [spec], { sourceId: 'r1:admitted' })
+  const first = await dispatch(app, mount.agent)
+  assert.deepEqual(textsOf(first), ['claimed', 'ONCE'])
+  persist(app, mount.agent.session, events, first.messages)
+  assert.deepEqual(textsOf(await dispatch(app, mount.agent)), ['claimed'], '已接纳的消息不再重复注入')
+
+  // 清空持久快照（快照滞后）：投递确认快路径独立生效，仍不重复注入。
+  events.length = 0
+  assert.deepEqual(textsOf(await dispatch(app, mount.agent)), ['claimed'], '确认快路径独立生效')
+
+  // 重挂：同一会话的持久事件里已有该身份 → 新 mount 不重复注入。
+  const remounted = new Context()
+  installPreStepCoordinator(remounted, { collectFiles: () => [] })
+  const restored = []
+  const again = scopedAgent(remounted, 'r1-admitted', restored)
+  installEngine(remounted, again, [spec], { sourceId: 'r1:admitted' })
+  persist(remounted, again.agent.session, restored, first.messages)
+  assert.deepEqual(textsOf(await dispatch(remounted, again.agent)), ['claimed'], '重挂按持久事实恢复，不重复注入')
+})
+
+test('R1 reject 与空候选不产生投递记账', async () => {
+  const app = new Context()
+  installPreStepCoordinator(app, { collectFiles: () => [] })
+  const mount = scopedAgent(app, 'r1-reject')
+  installEngine(app, mount, [onceSpec('once-card', 'ONCE')], { sourceId: 'r1:reject' })
+  assert.deepEqual(await dispatch(app, mount.agent, async () => ({ kind: 'reject' })), { kind: 'reject' })
+  const decision = await dispatch(app, mount.agent)
+  assert.deepEqual(textsOf(decision), ['claimed', 'ONCE'], 'reject 的步不记账，下一步仍可正常注入')
+})
+
 test('T15 文件来源与预设来源同批执行：同一算法里按 order 排序、身份互不覆盖', async () => {
   const app = new Context()
   installPreStepCoordinator(app, {

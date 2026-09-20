@@ -33,7 +33,14 @@ function makeHarness(configs, services = {}) {
   assert.ok(handler, 'pre-step listener registered')
   const step = async (agent, messages = [userTask], kind = 'ok') =>
     handler({ agent }, async () => ({ kind, messages }))
-  return { step, warnings }
+  /** 宿主接纳：本步承认的消息逐条成为持久事件（投递确认的唯一来源）。 */
+  const admit = (agent, decision) => {
+    const observe = listeners.get('session/event')
+    for (const message of decision.messages) {
+      if (observe) observe(agent.session, { type: 'user/message', data: { message } })
+    }
+  }
+  return { step, admit, warnings }
 }
 
 const agent = (overrides = {}) => ({
@@ -691,10 +698,33 @@ test('pre-step 条件判定：用户消息命中才注入，未命中不占用 s
     hit.messages.some((message) => JSON.stringify(message).includes('先取证再动手')),
     '未命中不写入 session 去重，条件恢复后仍能注入',
   )
+  const unconfirmed = await harness.step(probe, say('u3', '又报错了'))
+  assert.equal(unconfirmed.messages.length, 2, '宿主未确认接纳前不算已投递（候选可能被外层门控剥离）')
 
-  const repeat = await harness.step(probe, say('u3', '又报错了'))
-  assert.equal(repeat.messages.length, 1, '命中过一次后 session 去重照常生效')
+  harness.admit(probe, hit)
+  const repeat = await harness.step(probe, say('u4', '还报错'))
+  assert.equal(repeat.messages.length, 1, '宿主接纳后 session 去重照常生效')
 })
+
+test('R2 条件未命中的 ST 赋值模板不执行副作用，命中才按 order 生效', async () => {
+  const specs = [
+    { id: 'never-set', layer: 'pre-step', strategy: 'static', order: 0, position: 'after-all',
+      texts: ['{{setvar::x::BAD}}'], params: { stMacros: true }, match: { keys: ['NEVER'] } },
+    { id: 'reader', layer: 'pre-step', strategy: 'static', order: 1, position: 'after-all',
+      texts: ['[{{getvar::x::EMPTY}}]'], params: { stMacros: true } },
+  ]
+  const textsOf = (decision) => decision.messages
+    .flatMap((message) => message.content ?? [])
+    .map((block) => block.text)
+  const say = (id, text) => [{ id, role: 'user', content: [{ type: 'text', text }], source: { kind: 'user' } }]
+
+  const miss = await makeHarness(createPromptConfigs(specs)).step(agent(), say('u1', '普通请求'))
+  assert.deepEqual(textsOf(miss), ['普通请求', '[EMPTY]'], '未命中的 setter 不得改动变量帧')
+
+  const hit = await makeHarness(createPromptConfigs(specs)).step(agent(), say('u2', 'NEVER 条件命中'))
+  assert.deepEqual(textsOf(hit), ['NEVER 条件命中', '[BAD]'], '命中时 setter 按 order 先行求值（setvar 本身无输出），reader 可读')
+})
+
 
 test('configKind/order 排序：anchor 提示词配置保持文件序在前，ordered 提示词配置按 order 升序', () => {
   const runtime = createPromptConfigs([
@@ -883,14 +913,16 @@ test('placeholder：skill-catalog list 失败时跳过该配置并告警一次�
 })
 
 
-test('placeholder：skill-catalog dedupe=session 每会话只注入一次', async () => {
-  const { step } = makeHarness(createPromptConfigs([
+test('placeholder：skill-catalog dedupe=session 每会话只注入一次（以宿主接纳确认）', async () => {
+  const harness = makeHarness(createPromptConfigs([
     { id: 'sk-dedupe', strategy: 'placeholder', fill: 'skill-catalog', position: 'after-all', dedupe: 'session' },
   ]), { skills: skillCatalogStub })
   const session = { id: 'sk-session', header: { delegationDepth: 0 }, snapshotEvents: () => [] }
-  const first = await step(agent({ session }))
+  const first = await harness.step(agent({ session }))
   assert.equal(first.messages.length, 2)
-  const second = await step(agent({ session }))
+  assert.equal((await harness.step(agent({ session }))).messages.length, 2, '未确认接纳前不记账')
+  harness.admit(agent({ session }), first)
+  const second = await harness.step(agent({ session }))
   assert.equal(second.messages.length, 1)
 })
 

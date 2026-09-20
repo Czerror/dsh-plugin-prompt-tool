@@ -112,6 +112,35 @@ test('writePreset 引擎指纹：包内引擎未变时二次写入不重刷共�
   }
 })
 
+test('R4 引擎指纹含内容摘要：等字节修改也刷新，内容不变与新增/删除都正确', async () => {
+  const { engineFingerprint } = await import('../../src/host/write-preset.ts')
+  const fake = mkdtempSync(join(tmpdir(), 'pt-fp-content-'))
+  try {
+    const file = join(fake, 'a.mjs')
+    writeFileSync(file, 'export const version = 1\n', 'utf8')
+    writeFileSync(join(fake, 'b.mjs'), 'export const other = true\n', 'utf8')
+    // compositions 是生成期资产：与真实指纹一致地排除。
+    mkdirSync(join(fake, 'compositions'), { recursive: true })
+    writeFileSync(join(fake, 'compositions', 'ignored.yml'), 'x\n', 'utf8')
+    const first = engineFingerprint(fake)
+    assert.equal(engineFingerprint(fake), first, '内容不变时指纹稳定（无变化不重刷）')
+
+    writeFileSync(file, 'export const version = 2\n', 'utf8')
+    assert.notEqual(engineFingerprint(fake), first, '等字节内容变化必须改变指纹（旧实现只比大小）')
+    const changed = engineFingerprint(fake)
+
+    writeFileSync(join(fake, 'c.mjs'), 'export const added = true\n', 'utf8')
+    assert.notEqual(engineFingerprint(fake), changed, '新增文件改变指纹')
+    rmSync(join(fake, 'c.mjs'))
+    assert.equal(engineFingerprint(fake), changed, '删除新增文件后指纹回到原值')
+
+    writeFileSync(join(fake, 'compositions', 'ignored.yml'), 'yy\n', 'utf8')
+    assert.equal(engineFingerprint(fake), changed, 'compositions 生成期资产不计入指纹')
+  } finally {
+    rmSync(fake, { recursive: true, force: true })
+  }
+})
+
 test('writePreset 输出不包含未解析的 __VARIABLE__ 残留', () => {
   const dir = join(tmpdir(), `prompt-tool-wp-${process.pid}-${Date.now()}`)
   const presetDir = join(dir, 'preset')
@@ -839,6 +868,56 @@ test('writePreset 禁用大条目瘦身：enabled=false 超阈值正文不落产
     assert.equal(smallOff.text, '小段文本', '阈值内禁用条目保留正文')
     const bigOn = read('normal-on')
     assert.equal(bigOn.text.length, 40 * 1024, '启用条目不受瘦身影响')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('R3 未提供的引擎参数保留 preset.yml 定义，显式值才覆盖（导入/离线物化同源）', () => {
+  const dir = join(tmpdir(), `prompt-tool-preserve-${process.pid}-${Date.now()}`)
+  /** 安装夹具并把定义改成「作者显式声明」形态，覆盖 runtimeOf 曾补默认值的键。 */
+  const install = (presetDir) => {
+    installFixturePreset(presetDir)
+    const file = join(presetDir, FIXTURE_PRESET_ID, 'preset.yml')
+    const doc = parseDocument(readFileSync(file, 'utf8'))
+    doc.setIn(['params', 'firstTurnAnchor'], true)
+    doc.setIn(['params', 'firstTurnText'], 'ANCHOR TEXT')
+    doc.setIn(['params', 'injectPrompt'], false)
+    doc.setIn(['subagentModel', 'provider'], 'sub-provider')
+    doc.setIn(['subagentModel', 'name'], 'sub-model')
+    writeFileSync(file, doc.toString(), 'utf8')
+    return presetDir
+  }
+  const readConfig = (presetDir, id) => {
+    const configsDir = join(presetDir, FIXTURE_PRESET_ID, 'prompt-configs')
+    const file = readdirSync(configsDir).find((name) => name.endsWith(`-${id}.yml`))
+    assert.ok(file, `应生成 ${id}`)
+    return parseYaml(readFileSync(join(configsDir, file), 'utf8'))
+  }
+  const subagentRow = (presetDir) => {
+    const rows = parseYaml(readFileSync(join(presetDir, FIXTURE_PRESET_ID, 'agent.cordis.yml'), 'utf8'))
+    const group = rows.find((row) => row?.id === 'delegation')
+    return (group?.config ?? []).find((row) => row?.id === 'tool-subagent')
+  }
+  try {
+    // 调用方只给部署字段（与 installPresetPackage / 离线物化调用同源）：不得覆盖作者定义。
+    const kept = install(join(dir, 'kept'))
+    writePreset('PRESET BODY', { presetDir: kept, presetTemplate: FIXTURE_PRESET_ID, presetOrder: 5, promptConfigs: [] })
+    assert.equal(readConfig(kept, 'near-anchor').enabled, true, '省略 firstTurnAnchor 时保留定义里的 true')
+    assert.equal(readConfig(kept, 'near-anchor').params.text, 'ANCHOR TEXT', '省略 firstTurnText 不清空作者文本')
+    assert.equal(readConfig(kept, 'prompt-injector').enabled, false, '省略 injectPrompt 时保留定义里的 false')
+    assert.deepEqual(subagentRow(kept)?.config?.agentOptions, { provider: 'sub-provider', model: 'sub-model' },
+      '省略子代理模型路由时保留定义')
+
+    // 显式值优先：false / true / 空串分别是「关锚定」「启用注入器」「不设置路由」。
+    const explicit = install(join(dir, 'explicit'))
+    writePreset('PRESET BODY', {
+      presetDir: explicit, presetTemplate: FIXTURE_PRESET_ID, presetOrder: 5, promptConfigs: [],
+      firstTurnAnchor: false, injectPrompt: true, subagentModelProvider: '', subagentModelName: '',
+    })
+    assert.equal(readConfig(explicit, 'near-anchor').enabled, false, '显式 false 覆盖定义')
+    assert.equal(readConfig(explicit, 'prompt-injector').enabled, true, '显式 true 覆盖定义')
+    assert.equal(subagentRow(explicit)?.config?.agentOptions, undefined, '显式空串 = 不设置路由')
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }

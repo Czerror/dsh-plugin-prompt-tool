@@ -98,6 +98,23 @@ UI 侧 `persistParamOverrides` **条件发送**：
 
 > 这里的「空值删键」只适用于引擎行为参数，不适用于内容占位变量。`variables` 的空字符串占位键是有意设计，必须继续写入 `variables.yml`，供内部世界书工具（`world_book_upsert`）动态登记与调整，不参与引擎参数校验。
 
+### 物化缺省语义：未提供 ≠ 显式空值（2026-09-20）
+
+`writePreset` 的 `runtimeOf` 只投影调用方**真正提供**的引擎参数：
+
+- **未提供（`undefined`）= 不覆盖**：`resolvePresetParams` 跳过 `undefined` 键，缺省值来自
+  预设 `preset.yml` 的 `params` / `model` / `subagentModel` 段。导入
+  （`installPresetPackage`）、离线物化、补建其他预设等调用方只给部署字段，不再被 writer
+  补上的 `false` / `''` / `true` 覆盖作者定义（锚定被关、自定义文本被清空、关闭的注入器被
+  启用、子代理模型路由消失）。
+- **显式 `false` / `0` / `''` = 显式语义**：布尔的 `false` 是显式关闭；字符串的 `''` 是
+  「不设置该值」（路由与模型参数因此不产生行配置或 patch），不回落到预设定义值。
+- 参数桥 `buildEngineModuleParams` 的 `editor-default` 绑定（`strReplaceEditorMaxOutputChars`）
+  同样只投影已提供的正值：缺参不再补 16000 覆盖 `moduleConfigs` / 组合行的 `maxOutputChars`；
+  非法值不写行配置（渲染层宽容，回落行默认），保存期仍由 `validateEngineParamValues` 响亮拒绝。
+- 验收入口：`test/host/write-preset.test.mjs`（未提供 vs 显式值两组对照）、
+  `test/host/preset-render-variants.test.mjs` 与 `test/shared/engine-param-schema.test.mjs`（编辑器上限三态）。
+
 
 ## 4. variables 双通道（两套体系，不互串）
 
@@ -269,7 +286,8 @@ wholeWords/selectiveLogic）单一权威。两个写入端共用：
   对每个插件格式预设（preset.yml 含 `modules` / `params`）重跑 `writePreset`：重刷
   `agent.cordis.yml`（带 `# prompt-tool:render vN` 戳）、
   `prompt-configs/`、`custom-tools/`、`subagent-tools/` 与预设根共享 `.engine/`
-  （引擎指纹未变时跳过重刷）。手写/官方格式预设（无 `modules` / `params`，如
+  （指纹 = 有序相对路径 + 内容摘要，未变时跳过重刷；等字节的内容更新同样触发刷新）。
+  手写/官方格式预设（无 `modules` / `params`，如
   `liangshen`）整体跳过，不覆盖手写组合。参数：`--dsh-home <dir>`、`--dry-run`。
   宿主运行时会锁住预设内 `skills/` 目录（技能监听器持有句柄），
   `writePreset` 整目录改名失败时退回原地合并写（同名项覆盖、多余项删除），

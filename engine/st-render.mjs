@@ -53,7 +53,7 @@ export function attachStRenderers(configs) {
   const sessions = new WeakMap()
   const tokens = new WeakMap()
   for (const target of templates) {
-    target.renderSt = (agent, messages = [], warn = () => {}, token) => {
+    target.renderSt = (agent, messages = [], warn = () => {}, token, eligible) => {
       const session = agent?.session
       const cached = token && tokens.get(token)
       if (cached) {
@@ -86,9 +86,14 @@ export function attachStRenderers(configs) {
           }
         }
         frame.evaluate = evaluate
-        // 命中、晋升和去重受限的模板由执行器确认资格后才求值。
-        for (const config of templates.filter(config => visible(config, agent) && config.strategy === 'static'
-          && config.dedupe === 'none' && config.promotion === 'none')
+        // 命中、晋升和去重受限的模板由执行器确认资格后才求值：`eligible` 是本批
+        // 执行器判定的获准集合（含声明式条件），渲染器不复制判定；非执行器调用
+        // （如 system-section 层）没有集合，退回「可见 + 无晋升约束」的保守判定。
+        const approved = eligible === undefined
+          ? (config) => visible(config, agent) && config.promotion === 'none'
+          : (config) => eligible.has(config)
+        for (const config of templates.filter(config => approved(config)
+          && config.strategy === 'static' && config.dedupe === 'none')
           .sort((a, b) => a.order - b.order)) evaluate(config)
         if (session) sessions.set(session, frame)
       }
