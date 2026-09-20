@@ -5,8 +5,13 @@
 - 日期：2026-09-20；审查与建计划起始基线：`dev / a7c80bc`。
 - 用户原始需求：`/dev-expert /codebase-design 审查引擎能力是否可复用模块化, 是否有可归一优化.`
 - 用户补充要求：`按照仓库指令 应该创建为plan`。
-- 已授权：审查、验证反例、将结论与候选任务写入本 PLAN。文档按仓库规则验证、提交并推送 `origin/dev`。
-- 未授权：实施以下任何引擎、生成器或参数修复。Wave 1—4 都是供用户选定的候选范围，不因列入 PLAN 自动开始。
+- 2026-09-20 新增原话：`本项目已经 对齐官方9个注入层,可否 统一前端和后端可编辑引擎参数 设置到 9个注入层 模块卡片中,不在把引擎设置分散在各处,请给出重构方案,也写入2026-09-20-plan-engine-reuse-a7c80bc.md`。
+- 用户进一步明确：`比方说 tool-config 、tool-filter 、自定义工具等功能完全可以加入tool-pipeline模块卡中,按照这个思路 其他引擎设置也可以加入到对应注入层的模块卡中`。
+- 随后澄清：`预设中同一层拥有不同配置时 可创建多张同层卡片 这是目前合理的设计.比方说系统提示段,在某些自定义预设中 可存在几十张不同设置的卡片`，并指定本地 beta-2-42 预设作为参考。最终约束为九种层类型、每层可有多张独立配置卡；能力设置进入对应层卡，但不收拢或减少配置实例数量。前述“固定数量容器”的推断已撤回。
+- 最新补充：`多实例设计是合理的,唯一引擎功能的设置参数 可采用 同步或互斥,在多张同层或跨层卡中同步`。据此改为唯一存储所有者、多处同步编辑；只有真实不兼容的功能采用后端校验的互斥，不以“唯一功能”为由强制单一可写控件。
+- 本次方案增补基线：`dev / d415d4a`（上一轮 PLAN 提交）；保留文件名中的原始审查基线，不新建第二份计划。
+- 已授权：审查、验证反例、将结论与候选任务写入本 PLAN，以及九层参数编辑收敛的方案设计。文档按仓库规则验证、提交并推送 `origin/dev`。
+- 未授权：实施以下任何引擎、生成器、参数或界面重构。Wave 1—4、6—9 都是候选实施范围；Wave 5 仅编写本次方案，不因列出方案自动开始修复。
 - 本文件是本次审查的唯一 PLAN；结论集中在「审查结论」，不另建审查报告。仅建计划不等于修复完成，因此保留在 `.scratch/plan/`；选定任务完成并验收后才按仓库规则归档。
 - 保留起始工作树中的用户未跟踪目录 `skills/`；本轮不修改宿主源码，不启停服务，不安装依赖。
 - 格式依据：[PLAN 格式规范](../../docs/agents/plan-format.md)；授权、归档与交付依据：[仓库规则](../../AGENTS.md)。
@@ -53,10 +58,155 @@ A1：[复用指南](../../docs/engine-reuse.md#L34) 的整目录复制表述应�
 - 不把 PTC 调用处缺少显式 keepDisposer 认定为泄漏：已安装宿主的 presentAs 内部已有 ctx.effect。
 - 未进行性能基准，不宣称延迟、吞吐或资源消耗改善。
 
+## 九层参数编辑收敛方案（2026-09-20 增补，待批准实施）
+
+### 目标与取舍
+
+可行。采用「九层分类、多卡实例、唯一数据源、共享功能同步或互斥」：收敛参数定义、元数据和写回绑定，编辑控件可以在多张同层/跨层卡中出现，但引用同一数据所有者。继续使用现有预设格式、保存队列、校验器与物化流程，不新增 `layers.*` 数据树，不把所有能力改写为 promptConfig。
+
+**最终编辑结构**：一个引擎编辑面，按九种官方注入层分类，每层允许零张、一张或多张独立配置卡，不以层类型作唯一卡片键，也不把多张卡压成一个表单。现有 promptConfigs 卡片继续独立新增、复制、排序、启停、删除和编辑。tool-config-engine、tool-filter、自定义工具等预设级功能集中到属于 tool-pipeline 的能力设置区，也可以在相关卡中显示同步控件；它们与多张 tool-pipeline 规则实例卡并存。其他引擎设置同样进入相应层，消除各处私有数据和重复保存逻辑，保留多处同源编辑和所有不同配置实例。
+
+必须保留两类数据粒度：预设级能力参数引用现有唯一所有者，移动或增加编辑位置不为每张卡复制一份；实例字段继续保存在 `promptConfigs[].params` 和该实例自身字段中，允许同层各卡有不同值。标记“共享引擎参数，同步影响相关卡”与“仅本卡”，不得用层默认值批量覆盖实例。
+
+主会话/子代理是同一编辑面的受众视图，不再各自维护一套表单。保留既有页面标识作为进入相应视图的入口，资产库页继续管理导入/导出等资产操作，不再承载重复的引擎参数表单。
+
+工具管线的示例结构（预设级能力卡与多张规则实例卡均属于同一层）：
+
+```text
+tool-pipeline 层
+  工具能力设置卡（引用预设级配置）
+    工具配置 / tool-config-engine：装配状态、执行前批准种类
+    工具过滤 / tool-filter：启用、允许工具、禁止工具
+    自定义工具：新增、模板、编辑、删除（仍保存 customTools）
+    工具呈现 / PTC：开关、晋升信号、子代理范围
+    编辑器：输出字符上限
+    深思门、执行后提醒：各自的参数
+    相关设置：首阶段工具目录、子代理授权（同源同步控件及定位）
+  管线规则卡 A：独立 id、条件、调用前裁决、调用后动作
+  管线规则卡 B：另一套 id、条件与参数
+  ……继续新增同层卡片
+
+system-section 层
+  人设设置卡（引用顶层 persona）
+  系统段卡 A：独立 id、order、文本、params
+  系统段卡 B：独立 id、order、文本、params
+  ……允许几十张不同配置的系统段卡
+```
+
+此处“装配状态”来自真实能力装配；没有布尔 enabled 参数的模块以装配/移除动作表达，不伪造新运行时开关。能力参数单例来自其原有数据所有权，不是“一层只能一张卡”的规则。
+
+必须区分两个概念：**编辑归属层**是能力主要在哪里展示，**实际生效通道**是运行时在哪里消费。工具注册、默认模型装配、收件箱锚定并不是九层中的新 hook（扩展点）。它们可在相关层卡片中提供参数控件，但不能为统一外观迁移运行时监听器。主归属用于组织导航，不限制关联层提供同源可写控件。
+
+### 多卡共享参数：默认同步，真实冲突才互斥
+
+| 字段类别 | 数据身份与保存位置 | 多卡行为 |
+|---|---|---|
+| 配置实例字段 | presetId + config.id + 字段路径，保存到该条 promptConfig | 完全独立；同层相同字段名也不互相覆盖。复制生成新 ID，排序/删除只作用于目标实例。 |
+| 唯一引擎功能参数 | presetId + 既有所有者 + 参数键，例如 params.toolFilterAllow | 同层/跨层多张卡绑定同一 store 字段和草稿；任一处修改立即在其他位置回显，一次语义变更只提交一份参数。 |
+| 共享结构化资产 | presetId + persona/variables/customTools/subagentToolPolicy + 内部稳定身份 | 重用各自专用编辑器及同一草稿池/写端点；可以镜像编辑，不能在各卡缓存独立“真值”并整段互相覆盖。 |
+| 真实互斥配置 | 官方作用域及现有冲突规则，例如 persona.complete 与同作用域独占系统段 | 不接受相互矛盾的有效配置。后端验证候选最终状态；若提供“切换独占目标”，需用户明确操作后原子调整冲突项。未提供此动作时保留现有明确报错，不能静默关闭其他卡。 |
+
+实现约束：
+
+- 复用现有 store/字段草稿池/保存队列；共享字段控件直接订阅同一个值，不通过组件之间的 effect 相互复制，不新增独立同步服务、事件总线或状态库。共享字段身份由既有参数/资产目录给出，不能仅因两个字段都叫 `enabled` 就同步。
+- 合法值、尚未完成的数字/文本输入、错误和保存状态都按同一个共享绑定同步；实例草稿仍按 config.id 隔离。每个控件的 DOM id/aria 关联须加所在卡实例前缀，避免多个镜像输入发生标签或焦点冲突。
+- 一个控件的用户操作只调用一次现有 patch/保存动作；其他镜像的重新渲染不触发保存。保存采用入队快照和编辑版本，迟到的 blur/异步响应不能把较新的共享值覆盖回去；失败保留最新草稿及错误，不谎报已保存。跨预设迟到请求继续拒绝。
+- 已持久化的旧配置中若同一功能存在真实多个来源，先按现有优先级计算有效值并标明来源；重构不新增“最后渲染的卡获胜”。启用互斥必须复用真实运行规则，不能把用户合法的几十张普通系统段卡判冲突。
+- 能力开关跨卡同步不等于卡片实例启停同步。关闭某条系统段/管线规则只关闭该实例；改共享工具过滤开关才影响所有引用它的卡。删除普通实例不删除共享能力、预设参数或其他引用。
+- 工具目录过滤、阶段推进等共享模块仍只装配一次；多个编辑镜像不重复创建 modules 行、监听器或工具注册。移除能力属于原有明确操作，所有镜像同步成未装配状态；不会因关闭一张展示卡就卸载能力。
+
+
+### 现状证据与收敛范围
+
+| 现状 | 代码证据 | 本次方案处理 |
+|---|---|---|
+| 主会话上方另有模型、提示词默认值、人设等卡片；子代理另有模型和委派深度 | [主会话装配](../../src/client/app/workspace/pages/MainSessionPage.tsx#L132)、[子代理装配](../../src/client/app/workspace/pages/SubagentPage.tsx#L98) | 移入九层对应卡片，复用专用编辑器，移除 commonCards/beforeCards 中这些编辑入口。 |
+| 提示词列表与能力卡平行呈现，筛选没有统一包含所有编辑项 | [提示词列表](../../src/client/features/prompts/PromptConfigList.tsx#L391)、[能力卡列表](../../src/client/features/modules/EngineModuleList.tsx#L136) | 页面装配层统一分层、搜索与定位，取消固定漂浮在层过滤之外的引擎表单。 |
+| 能力目录 displayLayer 只有三种，参数目录已覆盖 64 个键 | [能力目录](../../src/shared/engine-capabilities.ts#L18)、[参数目录](../../src/shared/engine-params.ts#L197) | 将展示归属扩展到九层，在现有定义上补齐编辑组，不复制第二套参数键表。 |
+| 额外 7 个内容键能被 writer 消费，但未进入共享参数定义；bridge 白名单通过后仍被值校验拒绝 | [附加键](../../src/shared/param-keys.ts#L16)、[值校验](../../src/shared/engine-params.ts#L394)、[保存链](../../src/runtime/settings-bridge.ts#L1360) | 将 7 键正式纳入共享定义、类型、校验、草稿、读回、保存和词条；目标为 71 个已声明扁平参数的闭环，保留旧存储键。 |
+| near-anchor、router-guide 的局部策略字段因 writer 管理而被隐藏 | [托管字段编辑逻辑](../../src/client/features/prompts/PromptConfigFields.tsx#L224)、[writer 投影](../../src/host/write-preset.ts#L434) | 在所属层内呈现唯一来源字段；生成字段只读回显或链接到来源，不留下“能改但重建覆盖”的入口。 |
+| 模型卡同时修改当前会话和预设默认，持久化通道不同 | [模型卡](../../src/client/features/models/ModelRouteCard.tsx#L58)、[模型请求配置生成](../../src/host/write-preset.ts#L267) | 预设参数进入九层；当前会话选择保留为明确标注的会话操作，不进入预设批保存。 |
+
+七个待闭合键为 `buildPattern`、`complexPattern`、`firstTurnBuild`、`firstTurnInspect`、`firstTurnDeep`、`guideWeak`、`guideDeep`。这属于补齐现有功能的保存契约，不是把任意后端配置键公开成 UI 输入。
+
+### 同层多卡的参考预设与不变量
+
+已只读解析用户指定的本地 beta-2-42 定义：本次快照含 128 个不同 ID 的 promptConfigs，其中 pre-step 120 张（启用 18 张）、system-section 8 张（启用 4 张）；每层的 order 均各不相同。这些实例全部声明 mergeMode=merged，说明“运行时可以合并输出”与“编辑器中保留多张独立配置卡”必须分开处理。参考正文未复制到仓库，用户预设未修改。
+
+- `layer` 只是分类/执行通道，不能用于 Map 覆盖同层条目。实例身份继续使用预设身份和配置 id；改名/复制沿用现有 ID 唯一性校验，新增同层卡不替换已有卡。
+- 单卡的 order、enabled、strategy、text/texts、params、variables、受支持的 audience/modelScope/match 与 mergeMode 均按现有语义独立保存；排序保持同层的稳定顺序。显示归类不得重排 YAML 数组或改写已有 order。
+- 预设级能力设置卡不能进入 promptConfigs 数组；配置实例也不能因挂在某层而被投影成一份全局参数。托管配置、普通自定义配置和独立指令文件仍按现有来源区分。
+- 行为回归使用合成的 128 卡数据（匹配本地样本层分布）与至少 64 张 system-section 卡，使用不同 id/order/参数值；逐卡修改、复制、排序、启停、删除后，其他实例及同名全局变量不受影响。实例编辑→保存→重读应保持数量、身份、顺序和未修改字段。
+- 实例卡片的草稿键/展开态/焦点锚点按“预设 + 来源类型 + 实例 id + 字段路径”保存，不能只按 layer；共享参数的值/草稿按参数或资产身份保存，显示它的每个控件仍有独立 DOM 身份。层导航保留九种选项，不建立每层容量为 1 的断言。
+
+### 九层卡片目标映射
+
+以下是编辑位置的建议映射；只有 promptConfigs 实例使用真实 `layer` 参与执行。顶层资产和装配能力仍用其原有保存通道。
+
+| 层类型（每层可多卡） | 主要编辑内容 | 共享或实例范围 |
+|---|---|---|
+| 消息批层 `pre-step` | 多张本层提示词/世界书卡；锚定/引导/兜底注入、context-gate、anchor-turn、独立指令来源/策略/文件卡 | 8 个既有默认参数及 7 内容键引用预设来源，实例文本和局部 params 独立；context-gate 可在 runtime-context 卡内同步编辑。 |
+| 系统段层 `system-section` | 多张不同系统段卡；人设设置；tool-bootstrap 的 16 个共享参数 | 每条系统段的 id/order/text/params 独立，persona 仍是独立顶层所有者；bootstrap 封顶/工具设置可在相关层镜像编辑，装配一次。 |
+| 运行上下文 `runtime-context` | 多张上下文提供项、占位填充、上下文名称；共享模板变量 | 变量全局默认仍存 variables/variablesEnabled，可在使用它的卡中同步编辑；局部 promptConfig.variables 按实例隔离。 |
+| 调用配置层 `agent-request` | 多张 patch/replace 配置；主模型 5 参数、子模型采样 3 参数 | 生成模型配置的控件绑定原参数来源；用户独立请求 patch 保留自身字段，不能把同名 patch 强制同步。 |
+| 模型流层 `llm-stream` | 多张启用/模型范围/pass/replace/替换正文配置 | 各实例独立；没有需求就不新增全局流参数，深思门不伪装成流拦截。 |
+| 工具管线层 `tool-pipeline` | 工具配置、过滤、自定义工具、PTC、编辑器限额、深思门、提醒；多张条件/裁决/结果处理规则卡 | 唯一能力参数跨卡同步，customTools 仍是同一资产集合；每条管线规则独立，目录/呈现/注册/执行方式分清；子代理策略可在关联卡同步编辑。 |
+| 轮次停止层 `turn-stop` | 多张条件、匹配对象、续跑正文配置 | 每卡字段独立；引擎防循环总上限保持内部约束，不因多实例放大预算或开放关闭按钮。 |
+| 子代理启动层 `subagent-start` | 多张启动事件提示卡；子模型路由 2 项、maxDepth、结构化工具策略 | 委派配置引用共享所有者，可以在工具管线/请求配置的相关卡同步；每条启动消息卡仍独立。 |
+| 子代理结束层 `subagent-end` | 多张结束条件/匹配对象/观察配置卡 | 各卡独立，当前只观察记录；不新增或暗示结束后消息注入。 |
+
+**64 个已有参数覆盖核对**：pre-step 为 prompt-defaults 8 + context-gate 8 + anchor-turn 3，共 19；system-section 为 tool-bootstrap 16；agent-request 为主模型 5 + 子模型采样 3，共 8；tool-pipeline 为 tool-filter 3 + PTC 3 + 编辑器 1 + 深思门 5 + 提醒 5 + 自定义批准 1，共 18；subagent-start 为子模型路由 2 + maxDepth 1，共 3。合计 64；新增 7 个内容键归 pre-step。其余四层主要由配置实例和结构化资产承载，不为平均分配参数制造空功能。
+
+此处的唯一性按“预设/资产或配置实例/字段路径”判断：不同实例同名参数不是重复；同一个预设参数在主会话/子代理视图中共享同一草稿和写回，不能变成两份状态。
+
+### 前端结构与交互
+
+1. 在 app/workspace/pages 装配一个共用九层分类编辑面（建议新增 `EngineLayersPanel.tsx`），让 MainSessionPage 与 SubagentPage 只传受众视图和导航信息。跨 feature 组合放在 app 层，不让模块 feature 导入其他 feature 的内部实现。
+2. 九层是导航/筛选类型，不是卡片数量。保留当前独立卡片呈现，层内允许 0..N 张配置实例及相关能力设置卡；无内容的层显示空状态与新增入口，不自动创建九个配置对象。每张实例保留名称、独立启停、顺序和编辑入口。
+3. 工具配置、过滤、自定义工具等在 tool-pipeline 卡的功能区内操作；其他相关卡可以嵌入同源共享控件。搜索同时覆盖中文名、技术键、能力名、配置名，定位匹配实例及功能区；不要把几十张匹配卡合并成一张“层结果”。创建同层新卡沿用现有筛选和定位纪律。
+4. 普通字段复用 EngineParamFields；模型、阶段、工具定义、授权策略、人设继续用专用编辑器，必要时拆出可嵌入内容。清理旧的私有状态/重复保存逻辑和零散公共区，保留真实实例卡壳与多处同源控件。默认显示中文功能名、共享/仅本卡范围，真实 hook/存储细节放高级说明。
+5. 主/子代理只是视图筛选，不改 audience，不默默启用 includeSubagents。跨受众共享设置明确标注影响范围；同一数据身份的镜像同步，不把主会话模型键与子代理模型键混为一份。
+6. 切层/换受众不丢数字半成品、未完成阶段、模板变量空行或专用编辑器草稿；共享字段的草稿按参数/资产身份复用，实例字段按 config.id 隔离。多控件允许同时存在，但 DOM id 独立、值和提交基线同源。
+7. 不新增“一键关闭整个注入层”或跨层运行顺序。批量操作沿用可写配置实例范围，不把共享能力、独立文件和授权策略一起删除/停用；显示多个镜像不等于重复装配模块。
+
+### 前后端共同契约与保存路线
+
+- `engine/schema.mjs#getEngineMeta` 继续拥有真实九层及字段/策略支持事实；在现有 meta 返回中提供稳定的 `layerOrder`，浏览器消费此顺序，移除客户端另写的运行时九层清单。共享 TypeScript 类型可声明九层联合，但运行时合法性以引擎校验为准；不让浏览器直接 import 含 node:fs 的 schema，也不让复制引擎反向依赖 src。
+- `ENGINE_PARAM_DEFINITIONS` 继续是参数键、类型、默认草稿、校验和组合行映射唯一来源，补齐 7 个键；现有 `card` 继续表示编辑组。只在既有 shared 文件补少量编辑组元数据，不在页面再维护键数组。
+- 复用并扩展 `ENGINE_CAPABILITIES.displayLayer` 到九层；非能力编辑组（模型、提示词默认值、人设、变量、委派等）在同一 shared 契约中登记主归属，能力组派生现有目录而不重复声明。确有跨层影响的组才补 `relatedLayers`，同时记录实际 hook 或装配方式供只读说明。无需同时引入含义相同的 ownerLayer/displayLayer 两套字段。
+- `/meta` 与 `/bootstrap` 复用现有 loadEngineMeta，一次组合引擎层信息与白名单编辑组说明；响应形状先在 shared/bridge-contract 登记，再改 host/client/transport 守卫。只序列化可公开的类型、选项、组归属和说明，不序列化 check 函数、路径、任意 moduleConfigs 或服务对象。
+- 补齐 7 键时同步 EngineParams、词条、读回/保存/脏检测/快照派生，PARAM_KEYS 不再为它们保留旁路键表。正则值复用现有分类/匹配编译逻辑验证，空串仍是删键语义，错误在写盘前返回；不得只取消校验来“支持”字段。
+- 扁平参数与 promptConfigs 继续走 `/param-overrides`、`savePresetParams`、`reloadPresetParams`、`rebuildPreset/writePreset`；persona、variables、customTools、subagentToolPolicy 各保留既有端点和顶层所有者。统一入口不要求把不同数据塞进一个通用写路径。
+- 受 writer 管理的 near-anchor/router-guide/prompt-injector/model-params 等字段必须有明确来源绑定。可直接映射的字段在当前卡显示同步控件，保存仍写原参数/资产，不另存派生副本；只有无法直接逆映射的计算结果（例如自动派生 anchorWords）只读显示并链接来源。绑定事实由 host 既有投影规则产生，前端不另写 ID 特判和优先级。普通自建策略配置继续编辑局部 params，合法显式覆盖保留原来源及优先级，不能被共享控件覆盖。
+- 卡片保存沿用入队时快照、预设身份核对、串行队列和保存后脏状态判定；同一预设同一次编辑涉及扁平参数与配置时可复用现有复合载荷，禁止先写显示默认值再修正。不同端点的保存按真实结果逐项报告，不宣称跨资产原子提交。
+- 独立指令源的控制入口移入 pre-step，但正文和策略继续分别走授权、上下文白名单与版本校验通道；不会因“保存本层/保存预设”自动写指令文件。当前会话模型选择仍走官方 selectModel，部署开关/默认预设仍留设置页，资产库保留导入管理入口；这些不是散落的预设引擎参数。
+
+### 迁移、前置依赖与范围控制
+
+- 旧预设无须批量迁移：保留 params、moduleConfigs、promptConfigs、model/subagentModel、persona、variables 等现有路径和优先级。只读浏览不写默认值；打开再关闭新界面，预设应逐字不变。
+- 参数视图收敛的前置依赖是 T4/R3 和 T5/R5，否则新卡仍可能保存后被默认值覆盖；若本轮涉及引擎分发变化，交付前包含 T6/R4，防止等字节更新遗漏。R1/R2/R6/R7/R8 继续单独列为已知问题，不为界面重排默认扩大到全量修复。
+- 旧页面入口改为同一九层视图的受众定位或只读导航，旧卡片本体完成接管后移除；不存在长期维护的新旧两套编辑器，也不迁移真实用户数据。
+- 未知/未来层或扩展字段保留读取与现有高级编辑能力，不静默删值，也不把它们算成第十个官方层。不支持的字段仍由后端拒绝，UI 不因“全量可编辑”放宽运行时矩阵。
+- 未公开的装配参数（配置目录、策略目录、插件路径、工具执行环境和宿主私有选项）按真实权限逐项处理；本方案覆盖插件已承诺的公开引擎参数和实例字段，不把任意 moduleConfigs 变成可远程写的通用对象。`tool-filter.includeSubagents` 在 [现有覆盖测试](../../test/shared/engine-param-schema.test.mjs#L98) 中明确是有意不暴露的字段，子代理工具面使用实例策略，本轮不以“补全参数”为由重新开放。若新增公开选项，必须同时补共享定义、校验、owner 和回归。
+- 首期新增生产文件最多一处页面装配组件，其他调整在既有 owner 中完成；不更换路由、状态库、卡片库或保存服务。超过约 200 行实现量级的切片在实施时继续细拆，不用“大 UI 重构”一次替换整个 store。
+
+### 验收标准
+
+- 九层的层名、顺序、有效字段来自权威元数据；64 个现有参数及选定补齐的 7 键均有唯一数据所有者和主要展示归属，可在相关卡提供同步编辑；覆盖测试同时检查绑定来源与真实保存行为。
+- 以合成 128 卡样本及 64 张系统段卡验证同层可多实例：数量/ID/order/启用/文本/局部参数在保存往返后不折叠、不串值；运行输出合并不影响编辑实例身份。
+- 同层与跨层各至少两个共享控件：合法值、未完成输入、错误/保存状态同步；同名实例参数保持不同值，控件 DOM id 不重复；单次语义变更只发一次保存，迟到响应不覆盖新草稿。
+- 真实互斥项由后端校验最终候选状态，冲突保存不落盘；普通多系统段不互斥，不以渲染顺序或最后一次保存决定功能所有者。
+- 前端实际输入 → 队列载荷 → bridge 验证 → 预设落盘 → 物化 → 重读回显至少按每种存储 owner 各跑一条行为用例；非法键/非法值/system 只读/过期 presetId 均在写盘前拒绝。
+- 非修改打开不写盘；省略/false/0/空串/空列表、行默认与显式覆盖、主子模型与委派授权、受托管字段的来源都往返一致；导入与重建不覆盖用户值。
+- 切层/筛选/受众切换/保存中继续编辑/切预设保留草稿并拒绝过期响应；键盘可定位具体实例与共享控件，错误与同步影响范围清晰；清理零散入口的私有状态与重复写入逻辑，而非禁止多处同源编辑。
+- 九层展示不改变 hook 注册、scope、disposer 或 epoch；工具目录不被误当执行权限，结束层保持只观察，停止层防循环上限不放开。
+- 指令文件与预设、会话操作与预设分别保存，错误逐项报告；复制核心引擎仍不依赖 src 或浏览器包。
+- 完整 typecheck/lint/test/build、文档 diff 与对应契约测试通过。实施后的 UI 验证必须使用现有 `http://127.0.0.1:3080`：先确认同仓库 `dev:web` watcher 再决定 HMR 验证方式，否则重建受影响产物并刷新现有页面；不启动替代服务冒充当前 GUI 已更新，不重启宿主。
+
 ## 影响面、依赖与护栏
 
 1. 主要链路：配置编译 → 策略绑定 → 独立执行器或宿主协调器 → 外层门控 → 宿主接纳/持久事件；以及导入/重建 → writer → 参数合并 → 组合与提示词物化 → 共享引擎同步。
-2. Wave 0 是当前已授权工作。Wave 1—4 必须先由用户选定 R 编号；仅实施选中项，未选项记录为不在本轮范围。推荐优先 R1—R4，推荐不构成授权。
+2. Wave 0、Wave 5 是已授权的审查/方案工作；Wave 1—4 及 Wave 6—9 的实施须由用户选定范围。推荐优先 R1—R4；九层收敛以 R3/R5 为参数保真前置，涉及引擎分发时包含 R4。推荐不构成授权。
 3. Wave 1 的 T2、T3 可能同时修改执行器与 ST 帧，串行完成；Wave 2 的 T4、T6 共用 writer，串行完成。Wave 3 的任务可按互斥写区独立执行；共享文档统一在 Wave 4 收敛。
 4. 修复参数链前读取 [参数架构](../../docs/architecture-params.md)；引擎修复前读取 [引擎复用契约](../../docs/engine-reuse.md)。若需修改组合来源，先读取 [组合编辑技能](../../preset/pt-cordis/skills/editing-cordis-compositions/SKILL.md)。
 5. 保持官方插入点独立，order 只作用于同一插入点；PTC、锚定、引导及增强能力保持 opt-in；不得改变用户未选择的行为范围。
@@ -170,6 +320,93 @@ A1：[复用指南](../../docs/engine-reuse.md#L34) 的整目录复制表述应�
 </task>
 ```
 
+## Wave 5：九层统一编辑方案（已授权，仅文档）
+
+```xml
+<task type="auto">
+  <name>T11：盘点参数与真实通道，补写九层收敛方案</name>
+  <files>本 PLAN；docs/ui-architecture.md、docs/architecture-params.md、src/client、src/shared、src/runtime/settings-bridge.ts、src/host/write-preset.ts 与 engine（只读调研）；本地 daily.md（追加记录）</files>
+  <action>复核九层、64 参数、7 附加键、能力和资产编辑入口，写明归属表、前后端共用契约、迁移和候选任务；不实施任何重构。</action>
+  <verify>执行内存参数目录断言、回读方案、核对必需章节与新增任务六节点、本地链接和命令；git diff --check，只提交本 PLAN。</verify>
+  <security>只读分析源码，未改用户配置、后端白名单或宿主服务；文档不记录秘密，日志不入库。</security>
+  <done>方案按要求进入现有 PLAN，证据与未授权实施边界明确，验证后提交并推送 origin/dev。</done>
+</task>
+```
+
+## Wave 6：九层元数据与参数完整性（候选，未授权）
+
+```xml
+<task type="auto">
+  <name>T12：建立九层编辑组映射与元数据读契约</name>
+  <files>src/shared/engine-capabilities.ts；src/shared/bridge-contract.ts；engine/schema.mjs；src/runtime/settings-bridge.ts；src/client/prompt-tool-types.ts；src/client/data/bridge-transport.ts；src/client/features/prompts/prompt-config-policy.ts；test/shared/bridge-contract.test.mjs；test/client/bridge-client.test.mjs</files>
+  <action>扩展现有 displayLayer 的九层类型；由能力定义与少量专用编辑组定义派生主归属和相关层，不再给每个参数复制归属。meta/bootstrap 同源输出 layerOrder 和公开编辑说明，前端消费后删除重复运行时层序清单。只改元数据，不改 hook。</action>
+  <verify>node --test "$Repo/test/shared/bridge-contract.test.mjs" "$Repo/test/client/bridge-client.test.mjs" "$Repo/test/client/engine-module-cards.test.mjs"；断言每组主归属唯一、相关层合法、meta/bootstrap 同源、旧数据可读、复制引擎无需 src。</verify>
+  <security>只返回白名单的可序列化字段，不输出路径、任意行配置、校验函数或服务实例；不因展示归属扩大写权限。</security>
+  <done>同一个组映射可同时供后端说明和前端九层组织使用，运行时层矩阵仍由引擎负责。</done>
+</task>
+<task type="auto">
+  <name>T13：闭合七个已有内容参数的编辑保存链</name>
+  <files>src/shared/engine-params.ts；src/shared/param-keys.ts；src/client/locales-params.ts；src/client/data/param-overrides.ts；src/runtime/settings-bridge.ts；src/host/write-preset.ts；test/shared/engine-param-schema.test.mjs；test/client/param-overrides.test.mjs；test/host/engine-params-bridge.test.mjs；test/host/settings-bridge.test.mjs</files>
+  <action>将七个已被生成器消费的键纳入类型和共同定义，删除旁路键清单，复用现有草稿/序列化/校验派生；添加字符串和模式校验、中文英文词条、预设级归属，不改变键名。实施前完成选定的 T4/R3、T5/R5。</action>
+  <verify>node --test "$Repo/test/shared/engine-param-schema.test.mjs" "$Repo/test/client/param-overrides.test.mjs" "$Repo/test/host/engine-params-bridge.test.mjs" "$Repo/test/host/settings-bridge.test.mjs"；71 键覆盖，七键从有效 bridge 写入到生成及回显，非法值写前拒绝，清空删键，未改动不固化默认。</verify>
+  <security>不绕过白名单和值校验，不执行输入脚本；正则沿用既有安全/长度规则，未支持的模式明确返回错误，不写入未知字段。</security>
+  <done>七键不再出现“白名单接受但值校验拒绝”的断层，前后端编辑能力一致。</done>
+</task>
+```
+
+T12 与 T13 可能同时改 shared/bridge/client 类型，默认串行；若委派必须明确互斥文件。T13 涉及 writer 时与 T4/T6 串行。方案不要求先完成不相关的 R1/R2/R6/R7/R8。
+
+## Wave 7：以工具管线卡建立首个完整切片（候选，未授权）
+
+```xml
+<task type="auto">
+  <name>T14：将 tool-config、tool-filter 与自定义工具纳入工具管线卡</name>
+  <files>src/client/app/workspace/pages/EngineLayersPanel.tsx（拟新增页面装配）；MainSessionPage.tsx、SubagentPage.tsx；src/client/features/modules/EngineModuleList.tsx、EngineParamFields.tsx；src/client/features/tools/CustomToolsCard.tsx；src/client/features/prompts/PromptConfigList.tsx；对应 client 测试</files>
+  <action>将工具配置、过滤、自定义工具、PTC、编辑器、深思门和提醒集中到 tool-pipeline 能力设置区，允许相关卡嵌入共享控件；保留所有独立管线规则实例卡，不按 layer 去重。复用原编辑器/保存端点，共享控件绑定同一字段草稿和提交动作，实例字段保持按 id 独立。</action>
+  <verify>node --test "$Repo/test/client/engine-module-cards.test.mjs" "$Repo/test/client/custom-tool-editor.test.mjs" "$Repo/test/client/module-policy-smoke.test.mjs" "$Repo/test/client/editor-state.test.mjs"；两张同层规则卡参数独立，两个共享过滤控件实时同步，单次修改只保存一次、无循环；新增/删除规则不改共享资产，DOM id 不重复，切层不丢草稿。</verify>
+  <security>以实际装配事实判定能力存在，不新增 enabled 假字段或通用写对象；保留预设只读、身份核对和工具批准策略，不改目录过滤的权限语义。</security>
+  <done>用户举例的三个功能及其余工具能力直接在工具管线卡内操作，保存往返与原实现一致，该整卡结构可复用于其他八层。</done>
+</task>
+```
+
+T14 依赖 T12 的归属契约；单纯整卡接管可先验证，不要求先实现所有缺陷修复或七键扩展。完整参数保真验收前仍需完成已选 T4/T5。若单次改动超过约 200 行，按工具管线骨架、普通能力区、自定义工具区拆检查点，不同时重写 store。
+
+## Wave 8：其余层接管与跨卡同步/互斥（候选，未授权）
+
+```xml
+<task type="auto">
+  <name>T15：归位模型、人设、变量、工具与委派能力</name>
+  <files>共用 EngineLayersPanel（拟新增）；src/client/features/models/ModelRouteCard.tsx；src/client/features/persona/PresetPersonaCard.tsx；src/client/features/subagents/DelegationToolsCard.tsx、SubagentToolPolicyCard.tsx；src/client/features/tools/CustomToolsCard.tsx；src/client/features/prompts/PromptConfigsEditor.tsx；src/client/features/modules/EngineModuleList.tsx；src/client/data/use-prompt-tool-store.ts、workspace-drafts.ts；src/shared/engine-params.ts、engine-capabilities.ts；相关 client 测试</files>
+  <action>按映射表迁移字段组件，让同一共享参数/结构化资产的跨卡控件绑定同一草稿；主/子页是同源视图，独立实例与不同作用域的参数保持独立。复用已有冲突校验，提供清晰互斥错误；保留当前会话操作通道，删除各处私有状态和重复提交逻辑，不限制同层实例数量。</action>
+  <verify>node --test "$Repo/test/client/engine-module-cards.test.mjs" "$Repo/test/client/scope-create-separation.test.mjs" "$Repo/test/client/session-model-face.test.mjs" "$Repo/test/client/module-policy-smoke.test.mjs" "$Repo/test/client/locale-contract.test.mjs"；跨层改共享值即时回显，失败/迟到 blur 不覆盖新值；主子路由不串、实例策略上限不变、独占冲突写前拒绝，普通多系统段合法。</verify>
+  <security>展示归类不得当成权限；互斥仍由候选有效配置校验，不静默关闭别人的实例；不把工具目录过滤伪装为授权，不把当前会话模型操作纳入预设保存。</security>
+  <done>64 参数及新增七键的存储所有者唯一，多卡同步引用无重复落盘；结构化资产共用草稿，实例参数和未改动内容保持独立。</done>
+</task>
+<task type="auto">
+  <name>T16：补齐九层实例字段与交互一致性</name>
+  <files>src/client/features/prompts/PromptConfigFields.tsx、PromptConfigForm.tsx、PromptConfigList.tsx、prompt-config-policy.ts；src/client/data/workspace-drafts.ts；src/client/app/workspace/workspace-browse-state.ts；src/client/locales-prompts.ts、locales-cards.ts；test/client/prompt-config-form-layout.test.mjs；test/client/editor-state.test.mjs；test/engine/prompt-config-engine.test.mjs</files>
+  <action>复用层能力矩阵与现有表单，为 runtime-context 名称、agent-request patch/replace、llm-stream mode、tool-pipeline 裁决等现有可编辑实例字段提供可发现入口；保留高级配置和未知字段。完成跨参数搜索、定位、切层草稿保持与只读说明，不增加新运行时能力。</action>
+  <verify>node --test "$Repo/test/client/prompt-config-form-layout.test.mjs" "$Repo/test/client/editor-state.test.mjs" "$Repo/test/client/engine-module-cards.test.mjs" "$Repo/test/engine/prompt-config-engine.test.mjs"；九层有效字段可编辑且保存受相同规则限制，停止上限无可写项，结束层只观察；无隐藏重复输入，键盘与错误提示可用。</verify>
+  <security>不支持的 subject/match/strategy 仍由后端拒绝；原始 JSON 只能走现有配置校验，不能引入任意路径或脚本编辑；切层不静默删除未知资产。</security>
+  <done>九层不仅能筛选卡片，还能找到并正确编辑所属公开参数；交互保持原草稿与权限保护。</done>
+</task>
+```
+
+T15 按 pre-step 来源绑定、系统段/变量、模型/委派分组检查点执行；涉及托管字段说明时补查 writer、settings-bridge 和 PromptConfigFields，元数据须从已有生成规则与源配置事实派生，不能仅凭 ID 把用户项变为只读。pre-step 单独运行 `node --test "$Repo/test/client/instruction-save-flow.test.mjs" "$Repo/test/host/write-preset.test.mjs"`，验证锚定/引导/注入器唯一写回、局部实例保留、独立指令不进入预设批保存。T16 与 T14/T15 共用表单和层卡组件，应串行集成，避免多个代理同时改页面 owner；复用列表正文，避免挂九个拥有独立保存状态的完整列表。
+
+## Wave 9：行为保持、旧入口清理与九层交付（候选，未授权）
+
+```xml
+<task type="auto">
+  <name>T17：验证九层编辑重构并更新权威文档</name>
+  <files>docs/ui-architecture.md；docs/architecture-params.md；docs/engine-reuse.md；CHANGELOG.md；本 PLAN；相关 shared/client/host/engine 契约测试；脚本生成的必要产物</files>
+  <action>删除完成接管的旧表单入口和重复层序/映射；更新过去“公共配置独立显示”的文档和测试断言。用按 owner 的行为用例验证保存保真及只读打开无写盘，再运行完整门禁；记录真实 GUI 构建/刷新验证结果。</action>
+  <verify>隔离 cwd 执行 pnpm --dir $Repo typecheck、lint、test、build，git diff --check；补齐计划验收标准中的 71 参数覆盖、各 owner 往返、旧预设无迁移、只读/并发/失败保护；确认现有 3080 GUI 使用了本次受影响 Web 产物。</verify>
+  <security>保留 Host/Origin、体积、白名单、预设身份和指令版本守卫；不手改生成目录，不启停现有服务，不提交本地日志或用户变更。</security>
+  <done>选定九层重构范围全部通过并有实际验证记录；与 T10 合并执行一次最终文档/归档/提交交付，未选缺陷列为边界，不宣称已修复。</done>
+</task>
+```
+
 ## 回滚与检查点
 
 - 当前只有 PLAN 文档及忽略的本地日志，未修改运行行为；需要撤销已提交计划时用 `git revert`，不清理用户目录或重写历史。
@@ -185,6 +422,11 @@ A1：[复用指南](../../docs/engine-reuse.md#L34) 的整目录复制表述应�
 - [ ] Wave 2 / T4、T5、T6（R3、R5、R4）：未启动，等待用户指定修复范围。
 - [ ] Wave 3 / T7、T8、T9（R6、R7、R8）：未启动，等待用户指定修复范围。
 - [ ] Wave 4 / T10（A1 与选定范围验收）：未启动，依赖范围授权和所选实现通过。
+- [✔] Wave 5 / T11：已完成九层多实例、共享参数同步/互斥方案、64+7 参数盘点和本地 beta-2-42 结构核对；本轮文档校验与交付记录见下。
+- [ ] Wave 6 / T12、T13：元数据与七键保存闭环未实施，等待用户确认方案和相关前置修复范围。
+- [ ] Wave 7 / T14：tool-pipeline 整卡切片未实施，依赖 T12；以用户给出的 tool-config/tool-filter/自定义工具归并为首个样板。
+- [ ] Wave 8 / T15、T16：其余八层能力接管和九层交互未实施，依赖工具管线切片通过及所选参数保真前置。
+- [ ] Wave 9 / T17：清理旧入口、完整门禁及现有 GUI 验证未实施；最终归档与 T10 合并一次执行。
 
 ## 验收记录
 
@@ -215,6 +457,15 @@ A1：[复用指南](../../docs/engine-reuse.md#L34) 的整目录复制表述应�
 - `git diff --check` 与 `git diff --cached --check` 均通过；暂存文件列表只含本 PLAN，未包含源码、用户已有目录或本地记忆。提交前再次检查最终暂存内容。
 - 本次只修改文档，按仓库规则无需重跑 typecheck/lint/test/build；不得把审查阶段的测试结果写成修复后验收。
 - 提交与推送结果以交付回执为准，提交前不得宣称已经成功。
+
+### 九层多卡方案增补的文档验收（基线 d415d4a）
+
+- 已读取 UI/参数权威文档、页面装配、能力/参数定义、bridge 保存与 writer 投影；已复核子代理的参数和真实通道证据。用户明确能力进入对应层卡，又澄清同层多实例及共享参数可同步/互斥；最终方案已经撤回固定卡数与唯一可写控件限制，更新任务和验收条件。
+- 已只读解析用户提供的 beta-2-42：128 个唯一 ID，pre-step 120（启用18），system-section 8（启用4），全部 mergeMode=merged。结构断言退出0；只在 PLAN 保留数量与身份语义，未复制正文或改写预设。拟用合成 128 卡与 64 系统段数据验证未来重构，这些未来回归尚未运行。
+- 在隔离 cwd 执行内联 Node 盘点断言：现有 `ENGINE_PARAM_KEYS` 为 64，额外内容键为 7；七键均被当前值校验拒绝；能力 displayLayer 仅有 system-section/pre-step/tool-pipeline 三种。退出 0，无文件写入；这些是方案依据，未在本轮修复。
+- 最终文档校验通过：17 个六节点任务、10 个 Wave、43 处本地链接（含行号检查）、35 处测试引用和4个 package scripts 有效，UTF-8 无 BOM；不存在固定九张卡、跨层强制只读或唯一可写控件的残留约束。内联断言退出0；参考预设的读取前后摘要一致。
+- `git diff --check` 通过；受版本控制的修改仅本 PLAN。未修改生产/测试源码，不运行 UI 构建或假称当前 GUI 已更新；纯文档按仓库要求检查路径与命令。
+- 初版计划已经在 `d415d4a` 推送 origin/dev；本次增补提交与推送凭据在交付回执记录。实施候选任务仍未启动，计划不归档。
 
 ### 后续实施的命令约定
 
