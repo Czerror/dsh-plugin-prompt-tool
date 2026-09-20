@@ -34,6 +34,7 @@ const loader = registerHooks({
 })
 const { EngineParamFields, EngineParamField } = await import('../../src/client/features/modules/EngineParamFields.tsx')
 const { ToolPipelineSettingsCard, TOOL_PIPELINE_SETTING_GROUPS } = await import('../../src/client/app/workspace/pages/EngineLayersPanel.tsx')
+const { LayerCard } = await import('../../src/client/ui/LayerCard.tsx')
 const { EngineModuleCards, EngineCapabilityCreateMenu } = await import('../../src/client/features/modules/EngineModuleList.tsx')
 const { PromptConfigForm } = await import('../../src/client/features/prompts/PromptConfigForm.tsx')
 const { OptionField } = await import('../../src/client/features/prompts/PromptConfigFields.tsx')
@@ -451,8 +452,7 @@ test('工具管线共享设置区登记跨层相关设置，并说明真实主�
   }
 })
 
-test('EngineParamFields 把 instanceId 透传给组内每个字段', () => {
-  const store = {
+test('EngineParamFields 把 instanceId 透传给组内每个字段', () => {  const store = {
     fields: { ...EMPTY_FIELDS, presetTemplate: 'pt-pipeline', writePreset: true, toolFilterEnabled: true, toolFilterAllow: 'read' },
     moduleFacts: { editable: true },
     editorDrafts: undefined,
@@ -511,4 +511,22 @@ test('共享参数的未完成输入与错误态在镜像控件之间同步，�
   assert.equal(drafts.fields.has('pt-mirror:param:deliberationMinChars'), false, '保存成功后清掉草稿')
   assert.equal(control(undefined).props.value, '20')
   assert.equal(control('tool-pipeline-deliberation-gate').props.value, '20')
+})
+
+test('切层与受众切换保留草稿：卡片隐藏而不卸载，草稿键与层无关', () => {
+  const hidden = render(LayerCard, { visible: false, children: 'CARD-MARKER' })
+  assert.match(hidden, /hidden=""/)
+  assert.ok(hidden.includes('CARD-MARKER'), '不可见的卡留在 DOM 里：切层不丢草稿、不重跑读取')
+  assert.doesNotMatch(render(LayerCard, { visible: true, children: 'CARD-MARKER' }), /hidden=/)
+  // 参数草稿键按「预设 + 参数字段」保存，展开键按「预设 + 卡片身份」保存：都不含层名，
+  // 因此切层、筛选与主/子受众切换后读回的是同一份草稿。
+  assert.match(read('features/modules/EngineParamFields.tsx'),
+    /const draftKey = `\$\{store\.fields\.presetTemplate\}:param:\$\{param\}`/)
+  assert.match(read('app/workspace/pages/EngineLayersPanel.tsx'),
+    /const expandedKey = `\$\{store\.fields\.presetTemplate\}:tool-pipeline-settings`/)
+  // 主/子代理是同源视图：两页只声明受众，配置卡草稿作用域都取当前预设。
+  assert.match(read('app/workspace/pages/MainSessionPage.tsx'), /draftScope=\{fields\.presetTemplate\}/)
+  assert.match(read('app/workspace/pages/SubagentPage.tsx'), /audience: 'subagent'/)
+  // 两页共用同一装配入口：不存在第二份按层保存的草稿或按层过滤的写通道。
+  assert.doesNotMatch(read('app/workspace/pages/EngineLayersPanel.tsx'), /localStorage|sessionStorage/)
 })
