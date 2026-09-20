@@ -509,6 +509,29 @@ const stageAssembled = () => ({
   contexts: [],
 })
 
+/** 阶段业务工具 + 干扰工具（含未解锁档工具，用于验证窄化边界）。 */
+const BUSINESS_TOOLS = [
+  'read', 'glob', 'grep', 'write', 'edit', 'pwsh', 'bash', 'str_replace_editor', 'web_search', 'todo_write',
+]
+
+/** 注册结果 → 装配输入（R8 真实路径）：业务工具在前，本模块注册的控制工具在后。 */
+const catalogFromRegistration = (registered, toolNames = BUSINESS_TOOLS) => ({
+  tools: [...toolNames.map((toolName) => ({ name: toolName })), ...registered.map((tool) => ({ name: tool.name }))],
+  sections: [],
+  contexts: [],
+})
+
+/** 捕获 ctx.tools.register 的 ctx：推进工具名只取自注册结果，不从测试常量猜。 */
+function makeStagesCtx() {
+  const { ctx, listeners } = makeCtx()
+  const registered = []
+  return {
+    listeners,
+    registered,
+    ctx: { logger: { warn: () => {} }, on: ctx.on, tools: { register: (tool) => registered.push(tool) } },
+  }
+}
+
 test('tool-bootstrap stages：首轮窄化到阶段 0 + 预放档（默认 1）', async () => {
   const { ctx, listeners } = makeCtx()
   applyToolBootstrap(ctx, { bootstrapTools: ['bash'], stages: STAGES })
@@ -552,25 +575,57 @@ test('tool-bootstrap stages：直达语义（调用更高阶段工具自动跳�
 })
 
 test('tool-bootstrap stages：stagePreUnlock=0 + 自定义推进工具名 + 工具注册', async () => {
-  const { ctx, listeners } = makeCtx()
-  const registered = []
-  const ctxWithTools = {
-    logger: { warn: () => {} },
-    on: ctx.on,
-    tools: { register: (tool) => registered.push(tool) },
-  }
-  applyToolBootstrap(ctxWithTools, { bootstrapTools: ['bash'], stages: STAGES, stagePreUnlock: 0, stageAdvanceTool: 'level_up' })
+  const { ctx, listeners, registered } = makeStagesCtx()
+  applyToolBootstrap(ctx, { bootstrapTools: ['bash'], stages: STAGES, stagePreUnlock: 0, stageAdvanceTool: 'level_up' })
   assert.equal(registered.length, 1)
   assert.equal(registered[0].name, 'level_up', '推进工具名参数化')
-  const out = await assembleThrough(listeners, makeAgent(makeSession([])), stageAssembled())
-  assert.deepEqual(out.tools.map((t) => t.name), ['read', 'glob', 'grep'], 'stagePreUnlock=0 不预放')
-  // 自定义推进工具事件同样推进。
   const session = makeSession([])
   const agent = makeAgent(session)
-  const handlers = listeners.get('session/event') ?? []
-  for (const { handler: h } of handlers) h(session, toolCall('level_up', 1))
-  const after = await assembleThrough(listeners, agent, stageAssembled())
-  assert.deepEqual(after.tools.map((t) => t.name), ['read', 'glob', 'grep', 'write', 'edit'], 'level_up 推进到阶段 1')
+  // R8：装配输入由注册结果构造——自定义推进工具必须留在目录里（此前被 keep 集合裁掉）。
+  const out = await assembleThrough(listeners, agent, catalogFromRegistration(registered))
+  assert.deepEqual(out.tools.map((t) => t.name), ['read', 'glob', 'grep', 'level_up'], 'stagePreUnlock=0：推进工具可见且不预放')
+  assert.equal(out.tools.some((t) => ['write', 'edit', 'pwsh', 'bash'].includes(t.name)), false, '未解锁档业务工具不可见')
+  // 自定义推进工具事件同样推进（用注册结果里的真实名字触发）。
+  for (const { handler: h } of listeners.get('session/event') ?? []) h(session, toolCall(registered[0].name, 1))
+  const after = await assembleThrough(listeners, agent, catalogFromRegistration(registered))
+  assert.deepEqual(after.tools.map((t) => t.name), ['read', 'glob', 'grep', 'write', 'edit', 'level_up'], 'level_up 推进到阶段 1：下一档开放且推进工具仍在')
+  assert.equal(after.tools.some((t) => t.name === 'pwsh'), false, '阶段 2 工具仍未解锁')
+})
+
+test('tool-bootstrap stages：R8 preUnlock=0 默认推进工具与提示同源可见，被策略挡掉时不复活', async () => {
+  const { ctx, listeners, registered } = makeStagesCtx()
+  applyToolBootstrap(ctx, { bootstrapTools: ['bash'], stages: STAGES, stagePreUnlock: 0 })
+  assert.equal(registered[0].name, 'phase_advance', '默认推进工具名')
+  const agent = makeAgent(makeSession([]))
+  const out = await assembleThrough(listeners, agent, catalogFromRegistration(registered))
+  assert.deepEqual(out.tools.map((t) => t.name), ['read', 'glob', 'grep', 'phase_advance'], 'preUnlock=0 时默认推进工具在目录中可见')
+  const section = out.sections.find((s) => s.name === 'stage-status')
+  assert.ok(section, '默认模板注入 stage-status')
+  assert.match(section.text, /Advance via phase_advance/, '提示引用的推进工具名与注册、目录同源')
+  // 外层工具策略已挡掉推进工具：不复活它，也不把阶段目录降级成完整目录。
+  const filtered = await assembleThrough(listeners, agent, {
+    tools: BUSINESS_TOOLS.filter((toolName) => toolName !== 'phase_advance').map((toolName) => ({ name: toolName })),
+    sections: [],
+    contexts: [],
+  })
+  assert.deepEqual(filtered.tools.map((t) => t.name), ['read', 'glob', 'grep'], '缺失校验不因推进工具放开未授权业务工具')
+})
+
+test('tool-bootstrap stages：默认预放 1 档与子代理语义保持（含推进工具）', async () => {
+  const subagentSession = () => ({ id: `s-${Math.random()}`, header: { cwd: '/workspace', delegationDepth: 1 }, snapshotEvents: () => [] })
+  const main = makeStagesCtx()
+  applyToolBootstrap(main.ctx, { bootstrapTools: ['bash'], stages: STAGES })
+  const mainOut = await assembleThrough(main.listeners, makeAgent(makeSession([])), catalogFromRegistration(main.registered))
+  assert.deepEqual(mainOut.tools.map((t) => t.name), ['read', 'glob', 'grep', 'write', 'edit', 'phase_advance'], '默认预放 1 档 + 推进工具可见')
+  // 子代理默认（includeSubagents=false）继承完整目录，仍含推进工具。
+  const full = catalogFromRegistration(main.registered)
+  const defaultSub = await assembleThrough(main.listeners, makeAgent(subagentSession()), full)
+  assert.deepEqual(defaultSub.tools.map((t) => t.name), full.tools.map((t) => t.name), '子代理默认不裁剪')
+  // includeSubagents=true：子代理与主会话同相位（stagePreUnlock=0 只剩阶段 0 + 推进工具）。
+  const sub = makeStagesCtx()
+  applyToolBootstrap(sub.ctx, { bootstrapTools: ['bash'], stages: STAGES, stagePreUnlock: 0, includeSubagents: true })
+  const subOut = await assembleThrough(sub.listeners, makeAgent(subagentSession()), catalogFromRegistration(sub.registered))
+  assert.deepEqual(subOut.tools.map((t) => t.name), ['read', 'glob', 'grep', 'phase_advance'], '子代理同相位且推进工具可见')
 })
 
 test('tool-bootstrap stages：stageSectionTemplate 空 = 不注入 section（文案参数化）', async () => {

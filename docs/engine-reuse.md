@@ -154,9 +154,12 @@ pre-step 来源：
   避免被解析成空列表（= 匹配所有工具），把一条定向门扩大成全工具门。
 - 条件层以外的层声明 `subject` / `match` 会在挂载期报错，不会静默忽略。
 - **策略只在消费它的层生效**：`config.resolve` 只由 pre-step（`executor.mjs`）与 runtime-context
-  的 placeholder（`layers.mjs`）调用，其余层声明非 `static` 策略会在挂载期报错
+  的 provider（`layers.mjs`）调用，其余层声明非 `static` 策略会在挂载期报错
   （`schema.mjs#STRATEGY_LAYER_SUPPORT`）。模板专属策略（`strategyDir` 懒加载）同样只允许
-  pre-step 与 runtime-context——此前这些组合会绑定 resolver 却无人调用，表现为「配了没效果也不报错」。
+  pre-step 与 runtime-context，两层都真实调用 resolver：runtime-context 的模板专属策略与
+  placeholder 一样注册成函数 provider，模板模块抛错只让该条为空并告警，不再出现「配了没效果
+  也不报错」。`strategyDir` 在引擎入口统一解析为绝对 URL（相对写法按
+  `prompt-config-engine.mjs` 解析），相对目录不再让整行挂载抛 `ERR_INVALID_URL`。
 - 条件判定的共享实现是 `engine/condition.mjs`：pre-step 缺省匹配本批用户消息，其余层按各自
   `subject` 取文本；`match` 的匹配器在 `schema.mjs` 挂载期预编译一次（`config.matchScan`），
   校验与执行同源。未命中的配置**不写入 session 去重**，条件恢复后仍能注入。
@@ -292,7 +295,9 @@ moduleConfigs 只补充参数桥未覆盖的键，不再锁定覆盖 UI 可管�
 
 `tool-bootstrap` 声明 `stages` 时激活多级阶段窄化（参考 dsh-router-standard
 progressive disclosure 自写）：目录 = 当前阶段工具 + 预放（`stagePreUnlock`
-档）；`phase_advance`（名字可配）推进阶段；调用更高阶段工具 = 直达（自动
+档）+ 本模块注册的推进工具（`stageAdvanceTool`：注册、`{{advanceTool}}` 提示与
+目录裁剪引用同一个名字，`stagePreUnlock=0` 时它仍在目录里；被外层工具策略挡掉时
+不复活，也不触发「缺失即放开完整目录」的降级）；`phase_advance`（名字可配）推进阶段；调用更高阶段工具 = 直达（自动
 跳到其档）；阶段状态由 durable tool/call 事件推导（resume/reload 自动恢复，
 无文件），compaction 不重置；阶段文案经 `stageSectionTemplate` 参数化
 （引擎只注入动态状态 section `stage-status`，不写死引导文本——引导类内容

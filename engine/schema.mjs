@@ -141,10 +141,15 @@ export const STRATEGY_LAYER_SUPPORT = {
 /** 模板专属策略允许的层：resolver 同样只在 pre-step / runtime-context 被调用。 */
 const TEMPLATE_STRATEGY_LAYERS = ['pre-step', 'runtime-context']
 export const KNOWN_SLOT_KINDS = new Set(['ordered', 'anchor'])
-export const KNOWN_LAYERS = new Set([
+/**
+ * 九个官方注入层的固定顺序：/meta 的 layerOrder、UI 层序与模板菜单共用这一份，
+ * 各端不再各自维护层序清单。顺序即产品定义，改顺序等于改 UI 组织，不要只为排序调整。
+ */
+export const LAYER_ORDER = [
   'pre-step', 'system-section', 'runtime-context', 'agent-request', 'llm-stream', 'tool-pipeline',
   'turn-stop', 'subagent-start', 'subagent-end',
-])
+]
+export const KNOWN_LAYERS = new Set(LAYER_ORDER)
 /**
  * 条件判定的匹配对象：决定把哪段文本交给 anchor-match 匹配器。
  * 取值与 DSH 扩展点一一对应，各层缺省值见 LAYER_DEFAULT_SUBJECT。
@@ -209,6 +214,8 @@ export const LAYER_LABELS = {
 /** 引擎能力矩阵：作为 /meta 的唯一数据源，客户端表单据此动态渲染。 */
 export function getEngineMeta() {
   return {
+    // layerOrder = 固定九层顺序（UI 组织用）；layers = 合法层集合（校验与旧消费方用）。
+    layerOrder: [...LAYER_ORDER],
     layers: [...KNOWN_LAYERS].sort(),
     strategies: [...KNOWN_STRATEGIES].sort(),
     slotKinds: [...KNOWN_SLOT_KINDS].sort(),

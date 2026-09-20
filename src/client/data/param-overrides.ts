@@ -23,6 +23,10 @@ export function readParamOverridesPatch(source: Record<string, unknown>): Partia
       case 'string':
         if (typeof value === 'string') patch[key] = value
         break
+      // 正则串按原样回显：合法性交给保存层响亮拒绝，读回不因本地编译失败就吞掉用户值。
+      case 'pattern':
+        if (typeof value === 'string') patch[key] = value
+        break
       case 'string-list':
         if (typeof value === 'string' || Array.isArray(value)) patch[key] = engineParamList(value).join(', ')
         break

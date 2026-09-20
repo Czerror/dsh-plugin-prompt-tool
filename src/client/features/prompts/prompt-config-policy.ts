@@ -1,24 +1,23 @@
 import type { PromptToolLocaleKey, PromptToolTranslate } from '../../locales.ts'
+import { ENGINE_LAYER_ORDER } from '../../../shared/engine-capabilities.ts'
 import type { EngineMeta, LayerFieldPolicy, PromptConfigDraft, PromptConfigMatch } from '../../prompt-tool-types.ts'
 /** sourceKind / form 是少量固定语义值，用下拉选择；引擎不设枚举，因此额外保留当前值。 */
 export const SOURCE_KINDS = ['', 'plugin', 'instruction-hint', 'instruction-file', 'skill-catalog', 'env-facts'] as const
 export const SOURCE_FORMS = ['notice', 'hint', 'instructions', ''] as const
 
-/** UI 始终提供九个官方插入点；meta 额外返回的层仍保留在末尾，避免丢失未知配置。 */
-export const INSERTION_LAYERS = [
-  'pre-step',
-  'system-section',
-  'runtime-context',
-  'agent-request',
-  'llm-stream',
-  'tool-pipeline',
-  'turn-stop',
-  'subagent-start',
-  'subagent-end',
-] as const
+/**
+ * 层序的唯一来源是宿主 meta.layerOrder（运行时由引擎 schema 下发）。
+ * 这里只留共享契约里的九层作退化默认：旧宿主不下发 layerOrder 时仍能渲染完整菜单。
+ */
+export const INSERTION_LAYERS = ENGINE_LAYER_ORDER
 
-export function displayLayers(layers: readonly string[]): string[] {
-  return [...INSERTION_LAYERS, ...layers.filter((layer) => !(INSERTION_LAYERS as readonly string[]).includes(layer))]
+/**
+ * 九层顺序在前，其余层追加在末尾（旧数据里的未知层不丢）。
+ * layerOrder 缺失或为空（旧宿主、首屏）时退化为共享九层，不崩也不清空层列表。
+ */
+export function displayLayers(layerOrder: readonly string[] | undefined, layers: readonly string[]): string[] {
+  const base: readonly string[] = Array.isArray(layerOrder) && layerOrder.length > 0 ? layerOrder : INSERTION_LAYERS
+  return [...base, ...layers.filter((layer) => !base.includes(layer))]
 }
 
 /**

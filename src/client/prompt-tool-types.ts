@@ -1,5 +1,5 @@
 /** 客户端共享类型：提示词配置草稿、层能力矩阵与引擎 /meta 载荷。 */
-import type { StConversionReport, StOrderGroupCandidate } from '../shared/bridge-contract.ts'
+import type { EngineMetaLayerContract, StConversionReport, StOrderGroupCandidate } from '../shared/bridge-contract.ts'
 import type { AssetImportRequest, AssetSummary } from '../shared/asset-transfer.ts'
 
 /**
@@ -111,8 +111,8 @@ export interface LayerFieldPolicy {
   match: boolean
 }
 
-/** settings bridge /meta 返回的引擎能力矩阵。 */
-export interface EngineMeta {
+/** settings bridge /meta 返回的引擎能力矩阵。layerOrder / editorGroups 见 {@link EngineMetaLayerContract}。 */
+export interface EngineMeta extends Partial<EngineMetaLayerContract> {
   /** 可用预设模板清单（UI 预设切换器）。 */
   presets?: Array<{ id: string; name: string; user?: boolean; renderable?: boolean; description?: string; meta?: Record<string, unknown> }>
   /** 插件目录内置模板清单（「新建预设」选择器数据源）。 */

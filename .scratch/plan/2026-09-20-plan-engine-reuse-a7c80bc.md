@@ -421,16 +421,37 @@ T15 按 pre-step 来源绑定、系统段/变量、模型/委派分组检查点�
 - [✔] Wave 0 / T1：审查证据、PLAN 补录与文档核对完成；本轮仅交付计划，Git 提交推送凭据见交付回执。
 - [✔] Wave 1 / T2、T3（R1、R2）：2026-09-20 实施完成并验收（见「本轮修复验收」）；R1 改为「候选生成 vs 宿主接纳确认」，R2 改为「执行器判定获准集合驱动 ST 预求值」。
 - [✔] Wave 2 / T4、T5、T6（R3、R5、R4）：2026-09-20 实施完成并验收；runtimeOf 未提供参数不覆盖定义、参数桥 editor-default 只投影已提供值、引擎指纹含内容摘要。
-- [ ] Wave 3 / T7、T8、T9（R6、R7、R8）：未启动，等待用户指定修复范围。
+- [✔] Wave 3 / T7、T8、T9（R6、R7、R8）：2026-09-20 实施完成并验收（见「Wave 3 验收」）；R6 改为「入口统一把 strategyDir 解析成绝对 URL + runtime-context 真实消费模板专属策略」，R7 改为「turn/start 建立每轮预算 + assistant/message 计可获得文本，冷扫与实时共用同一处理函数」，R8 改为「阶段 keep 集合保留本模块注册的推进工具，注册/提示/裁剪同源于 stageAdvanceTool」。
 - [ ] Wave 4 / T10（A1 与选定范围验收）：未启动；本轮已在 T2—T6 交付内完成所选范围的文档同步与完整门禁，但 A1 三类依赖说明与归档仍待全部 Wave 完成后执行。
 - [✔] Wave 5 / T11：已完成九层多实例、共享参数同步/互斥方案、64+7 参数盘点和本地 beta-2-42 结构核对；本轮文档校验与交付记录见下。
-- [ ] Wave 6 / T12、T13：元数据与七键保存闭环未实施，等待用户确认方案和相关前置修复范围。
+- [✔] Wave 6 / T12、T13：2026-09-20 实施完成并验收（见「Wave 6 验收」）；T12 建立九层编辑组契约（引擎 `LAYER_ORDER` + 共享 `EngineLayer`/`ENGINE_EDITOR_GROUP_MAP` + `/meta` 与 `/bootstrap` 同源下发 + 前端容错退化），T13 把七个锚定/引导内容键并入共享参数定义、删除旁路键清单并补齐读回/保存/中英词条与正则校验。
 - [ ] Wave 7 / T14：tool-pipeline 整卡切片未实施，依赖 T12；以用户给出的 tool-config/tool-filter/自定义工具归并为首个样板。
 - [ ] Wave 8 / T15、T16：其余八层能力接管和九层交互未实施，依赖工具管线切片通过及所选参数保真前置。
 - [ ] Wave 9 / T17：清理旧入口、完整门禁及现有 GUI 验证未实施。
 - 归档条件（用户 2026-09-20 明确）：PLAN 内全部 Wave 完成后才归档；本轮保持在本目录。
 
 ## 验收记录
+
+### Wave 3 验收（T7—T9 / R6—R8，基线 54bac00）
+
+执行目录 `D:\AI\workspase\_temp`（隔离 cwd），Node `v26.7.0`；临时目录由各用例 `finally` 清理，未触碰真实 `DSH_HOME`。
+
+| 任务 | 修改 | 回归证据 | 结果 |
+|---|---|---|---|
+| T7（R6） | `engine/prompt-config-engine.mjs#apply` 把 `strategyDir` 统一解析为绝对 URL（相对写法按引擎文件解析）；`engine/layers.mjs#wireRuntimeContexts` 用 `needsResolver` 把模板专属策略与 placeholder 一起注册成函数 provider，provider 内失败只 warnOnce 不炸 assembly | `test/engine/prompt-config-engine.test.mjs` 新增两条：runtime-context 模板策略在 assembly 时真实调用 resolve、disposer 释放后不留后台注册；`apply` 按真实预设布局（`engine/` 与 `strategies/` 同级）断言相对 `../strategies` 不再抛 `ERR_INVALID_URL` 且与绝对 URL 求值一致 | 77/77 通过 |
+| T8（R7） | `engine/deliberation-gate.mjs`：`observeEvent` 成为唯一事件处理函数（冷扫与实时共用），`turn/start` 建立每轮预算、`assistant/message` 只读 `message.content` 计入深度（不读同一事件的 stream delta，避免双计） | `test/engine/injection-gates.test.mjs` 夹具换成真实 `@deepseek-ai/dsh-session` 的 `Session.append` + `snapshotSessionEvent`：首轮 300 字 reasoning 放行、无文本次轮受门且本轮上限用尽后放行、阈值 0、冷恢复与实时同判定序列、会话隔离、reasoning/text 都计入、子代理 `includeSubagents` 对照 | 通过 |
+| T9（R8） | `engine/tool-bootstrap.mjs`：`keepTools` 新增 `required` 参数（默认 = keep，其它调用点语义不变）；stages 分支把 stages 声明工具与自注册推进工具分开，`keep` 加入 `stageAdvanceTool` 但不参与缺失校验 | `test/engine/promotion-gate.test.mjs` 改用注册结果构造装配输入：`stagePreUnlock=0` 时默认与自定义推进工具都可见、推进后下一档开放且未解锁工具仍不可见、推进工具被外层策略挡掉时不复活也不放开完整目录、默认预放 1 档与子代理语义保持 | 37/37 通过 |
+
+组合回归：`node --test test/engine/*.test.mjs` 298 测试全通过（fail 0，退出 0）。文档同步：`docs/engine-reuse.md`（阶段目录含本模块注册的推进工具、策略只在消费它的层生效且 runtime-context 真实调用 resolver、`strategyDir` 入口统一解析）。
+
+### Wave 6 验收（T12、T13，基线 54bac00）
+
+| 任务 | 修改 | 回归证据 | 结果 |
+|---|---|---|---|
+| T12 | 引擎新增 `LAYER_ORDER` 与 `getEngineMeta().layerOrder`（`layers` 仍是排序集合，不破坏既有消费方）；共享契约新增 `EngineLayer` 九层联合、`ENGINE_LAYER_ORDER`（旧宿主退化用）、`EngineEditorGroup`、`ENGINE_EDITOR_GROUPS`（6 条按真实 card 名登记：prompt-defaults→pre-step、persona→system-section（relatedLayers: runtime-context）、variables→runtime-context、main-model→agent-request、subagent-model→subagent-start、custom-tools→tool-pipeline）与派生总表 `ENGINE_EDITOR_GROUP_MAP`；`/meta` 与 `/bootstrap` 只下发 `id/displayLayer/relatedLayers/hook` 白名单字段；前端 `normalizeEngineMeta` 对旧宿主缺字段退化，`displayLayers` 改吃 `meta.layerOrder`，删除客户端本地九层字面量 | `test/shared/bridge-contract.test.mjs` 10/10（三方层序同源、白名单字段无函数无路径、组 id 唯一且每组有归属、复制 engine 目录独立 import 仍同层序）；`test/client/bridge-client.test.mjs` 7/7（旧宿主/坏数据退化、未知层追加末尾、host 层序优先）；`test/client/engine-module-cards.test.mjs` 14/14（编辑组主归属唯一、相关层合法、参数 card 覆盖） | 通过 |
+| T13 | 七个内容键（`buildPattern`、`complexPattern`、`firstTurnBuild`、`firstTurnInspect`、`firstTurnDeep`、`guideWeak`、`guideDeep`）并入 `EngineParams` 与 `ENGINE_PARAM_DEFINITIONS`（card=`prompt-defaults`），`PARAM_KEYS` 旁路清单只剩 `promptConfigs`；新增 `pattern` 值类型，按 `new RegExp(value, 'i')`（与 `engine/classify-task.mjs` 消费同源）在写盘前拒绝非法正则；读回、序列化、脏检测与中英词条随现有派生链自动生效 | `test/shared/engine-param-schema.test.mjs`（归属/默认/合法与非法正则/读回往返/清空删键）、`test/host/engine-params-bridge.test.mjs`（`PARAM_KEYS` 派生与七键必须进 `ENGINE_PARAM_KEYS`）、`test/client/param-overrides.test.mjs`、`test/client/locale-contract.test.mjs`、`test/host/settings-bridge.test.mjs` 新增端到端用例：非法正则 400 不落盘且不重建、合法值落进 `params`、清空只删该键、YAML 注释与未知字段保持不动 | 通过 |
+
+完整门禁（隔离 cwd，`pnpm --dir $Repo …`）：`typecheck`、`lint`、`build`、`git diff --check` 全部通过；`test` 为 **1171 测试全通过（fail 0）**。
 
 ### 本轮修复验收（Wave 1+2 / T2—T6，基线 25f70d1）
 

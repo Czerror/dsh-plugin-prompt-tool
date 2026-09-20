@@ -501,6 +501,54 @@ test('settings bridge /param-overrides 数值参数保存前校验（temperature
   }
 })
 
+test('settings bridge /param-overrides 接受锚定/引导内容键，非法正则写盘前拒绝', async () => {
+  const { ctx, handlers } = makeHarness()
+  const dir = makeUserPresetDir('pt-overrides-content-')
+  const file = join(dir, 'preset.yml')
+  const original = `# keep comment\nid: ${basename(dir)}\nunknown: keep\n`
+  writeFileSync(file, original, 'utf8')
+  let rebuilds = 0
+  registerSettingsBridge(ctx, 'prompt-tool', () => ({ available: true, providers: [] }),
+    () => skillsStateStub(), () => '', undefined, () => dir,
+    undefined, () => { rebuilds += 1 })
+  const write = handlers.get(PREFIX + BRIDGE_ENDPOINTS.paramOverrides)
+  assert.ok(write, '/param-overrides 端点应注册')
+  // 七个内容键此前只挂在白名单上：白名单放行、值校验拒绝，保存必然 400（R5 同类断层）。
+  const bad = fakeRes()
+  await write(fakeReq({ [Symbol.asyncIterator]: async function* () {
+    yield Buffer.from(JSON.stringify({ overrides: { buildPattern: '(' } }))
+  } }), bad)
+  assert.equal(bad.status, 400)
+  const badPayload = JSON.parse(bad.body)
+  assert.equal(badPayload.code, 'overrides-invalid-value')
+  assert.match(badPayload.message, /buildPattern/)
+  assert.equal(readFileSync(file, 'utf8'), original, '非法正则不得写入 preset.yml')
+  assert.equal(rebuilds, 0)
+  // 合法值走同一条扁平参数通道落进 params；YAML 注释与未知字段保持不动。
+  const ok = fakeRes()
+  await write(fakeReq({ [Symbol.asyncIterator]: async function* () {
+    yield Buffer.from(JSON.stringify({ overrides: { buildPattern: '^(写|实现)', complexPattern: '重构', guideWeak: '简短引导', firstTurnDeep: '深度锚句' } }))
+  } }), ok)
+  assert.equal(ok.status, 200)
+  assert.equal(JSON.parse(ok.body).ok, true)
+  const saved = parseYaml(readFileSync(file, 'utf8'))
+  assert.equal(saved.params.buildPattern, '^(写|实现)')
+  assert.equal(saved.params.complexPattern, '重构')
+  assert.equal(saved.params.guideWeak, '简短引导')
+  assert.equal(saved.params.firstTurnDeep, '深度锚句')
+  assert.equal(saved.unknown, 'keep')
+  // 清空 = 删键：留空只移除该键，其它内容键不受影响。
+  const cleared = fakeRes()
+  await write(fakeReq({ [Symbol.asyncIterator]: async function* () {
+    yield Buffer.from(JSON.stringify({ overrides: { buildPattern: '' } }))
+  } }), cleared)
+  assert.equal(cleared.status, 200)
+  const after = parseYaml(readFileSync(file, 'utf8'))
+  assert.equal(after.params.buildPattern, undefined)
+  assert.equal(after.params.guideWeak, '简短引导')
+  assert.equal(after.unknown, 'keep')
+})
+
 test('参数保存拒绝空工具阶段和非法深度，失败不写盘、不重建', async () => {
   const { ctx, handlers } = makeHarness()
   const dir = makeUserPresetDir('pt-param-validation-')

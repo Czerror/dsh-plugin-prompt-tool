@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -250,7 +250,7 @@ test('inject 声明等待全部注入层级的宿主服务', () => {
 })
 
 /** 带服务桩的 harness：验证非 pre-step 层级的官方通道接线。 */
-function makeWiredHarness(configSpecs, services = {}) {
+function makeWiredHarness(configSpecs, services = {}, options = {}) {
   const listeners = new Map()
   const sections = []
   const contexts = []
@@ -267,7 +267,7 @@ function makeWiredHarness(configSpecs, services = {}) {
     },
     logger: { warn() {} },
   }
-  applyPromptConfigs(ctx, createPromptConfigs(configSpecs))
+  applyPromptConfigs(ctx, createPromptConfigs(configSpecs, options))
   return { listeners, sections, contexts, disposed }
 }
 
@@ -1327,4 +1327,81 @@ test('getEngineMeta 返回引擎能力矩阵，内置策略集合稳定', () => 
   assert.ok(meta.layerFieldPolicies['agent-request'].order === true)
   assert.ok(meta.layerLabels['pre-step'].title.length > 0)
   assert.deepEqual([...KNOWN_STRATEGIES].sort(), meta.strategies)
+})
+
+// R6（2026-09-20）：模板专属策略在 runtime-context 被真实消费，且相对 strategyDir 可解析。
+
+test('runtime-context 模板专属策略：assembly 时调用 resolve 返回动态内容', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'pt-strategy-'))
+  try {
+    writeFileSync(join(dir, 'dynamic.mjs'), [
+      'export const createResolver = (config) => (args) => ({ text: `动态:${config.id}:${args.messages.length}` })',
+      '',
+    ].join('\n'))
+    const contexts = []
+    const { disposed } = makeWiredHarness([
+      { id: 'ctx-dynamic', layer: 'runtime-context', strategy: 'dynamic', order: 5 },
+    ], {
+      systemPrompt: {
+        section() { return () => {} },
+        context(def) {
+          contexts.push(def)
+          return () => { contexts.length = 0 }
+        },
+      },
+    }, { strategyDir: pathToFileURL(dir).href })
+    // 模板专属策略不再按静态文本注册：必须拿到函数 provider 且调用到 resolve。
+    assert.equal(contexts.length, 1)
+    assert.equal(typeof contexts[0].text, 'function')
+    assert.equal(await contexts[0].text({ agent: agent() }), '动态:ctx-dynamic:0')
+    // 释放：provider 随 disposer 撤销，不留下后台注册。
+    assert.equal(typeof disposed.at(-1), 'function')
+    disposed.at(-1)()
+    assert.equal(contexts.length, 0)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('apply：相对 strategyDir 在入口解析为绝对 URL，与绝对写法指向同一模块', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'pt-engine-apply-'))
+  try {
+    // 真实预设布局：engine/ 与 strategies/、prompt-configs/ 同级，故相对写法是 ../strategies。
+    cpSync(new URL('../../engine/', import.meta.url), join(root, 'engine'), { recursive: true })
+    mkdirSync(join(root, 'strategies'))
+    writeFileSync(join(root, 'strategies', 'dynamic.mjs'), [
+      'export const createResolver = (config) => () => ({ text: `DYN:${config.id}` })',
+      '',
+    ].join('\n'))
+    mkdirSync(join(root, 'prompt-configs'))
+    writeFileSync(join(root, 'prompt-configs', '00-dynamic.yml'), [
+      'id: dyn-ctx',
+      'layer: runtime-context',
+      'strategy: dynamic',
+      'order: 1',
+      '',
+    ].join('\n'))
+    const { apply } = await import(pathToFileURL(join(root, 'engine', 'prompt-config-engine.mjs')).href)
+    const run = async (strategyDir) => {
+      const contexts = []
+      const ctx = {
+        on() { return () => {} },
+        get(name) {
+          return name === 'systemPrompt'
+            ? { section() { return () => {} }, context(def) { contexts.push(def); return () => {} } }
+            : undefined
+        },
+        effect(callback) { callback() },
+        logger: { warn() {} },
+      }
+      apply(ctx, { configsDir: '../prompt-configs', strategyDir })
+      assert.equal(contexts.length, 1)
+      return contexts[0].text({ agent: agent() })
+    }
+    // 相对 ../strategies 不再抛 ERR_INVALID_URL，且与绝对 URL 求值一致。
+    assert.equal(await run('../strategies'), 'DYN:dyn-ctx')
+    assert.equal(await run(pathToFileURL(join(root, 'strategies')).href), 'DYN:dyn-ctx')
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
 })

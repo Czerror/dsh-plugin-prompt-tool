@@ -1,7 +1,9 @@
 // 由 anchor-turn.test.mjs、deliberation-gate.test.mjs、progress-reminder.test.mjs 并入
 //（2026-09-17 测试归一精简）。三个模块共用同一个桩 ctx 与 makeExec，故合并为一份顶层样板。
+// 深思门控段使用已安装宿主 `@deepseek-ai/dsh-session` 的真实持久事件夹具。
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { Session, snapshotSessionEvent } from '@deepseek-ai/dsh-session'
 import { apply as applyAnchorTurn, ANCHOR_TEXT } from '../../engine/anchor-turn.mjs'
 import { apply as applyGate, GATE_TEXT, DEFAULT_MIN_CHARS } from '../../engine/deliberation-gate.mjs'
 import { apply as applyProgressReminder, DRIP_TEXT } from '../../engine/progress-reminder.mjs'
@@ -85,49 +87,141 @@ test('anchor-turn：自定义锚定文本 + 未知配置键 fail loud', () => {
 })
 
 // —— 深思门控（原 deliberation-gate.test.mjs） ——
+//
+// 深度探针走已安装宿主的真实持久事件：当前宿主不再发 `assistant/chunk`，
+// 深思深度来自落盘的 `assistant/message` 内容块（reasoning / text），轮预算来自
+// `turn/start`；surface 事件必须带 `surfaceOp` 标记，所以夹具一律用真实
+// `Session.append` 写入并逐条投递，不手写想象的事件字段。
 
-const makeSession = (events = []) => ({ id: `s-${Math.random()}`, header: { delegationDepth: 0 }, snapshotEvents: () => events })
-const chunk = (turn, text) => ({ type: 'assistant/chunk', data: { turn, chunk: { text } } })
+let messageSeq = 0
 
-test('deliberation-gate：深思不足 deny 一次，深度达标放行', () => {
+const assistantMessage = (content) => ({
+  id: `a-${++messageSeq}`,
+  role: 'assistant',
+  content,
+  source: { kind: 'model', provider: 'test', model: 'test-model' },
+})
+
+/** durable log → JSON 快照 → 重新加载：冷恢复与宿主重载同一条路径。 */
+const seedOf = (session) => JSON.parse(JSON.stringify(session.snapshotEvents().map((event) => snapshotSessionEvent(event))))
+
+/** 一个深思门实例可服务多个会话：实时路径 append 即投递，冷路径重载同一份 durable log。 */
+function withGate(config = {}) {
   const { ctx, listeners } = makeCtx()
-  applyGate(ctx, { minChars: 10 })
-  const session = makeSession([])
-  const exec = makeExec(session)
+  applyGate(ctx, config)
   const pre = listeners.get('tools/pre-execute')[0]
-  const emit = (event) => { for (const h of listeners.get('session/event')) h(session, event) }
+  const handlers = listeners.get('session/event') ?? []
+  const bind = (session) => ({
+    session,
+    /** 宿主写入路径：append 返回的真实事件立即发给 session/event 监听器。 */
+    append(type, data, opts) {
+      const event = session.append(type, data, opts)
+      for (const handler of handlers) handler(session, event)
+      return event
+    },
+    decide: () => pre(makeExec(session), () => ({ kind: 'accept' })),
+  })
+  return {
+    bind,
+    live: (id) => bind(Session.create(id)),
+    cold: (session, id) => bind(Session.create(id, seedOf(session))),
+  }
+}
 
-  // 无流式文本：深度 0 → deny（gateText），且只 deny 一次。
-  assert.equal(pre(exec, () => ({ kind: 'accept' })).kind, 'deny')
-  assert.equal(pre(exec, () => ({ kind: 'accept' })).kind, 'accept', 'maxGatesPerTurn=1 后放行')
+/** 一轮真实持久事件：turn/start 建立预算，assistant/message 计入可获得文本。 */
+const writeTurn = (harness, turn, { reasoning = '', text = '', stream = [] } = {}) => {
+  harness.append('turn/start', { turn })
+  harness.append('step/start', { turn, step: 1 })
+  const content = []
+  if (reasoning.length > 0) content.push({ type: 'reasoning', text: reasoning })
+  if (text.length > 0) content.push({ type: 'text', text })
+  if (content.length > 0) {
+    harness.append('assistant/message', { turn, step: 1, message: assistantMessage(content), stream }, { surfaceOp: 'append' })
+  }
+}
 
-  // 新轮（turn 2）流式深思 >= minChars → 直接放行。
-  emit(chunk(2, 'x'.repeat(10)))
-  assert.equal(pre(exec, () => ({ kind: 'accept' })).kind, 'accept', '深度达标放行')
+test('deliberation-gate：真实宿主持久事件——首轮 reasoning 达标放行，无文本次轮受门', () => {
+  const gate = withGate({ minChars: 10 })
+  const live = gate.live('gate-live')
+  writeTurn(live, 1, { reasoning: 'w'.repeat(300) })
+  assert.equal(live.decide().kind, 'accept', '首轮 300 字 reasoning >= 10 放行（R7 反例）')
+
+  // 次轮只有轮边界、没有任何可获得文本：深度 0 受门，本轮上限用尽后放行。
+  writeTurn(live, 2)
+  assert.equal(live.decide().kind, 'deny', '无文本次轮受门')
+  assert.equal(live.decide().kind, 'accept', 'maxGatesPerTurn=1 后本轮放行')
+
+  // 会话隔离：同一门实例里的另一个会话不共享已达标深度。
+  assert.equal(gate.live('gate-isolated').decide().kind, 'deny', '会话隔离：新会话深度仍为 0')
+})
+
+test('deliberation-gate：maxGatesPerTurn=2 逐轮计数，turn/start 重置', () => {
+  const live = withGate({ minChars: 10, maxGatesPerTurn: 2 }).live('gate-cap')
+  writeTurn(live, 1)
+  assert.deepEqual([live.decide().kind, live.decide().kind, live.decide().kind], ['deny', 'deny', 'accept'], '本轮上限 2')
+  writeTurn(live, 2)
+  assert.equal(live.decide().kind, 'deny', 'turn/start 重置本轮门计数')
+})
+
+test('deliberation-gate：message 与 stream 不双计；reasoning/text 都计入深度', () => {
+  const live = withGate({ minChars: 10 }).live('gate-count')
+  // 同一段文本既在 message.content 又在 compact stream 里：只计一次（8 < 10）。
+  writeTurn(live, 1, {
+    reasoning: 'w'.repeat(8),
+    stream: [{ type: 'reasoning-chunks', time0: 1, index: 0, dt: [0], texts: ['w'.repeat(8)] }],
+  })
+  assert.equal(live.decide().kind, 'deny', '只按 message.content 计一次，双计会误放行')
+
+  // reasoning + text 都算可获得文本：合计 >= 10 → 放行。
+  writeTurn(live, 2, { reasoning: 'w'.repeat(8), text: 'y'.repeat(20) })
+  assert.equal(live.decide().kind, 'accept', 'reasoning 与 text 块都计入深度')
+})
+
+test('deliberation-gate：minChars=0 不设门（阈值 0 对照）', () => {
+  const gate = withGate({ minChars: 0 })
+  const live = gate.live('gate-zero')
+  writeTurn(live, 1)
+  assert.equal(live.decide().kind, 'accept', '阈值 0：深度 0 也放行')
+  assert.equal(gate.live('gate-zero-bare').decide().kind, 'accept', '阈值 0：连轮事件都没有也放行')
+})
+
+test('deliberation-gate：冷恢复（durable 重载）与实时判定一致', () => {
+  // 实时：首轮 300 字达标放行，次轮无文本受门、上限用尽后放行。
+  const live = withGate({ minChars: 10 }).live('gate-cold-live')
+  writeTurn(live, 1, { reasoning: 'w'.repeat(300) })
+  writeTurn(live, 2)
+  assert.equal(live.decide().kind, 'deny')
+  assert.equal(live.decide().kind, 'accept')
+  // 真实 log 形状：本轮的模型调用确实发出了工具调用（门已在上一步生效）。
+  live.append('tool/call', { turn: 2, step: 1, callId: 'c-1', name: 'read', arguments: '{}' })
+
+  // 冷恢复：同一 durable log 重载 → 同一判定序列。
+  const restored = withGate({ minChars: 10 }).cold(live.session, 'gate-cold-restored')
+  assert.equal(restored.decide().kind, 'deny', '冷扫重建当前轮（turn 2 无文本）→ 同样受门')
+  assert.equal(restored.decide().kind, 'accept', '冷扫的每轮上限与实时一致')
+
+  // 停在首轮的 durable log：冷扫保留该轮已计深度。
+  const deep = withGate({ minChars: 10 }).live('gate-cold-deep')
+  writeTurn(deep, 1, { reasoning: 'w'.repeat(300) })
+  const restoredDeep = withGate({ minChars: 10 }).cold(deep.session, 'gate-cold-deep-restored')
+  assert.equal(restoredDeep.decide().kind, 'accept', '冷扫首轮 300 字 reasoning 放行')
 })
 
 test('deliberation-gate：deny reason 是规划提示而非工具失败', () => {
-  const { ctx, listeners } = makeCtx()
-  applyGate(ctx, {})
-  const session = makeSession([])
-  const decision = listeners.get('tools/pre-execute')[0](makeExec(session), () => ({ kind: 'accept' }))
+  const decision = withGate({}).live('gate-reason').decide()
   assert.equal(decision.kind, 'deny')
   assert.ok(decision.reason.includes('planning prompt'), '措辞明示非工具失败')
   assert.ok(decision.reason.startsWith('Deliberation gate'))
 })
 
-test('deliberation-gate：子代理默认不门控；冷扫描 durable log 保持深度', () => {
-  const { ctx, listeners } = makeCtx()
-  applyGate(ctx, { minChars: 10 })
-  const sub = makeSession([])
-  sub.header.delegationDepth = 1
-  const decision = listeners.get('tools/pre-execute')[0](makeExec(sub), () => ({ kind: 'accept' }))
-  assert.equal(decision.kind, 'accept', '子代理不门控')
-
-  // 冷启动：durable log 已含足够深思 → 不 deny。
-  const resumed = makeSession([chunk(1, 'y'.repeat(10))])
-  const decision2 = listeners.get('tools/pre-execute')[0](makeExec(resumed), () => ({ kind: 'accept' }))
-  assert.equal(decision2.kind, 'accept', '冷扫描深度达标放行')
+test('deliberation-gate：子代理默认不门控；includeSubagents=true 同门控', () => {
+  const subagent = (id) => ({ id, header: { delegationDepth: 1 }, snapshotEvents: () => [] })
+  assert.equal(withGate({ minChars: 10 }).bind(subagent('sub-off')).decide().kind, 'accept', '子代理不门控')
+  assert.equal(
+    withGate({ minChars: 10, includeSubagents: true }).bind(subagent('sub-on')).decide().kind,
+    'deny',
+    'includeSubagents=true → 子代理同门控',
+  )
 })
 
 test('deliberation-gate：默认值 + 非法配置 fail loud', () => {

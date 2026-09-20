@@ -6,6 +6,7 @@
  */
 import type { PersonaSpec } from './persona-section.ts'
 import type { AssetImportRequest, AssetSummary, ImportKind, PresetExportRequest, PresetExportResult } from './asset-transfer.ts'
+import type { EngineEditorGroup, EngineLayer } from './engine-capabilities.ts'
 import type { SkillPolicyChange, SkillsCatalogSnapshot } from './skills.ts'
 import type {
   InstructionFileWriteResult,
@@ -279,9 +280,22 @@ export interface StOrderGroupCandidate {
 /** 导入预览状态：`ready` 才有报告与写入凭据；候选状态不得启用确认。 */
 export type ImportPreviewState = 'ready' | 'needs-order-selection' | 'needs-kind-selection'
 
+/**
+ * /meta 与 /bootstrap 的 meta 段下发的层契约：九层顺序 + 编辑组主归属。
+ * 只含可序列化白名单字段（组 id / displayLayer / relatedLayers / hook）：
+ * 不含路径、行级配置、校验函数或服务实例 —— 展示归属不扩大写权限。
+ * 旧宿主可能缺省这两个字段，消费方必须退化（前端用 ENGINE_LAYER_ORDER）。
+ */
+export interface EngineMetaLayerContract {
+  /** 九层固定顺序（引擎 LAYER_ORDER，host 不另写一份）。 */
+  layerOrder: readonly EngineLayer[]
+  /** 编辑组主归属总表（能力组 id = 能力 id）；前端据此组织九层卡片。 */
+  editorGroups: readonly EngineEditorGroup[]
+}
+
 /** 端点级响应 value 契约（value 字段形状；扩展字段仍以 value 旁可选字段出现）。 */
 export interface BridgeValueMap {
-  meta: { meta: Record<string, unknown> }
+  meta: { meta: Record<string, unknown> & Partial<EngineMetaLayerContract> }
   bootstrap: BridgeSettingsView
   describe: BridgeSettingsView
   models: { modelCatalog: Record<string, string[]> }

@@ -13,6 +13,7 @@ import {
   newMessageId,
   parseToolNames,
 } from './shared.mjs'
+import { KNOWN_STRATEGIES } from './schema.mjs'
 import { interpolateVariables, stripUnresolvedRefs, RUNTIME_FACTS, runtimeFactValue } from './interpolate.mjs'
 import { getSessionVar, sessionVarsSnapshot } from './session-vars.mjs'
 import { conditionHit, lastAssistantText, subagentTextOf, toolArgsText } from './condition.mjs'
@@ -220,7 +221,10 @@ function wireRuntimeContexts(ctx, configs, registry, warnOnce) {
     if (configs.length > 0) warnOnce(`${name}: systemPrompt service unavailable — runtime-context configs skipped`)
     return
   }
-  const staticConfigs = configs.filter((config) => config.strategy !== 'placeholder')
+  // 模板专属策略（strategyDir 懒加载）与 placeholder 一样由 provider 按 assembly 消费
+  // resolve——`config.resolve` 只在这两层被调用，按静态注册会让「配了没效果也不报错」。
+  const needsResolver = (config) => config.strategy === 'placeholder' || !KNOWN_STRATEGIES.has(config.strategy)
+  const staticConfigs = configs.filter((config) => !needsResolver(config))
   for (const group of textLayerGroups(staticConfigs)) {
     const base = group[0]
     try {
@@ -238,8 +242,8 @@ function wireRuntimeContexts(ctx, configs, registry, warnOnce) {
       warnOnce(`${name}: runtime-context config ${base.id} failed: ${String(error?.message ?? error)}`)
     }
   }
-  // placeholder:官方 context 接受函数 provider,在每次 assembly 时动态填充。
-  const placeholders = configs.filter((config) => config.strategy === 'placeholder')
+  // placeholder / 模板专属策略:官方 context 接受函数 provider,在每次 assembly 时动态填充。
+  const placeholders = configs.filter(needsResolver)
     .sort((a, b) => a.order - b.order)
   for (const config of placeholders) {
     try {
@@ -248,16 +252,22 @@ function wireRuntimeContexts(ctx, configs, registry, warnOnce) {
         name: typeof config.params?.contextName === 'string' && config.params.contextName.length > 0 ? config.params.contextName : config.id,
         order: config.order,
         text: async (assembly) => {
-          const agent = assembly?.agent
-          const session = agent?.session
-          const resolved = await resolver({ ctx, agent, session, decision: { kind: 'ok', messages: [] }, messages: [] })
-          if (resolved === null || resolved === undefined) return ''
-          const variables = { ...config.variables, ...(resolved.variables !== null && typeof resolved.variables === 'object' ? resolved.variables : {}) }
-          // runtime-context 是官方插值通道且 0.1.6 没有 interpolate:false：出口同样清洗。
-          const rendered = config.texts.length > 0
-            ? interpolateVariables(config.texts.join('\n\n'), variables, session)
-            : typeof resolved.text === 'string' ? interpolateVariables(resolved.text, variables, session) : ''
-          return officialChannelText(rendered, `runtime-context ${config.id}`, registry.get(config), warnOnce)
+          try {
+            const agent = assembly?.agent
+            const session = agent?.session
+            const resolved = await resolver({ ctx, agent, session, decision: { kind: 'ok', messages: [] }, messages: [] })
+            if (resolved === null || resolved === undefined) return ''
+            const variables = { ...config.variables, ...(resolved.variables !== null && typeof resolved.variables === 'object' ? resolved.variables : {}) }
+            // runtime-context 是官方插值通道且 0.1.6 没有 interpolate:false：出口同样清洗。
+            const rendered = config.texts.length > 0
+              ? interpolateVariables(config.texts.join('\n\n'), variables, session)
+              : typeof resolved.text === 'string' ? interpolateVariables(resolved.text, variables, session) : ''
+            return officialChannelText(rendered, `runtime-context ${config.id}`, registry.get(config), warnOnce)
+          } catch (error) {
+            // 单条失败不炸整次 assembly：模板策略模块由用户提供，缺文件/抛错都在这里收敛。
+            warnOnce(`${name}: runtime-context ${config.id} resolve failed: ${String(error?.message ?? error)}`)
+            return ''
+          }
         },
       }), `${name}: context ${config.id}`)
     } catch (error) {

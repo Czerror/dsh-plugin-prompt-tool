@@ -58,6 +58,25 @@ export interface EngineParams {
   allowKinds?: string[] | string
   /** custom-fallback 锚定词（prompt-injector params.firstTurnWord）。 */
   firstTurnWord?: string
+  /**
+   * 锚定/引导内容键：writePreset 把它们映射进 near-anchor / router-guide 的
+   * promptConfig params（由对应策略消费）。此前只在 PARAM_KEYS 旁路白名单里，
+   * 保存链接受键名却被值校验拒绝，形成「白名单通过、写盘前报未知键」的断层。
+   */
+  /** 构建任务正则（锚定三档分类的 build 档；编译规则与 engine/classify-task.mjs 同源，flags=i）。 */
+  buildPattern?: string
+  /** 复杂任务正则（锚定 complex 档与引导深度判定共用）。 */
+  complexPattern?: string
+  /** 构建档锚句。 */
+  firstTurnBuild?: string
+  /** 排查档锚句。 */
+  firstTurnInspect?: string
+  /** 深度档锚句。 */
+  firstTurnDeep?: string
+  /** 引导-简短档正文。 */
+  guideWeak?: string
+  /** 引导-深度档正文。 */
+  guideDeep?: string
   /** 首轮输出封顶（bootstrapMaxTokens）；0 或未设置 = 本项目默认无封顶。 */
   bootstrapMaxTokens?: number
   /** 使用 PTC 模式；undefined = 模板/引擎默认（false，opt-in）。 */
@@ -170,6 +189,8 @@ type ParamRule =
   | { kind: 'boolean' }
   | { kind: 'number'; check: (value: number) => string | undefined }
   | { kind: 'string'; options?: readonly string[] }
+  /** 正则字符串：编译规则与 engine/classify-task.mjs 的 new RegExp(pattern, 'i') 同源。 */
+  | { kind: 'pattern' }
   | { kind: 'string-list'; options?: readonly string[] }
   | { kind: 'max-depth' }
   | { kind: 'stages' }
@@ -217,6 +238,13 @@ export const ENGINE_PARAM_DEFINITIONS: Record<EngineParamKey, EngineParamDefinit
   maxDepth: { kind: 'max-depth', defaultValue: '', card: 'subagent-tools' },
   allowKinds: { kind: 'string-list', defaultValue: '', card: 'context-gate', module: { row: 'context-gate' } },
   firstTurnWord: { kind: 'string', defaultValue: '', card: 'prompt-defaults' },
+  buildPattern: { kind: 'pattern', defaultValue: '', card: 'prompt-defaults' },
+  complexPattern: { kind: 'pattern', defaultValue: '', card: 'prompt-defaults' },
+  firstTurnBuild: { kind: 'string', defaultValue: '', card: 'prompt-defaults' },
+  firstTurnInspect: { kind: 'string', defaultValue: '', card: 'prompt-defaults' },
+  firstTurnDeep: { kind: 'string', defaultValue: '', card: 'prompt-defaults' },
+  guideWeak: { kind: 'string', defaultValue: '', card: 'prompt-defaults' },
+  guideDeep: { kind: 'string', defaultValue: '', card: 'prompt-defaults' },
   bootstrapMaxTokens: { kind: 'number', check: NON_NEGATIVE_INTEGER, defaultValue: 0, card: 'tool-bootstrap', module: { row: 'tool-bootstrap', mode: 'optional-cap' } },
   usePtcMode: { kind: 'boolean', defaultValue: false, card: 'promoted-code-mode', module: { row: 'promoted-code-mode' } },
   promoteGate: { kind: 'boolean', defaultValue: false, card: 'tool-bootstrap', module: { row: 'tool-bootstrap' } },
@@ -358,6 +386,17 @@ function validateParamValue(key: string, rule: ParamRule, value: unknown): strin
       if (typeof value !== 'string') return `${key}: 必须是字符串`
       return value === '' || rule.options === undefined || rule.options.includes(value)
         ? undefined : `${key}: 必须为 ${rule.options.join('/')} 或留空`
+    case 'pattern': {
+      if (typeof value !== 'string') return `${key}: 必须是字符串`
+      try {
+        // 与引擎消费同源：classify-task 按 flags=i 编译；非法正则会让锚定/引导静默失效，
+        // 因此这里在写盘前响亮拒绝，而不是先存下再让策略什么都不做。
+        new RegExp(value, 'i')
+      } catch (error) {
+        return `${key}: 不是合法正则（${error instanceof Error ? error.message : String(error)}；留空 = 不设置）`
+      }
+      return undefined
+    }
     case 'string-list':
       if (typeof value === 'string' || (Array.isArray(value) && value.every((item) => typeof item === 'string'))) {
         return rule.options !== undefined && engineParamList(value).some((item) => !rule.options!.includes(item))

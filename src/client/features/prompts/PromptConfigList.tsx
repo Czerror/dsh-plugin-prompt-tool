@@ -116,7 +116,7 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
   }, [props.createdConfigId])
 
   const effectiveLayer = layer ?? (viewFilter !== 'all' && viewFilter !== 'world-book' ? viewFilter : undefined)
-  const allLayers = displayLayers([...meta.layers, ...configs.map(promptConfigLayer)])
+  const allLayers = displayLayers(meta.layerOrder, [...meta.layers, ...configs.map(promptConfigLayer)])
   const visible = effectiveLayer === undefined
     ? configs
     : configs.filter((config) => promptConfigLayer(config) === effectiveLayer)

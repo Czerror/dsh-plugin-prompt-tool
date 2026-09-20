@@ -1,11 +1,14 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { cpSync, mkdtempSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 const home = mkdtempSync(join(process.cwd(), 'pt-contract-'))
 process.env.DSH_HOME = home
 const { BRIDGE_ENDPOINTS, SETTINGS_BRIDGE_PREFIX } = await import('../../src/shared/bridge-contract.ts')
 const { registerSettingsBridge } = await import('../../src/runtime/settings-bridge.ts')
+const { ENGINE_CAPABILITIES, ENGINE_EDITOR_GROUP_MAP, ENGINE_LAYER_ORDER } = await import('../../src/shared/engine-capabilities.ts')
+const { getEngineMeta, LAYER_ORDER } = await import('../../engine/schema.mjs')
 const bridgeDisposers = []
 test.after(() => {
   for (const dispose of bridgeDisposers) dispose()
@@ -147,6 +150,67 @@ test('契约：/bootstrap 聚合 meta + overrides + variables + promptConfigs �
   assert.equal('skillBlocked' in payload, false, '屏蔽表不再单独下发，避免第二个真相')
   assert.equal('skillsDirExists' in payload, false, '目录存在性字段已删除')
   assert.ok(payload.moduleFacts === undefined || payload.moduleFacts.effectiveConfigs === undefined, 'bootstrap 不应暴露完整行级配置')
+})
+
+test('契约：/meta 与 /bootstrap 同源下发 layerOrder 与 editorGroups，且只含白名单字段', async () => {
+  const engineMeta = getEngineMeta()
+  assert.deepEqual(engineMeta.layerOrder, [
+    'pre-step', 'system-section', 'runtime-context', 'agent-request', 'llm-stream',
+    'tool-pipeline', 'turn-stop', 'subagent-start', 'subagent-end',
+  ])
+  assert.deepEqual([...LAYER_ORDER], engineMeta.layerOrder, 'LAYER_ORDER 必须是九层固定顺序')
+  assert.deepEqual([...ENGINE_LAYER_ORDER], engineMeta.layerOrder, '前端退化默认必须与引擎层序同源')
+  assert.deepEqual([...engineMeta.layers], [...LAYER_ORDER].sort(), 'layers 仍是排序后的合法集合（旧消费方不变）')
+
+  const handlers = register()
+  const metaRes = fakeRes()
+  await handlers.get(SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.meta)(fakeReq(), metaRes)
+  assert.equal(metaRes.status, 200)
+  const meta = JSON.parse(metaRes.body).value.meta
+  assert.deepEqual(meta.layerOrder, engineMeta.layerOrder)
+  assert.ok(Array.isArray(meta.editorGroups) && meta.editorGroups.length > 0)
+  // 同源：host 下发的编辑组与共享契约逐条一致（含能力组）。
+  assert.deepEqual(meta.editorGroups.map(({ id }) => id), ENGINE_EDITOR_GROUP_MAP.map(({ id }) => id))
+  const capabilityIds = ENGINE_CAPABILITIES.map(({ id }) => id)
+  const groupIds = meta.editorGroups.map(({ id }) => id)
+  assert.equal(new Set(groupIds).size, groupIds.length, '编辑组 id 必须唯一（能力组与专用组不重复登记）')
+  for (const id of capabilityIds) assert.ok(groupIds.includes(id), `能力 ${id} 必须有主归属`)
+  for (const group of meta.editorGroups) {
+    // 白名单：只有四个可序列化字段，不夹带路径、行级配置、校验函数或服务实例。
+    assert.deepEqual(Object.keys(group).sort(), group.relatedLayers === undefined
+      ? ['displayLayer', 'hook', 'id']
+      : ['displayLayer', 'hook', 'id', 'relatedLayers'])
+    assert.equal(typeof group.id, 'string')
+    assert.equal(typeof group.hook, 'string')
+    assert.ok(meta.layerOrder.includes(group.displayLayer), `${group.id} 主归属层非法：${group.displayLayer}`)
+    for (const related of group.relatedLayers ?? []) {
+      assert.ok(meta.layerOrder.includes(related), `${group.id} 相关层非法：${related}`)
+      assert.notEqual(related, group.displayLayer, `${group.id} 相关层不能与主归属层相同`)
+    }
+  }
+  const serialized = JSON.stringify(meta.editorGroups)
+  assert.equal(serialized.includes('function'), false, '不得下发函数')
+  assert.equal(serialized.includes(':\\'), false, '不得下发本地路径')
+
+  // /bootstrap 与 /meta 同源：同一份 layerOrder / editorGroups，不各自组装。
+  const bootRes = fakeRes()
+  await handlers.get(SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.bootstrap)(fakeReq(), bootRes)
+  assert.equal(bootRes.status, 200)
+  const boot = JSON.parse(bootRes.body).meta.meta
+  assert.deepEqual(boot.layerOrder, meta.layerOrder)
+  assert.deepEqual(boot.editorGroups, meta.editorGroups)
+})
+
+test('契约：复制引擎目录即可提供层契约，不依赖 src', async () => {
+  const copied = mkdtempSync(join(process.cwd(), 'pt-engine-copy-'))
+  try {
+    cpSync(new URL('../../engine', import.meta.url), join(copied, 'engine'), { recursive: true })
+    const copy = await import(pathToFileURL(join(copied, 'engine', 'schema.mjs')).href)
+    assert.deepEqual([...copy.LAYER_ORDER], [...LAYER_ORDER])
+    assert.deepEqual(copy.getEngineMeta().layerOrder, getEngineMeta().layerOrder)
+  } finally {
+    rmSync(copied, { recursive: true, force: true })
+  }
 })
 
 test('契约：成功载荷统一为 { ok: true, value }', async () => {

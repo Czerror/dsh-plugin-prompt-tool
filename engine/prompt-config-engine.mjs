@@ -66,8 +66,10 @@ export function apply(ctx, config) {
     ? config.configsDir
     : './prompt-configs'
   const dirUrl = new URL(dirName.endsWith('/') ? dirName : `${dirName}/`, import.meta.url)
+  // strategyDir 在入口统一解析成绝对 URL：bindResolver 用 `new URL(x.mjs, strategyDir)`
+  // 懒加载，相对写法的 base 不是合法绝对 URL（ERR_INVALID_URL），会让整行挂载失败。
   const strategyDir = typeof config?.strategyDir === 'string' && config.strategyDir.length > 0
-    ? config.strategyDir
+    ? new URL(config.strategyDir.endsWith('/') ? config.strategyDir : `${config.strategyDir}/`, import.meta.url).href
     : undefined
   const facts = compositionFacts(dirUrl)
   applyPromptConfigs(ctx, createPromptConfigs(loadPromptConfigFiles(dirUrl), { strategyDir }), {

@@ -21,8 +21,10 @@
  *
  * STAGES MODE (渐进披露, 参考 dsh-router-standard progressive disclosure 自写,
  * MIT): `stages: [{ name, tools }]` 声明时激活多级阶段窄化——目录 = 当前阶段
- * 工具 + 预放（stagePreUnlock 档，默认 1）；`stageAdvanceTool`（默认
- * phase_advance）推进阶段；调用更高阶段工具 = 直达（自动跳到其档）；阶段
+ * 工具 + 预放（stagePreUnlock 档，默认 1）+ 本模块注册的推进工具（R8：它不在
+ * stages 声明里，但 {{advanceTool}} 提示要求模型调用它，因此必须同源可见）；
+ * `stageAdvanceTool`（默认 phase_advance）推进阶段；调用更高阶段工具 = 直达
+ * （自动跳到其档）；阶段
  * 状态由 durable tool/call 事件推导（resume/reload 自动恢复，无文件），
  * compaction 不重置（阶段是会话级进度）。阶段文案经 `stageSectionTemplate`
  * 参数化（引擎只提供动态状态，不写死引导文本）。stages 与 promoteOn 门控
@@ -318,10 +320,14 @@ export function apply(ctx, config) {
     }
   }
 
-  /** Narrow the assembled catalog to a keep-set; validate required names. */
-  const keepTools = (assembled, keep, missingAllowsFullCatalog) => {
+  /**
+   * Narrow the assembled catalog to a keep-set; validate required names.
+   * `required` 默认等于 keep 集合；阶段分支只把 stages 声明的工具交给它做缺失
+   * 校验，本模块自注册的推进工具另行保留（见下方 R8 修复）。
+   */
+  const keepTools = (assembled, keep, missingAllowsFullCatalog, required = keep) => {
     const available = new Set(assembled.tools.map((tool) => tool.name))
-    const missing = [...keep].filter((toolName) => !available.has(toolName))
+    const missing = [...required].filter((toolName) => !available.has(toolName))
     if (missing.length > 0) {
       warnOnce(
         `${name}: expected every phase tool; missing=${JSON.stringify(missing)} — `
@@ -348,14 +354,22 @@ export function apply(ctx, config) {
         return assembled
       }
       if (stages !== undefined) {
-        // 渐进披露：目录 = 当前阶段 + 预放档工具；阶段 section 按模板注入（文案参数化）。
+        // 渐进披露：目录 = 当前阶段 + 预放档工具 + 本模块注册的推进工具；
+        // 阶段 section 按模板注入（文案参数化）。
         const stage = currentStage(agent.session)
-        const keep = new Set()
+        const stageTools = new Set()
         const upper = Math.min(stage + stagePreUnlock, stages.length - 1)
         for (let i = 0; i <= upper; i += 1) {
-          for (const toolName of stages[i].tools) keep.add(toolName)
+          for (const toolName of stages[i].tools) stageTools.add(toolName)
         }
-        let next = keepTools(assembled, keep, true)
+        // R8：推进工具不在 stages 声明里，但阶段提示按 {{advanceTool}} 要求模型调用它，
+        // 因此注册、提示与目录裁剪必须同源于 stageAdvanceTool——否则推进工具被裁掉，
+        // 模型既看不到它又被要求调用它（stagePreUnlock=0 时尤其致命）。
+        // 它不参与阶段工具的缺失校验：已经不在装配目录里（被外层工具策略挡掉）时不复活，
+        // 也不把阶段目录降级成完整目录，否则会把未授权的业务工具一起放开。
+        const keep = new Set(stageTools)
+        keep.add(stageAdvanceTool)
+        let next = keepTools(assembled, keep, true, stageTools)
         if (stageSectionTemplate.length > 0) {
           const unlocked = stages
             .slice(0, upper + 1)

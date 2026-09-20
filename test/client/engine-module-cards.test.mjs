@@ -5,7 +5,7 @@ import { registerHooks } from 'node:module'
 import { createElement, isValidElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import ts from 'typescript'
-import { ENGINE_CAPABILITIES, engineCapability, engineRecipe } from '../../src/shared/engine-capabilities.ts'
+import { ENGINE_CAPABILITIES, ENGINE_EDITOR_GROUP_MAP, ENGINE_LAYER_ORDER, engineCapability, engineRecipe } from '../../src/shared/engine-capabilities.ts'
 import { ENGINE_PARAM_DEFINITIONS, ENGINE_PARAM_KEYS } from '../../src/shared/engine-params.ts'
 import { displayLayers, INSERTION_LAYERS } from '../../src/client/features/prompts/prompt-config-policy.ts'
 import { EMPTY_FIELDS } from '../../src/client/data/prompt-tool-fields.ts'
@@ -174,20 +174,58 @@ test('自定义工具编辑入口保留，能力删除仍需二次确认', () =>
   assert.deepEqual(removed, ['anchor-turn'], '删除回调只操作本卡对应的能力')
 })
 
-test('插入点顺序恒为九层（含三个新层），公共默认值不伪装成 pre-step 能力', () => {
+test('插入点顺序恒为九层（含三个新层），层序由 meta.layerOrder 下发而非本地清单', () => {
   const order = ['pre-step', 'system-section', 'runtime-context', 'agent-request', 'llm-stream', 'tool-pipeline', 'turn-stop', 'subagent-start', 'subagent-end']
-  assert.deepEqual(displayLayers([]), order)
-  // 引擎 /meta 下发的层必须全部落在固定顺序里：只加一端会让下拉/模板菜单露出裸 id。
+  // 层序唯一来源是引擎 /meta：客户端只消费，不再各写一份清单。
   const engineMeta = getEngineMeta()
+  assert.deepEqual(engineMeta.layerOrder, order)
+  assert.deepEqual([...ENGINE_LAYER_ORDER], order, '前端退化默认必须与引擎 layerOrder 同源')
+  assert.deepEqual(displayLayers(engineMeta.layerOrder, []), order)
+  // 旧宿主不下发 layerOrder（或首屏）时退化，不崩也不清空层列表。
+  assert.deepEqual(displayLayers(undefined, []), order)
+  assert.deepEqual(displayLayers([], []), order)
+  // 引擎 /meta 下发的层必须全部落在固定顺序里：只加一端会让下拉/模板菜单露出裸 id。
   for (const layer of engineMeta.layers) assert.ok(order.includes(layer), `引擎层 ${layer} 未进入客户端固定顺序`)
   for (const layer of ['turn-stop', 'subagent-start', 'subagent-end']) assert.ok(engineMeta.layers.includes(layer), `引擎未下发新层 ${layer}`)
-  // 固定顺序之外的层仍追加在末尾，不丢未知配置。
-  assert.deepEqual(displayLayers(['future-layer']), [...order, 'future-layer'])
+  // 固定顺序之外的层仍追加在末尾，不丢未知配置（旧数据可读）。
+  assert.deepEqual(displayLayers(engineMeta.layerOrder, ['future-layer']), [...order, 'future-layer'])
   const list = read('features/modules/EngineModuleList.tsx')
   assert.match(list, /EnginePromptDefaultsCard/)
   assert.doesNotMatch(list, /name="提示词生成默认值" layer="pre-step"/)
   const editor = read('features/prompts/PromptConfigsEditor.tsx')
   assert.match(editor, /aria-label=\{t\('configs\.common\.aria'\)\}/)
+})
+
+test('编辑组主归属唯一且只引用合法层：能力卡与专用卡共用同一份映射', () => {
+  const order = getEngineMeta().layerOrder
+  const ids = ENGINE_EDITOR_GROUP_MAP.map((group) => group.id)
+  assert.equal(new Set(ids).size, ids.length, '同一编辑组不得有两个主归属（含能力组与专用组冲突）')
+  for (const capability of ENGINE_CAPABILITIES) {
+    const group = ENGINE_EDITOR_GROUP_MAP.find(({ id }) => id === capability.id)
+    assert.ok(group, `能力 ${capability.id} 必须有主归属`)
+    assert.equal(group.displayLayer, capability.displayLayer, `${capability.id} 的归属必须与能力定义同源`)
+  }
+  for (const group of ENGINE_EDITOR_GROUP_MAP) {
+    assert.ok(order.includes(group.displayLayer), `${group.id} 主归属层非法：${group.displayLayer}`)
+    assert.ok(typeof group.hook === 'string' && group.hook.length > 0, `${group.id} 必须登记真实生效通道`)
+    for (const related of group.relatedLayers ?? []) {
+      assert.ok(order.includes(related), `${group.id} 相关层非法：${related}`)
+      assert.notEqual(related, group.displayLayer, `${group.id} 相关层不能与主归属层相同`)
+    }
+  }
+  // 专用编辑组的 id 必须是真实存在的 card：参数目录里出现过，或前端有同名卡片/展开键。
+  const registered = new Set(ENGINE_EDITOR_GROUP_MAP.map(({ id }) => id))
+  for (const id of ['prompt-defaults', 'persona', 'variables', 'main-model', 'subagent-model', 'custom-tools']) {
+    assert.ok(registered.has(id), `专用编辑组 ${id} 未登记主归属`)
+  }
+  // subagent-tools（递归深度）走预置顶层 subagent 段，九层归属未定，明确记为缺口而不是硬塞一层。
+  const cards = new Set(ENGINE_PARAM_KEYS.map((key) => ENGINE_PARAM_DEFINITIONS[key].card))
+  for (const card of cards) {
+    if (card === 'subagent-tools') continue
+    assert.ok(registered.has(card), `参数 card ${card} 没有主归属`)
+  }
+  // 相关层只在确有第二通道时登记：人设的 includeRuntimeContext 同时抑制 runtime-context 快照。
+  assert.deepEqual(ENGINE_EDITOR_GROUP_MAP.find(({ id }) => id === 'persona').relatedLayers, ['runtime-context'])
 })
 
 test('模板菜单覆盖九个插入层：新层分组标题来自字典而不是裸层名', () => {

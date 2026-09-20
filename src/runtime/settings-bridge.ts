@@ -63,7 +63,7 @@ import { readPersonaSpec } from '../shared/persona-section.ts'
 import { SKILL_NAME_PATTERN, type SkillsStateRead } from '../host/skills-config.ts'
 import { withGlobalSkillFallback, withSkillWinners } from '../host/skills-scan.ts'
 import { DEFAULT_PRESET_ID } from '../shared/preset-ids.ts'
-import type { PresetModuleFacts } from '../shared/engine-capabilities.ts'
+import { ENGINE_EDITOR_GROUP_MAP, type PresetModuleFacts } from '../shared/engine-capabilities.ts'
 import { validateCustomTools } from '../host/custom-tools.ts'
 import {
   agentsFileCardSpecs,
@@ -572,6 +572,14 @@ export function registerSettingsBridge(
         const meta = getEngineMeta() as Record<string, unknown>
         meta.presets = listPresets()
         meta.builtinTemplates = listBuiltinTemplates()
+        // 编辑组主归属与引擎 meta 同源组合下发：layerOrder 由引擎 schema 提供（不另写层序清单），
+        // editorGroups 来自共享契约。逐条挑白名单字段，避免将来给契约加字段就顺带泄漏到浏览器。
+        meta.editorGroups = ENGINE_EDITOR_GROUP_MAP.map(({ id, displayLayer, relatedLayers, hook }) => ({
+          id,
+          displayLayer,
+          ...(relatedLayers === undefined ? {} : { relatedLayers }),
+          hook,
+        }))
         return meta
       }
 

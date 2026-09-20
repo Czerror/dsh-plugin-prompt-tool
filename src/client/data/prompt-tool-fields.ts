@@ -1,5 +1,6 @@
 /** 提示词工具客户端状态模型与稳定默认值（无网络、无 React）。 */
 import { ENGINE_PARAM_DEFINITIONS, ENGINE_PARAM_KEYS, type EngineParamKey, type EngineParams } from '../../shared/engine-params.ts'
+import { ENGINE_LAYER_ORDER } from '../../shared/engine-capabilities.ts'
 import { DEFAULT_PRESET_ID } from '../../shared/preset-ids.ts'
 import type { SkillCatalogEntry } from '../../shared/skills.ts'
 import type { EngineMeta, PromptConfigDraft } from '../prompt-tool-types.ts'
@@ -53,6 +54,8 @@ export const hasIncompleteStageDrafts = (stages: StageDraft[]): boolean =>
   stages.some((stage) => stage.name.trim().length === 0 || stage.tools.trim().length === 0)
 
 export const EMPTY_META: EngineMeta = {
+  // 首屏（/bootstrap 未返回或宿主为旧版本）就有九层层序：来自共享契约，不等 host 下发。
+  layerOrder: ENGINE_LAYER_ORDER,
   layers: [],
   strategies: [],
   slotKinds: [],

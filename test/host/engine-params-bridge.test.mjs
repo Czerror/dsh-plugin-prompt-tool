@@ -389,9 +389,9 @@ const BRIDGE_SAMPLES = {
   customToolRequireApproval: ['shell', 'fs'],
 }
 
-test('PARAM_KEYS 派生一致性：= ENGINE_PARAM_KEYS + 锚定内容键 + promptConfigs', () => {
-  const EXTRA = new Set(['buildPattern', 'complexPattern', 'firstTurnBuild', 'firstTurnInspect', 'firstTurnDeep',
-    'guideWeak', 'guideDeep', 'promptConfigs'])
+test('PARAM_KEYS 派生一致性：= ENGINE_PARAM_KEYS + promptConfigs', () => {
+  // 锚定/引导内容键已并入 ENGINE_PARAM_KEYS，旁路清单只剩 settings 载荷键 promptConfigs。
+  const EXTRA = new Set(['promptConfigs'])
   const engineKeys = new Set(ENGINE_PARAM_KEYS)
   for (const key of PARAM_KEYS) {
     assert.ok(engineKeys.has(key) || EXTRA.has(key), `${key} 应属于 ENGINE_PARAM_KEYS 或附加键`)
@@ -401,6 +401,10 @@ test('PARAM_KEYS 派生一致性：= ENGINE_PARAM_KEYS + 锚定内容键 + promp
   }
   for (const key of EXTRA) {
     assert.ok(PARAM_KEYS.has(key), `${key} 附加键应存在`)
+  }
+  // 七个内容键不得再以旁路键存在：它们必须同时进白名单与值校验（否则又是「白名单接受、值校验拒绝」）。
+  for (const key of ['buildPattern', 'complexPattern', 'firstTurnBuild', 'firstTurnInspect', 'firstTurnDeep', 'guideWeak', 'guideDeep']) {
+    assert.ok(engineKeys.has(key), `${key} 应已并入 ENGINE_PARAM_KEYS`)
   }
   // 无重复。
   assert.equal(PARAM_KEYS.size, ENGINE_PARAM_KEYS.length + EXTRA.size, 'PARAM_KEYS 无重复键')

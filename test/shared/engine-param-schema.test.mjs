@@ -136,3 +136,29 @@ test('能力卡覆盖引擎全部公开配置键，且新参数自动参与保�
   assert.equal(shouldReloadAfterParamSave(snapshotSwitches({ ...EMPTY_FIELDS, toolFilterAllow: 'read' }), before), false)
   assert.ok(validateEngineParamValues({ bootstrapPromoteOn: 'invalid' }).length > 0)
 })
+
+test('T13 锚定/引导内容键：预设级归属、正则校验、读回与清空往返', () => {
+  const patternKeys = ['buildPattern', 'complexPattern']
+  const textKeys = ['firstTurnBuild', 'firstTurnInspect', 'firstTurnDeep', 'guideWeak', 'guideDeep']
+  for (const key of [...patternKeys, ...textKeys]) {
+    assert.ok(ENGINE_PARAM_KEYS.includes(key), `${key} 必须进共享参数定义（不再走旁路键清单）`)
+    assert.equal(ENGINE_PARAM_DEFINITIONS[key].card, 'prompt-defaults', `${key} 主归属提示词默认值卡`)
+    assert.equal(ENGINE_PARAM_DEFINITIONS[key].defaultValue, '', `${key} 默认草稿为空串`)
+    assert.equal(EMPTY_FIELDS[key], '', `${key} 字段默认同源`)
+  }
+  // 正则按 flags=i 编译（与 engine/classify-task.mjs 同源）：合法与空串通过，非法在写盘前拒绝。
+  assert.deepEqual(validateEngineParamValues({ buildPattern: '^(写|实现)' }), [])
+  assert.deepEqual(validateEngineParamValues({ complexPattern: '', guideWeak: '简短引导' }), [])
+  assert.equal(validateEngineParamValues({ buildPattern: '(' }).length, 1)
+  assert.equal(validateEngineParamValues({ complexPattern: 'a{2,1}' }).length, 1)
+  // 读回原样保留（不因本地编译差异吞值），保存往返一致。
+  const patch = readParamOverridesPatch({ buildPattern: '^(写|实现)', guideWeak: '简短引导', firstTurnDeep: '深度锚句' })
+  assert.deepEqual(patch, { buildPattern: '^(写|实现)', guideWeak: '简短引导', firstTurnDeep: '深度锚句' })
+  const fields = { ...EMPTY_FIELDS, ...patch }
+  assert.deepEqual(
+    buildParamOverrides(fields, { loadedKeys: new Set(Object.keys(patch)) }),
+    { buildPattern: '^(写|实现)', guideWeak: '简短引导', firstTurnDeep: '深度锚句' },
+  )
+  // 清空是删键语义：已存键的空串仍要发送，否则旧正则永远删不掉。
+  assert.deepEqual(buildParamOverrides({ ...EMPTY_FIELDS, buildPattern: '' }, { loadedKeys: new Set(['buildPattern']) }), { buildPattern: '' })
+})
