@@ -3,18 +3,13 @@ import type { PromptToolStore } from '../../../data/use-prompt-tool-store.ts'
 import { usePromptToolFields } from '../../../data/use-prompt-tool-fields.ts'
 import type { PromptToolTranslate } from '../../../locales.ts'
 import { PromptConfigsEditor } from '../../../features/prompts/PromptConfigsEditor.tsx'
-import { WorldBookDiagnosticsCard } from '../../../features/prompts/WorldBookDiagnosticsCard.tsx'
 import { useTemplatePicker } from '../../../features/prompts/useTemplatePicker.ts'
 import { INSERTION_LAYERS, LAYER_LABEL_KEYS, translateLabel } from '../../../features/prompts/prompt-config-policy.ts'
-import { ModelRouteModuleCard } from '../../../features/models/ModelRouteCard.tsx'
-import { PresetPersonaCard } from '../../../features/persona/PresetPersonaCard.tsx'
-import { EngineModuleActions, EngineModuleCards, EnginePromptDefaultsCard } from '../../../features/modules/EngineModuleList.tsx'
-import { ToolPipelineSettingsCard } from './EngineLayersPanel.tsx'
-import { LayerCard } from '../../../ui/LayerCard.tsx'
-import { isEditorGroupVisible } from '../../../../shared/engine-capabilities.ts'
-import { CustomToolsCard, type ToolCreateIntent } from '../../../features/tools/CustomToolsCard.tsx'
+import { EngineModuleActions } from '../../../features/modules/EngineModuleList.tsx'
+import { engineLayerSlots } from './EngineLayersPanel.tsx'
 import { SubagentToolPolicyCard } from '../../../features/subagents/SubagentToolPolicyCard.tsx'
 import { TemplatePicker } from '../../../ui/TemplatePicker.tsx'
+import type { ToolCreateIntent } from '../../../features/tools/CustomToolsCard.tsx'
 import ui from '../../../ui/controls.module.css'
 import type { InstructionPolicyFileOverride } from '../../../../shared/instructions.ts'
 import type { ConfigPageBrowse } from '../workspace-browse-state.ts'
@@ -97,6 +92,29 @@ export const MainSessionPage = memo(function MainSessionPage(props: { store: Pro
     setToolCreate({ kind: 'template', spec, presetId: fields.presetTemplate })
     picker.closePicker()
   }, [fields.presetTemplate, picker, viewFilter])
+  // 九层归位与层内卡片装配统一由 EngineLayersPanel 提供：本页只声明受众视图与页面编排
+  // （创建菜单、模板浮层、指令回调），不再自己手写层名判断。
+  const layers = engineLayerSlots({
+    store,
+    t,
+    viewFilter,
+    audience: 'main',
+    focusCapability,
+    toolCreate,
+    onToolIntentConsumed: () => setToolCreate(undefined),
+    renderCapabilityExtra: ({ capabilityId }) => capabilityId === 'subagent-tool-policy'
+      ? (
+        <SubagentToolPolicyCard
+          key={fields.presetTemplate}
+          presetId={fields.presetTemplate}
+          disabled={!canEditPreset}
+          t={t}
+          onNotice={store.showNotice}
+          drafts={store.editorDrafts}
+        />
+      )
+      : undefined,
+  })
   return (
     <section className={ui.section} aria-label={t('main.aria')}>
       <PromptConfigsEditor
@@ -132,59 +150,10 @@ export const MainSessionPage = memo(function MainSessionPage(props: { store: Pro
         onViewFilterChange={changeViewFilter}
         variablesExpanded={variablesExpanded}
         onVariablesExpandedChange={changeVariablesExpanded}
-        beforeCards={
-          <>
-            <LayerCard visible={isEditorGroupVisible('persona', viewFilter)}>
-              <PresetPersonaCard t={t} presetId={fields.presetTemplate} disabled={!canEditPreset} onNotice={store.showNotice} drafts={store.editorDrafts} />
-            </LayerCard>
-            <div hidden={viewFilter !== 'world-book'}>
-              <WorldBookDiagnosticsCard store={store} t={t} />
-            </div>
-          </>
-        }
-        commonCards={
-          <div className={ui.configList}>
-            <LayerCard visible={isEditorGroupVisible('main-model', viewFilter)}>
-              <ModelRouteModuleCard store={store} scope="main" />
-            </LayerCard>
-            <LayerCard visible={isEditorGroupVisible('prompt-defaults', viewFilter)}>
-              <EnginePromptDefaultsCard store={store} t={t} />
-            </LayerCard>
-          </div>
-        }
+        beforeCards={layers.beforeCards}
+        commonCards={layers.commonCards}
         toolbarActions={<EngineModuleActions store={store} t={t} anchorRef={picker.anchorRef} extraItems={createItems} onExtraSelect={onCreateSelect} onCreated={revealCapability} />}
-        moduleCards={
-          <>
-            <EngineModuleCards store={store} t={t} layerFilter={viewFilter} focusCapability={focusCapability} showActions={false} showPromptDefaults={false} showStatus={viewFilter !== 'all'}
-              renderCapabilityExtra={({ capabilityId }) => capabilityId === 'subagent-tool-policy'
-                ? (
-                  <SubagentToolPolicyCard
-                    key={fields.presetTemplate}
-                    presetId={fields.presetTemplate}
-                    disabled={!canEditPreset}
-                    t={t}
-                    onNotice={store.showNotice}
-                    drafts={store.editorDrafts}
-                  />
-                )
-                : undefined} />
-            <LayerCard visible={isEditorGroupVisible('tool-filter', viewFilter)}>
-              <ToolPipelineSettingsCard store={store} t={t} />
-            </LayerCard>
-            <LayerCard visible={isEditorGroupVisible('custom-tools', viewFilter)}>
-              <CustomToolsCard
-                key={fields.presetTemplate}
-                presetId={fields.presetTemplate}
-                t={t}
-                onNotice={store.showNotice}
-                drafts={store.editorDrafts}
-                disabled={!canEditPreset}
-                createIntent={toolCreate}
-                onIntentConsumed={() => setToolCreate(undefined)}
-              />
-            </LayerCard>
-          </>
-        }
+        moduleCards={layers.moduleCards}
       />
       {picker.open && (
         <TemplatePicker

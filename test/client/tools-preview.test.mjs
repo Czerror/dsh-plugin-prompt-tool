@@ -65,7 +65,7 @@ test('编辑保留在主会话，工具预览没有保存或安装管理入口',
   assert.match(edit, /添加能力 \/ 工具模块/)
   assert.doesNotMatch(edit, /从模板新建|新建工具/)
   assert.doesNotMatch(edit, /当前会话工具|预设工具能力来源/)
-  assert.match(read('src/client/app/workspace/pages/MainSessionPage.tsx'), /<CustomToolsCard/)
+  assert.match(read('src/client/app/workspace/pages/EngineLayersPanel.tsx'), /<CustomToolsCard/)
   for (const path of [
     'src/client/features/tools/CustomToolsCard.tsx',
     'src/client/app/workspace/pages/SubagentPage.tsx',
@@ -91,15 +91,17 @@ test('子代理仅保留实例策略解析，旧工具面标签、session 输入
   // 「工具与深度」卡只保留深度与入口提示，避免双入口。
   const chat = read('src/client/app/workspace/pages/MainSessionPage.tsx')
   const subagent = read('src/client/app/workspace/pages/SubagentPage.tsx')
-  assert.match(chat, /renderCapabilityExtra=\{\(\{ capabilityId \}\) => capabilityId === 'subagent-tool-policy'/)
-  assert.match(subagent, /renderCapabilityExtra=\{\(\{ capabilityId \}\) => capabilityId === 'subagent-tool-policy'/)
+  assert.match(chat, /renderCapabilityExtra: \(\{ capabilityId \}\) => capabilityId === 'subagent-tool-policy'/)
+  assert.match(subagent, /renderCapabilityExtra: \(\{ capabilityId \}\) => capabilityId === 'subagent-tool-policy'/)
   assert.match(delegation, /policy\.delegation\.policyMoved/)
   assert.doesNotMatch(delegation, /<SubagentToolPolicyCard/)
 })
 
 test('自定义工具按预设隔离，system 或关闭 writePreset 时禁用写入但保留展开与草稿身份', () => {
   const main = read('src/client/app/workspace/pages/MainSessionPage.tsx')
-  assert.match(main, /<CustomToolsCard\s+key=\{fields\.presetTemplate\}/)
+  // 卡片本身由统一层装配入口渲染（两页共用一张卡）；页面只传创建意图与只读判定。
+  assert.match(read('src/client/app/workspace/pages/EngineLayersPanel.tsx'), /<CustomToolsCard\s+key=\{store\.fields\.presetTemplate\}/)
+  assert.match(main, /toolCreate,/)
   assert.match(main, /const canEditPreset = store\.fields\.writePreset && store\.moduleFacts\?\.editable === true/)
   assert.match(main, /disabled=\{!canEditPreset\}/)
   const source = read('src/client/features/tools/CustomToolsCard.tsx')

@@ -1,17 +1,13 @@
 import { memo, useCallback, useState, type ReactNode } from 'react'
 import type { PromptToolStore } from '../../../data/use-prompt-tool-store.ts'
 import type { PromptToolTranslate } from '../../../locales.ts'
-import { ModelRouteModuleCard } from '../../../features/models/ModelRouteCard.tsx'
-import { DelegationToolsModuleCard } from '../../../features/subagents/DelegationToolsCard.tsx'
-import { EngineModuleActions, EngineModuleCards } from '../../../features/modules/EngineModuleList.tsx'
-import { TemplateVariablesModuleCard } from '../../../features/prompts/PromptConfigsEditor.tsx'
+import { EngineModuleActions } from '../../../features/modules/EngineModuleList.tsx'
 import { SubagentToolPolicyCard } from '../../../features/subagents/SubagentToolPolicyCard.tsx'
 import { INSERTION_LAYERS, LAYER_LABEL_KEYS, translateLabel } from '../../../features/prompts/prompt-config-policy.ts'
 import { useTemplatePicker } from '../../../features/prompts/useTemplatePicker.ts'
-import { CustomToolsCard, type ToolCreateIntent } from '../../../features/tools/CustomToolsCard.tsx'
+import type { ToolCreateIntent } from '../../../features/tools/CustomToolsCard.tsx'
 import { TemplatePicker } from '../../../ui/TemplatePicker.tsx'
-import { LayerCard } from '../../../ui/LayerCard.tsx'
-import { isEditorGroupVisible } from '../../../../shared/engine-capabilities.ts'
+import { engineLayerSlots } from './EngineLayersPanel.tsx'
 import { ConfigListWithTemplates } from './ConfigListWithTemplates.tsx'
 import ui from '../../../ui/controls.module.css'
 import type { ConfigPageBrowse } from '../workspace-browse-state.ts'
@@ -83,6 +79,36 @@ export const SubagentPage = memo(function SubagentPage(props: { store: PromptToo
     setCreatedHidden(viewFilter !== 'all')
     setFocusCapability((current) => ({ id, token: (current?.token ?? 0) + 1 }))
   }, [viewFilter])
+  // 与主会话同源的层内装配：本页只声明受众视图与子代理专属编排。
+  const layers = engineLayerSlots({
+    store,
+    t,
+    viewFilter,
+    audience: 'subagent',
+    focusCapability,
+    toolCreate,
+    onToolIntentConsumed: () => setToolCreate(undefined),
+    variablesExpanded,
+    onToggleVariables: () => {
+      if (props.browse !== undefined) props.browse.variablesExpanded = !variablesExpanded
+      setVariablesExpanded(!variablesExpanded)
+    },
+    excludeCapabilities: mainSessionOnly,
+    moduleHint: t('modules.subagentScopeHint'),
+    moduleEmptyHint: t('modules.subagentEmptyHint'),
+    renderCapabilityExtra: ({ capabilityId }) => capabilityId === 'subagent-tool-policy'
+      ? (
+        <SubagentToolPolicyCard
+          key={store.fields.presetTemplate}
+          presetId={store.fields.presetTemplate}
+          disabled={!canEditPreset}
+          t={t}
+          onNotice={store.showNotice}
+          drafts={store.editorDrafts}
+        />
+      )
+      : undefined,
+  })
   return (
     <>
       <section className={ui.section} aria-label={t('subagent.aria')}>
@@ -96,31 +122,8 @@ export const SubagentPage = memo(function SubagentPage(props: { store: PromptToo
           createdHidden={createdHidden}
           onShowCreated={() => { changeViewFilter('all'); setCreatedHidden(false) }}
           createdConfigId={picker.createdConfigId}
-          commonCards={<div className={ui.configList}>
-            <LayerCard visible={isEditorGroupVisible('subagent-model', viewFilter)}>
-              <ModelRouteModuleCard store={store} scope="subagent" />
-            </LayerCard>
-            <LayerCard visible={isEditorGroupVisible('subagent-tools', viewFilter)}>
-              <DelegationToolsModuleCard store={store} t={t} />
-            </LayerCard>
-          </div>}
-          beforeCards={
-            <LayerCard visible={isEditorGroupVisible('variables', viewFilter)}>
-              <TemplateVariablesModuleCard
-                t={t}
-                templateVariables={store.templateVariables}
-                setTemplateVariables={store.setTemplateVariables}
-                templateVariablesEnabled={store.templateVariablesEnabled}
-                setTemplateVariablesEnabled={store.setTemplateVariablesEnabled}
-                saveTemplateVariables={store.saveTemplateVariables}
-                expanded={variablesExpanded}
-                onToggleExpanded={() => {
-                  if (props.browse !== undefined) props.browse.variablesExpanded = !variablesExpanded
-                  setVariablesExpanded(!variablesExpanded)
-                }}
-              />
-            </LayerCard>
-          }
+          commonCards={layers.commonCards}
+          beforeCards={layers.beforeCards}
           toolbarActions={
             <EngineModuleActions
               store={store}
@@ -132,46 +135,7 @@ export const SubagentPage = memo(function SubagentPage(props: { store: PromptToo
               excludeCapabilities={mainSessionOnly}
             />
           }
-          moduleCards={
-            <>
-                <EngineModuleCards
-                  store={store}
-                  t={t}
-                  layerFilter={viewFilter}
-                  showActions={false}
-                  showPromptDefaults={false}
-                  showStatus={viewFilter !== 'all'}
-                  focusCapability={focusCapability}
-                  excludeCapabilities={mainSessionOnly}
-                  hint={t('modules.subagentScopeHint')}
-                  emptyHint={t('modules.subagentEmptyHint')}
-                  renderCapabilityExtra={({ capabilityId }) => capabilityId === 'subagent-tool-policy'
-                    ? (
-                      <SubagentToolPolicyCard
-                        key={store.fields.presetTemplate}
-                        presetId={store.fields.presetTemplate}
-                        disabled={!canEditPreset}
-                        t={t}
-                        onNotice={store.showNotice}
-                        drafts={store.editorDrafts}
-                      />
-                    )
-                    : undefined}
-                />
-              <LayerCard visible={isEditorGroupVisible('custom-tools', viewFilter)}>
-                <CustomToolsCard
-                  key={store.fields.presetTemplate}
-                  presetId={store.fields.presetTemplate}
-                  t={t}
-                  onNotice={store.showNotice}
-                  drafts={store.editorDrafts}
-                  disabled={!canEditPreset}
-                  createIntent={toolCreate}
-                  onIntentConsumed={() => setToolCreate(undefined)}
-                />
-              </LayerCard>
-            </>
-          }
+          moduleCards={layers.moduleCards}
           viewFilter={viewFilter}
           onViewFilterChange={changeViewFilter}
         />

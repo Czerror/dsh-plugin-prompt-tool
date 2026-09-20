@@ -158,15 +158,17 @@ test('说明浮窗只复用宿主视觉，并自行跟随指针或聚焦控件',
 })
 
 test('人设卡脱离公共配置分组，在模块列表下置顶显示', () => {
-  // 保留源码契约：这条断言的对象是**页面组合顺序**（MainSessionPage 把 PresetPersonaCard
-  // 放进 PromptConfigsEditor 的 beforeCards 插槽，且排在世界书诊断卡之前）。要改成渲染断言
+  // 保留源码契约：这条断言的对象是**页面组合顺序**（统一层装配把 PresetPersonaCard 放进
+  // PromptConfigsEditor 的 beforeCards 插槽，且排在世界书诊断卡之前）。要改成渲染断言
   // 就得构造 MainSessionPage 的完整 store/fields/session props，成本远高于收益，而现有断言
   // 在顺序被调换时能真实失败 —— 故保留并在此说明理由。
   const editor = read('src/client/features/prompts/PromptConfigsEditor.tsx')
   const page = read('src/client/app/workspace/pages/MainSessionPage.tsx')
+  const panel = read('src/client/app/workspace/pages/EngineLayersPanel.tsx')
   assert.match(editor, /beforeCards\?: ReactNode/)
   assert.match(editor, /beforeCards=\{props\.beforeCards\}/)
-  const beforeCards = page.slice(page.indexOf('beforeCards={'), page.indexOf('commonCards='))
+  assert.match(page, /beforeCards=\{layers\.beforeCards\}/, '页面把统一装配的卡片区下发给编辑器')
+  const beforeCards = panel.slice(panel.indexOf('const beforeCards = main'), panel.indexOf('const commonCards ='))
   assert.ok(beforeCards.includes('<PresetPersonaCard'), '人设卡仍在卡片区最前')
   assert.ok(beforeCards.indexOf('<PresetPersonaCard') < beforeCards.indexOf('WorldBookDiagnosticsCard'),
     '世界书诊断卡排在人设卡之后')

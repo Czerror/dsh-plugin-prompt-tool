@@ -115,6 +115,17 @@ export const PARAMS_ZH = {
   'modules.toolPipeline.name': '工具能力设置',
   'modules.toolPipeline.meta': '预设级共享参数（与工具过滤能力卡同源）',
   'modules.toolPipeline.hint': '这里的工具过滤与「tool-filter」能力卡是同一份预设参数：任一处修改立即反映到另一处，保存一次即可；不新增第二份状态。',
+  // 共享设置区的能力参数分组标题（按真实能力 card 分组，不另抄键表）。
+  'modules.group.tool-filter': '工具过滤',
+  'modules.group.promoted-code-mode': '工具呈现',
+  'modules.group.str-replace-editor': '编辑器',
+  'modules.group.deliberation-gate': '深思门',
+  'modules.group.progress-reminder': '执行后提醒',
+  'modules.group.tool-config-engine': '工具配置',
+  'modules.group.bootstrap-tools': '首阶段工具目录',
+  'modules.group.subagent-delegation': '子代理授权',
+  'modules.group.sharedHint': '与对应能力卡绑定同一份预设参数：任一处修改立即反映到另一处，保存一次即可。',
+  'modules.group.relatedHint': '主归属在「{layer}」层；这里是与该层能力卡同源的第二处编辑点，不新增第二份状态，也不改变实际生效通道。',
 }
 
 export const PARAMS_EN: Record<keyof typeof PARAMS_ZH, string> = {
@@ -224,4 +235,14 @@ export const PARAMS_EN: Record<keyof typeof PARAMS_ZH, string> = {
   'modules.toolPipeline.name': 'Tool capability settings',
   'modules.toolPipeline.meta': 'Preset-level shared parameters (same source as the tool-filter capability card)',
   'modules.toolPipeline.hint': 'These tool-filter controls and the "tool-filter" capability card edit the same preset parameters: a change in either place shows up in the other immediately, and one save is enough — there is no second copy of the state.',
+  'modules.group.tool-filter': 'Tool filter',
+  'modules.group.promoted-code-mode': 'Tool presentation',
+  'modules.group.str-replace-editor': 'Editor',
+  'modules.group.deliberation-gate': 'Deliberation gate',
+  'modules.group.progress-reminder': 'Progress reminder',
+  'modules.group.tool-config-engine': 'Tool config',
+  'modules.group.bootstrap-tools': 'Bootstrap tool catalog',
+  'modules.group.subagent-delegation': 'Subagent delegation',
+  'modules.group.sharedHint': 'Edits the same preset parameters as the matching capability card: a change in either place shows up in the other, and one save is enough.',
+  'modules.group.relatedHint': 'Primary home is the "{layer}" layer; this is a second editing point over the same parameters, with no second copy of the state and no change to the real injection channel.',
 }

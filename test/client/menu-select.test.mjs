@@ -126,9 +126,10 @@ test('主会话使用平铺模块列表与合并创建菜单', () => {
   assert.match(list, /LAYER_LABEL_KEYS/)
   assert.match(list, /\.\.\.allLayers\.map\(/)
   assert.match(list, /t\('configs\.view\.layer', \{ layer: translateLabel\(t, LAYER_LABEL_KEYS, item\) \}\)/)
-  assert.match(page, /commonCards=/)
+  // 层内卡片由统一装配入口下发；筛选值仍由页面持有并下发（创建路径不写过滤）。
+  assert.match(page, /commonCards=\{layers\.commonCards\}/)
   assert.match(page, /viewFilter=\{viewFilter\}/)
-  assert.match(page, /layerFilter=\{viewFilter\}/)
+  assert.match(read('app/workspace/pages/EngineLayersPanel.tsx'), /layerFilter=\{viewFilter\}/)
   assert.match(page, /extraItems=\{createItems\}/)
   // 模板入口按插入点层级平铺，浮层只列该层模板（不再有一个「从模板新建」聚合项）。
   assert.match(page, /INSERTION_LAYERS\.map/)

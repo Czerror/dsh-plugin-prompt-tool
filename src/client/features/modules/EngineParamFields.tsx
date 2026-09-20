@@ -16,9 +16,9 @@ import styles from '../../ui/controls.module.css'
  * 显示标签不进 shared：shared 只给参数键，UI 按 `param.<键>` 查 prompt-tool 字典
  * （键类型由 ENGINE_PARAM_KEY 的模板字面量约束，新增参数缺词条即编译失败）。
  */
-export function EngineParamFields({ store, card, t }: { store: PromptToolStore; card: string; t: PromptToolTranslate }): ReactNode {
+export function EngineParamFields({ store, card, t, instanceId }: { store: PromptToolStore; card: string; t: PromptToolTranslate; instanceId?: string }): ReactNode {
   return ENGINE_PARAM_KEYS.filter((key) => ENGINE_PARAM_DEFINITIONS[key].card === card).map((key) => (
-    <EngineParamField key={`${store.fields.presetTemplate}:${key}`} store={store} param={key} t={t} />
+    <EngineParamField key={`${store.fields.presetTemplate}:${key}`} store={store} param={key} t={t} instanceId={instanceId} />
   ))
 }
 

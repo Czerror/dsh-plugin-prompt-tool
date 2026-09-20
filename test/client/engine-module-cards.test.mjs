@@ -33,6 +33,7 @@ const loader = registerHooks({
   },
 })
 const { EngineParamFields, EngineParamField } = await import('../../src/client/features/modules/EngineParamFields.tsx')
+const { ToolPipelineSettingsCard, TOOL_PIPELINE_SETTING_GROUPS } = await import('../../src/client/app/workspace/pages/EngineLayersPanel.tsx')
 const { EngineModuleCards, EngineCapabilityCreateMenu } = await import('../../src/client/features/modules/EngineModuleList.tsx')
 const { PromptConfigForm } = await import('../../src/client/features/prompts/PromptConfigForm.tsx')
 const { OptionField } = await import('../../src/client/features/prompts/PromptConfigFields.tsx')
@@ -154,7 +155,9 @@ test('自定义工具编辑入口保留，能力删除仍需二次确认', () =>
   const page = read('app/workspace/pages/MainSessionPage.tsx')
   assert.match(page, /t\('main\.addTemplate', \{ layer: translateLabel\(t, LAYER_LABEL_KEYS, layer\) \}\)/)
   assert.match(page, /create:blank-tool/)
-  assert.match(page, /<CustomToolsCard/)
+  // 自定义工具卡由统一层装配入口渲染；页面只传创建意图，不自己拼卡片。
+  assert.match(page, /toolCreate,/)
+  assert.match(read('app/workspace/pages/EngineLayersPanel.tsx'), /<CustomToolsCard/)
   assert.match(read('features/tools/CustomToolsCard.tsx'), /<CustomToolCard/)
   assert.match(read('ui/EngineModuleCard.tsx'), /确认删除/)
   const removed = []
@@ -282,13 +285,12 @@ test('统一列表平铺渲染配置与能力卡，层级筛选只过滤不分�
   assert.doesNotMatch(filtered, /data-insertion-point/)
   assert.doesNotMatch(filtered, /persona-main/)
   assert.match(filtered, /class="configMeta">anchor-turn</)
-  // 主会话把筛选值同时下发给配置与能力卡；编辑组卡在哪层可见由共享契约判定，
+  // 主会话把筛选值下发给统一层装配入口；编辑组卡在哪层可见由共享契约判定，
   // 页面不再各自手写层名（旧实现按 `viewFilter !== 'tool-pipeline'` 内联硬编码）。
   const page = read('app/workspace/pages/MainSessionPage.tsx')
-  assert.match(page, /layerFilter=\{viewFilter\}/)
-  assert.match(page, /isEditorGroupVisible\('custom-tools', viewFilter\)/)
-  assert.match(page, /isEditorGroupVisible\('persona', viewFilter\)/)
-  assert.match(page, /isEditorGroupVisible\('prompt-defaults', viewFilter\)/)
+  assert.match(page, /const layers = engineLayerSlots\(\{/)
+  assert.match(page, /viewFilter,/)
+  assert.doesNotMatch(page, /isEditorGroupVisible/)
   assert.doesNotMatch(page, /hidden=\{viewFilter !== 'all' && viewFilter !== 'tool-pipeline'\}/, '层可见性不再内联硬编码层名')
   // 世界书只隐藏模块区域，不卸载工具草稿 owner。
   const worldBook = tree(PromptConfigList, { ...props, viewFilter: 'world-book' })
@@ -371,9 +373,17 @@ test('编辑组层可见性来自共享契约，页面不再各自手写层名',
   assert.equal(isEditorGroupVisible('deliberation-gate', 'pre-step'), false)
   // 未登记的 id 不猜归属：一律可见（新增卡忘登记时是「哪层都能看到」，不是整张消失）。
   assert.equal(isEditorGroupVisible('not-registered-yet', 'turn-stop'), true)
-  // 主/子页面消费同一判定：tool-pipeline 的共享设置区与子代理委派卡各按自己的组 id 显示。
-  assert.match(read('app/workspace/pages/MainSessionPage.tsx'), /isEditorGroupVisible\('tool-filter', viewFilter\)/)
-  assert.match(read('app/workspace/pages/SubagentPage.tsx'), /isEditorGroupVisible\('subagent-tools', viewFilter\)/)
+  // 主/子页面消费同一装配入口：页面只声明受众视图，层名判断由 EngineLayersPanel 统一提供。
+  const mainPage = read('app/workspace/pages/MainSessionPage.tsx')
+  const subagentPage = read('app/workspace/pages/SubagentPage.tsx')
+  assert.match(mainPage, /engineLayerSlots\(\{/)
+  assert.match(subagentPage, /engineLayerSlots\(\{/)
+  assert.doesNotMatch(mainPage, /isEditorGroupVisible/)
+  assert.doesNotMatch(subagentPage, /isEditorGroupVisible/)
+  const panel = read('app/workspace/pages/EngineLayersPanel.tsx')
+  assert.match(panel, /isEditorGroupVisible\('tool-filter', viewFilter\)/)
+  assert.match(panel, /isEditorGroupVisible\('subagent-tools', viewFilter\)/)
+  assert.match(panel, /isEditorGroupVisible\('variables', viewFilter\)/)
 })
 
 test('共享参数镜像控件：两处渲染读同一 store 字段，DOM id 不重复', () => {
@@ -393,4 +403,63 @@ test('共享参数镜像控件：两处渲染读同一 store 字段，DOM id 不
   // 两处读的是同一个 store 字段（TagInput 把列表值渲染成标签，断言值本身出现即可）。
   assert.ok(primary.includes('read') && mirror.includes('read'), '两处读到同一 store 字段值')
   assert.notEqual(primary.match(/id="([^"]+)"/)?.[1], mirror.match(/id="([^"]+)"/)?.[1], 'DOM id 必须不同')
+})
+
+/** 共享设置区渲染用 store：展开态由草稿池给出，字段与保存动作与能力卡同源。 */
+const pipelineStore = () => ({
+  fields: { ...EMPTY_FIELDS, presetTemplate: 'pt-pipeline', writePreset: true },
+  moduleFacts: { editable: true },
+  editorDrafts: { expanded: new Map([['pt-pipeline:tool-pipeline-settings', true]]), fields: new Map() },
+  patch() {},
+  persistParamOverrides() { return Promise.resolve(true) },
+})
+
+test('工具管线共享设置区覆盖本层每个带参数的能力，不漏键也不另抄键表', () => {
+  // 分组集合必须覆盖 tool-pipeline 层所有「确实有扁平参数」的能力 card；
+  // subagent-tool-policy 的结构化授权走自己的策略编辑器，不伪造扁平参数。
+  const groupCards = new Set(TOOL_PIPELINE_SETTING_GROUPS.map((group) => group.card))
+  const cardsWithParams = new Set(ENGINE_PARAM_KEYS.map((key) => ENGINE_PARAM_DEFINITIONS[key].card))
+  const missing = ENGINE_CAPABILITIES
+    .filter(({ id, displayLayer }) => displayLayer === 'tool-pipeline' && cardsWithParams.has(id) && !groupCards.has(id))
+    .map(({ id }) => id)
+  assert.deepEqual(missing, [], '本层带参数的能力 card 必须进入共享设置区')
+  // 分组内渲染的参数完全来自 shared 定义：既不重复声明键，也不遗漏。
+  const html = render(ToolPipelineSettingsCard, { store: pipelineStore(), t })
+  for (const group of TOOL_PIPELINE_SETTING_GROUPS) {
+    assert.ok(html.includes(`data-pipeline-group="${group.id}"`), `缺少分组 ${group.id}`)
+    const keys = ENGINE_PARAM_KEYS.filter((key) => ENGINE_PARAM_DEFINITIONS[key].card === group.card)
+    for (const key of keys) {
+      // 控件形态随类型不同（Switch 无 id、TagInput 有 id），标签是共同的可断言标识。
+      assert.ok(html.includes(zh[`param.${key}`]), `分组 ${group.id} 缺少参数 ${key}`)
+    }
+  }
+  // 镜像控件的 DOM id 必须唯一：两处渲染同一参数时靠 instanceId 前缀区分。
+  const ids = [...html.matchAll(/\sid="([^"]+)"/g)].map(([, id]) => id)
+  assert.equal(new Set(ids).size, ids.length, '共享设置区内 DOM id 不得重复')
+  assert.ok(ids.some((id) => id.startsWith('pt-param-tool-pipeline-tool-filter-')), '镜像渲染点带实例前缀')
+})
+
+test('工具管线共享设置区登记跨层相关设置，并说明真实主归属层', () => {
+  const html = render(ToolPipelineSettingsCard, { store: pipelineStore(), t })
+  // 首阶段工具目录主归属 system-section、子代理授权主归属 subagent-start：同源第二处编辑点。
+  assert.ok(html.includes('data-pipeline-group="bootstrap-tools"') && html.includes('data-pipeline-group="subagent-delegation"'))
+  assert.ok(html.includes(t('layer.system-section')) && html.includes(t('layer.subagent-start')), '跨层组标明真实主归属层')
+  assert.ok(html.includes(t('modules.group.bootstrap-tools')) && html.includes(t('modules.group.subagent-delegation')))
+  // 相关层必须是真实登记过的归属：与 shared 契约一致，前端不另写层名。
+  for (const group of TOOL_PIPELINE_SETTING_GROUPS.filter((item) => item.relatedLayer !== undefined)) {
+    assert.equal(isEditorGroupVisible(group.card, group.relatedLayer), true, `${group.card} 未登记相关层 ${group.relatedLayer}`)
+  }
+})
+
+test('EngineParamFields 把 instanceId 透传给组内每个字段', () => {
+  const store = {
+    fields: { ...EMPTY_FIELDS, presetTemplate: 'pt-pipeline', writePreset: true, toolFilterEnabled: true, toolFilterAllow: 'read' },
+    moduleFacts: { editable: true },
+    editorDrafts: undefined,
+    patch() {},
+    persistParamOverrides() { return Promise.resolve(true) },
+  }
+  const html = render(EngineParamFields, { store, card: 'tool-filter', t, instanceId: 'tool-pipeline' })
+  assert.ok(html.includes(zh['param.toolFilterAllow']) && html.includes(zh['param.toolFilterDeny']))
+  assert.ok(html.includes('id="pt-param-tool-pipeline-toolFilterAllow"'), '组内字段继承实例前缀')
 })

@@ -168,7 +168,7 @@ test('创建后的定位信号与滚动实现：重复创建同一能力仍会�
   const page = read('app/workspace/pages/MainSessionPage.tsx')
   // 一次性信号：token 递增，避免"同 id 第二次创建不展开"。
   assert.match(page, /setFocusCapability\(\(current\) => \(\{ id, token: \(current\?\.token \?\? 0\) \+ 1 \}\)\)/)
-  assert.match(page, /focusCapability=\{focusCapability\}/)
+  assert.match(page, /focusCapability,/)
   // 选中能力卡后滚动定位到稳定锚点；不修改任何筛选状态。
   const modules = read('features/modules/EngineModuleList.tsx')
   assert.match(modules, /scrollToCreatedCard\(`\[data-module-card-id="\$\{cssEscapeId\(focusId\)\}"\]`\)/)
@@ -189,9 +189,15 @@ test('复制配置保留受众，且不改动过滤状态', () => {
 
 test('子代理页创建入口对等，且不下发指令文件卡（单编辑入口）', () => {
   const subagent = read('app/workspace/pages/SubagentPage.tsx')
-  for (const needle of ['EngineModuleActions', 'EngineModuleCards', 'CustomToolsCard', 'INSERTION_LAYERS', 'TemplateVariablesModuleCard']) {
+  for (const needle of ['EngineModuleActions', 'INSERTION_LAYERS']) {
     assert.ok(subagent.includes(needle), `子代理页具备 ${needle} 入口`)
   }
+  // 能力卡、模板变量卡与自定义工具卡由统一层装配入口按受众视图渲染（两页同源）。
+  const panel = read('app/workspace/pages/EngineLayersPanel.tsx')
+  for (const needle of ['EngineModuleCards', 'CustomToolsCard', 'TemplateVariablesModuleCard']) {
+    assert.ok(panel.includes(needle), `共享层装配提供 ${needle}`)
+  }
+  assert.match(subagent, /audience: 'subagent'/)
   // 指令文件卡是主会话概念：子代理作用域不下发，避免同一文件双编辑入口。
   const wrapper = read('app/workspace/pages/ConfigListWithTemplates.tsx')
   assert.match(wrapper, /const instructionScope = scope === undefined \|\| scope === 'main'/)
