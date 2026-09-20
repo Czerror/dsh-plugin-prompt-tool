@@ -234,6 +234,27 @@ moduleConfigs 仅补充参数桥未覆盖的键（如 ST 导入 tool-web.fetch�
 PARAM_KEYS 移除），本项目也不提供迁移：请自行从 preset.yml 删除该键。
 锚定与引导**不合并**：锚定句（reasoning 开头句，首轮一次性）与引导句（路由引导，每轮）注入位不同。
 
+### 受管配置字段的唯一来源（2026-09-20）
+
+`near-anchor` 与 `router-guide` 两条模板配置的字段由 `writePreset` 在每次物化时按预设级
+扁平参数覆写，因此在实例卡里编辑会被下一次重建覆盖。这份「受管字段 → 来源参数」的映射
+登记在 `src/shared/managed-config-fields.ts#MANAGED_CONFIG_FIELDS`，客户端按它渲染只读
+来源面板（字段中文名 · 来源参数键 · 当前生效值 · 计算结果/缺省跟随标注），不提供会被
+覆盖的写入口；唯一写入口是来源参数本身所在的卡片（`pre-step` 层的「提示词生成默认值」
+能力卡与工具管线共享设置区）。
+
+| 配置 id | 受管字段 | 来源参数 | 语义 |
+|---|---|---|---|
+| `near-anchor` | `enabled` / `params.useCustom` / `params.text` / `params.buildPattern` / `params.complexPattern` / `params.firstTurnBuild` / `params.firstTurnInspect` / `params.firstTurnDeep` | `firstTurnAnchor` / `firstTurnCustom` / `firstTurnText` / `buildPattern` / `complexPattern` / `firstTurnBuild` / `firstTurnInspect` / `firstTurnDeep` | 逐字映射 |
+| `router-guide` | `enabled` | `guideEnabled` | 显式值优先，缺省跟随 `firstTurnAnchor` |
+| `router-guide` | `modelScope` | `guideCustom`（计算结果） | 自定义引导 `all`，自动引导 `flash` |
+| `router-guide` | `params.useCustom` / `params.text` / `params.complexPattern` / `params.guideWeak` / `params.guideDeep` | `guideCustom` / `guideText` / `complexPattern` / `guideWeak` / `guideDeep` | 逐字映射 |
+
+契约与真实投影的一致性由 `test/host/managed-config-fields.test.mjs` 锁定：用 A/B 两组来源
+参数生成产物，逐字段断言随动、派生项语义正确，并断言 writer 实际覆写的键都已登记
+（不留「能改但重建覆盖」的未登记字段）。普通自建策略配置（其他 id）继续编辑自己的局部
+`params`，受管判定只按契约登记的配置 id，不按 strategy 一刀切。
+
 ### 模块化视图（2026-08-25）
 
 - **任务分类器单一能力**：`engine/classify-task.mjs` 的 `createTaskClassifier({ buildPattern, complexPattern })`
