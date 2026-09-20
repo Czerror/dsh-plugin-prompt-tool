@@ -7,7 +7,7 @@ import { MenuSelect } from '../../ui/MenuSelect.tsx'
 import { ToggleRow } from '../../ui/ToggleRow.tsx'
 import { PromptConfigCard } from './PromptConfigCard.tsx'
 import { moveToView, moveWithinLayer, promptConfigLayer, viewOrderedIds } from './prompt-config-order.ts'
-import { displayLayers, LAYER_LABEL_KEYS, translateLabel } from './prompt-config-policy.ts'
+import { displayLayers, LAYER_LABEL_KEYS, matchesConfigKeyword, translateLabel } from './prompt-config-policy.ts'
 import type { EngineMeta, PromptConfigDraft, ValidationErrorEntry } from '../../prompt-tool-types.ts'
 import type { InstructionPolicyFileOverride, InstructionPolicySnapshot } from '../../../shared/instructions.ts'
 import sharedCss from '../../ui/controls.module.css'
@@ -45,6 +45,9 @@ export interface PromptConfigListProps {
   /** 受控层筛选（全部/世界书/层级）；未传时内部 state 兜底（子代理页等独立实例）。 */
   viewFilter?: string
   onViewFilterChange?: (value: string) => void
+  /** 受控搜索词：页面持有搜索词时（例如同时过滤能力卡与共享设置区）由页面下发并接收改动。 */
+  keyword?: string
+  onKeywordChange?: (value: string) => void
   /** 只响应明确的创建动作；后台读取已有配置不抢占筛选或展开状态。 */
   createdConfigId?: string
   /** 空状态追加提示（如「当前预设模板该层无配置」）。 */
@@ -70,10 +73,11 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
   const [validating, setValidating] = useState(false)
   const [saving, setSaving] = useState(false)
   const [savingSource, setSavingSource] = useState(false)
-  const [filter, setFilter] = useState(props.browse?.filter ?? '')
+  const [filterState, setFilterState] = useState(props.browse?.filter ?? '')
   const changeFilter = (value: string): void => {
     if (props.browse !== undefined) props.browse.filter = value
-    setFilter(value)
+    props.onKeywordChange?.(value)
+    setFilterState(value)
   }
   const [createdId, setCreatedId] = useState<string>()
   const busyRef = useRef(false)
@@ -129,11 +133,12 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
   const byStrategy = viewFilter !== 'world-book'
     ? scoped
     : scoped.filter((config) => config.strategy === 'world-book')
+  // 搜索词：受控时取页面下发值（同一搜索词同时过滤能力卡与共享设置区），否则用内部 state。
+  const filter = props.keyword ?? filterState
   const keyword = filter.trim().toLowerCase()
   const filtered = keyword.length === 0
     ? byStrategy
-    : byStrategy.filter((config) =>
-      [config.id, config.name ?? '', config.strategy ?? ''].join(' ').toLowerCase().includes(keyword))
+    : byStrategy.filter((config) => matchesConfigKeyword(config, keyword, t))
   // 插入点分组只用于阅读；order 仅在同一插入点内比较。
   const layerRank = (config: PromptConfigDraft): number => {
     const index = allLayers.indexOf(promptConfigLayer(config))
@@ -343,7 +348,9 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
     changeViewFilter('all')
   }
   const hiddenCreated = props.createdHidden === true || (createdId !== undefined && configs.some((config) => config.id === createdId) && !ordered.some((config) => config.id === createdId))
-  const filteredView = keyword.length > 0 || viewFilter !== 'all'
+  /** 选中的是九层之一（world-book 是策略筛选，保持原有的「无匹配 + 清除筛选」提示）。 */
+  const worldBookView = viewFilter === 'world-book'
+  const layerView = viewFilter !== 'all' && !worldBookView
 
   return (
     <section className={styles.section} aria-labelledby="prompt-tool-configs-heading">
@@ -422,8 +429,17 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
           这里只定义展示分组，不建立插入点间运行顺序。 */}
       {moduleCards !== undefined && <div className={styles.configList} hidden={viewFilter === 'world-book'}>{moduleCards}</div>}
 
-      {ordered.length === 0 ? filteredView ? (
+      {ordered.length === 0 ? (keyword.length > 0 || worldBookView) ? (
         <p className={styles.readOnly}>{t('configs.noMatch', { keyword: filter.trim() || translateLabel(t, LAYER_LABEL_KEYS, viewFilter) })} <button type="button" className={styles.pillButton} onClick={clearFilters}>{t('configs.clearFilters')}</button></p>
+      ) : layerView ? (
+        // 选中的注入层没有内容：给空状态与新增入口，不自动创建九张空卡。
+        <div className={styles.emptyState}><span className={styles.emptyGlyph} aria-hidden="true">⌁</span><div>
+          <h3>{t('configs.empty.layer.title', { layer: translateLabel(t, LAYER_LABEL_KEYS, viewFilter) })}</h3>
+          <p>{t('configs.empty.layer.desc')}</p>
+          {emptyHint !== undefined && <p className={styles.readOnly}>{emptyHint}</p>}
+          {props.readOnlyReason === undefined && props.onCreate !== undefined && <button type="button" className={styles.pillButton} onClick={props.onCreate}>{t('configs.createFirst')}</button>}
+          {props.readOnlyReason !== undefined && props.onChoosePreset !== undefined && <button type="button" className={styles.pillButton} onClick={props.onChoosePreset}>{t('configs.chooseEditable')}</button>}
+        </div></div>
       ) : (
         <div className={styles.emptyState}><span className={styles.emptyGlyph} aria-hidden="true">⌁</span><div>
           <h3>{scope === 'subagent' ? t('configs.empty.subagent.title') : t('configs.empty.all.title')}</h3>

@@ -2,6 +2,7 @@ import { useSyncExternalStore, type ReactNode } from 'react'
 import clsx from 'clsx'
 import { Switch } from '@deepseek-ai/dsh-client-ui-primitives'
 import { ENGINE_PARAM_DEFINITIONS, ENGINE_PARAM_KEYS, type EngineParamKey } from '../../../shared/engine-params.ts'
+import { engineGroupParamKeys } from '../../../shared/engine-capabilities.ts'
 import type { PromptToolStore } from '../../data/use-prompt-tool-store.ts'
 import type { StageDraft } from '../../data/prompt-tool-fields.ts'
 import type { FieldDraft } from '../../data/workspace-drafts.ts'
@@ -14,6 +15,21 @@ import styles from '../../ui/controls.module.css'
 /** 未提供草稿通道的 store（单测桩）退化订阅：不广播，字段仍按当前草稿读一次。 */
 const subscribeNothing = (): (() => void) => () => {}
 const getZero = (): number => 0
+
+/**
+ * 编辑组 / 能力卡的搜索文本：能力 id（技术键）+ 该组参数键 + 参数中文标签。
+ * 参数键来自 shared 派生（`engineGroupParamKeys`），中文标签来自 `param.<键>` 字典；
+ * 与配置实例的搜索共用「中文名 + 技术键」口径，都只影响展示过滤，不改变写通道。
+ */
+export function editorGroupSearchText(id: string, t: PromptToolTranslate): string {
+  const keys = engineGroupParamKeys(id)
+  return [id, ...keys.flatMap((key) => [key, t(`param.${key}`)])].join(' ')
+}
+
+/** 该编辑组是否命中搜索词（没有登记扁平参数的能力按能力 id 匹配）。 */
+export function matchesEditorGroup(id: string, keyword: string, t: PromptToolTranslate): boolean {
+  return keyword.length === 0 || editorGroupSearchText(id, t).toLowerCase().includes(keyword)
+}
 
 /**
  * 简单字段由共享定义驱动；阶段继续使用结构化编辑，不暴露任意 JSON 配置。

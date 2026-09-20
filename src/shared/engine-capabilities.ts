@@ -1,4 +1,10 @@
 /** 引擎能力目录：把 UI capability id 与 preset module/row 实际事实解耦。 */
+import { ENGINE_PARAM_DEFINITIONS, ENGINE_PARAM_KEYS, type EngineParamKey } from './engine-params.ts'
+
+/** 该编辑组 / 能力 card 拥有的扁平参数键：分组渲染与技术键搜索共用这一份派生。 */
+export function engineGroupParamKeys(id: string): readonly EngineParamKey[] {
+  return ENGINE_PARAM_KEYS.filter((key) => ENGINE_PARAM_DEFINITIONS[key].card === id)
+}
 
 export type ModuleSourceMode = 'explicit' | 'composition' | 'official' | 'unknown'
 

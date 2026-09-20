@@ -8,6 +8,7 @@ import { ConfirmDialog } from '../../ui/ConfirmDialog.tsx'
 import { VariablesEditor } from './PromptConfigFields.tsx'
 import { LayerCard } from '../../ui/LayerCard.tsx'
 import { isEditorGroupVisible } from '../../../shared/engine-capabilities.ts'
+import { matchesEditorGroup } from './prompt-config-policy.ts'
 import sharedCss from '../../ui/controls.module.css'
 import featureCss from './prompts.module.css'
 
@@ -49,6 +50,9 @@ export interface PromptConfigsEditorProps extends Pick<PromptConfigListProps, 'b
   saveTemplateVariables: (next?: Record<string, string>, enabled?: boolean) => Promise<boolean | void>
   viewFilter: string
   onViewFilterChange: (value: string) => void
+  /** 统一搜索词（页面持有）：同一搜索词过滤配置实例、能力卡、共享设置区与单例卡。 */
+  keyword?: string
+  onKeywordChange?: (value: string) => void
   createdConfigId?: string
   /** 模板变量卡片展开态由页面持有：合并创建菜单的「添加模板变量」需要展开它。 */
   variablesExpanded: boolean
@@ -157,7 +161,7 @@ export function PromptConfigsEditor(props: PromptConfigsEditorProps): ReactNode 
         onShowCreated={props.onShowCreated}
         commonCards={<div className={styles.commonCards} aria-label={t('configs.common.aria')} data-module-category="common">
           {props.commonCards}
-          <LayerCard visible={isEditorGroupVisible('variables', props.viewFilter)}>
+          <LayerCard visible={isEditorGroupVisible('variables', props.viewFilter) && matchesEditorGroup('variables', (props.keyword ?? '').trim().toLowerCase(), t)}>
             <TemplateVariablesModuleCard
               t={t}
               templateVariables={props.templateVariables}
@@ -174,6 +178,8 @@ export function PromptConfigsEditor(props: PromptConfigsEditorProps): ReactNode 
         configs={props.configs}
         viewFilter={props.viewFilter}
         onViewFilterChange={props.onViewFilterChange}
+        keyword={props.keyword}
+        onKeywordChange={props.onKeywordChange}
         createdConfigId={props.createdConfigId}
         toolbarActions={props.toolbarActions}
         beforeCards={props.beforeCards}

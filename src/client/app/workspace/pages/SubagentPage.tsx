@@ -37,6 +37,8 @@ export const SubagentPage = memo(function SubagentPage(props: { store: PromptToo
   const [toolCreate, setToolCreate] = useState<ToolCreateIntent>()
   const [variablesExpanded, setVariablesExpanded] = useState(props.browse?.variablesExpanded ?? false)
   const [createdHidden, setCreatedHidden] = useState(false)
+  // 搜索词由页面持有：同一搜索词同时过滤配置实例、能力卡、共享设置区与单例卡。
+  const [keyword, setKeyword] = useState(props.browse?.filter ?? '')
   const canEditPreset = store.fields.writePreset && store.moduleFacts?.editable === true
   /** 仅主对话生效的能力：本页既不提供创建，也不渲染卡片。 */
   const mainSessionOnly = ['tool-filter']
@@ -85,6 +87,7 @@ export const SubagentPage = memo(function SubagentPage(props: { store: PromptToo
     t,
     viewFilter,
     audience: 'subagent',
+    keyword,
     focusCapability,
     toolCreate,
     onToolIntentConsumed: () => setToolCreate(undefined),
@@ -138,6 +141,8 @@ export const SubagentPage = memo(function SubagentPage(props: { store: PromptToo
           moduleCards={layers.moduleCards}
           viewFilter={viewFilter}
           onViewFilterChange={changeViewFilter}
+          keyword={keyword}
+          onKeywordChange={setKeyword}
         />
       </section>
       {picker.open && (

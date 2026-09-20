@@ -382,9 +382,9 @@ test('编辑组层可见性来自共享契约，页面不再各自手写层名',
   assert.doesNotMatch(mainPage, /isEditorGroupVisible/)
   assert.doesNotMatch(subagentPage, /isEditorGroupVisible/)
   const panel = read('app/workspace/pages/EngineLayersPanel.tsx')
-  assert.match(panel, /isEditorGroupVisible\('tool-filter', viewFilter\)/)
-  assert.match(panel, /isEditorGroupVisible\('subagent-tools', viewFilter\)/)
-  assert.match(panel, /isEditorGroupVisible\('variables', viewFilter\)/)
+  assert.match(panel, /const shows = \(groupId: string\): boolean => isEditorGroupVisible\(groupId, viewFilter\)/)
+  assert.match(panel, /shows\('subagent-tools'\)/)
+  assert.match(panel, /shows\('variables'\)/)
 })
 
 test('共享参数镜像控件：两处渲染读同一 store 字段，DOM id 不重复', () => {
@@ -529,4 +529,72 @@ test('切层与受众切换保留草稿：卡片隐藏而不卸载，草稿键�
   assert.match(read('app/workspace/pages/SubagentPage.tsx'), /audience: 'subagent'/)
   // 两页共用同一装配入口：不存在第二份按层保存的草稿或按层过滤的写通道。
   assert.doesNotMatch(read('app/workspace/pages/EngineLayersPanel.tsx'), /localStorage|sessionStorage/)
+})
+
+test('统一搜索：配置名、标识、注入层与参数名都能命中，且不改变保存载荷', () => {
+  const configs = [
+    { id: 'anchor-main', name: '首轮锚定', layer: 'pre-step', strategy: 'first-turn-anchor', order: 10, enabled: true },
+    { id: 'sys-guard', name: '系统约束', layer: 'system-section', strategy: 'static', order: 0, enabled: true, params: { maxOutputChars: 2048 } },
+  ]
+  const listProps = (keyword) => ({
+    t, meta: getEngineMeta(), configs, viewFilter: 'all', keyword, onPatchConfigs: () => {}, onSaveConfigs: async () => true, onNotice: () => {},
+  })
+  const shown = (keyword) => {
+    const html = render(PromptConfigList, listProps(keyword))
+    return configs.filter((config) => html.includes(`data-config-id="${config.id}"`)).map((config) => config.id)
+  }
+  // 中文名、标识（技术键）、注入层中文名与参数名各自都能命中，未命中的实例不出现。
+  assert.deepEqual(shown('首轮锚定'), ['anchor-main'])
+  assert.deepEqual(shown('sys-guard'), ['sys-guard'])
+  assert.deepEqual(shown('系统提示段'), ['sys-guard'], '注入层中文名参与匹配')
+  assert.deepEqual(shown('maxOutputChars'), ['sys-guard'], '局部参数键参与匹配')
+  assert.deepEqual(shown('首轮锚定'), ['anchor-main'])
+  assert.deepEqual(shown(''), ['anchor-main', 'sys-guard'], '空搜索词不过滤')
+  // 搜索只影响展示：不产生保存、不改写实例数组。
+  const before = structuredClone(configs)
+  const patches = []
+  const nodes = tree(PromptConfigList, {
+    t, meta: getEngineMeta(), configs, viewFilter: 'all', keyword: '首轮', onPatchConfigs: (next) => patches.push(next), onSaveConfigs: async () => true, onNotice: () => {},
+  })
+  assert.ok(nodes)
+  assert.deepEqual(patches, [])
+  assert.deepEqual(configs, before)
+})
+
+test('统一搜索：能力卡与共享设置区按分组名、参数键与参数中文标签过滤', () => {
+  // 共享设置区：分组标题命中「深思门」，其余分组隐藏；没有命中时给搜索空状态而不是整卡消失。
+  const byLabel = render(ToolPipelineSettingsCard, { store: pipelineStore(), t, keyword: '深思门' })
+  assert.ok(byLabel.includes('data-pipeline-group="deliberation-gate"'))
+  assert.equal(byLabel.includes('data-pipeline-group="tool-filter"'), false)
+  const byKey = render(ToolPipelineSettingsCard, { store: pipelineStore(), t, keyword: 'cotdripevery' })
+  assert.ok(byKey.includes('data-pipeline-group="progress-reminder"'), '参数技术键参与匹配')
+  assert.equal(byKey.includes('data-pipeline-group="bootstrap-tools"'), false)
+  const noHit = render(ToolPipelineSettingsCard, { store: pipelineStore(), t, keyword: '没有这个能力' })
+  assert.ok(noHit.includes(t('modules.status.emptySearch', { keyword: '没有这个能力' })))
+  assert.ok(noHit.includes(t('modules.toolPipeline.name')), '整卡仍在，只给空状态')
+  // 能力卡：能力 id（技术键）与参数中文标签都能命中；未命中的能力卡不渲染。
+  const active = { ...store, moduleFacts: withModules(['deliberation-gate', 'progress-reminder', 'tool-filter']) }
+  const cards = (keyword) => render(EngineModuleCards, { store: active, t, keyword, showPromptDefaults: false, showStatus: false })
+  assert.match(cards('deliberation'), /deliberation-gate/)
+  assert.doesNotMatch(cards('deliberation'), /progress-reminder/)
+  assert.match(cards(t('param.cotDrip')), /progress-reminder/, '参数中文标签参与匹配')
+  assert.doesNotMatch(cards('没有这个能力'), /progress-reminder/)
+})
+
+test('统一搜索：无匹配给定位提示，层内无内容给空状态与新增入口', () => {
+  const listProps = (viewFilter, keyword = '') => ({
+    t, meta: getEngineMeta(), configs: [], viewFilter, keyword, onCreate: () => {}, onPatchConfigs: () => {}, onSaveConfigs: async () => true, onNotice: () => {},
+  })
+  // 层内没有内容：空状态 + 新增入口（不自动创建空卡，也不说「无匹配」）。
+  const layerEmpty = render(PromptConfigList, listProps('llm-stream'))
+  assert.ok(layerEmpty.includes(t('configs.empty.layer.title', { layer: t('layer.llm-stream') })))
+  assert.ok(layerEmpty.includes(t('configs.createFirst')), '空层保留新增入口')
+  assert.equal(layerEmpty.includes(t('configs.noMatch', { keyword: t('layer.llm-stream') })), false)
+  // 有搜索词但没命中：仍是「无匹配 + 清除筛选」。
+  const noMatch = render(PromptConfigList, listProps('all', '不存在'))
+  assert.ok(noMatch.includes(t('configs.noMatch', { keyword: '不存在' })))
+  assert.ok(noMatch.includes(t('configs.clearFilters')))
+  // 世界书策略视图保持原语义（既有回归）：不因层空态改动而改变。
+  const worldBook = render(PromptConfigList, listProps('world-book'))
+  assert.ok(worldBook.includes(t('configs.noMatch', { keyword: 'world-book' })))
 })

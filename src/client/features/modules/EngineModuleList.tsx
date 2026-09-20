@@ -6,7 +6,7 @@ import { EngineModuleCard } from '../../ui/EngineModuleCard.tsx'
 import { useMenuFocus } from '../../ui/menu-focus.ts'
 import { cssEscapeId, scrollToCreatedCard } from '../../ui/reveal-card.ts'
 import { ENGINE_CAPABILITIES, ENGINE_RECIPES, engineRecipe, isEngineCapabilityPresent } from '../../../shared/engine-capabilities.ts'
-import { EngineParamFields } from './EngineParamFields.tsx'
+import { EngineParamFields, matchesEditorGroup } from './EngineParamFields.tsx'
 import styles from '../../ui/controls.module.css'
 
 /** 能力卡内的附加编辑器插槽上下文（跨 feature 的自定义编辑器由页面注入，模块层不反向依赖）。 */
@@ -106,6 +106,7 @@ export function EngineModuleCards({
   store,
   t,
   layerFilter = 'all',
+  keyword = '',
   showActions = true,
   showPromptDefaults = true,
   showStatus = true,
@@ -118,6 +119,8 @@ export function EngineModuleCards({
   store: PromptToolStore
   t: PromptToolTranslate
   layerFilter?: string
+  /** 统一搜索词：能力 id、参数键与参数中文标签都参与匹配（只影响展示）。 */
+  keyword?: string
   showActions?: boolean
   showPromptDefaults?: boolean
   showStatus?: boolean
@@ -133,8 +136,12 @@ export function EngineModuleCards({
   renderCapabilityExtra?: (slot: CapabilityEditorSlot) => ReactNode
 }): ReactNode {
   const excluded = new Set(excludeCapabilities ?? [])
+  const search = keyword.trim().toLowerCase()
   const capabilities = ENGINE_CAPABILITIES.filter(({ id, displayLayer }) =>
-    !excluded.has(id) && (layerFilter === 'all' || layerFilter === displayLayer) && isEngineCapabilityPresent(id, store.moduleFacts))
+    !excluded.has(id)
+    && (layerFilter === 'all' || layerFilter === displayLayer)
+    && matchesEditorGroup(id, search, t)
+    && isEngineCapabilityPresent(id, store.moduleFacts))
   const editable = store.fields.writePreset && store.moduleFacts?.editable === true
   const focus = focusCapability
   const focusToken = focus?.token
@@ -162,11 +169,13 @@ export function EngineModuleCards({
         {renderCapabilityExtra?.({ capabilityId: capability.id, store, t })}
       </EngineModuleCard>
     ))}
-    {showPromptDefaults && (layerFilter === 'all' || layerFilter === 'pre-step') && <EnginePromptDefaultsCard store={store} t={t} />}
+    {showPromptDefaults && (layerFilter === 'all' || layerFilter === 'pre-step') && matchesEditorGroup('prompt-defaults', search, t) && <EnginePromptDefaultsCard store={store} t={t} />}
     {showStatus && store.moduleFacts === undefined && <p className={styles.configFieldHint} role="status">{t('modules.status.reading')}</p>}
     {showStatus && store.moduleFacts !== undefined && capabilities.length === 0 && (
       <p className={styles.configFieldHint} role="status">
-        {emptyHint ?? (layerFilter === 'all' ? t('modules.status.emptyAll') : t('modules.status.emptyFiltered'))}
+        {search.length > 0
+          ? t('modules.status.emptySearch', { keyword: keyword.trim() })
+          : emptyHint ?? (layerFilter === 'all' ? t('modules.status.emptyAll') : t('modules.status.emptyFiltered'))}
       </p>
     )}
   </>

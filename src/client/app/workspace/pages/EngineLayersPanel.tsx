@@ -13,7 +13,7 @@ import type { PromptToolStore } from '../../../data/use-prompt-tool-store.ts'
 import type { PromptToolTranslate } from '../../../locales.ts'
 import { EngineModuleCard } from '../../../ui/EngineModuleCard.tsx'
 import { EngineModuleCards, EnginePromptDefaultsCard, type CapabilityEditorSlot } from '../../../features/modules/EngineModuleList.tsx'
-import { EngineParamFields } from '../../../features/modules/EngineParamFields.tsx'
+import { EngineParamFields, matchesEditorGroup } from '../../../features/modules/EngineParamFields.tsx'
 import { ModelRouteModuleCard } from '../../../features/models/ModelRouteCard.tsx'
 import { PresetPersonaCard } from '../../../features/persona/PresetPersonaCard.tsx'
 import { DelegationToolsModuleCard } from '../../../features/subagents/DelegationToolsCard.tsx'
@@ -65,16 +65,23 @@ export const TOOL_PIPELINE_SETTING_GROUPS: readonly ToolPipelineSettingGroup[] =
  * tool-pipeline 层的共享能力设置区：这里的控件与对应能力卡绑定同一 `store.fields` 字段
  * 和同一草稿键，是同一份参数的第二处编辑点；`instanceId` 只区分 DOM id 与 aria 关联，
  * 不引入第二份状态、同步服务或事件总线，卡片本身仍由能力卡负责装配与删除。
+ *
+ * `keyword` 是同一搜索词：分组标题、组内参数键与参数中文标签都参与匹配，
+ * 只影响展示（不匹配的分组隐藏），不改写任何预设数据。
  */
-export function ToolPipelineSettingsCard(props: { store: PromptToolStore; t: PromptToolTranslate }): ReactNode {
+export function ToolPipelineSettingsCard(props: { store: PromptToolStore; t: PromptToolTranslate; keyword?: string }): ReactNode {
   const { store, t } = props
+  const search = (props.keyword ?? '').trim().toLowerCase()
   const expandedKey = `${store.fields.presetTemplate}:tool-pipeline-settings`
+  const groups = TOOL_PIPELINE_SETTING_GROUPS.filter((group) => search.length === 0
+    || t(`modules.group.${group.id}`).toLowerCase().includes(search)
+    || matchesEditorGroup(group.card, search, t))
   return (
     <EngineModuleCard name={t('modules.toolPipeline.name')} meta={t('modules.toolPipeline.meta')}
       defaultExpanded={store.editorDrafts?.expanded.get(expandedKey)}
       onExpandedChange={(value) => store.editorDrafts?.expanded.set(expandedKey, value)}>
       <p className={ui.configFieldHint}>{t('modules.toolPipeline.hint')}</p>
-      {TOOL_PIPELINE_SETTING_GROUPS.map((group) => (
+      {groups.map((group) => (
         <section key={group.id} className={ui.settingRowStack} data-pipeline-group={group.id} aria-label={t(`modules.group.${group.id}`)}>
           <strong>{t(`modules.group.${group.id}`)}</strong>
           <small className={ui.configFieldHint}>
@@ -85,6 +92,7 @@ export function ToolPipelineSettingsCard(props: { store: PromptToolStore; t: Pro
           <EngineParamFields store={store} card={group.card} t={t} instanceId={`tool-pipeline-${group.id}`} />
         </section>
       ))}
+      {groups.length === 0 && <p className={ui.configFieldHint} role="status">{t('modules.status.emptySearch', { keyword: props.keyword ?? '' })}</p>}
     </EngineModuleCard>
   )
 }
@@ -100,6 +108,8 @@ export interface EngineLayerSlotsInput {
   t: PromptToolTranslate
   /** 当前层筛选（`all` / `world-book` / 九层之一）；过滤只影响展示，不改变保存语义。 */
   viewFilter: string
+  /** 统一搜索词：同时过滤配置实例、能力卡、共享设置区与单例卡（只影响展示）。 */
+  keyword?: string
   /** 受众视图：主会话与子代理是同源视图，不改 audience，也不隐式启用 includeSubagents。 */
   audience: 'main' | 'subagent'
   /** 新建能力后的定位信号（token 递增，重复创建同一能力仍会再次展开）。 */
@@ -126,10 +136,13 @@ export function engineLayerSlots(input: EngineLayerSlotsInput): EngineLayerSlots
   const { store, t, viewFilter, audience } = input
   const main = audience === 'main'
   const canEditPreset = store.fields.writePreset && store.moduleFacts?.editable === true
+  const search = (input.keyword ?? '').trim().toLowerCase()
+  /** 层归属 + 搜索词同时命中才显示；隐藏而不卸载，切层/清搜索后草稿与展开态仍在。 */
+  const shows = (groupId: string): boolean => isEditorGroupVisible(groupId, viewFilter) && matchesEditorGroup(groupId, search, t)
   const beforeCards = main
     ? (
       <>
-        <LayerCard visible={isEditorGroupVisible('persona', viewFilter)}>
+        <LayerCard visible={shows('persona')}>
           <PresetPersonaCard t={t} presetId={store.fields.presetTemplate} disabled={!canEditPreset} onNotice={store.showNotice} drafts={store.editorDrafts} />
         </LayerCard>
         <div hidden={viewFilter !== 'world-book'}>
@@ -138,7 +151,7 @@ export function engineLayerSlots(input: EngineLayerSlotsInput): EngineLayerSlots
       </>
     )
     : (
-      <LayerCard visible={isEditorGroupVisible('variables', viewFilter)}>
+      <LayerCard visible={shows('variables')}>
         <TemplateVariablesModuleCard
           t={t}
           templateVariables={store.templateVariables}
@@ -156,20 +169,20 @@ export function engineLayerSlots(input: EngineLayerSlotsInput): EngineLayerSlots
       {main
         ? (
           <>
-            <LayerCard visible={isEditorGroupVisible('main-model', viewFilter)}>
+            <LayerCard visible={shows('main-model')}>
               <ModelRouteModuleCard store={store} scope="main" />
             </LayerCard>
-            <LayerCard visible={isEditorGroupVisible('prompt-defaults', viewFilter)}>
+            <LayerCard visible={shows('prompt-defaults')}>
               <EnginePromptDefaultsCard store={store} t={t} />
             </LayerCard>
           </>
         )
         : (
           <>
-            <LayerCard visible={isEditorGroupVisible('subagent-model', viewFilter)}>
+            <LayerCard visible={shows('subagent-model')}>
               <ModelRouteModuleCard store={store} scope="subagent" />
             </LayerCard>
-            <LayerCard visible={isEditorGroupVisible('subagent-tools', viewFilter)}>
+            <LayerCard visible={shows('subagent-tools')}>
               <DelegationToolsModuleCard store={store} t={t} />
             </LayerCard>
           </>
@@ -182,6 +195,7 @@ export function engineLayerSlots(input: EngineLayerSlotsInput): EngineLayerSlots
         store={store}
         t={t}
         layerFilter={viewFilter}
+        keyword={input.keyword}
         showActions={false}
         showPromptDefaults={false}
         showStatus={viewFilter !== 'all'}
@@ -193,10 +207,10 @@ export function engineLayerSlots(input: EngineLayerSlotsInput): EngineLayerSlots
       />
       {main && (
         <LayerCard visible={isEditorGroupVisible('tool-filter', viewFilter)}>
-          <ToolPipelineSettingsCard store={store} t={t} />
+          <ToolPipelineSettingsCard store={store} t={t} keyword={input.keyword} />
         </LayerCard>
       )}
-      <LayerCard visible={isEditorGroupVisible('custom-tools', viewFilter)}>
+      <LayerCard visible={shows('custom-tools')}>
         <CustomToolsCard
           key={store.fields.presetTemplate}
           presetId={store.fields.presetTemplate}

@@ -1,5 +1,5 @@
 import type { PromptToolLocaleKey, PromptToolTranslate } from '../../locales.ts'
-import { ENGINE_LAYER_ORDER } from '../../../shared/engine-capabilities.ts'
+import { ENGINE_LAYER_ORDER, engineGroupParamKeys } from '../../../shared/engine-capabilities.ts'
 import type { EngineMeta, LayerFieldPolicy, PromptConfigDraft, PromptConfigMatch } from '../../prompt-tool-types.ts'
 /** sourceKind / form 是少量固定语义值，用下拉选择；引擎不设枚举，因此额外保留当前值。 */
 export const SOURCE_KINDS = ['', 'plugin', 'instruction-hint', 'instruction-file', 'skill-catalog', 'env-facts'] as const
@@ -95,8 +95,7 @@ export const MATCH_REGEX_MODE_LABEL_KEYS: Record<string, PromptToolLocaleKey> = 
   literal: 'form.match.useRegex.literal',
 }
 
-/** 从引擎 /meta 中读取某层的字段能力；未知层回退 pre-step。 */
-const EMPTY_POLICY: LayerFieldPolicy = {
+/** 从引擎 /meta 中读取某层的字段能力；未知层回退 pre-step。 */const EMPTY_POLICY: LayerFieldPolicy = {
   position: false,
   dedupe: false,
   promotion: false,
@@ -146,4 +145,56 @@ export function normalizeMatch(match: Partial<PromptConfigMatch> | undefined): P
     ...(match?.wholeWords === true ? { wholeWords: true } : {}),
     ...(match?.useRegex !== undefined ? { useRegex: match.useRegex === true } : {}),
   }
+}
+
+/**
+ * 统一搜索：同时覆盖「中文名」与「技术键」，只拼可搜索文本，不改变过滤语义
+ * （过滤仍然只影响展示，不写盘、不改变保存载荷，也不把匹配结果合并成一张层结果）。
+ */
+function matchesKeyword(text: string, keyword: string): boolean {
+  return keyword.length === 0 || text.toLowerCase().includes(keyword)
+}
+
+/** 配置实例的搜索文本：标识、名称、枚举技术值与其中文标签、局部参数键。 */
+export function configSearchText(config: PromptConfigDraft, t: PromptToolTranslate): string {
+  const params = Object.keys(config.params ?? {})
+  return [
+    config.id,
+    config.name ?? '',
+    config.layer ?? '',
+    config.strategy ?? '',
+    config.position ?? '',
+    config.dedupe ?? '',
+    config.mergeMode ?? '',
+    config.fill ?? '',
+    config.sourceKind ?? '',
+    config.form ?? '',
+    config.role ?? '',
+    config.audience ?? '',
+    config.modelScope ?? '',
+    ...params,
+    translateLabel(t, LAYER_LABEL_KEYS, config.layer ?? 'pre-step'),
+    translateLabel(t, STRATEGY_LABEL_KEYS, config.strategy ?? ''),
+    translateLabel(t, POSITION_LABEL_KEYS, config.position ?? ''),
+    translateLabel(t, FILL_LABEL_KEYS, config.fill ?? ''),
+    translateLabel(t, SOURCE_KIND_LABEL_KEYS, config.sourceKind ?? ''),
+    translateLabel(t, SOURCE_FORM_LABEL_KEYS, config.form ?? ''),
+    translateLabel(t, AUDIENCE_LABEL_KEYS, config.audience ?? ''),
+    translateLabel(t, MODEL_SCOPE_LABEL_KEYS, config.modelScope ?? ''),
+  ].join(' ')
+}
+
+/** 该配置实例是否命中搜索词（配置名、标识、注入层与参数名）。 */
+export function matchesConfigKeyword(config: PromptConfigDraft, keyword: string, t: PromptToolTranslate): boolean {
+  return matchesKeyword(configSearchText(config, t), keyword)
+}
+
+/**
+ * 编辑组 / 能力卡是否命中搜索词：能力 id（技术键）+ 该组参数键 + 参数中文标签。
+ * 参数键取自 shared 派生，与能力卡侧的判定同一口径（本文件不反向依赖其他 feature）。
+ */
+export function matchesEditorGroup(id: string, keyword: string, t: PromptToolTranslate): boolean {
+  if (keyword.length === 0) return true
+  const keys = engineGroupParamKeys(id)
+  return [id, ...keys, ...keys.map((key) => t(`param.${key}`))].join(' ').toLowerCase().includes(keyword)
 }

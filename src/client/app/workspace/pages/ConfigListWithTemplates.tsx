@@ -23,10 +23,13 @@ export const ConfigListWithTemplates = memo(function ConfigListWithTemplates(pro
   /** 受控视图过滤（页面持有）：不传时列表内部维护。 */
   viewFilter?: string
   onViewFilterChange?: (value: string) => void
+  /** 受控搜索词（页面持有）：同一搜索词同时过滤配置实例与层内卡片。 */
+  keyword?: string
+  onKeywordChange?: (value: string) => void
   /** 与页面合并创建入口使用同一定位信号。 */
   createdConfigId?: string
 }): ReactNode {
-  const { store, t, layer, scope, beforeCards, toolbarActions, moduleCards, viewFilter, onViewFilterChange, createdConfigId } = props
+  const { store, t, layer, scope, beforeCards, toolbarActions, moduleCards, viewFilter, onViewFilterChange, keyword, onKeywordChange, createdConfigId } = props
   const fields = usePromptToolFields(store, (value) => value)
   // 稳定回调：卡片 memo 的生效前提（store 引用已稳定）。
   const patchConfigs = useCallback((configs: PromptToolStore['fields']['promptConfigs']) => {
@@ -74,6 +77,8 @@ export const ConfigListWithTemplates = memo(function ConfigListWithTemplates(pro
       toolbarActions={toolbarActions}
       viewFilter={viewFilter}
       onViewFilterChange={onViewFilterChange}
+      keyword={keyword}
+      onKeywordChange={onKeywordChange}
       emptyHint={preStepEmpty ? t('configList.emptyPreStep') : undefined}
       onPatchConfigs={patchConfigs}
       onSaveConfigs={saveConfigs}

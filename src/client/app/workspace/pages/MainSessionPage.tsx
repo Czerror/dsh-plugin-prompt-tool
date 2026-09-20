@@ -29,6 +29,8 @@ export const MainSessionPage = memo(function MainSessionPage(props: { store: Pro
     if (props.browse !== undefined) props.browse.variablesExpanded = value
     setVariablesExpanded(value)
   }
+  // 搜索词由页面持有：同一搜索词同时过滤配置实例、能力卡、共享设置区与单例卡。
+  const [keyword, setKeyword] = useState(props.browse?.filter ?? '')
   const [toolCreate, setToolCreate] = useState<ToolCreateIntent>()
   /** 新建能力后的定位信号：token 递增，保证重复创建同一能力仍会再次展开并跳转。 */
   const [focusCapability, setFocusCapability] = useState<{ id: string; token: number }>()
@@ -99,6 +101,7 @@ export const MainSessionPage = memo(function MainSessionPage(props: { store: Pro
     t,
     viewFilter,
     audience: 'main',
+    keyword,
     focusCapability,
     toolCreate,
     onToolIntentConsumed: () => setToolCreate(undefined),
@@ -148,6 +151,8 @@ export const MainSessionPage = memo(function MainSessionPage(props: { store: Pro
         saveTemplateVariables={store.saveTemplateVariables}
         viewFilter={viewFilter}
         onViewFilterChange={changeViewFilter}
+        keyword={keyword}
+        onKeywordChange={setKeyword}
         variablesExpanded={variablesExpanded}
         onVariablesExpandedChange={changeVariablesExpanded}
         beforeCards={layers.beforeCards}
