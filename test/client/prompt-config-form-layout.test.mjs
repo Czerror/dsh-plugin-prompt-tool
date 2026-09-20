@@ -174,6 +174,38 @@ test('人设卡脱离公共配置分组，在模块列表下置顶显示', () =>
     '世界书诊断卡排在人设卡之后')
 })
 
+test('受管配置参数只给来源绑定与只读回显，不给会被重建覆盖的写入口', () => {
+  const anchorProps = {
+    t, strategy: 'first-turn-anchor', layer: 'pre-step', id: 'near-anchor', enabled: true,
+    params: { text: 'ANCHOR-VALUE', useCustom: true, buildPattern: 'BUILD-VALUE' }, onPatch() {},
+  }
+  const anchorHtml = renderToStaticMarkup(createElement(StrategyParamsFields, anchorProps))
+  assert.match(anchorHtml, /data-managed-config="near-anchor"/, '锚定受管配置给出来源绑定面板')
+  // 每个受管字段都带来源参数标记，顺序与 shared 契约一致。
+  assert.deepEqual([...anchorHtml.matchAll(/data-managed-source="([^"]+)"/g)].map(([, source]) => source), [
+    'firstTurnAnchor', 'firstTurnCustom', 'firstTurnText', 'buildPattern',
+    'complexPattern', 'firstTurnBuild', 'firstTurnInspect', 'firstTurnDeep',
+  ])
+  assert.match(anchorHtml, /ANCHOR-VALUE/, '只读回显当前生效值')
+  assert.match(anchorHtml, /firstTurnText/, '标明来源参数键')
+  assert.equal(/<textarea|<input[^>]*class="[^"]*configInput/.test(anchorHtml), false, '受管字段不渲染可写输入')
+  // 派生项明确标注为计算结果，缺省回落语义也有说明。
+  const guideHtml = renderToStaticMarkup(createElement(StrategyParamsFields, {
+    t, strategy: 'guide-auto', layer: 'pre-step', id: 'router-guide', enabled: true, modelScope: 'flash',
+    params: { text: 'GUIDE-VALUE', useCustom: false }, onPatch() {},
+  }))
+  assert.match(guideHtml, /data-managed-config="router-guide"/)
+  assert.match(guideHtml, /data-managed-path="modelScope"/)
+  assert.match(guideHtml, new RegExp(t('strategyParam.managed.derived')))
+  assert.match(guideHtml, new RegExp(t('strategyParam.managed.followsAnchor')))
+  // 普通自建策略配置仍可编辑局部 params（受管判定按契约的配置 id，不按策略一刀切）。
+  const customHtml = renderToStaticMarkup(createElement(StrategyParamsFields, {
+    t, strategy: 'first-turn-anchor', layer: 'pre-step', id: 'my-own-anchor', params: { text: 'X' }, onPatch() {},
+  }))
+  assert.match(customHtml, /<textarea/, '自建策略保留局部参数编辑')
+  assert.doesNotMatch(customHtml, /data-managed-config/)
+})
+
 test('原生元素不再使用浏览器 title 或 data-tip 说明', () => {
   // 禁令类断言：跨全目录扫描，不是"某个组件渲染成什么"，SSR 无法替代。
   const root = new URL('../../src/client/', import.meta.url)

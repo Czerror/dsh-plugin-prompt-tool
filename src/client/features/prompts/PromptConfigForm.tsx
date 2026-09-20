@@ -217,7 +217,7 @@ export function PromptConfigForm(props: {
         {placeholder && (
           <OptionField t={t} className={styles.fieldSpan3} label={t('form.fill.label')} hint={t('form.fill.hint')} value={config.fill ?? (instructionHint ? 'instruction-hint' : undefined)} options={fillOptions} fallback="" labelKeys={FILL_LABEL_KEYS} disabled={locked || disabled} onChange={(value) => onPatch({ fill: value || undefined })} />
         )}
-        {!locked && <StrategyParamsFields t={t} strategy={strategy} layer={config.layer} params={config.params} id={config.id} fieldDrafts={props.fieldDrafts} draftScope={props.draftScope} onPatch={(value) => onPatch({ params: value })} />}
+        {!locked && <StrategyParamsFields t={t} strategy={strategy} layer={config.layer} params={config.params} id={config.id} enabled={config.enabled} modelScope={config.modelScope} fieldDrafts={props.fieldDrafts} draftScope={props.draftScope} onPatch={(value) => onPatch({ params: value })} />}
       </fieldset>
 
       <details className={styles.configAdvanced} open={advancedOpen} onToggle={(event) => setAdvancedOpen(event.currentTarget.open)}>

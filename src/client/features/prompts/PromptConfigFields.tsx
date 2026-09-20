@@ -8,6 +8,7 @@ import { MenuSelect } from '../../ui/MenuSelect.tsx'
 import { TagInput } from '../../ui/TagInput.tsx'
 import type { PromptToolLocaleKey, PromptToolTranslate } from '../../locales.ts'
 import type { PromptConfigMatch } from '../../prompt-tool-types.ts'
+import { managedConfigSpec, managedFieldValue, type ManagedConfigSpec } from '../../../shared/managed-config-fields.ts'
 import { autoResizeTextarea } from './textarea-resize.ts'
 import { EMPTY_BEHAVIOR_LABEL_KEYS, MATCH_LOGIC_LABEL_KEYS, MATCH_LOGICS, MATCH_REGEX_MODE_LABEL_KEYS, MATCH_REGEX_MODES, normalizeMatch, translateLabel } from './prompt-config-policy.ts'
 import sharedCss from '../../ui/controls.module.css'
@@ -227,6 +228,44 @@ function ParamInput(props: { label: string; hint?: string; className?: string; v
 }
 
 /**
+ * 受 writer 管理的字段面板：逐字段显示「只读当前值 + 唯一来源参数」。
+ * 绑定事实来自 shared 契约（`MANAGED_CONFIG_FIELDS`），与 host 的投影行为由
+ * `test/host/managed-config-fields.test.mjs` 锁定；这里不做 id 特判，也不提供
+ * 会被重建覆盖的写入口。
+ */
+function ManagedFieldsPanel(props: {
+  t: PromptToolTranslate
+  spec: ManagedConfigSpec
+  config: { enabled?: boolean; modelScope?: string; params?: Record<string, unknown> }
+}): ReactNode {
+  const { t, spec } = props
+  return (
+    <div className={clsx(styles.configFieldHint, styles.fieldFull)} data-managed-config={spec.configId}>
+      <p>{t(spec.configId === 'near-anchor' ? 'strategyParam.anchorManaged' : 'strategyParam.guideManaged')}</p>
+      <ul>
+        {spec.fields.map((field) => {
+          const value = managedFieldValue(field, props.config)
+          const shown = value === undefined || value === null || value === ''
+            ? t('strategyParam.managed.empty')
+            : typeof value === 'boolean' ? t(value ? 'param.on' : 'param.off') : String(value)
+          const note = field.derived === true
+            ? t('strategyParam.managed.derived')
+            : field.fallbackNote === 'followsAnchor'
+              ? t('strategyParam.managed.followsAnchor')
+              : field.fallbackNote === 'followsCustom' ? t('strategyParam.managed.followsCustom') : undefined
+          return (
+            <li key={field.path} data-managed-path={field.path} data-managed-source={field.sourceParam}>
+              {t(`param.${field.sourceParam}`)} · {t('strategyParam.managed.source', { param: field.sourceParam })} · {shown}
+              {note === undefined ? undefined : <> · {note}</>}
+            </li>
+          )
+        })}
+      </ul>
+    </div>
+  )
+}
+
+/**
  * 按 layer / strategy 拆解 params 为结构化编辑框（替代裸 JSON）：
  *   层专属 → system-section（段名/独占/动态抑制）、runtime-context（注册名）、
  *   agent-request（patch/replace）、llm-stream（mode）、tool-pipeline（toolNames/裁决）；
@@ -236,7 +275,7 @@ function ParamInput(props: { label: string; hint?: string; className?: string; v
  *   placeholder / instruction-hint → fill 模板参数（text/envKeys/limit/fields/providers/emptyBehavior/emptyText）；
  * 无固定字段的策略回退 JSON 编辑（保留任意 params 能力）。
  */
-export function StrategyParamsFields(props: { t: PromptToolTranslate; strategy: string; layer?: string; params: Record<string, unknown> | undefined; onPatch: (params: Record<string, unknown>) => void; id?: string; fieldDrafts?: Map<string, FieldDraft>; draftScope?: string }): ReactNode {
+export function StrategyParamsFields(props: { t: PromptToolTranslate; strategy: string; layer?: string; params: Record<string, unknown> | undefined; onPatch: (params: Record<string, unknown>) => void; id?: string; enabled?: boolean; modelScope?: string; fieldDrafts?: Map<string, FieldDraft>; draftScope?: string }): ReactNode {
   const { strategy, layer, params, onPatch, id } = props
   const t = props.t
   const value = params ?? {}
@@ -313,16 +352,16 @@ export function StrategyParamsFields(props: { t: PromptToolTranslate; strategy: 
   const covered = Object.fromEntries(Object.entries(value).filter(([key]) => known.includes(key)))
   const readOnlyNote = LAYER_READ_ONLY_NOTES[layer ?? '']
 
+  const managed = managedConfigSpec(id)
   if (strategy === 'first-turn-anchor') {
     // writePreset 按 id 把顶层 params（firstTurnCustom/firstTurnText/…）统一写入
-    // 这两个模板配置的 params——这里的编辑会被重建覆盖，隐藏以避免假入口。
-    const managed = id === 'near-anchor'
+    // 这两个模板配置的 params——这里的编辑会被重建覆盖，因此只给来源绑定与只读回显。
     return (
       <>
-        {managed && (
-          <p className={clsx(styles.configFieldHint, styles.fieldFull)}>{t('strategyParam.anchorManaged')}</p>
+        {managed !== undefined && (
+          <ManagedFieldsPanel t={t} spec={managed} config={{ enabled: props.enabled, modelScope: props.modelScope, params: value }} />
         )}
-        {!managed && (
+        {managed === undefined && (
           <>
             <ParamToggle className={styles.fieldSpan4} label={t('strategyParam.custom.label')} hint={t('strategyParam.custom.hint')}
               checked={bool('useCustom')} onChange={(next) => set('useCustom', next)} />
@@ -338,13 +377,12 @@ export function StrategyParamsFields(props: { t: PromptToolTranslate; strategy: 
     )
   }
   if (strategy === 'guide-auto') {
-    const managed = id === 'router-guide'
     return (
       <>
-        {managed && (
-          <p className={clsx(styles.configFieldHint, styles.fieldFull)}>{t('strategyParam.guideManaged')}</p>
+        {managed !== undefined && (
+          <ManagedFieldsPanel t={t} spec={managed} config={{ enabled: props.enabled, modelScope: props.modelScope, params: value }} />
         )}
-        {!managed && (
+        {managed === undefined && (
           <>
             <ParamToggle className={styles.fieldSpan4} label={t('strategyParam.custom.label')} hint={t('strategyParam.custom.hint')}
               checked={bool('useCustom')} onChange={(next) => set('useCustom', next)} />
