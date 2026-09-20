@@ -82,6 +82,12 @@ export interface PromptToolStore {
    *  getFields 返回引用稳定快照，selector 化的组件据此跳过无关重渲染。 */
   getFields: () => Fields
   subscribeFields: (listener: () => void) => () => void
+  /** 参数草稿外部订阅通道：同一参数的多个镜像渲染点据此同步未完成的数字输入与错误态。
+   *  草稿本身仍只有一份（`editorDrafts.fields`），这里只广播修订号，不引入第二份状态。 */
+  getDraftRevision: () => number
+  subscribeDrafts: (listener: () => void) => () => void
+  /** 草稿池写入后调用：镜像控件一起重渲染，读同一草稿键。 */
+  publishDrafts: () => void
   meta: EngineMeta
   loading: boolean
   modelCatalog: Record<string, string[]>
@@ -286,6 +292,20 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
   const subscribeFields = useCallback((listener: () => void) => {
     fieldsListenersRef.current.add(listener)
     return () => { fieldsListenersRef.current.delete(listener) }
+  }, [])
+  /** 参数草稿广播：未完成的数字输入与错误态按同一草稿键在镜像控件之间同步。
+   *  草稿池是可变 Map（不触发 React 重渲染），因此写入方显式发布修订号；
+   *  这是既有 subscribeFields 的同一模式，不是第二份状态或事件总线。 */
+  const draftListenersRef = useRef(new Set<() => void>())
+  const draftRevisionRef = useRef(0)
+  const getDraftRevision = useCallback(() => draftRevisionRef.current, [])
+  const publishDrafts = useCallback(() => {
+    draftRevisionRef.current += 1
+    for (const listener of draftListenersRef.current) listener()
+  }, [])
+  const subscribeDrafts = useCallback((listener: () => void) => {
+    draftListenersRef.current.add(listener)
+    return () => { draftListenersRef.current.delete(listener) }
   }, [])
   /** 指令文件草稿池（独立于 fields）：patch/保存/重新读取都经此发布。 */
   const instructionPoolRef = useRef<InstructionDraftPool>(EMPTY_INSTRUCTION_POOL)
@@ -1118,6 +1138,9 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     fields,
     getFields,
     subscribeFields,
+    getDraftRevision,
+    subscribeDrafts,
+    publishDrafts,
     meta,
     loading,
     modelCatalog,

@@ -1,14 +1,19 @@
-import { useState, type ReactNode } from 'react'
+import { useSyncExternalStore, type ReactNode } from 'react'
 import clsx from 'clsx'
 import { Switch } from '@deepseek-ai/dsh-client-ui-primitives'
 import { ENGINE_PARAM_DEFINITIONS, ENGINE_PARAM_KEYS, type EngineParamKey } from '../../../shared/engine-params.ts'
 import type { PromptToolStore } from '../../data/use-prompt-tool-store.ts'
 import type { StageDraft } from '../../data/prompt-tool-fields.ts'
+import type { FieldDraft } from '../../data/workspace-drafts.ts'
 import type { PromptToolTranslate } from '../../locales.ts'
 import { MenuSelect } from '../../ui/MenuSelect.tsx'
 import { TagInput } from '../../ui/TagInput.tsx'
 import { HintTooltip } from '../../ui/HintTooltip.tsx'
 import styles from '../../ui/controls.module.css'
+
+/** 未提供草稿通道的 store（单测桩）退化订阅：不广播，字段仍按当前草稿读一次。 */
+const subscribeNothing = (): (() => void) => () => {}
+const getZero = (): number => 0
 
 /**
  * 简单字段由共享定义驱动；阶段继续使用结构化编辑，不暴露任意 JSON 配置。
@@ -23,19 +28,29 @@ export function EngineParamFields({ store, card, t, instanceId }: { store: Promp
 }
 
 /**
- * 同一个引擎参数可以在多个位置渲染（层卡内的能力卡 + 工具管线的共享设置区）：
+ * 同一个引擎参数可以在多个位置渲染（层卡内的能力卡 + 工具管线的共享设置区，含跨层相关设置）：
  * 它们绑定同一 `store.fields[param]` 与同一草稿键，天然同源，不需要同步服务；
  * `instanceId` 只用来给每个渲染点一份独立的 DOM id / aria 关联，避免镜像控件
  * 出现重复 id 与标签错配。
+ *
+ * 未完成的数字输入与字段错误也属于这份共享草稿：渲染点订阅同一草稿修订号后一起重渲染，
+ * 因此一个渲染点里的半成品输入或错误提示会立即出现在其他渲染点，且不各留一份本地 state。
  */
 export function EngineParamField({ store, param, t, instanceId }: { store: PromptToolStore; param: EngineParamKey; t: PromptToolTranslate; instanceId?: string }): ReactNode {
   const definition = ENGINE_PARAM_DEFINITIONS[param]
   const value = store.fields[param]
   const disabled = !store.fields.writePreset || store.moduleFacts?.editable !== true
   const draftKey = `${store.fields.presetTemplate}:param:${param}`
-  const retained = store.editorDrafts?.fields.get(draftKey)
-  const [numberDraft, setNumberDraft] = useState<string | undefined>(retained?.text)
-  const [error, setError] = useState<string | undefined>(retained?.error || undefined)
+  const getDraftRevision = store.getDraftRevision ?? getZero
+  useSyncExternalStore(store.subscribeDrafts ?? subscribeNothing, getDraftRevision, getDraftRevision)
+  const draft = store.editorDrafts?.fields.get(draftKey)
+  const draftText = draft?.text
+  const error = draft !== undefined && draft.error.length > 0 ? draft.error : undefined
+  const writeDraft = (next: FieldDraft | undefined): void => {
+    if (next === undefined) store.editorDrafts?.fields.delete(draftKey)
+    else store.editorDrafts?.fields.set(draftKey, next)
+    store.publishDrafts?.()
+  }
   const save = (): void => { void store.persistParamOverrides() }
   const patch = (next: unknown): void => { store.patch({ [param]: next }) }
   // 默认渲染点沿用 `pt-param-<键>`（层卡内唯一）；镜像渲染点带实例前缀，DOM id 不重复。
@@ -100,24 +115,18 @@ export function EngineParamField({ store, param, t, instanceId }: { store: Promp
   } else if (definition.kind === 'number') {
     control = <input id={id} className={clsx(styles.configInput, styles.configNumberInput)} inputMode="decimal" aria-label={label}
       aria-invalid={error !== undefined} aria-describedby={error === undefined ? undefined : `${id}-error`}
-      value={numberDraft ?? String(value ?? '')} readOnly={disabled}
-      onChange={(event) => {
-        setNumberDraft(event.target.value)
-        setError(undefined)
-        store.editorDrafts?.fields.set(draftKey, { source: String(value ?? ''), text: event.target.value, error: '' })
-      }}
+      value={draftText ?? String(value ?? '')} readOnly={disabled}
+      onChange={(event) => writeDraft({ source: String(value ?? ''), text: event.target.value, error: '' })}
       onBlur={() => {
-        if (numberDraft === undefined || disabled) return
-        const next = numberDraft.trim() === '' ? definition.defaultValue : Number(numberDraft)
+        if (draftText === undefined || disabled) return
+        const next = draftText.trim() === '' ? definition.defaultValue : Number(draftText)
         const reason = typeof next === 'number' ? definition.check(next) : undefined
         if (reason !== undefined) {
-          setError(reason)
-          store.editorDrafts?.fields.set(draftKey, { source: String(value ?? ''), text: numberDraft, error: reason })
+          writeDraft({ source: String(value ?? ''), text: draftText, error: reason })
           return
         }
         patch(next)
-        store.editorDrafts?.fields.delete(draftKey)
-        setNumberDraft(undefined)
+        writeDraft(undefined)
         save()
       }} />
   } else {

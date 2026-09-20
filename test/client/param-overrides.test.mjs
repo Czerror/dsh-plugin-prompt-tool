@@ -3,6 +3,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { EMPTY_FIELDS } from '../../src/client/data/prompt-tool-fields.ts'
+import { shouldReloadAfterParamSave, snapshotSwitches } from '../../src/client/data/dirty-state.ts'
 import { buildParamOverrides, isCurrentPresetDraft, readParamOverridesPatch, updateLoadedParamKeys } from '../../src/client/data/param-overrides.ts'
 import { createSerialTaskQueue } from '../../src/client/data/save-queue.ts'
 
@@ -75,6 +76,20 @@ for (const [name, run] of [
     assert.deepEqual(buildParamOverrides(fields, { baseline, loadedKeys: new Set(), autoModelProvider: 'detected', autoSubagentModelProvider: 'detected' }), {
       modelName: 'main', modelProvider: 'detected', subagentModelName: 'child', subagentModelProvider: 'detected',
     })
+  }],
+  ['参数保存的迟到响应不覆盖请求期间的新编辑', () => {
+    // 参数保存发起时取快照；请求返回时若草稿已继续变化，则不得触发静默重载覆盖新值。
+    const saved = snapshotSwitches({ ...EMPTY_FIELDS, toolFilterAllow: 'read' })
+    assert.equal(shouldReloadAfterParamSave(snapshotSwitches({ ...EMPTY_FIELDS, toolFilterAllow: 'read' }), saved), true,
+      '草稿未继续变化时可以静默重载')
+    assert.equal(shouldReloadAfterParamSave(snapshotSwitches({ ...EMPTY_FIELDS, toolFilterAllow: 'read, glob' }), saved), false,
+      '请求期间改了共享参数：迟到响应不重载')
+    // 未完成的阶段草稿同样阻止重载，避免服务端过滤结果覆盖正在编辑的行。
+    const withStage = { ...EMPTY_FIELDS, stages: [{ name: '了解', tools: '' }] }
+    assert.equal(shouldReloadAfterParamSave(snapshotSwitches(withStage), snapshotSwitches(withStage)), false)
+    // 预设身份核对：跨预设的迟到响应一律拒绝，回显不串。
+    assert.equal(isCurrentPresetDraft({ presetTemplate: 'a' }, { presetTemplate: 'a' }), true)
+    assert.equal(isCurrentPresetDraft({ presetTemplate: 'a', toolFilterAllow: 'read, glob' }, { presetTemplate: 'b' }), false)
   }],
 ]) {
   test(name, run)

@@ -351,3 +351,48 @@ test('浏览器：子代理策略失焦保存与草稿隔离', { skip: skipBrows
   })
   assert.deepEqual(await evaluate('window.errors'), [])
 })
+
+test('浏览器：参数镜像控件同步半成品输入与错误态，一次失焦只保存一次', { skip: skipBrowser, timeout: 60000 }, async () => {
+  const chooseView = async (name) => {
+    await evaluate(`document.querySelector('[aria-label="按层级或策略过滤"]').click()`)
+    await sleep(50)
+    await click(name)
+  }
+  await navigate('/')
+  await waitFor('window.store?.moduleFacts?.editable === true')
+  // 创建「深思门」能力：deliberationMinChars 同时出现在能力卡与工具管线共享设置区。
+  await click('添加能力 / 工具模块')
+  await click('添加模块 · deliberation-gate')
+  await chooseView('层级：工具链')
+  await waitFor(`document.querySelector('#pt-param-deliberationMinChars') !== null`)
+  // 能力卡由创建定位自动展开；共享设置卡需要手动展开才渲染镜像控件。
+  await evaluate(`[...document.querySelectorAll('button[aria-expanded]')].find((button) => button.textContent.includes('工具能力设置'))?.click(); true`)
+  const primary = '#pt-param-deliberationMinChars'
+  const mirror = '#pt-param-tool-pipeline-deliberation-gate-deliberationMinChars'
+  await waitFor(`document.querySelector(${JSON.stringify(mirror)}) !== null`)
+  // module fixture 没有额外的焦点目标，直接 blur 元素本身即可触发卡片的 onBlur 保存语义。
+  const blurField = (selector) => evaluate(`document.querySelector(${JSON.stringify(selector)}).blur(); true`)
+  const saves = `window.requests.filter((request) => request.endpoint === 'param-overrides').length`
+  const before = await evaluate(saves)
+  assert.notEqual(await evaluate(`document.querySelector(${JSON.stringify(primary)}).id`),
+    await evaluate(`document.querySelector(${JSON.stringify(mirror)}).id`), '两处渲染点的 DOM id 不同')
+  // 半成品输入：另一处立即读到同一个值（同一草稿键），且尚未落盘。
+  await edit(mirror, '12a')
+  await waitFor(`document.querySelector(${JSON.stringify(primary)}).value === '12a'`)
+  assert.equal(await evaluate(saves), before, '未完成的输入不保存')
+  // 失焦校验失败：错误态同为共享草稿，两处一起 aria-invalid 并各播报同一条错误。
+  await blurField(mirror)
+  await waitFor(`document.querySelector(${JSON.stringify(primary)}).getAttribute('aria-invalid') === 'true'`)
+  assert.equal(await evaluate(`document.querySelector(${JSON.stringify(mirror)}).getAttribute('aria-invalid')`), 'true')
+  assert.equal(await evaluate(`[...document.querySelectorAll('[role="alert"]')].filter((node) => node.textContent.includes('必须是非负整数')).length`), 2)
+  assert.equal(await evaluate(saves), before, '校验失败不落盘')
+  // 合法值：一次失焦只提交一次参数保存，两处回落到同一个字段值。
+  await edit(primary, '20')
+  await blurField(primary)
+  await waitFor(`${saves} === ${before + 1}`)
+  await sleep(200)
+  assert.equal(await evaluate(saves), before + 1, '一次语义变更只保存一次')
+  assert.equal(await evaluate(`document.querySelector(${JSON.stringify(mirror)}).value`), '20')
+  assert.equal(await evaluate('window.store.fields.deliberationMinChars'), 20)
+  assert.equal(await evaluate(`document.querySelectorAll('[role="alert"]').length`), 0, '保存成功后清掉错误态')
+})

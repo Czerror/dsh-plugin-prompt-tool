@@ -463,3 +463,52 @@ test('EngineParamFields 把 instanceId 透传给组内每个字段', () => {
   assert.ok(html.includes(zh['param.toolFilterAllow']) && html.includes(zh['param.toolFilterDeny']))
   assert.ok(html.includes('id="pt-param-tool-pipeline-toolFilterAllow"'), '组内字段继承实例前缀')
 })
+
+test('共享参数的未完成输入与错误态在镜像控件之间同步，且一次修改只保存一次', () => {
+  const listeners = new Set()
+  const drafts = { fields: new Map() }
+  let revision = 0
+  let saves = 0
+  const store = {
+    fields: { ...EMPTY_FIELDS, presetTemplate: 'pt-mirror', writePreset: true, deliberationMinChars: 10 },
+    moduleFacts: { editable: true },
+    editorDrafts: drafts,
+    patch(partial) { Object.assign(store.fields, partial) },
+    persistParamOverrides() { saves += 1; return Promise.resolve(true) },
+    getDraftRevision() { return revision },
+    subscribeDrafts(listener) { listeners.add(listener); return () => { listeners.delete(listener) } },
+    publishDrafts() { revision += 1; for (const listener of listeners) listener() },
+  }
+  const control = (instanceId) => find(tree(EngineParamField, { store, param: 'deliberationMinChars', t, instanceId }), (node) => node.type === 'input')
+  // SSR 只用 getServerSnapshot，不会调用 subscribe：接线本身由源码契约守卫，
+  // 真实重渲染同步由浏览器 smoke 覆盖（两处控件读同一草稿键）。
+  assert.match(read('features/modules/EngineParamFields.tsx'), /useSyncExternalStore\(store\.subscribeDrafts \?\? subscribeNothing/,
+    '参数控件订阅共享草稿通道')
+  // 两处渲染点有独立 DOM id，但读同一字段与同一草稿键。
+  assert.equal(control(undefined).props.value, '10')
+  assert.equal(control('tool-pipeline-deliberation-gate').props.value, '10')
+  // 未完成的数字输入写在共享草稿里：另一处立即读到同一半成品，不是各自一份本地 state。
+  control(undefined).props.onChange({ target: { value: '12a' } })
+  assert.equal(control(undefined).props.value, '12a')
+  assert.equal(control('tool-pipeline-deliberation-gate').props.value, '12a')
+  assert.equal(saves, 0, '未完成的输入不落盘')
+  // 在镜像渲染点失焦：错误态同为共享草稿，两处一起进入 aria-invalid 并播报同一条错误。
+  control('tool-pipeline-deliberation-gate').props.onBlur()
+  assert.equal(saves, 0)
+  const primary = render(EngineParamField, { store, param: 'deliberationMinChars', t })
+  const mirror = render(EngineParamField, { store, param: 'deliberationMinChars', t, instanceId: 'tool-pipeline-deliberation-gate' })
+  for (const html of [primary, mirror]) {
+    assert.match(html, /aria-invalid="true"/)
+    assert.match(html, /role="alert"/)
+  }
+  assert.equal(drafts.fields.get('pt-mirror:param:deliberationMinChars').text, '12a', '错误草稿保留半成品原文')
+  // 改成合法值后失焦：一次语义变更只提交一次保存，两处回落到同一个字段值。
+  control(undefined).props.onChange({ target: { value: '20' } })
+  assert.equal(saves, 0, '输入过程不保存')
+  control('tool-pipeline-deliberation-gate').props.onBlur()
+  assert.equal(saves, 1, '一次失焦只提交一次保存')
+  assert.equal(store.fields.deliberationMinChars, 20)
+  assert.equal(drafts.fields.has('pt-mirror:param:deliberationMinChars'), false, '保存成功后清掉草稿')
+  assert.equal(control(undefined).props.value, '20')
+  assert.equal(control('tool-pipeline-deliberation-gate').props.value, '20')
+})

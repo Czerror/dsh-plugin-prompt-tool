@@ -30,7 +30,7 @@ const instructionCard = (file) => ({
   origin: { kind: 'instruction-file', fileId: file.fileId },
   params: { scope: file.scope, file: file.path, displayPath: file.displayPath, fileId: file.fileId },
 })
-let configs = [], variables = {}, tools = []
+let configs = [], variables = {}, tools = [], overrides = {}
 const modules = new Set()
 window.requests = []
 window.fetch = async (url, init) => {
@@ -39,7 +39,7 @@ window.fetch = async (url, init) => {
   let value = {}
   if (endpoint === 'bootstrap') return new Response(JSON.stringify({ ok: true,
     value: { value: { presetTemplate: 'test', writePreset: true }, base: {}, revision: 1 },
-    meta: { meta: fixture.meta }, overrides: { overrides: {} }, variables: { variables, enabled: true },
+    meta: { meta: fixture.meta }, overrides: { overrides }, variables: { variables, enabled: true },
     // 生成快照可能暂时为空；指令文件卡始终由文件快照合并回来（与宿主 bridge 同形）。
     promptConfigs: { promptConfigs: [...(window.staleGenerated ? [] : configs), ...instructionFiles.map(instructionCard)] },
     instructions: {
@@ -51,7 +51,7 @@ window.fetch = async (url, init) => {
   }))
   if (endpoint === 'instructions-policy') value = { policy: { enabled: true, files: {}, defaults: { order: 30, position: 'after-user', promotion: 'include-subagents', audience: null, modelScope: 'all' } }, revision: 'pol-1', exists: true }
   if (endpoint === 'templates') value = fixture.templates
-  if (endpoint === 'param-overrides') { if (body.promptConfigs) configs = body.promptConfigs; value = body }
+  if (endpoint === 'param-overrides') { if (body.promptConfigs) configs = body.promptConfigs; if (body.overrides) overrides = body.overrides; value = body }
   if (endpoint === 'custom-tools') {
     if (body.customTools && window.rejectToolSave) return new Response(JSON.stringify({ ok: false, message: 'test: incomplete tool' }))
     if (body.customTools) tools = body.customTools
