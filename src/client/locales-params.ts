@@ -111,6 +111,10 @@ export const PARAMS_ZH = {
   // 子代理页不提供「仅主对话」能力的创建与卡片：引导到实例级策略能力卡。
   'modules.subagentScopeHint': '子代理工具面由「subagent-tool-policy」能力卡管理（在本菜单里创建）；「tool-filter」只作用于主对话，不在本页提供。',
   'modules.subagentEmptyHint': '子代理页不显示「仅主对话」的引擎能力；子代理工具面请启用「subagent-tool-policy」能力。',
+  // 工具管线层的共享能力设置区：与 tool-filter 能力卡同源，改一处即改同一份预设参数。
+  'modules.toolPipeline.name': '工具能力设置',
+  'modules.toolPipeline.meta': '预设级共享参数（与工具过滤能力卡同源）',
+  'modules.toolPipeline.hint': '这里的工具过滤与「tool-filter」能力卡是同一份预设参数：任一处修改立即反映到另一处，保存一次即可；不新增第二份状态。',
 }
 
 export const PARAMS_EN: Record<keyof typeof PARAMS_ZH, string> = {
@@ -217,4 +221,7 @@ export const PARAMS_EN: Record<keyof typeof PARAMS_ZH, string> = {
   // Subagent page omits main-session-only capabilities and points at the per-instance policy capability card.
   'modules.subagentScopeHint': 'The subagent tool surface is managed by the "subagent-tool-policy" capability card (create it from this menu); "tool-filter" affects the main session only and is not offered here.',
   'modules.subagentEmptyHint': 'Main-session-only engine capabilities are not shown on the subagent page; enable the "subagent-tool-policy" capability for the subagent tool surface.',
+  'modules.toolPipeline.name': 'Tool capability settings',
+  'modules.toolPipeline.meta': 'Preset-level shared parameters (same source as the tool-filter capability card)',
+  'modules.toolPipeline.hint': 'These tool-filter controls and the "tool-filter" capability card edit the same preset parameters: a change in either place shows up in the other immediately, and one save is enough — there is no second copy of the state.',
 }

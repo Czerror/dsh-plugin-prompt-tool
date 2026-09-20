@@ -10,6 +10,8 @@ import { INSERTION_LAYERS, LAYER_LABEL_KEYS, translateLabel } from '../../../fea
 import { useTemplatePicker } from '../../../features/prompts/useTemplatePicker.ts'
 import { CustomToolsCard, type ToolCreateIntent } from '../../../features/tools/CustomToolsCard.tsx'
 import { TemplatePicker } from '../../../ui/TemplatePicker.tsx'
+import { LayerCard } from '../../../ui/LayerCard.tsx'
+import { isEditorGroupVisible } from '../../../../shared/engine-capabilities.ts'
 import { ConfigListWithTemplates } from './ConfigListWithTemplates.tsx'
 import ui from '../../../ui/controls.module.css'
 import type { ConfigPageBrowse } from '../workspace-browse-state.ts'
@@ -81,7 +83,6 @@ export const SubagentPage = memo(function SubagentPage(props: { store: PromptToo
     setCreatedHidden(viewFilter !== 'all')
     setFocusCapability((current) => ({ id, token: (current?.token ?? 0) + 1 }))
   }, [viewFilter])
-  const showCustomTools = viewFilter === 'all' || viewFilter === 'tool-pipeline'
   return (
     <>
       <section className={ui.section} aria-label={t('subagent.aria')}>
@@ -96,23 +97,29 @@ export const SubagentPage = memo(function SubagentPage(props: { store: PromptToo
           onShowCreated={() => { changeViewFilter('all'); setCreatedHidden(false) }}
           createdConfigId={picker.createdConfigId}
           commonCards={<div className={ui.configList}>
-            <ModelRouteModuleCard store={store} scope="subagent" />
-            <DelegationToolsModuleCard store={store} t={t} />
+            <LayerCard visible={isEditorGroupVisible('subagent-model', viewFilter)}>
+              <ModelRouteModuleCard store={store} scope="subagent" />
+            </LayerCard>
+            <LayerCard visible={isEditorGroupVisible('subagent-tools', viewFilter)}>
+              <DelegationToolsModuleCard store={store} t={t} />
+            </LayerCard>
           </div>}
           beforeCards={
-            <TemplateVariablesModuleCard
-              t={t}
-              templateVariables={store.templateVariables}
-              setTemplateVariables={store.setTemplateVariables}
-              templateVariablesEnabled={store.templateVariablesEnabled}
-              setTemplateVariablesEnabled={store.setTemplateVariablesEnabled}
-              saveTemplateVariables={store.saveTemplateVariables}
-              expanded={variablesExpanded}
-              onToggleExpanded={() => {
-                if (props.browse !== undefined) props.browse.variablesExpanded = !variablesExpanded
-                setVariablesExpanded(!variablesExpanded)
-              }}
-            />
+            <LayerCard visible={isEditorGroupVisible('variables', viewFilter)}>
+              <TemplateVariablesModuleCard
+                t={t}
+                templateVariables={store.templateVariables}
+                setTemplateVariables={store.setTemplateVariables}
+                templateVariablesEnabled={store.templateVariablesEnabled}
+                setTemplateVariablesEnabled={store.setTemplateVariablesEnabled}
+                saveTemplateVariables={store.saveTemplateVariables}
+                expanded={variablesExpanded}
+                onToggleExpanded={() => {
+                  if (props.browse !== undefined) props.browse.variablesExpanded = !variablesExpanded
+                  setVariablesExpanded(!variablesExpanded)
+                }}
+              />
+            </LayerCard>
           }
           toolbarActions={
             <EngineModuleActions
@@ -151,7 +158,7 @@ export const SubagentPage = memo(function SubagentPage(props: { store: PromptToo
                     )
                     : undefined}
                 />
-              <div hidden={!showCustomTools}>
+              <LayerCard visible={isEditorGroupVisible('custom-tools', viewFilter)}>
                 <CustomToolsCard
                   key={store.fields.presetTemplate}
                   presetId={store.fields.presetTemplate}
@@ -162,7 +169,7 @@ export const SubagentPage = memo(function SubagentPage(props: { store: PromptToo
                   createIntent={toolCreate}
                   onIntentConsumed={() => setToolCreate(undefined)}
                 />
-              </div>
+              </LayerCard>
             </>
           }
           viewFilter={viewFilter}

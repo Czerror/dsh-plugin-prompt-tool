@@ -6,6 +6,8 @@ import { PromptConfigList, type PromptConfigListProps } from './PromptConfigList
 import { HintTooltip } from '../../ui/HintTooltip.tsx'
 import { ConfirmDialog } from '../../ui/ConfirmDialog.tsx'
 import { VariablesEditor } from './PromptConfigFields.tsx'
+import { LayerCard } from '../../ui/LayerCard.tsx'
+import { isEditorGroupVisible } from '../../../shared/engine-capabilities.ts'
 import sharedCss from '../../ui/controls.module.css'
 import featureCss from './prompts.module.css'
 
@@ -155,16 +157,18 @@ export function PromptConfigsEditor(props: PromptConfigsEditorProps): ReactNode 
         onShowCreated={props.onShowCreated}
         commonCards={<div className={styles.commonCards} aria-label={t('configs.common.aria')} data-module-category="common">
           {props.commonCards}
-          <TemplateVariablesModuleCard
-            t={t}
-            templateVariables={props.templateVariables}
-            setTemplateVariables={props.setTemplateVariables}
-            templateVariablesEnabled={props.templateVariablesEnabled}
-            setTemplateVariablesEnabled={props.setTemplateVariablesEnabled}
-            saveTemplateVariables={props.saveTemplateVariables}
-            expanded={props.variablesExpanded}
-            onToggleExpanded={() => props.onVariablesExpandedChange(!props.variablesExpanded)}
-          />
+          <LayerCard visible={isEditorGroupVisible('variables', props.viewFilter)}>
+            <TemplateVariablesModuleCard
+              t={t}
+              templateVariables={props.templateVariables}
+              setTemplateVariables={props.setTemplateVariables}
+              templateVariablesEnabled={props.templateVariablesEnabled}
+              setTemplateVariablesEnabled={props.setTemplateVariablesEnabled}
+              saveTemplateVariables={props.saveTemplateVariables}
+              expanded={props.variablesExpanded}
+              onToggleExpanded={() => props.onVariablesExpandedChange(!props.variablesExpanded)}
+            />
+          </LayerCard>
         </div>}
         meta={props.meta}
         configs={props.configs}

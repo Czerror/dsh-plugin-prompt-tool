@@ -155,6 +155,29 @@ ST 导入配置显式带 `params.stMacros: true`，赋值模板保留到运行�
 6. 测试：`test/host/engine-params-bridge.test.mjs` 的 BRIDGE_SAMPLES 加样本值（若为参数桥消费键）。
 7. `docs/architecture-params.md` 如有语义变更同步；CHANGELOG 记条目。
 
+### 锚定/引导内容键并入共享参数目录（2026-09-20）
+
+`buildPattern`、`complexPattern`、`firstTurnBuild`、`firstTurnInspect`、`firstTurnDeep`、`guideWeak`、
+`guideDeep` 七个键此前只在 `shared/param-keys.ts` 的旁路清单里：bridge 白名单放行，
+`validateEngineParamValues` 却按未知键拒绝，形成「白名单通过、写盘前报未知键」的断层。现在它们并入
+`EngineParams` 与 `ENGINE_PARAM_DEFINITIONS`（`card: 'prompt-defaults'`，默认草稿空串），旁路清单只剩
+settings 载荷键 `promptConfigs`；读回、序列化、脏检测、保存快照与中英词条随现有派生链自动生效，页面不再
+维护键数组。
+
+前两个键是正则：值类型为新增的 `pattern`，按 `new RegExp(value, 'i')` 在写盘前编译校验——与
+`engine/classify-task.mjs` 消费时的编译规则同源，非法正则返回逐字段错误，而不是先存下再让锚定/引导静默
+失效。空串仍是删键语义：只移除该键，不动其它内容键。
+
+### 九层编辑归属契约（2026-09-20）
+
+`engine/schema.mjs` 的 `LAYER_ORDER` 是九层顺序的唯一权威，`getEngineMeta()` 同源下发 `layerOrder`；
+`src/shared/engine-capabilities.ts` 用 `EngineLayer` 表达同一组层，`ENGINE_EDITOR_GROUP_MAP` 把能力组
+（id = 能力 id，通道即 `displayLayer`）与少量专用编辑组（`prompt-defaults` / `persona` / `variables` /
+`main-model` / `subagent-model` / `custom-tools`）的主归属登记在一处，`relatedLayers` 只登记确有第二通道的
+组。`/meta` 与 `/bootstrap` 只下发 `id` / `displayLayer` / `relatedLayers` / `hook` 白名单字段，不含路径、
+行级配置或函数；前端对旧宿主缺字段退化到共享的 `ENGINE_LAYER_ORDER`。展示归属不改变运行时消费：hook、
+注册顺序、作用域与 disposer 仍由引擎行自身决定。
+
 ## 6. 保存状态机（防保存期间编辑丢失）
 
 `persistParamOverrides` 与 `persistConfigs` 不直接把“当前 fields”当作保存结果：

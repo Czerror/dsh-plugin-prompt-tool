@@ -13,17 +13,16 @@ import { assertPresetId, assertPresetTree, presetPathExists } from './preset-ins
 import { appendPresetModules, withPresetDoc } from './manifest.ts'
 import { buildWorldBookEntry } from './worldbook.ts'
 import type { PresetSpec } from './manifest.ts'
+import { ENGINE_LAYER_ORDER } from '../shared/engine-capabilities.ts'
 import type { StConversionReport } from '../shared/bridge-contract.ts'
 import type { AssetFile, ImportChoices, ImportKind } from '../shared/asset-transfer.ts'
 
-/** 引擎六层注入顺序（与 schema 层序一致）：合并写盘时按此排序，数组序 = 引擎序。 */
-const LAYER_ORDER = ['pre-step', 'system-section', 'runtime-context', 'agent-request', 'llm-stream', 'tool-pipeline', 'turn-stop', 'subagent-start', 'subagent-end']
-
+/** 合并写盘时按九层顺序排序（数组序 = 引擎序）：层序只由共享契约提供，这里不再维护第二份。 */
 function sortConfigs(configs: Array<Record<string, unknown>>): Array<Record<string, unknown>> {
   return [...configs].sort((a, b) => {
     const rank = (config: Record<string, unknown>): number => {
-      const index = LAYER_ORDER.indexOf(String(config.layer ?? 'pre-step'))
-      return index < 0 ? LAYER_ORDER.length : index
+      const index = ENGINE_LAYER_ORDER.indexOf(String(config.layer ?? 'pre-step') as typeof ENGINE_LAYER_ORDER[number])
+      return index < 0 ? ENGINE_LAYER_ORDER.length : index
     }
     const byLayer = rank(a) - rank(b)
     if (byLayer !== 0) return byLayer

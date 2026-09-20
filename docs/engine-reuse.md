@@ -33,7 +33,18 @@
 
 ## 复制协议（跨项目复用）
 
-1. 把 `engine/` 整个目录复制到你的项目（自包含 + vendor yaml，无外部依赖）；
+1. 把 `engine/` 整个目录复制到你的项目（自包含 + vendor yaml，无外部依赖）。目录里的模块按依赖分三类，
+   复制后按需装配：
+
+   | 类别 | 模块 | 复制后的运行条件 |
+   |---|---|---|
+   | 核心可复制 | 晋升门控、上下文门控、工具目录相位、PTC 呈现、提示词注入引擎、条件判定、ST 渲染、世界书选择、`compaction-epoch`、`subagent-tool-policy-core`、`classify-task` | 无额外依赖：隔离复制后即可挂载并完成注入 |
+   | 需官方 DSH 包 | 依赖宿主服务（`tools` / `systemPrompt` / `llm` / `agents` / `scope`）的模块行 | 目标项目需装配同名宿主服务；缺服务时按各自契约报错或跳过（`inject` 声明的行保持 pending） |
+   | 需 Prompt Tool 私有服务 | `character-tools.mjs`、`world-book-tools.mjs`、`session-var-tools.mjs` | 各自适配私有 `pt-*` 服务（角色卡 / 世界书 / 会话变量存取）：隔离复制后三条各告警一次并跳过，提供同名 mount 服务后 3/3 正常挂载 |
+
+   实测（2026-09-20）：把 `engine/` 复制到隔离目录、由最小 Cordis 根挂载并触发一次 `agent/pre-step`，
+   核心模块完成注入（正文 `COPIED`）；三条私有适配器在缺服务时各告警一次，补齐 mount 服务后全部注册成功。
+   因此私有适配器只在第二个真实宿主需要这些能力时再考虑下沉，当前只需按上表明确依赖契约。
 2. 组合文件（agent.cordis.yml）以相对路径引用引擎插件行：
 
    ```yaml

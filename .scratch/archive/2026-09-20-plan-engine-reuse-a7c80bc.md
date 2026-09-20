@@ -422,12 +422,12 @@ T15 按 pre-step 来源绑定、系统段/变量、模型/委派分组检查点�
 - [✔] Wave 1 / T2、T3（R1、R2）：2026-09-20 实施完成并验收（见「本轮修复验收」）；R1 改为「候选生成 vs 宿主接纳确认」，R2 改为「执行器判定获准集合驱动 ST 预求值」。
 - [✔] Wave 2 / T4、T5、T6（R3、R5、R4）：2026-09-20 实施完成并验收；runtimeOf 未提供参数不覆盖定义、参数桥 editor-default 只投影已提供值、引擎指纹含内容摘要。
 - [✔] Wave 3 / T7、T8、T9（R6、R7、R8）：2026-09-20 实施完成并验收（见「Wave 3 验收」）；R6 改为「入口统一把 strategyDir 解析成绝对 URL + runtime-context 真实消费模板专属策略」，R7 改为「turn/start 建立每轮预算 + assistant/message 计可获得文本，冷扫与实时共用同一处理函数」，R8 改为「阶段 keep 集合保留本模块注册的推进工具，注册/提示/裁剪同源于 stageAdvanceTool」。
-- [ ] Wave 4 / T10（A1 与选定范围验收）：未启动；本轮已在 T2—T6 交付内完成所选范围的文档同步与完整门禁，但 A1 三类依赖说明与归档仍待全部 Wave 完成后执行。
+- [✔] Wave 4 / T10：A1 三类依赖说明已写入 [引擎复用指南](../../docs/engine-reuse.md)「复制协议」表（核心可复制 / 需官方 DSH 包 / 需 Prompt Tool 私有服务，含隔离复制实测）；全部 Wave 完成后执行最终门禁、稳定契约文档同步与 PLAN 归档（见「Wave 7—9 验收」）。
 - [✔] Wave 5 / T11：已完成九层多实例、共享参数同步/互斥方案、64+7 参数盘点和本地 beta-2-42 结构核对；本轮文档校验与交付记录见下。
 - [✔] Wave 6 / T12、T13：2026-09-20 实施完成并验收（见「Wave 6 验收」）；T12 建立九层编辑组契约（引擎 `LAYER_ORDER` + 共享 `EngineLayer`/`ENGINE_EDITOR_GROUP_MAP` + `/meta` 与 `/bootstrap` 同源下发 + 前端容错退化），T13 把七个锚定/引导内容键并入共享参数定义、删除旁路键清单并补齐读回/保存/中英词条与正则校验。
-- [ ] Wave 7 / T14：tool-pipeline 整卡切片未实施，依赖 T12；以用户给出的 tool-config/tool-filter/自定义工具归并为首个样板。
-- [ ] Wave 8 / T15、T16：其余八层能力接管和九层交互未实施，依赖工具管线切片通过及所选参数保真前置。
-- [ ] Wave 9 / T17：清理旧入口、完整门禁及现有 GUI 验证未实施。
+- [✔] Wave 7 / T14：2026-09-20 实施完成并验收；归属判定下沉到共享契约（`isEditorGroupVisible`），新增 `ui/LayerCard.tsx` 与 `app/workspace/pages/EngineLayersPanel.tsx`，tool-pipeline 层补齐共享能力设置区与镜像控件。
+- [✔] Wave 8 / T15、T16：2026-09-20 实施完成并验收；主/子页面与 `PromptConfigsEditor` 统一改用契约判定，`subagent-tools` / `subagent-model` 归属补齐；四层实例字段获得结构化入口，system-section 保留未知 params 的高级 JSON 兜底。
+- [✔] Wave 9 / T17：2026-09-20 实施完成并验收；删除 `src/host/characters.ts` 的第二份九层清单，权威 UI/参数文档与 CHANGELOG 同步，完整门禁与现有 GUI 产物验证见「Wave 7—9 验收」。
 - 归档条件（用户 2026-09-20 明确）：PLAN 内全部 Wave 完成后才归档；本轮保持在本目录。
 
 ## 验收记录
@@ -452,6 +452,19 @@ T15 按 pre-step 来源绑定、系统段/变量、模型/委派分组检查点�
 | T13 | 七个内容键（`buildPattern`、`complexPattern`、`firstTurnBuild`、`firstTurnInspect`、`firstTurnDeep`、`guideWeak`、`guideDeep`）并入 `EngineParams` 与 `ENGINE_PARAM_DEFINITIONS`（card=`prompt-defaults`），`PARAM_KEYS` 旁路清单只剩 `promptConfigs`；新增 `pattern` 值类型，按 `new RegExp(value, 'i')`（与 `engine/classify-task.mjs` 消费同源）在写盘前拒绝非法正则；读回、序列化、脏检测与中英词条随现有派生链自动生效 | `test/shared/engine-param-schema.test.mjs`（归属/默认/合法与非法正则/读回往返/清空删键）、`test/host/engine-params-bridge.test.mjs`（`PARAM_KEYS` 派生与七键必须进 `ENGINE_PARAM_KEYS`）、`test/client/param-overrides.test.mjs`、`test/client/locale-contract.test.mjs`、`test/host/settings-bridge.test.mjs` 新增端到端用例：非法正则 400 不落盘且不重建、合法值落进 `params`、清空只删该键、YAML 注释与未知字段保持不动 | 通过 |
 
 完整门禁（隔离 cwd，`pnpm --dir $Repo …`）：`typecheck`、`lint`、`build`、`git diff --check` 全部通过；`test` 为 **1171 测试全通过（fail 0）**。
+
+### Wave 7—9 验收（T14—T17，基线 b85935e）
+
+| 任务 | 修改 | 回归证据 | 结果 |
+|---|---|---|---|
+| T14 | 归属判定下沉到共享契约 `isEditorGroupVisible(id, viewFilter)`（未登记组不猜归属、一律可见）；新增 `src/client/ui/LayerCard.tsx`（`hidden` 隐藏而不卸载）与 `src/client/app/workspace/pages/EngineLayersPanel.tsx`（tool-pipeline 共享能力设置区 + `instanceId` 镜像控件）；`EngineParamField` 导出并支持 `instanceId`（默认渲染点 id 不变）；`MainSessionPage` / `SubagentPage` / `PromptConfigsEditor` 改用 `<LayerCard visible={…}>`，删除页面内联层名判断 | `test/client/engine-module-cards.test.mjs` 新增「编辑组层可见性来自共享契约」与「共享参数镜像控件：两处渲染读同一 store 字段、DOM id 不重复」；旧的内联 hidden 断言改为断言消费契约 | 16/16 通过 |
+| T15 | 编辑组归属补齐：`subagent-tools`（maxDepth）→ `subagent-start`；`subagent-model` 加 `relatedLayers: ['agent-request']`（采样三参数经 agent-request patch）；`main-model` 归属注释与真实通道对齐 | 同上的层可见性用例覆盖主归属 / 相关层 / 未登记三类分支 | 通过 |
+| T16 | `PromptConfigFields.tsx` 按 layer 渲染实例字段：runtime-context `contextName`、agent-request `patch`/`replace`、llm-stream `mode`、tool-pipeline `toolNames`/`preDecision`/`denyReason`/`postAction`（全部复用既有控件；`toolNames` 恒写逗号串，避免数组被 `parseToolNames` 解析成空 = 匹配所有工具）；turn-stop / subagent-end 保持无可写项并补只读说明；新增 26 条中英词条 | `test/client/prompt-config-form-layout.test.mjs` 新增两条用例（四层字段真实渲染、枚举与引擎一致、旧数组回显为逗号串、未知键不被吞也不重复渲染、结构化值并回），并补 system-section 未知 params 高级 JSON 兜底用例 | 14/14 通过 |
+| T17 | 删除 `src/host/characters.ts` 的第二份九层清单（改取 `ENGINE_LAYER_ORDER`）；`docs/ui-architecture.md` 更新目录树、文件计数与「按层归位 + 镜像控件」契约；`docs/architecture-params.md` 补七键闭环与九层编辑归属；`CHANGELOG.md` 记本轮条目 | 见下完整门禁与 GUI 验证 | 通过 |
+
+完整门禁（隔离 cwd `D:\AI\workspase\_temp`，`pnpm --dir $Repo …`）：`typecheck`、`lint`、`build`、`git diff --check` 全部通过；`test` 为 **1176 测试全通过（fail 0）**。
+
+现有 GUI 验证（只读，未重启宿主、未抢端口）：`dsh web --host 127.0.0.1 --port 3080` 进程存活，`http://127.0.0.1:3080` 探测返回 401（需鉴权，服务在役）；仓库内**没有** `dev:web`（vite）watcher 进程，因此按仓库规则重建受影响产物——`pnpm --dir $Repo build` 通过，`lib/client.js` 已含本轮新增文案键（`modules.toolPipeline`）。结论：刷新现有工作台页面即可看到九层归位与镜像控件，无需重启 DSH 服务。
 
 ### 本轮修复验收（Wave 1+2 / T2—T6，基线 25f70d1）
 

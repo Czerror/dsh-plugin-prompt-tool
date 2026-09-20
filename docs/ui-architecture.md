@@ -86,6 +86,7 @@
     │     ├─ workspace-pages.ts
     │     └─ pages/
     │        ├─ ConfigListWithTemplates.tsx
+    │        ├─ EngineLayersPanel.tsx
     │        ├─ MainSessionPage.tsx
     │        └─ SubagentPage.tsx
     ├─ data/
@@ -170,6 +171,7 @@
        ├─ hint-tooltip-position.ts
        ├─ ImportFileButton.tsx
        ├─ ImportPreviewCard.tsx
+       ├─ LayerCard.tsx
        ├─ MenuSelect.tsx
        ├─ menu-focus.ts
        ├─ reveal-card.ts
@@ -183,7 +185,7 @@
        ├─ TemplatePicker.tsx
        └─ ToggleRow.tsx
 
-共 105 个源文件：app 15、data 18、features 40、ui 27、顶层 5。生成目录 lib/ 不属于源码 owner，不手工编辑。客户端样式已按 owner 分开，PromptUi.module.css 不再存在。
+共 107 个源文件：app 16、data 18、features 40、ui 28、顶层 5。生成目录 lib/ 不属于源码 owner，不手工编辑。客户端样式已按 owner 分开，PromptUi.module.css 不再存在。
 
 ## 4. 宿主接入与生命周期
 
@@ -496,13 +498,17 @@ promptConfigs 模块卡展开区按基础信息、注入规则、作用范围、
 
 「注入规则」分区内的**条件判定**块只在引擎放行的层渲染（读 `/meta` 的 `layerFieldPolicies.subject|match`）：`subject` 下拉含「层缺省」（空值即不写该字段，由层决定匹配对象），`match` 提供主键/副键集合、组合逻辑四选一，以及区分大小写、整词两个开关；键的匹配方式是**三态**（自动 / 强制正则 / 强制字面）而非开关——做成开关会把用户手写的 `useRegex: false` 在编辑后静默改成自动识别。切换注入层时清空目标层不支持的 `subject`/`match`：引擎对这些层声明该字段直接 fail loud（整个预设无法挂载），顺手清掉是唯一安全的层切换语义。没有有效键的 `match` 不落盘（引擎要求至少一个非空键），只填逻辑或开关的半成品不会写进配置；手写的坏卡可以在表单里「切层再切回」清掉。
 
-主会话使用单一模块列表，视觉顺序为：预设人设卡（脱离「公共配置」分组，不参与层过滤）→ 各能力卡 → 自定义工具卡 → 层级配置卡；公共配置（当前会话模型、模板变量和提示词生成默认值）位于列表顶部。视觉顺序不建立跨插入点的全局执行顺序，`anchor-turn` 的实际 hook 同样不受展示影响。工具栏提供插入点层级与策略筛选、合并创建菜单和提示词配置操作；列表筛选只影响展示，仍是同一份平铺列表，不按插入点分区块。能力与提示词配置保留各自保存、排序和删除语义，不建立第二份字段状态。
+主会话使用单一模块列表，「全部」视图的视觉顺序为：预设人设卡 → 各能力卡 → 工具管线共享设置卡 → 自定义工具卡 → 层级配置卡；公共配置（当前会话模型、提示词生成默认值和模板变量）位于列表顶部。这一平铺顺序不建立跨插入点的全局执行顺序，`anchor-turn` 的实际 hook 同样不受展示影响。
+
+选中某个注入层时，编辑组卡按共享契约归位：`src/shared/engine-capabilities.ts#isEditorGroupVisible(组 id, viewFilter)` 读 `ENGINE_EDITOR_GROUP_MAP`（能力组 id = 能力 id；专用组 `prompt-defaults` / `persona` / `variables` / `main-model` / `subagent-model` / `subagent-tools` / `custom-tools` 各带主归属与 `relatedLayers`），主归属或相关层命中才显示，未登记的组不猜归属、一律可见。不可见的卡用 `ui/LayerCard.tsx` 的 `hidden` 隐藏而不卸载，所以切层不丢草稿、不重跑读取；页面不再各自手写层名判断，`app/workspace/pages/EngineLayersPanel.tsx` 是这一装配与工具管线共享设置区的唯一入口。
+
+同名引擎参数允许多处渲染（例如 `toolFilterAllow` 同时出现在 `tool-filter` 能力卡与工具管线共享设置卡）：它们绑定同一 `store.fields[键]` 与同一草稿键，一次修改只提交一次保存；`EngineParamField` 的 `instanceId` 只用来区分 DOM id 与 aria 关联，不引入第二份状态、同步服务或事件总线。工具栏提供插入点层级与策略筛选、合并创建菜单和提示词配置操作；列表筛选只影响展示，仍是同一份平铺列表，不按插入点分区块。能力与提示词配置保留各自保存、排序和删除语义。
 
 模块卡（能力卡、提示词生成默认值卡、自定义工具卡）与层级配置卡共用同一个 `configList` 列表容器与卡间距；world-book 视图只隐藏模块卡容器，不卸载工具草稿。能力卡与工具卡默认折叠，只有创建/定位（工具栏「添加能力 / 工具模块」创建能力、新建或插入工具）才自动展开目标卡，其余展开与折叠完全由用户点击决定；创建动作不改动层级筛选与搜索词。只读预设（system 或关闭 `writePreset`）下工具卡同样默认折叠：卡头操作区与表单各自是独立的 `fieldset` 禁用边界，折叠按钮留在边界之外保持可点。
 
 工具栏的「添加能力 / 工具模块」是唯一创建入口，创建路径的过滤与受众规则见 §5.2.1。指令文件卡属于主会话概念，只在 `scope=main`（或缺省）时下发，子代理页不渲染，避免同一指令文件出现两个编辑入口。
 
-世界书是提示词策略筛选，能力卡不混入该视图；自定义工具卡只在「全部」和「工具链」筛选下显示。筛选通过隐藏保留工具编辑器挂载，不卸载其未保存草稿；保存失败保留原输入。提示词搜索只作用于提示词配置，计数、批量启停和保存按钮不操作能力卡。
+世界书是提示词策略筛选，能力卡不混入该视图（模块卡容器在 `world-book` 视图整体隐藏）；自定义工具卡按 `custom-tools` 编辑组归位到 tool-pipeline 层。筛选通过隐藏保留工具编辑器挂载，不卸载其未保存草稿；保存失败保留原输入。提示词搜索只作用于提示词配置，计数、批量启停和保存按钮不操作能力卡。
 
 子代理工具策略（`subagent-tool-policy`）是模块类型能力：在能力菜单里创建、在模块列表里有独立能力卡、用「删除引擎能力」移除；编辑器住在该能力卡内部（由页面经 `EngineModuleCards` 的 `renderCapabilityExtra` 插槽注入，「工具与深度」卡只留递归深度与入口提示）。该卡片只有**一个启用开关**：打开复用共享可用骨架并立即落盘；关闭删除顶层策略段并保留模块声明，同时把编辑区置为 `fieldset[disabled]` 只读。引擎仅在策略文件确实不存在时降级为官方委派行为，现存损坏文件仍报错。删除能力时模块声明与顶层段一起移除。历史“段在、声明不在”预设保留既有授权装配，能力卡如实展示它；保存或显式创建会补齐模块声明，不覆盖已有授权。子代理页排除「仅主对话」能力——不提供创建 `tool-filter`，也不渲染它的卡片，并在能力卡列表上方提示子代理工具面应走「subagent-tool-policy」能力。
 

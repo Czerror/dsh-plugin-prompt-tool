@@ -309,3 +309,118 @@ test('键匹配方式是三态下拉，强制字面不会被静默改回自动',
   field.props.onChange('literal')
   assert.deepEqual(patches.at(-1), { keys: ['报错'], useRegex: false })
 })
+
+/** 四层可写实例字段（与 engine/layers.mjs 的真实 params 消费一一对应）。 */
+const LAYER_PARAM_FIELDS = {
+  'runtime-context': ['contextName'],
+  'agent-request': ['patch', 'replace'],
+  'llm-stream': ['mode'],
+  'tool-pipeline': ['toolNames', 'preDecision', 'denyReason', 'postAction'],
+}
+const LAYER_PARAM_LABELS = Object.values(LAYER_PARAM_FIELDS).flat().map((key) => t(`strategyParam.${key}.label`))
+
+test('层实例字段有可发现入口，停止与结束层保持无可写项', () => {
+  const paramsOf = {
+    'runtime-context': { contextName: 'ctx-probe' },
+    'agent-request': { patch: { maxTokens: 2048 }, replace: true },
+    'llm-stream': { mode: 'replace' },
+    'tool-pipeline': { toolNames: 'bash,run_code', preDecision: 'deny', denyReason: 'D', postAction: 'block' },
+  }
+  // 正向：四层的实例字段必须真的渲染出来（不是只存在于源码里的 t(...) 调用）。
+  for (const [layer, params] of Object.entries(paramsOf)) {
+    const html = renderElement(PromptConfigForm, formProps({ layer, strategy: 'static', params }))
+    for (const key of LAYER_PARAM_FIELDS[layer]) {
+      assert.ok(html.includes(t(`strategyParam.${key}.label`)), `${layer} 缺「${key}」实例字段入口`)
+    }
+  }
+  // tool-pipeline 是老层：新字段与既有条件判定区共存，不是替换关系。
+  const tools = renderElement(PromptConfigForm, formProps({ layer: 'tool-pipeline', strategy: 'static', params: paramsOf['tool-pipeline'] }))
+  assert.ok(tools.includes(t('form.match.keys.label')), 'tool-pipeline 的匹配编辑器必须保留')
+
+  // 反向：引擎常量层（turn-stop）与只读观察层（subagent-end）不得出现任何可写实例字段，
+  // 也不得把层字段漏给无 params 概念的其他层。
+  for (const layer of ['turn-stop', 'subagent-end', 'subagent-start', 'pre-step', 'system-section']) {
+    const html = renderElement(PromptConfigForm, formProps({ layer, strategy: 'static', params: {} }))
+    for (const label of LAYER_PARAM_LABELS) {
+      assert.ok(!html.includes(label), `${layer} 不得出现可写实例字段「${label}」`)
+    }
+  }
+  // 停止层与结束层的空参数区补只读说明（解释为什么没有可写项），而不是留一块空白。
+  assert.ok(renderElement(PromptConfigForm, formProps({ layer: 'turn-stop', strategy: 'static' })).includes(t('strategyParam.turnStopNote')))
+  assert.ok(renderElement(PromptConfigForm, formProps({ layer: 'subagent-end', strategy: 'static' })).includes(t('strategyParam.subagentEndNote')))
+})
+
+test('层实例字段写入草稿：枚举同源、toolNames 保持逗号串、未知字段不被吞也不重复', () => {
+  const patches = []
+  const layerTree = (layer, params) => treeOf(StrategyParamsFields, {
+    t, strategy: 'static', layer, params, draftScope: 'layout-probe', onPatch: (next) => patches.push(next),
+  })
+
+  // llm-stream：下拉取值与引擎一致，编辑只写 mode。
+  const modeField = findElement(layerTree('llm-stream', { mode: 'pass' }),
+    (node) => node.type === OptionField && node.props.label === t('strategyParam.mode.label'))
+  assert.deepEqual(modeField.props.options, ['pass', 'replace'])
+  modeField.props.onChange('replace')
+  assert.deepEqual(patches.at(-1), { mode: 'replace' })
+
+  // tool-pipeline：toolNames 按逗号串编辑；旧数组数据按同形态回显，编辑后写回字符串
+  //（引擎 parseToolNames 只认字符串，写成数组会被解析成空 = 匹配所有工具）。
+  const toolTree = layerTree('tool-pipeline', { toolNames: ['bash', 'run_code'], preDecision: 'allow' })
+  const namesInput = findElement(toolTree, (node) => node.props?.label === t('strategyParam.toolNames.label'))
+  assert.equal(namesInput.props.value, 'bash, run_code', '旧数组数据必须回显成逗号串，而不是显示为空')
+  namesInput.props.onChange('bash,run_code')
+  assert.deepEqual(patches.at(-1), { toolNames: 'bash,run_code', preDecision: 'allow' })
+  const preDecision = findElement(toolTree, (node) => node.type === OptionField && node.props.label === t('strategyParam.preDecision.label'))
+  assert.deepEqual(preDecision.props.options, ['allow', 'deny', 'ask'])
+  preDecision.props.onChange('deny')
+  assert.deepEqual(patches.at(-1), { toolNames: ['bash', 'run_code'], preDecision: 'deny' })
+  assert.deepEqual(findElement(toolTree, (node) => node.type === OptionField && node.props.label === t('strategyParam.postAction.label')).props.options,
+    ['accept', 'replace', 'block'])
+
+  // replace 开关与 runtime-context 注册名：只写自己那一个键。
+  findElement(layerTree('agent-request', {}), (node) => node.props?.label === t('strategyParam.replace.label')).props.onChange(true)
+  assert.deepEqual(patches.at(-1), { replace: true })
+  findElement(layerTree('runtime-context', {}), (node) => node.props?.label === t('strategyParam.contextName.label')).props.onChange('ctx-a')
+  assert.deepEqual(patches.at(-1), { contextName: 'ctx-a' })
+
+  // agent-request：已结构化的键不再进 JSON 兜底（无隐藏重复输入）；未知键单独进兜底，
+  // 提交时把结构化值并回，编辑未知字段不会丢掉 patch / replace。
+  const onlyKnown = renderElement(StrategyParamsFields, { t, strategy: 'static', layer: 'agent-request', params: { patch: { maxTokens: 2048 }, replace: false } })
+  assert.ok(onlyKnown.includes(t('strategyParam.patch.label')))
+  assert.ok(!onlyKnown.includes(t('field.json.advanced')), '已结构化覆盖的键不得再渲染一份 JSON 输入')
+  const fallback = findElement(layerTree('agent-request', { patch: { maxTokens: 2048 }, stMacros: true }), (node) => node.props?.label === t('field.json.advanced'))
+  assert.deepEqual(fallback.props.value, { stMacros: true }, 'JSON 兜底只收未被结构化覆盖的键')
+  fallback.props.onChange({ stMacros: false, extra: 1 })
+  assert.deepEqual(patches.at(-1), { patch: { maxTokens: 2048 }, stMacros: false, extra: 1 })
+
+  // runtime-context 的 placeholder 是层字段与策略字段的唯一交集：两者同时可见。
+  const ctxPlaceholder = renderElement(StrategyParamsFields, { t, strategy: 'placeholder', layer: 'runtime-context', params: { contextName: 'ctx-a' } })
+  assert.ok(ctxPlaceholder.includes(t('strategyParam.contextName.label')))
+  assert.ok(ctxPlaceholder.includes(t('strategyParam.fillText.label')))
+
+  // turn-stop：只是没有可写实例字段，既有未知 params 仍能编辑，不被新分支吞掉。
+  const turnStop = renderElement(StrategyParamsFields, { t, strategy: 'static', layer: 'turn-stop', params: { stMacros: true } })
+  assert.ok(turnStop.includes(t('field.json.advanced')))
+  const turnStopEmpty = renderElement(StrategyParamsFields, { t, strategy: 'static', layer: 'turn-stop', params: {} })
+  assert.ok(turnStopEmpty.includes(t('strategyParam.noParams')))
+  assert.ok(turnStopEmpty.includes(t('strategyParam.turnStopNote')))
+})
+
+test('system-section：结构化字段之外的 params 仍可编辑，提交时并回段名与 complete', () => {
+  const patches = []
+  const tree = treeOf(StrategyParamsFields, {
+    t, strategy: 'static', layer: 'system-section', params: { sectionName: 'sec-a', complete: true, stMacros: true },
+    draftScope: 'layout-probe', onPatch: (next) => patches.push(next),
+  })
+  // 三个结构化字段照旧可编辑，取值来自 params。
+  assert.equal(findElement(tree, (node) => node.props?.label === t('strategyParam.sectionName.label')).props.value, 'sec-a')
+  assert.equal(findElement(tree, (node) => node.props?.label === t('strategyParam.complete.label')).props.checked, true)
+  // 未结构化的键单独进 JSON 兜底；提交时并回结构化值，不该因为改了一个未知键就丢掉段名与 complete。
+  const fallback = findElement(tree, (node) => node.props?.label === t('field.json.advanced'))
+  assert.deepEqual(fallback.props.value, { stMacros: true }, 'JSON 兜底只收未被结构化覆盖的键')
+  fallback.props.onChange({ stMacros: false })
+  assert.deepEqual(patches.at(-1), { sectionName: 'sec-a', complete: true, stMacros: false })
+  // 只有结构化键时不渲染第二份 JSON 输入。
+  const onlyKnown = renderElement(StrategyParamsFields, { t, strategy: 'static', layer: 'system-section', params: { sectionName: 'sec-a' } })
+  assert.ok(!onlyKnown.includes(t('field.json.advanced')), '已结构化覆盖的键不得再渲染一份 JSON 输入')
+})

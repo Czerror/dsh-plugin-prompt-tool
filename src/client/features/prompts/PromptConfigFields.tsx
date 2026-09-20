@@ -23,6 +23,41 @@ const SELECTIVE_LOGIC_LABEL_KEYS: Record<string, PromptToolLocaleKey> = {
   '3': 'selectiveLogic.3',
 }
 
+/**
+ * 层专属实例字段的键清单（与 engine/layers.mjs 的真实消费一一对应）：
+ * 末尾的 JSON 兜底按此剔除已结构化的键，同一取值不会同时出现两份输入。
+ * turn-stop（续跑上限是引擎常量）与 subagent-end（只观察、无注入通道）没有可写
+ * 实例字段，故不在此表——它们只拿到只读说明。
+ */
+const LAYER_PARAM_KEYS: Record<string, readonly string[]> = {
+  'runtime-context': ['contextName'],
+  'agent-request': ['patch', 'replace'],
+  'llm-stream': ['mode'],
+  'tool-pipeline': ['toolNames', 'preDecision', 'denyReason', 'postAction'],
+}
+
+/** 只读层的说明键：没有可写参数是设计事实，用一句说明代替空白的策略区。 */
+const LAYER_READ_ONLY_NOTES: Record<string, PromptToolLocaleKey> = {
+  'turn-stop': 'strategyParam.turnStopNote',
+  'subagent-end': 'strategyParam.subagentEndNote',
+}
+
+/** 引擎枚举 → 显示键：未知旧值仍由 OptionField 自己保留，避免旧配置无法编辑。 */
+const LLM_STREAM_MODE_LABEL_KEYS: Record<string, PromptToolLocaleKey> = {
+  pass: 'strategyParam.mode.pass',
+  replace: 'strategyParam.mode.replace',
+}
+const PRE_DECISION_LABEL_KEYS: Record<string, PromptToolLocaleKey> = {
+  allow: 'strategyParam.preDecision.allow',
+  deny: 'strategyParam.preDecision.deny',
+  ask: 'strategyParam.preDecision.ask',
+}
+const POST_ACTION_LABEL_KEYS: Record<string, PromptToolLocaleKey> = {
+  accept: 'strategyParam.postAction.accept',
+  replace: 'strategyParam.postAction.replace',
+  block: 'strategyParam.postAction.block',
+}
+
 function selectOptions(t: PromptToolTranslate, options: readonly string[], value: string | undefined): Array<{ value: string; label: string }> {
   const current = value ?? ''
   const entries = options.map((item) => ({ value: item, label: item === '' ? t('field.default') : item }))
@@ -192,7 +227,9 @@ function ParamInput(props: { label: string; hint?: string; className?: string; v
 }
 
 /**
- * 按 strategy 拆解 params 为结构化编辑框（替代裸 JSON）：
+ * 按 layer / strategy 拆解 params 为结构化编辑框（替代裸 JSON）：
+ *   层专属 → system-section（段名/独占/动态抑制）、runtime-context（注册名）、
+ *   agent-request（patch/replace）、llm-stream（mode）、tool-pipeline（toolNames/裁决）；
  *   first-turn-anchor → near-anchor 锚点参数（开关/锚文本/任务正则/引导句）；
  *   guide-auto → router-guide 每轮引导参数（开关/文本/复杂正则/强弱引导句）；
  *   custom-fallback → prompt-injector 锚定词（params.text 为运行时注入内容，不暴露编辑）；
@@ -211,6 +248,11 @@ export function StrategyParamsFields(props: { t: PromptToolTranslate; strategy: 
     // system-section 层参数：段名（空则引擎回退 id 注册为普通段）与 complete（独占
     // system prompt）。人设不走本层：preset.yml 顶层 persona 段（官方
     // @deepseek-ai/dsh-persona 行同构）由「人设」卡编辑。
+    // 未结构化的键仍走高级 JSON：手写/导入的其它 params（例如 stMacros）不被吞掉，
+    // 提交时把结构化值并回，避免保存一次丢掉段名与 complete。
+    const sectionKeys = ['sectionName', 'complete', 'suppressRuntimeContext']
+    const sectionRest = Object.fromEntries(Object.entries(value).filter(([key]) => !sectionKeys.includes(key)))
+    const sectionCovered = Object.fromEntries(Object.entries(value).filter(([key]) => sectionKeys.includes(key)))
     return (
       <>
         <ParamInput className={styles.fieldSpan3} label={t('strategyParam.sectionName.label')} hint={t('strategyParam.sectionName.hint')} value={str('sectionName')} onChange={(next) => set('sectionName', next)} />
@@ -218,9 +260,59 @@ export function StrategyParamsFields(props: { t: PromptToolTranslate; strategy: 
           checked={bool('complete')} onChange={(next) => set('complete', next)} />
         <ParamToggle className={styles.fieldSpan3} label={t('strategyParam.suppressRuntimeContext.label')} hint={t('strategyParam.suppressRuntimeContext.hint')}
           checked={bool('suppressRuntimeContext')} onChange={(next) => set('suppressRuntimeContext', next)} />
+        {Object.keys(sectionRest).length > 0 && (
+          <JsonField t={t} label={t('field.json.advanced')} value={sectionRest} fieldDrafts={props.fieldDrafts}
+            draftKey={`${props.draftScope}:params`} onChange={(next) => { if (next !== undefined) onPatch({ ...sectionCovered, ...next }) }} />
+        )}
       </>
     )
   }
+  const objectOf = (key: string): Record<string, unknown> | undefined => {
+    const raw = value[key]
+    return raw !== null && typeof raw === 'object' && !Array.isArray(raw) ? raw as Record<string, unknown> : undefined
+  }
+  /**
+   * 层专属实例字段：只暴露 engine/layers.mjs 真实消费的 params（留空即引擎缺省），
+   * 让此前只能写高级 JSON 的四层有可发现入口。层字段与 strategy 字段正交
+   * （runtime-context 的 placeholder 是唯一交集），故先渲染层字段再落到策略分支。
+   */
+  const layerFields: ReactNode = layer === 'runtime-context' ? (
+    <ParamInput className={styles.fieldSpan3} label={t('strategyParam.contextName.label')} hint={t('strategyParam.contextName.hint')}
+      value={str('contextName')} onChange={(next) => set('contextName', next)} />
+  ) : layer === 'agent-request' ? (
+    <>
+      {/* patch 是浅合并进冻结 LlmCallConfig 的对象（形态自由故用 JSON）；replace 只认显式 true。 */}
+      <JsonField t={t} label={t('strategyParam.patch.label')} value={objectOf('patch')} fieldDrafts={props.fieldDrafts}
+        draftKey={`${props.draftScope}:params.patch`} onChange={(next) => set('patch', next)} />
+      <ParamToggle className={styles.fieldSpan3} label={t('strategyParam.replace.label')} hint={t('strategyParam.replace.hint')}
+        checked={bool('replace')} onChange={(next) => set('replace', next)} />
+    </>
+  ) : layer === 'llm-stream' ? (
+    <OptionField t={t} className={styles.fieldSpan3} label={t('strategyParam.mode.label')} hint={t('strategyParam.mode.hint')}
+      value={str('mode')} options={['pass', 'replace']} fallback="pass" labelKeys={LLM_STREAM_MODE_LABEL_KEYS}
+      onChange={(next) => set('mode', next)} />
+  ) : layer === 'tool-pipeline' ? (
+    <>
+      {/* toolNames 只能按逗号串写：引擎 parseToolNames 只认字符串，数组会被解析成空
+          = 匹配所有工具，把定向门扩大成全工具门。旧数组数据按同形态回显，编辑即写成字符串。 */}
+      <ParamInput className={styles.fieldSpan6} label={t('strategyParam.toolNames.label')} hint={t('strategyParam.toolNames.hint')}
+        value={Array.isArray(value['toolNames']) ? (value['toolNames'] as unknown[]).map(String).join(', ') : str('toolNames')}
+        onChange={(next) => set('toolNames', next)} />
+      <OptionField t={t} className={styles.fieldSpan3} label={t('strategyParam.preDecision.label')} hint={t('strategyParam.preDecision.hint')}
+        value={str('preDecision')} options={['allow', 'deny', 'ask']} fallback="allow" labelKeys={PRE_DECISION_LABEL_KEYS}
+        onChange={(next) => set('preDecision', next)} />
+      <ParamInput className={styles.fieldSpan3} label={t('strategyParam.denyReason.label')} hint={t('strategyParam.denyReason.hint')}
+        value={str('denyReason')} onChange={(next) => set('denyReason', next)} />
+      <OptionField t={t} className={styles.fieldSpan3} label={t('strategyParam.postAction.label')} hint={t('strategyParam.postAction.hint')}
+        value={str('postAction')} options={['accept', 'replace', 'block']} fallback="accept" labelKeys={POST_ACTION_LABEL_KEYS}
+        onChange={(next) => set('postAction', next)} />
+    </>
+  ) : undefined
+  const known = LAYER_PARAM_KEYS[layer ?? ''] ?? []
+  const rest = Object.fromEntries(Object.entries(value).filter(([key]) => !known.includes(key)))
+  const covered = Object.fromEntries(Object.entries(value).filter(([key]) => known.includes(key)))
+  const readOnlyNote = LAYER_READ_ONLY_NOTES[layer ?? '']
+
   if (strategy === 'first-turn-anchor') {
     // writePreset 按 id 把顶层 params（firstTurnCustom/firstTurnText/…）统一写入
     // 这两个模板配置的 params——这里的编辑会被重建覆盖，隐藏以避免假入口。
@@ -309,6 +401,7 @@ export function StrategyParamsFields(props: { t: PromptToolTranslate; strategy: 
     const emptyBehavior = str('emptyBehavior') || 'skip'
     return (
       <>
+        {layerFields}
         <ParamTextarea className={styles.fieldFull} label={t('strategyParam.fillText.label')} hint={t('strategyParam.fillText.hint')}
           value={str('text')} onChange={(next) => set('text', next)} />
         <ParamInput className={styles.fieldSpan5} label={t('strategyParam.envKeys.label')} hint={t('strategyParam.envKeys.hint')}
@@ -331,7 +424,27 @@ export function StrategyParamsFields(props: { t: PromptToolTranslate; strategy: 
   // 无策略参数的配置（static 等）：预设级内容变量已展开进 variables（官方插值
   // 机制，由上方 VariablesEditor 结构化编辑），params 为空时不再渲染 JSON 框。
   if (Object.keys(value).length === 0) {
-    return <p className={styles.configFieldHint}>{t('strategyParam.noParams')}</p>
+    return (
+      <>
+        {layerFields}
+        {/* 有层字段时不喊「无参数」：可编辑实例参数就在上面，提示只会与界面自相矛盾。 */}
+        {layerFields === undefined && <p className={styles.configFieldHint}>{t('strategyParam.noParams')}</p>}
+        {readOnlyNote !== undefined && <p className={styles.configFieldHint}>{t(readOnlyNote)}</p>}
+      </>
+    )
+  }
+  // 层字段之外仍有 params（未知键 / 旧数据）时继续走高级 JSON：新增分支既不吞未知
+  // 资产，也不把已结构化的键重复渲染一遍；JSON 提交时把结构化值原样并回，避免丢字段。
+  if (layerFields !== undefined) {
+    return (
+      <>
+        {layerFields}
+        {Object.keys(rest).length > 0 && (
+          <JsonField t={t} label={t('field.json.advanced')} value={rest} fieldDrafts={props.fieldDrafts}
+            draftKey={`${props.draftScope}:params`} onChange={(next) => { if (next !== undefined) onPatch({ ...covered, ...next }) }} />
+        )}
+      </>
+    )
   }
   return <JsonField t={t} label={t('field.json.advanced')} value={value} fieldDrafts={props.fieldDrafts} draftKey={`${props.draftScope}:params`} onChange={(next) => { if (next !== undefined) onPatch(next) }} />
 }

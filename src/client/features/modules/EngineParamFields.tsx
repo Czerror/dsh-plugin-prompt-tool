@@ -22,7 +22,13 @@ export function EngineParamFields({ store, card, t }: { store: PromptToolStore; 
   ))
 }
 
-function EngineParamField({ store, param, t }: { store: PromptToolStore; param: EngineParamKey; t: PromptToolTranslate }): ReactNode {
+/**
+ * 同一个引擎参数可以在多个位置渲染（层卡内的能力卡 + 工具管线的共享设置区）：
+ * 它们绑定同一 `store.fields[param]` 与同一草稿键，天然同源，不需要同步服务；
+ * `instanceId` 只用来给每个渲染点一份独立的 DOM id / aria 关联，避免镜像控件
+ * 出现重复 id 与标签错配。
+ */
+export function EngineParamField({ store, param, t, instanceId }: { store: PromptToolStore; param: EngineParamKey; t: PromptToolTranslate; instanceId?: string }): ReactNode {
   const definition = ENGINE_PARAM_DEFINITIONS[param]
   const value = store.fields[param]
   const disabled = !store.fields.writePreset || store.moduleFacts?.editable !== true
@@ -32,7 +38,8 @@ function EngineParamField({ store, param, t }: { store: PromptToolStore; param: 
   const [error, setError] = useState<string | undefined>(retained?.error || undefined)
   const save = (): void => { void store.persistParamOverrides() }
   const patch = (next: unknown): void => { store.patch({ [param]: next }) }
-  const id = `pt-param-${param}`
+  // 默认渲染点沿用 `pt-param-<键>`（层卡内唯一）；镜像渲染点带实例前缀，DOM id 不重复。
+  const id = instanceId === undefined ? `pt-param-${param}` : `pt-param-${instanceId}-${param}`
   const label = t(`param.${param}`)
   const hint = t('param.hint', { param, label })
   const optionLabels: Record<string, string> = {

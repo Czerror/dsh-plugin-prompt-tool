@@ -127,10 +127,15 @@ export const ENGINE_EDITOR_GROUPS: readonly EngineEditorGroup[] = [
   { id: 'persona', displayLayer: 'system-section', relatedLayers: ['runtime-context'], hook: 'system-section' },
   // 预设顶层 variables 是插值源，由 runtime-context 的 placeholder 消费。
   { id: 'variables', displayLayer: 'runtime-context', hook: 'runtime-context' },
-  // 主模型参数（provider / model / 思维程度 / 采样与上限）经 agent-request patch 生效。
+  // 主模型参数：思维程度/温度/输出上限经 writePreset 生成的 agent-request patch 生效；
+  // provider / model 另写官方顶层 model 段（官方 agent-default-model 通道，不属于九层）。
   { id: 'main-model', displayLayer: 'agent-request', hook: 'agent-request' },
-  // 子代理模型路由随子代理启动注入 agentOptions。
-  { id: 'subagent-model', displayLayer: 'subagent-start', hook: 'subagent-start' },
+  // 子代理模型路由随子代理启动注入 tool-subagent 行 agentOptions；同卡采样三参数写
+  // agent-request 的 subagent-model-params patch，因此关联 agent-request。
+  { id: 'subagent-model', displayLayer: 'subagent-start', relatedLayers: ['agent-request'], hook: 'subagent-start' },
+  // 委派递归深度（maxDepth）经 tool-subagent / tool-subagent-fork 行 config 下发，
+  // 启用实例策略时改由 subagent-tool-policy 承载：两条通道都在子代理启动处生效。
+  { id: 'subagent-tools', displayLayer: 'subagent-start', hook: 'subagent-start' },
   // 自定义工具定义进 tools/* 管线。
   { id: 'custom-tools', displayLayer: 'tool-pipeline', hook: 'tool-pipeline' },
 ] as const
@@ -143,6 +148,18 @@ export const ENGINE_EDITOR_GROUP_MAP: readonly EngineEditorGroup[] = [
   ...ENGINE_CAPABILITIES.map(({ id, displayLayer, relatedLayers }) => ({ id, displayLayer, relatedLayers, hook: displayLayer })),
   ...ENGINE_EDITOR_GROUPS,
 ]
+
+/**
+ * 该编辑组在给定层筛选下是否可见：`all` / `world-book` 视图恒可见（保持既有平铺位置），
+ * 否则主归属或 `relatedLayers` 命中该层才显示。未登记的 id 不猜归属，一律可见——
+ * 这样新增卡片忘登记时是「哪层都能看到」，而不是「哪层都看不到」。
+ */
+export function isEditorGroupVisible(id: string, viewFilter: string): boolean {
+  if (viewFilter === 'all' || viewFilter === 'world-book') return true
+  const group = ENGINE_EDITOR_GROUP_MAP.find((item) => item.id === id)
+  if (group === undefined) return true
+  return group.displayLayer === viewFilter || (group.relatedLayers ?? []).includes(viewFilter as EngineLayer)
+}
 
 export interface EngineRecipe {
   id: string

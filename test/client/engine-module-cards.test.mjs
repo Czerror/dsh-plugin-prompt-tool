@@ -5,7 +5,7 @@ import { registerHooks } from 'node:module'
 import { createElement, isValidElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import ts from 'typescript'
-import { ENGINE_CAPABILITIES, ENGINE_EDITOR_GROUP_MAP, ENGINE_LAYER_ORDER, engineCapability, engineRecipe } from '../../src/shared/engine-capabilities.ts'
+import { ENGINE_CAPABILITIES, ENGINE_EDITOR_GROUP_MAP, ENGINE_LAYER_ORDER, engineCapability, engineRecipe, isEditorGroupVisible } from '../../src/shared/engine-capabilities.ts'
 import { ENGINE_PARAM_DEFINITIONS, ENGINE_PARAM_KEYS } from '../../src/shared/engine-params.ts'
 import { displayLayers, INSERTION_LAYERS } from '../../src/client/features/prompts/prompt-config-policy.ts'
 import { EMPTY_FIELDS } from '../../src/client/data/prompt-tool-fields.ts'
@@ -32,7 +32,7 @@ const loader = registerHooks({
     return nextLoad(url, context)
   },
 })
-const { EngineParamFields } = await import('../../src/client/features/modules/EngineParamFields.tsx')
+const { EngineParamFields, EngineParamField } = await import('../../src/client/features/modules/EngineParamFields.tsx')
 const { EngineModuleCards, EngineCapabilityCreateMenu } = await import('../../src/client/features/modules/EngineModuleList.tsx')
 const { PromptConfigForm } = await import('../../src/client/features/prompts/PromptConfigForm.tsx')
 const { OptionField } = await import('../../src/client/features/prompts/PromptConfigFields.tsx')
@@ -282,10 +282,14 @@ test('统一列表平铺渲染配置与能力卡，层级筛选只过滤不分�
   assert.doesNotMatch(filtered, /data-insertion-point/)
   assert.doesNotMatch(filtered, /persona-main/)
   assert.match(filtered, /class="configMeta">anchor-turn</)
-  // 主会话把筛选值同时下发给配置与能力卡；自定义工具卡只在全部/工具链视图出现。
+  // 主会话把筛选值同时下发给配置与能力卡；编辑组卡在哪层可见由共享契约判定，
+  // 页面不再各自手写层名（旧实现按 `viewFilter !== 'tool-pipeline'` 内联硬编码）。
   const page = read('app/workspace/pages/MainSessionPage.tsx')
   assert.match(page, /layerFilter=\{viewFilter\}/)
-  assert.match(page, /hidden=\{viewFilter !== 'all' && viewFilter !== 'tool-pipeline'\}/)
+  assert.match(page, /isEditorGroupVisible\('custom-tools', viewFilter\)/)
+  assert.match(page, /isEditorGroupVisible\('persona', viewFilter\)/)
+  assert.match(page, /isEditorGroupVisible\('prompt-defaults', viewFilter\)/)
+  assert.doesNotMatch(page, /hidden=\{viewFilter !== 'all' && viewFilter !== 'tool-pipeline'\}/, '层可见性不再内联硬编码层名')
   // 世界书只隐藏模块区域，不卸载工具草稿 owner。
   const worldBook = tree(PromptConfigList, { ...props, viewFilter: 'world-book' })
   const owner = find(worldBook, (node) => node.props.children === props.moduleCards)
@@ -345,4 +349,48 @@ test('通用模板可重复创建空卡，独立指令提示入口归为动态�
   assert.equal(fill.props.value, 'instruction-hint')
   fill.props.onChange('skill-catalog')
   assert.deepEqual(patches, [{ strategy: 'placeholder', fill: 'skill-catalog' }])
+})
+
+test('编辑组层可见性来自共享契约，页面不再各自手写层名', () => {
+  // 全部/世界书视图保持既有平铺位置；选中层只留主归属与登记过的相关层。
+  assert.equal(isEditorGroupVisible('custom-tools', 'all'), true)
+  assert.equal(isEditorGroupVisible('custom-tools', 'world-book'), true)
+  assert.equal(isEditorGroupVisible('custom-tools', 'tool-pipeline'), true)
+  assert.equal(isEditorGroupVisible('custom-tools', 'pre-step'), false)
+  assert.equal(isEditorGroupVisible('prompt-defaults', 'pre-step'), true)
+  assert.equal(isEditorGroupVisible('prompt-defaults', 'llm-stream'), false)
+  // 人设注册 system-section 段，includeRuntimeContext 同时抑制 runtime-context 快照（真实跨层）。
+  assert.equal(isEditorGroupVisible('persona', 'system-section'), true)
+  assert.equal(isEditorGroupVisible('persona', 'runtime-context'), true)
+  assert.equal(isEditorGroupVisible('persona', 'turn-stop'), false)
+  // 子代理模型路由随子代理启动注入 agentOptions，采样三参数写 agent-request patch。
+  assert.equal(isEditorGroupVisible('subagent-model', 'subagent-start'), true)
+  assert.equal(isEditorGroupVisible('subagent-model', 'agent-request'), true)
+  // 能力组与专用编辑组共用一张归属表：能力 id 也能直接查询。
+  assert.equal(isEditorGroupVisible('deliberation-gate', 'tool-pipeline'), true)
+  assert.equal(isEditorGroupVisible('deliberation-gate', 'pre-step'), false)
+  // 未登记的 id 不猜归属：一律可见（新增卡忘登记时是「哪层都能看到」，不是整张消失）。
+  assert.equal(isEditorGroupVisible('not-registered-yet', 'turn-stop'), true)
+  // 主/子页面消费同一判定：tool-pipeline 的共享设置区与子代理委派卡各按自己的组 id 显示。
+  assert.match(read('app/workspace/pages/MainSessionPage.tsx'), /isEditorGroupVisible\('tool-filter', viewFilter\)/)
+  assert.match(read('app/workspace/pages/SubagentPage.tsx'), /isEditorGroupVisible\('subagent-tools', viewFilter\)/)
+})
+
+test('共享参数镜像控件：两处渲染读同一 store 字段，DOM id 不重复', () => {
+  const store = {
+    fields: { ...EMPTY_FIELDS, presetTemplate: 'pt-mirror', writePreset: true, toolFilterAllow: 'read' },
+    moduleFacts: { editable: true },
+    editorDrafts: undefined,
+    patch() {},
+    persistParamOverrides() { return Promise.resolve(true) },
+  }
+  // 层卡内的默认渲染点与工具管线共享设置区的镜像渲染点：值同源，只有 DOM id 不同。
+  const primary = render(EngineParamField, { store, param: 'toolFilterAllow', t })
+  const mirror = render(EngineParamField, { store, param: 'toolFilterAllow', t, instanceId: 'tool-pipeline' })
+  assert.match(primary, /id="pt-param-toolFilterAllow"/)
+  assert.match(mirror, /id="pt-param-tool-pipeline-toolFilterAllow"/)
+  assert.ok(!primary.includes('pt-param-tool-pipeline-'), '默认渲染点不带实例前缀')
+  // 两处读的是同一个 store 字段（TagInput 把列表值渲染成标签，断言值本身出现即可）。
+  assert.ok(primary.includes('read') && mirror.includes('read'), '两处读到同一 store 字段值')
+  assert.notEqual(primary.match(/id="([^"]+)"/)?.[1], mirror.match(/id="([^"]+)"/)?.[1], 'DOM id 必须不同')
 })

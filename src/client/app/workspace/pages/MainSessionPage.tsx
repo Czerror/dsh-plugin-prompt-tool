@@ -9,6 +9,9 @@ import { INSERTION_LAYERS, LAYER_LABEL_KEYS, translateLabel } from '../../../fea
 import { ModelRouteModuleCard } from '../../../features/models/ModelRouteCard.tsx'
 import { PresetPersonaCard } from '../../../features/persona/PresetPersonaCard.tsx'
 import { EngineModuleActions, EngineModuleCards, EnginePromptDefaultsCard } from '../../../features/modules/EngineModuleList.tsx'
+import { ToolPipelineSettingsCard } from './EngineLayersPanel.tsx'
+import { LayerCard } from '../../../ui/LayerCard.tsx'
+import { isEditorGroupVisible } from '../../../../shared/engine-capabilities.ts'
 import { CustomToolsCard, type ToolCreateIntent } from '../../../features/tools/CustomToolsCard.tsx'
 import { SubagentToolPolicyCard } from '../../../features/subagents/SubagentToolPolicyCard.tsx'
 import { TemplatePicker } from '../../../ui/TemplatePicker.tsx'
@@ -131,7 +134,9 @@ export const MainSessionPage = memo(function MainSessionPage(props: { store: Pro
         onVariablesExpandedChange={changeVariablesExpanded}
         beforeCards={
           <>
-            <PresetPersonaCard t={t} presetId={fields.presetTemplate} disabled={!canEditPreset} onNotice={store.showNotice} drafts={store.editorDrafts} />
+            <LayerCard visible={isEditorGroupVisible('persona', viewFilter)}>
+              <PresetPersonaCard t={t} presetId={fields.presetTemplate} disabled={!canEditPreset} onNotice={store.showNotice} drafts={store.editorDrafts} />
+            </LayerCard>
             <div hidden={viewFilter !== 'world-book'}>
               <WorldBookDiagnosticsCard store={store} t={t} />
             </div>
@@ -139,8 +144,12 @@ export const MainSessionPage = memo(function MainSessionPage(props: { store: Pro
         }
         commonCards={
           <div className={ui.configList}>
-            <ModelRouteModuleCard store={store} scope="main" />
-            <EnginePromptDefaultsCard store={store} t={t} />
+            <LayerCard visible={isEditorGroupVisible('main-model', viewFilter)}>
+              <ModelRouteModuleCard store={store} scope="main" />
+            </LayerCard>
+            <LayerCard visible={isEditorGroupVisible('prompt-defaults', viewFilter)}>
+              <EnginePromptDefaultsCard store={store} t={t} />
+            </LayerCard>
           </div>
         }
         toolbarActions={<EngineModuleActions store={store} t={t} anchorRef={picker.anchorRef} extraItems={createItems} onExtraSelect={onCreateSelect} onCreated={revealCapability} />}
@@ -159,7 +168,10 @@ export const MainSessionPage = memo(function MainSessionPage(props: { store: Pro
                   />
                 )
                 : undefined} />
-            <div hidden={viewFilter !== 'all' && viewFilter !== 'tool-pipeline'}>
+            <LayerCard visible={isEditorGroupVisible('tool-filter', viewFilter)}>
+              <ToolPipelineSettingsCard store={store} t={t} />
+            </LayerCard>
+            <LayerCard visible={isEditorGroupVisible('custom-tools', viewFilter)}>
               <CustomToolsCard
                 key={fields.presetTemplate}
                 presetId={fields.presetTemplate}
@@ -170,7 +182,7 @@ export const MainSessionPage = memo(function MainSessionPage(props: { store: Pro
                 createIntent={toolCreate}
                 onIntentConsumed={() => setToolCreate(undefined)}
               />
-            </div>
+            </LayerCard>
           </>
         }
       />

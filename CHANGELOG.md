@@ -1,5 +1,28 @@
 # Changelog
 
+## 引擎缺陷修复与九层编辑归属契约（2026-09-20）
+
+### 引擎修复（R6—R8）
+
+- **自定义策略真正生效**：`strategyDir` 在引擎入口统一解析为绝对 URL，相对写法不再让整行挂载抛 `ERR_INVALID_URL`；
+  runtime-context 的模板专属策略与 placeholder 一样注册成函数 provider 并按 assembly 调用 resolver，模板模块
+  抛错只让该条为空并告警，不再出现「配了没效果也不报错」。
+- **深思门适配当前宿主**：深度代理从已撤销的 `assistant/chunk` 改为 durable `turn/start`（建立每轮预算）+
+  `assistant/message`（只读 `message.content`，不读同一事件的 stream delta，避免双计）；冷扫与实时共用同一个
+  事件处理函数，重启前后判定一致。
+- **阶段目录保留推进工具**：渐进披露的 keep 集合加入本模块注册的 `stageAdvanceTool`，注册、`{{advanceTool}}`
+  提示与目录裁剪同源；它不参与阶段工具缺失校验，被外层策略挡掉时不复活，也不触发「缺失即放开完整目录」的降级。
+
+### 九层编辑归属与参数闭环（T12、T13）
+
+- 引擎 `LAYER_ORDER` 成为九层顺序唯一权威，`getEngineMeta()` 下发 `layerOrder`；共享契约新增 `EngineLayer`、
+  `ENGINE_LAYER_ORDER` 与 `ENGINE_EDITOR_GROUP_MAP`（能力组 + 专用编辑组的主归属与 `relatedLayers`），
+  `/meta` 与 `/bootstrap` 只下发可序列化白名单字段，前端对旧宿主缺字段退化到共享层序。
+- 七个锚定/引导内容键（`buildPattern`、`complexPattern`、`firstTurnBuild`、`firstTurnInspect`、`firstTurnDeep`、
+  `guideWeak`、`guideDeep`）并入共享参数定义，旁路键清单只剩 `promptConfigs`；新增 `pattern` 值类型按
+  `new RegExp(value, 'i')` 在写盘前拒绝非法正则，读回、脏检测、中英词条随现有派生链生效。
+- 角色卡合并写盘复用共享层序，删除 `src/host/characters.ts` 里的第二份九层清单。
+
 ## 会话 id 来源修复与官方依赖对齐（2026-09-18）
 
 - 官方 `0.1.6-alpha.2` 删除了 `SessionListState.current`（当前选中会话移出 Session Controller），客户端 `currentSessionId` 因此恒为 `undefined`：工作区指令文件卡整体不可见、不可写，模型选择卡 `selectable` 恒 false，预设切换恒返回未应用。
