@@ -96,7 +96,9 @@ test('主会话使用平铺模块列表与合并创建菜单', () => {
   assert.doesNotMatch(editor, /viewMode|通用设置|引擎能力设置/)
   assert.doesNotMatch(page, /viewMode|onViewModeChange/)
   assert.match(editor, /moduleCards\?: ReactNode/)
-  assert.doesNotMatch(list, /renderLayer|data-insertion-point/)
+  // 旧的按插入点分区渲染已移除；`renderLayerSettings` 是本层设置注入点，不是分区渲染。
+  assert.doesNotMatch(list, /data-insertion-point|renderLayer\(/)
+  assert.match(list, /renderLayerSettings\?:/)
   // 自动保存（store debounce）取代浮动未保存提示/放弃/保存条；工具栏保留校验与保存入口。
   assert.doesNotMatch(list, /放弃修改|保存提示词配置|有未保存提示词配置修改/)
 

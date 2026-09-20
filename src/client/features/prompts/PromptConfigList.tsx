@@ -62,6 +62,13 @@ export interface PromptConfigListProps {
   onReloadInstructionFile?: (fileId: string) => void
   /** 指令文件卡的行为策略改动（独立策略存储）。 */
   onPatchInstructionPolicy?: (fileId: string, override: InstructionPolicyFileOverride) => void
+  /**
+   * 本层引擎设置内容（app 层注入，逐层下发到每张实例卡）：
+   * 同层每张卡显示同一份值，折叠区默认折叠且展开才渲染内容。
+   */
+  renderLayerSettings?: (layer: string, config: PromptConfigDraft) => ReactNode
+  /** 该层是否有可编辑的引擎设置：决定「本层无配置卡」时是否渲染兜底设置容器。 */
+  hasLayerSettings?: (layer: string) => boolean
   onNotice: (kind: 'ok' | 'error', message: string) => void
 }
 
@@ -339,6 +346,7 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
         onDragOver={handleDragOver}
         onDrop={handleDrop}
         onDragEnd={handleDragEnd}
+        renderLayerSettings={props.renderLayerSettings}
       />
     )
   }
@@ -351,6 +359,16 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
   /** 选中的是九层之一（world-book 是策略筛选，保持原有的「无匹配 + 清除筛选」提示）。 */
   const worldBookView = viewFilter === 'world-book'
   const layerView = viewFilter !== 'all' && !worldBookView
+  /**
+   * 兜底层设置容器内容：该层有可编辑引擎设置、却一张配置卡都没有时用它承载
+   * （否则工具链这类通常没有提示词配置卡的层将无处修改引擎参数）。它不进入
+   * promptConfigs、不触发保存，也不创建配置对象。
+   */
+  const standaloneLayerSettings = layerView
+    && props.renderLayerSettings !== undefined
+    && props.hasLayerSettings?.(viewFilter) === true
+    ? props.renderLayerSettings(viewFilter, { id: '__layer-settings__', layer: viewFilter })
+    : undefined
 
   return (
     <section className={styles.section} aria-labelledby="prompt-tool-configs-heading">
@@ -431,8 +449,27 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
 
       {ordered.length === 0 ? (keyword.length > 0 || worldBookView) ? (
         <p className={styles.readOnly}>{t('configs.noMatch', { keyword: filter.trim() || translateLabel(t, LAYER_LABEL_KEYS, viewFilter) })} <button type="button" className={styles.pillButton} onClick={clearFilters}>{t('configs.clearFilters')}</button></p>
+      ) : layerView && standaloneLayerSettings ? (
+        // 该层有可编辑的引擎设置却没有任何配置卡：用不写盘的兜底容器承载设置，
+        // 否则工具链层这类「通常没有提示词配置卡」的层将无处修改引擎参数。
+        <div className={styles.configList} data-layer-settings-standalone={viewFilter}>
+          <article className={styles.configCard}>
+            <header className={styles.configHeader}>
+              <span className={styles.configToggle} data-static>
+                <span className={styles.configTitle}>
+                  <span className={styles.configName}>{t('configs.layerSettings.title', { layer: translateLabel(t, LAYER_LABEL_KEYS, viewFilter) })}</span>
+                  <span className={styles.configMeta}>{t('configs.layerSettings.meta')}</span>
+                </span>
+              </span>
+            </header>
+            <div className={styles.configForm}>
+              <p className={styles.configFieldHint}>{t('configs.layerSettings.note')}</p>
+              <div className={styles.configGrid}>{standaloneLayerSettings}</div>
+            </div>
+          </article>
+        </div>
       ) : layerView ? (
-        // 选中的注入层没有内容：给空状态与新增入口，不自动创建九张空卡。
+        // 选中的注入层没有内容且没有引擎设置：给空状态与新增入口，不自动创建九张空卡。
         <div className={styles.emptyState}><span className={styles.emptyGlyph} aria-hidden="true">⌁</span><div>
           <h3>{t('configs.empty.layer.title', { layer: translateLabel(t, LAYER_LABEL_KEYS, viewFilter) })}</h3>
           <p>{t('configs.empty.layer.desc')}</p>

@@ -47,6 +47,8 @@ export const PromptConfigCard = memo(function PromptConfigCard(props: {
   onDragOver?: (id: string, event: React.DragEvent<HTMLElement>) => void
   onDrop?: (id: string, event: React.DragEvent<HTMLElement>) => void
   onDragEnd?: () => void
+  /** 本层引擎设置内容（app 层注入）：同层每张卡显示同一份值，展开才渲染。 */
+  renderLayerSettings?: (layer: string, config: PromptConfigDraft) => ReactNode
 }): ReactNode {
   const { t, meta, config } = props
   const [confirmation, setConfirmation] = useState<'delete' | 'reload'>()
@@ -168,6 +170,7 @@ export const PromptConfigCard = memo(function PromptConfigCard(props: {
       {props.expanded && <>
         <p className={styles.configFullName}>{config.id}{config.name && config.name !== config.id ? ` · ${config.name}` : ''}</p>
         <PromptConfigForm t={t} meta={meta} config={config} disabled={props.disabled} fieldDrafts={props.fieldDrafts} draftScope={`${props.draftScope}:${config.id}`}
+          renderLayerSettings={props.renderLayerSettings}
           onPatch={(patch) => props.onPatch(config.id, patch)}
           {...(instructionFileId === undefined ? {} : { onPatchPolicy: (patch: InstructionPolicyFileOverride) => props.onPatchInstructionPolicy?.(instructionFileId, patch) })} />
       </>}

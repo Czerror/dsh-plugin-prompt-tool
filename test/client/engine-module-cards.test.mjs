@@ -598,3 +598,43 @@ test('统一搜索：无匹配给定位提示，层内无内容给空状态与�
   const worldBook = render(PromptConfigList, listProps('world-book'))
   assert.ok(worldBook.includes(t('configs.noMatch', { keyword: 'world-book' })))
 })
+
+test('本层无配置卡时用不写盘的兜底容器承载引擎设置', () => {
+  const marker = 'STANDALONE-LAYER-SETTINGS'
+  const patches = []
+  const saves = []
+  const base = (extra) => ({
+    t, meta: getEngineMeta(), configs: [], viewFilter: 'tool-pipeline', onCreate: () => {},
+    onPatchConfigs: (next) => patches.push(next), onSaveConfigs: async (next) => { saves.push(next); return true }, onNotice: () => {},
+    ...extra,
+  })
+  // 该层有设置且没有任何配置卡：渲染兜底容器，内容来自注入回调，并说明不写入配置列表。
+  const withSettings = render(PromptConfigList, base({
+    renderLayerSettings: (layer) => `${marker}:${layer}`,
+    hasLayerSettings: (layer) => layer === 'tool-pipeline',
+  }))
+  assert.match(withSettings, /data-layer-settings-standalone="tool-pipeline"/)
+  assert.ok(withSettings.includes(`${marker}:tool-pipeline`), '兜底容器渲染该层设置内容')
+  assert.ok(withSettings.includes(t('configs.layerSettings.title', { layer: t('layer.tool-pipeline') })))
+  assert.ok(withSettings.includes(t('configs.layerSettings.note')), '说明不写入预设配置列表')
+  assert.equal(withSettings.includes(t('configs.empty.layer.title', { layer: t('layer.tool-pipeline') })), false, '有设置时不再显示层空态')
+  // 只渲染不写入：不产生保存、不创建配置对象、不触发 patch。
+  assert.deepEqual(patches, [])
+  assert.deepEqual(saves, [])
+  // 该层有配置卡：兜底容器让位给实例卡（设置改为嵌在卡内）。
+  const withCard = render(PromptConfigList, base({
+    configs: [{ id: 'pipe-rule-a', layer: 'tool-pipeline', order: 0, enabled: true, strategy: 'static' }],
+    renderLayerSettings: (layer) => `${marker}:${layer}`,
+    hasLayerSettings: () => true,
+  }))
+  assert.equal(withCard.includes('data-layer-settings-standalone'), false)
+  assert.ok(withCard.includes('pipe-rule-a'))
+  // 该层没有可编辑设置：保持既有层空态与新增入口。
+  const noSettings = render(PromptConfigList, base({ renderLayerSettings: () => marker, hasLayerSettings: () => false }))
+  assert.equal(noSettings.includes('data-layer-settings-standalone'), false)
+  assert.ok(noSettings.includes(t('configs.empty.layer.title', { layer: t('layer.tool-pipeline') })))
+  // 注入回调存在但该层无设置判定为假时，回调不被调用（不产生无谓渲染）。
+  let called = 0
+  render(PromptConfigList, base({ renderLayerSettings: () => { called += 1; return marker }, hasLayerSettings: () => false }))
+  assert.equal(called, 0)
+})

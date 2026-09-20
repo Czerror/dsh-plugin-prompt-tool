@@ -3,6 +3,7 @@ import type { PromptToolStore } from '../../../data/use-prompt-tool-store.ts'
 import { usePromptToolFields } from '../../../data/use-prompt-tool-fields.ts'
 import type { PromptToolTranslate } from '../../../locales.ts'
 import { PromptConfigList, type PromptConfigListProps } from '../../../features/prompts/PromptConfigList.tsx'
+import type { PromptConfigDraft } from '../../../prompt-tool-types.ts'
 import type { InstructionPolicyFileOverride } from '../../../../shared/instructions.ts'
 /** 子代理配置列表（按 scope 过滤：subagent 只列子代理可见配置）。
  *  纪律：过滤状态只由用户手动改变；新建只做「展开新卡 + 滚动定位」两件事。
@@ -26,10 +27,12 @@ export const ConfigListWithTemplates = memo(function ConfigListWithTemplates(pro
   /** 受控搜索词（页面持有）：同一搜索词同时过滤配置实例与层内卡片。 */
   keyword?: string
   onKeywordChange?: (value: string) => void
+  /** 本层引擎设置内容（页面注入）：同层每张实例卡显示同一份值。 */
+  renderLayerSettings?: (layer: string, config: PromptConfigDraft) => ReactNode
   /** 与页面合并创建入口使用同一定位信号。 */
   createdConfigId?: string
 }): ReactNode {
-  const { store, t, layer, scope, beforeCards, toolbarActions, moduleCards, viewFilter, onViewFilterChange, keyword, onKeywordChange, createdConfigId } = props
+  const { store, t, layer, scope, beforeCards, toolbarActions, moduleCards, viewFilter, onViewFilterChange, keyword, onKeywordChange, renderLayerSettings, createdConfigId } = props
   const fields = usePromptToolFields(store, (value) => value)
   // 稳定回调：卡片 memo 的生效前提（store 引用已稳定）。
   const patchConfigs = useCallback((configs: PromptToolStore['fields']['promptConfigs']) => {
@@ -79,6 +82,7 @@ export const ConfigListWithTemplates = memo(function ConfigListWithTemplates(pro
       onViewFilterChange={onViewFilterChange}
       keyword={keyword}
       onKeywordChange={onKeywordChange}
+      renderLayerSettings={renderLayerSettings}
       emptyHint={preStepEmpty ? t('configList.emptyPreStep') : undefined}
       onPatchConfigs={patchConfigs}
       onSaveConfigs={saveConfigs}

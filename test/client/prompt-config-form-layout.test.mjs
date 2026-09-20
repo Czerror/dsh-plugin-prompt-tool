@@ -458,3 +458,21 @@ test('system-section：结构化字段之外的 params 仍可编辑，提交时�
   const onlyKnown = renderElement(StrategyParamsFields, { t, strategy: 'static', layer: 'system-section', params: { sectionName: 'sec-a' } })
   assert.ok(!onlyKnown.includes(t('field.json.advanced')), '已结构化覆盖的键不得再渲染一份 JSON 输入')
 })
+
+test('本层引擎设置：注入点默认折叠，折叠时不渲染内容', () => {
+  const marker = 'LAYER-SETTINGS-MARKER'
+  // 没有可编辑引擎设置的层不注入内容 → 不出现空的设置区。
+  const without = renderElement(PromptConfigForm, formProps({ layer: 'llm-stream' }))
+  assert.equal(without.includes('data-layer-settings'), false, '未注入时不渲染设置区')
+  // 注入后：折叠区带该层标记，标题与说明来自字典。
+  const injected = renderElement(PromptConfigForm, formProps({ layer: 'tool-pipeline' }, { renderLayerSettings: () => marker }))
+  assert.match(injected, /data-layer-settings="tool-pipeline"/)
+  assert.ok(injected.includes(t('form.layerSettings.label', { layer: t('layer.tool-pipeline') })), '标题带层名')
+  assert.ok(injected.includes(t('form.layerSettings.hint', { layer: t('layer.tool-pipeline') })), '说明来自字典')
+  // 默认折叠 = 内容不求值：同层 120 张实例卡不会因此多出成百上千控件。
+  assert.equal(injected.includes(marker), false, '折叠时不渲染设置内容')
+  // 折叠状态初始为关闭，注入回调不因渲染被调用。
+  let called = 0
+  renderElement(PromptConfigForm, formProps({ layer: 'pre-step' }, { renderLayerSettings: () => { called += 1; return marker } }))
+  assert.equal(called, 0, '折叠时不得调用注入回调')
+})

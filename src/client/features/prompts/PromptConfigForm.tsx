@@ -67,6 +67,11 @@ export function PromptConfigForm(props: {
   onPatch: (patch: Partial<PromptConfigDraft>) => void
   /** 指令文件卡：行为策略写独立策略存储（不写 preset.yml）。 */
   onPatchPolicy?: (patch: InstructionPolicyFileOverride) => void
+  /**
+   * 本层引擎设置的内容（由 app 层注入）：参数、已装配能力的装配状态与移除、按层归属的资产编辑器。
+   * 只在展开时求值——折叠区存在于每张同层实例卡，但折叠时零渲染成本。
+   */
+  renderLayerSettings?: (layer: string, config: PromptConfigDraft) => ReactNode
 }): ReactNode {
   const { t, meta, config, onPatch: patchConfig, onPatchPolicy } = props
   // 指令文件卡：正文对应磁盘上的原文件；读取失败或磁盘已变时不得继续编辑覆盖。
@@ -121,6 +126,8 @@ export function PromptConfigForm(props: {
     config.identity !== undefined && (config.identity.field !== 'plugin' || config.identity.value.length > 0),
   ].filter(Boolean).length
   const [advancedOpen, setAdvancedOpen] = useState(advancedCount > 0)
+  /** 本层引擎设置折叠区：默认折叠，展开才渲染内容（同层 120 张卡也因此没有额外控件成本）。 */
+  const [layerSettingsOpen, setLayerSettingsOpen] = useState(false)
   return (
     <div className={clsx(styles.configForm, styles.configFormLayout)}>
       <div className={styles.configSectionTitle}>{t('form.section.basic')}</div>
@@ -219,6 +226,18 @@ export function PromptConfigForm(props: {
         )}
         {!locked && <StrategyParamsFields t={t} strategy={strategy} layer={config.layer} params={config.params} id={config.id} enabled={config.enabled} modelScope={config.modelScope} fieldDrafts={props.fieldDrafts} draftScope={props.draftScope} onPatch={(value) => onPatch({ params: value })} />}
       </fieldset>
+
+      {/* 本层引擎设置：同层每张卡都显示同一份值（同源同步），默认折叠且折叠时不渲染内容。 */}
+      {props.renderLayerSettings !== undefined && (
+        <details className={styles.configAdvanced} open={layerSettingsOpen} data-layer-settings={config.layer ?? 'pre-step'}
+          onToggle={(event) => setLayerSettingsOpen(event.currentTarget.open)}>
+          <summary className={styles.configAdvancedSummary}>
+            {t('form.layerSettings.label', { layer: translateLabel(t, LAYER_LABEL_KEYS, config.layer ?? 'pre-step') })}
+          </summary>
+          <p className={styles.configFieldHint}>{t('form.layerSettings.hint', { layer: translateLabel(t, LAYER_LABEL_KEYS, config.layer ?? 'pre-step') })}</p>
+          {layerSettingsOpen && <div className={styles.configGrid}>{props.renderLayerSettings(config.layer ?? 'pre-step', config)}</div>}
+        </details>
+      )}
 
       <details className={styles.configAdvanced} open={advancedOpen} onToggle={(event) => setAdvancedOpen(event.currentTarget.open)}>
         <summary className={styles.configAdvancedSummary}>{advancedCount > 0 ? t('form.advanced.setCount', { count: advancedCount }) : t('form.advanced.label')}</summary>
