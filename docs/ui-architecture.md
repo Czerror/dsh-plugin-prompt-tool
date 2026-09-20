@@ -275,8 +275,8 @@ workspace-pages.ts 是页面元数据的唯一来源。默认页为 features，�
 
 | id | 标题 | 主要组合 |
 |---|---|---|
-| features | 主会话 | 页面只声明受众视图与创建编排；层内卡片（人设、世界书诊断、模型路由、提示词默认值、能力卡、工具管线共享设置区、自定义工具卡）由 `EngineLayersPanel#engineLayerSlots` 统一装配，平铺的 PromptConfigList/EngineModuleList 承担筛选、搜索与保存，预设包导入预览在工具栏 |
-| subagent | 子代理 | 同一 `engineLayerSlots(audience: 'subagent')`（模型路由、模板变量、工具与深度、能力卡、自定义工具卡）、与主会话同款的合并创建菜单（能力模块/recipe、按层模板、工具模板、模板变量）、ConfigListWithTemplates（scope=subagent） |
+| features | 主会话 | 页面只声明受众视图与创建编排（创建菜单、模板浮层、指令回调），层内装配全部由 `EngineLayersPanel#engineLayerSlots` 提供；列表里是提示词配置实例卡（每张卡内嵌本层引擎设置区）与工具栏，预设包导入预览在工具栏 |
+| subagent | 子代理 | 同一 `engineLayerSlots(audience: 'subagent')`、与主会话同款的合并创建菜单（能力模块/recipe、按层模板、工具模板、模板变量）、ConfigListWithTemplates（scope=subagent）；引擎设置同样嵌在该层实例卡内 |
 | tools | 工具预览 | 顶置统一搜索；当前会话／所选预设两个可折叠分组，预设选择位于分组标题右侧；双列展开详情卡，680px 以下单列 |
 | skills | 技能设置 | 技能根与资产卡（用户技能根、创建、复制导入、技能文件夹引用）、状态与来源筛选、按来源分组的 SkillRow（调用策略开关、删除） |
 | presets | 预设配置 | 全局生成开关、AGENTS 路径与生成顺序设置、PresetSwitcher 与预设 CRUD |
@@ -453,7 +453,7 @@ feature 只拥有自己的视图、瞬时状态、领域纯 helper 和 CSS：
 | prompts | 六层配置卡、字段策略、排序、模板插入、变量编辑和内容配置；世界书只读诊断卡 |
 | persona | preset.yml 顶层 persona 段的编辑卡；prefix/suffix 与 complete 互斥校验，写盘经 host 校验与重建 |
 | models | 当前预设的主/子代理模型路由卡；模型下拉展示完整目录并按服务商分组，选择模型时内部回写 provider + model，不提供独立服务商选择控件 |
-| modules | 引擎能力身份、存在性与参数卡；一项实际装配能力一张卡，消费 `/bootstrap.moduleFacts`（显式模块及仍在运行的历史策略兼容装配），统一列表的行为分类由工作区组合，卡片形态由 ui/EngineModuleCard.tsx 提供 |
+| modules | 引擎能力身份、存在性判定与「本层引擎设置」内容装配（`LayerSettingsContent`：参数分组、已装配能力的装配状态与移除、按层归属的资产编辑器）；消费 `/bootstrap.moduleFacts`（显式模块及仍在运行的历史策略兼容装配），卡片壳 ui/EngineModuleCard.tsx 现在只服务资产编辑器 |
 | subagents | 委派工具、实例级工具策略草稿及策略解析预览；不重复嵌入工具面 |
 | tools | 自定义工具编辑/保存、参数模板；独立工具预览页与只读工具面 |
 | skills | 按官方六类技能根分组展示清单、来源与遮蔽判定、调用策略开关、技能文件夹引用、创建与两种复制导入、回收站删除；契约见 [skills-management.md](skills-management.md) |
@@ -498,27 +498,29 @@ promptConfigs 模块卡展开区按基础信息、注入规则、作用范围、
 
 「注入规则」分区内的**条件判定**块只在引擎放行的层渲染（读 `/meta` 的 `layerFieldPolicies.subject|match`）：`subject` 下拉含「层缺省」（空值即不写该字段，由层决定匹配对象），`match` 提供主键/副键集合、组合逻辑四选一，以及区分大小写、整词两个开关；键的匹配方式是**三态**（自动 / 强制正则 / 强制字面）而非开关——做成开关会把用户手写的 `useRegex: false` 在编辑后静默改成自动识别。切换注入层时清空目标层不支持的 `subject`/`match`：引擎对这些层声明该字段直接 fail loud（整个预设无法挂载），顺手清掉是唯一安全的层切换语义。没有有效键的 `match` 不落盘（引擎要求至少一个非空键），只填逻辑或开关的半成品不会写进配置；手写的坏卡可以在表单里「切层再切回」清掉。
 
-主会话使用单一模块列表，「全部」视图的视觉顺序为：预设人设卡 → 各能力卡 → 工具管线共享设置卡 → 自定义工具卡 → 层级配置卡；公共配置（当前会话模型、提示词生成默认值和模板变量）位于列表顶部。这一平铺顺序不建立跨插入点的全局执行顺序，`anchor-turn` 的实际 hook 同样不受展示影响。
+主会话的列表主体是**提示词配置实例卡**（同一层可以有多张），引擎设置不再是独立卡片：每张卡的表单里有一个默认折叠的「本层引擎设置」区（`form.layerSettings.label`），展开后就是该层的参数分组、已装配能力清单与该层归属的资产编辑器。列表顶部/底部只保留不承载引擎参数的入口：工具栏（合并创建菜单、校验与保存）与 world-book 视图下的只读诊断卡。这一顺序不建立跨插入点的全局执行顺序，`anchor-turn` 的实际 hook 同样不受展示影响。
 
-选中某个注入层时，编辑组卡按共享契约归位：`src/shared/engine-capabilities.ts#isEditorGroupVisible(组 id, viewFilter)` 读 `ENGINE_EDITOR_GROUP_MAP`（能力组 id = 能力 id；专用组 `prompt-defaults` / `persona` / `variables` / `main-model` / `subagent-model` / `subagent-tools` / `custom-tools` 各带主归属与 `relatedLayers`），主归属或相关层命中才显示，未登记的组不猜归属、一律可见。不可见的卡用 `ui/LayerCard.tsx` 的 `hidden` 隐藏而不卸载，所以切层不丢草稿、不重跑读取；页面不再各自手写层名判断，`app/workspace/pages/EngineLayersPanel.tsx` 是这一装配与工具管线共享设置区的唯一入口：`engineLayerSlots({ store, t, viewFilter, audience, keyword, … })` 返回 `beforeCards` / `commonCards` / `moduleCards` 三个片段，两个页面只声明受众视图与页面编排（创建菜单、模板浮层、指令回调）。
+`EngineLayersPanel#engineLayerSlots({ store, t, viewFilter, audience, keyword, … })` 是唯一的层装配入口，返回 `beforeCards` / `commonCards` / `moduleCards`（现在只含页面级提示与定位锚）以及 `renderLayerSettings(layer, config)` 与 `hasLayerSettings(layer)` 两个注入点；两个页面只声明受众视图与页面编排（创建菜单、模板浮层、指令回调），不再手写层名判断，也不再自己拼单例卡。
+
+`LayerSettingsContent` 的三段内容都按共享契约派生、不硬编码层名：`layerParamCards` 取主归属层等于该层、且**确实装配**的能力组与不依赖装配的专用编辑组（未装配能力的参数写了不生效，因此不显示假入口）；`layerAssembledCapabilities` 列出该层已装配能力，每项带二次确认的移除入口（只读预设下不提供）；资产编辑器（`persona` / `variables` / `main-model` / `subagent-model` / `subagent-tools` / `custom-tools` / `subagent-tool-policy`）按同一 `displayLayer` 归位，复用各自专用编辑器、草稿池与写端点。该层**没有任何可编辑设置**时不渲染设置区；该层有设置、却一张实例卡都没有时（例如工具链层通常没有提示词配置卡），列表用一张**不写盘**的兜底容器承载同一份内容（`data-layer-settings-standalone`），不创建配置对象、不触发保存，用户在该层新建配置卡后设置也出现在卡内。
 
 选中某个注入层且该层没有内容时，列表给「该层还没有内容」的空状态与新增入口，不自动创建九张空卡、也不谎称「无匹配」；`world-book` 是策略筛选而非层，保持原有的「无匹配 + 清除筛选」提示。
 
-同名引擎参数允许多处渲染（例如 `toolFilterAllow` 同时出现在 `tool-filter` 能力卡与工具管线共享设置卡）：它们绑定同一 `store.fields[键]` 与同一草稿键，一次修改只提交一次保存；`EngineParamField` 的 `instanceId` 只用来区分 DOM id 与 aria 关联，不引入第二份状态、同步服务或事件总线。未完成的数字输入与字段错误也属于这份共享草稿：`store.getDraftRevision` / `subscribeDrafts` / `publishDrafts` 是既有 `subscribeFields` 同一模式的窄广播，参数控件订阅它后，一个渲染点里的半成品输入或错误提示立即出现在其他渲染点（含跨层的 `bootstrap-tools`、`subagent-delegation` 相关设置），真实重渲染同步由 `module-policy-smoke` 用真实 Edge 覆盖。工具栏提供插入点层级与策略筛选、合并创建菜单和提示词配置操作；列表筛选只影响展示，仍是同一份平铺列表，不按插入点分区块。能力与提示词配置保留各自保存、排序和删除语义。
+同名引擎参数允许多处渲染（同层每张实例卡内各有一份本层设置区）：它们绑定同一 `store.fields[键]` 与同一草稿键，一次修改只提交一次保存；`EngineParamField` 的 `instanceId` 带上「层 + 卡身份」，同层多卡与兜底容器的 DOM id、aria 关联互不冲突，不引入第二份状态、同步服务或事件总线。未完成的数字输入与字段错误也属于这份共享草稿：`store.getDraftRevision` / `subscribeDrafts` / `publishDrafts` 是既有 `subscribeFields` 同一模式的窄广播，参数控件订阅它后，一个渲染点里的半成品输入或错误提示立即出现在其他渲染点（含跨层的相关设置），真实重渲染同步由 `module-policy-smoke` 用真实 Edge 覆盖（同层两张实例卡之间切换编辑、错误态同步、一次失焦只保存一次）。工具栏提供插入点层级与策略筛选、合并创建菜单和提示词配置操作；列表筛选只影响展示，不按插入点分区块。能力与提示词配置保留各自保存、排序和删除语义。
 
-模块卡（能力卡、提示词生成默认值卡、自定义工具卡）与层级配置卡共用同一个 `configList` 列表容器与卡间距；world-book 视图只隐藏模块卡容器，不卸载工具草稿。能力卡与工具卡默认折叠，只有创建/定位（工具栏「添加能力 / 工具模块」创建能力、新建或插入工具）才自动展开目标卡，其余展开与折叠完全由用户点击决定；创建动作不改动层级筛选与搜索词。只读预设（system 或关闭 `writePreset`）下工具卡同样默认折叠：卡头操作区与表单各自是独立的 `fieldset` 禁用边界，折叠按钮留在边界之外保持可点。
+world-book 视图只隐藏工具栏之外的列表主体之外的附加提示，不再有独立的模块卡容器需要隐藏；能力参数与资产编辑器都在实例卡的设置区里，随卡一起折叠，折叠时不渲染内容（同层 120 张卡不会因此多出成百上千控件）。创建/定位（工具栏「添加能力 / 工具模块」创建能力、新建或插入工具）只滚动到该层实例卡内的设置折叠区（`[data-layer-settings="<层>"]`），其余展开与折叠完全由用户点击决定；创建动作不改动层级筛选与搜索词。只读预设（system 或关闭 `writePreset`）下设置区里的移除入口不渲染、资产编辑器禁用，折叠按钮仍保持可点。
 
 工具栏的「添加能力 / 工具模块」是唯一创建入口，创建路径的过滤与受众规则见 §5.2.1。指令文件卡属于主会话概念，只在 `scope=main`（或缺省）时下发，子代理页不渲染，避免同一指令文件出现两个编辑入口。
 
-世界书是提示词策略筛选，能力卡不混入该视图（模块卡容器在 `world-book` 视图整体隐藏）；自定义工具卡按 `custom-tools` 编辑组归位到 tool-pipeline 层。筛选通过隐藏保留工具编辑器挂载，不卸载其未保存草稿；保存失败保留原输入。
+世界书是提示词策略筛选，不承载引擎设置（只读诊断卡只在 `world-book` 视图显示）；自定义工具编辑器按 `custom-tools` 编辑组归位到 tool-pipeline 层。筛选通过隐藏实例卡与设置区保留编辑器挂载，不卸载其未保存草稿；保存失败保留原输入。
 
-搜索统一覆盖「中文名 + 技术键」，且只影响展示：配置实例按标识、名称、枚举值与其中文标签、局部参数键匹配（`prompt-config-policy.ts#matchesConfigKeyword`）；能力卡与共享设置区按能力 id、参数键与 `param.<键>` 中文标签匹配（`EngineParamFields.tsx#matchesEditorGroup`，参数键派生来自 shared `engineGroupParamKeys`），工具管线共享设置区还额外按分组标题匹配。搜索词由页面持有并同时下发给列表与层装配，因此一次搜索同时过滤提示词配置、能力卡、共享设置区与单例卡，未命中的部分隐藏而不卸载；没有命中时能力区给 `modules.status.emptySearch`，列表给「无匹配 + 清除筛选」，不把几十张匹配卡合并成一张层结果。提示词搜索只作用于提示词配置的说法已作废：计数、批量启停和保存按钮仍不操作能力卡。
+搜索统一覆盖「中文名 + 技术键」，且只影响展示：配置实例按标识、名称、枚举值与其中文标签、局部参数键匹配（`prompt-config-policy.ts#matchesConfigKeyword`）；层设置区里的参数组与资产按能力 id、参数键与 `param.<键>` 中文标签匹配（`EngineParamFields.tsx#matchesEditorGroup`，参数键派生来自 shared `engineGroupParamKeys`）。搜索词由页面持有并同时下发给列表与层装配，未命中的部分隐藏而不卸载；没有命中时列表给「无匹配 + 清除筛选」，不把几十张匹配卡合并成一张层结果。
 
-子代理工具策略（`subagent-tool-policy`）是模块类型能力：在能力菜单里创建、在模块列表里有独立能力卡、用「删除引擎能力」移除；编辑器住在该能力卡内部（由页面经 `EngineModuleCards` 的 `renderCapabilityExtra` 插槽注入，「工具与深度」卡只留递归深度与入口提示）。该卡片只有**一个启用开关**：打开复用共享可用骨架并立即落盘；关闭删除顶层策略段并保留模块声明，同时把编辑区置为 `fieldset[disabled]` 只读。引擎仅在策略文件确实不存在时降级为官方委派行为，现存损坏文件仍报错。删除能力时模块声明与顶层段一起移除。历史“段在、声明不在”预设保留既有授权装配，能力卡如实展示它；保存或显式创建会补齐模块声明，不覆盖已有授权。子代理页排除「仅主对话」能力——不提供创建 `tool-filter`，也不渲染它的卡片，并在能力卡列表上方提示子代理工具面应走「subagent-tool-policy」能力。
+子代理工具策略（`subagent-tool-policy`）是模块类型能力：在能力菜单里创建，编辑器住在 tool-pipeline 层的层设置区资产分区里（`data-layer-asset="subagent-tool-policy"`），用「移除能力」入口移除。该编辑器只有**一个启用开关**：打开复用共享可用骨架并立即落盘；关闭删除顶层策略段并保留模块声明，同时把编辑区置为 `fieldset[disabled]` 只读。引擎仅在策略文件确实不存在时降级为官方委派行为，现存损坏文件仍报错。移除能力时模块声明与顶层段一起移除。历史“段在、声明不在”预设保留既有授权装配，装配清单如实列出它；保存或显式创建会补齐模块声明，不覆盖已有授权。子代理页排除「仅主对话」能力——不提供创建 `tool-filter`，它的参数与装配条目也不进本页设置区，并在模块区上方提示子代理工具面应走「subagent-tool-policy」能力。
 
 策略编辑器在焦点离开编辑区时自动保存，没有保存按钮。标签输入的失焦提交先更新最新草稿，再生成保存快照；保存成功只确认对应快照，期间新编辑仍保持待存。再次失焦时若旧请求未完成，只保留最新待存快照并串行提交；失败保留草稿供下一次失焦重试。切换预设或卸载会使旧读取、保存响应及未发送队列失效。
 
-能力卡展示当前预设 `modules` 声明的能力及实际运行的历史子代理策略，一项已装配能力一张卡：标题是能力 id，卡头 meta 显示提供该能力的模块，展开区直接编辑该能力自身的参数，不提供「编辑行为」这类编辑目标选择器；新能力仍从全量创建菜单添加。`modules: []` 不展开默认骨架，官方组合行不生成插件能力卡。二次确认删除保留普通 dormant 参数；子代理策略则连顶层段一起删除，成功后重建一次并刷新模块事实。
+层设置区展示当前预设 `modules` 声明的能力及实际运行的历史子代理策略，按主归属层分组：清单里每项是能力 id 与「移除能力」入口（二次确认），没有「编辑行为」这类编辑目标选择器；能力自身的参数在同一设置区的参数分组里编辑，新能力仍从全量创建菜单添加。`modules: []` 不展开默认骨架，官方组合行不生成插件能力条目。二次确认移除保留普通 dormant 参数；子代理策略则连顶层段一起移除，成功后重建一次并刷新模块事实。
 
 子代理页的筛选值与变更回调一起传到提示词列表；能力卡按同一层级过滤，工具管线包含子代理工具策略等本层能力。模板创建与列表展开共用页面持有的创建 ID，子组件不维护第二份无入口 picker。创建不改变筛选或搜索值。
 
@@ -620,7 +622,8 @@ promptConfigs 模块卡展开区按基础信息、注入规则、作用范围、
 | 技能状态文件、清单扫描、调用策略写入与资产入口 | skills-management（host 侧契约文档；测试见 `test/host/skills-*.test.mjs`） |
 | 子代理策略草稿 | subagent-policy-draft |
 | 过滤与新建严格分离（§5.2.1 规则） | scope-create-separation |
-| 能力卡、工具预览、自定义工具编辑 | engine-module-cards + tools-preview + custom-tool-editor |
+| 层设置区（参数分组、装配清单、资产归属）与统一搜索 | engine-module-cards + prompt-config-scale |
+| 工具预览、自定义工具编辑与只读边界 | tools-preview + custom-tool-editor + import-smoke |
 | 同层多实例规模、切层/受众草稿保持与统一搜索 | prompt-config-scale + engine-module-cards |
 | 受管配置字段的来源绑定与只读回显 | prompt-config-form-layout + host/managed-config-fields |
 | 184 卡保存往返与注释/未知键保真 | host/preset-configs-scale |

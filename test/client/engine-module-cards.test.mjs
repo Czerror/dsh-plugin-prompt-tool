@@ -34,7 +34,7 @@ const loader = registerHooks({
 })
 const { EngineParamFields, EngineParamField } = await import('../../src/client/features/modules/EngineParamFields.tsx')
 const { ToolPipelineSettingsCard, TOOL_PIPELINE_SETTING_GROUPS } = await import('../../src/client/app/workspace/pages/EngineLayersPanel.tsx')
-const { LayerSettingsContent, layerParamCards, layerHasSettings } = await import('../../src/client/app/workspace/pages/EngineLayersPanel.tsx')
+const { LayerSettingsContent, layerParamCards, layerHasSettings, layerAssembledCapabilities } = await import('../../src/client/app/workspace/pages/EngineLayersPanel.tsx')
 const { LayerCard } = await import('../../src/client/ui/LayerCard.tsx')
 const { EngineModuleCards, EngineCapabilityCreateMenu } = await import('../../src/client/features/modules/EngineModuleList.tsx')
 const { PromptConfigForm } = await import('../../src/client/features/prompts/PromptConfigForm.tsx')
@@ -86,28 +86,28 @@ test('模块字段从目录渲染，每个参数有且只有一个配置卡 owne
   }
 })
 
-test('卡片存在性来自装配事实，一项装配能力一张卡', () => {
-  const absent = render(EngineModuleCards, { store, t })
-  assert.doesNotMatch(absent, /class="configName">tool-bootstrap</)
-  const active = { ...store, moduleFacts: withModules(['tool-bootstrap', 'filesystem-editor', 'promoted-code-mode', 'progress-reminder']) }
-  const html = render(EngineModuleCards, { store: active, t, showPromptDefaults: false })
-  assert.equal((html.match(/data-module-card="true"/g) ?? []).length, 4, '每项装配能力一张卡')
-  for (const id of ['tool-bootstrap', 'promoted-code-mode', 'progress-reminder', 'str-replace-editor']) assert.match(html, new RegExp(`class="configName">${id}<`))
-  // 卡头 meta 显示提供该能力的 modules 行（str-replace-editor 由 filesystem-editor 行提供）。
-  assert.match(html, /class="configMeta">filesystem-editor</)
-  assert.doesNotMatch(html, /编辑行为/, '不再提供编辑目标选择器')
-  const filtered = render(EngineModuleCards, { store: active, t, layerFilter: 'pre-step' })
-  assert.doesNotMatch(filtered, /class="configName">tool-bootstrap</)
-  assert.doesNotMatch(filtered, /class="configName">str-replace-editor</)
-  assert.doesNotMatch(filtered, /class="configName">(?:promoted-code-mode|progress-reminder)</)
-  const anchored = render(EngineModuleCards, { store: { ...store, moduleFacts: withModules(['anchor-turn']) }, t, layerFilter: 'pre-step' })
-  assert.ok(anchored.includes('class="configName">anchor-turn<'), 'pre-step 过滤只留本层能力卡')
-  assert.doesNotMatch(render(EngineModuleCards, { store: { ...store, moduleFacts: withModules(['anchor-turn']) }, t, layerFilter: 'system-section' }), /class="configName">anchor-turn</)
-  const legacyPolicy = { ...store, moduleFacts: { ...withModules(['delegation']), effectiveModules: ['delegation', 'subagent-tool-policy'] } }
-  assert.match(render(EngineModuleCards, { store: legacyPolicy, t, layerFilter: 'tool-pipeline' }),
-    /class="configName">subagent-tool-policy</, '历史隐式策略仍在运行，必须显示能力卡以便管理授权')
-  const official = render(EngineModuleCards, { store: { ...active, moduleFacts: { ...active.moduleFacts, sourceMode: 'official' } }, t })
-  assert.doesNotMatch(official, /class="configName">tool-bootstrap</)
+test('层设置内容按装配事实列出本层能力，未装配的能力不出现', () => {
+  const active = {
+    ...store,
+    fields: { ...EMPTY_FIELDS, presetTemplate: 'pt-cards', writePreset: true },
+    moduleFacts: withModules(['tool-bootstrap', 'filesystem-editor', 'promoted-code-mode', 'progress-reminder']),
+  }
+  // 装配事实按主归属层分组：str-replace-editor 由 filesystem-editor 行提供，仍归 tool-pipeline。
+  assert.deepEqual(layerAssembledCapabilities(active, 'system-section'), ['tool-bootstrap'])
+  assert.deepEqual([...layerAssembledCapabilities(active, 'tool-pipeline')].sort(), ['progress-reminder', 'promoted-code-mode', 'str-replace-editor'])
+  assert.deepEqual(layerAssembledCapabilities(active, 'pre-step'), [])
+  const html = render(LayerSettingsContent, { store: active, t, layer: 'tool-pipeline' })
+  for (const id of ['promoted-code-mode', 'progress-reminder', 'str-replace-editor']) {
+    assert.match(html, new RegExp(`data-layer-capability="${id}"`), `${id} 应出现在本层装配清单`)
+  }
+  assert.doesNotMatch(html, /data-layer-capability="tool-bootstrap"/, '不列其他层的能力')
+  assert.doesNotMatch(html, /编辑行为/, '仍然不提供编辑目标选择器')
+  // 历史隐式策略仍在运行：照样列出，便于管理授权。
+  const legacyPolicy = { ...active, moduleFacts: { ...withModules(['delegation']), effectiveModules: ['delegation', 'subagent-tool-policy'] } }
+  assert.deepEqual(layerAssembledCapabilities(legacyPolicy, 'tool-pipeline'), ['subagent-tool-policy'])
+  // 官方组合行不伪装成本插件能力。
+  const official = { ...active, moduleFacts: { ...active.moduleFacts, sourceMode: 'official' } }
+  assert.deepEqual(layerAssembledCapabilities(official, 'tool-pipeline'), [])
 })
 
 test('能力与组合只引用新模块名，不接受旧模块名或编辑器模块别名', () => {
@@ -120,11 +120,14 @@ test('能力与组合只引用新模块名，不接受旧模块名或编辑器�
   }
   assert.equal(engineCapability('code-presentation'), undefined)
   assert.equal(engineCapability('cot-drip'), undefined)
+  assert.equal(engineCapability('bootstrap-filesystem'), undefined, '旧模块名不再被能力目录识别')
   const legacy = {
     ...store,
     moduleFacts: { ...withModules(['bootstrap-filesystem', 'str-replace-editor', 'custom-bash', 'code-presentation', 'cot-drip']), sourceMode: 'composition', rowIds: ['str-replace-editor', 'promoted-code-mode', 'progress-reminder'] },
   }
-  assert.doesNotMatch(render(EngineModuleCards, { store: legacy, t }), /class="configName">(?:str-replace-editor|promoted-code-mode|progress-reminder)</)
+  assert.deepEqual(layerAssembledCapabilities(legacy, 'tool-pipeline'), [], '组合来源的旧模块名不生成能力条目')
+  assert.deepEqual(layerParamCards(legacy, 'tool-pipeline'), [], '旧别名不产生可编辑参数组')
+  // 旧别名既不生成能力条目，也不产生可编辑参数组。
   assert.deepEqual(engineRecipe('phase-control-ptc'), {
     id: 'phase-control-ptc', capabilities: ['context-gate', 'tool-bootstrap', 'promoted-code-mode'], initialParams: { usePtcMode: true },
   })

@@ -124,16 +124,36 @@
 
 ## 状态
 
-- [ ] Wave 1 / T1、T2：待实施。
-- [ ] Wave 2 / T3、T4、T5：待实施。
-- [ ] Wave 3 / T6、T7、T8：待实施。
+- [✔] Wave 1 / T1、T2：2026-09-20 实施完成并验收（提交 `01d2654`）；注入点默认折叠且折叠时不求值，无实例卡层用不写盘兜底容器承载。
+- [✔] Wave 2 / T3：实施完成并验收（提交 `56b7925`）；参数分组按共享契约派生（能力组要求真实装配），装配清单与移除入口同区。
+- [✔] Wave 2 / T4：实施完成并验收（提交 `0293bea`）；独立能力卡与共享设置卡退场，页面级提示改在模块区渲染，定位锚改到层设置区。
+- [✔] Wave 2 / T5：实施完成并验收（提交 `c26651d`）；资产编辑器按主归属层进入设置区，两页删除 `renderCapabilityExtra` 与变量卡透传。
+- [✔] Wave 3 / T6：实施完成并验收（提交 `8b9a5c8`）；与旧卡片形态绑定的断言改写为层设置区/契约派生断言，浏览器用例改为同层两卡同步。
+- [✔] Wave 3 / T7、T8：文档同步、最终门禁与归档，见「验收记录」。
 
 ## 验收记录
 
-（实施后逐条补录命令、结果与证据；未执行的项不写入。）
+实施与验证均在隔离 cwd `D:\AI\workspase\_temp`；文件系统用例使用临时目录与临时 `DSH_HOME`，结束后清理，未触碰真实 DSH_HOME。
+
+| 任务 | 修改 | 回归证据 | 结果 |
+|---|---|---|---|
+| T1 | `PromptConfigForm` 新增「本层引擎设置」折叠区（默认折叠、折叠时不求值）；列表/卡片/编辑器/页面四层透传 `renderLayerSettings` | `test/client/prompt-config-form-layout.test.mjs` 新增用例：未注入不渲染该区、注入后标题与说明来自字典、折叠时不调用注入回调 | 16/16 通过 |
+| T2 | `PromptConfigList` 新增 `hasLayerSettings` 与不写盘兜底容器（`data-layer-settings-standalone`） | `test/client/engine-module-cards.test.mjs` 新增用例：有设置无卡时渲染容器且不触发保存/patch、有卡时让位、无设置时保持层空态 | 通过 |
+| T3 | `layerParamCards` / `layerAssembledCapabilities` / `layerHasSettings` 与 `LayerSettingsContent`；`engineLayerSlots` 返回两个注入点 | 同文件新增用例：按契约派生参数组（能力组要求装配）、装配清单只列本层、移除入口在只读预设下不渲染；`instanceId` 带卡身份 | 通过 |
+| T4 | 列表不再渲染能力卡/默认值卡/共享设置卡；`excludeCapabilities` 同时作用于参数与装配条目；页面级提示改在模块区 | `menu-select`、`scope-create-separation`、`import-smoke`（真实 Edge：兜底容器列出本层装配能力）、`module-policy-smoke`（真实 Edge：能力卡退场、设置区可编辑） | 通过 |
+| T5 | 人设/变量/模型/委派/自定义工具/子代理策略按 `displayLayer` 进入资产分区；两页删除 `variablesExpanded`、`renderCapabilityExtra` 与相应 props | `tools-preview`、`prompt-config-form-layout`、`module-policy-smoke`（真实 Edge：变量编辑器在运行上下文层设置区里编辑并落盘） | 通过 |
+| T6 | 与旧形态绑定的断言改写为层设置区与契约派生断言；浏览器镜像用例改为「同层两张实例卡之间同步」 | `test/client/*.test.mjs` 全部通过 | 266/266 通过 |
+| T7 | `docs/ui-architecture.md` 页面表、feature 职责表与 §9.1 改写；`CHANGELOG.md` 记本轮条目 | `git diff --check`；路径与命令核对 | 通过 |
+| T8 | 完整门禁 + GUI 产物重建 + PLAN 归档 | 见下 | 通过 |
+
+完整门禁（隔离 cwd，`pnpm --dir $Repo …`）：`typecheck`、`lint`、`build`、`git diff --check` 全部通过；`test` 为 **1200 测试全通过（fail 0）**，含真实 Edge smoke（层设置区展开、同层两卡镜像同步与单次保存、兜底容器、只读边界）。
+
+GUI 只读核对：`http://127.0.0.1:3080` 探测返回 401（服务在役）；仓库内没有 `dev:web` watcher（一次匹配经核实是本机自身命令行造成的假阳性），因此按仓库规则重建受影响产物，刷新现有工作台页面即可看到新形态，未重启或抢占运行中的 DSH 服务。
 
 ## 实施取舍与已知边界
 
 - 兜底层设置容器只存在于界面，不写入 preset.yml；用户在该层新建配置卡后，同一份设置也出现在卡内。
 - 不改变引擎运行时行为、九层顺序、参数缺省语义与 bridge 载荷；本轮只改编辑面的位置与容器。
 - 重型资产编辑器（自定义工具、子代理策略）在同层每张实例卡内只渲染同一份内容，展开任意一张即操作同一资产；折叠时零渲染成本。
+- **未做（如实记录）**：`EngineModuleCards`、`EnginePromptDefaultsCard`、`ToolPipelineSettingsCard` 三个组件已不再被工作台渲染，但仍是若干契约测试的渲染目标（参数渲染、搜索匹配、装配事实），因此本轮未删除；它们不再是用户可见入口，后续若清理需同步改写 `engine-module-cards` 等测试。
+- 列表仍是「手风琴」式（一次展开一张实例卡），因此同层两卡的设置区不能同屏对照；跨卡同步由切换卡后读回同一份草稿证明（真实 Edge 用例覆盖）。
