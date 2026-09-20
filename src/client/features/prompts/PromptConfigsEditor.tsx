@@ -55,6 +55,8 @@ export interface PromptConfigsEditorProps extends Pick<PromptConfigListProps, 'b
   onKeywordChange?: (value: string) => void
   /** 本层引擎设置内容（页面注入）：同层每张实例卡显示同一份值，展开才渲染。 */
   renderLayerSettings?: (layer: string, config: PromptConfigDraft) => ReactNode
+  /** 该层是否有可编辑设置：决定「本层无配置卡」时是否渲染兜底设置容器。 */
+  hasLayerSettings?: (layer: string) => boolean
   createdConfigId?: string
   /** 模板变量卡片展开态由页面持有：合并创建菜单的「添加模板变量」需要展开它。 */
   variablesExpanded: boolean
@@ -183,6 +185,7 @@ export function PromptConfigsEditor(props: PromptConfigsEditorProps): ReactNode 
         keyword={props.keyword}
         onKeywordChange={props.onKeywordChange}
         renderLayerSettings={props.renderLayerSettings}
+        hasLayerSettings={props.hasLayerSettings}
         createdConfigId={props.createdConfigId}
         toolbarActions={props.toolbarActions}
         beforeCards={props.beforeCards}

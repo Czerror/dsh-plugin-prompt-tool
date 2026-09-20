@@ -34,6 +34,7 @@ const loader = registerHooks({
 })
 const { EngineParamFields, EngineParamField } = await import('../../src/client/features/modules/EngineParamFields.tsx')
 const { ToolPipelineSettingsCard, TOOL_PIPELINE_SETTING_GROUPS } = await import('../../src/client/app/workspace/pages/EngineLayersPanel.tsx')
+const { LayerSettingsContent, layerParamCards, layerHasSettings } = await import('../../src/client/app/workspace/pages/EngineLayersPanel.tsx')
 const { LayerCard } = await import('../../src/client/ui/LayerCard.tsx')
 const { EngineModuleCards, EngineCapabilityCreateMenu } = await import('../../src/client/features/modules/EngineModuleList.tsx')
 const { PromptConfigForm } = await import('../../src/client/features/prompts/PromptConfigForm.tsx')
@@ -597,6 +598,46 @@ test('统一搜索：无匹配给定位提示，层内无内容给空状态与�
   // 世界书策略视图保持原语义（既有回归）：不因层空态改动而改变。
   const worldBook = render(PromptConfigList, listProps('world-book'))
   assert.ok(worldBook.includes(t('configs.noMatch', { keyword: 'world-book' })))
+})
+
+test('层设置内容：参数分组按共享契约派生，能力装配状态与移除入口同区', () => {
+  const active = {
+    ...store,
+    fields: { ...EMPTY_FIELDS, presetTemplate: 'pt-layer', writePreset: true },
+    moduleFacts: withModules(['deliberation-gate', 'tool-filter']),
+  }
+  // 参数分组按主归属层派生，且只列当前确实可编辑的组：能力组要求真实装配。
+  assert.deepEqual(layerParamCards(active, 'tool-pipeline'), ['tool-filter', 'deliberation-gate'])
+  assert.deepEqual(layerParamCards(active, 'llm-stream'), [])
+  // 专用编辑组不依赖模块装配（提示词生成默认值始终可编辑）；能力组随装配出现。
+  assert.deepEqual(layerParamCards(active, 'pre-step'), ['prompt-defaults'])
+  const withGate = { ...active, moduleFacts: withModules(['context-gate', 'deliberation-gate', 'tool-filter']) }
+  assert.deepEqual(layerParamCards(withGate, 'pre-step'), ['context-gate', 'prompt-defaults'])
+  assert.deepEqual([...layerParamCards(withGate, 'tool-pipeline')].sort(), ['deliberation-gate', 'tool-filter'])
+  assert.equal(layerHasSettings(active, 'tool-pipeline'), true)
+  assert.equal(layerHasSettings(active, 'llm-stream'), false)
+  // 内容：本层参数组 + 已装配能力条目（只列本层，且装配事实来自 moduleFacts）。
+  const html = render(LayerSettingsContent, { store: active, t, layer: 'tool-pipeline' })
+  assert.match(html, /data-layer-param-group="deliberation-gate"/)
+  assert.match(html, /data-layer-param-group="tool-filter"/)
+  assert.equal(html.includes('data-layer-param-group="progress-reminder"'), false, '只渲染本层 card')
+  assert.match(html, /data-layer-capabilities="tool-pipeline"/)
+  assert.match(html, /data-layer-capability="deliberation-gate"/)
+  assert.match(html, /data-layer-capability="tool-filter"/)
+  assert.ok(html.includes(t('modules.layer.assembled')))
+  // 镜像控件的 DOM id 带层前缀：与能力卡默认渲染点、其他层的镜像都不冲突。
+  assert.match(html, /id="pt-param-layer-tool-pipeline-deliberation-gate-deliberationMinChars"/)
+  // 只读预设：仍显示装配状态，但不提供移除入口。
+  const readOnly = render(LayerSettingsContent, { store: { ...active, fields: { ...EMPTY_FIELDS, presetTemplate: 'pt-layer', writePreset: false } }, t, layer: 'tool-pipeline' })
+  assert.ok(readOnly.includes(t('modules.layer.capability', { id: 'tool-filter' })))
+  assert.equal(readOnly.includes(t('modules.layer.remove')), false)
+  // 该层既没有参数也没有装配能力：不渲染任何内容（层设置区不出现空壳）。
+  const empty = render(LayerSettingsContent, {
+    store: { ...active, moduleFacts: withModules([]) },
+    t,
+    layer: 'llm-stream',
+  })
+  assert.equal(empty, '')
 })
 
 test('本层无配置卡时用不写盘的兜底容器承载引擎设置', () => {

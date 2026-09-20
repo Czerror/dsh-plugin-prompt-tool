@@ -127,6 +127,18 @@ export const PARAMS_ZH = {
   'modules.group.subagent-delegation': '子代理授权',
   'modules.group.sharedHint': '与对应能力卡绑定同一份预设参数：任一处修改立即反映到另一处，保存一次即可。',
   'modules.group.relatedHint': '主归属在「{layer}」层；这里是与该层能力卡同源的第二处编辑点，不新增第二份状态，也不改变实际生效通道。',
+  // 层设置区：参数分组标题按 card 派生，能力装配状态与移除入口都在本层设置区内。
+  'modules.group.prompt-defaults': '提示词生成默认值',
+  'modules.group.context-gate': '上下文门控',
+  'modules.group.anchor-turn': '锚定轮',
+  'modules.group.main-model': '主模型',
+  'modules.group.subagent-model': '子代理模型',
+  'modules.group.other': '其他设置',
+  'modules.layer.assembled': '本层已装配的能力',
+  'modules.layer.capability': '能力：{id}',
+  'modules.layer.remove': '移除能力',
+  'modules.layer.removeTitle': '移除「{id}」能力？',
+  'modules.layer.removeDesc': '从当前预设移除该能力：模块声明与行配置一起移除，它的参数不再生效；其他能力与本层配置不受影响。',
 }
 
 export const PARAMS_EN: Record<keyof typeof PARAMS_ZH, string> = {
@@ -247,4 +259,15 @@ export const PARAMS_EN: Record<keyof typeof PARAMS_ZH, string> = {
   'modules.group.subagent-delegation': 'Subagent delegation',
   'modules.group.sharedHint': 'Edits the same preset parameters as the matching capability card: a change in either place shows up in the other, and one save is enough.',
   'modules.group.relatedHint': 'Primary home is the "{layer}" layer; this is a second editing point over the same parameters, with no second copy of the state and no change to the real injection channel.',
+  'modules.group.prompt-defaults': 'Prompt generation defaults',
+  'modules.group.context-gate': 'Context gate',
+  'modules.group.anchor-turn': 'Anchor turn',
+  'modules.group.main-model': 'Main model',
+  'modules.group.subagent-model': 'Subagent model',
+  'modules.group.other': 'Other settings',
+  'modules.layer.assembled': 'Capabilities mounted in this layer',
+  'modules.layer.capability': 'Capability: {id}',
+  'modules.layer.remove': 'Remove capability',
+  'modules.layer.removeTitle': 'Remove the "{id}" capability?',
+  'modules.layer.removeDesc': 'Removes this capability from the current preset: the module declaration and its row config go away and its parameters stop applying; other capabilities and this layer configs are unaffected.',
 }

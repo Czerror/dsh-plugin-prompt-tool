@@ -7,10 +7,11 @@
  *
  * 展示归属只是导航：这里不新增第二份映射，也不改变任何运行时 hook、注册顺序或保存通道。
  */
-import type { ReactNode } from 'react'
-import { isEditorGroupVisible, type EngineLayer } from '../../../../shared/engine-capabilities.ts'
+import { useRef, useState, type ReactNode } from 'react'
+import { ENGINE_CAPABILITIES, ENGINE_EDITOR_GROUP_MAP, engineCapability, engineGroupParamKeys, isEditorGroupVisible, isEngineCapabilityPresent, type EngineLayer } from '../../../../shared/engine-capabilities.ts'
 import type { PromptToolStore } from '../../../data/use-prompt-tool-store.ts'
-import type { PromptToolTranslate } from '../../../locales.ts'
+import type { PromptToolLocaleKey, PromptToolTranslate } from '../../../locales.ts'
+import { ConfirmDialog } from '../../../ui/ConfirmDialog.tsx'
 import { EngineModuleCard } from '../../../ui/EngineModuleCard.tsx'
 import { EngineModuleCards, EnginePromptDefaultsCard, type CapabilityEditorSlot } from '../../../features/modules/EngineModuleList.tsx'
 import { EngineParamFields, matchesEditorGroup } from '../../../features/modules/EngineParamFields.tsx'
@@ -97,10 +98,116 @@ export function ToolPipelineSettingsCard(props: { store: PromptToolStore; t: Pro
   )
 }
 
+/** card → 参数分组标题词条：分组标题按 card 派生，不另抄一份参数归属。 */
+const CARD_LABEL_KEYS: Record<string, PromptToolLocaleKey> = {
+  'prompt-defaults': 'modules.group.prompt-defaults',
+  'context-gate': 'modules.group.context-gate',
+  'anchor-turn': 'modules.group.anchor-turn',
+  'tool-bootstrap': 'modules.group.bootstrap-tools',
+  'main-model': 'modules.group.main-model',
+  'subagent-model': 'modules.group.subagent-model',
+  'subagent-tools': 'modules.group.subagent-delegation',
+  'tool-filter': 'modules.group.tool-filter',
+  'promoted-code-mode': 'modules.group.promoted-code-mode',
+  'str-replace-editor': 'modules.group.str-replace-editor',
+  'deliberation-gate': 'modules.group.deliberation-gate',
+  'progress-reminder': 'modules.group.progress-reminder',
+  'tool-config-engine': 'modules.group.tool-config-engine',
+}
+
+/**
+ * 该层在共享契约里拥有扁平参数、且当前确实可编辑的编辑组：
+ * 能力组要求真实装配（未装配的能力参数写了不生效，不显示假入口）；
+ * 专用编辑组（提示词生成默认值等）不依赖模块装配，始终可编辑。
+ * 参数键仍由 `ENGINE_PARAM_DEFINITIONS` 给出，这里不另抄键表，也不按层硬编码。
+ */
+export function layerParamCards(store: PromptToolStore, layer: string): readonly string[] {
+  return ENGINE_EDITOR_GROUP_MAP
+    .filter((group) => group.displayLayer === layer
+      && engineGroupParamKeys(group.id).length > 0
+      && (engineCapability(group.id) === undefined || isEngineCapabilityPresent(group.id, store.moduleFacts)))
+    .map((group) => group.id)
+}
+
+/** 该层已装配的能力（装配事实来自 `store.moduleFacts`，不是前端开关）。 */
+export function layerAssembledCapabilities(store: PromptToolStore, layer: string): readonly string[] {
+  return ENGINE_CAPABILITIES
+    .filter(({ id, displayLayer }) => displayLayer === layer && isEngineCapabilityPresent(id, store.moduleFacts))
+    .map(({ id }) => id)
+}
+
+/** 该层是否有可编辑的引擎设置：参数组或已装配能力任一存在即为真。 */
+export function layerHasSettings(store: PromptToolStore, layer: string): boolean {
+  return layerParamCards(store, layer).length > 0 || layerAssembledCapabilities(store, layer).length > 0
+}
+
+/** 单个已装配能力：装配状态 + 移除入口（二次确认沿用统一对话框）。 */
+function LayerCapabilityRow(props: { store: PromptToolStore; t: PromptToolTranslate; capabilityId: string }): ReactNode {
+  const { store, t, capabilityId } = props
+  const [confirming, setConfirming] = useState(false)
+  const buttonRef = useRef<HTMLButtonElement>(null)
+  const editable = store.fields.writePreset && store.moduleFacts?.editable === true
+  return (
+    <li data-layer-capability={capabilityId}>
+      <span>{t('modules.layer.capability', { id: capabilityId })}</span>
+      {editable && (
+        <button ref={buttonRef} type="button" className={ui.pillButton} data-danger onClick={() => setConfirming(true)}>
+          {t('modules.layer.remove')}
+        </button>
+      )}
+      {confirming && (
+        <ConfirmDialog
+          title={t('modules.layer.removeTitle', { id: capabilityId })}
+          description={t('modules.layer.removeDesc')}
+          confirmLabel={t('toolEditor.confirmRemove')}
+          cancelLabel={t('toolEditor.cancel')}
+          failureMessage={t('card.operationFailed')}
+          returnFocusRef={buttonRef}
+          onConfirm={async () => { if (!await store.removeEngineCapability(capabilityId)) throw new Error(t('card.operationFailed')) }}
+          onCancel={() => setConfirming(false)}
+        />
+      )}
+    </li>
+  )
+}
+
+/**
+ * 本层引擎设置内容：参数分组（按共享契约派生）+ 已装配能力的装配状态与移除入口。
+ * 由 `engineLayerSlots` 注入到每张本层实例卡的折叠区（以及无实例卡时的兜底容器）；
+ * 同层多处渲染共用同一 `store.fields` 与同一草稿键，任一处修改同步。
+ */
+export function LayerSettingsContent(props: { store: PromptToolStore; t: PromptToolTranslate; layer: string }): ReactNode {
+  const { store, t, layer } = props
+  const cards = layerParamCards(store, layer)
+  const capabilities = layerAssembledCapabilities(store, layer)
+  if (cards.length === 0 && capabilities.length === 0) return null
+  return (
+    <>
+      {cards.map((card) => (
+        <section key={card} className={ui.settingRowStack} data-layer-param-group={card}
+          aria-label={t(CARD_LABEL_KEYS[card] ?? 'modules.group.other')}>
+          <strong>{t(CARD_LABEL_KEYS[card] ?? 'modules.group.other')}</strong>
+          <EngineParamFields store={store} card={card} t={t} instanceId={`layer-${layer}-${card}`} />
+        </section>
+      ))}
+      {capabilities.length > 0 && (
+        <section className={ui.settingRowStack} data-layer-capabilities={layer} aria-label={t('modules.layer.assembled')}>
+          <strong>{t('modules.layer.assembled')}</strong>
+          <ul>{capabilities.map((id) => <LayerCapabilityRow key={id} store={store} t={t} capabilityId={id} />)}</ul>
+        </section>
+      )}
+    </>
+  )
+}
+
 export interface EngineLayerSlots {
   beforeCards: ReactNode
   commonCards: ReactNode
   moduleCards: ReactNode
+  /** 本层引擎设置内容（注入到每张本层实例卡的折叠区）。 */
+  renderLayerSettings: (layer: string) => ReactNode
+  /** 该层是否有可编辑设置：决定「本层无配置卡」时是否渲染兜底容器。 */
+  hasLayerSettings: (layer: string) => boolean
 }
 
 export interface EngineLayerSlotsInput {
@@ -224,5 +331,11 @@ export function engineLayerSlots(input: EngineLayerSlotsInput): EngineLayerSlots
       </LayerCard>
     </>
   )
-  return { beforeCards, commonCards, moduleCards }
+  return {
+    beforeCards,
+    commonCards,
+    moduleCards,
+    renderLayerSettings: (layer: string) => <LayerSettingsContent store={store} t={t} layer={layer} />,
+    hasLayerSettings: (layer: string) => layerHasSettings(store, layer),
+  }
 }

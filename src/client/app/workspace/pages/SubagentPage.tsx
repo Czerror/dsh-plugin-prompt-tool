@@ -143,6 +143,8 @@ export const SubagentPage = memo(function SubagentPage(props: { store: PromptToo
           onViewFilterChange={changeViewFilter}
           keyword={keyword}
           onKeywordChange={setKeyword}
+          renderLayerSettings={layers.renderLayerSettings}
+          hasLayerSettings={layers.hasLayerSettings}
         />
       </section>
       {picker.open && (
