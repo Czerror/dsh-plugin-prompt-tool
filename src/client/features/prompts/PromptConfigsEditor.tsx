@@ -6,9 +6,6 @@ import { PromptConfigList, type PromptConfigListProps } from './PromptConfigList
 import { HintTooltip } from '../../ui/HintTooltip.tsx'
 import { ConfirmDialog } from '../../ui/ConfirmDialog.tsx'
 import { VariablesEditor } from './PromptConfigFields.tsx'
-import { LayerCard } from '../../ui/LayerCard.tsx'
-import { isEditorGroupVisible } from '../../../shared/engine-capabilities.ts'
-import { matchesEditorGroup } from './prompt-config-policy.ts'
 import sharedCss from '../../ui/controls.module.css'
 import featureCss from './prompts.module.css'
 
@@ -41,13 +38,6 @@ export interface PromptConfigsEditorProps extends Pick<PromptConfigListProps, 'b
   /** 指令文件卡的行为策略改动（独立策略存储）。 */
   onPatchInstructionPolicy?: (fileId: string, override: InstructionPolicyFileOverride) => void
   onNotice: (kind: 'ok' | 'error', message: string) => void
-  /** 预设级模板变量（preset.yml 顶层 variables 段；编辑入口与模块列表统一）。 */
-  templateVariables: Record<string, string>
-  setTemplateVariables: (value: Record<string, string>) => void
-  templateVariablesEnabled: boolean
-  setTemplateVariablesEnabled: (value: boolean) => void
-  /** 保存模板变量；开关变更时把新值一并传入，避免读到上一帧 enabled。 */
-  saveTemplateVariables: (next?: Record<string, string>, enabled?: boolean) => Promise<boolean | void>
   viewFilter: string
   onViewFilterChange: (value: string) => void
   /** 统一搜索词（页面持有）：同一搜索词过滤配置实例、能力卡、共享设置区与单例卡。 */
@@ -58,9 +48,6 @@ export interface PromptConfigsEditorProps extends Pick<PromptConfigListProps, 'b
   /** 该层是否有可编辑设置：决定「本层无配置卡」时是否渲染兜底设置容器。 */
   hasLayerSettings?: (layer: string) => boolean
   createdConfigId?: string
-  /** 模板变量卡片展开态由页面持有：合并创建菜单的「添加模板变量」需要展开它。 */
-  variablesExpanded: boolean
-  onVariablesExpandedChange: (value: boolean) => void
   /** 公共配置：模型、模板变量以外的预设级默认值等，不属于任何插入点。 */
   commonCards?: ReactNode
   /** 模块列表置顶卡片：脱离「公共配置」分组的单例配置（人设），不参与层过滤。 */
@@ -163,20 +150,8 @@ export function PromptConfigsEditor(props: PromptConfigsEditorProps): ReactNode 
         onCreate={props.onCreate}
         createdHidden={props.createdHidden}
         onShowCreated={props.onShowCreated}
-        commonCards={<div className={styles.commonCards} aria-label={t('configs.common.aria')} data-module-category="common">
+        commonCards={props.commonCards === undefined ? undefined : <div className={styles.commonCards} aria-label={t('configs.common.aria')} data-module-category="common">
           {props.commonCards}
-          <LayerCard visible={isEditorGroupVisible('variables', props.viewFilter) && matchesEditorGroup('variables', (props.keyword ?? '').trim().toLowerCase(), t)}>
-            <TemplateVariablesModuleCard
-              t={t}
-              templateVariables={props.templateVariables}
-              setTemplateVariables={props.setTemplateVariables}
-              templateVariablesEnabled={props.templateVariablesEnabled}
-              setTemplateVariablesEnabled={props.setTemplateVariablesEnabled}
-              saveTemplateVariables={props.saveTemplateVariables}
-              expanded={props.variablesExpanded}
-              onToggleExpanded={() => props.onVariablesExpandedChange(!props.variablesExpanded)}
-            />
-          </LayerCard>
         </div>}
         meta={props.meta}
         configs={props.configs}

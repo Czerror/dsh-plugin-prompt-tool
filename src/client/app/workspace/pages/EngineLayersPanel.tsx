@@ -14,15 +14,14 @@ import type { PromptToolStore } from '../../../data/use-prompt-tool-store.ts'
 import type { PromptToolLocaleKey, PromptToolTranslate } from '../../../locales.ts'
 import { ConfirmDialog } from '../../../ui/ConfirmDialog.tsx'
 import { EngineModuleCard } from '../../../ui/EngineModuleCard.tsx'
-import { EnginePromptDefaultsCard, type CapabilityEditorSlot } from '../../../features/modules/EngineModuleList.tsx'
 import { EngineParamFields, matchesEditorGroup } from '../../../features/modules/EngineParamFields.tsx'
 import { ModelRouteModuleCard } from '../../../features/models/ModelRouteCard.tsx'
 import { PresetPersonaCard } from '../../../features/persona/PresetPersonaCard.tsx'
 import { DelegationToolsModuleCard } from '../../../features/subagents/DelegationToolsCard.tsx'
+import { SubagentToolPolicyCard } from '../../../features/subagents/SubagentToolPolicyCard.tsx'
 import { WorldBookDiagnosticsCard } from '../../../features/prompts/WorldBookDiagnosticsCard.tsx'
 import { TemplateVariablesModuleCard } from '../../../features/prompts/PromptConfigsEditor.tsx'
 import { CustomToolsCard, type ToolCreateIntent } from '../../../features/tools/CustomToolsCard.tsx'
-import { LayerCard } from '../../../ui/LayerCard.tsx'
 import { cssEscapeId, scrollToCreatedCard } from '../../../ui/reveal-card.ts'
 import ui from '../../../ui/controls.module.css'
 
@@ -176,17 +175,42 @@ function LayerCapabilityRow(props: { store: PromptToolStore; t: PromptToolTransl
 }
 
 /**
- * 本层引擎设置内容：参数分组（按共享契约派生）+ 已装配能力的装配状态与移除入口。
- * 由 `engineLayerSlots` 注入到每张本层实例卡的折叠区（以及无实例卡时的兜底容器）；
- * 同层多处渲染共用同一 `store.fields` 与同一草稿键，任一处修改同步。
+ * 结构化资产编辑器按主归属层渲染（人设、模板变量、模型路由、委派深度、自定义工具、子代理策略）：
+ * 层归属来自共享契约，不在这里硬编码层名；每个资产复用各自专用编辑器、草稿池与写端点。
  */
-export function LayerSettingsContent(props: { store: PromptToolStore; t: PromptToolTranslate; layer: string; configId?: string; excludeCapabilities?: readonly string[] }): ReactNode {
+const LAYER_ASSET_IDS = ['persona', 'variables', 'main-model', 'subagent-model', 'subagent-tools', 'custom-tools', 'subagent-tool-policy'] as const
+
+/**
+ * 本层引擎设置内容：参数分组（按共享契约派生）+ 已装配能力的装配状态与移除入口 +
+ * 该层归属的结构化资产编辑器。由 `engineLayerSlots` 注入到每张本层实例卡的折叠区
+ * （以及无实例卡时的兜底容器）；同层多处渲染共用同一 `store.fields` 与同一草稿键。
+ */
+export function LayerSettingsContent(props: {
+  store: PromptToolStore
+  t: PromptToolTranslate
+  layer: string
+  configId?: string
+  excludeCapabilities?: readonly string[]
+  toolCreate?: ToolCreateIntent
+  onToolIntentConsumed?: () => void
+}): ReactNode {
   const { store, t, layer } = props
-  const cards = layerParamCards(store, layer, props.excludeCapabilities ?? [])
-  const capabilities = layerAssembledCapabilities(store, layer).filter((id) => !(props.excludeCapabilities ?? []).includes(id))
+  const excluded = props.excludeCapabilities ?? []
+  const cards = layerParamCards(store, layer, excluded)
+  const capabilities = layerAssembledCapabilities(store, layer).filter((id) => !excluded.includes(id))
   // 同层每张实例卡各渲染一份设置内容：instanceId 带上卡身份，DOM id 才不会互相冲突。
   const instanceId = `layer-${layer}-${props.configId ?? 'standalone'}`
-  if (cards.length === 0 && capabilities.length === 0) return null
+  const canEditPreset = store.fields.writePreset && store.moduleFacts?.editable === true
+  const presetId = store.fields.presetTemplate
+  const assets = ENGINE_EDITOR_GROUP_MAP
+    .filter((group) => group.displayLayer === layer
+      && !excluded.includes(group.id)
+      && (LAYER_ASSET_IDS as readonly string[]).includes(group.id))
+    .map((group) => group.id)
+  if (cards.length === 0 && capabilities.length === 0 && assets.length === 0) return null
+  // 变量编辑器在层设置区里默认展开（用户已主动展开设置区，不必再点一层）；折叠过就记住。
+  const variablesExpandedKey = `${presetId}:layer-variables-${props.configId ?? 'standalone'}`
+  const variablesExpanded = store.editorDrafts?.expanded.get(variablesExpandedKey) ?? true
   return (
     <>
       {cards.map((card) => (
@@ -202,6 +226,42 @@ export function LayerSettingsContent(props: { store: PromptToolStore; t: PromptT
           <ul>{capabilities.map((id) => <LayerCapabilityRow key={id} store={store} t={t} capabilityId={id} />)}</ul>
         </section>
       )}
+      {assets.map((id) => (
+        <section key={id} className={ui.settingRowStack} data-layer-asset={id} aria-label={t('modules.layer.asset')}>
+          <strong>{t('modules.layer.asset')}</strong>
+          {id === 'persona' && <PresetPersonaCard t={t} presetId={presetId} disabled={!canEditPreset} onNotice={store.showNotice} drafts={store.editorDrafts} />}
+          {id === 'variables' && (
+            <TemplateVariablesModuleCard
+              t={t}
+              templateVariables={store.templateVariables}
+              setTemplateVariables={store.setTemplateVariables}
+              templateVariablesEnabled={store.templateVariablesEnabled}
+              setTemplateVariablesEnabled={store.setTemplateVariablesEnabled}
+              saveTemplateVariables={store.saveTemplateVariables}
+              expanded={variablesExpanded}
+              onToggleExpanded={() => store.editorDrafts?.expanded.set(variablesExpandedKey, !variablesExpanded)}
+            />
+          )}
+          {id === 'main-model' && <ModelRouteModuleCard store={store} scope="main" />}
+          {id === 'subagent-model' && <ModelRouteModuleCard store={store} scope="subagent" />}
+          {id === 'subagent-tools' && <DelegationToolsModuleCard store={store} t={t} />}
+          {id === 'custom-tools' && (
+            <CustomToolsCard
+              key={presetId}
+              presetId={presetId}
+              t={t}
+              onNotice={store.showNotice}
+              drafts={store.editorDrafts}
+              disabled={!canEditPreset}
+              createIntent={props.toolCreate}
+              onIntentConsumed={props.onToolIntentConsumed}
+            />
+          )}
+          {id === 'subagent-tool-policy' && (
+            <SubagentToolPolicyCard key={presetId} presetId={presetId} disabled={!canEditPreset} t={t} onNotice={store.showNotice} drafts={store.editorDrafts} />
+          )}
+        </section>
+      ))}
     </>
   )
 }
@@ -237,14 +297,9 @@ export interface EngineLayerSlotsInput {
   audience: 'main' | 'subagent'
   /** 新建能力后的定位信号（token 递增；layer 用于滚动到该层实例卡内的设置区）。 */
   focusCapability?: { id: string; token: number; layer?: string }
-  /** 自定义工具创建意图（两页共用同一张卡，不各维护一份编辑器）。 */
+  /** 自定义工具创建意图（两页共用同一份编辑器，不各维护一套）。 */
   toolCreate?: ToolCreateIntent
   onToolIntentConsumed?: () => void
-  /** 子代理页的模板变量卡展开态：由页面持有以便跨页恢复。 */
-  variablesExpanded?: boolean
-  onToggleVariables?: () => void
-  /** 能力卡内的附加编辑器（页面注入，避免 feature 之间反向依赖）。 */
-  renderCapabilityExtra?: (slot: CapabilityEditorSlot) => ReactNode
   /** 本页既不创建也不渲染的能力（如子代理页的 tool-filter）。 */
   excludeCapabilities?: readonly string[]
   moduleHint?: string
@@ -257,89 +312,40 @@ export interface EngineLayerSlotsInput {
  */
 export function engineLayerSlots(input: EngineLayerSlotsInput): EngineLayerSlots {
   const { store, t, viewFilter, audience } = input
-  const main = audience === 'main'
-  const canEditPreset = store.fields.writePreset && store.moduleFacts?.editable === true
-  const search = (input.keyword ?? '').trim().toLowerCase()
-  /** 层归属 + 搜索词同时命中才显示；隐藏而不卸载，切层/清搜索后草稿与展开态仍在。 */
-  const shows = (groupId: string): boolean => isEditorGroupVisible(groupId, viewFilter) && matchesEditorGroup(groupId, search, t)
-  const beforeCards = main
-    ? (
-      <>
-        <LayerCard visible={shows('persona')}>
-          <PresetPersonaCard t={t} presetId={store.fields.presetTemplate} disabled={!canEditPreset} onNotice={store.showNotice} drafts={store.editorDrafts} />
-        </LayerCard>
-        <div hidden={viewFilter !== 'world-book'}>
-          <WorldBookDiagnosticsCard store={store} t={t} />
-        </div>
-      </>
-    )
-    : (
-      <LayerCard visible={shows('variables')}>
-        <TemplateVariablesModuleCard
-          t={t}
-          templateVariables={store.templateVariables}
-          setTemplateVariables={store.setTemplateVariables}
-          templateVariablesEnabled={store.templateVariablesEnabled}
-          setTemplateVariablesEnabled={store.setTemplateVariablesEnabled}
-          saveTemplateVariables={store.saveTemplateVariables}
-          expanded={input.variablesExpanded ?? false}
-          onToggleExpanded={() => input.onToggleVariables?.()}
-        />
-      </LayerCard>
-    )
-  const commonCards = (
-    <div className={ui.configList}>
-      {main
-        ? (
-          <>
-            <LayerCard visible={shows('main-model')}>
-              <ModelRouteModuleCard store={store} scope="main" />
-            </LayerCard>
-            <LayerCard visible={shows('prompt-defaults')}>
-              <EnginePromptDefaultsCard store={store} t={t} />
-            </LayerCard>
-          </>
-        )
-        : (
-          <>
-            <LayerCard visible={shows('subagent-model')}>
-              <ModelRouteModuleCard store={store} scope="subagent" />
-            </LayerCard>
-            <LayerCard visible={shows('subagent-tools')}>
-              <DelegationToolsModuleCard store={store} t={t} />
-            </LayerCard>
-          </>
-        )}
-    </div>
-  )
+  // 主会话页保留世界书只读诊断卡（策略视图）；其余单例卡与资产编辑器都进本层设置区。
+  const beforeCards = audience === 'main'
+    ? <div hidden={viewFilter !== 'world-book'}><WorldBookDiagnosticsCard store={store} t={t} /></div>
+    : null
+  const commonCards = null
   const moduleCards = (
     <>
-      {/* 独立的能力卡与单例引擎参数卡已退场：参数与装配状态由本层实例卡内的设置区承载。
-          页面级提示（子代理作用域说明、无装配能力说明）仍在这里渲染，不进工具栏按钮行。 */}
+      {/* 独立卡片（能力卡、单例参数卡与资产卡）已全部退场：参数、装配状态、资产编辑器
+          都由本层实例卡内的设置区承载。页面级提示仍在这里渲染，不进工具栏按钮行。 */}
       {input.moduleHint !== undefined && <p className={ui.configFieldHint}>{input.moduleHint}</p>}
       {input.moduleEmptyHint !== undefined && !ENGINE_CAPABILITIES.some(({ id }) => !(input.excludeCapabilities ?? []).includes(id) && isEngineCapabilityPresent(id, store.moduleFacts))
         && <p className={ui.configFieldHint} role="status">{input.moduleEmptyHint}</p>}
       <LayerSettingsFocus layer={input.focusCapability?.layer} token={input.focusCapability?.token ?? 0} />
-      <LayerCard visible={shows('custom-tools')}>
-        <CustomToolsCard
-          key={store.fields.presetTemplate}
-          presetId={store.fields.presetTemplate}
-          t={t}
-          onNotice={store.showNotice}
-          drafts={store.editorDrafts}
-          disabled={!canEditPreset}
-          createIntent={input.toolCreate}
-          onIntentConsumed={input.onToolIntentConsumed}
-        />
-      </LayerCard>
     </>
   )
   return {
     beforeCards,
     commonCards,
     moduleCards,
-    renderLayerSettings: (layer: string, config: PromptConfigDraft) => <LayerSettingsContent store={store} t={t} layer={layer} configId={config?.id} excludeCapabilities={input.excludeCapabilities} />,
+    renderLayerSettings: (layer: string, config: PromptConfigDraft) => (
+      <LayerSettingsContent
+        store={store}
+        t={t}
+        layer={layer}
+        configId={config?.id}
+        excludeCapabilities={input.excludeCapabilities}
+        toolCreate={input.toolCreate}
+        onToolIntentConsumed={input.onToolIntentConsumed}
+      />
+    ),
     hasLayerSettings: (layer: string) => layerParamCards(store, layer, input.excludeCapabilities ?? []).length > 0
-      || layerAssembledCapabilities(store, layer).some((id) => !(input.excludeCapabilities ?? []).includes(id)),
+      || layerAssembledCapabilities(store, layer).some((id) => !(input.excludeCapabilities ?? []).includes(id))
+      || ENGINE_EDITOR_GROUP_MAP.some((group) => group.displayLayer === layer
+        && !(input.excludeCapabilities ?? []).includes(group.id)
+        && (LAYER_ASSET_IDS as readonly string[]).includes(group.id)),
   }
 }

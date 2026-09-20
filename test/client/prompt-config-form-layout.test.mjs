@@ -157,21 +157,24 @@ test('说明浮窗只复用宿主视觉，并自行跟随指针或聚焦控件',
   assert.match(promptCss, /\.configToggleField\s*\{[^}]*flex-direction:\s*column/s)
 })
 
-test('人设卡脱离公共配置分组，在模块列表下置顶显示', () => {
-  // 保留源码契约：这条断言的对象是**页面组合顺序**（统一层装配把 PresetPersonaCard 放进
-  // PromptConfigsEditor 的 beforeCards 插槽，且排在世界书诊断卡之前）。要改成渲染断言
-  // 就得构造 MainSessionPage 的完整 store/fields/session props，成本远高于收益，而现有断言
-  // 在顺序被调换时能真实失败 —— 故保留并在此说明理由。
+test('人设编辑器按层归属进入层设置区，不再独立成卡', () => {
+  // 保留源码契约：这条断言的对象是**资产归属**（人设属于 system-section 层，在层设置内容的
+  // 资产分区里渲染）。要改成渲染断言就得构造完整 store 与实例卡 props，成本远高于收益，
+  // 而现有断言在归属被调换时能真实失败 —— 故保留并在此说明理由。
   const editor = read('src/client/features/prompts/PromptConfigsEditor.tsx')
   const page = read('src/client/app/workspace/pages/MainSessionPage.tsx')
   const panel = read('src/client/app/workspace/pages/EngineLayersPanel.tsx')
   assert.match(editor, /beforeCards\?: ReactNode/)
   assert.match(editor, /beforeCards=\{props\.beforeCards\}/)
   assert.match(page, /beforeCards=\{layers\.beforeCards\}/, '页面把统一装配的卡片区下发给编辑器')
-  const beforeCards = panel.slice(panel.indexOf('const beforeCards = main'), panel.indexOf('const commonCards ='))
-  assert.ok(beforeCards.includes('<PresetPersonaCard'), '人设卡仍在卡片区最前')
-  assert.ok(beforeCards.indexOf('<PresetPersonaCard') < beforeCards.indexOf('WorldBookDiagnosticsCard'),
-    '世界书诊断卡排在人设卡之后')
+  // 人设编辑器只在 system-section 层的设置区里渲染（层归属由共享契约给出）。
+  assert.match(panel, /id === 'persona' && <PresetPersonaCard/)
+  assert.match(panel, /data-layer-asset=\{id\}/)
+  assert.match(panel, /LAYER_ASSET_IDS/)
+  // 页面不再直接渲染人设卡或变量卡。
+  assert.doesNotMatch(page, /<PresetPersonaCard/)
+  assert.doesNotMatch(page, /<ModelRouteModuleCard/)
+  assert.doesNotMatch(page, /<TemplateVariablesModuleCard/)
 })
 
 test('受管配置参数只给来源绑定与只读回显，不给会被重建覆盖的写入口', () => {

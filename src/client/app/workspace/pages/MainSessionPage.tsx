@@ -8,7 +8,6 @@ import { INSERTION_LAYERS, LAYER_LABEL_KEYS, translateLabel } from '../../../fea
 import { EngineModuleActions } from '../../../features/modules/EngineModuleList.tsx'
 import { engineCapability } from '../../../../shared/engine-capabilities.ts'
 import { engineLayerSlots } from './EngineLayersPanel.tsx'
-import { SubagentToolPolicyCard } from '../../../features/subagents/SubagentToolPolicyCard.tsx'
 import { TemplatePicker } from '../../../ui/TemplatePicker.tsx'
 import type { ToolCreateIntent } from '../../../features/tools/CustomToolsCard.tsx'
 import ui from '../../../ui/controls.module.css'
@@ -25,16 +24,11 @@ export const MainSessionPage = memo(function MainSessionPage(props: { store: Pro
     if (props.browse !== undefined) props.browse.viewFilter = value
     setViewFilter(value)
   }, [props.browse])
-  const [variablesExpanded, setVariablesExpanded] = useState(props.browse?.variablesExpanded ?? false)
-  const changeVariablesExpanded = (value: boolean): void => {
-    if (props.browse !== undefined) props.browse.variablesExpanded = value
-    setVariablesExpanded(value)
-  }
-  // 搜索词由页面持有：同一搜索词同时过滤配置实例、能力卡、共享设置区与单例卡。
+  // 搜索词由页面持有：同一搜索词同时过滤配置实例、层设置区与本层资产。
   const [keyword, setKeyword] = useState(props.browse?.filter ?? '')
   const [toolCreate, setToolCreate] = useState<ToolCreateIntent>()
-  /** 新建能力后的定位信号：token 递增，保证重复创建同一能力仍会再次展开并跳转。 */
-  const [focusCapability, setFocusCapability] = useState<{ id: string; token: number }>()
+  /** 新建能力后的定位信号：token 递增；layer 用于滚动到该层实例卡内的设置区。 */
+  const [focusCapability, setFocusCapability] = useState<{ id: string; token: number; layer?: string }>()
   const [createdHidden, setCreatedHidden] = useState(false)
   // 创建后只定位并展开新卡，不改动用户选定的列表筛选。
   const revealCapability = useCallback((id: string) => {
@@ -72,11 +66,10 @@ export const MainSessionPage = memo(function MainSessionPage(props: { store: Pro
   )
   const canEditPreset = store.fields.writePreset && store.moduleFacts?.editable === true
   const pickVariables = useCallback(() => {
+    // 「添加模板变量」只创建待编辑行；变量的编辑入口在运行上下文层的实例卡设置区里。
     store.setTemplateVariables({ ...store.templateVariables, '': '' })
-    if (props.browse !== undefined) props.browse.variablesExpanded = true
-    setVariablesExpanded(true)
     picker.closePicker()
-  }, [picker, store, props.browse])
+  }, [picker, store])
   const createItems = [
     ...INSERTION_LAYERS.map((layer) => ({ id: `tpl:${layer}`, label: t('main.addTemplate', { layer: translateLabel(t, LAYER_LABEL_KEYS, layer) }) })),
     { id: 'create:tool-template', label: t('main.addToolTemplate') },
@@ -97,8 +90,8 @@ export const MainSessionPage = memo(function MainSessionPage(props: { store: Pro
     setToolCreate({ kind: 'template', spec, presetId: fields.presetTemplate })
     picker.closePicker()
   }, [fields.presetTemplate, picker, viewFilter])
-  // 九层归位与层内卡片装配统一由 EngineLayersPanel 提供：本页只声明受众视图与页面编排
-  // （创建菜单、模板浮层、指令回调），不再自己手写层名判断。
+  // 九层归位、层内设置与资产编辑器统一由 EngineLayersPanel 提供：本页只声明受众视图与
+  // 页面编排（创建菜单、模板浮层、指令回调），不再自己手写层名判断或注入单例卡。
   const layers = engineLayerSlots({
     store,
     t,
@@ -108,18 +101,6 @@ export const MainSessionPage = memo(function MainSessionPage(props: { store: Pro
     focusCapability,
     toolCreate,
     onToolIntentConsumed: () => setToolCreate(undefined),
-    renderCapabilityExtra: ({ capabilityId }) => capabilityId === 'subagent-tool-policy'
-      ? (
-        <SubagentToolPolicyCard
-          key={fields.presetTemplate}
-          presetId={fields.presetTemplate}
-          disabled={!canEditPreset}
-          t={t}
-          onNotice={store.showNotice}
-          drafts={store.editorDrafts}
-        />
-      )
-      : undefined,
   })
   return (
     <section className={ui.section} aria-label={t('main.aria')}>
@@ -147,19 +128,12 @@ export const MainSessionPage = memo(function MainSessionPage(props: { store: Pro
         onReloadInstructionFile={reloadInstructionFile}
         onPatchInstructionPolicy={patchInstructionPolicy}
         onNotice={store.showNotice}
-        templateVariables={store.templateVariables}
-        setTemplateVariables={store.setTemplateVariables}
-        templateVariablesEnabled={store.templateVariablesEnabled}
-        setTemplateVariablesEnabled={store.setTemplateVariablesEnabled}
-        saveTemplateVariables={store.saveTemplateVariables}
         viewFilter={viewFilter}
         onViewFilterChange={changeViewFilter}
         keyword={keyword}
         onKeywordChange={setKeyword}
         renderLayerSettings={layers.renderLayerSettings}
         hasLayerSettings={layers.hasLayerSettings}
-        variablesExpanded={variablesExpanded}
-        onVariablesExpandedChange={changeVariablesExpanded}
         beforeCards={layers.beforeCards}
         commonCards={layers.commonCards}
         toolbarActions={<EngineModuleActions store={store} t={t} anchorRef={picker.anchorRef} extraItems={createItems} onExtraSelect={onCreateSelect} onCreated={revealCapability} />}

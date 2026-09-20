@@ -2,7 +2,6 @@ import { memo, useCallback, useState, type ReactNode } from 'react'
 import type { PromptToolStore } from '../../../data/use-prompt-tool-store.ts'
 import type { PromptToolTranslate } from '../../../locales.ts'
 import { EngineModuleActions } from '../../../features/modules/EngineModuleList.tsx'
-import { SubagentToolPolicyCard } from '../../../features/subagents/SubagentToolPolicyCard.tsx'
 import { INSERTION_LAYERS, LAYER_LABEL_KEYS, translateLabel } from '../../../features/prompts/prompt-config-policy.ts'
 import { useTemplatePicker } from '../../../features/prompts/useTemplatePicker.ts'
 import type { ToolCreateIntent } from '../../../features/tools/CustomToolsCard.tsx'
@@ -36,7 +35,6 @@ export const SubagentPage = memo(function SubagentPage(props: { store: PromptToo
   /** 新建能力后的定位信号：token 递增，保证重复创建同一能力仍会再次展开并跳转。 */
   const [focusCapability, setFocusCapability] = useState<{ id: string; token: number }>()
   const [toolCreate, setToolCreate] = useState<ToolCreateIntent>()
-  const [variablesExpanded, setVariablesExpanded] = useState(props.browse?.variablesExpanded ?? false)
   const [createdHidden, setCreatedHidden] = useState(false)
   // 搜索词由页面持有：同一搜索词同时过滤配置实例、能力卡、共享设置区与单例卡。
   const [keyword, setKeyword] = useState(props.browse?.filter ?? '')
@@ -52,11 +50,10 @@ export const SubagentPage = memo(function SubagentPage(props: { store: PromptToo
     'subagent',
   )
   const pickVariables = useCallback(() => {
+    // 「添加模板变量」只创建待编辑行；变量的编辑入口在运行上下文层的实例卡设置区里。
     store.setTemplateVariables({ ...store.templateVariables, '': '' })
-    if (props.browse !== undefined) props.browse.variablesExpanded = true
-    setVariablesExpanded(true)
     picker.closePicker()
-  }, [picker, store, props.browse])
+  }, [picker, store])
   const createItems = [
     ...INSERTION_LAYERS.map((layer) => ({ id: `tpl:${layer}`, label: t('main.addTemplate', { layer: translateLabel(t, LAYER_LABEL_KEYS, layer) }) })),
     { id: 'create:tool-template', label: t('main.addToolTemplate') },
@@ -94,26 +91,9 @@ export const SubagentPage = memo(function SubagentPage(props: { store: PromptToo
     focusCapability,
     toolCreate,
     onToolIntentConsumed: () => setToolCreate(undefined),
-    variablesExpanded,
-    onToggleVariables: () => {
-      if (props.browse !== undefined) props.browse.variablesExpanded = !variablesExpanded
-      setVariablesExpanded(!variablesExpanded)
-    },
     excludeCapabilities: mainSessionOnly,
     moduleHint: t('modules.subagentScopeHint'),
     moduleEmptyHint: t('modules.subagentEmptyHint'),
-    renderCapabilityExtra: ({ capabilityId }) => capabilityId === 'subagent-tool-policy'
-      ? (
-        <SubagentToolPolicyCard
-          key={store.fields.presetTemplate}
-          presetId={store.fields.presetTemplate}
-          disabled={!canEditPreset}
-          t={t}
-          onNotice={store.showNotice}
-          drafts={store.editorDrafts}
-        />
-      )
-      : undefined,
   })
   return (
     <>

@@ -382,10 +382,12 @@ test('编辑组层可见性来自共享契约，页面不再各自手写层名',
   assert.match(subagentPage, /engineLayerSlots\(\{/)
   assert.doesNotMatch(mainPage, /isEditorGroupVisible/)
   assert.doesNotMatch(subagentPage, /isEditorGroupVisible/)
+  // 层设置内容与资产都按主归属层派生，不再用展示开关逐个包卡片。
   const panel = read('app/workspace/pages/EngineLayersPanel.tsx')
-  assert.match(panel, /const shows = \(groupId: string\): boolean => isEditorGroupVisible\(groupId, viewFilter\)/)
-  assert.match(panel, /shows\('subagent-tools'\)/)
-  assert.match(panel, /shows\('variables'\)/)
+  assert.match(panel, /export \{ isEditorGroupVisible \}/, '层可见性判定仍从共享契约转出')
+  assert.match(panel, /group\.displayLayer === layer/)
+  assert.match(panel, /id === 'persona' && <PresetPersonaCard/)
+  assert.match(panel, /id === 'subagent-tool-policy'/)
 })
 
 test('共享参数镜像控件：两处渲染读同一 store 字段，DOM id 不重复', () => {

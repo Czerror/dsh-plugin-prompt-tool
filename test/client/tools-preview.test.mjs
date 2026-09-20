@@ -87,23 +87,26 @@ test('子代理仅保留实例策略解析，旧工具面标签、session 输入
   assert.match(policy, /t\('policy\.preview\.title'\)/, '预览标题必须来自 prompt-tool 字典')
   assert.match(PROMPT_TOOL_DICTS.zh['policy.preview.title'], /实例解析预览/)
   assert.match(policy, /bridgeCall\('subagentToolPolicyPreview', previewInput\)/)
-  // 策略编辑器唯一入口 = subagent-tool-policy 能力卡（由页面经 renderCapabilityExtra 注入）；
+  // 策略编辑器唯一入口 = 工具链层的层设置区资产分区；页面不再注入能力卡插槽，
   // 「工具与深度」卡只保留深度与入口提示，避免双入口。
   const chat = read('src/client/app/workspace/pages/MainSessionPage.tsx')
   const subagent = read('src/client/app/workspace/pages/SubagentPage.tsx')
-  assert.match(chat, /renderCapabilityExtra: \(\{ capabilityId \}\) => capabilityId === 'subagent-tool-policy'/)
-  assert.match(subagent, /renderCapabilityExtra: \(\{ capabilityId \}\) => capabilityId === 'subagent-tool-policy'/)
+  const panel = read('src/client/app/workspace/pages/EngineLayersPanel.tsx')
+  assert.match(panel, /id === 'subagent-tool-policy' && \(\s*<SubagentToolPolicyCard/)
+  assert.doesNotMatch(chat, /renderCapabilityExtra/)
+  assert.doesNotMatch(subagent, /renderCapabilityExtra/)
   assert.match(delegation, /policy\.delegation\.policyMoved/)
   assert.doesNotMatch(delegation, /<SubagentToolPolicyCard/)
 })
 
 test('自定义工具按预设隔离，system 或关闭 writePreset 时禁用写入但保留展开与草稿身份', () => {
   const main = read('src/client/app/workspace/pages/MainSessionPage.tsx')
-  // 卡片本身由统一层装配入口渲染（两页共用一张卡）；页面只传创建意图与只读判定。
-  assert.match(read('src/client/app/workspace/pages/EngineLayersPanel.tsx'), /<CustomToolsCard\s+key=\{store\.fields\.presetTemplate\}/)
+  // 编辑器由统一层装配入口在工具链层的设置区里渲染（两页共用一份）；页面只传创建意图与只读判定。
+  assert.match(read('src/client/app/workspace/pages/EngineLayersPanel.tsx'), /id === 'custom-tools' && \(/)
   assert.match(main, /toolCreate,/)
   assert.match(main, /const canEditPreset = store\.fields\.writePreset && store\.moduleFacts\?\.editable === true/)
-  assert.match(main, /disabled=\{!canEditPreset\}/)
+  // 只读边界由层设置内容统一下发（自定义工具编辑器与资产同源）。
+  assert.match(read('src/client/app/workspace/pages/EngineLayersPanel.tsx'), /disabled=\{!canEditPreset\}/)
   const source = read('src/client/features/tools/CustomToolsCard.tsx')
   const html = render(CustomToolsCard, { disabled: true, onNotice() {}, t })
   assert.match(html, /当前预设工具只读/)

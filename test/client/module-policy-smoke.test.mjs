@@ -195,9 +195,12 @@ test('浏览器：六层空卡、跨层工具创建、筛选草稿与能力卡�
   const toolTemplate = fixture.templates.toolTemplates[0]
   await waitFor(`document.body.innerText.includes(${JSON.stringify(toolTemplate.file)})`)
   await evaluate(`document.querySelectorAll('button').forEach(e=>{if(e.textContent.includes(${JSON.stringify(toolTemplate.file)}))e.click()})`)
-  await waitFor(`document.querySelector(${JSON.stringify(`[aria-label="启用工具 ${toolTemplate.spec.id}"]`)})!==null`)
   assert.equal(await evaluate(`document.querySelector('[aria-label="按层级或策略过滤"]').textContent.trim()`), '世界书', '创建不改动列表筛选')
   assert.equal(await evaluate(`document.querySelector('[role="dialog"]')===null`), true, '工具模板选中后必须关闭浮层')
+  // 自定义工具编辑器住在工具链层的层设置区里：该层没有配置卡时用兜底容器承载。
+  await chooseView('层级：工具链')
+  await waitFor(`document.querySelector('[data-layer-settings-standalone="tool-pipeline"]') !== null`)
+  await waitFor(`document.querySelector(${JSON.stringify(`[aria-label="启用工具 ${toolTemplate.spec.id}"]`)})!==null`)
 
   // 真实模板 + 真实自动保存 effect；生成快照暂时为空也不能丢卡。
   await evaluate('window.staleGenerated=true')
@@ -217,11 +220,19 @@ test('浏览器：六层空卡、跨层工具创建、筛选草稿与能力卡�
   assert.equal(await evaluate('window.store.getFields().promptConfigs.length'), 8)
   await click('添加能力 / 工具模块')
   await click('添加模板变量')
+  // 变量编辑器住在运行上下文层的层设置区里：展开该层的一张实例卡即可看到（手风琴，逐张试）。
+  await chooseView('层级：运行上下文')
+  await waitFor(`document.querySelector('[data-config-id]') !== null`)
+  await evaluate(`document.querySelector('[data-config-id] header button[aria-expanded]').click(); true`)
+  await waitFor(`document.querySelector('[data-layer-settings="runtime-context"]') !== null`)
+  await evaluate(`document.querySelector('[data-layer-settings="runtime-context"] summary').click(); true`)
+  await waitFor(`document.querySelector('[data-layer-asset="variables"]') !== null`)
   await waitFor(`document.querySelector('[aria-label="模板变量名"]')!==null`)
   await evaluate(`document.querySelector('[aria-label="模板变量名"]').dispatchEvent(new FocusEvent('focusout', { bubbles: true, relatedTarget: document.querySelector('[aria-label="按层级或策略过滤"]') }))`)
   await waitFor(`window.requests.some(r=>r.endpoint==='preset-variables')`)
   await evaluate('window.store.load()')
   assert.equal(await evaluate(`document.querySelector('[aria-label="模板变量名"]')!==null`), true)
+  await chooseView('全部')
 
   await click('添加能力 / 工具模块')
   await click('添加模块 · context-gate')
