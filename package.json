@@ -148,6 +148,7 @@
     "link:profile": "node scripts/link-profile.mjs",
     "sync:yaml": "node scripts/sync-yaml-vendor.mjs",
     "rebuild:composition": "node scripts/rebuild-composition.mjs",
+    "rebuild:preset-template": "node scripts/rebuild-preset-template.mjs",
     "rematerialize:presets": "node scripts/rematerialize-presets.mjs",
     "verify:host": "node scripts/verify-host-contracts.mjs"
   },

@@ -29,7 +29,7 @@ test('原生 JSON 不走 ST 转换；文件夹附件字节与正文保留，ZIP 
   const from = root()
   const picture = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0xff, 0x00])
   const files = await expandPresetSource([
-    { path: 'folder/native.json', content: JSON.stringify({ id: 'native', name: '原生', modules: ['prompt-config-engine'], promptConfigs: [{ id: 'p', layer: 'pre-step', text: 'KEPT' }], unknown: 'kept' }) },
+    { path: 'folder/native.json', content: JSON.stringify({ id: 'native', name: '原生', modules: ['prompt-config-engine'], layerSettings: { 'pre-step': { injectPrompt: false }, 'system-section': { bootstrapMaxTokens: 0 } }, promptConfigs: [{ id: 'p', layer: 'pre-step', text: 'KEPT' }], unknown: 'kept' }) },
     { path: 'folder/preset.md', content: '原始正文\r\n' },
     { path: 'folder/assets/avatar.png', encoding: 'base64', content: picture.toString('base64') },
     { path: 'folder/engine/custom.mjs', content: 'export default {}' },
@@ -44,6 +44,8 @@ test('原生 JSON 不走 ST 转换；文件夹附件字节与正文保留，ZIP 
   assert.deepEqual(fs.readFileSync(join(to, 'native/assets/avatar.png')), picture)
   assert.equal(fs.readFileSync(join(to, 'native/engine/custom.mjs'), 'utf8'), 'export default {}')
   assert.equal(parse(fs.readFileSync(join(to, 'native/preset.yml'), 'utf8')).unknown, 'kept')
+  assert.deepEqual(parse(fs.readFileSync(join(to, 'native/preset.yml'), 'utf8')).layerSettings,
+    { 'pre-step': { injectPrompt: false }, 'system-section': { bootstrapMaxTokens: 0 } })
 })
 
 test('未预览、过期、未确认覆盖均不写目标；另存不会选择原 ID', async () => {

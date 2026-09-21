@@ -9,18 +9,6 @@ name: Fixture Template
 description: 测试夹具：锚定/门控链路装配与三条提示词配置模板。
 version: 1.0.0
 engineCompat: ">=0.4.2"
-model:
-  provider: ""
-  name: ""
-  reasoningEffort: ""
-  temperature: ""
-  maxTokens: ""
-subagentModel:
-  provider: ""
-  name: ""
-  reasoningEffort: ""
-  temperature: ""
-  maxTokens: ""
 moduleConfigs:
   context-gate:
     promoteOn: either
@@ -31,29 +19,6 @@ moduleConfigs:
   tool-web:
     fetch: true
     searchTimeoutMs: 60000
-params:
-  firstTurnAnchor: false
-  firstTurnCustom: false
-  firstTurnText: ""
-  guideText: ""
-  injectPrompt: true
-  usePtcMode: true
-  bootstrapMaxTokens: 0
-  bootstrapTools: [bash, str_replace_editor]
-  compactionTools: [read, write, edit, glob, grep, todo_write, ask_user_question]
-  guideCustom: false
-  guideWeak: "Router: classify this task (build or fix) now, then adopt the matching style — build: direct production; fix: inspect-first. Think deeply first, then commit and act."
-  guideDeep: "Router: classify this task (build or fix) now, then adopt the matching style — build: direct production; fix: inspect-first. Think deeply about the architecture, edge cases, and integration points. Do not spend reasoning on the environment or tooling. Produce when your information is complete. End each reasoning block with a decision or an information need."
-  buildPattern: "开发|创建|写一个|生成|从零|做一个|构建|新项目|搭建|实现|做出|上线|落地|脚本|工具|应用|build|create|develop|generate|implement|make a|new project"
-  complexPattern: "架构|重构|设计|系统|全面|深度|迁移|兼容|审查|architecture|refactor|comprehensive|design|system|migrate|review"
-  firstTurnBuild: "Start your reasoning with the exact sentence: We need to build it directly and verify it."
-  firstTurnInspect: "Start your reasoning with the exact sentence: We need to inspect the code first."
-  firstTurnDeep: "Start your reasoning with the exact sentence: Let me think through the design before changing anything."
-  firstTurnWord: ""
-  allowKinds: "[skill-invocation, near-anchor, router-guide]"
-  toolFilterAllow: []
-  toolFilterDeny: []
-  maxDepth: ""
 promptConfigs:
   - id: near-anchor
     name: 首句锚点
@@ -123,3 +88,53 @@ modules:
   - tool-ask-user
   - tool-todo
   - tool-web
+layerSettings:
+  pre-step:
+    firstTurnAnchor: false
+    firstTurnText: ""
+    firstTurnCustom: false
+    guideText: ""
+    guideCustom: false
+    injectPrompt: true
+    allowKinds: "[skill-invocation, near-anchor, router-guide]"
+    firstTurnWord: ""
+    buildPattern: "开发|创建|写一个|生成|从零|做一个|构建|新项目|搭建|实现|做出|上线|落地|脚本|工具|应用|build|create|\
+      develop|generate|implement|make a|new project"
+    complexPattern: "架构|重构|设计|系统|全面|深度|迁移|兼容|审查|architecture|refactor|comprehensive\
+      |design|system|migrate|review"
+    firstTurnBuild: "Start your reasoning with the exact sentence: We need to build
+      it directly and verify it."
+    firstTurnInspect: "Start your reasoning with the exact sentence: We need to
+      inspect the code first."
+    firstTurnDeep: "Start your reasoning with the exact sentence: Let me think
+      through the design before changing anything."
+    guideWeak: "Router: classify this task (build or fix) now, then adopt the
+      matching style — build: direct production; fix: inspect-first. Think
+      deeply first, then commit and act."
+    guideDeep: "Router: classify this task (build or fix) now, then adopt the
+      matching style — build: direct production; fix: inspect-first. Think
+      deeply about the architecture, edge cases, and integration points. Do not
+      spend reasoning on the environment or tooling. Produce when your
+      information is complete. End each reasoning block with a decision or an
+      information need."
+  agent-request:
+    modelProvider: ""
+    modelName: ""
+    modelReasoningEffort: ""
+    modelTemperature: ""
+    modelMaxTokens: ""
+  subagent-start:
+    subagentModelProvider: ""
+    subagentModelName: ""
+    subagentReasoningEffort: ""
+    subagentTemperature: ""
+    subagentMaxTokens: ""
+    maxDepth: ""
+  tool-pipeline:
+    toolFilterAllow: []
+    toolFilterDeny: []
+    usePtcMode: true
+  system-section:
+    bootstrapMaxTokens: 0
+    bootstrapTools: [ bash, str_replace_editor ]
+    compactionTools: [ read, write, edit, glob, grep, todo_write, ask_user_question ]

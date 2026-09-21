@@ -259,8 +259,8 @@ function writeManualCard(root, id, spec) {
   writeFileSync(join(dir, 'converted.yml'), stringifyYaml(spec, { lineWidth: 0 }), 'utf8')
 }
 
-/** 独立预设根：modules 与 params 由用例指定，用于观察按需追加与回退。 */
-function makeRoot({ modules = ['prompt-config-engine'], params } = {}) {
+/** 独立预设根：modules 与 layerSettings 由用例指定，用于观察按需追加与回退。 */
+function makeRoot({ modules = ['prompt-config-engine'], layerSettings } = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'pt-chara-mod-'))
   const template = 'anchored'
   const presetDir = join(dir, template)
@@ -272,10 +272,7 @@ function makeRoot({ modules = ['prompt-config-engine'], params } = {}) {
     'engineCompat: ">=0.4.2"',
     `modules: [${modules.join(', ')}]`,
   ]
-  if (params !== undefined) {
-    lines.push('params:')
-    for (const [key, value] of Object.entries(params)) lines.push(`  ${key}: ${value}`)
-  }
+  if (layerSettings !== undefined) lines.push(stringifyYaml({ layerSettings }).trimEnd())
   lines.push('promptConfigs: []', '')
   writeFileSync(join(presetDir, 'preset.yml'), lines.join('\n'), 'utf8')
   return {
@@ -410,8 +407,8 @@ test('移除：预设自带模块与无记录的老卡都不回退', () => {
   }
 })
 
-test('移除：params 里仍有工具名单时保留 tool-filter', () => {
-  const root = makeRoot({ modules: ['prompt-config-engine'], params: { toolFilterDeny: 'web_search' } })
+test('移除：共享参数里仍有工具名单时保留 tool-filter', () => {
+  const root = makeRoot({ modules: ['prompt-config-engine'], layerSettings: { 'tool-pipeline': { toolFilterDeny: 'web_search' } } })
   try {
     writeManualCard(root.dir, 'filtercard', manual('filtercard', {
       modules: ['tool-filter'],

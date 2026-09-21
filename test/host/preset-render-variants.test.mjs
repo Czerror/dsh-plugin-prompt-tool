@@ -149,8 +149,9 @@ test('removePresetModule：从 modules 清单移除模块并保留其余字段�
     '  - keep-a',
     '  - tool-cordis',
     '  - keep-b',
-    'params:',
-    '  maxDepth: ""',
+    'layerSettings:',
+    '  subagent-start:',
+    '    maxDepth: ""',
     '',
   ].join('\n'))
   assert.equal(removePresetModule(dir, 'tool-cordis'), true)
@@ -233,8 +234,9 @@ test('本地 filesystem-editor 行：装配嵌套编辑器并覆盖 maxOutputCha
       'modules:',
       '  - filesystem-editor',
       '  - prompt-config-engine',
-      'params:',
-      '  strReplaceEditorMaxOutputChars: 32000',
+      'layerSettings:',
+      '  tool-pipeline:',
+      '    strReplaceEditorMaxOutputChars: 32000',
       '',
     ].join('\n'), 'utf8')
 

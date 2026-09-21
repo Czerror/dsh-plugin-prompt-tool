@@ -7,6 +7,7 @@ import type { AssetFile, ImportChoices, ImportKind } from '../shared/asset-trans
 import { MAX_ASSET_BYTES, MAX_ASSET_FILES } from '../shared/asset-transfer.ts'
 import type { StConversionReport } from '../shared/bridge-contract.ts'
 import type { PresetSpec } from './manifest.ts'
+import { readPresetLayerSettings } from './preset-layer-settings.ts'
 import { assertPresetId } from './preset-install.ts'
 import { assertSafeConfigId } from './prompt-configs.ts'
 import { decodePngCharacterCard, isPngBuffer } from './character-png.ts'
@@ -69,6 +70,7 @@ export function assetSourceDigest(files: AssetFile[]): string {
 
 /** 角色片段只接受自包含配置，验证时不得读取上传来源以外的磁盘文件。 */
 export function validateCharacterSpec(spec: PresetSpec): void {
+  readPresetLayerSettings(spec)
   for (const field of ['composition', 'customTools', 'content', 'model', 'subagentModel', 'subagentToolPolicy', 'moduleConfigs'] as const) {
     const value = spec[field]
     if (value !== undefined && !(Array.isArray(value) && value.length === 0) && !(isRecord(value) && Object.keys(value).length === 0)) {
@@ -95,7 +97,7 @@ export type PreparedImport = {
 
 function classify(raw: unknown, target: 'preset' | 'character'): ImportKind {
   if (!isRecord(raw)) throw new Error('内容必须是已知格式的对象，不能是 null 或数组')
-  const native = ['modules', 'promptConfigs', 'params', 'engineCompat', 'composition', 'content'].some(key => key in raw)
+  const native = ['modules', 'promptConfigs', 'layerSettings', 'params', 'engineCompat', 'composition', 'content'].some(key => key in raw)
     || (typeof raw.id === 'string' && typeof raw.name === 'string')
   const prompts = 'prompts' in raw
   const data = isRecord(raw.data) ? raw.data : raw
@@ -107,7 +109,8 @@ function classify(raw: unknown, target: 'preset' | 'character'): ImportKind {
   if (/^chara_card_v[23]$/.test(String(raw.spec)) && !isRecord(raw.data)) throw new Error('chara_card_v2/v3 的 data 必须是对象')
   if (native) {
     for (const field of ['promptConfigs', 'modules', 'customTools']) if (raw[field] !== undefined && !Array.isArray(raw[field])) throw new Error(`${field} 必须是数组`)
-    for (const field of ['params', 'meta', 'variables', 'moduleConfigs', 'content']) if (raw[field] !== undefined && !isRecord(raw[field])) throw new Error(`${field} 必须是对象`)
+    for (const field of ['layerSettings', 'params', 'meta', 'variables', 'moduleConfigs', 'content']) if (raw[field] !== undefined && !isRecord(raw[field])) throw new Error(`${field} 必须是对象`)
+    readPresetLayerSettings(raw)
     if (raw.modules !== undefined && (raw.modules as unknown[]).some(value => typeof value !== 'string')) throw new Error('modules 必须是字符串数组')
     return target === 'character' ? 'native-character' : 'native-preset'
   }

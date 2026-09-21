@@ -48,7 +48,7 @@ test('能力创建一次写入 modules/初始参数并保持幂等', () => {
     assert.ok(parsed.modules.includes('deliberation-gate'))
     assert.ok(parsed.modules.includes('progress-reminder'))
     assert.equal(parsed.params.customKeep, true)
-    assert.equal(parsed.params.deliberationGate, true)
+    assert.equal(parsed.layerSettings['tool-pipeline'].deliberationGate, true)
     const before = readFileSync(file, 'utf8')
     const second = createEngineCapabilityInPreset(dir, { action: 'create-recipe', recipeId: 'deliberation' })
     assert.equal(second.changed, false)
@@ -135,7 +135,8 @@ test('删除能力连显式参数与行配置一起移除，保留未登记参�
     writeFileSync(file, [
       'id: demo', 'name: demo', 'version: "1"', 'engineCompat: ">=0"',
       'modules: [context-gate, tool-bootstrap]',
-      'params: { bootstrapMaxTokens: 1024, customKeep: true }',
+      'params: { customKeep: true }',
+      'layerSettings: { system-section: { bootstrapMaxTokens: 1024 } }',
       'moduleConfigs:', '  tool-bootstrap:', '    promoteGate: true',
       'unknown: keep', '',
     ].join('\n'), 'utf8')
@@ -143,7 +144,7 @@ test('删除能力连显式参数与行配置一起移除，保留未登记参�
     assert.deepEqual(first, { changed: true, removedModules: ['tool-bootstrap'], capabilityIds: ['tool-bootstrap'] })
     const parsed = parseYaml(readFileSync(file, 'utf8'))
     assert.deepEqual(parsed.modules, ['context-gate'])
-    assert.equal(parsed.params.bootstrapMaxTokens, undefined, '该能力参数随能力一起移除（参数在 ⇒ 装配在）')
+    assert.equal(parsed.layerSettings['system-section'].bootstrapMaxTokens, undefined, '该能力参数随能力一起移除（参数在 ⇒ 装配在）')
     assert.equal(parsed.params.customKeep, true, '未登记的键不是引擎参数，不碰')
     assert.equal(parsed.moduleConfigs?.['tool-bootstrap'], undefined, '该能力的行配置一起移除')
     assert.equal(parsed.unknown, 'keep')
@@ -159,7 +160,8 @@ test('参数在 ⇒ 装配在：显式参数与行配置自动补齐能力模块
     writeFileSync(join(dir, 'preset.yml'), [
       'id: implied', 'name: implied', 'version: "1"', 'engineCompat: ">=0"',
       'modules: [context-gate]',
-      'params: { cotDrip: true, cotDripEvery: 2, customKeep: true }',
+      'params: { customKeep: true }',
+      'layerSettings: { tool-pipeline: { cotDrip: true, cotDripEvery: 2 } }',
       'moduleConfigs:', '  tool-filter:', '    enabled: false',
       '',
     ].join('\n'), 'utf8')

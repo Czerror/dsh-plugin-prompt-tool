@@ -111,7 +111,7 @@ export interface LayerFieldPolicy {
   match: boolean
 }
 
-/** settings bridge /meta 返回的引擎能力矩阵。layerOrder / editorGroups 见 {@link EngineMetaLayerContract}。 */
+/** settings bridge /meta 返回的引擎能力矩阵。层行为、顺序和编辑组见 {@link EngineMetaLayerContract}。 */
 export interface EngineMeta extends Partial<EngineMetaLayerContract> {
   /** 可用预设模板清单（UI 预设切换器）。 */
   presets?: Array<{ id: string; name: string; user?: boolean; renderable?: boolean; description?: string; meta?: Record<string, unknown> }>

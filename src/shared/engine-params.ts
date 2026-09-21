@@ -9,9 +9,9 @@
  *  - 本文件 = 引擎参数「契约层」（类型）：参数桥/模板/UI 可配置的键与类型；
  *  - ENGINE_PARAM_DEFINITIONS 统一键、校验、卡片、默认草稿与组合映射；
  *    Record<keyof EngineParams, ...> 强制完整覆盖，ENGINE_PARAM_KEYS 与 PARAM_KEYS 从其派生；
- *  - 模型段 ↔ 扁平键的存储翻译唯二入口：loadPresetSpec 展平 / savePresetParams 迁移。
+ *  - layerSettings ↔ 运行时平铺键：loadPresetSpec 展平 / savePresetParams 按层写入。
  *
- * 全部字段可选：缺省 = 模板 preset.yml params / 引擎默认，符合「一切皆可自定义」。
+ * 全部字段可选：缺省 = 模板 preset.yml layerSettings / 引擎默认，符合「一切皆可自定义」。
  */
 export interface EngineParams {
   /** 首轮近距离锚定：首条真实用户消息后追加一次性首句锚点。 */

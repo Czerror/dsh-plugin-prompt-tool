@@ -199,6 +199,9 @@ test('契约：/meta 与 /bootstrap 同源下发 layerOrder 与 editorGroups，�
   const boot = JSON.parse(bootRes.body).meta.meta
   assert.deepEqual(boot.layerOrder, meta.layerOrder)
   assert.deepEqual(boot.editorGroups, meta.editorGroups)
+  assert.deepEqual(meta.layerContracts, getEngineMeta().layerContracts)
+  assert.deepEqual(boot.layerContracts, meta.layerContracts)
+  assert.equal(Object.keys(meta.layerContracts).length, 9)
 })
 
 test('契约：复制引擎目录即可提供层契约，不依赖 src', async () => {
@@ -208,6 +211,7 @@ test('契约：复制引擎目录即可提供层契约，不依赖 src', async (
     const copy = await import(pathToFileURL(join(copied, 'engine', 'schema.mjs')).href)
     assert.deepEqual([...copy.LAYER_ORDER], [...LAYER_ORDER])
     assert.deepEqual(copy.getEngineMeta().layerOrder, getEngineMeta().layerOrder)
+    assert.deepEqual(copy.getEngineMeta().layerContracts, getEngineMeta().layerContracts)
   } finally {
     rmSync(copied, { recursive: true, force: true })
   }

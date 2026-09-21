@@ -16,6 +16,7 @@
  */
 import { createHash } from 'node:crypto'
 import type { PresetSpec } from './manifest.ts'
+import { readPresetLayerSettings } from './preset-layer-settings.ts'
 import type { PersonaSpec } from '../shared/persona-section.ts'
 import type {
   StConversionDiagnostic,
@@ -81,7 +82,12 @@ export function mergeStPresetsWithReport(specs: PresetSpec[]): { spec: PresetSpe
     idMap.set(sourceIndex, perSource)
   }
   const params: Record<string, unknown> = {}
-  for (const spec of specs) Object.assign(params, spec.params ?? {})
+  const layerSettings: NonNullable<PresetSpec['layerSettings']> = {}
+  for (const spec of specs) {
+    readPresetLayerSettings(spec)
+    Object.assign(params, spec.params ?? {})
+    for (const [layer, fields] of Object.entries(spec.layerSettings ?? {})) layerSettings[layer] = { ...layerSettings[layer], ...fields }
+  }
   const variables = Object.fromEntries(specs.filter(spec => spec.variablesEnabled !== false).flatMap(spec => Object.entries(spec.variables ?? {})))
   const warnings = [...new Set(specs.flatMap(spec => Array.isArray(spec.meta?.stWarnings) ? spec.meta.stWarnings.filter((value): value is string => typeof value === 'string') : []))]
   const modules: string[] = []
@@ -116,6 +122,7 @@ export function mergeStPresetsWithReport(specs: PresetSpec[]): { spec: PresetSpe
     engineCompat: '>=0.4.2',
     meta: { source: 'sillytavern', ...(warnings.length > 0 ? { stWarnings: warnings } : {}) },
     ...(Object.keys(params).length > 0 ? { params } : {}),
+    ...(Object.keys(layerSettings).length > 0 ? { layerSettings } : {}),
     ...(Object.keys(variables).length > 0 ? { variables } : {}),
     ...(persona === undefined ? {} : { persona }),
     modules,

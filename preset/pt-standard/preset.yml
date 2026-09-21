@@ -23,23 +23,23 @@ modules:
   - tool-present
   - tool-plugin-manager-disabled
   - prompt-config-engine
-model:
-  provider: ""
-  name: ""
-  reasoningEffort: ""
-  temperature: ""
-  maxTokens: ""
-subagentModel:
-  provider: ""
-  name: ""
-  reasoningEffort: ""
-  temperature: ""
-  maxTokens: ""
 persona:
   suffix: >-
     Your working directory is {{cwd}}.
   prefix: >-
     You are a coding agent powered by the {{model}} model.
-params:
-  maxDepth: ""
 promptConfigs: []
+layerSettings:
+  agent-request:
+    modelProvider: ""
+    modelName: ""
+    modelReasoningEffort: ""
+    modelTemperature: ""
+    modelMaxTokens: ""
+  subagent-start:
+    subagentModelProvider: ""
+    subagentModelName: ""
+    subagentReasoningEffort: ""
+    subagentTemperature: ""
+    subagentMaxTokens: ""
+    maxDepth: ""

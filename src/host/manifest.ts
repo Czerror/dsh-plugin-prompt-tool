@@ -2,8 +2,8 @@
  * manifest — 预设模板单一参数 YAML(preset.yml)的加载与引擎参数解析。
  *
  * 一个预设 = 一个 preset.yml:
- *   - modules/params/content/meta 全部是直读参数,无模板语法;
- *   - 默认提示词配置由引擎按 params 生成(见 write-preset),promptConfigs 仅为可选覆盖;
+ *   - modules/layerSettings/content/meta 全部是直读参数,无模板语法;
+ *   - layerSettings 展平为内部 params，供引擎生成默认提示词配置，promptConfigs 仅为可选覆盖;
  *   - 组合模块的行级 config 由参数桥 buildModuleConfigsFromParams 按 params
  *     构造对象合并（取代旧 __TOKEN__ 文本渲染，无占位符、无文本往返），
  *     params（UI/基础层）优先于 moduleConfigs 行级直写（旧作者锁定语义已移除）。
@@ -21,6 +21,8 @@ import { ENGINE_PARAM_DEFINITIONS, ENGINE_PARAM_KEYS, buildEngineModuleParams, e
 import { personaRowConfig, readPersonaSpec, type PersonaSpec } from '../shared/persona-section.ts'
 import { DEFAULT_PRESET_ID } from '../shared/preset-ids.ts'
 import { assertPresetDirectory, assertPresetId, assertPresetTree, presetPathExists, rewritePresetEngineReferences, setPresetDefinitionId } from './preset-install.ts'
+import { engineParamPath, readLayerSettings, readPresetLayerSettings, PresetLayerSettingsError } from './preset-layer-settings.ts'
+export { MODEL_SEGMENT_MAP, PresetLayerSettingsError } from './preset-layer-settings.ts'
 
 export interface PresetSpec {
   id: string
@@ -35,15 +37,17 @@ export interface PresetSpec {
   modules?: string[]
   /** 兼容字段:内联组合文本或组合清单名。 */
   composition?: string
-  /** 扁平参数:全部直读(true/false、数字、字符串),on/off 作为兼容写法。 */
+  /** 内部运行时平铺适配面；磁盘上的同名段只允许未登记扩展字段。 */
   params?: Record<string, unknown>
-  /** 顶层模型段（主对话，官方 agent-default-model 同构）：provider/name/reasoningEffort/temperature/maxTokens。 */
+  /** 共享引擎参数按编辑组的主归属插入点存储；规则实例仍拥有各自 params。 */
+  layerSettings?: Record<string, Record<string, unknown>>
+  /** 旧模型段仅保留未知字段；已登记模型字段必须显式迁移。 */
   model?: Record<string, unknown>
-  /** 顶层子代理模型段：provider/name/reasoningEffort/temperature/maxTokens。 */
+  /** 旧子代理模型段仅保留未知字段。 */
   subagentModel?: Record<string, unknown>
   /** 顶层人设段（官方 @deepseek-ai/dsh-persona 行同构）：prefix/suffix/complete/includeRuntimeContext。 */
   persona?: PersonaSpec
-  /** 预设级模板变量（{{key}} 插值源；与引擎行为参数 params 分离，顶层 variables 段）。 */
+  /** 预设级模板变量（{{key}} 插值源；与 layerSettings 分离，顶层 variables 段）。 */
   variables?: Record<string, string>
   /** 自定义工具定义（tool-config-engine 渲染进 custom-tools/ 后运行时注册）。 */
   customTools?: unknown[]
@@ -111,6 +115,7 @@ export function removePresetModule(dir: string, moduleId: string): boolean {
   if (!existsSync(file)) return false
   const doc = parseDocument(readFileSync(file, 'utf8'), { logLevel: 'silent' })
   if (doc.errors.length > 0) return false
+  readPresetLayerSettings(doc.toJS())
   const modules = doc.getIn(['modules'])
   if (!(modules instanceof YAMLSeq)) return false
   const kept = modules.items.filter((item) => !(item instanceof Scalar) || item.value !== moduleId)
@@ -148,28 +153,8 @@ export function loadPresetSpec(dir: string): PresetSpec {
   if (typeof parsed.id !== 'string' || parsed.id.length === 0) {
     parsed.id = basename(dir)
   }
-  // 顶层模型段（model / subagentModel，官方 agent-default-model 同构）→ 展平进
-  // params 扁平键（消费方统一读 params.modelProvider 等）。双读：段优先，扁平键兜底。
-  // 映射来源 = MODEL_SEGMENT_MAP（与 savePresetParams 迁移共用，单一来源）。
-  const flattenModelGroup = (source: unknown, mapping: Record<string, string>): void => {
-    if (source === null || typeof source !== 'object' || Array.isArray(source)) return
-    if (parsed.params === null || typeof parsed.params !== 'object' || Array.isArray(parsed.params)) {
-      parsed.params = {}
-    }
-    for (const [segmentKey, flatKey] of Object.entries(mapping)) {
-      const value = (source as Record<string, unknown>)[segmentKey]
-      if (value !== undefined) parsed.params[flatKey] = value
-    }
-  }
-  const flattenMapping = (segmentName: 'model' | 'subagentModel'): Record<string, string> => {
-    const mapping: Record<string, string> = {}
-    for (const [flatKey, [segment, segmentKey]] of Object.entries(MODEL_SEGMENT_MAP)) {
-      if (segment === segmentName) mapping[segmentKey] = flatKey
-    }
-    return mapping
-  }
-  flattenModelGroup(parsed.model, flattenMapping('model'))
-  flattenModelGroup(parsed.subagentModel, flattenMapping('subagentModel'))
+  const params = readPresetLayerSettings(parsed)
+  if (parsed.layerSettings !== undefined || parsed.params !== undefined) parsed.params = params
   presetSpecCache.set(file, { mtimeMs: stat.mtimeMs, size: stat.size, spec: parsed as PresetSpec })
   return parsed as PresetSpec
 }
@@ -192,24 +177,6 @@ export const asString = (value: unknown, fallback = ''): string => {
   if (typeof value === 'string') return value
   if (value === undefined || value === null) return fallback
   return String(value)
-}
-
-/**
- * 顶层模型段 ↔ 扁平参数键双向映射（单一来源）。
- * loadPresetSpec 展平（段 → 扁平键）与 savePresetParams 迁移（扁平键 → 段）
- * 共用本常量，杜绝两处字面量漂移。段结构 = 官方 agent-default-model 同构。
- */
-export const MODEL_SEGMENT_MAP: Record<string, [string, string]> = {
-  modelProvider: ['model', 'provider'],
-  modelName: ['model', 'name'],
-  modelReasoningEffort: ['model', 'reasoningEffort'],
-  modelTemperature: ['model', 'temperature'],
-  modelMaxTokens: ['model', 'maxTokens'],
-  subagentModelProvider: ['subagentModel', 'provider'],
-  subagentModelName: ['subagentModel', 'name'],
-  subagentReasoningEffort: ['subagentModel', 'reasoningEffort'],
-  subagentTemperature: ['subagentModel', 'temperature'],
-  subagentMaxTokens: ['subagentModel', 'maxTokens'],
 }
 
 /** 预设根：官方 USER_PRESET_DIR（~/.dsh/.agent-presets），导入/新建/种子化的预设都放这里。 */
@@ -240,7 +207,8 @@ export function isRenderablePresetDir(dir: string): boolean {
     const spec = loadPresetSpec(dir)
     if (Array.isArray(spec.modules)) return true
     if (typeof spec.composition === 'string' && spec.composition.length > 0) return true
-  } catch {
+  } catch (error) {
+    if (error instanceof PresetLayerSettingsError) throw error
     return false
   }
   return existsSync(join(dir, 'agent.cordis.yml'))
@@ -370,6 +338,7 @@ export function ensurePresetSeed(root = userPresetsDir()): { created: string[] }
 /** 完整复制到隐藏候选；只更新定义 ID 和已知共享引擎配置位置。 */
 function copyPresetDirectory(source: string, root: string, targetId: string): void {
   assertPresetTree(source)
+  loadPresetSpec(source)
   const target = assertPresetDirectory(root, targetId, true)
   if (presetPathExists(target)) throw new Error(`目标预设已存在：${targetId}`)
   mkdirSync(root, { recursive: true })
@@ -483,18 +452,13 @@ export function openPresetLocation(id: string, presetRoot = userPresetsDir()): {
   }
 }
 
-/** 删除 yaml 两级键；父集合缺失时不触发 deleteIn 对不存在集合的异常。 */
-function deleteYamlPath(doc: ReturnType<typeof parseDocument>, path: [string, string]): void {
+/** 父集合缺失时不触发 deleteIn 对不存在集合的异常。 */
+function deleteYamlPath(doc: ReturnType<typeof parseDocument>, path: string[]): void {
   if (doc.hasIn(path)) doc.deleteIn(path)
 }
 
-/** 删除扁平 params 键。 */
-function deleteFlatParam(doc: ReturnType<typeof parseDocument>, key: string): void {
-  deleteYamlPath(doc, ['params', key])
-}
-
 /**
- * 保存预设参数：写激活预设目录 preset.yml 的 params（merge）/ promptConfigs（整体替换）。
+ * 保存预设参数：写 layerSettings（merge）/ promptConfigs（整体替换）。
  * parseDocument 保留注释与未知键（preset.yml 模板含大量注释）；空值键删除（'' / []，
  * 回落模板/引擎默认；0 与 false 照常写入——语义与函数内注释、docs §3 一致）。
  */
@@ -506,11 +470,10 @@ export function savePresetParams(
   variables?: Record<string, string>,
   variablesEnabled?: boolean,
 ): void {
-  // 模型参数写入顶层段（model / subagentModel，官方 agent-default-model 同构）：
-  // params 旧扁平键同步清理（保存即迁移）。映射 = MODEL_SEGMENT_MAP（与展平共用）。
   const file = join(assertPresetDirectory(presetRoot, templateName), 'preset.yml')
   if (!existsSync(file)) throw new Error(`preset ${templateName} 无 preset.yml`)
   const doc = parseDocument(readFileSync(file, 'utf8'), { logLevel: 'silent' })
+  readPresetLayerSettings(doc.toJS())
   // 空值 = 删除键（回落模板/引擎默认）：''（字符串清空）、[]（列表清空）。
   // 其余 0/false 照常写入：stagePreUnlock 的 0 是合法档位（undefined 才回落
   // 引擎默认 1），maxPromoteSteps 0 由引擎归一为默认 4。
@@ -520,16 +483,9 @@ export function savePresetParams(
       // 「从有值改回留空」依赖空值清掉旧键（渲染层空值跳过 = 继承模板/宿主默认）。
       if (value === undefined || value === null || key.trim().length === 0) continue
       const isEmpty = value === '' || (Array.isArray(value) && value.length === 0)
-      const segment = MODEL_SEGMENT_MAP[key]
-      if (segment !== undefined) {
-        if (isEmpty) deleteYamlPath(doc, [segment[0], segment[1]])
-        else doc.setIn([segment[0], segment[1]], value)
-        deleteFlatParam(doc, key)
-      } else if (isEmpty) {
-        deleteFlatParam(doc, key)
-      } else {
-        doc.setIn(['params', key], value)
-      }
+      const path = engineParamPath(key)
+      if (isEmpty) deleteYamlPath(doc, path)
+      else doc.setIn(path, value)
     }
   }
   if (promptConfigs !== undefined) {
@@ -549,7 +505,7 @@ export function savePresetParams(
     doc.setIn(['promptConfigs'], cleaned)
   }
   if (variables !== undefined) {
-    // 模板变量只写顶层 variables 段，不修改 params 中的同名引擎参数。
+    // 模板变量只写顶层 variables 段，不修改 layerSettings 中的同名引擎参数。
     const kept = Object.fromEntries(
       Object.entries(variables).filter(([key, value]) => key.trim().length > 0 && typeof value === 'string'),
     )
@@ -579,6 +535,7 @@ export function savePresetPersona(presetRoot: string, templateName: string, pers
   const file = join(assertPresetDirectory(presetRoot, templateName), 'preset.yml')
   if (!existsSync(file)) throw new Error(`preset ${templateName} 无 preset.yml`)
   const doc = parseDocument(readFileSync(file, 'utf8'), { logLevel: 'silent' })
+  readPresetLayerSettings(doc.toJS())
   if (persona === null) doc.deleteIn(['persona'])
   else doc.setIn(['persona'], personaRowConfig(persona))
   atomicWriteTextFile(file, doc.toString())
@@ -604,7 +561,9 @@ export function withPresetDoc(presetDir: string, mutate: (doc: ReturnType<typeof
   const file = join(presetDir, 'preset.yml')
   if (!existsSync(file)) throw new Error(`${presetDir} 无 preset.yml`)
   const doc = parseDocument(readFileSync(file, 'utf8'), { logLevel: 'silent' })
+  readPresetLayerSettings(doc.toJS())
   mutate(doc)
+  readPresetLayerSettings(doc.toJS())
   atomicWriteTextFile(file, doc.toString())
   invalidatePresetSpec(presetDir)
 }
@@ -645,6 +604,7 @@ export function removeUserPreset(id: string, presetRoot = userPresetsDir()): { o
 export function parseImportedPresetId(presetYaml: string, fallback: string): string {
   const doc = parseDocument(presetYaml, { logLevel: 'silent' })
   if (doc.errors.length > 0 || !(doc.contents instanceof YAMLMap)) throw new Error('预设定义必须是合法 YAML 对象')
+  readPresetLayerSettings(doc.toJS())
   const declared = doc.get('id')
   const id = declared === undefined ? fallback : declared
   assertPresetId(id)
@@ -661,7 +621,7 @@ export function normalizeParam(value: unknown): unknown {
 /** 预设 params(默认参数)与运行时 settings 合并;settings 值优先。 */
 export function resolvePresetParams(spec: PresetSpec, runtime: Record<string, unknown>): Record<string, unknown> {
   const params: Record<string, unknown> = {}
-  for (const [key, value] of Object.entries(spec.params ?? {})) {
+  for (const [key, value] of Object.entries(spec.layerSettings === undefined ? spec.params ?? {} : readLayerSettings(spec.layerSettings))) {
     params[key] = normalizeParam(value)
   }
   for (const [key, value] of Object.entries(runtime)) {
@@ -863,7 +823,7 @@ export function loadCompositionText(spec: PresetSpec, templateDir?: string): str
     // 参数在 ⇒ 装配在：显式 params/moduleConfigs 隐含的能力模块自动补齐，与顶层策略段同一规则。
     const extra = [
       ...(spec.subagentToolPolicy !== undefined && spec.subagentToolPolicy !== null ? ['subagent-tool-policy'] : []),
-      ...impliedModulesForParams(spec.params, spec.moduleConfigs),
+      ...impliedModulesForParams(resolvePresetParams(spec, {}), spec.moduleConfigs),
     ].filter((module) => !declared.includes(module))
     if (extra.length > 0) modules = [...declared, ...extra]
   }
@@ -974,7 +934,7 @@ export function resolvePresetModuleFacts(
   // 隐式装配如实进入 effectiveModules（declaredModules 保持磁盘事实）：参数在 ⇒ 装配在；
   // 顶层策略段同理——两者都让编辑卡与「本层已装配的能力」展示真实运行状态。
   if (effectiveModules !== null) {
-    for (const module of impliedModulesForParams(spec.params, spec.moduleConfigs)) {
+    for (const module of impliedModulesForParams(resolvePresetParams(spec, {}), spec.moduleConfigs)) {
       if (!effectiveModules.includes(module)) effectiveModules.push(module)
     }
     if (rowIds.includes('subagent-tool-policy') && !effectiveModules.includes('subagent-tool-policy')) {
@@ -1021,6 +981,7 @@ export function createEngineCapabilityInPreset(
   const original = readFileSync(file, 'utf8')
   const doc = parseDocument(original, { logLevel: 'silent' })
   const source = doc.toJS() as PresetSpec
+  const sourceParams = readPresetLayerSettings(source)
   if (!Array.isArray(source.modules)) throw new Error('当前预设没有可编辑的 modules 数组；请先复制为插件用户预设')
   const capabilityIds = request.action === 'create'
     ? [request.capabilityId]
@@ -1045,7 +1006,7 @@ export function createEngineCapabilityInPreset(
   doc.set('modules', modules)
   const recipe = request.action === 'create-recipe' ? engineRecipe(request.recipeId) : undefined
   for (const [key, value] of Object.entries(recipe?.initialParams ?? {})) {
-    if (!Object.prototype.hasOwnProperty.call(source.params ?? {}, key)) doc.setIn(['params', key], value)
+    if (!Object.prototype.hasOwnProperty.call(sourceParams, key)) doc.setIn(engineParamPath(key), value)
   }
   // 拥有顶层数据段的能力（如 subagent-tool-policy → subagentToolPolicy）：启用即写入可用骨架，
   // 保证"模块在 ⇒ 数据在"（否则 shadow 行会读不到物化后的 policy.yml）。
@@ -1084,7 +1045,7 @@ export function createEngineCapabilityInPreset(
     if (!capability.rowIds.some((rowId) => rowPaths.has(rowId))) throw new Error(`能力 ${id} 的组合缺少预期 row`)
   }
   if (addedModules.length === 0 && recipe === undefined && !sectionWritten) return { changed: false, addedModules, capabilityIds }
-  if (addedModules.length === 0 && recipe !== undefined && Object.entries(recipe.initialParams ?? {}).every(([key]) => Object.prototype.hasOwnProperty.call(source.params ?? {}, key))) {
+  if (addedModules.length === 0 && recipe !== undefined && Object.entries(recipe.initialParams ?? {}).every(([key]) => Object.prototype.hasOwnProperty.call(sourceParams, key))) {
     return { changed: false, addedModules, capabilityIds }
   }
   atomicWriteTextFile(file, doc.toString())
@@ -1103,6 +1064,7 @@ export function removeEngineCapabilityFromPreset(
   if (!existsSync(file)) throw new Error(`预设目录缺少 preset.yml：${presetDir}`)
   const doc = parseDocument(readFileSync(file, 'utf8'), { logLevel: 'silent' })
   const source = doc.toJS() as unknown as PresetSpec & Record<string, unknown>
+  const params = readPresetLayerSettings(source)
   if (!Array.isArray(source.modules)) throw new Error('当前预设没有可编辑的 modules 数组；官方组合不支持删除插件能力')
   const capability = engineCapability(capabilityId)
   if (capability === undefined) throw new Error(`未知引擎能力：${capabilityId}`)
@@ -1111,7 +1073,6 @@ export function removeEngineCapabilityFromPreset(
   const section = capability.ownSection
   const sectionPresent = section !== undefined && source[section.key] !== undefined && source[section.key] !== null
   // 该能力的显式参数键与行配置：与模块声明同生共死。
-  const params = (source.params ?? {}) as Record<string, unknown>
   const paramKeys = ENGINE_PARAM_KEYS.filter((key) => ENGINE_PARAM_DEFINITIONS[key].card === capabilityId
     && Object.prototype.hasOwnProperty.call(params, key))
   const configs = (source.moduleConfigs ?? {}) as Record<string, unknown>
@@ -1122,7 +1083,7 @@ export function removeEngineCapabilityFromPreset(
   }
   if (removedModules.length > 0) doc.set('modules', modules.filter((module) => !capability.moduleKeys.includes(module)))
   if (sectionPresent) doc.deleteIn([section!.key])
-  for (const key of paramKeys) doc.deleteIn(['params', key])
+  for (const key of paramKeys) doc.deleteIn(engineParamPath(key))
   for (const rowId of configRows) doc.deleteIn(['moduleConfigs', rowId])
   const candidate = doc.toJS() as PresetSpec
   assertCompositionArray(renderComposition(candidate, {}, presetDir), candidate)

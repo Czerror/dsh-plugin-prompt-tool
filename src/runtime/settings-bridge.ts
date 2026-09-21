@@ -14,6 +14,7 @@ import type { SkillCatalogEntry, SkillPolicyChange, SkillPolicyScope, SkillsCata
 import { loadPromptConfigFiles } from '../host/prompt-configs.ts'
 import { readConfigFieldSources, stripConfigFieldSources } from '../shared/managed-config-fields.ts'
 import { validatePromptConfigs } from './configs-validate.ts'
+import { PresetLayerSettingsError } from '../host/preset-layer-settings.ts'
 import { loadPromptTemplates, loadToolTemplates } from '../host/templates.ts'
 import { assertImportableSource, importSkillsDirectory, importSkillsPackage } from '../host/skills-import.ts'
 import { createSkill, type SkillActionResult } from '../host/skills-actions.ts'
@@ -137,6 +138,13 @@ function writeBridgeJson(res: ServerResponse, status: number, body: unknown): vo
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === 'object' && !Array.isArray(value)
+
+/** 旧格式不能伪装成空配置；其余读取失败继续使用各端点原有规则。 */
+function writeMigrationRequired(res: ServerResponse, error: unknown): boolean {
+  if (!(error instanceof PresetLayerSettingsError) || error.code !== 'preset-migration-required') return false
+  writeBridgeJson(res, 409, { ok: false, code: error.code, message: error.message })
+  return true
+}
 
 /** 确认名单只授权已展示的目录；不是允许覆盖任意同名目标的总开关。 */
 function readSkillOverwrite(value: unknown): string[] | undefined {
@@ -549,8 +557,15 @@ export function registerSettingsBridge(
         }
         return true
       }
+      const guardPresetFormat = (dir: string, res: ServerResponse): boolean => {
+        if (dir.length === 0) return true
+        try { loadPresetSpec(dir) } catch (error) {
+          if (writeMigrationRequired(res, error)) return false
+        }
+        return true
+      }
       const guardPresetWrite = (dir: string, res: ServerResponse): boolean =>
-        guardEditablePresetDir(dir, res)
+        guardEditablePresetDir(dir, res) && guardPresetFormat(dir, res)
       /** 预设身份只作一致性检查，绝不用客户端 ID 构造写入路径。 */
       const guardPresetIdentity = (record: Record<string, unknown>, dir: string, res: ServerResponse): boolean => {
         const expected = record.expectedPresetId
@@ -562,7 +577,7 @@ export function registerSettingsBridge(
           writeBridgeJson(res, 409, { ok: false, code: 'preset-changed', message: '当前预设已切换；旧草稿未写入，请重新读取后保存' })
           return false
         }
-        return true
+        return guardPresetFormat(dir, res)
       }
       /** 引擎能力矩阵（meta 端点与 /bootstrap 共用）：动态 import 引擎 schema。 */
       const loadEngineMeta = async (): Promise<Record<string, unknown>> => {
@@ -671,7 +686,8 @@ export function registerSettingsBridge(
             const layer = (config as { layer?: string }).layer
             return layer === undefined || layer === 'pre-step'
           }).length
-        } catch {
+        } catch (error) {
+          if (error instanceof PresetLayerSettingsError && error.code === 'preset-migration-required') throw error
           templatePreStepCount = 0
         }
         return {
@@ -704,7 +720,8 @@ export function registerSettingsBridge(
             }
           }
           return params
-        } catch {
+        } catch (error) {
+          if (error instanceof PresetLayerSettingsError && error.code === 'preset-migration-required') throw error
           return {}
         }
       }
@@ -718,7 +735,8 @@ export function registerSettingsBridge(
             if (typeof value === 'string') variables[key] = value
           }
           return { variables, enabled: spec.variablesEnabled !== false }
-        } catch {
+        } catch (error) {
+          if (error instanceof PresetLayerSettingsError && error.code === 'preset-migration-required') throw error
           return { variables: {}, enabled: true }
         }
       }
@@ -776,6 +794,7 @@ export function registerSettingsBridge(
                 ...extras,
               })
             } catch (error) {
+              if (writeMigrationRequired(res, error)) return
               const message = error instanceof Error ? error.message : String(error)
               writeBridgeJson(res, 500, { ok: false, code: 'bootstrap-failed', message })
             }
@@ -800,7 +819,11 @@ export function registerSettingsBridge(
               writeBridgeJson(res, 404, { ok: false, code: 'settings-not-exposed', message: 'prompt-tool settings namespace is not registered' })
               return
             }
-            writeBridgeJson(res, 200, { ok: true, value: descriptor, ...await collectDescribeExtras() })
+            try {
+              writeBridgeJson(res, 200, { ok: true, value: descriptor, ...await collectDescribeExtras() })
+            } catch (error) {
+              if (!writeMigrationRequired(res, error)) throw error
+            }
           },
         }),
         sctx.webServer.register({
@@ -903,7 +926,7 @@ export function registerSettingsBridge(
               writeBridgeJson(res, 400, { ok: false, code: 'prompt-configs-invalid', message: 'promptConfigs must be an array' })
               return
             }
-            const result = await validatePromptConfigs(record.promptConfigs, { strategyDir: getEngineStrategyDir() })
+            const result = await validatePromptConfigs(record.promptConfigs, { strategyDir: getEngineStrategyDir(), presetDir: getPresetConfigsDir?.() })
             writeBridgeJson(res, 200, { ok: true, value: result })
           },
         }),
@@ -1129,6 +1152,7 @@ export function registerSettingsBridge(
             // 实际生效配置 = 生成目录 prompt-configs/（引擎加载源）；
             // settings.promptConfigs 仅是用户覆盖层，默认为空不代表无配置。
             const dir = getPresetConfigsDir?.() ?? ''
+            if (!guardPresetFormat(dir, res)) return
             // 独立文件来源：与 /bootstrap 共用同一读取入口，附正文、字节版本与读取状态。
             const scope = resolveInstructionScope(sctx, session.sessionId)
             writeBridgeJson(res, 200, {
@@ -1402,6 +1426,15 @@ export function registerSettingsBridge(
               // 顶层人设「独占」与提示词配置「独占」互斥（官方 complete 段一个 scope
               // 只能有一个）；promptConfigs 单独保存也走这里，故放在参数块之外。
               if (Array.isArray(record.promptConfigs)) {
+                const validation = await validatePromptConfigs(record.promptConfigs, { strategyDir: getEngineStrategyDir(), presetDir: dir })
+                if (!validation.valid) {
+                  writeBridgeJson(res, 400, {
+                    ok: false,
+                    code: 'prompt-configs-invalid',
+                    message: validation.errors.map(({ index, id, message }) => `[${index}] ${id}: ${message}`).join('; '),
+                  })
+                  return
+                }
                 const spec = loadPresetSpec(dir)
                 const conflicting = record.promptConfigs.some((config) => {
                   if (config === null || typeof config !== 'object' || Array.isArray(config)) return false
@@ -1451,6 +1484,7 @@ export function registerSettingsBridge(
                 },
               })
             } catch (error) {
+              if (writeMigrationRequired(res, error)) return
               const message = error instanceof Error ? error.message : String(error)
               writeBridgeJson(res, 500, { ok: false, code: 'overrides-write-failed', message })
             }
@@ -1531,7 +1565,8 @@ export function registerSettingsBridge(
                 const spec = loadPresetSpec(dir)
                 const customTools = Array.isArray(spec.customTools) ? spec.customTools : []
                 writeBridgeJson(res, 200, { ok: true, value: { customTools } })
-              } catch {
+              } catch (error) {
+                if (writeMigrationRequired(res, error)) return
                 writeBridgeJson(res, 409, { ok: false, code: 'custom-tools-unavailable', message: '自定义工具读取失败，原文件保持不变' })
               }
               return
@@ -1582,7 +1617,8 @@ export function registerSettingsBridge(
             if (record.persona === undefined) {
               try {
                 writeBridgeJson(res, 200, { ok: true, value: { persona: readPersonaSpec(loadPresetSpec(dir).persona) ?? null } })
-              } catch {
+              } catch (error) {
+                if (writeMigrationRequired(res, error)) return
                 writeBridgeJson(res, 200, { ok: true, value: { persona: null } })
               }
               return
@@ -2035,7 +2071,8 @@ export function registerSettingsBridge(
                 const spec = loadPresetSpec(dir)
                 const policy = spec.subagentToolPolicy ?? null
                 writeBridgeJson(res, 200, { ok: true, value: { policy } })
-              } catch {
+              } catch (error) {
+                if (writeMigrationRequired(res, error)) return
                 writeBridgeJson(res, 200, { ok: true, value: { policy: null } })
               }
               return

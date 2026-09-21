@@ -23,18 +23,6 @@ modules:
   - tool-present
   - tool-plugin-manager
   - prompt-config-engine
-model:
-  provider: ""
-  name: ""
-  reasoningEffort: ""
-  temperature: ""
-  maxTokens: ""
-subagentModel:
-  provider: ""
-  name: ""
-  reasoningEffort: ""
-  temperature: ""
-  maxTokens: ""
 persona:
   suffix: Your working directory is {{cwd}}.
   prefix: |-
@@ -57,6 +45,18 @@ persona:
     To connect an MCP server, create a configuration-only bundle whose patch inserts @deepseek-ai/dsh-mcp-client, then install it with plugin_manager. Load cordis-plugin-development for the package and YAML examples. After successful activation, call one of the newly available mcp__<serverName>__<tool> tools to verify the connection.
 
     Use installed bundles for new plugin code. Package installation may require explicit user approval for build scripts. Preserve returned failures and pending states; only report success after observing the requested capability.
-params:
-  maxDepth: ""
 promptConfigs: []
+layerSettings:
+  agent-request:
+    modelProvider: ""
+    modelName: ""
+    modelReasoningEffort: ""
+    modelTemperature: ""
+    modelMaxTokens: ""
+  subagent-start:
+    subagentModelProvider: ""
+    subagentModelName: ""
+    subagentReasoningEffort: ""
+    subagentTemperature: ""
+    subagentMaxTokens: ""
+    maxDepth: ""

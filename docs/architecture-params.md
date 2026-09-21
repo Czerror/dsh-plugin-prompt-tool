@@ -5,13 +5,40 @@
 > `src/host/write-preset.ts`、`src/index.ts`（reloadPresetParams / rebuildPreset）、
 > `src/runtime/settings-bridge.ts`（/param-overrides）、`src/client/data/use-prompt-tool-store.ts`（fields / persist）。
 
+## 磁盘格式：按插入点组织共享参数
+
+共享引擎参数唯一存于 `layerSettings.<层名>.<参数键>`，例如 `layerSettings.subagent-start.maxDepth: 2`。归属由 `ENGINE_PARAM_DEFINITIONS.card` → `ENGINE_EDITOR_GROUP_MAP.displayLayer` 派生；该段不创建提示词实例，也不生成空 UI 卡。
+
+`promptConfigs[].params` 仍属于单条规则。persona、variables、customTools、subagentToolPolicy 和 moduleConfigs 保留独立所有者。`loadPresetSpec().params` 是读取新格式后得到的**内部平铺适配面**，本文下文的参数桥 `params` 均指该内部对象，不再表示旧磁盘位置。
+
+正常读写不兼容旧位置中的登记参数：`params.<已登记键>`、`model`/`subagentModel` 已登记字段返回 `preset-migration-required`；未知字段保持原样，且不进入运行参数。`layerSettings` 中登记键放错层、层名或形态错误返回 `preset-layer-settings-invalid`。bridge 对迁移要求返回 409，不静默回落成空值。
+
+一次性离线脚本为 `scripts/migrate-layer-settings.mjs`，不注册日常产品工具或 package script，也不在启动、读取、保存时自动迁移。由已授权的维护操作执行：
+
+```powershell
+Set-Location 'D:\AI\workspase\_temp'
+$PresetRoot = Join-Path $env:DSH_HOME '.agent-presets'
+$PresetFiles = Get-ChildItem -LiteralPath $PresetRoot -Directory |
+  Where-Object { -not $_.Name.StartsWith('.') } |
+  ForEach-Object { Join-Path $_.FullName 'preset.yml' } |
+  Where-Object { Test-Path -LiteralPath $_ }
+node D:/AI/GitHub/dsh-plugin-prompt-tool/scripts/migrate-layer-settings.mjs @PresetFiles
+node D:/AI/GitHub/dsh-plugin-prompt-tool/scripts/migrate-layer-settings.mjs @PresetFiles --write
+```
+
+上例要求 DSH_HOME 已设置；未设置时使用操作系统用户目录下的 `.dsh`。默认只预览；`--write` 才原子替换指定文件。脚本通过 YAML Document 移动节点，保留注释、未知字段、规则参数、false/0；冲突和并发改动拒绝覆盖。备份 `.layer-settings-backup.json` 保存原始字节及前后摘要，被预设导出排除。`--rollback --write` 对同一预设恢复，当前摘要必须仍等于迁移后或迁移前摘要；用户已有新改动时拒绝恢复。空预设保持为空，包内预设和导入产物直接使用新格式。
+
+九层 UI、官方参数与插件参数的对照见 [九层契约](injection-point-contracts.md)。
+
+根目录 [preset.yml](../preset.yml) 是可复制的全参数参考：九层真实模板与 71 个共享登记参数自动生成，所有规则示例默认关闭，共享参数以注释参考提供，避免复制模板即默认启用可选能力。`pnpm rebuild:preset-template` 使用 YAML Document 从权威目录重建，`-- --check` 检查漂移；模板自身的参数值、层归属和规则合法性由行为测试验证。
+
 ## 1. 分层与职责
 
 | 层 | 文件 | 职责 |
 |---|---|---|
 | 契约层 | `shared/engine-params.ts` | `EngineParams` + 完整覆盖其键的 `ENGINE_PARAM_DEFINITIONS`（类型规则、卡片归属、标签、默认草稿、枚举、组合行映射）；`ENGINE_PARAM_KEYS` 与 `WRITER_PARAM_KEYS` 从目录派生 |
 | 键集合 | `shared/param-keys.ts` | `PARAM_KEYS` = `ENGINE_PARAM_KEYS` 派生 + 锚定内容键 + `promptConfigs`；参数写入白名单 / mutate 拦截 / 读回遍历共用，不推断模板变量 |
-| 存储层 | `host/manifest.ts` | `loadPresetSpec`（顶层 model/subagentModel 段 → 扁平键，`MODEL_SEGMENT_MAP`）、`savePresetParams`（扁平键 → 段，同源映射；空值删键）、`buildModuleConfigsFromParams`（参数桥）、`renderComposition`（参数桥 > moduleConfigs > 行默认；组合模块从 `source/local` 与 `library` 唯一查找） |
+| 存储层 | `host/manifest.ts`、`host/preset-layer-settings.ts` | `loadPresetSpec`（layerSettings → 内部平铺值）、`savePresetParams`（平铺值 → 所属层；空值删键）、`buildModuleConfigsFromParams`（参数桥）、`renderComposition`（参数桥 > moduleConfigs > 行默认） |
 | 物化层 | `host/write-preset.ts` | `writePreset`：参数 + 内容资产 → 官方预设目录（agent.cordis.yml / prompt-configs / variables.yml）；`runtimeOf` 透传、`modelRequestConfigs` 模型 patch |
 | 装配层 | `index.ts` | `reloadPresetParams`（preset.yml → runtime）、`rebuildPreset`（写入触发） |
 | 接线层 | `runtime/settings-bridge.ts` | `/param-overrides` GET（读回）/ POST（保存到激活预设 preset.yml） |
@@ -27,7 +54,7 @@
 UI fields
   → persistParamOverrides（只发送已存键或用户已改动键；含需清除的 '' / [] 与合法的 false / 0）
     → /param-overrides POST（settings-bridge）
-      → savePresetParams（写 preset.yml：model 顶层段 / params；空值删键）
+      → savePresetParams（写 preset.yml：layerSettings 的所属层；空值删键）
         → reloadPresetParams（runtime 态）
           → rebuildPreset → writePreset
             → runtimeOf（透传 WRITER_PARAM_KEYS）
@@ -103,7 +130,7 @@ UI 侧 `persistParamOverrides` **条件发送**：
 `writePreset` 的 `runtimeOf` 只投影调用方**真正提供**的引擎参数：
 
 - **未提供（`undefined`）= 不覆盖**：`resolvePresetParams` 跳过 `undefined` 键，缺省值来自
-  预设 `preset.yml` 的 `params` / `model` / `subagentModel` 段。导入
+  预设 `preset.yml` 的 `layerSettings` 段。导入
   （`installPresetPackage`）、离线物化、补建其他预设等调用方只给部署字段，不再被 writer
   补上的 `false` / `''` / `true` 覆盖作者定义（锚定被关、自定义文本被清空、关闭的注入器被
   启用、子代理模型路由消失）。
@@ -150,7 +177,7 @@ ST 导入配置显式带 `params.stMacros: true`，赋值模板保留到运行�
 1. `shared/engine-params.ts`：`EngineParams` 加字段，并在 `ENGINE_PARAM_DEFINITIONS` 登记规则、默认草稿、卡片和组合映射；键集、默认值、普通字段渲染、读写和保存快照自动派生。
 2. 若需 writePreset 透传：`PresetWriterParams` Pick 加键 + `WRITER_PARAM_KEYS` 加键（断言强制）。
 3. 只有跨字段的模型／授权关系才修改 `host/manifest.ts`；普通模块参数不再额外手写双向映射。
-4. 存储：若走 model/subagentModel 顶层段 → `MODEL_SEGMENT_MAP` 加映射（展平/迁移共用）；否则 params 段。
+4. 存储：参数定义的 card 必须在编辑组目录登记主归属层，存储路径随目录派生；MODEL_SEGMENT_MAP 仅用于一次性旧格式迁移，不能新增运行时双读。
 5. UI：现有模块普通字段自动渲染；新增特殊交互才扩展专用编辑器，禁止增加第二份参数清单。
 6. 测试：`test/host/engine-params-bridge.test.mjs` 的 BRIDGE_SAMPLES 加样本值（若为参数桥消费键）。
 7. `docs/architecture-params.md` 如有语义变更同步；CHANGELOG 记条目。

@@ -129,8 +129,8 @@ React.createElement('section',{className:ui.pageActions,'data-sticky':true},'模
     for (const width of [860, 420, 320]) {
       await evaluate(`document.querySelector('[data-settings-host]').style.width='${width}px'`)
       await delay(40)
-      const layout = await evaluate(`(()=>{const root=document.querySelector('[data-layer-settings-content]');const grid=root.querySelector('[data-layer-param-fields="deliberation-gate"]');const text=grid.querySelector('textarea').closest('[data-param-key]');return {width:root.getBoundingClientRect().width,overflow:root.scrollWidth>root.clientWidth+1,columns:getComputedStyle(grid).gridTemplateColumns.split(' ').length,textWidth:text.getBoundingClientRect().width,gridWidth:grid.getBoundingClientRect().width,groupWidths:[...root.querySelectorAll('[data-layer-param-group]')].map(e=>e.getBoundingClientRect().width)}})()`)
-      assert.ok(layout.width >= width - 60, `设置内容占满外层网格：${JSON.stringify(layout)}`)
+      const layout = await evaluate(`(()=>{const root=document.querySelector('[data-layer-settings-content]');const grid=root.querySelector('[data-layer-param-fields="deliberation-gate"]');const text=grid.querySelector('textarea').closest('[data-param-key]');return {width:root.getBoundingClientRect().width,available:root.parentElement.getBoundingClientRect().width,overflow:root.scrollWidth>root.clientWidth+1,columns:getComputedStyle(grid).gridTemplateColumns.split(' ').length,textWidth:text.getBoundingClientRect().width,gridWidth:grid.getBoundingClientRect().width,groupWidths:[...root.querySelectorAll('[data-layer-param-group]')].map(e=>e.getBoundingClientRect().width)}})()`)
+      assert.ok(layout.width >= layout.available - 2, `设置内容占满外层网格：${JSON.stringify(layout)}`)
       assert.equal(layout.overflow, false, `无水平溢出：${width}`)
       assert.equal(layout.columns, width > 640 ? 2 : 1, `参数列数：${width}`)
       assert.ok(layout.textWidth >= layout.gridWidth - 2, `长文本占整行：${JSON.stringify(layout)}`)
@@ -177,12 +177,13 @@ React.createElement('section',{className:ui.pageActions,'data-sticky':true},'模
     await toggleWithSpace()
     assert.deepEqual(await evaluate('[window.settingsStore.fields.cotDrip,window.settingsStore.fields.cotDripSubagents,window.paramWrites]'), [true, true, 3])
     if (process.env.PROMPT_TOOL_LAYER_SCREENSHOT) {
+      await evaluate(`document.querySelector('[data-sticky]').style.position='static'; window.scrollTo(0,0)`)
       await send('Emulation.setDeviceMetricsOverride', { width: 1024, height: 900, deviceScaleFactor: 1, mobile: false })
       await evaluate(`document.querySelector('[data-settings-host]').style.width='860px'`)
       for (const scheme of ['light', 'dark']) {
         await evaluate(`document.documentElement.style.colorScheme='${scheme}'`)
         await delay(40)
-        const clip = await evaluate(`(()=>{const r=document.querySelector('[data-layer-settings-content]').getBoundingClientRect();return {x:r.left+scrollX,y:r.top+scrollY,width:r.width,height:r.height,scale:1}})()`)
+        const clip = await evaluate(`(()=>{const r=document.querySelector('[data-settings-host]').getBoundingClientRect();return {x:r.left+scrollX,y:r.top+scrollY,width:r.width,height:r.height,scale:1}})()`)
         const image = await send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true, clip })
         writeFileSync(process.env.PROMPT_TOOL_LAYER_SCREENSHOT + '-' + scheme + '.png', Buffer.from(image.data, 'base64'))
       }

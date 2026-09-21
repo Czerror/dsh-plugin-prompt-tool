@@ -156,7 +156,7 @@ pre-step 来源：
 | `tool-pipeline` | `tools/pre-execute` / `tools/post-execute` | `toolArgs` | `preDecision` / `postAction` 按条件裁决 |
 | `turn-stop` | `agent/turn-stopping` | `assistantText` | 阻止本轮停止并强制续跑一步 |
 | `subagent-start` | `subagent/start` | `subagentInfo` | 向该子代理注入一条上下文 |
-| `subagent-end` | `subagent/end` | `subagentInfo` | 只记录，无注入通道 |
+| `subagent-end` | `subagent/end` | `subagentInfo` | 默认记录；`params.action: inject-main` 时通过独立 Agent.inject 调用向所属主会话投递文本，不改写子代理结果、不唤醒空闲主会话 |
 
 - `turn-stop` 的续跑上限固定在引擎内（每轮 1 次、每会话 3 次：`engine/layers.mjs` 的
   `TURN_STOP_MAX_PER_TURN` / `TURN_STOP_MAX_PER_SESSION`），**不暴露为配置**——强制续跑

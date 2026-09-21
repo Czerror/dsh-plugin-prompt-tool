@@ -7,7 +7,7 @@ description: 空白起点：所有参数为空，按需从 UI 配置。
 version: 1.0.0
 engineCompat: ">=0.4.2"
 modules: []
-params: {}
+layerSettings: {}
 # 空白起点不隐式装配任何提示词卡：需要时从 UI 添加。
 # 指令文件正文由独立指令来源（pre-step 协调器 + $DSH_HOME/.prompt-tool/instructions.yml）
 # 按会话现场解析，预设侧不再有 agentsHints 开关。

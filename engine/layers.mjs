@@ -19,6 +19,8 @@ import { getSessionVar, sessionVarsSnapshot } from './session-vars.mjs'
 import { conditionHit, lastAssistantText, subagentTextOf, toolArgsText } from './condition.mjs'
 
 const name = 'prompt-config-engine'
+// 同一宿主会话共享投递账本，避免预设作用域重挂后重投同一次结束通知。
+const subagentEndDeliveries = new WeakMap()
 
 /** 单条文本型配置的完整文本:texts 数组按空行拼接（单一文本字段）。
  *  keep=官方变量通道按 assembly 求值的名字，静态 pass 命中即原样保留引用。 */
@@ -444,10 +446,40 @@ function wireTurnStops(ctx, configs, warnOnce) {
   }
 }
 
-/** subagent-start：命中条件时向该子代理注入上下文；subagent-end 只能观察。 */
+/** 沿官方持久 session 血缘找根会话，不根据当前 UI 会话或预设名称猜测。 */
+function mainSessionForChild(ctx, id) {
+  const agents = getService(ctx, 'agents')
+  const sessions = getService(ctx, 'sessions')
+  const visited = new Set()
+  let session = agents?.get?.(id)?.session ?? sessions?.get?.(id)
+  if (session?.header?.parentSession === undefined) return undefined
+  while (session !== undefined) {
+    const sessionId = session.id ?? session.header?.id
+    if (typeof sessionId !== 'string' || visited.has(sessionId)) return undefined
+    visited.add(sessionId)
+    const parentId = session.header?.parentSession
+    if (parentId === undefined) return isDelegated(session) ? undefined : sessionId
+    session = agents?.get?.(parentId)?.session ?? sessions?.get?.(parentId)
+  }
+}
+
+/** 子代理生命周期：启动注入子代理；结束默认观察，可显式给所属主会话投递上下文。 */
 function wireSubagentEvents(ctx, configs, warnOnce) {
   const startConfigs = configs.filter((config) => config.layer === 'subagent-start')
   const endConfigs = configs.filter((config) => config.layer === 'subagent-end')
+  const injectMain = endConfigs.some((config) => config.params?.action === 'inject-main')
+  const runs = new Map()
+  if (injectMain) {
+    ctx.on('subagent/start', (info) => {
+      if (typeof info?.runId !== 'string' || typeof info?.id !== 'string') return
+      const mainId = mainSessionForChild(ctx, info.id)
+      if (mainId === undefined) return
+      // ponytail: 有界运行记录；极端并发超过上限时，结束事件仍可通过存活会话血缘定位。
+      if (runs.size >= MAX_TRACKED_SESSIONS) runs.delete(runs.keys().next().value)
+      runs.set(info.runId, { id: info.id, mainId, model: getService(ctx, 'agents')?.get?.(info.id)?.options?.model })
+    })
+    ctx.effect?.(() => () => runs.clear())
+  }
   if (startConfigs.length > 0) {
     ctx.on('subagent/start', (info) => {
       try {
@@ -471,12 +503,34 @@ function wireSubagentEvents(ctx, configs, warnOnce) {
     ctx.on('subagent/end', (info) => {
       try {
         const child = getService(ctx, 'agents')?.get?.(info?.id)
+        const recorded = runs.get(info?.runId)
+        runs.delete(info?.runId)
+        if (recorded !== undefined && recorded.id !== info?.id) return
         const subagentText = subagentTextOf(info)
         for (const config of endConfigs) {
-          if (!matchesAgentScope(config, child)) continue
+          if (!matchesModel(config.modelScope, child?.options?.model ?? recorded?.model)) continue
           if (!conditionHit(config, { subagentText })) continue
-          // 该事件只观察、没有注入通道：命中即留一条记录，不产生模型可见副作用。
-          warnOnce(`${name}: subagent-end ${config.id} matched (observe only)`)
+          if (config.params?.action !== 'inject-main') {
+            warnOnce(`${name}: subagent-end ${config.id} matched (observe only)`)
+            continue
+          }
+          if (typeof info?.runId !== 'string' || info.runId.length === 0) continue
+          const mainId = recorded?.mainId ?? mainSessionForChild(ctx, info?.id)
+          const main = mainId === undefined ? undefined : getService(ctx, 'agents')?.get?.(mainId)
+          if (main?.session === undefined || typeof main.inject !== 'function') {
+            warnOnce(`${name}: subagent-end ${config.id} has no live main session`)
+            continue
+          }
+          const text = layerText(config, main, warnOnce)
+          if (text.length === 0) continue
+          let delivered = subagentEndDeliveries.get(main.session)
+          if (delivered === undefined) { delivered = new Map(); subagentEndDeliveries.set(main.session, delivered) }
+          const key = `${info.runId}:${config.id}`
+          if (delivered.has(key)) continue
+          // ponytail: 会话内保留最近的投递记录；超大历史改用持久事件索引时可取消此上限。
+          if (delivered.size >= MAX_TRACKED_SESSIONS) delivered.delete(delivered.keys().next().value)
+          delivered.set(key, true)
+          main.inject(pluginMessage(`subagent-end-${config.id}`, text, `subagent-end ${config.id}`))
         }
       } catch (error) {
         warnOnce(`${name}: subagent-end failed: ${String(error?.message ?? error)}`)

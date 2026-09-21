@@ -17,6 +17,53 @@ const STRATEGY_DIR = new URL('../../engine/', import.meta.url).href
 const createPromptConfigs = (specs, options = {}) =>
   createPromptConfigsCore(specs, { strategyDir: STRATEGY_DIR, ...options })
 
+test('九层契约只公开各入口可消费的策略、匹配对象和内容字段', () => {
+  const { layerContracts } = getEngineMeta()
+  assert.equal(Object.keys(layerContracts).length, 9)
+  assert.deepEqual(layerContracts['pre-step'].subjects, ['userMessage'])
+  assert.deepEqual(layerContracts['tool-pipeline'].subjects, ['toolArgs', 'toolResult'])
+  assert.deepEqual(layerContracts['runtime-context'].strategies, ['static', 'placeholder'])
+  assert.deepEqual(layerContracts['agent-request'].strategies, ['static'])
+  assert.equal(layerContracts['agent-request'].content, 'request')
+  assert.equal(layerContracts['agent-request'].variables, false)
+  assert.equal(layerContracts['subagent-end'].content, 'subagent-result')
+  assert.deepEqual(layerContracts['subagent-end'].params.action.values, ['observe', 'inject-main'])
+  for (const [layer, contract] of Object.entries(layerContracts)) {
+    assert.equal(contract.messageMetadata, layer === 'pre-step')
+  }
+})
+
+test('局部参数校验拒绝静默失效值，保留扩展键和工具名数组兼容', () => {
+  for (const spec of [
+    { layer: 'subagent-start', subject: 'toolArgs' },
+    { layer: 'llm-stream', params: { mode: 'typo' } },
+    { layer: 'tool-pipeline', params: { preDecision: 'dnye' } },
+    { layer: 'tool-pipeline', params: { postAction: 'typo' } },
+    { layer: 'tool-pipeline', params: { toolNames: ['read', 1] } },
+    { layer: 'system-section', params: { complete: 'true' } },
+    { layer: 'runtime-context', params: { contextName: 1 } },
+    { layer: 'subagent-end', params: { action: 'replace' } },
+    { layer: 'pre-step', params: [] },
+  ]) assert.throws(() => createPromptConfigs([{ id: 'bad', ...spec }]), /subject|params/)
+  const [config] = createPromptConfigs([{ id: 'ok', layer: 'tool-pipeline', params: { toolNames: ['read', 'write'], extension: { kept: true } } }])
+  assert.equal(config.params.toolNames, 'read,write')
+  assert.deepEqual(config.params.extension, { kept: true })
+})
+
+test('请求 patch 校验官方字段，整体替换必须提供有效路由', () => {
+  for (const params of [
+    { patch: 'bad' }, { patch: { provider: '' } }, { patch: { model: 1 } },
+    { patch: { reasoningEffort: 1 } }, { patch: { temperature: '0.7' } },
+    { patch: { maxTokens: -1 } }, { patch: { stop: 'END' } },
+    { patch: { messages: [] } }, { replace: 'true' },
+    { replace: true }, { replace: true, patch: { provider: 'official' } },
+  ]) assert.throws(() => createPromptConfigs([{ id: 'bad-request', layer: 'agent-request', params }]), /params/)
+  const patch = { provider: 'official', model: 'custom-model', reasoningEffort: 'adapter-owned', temperature: 0, maxTokens: 1, stop: [] }
+  const [config] = createPromptConfigs([{ id: 'request', layer: 'agent-request', params: { patch, replace: true, extension: 'kept' } }])
+  assert.deepEqual(config.params.patch, patch)
+  assert.equal(config.params.extension, 'kept')
+})
+
 const userTask = {
   id: 'task-1',
   role: 'user',

@@ -1,501 +1,470 @@
-# =============================================================================
-# dsh-plugin-prompt-tool — 全参数 preset.yml 模板
-# -----------------------------------------------------------------------------
-# 本文件是【配置参数齐全、逐项注释】的预设模板，复制到
-#   ~/.dsh/.agent-presets/<你的预设名>/preset.yml
-# 或 preset/<预设名>/preset.yml 即可作为自定义预设起点。
-# 完整可用示例见 preset/ 下的内置预设（preset/standard、preset/ptc 等）。
-#
-# 默认值体系（职责不重叠）：
-#   params        → 引擎行为参数（锚定/引导/PTC/门控/模型/工具），经参数桥落位组合行；
-#                    UI 可管理（PARAM_KEYS），优先级最高
-#   moduleConfigs → 行级 config 直写通道（参数桥未覆盖的键：超时/环境白名单/ST 导入等），
-#                    不锁定覆盖 UI 可管理参数
-#   promptConfigs → 注入提示词配置（策略/层/位置/时机），与目录、settings 三源合并
-# =============================================================================
+# dsh-plugin-prompt-tool — 全参数 preset.yml 模板（自动生成）
+# 生成来源：scripts/rebuild-preset-template.mjs + ENGINE_PARAM_DEFINITIONS + engine/schema.mjs + templates/
+# 重建：pnpm rebuild:preset-template；检查：pnpm rebuild:preset-template -- --check
+# 复制到 DSH_HOME/.agent-presets/<id>/preset.yml，id 与目录名保持一致。
+# 真实提示词规则与共享参数分属两个所有者：promptConfigs[].params / layerSettings.<层名>.<键>。
+# 共享设置只内嵌真实配置卡；空层不自动创建 UI 卡或提示词规则。
+# 九层是独立官方扩展点，没有插件定义的跨层执行顺序。详见 docs/injection-point-contracts.md。
+# 默认不启用锚定、PTC、工具门控或模型增强；下方参考参数全部为注释，按需启用。
+# 指令文件正文和指令策略不放在本文件；不得将用户 AGENTS.md/CLAUDE.md 正文复制进来。
 
-# ── 预设元数据 ──────────────────────────────────────────────────────────────
-id: my-preset                    # 预设唯一 id（UI 切换值=目录名，id 兼容兜底）
-name: 我的预设                    # 预设显示名（UI 预设切换器展示）
-version: 1.0.0                   # 预设版本（引擎兼容性诊断用）
-engineCompat: ">=0.4.2"          # 插件引擎最低版本约束
-
-meta:
-  name: prompt-tool              # 归属插件
-  description: 一句话描述这个预设。  # 预设说明
-  order: 5                       # 预设列表排序（数字小在前）
-
-# ── 内容：preset.md / AGENTS.md 文本（占位，替换为你自己的提示词）────────────
-content:
-  # 系统提示词（写入生成目录 preset.md；支持官方 {{variable}} 渲染）。
-  # 完整示例见 preset/ 下内置预设的 content.presetText。
-  presetText: >
-    You are a helpful software assistant.
-
-    Answer requests directly in the user's language.
-
-  # 项目级规范（写入生成目录 AGENTS.md）。
-  agentsText: |
-    # 语言行为规范
-
-    1. 思维链使用简体中文。
-    2. 回答内容使用简体中文。
-
-# ── model / subagentModel：模型参数（顶层段，官方 agent-default-model 同构）──
-# 模型参数独立于 params（引擎行为参数）——对齐官方范式（模型设置独立 namespace）。
-# 新写/编辑一律用本顶层段；params 扁平键（modelProvider 等）仅旧布局读取兼容，
-# 保存时 savePresetParams 自动迁移（写顶层段 + 清理扁平键），无需手工维护。
-# 读取：顶层段优先展平进 params 扁平键（modelProvider 等），扁平旧键兜底；
-# 写入：savePresetParams 写顶层段并清理 params 旧扁平键（保存即迁移）。
-model:                           # 主对话模型（新会话默认；空=继承宿主 agent-default-model）
-  provider: ""                   # 模型服务商
-  name: ""                       # 模型名（空=继承宿主）
-  reasoningEffort: ""            # 思维程度（''=不设置；off/low/high/max）
-  temperature: ""                # 采样温度（''=不设置）
-  maxTokens: ""                  # 输出上限（''=不设置）
-subagentModel:                   # 子代理模型（固定路由；空=继承主会话）
-  provider: ""                   # 子代理模型服务商（tool-subagent agentOptions.provider）
-  name: ""                       # 子代理模型名（空=继承主会话）
-  reasoningEffort: ""            # 子代理思维程度（''=不设置）
-  temperature: ""                # 子代理采样温度（''=不设置）
-  maxTokens: ""                  # 子代理输出上限（''=不设置）
-
-# ── params：引擎行为参数（全部可选，缺省 = 模板/引擎默认）────────────────────
-params:
-  # ── 锚定（首轮任务类型判定）──
-  firstTurnAnchor: true          # true=首轮启用任务锚定（判定 build/fix/deep）
-  firstTurnCustom: false         # true=用 firstTurnText 替代内置锚定句
-  firstTurnText: ""              # 自定义锚定句（firstTurnCustom=true 时生效）
-  firstTurnWord: ""              # 锚定确认词（custom-fallback 命中词；空 = 自动从锚句派生，非空 = 显式覆盖）
-  firstTurnBuild: "Start your reasoning with the exact sentence: We need to build it directly and verify it."
-  firstTurnInspect: "Start your reasoning with the exact sentence: We need to inspect the code first."
-  firstTurnDeep: "Start your reasoning with the exact sentence: Let me think through the design before changing anything."
-
-  # ── 引导（每轮路由引导）──
-  guideCustom: false             # true=用 guideText 替代内置引导
-  guideText: ""                  # 自定义引导文本（guideCustom=true 时生效）
-  # guideEnabled: true           # 每轮引导独立开关；不声明 = 跟随 firstTurnAnchor（关锚定 = 关引导）
-  # 复杂任务判定 fallback 复用上方 complexPattern（引导与锚定共用分类器）。
-  guideWeak: "Router: classify this task (build or fix) now, then adopt the matching style — build: direct production; fix: inspect-first. Think deeply first, then commit and act."
-  guideDeep: "Router: classify this task (build or fix) now, then adopt the matching style — build: direct production; fix: inspect-first. Think deeply about the architecture, edge cases, and integration points. Do not spend reasoning on the environment or tooling. Produce when your information is complete. End each reasoning block with a decision or an information need."
-  buildPattern: "开发|创建|写一个|生成|从零|做一个|构建|新项目|搭建|实现|做出|上线|落地|脚本|工具|应用|build|create|develop|generate|implement|make a|new project"
-  complexPattern: "架构|重构|设计|系统|全面|深度|迁移|兼容|审查|architecture|refactor|comprehensive|design|system|migrate|review"
-
-  # ── PTC 模式 / 门控 ──
-  # 晋升门控与状态机参数（参数桥扁平键，直达 tool-bootstrap / context-gate /
-  # code-presentation 模块行 config；缺省 = 引擎默认，参数桥优先于 moduleConfigs）：
-  usePtcMode: false              # false=默认关闭；true=晋升后 Code Mode (PTC) 呈现（code-presentation 行，opt-in）
-  bootstrapMaxTokens: 0          # 首轮工具目录引导的 maxTokens 上限；0=不封顶
-  injectPrompt: true             # true=锚定确认后注入 preset.md 一次（确认词自动从锚句派生）
-  allowKinds: "[skill-invocation, near-anchor, router-guide]"  # 注入 kind 白名单（context-gate 门控；不声明 = 不过滤，显式空数组 = 全拦注入，危险）
-  # promoteGate: false            # 门控晋升：首段 reasoning minimal-like + 工具调用才晋升
-  # promoteAfterFirstResponse: false  # 无工具首响应 / 首轮 turn/end 即晋升
-  # maxPromoteSteps: 4            # 门控回退：步数达上限强制晋升
-  # bootstrapTools: [bash, str_replace_editor]  # 首轮工具窄化集；清空 [] = 零工具模式（首请求空工具面产生最深
-  #                                              # "we" 轨迹，assistant/message 后晋升；compaction 回退自动补 shell）
-  # compactionTools: []           # 压缩后恢复集（模型中途继续工作的核心工具）
-  # personaSectionsOnly: false    # phase-1 提示词段只留 persona
-  # workspaceLine: false          # 晋升后 persona 附加工作目录行
-  # phase1FirstCallInstruction: ""  # phase-1 persona 追加的首次调用指令行
-  # messageSources: []            # context-gate phase-1 消息源白名单（空 = 不启用）
-  # deferredSources: []           # 晋升后延迟注入的 source kind
-  # deferredGraceSteps: 0         # 延迟注入宽限步数
-  # instructionHint: false        # 晋升后 agent-instructions 全文 → 一次性 hint
-
-  # ── 锚定/深思可选模块（引擎内置能力，全部 opt-in）──
-  # 对应 library 行默认 enabled: false（挂载即禁用，行为不变）；UI 开关打开
-  # （或本段置 true）即写行 config.enabled: true 生效。前提：modules 已挂对应行。
-  # anchorTurn: false             # 前置锚定轮（anchor-turn 行）：用户首条真实消息前 prepend 合成锚定轮，
-  #                                # 配合 bootstrapTools: [] = 空工具面锚定（真实消息顺延一轮，届时已晋升）
-  # anchorTurnText: ""            # 锚定轮自定义文本（如「你是谁」）；空 = 引擎默认 "This round is a test…"
-  # deliberationGate: false       # 轨迹深度门（deliberation-gate 行）：首工具调用前流式深思 < 下限时
-  #                                # deny 一次（规划式提示，非工具失败）；retry 带强制深思进历史
-  # deliberationMinChars: 400     # 深思下限（字符数）；0 = 回落行默认 400；minChars: 0 禁用由行配置直写
-  # deliberationMaxGatesPerTurn: 1  # 每轮最大 deny 次数；0 = 回落行默认 1
-  # cotDrip: false                # 深思维持节拍（cot-drip 行）：每 N 次工具结果滴入一条 "We…" 重申提醒
-  #                                # （additionalContexts，永不阻塞）；长工具循环防深思衰减
-  # cotDripEvery: 4               # 节拍间隔（工具结果数）；0 = 回落行默认 4
-  # cotDripMaxPerTurn: 1          # 每轮最大提醒条数；0 = 回落行默认 1
-
-  # ── 工具集（只作用于主对话 tool-filter 行；子代理工具面由 subagentToolPolicy 独立授权）──
-  toolFilterAllow: []            # 主对话工具白名单（数组或逗号/空格字符串；空=不过滤；
-                                 # subagentToolPolicy 启用后子代理改由实例级策略解析授权，本键只作用于主对话）
-  toolFilterDeny: []             # 主对话工具黑名单（数组或逗号/空格字符串；空=不过滤）
-  # ── 委派深度 ──
-  maxDepth: ""                   # 子代理递归深度：0=禁止委派 / provider-managed / 正整数；空=官方默认
-
-  # ── 渐进披露（可选，tool-bootstrap stages 模式；不声明 = 两相窄化）──
-  # stages:                        # 阶段定义 [{name, tools}]；声明即激活多级阶段窄化
-  #   - { name: 了解, tools: [read, glob, grep] }
-  #   - { name: 开发, tools: [write, edit] }
-  #   - { name: 验证, tools: [pwsh, bash] }
-  # stagePreUnlock: 1              # 预放档数（调用预放工具 = 直达其档；0 = 删键回落默认 1）
-  # stageAdvanceTool: phase_advance  # 阶段推进工具名
-  # stageAdvanceDescription: ""    # 阶段推进工具描述
-  # stageSectionTemplate: ""       # 阶段状态 section 模板（{{stage}}/{{stageName}}/{{unlocked}}/{{total}}；空=不注入）
-# ── promptConfigs：注入提示词配置（三源合并：默认 < 目录 < 本段）──────────────
-# 每条配置的通用字段（除 id 外全部可选，缺省见注释）：
-# 每条配置的通用字段（除 id 外全部可选，缺省见注释）：
-#   id             唯一 id，必填；同名覆盖默认配置
-#   name           显示名，默认等于 id（UI 使用）
-#   enabled        总开关，默认 true
-#   layer          注入层级：pre-step（默认）/ system-section / runtime-context /
-#                  agent-request / llm-stream / tool-pipeline
-#   strategy       内容策略：static（默认）/ first-turn-anchor / guide-auto /
-#                  custom-fallback / world-book / placeholder / instruction-hint
-#   position       插入位置（pre-step）：after-user（默认）/ before-all / after-all
-#   dedupe         幂等：none（默认）/ session（每会话一次）/ batch（当批去重）
-#   promotion      晋升门槛：none（默认）/ main / include-subagents
-#   audience       消息受众：缺省=公用（主会话+子代理都注入）；main=仅主会话；
-#                  subagent=仅子代理（委派子代理专用）
-#   modelScope     模型范围：all（默认）/ pro / flash
-#   configKind     排序类型：ordered（按 order 升序，默认）/ anchor（固定文件序排最前）
-#   order          同层排序权重（同时决定 merged 拼接顺序），默认 0
-#   role           注入消息角色：user（默认）/ assistant
-#   mergeMode      同位置多条：separate（默认，独立消息）/ merged（拼接为一条）
-#   group          互斥组名：同 group 且 exclusive=true 时只执行排序后第一个 enabled
-#   exclusive      互斥开关（需配合 group），默认 false
-#   sourceKind     注入消息 source.kind，默认等于 id
-#   form           source.form：notice（默认）/ hint
-#   summary        source.summary，默认空
-#   templateFile   外部 yml/json/纯文本内容模板（text 优先）
-#   identity       持久幂等匹配字段，默认 {field: plugin, value: id}
-#   text / texts   注入内容（都写时 text 在前 texts 追加；空 = 不注入）
-#   variables      模板变量（配置级），{{key}} 插值优先于预设 variables
-#   params         策略参数（static 无；各策略见下方对应层的参数说明）
-# 插值：{{key}} = 配置/预设 variables > 会话变量（session_var 工具）> 运行时宏
-# （lastusermessage 等）> 动态宏（roll/random/pick/time/date）> 内置
-# （DSH_HOME/WORKSPACE/CWD）> 字面保留。
-# agent-request / llm-stream / tool-pipeline 的参数说明与示例见本段下方各块。
-# 默认四条（子代理默认全部放行/跟随；如需仅主会话/仅子代理，显式写
-# audience: main / subagent 即可）：
+id: my-preset
+name: 我的预设
+description: 九层配置与全部共享参数参考；所有示例规则默认关闭。
+version: 1.0.0
+engineCompat: ">=0.7.2"
+modules:
+  # 仅启用提示词引擎。其他能力保持 opt-in；写入其已登记参数后会自动补齐装配。
+  # 官方与本地可用模块：agent-instructions, command-goal, compaction, delegation-ptc, delegation, persistent-shell, planning, skill-filesystem-cordis, skill-filesystem, tool-ask-user, tool-bash, tool-cordis, tool-fs-search, tool-fs, tool-goal, tool-jobs, tool-plugin-manager-disabled, tool-plugin-manager, tool-present, tool-presentation, tool-pwsh, tool-skill, tool-todo, tool-web, anchor-turn, character-tools, context-gate, deliberation-gate, filesystem-editor, persistent-shell-posix, progress-reminder, promoted-code-mode, prompt-config-engine, run-code-env, session-var-tools, skill-search, subagent-tool-policy, tool-bash-disabled, tool-bootstrap, tool-config-engine, tool-filter, tool-git-bash, world-book-tools
+  # 人设使用顶层 persona；不存在 persona、code-presentation、cot-drip 等已撤销模块别名。
+  - prompt-config-engine
+layerSettings:
+  # 唯一共享参数磁盘位置。按下方参考取消所需注释，不要复制旧 params/model/subagentModel 段。
+  {}
+variables:
+  # 预设内容变量；与共享参数、每条规则的 variables 都是独立命名空间。空字符串是合法占位值。
+  {}
+customTools:
+  # 自定义模型工具列表；结构示例见 templates/tools。工具权限和执行器通过既有专用编辑器配置。
+  []
 promptConfigs:
-  - id: near-anchor              # 首句任务锚点（首轮注入一次）
-    name: 首句锚点
-    enabled: true
-    strategy: first-turn-anchor
+  # 每条都是真实规则示例，默认 enabled:false。启用前填写正文/行为；未填写内容的文本层不注入。
+  # id 必填且唯一；name 可选；configKind: ordered | anchor；order 只在同一入口比较。
+  # group + exclusive 控制互斥；text 与 texts 为正文来源；策略专属 params 只属于本条。
+  # pre-step 可声明 position/dedupe/promotion/audience/modelScope/mergeMode/role(user)/sourceKind/form/summary/identity。
+  # identity 只允许 {field: plugin, value: 唯一值}；templateFile 可选，须在预设目录内，内嵌正文优先。
+  # match: {keys:[关键字], secondaryKeys:[], logic:any|all|not|notAny, caseSensitive:false, wholeWords:false, useRegex:false}。
+  # useRegex 缺省自动识别 /pattern/flags，true 强制正则，false 强制字面；subject 必须是本层支持的对象。
+  # 工具参数不可改写；toolResult 条件只作用于后置阶段。结束层 inject-main 不改写子代理结果、不唤醒空闲主会话。
+  # 10-pre-step.yml — 官方默认层：agent/pre-step 消息批。支持 position / dedupe / promotion / audience / mergeMode 与文本插值。
+  # 本层通用字段：position, dedupe, promotion, audience, modelScope, mergeMode, order, role, subject, match；未列字段不可从其他层直接照搬。
+  # 本层支持策略：static, placeholder, instruction-hint, first-turn-anchor, guide-auto, custom-fallback, world-book；匹配对象：userMessage。
+  # 无额外层专属 params；策略字段仍按所选策略解释。
+  - id: example-pre-step
+    name: 示例：消息批注入
+    enabled: false
     layer: pre-step
-    configKind: ordered
-    order: 0
-    role: user
+    strategy: static
     position: after-user
     dedupe: session
     promotion: none
-  - id: router-guide             # 每轮路由引导（仅快速模型档）
-    name: 每轮引导
-    enabled: true
-    strategy: guide-auto
-    layer: pre-step
+    modelScope: all
     configKind: ordered
-    order: 10
+    order: 0
     role: user
+    mergeMode: separate
+    sourceKind: ""
+    form: notice
+    summary: ""
+    identity:
+      field: plugin
+      value: example-pre-step
+    text: ""
+    variables:
+      WHO: ""
+    params: {}
+  # 14-first-turn-anchor.yml — 官方默认层：agent/pre-step 消息批。支持 position / dedupe / promotion / audience / mergeMode 与文本插值。
+  # 本层通用字段：position, dedupe, promotion, audience, modelScope, mergeMode, order, role, subject, match；未列字段不可从其他层直接照搬。
+  # 本层支持策略：static, placeholder, instruction-hint, first-turn-anchor, guide-auto, custom-fallback, world-book；匹配对象：userMessage。
+  # 无额外层专属 params；策略字段仍按所选策略解释。
+  - id: example-first-turn-anchor
+    name: 示例：首句锚点
+    enabled: false
+    layer: pre-step
+    strategy: first-turn-anchor
+    position: after-user
+    dedupe: session
+    promotion: none
+    modelScope: all
+    configKind: ordered
+    order: 0
+    role: user
+    mergeMode: separate
+    sourceKind: ""
+    form: notice
+    params:
+      useCustom: false
+      text: ""
+      buildPattern: ""
+      complexPattern: ""
+      firstTurnBuild: ""
+      firstTurnInspect: ""
+      firstTurnDeep: ""
+  # 15-guide-auto.yml — 官方默认层：agent/pre-step 消息批。支持 position / dedupe / promotion / audience / mergeMode 与文本插值。
+  # 本层通用字段：position, dedupe, promotion, audience, modelScope, mergeMode, order, role, subject, match；未列字段不可从其他层直接照搬。
+  # 本层支持策略：static, placeholder, instruction-hint, first-turn-anchor, guide-auto, custom-fallback, world-book；匹配对象：userMessage。
+  # 无额外层专属 params；策略字段仍按所选策略解释。
+  - id: example-guide-auto
+    name: 示例：每轮引导
+    enabled: false
+    layer: pre-step
+    strategy: guide-auto
     position: after-user
     dedupe: batch
     promotion: main
     modelScope: flash
-  - id: prompt-injector          # 锚定确认后注入 preset.md 一次
-    name: preset.md 注入
-    enabled: true
-    strategy: custom-fallback
-    layer: pre-step
     configKind: ordered
-    order: 20
+    order: 10
     role: user
+    mergeMode: separate
+    sourceKind: ""
+    form: notice
+    params:
+      useCustom: false
+      text: ""
+      guideWeak: ""
+      guideDeep: ""
+  # 16-custom-fallback.yml — 官方默认层：agent/pre-step 消息批。支持 position / dedupe / promotion / audience / mergeMode 与文本插值。
+  # 本层通用字段：position, dedupe, promotion, audience, modelScope, mergeMode, order, role, subject, match；未列字段不可从其他层直接照搬。
+  # 本层支持策略：static, placeholder, instruction-hint, first-turn-anchor, guide-auto, custom-fallback, world-book；匹配对象：userMessage。
+  # 无额外层专属 params；策略字段仍按所选策略解释。
+  - id: example-custom-fallback
+    name: 示例：自定义锚词兜底注入
+    enabled: false
+    layer: pre-step
+    strategy: custom-fallback
     position: before-all
     dedupe: session
     promotion: main
-    sourceKind: plugin
-  - id: instruction-hint         # 指令文件存在性提示（子代理晋升后跟随）
-    name: 指令文件提示
-    enabled: true
-    strategy: placeholder
-    layer: pre-step
+    modelScope: all
     configKind: ordered
-    order: 30
+    order: 20
     role: user
+    mergeMode: separate
+    sourceKind: plugin
+    form: notice
+    params:
+      text: ""
+      firstTurnWord: ""
+  # 18-placeholder-env-facts.yml — 官方默认层：agent/pre-step 消息批。支持 position / dedupe / promotion / audience / mergeMode 与文本插值。
+  # 本层通用字段：position, dedupe, promotion, audience, modelScope, mergeMode, order, role, subject, match；未列字段不可从其他层直接照搬。
+  # 本层支持策略：static, placeholder, instruction-hint, first-turn-anchor, guide-auto, custom-fallback, world-book；匹配对象：userMessage。
+  # 无额外层专属 params；策略字段仍按所选策略解释。
+  - id: example-placeholder
+    layer: pre-step
+    strategy: placeholder
+    fill: env-facts
     position: after-all
     dedupe: session
     promotion: include-subagents
-    sourceKind: instruction-hint
+    text: ""
+    params:
+      envKeys: ""
+      limit: 20
+      fields: name,description
+      providers: ""
+      emptyBehavior: skip
+      emptyText: ""
+    enabled: false
+  # 20-system-section.yml — system-section 静态层：注册即全局，由 order 与 params.complete / sectionName 控制。
+  # 本层通用字段：audience, mergeMode, order；未列字段不可从其他层直接照搬。
+  # 本层支持策略：static；匹配对象：不支持。
+  # params.sectionName: string；params.complete: boolean；params.suppressRuntimeContext: boolean
+  - id: example-system-section
+    name: 示例：system 静态段
+    layer: system-section
+    strategy: static
+    order: -50
+    mergeMode: merged
+    text: ""
+    variables: {}
+    params:
+      complete: false
+      suppressRuntimeContext: false
+      sectionName: ""
+    enabled: false
+  # 30-runtime-context.yml — runtime-context 层：static 按 order 注册，placeholder 单条生效，由 params.contextName 控制。
+  # 本层通用字段：mergeMode, order；未列字段不可从其他层直接照搬。
+  # 本层支持策略：static, placeholder；匹配对象：不支持。
+  # params.contextName: string
+  - id: example-runtime-context
+    layer: runtime-context
+    strategy: static
+    order: 5
+    mergeMode: merged
+    text: ""
+    params:
+      contextName: ""
+    enabled: false
+  # 40-agent-request.yml — agent-request 层：按 order 注册，params.patch 改写请求配置。
+  # 本层通用字段：audience, modelScope, order；未列字段不可从其他层直接照搬。
+  # 本层支持策略：static；匹配对象：不支持。
+  # params.patch: object；params.replace: boolean
+  - id: example-agent-request
+    layer: agent-request
+    strategy: static
+    modelScope: flash
+    order: 0
+    params:
+      patch:
+        provider: provider-id
+        model: model-id
+        reasoningEffort: high
+        temperature: 0.3
+        maxTokens: 4096
+        stop:
+          - END
+      replace: false
+    enabled: false
+  # 50-llm-stream.yml — llm/stream 层：按 order 注册，params.mode = pass | replace。
+  # 本层通用字段：modelScope, order；未列字段不可从其他层直接照搬。
+  # 本层支持策略：static；匹配对象：不支持。
+  # params.mode: pass | replace
+  - id: example-llm-stream
+    layer: llm-stream
+    strategy: static
+    modelScope: flash
+    order: 0
+    text: ""
+    params:
+      mode: pass
+    enabled: false
+  # 60-tool-pipeline.yml — tools/* 层：按 order 注册，params.toolNames 与 preDecision / postAction 控制；subject / match 可选，命中才裁决。
+  # 本层通用字段：audience, modelScope, order, subject, match；未列字段不可从其他层直接照搬。
+  # 本层支持策略：static；匹配对象：toolArgs, toolResult。
+  # params.toolNames: string；params.preDecision: allow | deny | ask；params.denyReason: string；params.postAction: accept | replace | block
+  - id: example-tool-pipeline
+    layer: tool-pipeline
+    strategy: static
+    order: 0
+    modelScope: all
+    text: ""
+    params:
+      toolNames: bash,run_code
+      preDecision: allow
+      denyReason: 该工具被提示词配置禁用
+      postAction: accept
+    enabled: false
+  # 65-turn-stop.yml — agent/turn-stopping 层：命中条件时强制续跑一步；引擎内置续跑上限，不可用配置关闭。
+  # 本层通用字段：modelScope, order, subject, match；未列字段不可从其他层直接照搬。
+  # 本层支持策略：static；匹配对象：assistantText。
+  # 无额外层专属 params；策略字段仍按所选策略解释。
+  - id: example-turn-stop
+    name: 未完成时强制续跑
+    layer: turn-stop
+    strategy: static
+    order: 0
+    modelScope: all
+    text: |-
+      上一轮还没有给出完整交付。请继续把当前任务做完：不要停在中途，
+      也不要用「接下来我会…」的计划代替实际执行。
+    match:
+      keys:
+        - 接下来我会
+        - 稍后继续
+        - 待办如下
+    params: {}
+    enabled: false
+  # 66-subagent-start.yml — subagent/start 层：命中条件时向该子代理注入上下文。
+  # 本层通用字段：modelScope, order, subject, match；未列字段不可从其他层直接照搬。
+  # 本层支持策略：static；匹配对象：subagentInfo。
+  # 无额外层专属 params；策略字段仍按所选策略解释。
+  - id: example-subagent-start
+    name: 子代理通用守则
+    layer: subagent-start
+    strategy: static
+    order: 0
+    modelScope: all
+    text: |-
+      开始编辑之前，先确认你改的这条路径在运行时会真的被执行：查调用链，
+      或用探针跑一次看它动。找不到证据就继续查，不要凭「看起来像」就动手。
+    params: {}
+    enabled: false
+  # 70-subagent-maintenance.yml — 官方默认层：agent/pre-step 消息批。支持 position / dedupe / promotion / audience / mergeMode 与文本插值。
+  # 本层通用字段：position, dedupe, promotion, audience, modelScope, mergeMode, order, role, subject, match；未列字段不可从其他层直接照搬。
+  # 本层支持策略：static, placeholder, instruction-hint, first-turn-anchor, guide-auto, custom-fallback, world-book；匹配对象：userMessage。
+  # 无额外层专属 params；策略字段仍按所选策略解释。
+  - id: subagent-maintenance
+    name: 子代理状态/记忆维护
+    enabled: false
+    layer: pre-step
+    strategy: static
+    position: after-user
+    dedupe: none
+    promotion: none
+    audience: subagent
+    modelScope: all
+    configKind: ordered
+    order: 2000
+    role: user
+    mergeMode: merged
+    sourceKind: ""
     form: hint
-    fill: instruction-hint
+    summary: ""
+    identity:
+      field: plugin
+      value: subagent-maintenance
+    text: |-
+      你是本会话的「状态与记忆维护者」，与创作类子代理职责互补：
+      - 状态（本会话临时，模板变量注入用）：观察互动中明确的角色状态变化
+        （心情、态度、接受度等），用 session_var 工具 set 更新——变量名见下方
+        「状态变量」清单；状态未变化时不要重复写入。
+      - 记忆（跨会话持久）：有人际关系进展或重要事实时，用 world_book_upsert
+        的 note 参数写入来源角色卡记忆（条目 id 带 chara- 前缀 → 角色卡
+        memory.md，跨会话跟随角色卡）；无归属条目写入预设记忆。
+      - 克制：仅在状态确实变化时更新；不确定时保留原值；不编造未发生的内容。
+      状态变量清单：{{stateKeys}}
+    variables:
+      stateKeys: 心情, 接受值, 关系进度
+    params: {}
+  # 75-subagent-end.yml — subagent/end 层：默认记录；action=inject-main 时向所属主会话注入配置文本，不改写子代理返回结果。
+  # 本层通用字段：modelScope, order, subject, match；未列字段不可从其他层直接照搬。
+  # 本层支持策略：static；匹配对象：subagentInfo。
+  # params.action: observe | inject-main
+  - id: example-subagent-end
+    name: 子代理结束记录（只观察）
+    enabled: false
+    layer: subagent-end
+    strategy: static
+    order: 0
+    modelScope: all
+    params:
+      action: observe
+    text: 子代理已结束。请检查其结果，验证后再回复用户。
+  - id: example-world-book
+    name: 世界书条件条目
+    enabled: false
+    layer: pre-step
+    strategy: world-book
+    text: 这里是触发后注入的背景知识。
+    params:
+      constant: false
+      keys:
+        - 项目
+      secondaryKeys:
+        - 规范
+      selectiveLogic: 0
+      caseSensitive: false
+      wholeWords: false
+      useRegex: false
 
-# ── 策略参数参考（strategy 专用 params，除下方各层注释外）───────────────────
-# first-turn-anchor（首轮任务锚点）：
-#   useCustom            true=固定使用 text；false=按正则自动选引导句
-#   text                自定义锚文本（useCustom=true 时注入；writePreset 从 params.firstTurnText 映射）
-#   buildPattern        构建任务正则（命中用 firstTurnBuild）
-#   complexPattern      复杂任务正则（命中用 firstTurnDeep）
-#   firstTurnBuild      构建引导句 / firstTurnInspect 排查引导句 / firstTurnDeep 复杂设计引导句
-# guide-auto（每轮路由引导）：
-#   useCustom            true=固定使用 text；false=按任务自动选强弱引导
-#   text                自定义引导文本（useCustom=true 时注入）
-#   complexPattern      复杂任务正则（fallback 复用锚定分类器；旧 guideComplexPattern 已移除）
-#   guideWeak           简单任务自动引导 / guideDeep 复杂任务自动引导
-# custom-fallback（自定义锚定词，prompt-injector 晋升确认）：
-#   firstTurnWord       锚定确认词（首轮 reasoning 开头命中即注入；空 = 自动从锚句派生确认词集合；ASCII 词边界 / 非 ASCII 直前缀，
-#                       锚定匹配经 anchor-match 引擎 prefix 模式）
-#   text                注入内容（晋升确认后注入一次）
+# BEGIN SHARED PARAMETER REFERENCE
+# 以下穷举全部登记键；值是编辑器示例，不承诺等于模块运行时默认值。
+# '' / [] 保存时删键；false / 0 保留。按需合并到上方 layerSettings，勿保留重复顶层键。
+# layerSettings:
+#   pre-step:
+#     # 消息批层：共享参数，不属于该层某一条提示词规则。
+#     firstTurnAnchor: false # 首轮锚定；boolean
+#     firstTurnText: "" # 首轮锚定文本；string
+#     firstTurnCustom: false # 使用自定义锚定文本；boolean
+#     guideText: "" # 每轮引导文本；string
+#     guideCustom: false # 使用自定义引导文本；boolean
+#     guideEnabled: false # 每轮引导（未设置时跟随锚定）；boolean；不声明时跟随 firstTurnAnchor；false 为显式关闭
+#     injectPrompt: true # 锚定确认后注入内容；boolean
+#     allowKinds: "" # 注入 kind 白名单；string-list；来源类型白名单；清空列表保存时删键，恢复缺省
+#     firstTurnWord: "" # 锚定确认词；string
+#     buildPattern: "" # 构建任务正则；pattern
+#     complexPattern: "" # 复杂任务正则；pattern
+#     firstTurnBuild: "" # 构建档锚句；string
+#     firstTurnInspect: "" # 排查档锚句；string
+#     firstTurnDeep: "" # 深度档锚句；string
+#     guideWeak: "" # 简短引导正文；string
+#     guideDeep: "" # 深度引导正文；string
+#     messageSources: "" # 消息来源白名单；string-list
+#     deferredSources: "" # 延迟注入来源；string-list
+#     deferredGraceSteps: 0 # 延迟注入宽限步数；number
+#     instructionHint: false # 指令路径提示；boolean
+#     anchorTurn: false # 前置锚定轮；boolean
+#     anchorTurnText: "" # 锚定轮文本；string
+#     contextGateEnabled: true # 启用上下文门控；boolean
+#     contextGateSubagents: false # 子代理参与上下文门控；boolean
+#     contextGatePromoteOn: "" # 上下文晋升信号；string；either | tool-call | assistant-message
+#     anchorTurnSubagents: false # 子代理参与锚定轮；boolean
+#   system-section:
+#     # 系统段层：共享参数，不属于该层某一条提示词规则。
+#     bootstrapMaxTokens: 0 # 首轮输出封顶（0 不封顶）；number；0 显式取消输出封顶
+#     promoteGate: false # 门控晋升；boolean
+#     promoteAfterFirstResponse: false # 首响应即晋升；boolean
+#     maxPromoteSteps: 0 # 门控回退步数（0 默认）；number；0 由引擎解释为默认回退步数
+#     bootstrapTools: "" # 首轮窄化集；string-list
+#     compactionTools: "" # 压缩后恢复集；string-list
+#     personaSectionsOnly: false # 首轮只留人设；boolean
+#     workspaceLine: false # 工作目录行；boolean
+#     phase1FirstCallInstruction: "" # 首次调用指令；string
+#     stages:
+#       []
+#       # 渐进披露阶段；stages
+#     stagePreUnlock: 1 # 预放档数；number；0 是合法值，不等于缺省的 1
+#     stageAdvanceTool: "" # 阶段推进工具名；string
+#     stageAdvanceDescription: "" # 阶段推进工具描述；string
+#     stageSectionTemplate: "" # 阶段状态模板；string
+#     bootstrapSubagents: false # 子代理参与工具晋升；boolean
+#     bootstrapPromoteOn: "" # 工具晋升信号；string；either | tool-call | assistant-message
+#   runtime-context:
+#     # 运行上下文：共享参数，不属于该层某一条提示词规则。
+#     {}
+#   agent-request:
+#     # 调用配置层：共享参数，不属于该层某一条提示词规则。
+#     modelProvider: "" # 模型服务商；string
+#     modelName: "" # 模型；string
+#     modelReasoningEffort: "" # 思维程度；string
+#     modelTemperature: "" # 采样温度；number；有限数；空继承宿主，不写入请求 patch
+#     modelMaxTokens: "" # 输出上限；number；正整数；空继承宿主
+#   llm-stream:
+#     # 模型流层：共享参数，不属于该层某一条提示词规则。
+#     {}
+#   tool-pipeline:
+#     # 工具管线层：共享参数，不属于该层某一条提示词规则。
+#     toolFilterAllow: "" # 工具白名单；string-list
+#     toolFilterDeny: "" # 工具黑名单；string-list
+#     usePtcMode: false # PTC 呈现；boolean
+#     strReplaceEditorMaxOutputChars: 16000 # 编辑器输出上限；number
+#     deliberationGate: false # 轨迹深度门；boolean
+#     deliberationMinChars: 0 # 深思下限（0 默认）；number；0 取消深思下限，不回落为 400
+#     deliberationMaxGatesPerTurn: 0 # 每轮最大门控（0 默认）；number；0 不覆盖行配置；正整数覆盖
+#     cotDrip: false # 深思维持节拍；boolean
+#     cotDripEvery: 0 # 节拍间隔（0 默认；禁用请关闭节拍）；number；0 禁用节拍提醒，不回落为 4
+#     cotDripMaxPerTurn: 0 # 每轮最大提醒（0 默认）；number；0 不覆盖行配置；正整数覆盖
+#     ptcSubagents: false # 子代理参与 PTC 晋升；boolean
+#     ptcPromoteOn: "" # PTC 晋升信号；string；either | tool-call | assistant-message
+#     toolFilterEnabled: true # 启用工具过滤；boolean
+#     deliberationSubagents: false # 子代理参与深思门控；boolean
+#     deliberationGateText: "" # 深思门控提示文本；string
+#     cotDripSubagents: false # 子代理参与深思节拍；boolean
+#     cotDripText: "" # 深思节拍提示文本；string
+#     customToolRequireApproval: "" # 执行前需用户批准的工具种类；string-list；shell | http | delegate | fs | ask-user
+#   turn-stop:
+#     # 轮次停止层：共享参数，不属于该层某一条提示词规则。
+#     {}
+#   subagent-start:
+#     # 子代理启动层：共享参数，不属于该层某一条提示词规则。
+#     subagentModelProvider: "" # 子代理模型服务商；string
+#     subagentModelName: "" # 子代理模型；string
+#     subagentReasoningEffort: "" # 子代理思维程度；string
+#     subagentTemperature: "" # 子代理采样温度；number；子代理采样最终通过 agent-request 生效
+#     subagentMaxTokens: "" # 子代理输出上限；number；正整数；空继承宿主
+#     maxDepth: "" # 递归深度；max-depth；0 禁止委派；provider-managed 交给 provider；正整数限制深度；空继承
+#   subagent-end:
+#     # 子代理结束层：共享参数，不属于该层某一条提示词规则。
+#     {}
+# END SHARED PARAMETER REFERENCE
 
-# ── world-book 策略（世界书条目，SillyTavern character_book 转换落点）───────
-# 策略 strategy: world-book，按关键字触发的上下文条目，全部字段与普通配置一致
-# （layer / position / order / enabled / dedupe…），关键参数在 params：
-#   params.constant       true=常驻注入（不扫描关键字，每轮注入）
-#   params.keys           触发关键字数组（命中聊天内容任一即注入；与 secondaryKeys 合并匹配）
-#   params.secondaryKeys  次级关键字（与 keys 合并匹配，任一命中即注入）
-#   params.caseSensitive  true=关键字区分大小写（默认不区分）
-#   params.wholeWords     true=整词匹配（默认子串包含；中文无词边界，对英文生效）
-#   正则形态键自动检测：/regex/ 包裹或含正则特殊字符的 keys 按正则匹配（ST 语义，无 use_regex 字段）
-#   params.selectiveLogic ST world_info_logic（选择性触发组合逻辑）：
-#                         0=主/副键任一命中（默认）/ 3=副键全中才注入 /
-#                         1=副键全不中才注入 / 2=至少一个副键未中才注入
-# 注入语义：constant=true 恒注入；有 keys 命中才注入；无 keys 且非常驻 = 全局条目
-# 每轮注入（对齐 dsh-tavern 语义）。管理入口：模块列表下拉「世界书」过滤
-# （完整模块卡片编辑 + 批量启用/禁用）；模型工具（会话中直接维护，写入本段
-# promptConfigs）：world_book_list（列出条目）/ world_book_upsert（新增或更新，
-# 自定义工具（顶层 customTools 段；首次保存自动加入 tool-config-engine 模块，加载渲染并运行时注册）：
-#   声明式定义模型工具：id（文件标识）/ name（模型可见 ^[a-z][a-z0-9_]*$）/
-#   description / parameters（dsh-tools schema 形态）/ output.schema / execute：
-#   kind 执行器 shell（命令，{{args.x}} 插值，env 白名单）/ http（fetch）/
-#   delegate（委托已注册工具）/ fs（read/write/append/list/delete，路径限定工作区）/
-#   ask-user（approval 通道）。坏定义引擎跳过并告警；行 requireApproval 可列
-#   执行器强制 approval 门。管理入口：模块列表「自定义工具」卡片（JSON 编辑）。
-# note 参数可选写入角色卡记忆 .characters/<卡>/memory.md）/ world_book_delete
-# （删除条目，note 同）。
-# 示例（取消注释即可启用）：
-# - id: world-rule
-#   name: 世界观规则
-#   enabled: true
-#   strategy: world-book
-#   layer: pre-step
-#   position: before-all
-#   order: 40
-#   text: |
-#     魔法系统的核心规则：魔力来自星辉，施法需要手势配合。
-#   params:
-#     constant: true
-# - id: world-trigger
-#   name: 触发条目
-#   enabled: true
-#   strategy: world-book
-#   layer: pre-step
-#   position: before-all
-#   order: 50
-#   text: |
-#     当对话提到酒馆时注入这段设定。
-#   params:
-#     keys: [酒馆, 旅店, tavern]
-
-# ── subagentToolPolicy：子代理实例级工具策略（顶层段，opt-in）──────────────
-# 启用后（写入非空对象）：
-#   1) 参数桥不再把主代理 toolFilterAllow/Deny 写入 delegation.toolFilter；
-#   2) subagent / subagent_fork 由 subagent-tool-policy 模块以 agent-local
-#      shadow 注册，模型可在调用时选择 tool_profile / character_id / task_type /
-#      additional_tools / restrict_tools；
-#   3) 实际 toolFilter 在子代理创建窗口冻结（不热更新；需要更高权限时创建新实例）。
-# 选择器优先级：tool_profile > character_id 绑定 > task_type > 自动分类 > default。
-# 有效工具集 = (profile.allow ∪ 已验证扩权) ∩ ceiling.allow ∩ presetAvailable
-#              − profile.deny − restrict_tools − ceiling.deny。
-# ceiling.deny 永远优先，任何 selector / additional_tools 都不能恢复。
-# modelExpansion 扩权严格限制在 ceiling.allow 与 expansion.allow 交集内；
-# requireApproval: true 且无批准通道时 fail closed（拒绝创建）。
-# provider 不支持 toolFilter / agentOptions / depthLimit 时启动前 fail loud。
-# 管理入口：模块列表「子代理工具策略」卡片（编辑/预览）；
-# 工具面预览只代表当前运行会话，不代表未挂载预设。
-# 示例（取消注释即可启用）：
+# 其他领域资产参考（按需合并；moduleConfigs 低于已声明共享参数，不能绕过权限）
+# persona:
+#   prefix: You are a helpful assistant.
+#   suffix: "Working directory: {{cwd}}."
+#   complete: false
+#   includeRuntimeContext: true
+# content:
+#   presetText: 填写预设内容资产；由显式启用的规则消费。
+# moduleConfigs:
+#   tool-web:
+#     fetch: true
 # subagentToolPolicy:
-#   defaultProfile: reader
+#   defaultProfile: default
 #   ceiling:
-#     allow: [read_file, search, shell_command]   # 用户授权上限（非空）
-#     deny: [shell_command]                      # 永久禁用（最高优先级）
+#     allow:
+#       - read
+#     deny: []
 #   profiles:
-#     - id: reader
+#     - id: default
 #       name: 只读
-#       allow: [read_file, search]
+#       allow:
+#         - read
 #       deny: []
-#       modelSelectable: true                     # 模型调用时可显式选择
-#     - id: writer
-#       name: 读写
-#       allow: [read_file, search, shell_command]
-#       deny: []
-#       modelSelectable: false
-#   characterBindings: []                         # { characterId, profile, modelSelectable }
-#   taskRules: []                                  # { id, name, pattern(正则), order, profile }，order 升序匹配
+#       modelSelectable: true
 #   modelExpansion:
-#     enabled: true
-#     allow: [search]                             # 扩权白名单（必须 ⊆ ceiling.allow）
-#     maxAdditionalTools: 2
-#     requireApproval: true                       # 无批准通道时 fail closed
-
-# ── system-section 层参数说明（官方 ctx.systemPrompt.section 静态段）─────────
-# 本层是唯一支持官方 {{variable}} 渲染的静态层（缓存友好，静态内容优先放这里），
-# 可用参数：
-#   order              段内排序，数值小者靠前（多条 system-section 的拼接顺序；
-#                      order 参考：-100 身份 / 0 persona / 100-199 工具引导）
-#   text               静态文本，支持官方 {{variable}} 渲染
-#   templateFile       外部模板文件（相对引擎文件解析，与 text 二选一）
-#   variables          文本变量表（text 中 {{KEY}} 的替换值）
-#   mergeMode          merged=与同层其他配置按 order 拼接为一条 system prompt
-#   params.complete    true=minimal 完整 persona（plan-mode/Flash 路由人设被抑制）；
-#                      false=standard 语义——system-section 生效的前提
-#   params.sectionName 自定义段名（默认取 id）
-# 注意：本层注册即全局，官方 API 无逐 agent / 逐消息概念——subagents /
-#       promotion / dedupe / position / modelScope 配置了也不会生效（非配置错误）。
-# 示例（取消注释即可启用）：
-# - id: identity-section
-#   name: 身份段
-#   enabled: true
-#   strategy: static
-#   layer: system-section
-#   order: -50
-#   text: |
-#     你是 {{AGENT_NAME}}，回复前先说明正在做什么。
-#   variables:
-#     AGENT_NAME: prompt-tool
-#   params:
-#     complete: false
-
-# ── runtime-context 层参数说明（官方 ctx.systemPrompt.context 动态快照）──────
-# 随会话变化的内容放这里（动态文本不要进 system-section）：
-#   order / text / templateFile / variables   同 system-section（静态文本只替换 variables）
-#   params.contextName                       自定义快照名（默认取 id）
-# 两种 strategy：
-#   static      按 order 注册，每次会话装配注入
-#   placeholder 单条生效（fill: env-facts / skill-catalog / instruction-hint），
-#               支持 filler 变量（如 SKILL_COUNT / SKILL_NAMES）
-# 注意：本层无逐 agent / 逐消息概念——subagents / promotion / dedupe / modelScope 不生效。
-# 示例（取消注释即可启用）：
-# - id: workspace-context
-#   name: 工作区快照
-#   enabled: true
-#   strategy: static
-#   layer: runtime-context
-#   order: 5
-#   text: |
-#     当前工作区：{{WORKSPACE}}
-#   variables:
-#     WORKSPACE: /path/to/project
-
-# ── agent-request 层参数说明（官方 agent/request，LlmCallConfig 修改）────────
-# 按 order 注册；modelScope / subagents 生效。
-#   params.patch   对象，对冻结的 LlmCallConfig 浅合并（默认，安全）
-#   params.replace true=整体替换（返回 patch 本身，需提供完整 provider/model 等字段）
-# 注意：params.patch 不插值（原样使用）；text / texts 本层不使用。
-# 示例（取消注释即可启用）：
-# - id: flash-cap
-#   name: Flash 档上限
-#   enabled: true
-#   layer: agent-request
-#   modelScope: flash
-#   order: 0
-#   params:
-#     patch:
-#       maxTokens: 4096
-#       temperature: 0.3
-
-# ── llm-stream 层参数说明（官方 llm/stream 流包装）──────────────────────────
-# 按 order 注册；modelScope 生效（subagents 不适用）。
-#   params.mode  pass（默认，透传）/ replace（用 text / texts 替代整个模型流，
-#                text 为空时透传）
-# 注意：text 不插值。
-# 示例（取消注释即可启用）：
-# - id: fixed-reply
-#   name: 固定回复
-#   enabled: true
-#   layer: llm-stream
-#   modelScope: flash
-#   order: 0
-#   text: 这是固定回复内容。
-#   params:
-#     mode: replace
-
-# ── tool-pipeline 层参数说明（官方 tools/pre-execute / post-execute）─────────
-# 按 order 注册；modelScope / subagents 生效。
-#   params.toolNames  逗号分隔工具名白名单；空=全部工具
-#   params.preDecision allow（默认）/ deny / ask（tools/pre-execute 判定）
-#   params.denyReason  deny 时的原因文本（默认「{name}: denied by prompt config」）
-#   params.postAction  accept（默认）/ replace（用 text 替换工具结果）/
-#                      block（阻断并反馈 text）
-# 注意：text / texts 用于 postAction=replace/block 的反馈内容，不插值。
-# 示例（取消注释即可启用）：
-# - id: no-web
-#   name: 禁用 web 工具
-#   enabled: true
-#   layer: tool-pipeline
-#   modelScope: all
-#   order: 0
-#   params:
-#     toolNames: web_search,web_fetch
-#     preDecision: deny
-#     denyReason: 本预设禁用 web 工具
-
-# ── modules：引擎行/组模块装配顺序（增删即改装配）───────────────────────────
-# 可用模块：context-gate / tool-filter / tool-bootstrap / code-presentation /
-# prompt-config-engine / tool-config-engine / character-tools / world-book-tools / session-var-tools / run-code-env / persona /
-# persistent-shell / custom-bash / tool-fs / tool-fs-search / bootstrap-filesystem /
-# tool-jobs / skill-filesystem / skill-search / tool-goal /
-# planning / compaction / delegation / tool-ask-user / tool-todo / tool-web /
-# anchor-turn / deliberation-gate / cot-drip
-# 晋升门控三件套：context-gate（注入门控）+ tool-bootstrap（目录相位）+
-# code-presentation（PTC 呈现；「只要 PTC」= 只挂本行）。
-modules:
-  - context-gate                 # 上下文门控（晋升后才放行注入）
-  - tool-filter                  # 主对话工具过滤
-  - tool-bootstrap               # 工具目录引导
-  - code-presentation            # 晋升后 Code Mode (PTC) 呈现
-  - prompt-config-engine         # 提示词注入引擎（必需行，勿删）
-  - character-tools              # 角色卡模型工具
-  - world-book-tools             # 世界书模型工具
-  - session-var-tools            # 会话变量模型工具
-  - run-code-env                 # 代码运行环境变量注入
-  - persona                      # 人设组装
-  - tool-bash                    # bash 工具
-  - tool-pwsh                    # pwsh 工具
-  - persistent-shell             # 持久 shell
-  - custom-bash                  # 自定义 bash（超时/输出上限）
-  - tool-fs                      # 文件系统工具
-  - tool-fs-search               # 文件搜索工具
-  - bootstrap-filesystem         # 引导期文件系统（fs-local + str-replace-editor 同隔离域）
-  - tool-jobs                    # 任务面板
-  - skill-filesystem             # 技能文件系统
-  - skill-search                 # 技能搜索
-  - tool-goal                    # goal 工具
-  - planning                     # 规划
-  - compaction                   # 压缩
-  - delegation                   # 委派（subagent）
-  # - subagent-tool-policy     # 子代理实例级工具策略（opt-in；preset.yml 顶层 subagentToolPolicy 段非空时自动装配；
-  #                              # subagent/subagent_fork shadow + 创建窗口冻结 toolFilter；详见上方「子代理工具策略」段）
-  - tool-ask-user                # 提问工具
-  - tool-todo                    # todo 工具
-  - tool-web                     # web 搜索
-  # - anchor-turn                # 前置锚定轮（引擎内置；行默认 enabled: false，开关见 params.anchorTurn）
-  # - deliberation-gate          # 轨迹深度门（引擎内置；行默认 enabled: false，开关见 params.deliberationGate）
-  # - cot-drip                   # 深思维持节拍（引擎内置；行默认 enabled: false，开关见 params.cotDrip）
-  # - tool-config-engine          # 自定义工具保存时自动加入；手动声明也可用
-
-# ── moduleConfigs（可选）：行级 config 直写通道 ──────────────────────────────
-# 仅用于参数桥未覆盖的行级 config（ST 导入等直写 tool-web.fetch / tool-filter.deny）。
-# 合并优先级：参数桥（params/UI）> moduleConfigs > 行默认；moduleConfigs 不再锁定覆盖
-# UI 可管理参数。行默认值来自 engine/compositions/source/local/*.yml（本地模块）或
-# engine/compositions/library/*.yml（官方切块/变体），模板一般无需声明本段。
-# 示例（覆盖库行默认的模块 config 时）：
-#   moduleConfigs:
-#     custom-bash:
-#       timeoutMs: 120000
-# 人设文本走下方顶层 persona 段（官方 @deepseek-ai/dsh-persona 行同构），不写 moduleConfigs.persona。
-
-# ── persona（可选）：主会话人设（官方 dsh-persona 行 config 同构）────────────
-# 声明本段 = 组合自动前插 persona 模块行（官方预设同款），prefix 落在
-# deployment:persona-prefix（第一方指导之前），suffix 落在 deployment:persona-suffix
-# （第一方指导之后）；{{model}} / {{cwd}} 由宿主按 agent 路由与工作目录插值。
-# 不声明 = 沿用宿主部署人设。
-persona:
-  suffix: >-
-    Your working directory is {{cwd}}.
-  prefix: >-
-    You are a helpful software assistant.
-  # complete: true              # prefix 独占整个 system prompt（抑制其余段与 suffix）
-  # includeRuntimeContext: false # 抑制该 scope 的动态 runtime-context 快照
-
-# ── 清理（可选）─────────────────────────────────────────────────────────────
-legacyCleanup: []                # 历史残留文件清理列表
+#     enabled: false
+#     allow: []
+#     maxAdditionalTools: 0
+#     requireApproval: true

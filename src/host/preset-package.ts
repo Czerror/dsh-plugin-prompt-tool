@@ -9,6 +9,7 @@ import { decodeAssetFile, normalizeAssetFiles, prepareImport, assetSourceDigest 
 import { directoryVersionOf, computePreviewRevision } from './preview-revision.ts'
 import { resolvePresetDir, invalidatePresetSpec, packageEngineDir, type PresetSpec } from './manifest.ts'
 import { validateCustomTools } from './custom-tools.ts'
+import { readPresetLayerSettings } from './preset-layer-settings.ts'
 import { projectCharacterMemories } from './characters.ts'
 import { writePreset, RENDER_VERSION } from './write-preset.ts'
 import { assertPresetId, assertPresetDirectory, canonicalPresetRoot, setPresetDefinitionId } from './preset-install.ts'
@@ -287,6 +288,7 @@ export async function exportPresetPackage(root: string, request: PresetExportReq
   const projection = projectCharacterMemories(original, request.memoryChoices ?? {}, root)
   definition.bytes = Buffer.from(projection.doc.toString())
   const spec = projection.doc.toJS() as PresetSpec
+  readPresetLayerSettings(spec)
   const blockers = dependencyErrors(files, spec)
   if (projection.memoryConflicts.length > 0) blockers.push('请明确选择来源不明的记忆条目是否分享')
   const mode = request.mode ?? 'definition'

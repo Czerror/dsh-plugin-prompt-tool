@@ -17,10 +17,10 @@ import assert from 'node:assert/strict'
 import { readdirSync, readFileSync } from 'node:fs'
 import { createElement, isValidElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { getEngineMeta } from '../../engine/schema.mjs'
+import { getEngineMeta, createPromptConfigs } from '../../engine/schema.mjs'
 import { MATCH_LOGIC } from '../../engine/anchor-match.mjs'
 import { PROMPT_TOOL_DICTS } from '../../src/client/locales.ts'
-import { MATCH_LOGIC_LABEL_KEYS, MATCH_LOGICS, MATCH_REGEX_MODE_LABEL_KEYS, MATCH_REGEX_MODES, normalizeMatch } from '../../src/client/features/prompts/prompt-config-policy.ts'
+import { MATCH_LOGIC_LABEL_KEYS, MATCH_LOGICS, MATCH_REGEX_MODE_LABEL_KEYS, MATCH_REGEX_MODES, normalizeMatch, layerChangePatch } from '../../src/client/features/prompts/prompt-config-policy.ts'
 import { MANAGED_CONFIG_FIELDS, isManagedConfigField, stripConfigFieldSources } from '../../src/shared/managed-config-fields.ts'
 import { withSsr, renderElement, makeTranslate } from './support/ssr-render.mjs'
 
@@ -66,6 +66,45 @@ const strategyProps = (props) => ({
   params: {},
   onPatch() {},
   ...props,
+})
+
+test('九层卡片消费引擎契约，只展示实际可用策略、匹配对象和正文入口', () => {
+  for (const layer of meta.layerOrder) {
+    const contract = meta.layerContracts[layer]
+    const config = { layer, strategy: 'static', text: '保留原文', variables: { untouched: 'value' } }
+    const tree = treeOf(PromptConfigForm, formProps(config))
+    const strategy = findElement(tree, (node) => node.type === OptionField && node.props.label === t('form.strategy.label'))
+    assert.deepEqual(strategy.props.options, contract.strategies.filter((item) => item !== 'instruction-hint'))
+    const subject = findElement(tree, (node) => node.type === OptionField && node.props.label === t('form.subject.label'))
+    if (contract.subjects.length > 0) assert.deepEqual(subject.props.options, ['', ...contract.subjects])
+    else assert.equal(subject, undefined)
+    const html = renderElement(PromptConfigForm, formProps(config))
+    assert.equal(html.includes(t('form.text.aria')), contract.content === 'text', `${layer} 缺省正文入口`)
+    assert.equal(html.includes(t('form.sourceKind.label')), contract.messageMetadata, `${layer} 消息元数据`)
+    assert.equal(html.includes(t('form.templateFile.label')), contract.content === 'text', `${layer} 内容文件入口独立于消息元数据`)
+    assert.equal(config.text, '保留原文', '隐藏不会改动旧字段')
+  }
+  for (const [layer, params, label] of [
+    ['llm-stream', { mode: 'replace' }, 'form.text.stream'],
+    ['tool-pipeline', { postAction: 'block' }, 'form.text.toolResult'],
+    ['subagent-end', { action: 'inject-main' }, 'form.text.mainSession'],
+  ]) {
+    const html = renderElement(PromptConfigForm, formProps({ layer, params }))
+    assert.ok(html.includes(t(label)))
+    assert.ok(html.includes(t('form.text.aria')))
+  }
+})
+
+test('换层按完整字段矩阵清理不支持项，九种目标均能通过同源引擎校验', () => {
+  const config = { id: 'switch-layer', layer: 'pre-step', strategy: 'placeholder', fill: 'env-facts', role: 'user',
+    position: 'after-user', dedupe: 'session', promotion: 'main', audience: 'subagent', modelScope: 'all', mergeMode: 'merged',
+    subject: 'userMessage', match: { keys: ['test'] }, text: '保留正文', params: { extension: 'keep' } }
+  for (const layer of meta.layerOrder) {
+    const next = { ...config, ...layerChangePatch(meta, config, layer) }
+    assert.doesNotThrow(() => createPromptConfigs([next]), layer)
+    assert.equal(next.text, config.text)
+    assert.equal(next.params, config.params)
+  }
 })
 
 test('模块卡参数按语义分区，并用容器网格限制短字段宽度', () => {
@@ -352,7 +391,7 @@ test('切换注入层清空该层不支持的 subject/match', () => {
   assert.deepEqual(patches.at(-1), { layer: 'system-section', subject: undefined, match: undefined })
   // 切到支持条件判定的层：原值保留，不误清。
   layerField.props.onChange('turn-stop')
-  assert.deepEqual(patches.at(-1), { layer: 'turn-stop' })
+  assert.deepEqual(patches.at(-1), { layer: 'turn-stop', subject: undefined })
 })
 
 test('match 草稿：UI 编辑按引擎契约归一，可 JSON 往返', () => {
@@ -427,13 +466,13 @@ test('键匹配方式是三态下拉，强制字面不会被静默改回自动',
 /** 四层可写实例字段（与 engine/layers.mjs 的真实 params 消费一一对应）。 */
 const LAYER_PARAM_FIELDS = {
   'runtime-context': ['contextName'],
-  'agent-request': ['patch', 'replace'],
+  'agent-request': ['replace'],
   'llm-stream': ['mode'],
   'tool-pipeline': ['toolNames', 'preDecision', 'denyReason', 'postAction'],
 }
 const LAYER_PARAM_LABELS = Object.values(LAYER_PARAM_FIELDS).flat().map((key) => t(`strategyParam.${key}.label`))
 
-test('层实例字段有可发现入口，停止与结束层保持无可写项', () => {
+test('层实例字段有可发现入口，结束层支持显式注入主会话行为', () => {
   const paramsOf = {
     'runtime-context': { contextName: 'ctx-probe' },
     'agent-request': { patch: { maxTokens: 2048 }, replace: true },
@@ -462,6 +501,7 @@ test('层实例字段有可发现入口，停止与结束层保持无可写项',
   // 停止层与结束层的空参数区补只读说明（解释为什么没有可写项），而不是留一块空白。
   assert.ok(renderElement(PromptConfigForm, formProps({ layer: 'turn-stop', strategy: 'static' })).includes(t('strategyParam.turnStopNote')))
   assert.ok(renderElement(PromptConfigForm, formProps({ layer: 'subagent-end', strategy: 'static' })).includes(t('strategyParam.subagentEndNote')))
+  assert.ok(renderElement(PromptConfigForm, formProps({ layer: 'subagent-end', strategy: 'static' })).includes(t('strategyParam.endAction.label')))
 })
 
 test('层实例字段写入草稿：枚举同源、toolNames 保持逗号串、未知字段不被吞也不重复', () => {
@@ -500,7 +540,7 @@ test('层实例字段写入草稿：枚举同源、toolNames 保持逗号串、�
   // agent-request：已结构化的键不再进 JSON 兜底（无隐藏重复输入）；未知键单独进兜底，
   // 提交时把结构化值并回，编辑未知字段不会丢掉 patch / replace。
   const onlyKnown = renderElement(StrategyParamsFields, { t, strategy: 'static', layer: 'agent-request', params: { patch: { maxTokens: 2048 }, replace: false } })
-  assert.ok(onlyKnown.includes(t('strategyParam.patch.label')))
+  assert.ok(onlyKnown.includes(t('strategyParam.request.maxTokens')))
   assert.ok(!onlyKnown.includes(t('field.json.advanced')), '已结构化覆盖的键不得再渲染一份 JSON 输入')
   const fallback = findElement(layerTree('agent-request', { patch: { maxTokens: 2048 }, stMacros: true }), (node) => node.props?.label === t('field.json.advanced'))
   assert.deepEqual(fallback.props.value, { stMacros: true }, 'JSON 兜底只收未被结构化覆盖的键')

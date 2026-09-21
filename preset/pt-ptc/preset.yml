@@ -1,6 +1,7 @@
 id: pt-ptc
 name: PTC 模式
-description: 功能完整的编码 Agent，但默认不提供 workflow 工具；其他工具通过 PTC 模式 SDK 呈现，让模型用一个 TypeScript 程序组合多步操作。
+description: 功能完整的编码 Agent，但默认不提供 workflow 工具；其他工具通过 PTC 模式 SDK 呈现，让模型用一个
+  TypeScript 程序组合多步操作。
 version: 1.0.0
 engineCompat: ">=0.4.2"
 modules:
@@ -24,23 +25,23 @@ modules:
   - tool-present
   - tool-plugin-manager-disabled
   - prompt-config-engine
-model:
-  provider: ""
-  name: ""
-  reasoningEffort: ""
-  temperature: ""
-  maxTokens: ""
-subagentModel:
-  provider: ""
-  name: ""
-  reasoningEffort: ""
-  temperature: ""
-  maxTokens: ""
 persona:
   suffix: >-
     Your working directory is {{cwd}}.
   prefix: >-
     You are a coding agent powered by the {{model}} model.
-params:
-  maxDepth: ""
 promptConfigs: []
+layerSettings:
+  agent-request:
+    modelProvider: ""
+    modelName: ""
+    modelReasoningEffort: ""
+    modelTemperature: ""
+    modelMaxTokens: ""
+  subagent-start:
+    subagentModelProvider: ""
+    subagentModelName: ""
+    subagentReasoningEffort: ""
+    subagentTemperature: ""
+    subagentMaxTokens: ""
+    maxDepth: ""

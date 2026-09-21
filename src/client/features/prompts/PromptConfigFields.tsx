@@ -8,6 +8,7 @@ import { MenuSelect } from '../../ui/MenuSelect.tsx'
 import { TagInput } from '../../ui/TagInput.tsx'
 import type { PromptToolLocaleKey, PromptToolTranslate } from '../../locales.ts'
 import type { PromptConfigMatch } from '../../prompt-tool-types.ts'
+import type { LayerContract } from '../../../shared/bridge-contract.ts'
 import { managedConfigSpec, managedFieldValue, type ConfigFieldSources, type ManagedConfigSpec } from '../../../shared/managed-config-fields.ts'
 import { autoResizeTextarea } from './textarea-resize.ts'
 import { EMPTY_BEHAVIOR_LABEL_KEYS, MATCH_LOGIC_LABEL_KEYS, MATCH_LOGICS, MATCH_REGEX_MODE_LABEL_KEYS, MATCH_REGEX_MODES, normalizeMatch, translateLabel } from './prompt-config-policy.ts'
@@ -35,6 +36,7 @@ const LAYER_PARAM_KEYS: Record<string, readonly string[]> = {
   'agent-request': ['patch', 'replace'],
   'llm-stream': ['mode'],
   'tool-pipeline': ['toolNames', 'preDecision', 'denyReason', 'postAction'],
+  'subagent-end': ['action'],
 }
 
 /** 只读层的说明键：没有可写参数是设计事实，用一句说明代替空白的策略区。 */
@@ -57,6 +59,10 @@ const POST_ACTION_LABEL_KEYS: Record<string, PromptToolLocaleKey> = {
   accept: 'strategyParam.postAction.accept',
   replace: 'strategyParam.postAction.replace',
   block: 'strategyParam.postAction.block',
+}
+const SUBAGENT_END_ACTION_LABEL_KEYS: Record<string, PromptToolLocaleKey> = {
+  observe: 'strategyParam.endAction.observe',
+  'inject-main': 'strategyParam.endAction.injectMain',
 }
 
 function selectOptions(t: PromptToolTranslate, options: readonly string[], value: string | undefined): Array<{ value: string; label: string }> {
@@ -227,6 +233,35 @@ function ParamInput(props: { label: string; hint?: string; className?: string; v
   )
 }
 
+/** 官方 LlmCallConfig 的六个可写字段；实例 patch 与预设共享模型参数保持不同所有者。 */
+function RequestPatchFields(props: { t: PromptToolTranslate; value: Record<string, unknown>; onChange: (value: Record<string, unknown>) => void; fieldDrafts?: Map<string, FieldDraft>; draftScope?: string }): ReactNode {
+  const { t, value } = props
+  const set = (key: string, next: unknown): void => {
+    const patch = { ...value }
+    if (next === '' || next === undefined || (Array.isArray(next) && next.length === 0)) delete patch[key]
+    else patch[key] = next
+    props.onChange(patch)
+  }
+  const keys = ['provider', 'model', 'reasoningEffort', 'temperature', 'maxTokens', 'stop']
+  const extra = Object.fromEntries(Object.entries(value).filter(([key]) => !keys.includes(key)))
+  const covered = Object.fromEntries(Object.entries(value).filter(([key]) => keys.includes(key)))
+  return <>
+    <p className={clsx(styles.configFieldHint, styles.fieldFull)}>{t('strategyParam.request.hint')}</p>
+    {(['provider', 'model', 'reasoningEffort'] as const).map((key) => <ParamInput key={key} className={styles.fieldSpan4}
+      label={t(`strategyParam.request.${key}`)} value={typeof value[key] === 'string' ? value[key] : ''} onChange={(next) => set(key, next)} />)}
+    {(['temperature', 'maxTokens'] as const).map((key) => <NumberField key={key} t={t} className={styles.fieldSpan6}
+      label={t(`strategyParam.request.${key}`)} value={typeof value[key] === 'number' || typeof value[key] === 'string' ? value[key] : ''}
+      fallback="" integer={key === 'maxTokens'} min={key === 'maxTokens' ? 1 : undefined} fieldDrafts={props.fieldDrafts}
+      draftKey={`${props.draftScope}:params.patch.${key}`} onChange={(next) => set(key, next)} />)}
+    <ParamTextarea className={styles.fieldFull} label={t('strategyParam.request.stop')} hint={t('strategyParam.request.stopHint')}
+      value={Array.isArray(value.stop) ? value.stop.map(String).join('\n') : ''}
+      onChange={(next) => set('stop', next.split('\n').filter((item) => item.length > 0))} />
+    {Object.keys(extra).length > 0 && <JsonField t={t} label={t('field.json.advanced')} value={extra}
+      fieldDrafts={props.fieldDrafts} draftKey={`${props.draftScope}:params.patch.extra`}
+      onChange={(next) => props.onChange({ ...covered, ...next })} />}
+  </>
+}
+
 /** 仅展示 host 确认来自参数投影的字段；白名单提供来源参数标签。 */
 function ManagedFieldsPanel(props: {
   t: PromptToolTranslate
@@ -270,7 +305,7 @@ function ManagedFieldsPanel(props: {
  *   placeholder / instruction-hint → fill 模板参数（text/envKeys/limit/fields/providers/emptyBehavior/emptyText）；
  * 无固定字段的策略回退 JSON 编辑（保留任意 params 能力）。
  */
-export function StrategyParamsFields(props: { t: PromptToolTranslate; strategy: string; layer?: string; params: Record<string, unknown> | undefined; onPatch: (params: Record<string, unknown>) => void; id?: string; fieldSources?: ConfigFieldSources; enabled?: boolean; modelScope?: string; fieldDrafts?: Map<string, FieldDraft>; draftScope?: string }): ReactNode {
+export function StrategyParamsFields(props: { t: PromptToolTranslate; strategy: string; layer?: string; contract?: LayerContract; params: Record<string, unknown> | undefined; onPatch: (params: Record<string, unknown>) => void; id?: string; fieldSources?: ConfigFieldSources; enabled?: boolean; modelScope?: string; fieldDrafts?: Map<string, FieldDraft>; draftScope?: string }): ReactNode {
   const { strategy, layer, params, onPatch, id } = props
   const t = props.t
   const value = params ?? {}
@@ -278,6 +313,7 @@ export function StrategyParamsFields(props: { t: PromptToolTranslate; strategy: 
   const str = (key: string): string => (typeof value[key] === 'string' ? value[key] as string : '')
   const bool = (key: string): boolean => value[key] === true
   const set = (key: string, next: unknown): void => onPatch({ ...value, [key]: next })
+  const options = (key: string, fallback: readonly string[]): readonly string[] => props.contract?.params[key]?.values ?? fallback
   if (layer === 'system-section') {
     // system-section 层参数：段名（空则引擎回退 id 注册为普通段）与 complete（独占
     // system prompt）。人设不走本层：preset.yml 顶层 persona 段（官方
@@ -315,15 +351,14 @@ export function StrategyParamsFields(props: { t: PromptToolTranslate; strategy: 
       value={str('contextName')} onChange={(next) => set('contextName', next)} />
   ) : layer === 'agent-request' ? (
     <>
-      {/* patch 是浅合并进冻结 LlmCallConfig 的对象（形态自由故用 JSON）；replace 只认显式 true。 */}
-      <JsonField t={t} label={t('strategyParam.patch.label')} value={objectOf('patch')} fieldDrafts={props.fieldDrafts}
-        draftKey={`${props.draftScope}:params.patch`} onChange={(next) => set('patch', next)} />
+      <RequestPatchFields t={t} value={objectOf('patch') ?? {}} onChange={(next) => set('patch', next)}
+        fieldDrafts={props.fieldDrafts} draftScope={props.draftScope} />
       <ParamToggle className={styles.fieldSpan3} label={t('strategyParam.replace.label')} hint={t('strategyParam.replace.hint')}
         checked={bool('replace')} onChange={(next) => set('replace', next)} />
     </>
   ) : layer === 'llm-stream' ? (
     <OptionField t={t} className={styles.fieldSpan3} label={t('strategyParam.mode.label')} hint={t('strategyParam.mode.hint')}
-      value={str('mode')} options={['pass', 'replace']} fallback="pass" labelKeys={LLM_STREAM_MODE_LABEL_KEYS}
+      value={str('mode') || 'pass'} options={options('mode', ['pass', 'replace'])} fallback="pass" labelKeys={LLM_STREAM_MODE_LABEL_KEYS}
       onChange={(next) => set('mode', next)} />
   ) : layer === 'tool-pipeline' ? (
     <>
@@ -333,16 +368,20 @@ export function StrategyParamsFields(props: { t: PromptToolTranslate; strategy: 
         value={Array.isArray(value['toolNames']) ? (value['toolNames'] as unknown[]).map(String).join(', ') : str('toolNames')}
         onChange={(next) => set('toolNames', next)} />
       <OptionField t={t} className={styles.fieldSpan3} label={t('strategyParam.preDecision.label')} hint={t('strategyParam.preDecision.hint')}
-        value={str('preDecision')} options={['allow', 'deny', 'ask']} fallback="allow" labelKeys={PRE_DECISION_LABEL_KEYS}
+        value={str('preDecision') || 'allow'} options={options('preDecision', ['allow', 'deny', 'ask'])} fallback="allow" labelKeys={PRE_DECISION_LABEL_KEYS}
         onChange={(next) => set('preDecision', next)} />
-      <ParamInput className={styles.fieldSpan3} label={t('strategyParam.denyReason.label')} hint={t('strategyParam.denyReason.hint')}
-        value={str('denyReason')} onChange={(next) => set('denyReason', next)} />
+      {str('preDecision') === 'deny' && <ParamInput className={styles.fieldSpan6} label={t('strategyParam.denyReason.label')} hint={t('strategyParam.denyReason.hint')}
+        value={str('denyReason')} onChange={(next) => set('denyReason', next)} />}
       <OptionField t={t} className={styles.fieldSpan3} label={t('strategyParam.postAction.label')} hint={t('strategyParam.postAction.hint')}
-        value={str('postAction')} options={['accept', 'replace', 'block']} fallback="accept" labelKeys={POST_ACTION_LABEL_KEYS}
+        value={str('postAction') || 'accept'} options={options('postAction', ['accept', 'replace', 'block'])} fallback="accept" labelKeys={POST_ACTION_LABEL_KEYS}
         onChange={(next) => set('postAction', next)} />
     </>
+  ) : layer === 'subagent-end' ? (
+    <OptionField t={t} className={styles.fieldSpan6} label={t('strategyParam.endAction.label')} hint={t('strategyParam.endAction.hint')}
+      value={str('action') || 'observe'} options={options('action', ['observe', 'inject-main'])} fallback="observe" labelKeys={SUBAGENT_END_ACTION_LABEL_KEYS}
+      onChange={(next) => set('action', next)} />
   ) : undefined
-  const known = LAYER_PARAM_KEYS[layer ?? ''] ?? []
+  const known = props.contract === undefined ? LAYER_PARAM_KEYS[layer ?? ''] ?? [] : Object.keys(props.contract.params)
   const rest = Object.fromEntries(Object.entries(value).filter(([key]) => !known.includes(key)))
   const covered = Object.fromEntries(Object.entries(value).filter(([key]) => known.includes(key)))
   const readOnlyNote = LAYER_READ_ONLY_NOTES[layer ?? '']
@@ -455,6 +494,7 @@ export function StrategyParamsFields(props: { t: PromptToolTranslate; strategy: 
     return (
       <>
         {layerFields}
+        {readOnlyNote !== undefined && <p className={styles.configFieldHint}>{t(readOnlyNote)}</p>}
         {Object.keys(rest).length > 0 && (
           <JsonField t={t} label={t('field.json.advanced')} value={rest} fieldDrafts={props.fieldDrafts}
             draftKey={`${props.draftScope}:params`} onChange={(next) => { if (next !== undefined) onPatch({ ...covered, ...next }) }} />

@@ -24,25 +24,24 @@ function readTextFile(url) {
   return readFileSync(url, 'utf8')
 }
 
-/** 预设根：引擎目录（.engine 或包内 engine/）的父目录；templateFile 只允许解析到其内。 */
-const PRESET_ROOT = fileURLToPath(new URL('../..', import.meta.url)).replace(/[\\\\/]$/, '')
-
-function loadTemplate(file) {
+function loadTemplate(file, baseUrl = import.meta.url) {
   if (typeof file !== 'string' || file.length === 0) return undefined
+  // 保存预检使用最终共享引擎位置，加载与边界检查仍复用同一路径规则。
+  const presetRoot = fileURLToPath(new URL('../..', baseUrl)).replace(/[\\\\/]$/, '')
   // templateFile 只允许 canonical 预设目录（引擎父目录）内：防配置声明任意
   // 本地路径把文件内容带进模型上下文。非 file: 协议（绝对盘符被解析为 scheme）同样拒绝。
   let resolved
   try {
-    resolved = fileURLToPath(new URL(file, import.meta.url))
+    resolved = fileURLToPath(new URL(file, baseUrl))
   } catch {
     throw new TypeError(`${name}: templateFile ${JSON.stringify(file)} escapes preset root`)
   }
-  if (resolved !== PRESET_ROOT && !resolved.startsWith(PRESET_ROOT + sep)) {
+  if (resolved !== presetRoot && !resolved.startsWith(presetRoot + sep)) {
     throw new TypeError(`${name}: templateFile ${JSON.stringify(file)} escapes preset root`)
   }
   let raw
   try {
-    raw = readTextFile(new URL(file, import.meta.url))
+    raw = readTextFile(new URL(file, baseUrl))
   } catch {
     throw new TypeError(`${name}: templateFile ${JSON.stringify(file)} is not readable`)
   }
@@ -198,6 +197,30 @@ export const LAYER_FIELD_POLICIES = {
   'subagent-end': { position: false, dedupe: false, promotion: false, audience: false, modelScope: true, merge: false, order: true, role: false, placeholder: false, subject: true, match: true },
 }
 
+/** 局部参数只登记真实消费字段；未知扩展键仍保留，策略参数由各策略消费。 */
+const LAYER_EDITING = {
+  'pre-step': { subjects: ['userMessage'], content: 'text', variables: true, messageMetadata: true, params: {} },
+  'system-section': { subjects: [], content: 'text', variables: true, messageMetadata: false,
+    params: { sectionName: { type: 'string' }, complete: { type: 'boolean' }, suppressRuntimeContext: { type: 'boolean' } } },
+  'runtime-context': { subjects: [], content: 'text', variables: true, messageMetadata: false, params: { contextName: { type: 'string' } } },
+  'agent-request': { subjects: [], content: 'request', variables: false, messageMetadata: false,
+    params: { patch: { type: 'object' }, replace: { type: 'boolean' } } },
+  'llm-stream': { subjects: [], content: 'stream', variables: false, messageMetadata: false,
+    params: { mode: { type: 'enum', values: ['pass', 'replace'] } } },
+  'tool-pipeline': { subjects: ['toolArgs', 'toolResult'], content: 'tool-result', variables: false, messageMetadata: false,
+    params: { toolNames: { type: 'string' }, preDecision: { type: 'enum', values: ['allow', 'deny', 'ask'] },
+      denyReason: { type: 'string' }, postAction: { type: 'enum', values: ['accept', 'replace', 'block'] } } },
+  'turn-stop': { subjects: ['assistantText'], content: 'text', variables: true, messageMetadata: false, params: {} },
+  'subagent-start': { subjects: ['subagentInfo'], content: 'text', variables: true, messageMetadata: false, params: {} },
+  'subagent-end': { subjects: ['subagentInfo'], content: 'subagent-result', variables: true, messageMetadata: false,
+    params: { action: { type: 'enum', values: ['observe', 'inject-main'] } } },
+}
+
+export const LAYER_CONTRACTS = Object.fromEntries(LAYER_ORDER.map(layer => [layer, {
+  strategies: [...KNOWN_STRATEGIES].filter(strategy => STRATEGY_LAYER_SUPPORT[strategy] === null || STRATEGY_LAYER_SUPPORT[strategy].includes(layer)),
+  ...LAYER_EDITING[layer],
+}]))
+
 /** 层显示名与说明：由引擎统一下发，客户端不再各自维护。 */
 export const LAYER_LABELS = {
   'pre-step': { title: '消息批层', detail: '官方默认层：agent/pre-step 消息批。支持 position / dedupe / promotion / audience / mergeMode 与文本插值。' },
@@ -208,7 +231,7 @@ export const LAYER_LABELS = {
   'tool-pipeline': { title: '工具管线层', detail: 'tools/* 层：按 order 注册，params.toolNames 与 preDecision / postAction 控制；subject / match 可选，命中才裁决。' },
   'turn-stop': { title: '轮次停止层', detail: 'agent/turn-stopping 层：命中条件时强制续跑一步；引擎内置续跑上限，不可用配置关闭。' },
   'subagent-start': { title: '子代理启动层', detail: 'subagent/start 层：命中条件时向该子代理注入上下文。' },
-  'subagent-end': { title: '子代理结束层', detail: 'subagent/end 层：命中条件时只记录，不注入。' },
+  'subagent-end': { title: '子代理结束层', detail: 'subagent/end 层：默认记录；action=inject-main 时向所属主会话注入配置文本，不改写子代理返回结果。' },
 }
 
 /** 引擎能力矩阵：作为 /meta 的唯一数据源，客户端表单据此动态渲染。 */
@@ -233,6 +256,7 @@ export function getEngineMeta() {
     layerDefaultSubjects: { ...LAYER_DEFAULT_SUBJECT },
     layerFieldPolicies: LAYER_FIELD_POLICIES,
     layerLabels: LAYER_LABELS,
+    layerContracts: structuredClone(LAYER_CONTRACTS),
   }
 }
 
@@ -283,6 +307,41 @@ function normalizeMatch(raw, label) {
     throw new TypeError(`${label}.match is not compilable: ${error instanceof Error ? error.message : String(error)}`)
   }
   return match
+}
+
+function normalizeLayerParams(raw, layer, label) {
+  if (raw === undefined || raw === null) return {}
+  if (typeof raw !== 'object' || Array.isArray(raw)) throw new TypeError(`${label}.params must be an object`)
+  let params = raw
+  if (layer === 'tool-pipeline' && Array.isArray(raw.toolNames)) {
+    if (raw.toolNames.some(item => typeof item !== 'string')) throw new TypeError(`${label}.params.toolNames must contain only strings`)
+    params = { ...raw, toolNames: raw.toolNames.join(',') }
+  }
+  for (const [key, rule] of Object.entries(LAYER_CONTRACTS[layer].params)) {
+    const value = params[key]
+    if (value === undefined) continue
+    const valid = rule.type === 'enum' ? rule.values.includes(value)
+      : rule.type === 'object' ? value !== null && typeof value === 'object' && !Array.isArray(value)
+        : typeof value === rule.type
+    if (!valid) throw new TypeError(`${label}.params.${key} must be ${rule.type === 'enum' ? rule.values.join(' | ') : rule.type}`)
+  }
+  if (layer === 'agent-request') {
+    const patch = params.patch ?? {}
+    // 官方 0.1.6 LlmCallConfig；不能把消息、工具或 system 塞进请求配置。
+    const keys = new Set(['provider', 'model', 'reasoningEffort', 'temperature', 'maxTokens', 'stop'])
+    for (const [key, value] of Object.entries(patch)) {
+      if (!keys.has(key)) throw new TypeError(`${label}.params.patch.${key} is not a LlmCallConfig field`)
+      const valid = key === 'temperature' ? typeof value === 'number' && Number.isFinite(value)
+        : key === 'maxTokens' ? Number.isSafeInteger(value) && value > 0
+          : key === 'stop' ? Array.isArray(value) && value.every(item => typeof item === 'string')
+            : typeof value === 'string' && value.trim().length > 0
+      if (!valid) throw new TypeError(`${label}.params.patch.${key} has an invalid value`)
+    }
+    if (params.replace === true && (!patch.provider || !patch.model)) {
+      throw new TypeError(`${label}.params.patch requires provider and model when replace=true`)
+    }
+  }
+  return params
 }
 
 /** 从 YAML 提示词配置描述构造运行时提示词配置。配置错误必须在挂载时暴露(fail loud)。 */
@@ -364,6 +423,9 @@ export function createPromptConfigs(specs, options = {}) {
     if (spec.subject !== undefined && !KNOWN_SUBJECTS.has(spec.subject)) {
       throw new TypeError(`${name}: ${label} unknown subject ${JSON.stringify(spec.subject)} — known subjects: ${[...KNOWN_SUBJECTS].sort().join(', ')}`)
     }
+    if (spec.subject !== undefined && !LAYER_CONTRACTS[layer].subjects.includes(spec.subject)) {
+      throw new TypeError(`${name}: ${label}.subject ${JSON.stringify(spec.subject)} is unavailable on layer ${JSON.stringify(layer)}`)
+    }
     const subject = spec.subject ?? LAYER_DEFAULT_SUBJECT[layer]
     const match = normalizeMatch(spec.match, `${name}: ${label}`)
   // identity 仅支持 plugin 命名空间（kind 模式与 sourceKind 重复，已归一）。
@@ -404,17 +466,14 @@ export function createPromptConfigs(specs, options = {}) {
       }
     }
     // 安装预检可把文件读取定向到尚未提交的候选目录，默认运行期仍走原解析器。
-    const template = (options.loadTemplate ?? loadTemplate)(spec.templateFile)
+    const template = (options.loadTemplate ?? loadTemplate)(spec.templateFile, options.templateBaseUrl)
     const templatePatch = template !== null && typeof template === 'object'
       ? { id: template.id, role: template.role, content: template.content, source: template.source }
       : undefined
     // tool-pipeline 的 toolNames 是逗号分隔字符串（parseToolNames 只认字符串）：
     // 数组写法会被静默解析为空 = 匹配所有工具，把一条定向门扩大成全工具门，
     // 与条件判定叠加后危害更大，这里归一化而不是留给运行时。
-    const rawParams = spec.params !== null && typeof spec.params === 'object' && !Array.isArray(spec.params) ? spec.params : {}
-    const params = layer === 'tool-pipeline' && Array.isArray(rawParams.toolNames)
-      ? { ...rawParams, toolNames: rawParams.toolNames.filter((item) => typeof item === 'string').join(',') }
-      : rawParams
+    const params = normalizeLayerParams(spec.params, layer, `${name}: ${label}`)
     const config = {
       id: spec.id,
       name: typeof spec.name === 'string' ? spec.name : spec.id,

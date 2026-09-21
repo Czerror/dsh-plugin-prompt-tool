@@ -36,7 +36,7 @@ export interface PromptConfigSpec {
   sourceKind?: string
   form?: string
   summary?: string
-  identity?: { field: 'plugin' | 'kind'; value: string }
+  identity?: { field: 'plugin'; value: string }
   text?: string
   /** 单条提示词配置的多段文本：注入为一条消息的多个 text 内容块。 */
   texts?: string[]
@@ -259,5 +259,4 @@ export function loadPromptConfigFiles(dir: string): PromptConfigSpec[] {
   }
   return specs
 }
-
 

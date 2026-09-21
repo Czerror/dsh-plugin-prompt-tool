@@ -345,7 +345,7 @@ test('V2 卡片：展开语义、菜单焦点、删除/丢弃确认、portal保�
   assert.equal(await evaluate(`document.querySelector('[data-config-id="ordinary"] details').open`), false, '普通更新不重开details')
   await evaluate('window.setReadOnly(true)')
   await waitFor(`document.querySelector('[data-config-id="ordinary"] input').readOnly`)
-  assert.equal(await evaluate(`document.querySelector('[data-config-id="ordinary"] textarea').readOnly`), true)
+  assert.equal(await evaluate(`[...document.querySelectorAll('[data-config-id="ordinary"] textarea')].every(input=>input.readOnly||input.matches(':disabled'))`), true)
   assert.equal(await evaluate(`document.querySelector('[data-config-id="ordinary"] [role="switch"]').disabled`), true)
   assert.equal(await evaluate(`document.querySelector('[data-config-id="ordinary"] [aria-controls]').disabled`), false)
   await evaluate('window.setReadOnly(false);window.setSaving(true)')

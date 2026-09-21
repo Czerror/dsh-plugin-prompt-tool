@@ -425,7 +425,7 @@ test('ENGINE_PARAM_KEYS 每个非 writer 键都有参数桥装配消费（防「
     '参数桥应覆盖核心引擎行；writer 参数仍需由 runtimeOf 透传')
 })
 
-test('MODEL_SEGMENT_MAP 双向一致：展平读回 = 保存写回（段目标唯一）', () => {
+test('MODEL_SEGMENT_MAP 显式迁移源唯一，覆盖全部旧模型字段', () => {
   const targets = new Set()
   for (const [flatKey, [segment, segmentKey]] of Object.entries(MODEL_SEGMENT_MAP)) {
     assert.ok(flatKey.length > 0 && segment.length > 0 && segmentKey.length > 0, `映射项非空: ${flatKey}`)
@@ -586,7 +586,7 @@ test('真实来源：表单局部编辑经 bridge/writer 重读，清空、只�
   const dir = join(root, id)
   mkdirSync(dir, { recursive: true })
   const initial = {
-    id, modules: [], params: { firstTurnAnchor: true, firstTurnText: 'GLOBAL' },
+    id, modules: [], layerSettings: { 'pre-step': { firstTurnAnchor: true, firstTurnText: 'GLOBAL' } },
     promptConfigs: [
       { id: 'near-anchor', layer: 'pre-step', strategy: 'first-turn-anchor', enabled: false, params: { text: 'LOCAL', useCustom: true } },
       { id: 'ordinary-anchor', layer: 'pre-step', strategy: 'first-turn-anchor', params: { text: 'ORDINARY' } },

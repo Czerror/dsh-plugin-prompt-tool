@@ -1,6 +1,7 @@
 import type { PromptToolLocaleKey, PromptToolTranslate } from '../../locales.ts'
 import { ENGINE_LAYER_ORDER, engineGroupParamKeys } from '../../../shared/engine-capabilities.ts'
 import type { EngineMeta, LayerFieldPolicy, PromptConfigDraft, PromptConfigMatch } from '../../prompt-tool-types.ts'
+import type { LayerContract } from '../../../shared/bridge-contract.ts'
 /** sourceKind / form 是少量固定语义值，用下拉选择；引擎不设枚举，因此额外保留当前值。 */
 export const SOURCE_KINDS = ['', 'plugin', 'instruction-hint', 'instruction-file', 'skill-catalog', 'env-facts'] as const
 export const SOURCE_FORMS = ['notice', 'hint', 'instructions', ''] as const
@@ -111,6 +112,27 @@ export const MATCH_REGEX_MODE_LABEL_KEYS: Record<string, PromptToolLocaleKey> = 
 
 export function fieldPolicyFor(meta: EngineMeta, layer: string | undefined): LayerFieldPolicy {
   return meta.layerFieldPolicies[(layer ?? 'pre-step')] ?? EMPTY_POLICY
+}
+
+export function layerContractFor(meta: EngineMeta, layer: string | undefined): LayerContract | undefined {
+  return (meta.layerContracts as Record<string, LayerContract> | undefined)?.[layer ?? 'pre-step']
+}
+
+/** 只有用户明确换层才清理目标层拒绝的字段；隐藏正文、未知 params 不被删除。 */
+export function layerChangePatch(meta: EngineMeta, config: PromptConfigDraft, layer: string): Partial<PromptConfigDraft> {
+  const policy = fieldPolicyFor(meta, layer)
+  const contract = layerContractFor(meta, layer)
+  const patch: Partial<PromptConfigDraft> = { layer, ...clearedConditionPatch(meta, layer) }
+  for (const field of ['position', 'dedupe', 'promotion', 'audience', 'modelScope', 'role'] as const) {
+    if (!policy[field] && config[field] != null) Object.assign(patch, { [field]: undefined })
+  }
+  if (!policy.merge && config.mergeMode !== undefined) patch.mergeMode = undefined
+  if (config.subject !== undefined && contract !== undefined && !contract.subjects.includes(config.subject)) patch.subject = undefined
+  if (contract !== undefined && !contract.strategies.includes(config.strategy ?? 'static')) {
+    patch.strategy = 'static'
+    patch.fill = undefined
+  }
+  return patch
 }
 
 /**

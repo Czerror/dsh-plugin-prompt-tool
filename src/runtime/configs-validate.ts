@@ -12,6 +12,9 @@
  */
 import type { PromptConfigFile, PromptConfigSpec } from '../host/prompt-configs.ts'
 import { configFileName, renderPromptConfigYaml } from '../host/prompt-configs.ts'
+import { packageEngineDir } from '../host/manifest.ts'
+import { dirname, join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 
 export interface PromptConfigValidationError {
   /** 数组下标；结构层整组错误为 -1。 */
@@ -62,35 +65,34 @@ function shapeErrors(value: unknown): PromptConfigValidationError[] {
  * 逐条调用引擎权威校验并渲染预览文件。
  * 逐条（而非整组一次）校验保证一条坏配置不吞掉其余错误，且 index 可直接映射。
  */
-export async function validatePromptConfigs(value: unknown, options: { strategyDir?: string } = {}): Promise<PromptConfigValidationResult> {
+export async function validatePromptConfigs(value: unknown, options: { strategyDir?: string; presetDir?: string } = {}): Promise<PromptConfigValidationResult> {
   const errors = shapeErrors(value)
   if (errors.length > 0 || !Array.isArray(value)) return { valid: false, errors }
   const specs = value as PromptConfigSpec[]
-  // 引擎与配置文件夹分离:包根 engine/ 与 lib/ 平级,../engine 相对路径成立。
-  // strategyDir 让模板专属策略也能通过同一权威校验(内置策略当前全部随引擎提供)。
-  const engineUrl = new URL('../engine/prompt-config-engine.mjs', import.meta.url)
+  // 与 bridge /meta 共用包根解析，源码 src/runtime 与打包 lib 路径均可调用。
+  const engineUrl = pathToFileURL(join(packageEngineDir(), 'prompt-config-engine.mjs'))
   const { createPromptConfigs } = await import(engineUrl.href) as {
-    createPromptConfigs: (specs: unknown[], options?: { strategyDir?: string }) => unknown
+    createPromptConfigs: (specs: unknown[], options?: { strategyDir?: string; templateBaseUrl?: string }) => unknown
   }
+  const engineOptions = {
+    ...(options.strategyDir ? { strategyDir: options.strategyDir } : {}),
+    ...(options.presetDir ? { templateBaseUrl: pathToFileURL(join(dirname(options.presetDir), '.engine', 'schema.mjs')).href } : {}),
+  }
+  const files: PromptConfigFile[] = []
   for (let index = 0; index < specs.length; index += 1) {
     const spec = specs[index]
     const id = spec !== null && typeof spec === 'object' && typeof (spec as { id?: unknown }).id === 'string'
       ? (spec as { id: string }).id
       : ''
     try {
-      createPromptConfigs([spec], typeof options.strategyDir === 'string' && options.strategyDir.length > 0
-        ? { strategyDir: options.strategyDir }
-        : {})
+      createPromptConfigs([spec], engineOptions)
+      // 文件名与 YAML 渲染同样属于写盘前校验，不能等写盘后才暴露非法 id。
+      files.push({ file: configFileName(index * 10, spec!.id), content: renderPromptConfigYaml(spec!) })
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       errors.push({ index, id, message })
     }
   }
   if (errors.length > 0) return { valid: false, errors }
-  const files: PromptConfigFile[] = specs.map((spec, index) => ({
-    file: configFileName(index * 10, spec.id),
-    content: renderPromptConfigYaml(spec),
-  }))
   return { valid: true, errors: [], configs: specs, files }
 }
-

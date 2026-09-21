@@ -11,8 +11,9 @@ process.env.DSH_HOME = home
 const tuiDir = join(home, 'preset-dir')
 mkdirSync(tuiDir, { recursive: true })
 writeFileSync(join(tuiDir, 'preset.yml'), [
-  'params:',
-  '  firstTurnAnchor: true',
+  'layerSettings:',
+  '  pre-step:',
+  '    firstTurnAnchor: true',
   'promptConfigs:',
   '  - id: extra',
   '    name: 额外配置',

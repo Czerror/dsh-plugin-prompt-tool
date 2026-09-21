@@ -11,6 +11,7 @@ import type { StConversionOptions, StOrderGroupSummary } from './sillytavern.ts'
 import { prepareImport, assetSourceDigest, normalizeAssetFiles, validateCharacterSpec } from './import-source.ts'
 import { assertPresetId, assertPresetTree, presetPathExists } from './preset-install.ts'
 import { appendPresetModules, withPresetDoc } from './manifest.ts'
+import { engineParamPath, readPresetLayerSettings } from './preset-layer-settings.ts'
 import { buildWorldBookEntry } from './worldbook.ts'
 import type { PresetSpec } from './manifest.ts'
 import { ENGINE_LAYER_ORDER } from '../shared/engine-capabilities.ts'
@@ -556,8 +557,8 @@ export function applyCharacterToPreset(
           ...entry.variables as Record<string, string> | undefined,
         } }]
       })
-      for (const [key, value] of Object.entries(spec.params ?? {})) {
-        doc.setIn(['params', key], value)
+      for (const [key, value] of Object.entries(readPresetLayerSettings(spec))) {
+        doc.setIn(engineParamPath(key), value)
       }
       // 角色卡本地记忆（memory.md）合并为 world-book constant 配置（chara-<卡>-memory）。
       const memory = readCharacterMemory(presetRoot, cardId)
@@ -624,8 +625,9 @@ export function removeCharacterFromPreset(
       if (doc.hasIn(['meta', CHARACTER_MEMORIES_KEY, cardId])) doc.deleteIn(['meta', CHARACTER_MEMORIES_KEY, cardId])
       // 删除该卡声明的 params 键（若曾覆盖预设原值无法恢复——文档说明）。
       // 现值判断：仅当当前值仍等于卡声明值才删——用户手改过或他卡同键覆盖过的值不误删。
-      for (const [key, value] of Object.entries(spec?.params ?? {})) {
-        if (doc.getIn(['params', key]) === value) doc.deleteIn(['params', key])
+      for (const [key, value] of Object.entries(spec === undefined ? {} : readPresetLayerSettings(spec))) {
+        const path = engineParamPath(key)
+        if (doc.getIn(path) === value) doc.deleteIn(path)
       }
       const list = Array.isArray(current.meta?.importedCharacters) ? current.meta.importedCharacters : []
       const remainingCards = list.map(String).filter((entry) => entry !== cardId)
@@ -639,7 +641,7 @@ export function removeCharacterFromPreset(
         const after = doc.toJS() as { params?: unknown; customTools?: unknown }
         const context: CharacterModuleContext = {
           configs: kept.filter(isRecord),
-          params: isRecord(after.params) ? after.params : {},
+          params: readPresetLayerSettings(after),
           customTools: Array.isArray(after.customTools) && after.customTools.length > 0,
           importedCharacters: remainingCards,
         }

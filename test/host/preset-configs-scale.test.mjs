@@ -21,8 +21,9 @@ const PRESET_YML = [
   'name: 规模样本',
   'modules:',
   '  - prompt-config-engine',
-  'params:',
-  '  injectPrompt: true',
+  'layerSettings:',
+  '  pre-step:',
+  '    injectPrompt: true',
   'unknownFutureKey:',
   '  keep: me',
   '',
@@ -83,7 +84,7 @@ test('184 卡落盘往返：数量、身份、顺序与未修改字段保持，�
   const raw = readFileSync(file, 'utf8')
   assert.ok(raw.includes('# 顶部注释：保存 promptConfigs 不得删除它'), '保留文档注释')
   assert.deepEqual(parseYaml(raw).unknownFutureKey, { keep: 'me' }, '未知顶层键不被删除')
-  assert.equal(parseYaml(raw).params.injectPrompt, true, '未改动的 params 保持')
+  assert.equal(parseYaml(raw).layerSettings['pre-step'].injectPrompt, true, '未改动的共享参数保持')
 
   const written = parseYaml(raw).promptConfigs
   assert.equal(written.length, 184, '实例数量不折叠')

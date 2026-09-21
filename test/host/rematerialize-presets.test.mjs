@@ -114,8 +114,8 @@ test('rematerialize-presets：引擎参数按 preset.yml 解析，不回落 writ
   try {
     const dir = installFixturePresetInHome(home)
     const doc = parseDocument(readFileSync(join(dir, 'preset.yml'), 'utf8'))
-    doc.setIn(['params', 'firstTurnAnchor'], true)
-    doc.setIn(['params', 'injectPrompt'], false)
+    doc.setIn(['layerSettings', 'pre-step', 'firstTurnAnchor'], true)
+    doc.setIn(['layerSettings', 'pre-step', 'injectPrompt'], false)
     writeFileSync(join(dir, 'preset.yml'), doc.toString(), 'utf8')
 
     const output = run(home)

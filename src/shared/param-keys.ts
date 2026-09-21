@@ -1,5 +1,5 @@
 /**
- * 引擎行为参数键（按预设存储：激活预设 preset.yml 的 params + promptConfigs）。
+ * 引擎行为参数键（按预设存储：激活预设 preset.yml 的 layerSettings + promptConfigs）。
  * 不进 Config schema、不进 settings namespace——每预设一份，随预设走（官方范式：
  * Config = 部署轴，引擎行为在预设文件）。
  *

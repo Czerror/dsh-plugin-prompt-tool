@@ -25,7 +25,7 @@ test('writePreset 从指定预设根读取同名参数，不被默认根遮蔽',
   for (const [root, usePtcMode] of [[join(home, '.agent-presets'), true], [customRoot, false]]) {
     mkdirSync(join(root, id), { recursive: true })
     writeFileSync(join(root, id, 'preset.yml'),
-      `id: ${id}\nmodules: [promoted-code-mode]\nparams:\n  usePtcMode: ${usePtcMode}\n`, 'utf8')
+      `id: ${id}\nmodules: [promoted-code-mode]\nlayerSettings:\n  tool-pipeline:\n    usePtcMode: ${usePtcMode}\n`, 'utf8')
   }
   const defaultFile = join(home, '.agent-presets', id, 'preset.yml')
   const before = readFileSync(defaultFile, 'utf8')
@@ -660,12 +660,12 @@ test('savePresetParams 清理空 key（VariablesEditor 待编辑行不落盘）'
     savePresetParams(
       presetDir,
       'fixture',
-      { '': 'x', wordsCloud: 'v' },
+      { '': 'x', guideText: 'v' },
       [{ id: 'a', variables: { '': '', keep: '1' } }],
     )
     const doc = parseYaml(readFileSync(join(presetDir, 'fixture', 'preset.yml'), 'utf8'))
     assert.equal(doc.params?.[''], undefined, 'params 空 key 不写入')
-    assert.equal(doc.params?.wordsCloud, 'v', '有效 params 正常写入')
+    assert.equal(doc.layerSettings['pre-step'].guideText, 'v', '有效引擎参数写入所属层')
     assert.equal(doc.promptConfigs[0]?.variables?.[''], undefined, '配置 variables 空 key 不写入')
     assert.equal(doc.promptConfigs[0]?.variables?.keep, '1', '有效变量保留')
   } finally {
@@ -680,12 +680,12 @@ test('晋升门控/渐进披露/验证工具参数仅进入组合配置，不成
     cpSync(FIXTURE_PRESET_SRC, join(dir, 'fixture'), { recursive: true })
     const presetFile = join(dir, 'fixture', 'preset.yml')
     const doc = parseDocument(readFileSync(presetFile, 'utf8'))
-    doc.setIn(['params', 'promoteGate'], true)
-    doc.setIn(['params', 'maxPromoteSteps'], 6)
-    doc.setIn(['params', 'bootstrapTools'], ['bash', 'read'])
-    doc.setIn(['params', 'messageSources'], ['user', 'goal'])
-    doc.setIn(['params', 'stagePreUnlock'], 2)
-    doc.setIn(['params', 'stages'], [
+    doc.setIn(['layerSettings', 'system-section', 'promoteGate'], true)
+    doc.setIn(['layerSettings', 'system-section', 'maxPromoteSteps'], 6)
+    doc.setIn(['layerSettings', 'system-section', 'bootstrapTools'], ['bash', 'read'])
+    doc.setIn(['layerSettings', 'pre-step', 'messageSources'], ['user', 'goal'])
+    doc.setIn(['layerSettings', 'system-section', 'stagePreUnlock'], 2)
+    doc.setIn(['layerSettings', 'system-section', 'stages'], [
       { name: '了解', tools: ['read', 'glob', 'grep'] },
       { name: '开发', tools: ['write', 'edit'] },
     ])
@@ -727,36 +727,37 @@ test('晋升门控/渐进披露/验证工具参数仅进入组合配置，不成
   }
 })
 
-test('顶层 model/subagentModel 段：读取展平进 params + 保存写顶层段（旧扁平键迁移）', () => {
+test('layerSettings 模型参数：读取展平进运行时 params，保存仍按所属层落盘', () => {
   const dir = join(tmpdir(), `prompt-tool-modelseg-${process.pid}-${Date.now()}`)
   const presetDir = join(dir, 'preset')
   try {
     mkdirSync(join(presetDir, 'mseg'), { recursive: true })
     writeFileSync(join(presetDir, 'mseg', 'preset.yml'), [
       'id: mseg',
-      'model:',
-      '  provider: deepseek-official',
-      '  name: deepseek-v4-pro',
-      '  maxTokens: "32000"',
-      'subagentModel:',
-      '  provider: p2',
-      'params:',
-      '  firstTurnAnchor: true',
+      'layerSettings:',
+      '  agent-request:',
+      '    modelProvider: deepseek-official',
+      '    modelName: deepseek-v4-pro',
+      '    modelMaxTokens: "32000"',
+      '  subagent-start:',
+      '    subagentModelProvider: p2',
+      '  pre-step:',
+      '    firstTurnAnchor: true',
       'promptConfigs: []',
     ].join('\n') + '\n', 'utf8')
-    // 读取：顶层段展平进 params 扁平键（消费方统一读 modelProvider 等）。
+    // 读取：层级段展平进 params 内部接口。
     const spec = loadPresetSpec(join(presetDir, 'mseg'))
-    assert.equal(spec.params?.modelProvider, 'deepseek-official', 'model.provider → modelProvider')
+    assert.equal(spec.params?.modelProvider, 'deepseek-official', 'agent-request.modelProvider → modelProvider')
     assert.equal(spec.params?.modelName, 'deepseek-v4-pro')
     assert.equal(spec.params?.modelMaxTokens, '32000')
     assert.equal(spec.params?.subagentModelProvider, 'p2')
     assert.equal(spec.params?.firstTurnAnchor, true, '非模型键保留')
-    // 保存：模型键写顶层段 + params 旧扁平键清理（保存即迁移）。
+    // 保存：全部引擎键都写入各自所属层。
     savePresetParams(presetDir, 'mseg', { modelTemperature: '0.8', firstTurnAnchor: false }, undefined)
     const doc = parseYaml(readFileSync(join(presetDir, 'mseg', 'preset.yml'), 'utf8'))
-    assert.equal(doc.model?.temperature, '0.8', '模型键写顶层 model 段')
-    assert.equal(doc.params?.modelTemperature, undefined, 'params 旧扁平键清理')
-    assert.equal(doc.params?.firstTurnAnchor, false, '非模型键仍写 params')
+    assert.equal(doc.layerSettings['agent-request'].modelTemperature, '0.8')
+    assert.equal(doc.params, undefined, '不产生旧 params 段')
+    assert.equal(doc.layerSettings['pre-step'].firstTurnAnchor, false)
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
@@ -831,13 +832,13 @@ test('writePreset 非纯元数据副本不升级：仅回退渲染，参数源�
   const userPtc = join(presetDir, 'pt-ptc')
   try {
     mkdirSync(userPtc, { recursive: true })
-    // 用户配置过（有 params 段）但不可渲染的副本
-    writeFileSync(join(userPtc, 'preset.yml'), 'id: pt-ptc\nname: 用户改过的PTC\nparams:\n  injectPrompt: false\n', 'utf8')
+    // 用户配置过（有 layerSettings 段）但不可渲染的副本
+    writeFileSync(join(userPtc, 'preset.yml'), 'id: pt-ptc\nname: 用户改过的PTC\nlayerSettings:\n  pre-step:\n    injectPrompt: false\n', 'utf8')
     writePreset('PROMPT', { ...makeOptions(presetDir), presetTemplate: 'pt-ptc' })
-    // 参数源未被包内模板覆盖（保留用户 params）
+    // 参数源未被包内模板覆盖。
     const spec = parseYaml(readFileSync(join(userPtc, 'preset.yml'), 'utf8'))
     assert.equal(spec.name, '用户改过的PTC', '用户命名保留')
-    assert.equal(spec.params?.injectPrompt, false, '用户参数保留（不升级不覆盖）')
+    assert.equal(spec.layerSettings['pre-step'].injectPrompt, false, '用户参数保留（不升级不覆盖）')
     assert.ok(existsSync(join(userPtc, 'agent.cordis.yml')), '回退渲染仍产出组合')
   } finally {
     rmSync(userPtc, { recursive: true, force: true })
@@ -880,11 +881,11 @@ test('R3 未提供的引擎参数保留 preset.yml 定义，显式值才覆盖�
     installFixturePreset(presetDir)
     const file = join(presetDir, FIXTURE_PRESET_ID, 'preset.yml')
     const doc = parseDocument(readFileSync(file, 'utf8'))
-    doc.setIn(['params', 'firstTurnAnchor'], true)
-    doc.setIn(['params', 'firstTurnText'], 'ANCHOR TEXT')
-    doc.setIn(['params', 'injectPrompt'], false)
-    doc.setIn(['subagentModel', 'provider'], 'sub-provider')
-    doc.setIn(['subagentModel', 'name'], 'sub-model')
+    doc.setIn(['layerSettings', 'pre-step', 'firstTurnAnchor'], true)
+    doc.setIn(['layerSettings', 'pre-step', 'firstTurnText'], 'ANCHOR TEXT')
+    doc.setIn(['layerSettings', 'pre-step', 'injectPrompt'], false)
+    doc.setIn(['layerSettings', 'subagent-start', 'subagentModelProvider'], 'sub-provider')
+    doc.setIn(['layerSettings', 'subagent-start', 'subagentModelName'], 'sub-model')
     writeFileSync(file, doc.toString(), 'utf8')
     return presetDir
   }

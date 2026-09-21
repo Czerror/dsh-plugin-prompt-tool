@@ -112,15 +112,15 @@ src/client/
 初始化直接按同名复制：缺哪个目录只补哪个，已有目录不覆盖，也不运行时探测官方名称或重命名。
 用户保存时以当前预设自身的 `preset.yml` 生成运行产物；现有用户预设不自动改名。
 
-预设行为由一份 `preset.yml` 单一配置源下发，共四层默认值，各层职责不重叠：
+预设行为由一份 `preset.yml` 单一配置源下发，参数所有者各自独立：
 
 | 层 | 职责 |
 |---|---|
-| `params` | 引擎行为参数（锚定/引导/PTC/门控/模型/工具），经参数桥落位组合行；UI 可管理，优先级最高 |
+| `layerSettings.<层名>` | 同层共享的引擎行为参数（锚定/引导/PTC/门控/模型/工具），经参数桥落位组合行；UI 内嵌真实配置卡，优先级最高 |
 | `moduleConfigs` | 行级 config 直写通道（参数桥未覆盖的键：超时/环境白名单/ST 导入等），不锁定覆盖 UI 可管理参数 |
-| `promptConfigs` | 注入提示词配置（策略/层/位置/时机），与目录、settings 三源合并 |
+| `promptConfigs` | 独立命名的注入规则，`params` 仅属于该规则；与预设默认及生成配置按 id 合并 |
 
-### params 一览（全部可选，缺省 = 官方默认）
+### 共享参数一览（全部可选，缺省按对应模块解释）
 
 | 分类 | 键 |
 |---|---|
@@ -147,14 +147,14 @@ src/client/
 - 读取失败（不可读/超限/文件消失）与「读取成功的空文件」严格区分：前者不可编辑、不可保存，不用空正文掩盖错误。
 - 原子写入（tmp + rename，保留原权限），失败保留原文件并清理临时文件；正文不受预设变量插值影响。
 
-模型参数在 **preset.yml 顶层 `model` / `subagentModel` 段**（官方 `agent-default-model` 同构）：
+模型参数按所属层保存，仍使用官方模型路由与请求接口：
 
 | 段 | 键 |
 |---|---|
-| `model`（主对话） | `provider` `name` `reasoningEffort` `temperature` `maxTokens` |
-| `subagentModel`（子代理固定路由） | `provider` `name` `reasoningEffort` `temperature` `maxTokens` |
+| `layerSettings.agent-request`（主对话） | `modelProvider` `modelName` `modelReasoningEffort` `modelTemperature` `modelMaxTokens` |
+| `layerSettings.subagent-start`（子代理） | `subagentModelProvider` `subagentModelName` `subagentReasoningEffort` `subagentTemperature` `subagentMaxTokens` `maxDepth` |
 
-读取时顶层段展平进 params 扁平键（`modelProvider` 等）；保存时写顶层段并清理旧键。旧扁平键不兼容也**不迁移**（参数只走 canonical 键），旧数据需自行整理。人设同理：旧 `persona-main` / 子代理人设配置卡不支持，人设统一写顶层 `persona` 段（`deployment:persona-suffix` 卡归 `suffix`，`suppressRuntimeContext` → `includeRuntimeContext: false`，子代理卡 → `moduleConfigs.tool-subagent.persona`）。顶层 `persona` 段示例：
+读取新结构后展平到内部 EngineParams；保存只更新所属层。旧 `params` / 模型段不双读、不在运行时自动迁移；一次性离线迁移与恢复见[参数框架](docs/architecture-params.md)。人设仍统一写顶层 `persona` 段；子代理独立人设由 `moduleConfigs.tool-subagent.persona` 声明。示例：
 
 ```yaml
 persona:
@@ -166,9 +166,9 @@ persona:
 
 工作台「模型路由」卡顶部另有**当前会话**区（仅主对话作用域）：显示活动会话的模型/思维程度（会话 `modelSelection` 投影，缺省回退宿主默认），模型下拉展示全部可用模型并按服务商分组，选择模型时自动回写对应服务商；切换走官方 `session.selectModel`——对当前会话立即生效并被宿主持久化为新会话默认，与官方模型选择器双向同源；子代理会话与宿主默认场景不支持会话级切换。预设参数非空时按请求覆盖会话选择（参数桥优先级不变）。
 
-> 根目录 **`preset.yml`** 是配置参数齐全、逐项注释的完整模板，复制即得自定义预设起点。
+> 根目录 [preset.yml](preset.yml) 覆盖全部 71 个共享参数与九层规则。`pnpm rebuild:preset-template` 从权威契约重建；规则默认关闭，共享参数按需取消注释。
 
-## 提示词配置（六个官方插入点）
+## 提示词配置（九个官方插入点）
 
 | `layer` | 官方通道 | 关键参数 |
 |---|---|---|
@@ -178,9 +178,12 @@ persona:
 | `agent-request` | `agent/request`（LlmCallConfig） | `params.patch`（浅合并）/ `params.replace`（整体替换） |
 | `llm-stream` | `llm/stream`（流包装） | `params.mode=pass\|replace` |
 | `tool-pipeline` | `tools/*`（pre/execute/post） | `params.toolNames`、`preDecision=allow\|deny\|ask`、`postAction=accept\|replace\|block` |
+| `turn-stop` | `agent/turn-stopping` | 条件命中后通过 steer 继续；每轮1次、每会话3次上限 |
+| `subagent-start` | `subagent/start` + `Agent.inject` | 子代理事件匹配与注入文本；模型/深度在卡内共享设置 |
+| `subagent-end` | `subagent/end` + 可选 `Agent.inject` | `params.action=observe\|inject-main`，后者投递到所属主会话 |
 
-六个插入点彼此独立，没有跨层全局运行顺序；`order` 只在同一插入点内生效。
-UI / 写盘展示顺序固定为 `pre-step → system-section → runtime-context → agent-request → llm-stream → tool-pipeline`；这是展示与写盘顺序，不是模型提示词优先级。
+九个插入点彼此独立，没有跨层全局运行顺序；`order` 只在同一插入点内生效。
+UI / 写盘按上表分组；这是展示顺序，不是模型提示词优先级。详细支持字段、限制与官方依据见[九层对照](docs/injection-point-contracts.md)。
 模型实际收到的提示词文本顺序更接近 `system-section → runtime-context → pre-step`；`agent-request` / `llm-stream` / `tool-pipeline` 是控制通道。
 
 默认四条：`00-near-anchor`（首句锚点）、`10-router-guide`（每轮引导）、`20-prompt-injector`（we 确认后注入 preset.md 一次）、`30-instruction-hint`（指令文件提示）。

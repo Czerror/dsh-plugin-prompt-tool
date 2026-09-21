@@ -524,7 +524,7 @@ test('settings bridge /param-overrides 接受锚定/引导内容键，非法正�
   assert.match(badPayload.message, /buildPattern/)
   assert.equal(readFileSync(file, 'utf8'), original, '非法正则不得写入 preset.yml')
   assert.equal(rebuilds, 0)
-  // 合法值走同一条扁平参数通道落进 params；YAML 注释与未知字段保持不动。
+  // 扁平传输参数落入所属层；YAML 注释与未知字段保持不动。
   const ok = fakeRes()
   await write(fakeReq({ [Symbol.asyncIterator]: async function* () {
     yield Buffer.from(JSON.stringify({ overrides: { buildPattern: '^(写|实现)', complexPattern: '重构', guideWeak: '简短引导', firstTurnDeep: '深度锚句' } }))
@@ -532,10 +532,10 @@ test('settings bridge /param-overrides 接受锚定/引导内容键，非法正�
   assert.equal(ok.status, 200)
   assert.equal(JSON.parse(ok.body).ok, true)
   const saved = parseYaml(readFileSync(file, 'utf8'))
-  assert.equal(saved.params.buildPattern, '^(写|实现)')
-  assert.equal(saved.params.complexPattern, '重构')
-  assert.equal(saved.params.guideWeak, '简短引导')
-  assert.equal(saved.params.firstTurnDeep, '深度锚句')
+  assert.equal(saved.layerSettings['pre-step'].buildPattern, '^(写|实现)')
+  assert.equal(saved.layerSettings['pre-step'].complexPattern, '重构')
+  assert.equal(saved.layerSettings['pre-step'].guideWeak, '简短引导')
+  assert.equal(saved.layerSettings['pre-step'].firstTurnDeep, '深度锚句')
   assert.equal(saved.unknown, 'keep')
   // 清空 = 删键：留空只移除该键，其它内容键不受影响。
   const cleared = fakeRes()
@@ -544,8 +544,8 @@ test('settings bridge /param-overrides 接受锚定/引导内容键，非法正�
   } }), cleared)
   assert.equal(cleared.status, 200)
   const after = parseYaml(readFileSync(file, 'utf8'))
-  assert.equal(after.params.buildPattern, undefined)
-  assert.equal(after.params.guideWeak, '简短引导')
+  assert.equal(after.layerSettings['pre-step'].buildPattern, undefined)
+  assert.equal(after.layerSettings['pre-step'].guideWeak, '简短引导')
   assert.equal(after.unknown, 'keep')
 })
 
@@ -581,8 +581,8 @@ test('参数保存拒绝空工具阶段和非法深度，失败不写盘、不�
     } }), res)
     assert.equal(res.status, 200)
     const saved = parseYaml(readFileSync(file, 'utf8'))
-    assert.deepEqual(saved.params.stages, stages.length > 0 ? stages : undefined)
-    assert.equal(saved.params.maxDepth, '0')
+    assert.deepEqual(saved.layerSettings['system-section']?.stages, stages.length > 0 ? stages : undefined)
+    assert.equal(saved.layerSettings['subagent-start'].maxDepth, '0')
     assert.equal(saved.unknown, 'keep')
   }
   assert.equal(rebuilds, 2)
@@ -593,8 +593,9 @@ test('模板变量与参数独立保存，读取与 bootstrap 不回退旧 param
   const { ctx, handlers } = makeHarness()
   const dir = makeUserPresetDir('pt-variable-isolation-')
   const file = join(dir, 'preset.yml')
-  const params = { usePtcMode: false, stagePreUnlock: 0, legacyOnly: '旧值', variables: { nested: '嵌套旧值' } }
-  writeFileSync(file, `# keep comment\nid: ${basename(dir)}\nparams: ${JSON.stringify(params)}\n`, 'utf8')
+  const params = { legacyOnly: '旧值', variables: { nested: '嵌套旧值' } }
+  const layerSettings = { 'tool-pipeline': { usePtcMode: false }, 'system-section': { stagePreUnlock: 0 } }
+  writeFileSync(file, `# keep comment\nid: ${basename(dir)}\nparams: ${JSON.stringify(params)}\nlayerSettings: ${JSON.stringify(layerSettings)}\n`, 'utf8')
   registerSettingsBridge(ctx, 'prompt-tool', () => ({ available: true, providers: [] }),
     () => skillsStateStub(), () => '', undefined, () => dir)
   const write = handlers.get(PREFIX + BRIDGE_ENDPOINTS.presetVariables)
@@ -606,6 +607,7 @@ test('模板变量与参数独立保存，读取与 bootstrap 不回退旧 param
     assert.equal(res.status, 200)
     const saved = parseYaml(readFileSync(file, 'utf8'))
     assert.deepEqual(saved.params, params)
+    assert.deepEqual(saved.layerSettings, layerSettings)
     assert.deepEqual(saved.variables ?? {}, variables)
     assert.match(readFileSync(file, 'utf8'), /# keep comment/)
     const read = fakeRes()
@@ -688,7 +690,7 @@ test('settings bridge /configs-validate 接受 >64KB promptConfigs 载荷（不�
 test('settings bridge：非法 JSON 与错误写入结构返回 400 且不落盘', async () => {
   const dir = makeUserPresetDir('pt-invalid-body-')
   const presetFile = join(dir, 'preset.yml')
-  const original = `id: ${basename(dir)}\nparams:\n  firstTurnAnchor: false\n`
+  const original = `id: ${basename(dir)}\nlayerSettings:\n  pre-step:\n    firstTurnAnchor: false\n`
   writeFileSync(presetFile, original, 'utf8')
   try {
     const { ctx, handlers } = makeHarness()

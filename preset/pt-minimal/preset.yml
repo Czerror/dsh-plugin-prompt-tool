@@ -6,22 +6,22 @@ engineCompat: ">=0.4.2"
 modules:
   - persistent-shell
   - prompt-config-engine
-model:
-  provider: ""
-  name: ""
-  reasoningEffort: ""
-  temperature: ""
-  maxTokens: ""
-subagentModel:
-  provider: ""
-  name: ""
-  reasoningEffort: ""
-  temperature: ""
-  maxTokens: ""
 persona:
   prefix: You are a helpful software engineer assistant.
   complete: true
   includeRuntimeContext: false
-params:
-  maxDepth: ""
 promptConfigs: []
+layerSettings:
+  agent-request:
+    modelProvider: ""
+    modelName: ""
+    modelReasoningEffort: ""
+    modelTemperature: ""
+    modelMaxTokens: ""
+  subagent-start:
+    subagentModelProvider: ""
+    subagentModelName: ""
+    subagentReasoningEffort: ""
+    subagentTemperature: ""
+    subagentMaxTokens: ""
+    maxDepth: ""

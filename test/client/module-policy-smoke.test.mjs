@@ -246,6 +246,24 @@ test('浏览器：真实模板实例内编辑各层引擎参数，保存不创�
   }
 })
 
+test('浏览器：子代理结束卡选择注入主会话时才出现正文，保存仍属于本条规则', { skip: skipBrowser, timeout: 30000 }, async () => {
+  await navigate('/')
+  await waitFor('window.store?.moduleFacts?.editable === true')
+  await evaluate(`window.loadPromptTemplates(['75-subagent-end.yml'])`)
+  await waitFor(`document.querySelector('[data-config-id="example-subagent-end"]') !== null`)
+  const originalIds = await evaluate('window.store.fields.promptConfigs.map(config=>config.id)')
+  await evaluate(`document.querySelector('[data-config-id="example-subagent-end"] header button[aria-expanded]').click()`)
+  await waitFor(`document.querySelector('[aria-label="结束后的行为"]') !== null`)
+  assert.equal(await evaluate(`document.querySelector('[aria-label="注入内容（空 = 不注入）"]') === null`), true)
+  await evaluate(`document.querySelector('[aria-label="结束后的行为"]').click()`)
+  await click('向主会话注入文本')
+  await waitFor(`document.querySelector('[aria-label="注入内容（空 = 不注入）"]') !== null`)
+  await edit('[aria-label="注入内容（空 = 不注入）"]', '核对子代理结果后继续。')
+  await evaluate(`document.querySelector('[aria-label="按层级或策略过滤"]').focus()`)
+  await waitFor(`window.store.savedConfigs?.some(config=>config.id==='example-subagent-end' && config.params.action==='inject-main' && config.text==='核对子代理结果后继续。')`)
+  assert.deepEqual(await evaluate('window.store.fields.promptConfigs.map(config=>config.id)'), originalIds)
+})
+
 test('浏览器：两页顶部创建菜单严格只有九层模板', { skip: skipBrowser, timeout: 30000 }, async () => {
   for (const page of ['main', 'subagent']) {
     await navigate('/')
@@ -415,7 +433,7 @@ test('浏览器：六层空卡、跨层工具创建、筛选草稿与能力卡�
     await evaluate(`document.querySelectorAll('button').forEach(e=>{if(e.textContent.includes(${JSON.stringify(file)}))e.click()})`)
     await waitFor(`window.store.savedConfigs.length===${index + configsBeforeTemplates + 1}`)
     assert.equal(await evaluate(`document.querySelector('[aria-label="按层级或策略过滤"]').textContent.trim()`), '全部', '创建模板不改动列表筛选')
-    assert.equal(await evaluate(`document.querySelector('[aria-label="注入内容（空 = 不注入）"]')!==null`), true, `${file} 应展开`)
+    assert.equal(await evaluate(`document.querySelector('[data-config-layer]')!==null`), true, `${file} 应展开`)
     assert.equal(await evaluate('window.store.getFields().promptConfigs.length'), index + configsBeforeTemplates + 1)
   }
   await evaluate('window.staleGenerated=false')

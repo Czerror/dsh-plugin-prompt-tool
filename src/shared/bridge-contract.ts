@@ -281,6 +281,21 @@ export interface StOrderGroupCandidate {
 /** 导入预览状态：`ready` 才有报告与写入凭据；候选状态不得启用确认。 */
 export type ImportPreviewState = 'ready' | 'needs-order-selection' | 'needs-kind-selection'
 
+/** 引擎实际消费的实例参数；只下发可序列化约束，未知扩展键仍由原配置保留。 */
+export interface LayerParamContract {
+  type: 'string' | 'boolean' | 'object' | 'enum'
+  values?: readonly string[]
+}
+
+export interface LayerContract {
+  strategies: readonly string[]
+  subjects: readonly string[]
+  content: 'text' | 'request' | 'stream' | 'tool-result' | 'observe' | 'subagent-result'
+  variables: boolean
+  messageMetadata: boolean
+  params: Readonly<Record<string, LayerParamContract>>
+}
+
 /**
  * /meta 与 /bootstrap 的 meta 段下发的层契约：九层顺序 + 编辑组主归属。
  * 只含可序列化白名单字段（组 id / displayLayer / relatedLayers / hook）：
@@ -292,6 +307,8 @@ export interface EngineMetaLayerContract {
   layerOrder: readonly EngineLayer[]
   /** 编辑组主归属总表（能力组 id = 能力 id）；前端据此组织九层卡片。 */
   editorGroups: readonly EngineEditorGroup[]
+  /** 每层真实可编辑的行为契约，来自独立可分发的 engine/schema.mjs。 */
+  layerContracts: Record<EngineLayer, LayerContract>
 }
 
 /** 物化配置的只读来源；与配置一同读回，不能作为写入字段或授权。 */
