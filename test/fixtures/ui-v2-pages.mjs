@@ -6,6 +6,7 @@ import { PROMPT_TOOL_DICTS } from '../../src/client/locales.ts'
 const session = {}
 const api = {
   sessionModel: { snapshot: () => session, subscribe: () => () => {} },
+  sessionPreset: { snapshot: () => undefined, subscribe: () => () => {} },
   currentSessionId: () => undefined,
   subscribeSessionChange: () => () => {},
   listAgentPresets: async () => { window.previewRequests++; return [{ id: 'test', name: 'Test' }] },

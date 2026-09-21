@@ -125,6 +125,7 @@ const policyPayload = (files = {}, over = {}) => ({
 
 const makeApi = (options = {}) => ({
   sessionModel: { snapshot: () => ({}) },
+  sessionPreset: { snapshot: () => undefined, subscribe: () => () => {} },
   currentSessionId: () => options.sessionId ?? 'sess-1',
   switchPreset: async (id) => {
     options.onSwitch?.(id)

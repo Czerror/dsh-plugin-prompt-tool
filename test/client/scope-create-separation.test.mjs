@@ -286,7 +286,7 @@ test('子代理页能力卡排除清单由页面下发', () => {
       effectiveModules: ['tool-filter', 'subagent-tool-policy'],
       declaredModules: ['tool-filter', 'subagent-tool-policy'],
     },
-    api: { sessionModel: { subscribe: () => () => {}, snapshot: () => SESSION_SNAPSHOT, getServerSnapshot: () => SESSION_SNAPSHOT } },
+    api: { sessionModel: { subscribe: () => () => {}, snapshot: () => SESSION_SNAPSHOT, getServerSnapshot: () => SESSION_SNAPSHOT }, sessionPreset: { snapshot: () => undefined, subscribe: () => () => {} } },
     hostDefaultModel: undefined, modelCatalog: [], modelReasoning: {}, templatePreStepCount: 0,
     notice: undefined, noticeKind: undefined, meta,
     templateVariables: {}, templateVariablesEnabled: false,

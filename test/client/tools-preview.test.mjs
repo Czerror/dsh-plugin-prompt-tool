@@ -131,7 +131,7 @@ test('自定义工具按预设隔离，system 或关闭 writePreset 时禁用写
 test('官方目录式搜索、可折叠分组与标题右侧预设选择；不再嵌套 tabs', () => {
   const snapshot = { sessionId: 'current-session', selectable: true }
   const html = render(ToolsPreviewPage, {
-    api: { sessionModel: { subscribe() { return () => {} }, snapshot: () => snapshot }, listAgentPresets() { throw new Error('当前会话视角不得加载预设') } },
+    api: { sessionModel: { subscribe() { return () => {} }, snapshot: () => snapshot }, sessionPreset: { snapshot: () => undefined, subscribe() { return () => {} } }, listAgentPresets() { throw new Error('当前会话视角不得加载预设') } },
     t,
   })
   assert.match(html, /aria-label="搜索工具"/)

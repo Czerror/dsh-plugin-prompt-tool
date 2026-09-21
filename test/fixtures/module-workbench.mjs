@@ -11,7 +11,7 @@ const session = { sessionId: 'test-session', selectable: true }
 let presetId = 'test'
 const presets = new Map()
 window.presetSwitches = []
-const api = { sessionModel: { snapshot: () => session, subscribe: () => () => {}, select: async (selection) => { window.sessionSelection = selection } }, currentSessionId: () => undefined, subscribeSessionChange: () => () => {},
+const api = { sessionModel: { snapshot: () => session, subscribe: () => () => {}, select: async (selection) => { window.sessionSelection = selection } }, sessionPreset: { snapshot: () => undefined, subscribe: () => () => {} }, currentSessionId: () => undefined, subscribeSessionChange: () => () => {},
   switchPreset: async id => {
     window.presetSwitches.push(id)
     presets.set(presetId, { configs, variables, tools, overrides, modules })

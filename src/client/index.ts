@@ -9,6 +9,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import type { PromptToolSettingsTransport } from './data/use-prompt-tool-store.ts'
 import { createSessionModelFace } from './data/session-model-face.ts'
+import { createSessionPresetFace } from './data/session-preset-face.ts'
 import { readCurrentSessionId, subscribeSessionIdChange } from './data/session-id-source.ts'
 import { bridgeCall } from './data/bridge-client.ts'
 import { registerWorkbenchSlots } from './app/workbench/register-workbench.tsx'
@@ -92,6 +93,13 @@ export function apply(ctx: ClientContext): void {
       },
       (request) => ctx.remote.session.selectModel(request as Parameters<typeof ctx.remote.session.selectModel>[0]),
     ),
+    // 官方会话级预设切换（新建会话 chip）只改那个空白会话，不改宿主默认预设：
+    // 工作台据此跟随（见 session-preset-follow）。
+    sessionPreset: createSessionPresetFace({
+      currentSessionId,
+      subscribeCurrent: (listener) => ctx.uiSession.adapter.current.subscribe(listener),
+      binding: (id) => ctx.sessions.binding(id as Parameters<typeof ctx.sessions.binding>[0]),
+    }),
     switchPreset: async (id) => {
       const sessionId = currentSessionId()
       const list = ctx.sessions.list.getSnapshot()

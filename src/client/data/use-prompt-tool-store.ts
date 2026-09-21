@@ -8,6 +8,7 @@ import type { SkillCatalogEntry, SkillPolicyChange } from '../../shared/skills.t
 import { bridgeCall, errorMessage, normalizeEngineMeta, type BridgeResult, type BridgeSettingsView } from './bridge-client.ts'
 import { requestSkillImport, type ConfirmSkillOverwrite } from './skill-import.ts'
 import { readImportFiles, type ImportFileEntry } from './import-files.ts'
+import { createSessionPresetFollower, type SessionPresetFollower } from './session-preset-follow.ts'
 import {
   EMPTY_FIELDS,
   EMPTY_META,
@@ -343,6 +344,11 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
   /** 已成功应用快照的预设 id：与当前 fields.presetTemplate 不一致时（切换/加载进行中）
    *  拒绝写盘，避免旧预设字段被当成当前预设数据写进新预设。 */
   const loadedPresetRef = useRef<string | undefined>(undefined)
+  /** 会话预设跟随器：跨检查只保留「写盘进行中」与「已提示过的 id」。 */
+  const presetFollowerRef = useRef<SessionPresetFollower | undefined>(undefined)
+  if (presetFollowerRef.current === undefined) presetFollowerRef.current = createSessionPresetFollower()
+  /** 跟随检查入口：load 结束时也调用一次（用 ref 打破 load ↔ 跟随的依赖环）。 */
+  const followCheckRef = useRef<() => void>(() => {})
   /** applyView 自动预选的 provider：无模型名时不作为用户显式参数落盘。 */
   const autoModelProviderRef = useRef<string | undefined>(undefined)
   const autoSubagentModelProviderRef = useRef<string | undefined>(undefined)
@@ -524,6 +530,9 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
       loadedPresetRef.current = fieldsRef.current.presetTemplate
       paramBaselineRef.current = snapshotSwitches(fieldsRef.current)
       setNotice('')
+      // 加载完成后补一次会话预设检查：工作台打开时会话可能已经运行在别的预设上
+      // （官方侧切换发生在订阅建立之前，不会有投影通知）。
+      followCheckRef.current()
       return fieldsRef.current
     } catch (error) {
       if (seq === loadSeqRef.current && sessionId === api.currentSessionId() && draftVersionRef.current === draftVersion) showNotice('error', '读取失败：' + errorMessage(error))
@@ -942,7 +951,15 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     else void persistSwitches()
   }, [patch, persistParamOverrides, persistSwitches, load])
 
-  const setPresetTemplate = useCallback(async (id: string) => {
+  /**
+   * 把插件预设事实切到 id：保存当前预设的未提交修改 → 写 settings.presetTemplate
+   * （宿主据此物化目标预设并同步官方默认预设）→ 静默重载目标预设数据。
+   * @param switchSession 是否同时把当前空白会话切到该预设。用户主动切换为 true；
+   *   跟随官方会话级选择时为 false——那个会话已经运行在该预设上，再 select 只会重复
+   *   记一条 `agent-preset/selected` 事件。
+   * @param notice 自定义成功文案（跟随的提示与主动切换区分开）。
+   */
+  const applyPresetTemplate = useCallback(async (id: string, switchSession: boolean, notice?: string): Promise<void> => {
     if (fieldsRef.current.presetTemplate === id) return
     if (hasWorkspaceDrafts(editorDrafts, fieldsRef.current.presetTemplate)) {
       showNotice('error', '当前预设仍有未保存的工具、人设、策略或字段草稿，请返回对应页面保存或修正后再切换')
@@ -963,13 +980,13 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
         return
       }
     }
-    const switchResult = await api.switchPreset(id)
+    const switchResult = switchSession ? await api.switchPreset(id) : { applied: false }
     patch({ presetTemplate: id })
     await enqueueSave(
       [{ op: 'set', path: ['presetTemplate'], value: id }],
-      switchResult.applied
+      notice ?? (switchResult.applied
         ? `已切换预设模板：${id}（当前空会话已重组）`
-        : `已切换默认预设模板：${id}`,
+        : `已切换默认预设模板：${id}`),
       () => {
         if (switchResult.message !== undefined) {
           showNotice('error', switchResult.message)
@@ -979,6 +996,38 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     // 队列完成后再刷新：新数据应用前 fields 仍是旧预设字段，写路径守卫以此拦截误写。
     await load({ silent: true })
   }, [api, editorDrafts, enqueueSave, load, patch, persistConfigs, showNotice])
+
+  // 返回 Promise 保持调用契约（既有调用方会 then/await 它等写入完成）。
+  const setPresetTemplate = useCallback((id: string): Promise<void> => applyPresetTemplate(id, true), [applyPresetTemplate])
+
+  /**
+   * 跟随官方会话级预设选择：会话投影 agentPreset 记的是该会话真正运行的预设，
+   * 官方「新建会话」旁的选择器只改那个空白会话、不改宿主默认预设，因此插件镜像宿主
+   * 默认的 presetTemplate 只有读这个投影才能跟随（决策与守卫见 session-preset-follow）。
+   */
+  const followCheck = useCallback((): void => {
+    const follower = presetFollowerRef.current
+    if (follower === undefined) return
+    void follower.check({
+      sessionPreset: api.sessionPreset.snapshot(),
+      currentPreset: fieldsRef.current.presetTemplate,
+      loadedPreset: loadedPresetRef.current,
+      // 只跟随插件管理目录中可渲染的预设：别处（官方随包预设等）不由本插件物化。
+      followable: (presetId) => (meta.presets ?? [])
+        .some((preset) => preset.id === presetId && preset.renderable !== false),
+      blocked: (presetId) => hasWorkspaceDrafts(editorDrafts, presetId),
+      apply: (presetId) => applyPresetTemplate(presetId, false, `已跟随当前会话预设：${presetId}`),
+      warn: (presetId) => showNotice('error', `当前会话预设 ${presetId} 不在提示词工具管理目录中，工作台未跟随`),
+    })
+  }, [api, applyPresetTemplate, editorDrafts, meta.presets, showNotice])
+  followCheckRef.current = followCheck
+
+  // 会话预设跟随：官方侧切换不经过插件设置，只有订阅会话投影才能即时回显。
+  useEffect(() => {
+    const unsubscribe = api.sessionPreset.subscribe(followCheck)
+    followCheck()
+    return unsubscribe
+  }, [api, followCheck])
 
   /** 能力变更和参数保存共用队列；预设切换等待写入及其读回完成。 */
   const changeEngineCapability = useCallback((action: 'create' | 'create-recipe' | 'remove', id: string): Promise<boolean> => {

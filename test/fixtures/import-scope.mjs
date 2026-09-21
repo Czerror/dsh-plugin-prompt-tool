@@ -20,7 +20,7 @@ const store = {
   patch: patch => { fields = { ...fields, ...patch }; version++; for (const listener of listeners) listener() },
   meta: { ...EMPTY_META, layers: ['pre-step', 'system-section', 'tool-pipeline'], presets: [], builtinTemplates: [] },
   moduleFacts: { sourceMode: 'explicit', declaredModules: ['subagent-tool-policy', 'anchor-turn'], effectiveModules: ['subagent-tool-policy', 'anchor-turn'], rowIds: [], editable: true },
-  api: { sessionModel: { subscribe: () => noop, snapshot: () => session } },
+  api: { sessionModel: { subscribe: () => noop, snapshot: () => session }, sessionPreset: { snapshot: () => undefined, subscribe: () => noop } },
   modelCatalog: [], modelReasoning: {}, templatePreStepCount: 0,
   templateVariables: {}, templateVariablesEnabled: true,
   setTemplateVariables: noop, setTemplateVariablesEnabled: noop, saveTemplateVariables: noop,

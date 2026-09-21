@@ -53,6 +53,7 @@ const mountStore = (api, settings) => {
 
 const makeApi = (onSwitch) => ({
   sessionModel: { snapshot: () => ({}) },
+  sessionPreset: { snapshot: () => undefined, subscribe: () => () => {} },
   currentSessionId: () => undefined,
   switchPreset: async (id) => {
     onSwitch?.(id)

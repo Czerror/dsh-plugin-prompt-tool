@@ -12,11 +12,27 @@ export interface SessionModelFace {
   select(selection: { provider: string; model: string; reasoningEffort?: string }): Promise<void>
 }
 
+/**
+ * 当前会话预设面：官方会话投影 `agentPreset`（该会话真正运行的预设）。
+ *
+ * 官方会话级切换（新建会话 chip → `agentPresets/select`）只改那个空白会话、
+ * 不改宿主默认预设，所以插件镜像宿主默认的 `presetTemplate` 必须读这个投影才能
+ * 跟随官方侧的选择。
+ */
+export interface SessionPresetFace {
+  /** 当前会话记录的预设 id；无会话、无投影或无记录时 undefined。 */
+  snapshot(): string | undefined
+  /** 会话切换或该会话预设变化时通知；退订后静默。 */
+  subscribe(listener: () => void): () => void
+}
+
 export interface PromptToolHostApi {
   /** 选择宿主机目录并返回绝对路径；取消时返回 null。 */
   pickDirectory(): Promise<string | null>
   openPath(path: string): Promise<void>
   sessionModel: SessionModelFace
+  /** 当前会话记录的官方预设（会话级切换的事实来源）。 */
+  sessionPreset: SessionPresetFace
   switchPreset(id: string): Promise<PromptToolPresetSwitchResult>
   currentSessionId(): string | undefined
   /**
