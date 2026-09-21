@@ -22,6 +22,7 @@ import { personaRowConfig, readPersonaSpec, type PersonaSpec } from '../shared/p
 import { DEFAULT_PRESET_ID } from '../shared/preset-ids.ts'
 import { assertPresetDirectory, assertPresetId, assertPresetTree, presetPathExists, rewritePresetEngineReferences, setPresetDefinitionId } from './preset-install.ts'
 import { engineParamPath, readLayerSettings, readPresetLayerSettings, PresetLayerSettingsError } from './preset-layer-settings.ts'
+import { modelRequestConfigs } from './prompt-configs.ts'
 export { MODEL_SEGMENT_MAP, PresetLayerSettingsError } from './preset-layer-settings.ts'
 
 export interface PresetSpec {
@@ -815,15 +816,17 @@ export function applyModuleConfigs(raw: string, configs: Record<string, Record<s
  *  - `composition: ./xxx.yml` → 预设模板目录内组合文件(官方预设直用);
  *  - `composition:` 内联文本或组合清单名。
  */
-export function loadCompositionText(spec: PresetSpec, templateDir?: string): string {
+export function loadCompositionText(spec: PresetSpec, templateDir?: string, runtime: Record<string, unknown> = {}): string {
   let raw: string
   let modules = spec.modules
   if (Array.isArray(modules)) {
     const declared: string[] = modules
     // 参数在 ⇒ 装配在：显式 params/moduleConfigs 隐含的能力模块自动补齐，与顶层策略段同一规则。
+    const params = resolvePresetParams(spec, runtime)
     const extra = [
       ...(spec.subagentToolPolicy !== undefined && spec.subagentToolPolicy !== null ? ['subagent-tool-policy'] : []),
       ...impliedModulesForParams(resolvePresetParams(spec, {}), spec.moduleConfigs),
+      ...(Array.isArray(spec.promptConfigs) && spec.promptConfigs.length > 0 || modelRequestConfigs(params).length > 0 ? ['prompt-config-engine'] : []),
     ].filter((module) => !declared.includes(module))
     if (extra.length > 0) modules = [...declared, ...extra]
   }
@@ -939,6 +942,9 @@ export function resolvePresetModuleFacts(
     }
     if (rowIds.includes('subagent-tool-policy') && !effectiveModules.includes('subagent-tool-policy')) {
       effectiveModules.push('subagent-tool-policy')
+    }
+    if (rowIds.includes('prompt-config-engine') && !effectiveModules.includes('prompt-config-engine')) {
+      effectiveModules.push('prompt-config-engine')
     }
   }
   const effectiveConfigs: Record<string, Record<string, unknown>> = {}
@@ -1107,7 +1113,7 @@ export function renderComposition(spec: PresetSpec, runtime: Record<string, unkn
     // 参数桥优先：UI/运行时参数不被模板或 ST 直写覆盖。
     merged[id] = { ...cfg, ...merged[id] }
   }
-  let raw = loadCompositionText(spec, templateDir)
+  let raw = loadCompositionText(spec, templateDir, runtime)
   // 人设由预设字段直接生成官方行，不查模块库，也不改写 modules 清单。
   // composition 文件仍自行提供该行；顶层字段只覆盖它的配置。
   const persona = readPersonaSpec(spec.persona)

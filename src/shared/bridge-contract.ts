@@ -169,19 +169,6 @@ export interface BridgeSettingsView {
 }
 
 /**
- * 默认模型同步结果（预设保存链路带出，跨端统一形状）。
- *
- * 「预设已保存」与「宿主默认模型同步」是两件事：预设参数先落盘，随后插件把
- * provider/model/effort 写进官方 agent-default-model；后者可能因为服务未装配、
- * 宿主当前值已一致或写盘被拒而不同。四态都与失败区分：只有 `failed` 需要用户重试。
- */
-export interface ModelSyncResult {
-  status: 'synced' | 'unchanged' | 'unavailable' | 'failed'
-  /** 安全提示：只带状态说明，不含凭证、路径或 provider 原始错误正文。 */
-  message?: string
-}
-
-/**
  * 一条 provider/model 路由的推理档位元数据（官方模型元数据的展示子集）。
  *
  * `known` 区分「查过且该路由不提供档位」与「尚未取得元数据」：前者 UI 必须隐藏档位
@@ -339,11 +326,8 @@ export interface BridgeValueMap {
   instructionsPolicy: { policy: InstructionPolicy; revision: string | null; exists: boolean; error?: string }
   presetContent: Record<string, unknown>
   importPreset: { scopes: Array<'preset' | 'agents'> }
-  /**
-   * 参数/提示词配置写入结果。`modelSync` 只描述宿主默认模型同步的附加结果：
-   * 预设写盘成功但默认模型未同步（unavailable/failed）时，UI 据此分开表达并允许重试。
-   */
-  paramOverrides: { overrides?: Record<string, unknown>; promptConfigs?: unknown[]; modelSync?: ModelSyncResult }
+  /** 参数/提示词配置只保存当前预设，不同步宿主全局默认模型。 */
+  paramOverrides: { overrides?: Record<string, unknown>; promptConfigs?: unknown[] }
   persona: { persona: PersonaSpec | null }
   presetVariables: { variables: Record<string, string>; enabled: boolean }
   customTools: { customTools?: unknown[] }

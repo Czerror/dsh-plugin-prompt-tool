@@ -59,7 +59,6 @@ import { DSH_HOME } from '../host/paths.ts'
 import type { AssetFile, AssetImportRequest, ImportKind, PresetExportRequest } from '../shared/asset-transfer.ts'
 import { lastWorldBookDiagnostics } from '../../engine/st-world-book.mjs'
 import { BRIDGE_ENDPOINTS, MAX_BRIDGE_BODY_BYTES, SETTINGS_BRIDGE_PREFIX } from '../shared/bridge-contract.ts'
-import type { ModelSyncResult } from '../shared/bridge-contract.ts'
 import { moduleParamFallbacks, validateEngineParamValues } from '../shared/engine-params.ts'
 import { readPersonaSpec } from '../shared/persona-section.ts'
 import { SKILL_NAME_PATTERN, type SkillsStateRead } from '../host/skills-config.ts'
@@ -494,12 +493,8 @@ export function registerSettingsBridge(
   getPresetConfigsDir?: () => string,
   /** 内容导入完成回调：批量 scope 只触发一次重建（更新运行时文本并重建预设）。 */
   afterPresetImport?: (scopes: Array<'preset' | 'agents'>) => void,
-  /**
-   * 参数覆盖写入回调（重建预设使参数生效）。返回值若为 Promise，是宿主默认模型同步结果：
-   * 只有参数覆盖端点会把结果回给客户端（预设已保存 vs 默认模型同步失败要分开表达）；
-   * 其余调用点不需要该结果。
-   */
-  afterOverridesChange?: () => ModelSyncResult | Promise<ModelSyncResult>,
+  /** 参数覆盖写入后重建当前预设。 */
+  afterOverridesChange?: () => void | Promise<void>,
   /** 预设已完整安装后的刷新回调；失败只返回 refreshWarning，不再物化或撤销安装。 */
   afterPresetPackageImport?: (id: string) => void | Promise<void>,
   /** 能力/recipe 原子创建后重建回调；抛错时调用方恢复 preset.yml。 */
@@ -507,17 +502,12 @@ export function registerSettingsBridge(
 ): { invalidateDescriptor: () => void } {
   let invalidateCachedDescriptor: () => void = () => {}
   let capabilityQueue: Promise<void> = Promise.resolve()
-  /**
-   * 触发参数覆盖回调并等待可选的模型同步结果：端点能据此把「预设已保存」与
-   * 「宿主默认模型同步失败」分开表达；不需要结果的调用方走本函数忽略返回值即可
-   * （不产生未处理拒绝）。
-   */
-  const runOverridesChange = async (): Promise<ModelSyncResult | undefined> => {
+  /** 等待当前预设重建；不传播附加回调的返回值。 */
+  const runOverridesChange = async (): Promise<void> => {
     try {
-      return await afterOverridesChange?.()
+      await afterOverridesChange?.()
     } catch {
-      // 回调失败不应让保存端点整体失败：预设参数已经落盘，回调只影响重建/同步。
-      return undefined
+      // 预设参数已落盘；重建回调自行记录诊断。
     }
   }
   // 动态等待 webServer：webServer 由 @deepseek-ai/dsh-web-app 提供。
@@ -1473,14 +1463,12 @@ export function registerSettingsBridge(
               )
               // 预设切换前保存当前配置卡时只需落盘，不立即重建；
               // 后续 settings presetTemplate 变更会让目标预设完成唯一一次重建。
-              // rebuild === false 时不做重建/同步，也不回 modelSync（没有同步事实可报）。
-              const modelSync = record.rebuild === false ? undefined : await runOverridesChange()
+              if (record.rebuild !== false) await runOverridesChange()
               writeBridgeJson(res, 200, {
                 ok: true,
                 value: {
                   ...(record.overrides !== undefined ? { overrides: record.overrides } : {}),
                   ...(record.promptConfigs !== undefined ? { promptConfigs: record.promptConfigs } : {}),
-                  ...(modelSync !== undefined ? { modelSync } : {}),
                 },
               })
             } catch (error) {

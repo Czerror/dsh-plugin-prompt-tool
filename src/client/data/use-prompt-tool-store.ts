@@ -51,7 +51,6 @@ import {
 } from './instruction-policy.ts'
 import type { InstructionPolicyFileOverride, InstructionPolicyPatch, InstructionPolicySnapshot } from '../../shared/instructions.ts'
 import { buildParamOverrides, isCurrentPresetDraft, readParamOverridesPatch, updateLoadedParamKeys } from './param-overrides.ts'
-import { modelSyncNotice } from './model-sync-notice.ts'
 import { createSerialTaskQueue } from './save-queue.ts'
 import { createWorkspaceDrafts, hasWorkspaceDrafts, type WorkspaceDrafts } from './workspace-drafts.ts'
 import { modelChoiceValue } from '../features/models/model-options.ts'
@@ -701,9 +700,6 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
         paramBaselineRef.current = savedSnapshot
         // 只标记发起时快照；若期间有新编辑，当前 fields 仍保持 dirty。
         setSavedSwitches(savedSnapshot)
-        // 预设已落盘，但宿主默认模型同步可能未完成：分别表达，不谎报全绿。
-        const syncNotice = modelSyncNotice(res.value.modelSync, '预设已保存')
-        if (syncNotice !== undefined) showNotice(syncNotice.kind, syncNotice.message)
         const currentSnapshot = snapshotSwitches(fieldsRef.current)
         // 服务端会过滤未完成阶段；此时不重载，保留 UI 正在编辑的空草稿行。
         if (shouldReloadAfterPresetSave(
@@ -896,8 +892,6 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
       if (expectedPresetId !== fieldsRef.current.presetTemplate) return false
       if (res.ok) {
         setSavedConfigs(configs)
-        const syncNotice = modelSyncNotice(res.value.modelSync, '提示词配置已保存')
-        if (instructionsSaved && syncNotice !== undefined) showNotice(syncNotice.kind, syncNotice.message)
         if (instructionsSaved && options?.reload !== false && !pendingVariableRows && shouldReloadAfterPresetSave(
           draftVersion,
           draftVersionRef.current,
@@ -958,7 +952,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     // 切换即保存：模块列表有未保存的提示词配置修改时先提交（写当前激活预设），
     // 避免切换后 load() 重置 fields 丢失修改。已保存/无修改则直接切换；
     // 保存未成功（失败/被拒）时不切换，把草稿完整留在当前预设。
-    const dirtyConfigs = promptConfigsDirty(fieldsRef.current.promptConfigs, savedConfigs)
+    const dirtyConfigs = promptConfigsDirty(fieldsRef.current.promptConfigs, savedConfigsRef.current)
     if (dirtyConfigs) {
       // 免双 load：保存成功后由下方 enqueueSave 的 onSaved 统一静默重载。
       // 切换前只落盘当前预设，不重建；settings 切换后目标预设只重建一次。
@@ -984,30 +978,30 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     )
     // 队列完成后再刷新：新数据应用前 fields 仍是旧预设字段，写路径守卫以此拦截误写。
     await load({ silent: true })
-  }, [editorDrafts, enqueueSave, load, patch, persistConfigs, savedConfigs, showNotice])
+  }, [api, editorDrafts, enqueueSave, load, patch, persistConfigs, showNotice])
 
-  const createEngineCapability = useCallback(async (action: 'create' | 'create-recipe', id: string): Promise<boolean> => {
-    const request = action === 'create' ? { action: 'create' as const, capabilityId: id } : { action: 'create-recipe' as const, recipeId: id }
-    const result = await bridgeCall('engineCapability', { ...request, expectedPresetId: fieldsRef.current.presetTemplate })
-    if (!result.ok) {
-      showNotice('error', '引擎能力创建失败：' + (result.message ?? 'settings bridge unavailable'))
-      return false
-    }
-    showNotice('ok', result.value.changed ? `已创建引擎能力：${id}` : `引擎能力已存在：${id}`)
-    await load({ silent: true })
-    return true
+  /** 能力变更和参数保存共用队列；预设切换等待写入及其读回完成。 */
+  const changeEngineCapability = useCallback((action: 'create' | 'create-recipe' | 'remove', id: string): Promise<boolean> => {
+    const expectedPresetId = fieldsRef.current.presetTemplate
+    return presetSaveQueueRef.current.enqueue(async () => {
+      if (expectedPresetId !== fieldsRef.current.presetTemplate || loadedPresetRef.current !== expectedPresetId) {
+        showNotice('error', PRESET_PENDING_MESSAGE)
+        return false
+      }
+      const request = action === 'create-recipe' ? { action, recipeId: id } : { action, capabilityId: id }
+      const result = await bridgeCall('engineCapability', { ...request, expectedPresetId })
+      if (expectedPresetId !== fieldsRef.current.presetTemplate) return false
+      if (!result.ok) {
+        showNotice('error', '引擎能力变更失败：' + (result.message ?? 'settings bridge unavailable'))
+        return false
+      }
+      await load({ silent: true })
+      showNotice('ok', action === 'remove' ? `已移除引擎能力：${id}` : `已装配引擎能力：${id}`)
+      return true
+    })
   }, [load, showNotice])
-
-  const removeEngineCapability = useCallback(async (id: string): Promise<boolean> => {
-    const result = await bridgeCall('engineCapability', { action: 'remove', capabilityId: id, expectedPresetId: fieldsRef.current.presetTemplate })
-    if (!result.ok) {
-      showNotice('error', '引擎能力删除失败：' + (result.message ?? 'settings bridge unavailable'))
-      return false
-    }
-    showNotice('ok', result.value.changed ? `已删除引擎能力：${id}` : `引擎能力不存在：${id}`)
-    await load({ silent: true })
-    return true
-  }, [load, showNotice])
+  const createEngineCapability = useCallback((action: 'create' | 'create-recipe', id: string) => changeEngineCapability(action, id), [changeEngineCapability])
+  const removeEngineCapability = useCallback((id: string) => changeEngineCapability('remove', id), [changeEngineCapability])
 
   const refreshSkills = useCallback(async (): Promise<boolean> => {
     const seq = ++skillsSeqRef.current

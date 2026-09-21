@@ -3,16 +3,17 @@ import assert from 'node:assert/strict'
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { Document } from 'yaml'
 
 const home = mkdtempSync(join(tmpdir(), 'pt-preset-sync-'))
 process.env.DSH_HOME = home
 const { apply, writePluginState } = await import('../../lib/index.mjs')
 
 const presetDir = join(home, '.agent-presets')
-const preset = (id) => {
+const preset = (id, layerSettings = {}) => {
   mkdirSync(join(presetDir, id), { recursive: true })
   writeFileSync(join(presetDir, id, 'preset.yml'),
-    `id: ${id}\nname: ${id}\nmodules: [prompt-config-engine]\n`, 'utf8')
+    new Document({ id, name: id, modules: ['prompt-config-engine'], layerSettings }).toString(), 'utf8')
 }
 
 function makeHarness(initial, options = {}) {
@@ -83,7 +84,7 @@ function makeHarness(initial, options = {}) {
     // 真实 cordis Context 提供事件订阅；插件用它订阅 provider 拓扑变化失效模型目录。
     on: () => () => {},
     skills: { registerProvider: () => {} },
-    get: (name) => name === 'webServer' ? {} : undefined,
+    get: (name) => name === 'webServer' ? {} : name === 'agentDefaultModel' ? options.defaultModel : undefined,
     provide: () => () => {},
     baseUrl: 'http://localhost:3000',
     inject: (_deps, callback) => { callback(sctx); return () => {} },
@@ -108,6 +109,25 @@ function makeHarness(initial, options = {}) {
     },
   }
 }
+
+test('预设模型参数只归当前预设，启动与切换不回写宿主全局默认模型', async () => {
+  preset('route-a', { 'agent-request': { modelProvider: 'provider-a', modelName: 'model-a', modelReasoningEffort: 'high' } })
+  preset('route-b')
+  writePluginState({ seeded: true })
+  const globalSelection = { provider: 'host-provider', model: 'host-model' }
+  const writes = []
+  const initial = { writePreset: true, presetTemplate: 'route-a', presetOrder: 5, fallbackText: '' }
+  const harness = makeHarness(initial, { defaultModel: {
+    currentSelection: () => globalSelection,
+    saveSelection: async selection => { writes.push(selection) },
+  } })
+  apply(harness.ctx, initial)
+  await Promise.resolve()
+  assert.deepEqual(writes, [], '加载 A 的预设模型不能影响全局默认')
+  harness.switchPreset('route-b')
+  await Promise.resolve()
+  assert.deepEqual(writes, [], '切换到未配置模型的 B 不应继承 A 回写的全局值')
+})
 
 test('官方 agent-presets.default 变化反向同步 prompt-tool.presetTemplate 且不回环', async () => {
   preset('anchored')

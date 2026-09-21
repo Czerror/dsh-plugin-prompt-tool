@@ -11,6 +11,10 @@
 
 `promptConfigs[].params` 仍属于单条规则。persona、variables、customTools、subagentToolPolicy 和 moduleConfigs 保留独立所有者。`loadPresetSpec().params` 是读取新格式后得到的**内部平铺适配面**，本文下文的参数桥 `params` 均指该内部对象，不再表示旧磁盘位置。
 
+共享只限于同一预设内的配置卡。预设主模型的 provider/model 与采样参数通过该预设的 `agent-request` 规则生效；预设加载、保存和能力操作不再调用 `agentDefaultModel.saveSelection` 改写宿主全局默认。模型未配置时继承该会话选择。用户在官方“当前会话模型”控件中的显式选择仍遵循官方接口语义。
+
+显式模块预设存在 `promptConfigs` 或可生成的模型请求规则时，生成组合自动补齐 `prompt-config-engine`；`effectiveModules` 同步反映此依赖，`declaredModules` 保持磁盘声明。模型规则由 `host/prompt-configs.ts#modelRequestConfigs` 同时服务生成和依赖判定，避免“规则文件已生成但无消费者”。没有规则或请求参数的空预设仍为空，手写 composition 不被改写。
+
 正常读写不兼容旧位置中的登记参数：`params.<已登记键>`、`model`/`subagentModel` 已登记字段返回 `preset-migration-required`；未知字段保持原样，且不进入运行参数。`layerSettings` 中登记键放错层、层名或形态错误返回 `preset-layer-settings-invalid`。bridge 对迁移要求返回 409，不静默回落成空值。
 
 一次性离线脚本为 `scripts/migrate-layer-settings.mjs`，不注册日常产品工具或 package script，也不在启动、读取、保存时自动迁移。由已授权的维护操作执行：
@@ -209,7 +213,7 @@ settings 载荷键 `promptConfigs`；读回、序列化、脏检测、保存快�
 
 `persistParamOverrides` 与 `persistConfigs` 不直接把“当前 fields”当作保存结果：
 
-1. 参数与提示词配置请求进入同一个预设保存队列，跨通道严格串行；失败任务不阻断后续任务；
+1. 参数、提示词配置与能力创建/组合创建/移除进入同一个预设保存队列，写入与读回在队列内完成；切换等待已入队操作，失败任务不阻断后续任务；
 2. 入队时生成请求快照，载荷与成功后的已保存基线都来自该快照；
 3. 请求成功后只确认该快照；若用户在请求期间继续编辑，当前 fields 与快照不等，仍保持 dirty；
 4. 只有全局草稿版本未变化、其他保存通道无待存草稿，且对应草稿与请求快照一致时，才在队列内执行静默 `load()`；参数草稿还须不存在未完成阶段；

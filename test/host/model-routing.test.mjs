@@ -1,17 +1,10 @@
 /**
  * 模型路由与模型目录的宿主侧核验。
  *
- * 合并自 `models.test.mjs`（15 条）、`model-catalog-refresh.test.mjs`（3 条）、
- * `param-overrides-model-sync.test.mjs`（1 条）—— 2026-09-17 测试归一精简 Wave 2。
- * 三组原本各自准备环境（前一组是纯单元、后两组各建一个隔离 DSH_HOME），现共用一个 HOME；
- * 组内私有 harness 按来源分组命名（catalog* / paramSync*），断言与用例标题一律原样保留。
- *
- * - models：模型检测、默认路由安装的四态、模型目录缓存（按 Context 隔离 / 并发合并 / 显式失效）。
+ * - models：模型检测、模型目录缓存（按 Context 隔离 / 并发合并 / 显式失效）。
  * - model-catalog-refresh（M-11）：`/models` 默认走 10 分钟缓存；显式刷新（客户端 connection/reset、
  *   用户重试）传 `refresh: true` 时必须越过 TTL 重新查询，且非法 body 走统一 400 包装。
- * - param-overrides（M-03/M-04）：「预设已保存」与「宿主默认模型已同步」是两件事：同步失败/不可用时
- *   响应仍是 ok:true（预设确实落盘），但要带上 modelSync 让客户端分别表达；rebuild:false 的落盘
- *   没有同步事实，不得伪造状态。
+ * - param-overrides：只重建当前预设；预设参数不回写全局默认模型。
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
@@ -24,7 +17,6 @@ const {
   BRIDGE_ENDPOINTS,
   apply,
   detectModels,
-  installDefaultModelRoute,
   invalidateModelCatalog,
   listAdvertisedModels,
   peekModelCatalog,
@@ -83,87 +75,6 @@ test('listAdvertisedModels：官方类方法风格 mock（依赖 this）也能�
   })
 })
 
-test('installDefaultModelRoute：参数非空时写入官方 agent-default-model 默认选择', () => {
-  const saved = []
-  const ctx = {
-    get: (name) => name === 'agentDefaultModel'
-      ? { saveSelection: (selection) => { saved.push(selection) } }
-      : undefined,
-  }
-  const apply = installDefaultModelRoute(
-    ctx,
-    () => true,
-    () => 'deepseek-official',
-    () => 'deepseek-v4-flash',
-  )
-  assert.deepEqual(saved, [{ provider: 'deepseek-official', model: 'deepseek-v4-flash' }], '安装时立即写入一次')
-  apply()
-  assert.equal(saved.length, 2, '重放幂等写入')
-})
-
-test('installDefaultModelRoute：未启用（任一参数为空）时不干预', () => {
-  let called = false
-  const ctx = {
-    get: (name) => name === 'agentDefaultModel'
-      ? { saveSelection: () => { called = true } }
-      : undefined,
-  }
-  installDefaultModelRoute(ctx, () => false, () => '', () => '')
-  assert.equal(called, false, '未设置固定模型路由时不得覆盖用户选择')
-})
-
-test('installDefaultModelRoute：agent-default-model 服务缺失时静默跳过不抛错', () => {
-  const ctx = { get: () => undefined }
-  const apply = installDefaultModelRoute(ctx, () => true, () => 'p', () => 'm')
-  apply()
-  assert.ok(true, '服务缺失不应抛异常')
-})
-
-test('installDefaultModelRoute：仅思维程度非空时与宿主当前选择合并写入（不劫持模型路由）', () => {
-  const saved = []
-  const ctx = {
-    get: (name) => name === 'agentDefaultModel'
-      ? {
-          currentSelection: () => ({ provider: 'host-p', model: 'host-m', reasoningEffort: 'low' }),
-          saveSelection: (selection) => { saved.push(selection) },
-        }
-      : undefined,
-  }
-  installDefaultModelRoute(ctx, () => true, () => '', () => '', () => 'high')
-  assert.deepEqual(saved, [{ provider: 'host-p', model: 'host-m', reasoningEffort: 'high' }],
-    '思维程度应合并宿主当前默认选择写入')
-})
-
-test('installDefaultModelRoute：仅思维程度但宿主无当前选择时不写盘', () => {
-  let called = false
-  const ctx = {
-    get: (name) => name === 'agentDefaultModel'
-      ? { currentSelection: () => ({}), saveSelection: () => { called = true } }
-      : undefined,
-  }
-  installDefaultModelRoute(ctx, () => true, () => '', () => '', () => 'high')
-  assert.equal(called, false, '宿主当前选择缺 provider/model 时跳过，不写非法选择')
-})
-
-test('installDefaultModelRoute：saveSelection 返回被拒 Promise 不产生 unhandledRejection', async () => {
-  const rejections = []
-  const onUnhandled = (reason) => rejections.push(reason)
-  process.on('unhandledRejection', onUnhandled)
-  const ctx = {
-    get: (name) => name === 'agentDefaultModel'
-      ? { saveSelection: () => Promise.reject(new Error('save failed')) }
-      : undefined,
-  }
-  try {
-    installDefaultModelRoute(ctx, () => true, () => 'p', () => 'm', () => 'high')
-    // 给拒绝传播一个宏任务窗口。
-    await new Promise((resolve) => setTimeout(resolve, 20))
-    assert.deepEqual(rejections, [], '被拒 Promise 必须被捕获，不得触发 unhandledRejection')
-  } finally {
-    process.off('unhandledRejection', onUnhandled)
-  }
-})
-
 test('模型目录缓存按 Context 实例隔离：两个 Context 互不污染（M-10）', async () => {
   const makeCtx = (provider, models) => ({
     get: () => ({
@@ -195,48 +106,6 @@ test('模型目录并发刷新合并为一次 provider 查询（M-10）', async 
   assert.deepEqual(first, { 'provider-a': ['a-1'] })
   assert.deepEqual(second, { 'provider-a': ['a-1'] })
   assert.equal(calls, 1, '同源并发刷新只查询一次')
-})
-
-test('installDefaultModelRoute：apply 返回可等待的同步结果（synced/unchanged/unavailable/failed）', async () => {
-  const saved = []
-  let host = { provider: 'p', model: 'm', reasoningEffort: 'low' }
-  const ctx = {
-    get: (name) => name === 'agentDefaultModel'
-      ? {
-        currentSelection: () => host,
-        saveSelection: async (next) => {
-          saved.push(next)
-          host = { ...next }
-        },
-      }
-      : undefined,
-  }
-  const apply = installDefaultModelRoute(ctx, () => true, () => 'p', () => 'm', () => 'high')
-  const afterInstall = await apply()
-  assert.ok(['synced', 'unchanged'].includes(afterInstall.status), 'apply 必须返回四态结果而不是 undefined')
-  assert.deepEqual(saved, [{ provider: 'p', model: 'm', reasoningEffort: 'high' }], '安装时同步一次且只写一次')
-  assert.equal((await apply()).status, 'unchanged', '宿主值已是目标值时不再写盘')
-  assert.equal(saved.length, 1, 'unchanged 不得重复写盘')
-
-  host = { provider: 'p', model: 'other', reasoningEffort: 'high' }
-  const changed = await apply()
-  assert.equal(changed.status, 'synced', '宿主模型被外部改动后再次同步并报告 synced')
-  assert.equal(saved.length, 2)
-
-  const noService = { get: () => undefined }
-  const unavailable = await installDefaultModelRoute(noService, () => true, () => 'p', () => 'm')()
-  assert.equal(unavailable.status, 'unavailable', '服务缺失必须与失败区分')
-  assert.match(unavailable.message ?? '', /agent-default-model/)
-
-  const failing = {
-    get: (name) => name === 'agentDefaultModel'
-      ? { saveSelection: async () => { throw new Error('EACCES: D:\\secret\\path.json') } }
-      : undefined,
-  }
-  const failed = await installDefaultModelRoute(failing, () => true, () => 'p', () => 'm')()
-  assert.equal(failed.status, 'failed', '写盘拒绝必须报告 failed（可重试）')
-  assert.ok((failed.message ?? '').length <= 200, '失败提示限长')
-  assert.ok(!(failed.message ?? '').includes('secret'), '失败提示不得带出绝对路径')
 })
 
 test('模型目录失效：invalidateModelCatalog 后重新全量查询，旧缓存不再命中（M-11）', async () => {
@@ -493,7 +362,7 @@ test('/model-reasoning：返回官方元数据档位，命中缓存，非法载�
   assert.equal(calls.resolveModelInfo, 1, '非法载荷不得触发元数据查询')
 })
 
-// —— `/param-overrides` 的默认模型同步事实（原 param-overrides-model-sync.test.mjs） ——
+// —— `/param-overrides` 只重建当前预设 ——
 
 function makeParamSyncHarness() {
   const handlers = new Map()
@@ -525,13 +394,13 @@ function paramSyncReq(payload) {
   }
 }
 
-test('/param-overrides 回传 modelSync 四态；rebuild:false 不带同步事实', async () => {
+test('/param-overrides 只重建当前预设，返回值不携带全局模型同步', async () => {
   mkdirSync(presetRoot, { recursive: true })
   const dir = join(presetRoot, 'pt-overrides-sync')
   mkdirSync(dir)
   writeFileSync(join(dir, 'preset.yml'), 'id: pt-overrides-sync\n', 'utf8')
   const { ctx, handlers } = makeParamSyncHarness()
-  let next = { status: 'synced' }
+  let rebuilds = 0
   try {
     registerSettingsBridge(
       ctx,
@@ -542,30 +411,22 @@ test('/param-overrides 回传 modelSync 四态；rebuild:false 不带同步事�
       undefined,
       () => dir,
       undefined,
-      () => next,
+      () => { rebuilds++; return { status: 'synced' } },
     )
     const write = handlers.get(`${PREFIX}${BRIDGE_ENDPOINTS.paramOverrides}`)
     assert.ok(write, '/param-overrides 端点应注册')
 
-    for (const result of [
-      { status: 'synced', message: '宿主默认模型已同步为 deepseek-official/x' },
-      { status: 'unchanged', message: '宿主默认模型已是目标值' },
-      { status: 'unavailable', message: '宿主未装配 agent-default-model 服务，已跳过默认模型同步' },
-      { status: 'failed', message: '宿主默认模型写入失败' },
-    ]) {
-      next = result
-      const res = fakeRes()
-      await write(paramSyncReq({ overrides: { maxDepth: '' } }), res)
-      assert.equal(res.status, 200)
-      const payload = JSON.parse(res.body)
-      assert.equal(payload.ok, true, '宿主同步失败不影响「预设已保存」的成功包装')
-      assert.deepEqual(payload.value.modelSync, result)
-    }
+    const res = fakeRes()
+    await write(paramSyncReq({ overrides: { maxDepth: '' } }), res)
+    assert.equal(res.status, 200)
+    assert.equal(rebuilds, 1)
+    assert.deepEqual(JSON.parse(res.body), { ok: true, value: { overrides: { maxDepth: '' } } })
 
     const noRebuild = fakeRes()
     await write(paramSyncReq({ overrides: { maxDepth: '' }, rebuild: false }), noRebuild)
     assert.equal(noRebuild.status, 200)
-    assert.equal(JSON.parse(noRebuild.body).value.modelSync, undefined, '没有同步事实不得伪造状态')
+    assert.equal(rebuilds, 1, 'rebuild:false 不重建')
+    assert.deepEqual(JSON.parse(noRebuild.body), { ok: true, value: { overrides: { maxDepth: '' } } })
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }

@@ -25,6 +25,7 @@ import { MANAGED_CONFIG_FIELDS, type ConfigFieldSources } from '../shared/manage
 import {
   configFileName,
   mergePromptConfigs,
+  modelRequestConfigs,
   renderPromptConfigYaml,
 } from './prompt-configs.ts'
 import type { PromptConfigSpec } from './prompt-configs.ts'
@@ -45,7 +46,7 @@ const ENGINE_DIR = packageEngineDir()
  * dsh-persona 行 config 字段等）时 +1。启动重建据此重刷用户目录旧产物——
  * 否则旧产物只会在用户手动切换该预设时才会重新渲染。
  */
-export const RENDER_VERSION = 4
+export const RENDER_VERSION = 5
 export const RENDER_STAMP = `# prompt-tool:render v${RENDER_VERSION}`
 
 /** 包内引擎指纹（有序相对路径 + 内容摘要）：引擎文件未变时共享引擎不重刷。
@@ -258,34 +259,6 @@ function runtimeOf(options: WritePresetOptions, prompt: string): Record<string, 
   }
 }
 
-/** 模型参数（思维程度/温度/输出上限）→ agent-request 提示词配置（官方 LlmCallConfig patch 浅合并）。
- *  读合并后 params（preset.yml 模板默认 + settings/overrides 覆盖），空值不产生配置。 */
-function modelRequestConfigs(params: Record<string, unknown>): PromptConfigSpec[] {
-  const patchOf = (prefix: 'model' | 'subagent'): Record<string, unknown> => {
-    const patch: Record<string, unknown> = {}
-    const effort = params[`${prefix}ReasoningEffort`]
-    const temperature = params[`${prefix}Temperature`]
-    const maxTokens = params[`${prefix}MaxTokens`]
-    if (typeof effort === 'string' && effort.trim().length > 0) patch.reasoningEffort = effort.trim()
-    // 字符串（UI）与 number（preset.yml 手写数字）两通道统一：空值不产生 patch。
-    const temp = typeof temperature === 'string' ? Number(temperature.trim()) : temperature
-    if (typeof temp === 'number' && Number.isFinite(temp) && String(temperature).trim().length > 0) patch.temperature = temp
-    const tokens = typeof maxTokens === 'string' ? Number(maxTokens.trim()) : maxTokens
-    if (typeof tokens === 'number' && Number.isSafeInteger(tokens) && tokens > 0 && String(maxTokens).trim().length > 0) patch.maxTokens = tokens
-    return patch
-  }
-  const configs: PromptConfigSpec[] = []
-  const mainPatch = patchOf('model')
-  if (Object.keys(mainPatch).length > 0) {
-    configs.push({ id: 'model-params', name: '模型参数（主对话）', layer: 'agent-request', audience: 'main', order: -100, params: { patch: mainPatch } })
-  }
-  const subagentPatch = patchOf('subagent')
-  if (Object.keys(subagentPatch).length > 0) {
-    configs.push({ id: 'subagent-model-params', name: '模型参数（子代理）', layer: 'agent-request', audience: 'subagent', order: -100, params: { patch: subagentPatch } })
-  }
-  return configs
-}
-
 /** 手写/导入预设恢复路径：与保存方完整编译同源，但坏定义仍逐条告警跳过。 */
 function materializeCustomTool(tool: Record<string, unknown>, warn: (message: string) => void): Record<string, unknown> | undefined {
   try {
@@ -352,7 +325,7 @@ export function writePreset(prompt: string, options: WritePresetOptions): string
   const outDir = tmpDir
   try {
   // 1) 组合文件:modules 模块库装配 + 参数桥行级合并 + YAML 校验。
-  const composition = renderComposition(spec, runtime, templateDir)
+  const composition = renderComposition(Array.isArray(options.promptConfigs) && options.promptConfigs.length > 0 ? { ...spec, promptConfigs: options.promptConfigs } : spec, runtime, templateDir)
   assertCompositionArray(composition, spec)
   // 共享引擎路径重写（引擎只物化一份于预设根 .engine）：组合的引擎引用
   // ./engine/ → ../.engine/（相对预设目录 = 预设根/.engine）；configsDir 相对

@@ -4,7 +4,8 @@
 工具目录相位、PTC（Code Mode）呈现、指令文件提示与提示词注入引擎全部以
 共享 ESM 实现 + cordis 插件行/声明式配置提供，任何 dsh 预设可自由装配。
 
-装配遵循显式按需语义：`modules: []` 生成合法空组合，只有列入 `modules` 的插件能力才会挂载；
+装配遵循按需语义：空模块、无规则且无请求参数时生成合法空组合；显式参数补齐对应能力，
+真实提示词规则或模型请求参数补齐必要的 `prompt-config-engine`，不创建额外 UI 配置卡。
 四个官方基型保留上游工具能力，人设统一由 preset.yml 顶层 `persona` 段（官方
 `@deepseek-ai/dsh-persona` 行 config 同构）驱动——`renderComposition` 在 `modules` 清单预设中
 直接从字段生成该行，不读取任何 persona 模块。模块库不提供 `persona`，不得把人设

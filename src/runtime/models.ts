@@ -1,10 +1,9 @@
 /** 模型服务商/模型名检测与子代理固定模型路由（宿主侧运行时工具）。 */
 import type { Context } from '@deepseek-ai/cordis'
-import type { AgentDefaultModelConfig } from '@deepseek-ai/dsh-agent-default-model'
-import type { AgentOptions, ModelSelection } from '@deepseek-ai/dsh-agent'
+import type { AgentOptions } from '@deepseek-ai/dsh-agent'
 import type { ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import type { SubagentRuntime } from '@deepseek-ai/dsh-subagent'
-import type { ModelReasoningView, ModelSyncResult } from '../shared/bridge-contract.ts'
+import type { ModelReasoningView } from '../shared/bridge-contract.ts'
 
 /**
  * 官方子代理 seam 的类型锚点：本插件只读 `list()` / `getProvider()` 并显式传参，
@@ -276,102 +275,6 @@ async function refreshModelCatalog(ctx: Context): Promise<Record<string, string[
     }
   }))
   return catalog
-}
-
-/**
- * 主对话默认模型控制：modelProvider + modelName 同时非空时，经官方
- * `agentDefaultModel.saveSelection` 写入新会话默认模型（对齐官方 web 切换模型的
- * 默认级持久化；只影响新创建的 Agent，不干预已有会话）。任一为空时若思维程度非空，
- * 则与宿主当前默认选择（currentSelection）合并、只同步思维程度而不劫持模型路由；
- * 三者皆空 = 不干预（继承用户在宿主 web 的选择）；agent-default-model 服务未装配时静默跳过。
- *
- * 返回值可等待：{@link ModelSyncResult} 区分 changed / unchanged / unavailable / failed，
- * 让保存链路能把「预设已保存」与「宿主默认模型同步结果」分别表达（M-03/M-04）。
- * apply 自身从不 reject：失败一律折叠成 failed 结果，调用方不必额外 catch。
- */
-/**
- * 失败提示的安全化：只保留错误文本，去掉绝对路径形态（含盘符）与疑似凭证，
- * 再限制长度后跨端。凭证与路径都不应出现在 bridge 载荷里。
- */
-function sanitizeSyncMessage(error: unknown): string {
-  const raw = error instanceof Error ? error.message : String(error)
-  const cleaned = raw
-    .replace(/[A-Za-z]:\\[^\s"']*/g, '<path>')
-    .replace(/\b(?:sk|pk|api|token)-[A-Za-z0-9_-]{8,}/gi, '<redacted>')
-    .trim()
-  return cleaned.length === 0 ? '宿主默认模型写入失败' : cleaned.slice(0, 200)
-}
-
-export function installDefaultModelRoute(
-  ctx: Context,
-  isEnabled: () => boolean,
-  provider: () => string,
-  model: () => string,
-  getReasoningEffort?: () => string,
-): () => Promise<ModelSyncResult> {
-  /** 官方 AgentOptions 的 effort 是 adapter 拥有的档位 id；UI 文本交宿主校验。 */
-  const asEffort = (value: string): ReasoningEffortId => value as ReasoningEffortId
-  const apply = async (): Promise<ModelSyncResult> => {
-    try {
-      // 服务缺失时 ctx.get 返回 undefined（agent-default-model 未装配）。
-      const service = ctx.get('agentDefaultModel') as AgentDefaultModelConfig | undefined
-      if (service?.saveSelection === undefined) return { status: 'unavailable', message: '宿主未装配 agent-default-model 服务，已跳过默认模型同步' }
-      if (!isEnabled()) return { status: 'unchanged', message: '未启用固定模型路由，保持宿主当前默认' }
-      // 官方 AgentDefaultModelSettings 含 reasoningEffort：插件思维程度设置非空时一并写入
-      // 宿主默认（saveSelection 整体替换语义；插件 agent-request patch 仍按会话生效）。
-      const effort = (getReasoningEffort?.() ?? '').trim()
-      let targetProvider = provider()
-      let targetModel = model()
-      if (targetProvider.length === 0 || targetModel.length === 0) {
-        // 未固定模型路由但设了思维程度：与宿主当前默认选择合并，只改思维程度不劫持模型/服务商。
-        if (effort.length === 0) return { status: 'unchanged', message: '未配置固定模型路由，保持宿主当前默认' }
-        const current = service.currentSelection?.()
-        if (typeof current?.provider !== 'string' || current.provider.length === 0
-          || typeof current?.model !== 'string' || current.model.length === 0) {
-          return { status: 'unavailable', message: '宿主当前没有可合并的默认模型路由，已跳过思维程度同步' }
-        }
-        targetProvider = current.provider
-        targetModel = current.model
-      }
-      // 宿主值未变时不重复写盘（宿主切换预设/重建时 apply 会被重放）。
-      const hostCurrent = service.currentSelection?.()
-      if (hostCurrent?.provider === targetProvider
-        && hostCurrent.model === targetModel
-        && (hostCurrent.reasoningEffort ?? '') === effort) {
-        return { status: 'unchanged', message: '宿主默认模型已是目标值' }
-      }
-      const selection: ModelSelection = {
-        provider: targetProvider,
-        model: targetModel,
-        ...(effort.length > 0 ? { reasoningEffort: asEffort(effort) } : {}),
-      }
-      // 官方 saveSelection 可能返回 Promise：可等待的调用方需要真实结果，
-      // 不等待的调用方也不能收到 unhandledRejection。
-      let result: unknown
-      try {
-        result = service.saveSelection(selection)
-      } catch (error) {
-        return { status: 'failed', message: sanitizeSyncMessage(error) }
-      }
-      if (result !== null && typeof result === 'object' && typeof (result as Promise<void>).then === 'function') {
-        const settled = (result as Promise<void>).then(
-          () => undefined,
-          (error: unknown) => sanitizeSyncMessage(error),
-        )
-        // 兜底：即使调用方不 await，也不产生 unhandledRejection。
-        void settled.catch(() => undefined)
-        const failure = await settled
-        if (typeof failure === 'string') return { status: 'failed', message: failure }
-      }
-      return { status: 'synced', message: `宿主默认模型已同步为 ${targetProvider}/${targetModel}` }
-    } catch {
-      // agent-default-model 服务缺失（core 未装配）时静默跳过，不阻断插件。
-      return { status: 'unavailable', message: '宿主未装配 agent-default-model 服务，已跳过默认模型同步' }
-    }
-  }
-  // 安装时立即同步一次；调用方若需要结果可 await，不需要也不会有未处理拒绝。
-  void apply()
-  return apply
 }
 
 /**

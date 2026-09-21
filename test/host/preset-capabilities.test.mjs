@@ -30,6 +30,9 @@ const {
 } = await import('../../lib/index.mjs')
 const { buildEngineModuleParams } = await import('../../src/shared/engine-params.ts')
 const { apply: applyToolFilter } = await import('../../engine/tool-filter.mjs')
+const { modelRequestConfigs } = await import('../../src/host/prompt-configs.ts')
+const { createPromptConfigs } = await import('../../engine/schema.mjs')
+const { wireLayers } = await import('../../engine/layers.mjs')
 
 // —— 能力创建/删除（原 engine-capability.test.mjs） ——
 
@@ -199,6 +202,43 @@ test('删除最后一项能力后保持显式空组合', () => {
 })
 
 // —— 模块事实（原 module-facts.test.mjs） ——
+
+test('实际规则和请求参数自动补齐执行引擎，空预设与手写组合保持独立', () => {
+  const blank = { id: 'blank', modules: [], promptConfigs: [] }
+  for (const spec of [
+    { ...blank, promptConfigs: [{ id: 'rule', text: 'RUN', layer: 'pre-step' }] },
+    { ...blank, layerSettings: { 'agent-request': { modelTemperature: 0 } } },
+    { ...blank, layerSettings: { 'agent-request': { modelProvider: 'provider-a', modelName: 'model-a' } } },
+    { ...blank, layerSettings: { 'subagent-start': { subagentReasoningEffort: 'high' } } },
+  ]) {
+    const facts = resolvePresetModuleFacts(spec)
+    assert.deepEqual(facts.declaredModules, [])
+    assert.deepEqual(facts.effectiveModules, ['prompt-config-engine'])
+    assert.ok(facts.rowIds.includes('prompt-config-engine'))
+    assert.ok(parseYaml(renderComposition(spec, {})).some(row => row.id === 'prompt-config-engine'))
+    assert.deepEqual(spec.modules, [], '只派生必要装配，不修改预设声明')
+  }
+  assert.deepEqual(resolvePresetModuleFacts(blank).effectiveModules, [])
+  assert.deepEqual(parseYaml(renderComposition(blank, {})), [])
+  assert.deepEqual(parseYaml(renderComposition({ ...blank, modules: undefined, composition: '[]\n', promptConfigs: [{ id: 'rule', text: 'RUN' }] }, {})), [])
+  assert.ok(parseYaml(renderComposition(blank, { modelMaxTokens: 128 })).some(row => row.id === 'prompt-config-engine'), '显式运行参数同样需要消费者')
+  assert.deepEqual(parseYaml(renderComposition({ ...blank, layerSettings: { 'agent-request': { modelTemperature: '' } } }, {})), [], '空参数不产生请求规则或执行引擎')
+})
+
+test('预设主模型在自身请求中生效，其他预设与子代理不继承该覆盖', async () => {
+  const inherited = { provider: 'host', model: 'host-model', temperature: 0.5 }
+  const requestFor = async (params, depth = 0) => {
+    let request
+    const configs = createPromptConfigs(modelRequestConfigs(params))
+    wireLayers({ get: () => undefined, on: (name, listener) => { if (name === 'agent/request') request = listener } }, configs, () => {})
+    return request === undefined ? { ...inherited } : request({ agent: { session: { header: { delegationDepth: depth } } } }, async () => ({ ...inherited }))
+  }
+  const a = { modelProvider: 'provider-a', modelName: 'model-a', modelTemperature: 0 }
+  assert.deepEqual(await requestFor(a), { provider: 'provider-a', model: 'model-a', temperature: 0 })
+  assert.deepEqual(await requestFor({}), inherited, '未配置模型的预设继承宿主，不能继承 A')
+  assert.deepEqual(await requestFor(a, 1), inherited, '主模型覆盖不强写子代理')
+  assert.deepEqual(modelRequestConfigs({ modelProvider: 'provider-a', modelName: '' }), [], '不完整路由不生成半个请求覆盖')
+})
 
 const preset = (id) => loadPresetSpec(fileURLToPath(new URL(`../../preset/pt-${id}/`, import.meta.url)))
 

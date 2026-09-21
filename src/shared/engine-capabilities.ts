@@ -133,8 +133,7 @@ export const ENGINE_EDITOR_GROUPS: readonly EngineEditorGroup[] = [
   { id: 'persona', displayLayer: 'system-section', relatedLayers: ['runtime-context'], hook: 'system-section' },
   // 预设顶层 variables 是插值源，由 runtime-context 的 placeholder 消费。
   { id: 'variables', displayLayer: 'runtime-context', hook: 'runtime-context' },
-  // 主模型参数：思维程度/温度/输出上限经 writePreset 生成的 agent-request patch 生效；
-  // provider / model 另写官方顶层 model 段（官方 agent-default-model 通道，不属于九层）。
+  // 主模型 provider/model 与采样参数经当前预设生成的 agent-request patch 生效。
   { id: 'main-model', displayLayer: 'agent-request', hook: 'agent-request' },
   // 子代理模型路由随子代理启动注入 tool-subagent 行 agentOptions；同卡采样三参数写
   // agent-request 的 subagent-model-params patch，因此关联 agent-request。

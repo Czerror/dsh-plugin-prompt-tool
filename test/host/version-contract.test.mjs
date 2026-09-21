@@ -211,7 +211,6 @@ test('新增直接依赖都有真实消费者（D-02）', () => {
   const added = [
     '@deepseek-ai/dsh-agent',
     '@deepseek-ai/dsh-llm',
-    '@deepseek-ai/dsh-agent-default-model',
     '@deepseek-ai/dsh-subagent',
     '@deepseek-ai/dsh-tool-subagent',
     '@deepseek-ai/dsh-package-manifest',

@@ -14,7 +14,7 @@ import {
 import type { PresetSpec } from './host/manifest.ts'
 import type { PromptConfigSpec } from './host/prompt-configs.ts'
 import { scheduleWebSurfaceRepair } from './web-surface.ts'
-import { detectModels, installDefaultModelRoute, invalidateModelCatalog, listAdvertisedModels } from './runtime/models.ts'
+import { detectModels, invalidateModelCatalog, listAdvertisedModels } from './runtime/models.ts'
 import type { ModelDetection } from './runtime/models.ts'
 import { registerSettingsBridge } from './runtime/settings-bridge.ts'
 import { registerCharacterTools } from './runtime/character-tools.ts'
@@ -297,8 +297,6 @@ export function apply(ctx: Context, configIn: Config): void {
       } catch (error) {
         warn(ctx, `prompt-tool: overrides rebuild failed: ${String(error)}`)
       }
-      // 默认模型同步结果回给参数覆盖端点：预设已保存与默认模型同步失败分开表达。
-      return applyDefaultModel()
     },
     // host 已安装完整候选；这里只刷新内存，不能二次物化覆盖导入资产。
     (id) => {
@@ -311,7 +309,6 @@ export function apply(ctx: Context, configIn: Config): void {
     },
     () => {
       rebuildPreset()
-      return applyDefaultModel()
     },
   )
 
@@ -460,17 +457,6 @@ export function apply(ctx: Context, configIn: Config): void {
   // 子代理固定模型路由：不替换 ctx.subagents 的 start/startContinuable 方法，
   // 只经 buildModuleConfigsFromParams 把 agentOptions 写进本插件生成的
   // tool-subagent / tool-subagent-fork 行；第三方直派保持官方默认继承语义。
-  // 主对话默认模型控制：modelProvider + modelName 非空时写入官方 agent-default-model
-  // （新会话默认模型）；仅思维程度非空时与宿主当前选择合并、只同步思维程度；
-  // 三者皆空 = 不干预，继承用户在宿主 web 的选择。
-  const applyDefaultModel = installDefaultModelRoute(
-    ctx,
-    () => (runtime.modelProvider.length > 0 && runtime.modelName.length > 0)
-      || runtime.modelReasoningEffort.trim().length > 0,
-    () => runtime.modelProvider,
-    () => runtime.modelName,
-    () => runtime.modelReasoningEffort,
-  )
 
   let currentSource = (): PromptSettings => ({
     modelsAvailable: getModelsState().available,
@@ -669,7 +655,7 @@ export { expandPresetSource, exportPresetPackage, presetImportPreview, installPr
 export { ensureWebSurface, resolveProfileDir, scheduleWebSurfaceRepair } from './web-surface.ts'
 export { USER_SKILLS_DIR } from './host/paths.ts'
 export { importSkillsPackage } from './host/skills-import.ts'
-export { detectModels, installDefaultModelRoute, invalidateModelCatalog, listAdvertisedModels, peekModelCatalog, resolveSubagentStartOptions } from './runtime/models.ts'
+export { detectModels, invalidateModelCatalog, listAdvertisedModels, peekModelCatalog, resolveSubagentStartOptions } from './runtime/models.ts'
 export type { PluginSubagentSeam } from './runtime/models.ts'
 export type { WritePresetOptions } from './host/write-preset.ts'
 export { validatePromptConfigs } from './runtime/configs-validate.ts'

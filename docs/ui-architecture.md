@@ -326,7 +326,6 @@ workspace-pages.ts 是页面元数据的唯一来源。默认页为 features，�
 | 工具、人设、策略、原始 JSON/数字草稿 | store.editorDrafts / workspace-drafts | 按预设和字段身份保留；未存草稿或保存中阻止预设切换；改名迁移、删除清理对应字段 |
 | 指令文件正文草稿 | instruction-drafts | 与预设保存队列分离；按指令上下文（`contextId`）隔离，旧上下文迟到响应不覆盖当前视图 |
 | 导入预览与提交阶段 | use-import-preview-flow | 每次 `run()` 独立生命周期；卸载结束等待、不悬挂 Promise |
-| 模型同步提示 | model-sync-notice | 纯函数，从保存结果推导提示，不持有状态 |
 | 创建意图、菜单、删除/导入确认、拖拽 | 对应 feature | 仍随页面卸载失效；不恢复或重放危险操作 |
 | 保存队列、revision、草稿版本 | save-queue + store | 工作台挂载期 |
 | 大文本和角色卡原文件 | 文件通道/bridge | 不进入 settings descriptor |
@@ -366,7 +365,6 @@ use-prompt-tool-store.ts 是唯一工作台 facade，负责把 SettingsScope mir
 | workspace-drafts.ts | 按预设身份的跨页草稿池：人设、工具、策略与展开状态 |
 | instruction-drafts.ts | 指令文件正文的独立草稿池与版本基线 |
 | instruction-policy.ts | 指令策略的读写、默认值与单文件开关推导 |
-| model-sync-notice.ts | 预设保存后的宿主默认模型同步提示推导 |
 | session-model-face.ts | 官方会话模型 projection 与选择动作 |
 
 这些模块不重复实现页面渲染，也不把 feature 专属网络流程塞回通用 transport。
@@ -402,7 +400,7 @@ JSON bridge 的统一上限为 32 MiB；角色卡原始文件流独立限制为 
 
 ### 7.3 保存保护
 
-1. 全局 settings 保存使用独立队列；参数与 promptConfigs 共享预设保存队列，跨通道严格串行。
+1. 全局 settings 保存使用独立队列；参数、promptConfigs、能力创建/组合创建/移除共享预设保存队列，跨通道严格串行；能力写入及读回完成后才允许后续切换继续。
 2. 请求使用保存时的 snapshot；成功后只更新该 snapshot 的 saved 基线。
 3. 请求期间继续编辑时，当前 fields 与 saved snapshot 不同，dirty 保持为真。
 4. 成功后的静默 load 留在预设队列内，且只在全局草稿版本未变化、其他通道无待存草稿、对应草稿仍等于请求快照时执行；参数还要求没有未完成阶段草稿。
@@ -622,7 +620,7 @@ world-book 视图只隐藏工具栏之外的列表主体之外的附加提示，
 | 指令文件正文与策略 | instruction-drafts + instruction-save-flow |
 | 导入预览生命周期与顺序组 | import-smoke（真实 Edge + 真实文件输入） |
 | 菜单、下拉、模板浮层的键盘与 ARIA | menu-select + tab-key + hint-tooltip |
-| 模型选项与宿主默认同步提示 | model-options + model-sync-notice + session-model-face |
+| 模型选项与官方会话选择 | model-options + session-model-face |
 | 悬浮入口位置与拖动判定 | floating-trigger-position |
 | 锚点浮层几何与窄视口适配 | anchored-popover |
 | 技能状态筛选、徽章与来源分组 | skill-status |

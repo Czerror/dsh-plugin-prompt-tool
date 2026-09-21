@@ -80,6 +80,34 @@ export function configFileName(index: number, id: string): string {
   assertSafeConfigId(id)
   return `${String(index).padStart(4, '0')}-${id}.yml`
 }
+/** 模型采样参数生成与装配判定共用同一规则；空值不产生请求配置。 */
+export function modelRequestConfigs(params: Record<string, unknown>): PromptConfigSpec[] {
+  const patchOf = (prefix: 'model' | 'subagent'): Record<string, unknown> => {
+    const patch: Record<string, unknown> = {}
+    const effort = params[`${prefix}ReasoningEffort`]
+    const temperature = params[`${prefix}Temperature`]
+    const maxTokens = params[`${prefix}MaxTokens`]
+    if (typeof effort === 'string' && effort.trim().length > 0) patch.reasoningEffort = effort.trim()
+    const temp = typeof temperature === 'string' ? Number(temperature.trim()) : temperature
+    if (typeof temp === 'number' && Number.isFinite(temp) && String(temperature).trim().length > 0) patch.temperature = temp
+    const tokens = typeof maxTokens === 'string' ? Number(maxTokens.trim()) : maxTokens
+    if (typeof tokens === 'number' && Number.isSafeInteger(tokens) && tokens > 0 && String(maxTokens).trim().length > 0) patch.maxTokens = tokens
+    return patch
+  }
+  const configs: PromptConfigSpec[] = []
+  const mainPatch = patchOf('model')
+  // 固定主模型归当前预设的请求，不经全局默认模型服务回写。
+  if (typeof params.modelProvider === 'string' && params.modelProvider.trim().length > 0
+    && typeof params.modelName === 'string' && params.modelName.trim().length > 0) {
+    mainPatch.provider = params.modelProvider.trim()
+    mainPatch.model = params.modelName.trim()
+  }
+  if (Object.keys(mainPatch).length > 0) configs.push({ id: 'model-params', name: '模型参数（主对话）', layer: 'agent-request', audience: 'main', order: -100, params: { patch: mainPatch } })
+  const subagentPatch = patchOf('subagent')
+  if (Object.keys(subagentPatch).length > 0) configs.push({ id: 'subagent-model-params', name: '模型参数（子代理）', layer: 'agent-request', audience: 'subagent', order: -100, params: { patch: subagentPatch } })
+  return configs
+}
+
 export interface PromptConfigFile {
   /** 模块文件夹内文件名（数字前缀决定引擎执行顺序）。 */
   file: string
@@ -259,4 +287,3 @@ export function loadPromptConfigFiles(dir: string): PromptConfigSpec[] {
   }
   return specs
 }
-
