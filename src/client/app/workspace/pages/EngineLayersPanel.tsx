@@ -8,12 +8,11 @@
  * 展示归属只是导航：这里不新增第二份映射，也不改变任何运行时 hook、注册顺序或保存通道。
  */
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { ENGINE_CAPABILITIES, ENGINE_EDITOR_GROUP_MAP, engineCapability, engineGroupParamKeys, isEditorGroupVisible, isEngineCapabilityPresent, type EngineLayer } from '../../../../shared/engine-capabilities.ts'
+import { ENGINE_CAPABILITIES, ENGINE_EDITOR_GROUP_MAP, engineCapability, engineGroupParamKeys, isEditorGroupVisible, isEngineCapabilityPresent } from '../../../../shared/engine-capabilities.ts'
 import type { PromptConfigDraft } from '../../../prompt-tool-types.ts'
 import type { PromptToolStore } from '../../../data/use-prompt-tool-store.ts'
 import type { PromptToolLocaleKey, PromptToolTranslate } from '../../../locales.ts'
 import { ConfirmDialog } from '../../../ui/ConfirmDialog.tsx'
-import { EngineModuleCard } from '../../../ui/EngineModuleCard.tsx'
 import { EngineParamFields, matchesEditorGroup } from '../../../features/modules/EngineParamFields.tsx'
 import { EngineCapabilityCreateMenu } from '../../../features/modules/EngineModuleList.tsx'
 import { ModelRouteModuleCard } from '../../../features/models/ModelRouteCard.tsx'
@@ -28,78 +27,6 @@ import ui from '../../../ui/controls.module.css'
 import css from './layer-settings.module.css'
 
 export { isEditorGroupVisible }
-
-export const TOOL_PIPELINE_SETTING_GROUP_IDS = [
-  'tool-filter',
-  'promoted-code-mode',
-  'str-replace-editor',
-  'deliberation-gate',
-  'progress-reminder',
-  'tool-config-engine',
-  'bootstrap-tools',
-  'subagent-delegation',
-] as const
-export type ToolPipelineSettingGroupId = typeof TOOL_PIPELINE_SETTING_GROUP_IDS[number]
-
-export interface ToolPipelineSettingGroup {
-  id: ToolPipelineSettingGroupId
-  /** 该组参数的真实能力 card：参数键仍由 shared `ENGINE_PARAM_DEFINITIONS` 派生，不另抄一份键表。 */
-  card: string
-  /** 真实主归属在别的层时登记相关层；只读说明用，不改变写通道。 */
-  relatedLayer?: EngineLayer
-}
-
-/**
- * 工具管线层的能力参数分组：前六组的主归属就在本层，后两组是登记过的跨层相关设置
- * （首阶段工具目录主归属 system-section、子代理授权主归属 subagent-start）。
- * 同一参数在能力卡与这里各渲染一次，绑定同一 `store.fields[键]` 与同一草稿键。
- */
-export const TOOL_PIPELINE_SETTING_GROUPS: readonly ToolPipelineSettingGroup[] = [
-  { id: 'tool-filter', card: 'tool-filter' },
-  { id: 'promoted-code-mode', card: 'promoted-code-mode' },
-  { id: 'str-replace-editor', card: 'str-replace-editor' },
-  { id: 'deliberation-gate', card: 'deliberation-gate' },
-  { id: 'progress-reminder', card: 'progress-reminder' },
-  { id: 'tool-config-engine', card: 'tool-config-engine' },
-  { id: 'bootstrap-tools', card: 'tool-bootstrap', relatedLayer: 'system-section' },
-  { id: 'subagent-delegation', card: 'subagent-tools', relatedLayer: 'subagent-start' },
-]
-
-/**
- * tool-pipeline 层的共享能力设置区：这里的控件与对应能力卡绑定同一 `store.fields` 字段
- * 和同一草稿键，是同一份参数的第二处编辑点；`instanceId` 只区分 DOM id 与 aria 关联，
- * 不引入第二份状态、同步服务或事件总线，卡片本身仍由能力卡负责装配与删除。
- *
- * `keyword` 是同一搜索词：分组标题、组内参数键与参数中文标签都参与匹配，
- * 只影响展示（不匹配的分组隐藏），不改写任何预设数据。
- */
-export function ToolPipelineSettingsCard(props: { store: PromptToolStore; t: PromptToolTranslate; keyword?: string }): ReactNode {
-  const { store, t } = props
-  const search = (props.keyword ?? '').trim().toLowerCase()
-  const expandedKey = `${store.fields.presetTemplate}:tool-pipeline-settings`
-  const groups = TOOL_PIPELINE_SETTING_GROUPS.filter((group) => search.length === 0
-    || t(`modules.group.${group.id}`).toLowerCase().includes(search)
-    || matchesEditorGroup(group.card, search, t))
-  return (
-    <EngineModuleCard name={t('modules.toolPipeline.name')} meta={t('modules.toolPipeline.meta')}
-      defaultExpanded={store.editorDrafts?.expanded.get(expandedKey)}
-      onExpandedChange={(value) => store.editorDrafts?.expanded.set(expandedKey, value)}>
-      <p className={ui.configFieldHint}>{t('modules.toolPipeline.hint')}</p>
-      {groups.map((group) => (
-        <section key={group.id} className={ui.settingRowStack} data-pipeline-group={group.id} aria-label={t(`modules.group.${group.id}`)}>
-          <strong>{t(`modules.group.${group.id}`)}</strong>
-          <small className={ui.configFieldHint}>
-            {group.relatedLayer === undefined
-              ? t('modules.group.sharedHint')
-              : t('modules.group.relatedHint', { layer: t(`layer.${group.relatedLayer}`) })}
-          </small>
-          <EngineParamFields store={store} card={group.card} t={t} instanceId={`tool-pipeline-${group.id}`} />
-        </section>
-      ))}
-      {groups.length === 0 && <p className={ui.configFieldHint} role="status">{t('modules.status.emptySearch', { keyword: props.keyword ?? '' })}</p>}
-    </EngineModuleCard>
-  )
-}
 
 /** card → 参数分组标题词条：分组标题按 card 派生，不另抄一份参数归属。 */
 const CARD_LABEL_KEYS: Record<string, PromptToolLocaleKey> = {

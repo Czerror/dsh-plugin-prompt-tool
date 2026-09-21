@@ -33,7 +33,6 @@ const loader = registerHooks({
   },
 })
 const { EngineParamFields, EngineParamField } = await import('../../src/client/features/modules/EngineParamFields.tsx')
-const { ToolPipelineSettingsCard, TOOL_PIPELINE_SETTING_GROUPS } = await import('../../src/client/app/workspace/pages/EngineLayersPanel.tsx')
 const { LayerSettingsContent, layerParamCards, layerHasSettings, layerAssembledCapabilities, engineLayerSlots } = await import('../../src/client/app/workspace/pages/EngineLayersPanel.tsx')
 const { LayerCard } = await import('../../src/client/ui/LayerCard.tsx')
 const { EngineModuleCards, EngineCapabilityCreateMenu } = await import('../../src/client/features/modules/EngineModuleList.tsx')
@@ -448,50 +447,35 @@ test('共享参数镜像控件：两处渲染读同一 store 字段，DOM id 不
   assert.notEqual(primary.match(/id="([^"]+)"/)?.[1], mirror.match(/id="([^"]+)"/)?.[1], 'DOM id 必须不同')
 })
 
-/** 共享设置区渲染用 store：展开态由草稿池给出，字段与保存动作与能力卡同源。 */
-const pipelineStore = () => ({
-  fields: { ...EMPTY_FIELDS, presetTemplate: 'pt-pipeline', writePreset: true },
-  moduleFacts: { editable: true },
-  editorDrafts: { expanded: new Map([['pt-pipeline:tool-pipeline-settings', true]]), fields: new Map() },
-  patch() {},
-  persistParamOverrides() { return Promise.resolve(true) },
-})
-
-test('工具管线共享设置区覆盖本层每个带参数的能力，不漏键也不另抄键表', () => {
+test('工具链层参数分组覆盖本层每个带参数的能力，不漏键也不另抄键表', () => {
   // 分组集合必须覆盖 tool-pipeline 层所有「确实有扁平参数」的能力 card；
   // subagent-tool-policy 的结构化授权走自己的策略编辑器，不伪造扁平参数。
-  const groupCards = new Set(TOOL_PIPELINE_SETTING_GROUPS.map((group) => group.card))
+  const pipelineCapabilities = ENGINE_CAPABILITIES.filter(({ displayLayer }) => displayLayer === 'tool-pipeline')
+  const moduleKeys = [...new Set(pipelineCapabilities.flatMap((capability) => capability.moduleKeys))]
+  const active = {
+    ...store,
+    fields: { ...EMPTY_FIELDS, presetTemplate: 'pt-pipeline', writePreset: true },
+    moduleFacts: { sourceMode: 'explicit', editable: true, rowIds: [], declaredModules: moduleKeys, effectiveModules: moduleKeys },
+  }
   const cardsWithParams = new Set(ENGINE_PARAM_KEYS.map((key) => ENGINE_PARAM_DEFINITIONS[key].card))
-  const missing = ENGINE_CAPABILITIES
-    .filter(({ id, displayLayer }) => displayLayer === 'tool-pipeline' && cardsWithParams.has(id) && !groupCards.has(id))
+  const groups = layerParamCards(active, 'tool-pipeline')
+  const missing = pipelineCapabilities
+    .filter(({ id }) => cardsWithParams.has(id) && !groups.includes(id))
     .map(({ id }) => id)
-  assert.deepEqual(missing, [], '本层带参数的能力 card 必须进入共享设置区')
+  assert.deepEqual(missing, [], '本层带参数的能力 card 必须进入层设置区')
   // 分组内渲染的参数完全来自 shared 定义：既不重复声明键，也不遗漏。
-  const html = render(ToolPipelineSettingsCard, { store: pipelineStore(), t })
-  for (const group of TOOL_PIPELINE_SETTING_GROUPS) {
-    assert.ok(html.includes(`data-pipeline-group="${group.id}"`), `缺少分组 ${group.id}`)
-    const keys = ENGINE_PARAM_KEYS.filter((key) => ENGINE_PARAM_DEFINITIONS[key].card === group.card)
-    for (const key of keys) {
+  const html = render(LayerSettingsContent, { store: active, t, layer: 'tool-pipeline' })
+  for (const id of groups) {
+    assert.ok(html.includes(`data-layer-param-group="${id}"`), `缺少分组 ${id}`)
+    for (const key of ENGINE_PARAM_KEYS.filter((item) => ENGINE_PARAM_DEFINITIONS[item].card === id)) {
       // 控件形态随类型不同（Switch 无 id、TagInput 有 id），标签是共同的可断言标识。
-      assert.ok(html.includes(zh[`param.${key}`]), `分组 ${group.id} 缺少参数 ${key}`)
+      assert.ok(html.includes(zh[`param.${key}`]), `分组 ${id} 缺少参数 ${key}`)
     }
   }
-  // 镜像控件的 DOM id 必须唯一：两处渲染同一参数时靠 instanceId 前缀区分。
+  // 同层多处渲染同一参数时靠 instanceId 前缀区分，DOM id 不得重复。
   const ids = [...html.matchAll(/\sid="([^"]+)"/g)].map(([, id]) => id)
-  assert.equal(new Set(ids).size, ids.length, '共享设置区内 DOM id 不得重复')
-  assert.ok(ids.some((id) => id.startsWith('pt-param-tool-pipeline-tool-filter-')), '镜像渲染点带实例前缀')
-})
-
-test('工具管线共享设置区登记跨层相关设置，并说明真实主归属层', () => {
-  const html = render(ToolPipelineSettingsCard, { store: pipelineStore(), t })
-  // 首阶段工具目录主归属 system-section、子代理授权主归属 subagent-start：同源第二处编辑点。
-  assert.ok(html.includes('data-pipeline-group="bootstrap-tools"') && html.includes('data-pipeline-group="subagent-delegation"'))
-  assert.ok(html.includes(t('layer.system-section')) && html.includes(t('layer.subagent-start')), '跨层组标明真实主归属层')
-  assert.ok(html.includes(t('modules.group.bootstrap-tools')) && html.includes(t('modules.group.subagent-delegation')))
-  // 相关层必须是真实登记过的归属：与 shared 契约一致，前端不另写层名。
-  for (const group of TOOL_PIPELINE_SETTING_GROUPS.filter((item) => item.relatedLayer !== undefined)) {
-    assert.equal(isEditorGroupVisible(group.card, group.relatedLayer), true, `${group.card} 未登记相关层 ${group.relatedLayer}`)
-  }
+  assert.equal(new Set(ids).size, ids.length, '层设置区内 DOM id 不得重复')
+  assert.ok(ids.some((id) => id.startsWith('pt-param-layer-tool-pipeline-standalone-')), '设置区渲染点带层与卡身份前缀')
 })
 
 test('EngineParamFields 把 instanceId 透传给组内每个字段', () => {  const store = {
@@ -564,8 +548,6 @@ test('切层与受众切换保留草稿：卡片隐藏而不卸载，草稿键�
   // 因此切层、筛选与主/子受众切换后读回的是同一份草稿。
   assert.match(read('features/modules/EngineParamFields.tsx'),
     /const draftKey = `\$\{store\.fields\.presetTemplate\}:param:\$\{param\}`/)
-  assert.match(read('app/workspace/pages/EngineLayersPanel.tsx'),
-    /const expandedKey = `\$\{store\.fields\.presetTemplate\}:tool-pipeline-settings`/)
   // 主/子代理是同源视图：两页只声明受众，配置卡草稿作用域都取当前预设。
   assert.match(read('app/workspace/pages/MainSessionPage.tsx'), /draftScope=\{fields\.presetTemplate\}/)
   assert.match(read('app/workspace/pages/SubagentPage.tsx'), /audience: 'subagent'/)

@@ -113,10 +113,6 @@ export const PARAMS_ZH = {
   // 子代理页不提供「仅主对话」能力的创建与卡片：引导到实例级策略能力卡。
   'modules.subagentScopeHint': '子代理工具面由「subagent-tool-policy」能力管理，可在工具链层的设置区创建；「tool-filter」只作用于主对话，不在本页提供。',
   'modules.subagentEmptyHint': '子代理页不显示「仅主对话」的引擎能力；子代理工具面请启用「subagent-tool-policy」能力。',
-  // 工具管线层的共享能力设置区：与 tool-filter 能力卡同源，改一处即改同一份预设参数。
-  'modules.toolPipeline.name': '工具能力设置',
-  'modules.toolPipeline.meta': '预设级共享参数（与工具过滤能力卡同源）',
-  'modules.toolPipeline.hint': '这里的工具过滤与「tool-filter」能力卡是同一份预设参数：任一处修改立即反映到另一处，保存一次即可；不新增第二份状态。',
   // 共享设置区的能力参数分组标题（按真实能力 card 分组，不另抄键表）。
   'modules.group.tool-filter': '工具过滤',
   'modules.group.promoted-code-mode': '工具呈现',
@@ -126,8 +122,6 @@ export const PARAMS_ZH = {
   'modules.group.tool-config-engine': '工具配置',
   'modules.group.bootstrap-tools': '首阶段工具目录',
   'modules.group.subagent-delegation': '子代理授权',
-  'modules.group.sharedHint': '与对应能力卡绑定同一份预设参数：任一处修改立即反映到另一处，保存一次即可。',
-  'modules.group.relatedHint': '主归属在「{layer}」层；这里是与该层能力卡同源的第二处编辑点，不新增第二份状态，也不改变实际生效通道。',
   // 层设置区：参数分组标题按 card 派生，能力装配状态与移除入口都在本层设置区内。
   'modules.group.prompt-defaults': '提示词生成默认值',
   'modules.group.context-gate': '上下文门控',
@@ -249,9 +243,6 @@ export const PARAMS_EN: Record<keyof typeof PARAMS_ZH, string> = {
   // Subagent page omits main-session-only capabilities and points at the per-instance policy capability card.
   'modules.subagentScopeHint': 'The subagent tool surface is managed by "subagent-tool-policy", created in the tool-pipeline layer settings; "tool-filter" affects the main session only and is not offered here.',
   'modules.subagentEmptyHint': 'Main-session-only engine capabilities are not shown on the subagent page; enable the "subagent-tool-policy" capability for the subagent tool surface.',
-  'modules.toolPipeline.name': 'Tool capability settings',
-  'modules.toolPipeline.meta': 'Preset-level shared parameters (same source as the tool-filter capability card)',
-  'modules.toolPipeline.hint': 'These tool-filter controls and the "tool-filter" capability card edit the same preset parameters: a change in either place shows up in the other immediately, and one save is enough — there is no second copy of the state.',
   'modules.group.tool-filter': 'Tool filter',
   'modules.group.promoted-code-mode': 'Tool presentation',
   'modules.group.str-replace-editor': 'Editor',
@@ -260,8 +251,6 @@ export const PARAMS_EN: Record<keyof typeof PARAMS_ZH, string> = {
   'modules.group.tool-config-engine': 'Tool config',
   'modules.group.bootstrap-tools': 'Bootstrap tool catalog',
   'modules.group.subagent-delegation': 'Subagent delegation',
-  'modules.group.sharedHint': 'Edits the same preset parameters as the matching capability card: a change in either place shows up in the other, and one save is enough.',
-  'modules.group.relatedHint': 'Primary home is the "{layer}" layer; this is a second editing point over the same parameters, with no second copy of the state and no change to the real injection channel.',
   'modules.group.prompt-defaults': 'Prompt generation defaults',
   'modules.group.context-gate': 'Context gate',
   'modules.group.anchor-turn': 'Anchor turn',
