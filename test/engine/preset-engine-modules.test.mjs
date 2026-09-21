@@ -1,7 +1,12 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
-import { apply as applyGitBash, bashCandidates, normalizeGitBashWorkdir } from '../../engine/tool-git-bash.mjs'
+import { apply as applyGitBashRaw, bashCandidates, normalizeGitBashWorkdir } from '../../engine/tool-git-bash.mjs'
+import { compositionConfig } from '../fixtures/composition-defaults.mjs'
+
+// 引擎不再内置超时/输出上限默认：测试装配铺组合源默认，再叠加用例覆盖。
+const applyGitBash = (ctx, config = {}) =>
+  applyGitBashRaw(ctx, { ...compositionConfig('tool-git-bash'), ...config })
 
 function makeTool({ timeoutMs = 30, exitCode = 0, output = '', pending = false } = {}) {
   let registered
@@ -193,7 +198,8 @@ function parseInjectedEnv(code) {
 
 function makeHarness({
   enabled = true,
-  envKeys,
+  // 白名单归组合源/预设，引擎不再内置默认键。
+  envKeys = compositionConfig('run-code-env').envKeys,
   schemas = [{ name: 'run_code' }],
   shellEnv,
 } = {}) {
@@ -331,14 +337,13 @@ test('PTC 时提示段列出 env 用法与可用键', async () => {
   assert.match(text, /DSH_WORKSPACE/)
 })
 
-test('normalizeEnvKeys：缺省/空数组回退默认，去重并保留自定义', () => {
-  assert.deepEqual(normalizeEnvKeys(undefined), [
-    'PATH', 'PATHEXT', 'HOME', 'USERPROFILE', 'USERNAME', 'COMPUTERNAME',
-    'OS', 'TEMP', 'TMP', 'SystemRoot', 'ProgramFiles', 'ProgramFiles(x86)',
-    'LOCALAPPDATA', 'APPDATA',
-  ])
-  assert.equal(normalizeEnvKeys([]).includes('PATH'), true)
+test('normalizeEnvKeys：白名单必填（缺省/空数组 fail loud），去重并保留自定义', () => {
+  assert.throws(() => normalizeEnvKeys(undefined), /envKeys must be a non-empty array/)
+  assert.throws(() => normalizeEnvKeys([]), /envKeys must be a non-empty array/)
+  assert.throws(() => normalizeEnvKeys(['', '  ']), /at least one non-empty/)
   assert.deepEqual(normalizeEnvKeys(['FOO', 'FOO', 'BAR']), ['FOO', 'BAR'])
+  // 行默认仍在组合源（默认值归模板/预设，引擎不再兜底）。
+  assert.ok(compositionConfig('run-code-env').envKeys.includes('PATH'))
 })
 
 test('injectEnvPrefix 生成可解析且原始 code 保持在最后一行', () => {

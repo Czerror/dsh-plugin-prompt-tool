@@ -10,14 +10,12 @@ const name = 'prompt-config-engine'
 
 /**
  * env-facts:机器事实动态填充器。
- * params.envKeys 逗号分隔环境变量白名单,默认 DSH_HOME,DSH_WORKSPACE;
- * CWD 特殊映射到 session.header.cwd ?? process.cwd()。
+ * params.envKeys 逗号分隔环境变量白名单：取值归模板/预设，留空 = 不附加宿主环境
+ * 变量（CWD/WORKSPACE 仍由会话事实提供）。
  * 返回 facts 变量表与默认文本;用户可用 text 模板 + {{变量}} 完全自定义输出。
  */
 function createEnvFactsResolver(config) {
-  const keys = parseToolNames(typeof config.params?.envKeys === 'string' && config.params.envKeys.length > 0
-    ? config.params.envKeys
-    : 'DSH_HOME,DSH_WORKSPACE')
+  const keys = parseToolNames(typeof config.params?.envKeys === 'string' ? config.params.envKeys : '')
   return ({ agent }) => {
     const session = agent?.session
     const cwd = session?.header?.cwd ?? process.cwd()
@@ -51,9 +49,8 @@ function createSkillCatalogResolver(config) {
     .filter((field) => ['name', 'description', 'whenToUse'].includes(field))
   const providers = parseToolNames(config.params?.providers)
   const emptyBehavior = config.params?.emptyBehavior === 'text' ? 'text' : 'skip'
-  const emptyText = typeof config.params?.emptyText === 'string' && config.params.emptyText.length > 0
-    ? config.params.emptyText
-    : '当前没有可用技能。'
+  // 空结果提示文案归模板/预设：留空且 emptyBehavior=text 时按 skip 处理（不注入空消息）。
+  const emptyText = typeof config.params?.emptyText === 'string' ? config.params.emptyText : ''
   let warned = false
   const warnOnceLocal = (ctx, message) => {
     if (warned) return
@@ -83,7 +80,7 @@ function createSkillCatalogResolver(config) {
         : visible.filter((skill) => providers.includes(skill?.provider))
       const total = scoped.length
       if (total === 0) {
-        if (emptyBehavior !== 'text') return null
+        if (emptyBehavior !== 'text' || emptyText.length === 0) return null
         return { text: emptyText, variables: { SKILL_COUNT: '0', SKILL_NAMES: '', SKILLS_TEXT: '' } }
       }
 

@@ -18,7 +18,7 @@
  * native 模式自动空转。
  */
 
-import { validateConfig } from './shared.mjs'
+import { booleanOption, validateConfig } from './shared.mjs'
 
 /** Cordis 插件名，供 loader 诊断使用。 */
 export const name = 'run-code-env'
@@ -29,24 +29,6 @@ const ALLOWED_KEYS = new Set(['enabled', 'envKeys'])
 /** 需要 tools 视图与 systemPrompt 段。shellEnv 为机会型读取，不写进 inject。 */
 export const inject = ['tools', 'systemPrompt']
 
-/** 默认暴露的系统环境变量（无凭据形态）。 */
-export const DEFAULT_ENV_KEYS = [
-  'PATH',
-  'PATHEXT',
-  'HOME',
-  'USERPROFILE',
-  'USERNAME',
-  'COMPUTERNAME',
-  'OS',
-  'TEMP',
-  'TMP',
-  'SystemRoot',
-  'ProgramFiles',
-  'ProgramFiles(x86)',
-  'LOCALAPPDATA',
-  'APPDATA',
-]
-
 /** 任何疑似凭据的名字一律不放行。 */
 export const SENSITIVE_ENV_RE = /KEY|PASSWORD|SECRET|TOKEN/i
 
@@ -54,15 +36,20 @@ export const SENSITIVE_ENV_RE = /KEY|PASSWORD|SECRET|TOKEN/i
 const PATCHED = new WeakSet()
 
 /**
- * 校验 envKeys：非空字符串数组；缺省/空数组回退默认白名单。
+ * 校验 envKeys：非空字符串数组；缺失或全空一律 fail loud——暴露哪些变量
+ * 归组合源 / 预设（见 engine/compositions/source/local/run-code-env.yml）。
  * 单个键为敏感名时在 buildEnv 阶段过滤，这里只校验形状。
  */
 export function normalizeEnvKeys(value) {
-  if (value === undefined) return [...DEFAULT_ENV_KEYS]
-  if (!Array.isArray(value) || value.length === 0) return [...DEFAULT_ENV_KEYS]
+  if (!Array.isArray(value) || value.length === 0) {
+    throw new TypeError(`${name}: envKeys must be a non-empty array of env var names — 白名单归模板/预设，请在本预设或组合源提供`)
+  }
   const keys = value.map((key) => (typeof key === 'string' ? key.trim() : ''))
     .filter((key) => key.length > 0)
-  return keys.length > 0 ? [...new Set(keys)] : [...DEFAULT_ENV_KEYS]
+  if (keys.length === 0) {
+    throw new TypeError(`${name}: envKeys must contain at least one non-empty env var name`)
+  }
+  return [...new Set(keys)]
 }
 
 /**
@@ -172,7 +159,8 @@ export function patchRunCodeTool(tool, ctx, keys) {
 /** 注册 PTC env 注入：只在目标 scope 出现 run_code 时生效。 */
 export function apply(ctx, config) {
   const source = validateConfig(name, config, ALLOWED_KEYS)
-  const enabled = source.enabled !== false
+  // 开关语义：未声明 = 关闭（组合源为本模块显式写 enabled: true）。
+  const enabled = booleanOption(name, source.enabled, 'enabled', false)
   const keys = normalizeEnvKeys(source.envKeys)
 
   const tryPatch = (scope) => {

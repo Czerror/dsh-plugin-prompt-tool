@@ -1,6 +1,11 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { apply as applyToolFilter } from '../../engine/tool-filter.mjs'
+import { apply as applyToolFilterRaw } from '../../engine/tool-filter.mjs'
+import { compositionConfig } from '../fixtures/composition-defaults.mjs'
+
+// 引擎不再内置 enabled 默认：测试装配铺组合源默认（enabled: true），未声明即关闭。
+const applyToolFilter = (ctx, config = {}) =>
+  applyToolFilterRaw(ctx, { ...compositionConfig('tool-filter'), ...config })
 
 /** 收集 ctx.on 注册的监听器（按注册顺序）。 */
 function makeCtx() {

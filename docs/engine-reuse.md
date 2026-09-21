@@ -218,7 +218,8 @@ pre-step 来源：
 - `context-gate.instructionHint` 以 `session.deriveMessages()` 的模型可见 surface 去重：hint 仍可见时不重复，被压缩遮蔽后才重新提示；
 - 子代理：默认视为已晋升（继承完整上下文/目录）；`includeSubagents: true` 时跟随主会话相位；
 - 严格门控模式（通用 opt-in 扩展）：`promoteGate: true` 要求首段 reasoning minimal-like
-  （`we` 无 `let me`）+ 工具调用才晋升，`maxPromoteSteps`（默认 4）步数兜底，
+  （`we` 无 `let me`）+ 工具调用才晋升，`maxPromoteSteps`（步数兜底，开启门控时必填，
+  取值由组合源/预设提供）兜底，
   `promoteAfterFirstResponse: true` 无工具首响应/首轮结束即晋升。
 
 ## 配置参考（params 扁平键 ↔ 模块行 config）
@@ -297,15 +298,19 @@ ST 的两个条目级开关在引擎里按 `params.stWorldBook` 消费；未开�
 优先级：参数桥（params / UI）> `moduleConfigs`（模板/ST 行级直写）> 行默认。
 moduleConfigs 只补充参数桥未覆盖的键，不再锁定覆盖 UI 可管理参数。
 
-| params 键 | 落点（config 键） | 默认 |
+行默认 = `engine/compositions/source/local/*.yml` 各行 `config`，是可配置默认值的唯一归属地
+（含引导正文与节奏阈值）。引擎不内置可配置默认值：未声明 `enabled` 视为关闭，缺必填键在装配时
+响亮失败（`requiredText` / `requiredInt`），显式空文本表示该能力不注册。
+
+| params 键 | 落点（config 键） | 行默认（组合源） |
 |---|---|---|
 | `usePtcMode` | promoted-code-mode.usePtcMode | false（opt-in） |
 | `bootstrapMaxTokens` | tool-bootstrap.bootstrapMaxTokens | 不封顶 |
 | `bootstrapTools` | tool-bootstrap.bootstrapTools | [bash, str_replace_editor] |
 | `promoteGate` | tool-bootstrap.promoteGate | false |
 | `promoteAfterFirstResponse` | tool-bootstrap.promoteAfterFirstResponse | false |
-| `maxPromoteSteps` | tool-bootstrap.maxPromoteSteps | 4 |
-| `compactionTools` | tool-bootstrap.compactionTools | [] |
+| `maxPromoteSteps` | tool-bootstrap.maxPromoteSteps | 4（开启门控时必填） |
+| `compactionTools` | tool-bootstrap.compactionTools | read/write/edit/glob/grep/todo_write/ask_user_question |
 | `personaSectionsOnly` | tool-bootstrap.personaSectionsOnly | false |
 | `workspaceLine` | tool-bootstrap.workspaceLine | false |
 | `allowKinds` | context-gate.allowKinds | 不过滤（官方 pre-step 行为） |
@@ -314,8 +319,8 @@ moduleConfigs 只补充参数桥未覆盖的键，不再锁定覆盖 UI 可管�
 | `deferredGraceSteps` | context-gate.deferredGraceSteps | 0 |
 | `instructionHint` | context-gate.instructionHint | false |
 | `stages` | tool-bootstrap.stages（`[{name, tools}]`） | 未声明（两相窄化） |
-| `stagePreUnlock` | tool-bootstrap.stagePreUnlock | 1 |
-| `stageAdvanceTool` | tool-bootstrap.stageAdvanceTool | phase_advance |
+| `stagePreUnlock` | tool-bootstrap.stagePreUnlock | 1（声明 stages 时必填） |
+| `stageAdvanceTool` | tool-bootstrap.stageAdvanceTool | phase_advance（声明 stages 时必填） |
 | `stageSectionTemplate` | tool-bootstrap.stageSectionTemplate | 默认模板（`{{stage}}/{{stageName}}/{{unlocked}}/{{total}}/{{advanceTool}}`；空 = 不注入） |
 
 ## 渐进披露（stages 模式）

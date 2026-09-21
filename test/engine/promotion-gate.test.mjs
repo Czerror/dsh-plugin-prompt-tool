@@ -5,9 +5,17 @@ import {
   classifyReasoning,
   hasAnchoredReasoning,
 } from '../../engine/compaction-epoch.mjs'
-import { apply as applyToolBootstrap } from '../../engine/tool-bootstrap.mjs'
-import { apply as applyContextGate } from '../../engine/context-gate.mjs'
+import { apply as applyToolBootstrapRaw } from '../../engine/tool-bootstrap.mjs'
+import { apply as applyContextGateRaw } from '../../engine/context-gate.mjs'
 import { apply as applyPromotedCodeMode } from '../../engine/promoted-code-mode.mjs'
+import { compositionConfig } from '../fixtures/composition-defaults.mjs'
+
+// 引擎不再内置可配置默认值：测试装配先铺组合源默认，再叠加用例覆盖
+// （未声明 enabled 的模块在引擎侧一律视为关闭，默认开启由组合源显式表达）。
+const applyToolBootstrap = (ctx, config = {}) =>
+  applyToolBootstrapRaw(ctx, { ...compositionConfig('tool-bootstrap'), ...config })
+const applyContextGate = (ctx, config = {}) =>
+  applyContextGateRaw(ctx, { ...compositionConfig('context-gate'), ...config })
 
 /** 收集 ctx.on 注册的监听器（按注册顺序）。 */
 function makeCtx() {

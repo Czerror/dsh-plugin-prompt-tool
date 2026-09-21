@@ -65,7 +65,7 @@ node scripts/migrate-skills.mjs --rollback "<备份目录>\migration.json"
 - 🧩 **模板变量**：仅从预设顶层 `variables` 段提供 `{{key}}` 插值默认值，单条提示词配置的 `variables` 可局部覆盖——模块列表顶部「模板变量」卡片统一编辑（可折叠/清空/停用/失焦自动保存）。`params` 中的旧内容变量及 `params.variables` 不再读取，也不自动迁移；旧预设需自行整理到顶层后重新物化。锚定匹配引擎（anchor-match）统一 custom-fallback 与 world-book 的匹配语义
 - 💬 **会话变量工具**：`session_var`（list/get/set/clear）——模型维护角色状态（`{{心情}}` 等），会话级覆盖预设默认；ST 运行时宏（`{{lastusermessage}}` / `{{lastcharmessage}}`）从会话事件提取
 - 🧩 **工具按模块装配**：角色卡、世界书、会话变量、自定义工具分别由 `character-tools` / `world-book-tools` / `session-var-tools` / `tool-config-engine` 模块提供；不再维护重复的顶层工具开关
-- 📐 **显式按需装配**：`modules: []` 保持空组合；四个官方基型的人设直接由顶层 `persona` 段生成官方行，不再经模块库；不附加其他增强模块。Minimal 保持官方单 shell 基型；带隔离文件系统的本地 `filesystem-editor` 模块（`fs-local` + `str-replace-editor` 同隔离域）只由显式声明它的预设装配。锚定/深思链路（`context-gate` / `tool-bootstrap` / `promoted-code-mode` / `anchor-turn` / `deliberation-gate` / `progress-reminder`）同样按需声明，不预装 ST 管理工具
+- 📐 **显式按需装配**：`modules: []` 保持空组合；四个官方基型的人设直接由顶层 `persona` 段生成官方行，不再经模块库；不附加其他增强模块。Minimal 保持官方单 shell 基型；带隔离文件系统的本地 `filesystem-editor` 模块（`fs-local` + `str-replace-editor` 同隔离域）只由显式声明它的预设装配。锚定/深思链路（`context-gate` / `tool-bootstrap` / `promoted-code-mode` / `anchor-turn` / `deliberation-gate` / `progress-reminder`）同样按需声明，不预装 ST 管理工具。这些能力的开关、引导正文与节奏阈值统一由组合源（`engine/compositions/source/local/*.yml`）和预设 `moduleConfigs` 提供，引擎不内置可配置默认值：未声明 `enabled` 视为关闭，缺必填键在装配时响亮失败
 
 ## Web 客户端结构
 

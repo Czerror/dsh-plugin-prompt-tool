@@ -11,41 +11,34 @@
  * 之后，落在下一请求的规划节拍位（与 Code Mode 嵌套上下文同形状）。
  * 模型读到后以一句 "We …" 重申剩余目标并继续。
  *
- * 节奏刻意温和：默认 every: 4 次结果、每轮最多 maxPerTurn: 1 条；
- * every: 0 禁用。计数在 await 前同步自增（并行调用无法竞态越过节奏）；
+ * 节奏由配置给出（组合源默认 every: 4 次结果、每轮最多 maxPerTurn: 1 条；
+ * every: 0 禁用）。计数在 await 前同步自增（并行调用无法竞态越过节奏）；
  * 轮边界由 durable turn/start + assistant/chunk 双路跟踪（无轮号时降级
  * session 全局）；子代理默认不滴（brief 即计划）。
  */
 
-import { MAX_TRACKED_SESSIONS, booleanOption, validateConfig } from './shared.mjs'
+import { MAX_TRACKED_SESSIONS, booleanOption, requiredInt, requiredText, validateConfig } from './shared.mjs'
 
 /** Cordis plugin name used by loader diagnostics. */
 export const name = 'progress-reminder'
 
-/** 默认提醒文本——一条规划节拍，措辞维持 "We" 语态。 */
-export const DRIP_TEXT = [
-  'Progress check: before the next action, restate in one "We …" sentence what remains of the goal and why the next step is the right one.',
-].join(' ')
+// 节拍间隔、每轮上限与提醒正文无内置默认：取值与文案归组合源 / 预设
+// （见 engine/compositions/source/local/progress-reminder.yml）。
 
 /** Every config key this plugin accepts — anything else is a typo. */
 const ALLOWED_KEYS = new Set(['enabled', 'every', 'maxPerTurn', 'includeSubagents', 'text'])
 
-function parseCounter(value, field, fallback, minimum) {
-  if (value === undefined) return fallback
-  if (!Number.isInteger(value) || value < minimum) {
-    throw new TypeError(`${name}: ${field} must be an integer >= ${minimum}; got ${JSON.stringify(value)}`)
-  }
-  return value
-}
-
 /** 注册执行后深思滴入。 */
 export function apply(ctx, config) {
   const source = validateConfig(name, config, ALLOWED_KEYS)
-  if (source.enabled === false) return
-  const every = parseCounter(source.every, 'every', 4, 0)
-  const maxPerTurn = parseCounter(source.maxPerTurn, 'maxPerTurn', 1, 1)
+  // 开关语义：未声明 = 关闭（需要默认开启时由组合源显式写 enabled: true）。
+  if (source.enabled !== true) return
+  const every = requiredInt(name, source.every, 'every', 0)
+  const maxPerTurn = requiredInt(name, source.maxPerTurn, 'maxPerTurn', 1)
   const includeSubagents = booleanOption(name, source.includeSubagents, 'includeSubagents', false)
-  const text = typeof source.text === 'string' && source.text.length > 0 ? source.text : DRIP_TEXT
+  const text = requiredText(name, source.text, 'text')
+  // 显式留空正文 = 不滴入（无提醒措辞即无节拍）。
+  if (text === undefined) return
 
   /** sessionId -> { results, drips, lastTurn } — 每轮计数。 */
   const state = new Map()

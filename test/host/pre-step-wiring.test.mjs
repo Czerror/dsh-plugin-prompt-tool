@@ -14,9 +14,14 @@ import { Context } from '@deepseek-ai/cordis'
 import { NamedEntries, ScopedLayers, bindScopeParent, createScope, scopeOf } from '@deepseek-ai/dsh-scope'
 import { agentEvents } from '@deepseek-ai/dsh-agent'
 import SystemPrompt, { renderPrompt } from '@deepseek-ai/dsh-system-prompt'
-import { apply as applyContextGate } from '../../engine/context-gate.mjs'
+import { apply as applyContextGateRaw } from '../../engine/context-gate.mjs'
+import { compositionConfig } from '../fixtures/composition-defaults.mjs'
 import { applyPromptConfigs, createPromptConfigs } from '../../engine/prompt-config-engine.mjs'
 import { installPreStepCoordinator, PRE_STEP_COORDINATOR_SERVICE } from '../../src/runtime/pre-step-coordinator.ts'
+
+// 引擎不再内置 enabled 默认：装配铺组合源默认（enabled: true）。
+const applyContextGate = (ctx, config = {}) =>
+  applyContextGateRaw(ctx, { ...compositionConfig('context-gate'), ...config })
 
 const ENGINE_DIR = new URL('../../engine/', import.meta.url).href
 const signalOf = () => new AbortController().signal

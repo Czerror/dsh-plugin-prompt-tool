@@ -47,7 +47,7 @@
  * CONFIG:
  *  - `promoteOn`: 'either' (default) | 'tool-call' | 'assistant-message'.
  *  - `includeSubagents`: boolean, default false.
- *  - `enabled`: boolean, default true. `false` disables both interception
+ *  - `enabled`: boolean, default false（组合源显式写 true）. `false` disables both interception
  *    paths (A/B testing without touching the row set).
  *  - `allowKinds`: message `source.kind` names allowed beyond the claimed
  *    batch. UNCONFIGURED = official pre-step behavior (no kind filtering:
@@ -137,7 +137,8 @@ export function apply(ctx, config) {
   const source = validateConfig(name, config, ALLOWED_KEYS)
   const promoteEvents = parsePromoteOn(name, source.promoteOn)
   const includeSubagents = booleanOption(name, source.includeSubagents, 'includeSubagents', false)
-  const enabled = booleanOption(name, source.enabled, 'enabled', true)
+  // 开关语义：未声明 = 关闭（组合源为本模块显式写 enabled: true）。
+  const enabled = booleanOption(name, source.enabled, 'enabled', false)
   const allowKinds = allowKindList(source.allowKinds, 'allowKinds')
   const messageSources = sourceList(source.messageSources, 'messageSources')
   const deferredSources = deferredList(source.deferredSources, 'deferredSources')
@@ -173,7 +174,7 @@ export function apply(ctx, config) {
   ctx.on('system-prompt/assemble', async (_assembly, context, next) => {
     // Downstream errors propagate untouched; only this filter's own logic is guarded.
     const assembled = await next()
-    if (enabled === false) return assembled
+    if (!enabled) return assembled
     try {
       if (promotion.status(context.agent).promoted) return assembled
       if (!Array.isArray(assembled.contexts) || assembled.contexts.length === 0) return assembled
@@ -193,7 +194,7 @@ export function apply(ctx, config) {
     // Downstream errors propagate untouched; only this filter's own logic is guarded.
     const decision = await next()
     if (decision.kind === 'reject') return decision
-    if (enabled === false) return decision
+    if (!enabled) return decision
     try {
       if (promotion.status(agent).promoted) return decision
       if (messageSources !== undefined) {
@@ -227,7 +228,7 @@ export function apply(ctx, config) {
   ctx.on('agent/pre-step', async ({ agent }, next) => {
     const decision = await next()
     if (decision.kind === 'reject') return decision
-    if (enabled === false) return decision
+    if (!enabled) return decision
     try {
       if (!promotion.status(agent).promoted) return decision
       if (!Array.isArray(decision.messages)) return decision

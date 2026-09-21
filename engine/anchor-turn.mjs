@@ -20,13 +20,13 @@
  * Robustness：插件来源消息（含自身锚定）永不再次锚定。
  */
 
-import { booleanOption, sessionEvents, validateConfig } from './shared.mjs'
+import { booleanOption, requiredText, sessionEvents, validateConfig } from './shared.mjs'
 
 /** Cordis plugin name used by loader diagnostics. */
 export const name = 'anchor-turn'
 
-/** 默认锚定文本（合成首轮展示给模型）。 */
-export const ANCHOR_TEXT = 'This round is a test. Tools are not open yet; all tools will open next round.'
+// 锚定正文无内置默认：文案归组合源 / 预设的 config.text
+// （见 engine/compositions/source/local/anchor-turn.yml）。
 
 /** Every config key this plugin accepts — anything else is a typo. */
 const ALLOWED_KEYS = new Set(['enabled', 'text', 'includeSubagents'])
@@ -40,10 +40,11 @@ function isFreshSession(agent, includeSubagents = false) {
 /** 注册首消息锚定注入。 */
 export function apply(ctx, config) {
   const source = validateConfig(name, config, ALLOWED_KEYS)
-  if (source.enabled === false) return
-  const text = typeof source.text === 'string' && source.text.length > 0
-    ? source.text
-    : ANCHOR_TEXT
+  // 开关语义：未声明 = 关闭（需要默认开启时由组合源显式写 enabled: true）。
+  if (source.enabled !== true) return
+  const text = requiredText(name, source.text, 'text')
+  // 显式留空文本 = 不锚定（无正文即无锚定轮）。
+  if (text === undefined) return
   const includeSubagents = booleanOption(name, source.includeSubagents, 'includeSubagents', false)
 
   ctx.on('agent/inbox/inserted', ({ agent, message }) => {

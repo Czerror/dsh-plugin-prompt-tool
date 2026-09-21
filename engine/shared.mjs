@@ -26,6 +26,28 @@ export function booleanOption(pluginName, value, field, fallback) {
   return value
 }
 
+/**
+ * 必填整数配置：缺键 / 非整数 / 越界一律 fail loud。
+ * 默认值归模板与预设（组合源 yml 的 config 或本预设 moduleConfigs），引擎不兜底。
+ */
+export function requiredInt(pluginName, value, field, minimum) {
+  if (!Number.isSafeInteger(value) || value < minimum) {
+    throw new TypeError(`${pluginName}: ${field} must be an integer >= ${minimum}`)
+  }
+  return value
+}
+
+/**
+ * 必填文本配置：缺键 / 非字符串 fail loud（引导措辞归模板与预设，引擎不内置文案）；
+ * 空串 = 显式留空，返回 undefined 供调用方跳过注册（无正文即无该能力行为）。
+ */
+export function requiredText(pluginName, value, field) {
+  if (typeof value !== 'string') {
+    throw new TypeError(`${pluginName}: ${field} must be a string — 默认文案归模板/预设，请在本预设或组合源提供`)
+  }
+  return value.length > 0 ? value : undefined
+}
+
 /** Validate the shared config envelope and unknown-key contract. */
 export function validateConfig(pluginName, source, allowedKeys) {
   const config = source === undefined ? {} : source

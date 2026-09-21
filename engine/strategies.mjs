@@ -83,14 +83,13 @@ function createCustomFallbackResolver(config) {
   const promptText = config.texts.length > 0
     ? config.texts.join('\n\n')
     : (typeof config.params?.text === 'string' && config.params.text.length > 0 ? config.params.text : undefined)
-  const firstTurnWord = typeof config.params?.firstTurnWord === 'string' && config.params.firstTurnWord.length > 0
-    ? config.params.firstTurnWord
-    : 'we'
+  // 确认词无内置默认（默认值归模板/预设）：空 = 不做词确认，只走未命中兜底注入。
+  const firstTurnWord = typeof config.params?.firstTurnWord === 'string' ? config.params.firstTurnWord : ''
   // 确认词集合：writePreset 派生的 anchorWords 优先（锚句信号词多词 prefix，任一命中即
-  // 确认——deep 档 Let…/自定义锚句首词都覆盖）；旧产物无 anchorWords 时回退 firstTurnWord 单词。
+  // 确认——deep 档 Let…/自定义锚句首词都覆盖）；无 anchorWords 时用显式确认词。
   const anchorWords = Array.isArray(config.params?.anchorWords) && config.params.anchorWords.length > 0
     ? config.params.anchorWords.map(String).filter((word) => word.length > 0)
-    : [firstTurnWord]
+    : (firstTurnWord.length > 0 ? [firstTurnWord] : [])
   // 锚定匹配经 anchor-match 引擎（prefix 模式：首轮 reasoning 开头命中任一确认词）。
   const anchor = createAnchorMatcher({ keys: anchorWords, mode: 'prefix' })
 
@@ -125,8 +124,8 @@ function createCustomFallbackResolver(config) {
         plugin: config.id,
         form: 'notice',
         summary: confirmed
-          ? `prompt-tool 提示词(「${firstTurnWord}」锚定确认后注入)`
-          : `prompt-tool 提示词(「${firstTurnWord}」未确认,兜底注入)`,
+          ? (firstTurnWord.length > 0 ? `prompt-tool 提示词(「${firstTurnWord}」锚定确认后注入)` : 'prompt-tool 提示词(无确认词,锚定就绪后注入)')
+          : (firstTurnWord.length > 0 ? `prompt-tool 提示词(「${firstTurnWord}」未确认,兜底注入)` : 'prompt-tool 提示词(无确认词,兜底注入)'),
       },
     }
   }

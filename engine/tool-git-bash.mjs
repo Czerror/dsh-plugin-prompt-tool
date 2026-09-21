@@ -43,7 +43,7 @@
 
 import { access } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
-import { validateConfig } from './shared.mjs'
+import { requiredInt, validateConfig } from './shared.mjs'
 
 /** Cordis plugin name used by loader diagnostics. */
 export const name = 'tool-git-bash'
@@ -51,8 +51,8 @@ export const name = 'tool-git-bash'
 /** The subprocess and tools services must exist before this tool can register. */
 export const inject = ['subprocess', 'tools']
 
-const DEFAULT_TIMEOUT_MS = 120000
-const DEFAULT_MAX_OUTPUT_BYTES = 64000
+// 超时与输出上限无内置默认：取值归组合源 / 预设
+// （见 engine/compositions/source/local/tool-git-bash.yml）。
 
 /** Every config key this plugin accepts — anything else is a typo. */
 const ALLOWED_KEYS = new Set(['bashPath', 'timeoutMs', 'maxOutputBytes'])
@@ -124,8 +124,8 @@ const commandSchema = {
 export function apply(ctx, config) {
   const source = validateConfig(name, config, ALLOWED_KEYS)
   const explicitBashPath = typeof source.bashPath === 'string' && source.bashPath.length > 0 ? source.bashPath : undefined
-  const timeoutMs = Number.isSafeInteger(source.timeoutMs) && source.timeoutMs > 0 ? source.timeoutMs : DEFAULT_TIMEOUT_MS
-  const maxOutputBytes = Number.isSafeInteger(source.maxOutputBytes) && source.maxOutputBytes > 0 ? source.maxOutputBytes : DEFAULT_MAX_OUTPUT_BYTES
+  const timeoutMs = requiredInt(name, source.timeoutMs, 'timeoutMs', 1)
+  const maxOutputBytes = requiredInt(name, source.maxOutputBytes, 'maxOutputBytes', 1)
 
   // The inferred executable is memoized per plugin instance: candidate probing
   // walks the filesystem, and the answer cannot change within a mount. A

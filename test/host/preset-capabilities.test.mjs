@@ -430,7 +430,7 @@ test('子代理页创建 tool-filter：预设级落盘 + 组合行 + 参数桥�
     // 3) 组合行与参数桥一致。
     const row = parseYaml(renderComposition(loadPresetSpec(dir), { toolFilterAllow: ['read'], toolFilterDeny: ['bash'] }, root))
       .find((item) => item?.id === 'tool-filter')
-    assert.deepEqual(row.config, { allow: ['read'], deny: ['bash'] })
+    assert.deepEqual(row.config, { enabled: true, allow: ['read'], deny: ['bash'] }, '注册开关随组合源行默认给出')
 
     // 4) 引擎实测：主对话被过滤，子代理保持完整目录。
     const mainCtx = makeCtx()
@@ -450,7 +450,7 @@ test('子代理页创建 tool-filter：预设级落盘 + 组合行 + 参数桥�
 
     // 6) 兼容路径：显式 moduleConfigs 直写 includeSubagents 仍可让子代理继承（非 UI 路径）。
     const directCtx = makeCtx()
-    applyToolFilter(directCtx, { allow: ['read'], includeSubagents: true })
+    applyToolFilter(directCtx, { enabled: true, allow: ['read'], includeSubagents: true })
     const inherited = await runAssemble(directCtx, 1, [tool('bash'), tool('read')])
     assert.deepEqual(inherited.tools.map((item) => item.name), ['read'], '显式直写才让子代理继承')
 

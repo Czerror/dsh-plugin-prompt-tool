@@ -59,7 +59,8 @@ function applyMask(assembled, allow, deny) {
 /** Register the per-assembly main-session tool mask. */
 export function apply(ctx, config) {
   const source = validateConfig(name, config, ALLOWED_KEYS)
-  if (source.enabled === false) return
+  // 开关语义：未声明 = 关闭（组合源为本模块显式写 enabled: true）。
+  if (source.enabled !== true) return
   const allow = nameSet(source.allow, 'allow')
   const deny = nameSet(source.deny, 'deny')
   const includeSubagents = booleanOption(name, source.includeSubagents, 'includeSubagents', false)

@@ -9,9 +9,9 @@
  * 行为：
  *  - turn/start 建立本轮预算（深度 0、门计数 0）；assistant/message 把该轮
  *    可获得文本计入深度（只读 message.content，不读同一事件的 stream delta，
- *    避免双计）。tools/pre-execute 时当前轮深度 < minChars（默认 400）
+ *    避免双计）。tools/pre-execute 时当前轮深度 < minChars
  *    → { kind:'deny', reason: gateText }（规划式提示，措辞明示"非工具失败"），
- *    每轮最多 maxGatesPerTurn 次（默认 1）。
+ *    每轮最多 maxGatesPerTurn 次。
  *  - retry 把强制深思带进历史；无文本的轮 = 深度 0，恰好门一次
  *    （fail-safe 向更多深思）。
  *  - 冷启动从 durable log 扫描（重启保持深度），与实时 session/event 共用
@@ -20,20 +20,13 @@
  *  - 子代理默认不门控（brief 即计划）；includeSubagents: true 同门控。
  */
 
-import { MAX_TRACKED_SESSIONS, booleanOption, extractText, sessionEvents, validateConfig } from './shared.mjs'
+import { MAX_TRACKED_SESSIONS, booleanOption, extractText, requiredInt, requiredText, sessionEvents, validateConfig } from './shared.mjs'
 
 /** Cordis plugin name used by loader diagnostics. */
 export const name = 'deliberation-gate'
 
-/** 默认深思下限（每轮首工具调用前，字符数）。 */
-export const DEFAULT_MIN_CHARS = 400
-
-/** 默认门控指令（拒绝回传的规划提示）。 */
-export const GATE_TEXT = [
-  'Deliberation gate: this turn has not shown its reasoning yet.',
-  'Before retrying this tool call, write out your full reasoning in your reply — start with "We", restate the goal, weigh the approaches, and lay out the concrete steps and risks — then issue the tool call again.',
-  'This message is a planning prompt, not a tool failure.',
-].join(' ')
+// 深思下限、每轮上限与门控指令无内置默认：取值与文案归组合源 / 预设
+// （见 engine/compositions/source/local/deliberation-gate.yml）。
 
 /** 每会话最多保留的轮次深度状态。 */
 const MAX_TRACKED_TURNS = 8
@@ -41,22 +34,17 @@ const MAX_TRACKED_TURNS = 8
 /** Every config key this plugin accepts — anything else is a typo. */
 const ALLOWED_KEYS = new Set(['enabled', 'minChars', 'maxGatesPerTurn', 'includeSubagents', 'gateText'])
 
-function parseCounter(value, field, fallback, minimum) {
-  if (value === undefined) return fallback
-  if (!Number.isInteger(value) || value < minimum) {
-    throw new TypeError(`${name}: ${field} must be an integer >= ${minimum}; got ${JSON.stringify(value)}`)
-  }
-  return value
-}
-
 /** 注册轨迹深度门。 */
 export function apply(ctx, config) {
   const source = validateConfig(name, config, ALLOWED_KEYS)
-  if (source.enabled === false) return
-  const minChars = parseCounter(source.minChars, 'minChars', DEFAULT_MIN_CHARS, 0)
-  const maxGatesPerTurn = parseCounter(source.maxGatesPerTurn, 'maxGatesPerTurn', 1, 1)
+  // 开关语义：未声明 = 关闭（需要默认开启时由组合源显式写 enabled: true）。
+  if (source.enabled !== true) return
+  const minChars = requiredInt(name, source.minChars, 'minChars', 0)
+  const maxGatesPerTurn = requiredInt(name, source.maxGatesPerTurn, 'maxGatesPerTurn', 1)
   const includeSubagents = booleanOption(name, source.includeSubagents, 'includeSubagents', false)
-  const gateText = typeof source.gateText === 'string' && source.gateText.length > 0 ? source.gateText : GATE_TEXT
+  const gateText = requiredText(name, source.gateText, 'gateText')
+  // 显式留空指令 = 不门控（没有拒绝说明就无法拒绝）。
+  if (gateText === undefined) return
 
   /** sessionId -> { turns: Map<turn, { chars, gates }>, lastTurn } */
   const state = new Map()

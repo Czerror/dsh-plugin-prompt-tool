@@ -1,7 +1,8 @@
 # module: progress-reminder
 # source: engine/compositions/source/local/progress-reminder.yml (本地附加,上游 dsh-anchored-standard 移植)
-# 深思维持节拍：每 N 次工具结果滴入一条 "We …" 重申提醒（additionalContexts）。
-# 默认 enabled: false（挂载即禁用）；启用 = params.cotDrip（UI 开关）。
+# 深思维持节拍：每 N 次工具结果滴入一条重申提醒（additionalContexts）。
+# 本行是节拍默认值的归属地（引擎不内置文本与节奏）；默认 enabled: false，
+# 启用 = params.cotDrip（UI 开关）或本行 config.enabled: true。
 
 - id: progress-reminder
   name: ./engine/progress-reminder.mjs
@@ -9,3 +10,6 @@
     enabled: false
     every: 4
     maxPerTurn: 1
+    text: >-
+      Progress check: before the next action, restate in one "We …" sentence what
+      remains of the goal and why the next step is the right one.

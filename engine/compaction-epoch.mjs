@@ -24,7 +24,7 @@
  * GATE MODE (strict two-phase stabilization extension, source: xiaobright/dsh-anchored-standard
  * MIT + phase-1 quarantine): `promoteGate: true` gates the promotion on the
  * first reasoning block classifying minimal-like (`we` present, no `let me`),
- * with a `maxPromoteSteps` (default 4) fallback; `promoteAfterFirstResponse:
+ * with a `maxPromoteSteps` fallback supplied by the caller's config; `promoteAfterFirstResponse:
  * true` promotes a tool-less first response once it has responded, and also
  * releases an anchor-gated session when its first turn ends. Gate mode uses
  * the durable-event state machine below and ignores `promoteEvents` (fixed
@@ -62,9 +62,9 @@ export function createEpochPromotion(promoteEvents, options = {}) {
   const includeSubagents = options.includeSubagents === true
   const promoteGate = options.promoteGate === true
   const promoteAfterFirstResponse = options.promoteAfterFirstResponse === true
-  const maxPromoteSteps = Number.isSafeInteger(options.maxPromoteSteps) && options.maxPromoteSteps > 0
-    ? options.maxPromoteSteps
-    : 4
+  // 门控回退步数由调用方配置提供（tool-bootstrap 在开启门控时做必填校验）：
+  // 引擎不内置默认；未提供时步数兜底不生效，只按 anchored 判定。
+  const maxPromoteSteps = options.maxPromoteSteps
   const promote = new Set(promoteEvents)
   const gated = promoteGate || promoteAfterFirstResponse
   /** sessionId -> entry（boundary/promoted + 门控字段） */

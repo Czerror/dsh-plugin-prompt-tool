@@ -10,7 +10,12 @@ import { createPromptConfigs } from '../../engine/schema.mjs'
 import { applyPromptConfigs } from '../../engine/executor.mjs'
 import { wireLayers } from '../../engine/layers.mjs'
 import { setSessionVar } from '../../engine/session-vars.mjs'
-import { apply as applyContextGate } from '../../engine/context-gate.mjs'
+import { apply as applyContextGateRaw } from '../../engine/context-gate.mjs'
+import { compositionConfig } from '../fixtures/composition-defaults.mjs'
+
+// 引擎不再内置 enabled 默认：装配铺组合源默认（enabled: true）。
+const applyContextGate = (ctx, config = {}) =>
+  applyContextGateRaw(ctx, { ...compositionConfig('context-gate'), ...config })
 
 async function harness(t) {
   const root = new Context()

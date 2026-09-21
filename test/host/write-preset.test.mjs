@@ -286,11 +286,12 @@ test('writePreset 透传 firstTurnWord 覆盖到 prompt-injector 配置', () => 
     writePreset('PROMPT', { ...makeOptions(presetDir), firstTurnWord: '开始' })
     const injector = readFileSync(join(presetDir, 'fixture', 'prompt-configs', '0020-prompt-injector.yml'), 'utf8')
     assert.ok(injector.includes('firstTurnWord: |-') && injector.includes('开始'), injector)
-    // 未传 firstTurnWord 时回退 preset.yml 模板默认（we），不写空值覆盖。
+    // 未传 firstTurnWord 时不造内置确认词：写空值，由模板/预设决定是否给词。
     const dir2 = join(dir, 'preset2')
     writePreset('PROMPT', makeOptions(dir2))
     const injector2 = readFileSync(join(dir2, 'fixture', 'prompt-configs', '0020-prompt-injector.yml'), 'utf8')
-    assert.ok(injector2.includes('firstTurnWord: |-') && injector2.includes('we'), injector2)
+    assert.ok(injector2.includes("firstTurnWord: ''"), injector2)
+    assert.equal(injector2.includes('firstTurnWord: |-'), false, '不再回退内置 we 确认词')
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }

@@ -898,9 +898,11 @@ test('placeholder：instruction-hint + params.file 注入绑定文件正文，�
   }
 })
 
-test('placeholder：env-facts 注入默认机器事实，未知 fill fail loud', async () => {
+test('placeholder：env-facts 按 envKeys 白名单注入机器事实，未知 fill fail loud', async () => {
   const { step } = makeHarness(createPromptConfigs([{
     id: 'env-facts', strategy: 'placeholder', fill: 'env-facts', position: 'after-all',
+    // 白名单归配置（组合源/预设），引擎不再内置默认键。
+    params: { envKeys: 'DSH_HOME,DSH_WORKSPACE' },
   }]))
   const decision = await step(agent())
   assert.equal(decision.messages.length, 2)

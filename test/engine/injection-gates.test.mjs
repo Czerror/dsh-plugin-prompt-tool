@@ -4,9 +4,15 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { Session, snapshotSessionEvent } from '@deepseek-ai/dsh-session'
-import { apply as applyAnchorTurn, ANCHOR_TEXT } from '../../engine/anchor-turn.mjs'
-import { apply as applyGate, GATE_TEXT, DEFAULT_MIN_CHARS } from '../../engine/deliberation-gate.mjs'
-import { apply as applyProgressReminder, DRIP_TEXT } from '../../engine/progress-reminder.mjs'
+import { apply as applyAnchorTurn } from '../../engine/anchor-turn.mjs'
+import { apply as applyGate } from '../../engine/deliberation-gate.mjs'
+import { apply as applyProgressReminder } from '../../engine/progress-reminder.mjs'
+import { compositionConfig } from '../fixtures/composition-defaults.mjs'
+
+// 引擎不再内置文本与节奏默认：测试从组合源取真实默认，再显式开启开关。
+const anchorConfig = (overrides = {}) => compositionConfig('anchor-turn', { enabled: true, ...overrides })
+const gateConfig = (overrides = {}) => compositionConfig('deliberation-gate', { enabled: true, ...overrides })
+const dripConfig = (overrides = {}) => compositionConfig('progress-reminder', { enabled: true, ...overrides })
 
 /** 三个注入门控模块共用的桩 ctx：按事件类型收集监听器，logger.warn 丢弃。 */
 function makeCtx() {
@@ -41,18 +47,31 @@ function makeAgent({ userMessages = 0, delegationDepth = 0 } = {}) {
 
 test('anchor-turn：全新会话首条用户消息前 prepend 锚定轮', () => {
   const { ctx, listeners } = makeCtx()
-  applyAnchorTurn(ctx, {})
+  applyAnchorTurn(ctx, anchorConfig())
   const agent = makeAgent({})
   listeners.get('agent/inbox/inserted')[0]({ agent, message: { source: { kind: 'user' } } })
   assert.equal(agent.prepended.length, 1)
   assert.equal(agent.prepended[0].queue, 'next-turn')
-  assert.equal(agent.prepended[0].message.content[0].text, ANCHOR_TEXT)
+  assert.equal(agent.prepended[0].message.content[0].text, anchorConfig().text, '正文取自组合源配置')
   assert.equal(agent.prepended[0].message.source.kind, 'plugin')
+})
+
+test('anchor-turn：未声明 enabled = 关闭；缺 text fail loud；空 text 不锚定', () => {
+  const off = makeCtx()
+  applyAnchorTurn(off.ctx, { text: 'x' })
+  assert.equal(off.listeners.size, 0, '未声明 enabled 不注册监听器')
+
+  const on = makeCtx()
+  assert.throws(() => applyAnchorTurn(on.ctx, { enabled: true }), /text must be a string/)
+
+  const blank = makeCtx()
+  applyAnchorTurn(blank.ctx, { enabled: true, text: '' })
+  assert.equal(blank.listeners.size, 0, '显式空文本 = 不锚定')
 })
 
 test('anchor-turn：已有用户消息的会话不锚定；插件来源消息不锚定', () => {
   const { ctx, listeners } = makeCtx()
-  applyAnchorTurn(ctx, {})
+  applyAnchorTurn(ctx, anchorConfig())
   const used = makeAgent({ userMessages: 1 })
   listeners.get('agent/inbox/inserted')[0]({ agent: used, message: { source: { kind: 'user' } } })
   assert.equal(used.prepended.length, 0, '已有用户消息不锚定')
@@ -64,13 +83,13 @@ test('anchor-turn：已有用户消息的会话不锚定；插件来源消息不
 
 test('anchor-turn：子代理默认跳过；includeSubagents=true 时锚定', () => {
   const { ctx, listeners } = makeCtx()
-  applyAnchorTurn(ctx, {})
+  applyAnchorTurn(ctx, anchorConfig())
   const sub = makeAgent({ delegationDepth: 1 })
   listeners.get('agent/inbox/inserted')[0]({ agent: sub, message: { source: { kind: 'user' } } })
   assert.equal(sub.prepended.length, 0, '子代理默认跳过')
 
   const { ctx: ctx2, listeners: listeners2 } = makeCtx()
-  applyAnchorTurn(ctx2, { includeSubagents: true })
+  applyAnchorTurn(ctx2, anchorConfig({ includeSubagents: true }))
   const sub2 = makeAgent({ delegationDepth: 1 })
   listeners2.get('agent/inbox/inserted')[0]({ agent: sub2, message: { source: { kind: 'user' } } })
   assert.equal(sub2.prepended.length, 1, 'includeSubagents=true 子代理也锚定')
@@ -78,7 +97,7 @@ test('anchor-turn：子代理默认跳过；includeSubagents=true 时锚定', ()
 
 test('anchor-turn：自定义锚定文本 + 未知配置键 fail loud', () => {
   const { ctx, listeners } = makeCtx()
-  applyAnchorTurn(ctx, { text: '你是谁' })
+  applyAnchorTurn(ctx, anchorConfig({ text: '你是谁' }))
   const agent = makeAgent({})
   listeners.get('agent/inbox/inserted')[0]({ agent, message: { source: { kind: 'user' } } })
   assert.equal(agent.prepended[0].message.content[0].text, '你是谁')
@@ -108,7 +127,7 @@ const seedOf = (session) => JSON.parse(JSON.stringify(session.snapshotEvents().m
 /** 一个深思门实例可服务多个会话：实时路径 append 即投递，冷路径重载同一份 durable log。 */
 function withGate(config = {}) {
   const { ctx, listeners } = makeCtx()
-  applyGate(ctx, config)
+  applyGate(ctx, gateConfig(config))
   const pre = listeners.get('tools/pre-execute')[0]
   const handlers = listeners.get('session/event') ?? []
   const bind = (session) => ({
@@ -224,13 +243,22 @@ test('deliberation-gate：子代理默认不门控；includeSubagents=true 同�
   )
 })
 
-test('deliberation-gate：默认值 + 非法配置 fail loud', () => {
-  assert.equal(DEFAULT_MIN_CHARS, 400)
-  assert.ok(GATE_TEXT.length > 0)
+test('deliberation-gate：配置必填 + 未声明 enabled 即关闭 + 非法配置 fail loud', () => {
   const { ctx } = makeCtx()
-  assert.throws(() => applyGate(ctx, { minChars: -1 }), /integer >= 0/)
-  assert.throws(() => applyGate(ctx, { maxGatesPerTurn: 0 }), /integer >= 1/)
+  // 缺 minChars / gateText 都响亮失败（默认值归模板/预设）。
+  assert.throws(() => applyGate(ctx, { enabled: true, maxGatesPerTurn: 1, gateText: 'x' }), /minChars must be an integer >= 0/)
+  assert.throws(() => applyGate(ctx, { enabled: true, minChars: 10, maxGatesPerTurn: 1 }), /gateText must be a string/)
+  assert.throws(() => applyGate(ctx, gateConfig({ minChars: -1 })), /integer >= 0/)
+  assert.throws(() => applyGate(ctx, gateConfig({ maxGatesPerTurn: 0 })), /integer >= 1/)
   assert.throws(() => applyGate(ctx, { bogus: 1 }), /unknown config key/)
+
+  const off = makeCtx()
+  applyGate(off.ctx, { minChars: 10, maxGatesPerTurn: 1, gateText: 'x' })
+  assert.equal(off.listeners.size, 0, '未声明 enabled 不注册监听器')
+
+  const blank = makeCtx()
+  applyGate(blank.ctx, gateConfig({ gateText: '' }))
+  assert.equal(blank.listeners.size, 0, '显式空 gateText = 不门控')
 })
 
 // —— 进度提醒（原 progress-reminder.test.mjs） ——
@@ -240,7 +268,7 @@ const makeReminderSession = () => ({ id: `s-${Math.random()}`, header: { delegat
 
 test('progress-reminder：每 N 次工具结果滴入一条提醒，每轮最多 1 条', async () => {
   const { ctx, listeners } = makeCtx()
-  applyProgressReminder(ctx, { every: 2 })
+  applyProgressReminder(ctx, dripConfig({ every: 2 }))
   const session = makeReminderSession()
   const exec = makeExec(session)
   const post = listeners.get('tools/post-execute')[0]
@@ -257,7 +285,7 @@ test('progress-reminder：每 N 次工具结果滴入一条提醒，每轮最多
   // 第 2 次结果 → 滴入；第 4 次 → 本轮到 maxPerTurn 不再滴。
   const d2 = await run(2)
   assert.equal(d2.additionalContexts.length, 1)
-  assert.equal(d2.additionalContexts[0].content[0].text, DRIP_TEXT)
+  assert.equal(d2.additionalContexts[0].content[0].text, dripConfig().text, '提醒正文取自组合源配置')
   assert.equal(d2.additionalContexts[0].source.plugin, 'progress-reminder')
 
   const d4 = await run(2)
@@ -269,16 +297,20 @@ test('progress-reminder：每 N 次工具结果滴入一条提醒，每轮最多
   assert.equal(d5.additionalContexts.length, 1, '新轮重置后再次滴入')
 })
 
-test('progress-reminder：every=0 禁用；子代理默认不滴；失败保留原决策', async () => {
+test('progress-reminder：every=0 禁用；未声明 enabled 即关闭；子代理默认不滴；失败保留原决策', async () => {
   const { ctx, listeners } = makeCtx()
-  applyProgressReminder(ctx, { every: 0 })
+  applyProgressReminder(ctx, dripConfig({ every: 0 }))
   const session = makeReminderSession()
   const post = listeners.get('tools/post-execute')[0]
   const decision = await post(makeExec(session), {}, async () => ({ kind: 'accept' }))
   assert.equal(decision.additionalContexts, undefined, 'every=0 禁用')
 
+  const off = makeCtx()
+  applyProgressReminder(off.ctx, { every: 1, maxPerTurn: 1, text: 'x' })
+  assert.equal(off.listeners.size, 0, '未声明 enabled 不注册监听器')
+
   const { ctx: ctx2, listeners: listeners2 } = makeCtx()
-  applyProgressReminder(ctx2, { every: 1 })
+  applyProgressReminder(ctx2, dripConfig({ every: 1 }))
   const sub = makeReminderSession()
   sub.header.delegationDepth = 1
   const subDecision = await listeners2.get('tools/post-execute')[0](makeExec(sub), {}, async () => ({ kind: 'accept' }))

@@ -9,7 +9,7 @@
  * GATE MODE (strict two-phase stabilization extension, source: xiaobright/dsh-anchored-standard
  * MIT + phase-1 quarantine): `promoteGate: true` gates the promotion on the
  * first reasoning block classifying minimal-like (`we` present, no `let me`),
- * `maxPromoteSteps` (default 4) is the gate fallback, and
+ * `maxPromoteSteps`（门控回退步数，来自配置）是门控兜底，且
  * `promoteAfterFirstResponse: true` promotes a tool-less first response and
  * releases an anchor-gated session at its first `turn/end`.
  * `personaSectionsOnly: true` narrows phase-1 prompt sections to the persona
@@ -21,9 +21,9 @@
  *
  * STAGES MODE (渐进披露, 参考 dsh-router-standard progressive disclosure 自写,
  * MIT): `stages: [{ name, tools }]` 声明时激活多级阶段窄化——目录 = 当前阶段
- * 工具 + 预放（stagePreUnlock 档，默认 1）+ 本模块注册的推进工具（R8：它不在
+ * 工具 + 预放（stagePreUnlock 档，来自配置）+ 本模块注册的推进工具（R8：它不在
  * stages 声明里，但 {{advanceTool}} 提示要求模型调用它，因此必须同源可见）；
- * `stageAdvanceTool`（默认 phase_advance）推进阶段；调用更高阶段工具 = 直达
+ * `stageAdvanceTool`（推进工具名来自配置）推进阶段；调用更高阶段工具 = 直达
  * （自动跳到其档）；阶段
  * 状态由 durable tool/call 事件推导（resume/reload 自动恢复，无文件），
  * compaction 不重置（阶段是会话级进度）。阶段文案经 `stageSectionTemplate`
@@ -105,7 +105,7 @@
  */
 
 import { createEpochPromotion } from './compaction-epoch.mjs'
-import { MAX_TRACKED_SESSIONS, booleanOption, createWarnOnce, parsePromoteOn, sessionEvents, validateConfig } from './shared.mjs'
+import { MAX_TRACKED_SESSIONS, booleanOption, createWarnOnce, parsePromoteOn, requiredInt, requiredText, sessionEvents, validateConfig } from './shared.mjs'
 
 /** Cordis plugin name used by loader diagnostics. */
 export const name = 'anchored-tool-bootstrap'
@@ -183,18 +183,35 @@ function optionalPositiveInt(value, field) {
   return value
 }
 
+/**
+ * stages 声明时必填的机制字段：缺键 / 类型错 / 空值一律 fail loud。
+ * 默认值（推进工具名、工具描述、状态文案）归模板与预设，引擎不内置。
+ */
+function requiredStageField(field, value, allowEmpty = false) {
+  if (typeof value !== 'string' || (!allowEmpty && value.length === 0)) {
+    throw new TypeError(`${name}: ${field} is required when stages is declared — 默认值归模板/预设，请在本预设或组合源提供`)
+  }
+  return value
+}
+
 /** Register the per-session bootstrap filters. */
 export function apply(ctx, config) {
   const source = validateConfig(name, config, ALLOWED_KEYS)
+  const promoteGate = source.promoteGate === true
+  const promoteAfterFirstResponse = source.promoteAfterFirstResponse === true
   // 门控模式（promoteGate / promoteAfterFirstResponse）固定 either 晋升语义，
   // promoteOn 显式非 either 时与门控互斥，fail loud 而非静默忽略。
-  if ((source.promoteGate === true || source.promoteAfterFirstResponse === true)
+  if ((promoteGate || promoteAfterFirstResponse)
     && source.promoteOn !== undefined && source.promoteOn !== 'either') {
     throw new TypeError(`${name}: promoteGate/promoteAfterFirstResponse 门控模式固定 either 晋升语义，promoteOn 必须省略或为 "either"`)
   }
   // bootstrapTools 允许空数组 = 零工具模式（上游 zero-tool-bootstrap 等价：
   // 首请求 tools: [] 产生最深 "we" 轨迹，assistant/message 后晋升）。
   const bootstrapTools = stringList(source.bootstrapTools, 'bootstrapTools', true)
+  // 门控晋升的步数兜底归模板/预设：开启门控时必须给出，缺失即 fail loud（不再内置默认 4）。
+  const maxPromoteSteps = promoteGate || promoteAfterFirstResponse
+    ? requiredInt(name, source.maxPromoteSteps, 'maxPromoteSteps', 1)
+    : source.maxPromoteSteps
   const promoteEvents = parsePromoteOn(name, source.promoteOn)
   const bootstrapMaxTokens = optionalPositiveInt(source.bootstrapMaxTokens, 'bootstrapMaxTokens')
   const includeSubagents = booleanOption(name, source.includeSubagents, 'includeSubagents', false)
@@ -204,21 +221,17 @@ export function apply(ctx, config) {
     ? source.phase1FirstCallInstruction
     : ''
   // 渐进披露（stages 模式）：声明时激活多级阶段窄化，替代"两相"窄化语义。
+  // 阶段机制字段（预放档、推进工具名、工具描述、状态文案）随 stages 一并必填。
   const stages = stageDefs(source.stages, 'stages')
-  const stagePreUnlock = source.stagePreUnlock === undefined
-    ? 1
-    : Number.isSafeInteger(source.stagePreUnlock) && source.stagePreUnlock >= 0
-      ? source.stagePreUnlock
-      : (() => { throw new TypeError(`${name}: stagePreUnlock must be an integer >= 0`) })()
-  const stageAdvanceTool = typeof source.stageAdvanceTool === 'string' && source.stageAdvanceTool.length > 0
-    ? source.stageAdvanceTool
-    : 'phase_advance'
-  const stageAdvanceDescription = typeof source.stageAdvanceDescription === 'string' && source.stageAdvanceDescription.length > 0
-    ? source.stageAdvanceDescription
-    : 'Declare the current stage complete and advance to the next stage (unlocks more tools). Call only when the current stage is genuinely done. Pre-unlocked tools are directly callable — using one jumps straight to its stage.'
-  const stageSectionTemplate = source.stageSectionTemplate === undefined
-    ? 'Stage {{stageName}} ({{stage}}/{{total}}). Unlocked tools: {{unlocked}}. Advance via {{advanceTool}} when the current stage is done.'
-    : (typeof source.stageSectionTemplate === 'string' ? source.stageSectionTemplate : '')
+  const stagePreUnlock = stages === undefined ? undefined : requiredInt(name, source.stagePreUnlock, 'stagePreUnlock', 0)
+  const stageAdvanceTool = stages === undefined ? undefined : requiredStageField('stageAdvanceTool', source.stageAdvanceTool)
+  const stageAdvanceDescription = stages === undefined
+    ? undefined
+    : requiredStageField('stageAdvanceDescription', source.stageAdvanceDescription)
+  // 空串 = 不注入阶段状态 section，是合法取值，故允许为空。
+  const stageSectionTemplate = stages === undefined
+    ? undefined
+    : requiredStageField('stageSectionTemplate', source.stageSectionTemplate, true)
   // 工具名 → 阶段索引（直达语义查询表）。
   const toolStage = new Map()
   if (stages !== undefined) {
@@ -285,9 +298,9 @@ export function apply(ctx, config) {
 
   const promotion = createEpochPromotion(promoteEvents, {
     includeSubagents,
-    promoteGate: source.promoteGate === true,
-    promoteAfterFirstResponse: source.promoteAfterFirstResponse === true,
-    maxPromoteSteps: source.maxPromoteSteps,
+    promoteGate,
+    promoteAfterFirstResponse,
+    maxPromoteSteps,
   })
 
   ctx.on('session/event', (session, event) => promotion.observe(session, event))

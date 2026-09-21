@@ -149,12 +149,12 @@ promptConfigs:
     promotion: include-subagents
     text: ""
     params:
-      envKeys: ""
+      envKeys: DSH_HOME,DSH_WORKSPACE
       limit: 20
       fields: name,description
       providers: ""
       emptyBehavior: skip
-      emptyText: ""
+      emptyText: 当前没有可用技能。
     enabled: false
   # 20-system-section.yml — system-section 静态层：注册即全局，由 order 与 params.complete / sectionName 控制。
   # 本层通用字段：audience, mergeMode, order；未列字段不可从其他层直接照搬。

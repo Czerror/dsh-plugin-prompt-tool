@@ -241,7 +241,7 @@ function runtimeOf(options: WritePresetOptions, prompt: string): Record<string, 
       : undefined,
     maxDepth: options.maxDepth,
     allowKinds: options.allowKinds,
-    // firstTurnWord 空应回退 preset.yml 模板默认（we）。
+    // firstTurnWord 空 = 不写该键，由模板/预设的 prompt-injector 条目决定确认词。
     firstTurnWord: typeof options.firstTurnWord === 'string' && options.firstTurnWord.length > 0
       ? options.firstTurnWord
       : undefined,
@@ -479,7 +479,8 @@ export function writePreset(prompt: string, options: WritePresetOptions): string
       config.texts = []
       // 无注入内容（空白预设）时禁用，避免注入空消息。
       config.enabled = params.injectPrompt !== false && prompt.trim().length > 0
-      // 锚定确认词归一：默认从锚句文本自动派生（firstTurnWord 空 = 派生；非空 = 显式覆盖）。
+      // 锚定确认词归一：显式/模板给出的词优先，其余从锚句文本自动派生（派生集合进
+      // anchorWords）；两者都没有 = 留空，引擎据此不做词确认（不再内置 we 兜底）。
       // 确认词 = 锚句要求的 reasoning 开头信号（内置格式 the exact sentence: X → X 首词；
       // 无格式 → 文本首词，小写去重）——deep 档（Let…）与自定义锚句不再因固定确认词
       // we 而确认失败（旧缺陷：锚句要求 We/Let，确认词恒 we）。
@@ -500,7 +501,7 @@ export function writePreset(prompt: string, options: WritePresetOptions): string
       config.params = {
         ...config.params,
         text: prompt,
-        firstTurnWord: explicitWord.length > 0 ? explicitWord : (anchorWords[0] ?? 'we'),
+        firstTurnWord: explicitWord,
         anchorWords,
       }
     }

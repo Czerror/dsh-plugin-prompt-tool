@@ -14,9 +14,9 @@ promotion: include-subagents
 text: |-
   
 params:
-  envKeys: ""       # 环境变量白名单（逗号分隔）；留空 = 默认 DSH_HOME,DSH_WORKSPACE
+  envKeys: DSH_HOME,DSH_WORKSPACE  # 环境变量白名单（逗号分隔）；留空 = 只输出 CWD/WORKSPACE
   limit: 20         # skill-catalog：条目数上限
   fields: name,description  # skill-catalog：输出字段
   providers: ''     # skill-catalog：提供方过滤
   emptyBehavior: skip       # skill-catalog：空结果行为
-  emptyText: ""     # skill-catalog：emptyBehavior=text 时的提示；留空 = 空文本
+  emptyText: 当前没有可用技能。  # skill-catalog：emptyBehavior=text 时的提示；留空 = 不注入

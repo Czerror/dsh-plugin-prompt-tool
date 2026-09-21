@@ -197,7 +197,8 @@ test('writePreset 处理空提示词时 prompt-injector 结构完整', () => {
   assert.equal(byId['prompt-injector'].enabled, false, '空提示词无内容可注入，应禁用')
   assert.equal(byId['prompt-injector'].strategy, 'custom-fallback')
   assert.equal(byId['prompt-injector'].params.text, '')
-  assert.equal(byId['prompt-injector'].params.firstTurnWord, 'we')
+  assert.equal(byId['prompt-injector'].params.firstTurnWord, '', '确认词无内置默认（默认值归模板/预设）')
+  assert.ok(byId['prompt-injector'].params.anchorWords.length > 0, '确认集合仍来自模板锚句派生')
 })
 
 test('writePreset 开启 firstTurnAnchor 时 near-anchor 启用并携带自定义锚定句', () => {
