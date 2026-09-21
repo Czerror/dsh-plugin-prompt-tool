@@ -503,7 +503,7 @@ promptConfigs 模块卡展开区按基础信息、注入规则、作用范围、
 
 `EngineLayersPanel#engineLayerSlots({ store, t, viewFilter, audience, keyword, … })` 是唯一的层装配入口，返回 `beforeCards` / `commonCards` / `moduleCards`（只含页面级提示与定位锚）以及 `renderLayerSettings`、`hasLayerSettings` 和 `matchesLayerSettings`；两个页面声明受众视图、创建编排并持有工具草稿所有者，不手写层名判断或重复资产布局。
 
-`LayerSettingsContent` 的三段内容都按共享契约派生、不硬编码层名：`layerParamCards` 取主归属层等于该层、且**确实装配**的能力组与不依赖装配的专用编辑组（"确实装配"同时包含 `modules` 声明与参数/行配置隐含补齐两条来源，见 [architecture-params.md](architecture-params.md)，因此不显示假入口）；`layerAssembledCapabilities` 列出该层已装配能力，每项带二次确认的移除入口（只读预设下不提供）；资产编辑器（`persona` / `variables` / `main-model` / `subagent-model` / `subagent-tools` / `custom-tools` / `subagent-tool-policy`）按同一 `displayLayer` 归位，复用各自专用编辑器、草稿池与写端点。该层**没有任何可编辑设置**时不渲染设置区；该层有设置、却一张实例卡都没有时（例如工具链层通常没有提示词配置卡），列表用一张**不写盘**的兜底容器承载同一份内容（`data-layer-settings-standalone`），不创建配置对象、不触发保存，用户在该层新建配置卡后设置也出现在卡内。
+`LayerSettingsContent` 的三段内容都按共享契约派生、不硬编码层名：`layerParamCards` 取主归属层等于该层、且**确实装配**的能力组与不依赖装配的专用编辑组（"确实装配"同时包含 `modules` 声明与参数/行配置隐含补齐两条来源，见 [architecture-params.md](architecture-params.md)，因此不显示假入口），并排除已有专属编辑器的组——`main-model` / `subagent-model` 由模型路由卡承载，不再同时渲染一份通用控件（同一批字段只留一个编辑入口）；`layerAssembledCapabilities` 列出该层已装配能力，每项带二次确认的移除入口（只读预设下不提供）；资产编辑器（`persona` / `variables` / `main-model` / `subagent-model` / `subagent-tools` / `custom-tools` / `subagent-tool-policy`）按同一 `displayLayer` 归位，复用各自专用编辑器、草稿池与写端点。设置区顶部是本层创建入口：`EngineCapabilityCreateMenu`（添加本层能力）与页面注入的「插入本层模板」（`data-layer-insert-template`，与顶部九层模板菜单共用同一个浮层与按层过滤，未注入回调时不渲染）。该层**没有任何可编辑设置**时不渲染设置区；该层有设置、却一张实例卡都没有时（例如工具链层通常没有提示词配置卡），列表用一张**不写盘**的兜底容器承载同一份内容（`data-layer-settings-standalone`），不创建配置对象、不触发保存，用户在该层新建配置卡后设置也出现在卡内。
 
 选中某个注入层且该层没有内容时，列表给「该层还没有内容」的空状态与新增入口，不自动创建九张空卡、也不谎称「无匹配」；`world-book` 是策略筛选而非层，保持原有的「无匹配 + 清除筛选」提示。
 

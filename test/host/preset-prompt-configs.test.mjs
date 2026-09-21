@@ -393,7 +393,7 @@ test('validatePromptConfigs：预览文件名统一 4 位零填充前缀', async
 
 test('loadPromptTemplates：按文件名数字前缀顺序返回包内模板库', () => {
   const templates = loadPromptTemplates()
-  assert.equal(templates.length, 13)
+  assert.equal(templates.length, 14)
   assert.deepEqual(templates.map((template) => template.file), [
     '10-pre-step.yml',
     '14-first-turn-anchor.yml',
@@ -408,6 +408,7 @@ test('loadPromptTemplates：按文件名数字前缀顺序返回包内模板库'
     '65-turn-stop.yml',
     '66-subagent-start.yml',
     '70-subagent-maintenance.yml',
+    '75-subagent-end.yml',
   ])
 })
 
@@ -445,6 +446,8 @@ test('模板库覆盖六个常用注入层级、两个事件层与一个 placeho
   assert.equal(byId.get('example-tool-pipeline').layer, 'tool-pipeline')
   assert.equal(byId.get('example-turn-stop').layer, 'turn-stop')
   assert.equal(byId.get('example-subagent-start').layer, 'subagent-start')
+  assert.equal(byId.get('example-subagent-end').layer, 'subagent-end')
+  assert.equal(byId.get('example-subagent-end').enabled, false, '只观察的层模板默认关闭')
   assert.equal(byId.get('example-placeholder').fill, 'env-facts')
 })
 

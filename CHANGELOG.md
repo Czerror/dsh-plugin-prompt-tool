@@ -1,5 +1,11 @@
 # Changelog
 
+## 去重模型入口与层内模板入口（2026-09-21）
+
+- 「主模型」通用参数分组退场：`main-model` / `subagent-model` 这类已有专属编辑器的组不再进 `layerParamCards`，代理请求层与子代理启动层只保留模型路由卡这一个模型编辑入口（同一批字段不再渲染两遍）。
+- 层设置区顶部新增「插入本层模板」入口（`data-layer-insert-template`），与顶部九层模板菜单共用同一个浮层与按层过滤；页面未注入回调时不渲染。
+- 新增 `templates/75-subagent-end.yml`：子代理结束层此前没有任何模板，该层在引擎里只观察不注入（命中仅留一条 observe 记录），模板默认关闭，注释写明这一点并指向 66-subagent-start 做真正的注入。
+
 ## 参数在 ⇒ 装配在（2026-09-21）
 
 - 预设 `params` 里出现登记参数键、或 `moduleConfigs` 里出现能力行键时，装配入口（`loadCompositionText`）与模块事实（`resolvePresetModuleFacts`）用同一份派生 `impliedModulesForParams` 自动补齐对应模块：`effectiveModules` 与编辑卡如实反映，`declaredModules` 仍是磁盘事实，组合源自带默认值不算信号。参数存在的能力不再出现「参数写了、运行时却不生效、编辑卡也消失」的休眠状态。

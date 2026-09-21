@@ -60,6 +60,8 @@ export function layerParamCards(store: PromptToolStore, layer: string, exclude: 
   return ENGINE_EDITOR_GROUP_MAP
     .filter((group) => group.displayLayer === layer
       && !excluded.has(group.id)
+      // 已有专属编辑器的组（模型路由卡、资产卡）不再进通用分组：同一批字段只留一个编辑入口。
+      && !isLayerAsset(group.id)
       && engineGroupParamKeys(group.id).length > 0
       && (engineCapability(group.id) === undefined || isEngineCapabilityPresent(group.id, store.moduleFacts)))
     .map((group) => group.id)
@@ -113,6 +115,11 @@ function LayerCapabilityRow(props: { store: PromptToolStore; t: PromptToolTransl
  */
 const LAYER_ASSET_IDS = ['persona', 'variables', 'main-model', 'subagent-model', 'subagent-tools', 'custom-tools', 'subagent-tool-policy'] as const
 
+/** 该组已有专属编辑器（模型路由卡、资产编辑器）：参数不再走通用控件渲染，避免同一批字段两遍。 */
+function isLayerAsset(id: string): boolean {
+  return (LAYER_ASSET_IDS as readonly string[]).includes(id)
+}
+
 function layerAssets(layer: string, excluded: readonly string[]): string[] {
   return ENGINE_EDITOR_GROUP_MAP.filter((group) => group.displayLayer === layer
     && !excluded.includes(group.id) && (LAYER_ASSET_IDS as readonly string[]).includes(group.id)).map((group) => group.id)
@@ -136,6 +143,8 @@ export function LayerSettingsContent(props: {
   excludeCapabilities?: readonly string[]
   toolEditor?: ReactNode
   onCreated?: (capabilityId: string) => void
+  /** 层内「插入本层模板」入口：由页面注入浮层打开动作（缺省不渲染该入口）。 */
+  onInsertTemplate?: (layer: string) => void
   keyword?: string
 }): ReactNode {
   const { store, t, layer } = props
@@ -156,6 +165,11 @@ export function LayerSettingsContent(props: {
   return (
     <div className={css.settings} data-layer-settings-content={layer}>
       <EngineCapabilityCreateMenu store={store} t={t} layer={layer} excludeCapabilities={excluded} onCreated={props.onCreated} />
+      {props.onInsertTemplate !== undefined && (
+        <button type="button" className={ui.pillButton} data-layer-insert-template={layer} onClick={() => props.onInsertTemplate?.(layer)}>
+          {t('modules.layer.insertTemplate')}
+        </button>
+      )}
       {cards.map((card) => (
         <section key={card} hidden={!matches(card)} className={css.group} data-layer-param-group={card}
           aria-label={t(CARD_LABEL_KEYS[card] ?? 'modules.group.other')}>
@@ -243,6 +257,8 @@ export interface EngineLayerSlotsInput {
   onCreated?: (capabilityId: string) => void
   /** 本页既不创建也不渲染的能力（如子代理页的 tool-filter）。 */
   excludeCapabilities?: readonly string[]
+  /** 层设置区「插入本层模板」入口：页面注入模板浮层打开动作（缺省不渲染该入口）。 */
+  onInsertTemplate?: (layer: string) => void
   moduleHint?: string
   moduleEmptyHint?: string
 }
@@ -282,6 +298,7 @@ export function engineLayerSlots(input: EngineLayerSlotsInput): EngineLayerSlots
         excludeCapabilities={input.excludeCapabilities}
         toolEditor={input.toolEditor}
         onCreated={input.onCreated}
+        onInsertTemplate={input.onInsertTemplate}
         keyword={input.keyword}
       />
     ),

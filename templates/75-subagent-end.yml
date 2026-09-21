@@ -1,0 +1,14 @@
+# 模板：subagent-end 子代理结束层（**只观察，不注入**）
+# 用途：按条件记录子代理结束事件——该层没有注入通道，命中只在宿主日志留一条 observe 记录，
+#       不产生模型可见副作用；要向子代理注入内容请用 66-subagent-start 模板。
+# 接入：subject 缺省 subagentInfo（事件载荷序列化文本，含子代理 id/runId）；不写 match
+#       即每个子代理结束都记录。载荷里没有稳定角色名，需要筛的时候按实际 runId 补 match。
+# 默认关闭：它只写日志，需要审计子代理收尾时再打开。
+id: example-subagent-end
+name: 子代理结束记录（只观察）
+enabled: false
+layer: subagent-end
+strategy: static
+order: 0
+modelScope: all
+params: {}

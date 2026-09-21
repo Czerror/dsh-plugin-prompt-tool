@@ -639,6 +639,10 @@ test('层设置内容：参数分组按共享契约派生，能力装配状态�
   assert.deepEqual(layerParamCards(active, 'llm-stream'), [])
   // 专用编辑组不依赖模块装配（提示词生成默认值始终可编辑）；能力组随装配出现。
   assert.deepEqual(layerParamCards(active, 'pre-step'), ['prompt-defaults'])
+  // 已有专属编辑器的组不再进通用参数分组（模型路由卡是唯一入口）。
+  const withModel = { ...active, moduleFacts: withModules(['context-gate']) }
+  assert.deepEqual(layerParamCards(withModel, 'agent-request'), [], '主模型参数由模型路由卡承载')
+  assert.deepEqual(layerParamCards(withModel, 'subagent-start'), [], '子代理模型同理只留模型路由卡')
   const withGate = { ...active, moduleFacts: withModules(['context-gate', 'deliberation-gate', 'tool-filter']) }
   assert.deepEqual(layerParamCards(withGate, 'pre-step'), ['context-gate', 'prompt-defaults'])
   assert.deepEqual([...layerParamCards(withGate, 'tool-pipeline')].sort(), ['deliberation-gate', 'tool-filter'])
@@ -649,6 +653,18 @@ test('层设置内容：参数分组按共享契约派生，能力装配状态�
   assert.match(html, /data-layer-param-group="deliberation-gate"/)
   assert.match(html, /data-layer-param-group="tool-filter"/)
   assert.equal(html.includes('data-layer-param-group="progress-reminder"'), false, '只渲染本层 card')
+  // 层内「插入本层模板」入口：注入回调才渲染，点击把该层交给模板浮层；未注入时不出现。
+  const inserted = []
+  const withInsert = { store: active, t, layer: 'tool-pipeline', onInsertTemplate: (value) => inserted.push(value) }
+  assert.match(render(LayerSettingsContent, withInsert), /data-layer-insert-template="tool-pipeline"/)
+  find(tree(LayerSettingsContent, withInsert), (node) => node.props['data-layer-insert-template'] === 'tool-pipeline').props.onClick()
+  assert.deepEqual(inserted, ['tool-pipeline'])
+  assert.equal(html.includes('data-layer-insert-template'), false, '未注入回调时不渲染该入口')
+  // 代理请求层：模型路由卡仍是该层唯一模型入口，通用参数分组退场但设置区不空。
+  // 资产计入 hasLayerSettings 的是 engineLayerSlots 的装配结果（导出的 layerHasSettings 只看参数与能力）。
+  const modelSlots = engineLayerSlots({ store: withModel, t, viewFilter: 'all', audience: 'main' })
+  assert.equal(modelSlots.hasLayerSettings('agent-request'), true, '模型路由资产让该层仍有设置')
+  assert.deepEqual(layerParamCards(withModel, 'agent-request'), [], '该层不再有重复的通用分组')
   assert.match(html, /data-layer-capabilities="tool-pipeline"/)
   assert.match(html, /data-layer-capability="deliberation-gate"/)
   assert.match(html, /data-layer-capability="tool-filter"/)
