@@ -117,7 +117,7 @@ export const CARDS_ZH = {
   // 自定义工具容器（CustomToolsCard）。
   'customTools.aria': '自定义工具编辑',
   'customTools.fieldsAria': '自定义工具配置',
-  'customTools.hint': '经顶部「添加能力 / 工具模块」新建或从模板插入工具；模型可见工具请到顶层「工具预览」查看。',
+  'customTools.hint': '在此新建空白工具或从模板插入；保存后生效。模型可见工具请到「工具预览」查看。',
   'customTools.readonly': '当前预设工具只读；system 预设或未启用预设写入时不能编辑或保存。',
   'customTools.loading': '正在读取自定义工具…',
   'customTools.loadFailed': '自定义工具读取失败',
@@ -392,7 +392,7 @@ export const CARDS_EN: Record<keyof typeof CARDS_ZH, string> = {
 
   'customTools.aria': 'Custom tool editor',
   'customTools.fieldsAria': 'Custom tool configuration',
-  'customTools.hint': 'Create tools from the "Add capability / tool module" menu or insert a template; inspect model-visible tools on the Tools preview page.',
+  'customTools.hint': 'Create a blank tool or insert a template here, then save to apply. Inspect model-visible tools on the Tools preview page.',
   'customTools.readonly': 'Tools of the current preset are read-only; system presets or presets without write access cannot be edited or saved.',
   'customTools.loading': 'Reading custom tools…',
   'customTools.loadFailed': 'Failed to read custom tools',

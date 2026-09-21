@@ -38,9 +38,17 @@ export function matchesEditorGroup(id: string, keyword: string, t: PromptToolTra
  * （键类型由 ENGINE_PARAM_KEY 的模板字面量约束，新增参数缺词条即编译失败）。
  */
 export function EngineParamFields({ store, card, t, instanceId }: { store: PromptToolStore; card: string; t: PromptToolTranslate; instanceId?: string }): ReactNode {
-  return ENGINE_PARAM_KEYS.filter((key) => ENGINE_PARAM_DEFINITIONS[key].card === card).map((key) => (
+  const keys = ENGINE_PARAM_KEYS.filter((key) => ENGINE_PARAM_DEFINITIONS[key].card === card)
+  const primary = keys.find((key) => ENGINE_PARAM_DEFINITIONS[key].module?.key === 'enabled' || key === 'usePtcMode')
+  const subagents = keys.find((key) => ENGINE_PARAM_DEFINITIONS[key].module?.key === 'includeSubagents')
+  const paired = primary !== undefined && subagents !== undefined ? [primary, subagents] : []
+  const renderField = (key: EngineParamKey): ReactNode => (
     <EngineParamField key={`${store.fields.presetTemplate}:${key}`} store={store} param={key} t={t} instanceId={instanceId} />
-  ))
+  )
+  return <>
+    {paired.length > 0 && <fieldset data-param-pair={primary} aria-label={t(`param.${primary!}`)}>{paired.map(renderField)}</fieldset>}
+    {keys.filter((key) => !paired.includes(key)).map(renderField)}
+  </>
 }
 
 /**

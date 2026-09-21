@@ -5,6 +5,7 @@ import { MainSessionPage } from '../../src/client/app/workspace/pages/MainSessio
 import { SubagentPage } from '../../src/client/app/workspace/pages/SubagentPage.tsx'
 import { usePromptToolStore } from '../../src/client/data/use-prompt-tool-store.ts'
 import { PROMPT_TOOL_DICTS } from '../../src/client/locales.ts'
+import { engineCapability, engineRecipe } from '../../src/shared/engine-capabilities.ts'
 const fixture = window.fixture
 const session = { sessionId: 'test-session', selectable: true }
 const api = { sessionModel: { snapshot: () => session, subscribe: () => () => {}, select: async (selection) => { window.sessionSelection = selection } }, currentSessionId: () => undefined, subscribeSessionChange: () => () => {} }
@@ -59,7 +60,11 @@ window.fetch = async (url, init) => {
     if (body.customTools) tools = body.customTools
     value = { customTools: tools }
   }
-  if (endpoint === 'engine-capability') { modules.add(body.capabilityId); value = { changed: true } }
+  if (endpoint === 'engine-capability') {
+    const ids = body.action === 'create-recipe' ? engineRecipe(body.recipeId)?.capabilities ?? [] : [body.capabilityId]
+    for (const id of ids) for (const module of engineCapability(id)?.moduleKeys ?? []) modules.add(module)
+    value = { changed: true }
+  }
   if (endpoint === 'preset-variables') { if (body.variables) variables = body.variables; value = { variables } }
   if (endpoint === 'configs-validate') value = { valid: true, errors: [] }
   if (endpoint === 'persona') value = { persona: null }

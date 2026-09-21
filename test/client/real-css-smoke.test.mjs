@@ -135,6 +135,13 @@ React.createElement('section',{className:ui.pageActions,'data-sticky':true},'模
       assert.equal(layout.columns, width > 640 ? 2 : 1, `参数列数：${width}`)
       assert.ok(layout.textWidth >= layout.gridWidth - 2, `长文本占整行：${JSON.stringify(layout)}`)
       assert.ok(layout.groupWidths.every(value => value >= layout.width - 4), '每个分组占完整宽度')
+      const pairs = await evaluate(`(()=>[...document.querySelectorAll('[data-param-pair]')].map(group=>[...group.querySelectorAll('[role="switch"]')].map(button=>{const r=button.getBoundingClientRect();return {x:r.left,y:r.top,width:r.width}})))()`)
+      assert.equal(pairs.length, 2, '深思门与节拍都沿用同一关联开关规则')
+      for (const pair of pairs) {
+        assert.equal(pair.length, 2)
+        assert.ok(pair[1].x > pair[0].x + pair[0].width, `子代理开关位于右侧：${width}`)
+        assert.ok(Math.abs(pair[0].y - pair[1].y) <= 1, `关联开关同一行：${width}`)
+      }
     }
     await evaluate(`document.querySelector('[data-layer-param-group="deliberation-gate"]').hidden=true`)
     assert.equal(await evaluate(`getComputedStyle(document.querySelector('[data-layer-param-group="deliberation-gate"]')).display`), 'none')
@@ -152,6 +159,23 @@ React.createElement('section',{className:ui.pageActions,'data-sticky':true},'模
     await evaluate(`document.querySelector('${number}').blur()`)
     await delay(40)
     assert.equal(await evaluate('window.paramWrites'), 1, '一次失焦仍只保存一次')
+    const mainSwitch = '[data-param-key="cotDrip"] [role="switch"]'
+    const childSwitch = '[data-param-key="cotDripSubagents"] [role="switch"]'
+    await evaluate(`document.querySelector('${mainSwitch}').focus()`)
+    await send('Input.dispatchKeyEvent', { type: 'rawKeyDown', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9 })
+    await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9 })
+    assert.equal(await evaluate(`document.activeElement===document.querySelector('${childSwitch}')`), true, '键盘顺序与左右排列一致')
+    const toggleWithSpace = async () => {
+      await send('Input.dispatchKeyEvent', { type: 'rawKeyDown', key: ' ', code: 'Space', windowsVirtualKeyCode: 32 })
+      await send('Input.dispatchKeyEvent', { type: 'char', text: ' ', key: ' ', code: 'Space', windowsVirtualKeyCode: 32 })
+      await send('Input.dispatchKeyEvent', { type: 'keyUp', key: ' ', code: 'Space', windowsVirtualKeyCode: 32 })
+      await delay(40)
+    }
+    await toggleWithSpace()
+    assert.deepEqual(await evaluate('[window.settingsStore.fields.cotDrip,window.settingsStore.fields.cotDripSubagents,window.paramWrites]'), [false, true, 2], '子代理开关独立保存，不联动主开关')
+    await evaluate(`document.querySelector('${mainSwitch}').focus()`)
+    await toggleWithSpace()
+    assert.deepEqual(await evaluate('[window.settingsStore.fields.cotDrip,window.settingsStore.fields.cotDripSubagents,window.paramWrites]'), [true, true, 3])
     if (process.env.PROMPT_TOOL_LAYER_SCREENSHOT) {
       await send('Emulation.setDeviceMetricsOverride', { width: 1024, height: 900, deviceScaleFactor: 1, mobile: false })
       await evaluate(`document.querySelector('[data-settings-host]').style.width='860px'`)

@@ -1,4 +1,4 @@
-/** 模板库加载 + 插入共享逻辑：主会话合并创建菜单与各配置列表页（子代理）共用。 */
+/** 模板库加载与插入：两页共用，顶部注入模板与层内工具按钮分别提供真实锚点。 */
 import { useRef, useState, type RefObject } from 'react'
 import { bridgeCall, errorMessage } from '../../data/bridge-client.ts'
 import type { PromptToolTranslate } from '../../locales.ts'
@@ -51,6 +51,7 @@ export function useTemplatePicker(
   scope?: TemplatePickerScope,
 ): {
   anchorRef: RefObject<HTMLButtonElement>
+  popoverAnchorRef: RefObject<HTMLButtonElement>
   templates: PromptConfigTemplateEntry[]
   toolTemplates: ToolTemplateEntry[]
   open: boolean
@@ -62,11 +63,12 @@ export function useTemplatePicker(
   /** 打开模板浮层；传入插入点层级时只列该层模板（无分组标题）。 */
   openPicker: (layer?: string) => void
   /** 打开只含工具模板的浮层。 */
-  openTools: () => void
+  openTools: (anchor: HTMLButtonElement) => void
   closePicker: () => void
   pickTemplate: (entry: PromptConfigTemplateEntry) => void
 } {
   const anchorRef = useRef<HTMLButtonElement>(null)
+  const popoverAnchorRef = useRef<HTMLButtonElement | null>(null)
   const [templates, setTemplates] = useState<PromptConfigTemplateEntry[]>([])
   const [toolTemplates, setToolTemplates] = useState<ToolTemplateEntry[]>([])
   const [open, setOpen] = useState(false)
@@ -94,13 +96,16 @@ export function useTemplatePicker(
   }
 
   const openPicker = (target?: string): void => {
+    popoverAnchorRef.current = anchorRef.current
     setLayer(target)
     setToolsOnly(false)
     setOpen(true)
     void loadTemplates()
   }
 
-  const openTools = (): void => {
+  const openTools = (anchor: HTMLButtonElement): void => {
+    popoverAnchorRef.current = anchor
+    anchor.focus()
     setLayer(undefined)
     setToolsOnly(true)
     setOpen(true)
@@ -118,5 +123,5 @@ export function useTemplatePicker(
     setOpen(false)
   }
 
-  return { anchorRef, templates, toolTemplates, open, layer, toolsOnly, createdConfigId, openPicker, openTools, closePicker, pickTemplate }
+  return { anchorRef, popoverAnchorRef, templates, toolTemplates, open, layer, toolsOnly, createdConfigId, openPicker, openTools, closePicker, pickTemplate }
 }

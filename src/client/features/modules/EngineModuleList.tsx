@@ -29,6 +29,8 @@ export function EngineCapabilityCreateMenu(props: {
   anchorRef?: RefObject<HTMLButtonElement>
   /** 合并入口：排在能力模块项之前的创建项。 */
   extraItems?: readonly ModuleCreateItem[]
+  templatesOnly?: boolean
+  layer?: string
   onExtraSelect?: (id: string) => void
   onCreated?: (capabilityId: string) => void
   /** 该页面不提供创建的能力（如子代理页排除仅主对话生效的 tool-filter）。 */
@@ -44,16 +46,19 @@ export function EngineCapabilityCreateMenu(props: {
   if (!editable && extraItems.length === 0) return null
   const items = [
     ...extraItems,
-    ...(editable
+    ...(editable && !props.templatesOnly
       ? [
-        ...ENGINE_CAPABILITIES.filter(({ id }) => !excluded.has(id) && !isEngineCapabilityPresent(id, store.moduleFacts))
+        ...ENGINE_CAPABILITIES.filter(({ id, displayLayer }) => !excluded.has(id) && !isEngineCapabilityPresent(id, store.moduleFacts)
+          && (props.layer === undefined || displayLayer === props.layer))
           .map(({ id }) => ({ id: `cap:${id}`, label: t('modules.addCapabilityItem', { id }) })),
-        ...ENGINE_RECIPES.filter(({ capabilities }) => !capabilities.some((id) => excluded.has(id)))
+        ...ENGINE_RECIPES.filter(({ capabilities }) => !capabilities.some((id) => excluded.has(id))
+          && (props.layer === undefined || ENGINE_CAPABILITIES.find(({ id }) => id === capabilities[0])?.displayLayer === props.layer))
           .map(({ id }) => ({ id: `recipe:${id}`, label: t('modules.createRecipeItem', { id }) })),
       ]
       : []),
   ]
-  return <span onKeyDown={(event) => {
+  if (items.length === 0) return null
+  return <span data-engine-create-layer={props.layer} onKeyDown={(event) => {
     if (!open || !['Escape', 'Tab'].includes(event.key)) return
     event.stopPropagation()
     if (event.key === 'Escape') event.preventDefault()
@@ -63,6 +68,7 @@ export function EngineCapabilityCreateMenu(props: {
     onSelect={(id) => {
       setOpen(false)
       trigger.current?.focus()
+      if (!editable || !items.some((item) => item.id === id)) return
       const [kind, value] = id.split(':', 2)
       if (kind === 'cap' || kind === 'recipe') {
         if (value !== undefined) void store.createEngineCapability(kind === 'recipe' ? 'create-recipe' : 'create', value).then((created) => {
@@ -71,8 +77,8 @@ export function EngineCapabilityCreateMenu(props: {
         })
       } else onExtraSelect?.(id)
     }}
-    anchor={<button ref={trigger} type="button" className={styles.pillButton} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(!open)}>
-      {t('modules.addCapability')}<IconChevronDownOutline14 />
+    anchor={<button ref={trigger} type="button" className={styles.pillButton} disabled={!editable} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(!open)}>
+      {t(props.templatesOnly ? 'modules.addTemplates' : 'modules.addCapability')}<IconChevronDownOutline14 />
     </button>} /></span>
 }
 
@@ -81,6 +87,8 @@ export function EngineModuleActions(props: {
   t: PromptToolTranslate
   anchorRef?: RefObject<HTMLButtonElement>
   extraItems?: readonly ModuleCreateItem[]
+  templatesOnly?: boolean
+  layer?: string
   onExtraSelect?: (id: string) => void
   onCreated?: (capabilityId: string) => void
   /** 该页面不提供创建的能力。 */

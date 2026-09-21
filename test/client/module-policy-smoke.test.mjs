@@ -154,6 +154,134 @@ after(async () => {
   rmSync(profile, { recursive: true, force: true, maxRetries: 8, retryDelay: 150 })
 })
 
+async function openLayerSettings(layer, label) {
+  await evaluate(`document.querySelector('[aria-label="按层级或策略过滤"]').click()`)
+  await sleep(50)
+  await click(`层级：${label}`)
+  if (await evaluate(`document.querySelector('[data-layer-settings-content="${layer}"]') !== null`)) return
+  await evaluate(`(()=>{const button=document.querySelector('[data-config-id] header button[aria-expanded]');if(button?.getAttribute('aria-expanded')==='false')button.click()})()`)
+  await waitFor(`document.querySelector('[data-layer-settings="${layer}"]') !== null`)
+  await evaluate(`(()=>{const details=document.querySelector('[data-layer-settings="${layer}"]');if(!details.open)details.querySelector('summary').click()})()`)
+  await waitFor(`document.querySelector('[data-layer-settings-content="${layer}"]') !== null`)
+}
+
+async function createInLayer(layer, label, item) {
+  await openLayerSettings(layer, label)
+  await evaluate(`document.querySelector('[data-engine-create-layer="${layer}"] button[aria-haspopup="menu"]').click()`)
+  await sleep(50)
+  await click(item)
+}
+
+test('浏览器：两页顶部创建菜单严格只有九层模板', { skip: skipBrowser, timeout: 30000 }, async () => {
+  for (const page of ['main', 'subagent']) {
+    await navigate('/')
+    await waitFor('window.store?.moduleFacts?.editable === true')
+    await evaluate(`window.selectPage('${page}')`)
+    await waitFor(`document.querySelector('[data-module-toolbar] button[aria-haspopup="menu"]') !== null`)
+    await evaluate(`document.querySelector('[data-module-toolbar] button[aria-haspopup="menu"]').click()`)
+    await waitFor(`document.querySelector('[role="menuitem"]') !== null`)
+    const items = await evaluate(`[...document.querySelectorAll('[role="menuitem"]')].map(item=>item.textContent.trim())`)
+    assert.equal(items.length, 9, `${page} 顶部不能混入工具、变量、能力或组合`)
+    assert.ok(items.every((item) => item.startsWith('添加模板 · ')))
+    assert.equal(new Set(items).size, 9)
+    await send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 })
+    await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 })
+    await evaluate(`document.querySelector('[aria-label="按层级或策略过滤"]').click()`)
+    await sleep(50)
+    await click('层级：模型流')
+    await click('创建第一条配置')
+    await waitFor(`document.querySelector('[role="dialog"]')?.textContent.includes('50-llm-stream.yml')`)
+    assert.equal(await evaluate(`document.querySelector('[role="dialog"]').textContent.includes('10-pre-step.yml')`), false)
+    assert.equal(await evaluate(`document.querySelector('[aria-label="按层级或策略过滤"]').textContent.trim()`), '层级：模型流')
+  }
+})
+
+test('浏览器：层内能力与组合创建保持筛选，变量空态立即渲染，只读禁用', { skip: skipBrowser, timeout: 60000 }, async () => {
+  for (const page of ['main', 'subagent']) {
+    await navigate('/')
+    await waitFor('window.store?.moduleFacts?.editable === true')
+    await evaluate(`window.selectPage('${page}')`)
+    const count = await evaluate('window.store.fields.promptConfigs.length')
+    await createInLayer('pre-step', '前置步骤', '连锁创建 · phase-control')
+    await waitFor(`window.store.moduleFacts.effectiveModules.includes('context-gate') && window.store.moduleFacts.effectiveModules.includes('tool-bootstrap')`)
+    assert.equal(await evaluate('window.store.fields.promptConfigs.length'), count, '能力组合不创建假提示词卡')
+    assert.equal(await evaluate(`document.querySelector('[aria-label="按层级或策略过滤"]').textContent.trim()`), '层级：前置步骤')
+    await edit('input[type="search"]', 'context')
+    await waitFor(`document.querySelector('[data-engine-create-layer="pre-step"]') !== null`)
+    await evaluate(`document.querySelector('[data-engine-create-layer="pre-step"] button').click()`)
+    await sleep(50)
+    await click('添加模块 · anchor-turn')
+    await waitFor(`window.store.moduleFacts.effectiveModules.includes('anchor-turn')`)
+    assert.equal(await evaluate('document.querySelector("input[type=search]").value'), 'context', '层内创建不清搜索')
+    await edit('input[type="search"]', '')
+    await openLayerSettings('tool-pipeline', '工具链')
+    await evaluate(`document.querySelector('[data-engine-create-layer="tool-pipeline"] button').click()`)
+    await waitFor(`document.querySelector('[role="menuitem"]') !== null`)
+    const labels = await evaluate(`[...document.querySelectorAll('[role="menuitem"]')].map(item=>item.textContent.trim())`)
+    assert.equal(labels.includes('添加模块 · tool-filter'), page === 'main')
+    assert.ok(labels.includes('连锁创建 · deliberation'))
+    assert.equal(labels.some((label) => label.includes('phase-control')), false, '跨层组合只在首能力主层出现')
+    await click('连锁创建 · deliberation')
+    await waitFor(`window.store.moduleFacts.effectiveModules.includes('deliberation-gate') && window.store.moduleFacts.effectiveModules.includes('progress-reminder')`)
+    await openLayerSettings('runtime-context', '运行上下文')
+    assert.equal(await evaluate(`document.querySelector('[aria-label="模板变量名"]') === null`), true)
+    await evaluate(`[...document.querySelector('[data-layer-asset="variables"]').querySelectorAll('button')].find(button=>button.textContent==='添加').focus()`)
+    await send('Input.dispatchKeyEvent', { type: 'rawKeyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 })
+    await send('Input.dispatchKeyEvent', { type: 'char', key: 'Enter', code: 'Enter', text: '\r', windowsVirtualKeyCode: 13 })
+    await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 })
+    await waitFor(`document.querySelector('[aria-label="模板变量名"]') !== null`)
+    await evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
+    assert.equal(await evaluate(`document.activeElement === document.querySelector('[aria-label="模板变量名"]')`), true, '创建按钮卸载后焦点应进入新变量名输入框')
+    assert.equal(await evaluate(`document.querySelector('[aria-label="按层级或策略过滤"]').textContent.trim()`), '层级：运行上下文')
+    assert.equal(await evaluate('window.store.fields.promptConfigs.length'), count)
+  }
+  for (const [editable, writePreset] of [[false, true], [true, false]]) {
+    await navigate('/')
+    await waitFor('window.store?.moduleFacts?.editable === true')
+    await evaluate(`window.presetEditable=${editable}; window.writePreset=${writePreset}; window.store.load()`)
+    await waitFor(`window.store.moduleFacts.editable === ${editable} && window.store.fields.writePreset === ${writePreset}`)
+    assert.equal(await evaluate(`document.querySelector('[data-module-toolbar] button[aria-haspopup="menu"]').disabled`), true)
+    const before = await evaluate('window.store.fields.promptConfigs.length')
+    await openLayerSettings('tool-pipeline', '工具链')
+    assert.equal(await evaluate(`document.querySelector('[data-engine-create-layer]') === null`), true)
+    assert.equal(await evaluate(`[...document.querySelector('[data-layer-asset="custom-tools"]').querySelectorAll('button')].filter(b=>['新建空白工具','添加工具模板…'].includes(b.textContent)).every(b=>b.disabled)`), true)
+    await openLayerSettings('runtime-context', '运行上下文')
+    assert.equal(await evaluate(`[...document.querySelector('[data-layer-asset="variables"]').querySelectorAll('button')].find(b=>b.textContent==='添加').disabled`), true)
+    assert.equal(await evaluate('window.store.fields.promptConfigs.length'), before)
+    assert.equal(await evaluate(`window.requests.some(r=>r.endpoint==='engine-capability'||(r.endpoint==='custom-tools'&&r.body.customTools)||r.endpoint==='preset-variables')`), false)
+  }
+})
+
+test('浏览器：工具模板切换实例锚点，Escape关闭后回到原按钮', { skip: skipBrowser, timeout: 30000 }, async () => {
+  await navigate('/')
+  await waitFor('window.store?.moduleFacts?.editable === true')
+  await send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false })
+  await evaluate(`window.store.patch({promptConfigs:[{id:'pipe-a',layer:'tool-pipeline',strategy:'static'},{id:'pipe-b',layer:'tool-pipeline',strategy:'static'}]})`)
+  for (const id of ['pipe-a', 'pipe-b']) {
+    await evaluate(`document.querySelector('[data-config-id="${id}"] header button[aria-expanded]').click()`)
+    await waitFor(`document.querySelector('[data-config-id="${id}"] [data-layer-settings]') !== null`)
+    await evaluate(`document.querySelector('[data-config-id="${id}"] [data-layer-settings] summary').click()`)
+    await waitFor(`document.querySelector('[data-config-id="${id}"] [data-layer-asset="custom-tools"]') !== null`)
+    await evaluate(`(()=>{window.clickedToolTrigger=[...document.querySelector('[data-config-id="${id}"] [data-layer-asset="custom-tools"]').querySelectorAll('button')].find(b=>b.textContent==='添加工具模板…');Object.assign(window.clickedToolTrigger.style,{position:'fixed',left:'220px',top:'400px'});window.clickedToolTrigger.click()})()`)
+    await waitFor(`document.querySelector('[role="dialog"][aria-label="选择内置模板"]')?.style.visibility !== 'hidden' && document.querySelector('[role="dialog"][aria-label="选择内置模板"]') !== null`)
+    await evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
+    // 本夹具替换了CSS，position:fixed不在；断言定位器给出的top与真实触发按钮一致。
+    const anchored = await evaluate(`(()=>{const el=document.querySelector('[role="dialog"][aria-label="选择内置模板"]'),a=window.clickedToolTrigger.getBoundingClientRect(),top=parseFloat(el.style.top);return Math.abs(top-a.bottom-8)<2||Math.abs(a.top-top-el.offsetHeight-8)<2})()`)
+    assert.equal(anchored, true, `${id} 定位器必须使用本次层内按钮`)
+    await waitFor(`document.activeElement?.closest('[role="dialog"]') !== null`)
+    assert.equal(await evaluate(`document.activeElement?.closest('[role="dialog"]') !== null`), true, '模板浮层打开后自动获得键盘焦点')
+    await send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 })
+    await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 })
+    await waitFor(`document.querySelector('[role="dialog"][aria-label="选择内置模板"]') === null`)
+    assert.equal(await evaluate('document.activeElement === window.clickedToolTrigger'), true)
+  }
+  await click('添加注入模板')
+  await click('添加模板 · 前置步骤')
+  await waitFor(`document.querySelector('[role="dialog"]') !== null`)
+  await click('×')
+  assert.equal(await evaluate(`document.activeElement === document.querySelector('[data-module-toolbar] button[aria-haspopup="menu"]')`), true, '顶部模板仍回到顶部按钮')
+})
+
 test('浏览器：六层空卡、跨层工具创建、筛选草稿与能力卡装配', { skip: skipBrowser, timeout: 60000 }, async () => {
   const chooseView = async (name) => {
     await evaluate(`document.querySelector('[aria-label="按层级或策略过滤"]').click()`)
@@ -172,31 +300,27 @@ test('浏览器：六层空卡、跨层工具创建、筛选草稿与能力卡�
   await evaluate(`[...document.querySelectorAll('button[aria-expanded]')].find((b) => b.textContent.includes('AGENTS：AGENTS.md')).click()`)
   await waitFor(`document.querySelector('[aria-label="注入内容（空 = 不注入）"]')?.value==='项目指令正文'`)
   assert.equal(await evaluate(`document.querySelector('[aria-label="填充来源"]')?.textContent.includes('指令提示')`), true, '展开后完整读取填充来源')
-  await chooseView('层级：前置步骤')
-  await click('添加能力 / 工具模块')
-  await click('新建空白工具')
-  // 创建不改动列表筛选：工具草稿已建立，但当前层级视图不显示工具卡。
-  assert.equal(await evaluate(`document.body.innerText.includes('tool-1 · my_tool')`), false, '创建工具不改动筛选')
   await chooseView('层级：工具链')
+  await waitFor(`document.querySelector('[data-layer-asset="custom-tools"]') !== null`)
+  await click('新建空白工具')
+  assert.equal(await evaluate(`document.querySelector('[aria-label="按层级或策略过滤"]').textContent.trim()`), '层级：工具链', '创建工具不改动筛选')
   await waitFor(`document.body.innerText.includes('tool-1 · my_tool')`)
   assert.equal(await evaluate(`document.querySelector('[aria-label="启用工具 tool-1"]').closest('article').querySelector('[aria-expanded="true"]')!==null`), true)
   for (const view of ['层级：系统提示段', '世界书', '层级：工具链']) await chooseView(view)
   await waitFor(`document.body.innerText.includes('tool-1 · my_tool')`)
-  await click('添加能力 / 工具模块')
   await click('新建空白工具')
   await waitFor(`document.body.innerText.includes('tool-2 · my_tool_2')`)
   await evaluate(`window.rejectToolSave=true;[...document.querySelector('section[aria-label="自定义工具编辑"]').querySelectorAll('button')].find(e=>e.textContent==='保存').click()`)
   await waitFor(`window.store.notice==='test: incomplete tool'`)
   assert.equal(await evaluate(`document.querySelectorAll('[aria-label^="启用工具 tool-"]').length`), 2)
 
-  await chooseView('世界书')
-  await click('添加能力 / 工具模块')
-  await click('添加工具模板…')
+  await evaluate(`window.toolTrigger=[...document.querySelector('[data-layer-asset="custom-tools"]').querySelectorAll('button')].find(b=>b.textContent==='添加工具模板…');window.toolTrigger.click()`)
   const toolTemplate = fixture.templates.toolTemplates[0]
   await waitFor(`document.body.innerText.includes(${JSON.stringify(toolTemplate.file)})`)
   await evaluate(`document.querySelectorAll('button').forEach(e=>{if(e.textContent.includes(${JSON.stringify(toolTemplate.file)}))e.click()})`)
-  assert.equal(await evaluate(`document.querySelector('[aria-label="按层级或策略过滤"]').textContent.trim()`), '世界书', '创建不改动列表筛选')
+  assert.equal(await evaluate(`document.querySelector('[aria-label="按层级或策略过滤"]').textContent.trim()`), '层级：工具链', '创建不改动列表筛选')
   assert.equal(await evaluate(`document.querySelector('[role="dialog"]')===null`), true, '工具模板选中后必须关闭浮层')
+  assert.equal(await evaluate('document.activeElement === window.toolTrigger'), true, '选中后焦点恢复实际层内按钮')
   // 自定义工具编辑器住在工具链层的层设置区里：该层没有配置卡时用兜底容器承载。
   await chooseView('层级：工具链')
   await waitFor(`document.querySelector('[data-layer-settings-standalone="tool-pipeline"]') !== null`)
@@ -206,7 +330,7 @@ test('浏览器：六层空卡、跨层工具创建、筛选草稿与能力卡�
   await evaluate('window.staleGenerated=true')
   await chooseView('全部')
   for (const [index, [file, layer]] of [['10-pre-step.yml', '前置步骤'], ['20-system-section.yml', '系统提示段'], ['30-runtime-context.yml', '运行上下文'], ['40-agent-request.yml', '代理请求'], ['50-llm-stream.yml', '模型流'], ['60-tool-pipeline.yml', '工具链']].entries()) {
-    await click('添加能力 / 工具模块')
+    await click('添加注入模板')
     await click(`添加模板 · ${layer}`)
     await waitFor(`document.body.innerText.includes(${JSON.stringify(file)})`)
     await evaluate(`document.querySelectorAll('button').forEach(e=>{if(e.textContent.includes(${JSON.stringify(file)}))e.click()})`)
@@ -218,15 +342,14 @@ test('浏览器：六层空卡、跨层工具创建、筛选草稿与能力卡�
   await evaluate('window.staleGenerated=false')
   await evaluate('window.store.load()')
   assert.equal(await evaluate('window.store.getFields().promptConfigs.length'), 8)
-  await click('添加能力 / 工具模块')
-  await click('添加模板变量')
-  // 变量编辑器住在运行上下文层的层设置区里：展开该层的一张实例卡即可看到（手风琴，逐张试）。
+  // 变量从本层空态创建，点击后必须立即重渲染，不依赖另一轮展开。
   await chooseView('层级：运行上下文')
   await waitFor(`document.querySelector('[data-config-id]') !== null`)
   await evaluate(`document.querySelector('[data-config-id] header button[aria-expanded]').click(); true`)
   await waitFor(`document.querySelector('[data-layer-settings="runtime-context"]') !== null`)
   await evaluate(`document.querySelector('[data-layer-settings="runtime-context"] summary').click(); true`)
   await waitFor(`document.querySelector('[data-layer-asset="variables"]') !== null`)
+  await evaluate(`[...document.querySelector('[data-layer-asset="variables"]').querySelectorAll('button')].find(button=>button.textContent==='添加').click()`)
   await waitFor(`document.querySelector('[aria-label="模板变量名"]')!==null`)
   await evaluate(`document.querySelector('[aria-label="模板变量名"]').dispatchEvent(new FocusEvent('focusout', { bubbles: true, relatedTarget: document.querySelector('[aria-label="按层级或策略过滤"]') }))`)
   await waitFor(`window.requests.some(r=>r.endpoint==='preset-variables')`)
@@ -234,24 +357,19 @@ test('浏览器：六层空卡、跨层工具创建、筛选草稿与能力卡�
   assert.equal(await evaluate(`document.querySelector('[aria-label="模板变量名"]')!==null`), true)
   await chooseView('全部')
 
-  await click('添加能力 / 工具模块')
-  await click('添加模块 · context-gate')
+  await createInLayer('pre-step', '前置步骤', '添加模块 · context-gate')
   await waitFor(`window.store.moduleFacts.effectiveModules.includes('context-gate')`)
-  await click('添加能力 / 工具模块')
-  await click('添加模块 · anchor-turn')
+  await createInLayer('pre-step', '前置步骤', '添加模块 · anchor-turn')
   await waitFor(`window.store.moduleFacts.effectiveModules.includes('anchor-turn')`)
-  // 能力卡已退场：本层引擎设置嵌在实例卡内，展开任一 pre-step 卡即可看到本层已装配能力。
   assert.equal(await evaluate(`[...document.querySelectorAll('[data-module-card="true"]')].some((card)=>card.textContent.includes('context-gate')||card.textContent.includes('anchor-turn'))`), false, '能力不再以独立卡片出现')
-  await evaluate(`document.querySelector('[data-config-id] header button[aria-expanded]').click(); true`)
-  await waitFor(`document.querySelector('[data-layer-settings="pre-step"]') !== null`)
-  await evaluate(`document.querySelector('[data-layer-settings="pre-step"] summary').click(); true`)
+  await openLayerSettings('pre-step', '前置步骤')
   await waitFor(`document.querySelector('[data-layer-capability="context-gate"]') !== null`)
   assert.equal(await evaluate(`document.querySelectorAll('[data-layer-capability]').length`), 2, '本层两个已装配能力都列出')
   assert.equal(await evaluate(`document.querySelector('[data-layer-capability="anchor-turn"]') !== null`), true, '另一个能力同区可见')
   // 参数也在同一设置区里：与本层其余实例卡同源。
   assert.equal(await evaluate(`document.querySelector('[data-layer-param-group="context-gate"]') !== null`), true, '参数组随能力装配出现')
   assert.equal(await evaluate(`document.querySelector('[aria-label="编辑行为"]')===null`), true, '不再有编辑目标下拉')
-  assert.equal(await evaluate(`document.querySelector('[aria-label="按层级或策略过滤"]').textContent.trim()`), '全部')
+  assert.equal(await evaluate(`document.querySelector('[aria-label="按层级或策略过滤"]').textContent.trim()`), '层级：前置步骤')
   assert.deepEqual(await evaluate('window.store.moduleFacts.effectiveModules'), ['context-gate', 'anchor-turn'])
 })
 
@@ -382,21 +500,20 @@ test('浏览器：复审修复覆盖创建、搜索、只读和折叠的生产�
     await waitFor(`document.querySelector('[data-layer-settings="${layer}"]') !== null`)
     await evaluate(`document.querySelector('[data-layer-settings="${layer}"] summary').click()`)
   }
-  await t.test('N1：两页的全部、其他层与工具层折叠时连续创建立即保留草稿', async () => {
+  await t.test('层内工具连续创建立即生成独立草稿，切页保留不重放且不保存', async () => {
     for (const page of ['main', 'subagent']) {
-      for (const view of ['全部', '层级：前置步骤', '层级：工具链']) {
+      for (const withInstance of [false, true]) {
         await reset()
-        await evaluate(`window.selectPage(${JSON.stringify(page)}); window.store.patch({promptConfigs:[{id:'pipe-a',layer:'tool-pipeline',strategy:'static'}]})`)
-        await chooseView(view)
-        for (let index = 1; index <= 2; index++) {
-          await click('添加能力 / 工具模块'); await click('新建空白工具')
-          await waitFor(`window.store.editorDrafts.tools.get('test')?.tools.length === ${index}`)
-        }
-        assert.equal(await evaluate(`document.querySelector('[aria-label="按层级或策略过滤"]').textContent.trim()`), view)
+        await evaluate(`window.selectPage('${page}'); window.store.patch({promptConfigs:${withInstance ? "[{id:'pipe-a',layer:'tool-pipeline',strategy:'static'}]" : '[]'}})`)
+        await openLayerSettings('tool-pipeline', '工具链')
+        await waitFor(`window.store.editorDrafts.tools.get('test')?.loaded === true`)
+        await evaluate(`(()=>{const button=[...document.querySelector('[data-layer-asset="custom-tools"]').querySelectorAll('button')].find(b=>b.textContent==='新建空白工具');button.click();button.click()})()`)
+        await waitFor(`window.store.editorDrafts.tools.get('test')?.tools.length === 2`)
+        assert.equal(await evaluate(`document.querySelector('[aria-label="按层级或策略过滤"]').textContent.trim()`), '层级：工具链')
+        await chooseView('层级：前置步骤')
         await evaluate(`window.selectPage('away')`)
-        await evaluate(`window.selectPage(${JSON.stringify(page)})`)
-        await chooseView('层级：工具链')
-        await openSettings('pipe-a', 'tool-pipeline')
+        await evaluate(`window.selectPage('${page}')`)
+        await openLayerSettings('tool-pipeline', '工具链')
         await waitFor(`document.querySelectorAll('[aria-label^="启用工具 tool-"]').length === 2`)
         assert.deepEqual(await evaluate(`window.store.editorDrafts.tools.get('test').tools.map(t=>t.id)`), ['tool-1', 'tool-2'])
         assert.equal(await evaluate(`window.requests.filter(r=>r.endpoint==='custom-tools'&&r.body.customTools).length`), 0)
@@ -405,8 +522,9 @@ test('浏览器：复审修复覆盖创建、搜索、只读和折叠的生产�
   })
   await t.test('N2：技术键、中文标签、能力名命中有卡与空层设置，不扩大批量启停', async () => {
     await reset()
-    await click('添加能力 / 工具模块'); await click('添加模块 · deliberation-gate')
+    await createInLayer('tool-pipeline', '工具链', '添加模块 · deliberation-gate')
     await waitFor(`window.store.moduleFacts.effectiveModules.includes('deliberation-gate')`)
+    await chooseView('全部')
     await evaluate(`window.store.patch({promptConfigs:[{id:'pipe-a',name:'普通规则',layer:'tool-pipeline',strategy:'static',enabled:true}]})`)
     for (const keyword of ['deliberationMinChars', '深思', 'deliberation-gate']) {
       await edit('input[type="search"]', keyword)
@@ -476,8 +594,7 @@ test('浏览器：参数镜像控件同步半成品输入与错误态，一次�
   await navigate('/')
   await waitFor('window.store?.moduleFacts?.editable === true')
   // 装配「上下文门控」能力：deferredGraceSteps 属于 pre-step 层，随后会出现在该层每张实例卡里。
-  await click('添加能力 / 工具模块')
-  await click('添加模块 · context-gate')
+  await createInLayer('pre-step', '前置步骤', '添加模块 · context-gate')
   await waitFor(`window.store.moduleFacts.effectiveModules.includes('context-gate')`)
   // 同层两张实例卡：每张卡内部各有一份「本层引擎设置」，两处读同一份值。
   await evaluate(`window.store.patch({ promptConfigs: [

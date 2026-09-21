@@ -31,10 +31,14 @@ export function useDialogFocus<T extends HTMLElement>(open: boolean, onClose: ()
     const fallbacks = at < 0 ? [] : [...siblings.slice(at + 1), ...siblings.slice(0, at).reverse()]
       .map((element) => element.querySelector<HTMLElement>(FOCUSABLE)).filter((element) => element !== null)
     const parent = card?.parentElement
-    const initial = options?.initialFocusRef?.current ?? [...(dialogRef.current?.querySelectorAll<HTMLElement>(FOCUSABLE) ?? [])]
-      .find((element) => !element.matches(':disabled') && element.getClientRects().length > 0)
-    ;(initial ?? dialogRef.current)?.focus()
+    // 锚定浮层首帧可能仍为 hidden；与菜单一致，等定位帧后再聚焦。
+    const frame = requestAnimationFrame(() => {
+      const initial = options?.initialFocusRef?.current ?? [...(dialogRef.current?.querySelectorAll<HTMLElement>(FOCUSABLE) ?? [])]
+        .find((element) => !element.matches(':disabled') && element.getClientRects().length > 0)
+      ;(initial ?? dialogRef.current)?.focus()
+    })
     return () => {
+      cancelAnimationFrame(frame)
       if (restoreRef.current?.isConnected) { restoreRef.current.focus(); return }
       // 删除 owner 可先安排更精确的焦点；仅在焦点随卸载丢失时补到相邻卡/创建入口。
       if (document.activeElement !== document.body && document.activeElement?.isConnected) return

@@ -85,6 +85,26 @@ const configListProps = (overrides = {}) => ({
   ...overrides,
 })
 
+test('能力与组合从所属层创建，跨层组合入口取首能力主层，只读拒绝', async () => {
+  const calls = []
+  const store = { fields: { ...EMPTY_FIELDS, writePreset: true }, moduleFacts: { editable: true, declaredModules: [], effectiveModules: [] },
+    createEngineCapability: async (...args) => { calls.push(args); return true } }
+  const get = (layer, extra = {}) => find(tree(EngineCapabilityCreateMenu, { store, t, layer, ...extra }), (node) => Array.isArray(node.props.items))
+  const pre = get('pre-step')
+  assert.deepEqual(pre.props.items.map((item) => item.id), ['cap:context-gate', 'cap:anchor-turn', 'recipe:phase-control', 'recipe:phase-control-ptc'])
+  const system = get('system-section')
+  assert.deepEqual(system.props.items.map((item) => item.id), ['cap:tool-bootstrap'])
+  const tools = get('tool-pipeline', { excludeCapabilities: ['tool-filter'] })
+  assert.equal(tools.props.items.some((item) => item.id === 'cap:tool-filter'), false)
+  assert.ok(tools.props.items.some((item) => item.id === 'recipe:deliberation'))
+  pre.props.onSelect('recipe:phase-control')
+  await Promise.resolve()
+  assert.deepEqual(calls, [['create-recipe', 'phase-control']])
+  pre.props.onSelect('cap:tool-filter')
+  assert.equal(calls.length, 1, '不能绕过层内菜单白名单')
+  assert.equal(tree(EngineCapabilityCreateMenu, { store: { ...store, fields: { writePreset: false } }, t, layer: 'pre-step' }), null)
+})
+
 test('新建派生纯函数：受众随作用域代入，不改模板与既有列表', () => {
   const entry = { file: '70-subagent-maintenance.yml', spec: { id: 'sub', layer: 'pre-step', strategy: 'static', audience: 'subagent', text: 'x' } }
   // 子代理列表新建 → 仅子代理（当前视图可见）。

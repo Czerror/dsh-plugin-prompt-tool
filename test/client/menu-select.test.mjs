@@ -87,7 +87,7 @@ test('模块控件紧凑且长文本继续自适应', () => {
   assert.match(read('features/prompts/PromptConfigFields.tsx'), /autoResizeTextarea/)
 })
 
-test('主会话使用平铺模块列表与合并创建菜单', () => {
+test('主会话使用平铺模块列表与九层模板菜单', () => {
   // 页面接线与被移除形态保留源码断言：渲染 MainSessionPage 需要完整 store/session 依赖，
   // 而 `viewMode` 这类断言证明的是"不存在"，只能靠源码扫描。
   const editor = read('features/prompts/PromptConfigsEditor.tsx')
@@ -143,8 +143,9 @@ test('主会话使用平铺模块列表与合并创建菜单', () => {
   assert.match(page, /tpl:\$\{layer\}/)
   assert.match(page, /picker\.openPicker\(id\.slice\(4\)\)/)
   assert.match(page, /layer=\{picker\.layer\}/)
-  assert.match(page, /create:blank-tool/)
-  assert.match(page, /create:tool-template/)
-  assert.match(page, /create:variables/)
+  assert.match(page, /templatesOnly/)
+  assert.doesNotMatch(page, /create:(blank-tool|tool-template|variables)/)
+  assert.match(panel, /EngineCapabilityCreateMenu/)
+  assert.match(panel, /layer=\{layer\}/)
   assert.doesNotMatch(page, /从模板新建/)
 })

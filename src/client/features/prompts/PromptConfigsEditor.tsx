@@ -81,15 +81,15 @@ export function TemplateVariablesModuleCard(props: {
   const panelId = useId()
   const count = Object.keys(props.templateVariables).length
   const enabled = props.templateVariablesEnabled
-  // 无变量时不显示卡片（模块列表恢复干净；「新建 → Variables」添加空行后自动出现）。
-  if (count === 0) return null
+  const addRef = useRef<HTMLButtonElement>(null)
+  // 空态也保留本层创建入口，不依赖已退场的顶部变量菜单。
   const clearAll = async (): Promise<void> => {
     if (props.disabled) return
     if (await props.saveTemplateVariables({}) === false) throw new Error(t('variables.deleteFailed'))
     props.setTemplateVariables({})
     setConfirmingDelete(false)
     if (props.expanded) props.onToggleExpanded()
-    requestAnimationFrame(() => document.querySelector<HTMLElement>('[data-module-toolbar] button')?.focus())
+    requestAnimationFrame(() => addRef.current?.focus())
   }
   /** 失焦自动保存：焦点离开卡片容器（含收起/切换开关/点击删除）即持久化。 */
   const autoSaveOnBlur = (event: FocusEvent<HTMLElement>): void => {
@@ -118,14 +118,20 @@ export function TemplateVariablesModuleCard(props: {
             }} />
           </HintTooltip>
           <span className={styles.configActions}>
-            <button ref={deleteRef} type="button" disabled={props.disabled} className={styles.pillButton} data-danger onClick={() => setConfirmingDelete(true)}>{t('variables.delete')}</button>
+            {count === 0 && <button ref={addRef} type="button" disabled={props.disabled} className={styles.pillButton} onClick={() => {
+              if (props.disabled) return
+              props.setTemplateVariables({ '': '' })
+              if (!props.expanded) props.onToggleExpanded()
+              requestAnimationFrame(() => cardRef.current?.querySelector<HTMLInputElement>('input')?.focus())
+            }}>{t('variables.add')}</button>}
+            {count > 0 && <button ref={deleteRef} type="button" disabled={props.disabled} className={styles.pillButton} data-danger onClick={() => setConfirmingDelete(true)}>{t('variables.delete')}</button>}
           </span>
         </span>
       </header>
       {props.expanded && (
         <div id={panelId} className={styles.configForm}>
           {!enabled && <p className={styles.configFieldHint}>{t('variables.disabledHint')}</p>}
-          <VariablesEditor t={t} value={props.templateVariables} disabled={props.disabled} onChange={(next) => { if (!props.disabled) props.setTemplateVariables(next ?? {}) }} />
+          {count === 0 ? <p className={styles.configFieldHint}>{t('variables.empty')}</p> : <VariablesEditor t={t} value={props.templateVariables} disabled={props.disabled} onChange={(next) => { if (!props.disabled) props.setTemplateVariables(next ?? {}) }} />}
         </div>
       )}
       {confirmingDelete && <ConfirmDialog title={t('variables.deleteTitle')} description={t('variables.deleteDescription')}

@@ -10,7 +10,7 @@ import featureCss from './tools.module.css'
 
 const styles = { ...sharedCss, ...featureCss }
 
-/** 「添加能力 / 工具模块」菜单下发的创建意图；每次请求一个新对象，消费后由页面清空。 */
+/** 所属层按钮直接提交的创建请求；草稿由常驻页面立即建立。 */
 export type ToolCreateIntent = { kind: 'blank' | 'template'; spec?: ToolDraft; presetId?: string }
 
 /** 工具草稿与保存由常驻页面持有；设置区只渲染同一份编辑内容。 */
@@ -20,6 +20,7 @@ export function useCustomToolsEditor(props: {
   disabled?: boolean
   presetId?: string
   drafts?: WorkspaceDrafts
+  onChooseTemplate?: (anchor: HTMLButtonElement) => void
 }): { createTool: (intent: ToolCreateIntent) => void; content: ReactNode } {
   const { t } = props
   const editor = useMemo((): ToolsEditorDraft => {
@@ -187,6 +188,9 @@ export function useCustomToolsEditor(props: {
       {loadError && <p role="alert">{loadError} <button type="button" className={styles.pillButton} onClick={() => setRevision((value) => value + 1)}>{t('customTools.retry')}</button></p>}
       <fieldset className={styles.customToolsFields} aria-label={t('customTools.fieldsAria')}>
         <div className={styles.configActions}>
+          <button type="button" className={styles.pillButton} disabled={disabled} onClick={() => createTool({ kind: 'blank', presetId: props.presetId })}>{t('main.newBlankTool')}</button>
+          {props.onChooseTemplate !== undefined && <button type="button" className={styles.pillButton} disabled={disabled}
+            onClick={(event) => { if (!disabled) props.onChooseTemplate?.(event.currentTarget) }}>{t('main.addToolTemplate')}</button>}
           {(tools.length > 0 || hasPersistedTools) && (
             <Button type="button" variant="primary" size="sm" disabled={disabled || saving} onClick={save}>
               {saving ? t('customTools.saving') : t('customTools.save')}

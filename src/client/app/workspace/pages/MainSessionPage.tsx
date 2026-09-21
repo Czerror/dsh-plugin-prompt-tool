@@ -54,38 +54,21 @@ export const MainSessionPage = memo(function MainSessionPage(props: { store: Pro
   const patchInstructionPolicy = useCallback((fileId: string, override: InstructionPolicyFileOverride) => {
     void store.updateInstructionPolicy(fileId, override)
   }, [store])
-  // 模板浮层由页面持有：合并菜单按插入点层级平铺「添加模板 · 层级」入口，浮层只列该层模板。
+  const canEditPreset = store.fields.writePreset && store.moduleFacts?.editable === true
+  // 顶部只提供九层注入模板；其它创建由所属层设置承载。
   // 作用域 = 主会话：新建配置清除模板自带的「仅子代理」限制（缺省 = 公用，两侧都可见）。
   const picker = useTemplatePicker(
     fields.promptConfigs,
-    (config) => patchConfigs([...store.getFields().promptConfigs, config]),
+    (config) => { if (canEditPreset) patchConfigs([...store.getFields().promptConfigs, config]) },
     store.showNotice,
     t,
     'main',
   )
-  const canEditPreset = store.fields.writePreset && store.moduleFacts?.editable === true
-  const toolEditor = useCustomToolsEditor({ t, presetId: fields.presetTemplate, disabled: !canEditPreset, drafts: store.editorDrafts, onNotice: store.showNotice })
-  const pickVariables = useCallback(() => {
-    if (!canEditPreset) return
-    // 「添加模板变量」只创建待编辑行；变量的编辑入口在运行上下文层的实例卡设置区里。
-    store.setTemplateVariables({ ...store.templateVariables, '': '' })
-    picker.closePicker()
-  }, [picker, store, canEditPreset])
-  const createItems = [
-    ...INSERTION_LAYERS.map((layer) => ({ id: `tpl:${layer}`, label: t('main.addTemplate', { layer: translateLabel(t, LAYER_LABEL_KEYS, layer) }) })),
-    { id: 'create:tool-template', label: t('main.addToolTemplate') },
-    { id: 'create:variables', label: t('main.addVariables') },
-    ...(canEditPreset ? [{ id: 'create:blank-tool', label: t('main.newBlankTool') }] : []),
-  ]
+  const toolEditor = useCustomToolsEditor({ t, presetId: fields.presetTemplate, disabled: !canEditPreset, drafts: store.editorDrafts, onNotice: store.showNotice, onChooseTemplate: picker.openTools })
+  const createItems = INSERTION_LAYERS.map((layer) => ({ id: `tpl:${layer}`, label: t('main.addTemplate', { layer: translateLabel(t, LAYER_LABEL_KEYS, layer) }) }))
   const onCreateSelect = useCallback((id: string) => {
-    if (id.startsWith('tpl:')) picker.openPicker(id.slice(4))
-    else if (id === 'create:tool-template') picker.openTools()
-    else if (id === 'create:variables') pickVariables()
-    else if (id === 'create:blank-tool') {
-      setCreatedHidden(viewFilter !== 'all' && viewFilter !== 'tool-pipeline')
-      toolEditor.createTool({ kind: 'blank', presetId: fields.presetTemplate })
-    }
-  }, [fields.presetTemplate, picker, pickVariables, viewFilter, toolEditor.createTool])
+    if (canEditPreset && id.startsWith('tpl:')) picker.openPicker(id.slice(4))
+  }, [canEditPreset, picker])
   const insertToolTemplate = useCallback((spec: Record<string, unknown>) => {
     setCreatedHidden(viewFilter !== 'all' && viewFilter !== 'tool-pipeline')
     toolEditor.createTool({ kind: 'template', spec, presetId: fields.presetTemplate })
@@ -100,6 +83,7 @@ export const MainSessionPage = memo(function MainSessionPage(props: { store: Pro
     audience: 'main',
     keyword,
     focusCapability,
+    onCreated: revealCapability,
     toolEditor: toolEditor.content,
   })
   return (
@@ -115,7 +99,7 @@ export const MainSessionPage = memo(function MainSessionPage(props: { store: Pro
         noticeKind={store.noticeKind}
         readOnlyReason={!canEditPreset ? t(fields.writePreset ? 'configs.readOnly.system' : 'configs.readOnly.disabled') : undefined}
         onChoosePreset={() => props.onNavigate?.('presets')}
-        onCreate={() => picker.openPicker('pre-step')}
+        onCreate={() => picker.openPicker(INSERTION_LAYERS.find((layer) => layer === viewFilter) ?? 'pre-step')}
         createdHidden={createdHidden}
         onShowCreated={() => { changeViewFilter('all'); setCreatedHidden(false) }}
         createdConfigId={picker.createdConfigId}
@@ -137,19 +121,18 @@ export const MainSessionPage = memo(function MainSessionPage(props: { store: Pro
         matchesLayerSettings={layers.matchesLayerSettings}
         beforeCards={layers.beforeCards}
         commonCards={layers.commonCards}
-        toolbarActions={<EngineModuleActions store={store} t={t} anchorRef={picker.anchorRef} extraItems={createItems} onExtraSelect={onCreateSelect} onCreated={revealCapability} />}
+        toolbarActions={<EngineModuleActions store={store} t={t} anchorRef={picker.anchorRef} extraItems={createItems} templatesOnly onExtraSelect={onCreateSelect} />}
         moduleCards={layers.moduleCards}
       />
       {picker.open && (
         <TemplatePicker
           t={t}
-          anchorRef={picker.anchorRef}
+          anchorRef={picker.popoverAnchorRef}
           templates={picker.toolsOnly ? [] : picker.templates}
           layer={picker.layer}
           toolTemplates={picker.layer === undefined ? picker.toolTemplates : undefined}
           onPick={picker.pickTemplate}
           onPickTool={insertToolTemplate}
-          onPickVariables={picker.layer === undefined && !picker.toolsOnly ? pickVariables : undefined}
           onClose={picker.closePicker}
         />
       )}

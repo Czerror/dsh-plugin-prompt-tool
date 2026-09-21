@@ -100,6 +100,7 @@ export const PARAMS_ZH = {
   'param.stages.add': '添加阶段',
 
   // 模块列表（EngineModuleList）。
+  'modules.addTemplates': '添加注入模板',
   'modules.addCapability': '添加能力 / 工具模块',
   'modules.addCapabilityItem': '添加模块 · {id}',
   'modules.createRecipeItem': '连锁创建 · {id}',
@@ -110,7 +111,7 @@ export const PARAMS_ZH = {
   'modules.status.emptyFiltered': '当前分类无已装配的引擎能力；可按需添加模块。',
   'modules.status.emptySearch': '没有匹配「{keyword}」的能力模块；提示词配置按各自层级另计。',
   // 子代理页不提供「仅主对话」能力的创建与卡片：引导到实例级策略能力卡。
-  'modules.subagentScopeHint': '子代理工具面由「subagent-tool-policy」能力卡管理（在本菜单里创建）；「tool-filter」只作用于主对话，不在本页提供。',
+  'modules.subagentScopeHint': '子代理工具面由「subagent-tool-policy」能力管理，可在工具链层的设置区创建；「tool-filter」只作用于主对话，不在本页提供。',
   'modules.subagentEmptyHint': '子代理页不显示「仅主对话」的引擎能力；子代理工具面请启用「subagent-tool-policy」能力。',
   // 工具管线层的共享能力设置区：与 tool-filter 能力卡同源，改一处即改同一份预设参数。
   'modules.toolPipeline.name': '工具能力设置',
@@ -235,6 +236,7 @@ export const PARAMS_EN: Record<keyof typeof PARAMS_ZH, string> = {
   'param.stages.remove': 'Delete',
   'param.stages.add': 'Add stage',
 
+  'modules.addTemplates': 'Add injection template',
   'modules.addCapability': 'Add capability / tool module',
   'modules.addCapabilityItem': 'Add module · {id}',
   'modules.createRecipeItem': 'Create chained modules · {id}',
@@ -245,7 +247,7 @@ export const PARAMS_EN: Record<keyof typeof PARAMS_ZH, string> = {
   'modules.status.emptyFiltered': 'No mounted engine capability in this category; add modules as needed.',
   'modules.status.emptySearch': 'No capability module matches "{keyword}"; prompt configs are counted per layer.',
   // Subagent page omits main-session-only capabilities and points at the per-instance policy capability card.
-  'modules.subagentScopeHint': 'The subagent tool surface is managed by the "subagent-tool-policy" capability card (create it from this menu); "tool-filter" affects the main session only and is not offered here.',
+  'modules.subagentScopeHint': 'The subagent tool surface is managed by "subagent-tool-policy", created in the tool-pipeline layer settings; "tool-filter" affects the main session only and is not offered here.',
   'modules.subagentEmptyHint': 'Main-session-only engine capabilities are not shown on the subagent page; enable the "subagent-tool-policy" capability for the subagent tool surface.',
   'modules.toolPipeline.name': 'Tool capability settings',
   'modules.toolPipeline.meta': 'Preset-level shared parameters (same source as the tool-filter capability card)',

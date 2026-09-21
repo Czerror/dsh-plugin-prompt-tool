@@ -15,6 +15,7 @@ import type { PromptToolLocaleKey, PromptToolTranslate } from '../../../locales.
 import { ConfirmDialog } from '../../../ui/ConfirmDialog.tsx'
 import { EngineModuleCard } from '../../../ui/EngineModuleCard.tsx'
 import { EngineParamFields, matchesEditorGroup } from '../../../features/modules/EngineParamFields.tsx'
+import { EngineCapabilityCreateMenu } from '../../../features/modules/EngineModuleList.tsx'
 import { ModelRouteModuleCard } from '../../../features/models/ModelRouteCard.tsx'
 import { PresetPersonaCard } from '../../../features/persona/PresetPersonaCard.tsx'
 import { DelegationToolsModuleCard } from '../../../features/subagents/DelegationToolsCard.tsx'
@@ -207,6 +208,7 @@ export function LayerSettingsContent(props: {
   configId?: string
   excludeCapabilities?: readonly string[]
   toolEditor?: ReactNode
+  onCreated?: (capabilityId: string) => void
   keyword?: string
 }): ReactNode {
   const { store, t, layer } = props
@@ -226,6 +228,7 @@ export function LayerSettingsContent(props: {
   if (cards.length === 0 && capabilities.length === 0 && assets.length === 0) return null
   return (
     <div className={css.settings} data-layer-settings-content={layer}>
+      <EngineCapabilityCreateMenu store={store} t={t} layer={layer} excludeCapabilities={excluded} onCreated={props.onCreated} />
       {cards.map((card) => (
         <section key={card} hidden={!matches(card)} className={css.group} data-layer-param-group={card}
           aria-label={t(CARD_LABEL_KEYS[card] ?? 'modules.group.other')}>
@@ -310,6 +313,7 @@ export interface EngineLayerSlotsInput {
   focusCapability?: { id: string; token: number; layer?: string }
   /** 自定义工具由常驻页面持有，设置区只渲染。 */
   toolEditor?: ReactNode
+  onCreated?: (capabilityId: string) => void
   /** 本页既不创建也不渲染的能力（如子代理页的 tool-filter）。 */
   excludeCapabilities?: readonly string[]
   moduleHint?: string
@@ -350,6 +354,7 @@ export function engineLayerSlots(input: EngineLayerSlotsInput): EngineLayerSlots
         configId={config?.id}
         excludeCapabilities={input.excludeCapabilities}
         toolEditor={input.toolEditor}
+        onCreated={input.onCreated}
         keyword={input.keyword}
       />
     ),

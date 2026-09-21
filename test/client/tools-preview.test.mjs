@@ -60,10 +60,11 @@ test('工具预览是独立顶层 tab，键盘导航及 panel 关系完整', () 
 })
 
 test('编辑保留在主会话，工具预览没有保存或安装管理入口', () => {
-  const edit = render(CustomToolsCard, { onNotice() {}, t })
+  const edit = render(CustomToolsCard, { onNotice() {}, onChooseTemplate() {}, t })
   assert.match(edit, /自定义工具编辑/)
-  assert.match(edit, /添加能力 \/ 工具模块/)
-  assert.doesNotMatch(edit, /从模板新建|新建工具/)
+  assert.match(edit, /新建空白工具/)
+  assert.match(edit, /添加工具模板/)
+  assert.doesNotMatch(edit, /经顶部/)
   assert.doesNotMatch(edit, /当前会话工具|预设工具能力来源/)
   assert.match(read('src/client/app/workspace/pages/EngineLayersPanel.tsx'), /<CustomToolsCard/)
   for (const path of [

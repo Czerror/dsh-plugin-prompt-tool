@@ -147,6 +147,24 @@ test('字段类型、零值与 system 只读由同一渲染器处理', () => {
   assert.match(readonly, /aria-label="锚定轮文本"/)
 })
 
+test('主功能与子代理参与开关按同一DOM顺序成对排列，参数不增不丢', () => {
+  const pairs = [
+    ['progress-reminder', 'cotDrip', 'cotDripSubagents'],
+    ['deliberation-gate', 'deliberationGate', 'deliberationSubagents'],
+    ['context-gate', 'contextGateEnabled', 'contextGateSubagents'],
+    ['anchor-turn', 'anchorTurn', 'anchorTurnSubagents'],
+    ['promoted-code-mode', 'usePtcMode', 'ptcSubagents'],
+  ]
+  for (const [card, primary, subagents] of pairs) {
+    const html = render(EngineParamFields, { store, card, t })
+    const keys = [...html.matchAll(/data-param-key="([^"]+)"/g)].map((match) => match[1])
+    assert.deepEqual(keys.slice(0, 2), [primary, subagents], card)
+    assert.match(html, new RegExp(`<fieldset[^>]*data-param-pair="${primary}"`))
+    const expected = ENGINE_PARAM_KEYS.filter((key) => ENGINE_PARAM_DEFINITIONS[key].card === card)
+    assert.deepEqual([...keys].sort(), [...expected].sort(), '完整字段集合保持')
+  }
+})
+
 test('阶段参数在两个设置实例中保留独立DOM身份与同一草稿值', () => {
   const active = { ...store, fields: { ...EMPTY_FIELDS, writePreset: true, stages: [{ name: '读取', tools: 'read, grep' }] } }
   const html = ['rule-a', 'rule-b'].map((instanceId) => render(EngineParamFields, { store: active, card: 'tool-bootstrap', t, instanceId })).join('')
@@ -168,8 +186,8 @@ test('递归深度和专用模型卡保留，过滤字段不重复出现在委�
 test('自定义工具编辑入口保留，能力删除仍需二次确认', () => {
   const page = read('app/workspace/pages/MainSessionPage.tsx')
   assert.match(page, /t\('main\.addTemplate', \{ layer: translateLabel\(t, LAYER_LABEL_KEYS, layer\) \}\)/)
-  assert.match(page, /create:blank-tool/)
-  // 自定义工具卡由统一层装配入口渲染；页面只传创建意图，不自己拼卡片。
+  assert.match(page, /templatesOnly/)
+  // 顶部只创建模板；工具创建由层内编辑器提供，页面仍持有草稿。
   assert.match(page, /toolEditor: toolEditor\.content/)
   assert.match(read('app/workspace/pages/EngineLayersPanel.tsx'), /<CustomToolsCard/)
   assert.match(read('features/tools/CustomToolsCard.tsx'), /<CustomToolCard/)
@@ -329,15 +347,24 @@ test('能力卡默认折叠，只有创建/定位到该能力才展开', () => {
   assert.equal((again.match(/aria-expanded="true"/g) ?? []).length, 1, '同一能力重复创建仍展开')
 })
 
-test('创建菜单始终列出全部未添加能力，不按当前层过滤', async () => {
+test('层内创建菜单按能力主层过滤，组合沿首个能力归位', async () => {
   const created = []
   const revealed = []
-  const menuTree = tree(EngineCapabilityCreateMenu, { t, store: { ...store, fields: { ...store.fields, writePreset: true },
-    createEngineCapability: async (...args) => { created.push(args); return true } }, onCreated: (id) => revealed.push(id) })
-  const menu = find(menuTree, (node) => Array.isArray(node.props.items))
+  const active = { ...store, fields: { ...store.fields, writePreset: true }, createEngineCapability: async (...args) => { created.push(args); return true } }
+  const menuFor = (layer) => find(tree(EngineCapabilityCreateMenu, { t, store: active, layer, onCreated: (id) => revealed.push(id) }), (node) => Array.isArray(node.props.items))
+  const menu = menuFor(undefined)
   assert.ok(menu, '键盘焦点容器内保留官方创建菜单')
   assert.deepEqual(menu.props.items.filter(({ id }) => id.startsWith('cap:')).map(({ id }) => id.slice(4)), ENGINE_CAPABILITIES.map(({ id }) => id))
-  menu.props.onSelect('cap:tool-filter')
+  const pipeline = menuFor('tool-pipeline')
+  const ids = pipeline.props.items.map(({ id }) => id)
+  assert.ok(ids.includes('cap:progress-reminder') && ids.includes('recipe:deliberation'))
+  assert.ok(!ids.includes('cap:tool-bootstrap') && !ids.includes('recipe:phase-control'))
+  const preStep = menuFor('pre-step').props.items.map(({ id }) => id)
+  assert.ok(preStep.includes('cap:context-gate') && preStep.includes('recipe:phase-control-ptc'))
+  pipeline.props.onSelect('cap:context-gate')
+  await Promise.resolve()
+  assert.deepEqual(created, [], '不接受不属于当前层菜单的选择')
+  pipeline.props.onSelect('cap:tool-filter')
   await Promise.resolve()
   assert.deepEqual(created, [['create', 'tool-filter']])
   assert.deepEqual(revealed, ['tool-filter'])

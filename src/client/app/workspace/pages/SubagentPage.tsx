@@ -16,7 +16,7 @@ import type { WorkspacePage } from '../workspace-pages.ts'
  *  （audience != main 即公用或仅子代理）。
  *
  *  入口对等（与主会话同款创建能力，只改作用域）：
- *  - 合并创建菜单：引擎能力/recipe、按插入点层级的模板、工具模板、模板变量；
+ *  - 顶部只提供九层注入模板；能力/组合、工具和变量在所属层内创建；
  *  - 能力模块卡与自定义工具卡（与主会话同一份激活预设，视图过滤联动）；
  *  - 子代理独有：子代理模型、工具与深度（子代理工具策略 / allowKinds / maxDepth）。
  *
@@ -38,38 +38,21 @@ export const SubagentPage = memo(function SubagentPage(props: { store: PromptToo
   // 搜索词由页面持有：同一搜索词同时过滤配置实例、能力卡、共享设置区与单例卡。
   const [keyword, setKeyword] = useState(props.browse?.filter ?? '')
   const canEditPreset = store.fields.writePreset && store.moduleFacts?.editable === true
-  const toolEditor = useCustomToolsEditor({ t, presetId: store.fields.presetTemplate, disabled: !canEditPreset, drafts: store.editorDrafts, onNotice: store.showNotice })
   /** 仅主对话生效的能力：本页既不提供创建，也不渲染卡片。 */
   const mainSessionOnly = ['tool-filter']
   // 合并创建菜单：按插入点层级平铺「添加模板 · 层级」入口，浮层只列该层模板。
   const picker = useTemplatePicker(
     store.fields.promptConfigs,
-    (config) => store.patch({ promptConfigs: [...store.getFields().promptConfigs, config] }),
+    (config) => { if (canEditPreset) store.patch({ promptConfigs: [...store.getFields().promptConfigs, config] }) },
     store.showNotice,
     t,
     'subagent',
   )
-  const pickVariables = useCallback(() => {
-    if (!canEditPreset) return
-    // 「添加模板变量」只创建待编辑行；变量的编辑入口在运行上下文层的实例卡设置区里。
-    store.setTemplateVariables({ ...store.templateVariables, '': '' })
-    picker.closePicker()
-  }, [picker, store, canEditPreset])
-  const createItems = [
-    ...INSERTION_LAYERS.map((layer) => ({ id: `tpl:${layer}`, label: t('main.addTemplate', { layer: translateLabel(t, LAYER_LABEL_KEYS, layer) }) })),
-    { id: 'create:tool-template', label: t('main.addToolTemplate') },
-    { id: 'create:variables', label: t('main.addVariables') },
-    ...(canEditPreset ? [{ id: 'create:blank-tool', label: t('main.newBlankTool') }] : []),
-  ]
+  const toolEditor = useCustomToolsEditor({ t, presetId: store.fields.presetTemplate, disabled: !canEditPreset, drafts: store.editorDrafts, onNotice: store.showNotice, onChooseTemplate: picker.openTools })
+  const createItems = INSERTION_LAYERS.map((layer) => ({ id: `tpl:${layer}`, label: t('main.addTemplate', { layer: translateLabel(t, LAYER_LABEL_KEYS, layer) }) }))
   const onCreateSelect = useCallback((id: string) => {
-    if (id.startsWith('tpl:')) picker.openPicker(id.slice(4))
-    else if (id === 'create:tool-template') picker.openTools()
-    else if (id === 'create:variables') pickVariables()
-    else if (id === 'create:blank-tool') {
-      setCreatedHidden(viewFilter !== 'all' && viewFilter !== 'tool-pipeline')
-      toolEditor.createTool({ kind: 'blank', presetId: store.fields.presetTemplate })
-    }
-  }, [picker, pickVariables, store, viewFilter, toolEditor.createTool])
+    if (canEditPreset && id.startsWith('tpl:')) picker.openPicker(id.slice(4))
+  }, [canEditPreset, picker])
   const insertToolTemplate = useCallback((spec: Record<string, unknown>) => {
     setCreatedHidden(viewFilter !== 'all' && viewFilter !== 'tool-pipeline')
     toolEditor.createTool({ kind: 'template', spec, presetId: store.fields.presetTemplate })
@@ -90,6 +73,7 @@ export const SubagentPage = memo(function SubagentPage(props: { store: PromptToo
     audience: 'subagent',
     keyword,
     focusCapability,
+    onCreated: revealCapability,
     toolEditor: toolEditor.content,
     excludeCapabilities: mainSessionOnly,
     moduleHint: t('modules.subagentScopeHint'),
@@ -104,7 +88,7 @@ export const SubagentPage = memo(function SubagentPage(props: { store: PromptToo
           scope="subagent"
           browse={props.browse}
           onChoosePreset={() => props.onNavigate?.('presets')}
-          onCreate={() => picker.openPicker('pre-step')}
+          onCreate={() => picker.openPicker(INSERTION_LAYERS.find((layer) => layer === viewFilter) ?? 'pre-step')}
           createdHidden={createdHidden}
           onShowCreated={() => { changeViewFilter('all'); setCreatedHidden(false) }}
           createdConfigId={picker.createdConfigId}
@@ -116,8 +100,8 @@ export const SubagentPage = memo(function SubagentPage(props: { store: PromptToo
               t={t}
               anchorRef={picker.anchorRef}
               extraItems={createItems}
+              templatesOnly
               onExtraSelect={onCreateSelect}
-              onCreated={revealCapability}
               excludeCapabilities={mainSessionOnly}
             />
           }
@@ -134,13 +118,12 @@ export const SubagentPage = memo(function SubagentPage(props: { store: PromptToo
       {picker.open && (
         <TemplatePicker
           t={t}
-          anchorRef={picker.anchorRef}
+          anchorRef={picker.popoverAnchorRef}
           templates={picker.toolsOnly ? [] : picker.templates}
           layer={picker.layer}
           toolTemplates={picker.layer === undefined ? picker.toolTemplates : undefined}
           onPick={picker.pickTemplate}
           onPickTool={insertToolTemplate}
-          onPickVariables={picker.layer === undefined && !picker.toolsOnly ? pickVariables : undefined}
           onClose={picker.closePicker}
         />
       )}

@@ -34,7 +34,20 @@
   align-items: start;
 }
 
-.paramFields > [data-param-key] {
+.paramFields > [data-param-pair] {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: end;
+  gap: 16px 24px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.paramFields > [data-param-key],
+.paramFields > [data-param-pair] > [data-param-key] {
   min-width: 0;
   padding: 0;
 }
