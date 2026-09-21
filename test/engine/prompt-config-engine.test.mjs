@@ -340,6 +340,13 @@ function makeWiredHarness(configSpecs, services = {}, options = {}) {
   return { listeners, sections, contexts, disposed }
 }
 
+async function assembleRuntimeContexts(definitions, listeners, currentAgent = agent()) {
+  const context = { agent: currentAgent }
+  const assembly = { contexts: definitions.map(def => ({ name: def.name, text: typeof def.text === 'function' ? def.text(context) : def.text })) }
+  assert.ok(assembly.contexts.every(entry => typeof entry.text === 'string'), '官方 provider 必须同步返回文本')
+  return (await listeners.get('system-prompt/assemble')(assembly, context, async () => assembly)).contexts
+}
+
 test('官方变量注册：事实按 assembly 求值、非法名改写为别名、未声明引用剥离', () => {
   const providers = new Map()
   const sections = []
@@ -998,20 +1005,20 @@ test('placeholder：skill-catalog dedupe=session 每会话只注入一次（以�
 test('runtime-context placeholder：skill-catalog 每次 assembly 动态填充', async () => {
   const contexts = []
   const skills = { list: async () => [{ name: 'pdf', description: 'PDF 转换', provider: 'prompt-tool' }] }
-  makeWiredHarness([
+  const { listeners } = makeWiredHarness([
     { id: 'ctx-skill', layer: 'runtime-context', strategy: 'placeholder', fill: 'skill-catalog', order: 5,
       text: '技能={{SKILL_NAMES}}' },
   ], {
     systemPrompt: {
+      variable() { return () => {} },
       section() { return () => {} },
       context(def) { contexts.push(def); return () => {} },
     },
     skills,
   })
   assert.equal(contexts.length, 1)
-  assert.equal(typeof contexts[0].text, 'function')
-  const text = await contexts[0].text({ agent: agent({ session: { id: 'ctx2', header: { delegationDepth: 0, cwd: 'D:/repo' }, snapshotEvents: () => [] } }) })
-  assert.equal(text, '技能=pdf')
+  const result = await assembleRuntimeContexts(contexts, listeners, agent({ session: { id: 'ctx2', header: { delegationDepth: 0, cwd: 'D:/repo' }, snapshotEvents: () => [] } }))
+  assert.equal(result[0].text, '技能=pdf')
 })
 
 test('placeholder 仅允许 pre-step 或 runtime-context 层', () => {
@@ -1248,21 +1255,21 @@ test('runtime-context：merged 模式同样支持拼接与 order 顺序', () => 
   assert.equal(contexts[0].text, 'A\n\nB')
 })
 
-test('runtime-context placeholder：注册函数 provider，assembly 时动态填充', async () => {
+test('runtime-context placeholder：注册同步占位，assembly 时动态填充', async () => {
   const contexts = []
-  makeWiredHarness([
+  const { listeners } = makeWiredHarness([
     { id: 'ctx-env', layer: 'runtime-context', strategy: 'placeholder', fill: 'env-facts', order: 5,
       text: '工作区={{WORKSPACE}}' },
   ], {
     systemPrompt: {
+      variable() { return () => {} },
       section() { return () => {} },
       context(def) { contexts.push(def); return () => {} },
     },
   })
   assert.equal(contexts.length, 1)
-  assert.equal(typeof contexts[0].text, 'function')
-  const text = await contexts[0].text({ agent: agent({ session: { id: 'ctx1', header: { delegationDepth: 0, cwd: 'D:/repo' }, snapshotEvents: () => [] } }) })
-  assert.equal(text, '工作区=D:/repo')
+  const result = await assembleRuntimeContexts(contexts, listeners, agent({ session: { id: 'ctx1', header: { delegationDepth: 0, cwd: 'D:/repo' }, snapshotEvents: () => [] } }))
+  assert.equal(result[0].text, '工作区=D:/repo')
 })
 
 test('vendored yaml 完整解析：支持列表、行尾注释与引号转义', () => {
@@ -1408,10 +1415,11 @@ test('runtime-context 模板专属策略：assembly 时调用 resolve 返回动�
       '',
     ].join('\n'))
     const contexts = []
-    const { disposed } = makeWiredHarness([
+    const { disposed, listeners } = makeWiredHarness([
       { id: 'ctx-dynamic', layer: 'runtime-context', strategy: 'dynamic', order: 5 },
     ], {
       systemPrompt: {
+        variable() { return () => {} },
         section() { return () => {} },
         context(def) {
           contexts.push(def)
@@ -1419,10 +1427,9 @@ test('runtime-context 模板专属策略：assembly 时调用 resolve 返回动�
         },
       },
     }, { strategyDir: pathToFileURL(dir).href })
-    // 模板专属策略不再按静态文本注册：必须拿到函数 provider 且调用到 resolve。
+    // 官方注册只含同步文本；异步模板策略在 waterfall 被实际消费。
     assert.equal(contexts.length, 1)
-    assert.equal(typeof contexts[0].text, 'function')
-    assert.equal(await contexts[0].text({ agent: agent() }), '动态:ctx-dynamic:0')
+    assert.equal((await assembleRuntimeContexts(contexts, listeners))[0].text, '动态:ctx-dynamic:0')
     // 释放：provider 随 disposer 撤销，不留下后台注册。
     assert.equal(typeof disposed.at(-1), 'function')
     disposed.at(-1)()
@@ -1453,11 +1460,12 @@ test('apply：相对 strategyDir 在入口解析为绝对 URL，与绝对写法�
     const { apply } = await import(pathToFileURL(join(root, 'engine', 'prompt-config-engine.mjs')).href)
     const run = async (strategyDir) => {
       const contexts = []
+      const listeners = new Map()
       const ctx = {
-        on() { return () => {} },
+        on(name, handler) { listeners.set(name, handler); return () => {} },
         get(name) {
           return name === 'systemPrompt'
-            ? { section() { return () => {} }, context(def) { contexts.push(def); return () => {} } }
+            ? { variable() { return () => {} }, section() { return () => {} }, context(def) { contexts.push(def); return () => {} } }
             : undefined
         },
         effect(callback) { callback() },
@@ -1465,7 +1473,7 @@ test('apply：相对 strategyDir 在入口解析为绝对 URL，与绝对写法�
       }
       apply(ctx, { configsDir: '../prompt-configs', strategyDir })
       assert.equal(contexts.length, 1)
-      return contexts[0].text({ agent: agent() })
+      return (await assembleRuntimeContexts(contexts, listeners))[0].text
     }
     // 相对 ../strategies 不再抛 ERR_INVALID_URL，且与绝对 URL 求值一致。
     assert.equal(await run('../strategies'), 'DYN:dyn-ctx')

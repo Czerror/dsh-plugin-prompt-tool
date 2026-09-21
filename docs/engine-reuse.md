@@ -165,11 +165,13 @@ pre-step 来源：
   避免被解析成空列表（= 匹配所有工具），把一条定向门扩大成全工具门。
 - 条件层以外的层声明 `subject` / `match` 会在挂载期报错，不会静默忽略。
 - **策略只在消费它的层生效**：`config.resolve` 只由 pre-step（`executor.mjs`）与 runtime-context
-  的 provider（`layers.mjs`）调用，其余层声明非 `static` 策略会在挂载期报错
+  的 `system-prompt/assemble` waterfall（`layers.mjs`）调用，其余层声明非 `static` 策略会在挂载期报错
   （`schema.mjs#STRATEGY_LAYER_SUPPORT`）。模板专属策略（`strategyDir` 懒加载）同样只允许
   pre-step 与 runtime-context，两层都真实调用 resolver：runtime-context 的模板专属策略与
-  placeholder 一样注册成函数 provider，模板模块抛错只让该条为空并告警，不再出现「配了没效果
-  也不报错」。`strategyDir` 在引擎入口统一解析为绝对 URL（相对写法按
+  placeholder 一样先通过官方 context/variable 注册可渲染为空的同步占位，再由异步 waterfall
+  在 `next()` 前填充本次装配中的对应项。官方排序、作用域遮蔽及下游门控保持生效；不缓存
+  会话正文，复用同一 AssembleContext 的并发请求也各自求值。空值或异常只让该条为空并告警，
+  取消或卸载会丢弃本次待填充结果。`strategyDir` 在引擎入口统一解析为绝对 URL（相对写法按
   `prompt-config-engine.mjs` 解析），相对目录不再让整行挂载抛 `ERR_INVALID_URL`。
 - 条件判定的共享实现是 `engine/condition.mjs`：pre-step 缺省匹配本批用户消息，其余层按各自
   `subject` 取文本；`match` 的匹配器在 `schema.mjs` 挂载期预编译一次（`config.matchScan`），

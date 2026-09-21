@@ -85,8 +85,6 @@ export const MainSessionPage = memo(function MainSessionPage(props: { store: Pro
     focusCapability,
     onCreated: revealCapability,
     toolEditor: toolEditor.content,
-    // 层内「插入本层模板」：与顶部九层模板菜单共用同一个浮层与过滤。
-    onInsertTemplate: (layer: string) => picker.openPicker(layer),
   })
   return (
     <section className={ui.section} aria-label={t('main.aria')}>

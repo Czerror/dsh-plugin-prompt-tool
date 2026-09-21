@@ -19,7 +19,7 @@
 |---|---|---|---|
 | 前置步骤 `pre-step` | `agent/pre-step({agent,messages,turn,step,signal}, next)`；返回 `reject` 或 `enter`，后者含完整 `messages: UserMessage[]`、可选 `startsRequestSeries` | 固定文本、动态填充、首轮锚定、每轮引导、自定义回退、世界书；位置、去重、晋升、受众、模型、合并、用户消息匹配、正文、局部变量与来源元数据 | 出口角色只允许 user；插件保留下游 decision 的其他字段，不伪造 assistant 消息 |
 | 系统提示段 `system-section` | `systemPrompt.section({name,order,text,interpolate?,complete?})`；text 为字符串或同步函数；返回 disposer | `sectionName → name`、`complete`、`suppressRuntimeContext → 独立官方方法`；静态正文、局部变量、受众与合并 | 同一作用域只能有一个有效 complete 段；没有位置、去重、晋升和模型过滤。`interpolate` 未开放为本插件参数 |
-| 运行上下文 `runtime-context` | `systemPrompt.context({name,order,text})`；text 为字符串或同步函数，物化为持久 user-role 快照 | `contextName → name`；固定文本或动态填充、正文、变量与合并 | 空文本不贡献内容；没有 complete、消息角色或拼接位置。官方 provider 不是异步接口 |
+| 运行上下文 `runtime-context` | `systemPrompt.context({name,order,text})`；text 为字符串或同步函数，物化为持久 user-role 快照；异步准备使用 `system-prompt/assemble(assembly,context,next)` | `contextName → name`；固定文本或动态填充、正文、变量与合并 | 空文本不贡献内容；没有 complete、消息角色或拼接位置。动态策略先注册同步空占位，在 waterfall 内等待填充，不向 text 返回 Promise |
 | 代理请求 `agent-request` | `agent/request({agent,turn,step,signal}, next)` 返回新的 `LlmCallConfig`；仅 `provider/model/reasoningEffort/temperature/maxTokens/stop` | 六项结构化请求字段；`params.patch` 浅合并，`params.replace` 整体替换；受众与模型过滤；本层共享模型设置 | 不接收消息正文、system 或 tools；整体替换必须提供 provider/model；`stop` 为字符串数组。patch/replace 是插件配置，并非官方字段 |
 | 模型流 `llm-stream` | `llm/stream(GenerateOptions,next)` 返回 `AsyncIterable<StreamChunk>`，允许包装或替代流 | `mode=pass/replace`；仅 replace 显示替代输出文本，支持模型过滤 | 请求深冻结，不在此改写消息或调用配置；当前插件只实现文本流替换，不开放任意 chunk 脚本 |
 | 工具链 `tool-pipeline` | `tools/pre-execute(exec,next)`、`tools/execute(exec,next)`、`tools/post-execute(exec,result,next)`；exec 含 `callId/rootCallId/name/arguments/agent?/parent?/signal/token` | 工具名称；前置 allow/deny/ask；deny 原因；后置 accept/replace/block；工具参数或结果匹配；replace/block 才显示文本；内嵌工具共享设置 | 当前插件只接 pre/post，未开放 execute 包装；官方另有 cancel、value、additionalContexts，尚非本插件参数。arguments 不可改写；toolResult 条件仅后置入口具备数据 |
@@ -71,4 +71,4 @@ promptConfigs:
 - [Tools：各工具阶段及不可修改的参数](https://github.com/deepseek-ai/deepseek-harness/blob/ddefc45fbc/docs/subsystems/tools.md)
 - [Subagent：只读生命周期与投递接口](https://github.com/deepseek-ai/deepseek-harness/blob/ddefc45fbc/docs/subsystems/subagent.md)
 
-运行时动态上下文的异步 provider 与官方同步 text 契约不一致属于已记录的既有问题；本轮没有将其包装成“官方已支持异步”。
+运行时动态上下文在官方异步 waterfall 内完成填充，随后继续 `next()`，保留作用域遮蔽、顺序、上下文抑制与晋升门控。同步占位由私有空变量承载；空值、异常、取消或卸载不会复用旧正文。真实官方装配回归见 `test/engine/official-variable-regression.test.mjs`。

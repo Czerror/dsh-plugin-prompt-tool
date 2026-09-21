@@ -143,8 +143,6 @@ export function LayerSettingsContent(props: {
   excludeCapabilities?: readonly string[]
   toolEditor?: ReactNode
   onCreated?: (capabilityId: string) => void
-  /** 层内「插入本层模板」入口：由页面注入浮层打开动作（缺省不渲染该入口）。 */
-  onInsertTemplate?: (layer: string) => void
   keyword?: string
 }): ReactNode {
   const { store, t, layer } = props
@@ -165,11 +163,6 @@ export function LayerSettingsContent(props: {
   return (
     <div className={css.settings} data-layer-settings-content={layer}>
       <EngineCapabilityCreateMenu store={store} t={t} layer={layer} excludeCapabilities={excluded} onCreated={props.onCreated} />
-      {props.onInsertTemplate !== undefined && (
-        <button type="button" className={ui.pillButton} data-layer-insert-template={layer} onClick={() => props.onInsertTemplate?.(layer)}>
-          {t('modules.layer.insertTemplate')}
-        </button>
-      )}
       {cards.map((card) => (
         <section key={card} hidden={!matches(card)} className={css.group} data-layer-param-group={card}
           aria-label={t(CARD_LABEL_KEYS[card] ?? 'modules.group.other')}>
@@ -257,8 +250,6 @@ export interface EngineLayerSlotsInput {
   onCreated?: (capabilityId: string) => void
   /** 本页既不创建也不渲染的能力（如子代理页的 tool-filter）。 */
   excludeCapabilities?: readonly string[]
-  /** 层设置区「插入本层模板」入口：页面注入模板浮层打开动作（缺省不渲染该入口）。 */
-  onInsertTemplate?: (layer: string) => void
   moduleHint?: string
   moduleEmptyHint?: string
 }
@@ -298,7 +289,6 @@ export function engineLayerSlots(input: EngineLayerSlotsInput): EngineLayerSlots
         excludeCapabilities={input.excludeCapabilities}
         toolEditor={input.toolEditor}
         onCreated={input.onCreated}
-        onInsertTemplate={input.onInsertTemplate}
         keyword={input.keyword}
       />
     ),

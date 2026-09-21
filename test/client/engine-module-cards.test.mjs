@@ -655,13 +655,7 @@ test('层设置内容：参数分组按共享契约派生，能力装配状态�
   assert.match(html, /data-layer-param-group="deliberation-gate"/)
   assert.match(html, /data-layer-param-group="tool-filter"/)
   assert.equal(html.includes('data-layer-param-group="progress-reminder"'), false, '只渲染本层 card')
-  // 层内「插入本层模板」入口：注入回调才渲染，点击把该层交给模板浮层；未注入时不出现。
-  const inserted = []
-  const withInsert = { store: active, t, layer: 'tool-pipeline', onInsertTemplate: (value) => inserted.push(value) }
-  assert.match(render(LayerSettingsContent, withInsert), /data-layer-insert-template="tool-pipeline"/)
-  find(tree(LayerSettingsContent, withInsert), (node) => node.props['data-layer-insert-template'] === 'tool-pipeline').props.onClick()
-  assert.deepEqual(inserted, ['tool-pipeline'])
-  assert.equal(html.includes('data-layer-insert-template'), false, '未注入回调时不渲染该入口')
+  assert.equal(html.includes('data-layer-insert-template'), false, '层设置区不提供重复的注入模板入口')
   // 代理请求层：模型路由卡仍是该层唯一模型入口，通用参数分组退场但设置区不空。
   // 资产计入 hasLayerSettings 的是 engineLayerSlots 的装配结果（导出的 layerHasSettings 只看参数与能力）。
   const modelSlots = engineLayerSlots({ store: withModel, t, viewFilter: 'all', audience: 'main' })

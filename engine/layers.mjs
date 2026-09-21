@@ -216,14 +216,14 @@ function wireSystemSections(ctx, configs, registry, warnOnce) {
   }
 }
 
-/** runtime-context:注册动态运行时上下文(晋升后由 context-gate 差分投影;支持 merged 拼接与 placeholder 函数 provider)。 */
+/** runtime-context:注册运行时上下文；静态文本支持 merged，动态策略在官方 assembly waterfall 中填充。 */
 function wireRuntimeContexts(ctx, configs, registry, warnOnce) {
   const systemPrompt = getService(ctx, 'systemPrompt')
   if (systemPrompt === undefined || typeof systemPrompt.context !== 'function') {
     if (configs.length > 0) warnOnce(`${name}: systemPrompt service unavailable — runtime-context configs skipped`)
     return
   }
-  // 模板专属策略（strategyDir 懒加载）与 placeholder 一样由 provider 按 assembly 消费
+  // 模板专属策略（strategyDir 懒加载）与 placeholder 一样由 waterfall 按 assembly 消费
   // resolve——`config.resolve` 只在这两层被调用，按静态注册会让「配了没效果也不报错」。
   const needsResolver = (config) => config.strategy === 'placeholder' || !KNOWN_STRATEGIES.has(config.strategy)
   const staticConfigs = configs.filter((config) => !needsResolver(config))
@@ -244,38 +244,53 @@ function wireRuntimeContexts(ctx, configs, registry, warnOnce) {
       warnOnce(`${name}: runtime-context config ${base.id} failed: ${String(error?.message ?? error)}`)
     }
   }
-  // placeholder / 模板专属策略:官方 context 接受函数 provider,在每次 assembly 时动态填充。
+  // 官方 provider 必须同步：先注册可渲染为空的私有变量占位，再在 waterfall 中填充。
+  // 标记随官方排序/遮蔽进入本次 assembly，无会话缓存，也不依赖调用方 context 的对象身份。
   const placeholders = configs.filter(needsResolver)
     .sort((a, b) => a.order - b.order)
+  if (placeholders.length === 0) return
+  const slotVariable = `pt_runtime_${newMessageId('context').replace(/[^a-z0-9_]/gi, '_').toLowerCase()}`
+  const slotText = `{{${slotVariable}}}`
+  const registered = new Map()
+  let active = true
+  keepDisposer(ctx, () => { active = false }, `${name}: runtime-context lifecycle`)
+  keepDisposer(ctx, systemPrompt.variable(slotVariable, () => ''), `${name}: runtime-context placeholder`)
   for (const config of placeholders) {
     try {
-      const resolver = config.resolve
+      const contextName = typeof config.params?.contextName === 'string' && config.params.contextName.length > 0 ? config.params.contextName : config.id
       keepDisposer(ctx, systemPrompt.context({
-        name: typeof config.params?.contextName === 'string' && config.params.contextName.length > 0 ? config.params.contextName : config.id,
+        name: contextName,
         order: config.order,
-        text: async (assembly) => {
-          try {
-            const agent = assembly?.agent
-            const session = agent?.session
-            const resolved = await resolver({ ctx, agent, session, decision: { kind: 'ok', messages: [] }, messages: [] })
-            if (resolved === null || resolved === undefined) return ''
-            const variables = { ...config.variables, ...(resolved.variables !== null && typeof resolved.variables === 'object' ? resolved.variables : {}) }
-            // runtime-context 是官方插值通道且 0.1.6 没有 interpolate:false：出口同样清洗。
-            const rendered = config.texts.length > 0
-              ? interpolateVariables(config.texts.join('\n\n'), variables, session)
-              : typeof resolved.text === 'string' ? interpolateVariables(resolved.text, variables, session) : ''
-            return officialChannelText(rendered, `runtime-context ${config.id}`, registry.get(config), warnOnce)
-          } catch (error) {
-            // 单条失败不炸整次 assembly：模板策略模块由用户提供，缺文件/抛错都在这里收敛。
-            warnOnce(`${name}: runtime-context ${config.id} resolve failed: ${String(error?.message ?? error)}`)
-            return ''
-          }
-        },
+        text: slotText,
       }), `${name}: context ${config.id}`)
+      registered.set(contextName, config)
     } catch (error) {
       warnOnce(`${name}: runtime-context placeholder ${config.id} failed: ${String(error?.message ?? error)}`)
     }
   }
+  ctx.on('system-prompt/assemble', async (assembly, context, next) => {
+    const entries = assembly.contexts.filter(entry => registered.has(entry.name) && entry.text === slotText)
+    for (const entry of entries) {
+      const config = registered.get(entry.name)
+      entry.text = ''
+      if (!active || context.signal?.aborted) continue
+      try {
+        const agent = context.agent
+        const session = agent?.session
+        const resolved = await config.resolve({ ctx, agent, session, signal: context.signal, decision: { kind: 'ok', messages: [] }, messages: [] })
+        if (!active || context.signal?.aborted || resolved === null || resolved === undefined) continue
+        const variables = { ...config.variables, ...(resolved.variables !== null && typeof resolved.variables === 'object' ? resolved.variables : {}) }
+        const rendered = config.texts.length > 0
+          ? interpolateVariables(config.texts.join('\n\n'), variables, session)
+          : typeof resolved.text === 'string' ? interpolateVariables(resolved.text, variables, session) : ''
+        entry.text = officialChannelText(rendered, `runtime-context ${config.id}`, registry.get(config), warnOnce)
+      } catch (error) {
+        warnOnce(`${name}: runtime-context ${config.id} resolve failed: ${String(error?.message ?? error)}`)
+      }
+    }
+    if (!active || context.signal?.aborted) for (const entry of entries) entry.text = ''
+    return next()
+  })
 }
 
 /** agent-request:对冻结的 LlmCallConfig 做浅合并 / 整体替换。 */

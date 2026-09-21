@@ -10,6 +10,7 @@ import { createPromptConfigs } from '../../engine/schema.mjs'
 import { applyPromptConfigs } from '../../engine/executor.mjs'
 import { wireLayers } from '../../engine/layers.mjs'
 import { setSessionVar } from '../../engine/session-vars.mjs'
+import { apply as applyContextGate } from '../../engine/context-gate.mjs'
 
 async function harness(t) {
   const root = new Context()
@@ -58,6 +59,158 @@ function sessionWith(text = 'LATEST', id = 'main') {
     snapshotEvents: () => [{ type: 'user/message', data: { message: { content: [{ type: 'text', text }] } } }],
   }
 }
+
+test('runtime-context：真实官方装配等待异步技能目录，排序、变量与空结果不漂移', async (t) => {
+  const h = await harness(t)
+  let names = ['pdf']
+  h.root.provide('skills', { list: async () => names.map(name => ({ name })) })
+  const scope = await h.mount([
+    { id: 'tail', layer: 'runtime-context', order: 9, text: 'TAIL' },
+    { id: 'skills', layer: 'runtime-context', strategy: 'placeholder', fill: 'skill-catalog', order: 2,
+      text: '{{prefix}}={{SKILL_NAMES}}/{{missing}}', variables: { prefix: '技能' } },
+    { id: 'env', layer: 'runtime-context', strategy: 'placeholder', fill: 'env-facts', order: 1, text: '{{CWD}}' },
+  ])
+  const session = sessionWith()
+  const rendered = () => h.assemble(scope, session).then(renderContextSections)
+  assert.deepEqual(await rendered(), [
+    { name: 'env', text: process.cwd() }, { name: 'skills', text: '技能=pdf/' }, { name: 'tail', text: 'TAIL' },
+  ])
+  names = ['image']
+  assert.equal((await rendered())[1].text, '技能=image/')
+  names = []
+  assert.deepEqual((await rendered()).map(entry => entry.name), ['env', 'tail'])
+})
+
+test('runtime-context：异步 resolver 的并发装配独立，失败与空值不复用旧文本', async (t) => {
+  const h = await harness(t)
+  const pending = []
+  const scope = await h.mount([{ id: 'dynamic', layer: 'runtime-context', strategy: 'placeholder', fill: 'env-facts' }], (ctx, configs, warn) => {
+    configs[0].resolve = ({ session }) => {
+      const deferred = Promise.withResolvers()
+      pending.push({ ...deferred, id: session.id })
+      return deferred.promise
+    }
+    wireLayers(ctx, configs, warn)
+  })
+  const main = sessionWith('', 'main')
+  const child = sessionWith('', 'child')
+  child.header.delegationDepth = 1
+  const a = h.assemble(scope, main)
+  const b = h.assemble(scope, child)
+  const c = h.assemble(scope, main)
+  assert.deepEqual(pending.map(item => item.id), ['main', 'child', 'main'])
+  pending[2].resolve({ text: 'MAIN-NEW' })
+  pending[1].resolve({ text: 'CHILD' })
+  pending[0].resolve({ text: 'MAIN-OLD' })
+  assert.deepEqual((await Promise.all([a, b, c])).map(result => renderContextSections(result)[0].text), ['MAIN-OLD', 'CHILD', 'MAIN-NEW'])
+  const failed = h.assemble(scope, main)
+  pending[3].reject(new Error('resolver unavailable'))
+  assert.deepEqual(renderContextSections(await failed), [])
+  assert.match(scope.warnings.at(-1), /resolver unavailable/)
+  const empty = h.assemble(scope, main)
+  pending[4].resolve(null)
+  assert.deepEqual(renderContextSections(await empty), [])
+})
+
+for (const gateFirst of [true, false]) {
+  test(`runtime-context：真实晋升门控与压缩后重晋升保持生效（门控先挂=${gateFirst}）`, async (t) => {
+    const h = await harness(t)
+    const scope = await h.mount([{ id: 'env', layer: 'runtime-context', strategy: 'placeholder', fill: 'env-facts', text: '{{CWD}}' }], (ctx, configs, warn) => {
+      if (gateFirst) applyContextGate(ctx, {})
+      wireLayers(ctx, configs, warn)
+      if (!gateFirst) applyContextGate(ctx, {})
+    })
+    const session = sessionWith()
+    const events = []
+    session.snapshotEvents = () => events
+    const observe = (type, data = {}) => {
+      const event = { type, seq: events.length + 1, data }
+      events.push(event)
+      scope.ctx.emit('session/event', session, event)
+    }
+    const rendered = () => h.assemble(scope, session).then(renderContextSections)
+    assert.deepEqual(await rendered(), [])
+    observe('tool/call')
+    assert.equal((await rendered())[0].text, process.cwd())
+    observe('compaction/end', { error: 'failed' })
+    assert.equal((await rendered()).length, 1)
+    observe('compaction/end')
+    assert.deepEqual(await rendered(), [])
+    observe('tool/call')
+    assert.equal((await rendered()).length, 1)
+    const unsuppress = scope.ctx.systemPrompt.suppressRuntimeContext()
+    assert.deepEqual(await rendered(), [])
+    unsuppress()
+    assert.equal((await rendered()).length, 1)
+    const child = sessionWith('', 'child')
+    child.header.delegationDepth = 1
+    assert.equal(renderContextSections(await h.assemble(scope, child)).length, 1)
+  })
+}
+
+test('runtime-context：官方同名遮蔽、兄弟 scope 与 pending disposer 不串', async (t) => {
+  const h = await harness(t)
+  wireLayers(h.root, createPromptConfigs([{ id: 'shared', layer: 'runtime-context', strategy: 'placeholder', fill: 'env-facts', text: 'GLOBAL' }]), () => {})
+  const a = await h.mount([{ id: 'shared', layer: 'runtime-context', text: 'SCOPED' }])
+  const deferred = Promise.withResolvers()
+  const b = await h.mount([{ id: 'shared', layer: 'runtime-context', strategy: 'placeholder', fill: 'env-facts' }], (ctx, configs, warn) => {
+    configs[0].resolve = () => deferred.promise
+    wireLayers(ctx, configs, warn)
+  })
+  assert.deepEqual(renderContextSections(await h.assemble(a, sessionWith())), [{ name: 'shared', text: 'SCOPED' }])
+  const inFlight = h.assemble(b, sessionWith())
+  await b.dispose()
+  deferred.resolve({ text: 'DISPOSED' })
+  assert.deepEqual(renderContextSections(await inFlight), [])
+  assert.deepEqual(renderContextSections(await h.assemble(b, sessionWith())), [{ name: 'shared', text: 'GLOBAL' }])
+  assert.deepEqual(renderContextSections(await h.assemble(a, sessionWith())), [{ name: 'shared', text: 'SCOPED' }])
+})
+
+test('runtime-context：复用同一 AssembleContext 并发调用仍逐次填充，后续 waterfall 只见文本', async (t) => {
+  const h = await harness(t)
+  const barrier = Promise.withResolvers()
+  let calls = 0
+  const scope = await h.mount([{ id: 'dynamic', layer: 'runtime-context', strategy: 'placeholder', fill: 'env-facts' }], (ctx, configs, warn) => {
+    ctx.on('system-prompt/assemble', async (_assembly, _context, next) => {
+      await barrier.promise
+      return next()
+    })
+    configs[0].resolve = async () => ({ text: `call-${++calls}` })
+    wireLayers(ctx, configs, warn)
+    ctx.on('system-prompt/assemble', (assembly, _context, next) => {
+      assert.match(renderContextSections(assembly)[0].text, /^call-/)
+      return next()
+    })
+  })
+  const context = { scope: scope.key, agent: { session: sessionWith(), options: {} } }
+  const first = h.root.systemPrompt.assemble(context)
+  const second = h.root.systemPrompt.assemble(context)
+  barrier.resolve()
+  assert.deepEqual((await Promise.all([first, second])).map(result => renderContextSections(result)[0].text), ['call-1', 'call-2'])
+})
+
+test('runtime-context：取消本次装配或卸载时丢弃所有已填充和等待中的正文', async (t) => {
+  const h = await harness(t)
+  for (const dispose of [false, true]) {
+    const pending = Promise.withResolvers()
+    const started = Promise.withResolvers()
+    const scope = await h.mount([
+      { id: 'early', layer: 'runtime-context', strategy: 'placeholder', fill: 'env-facts', order: 1 },
+      { id: 'late', layer: 'runtime-context', strategy: 'placeholder', fill: 'env-facts', order: 2 },
+    ], (ctx, configs, warn) => {
+      configs[0].resolve = async () => ({ text: 'EARLY' })
+      configs[1].resolve = () => { started.resolve(); return pending.promise }
+      wireLayers(ctx, configs, warn)
+    })
+    const controller = new AbortController()
+    const inFlight = h.root.systemPrompt.assemble({ scope: scope.key, agent: { session: sessionWith() }, signal: controller.signal })
+    await started.promise
+    if (dispose) await scope.dispose()
+    else controller.abort()
+    pending.resolve({ text: 'LATE' })
+    assert.deepEqual(renderContextSections(await inFlight), [])
+  }
+})
 
 test('官方同 scope：局部同名变量分别绑定，大小写事实只注册一次，等价绑定复用', async (t) => {
   const h = await harness(t)
