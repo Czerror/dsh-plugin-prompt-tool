@@ -128,7 +128,7 @@ test('空白预设只装配用户新建的单项能力', () => {
   }
 })
 
-test('删除能力只移除显式模块，保留 dormant 参数与未知字段', () => {
+test('删除能力连显式参数与行配置一起移除，保留未登记参数与未知字段', () => {
   const dir = mkdtempSync(join(tmpdir(), 'pt-engine-capability-remove-'))
   try {
     const file = join(dir, 'preset.yml')
@@ -143,10 +143,41 @@ test('删除能力只移除显式模块，保留 dormant 参数与未知字段',
     assert.deepEqual(first, { changed: true, removedModules: ['tool-bootstrap'], capabilityIds: ['tool-bootstrap'] })
     const parsed = parseYaml(readFileSync(file, 'utf8'))
     assert.deepEqual(parsed.modules, ['context-gate'])
-    assert.equal(parsed.params.bootstrapMaxTokens, 1024, '参数保留为 dormant 配置')
-    assert.equal(parsed.moduleConfigs['tool-bootstrap'].promoteGate, true, '行配置保留为 dormant 配置')
+    assert.equal(parsed.params.bootstrapMaxTokens, undefined, '该能力参数随能力一起移除（参数在 ⇒ 装配在）')
+    assert.equal(parsed.params.customKeep, true, '未登记的键不是引擎参数，不碰')
+    assert.equal(parsed.moduleConfigs?.['tool-bootstrap'], undefined, '该能力的行配置一起移除')
     assert.equal(parsed.unknown, 'keep')
     assert.equal(removeEngineCapabilityFromPreset(dir, 'tool-bootstrap').changed, false, '重复删除幂等')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('参数在 ⇒ 装配在：显式参数与行配置自动补齐能力模块', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'pt-implied-modules-'))
+  try {
+    writeFileSync(join(dir, 'preset.yml'), [
+      'id: implied', 'name: implied', 'version: "1"', 'engineCompat: ">=0"',
+      'modules: [context-gate]',
+      'params: { cotDrip: true, cotDripEvery: 2, customKeep: true }',
+      'moduleConfigs:', '  tool-filter:', '    enabled: false',
+      '',
+    ].join('\n'), 'utf8')
+    const spec = loadPresetSpec(dir)
+    const facts = resolvePresetModuleFacts(spec, dir, true)
+    assert.deepEqual(facts.declaredModules, ['context-gate'], '声明事实仍是磁盘内容，不伪造')
+    assert.ok(facts.effectiveModules.includes('progress-reminder'), '参数隐含的模块进入装配事实')
+    assert.ok(facts.effectiveModules.includes('tool-filter'), '行配置隐含的模块进入装配事实')
+    assert.equal(isEngineCapabilityPresent('progress-reminder', facts), true, '编辑卡据此出现')
+    const ids = parseYaml(renderComposition(spec, {}, dir)).map((row) => row.id)
+    assert.ok(ids.includes('progress-reminder'), '装配产物真的含该能力行')
+    assert.ok(ids.includes('tool-filter'), '行配置隐含的模块同样真的装配')
+    assert.equal(facts.effectiveModules.includes('tool-bootstrap'), false, '无关参数不触发其他能力')
+    // 移除能力时参数与行配置一起消失：不会再被隐含装配拉回来。
+    assert.equal(removeEngineCapabilityFromPreset(dir, 'progress-reminder').changed, true)
+    const after = resolvePresetModuleFacts(loadPresetSpec(dir), dir, true)
+    assert.equal(after.effectiveModules.includes('progress-reminder'), false, '移除后不再隐含装配')
+    assert.equal(loadPresetSpec(dir).params?.cotDrip, undefined, '移除后参数已随能力删除')
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
@@ -293,9 +324,9 @@ test('历史策略段：实际运行能力可见，补声明保留授权，移�
     assert.equal(removed.subagentToolPolicy, undefined)
     assert.equal(isEngineCapabilityPresent(id, resolvePresetModuleFacts(removed, dir, true)), false)
     assert.doesNotMatch(renderComposition(removed, {}, dir), /id: subagent-tool-policy/)
-    const dormant = { ...removed, params: { toolFilterAllow: ['read'] }, moduleConfigs: { 'tool-filter': { enabled: true } } }
-    assert.equal(isEngineCapabilityPresent('tool-filter', resolvePresetModuleFacts(dormant, dir, true)), false,
-      '其他 dormant 参数不触发隐式能力')
+    const implied = { ...removed, params: { toolFilterAllow: ['read'] }, moduleConfigs: { 'tool-filter': { enabled: true } } }
+    assert.equal(isEngineCapabilityPresent('tool-filter', resolvePresetModuleFacts(implied, dir, true)), true,
+      '参数在 ⇒ 装配在：显式参数/行配置会隐含装配该能力')
   } finally {
     rmSync(root, { recursive: true, force: true })
   }

@@ -305,7 +305,7 @@ test('参数桥优先于 moduleConfigs 直写：UI 开关不被行级直写覆�
   assert.equal(tf2.config.enabled, true, '桥未覆盖时 moduleConfigs 直写生效')
 })
 
-test('空白预设的 dormant moduleConfigs 不会隐式装配引擎能力', () => {
+test('显式 moduleConfigs 行 ⇒ 自动装配对应能力（参数在 ⇒ 装配在）', () => {
   const base = loadPresetSpec(resolvePresetDir('pt-custom'))
   const spec = {
     ...base,
@@ -314,8 +314,9 @@ test('空白预设的 dormant moduleConfigs 不会隐式装配引擎能力', () 
       'promoted-code-mode': { usePtcMode: true },
     },
   }
-  const rows = parseYaml(renderComposition(spec, {}))
-  assert.deepEqual(rows, [], '只有 modules 显式声明才允许装配能力')
+  const ids = parseYaml(renderComposition(spec, {})).map((row) => row.id)
+  assert.ok(ids.includes('tool-bootstrap'), '显式行配置隐含 tool-bootstrap 装配')
+  assert.ok(ids.includes('promoted-code-mode'), '显式行配置隐含 promoted-code-mode 装配')
 })
 
 test('显式零值穿过组合默认与直写配置后仍禁用节拍、取消深思下限', async () => {

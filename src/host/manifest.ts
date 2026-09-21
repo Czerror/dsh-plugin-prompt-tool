@@ -16,8 +16,8 @@ import { basename, join, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Pair, Scalar, parse as parseYaml, parseDocument, YAMLMap, YAMLSeq } from 'yaml'
 import { DEFAULT_PRESET_DIR, DSH_HOME } from './paths.ts'
-import { engineCapability, engineRecipe, isEngineCapabilityPresent, type ModuleSourceMode, type PresetModuleFacts } from '../shared/engine-capabilities.ts'
-import { buildEngineModuleParams, engineParamList, normalizeMaxDepth } from '../shared/engine-params.ts'
+import { engineCapability, engineRecipe, impliedModulesForParams, isEngineCapabilityPresent, type ModuleSourceMode, type PresetModuleFacts } from '../shared/engine-capabilities.ts'
+import { ENGINE_PARAM_DEFINITIONS, ENGINE_PARAM_KEYS, buildEngineModuleParams, engineParamList, normalizeMaxDepth } from '../shared/engine-params.ts'
 import { personaRowConfig, readPersonaSpec, type PersonaSpec } from '../shared/persona-section.ts'
 import { DEFAULT_PRESET_ID } from '../shared/preset-ids.ts'
 import { assertPresetDirectory, assertPresetId, assertPresetTree, presetPathExists, rewritePresetEngineReferences, setPresetDefinitionId } from './preset-install.ts'
@@ -858,9 +858,14 @@ export function applyModuleConfigs(raw: string, configs: Record<string, Record<s
 export function loadCompositionText(spec: PresetSpec, templateDir?: string): string {
   let raw: string
   let modules = spec.modules
-  if (Array.isArray(modules) && spec.subagentToolPolicy !== undefined && spec.subagentToolPolicy !== null
-    && !modules.includes('subagent-tool-policy')) {
-    modules = [...modules, 'subagent-tool-policy']
+  if (Array.isArray(modules)) {
+    const declared: string[] = modules
+    // 参数在 ⇒ 装配在：显式 params/moduleConfigs 隐含的能力模块自动补齐，与顶层策略段同一规则。
+    const extra = [
+      ...(spec.subagentToolPolicy !== undefined && spec.subagentToolPolicy !== null ? ['subagent-tool-policy'] : []),
+      ...impliedModulesForParams(spec.params, spec.moduleConfigs),
+    ].filter((module) => !declared.includes(module))
+    if (extra.length > 0) modules = [...declared, ...extra]
   }
   if (Array.isArray(modules)) raw = assembleModules({ ...spec, modules })
   else {
@@ -966,10 +971,16 @@ export function resolvePresetModuleFacts(
   } catch {
     return { declaredModules, effectiveModules: null, rowIds: [], sourceMode: 'unknown', editable: false }
   }
-  // 历史策略段仍由 loadCompositionText 装配：保留已有授权，并让编辑卡展示真实运行状态。
-  // 仅这一兼容能力可隐式出现；其他 dormant 参数和官方组合行不推断为插件能力。
-  if (effectiveModules !== null && rowIds.includes('subagent-tool-policy')
-    && !effectiveModules.includes('subagent-tool-policy')) effectiveModules.push('subagent-tool-policy')
+  // 隐式装配如实进入 effectiveModules（declaredModules 保持磁盘事实）：参数在 ⇒ 装配在；
+  // 顶层策略段同理——两者都让编辑卡与「本层已装配的能力」展示真实运行状态。
+  if (effectiveModules !== null) {
+    for (const module of impliedModulesForParams(spec.params, spec.moduleConfigs)) {
+      if (!effectiveModules.includes(module)) effectiveModules.push(module)
+    }
+    if (rowIds.includes('subagent-tool-policy') && !effectiveModules.includes('subagent-tool-policy')) {
+      effectiveModules.push('subagent-tool-policy')
+    }
+  }
   const effectiveConfigs: Record<string, Record<string, unknown>> = {}
   for (const [id, config] of defaults) effectiveConfigs[id] = config
   for (const [id, config] of Object.entries(spec.moduleConfigs ?? {})) {
@@ -1081,9 +1092,9 @@ export function createEngineCapabilityInPreset(
   return { changed: true, addedModules, capabilityIds }
 }
 
-/** 删除显式装配的能力模块；参数和 moduleConfigs 保留为 dormant 配置。
- *  例外：拥有顶层数据段的能力（如 subagent-tool-policy → subagentToolPolicy）**连段一起删除**——
- *  策略是结构化数据、留在磁盘上无法被任何 UI 编辑，属于"删除即失效"的语义（用户决策）。 */
+/** 删除能力：模块声明、顶层数据段，以及该能力的**显式参数与行配置**一起移除。
+ *  参数在 ⇒ 装配在（见 impliedModulesFromParams）：留下参数会让移除立刻被隐含装配拉回来，
+ *  所以"移除能力"必须是完整移除。未登记参数、其他能力的数据与未知字段一律不动。 */
 export function removeEngineCapabilityFromPreset(
   presetDir: string,
   capabilityId: string,
@@ -1099,9 +1110,20 @@ export function removeEngineCapabilityFromPreset(
   const removedModules = modules.filter((module) => capability.moduleKeys.includes(module))
   const section = capability.ownSection
   const sectionPresent = section !== undefined && source[section.key] !== undefined && source[section.key] !== null
-  if (removedModules.length === 0 && !sectionPresent) return { changed: false, removedModules, capabilityIds: [capabilityId] }
+  // 该能力的显式参数键与行配置：与模块声明同生共死。
+  const params = (source.params ?? {}) as Record<string, unknown>
+  const paramKeys = ENGINE_PARAM_KEYS.filter((key) => ENGINE_PARAM_DEFINITIONS[key].card === capabilityId
+    && Object.prototype.hasOwnProperty.call(params, key))
+  const configs = (source.moduleConfigs ?? {}) as Record<string, unknown>
+  const configRows = [...new Set([...capability.rowIds, ...capability.moduleKeys])]
+    .filter((rowId) => Object.prototype.hasOwnProperty.call(configs, rowId))
+  if (removedModules.length === 0 && !sectionPresent && paramKeys.length === 0 && configRows.length === 0) {
+    return { changed: false, removedModules, capabilityIds: [capabilityId] }
+  }
   if (removedModules.length > 0) doc.set('modules', modules.filter((module) => !capability.moduleKeys.includes(module)))
   if (sectionPresent) doc.deleteIn([section!.key])
+  for (const key of paramKeys) doc.deleteIn(['params', key])
+  for (const rowId of configRows) doc.deleteIn(['moduleConfigs', rowId])
   const candidate = doc.toJS() as PresetSpec
   assertCompositionArray(renderComposition(candidate, {}, presetDir), candidate)
   atomicWriteTextFile(file, doc.toString())

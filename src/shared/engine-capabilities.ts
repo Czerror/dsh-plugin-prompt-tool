@@ -188,6 +188,36 @@ export function engineRecipe(id: string): EngineRecipe | undefined {
   return ENGINE_RECIPES.find((recipe) => recipe.id === id)
 }
 
+/**
+ * 预设里显式写了的引擎参数 / 行配置所隐含的模块：**参数在 ⇒ 装配在**。
+ *
+ * 只认显式声明（`params` 的登记参数键与 `moduleConfigs` 的行键），组合源自带的默认值不算——
+ * 否则任何预设都会把全部能力装回来。返回能力拥有的模块 id（去重，顺序稳定）。
+ * 装配入口、模块事实与"移除能力"三处共用这一份派生，避免各自判断漂移。
+ */
+export function impliedModulesForParams(
+  params: Readonly<Record<string, unknown>> | undefined | null,
+  moduleConfigs: Readonly<Record<string, unknown>> | undefined | null,
+): string[] {
+  const implied = new Set<string>()
+  const add = (capability: EngineCapability | undefined): void => {
+    if (capability === undefined) return
+    for (const module of capability.moduleKeys) implied.add(module)
+  }
+  if (params !== undefined && params !== null) {
+    for (const key of ENGINE_PARAM_KEYS) {
+      if (!Object.prototype.hasOwnProperty.call(params, key)) continue
+      add(engineCapability(ENGINE_PARAM_DEFINITIONS[key].card))
+    }
+  }
+  if (moduleConfigs !== undefined && moduleConfigs !== null) {
+    for (const rowId of Object.keys(moduleConfigs)) {
+      add(ENGINE_CAPABILITIES.find((capability) => capability.rowIds.includes(rowId) || capability.moduleKeys.includes(rowId)))
+    }
+  }
+  return [...implied]
+}
+
 /** 显式模块预设中的实际能力；包含历史策略段仍在运行的兼容装配。
  *  创建补声明由 host 单独检查 declaredModules；官方组合行不伪装成可编辑能力。 */
 export function isEngineCapabilityPresent(id: string, facts: PresetModuleFacts | undefined): boolean {
