@@ -68,7 +68,7 @@ export interface PromptConfigListProps {
    * 同层每张卡显示同一份值，折叠区默认折叠且展开才渲染内容。
    */
   renderLayerSettings?: (layer: string, config: PromptConfigDraft) => ReactNode
-  /** 该层有设置且无实例时，自动生成只承载设置的层级配置卡。 */
+  /** 该层有可编辑设置时，在现有实例卡内提供设置区。 */
   hasLayerSettings?: (layer: string) => boolean
   matchesLayerSettings?: (layer: string, keyword: string) => boolean
   onNotice: (kind: 'ok' | 'error', message: string) => void
@@ -161,21 +161,9 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
       return a.index - b.index
     })
     .map((entry) => entry.config)
-  // 只派生展示卡，不加入 configs；真实规则操作与保存仍仅使用 configs。
-  const layerConfigs: PromptConfigDraft[] = props.renderLayerSettings === undefined ? [] : allLayers
-    .filter((candidate) => props.hasLayerSettings?.(candidate) === true && !configs.some((config) =>
-      promptConfigLayer(config) === candidate && (scope === undefined || (scope === 'main' ? config.audience !== 'subagent' : config.audience !== 'main'))))
-    .map((settingsLayer) => {
-      let id = `__layer-settings__:${settingsLayer}`
-      while (configs.some((config) => config.id === id)) id += '_'
-      return { id, layer: settingsLayer, name: t('configs.layerSettings.title', { layer: translateLabel(t, LAYER_LABEL_KEYS, settingsLayer) }) }
-    })
-  const visibleLayerConfigs = viewFilter === 'world-book' ? [] : layerConfigs.filter((config) =>
-    (effectiveLayer === undefined || config.layer === effectiveLayer)
-    && (matchesConfigKeyword(config, keyword, t) || props.matchesLayerSettings?.(config.layer!, keyword) === true))
   useEffect(() => {
-    if (expanded !== undefined && ![...configs, ...layerConfigs].some((config) => config.id === expanded)) setExpanded(undefined)
-  }, [configs, layerConfigs, expanded])
+    if (expanded !== undefined && !configs.some((config) => config.id === expanded)) setExpanded(undefined)
+  }, [configs, expanded])
   /** 按过滤后可见配置一次性启用/禁用（批量开关）。 */
   const batchSetEnabled = (enabled: boolean): void => {
     if (props.readOnlyReason !== undefined) return
@@ -327,17 +315,16 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
   const handleMoveUp = useCallback((id: string) => handleMove(id, -1), [handleMove])
   const handleMoveDown = useCallback((id: string) => handleMove(id, 1), [handleMove])
 
-  const renderCard = (config: PromptConfigDraft, layerSettingsOnly = false) => {
+  const renderCard = (config: PromptConfigDraft) => {
     const layerIds = ordered.filter((item) => promptConfigLayer(item) === promptConfigLayer(config)).map((item) => item.id)
     const position = layerIds.indexOf(config.id)
-    const sorting = !layerSettingsOnly && keyword.length === 0 && props.readOnlyReason === undefined
+    const sorting = keyword.length === 0 && props.readOnlyReason === undefined
     return (
       <PromptConfigCard
         key={config.id}
         t={t}
         meta={meta}
         config={config}
-        layerSettingsOnly={layerSettingsOnly}
         fieldDrafts={props.fieldDrafts}
         draftScope={props.draftScope}
         disabled={props.readOnlyReason !== undefined && instructionFileIdOf(config) === undefined}
@@ -359,9 +346,9 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
         onReloadInstructionFile={onReloadInstructionFile}
         onPatchInstructionPolicy={onPatchInstructionPolicy}
         onDragStart={sorting ? handleDragStart : undefined}
-        onDragOver={layerSettingsOnly ? undefined : handleDragOver}
-        onDrop={layerSettingsOnly ? undefined : handleDrop}
-        onDragEnd={layerSettingsOnly ? undefined : handleDragEnd}
+        onDragOver={handleDragOver}
+        onDrop={handleDrop}
+        onDragEnd={handleDragEnd}
         renderLayerSettings={props.hasLayerSettings?.(promptConfigLayer(config)) === false ? undefined : props.renderLayerSettings}
       />
     )
@@ -453,10 +440,10 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
           这里只定义展示分组，不建立插入点间运行顺序。 */}
       {moduleCards !== undefined && <div className={styles.configList} hidden={viewFilter === 'world-book'}>{moduleCards}</div>}
 
-      {ordered.length === 0 && visibleLayerConfigs.length === 0 ? (keyword.length > 0 || worldBookView) ? (
+      {ordered.length === 0 ? (keyword.length > 0 || worldBookView) ? (
         <p className={styles.readOnly}>{t('configs.noMatch', { keyword: filter.trim() || translateLabel(t, LAYER_LABEL_KEYS, viewFilter) })} <button type="button" className={styles.pillButton} onClick={clearFilters}>{t('configs.clearFilters')}</button></p>
       ) : layerView ? (
-        // 选中的注入层没有内容且没有引擎设置：给空状态与新增入口，不自动创建九张空卡。
+        // 没有真实实例就显示空状态与新增入口，不根据引擎设置自动补卡。
         <div className={styles.emptyState}><span className={styles.emptyGlyph} aria-hidden="true">⌁</span><div>
           <h3>{t('configs.empty.layer.title', { layer: translateLabel(t, LAYER_LABEL_KEYS, viewFilter) })}</h3>
           <p>{t('configs.empty.layer.desc')}</p>
@@ -473,10 +460,7 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
           {props.readOnlyReason !== undefined && props.onChoosePreset !== undefined && <button type="button" className={styles.pillButton} onClick={props.onChoosePreset}>{t('configs.chooseEditable')}</button>}
         </div></div>
       ) : <div className={styles.configList}>
-        {allLayers.flatMap((settingsLayer) => [
-          ...ordered.filter((config) => promptConfigLayer(config) === settingsLayer).map((config) => renderCard(config)),
-          ...visibleLayerConfigs.filter((config) => config.layer === settingsLayer).map((config) => renderCard(config, true)),
-        ])}
+        {ordered.map((config) => renderCard(config))}
       </div>}
 
     </section>

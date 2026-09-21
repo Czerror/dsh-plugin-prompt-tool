@@ -33,6 +33,11 @@ const instructionCard = (file) => ({
   params: { scope: file.scope, file: file.path, displayPath: file.displayPath, fileId: file.fileId },
 })
 let configs = [], variables = {}, tools = [], overrides = {}
+// 用例显式加载真实提示词模板；打开层设置本身不创建配置。
+window.loadPromptTemplates = async (files) => {
+  configs = files.map((file) => structuredClone(fixture.templates.templates.find((entry) => entry.file === file).spec))
+  await window.store.load()
+}
 const modules = new Set()
 window.requests = []
 window.fetch = async (url, init) => {

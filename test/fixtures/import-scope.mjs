@@ -71,6 +71,7 @@ window.mount = (mode, editable = true) => {
   fields = { ...EMPTY_FIELDS, promptConfigs: [
     { id: 'pre-config', layer: 'pre-step', audience: 'subagent', strategy: 'static', text: 'PRE' },
     { id: 'system-config', layer: 'system-section', audience: 'subagent', strategy: 'static', text: 'SYSTEM' },
+    { id: 'tool-config', layer: 'tool-pipeline', audience: 'subagent', strategy: 'static', text: '', params: { toolNames: 'bash', preDecision: 'allow', postAction: 'accept' } },
   ] }
   store.moduleFacts = { ...store.moduleFacts, editable }
   root = createRoot(document.getElementById('root'))

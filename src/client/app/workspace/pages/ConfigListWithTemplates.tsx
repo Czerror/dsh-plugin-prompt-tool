@@ -29,7 +29,7 @@ export const ConfigListWithTemplates = memo(function ConfigListWithTemplates(pro
   onKeywordChange?: (value: string) => void
   /** 本层引擎设置内容（页面注入）：同层每张实例卡显示同一份值。 */
   renderLayerSettings?: (layer: string, config: PromptConfigDraft) => ReactNode
-  /** 该层是否有可编辑设置：决定「本层无配置卡」时是否渲染兜底设置容器。 */
+  /** 该层是否有可编辑设置：决定真实实例卡内是否显示设置区。 */
   hasLayerSettings?: (layer: string) => boolean
   matchesLayerSettings?: (layer: string, keyword: string) => boolean
   /** 与页面合并创建入口使用同一定位信号。 */

@@ -5,6 +5,7 @@ import { registerHooks } from 'node:module'
 import { createElement, isValidElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import ts from 'typescript'
+import { parse } from 'yaml'
 import { ENGINE_CAPABILITIES, ENGINE_EDITOR_GROUP_MAP, ENGINE_LAYER_ORDER, engineCapability, engineRecipe, isEditorGroupVisible } from '../../src/shared/engine-capabilities.ts'
 import { ENGINE_PARAM_DEFINITIONS, ENGINE_PARAM_KEYS } from '../../src/shared/engine-params.ts'
 import { displayLayers, INSERTION_LAYERS } from '../../src/client/features/prompts/prompt-config-policy.ts'
@@ -586,7 +587,7 @@ test('统一搜索：配置名、标识、注入层与参数名都能命中，�
   assert.deepEqual(configs, before)
 })
 
-test('统一搜索：生产层装配按中文名、技术键与能力名保留实例或空层设置', () => {
+test('统一搜索：生产层装配按中文名、技术键与能力名保留真实实例，不生成空层设置卡', () => {
   const active = { ...store, fields: { ...EMPTY_FIELDS, writePreset: true }, moduleFacts: withModules(['deliberation-gate', 'progress-reminder']) }
   const config = { id: 'pipe-a', layer: 'tool-pipeline', strategy: 'static' }
   for (const keyword of ['深思门', 'deliberationminchars', 'deliberation-gate']) {
@@ -595,7 +596,7 @@ test('统一搜索：生产层装配按中文名、技术键与能力名保留�
     assert.equal(slots.matchesLayerSettings('llm-stream', keyword), false)
     const base = { ...slots, t, meta: getEngineMeta(), viewFilter: 'all', keyword, onPatchConfigs() { assert.fail('搜索不得写盘') }, onSaveConfigs() { assert.fail('搜索不得保存') }, onNotice() {} }
     assert.match(render(PromptConfigList, { ...base, configs: [config] }), /data-config-id="pipe-a"/)
-    assert.match(render(PromptConfigList, { ...base, configs: [] }), /data-layer-config="tool-pipeline"/)
+    assert.doesNotMatch(render(PromptConfigList, { ...base, configs: [] }), /data-layer-config=|data-config-id=|data-layer-settings-standalone=/)
     const settings = tree(LayerSettingsContent, { store: active, t, layer: 'tool-pipeline', keyword })
     assert.equal(find(settings, (node) => node.props['data-layer-param-group'] === 'deliberation-gate').props.hidden, false)
     assert.equal(find(settings, (node) => node.props['data-layer-param-group'] === 'progress-reminder').props.hidden, true)
@@ -692,7 +693,7 @@ test('层设置内容：参数分组按共享契约派生，能力装配状态�
   assert.notEqual(idOf(cardA), idOf(cardB), '同层多卡的镜像控件 DOM id 必须不同')
 })
 
-test('存在引擎设置时自动生成层级配置卡，全部视图直接可达且不生成提示词规则', () => {
+test('所有参数设置只内嵌真实配置卡，空层即使有设置也不自动创建卡片', () => {
   const marker = 'LAYER-SETTINGS'
   const layers = ['agent-request', 'tool-pipeline', 'subagent-start']
   const patches = []
@@ -706,30 +707,32 @@ test('存在引擎设置时自动生成层级配置卡，全部视图直接可�
     ...extra,
   })
   for (const scope of ['main', 'subagent']) {
-    const props = base({ scope })
-    const html = render(PromptConfigList, props)
-    assert.deepEqual([...html.matchAll(/data-layer-config="([^"]+)"/g)].map(([, layer]) => layer), layers)
-    assert.doesNotMatch(html, /data-layer-settings-standalone|该层还没有配置卡|data-config-id=/)
-    assert.ok(!html.includes(marker), '折叠卡片不挂载设置控件')
-    const nodes = tree(PromptConfigList, props)
-    for (const layer of layers) {
-      const card = find(nodes, (node) => node.type === PromptConfigCard && node.props.config.layer === layer)
-      assert.ok(card, '与提示词实例复用同一个卡片组件')
-      assert.equal(card.props.layerSettingsOnly, true)
-      const expanded = render(PromptConfigCard, { ...card.props, expanded: true })
-      assert.ok(expanded.includes(`${marker}:${layer}`), '展开后编辑本层设置')
-      assert.doesNotMatch(expanded, /role="switch"|aria-haspopup="menu"|draggable="true"|data-config-id=/, '层级卡没有提示词规则操作')
-      assert.ok(!expanded.includes(t('form.text.aria')), '层级卡不伪造提示词正文表单')
+    for (const viewFilter of ['all', ...layers, 'world-book']) {
+      for (const keyword of ['', '深思门', '代理请求']) {
+        const html = render(PromptConfigList, base({ scope, viewFilter, keyword }))
+        assert.doesNotMatch(html, /data-layer-config=|data-layer-settings-standalone|data-config-id=/)
+        assert.ok(!html.includes(marker), '无真实实例就不挂载设置控件')
+      }
     }
-    const searched = render(PromptConfigList, base({ scope, keyword: '深思门' }))
-    assert.deepEqual([...searched.matchAll(/data-layer-config="([^"]+)"/g)].map(([, layer]) => layer), ['tool-pipeline'])
-    assert.match(render(PromptConfigList, base({ scope, keyword: '代理请求' })), /data-layer-config="agent-request"/)
-    assert.doesNotMatch(render(PromptConfigList, base({ scope, viewFilter: 'world-book' })), /data-layer-config=/)
   }
   // 只渲染不写入：不产生保存、不创建配置对象、不触发 patch。
   assert.deepEqual(patches, [])
   assert.deepEqual(saves, [])
-  // 该层有配置卡：自动层级卡让位给实例卡（设置改为嵌在卡内）。
+  // 真实子代理模板卡内嵌设置，保留固定文本表单和原始身份。
+  const rule = parse(readFileSync(new URL('../../templates/66-subagent-start.yml', import.meta.url), 'utf8'))
+  const props = base({ configs: [rule] })
+  const card = find(tree(PromptConfigList, props), (node) => node.type === PromptConfigCard)
+  assert.equal(card.props.config, rule)
+  assert.equal(card.props.renderLayerSettings, props.renderLayerSettings)
+  const expanded = render(PromptConfigCard, { ...card.props, expanded: true })
+  assert.match(expanded, /子代理通用守则/)
+  assert.match(expanded, /子代理启动层 · 固定文本/)
+  assert.match(expanded, /data-layer-settings="subagent-start"/)
+  assert.doesNotMatch(expanded, /data-layer-config=|子代理启动层配置/)
+  assert.ok(expanded.includes(t('form.text.aria')), '仍是完整提示词配置表单')
+  assert.equal(props.renderLayerSettings('subagent-start', rule), `${marker}:subagent-start`)
+  const noSettingsCard = find(tree(PromptConfigList, base({ configs: [rule], hasLayerSettings: () => false })), (node) => node.type === PromptConfigCard)
+  assert.equal(noSettingsCard.props.renderLayerSettings, undefined, '该层无设置时不生成空设置区')
   const withCard = render(PromptConfigList, base({
     viewFilter: 'tool-pipeline',
     configs: [{ id: 'pipe-rule-a', layer: 'tool-pipeline', order: 0, enabled: true, strategy: 'static' }],
@@ -747,7 +750,7 @@ test('存在引擎设置时自动生成层级配置卡，全部视图直接可�
   render(PromptConfigList, base({ renderLayerSettings: () => { called += 1; return marker }, hasLayerSettings: () => false }))
   assert.equal(called, 0)
   const configs = [{ id: 'pipe-rule-a', layer: 'tool-pipeline', audience: 'main', enabled: true }]
-  assert.match(render(PromptConfigList, base({ configs, scope: 'subagent' })), /data-layer-config="tool-pipeline"/, '其他受众的实例不能遮挡当前受众的设置入口')
+  assert.doesNotMatch(render(PromptConfigList, base({ configs, scope: 'subagent' })), /data-layer-config=|data-config-id=/, '受众不可见时也不补卡')
   assert.doesNotMatch(render(PromptConfigList, base({ configs, scope: 'main', keyword: '不存在' })), /data-layer-config=/, '搜索隐藏实例时不额外生成设置卡')
   const nodes = tree(PromptConfigList, base({ configs }))
   find(nodes, (node) => node.type === 'button' && node.props.children === t('configs.batch.disableVisible', { count: 1 })).props.onClick()

@@ -133,7 +133,7 @@ function matchesLayerGroup(id: string, keyword: string, t: PromptToolTranslate):
 /**
  * 本层引擎设置内容：参数分组（按共享契约派生）+ 已装配能力的装配状态与移除入口 +
  * 该层归属的结构化资产编辑器。由 `engineLayerSlots` 注入到每张本层实例卡的折叠区
- * （无实例时由自动生成的层级配置卡承载）；同层多处渲染共用同一 `store.fields` 与同一草稿键。
+ * 中；无实例时不生成独立卡，同层多处渲染共用同一 `store.fields` 与同一草稿键。
  */
 export function LayerSettingsContent(props: {
   store: PromptToolStore
@@ -234,9 +234,9 @@ export interface EngineLayerSlots {
   beforeCards: ReactNode
   commonCards: ReactNode
   moduleCards: ReactNode
-  /** 本层引擎设置内容，由实例卡或自动生成的层级配置卡承载。 */
+  /** 本层引擎设置内容，仅由真实实例卡内的设置区承载。 */
   renderLayerSettings: (layer: string, config: PromptConfigDraft) => ReactNode
-  /** 该层有可编辑设置且无实例卡时，自动生成层级配置卡。 */
+  /** 该层是否有可编辑设置，控制真实实例卡内的设置区。 */
   hasLayerSettings: (layer: string) => boolean
   matchesLayerSettings: (layer: string, keyword: string) => boolean
 }
