@@ -2,7 +2,9 @@
  * pre-step 协调器：插件侧的薄装配层，用一个 pre-step 监听器统一执行两类来源。
  *
  *   - 预设来源：各预设 mount 的引擎行（prompt-config-engine）把配置注册到本服务，
- *     作用域与释放仍由注册 ctx（dsh-scope）决定——父/子 scope 继承、兄弟 scope 互不串；
+ *     作用域与释放仍由注册 ctx（dsh-scope）决定——父/子 scope 继承、兄弟 scope 互不串。
+ *     同一 scope 内同名来源再次注册（宿主重挂同一个 preset、HMR 时序下旧 fiber 尚未释放）
+ *     时由**后来者接管**：先撤旧登记再插新，绝不让引擎行因重名而挂载失败；
  *   - 独立指令文件来源：本模块按会话工作区现场探测文件、读取独立策略
  *     （`$DSH_HOME/.prompt-tool/instructions.yml`）并编译成同样的提示词配置。
  *
@@ -101,9 +103,12 @@ export interface PreStepCoordinatorService {
   readonly version: number
   /**
    * 把 preset mount 的 pre-step 配置登记进协调器。
+   * 同一 scope 内同一个 `sourceId` 再次登记时后来者接管：先撤销旧登记再插入新登记。
+   * 宿主重挂同一个 preset（或其引擎行的旧 fiber 尚未释放）时这是正常路径，不是配置错误，
+   * 因此不抛错——抛错会让整行未激活，进而让 preset 挂载整体失败（无法切换预设）。
    * @param sourceCtx 注册 ctx：同时决定来源作用域与释放时机（挂在这个 fiber 上）。
-   * @param sourceId 来源 id（同一 scope 内唯一，重复注册是错误）。
-   * @returns 幂等的撤销函数。
+   * @param sourceId 来源 id（同一 scope 内唯一：同名登记以最新一次为准）。
+   * @returns 幂等的撤销函数；登记已被后来者顶替时调用它是空操作。
    */
   registerPreset(sourceCtx: Context, sourceId: string, source: PreStepSource): () => void
   /** 该会话最近一次 pre-step 观察到的负责人事实；未知返回 undefined。 */
@@ -112,6 +117,11 @@ export interface PreStepCoordinatorService {
 
 interface SourceLayer {
   entries: NamedEntries<PreStepSource>
+  /**
+   * 当前活着的登记撤销函数（按 sourceId）。同名再次登记时用它先撤旧再插新；
+   * 旧 fiber 迟到释放时，其撤销函数不会移除已经接管的后来者登记。
+   */
+  undoes: Map<string, () => void>
   isEmpty(): boolean
 }
 
@@ -346,7 +356,11 @@ export function installPreStepCoordinator(
 ): PreStepCoordinatorService {
   const layers = new ScopedLayers<SourceLayer>(() => {
     const entries = new NamedEntries<PreStepSource>((key) => new Error(`prompt-tool: duplicate pre-step source ${key}`))
-    return { entries, isEmpty: () => entries.isEmpty() }
+    return {
+      entries,
+      undoes: new Map<string, () => void>(),
+      isEmpty: () => entries.isEmpty(),
+    }
   }, () => {})
 
   const promotion = {
@@ -440,7 +454,22 @@ export function installPreStepCoordinator(
           resolve: (input) => config.resolve({ ...input, ctx: sourceCtx }),
         })),
       }
-      return layers.effect(sourceCtx, (layer) => layer.entries.insert(sourceId, boundSource), {
+      return layers.effect(sourceCtx, (layer) => {
+        // 同名登记以最新一次为准：先撤旧再插新，让「同一个 preset 被重挂」走正常路径。
+        const previous = layer.undoes.get(sourceId)
+        if (previous !== undefined) {
+          warnOnce(`${WARN_LABEL}: pre-step source ${sourceId} re-registered in the same scope; the latest mount takes over`)
+          layer.undoes.delete(sourceId)
+          // 旧登记的撤销是幂等的：旧 fiber 稍后自己释放时不会移除本次插入的登记。
+          previous()
+        }
+        const undo = layer.entries.insert(sourceId, boundSource)
+        layer.undoes.set(sourceId, undo)
+        return () => {
+          if (layer.undoes.get(sourceId) === undo) layer.undoes.delete(sourceId)
+          undo()
+        }
+      }, {
         label: `prompt-tool: pre-step source ${sourceId}`,
       })
     },

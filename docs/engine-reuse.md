@@ -103,10 +103,16 @@
   注册句柄同时绑定服务实例，HMR 在相邻两步之间替换服务时也会撤销旧登记、向新实例重登；
   空预设与非空预设使用同一接管路径，任一时刻只选择一个批执行器。来源随 ctx disposer
   标记为失效，已被 waterfall 捕获的旧回调也不得在服务重挂后恢复登记。
-- 来源作用域来自注册 ctx（`@deepseek-ai/dsh-scope`）：同一 mount 内唯一，父 scope 的来源对
-  子代理可见、兄弟 scope 互不串，scope dispose 即释放。resolver 也绑定来源 ctx，不因合并
-  批次而改读协调器的全局服务。协调器使用普通监听顺序，留在 `context-gate` 的 prepend
-  门控内侧；迟到或重挂不改变 `allowKinds` 对预设与文件消息的约束。
+- 来源作用域来自注册 ctx（`@deepseek-ai/dsh-scope`）：同一 scope 内**同名来源以最新一次登记
+  为准**——宿主重挂同一个 preset（同一 scope 上旧 mount 的 fiber 尚未释放）时后来者接管，
+  先撤旧登记再插新登记，不抛错；抛错会让引擎行未激活，进而让整个 preset 挂载失败（表现为
+  无法切换预设）。被顶替的旧登记句柄迟到撤销是空操作，不会移除已接管的登记；接管只在
+  同一 scope 内发生，兄弟 scope 的同名来源互不顶替。父 scope 的来源对子代理可见、兄弟
+  scope 互不串，scope dispose 即释放。resolver 也绑定来源 ctx，不因合并批次而改读协调器的
+  全局服务。协调器使用普通监听顺序，留在 `context-gate` 的 prepend 门控内侧；迟到或重挂
+  不改变 `allowKinds` 对预设与文件消息的约束。
+- 验收入口：`test/host/pre-step-wiring.test.mjs`（来源 scope 隔离与 dispose 释放、同一 scope
+  同名来源接管与旧句柄幂等、协调服务迟到与 HMR 重登）。
 
 ### 独立指令文件来源
 

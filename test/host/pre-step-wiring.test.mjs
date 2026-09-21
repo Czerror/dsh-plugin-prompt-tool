@@ -160,6 +160,48 @@ test('T22 scope.dispose() 后来源不再参战（先撤旧再启新）', async 
   assert.deepEqual(textsOf(await dispatch(app, agent.agent)), ['claimed'], 'dispose 释放该 scope 的来源')
 })
 
+test('T28 同一 scope 内同名来源重复登记：后来者接管，引擎行不因重名而挂载失败', async () => {
+  const app = new Context()
+  installPreStepCoordinator(app, { collectFiles: () => [] })
+  const mount = scopedAgent(app, 'agent-reregister')
+  // 宿主重挂同一个 preset：旧 mount 的 fiber 尚未释放时，新 mount 已在同一 scope 登记同名来源。
+  installEngine(app, mount, [staticSpec('preset-card', 'OLD BODY')], { sourceId: 'preset:same' })
+  assert.doesNotThrow(
+    () => installEngine(app, mount, [staticSpec('preset-card', 'NEW BODY')], { sourceId: 'preset:same' }),
+    '重复登记不得让引擎行未激活（未激活会让整个 preset 挂载失败、无法切换预设）',
+  )
+  assert.deepEqual(textsOf(await dispatch(app, mount.agent)), ['claimed', 'NEW BODY'], '只有最新一次登记参战，不双份注入')
+})
+
+test('T28 被顶替的旧登记句柄迟到撤销时不误删后来者', async () => {
+  const app = new Context()
+  const service = installPreStepCoordinator(app, { collectFiles: () => [] })
+  const mount = scopedAgent(app, 'agent-reregister-handle')
+  const source = (text) => ({ configs: createPromptConfigs([staticSpec('preset-card', text)], { strategyDir: ENGINE_DIR }) })
+  const first = service.registerPreset(mount.scope.ctx, 'preset:handle', source('OLD BODY'))
+  const second = service.registerPreset(mount.scope.ctx, 'preset:handle', source('NEW BODY'))
+  assert.deepEqual(textsOf(await dispatch(app, mount.agent)), ['claimed', 'NEW BODY'])
+  first()
+  assert.deepEqual(
+    textsOf(await dispatch(app, mount.agent)),
+    ['claimed', 'NEW BODY'],
+    '旧 fiber 迟到释放不得移除已接管的登记',
+  )
+  second()
+  assert.deepEqual(textsOf(await dispatch(app, mount.agent)), ['claimed'], '当前登记撤销后来源归零')
+})
+
+test('T28 接管限定在同一 scope 内：兄弟 scope 的同名来源互不顶替', async () => {
+  const app = new Context()
+  installPreStepCoordinator(app, { collectFiles: () => [] })
+  const a = scopedAgent(app, 'agent-shared-id-a')
+  const b = scopedAgent(app, 'agent-shared-id-b')
+  installEngine(app, a, [staticSpec('card-a', 'A BODY')], { sourceId: 'preset:shared-id' })
+  installEngine(app, b, [staticSpec('card-b', 'B BODY')], { sourceId: 'preset:shared-id' })
+  assert.deepEqual(textsOf(await dispatch(app, a.agent)), ['claimed', 'A BODY'])
+  assert.deepEqual(textsOf(await dispatch(app, b.agent)), ['claimed', 'B BODY'])
+})
+
 test('T24 无协调服务时引擎独立执行（不依赖 src/host 或协调服务存在）', async () => {
   const app = new Context()
   const agent = scopedAgent(app, 'agent-standalone')
