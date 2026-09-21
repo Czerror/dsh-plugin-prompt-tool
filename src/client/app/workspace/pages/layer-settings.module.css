@@ -1,0 +1,81 @@
+.settings {
+  grid-column: 1 / -1;
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 16px;
+  container: layer-settings / inline-size;
+}
+
+.group {
+  min-width: 0;
+  padding: 16px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+}
+
+/* 搜索仅隐藏分组；作者布局不得覆盖原生 hidden。 */
+.group[hidden],
+.asset[hidden] { display: none; }
+
+.groupTitle {
+  margin: 0 0 16px;
+  color: var(--dsw-alias-label-primary);
+  font: var(--dsw-font-xs-strong-13);
+  text-wrap: balance;
+  overflow-wrap: anywhere;
+}
+
+.paramFields {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px 24px;
+  align-items: start;
+}
+
+.paramFields > [data-param-key] {
+  min-width: 0;
+  padding: 0;
+}
+
+.paramFields > [data-control='text'],
+.paramFields > [data-control='list'],
+.paramFields > [data-control='stages'] { grid-column: 1 / -1; }
+
+.paramFields > [data-control='number'] > input,
+.paramFields > [data-control='select'] > span { width: 100%; }
+
+.paramFields [data-control='number'] input { font-variant-numeric: tabular-nums; }
+.paramFields [role='alert'] { color: var(--dsw-alias-state-error-primary); }
+
+.settings :is(p, small) { text-wrap: pretty; }
+.paramFields :is(label, small, strong, span) { overflow-wrap: anywhere; }
+
+.capabilities {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.capabilityRow {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  font: var(--dsw-font-xxs-12);
+}
+
+.capabilityRow > span { min-width: 0; overflow-wrap: anywhere; text-wrap: pretty; }
+.capabilityRow > button { justify-self: end; }
+.asset { min-width: 0; }
+
+@container layer-settings (max-width: 640px) {
+  .group { padding: 12px; }
+  .paramFields { grid-template-columns: minmax(0, 1fr); }
+}

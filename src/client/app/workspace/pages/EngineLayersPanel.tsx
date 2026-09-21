@@ -24,6 +24,7 @@ import { TemplateVariablesModuleCard } from '../../../features/prompts/PromptCon
 import { CustomToolsCard } from '../../../features/tools/CustomToolsCard.tsx'
 import { cssEscapeId, scrollToCreatedCard } from '../../../ui/reveal-card.ts'
 import ui from '../../../ui/controls.module.css'
+import css from './layer-settings.module.css'
 
 export { isEditorGroupVisible }
 
@@ -155,10 +156,10 @@ function LayerCapabilityRow(props: { store: PromptToolStore; t: PromptToolTransl
   const buttonRef = useRef<HTMLButtonElement>(null)
   const editable = store.fields.writePreset && store.moduleFacts?.editable === true
   return (
-    <li data-layer-capability={capabilityId}>
+    <li className={css.capabilityRow} data-layer-capability={capabilityId}>
       <span>{t('modules.layer.capability', { id: capabilityId })}</span>
       {editable && (
-        <button ref={buttonRef} type="button" className={ui.pillButton} data-danger onClick={() => setConfirming(true)}>
+        <button ref={buttonRef} type="button" className={ui.pillButton} data-danger aria-label={t('modules.layer.removeTitle', { id: capabilityId })} onClick={() => setConfirming(true)}>
           {t('modules.layer.remove')}
         </button>
       )}
@@ -224,23 +225,24 @@ export function LayerSettingsContent(props: {
   const [variablesExpanded, setVariablesExpanded] = useState(() => store.editorDrafts?.expanded.get(variablesExpandedKey) ?? true)
   if (cards.length === 0 && capabilities.length === 0 && assets.length === 0) return null
   return (
-    <>
+    <div className={css.settings} data-layer-settings-content={layer}>
       {cards.map((card) => (
-        <section key={card} hidden={!matches(card)} className={ui.settingRowStack} data-layer-param-group={card}
+        <section key={card} hidden={!matches(card)} className={css.group} data-layer-param-group={card}
           aria-label={t(CARD_LABEL_KEYS[card] ?? 'modules.group.other')}>
-          <strong>{t(CARD_LABEL_KEYS[card] ?? 'modules.group.other')}</strong>
-          <EngineParamFields store={store} card={card} t={t} instanceId={`${instanceId}-${card}`} />
+          <h4 className={css.groupTitle}>{t(CARD_LABEL_KEYS[card] ?? 'modules.group.other')}</h4>
+          <div className={css.paramFields} data-layer-param-fields={card}>
+            <EngineParamFields store={store} card={card} t={t} instanceId={`${instanceId}-${card}`} />
+          </div>
         </section>
       ))}
       {capabilities.some(matches) && (
-        <section className={ui.settingRowStack} data-layer-capabilities={layer} aria-label={t('modules.layer.assembled')}>
-          <strong>{t('modules.layer.assembled')}</strong>
-          <ul>{capabilities.filter(matches).map((id) => <LayerCapabilityRow key={id} store={store} t={t} capabilityId={id} />)}</ul>
+        <section className={css.group} data-layer-capabilities={layer} aria-label={t('modules.layer.assembled')}>
+          <h4 className={css.groupTitle}>{t('modules.layer.assembled')}</h4>
+          <ul className={css.capabilities}>{capabilities.filter(matches).map((id) => <LayerCapabilityRow key={id} store={store} t={t} capabilityId={id} />)}</ul>
         </section>
       )}
       {assets.map((id) => (
-        <section key={id} hidden={!matches(id)} className={ui.settingRowStack} data-layer-asset={id} aria-label={t('modules.layer.asset')}>
-          <strong>{t('modules.layer.asset')}</strong>
+        <section key={id} hidden={!matches(id)} className={css.asset} data-layer-asset={id} aria-label={t(CARD_LABEL_KEYS[id] ?? 'modules.layer.asset')}>
           {id === 'persona' && <PresetPersonaCard t={t} presetId={presetId} disabled={!canEditPreset} onNotice={store.showNotice} drafts={store.editorDrafts} />}
           {id === 'variables' && (
             <TemplateVariablesModuleCard
@@ -270,7 +272,7 @@ export function LayerSettingsContent(props: {
           )}
         </section>
       ))}
-    </>
+    </div>
   )
 }
 

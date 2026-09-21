@@ -87,6 +87,7 @@
     │     └─ pages/
     │        ├─ ConfigListWithTemplates.tsx
     │        ├─ EngineLayersPanel.tsx
+    │        ├─ layer-settings.module.css
     │        ├─ MainSessionPage.tsx
     │        └─ SubagentPage.tsx
     ├─ data/
@@ -505,6 +506,8 @@ promptConfigs 模块卡展开区按基础信息、注入规则、作用范围、
 `LayerSettingsContent` 的三段内容都按共享契约派生、不硬编码层名：`layerParamCards` 取主归属层等于该层、且**确实装配**的能力组与不依赖装配的专用编辑组（未装配能力的参数写了不生效，因此不显示假入口）；`layerAssembledCapabilities` 列出该层已装配能力，每项带二次确认的移除入口（只读预设下不提供）；资产编辑器（`persona` / `variables` / `main-model` / `subagent-model` / `subagent-tools` / `custom-tools` / `subagent-tool-policy`）按同一 `displayLayer` 归位，复用各自专用编辑器、草稿池与写端点。该层**没有任何可编辑设置**时不渲染设置区；该层有设置、却一张实例卡都没有时（例如工具链层通常没有提示词配置卡），列表用一张**不写盘**的兜底容器承载同一份内容（`data-layer-settings-standalone`），不创建配置对象、不触发保存，用户在该层新建配置卡后设置也出现在卡内。
 
 选中某个注入层且该层没有内容时，列表给「该层还没有内容」的空状态与新增入口，不自动创建九张空卡、也不谎称「无匹配」；`world-book` 是策略筛选而非层，保持原有的「无匹配 + 清除筛选」提示。
+
+本层设置的样式由 `app/workspace/pages/layer-settings.module.css` 拥有：根节点占满外层配置网格，分组使用具名标题与轻边界。参数网格在大于640px的设置容器中显示双列短控件，文本、列表和阶段配置整行；小于等于640px单列，不依赖浏览器窗口宽度。控件类型通过既有渲染器的呈现属性表达，不复制参数定义。数字使用等宽数字，说明自然换行，搜索hidden状态始终优先于布局。能力名称与移除动作独立对齐，移除按钮名称包含目标能力；资产沿用专用标题。阶段工具输入的DOM标识同样包含实例身份，草稿键和保存入口保持原样。
 
 同名引擎参数允许多处渲染（同层每张实例卡内各有一份本层设置区）：它们绑定同一 `store.fields[键]` 与同一草稿键，一次修改只提交一次保存；`EngineParamField` 的 `instanceId` 带上「层 + 卡身份」，同层多卡与兜底容器的 DOM id、aria 关联互不冲突，不引入第二份状态、同步服务或事件总线。未完成的数字输入与字段错误也属于这份共享草稿：`store.getDraftRevision` / `subscribeDrafts` / `publishDrafts` 是既有 `subscribeFields` 同一模式的窄广播，参数控件订阅它后，一个渲染点里的半成品输入或错误提示立即出现在其他渲染点（含跨层的相关设置），真实重渲染同步由 `module-policy-smoke` 用真实 Edge 覆盖（同层两张实例卡之间切换编辑、错误态同步、一次失焦只保存一次）。工具栏提供插入点层级与策略筛选、合并创建菜单和提示词配置操作；列表筛选只影响展示，不按插入点分区块。能力与提示词配置保留各自保存、排序和删除语义。
 

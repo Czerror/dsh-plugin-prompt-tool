@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createRequire } from 'node:module'
-import { readFileSync, existsSync, mkdtempSync, rmSync } from 'node:fs'
+import { readFileSync, writeFileSync, existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { tmpdir } from 'node:os'
@@ -9,12 +9,13 @@ import { createServer } from 'node:http'
 import { spawn } from 'node:child_process'
 import { once } from 'node:events'
 import { setTimeout as delay } from 'node:timers/promises'
+import { getEngineMeta } from '../../engine/schema.mjs'
 
 const root = fileURLToPath(new URL('../../', import.meta.url))
 const require = createRequire(join(root, 'package.json'))
 const browserPath = process.env.PROMPT_TOOL_TEST_BROWSER ?? 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe'
 
-test('V2 真实CSS：长名称胶囊、透明主题表面与真实鼠标过滤选择', { skip: !existsSync(browserPath), timeout: 30000 }, async () => {
+test('真实CSS：层设置宽窄布局、键盘与就地错误，胶囊和鼠标过滤保持', { skip: !existsSync(browserPath), timeout: 30000 }, async () => {
   const { rolldown } = await import(pathToFileURL(createRequire(require.resolve('tsdown')).resolve('rolldown')))
   const { transform } = require('lightningcss'), ts = require('typescript')
   const css = []
@@ -22,6 +23,18 @@ test('V2 真实CSS：长名称胶囊、透明主题表面与真实鼠标过滤�
 import {StatusBadge} from ${JSON.stringify(join(root, 'src/client/ui/StatusBadge.tsx').replaceAll('\\', '/'))};
 import {MenuSelect} from ${JSON.stringify(join(root, 'src/client/ui/MenuSelect.tsx').replaceAll('\\', '/'))};
 import ui from ${JSON.stringify(join(root, 'src/client/ui/controls.module.css').replaceAll('\\', '/'))};
+import {PromptConfigForm} from ${JSON.stringify(join(root, 'src/client/features/prompts/PromptConfigForm.tsx').replaceAll('\\', '/'))};
+import {LayerSettingsContent} from ${JSON.stringify(join(root, 'src/client/app/workspace/pages/EngineLayersPanel.tsx').replaceAll('\\', '/'))};
+import {EMPTY_FIELDS} from ${JSON.stringify(join(root, 'src/client/data/prompt-tool-fields.ts').replaceAll('\\', '/'))};
+import {createWorkspaceDrafts} from ${JSON.stringify(join(root, 'src/client/data/workspace-drafts.ts').replaceAll('\\', '/'))};
+import {PROMPT_TOOL_DICTS} from ${JSON.stringify(join(root, 'src/client/locales.ts').replaceAll('\\', '/'))};
+const t=(key,params={})=>Object.entries(params).reduce((text,[name,value])=>text.replaceAll('{'+name+'}',String(value)),PROMPT_TOOL_DICTS.zh[key]??key);
+function Settings(){
+ const [,render]=React.useReducer(n=>n+1,0);
+ const store=React.useMemo(()=>({fields:{...EMPTY_FIELDS,presetTemplate:'layout',writePreset:true},moduleFacts:{sourceMode:'explicit',editable:true,declaredModules:['deliberation-gate','progress-reminder'],effectiveModules:['deliberation-gate','progress-reminder'],rowIds:[]},editorDrafts:createWorkspaceDrafts(),publishDrafts:()=>render(),patch:next=>{Object.assign(store.fields,next);render()},persistParamOverrides:async()=>{window.paramWrites=(window.paramWrites??0)+1},removeEngineCapability:async()=>true}),[]);
+ window.settingsStore=store;
+ return React.createElement('div',{'data-settings-host':true,style:{width:'860px',maxWidth:'100%'}},React.createElement(PromptConfigForm,{t,meta:window.layerMeta,config:{id:'layout-pipe',layer:'tool-pipeline',strategy:'static',text:'布局验收'},onPatch:()=>{},renderLayerSettings:(layer,config)=>React.createElement(LayerSettingsContent,{store,t,layer,configId:config.id,excludeCapabilities:['custom-tools','subagent-tool-policy']})}));
+}
 const names=['Anchored Standard(prompt-tool)','夏瑾 天琴座 Beta 2.42（SillyTavern 转换）'];
 const cards=names.map((name,index)=>
 React.createElement('article',{key:name,style:{width:'240px'},'data-card':index},React.createElement('div',{className:ui.presetCardHead},
@@ -29,7 +42,7 @@ React.createElement('strong',{className:ui.presetCardName},name),React.createEle
 function Filter(){const [value,setValue]=React.useState('all');return React.createElement(MenuSelect,{value,ariaLabel:'按层级或策略过滤',options:[{value:'all',label:'全部'},{value:'world-book',label:'世界书',group:'内容策略'},{value:'pre-step',label:'前置步骤',group:'插入点'},{value:'system-section',label:'系统提示段',group:'插入点'}],onChange:next=>{window.filterValue=next;setValue(next)}})}
 createRoot(document.getElementById('root')).render(React.createElement(React.Fragment,null,...cards,
 React.createElement('section',{className:ui.settingRowStack,hidden:true,'data-hidden-group':true},'隐藏参数组'),
-React.createElement('section',{className:ui.pageActions,'data-sticky':true},'模块列表 / 保存配置',React.createElement(Filter))));`
+React.createElement('section',{className:ui.pageActions,'data-sticky':true},'模块列表 / 保存配置',React.createElement(Filter)),React.createElement(Settings)));`
   const bundle = await rolldown({ input: 'badge-fixture', platform: 'browser', transform: { define: { 'process.env.NODE_ENV': '"production"', 'process.env': '{}', 'import.meta.env': '{}' } },
     plugins: [{ name: 'real-badge-css',
       resolveId(source, importer) {
@@ -54,7 +67,7 @@ React.createElement('section',{className:ui.pageActions,'data-sticky':true},'模
   const js = output.find((item) => item.type === 'chunk').code
   const server = createServer((req, res) => {
     res.setHeader('Content-Type', req.url === '/app.js' ? 'text/javascript' : 'text/html')
-    res.end(req.url === '/app.js' ? js : `<!doctype html><meta charset="utf-8"><style>${css.join('\n')}body{font:12px/18px sans-serif;margin:8px}article{margin-bottom:16px}strong{font:600 13px/20px sans-serif!important}</style><div id="root"></div><script src="/app.js"></script>`)
+    res.end(req.url === '/app.js' ? js : `<!doctype html><meta charset="utf-8"><style>${css.join('\n')}:root{color-scheme:light;--dsw-alias-label-primary:light-dark(#20242a,#eef0f3);--dsw-alias-label-secondary:light-dark(#5d6571,#b2bac7);--dsw-alias-label-tertiary:light-dark(#7a8391,#909bad);--dsw-alias-bg-layer-2:light-dark(#fff,#20242b);--dsw-alias-bg-layer-3:light-dark(#f6f7f9,#272c34);--dsw-alias-border-l1:light-dark(#e9ecf0,#323a46);--dsw-alias-border-l2:light-dark(#d9dfe7,#414c5c);--dsw-alias-border-l3:light-dark(#a5afbd,#637086);--dsw-alias-brand-primary:#3572d6;--dsw-alias-label-primary-foreground:#fff;--dsw-alias-bg-layer-1:light-dark(#fff,#20242b);--dsw-alias-state-business-primary:#3572d6;--dsw-alias-state-error-primary:#c63737;--dsw-font-xxs-12:400 12px/1.5 sans-serif;--dsw-font-xs-strong-13:600 13px/1.5 sans-serif;--dsw-font-s-14:400 14px/1.5 sans-serif;}body{font:12px/18px sans-serif;margin:8px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary)}article{margin-bottom:16px}strong{font:600 13px/20px sans-serif!important}</style><div id="root"></div><script>window.layerMeta=${JSON.stringify(getEngineMeta())}</script><script src="/app.js"></script>`)
   }).listen(0, '127.0.0.1')
   await once(server, 'listening')
   const profile = mkdtempSync(join(tmpdir(), 'pt-badge-browser-'))
@@ -103,6 +116,53 @@ React.createElement('section',{className:ui.pageActions,'data-sticky':true},'模
     await evaluate(`[...document.querySelectorAll('[role="menuitem"]')].find(e=>e.textContent.trim()==='系统提示段').dataset.targetFilter='true'`)
     await pointerClick('[data-target-filter="true"]')
     assert.equal(await evaluate('window.filterValue'), 'system-section', JSON.stringify(await evaluate('window.trace')))
+
+    // 生产表单默认折叠；用键盘打开后才创建本层参数控件。
+    assert.equal(await evaluate(`document.querySelector('[data-layer-settings-content]') === null`), true)
+    await send('Emulation.setDeviceMetricsOverride', { width: 1024, height: 900, deviceScaleFactor: 1, mobile: false })
+    await evaluate(`document.querySelector('[data-layer-settings="tool-pipeline"] summary').focus()`)
+    await send('Input.dispatchKeyEvent', { type: 'rawKeyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 })
+    await send('Input.dispatchKeyEvent', { type: 'char', text: '\r', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 })
+    await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 })
+    for (let i = 0; i < 100 && !await evaluate(`!!document.querySelector('[data-layer-settings-content]')`); i++) await delay(30)
+    assert.equal(await evaluate(`document.querySelector('[data-layer-settings="tool-pipeline"]').open`), true)
+    for (const width of [860, 420, 320]) {
+      await evaluate(`document.querySelector('[data-settings-host]').style.width='${width}px'`)
+      await delay(40)
+      const layout = await evaluate(`(()=>{const root=document.querySelector('[data-layer-settings-content]');const grid=root.querySelector('[data-layer-param-fields="deliberation-gate"]');const text=grid.querySelector('textarea').closest('[data-param-key]');return {width:root.getBoundingClientRect().width,overflow:root.scrollWidth>root.clientWidth+1,columns:getComputedStyle(grid).gridTemplateColumns.split(' ').length,textWidth:text.getBoundingClientRect().width,gridWidth:grid.getBoundingClientRect().width,groupWidths:[...root.querySelectorAll('[data-layer-param-group]')].map(e=>e.getBoundingClientRect().width)}})()`)
+      assert.ok(layout.width >= width - 60, `设置内容占满外层网格：${JSON.stringify(layout)}`)
+      assert.equal(layout.overflow, false, `无水平溢出：${width}`)
+      assert.equal(layout.columns, width > 640 ? 2 : 1, `参数列数：${width}`)
+      assert.ok(layout.textWidth >= layout.gridWidth - 2, `长文本占整行：${JSON.stringify(layout)}`)
+      assert.ok(layout.groupWidths.every(value => value >= layout.width - 4), '每个分组占完整宽度')
+    }
+    await evaluate(`document.querySelector('[data-layer-param-group="deliberation-gate"]').hidden=true`)
+    assert.equal(await evaluate(`getComputedStyle(document.querySelector('[data-layer-param-group="deliberation-gate"]')).display`), 'none')
+    await evaluate(`document.querySelector('[data-layer-param-group="deliberation-gate"]').hidden=false`)
+    const number = '#pt-param-layer-tool-pipeline-layout-pipe-deliberation-gate-deliberationMinChars'
+    await evaluate(`document.querySelector('${number}').focus();document.querySelector('${number}').select()`)
+    await send('Input.insertText', { text: '12a' })
+    await evaluate(`document.querySelector('${number}').blur()`)
+    await delay(40)
+    assert.equal(await evaluate(`document.querySelector('${number}').getAttribute('aria-invalid')`), 'true')
+    assert.equal(await evaluate(`!!document.getElementById(document.querySelector('${number}').getAttribute('aria-describedby'))?.textContent`), true)
+    assert.equal(await evaluate('window.paramWrites??0'), 0, '非法数字只展示就地错误')
+    await evaluate(`document.querySelector('${number}').focus();document.querySelector('${number}').select()`)
+    await send('Input.insertText', { text: '120' })
+    await evaluate(`document.querySelector('${number}').blur()`)
+    await delay(40)
+    assert.equal(await evaluate('window.paramWrites'), 1, '一次失焦仍只保存一次')
+    if (process.env.PROMPT_TOOL_LAYER_SCREENSHOT) {
+      await send('Emulation.setDeviceMetricsOverride', { width: 1024, height: 900, deviceScaleFactor: 1, mobile: false })
+      await evaluate(`document.querySelector('[data-settings-host]').style.width='860px'`)
+      for (const scheme of ['light', 'dark']) {
+        await evaluate(`document.documentElement.style.colorScheme='${scheme}'`)
+        await delay(40)
+        const clip = await evaluate(`(()=>{const r=document.querySelector('[data-layer-settings-content]').getBoundingClientRect();return {x:r.left+scrollX,y:r.top+scrollY,width:r.width,height:r.height,scale:1}})()`)
+        const image = await send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true, clip })
+        writeFileSync(process.env.PROMPT_TOOL_LAYER_SCREENSHOT + '-' + scheme + '.png', Buffer.from(image.data, 'base64'))
+      }
+    }
   } finally {
     if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ id: 0, method: 'Browser.close' }))
     await Promise.race([exited, delay(2000)])

@@ -92,14 +92,14 @@ export function EngineParamField({ store, param, t, instanceId }: { store: Promp
       update(next, true)
     }
     return (
-      <div className={styles.settingRowStack} data-param-key={param}>
+      <div className={styles.settingRowStack} data-param-key={param} data-param-kind={definition.kind} data-control="stages">
         <strong>{label}</strong>
         <small>{t('param.stages.hint')}</small>
         {stages.map((stage, index) => (
           <div className={styles.settingRowStack} key={index}>
             <input className={styles.configInput} aria-label={t('param.stages.nameAria', { index: index + 1 })} value={stage.name} disabled={disabled}
               onChange={(event) => update(stages.map((item, at) => at === index ? { ...item, name: event.target.value } : item))} onBlur={save} />
-            <TagInput id={`pt-stage-${index}-tools`} label={t('param.stages.toolsLabel', { index: index + 1 })} hint={t('param.stages.toolsHint')} value={stage.tools} disabled={disabled}
+            <TagInput id={`${id}-stage-${index}-tools`} label={t('param.stages.toolsLabel', { index: index + 1 })} hint={t('param.stages.toolsHint')} value={stage.tools} disabled={disabled}
               onChange={(tools) => update(stages.map((item, at) => at === index ? { ...item, tools } : item))} onCommit={save} />
             <div className={styles.configActions}>
               <button type="button" className={styles.pillButton} aria-label={t('param.stages.moveUpAria', { index: index + 1 })} disabled={disabled || index === 0} onClick={() => move(index, -1)}>{t('param.stages.moveUp')}</button>
@@ -113,8 +113,10 @@ export function EngineParamField({ store, param, t, instanceId }: { store: Promp
     )
   }
   if (definition.kind === 'string-list') {
-    return <TagInput id={id} label={label} hint={hint} value={String(value ?? '')} disabled={disabled}
-      onChange={patch} onCommit={save} />
+    return <div data-param-key={param} data-param-kind={definition.kind} data-control="list">
+      <TagInput id={id} label={label} hint={hint} value={String(value ?? '')} disabled={disabled}
+        onChange={patch} onCommit={save} />
+    </div>
   }
   let control: ReactNode
   if (definition.kind === 'string' && definition.options !== undefined) {
@@ -149,7 +151,8 @@ export function EngineParamField({ store, param, t, instanceId }: { store: Promp
     control = <textarea id={id} className={styles.configTextarea} rows={2} aria-label={label} value={String(value ?? '')}
       readOnly={disabled} onChange={(event) => patch(event.target.value)} onBlur={() => { if (!disabled) save() }} />
   }
-  return <div className={styles.settingRowStack} data-param-key={param}>
+  return <div className={styles.settingRowStack} data-param-key={param} data-param-kind={definition.kind}
+    data-control={menuField ? 'select' : definition.kind === 'boolean' ? 'switch' : definition.kind === 'number' ? 'number' : 'text'}>
     <HintTooltip label={hint}><span className={styles.settingCopy}>
       {menuField || definition.kind === 'boolean' ? <span>{label}</span> : <label htmlFor={id}>{label}</label>}
     </span></HintTooltip>

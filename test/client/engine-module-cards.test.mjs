@@ -147,6 +147,15 @@ test('字段类型、零值与 system 只读由同一渲染器处理', () => {
   assert.match(readonly, /aria-label="锚定轮文本"/)
 })
 
+test('阶段参数在两个设置实例中保留独立DOM身份与同一草稿值', () => {
+  const active = { ...store, fields: { ...EMPTY_FIELDS, writePreset: true, stages: [{ name: '读取', tools: 'read, grep' }] } }
+  const html = ['rule-a', 'rule-b'].map((instanceId) => render(EngineParamFields, { store: active, card: 'tool-bootstrap', t, instanceId })).join('')
+  const ids = [...html.matchAll(/id="([^"]+-stage-0-tools)"/g)].map((match) => match[1])
+  assert.deepEqual(ids, ['pt-param-rule-a-stages-stage-0-tools', 'pt-param-rule-b-stages-stage-0-tools'])
+  assert.equal(new Set(ids).size, 2)
+  assert.equal((html.match(/value="读取"/g) ?? []).length, 2)
+})
+
 test('递归深度和专用模型卡保留，过滤字段不重复出现在委派卡', () => {
   const delegation = read('features/subagents/DelegationToolsCard.tsx')
   assert.match(delegation, /ariaLabel=\{t\('param\.maxDepth'\)\}/)
