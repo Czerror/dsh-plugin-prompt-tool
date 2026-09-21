@@ -21,6 +21,7 @@ import { assertPresetDirectory, assertPresetId, assertPresetTree, canonicalPrese
 import { compileCustomTool } from './custom-tools.ts'
 import { validateCustomToolIdentities } from '../shared/engine-capabilities.ts'
 import { ENGINE_PARAM_KEYS, type PresetWriterParams } from '../shared/engine-params.ts'
+import { MANAGED_CONFIG_FIELDS, type ConfigFieldSources } from '../shared/managed-config-fields.ts'
 import {
   configFileName,
   mergePromptConfigs,
@@ -550,7 +551,14 @@ export function writePreset(prompt: string, options: WritePresetOptions): string
       delete config.text
       config.texts = []
     }
-    writeFileSync(join(promptConfigsDir, configFileName(index * 10, config.id)), renderPromptConfigYaml(config), 'utf8')
+    // mergePromptConfigs 按 id 整条替换；来源由胜出的对象身份决定，不能按值相等反推。
+    const binding = MANAGED_CONFIG_FIELDS.find((entry) => entry.configId === config.id)
+    const fieldSources: ConfigFieldSources | undefined = binding === undefined ? undefined : {
+      configId: config.id,
+      fields: binding.fields.map(({ path }) => ({ path, source: templateDefaults.includes(source) ? 'preset-param' : 'prompt-config' })),
+    }
+    const provenance = fieldSources === undefined ? '' : '\n' + stringifyYaml({ fieldSources })
+    writeFileSync(join(promptConfigsDir, configFileName(index * 10, config.id)), renderPromptConfigYaml(config) + provenance, 'utf8')
   }
 
   // 4.5) 自定义工具（preset.yml 顶层 customTools 段）→ custom-tools/<n>-<id>.yml：

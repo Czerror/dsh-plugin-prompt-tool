@@ -13,18 +13,14 @@ const styles = { ...sharedCss, ...featureCss }
 /** 「添加能力 / 工具模块」菜单下发的创建意图；每次请求一个新对象，消费后由页面清空。 */
 export type ToolCreateIntent = { kind: 'blank' | 'template'; spec?: ToolDraft; presetId?: string }
 
-/** 自定义工具编辑器：命令栏 + 一工具一卡，不再增加聚合卡片。 */
-export function CustomToolsCard(props: {
+/** 工具草稿与保存由常驻页面持有；设置区只渲染同一份编辑内容。 */
+export function useCustomToolsEditor(props: {
   t: PromptToolTranslate
   onNotice: (kind: 'ok' | 'error', message: string) => void
   disabled?: boolean
   presetId?: string
   drafts?: WorkspaceDrafts
-  /** 工具栏合并菜单的新建意图：空白工具 / 模板插入。 */
-  createIntent?: ToolCreateIntent
-  /** 意图已消费：页面清空状态，避免预设切换重挂载后重放旧意图。 */
-  onIntentConsumed?: () => void
-}): ReactNode {
+}): { createTool: (intent: ToolCreateIntent) => void; content: ReactNode } {
   const { t } = props
   const editor = useMemo((): ToolsEditorDraft => {
     const key = props.presetId ?? ''
@@ -152,19 +148,14 @@ export function CustomToolsCard(props: {
     else next.add(index)
     setExpandedCards(next)
   }
-  /** 菜单创建意图：同一对象只消费一次；工具草稿仍只经受保护的 updateTools 更新。 */
-  const handledIntentRef = useRef<ToolCreateIntent | undefined>(undefined)
-  useEffect(() => {
-    const intent = props.createIntent
-    if (intent === undefined || intent === handledIntentRef.current) return
-    if (intent.presetId !== undefined && intent.presetId !== props.presetId) {
-      handledIntentRef.current = intent
-      props.onIntentConsumed?.()
+  /** 创建使用草稿当前值，连续点击即使尚未重渲染也不会相互覆盖。 */
+  const createTool = (intent: ToolCreateIntent): void => {
+    if (intent.presetId !== undefined && intent.presetId !== props.presetId) return
+    if (disabled || !editor.loaded) {
+      props.onNotice('error', t(props.disabled ? 'customTools.readonly' : editor.error ? 'customTools.loadFailed' : 'customTools.loading'))
       return
     }
-    if (disabled) return
-    handledIntentRef.current = intent
-    props.onIntentConsumed?.()
+    const tools = editor.tools
     if (intent.kind === 'template' && intent.spec !== undefined) {
       const spec = intent.spec
       if (tools.some((tool) => tool.id === spec.id)) {
@@ -173,7 +164,7 @@ export function CustomToolsCard(props: {
       }
       const clone = JSON.parse(JSON.stringify(spec)) as ToolDraft
       updateTools([...tools, clone])
-      setExpandedCards(new Set([...expandedCards, tools.length]))
+      setExpandedCards(new Set([...editor.expanded, tools.length]))
       props.onNotice('ok', t('customTools.templateInserted', { id: String(spec.id) }))
       return
     }
@@ -186,9 +177,9 @@ export function CustomToolsCard(props: {
       output: { schema: { type: 'object', additionalProperties: true } },
       execute: { kind: 'shell', command: '' },
     }])
-    setExpandedCards(new Set([...expandedCards, tools.length]))
-  }, [disabled, expandedCards, props, tools])
-  return (
+    setExpandedCards(new Set([...editor.expanded, tools.length]))
+  }
+  return { createTool, content: (
     <section aria-label={t('customTools.aria')}>
       <p className={styles.configFieldHint}>{t('customTools.hint')}</p>
       {props.disabled && <p className={styles.configFieldHint} role="status">{t('customTools.readonly')}</p>}
@@ -243,5 +234,10 @@ export function CustomToolsCard(props: {
         )}
       </fieldset>
     </section>
-  )
+  ) }
+}
+
+/** 独立使用时仍由当前组件持有草稿，工作台通过页面钩子持有。 */
+export function CustomToolsCard(props: Parameters<typeof useCustomToolsEditor>[0]): ReactNode {
+  return useCustomToolsEditor(props).content
 }

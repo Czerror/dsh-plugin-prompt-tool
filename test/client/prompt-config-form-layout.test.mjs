@@ -21,13 +21,16 @@ import { getEngineMeta } from '../../engine/schema.mjs'
 import { MATCH_LOGIC } from '../../engine/anchor-match.mjs'
 import { PROMPT_TOOL_DICTS } from '../../src/client/locales.ts'
 import { MATCH_LOGIC_LABEL_KEYS, MATCH_LOGICS, MATCH_REGEX_MODE_LABEL_KEYS, MATCH_REGEX_MODES, normalizeMatch } from '../../src/client/features/prompts/prompt-config-policy.ts'
+import { MANAGED_CONFIG_FIELDS, isManagedConfigField, stripConfigFieldSources } from '../../src/shared/managed-config-fields.ts'
 import { withSsr, renderElement, makeTranslate } from './support/ssr-render.mjs'
 
 const read = (file) => readFileSync(new URL(`../../${file}`, import.meta.url), 'utf8')
 const t = makeTranslate()
 // 注意：withSsr 内部的 import() 以 **harness 自身**（test/client/support/）为基准解析，
 // 所以这里要写 `../../../src/...`（三层回到仓库根）；`read` 仍以本文件为基准。
-const { PromptConfigForm, StrategyParamsFields, MatchFields, OptionField, TagInput } = await withSsr([
+const { PromptConfigForm, PromptConfigCard, PromptConfigList, StrategyParamsFields, MatchFields, OptionField, TagInput } = await withSsr([
+  '../../../src/client/features/prompts/PromptConfigList.tsx',
+  '../../../src/client/features/prompts/PromptConfigCard.tsx',
   '../../../src/client/features/prompts/PromptConfigForm.tsx',
   '../../../src/client/features/prompts/PromptConfigFields.tsx',
   '../../../src/client/ui/TagInput.tsx',
@@ -177,9 +180,12 @@ test('人设编辑器按层归属进入层设置区，不再独立成卡', () =>
   assert.doesNotMatch(page, /<TemplateVariablesModuleCard/)
 })
 
-test('受管配置参数只给来源绑定与只读回显，不给会被重建覆盖的写入口', () => {
+const sourcesFor = (configId, source) => ({ configId, fields: MANAGED_CONFIG_FIELDS.find((entry) => entry.configId === configId).fields.map(({ path }) => ({ path, source })) })
+
+test('受管配置参数按 host 投影事实给出来源绑定与只读回显', () => {
   const anchorProps = {
     t, strategy: 'first-turn-anchor', layer: 'pre-step', id: 'near-anchor', enabled: true,
+    fieldSources: sourcesFor('near-anchor', 'preset-param'),
     params: { text: 'ANCHOR-VALUE', useCustom: true, buildPattern: 'BUILD-VALUE' }, onPatch() {},
   }
   const anchorHtml = renderToStaticMarkup(createElement(StrategyParamsFields, anchorProps))
@@ -195,6 +201,7 @@ test('受管配置参数只给来源绑定与只读回显，不给会被重建�
   // 派生项明确标注为计算结果，缺省回落语义也有说明。
   const guideHtml = renderToStaticMarkup(createElement(StrategyParamsFields, {
     t, strategy: 'guide-auto', layer: 'pre-step', id: 'router-guide', enabled: true, modelScope: 'flash',
+    fieldSources: sourcesFor('router-guide', 'preset-param'),
     params: { text: 'GUIDE-VALUE', useCustom: false }, onPatch() {},
   }))
   assert.match(guideHtml, /data-managed-config="router-guide"/)
@@ -207,6 +214,76 @@ test('受管配置参数只给来源绑定与只读回显，不给会被重建�
   }))
   assert.match(customHtml, /<textarea/, '自建策略保留局部参数编辑')
   assert.doesNotMatch(customHtml, /data-managed-config/)
+})
+
+test('同名局部覆盖、缺少来源、普通同策略均可编辑；混合来源逐字段判定', () => {
+  for (const id of ['near-anchor', 'ordinary-anchor']) {
+    const fieldSources = id === 'near-anchor' ? sourcesFor(id, 'prompt-config') : undefined
+    let next
+    const tree = treeOf(StrategyParamsFields, strategyProps({ id, strategy: 'first-turn-anchor', fieldSources, params: { text: 'LOCAL' }, onPatch(value) { next = value } }))
+    const input = findElement(tree, (element) => element.props.label === t('strategyParam.anchorText.label'))
+    assert.ok(input, id)
+    input.props.onChange('EDITED')
+    assert.equal(next.text, 'EDITED')
+    input.props.onChange('')
+    assert.equal(next.text, '', '清空不切回投影')
+  }
+  const unknown = renderElement(StrategyParamsFields, strategyProps({ id: 'near-anchor', strategy: 'first-turn-anchor' }))
+  assert.match(unknown, /<textarea/, '旧产物缺少来源时不能只凭 ID 锁定')
+  const mixed = sourcesFor('near-anchor', 'preset-param')
+  mixed.fields.find((field) => field.path === 'params.text').source = 'prompt-config'
+  const html = renderElement(StrategyParamsFields, strategyProps({ id: 'near-anchor', strategy: 'first-turn-anchor', fieldSources: mixed, params: { text: 'LOCAL' } }))
+  assert.match(html, /data-managed-source="firstTurnCustom"/)
+  assert.doesNotMatch(html, /data-managed-source="firstTurnText"/)
+  assert.match(html, /<textarea[^>]*aria-label="自定义锚文本"[^>]*>LOCAL<\/textarea>/)
+  assert.deepEqual(stripConfigFieldSources({ id: 'near-anchor', fieldSources: mixed, params: { text: '' } }), { id: 'near-anchor', params: { text: '' } })
+})
+
+test('启用开关和模型范围只锁定当前投影；只读局部表单拒绝回调', () => {
+  for (const source of ['preset-param', 'prompt-config']) {
+    const config = { id: 'router-guide', strategy: 'guide-auto', layer: 'pre-step', fieldSources: sourcesFor('router-guide', source) }
+    let changes = 0
+    const card = treeOf(PromptConfigCard.type, { t, meta, config, expanded: false, onToggleEnabled() { changes += 1 } })
+    const toggle = findElement(card, (element) => element.props.label === t('card.enableAria', { name: config.id }))
+    assert.equal(Boolean(toggle.props.disabled), source === 'preset-param')
+    toggle.props.onChange(false)
+    assert.equal(changes, source === 'preset-param' ? 0 : 1)
+    const form = treeOf(PromptConfigForm, formProps(config, { onPatch() { changes += 1 } }))
+    const scope = findElement(form, (element) => element.props.label === t('form.modelScope.label'))
+    assert.equal(scope.props.disabled, source === 'preset-param')
+    assert.equal(isManagedConfigField(config, 'enabled'), source === 'preset-param')
+    assert.equal(isManagedConfigField({ ...config, id: 'renamed' }, 'enabled'), false, '复制/改名不继承旧来源锁')
+  }
+  let changed = false
+  const readonly = treeOf(PromptConfigForm, formProps({ id: 'near-anchor', strategy: 'first-turn-anchor', fieldSources: sourcesFor('near-anchor', 'prompt-config') }, { disabled: true, onPatch() { changed = true } }))
+  findElement(readonly, (element) => element.type === StrategyParamsFields).props.onPatch({ text: 'forbidden' })
+  assert.equal(changed, false)
+  assert.ok(findElement(readonly, (element) => element.type === 'fieldset').props.disabled)
+})
+
+test('列表批量启停跳过真实投影，局部覆盖和普通配置仍按原筛选编辑', () => {
+  const configs = [
+    { id: 'near-anchor', enabled: true, layer: 'pre-step', strategy: 'first-turn-anchor', fieldSources: sourcesFor('near-anchor', 'preset-param') },
+    { id: 'router-guide', enabled: true, layer: 'pre-step', strategy: 'guide-auto', fieldSources: sourcesFor('router-guide', 'prompt-config') },
+    { id: 'ordinary-anchor', enabled: true, layer: 'pre-step', strategy: 'first-turn-anchor' },
+  ]
+  let patched
+  const props = { t, meta, configs, onPatchConfigs(next) { patched = next }, onSaveConfigs: async () => true, onNotice() {} }
+  const tree = treeOf(PromptConfigList, props)
+  const disable = findElement(tree, (element) => element.type === 'button' && element.props.children === t('configs.batch.disableVisible', { count: 2 }))
+  assert.equal(disable.props.disabled, false)
+  disable.props.onClick()
+  assert.equal(patched[0], configs[0], '投影启用字段不改写')
+  assert.deepEqual(patched.map((config) => config.enabled), [true, false, false])
+  patched = undefined
+  const readonly = treeOf(PromptConfigList, { ...props, readOnlyReason: '只读' })
+  const locked = findElement(readonly, (element) => element.type === 'button' && element.props.children === t('configs.batch.disableVisible', { count: 2 }))
+  assert.equal(locked.props.disabled, true)
+  locked.props.onClick()
+  assert.equal(patched, undefined)
+  const settingsOnly = treeOf(PromptConfigList, { ...props, keyword: 'bootstrapMaxTokens', matchesLayerSettings: () => true })
+  const none = findElement(settingsOnly, (element) => element.type === 'button' && element.props.children === t('configs.batch.disableVisible', { count: 0 }))
+  assert.equal(none.props.disabled, true, '仅因层设置搜索保留的卡不进入批量操作集合')
 })
 
 test('原生元素不再使用浏览器 title 或 data-tip 说明', () => {

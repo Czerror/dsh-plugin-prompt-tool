@@ -174,11 +174,16 @@ pre-step 来源：
 - 条件判定的共享实现是 `engine/condition.mjs`：pre-step 缺省匹配本批用户消息，其余层按各自
   `subject` 取文本；`match` 的匹配器在 `schema.mjs` 挂载期预编译一次（`config.matchScan`），
   校验与执行同源。未命中的配置**不写入 session 去重**，条件恢复后仍能注入。
-- ST 宏模板（`params.stMacros`）的跨配置变量帧按 `order` 预求值，但只对 **本批获准的配置**
-  执行副作用：`executor.mjs#runPreStepBatch` 把判定出的获准集合（层、受众、模型、晋升与
-  条件）传给渲染器，未命中条件的 setter 不再提前 `setvar` 污染同批 reader；非执行器调用
-  （如 system-section 走官方通道）退回「可见 + 无晋升约束」的保守判定，仍保持既有语义。
-  验收入口：`test/engine/prompt-config-engine.test.mjs`（未命中不改变量 + 命中对照）。
+- ST 宏模板（`params.stMacros`）的跨配置变量帧只求值**当前入口获准的配置**：
+  `executor.mjs#runPreStepBatch` 传入本批的层、受众、模型、晋升与条件资格集合，去重受限的
+  模板在通过去重后才由执行器触发。官方组装只求值其拥有的 system-section / runtime-context
+  模板，不提前执行 pre-step 或其他控制、事件插入点的 setter 与 reader；这些插入点的
+  条件与执行时机仍由各自入口决定。
+- 后到的获准模板按 `order` 在同一变量帧内补求值，已求值的模板不重放副作用或随机宏；
+  已返回的官方文本也不因后续 pre-step 赋值而倒放重算。两种入口顺序均沿用已有变量帧，
+  新步骤与成功压缩创建新帧，失败压缩不推进。该规则不增加跨插入点的全局调度顺序。
+  验收入口：`test/engine/official-variable-regression.test.mjs`（真实官方组装先行、条件与
+  受众/模型/晋升/去重边界、重复组装与新 epoch）及 `test/engine/st-render-macros.test.mjs`。
 
 ## 会话去重以「宿主接纳」为准（2026-09-20）
 
@@ -190,6 +195,8 @@ pre-step 来源：
 - 被外层门控（`context-gate` 的 `allowKinds` / `messageSources`）在**本步剥离**的候选
   不算已注入：晋升或门控放行后仍会补发，不会出现「日志里从来没有这条正文，去重却认为
   已注入」的永久缺失；`reject` 步同样不记账。
+- 确认缓存分别记录 `plugin:<身份>` 与 `kind:<来源>`，只比较同字段的值，与持久扫描的
+  `source.plugin` / `source.kind` 两条匹配规则一致；不同字段恰好同值不会误判已投递。
 - 独立执行路径与管理路径（协调器）共用同一确认实现，两条路径的去重语义一致；重挂或
   进程恢复直接从持久记录重建，不依赖进程内已投递集合。
 - 验收入口：`test/host/pre-step-wiring.test.mjs`（门控剥离→晋升补发的独立/管理双路径、

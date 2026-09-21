@@ -12,10 +12,9 @@ const { FIXTURE_PRESET_ID, installFixturePresetInHome } = await import('../fixtu
 // 夹具装进隔离 DSH_HOME 的官方预设根：本文件用「夹具模板 + renderComposition」替代已下线的 buildCordis 兼容层。
 installFixturePresetInHome(home)
 const { ENGINE_PARAM_DEFINITIONS, buildEngineModuleParams } = await import('../../src/shared/engine-params.ts')
+const { ENGINE_PARAM_KEYS, WRITER_PARAM_KEYS } = await import('../../src/shared/engine-params.ts')
+const { PARAM_KEYS } = await import('../../src/shared/param-keys.ts')
 const {
-  ENGINE_PARAM_KEYS,
-  WRITER_PARAM_KEYS,
-  PARAM_KEYS,
   MODEL_SEGMENT_MAP,
   applyModuleConfigs,
   buildModuleConfigsFromParams,
@@ -23,7 +22,7 @@ const {
   renderComposition,
   resolvePresetDir,
   resolvePresetParams,
-} = await import('../../lib/index.mjs')
+} = await import('../../src/host/manifest.ts')
 
 /** 用测试夹具模板渲染组合（等价于旧的 buildCordis：模板 spec + 运行时参数）。 */
 function fixtureComposition(runtime = {}) {
@@ -566,4 +565,124 @@ test('实例级工具策略：声明后装配 shadow 行并指向生成目录策
   const without = parseYaml(renderComposition(base, {}, dir))
   assert.deepEqual(findAllNested(without, new Set(['subagent-tool-policy'])), [])
   assert.ok(findAllNested(without, new Set(['tool-subagent'])).length > 0, '未启用策略时仍由官方委派行供工具')
+})
+
+test('真实来源：表单局部编辑经 bridge/writer 重读，清空、只读与过期预设不串写', async () => {
+  const { mkdirSync, readFileSync, writeFileSync } = await import('node:fs')
+  const { join } = await import('node:path')
+  const { createElement, isValidElement } = await import('react')
+  const { renderToStaticMarkup } = await import('react-dom/server')
+  const { withSsr, makeTranslate } = await import('../client/support/ssr-render.mjs')
+  const { StrategyParamsFields } = await withSsr([new URL('../../src/client/features/prompts/PromptConfigFields.tsx', import.meta.url).href])
+  const { writePreset } = await import('../../src/host/write-preset.ts')
+  const { registerSettingsBridge } = await import('../../src/runtime/settings-bridge.ts')
+  const { bridgeCall } = await import('../../src/client/data/bridge-client.ts')
+  const { stripConfigFieldSources } = await import('../../src/shared/managed-config-fields.ts')
+  const { withConfigFieldSources } = await import('../../src/client/data/prompt-tool-view.ts')
+  const { handlerTable, fakeReq, fakeRes } = await import('../fixtures/host-harness.mjs')
+  const root = join(home, '.agent-presets')
+  const id = 'managed-source-roundtrip'
+  const dir = join(root, id)
+  mkdirSync(dir, { recursive: true })
+  const initial = {
+    id, modules: [], params: { firstTurnAnchor: true, firstTurnText: 'GLOBAL' },
+    promptConfigs: [
+      { id: 'near-anchor', layer: 'pre-step', strategy: 'first-turn-anchor', enabled: false, params: { text: 'LOCAL', useCustom: true } },
+      { id: 'ordinary-anchor', layer: 'pre-step', strategy: 'first-turn-anchor', params: { text: 'ORDINARY' } },
+    ],
+  }
+  const { stringify } = await import('yaml')
+  writeFileSync(join(dir, 'preset.yml'), stringify(initial), 'utf8')
+  const options = { presetDir: root, presetTemplate: id, presetOrder: 5, promptConfigs: [] }
+  writePreset('', options)
+  let active = dir
+  let rebuilds = 0
+  const table = handlerTable()
+  const disposers = []
+  const sctx = {
+    settings: { describe: () => [{ ns: 'prompt-tool', value: { presetTemplate: id }, revision: 1 }], get: () => undefined },
+    webServer: { register: table.register },
+    get: () => undefined,
+    effect(fn) { const dispose = fn(); if (typeof dispose === 'function') disposers.push(dispose) },
+  }
+  registerSettingsBridge({ inject: (_deps, callback) => callback(sctx) }, 'prompt-tool',
+    () => ({ available: false, providers: [] }),
+    () => ({ skillsRoot: join(home, 'skills'), folders: [], listSkills: () => [] }), () => '', undefined, () => active, undefined,
+    () => {
+      const spec = loadPresetSpec(dir)
+      writePreset('', { ...resolvePresetParams(spec, {}), ...options, promptConfigs: spec.promptConfigs })
+      rebuilds += 1
+    })
+  const previousFetch = globalThis.fetch
+  globalThis.fetch = async (url, init) => {
+    const handler = table.handlers.get(String(url))
+    assert.ok(handler, `bridge 端点已注册：${url}`)
+    const res = fakeRes()
+    await handler(fakeReq({ raw: init.body }), res)
+    return new Response(res.body, { status: res.status, headers: { 'content-type': 'application/json' } })
+  }
+  const read = async () => {
+    const result = await bridgeCall('promptConfigs')
+    assert.equal(result.ok, true)
+    return result.value.promptConfigs.filter((config) => config.sourceKind !== 'instruction-file').map(withConfigFieldSources)
+  }
+  const sourceOf = (config, path) => config.fieldSources?.fields.find((field) => field.path === path)?.source
+  const t = makeTranslate()
+  const find = (node, predicate) => Array.isArray(node) ? node.map((child) => find(child, predicate)).find(Boolean)
+    : !isValidElement(node) ? undefined : predicate(node) ? node : find(node.props.children, predicate)
+  try {
+    let configs = await read()
+    assert.equal(configs[0].params.text, 'GLOBAL')
+    assert.equal(sourceOf(configs[0], 'params.text'), 'preset-param', '读当前离线产物，不能拿下一次在线来源冒充当前来源')
+    const boot = await bridgeCall('bootstrap')
+    assert.equal(boot.ok, true)
+    assert.deepEqual(boot.promptConfigs.promptConfigs.find((config) => config.id === 'near-anchor').fieldSources, configs[0].fieldSources)
+    // 在线生产路径的最高覆盖层是原始 spec.promptConfigs；必须保持 LOCAL，不能强制全局胜出。
+    writePreset('', { ...options, promptConfigs: loadPresetSpec(dir).promptConfigs })
+    configs = await read()
+    assert.equal(configs[0].params.text, 'LOCAL')
+    assert.equal(sourceOf(configs[0], 'params.text'), 'prompt-config')
+    assert.equal(sourceOf(configs[0], 'enabled'), 'prompt-config')
+    assert.equal(configs[1].fieldSources, undefined, '普通同策略配置不锁定')
+    for (const nextText of ['EDITED-IN-FORM', '']) {
+      let edited = configs[0]
+      let tree
+      function Probe() {
+        tree = StrategyParamsFields({ t, ...edited, onPatch(params) { edited = { ...edited, params } } })
+        return null
+      }
+      renderToStaticMarkup(createElement(Probe))
+      const input = find(tree, (element) => element.props.label === t('strategyParam.anchorText.label'))
+      assert.ok(input, '真实局部来源必须渲染编辑入口')
+      input.props.onChange(nextText)
+      const saved = await bridgeCall('paramOverrides', { expectedPresetId: id, promptConfigs: [edited, configs[1]].map(stripConfigFieldSources) })
+      assert.equal(saved.ok, true)
+      configs = await read()
+      assert.equal(configs[0].params.text, nextText)
+      assert.equal(sourceOf(configs[0], 'params.text'), 'prompt-config')
+      assert.equal(loadPresetSpec(dir).promptConfigs[0].fieldSources, undefined)
+    }
+    // 伪造来源元数据不能写入定义，也不能改变真实覆盖优先级。
+    const forged = await bridgeCall('paramOverrides', { expectedPresetId: id, promptConfigs: [{ ...configs[0], fieldSources: { configId: 'near-anchor', fields: [{ path: 'params.text', source: 'preset-param', file: 'SECRET' }] } }, configs[1]] })
+    assert.equal(forged.ok, true)
+    assert.equal(loadPresetSpec(dir).promptConfigs[0].fieldSources, undefined)
+    assert.equal(sourceOf((await read())[0], 'params.text'), 'prompt-config')
+    const before = readFileSync(join(dir, 'preset.yml'), 'utf8')
+    const count = rebuilds
+    const stale = await bridgeCall('paramOverrides', { expectedPresetId: 'old-preset', promptConfigs: [] })
+    assert.equal(stale.ok, false)
+    assert.equal(stale.code, 'preset-changed')
+    active = join(home, 'system-preset')
+    mkdirSync(active)
+    writeFileSync(join(active, 'preset.yml'), before)
+    const readonly = await bridgeCall('paramOverrides', { expectedPresetId: 'system-preset', promptConfigs: [] })
+    assert.equal(readonly.ok, false)
+    assert.equal(readonly.code, 'preset-readonly')
+    assert.equal(readFileSync(join(active, 'preset.yml'), 'utf8'), before)
+    assert.equal(readFileSync(join(dir, 'preset.yml'), 'utf8'), before)
+    assert.equal(rebuilds, count)
+  } finally {
+    globalThis.fetch = previousFetch
+    for (const dispose of disposers.reverse()) dispose()
+  }
 })

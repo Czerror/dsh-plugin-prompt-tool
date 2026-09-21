@@ -234,26 +234,41 @@ moduleConfigs 仅补充参数桥未覆盖的键（如 ST 导入 tool-web.fetch�
 PARAM_KEYS 移除），本项目也不提供迁移：请自行从 preset.yml 删除该键。
 锚定与引导**不合并**：锚定句（reasoning 开头句，首轮一次性）与引导句（路由引导，每轮）注入位不同。
 
-### 受管配置字段的唯一来源（2026-09-20）
+### 受管配置字段的真实来源（2026-09-21）
 
-`near-anchor` 与 `router-guide` 两条模板配置的字段由 `writePreset` 在每次物化时按预设级
-扁平参数覆写，因此在实例卡里编辑会被下一次重建覆盖。这份「受管字段 → 来源参数」的映射
-登记在 `src/shared/managed-config-fields.ts#MANAGED_CONFIG_FIELDS`，客户端按它渲染只读
-来源面板（字段中文名 · 来源参数键 · 当前生效值 · 计算结果/缺省跟随标注），不提供会被
-覆盖的写入口；唯一写入口是来源参数本身所在的卡片（`pre-step` 层的「提示词生成默认值」
-能力卡与工具管线共享设置区）。
+`near-anchor` 与 `router-guide` 的预设参数投影只是 writer 合并链的一层，不能仅凭 ID
+认定为唯一来源。`mergePromptConfigs` 按同 ID **整条配置替换**：模型参数默认配置 < 模板
+配置（含参数投影）< `options.promptConfigs`。最高层覆盖存在时，该条目未声明的字段使用
+配置/引擎缺省，不会逐键继承下层投影。此优先级保持不变。
+
+在线 `rebuildPreset` 把原始 `spec.promptConfigs` 作为最高覆盖层；导入候选、离线物化和
+补建其他预设传空覆盖数组。因此同一份定义在这些入口可能分别产生 LOCAL 与 GLOBAL，
+来源不能按 ID、值相等或下一次重建将采用的分支猜测。
+
+writer 在每条受管生成配置里附 `fieldSources`（`configId` 与固定字段路径的来源枚举
+`preset-param` / `prompt-config`），由最终胜出的对象身份生成；不改变配置值、不写入
+`preset.yml`。共享 `MANAGED_CONFIG_FIELDS` 只登记投影字段与参数键白名单。
+`/bootstrap` 和 `/prompt-configs` 从同一生成配置读取该事实，剔除未知字段、路径和附加
+属性后下发。运行时配置归一不消费此元数据，客户端与 bridge 保存端均剥离它。
+
+实例卡按字段事实锁定：预设投影显示当前值与来源参数；显式局部覆盖保留本地输入、模型
+范围与启用开关（包括批量启停）。局部文本空串照常保存。普通同策略配置不因策略相同被
+锁定；旧产物缺少来源时不宣称全局来源。保存后的重新读取同步来源，同时保留用户草稿。
+生成配置经过下一次重建后才具备本版本来源元数据。
 
 | 配置 id | 受管字段 | 来源参数 | 语义 |
 |---|---|---|---|
 | `near-anchor` | `enabled` / `params.useCustom` / `params.text` / `params.buildPattern` / `params.complexPattern` / `params.firstTurnBuild` / `params.firstTurnInspect` / `params.firstTurnDeep` | `firstTurnAnchor` / `firstTurnCustom` / `firstTurnText` / `buildPattern` / `complexPattern` / `firstTurnBuild` / `firstTurnInspect` / `firstTurnDeep` | 逐字映射 |
 | `router-guide` | `enabled` | `guideEnabled` | 显式值优先，缺省跟随 `firstTurnAnchor` |
 | `router-guide` | `modelScope` | `guideCustom`（计算结果） | 自定义引导 `all`，自动引导 `flash` |
-| `router-guide` | `params.useCustom` / `params.text` / `params.complexPattern` / `params.guideWeak` / `params.guideDeep` | `guideCustom` / `guideText` / `complexPattern` / `guideWeak` / `guideDeep` | 逐字映射 |
+| `router-guide` | `params.useCustom` | `guideCustom`（计算结果） | 引导启用且自定义开启时为 true |
+| `router-guide` | `params.text` / `params.complexPattern` / `params.guideWeak` / `params.guideDeep` | `guideText` / `complexPattern` / `guideWeak` / `guideDeep` | 逐字映射 |
 
-契约与真实投影的一致性由 `test/host/managed-config-fields.test.mjs` 锁定：用 A/B 两组来源
-参数生成产物，逐字段断言随动、派生项语义正确，并断言 writer 实际覆写的键都已登记
-（不留「能改但重建覆盖」的未登记字段）。普通自建策略配置（其他 id）继续编辑自己的局部
-`params`，受管判定只按契约登记的配置 id，不按 strategy 一刀切。
+契约与真实物化的一致性由 `test/host/managed-config-fields.test.mjs` 锁定：A/B 来源参数
+投影、空 options 与真实 spec 的 GLOBAL/LOCAL 对照、空串与整条替换均有断言。
+`test/host/engine-params-bridge.test.mjs` 覆盖表单回调到 bridge、writer 和重读，以及只读、
+旧预设身份拒写和元数据不入定义；`test/client/prompt-config-form-layout.test.mjs` 覆盖逐字段
+锁定、局部输入及启用/模型范围控件。
 
 ### 模块化视图（2026-08-25）
 

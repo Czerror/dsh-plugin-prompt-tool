@@ -245,6 +245,8 @@
   padding: 4px 0;
 }
 
+.settingRowStack[hidden] { display: none; }
+
 .settingRowStack .directoryControl {
   max-width: none;
   flex: 1 1 auto;

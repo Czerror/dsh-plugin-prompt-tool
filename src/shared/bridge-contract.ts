@@ -7,6 +7,7 @@
 import type { PersonaSpec } from './persona-section.ts'
 import type { AssetImportRequest, AssetSummary, ImportKind, PresetExportRequest, PresetExportResult } from './asset-transfer.ts'
 import type { EngineEditorGroup, EngineLayer } from './engine-capabilities.ts'
+import type { ConfigFieldSources } from './managed-config-fields.ts'
 import type { SkillPolicyChange, SkillsCatalogSnapshot } from './skills.ts'
 import type {
   InstructionFileWriteResult,
@@ -293,6 +294,11 @@ export interface EngineMetaLayerContract {
   editorGroups: readonly EngineEditorGroup[]
 }
 
+/** 物化配置的只读来源；与配置一同读回，不能作为写入字段或授权。 */
+export interface PromptConfigSourceView {
+  fieldSources?: ConfigFieldSources
+}
+
 /** 端点级响应 value 契约（value 字段形状；扩展字段仍以 value 旁可选字段出现）。 */
 export interface BridgeValueMap {
   meta: { meta: Record<string, unknown> & Partial<EngineMetaLayerContract> }
@@ -311,7 +317,7 @@ export interface BridgeValueMap {
   skillDelete: { id: string; path: string }
   skillsImportDirectory: { path: string; count: number; overwritten: number; warning?: string }
   templates: { templates?: unknown[]; toolTemplates?: unknown[] }
-  promptConfigs: { promptConfigs: unknown[]; instructions?: InstructionsSnapshot }
+  promptConfigs: { promptConfigs: Array<Record<string, unknown> & PromptConfigSourceView>; instructions?: InstructionsSnapshot }
   agentsFile: InstructionFileWriteResult
   instructionsPolicy: { policy: InstructionPolicy; revision: string | null; exists: boolean; error?: string }
   presetContent: Record<string, unknown>

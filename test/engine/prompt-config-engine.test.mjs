@@ -230,6 +230,28 @@ test('identity 归一：kind 维度去重由 sourceKind 承担（外来消息按
   assert.equal(decision.messages.length, 1)
 })
 
+test('V1 投递缓存区分 plugin/kind 身份，延迟命中与持久恢复一致', async () => {
+  const specs = [
+    { id: 'first', sourceKind: 'second', strategy: 'static', text: 'FIRST', position: 'after-all', dedupe: 'session' },
+    { id: 'second', sourceKind: 'other', strategy: 'static', text: 'SECOND', position: 'after-all', dedupe: 'session', match: { keys: ['LATER'] } },
+  ]
+  const events = []
+  const probe = agent({ session: { id: 'identity-collision', header: {}, snapshotEvents: () => events } })
+  const hot = makeHarness(createPromptConfigs(specs))
+  const first = await hot.step(probe)
+  assert.deepEqual(first.messages.map(message => message.source.plugin), [undefined, 'first'])
+  events.push(...first.messages.map(message => ({ type: 'user/message', data: { message } })))
+  hot.admit(probe, first)
+  const later = [{ ...userTask, id: 'later', content: [{ type: 'text', text: 'LATER' }] }]
+  const cold = makeHarness(createPromptConfigs(specs))
+  for (const h of [hot, cold]) {
+    const hit = await h.step(probe, later)
+    assert.deepEqual(hit.messages.map(message => message.source.plugin), [undefined, 'second'])
+    h.admit(probe, hit)
+    assert.equal((await h.step(probe, later)).messages.length, 1, '接纳后目标只投一次')
+  }
+})
+
 test('createPromptConfigs 默认 layer=pre-step；未知 layer fail loud', () => {
   assert.equal(createPromptConfigs([{ id: 'x', strategy: 'static' }])[0].layer, 'pre-step')
   assert.throws(() => createPromptConfigs([{ id: 'x', layer: 'nope' }]), /unknown layer/)

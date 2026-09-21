@@ -13,6 +13,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { Context } from '@deepseek-ai/cordis'
 import { NamedEntries, ScopedLayers, bindScopeParent, createScope, scopeOf } from '@deepseek-ai/dsh-scope'
 import { agentEvents } from '@deepseek-ai/dsh-agent'
+import SystemPrompt, { renderPrompt } from '@deepseek-ai/dsh-system-prompt'
 import { apply as applyContextGate } from '../../engine/context-gate.mjs'
 import { applyPromptConfigs, createPromptConfigs } from '../../engine/prompt-config-engine.mjs'
 import { installPreStepCoordinator, PRE_STEP_COORDINATOR_SERVICE } from '../../src/runtime/pre-step-coordinator.ts'
@@ -214,6 +215,60 @@ for (const managed of [false, true]) {
     app.emit('session/event', mount.agent.session, { type: 'tool/call', seq: 1, data: {} })
     assert.deepEqual(textsOf(await dispatch(app, mount.agent)), ['claimed', 'ONCE'], '晋升后必须补发，候选未被误记为已投递')
   })
+}
+
+for (const managed of [false, true]) {
+  test(`V1 字段同值不串用，冷热路径的延迟命中都只投一次（${managed ? '管理' : '独立'}路径）`, async (t) => {
+    const specs = [
+      { ...onceSpec('first', 'FIRST'), sourceKind: 'second' },
+      { ...onceSpec('second', 'SECOND'), sourceKind: 'other', match: { keys: ['LATER'] } },
+    ]
+    const mountApp = (events) => {
+      const app = new Context()
+      t.after(() => app.fiber.dispose())
+      if (managed) installPreStepCoordinator(app, { collectFiles: () => [] })
+      const mount = scopedAgent(app, `v1-${managed}`, events)
+      installEngine(app, mount, specs)
+      return { app, agent: mount.agent, events }
+    }
+    const hot = mountApp([])
+    const first = await dispatch(hot.app, hot.agent)
+    assert.deepEqual(textsOf(first), ['claimed', 'FIRST'])
+    persist(hot.app, hot.agent.session, hot.events, first.messages)
+    // 重挂从同一日志恢复，不发送 session/event，确保走持久扫描而非确认快路径。
+    const cold = mountApp([...hot.events])
+    const later = async () => ({ kind: 'enter', messages: [userMessage('LATER', 'later')] })
+    for (const current of [hot, cold]) {
+      const hit = await dispatch(current.app, current.agent, later)
+      assert.deepEqual(textsOf(hit), ['LATER', 'SECOND'])
+      assert.equal(hit.messages[1].source.plugin, 'second')
+      persist(current.app, current.agent.session, current.events, hit.messages)
+      assert.deepEqual(textsOf(await dispatch(current.app, current.agent, later)), ['LATER'])
+    }
+  })
+}
+
+for (const managed of [false, true]) {
+  for (const hit of [false, true]) {
+    test(`V2 官方组装先行后 ST 资格在配置绑定副本上仍生效（${managed ? '管理' : '独立'}路径，命中=${hit}）`, async (t) => {
+      const app = new Context()
+      t.after(() => app.fiber.dispose())
+      await app.plugin(SystemPrompt, { includeHarnessIdentity: false })
+      if (managed) installPreStepCoordinator(app, { collectFiles: () => [] })
+      const mount = scopedAgent(app, `v2-${managed}-${hit}`, [{ type: 'turn/start', seq: 1, data: { turn: 1 } }])
+      installEngine(app, mount, [
+        staticSpec('setter', '{{setvar::x::SET}}', { order: 0, params: { stMacros: true }, match: { keys: ['LATER'] } }),
+        { id: 'system', layer: 'system-section', order: 1, text: 'SYS[{{getvar::x::EMPTY}}]', params: { stMacros: true } },
+        staticSpec('reader', 'PRE[{{getvar::x::EMPTY}}]', { order: 2, params: { stMacros: true } }),
+      ])
+      const assembly = () => app.systemPrompt.assemble({ scope: mount.agent, agent: mount.agent })
+      assert.equal(renderPrompt(await assembly()), 'SYS[EMPTY]')
+      const input = hit ? 'LATER' : 'ordinary'
+      const decision = await dispatch(app, mount.agent, async () => ({ kind: 'enter', messages: [userMessage(input)] }))
+      assert.deepEqual(textsOf(decision), [input, hit ? 'PRE[SET]' : 'PRE[EMPTY]'])
+      assert.equal(renderPrompt(await assembly()), 'SYS[EMPTY]')
+    })
+  }
 }
 
 test('R1 宿主接纳后只注入一次，重挂按持久事实恢复', async () => {

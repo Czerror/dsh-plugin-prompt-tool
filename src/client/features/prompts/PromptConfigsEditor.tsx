@@ -47,6 +47,7 @@ export interface PromptConfigsEditorProps extends Pick<PromptConfigListProps, 'b
   renderLayerSettings?: (layer: string, config: PromptConfigDraft) => ReactNode
   /** 该层是否有可编辑设置：决定「本层无配置卡」时是否渲染兜底设置容器。 */
   hasLayerSettings?: (layer: string) => boolean
+  matchesLayerSettings?: (layer: string, keyword: string) => boolean
   createdConfigId?: string
   /** 公共配置：模型、模板变量以外的预设级默认值等，不属于任何插入点。 */
   commonCards?: ReactNode
@@ -70,6 +71,7 @@ export function TemplateVariablesModuleCard(props: {
   setTemplateVariablesEnabled: (value: boolean) => void
   saveTemplateVariables: (next?: Record<string, string>, enabled?: boolean) => Promise<boolean | void>
   expanded: boolean
+  disabled?: boolean
   onToggleExpanded: () => void
 }): ReactNode {
   const t = props.t
@@ -82,6 +84,7 @@ export function TemplateVariablesModuleCard(props: {
   // 无变量时不显示卡片（模块列表恢复干净；「新建 → Variables」添加空行后自动出现）。
   if (count === 0) return null
   const clearAll = async (): Promise<void> => {
+    if (props.disabled) return
     if (await props.saveTemplateVariables({}) === false) throw new Error(t('variables.deleteFailed'))
     props.setTemplateVariables({})
     setConfirmingDelete(false)
@@ -90,7 +93,7 @@ export function TemplateVariablesModuleCard(props: {
   }
   /** 失焦自动保存：焦点离开卡片容器（含收起/切换开关/点击删除）即持久化。 */
   const autoSaveOnBlur = (event: FocusEvent<HTMLElement>): void => {
-    if (confirmingDelete) return
+    if (confirmingDelete || props.disabled) return
     const next = event.relatedTarget
     if (next === null || !cardRef.current?.contains(next as Node)) {
       void props.saveTemplateVariables()
@@ -108,20 +111,21 @@ export function TemplateVariablesModuleCard(props: {
         </button>
         <span className={styles.configHeaderActions}>
           <HintTooltip label={enabled ? t('variables.toggleDisable') : t('variables.toggleEnable')}>
-            <Switch label={t('variables.enableAria')} checked={enabled} onChange={(value) => {
+            <Switch label={t('variables.enableAria')} checked={enabled} disabled={props.disabled} onChange={(value) => {
+              if (props.disabled) return
               props.setTemplateVariablesEnabled(value)
               void props.saveTemplateVariables(undefined, value)
             }} />
           </HintTooltip>
           <span className={styles.configActions}>
-            <button ref={deleteRef} type="button" className={styles.pillButton} data-danger onClick={() => setConfirmingDelete(true)}>{t('variables.delete')}</button>
+            <button ref={deleteRef} type="button" disabled={props.disabled} className={styles.pillButton} data-danger onClick={() => setConfirmingDelete(true)}>{t('variables.delete')}</button>
           </span>
         </span>
       </header>
       {props.expanded && (
         <div id={panelId} className={styles.configForm}>
           {!enabled && <p className={styles.configFieldHint}>{t('variables.disabledHint')}</p>}
-          <VariablesEditor t={t} value={props.templateVariables} onChange={(next) => props.setTemplateVariables(next ?? {})} />
+          <VariablesEditor t={t} value={props.templateVariables} disabled={props.disabled} onChange={(next) => { if (!props.disabled) props.setTemplateVariables(next ?? {}) }} />
         </div>
       )}
       {confirmingDelete && <ConfirmDialog title={t('variables.deleteTitle')} description={t('variables.deleteDescription')}
@@ -161,6 +165,7 @@ export function PromptConfigsEditor(props: PromptConfigsEditorProps): ReactNode 
         onKeywordChange={props.onKeywordChange}
         renderLayerSettings={props.renderLayerSettings}
         hasLayerSettings={props.hasLayerSettings}
+        matchesLayerSettings={props.matchesLayerSettings}
         createdConfigId={props.createdConfigId}
         toolbarActions={props.toolbarActions}
         beforeCards={props.beforeCards}

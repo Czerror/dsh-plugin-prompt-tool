@@ -54,10 +54,14 @@ export function attachStRenderers(configs) {
   const tokens = new WeakMap()
   for (const target of templates) {
     target.renderSt = (agent, messages = [], warn = () => {}, token, eligible) => {
+      // 官方 assembly 只拥有两个文本插入点；pre-step 的资格由执行器确认。
+      const approved = config => visible(config, agent) && (eligible === undefined
+        ? (config.layer === 'system-section' || config.layer === 'runtime-context') && config.promotion === 'none'
+        : eligible.has(config.renderSt))
+      if (!approved(target)) return ''
       const session = agent?.session
       const cached = token && tokens.get(token)
       if (cached) {
-        if (!visible(target, agent)) return ''
         if (!cached.text.has(target)) cached.evaluate(target)
         return cached.text.get(target) ?? ''
       }
@@ -86,19 +90,13 @@ export function attachStRenderers(configs) {
           }
         }
         frame.evaluate = evaluate
-        // 命中、晋升和去重受限的模板由执行器确认资格后才求值：`eligible` 是本批
-        // 执行器判定的获准集合（含声明式条件），渲染器不复制判定；非执行器调用
-        // （如 system-section 层）没有集合，退回「可见 + 无晋升约束」的保守判定。
-        const approved = eligible === undefined
-          ? (config) => visible(config, agent) && config.promotion === 'none'
-          : (config) => eligible.has(config)
-        for (const config of templates.filter(config => approved(config)
-          && config.strategy === 'static' && config.dedupe === 'none')
-          .sort((a, b) => a.order - b.order)) evaluate(config)
         if (session) sessions.set(session, frame)
       }
+      // 同一帧允许后到的 pre-step 资格补入；已求值模板不重放副作用或随机宏。
+      for (const config of templates.filter(config => approved(config)
+        && config.strategy === 'static' && config.dedupe === 'none' && !frame.text.has(config))
+        .sort((a, b) => a.order - b.order)) frame.evaluate(config)
       if (token && typeof token === 'object') tokens.set(token, frame)
-      if (!visible(target, agent)) return ''
       if (!frame.text.has(target)) frame.evaluate(target)
       return frame.text.get(target) ?? ''
     }

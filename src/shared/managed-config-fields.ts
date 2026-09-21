@@ -1,18 +1,10 @@
-/**
- * writer 投影事实：这些 promptConfig 字段在每次重建（writePreset 物化）时都由预设级
- * 扁平参数覆写，所以在实例卡里只能是只读回显，唯一写入口是来源参数本身
- * （能力卡或工具管线共享设置区里的同名控件）。
- *
- * 契约的目的：让前端按「配置 id + 字段路径 → 来源参数」消费同一份事实，
- * 而不是在组件里散写 `id === 'near-anchor'` 之类的特判；host 侧的真实投影行为
- * 由 `test/host/managed-config-fields.test.mjs` 按 writer 产物逐字段锁定。
- */
+/** 受管字段白名单；实际来源必须由 writer 最终合并分支提供，不能仅凭 id 判定。 */
 import type { EngineParamKey } from './engine-params.ts'
 
 export interface ManagedConfigField {
   /** 配置内的字段路径：`params.<键>` 或顶层字段名（`enabled` / `modelScope`）。 */
   path: string
-  /** 唯一来源的预设级扁平参数键。 */
+  /** 该字段由 writer 投影时使用的预设级扁平参数键。 */
   sourceParam: EngineParamKey
   /**
    * 计算结果而不是逐字映射：来源参数的组合结果（或集合开关），
@@ -29,7 +21,7 @@ export interface ManagedConfigSpec {
   fields: readonly ManagedConfigField[]
 }
 
-/** 受 writer 管理、因此不能在实例卡里写值的配置字段。 */
+/** writer 可投影的字段白名单；是否确由参数投影由 ConfigFieldSources 决定。 */
 export const MANAGED_CONFIG_FIELDS: readonly ManagedConfigSpec[] = [
   {
     configId: 'near-anchor',
@@ -51,7 +43,7 @@ export const MANAGED_CONFIG_FIELDS: readonly ManagedConfigSpec[] = [
       { path: 'enabled', sourceParam: 'guideEnabled', fallbackNote: 'followsAnchor' },
       // 自定义引导对所有模型注入，自动引导只服务 Flash 家族。
       { path: 'modelScope', sourceParam: 'guideCustom', derived: true, fallbackNote: 'followsCustom' },
-      { path: 'params.useCustom', sourceParam: 'guideCustom' },
+      { path: 'params.useCustom', sourceParam: 'guideCustom', derived: true },
       { path: 'params.text', sourceParam: 'guideText' },
       { path: 'params.complexPattern', sourceParam: 'complexPattern' },
       { path: 'params.guideWeak', sourceParam: 'guideWeak' },
@@ -60,9 +52,42 @@ export const MANAGED_CONFIG_FIELDS: readonly ManagedConfigSpec[] = [
   },
 ]
 
-export function managedConfigSpec(configId: string | undefined): ManagedConfigSpec | undefined {
-  if (configId === undefined) return undefined
-  return MANAGED_CONFIG_FIELDS.find((spec) => spec.configId === configId)
+export interface ConfigFieldSources {
+  configId: string
+  fields: Array<{ path: string; source: 'preset-param' | 'prompt-config' }>
+}
+
+/** 严格投影白名单；未知路径、参数键和附加属性都不进入客户端。 */
+export function readConfigFieldSources(configId: string, raw: unknown): ConfigFieldSources | undefined {
+  const spec = MANAGED_CONFIG_FIELDS.find((entry) => entry.configId === configId)
+  if (spec === undefined || raw === null || typeof raw !== 'object' || Array.isArray(raw)) return undefined
+  const record = raw as Record<string, unknown>
+  if (record.configId !== configId || !Array.isArray(record.fields)) return undefined
+  const fields = spec.fields.flatMap(({ path }) => {
+    const entry = (record.fields as unknown[]).find((item) => item !== null && typeof item === 'object'
+      && (item as Record<string, unknown>).path === path) as Record<string, unknown> | undefined
+    const source = entry?.source
+    return source === 'preset-param' || source === 'prompt-config' ? [{ path, source } satisfies ConfigFieldSources['fields'][number]] : []
+  })
+  return { configId, fields }
+}
+
+/** 只有本次物化确由预设参数投影的字段才锁定；重命名或缺少事实均不按 id 猜测。 */
+export function managedConfigSpec(configId: string | undefined, sources?: ConfigFieldSources): ManagedConfigSpec | undefined {
+  if (configId === undefined || sources?.configId !== configId) return undefined
+  const spec = MANAGED_CONFIG_FIELDS.find((entry) => entry.configId === configId)
+  const fields = spec?.fields.filter((field) => sources.fields.some((entry) => entry.path === field.path && entry.source === 'preset-param')) ?? []
+  return fields.length > 0 ? { configId, fields } : undefined
+}
+
+export function isManagedConfigField(config: { id: string; fieldSources?: ConfigFieldSources }, path: string): boolean {
+  return managedConfigSpec(config.id, config.fieldSources)?.fields.some((field) => field.path === path) === true
+}
+
+/** 来源只用于读回；无论客户端传了什么来源，都不能写入预设定义。 */
+export function stripConfigFieldSources<T extends { fieldSources?: unknown }>(config: T): Omit<T, 'fieldSources'> {
+  const { fieldSources: _fieldSources, ...definition } = config
+  return definition
 }
 
 /** 该受管字段在当前配置草稿里的值（只读回显用；缺失时返回 undefined）。 */

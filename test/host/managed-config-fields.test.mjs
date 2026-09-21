@@ -11,8 +11,10 @@ import { parse as parseYaml } from 'yaml'
 const home = mkdtempSync(join(tmpdir(), 'pt-managed-home-'))
 process.env.DSH_HOME = home
 const { FIXTURE_PRESET_ID, installFixturePreset } = await import('../fixtures/preset-template.mjs')
-const { writePreset } = await import('../../lib/index.mjs')
-const { MANAGED_CONFIG_FIELDS, managedFieldValue } = await import('../../src/shared/managed-config-fields.ts')
+const { writePreset } = await import('../../src/host/write-preset.ts')
+const { loadPresetSpec, savePresetParams } = await import('../../src/host/manifest.ts')
+const { MANAGED_CONFIG_FIELDS, managedFieldValue, readConfigFieldSources } = await import('../../src/shared/managed-config-fields.ts')
+const { createPromptConfigs } = await import('../../engine/prompt-config-engine.mjs')
 test.after(() => rmSync(home, { recursive: true, force: true }))
 
 /** writePreset 的运行时参数：A/B 两组只在受管字段的来源参数上不同。 */
@@ -58,6 +60,53 @@ function materialize(suffix, flags) {
 
 const on = materialize('ON', true)
 const off = materialize('OFF', false)
+
+test('来源只允许固定字段，运行时归一不消费编辑器元数据', () => {
+  const config = on.nearAnchor
+  const raw = { configId: config.id, file: 'PRIVATE', fields: [
+    { path: 'params.text', source: 'preset-param', file: 'PRIVATE', sourceParam: 'arbitrary' },
+    { path: 'params.file', source: 'preset-param' },
+    { path: 'enabled', source: 'unknown' },
+  ] }
+  assert.deepEqual(readConfigFieldSources(config.id, raw), { configId: config.id, fields: [{ path: 'params.text', source: 'preset-param' }] })
+  assert.equal(readConfigFieldSources('ordinary-anchor', raw), undefined)
+  assert.equal(readConfigFieldSources('router-guide', raw), undefined)
+  const [normalized] = createPromptConfigs([config])
+  assert.equal(normalized.fieldSources, undefined, '元数据不进入运行配置或注入内容')
+  assert.equal(normalized.params.text, config.params.text)
+})
+
+test('writer 按最终合并记录 GLOBAL 投影与真实 spec LOCAL 覆盖，保留整条替换和空值', () => {
+  const root = mkdtempSync(join(home, 'sources-'))
+  installFixturePreset(root)
+  const dir = join(root, FIXTURE_PRESET_ID)
+  const local = { id: 'near-anchor', layer: 'pre-step', strategy: 'first-turn-anchor', enabled: false, params: { text: 'LOCAL' } }
+  savePresetParams(root, FIXTURE_PRESET_ID, { firstTurnAnchor: true, firstTurnText: 'GLOBAL' }, [local])
+  const read = () => {
+    const configs = join(dir, 'prompt-configs')
+    const file = readdirSync(configs).find((name) => name.endsWith('-near-anchor.yml'))
+    return parseYaml(readFileSync(join(configs, file), 'utf8'))
+  }
+  const options = { presetDir: root, presetTemplate: FIXTURE_PRESET_ID, presetOrder: 5, promptConfigs: [] }
+  writePreset('', options)
+  const projected = read()
+  assert.equal(projected.params.text, 'GLOBAL')
+  assert.equal(projected.enabled, true)
+  assert.ok(projected.fieldSources?.fields.every((field) => field.source === 'preset-param'), 'GLOBAL 必须记录为投影来源')
+  assert.equal(projected.fieldSources?.fields.length, 8)
+  writePreset('', { ...options, promptConfigs: loadPresetSpec(dir).promptConfigs })
+  const overridden = read()
+  assert.equal(overridden.params.text, 'LOCAL')
+  assert.equal(overridden.enabled, false)
+  assert.equal(overridden.params.useCustom, undefined, '局部条目整体替换，缺失键不继承投影')
+  assert.ok(overridden.fieldSources?.fields.every((field) => field.source === 'prompt-config'), 'LOCAL 必须记录为局部来源')
+  assert.equal(overridden.fieldSources?.fields.length, 8)
+  assert.equal(loadPresetSpec(dir).promptConfigs[0].fieldSources, undefined, '元数据不进入定义')
+  writePreset('', { ...options, promptConfigs: [{ ...local, params: { text: 'GLOBAL' } }] })
+  assert.ok(read().fieldSources.fields.every((field) => field.source === 'prompt-config'), '局部值恰好等于全局值也仍是局部来源')
+  writePreset('', { ...options, promptConfigs: [{ ...local, params: { text: '' } }] })
+  assert.equal(read().params.text, '', '清空合法局部文本不回落 GLOBAL')
+})
 
 test('受管字段逐条随来源参数变化（shared 契约与 writer 投影一致）', () => {
   for (const spec of MANAGED_CONFIG_FIELDS) {

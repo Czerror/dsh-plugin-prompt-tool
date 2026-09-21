@@ -11,6 +11,7 @@ import { StatusBadge } from '../../ui/StatusBadge.tsx'
 import { useMenuFocus } from '../../ui/menu-focus.ts'
 import { PromptConfigForm } from './PromptConfigForm.tsx'
 import { instructionFileIdOf } from '../../data/prompt-config-content.ts'
+import { isManagedConfigField } from '../../../shared/managed-config-fields.ts'
 import { AUDIENCE_LABEL_KEYS, LAYER_LABEL_KEYS, POSITION_LABEL_KEYS, STRATEGY_LABEL_KEYS, fieldPolicyFor, translateLabel } from './prompt-config-policy.ts'
 import sharedCss from '../../ui/controls.module.css'
 import featureCss from './prompts.module.css'
@@ -132,8 +133,9 @@ export const PromptConfigCard = memo(function PromptConfigCard(props: {
       </button>
       {status && <StatusBadge tone={config.contentConflict ? 'warning' : fileNotWritable ? 'danger' : 'neutral'} label={status} />}
       <span className={styles.configHeaderActions}>
-        <Switch className={styles.configEnable} checked={enabled} label={t('card.enableAria', { name })} disabled={props.disabled || (instructionFileId !== undefined && config.contentSaving === true)}
+        <Switch className={styles.configEnable} checked={enabled} label={t('card.enableAria', { name })} disabled={props.disabled || isManagedConfigField(config, 'enabled') || (instructionFileId !== undefined && config.contentSaving === true)}
           onChange={(next) => {
+            if (props.disabled || isManagedConfigField(config, 'enabled')) return
             if (instructionFileId !== undefined) props.onPatchInstructionPolicy?.(instructionFileId, { enabled: next })
             else props.onToggleEnabled(config.id, next)
           }} />

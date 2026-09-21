@@ -10,6 +10,7 @@ import { buildEffortOptions, buildModelOptions, modelChoiceValue, parseModelChoi
 export function ModelRouteModuleCard(props: { store: PromptToolStore; scope: 'main' | 'subagent' }): ReactNode {
   const { store } = props
   const fields = store.fields
+  const disabled = !fields.writePreset || store.moduleFacts?.editable !== true
   const host = store.hostDefaultModel
   // 当前会话模型选择（官方 session 投影 + selectModel 通道）：会话切换即换显，
   // 宿主侧切换经投影帧实时回流；投影缺省时回退宿主默认（对齐官方目录 current 语义）。
@@ -52,6 +53,7 @@ export function ModelRouteModuleCard(props: { store: PromptToolStore; scope: 'ma
   const temperature = props.scope === 'main' ? fields.modelTemperature : fields.subagentTemperature
   const maxTokens = props.scope === 'main' ? fields.modelMaxTokens : fields.subagentMaxTokens
   const patchModelParam = (key: 'modelReasoningEffort' | 'modelTemperature' | 'modelMaxTokens' | 'subagentReasoningEffort' | 'subagentTemperature' | 'subagentMaxTokens', value: string): void => {
+    if (disabled) return
     store.patch({ [key]: value } as Partial<typeof fields>)
     void store.persistParamOverrides()
   }
@@ -135,7 +137,7 @@ export function ModelRouteModuleCard(props: { store: PromptToolStore; scope: 'ma
             compact
             ariaLabel="预设模型"
             value={active ? modelChoiceValue(provider, modelName) : ''}
-            disabled={!fields.writePreset}
+            disabled={disabled}
             options={modelOptions}
             onChange={(value) => {
               const selection = parseModelChoice(value)
@@ -153,7 +155,7 @@ export function ModelRouteModuleCard(props: { store: PromptToolStore; scope: 'ma
             compact
             ariaLabel="思维程度"
             value={reasoningEffort}
-            disabled={!fields.writePreset}
+            disabled={disabled}
             options={presetEffortOptions}
             onChange={(value) => patchModelParam(
               props.scope === 'main' ? 'modelReasoningEffort' : 'subagentReasoningEffort',
@@ -176,13 +178,13 @@ export function ModelRouteModuleCard(props: { store: PromptToolStore; scope: 'ma
             step={0.1}
             aria-label="采样温度"
             value={temperature}
-            disabled={!fields.writePreset}
+            disabled={disabled}
             placeholder="温度（不设置）"
             onChange={(event) => patchModelParam(
               props.scope === 'main' ? 'modelTemperature' : 'subagentTemperature',
               event.target.value,
             )}
-            onBlur={() => void store.persistParamOverrides()}
+            onBlur={() => { if (!disabled) void store.persistParamOverrides() }}
           />
           <input
             className={styles.configInput}
@@ -191,13 +193,13 @@ export function ModelRouteModuleCard(props: { store: PromptToolStore; scope: 'ma
             step={1}
             aria-label="输出上限"
             value={maxTokens}
-            disabled={!fields.writePreset}
+            disabled={disabled}
             placeholder="输出上限（不设置）"
             onChange={(event) => patchModelParam(
               props.scope === 'main' ? 'modelMaxTokens' : 'subagentMaxTokens',
               event.target.value,
             )}
-            onBlur={() => void store.persistParamOverrides()}
+            onBlur={() => { if (!disabled) void store.persistParamOverrides() }}
           />
         </div>
       </div>

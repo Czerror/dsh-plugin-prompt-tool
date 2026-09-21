@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps, type ReactNode } from 'react'
 import { scrollToCreatedCard, cssEscapeId } from '../../ui/reveal-card.ts'
 import { bridgeCall, errorMessage } from '../../data/bridge-client.ts'
+import { isManagedConfigField } from '../../../shared/managed-config-fields.ts'
 import { instructionFileIdOf } from '../../data/prompt-config-content.ts'
 import type { PromptToolTranslate } from '../../locales.ts'
 import { MenuSelect } from '../../ui/MenuSelect.tsx'
@@ -69,6 +70,7 @@ export interface PromptConfigListProps {
   renderLayerSettings?: (layer: string, config: PromptConfigDraft) => ReactNode
   /** 该层是否有可编辑的引擎设置：决定「本层无配置卡」时是否渲染兜底设置容器。 */
   hasLayerSettings?: (layer: string) => boolean
+  matchesLayerSettings?: (layer: string, keyword: string) => boolean
   onNotice: (kind: 'ok' | 'error', message: string) => void
 }
 
@@ -143,9 +145,10 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
   // 搜索词：受控时取页面下发值（同一搜索词同时过滤能力卡与共享设置区），否则用内部 state。
   const filter = props.keyword ?? filterState
   const keyword = filter.trim().toLowerCase()
-  const filtered = keyword.length === 0
-    ? byStrategy
-    : byStrategy.filter((config) => matchesConfigKeyword(config, keyword, t))
+  const configMatches = byStrategy.filter((config) => matchesConfigKeyword(config, keyword, t))
+  const batchConfigs = configMatches.filter((config) => !isManagedConfigField(config, 'enabled'))
+  const filtered = keyword.length === 0 ? byStrategy : byStrategy.filter((config) =>
+    configMatches.includes(config) || (viewFilter !== 'world-book' && props.matchesLayerSettings?.(promptConfigLayer(config), keyword) === true))
   // 插入点分组只用于阅读；order 仅在同一插入点内比较。
   const layerRank = (config: PromptConfigDraft): number => {
     const index = allLayers.indexOf(promptConfigLayer(config))
@@ -164,7 +167,7 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
   /** 按过滤后可见配置一次性启用/禁用（批量开关）。 */
   const batchSetEnabled = (enabled: boolean): void => {
     if (props.readOnlyReason !== undefined) return
-    const visibleIds = new Set(ordered.map((config) => config.id))
+    const visibleIds = new Set(batchConfigs.map((config) => config.id))
     onPatchConfigs(configs.map((config) => visibleIds.has(config.id) ? { ...config, enabled } : config))
   }
 
@@ -346,7 +349,7 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
         onDragOver={handleDragOver}
         onDrop={handleDrop}
         onDragEnd={handleDragEnd}
-        renderLayerSettings={props.renderLayerSettings}
+        renderLayerSettings={props.hasLayerSettings?.(promptConfigLayer(config)) === false ? undefined : props.renderLayerSettings}
       />
     )
   }
@@ -364,11 +367,12 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
    * （否则工具链这类通常没有提示词配置卡的层将无处修改引擎参数）。它不进入
    * promptConfigs、不触发保存，也不创建配置对象。
    */
-  const standaloneLayerSettings = layerView
-    && props.renderLayerSettings !== undefined
-    && props.hasLayerSettings?.(viewFilter) === true
-    ? props.renderLayerSettings(viewFilter, { id: '__layer-settings__', layer: viewFilter })
-    : undefined
+  const standaloneLayers = !worldBookView && props.renderLayerSettings !== undefined
+    ? (effectiveLayer !== undefined ? [effectiveLayer] : keyword ? allLayers : []).filter((candidate) =>
+      props.hasLayerSettings?.(candidate) === true
+      && !byStrategy.some((config) => promptConfigLayer(config) === candidate)
+      && (!keyword || props.matchesLayerSettings?.(candidate, keyword) === true))
+    : []
 
   return (
     <section className={styles.section} aria-labelledby="prompt-tool-configs-heading">
@@ -393,10 +397,10 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
               ...allLayers.map((item) => ({ value: item, label: t('configs.view.layer', { layer: translateLabel(t, LAYER_LABEL_KEYS, item) }), group: t('configs.view.insertion') })),
             ]} onChange={changeViewFilter} />}
           <span className={styles.batchControls}>
-            <button type="button" className={styles.pillButton} disabled={ordered.length === 0 || props.readOnlyReason !== undefined}
-              onClick={() => batchSetEnabled(true)}>{t('configs.batch.enableVisible', { count: ordered.length })}</button>
-            <button type="button" className={styles.pillButton} disabled={ordered.length === 0 || props.readOnlyReason !== undefined}
-              onClick={() => batchSetEnabled(false)}>{t('configs.batch.disableVisible', { count: ordered.length })}</button>
+            <button type="button" className={styles.pillButton} disabled={batchConfigs.length === 0 || props.readOnlyReason !== undefined}
+              onClick={() => batchSetEnabled(true)}>{t('configs.batch.enableVisible', { count: batchConfigs.length })}</button>
+            <button type="button" className={styles.pillButton} disabled={batchConfigs.length === 0 || props.readOnlyReason !== undefined}
+              onClick={() => batchSetEnabled(false)}>{t('configs.batch.disableVisible', { count: batchConfigs.length })}</button>
           </span>
         </div>
         <p className={styles.actionHint}>{t('configs.saveScope')}</p>
@@ -447,27 +451,8 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
           这里只定义展示分组，不建立插入点间运行顺序。 */}
       {moduleCards !== undefined && <div className={styles.configList} hidden={viewFilter === 'world-book'}>{moduleCards}</div>}
 
-      {ordered.length === 0 ? (keyword.length > 0 || worldBookView) ? (
+      {ordered.length === 0 && standaloneLayers.length === 0 ? (keyword.length > 0 || worldBookView) ? (
         <p className={styles.readOnly}>{t('configs.noMatch', { keyword: filter.trim() || translateLabel(t, LAYER_LABEL_KEYS, viewFilter) })} <button type="button" className={styles.pillButton} onClick={clearFilters}>{t('configs.clearFilters')}</button></p>
-      ) : layerView && standaloneLayerSettings ? (
-        // 该层有可编辑的引擎设置却没有任何配置卡：用不写盘的兜底容器承载设置，
-        // 否则工具链层这类「通常没有提示词配置卡」的层将无处修改引擎参数。
-        <div className={styles.configList} data-layer-settings-standalone={viewFilter}>
-          <article className={styles.configCard}>
-            <header className={styles.configHeader}>
-              <span className={styles.configToggle} data-static>
-                <span className={styles.configTitle}>
-                  <span className={styles.configName}>{t('configs.layerSettings.title', { layer: translateLabel(t, LAYER_LABEL_KEYS, viewFilter) })}</span>
-                  <span className={styles.configMeta}>{t('configs.layerSettings.meta')}</span>
-                </span>
-              </span>
-            </header>
-            <div className={styles.configForm}>
-              <p className={styles.configFieldHint}>{t('configs.layerSettings.note')}</p>
-              <div className={styles.configGrid}>{standaloneLayerSettings}</div>
-            </div>
-          </article>
-        </div>
       ) : layerView ? (
         // 选中的注入层没有内容且没有引擎设置：给空状态与新增入口，不自动创建九张空卡。
         <div className={styles.emptyState}><span className={styles.emptyGlyph} aria-hidden="true">⌁</span><div>
@@ -485,7 +470,25 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
           {props.readOnlyReason === undefined && props.onCreate !== undefined && <button type="button" className={styles.pillButton} onClick={props.onCreate}>{t('configs.createFirst')}</button>}
           {props.readOnlyReason !== undefined && props.onChoosePreset !== undefined && <button type="button" className={styles.pillButton} onClick={props.onChoosePreset}>{t('configs.chooseEditable')}</button>}
         </div></div>
-      ) : <div className={styles.configList}>{ordered.map((config) => renderCard(config))}</div>}
+      ) : <div className={styles.configList}>
+        {ordered.map((config) => renderCard(config))}
+        {standaloneLayers.map((settingsLayer) => (
+          <article key={settingsLayer} className={styles.configCard} data-layer-settings-standalone={settingsLayer}>
+            <header className={styles.configHeader}>
+              <span className={styles.configToggle} data-static>
+                <span className={styles.configTitle}>
+                  <span className={styles.configName}>{t('configs.layerSettings.title', { layer: translateLabel(t, LAYER_LABEL_KEYS, settingsLayer) })}</span>
+                  <span className={styles.configMeta}>{t('configs.layerSettings.meta')}</span>
+                </span>
+              </span>
+            </header>
+            <div className={styles.configForm}>
+              <p className={styles.configFieldHint}>{t('configs.layerSettings.note')}</p>
+              <div className={styles.configGrid}>{props.renderLayerSettings!(settingsLayer, { id: '__layer-settings__', layer: settingsLayer })}</div>
+            </div>
+          </article>
+        ))}
+      </div>}
 
     </section>
   )

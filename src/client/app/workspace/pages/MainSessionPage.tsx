@@ -9,7 +9,7 @@ import { EngineModuleActions } from '../../../features/modules/EngineModuleList.
 import { engineCapability } from '../../../../shared/engine-capabilities.ts'
 import { engineLayerSlots } from './EngineLayersPanel.tsx'
 import { TemplatePicker } from '../../../ui/TemplatePicker.tsx'
-import type { ToolCreateIntent } from '../../../features/tools/CustomToolsCard.tsx'
+import { useCustomToolsEditor } from '../../../features/tools/CustomToolsCard.tsx'
 import ui from '../../../ui/controls.module.css'
 import type { InstructionPolicyFileOverride } from '../../../../shared/instructions.ts'
 import type { ConfigPageBrowse } from '../workspace-browse-state.ts'
@@ -26,7 +26,6 @@ export const MainSessionPage = memo(function MainSessionPage(props: { store: Pro
   }, [props.browse])
   // 搜索词由页面持有：同一搜索词同时过滤配置实例、层设置区与本层资产。
   const [keyword, setKeyword] = useState(props.browse?.filter ?? '')
-  const [toolCreate, setToolCreate] = useState<ToolCreateIntent>()
   /** 新建能力后的定位信号：token 递增；layer 用于滚动到该层实例卡内的设置区。 */
   const [focusCapability, setFocusCapability] = useState<{ id: string; token: number; layer?: string }>()
   const [createdHidden, setCreatedHidden] = useState(false)
@@ -65,11 +64,13 @@ export const MainSessionPage = memo(function MainSessionPage(props: { store: Pro
     'main',
   )
   const canEditPreset = store.fields.writePreset && store.moduleFacts?.editable === true
+  const toolEditor = useCustomToolsEditor({ t, presetId: fields.presetTemplate, disabled: !canEditPreset, drafts: store.editorDrafts, onNotice: store.showNotice })
   const pickVariables = useCallback(() => {
+    if (!canEditPreset) return
     // 「添加模板变量」只创建待编辑行；变量的编辑入口在运行上下文层的实例卡设置区里。
     store.setTemplateVariables({ ...store.templateVariables, '': '' })
     picker.closePicker()
-  }, [picker, store])
+  }, [picker, store, canEditPreset])
   const createItems = [
     ...INSERTION_LAYERS.map((layer) => ({ id: `tpl:${layer}`, label: t('main.addTemplate', { layer: translateLabel(t, LAYER_LABEL_KEYS, layer) }) })),
     { id: 'create:tool-template', label: t('main.addToolTemplate') },
@@ -82,14 +83,14 @@ export const MainSessionPage = memo(function MainSessionPage(props: { store: Pro
     else if (id === 'create:variables') pickVariables()
     else if (id === 'create:blank-tool') {
       setCreatedHidden(viewFilter !== 'all' && viewFilter !== 'tool-pipeline')
-      setToolCreate({ kind: 'blank', presetId: fields.presetTemplate })
+      toolEditor.createTool({ kind: 'blank', presetId: fields.presetTemplate })
     }
-  }, [fields.presetTemplate, picker, pickVariables, viewFilter])
+  }, [fields.presetTemplate, picker, pickVariables, viewFilter, toolEditor.createTool])
   const insertToolTemplate = useCallback((spec: Record<string, unknown>) => {
     setCreatedHidden(viewFilter !== 'all' && viewFilter !== 'tool-pipeline')
-    setToolCreate({ kind: 'template', spec, presetId: fields.presetTemplate })
+    toolEditor.createTool({ kind: 'template', spec, presetId: fields.presetTemplate })
     picker.closePicker()
-  }, [fields.presetTemplate, picker, viewFilter])
+  }, [fields.presetTemplate, picker, viewFilter, toolEditor.createTool])
   // 九层归位、层内设置与资产编辑器统一由 EngineLayersPanel 提供：本页只声明受众视图与
   // 页面编排（创建菜单、模板浮层、指令回调），不再自己手写层名判断或注入单例卡。
   const layers = engineLayerSlots({
@@ -99,8 +100,7 @@ export const MainSessionPage = memo(function MainSessionPage(props: { store: Pro
     audience: 'main',
     keyword,
     focusCapability,
-    toolCreate,
-    onToolIntentConsumed: () => setToolCreate(undefined),
+    toolEditor: toolEditor.content,
   })
   return (
     <section className={ui.section} aria-label={t('main.aria')}>
@@ -134,6 +134,7 @@ export const MainSessionPage = memo(function MainSessionPage(props: { store: Pro
         onKeywordChange={setKeyword}
         renderLayerSettings={layers.renderLayerSettings}
         hasLayerSettings={layers.hasLayerSettings}
+        matchesLayerSettings={layers.matchesLayerSettings}
         beforeCards={layers.beforeCards}
         commonCards={layers.commonCards}
         toolbarActions={<EngineModuleActions store={store} t={t} anchorRef={picker.anchorRef} extraItems={createItems} onExtraSelect={onCreateSelect} onCreated={revealCapability} />}

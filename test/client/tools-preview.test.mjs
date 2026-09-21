@@ -103,7 +103,7 @@ test('自定义工具按预设隔离，system 或关闭 writePreset 时禁用写
   const main = read('src/client/app/workspace/pages/MainSessionPage.tsx')
   // 编辑器由统一层装配入口在工具链层的设置区里渲染（两页共用一份）；页面只传创建意图与只读判定。
   assert.match(read('src/client/app/workspace/pages/EngineLayersPanel.tsx'), /id === 'custom-tools' && \(/)
-  assert.match(main, /toolCreate,/)
+  assert.match(main, /toolEditor: toolEditor\.content/)
   assert.match(main, /const canEditPreset = store\.fields\.writePreset && store\.moduleFacts\?\.editable === true/)
   // 只读边界由层设置内容统一下发（自定义工具编辑器与资产同源）。
   assert.match(read('src/client/app/workspace/pages/EngineLayersPanel.tsx'), /disabled=\{!canEditPreset\}/)
@@ -120,8 +120,8 @@ test('自定义工具按预设隔离，system 或关闭 writePreset 时禁用写
   assert.match(editor, /<fieldset className=\{styles\.configForm\} disabled=\{props\.disabled === true\}>/)
   const toggle = editor.slice(editor.indexOf('configToggle'), editor.indexOf('configHeaderActions'))
   assert.doesNotMatch(toggle, /disabled=\{props\.disabled/, '折叠按钮不得进入只读边界')
-  assert.match(source, /props\.createIntent/)
-  assert.match(source, /if \(disabled\) return/)
+  assert.match(source, /const createTool = \(intent: ToolCreateIntent\)/)
+  assert.match(source, /if \(disabled \|\| !editor\.loaded\)/)
   assert.match(source, /const save = \(\): void => \{\s+if \(disabled \|\| editor\.saving\) return/)
   assert.match(source, /const updateTools = \(next: ToolDraft\[\]\): void => \{\s+if \(!disabled\) setTools\(next\)/)
   assert.equal((source.match(/\bsetTools\(/g) ?? []).length, 2, '只有初始加载和受保护的编辑入口可更新工具草稿')

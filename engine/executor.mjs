@@ -107,17 +107,18 @@ export function confirmDelivered(memo, session, event) {
   if (memo === null || memo === undefined || session === null || session === undefined) return
   const source = eventMessage(event)?.source
   if (source === null || typeof source !== 'object') return
-  for (const key of [source.plugin, source.kind]) {
-    if (typeof key !== 'string' || key.length === 0) continue
-    deliveredSessions(memo, key).add(session.id)
+  for (const field of ['plugin', 'kind']) {
+    const value = source[field]
+    if (typeof value !== 'string' || value.length === 0) continue
+    deliveredSessions(memo, `${field}:${value}`).add(session.id)
   }
 }
 
 /** dedupe=session：本会话是否已有该身份的已确认投递（快路径 + 持久事件真相）。 */
 function alreadyDelivered(config, session, memo) {
-  const confirmed = (key) => memo.get(key)?.has(session.id) === true
-  if (confirmed(identityOf(config))) return true
-  if (typeof config.sourceKind === 'string' && confirmed(config.sourceKind)) return true
+  const confirmed = (field, value) => memo.get(`${field}:${value}`)?.has(session.id) === true
+  if (confirmed('plugin', identityOf(config))) return true
+  if (typeof config.sourceKind === 'string' && confirmed('kind', config.sourceKind)) return true
   return hasInjected(config, session)
 }
 
@@ -203,7 +204,8 @@ export async function runPreStepBatch(options) {
       && (config.promotion !== 'include-subagents' || withSubagents.status(agent).promoted)
       && conditionHit(config, { userText })
     const qualifiedConfigs = configs.filter(qualified)
-    const eligible = new Set(qualifiedConfigs)
+    // 协调器为绑定来源 ctx 会复制 config；renderSt 函数身份在副本间保持不变。
+    const eligible = new Set(qualifiedConfigs.map(config => config.renderSt))
     const stWorldBook = selectStWorldBook(qualifiedConfigs, session, messages, warnOnce)
     for (const config of configs) {
       try {

@@ -370,6 +370,103 @@ test('浏览器：子代理策略失焦保存与草稿隔离', { skip: skipBrows
   assert.deepEqual(await evaluate('window.errors'), [])
 })
 
+test('浏览器：复审修复覆盖创建、搜索、只读和折叠的生产装配链', { skip: skipBrowser, timeout: 60000 }, async (t) => {
+  const chooseView = async (name) => {
+    await evaluate(`document.querySelector('[aria-label="按层级或策略过滤"]').click()`)
+    await sleep(50)
+    await click(name)
+  }
+  const reset = async () => { await navigate('/'); await waitFor('window.store?.moduleFacts?.editable === true') }
+  const openSettings = async (id, layer) => {
+    await evaluate(`document.querySelector('[data-config-id="${id}"] header button[aria-expanded]').click()`)
+    await waitFor(`document.querySelector('[data-layer-settings="${layer}"]') !== null`)
+    await evaluate(`document.querySelector('[data-layer-settings="${layer}"] summary').click()`)
+  }
+  await t.test('N1：两页的全部、其他层与工具层折叠时连续创建立即保留草稿', async () => {
+    for (const page of ['main', 'subagent']) {
+      for (const view of ['全部', '层级：前置步骤', '层级：工具链']) {
+        await reset()
+        await evaluate(`window.selectPage(${JSON.stringify(page)}); window.store.patch({promptConfigs:[{id:'pipe-a',layer:'tool-pipeline',strategy:'static'}]})`)
+        await chooseView(view)
+        for (let index = 1; index <= 2; index++) {
+          await click('添加能力 / 工具模块'); await click('新建空白工具')
+          await waitFor(`window.store.editorDrafts.tools.get('test')?.tools.length === ${index}`)
+        }
+        assert.equal(await evaluate(`document.querySelector('[aria-label="按层级或策略过滤"]').textContent.trim()`), view)
+        await evaluate(`window.selectPage('away')`)
+        await evaluate(`window.selectPage(${JSON.stringify(page)})`)
+        await chooseView('层级：工具链')
+        await openSettings('pipe-a', 'tool-pipeline')
+        await waitFor(`document.querySelectorAll('[aria-label^="启用工具 tool-"]').length === 2`)
+        assert.deepEqual(await evaluate(`window.store.editorDrafts.tools.get('test').tools.map(t=>t.id)`), ['tool-1', 'tool-2'])
+        assert.equal(await evaluate(`window.requests.filter(r=>r.endpoint==='custom-tools'&&r.body.customTools).length`), 0)
+      }
+    }
+  })
+  await t.test('N2：技术键、中文标签、能力名命中有卡与空层设置，不扩大批量启停', async () => {
+    await reset()
+    await click('添加能力 / 工具模块'); await click('添加模块 · deliberation-gate')
+    await waitFor(`window.store.moduleFacts.effectiveModules.includes('deliberation-gate')`)
+    await evaluate(`window.store.patch({promptConfigs:[{id:'pipe-a',name:'普通规则',layer:'tool-pipeline',strategy:'static',enabled:true}]})`)
+    for (const keyword of ['deliberationMinChars', '深思', 'deliberation-gate']) {
+      await edit('input[type="search"]', keyword)
+      await waitFor(`document.querySelector('[data-config-id="pipe-a"]') !== null`)
+      await openSettings('pipe-a', 'tool-pipeline')
+      await waitFor(`document.querySelector('[data-layer-param-group="deliberation-gate"]') !== null`)
+      assert.equal(await evaluate(`window.store.fields.promptConfigs[0].enabled`), true)
+      assert.equal(await evaluate(`[...document.querySelectorAll('button')].find(b=>b.textContent.startsWith('停用可见'))?.disabled`), true)
+      await evaluate(`document.querySelector('[data-config-id="pipe-a"] header button[aria-expanded]').click()`)
+    }
+    await evaluate(`window.store.patch({promptConfigs:[]})`)
+    await waitFor(`document.querySelector('[data-layer-settings-standalone="tool-pipeline"]') !== null`)
+    await edit('input[type="search"]', '不存在的设置')
+    await waitFor(`document.body.innerText.includes('没有匹配')`)
+    await edit('input[type="search"]', '')
+    assert.equal(await evaluate('window.store.fields.promptConfigs.length'), 0)
+  })
+  await t.test('V4/V6：变量即时折叠，三种可写状态与当前会话模型独立', async () => {
+    for (const [editable, writePreset] of [[false, true], [true, false], [true, true]]) {
+      await reset()
+      await evaluate(`window.presetEditable=${editable}; window.writePreset=${writePreset}; window.store.load()`)
+      await waitFor(`window.store.moduleFacts.editable === ${editable} && window.store.fields.writePreset === ${writePreset}`)
+      await evaluate(`window.store.setTemplateVariables({test:'value'})`)
+      await chooseView('层级：运行上下文')
+      await waitFor(`document.querySelector('[data-layer-asset="variables"] input') !== null`)
+      const writable = editable && writePreset
+      assert.equal(await evaluate(`document.querySelector('[aria-label="模板变量名"]').readOnly`), !writable)
+      assert.equal(await evaluate(`document.querySelector('[aria-label="启用模板变量插值"]').disabled`), !writable)
+      const writes = await evaluate(`window.requests.filter(r=>r.endpoint==='preset-variables').length`)
+      await evaluate(`document.querySelector('[data-layer-asset="variables"] button[aria-expanded]').click()`)
+      await waitFor(`document.querySelector('[data-layer-asset="variables"] button[aria-expanded]').getAttribute('aria-expanded')==='false'`)
+      await chooseView('层级：代理请求'); await chooseView('层级：运行上下文')
+      assert.equal(await evaluate(`document.querySelector('[data-layer-asset="variables"] button[aria-expanded]').getAttribute('aria-expanded')`), 'false')
+      await evaluate(`document.querySelector('[data-layer-asset="variables"] button[aria-expanded]').click()`)
+      await waitFor(`document.querySelector('[aria-label="模板变量名"]') !== null`)
+      assert.equal(await evaluate(`window.requests.filter(r=>r.endpoint==='preset-variables').length`), writes)
+      await chooseView('层级：代理请求')
+      await evaluate(`[...document.querySelectorAll('button[aria-expanded]')].find(b=>b.textContent.includes('模型路由')).click()`)
+      await waitFor(`document.querySelector('[data-layer-asset="main-model"] [aria-label="采样温度"]') !== null`)
+      assert.equal(await evaluate(`document.querySelector('[data-layer-asset="main-model"] [aria-label="采样温度"]').disabled`), !writable)
+      assert.equal(await evaluate(`document.querySelector('[aria-label="预设模型"]').disabled`), !writable)
+      assert.equal(await evaluate(`document.querySelector('[aria-label="会话模型"]').disabled`), false)
+      const presetWrites = await evaluate(`window.requests.filter(r=>r.endpoint==='param-overrides').length`)
+      await evaluate(`document.querySelector('[aria-label="会话模型"]').click()`)
+      await click('model-b')
+      await waitFor(`window.sessionSelection?.model === 'model-b'`)
+      assert.equal(await evaluate(`window.requests.filter(r=>r.endpoint==='param-overrides').length`), presetWrites)
+    }
+  })
+  await t.test('V5：三个无设置层不生成空设置壳', async () => {
+    await reset()
+    for (const layer of ['llm-stream', 'turn-stop', 'subagent-end']) {
+      await evaluate(`window.store.patch({promptConfigs:[{id:'empty-${layer}',layer:'${layer}',strategy:'static'}]})`)
+      await waitFor(`document.querySelector('[data-config-id="empty-${layer}"]') !== null`)
+      await evaluate(`document.querySelector('[data-config-id="empty-${layer}"] header button[aria-expanded]').click()`)
+      assert.equal(await evaluate(`document.querySelector('[data-layer-settings="${layer}"]') === null`), true)
+    }
+  })
+})
+
 test('浏览器：参数镜像控件同步半成品输入与错误态，一次失焦只保存一次', { skip: skipBrowser, timeout: 60000 }, async () => {
   const chooseView = async (name) => {
     await evaluate(`document.querySelector('[aria-label="按层级或策略过滤"]').click()`)

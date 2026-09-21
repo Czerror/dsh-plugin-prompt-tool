@@ -4,7 +4,7 @@ import type { PromptToolTranslate } from '../../../locales.ts'
 import { EngineModuleActions } from '../../../features/modules/EngineModuleList.tsx'
 import { INSERTION_LAYERS, LAYER_LABEL_KEYS, translateLabel } from '../../../features/prompts/prompt-config-policy.ts'
 import { useTemplatePicker } from '../../../features/prompts/useTemplatePicker.ts'
-import type { ToolCreateIntent } from '../../../features/tools/CustomToolsCard.tsx'
+import { useCustomToolsEditor } from '../../../features/tools/CustomToolsCard.tsx'
 import { TemplatePicker } from '../../../ui/TemplatePicker.tsx'
 import { engineCapability } from '../../../../shared/engine-capabilities.ts'
 import { engineLayerSlots } from './EngineLayersPanel.tsx'
@@ -34,11 +34,11 @@ export const SubagentPage = memo(function SubagentPage(props: { store: PromptToo
   }
   /** 新建能力后的定位信号：token 递增，保证重复创建同一能力仍会再次展开并跳转。 */
   const [focusCapability, setFocusCapability] = useState<{ id: string; token: number }>()
-  const [toolCreate, setToolCreate] = useState<ToolCreateIntent>()
   const [createdHidden, setCreatedHidden] = useState(false)
   // 搜索词由页面持有：同一搜索词同时过滤配置实例、能力卡、共享设置区与单例卡。
   const [keyword, setKeyword] = useState(props.browse?.filter ?? '')
   const canEditPreset = store.fields.writePreset && store.moduleFacts?.editable === true
+  const toolEditor = useCustomToolsEditor({ t, presetId: store.fields.presetTemplate, disabled: !canEditPreset, drafts: store.editorDrafts, onNotice: store.showNotice })
   /** 仅主对话生效的能力：本页既不提供创建，也不渲染卡片。 */
   const mainSessionOnly = ['tool-filter']
   // 合并创建菜单：按插入点层级平铺「添加模板 · 层级」入口，浮层只列该层模板。
@@ -50,10 +50,11 @@ export const SubagentPage = memo(function SubagentPage(props: { store: PromptToo
     'subagent',
   )
   const pickVariables = useCallback(() => {
+    if (!canEditPreset) return
     // 「添加模板变量」只创建待编辑行；变量的编辑入口在运行上下文层的实例卡设置区里。
     store.setTemplateVariables({ ...store.templateVariables, '': '' })
     picker.closePicker()
-  }, [picker, store])
+  }, [picker, store, canEditPreset])
   const createItems = [
     ...INSERTION_LAYERS.map((layer) => ({ id: `tpl:${layer}`, label: t('main.addTemplate', { layer: translateLabel(t, LAYER_LABEL_KEYS, layer) }) })),
     { id: 'create:tool-template', label: t('main.addToolTemplate') },
@@ -66,14 +67,14 @@ export const SubagentPage = memo(function SubagentPage(props: { store: PromptToo
     else if (id === 'create:variables') pickVariables()
     else if (id === 'create:blank-tool') {
       setCreatedHidden(viewFilter !== 'all' && viewFilter !== 'tool-pipeline')
-      setToolCreate({ kind: 'blank', presetId: store.fields.presetTemplate })
+      toolEditor.createTool({ kind: 'blank', presetId: store.fields.presetTemplate })
     }
-  }, [picker, pickVariables, store, viewFilter])
+  }, [picker, pickVariables, store, viewFilter, toolEditor.createTool])
   const insertToolTemplate = useCallback((spec: Record<string, unknown>) => {
     setCreatedHidden(viewFilter !== 'all' && viewFilter !== 'tool-pipeline')
-    setToolCreate({ kind: 'template', spec, presetId: store.fields.presetTemplate })
+    toolEditor.createTool({ kind: 'template', spec, presetId: store.fields.presetTemplate })
     picker.closePicker()
-  }, [picker, store, viewFilter])
+  }, [picker, store, viewFilter, toolEditor.createTool])
   // 能力创建成功后只定位并展开新卡；不改动用户选定的视图过滤。
   const revealCapability = useCallback((id: string) => {
     setCreatedHidden(viewFilter !== 'all')
@@ -89,8 +90,7 @@ export const SubagentPage = memo(function SubagentPage(props: { store: PromptToo
     audience: 'subagent',
     keyword,
     focusCapability,
-    toolCreate,
-    onToolIntentConsumed: () => setToolCreate(undefined),
+    toolEditor: toolEditor.content,
     excludeCapabilities: mainSessionOnly,
     moduleHint: t('modules.subagentScopeHint'),
     moduleEmptyHint: t('modules.subagentEmptyHint'),
@@ -128,6 +128,7 @@ export const SubagentPage = memo(function SubagentPage(props: { store: PromptToo
           onKeywordChange={setKeyword}
           renderLayerSettings={layers.renderLayerSettings}
           hasLayerSettings={layers.hasLayerSettings}
+          matchesLayerSettings={layers.matchesLayerSettings}
         />
       </section>
       {picker.open && (

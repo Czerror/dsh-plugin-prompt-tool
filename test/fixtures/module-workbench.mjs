@@ -1,12 +1,13 @@
 // 真实 React 工作台，只有宿主 HTTP/会话依赖替换为内存数据；不访问用户 DSH。
-import React, { useEffect } from 'react'
+import React, { useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { MainSessionPage } from '../../src/client/app/workspace/pages/MainSessionPage.tsx'
+import { SubagentPage } from '../../src/client/app/workspace/pages/SubagentPage.tsx'
 import { usePromptToolStore } from '../../src/client/data/use-prompt-tool-store.ts'
 import { PROMPT_TOOL_DICTS } from '../../src/client/locales.ts'
 const fixture = window.fixture
-const session = {}
-const api = { sessionModel: { snapshot: () => session, subscribe: () => () => {} }, currentSessionId: () => undefined, subscribeSessionChange: () => () => {} }
+const session = { sessionId: 'test-session', selectable: true }
+const api = { sessionModel: { snapshot: () => session, subscribe: () => () => {}, select: async (selection) => { window.sessionSelection = selection } }, currentSessionId: () => undefined, subscribeSessionChange: () => () => {} }
 const settings = { scope: { getSnapshot: () => ({ status: 'ready', revision: 1 }) }, ensure: async () => {}, mutate: async () => {} }
 const t = (key, params = {}) => Object.entries(params).reduce((text, [key, value]) => text.replaceAll(`{${key}}`, String(value)), PROMPT_TOOL_DICTS.zh[key] ?? key)
 // 两条指令文件（全局 + 项目）：与真实探测结果同形，用于验证它们复用标准配置卡渲染。
@@ -38,8 +39,9 @@ window.fetch = async (url, init) => {
   window.requests.push({ endpoint, body })
   let value = {}
   if (endpoint === 'bootstrap') return new Response(JSON.stringify({ ok: true,
-    value: { value: { presetTemplate: 'test', writePreset: true }, base: {}, revision: 1 },
+    value: { value: { presetTemplate: 'test', writePreset: window.writePreset !== false }, base: {}, revision: 1 },
     meta: { meta: fixture.meta }, overrides: { overrides }, variables: { variables, enabled: true },
+    modelCatalog: { test: ['model-a', 'model-b'] }, hostDefaultModel: { provider: 'test', model: 'model-a' },
     // 生成快照可能暂时为空；指令文件卡始终由文件快照合并回来（与宿主 bridge 同形）。
     promptConfigs: { promptConfigs: [...(window.staleGenerated ? [] : configs), ...instructionFiles.map(instructionCard)] },
     instructions: {
@@ -47,7 +49,7 @@ window.fetch = async (url, init) => {
       files: instructionFiles,
       owner: { officialInstructions: null },
     },
-    moduleFacts: { sourceMode: 'explicit', editable: true, effectiveModules: [...modules], declaredModules: [...modules], rowIds: [] },
+    moduleFacts: { sourceMode: 'explicit', editable: window.presetEditable !== false, effectiveModules: [...modules], declaredModules: [...modules], rowIds: [] },
   }))
   if (endpoint === 'instructions-policy') value = { policy: { enabled: true, files: {}, defaults: { order: 30, position: 'after-user', promotion: 'include-subagents', audience: null, modelScope: 'all' } }, revision: 'pol-1', exists: true }
   if (endpoint === 'templates') value = fixture.templates
@@ -67,6 +69,10 @@ function App() {
   const store = usePromptToolStore(api, settings)
   window.store = store
   useEffect(() => { void store.load() }, [store.load])
-  return React.createElement(React.Fragment, null, React.createElement(MainSessionPage, { store, t }), React.createElement('p', { role: 'status' }, store.notice))
+  const [page, setPage] = useState('main')
+  window.selectPage = setPage
+  return React.createElement(React.Fragment, null,
+    page === 'away' ? null : React.createElement(page === 'subagent' ? SubagentPage : MainSessionPage, { store, t }),
+    React.createElement('p', { role: 'status' }, store.notice))
 }
 createRoot(document.getElementById('root')).render(React.createElement(App))

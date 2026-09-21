@@ -1,5 +1,5 @@
 /** 客户端共享类型：提示词配置草稿、层能力矩阵与引擎 /meta 载荷。 */
-import type { EngineMetaLayerContract, StConversionReport, StOrderGroupCandidate } from '../shared/bridge-contract.ts'
+import type { EngineMetaLayerContract, PromptConfigSourceView, StConversionReport, StOrderGroupCandidate } from '../shared/bridge-contract.ts'
 import type { AssetImportRequest, AssetSummary } from '../shared/asset-transfer.ts'
 
 /**
@@ -41,7 +41,7 @@ export interface PromptConfigMatch {
 }
 
 /** 客户端侧的提示词配置草稿：与宿主 PromptConfigSpec 同构，字段全部宽松。 */
-export interface PromptConfigDraft {
+export interface PromptConfigDraft extends PromptConfigSourceView {
   id: string
   name?: string
   enabled?: boolean

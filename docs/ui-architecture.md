@@ -294,7 +294,7 @@ workspace-pages.ts 是页面元数据的唯一来源。默认页为 features，�
 
 主会话页中的卡片顺序是 UI 分组，不表示九个官方注入 seam 的运行顺序。九个插入点彼此独立，运行时顺序和参数语义见 [engine-reuse.md](engine-reuse.md)。
 
-工具预览与工具编辑分离。`CustomToolsCard` 只负责模型工具定义，保留在主会话模块列表；以预设 ID 为 React key 重挂载，加载期间和 system 只读时禁止写入。预览不隐藏自定义工具，不自动创建／恢复会话；当前会话读取冻结 generation，所选预设读取后续 generation，切换来源或刷新会丢弃旧请求响应。
+工具预览与工具编辑分离。`useCustomToolsEditor` 由主/子页面常驻调用，负责同一预设的读取、草稿与显式保存；创建直接消费动作并写共享草稿池，设置区只渲染其内容。连续创建不依赖卡片挂载，切页后已建立的草稿继续保留，不重放请求。加载或读取失败、预设不匹配和只读时拒绝创建并给出提示，不将空列表当读取成功。预览不隐藏自定义工具，不自动创建／恢复会话；当前会话读取冻结 generation，所选预设读取后续 generation，切换来源或刷新会丢弃旧请求响应。
 
 样式参照官方 `ui-settings-plugin-inventory/PluginInventorySettingsTab`，不是可配置插件表单。卡头复用共享 `StatusBadge`（StatusDot + 官方 Tag）与官方 Chevron，标记真实的「模型可见」；展开显示完整名称、来源视角、可见状态与描述。工具摘要没有插件配置启停或运行阶段，不显示虚构的「已启用／运行中」。搜索只在客户端过滤，并自动展开分组，不增加 bridge 请求。
 
@@ -500,7 +500,7 @@ promptConfigs 模块卡展开区按基础信息、注入规则、作用范围、
 
 主会话的列表主体是**提示词配置实例卡**（同一层可以有多张），引擎设置不再是独立卡片：每张卡的表单里有一个默认折叠的「本层引擎设置」区（`form.layerSettings.label`），展开后就是该层的参数分组、已装配能力清单与该层归属的资产编辑器。列表顶部/底部只保留不承载引擎参数的入口：工具栏（合并创建菜单、校验与保存）与 world-book 视图下的只读诊断卡。这一顺序不建立跨插入点的全局执行顺序，`anchor-turn` 的实际 hook 同样不受展示影响。
 
-`EngineLayersPanel#engineLayerSlots({ store, t, viewFilter, audience, keyword, … })` 是唯一的层装配入口，返回 `beforeCards` / `commonCards` / `moduleCards`（现在只含页面级提示与定位锚）以及 `renderLayerSettings(layer, config)` 与 `hasLayerSettings(layer)` 两个注入点；两个页面只声明受众视图与页面编排（创建菜单、模板浮层、指令回调），不再手写层名判断，也不再自己拼单例卡。
+`EngineLayersPanel#engineLayerSlots({ store, t, viewFilter, audience, keyword, … })` 是唯一的层装配入口，返回 `beforeCards` / `commonCards` / `moduleCards`（只含页面级提示与定位锚）以及 `renderLayerSettings`、`hasLayerSettings` 和 `matchesLayerSettings`；两个页面声明受众视图、创建编排并持有工具草稿所有者，不手写层名判断或重复资产布局。
 
 `LayerSettingsContent` 的三段内容都按共享契约派生、不硬编码层名：`layerParamCards` 取主归属层等于该层、且**确实装配**的能力组与不依赖装配的专用编辑组（未装配能力的参数写了不生效，因此不显示假入口）；`layerAssembledCapabilities` 列出该层已装配能力，每项带二次确认的移除入口（只读预设下不提供）；资产编辑器（`persona` / `variables` / `main-model` / `subagent-model` / `subagent-tools` / `custom-tools` / `subagent-tool-policy`）按同一 `displayLayer` 归位，复用各自专用编辑器、草稿池与写端点。该层**没有任何可编辑设置**时不渲染设置区；该层有设置、却一张实例卡都没有时（例如工具链层通常没有提示词配置卡），列表用一张**不写盘**的兜底容器承载同一份内容（`data-layer-settings-standalone`），不创建配置对象、不触发保存，用户在该层新建配置卡后设置也出现在卡内。
 
@@ -512,9 +512,11 @@ world-book 视图只隐藏工具栏之外的列表主体之外的附加提示，
 
 工具栏的「添加能力 / 工具模块」是唯一创建入口，创建路径的过滤与受众规则见 §5.2.1。指令文件卡属于主会话概念，只在 `scope=main`（或缺省）时下发，子代理页不渲染，避免同一指令文件出现两个编辑入口。
 
-世界书是提示词策略筛选，不承载引擎设置（只读诊断卡只在 `world-book` 视图显示）；自定义工具编辑器按 `custom-tools` 编辑组归位到 tool-pipeline 层。筛选通过隐藏实例卡与设置区保留编辑器挂载，不卸载其未保存草稿；保存失败保留原输入。
+世界书是提示词策略筛选，不承载引擎设置（只读诊断卡只在 `world-book` 视图显示）；自定义工具编辑器按 `custom-tools` 编辑组归位到 tool-pipeline 层。配置卡及设置内容可随筛选和折叠卸载，未保存资产与字段草稿由既有共享草稿池保留；工具读取与创建由页面所有者承载，保存失败保留原输入。
 
-搜索统一覆盖「中文名 + 技术键」，且只影响展示：配置实例按标识、名称、枚举值与其中文标签、局部参数键匹配（`prompt-config-policy.ts#matchesConfigKeyword`）；层设置区里的参数组与资产按能力 id、参数键与 `param.<键>` 中文标签匹配（`EngineParamFields.tsx#matchesEditorGroup`，参数键派生来自 shared `engineGroupParamKeys`）。搜索词由页面持有并同时下发给列表与层装配，未命中的部分隐藏而不卸载；没有命中时列表给「无匹配 + 清除筛选」，不把几十张匹配卡合并成一张层结果。
+搜索统一覆盖「中文名 + 技术键」，且只影响展示：配置实例使用 `matchesConfigKeyword`；真实层装配通过既有 `matchesEditorGroup` 与分组标题判定设置匹配，匹配时保留同层承载实例，展开后隐藏未命中的组。没有实例的匹配层显示同一份不写盘兜底设置，即使在「全部」搜索下也可进入。批量启停仍只作用原配置搜索集合，并排除 host 标记的受管投影，不把仅因设置命中而保留的卡算进写范围。清空搜索恢复原列表，不创建配置或保存。
+
+变量卡的输入、启停、删除和失焦保存受真实预设可写性约束；折叠按钮继续可用，React 状态立即更新并记入既有草稿键。模型资产的预设参数同样只读，但当前会话的 `selectModel` 仍单独按官方 selectable 决定可用性。
 
 子代理工具策略（`subagent-tool-policy`）是模块类型能力：在能力菜单里创建，编辑器住在 tool-pipeline 层的层设置区资产分区里（`data-layer-asset="subagent-tool-policy"`），用「移除能力」入口移除。该编辑器只有**一个启用开关**：打开复用共享可用骨架并立即落盘；关闭删除顶层策略段并保留模块声明，同时把编辑区置为 `fieldset[disabled]` 只读。引擎仅在策略文件确实不存在时降级为官方委派行为，现存损坏文件仍报错。移除能力时模块声明与顶层段一起移除。历史“段在、声明不在”预设保留既有授权装配，装配清单如实列出它；保存或显式创建会补齐模块声明，不覆盖已有授权。子代理页排除「仅主对话」能力——不提供创建 `tool-filter`，它的参数与装配条目也不进本页设置区，并在模块区上方提示子代理工具面应走「subagent-tool-policy」能力。
 

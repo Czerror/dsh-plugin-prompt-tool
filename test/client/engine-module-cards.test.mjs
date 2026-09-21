@@ -34,7 +34,7 @@ const loader = registerHooks({
 })
 const { EngineParamFields, EngineParamField } = await import('../../src/client/features/modules/EngineParamFields.tsx')
 const { ToolPipelineSettingsCard, TOOL_PIPELINE_SETTING_GROUPS } = await import('../../src/client/app/workspace/pages/EngineLayersPanel.tsx')
-const { LayerSettingsContent, layerParamCards, layerHasSettings, layerAssembledCapabilities } = await import('../../src/client/app/workspace/pages/EngineLayersPanel.tsx')
+const { LayerSettingsContent, layerParamCards, layerHasSettings, layerAssembledCapabilities, engineLayerSlots } = await import('../../src/client/app/workspace/pages/EngineLayersPanel.tsx')
 const { LayerCard } = await import('../../src/client/ui/LayerCard.tsx')
 const { EngineModuleCards, EngineCapabilityCreateMenu } = await import('../../src/client/features/modules/EngineModuleList.tsx')
 const { PromptConfigForm } = await import('../../src/client/features/prompts/PromptConfigForm.tsx')
@@ -161,7 +161,7 @@ test('自定义工具编辑入口保留，能力删除仍需二次确认', () =>
   assert.match(page, /t\('main\.addTemplate', \{ layer: translateLabel\(t, LAYER_LABEL_KEYS, layer\) \}\)/)
   assert.match(page, /create:blank-tool/)
   // 自定义工具卡由统一层装配入口渲染；页面只传创建意图，不自己拼卡片。
-  assert.match(page, /toolCreate,/)
+  assert.match(page, /toolEditor: toolEditor\.content/)
   assert.match(read('app/workspace/pages/EngineLayersPanel.tsx'), /<CustomToolsCard/)
   assert.match(read('features/tools/CustomToolsCard.tsx'), /<CustomToolCard/)
   assert.match(read('ui/EngineModuleCard.tsx'), /确认删除/)
@@ -567,24 +567,29 @@ test('统一搜索：配置名、标识、注入层与参数名都能命中，�
   assert.deepEqual(configs, before)
 })
 
-test('统一搜索：能力卡与共享设置区按分组名、参数键与参数中文标签过滤', () => {
-  // 共享设置区：分组标题命中「深思门」，其余分组隐藏；没有命中时给搜索空状态而不是整卡消失。
-  const byLabel = render(ToolPipelineSettingsCard, { store: pipelineStore(), t, keyword: '深思门' })
-  assert.ok(byLabel.includes('data-pipeline-group="deliberation-gate"'))
-  assert.equal(byLabel.includes('data-pipeline-group="tool-filter"'), false)
-  const byKey = render(ToolPipelineSettingsCard, { store: pipelineStore(), t, keyword: 'cotdripevery' })
-  assert.ok(byKey.includes('data-pipeline-group="progress-reminder"'), '参数技术键参与匹配')
-  assert.equal(byKey.includes('data-pipeline-group="bootstrap-tools"'), false)
-  const noHit = render(ToolPipelineSettingsCard, { store: pipelineStore(), t, keyword: '没有这个能力' })
-  assert.ok(noHit.includes(t('modules.status.emptySearch', { keyword: '没有这个能力' })))
-  assert.ok(noHit.includes(t('modules.toolPipeline.name')), '整卡仍在，只给空状态')
-  // 能力卡：能力 id（技术键）与参数中文标签都能命中；未命中的能力卡不渲染。
-  const active = { ...store, moduleFacts: withModules(['deliberation-gate', 'progress-reminder', 'tool-filter']) }
-  const cards = (keyword) => render(EngineModuleCards, { store: active, t, keyword, showPromptDefaults: false, showStatus: false })
-  assert.match(cards('deliberation'), /deliberation-gate/)
-  assert.doesNotMatch(cards('deliberation'), /progress-reminder/)
-  assert.match(cards(t('param.cotDrip')), /progress-reminder/, '参数中文标签参与匹配')
-  assert.doesNotMatch(cards('没有这个能力'), /progress-reminder/)
+test('统一搜索：生产层装配按中文名、技术键与能力名保留实例或空层设置', () => {
+  const active = { ...store, fields: { ...EMPTY_FIELDS, writePreset: true }, moduleFacts: withModules(['deliberation-gate', 'progress-reminder']) }
+  const config = { id: 'pipe-a', layer: 'tool-pipeline', strategy: 'static' }
+  for (const keyword of ['深思门', 'deliberationminchars', 'deliberation-gate']) {
+    const slots = engineLayerSlots({ store: active, t, viewFilter: 'all', audience: 'main', keyword })
+    assert.equal(slots.matchesLayerSettings('tool-pipeline', keyword), true)
+    assert.equal(slots.matchesLayerSettings('llm-stream', keyword), false)
+    const base = { ...slots, t, meta: getEngineMeta(), viewFilter: 'all', keyword, onPatchConfigs() { assert.fail('搜索不得写盘') }, onSaveConfigs() { assert.fail('搜索不得保存') }, onNotice() {} }
+    assert.match(render(PromptConfigList, { ...base, configs: [config] }), /data-config-id="pipe-a"/)
+    assert.match(render(PromptConfigList, { ...base, configs: [] }), /data-layer-settings-standalone="tool-pipeline"/)
+    const settings = tree(LayerSettingsContent, { store: active, t, layer: 'tool-pipeline', keyword })
+    assert.equal(find(settings, (node) => node.props['data-layer-param-group'] === 'deliberation-gate').props.hidden, false)
+    assert.equal(find(settings, (node) => node.props['data-layer-param-group'] === 'progress-reminder').props.hidden, true)
+  }
+})
+
+test('统一搜索：中文资产名与技术键命中同一归属层', () => {
+  const active = { ...store, templateVariables: { test: 'value' } }
+  const slots = engineLayerSlots({ store: active, t, viewFilter: 'all', audience: 'main' })
+  for (const [label, id, layer] of [['模板变量', 'variables', 'runtime-context'], ['自定义工具', 'custom-tools', 'tool-pipeline'], ['人设', 'persona', 'system-section'], ['子代理工具策略', 'subagent-tool-policy', 'tool-pipeline']]) {
+    assert.equal(slots.matchesLayerSettings(layer, label), true, label)
+    assert.equal(slots.matchesLayerSettings(layer, id), true, id)
+  }
 })
 
 test('统一搜索：无匹配给定位提示，层内无内容给空状态与新增入口', () => {

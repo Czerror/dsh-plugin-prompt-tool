@@ -12,6 +12,7 @@ import { PARAM_KEYS } from '../config.ts'
 import { invalidateModelCatalog, listAdvertisedModels, peekModelCatalog, refreshModelReasoning, type ModelDetection } from './models.ts'
 import type { SkillCatalogEntry, SkillPolicyChange, SkillPolicyScope, SkillsCatalogSnapshot } from '../shared/skills.ts'
 import { loadPromptConfigFiles } from '../host/prompt-configs.ts'
+import { readConfigFieldSources, stripConfigFieldSources } from '../shared/managed-config-fields.ts'
 import { validatePromptConfigs } from './configs-validate.ts'
 import { loadPromptTemplates, loadToolTemplates } from '../host/templates.ts'
 import { assertImportableSource, importSkillsDirectory, importSkillsPackage } from '../host/skills-import.ts'
@@ -725,7 +726,12 @@ export function registerSettingsBridge(
       /** 生成目录实际生效配置（/prompt-configs 读取）。 */
       const readPromptConfigs = (dir: string): unknown[] => {
         try {
-          return dir.length > 0 ? loadPromptConfigFiles(join(dir, 'prompt-configs')) : []
+          return dir.length > 0 ? loadPromptConfigFiles(join(dir, 'prompt-configs')).map((config) => {
+            const raw = config as typeof config & { fieldSources?: unknown }
+            const definition = stripConfigFieldSources(raw)
+            const fieldSources = readConfigFieldSources(config.id, raw.fieldSources)
+            return { ...definition, ...(fieldSources === undefined ? {} : { fieldSources }) }
+          }) : []
         } catch {
           return []
         }
@@ -1365,6 +1371,9 @@ export function registerSettingsBridge(
               return
             }
             if (!guardPresetWrite(dir, res)) return
+            if (Array.isArray(record.promptConfigs)) {
+              record.promptConfigs = record.promptConfigs.map((config) => isRecord(config) ? stripConfigFieldSources(config) : config)
+            }
             const rawOverrides = record.overrides as Record<string, unknown> | undefined
             // 参数键白名单：未知键 fail loud，避免写入「读回/参数桥都不消费」的死键。
             if (rawOverrides !== undefined) {
