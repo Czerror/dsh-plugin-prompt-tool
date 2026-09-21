@@ -29,8 +29,6 @@
 .configContext span, .configContext p { margin: 0; font: var(--dsw-font-xxs-12); color: var(--dsw-alias-label-secondary); text-wrap: pretty; overflow-wrap: anywhere; }
 .configSection { display: flex; flex-direction: column; gap: 16px; min-width: 0; border-top: 0.5px solid var(--dsw-alias-border-l2); padding-top: 24px; }
 .configSectionTitle { margin: 0; padding: 0; border: 0; font: var(--dsw-font-xs-strong-13); color: var(--dsw-alias-label-primary); text-wrap: balance; }
-.configSharedSettings { background: var(--dsw-alias-bg-layer-3); padding: 16px; border: 0; border-radius: 8px; }
-.configSharedSettings > p { margin-block: 12px; }
 .configFieldset { min-width: 0; padding: 0; margin: 0; border: 0; }
 .configGrid {
   display: grid;

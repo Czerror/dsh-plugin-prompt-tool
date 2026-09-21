@@ -251,7 +251,7 @@ export function PromptConfigForm(props: {
 
       {/* 本层引擎设置：同层每张卡都显示同一份值（同源同步），默认折叠且折叠时不渲染内容。 */}
       {props.renderLayerSettings !== undefined && (
-        <details className={clsx(styles.configAdvanced, styles.configSharedSettings)} open={layerSettingsOpen} data-layer-settings={config.layer ?? 'pre-step'}
+        <details className={styles.configAdvanced} open={layerSettingsOpen} data-layer-settings={config.layer ?? 'pre-step'}
           onToggle={(event) => setLayerSettingsOpen(event.currentTarget.open)}>
           <summary className={styles.configAdvancedSummary}>
             {t('form.layerSettings.label', { layer: translateLabel(t, LAYER_LABEL_KEYS, config.layer ?? 'pre-step') })}
