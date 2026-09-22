@@ -12,7 +12,7 @@ import {
   matchesModel,
   newMessageId,
   parseToolNames,
-  sessionMapGet,
+  sessionState,
 } from './shared.mjs'
 import { KNOWN_STRATEGIES } from './schema.mjs'
 import { interpolateVariables, stripUnresolvedRefs, RUNTIME_FACTS, runtimeFactValue } from './interpolate.mjs'
@@ -21,6 +21,10 @@ import { conditionHit, lastAssistantText, subagentTextOf, toolArgsText } from '.
 
 const name = 'prompt-config-engine'
 // 同一宿主会话共享投递账本，避免预设作用域重挂后重投同一次结束通知。
+// B4 保留原状（不迁 `sessionState`）：外层确实是「按会话索引」的 WeakMap，但它存的不是
+// 会话条目而是**第二层索引**——内层 `Map` 按 `${runId}:${config.id}` 去重，那是运行级的键，
+// 与统一接口的「按会话索引」不同层；套上去只剩一个改了名字的 WeakMap。内层的
+// `delete(最旧)` 也是与 `clear()` 不同的另一档淘汰策略（见下方 `runs` 的保留理由）。
 const subagentEndDeliveries = new WeakMap()
 
 /** 单条文本型配置的完整文本:texts 数组按空行拼接（单一文本字段）。
@@ -464,11 +468,29 @@ export const TURN_STOP_MAX_TRACKED_TURNS = 8
  *   claim(...)    落账，必须在 steer **之前**调用（steer 抛错也不允许重试越过预算）。
  */
 export function createTurnStopBudget() {
-  /** sessionId -> { turns: Map<turn, count>, total } */
-  const state = new Map()
+  /**
+   * 会话预算条目（`sessionState`：统一访问接口，策略逐条声明）。
+   *
+   * 键类型 `session.id`；淘汰策略超限 `clear()` 全清（与迁移前的 `sessionMapGet` 同档：
+   * 第 `MAX_TRACKED_SESSIONS` 个会话仍会清空整个容器）；**不声明复位**——预算是纯增量、
+   * 不可从事件流重建的计数（与 `progress-reminder` 同档），丢失时机必须与迁移前逐字一致，
+   * compaction 也不重置它。
+   *
+   * 本函数**没有 ctx**：`createTurnStopBudget()` 是 B3 交付物的一部分，对外签名与
+   * `entry/available/claim` 三个方法逐字不变（调用方见 actions.mjs 的 append-context 与
+   * 本文件的 turn-stop 层）。`sessionState` 只在声明了 `reset` 时才读 ctx，因此这里传
+   * `undefined` 合法且零开销（详见 shared.mjs 的 JSDoc 与 test/engine/session-state.test.mjs）。
+   */
+  const state = sessionState(undefined, () => ({ turns: new Map(), total: 0 }))
 
   const stateOf = (sessionId, turn) => {
-    const entry = sessionMapGet(state, sessionId, () => ({ turns: new Map(), total: 0 }))
+    // 对外仍是 `(sessionId, turn)`：按 id 造一次性键宿主，`keyOf` 取的就是 `.id`，与旧的
+    // `sessionMapGet(state, sessionId, …)` 写进同一个槽位、同一个 clear 时机。
+    // 唯一差异在**无 id 的会话**（`sessionId === undefined`）：`sessionState` 刻意不记账
+    // （见 shared.mjs），旧写法把 `undefined` 当一个共享槽位。两个调用点（actions.mjs 的
+    // append-context 与下方 turn-stop 层）都在 `entry()` 之前守卫 `session?.id === undefined`，
+    // 故该路径不可达；这里兜底一个新条目，避免将来误用时抛 TypeError。
+    const entry = state.get({ id: sessionId }) ?? { turns: new Map(), total: 0 }
     if (!Number.isFinite(turn)) return entry
     if (!entry.turns.has(turn) && entry.turns.size >= TURN_STOP_MAX_TRACKED_TURNS) {
       const oldest = [...entry.turns.keys()].sort((a, b) => a - b)
@@ -542,6 +564,9 @@ function wireSubagentEvents(ctx, configs, warnOnce) {
   const startConfigs = configs.filter((config) => config.layer === 'subagent-start')
   const endConfigs = configs.filter((config) => config.layer === 'subagent-end')
   const injectMain = endConfigs.some((config) => config.params?.action === 'inject-main')
+  // B4 保留原状（不迁 `sessionState`）：键是 `runId`（运行标识）而不是 session，不属于
+  // 「按会话索引」的会话态，套统一接口会把语义挪到错误的键上；它的 `delete(最旧)` 也是与
+  // `clear()` 不同的另一档淘汰策略，无等价证明前保留。
   const runs = new Map()
   if (injectMain) {
     disposers.push(ctx.on('subagent/start', (info) => {

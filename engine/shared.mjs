@@ -161,3 +161,94 @@ export function sessionMapGet(map, key, create) {
   }
   return entry
 }
+
+/**
+ * 会话态声明的统一访问接口（B4 T1 步骤一）。
+ *
+ * 收敛「每个模块自己维护会话态 Map、自己决定上限与清空策略、自己决定复位时机」，
+ * 但**不改变任何既有策略**：键类型、淘汰策略、复位语义逐项由调用方按现状声明，
+ * 本函数只把它们收进同一套读写入口。它**不替代** `sessionMapGet`（后者仍是
+ * 「按 id + 超限全清」这一档的实现，本函数在 `evict` 缺省且按 id 索引时逐字复用它）。
+ *
+ * ## 三个必答项（正好对应现状的三处差异）
+ *
+ *   1. **键类型**：`weak: true` 用会话**对象身份**（`WeakMap`，随对象回收、无上限，
+ *      既有先例见 `context-gate.mjs:154`）；缺省用 `session.id`（跨对象稳定的快路径键）。
+ *   2. **淘汰策略**：按 id 索引时缺省 `clear()` 全清（`MAX_TRACKED_SESSIONS` 上限，
+ *      清空只触发一次冷扫重建）；`evict: 'oldest'` 是**另一档**——只删早于当前新建的
+ *      一个条目，与 `clear()` **不等价**，只有调用方明确声明要用它时才生效（既有两处
+ *      见 `layers` 的去重 memo，B4 保留原状并注释）。
+ *   3. **复位语义**：`reset` **缺省完全不订阅** `session/event`（零开销，模块自行在其
+ *      既有监听里处理复位）；给了 `reset` 才注册一条监听，且**只有 `reset` 返回 true
+ *      才删除该会话条目**——由调用方按**状态字段**决定，不按模块决定
+ *      （`tool-bootstrap` 的 `stage` 与 `promotion` 策略相反，是这条的现成反例）。
+ *
+ * **纪律**：进程内状态是快路径，真相在 durable 事件流；迁移到本接口**不得**让任何判定
+ * 从 durable 事实退化为进程内状态，也不得改变任何门控/过滤的结果。
+ *
+ * @param {object} ctx 挂载期 ctx（只有声明了 `reset` 才需要它；缺 `on` 时 watchdog 不订阅）
+ * @param {() => any} create 新会话条目的工厂
+ * @param {object} [options]
+ * @param {boolean} [options.weak] 用会话对象身份做键（WeakMap，无上限）
+ * @param {number} [options.limit] 按 id 索引时的条目上限，缺省 `MAX_TRACKED_SESSIONS`
+ * @param {'clear'|'oldest'|null} [options.evict] 超限淘汰策略，缺省 `'clear'`
+ * @param {(session: unknown, event: unknown) => boolean} [options.reset] 复位判定
+ * @returns {{get: Function, peek: Function, set: Function, delete: Function, size: () => number, keys: Function, clear: Function}}
+ */
+export function sessionState(ctx, create, { weak = false, limit = MAX_TRACKED_SESSIONS, evict = 'clear', reset } = {}) {
+  const store = weak ? new WeakMap() : new Map()
+  const keyOf = (session) => (weak ? session : session?.id)
+  // ponytail: 无上限档（weak / limit: null / evict: null）与有上限档共用一条读写路径，
+  // 只在上限判定处分支；未声明上限时不创建任何额外计数器。
+  const finite = !weak && typeof limit === 'number' && limit > 0 && evict !== null
+  /** 超限处理：`clear` 与 `oldest` 是**两档不同语义**，绝不互相降级。 */
+  const settle = () => {
+    if (!finite) return
+    if (store.size < limit) return
+    if (evict === 'oldest') store.delete(store.keys().next().value)
+    else store.clear()
+  }
+  const peek = (session) => (keyOf(session) === undefined ? undefined : store.get(keyOf(session)))
+  const set = (session, value) => {
+    const key = keyOf(session)
+    // 无 id 的会话**不记账**（与 `predicates.mjs:343` 的既有决定一致）：共用一个 Map 键
+    // 会让两个会话串味，所以这里返回 undefined 而不是伪造一个存不住的条目。
+    if (key === undefined) return undefined
+    settle()
+    store.set(key, value)
+    return value
+  }
+  const get = (session) => {
+    const known = peek(session)
+    return known === undefined ? set(session, create()) : known
+  }
+  const remove = (session) => {
+    const key = keyOf(session)
+    return key === undefined ? false : store.delete(key)
+  }
+
+  // 复位：只在调用方声明了 reset 时订阅，且删除与否由 reset 的返回值决定。
+  if (typeof reset === 'function' && typeof ctx?.on === 'function') {
+    const disposer = ctx.on('session/event', (session, event) => {
+      try {
+        if (reset(session, event) === true) remove(session)
+      } catch {
+        // 复位失败不得影响事件流上的其它监听器（与各模块既有降级纪律一致）。
+      }
+    })
+    keepDisposer(ctx, disposer, 'session-state-reset')
+  }
+
+  return {
+    get,
+    peek,
+    set,
+    delete: remove,
+    size: () => (weak ? NaN : store.size),
+    keys: () => (weak ? [] : [...store.keys()]),
+    clear: () => { if (!weak) store.clear() },
+    weak,
+    limit: finite ? limit : null,
+    evict: finite ? evict : null,
+  }
+}

@@ -5,7 +5,7 @@
  * 仍支持 strategyDir 懒加载自定义模板策略。
  */
 
-import { MAX_TRACKED_SESSIONS, extractText, sessionEvents } from './shared.mjs'
+import { extractText, sessionEvents, sessionState } from './shared.mjs'
 import { MATCH_LOGIC, createAnchorMatcher } from './anchor-match.mjs'
 import { createTaskClassifier } from './classify-task.mjs'
 import { createPlaceholderResolver } from './fillers.mjs'
@@ -93,19 +93,33 @@ function createCustomFallbackResolver(config) {
   // 锚定匹配经 anchor-match 引擎（prefix 模式：首轮 reasoning 开头命中任一确认词）。
   const anchor = createAnchorMatcher({ keys: anchorWords, mode: 'prefix' })
 
-  const anchorScanned = new Map()
+  /**
+   * 锚定确认结果缓存（`sessionState`：统一访问接口，键 / 淘汰 / 复位三项与迁移前逐条相同）。
+   *
+   * - 键类型：`session.id`（进程内快路径，真相仍是 durable 事件流）。
+   * - 淘汰策略：超 `MAX_TRACKED_SESSIONS` 时 `clear()` 全清（`evict` 缺省档）。
+   * - 复位：**不声明**——本缓存纯派生自事件流（首条 assistant/message 的 reasoning 块），
+   *   没有复位语义；未声明 `reset` 时 `sessionState` 不订阅任何事件，`ctx` 完全用不到。
+   *
+   * `create` 不可达（本缓存只用 `peek`/`set`：未命中必须扫 durable 事件，不能凭空造值）。
+   * 缓存值是布尔，`false` 是**有效命中**，所以命中判定必须用 `peek(session) !== undefined`。
+   * 未找到首条 assistant/message 时返回 `false` 且**不写缓存**（决策未定，等下一条事件）。
+   * 无 `session.id` 的会话不记账（`sessionState` 既有决定，见 `predicates.mjs`）：每次重扫
+   * 该会话自己的事件流得同一结论。旧实现把这类会话缓存到共享的 `undefined` 键上，第二个
+   * 无 id 会话会读到第一个的缓存——现在以 durable 事实为准。
+   */
+  const anchorScanned = sessionState(undefined, () => false)
 
   const isAnchorConfirmed = (agent) => {
     const session = agent.session
-    const cached = anchorScanned.get(session.id)
+    const cached = anchorScanned.peek(session)
     if (cached !== undefined) return cached
     const first = sessionEvents(session).find((event) => event.type === 'assistant/message')
     if (first === undefined) return false
     const content = first.data?.message?.content ?? []
     const reasoning = content.find((block) => block.type === 'reasoning')
     const confirmed = reasoning !== undefined && anchor.scan(String(reasoning.text ?? '')).active
-    if (anchorScanned.size >= MAX_TRACKED_SESSIONS) anchorScanned.clear()
-    anchorScanned.set(session.id, confirmed)
+    anchorScanned.set(session, confirmed)
     return confirmed
   }
 

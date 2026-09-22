@@ -105,7 +105,7 @@
  */
 
 import { createEpochPromotion } from './compaction-epoch.mjs'
-import { MAX_TRACKED_SESSIONS, booleanOption, createWarnOnce, parsePromoteOn, requiredInt, requiredText, sessionEvents, validateConfig } from './shared.mjs'
+import { booleanOption, createWarnOnce, parsePromoteOn, requiredInt, requiredText, sessionEvents, sessionState, validateConfig } from './shared.mjs'
 
 /** Cordis plugin name used by loader diagnostics. */
 export const name = 'anchored-tool-bootstrap'
@@ -239,8 +239,18 @@ export function apply(ctx, config) {
       for (const tool of stage.tools) toolStage.set(tool, index)
     })
   }
-  /** sessionId -> 当前阶段（durable 推导；compaction 不重置）。 */
-  const stageBySession = new Map()
+  /**
+   * 当前阶段条目（`sessionState`：统一访问接口，策略逐条声明）。
+   *
+   * 键类型 `session.id`；淘汰策略超限 `clear()` 全清（与迁移前的 `sessionMapGet` 同档：
+   * 写入前 size 达上限就清空整个容器，只触发一次冷扫重建）；**不声明复位**——阶段是
+   * 会话级进度、由 durable tool/call 事件推导，**compaction 不重置**（B4 T2 的 `stage`
+   * 字段级声明；同模块的 `promotion` 字段相反，它订阅复位，由 compaction-epoch 自己管）。
+   *
+   * 读只用 `peek`：`get` 会在无条目时写入一个 0，让 `currentStage` 跳过冷扫，与迁移前
+   * 的读法（`map.get() ?? scanStage()`）不等价。`() => 0` 只是接口要求的缺省工厂。
+   */
+  const stageState = sessionState(ctx, () => 0)
   /** 从 tool/call 事件提取工具名（兼容 source.tool / toolName / name 形状）。 */
   const toolNameOf = (event) => {
     const data = event?.data
@@ -252,21 +262,17 @@ export function apply(ctx, config) {
     if (typeof message?.name === 'string') return message.name
     return ''
   }
-  const capStageBySession = () => {
-    if (stageBySession.size >= MAX_TRACKED_SESSIONS) stageBySession.clear()
-  }
-  const advanceStage = (sessionId, toolName) => {
+  const advanceStage = (session, toolName) => {
     if (stages === undefined) return
-    const current = stageBySession.get(sessionId) ?? 0
+    const current = stageState.peek(session) ?? 0
     if (toolName === stageAdvanceTool) {
-      capStageBySession()
-      stageBySession.set(sessionId, Math.min(current + 1, stages.length - 1))
+      // `set` 内部先淘汰后写入，与旧代码的「先 cap 再 set」同序。
+      stageState.set(session, Math.min(current + 1, stages.length - 1))
       return
     }
     const owned = toolStage.get(toolName)
     if (owned !== undefined && owned > current) {
-      capStageBySession()
-      stageBySession.set(sessionId, owned)
+      stageState.set(session, owned)
     }
   }
   /** 冷启动：从 durable log 重建阶段（resume/reload 同相位）。 */
@@ -281,14 +287,13 @@ export function apply(ctx, config) {
         if (owned !== undefined && owned > stage) stage = owned
       }
     }
-    capStageBySession()
-    stageBySession.set(session.id, stage)
+    stageState.set(session, stage)
     return stage
   }
   const currentStage = (session) => {
     if (stages === undefined) return 0
     if (session === undefined) return 0
-    const entry = stageBySession.get(session.id)
+    const entry = stageState.peek(session)
     return entry === undefined ? scanStage(session) : entry
   }
   // Core work set exposed after a compaction, before re-promotion. Empty
@@ -308,7 +313,7 @@ export function apply(ctx, config) {
   if (stages !== undefined) {
     ctx.on('session/event', (session, event) => {
       if (event?.type !== 'tool/call') return
-      advanceStage(session.id, toolNameOf(event))
+      advanceStage(session, toolNameOf(event))
     })
   }
 

@@ -20,7 +20,7 @@
  *  - 子代理默认不门控（brief 即计划）；includeSubagents: true 同门控。
  */
 
-import { booleanOption, extractText, requiredInt, requiredText, sessionEvents, sessionMapGet, validateConfig } from './shared.mjs'
+import { booleanOption, extractText, requiredInt, requiredText, sessionEvents, sessionState, validateConfig } from './shared.mjs'
 
 /** Cordis plugin name used by loader diagnostics. */
 export const name = 'deliberation-gate'
@@ -46,11 +46,20 @@ export function apply(ctx, config) {
   // 显式留空指令 = 不门控（没有拒绝说明就无法拒绝）。
   if (gateText === undefined) return
 
-  /** sessionId -> { turns: Map<turn, { chars, gates }>, lastTurn } */
-  const state = new Map()
+  /**
+   * 会话深度条目（`sessionState`：统一访问接口，策略与迁移前逐条相同）。
+   *
+   * 键类型 `session.id`、淘汰策略超限 `clear()` 全清、**不声明复位**——本模块的轮深度
+   * 本就靠 `turn/start` 重建，压缩不重置（B4 迁移只换访问方式，不改任何策略）。
+   *
+   * 无 id 的会话取不到条目（`sessionState` 不记账）→ 判定按「无条目 = 放行」降级，
+   * 与迁移前 `sessionMapGet(state, undefined, …)` 的行为一致（那时也会拿到一个
+   * 每事件都新建的条目，效果同样是门不住）。
+   */
+  const state = sessionState(ctx, () => ({ turns: new Map(), lastTurn: -1 }))
 
   /** 取（或建）会话深度条目。 */
-  const entryOf = (sessionId) => sessionMapGet(state, sessionId, () => ({ turns: new Map(), lastTurn: -1 }))
+  const entryOf = (session) => state.get(session) ?? { turns: new Map(), lastTurn: -1 }
 
   /** 取（或建）轮条目；修剪旧轮，长会话不累积状态。 */
   const turnEntryOf = (entry, turn) => {
@@ -77,26 +86,26 @@ export function apply(ctx, config) {
    * 唯一事件处理函数：冷扫 durable log 与实时 session/event 共用，
    * 重启前后按同一份计数判定。
    */
-  const observeEvent = (sessionId, event) => {
+  const observeEvent = (session, event) => {
     if (event?.type === 'assistant/message') {
       const turn = turnOf(event)
       // 深度只计 message.content 的文本长度：不读同一事件的 stream delta（双计），
       // 也不留存原文。
-      if (turn !== undefined) turnEntryOf(entryOf(sessionId), turn).chars += extractText(event.data).length
+      if (turn !== undefined) turnEntryOf(entryOf(session), turn).chars += extractText(event.data).length
       return
     }
     if (event?.type !== 'turn/start') return
     const turn = turnOf(event)
     // 新轮预算：深度 0、门计数 0，该轮首次工具调用前重新要求深思。
-    if (turn !== undefined) turnEntryOf(entryOf(sessionId), turn)
+    if (turn !== undefined) turnEntryOf(entryOf(session), turn)
   }
 
   /** 会话深度状态；首见冷扫 durable log（重启保持已计深度）。 */
   const depthOf = (session) => {
-    const known = state.get(session.id)
+    const known = state.peek(session)
     if (known !== undefined) return known
-    const entry = sessionMapGet(state, session.id, () => ({ turns: new Map(), lastTurn: -1 }))
-    for (const event of sessionEvents(session)) observeEvent(session.id, event)
+    const entry = state.get(session) ?? { turns: new Map(), lastTurn: -1 }
+    for (const event of sessionEvents(session)) observeEvent(session, event)
     if (entry.turns.size === 0) {
       // 无任何轮事件：深度视为 0 于哨兵轮，会话恰好门一次后放行。
       entry.turns.set(entry.lastTurn, { chars: 0, gates: 0 })
@@ -107,7 +116,7 @@ export function apply(ctx, config) {
   // 深度代理：durable turn/start + assistant/message，与冷扫同一个处理函数。
   ctx.on('session/event', (session, event) => {
     if (session?.id === undefined) return
-    observeEvent(session.id, event)
+    observeEvent(session, event)
   })
 
   // 门：同步决策，当前轮累计深度 < minChars 时最多 deny maxGatesPerTurn 次。

@@ -32,7 +32,7 @@
  * Non-gate mode keeps the original event-set semantics byte-for-byte.
  */
 
-import { MAX_TRACKED_SESSIONS, sessionEvents } from './shared.mjs'
+import { sessionEvents, sessionState } from './shared.mjs'
 
 /** 首段 reasoning 块分类（严格门控扩展）：we 且无 let me = minimal-like。 */
 export function classifyReasoning(text) {
@@ -67,9 +67,6 @@ export function createEpochPromotion(promoteEvents, options = {}) {
   const maxPromoteSteps = options.maxPromoteSteps
   const promote = new Set(promoteEvents)
   const gated = promoteGate || promoteAfterFirstResponse
-  /** sessionId -> entry（boundary/promoted + 门控字段） */
-  const state = new Map()
-
   const freshEntry = (boundary) => ({
     boundary,
     promoted: false,
@@ -79,6 +76,23 @@ export function createEpochPromotion(promoteEvents, options = {}) {
     turnEnded: false,
     steps: 0,
   })
+
+  /**
+   * 会话 epoch 条目容器（`sessionState`：统一访问接口，键 / 淘汰 / 复位三项与迁移前逐条相同）。
+   *
+   * - 键类型：`session.id`。
+   * - 淘汰策略：超 `MAX_TRACKED_SESSIONS` 时 `clear()` 全清（`evict` 缺省档），
+   *   清空只触发一次冷扫重建，相位由 durable 事件流重建。
+   * - 复位：**不声明**——压缩边界不是「删条目」：`applyEvent` 遇成功 `compaction/end`
+   *   直接把条目重置为 `freshEntry(seq)` 新边界（见 `scan` / `observe`），条目本身必须留在
+   *   容器里。声明 `reset` 只会多注册一条监听并改变语义，故 `ctx` 完全用不到、不传入。
+   *
+   * 无 `session.id` 的会话不记账（`sessionState` 既有决定，见 `predicates.mjs`）：`peek` 恒
+   * 未命中 → 每次按该会话自己的 durable 事件流重建。旧实现把这类会话的条目存在共享的
+   * `undefined` 键上（跨会话串味、且能把 `observe` 喂进来但不在事件流里的状态钉住），
+   * 现在以 durable 事实为准——方向与「状态是快路径、真相在事件流」的纪律一致。
+   */
+  const state = sessionState(undefined, () => freshEntry(-1))
 
   /** 门控晋升判定（严格门控扩展）。 */
   const decideGate = (entry) => {
@@ -114,8 +128,7 @@ export function createEpochPromotion(promoteEvents, options = {}) {
   const scan = (session) => {
     let entry = freshEntry(-1)
     for (const event of sessionEvents(session)) entry = applyEvent(entry, event)
-    if (state.size >= MAX_TRACKED_SESSIONS) state.clear()
-    state.set(session.id, entry)
+    state.set(session, entry)
     return entry
   }
 
@@ -134,17 +147,14 @@ export function createEpochPromotion(promoteEvents, options = {}) {
       // By default subagents keep the full catalog from their very first
       // request; includeSubagents makes them follow the normal bootstrap phase.
       if (!includeSubagents && (session.header?.delegationDepth ?? 0) > 0) return { boundary: -1, promoted: true }
-      return state.get(session.id) ?? scan(session)
+      return state.peek(session) ?? scan(session)
     },
     /** Incremental feed: call on every `session/event`. */
     observe(session, event) {
-      const entry = state.get(session.id)
+      const entry = state.peek(session)
       if (entry === undefined) return
       const next = applyEvent(entry, event)
-      if (next !== entry) {
-        if (state.size >= MAX_TRACKED_SESSIONS) state.clear()
-        state.set(session.id, next)
-      }
+      if (next !== entry) state.set(session, next)
     },
   }
 }

@@ -17,7 +17,7 @@
  * session 全局）；子代理默认不滴（brief 即计划）。
  */
 
-import { booleanOption, createWarnOnce, newMessageId, requiredInt, requiredText, sessionMapGet, validateConfig } from './shared.mjs'
+import { booleanOption, createWarnOnce, newMessageId, requiredInt, requiredText, sessionState, validateConfig } from './shared.mjs'
 
 /** Cordis plugin name used by loader diagnostics. */
 export const name = 'progress-reminder'
@@ -40,10 +40,20 @@ export function apply(ctx, config) {
   // 显式留空正文 = 不滴入（无提醒措辞即无节拍）。
   if (text === undefined) return
 
-  /** sessionId -> { results, drips, lastTurn } — 每轮计数。 */
-  const state = new Map()
+  /**
+   * 每轮计数条目（`sessionState`：统一访问接口，策略与迁移前逐条相同）。
+   *
+   * 键类型 `session.id`、淘汰策略超限 `clear()` 全清、**不声明复位**——复位时机由本模块
+   * 自己的 `turn/start` 监听按字段处理（B4 迁移只换访问方式，不改任何策略）。
+   *
+   * 注：本计数是**纯增量**、不可从事件流重建（B4 PLAN 的已知边界），所以它的丢失时机
+   * 与迁移前逐字一致才算零变更——`sessionState` 的 `clear()` 档正是 `sessionMapGet` 的
+   * 同一实现，第 4096 个会话仍会清空其它存活会话的预算。
+   */
+  const state = sessionState(ctx, () => ({ results: 0, drips: 0, lastTurn: undefined }))
 
-  const countersOf = (sessionId) => sessionMapGet(state, sessionId, () => ({ results: 0, drips: 0, lastTurn: undefined }))
+  /** 取（或建）会话计数条目；无 id 的会话取不到（调用方已有守卫）。 */
+  const countersOf = (session) => state.get(session) ?? { results: 0, drips: 0, lastTurn: undefined }
 
   const warnOnce = createWarnOnce(ctx, name)
 
@@ -52,7 +62,7 @@ export function apply(ctx, config) {
     if (session === undefined || session.id === undefined) return
     if (event.type === 'turn/start') {
       const turn = event.data?.turn
-      const entry = countersOf(session.id)
+      const entry = countersOf(session)
       if (entry.lastTurn !== turn) {
         entry.lastTurn = typeof turn === 'number' ? turn : entry.lastTurn
         entry.results = 0
@@ -63,7 +73,7 @@ export function apply(ctx, config) {
     if (event.type === 'assistant/chunk') {
       const turn = event.data?.turn
       if (typeof turn !== 'number') return
-      const entry = countersOf(session.id)
+      const entry = countersOf(session)
       if (entry.lastTurn === undefined || turn > entry.lastTurn) {
         entry.lastTurn = turn
         entry.results = 0
@@ -78,7 +88,7 @@ export function apply(ctx, config) {
     const eligible = session !== undefined
       && session.id !== undefined
       && (includeSubagents || (session.header?.delegationDepth ?? 0) === 0)
-    const entry = eligible ? countersOf(session.id) : undefined
+    const entry = eligible ? countersOf(session) : undefined
     if (entry !== undefined) entry.results += 1
     const due = entry !== undefined
       && every > 0
