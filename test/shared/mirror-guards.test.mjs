@@ -12,6 +12,9 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync, readdirSync } from 'node:fs'
+// engine/*.mjs 是纯 ESM，可直接 import：比正则解析源码更接近「实际取值」，
+// 也不会被格式调整（如把字面量表改成派生）误伤。src 的 TS 模块仍不 import。
+import { LAYER_CONTRACTS } from '../../engine/schema.mjs'
 
 const repoRoot = new URL('../../', import.meta.url)
 const readSource = (relativePath) => readFileSync(new URL(relativePath, repoRoot), 'utf8')
@@ -58,9 +61,8 @@ test('第一组(a)：手抄 ALLOWED 镜像与 engine/*.mjs 的 ALLOWED_KEYS 双�
 })
 
 test('第一组(b)：bridge 契约 content 联合与 LAYER_EDITING 实际取值同域', () => {
-  const editing = readSource('engine/schema.mjs').match(/const LAYER_EDITING = \{([\s\S]*?)\n\}/)?.[1]
-  assert.ok(editing !== undefined, 'engine/schema.mjs 应有 LAYER_EDITING')
-  const produced = new Set([...editing.matchAll(/content: '([a-z-]+)'/g)].map((match) => match[1]))
+  // 从**运行时导出**取引擎真实产出的 content 取值（LAYER_CONTRACTS 由 LAYER_EDITING 展开）。
+  const produced = new Set(Object.values(LAYER_CONTRACTS).map((contract) => contract.content))
   assert.ok(produced.size >= 5, `LAYER_EDITING 的 content 取值应 ≥5 种，实际 ${produced.size}`)
 
   const layerContract = readSource('src/shared/bridge-contract.ts')

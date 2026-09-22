@@ -141,13 +141,100 @@ export const STRATEGY_LAYER_SUPPORT = {
 const TEMPLATE_STRATEGY_LAYERS = ['pre-step', 'runtime-context']
 export const KNOWN_SLOT_KINDS = new Set(['ordered', 'anchor'])
 /**
- * 九个官方注入层的固定顺序：/meta 的 layerOrder、UI 层序与模板菜单共用这一份，
- * 各端不再各自维护层序清单。顺序即产品定义，改顺序等于改 UI 组织，不要只为排序调整。
+ * 九个官方注入层的**唯一权威定义**（B5 T1：原 `LAYER_ORDER` / `LAYER_FIELD_POLICIES` /
+ * `LAYER_EDITING` / `LAYER_LABELS` / `LAYER_DEFAULT_SUBJECT` 五处事实合一）。
+ *
+ * 新增或改一层只动这里一处：
+ *   - 数组顺序即 `layerOrder`（**产品定义**，改顺序等于改 UI 组织，不要只为排序调整）；
+ *   - `fields` 是层能力矩阵（11 项，客户端表单据此动态渲染）；
+ *   - `editing` 是字段能力表（subjects / content / variables / messageMetadata / params）；
+ *   - `label` 是由引擎统一下发给客户端的显示名与说明；
+ *   - `defaultSubject` 是该条件层的缺省匹配对象（不声明 = 该层没有匹配对象）。
+ *
+ * 下面所有导出都由本表**派生**，并保持既有名字与形状，外部消费方不受影响。
+ * `defaultSubject` 必须落在本层 `editing.subjects` 内——就近声明 + 加载期断言，
+ * 避免「缺省值不在允许集合里」这种只能靠运行期才发现的错配。
  */
-export const LAYER_ORDER = [
-  'pre-step', 'system-section', 'runtime-context', 'agent-request', 'llm-stream', 'tool-pipeline',
-  'turn-stop', 'subagent-start', 'subagent-end',
+const LAYER_DEFINITIONS = [
+  {
+    layer: 'pre-step',
+    fields: { position: true, dedupe: true, promotion: true, audience: true, modelScope: true, merge: true, order: true, role: true, placeholder: true, subject: true, match: true },
+    editing: { subjects: ['userMessage'], content: 'text', variables: true, messageMetadata: true, params: {} },
+    label: { title: '消息批层', detail: '官方默认层：agent/pre-step 消息批。支持 position / dedupe / promotion / audience / mergeMode 与文本插值。' },
+    defaultSubject: 'userMessage',
+  },
+  {
+    layer: 'system-section',
+    fields: { position: false, dedupe: false, promotion: false, audience: true, modelScope: false, merge: true, order: true, role: false, placeholder: false, subject: false, match: false },
+    editing: { subjects: [], content: 'text', variables: true, messageMetadata: false,
+      params: { sectionName: { type: 'string' }, complete: { type: 'boolean' }, suppressRuntimeContext: { type: 'boolean' } } },
+    label: { title: '系统段层', detail: 'system-section 静态层：注册即全局，由 order 与 params.complete / sectionName 控制。' },
+  },
+  {
+    layer: 'runtime-context',
+    fields: { position: false, dedupe: false, promotion: false, audience: false, modelScope: false, merge: true, order: true, role: false, placeholder: true, subject: false, match: false },
+    editing: { subjects: [], content: 'text', variables: true, messageMetadata: false, params: { contextName: { type: 'string' } } },
+    label: { title: '运行上下文', detail: 'runtime-context 层：static 按 order 注册，placeholder 单条生效，由 params.contextName 控制。' },
+  },
+  {
+    layer: 'agent-request',
+    fields: { position: false, dedupe: false, promotion: false, audience: true, modelScope: true, merge: false, order: true, role: false, placeholder: false, subject: false, match: false },
+    editing: { subjects: [], content: 'request', variables: false, messageMetadata: false,
+      params: { patch: { type: 'object' }, replace: { type: 'boolean' } } },
+    label: { title: '调用配置层', detail: 'agent-request 层：按 order 注册，params.patch 改写请求配置。' },
+  },
+  {
+    layer: 'llm-stream',
+    fields: { position: false, dedupe: false, promotion: false, audience: false, modelScope: true, merge: false, order: true, role: false, placeholder: false, subject: false, match: false },
+    editing: { subjects: [], content: 'stream', variables: false, messageMetadata: false,
+      params: { mode: { type: 'enum', values: ['pass', 'replace'] } } },
+    label: { title: '模型流层', detail: 'llm/stream 层：按 order 注册，params.mode = pass | replace。' },
+  },
+  {
+    layer: 'tool-pipeline',
+    fields: { position: false, dedupe: false, promotion: false, audience: true, modelScope: true, merge: false, order: true, role: false, placeholder: false, subject: true, match: true },
+    editing: { subjects: ['toolArgs', 'toolResult'], content: 'tool-result', variables: false, messageMetadata: false,
+      params: { toolNames: { type: 'string' }, preDecision: { type: 'enum', values: ['allow', 'deny', 'ask'] },
+        denyReason: { type: 'string' }, postAction: { type: 'enum', values: ['accept', 'replace', 'block'] } } },
+    label: { title: '工具管线层', detail: 'tools/* 层：按 order 注册，params.toolNames 与 preDecision / postAction 控制；subject / match 可选，命中才裁决。' },
+    defaultSubject: 'toolArgs',
+  },
+  {
+    layer: 'turn-stop',
+    fields: { position: false, dedupe: false, promotion: false, audience: false, modelScope: true, merge: false, order: true, role: false, placeholder: false, subject: true, match: true },
+    editing: { subjects: ['assistantText'], content: 'text', variables: true, messageMetadata: false, params: {} },
+    label: { title: '轮次停止层', detail: 'agent/turn-stopping 层：命中条件时强制续跑一步；引擎内置续跑上限，不可用配置关闭。' },
+    defaultSubject: 'assistantText',
+  },
+  {
+    layer: 'subagent-start',
+    fields: { position: false, dedupe: false, promotion: false, audience: false, modelScope: true, merge: false, order: true, role: false, placeholder: false, subject: true, match: true },
+    editing: { subjects: ['subagentInfo'], content: 'text', variables: true, messageMetadata: false, params: {} },
+    label: { title: '子代理启动层', detail: 'subagent/start 层：命中条件时向该子代理注入上下文。' },
+    defaultSubject: 'subagentInfo',
+  },
+  {
+    layer: 'subagent-end',
+    fields: { position: false, dedupe: false, promotion: false, audience: false, modelScope: true, merge: false, order: true, role: false, placeholder: false, subject: true, match: true },
+    editing: { subjects: ['subagentInfo'], content: 'subagent-result', variables: true, messageMetadata: false,
+      params: { action: { type: 'enum', values: ['observe', 'inject-main'] } } },
+    label: { title: '子代理结束层', detail: 'subagent/end 层：默认记录；action=inject-main 时向所属主会话注入配置文本，不改写子代理返回结果。' },
+    defaultSubject: 'subagentInfo',
+  },
 ]
+
+/** 就近断言：缺省匹配对象必须在本层允许的 subjects 内（新增层时最先撞到这里）。 */
+for (const definition of LAYER_DEFINITIONS) {
+  if (definition.defaultSubject === undefined) continue
+  if (!definition.editing.subjects.includes(definition.defaultSubject)) {
+    throw new TypeError(
+      `schema: layer ${definition.layer} defaultSubject ${definition.defaultSubject} must be one of its subjects`,
+    )
+  }
+}
+
+/** 九个官方注入层的固定顺序：/meta 的 layerOrder、UI 层序与模板菜单共用这一份。 */
+export const LAYER_ORDER = LAYER_DEFINITIONS.map((definition) => definition.layer)
 export const KNOWN_LAYERS = new Set(LAYER_ORDER)
 /**
  * 条件判定的匹配对象：决定把哪段文本交给 anchor-match 匹配器。
@@ -155,13 +242,11 @@ export const KNOWN_LAYERS = new Set(LAYER_ORDER)
  */
 export const KNOWN_SUBJECTS = new Set(['toolArgs', 'toolResult', 'userMessage', 'assistantText', 'subagentInfo'])
 /** 各条件层的缺省匹配对象；不在此表的层没有匹配对象。 */
-export const LAYER_DEFAULT_SUBJECT = {
-  'pre-step': 'userMessage',
-  'tool-pipeline': 'toolArgs',
-  'turn-stop': 'assistantText',
-  'subagent-start': 'subagentInfo',
-  'subagent-end': 'subagentInfo',
-}
+export const LAYER_DEFAULT_SUBJECT = Object.fromEntries(
+  LAYER_DEFINITIONS
+    .filter((definition) => definition.defaultSubject !== undefined)
+    .map((definition) => [definition.layer, definition.defaultSubject]),
+)
 /** 支持 subject / match 的层；其余层声明这两个字段即 fail loud（避免误以为是门）。 */
 export const CONDITIONAL_LAYERS = new Set(Object.keys(LAYER_DEFAULT_SUBJECT))
 export const KNOWN_POSITIONS = new Set(['after-user', 'before-all', 'after-all'])
@@ -185,36 +270,14 @@ export const EMITTABLE_ROLES = new Set(['user'])
 export const KNOWN_FILLS = new Set(['instruction-hint', 'env-facts', 'skill-catalog'])
 
 /** 层能力矩阵：每个字段只在对应注入层生效。客户端表单据此动态渲染。 */
-export const LAYER_FIELD_POLICIES = {
-  'pre-step': { position: true, dedupe: true, promotion: true, audience: true, modelScope: true, merge: true, order: true, role: true, placeholder: true, subject: true, match: true },
-  'system-section': { position: false, dedupe: false, promotion: false, audience: true, modelScope: false, merge: true, order: true, role: false, placeholder: false, subject: false, match: false },
-  'runtime-context': { position: false, dedupe: false, promotion: false, audience: false, modelScope: false, merge: true, order: true, role: false, placeholder: true, subject: false, match: false },
-  'agent-request': { position: false, dedupe: false, promotion: false, audience: true, modelScope: true, merge: false, order: true, role: false, placeholder: false, subject: false, match: false },
-  'llm-stream': { position: false, dedupe: false, promotion: false, audience: false, modelScope: true, merge: false, order: true, role: false, placeholder: false, subject: false, match: false },
-  'tool-pipeline': { position: false, dedupe: false, promotion: false, audience: true, modelScope: true, merge: false, order: true, role: false, placeholder: false, subject: true, match: true },
-  'turn-stop': { position: false, dedupe: false, promotion: false, audience: false, modelScope: true, merge: false, order: true, role: false, placeholder: false, subject: true, match: true },
-  'subagent-start': { position: false, dedupe: false, promotion: false, audience: false, modelScope: true, merge: false, order: true, role: false, placeholder: false, subject: true, match: true },
-  'subagent-end': { position: false, dedupe: false, promotion: false, audience: false, modelScope: true, merge: false, order: true, role: false, placeholder: false, subject: true, match: true },
-}
+export const LAYER_FIELD_POLICIES = Object.fromEntries(
+  LAYER_DEFINITIONS.map((definition) => [definition.layer, definition.fields]),
+)
 
 /** 局部参数只登记真实消费字段；未知扩展键仍保留，策略参数由各策略消费。 */
-const LAYER_EDITING = {
-  'pre-step': { subjects: ['userMessage'], content: 'text', variables: true, messageMetadata: true, params: {} },
-  'system-section': { subjects: [], content: 'text', variables: true, messageMetadata: false,
-    params: { sectionName: { type: 'string' }, complete: { type: 'boolean' }, suppressRuntimeContext: { type: 'boolean' } } },
-  'runtime-context': { subjects: [], content: 'text', variables: true, messageMetadata: false, params: { contextName: { type: 'string' } } },
-  'agent-request': { subjects: [], content: 'request', variables: false, messageMetadata: false,
-    params: { patch: { type: 'object' }, replace: { type: 'boolean' } } },
-  'llm-stream': { subjects: [], content: 'stream', variables: false, messageMetadata: false,
-    params: { mode: { type: 'enum', values: ['pass', 'replace'] } } },
-  'tool-pipeline': { subjects: ['toolArgs', 'toolResult'], content: 'tool-result', variables: false, messageMetadata: false,
-    params: { toolNames: { type: 'string' }, preDecision: { type: 'enum', values: ['allow', 'deny', 'ask'] },
-      denyReason: { type: 'string' }, postAction: { type: 'enum', values: ['accept', 'replace', 'block'] } } },
-  'turn-stop': { subjects: ['assistantText'], content: 'text', variables: true, messageMetadata: false, params: {} },
-  'subagent-start': { subjects: ['subagentInfo'], content: 'text', variables: true, messageMetadata: false, params: {} },
-  'subagent-end': { subjects: ['subagentInfo'], content: 'subagent-result', variables: true, messageMetadata: false,
-    params: { action: { type: 'enum', values: ['observe', 'inject-main'] } } },
-}
+const LAYER_EDITING = Object.fromEntries(
+  LAYER_DEFINITIONS.map((definition) => [definition.layer, definition.editing]),
+)
 
 export const LAYER_CONTRACTS = Object.fromEntries(LAYER_ORDER.map(layer => [layer, {
   strategies: [...KNOWN_STRATEGIES].filter(strategy => STRATEGY_LAYER_SUPPORT[strategy] === null || STRATEGY_LAYER_SUPPORT[strategy].includes(layer)),
@@ -222,17 +285,9 @@ export const LAYER_CONTRACTS = Object.fromEntries(LAYER_ORDER.map(layer => [laye
 }]))
 
 /** 层显示名与说明：由引擎统一下发，客户端不再各自维护。 */
-export const LAYER_LABELS = {
-  'pre-step': { title: '消息批层', detail: '官方默认层：agent/pre-step 消息批。支持 position / dedupe / promotion / audience / mergeMode 与文本插值。' },
-  'system-section': { title: '系统段层', detail: 'system-section 静态层：注册即全局，由 order 与 params.complete / sectionName 控制。' },
-  'runtime-context': { title: '运行上下文', detail: 'runtime-context 层：static 按 order 注册，placeholder 单条生效，由 params.contextName 控制。' },
-  'agent-request': { title: '调用配置层', detail: 'agent-request 层：按 order 注册，params.patch 改写请求配置。' },
-  'llm-stream': { title: '模型流层', detail: 'llm/stream 层：按 order 注册，params.mode = pass | replace。' },
-  'tool-pipeline': { title: '工具管线层', detail: 'tools/* 层：按 order 注册，params.toolNames 与 preDecision / postAction 控制；subject / match 可选，命中才裁决。' },
-  'turn-stop': { title: '轮次停止层', detail: 'agent/turn-stopping 层：命中条件时强制续跑一步；引擎内置续跑上限，不可用配置关闭。' },
-  'subagent-start': { title: '子代理启动层', detail: 'subagent/start 层：命中条件时向该子代理注入上下文。' },
-  'subagent-end': { title: '子代理结束层', detail: 'subagent/end 层：默认记录；action=inject-main 时向所属主会话注入配置文本，不改写子代理返回结果。' },
-}
+export const LAYER_LABELS = Object.fromEntries(
+  LAYER_DEFINITIONS.map((definition) => [definition.layer, definition.label]),
+)
 
 /** 引擎能力矩阵：作为 /meta 的唯一数据源，客户端表单据此动态渲染。 */
 export function getEngineMeta() {
@@ -344,6 +399,117 @@ function normalizeLayerParams(raw, layer, label) {
   return params
 }
 
+const isFiniteNumber = (value) => typeof value === 'number' && Number.isFinite(value)
+const isNonEmptyString = (value) => typeof value === 'string' && value.length > 0
+
+/**
+ * promptConfig 标量字段的校验与归一声明（B5 T2）。
+ *
+ * 原来 `createPromptConfigs` 里同一个模式手写了 15 遍（`const X = spec.X ?? D` 紧跟
+ * `if (!KNOWN_X.has(X)) throw …`）。这里把「枚举 / 缺省 / 形态」收进一份表，遍历一次完成。
+ *
+ * 三个旋钮覆盖现状里**逐字段不同**的三种 null 处置，必须逐条保留：
+ *   - `known` + `default`：`null`/`undefined` 取缺省，其余必须是枚举成员（原 `spec.X ?? D`）；
+ *   - `keepNull`：显式 `null` 合法且**原样保留**（audience 专用：null = 公用，与缺省的
+ *     undefined 不是同一档）；
+ *   - `optional`：缺失即不设置；一旦存在（**含 null**）就按 `validate` 校验形态。
+ *
+ * 表里需要额外上下文的项用 `resolve`（subject 有「全局集合 + 层内允许集」两条语义与层缺省
+ * 回退）。**表顺序 = 报错顺序**：与手写版逐个检查的先后完全一致，同一组非法输入必须先报同一处。
+ *
+ * 不在此表（各自领域的权威，留在原处）：`params`（`normalizeLayerParams`）、`match`
+ * （`normalizeMatch`）、`text`/`texts`（多来源合并）、`strategy`/`configKind`/`layer`
+ * （各自带额外上下文校验）。
+ */
+export const CONFIG_FIELDS = [
+  { field: 'position', known: KNOWN_POSITIONS, default: 'after-user' },
+  { field: 'dedupe', known: KNOWN_DEDUPES, default: 'none' },
+  { field: 'promotion', known: KNOWN_PROMOTIONS, default: 'none' },
+  { field: 'audience', known: KNOWN_AUDIENCES, keepNull: true, keepMissing: true },
+  { field: 'modelScope', known: KNOWN_MODEL_SCOPES, default: 'all' },
+  { field: 'role', known: KNOWN_ROLES, default: 'user' },
+  {
+    field: 'subject',
+    resolve: (spec, { label, layer }) => {
+      // 条件判定：subject 决定把哪段文本交给匹配器（缺省由层决定），match 缺省 = 无条件。
+      if (spec.subject !== undefined && !KNOWN_SUBJECTS.has(spec.subject)) {
+        throw new TypeError(`${name}: ${label} unknown subject ${JSON.stringify(spec.subject)} — known subjects: ${[...KNOWN_SUBJECTS].sort().join(', ')}`)
+      }
+      if (spec.subject !== undefined && !LAYER_CONTRACTS[layer].subjects.includes(spec.subject)) {
+        throw new TypeError(`${name}: ${label}.subject ${JSON.stringify(spec.subject)} is unavailable on layer ${JSON.stringify(layer)}`)
+      }
+      return spec.subject ?? LAYER_DEFAULT_SUBJECT[layer]
+    },
+  },
+  {
+    field: 'identity',
+    resolve: (spec, { label }) => {
+      // identity 仅支持 plugin 命名空间（kind 模式与 sourceKind 重复，已归一）。
+      const identity = spec.identity ?? { field: 'plugin', value: spec.id }
+      if (identity === null || typeof identity !== 'object' || Array.isArray(identity)
+        || identity.field !== 'plugin' || typeof identity.value !== 'string' || identity.value.length === 0) {
+        throw new TypeError(`${name}: ${label}.identity must be { field: 'plugin', value: string }`)
+      }
+      return identity
+    },
+  },
+  { field: 'order', default: 0, validate: isFiniteNumber, problem: 'must be a finite number' },
+  { field: 'group', optional: true, validate: isNonEmptyString, problem: 'must be a non-empty string when present' },
+  { field: 'exclusive', optional: true, validate: (value) => typeof value === 'boolean', problem: 'must be a boolean when present' },
+  { field: 'name', optional: true, validate: isNonEmptyString, problem: 'must be a non-empty string when present' },
+  {
+    field: 'variables',
+    resolve: (spec, { label }) => {
+      if (spec.variables !== undefined && (spec.variables === null || typeof spec.variables !== 'object' || Array.isArray(spec.variables))) {
+        throw new TypeError(`${name}: ${label}.variables must be an object when present`)
+      }
+      return spec.variables
+    },
+  },
+  {
+    field: 'texts',
+    resolve: (spec, { label }) => {
+      if (spec.texts !== undefined && (!Array.isArray(spec.texts) || spec.texts.some((item) => typeof item !== 'string'))) {
+        throw new TypeError(`${name}: ${label}.texts must be an array of strings when present`)
+      }
+      return spec.texts
+    },
+  },
+  { field: 'mergeMode', known: KNOWN_MERGE_MODES, default: 'separate' },
+]
+
+/** 按 {@link CONFIG_FIELDS} 遍历一次，产出全部标量字段的归一值（或按表顺序 fail loud）。 */
+function resolveConfigFields(spec, label, layer) {
+  const resolved = {}
+  for (const rule of CONFIG_FIELDS) {
+    if (typeof rule.resolve === 'function') {
+      resolved[rule.field] = rule.resolve(spec, { label, layer })
+      continue
+    }
+    const raw = spec[rule.field]
+    if (raw === undefined && (rule.optional === true || rule.keepMissing === true)) {
+      if (rule.keepMissing === true) resolved[rule.field] = undefined
+      continue
+    }
+    if (raw === null && rule.keepNull === true) {
+      resolved[rule.field] = null
+      continue
+    }
+    if (raw == null && rule.default !== undefined) {
+      resolved[rule.field] = rule.default
+      continue
+    }
+    if (rule.known !== undefined && !rule.known.has(raw)) {
+      throw new TypeError(`${name}: ${label} unknown ${rule.field} ${JSON.stringify(raw)}`)
+    }
+    if (rule.validate !== undefined && rule.validate(raw) !== true) {
+      throw new TypeError(`${name}: ${label}.${rule.field} ${rule.problem}`)
+    }
+    resolved[rule.field] = raw
+  }
+  return resolved
+}
+
 /** 从 YAML 提示词配置描述构造运行时提示词配置。配置错误必须在挂载时暴露(fail loud)。 */
 export function createPromptConfigs(specs, options = {}) {
   if (specs === undefined) return []
@@ -395,68 +561,11 @@ export function createPromptConfigs(specs, options = {}) {
     if (restricted.length > 0) {
       throw new TypeError(`${name}: ${label} layer ${JSON.stringify(layer)} does not support field(s): ${restricted.join(', ')}`)
     }
-    const position = spec.position ?? 'after-user'
-    if (!KNOWN_POSITIONS.has(position)) {
-      throw new TypeError(`${name}: ${label} unknown position ${JSON.stringify(position)}`)
-    }
-    const dedupe = spec.dedupe ?? 'none'
-    if (!KNOWN_DEDUPES.has(dedupe)) {
-      throw new TypeError(`${name}: ${label} unknown dedupe ${JSON.stringify(dedupe)}`)
-    }
-    const promotion = spec.promotion ?? 'none'
-    if (!KNOWN_PROMOTIONS.has(promotion)) {
-      throw new TypeError(`${name}: ${label} unknown promotion ${JSON.stringify(promotion)}`)
-    }
-    const audience = spec.audience
-    if (audience !== undefined && audience !== null && !KNOWN_AUDIENCES.has(audience)) {
-      throw new TypeError(`${name}: ${label} unknown audience ${JSON.stringify(audience)}`)
-    }
-    const modelScope = spec.modelScope ?? 'all'
-    if (!KNOWN_MODEL_SCOPES.has(modelScope)) {
-      throw new TypeError(`${name}: ${label} unknown modelScope ${JSON.stringify(modelScope)}`)
-    }
-    const role = spec.role ?? 'user'
-    if (!KNOWN_ROLES.has(role)) {
-      throw new TypeError(`${name}: ${label} unknown role ${JSON.stringify(role)}`)
-    }
-    // 条件判定：subject 决定把哪段文本交给匹配器（缺省由层决定），match 缺省 = 无条件。
-    if (spec.subject !== undefined && !KNOWN_SUBJECTS.has(spec.subject)) {
-      throw new TypeError(`${name}: ${label} unknown subject ${JSON.stringify(spec.subject)} — known subjects: ${[...KNOWN_SUBJECTS].sort().join(', ')}`)
-    }
-    if (spec.subject !== undefined && !LAYER_CONTRACTS[layer].subjects.includes(spec.subject)) {
-      throw new TypeError(`${name}: ${label}.subject ${JSON.stringify(spec.subject)} is unavailable on layer ${JSON.stringify(layer)}`)
-    }
-    const subject = spec.subject ?? LAYER_DEFAULT_SUBJECT[layer]
+    // 标量字段统一校验与归一（B5 T2：原 15 段同型校验收敛为一次遍历，表顺序即报错顺序）。
+    // 传**裸 label**：前缀 `${name}: ` 由 resolveConfigFields 与各 resolve 自行补齐。
+    const fields = resolveConfigFields(spec, label, layer)
+    // subject 已由 fields 归一（含「全局集合 + 层内允许集」两条语义与层缺省回退）。
     const match = normalizeMatch(spec.match, `${name}: ${label}`)
-  // identity 仅支持 plugin 命名空间（kind 模式与 sourceKind 重复，已归一）。
-  const identity = spec.identity ?? { field: 'plugin', value: spec.id }
-  if (identity === null || typeof identity !== 'object' || Array.isArray(identity)
-  || identity.field !== 'plugin' || typeof identity.value !== 'string' || identity.value.length === 0) {
-    throw new TypeError(`${name}: ${label}.identity must be { field: 'plugin', value: string }`)
-    }
-    const order = spec.order ?? 0
-    if (typeof order !== 'number' || !Number.isFinite(order)) {
-      throw new TypeError(`${name}: ${label}.order must be a finite number`)
-    }
-    if (spec.group !== undefined && (typeof spec.group !== 'string' || spec.group.length === 0)) {
-      throw new TypeError(`${name}: ${label}.group must be a non-empty string when present`)
-    }
-    if (spec.exclusive !== undefined && typeof spec.exclusive !== 'boolean') {
-      throw new TypeError(`${name}: ${label}.exclusive must be a boolean when present`)
-    }
-    if (spec.name !== undefined && (typeof spec.name !== 'string' || spec.name.length === 0)) {
-      throw new TypeError(`${name}: ${label}.name must be a non-empty string when present`)
-    }
-    if (spec.variables !== undefined && (spec.variables === null || typeof spec.variables !== 'object' || Array.isArray(spec.variables))) {
-      throw new TypeError(`${name}: ${label}.variables must be an object when present`)
-    }
-    if (spec.texts !== undefined && (!Array.isArray(spec.texts) || spec.texts.some((item) => typeof item !== 'string'))) {
-      throw new TypeError(`${name}: ${label}.texts must be an array of strings when present`)
-    }
-    const mergeMode = spec.mergeMode ?? 'separate'
-    if (!KNOWN_MERGE_MODES.has(mergeMode)) {
-      throw new TypeError(`${name}: ${label} unknown mergeMode ${JSON.stringify(mergeMode)}`)
-    }
     // placeholder 的层限制由上面的 STRATEGY_LAYER_SUPPORT 统一校验（此处不再重复）。
     let fill
     if (strategy === 'placeholder') {
@@ -476,27 +585,27 @@ export function createPromptConfigs(specs, options = {}) {
     const params = normalizeLayerParams(spec.params, layer, `${name}: ${label}`)
     const config = {
       id: spec.id,
-      name: typeof spec.name === 'string' ? spec.name : spec.id,
+      name: fields.name ?? spec.id,
       enabled: spec.enabled !== false,
       strategy,
       configKind,
       layer,
-      group: typeof spec.group === 'string' ? spec.group : undefined,
-      exclusive: spec.exclusive === true,
-      order,
-      role,
+      group: fields.group,
+      exclusive: fields.exclusive === true,
+      order: fields.order,
+      role: fields.role,
       fill,
-      position,
-      dedupe,
-      promotion,
-      audience,
-      modelScope,
-      subject,
+      position: fields.position,
+      dedupe: fields.dedupe,
+      promotion: fields.promotion,
+      audience: fields.audience,
+      modelScope: fields.modelScope,
+      subject: fields.subject,
       match,
       sourceKind: typeof spec.sourceKind === 'string' && spec.sourceKind.length > 0 ? spec.sourceKind : spec.id,
       form: typeof spec.form === 'string' ? spec.form : 'notice',
       summary: typeof spec.summary === 'string' ? spec.summary : '',
-      identity,
+      identity: fields.identity,
       // text/texts 统一：text 为单块便捷写法，运行时与渲染只消费 texts。
       texts: (() => {
         const specText = typeof spec.text === 'string' && spec.text.length > 0 ? spec.text : undefined
@@ -506,8 +615,8 @@ export function createPromptConfigs(specs, options = {}) {
           ? [...(specText !== undefined ? [specText] : []), ...specTexts]
           : (templateText.length > 0 ? [templateText] : [])
       })(),
-      mergeMode,
-      variables: spec.variables !== null && typeof spec.variables === 'object' && !Array.isArray(spec.variables) ? spec.variables : {},
+      mergeMode: fields.mergeMode,
+      variables: fields.variables ?? {},
       templatePatch,
       params,
     }
