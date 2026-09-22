@@ -3,6 +3,8 @@ import assert from 'node:assert/strict'
 import { cpSync, mkdtempSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { Context } from '@deepseek-ai/cordis'
+import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 const home = mkdtempSync(join(process.cwd(), 'pt-contract-'))
 process.env.DSH_HOME = home
 const { BRIDGE_ENDPOINTS, SETTINGS_BRIDGE_PREFIX } = await import('../../src/shared/bridge-contract.ts')
@@ -17,7 +19,7 @@ test.after(() => {
 
 // 跨端契约测试：shared 常量（client 消费）必须与 server 注册路由逐点一致。
 
-function makeHarness() {
+function makeHarness(otherServices = {}, logger = undefined) {
   const handlers = new Map()
   const agentPresets = {
     list: async () => [{ id: 'official', trust: 'system' }],
@@ -37,14 +39,14 @@ function makeHarness() {
     tools: {
       schemas: () => [{ name: 'bash', description: '运行命令' }],
     },
-    get: (name) => name === 'agentPresets' ? agentPresets : undefined,
+    get: (name) => name === 'agentPresets' ? agentPresets : otherServices[name],
     effect: (fn) => { const dispose = fn(); if (dispose) bridgeDisposers.push(dispose) },
   }
   // Cordis 语义：未 inject 的服务属性访问直接抛错，可选服务只能经 ctx.get 解析。
   Object.defineProperty(sctx, 'agentPresets', {
     get() { throw new Error('cannot get property "agentPresets" without inject') },
   })
-  const ctx = { inject: (_deps, cb) => cb(sctx) }
+  const ctx = { inject: (_deps, cb) => cb(sctx), ...(logger === undefined ? {} : { logger }) }
   return { ctx, handlers }
 }
 
@@ -202,6 +204,57 @@ test('契约：/meta 与 /bootstrap 同源下发 layerOrder 与 editorGroups，�
   assert.deepEqual(meta.layerContracts, getEngineMeta().layerContracts)
   assert.deepEqual(boot.layerContracts, meta.layerContracts)
   assert.equal(Object.keys(meta.layerContracts).length, 9)
+})
+
+test('契约：官方装配刻度随 /meta 与 /bootstrap 同源下发，服务缺失时整张表缺席且只告警一次', async (t) => {
+  // 刻度数值只认官方实现：这里挂真实 SystemPrompt，不喂手抄数值。
+  const root = new Context()
+  await root.plugin(SystemPrompt, { includeHarnessIdentity: false })
+  t.after(async () => { await root.fiber.dispose() })
+
+  const warnings = []
+  const present = makeHarness({ systemPrompt: root.systemPrompt }, { warn: (message) => warnings.push(message) })
+  registerSettingsBridge(
+    present.ctx, 'prompt-tool',
+    () => ({ available: true, providers: ['deepseek-official'] }), () => makeSkillsState(), () => '',
+  )
+  const metaRes = fakeRes()
+  await present.handlers.get(SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.meta)(fakeReq(), metaRes)
+  assert.equal(metaRes.status, 200)
+  const meta = JSON.parse(metaRes.body).value.meta
+  assert.ok(meta.officialOrders, '真实服务在位时必须下发刻度')
+  assert.equal(meta.officialOrders.sections.length, 6)
+  assert.equal(meta.officialOrders.contexts.length, 1)
+  for (const segment of [...meta.officialOrders.sections, ...meta.officialOrders.contexts]) {
+    assert.equal(typeof segment.id, 'string')
+    assert.equal(Number.isFinite(segment.from), true)
+    assert.equal(Number.isFinite(segment.to), true)
+    assert.ok(segment.from <= segment.to, `${segment.id}: from 不得大于 to`)
+  }
+  assert.equal(JSON.stringify(meta.officialOrders).includes('function'), false, '不得下发函数')
+  assert.equal(warnings.length, 0, '服务在位时不得告警')
+
+  const bootRes = fakeRes()
+  await present.handlers.get(SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.bootstrap)(fakeReq(), bootRes)
+  assert.equal(bootRes.status, 200)
+  assert.deepEqual(JSON.parse(bootRes.body).meta.meta.officialOrders, meta.officialOrders,
+    '/bootstrap 与 /meta 必须同源（同一份 loadEngineMeta）')
+
+  // 服务缺失：字段整体缺席、端点不失败，且只告警一次（两个端点共用同一函数）。
+  const missingWarnings = []
+  const missing = makeHarness({}, { warn: (message) => missingWarnings.push(message) })
+  registerSettingsBridge(
+    missing.ctx, 'prompt-tool',
+    () => ({ available: true, providers: ['deepseek-official'] }), () => makeSkillsState(), () => '',
+  )
+  for (const endpoint of [BRIDGE_ENDPOINTS.meta, BRIDGE_ENDPOINTS.meta]) {
+    const res = fakeRes()
+    await missing.handlers.get(SETTINGS_BRIDGE_PREFIX + endpoint)(fakeReq(), res)
+    assert.equal(res.status, 200, '服务缺失不得让端点失败')
+    assert.equal(JSON.parse(res.body).value.meta.officialOrders, undefined, '服务缺失 ⇒ 字段整体缺席，绝不部分下发')
+  }
+  assert.equal(missingWarnings.length, 1, '取值失败只告警一次，不随请求刷屏')
+  assert.match(missingWarnings[0], /官方装配档位/)
 })
 
 test('契约：复制引擎目录即可提供层契约，不依赖 src', async () => {

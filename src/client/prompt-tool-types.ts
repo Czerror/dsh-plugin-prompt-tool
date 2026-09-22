@@ -1,5 +1,6 @@
 /** 客户端共享类型：提示词配置草稿、层能力矩阵与引擎 /meta 载荷。 */
 import type { EngineMetaLayerContract, PromptConfigSourceView, StConversionReport, StOrderGroupCandidate } from '../shared/bridge-contract.ts'
+import type { OfficialOrdersView } from '../shared/official-orders.ts'
 import type { AssetImportRequest, AssetSummary } from '../shared/asset-transfer.ts'
 
 /**
@@ -119,6 +120,13 @@ export type LayerFieldPolicy = Record<LayerFieldPolicyKey, boolean>
 
 /** settings bridge /meta 返回的引擎能力矩阵。层行为、顺序和编辑组见 {@link EngineMetaLayerContract}。 */
 export interface EngineMeta extends Partial<EngineMetaLayerContract> {
+  /**
+   * 官方装配档位的区段刻度（B8 W2）：`from`/`to` 都是**运行期**从官方服务求得的值，
+   * 客户端不得硬编码任何档位数值。只用于 `system-section` / `runtime-context` 两层的
+   * order 快捷填值；服务降级或官方档位名不匹配时整张表缺席，此时**不渲染**刻度下拉
+   * （数字输入仍是唯一真相与唯一写入通道）。
+   */
+  officialOrders?: OfficialOrdersView
   /** 可用预设模板清单（UI 预设切换器）。 */
   presets?: Array<{ id: string; name: string; user?: boolean; renderable?: boolean; description?: string; meta?: Record<string, unknown> }>
   /** 插件目录内置模板清单（「新建预设」选择器数据源）。 */

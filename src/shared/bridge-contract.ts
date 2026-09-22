@@ -8,6 +8,7 @@ import type { PersonaSpec } from './persona-section.ts'
 import type { AssetImportRequest, AssetSummary, ImportKind, PresetExportRequest, PresetExportResult } from './asset-transfer.ts'
 import type { EngineEditorGroup, EngineLayer } from './engine-capabilities.ts'
 import type { ConfigFieldSources } from './managed-config-fields.ts'
+import type { OfficialOrdersView } from './official-orders.ts'
 import type { SkillPolicyChange, SkillsCatalogSnapshot } from './skills.ts'
 import type {
   InstructionFileWriteResult,
@@ -305,7 +306,11 @@ export interface PromptConfigSourceView {
 
 /** 端点级响应 value 契约（value 字段形状；扩展字段仍以 value 旁可选字段出现）。 */
 export interface BridgeValueMap {
-  meta: { meta: Record<string, unknown> & Partial<EngineMetaLayerContract> }
+  /**
+   * `/meta` 与 `/bootstrap` 的 meta 段：层契约 + 官方装配刻度。
+   * `officialOrders` 缺席表示服务降级或官方档位名不匹配，消费方必须退化（不渲染刻度）。
+   */
+  meta: { meta: Record<string, unknown> & Partial<EngineMetaLayerContract> & { officialOrders?: OfficialOrdersView } }
   bootstrap: BridgeSettingsView
   describe: BridgeSettingsView
   models: { modelCatalog: Record<string, string[]> }

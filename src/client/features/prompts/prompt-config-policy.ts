@@ -72,6 +72,18 @@ export const MERGE_MODE_LABEL_KEYS: Record<string, PromptToolLocaleKey> = { sepa
 export const DEDUPE_LABEL_KEYS: Record<string, PromptToolLocaleKey> = { none: 'dedupe.none', session: 'dedupe.session', batch: 'dedupe.batch' }
 export const PROMOTION_LABEL_KEYS: Record<string, PromptToolLocaleKey> = { none: 'promotion.none', main: 'promotion.main', 'include-subagents': 'promotion.subagents' }
 export const MODEL_SCOPE_LABEL_KEYS: Record<string, PromptToolLocaleKey> = { all: 'modelScope.all', pro: 'modelScope.pro', flash: 'modelScope.flash' }
+/** 官方装配刻度的区段显示名（id 来自 src/shared/official-orders.ts；这里只有名字，没有数值）。 */
+export const OFFICIAL_ORDER_GROUP_LABEL_KEYS: Record<string, PromptToolLocaleKey> = {
+  identity: 'orderGroup.identity',
+  policy: 'orderGroup.policy',
+  tools: 'orderGroup.tools',
+  sdk: 'orderGroup.sdk',
+  deliverable: 'orderGroup.deliverable',
+  closing: 'orderGroup.closing',
+  'runtime-policy': 'orderGroup.runtimePolicy',
+}
+/** 只有把 order 原样交给官方 `section()` / `context()` 的两层才展示官方刻度。 */
+export const OFFICIAL_ORDER_LAYERS: readonly EngineLayer[] = ['system-section', 'runtime-context']
 export const FILL_LABEL_KEYS: Record<string, PromptToolLocaleKey> = { '': 'fill.none', 'instruction-hint': 'fill.instructionHint', 'env-facts': 'fill.envFacts', 'skill-catalog': 'fill.skillCatalog' }
 /** 上述两个 UI 专有取值集的标签键：没有引擎值可对拍，只给本地下拉用。 */
 export const SOURCE_KIND_LABEL_KEYS: Record<string, PromptToolLocaleKey> = { '': 'sourceKind.default', plugin: 'sourceKind.plugin', 'instruction-hint': 'sourceKind.instructionHint', 'instruction-file': 'sourceKind.instructionFile', 'skill-catalog': 'sourceKind.skillCatalog', 'env-facts': 'sourceKind.envFacts' }

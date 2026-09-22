@@ -605,6 +605,7 @@ world-book 视图只隐藏工具栏之外的列表主体之外的附加提示，
 - 首屏使用一次 bootstrap 聚合；模型目录惰性加载并缓存。
 - filter/search 只在客户端运行；不引入虚拟列表、dynamic import 或 code splitting 来解决尚未出现的规模问题。
 - UI 分组不建立六个插入点的全局执行顺序；order 只在同一官方 seam 内解释。
+- order 的官方刻度只出现在 `system-section` 与 `runtime-context` 两层的 order 字段旁（只有这两层把 order 交给官方 `section()` / `context()`）：一个「插入到官方位置…」下拉，选中即把该区段的边界值写入 order。它只是**快捷填值入口**——数字输入仍是唯一真相与唯一写入通道，下拉不持有独立草稿、不清空 order、不新增保存队列入口。其余层只显示「本层 order 只决定同层配置的执行顺序，不对应官方装配位置」，不展示任何档位数值。区段边界全部来自 bridge 下发的 `meta.officialOrders`（运行期取自官方服务），客户端不硬编码；服务降级时该字段缺席、下拉不渲染，数字输入照旧。
 - 当前会话模型始终读取官方 sessions projection，切换始终走 official session.selectModel。
 - 未启用的可选模块保持 opt-in；生成结果、preset 优先级和 bridge 载荷不得因 UI 重构改变。
 

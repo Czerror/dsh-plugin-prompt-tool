@@ -8,6 +8,7 @@ import type { PromptToolLocaleKey, PromptToolTranslate } from '../../locales.ts'
 import type { EngineMeta, PromptConfigDraft } from '../../prompt-tool-types.ts'
 import type { InstructionPolicyFileOverride } from '../../../shared/instructions.ts'
 import { MatchFields, NumberField, OptionField, StrategyParamsFields, VariablesEditor } from './PromptConfigFields.tsx'
+import { MenuSelect } from '../../ui/MenuSelect.tsx'
 import { autoResizeTextarea } from './textarea-resize.ts'
 import { instructionFileIdOf } from '../../data/prompt-config-content.ts'
 import { isManagedConfigField } from '../../../shared/managed-config-fields.ts'
@@ -19,6 +20,8 @@ import {
   LAYER_LABEL_KEYS,
   MERGE_MODE_LABEL_KEYS,
   MODEL_SCOPE_LABEL_KEYS,
+  OFFICIAL_ORDER_GROUP_LABEL_KEYS,
+  OFFICIAL_ORDER_LAYERS,
   POSITION_LABEL_KEYS,
   PROMOTION_LABEL_KEYS,
   ROLE_LABEL_KEYS,
@@ -109,6 +112,25 @@ export function PromptConfigForm(props: {
   }
   const policy = fieldPolicyFor(meta, config.layer)
   const contract = layerContractFor(meta, config.layer)
+  // 官方装配刻度（B8 W2）：只有把 order 原样交给官方 `section()` / `context()` 的两层才有刻度。
+  // 其余层只给说明——展示档位数值会让人以为可与官方装配位置比较。
+  const layerShowsOfficialOrder = OFFICIAL_ORDER_LAYERS.some((layer) => layer === (config.layer ?? ''))
+  const officialSegments = config.layer === 'system-section'
+    ? meta.officialOrders?.sections
+    : config.layer === 'runtime-context' ? meta.officialOrders?.contexts : undefined
+  // 下拉项的值一律来自下发数据：区段取 from（「插到该区段之前」），末项取全部 to 的最大值 + 1。
+  // 客户端不硬编码任何档位数值，服务降级时整组为 undefined ⇒ 不渲染下拉。
+  const officialOrderOptions = officialSegments === undefined ? undefined : [
+    ...officialSegments.map((segment) => ({
+      value: String(segment.from),
+      label: translateLabel(t, OFFICIAL_ORDER_GROUP_LABEL_KEYS, segment.id),
+    })),
+    {
+      value: String(Math.max(...officialSegments.map((segment) => segment.to)) + 1),
+      label: t('form.order.insertLast'),
+    },
+  ]
+  const officialOrderSelectedValue = officialOrderOptions?.find((option) => Number(option.value) === config.order)?.value ?? ''
   const contentKind = contract?.content ?? 'text'
   const showContent = locked || contentKind === 'text'
     || (contentKind === 'stream' && config.params?.mode === 'replace')
@@ -178,6 +200,16 @@ export function PromptConfigForm(props: {
         {policy.order && <NumberField t={t} className={styles.fieldSpan2} label={t('form.order.label')} hint={t('form.order.hint')}
           value={config.order} fallback={locked ? 30 : 0} integer min={locked ? 0 : undefined} disabled={disabled}
           fieldDrafts={props.fieldDrafts} draftKey={`${props.draftScope}:order`} onChange={(value) => { if (typeof value === 'number') onPatch({ order: value }) }} />}
+        {/* 官方刻度快捷填值：只调用既有的 onPatch({ order })，不持有独立草稿、不清空 order ——
+            数字输入仍是唯一真相与唯一写入通道。 */}
+        {policy.order && officialOrderOptions !== undefined && (
+          <MenuSelect className={styles.fieldSpan2} ariaLabel={t('form.order.insert')} placeholder={t('form.order.insert')}
+            disabled={disabled} value={officialOrderSelectedValue} options={officialOrderOptions}
+            onChange={(value) => { const next = Number(value); if (Number.isSafeInteger(next)) onPatch({ order: next }) }} />
+        )}
+        {policy.order && !layerShowsOfficialOrder && (
+          <p className={clsx(styles.configFieldHint, styles.fieldSpan9)}>{t('form.order.layerOnly')}</p>
+        )}
         <FormField className={styles.fieldSpan4} label={t('form.group.label')} hint={t('form.group.hint')} hintMode="tooltip"><input className={inputClass} value={config.group ?? ''} spellCheck={false} readOnly={locked || disabled} onChange={(e) => onPatch({ group: e.target.value })} /></FormField>
         <div className={clsx(styles.configToggleField, styles.fieldSpan3)}>
           <span className={styles.configFieldLabel}>{t('form.exclusive.label')}</span>

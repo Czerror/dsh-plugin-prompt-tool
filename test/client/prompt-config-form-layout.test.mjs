@@ -596,3 +596,80 @@ test('本层引擎设置：注入点默认折叠，折叠时不渲染内容', ()
   renderElement(PromptConfigForm, formProps({ layer: 'pre-step' }, { renderLayerSettings: () => { called += 1; return marker } }))
   assert.equal(called, 0, '折叠时不得调用注入回调')
 })
+
+/**
+ * 官方装配刻度（B8 W2 / T5）：只有把 order 原样交给官方 `section()` / `context()` 的两层
+ * 展示区段下拉；其余层只给说明，不展示任何档位数值。
+ * 下面的替身数值只为让断言可读；真实数值一律由 bridge 从官方服务求得
+ * （真实性与降级在 test/shared/official-orders.test.mjs 与 bridge-contract.test.mjs 覆盖）。
+ */
+const OFFICIAL_ORDER_STUB = {
+  sections: [
+    { id: 'identity', from: -1000, to: 0 },
+    { id: 'policy', from: 500, to: 900 },
+    { id: 'tools', from: 1000, to: 3100 },
+    { id: 'sdk', from: 5000, to: 5000 },
+    { id: 'deliverable', from: 9000, to: 9900 },
+    { id: 'closing', from: 10000, to: 10200 },
+  ],
+  contexts: [{ id: 'runtime-policy', from: 110, to: 120 }],
+}
+const metaWithOrders = { ...meta, officialOrders: OFFICIAL_ORDER_STUB }
+const orderGroupLabel = (id) => t(`orderGroup.${id === 'runtime-policy' ? 'runtimePolicy' : id}`)
+const segmentsFor = (layer) => layer === 'system-section' ? OFFICIAL_ORDER_STUB.sections : OFFICIAL_ORDER_STUB.contexts
+const orderSelectOf = (tree) => findElement(tree, (node) => node.props?.ariaLabel === t('form.order.insert'))
+
+test('order 刻度：两层渲染区段下拉，值取各区段 from、末项为全部 to 的最大值 + 1', () => {
+  for (const layer of ['system-section', 'runtime-context']) {
+    const segments = segmentsFor(layer)
+    const select = orderSelectOf(treeOf(PromptConfigForm, formProps({ layer, strategy: 'static' }, { meta: metaWithOrders })))
+    assert.ok(select, `${layer} 必须渲染刻度下拉`)
+    assert.deepEqual(select.props.options.slice(0, -1).map((option) => option.value), segments.map((segment) => String(segment.from)))
+    assert.deepEqual(select.props.options.slice(0, -1).map((option) => option.label), segments.map((segment) => orderGroupLabel(segment.id)))
+    const last = select.props.options.at(-1)
+    assert.equal(last.label, t('form.order.insertLast'))
+    assert.equal(last.value, String(Math.max(...segments.map((segment) => segment.to)) + 1))
+    assert.equal(select.props.options.length, segments.length + 1, '区段项 + 「全部之后」一项')
+  }
+})
+
+test('order 刻度：其余层只给说明，不展示任何档位数值', () => {
+  for (const layer of meta.layerOrder) {
+    if (layer === 'system-section' || layer === 'runtime-context') continue
+    const html = renderElement(PromptConfigForm, formProps({ layer, strategy: 'static' }, { meta: metaWithOrders }))
+    const showsOrderField = html.includes(t('form.order.label'))
+    assert.equal(html.includes(t('form.order.layerOnly')), showsOrderField,
+      `${layer}: 有 order 字段才需要「不对应官方装配位置」说明`)
+    if (!showsOrderField) continue
+    for (const segment of [...OFFICIAL_ORDER_STUB.sections, ...OFFICIAL_ORDER_STUB.contexts]) {
+      assert.equal(html.includes(orderGroupLabel(segment.id)), false,
+        `${layer} 不得展示区段名（那两层之外没有官方刻度可比）`)
+    }
+  }
+})
+
+test('order 刻度：官方数据缺席时不渲染下拉，数字输入仍是唯一入口', () => {
+  for (const layer of ['system-section', 'runtime-context']) {
+    assert.equal(orderSelectOf(treeOf(PromptConfigForm, formProps({ layer, strategy: 'static' }))), undefined,
+      `${layer}: 服务降级时必须不渲染下拉`)
+    const html = renderElement(PromptConfigForm, formProps({ layer, strategy: 'static' }))
+    assert.equal(html.includes(t('form.order.layerOnly')), false, '该两层本就有官方位置，降级时不该显示「不对应官方位置」')
+    assert.ok(html.includes(t('form.order.label')), '数字输入必须保留')
+  }
+})
+
+test('order 刻度：下拉只走既有 onPatch({ order })，选中态跟随 order 且不写回', () => {
+  const patches = []
+  const props = formProps({ layer: 'system-section', strategy: 'static' }, { meta: metaWithOrders, onPatch: (patch) => patches.push(patch) })
+  const select = orderSelectOf(treeOf(PromptConfigForm, props))
+  assert.ok(select)
+  select.props.onChange(String(OFFICIAL_ORDER_STUB.sections[4].from))
+  assert.deepEqual(patches, [{ order: 9000 }], '下拉只发出 order 补丁，不新增写入通道')
+  select.props.onChange(String(Math.max(...OFFICIAL_ORDER_STUB.sections.map((segment) => segment.to)) + 1))
+  assert.deepEqual(patches.at(-1), { order: 10201 })
+
+  const selected = (order) => orderSelectOf(treeOf(PromptConfigForm,
+    formProps({ layer: 'runtime-context', strategy: 'static', order }, { meta: metaWithOrders })))
+  assert.equal(selected(110).props.value, '110', 'order 落在区段边界时下拉显示该区段')
+  assert.equal(selected(115).props.value, '', 'order 不落在任何边界时下拉回落到占位文案，且不改写 order')
+})

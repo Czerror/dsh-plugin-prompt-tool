@@ -40,6 +40,17 @@ promptConfigs:
     text: 子代理已结束。请检查其结果，完成验证后再回复用户。
 ```
 
+## order 的作用面与刻度来源
+
+`order` 有**两个**作用面，二者互不替代：
+
+- **加载期（全部九层）**：`engine/schema.mjs` 对每条配置做 anchor 优先 + ordered 升序，决定同层配置的执行与渲染次序。
+- **运行期（只有两层）**：只有 `system-section` 与 `runtime-context` 把 `order` 原样交给官方 `systemPrompt.section()` / `systemPrompt.context()`，因而**只有这两层**的数值能与官方装配位置比较。其余六层（`agent-request`、`llm-stream`、`tool-pipeline`、`turn-stop`、`subagent-start`、`subagent-end`）的 `order` 只在本插入点内比较，UI 对它们只显示说明、不显示任何档位数值。
+
+这与 `docs/engine-reuse.md` 的「`order` 只在各自入口内解释」自洽：那条说的是**不建立跨层全局顺序**，本条补充的是**同层之内**哪两层的数值具备官方含义。
+
+**刻度来源**：UI 展示的区段边界**不是**手抄常量，而是运行期由 `/meta`（与 `/bootstrap`）下发 —— `src/runtime/settings-bridge.ts` 取 `systemPrompt` 服务后，对每组调用官方 `getSectionOrder(name)` / `getContextOrder(name)`；任一组取不到有限数时**整张表缺席**，绝不部分下发（否则会展示一份看似完整、实则缺口的刻度）。**档位名**分组由 `src/shared/official-orders.ts` 维护，手抄自已安装的 `@deepseek-ai/dsh-system-prompt@0.1.6-alpha.2`（section 33 项 / context 3 项）；官方新增、改名或删除档位时必须同步该文件，届时 `test/shared/official-orders.test.mjs` 会先红。客户端不硬编码任何档位数值。
+
 ## 参数所有权与存储
 
 ```yaml

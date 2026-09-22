@@ -13,6 +13,7 @@ import { invalidateModelCatalog, listAdvertisedModels, peekModelCatalog, refresh
 import type { SkillCatalogEntry, SkillPolicyChange, SkillPolicyScope, SkillsCatalogSnapshot } from '../shared/skills.ts'
 import { listPromptConfigSpecs } from '../host/prompt-configs.ts'
 import { readConfigFieldSources, stripConfigFieldSources } from '../shared/managed-config-fields.ts'
+import { readOfficialOrderSegments, type OfficialOrderLookup } from '../shared/official-orders.ts'
 import { validatePromptConfigs } from './configs-validate.ts'
 import { PresetLayerSettingsError } from '../host/preset-layer-settings.ts'
 import { loadPromptTemplates, loadToolTemplates } from '../host/templates.ts'
@@ -589,6 +590,8 @@ export function registerSettingsBridge(
         }
         return guardPresetFormat(dir, res)
       }
+      /** 官方刻度取值失败只告警一次：本函数被 /meta 与 /bootstrap 共用，不能每次调用都刷屏。 */
+      let warnedOfficialOrders = false
       /** 引擎能力矩阵（meta 端点与 /bootstrap 共用）：动态 import 引擎 schema。 */
       const loadEngineMeta = async (): Promise<Record<string, unknown>> => {
         const engineMetaUrl = pathToFileURL(join(packageEngineDir(), 'schema.mjs'))
@@ -606,6 +609,19 @@ export function registerSettingsBridge(
           ...(relatedLayers === undefined ? {} : { relatedLayers }),
           hook,
         }))
+        // 官方装配刻度（B8 T4）：只下发**运行期求值**的区段边界，不抄任何数值（手抄数值正是
+        // 版本漂移的来源）。任一档位取不到有限数（官方改名、方法缺失、服务降级）⇒ 整张表缺席
+        // 并只告警一次；绝不下发部分区段——那样 UI 会展示一份看似完整、实则缺口的刻度。
+        const systemPrompt = sctx.get?.('systemPrompt') as OfficialOrderLookup | undefined
+        const officialOrders = systemPrompt === undefined ? undefined : readOfficialOrderSegments(systemPrompt)
+        if (officialOrders === undefined) {
+          if (!warnedOfficialOrders) {
+            warnedOfficialOrders = true
+            ctx.logger?.warn('prompt-tool: 无法读取官方装配档位（systemPrompt 服务缺失或档位名不匹配），本次不下发 order 刻度')
+          }
+        } else {
+          meta.officialOrders = officialOrders
+        }
         return meta
       }
 
