@@ -1,5 +1,29 @@
 # Changelog
 
+## 注入层权威性与官方装配刻度（2026-09-22）
+
+- **否决型装配门控改由 `prepend` 取得最外层**：`system-prompt/assemble` 是 waterfall（由外向内、
+  最外层监听器的返回值即最终结果），此前三类否决型门控只有「组合行序」这条**不成立**的保证——
+  行应用是并发的，行序并不决定监听器顺序。现在位置由声明的 `waterfallPosition: outermost`
+  表达（映射为 `prepend: true`），共四处：上下文清空、首轮目录窄化（两条）、名单掩码；协作式
+  填充与纯副作用监听器保持普通注册。新增真实 cordis 反例
+  `test/engine/assemble-authority.test.mjs`：先注册的 `prepend` 竞争者无法翻越门控；同为
+  `prepend` 且注册更晚者仍可翻越——这是该保证的**已知上界**，用例如实钉住。
+- **`order` 字段接入官方装配刻度**：只有 `system-section` 与 `runtime-context` 两层把 `order`
+  交给官方 `section()` / `context()`，故只在这两层的 order 字段旁提供「插入到官方位置…」下拉
+  （区段归纳：section 6 组 + context 1 组，共 7 个区段）。**数值一律运行期求得**：bridge 取
+  `systemPrompt` 服务后逐名调用官方 `getSectionOrder` / `getContextOrder`，经 `/meta` 与
+  `/bootstrap` 同源下发；任一组取不到有限数时整张表缺席并只告警一次。档位名分组由
+  `src/shared/official-orders.ts` 手抄自 `@deepseek-ai/dsh-system-prompt@0.1.6-alpha.2`
+  （section 33 项 / context 3 项），官方新增或改名时 `test/shared/official-orders.test.mjs` 先红。
+  下拉只是快捷填值入口，数字输入仍是唯一真相与唯一写入通道；其余六层显示「不对应官方装配位置」
+  说明，不展示任何档位数值。
+- **新增可选的来源黑名单**：`pre-step-filter` 动作的 `blockPlugins` 按 `source.plugin` 做
+  **大小写不敏感的精确等值**屏蔽（不做子串/正则/glob，要覆盖某插件须写全名）。默认不启用，
+  未声明或空名单等于关闭；与 `sources` / `keepKinds` 正交可共存；`reject` 步原样透传，过滤
+  自身异常时保留全部消息。**UI 与参数目录入口尚未接入**（按 2026-09-22 拍板延后），当前只能经
+  预设顶层 `triggers` 段声明。
+
 ## 专用能力模块退场：触发器声明统一时机与可见面（2026-09-22）
 
 - **删除七个专用能力模块**：`context-gate`、`tool-bootstrap`、`tool-filter`、`anchor-turn`、
