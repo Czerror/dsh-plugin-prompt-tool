@@ -16,8 +16,8 @@ const { configContract: subagentPolicy } = await import('../../engine/subagent-t
 const PLUGIN = 'probe'
 
 const MODULES = [
-  ['prompt-config-engine', promptConfig, ['configsDir', 'strategyDir']],
-  ['tool-config-engine', toolConfig, ['configsDir', 'requireApproval']],
+  ['prompt-config-engine', promptConfig, ['configsDir', 'strategyDir', 'presetRoot']],
+  ['tool-config-engine', toolConfig, ['configsDir', 'requireApproval', 'presetRoot']],
   ['subagent-tool-policy', subagentPolicy, ['policyFile', 'spawnProvider', 'forkProvider', 'maxDepth', 'agentOptions']],
 ]
 
@@ -45,6 +45,9 @@ test('prompt-config-engine：非字符串/空串仍静默取默认（迁移前�
   assert.equal(promptConfig.parse({ configsDir: './x' }, PLUGIN).configsDir, './x', '合法值原样透传')
   assert.equal(promptConfig.parse({}, PLUGIN).strategyDir, undefined, 'strategyDir 缺键为 undefined')
   assert.equal(promptConfig.parse({ strategyDir: 5 }, PLUGIN).strategyDir, undefined, 'strategyDir 非字符串为 undefined')
+  assert.equal(promptConfig.parse({}, PLUGIN).presetRoot, undefined, 'presetRoot 缺键为 undefined')
+  assert.equal(promptConfig.parse({ presetRoot: 7 }, PLUGIN).presetRoot, undefined, 'presetRoot 非字符串为 undefined')
+  assert.equal(promptConfig.parse({ presetRoot: 'file:///p/' }, PLUGIN).presetRoot, 'file:///p/', '合法 file URL 原样透传')
 })
 
 test('tool-config-engine：requireApproval 的宽容语义（非数组取空、过滤非字符串项）', () => {
@@ -57,6 +60,8 @@ test('tool-config-engine：requireApproval 的宽容语义（非数组取空、�
   )
   assert.equal(toolConfig.parse({}, PLUGIN).configsDir, './custom-tools', 'configsDir 缺键取默认')
   assert.equal(toolConfig.parse({ configsDir: 0 }, PLUGIN).configsDir, './custom-tools', 'configsDir 非字符串取默认')
+  assert.equal(toolConfig.parse({}, PLUGIN).presetRoot, undefined, 'presetRoot 缺键为 undefined')
+  assert.equal(toolConfig.parse({ presetRoot: {} }, PLUGIN).presetRoot, undefined, 'presetRoot 非字符串为 undefined')
 })
 
 test('subagent-tool-policy：五个键的缺省与原语义一致', () => {

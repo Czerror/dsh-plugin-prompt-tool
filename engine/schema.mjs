@@ -24,10 +24,15 @@ function readTextFile(url) {
   return readFileSync(url, 'utf8')
 }
 
-function loadTemplate(file, baseUrl = import.meta.url) {
+function loadTemplate(file, baseUrl = import.meta.url, presetRootUrl) {
   if (typeof file !== 'string' || file.length === 0) return undefined
-  // 保存预检使用最终共享引擎位置，加载与边界检查仍复用同一路径规则。
-  const presetRoot = fileURLToPath(new URL('../..', baseUrl)).replace(/[\\\\/]$/, '')
+  // 预设根基准：显式注入优先（引擎由插件包提供、不再位于 <预设根>/.engine/ 时必需），
+  // 缺省沿用「引擎文件的上一级目录」这一历史布局推导；加载与边界检查复用同一基准。
+  // URL 相对解析要求基准按目录语义以 `/` 结尾，调用方传裸预设根时在此补齐。
+  const rootUrl = presetRootUrl === undefined
+    ? new URL('../..', baseUrl)
+    : new URL(String(presetRootUrl).replace(/\/?$/, '/'))
+  const presetRoot = fileURLToPath(rootUrl).replace(/[\\\\/]$/, '')
   // templateFile 只允许 canonical 预设目录（引擎父目录）内：防配置声明任意
   // 本地路径把文件内容带进模型上下文。非 file: 协议（绝对盘符被解析为 scheme）同样拒绝。
   let resolved
@@ -591,7 +596,7 @@ export function createPromptConfigs(specs, options = {}) {
       }
     }
     // 安装预检可把文件读取定向到尚未提交的候选目录，默认运行期仍走原解析器。
-    const template = (options.loadTemplate ?? loadTemplate)(spec.templateFile, options.templateBaseUrl)
+    const template = (options.loadTemplate ?? loadTemplate)(spec.templateFile, options.templateBaseUrl, options.templatePresetRoot)
     const templatePatch = template !== null && typeof template === 'object'
       ? { id: template.id, role: template.role, content: template.content, source: template.source }
       : undefined

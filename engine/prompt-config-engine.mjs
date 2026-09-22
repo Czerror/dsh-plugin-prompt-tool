@@ -64,25 +64,40 @@ function compositionFacts(dirUrl) {
  */
 /**
  * 配置契约：白名单由字段声明派生（此前没有白名单，未知键被静默忽略）。
- * 两个键都刻意用 passthrough 保住既有语义——迁移前它们对**非字符串或空串**是静默取默认值
+ * 三个键都刻意用 passthrough 保住既有语义——迁移前它们对**非字符串或空串**是静默取默认值
  * （`typeof x === 'string' && x.length > 0 ? x : 默认`），换成 text() 会把静默降级变成挂载期
  * 报错，那是 B2 未授权的行为变更。归一化结果与迁移前逐字段一致，唯一新增的是「未知键报错」。
+ *
+ * `presetRoot` 是可选的预设根基准（绝对 file URL）：引擎由插件包提供、不再位于
+ * `<预设根>/.engine/` 时，`templateFile` 的越界校验无法再从引擎位置推导，改由装配期注入。
  */
 export const configContract = defineConfig({
   configsDir: passthrough((value) => (typeof value === 'string' && value.length > 0 ? value : './prompt-configs')),
   strategyDir: passthrough((value) => (typeof value === 'string' && value.length > 0 ? value : undefined)),
+  presetRoot: passthrough((value) => (typeof value === 'string' && value.length > 0 ? value : undefined)),
 })
 
 export function apply(ctx, config) {
-  const { configsDir: dirName, strategyDir: rawStrategyDir } = configContract.parse(config, name)
+  const { configsDir: dirName, strategyDir: rawStrategyDir, presetRoot: rawPresetRoot } = configContract.parse(config, name)
   const dirUrl = new URL(dirName.endsWith('/') ? dirName : `${dirName}/`, import.meta.url)
   // strategyDir 在入口统一解析成绝对 URL：bindResolver 用 `new URL(x.mjs, strategyDir)`
   // 懒加载，相对写法的 base 不是合法绝对 URL（ERR_INVALID_URL），会让整行挂载失败。
   const strategyDir = rawStrategyDir === undefined
     ? undefined
     : new URL(rawStrategyDir.endsWith('/') ? rawStrategyDir : `${rawStrategyDir}/`, import.meta.url).href
+  // 预设根基准（可选）：装配期注入绝对 file URL；缺省时由 schema 按「引擎上一级目录」推导。
+  const templatePresetRoot = rawPresetRoot === undefined
+    ? undefined
+    : new URL(rawPresetRoot.endsWith('/') ? rawPresetRoot : `${rawPresetRoot}/`)
   const facts = compositionFacts(dirUrl)
-  applyPromptConfigs(ctx, createPromptConfigs(loadPromptConfigFiles(dirUrl), { strategyDir }), {
+  applyPromptConfigs(ctx, createPromptConfigs(loadPromptConfigFiles(dirUrl), {
+    strategyDir,
+    // 注入预设根时（引擎由插件包提供）：相对 templateFile 仍按**历史引擎位置**
+    // `<预设根>/.engine/` 解析，用户预设与提示词配置零改写；越界校验基准则是预设根本身。
+    ...(templatePresetRoot === undefined
+      ? {}
+      : { templateBaseUrl: new URL('.engine/prompt-config-engine.mjs', templatePresetRoot), templatePresetRoot }),
+  }), {
     prepend: true,
     ...facts,
   })

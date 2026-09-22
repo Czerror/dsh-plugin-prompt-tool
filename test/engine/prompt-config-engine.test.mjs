@@ -1370,6 +1370,37 @@ test('createPromptConfigs：templateFile 越出预设根 fail loud（防任意�
   )
 })
 
+test('createPromptConfigs：注入 presetRoot 后按预设根解析与校验 templateFile', () => {
+  const base = mkdtempSync(join(tmpdir(), 'pt-preset-root-'))
+  const root = join(base, 'presets')
+  const presetDir = join(root, 'pt-demo')
+  mkdirSync(join(presetDir, 'assets'), { recursive: true })
+  writeFileSync(join(presetDir, 'assets', 't.txt'), 'TEMPLATE-BODY')
+  writeFileSync(join(base, 'outside.txt'), 'OUTSIDE')
+  try {
+    const templatePresetRoot = pathToFileURL(root)
+    // 注入基准时，相对 templateFile 仍按历史引擎位置 <预设根>/.engine/ 解析 —— 用户预设
+    // 与提示词配置无需改写，越界校验基准则换成注入的预设根。基准按目录语义补尾斜杠，
+    // 与引擎 apply 的归一一致（裸 URL 会被相对解析吃掉最后一段路径）。
+    const templateBaseUrl = new URL('.engine/prompt-config-engine.mjs', `${templatePresetRoot.href}/`)
+    assert.doesNotThrow(
+      () => createPromptConfigs(
+        [{ id: 'ok', strategy: 'static', templateFile: '../pt-demo/assets/t.txt' }],
+        { templateBaseUrl, templatePresetRoot },
+      ),
+      '预设根内的历史形态 templateFile 必须可解析',
+    )
+    assert.throws(
+      () => createPromptConfigs(
+        [{ id: 'bad', strategy: 'static', templateFile: '../../outside.txt' }],
+        { templateBaseUrl, templatePresetRoot },
+      ),
+      /escapes preset root/,
+      '越出注入预设根必须被拒',
+    )
+  } finally { rmSync(base, { recursive: true, force: true }) }
+})
+
 test('wireLayers 只装配实际声明的插入点：未声明 seam 无监听器', () => {
   // 只声明 pre-step：applyPromptConfigs 应只注册 pre-step 相关监听，
   // 其余五个非 pre-step 层级（agent/request / llm/stream / tools/* / system-prompt）无监听器。

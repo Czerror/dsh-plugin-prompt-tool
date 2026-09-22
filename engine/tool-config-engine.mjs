@@ -365,16 +365,17 @@ function compileTool(ctx, def, requireApproval) {
 }
 
 /** 工具定义文件加载（*.yml / *.json；与 prompt-config-engine configsDir 同构）。 */
-function loadToolFiles(dirUrl) {
+function loadToolFiles(dirUrl, presetRootUrl) {
   const resolved = isAbsolute(dirUrl)
     ? pathToFileURL(dirUrl).href
     : dirUrl
   const dir = new URL(resolved.endsWith('/') ? resolved : `${resolved}/`, import.meta.url)
   const localDir = fileURLToPath(dir)
-  // 相对 configsDir 只允许解析到引擎父目录（预设根）内：防组合行声明越界目录；
-  // 绝对路径（显式配置/测试桩）保持允许。
+  // 相对 configsDir 只允许解析到预设根内：防组合行声明越界目录；绝对路径（显式配置/
+  // 测试桩）保持允许。预设根基准显式注入优先（引擎由插件包提供时必需），缺省沿用
+  // 「引擎上一级目录」这一历史布局推导。
   if (!isAbsolute(dirUrl)) {
-    const presetRoot = fileURLToPath(new URL('../..', import.meta.url)).replace(/[\\\\/]$/, '')
+    const presetRoot = fileURLToPath(presetRootUrl ?? new URL('../..', import.meta.url)).replace(/[\\\\/]$/, '')
     if (localDir !== presetRoot && !localDir.startsWith(presetRoot + sep)) {
       throw new Error(`${name}: configsDir ${JSON.stringify(dirUrl)} escapes preset root`)
     }
@@ -400,6 +401,8 @@ function loadToolFiles(dirUrl) {
 export const configContract = defineConfig({
   configsDir: passthrough((value) => (typeof value === 'string' && value.length > 0 ? value : './custom-tools')),
   requireApproval: passthrough((value) => (Array.isArray(value) ? value.filter((kind) => typeof kind === 'string') : [])),
+  // 预设根基准（绝对 file URL）：引擎由插件包提供时由装配期注入，替代引擎位置推导。
+  presetRoot: passthrough((value) => (typeof value === 'string' && value.length > 0 ? value : undefined)),
 })
 
 /**
@@ -417,10 +420,13 @@ export const engineProvider = {
 
 /** 插件入口：扫描 configsDir 注册全部自定义工具。 */
 export function apply(ctx, config) {
-  const { configsDir: dirName, requireApproval } = configContract.parse(config, name)
+  const { configsDir: dirName, requireApproval, presetRoot: rawPresetRoot } = configContract.parse(config, name)
+  const presetRootUrl = rawPresetRoot === undefined
+    ? undefined
+    : new URL(rawPresetRoot.endsWith('/') ? rawPresetRoot : `${rawPresetRoot}/`)
   let definitions = []
   try {
-    definitions = loadToolFiles(dirName)
+    definitions = loadToolFiles(dirName, presetRootUrl)
   } catch (error) {
     ctx.logger?.warn(`${name}: cannot load ${dirName}: ${error?.message ?? error}`)
     return
