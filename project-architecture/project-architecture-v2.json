@@ -8,7 +8,7 @@
     "quality_profile": "showcase",
     "repository": {
       "url": "https://github.com/Czerror/dsh-plugin-prompt-tool.git",
-      "revision": "aaeb33bc143c1ebae2ef431c633abf2db113444b"
+      "revision": "3e6485225fcffc63b9a772df87c404898399e9ec"
     },
     "views": [
       {
@@ -57,7 +57,7 @@
           "engine",
           "host"
         ],
-        "note": "engine/ 组合行接入六个官方注入层、晋升门控和工具生态。"
+        "note": "engine/ 组合行接入六个官方注入层、声明式触发器与工具生态。"
       }
     ]
   },
@@ -196,7 +196,7 @@
       "id": "engine",
       "type": "backend",
       "label": "Engine & Composition",
-      "sublabel": "engine/*.mjs · six layers · gates",
+      "sublabel": "engine/*.mjs · six layers · declarations",
       "pos": [
         300,
         330
@@ -212,8 +212,8 @@
           "label": "prompt executor"
         },
         {
-          "path": "engine/context-gate.mjs",
-          "label": "promotion gate"
+          "path": "engine/declared-triggers.mjs",
+          "label": "declaration runtime"
         },
         {
           "path": "engine/tool-config-engine.mjs",
@@ -266,8 +266,8 @@
       "tag": "watch · import · register",
       "sources": [
         {
-          "path": "src/runtime/skills-provider.ts",
-          "label": "catalog / cache"
+          "path": "src/runtime/skills-parse.ts",
+          "label": "catalog"
         },
         {
           "path": "src/host/sillytavern.ts",
@@ -374,7 +374,7 @@
       "dot": "rose",
       "title": "引擎与验证",
       "items": [
-        "prompt-config-engine 接线六个官方注入层；context-gate 等模块共享晋升语义。",
+        "prompt-config-engine 接线六个官方注入层；能力由预设顶层 triggers 声明，declared-triggers 编译挂载。",
         "类型检查、lint、Node 回归与 CSS 所有权测试共同锁定重构边界。"
       ]
     }
