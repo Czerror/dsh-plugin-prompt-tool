@@ -17,7 +17,7 @@
  * session 全局）；子代理默认不滴（brief 即计划）。
  */
 
-import { MAX_TRACKED_SESSIONS, booleanOption, requiredInt, requiredText, validateConfig } from './shared.mjs'
+import { booleanOption, createWarnOnce, newMessageId, requiredInt, requiredText, sessionMapGet, validateConfig } from './shared.mjs'
 
 /** Cordis plugin name used by loader diagnostics. */
 export const name = 'progress-reminder'
@@ -43,26 +43,9 @@ export function apply(ctx, config) {
   /** sessionId -> { results, drips, lastTurn } — 每轮计数。 */
   const state = new Map()
 
-  const countersOf = (sessionId) => {
-    let entry = state.get(sessionId)
-    if (entry === undefined) {
-      if (state.size >= MAX_TRACKED_SESSIONS) state.clear()
-      entry = { results: 0, drips: 0, lastTurn: undefined }
-      state.set(sessionId, entry)
-    }
-    return entry
-  }
+  const countersOf = (sessionId) => sessionMapGet(state, sessionId, () => ({ results: 0, drips: 0, lastTurn: undefined }))
 
-  let warned = false
-  const warnOnce = (message) => {
-    if (warned) return
-    warned = true
-    try {
-      ctx.logger.warn(message)
-    } catch {
-      // Logger unavailable — the guard exists only to avoid spamming.
-    }
-  }
+  const warnOnce = createWarnOnce(ctx, name)
 
   // 轮跟踪：turn/start 重置计数；无可用轮号时用 assistant/chunk 的新轮。
   ctx.on('session/event', (session, event) => {
@@ -107,9 +90,7 @@ export function apply(ctx, config) {
       if (!due || decision?.kind !== 'accept') return decision
       entry.drips += 1
       const notice = {
-        id: typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
-          ? crypto.randomUUID()
-          : `progress-reminder-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        id: newMessageId('progress-reminder'),
         role: 'user',
         content: [{ type: 'text', text }],
         source: {

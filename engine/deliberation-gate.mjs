@@ -20,7 +20,7 @@
  *  - 子代理默认不门控（brief 即计划）；includeSubagents: true 同门控。
  */
 
-import { MAX_TRACKED_SESSIONS, booleanOption, extractText, requiredInt, requiredText, sessionEvents, validateConfig } from './shared.mjs'
+import { booleanOption, extractText, requiredInt, requiredText, sessionEvents, sessionMapGet, validateConfig } from './shared.mjs'
 
 /** Cordis plugin name used by loader diagnostics. */
 export const name = 'deliberation-gate'
@@ -50,15 +50,7 @@ export function apply(ctx, config) {
   const state = new Map()
 
   /** 取（或建）会话深度条目。 */
-  const entryOf = (sessionId) => {
-    let entry = state.get(sessionId)
-    if (entry === undefined) {
-      if (state.size >= MAX_TRACKED_SESSIONS) state.clear()
-      entry = { turns: new Map(), lastTurn: -1 }
-      state.set(sessionId, entry)
-    }
-    return entry
-  }
+  const entryOf = (sessionId) => sessionMapGet(state, sessionId, () => ({ turns: new Map(), lastTurn: -1 }))
 
   /** 取（或建）轮条目；修剪旧轮，长会话不累积状态。 */
   const turnEntryOf = (entry, turn) => {
@@ -103,9 +95,7 @@ export function apply(ctx, config) {
   const depthOf = (session) => {
     const known = state.get(session.id)
     if (known !== undefined) return known
-    if (state.size >= MAX_TRACKED_SESSIONS) state.clear()
-    const entry = { turns: new Map(), lastTurn: -1 }
-    state.set(session.id, entry)
+    const entry = sessionMapGet(state, session.id, () => ({ turns: new Map(), lastTurn: -1 }))
     for (const event of sessionEvents(session)) observeEvent(session.id, event)
     if (entry.turns.size === 0) {
       // 无任何轮事件：深度视为 0 于哨兵轮，会话恰好门一次后放行。

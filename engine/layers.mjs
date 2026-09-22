@@ -12,6 +12,7 @@ import {
   matchesModel,
   newMessageId,
   parseToolNames,
+  sessionMapGet,
 } from './shared.mjs'
 import { KNOWN_STRATEGIES } from './schema.mjs'
 import { interpolateVariables, stripUnresolvedRefs, RUNTIME_FACTS, runtimeFactValue } from './interpolate.mjs'
@@ -423,12 +424,7 @@ function wireTurnStops(ctx, configs, warnOnce) {
   const state = new Map()
 
   const stateOf = (sessionId, turn) => {
-    let entry = state.get(sessionId)
-    if (entry === undefined) {
-      if (state.size >= MAX_TRACKED_SESSIONS) state.clear()
-      entry = { turns: new Map(), total: 0 }
-      state.set(sessionId, entry)
-    }
+    const entry = sessionMapGet(state, sessionId, () => ({ turns: new Map(), total: 0 }))
     if (!Number.isFinite(turn)) return entry
     if (!entry.turns.has(turn) && entry.turns.size >= TURN_STOP_MAX_TRACKED_TURNS) {
       const oldest = [...entry.turns.keys()].sort((a, b) => a - b)

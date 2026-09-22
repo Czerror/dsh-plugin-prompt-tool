@@ -52,6 +52,11 @@ function createSkillCatalogResolver(config) {
   // 空结果提示文案归模板/预设：留空且 emptyBehavior=text 时按 skip 处理（不注入空消息）。
   const emptyText = typeof config.params?.emptyText === 'string' ? config.params.emptyText : ''
   let warned = false
+  // 保留本地 warnOnce：本工厂只拿得到 config，ctx 要到每次 resolve 调用时才由
+  // 参数传入；换成 shared 的 createWarnOnce(ctx, name) 必须改工厂签名，而唯一
+  // 调用点 engine/strategies.mjs 的 createPlaceholderResolver(config) 不在本支
+  // 写区。为替换而扩大改动面违反 PLAN，故此处按原语义手写（一次性 + logger
+  // 不可用时不抛）。
   const warnOnceLocal = (ctx, message) => {
     if (warned) return
     warned = true

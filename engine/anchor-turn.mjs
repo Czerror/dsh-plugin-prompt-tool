@@ -20,7 +20,7 @@
  * Robustness：插件来源消息（含自身锚定）永不再次锚定。
  */
 
-import { booleanOption, requiredText, sessionEvents, validateConfig } from './shared.mjs'
+import { booleanOption, newMessageId, requiredText, sessionEvents, validateConfig } from './shared.mjs'
 
 /** Cordis plugin name used by loader diagnostics. */
 export const name = 'anchor-turn'
@@ -53,9 +53,7 @@ export function apply(ctx, config) {
     // 插件来源消息（包括我们自己的锚定）永不再次锚定。
     if (message?.source?.kind === 'plugin') return
     agent.inbox.prepend('next-turn', {
-      id: typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
-        ? crypto.randomUUID()
-        : `anchor-turn-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      id: newMessageId('anchor-turn'),
       role: 'user',
       content: [{ type: 'text', text }],
       source: {
