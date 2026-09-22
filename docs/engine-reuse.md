@@ -281,9 +281,13 @@ pre-step 来源：
 - 候选只决定这一步注入什么；只有宿主把消息真正写进会话事件流（`session/event`）之后，
   该身份才记入本会话的去重快路径（`confirmDelivered`）。持久事件流仍是唯一真相
   （`snapshotEvents()`），快路径只省去每步全量扫描。
-- 被最外层 pre-step 门（声明式 `pre-step-filter` 的 `sources` / `keepKinds`）在**本步剥离**的候选
+- 被最外层 pre-step 门（声明式 `pre-step-filter` 的 `sources` / `keepKinds` / `blockPlugins`）在**本步剥离**的候选
   不算已注入：晋升或门控放行后仍会补发，不会出现「日志里从来没有这条正文，去重却认为
   已注入」的永久缺失；`reject` 步同样不记账。
+  `blockPlugins` 是**按 `source.plugin` 的显式屏蔽**（可选逃生阀）：仅当来源 `kind` 为 `plugin`
+  时做大小写不敏感的**精确等值**比较，不做子串、正则或 glob，因此要覆盖某个插件须写全名；
+  默认不启用，未声明或空名单等于关闭（注意与白名单「空 = 全拦」相反）；它与 `sources` /
+  `keepKinds` 正交，可同时声明。
 - 确认缓存分别记录 `plugin:<身份>` 与 `kind:<来源>`，只比较同字段的值，与持久扫描的
   `source.plugin` / `source.kind` 两条匹配规则一致；不同字段恰好同值不会误判已投递。
 - 独立执行路径与管理路径（协调器）共用同一确认实现，两条路径的去重语义一致；重挂或
