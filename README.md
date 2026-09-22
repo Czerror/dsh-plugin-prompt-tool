@@ -256,6 +256,26 @@ pnpm rebuild:composition # 只生成官方切块/变体；source/local 本地源
 
 发布类型声明通过 `deps.dts.neverBundle` 引用官方 SDK，不内联其品牌类型与相对模块扩充；公开类型引用的包须声明为生产或 peer 依赖，不能仅存在于 devDependencies。`deps.onlyBundle` 显式约束内联依赖（服务端为空，客户端仅 `clsx`），新增依赖需重新核对打包边界。`test/host-publish-contract.test.mjs` 直接校验 `lib/*.d.mts` 与官方 SDK 的类型兼容性；客户端仍保留宿主 loader 要求的 CJS 协议，不为消除通用 ESM 建议而切换格式。
 
+## 排障：插件未加载时
+
+启动日志出现 `dsh: skipping profile bundle "dsh-plugin-prompt-tool"` 时，插件**整体未加载**——dsh 在包解析阶段就跳过了它，插件自己的自愈层（web 表层补装配、预设种子补建）也不会运行。按顺序查三步：
+
+1. **看 bundles 列表**：`<DSH_HOME>/profiles/<name>/package.json` 的 `dsh.profile.bundles` 是否含 `dsh-plugin-prompt-tool`。
+2. **体检依赖链接**（只读、零写入）：
+
+   ```powershell
+   pnpm repair:profile -- --profile web --dry-run
+   ```
+
+   它按 dsh 同一口径（`createRequire(<profile>/package.json).resolve.paths`）逐项判定，并额外报出**链接目标是否存在**——「链接在、目标不在」的悬空链接正是最常见的失败形态（例如相对深度算错一层）。
+3. **修复**：去掉 `--dry-run` 重跑即可自动重建悬空或缺失的链接（只写 profile 私有层，真实文件与目录绝不删除，不改动 `profiles/node_modules` 兜底层）。若脚本报告需人工处理、或依赖本身缺失，走官方通道：
+
+   ```powershell
+   dsh plugin --profile web install
+   ```
+
+修复后需**重启 DSH** 生效。
+
 ## 许可
 
 插件本体 MIT（Czerror）。`engine/` 中移植自 [dsh-anchored-standard](https://github.com/xiaobright/dsh-anchored-standard) 的模块，其上游版权与 MIT 许可保存在 [engine/THIRD_PARTY_LICENSES](engine/THIRD_PARTY_LICENSES)，随包发布并由组合行的包名说明符直接引用（不再物化到预设根）；`preset/` 下 cordis 模板与脚本基于 DeepSeek Harness 官方 Standard 等预设修改。上游预设本体不再随本包分发。

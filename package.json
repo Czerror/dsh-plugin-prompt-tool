@@ -149,11 +149,11 @@
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.client.json --noEmit",
     "lint": "oxlint src test tsdown.config.ts",
     "test": "node scripts/run-tests.mjs",
-    "link:profile": "node scripts/link-profile.mjs",
     "sync:yaml": "node scripts/sync-yaml-vendor.mjs",
     "rebuild:composition": "node scripts/rebuild-composition.mjs",
     "rebuild:preset-template": "node scripts/rebuild-preset-template.mjs",
     "rematerialize:presets": "node scripts/rematerialize-presets.mjs",
+    "repair:profile": "node scripts/repair-profile.mjs",
     "verify:host": "node scripts/verify-host-contracts.mjs"
   },
   "dependencies": {

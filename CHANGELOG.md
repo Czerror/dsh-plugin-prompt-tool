@@ -1,5 +1,11 @@
 # Changelog
 
+## profile 解析修复器与外来脚本清理（2026-09-23）
+
+- **新增 `scripts/repair-profile.mjs`**（`pnpm repair:profile`）：体检并修复 profile **私有层**的包解析失败。启动日志出现 `skipping profile bundle` 时插件整体不加载、其自愈层也不会运行，这类零号故障只能由独立于插件的工具处理。判据与 dsh 的 `resolveBundleDir` 一致，并额外报出「链接在、目标不在」的悬空形态；只写 `<profiles>/<name>/node_modules/`，按 `link:` 声明重建为绝对 junction，真实文件/目录绝不删除，缺依赖只提示官方通道 `dsh plugin --profile <name> install`。
+- **移除 `scripts/link-profile.mjs` 与 `link:profile`**：该脚本由 dsh-web-ui 引入、服务 `@linxin666/*` 家族包并写 `profiles/node_modules` 兜底层，不属本仓库内容。其 `resolveDshHomeArg` 已内联进修复器，用例迁至 `test/host/profile-repair.test.mjs`；`test/host/profile-assembly.test.mjs` 只保留本插件 web 表层自愈的契约用例。
+- 文档：README 增「排障：插件未加载时」三步自查。
+
 ## 引擎归位插件包（2026-09-23）
 
 - **BREAKING**：共享引擎不再物化到 `<预设根>/.engine/`，改由**插件包**提供——组合行的引擎引用是包名说明符 `dsh-plugin-prompt-tool/engine/<module>.mjs`（`package.json` 新增 `"./engine/*"` 导出）。预设包不再携带引擎，预设根只承载用户数据；`syncPresetEngine`、引擎指纹与物化回滚一并退场。

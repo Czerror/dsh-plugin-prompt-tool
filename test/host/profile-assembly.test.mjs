@@ -1,18 +1,20 @@
 /**
- * profile 装配契约（来源：test/host/link-profile.test.mjs + test/host/web-surface.test.mjs）。
+ * web 表层自愈契约。
  *
- * 2026-09-17 测试归一精简 Wave 2（host 分片）：两组用例等价合并，用例标题与断言原样保留，
- * 只把「ensureWebSurface 的 web-app 来源」那条从读 src/web-surface.ts 的静态正则匹配
+ * 2026-09-17 测试归一精简 Wave 2（host 分片）：用例标题与断言原样保留，只把
+ * 「ensureWebSurface 的 web-app 来源」那条从读 src/web-surface.ts 的静态正则匹配
  * 升级为行为断言（清单里的误导性 requires 字段不得改变补进 bundles 的 bundle）。
+ * 2026-09-23：原合并进来的 dsh-web-ui `link-profile` 用例随该外来脚本一并移除——那支脚本
+ * 服务 `@linxin666/*` 家族包与 `profiles/node_modules` 兜底层，不属本仓库内容；其
+ * `resolveDshHomeArg` 用例已迁到 `profile-repair.test.mjs`（本仓库自有的解析修复器）。
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { homedir, tmpdir } from 'node:os'
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { isolatedHome, tempDir } from '../fixtures/host-harness.mjs'
-import { decideLinkAction, familyPackages, resolveDshHomeArg } from '../../scripts/link-profile.mjs'
 
 // 隔离 DSH_HOME 必须在插件入口之前生效：插件在模块加载期解析 DSH_HOME 派生路径。
 // isolatedHome 同时登记 after() 还原原值并清理临时目录（本文件不直接读家目录，
@@ -51,40 +53,6 @@ function effectCtxFor(profileDir) {
 
 const readBundles = (profileDir) =>
   JSON.parse(readFileSync(join(profileDir, 'package.json'), 'utf8')).dsh.profile.bundles
-
-test('decideLinkAction 四个分支', () => {
-  assert.equal(decideLinkAction('missing', '/a', null), 'create')
-  assert.equal(decideLinkAction('symlink', '/a', '/a'), 'keep')
-  assert.equal(decideLinkAction('symlink', '/a', '/b'), 'replace')
-  assert.equal(decideLinkAction('dir', '/a', null), 'skip-report')
-  assert.equal(decideLinkAction('file', '/a', null), 'skip-report')
-})
-
-test('familyPackages 只收 @linxin666 开头的包', () => {
-  const root = mkdtempSync(join(tmpdir(), 'lp-test-'))
-  const mk = (p, name) => {
-    mkdirSync(p, { recursive: true })
-    writeFileSync(join(p, 'package.json'), JSON.stringify({ name }))
-  }
-  mk(join(root, 'packages', 'dsh-web-ui-all'), '@linxin666/dsh-web-ui-all')
-  mk(join(root, 'packages', 'skins', 'skin-center'), '@linxin666/dsh-client-ui-skin-center')
-  mk(join(root, 'packages', 'other'), 'not-family')
-  mkdirSync(join(root, 'packages', 'no-pkg'))
-  const found = familyPackages(root).map((p) => p.name).sort()
-  assert.deepEqual(found, ['dsh-client-ui-skin-center', 'dsh-web-ui-all'])
-  rmSync(root, { recursive: true, force: true })
-})
-
-test('resolveDshHomeArg 优先级与官方 resolveDshHome 一致', () => {
-  // $DSH_HOME 命中
-  assert.equal(resolveDshHomeArg([], { DSH_HOME: 'D:\\AI\\DeepSeek harness\\.dsh' }), 'D:\\AI\\DeepSeek harness\\.dsh')
-  // --dsh-home 最高，且支持 ~ 展开
-  assert.equal(resolveDshHomeArg(['--dsh-home', '~/x'], { DSH_HOME: '/other' }), join(homedir(), 'x'))
-  // 空白 DSH_HOME 视为未设置 → ~/.dsh（不读 HOME）
-  assert.equal(resolveDshHomeArg([], { DSH_HOME: '   ', HOME: 'Z:\\fake' }), join(homedir(), '.dsh'))
-  // 无任何来源 → ~/.dsh
-  assert.equal(resolveDshHomeArg([], {}), join(homedir(), '.dsh'))
-})
 
 test('ensureWebSurface 为当前 profile 补 web-app 并写 .bak 备份', () => {
   const root = join(tmpdir(), `prompt-tool-web-${process.pid}-${Date.now()}`)
