@@ -15,12 +15,11 @@ export interface HostDefaultModel {
 /** 技能目录条目：与服务端共用同一契约（来源、优先级、两端调用策略、同名遮蔽）。 */
 export type { SkillCatalogEntry } from '../../shared/skills.ts'
 
-/** 参数草稿类型从宿主契约派生，只转换 UI 的列表/阶段/深度形态。 */
+/** 参数草稿类型从宿主契约派生，只转换 UI 的列表/深度形态。 */
 type EngineParamDrafts = {
-  [K in EngineParamKey]-?: K extends 'stages' ? StageDraft[]
-    : K extends 'guideEnabled' ? boolean | undefined
-      : K extends 'maxDepth' ? string
-        : NonNullable<EngineParams[K]> extends string | string[] ? string : NonNullable<EngineParams[K]>
+  [K in EngineParamKey]-?: K extends 'guideEnabled' ? boolean | undefined
+    : K extends 'maxDepth' ? string
+      : NonNullable<EngineParams[K]> extends string | string[] ? string : NonNullable<EngineParams[K]>
 }
 
 export interface Fields extends EngineParamDrafts {
@@ -42,16 +41,6 @@ export interface Fields extends EngineParamDrafts {
   presetTemplate: string
   promptConfigs: PromptConfigDraft[]
 }
-
-/** 渐进披露阶段草稿（UI 编辑形态；persist 时转引擎形态 [{name, tools: string[]}]）。 */
-export interface StageDraft {
-  name: string
-  tools: string
-}
-
-/** 是否存在未填完的阶段草稿；保存后不能立即重载，否则空行会被服务端过滤并从 UI 消失。 */
-export const hasIncompleteStageDrafts = (stages: StageDraft[]): boolean =>
-  stages.some((stage) => stage.name.trim().length === 0 || stage.tools.trim().length === 0)
 
 /**
  * /meta 的**列表类事实键**（对应 getEngineMeta() 下发的列表）：EMPTY_META 按本表派生空表，

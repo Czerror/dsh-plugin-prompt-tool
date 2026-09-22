@@ -1,8 +1,10 @@
 # engine 复用指南（晋升门控 / PTC 通用模块）
 
-本仓库的引擎（`engine/`）是**自包含**的通用模块库：晋升门控、上下文门控、
-工具目录相位、PTC（Code Mode）呈现、指令文件提示与提示词注入引擎全部以
-共享 ESM 实现 + cordis 插件行/声明式配置提供，任何 dsh 预设可自由装配。
+本仓库的引擎（`engine/`）是**自包含**的通用模块库：提示词注入引擎、触发器引擎
+（声明编译器 + 动作库 + 条件谓词）、指令文件提示与各提供者模块全部以
+共享 ESM 实现 + cordis 插件行提供，任何 dsh 预设可自由装配。晋升门控、上下文门控、
+工具目录相位、首轮锚句、深思门、进度节拍与工具名单**不再是内置能力模块**：
+它们改由预设顶层 `triggers` 段的声明表达（见下「模块清单」，净损失与迁移项同样列在那里）。
 
 装配遵循按需语义：空模块、无规则且无请求参数时生成合法空组合；显式参数补齐对应能力，
 真实提示词规则或模型请求参数补齐必要的 `prompt-config-engine`，不创建额外 UI 配置卡。
@@ -22,12 +24,12 @@
 
 - `engine/compositions/library/`：跟随核验过的官方最新 master，当前原样切出 24 个模块。官方预设本身的
   `delegation-ptc`、`skill-filesystem-cordis` 差异可保留，但不允许注入本地补丁。
-- `engine/compositions/source/local/`：19 个本地自有或本地改写模块的唯一源码。
+- `engine/compositions/source/local/`：14 个本地自有或本地改写模块的唯一源码。
   `tool-bash-disabled` 与 `persistent-shell-posix` 是本地适配，不因使用官方包就归为官方模块。
 - 模块文件名是 `modules` 的直接标识；官方原始 row id 保持不变，必要的模块名只描述职责
   或预设变体，例如 `tool-present` 对应官方 `present` 行。官方模块不使用额外 `official-` 前缀。
-- 本地明确职责：`tool-git-bash` 提供 Windows Git Bash，`promoted-code-mode` 在晋升后启用
-  Code Mode，`progress-reminder` 按工具结果节拍提醒进度。其他已经清楚的名称保持不变。
+- 本地明确职责：`tool-git-bash` 提供 Windows Git Bash，`declared-triggers` 读入预设的
+  `triggers.yml` 声明并注册触发器。其他已经清楚的名称保持不变。
 - **不提供旧名别名、兼容导出、双读或自动迁移。** 已撤销的模块名直接拒绝；`tool-bash`
   和 `persistent-shell` 只表示原样官方模块。本地适配须使用明确的新名。嵌套官方编辑器的
   row/tool 名 `str-replace-editor` 保持，但它不是可独立引用的组合模块。
@@ -68,7 +70,7 @@
 
    | 类别 | 模块 | 复制后的运行条件 |
    |---|---|---|
-   | 核心可复制 | 晋升门控、上下文门控、工具目录相位、PTC 呈现、提示词注入引擎、条件判定、ST 渲染、世界书选择、`compaction-epoch`、`subagent-tool-policy-core`、`classify-task` | 无额外依赖：隔离复制后即可挂载并完成注入 |
+   | 核心可复制 | 触发器引擎（声明编译器 / 动作库 / 条件谓词）、提示词注入引擎、条件判定、ST 渲染、世界书选择、`compaction-epoch`、`subagent-tool-policy-core`、`classify-task` | 无额外依赖：隔离复制后即可挂载并完成注入 |
    | 需官方 DSH 包 | 依赖宿主服务（`tools` / `systemPrompt` / `llm` / `agents` / `scope`）的模块行 | 目标项目需装配同名宿主服务；缺服务时按各自契约报错或跳过（`inject` 声明的行保持 pending） |
    | 需 Prompt Tool 私有服务 | `character-tools.mjs`、`world-book-tools.mjs`、`session-var-tools.mjs` | 各自适配私有 `pt-*` 服务（角色卡 / 世界书 / 会话变量存取）：隔离复制后三条各告警一次并跳过，提供同名 mount 服务后 3/3 正常挂载 |
 
@@ -78,30 +80,68 @@
 2. 组合文件（agent.cordis.yml）以相对路径引用引擎插件行：
 
    ```yaml
-   - id: context-gate
-     name: ./engine/context-gate.mjs
+   - id: prompt-config-engine
+     name: ./engine/prompt-config-engine.mjs
    ```
 
 3. 需要按预设参数化时，参考本仓库 `manifest.ts` 的
    `buildModuleConfigsFromParams`（params 扁平键 → 模块行 config 对象合并，
    取代旧 `__TOKEN__` 文本占位符）与 `applyModuleConfigs`（行级/嵌套合并）。
 
-## 晋升门控模块清单
+## 模块清单（触发器引擎、声明与提供者）
+
+七个专用能力模块（`context-gate`、`tool-bootstrap`、`tool-filter`、`anchor-turn`、
+`deliberation-gate`、`progress-reminder`、`promoted-code-mode`）已删除，其行为改由预设
+顶层 `triggers` 段的**声明**表达：`writePreset` 把该段物化为 `<预设目录>/triggers.yml`，
+`declared-triggers` 行在运行时读入、编译并注册。声明由预设提供，引擎不带默认
+（`triggers.yml` 缺失 = 没有声明，不注册任何触发器，也不让预设挂载失败）。
+
+**净损失只有两项**（其余是机制统一，不是能力删除）：
+
+- `stages` 渐进披露（多级阶段窄化、`phase_advance` 推进工具与阶段状态段）**按拍板放弃**：
+  它只是触发器机制的一个应用，需要时可用「多条件 + 多触发 + 多动作」自行声明；
+  引擎不再提供该内置能力，也不注册推进工具。
+- `promoted-code-mode` 的**「晋升后才呈现 PTC」时机特性**：PTC 呈现不再由晋升相位触发，
+  需要 PTC 的预设直接在 `modules` 里装配官方 `tool-presentation` 行。
+
+`bootstrapMaxTokens`（首轮输出封顶）与 `personaSectionsOnly`（首轮 sections 白名单）
+**不是放弃**：两者已作为声明迁移，分别为 `request-params` 动作的 `patch` / `unset`
+与 `assembly` 动作的 `target.sections.keep`。
+
+### 未迁移项（待产品/引擎侧决定）
+
+以下两项**既不是「已迁移」，也不是拍板放弃的净损失**（净损失只有上面两项），而是
+**尚未处理**的未迁移项：它们都要**改写已有段的正文**，而 `assembly` 动作只能
+`sections.add` / `remove` / `keep` 整段（`engine/actions.mjs:386-391`，没有正文改写形态），
+因此**未写声明**。
+
+- `workspaceLine`（`engine/tool-bootstrap.mjs:323-339`，调用点 `:415`）：晋升后给 persona 段
+  追加一行工作目录（段正文已含该行则原样返回，幂等）。
+- `phase1FirstCallInstruction`（`engine/tool-bootstrap.mjs:439-444`）：受控相位里给保留下来的
+  段追加首调指令（段正文已含该文本则跳过，幂等）。
+
+两项当前都没有等价声明，需要产品/引擎侧决定补哪种原语（例如 `sections` 的正文改写）。
+
+### 已知边界
+
+- `request-params` 动作无条件走 `matchesAgentScope`（`engine/actions.mjs:691`）；未声明
+  `modelScope` 时 `matchesModel` 按「非 Flash」过滤（`engine/shared.mjs:117-120`：`scope`
+  非 `flash` 即「非 Flash」），而原 `tool-bootstrap` 的预算监听没有模型过滤
+  （`engine/tool-bootstrap.mjs:466-483`）⇒ **Flash 模型下 `bootstrapMaxTokens` 不等价**。
+  对拍用例使用非 Flash 模型，这一支未覆盖。
 
 | 模块行 | 引擎文件 | 职责 |
 |---|---|---|
-| `context-gate` | engine/context-gate.mjs | 注入门控：未晋升时清空运行时上下文 + pre-step kind 白名单；可选调用 instruction-hint 完成全文转换 |
-| `instruction-hint` | engine/instruction-hint.mjs | 通用指令文件解析：`params.text` 自定义提示 → `params.file` 运行时读该文件正文（`Instructions from:` 头）→ `params.scope`（all / global / project）只发文件存在提示；含 agent-instructions 转换，prompt-config 与 context-gate 共用 |
-| `tool-bootstrap` | engine/tool-bootstrap.mjs | 首轮工具目录窄化（bootstrap 对）→ 晋升后恢复完整目录；bootstrapMaxTokens 封顶；promoteGate 门控；personaSectionsOnly / workspaceLine |
-| `promoted-code-mode` | engine/promoted-code-mode.mjs | 晋升后 PTC mode 呈现（`tools.presentAs('ptc')`），成功 compaction/end 释放 |
+| `instruction-hint` | engine/instruction-hint.mjs | 通用指令文件解析：`params.text` 自定义提示 → `params.file` 运行时读该文件正文（`Instructions from:` 头）→ `params.scope`（all / global / project）只发文件存在提示。**自带 plugin 形态**：挂本行并 `enabled: true`，即在晋升后把 agent-instructions 全文换成一次性 hint（原 `context-gate.instructionHint` 的归属；参数桥 `params.instructionHint` → 本行 `enabled`）；prompt-config 的 resolver 与本行共用同一实现 |
+| `declared-triggers` | engine/declared-triggers.mjs | 触发器声明入口：读 `triggers.yml`（preset.yml 顶层 `triggers` 段的物化产物）→ 编译 → 注册；有声明时由 `writePreset` 自动装配 |
+| （纯模块） | engine/trigger-spec.mjs / engine/actions.mjs / engine/predicates.mjs | 触发器引擎：声明编译器（校验 / 稳定排序 / 挂载）、七类动作（`inject-text` / `assembly` / `decision` / `append-context` / `guard` / `sdk-strip` / `request-params`）、条件谓词（`text` / `phase` / `source` / `count` / `names` / `session` / `preset` + `any` / `all` / `not` / `notAny`） |
 | `prompt-config-engine` | engine/prompt-config-engine.mjs | 提示词配置执行器（per-config `promotion: main / include-subagents` 门控） |
 | `tool-config-engine` | engine/tool-config-engine.mjs | 自定义工具引擎：preset.yml `customTools` 段 → 官方转换器物化标准 JSON Schema（`custom-tools/*.yml`）→ 运行时 `ctx.tools.register`（执行器 shell/http/delegate/fs/ask-user；行 `requireApproval` 门；delegate 经 `ctx.tools.execute` 嵌套调度走完整官方工具管线） |
 | `subagent-tool-policy` | engine/subagent-tool-policy.mjs | generation-scoped subagent/subagent_fork shadow：只安装到当前预设后代；spawn/fork 分别绑定官方 provider，foreground 读取 `SubagentRun.result`，continuable 读取 `childId` 并传顶层 signal；实例参数在 body 前校验，扩权经 approval 门，provider 能力不足 fail loud |
 | （纯模块） | engine/subagent-tool-policy-core.mjs | 策略 validate/compile/resolve/buildParameters 单一 seam（纯模块：不 import dsh-tools、不写文件，.engine 与 host 两侧共用；bridge 预览与运行时同一 resolver） |
 | （纯模块） | engine/classify-task.mjs | `createOrderedTaskClassifier`：有序正则任务规则确定性分类（taskRules order 升序，首个命中生效） |
 | character-tools / world-book-tools / session-var-tools | engine/character-tools.mjs / engine/world-book-tools.mjs / engine/session-var-tools.mjs | 按预设模块分别挂载角色卡、世界书、会话变量模型工具；宿主只提供注册服务，工具随 agent scope 生命周期清理 |
-| `compaction-epoch` | engine/compaction-epoch.mjs | 晋升状态机（被上面各模块共用；非插件行） |
-| `tool-filter` | engine/tool-filter.mjs | 常驻工具白名单/黑名单（与晋升无关的常量掩码） |
+| `compaction-epoch` | engine/compaction-epoch.mjs | 晋升状态机（`phase` 谓词与既有注入路径共用；非插件行） |
 
 ## pre-step 消息角色出口（2026-09-17）
 
@@ -138,8 +178,8 @@
   无法切换预设）。被顶替的旧登记句柄迟到撤销是空操作，不会移除已接管的登记；接管只在
   同一 scope 内发生，兄弟 scope 的同名来源互不顶替。父 scope 的来源对子代理可见、兄弟
   scope 互不串，scope dispose 即释放。resolver 也绑定来源 ctx，不因合并批次而改读协调器的
-  全局服务。协调器使用普通监听顺序，留在 `context-gate` 的 prepend 门控内侧；迟到或重挂
-  不改变 `allowKinds` 对预设与文件消息的约束。
+  全局服务。协调器使用普通监听顺序，留在最外层 pre-step 门（声明式 `pre-step-filter`，
+  `waterfallPosition: outermost`）内侧；迟到或重挂不改变该门对预设与文件消息的约束。
 - 验收入口：`test/host/pre-step-wiring.test.mjs`（来源 scope 隔离与 dispose 释放、同一 scope
   同名来源接管与旧句柄幂等、协调服务迟到与 HMR 重登）。
 
@@ -230,7 +270,7 @@ pre-step 来源：
 - 候选只决定这一步注入什么；只有宿主把消息真正写进会话事件流（`session/event`）之后，
   该身份才记入本会话的去重快路径（`confirmDelivered`）。持久事件流仍是唯一真相
   （`snapshotEvents()`），快路径只省去每步全量扫描。
-- 被外层门控（`context-gate` 的 `allowKinds` / `messageSources`）在**本步剥离**的候选
+- 被最外层 pre-step 门（声明式 `pre-step-filter` 的 `sources` / `keepKinds`）在**本步剥离**的候选
   不算已注入：晋升或门控放行后仍会补发，不会出现「日志里从来没有这条正文，去重却认为
   已注入」的永久缺失；`reject` 步同样不记账。
 - 确认缓存分别记录 `plugin:<身份>` 与 `kind:<来源>`，只比较同字段的值，与持久扫描的
@@ -244,12 +284,11 @@ pre-step 来源：
 
 - 晋升信号：`tool/call` 和/或 `assistant/message`（`promoteOn`，默认 either）；
 - 成功 `compaction/end` 为晋升边界：压缩后回到受控相位，重新晋升再恢复；失败压缩保持原相位；
-- `context-gate.instructionHint` 以 `session.deriveMessages()` 的模型可见 surface 去重：hint 仍可见时不重复，被压缩遮蔽后才重新提示；
-- 子代理：默认视为已晋升（继承完整上下文/目录）；`includeSubagents: true` 时跟随主会话相位；
-- 严格门控模式（通用 opt-in 扩展）：`promoteGate: true` 要求首段 reasoning minimal-like
-  （`we` 无 `let me`）+ 工具调用才晋升，`maxPromoteSteps`（步数兜底，开启门控时必填，
-  取值由组合源/预设提供）兜底，
-  `promoteAfterFirstResponse: true` 无工具首响应/首轮结束即晋升。
+- `instruction-hint`（原 `context-gate.instructionHint`）以 `session.deriveMessages()` 的模型可见 surface 去重：hint 仍可见时不重复，被压缩遮蔽后才重新提示；
+- 子代理：默认视为已晋升（继承完整上下文/目录）；声明里 `includeSubagents: true` 时跟随主会话相位；
+- 严格门控（通用 opt-in 扩展）：由声明的 `phase` 谓词表达——`promoteGate: true` 要求首段 reasoning
+  minimal-like（`we` 无 `let me`）+ 工具调用才晋升，`maxPromoteSteps`（步数兜底，开启门控时必填）
+  兜底，`promoteAfterFirstResponse: true` 无工具首响应/首轮结束即晋升。
 
 ## 配置参考（params 扁平键 ↔ 模块行 config）
 
@@ -320,106 +359,135 @@ ST 的两个条目级开关在引擎里按 `params.stWorldBook` 消费；未开�
 `data.extensions.depth_prompt.prompt`，`script.js:4626-4634`）。两个变量由 ST 导入期登记，
 缺省不存在时开关自动失效（零噪音）。
 
-字段映射集中在 `src/shared/engine-params.ts#ENGINE_PARAM_DEFINITIONS`；host 装配、bridge 回显与配置卡共享该目录。能力各自的 `includeSubagents`、`promoteOn`、启停和提示文本都可在所属卡片设置，依旧没有跨模块全局顺序；内部服务路径由生成器管理。`tool-filter.includeSubagents` 保留为引擎兼容键，UI 不再提供绑定。启用 `subagentToolPolicy` 后，子代理工具面由实例策略授权，主过滤不再写入 delegation；没有实例策略时，参数桥保留将主过滤下发 delegation 的兼容行为，详见 [参数架构](architecture-params.md#9-子代理工具策略subagenttoolpolicy2026-09-02)。
+字段映射集中在 `src/shared/engine-params.ts#ENGINE_PARAM_DEFINITIONS`；host 装配、bridge 回显与配置卡共享该目录。能力各自的 `includeSubagents`、`promoteOn`、启停和提示文本都在所属卡片或声明里设置，依旧没有跨模块全局顺序；内部服务路径由生成器管理。子代理工具面只能由 `subagentToolPolicy` 实例策略授权：`toolFilterAllow/Deny` 与「主过滤下发 delegation」的兼容通道已删除，策略未启用时按官方委派行为（不写 `toolFilter`），详见 [参数架构](architecture-params.md#9-子代理工具策略subagenttoolpolicy2026-09-02)。
 
 自定义模型工具保持 `customTools` 资产及 `tool-config-engine` 模块链路。保存方与运行时复用 `engine/tool-definition.mjs`，保存前编译官方参数 DSL 并完整验证；`customToolRequireApproval` 控制需用户批准的执行器种类。工具预览只是有效工具面的只读视图，不承担安装、连接或注册职责。
 
 优先级：参数桥（params / UI）> `moduleConfigs`（模板/ST 行级直写）> 行默认。
 moduleConfigs 只补充参数桥未覆盖的键，不再锁定覆盖 UI 可管理参数。
 
-行默认 = `engine/compositions/source/local/*.yml` 各行 `config`，是可配置默认值的唯一归属地
-（含引导正文与节奏阈值）。引擎不内置可配置默认值：未声明 `enabled` 视为关闭，缺必填键在装配时
+行默认 = `engine/compositions/source/local/*.yml` 各行 `config`，是可配置默认值的唯一归属地。
+引擎不内置可配置默认值：未声明 `enabled` 视为关闭，缺必填键在装配时
 响亮失败（`requiredText` / `requiredInt`），显式空文本表示该能力不注册。
 
 | params 键 | 落点（config 键） | 行默认（组合源） |
 |---|---|---|
-| `usePtcMode` | promoted-code-mode.usePtcMode | false（opt-in） |
-| `bootstrapMaxTokens` | tool-bootstrap.bootstrapMaxTokens | 不封顶 |
-| `bootstrapTools` | tool-bootstrap.bootstrapTools | [bash, str_replace_editor] |
-| `promoteGate` | tool-bootstrap.promoteGate | false |
-| `promoteAfterFirstResponse` | tool-bootstrap.promoteAfterFirstResponse | false |
-| `maxPromoteSteps` | tool-bootstrap.maxPromoteSteps | 4（开启门控时必填） |
-| `compactionTools` | tool-bootstrap.compactionTools | read/write/edit/glob/grep/todo_write/ask_user_question |
-| `personaSectionsOnly` | tool-bootstrap.personaSectionsOnly | false |
-| `workspaceLine` | tool-bootstrap.workspaceLine | false |
-| `allowKinds` | context-gate.allowKinds | 不过滤（官方 pre-step 行为） |
-| `messageSources` | context-gate.messageSources | 不启用 |
-| `deferredSources` | context-gate.deferredSources | 不延迟 |
-| `deferredGraceSteps` | context-gate.deferredGraceSteps | 0 |
-| `instructionHint` | context-gate.instructionHint | false |
-| `stages` | tool-bootstrap.stages（`[{name, tools}]`） | 未声明（两相窄化） |
-| `stagePreUnlock` | tool-bootstrap.stagePreUnlock | 1（声明 stages 时必填） |
-| `stageAdvanceTool` | tool-bootstrap.stageAdvanceTool | phase_advance（声明 stages 时必填） |
-| `stageSectionTemplate` | tool-bootstrap.stageSectionTemplate | 默认模板（`{{stage}}/{{stageName}}/{{unlocked}}/{{total}}/{{advanceTool}}`；空 = 不注入） |
+| `instructionHint` | instruction-hint.enabled（挂 `instruction-hint` 行并 `enabled: true`） | false |
 
-## 渐进披露（stages 模式）
-
-`tool-bootstrap` 声明 `stages` 时激活多级阶段窄化（参考 dsh-router-standard
-progressive disclosure 自写）：目录 = 当前阶段工具 + 预放（`stagePreUnlock`
-档）+ 本模块注册的推进工具（`stageAdvanceTool`：注册、`{{advanceTool}}` 提示与
-目录裁剪引用同一个名字，`stagePreUnlock=0` 时它仍在目录里；被外层工具策略挡掉时
-不复活，也不触发「缺失即放开完整目录」的降级）；`phase_advance`（名字可配）推进阶段；调用更高阶段工具 = 直达（自动
-跳到其档）；阶段状态由 durable tool/call 事件推导（resume/reload 自动恢复，
-无文件），compaction 不重置；阶段文案经 `stageSectionTemplate` 参数化
-（引擎只注入动态状态 section `stage-status`，不写死引导文本——引导类内容
-一律 promptConfigs 参数化）。
+被删除能力（`context-gate` / `tool-bootstrap` / `tool-filter` / `anchor-turn` /
+`deliberation-gate` / `progress-reminder` / `promoted-code-mode`）的专属参数键已全部删除
+（含首轮工具/封顶、门控与相位、来源名单、节拍与深思、`stages` 与 `stage*`、`toolFilter*`
+与 `contextGate*` 等）。这些行为改由预设顶层 `triggers` 段声明，见下「组合示例」。
 
 ## 组合示例
 
-只要 PTC（不窄化目录）：
+只要 PTC（不窄化目录）：装配官方 `tool-presentation` 行（`mode: ptc`），
+或直接使用基型 `pt-ptc`；PTC 呈现不再由晋升相位触发。
+
+首轮窄化 + 输出封顶 + 严格门控（等价于原 `tool-bootstrap` 的两相窄化与请求预算，
+`triggers` 段由 `writePreset` 物化为 `<预设目录>/triggers.yml`）：
 
 ```yaml
-modules:
-  - promoted-code-mode
+triggers:
+  - id: bootstrap-catalog                  # 受控相位：目录窄化 + sections 白名单
+    channel: system-prompt/assemble
+    when:
+      phase: { promoteGate: true, maxPromoteSteps: 4, compacted: false, promoted: false }
+    do:
+      kind: assembly
+      id: bootstrap-catalog
+      target:
+        tools: { allow: [bash, str_replace_editor], requireMatch: true }
+        sections: { keep: ['deployment:persona-prefix', 'deployment:persona-suffix'] }
+  - id: bootstrap-catalog-compacted        # 已压缩的受控相位：补回压缩工具集
+    channel: system-prompt/assemble
+    when:
+      phase: { promoteGate: true, maxPromoteSteps: 4, compacted: true, promoted: false }
+    do:
+      kind: assembly
+      id: bootstrap-compacted
+      target:
+        tools:
+          allow: [bash, str_replace_editor, read, write, edit, glob, grep, todo_write, ask_user_question]
+          requireMatch: true
+  - id: bootstrap-budget                   # 未晋升：把首请求 maxTokens 钉到 1024
+    channel: agent/request
+    when:
+      not:
+        phase: { promoteGate: true, maxPromoteSteps: 4 }
+    do:
+      kind: request-params
+      id: bootstrap-budget
+      patch: { maxTokens: 1024 }
+    waterfallPosition: outermost
+  - id: bootstrap-budget-release           # 晋升后按值释放该封顶
+    channel: agent/request
+    when:
+      phase: { promoteGate: true, maxPromoteSteps: 4 }
+    do:
+      kind: request-params
+      id: bootstrap-budget-release
+      unset: { maxTokens: 1024 }
+    waterfallPosition: outermost
 ```
 
-PTC + 首轮锚定：
+未晋升时清空运行时上下文并过滤 pre-step 来源（原 `context-gate` 等价形态）：
 
 ```yaml
-modules:
-  - context-gate
-  - tool-bootstrap
-  - promoted-code-mode
-moduleConfigs:
-  tool-bootstrap:
-    bootstrapTools: [bash, str_replace_editor]
-  promoted-code-mode:
-    usePtcMode: true             # PTC 呈现默认 false，这里显式开启
+triggers:
+  - id: gate-runtime-contexts
+    channel: system-prompt/assemble
+    when:
+      not:
+        phase: { promoteOn: either, includeSubagents: false }
+    do:
+      kind: assembly
+      id: gate-runtime-contexts
+      target:
+        contexts: { clear: true }
+  - id: gate-pre-step-sources
+    channel: agent/pre-step
+    waterfallPosition: outermost
+    when:
+      not:
+        phase: { promoteOn: either, includeSubagents: false }
+    do:
+      kind: pre-step-filter
+      id: gate-pre-step-sources
+      sources: [user, goal]                # 原 messageSources 的取值
 ```
 
-渐进披露示例：
+工具名单（原 `tool-filter` 等价形态，三条声明共用同一份名单：呈现 + SDK 正文裁剪 +
+执行层 guard；只裁文本不拦执行不算生效）：
 
 ```yaml
-modules:
-  - tool-bootstrap
-moduleConfigs:
-  tool-bootstrap:
-    stages:
-      - { name: 了解, tools: [read, glob, grep] }
-      - { name: 开发, tools: [write, edit] }
-      - { name: 验证, tools: [pwsh, bash] }
-    stagePreUnlock: 1
+triggers:
+  - id: tool-filter-presentation
+    channel: system-prompt/assemble
+    do:
+      kind: assembly
+      id: tool-filter-presentation
+      target:
+        tools: { deny: [web_search, web_fetch] }
+  - id: tool-filter-sdk
+    channel: system-prompt/assemble
+    do:
+      kind: sdk-strip
+      id: tool-filter-sdk
+      mask: { deny: [web_search, web_fetch] }
+  - id: tool-filter-guard
+    channel: system-prompt/assemble
+    do:
+      kind: guard
+      id: tool-filter-guard
+      mask: { deny: [web_search, web_fetch] }
+      includeSubagents: false
+      reason: blocked by tool-filter declaration
 ```
 
-严格两阶段门控示例：
-
-```yaml
-moduleConfigs:
-  tool-bootstrap:
-    bootstrapTools: [bash, str_replace_editor]
-    promoteGate: true
-    maxPromoteSteps: 4
-    promoteAfterFirstResponse: true
-    bootstrapMaxTokens: 1024
-    compactionTools: [read, write, edit, glob, grep, todo_write, ask_user_question]
-    personaSectionsOnly: true
-    workspaceLine: true
-  context-gate:
-    messageSources: [user, goal]
-    deferredSources: [agent-instructions, skill-catalog]
-    deferredGraceSteps: 1
-    instructionHint: true
-```
+严格两阶段门控（原 `tool-bootstrap` + `context-gate` 的 `moduleConfigs` 写法）等价于上方的
+`triggers` 声明：目录窄化与 sections 白名单走 `assembly`，首轮封顶走 `request-params`，
+未晋升时的上下文清空与来源过滤走 `assembly.target.contexts.clear` 与 `pre-step-filter`。
 
 ## 重建与验证
 

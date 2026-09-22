@@ -1,0 +1,12 @@
+# module: declared-triggers
+# source: 本地新增（B7 声明式触发器：preset.yml 顶层 triggers 段 → triggers.yml → 本模块注册）
+# 声明由预设提供，引擎不带默认（2026-09-22 拍板）：triggers.yml 缺失 = 没有声明，不注册任何
+# 触发器、也不让预设启动失败（与 subagent-tool-policy 的 ENOENT 降级同一纪律）。
+# 本行由 writePreset 按「有 triggers 段」自动装配（见 src/host/manifest.ts 的 implied modules）。
+# triggersFile 是**初值**：迁移/物化时由 preset-install 的 ENGINE_MANAGED_PATHS 改写成
+# ../<presetId>/triggers.yml（与 subagent-tool-policy 的 policyFile 同一规则）。
+
+- id: declared-triggers
+  name: ./engine/declared-triggers.mjs
+  config:
+    triggersFile: ../triggers.yml

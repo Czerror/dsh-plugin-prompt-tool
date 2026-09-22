@@ -43,6 +43,13 @@ const REPORT_DIAGNOSTIC_LIMIT = 200
 const ST_PRE_STEP_ROLE = 'user'
 const ST_ROLE_DOWNGRADE_CODE = 'assistant-role-downgrade'
 
+/**
+ * `enable_web_search: false` 时被拒绝的 web 工具名。
+ * 三个声明式触发器（assembly / sdk-strip / guard）共用这一份名单——呈现过滤与执行
+ * 边界必须同一判据，不得各写一份（见 engine/actions.mjs 的 (5) 类说明）。
+ */
+const ST_WEB_TOOLS = ['web_search', 'web_fetch'] as const
+
 /** ST marker prompts（marker: true）：content 不发送给模型（仅标记注入位置，ST
  *  以运行时内容填充该位置）；SPresetSettings 是旧版 ST 的预设设置 dump（正则
  *  脚本/扩展配置/ToolBindings，动辄数百 KB）。两者转换时整体丢弃并计数进
@@ -101,7 +108,6 @@ export function mergeStPresetsWithReport(specs: PresetSpec[]): { spec: PresetSpe
     ...(promptConfigs.some((config) => config.strategy === 'world-book') ? ['world-book-tools'] : []),
     'session-var-tools',
     'tool-config-engine',
-    'tool-filter',
   ]
   for (const name of managementModules) if (!modules.includes(name)) modules.push(name)
   const moduleConfigs: Record<string, Record<string, unknown>> = {}
@@ -113,6 +119,18 @@ export function mergeStPresetsWithReport(specs: PresetSpec[]): { spec: PresetSpe
   // 顶层 persona 段（ST 转换只在含 system-section 时声明）合并保留：丢失会让
   // 合并预设回落宿主部署人设，导入的 system-section 被 complete 人设抑制。
   const persona = specs.find((spec) => spec.persona !== undefined)?.persona
+  // 触发器声明按 id 去重合并：多源合并不丢「任一来声明过」的 web 拒绝名单（与 persona 同理）。
+  // 同名 id 保留首个来源的载荷——同一 id 在两份来源里必然表达同一意图，不叠加两份 mask。
+  const triggerDeclarations: unknown[] = []
+  const triggerIds = new Set<string>()
+  for (const source of specs) {
+    for (const declaration of source.triggers ?? []) {
+      const id = declaration !== null && typeof declaration === 'object' ? (declaration as { id?: unknown }).id : undefined
+      if (typeof id === 'string' && triggerIds.has(id)) continue
+      if (typeof id === 'string') triggerIds.add(id)
+      triggerDeclarations.push(declaration)
+    }
+  }
   const stripSuffix = (name: string): string => name.replace(/（SillyTavern 转换）$/, '')
   const spec: PresetSpec = {
     // 多源合并：id 拼接（2 + beta-2-42 → 2-beta-2-42），避免与任一源预设冲突。
@@ -125,6 +143,7 @@ export function mergeStPresetsWithReport(specs: PresetSpec[]): { spec: PresetSpe
     ...(Object.keys(layerSettings).length > 0 ? { layerSettings } : {}),
     ...(Object.keys(variables).length > 0 ? { variables } : {}),
     ...(persona === undefined ? {} : { persona }),
+    ...(triggerDeclarations.length > 0 ? { triggers: triggerDeclarations } : {}),
     modules,
     moduleConfigs,
     promptConfigs,
@@ -260,6 +279,8 @@ export function convertStToPresetWithReport(
     }
   }
   const configs: Array<Record<string, unknown>> = []
+  /** preset.yml 顶层触发器声明（`enable_web_search: false` 的 web 拒绝名单在此登记）。 */
+  const triggers: unknown[] = []
   // 世界书配置 id → 来源条目 id：键宏诊断必须定位到源条目，不按 id 前缀反推。
   const worldBookSources = new Map<string, string>()
   const droppedMarkers: string[] = []
@@ -735,21 +756,27 @@ export function convertStToPresetWithReport(
   // modules 按需组装：prompt-config-engine 始终。
   const modules = ['prompt-config-engine', 'character-tools']
   if (configs.some((config) => config.strategy === 'world-book')) modules.push('world-book-tools')
-  modules.push('session-var-tools', 'tool-config-engine', 'tool-filter')
+  modules.push('session-var-tools', 'tool-config-engine')
   const moduleConfigs: Record<string, Record<string, unknown>> = {}
   // 含 system-section 段时用顶层 persona 段声明官方人设行：空 prefix 只做 scope
   // shadow（不注入标准编码 Agent 人设），complete: false 允许导入的 system-section
   // 生效（宿主部署人设 complete: true 会抑制它们）。
   const persona: PersonaSpec | undefined = systemSectionCount > 0 ? { prefix: '', complete: false } : undefined
-  // tool-filter 始终装配，enable_web_search 按原 JSON 开关配置：
-  //   true  → 同时组装 tool-web（fetch: true 启用）；
-  //   false → 不组装 tool-web，写入黑名单（deny web_search/web_fetch），
-  //           即使宿主/其他模块装配了 tool-web，本预设会话也不暴露 web 工具。
+  // enable_web_search 的两手（B7 T3「3+1 结合」，取代已删除的 tool-filter 专用模块）：
+  //   true  → 组装 tool-web（fetch: true 启用），web 工具行进 modules；
+  //   false → ① **web 相关行根本不进 modules**（不组装 tool-web，也不再写 tool-filter 行配置）；
+  //           ② 同时产出三条声明式触发器（共用同一份 deny 名单）兜住「宿主/其他模块
+  //              仍装配了 tool-web」的情形：assembly 裁呈现、sdk-strip 裁 tools:sdk 正文、
+  //              guard 落到 agent scope 的执行边界（旧 tool-filter 只有呈现这一层）。
   if (record.enable_web_search === true) {
     modules.push('tool-web')
     moduleConfigs['tool-web'] = { fetch: true }
   } else if (record.enable_web_search === false) {
-    moduleConfigs['tool-filter'] = { includeSubagents: false, deny: ['web_search', 'web_fetch'] }
+    triggers.push(
+      { id: 'st-web-assembly', channel: 'system-prompt/assemble', do: { kind: 'assembly', target: { tools: { deny: [...ST_WEB_TOOLS] } } } },
+      { id: 'st-web-sdk-strip', channel: 'system-prompt/assemble', do: { kind: 'sdk-strip', mask: { deny: [...ST_WEB_TOOLS] } } },
+      { id: 'st-web-guard', channel: 'system-prompt/assemble', do: { kind: 'guard', mask: { deny: [...ST_WEB_TOOLS] } } },
+    )
   }
 
   const presetId = stPresetId(baseName)
@@ -841,6 +868,8 @@ export function convertStToPresetWithReport(
     },
     ...(Object.keys(variables).length > 0 ? { variables } : {}),
     ...(persona === undefined ? {} : { persona }),
+    // 声明式触发器：物化为 triggers.yml，并由 loadCompositionText 自动补 declared-triggers 行。
+    ...(triggers.length > 0 ? { triggers } : {}),
     modules,
     moduleConfigs,
     promptConfigs: configs,

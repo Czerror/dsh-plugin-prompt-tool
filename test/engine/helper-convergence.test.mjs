@@ -2,16 +2,14 @@
 // ① sessionMapGet 与替换前手写形态逐字对拍：返回值身份、map 内容、清空时机三者一致；
 // ② PLAN R2 要求的三条序列断言，证明被剔除的三处确实与 sessionMapGet 不等价：
 //    (a) compaction-epoch 成功压缩必须覆盖已有键（只建不改会留下旧 epoch）；
-//    (b) tool-bootstrap 已有键的阶段更新路径必须写入新阶段；
 //    (c) strategies 首个 assistant 消息延迟到达时不缓存 false。
-// 这三处按 PLAN 明确不替换，本文件只做行为证明，不驱动它们改用 helper。
+//    (b) 的 `tool-bootstrap` 阶段更新路径用例已随该模块在 B7 T3 删除（模块被声明式触发器取代）。
+// 这两处按 PLAN 明确不替换，本文件只做行为证明，不驱动它们改用 helper。
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { MAX_TRACKED_SESSIONS, sessionMapGet } from '../../engine/shared.mjs'
 import { createEpochPromotion } from '../../engine/compaction-epoch.mjs'
-import { apply as applyToolBootstrapRaw } from '../../engine/tool-bootstrap.mjs'
 import { bindResolver } from '../../engine/strategies.mjs'
-import { compositionConfig } from '../fixtures/composition-defaults.mjs'
 
 // ── ① sessionMapGet 对拍 ────────────────────────────────────────────────────
 
@@ -124,80 +122,6 @@ test('序列断言(a)：compaction-epoch 成功压缩后 epoch 状态被覆盖�
   assert.equal(after.boundary, 5, '成功压缩后 boundary 前推到新边界（覆盖写入生效）')
   assert.equal(after.promoted, false, '压缩前的事件不再计入新 epoch（旧值被覆盖，未被旧 entry 卡住）')
   assert.notEqual(after, before, '压缩后取到的是新 entry 对象')
-})
-
-// ── tool-bootstrap 阶段推进（渐进披露）的装配桩 ─────────────────────────────
-
-const STAGES = [
-  { name: '了解', tools: ['read', 'glob', 'grep'] },
-  { name: '开发', tools: ['write', 'edit'] },
-  { name: '验证', tools: ['pwsh', 'bash'] },
-]
-
-const toolCall = (tool, seq) => ({ type: 'tool/call', seq, data: { message: { source: { tool } } } })
-
-/** 收集 ctx.on 注册的监听器（按注册顺序），并吞掉 warn。 */
-function makeCtx() {
-  const listeners = new Map()
-  return {
-    listeners,
-    ctx: {
-      logger: { warn: () => {} },
-      tools: { register: () => {} },
-      on(type, handler, opts) {
-        const list = listeners.get(type) ?? []
-        list.push({ handler, opts })
-        listeners.set(type, list)
-      },
-    },
-  }
-}
-
-const makeSession = () => ({ id: `s-${Math.random()}`, header: { cwd: '/workspace', delegationDepth: 0 }, snapshotEvents: () => [] })
-const makeAgent = (session) => ({ session })
-
-/** 含全部阶段工具 + 推进工具 + 干扰工具的装配输入。 */
-const stageAssembled = () => ({
-  tools: ['read', 'glob', 'grep', 'write', 'edit', 'pwsh', 'bash', 'phase_advance', 'web_search'].map((name) => ({ name })),
-  sections: [],
-  contexts: [],
-})
-
-async function assembleThrough(listeners, agent) {
-  const handler = listeners.get('system-prompt/assemble')?.[0]?.handler
-  assert.ok(handler, '应注册 system-prompt/assemble')
-  return handler(null, { agent }, async () => stageAssembled())
-}
-
-const stageSectionText = (out) => out.sections.find((section) => section.name === 'stage-status')?.text
-
-test('序列断言(b)：tool-bootstrap 已有键的更新路径仍走覆盖写入（阶段不得冻结在首次写入值）', async () => {
-  const { ctx, listeners } = makeCtx()
-  applyToolBootstrapRaw(ctx, {
-    ...compositionConfig('tool-bootstrap'),
-    bootstrapTools: ['bash'],
-    stages: STAGES,
-    stageSectionTemplate: 'stage={{stage}}:{{stageName}}',
-  })
-  const session = makeSession()
-  const agent = makeAgent(session)
-  const emit = (tool, seq) => {
-    for (const { handler } of listeners.get('session/event') ?? []) handler(session, toolCall(tool, seq))
-  }
-
-  // 第一次推进：键缺失 → 创建（stage 0 → 1）。
-  emit('phase_advance', 1)
-  const first = await assembleThrough(listeners, agent)
-  assert.equal(stageSectionText(first), 'stage=2:开发', '首次推进：新键写入阶段 1')
-
-  // 第二次推进：键已存在 → 必须覆盖为新值（1 → 2），而不是保留首次写入值。
-  emit('phase_advance', 2)
-  const second = await assembleThrough(listeners, agent)
-  assert.equal(stageSectionText(second), 'stage=3:验证', '已有键被覆盖为新阶段（更新路径仍写入）')
-
-  // 更新路径的写入必须是单调前进的：两次装配的阶段可见差异。
-  assert.notEqual(stageSectionText(second), stageSectionText(first), '已有键的更新确实改变了阶段可见面')
-  assert.ok(second.tools.some((tool) => tool.name === 'phase_advance'), '推进工具在更新后仍在目录里')
 })
 
 test('序列断言(c)：strategies 首个 assistant 消息延迟到达时不缓存 false（条件缓存）', () => {

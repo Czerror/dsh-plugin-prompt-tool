@@ -1,5 +1,41 @@
 # Changelog
 
+## 专用能力模块退场：触发器声明统一时机与可见面（2026-09-22）
+
+- **删除七个专用能力模块**：`context-gate`、`tool-bootstrap`、`tool-filter`、`anchor-turn`、
+  `deliberation-gate`、`progress-reminder`、`promoted-code-mode`，连同各自的组合源 yml、
+  能力卡、一键配方（`ENGINE_RECIPES` 清空）与全部专属参数键一起退场。首轮窄化、
+  来源过滤、工具名单、锚句、深思门与进度节拍改由预设顶层 `triggers` 段**声明**表达：
+  `writePreset` 物化为 `<预设目录>/triggers.yml`，`declared-triggers` 行读入、编译并注册。
+  声明由预设提供，引擎不带默认（文件缺失 = 没有声明，不注册、也不让预设挂载失败）。
+- **机制统一**：判断面是 `when`（`phase` / `source` / `count` / `session` / `text` / `names`
+  / `preset` 谓词与 `any` / `all` / `not` / `notAny` 组合），执行面是七类动作
+  （`inject-text` / `assembly` / `decision` / `append-context` / `guard` / `sdk-strip` /
+  `request-params`）；不再为每个能力写一个专用模块。
+- **已作为声明迁移（不是放弃）**：`bootstrapMaxTokens`（首轮输出封顶）→ `request-params`
+  动作的 `patch` / `unset`（与 `agent-request` 层同源，含按值释放）；`personaSectionsOnly`
+  （首轮 sections 白名单）→ `assembly` 动作的 `target.sections.keep`。
+- **净损失只有两项**：`stages` 渐进披露（多级阶段窄化、`phase_advance` 推进工具与阶段状态
+  段——按拍板放弃，它只是触发器机制的一个应用，需要时可用「多条件 + 多触发 + 多动作」自行
+  声明）；`promoted-code-mode` 的**「晋升后才呈现 PTC」时机特性**（PTC 呈现不再由晋升相位
+  触发，需要 PTC 的预设直接装配官方 `tool-presentation` 行）。
+- **未迁移项（尚未处理，未写声明；既不是「已迁移」，也不是拍板放弃的净损失）**：
+  `workspaceLine`（晋升后给 persona 段追加工作目录行，幂等；`engine/tool-bootstrap.mjs:323-339`，
+  调用点 `:415`）与 `phase1FirstCallInstruction`（受控相位给保留下来的段追加首调指令，幂等；
+  `:439-444`）都要**改写已有段正文**，而 `assembly` 动作只能整段 `sections.add` / `remove` /
+  `keep`（`engine/actions.mjs:386-391`）⇒ 两项都没有等价声明，待产品/引擎侧决定补哪种原语。
+  另记一条已知边界：`request-params` 动作无条件走 `matchesAgentScope`（`actions.mjs:691`），
+  未声明 `modelScope` 时按「非 Flash」隐式过滤（`engine/shared.mjs:117-120`），而原预算监听
+  没有模型过滤（`tool-bootstrap.mjs:466-483`）⇒ **Flash 模型下 `bootstrapMaxTokens` 不等价**
+  （对拍用非 Flash 模型，该分支未覆盖）。
+- **连带精简**：能力卡从 11 张减到 4 张（`subagent-tool-policy` / `str-replace-editor` /
+  `tool-config-engine` / `tool-git-bash`），共享参数从 71 个减到 30 个；`toolFilterAllow/Deny`
+  与「主过滤下发子代理 `delegation.toolFilter`」的兼容通道整体删除（子代理工具面只由
+  `subagentToolPolicy` 实例策略授权）；`instructionHint` 改由 `instruction-hint` 行承接。
+- **SillyTavern `enable_web_search: false`** 改为产出三条声明（`assembly` 呈现剔除 +
+  `sdk-strip` 裁 `tools:sdk` 正文 + `guard` 执行层拒绝，共用同一份 `deny`），在 PTC 下同时
+  获得 SDK 正文裁剪与执行层拒绝（旧 `tool-filter` 实现没有这两者）。
+
 ## 字段声明与能力开关统一（2026-09-22）
 
 - **字段声明取代手写白名单**：`run-code-env`、`tool-git-bash` 的配置键白名单与逐字段归一化改由 `engine/fields.mjs` 的字段声明（各模块导出的 `configContract`）派生；未知键、错类型、缺必填仍在挂载期 fail loud，逐字段的归一化结果与错误消息与迁移前逐字一致（含 `run-code-env` 为空数组与 trim 后为空的两条既有文案）。

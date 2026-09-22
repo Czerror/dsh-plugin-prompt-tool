@@ -18,11 +18,10 @@ import type { WorkspacePage } from '../workspace-pages.ts'
  *  入口对等（与主会话同款创建能力，只改作用域）：
  *  - 顶部只提供九层注入模板；能力/组合、工具和变量在所属层内创建；
  *  - 能力模块卡与自定义工具卡（与主会话同一份激活预设，视图过滤联动）；
- *  - 子代理独有：子代理模型、工具与深度（子代理工具策略 / allowKinds / maxDepth）。
+ *  - 子代理独有：子代理模型、递归深度（子代理工具策略 / maxDepth）。
  *
- *  例外：`tool-filter`（主对话常驻工具过滤）**不在本页创建、也不在本页显示卡片**——
- *  它对子代理不生效（includeSubagents 缺省 false 且无 UI 开关）；子代理工具面由
- *  「工具与深度」卡里的实例级「子代理工具策略」授权。
+ *  例外：仅主对话生效的能力**不在本页创建、也不在本页显示卡片**；
+ *  子代理工具面由「工具与深度」卡里的实例级「子代理工具策略」授权。
  *
  *  纪律：过滤抽屉与搜索词只由用户手动改变；新建只做「展开新卡 + 滚动定位」两件事。 */
 export const SubagentPage = memo(function SubagentPage(props: { store: PromptToolStore; t: PromptToolTranslate; browse?: ConfigPageBrowse; onNavigate?: (page: WorkspacePage) => void }): ReactNode {
@@ -38,8 +37,8 @@ export const SubagentPage = memo(function SubagentPage(props: { store: PromptToo
   // 搜索词由页面持有：同一搜索词同时过滤配置实例、能力卡、共享设置区与单例卡。
   const [keyword, setKeyword] = useState(props.browse?.filter ?? '')
   const canEditPreset = store.fields.writePreset && store.moduleFacts?.editable === true
-  /** 仅主对话生效的能力：本页既不提供创建，也不渲染卡片。 */
-  const mainSessionOnly = ['tool-filter']
+  /** 仅主对话生效的能力：本页既不提供创建，也不渲染卡片。B7 T3 后暂无此类能力，清单留待重构。 */
+  const mainSessionOnly: readonly string[] = []
   // 合并创建菜单：按插入点层级平铺「添加模板 · 层级」入口，浮层只列该层模板。
   const picker = useTemplatePicker(
     store.fields.promptConfigs,

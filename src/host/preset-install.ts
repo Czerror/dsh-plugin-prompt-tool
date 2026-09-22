@@ -103,6 +103,7 @@ export const ENGINE_MANAGED_PATHS = {
   'prompt-config-engine.mjs': { field: 'configsDir', directory: 'prompt-configs' },
   'tool-config-engine.mjs': { field: 'configsDir', directory: 'custom-tools' },
   'subagent-tool-policy.mjs': { field: 'policyFile', directory: 'subagent-tools/policy.yml' },
+  'declared-triggers.mjs': { field: 'triggersFile', directory: 'triggers.yml' },
 } as const
 
 /** 仅处理 Cordis 行的已知共享引擎引用和受管配置位置，正文与自有引擎保持不变。 */

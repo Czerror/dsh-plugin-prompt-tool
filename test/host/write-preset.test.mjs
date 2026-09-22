@@ -22,16 +22,18 @@ test.after(() => rmSync(home, { recursive: true, force: true }))
 test('writePreset 从指定预设根读取同名参数，不被默认根遮蔽', () => {
   const id = 'root-isolation'
   const customRoot = mkdtempSync(join(home, 'custom-root-'))
-  for (const [root, usePtcMode] of [[join(home, '.agent-presets'), true], [customRoot, false]]) {
+  // B7 T3：`usePtcMode`（`tool-pipeline`）随 tool-filter/promoted-code-mode 一并删除，
+  // 载体换成同样「layerSettings 参数 → 模块行 config」的存活参数 `toolGitBashEnabled`。
+  for (const [root, toolGitBashEnabled] of [[join(home, '.agent-presets'), true], [customRoot, false]]) {
     mkdirSync(join(root, id), { recursive: true })
     writeFileSync(join(root, id, 'preset.yml'),
-      `id: ${id}\nmodules: [promoted-code-mode]\nlayerSettings:\n  tool-pipeline:\n    usePtcMode: ${usePtcMode}\n`, 'utf8')
+      `id: ${id}\nmodules: [tool-git-bash]\nlayerSettings:\n  tool-pipeline:\n    toolGitBashEnabled: ${toolGitBashEnabled}\n`, 'utf8')
   }
   const defaultFile = join(home, '.agent-presets', id, 'preset.yml')
   const before = readFileSync(defaultFile, 'utf8')
-  writePreset('', { ...makeOptions(customRoot), presetTemplate: id, usePtcMode: undefined })
+  writePreset('', { ...makeOptions(customRoot), presetTemplate: id, toolGitBashEnabled: undefined })
   const row = parseYaml(readFileSync(join(customRoot, id, 'agent.cordis.yml'), 'utf8'))[0]
-  assert.equal(row.config.usePtcMode, false)
+  assert.equal(row.config.enabled, false)
   assert.equal(readFileSync(defaultFile, 'utf8'), before)
 })
 
@@ -213,51 +215,53 @@ test('模型参数改回留空：空串删除 preset.yml 旧键（渲染层空�
   }
 })
 
-test('savePresetParams 空值删键：空数组删除，stagePreUnlock=0 是合法档位必须保留', () => {
+test('savePresetParams 空值删键：空数组/空串删除，合法零值必须保留', () => {
   const dir = join(tmpdir(), `prompt-tool-empty-${process.pid}-${Date.now()}`)
   const presetDir = join(dir, 'preset')
   try {
     cpSync(FIXTURE_PRESET_SRC, join(presetDir, 'fixture'), { recursive: true })
-    // 1) 设置有值：bootstrapTools / messageSources / stagePreUnlock / maxPromoteSteps。
+    // B7 T3：原用例用的 bootstrapTools / messageSources / stagePreUnlock / maxPromoteSteps 四个
+    // 参数键已随七个专用能力删除。改用存活参数覆盖同一语义（列表 / 字符串 / 可为零的整数）。
+    // 1) 设置有值。
     savePresetParams(presetDir, 'fixture', {
-      bootstrapTools: ['bash'],
-      messageSources: ['user'],
-      stagePreUnlock: 2,
-      maxPromoteSteps: 6,
+      customToolRequireApproval: ['shell'],
+      modelTemperature: 0.7,
+      maxDepth: 3,
     }, undefined)
     let spec = loadPresetSpec(join(presetDir, 'fixture'))
-    assert.deepEqual(spec.params.bootstrapTools, ['bash'], 'bootstrapTools 写入')
-    assert.deepEqual(spec.params.messageSources, ['user'], 'messageSources 写入')
-    assert.equal(spec.params.stagePreUnlock, 2, 'stagePreUnlock 写入')
-    assert.equal(spec.params.maxPromoteSteps, 6, 'maxPromoteSteps 写入')
-    // 2) 改回空：空数组删除键；stagePreUnlock=0 是合法档位，不是空值。
+    assert.deepEqual(spec.params.customToolRequireApproval, ['shell'], 'customToolRequireApproval 写入')
+    assert.equal(spec.params.modelTemperature, 0.7, 'modelTemperature 写入')
+    assert.equal(spec.params.maxDepth, 3, 'maxDepth 写入')
+    // 2) 改回空：空数组 / 空串删除键；0 是合法值，不是空值。
     savePresetParams(presetDir, 'fixture', {
-      bootstrapTools: [],
-      messageSources: [],
-      stagePreUnlock: 0,
-      maxPromoteSteps: 0,
+      customToolRequireApproval: [],
+      modelTemperature: '',
+      maxDepth: 0,
     }, undefined)
     spec = loadPresetSpec(join(presetDir, 'fixture'))
-    assert.equal(spec.params.bootstrapTools, undefined, 'bootstrapTools 空数组删键（引擎 stringList 空数组 fail）')
-    assert.equal(spec.params.messageSources, undefined, 'messageSources 空数组删键（空列表 = 全拦注入）')
-    assert.equal(spec.params.stagePreUnlock, 0, 'stagePreUnlock 0 保留（与 undefined->1 语义不同）')
-    // maxPromoteSteps 0 写入（引擎 createEpochPromotion 0/undefined 都落默认 4，等价）。
-    assert.equal(spec.params.maxPromoteSteps, 0, 'maxPromoteSteps 0 照常写入（引擎 0→默认 4）')
+    assert.equal(spec.params.customToolRequireApproval, undefined, '空数组删键（引擎 stringList 空数组 fail）')
+    assert.equal(spec.params.modelTemperature, undefined, '空串删键（留空 = 不设置）')
+    assert.equal(spec.params.maxDepth, 0, 'maxDepth 0 保留（0 = 禁止委派，与「留空 = 不设置」语义不同）')
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
 })
 
-test('writePreset 生成 agent.cordis.yml 注入 allowKinds', () => {
+test('writePreset：preset.yml 的模块行参数经参数桥注入 agent.cordis.yml', () => {
   const dir = join(tmpdir(), `prompt-tool-wp-${process.pid}-${Date.now()}`)
   const presetDir = join(dir, 'preset')
   try {
+    // B7 T3：原用例的载体是 `pre-step.allowKinds` → `context-gate` 行；两者都已删除。
+    // 换成本地自己写的模板（不污染共享夹具），机制与断言不变。
+    mkdirSync(join(presetDir, FIXTURE_PRESET_ID), { recursive: true })
+    writeFileSync(join(presetDir, FIXTURE_PRESET_ID, 'preset.yml'),
+      'id: fixture\nname: fixture\nversion: "1"\nengineCompat: ">=0.4.2"\n'
+      + 'modules: [tool-git-bash]\nlayerSettings:\n  tool-pipeline:\n    toolGitBashEnabled: false\n', 'utf8')
     writePreset('PROMPT', makeOptions(presetDir))
-    const agent = readFileSync(join(presetDir, 'fixture', 'agent.cordis.yml'), 'utf8')
-    const rows = parseYaml(agent)
-    const contextGate = rows.find((row) => row?.id === 'context-gate')
-    assert.ok(contextGate, 'agent.cordis.yml 应含 context-gate 行')
-    assert.deepEqual(contextGate.config.allowKinds, ['skill-invocation', 'near-anchor', 'router-guide'])
+    const rows = parseYaml(readFileSync(join(presetDir, FIXTURE_PRESET_ID, 'agent.cordis.yml'), 'utf8'))
+    const toolGitBash = rows.find((row) => row?.id === 'tool-git-bash')
+    assert.ok(toolGitBash, 'agent.cordis.yml 应含 tool-git-bash 行')
+    assert.equal(toolGitBash.config.enabled, false, '参数桥把 layerSettings 参数写进该行的 config')
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
@@ -413,6 +417,7 @@ test('writePreset 四个官方基型以顶层 persona 段渲染官方 dsh-person
       const agent = readFileSync(join(presetDir, template, 'agent.cordis.yml'), 'utf8')
       const rows = parseYaml(agent)
       assert.equal(rows.filter((row) => row?.id === 'prompt-config-engine').length, 1, `${template}: persona 配置执行器应且仅应装配一次`)
+      // B7 T3：这三个能力行已随模块删除、永远不该出现——负向断言保留（防渲染层又把它拼回来）。
       for (const id of ['context-gate', 'tool-bootstrap', 'promoted-code-mode']) {
         assert.equal(rows.some((row) => row?.id === id), false, `${template}: 不应追加 ${id}`)
       }
@@ -674,22 +679,18 @@ test('savePresetParams 清理空 key（VariablesEditor 待编辑行不落盘）'
   }
 })
 
-test('晋升门控/渐进披露/验证工具参数仅进入组合配置，不成为模板变量', () => {
+test('引擎参数仅进入组合配置，不成为模板变量', () => {
   const dir = mkdtempSync(join(tmpdir(), 'pt-wp-paramkeys-'))
   try {
-    // 复制夹具模板，params 加新增参数键（模拟用户手写/UI 保存）。
+    // 复制夹具模板，params 加引擎参数键（模拟用户手写/UI 保存）。
+    // B7 T3：原用例用的 promoteGate / bootstrapTools / messageSources / stagePreUnlock / stages
+    // 已随七个专用能力删除，换成本批存活的引擎参数（模块行绑定 + 只进 layerSettings 的两种）。
     cpSync(FIXTURE_PRESET_SRC, join(dir, 'fixture'), { recursive: true })
     const presetFile = join(dir, 'fixture', 'preset.yml')
     const doc = parseDocument(readFileSync(presetFile, 'utf8'))
-    doc.setIn(['layerSettings', 'system-section', 'promoteGate'], true)
-    doc.setIn(['layerSettings', 'system-section', 'maxPromoteSteps'], 6)
-    doc.setIn(['layerSettings', 'system-section', 'bootstrapTools'], ['bash', 'read'])
-    doc.setIn(['layerSettings', 'pre-step', 'messageSources'], ['user', 'goal'])
-    doc.setIn(['layerSettings', 'system-section', 'stagePreUnlock'], 2)
-    doc.setIn(['layerSettings', 'system-section', 'stages'], [
-      { name: '了解', tools: ['read', 'glob', 'grep'] },
-      { name: '开发', tools: ['write', 'edit'] },
-    ])
+    doc.setIn(['layerSettings', 'tool-pipeline', 'toolGitBashEnabled'], false)
+    doc.setIn(['layerSettings', 'tool-pipeline', 'strReplaceEditorMaxOutputChars'], 8000)
+    doc.setIn(['layerSettings', 'tool-pipeline', 'customToolRequireApproval'], ['shell'])
     doc.get('modules', true).add('tool-config-engine')
     writeFileSync(presetFile, doc.toString(), 'utf8')
 
@@ -699,9 +700,8 @@ test('晋升门控/渐进披露/验证工具参数仅进入组合配置，不成
     const varsFile = join(pcDir, 'variables.yml')
     // 无内容变量（顶层 variables 段为空）时不生成 variables.yml；生成时不得含参数键。
     const vars = existsSync(varsFile) ? parseYaml(readFileSync(varsFile, 'utf8')) : {}
-    // params 整段不作为变量源，新增参数也不得混入 variables.yml。
-    for (const key of ['promoteGate', 'maxPromoteSteps', 'bootstrapTools', 'messageSources',
-      'stagePreUnlock',
+    // params 整段不作为变量源，引擎参数也不得混入 variables.yml。
+    for (const key of ['toolGitBashEnabled', 'strReplaceEditorMaxOutputChars', 'customToolRequireApproval',
       // 锚定/引导内容键：writePreset 映射进 promptConfig.params，不得双落盘 variables.yml。
       'buildPattern', 'complexPattern', 'firstTurnBuild', 'firstTurnInspect', 'firstTurnDeep',
       'guideWeak', 'guideDeep']) {
@@ -711,18 +711,20 @@ test('晋升门控/渐进披露/验证工具参数仅进入组合配置，不成
     const configs = readdirSync(pcDir).filter((name) => name.endsWith('.yml') && name !== 'variables.yml')
     for (const name of configs) {
       const parsed = parseYaml(readFileSync(join(pcDir, name), 'utf8'))
-      for (const key of ['promoteGate', 'messageSources', 'stagePreUnlock']) {
+      for (const key of ['toolGitBashEnabled', 'strReplaceEditorMaxOutputChars', 'customToolRequireApproval']) {
         assert.equal(parsed.params?.[key], undefined, `配置 params 不得含 ${key}`)
       }
     }
-    // 参数桥落点：生成组合的 tool-bootstrap 行应含 promoteGate 等（params 声明生效）。
-    const cordis = readFileSync(join(dir, 'fixture', 'agent.cordis.yml'), 'utf8')
-    assert.ok(cordis.includes('promoteGate: true'), '参数桥把 promoteGate 合并进 tool-bootstrap 行')
-    assert.ok(cordis.includes('maxPromoteSteps: 6'))
-    assert.ok(cordis.includes('messageSources'), 'context-gate 行含 messageSources')
-    assert.ok(cordis.includes('stagePreUnlock: 2'), 'tool-bootstrap 行含 stagePreUnlock')
-    assert.ok(cordis.includes('name: 了解'), 'tool-bootstrap 行含 stages 阶段名')
-    assert.ok(cordis.includes('- read'), 'tool-bootstrap 行含 stages 工具集')
+    // 参数桥落点：生成组合的对应模块行应含这些键（`module` 绑定声明生效）。
+    // `str-replace-editor` 是 `filesystem-editor` 组行下的嵌套行，故按行 id 递归查找。
+    const rows = parseYaml(readFileSync(join(dir, 'fixture', 'agent.cordis.yml'), 'utf8'))
+    const flatten = (list) => list.flatMap((row) => [row, ...(Array.isArray(row?.config) ? flatten(row.config) : [])])
+    const rowOf = (id) => flatten(rows).find((row) => row?.id === id)
+    assert.equal(rowOf('tool-git-bash')?.config?.enabled, false, '参数桥把 toolGitBashEnabled 合并进 tool-git-bash 行')
+    assert.equal(rowOf('str-replace-editor')?.config?.maxOutputChars, 8000,
+      '参数桥把 strReplaceEditorMaxOutputChars 合并进 str-replace-editor 行（含 editor-default 投影）')
+    assert.deepEqual(rowOf('tool-config-engine')?.config?.requireApproval, ['shell'],
+      '参数桥把 customToolRequireApproval 合并进 tool-config-engine 行')
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }

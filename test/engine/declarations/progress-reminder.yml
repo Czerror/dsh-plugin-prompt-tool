@@ -1,0 +1,68 @@
+# progress-reminder 声明（B7 T1 能力收敛）
+#
+# 格式：与将来 `preset.yml` 顶层 `triggers` 段同格式 —— **YAML 数组**，
+# 由 engine/declared-triggers.mjs:58-73 读入 → compileDeclarations → mountDeclarations。
+#
+# 对应原模块：engine/progress-reminder.mjs
+#
+# ## 行为 → 通道 → 原语 → 动作 映射
+#
+# | 原模块行为                                                     | 依据        | 本声明的表达 |
+# |----------------------------------------------------------------|-------------|--------------|
+# | `enabled: true` 才注册                                          | :35         | 写声明即启用 |
+# | `text` 必填、显式空串 = 不滴入                                   | :39-41      | `append-context` 的空正文不注册（actions.mjs:393-394） |
+# | `tools/post-execute` → `additionalContexts` 追加 durable user 消息 | :113-116    | `append-context`（`mode: context`，actions.mjs:417-431） |
+# | `decision.kind !== 'accept'` 时不追加                            | :100        | 动作自带（actions.mjs:421） |
+# | 异常降级保留原 decision                                          | :117-120    | 动作自带（actions.mjs:427-430） |
+# | 正文 text、role=user、source.kind=plugin                          | :102-112    | 动作构造同一形状（actions.mjs:422-425） |
+# | `results % every === 0`（每 N 次结果滴一次）                      | :93-96      | `count.every = every` + `count.includeCurrent: true`（predicates.mjs:413-420 的校验与 :491 的 `count === 0 \|\| count % every !== 0`） |
+# | `drips < maxPerTurn`（每轮上限）                                  | :96, :101   | 动作 `maxPerTurn`（actions.mjs:249-296；命中后同步消耗，见 :333） |
+# | 子代理默认不滴入（`includeSubagents: false`）                     | :90         | `count.delegated: false`（predicates.mjs:432-436, 489；与 `session` 谓词同语义同实现） |
+# | 轮边界重置（`:61-83` 的 `turn/start` 监听）                        | :61-83      | `count.per: turn` 的轮推进（predicates.mjs:443-473）+ `maxPerTurn` 的轮重置（actions.mjs:270-271, 836） |
+#
+# ## 语义（`every: 4`、`maxPerTurn: 1`，即组合源默认）
+#
+# 判据 = 「本轮 `tool/result` 计数**含本次**满足 `count > 0 && count % every === 0`」
+# （`includeCurrent: true` 对齐 `progress-reminder.mjs:92` 在 `await` 前的同步自增；`count > 0`
+# 是 `every` 的既有约定，避免 `0 % N === 0` 在第 0 次误命中，见 predicates.mjs:413-415），
+# 上限由动作 `maxPerTurn` 承担（命中后同步消耗，超出即等同不命中放行下游）。
+# 第 E 次命中并追加一条（`drips` 0→1），第 2E 次在 `maxPerTurn = 1` 下被预算拦下、
+# 在 `maxPerTurn = 2` 下再追加一条 —— 与原模块逐轮一致。
+#
+# ## 与模块的已知差异（2026-09-22 用户拍板接受，不是待修缺口）
+#
+# **计数来源不同**：原模块的 `results`/`drips` 是**纯增量**、由本模块自己的 `turn/start`
+# 监听重置（:61-83），自注「纯增量、不可从事件流重建」（:49-51）；声明侧 `count` 从 durable
+# 事件流冷扫重建（predicates.mjs:474-487），`maxPerTurn` 预算同样是本进程内的纯增量
+# （actions.mjs:270-271）。因此**冷启动/重启后**两侧分叉：模块从 0 起（要再等 E 次），
+# 声明按已落盘的 durable 计数起（可能立即命中）。用户已拍板「改用可重建计数」，
+# 把语义从「严格递增节奏」放宽为「轮内计数阈值」——**已接受**。
+# 对拍证据：「冷启动时原模块从 0 计数、声明按已落盘事件计数」用例仍红，已按已知差异标注。
+#
+# ## 谓词载荷 / 计数时点（2026-09-22 已由主线程补齐，保留记载）
+#
+# 修复前的载荷缺口：`count` 谓词读「payload 自身」，而 `tools/post-execute` 的真实载荷是 exec
+# （`dsh-tools/lib/index.js:3491` 的 `waterfall(…, "tools/post-execute", exec, result, …)`）
+# → 计数恒 0。现行实现：`withWhen` 先经 `subjectOf(channel, args, warn)` 归一（actions.mjs:250；
+# 取法表 predicates.mjs:68-85，`tools/post-execute` → `args[0].agent`），
+# `createCountPredicate` 读 `sessionOf(payload)` → 会话可达。
+# 计数时点 `includeCurrent`（predicates.mjs:424-431, 490）**适用边界由声明者负责**：只有在
+# 「本次触发即将成为该信号」的通道上才成立（post-execute 上的 `tool-result` 成立、
+# pre-execute 上不成立），因此只在本文件使用。
+#
+# ## 剩余缺口
+#
+# 除上面已拍板接受的「计数来源」差异外无其它缺口。本能力 6 条对拍用例中 5 条绿
+# （形状 / 第 every 次 / 每轮上限 / 轮边界 / 子代理受众），1 条按已知差异标注。
+- id: progress-reminder
+  channel: tools/post-execute
+  when:
+    count: { of: tool-result, per: turn, every: 4, includeCurrent: true, delegated: false }
+  do:
+    kind: append-context
+    id: progress-reminder
+    mode: context
+    maxPerTurn: 1
+    text: >-
+      Progress check: before the next action, restate in one "We …" sentence what
+      remains of the goal and why the next step is the right one.

@@ -109,9 +109,10 @@ test('补建只创建缺失目录，已有非当前预设的定义与资源保�
 test('当前 pt-standard 保存物化自身的变量和能力模块，其他预设不受影响', (t) => {
   const presetDir = join(home, '.agent-presets')
   t.after(() => rmSync(home, { recursive: true, force: true }))
+  // B7 T3：载体换成存活模块（原 promoted-code-mode / tool-bootstrap 已随能力删除）。
   for (const [id, value, module] of [
-    ['pt-standard', 'ACTIVE', 'promoted-code-mode'],
-    ['standard', 'OTHER', 'tool-bootstrap'],
+    ['pt-standard', 'ACTIVE', 'tool-git-bash'],
+    ['standard', 'OTHER', 'tool-config-engine'],
   ]) {
     mkdirSync(join(presetDir, id), { recursive: true })
     writeFileSync(join(presetDir, id, 'preset.yml'),
@@ -125,8 +126,8 @@ test('当前 pt-standard 保存物化自身的变量和能力模块，其他预�
   assert.equal(existsSync(join(presetDir, 'pt-standard', 'agent.cordis.yml')), false, '启动不重建已有目录')
   ctx.save()
   const rows = parse(readFileSync(join(presetDir, 'pt-standard', 'agent.cordis.yml'), 'utf8'))
-  assert.ok(rows.some((row) => row.id === 'promoted-code-mode'))
-  assert.ok(!rows.some((row) => row.id === 'tool-bootstrap'))
+  assert.ok(rows.some((row) => row.id === 'tool-git-bash'))
+  assert.ok(!rows.some((row) => row.id === 'tool-config-engine'))
   assert.deepEqual(parse(readFileSync(join(presetDir, 'pt-standard', 'prompt-configs', 'variables.yml'), 'utf8')), { owner: 'ACTIVE' })
   assert.equal(readFileSync(join(presetDir, 'standard', 'preset.yml'), 'utf8'), other)
   assert.equal(existsSync(join(presetDir, 'standard', 'agent.cordis.yml')), false)

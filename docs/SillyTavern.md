@@ -33,9 +33,11 @@
 也不能被视为在 DSH 中保留了完全相同的全序。原始采样参数不导入，由宿主模型设置管理。
 
 生成预设按需装配 `prompt-config-engine`、`character-tools`、`session-var-tools`、
-`tool-config-engine`、`tool-filter`；有世界书则加 `world-book-tools`。含 system-section 时
+`tool-config-engine`；有世界书则加 `world-book-tools`。含 system-section 时
 生成 `persona: { prefix: '', complete: false }`。`enable_web_search=true` 加 `tool-web`；
-显式 false 时过滤 web 工具。
+显式 false 时产出三条 `triggers` 声明（`assembly` 呈现剔除 + `sdk-strip` 裁 `tools:sdk`
+正文 + `guard` 执行层拒绝，共用同一份 `deny: [web_search, web_fetch]`），
+`writePreset` 把该段物化为 `triggers.yml`，`declared-triggers` 行自动补装配。
 
 ## 角色卡（PNG / JSON）与角色卡库
 
@@ -65,7 +67,7 @@
 「应用到当前预设」按卡的实际需要装配模块，不再固定追加四件套；移除时对称回退：
 
 - **声明优先**：卡顶层 `modules` 存在时按声明追加。ST 转换产物自带 `prompt-config-engine`、`character-tools`、
-  `world-book-tools`（有世界书时）、`session-var-tools`、`tool-config-engine`、`tool-filter` 的声明，
+  `world-book-tools`（有世界书时）、`session-var-tools`、`tool-config-engine` 的声明，
   所以 ST 卡的应用行为与改造前一致。
 - **必需项兜底**：`prompt-config-engine` 始终补齐——缺少该行时 `promptConfigs` 不会生效，且不会有任何报错；
   卡含 `world-book` 策略配置时补 `world-book-tools`。因此未声明 `modules` 的手写卡只会得到必需项。
@@ -73,8 +75,8 @@
   预设原本就有的模块不会被记成这张卡引入的。来源记录保留到模块完成回退；首次引入它的卡先被移除时，
   记录仍保留给后续消费者，因此两张卡按任意顺序全部移除都能回退共享模块。
 - **移除回退**：按记录删除模块，删除前检查消费者——其他已导入卡仍引用（各自的记录或 `converted.yml` 里的声明）、
-  或预设内容仍需要它（还有 `promptConfigs` / `world-book` 配置 / `params.stMacros` / 顶层 `customTools` /
-  非空 `toolFilterAllow`|`toolFilterDeny`）时保留。**改造前应用过的卡没有记录，移除时不会回退模块**：
+  或预设内容仍需要它（还有 `promptConfigs` / `world-book` 配置 / `params.stMacros` / 顶层 `customTools`）时保留。
+  **改造前应用过的卡没有记录，移除时不会回退模块**：
   无从判断归属，宁可留下模块也不误删用户或引擎要用的装配。
 - **手写卡的档位**：用 `group` + `exclusive`（同一互斥组只运行排序最前的启用配置）表达档位三选一；
   本项目没有 `/命令` 式切换通道，切换在工作台的提示词配置页完成（关闭当前档、打开目标档）。

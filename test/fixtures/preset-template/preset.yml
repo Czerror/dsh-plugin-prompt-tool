@@ -10,12 +10,6 @@ description: 测试夹具：锚定/门控链路装配与三条提示词配置模
 version: 1.0.0
 engineCompat: ">=0.4.2"
 moduleConfigs:
-  context-gate:
-    promoteOn: either
-    includeSubagents: false
-  tool-bootstrap:
-    promoteOn: either
-    includeSubagents: false
   tool-web:
     fetch: true
     searchTimeoutMs: 60000
@@ -61,13 +55,6 @@ persona:
   complete: true
   includeRuntimeContext: false
 modules:
-  - context-gate
-  - anchor-turn
-  - deliberation-gate
-  - progress-reminder
-  - tool-filter
-  - tool-bootstrap
-  - promoted-code-mode
   - prompt-config-engine
   - run-code-env
   - tool-bash-disabled
@@ -96,7 +83,6 @@ layerSettings:
     guideText: ""
     guideCustom: false
     injectPrompt: true
-    allowKinds: "[skill-invocation, near-anchor, router-guide]"
     firstTurnWord: ""
     buildPattern: "开发|创建|写一个|生成|从零|做一个|构建|新项目|搭建|实现|做出|上线|落地|脚本|工具|应用|build|create|\
       develop|generate|implement|make a|new project"
@@ -130,11 +116,3 @@ layerSettings:
     subagentTemperature: ""
     subagentMaxTokens: ""
     maxDepth: ""
-  tool-pipeline:
-    toolFilterAllow: []
-    toolFilterDeny: []
-    usePtcMode: true
-  system-section:
-    bootstrapMaxTokens: 0
-    bootstrapTools: [ bash, str_replace_editor ]
-    compactionTools: [ read, write, edit, glob, grep, todo_write, ask_user_question ]

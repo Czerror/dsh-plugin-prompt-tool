@@ -156,13 +156,6 @@ export interface CharacterModuleContext {
   importedCharacters: readonly string[]
 }
 
-/** `string | string[]` 形态的引擎参数是否非空（空串 / 空列表 = 删键语义，视为未设置）。 */
-function nonEmptyParam(value: unknown): boolean {
-  if (Array.isArray(value)) return value.length > 0
-  if (typeof value === 'string') return value.trim().length > 0
-  return value !== undefined && value !== null
-}
-
 /** 模块的消费者判据。未知模块保守保留：宁可留一个无消费者的模块，也不误删用户或引擎要用的装配。 */
 export function characterModuleStillNeeded(module: string, context: CharacterModuleContext): boolean {
   switch (module) {
@@ -174,8 +167,6 @@ export function characterModuleStillNeeded(module: string, context: CharacterMod
       return context.configs.some((config) => isRecord(config.params) && config.params.stMacros === true)
     case 'tool-config-engine':
       return context.customTools
-    case 'tool-filter':
-      return nonEmptyParam(context.params.toolFilterAllow) || nonEmptyParam(context.params.toolFilterDeny)
     case 'character-tools':
       return context.importedCharacters.length > 0
         || context.configs.some((config) => String(config.id ?? '').startsWith('chara-'))

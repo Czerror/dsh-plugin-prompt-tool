@@ -301,7 +301,7 @@ workspace-pages.ts 是页面元数据的唯一来源。默认页为 features，�
 
 样式参照官方 `ui-settings-plugin-inventory/PluginInventorySettingsTab`，不是可配置插件表单。卡头复用共享 `StatusBadge`（StatusDot + 官方 Tag）与官方 Chevron，标记真实的「模型可见」；展开显示完整名称、来源视角、可见状态与描述。工具摘要没有插件配置启停或运行阶段，不显示虚构的「已启用／运行中」。搜索只在客户端过滤，并自动展开分组，不增加 bridge 请求。
 
-引擎字段由 `EngineParamFields` 按 `ENGINE_PARAM_DEFINITIONS` 生成，能力存在性仍由真实模块事实决定。普通参数不再在 JSX、默认值、读回、保存和快照中各抄一遍；枚举使用 MenuSelect，列表使用 TagInput，阶段保留结构化编辑。
+引擎字段由 `EngineParamFields` 按 `ENGINE_PARAM_DEFINITIONS` 生成，能力存在性仍由真实模块事实决定。普通参数不再在 JSX、默认值、读回、保存和快照中各抄一遍；枚举使用 MenuSelect，列表使用 TagInput。
 
 ### 5.3 状态展示约定
 
@@ -357,9 +357,9 @@ use-prompt-tool-store.ts 是唯一工作台 facade，负责把 SettingsScope mir
 
 | 模块 | 责任 |
 |---|---|
-| prompt-tool-fields.ts | Fields、StageDraft、默认值、字段级 helper |
+| prompt-tool-fields.ts | Fields、默认值、字段级 helper |
 | prompt-tool-view.ts | bootstrap/view 到 Fields 的 shape guard 与映射 |
-| dirty-state.ts | snapshot、深比较、阶段草稿完整性和 reload 判定 |
+| dirty-state.ts | snapshot、深比较和 reload 判定 |
 | param-overrides.ts | params 的列表拆分、条件发送和读回 patch |
 | prompt-config-content.ts | preset.md 内容资产的提升与剥离；AGENTS 文件卡（`params.file`）的正文提升与文件写回分流 |
 | save-queue.ts | 串行保存任务的最小队列 |
@@ -408,7 +408,7 @@ JSON bridge 的统一上限为 32 MiB；角色卡原始文件流独立限制为 
 1. 全局 settings 保存使用独立队列；参数、promptConfigs、能力创建/组合创建/移除共享预设保存队列，跨通道严格串行；能力写入及读回完成后才允许后续切换继续。
 2. 请求使用保存时的 snapshot；成功后只更新该 snapshot 的 saved 基线。
 3. 请求期间继续编辑时，当前 fields 与 saved snapshot 不同，dirty 保持为真。
-4. 成功后的静默 load 留在预设队列内，且只在全局草稿版本未变化、其他通道无待存草稿、对应草稿仍等于请求快照时执行；参数还要求没有未完成阶段草稿。
+4. 成功后的静默 load 留在预设队列内，且只在全局草稿版本未变化、其他通道无待存草稿、对应草稿仍等于请求快照时执行。
 5. promptConfigs 自动保存使用 debounce；工具栏手动保存仍经过配置校验，模块列表不再提供未保存提示、放弃修改和浮动保存条。
 6. 参数空字符串/空数组沿用删除键语义；variables 的空字符串仍是合法占位值。详细参数规则见 [architecture-params.md](architecture-params.md)。
 7. 预设写入携带 `expectedPresetId`，读回失败的自定义工具不降级为空列表供覆盖；跨预设旧草稿被拒绝，切换等待参数保存队列。
@@ -504,7 +504,7 @@ promptConfigs 模块卡展开区按基础信息、注入规则、作用范围、
 
 「注入规则」分区内的**条件判定**块只在引擎放行的层渲染（读 `/meta` 的 `layerFieldPolicies.subject|match`）：`subject` 下拉含「层缺省」（空值即不写该字段，由层决定匹配对象），`match` 提供主键/副键集合、组合逻辑四选一，以及区分大小写、整词两个开关；键的匹配方式是**三态**（自动 / 强制正则 / 强制字面）而非开关——做成开关会把用户手写的 `useRegex: false` 在编辑后静默改成自动识别。切换注入层时清空目标层不支持的 `subject`/`match`：引擎对这些层声明该字段直接 fail loud（整个预设无法挂载），顺手清掉是唯一安全的层切换语义。没有有效键的 `match` 不落盘（引擎要求至少一个非空键），只填逻辑或开关的半成品不会写进配置；手写的坏卡可以在表单里「切层再切回」清掉。
 
-主会话与子代理列表只显示真实的**提示词配置实例卡**，统一使用 `PromptConfigCard`，同一层可以有多张。每张卡的表单里有一个默认折叠的「本层引擎设置」区（`form.layerSettings.label`），展开后就是该层的参数分组、已装配能力清单与该层归属的资产编辑器。例如子代理启动层参数内嵌在「子代理通用守则 · 子代理启动层 · 固定文本」实例卡中，不另外生成「子代理启动层配置」卡。列表顶部/底部只保留不承载引擎参数的入口：工具栏（九层模板菜单、校验与保存）与 world-book 视图下的只读诊断卡。这一顺序不建立跨插入点的全局执行顺序，`anchor-turn` 的实际 hook 同样不受展示影响。
+主会话与子代理列表只显示真实的**提示词配置实例卡**，统一使用 `PromptConfigCard`，同一层可以有多张。每张卡的表单里有一个默认折叠的「本层引擎设置」区（`form.layerSettings.label`），展开后就是该层的参数分组、已装配能力清单与该层归属的资产编辑器。例如子代理启动层参数内嵌在「子代理通用守则 · 子代理启动层 · 固定文本」实例卡中，不另外生成「子代理启动层配置」卡。列表顶部/底部只保留不承载引擎参数的入口：工具栏（九层模板菜单、校验与保存）与 world-book 视图下的只读诊断卡。这一顺序不建立跨插入点的全局执行顺序，能力实际的 hook 同样不受展示影响。
 
 `EngineLayersPanel#engineLayerSlots({ store, t, viewFilter, audience, keyword, … })` 是唯一的层装配入口，返回 `beforeCards` / `commonCards` / `moduleCards`（只含页面级提示与定位锚）以及 `renderLayerSettings`、`hasLayerSettings` 和 `matchesLayerSettings`；两个页面声明受众视图、创建编排并持有工具草稿所有者，不手写层名判断或重复资产布局。
 
@@ -512,7 +512,7 @@ promptConfigs 模块卡展开区按基础信息、注入规则、作用范围、
 
 选中某个注入层且该层没有内容时，列表给「该层还没有内容」的空状态与新增入口，不自动创建九张空卡、也不谎称「无匹配」；`world-book` 是策略筛选而非层，保持原有的「无匹配 + 清除筛选」提示。
 
-本层设置的样式由 `app/workspace/pages/layer-settings.module.css` 拥有：根节点占满外层配置网格，分组使用具名标题与轻边界。参数网格在大于640px的设置容器中显示双列短控件，文本、列表和阶段配置整行；小于等于640px单列，不依赖浏览器窗口宽度。控件类型通过既有渲染器的呈现属性表达，不复制参数定义。已有主功能开关及子代理参与开关的能力按同一DOM顺序放入具名字段组：主开关在左、子代理在右，窄容器保留相邻关系；数值和文本在其后沿原顺序显示。配对复用模块的enabled/includeSubagents绑定，工具呈现沿已有usePtcMode主开关；不改字段集合、值或独立保存，不靠CSS order调整视觉顺序。数字使用等宽数字，说明自然换行，搜索hidden状态始终优先于布局。能力名称与移除动作独立对齐，移除按钮名称包含目标能力；资产沿用专用标题。阶段工具输入的DOM标识同样包含实例身份，草稿键和保存入口保持原样。
+本层设置的样式由 `app/workspace/pages/layer-settings.module.css` 拥有：根节点占满外层配置网格，分组使用具名标题与轻边界。参数网格在大于640px的设置容器中显示双列短控件，文本和列表整行；小于等于640px单列，不依赖浏览器窗口宽度。控件类型通过既有渲染器的呈现属性表达，不复制参数定义。已有主功能开关及子代理参与开关的能力按同一DOM顺序放入具名字段组：主开关在左、子代理在右，窄容器保留相邻关系；数值和文本在其后沿原顺序显示。配对复用模块的 enabled / includeSubagents 绑定沿用既有开关；不改字段集合、值或独立保存，不靠CSS order调整视觉顺序。数字使用等宽数字，说明自然换行，搜索hidden状态始终优先于布局。能力名称与移除动作独立对齐，移除按钮名称包含目标能力；资产沿用专用标题。实例参数输入的DOM标识同样包含实例身份，草稿键和保存入口保持原样。
 
 同名引擎参数允许多处渲染（同层每张实例卡内各有一份本层设置区）：它们绑定同一 `store.fields[键]` 与同一草稿键，一次修改只提交一次保存；`EngineParamField` 的 `instanceId` 带上「层 + 卡身份」，同层多卡的 DOM id、aria 关联互不冲突，不引入第二份状态、同步服务或事件总线。未完成的数字输入与字段错误也属于这份共享草稿：`store.getDraftRevision` / `subscribeDrafts` / `publishDrafts` 是既有 `subscribeFields` 同一模式的窄广播，参数控件订阅它后，一个渲染点里的半成品输入或错误提示立即出现在其他渲染点（含跨层的相关设置），真实重渲染同步由 `module-policy-smoke` 用真实 Edge 覆盖（同层两张实例卡之间切换编辑、错误态同步、一次失焦只保存一次）。工具栏提供插入点层级与策略筛选、九层模板菜单和提示词配置操作；列表筛选只影响展示，不按插入点分区块。能力与提示词配置保留各自保存、排序和删除语义。
 
@@ -526,7 +526,7 @@ world-book 视图只隐藏工具栏之外的列表主体之外的附加提示，
 
 变量卡的输入、启停、删除和失焦保存受真实预设可写性约束；折叠按钮继续可用，React 状态立即更新并记入既有草稿键。模型资产的预设参数同样只读，但当前会话的 `selectModel` 仍单独按官方 selectable 决定可用性。
 
-子代理工具策略（`subagent-tool-policy`）是模块类型能力：在能力菜单里创建，编辑器住在 tool-pipeline 层的层设置区资产分区里（`data-layer-asset="subagent-tool-policy"`），用「移除能力」入口移除。该编辑器只有**一个启用开关**：打开复用共享可用骨架并立即落盘；关闭删除顶层策略段并保留模块声明，同时把编辑区置为 `fieldset[disabled]` 只读。引擎仅在策略文件确实不存在时降级为官方委派行为，现存损坏文件仍报错。移除能力时模块声明与顶层段一起移除。历史“段在、声明不在”预设保留既有授权装配，装配清单如实列出它；保存或显式创建会补齐模块声明，不覆盖已有授权。子代理页排除「仅主对话」能力——不提供创建 `tool-filter`，它的参数与装配条目也不进本页设置区，并在模块区上方提示子代理工具面应走「subagent-tool-policy」能力。
+子代理工具策略（`subagent-tool-policy`）是模块类型能力：在能力菜单里创建，编辑器住在 tool-pipeline 层的层设置区资产分区里（`data-layer-asset="subagent-tool-policy"`），用「移除能力」入口移除。该编辑器只有**一个启用开关**：打开复用共享可用骨架并立即落盘；关闭删除顶层策略段并保留模块声明，同时把编辑区置为 `fieldset[disabled]` 只读。引擎仅在策略文件确实不存在时降级为官方委派行为，现存损坏文件仍报错。移除能力时模块声明与顶层段一起移除。历史“段在、声明不在”预设保留既有授权装配，装配清单如实列出它；保存或显式创建会补齐模块声明，不覆盖已有授权。子代理页排除「仅主对话」能力：它们的参数与装配条目不进本页设置区，并在模块区上方提示子代理工具面应走「subagent-tool-policy」能力。能力卡的组织方式见前端实现（待 UI 重构时补充）。
 
 策略编辑器在焦点离开编辑区时自动保存，没有保存按钮。标签输入的失焦提交先更新最新草稿，再生成保存快照；保存成功只确认对应快照，期间新编辑仍保持待存。再次失焦时若旧请求未完成，只保留最新待存快照并串行提交；失败保留草稿供下一次失焦重试。切换预设或卸载会使旧读取、保存响应及未发送队列失效。
 
@@ -556,7 +556,7 @@ world-book 视图只隐藏工具栏之外的列表主体之外的附加提示，
 - 工作台抽屉（shell.overlay，role=dialog + aria-modal）在抽屉内提供首尾 Tab 循环，复用 dialog-focus 的 `FOCUSABLE` / `nextDialogFocusIndex`；焦点位于 body portal 弹窗内时由弹窗自身循环接管，抽屉不拦截。
 - 弹窗只操作自己的 ref，不查询宿主页面结构。
 - 数值输入在提交点解析，草稿期保留字符串，避免输入中间态跳动。
-- 提示词和阶段排序同时提供 pointer drag 与上移/下移键盘替代；边界按钮有明确 aria-label。技能列表跟随官方来源与会话裁决，不提供自定义注册顺序。
+- 提示词排序同时提供 pointer drag 与上移/下移键盘替代；边界按钮有明确 aria-label。技能列表跟随官方来源与会话裁决，不提供自定义注册顺序。
 - reduced-motion 下关闭平移和过渡；focus-visible 必须清晰。
 - 外层抽屉和工作台壳使用overflow: clip；程序化定位只滚动canvas，不能把页头和导航滚出固定面板。
 
@@ -620,7 +620,7 @@ world-book 视图只隐藏工具栏之外的列表主体之外的附加提示，
 | slot 注册、抽屉接线、模板浮层锚点、弹窗焦点 | client-wiring-contract |
 | 客户端 slot 面、0.1.5 版本声明、bundle facade | host-publish-contract |
 | 桥接路径、端点映射、统一载荷 | bridge-client + test/shared/bridge-contract |
-| Fields、快照、空值、保存队列、阶段草稿 | editor-state + prompt-tool-view + param-overrides |
+| Fields、快照、空值、保存队列 | editor-state + prompt-tool-view + param-overrides |
 | 提示词配置内容资产、排序、表单分区 | prompt-config-content + prompt-config-order + prompt-config-form-layout |
 | 指令文件正文与策略 | instruction-drafts + instruction-save-flow |
 | 导入预览生命周期与顺序组 | import-smoke（真实 Edge + 真实文件输入） |

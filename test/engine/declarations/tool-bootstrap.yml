@@ -1,0 +1,99 @@
+# tool-bootstrap 声明（B7 T1 能力收敛）
+#
+# 格式：与将来 `preset.yml` 顶层 `triggers` 段同格式 —— **YAML 数组**，
+# 由 engine/declared-triggers.mjs:58-73 读入 → compileDeclarations → mountDeclarations。
+#
+# 对应原模块：engine/tool-bootstrap.mjs
+#
+# ## 行为 → 通道 → 原语 → 动作 映射（三项按 R1 分别处置；`stages` 已按拍板放弃）
+#
+# | 原模块行为                                                          | 依据        | 本声明的表达 |
+# |---------------------------------------------------------------------|-------------|--------------|
+# | 受控相位（未晋升、未压缩）把目录裁到 `bootstrapTools`                 | :412-416, :422, :432 | 声明 1 `phase({ compacted: false, promoted: false })` + `assembly.target.tools.allow` + `requireMatch: true` |
+# | 受控相位 + 已压缩（`boundary ≥ 0`）再补 `compactionTools`            | :423-426    | 声明 2 `phase({ compacted: true, promoted: false })` + `allow` = bootstrapTools + compactionTools |
+# | 晋升后保持装配目录（prompt-tool patch：不再窄化）                     | :412-416    | 两条 `promoted: false` 的声明都不命中 → 装配原样返回 |
+# | 子代理默认（`includeSubagents: false`）继承完整目录                   | :369-373    | `phase.includeSubagents: false`（predicates.mjs 透传给 `createEpochPromotion`；`compaction-epoch.mjs:149` 对子代理返回 `promoted: true`） |
+# | `personaSectionsOnly`：sections 只留 persona                         | :433-437    | 声明 1/2 的 `assembly.target.sections.keep`（白名单，actions.mjs:429-435 的过滤与 :298-300 的 keep/remove 互斥） |
+# | required 工具缺失 → 暴露完整目录                                      | :346-355    | `tools.requireMatch: true`（actions.mjs:412-427：`[...allow].some(name => !available.has(name))`，与原模块 `missing.length > 0` 对齐） |
+# | 未晋升时把首请求 `maxTokens` 钉到 `bootstrapMaxTokens`                | :466-483    | 声明 3 `request-params.patch`（actions.mjs 的 registerRequestParams；改写的唯一实现 layers.mjs 的 applyAgentRequestParams） |
+# | 晋升后**按值**剥离该 cap（仅当恰好等于注入值）                        | :469-477    | 声明 4 `request-params.unset`（layers.mjs 的按值删键语义） |
+# | 该监听注册在最外层（`prepend: true`）                                 | :460-465, :483 | `waterfallPosition: outermost` → `registrationOptions` 的 `prepend: true`（trigger.mjs:100-102） |
+# | `promoteOn: 'either'`（首 `tool/call` 或首 `assistant/message` 均晋升）| :34-40, :215 | `phase.promoteOn: either`（parsePromoteOn 的同义词汇，shared.mjs:14-18） |
+# | 装配/请求改写失败一律降级（暴露完整目录 / 保留原请求）                 | :449-453, :574-577 | 动作自带 expose-all / keep 降级 |
+#
+# `stages` 渐进披露（`:374-409` 的目录分支、`:488-515` 的推进工具注册）：**按 2026-09-22
+# 拍板放弃**，本文件不写声明、不注册推进工具（见 PLAN「T1 范围扩展」与「实施取舍」）。
+#
+# ## 已补齐的引擎能力（2026-09-22，保留记载以便追溯）
+#
+# 1. **谓词载荷归一**：`withWhen` 先经 `subjectOf(channel, args, warn)`（actions.mjs:250；
+#    取法表 predicates.mjs:68-85：`system-prompt/assemble` → `args[1].agent`、
+#    `agent/request` → `args[0].agent`），`createPhasePredicate` 读 `agentOf(payload)`。
+# 2. **`sections.keep` 白名单**（与 `remove` 互斥）：与 `filter(PERSONA_SECTION_NAMES.has)`
+#    （:433-437，persona 名见 :133）逐例等价——未列名的第三方段同样被删。
+# 3. **`phase.promoted` 三态**（predicates.mjs:273-292）：解耦后
+#    `{ compacted: true, promoted: false }` 就是 **C ∧ ¬P**，即 `:423-431` 的 compaction 回退；
+#    此前 `compacted` 与 `promoted` 合取，三者（P / C∧P / ¬C∧P）在 ¬P 上恒 false，
+#    任何组合都表达不出 C ∧ ¬P（这是本能力当时唯一无法表达的一维）。
+# 4. **`requireMatch` 判据对齐**（actions.mjs:414-424）：从「一个都不存在」改为
+#    「**任意一个** allow 工具缺失」，与原模块 `missing.length > 0` 逐条一致。
+#
+# ## 仍存在的缺口
+#
+# 1. **零工具模式的 compaction 补 shell 不在本文件**：原模块在 `bootstrapTools.length === 0`
+#    且已压缩时补 `bash`/`pwsh`（:427-430，仅当它们在装配目录里）。本文件对应组合源默认
+#    （`bootstrapTools: [bash, str_replace_editor]`），加 `bash`/`pwsh` 会与非零工具配置不等价。
+#    → **零工具模式的预设**应在其自己的声明 2 里把 `allow` 写成
+#    `[bash, pwsh, <compactionTools…>]`。
+# 2. **请求改写的隐式模型过滤**：`request-params` 动作无条件走 `matchesAgentScope`，
+#    未声明 `modelScope` 时按「非 Flash」过滤（`shared.mjs` 的 `matchesModel`）；原模块的
+#    预算监听没有模型过滤（:466-483）。对拍用非 Flash 模型，Flash 场景未覆盖。
+# 3. `workspaceLine`（:323-339, :415）与 `phase1FirstCallInstruction`（:439-444）都要改
+#    **已有段的正文**，`assembly` 动作只能 `sections.add` 整段 —— **未写声明**，
+#    需产品/引擎侧决定是否补能力。
+- id: tool-bootstrap-catalog
+  channel: system-prompt/assemble
+  when:
+    phase: { promoteOn: either, includeSubagents: false, compacted: false, promoted: false }
+  do:
+    kind: assembly
+    id: tool-bootstrap
+    target:
+      tools: { allow: [bash, str_replace_editor], requireMatch: true }
+      sections: { keep: ['deployment:persona-prefix', 'deployment:persona-suffix'] }
+  waterfallPosition: default
+
+- id: tool-bootstrap-catalog-compacted
+  channel: system-prompt/assemble
+  when:
+    phase: { promoteOn: either, includeSubagents: false, compacted: true, promoted: false }
+  do:
+    kind: assembly
+    id: tool-bootstrap-compacted
+    target:
+      tools:
+        allow: [bash, str_replace_editor, read, write, edit, glob, grep, todo_write, ask_user_question]
+        requireMatch: true
+      sections: { keep: ['deployment:persona-prefix', 'deployment:persona-suffix'] }
+  waterfallPosition: default
+
+- id: tool-bootstrap-budget
+  channel: agent/request
+  when:
+    not:
+      phase: { promoteOn: either, includeSubagents: false }
+  do:
+    kind: request-params
+    id: tool-bootstrap-budget
+    patch: { maxTokens: 1024 }
+  waterfallPosition: outermost
+
+- id: tool-bootstrap-budget-release
+  channel: agent/request
+  when:
+    phase: { promoteOn: either, includeSubagents: false }
+  do:
+    kind: request-params
+    id: tool-bootstrap-budget-release
+    unset: { maxTokens: 1024 }
+  waterfallPosition: outermost

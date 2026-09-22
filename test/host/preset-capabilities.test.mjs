@@ -28,32 +28,29 @@ const {
   resolvePresetModuleFacts,
   validateCustomToolIdentities,
 } = await import('../../lib/index.mjs')
-const { buildEngineModuleParams } = await import('../../src/shared/engine-params.ts')
-const { apply: applyToolFilter } = await import('../../engine/tool-filter.mjs')
 const { modelRequestConfigs } = await import('../../src/host/prompt-configs.ts')
 const { createPromptConfigs } = await import('../../engine/schema.mjs')
 const { wireLayers } = await import('../../engine/layers.mjs')
 
 // —— 能力创建/删除（原 engine-capability.test.mjs） ——
 
-test('能力创建一次写入 modules/初始参数并保持幂等', () => {
+test('能力创建一次写入 modules 并保持幂等', () => {
   const dir = mkdtempSync(join(tmpdir(), 'pt-engine-capability-'))
   try {
     const file = join(dir, 'preset.yml')
     writeFileSync(file, [
       'id: demo', 'name: demo', 'version: "1"', 'engineCompat: ">=0"',
-      'modules: [context-gate]', 'params: { customKeep: true }',
-      'moduleConfigs:', '  context-gate:', '    custom: keep', '',
+      'modules: [prompt-config-engine]', 'params: { customKeep: true }',
+      'moduleConfigs:', '  tool-web:', '    fetch: true', '',
     ].join('\n'), 'utf8')
-    const first = createEngineCapabilityInPreset(dir, { action: 'create-recipe', recipeId: 'deliberation' })
+    // B7 T3：recipe（`deliberation` 等）已随能力删除清空，改用存活的单项能力。
+    const first = createEngineCapabilityInPreset(dir, { action: 'create', capabilityId: 'tool-git-bash' })
     assert.equal(first.changed, true)
     const parsed = parseYaml(readFileSync(file, 'utf8'))
-    assert.ok(parsed.modules.includes('deliberation-gate'))
-    assert.ok(parsed.modules.includes('progress-reminder'))
+    assert.ok(parsed.modules.includes('tool-git-bash'))
     assert.equal(parsed.params.customKeep, true)
-    assert.equal(parsed.layerSettings['tool-pipeline'].deliberationGate, true)
     const before = readFileSync(file, 'utf8')
-    const second = createEngineCapabilityInPreset(dir, { action: 'create-recipe', recipeId: 'deliberation' })
+    const second = createEngineCapabilityInPreset(dir, { action: 'create', capabilityId: 'tool-git-bash' })
     assert.equal(second.changed, false)
     assert.equal(readFileSync(file, 'utf8'), before)
   } finally {
@@ -67,7 +64,7 @@ test('能力候选校验失败时不写入 preset.yml', () => {
     const file = join(dir, 'preset.yml')
     writeFileSync(file, 'id: demo\nname: demo\nversion: "1"\nengineCompat: ">=0"\nmodules: [missing-module]\n', 'utf8')
     const before = readFileSync(file, 'utf8')
-    assert.throws(() => createEngineCapabilityInPreset(dir, { action: 'create', capabilityId: 'tool-filter' }))
+    assert.throws(() => createEngineCapabilityInPreset(dir, { action: 'create', capabilityId: 'tool-git-bash' }))
     assert.equal(readFileSync(file, 'utf8'), before)
   } finally {
     rmSync(dir, { recursive: true, force: true })
@@ -96,7 +93,7 @@ test('能力候选校验拒绝重复 Loader row 且不写盘', () => {
     writeFileSync(file, 'id: duplicate-row\nname: duplicate-row\nversion: "1"\nengineCompat: ">=0"\nmodules: [delegation, delegation-ptc]\n', 'utf8')
     const before = readFileSync(file, 'utf8')
     assert.throws(
-      () => createEngineCapabilityInPreset(dir, { action: 'create', capabilityId: 'tool-filter' }),
+      () => createEngineCapabilityInPreset(dir, { action: 'create', capabilityId: 'tool-git-bash' }),
       /重复 row id[\s\S]*delegation/,
     )
     assert.equal(readFileSync(file, 'utf8'), before)
@@ -123,9 +120,9 @@ test('空白预设只装配用户新建的单项能力', () => {
   try {
     const file = join(dir, 'preset.yml')
     writeFileSync(file, 'id: blank\nname: blank\nversion: "1"\nengineCompat: ">=0"\nmodules: []\n', 'utf8')
-    const result = createEngineCapabilityInPreset(dir, { action: 'create', capabilityId: 'tool-filter' })
+    const result = createEngineCapabilityInPreset(dir, { action: 'create', capabilityId: 'tool-git-bash' })
     assert.equal(result.changed, true)
-    assert.deepEqual(parseYaml(readFileSync(file, 'utf8')).modules, ['tool-filter'])
+    assert.deepEqual(parseYaml(readFileSync(file, 'utf8')).modules, ['tool-git-bash'])
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
@@ -135,23 +132,24 @@ test('删除能力连显式参数与行配置一起移除，保留未登记参�
   const dir = mkdtempSync(join(tmpdir(), 'pt-engine-capability-remove-'))
   try {
     const file = join(dir, 'preset.yml')
+    // B7 T3：载体换成存活的能力提供者（tool-git-bash 有 `toolGitBashEnabled` 参数与自有行配置）。
     writeFileSync(file, [
       'id: demo', 'name: demo', 'version: "1"', 'engineCompat: ">=0"',
-      'modules: [context-gate, tool-bootstrap]',
+      'modules: [tool-git-bash, filesystem-editor]',
       'params: { customKeep: true }',
-      'layerSettings: { system-section: { bootstrapMaxTokens: 1024 } }',
-      'moduleConfigs:', '  tool-bootstrap:', '    promoteGate: true',
+      'layerSettings: { tool-pipeline: { toolGitBashEnabled: false } }',
+      'moduleConfigs:', '  tool-git-bash:', '    timeoutMs: 90000',
       'unknown: keep', '',
     ].join('\n'), 'utf8')
-    const first = removeEngineCapabilityFromPreset(dir, 'tool-bootstrap')
-    assert.deepEqual(first, { changed: true, removedModules: ['tool-bootstrap'], capabilityIds: ['tool-bootstrap'] })
+    const first = removeEngineCapabilityFromPreset(dir, 'tool-git-bash')
+    assert.deepEqual(first, { changed: true, removedModules: ['tool-git-bash'], capabilityIds: ['tool-git-bash'] })
     const parsed = parseYaml(readFileSync(file, 'utf8'))
-    assert.deepEqual(parsed.modules, ['context-gate'])
-    assert.equal(parsed.layerSettings['system-section'].bootstrapMaxTokens, undefined, '该能力参数随能力一起移除（参数在 ⇒ 装配在）')
+    assert.deepEqual(parsed.modules, ['filesystem-editor'])
+    assert.equal(parsed.layerSettings['tool-pipeline'].toolGitBashEnabled, undefined, '该能力参数随能力一起移除（参数在 ⇒ 装配在）')
     assert.equal(parsed.params.customKeep, true, '未登记的键不是引擎参数，不碰')
-    assert.equal(parsed.moduleConfigs?.['tool-bootstrap'], undefined, '该能力的行配置一起移除')
+    assert.equal(parsed.moduleConfigs?.['tool-git-bash'], undefined, '该能力的行配置一起移除')
     assert.equal(parsed.unknown, 'keep')
-    assert.equal(removeEngineCapabilityFromPreset(dir, 'tool-bootstrap').changed, false, '重复删除幂等')
+    assert.equal(removeEngineCapabilityFromPreset(dir, 'tool-git-bash').changed, false, '重复删除幂等')
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
@@ -160,29 +158,30 @@ test('删除能力连显式参数与行配置一起移除，保留未登记参�
 test('参数在 ⇒ 装配在：显式参数与行配置自动补齐能力模块', () => {
   const dir = mkdtempSync(join(tmpdir(), 'pt-implied-modules-'))
   try {
+    // B7 T3：载体换成存活的能力提供者（参数 → tool-git-bash，行配置 → tool-config-engine）。
     writeFileSync(join(dir, 'preset.yml'), [
       'id: implied', 'name: implied', 'version: "1"', 'engineCompat: ">=0"',
-      'modules: [context-gate]',
+      'modules: [tool-web]',
       'params: { customKeep: true }',
-      'layerSettings: { tool-pipeline: { cotDrip: true, cotDripEvery: 2 } }',
-      'moduleConfigs:', '  tool-filter:', '    enabled: false',
+      'layerSettings: { tool-pipeline: { toolGitBashEnabled: false } }',
+      'moduleConfigs:', '  tool-config-engine:', '    requireApproval: [shell]',
       '',
     ].join('\n'), 'utf8')
     const spec = loadPresetSpec(dir)
     const facts = resolvePresetModuleFacts(spec, dir, true)
-    assert.deepEqual(facts.declaredModules, ['context-gate'], '声明事实仍是磁盘内容，不伪造')
-    assert.ok(facts.effectiveModules.includes('progress-reminder'), '参数隐含的模块进入装配事实')
-    assert.ok(facts.effectiveModules.includes('tool-filter'), '行配置隐含的模块进入装配事实')
-    assert.equal(isEngineCapabilityPresent('progress-reminder', facts), true, '编辑卡据此出现')
+    assert.deepEqual(facts.declaredModules, ['tool-web'], '声明事实仍是磁盘内容，不伪造')
+    assert.ok(facts.effectiveModules.includes('tool-git-bash'), '参数隐含的模块进入装配事实')
+    assert.ok(facts.effectiveModules.includes('tool-config-engine'), '行配置隐含的模块进入装配事实')
+    assert.equal(isEngineCapabilityPresent('tool-git-bash', facts), true, '编辑卡据此出现')
     const ids = parseYaml(renderComposition(spec, {}, dir)).map((row) => row.id)
-    assert.ok(ids.includes('progress-reminder'), '装配产物真的含该能力行')
-    assert.ok(ids.includes('tool-filter'), '行配置隐含的模块同样真的装配')
-    assert.equal(facts.effectiveModules.includes('tool-bootstrap'), false, '无关参数不触发其他能力')
+    assert.ok(ids.includes('tool-git-bash'), '装配产物真的含该能力行')
+    assert.ok(ids.includes('tool-config-engine'), '行配置隐含的模块同样真的装配')
+    assert.equal(facts.effectiveModules.includes('filesystem-editor'), false, '无关参数不触发其他能力')
     // 移除能力时参数与行配置一起消失：不会再被隐含装配拉回来。
-    assert.equal(removeEngineCapabilityFromPreset(dir, 'progress-reminder').changed, true)
+    assert.equal(removeEngineCapabilityFromPreset(dir, 'tool-git-bash').changed, true)
     const after = resolvePresetModuleFacts(loadPresetSpec(dir), dir, true)
-    assert.equal(after.effectiveModules.includes('progress-reminder'), false, '移除后不再隐含装配')
-    assert.equal(loadPresetSpec(dir).params?.cotDrip, undefined, '移除后参数已随能力删除')
+    assert.equal(after.effectiveModules.includes('tool-git-bash'), false, '移除后不再隐含装配')
+    assert.equal(loadPresetSpec(dir).params?.toolGitBashEnabled, undefined, '移除后参数已随能力删除')
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
@@ -192,8 +191,8 @@ test('删除最后一项能力后保持显式空组合', () => {
   const dir = mkdtempSync(join(tmpdir(), 'pt-engine-capability-remove-last-'))
   try {
     const file = join(dir, 'preset.yml')
-    writeFileSync(file, 'id: blank\nname: blank\nversion: "1"\nengineCompat: ">=0"\nmodules: [tool-filter]\n', 'utf8')
-    const result = removeEngineCapabilityFromPreset(dir, 'tool-filter')
+    writeFileSync(file, 'id: blank\nname: blank\nversion: "1"\nengineCompat: ">=0"\nmodules: [tool-git-bash]\n', 'utf8')
+    const result = removeEngineCapabilityFromPreset(dir, 'tool-git-bash')
     assert.equal(result.changed, true)
     assert.deepEqual(parseYaml(readFileSync(file, 'utf8')).modules, [])
   } finally {
@@ -290,21 +289,18 @@ test('能力事实覆盖本地 filesystem module 与 nested row id', () => {
 test('官方 agent.cordis.yml 行只作运行事实，不伪装成可编辑引擎能力', () => {
   const dir = mkdtempSync(join(tmpdir(), 'pt-official-facts-'))
   try {
+    // B7 T3：原夹具列的是三个已删本地行；换成官方包行（本仓库无对应 .mjs）。
     writeFileSync(join(dir, 'agent.cordis.yml'), [
-      '- id: tool-bootstrap',
-      '  name: ./tool-bootstrap.mjs',
-      '- id: context-gate',
-      '  name: ./context-gate.mjs',
-      '- id: promoted-code-mode',
-      '  name: ./promoted-code-mode.mjs',
       '- id: str-replace-editor',
       '  name: "@deepseek-ai/dsh-tool-str-replace-editor"',
+      '- id: tool-web',
+      '  name: "@deepseek-ai/dsh-tool-web"',
       '',
     ].join('\n'), 'utf8')
     const facts = resolvePresetModuleFacts({ id: 'official', name: 'official', version: '1', engineCompat: '>=0' }, dir, true)
     assert.equal(facts.sourceMode, 'official')
     assert.equal(facts.editable, false)
-    assert.ok(facts.rowIds.includes('tool-bootstrap'), '官方行事实仍保留供诊断')
+    assert.ok(facts.rowIds.includes('str-replace-editor'), '官方行事实仍保留供诊断')
     assert.deepEqual(ENGINE_CAPABILITIES.filter((item) => isEngineCapabilityPresent(item.id, facts)), [])
   } finally {
     rmSync(dir, { recursive: true, force: true })
@@ -314,15 +310,15 @@ test('官方 agent.cordis.yml 行只作运行事实，不伪装成可编辑引�
 test('显式模块清单稳定去重', () => {
   const facts = resolvePresetModuleFacts({
     id: 'duplicate', name: 'duplicate', version: '1', engineCompat: '>=0',
-    modules: ['context-gate', 'context-gate', 'tool-bootstrap'],
+    modules: ['tool-git-bash', 'tool-git-bash', 'tool-config-engine'],
   })
-  assert.deepEqual(facts.declaredModules, ['context-gate', 'tool-bootstrap'])
-  assert.deepEqual(facts.effectiveModules, ['context-gate', 'tool-bootstrap'])
+  assert.deepEqual(facts.declaredModules, ['tool-git-bash', 'tool-config-engine'])
+  assert.deepEqual(facts.effectiveModules, ['tool-git-bash', 'tool-config-engine'])
 })
 
 test('params-only 不能伪造模块事实', () => {
   const facts = resolvePresetModuleFacts({
-    id: 'params-only', name: 'params-only', version: '1', engineCompat: '>=0', params: { cotDrip: true },
+    id: 'params-only', name: 'params-only', version: '1', engineCompat: '>=0', params: { toolGitBashEnabled: false },
   })
   assert.equal(facts.sourceMode, 'unknown')
   assert.equal(facts.effectiveModules, null)
@@ -366,101 +362,14 @@ test('历史策略段：实际运行能力可见，补声明保留授权，移�
     assert.equal(removed.subagentToolPolicy, undefined)
     assert.equal(isEngineCapabilityPresent(id, resolvePresetModuleFacts(removed, dir, true)), false)
     assert.doesNotMatch(renderComposition(removed, {}, dir), /id: subagent-tool-policy/)
-    const implied = { ...removed, params: { toolFilterAllow: ['read'] }, moduleConfigs: { 'tool-filter': { enabled: true } } }
-    assert.equal(isEngineCapabilityPresent('tool-filter', resolvePresetModuleFacts(implied, dir, true)), true,
+    const implied = { ...removed, params: { toolGitBashEnabled: false }, moduleConfigs: { 'tool-git-bash': { enabled: false } } }
+    assert.equal(isEngineCapabilityPresent('tool-git-bash', resolvePresetModuleFacts(implied, dir, true)), true,
       '参数在 ⇒ 装配在：显式参数/行配置会隐含装配该能力')
   } finally {
     rmSync(root, { recursive: true, force: true })
   }
 })
 
-// —— 子代理页创建 tool-filter（原 subagent-creates-tool-filter.test.mjs） ——
-
-const PRESET_ID = 'subfilter-e2e'
-
-/** 独立临时预设根：modules 可编辑（create/remove 都要求显式 modules 数组）。 */
-function seedPreset() {
-  const root = mkdtempSync(join(tmpdir(), 'pt-subfilter-root-'))
-  const dir = join(root, PRESET_ID)
-  mkdirSync(dir, { recursive: true })
-  writeFileSync(join(dir, 'preset.yml'),
-    `id: ${PRESET_ID}\nname: ${PRESET_ID}\nversion: "1"\nengineCompat: ">=0"\nmodules:\n  - tool-fs\n  - delegation\nparams: {}\n`, 'utf8')
-  return { root, dir }
-}
-
-function makeCtx() {
-  const listeners = new Map()
-  const ctx = {
-    logger: { warn: () => {} },
-    on(type, handler, opts) {
-      const list = listeners.get(type) ?? []
-      list.push({ handler, opts })
-      listeners.set(type, list)
-    },
-  }
-  ctx.listeners = listeners
-  return ctx
-}
-
-const tool = (name) => ({ name, description: `tool ${name}` })
-const assembled = (tools) => ({ sections: [], contexts: [], tools, variables: {} })
-
-/** 跑一次 system-prompt/assemble 瀑布（模拟主会话或子代理）。 */
-async function runAssemble(ctx, delegationDepth, tools) {
-  const handler = ctx.listeners.get('system-prompt/assemble')?.[0]?.handler
-  assert.ok(handler, 'tool-filter 应注册 assemble 监听器')
-  const agent = { session: { id: `s-${delegationDepth}`, header: { delegationDepth } } }
-  return handler(assembled(tools), { agent }, async () => assembled(tools))
-}
-
-test('子代理页创建 tool-filter：预设级落盘 + 组合行 + 参数桥只写主对话语义', async () => {
-  const { root, dir } = seedPreset()
-  try {
-    // 1) 创建能力（等价于 UI 点「添加能力 → tool-filter」）。
-    const created = createEngineCapabilityInPreset(dir, { action: 'create', capabilityId: 'tool-filter' })
-    assert.equal(created.changed, true)
-    assert.deepEqual(created.addedModules, ['tool-filter'])
-    assert.ok(loadPresetSpec(dir).modules.includes('tool-filter'), '写入激活预设 modules（预设级，无作用域参数）')
-
-    // 2) 参数桥：用户在卡片里配的白/黑名单只产生主对话语义的键。
-    const configs = buildEngineModuleParams({ toolFilterAllow: ['read'], toolFilterDeny: ['bash'] })
-    assert.deepEqual(configs['tool-filter'], { allow: ['read'], deny: ['bash'] })
-    assert.equal(configs['tool-filter'].includeSubagents, undefined, '不存在写 includeSubagents 的 UI 路径')
-
-    // 3) 组合行与参数桥一致。
-    const row = parseYaml(renderComposition(loadPresetSpec(dir), { toolFilterAllow: ['read'], toolFilterDeny: ['bash'] }, root))
-      .find((item) => item?.id === 'tool-filter')
-    assert.deepEqual(row.config, { enabled: true, allow: ['read'], deny: ['bash'] }, '注册开关随组合源行默认给出')
-
-    // 4) 引擎实测：主对话被过滤，子代理保持完整目录。
-    const mainCtx = makeCtx()
-    applyToolFilter(mainCtx, row.config)
-    const main = await runAssemble(mainCtx, 0, [tool('bash'), tool('read'), tool('write')])
-    assert.deepEqual(main.tools.map((item) => item.name), ['read'], '主对话只留白名单内工具')
-
-    const subCtx = makeCtx()
-    applyToolFilter(subCtx, row.config)
-    const sub = await runAssemble(subCtx, 1, [tool('bash'), tool('read'), tool('write')])
-    assert.deepEqual(sub.tools.map((item) => item.name), ['bash', 'read', 'write'], '子代理完全不受这条过滤影响')
-
-    // 5) 总开关关闭时不注册监听器（整条链失效）。
-    const offCtx = makeCtx()
-    applyToolFilter(offCtx, { allow: ['read'], enabled: false })
-    assert.equal(offCtx.listeners.get('system-prompt/assemble'), undefined, 'enabled=false 不注册监听器')
-
-    // 6) 兼容路径：显式 moduleConfigs 直写 includeSubagents 仍可让子代理继承（非 UI 路径）。
-    const directCtx = makeCtx()
-    applyToolFilter(directCtx, { enabled: true, allow: ['read'], includeSubagents: true })
-    const inherited = await runAssemble(directCtx, 1, [tool('bash'), tool('read')])
-    assert.deepEqual(inherited.tools.map((item) => item.name), ['read'], '显式直写才让子代理继承')
-
-    // 7) 创建/删除对称：移除能力后组合不再出现过滤行。
-    const removed = removeEngineCapabilityFromPreset(dir, 'tool-filter')
-    assert.equal(removed.changed, true)
-    assert.deepEqual(removed.removedModules, ['tool-filter'])
-    const rows = parseYaml(renderComposition(loadPresetSpec(dir), {}, root))
-    assert.equal(rows.find((item) => item?.id === 'tool-filter'), undefined)
-  } finally {
-    rmSync(root, { recursive: true, force: true })
-  }
-})
+// B7 T3：原「子代理页创建 tool-filter」整段随 tool-filter 能力与委派 toolFilter 通道删除而退场
+// （能力卡、参数键、`engine/tool-filter.mjs` 均已不存在；子代理工具面改由实例级 subagent-tool-policy 授权，
+//  覆盖见 test/engine/declaration-parity-tool-filter.test.mjs 与 test/host/subagent-tool-policy.test.mjs）。

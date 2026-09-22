@@ -35,17 +35,10 @@ const CARD_LABEL_KEYS: Record<string, PromptToolLocaleKey> = {
   'custom-tools': 'customTools.aria',
   'subagent-tool-policy': 'policy.title',
   'prompt-defaults': 'modules.group.prompt-defaults',
-  'context-gate': 'modules.group.context-gate',
-  'anchor-turn': 'modules.group.anchor-turn',
-  'tool-bootstrap': 'modules.group.bootstrap-tools',
   'main-model': 'modules.group.main-model',
   'subagent-model': 'modules.group.subagent-model',
   'subagent-tools': 'modules.group.subagent-delegation',
-  'tool-filter': 'modules.group.tool-filter',
-  'promoted-code-mode': 'modules.group.promoted-code-mode',
   'str-replace-editor': 'modules.group.str-replace-editor',
-  'deliberation-gate': 'modules.group.deliberation-gate',
-  'progress-reminder': 'modules.group.progress-reminder',
   'tool-config-engine': 'modules.group.tool-config-engine',
 }
 
@@ -248,7 +241,7 @@ export interface EngineLayerSlotsInput {
   /** 自定义工具由常驻页面持有，设置区只渲染。 */
   toolEditor?: ReactNode
   onCreated?: (capabilityId: string) => void
-  /** 本页既不创建也不渲染的能力（如子代理页的 tool-filter）。 */
+  /** 本页既不创建也不渲染的能力（受众视图差异，如仅主对话生效的能力）。 */
   excludeCapabilities?: readonly string[]
   moduleHint?: string
   moduleEmptyHint?: string

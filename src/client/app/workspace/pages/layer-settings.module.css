@@ -53,8 +53,7 @@
 }
 
 .paramFields > [data-control='text'],
-.paramFields > [data-control='list'],
-.paramFields > [data-control='stages'] { grid-column: 1 / -1; }
+.paramFields > [data-control='list'] { grid-column: 1 / -1; }
 
 .paramFields > [data-control='number'] > input,
 .paramFields > [data-control='select'] > span { width: 100%; }

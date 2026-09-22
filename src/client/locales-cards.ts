@@ -11,8 +11,8 @@
 export const CARDS_ZH = {
   // 子代理「工具与深度」模块卡（DelegationToolsCard；深度标签复用 param.maxDepth）。
   'policy.delegation.name': '工具与深度',
-  'policy.delegation.meta': '工具集白名单/黑名单 + 注入 kind 白名单 + 递归深度',
-  'policy.delegation.hint': '工具过滤与注入 kind 白名单由主会话的 `tool-filter` / `context-gate` 能力卡统一维护；此处只保留子代理深度。',
+  'policy.delegation.meta': '委派递归深度（工具授权已归「subagent-tool-policy」能力卡）',
+  'policy.delegation.hint': '工具授权由「subagent-tool-policy」能力卡统一维护（授权上限、工具档与模型扩权）；此处只保留子代理递归深度。',
   'policy.delegation.policyMoved': '子代理工具策略已改为模块类型能力：在模块列表里启用/删除「subagent-tool-policy」能力卡，卡内编辑授权上限、工具档与模型扩权。',
   'policy.delegation.depthHint': '0 表示禁止委派；服务商管理表示由服务商决定；正整数限制递归层数；留空使用默认值',
   'policy.delegation.depthUnset': '（不设置）',
@@ -288,8 +288,8 @@ export const CARDS_ZH = {
 
 export const CARDS_EN: Record<keyof typeof CARDS_ZH, string> = {
   'policy.delegation.name': 'Tools & depth',
-  'policy.delegation.meta': 'Tool allow/deny lists + injected kind whitelist + recursion depth',
-  'policy.delegation.hint': 'Tool filtering and the injected kind whitelist are maintained by the main-session `tool-filter` / `context-gate` capability cards; only subagent depth lives here.',
+  'policy.delegation.meta': 'Delegation recursion depth (tool grants live in the "subagent-tool-policy" card)',
+  'policy.delegation.hint': 'Tool grants are maintained by the "subagent-tool-policy" capability card (ceiling, profiles and model expansion); only subagent recursion depth lives here.',
   'policy.delegation.policyMoved': 'The subagent tool policy is now a module-type capability: enable or remove the "subagent-tool-policy" card in the module list and edit the ceiling, profiles and model expansion inside it.',
   'policy.delegation.depthHint': '0 forbids delegation; provider-managed leaves it to the provider; a positive integer limits recursion depth; empty uses the default',
   'policy.delegation.depthUnset': '(Not set)',

@@ -1,6 +1,6 @@
 /** preset.yml params 与客户端字段之间的纯转换；字段清单/类型/默认值来自共享契约。 */
 import { ENGINE_PARAM_DEFINITIONS, ENGINE_PARAM_KEYS, engineParamList, type EngineParamKey } from '../../shared/engine-params.ts'
-import type { Fields, StageDraft } from './prompt-tool-fields.ts'
+import type { Fields } from './prompt-tool-fields.ts'
 import { deepEqual } from './dirty-state.ts'
 
 export function readParamOverridesPatch(source: Record<string, unknown>): Partial<Fields> {
@@ -33,14 +33,6 @@ export function readParamOverridesPatch(source: Record<string, unknown>): Partia
       case 'max-depth':
         if (typeof value === 'string' || typeof value === 'number') patch[key] = String(value)
         break
-      case 'stages':
-        if (Array.isArray(value)) {
-          patch[key] = value.filter((stage) => stage !== null && typeof stage === 'object').map((stage) => ({
-            name: typeof stage.name === 'string' ? stage.name : '',
-            tools: engineParamList(stage.tools).join(', '),
-          }))
-        }
-        break
     }
   }
   return patch as Partial<Fields>
@@ -66,9 +58,6 @@ function serializedParam(key: EngineParamKey, value: unknown): unknown {
   switch (ENGINE_PARAM_DEFINITIONS[key].kind) {
     case 'string-list': return engineParamList(value)
     case 'max-depth': return value === '' || value === 'provider-managed' ? value : Number(value)
-    case 'stages': return (value as StageDraft[]).map((stage) => ({
-      name: stage.name.trim(), tools: engineParamList(stage.tools),
-    })).filter((stage) => stage.name.length > 0 && stage.tools.length > 0)
     default: return value
   }
 }

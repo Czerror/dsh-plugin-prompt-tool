@@ -173,7 +173,8 @@ export function sessionMapGet(map, key, create) {
  * ## 三个必答项（正好对应现状的三处差异）
  *
  *   1. **键类型**：`weak: true` 用会话**对象身份**（`WeakMap`，随对象回收、无上限，
- *      既有先例见 `context-gate.mjs:154`）；缺省用 `session.id`（跨对象稳定的快路径键）。
+ *      既有先例见原 `context-gate` 的延迟状态表，它已随模块删除）；缺省用 `session.id`
+ *      （跨对象稳定的快路径键）。
  *   2. **淘汰策略**：按 id 索引时缺省 `clear()` 全清（`MAX_TRACKED_SESSIONS` 上限，
  *      清空只触发一次冷扫重建）；`evict: 'oldest'` 是**另一档**——只删早于当前新建的
  *      一个条目，与 `clear()` **不等价**，只有调用方明确声明要用它时才生效（既有两处

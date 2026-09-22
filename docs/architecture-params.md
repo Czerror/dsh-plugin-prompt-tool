@@ -34,7 +34,7 @@ node D:/AI/GitHub/dsh-plugin-prompt-tool/scripts/migrate-layer-settings.mjs @Pre
 
 九层 UI、官方参数与插件参数的对照见 [九层契约](injection-point-contracts.md)。
 
-根目录 [preset.yml](../preset.yml) 是可复制的全参数参考：九层真实模板与 71 个共享登记参数自动生成，所有规则示例默认关闭，共享参数以注释参考提供，避免复制模板即默认启用可选能力。`pnpm rebuild:preset-template` 使用 YAML Document 从权威目录重建，`-- --check` 检查漂移；模板自身的参数值、层归属和规则合法性由行为测试验证。
+根目录 [preset.yml](../preset.yml) 是可复制的全参数参考：九层真实模板与 30 个共享登记参数自动生成，所有规则示例默认关闭，共享参数以注释参考提供，避免复制模板即默认启用可选能力。`pnpm rebuild:preset-template` 使用 YAML Document 从权威目录重建，`-- --check` 检查漂移；模板自身的参数值、层归属和规则合法性由行为测试验证。
 
 ## 1. 分层与职责
 
@@ -50,7 +50,7 @@ node D:/AI/GitHub/dsh-plugin-prompt-tool/scripts/migrate-layer-settings.mjs @Pre
 
 `buildEngineModuleParams()` 与 `moduleParamFallbacks()` 使用同一字段映射正向装配、反向回显；仅投影白名单参数，不把任意 `moduleConfigs` 或内部路径发送到浏览器。复杂的子代理模型路由／授权关系仍由 `buildModuleConfigsFromParams()` 处理，不伪装成简单字段映射。
 
-`EngineParamFields` 按定义渲染现有能力配置卡，阶段使用结构化编辑；全部公开引擎配置键（受众、晋升信号、开关、文本等）由覆盖测试约束。模型路由、子代理策略、自定义工具保留专用编辑器；不将它们塞进 `promptConfigs`。
+`EngineParamFields` 按定义渲染现有能力配置卡；全部公开引擎配置键（受众、晋升信号、开关、文本等）由覆盖测试约束。模型路由、子代理策略、自定义工具保留专用编辑器；不将它们塞进 `promptConfigs`。
 
 ## 2. 参数流链路（保存 → 生效）
 
@@ -94,22 +94,18 @@ UI fields
 | 值 | 处理 | 原因 |
 |---|---|---|
 | `''`（字符串清空） | **删键** | 回落模板/引擎默认（如 reasoningEffort 留空 = 继承宿主） |
-| `[]`（列表清空） | **删键** | 恢复该参数的默认行为；清空全部阶段不生成非法的空阶段定义 |
-| `0`（`stagePreUnlock`） | **写 0（保留）** | 引擎 `undefined → 1`，`0` 是合法档位，二者不等价 |
-| `0`（`cotDripEvery` / `deliberationMinChars`） | **写 0 并透传** | 分别禁用节拍提醒、取消深思下限；不得回落组合默认的 4 / 400 |
-| `0`（`bootstrapMaxTokens`） | **写 0，物化时删除封顶键** | 显式关闭输出封顶，不被行默认或 moduleConfigs 回填 |
-| `0`（其余数字） | **写 0，按字段语义消费** | 如 maxPromoteSteps 0→默认 4、deferredGraceSteps 0→无延迟 |
+| `[]`（列表清空） | **删键** | 恢复该参数的默认行为 |
+| `0`（其余数字） | **写 0，按字段语义消费** | 如 `maxDepth: 0` = 禁止委派 |
 | `false`（布尔） | **写 false** | 引擎 `=== true` 归一，false = 显式关闭（与默认等价或明确） |
 
 
 **保存前全量参数校验（2026-09-01）**：`/param-overrides` 写分支在落盘前调用
 `validateEngineParamValues()`（契约层与渲染消费同源）——覆盖全部 `ENGINE_PARAM_KEYS`：
-布尔键必须是 boolean；数值键（temperature/maxTokens/步数/字符数）按各自约束（有限数 /
-正整数 / 非负整数）；字符串键必须是 string；列表键（工具集/白名单/来源）必须是 string 或
+布尔键必须是 boolean；数值键（temperature/maxTokens/字符数）按各自约束（有限数 /
+正整数 / 非负整数）；字符串键必须是 string；列表键必须是 string 或
 string[]；`maxDepth` 接受 `''`/`provider-managed`/非负安全整数及其数字字符串，
 保存校验与普通委派、实例工具策略的参数桥共用归一化规则（`"0"` 与 `0` 同义）。
-`stages` 的每项必须有非空名称、非空 `tools` 数组，且工具名均为非空字符串；
-顶层 `stages: []` 仍表示删键。未知键（旧内容别名等不兼容键）在保存期响亮失败
+未知键（旧内容别名等不兼容键）在保存期响亮失败
 （`400 overrides-unknown-key` / `400 overrides-invalid-value`），不做运行时自动兼容。
 UI 字符串与 preset.yml 手写 number 两通道统一；空字符串仍是合法删键值。
 渲染层保持宽容（never-brick），配置错误只在保存期响亮失败。
@@ -125,7 +121,7 @@ UI 侧 `persistParamOverrides` **条件发送**：
 - 未改动且 preset.yml 未声明的值不发送；比较基线是最近读回／保存的有效草稿，避免把组合行默认值固化进 params；
 - 用户把值改到与已加载基线不同即发送，包括从行级 true 改为 false；
 - `guideEnabled` 可恢复继承：发送空字符串删除显式开关；`false` 仍是显式关闭，不当作空值；
-- YAML 数值模型参数转换成编辑器字符串，列表和阶段完整投影，不再因为草稿类型不同而漏回显。
+- YAML 数值模型参数转换成编辑器字符串，列表完整投影，不再因为草稿类型不同而漏回显。
 
 > 这里的「空值删键」只适用于引擎行为参数，不适用于内容占位变量。`variables` 的空字符串占位键是有意设计，必须继续写入 `variables.yml`，供世界书条目正文以 `{{key}}` 引用：登记发生在 ST 导入期（`src/host/sillytavern.ts:785` 把卡内无源宏登记为空占位）与工作台「模板变量」编辑（`VariablesEditor`，`src/client/features/prompts/PromptConfigFields.tsx:509`），交付时按既有插值替换，空值替换为空串、不留字面量（`engine/executor.mjs:237`、`engine/interpolate.mjs:119`）；占位键不参与引擎参数校验。`world_book_upsert` 只写世界书条目与 note 记忆（`src/runtime/world-book-tools.ts:134-151`），不登记也不调整变量。
 
@@ -216,12 +212,10 @@ settings 载荷键 `promptConfigs`；读回、序列化、脏检测、保存快�
 1. 参数、提示词配置与能力创建/组合创建/移除进入同一个预设保存队列，写入与读回在队列内完成；切换等待已入队操作，失败任务不阻断后续任务；
 2. 入队时生成请求快照，载荷与成功后的已保存基线都来自该快照；
 3. 请求成功后只确认该快照；若用户在请求期间继续编辑，当前 fields 与快照不等，仍保持 dirty；
-4. 只有全局草稿版本未变化、其他保存通道无待存草稿，且对应草稿与请求快照一致时，才在队列内执行静默 `load()`；参数草稿还须不存在未完成阶段；
+4. 只有全局草稿版本未变化、其他保存通道无待存草稿，且对应草稿与请求快照一致时，才在队列内执行静默 `load()`；
 5. provider 自动预选只是显示兜底：preset 未声明 provider 且模型名为空时不写入 params，防止 UI convenience default 被固化成用户覆盖。
 
 参数、提示词资产、模板变量、自定义工具、子代理策略及能力变更请求携带可选 `expectedPresetId`。服务端只用该 ID 校验当前预设一致性，不据此构造目录；旧草稿或请求体读取期间切换返回 `409 preset-changed`，不写盘。客户端切换先等待参数队列，排队草稿和保存响应均检查预设身份。
-
-首轮输出封顶的未设置与显式 `0` 分开：未设置继承组合默认，`0` 在组合合并时删除封顶键，确保不会被 `moduleConfigs` 旧限额回填。晋升信号与门控的互斥关系按候选有效配置在写盘前校验。
 
 `SwitchSnapshot` 的参数键从目录派生，使用结构化克隆隔离数组和对象；全部参数自动参与脏检测。客户端 `Fields` 从 `EngineParams` 派生草稿类型；bridge transport 保留响应 shape guard。
 
@@ -249,7 +243,8 @@ moduleConfigs 仅补充参数桥未覆盖的键（如 ST 导入 tool-web.fetch�
 ## 8. 内容策略三功能与参数归属
 
 `engine/instruction-hint.mjs` 是通用内置能力：`strategy: instruction-hint`、
-`placeholder + fill: instruction-hint` 与 `context-gate.instructionHint` 共用同一组
+`placeholder + fill: instruction-hint` 与 `params.instructionHint`（原 `context-gate.instructionHint`，
+现由 `instruction-hint` 模块行承接）共用同一组
 文件探测、提示文本与转换函数；它不属于任何预设专属模块。
 
 `engine/strategies.mjs` 三个内容策略是**独立功能**，仅分类器在 fallback 层共用：
@@ -461,8 +456,8 @@ ST 转换（convertStToPreset）通过顶层 `persona: { prefix: '', complete: f
 
 ### 分流规则
 
-- 策略未启用（段缺失）：参数桥照旧把 `toolFilterAllow/Deny` 同时写入主代理 `tool-filter` 与子代理 `delegation.toolFilter`（官方原行为）。
-- 策略启用（段非空）：参数桥只写主代理 `tool-filter`；子代理由 `subagent-tool-policy` 模块的 agent-local shadow 在创建窗口解析并冻结 toolFilter（不再热更新；需要更高权限时创建新实例）。
+- 策略未启用（段缺失）：子代理工具面按官方委派行为，不写 `toolFilter`；原先「参数桥把 `toolFilterAllow/Deny` 写入主代理 `tool-filter` 并下发子代理 `delegation.toolFilter`」的通道已随该能力一并删除。
+- 策略启用（段非空）：子代理由 `subagent-tool-policy` 模块的 agent-local shadow 在创建窗口解析并冻结 toolFilter（不再热更新；需要更高权限时创建新实例）。
 - `subagent-tools/policy.yml` 是生成物（writePreset 从 preset.yml 顶层段物化）；preset.yml 仍是单一来源。
 - 保存链路：`/subagent-tool-policy` POST → `validateSubagentToolPolicy()` 校验 → 原子写盘并补齐模块声明；关闭开关只删策略段并保留模块声明，删除能力才同时移除两者。
 - writer 直接读取手写/导入的 `subagentToolPolicy` 时同样先校验。历史“有段无模块”预设继续装配策略以保留既有授权；`effectiveModules` 和能力卡如实显示该装配，`declaredModules` 保持磁盘事实。显式创建或保存可补齐声明且不覆盖已有策略，删除能力会连段移除。**参数在 ⇒ 装配在**：预设 `params` 里出现登记参数键、或 `moduleConfigs` 里出现该能力的行键时，装配入口（`loadCompositionText`）与模块事实（`resolvePresetModuleFacts`）用同一份派生 `impliedModulesForParams` 自动补齐对应模块——`effectiveModules` 如实反映、`declaredModules` 仍是磁盘事实，组合源自带默认值不算信号。因此不存在"写了参数却长期不生效"的休眠配置，编辑卡也不会因此消失；相应地"移除能力"必须同时删除该能力的显式参数与行配置，否则会被隐含装配立刻拉回。
@@ -510,7 +505,7 @@ ST 转换（convertStToPreset）通过顶层 `persona: { prefix: '', complete: f
 
 - `/bootstrap` 附带 `moduleFacts`：`declaredModules`（缺失为 `null`）、`effectiveModules`（不展开默认骨架，但保留历史策略段的真实兼容装配）、递归 `rowIds`、`sourceMode` 和 `editable`；官方 `agent.cordis.yml` 行只作运行事实，不伪装成可编辑的插件能力。
 - 能力卡存在性来自显式 `modules`，以及实际仍在运行的历史子代理策略兼容装配；不能由其它 params 或官方组合 `rowIds` 推断。创建能力按磁盘声明检查，允许补齐历史策略的声明；`moduleConfigs` 回显优先级保持 `params > moduleConfigs > 行默认`。
-- `tool-filter`、`context-gate` 等参数各有唯一 UI owner；子代理委派卡只编辑 `maxDepth` 与 `subagentToolPolicy`，避免跨页失焦保存互相覆盖。
+- 每个引擎参数各有唯一 UI owner；子代理委派卡只编辑 `maxDepth` 与 `subagentToolPolicy`，避免跨页失焦保存互相覆盖。
 - `engineCapability` bridge 只接受服务端白名单能力/recipe；recipe 不作为持久化实体，但展开结果一次写入目标 preset.yml，候选组合校验通过后才重建。
 
 ### 边界
@@ -534,4 +529,4 @@ buildSubagentToolParameters(c)     → 模型可见扩展参数 Schema
 完整预设导入复用 writer 的 `sourceDir` 与 `materializeOnly` 模式：从隔离来源物化到独立候选目录，最终 ID 与暂存位置分离，不写目标或同步共享引擎。安装方先完成工具／配置／附件校验，再版本复检和 rename 交换；普通保存与重建继续复用 writer。预设自有正文及本地 engine 保留，禁止遍历清理兄弟预设。详见 [资产交换](asset-transfer.md)。
 
 - `test/host/engine-params-bridge.test.mjs`：PARAM_KEYS 派生一致性；每个 ENGINE_PARAM_KEYS 键有装配消费；MODEL_SEGMENT_MAP 段目标唯一。
-- `test/host/write-preset.test.mjs`：模型参数 patch 生成/留空跳过；空值删键（''/[]，stagePreUnlock=0 保留）；变量文件只读顶层 variables，保留空串与同名键，清空后不回退旧 params。
+- `test/host/write-preset.test.mjs`：模型参数 patch 生成/留空跳过；空值删键（''/[]）；变量文件只读顶层 variables，保留空串与同名键，清空后不回退旧 params。

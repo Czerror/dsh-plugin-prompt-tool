@@ -1,0 +1,63 @@
+# deliberation-gate 声明（B7 T1 能力收敛）
+#
+# 格式：与将来 `preset.yml` 顶层 `triggers` 段同格式 —— **YAML 数组**，
+# 由 engine/declared-triggers.mjs:58-73 读入 → compileDeclarations → mountDeclarations。
+#
+# 对应原模块：engine/deliberation-gate.mjs
+#
+# ## 行为 → 通道 → 原语 → 动作 映射
+#
+# | 原模块行为                                                       | 依据          | 本声明的表达 |
+# |------------------------------------------------------------------|---------------|--------------|
+# | `enabled: true` 才注册                                            | :41           | 写声明即启用 |
+# | 深度代理 = 本轮 `assistant/message` 的 `extractText(event.data).length` 累加 | :90-96 | `count: { of: assistant-chars, per: turn }`（predicates.mjs:248 注明与 deliberation-gate 逐字相同） |
+# | `turn/start` 建立本轮预算（深度 0）                                | :97-100       | count 的 `per: turn` 由 `turn/start` 与带轮号事件共同推进（predicates.mjs:262-263, 304-317） |
+# | 首见会话冷扫 durable log 重建深度                                  | :104-114      | count 的 `rebuild` 冷扫（predicates.mjs:337-350） |
+# | 无任何轮事件 → 深度视为 0（哨兵轮），恰好门一次                     | :109-112      | 无轮号时 `countOf` 返回 0（predicates.mjs:336）——同为「深度 0」 |
+# | 轮 map 修剪 `MAX_TRACKED_TURNS = 8`                               | :32, :65-71   | count 同一常量与同一修剪策略（predicates.mjs:260, 306-317） |
+# | 当前轮深度 `< minChars` → `{ kind: 'deny', reason: gateText }`      | :131, :133    | `count.max = minChars - 1` + `decision: deny` + `reason: gateText` |
+# | 每轮最多 deny `maxGatesPerTurn` 次（`:130-132` 的 `gates` 自增）      | :130-132      | 动作 `maxPerTurn: maxGatesPerTurn`（actions.mjs:249-296, 333：命中后**同步**消耗，超出即等同不命中放行下游；轮边界由 durable `data.turn` 重置，见 :836 的 observe 接线） |
+# | 子代理默认不门控（`includeSubagents: false`）                       | :126          | `count.delegated: false`（predicates.mjs:432-436, 489；与 `session` 谓词同语义同实现 `isDelegated`） |
+# | deny 前无 await（同步裁决，并行调用无法竞态越过预算）                | :122-133      | 声明的 when 由 `withWhen` 同步求值、预算 `take()` 也在同步路径上（actions.mjs:244-253, 333；同步谓词不插 microtask） |
+#
+# ## 谓词载荷（2026-09-22 已由主线程修复，保留记载以便追溯）
+#
+# 修复前的缺口：`count` 谓词读「payload 自身」（predicates.mjs 旧版），而
+# `tools/pre-execute` 的真实载荷是 exec（真机键：`token / callId / rootCallId / name /
+# signal / agent / deferContext / concludeTurn / arguments`，见 `dsh-tools` 的
+# `createExecution` 与 `lib/index.js:3220` 的 `waterfall(carrier, "tools/pre-execute", exec, …)`）
+# → 顶层没有 session → 计数恒 0 → `max: 399` 恒命中（恒 deny）。
+# 现行实现：`withWhen` 先经 `subjectOf(channel, args, warn)` 归一（actions.mjs:250；取法表
+# predicates.mjs:68-85，`tools/pre-execute` → `args[0].agent`），`createCountPredicate` 读
+# `sessionOf(payload)`（predicates.mjs:443）→ 会话可达、`per: turn` 真正按轮计数。
+# 对拍证据：「深度 ≥ minChars 放行」「深度 < minChars deny」两条用例已绿。
+#
+# ## 每轮上限与受众（2026-09-22 已由主线程补齐）
+#
+# 1. **动作触发计数**：动作声明新增 `maxPerTurn`（actions.mjs:249-296）——纯增量、按轮重置、
+#    与 `count` 的 durable 重建模型分开（正是 `gates` 需要的语义）。`take()` 在谓词命中后的
+#    同步路径上消耗（actions.mjs:333），超出即等同不命中并放行下游，与原模块
+#    `gates >= maxGatesPerTurn → next()` 逐条一致。轮边界经 `session/event` 的 `observe`
+#    按 durable `data.turn` 推进（actions.mjs:836）。
+# 2. **受众**：`count` 现在也有 `delegated`（predicates.mjs:432-436, 489），因此
+#    `includeSubagents: false` 直接写在 `count` 上即可，不必再耦合一个 durable 事件类型。
+# 对拍证据：「每轮最多 deny maxGatesPerTurn 次」与「子代理默认不门控」两条用例已绿。
+#
+# ## 剩余缺口
+#
+# 无。本能力 5 条对拍用例（放行 / deny / 哨兵轮 / 每轮上限 / 子代理受众）全部绿。
+- id: deliberation-gate
+  channel: tools/pre-execute
+  when:
+    count: { of: assistant-chars, per: turn, max: 399, delegated: false }
+  do:
+    kind: decision
+    id: deliberation-gate
+    phase: pre
+    decision: deny
+    maxPerTurn: 1
+    reason: >-
+      Deliberation gate: this turn has not shown its reasoning yet. Before retrying this tool
+      call, write out your full reasoning in your reply — start with "We", restate the goal,
+      weigh the approaches, and lay out the concrete steps and risks — then issue the tool
+      call again. This message is a planning prompt, not a tool failure.

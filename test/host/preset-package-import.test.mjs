@@ -293,11 +293,22 @@ test('importPresetPackage：SillyTavern JSON 单文件经转换引擎导入（�
   assert.equal(converted.name, '我的角色（SillyTavern 转换）', '预设名取卡片 name 字段')
   assert.deepEqual(converted.modules, [
     'prompt-config-engine', 'character-tools',
-    'session-var-tools', 'tool-config-engine', 'tool-filter',
+    'session-var-tools', 'tool-config-engine',
   ], 'ST 管理工具按固定集合装配；persona 行由顶层 persona 段渲染时自动前插')
   assert.deepEqual(converted.persona, { prefix: '', complete: false }, 'system-section 注入需要顶层 persona（complete: false 允许其生效）')
   assert.equal(converted.modules.includes('tool-web'), false, 'enable_web_search: false 不组装 tool-web')
-  assert.deepEqual(converted.moduleConfigs['tool-filter'], { includeSubagents: false, deny: ['web_search', 'web_fetch'] }, 'false 时 tool-filter deny web 工具')
+  // B7 T3「3+1 结合」：`enable_web_search: false` 不再写已删除的 `tool-filter` 行配置，
+  // 改由三条声明式触发器（呈现裁剪 / SDK 正文裁剪 / 执行 guard）共用同一份 deny 名单。
+  assert.equal(converted.moduleConfigs?.['tool-filter'], undefined, 'tool-filter 模块与行配置已退场')
+  assert.deepEqual(converted.triggers.map((trigger) => [trigger.id, trigger.do.kind]), [
+    ['st-web-assembly', 'assembly'],
+    ['st-web-sdk-strip', 'sdk-strip'],
+    ['st-web-guard', 'guard'],
+  ])
+  for (const trigger of converted.triggers) {
+    const mask = trigger.do.target?.tools ?? trigger.do.mask
+    assert.deepEqual(mask, { deny: ['web_search', 'web_fetch'] }, '三条声明共用同一份 deny 名单')
+  }
   const configs = converted.promptConfigs
   assert.equal(configs.length, 2)
   const main = configs.find((config) => config.id === 'main')

@@ -1,21 +1,24 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import SystemPrompt, { renderPrompt, renderContextSections } from '@deepseek-ai/dsh-system-prompt'
 import { createScope } from '@deepseek-ai/dsh-scope'
 import { agentEvents } from '@deepseek-ai/dsh-agent'
+import { parse } from 'yaml'
 import { createPromptConfigs } from '../../engine/schema.mjs'
 import { applyPromptConfigs } from '../../engine/executor.mjs'
 import { wireLayers } from '../../engine/layers.mjs'
 import { setSessionVar } from '../../engine/session-vars.mjs'
-import { apply as applyContextGateRaw } from '../../engine/context-gate.mjs'
-import { compositionConfig } from '../fixtures/composition-defaults.mjs'
+import { compileDeclarations, mountDeclarations } from '../../engine/trigger-spec.mjs'
 
-// 引擎不再内置 enabled 默认：装配铺组合源默认（enabled: true）。
-const applyContextGate = (ctx, config = {}) =>
-  applyContextGateRaw(ctx, { ...compositionConfig('context-gate'), ...config })
+// 晋升门控的载体是**声明路径**（B7 T3：原 `context-gate` 模块与本地下同名组合源已删除，
+// 该行为改由预设顶层 `triggers` 段的声明表达）。下面这份 YAML 就是删除前对拍通过的等价声明；
+// 断言（未晋升不出现运行时上下文 / 压缩后重新门控 / 子代理豁免）不依赖原模块。
+const CONTEXT_GATE_DECLARATIONS = parse(readFileSync(new URL('./declarations/context-gate.yml', import.meta.url), 'utf8'))
+const mountContextGate = (ctx) =>
+  mountDeclarations(ctx, compileDeclarations(CONTEXT_GATE_DECLARATIONS, { ctx }), { plugin: 'official-variable-regression' })
 
 async function harness(t) {
   const root = new Context()
@@ -121,9 +124,9 @@ for (const gateFirst of [true, false]) {
   test(`runtime-context：真实晋升门控与压缩后重晋升保持生效（门控先挂=${gateFirst}）`, async (t) => {
     const h = await harness(t)
     const scope = await h.mount([{ id: 'env', layer: 'runtime-context', strategy: 'placeholder', fill: 'env-facts', text: '{{CWD}}' }], (ctx, configs, warn) => {
-      if (gateFirst) applyContextGate(ctx, {})
+      if (gateFirst) mountContextGate(ctx)
       wireLayers(ctx, configs, warn)
-      if (!gateFirst) applyContextGate(ctx, {})
+      if (!gateFirst) mountContextGate(ctx)
     })
     const session = sessionWith()
     const events = []

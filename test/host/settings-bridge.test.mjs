@@ -549,21 +549,23 @@ test('settings bridge /param-overrides 接受锚定/引导内容键，非法正�
   assert.equal(after.unknown, 'keep')
 })
 
-test('参数保存拒绝空工具阶段和非法深度，失败不写盘、不重建', async () => {
+test('参数保存拒绝非法参数值，失败不写盘、不重建', async () => {
   const { ctx, handlers } = makeHarness()
   const dir = makeUserPresetDir('pt-param-validation-')
   const file = join(dir, 'preset.yml')
-  const original = `# keep comment\nid: ${basename(dir)}\nmodules: [tool-bootstrap]\nunknown: keep\n`
+  const original = `# keep comment\nid: ${basename(dir)}\nmodules: [prompt-config-engine]\nunknown: keep\n`
   writeFileSync(file, original, 'utf8')
   let rebuilds = 0
   registerSettingsBridge(ctx, 'prompt-tool', () => ({ available: true, providers: [] }),
     () => skillsStateStub(), () => '', undefined, () => dir,
     undefined, () => { rebuilds += 1 })
   const write = handlers.get(PREFIX + BRIDGE_ENDPOINTS.paramOverrides)
+  // B7 T3：原用例用 `stages`（已随能力删除），换成存活的同 kind 非法值：
+  // maxDepth 枚举/整数、number 键、string-list 元素类型、pattern 编译。
   for (const overrides of [
-    { stages: [{ name: 'read', tools: [] }] },
-    { stages: [{ name: 'read', tools: [''] }] },
     { maxDepth: 'invalid' }, { maxDepth: ' ' }, { maxDepth: '-1' }, { maxDepth: '1.5' },
+    { modelMaxTokens: '-5' }, { strReplaceEditorMaxOutputChars: 1.5 },
+    { customToolRequireApproval: [1, 2] }, { buildPattern: '(' },
   ]) {
     const res = fakeRes()
     await write(fakeReq({ [Symbol.asyncIterator]: async function* () {
@@ -574,15 +576,14 @@ test('参数保存拒绝空工具阶段和非法深度，失败不写盘、不�
     assert.equal(readFileSync(file, 'utf8'), original)
   }
   assert.equal(rebuilds, 0)
-  for (const stages of [[{ name: 'read', tools: ['read'] }], []]) {
+  for (const overrides of [{ maxDepth: '0' }, { maxDepth: '0', customToolRequireApproval: ['shell'] }]) {
     const res = fakeRes()
     await write(fakeReq({ [Symbol.asyncIterator]: async function* () {
-      yield Buffer.from(JSON.stringify({ overrides: { stages, maxDepth: '0' } }))
+      yield Buffer.from(JSON.stringify({ overrides }))
     } }), res)
     assert.equal(res.status, 200)
     const saved = parseYaml(readFileSync(file, 'utf8'))
-    assert.deepEqual(saved.layerSettings['system-section']?.stages, stages.length > 0 ? stages : undefined)
-    assert.equal(saved.layerSettings['subagent-start'].maxDepth, '0')
+    assert.equal(saved.layerSettings['subagent-start'].maxDepth, '0', 'maxDepth 0 是合法值')
     assert.equal(saved.unknown, 'keep')
   }
   assert.equal(rebuilds, 2)
@@ -594,12 +595,14 @@ test('模板变量与参数独立保存，读取与 bootstrap 不回退旧 param
   const dir = makeUserPresetDir('pt-variable-isolation-')
   const file = join(dir, 'preset.yml')
   const params = { legacyOnly: '旧值', variables: { nested: '嵌套旧值' } }
-  const layerSettings = { 'tool-pipeline': { usePtcMode: false }, 'system-section': { stagePreUnlock: 0 } }
+  // B7 T3：变量名故意与**已登记的存活引擎参数**同名（原 usePtcMode / stagePreUnlock 已删除）——
+  // 模板变量只写顶层 `variables`，不得污染 `layerSettings` 上的同名引擎参数。
+  const layerSettings = { 'tool-pipeline': { toolGitBashEnabled: false, strReplaceEditorMaxOutputChars: 16000 } }
   writeFileSync(file, `# keep comment\nid: ${basename(dir)}\nparams: ${JSON.stringify(params)}\nlayerSettings: ${JSON.stringify(layerSettings)}\n`, 'utf8')
   registerSettingsBridge(ctx, 'prompt-tool', () => ({ available: true, providers: [] }),
     () => skillsStateStub(), () => '', undefined, () => dir)
   const write = handlers.get(PREFIX + BRIDGE_ENDPOINTS.presetVariables)
-  for (const variables of [{ usePtcMode: 'text', stagePreUnlock: '' }, {}]) {
+  for (const variables of [{ toolGitBashEnabled: 'text', strReplaceEditorMaxOutputChars: '' }, {}]) {
     const res = fakeRes()
     await write(fakeReq({ [Symbol.asyncIterator]: async function* () {
       yield Buffer.from(JSON.stringify({ variables }))
@@ -994,7 +997,8 @@ test('settings bridge /engine-capability 删除显式能力并只重建一次', 
   mkdirSync(presetRoot, { recursive: true })
   const dir = makeUserPresetDir('pt-engine-capability-bridge-')
   try {
-    writeFileSync(join(dir, 'preset.yml'), `id: ${basename(dir)}\nname: beta\nversion: "1"\nengineCompat: ">=0"\nmodules: [context-gate, tool-filter]\n`, 'utf8')
+    // B7 T3：原用例删的是 tool-filter（已删除的能力卡），换成本批存活的能力。
+    writeFileSync(join(dir, 'preset.yml'), `id: ${basename(dir)}\nname: beta\nversion: "1"\nengineCompat: ">=0"\nmodules: [filesystem-editor, tool-git-bash]\n`, 'utf8')
     const { ctx, handlers } = makeHarness()
     let rebuilds = 0
     registerSettingsBridge(ctx, 'prompt-tool',
@@ -1009,12 +1013,12 @@ test('settings bridge /engine-capability 删除显式能力并只重建一次', 
       () => { rebuilds += 1 },
     )
     const handler = handlers.get(PREFIX + BRIDGE_ENDPOINTS.engineCapability)
-    const request = Buffer.from(JSON.stringify({ action: 'remove', capabilityId: 'tool-filter' }))
+    const request = Buffer.from(JSON.stringify({ action: 'remove', capabilityId: 'tool-git-bash' }))
     const res = fakeRes()
     await handler(fakeReq({ [Symbol.asyncIterator]: async function* () { yield request } }), res)
     assert.equal(res.status, 200)
-    assert.deepEqual(JSON.parse(res.body).value.removedModules, ['tool-filter'])
-    assert.deepEqual(parseYaml(readFileSync(join(dir, 'preset.yml'), 'utf8')).modules, ['context-gate'])
+    assert.deepEqual(JSON.parse(res.body).value.removedModules, ['tool-git-bash'])
+    assert.deepEqual(parseYaml(readFileSync(join(dir, 'preset.yml'), 'utf8')).modules, ['filesystem-editor'])
     assert.equal(rebuilds, 1)
 
     const again = fakeRes()
@@ -1078,12 +1082,12 @@ test('预设身份拦截跨预设旧请求及请求体读取期间的切换，�
     () => skillsStateStub(), () => '', undefined, () => active,
     () => { rebuilds += 1 }, () => { rebuilds += 1 }, undefined, () => { rebuilds += 1 })
   const requests = [
-    ['paramOverrides', { overrides: { bootstrapSubagents: true } }],
+    ['paramOverrides', { overrides: { toolGitBashEnabled: false } }],
     ['paramOverrides', { promptConfigs: [] }],
     ['customTools', { customTools: [] }],
     ['subagentToolPolicy', { policy: null }],
     ['presetVariables', { variables: {} }],
-    ['engineCapability', { action: 'create', capabilityId: 'tool-bootstrap' }],
+    ['engineCapability', { action: 'create', capabilityId: 'tool-git-bash' }],
     ['importPreset', { contents: [{ scope: 'preset', content: '旧文本' }] }],
   ]
   try {
@@ -1113,30 +1117,8 @@ test('预设身份拦截跨预设旧请求及请求体读取期间的切换，�
   } finally { for (const dir of [a, b]) rmSync(dir, { recursive: true, force: true }) }
 })
 
-test('公开晋升信号与门控开关冲突在落盘前拒绝，保留旧参数', async () => {
-  const dir = makeUserPresetDir('pt-gate-conflict-')
-  const file = join(dir, 'preset.yml')
-  const original = `id: ${basename(dir)}\nmodules: [tool-bootstrap]\nmoduleConfigs:\n  tool-bootstrap:\n    promoteOn: tool-call\n`
-  writeFileSync(file, original, 'utf8')
-  const { ctx, handlers } = makeHarness()
-  registerSettingsBridge(ctx, 'prompt-tool', () => ({ available: true, providers: [] }),
-    () => skillsStateStub(), () => '', undefined, () => dir)
-  const handler = handlers.get(PREFIX + BRIDGE_ENDPOINTS.paramOverrides)
-  try {
-    const res = fakeRes()
-    await handler(fakeReq({ [Symbol.asyncIterator]: async function* () {
-      yield Buffer.from(JSON.stringify({ overrides: { promoteGate: true } }))
-    } }), res)
-    assert.equal(res.status, 400)
-    assert.equal(JSON.parse(res.body).code, 'overrides-invalid-value')
-    assert.equal(readFileSync(file, 'utf8'), original)
-    const valid = fakeRes()
-    await handler(fakeReq({ [Symbol.asyncIterator]: async function* () {
-      yield Buffer.from(JSON.stringify({ overrides: { promoteGate: true, bootstrapPromoteOn: 'either' } }))
-    } }), valid)
-    assert.equal(valid.status, 200)
-  } finally { rmSync(dir, { recursive: true, force: true }) }
-})
+// B7 T3：原「公开晋升信号与门控开关冲突在落盘前拒绝」用例随 `promoteGate` / `bootstrapPromoteOn`
+// 两个参数键与 `tool-bootstrap` 模块一并删除——冲突规则的对象已不存在（`src/**` 中已无该判据）。
 
 test('settings bridge /subagent-tool-policy 保存、停用与模块装配均为原子操作', async () => {
   const dir = makeUserPresetDir('pt-subagent-policy-')

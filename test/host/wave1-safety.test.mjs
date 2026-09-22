@@ -19,29 +19,30 @@ const { mergePromptConfigs } = await import('../../lib/preset-core.mjs')
 
 test('validateEngineParamValues：全量类型校验（布尔/数值/字符串/列表/枚举）', () => {
   // 合法值（含 '' = 删键、number 直写）无错误。
+  // B7 T3：原用例里的 bootstrapTools / allowKinds / stages / bootstrapMaxTokens 已随七个专用能力删除，
+  // 换成本批存活的同 kind 键。
   assert.deepEqual(validateEngineParamValues({
     firstTurnAnchor: true,
     modelTemperature: '0.7',
     modelMaxTokens: 8192,
     subagentTemperature: '',
-    bootstrapTools: ['bash', 'read'],
-    allowKinds: 'near-anchor,router-guide',
+    customToolRequireApproval: ['shell', 'fs'],
+    buildPattern: '^(写|实现)',
     maxDepth: 'provider-managed',
-    stages: [{ name: '了解', tools: ['read'] }],
   }), [])
   // 布尔键收窄。
-  assert.deepEqual(validateEngineParamValues({ promoteGate: 'yes' }).map((e) => e.key), ['promoteGate'])
+  assert.deepEqual(validateEngineParamValues({ instructionHint: 'yes' }).map((e) => e.key), ['instructionHint'])
   // 数值键非法。
   assert.deepEqual(validateEngineParamValues({ modelTemperature: 'abc' }).map((e) => e.key), ['modelTemperature'])
   assert.deepEqual(validateEngineParamValues({ modelMaxTokens: '-5' }).map((e) => e.key), ['modelMaxTokens'])
-  assert.deepEqual(validateEngineParamValues({ bootstrapMaxTokens: 1.5 }).map((e) => e.key), ['bootstrapMaxTokens'])
+  assert.deepEqual(validateEngineParamValues({ strReplaceEditorMaxOutputChars: 1.5 }).map((e) => e.key), ['strReplaceEditorMaxOutputChars'])
   // 列表键收窄。
-  assert.deepEqual(validateEngineParamValues({ toolFilterAllow: [1, 2] }).map((e) => e.key), ['toolFilterAllow'])
+  assert.deepEqual(validateEngineParamValues({ customToolRequireApproval: [1, 2] }).map((e) => e.key), ['customToolRequireApproval'])
   // maxDepth 枚举收窄。
   assert.deepEqual(validateEngineParamValues({ maxDepth: -1 }).map((e) => e.key), ['maxDepth'])
-  // stages 结构校验。
-  assert.deepEqual(validateEngineParamValues({ stages: [{ name: '', tools: ['x'] }] }).map((e) => e.key), ['stages'])
-  assert.deepEqual(validateEngineParamValues({ stages: [{ name: 'x', tools: 'bash' }] }).map((e) => e.key), ['stages'])
+  // 正则键结构校验（pattern kind）。
+  assert.deepEqual(validateEngineParamValues({ buildPattern: '(' }).map((e) => e.key), ['buildPattern'])
+  assert.deepEqual(validateEngineParamValues({ complexPattern: 'a{2,1}' }).map((e) => e.key), ['complexPattern'])
   // 未知键（旧内容别名等不兼容键）响亮失败。
   const unknown = validateEngineParamValues({ guideComplexPattern: 'x' })
   assert.equal(unknown.length, 1)

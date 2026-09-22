@@ -308,9 +308,10 @@ function wireRuntimeContexts(ctx, configs, registry, warnOnce) {
  *   - `patch`：对下游已解析的 LlmCallConfig 做浅合并；
  *   - `replace: true`：整体替换为 `patch`（不叠加 base，故 `unset` 无比较对象）；
  *   - `unset`：**按值条件删键** —— 仅当合并结果里的值**恰好等于**声明值时删除该键
- *     （`Object.is` 比较）。这是 `tool-bootstrap` 剥离 `bootstrapMaxTokens` 的语义
- *     （`tool-bootstrap.mjs:464-472`：「仅当解析后的 maxTokens 恰好等于本声明注入
- *     的那个值时才删」），不是"存在即删"——模型或其它插件设置的同名参数不会被删。
+ *     （`Object.is` 比较）。这来自原 `tool-bootstrap` 剥离 `bootstrapMaxTokens` 的语义
+ *     （「仅当解析后的 maxTokens 恰好等于本声明注入的那个值时才删」；声明侧见
+ *     `test/engine/declarations/tool-bootstrap.yml` 声明 4 的 `do.unset`），不是"存在即删"
+ *     ——模型或其它插件设置的同名参数不会被删。
  *     浅合并做不到删键，故删键必须走显式通道。
  * @param params 提示词配置的 `params`（或动作的等价声明）。
  * @param base 下游 `next()` 已解析的请求配置。

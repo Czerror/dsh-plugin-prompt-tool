@@ -127,16 +127,8 @@ export function apply(ctx: Context, configIn: Config): void {
     runtime.subagentReasoningEffort = asString(params.subagentReasoningEffort)
     runtime.subagentTemperature = asString(params.subagentTemperature)
     runtime.subagentMaxTokens = asString(params.subagentMaxTokens)
-    runtime.bootstrapMaxTokens = Number.isSafeInteger(params.bootstrapMaxTokens) && (params.bootstrapMaxTokens as number) >= 0
-      ? params.bootstrapMaxTokens as number
-      : undefined
-    // 透传：未声明 = 模板 preset.yml params / 引擎默认（false）兜底。
-    runtime.usePtcMode = typeof params.usePtcMode === 'boolean' ? params.usePtcMode : undefined
     runtime.injectPrompt = params.injectPrompt !== false
-    runtime.toolFilterAllow = params.toolFilterAllow as string[] | string | undefined
-    runtime.toolFilterDeny = params.toolFilterDeny as string[] | string | undefined
     runtime.maxDepth = params.maxDepth as RuntimeOptions['maxDepth']
-    runtime.allowKinds = params.allowKinds as string[] | string | undefined
     runtime.firstTurnWord = asString(params.firstTurnWord) || undefined
     runtime.promptConfigs = Array.isArray(spec.promptConfigs)
       ? spec.promptConfigs as PromptConfigSpec[]
@@ -168,13 +160,8 @@ export function apply(ctx: Context, configIn: Config): void {
         subagentReasoningEffort: runtime.subagentReasoningEffort,
         subagentTemperature: runtime.subagentTemperature,
         subagentMaxTokens: runtime.subagentMaxTokens,
-        toolFilterAllow: runtime.toolFilterAllow,
-        toolFilterDeny: runtime.toolFilterDeny,
         maxDepth: runtime.maxDepth,
-        allowKinds: runtime.allowKinds,
         firstTurnWord: runtime.firstTurnWord,
-        bootstrapMaxTokens: runtime.bootstrapMaxTokens,
-        usePtcMode: runtime.usePtcMode,
         agentsInstructionText: currentAgents,
         presetDir: DEFAULT_PRESET_DIR,
         presetOrder: runtime.presetOrder,
@@ -345,14 +332,7 @@ export function apply(ctx: Context, configIn: Config): void {
     subagentReasoningEffort: asString(initialParams.subagentReasoningEffort),
     subagentTemperature: asString(initialParams.subagentTemperature),
     subagentMaxTokens: asString(initialParams.subagentMaxTokens),
-    bootstrapMaxTokens: Number.isSafeInteger(initialParams.bootstrapMaxTokens) && (initialParams.bootstrapMaxTokens as number) >= 0
-      ? initialParams.bootstrapMaxTokens as number
-      : undefined,
-    usePtcMode: typeof initialParams.usePtcMode === 'boolean' ? initialParams.usePtcMode : undefined,
-    toolFilterAllow: initialParams.toolFilterAllow as string[] | string | undefined,
-    toolFilterDeny: initialParams.toolFilterDeny as string[] | string | undefined,
     maxDepth: initialParams.maxDepth as RuntimeOptions['maxDepth'],
-    allowKinds: initialParams.allowKinds as string[] | string | undefined,
     firstTurnWord: asString(initialParams.firstTurnWord) || undefined,
     presetOrder: config.presetOrder,
     fallbackText: config.fallbackText,

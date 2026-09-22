@@ -1,7 +1,7 @@
 /** 客户端脏检测、保存快照与保存后重载判定（纯逻辑）。 */
 import type { PromptConfigDraft } from '../prompt-tool-types.ts'
 import { ENGINE_PARAM_KEYS, type EngineParamKey } from '../../shared/engine-params.ts'
-import { EMPTY_FIELDS, hasIncompleteStageDrafts, type Fields } from './prompt-tool-fields.ts'
+import { EMPTY_FIELDS, type Fields } from './prompt-tool-fields.ts'
 
 const SETTINGS_SNAPSHOT_KEYS = [
   'presetOrder', 'fallbackText', 'writePreset',
@@ -46,9 +46,9 @@ export const deepEqual = (a: unknown, b: unknown): boolean => {
 
 export const switchesEqual = (a: SwitchSnapshot, b: SwitchSnapshot): boolean => deepEqual(a, b)
 
-/** 参数保存后仅在草稿未继续变化且没有未完成阶段时重载。 */
+/** 参数保存后仅在草稿未继续变化时重载（结构化草稿由各自编辑器自行保留）。 */
 export const shouldReloadAfterParamSave = (current: SwitchSnapshot, saved: SwitchSnapshot): boolean =>
-  switchesEqual(current, saved) && !hasIncompleteStageDrafts(saved.stages)
+  switchesEqual(current, saved)
 
 /** 任一通道出现新草稿时，旧保存响应不得触发全量重载。 */
 export const shouldReloadAfterPresetSave = (

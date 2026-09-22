@@ -53,8 +53,8 @@ export const PromptSettingsSchema: z<PromptSettings> = z.object({
  * 运行时装配态：settings 轴 + 引擎参数（契约来自 shared/engine-params.ts）。
  * 引擎参数统一从 PresetWriterParams 继承（可选），此处仅对「schema 默认值保证必有值」
  * 的首层参数做必填重声明——TS 强制与契约类型兼容，签名漂移变成编译错误。
- * 可选尾（toolFilterAllow / toolFilterDeny / maxDepth / allowKinds /
- * firstTurnWord）由 PresetWriterParams 继承，不再逐字段手写。
+ * 可选尾（maxDepth / firstTurnWord / instructionHint 等）由 PresetWriterParams 继承，
+ * 不再逐字段手写。
  */
 export interface RuntimeOptions extends PresetWriterParams {
   writePreset: boolean
@@ -71,9 +71,6 @@ export interface RuntimeOptions extends PresetWriterParams {
   guideCustom: boolean
   /** 每轮引导独立开关（undefined = 跟随 firstTurnAnchor）。 */
   guideEnabled?: boolean
-  bootstrapMaxTokens?: number
-  /** PTC (Code Mode) 呈现开关；undefined = 模板/引擎默认（false，opt-in）。 */
-  usePtcMode: boolean | undefined
   /** 模型路由 provider（主对话直派子代理与委派子代理通用）；与模型名同时非空时生效。 */
   modelProvider: string
   /** 模型名；与 provider 同时非空时生效。 */

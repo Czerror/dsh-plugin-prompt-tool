@@ -3,7 +3,7 @@
 //   2. 管理路径只有一个执行器：引擎行把来源注册给协调器，注入恰好一次（不双份）；
 //   3. 来源作用域按 dsh-scope 生效：各自 mount 互不串、父 scope 对子代理可见、兄弟不可见；
 //   4. scope.dispose() 后来源归零；协调服务迟到时引擎先撤旧再启用新路径；
-//   5. 与 context-gate 共挂时门控仍在外层（未晋升步的注入被剥离）、reject 不被吞掉。
+//   5. 与晋升门控声明共挂时门控仍在外层（未晋升步的注入被剥离）、reject 不被吞掉。
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
@@ -14,14 +14,24 @@ import { Context } from '@deepseek-ai/cordis'
 import { NamedEntries, ScopedLayers, bindScopeParent, createScope, scopeOf } from '@deepseek-ai/dsh-scope'
 import { agentEvents } from '@deepseek-ai/dsh-agent'
 import SystemPrompt, { renderPrompt } from '@deepseek-ai/dsh-system-prompt'
-import { apply as applyContextGateRaw } from '../../engine/context-gate.mjs'
-import { compositionConfig } from '../fixtures/composition-defaults.mjs'
 import { applyPromptConfigs, createPromptConfigs } from '../../engine/prompt-config-engine.mjs'
+import { compileDeclarations, mountDeclarations } from '../../engine/trigger-spec.mjs'
 import { installPreStepCoordinator, PRE_STEP_COORDINATOR_SERVICE } from '../../src/runtime/pre-step-coordinator.ts'
 
-// 引擎不再内置 enabled 默认：装配铺组合源默认（enabled: true）。
-const applyContextGate = (ctx, config = {}) =>
-  applyContextGateRaw(ctx, { ...compositionConfig('context-gate'), ...config })
+// B7 T3：晋升门控的载体是**声明路径**（原 `context-gate` 模块与本地下同名组合源已删除）。
+// `pre-step-filter` + `keepKinds` 就是原 `allowKinds` 白名单的声明等价物：
+// `waterfallPosition: outermost` → prepend（「门是最外层 transform」），
+// `when.not.phase` → 未晋升才过滤，晋升后自动放行（与 compaction-epoch 同源）。
+const GATE_DECLARATIONS = [{
+  id: 'pre-step-wiring-gate',
+  channel: 'agent/pre-step',
+  channelOrder: 0,
+  waterfallPosition: 'outermost',
+  when: { not: { phase: { promoteOn: 'either', includeSubagents: false } } },
+  do: { kind: 'pre-step-filter', id: 'pre-step-wiring-gate', keepKinds: ['user'] },
+}]
+const mountGate = (ctx) =>
+  mountDeclarations(ctx, compileDeclarations(GATE_DECLARATIONS, { ctx }), { plugin: 'pre-step-wiring' })
 
 const ENGINE_DIR = new URL('../../engine/', import.meta.url).href
 const signalOf = () => new AbortController().signal
@@ -223,10 +233,10 @@ test('T22 协调服务迟到：引擎先独立执行，服务出现后交出唯�
   assert.deepEqual(textsOf(await dispatch(app, agent.agent)), ['claimed', 'BODY'], '接管后仍只注入一次')
 })
 
-test('T23 与 context-gate 共挂：未晋升步注入被门控剥离，reject 不被吞掉', async () => {
+test('T23 与晋升门控声明共挂：未晋升步注入被门控剥离，reject 不被吞掉', async () => {
   const app = new Context()
   installPreStepCoordinator(app, { collectFiles: () => [] })
-  applyContextGate(app, { allowKinds: ['user'] })
+  mountGate(app)
   const agent = scopedAgent(app, 'agent-gated')
   installEngine(app, agent, [staticSpec('preset-card', 'PRESET BODY')], { sourceId: 'preset:gated' })
 
@@ -257,7 +267,7 @@ for (const managed of [false, true]) {
     const mount = scopedAgent(app, `r1-gated-${managed}`, events)
     installEngine(app, mount, [onceSpec('once-card', 'ONCE')], { sourceId: `r1:${managed}` })
     // gate 后注册 = prepend 更外层：剥离本步注入的候选消息。
-    applyContextGate(app, { allowKinds: ['user'] })
+    mountGate(app)
     assert.deepEqual(textsOf(await dispatch(app, mount.agent)), ['claimed'], '未晋升步：候选被外层门控剥离')
     app.emit('session/event', mount.agent.session, { type: 'tool/call', seq: 1, data: {} })
     assert.deepEqual(textsOf(await dispatch(app, mount.agent)), ['claimed', 'ONCE'], '晋升后必须补发，候选未被误记为已投递')
@@ -389,7 +399,7 @@ for (const prepend of [false, true]) {
     const app = new Context()
     const mount = scopedAgent(app, `late-gated-${prepend}`)
     const engine = () => installEngine(app, mount, [staticSpec('guarded-card', 'PRESET BODY')], { sourceId: 'guarded', prepend })
-    const gate = () => applyContextGate(mount.scope.ctx, { allowKinds: ['user'] })
+    const gate = () => mountGate(mount.scope.ctx)
     // 独立执行时先保证 gate 包住引擎，再验证迟到接管不改变这个约束。
     if (prepend) { engine(); gate() } else { gate(); engine() }
     assert.deepEqual(textsOf(await dispatch(app, mount.agent)), ['claimed'])
@@ -523,7 +533,7 @@ test('T22 已释放来源的在途回调遇到协调器 HMR 时不重新登记',
  *   3. createScope/dispose 释放全部注册；dispose 后注册被拒。旧接线先撤、新接线再启的
  *      单执行器切换不会双跑。
  *   4. 真实 PreStepDecision：enter/reject 与 startsRequestSeries 透传。
- *   5. prepend 是 LIFO：与 context-gate 真实 apply() 共挂时 gate 仍在外层，
+ *   5. prepend 是 LIFO：与门控声明（`waterfallPosition: outermost`）共挂时 gate 仍在外层，
  *      注入消息进入 gate 的过滤视图，reject 不被下游吞掉。
  */
 {
@@ -531,7 +541,7 @@ const ENGINE_DIR = new URL('../../engine/', import.meta.url).href
 
 const signalOf = () => new AbortController().signal
 
-/** 最小本地 Agent：session 形状对齐 executor/context-gate 的读取面。 */
+/** 最小本地 Agent：session 形状对齐 executor 与晋升状态机（compaction-epoch）的读取面。 */
 const makeAgent = (id, model = 'verify-model') => ({
   session: { id, header: { delegationDepth: 0 }, snapshotEvents: () => [], deriveMessages: () => [] },
   options: { model },
@@ -691,12 +701,12 @@ test('prepend 监听按 LIFO 排在外层（W3 接线顺序约束）', async () 
   assert.deepEqual(order, ['prepend-second', 'prepend-first', 'normal'])
 })
 
-test('context-gate 与 executor 真实共挂：gate 在外层过滤注入消息，reject 不被吞掉', async () => {
+test('门控声明与 executor 真实共挂：gate 在外层过滤注入消息，reject 不被吞掉', async () => {
   const specs = [{ id: 'verify-injected', layer: 'pre-step', strategy: 'static', text: 'INJECTED', position: 'after-all' }]
 
   const gatedApp = new Context()
   const gated = scopedAgent(gatedApp, 'agent-gated')
-  applyContextGate(gatedApp, { allowKinds: ['user'] })
+  mountGate(gatedApp)
   applyPromptConfigs(gatedApp, createPromptConfigs(specs, { strategyDir: ENGINE_DIR }))
   const gatedClaimed = userMessage('claimed', 'u-gated-claimed')
   const gatedDecision = await dispatch(

@@ -348,7 +348,8 @@ function defaultCollectFiles(readPolicy: () => InstructionPolicy | undefined, ho
 /**
  * 安装协调器：发布 `promptToolPreStep` 服务并注册唯一的 pre-step 监听器。
  * 普通监听器留在 prepend 门控内侧；来源监听器只登记后交出执行权。
- * 即使服务迟到或重挂，已安装的 context-gate 仍能过滤最终消息批。
+ * 即使服务迟到或重挂，下游的 pre-step 过滤（声明式触发器的 `pre-step-filter` 动作）
+ * 仍能在本监听器交出执行权之后过滤最终消息批。
  */
 export function installPreStepCoordinator(
   ctx: Context,

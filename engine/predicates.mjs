@@ -31,6 +31,7 @@ import {
   MAX_TRACKED_SESSIONS,
   extractText,
   getService,
+  isDelegated,
   parsePromoteOn,
   sessionEvents,
 } from './shared.mjs'
@@ -43,6 +44,96 @@ const MATCH_FLAGS = ['caseSensitive', 'wholeWords', 'useRegex', 'stWords']
 
 /** 文本匹配模式（anchor-match 支持的两档）。 */
 const MATCH_MODES = ['scan', 'prefix']
+
+/**
+ * 通道 → 谓词载荷的取法表（**每条都对应处理器实际解构过的字段**，不是推测）。
+ *
+ * 为什么需要这一层：谓词契约是**单个对象**（见本文件头「统一接口」），而事件处理器收到的
+ * 是**参数表**（waterfall 的最后一个参数是 `next`）。此前两条挂载路径
+ * （`actions.mjs` 的 `withWhen`、`trigger.mjs` 的内联 handler）都直接 `when(...payload)`
+ * 把参数表**展开成多个实参**，于是除 `names`（`tools/pre-execute` 的第一个实参恰好是
+ * `exec`）外，所有谓词在真实通道上都拿不到它要的域——`phase` 甚至恒为「已晋升」
+ * （`compaction-epoch.mjs` 的 `status(undefined)` → `promoted: true`），使 `not phase`
+ * 恒为 false、声明永不命中。
+ *
+ * 依据（各通道的处理器签名，见 `actions.mjs` 的注册器与 `context-gate.mjs` 的用法）：
+ *   `system-prompt/assemble` `(assembly, context, next)` → agent 在 **第二个**实参
+ *   `agent/request`          `(payload, next)`           → `payload.agent`
+ *   `agent/pre-step`         `({ agent, messages, … })`  → `agent`
+ *   `tools/pre-execute`      `(exec, next)`              → `exec.agent` / `exec.name`
+ *   `tools/post-execute`     `(exec, result, next)`      → `exec.agent` / `exec.name`
+ *   `agent/turn-stopping`    `({ agent, turn })`         → `agent`
+ *   `agent/inbox/inserted`   `({ agent, message })`      → `agent` / `message.source`
+ *   `session/event`          `(session, event)`          → `session`
+ */
+const CHANNEL_SUBJECTS = {
+  'system-prompt/assemble': (args) => ({ agent: args[1]?.agent }),
+  'agent/request': (args) => ({ agent: args[0]?.agent }),
+  'agent/pre-step': (args) => ({ agent: args[0]?.agent }),
+  'agent/inbox/inserted': (args) => ({ agent: args[0]?.agent, source: args[0]?.message?.source }),
+  'agent/turn-stopping': (args) => ({ agent: args[0]?.agent }),
+  'tools/pre-execute': (args) => ({ agent: args[0]?.agent, name: args[0]?.name }),
+  'tools/post-execute': (args) => ({ agent: args[0]?.agent, name: args[0]?.name }),
+  'session/event': (args) => ({ session: args[0] }),
+}
+
+/** 未知通道的告警去重（每个通道一次；判定期不刷屏）。 */
+const warnedChannels = new Set()
+
+/**
+ * 归一化载荷的标记（Symbol，非字符串键）：`subjectOf` 产出它，`agentOf`/`sessionOf` 据此
+ * 区分「归一化载荷」与「旧形态的直接 payload」——**不用启发式猜**（曾按「有没有 `.session`」
+ * 判断，结果把测试里 `{ id, ctx }` 形状的假 agent 误判成归一化载荷）。
+ */
+const SUBJECT_MARK = Symbol('predicate-subject')
+
+/**
+ * 把事件参数表归一为谓词载荷。
+ *
+ * `args` 传的是**去掉 `next` 之后的参数表**（无 `next` 的 emit/serial 通道原样传）。
+ * 未知通道回落到「第一个实参」（= 归一化之前的旧行为）并**告警一次**——不静默丢弃，
+ * 否则新增通道会悄悄失去判定能力；也不抛错，判定期抛错会打断会话。
+ *
+ * @param {string} channel 事件名
+ * @param {unknown[]} args 去掉 next 的参数表
+ * @param {Function} [warn] 告警回调（缺省静默）
+ * @returns {unknown} 谓词载荷
+ */
+export function subjectOf(channel, args, warn) {
+  // 第一个实参的字段**原样保留**在载荷顶层：旧形态（如 `agent/turn-stopping` 的
+  // `{ agent, turn }`）因此继续可见，既有断言不会因归一化而失效。
+  const first = args[0]
+  const base = first !== null && typeof first === 'object' && !Array.isArray(first) ? { ...first } : {}
+  const pick = CHANNEL_SUBJECTS[channel]
+  if (pick === undefined) {
+    if (typeof warn === 'function' && !warnedChannels.has(channel)) {
+      warnedChannels.add(channel)
+      warn(`predicates: unknown channel ${JSON.stringify(channel)} — 无显式取法，退回「第一个实参即载荷」的旧语义`)
+    }
+    return { ...base, [SUBJECT_MARK]: true, channel, args }
+  }
+  return { ...base, ...pick(args), [SUBJECT_MARK]: true, channel, args }
+}
+
+/**
+ * 从载荷取 agent：**归一化载荷**读 `agent`（`subjectOf` 的标记为凭）；**旧形态**
+ * （载荷本身就是 agent——手写调用方与既有测试都这样传）原样返回。
+ */
+function agentOf(payload) {
+  if (payload === null || typeof payload !== 'object') return undefined
+  return payload[SUBJECT_MARK] === true ? payload.agent : payload
+}
+
+/**
+ * 从载荷取 session：归一化载荷走 `session` → `agent.session`；旧形态走
+ * `session` → 载荷自身。取不到时返回原载荷——`sessionEvents` 对无 `snapshotEvents`
+ * 的对象返回空，语义是「无事件」，与归一化之前逐例一致。
+ */
+function sessionOf(payload) {
+  if (payload === null || typeof payload !== 'object') return payload
+  if (payload[SUBJECT_MARK] !== true) return payload.session ?? payload
+  return payload.session ?? payload.agent?.session
+}
 
 /** 可选布尔：缺省返回 fallback；显式非布尔一律 fail loud。 */
 function optionalBoolean(value, field, fallback) {
@@ -173,8 +264,34 @@ export function createPhasePredicate(options = {}) {
     maxPromoteSteps: options.maxPromoteSteps,
   }
   const tracker = createEpochPromotion(promoteEvents, trackerOptions)
-  const predicate = (agent) => (subscribe ? tracker : createEpochPromotion(promoteEvents, trackerOptions))
-    .status(agent).promoted === true
+  // 载荷归一后 agent 在 `payload.agent`；旧的手工形态（载荷本身就是 agent）由 agentOf 兼容。
+  //
+  // `compacted`（2026-09-22 用户拍板「扩原语」）：`status()` 本来就返回 `boundary`
+  // （最近一次成功 `compaction/end` 的 seq，未压缩过为 -1），此前只用了 `promoted`。
+  // `compacted: true` = 发生过成功压缩；`false` = 从未压缩；未声明 = 不判该维度。
+  const compacted = optionalBoolean(options.compacted, 'compacted', undefined)
+  // `promoted` 三态：缺省 `true`（= 原行为，向后兼容）/ `false` / `'ignore'`。
+  //
+  // 为什么需要它（对拍实测）：原实现把 `compacted` 与 `promoted` 写成**合取**，于是可表达的
+  // 原子只有 `P`、`C∧P`、`¬C∧P`——三者在 **¬P 的会话上全为 false**，用 `any`/`all`/`not`/
+  // `notAny` 的任何组合都表达不出原 `tool-bootstrap` compaction 回退要的 **`C ∧ ¬P`**
+  // （受控相位 + 已压缩：压缩后回到受控工具集；声明侧见
+  // `test/engine/declarations/tool-bootstrap.yml` 声明 2）。解耦后
+  // `{ compacted: true, promoted: false }` 就是 `C ∧ ¬P`。
+  const promotedOption = options.promoted
+  if (promotedOption !== undefined && promotedOption !== true && promotedOption !== false && promotedOption !== 'ignore') {
+    throw new TypeError("predicates: phase promoted must be true, false or 'ignore'")
+  }
+  if (promotedOption === 'ignore' && compacted === undefined) {
+    throw new TypeError("predicates: phase promoted 'ignore' needs compacted — 否则该判定恒真")
+  }
+  const predicate = (payload) => {
+    const status = (subscribe ? tracker : createEpochPromotion(promoteEvents, trackerOptions))
+      .status(agentOf(payload))
+    if (compacted !== undefined && (status.boundary >= 0) !== compacted) return false
+    if (promotedOption === 'ignore') return true
+    return status.promoted === (promotedOption ?? true)
+  }
   predicate.kind = 'phase'
   // 只有订阅模式才有增量入口：不订阅时多一个入口只会诱使调用方以为状态被记住了。
   if (subscribe) predicate.observe = (session, event) => tracker.observe(session, event)
@@ -294,9 +411,31 @@ export function createCountPredicate(options = {}) {
   }
   const min = boundOf(options.min, 'min')
   const max = boundOf(options.max, 'max')
-  if (min === undefined && max === undefined) {
-    throw new TypeError('predicates: a count predicate needs min or max')
+  // 节奏判据（2026-09-22 用户拍板⑤「改用可重建计数」的核心语义）：`every: N` = 每 N 次命中一次。
+  // 原 `progress-reminder` 的 `results % every === 0` 配的是**自增后**的计数
+  // （声明侧见 `test/engine/declarations/progress-reminder.yml` 的 `count.every`），
+  // 所以这里必须要求 `count > 0`——否则 `0 % N === 0` 会让第 0 次就命中。
+  const every = options.every === undefined
+    ? undefined
+    : Number.isSafeInteger(options.every) && options.every > 0
+      ? options.every
+      : (() => { throw new TypeError('predicates: count every must be a positive integer') })()
+  if (min === undefined && max === undefined && every === undefined) {
+    throw new TypeError('predicates: a count predicate needs min, max or every')
   }
+  // 计数时点对齐（2026-09-22 用户拍板「扩原语」）：某些通道的 `when` 在**处理器入口**求值，
+  // 早于本次信号事件落盘——`tools/post-execute` 就是 `dsh-tools` 的
+  // `finalizeScheduledExecution` 内部一环，而该包内不写 durable `tool/result`，落盘发生在
+  // `execute()` 返回后的 agent loop。`includeCurrent: true` 把「本次触发即将成为的那个事件」
+  // 计入，从而与模块自己的自增计数时点对齐。
+  // **适用边界由声明者负责**：谓词看不到通道名，只有在「当前事件即将成为该信号」的通道上
+  // 这个 +1 才成立（post-execute 上的 tool-result 成立；pre-execute 上的 tool-result 不成立）。
+  const includeCurrent = optionalBoolean(options.includeCurrent, 'includeCurrent', false)
+  // 受众判据（与 `session` 谓词的 `delegated` 同语义、同实现 `shared.isDelegated`）。
+  // 需求的来源是原 `deliberation-gate` 与原 `progress-reminder`：这两个能力的
+  // **主判据就是 count**，受众不能只挂在 `session` 谓词上——那会迫使声明额外耦合一个
+  // durable 事件类型（还要回答「哪种 type 恒真」，而哨兵轮表明甚至可能没有轮事件）。
+  const delegated = optionalBoolean(options.delegated, 'delegated', undefined)
   /** sessionId -> { total, turns, lastTurn }（进程内快路径，真相在 durable 事件流）。 */
   const state = new Map()
   const fresh = () => ({ total: 0, turns: new Map(), lastTurn: undefined })
@@ -349,7 +488,9 @@ export function createCountPredicate(options = {}) {
     return entry
   }
   const predicate = (payload) => {
-    const count = countOf(entryOf(payload?.session ?? payload))
+    if (delegated !== undefined && isDelegated(sessionOf(payload)) !== delegated) return false
+    const count = countOf(entryOf(sessionOf(payload))) + (includeCurrent ? 1 : 0)
+    if (every !== undefined && (count === 0 || count % every !== 0)) return false
     return (min === undefined || count >= min) && (max === undefined || count <= max)
   }
   predicate.kind = 'count'
@@ -413,8 +554,15 @@ export function createSessionStatePredicate(options = {}) {
     throw new TypeError('predicates: a session-state predicate needs an event type')
   }
   const present = optionalBoolean(options.present, 'present', false)
-  const predicate = (payload) => sessionEvents(payload?.session ?? payload)
-    .some((event) => event?.type === type) === present
+  // 受众判据（2026-09-22 用户拍板「扩原语」）：`delegated: false` = 只在主会话命中，
+  // `true` = 只在子代理命中，未声明 = 不判受众。子代理判定复用 `shared.isDelegated`，
+  // 不写字面量比较（trigger.mjs 的会话态契约第 (2) 条纪律）。
+  const delegated = optionalBoolean(options.delegated, 'delegated', undefined)
+  const predicate = (payload) => {
+    if (delegated !== undefined && isDelegated(sessionOf(payload)) !== delegated) return false
+    return sessionEvents(sessionOf(payload))
+      .some((event) => event?.type === type) === present
+  }
   predicate.kind = 'session'
   return predicate
 }
@@ -506,7 +654,7 @@ export function createPresetPredicate(options = {}) {
   }
   const ctx = options.ctx
   const standingMountFor = options.standingMountFor
-  const predicate = (agent) => agentPresetId(ctx, agent, standingMountFor) === presetId
+  const predicate = (payload) => agentPresetId(ctx, agentOf(payload), standingMountFor) === presetId
   predicate.kind = 'preset'
   return predicate
 }
@@ -540,6 +688,9 @@ export function composite(node) {
     const child = composite(node[operator])
     const predicate = (payload) => !child(payload)
     predicate.kind = 'composite'
+    if (typeof child.observe === 'function') {
+      predicate.observe = (session, event) => child.observe(session, event)
+    }
     return predicate
   }
   const list = node[operator]
@@ -572,5 +723,17 @@ export function composite(node) {
     throw new TypeError(`predicates: composite ${operator} is not a supported operator`)
   }
   predicate.kind = 'composite'
+  // 组合层必须**转发子谓词的 observe**（B7 T1 的跨能力缺口修复）：两条挂载路径的观察器
+  // 接线都按 `when.observe` 过滤（`trigger.mjs` 的 `wireTriggerObservers`），被组合包住的
+  // phase / count / session 谓词否则永远收不到活的 `session/event`——状态按 `session.id`
+  // 缓存后不再重扫（`shared.mjs` 的 `sessionMapGet`），判定会停在冷扫那一刻（计数恒旧值、
+  // 相位永不晋升）。`phase` 有 `subscribe: false` 可绕（代价是每次判定冷扫），
+  // `count` / `session` 没有该档，所以这条转发是它们唯一的活路。
+  const observers = children.filter((child) => typeof child.observe === 'function')
+  if (observers.length > 0) {
+    predicate.observe = (session, event) => {
+      for (const child of observers) child.observe(session, event)
+    }
+  }
   return predicate
 }

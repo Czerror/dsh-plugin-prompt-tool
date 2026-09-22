@@ -39,7 +39,8 @@ function mirroredAllowedKeys() {
   for (const entry of block.matchAll(/'([a-z-]+)':\s*new Set\(\[([\s\S]*?)\]\)/g)) {
     mirrors.set(entry[1], new Set([...entry[2].matchAll(/'([^']+)'/g)].map((match) => match[1])))
   }
-  assert.ok(mirrors.size >= 4, `手抄镜像应覆盖 ≥4 个本地模块，实际 ${mirrors.size}`)
+  // B7 T3：手写 ALLOWED_KEYS 的本地模块从 7 个收缩到 1 个（`instruction-hint`），镜像规模随之下降。
+  assert.ok(mirrors.size >= 1, `手抄镜像应覆盖 ≥1 个本地模块，实际 ${mirrors.size}`)
   for (const [module, keys] of mirrors) assert.ok(keys.size > 0, `${module} 镜像解析结果不得为空`)
   return mirrors
 }

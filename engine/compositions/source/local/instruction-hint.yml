@@ -1,0 +1,15 @@
+# module: instruction-hint
+# source: engine/compositions/source/local/instruction-hint.yml (本地附加,非官方模块)
+# context-gate 的 instructionHint 转换在本模块的归属行——删除前的原始语义见
+# context-gate.mjs:64-66，替换点 :243-248，pre-step 挂载 :226-255：晋升后把
+# agent-instructions 全文换成一次性非命令式 hint，后续全文 dump 丢弃。
+# opt-in：enabled 默认 false（与原 instructionHint 默认 false 同值），由参数桥
+# params.instructionHint（→ 本行 enabled）或本行 config.enabled: true 打开；
+# 相位词汇与 tool-bootstrap / promoted-code-mode 同源（compaction-epoch.mjs）。
+
+- id: instruction-hint
+  name: ./engine/instruction-hint.mjs
+  config:
+    enabled: false
+    promoteOn: either
+    includeSubagents: false

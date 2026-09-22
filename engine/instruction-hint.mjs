@@ -1,19 +1,30 @@
 /**
  * instruction-hint — 通用内置指令文件提示引擎。
  *
- * 这不是 anchored 预设专属能力：
+ * 本模块同时是「可 import 的纯函数库」与「可被组合源挂载的 plugin」：
  * - prompt-config 的 strategy=instruction-hint / placeholder fill=instruction-hint
- *   直接使用本模块；
- * - context-gate 的 instructionHint 转换也复用本模块的探测与消息构造。
+ *   直接使用本模块的探测与消息构造；
+ * - plugin 形态（见文件末尾 apply）：**挂本行 = 开启**「晋升后把
+ *   agent-instructions 全文替换为一次性 hint，后续全文消息丢弃」的转换。
  *
  * 只提示参考文件存在，不把文件正文塞进每轮上下文。文件探测失败时返回空结果，
  * 不阻断会话；独立生成的 hint 使用随机 id，替换既有消息时保留其 id。
+ *
+ * PLUGIN CONFIG（挂载期校验；声明即校验，未声明 `enabled` = 关闭）：
+ * - `enabled`: boolean，缺省 false（组合源须显式写 true）。
+ * - `promoteOn`: 'either'（缺省）| 'tool-call' | 'assistant-message'。
+ * - `includeSubagents`: boolean，缺省 false（子代理首次请求即视为已晋升）。
  */
 
 import { randomUUID } from 'node:crypto'
 import { readFileSync } from 'node:fs'
+import { createEpochPromotion } from './compaction-epoch.mjs'
+import { booleanOption, createWarnOnce, parsePromoteOn, validateConfig } from './shared.mjs'
 
 export const name = 'instruction-hint'
+
+/** 无 inject：监听器只在使用时触碰 ctx 服务（同 tool-bootstrap / context-gate 纪律）。 */
+export const inject = []
 
 /** 项目目录链中按优先级探测的指令文件名。 */
 export const PROJECT_INSTRUCTION_CANDIDATES = ['AGENTS.md', 'CLAUDE.md', 'AGENTS.local.md', 'CLAUDE.local.md']
@@ -220,4 +231,55 @@ export function instructionHintMessages(messages, state, sourceName = 'instructi
     kept.push(buildInstructionHint(message, paths, sourceName))
   }
   return kept
+}
+
+// ── plugin 形态 ─────────────────────────────────────────────────────────────
+
+/** Every config key this plugin accepts — anything else is a typo. */
+const ALLOWED_KEYS = new Set(['enabled', 'promoteOn', 'includeSubagents'])
+
+/** The visible surface, not the append-only log, owns hint lifetime. */
+function hasVisibleInstructionHint(session) {
+  const messages = session?.deriveMessages?.()
+  return Array.isArray(messages) && messages.some((message) => message?.source?.kind === 'instruction-hint')
+}
+
+/**
+ * 注册晋升后的指令正文转换。
+ *
+ * `prepend: true` + 组合首选行：waterfall after-next 变换按注册逆序生效，本转换因此
+ * 是最外层——后注册的注入无法绕过它。`promotion.status(agent)` 兼作冷扫入口（resume /
+ * reload 后由 durable 事件流重建相位）。声明即校验：非法配置在挂载期暴露，未声明
+ * `enabled` 时同样报错。
+ */
+export function apply(ctx, config) {
+  const source = validateConfig(name, config, ALLOWED_KEYS)
+  const promoteEvents = parsePromoteOn(name, source.promoteOn)
+  const includeSubagents = booleanOption(name, source.includeSubagents, 'includeSubagents', false)
+  // 开关语义：未声明 = 关闭（组合源为本模块显式写 enabled: true）。
+  const enabled = booleanOption(name, source.enabled, 'enabled', false)
+  if (!enabled) return
+
+  const promotion = createEpochPromotion(promoteEvents, { includeSubagents })
+  const warnOnce = createWarnOnce(ctx, name)
+  ctx.on('session/event', (session, event) => promotion.observe(session, event))
+
+  ctx.on('agent/pre-step', async ({ agent }, next) => {
+    // Downstream errors propagate untouched; only this filter's own logic is guarded.
+    const decision = await next()
+    if (decision.kind === 'reject') return decision
+    try {
+      if (!promotion.status(agent).promoted) return decision
+      if (!Array.isArray(decision.messages)) return decision
+      if (agent?.session === undefined) return decision
+      // 1 换 1 的转换不能按长度判断（长度相同仍可能已转换），
+      // instructionHintMessages 本身保留非目标消息，直接采用结果。
+      const hintState = { instructionHinted: hasVisibleInstructionHint(agent.session) }
+      return { ...decision, messages: instructionHintMessages(decision.messages, hintState, name) }
+    } catch (error) {
+      // 转换失败不阻断会话：保留原消息。
+      warnOnce(`${name}: instruction hint conversion failed, keeping messages: ${String((error && error.message) || error)}`)
+      return decision
+    }
+  }, { prepend: true })
 }

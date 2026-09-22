@@ -15,6 +15,8 @@ import { parseDocument, stringify as stringifyYaml } from 'yaml'
 // 纯策略模块同时由 host writer 与生成运行时消费；保持校验算法单一来源。
 // @ts-expect-error 仓库根 ESM 引擎文件由 tsdown 作为源码依赖打包，无独立声明文件。
 import { validateSubagentToolPolicy } from '../../engine/subagent-tool-policy-core.mjs'
+// @ts-expect-error 仓库根 ESM 引擎文件由 tsdown 作为源码依赖打包，无独立声明文件。
+import { compileDeclarations } from '../../engine/trigger-spec.mjs'
 import { DEFAULT_PRESET_DIR } from './paths.ts'
 import { DEFAULT_PRESET_ID } from '../shared/preset-ids.ts'
 import { assertPresetDirectory, assertPresetId, assertPresetTree, canonicalPresetRoot, engineModuleFileNames, presetPathExists, rewritePresetEngineReferences } from './preset-install.ts'
@@ -225,9 +227,6 @@ export function runtimeOf(options: WritePresetOptions, prompt: string): Record<s
     // 每轮引导独立开关：undefined = 跟随 firstTurnAnchor（兼容旧行为）。
     guideEnabled: providedBoolean(options.guideEnabled),
     injectPrompt: providedBoolean(options.injectPrompt),
-    // 透传：未声明 = 模板 preset.yml params / 引擎默认（false）兜底，不再强制 true。
-    usePtcMode: typeof options.usePtcMode === 'boolean' ? options.usePtcMode : undefined,
-    bootstrapMaxTokens: Number.isSafeInteger(options.bootstrapMaxTokens) ? options.bootstrapMaxTokens : undefined,
     // 字符串键：调用方给了就用它（'' = 显式不设置），没给才回落到 preset.yml 定义。
     modelProvider: typeof options.modelProvider === 'string' ? options.modelProvider : undefined,
     modelName: typeof options.modelName === 'string' ? options.modelName : undefined,
@@ -239,32 +238,11 @@ export function runtimeOf(options: WritePresetOptions, prompt: string): Record<s
     subagentReasoningEffort: typeof options.subagentReasoningEffort === 'string' ? options.subagentReasoningEffort : undefined,
     subagentTemperature: typeof options.subagentTemperature === 'string' ? options.subagentTemperature : undefined,
     subagentMaxTokens: typeof options.subagentMaxTokens === 'string' ? options.subagentMaxTokens : undefined,
-    // 工具过滤空值不覆盖：spec.params（预设模板默认）保留，settings/overrides 显式值优先。
-    toolFilterAllow: options.toolFilterAllow !== undefined
-      && (Array.isArray(options.toolFilterAllow) ? options.toolFilterAllow.length > 0 : String(options.toolFilterAllow).trim().length > 0)
-      ? options.toolFilterAllow
-      : undefined,
-    toolFilterDeny: options.toolFilterDeny !== undefined
-      && (Array.isArray(options.toolFilterDeny) ? options.toolFilterDeny.length > 0 : String(options.toolFilterDeny).trim().length > 0)
-      ? options.toolFilterDeny
-      : undefined,
     maxDepth: options.maxDepth,
-    allowKinds: options.allowKinds,
     // firstTurnWord 空 = 不写该键，由模板/预设的 prompt-injector 条目决定确认词。
     firstTurnWord: typeof options.firstTurnWord === 'string' && options.firstTurnWord.length > 0
       ? options.firstTurnWord
       : undefined,
-    // 锚定/深思可选模块（anchor-turn / deliberation-gate / progress-reminder 参数桥）。
-    anchorTurn: typeof options.anchorTurn === 'boolean' ? options.anchorTurn : undefined,
-    anchorTurnText: typeof options.anchorTurnText === 'string' ? options.anchorTurnText : undefined,
-    deliberationGate: typeof options.deliberationGate === 'boolean' ? options.deliberationGate : undefined,
-    deliberationMinChars: Number.isSafeInteger(options.deliberationMinChars) ? options.deliberationMinChars : undefined,
-    deliberationMaxGatesPerTurn: Number.isSafeInteger(options.deliberationMaxGatesPerTurn)
-      ? options.deliberationMaxGatesPerTurn
-      : undefined,
-    cotDrip: typeof options.cotDrip === 'boolean' ? options.cotDrip : undefined,
-    cotDripEvery: Number.isSafeInteger(options.cotDripEvery) ? options.cotDripEvery : undefined,
-    cotDripMaxPerTurn: Number.isSafeInteger(options.cotDripMaxPerTurn) ? options.cotDripMaxPerTurn : undefined,
   }
 }
 
@@ -320,6 +298,18 @@ export function writePreset(prompt: string, options: WritePresetOptions): string
     const policyErrors = validateSubagentToolPolicy(spec.subagentToolPolicy)
     if (policyErrors.length > 0) {
       throw new Error(`invalid subagentToolPolicy: ${policyErrors.join('; ')}`)
+    }
+  }
+  // 触发器声明在**保存期**就用引擎的声明编译器校验（与运行时同一份实现）：写错的声明
+  // 会在保存时被拒，而不是等到装配才炸。编译器只做数据校验（不需要 ctx）。
+  if (spec.triggers !== undefined && spec.triggers !== null) {
+    if (!Array.isArray(spec.triggers)) {
+      throw new Error('invalid triggers: 必须是触发器声明数组')
+    }
+    try {
+      compileDeclarations(spec.triggers)
+    } catch (error) {
+      throw new Error(`invalid triggers: ${String((error as Error)?.message ?? error)}`)
     }
   }
   const runtime = runtimeOf(options, prompt)
@@ -573,6 +563,15 @@ export function writePreset(prompt: string, options: WritePresetOptions): string
   if (spec.subagentToolPolicy !== undefined && spec.subagentToolPolicy !== null) {
     mkdirSync(subagentToolsDir, { recursive: true })
     writeFileSync(join(subagentToolsDir, 'policy.yml'), stringifyYaml(spec.subagentToolPolicy, { lineWidth: 0 }), 'utf8')
+  }
+
+  // 4.7) 触发器声明（preset.yml 顶层 triggers 段）→ triggers.yml：
+  //      声明以**裸数组**落盘（与 preset.yml 里的段同形，读回不需要再拆一层包装）；
+  //      本次没有声明时删掉旧文件——否则上一版的声明会残留并继续生效。
+  const triggersFile = join(outDir, 'triggers.yml')
+  rmSync(triggersFile, { force: true })
+  if (Array.isArray(spec.triggers) && spec.triggers.length > 0) {
+    writeFileSync(triggersFile, stringifyYaml(spec.triggers, { lineWidth: 0 }), 'utf8')
   }
 
   // 候选模式在此结束，安装事务由调用方单独执行，绝不进入原地覆盖回退。

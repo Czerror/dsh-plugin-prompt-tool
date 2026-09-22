@@ -5,7 +5,7 @@
 # 真实提示词规则与共享参数分属两个所有者：promptConfigs[].params / layerSettings.<层名>.<键>。
 # 共享设置只内嵌真实配置卡；空层不自动创建 UI 卡或提示词规则。
 # 九层是独立官方扩展点，没有插件定义的跨层执行顺序。详见 docs/injection-point-contracts.md。
-# 默认不启用锚定、PTC、工具门控或模型增强；下方参考参数全部为注释，按需启用。
+# 默认不启用锚定或模型增强；下方参考参数全部为注释，按需启用。
 # 指令文件正文和指令策略不放在本文件；不得将用户 AGENTS.md/CLAUDE.md 正文复制进来。
 
 id: my-preset
@@ -15,7 +15,7 @@ version: 1.0.0
 engineCompat: ">=0.7.2"
 modules:
   # 仅启用提示词引擎。其他能力保持 opt-in；写入其已登记参数后会自动补齐装配。
-  # 官方与本地可用模块：agent-instructions, command-goal, compaction, delegation-ptc, delegation, persistent-shell, planning, skill-filesystem-cordis, skill-filesystem, tool-ask-user, tool-bash, tool-cordis, tool-fs-search, tool-fs, tool-goal, tool-jobs, tool-plugin-manager-disabled, tool-plugin-manager, tool-present, tool-presentation, tool-pwsh, tool-skill, tool-todo, tool-web, anchor-turn, character-tools, context-gate, deliberation-gate, filesystem-editor, persistent-shell-posix, progress-reminder, promoted-code-mode, prompt-config-engine, run-code-env, session-var-tools, skill-search, subagent-tool-policy, tool-bash-disabled, tool-bootstrap, tool-config-engine, tool-filter, tool-git-bash, world-book-tools
+  # 官方与本地可用模块：agent-instructions, command-goal, compaction, delegation-ptc, delegation, persistent-shell, planning, skill-filesystem-cordis, skill-filesystem, tool-ask-user, tool-bash, tool-cordis, tool-fs-search, tool-fs, tool-goal, tool-jobs, tool-plugin-manager-disabled, tool-plugin-manager, tool-present, tool-presentation, tool-pwsh, tool-skill, tool-todo, tool-web, character-tools, declared-triggers, filesystem-editor, instruction-hint, persistent-shell-posix, prompt-config-engine, run-code-env, session-var-tools, skill-search, subagent-tool-policy, tool-bash-disabled, tool-config-engine, tool-git-bash, world-book-tools
   # 人设使用顶层 persona；不存在 persona、code-presentation、cot-drip 等已撤销模块别名。
   - prompt-config-engine
 layerSettings:
@@ -351,7 +351,6 @@ promptConfigs:
 #     guideCustom: false # 使用自定义引导文本；boolean
 #     guideEnabled: false # 每轮引导（未设置时跟随锚定）；boolean；不声明时跟随 firstTurnAnchor；false 为显式关闭
 #     injectPrompt: true # 锚定确认后注入内容；boolean
-#     allowKinds: "" # 注入 kind 白名单；string-list；来源类型白名单；清空列表保存时删键，恢复缺省
 #     firstTurnWord: "" # 锚定确认词；string
 #     buildPattern: "" # 构建任务正则；pattern
 #     complexPattern: "" # 复杂任务正则；pattern
@@ -360,36 +359,10 @@ promptConfigs:
 #     firstTurnDeep: "" # 深度档锚句；string
 #     guideWeak: "" # 简短引导正文；string
 #     guideDeep: "" # 深度引导正文；string
-#     messageSources: "" # 消息来源白名单；string-list
-#     deferredSources: "" # 延迟注入来源；string-list
-#     deferredGraceSteps: 0 # 延迟注入宽限步数；number
 #     instructionHint: false # 指令路径提示；boolean
-#     anchorTurn: false # 前置锚定轮；boolean
-#     anchorTurnText: "" # 锚定轮文本；string
-#     contextGateEnabled: true # 启用上下文门控；boolean
-#     contextGateSubagents: false # 子代理参与上下文门控；boolean
-#     contextGatePromoteOn: "" # 上下文晋升信号；string；either | tool-call | assistant-message
-#     anchorTurnSubagents: false # 子代理参与锚定轮；boolean
 #   system-section:
 #     # 系统段层：共享参数，不属于该层某一条提示词规则。
-#     bootstrapMaxTokens: 0 # 首轮输出封顶（0 不封顶）；number；0 显式取消输出封顶
-#     promoteGate: false # 门控晋升；boolean
-#     promoteAfterFirstResponse: false # 首响应即晋升；boolean
-#     maxPromoteSteps: 0 # 门控回退步数（0 默认）；number；0 由引擎解释为默认回退步数
-#     bootstrapTools: "" # 首轮窄化集；string-list
-#     compactionTools: "" # 压缩后恢复集；string-list
-#     personaSectionsOnly: false # 首轮只留人设；boolean
-#     workspaceLine: false # 工作目录行；boolean
-#     phase1FirstCallInstruction: "" # 首次调用指令；string
-#     stages:
-#       []
-#       # 渐进披露阶段；stages
-#     stagePreUnlock: 1 # 预放档数；number；0 是合法值，不等于缺省的 1
-#     stageAdvanceTool: "" # 阶段推进工具名；string
-#     stageAdvanceDescription: "" # 阶段推进工具描述；string
-#     stageSectionTemplate: "" # 阶段状态模板；string
-#     bootstrapSubagents: false # 子代理参与工具晋升；boolean
-#     bootstrapPromoteOn: "" # 工具晋升信号；string；either | tool-call | assistant-message
+#     {}
 #   runtime-context:
 #     # 运行上下文：共享参数，不属于该层某一条提示词规则。
 #     {}
@@ -405,24 +378,8 @@ promptConfigs:
 #     {}
 #   tool-pipeline:
 #     # 工具管线层：共享参数，不属于该层某一条提示词规则。
-#     toolFilterAllow: "" # 工具白名单；string-list
-#     toolFilterDeny: "" # 工具黑名单；string-list
-#     usePtcMode: false # PTC 呈现；boolean
 #     strReplaceEditorMaxOutputChars: 16000 # 编辑器输出上限；number
-#     deliberationGate: false # 轨迹深度门；boolean
-#     deliberationMinChars: 0 # 深思下限（0 默认）；number；0 取消深思下限，不回落为 400
-#     deliberationMaxGatesPerTurn: 0 # 每轮最大门控（0 默认）；number；0 不覆盖行配置；正整数覆盖
-#     cotDrip: false # 深思维持节拍；boolean
-#     cotDripEvery: 0 # 节拍间隔（0 默认；禁用请关闭节拍）；number；0 禁用节拍提醒，不回落为 4
-#     cotDripMaxPerTurn: 0 # 每轮最大提醒（0 默认）；number；0 不覆盖行配置；正整数覆盖
-#     ptcSubagents: false # 子代理参与 PTC 晋升；boolean
-#     ptcPromoteOn: "" # PTC 晋升信号；string；either | tool-call | assistant-message
-#     toolFilterEnabled: true # 启用工具过滤；boolean
 #     toolGitBashEnabled: true # 启用 Git Bash 工具；boolean
-#     deliberationSubagents: false # 子代理参与深思门控；boolean
-#     deliberationGateText: "" # 深思门控提示文本；string
-#     cotDripSubagents: false # 子代理参与深思节拍；boolean
-#     cotDripText: "" # 深思节拍提示文本；string
 #     customToolRequireApproval: "" # 执行前需用户批准的工具种类；string-list；shell | http | delegate | fs | ask-user
 #   turn-stop:
 #     # 轮次停止层：共享参数，不属于该层某一条提示词规则。

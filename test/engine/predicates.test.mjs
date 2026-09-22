@@ -9,11 +9,7 @@ import { createScope, scopeOf, scopeParentOf } from '@deepseek-ai/dsh-scope'
 
 import { MATCH_LOGIC, createAnchorMatcher } from '../../engine/anchor-match.mjs'
 import { createEpochPromotion } from '../../engine/compaction-epoch.mjs'
-import { apply as applyAnchorTurn } from '../../engine/anchor-turn.mjs'
-import { apply as applyDeliberationGate } from '../../engine/deliberation-gate.mjs'
-import { apply as applyToolFilter } from '../../engine/tool-filter.mjs'
 import { parsePromoteOn } from '../../engine/shared.mjs'
-import { compositionConfig } from '../fixtures/composition-defaults.mjs'
 import {
   agentPresetId,
   composite,
@@ -28,20 +24,6 @@ import {
 } from '../../engine/predicates.mjs'
 
 // ── 测试夹具 ─────────────────────────────────────────────────────────────────
-
-/** 收集 ctx.on 注册的监听器（按注册顺序）。 */
-function makeCtx() {
-  const listeners = new Map()
-  const ctx = {
-    logger: { warn: () => {} },
-    on(type, handler) {
-      const list = listeners.get(type) ?? []
-      list.push(handler)
-      listeners.set(type, list)
-    },
-  }
-  return { ctx, listeners }
-}
 
 let sessionSeq = 0
 const makeSession = (events = []) => ({
@@ -315,7 +297,7 @@ test('计数类：冷启动冷扫重建与上下限边界', () => {
   assert.equal(createCountPredicate({ of: 'tool-call', min: 1 })(undefined), false, '取不到会话 = 计数 0')
 
   assert.throws(() => createCountPredicate({ of: 'nope', min: 1 }), /count of must be one of/)
-  assert.throws(() => createCountPredicate({ of: 'tool-call' }), /needs min or max/)
+  assert.throws(() => createCountPredicate({ of: 'tool-call' }), /needs min, max or every/)
   assert.throws(() => createCountPredicate({ of: 'tool-call', per: 'step', min: 1 }), /per must be "session" or "turn"/)
   assert.throws(() => createCountPredicate({ of: 'tool-call', min: -1 }), /min must be an integer >= 0/)
 })
@@ -358,88 +340,7 @@ test('计数类：observe 增量不重复计数', () => {
   assert.equal(createCountPredicate({ of: 'tool-call', min: 3 })(session), false, '独立冷扫重建仍是 2 次')
 })
 
-test('计数类：与 deliberation-gate 的当前轮深度判定逐例一致（冷启动与增量两路）', () => {
-  const MIN_CHARS = 12
-  const { ctx, listeners } = makeCtx()
-  // maxGatesPerTurn 调高：本用例对拍的是"当前轮深度"这一计数语义，不是门次数。
-  applyDeliberationGate(ctx, {
-    ...compositionConfig('deliberation-gate'),
-    enabled: true,
-    minChars: MIN_CHARS,
-    maxGatesPerTurn: 100,
-  })
-  const eventHandlers = listeners.get('session/event')
-  const preExecute = listeners.get('tools/pre-execute')?.[0]
-  assert.ok(eventHandlers !== undefined && eventHandlers.length > 0, '应注册 session/event')
-  assert.ok(preExecute !== undefined, '应注册 tools/pre-execute')
-  /** 门的判定：depth < minChars 时 deny。 */
-  const denies = (agent) => preExecute({ agent }, () => undefined)?.kind === 'deny'
-  /** 同一语义的谓词表达：当前轮字符数 <= minChars - 1。 */
-  const shallow = () => createCountPredicate({ of: 'assistant-chars', per: 'turn', max: MIN_CHARS - 1 })
-
-  const CASES = [
-    [],
-    [{ type: 'turn/start', seq: 1, data: { turn: 1 } }],
-    [{ type: 'turn/start', seq: 1, data: { turn: 1 } }, assistantText('short', 2, 1)],
-    [{ type: 'turn/start', seq: 1, data: { turn: 1 } }, assistantText('x'.repeat(MIN_CHARS), 2, 1)],
-    [{ type: 'turn/start', seq: 1, data: { turn: 1 } }, assistantText('x'.repeat(MIN_CHARS + 5), 2, 1)],
-    [assistantText('x'.repeat(MIN_CHARS), 1, 3)],
-    [assistantText('abc', 1, 3)],
-    [assistantText('x'.repeat(MIN_CHARS), 1, 3), { type: 'turn/start', seq: 2, data: { turn: 4 } }],
-    [assistantText('x'.repeat(MIN_CHARS), 1, undefined)],
-  ]
-  for (const log of CASES) {
-    const agent = makeAgent(makeSession(log))
-    assert.equal(denies(agent), shallow()(agent), `冷启动：${JSON.stringify(log)}`)
-  }
-
-  // 增量路径：同一条事件流同时喂给门与谓词
-  const events = []
-  const session = { id: 'gate-incremental', header: { cwd: '/workspace', delegationDepth: 0 }, snapshotEvents: () => events }
-  const agent = { session }
-  const incremental = shallow()
-  assert.equal(denies(agent), true, '空日志：哨兵轮深度 0')
-  assert.equal(incremental(agent), true)
-  for (const event of [
-    { type: 'turn/start', seq: 1, data: { turn: 1 } },
-    assistantText('short', 2, 1),
-    assistantText('x'.repeat(MIN_CHARS), 3, 1),
-    toolCall(4),
-    { type: 'turn/start', seq: 5, data: { turn: 2 } },
-  ]) {
-    events.push(event)
-    for (const handler of eventHandlers) handler(session, event)
-    incremental.observe(session, event)
-    assert.equal(denies(agent), incremental(agent), `增量：${event.type}`)
-  }
-})
-
 // ── 5. 名单 ──────────────────────────────────────────────────────────────────
-
-test('名单类：allow/deny 语义与 tool-filter 的过滤逐例一致', async () => {
-  const NAMES = ['read', 'write', 'bash', 'web_search', 'phase_advance']
-  const CASES = [
-    {},
-    { allow: ['read', 'write'] },
-    { deny: ['bash'] },
-    { allow: ['read', 'write'], deny: ['write'] },
-    { allow: [] },
-    { deny: [] },
-  ]
-  for (const lists of CASES) {
-    const { ctx, listeners } = makeCtx()
-    applyToolFilter(ctx, { ...compositionConfig('tool-filter'), enabled: true, ...lists })
-    const assemble = listeners.get('system-prompt/assemble')?.[0]
-    assert.ok(assemble !== undefined, '应注册 system-prompt/assemble')
-    const assembly = { tools: NAMES.map((name) => ({ name })), sections: [], contexts: [] }
-    const filtered = await assemble(assembly, { agent: makeAgent(makeSession([])) }, async () => assembly)
-    const kept = new Set(filtered.tools.map((tool) => tool.name))
-    const predicate = createNameListPredicate(lists)
-    for (const name of NAMES) {
-      assert.equal(predicate(name), kept.has(name), `lists=${JSON.stringify(lists)} name=${name}`)
-    }
-  }
-})
 
 test('名单类：大小写、空名与未声明的边界', () => {
   assert.equal(createNameListPredicate({})({ name: 'anything' }), true, '两侧未声明 = 不过滤')
@@ -456,27 +357,6 @@ test('名单类：大小写、空名与未声明的边界', () => {
 })
 
 // ── 6. 会话状态 ──────────────────────────────────────────────────────────────
-
-test('会话状态类：与 anchor-turn 的 isFreshSession 逐例一致', () => {
-  const { ctx, listeners } = makeCtx()
-  applyAnchorTurn(ctx, { ...compositionConfig('anchor-turn'), enabled: true })
-  const inserted = listeners.get('agent/inbox/inserted')?.[0]
-  assert.ok(inserted !== undefined, '应注册 agent/inbox/inserted')
-  const fresh = createSessionStatePredicate({ type: 'user/message' })
-  const CASES = [
-    [],
-    [toolCall(1)],
-    [userMessage(1)],
-    [userMessage(1), toolCall(2)],
-  ]
-  for (const events of CASES) {
-    const session = makeSession(events)
-    const prepends = []
-    const agent = { session, inbox: { prepend: (queue, message) => prepends.push({ queue, message }) } }
-    inserted({ agent, message: { source: { kind: 'user' } } })
-    assert.equal(prepends.length === 1, fresh(agent), `events=${JSON.stringify(events)}`)
-  }
-})
 
 test('会话状态类：present 镜像语义与只读 durable 快照', () => {
   const seen = createSessionStatePredicate({ type: 'user/message', present: true })

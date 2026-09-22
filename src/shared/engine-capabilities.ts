@@ -88,11 +88,8 @@ export const SUBAGENT_TOOL_POLICY_SKELETON: Readonly<Record<string, unknown>> = 
 
 /** 首期只登记已有 typed editor 的能力，避免万能 key/value 表单。 */
 export const ENGINE_CAPABILITIES: readonly EngineCapability[] = [
-  { id: 'tool-bootstrap', moduleKeys: ['tool-bootstrap'], rowIds: ['tool-bootstrap'], displayLayer: 'system-section' },
-  { id: 'context-gate', moduleKeys: ['context-gate'], rowIds: ['context-gate'], displayLayer: 'pre-step' },
-  { id: 'anchor-turn', moduleKeys: ['anchor-turn'], rowIds: ['anchor-turn'], displayLayer: 'pre-step' },
-  { id: 'promoted-code-mode', moduleKeys: ['promoted-code-mode'], rowIds: ['promoted-code-mode'], displayLayer: 'tool-pipeline' },
-  { id: 'tool-filter', moduleKeys: ['tool-filter'], rowIds: ['tool-filter'], displayLayer: 'tool-pipeline' },
+  // B7 T3：tool-bootstrap / context-gate / anchor-turn / promoted-code-mode / tool-filter /
+  // deliberation-gate / progress-reminder 七张专用能力卡随对应引擎模块退场，不再登记。
   // 子代理工具面：模块 + 顶层策略段（段是结构化数据，物化为 subagent-tools/policy.yml）。
   {
     id: 'subagent-tool-policy',
@@ -103,8 +100,6 @@ export const ENGINE_CAPABILITIES: readonly EngineCapability[] = [
   },
   // filesystem-editor 同时提供 fs-local 与 str-replace-editor，二者必须同域。
   { id: 'str-replace-editor', moduleKeys: ['filesystem-editor'], rowIds: ['str-replace-editor'], displayLayer: 'tool-pipeline' },
-  { id: 'deliberation-gate', moduleKeys: ['deliberation-gate'], rowIds: ['deliberation-gate'], displayLayer: 'tool-pipeline' },
-  { id: 'progress-reminder', moduleKeys: ['progress-reminder'], rowIds: ['progress-reminder'], displayLayer: 'tool-pipeline' },
   { id: 'tool-config-engine', moduleKeys: ['tool-config-engine'], rowIds: ['tool-config-engine'], displayLayer: 'tool-pipeline' },
   // B2 T3：tool-git-bash 此前没有能力卡（开关只能靠「行在不在组合里」），补 `enabled` 键后登记卡片，
   // 否则 impliedModulesForParams 查不到 card，「参数在 ⇒ 装配在」对该行静默失效。
@@ -175,12 +170,15 @@ export interface EngineRecipe {
   initialParams?: Readonly<Record<string, unknown>>
 }
 
-/** 只保留已有真实工作流的一键组合；recipe 本身不写入 preset.yml。 */
-export const ENGINE_RECIPES: readonly EngineRecipe[] = [
-  { id: 'phase-control', capabilities: ['context-gate', 'tool-bootstrap'] },
-  { id: 'phase-control-ptc', capabilities: ['context-gate', 'tool-bootstrap', 'promoted-code-mode'], initialParams: { usePtcMode: true } },
-  { id: 'deliberation', capabilities: ['deliberation-gate', 'progress-reminder'], initialParams: { deliberationGate: true, cotDrip: true } },
-] as const
+/**
+ * 只保留已有真实工作流的一键组合；recipe 本身不写入 preset.yml。
+ *
+ * B7 T3 清空：三条 recipe 的成员都是随本轮退场的专用能力（phase-control /
+ * phase-control-ptc / deliberation），没有任何一条还能组成合法能力集合。
+ * export 与 `engineRecipe()` 保留——调用点（创建菜单、bridge 校验）不必跟着改，
+ * 空表天然让组合项整个消失。
+ */
+export const ENGINE_RECIPES: readonly EngineRecipe[] = []
 
 export function engineCapability(id: string): EngineCapability | undefined {
   return ENGINE_CAPABILITIES.find((capability) => capability.id === id)

@@ -32,29 +32,24 @@ import { ENGINE_PARAM_DEFINITIONS, ENGINE_PARAM_KEYS } from '../../src/shared/en
 const NORMALIZED = [
   'firstTurnAnchor', 'firstTurnText', 'firstTurnCustom', 'guideText', 'guideCustom', 'guideEnabled',
   'injectPrompt', 'modelProvider', 'modelName', 'subagentModelProvider', 'subagentModelName',
-  'modelReasoningEffort', 'subagentReasoningEffort', 'firstTurnWord', 'bootstrapMaxTokens', 'usePtcMode',
-  'anchorTurn', 'anchorTurnText', 'deliberationGate', 'deliberationMinChars', 'deliberationMaxGatesPerTurn',
-  'cotDrip', 'cotDripEvery', 'cotDripMaxPerTurn',
+  'modelReasoningEffort', 'subagentReasoningEffort', 'firstTurnWord',
 ]
 
 /**
- * **直透**的键（48 个，= 72 − 24）：`runtimeOf` 不碰它们，取值原样进 runtime。
+ * **直透**的键（16 个，= 30 − 14）：`runtimeOf` 不碰它们，取值原样进 runtime。
  *
  * 其中四个（`modelTemperature` / `modelMaxTokens` / `subagentTemperature` / `subagentMaxTokens`）
  * 看着像漏网，其实**是**在上面第 2 条里被有意排除的：它们已有独立的字符串收窄分支，
  * 而喂给它们的「异物值」恰好是字符串（其 kind 为 `number`），所以行为上表现为直透。
+ *
+ * B7 T3：参数目录从 72 键收缩到 30 键（七个专用能力的参数键随模块删除），两个清单同时变短；
+ * 「哪些键需要收窄」的判据不变 —— 仍是 `runtimeOf` 里有没有显式的类型守卫。
  */
 const PASSTHROUGH = [
-  'modelTemperature', 'modelMaxTokens', 'subagentTemperature', 'subagentMaxTokens',
-  'toolFilterAllow', 'toolFilterDeny', 'maxDepth', 'allowKinds', 'buildPattern', 'complexPattern',
-  'firstTurnBuild', 'firstTurnInspect', 'firstTurnDeep', 'guideWeak', 'guideDeep',
-  'promoteGate', 'promoteAfterFirstResponse', 'maxPromoteSteps', 'bootstrapTools', 'compactionTools',
-  'personaSectionsOnly', 'workspaceLine', 'phase1FirstCallInstruction', 'messageSources', 'deferredSources',
-  'deferredGraceSteps', 'instructionHint', 'stages', 'stagePreUnlock', 'stageAdvanceTool',
-  'stageAdvanceDescription', 'stageSectionTemplate', 'strReplaceEditorMaxOutputChars',
-  'bootstrapSubagents', 'bootstrapPromoteOn', 'contextGateEnabled', 'contextGateSubagents', 'contextGatePromoteOn',
-  'ptcSubagents', 'ptcPromoteOn', 'toolFilterEnabled', 'toolGitBashEnabled', 'anchorTurnSubagents',
-  'deliberationSubagents', 'deliberationGateText', 'cotDripSubagents', 'cotDripText', 'customToolRequireApproval',
+  'modelTemperature', 'modelMaxTokens', 'subagentTemperature', 'subagentMaxTokens', 'maxDepth',
+  'buildPattern', 'complexPattern', 'firstTurnBuild', 'firstTurnInspect', 'firstTurnDeep',
+  'guideWeak', 'guideDeep', 'instructionHint', 'strReplaceEditorMaxOutputChars',
+  'toolGitBashEnabled', 'customToolRequireApproval',
 ]
 
 /** 异物值：与该 kind 的合法形态**不同类**，用来判断这个键有没有被收窄。 */
@@ -62,7 +57,7 @@ const ALIEN = { boolean: 'not-a-boolean', number: 'not-a-number', string: 12345,
 /** 该 kind 的合法值，用来判断收窄是否「保留原值」。 */
 const VALID = { boolean: true, number: 7, string: 'valid', 'string-list': ['a'], stages: [{ name: 's', tools: ['t'] }], 'max-depth': 2, pattern: '^x' }
 
-test('收窄划分与实测一致：24 个键收窄形态，48 个键直透（按 kind 统一驱动会破坏它）', () => {
+test('收窄划分与实测一致：14 个键收窄形态，16 个键直透（按 kind 统一驱动会破坏它）', () => {
   const normalized = []
   const passthrough = []
   for (const key of ENGINE_PARAM_KEYS) {

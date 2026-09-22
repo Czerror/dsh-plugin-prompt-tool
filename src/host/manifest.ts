@@ -17,7 +17,7 @@ import { fileURLToPath } from 'node:url'
 import { Pair, Scalar, parse as parseYaml, parseDocument, YAMLMap, YAMLSeq } from 'yaml'
 import { DEFAULT_PRESET_DIR, DSH_HOME } from './paths.ts'
 import { engineCapability, engineRecipe, impliedModulesForParams, isEngineCapabilityPresent, type ModuleSourceMode, type PresetModuleFacts } from '../shared/engine-capabilities.ts'
-import { ENGINE_PARAM_DEFINITIONS, ENGINE_PARAM_KEYS, buildEngineModuleParams, engineParamList, normalizeMaxDepth } from '../shared/engine-params.ts'
+import { ENGINE_PARAM_DEFINITIONS, ENGINE_PARAM_KEYS, buildEngineModuleParams, normalizeMaxDepth } from '../shared/engine-params.ts'
 import { personaRowConfig, readPersonaSpec, type PersonaSpec } from '../shared/persona-section.ts'
 import { DEFAULT_PRESET_ID } from '../shared/preset-ids.ts'
 import { assertPresetDirectory, assertPresetId, assertPresetTree, engineModuleFileNames, presetPathExists, rewritePresetEngineReferences, setPresetDefinitionId } from './preset-install.ts'
@@ -54,6 +54,12 @@ export interface PresetSpec {
   customTools?: unknown[]
   /** 子代理实例级工具策略（subagentToolPolicy 顶层领域段；缺省 = 官方 delegation 行为）。 */
   subagentToolPolicy?: Record<string, unknown>
+  /**
+   * 触发器声明（`triggers` 顶层段）：`{ id, channel, when?, do, … }` 的数组。
+   * 声明**由预设提供**（引擎不带默认），物化为 `triggers.yml` 后由 `declared-triggers`
+   * 运行时模块读入并注册；形状与校验归 `engine/trigger-spec.mjs` 的声明编译器。
+   */
+  triggers?: unknown[]
   /** 模板变量插值开关（缺省 true = 启用；false = 停用，writePreset 不生成变量文件）。 */
   variablesEnabled?: boolean
   /**
@@ -476,8 +482,7 @@ export function savePresetParams(
   const doc = parseDocument(readFileSync(file, 'utf8'), { logLevel: 'silent' })
   readPresetLayerSettings(doc.toJS())
   // 空值 = 删除键（回落模板/引擎默认）：''（字符串清空）、[]（列表清空）。
-  // 其余 0/false 照常写入：stagePreUnlock 的 0 是合法档位（undefined 才回落
-  // 引擎默认 1），maxPromoteSteps 0 由引擎归一为默认 4。
+  // 其余 0/false 照常写入——0 是合法档位（如 maxDepth 0 = 禁止委派），不能当空值吞掉。
   if (params !== undefined) {
     for (const [key, value] of Object.entries(params)) {
       // 仅跳过 undefined/null 与空 key 名；空串/空数组照常写入——
@@ -634,9 +639,6 @@ export function resolvePresetParams(spec: PresetSpec, runtime: Record<string, un
   return params
 }
 
-/** 逗号分隔 / YAML flow 数组 / 空格分隔的字符串列表 → 字符串数组。 */
-const parseListParam = engineParamList
-
 /**
  * 参数桥：params 扁平键 → 引擎模块行 config 对象（取代旧 __TOKEN__ 文本渲染）。
  *
@@ -644,8 +646,8 @@ const parseListParam = engineParamList
  *  - 未声明的键不合并（composition 行默认 / 引擎默认生效），与旧"空值删行"语义等价；
  *  - 值类型直达（布尔/数字/数组不再字符串化再解析）；
  *  - 合并优先级：参数桥（UI/基础层）> moduleConfigs（模板/ST 行级直写）> 行默认。
- * 模型路由/委派参数统一扁平键（modelProvider/subagentModelProvider/toolFilterAllow/maxDepth 等），
- * 与官方 AgentOptions{provider,model} / toolFilter{allow,deny} / maxDepth 对齐。
+ * 模型路由/委派参数统一扁平键（modelProvider/subagentModelProvider/maxDepth 等），
+ * 与官方 AgentOptions{provider,model} / maxDepth 对齐。
  */
 export function buildModuleConfigsFromParams(params: Record<string, unknown>, options: { subagentPolicyEnabled?: boolean } = {}): Record<string, Record<string, unknown>> {
   const out = buildEngineModuleParams(params)
@@ -660,18 +662,8 @@ export function buildModuleConfigsFromParams(params: Record<string, unknown>, op
   const provider = asString(params.subagentModelProvider, '')
   const model = asString(params.subagentModelName, '')
   if (provider.length > 0 && model.length > 0) subagent.agentOptions = { provider, model }
-  // 子代理工具权限分离（Wave 3）：策略启用后参数桥不再把主代理列表写入
-  // delegation.toolFilter（子代理由 subagentToolPolicy 实例级解析授权，避免双重过滤）。
-  if (options.subagentPolicyEnabled !== true) {
-    const subAllow = parseListParam(params.toolFilterAllow)
-    const subDeny = parseListParam(params.toolFilterDeny)
-    if (subAllow.length > 0 || subDeny.length > 0) {
-      subagent.toolFilter = {
-        ...(subAllow.length > 0 ? { allow: subAllow } : {}),
-        ...(subDeny.length > 0 ? { deny: subDeny } : {}),
-      }
-    }
-  }
+  // B7 T3：委派 `toolFilter` 通道随 `toolFilterAllow/Deny` 参数一并删除——子代理工具面
+  // 一律由 subagentToolPolicy 实例级解析授权，不再有第二条「主代理列表直写子代理」的路径。
   const maxDepth = normalizeMaxDepth(params.maxDepth)
   if (maxDepth !== undefined) subagent.maxDepth = maxDepth
   if (Object.keys(subagent).length > 0) {
@@ -825,6 +817,8 @@ export function loadCompositionText(spec: PresetSpec, templateDir?: string, runt
     const params = resolvePresetParams(spec, runtime)
     const extra = [
       ...(spec.subagentToolPolicy !== undefined && spec.subagentToolPolicy !== null ? ['subagent-tool-policy'] : []),
+      // 有触发器声明 ⇒ 装配声明运行时（与 subagentToolPolicy 同一规则：顶层数据段隐含其消费者）。
+      ...(Array.isArray(spec.triggers) && spec.triggers.length > 0 ? ['declared-triggers'] : []),
       ...impliedModulesForParams(resolvePresetParams(spec, {}), spec.moduleConfigs),
       ...(Array.isArray(spec.promptConfigs) && spec.promptConfigs.length > 0 || modelRequestConfigs(params).length > 0 ? ['prompt-config-engine'] : []),
     ].filter((module) => !declared.includes(module))

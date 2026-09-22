@@ -21,7 +21,6 @@ const TUI_PARAM_SWITCHES: ReadonlyArray<readonly [key: string, label: string]> =
   ['guideEnabled', '每轮引导（独立开关；缺省跟随锚定）'],
   ['firstTurnCustom', '使用自定义引导（首句）'],
   ['guideCustom', '使用自定义引导（每轮）'],
-  ['usePtcMode', '使用 PTC 模式'],
 ] as const
 
 /** 参数显示行（从激活预设 preset.yml params 读）。 */
@@ -88,7 +87,6 @@ function renderTuiStatus(source: TuiSource, params: Record<string, unknown>, pro
       return `  ${label.padEnd(26)}${text.length > 0 ? text : emptyText}`
     }),
     `  modelsAvailable         ${source.modelsAvailable ? '是' : '否（未检测到模型服务商）'}`,
-    `  bootstrapMaxTokens      ${typeof params.bootstrapMaxTokens === 'number' && params.bootstrapMaxTokens > 0 ? String(params.bootstrapMaxTokens) : '0（关闭，不设封顶）'}`,
     `  activeSkillsDirs        ${source.activeSkillsDirs.length > 0 ? source.activeSkillsDirs.join(' → ') : '（未解析到技能目录）'}`,
     '提示词配置:',
   ]
@@ -213,11 +211,10 @@ export function registerTuiCommand(
         const usage = (): CommandResult => ({
           kind: 'error',
           text: '用法：/prompt-tool status\n' +
-            '      /prompt-tool on|off|toggle <writePreset|injectPrompt|firstTurnAnchor|firstTurnCustom|guideEnabled|guideCustom|usePtcMode>\n' +
+            '      /prompt-tool on|off|toggle <writePreset|injectPrompt|firstTurnAnchor|firstTurnCustom|guideEnabled|guideCustom>\n' +
             '      /prompt-tool skill <frontmatter 技能名> on|off|toggle\n' +
             '      /prompt-tool config <id>（id 可含空格）\n' +
-            '      /prompt-tool config <id> on|off|toggle\n' +
-            '      /prompt-tool bootstrapMaxTokens <正整数|0（关闭）>',
+            '      /prompt-tool config <id> on|off|toggle',
         })
         const persistPresetParam = async (key: string, value: unknown): Promise<CommandResult | undefined> => {
           if (savePresetParam === undefined) {
@@ -290,19 +287,6 @@ ${renderTuiStatus(getSource(), readPresetParams(getPresetConfigsDir?.()), resolv
           return { kind: 'success', text: `已把提示词配置 ${id} 设为 ${next ? '开' : '关'}
 
 ${renderConfigDetail(getSource(), id, resolvePromptConfigs(getPresetConfigsDir?.(), []))}` }
-        }
-        if (tokens[0] === 'bootstrapMaxTokens') {
-          const raw = tokens[1]
-          const value = raw === undefined ? NaN : Number(raw)
-          if (!Number.isSafeInteger(value) || value < 0) {
-            return { kind: 'error', text: 'bootstrapMaxTokens 需要非负整数：0 关闭封顶，正整数设置首轮 maxTokens。' }
-          }
-          // bootstrapMaxTokens 按预设存储：写激活预设 preset.yml。
-          const failure = await persistPresetParam('bootstrapMaxTokens', value)
-          if (failure !== undefined) return failure
-          return { kind: 'success', text: `已把 bootstrapMaxTokens 设为 ${value === 0 ? '关闭（不设封顶）' : String(value)}
-
-${renderTuiStatus(getSource(), readPresetParams(getPresetConfigsDir?.()), resolvePromptConfigs(getPresetConfigsDir?.(), []))}` }
         }
         const action = tokens[0]
         const key = tokens[1]

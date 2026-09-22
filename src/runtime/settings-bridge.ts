@@ -1460,20 +1460,6 @@ export function registerSettingsBridge(
                   return
                 }
               }
-              if (rawOverrides !== undefined) {
-                const spec = loadPresetSpec(dir)
-                const candidateParams = { ...spec.params }
-                for (const [key, value] of Object.entries(rawOverrides)) {
-                  if (value === '' || (Array.isArray(value) && value.length === 0)) delete candidateParams[key]
-                  else if (value !== null && value !== undefined) candidateParams[key] = value
-                }
-                const bootstrap = resolvePresetModuleFacts({ ...spec, params: candidateParams }, dir, true).effectiveConfigs?.['tool-bootstrap']
-                if ((bootstrap?.promoteGate === true || bootstrap?.promoteAfterFirstResponse === true)
-                  && bootstrap.promoteOn !== undefined && bootstrap.promoteOn !== 'either') {
-                  writeBridgeJson(res, 400, { ok: false, code: 'overrides-invalid-value', message: '门控晋升与首响应晋升要求工具晋升信号为 either；请先调整同一卡片中的晋升信号' })
-                  return
-                }
-              }
               if (!guardPresetIdentity(record, dir, res)) return
               savePresetParams(
                 presetRoot,

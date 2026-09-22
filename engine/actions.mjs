@@ -27,7 +27,13 @@
  * @module engine/actions
  */
 
-import { createWarnOnce, keepDisposer, parseToolNames } from './shared.mjs'
+import {
+  MAX_TRACKED_SESSIONS,
+  createWarnOnce,
+  keepDisposer,
+  newMessageId,
+  parseToolNames,
+} from './shared.mjs'
 import { stringList } from './fields.mjs'
 import { applyPromptConfigs } from './executor.mjs'
 import {
@@ -38,6 +44,7 @@ import {
   wireLayers,
 } from './layers.mjs'
 import { SDK_SECTION_NAME, sdkToolNames, stripSdkDeclarations } from './sdk-strip.mjs'
+import { subjectOf } from './predicates.mjs'
 
 /**
  * 标识来源：**由调用方经 `options.plugin` 传入**（与 `trigger.mjs` 的
@@ -126,6 +133,25 @@ export const ACTION_KINDS = Object.freeze({
     timing: 'agent/request 的下游结算之后（`await next()` 拿到已冻结的 LlmCallConfig 再改写）。',
     note: '与既有 promptConfigs 的 agent-request 层共用 applyAgentRequestParams；只改命中 scope/agent 的请求，删键仅删"本声明注入的那个值"。',
   },
+  'inbox-prepend': {
+    title: '前置收件箱消息',
+    events: ['agent/inbox/inserted'],
+    services: ['agent.inbox.prepend'],
+    degrade: ACTION_DEGRADE.silent,
+    timing: 'emit 通道（**无 next**）：命中即前置一条消息，不命中什么都不做。',
+    note: '只前置不追加；插件来源消息（含本动作自己插入的那条）永不再次前置，防自触发插队。'
+      + '收件箱的持久化归宿主（`agent/inbox/spliced`），本动作不自己落盘。',
+  },
+  'pre-step-filter': {
+    title: '过滤 pre-step 注入消息',
+    events: ['agent/pre-step'],
+    services: [],
+    degrade: ACTION_DEGRADE.exposeAll,
+    timing: 'agent/pre-step 的下游结算之后（`await next()` 拿到 decision 再过滤 messages）。',
+    note: '两种模式**互斥**：`sources` = 严格白名单（只放行这些 `source.kind`，含 claimed 批）；'
+      + '`keepKinds` = 保留 claimed 基线（按对象身份或 id）+ 这些 kind。未声明任一 = 不过滤（零开销）。'
+      + '**永不吞上下文**：异常一律返回未过滤的 decision（`expose-all`）。',
+  },
 })
 
 /** 名单字段：非空字符串数组 → Set；缺省返回 undefined。空数组合法（= 一个都不留）。 */
@@ -141,15 +167,26 @@ function createMask(source, label, plugin) {
   if (allow === undefined && deny === undefined) {
     throw new TypeError(`${plugin}: ${label} needs allow and/or deny — 空名单无法表达「剔哪些工具」`)
   }
-  for (const reserved of [allow, deny]) {
-    if (reserved?.has(RUN_CODE)) {
-      throw new TypeError(`${plugin}: ${label} must not name the reserved ${RUN_CODE} transport — it is the only callable entry of the PTC presentation`)
-    }
+  // `run_code` 是 PTC 呈现**唯一**的可调用入口（见本文件顶部）。把它写进 **deny** 名单会让
+  // 整个 PTC 面失效，一律挂载期拒绝。写进 **allow** 名单相反是**必需**的：allow 是
+  // fail-closed（未列出即剔出），不点名它就会被连带剔掉——PTC 预设因此失去唯一入口。
+  // 2026-09-22 用户拍板：allow 模式允许点名它（旧模块本就能把它写进白名单）。
+  if (deny?.has(RUN_CODE)) {
+    throw new TypeError(`${plugin}: ${label}.deny must not name the reserved ${RUN_CODE} transport — it is the only callable entry of the PTC presentation`)
   }
   return {
     allow,
     deny,
-    /** 与 tool-filter.applyMask / Layer.admits 同一判据。 */
+    /**
+     * fail-open 兜底开关（**可选**，缺省 false）：原 `tool-bootstrap` 的语义是
+     * 「keep 名单里的工具在本次装配目录里一个都不存在 → 放弃裁剪、暴露完整目录」（声明侧见
+     * `test/engine/declarations/tool-bootstrap.yml` 的 `requireMatch: true`），而原
+     * `tool-filter` 的同名场景是**照名单裁成空目录**。两种语义都真实存在，所以这里
+     * **不设默认**——要兜底的声明自己写 `requireMatch: true`。把某一个模块的特有语义当成
+     * 通用默认，会让另一个声明路径的行为被悄悄改掉（这正是对拍抓出来的）。
+     */
+    requireMatch: source?.requireMatch === true,
+    /** 与 tool-filter 的名单判据 / Layer.admits 同一判据（tool-filter 模块已删除，判据保留）。 */
     blocks: (toolName) => {
       if (typeof toolName !== 'string' || toolName.length === 0) return false
       if (deny !== undefined && deny.has(toolName)) return true
@@ -159,14 +196,160 @@ function createMask(source, label, plugin) {
 }
 
 /** 合法通道绑定器：动作注册到声明外的事件在挂载期 fail loud。 */
-function channelBinder(ctx, kind, plugin) {
+function channelBinder(ctx, kind, plugin, prepend) {
   const legal = new Set(ACTION_KINDS[kind].events)
   return (event, handler, options) => {
     if (!legal.has(event)) {
       throw new TypeError(`${plugin}: action ${kind} must not register on ${JSON.stringify(event)} — legal channel(s): ${[...legal].join(', ')}`)
     }
-    return ctx.on(event, handler, options)
+    // `prepend` 只表达「落在宿主 waterfall 的最外层」（否决型动作如预算剥离需要它），
+    // **不承担声明之间的排序**——同通道顺序由注册先后决定（见 trigger.mjs 的 R13 依据）。
+    return ctx.on(event, handler, prepend === true ? { ...options, prepend: true } : options)
   }
+}
+
+/**
+ * 支持 `when` 前置判定的动作：它们经 `on(...)` 注册处理器，判定可以在处理器入口统一前置。
+ *
+ * 另外两类**不走这个入口**，所以传 `when` 会在挂载期 fail loud（而不是静默无效）：
+ *   - `inject-text` 注册的是**层**（`applyPromptConfigs` / `wireLayers`），不是处理器；
+ *   - `guard` 注册的是 agent scope 上的**最终拒绝**（`ctx.tools.guard`，assembly 时惰性挂载）。
+ * 本集合与实现的一致性由 `test/engine/actions.test.mjs` 的「when 支持面」用例钉住。
+ */
+const ON_REGISTERED_KINDS = new Set(['assembly', 'decision', 'append-context', 'sdk-strip', 'request-params', 'inbox-prepend', 'pre-step-filter'])
+
+/**
+ * **没有 `next` 的通道**（官方 `@mode emit` / `@mode serial`）：注册在这些通道上的动作
+ * 不能靠「`args` 的最后一个参数是 `next`」工作——判定路径与载荷切分都要走无 `next` 分支。
+ *
+ * 依据（`@deepseek-ai/dsh-agent/lib/types/runtime-types.d.ts` 的逐事件 `@mode` 注释）：
+ * **只有 `waterfall` 才有 `next`**；`agent/pre-step`／`agent/request` 是 waterfall，
+ * 而 `agent/inbox/inserted`（B7 新增动作的通道）是 **emit**、
+ * `agent/turn-stopping`（既有 append-context「续跑」的通道）是 **serial**——
+ * 两者都没有 `next`。第三项此前是个隐患：`append-context(continue)` 一旦带 `when`，
+ * 旧实现会把 `turn` 当成 `next` 调掉。
+ */
+const NEXT_FREE_CHANNELS = new Set([
+  'session/event',
+  'agent/inbox/inserted',
+  'agent/turn-stopping',
+])
+
+/**
+ * 给注册器的 `on` 包一层 `when` 前置判定（B7：`when` → 动作的接线）。
+ *
+ * 七个注册器**一行不用改**——它们照常调 `on`，判定只在这里统一前置。不命中即放行
+ * （waterfall 调 `next()`；无 `next` 的通道什么都不做）。判定异常只告警并同样放行
+ * （与「动作只 guard 自身逻辑」同一纪律，绝不卡死调用）。
+ *
+ * **同步谓词走同步路径**：`tools/pre-execute` 这类通道的裁决靠「deny 前无 await」保证
+ * 并行调用不越过预算（见 `deliberation-gate.mjs` 的注释），无条件 `await` 会破坏它。
+ * 返回 Promise 的谓词退回异步路径——声明编译出的谓词恒同步，这条兜底是给手写调用方的。
+ */
+/**
+ * 每轮生效预算（动作声明的 `maxPerTurn`）。
+ *
+ * **为什么必须是动作侧、不能用 `count` 原语**：原 `deliberation-gate` 的 `gates` 与原
+ * `progress-reminder` 的 `drips` 数的是**本动作自己生效了几次**，不是 durable 事件数。
+ * 它们是纯增量状态（重启后从 0 开始、每轮重置），而 `count` 的模型是冷扫 durable 事件流重建
+ * ——两者在重启/压缩后给出的答案不同，所以这是独立的一类计数。
+ *
+ * **轮号**取自 durable 事件的 `data.turn`（与 `predicates.mjs` 的 `trackTurn` 同规则：任何带
+ * 有限轮号的事件都推进当前轮并取最大值），所以重启后计数虽从 0 开始，轮边界立刻是对的。
+ *
+ * **同步消耗**：`take()` 在谓词命中后的同步路径上查/增，与原 `deliberation-gate` 的
+ * 「await 前同步自增」同纪律——并行工具调用不得越过预算。声明的谓词恒同步，所以这条成立。
+ *
+ * @returns {{take: (subject: unknown) => boolean, observe: Function}|undefined} 无 `maxPerTurn` 时为 undefined
+ */
+function createTurnBudget(action) {
+  const max = action?.maxPerTurn
+  if (max === undefined) return undefined
+  if (!Number.isSafeInteger(max) || max <= 0) {
+    throw new TypeError(`${labelOf(action)}.maxPerTurn must be a positive integer`)
+  }
+  /** sessionId -> { turn, used }（纯增量，与原模块同语义：重启从 0 开始）。 */
+  const budgets = new Map()
+  const entryOf = (session) => {
+    if (session?.id === undefined) return undefined
+    let entry = budgets.get(session.id)
+    if (entry === undefined) {
+      if (budgets.size >= MAX_TRACKED_SESSIONS) budgets.clear()
+      entry = { turn: undefined, used: 0 }
+      budgets.set(session.id, entry)
+    }
+    return entry
+  }
+  return {
+    /** 同步查/增；`false` = 本轮预算已尽，调用方按「不命中」放行下游。 */
+    take(subject) {
+      const session = subject?.session ?? subject?.agent?.session
+      // 无会话不设限：与原模块「取不到会话条目即放行」的降级一致。
+      const entry = entryOf(session)
+      if (entry === undefined) return true
+      if (entry.used >= max) return false
+      entry.used += 1
+      return true
+    },
+    /** 轮边界重置（取最大值，容忍乱序/重复事件）。 */
+    observe(session, event) {
+      const turn = event?.data?.turn
+      if (typeof turn !== 'number' || !Number.isFinite(turn)) return
+      const entry = entryOf(session)
+      if (entry === undefined) return
+      if (entry.turn === undefined || turn > entry.turn) {
+        entry.turn = turn
+        entry.used = 0
+      }
+    },
+  }
+}
+
+/**
+ * 给注册器的 `on` 包一层 `when` 前置判定（B7：`when` → 动作的接线）与可选的每轮预算。
+ *
+ * 七个注册器**一行不用改**——它们照常调 `on`，判定只在这里统一前置。不命中即放行
+ * （waterfall 调 `next()`；无 `next` 的通道什么都不做）。判定异常只告警并同样放行
+ * （与「动作只 guard 自身逻辑」同一纪律，绝不卡死调用）。
+ *
+ * **同步谓词走同步路径**：`tools/pre-execute` 这类通道的裁决靠「deny 前无 await」保证
+ * 并行调用不越过预算（见 `deliberation-gate.mjs` 的注释），无条件 `await` 会破坏它。
+ * 返回 Promise 的谓词退回异步路径——声明编译出的谓词恒同步，这条兜底是给手写调用方的。
+ */
+function withWhen(on, when, warnOnce, budget) {
+  if (typeof when !== 'function' && budget === undefined) return on
+  // 注意参数个数：`on` 的签名是 `(event, handler, options)`——包装后的处理器必须占据
+  // **第二个**位置，多传一个参数会把 options 挤到错位（首版就踩了这个，被测试抓出）。
+  return (event, handler, options) => on(event, (...args) => {
+    const nextFree = NEXT_FREE_CHANNELS.has(event)
+    const payload = nextFree ? args : args.slice(0, -1)
+    const pass = () => (nextFree ? undefined : args[args.length - 1]())
+    // 谓词契约是**单个载荷对象**（见 predicates.mjs 头部的统一接口），而处理器收到的是
+    // 事件参数表：按通道归一后再交给谓词与预算——否则除 `names` 外，各原语在真实载荷上都
+    // 取不到它们要的域（`phase` 曾因此恒为「已晋升」、`count` 恒 0）。
+    const subject = subjectOf(event, payload, warnOnce)
+    const decide = (decided) => {
+      if (decided !== true) return pass()
+      // 每轮预算：命中后、动作体前**同步**查/增（并行调用不得越过预算）。
+      if (budget !== undefined && !budget.take(subject)) return pass()
+      return handler(...args)
+    }
+    const failed = (error) => {
+      warnOnce(`when predicate failed: ${String(error?.message ?? error)}`)
+      return pass()
+    }
+    if (typeof when !== 'function') return decide(true)
+    let decided
+    try {
+      decided = when(subject)
+    } catch (error) {
+      return failed(error)
+    }
+    if (decided !== null && typeof decided === 'object' && typeof decided.then === 'function') {
+      return decided.then(decide, failed)
+    }
+    return decide(decided)
+  }, options)
 }
 
 /** stringList 已保证形状；这里只做「声明即校验」的显式检查。 */
@@ -203,6 +386,13 @@ function registerAssembly(ctx, action, { plugin, warnOnce, on, collect }) {
   const tools = target.tools === undefined ? undefined : createMask(target.tools, 'assembly.tools', plugin)
   const sectionsAdd = target.sections?.add
   const sectionsRemove = NAME_LIST.parse(target.sections?.remove, plugin, 'assembly.sections.remove')
+  // 白名单（2026-09-22 用户拍板「扩动作库」）：`personaSectionsOnly` 一类的语义是
+  // `filter(白名单)`，而 remove 是黑名单——未列名的第三方/晚到段不会被它删掉。
+  // 两种语义**互斥**：同时声明即挂载期 fail loud，而不是静默二选一。
+  const sectionsKeep = NAME_LIST.parse(target.sections?.keep, plugin, 'assembly.sections.keep')
+  if (sectionsKeep !== undefined && sectionsRemove !== undefined) {
+    throw new TypeError(`${plugin}: assembly target.sections cannot combine keep with remove — 一种是白名单、一种是黑名单，同时声明语义不明`)
+  }
   const contextsAdd = target.contexts?.add
   const contextsRemove = NAME_LIST.parse(target.contexts?.remove, plugin, 'assembly.contexts.remove')
   const contextsClear = target.contexts?.clear === true
@@ -222,12 +412,27 @@ function registerAssembly(ctx, action, { plugin, warnOnce, on, collect }) {
       if (typeof action.match === 'function' && action.match(context, assembled) !== true) return assembled
       let result = assembled
       if (tools !== undefined && Array.isArray(result.tools)) {
-        result = { ...result, tools: result.tools.filter((tool) => !tools.blocks(tool?.name)) }
+        // keep 名单兜底（2026-09-22 用户拍板，**可选**）：判据与原 `tool-bootstrap` 逐条对齐——
+        // 原模块是 `missing = required.filter(t => !available.has(t))`
+        // 且 `missing.length > 0` 即放弃裁剪，也就是「**任意一个** 名单工具缺失」而不是
+        // 「一个都不存在」（对拍实测：目录 `[bash,read]` + 名单 `[bash,str_replace_editor]` 时
+        // 原模块给完整目录，只判"全缺"会裁成 `[bash]`）。
+        // 声明写 `requireMatch: true` 才启用；**不写就照名单裁**（与 `tool-filter.mjs` 一致）。
+        const available = new Set(result.tools.map((tool) => tool?.name).filter((name) => typeof name === 'string'))
+        const missingRequired = tools.requireMatch && tools.allow !== undefined
+          && [...tools.allow].some((name) => !available.has(name))
+        if (missingRequired) {
+          warnOnce(`${plugin}: assembly action ${labelOf(action)}: a requireMatch tool is absent — exposing the full tool set (fail-open)`)
+        } else {
+          result = { ...result, tools: result.tools.filter((tool) => !tools.blocks(tool?.name)) }
+        }
       }
-      if (Array.isArray(result.sections) && (sectionsAdd !== undefined || sectionsRemove !== undefined)) {
-        const kept = sectionsRemove === undefined
-          ? result.sections
-          : result.sections.filter((section) => !sectionsRemove.has(section?.name))
+      if (Array.isArray(result.sections) && (sectionsAdd !== undefined || sectionsRemove !== undefined || sectionsKeep !== undefined)) {
+        const kept = sectionsKeep !== undefined
+          ? result.sections.filter((section) => sectionsKeep.has(section?.name))
+          : sectionsRemove === undefined
+            ? result.sections
+            : result.sections.filter((section) => !sectionsRemove.has(section?.name))
         result = { ...result, sections: sectionsAdd === undefined ? kept : [...kept, ...sectionsAdd] }
       }
       if (Array.isArray(result.contexts)) {
@@ -493,6 +698,94 @@ function registerRequestParams(ctx, action, { plugin, warnOnce, on, collect }) {
   }))
 }
 
+/**
+ * (8) 前置收件箱消息 —— 注册在 **emit** 通道 `agent/inbox/inserted`（无 `next`）。
+ *
+ * 语义（`anchor-turn` 的重建目标）：真实消息进入收件箱时，把一条合成消息**插到它前面**，
+ * 使下一条被 claim 的消息是合成的那条。判定（是否全新会话、是否插件来源）由声明的 `when`
+ * 表达；本动作只负责"插队"这一件事，不判断时机。
+ *
+ * **防自触发**：插件来源消息（包括本动作自己插入的那条）永不再次前置——`anchor-turn` 的
+ * 原实现也守这条，否则一条消息会引出无限插队。
+ */
+function registerInboxPrepend(ctx, action, { plugin, warnOnce, on, collect }) {
+  const label = labelOf(action)
+  const target = action.target ?? 'next-turn'
+  if (target !== 'next-turn' && target !== 'next-step') {
+    throw new TypeError(`${plugin}: ${label}.target must be "next-turn" or "next-step"`)
+  }
+  const text = requireString(action.text, `${label}.text`)
+  // 空正文 = 没有可插入的内容（empty 情形）：不注册，而不是插入一条空消息。
+  if (text.length === 0) return
+  collect(on('agent/inbox/inserted', ({ agent, message } = {}) => {
+    try {
+      // 无 session 的 agent 不锚定（与原 `anchor-turn` 的守卫逐条对齐；声明侧见
+      // `test/engine/declarations/anchor-turn.yml` 的 session 谓词）：锚定是**会话**
+      // 首轮语义，没有会话就没有「首轮」；缺这条会让匿名/临时 agent 也被插一条合成消息
+      // （对拍实测：声明路径多插 2 条）。
+      if (agent?.session === undefined) return
+      if (typeof agent?.inbox?.prepend !== 'function') return
+      if (message?.source?.kind === 'plugin') return
+      if (typeof action.match === 'function' && action.match(agent, message) !== true) return
+      agent.inbox.prepend(target, {
+        id: newMessageId(`action-${label}`),
+        role: 'user',
+        content: [{ type: 'text', text }],
+        source: { kind: 'plugin', plugin: label, form: 'notice', summary: `${label} ${target}` },
+      })
+    } catch (error) {
+      warnOnce(`${plugin}: inbox-prepend action ${label} failed: ${String(error?.message ?? error)}`)
+    }
+  }))
+}
+
+/**
+ * (9) 过滤 pre-step 注入消息 —— waterfall（有 `next`）：`await next()` 后改写 `decision.messages`。
+ *
+ * 语义（`context-gate` 的两个 pre-step 监听都用它）：
+ *   - `sources`（严格白名单）：只放行 `source.kind` 在名单内的消息，**包括 claimed 批**；
+ *   - `keepKinds`（基线 + 名单）：保留本次 step 从收件箱 claim 的 baseline（按**对象身份**或
+ *     `id` 匹配，因为下游可能换了对象引用），再加上 `source.kind` 在名单内的追加消息。
+ *
+ * 两者**互斥**：混用会在挂载期报错——它们的"保留集"定义不同，叠在一起没有确定语义。
+ * 未声明任一 = 不过滤（不注册，零开销）：与 `context-gate` 的「allowKinds 未声明 = 官方行为」一致。
+ *
+ * **永不吞上下文**：异常一律返回未过滤的 decision。门控 bug 可以少拦，不可以吃掉会话内容。
+ */
+function registerPreStepFilter(ctx, action, { plugin, warnOnce, on, collect }) {
+  const label = labelOf(action)
+  const sources = NAME_LIST.parse(action.sources, plugin, `${label}.sources`)
+  const keepKinds = NAME_LIST.parse(action.keepKinds, plugin, `${label}.keepKinds`)
+  if (sources !== undefined && keepKinds !== undefined) {
+    throw new TypeError(`${plugin}: ${label} cannot combine sources with keepKinds — 两种过滤语义的保留集定义不同`)
+  }
+  if (sources === undefined && keepKinds === undefined) return
+  collect(on('agent/pre-step', async ({ messages: claimed } = {}, next) => {
+    const decision = await next()
+    try {
+      if (decision?.kind === 'reject') return decision
+      if (!Array.isArray(decision?.messages)) return decision
+      if (sources !== undefined) {
+        const kept = decision.messages.filter((message) => sources.has(message?.source?.kind))
+        return kept.length === decision.messages.length ? decision : { ...decision, messages: kept }
+      }
+      if (!Array.isArray(claimed)) return decision
+      const baseline = new Set(claimed)
+      const baselineIds = new Set(claimed
+        .map((message) => message?.id)
+        .filter((id) => id !== undefined && id !== null))
+      const kept = decision.messages.filter((message) =>
+        baseline.has(message)
+        || (message?.id !== undefined && message?.id !== null && baselineIds.has(message.id))
+        || keepKinds.has(message?.source?.kind))
+      return kept.length === decision.messages.length ? decision : { ...decision, messages: kept }
+    } catch (error) {
+      warnOnce(`${plugin}: pre-step-filter action ${label} failed, keeping every message: ${String(error?.message ?? error)}`)
+      return decision
+    }
+  }))
+}
+
 const REGISTRARS = {
   'inject-text': registerInjectText,
   assembly: registerAssembly,
@@ -501,6 +794,8 @@ const REGISTRARS = {
   guard: registerGuard,
   'sdk-strip': registerSdkStrip,
   'request-params': registerRequestParams,
+  'inbox-prepend': registerInboxPrepend,
+  'pre-step-filter': registerPreStepFilter,
 }
 
 /**
@@ -511,6 +806,11 @@ const REGISTRARS = {
  * @param options.plugin 调用方插件名（错误消息 / 告警 / disposer 标签），与
  *   `mountTriggers(ctx, declarations, { plugin })` 同一约定；缺省 `prompt-actions`。
  * @param options.warnOnce 复用宿主模块的告警器；缺省为本文件自己的 warnOnce。
+ * @param options.when 可选判定：不命中（非 `true`）即放行下游、不执行本动作。仅对
+ *   {@link ON_REGISTERED_KINDS} 里的动作有效；对 `inject-text` / `guard` 传它会挂载期报错
+ *   （那两类不走 `on(...)`，静默忽略就是"配了没效果"）。
+ * @param options.prepend 让本动作落在宿主 waterfall 的**最外层**（否决型动作需要）。同样只对
+ *   `ON_REGISTERED_KINDS` 有效；它表达的是**位置**，不承担声明之间的排序。
  * @returns 释放函数：撤销本动作注册的监听器与 agent scope 上的 guard/restrict。
  */
 export function registerAction(ctx, action, options = {}) {
@@ -520,10 +820,22 @@ export function registerAction(ctx, action, options = {}) {
   if (declaration === undefined) {
     throw new TypeError(`${plugin}: unknown action kind ${JSON.stringify(kind)} — known kinds: ${Object.keys(ACTION_KINDS).join(', ')}`)
   }
+  if (!ON_REGISTERED_KINDS.has(kind) && (options.when !== undefined || options.prepend === true)) {
+    const feature = options.when !== undefined ? 'a when predicate' : 'prepend'
+    throw new TypeError(`${plugin}: action ${kind} does not support ${feature} — 它不经 on(...) 注册（inject-text 注册层、guard 注册 agent scope 的最终拒绝）`)
+  }
+  // `maxPerTurn` 与 `when` 的支持面相同：都只对经 `on(...)` 注册的动作有效。
+  if (!ON_REGISTERED_KINDS.has(kind) && action?.maxPerTurn !== undefined) {
+    throw new TypeError(`${plugin}: action ${kind} does not support maxPerTurn — 它不经 on(...) 注册`)
+  }
   const warnOnce = options.warnOnce ?? createWarnOnce(ctx, plugin)
-  const on = channelBinder(ctx, kind, plugin)
+  const budget = createTurnBudget(action)
+  const on = withWhen(channelBinder(ctx, kind, plugin, options.prepend === true), options.when, warnOnce, budget)
   const disposers = []
   const collect = (disposer) => { if (typeof disposer === 'function') disposers.push(disposer) }
+  // 每轮预算的轮边界由 durable 事件驱动（与谓词的 observe 同一事件源，但**独立记账**：
+  // 预算是「本动作生效次数」，不是 durable 事件计数）。
+  if (budget !== undefined) collect(ctx.on('session/event', (session, event) => budget.observe(session, event)))
   REGISTRARS[kind](ctx, action, { plugin, warnOnce, on, collect })
   const dispose = () => {
     for (const release of disposers.splice(0)) {

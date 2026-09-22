@@ -453,8 +453,8 @@ test('convertStToPreset：世界书正则键保留原样且不写幽灵字段 us
   const spec = lib.convertStToPreset(card, 'test-card')
   assert.deepEqual(spec.modules, [
     'prompt-config-engine', 'character-tools', 'world-book-tools',
-    'session-var-tools', 'tool-config-engine', 'tool-filter',
-  ], 'ST 只装配提示词执行与管理工具模块')
+    'session-var-tools', 'tool-config-engine',
+  ], 'ST 只装配提示词执行与管理工具模块（tool-filter 已退场）')
   const lore = spec.promptConfigs.filter((config) => config.strategy === 'world-book')
   assert.equal(lore.length, 2, '两条世界书条目都转换')
   assert.equal(lore[0].params.keys[0], '/^剑\\d+$/')
@@ -462,15 +462,18 @@ test('convertStToPreset：世界书正则键保留原样且不写幽灵字段 us
   assert.equal('useRegex' in lore[1].params, false)
 })
 
-test('convertStToPreset：空世界书不装工具，tool-filter 仍按需就绪', () => {
+test('convertStToPreset：空世界书不装工具，enable_web_search 缺省时不产出任何声明', () => {
   const spec = lib.convertStToPreset({
     name: '空卡',
     data: { character_book: { entries: [{ content: '   ' }] } },
   }, 'empty-card')
   assert.deepEqual(spec.modules, [
-    'prompt-config-engine', 'character-tools', 'session-var-tools', 'tool-config-engine', 'tool-filter',
+    'prompt-config-engine', 'character-tools', 'session-var-tools', 'tool-config-engine',
   ])
-  assert.equal(spec.moduleConfigs['tool-filter'], undefined, '字段缺省时过滤器为空操作')
+  // B7 T3：`tool-filter` 模块已删除；web 拒绝只在 `enable_web_search: false` 时以三条声明表达
+  // （见 preset-package-import 的「3+1 结合」用例），缺省不产出触发器。
+  assert.equal(spec.moduleConfigs['tool-filter'], undefined)
+  assert.equal(spec.triggers, undefined, '未声明 enable_web_search 时不产出触发器')
 })
 
 test('convertStToPreset：世界书最终正文 order 升序（ST 激活后 unshift）', () => {

@@ -1,0 +1,79 @@
+# declarations/tool-filter.yml — engine/tool-filter.mjs 的等价声明（B7 T1 对拍用）。
+# 与将来 preset.yml 顶层 `triggers` 段同格式：writePreset 用**同一份** compileDeclarations
+# 校验并物化为触发器的声明文件（src/host/write-preset.ts:329-338、:592-598）。
+#
+# ── 名单语义（2026-09-22 用户拍板：模式互斥）──────────────────────────────────
+# 一份声明只写一个模式，另一个字段**必须不写**：
+#   mode: allow → target.tools / mask = { allow: [...] }   未列出即不可用（fail-closed）
+#   mode: deny  → target.tools / mask = { deny:  [...] }   未列出即可用
+# 旧实现 allow 与 deny 同时生效且 deny 优先（tool-filter.mjs:52-53）语义不明，已废弃；
+# 本文件按模式只写一侧。动作层对同一名单只有一条判据（actions.mjs:173-176 blocks），
+# 与 tool-filter.mjs:46-57 applyMask 逐条一致：无名单=不过滤、空名单=已声明、
+# 空名/非字符串名一律通过（tool-filter.mjs:50-51 ↔ actions.mjs:173）。
+#
+# ── 逐条映射（原模块 → 声明）────────────────────────────────────────────────
+#   呈现过滤：tool-filter.mjs:69-80 的 system-prompt/assemble + :46-57 applyMask
+#             → do.kind=assembly（actions.mjs:287-333；:313 改 tools，同一 blocks 判据）
+#   开关：    tool-filter.mjs:63 `enabled !== true` 即不注册 → 本文件存在与否即开关
+#             （未声明 = 不注册，与 declared-triggers 的「声明由预设提供」同一纪律）
+#   失败降级：tool-filter.mjs:76-79「过滤失败暴露完整目录」= assembly 动作的
+#             expose-all 降级（actions.mjs:63 的词汇、:86 的声明、:332-335 的 catch），逐条同向
+#   位置：    tool-filter.mjs:69 未 prepend → waterfallPosition: default
+#   PTC 新增覆盖（非等价对拍，PLAN §5 的缺口修复）：同一份名单再驱动
+#             sdk-strip（tools:sdk 段正文，actions.mjs:530-556）与 guard（run_code
+#             子调用裁决，actions.mjs:447-521）。原模块**没有**这两处——只裁列表挡不住
+#             「模型知道旧工具名」的调用（actions.mjs:18-25）。
+#
+# ── 已知差异（**未声明**，见报告缺口清单）────────────────────────────────────
+#   tool-filter.mjs:72-74 的 `includeSubagents:false → 子代理整个跳过本过滤`
+#   无法声明：`assembly` / `sdk-strip` 只吃 `when` 判定，而七类判断原语
+#   （trigger-spec.mjs:41-49 的工厂表）里没有一类读
+#   `agent.session.header.delegationDepth`，按通道归一后的载荷也只挑
+#   agent / name / source 三个域（predicates.mjs:68-108 的 CHANNEL_SUBJECTS，
+#   `names` 读 `payload.name`：predicates.mjs:469-486）；`includeSubagents` 只在
+#   `guard` 动作里被读（actions.mjs:450、:471、:505）。
+#   后果：本声明在**子代理**装配上比原模块多过滤一层（更严，非更宽），
+#   `guard` 已按原受众写 includeSubagents:false。对拍测试显式钉住该差异。
+#
+# ── 已知缺口 2（**allow 模式保不住 PTC 传输名**）──────────────────────────────
+#   `run_code` 是 PTC 呈现面唯一的可调用入口（actions.mjs:51、:18-25），而 createMask
+#   禁止在任一名单里**点名**它（actions.mjs:164-167，挂载期报错）。allow 模式因此在
+#   声明层表达不了「保留 run_code」：不点名 → `blocks('run_code')` 为真（allow 已声明
+#   且不含它，actions.mjs:173-176）→ 它被剔出 assembly.tools，PTC 预设失去唯一入口；
+#   点名 → 整条声明挂载期报错。旧模块没有这条限制（`allow` 里写上 run_code 即可保留，
+#   tool-filter.mjs:49-55）。deny 模式不受影响（不点名即不拦）。对拍测试显式钉住。
+
+- id: tool-filter-presentation
+  channel: system-prompt/assemble
+  channelOrder: 0
+  waterfallPosition: default
+  do:
+    kind: assembly
+    id: tool-filter-presentation
+    target:
+      tools:
+        deny: [web_search, web_fetch] # ← 名单：模式互斥，allow 模式写成 { allow: [...] }
+
+- id: tool-filter-sdk
+  channel: system-prompt/assemble
+  channelOrder: 1
+  waterfallPosition: default
+  do:
+    kind: sdk-strip
+    id: tool-filter-sdk
+    mask:
+      deny: [web_search, web_fetch]
+
+- id: tool-filter-guard
+  channel: system-prompt/assemble
+  channelOrder: 2
+  waterfallPosition: default
+  # guard **不支持** when/prepend（actions.mjs:702-705 挂载期报错），受众由动作自身
+  # 的 includeSubagents 表达（actions.mjs:450、:471），故本声明不带 when。
+  do:
+    kind: guard
+    id: tool-filter-guard
+    mask:
+      deny: [web_search, web_fetch]
+    includeSubagents: false # 与原模块受众一致（tool-filter.mjs:74）
+    reason: 'blocked by tool-filter declaration'

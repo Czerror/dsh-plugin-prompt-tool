@@ -50,7 +50,7 @@ layerSettings:
     subagentTemperature: 0.9
     maxDepth: 2
   tool-pipeline:
-    deliberationMinChars: 400
+    strReplaceEditorMaxOutputChars: 16000
 promptConfigs:
   - id: example-subagent-start
     name: 子代理通用守则

@@ -57,9 +57,10 @@ test('新建按包内同名复制，递增副本同步定义 ID 并保留其余�
 
 test('物化 pt-standard 读取自身变量和能力模块，不读取其他同源预设', () => {
   const root = mkdtempSync(join(home, 'render-'))
+  // B7 T3：载体换成存活模块（原 promoted-code-mode / tool-bootstrap 已随能力删除）。
   for (const [id, value, module] of [
-    ['pt-standard', 'ACTIVE', 'promoted-code-mode'],
-    ['standard', 'OTHER', 'tool-bootstrap'],
+    ['pt-standard', 'ACTIVE', 'tool-git-bash'],
+    ['standard', 'OTHER', 'tool-config-engine'],
   ]) {
     mkdirSync(join(root, id))
     writeFileSync(join(root, id, 'preset.yml'),
@@ -67,8 +68,8 @@ test('物化 pt-standard 读取自身变量和能力模块，不读取其他同�
   }
   writePreset('', { presetDir: root, presetTemplate: 'pt-standard', presetOrder: 5, promptConfigs: [] })
   const rows = parse(readFileSync(join(root, 'pt-standard', 'agent.cordis.yml'), 'utf8'))
-  assert.ok(rows.some((row) => row.id === 'promoted-code-mode'))
-  assert.ok(!rows.some((row) => row.id === 'tool-bootstrap'))
+  assert.ok(rows.some((row) => row.id === 'tool-git-bash'))
+  assert.ok(!rows.some((row) => row.id === 'tool-config-engine'))
   assert.deepEqual(parse(readFileSync(join(root, 'pt-standard', 'prompt-configs', 'variables.yml'), 'utf8')), { owner: 'ACTIVE' })
   assert.equal(existsSync(join(root, 'standard', 'agent.cordis.yml')), false)
 })

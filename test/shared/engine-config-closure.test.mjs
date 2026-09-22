@@ -1,24 +1,27 @@
 /**
  * B6 T1 验收：**参数桥的转换规则闭合成引擎的有效配置**。
  *
- * 背景：`src/shared/engine-params.ts` 的 71 键参数目录经 `buildEngineModuleParams`
- * 转换成各引擎模块的行配置。既有守卫（`engine-param-schema.test.mjs:117-132`）用**源码
- * 解析 `ALLOWED_KEYS`** 检查了 7 个手写白名单的模块，但 B2 把另外几个模块迁到了
- * `defineConfig`（导出 `configContract`）——那批**完全没有守卫**，本文件补这一半。
+ * 背景：`src/shared/engine-params.ts` 的参数目录经 `buildEngineModuleParams` 转换成各引擎
+ * 模块的行配置。历史上既有守卫用**源码解析 `ALLOWED_KEYS`** 检查 7 个手写白名单模块，而
+ * B2 迁到 `defineConfig`（导出 `configContract`）的那批**完全没有守卫**，本文件补这一半。
+ *
+ * B7 T3 起那 7 个手写白名单模块（七个专用能力：`tool-bootstrap` / `context-gate` /
+ * `promoted-code-mode` / `tool-filter` / `anchor-turn` / `deliberation-gate` /
+ * `progress-reminder`）**已随模块与本地下同名组合源一并删除**，参数桥的绑定面收缩到四个
+ * 存活的能力提供者（`instruction-hint` / `tool-git-bash` / `tool-config-engine` /
+ * 官方包 `str-replace-editor`）。本文件保留的三类断言都仍成立且必要：
+ *   - configContract 模块接受「组合源默认值 + 参数桥覆盖」；
+ *   - 手写白名单模块不接受白名单外的键（人口变小，机制不变）；
+ *   - 参数桥产出的每个 row 都必须在组合源里真实存在（行缺失 / 官方包行 / 声明缺失三类可区分）。
  *
  * 关键立场（R9）：**不要求两侧原值相等**。`ENGINE_PARAM_DEFINITIONS` 的 `defaultValue`
- * 是**编辑草稿**，与引擎运行缺省分工不同（草稿 `contextGateEnabled: true` 而引擎缺省
- * `false`；草稿 `bootstrapMaxTokens: 0` 经参数桥转成**删键** `undefined`）。所以这里断言的是
- * 「**转换产出**能被引擎接受」这条闭合性，而不是「两边的值一样」。
+ * 是**编辑草稿**，与引擎运行缺省分工不同。所以这里断言的是「**转换产出**能被引擎接受」
+ * 这条闭合性，而不是「两边的值一样」。
  *
  * **实际配置 = 组合源的 `config:` + 参数桥的覆盖**（不是参数桥产出单独成配置）。
  * 这条由首次运行打红纠正：`tool-git-bash` 的 `timeoutMs` / `maxOutputBytes` 是
- * `int({ required: true })`，只由 `tool-git-bash.yml:12-15` 的 `config:` 提供，
+ * `int({ required: true })`，只由 `tool-git-bash.yml` 的 `config:` 提供，
  * 参数桥只覆盖 `enabled` 一格。缺了前半句，守卫会误报「不相容」。
- *
- * R7 范围限定：本支只对**当下存在的**声明集负责。7 个待删模块尚无字段声明，它们的闭合
- * 随 B7 交付；因此「模块没有声明」与「声明与产出不一致」必须是**两类可区分的失败**，
- * 否则 B7 迁移时会被同一盏红灯掩盖。
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
@@ -158,7 +161,10 @@ test('闭合（未迁移模块）：参数桥产出的键必须落在该模块�
     assert.deepEqual(unknown, [], `${module}: 参数桥产出白名单外的键 ${unknown.join(', ')} —— 该键会被挂载期拒绝`)
     checked += 1
   }
-  assert.ok(checked >= 5, `至少应校验 5 个手写白名单模块（实际 ${checked}）`)
+  // B7 T3：手写白名单模块从 7 个收缩到 1 个（`instruction-hint`）——其余要么已迁到
+  // configContract，要么随七个专用能力删除。阈值随之下降，但「产出键必须在白名单内」
+  // 这条机制不变，仍有对象可查。
+  assert.ok(checked >= 1, `至少应校验 1 个手写白名单模块（实际 ${checked}）—— 数量过少说明 row→module 映射失效`)
 })
 
 test('范围断言（R7）：三类失败互不混淆——行缺失 / 官方包行 / 声明缺失', () => {
@@ -178,17 +184,6 @@ test('范围断言（R7）：三类失败互不混淆——行缺失 / 官方包
   assert.deepEqual(missingRow, [], `参数桥产出的行必须都在组合源里声明：${missingRow.join(', ')}`)
   assert.deepEqual(external, ['str-replace-editor'], `只有官方包行允许没有本仓库模块（B3 T4 已核对）；实际：${external.join(', ')}`)
   assert.deepEqual(undeclared, [], `有模块却既无 configContract 也无 ALLOWED_KEYS：${undeclared.join(', ')} —— 这是**声明缺失**`)
-})
-
-test('B0 既有守卫的覆盖对象（7 个手写模块）当前确实都有可解析的声明', () => {
-  // 钉住迁移进度：某模块一旦迁到 configContract，它的 ALLOWED_KEYS 消失，既有守卫
-  // （engine-param-schema.test.mjs 的源码解析）会解析失败，而本文件的 contract 分支接手
-  // —— 两盏灯加起来不漏。
-  for (const module of ['tool-bootstrap', 'context-gate', 'promoted-code-mode', 'tool-filter', 'anchor-turn', 'deliberation-gate', 'progress-reminder']) {
-    const declaration = declarationOf(module)
-    assert.ok(declaration !== undefined, `engine/${module}.mjs 应至少有一种声明`)
-    if (declaration === 'allowedKeys') allowedKeysOf(module)
-  }
 })
 
 test('行 id → 模块文件的映射可信：每个有绑定的 row 都能定位到模块或明确是官方包', () => {

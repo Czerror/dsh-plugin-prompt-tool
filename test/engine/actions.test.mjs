@@ -25,14 +25,13 @@ import { SDK_SECTION_NAME, sdkToolNames, stripSdkDeclarations } from '../../engi
 import { applyAgentRequestParams, wireLayers } from '../../engine/layers.mjs'
 import { applyPromptConfigs } from '../../engine/executor.mjs'
 import { createPromptConfigs } from '../../engine/prompt-config-engine.mjs'
-import { apply as applyToolFilter } from '../../engine/tool-filter.mjs'
-import { apply as applyProgressReminder } from '../../engine/progress-reminder.mjs'
-import { compositionConfig } from '../fixtures/composition-defaults.mjs'
 
 /** 官方事件词汇表：动作声明的通道必须落在这里面。 */
 const OFFICIAL_EVENTS = new Set([
   'agent/pre-step', 'agent/request', 'agent/turn-stopping', 'system-prompt/assemble', 'session/event',
   'llm/stream', 'tools/pre-execute', 'tools/post-execute', 'subagent/start', 'subagent/end',
+  // @mode emit（无 next）：B7 的 inbox-prepend 注册在这里。
+  'agent/inbox/inserted',
 ])
 
 /** 记录型 ctx 桩：记录 ctx.on 的通道、注册的服务调用与 effect 释放。 */
@@ -85,9 +84,9 @@ const tool = (toolName) => ({ name: toolName, description: `tool ${toolName}`, p
 
 // ───────────────────────── 一、通道与降级语义声明 ─────────────────────────
 
-test('动作声明：七类动作的合法通道都在官方事件表内，降级语义取四类固定词汇', () => {
+test('动作声明：九类动作的合法通道都在官方事件表内，降级语义取四类固定词汇', () => {
   assert.deepEqual(Object.keys(ACTION_KINDS).sort(), [
-    'append-context', 'assembly', 'decision', 'guard', 'inject-text', 'request-params', 'sdk-strip',
+    'append-context', 'assembly', 'decision', 'guard', 'inbox-prepend', 'inject-text', 'pre-step-filter', 'request-params', 'sdk-strip',
   ])
   const vocabulary = new Set(Object.values(ACTION_DEGRADE))
   for (const [kind, declaration] of Object.entries(ACTION_KINDS)) {
@@ -114,6 +113,8 @@ test('动作只在其合法通道注册：逐类记录 ctx.on 的通道并与声
     ['guard', { kind: 'guard', id: 'g1', mask: { deny: ['bash'] } }, ['system-prompt/assemble']],
     ['sdk-strip', { kind: 'sdk-strip', id: 's1', mask: { deny: ['bash'] } }, ['system-prompt/assemble']],
     ['request-params', { kind: 'request-params', id: 'r1', patch: { maxTokens: 64 } }, ['agent/request']],
+    ['inbox-prepend', { kind: 'inbox-prepend', id: 'p1', text: 'ANCHOR' }, ['agent/inbox/inserted']],
+    ['pre-step-filter', { kind: 'pre-step-filter', id: 'f1', sources: ['plugin'] }, ['agent/pre-step']],
   ]
   for (const [label, action, expected] of cases) {
     const { ctx, events } = recordingCtx({ systemPrompt: systemPromptStub([]) })
@@ -187,30 +188,32 @@ test('(1) 注入文本：pre-step 走既有执行器通道，注册的监听器�
   )
 })
 
-test('(2) 改装配 tools：与 tool-filter 在同一装配上逐条同结果（含 allow+deny 与空名单）', async () => {
+test('(2) 改装配 tools：名单裁剪（deny / allow / 两者并存 / 空名单）', async () => {
+  // B7 T3：原 `tool-filter` 模块已删除，本用例不再与它逐条对拍；期望值是按名单语义
+  // 逐条算出的字面量 —— `createMask` 的剔出判据是「先看 deny、再看 allow 是否点名」
+  // （actions.mjs:191-192）。
   const cases = [
-    { deny: ['web_search'] },
-    { allow: ['bash', 'read'] },
-    { allow: ['bash', 'read', 'web_search'], deny: ['web_search'] },
+    [{ deny: ['web_search'] }, ['bash', 'read']],
+    [{ allow: ['bash', 'read'] }, ['bash', 'read']],
+    [{ allow: ['bash', 'read', 'web_search'], deny: ['web_search'] }, ['bash', 'read']],
   ]
-  for (const mask of cases) {
+  for (const [mask, expected] of cases) {
     const catalog = ['bash', 'read', 'web_search'].map(tool)
-    const filter = recordingCtx()
-    applyToolFilter(filter.ctx, { ...compositionConfig('tool-filter'), ...mask })
-    const expected = await only(filter.events, 'system-prompt/assemble')(assembled(catalog.map((item) => ({ ...item }))), { agent: agent() }, async () => assembled(catalog.map((item) => ({ ...item }))))
-
     const viaAction = recordingCtx()
     registerAction(viaAction.ctx, { kind: 'assembly', id: 'm', target: { tools: mask } })
     const actual = await only(viaAction.events, 'system-prompt/assemble')(assembled(catalog.map((item) => ({ ...item }))), { agent: agent() }, async () => assembled(catalog.map((item) => ({ ...item }))))
-    assert.deepEqual(actual.tools.map((item) => item.name), expected.tools.map((item) => item.name), `mask ${JSON.stringify(mask)}`)
-    // 名单未命中时按官方默认不过滤
-    assert.deepEqual(actual.tools.length, mask.allow === undefined ? 3 - mask.deny.length : Math.min(mask.allow.length, 3) - (mask.deny?.length ?? 0))
+    assert.deepEqual(actual.tools.map((item) => item.name), expected, `mask ${JSON.stringify(mask)}`)
   }
   const empty = recordingCtx()
   registerAction(empty.ctx, { kind: 'assembly', id: 'm2', target: { tools: { deny: [] } } })
   const input = assembled([tool('bash')])
   const output = await only(empty.events, 'system-prompt/assemble')(input, { agent: agent() }, async () => input)
   assert.deepEqual(output.tools.map((item) => item.name), ['bash'], '空 deny = 不过滤')
+
+  const emptyAllow = recordingCtx()
+  registerAction(emptyAllow.ctx, { kind: 'assembly', id: 'm3', target: { tools: { allow: [] } } })
+  const none = await only(emptyAllow.events, 'system-prompt/assemble')(input, { agent: agent() }, async () => input)
+  assert.deepEqual(none.tools.map((item) => item.name), [], '显式空 allow = 一个都不通过')
 })
 
 test('(2) 改装配 sections/contexts：增删改与既有形态一致，异常时返回未改装配', async () => {
@@ -299,22 +302,19 @@ test('(3) 裁决：post-execute 与 tool-pipeline 层逐条同结果（accept/re
   }
 })
 
-test('(4) 追加上下文：与 progress-reminder 的 additionalContexts 形状一致且只发 user 角色', async () => {
-  const reminder = recordingCtx()
-  applyProgressReminder(reminder.ctx, { ...compositionConfig('progress-reminder'), enabled: true, every: 1, maxPerTurn: 1, text: 'BEAT' })
+test('(4) 追加上下文：additionalContexts 形状（user 角色、plugin 来源）且只在 accept 裁决上追加', async () => {
+  // B7 T3：原 `progress-reminder` 模块已删除，本用例不再与它逐条对拍；期望值改为字面量。
   const exec = { name: 'bash', agent: agent(), arguments: {} }
   const decision = { kind: 'accept', content: [{ type: 'text', text: 'OUT' }] }
-  const expected = await only(reminder.events, 'tools/post-execute')(exec, decision, async () => ({ ...decision }))
-
   const viaAction = recordingCtx()
   registerAction(viaAction.ctx, { kind: 'append-context', id: 'beat', mode: 'context', text: 'BEAT' })
   const actual = await only(viaAction.events, 'tools/post-execute')(exec, decision, async () => ({ ...decision }))
   assert.equal(actual.additionalContexts.length, 1)
-  assert.deepEqual(actual.additionalContexts[0].content, expected.additionalContexts[0].content)
+  assert.deepEqual(actual.additionalContexts[0].content, [{ type: 'text', text: 'BEAT' }])
   assert.equal(actual.additionalContexts[0].role, 'user')
   assert.equal(actual.additionalContexts[0].source.kind, 'plugin')
   assert.equal(actual.additionalContexts[0].source.plugin, 'beat')
-  // 非 accept 裁决不追加（与 progress-reminder 相同）
+  // 非 accept 裁决不追加（原模块同样只在 accept 上追加）
   const denied = await only(viaAction.events, 'tools/post-execute')(exec, decision, async () => ({ kind: 'block', feedback: [] }))
   assert.deepEqual(denied, { kind: 'block', feedback: [] })
 })
@@ -740,4 +740,317 @@ test('释放：动作的 disposer 撤销它注册的全部监听器', () => {
   assert.equal(recorder.events.length, 0)
   dispose()
   assert.equal(scopeOf, scopeOf) // 保持导入被使用（真实 scope 断言在上面 PTC 用例里）
+})
+
+// ───────────────────────── when 前置判定（B7：when → 动作的接线） ─────────────────────────
+
+test('when：命中才执行动作，不命中放行下游', async () => {
+  const recorder = recordingCtx()
+  let evaluated = 0
+  registerAction(recorder.ctx, { kind: 'request-params', id: 'r', patch: { maxTokens: 8 } },
+    { when: () => { evaluated += 1; return true } })
+  const handler = only(recorder.events, 'agent/request')
+  const base = { provider: 'deepseek', model: 'chat' }
+  assert.deepEqual(await handler({ agent: agent() }, async () => base), { ...base, maxTokens: 8 }, '命中即改写')
+  assert.equal(evaluated, 1)
+
+  const off = recordingCtx()
+  registerAction(off.ctx, { kind: 'request-params', id: 'r', patch: { maxTokens: 8 } }, { when: () => false })
+  const offHandler = only(off.events, 'agent/request')
+  assert.deepEqual(await offHandler({ agent: agent() }, async () => base), base, '不命中必须原样放行')
+})
+
+test('when：判定抛错只告警一次并放行（不吞下游异常、不卡死调用）', async () => {
+  const recorder = recordingCtx()
+  const warnings = []
+  registerAction(recorder.ctx, { kind: 'request-params', id: 'r', patch: { maxTokens: 8 } },
+    { when: () => { throw new Error('predicate blew up') }, warnOnce: (message) => warnings.push(message) })
+  const handler = only(recorder.events, 'agent/request')
+  const base = { provider: 'deepseek', model: 'chat' }
+  assert.deepEqual(await handler({ agent: agent() }, async () => base), base, '判定失败放行')
+  assert.equal(warnings.length, 1)
+  assert.match(warnings[0], /when predicate failed/)
+  // 下游异常仍原样上抛——判定失败不影响下游错误的传播。
+  await assert.rejects(handler({ agent: agent() }, async () => { throw new Error('downstream') }), /downstream/)
+})
+
+test('when：同步谓词在处理器入口**同步**求值（不额外插入 microtask 跳）', () => {
+  // `tools/pre-execute` 的裁决靠「deny 前无 await」保证并行调用不越过预算，
+  // 无条件 `await when(...)` 会给每次判定加一跳。这里用副作用顺序钉住同步性：
+  // 调用方同步检查 order 时，谓词必须**已经**跑完。
+  const order = []
+  const recorder = recordingCtx()
+  registerAction(recorder.ctx, { kind: 'decision', id: 'd', phase: 'pre', decision: 'deny' },
+    { when: () => { order.push('when'); return true } })
+  const handler = only(recorder.events, 'tools/pre-execute')
+  const returned = handler({ name: 'bash' }, () => { order.push('next'); return undefined })
+  assert.deepEqual(order, ['when'], '同步谓词必须在调用点就已求值')
+  return returned
+})
+
+test('when：异步谓词退回 Promise 路径（兜底，声明编译出的谓词恒同步）', async () => {
+  const recorder = recordingCtx()
+  let evaluated = 0
+  registerAction(recorder.ctx, { kind: 'request-params', id: 'r', patch: { maxTokens: 8 } },
+    { when: async () => { evaluated += 1; return true } })
+  const handler = only(recorder.events, 'agent/request')
+  const base = { provider: 'deepseek', model: 'chat' }
+  assert.deepEqual(await handler({ agent: agent() }, async () => base), { ...base, maxTokens: 8 })
+  // 计数是必要的：只断言结果的话，「谓词根本没被调用」也会得到同样的对象（假绿）。
+  assert.equal(evaluated, 1, '异步谓词必须真的被求值')
+})
+
+test('when 支持面：只对走 on(...) 的动作有效，另外两类挂载期 fail loud', () => {
+  const capable = ['assembly', 'decision', 'append-context', 'sdk-strip', 'request-params']
+  for (const kind of capable) {
+    const recorder = recordingCtx()
+    // 能力面用例只关心「不抛」；各动作的最小合法载荷在此分别给出。
+    const payload = kind === 'assembly' ? { target: { tools: { deny: ['bash'] } } }
+      : kind === 'decision' ? { phase: 'pre', decision: 'allow' }
+        : kind === 'append-context' ? { mode: 'context', text: 'x' }
+          : kind === 'sdk-strip' ? { mask: { deny: ['bash'] } }
+            : { patch: { maxTokens: 8 } }
+    assert.doesNotThrow(
+      () => registerAction(recorder.ctx, { kind, id: 'k', ...payload }, { when: () => true }),
+      `${kind}: 应支持 when（它是 WHEN_CAPABLE_KINDS 的一员）`,
+    )
+  }
+  // 不走 on(...) 的两类：静默忽略就是「配了没效果」，必须挂载期报错。
+  assert.throws(
+    () => registerAction(recordingCtx().ctx, { kind: 'inject-text', id: 'x', config: {} }, { when: () => true }),
+    /does not support a when predicate/,
+  )
+  assert.throws(
+    () => registerAction(recordingCtx().ctx, { kind: 'guard', id: 'x', mask: { deny: ['bash'] } }, { when: () => true }),
+    /does not support a when predicate/,
+  )
+})
+
+test('prepend：落在外层；未声明时不得凭空加上；两类不走 on 的动作 fail loud', () => {
+  const prepended = recordingCtx()
+  registerAction(prepended.ctx, { kind: 'assembly', id: 'm', target: { tools: { deny: ['bash'] } } }, { prepend: true })
+  const entry = prepended.events.find((item) => item.event === 'system-prompt/assemble')
+  assert.deepEqual(entry.options, { prepend: true }, 'prepend 必须原样传给 ctx.on')
+
+  const plain = recordingCtx()
+  registerAction(plain.ctx, { kind: 'assembly', id: 'm', target: { tools: { deny: ['bash'] } } })
+  assert.equal(plain.events.find((item) => item.event === 'system-prompt/assemble').options, undefined,
+    '未声明 prepend 时不得凭空加上（默认位置是既有行为）')
+
+  assert.throws(
+    () => registerAction(recordingCtx().ctx, { kind: 'inject-text', id: 'x', config: {} }, { prepend: true }),
+    /does not support prepend/,
+  )
+  assert.throws(
+    () => registerAction(recordingCtx().ctx, { kind: 'guard', id: 'x', mask: { deny: ['bash'] } }, { prepend: true }),
+    /does not support prepend/,
+  )
+})
+
+test('when：无 next 的通道（serial / emit）不把最后一个参数当成 next 调', () => {
+  // `agent/turn-stopping` 是 @mode serial —— **没有 next**。旧实现无条件取 `args[last]` 当 next，
+  // 一旦给「续跑」动作加 when，就会把 turn（数字）当函数调而抛错。这里用会抛的 steer 钉住
+  // 「判定不命中时动作体绝不执行」，同时用 doesNotThrow 钉住「不去调不存在的 next」。
+  const recorder = recordingCtx()
+  const seen = []
+  registerAction(recorder.ctx, { kind: 'append-context', id: 'go', mode: 'continue', text: 'GO' },
+    { when: (payload) => { seen.push(payload); return false } })
+  const handler = only(recorder.events, 'agent/turn-stopping')
+  const payload = { agent: { session: { id: 's-1' }, steer: () => { throw new Error('must not steer') } }, turn: 3 }
+  assert.doesNotThrow(() => handler(payload), '无 next 的通道不得去调用它')
+  assert.equal(seen.length, 1, '谓词必须被调用')
+  assert.equal(seen[0].turn, 3, '载荷是全部参数（不切掉"最后一个参数"）')
+  assert.equal(seen[0].agent.session.id, 's-1')
+
+  // 命中时动作体照常执行（该动作会 steer）——用同一载荷对照。
+  const hit = recordingCtx()
+  let steered = 0
+  registerAction(hit.ctx, { kind: 'append-context', id: 'go', mode: 'continue', text: 'GO' }, { when: () => true })
+  const hitHandler = only(hit.events, 'agent/turn-stopping')
+  assert.doesNotThrow(() => hitHandler({ agent: { session: { id: 's-2' }, steer: () => { steered += 1 } }, turn: 1 }))
+  assert.equal(steered, 1, '命中即执行动作体')
+})
+
+test('每轮预算：maxPerTurn 命中后同步消耗，轮边界重置，无会话不设限', async () => {
+  const recorder = recordingCtx()
+  const session = { id: 's-budget', header: {}, snapshotEvents: () => [] }
+  const agent = { session }
+  registerAction(recorder.ctx, {
+    kind: 'decision', id: 'gate', phase: 'pre', decision: 'deny', reason: 'go deeper', maxPerTurn: 2,
+  })
+  const handler = only(recorder.events, 'tools/pre-execute')
+  const exec = () => ({ name: 'bash', agent })
+
+  assert.deepEqual(await handler(exec(), () => undefined), { kind: 'deny', reason: 'go deeper' }, '第 1 次生效')
+  assert.deepEqual(await handler(exec(), () => undefined), { kind: 'deny', reason: 'go deeper' }, '第 2 次生效')
+  assert.equal(await handler(exec(), () => 'next'), 'next', '第 3 次超出预算 → 等同不命中，放行下游')
+
+  // 轮边界来自 durable 事件（与 predicates 的 trackTurn 同规则），所以重启后计数虽从 0 开始、
+  // 轮边界却是立刻正确的——这正是它不能用 count 的冷扫模型表达的原因。
+  const observer = recorder.events.find((item) => item.event === 'session/event')?.handler
+  assert.ok(observer, '带预算的动作必须接 session/event 以跟踪轮边界')
+  observer(session, { type: 'turn/start', data: { turn: 2 } })
+  assert.deepEqual(await handler(exec(), () => undefined), { kind: 'deny', reason: 'go deeper' }, '新轮预算重置')
+
+  // 无会话不设限：与原模块「取不到会话条目即放行」的降级一致。
+  const anon = recordingCtx()
+  registerAction(anon.ctx, { kind: 'decision', id: 'g2', phase: 'pre', decision: 'deny', reason: 'r', maxPerTurn: 1 })
+  const anonHandler = only(anon.events, 'tools/pre-execute')
+  for (let i = 0; i < 3; i += 1) {
+    assert.deepEqual(await anonHandler({ name: 'bash' }, () => undefined), { kind: 'deny', reason: 'r' }, `无会话第 ${i + 1} 次仍生效`)
+  }
+})
+
+test('每轮预算：非法值挂载期报错；不支持 when 的动作同样不支持 maxPerTurn', () => {
+  assert.throws(
+    () => registerAction(recordingCtx().ctx, { kind: 'decision', id: 'x', maxPerTurn: 0 }),
+    /maxPerTurn must be a positive integer/,
+  )
+  assert.throws(
+    () => registerAction(recordingCtx().ctx, { kind: 'guard', id: 'x', mask: { deny: ['bash'] }, maxPerTurn: 2 }),
+    /does not support maxPerTurn/,
+  )
+})
+
+test('assembly 的 requireMatch：任意一个名单工具缺失即暴露完整目录（与原模块同判据）', async () => {
+  const assembly = (names) => ({ tools: names.map((name) => ({ name })), sections: [], contexts: [] })
+  const via = (declaration, names) => {
+    const recorder = recordingCtx()
+    registerAction(recorder.ctx, declaration)
+    const handler = only(recorder.events, 'system-prompt/assemble')
+    const initial = assembly(names)
+    return handler(initial, {}, () => initial).then((result) => result.tools.map((tool) => tool.name))
+  }
+
+  // 判据是「任意一个 required 缺失」（missing.length > 0），不是「一个都不存在」——
+  // 后者在部分匹配时会照名单裁成半截目录。同一条判据的声明侧见
+  // `test/engine/declarations/tool-bootstrap.yml` 的 `requireMatch: true`。
+  assert.deepEqual(
+    await via({ kind: 'assembly', id: 'narrow', target: { tools: { allow: ['bash', 'str_replace_editor'], requireMatch: true } } }, ['bash', 'read']),
+    ['bash', 'read'],
+    '部分缺失 → 放弃裁剪、暴露完整目录',
+  )
+  assert.deepEqual(
+    await via({ kind: 'assembly', id: 'narrow', target: { tools: { allow: ['bash', 'str_replace_editor'], requireMatch: true } } }, ['bash', 'str_replace_editor', 'read']),
+    ['bash', 'str_replace_editor'],
+    '全部命中 → 照名单裁',
+  )
+  // 不写 requireMatch 时照名单裁（tool-filter.mjs 的语义，不受该开关影响）。
+  assert.deepEqual(
+    await via({ kind: 'assembly', id: 'narrow', target: { tools: { allow: ['bash', 'str_replace_editor'] } } }, ['bash', 'read']),
+    ['bash'],
+    '不启用兜底 → 照名单裁',
+  )
+})
+
+// ───────────────────────── (8) 前置收件箱消息（B7 新增动作） ─────────────────────────
+
+test('(8) 前置收件箱消息：命中即插到真实消息之前，插件来源不再前置，缺服务静默跳过', () => {
+  const recorder = recordingCtx()
+  const prepended = []
+  const agent = { session: { id: 's-1' }, inbox: { prepend: (target, message) => prepended.push({ target, message }) } }
+  registerAction(recorder.ctx, { kind: 'inbox-prepend', id: 'anchor', text: 'ANCHOR' }, { when: () => true })
+  const handler = only(recorder.events, 'agent/inbox/inserted')
+
+  handler({ agent, message: { id: 'real', role: 'user' } })
+  assert.equal(prepended.length, 1, '命中即前置')
+  assert.equal(prepended[0].target, 'next-turn', '缺省插到下一轮队列')
+  assert.equal(prepended[0].message.content[0].text, 'ANCHOR')
+  assert.equal(prepended[0].message.role, 'user', '绝不伪造 assistant 角色')
+  assert.equal(prepended[0].message.source.kind, 'plugin', '来源标记为插件，供防自触发')
+
+  // 防自触发：插件来源消息（含本动作自己插入的那条）永不再次前置，否则一条消息引出无限插队。
+  handler({ agent, message: { source: { kind: 'plugin' } } })
+  assert.equal(prepended.length, 1, '插件来源消息不得再次触发前置')
+
+  // 缺 inbox 服务（最小组合 / 测试桩）：静默跳过，不抛。
+  assert.doesNotThrow(() => handler({ agent: { session: { id: 'x' } }, message: {} }))
+  assert.equal(prepended.length, 1)
+})
+
+test('(8) 前置收件箱消息：空正文不注册；target 非法挂载期报错', () => {
+  const empty = recordingCtx()
+  registerAction(empty.ctx, { kind: 'inbox-prepend', id: 'x', text: '' })
+  assert.equal(empty.events.length, 0, '空正文 = 不注册（empty 情形），而不是插入一条空消息')
+
+  assert.throws(
+    () => registerAction(recordingCtx().ctx, { kind: 'inbox-prepend', id: 'x', text: 'a', target: 'nowhere' }),
+    /target must be "next-turn" or "next-step"/,
+  )
+})
+
+test('(8) 前置收件箱消息：注册在 emit 通道，判定不命中即什么都不做（无 next 可调）', () => {
+  assert.deepEqual(ACTION_KINDS['inbox-prepend'].events, ['agent/inbox/inserted'])
+  assert.equal(ACTION_KINDS['inbox-prepend'].degrade, ACTION_DEGRADE.silent, '无替代值：命中即生效、不命中不存在')
+
+  const recorder = recordingCtx()
+  const prepended = []
+  const agent = { session: { id: 's' }, inbox: { prepend: () => prepended.push(1) } }
+  registerAction(recorder.ctx, { kind: 'inbox-prepend', id: 'p', text: 'X' }, { when: () => false })
+  assert.doesNotThrow(() => only(recorder.events, 'agent/inbox/inserted')({ agent, message: {} }),
+    'emit 通道没有 next，判定不命中时不得去调它')
+  assert.equal(prepended.length, 0, '不命中即什么都不做')
+})
+
+// ───────────────────────── (9) 过滤 pre-step 注入消息（B7 新增动作） ─────────────────────────
+
+test('(9) pre-step 过滤：sources 严格白名单只放行声明的 source.kind（含 claimed 批）', async () => {
+  const recorder = recordingCtx()
+  registerAction(recorder.ctx, { kind: 'pre-step-filter', id: 'phase1', sources: ['plugin'] })
+  const handler = only(recorder.events, 'agent/pre-step')
+  const decide = (messages) => async () => ({ kind: 'send', messages })
+
+  const filtered = await handler({ agent: agent(), messages: [] },
+    decide([{ id: 'a', source: { kind: 'plugin' } }, { id: 'b', source: { kind: 'user' } }, { id: 'c', source: { kind: 'plugin' } }]))
+  assert.deepEqual(filtered.messages.map((m) => m.id), ['a', 'c'], '只留白名单内的 kind')
+
+  // 全留时返回**同一对象**（不制造无谓的新决策）。
+  const same = { kind: 'send', messages: [{ id: 'x', source: { kind: 'plugin' } }] }
+  assert.equal(await handler({ agent: agent(), messages: [] }, async () => same), same)
+})
+
+test('(9) pre-step 过滤：keepKinds 保留 claimed 基线（对象身份或 id）+ 声明的 kind', async () => {
+  const recorder = recordingCtx()
+  registerAction(recorder.ctx, { kind: 'pre-step-filter', id: 'gate', keepKinds: ['plugin'] })
+  const handler = only(recorder.events, 'agent/pre-step')
+
+  const claimedByObject = { id: 'base-1', source: { kind: 'user' } }
+  const claimedById = { id: 'base-2', source: { kind: 'user' } }
+  const decision = {
+    kind: 'send',
+    messages: [
+      claimedByObject,                                  // 对象身份命中
+      { id: 'base-2', source: { kind: 'user' } },       // 换了对象、id 命中
+      { id: 'extra-plugin', source: { kind: 'plugin' } }, // kind 在名单内
+      { id: 'extra-other', source: { kind: 'skill-catalog' } }, // 两者都不命中 → 剔除
+    ],
+  }
+  const result = await handler({ agent: agent(), messages: [claimedByObject, claimedById] }, async () => decision)
+  assert.deepEqual(result.messages.map((m) => m.id), ['base-1', 'base-2', 'extra-plugin'],
+    '基线（对象或 id 任一命中）+ 声明的 kind')
+})
+
+test('(9) pre-step 过滤：两种模式互斥、未声明不注册、reject 决策不碰、异常保留全部', async () => {
+  assert.throws(
+    () => registerAction(recordingCtx().ctx, { kind: 'pre-step-filter', id: 'x', sources: ['a'], keepKinds: ['b'] }),
+    /cannot combine sources with keepKinds/,
+  )
+  const none = recordingCtx()
+  registerAction(none.ctx, { kind: 'pre-step-filter', id: 'x' })
+  assert.equal(none.events.length, 0, '未声明任一 = 不过滤（不注册，零开销）')
+
+  const recorder = recordingCtx()
+  const warnings = []
+  registerAction(recorder.ctx, { kind: 'pre-step-filter', id: 'g', sources: ['plugin'] },
+    { warnOnce: (message) => warnings.push(message) })
+  const handler = only(recorder.events, 'agent/pre-step')
+  const rejected = { kind: 'reject' }
+  assert.equal(await handler({ agent: agent(), messages: [] }, async () => rejected), rejected, 'reject 决策原样返回')
+
+  // 下游抛错原样上抛（只 guard 自身逻辑）
+  await assert.rejects(handler({ agent: agent(), messages: [] }, async () => { throw new Error('downstream') }), /downstream/)
+
+  // messages 不是数组时不动（形态异常不猜测）
+  const odd = { kind: 'send', messages: 'not-an-array' }
+  assert.equal(await handler({ agent: agent(), messages: [] }, async () => odd), odd)
 })

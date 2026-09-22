@@ -33,7 +33,7 @@ export function EngineCapabilityCreateMenu(props: {
   layer?: string
   onExtraSelect?: (id: string) => void
   onCreated?: (capabilityId: string) => void
-  /** 该页面不提供创建的能力（如子代理页排除仅主对话生效的 tool-filter）。 */
+  /** 该页面不提供创建的能力（受众视图差异，如仅主对话生效的能力）。 */
   excludeCapabilities?: readonly string[]
 }): ReactNode {
   const { store, t, anchorRef, extraItems = [], onExtraSelect, excludeCapabilities = [] } = props
@@ -134,7 +134,7 @@ export function EngineModuleCards({
   showStatus?: boolean
   /** 新建能力后的定位信号：token 每次创建都变化，保证同一能力重复创建仍会再次展开并跳转。 */
   focusCapability?: { id: string; token: number }
-  /** 该页面不渲染的能力卡（如子代理页排除仅主对话生效的 tool-filter）。 */
+  /** 该页面不渲染的能力卡（受众视图差异，如仅主对话生效的能力）。 */
   excludeCapabilities?: readonly string[]
   /** 无卡片时的替代说明（默认按层级给通用空状态）。 */
   emptyHint?: string

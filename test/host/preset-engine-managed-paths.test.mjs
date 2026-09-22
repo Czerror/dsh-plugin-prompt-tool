@@ -60,10 +60,13 @@ test('映射里的模块文件真实存在（防止指向已改名的模块）',
   }
 })
 
-test('受管字段名是这两个之一（写错字段名会让迁移静默不改写）', () => {
+test('受管字段名是已知的那几个（写错字段名会让迁移静默不改写）', () => {
+  // 已知的受管字段：配置目录、策略文件、触发器声明文件。新增一种就在这里加一项——
+  // 这条断言的作用是「字段名打错」必须在测试里显形，而不是让迁移悄悄不改写。
+  const MANAGED_FIELDS = ['configsDir', 'policyFile', 'triggersFile']
   for (const [moduleFile, managed] of Object.entries(ENGINE_MANAGED_PATHS)) {
-    assert.ok(['configsDir', 'policyFile'].includes(managed.field),
-      `${moduleFile}: field 应是 configsDir 或 policyFile，实际 ${managed.field}`)
+    assert.ok(MANAGED_FIELDS.includes(managed.field),
+      `${moduleFile}: field 应是 ${MANAGED_FIELDS.join(' / ')} 之一，实际 ${managed.field}`)
     assert.ok(!managed.directory.startsWith('/') && !managed.directory.includes('..'),
       `${moduleFile}: directory 应是相对预设目录的纯路径`)
   }

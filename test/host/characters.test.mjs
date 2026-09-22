@@ -84,11 +84,11 @@ test('importCharacterCard + applyCharacterToPreset：卡入库并导入预设（
   assert.deepEqual(preset.meta.importedCharacters, [cardId])
   assert.deepEqual(preset.modules, [
     'prompt-config-engine', 'character-tools', 'world-book-tools',
-    'session-var-tools', 'tool-config-engine', 'tool-filter',
+    'session-var-tools', 'tool-config-engine',
   ], 'ST 卡按自身 modules 声明装配（声明优先），行为与改造前一致')
-  // 模块来源记录：预设原本只有 prompt-config-engine，其余五个是这张卡引入的（移除时据此回退）。
+  // 模块来源记录：预设原本只有 prompt-config-engine，其余四个是这张卡引入的（移除时据此回退）。
   assert.deepEqual(preset.meta.characterModules[cardId], [
-    'character-tools', 'world-book-tools', 'session-var-tools', 'tool-config-engine', 'tool-filter',
+    'character-tools', 'world-book-tools', 'session-var-tools', 'tool-config-engine',
   ], 'apply 记录由该卡引入的模块')
 
   const listed = listCharacterCards(root, template)
@@ -344,12 +344,12 @@ test('移除：回退由本卡引入的模块，并清记录与导入标记', ()
   const root = makeRoot({ modules: ['tool-fs'] })
   try {
     writeManualCard(root.dir, 'ponytail', manual('ponytail', {
-      modules: ['session-var-tools', 'tool-filter'],
+      modules: ['session-var-tools', 'tool-config-engine'],
       promptConfigs: [staticConfig('ponytail-full', '规则正文')],
     }))
     applyCharacterToPreset(root.dir, root.template, 'ponytail')
     assert.deepEqual(root.read().modules,
-      ['tool-fs', 'session-var-tools', 'tool-filter', 'prompt-config-engine'])
+      ['tool-fs', 'session-var-tools', 'tool-config-engine', 'prompt-config-engine'])
 
     const removed = removeCharacterFromPreset(root.dir, root.template, 'ponytail')
     assert.equal(removed.ok, true)
@@ -407,17 +407,19 @@ test('移除：预设自带模块与无记录的老卡都不回退', () => {
   }
 })
 
-test('移除：共享参数里仍有工具名单时保留 tool-filter', () => {
-  const root = makeRoot({ modules: ['prompt-config-engine'], layerSettings: { 'tool-pipeline': { toolFilterDeny: 'web_search' } } })
+test('移除：已删能力的模块 id 走保守保留（不再有专属消费者判据）', () => {
+  // B7 T3：`tool-filter` 的消费者判据随 `toolFilterAllow/Deny` 参数删除；该 id 现在落到
+  // `characterModuleStillNeeded` 的未知模块分支（保守保留），所以移除卡也不会夺走这一行。
+  const root = makeRoot({ modules: ['prompt-config-engine'] })
   try {
     writeManualCard(root.dir, 'filtercard', manual('filtercard', {
       modules: ['tool-filter'],
       promptConfigs: [staticConfig('filtercard-cfg', '名单卡正文')],
     }))
     applyCharacterToPreset(root.dir, root.template, 'filtercard')
-    assert.ok(root.read().modules.includes('tool-filter'))
+    assert.ok(root.read().modules.includes('tool-filter'), '卡声明的模块照常装配')
     removeCharacterFromPreset(root.dir, root.template, 'filtercard')
-    assert.ok(root.read().modules.includes('tool-filter'), '预设自己设的名单仍需该模块 → 保留')
+    assert.ok(root.read().modules.includes('tool-filter'), '未知/已删模块保守保留')
   } finally {
     rmSync(root.dir, { recursive: true, force: true })
   }
@@ -461,9 +463,9 @@ test('判据纯函数：记录容错、未知模块保守保留、消费者判�
   const empty = { configs: [], params: {}, customTools: false, importedCharacters: [] }
   assert.equal(characterModuleStillNeeded('prompt-config-engine', empty), false)
   assert.equal(characterModuleStillNeeded('prompt-config-engine', { ...empty, configs: [{ id: 'x' }] }), true)
-  assert.equal(characterModuleStillNeeded('tool-filter', { ...empty, params: { toolFilterAllow: [] } }), false)
-  assert.equal(characterModuleStillNeeded('tool-filter', { ...empty, params: { toolFilterAllow: ['read'] } }), true)
-  assert.equal(characterModuleStillNeeded('tool-filter', { ...empty, params: { toolFilterDeny: '  ' } }), false)
+  // B7 T3：原 `tool-filter` 的消费者判据随 `toolFilterAllow/Deny` 参数一并删除，
+  // 已删能力的模块 id 现在走「未知模块保守保留」这一支（不夺走用户在预设里手写的行）。
+  assert.equal(characterModuleStillNeeded('tool-filter', empty), true, '已删能力的模块 id 保守保留')
   assert.equal(characterModuleStillNeeded('session-var-tools',
     { ...empty, configs: [{ id: 'x', params: { stMacros: true } }] }), true)
   assert.equal(characterModuleStillNeeded('tool-config-engine', { ...empty, customTools: true }), true)

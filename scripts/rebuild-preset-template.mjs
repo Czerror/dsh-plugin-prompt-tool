@@ -22,7 +22,7 @@ doc.commentBefore = ` dsh-plugin-prompt-tool — 全参数 preset.yml 模板（�
  真实提示词规则与共享参数分属两个所有者：promptConfigs[].params / layerSettings.<层名>.<键>。
  共享设置只内嵌真实配置卡；空层不自动创建 UI 卡或提示词规则。
  九层是独立官方扩展点，没有插件定义的跨层执行顺序。详见 docs/injection-point-contracts.md。
- 默认不启用锚定、PTC、工具门控或模型增强；下方参考参数全部为注释，按需启用。
+ 默认不启用锚定或模型增强；下方参考参数全部为注释，按需启用。
  指令文件正文和指令策略不放在本文件；不得将用户 AGENTS.md/CLAUDE.md 正文复制进来。`
 doc.get('modules', true).commentBefore = ` 仅启用提示词引擎。其他能力保持 opt-in；写入其已登记参数后会自动补齐装配。
  官方与本地可用模块：${['engine/compositions/library/', 'engine/compositions/source/local/'].flatMap(dir => readdirSync(new URL(dir, root)).filter(name => name.endsWith('.yml')).map(name => name.slice(0, -4))).join(', ')}
@@ -66,14 +66,6 @@ doc.get('promptConfigs', true).commentBefore = ` 每条都是真实规则示例�
 const reference = new Document({ layerSettings: Object.fromEntries(LAYER_ORDER.map(layer => [layer, {}])) })
 const notes = {
   guideEnabled: '不声明时跟随 firstTurnAnchor；false 为显式关闭',
-  allowKinds: '来源类型白名单；清空列表保存时删键，恢复缺省',
-  bootstrapMaxTokens: '0 显式取消输出封顶',
-  maxPromoteSteps: '0 由引擎解释为默认回退步数',
-  stagePreUnlock: '0 是合法值，不等于缺省的 1',
-  deliberationMinChars: '0 取消深思下限，不回落为 400',
-  deliberationMaxGatesPerTurn: '0 不覆盖行配置；正整数覆盖',
-  cotDripEvery: '0 禁用节拍提醒，不回落为 4',
-  cotDripMaxPerTurn: '0 不覆盖行配置；正整数覆盖',
   maxDepth: '0 禁止委派；provider-managed 交给 provider；正整数限制深度；空继承',
   modelTemperature: '有限数；空继承宿主，不写入请求 patch',
   modelMaxTokens: '正整数；空继承宿主',

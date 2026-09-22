@@ -1,0 +1,98 @@
+# declarations/context-gate.yml — engine/context-gate.mjs 的等价声明（B7 T1 对拍用）。
+# 与将来 preset.yml 顶层 `triggers` 段同格式（src/host/write-preset.ts:329-338 用同一份
+# compileDeclarations 校验并物化为 triggers.json/triggers.yml）。
+#
+# 组合源现状（engine/compositions/source/local/context-gate.yml:8-11）：
+#   enabled: true / promoteOn: either / includeSubagents: false；
+#   allowKinds / messageSources / deferredSources / deferredGraceSteps / instructionHint **均未配置**。
+# 本文件启用两条声明：
+#   1. 路径 (a)：配置无关（三种取值下都成立）；
+#   2. 路径 (b) 的 `messageSources` 变体：**配置相关**——只在预设写了 `messageSources` 时
+#      才是等价声明（那种配置下对拍通过）。当前组合源没写这个键，那种形态的等价形式是
+#      **不写这条声明**；`allowKinds` 变体见文末注释（两条互斥，按配置二选一）。
+#
+# ── 判定输入（为什么这么写 when）────────────────────────────────────────────
+# 相位判定要求「未晋升」，即 `not phase`。`phase` 原语的载荷由 CHANNEL_SUBJECTS 按通道归一
+# （predicates.mjs:68-108 的 `system-prompt/assemble → args[1].agent`、`agent/pre-step →
+# args[0].agent`），声明层再把它交给谓词（actions.mjs:250 的 `subjectOf(event, payload)`；
+# 内联路径同源 trigger.mjs:276）。取值链两端都在源码里：
+#   context-gate.mjs:179 `promotion.status(context.agent).promoted`
+#   context-gate.mjs:199 `promotion.status(agent).promoted`
+# 相位判定走**订阅档**（缺省）：`composite` 现已转发内层谓词的 `observe`（predicates.mjs 的
+# `composite` 在 `not` / `any` / `all` / `notAny` 每个分支都把子谓词的 `observe` 暴露出去），
+# 于是 `wireTriggerObservers` 会接上 `session/event`（trigger.mjs 按 `when.observe` 过滤接线），
+# 相位由活事件**增量**推进，没有冷扫代价。
+# 在此修复之前这里曾必须写 `subscribe: false` 绕开：那次每次判定都要 O(事件数) 冷扫 durable log，
+# 且整条声明不接观察者。B7 T1 的跨能力缺口修复后不再需要——这是行为不变、纯性能档的清理。
+#
+# ── 声明 → 原模块映射（路径 (a)：未晋升时清空 assembly.contexts）─────────────
+#   监听通道   context-gate.mjs:174 `ctx.on('system-prompt/assemble', …)`（未 prepend）
+#   开关       :177 `if (!enabled) return assembled` → 本文件存在与否即开关
+#   未晋升判定 :179 `promotion.status(context.agent).promoted` 取反
+#   原样返回   :180 `contexts` 非数组或为空时不动 → 动作侧同一判据（actions.mjs:322）
+#   改写       :181 `{ ...assembled, contexts: [] }` → `assembly` + `target.contexts.clear`
+#              （actions.mjs:287-333 是动作本体；:297 读 clear、:322-323 是落点）
+#   降级       :182-186 自身失败保留装配 → 动作的 expose-all（actions.mjs:63、:86、:332-335）
+#   晋升后     :179 已晋升即不动 → `when` 不命中，动作整条跳过（actions.mjs:240）
+- id: context-gate-runtime-contexts
+  channel: system-prompt/assemble
+  channelOrder: 0
+  waterfallPosition: default
+  when:
+    not:
+      phase: { promoteOn: either, includeSubagents: false }
+  do:
+    kind: assembly
+    id: context-gate-runtime-contexts
+    target:
+      contexts: { clear: true }
+
+# ── 路径 (b)：未晋升时的 pre-step 过滤（本文件启用变体 1）────────────────────
+# ⚠ 配置耦合：这一条只在预设**配置了 `messageSources`** 时才是等价声明。当前组合源
+#   未配置 `messageSources`/`allowKinds`（engine/compositions/source/local/context-gate.yml:8-11），
+#   那种情形下的等价形式是**不写这条声明**（`allowKinds` 未声明 = 官方 pre-step 行为、
+#   不做任何 kind 过滤：context-gate.mjs:24-27、:205-206；pre-step-filter 未声明任一 =
+#   不注册：actions.mjs:641）。两种情形都由对拍测试覆盖（`sources` 变体配 moduleConfig
+#   `{ messageSources: [...同值] }`；未配置形态断言「不注册任何 pre-step 监听且不过滤」）。
+# 位置、判定与 (a) 完全同源：
+#   prepend    context-gate.mjs:224 `{ prepend: true }`（「门是最外层 transform」）
+#              → waterfallPosition: outermost（trigger-spec.mjs:227 → actions.mjs:190）
+#   reject     :196 `decision.kind === 'reject'` 原样返回 → actions.mjs:645
+#   晋升后     :199 已晋升即不动
+#   严格白名单 :200-204 只放行声明的 source.kind（含 claimed 批）→ `pre-step-filter.sources`
+#              （名单解析 actions.mjs:636、过滤分支 :647-649，判据逐字相同）
+- id: context-gate-pre-step-sources
+  channel: agent/pre-step
+  channelOrder: 0
+  waterfallPosition: outermost
+  when:
+    not:
+      phase: { promoteOn: either, includeSubagents: false }
+  do:
+    kind: pre-step-filter
+    id: context-gate-pre-step-sources
+    sources: [user, goal]          # ← messageSources 的取值
+
+# 变体 2 —— 预设改配 `allowKinds` 时用这一条**替换**上面那条：保留 claimed 基线
+#   （对象身份或 id）+ 声明的 kind（context-gate.mjs:209-218）→ `pre-step-filter.keepKinds`
+#   （名单解析 actions.mjs:637、过滤分支 :652-660，同一实现）。
+#
+# - id: context-gate-pre-step-keepkinds
+#   channel: agent/pre-step
+#   channelOrder: 0
+#   waterfallPosition: outermost
+#   when:
+#     not:
+#       phase: { promoteOn: either, includeSubagents: false }
+#   do:
+#     kind: pre-step-filter
+#     id: context-gate-pre-step-keepkinds
+#     keepKinds: [skill-invocation]  # ← allowKinds 的取值
+#
+# 两条变体**不得同时启用**：`sources` 与 `keepKinds` 的保留集定义不同，动作在挂载期
+# 会直接报错（actions.mjs:638-640）。这与原模块「`messageSources` 先判、命中即不再看
+# `allowKinds`」（context-gate.mjs:200、:205）等价——同一时刻只有一条生效。
+#
+# ── 不在本文件范围 ─────────────────────────────────────────────────────────
+#   `instructionHint`（context-gate.mjs:243-248 + :129-133）已并入 engine/instruction-hint.mjs；
+#   `deferredSources` + `deferredGraceSteps`（:228-242）已拍板作废，不写声明。

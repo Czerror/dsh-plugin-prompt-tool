@@ -4,7 +4,6 @@ import { Switch } from '@deepseek-ai/dsh-client-ui-primitives'
 import { ENGINE_PARAM_DEFINITIONS, ENGINE_PARAM_KEYS, type EngineParamKey } from '../../../shared/engine-params.ts'
 import { engineGroupParamKeys } from '../../../shared/engine-capabilities.ts'
 import type { PromptToolStore } from '../../data/use-prompt-tool-store.ts'
-import type { StageDraft } from '../../data/prompt-tool-fields.ts'
 import type { FieldDraft } from '../../data/workspace-drafts.ts'
 import type { PromptToolTranslate } from '../../locales.ts'
 import { MenuSelect } from '../../ui/MenuSelect.tsx'
@@ -39,7 +38,7 @@ export function matchesEditorGroup(id: string, keyword: string, t: PromptToolTra
  */
 export function EngineParamFields({ store, card, t, instanceId }: { store: PromptToolStore; card: string; t: PromptToolTranslate; instanceId?: string }): ReactNode {
   const keys = ENGINE_PARAM_KEYS.filter((key) => ENGINE_PARAM_DEFINITIONS[key].card === card)
-  const primary = keys.find((key) => ENGINE_PARAM_DEFINITIONS[key].module?.key === 'enabled' || key === 'usePtcMode')
+  const primary = keys.find((key) => ENGINE_PARAM_DEFINITIONS[key].module?.key === 'enabled')
   const subagents = keys.find((key) => ENGINE_PARAM_DEFINITIONS[key].module?.key === 'includeSubagents')
   const paired = primary !== undefined && subagents !== undefined ? [primary, subagents] : []
   const renderField = (key: EngineParamKey): ReactNode => (
@@ -88,38 +87,6 @@ export function EngineParamField({ store, param, t, instanceId }: { store: Promp
   }
   const menuField = (definition.kind === 'string' && definition.options !== undefined)
     || (definition.kind === 'boolean' && definition.defaultValue === undefined)
-  if (definition.kind === 'stages') {
-    const stages = store.fields.stages
-    const update = (next: StageDraft[], persist = false): void => {
-      store.patch({ stages: next })
-      if (persist) save()
-    }
-    const move = (index: number, delta: number): void => {
-      const next = [...stages]
-      ;[next[index], next[index + delta]] = [next[index + delta]!, next[index]!]
-      update(next, true)
-    }
-    return (
-      <div className={styles.settingRowStack} data-param-key={param} data-param-kind={definition.kind} data-control="stages">
-        <strong>{label}</strong>
-        <small>{t('param.stages.hint')}</small>
-        {stages.map((stage, index) => (
-          <div className={styles.settingRowStack} key={index}>
-            <input className={styles.configInput} aria-label={t('param.stages.nameAria', { index: index + 1 })} value={stage.name} disabled={disabled}
-              onChange={(event) => update(stages.map((item, at) => at === index ? { ...item, name: event.target.value } : item))} onBlur={save} />
-            <TagInput id={`${id}-stage-${index}-tools`} label={t('param.stages.toolsLabel', { index: index + 1 })} hint={t('param.stages.toolsHint')} value={stage.tools} disabled={disabled}
-              onChange={(tools) => update(stages.map((item, at) => at === index ? { ...item, tools } : item))} onCommit={save} />
-            <div className={styles.configActions}>
-              <button type="button" className={styles.pillButton} aria-label={t('param.stages.moveUpAria', { index: index + 1 })} disabled={disabled || index === 0} onClick={() => move(index, -1)}>{t('param.stages.moveUp')}</button>
-              <button type="button" className={styles.pillButton} aria-label={t('param.stages.moveDownAria', { index: index + 1 })} disabled={disabled || index === stages.length - 1} onClick={() => move(index, 1)}>{t('param.stages.moveDown')}</button>
-              <button type="button" className={styles.pillButton} aria-label={t('param.stages.removeAria', { index: index + 1 })} disabled={disabled} onClick={() => update(stages.filter((_, at) => at !== index), true)}>{t('param.stages.remove')}</button>
-            </div>
-          </div>
-        ))}
-        <button type="button" className={styles.pillButton} disabled={disabled} onClick={() => update([...stages, { name: '', tools: '' }])}>{t('param.stages.add')}</button>
-      </div>
-    )
-  }
   if (definition.kind === 'string-list') {
     return <div data-param-key={param} data-param-kind={definition.kind} data-control="list">
       <TagInput id={id} label={label} hint={hint} value={String(value ?? '')} disabled={disabled}

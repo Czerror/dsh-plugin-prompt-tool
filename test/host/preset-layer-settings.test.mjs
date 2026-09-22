@@ -32,21 +32,24 @@ test('每个登记参数的存储层从编辑组目录派生，未知键不能�
 
 test('新格式按层往返、false/0 保留、空字符串和数组删除；规则参数与未知字段保持', () => {
   const dir = preset('roundtrip', 'params: { futureFlag: keep }\nlayerSettings:\n  pre-step:\n    injectPrompt: true # 注入注释\n    customField: keep\npromptConfigs:\n  - id: local\n    layer: pre-step\n    params: { injectPrompt: local }\n')
-  savePresetParams(presetRoot, 'roundtrip', { injectPrompt: false, stagePreUnlock: 0, modelTemperature: '0.8', bootstrapTools: ['bash'] }, undefined)
+  // B7 T3：原用例用的 stagePreUnlock / bootstrapTools 已随七个专用能力删除，换成本批存活的键
+  // （pre-step 布尔、agent-request 可为零的数字、tool-pipeline 的列表与布尔）。
+  savePresetParams(presetRoot, 'roundtrip', { injectPrompt: false, modelTemperature: 0, toolGitBashEnabled: false, customToolRequireApproval: ['shell'] }, undefined)
   const first = loadPresetSpec(dir)
   assert.equal(first.params.injectPrompt, false)
-  assert.equal(first.params.stagePreUnlock, 0)
-  assert.equal(first.params.modelTemperature, '0.8')
+  assert.equal(first.params.modelTemperature, 0)
+  assert.equal(first.params.toolGitBashEnabled, false)
+  assert.deepEqual(first.params.customToolRequireApproval, ['shell'])
   assert.equal(first.params.futureFlag, undefined)
   assert.equal(first.params.customField, undefined)
-  savePresetParams(presetRoot, 'roundtrip', { modelTemperature: '', bootstrapTools: [] }, undefined)
+  savePresetParams(presetRoot, 'roundtrip', { modelTemperature: '', customToolRequireApproval: [] }, undefined)
   const raw = readFileSync(join(dir, 'preset.yml'), 'utf8')
   const disk = parseYaml(raw)
   assert.match(raw, /注入注释/)
   assert.equal(disk.layerSettings['pre-step'].injectPrompt, false)
-  assert.equal(disk.layerSettings['system-section'].stagePreUnlock, 0)
-  assert.equal(disk.layerSettings['agent-request'].modelTemperature, undefined)
-  assert.equal(disk.layerSettings['system-section'].bootstrapTools, undefined)
+  assert.equal(disk.layerSettings['tool-pipeline'].toolGitBashEnabled, false, 'false 是合法值，必须留在盘上')
+  assert.equal(disk.layerSettings['agent-request'].modelTemperature, undefined, '空串删键')
+  assert.equal(disk.layerSettings['tool-pipeline'].customToolRequireApproval, undefined, '空数组删键')
   assert.equal(disk.params.futureFlag, 'keep')
   assert.equal(disk.layerSettings['pre-step'].customField, 'keep')
   assert.equal(disk.promptConfigs[0].params.injectPrompt, 'local')
@@ -87,15 +90,17 @@ test('新字段拒绝错误层和非对象形状，不写盘', () => {
 })
 
 test('节点迁移保留注释、未知字段、false/0、实例参数，并保持组合行为等价', () => {
-  const legacy = '# 文档注释\nid: migration\nmodules: [prompt-config-engine]\nparams: # 旧段注释\n  bootstrapMaxTokens: 0 # 数值注释\n  injectPrompt: false\n  futureFlag: keep\nmodel:\n  provider: vendor # 模型注释\n  futureModel: keep\nsubagentModel:\n  maxTokens: 4096\npromptConfigs:\n  - id: local\n    layer: pre-step\n    params: { injectPrompt: true }\n'
+  // B7 T3：`bootstrapMaxTokens` 已随 tool-bootstrap 删除，换成本批存活的同层键
+  // （modelTemperature 为 agent-request 的可为零数字，customToolRequireApproval 为 tool-pipeline 列表）。
+  const legacy = '# 文档注释\nid: migration\nmodules: [prompt-config-engine]\nparams: # 旧段注释\n  modelTemperature: 0 # 数值注释\n  injectPrompt: false\n  futureFlag: keep\nmodel:\n  provider: vendor # 模型注释\n  futureModel: keep\nsubagentModel:\n  maxTokens: 4096\npromptConfigs:\n  - id: local\n    layer: pre-step\n    params: { injectPrompt: true }\n'
   const migrated = migratePresetLayerSettings(legacy)
   const value = parseYaml(migrated.text)
   for (const comment of ['文档注释', '旧段注释', '数值注释', '模型注释']) assert.match(migrated.text, new RegExp(comment))
-  assert.deepEqual(readPresetLayerSettings(value), { bootstrapMaxTokens: 0, injectPrompt: false, modelProvider: 'vendor', subagentMaxTokens: 4096 })
+  assert.deepEqual(readPresetLayerSettings(value), { modelTemperature: 0, injectPrompt: false, modelProvider: 'vendor', subagentMaxTokens: 4096 })
   assert.equal(value.params.futureFlag, 'keep')
   assert.equal(value.model.futureModel, 'keep')
   assert.equal(value.promptConfigs[0].params.injectPrompt, true)
-  const prior = { id: 'migration', modules: ['prompt-config-engine'], params: { bootstrapMaxTokens: 0, injectPrompt: false, modelProvider: 'vendor', subagentMaxTokens: 4096 } }
+  const prior = { id: 'migration', modules: ['prompt-config-engine'], params: { modelTemperature: 0, injectPrompt: false, modelProvider: 'vendor', subagentMaxTokens: 4096 } }
   assert.deepEqual(parseYaml(renderComposition(value, {})), parseYaml(renderComposition(prior, {})))
   assert.deepEqual(migratePresetLayerSettings(migrated.text), { text: migrated.text, moved: [] })
 })
@@ -140,17 +145,19 @@ test('迁移默认预览，显式写入幂等；受 hash 保护的恢复拒绝�
 })
 
 test('新格式参数隐含装配，能力移除同时删除所属参数，不影响同层其他能力', () => {
-  const dir = preset('capability', 'layerSettings:\n  tool-pipeline:\n    deliberationGate: true\n    cotDrip: true\n    futureFlag: keep\n')
+  // B7 T3：原用例用 deliberation-gate + `create-recipe`（recipe 已清空），换成本批存活的能力提供者。
+  const dir = preset('capability', 'layerSettings:\n  tool-pipeline:\n    toolGitBashEnabled: false\n    customToolRequireApproval: ["shell"]\n    futureFlag: keep\n')
   const spec = loadPresetSpec(dir)
-  assert.ok(resolvePresetModuleFacts(spec, dir, true).effectiveModules.includes('deliberation-gate'))
-  removeEngineCapabilityFromPreset(dir, 'deliberation-gate')
+  assert.ok(resolvePresetModuleFacts(spec, dir, true).effectiveModules.includes('tool-git-bash'))
+  removeEngineCapabilityFromPreset(dir, 'tool-git-bash')
   const after = loadPresetSpec(dir)
-  assert.equal(after.params.deliberationGate, undefined)
-  assert.equal(after.params.cotDrip, true)
+  assert.equal(after.params.toolGitBashEnabled, undefined, '该能力的参数一起移除')
+  assert.deepEqual(after.params.customToolRequireApproval, ['shell'], '同层其他能力的参数不受影响')
   assert.equal(after.layerSettings['tool-pipeline'].futureFlag, 'keep')
-  assert.ok(!resolvePresetModuleFacts(after, dir, true).effectiveModules.includes('deliberation-gate'))
-  createEngineCapabilityInPreset(dir, { action: 'create-recipe', recipeId: 'deliberation' })
-  assert.equal(loadPresetSpec(dir).params.deliberationGate, true)
+  assert.ok(!resolvePresetModuleFacts(after, dir, true).effectiveModules.includes('tool-git-bash'))
+  createEngineCapabilityInPreset(dir, { action: 'create', capabilityId: 'tool-git-bash' })
+  assert.ok(resolvePresetModuleFacts(loadPresetSpec(dir), dir, true).effectiveModules.includes('tool-git-bash'),
+    '显式创建后该能力重新进入装配事实')
 })
 
 test('迁移备份不进入导出资产；复制与导出保持新格式参数', async () => {

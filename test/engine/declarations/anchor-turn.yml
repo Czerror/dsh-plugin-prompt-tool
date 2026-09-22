@@ -1,0 +1,61 @@
+# anchor-turn 声明（B7 T1 能力收敛）
+#
+# 格式：与将来 `preset.yml` 顶层 `triggers` 段同格式 —— **YAML 数组**，由
+# engine/declared-triggers.mjs:58-73 读入 → compileDeclarations → mountDeclarations。
+#
+# 对应原模块：engine/anchor-turn.mjs
+#
+# ## 行为 → 通道 → 原语 → 动作 映射
+#
+# | 原模块行为                                              | 依据                | 本声明的表达 |
+# |---------------------------------------------------------|---------------------|--------------|
+# | `enabled: true` 才注册（未声明 = 关闭）                  | :44                 | 写声明本身即启用（声明无 enabled 字段） |
+# | `text` 必填字符串、显式空串 = 不锚定                     | :45-47              | `inbox-prepend` 的空正文不注册（actions.mjs:597-599） |
+# | 监听 `agent/inbox/inserted`（emit 通道，无 next）         | :50                 | `channel` + `inbox-prepend` 动作（actions.mjs:591-615） |
+# | `agent.session` / `agent.inbox.prepend` 缺失 → 静默跳过   | :51                 | 动作自带两道守卫（actions.mjs:638 起） |
+# | 全新会话（日志内无 `user/message`）才锚定                 | :35-38, :52         | `when.session: { type: user/message, present: false, delegated: false }` |
+# | 子代理默认不锚定（`includeSubagents: false`）             | :36                 | 同上的 `delegated: false`（只在主会话命中；配 `includeSubagents: true` 时改 `delegated: true` 或省略） |
+# | 插件来源消息（含自身锚定）永不再次锚定                     | :54                 | 动作自带同一守卫（actions.mjs:603） |
+# | prepend 到 `next-turn`，role=user，content=[text]，source.kind=plugin | :55-65 | 动作构造同一形状（actions.mjs:605-610） |
+#
+# ## 谓词载荷（2026-09-22 已由主线程修复，保留记载以便追溯）
+#
+# 修复前的缺口：`session` 谓词读「payload 自身」（predicates.mjs 旧版），而
+# `agent/inbox/inserted` 的真实载荷是 `{ agent, message }`（官方
+# `dsh-scope/lib/invariant.js` 的 scoped-event 路由表：`"agent/inbox/inserted": (args) => args[0]["agent"]`）
+# → 顶层没有 session → 谓词恒为「未出现 user/message」= 恒命中。
+# 现行实现：`withWhen` 先经 `subjectOf(channel, args, warn)` 归一
+# （actions.mjs:250；取法表 predicates.mjs:68-85，`agent/inbox/inserted` → `args[0].agent` + `args[0].message.source`），
+# `createSessionStatePredicate` 读 `sessionOf(payload)`（predicates.mjs:507）→ 会话可达。
+# 对拍证据：「第二条真实消息不得锚定」用例已绿（test/engine/declaration-parity-capabilities.test.mjs）。
+#
+# ## 受众判据（2026-09-22 已由主线程补齐）
+#
+# `createSessionStatePredicate` 新增 `delegated` 选项（predicates.mjs:517-524）：
+# `delegated: false` = 只在主会话命中、`true` = 只在子代理命中、未声明 = 不判受众；
+# 子代理判定复用 `shared.mjs` 的 `isDelegated`（不写字面量比较）。这正好表达原模块
+# `isFreshSession` 的第一道闸（anchor-turn.mjs:36）：`includeSubagents: false`（组合源默认）
+# ⇔ `delegated: false`；`includeSubagents: true` ⇔ 省略该选项。
+# 对拍证据：「子代理默认不锚定」用例已绿。
+#
+# ## `agent.session` 守卫（2026-09-22 已由主线程补齐）
+#
+# 原模块 `:51` 要求 `agent.session !== undefined` 才锚定；`inbox-prepend` 动作现在同样
+# 先判 `agent?.session === undefined` 即返回（actions.mjs:638），因此
+# 「agent 无 session 时不得锚定」用例已绿。
+#
+# ## 剩余缺口
+#
+# 无。本能力 5 条对拍用例（首条锚定 / 非首条不锚 / 插件来源不锚 / 子代理不锚 / 无 session 不锚）
+# 在 `includeSubagents: false`（组合源默认，声明写 `delegated: false`）下全部绿。
+- id: anchor-turn
+  channel: agent/inbox/inserted
+  when:
+    session: { type: user/message, present: false, delegated: false }
+  do:
+    kind: inbox-prepend
+    id: anchor-turn
+    target: next-turn
+    text: >-
+      This round is a test. Tools are not open yet; all tools will open next round.
+  waterfallPosition: default

@@ -58,7 +58,7 @@
  *
  * 三条纪律：**(1)** 没有 `session.id` 的会话一律不记账（`predicates.mjs:343` 的既有决定：
  * 共用一个 Map 键会让两个会话串味），每次冷扫而非缓存；**(2)** 子代理判定复用
- * `isDelegated`，不写字面量比较（`progress-reminder.mjs:80` 的 `=== 0` 与它是同一判定的
+ * `isDelegated`，不写字面量比较（原 `progress-reminder` 的 `== 0` 判定与它是同一语义的
  * 两种写法，B4 迁移时统一到前者，行为不变）；**(3)** `snapshotEvents()` 是正式 API
  * （DSH 0.1.2-alpha.4+），缺失时按空日志处理——**不得**回退读旧的 `events` 数组。
  *
@@ -70,6 +70,16 @@
  * **(c)** 逐模块保留原有键类型与淘汰策略（`Map<session.id>` / `WeakMap<session 对象>` /
  * 无上限），**(d)** `resetOn` 按**状态字段**声明，不是按模块（`tool-bootstrap` 的
  * `stage` 与 `promotion` 两个字段策略相反，是这条的现成反例）。
+ */
+
+import { subjectOf } from './predicates.mjs'
+
+/**
+ * 本文件此前**零 import**（`when` / `do` / `warnOnce` 全由调用方注入，会话态读法经 `ctx`
+ * 取得）。唯一新增的依赖是谓词的**输入契约** `subjectOf`：调度层调用 `when` 时必须先把
+ * 事件参数表归一为**单个载荷对象**（契约见 `predicates.mjs` 头部），否则除 `names` 外，
+ * 各原语在真实通道上都取不到它们要的域——`phase` 曾因此恒为「已晋升」、`count` 恒为 0。
+ * 声明路径同源：`actions.mjs` 的 `withWhen` 用同一函数归一。
  */
 
 /** 声明里的合法位置取值（与 events.ts 的布尔注册策略一一对应）。 */
@@ -221,26 +231,41 @@ export function createDecisionLog({ enabled = false, logger, sessionOf } = {}) {
  *
  * @returns disposer：注销本组全部监听器。
  */
+/**
+ * 把 `session/event` 喂给带 `observe(session, event)` 入口的谓词（相位 / 计数两类）。
+ *
+ * 同一组声明**共用一条**监听（不按触发器各接一条，避免 N 倍监听）；没有这类谓词时
+ * **不接**（返回 `undefined`，零开销）。观察者自身抛错只告警、不影响其它触发器
+ * ——与判定失败的降级纪律一致。
+ *
+ * 两条调用路径共用它：`mountTriggers`（`do` 是函数的内联路径）与
+ * `trigger-spec.mjs` 的 `mountDeclarations`（`do` 是动作声明的路径）。
+ *
+ * @returns disposer，或 `undefined`（本组无观察者）
+ */
+export function wireTriggerObservers(ctx, triggers, { plugin, warnOnce } = {}) {
+  const warn = typeof warnOnce === 'function' ? warnOnce : () => {}
+  const observers = triggers.filter((trigger) => typeof trigger.when?.observe === 'function')
+  if (observers.length === 0) return undefined
+  return ctx.on('session/event', (session, event) => {
+    for (const trigger of observers) {
+      try {
+        trigger.when.observe(session, event)
+      } catch (error) {
+        warn(`${plugin}: trigger ${trigger.id} observe failed: ${String(error?.message ?? error)}`)
+      }
+    }
+  })
+}
+
 export function mountTriggers(ctx, declarations, { plugin, warnOnce, diagnose } = {}) {
   const warn = typeof warnOnce === 'function' ? warnOnce : () => {}
   const disposers = []
   const ordered = orderTriggers(declarations).map((raw) => validateTrigger(raw, plugin))
 
-  // 会话态生命周期：相位/计数两类谓词带 `observe(session, event)` 入口，需要一个事件源。
-  // 同一组声明**共用一条** session/event 监听（不按触发器各接一条，避免 N 倍监听），
-  // 观察者自身抛错只告警、不影响其它触发器（与判定失败的降级纪律一致）。
-  const observers = ordered.filter((trigger) => typeof trigger.when?.observe === 'function')
-  if (observers.length > 0) {
-    disposers.push(ctx.on('session/event', (session, event) => {
-      for (const trigger of observers) {
-        try {
-          trigger.when.observe(session, event)
-        } catch (error) {
-          warn(`${plugin}: trigger ${trigger.id} observe failed: ${String(error?.message ?? error)}`)
-        }
-      }
-    }))
-  }
+  // 会话态生命周期：共用 `wireTriggerObservers`（与声明路径同一实现）。
+  const observer = wireTriggerObservers(ctx, ordered, { plugin, warnOnce: warn })
+  if (observer !== undefined) disposers.push(observer)
 
   for (const trigger of ordered) {
     const handler = async (...args) => {
@@ -248,7 +273,7 @@ export function mountTriggers(ctx, declarations, { plugin, warnOnce, diagnose } 
       const payload = args.slice(0, -1)
       let decided
       try {
-        decided = await trigger.when(...payload)
+        decided = await trigger.when(subjectOf(trigger.channel, payload, warn))
       } catch (error) {
         // 判定失败只影响本触发器：告警一次并放行下游（expose-all 语义）。
         warn(`${plugin}: trigger ${trigger.id} predicate failed: ${String(error?.message ?? error)}`)

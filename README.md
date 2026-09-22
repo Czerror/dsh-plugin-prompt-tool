@@ -52,7 +52,7 @@ node scripts/migrate-skills.mjs --rollback "<备份目录>\migration.json"
 - 🖥️ **可拖动悬浮工作台入口**：工作台经官方 `shell.overlay` 渲染悬浮触发器与 body portal 抽屉；按钮可拖动、位置存插件自己的 localStorage、窗口变化自动夹回可见区（不读宿主布局树，已移除 `sidebar.footer.action` 几何探针）；六页（主会话/子代理/工具预览/技能设置/预设配置/角色管理）在抽屉内渲染，抽屉用 fixed + z-index 置顶，不被宿主导航栏遮挡
 - 🧪 **七种内容策略**：`static / first-turn-anchor / guide-auto / custom-fallback / instruction-hint / placeholder / world-book`（world-book 支持 ST selectiveLogic 选择性触发：任一/副键全中/排除）
 - 🛡️ **失败不伤会话**：单条失败跳过 + `warnOnce`；配置错误挂载时 fail loud；`dedupe: session` 持久幂等
-- 🧭 **通用 instruction-hint 引擎**：所有预设都可通过 `strategy: instruction-hint` 或 `placeholder + fill: instruction-hint` 提示指令文件存在；实现位于 `engine/instruction-hint.mjs`，不绑定任何预设；`context-gate.instructionHint` 按模型可见 surface 去重，重挂不重复，被压缩遮蔽后才再次提示
+- 🧭 **通用 instruction-hint 引擎**：所有预设都可通过 `strategy: instruction-hint` 或 `placeholder + fill: instruction-hint` 提示指令文件存在；实现位于 `engine/instruction-hint.mjs`，不绑定任何预设；它的 plugin 形态（挂 `instruction-hint` 行并 `enabled: true`，即参数桥 `params.instructionHint`）按模型可见 surface 去重，重挂不重复，被压缩遮蔽后才再次提示
 - 📦 **Bridge 载荷**：JSON 请求统一 32 MiB 硬上限并明确返回 413；角色卡原始图片走 64 MiB 流式通道，按 PNG 魔数识别。
 - 📂 **技能管理**：官方发现与会话快照统一技能来源、生效和遮蔽状态；单端开关写回技能文件。支持目录包与直属 Markdown 技能、创建、两种复制导入，以及用户根和引用根的可恢复删除；技能局部刷新保留其他页面草稿。
 - 🎭 **SillyTavern 导入**：JSON 预设、角色卡和独立世界书转换为本地预设——按官方顺序表保留启停，赋值模板运行时求值；不等价能力明确报告，采样参数由宿主管理
@@ -65,7 +65,7 @@ node scripts/migrate-skills.mjs --rollback "<备份目录>\migration.json"
 - 🧩 **模板变量**：仅从预设顶层 `variables` 段提供 `{{key}}` 插值默认值，单条提示词配置的 `variables` 可局部覆盖——模块列表顶部「模板变量」卡片统一编辑（可折叠/清空/停用/失焦自动保存）。`params` 中的旧内容变量及 `params.variables` 不再读取，也不自动迁移；旧预设需自行整理到顶层后重新物化。锚定匹配引擎（anchor-match）统一 custom-fallback 与 world-book 的匹配语义
 - 💬 **会话变量工具**：`session_var`（list/get/set/clear）——模型维护角色状态（`{{心情}}` 等），会话级覆盖预设默认；ST 运行时宏（`{{lastusermessage}}` / `{{lastcharmessage}}`）从会话事件提取
 - 🧩 **工具按模块装配**：角色卡、世界书、会话变量、自定义工具分别由 `character-tools` / `world-book-tools` / `session-var-tools` / `tool-config-engine` 模块提供；不再维护重复的顶层工具开关
-- 📐 **显式按需装配**：`modules: []` 保持空组合；四个官方基型的人设直接由顶层 `persona` 段生成官方行，不再经模块库；不附加其他增强模块。Minimal 保持官方单 shell 基型；带隔离文件系统的本地 `filesystem-editor` 模块（`fs-local` + `str-replace-editor` 同隔离域）只由显式声明它的预设装配。锚定/深思链路（`context-gate` / `tool-bootstrap` / `promoted-code-mode` / `anchor-turn` / `deliberation-gate` / `progress-reminder`）同样按需声明，不预装 ST 管理工具。这些能力的开关、引导正文与节奏阈值统一由组合源（`engine/compositions/source/local/*.yml`）和预设 `moduleConfigs` 提供，引擎不内置可配置默认值：未声明 `enabled` 视为关闭，缺必填键在装配时响亮失败
+- 📐 **显式按需装配**：`modules: []` 保持空组合；四个官方基型的人设直接由顶层 `persona` 段生成官方行，不再经模块库；不附加其他增强模块。Minimal 保持官方单 shell 基型；带隔离文件系统的本地 `filesystem-editor` 模块（`fs-local` + `str-replace-editor` 同隔离域）只由显式声明它的预设装配。首轮窄化/门控、来源过滤、工具名单、锚句、深思门与进度节拍**不再有专用能力模块**：它们由预设顶层 `triggers` 段的声明按需表达（`writePreset` 物化为 `triggers.yml`，`declared-triggers` 行读入注册；未声明 = 无该行为，不预装 ST 管理工具，也不内置可配置默认值）；声明写错在挂载期响亮失败
 
 ## Web 客户端结构
 
@@ -126,10 +126,11 @@ src/client/
 |---|---|
 | 锚定 | `firstTurnAnchor` `firstTurnCustom` `firstTurnText` `firstTurnWord`（空 = 自动从锚句派生确认词）`firstTurnBuild` `firstTurnInspect` `firstTurnDeep` |
 | 引导 | `guideCustom` `guideText` `guideWeak` `guideDeep`（复杂判定 fallback 复用锚定的 `complexPattern`） |
-| PTC/门控 | `usePtcMode` `bootstrapMaxTokens` `injectPrompt` `allowKinds` |
+| 指令 | `instructionHint`（挂 `instruction-hint` 行并 `enabled: true`，晋升后只发一次文件路径提示） |
 | 人设 | preset.yml 顶层 `persona` 段（官方 `@deepseek-ai/dsh-persona` 行 config 同构）：`prefix`（必填）/ `suffix` / `complete` / `includeRuntimeContext`；`complete` 独占 system prompt，与提示词配置的「独占」互斥；子代理独立人设走 `moduleConfigs.tool-subagent.persona`（官方 per-child persona，不继承主会话） |
-| 工具集 | `toolFilterAllow` `toolFilterDeny`（主对话 tool-filter；策略未启用时也写入子代理 delegation.toolFilter——策略启用后子代理改由 `subagentToolPolicy` 实例级解析授权，主/子代理列表分离） |
 | 深度 | `maxDepth`（0 禁止委派 / `provider-managed` / 正整数） |
+
+> 首轮工具面与输出封顶、`stages` 式阶段窄化、pre-step 来源名单、常驻工具白/黑名单、锚句、深思门与进度节拍都没有共享参数键：它们改由预设顶层 `triggers` 段声明（示例见 [engine 复用指南](docs/engine-reuse.md)）。其中 `stages` 阶段窄化与「晋升后才切 PTC 呈现」是本轮的两项净损失；子代理工具面只能由 `subagentToolPolicy` 实例策略授权。
 
 > 注：`injectPrompt`（params）= 锚定确认后注入 preset.md 的开关。AGENTS.md 走「文件即真相」：文件集合、正文与版本**不再物化进生成目录**，而是由宿主按**本会话工作区**现场解析（`$DSH_HOME/AGENTS.md` + 工作区 cwd→项目根链的 AGENTS.md/CLAUDE.md/AGENTS.local.md/CLAUDE.local.md）；工作台里的文件卡就是该文件，编辑框里的内容保存后直接写回原文件，卡片定义与正文都不进 preset.yml。插件不写常驻受管块。
 
@@ -168,7 +169,7 @@ persona:
 
 预设事实同样跟随官方会话：官方「新建会话」旁的预设选择器走**会话级**切换（只改那个空白会话，不改宿主默认预设），插件读会话投影 `agentPreset` 后自动把工作台切到该预设——跟随只写同一份插件预设事实（不重复切换会话），官方侧选完，主会话页的配置、参数与工具预览即刻对应该预设。目标预设不在插件管理目录（例如官方随包预设）时**不跟随**并提示；当前预设仍有未保存草稿时保持不动，等草稿处理完再跟随。
 
-> 根目录 [preset.yml](preset.yml) 覆盖全部 71 个共享参数与九层规则。`pnpm rebuild:preset-template` 从权威契约重建；规则默认关闭，共享参数按需取消注释。
+> 根目录 [preset.yml](preset.yml) 覆盖全部 30 个共享参数与九层规则。`pnpm rebuild:preset-template` 从权威契约重建；规则默认关闭，共享参数按需取消注释。
 
 ## 提示词配置（九个官方插入点）
 
@@ -202,8 +203,8 @@ UI / 写盘按上表分组；这是展示顺序，不是模型提示词优先级
 - `prompts[]` → `promptConfigs`：system 角色进入 `system-section`，其余进入 `pre-step`；官方 `prompt_order[].order[]` 决定启停与相对顺序，深度位置保留来源并报告降级
 - 采样参数（`temperature` / `openai_max_tokens` / `reasoning_effort`）**剥离**——模型参数统一由「模型设置」UI / 宿主默认管理
 - ST 变量：保留可启停的赋值模板，在运行时顺序求值；声明变量在合并和角色卡应用时保持局部绑定
-- ST 管理工具：始终装配 `character-tools`、`session-var-tools`、`tool-config-engine` 与空操作默认的 `tool-filter`
-- `enable_web_search`：`true` → 额外组装 `tool-web`（fetch 启用）；`false` → 复用 `tool-filter` 黑名单 `web_search / web_fetch`
+- ST 管理工具：始终装配 `character-tools`、`session-var-tools` 与 `tool-config-engine`
+- `enable_web_search`：`true` → 额外组装 `tool-web`（fetch 启用）；`false` → 产出三条 `triggers` 声明（`assembly` 呈现剔除 + `sdk-strip` 裁 `tools:sdk` 正文 + `guard` 执行层拒绝，共用同一份 `deny: [web_search, web_fetch]`），PTC 下同样生效
 - 含有效 `character_book` 条目时自动追加 `world-book-tools` 模块，使导入预设可直接调用世界书管理工具
 - 世界书条目级条件：`delayUntilRecursion`（延迟到递归扫描的层级池）、`useGroupScoring`（组内评分淘汰）、`matchCreatorNotes` / `matchCharacterDepthPrompt`（按需扫描卡片备注与深度提示词）按 ST 语义求值；`characterFilter`（角色/标签过滤）、`automationId`（STscript 自动化）、`outletName` 与向量检索**不实现**，只保留来源事实并在预览卡里逐条告警
 - 触发键里的 ST 宏（例如只存在于 ST 全局 persona 的 `{{user}}`）登记为「模板变量」空占位并产出诊断：未赋值时该键不参与匹配（不会退化成字面量误判），在模板变量里赋值后按既有匹配路径生效
