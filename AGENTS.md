@@ -68,7 +68,7 @@
 
 - preset.yml 是具体预设行为的单一来源；settings 只承载部署轴，复杂数据和大文本走文件或 loopback bridge。
 - 所有 YAML 修改使用 yaml Document API 保留注释和未知字段；写盘先完整生成临时目录，再原子 rename，system 目录保持只读。
-- 默认只写 DSH_HOME 下本插件拥有的状态、生成目录、.engine 指纹、.characters 和指令策略文件；不得清理其他用户或官方文件。
+- 默认只写 DSH_HOME 下本插件拥有的状态、生成目录、.characters 和指令策略文件；不得清理其他用户或官方文件（共享引擎自阶段 2 起由插件包提供，不再物化 `.engine/`，也不写引擎指纹）。
 - 预设定义只拥有预设行为；指令文件正文与指令策略是独立所有者。工作区指令文件（AGENTS.md、CLAUDE.md 及其 .local 变体）正文属于用户文件，只有用户授权编辑、目标命中当前会话上下文白名单且版本校验通过时才写入，且只替换该文件本身。
 - 写入指令文件不覆盖用户未知改动，不修改官方或只读目录中的文件；不得把指令正文复制进 preset.yml、settings、生成目录或策略文件。
 - bridge 路径和载荷先改 src/shared/bridge-contract.ts，再同步 host、client 和契约测试；成功/失败载荷保持统一包装，写入端点先做白名单、类型、数值和大小校验。
