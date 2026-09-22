@@ -241,7 +241,8 @@ function dependencyErrors(files: Array<{ path: string; bytes: Buffer }>, spec: P
   const paths = new Set(files.map((file) => file.path))
   const errors = new Set<string>()
   const check = (ref: string, from: string): void => {
-    if (ref.startsWith('../.engine/')) return // 插件运行前提，目标本机生成。
+    // 共享引擎不再随包分发（引擎由插件提供，组合行用包名说明符）：旧预设包里的
+    // `../.engine/x.mjs` 引用不再豁免，会按越界资源在下面被拒绝。
     const rel = posix.normalize(posix.join(posix.dirname(from), ref))
     if (rel.startsWith('../') || posix.isAbsolute(rel) || ref.includes(':')) errors.add(`外部资源：${ref}`)
     else if (!paths.has(rel)) errors.add(`缺失资源：${rel}`)

@@ -13,10 +13,11 @@
 import { after, test } from 'node:test'
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import { pathToFileURL } from 'node:url'
+import { basename, join, resolve } from 'node:path'
+import { fileURLToPath, pathToFileURL } from 'node:url'
+import { parse } from 'yaml'
 import { Context } from '@deepseek-ai/cordis'
 import { agentEvents } from '@deepseek-ai/dsh-agent'
 import { createScope } from '@deepseek-ai/dsh-scope'
@@ -559,12 +560,13 @@ test('指令负责人事实：没有协调服务（独立引擎/测试宿主）�
 })
 
 // —— 端到端注入（原 instructions-e2e.test.mjs，3 条） ——
-// 端到端（真实物化 + 真实引擎副本 + 协调器 + 真实文件系统）：
-//   writePreset 生成预设与共享引擎 → 引擎行注册来源给协调器 → 指令文件按会话工作区
+// 端到端（真实物化 + 包内真实引擎 + 协调器 + 真实文件系统）：
+//   writePreset 生成预设（组合行以包名说明符引用包内共享引擎，不再物化 `<预设根>/.engine/`）
+//   → 受管字段按历史基准换算为绝对 file:// → 引擎行注册来源给协调器 → 指令文件按会话工作区
 //   现场探测并注入正文 → 文件变更后注入新版本 → 内容为空只发失效通知。
 // 与单测的区别：这里不注入任何替身，探测、策略、读取、版本、消息身份全部走真实模块。
 
-/** 物化一份真实预设（含 .engine 引擎副本），返回预设目录。 */
+/** 物化一份真实预设（组合行引用包内共享引擎，不再物化 `.engine/`），返回预设目录与挂载目录。 */
 const materialize = (name, template) => {
   const presetDir = join(e2eHome, 'preset')
   writePreset('PROMPT', {
@@ -604,16 +606,36 @@ const instructionMessages = (decision) =>
   (Array.isArray(decision?.messages) ? decision.messages : [])
     .filter((message) => message?.source?.kind === 'instruction-file')
 
-/** 真实装配：协调器挂在 app 上，引擎行从物化目录加载并注册到 agent 的 mount scope。 */
+/** 包内共享引擎源码：阶段 2 起引擎由插件包提供（组合行写包名说明符），不再物化到预设根。 */
+const packageEngineFile = fileURLToPath(new URL('../../engine/prompt-config-engine.mjs', import.meta.url))
+
+/**
+ * 组合行声明的受管配置位置 → 装配期绝对 `file://`。
+ * 正本仍按历史语义相对 `<预设根>/.engine/` 书写（`../<id>/prompt-configs`），与
+ * `preset-registry.absolutizeLocalModules` 同一规则；该基准目录本身已不再物化。
+ */
+const engineConfigsDir = (presetDir, mountDir) => {
+  const rows = parse(readFileSync(join(mountDir, 'agent.cordis.yml'), 'utf8'))
+  const row = rows.find((item) => item?.name === 'dsh-plugin-prompt-tool/engine/prompt-config-engine.mjs')
+  assert.ok(row, '组合行按包名说明符引用包内共享引擎')
+  assert.equal(row.config.configsDir, `../${basename(mountDir)}/prompt-configs`, '受管字段保持历史相对形态')
+  return pathToFileURL(resolve(join(presetDir, '.engine'), row.config.configsDir)).href
+}
+
+/** 真实装配：协调器挂在 app 上，包内共享引擎按换算后的受管位置注册到 agent 的 mount scope。 */
 const mountPreset = async (presetDir, mountDir, agent) => {
   const app = new Context()
   const service = installPreStepCoordinator(app, { home: e2eHome, policyFile: e2ePolicyFile })
   assert.equal(typeof service.registerPreset, 'function')
   assert.equal(app.get(PRE_STEP_COORDINATOR_SERVICE), service, '协调服务在 app 上可见')
+  assert.equal(existsSync(join(presetDir, '.engine')), false, '共享引擎不再物化到预设根')
   const scope = createScope(app, agent)
   agent.ctx = scope.ctx
-  const engine = await import(pathToFileURL(join(presetDir, '.engine', 'prompt-config-engine.mjs')).href)
-  engine.apply(scope.ctx, { configsDir: `../${mountDir.split(/[\\/]/).at(-1)}/prompt-configs` })
+  const engine = await import(pathToFileURL(packageEngineFile).href)
+  engine.apply(scope.ctx, {
+    configsDir: engineConfigsDir(presetDir, mountDir),
+    presetRoot: `${pathToFileURL(presetDir).href}/`,
+  })
   return app
 }
 

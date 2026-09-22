@@ -197,6 +197,48 @@ test('装配期换算：相对说明符绝对化，configsDir 与 !!js 保持原
   } finally { await sync.dispose() }
 })
 
+test('装配期换算：引擎行识别、受管字段绝对化与 presetRoot 注入', async () => {
+  const root = join(home, 'engine-rows')
+  const dir = join(root, 'pt-eng')
+  mkdirSync(join(dir, 'prompt-configs'), { recursive: true })
+  writeFileSync(join(dir, 'preset.yml'), 'id: pt-eng\nname: Eng\nmodules: []\n')
+  writeFileSync(join(dir, 'agent.cordis.yml'), [
+    '- id: prompt-config-engine',
+    '  name: dsh-plugin-prompt-tool/engine/prompt-config-engine.mjs',
+    '  config:',
+    '    configsDir: ../pt-eng/prompt-configs',
+    '- id: legacy-engine',
+    '  name: ../.engine/character-tools.mjs',
+    '  config:',
+    '    configsDir: ../pt-eng/prompt-configs',
+    '',
+  ].join('\n'))
+  const definitions = new Map()
+  const registry = {
+    register: async (definition) => {
+      definitions.set(definition.id, definition)
+      return async () => { definitions.delete(definition.id) }
+    },
+    resolve: async (id) => definitions.get(id),
+  }
+  const sync = createPresetRegistrySync({ agentPresets: registry }, root)
+  try {
+    await sync.refresh()
+    const [engine, legacy] = definitions.get('pt-eng').plugins
+    assert.equal(engine.name, 'dsh-plugin-prompt-tool/engine/prompt-config-engine.mjs', '包名说明符不改写')
+    assert.equal(
+      engine.config.configsDir,
+      pathToFileURL(join(root, 'pt-eng', 'prompt-configs')).href,
+      '受管字段按历史语义（相对 <预设根>/.engine/）换算为绝对 file URL',
+    )
+    assert.equal(engine.config.presetRoot, `${pathToFileURL(root).href}/`, '引擎行必须注入预设根基准')
+    // 不兼容旧布局：`../.engine/x.mjs` 不再是引擎行，按普通本地说明符换算到已不再物化的目录。
+    assert.equal(legacy.name, pathToFileURL(join(root, '.engine', 'character-tools.mjs')).href)
+    assert.equal(legacy.config.configsDir, '../pt-eng/prompt-configs', '非引擎行的字段不参与受管换算')
+    assert.equal(legacy.config.presetRoot, undefined, '非引擎行不得注入 presetRoot（否则触发未知键报错）')
+  } finally { await sync.dispose() }
+})
+
 test('注册刷新排队期间卸载：待执行任务不得重新注册', async () => {
   let registrations = 0
   const sync = createPresetRegistrySync({ get agentPresets() { registrations++; throw new Error('不得重新注册') } }, join(home, 'presets'))

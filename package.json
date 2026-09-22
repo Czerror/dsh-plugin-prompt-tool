@@ -16,6 +16,7 @@
       "default": "./lib/index.mjs"
     },
     "./client": "./lib/client.js",
+    "./engine/*": "./engine/*",
     "./package.json": "./package.json"
   },
   "engines": {

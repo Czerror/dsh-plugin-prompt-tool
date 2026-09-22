@@ -173,10 +173,25 @@ test('复制及导入另存同步自有模板引用，导出副本不再依赖�
   const copy = duplicateUserPreset('original', dir)
   assert.equal(copy.ok, true, copy.message)
   assert.equal(parse(fs.readFileSync(join(dir, copy.id, 'preset.yml'), 'utf8')).promptConfigs[0].templateFile, `../${copy.id}/assets/t.txt`)
+  // 共享引擎自阶段 2 起由插件包提供：组合行写包名说明符，副本不指向任何 `.engine/` 物化目录。
+  const compositionRow = (presetDir) => parse(fs.readFileSync(join(presetDir, 'agent.cordis.yml'), 'utf8'))[0]
+  assert.equal(compositionRow(join(dir, copy.id)).name, 'dsh-plugin-prompt-tool/engine/prompt-config-engine.mjs')
+  assert.deepEqual(
+    compositionRow(join(dir, copy.id)).config,
+    { configsDir: `../${copy.id}/prompt-configs` },
+    '副本的受管配置位置必须改写到自身 id——包名说明符行同样要过改写，否则副本会读原预设的 prompt-configs',
+  )
   const exported = await exportPresetPackage(dir, { id: copy.id, mode: 'zip' })
+  const entries = await unpackZip(Buffer.from(exported.content, 'base64'))
+  assert.ok(
+    entries.every(entry => !/(^|\/)\.engine\//.test(entry.path) && !entry.path.endsWith('/engine/prompt-config-engine.mjs')),
+    '导出包既不携带共享引擎，也不再出现 .engine 目录',
+  )
   const to = root()
   await install(to, await expandPresetSource([{ path: 'copy.zip', encoding: 'base64', content: exported.content }]), { targetId: 'renamed' })
   assert.equal(parse(fs.readFileSync(join(to, 'renamed/preset.yml'), 'utf8')).promptConfigs[0].templateFile, '../renamed/assets/t.txt')
+  // 另存后的组合只引用包内引擎，且受管配置位置指向自己：不依赖原预设，也不依赖物化引擎目录。
+  assert.deepEqual(compositionRow(join(to, 'renamed')).config, { configsDir: '../renamed/prompt-configs' })
 })
 
 test('发布后的 CLI 使用当前根，共享 ZIP／定义／目录出口且不覆盖已有目标', async () => {

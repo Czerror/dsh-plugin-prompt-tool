@@ -138,7 +138,7 @@
 | `prompt-config-engine` | engine/prompt-config-engine.mjs | 提示词配置执行器（per-config `promotion: main / include-subagents` 门控） |
 | `tool-config-engine` | engine/tool-config-engine.mjs | 自定义工具引擎：preset.yml `customTools` 段 → 官方转换器物化标准 JSON Schema（`custom-tools/*.yml`）→ 运行时 `ctx.tools.register`（执行器 shell/http/delegate/fs/ask-user；行 `requireApproval` 门；delegate 经 `ctx.tools.execute` 嵌套调度走完整官方工具管线） |
 | `subagent-tool-policy` | engine/subagent-tool-policy.mjs | generation-scoped subagent/subagent_fork shadow：只安装到当前预设后代；spawn/fork 分别绑定官方 provider，foreground 读取 `SubagentRun.result`，continuable 读取 `childId` 并传顶层 signal；实例参数在 body 前校验，扩权经 approval 门，provider 能力不足 fail loud |
-| （纯模块） | engine/subagent-tool-policy-core.mjs | 策略 validate/compile/resolve/buildParameters 单一 seam（纯模块：不 import dsh-tools、不写文件，.engine 与 host 两侧共用；bridge 预览与运行时同一 resolver） |
+| （纯模块） | engine/subagent-tool-policy-core.mjs | 策略 validate/compile/resolve/buildParameters 单一 seam（纯模块：不 import dsh-tools、不写文件，包内引擎与 host 两侧共用；bridge 预览与运行时同一 resolver） |
 | （纯模块） | engine/classify-task.mjs | `createOrderedTaskClassifier`：有序正则任务规则确定性分类（taskRules order 升序，首个命中生效） |
 | character-tools / world-book-tools / session-var-tools | engine/character-tools.mjs / engine/world-book-tools.mjs / engine/session-var-tools.mjs | 按预设模块分别挂载角色卡、世界书、会话变量模型工具；宿主只提供注册服务，工具随 agent scope 生命周期清理 |
 | `compaction-epoch` | engine/compaction-epoch.mjs | 晋升状态机（`phase` 谓词与既有注入路径共用；非插件行） |
@@ -521,5 +521,5 @@ triggers:
   npm 的版本列表与 dist-tags，不能把名字为 latest 的旧标签误当成更新版本。
 - 本地新增模块放 `engine/compositions/source/local/<name>.yml`，重建脚本校验后直接装配；
   官方预设行变体在 `OFFICIAL_MODULES` 显式登记并生成到 `library/`；本地改写不得加入生成器补丁表，两处同名会 fail loud；
-- 用户目录刷新：`pnpm rematerialize:presets` 按各预设 `preset.yml` 重新物化组合与共享引擎。预设内嵌 `skills/` 不由 `writePreset` 管理，脚本默认只报告漂移；`--refresh-skills` 暂存包内文件与用户独有文件的合并树，再备份旧树并切换，失败恢复原目录。同名文件按模板更新，独有文件仍在有效目录，仅独有文件不触发重复备份；不沿符号链接外写。
+- 用户目录刷新：`pnpm rematerialize:presets` 按各预设 `preset.yml` 重新物化组合（引擎由插件包提供，不再物化共享引擎）。预设内嵌 `skills/` 不由 `writePreset` 管理，脚本默认只报告漂移；`--refresh-skills` 暂存包内文件与用户独有文件的合并树，再备份旧树并切换，失败恢复原目录。同名文件按模板更新，独有文件仍在有效目录，仅独有文件不触发重复备份；不沿符号链接外写。
 - 验证三连：`pnpm typecheck` + `pnpm lint` + `pnpm test`。

@@ -9,7 +9,8 @@
  *   - <preset>/agent.cordis.yml（组合，带 render 版本戳）
  *   - <preset>/prompt-configs/*.yml、custom-tools/*.yml、subagent-tools/policy.yml
  *   - <preset>/preset.md、agents.md、agents-instruction.md
- *   - <presetRoot>/.engine/（共享引擎；指纹未变时 writePreset 内部跳过重刷）
+ * 共享引擎不再物化：引擎由插件包提供，组合行引用包名说明符
+ * `dsh-plugin-prompt-tool/engine/<module>.mjs`（预设根下不再产生 `.engine/`）。
  *
  * 手写/官方格式预设（preset.yml 无 modules/params，如 liangshen）整体跳过，
  * 不覆盖用户手写组合。本项目不含旧参数/旧内容迁移代码：物化只按当前契约重跑。
@@ -225,10 +226,8 @@ for (const drift of staleSkills) {
   }
 }
 
-// 4) 物化后校验：组合版本戳与共享引擎标记存在（失败计入退出码）。
+// 4) 物化后校验：组合版本戳存在，且不再引用旧布局引擎目录（失败计入退出码）。
 if (!args.dryRun && materializedIds.length > 0) {
-  const marker = join(presetRoot, '.engine', '.pt-engine-fingerprint')
-  if (!existsSync(marker)) failures.push('共享引擎缺少 .engine/.pt-engine-fingerprint')
   for (const id of materializedIds) {
     const composition = join(presetRoot, id, 'agent.cordis.yml')
     let raw = ''
@@ -239,7 +238,7 @@ if (!args.dryRun && materializedIds.length > 0) {
       continue
     }
     if (!raw.includes(RENDER_STAMP_PREFIX)) failures.push(`${id}: agent.cordis.yml 缺少 render 版本戳`)
-    if (raw.includes('../engine/') || raw.includes('./engine/')) failures.push(`${id}: agent.cordis.yml 仍引用旧布局 engine/ 目录`)
+    if (['../engine/', './engine/', '../.engine/'].some((legacy) => raw.includes(legacy))) failures.push(`${id}: agent.cordis.yml 仍引用旧布局 engine/ 目录`)
   }
 }
 

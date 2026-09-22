@@ -83,13 +83,20 @@ node_modules 链）。因此插件**不得**改写 baseUrl：一旦把锚点换�
 （`@deepseek-ai/dsh-*`）就会从预设目录起向上找不到 node_modules，整份预设注册被拒
 （表现为 `pt-*` 在预设选择器里全部缺失、默认预设指向不存在的 id）。
 
-锚点归于宿主后，预设目录内按目录书写的**本地模块说明符**（`name` 以 `.` 开头，如
-`../.engine/prompt-config-engine.mjs`）在**装配期**换算为绝对 `file://` URL。换算只发生在内存
-里的注册定义：正本 `agent.cordis.yml` 一字不改，因此用户改 `DSH_HOME` 或复制整个预设根后，
-下次注册会按新位置重新换算。`configsDir`、`strategyDir`、`policyFile`、`triggersFile` 由引擎按
-`import.meta.url`（`<预设根>/.engine/`）自解析，必须保持相对形态，不参与换算——实测把
-`configsDir` 写成 Windows 盘符路径（`d:/…`）会被引擎的 `new URL()` 当成 URL scheme，报
-`is not readable: The URL must be of scheme file`（`engine/schema.mjs` 的读取失败分支）。
+锚点归于宿主后，组合内的本地引用由插件在**装配期**统一换算——只改内存里的注册定义，正本
+`agent.cordis.yml` 一字不改，因此用户改 `DSH_HOME` 或复制整个预设根后按新位置重新换算：
+
+- **共享引擎行**由生成侧写**包名说明符** `dsh-plugin-prompt-tool/engine/<module>.mjs`：引擎是
+  插件包资产，不再物化到 `<预设根>/.engine/`，预设根只承载用户数据。
+- **其它本地模块说明符**（`name` 以 `.` 开头）按预设目录换算为绝对 `file://`。
+- **受管配置字段**（`configsDir` / `strategyDir` / `policyFile` / `triggersFile`）按历史语义相对
+  `<预设根>/.engine/` 解析为绝对 `file://`。引擎由包内加载后其 `import.meta.url` 不再位于该目录，
+  而实测只有 `file://` 形态对全部受管字段一致有效（写成 Windows 盘符路径会被 `new URL()` 当成
+  URL scheme，报 `is not readable: The URL must be of scheme file`）。
+- 需要 `templateFile` 越界校验的引擎行（`prompt-config-engine`、`tool-config-engine`）额外注入
+  `presetRoot`；相对 `templateFile` 仍按历史引擎位置解析，用户预设与提示词配置无需改写。
+
+**旧布局不再兼容**：仍写 `./engine/`、`../.engine/` 的预设不再被特殊处理，需重建后重新物化。
 
 该取向与官方一致：`editing-cordis-compositions` 技能要求「Resolve assets from installed
 packages rather than a preset directory」，并把 `!!js` 限制在插件配置与 `disabled` 上（行 `name`
@@ -391,9 +398,9 @@ wholeWords/selectiveLogic）单一权威。两个写入端共用：
   子代理卡写 `moduleConfigs.tool-subagent.persona`。
 - 离线重物化：`pnpm rematerialize:presets`（`scripts/rematerialize-presets.mjs`）
   对每个插件格式预设（preset.yml 含 `modules` / `params`）重跑 `writePreset`：重刷
-  `agent.cordis.yml`（带 `# prompt-tool:render vN` 戳）、
-  `prompt-configs/`、`custom-tools/`、`subagent-tools/` 与预设根共享 `.engine/`
-  （指纹 = 有序相对路径 + 内容摘要，未变时跳过重刷；等字节的内容更新同样触发刷新）。
+  `agent.cordis.yml`（带 `# prompt-tool:render vN` 戳）、`prompt-configs/`、`custom-tools/`、
+  `subagent-tools/`。共享引擎不再物化（引擎由插件包提供，组合行引用包名说明符），
+  预设根下不会产生 `.engine/` 与指纹文件。
   手写/官方格式预设（无 `modules` / `params`，如
   `liangshen`）整体跳过，不覆盖手写组合。参数：`--dsh-home <dir>`、`--dry-run`。
   宿主运行时会锁住预设内 `skills/` 目录（技能监听器持有句柄），
@@ -548,7 +555,7 @@ buildSubagentToolParameters(c)     → 模型可见扩展参数 Schema
 
 ## 10. 契约测试
 
-完整预设导入复用 writer 的 `sourceDir` 与 `materializeOnly` 模式：从隔离来源物化到独立候选目录，最终 ID 与暂存位置分离，不写目标或同步共享引擎。安装方先完成工具／配置／附件校验，再版本复检和 rename 交换；普通保存与重建继续复用 writer。预设自有正文及本地 engine 保留，禁止遍历清理兄弟预设。详见 [资产交换](asset-transfer.md)。
+完整预设导入复用 writer 的 `sourceDir` 与 `materializeOnly` 模式：从隔离来源物化到独立候选目录，最终 ID 与暂存位置分离，不写目标，也不再同步共享引擎（引擎由插件包提供）。安装方先完成工具／配置／附件校验，再版本复检和 rename 交换；普通保存与重建继续复用 writer。预设自有正文及本地 engine 保留，禁止遍历清理兄弟预设。详见 [资产交换](asset-transfer.md)。
 
 - `test/host/engine-params-bridge.test.mjs`：PARAM_KEYS 派生一致性；每个 ENGINE_PARAM_KEYS 键有装配消费；MODEL_SEGMENT_MAP 段目标唯一。
 - `test/host/write-preset.test.mjs`：模型参数 patch 生成/留空跳过；空值删键（''/[]）；变量文件只读顶层 variables，保留空串与同名键，清空后不回退旧 params。

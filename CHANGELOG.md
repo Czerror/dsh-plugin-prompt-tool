@@ -1,5 +1,13 @@
 # Changelog
 
+## 引擎归位插件包（2026-09-23）
+
+- **BREAKING**：共享引擎不再物化到 `<预设根>/.engine/`，改由**插件包**提供——组合行的引擎引用是包名说明符 `dsh-plugin-prompt-tool/engine/<module>.mjs`（`package.json` 新增 `"./engine/*"` 导出）。预设包不再携带引擎，预设根只承载用户数据；`syncPresetEngine`、引擎指纹与物化回滚一并退场。
+- 装配期由 `preset-registry` 统一换算（只改内存注册定义，正本 `agent.cordis.yml` 一字不改）：受管配置字段（`configsDir` / `strategyDir` / `policyFile` / `triggersFile`）按历史语义相对 `<预设根>/.engine/` 解析为绝对 `file://`——实测只有该形态对全部受管字段一致有效；需要 `templateFile` 越界校验的引擎行注入 `presetRoot`，相对 `templateFile` 仍按历史引擎位置解析，用户预设与提示词配置无需改写。
+- 引擎侧只做基准解耦：`schema.loadTemplate` 接受显式预设根并对裸基准做目录语义归一；`prompt-config-engine` / `tool-config-engine` 的 config 新增可选 `presetRoot`。缺省行为与改动前完全一致。
+- **不兼容旧预设**：仍写 `./engine/`、`../.engine/` 的预设不再被特殊处理，保存或重建一次即迁移为新形态；已有 `.engine/` 目录不再被引用，插件不主动删除。
+- 升级后需用户重启 DSH 服务生效。
+
 ## 预设装配锚点修复（2026-09-23）
 
 - **修复 DSH 0.1.7 下整份预设注册被拒**：官方 `agentPresets.register()` 以调用方 ctx 的 `baseUrl` 建立预设 Loader 树，插件此前把它改写到预设目录，导致组合内的包名行（`@deepseek-ai/dsh-*`）从预设目录起解析、向上找不到 node_modules 而全部 `never started`，`mountPreset` 失败即整份预设注册被拒——表现为预设选择器里 `pt-*` 全部缺失、默认预设 `selectedDefault` 指向不存在的 id（新会话装配抛 `agent-preset/not-found`）。

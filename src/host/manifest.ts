@@ -368,13 +368,13 @@ function copyPresetDirectory(source: string, root: string, targetId: string): vo
       if (!file.startsWith(resolve(candidate) + sep)) throw new Error('组合文件路径越界')
       if (presetPathExists(file)) {
         const before = readFileSync(file, 'utf8')
-        const after = rewritePresetEngineReferences(before, targetId, files, candidate)
+        const after = rewritePresetEngineReferences(before, targetId, files)
         if (after !== before) writeFileSync(file, after, 'utf8')
       }
     }
     const composition = doc.get('composition')
     if (typeof composition === 'string' && composition.includes('\n')) {
-      const rewritten = rewritePresetEngineReferences(composition, targetId, files, candidate)
+      const rewritten = rewritePresetEngineReferences(composition, targetId, files)
       if (rewritten !== composition) { doc.set('composition', rewritten); writeFileSync(definition, doc.toString(), 'utf8') }
     }
     if (presetPathExists(target)) throw new Error(`目标预设已存在：${targetId}`)

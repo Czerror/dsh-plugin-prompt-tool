@@ -48,7 +48,7 @@ function seedPreset(home, name, template = 'pt-minimal') {
   return dir
 }
 
-test('rematerialize-presets：按当前 preset.yml 重新物化组合与共享引擎', () => {
+test('rematerialize-presets：按当前 preset.yml 重新物化组合，共享引擎引用为包名说明符', () => {
   const home = mkdtempSync(join(tmpdir(), 'pt-remat-'))
   try {
     const dir = seedPreset(home, 'minimal')
@@ -58,8 +58,16 @@ test('rematerialize-presets：按当前 preset.yml 重新物化组合与共享�
 
     const composition = readFileSync(join(dir, 'agent.cordis.yml'), 'utf8')
     assert.match(composition, /# prompt-tool:render v/, '组合带 render 版本戳')
-    assert.ok(Array.isArray(parseYaml(composition)), '组合是 YAML 数组')
-    assert.ok(existsSync(join(home, '.agent-presets', '.engine', '.pt-engine-fingerprint')), '共享引擎已物化')
+    const rows = parseYaml(composition)
+    assert.ok(Array.isArray(rows), '组合是 YAML 数组')
+    // 阶段 2 起共享引擎由插件包提供：组合行写包名说明符，受管配置位置仍按历史语义
+    // 相对 <预设根>/.engine/ 书写（注册期由 preset-registry 换算为绝对 file://）。
+    const engineRow = rows.find((row) => row?.id === 'prompt-config-engine')
+    assert.equal(engineRow?.name, 'dsh-plugin-prompt-tool/engine/prompt-config-engine.mjs',
+      '共享引擎行引用插件包说明符')
+    assert.equal(engineRow?.config?.configsDir, '../minimal/prompt-configs', '受管配置位置按历史语义书写')
+    assert.equal(existsSync(join(home, '.agent-presets', '.engine')), false,
+      '共享引擎不再物化到 <预设根>/.engine/，也没有引擎指纹文件')
     assert.ok(existsSync(join(dir, 'prompt-configs')), '提示词配置目录已物化')
   } finally {
     rmSync(home, { recursive: true, force: true })

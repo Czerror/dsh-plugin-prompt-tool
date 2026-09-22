@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -68,26 +68,34 @@ function readPersonaRow(presetDir, template) {
   return row
 }
 
-test('writePreset 共享引擎 .engine：预设目录不复制 engine，组合引用 ../.engine', () => {
+test('writePreset 共享引擎：预设根不物化 .engine，组合引用插件包说明符', () => {
   const dir = join(tmpdir(), `prompt-tool-wp-${process.pid}-${Date.now()}`)
   const presetDir = join(dir, 'preset')
   try {
     writePreset('PROMPT', makeOptions(presetDir))
-    // 预设根共享引擎完整存在（含 vendor；生成期 compositions 不复制）。
-    const engineDir = join(presetDir, '.engine')
-    assert.ok(existsSync(join(engineDir, 'prompt-config-engine.mjs')), '容器根共享引擎存在')
-    assert.ok(existsSync(join(engineDir, 'vendor', 'yaml', 'index.js')), '容器根共享引擎含 vendor')
-    assert.equal(readFileSync(join(engineDir, 'THIRD_PARTY_LICENSES'), 'utf8'),
-      readFileSync(join(ROOT, 'engine', 'THIRD_PARTY_LICENSES'), 'utf8'), '上游版权与许可随物化引擎保留')
-    assert.equal(existsSync(join(engineDir, 'compositions')), false, '生成期 compositions 不复制')
-    assert.equal(existsSync(join(presetDir, 'fixture', 'engine')), false, '子预设不再复制 engine')
+    // 共享引擎自阶段 2 起由**插件包**提供（组合行引用 dsh-plugin-prompt-tool/engine/*.mjs）：
+    // 预设根下不再出现 .engine/ 目录，也不再写引擎指纹文件。
+    assert.equal(existsSync(join(presetDir, '.engine')), false, '预设根不再物化 .engine')
+    assert.equal(existsSync(join(presetDir, '.pt-engine-fingerprint')), false, '不再写引擎指纹文件')
+    assert.deepEqual(readdirSync(presetDir).filter((name) => name.startsWith('.')), [],
+      '预设根不残留 .engine/.pt-engine-fingerprint/临时目录')
+    assert.equal(existsSync(join(presetDir, 'fixture', 'engine')), false, '子预设不复制 engine')
     assert.equal(existsSync(join(presetDir, 'agent.cordis.yml')), false, '预设根不再写容器根转发')
-    // 组合路径重写：引擎引用 ../.engine（相对预设目录 = 预设根/.engine），
-    // configsDir ../fixture/prompt-configs（相对 .engine = 预设目录/prompt-configs，数学可验证）。
+    // 组合路径重写：引擎行改引用包名说明符（预设包不再携带 engine/，旧 ./engine/ 与
+    // ../.engine/ 都不再被识别）；configsDir 保持历史语义 `../<id>/...`
+    //（相对 <预设根>/.engine/ 解析 = 预设目录/prompt-configs），由 preset-registry 注册期换算。
     const sub = readFileSync(join(presetDir, 'fixture', 'agent.cordis.yml'), 'utf8')
-    assert.match(sub, /name: \.\.\/\.engine\/prompt-config-engine\.mjs/, '预设引擎引用 ../.engine（预设根共享）')
+    assert.doesNotMatch(sub, /name: ['"]?\.{1,2}\/\.?engine\//,
+      '产物不得残留 ./engine/ 或 ../.engine/ 本地引用')
+    for (const module of ['prompt-config-engine', 'run-code-env', 'tool-git-bash', 'skill-search']) {
+      assert.match(sub, new RegExp(`name: dsh-plugin-prompt-tool/engine/${module}\\.mjs`),
+        `引擎行 ${module} 应引用插件包说明符`)
+      assert.ok(existsSync(join(ROOT, 'engine', `${module}.mjs`)),
+        `说明符 ${module}.mjs 应在包内引擎目录存在（否则引用悬空）`)
+    }
     assert.match(sub, /configsDir: \.\.\/fixture\/prompt-configs/, 'configsDir 相对 .engine 指向预设目录')
     const engineRow = parseYaml(sub).find((row) => row?.id === 'prompt-config-engine')
+    // 虚拟引擎基准 <预设根>/.engine/（注册期换算用的同一基准；URL 解析无需目录真实存在）。
     const engineFileUrl = pathToFileURL(join(presetDir, '.engine', 'prompt-config-engine.mjs'))
     const resolved = new URL(engineRow.config.configsDir + '/', engineFileUrl)
     assert.ok(existsSync(resolved), `configsDir 解析后应存在: ${resolved.pathname}`)
@@ -96,50 +104,59 @@ test('writePreset 共享引擎 .engine：预设目录不复制 engine，组合�
   }
 })
 
-test('writePreset 引擎指纹：包内引擎未变时二次写入不重刷共享引擎', () => {
+test('writePreset 不再有引擎指纹：二次写入不物化 .engine，产物幂等', () => {
   const dir = join(tmpdir(), `prompt-tool-fp-${process.pid}-${Date.now()}`)
   const presetDir = join(dir, 'preset')
   try {
     writePreset('PROMPT', makeOptions(presetDir))
-    const engineFile = join(presetDir, '.engine', 'prompt-config-engine.mjs')
-    const marker = join(presetDir, '.engine', '.pt-engine-fingerprint')
-    assert.ok(existsSync(marker), '指纹标记应写入')
-    assert.ok(readFileSync(marker, 'utf8').length > 10, '指纹内容非空')
-    const mtime1 = statSync(engineFile).mtimeMs
+    // 引擎指纹（.engine/.pt-engine-fingerprint + 内容摘要比对、未变则不重刷）已随共享引擎
+    // 归位插件包整体删除：二次写入不再有「是否重刷共享引擎」这一步，只需保证产物本身幂等
+    // 且不产生引擎目录/指纹文件。
+    const stable = readFileSync(join(presetDir, 'fixture', 'agent.cordis.yml'), 'utf8')
     writePreset('PROMPT', makeOptions(presetDir))
-    const mtime2 = statSync(engineFile).mtimeMs
-    assert.equal(mtime2, mtime1, '引擎未变不应重刷（mtime 保持不变）')
+    assert.equal(readFileSync(join(presetDir, 'fixture', 'agent.cordis.yml'), 'utf8'), stable,
+      '二次写入产物逐字节稳定（引擎说明符不来回改写）')
+    assert.equal(existsSync(join(presetDir, '.engine')), false, '二次写入仍不物化 .engine')
+    assert.equal(existsSync(join(presetDir, '.pt-engine-fingerprint')), false, '不再写引擎指纹文件')
+    assert.deepEqual(readdirSync(presetDir).filter((name) => name.startsWith('.')), [],
+      '二次写入不残留引擎/指纹/临时/备份目录')
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
 })
 
-test('R4 引擎指纹含内容摘要：等字节修改也刷新，内容不变与新增/删除都正确', async () => {
-  const { engineFingerprint } = await import('../../src/host/write-preset.ts')
-  const fake = mkdtempSync(join(tmpdir(), 'pt-fp-content-'))
+test('R4 引擎不再随预设物化：产物里没有引擎副本，引擎行说明符指向包内真实文件', () => {
+  const dir = join(tmpdir(), `prompt-tool-engine-pkg-${process.pid}-${Date.now()}`)
+  const presetDir = join(dir, 'preset')
   try {
-    const file = join(fake, 'a.mjs')
-    writeFileSync(file, 'export const version = 1\n', 'utf8')
-    writeFileSync(join(fake, 'b.mjs'), 'export const other = true\n', 'utf8')
-    // compositions 是生成期资产：与真实指纹一致地排除。
-    mkdirSync(join(fake, 'compositions'), { recursive: true })
-    writeFileSync(join(fake, 'compositions', 'ignored.yml'), 'x\n', 'utf8')
-    const first = engineFingerprint(fake)
-    assert.equal(engineFingerprint(fake), first, '内容不变时指纹稳定（无变化不重刷）')
-
-    writeFileSync(file, 'export const version = 2\n', 'utf8')
-    assert.notEqual(engineFingerprint(fake), first, '等字节内容变化必须改变指纹（旧实现只比大小）')
-    const changed = engineFingerprint(fake)
-
-    writeFileSync(join(fake, 'c.mjs'), 'export const added = true\n', 'utf8')
-    assert.notEqual(engineFingerprint(fake), changed, '新增文件改变指纹')
-    rmSync(join(fake, 'c.mjs'))
-    assert.equal(engineFingerprint(fake), changed, '删除新增文件后指纹回到原值')
-
-    writeFileSync(join(fake, 'compositions', 'ignored.yml'), 'yy\n', 'utf8')
-    assert.equal(engineFingerprint(fake), changed, 'compositions 生成期资产不计入指纹')
+    writePreset('PROMPT', makeOptions(presetDir))
+    // 包内引擎目录是说明符的唯一解析目标（package.json exports "./engine/*"）。
+    const packaged = new Set(readdirSync(join(ROOT, 'engine')).filter((name) => name.endsWith('.mjs')))
+    assert.ok(packaged.has('prompt-config-engine.mjs'), '包内引擎目录应存在')
+    /** 预设根下递归收集全部产物文件（相对路径，正斜杠）。 */
+    const walk = (prefix) => readdirSync(join(presetDir, prefix), { withFileTypes: true })
+      .flatMap((entry) => {
+        const rel = prefix.length > 0 ? `${prefix}/${entry.name}` : entry.name
+        return entry.isDirectory() ? walk(rel) : [rel]
+      })
+    const files = walk('')
+    // 引擎副本判据：出现在 engine/ 或 .engine/ 路径段下的产物，或与包内引擎模块同名的文件。
+    assert.deepEqual(files.filter((rel) => /(^|\/)\.?engine\//.test(rel)), [],
+      '预设产物不含任何引擎目录副本（.engine/ 与逐预设 engine/ 都不物化）')
+    assert.deepEqual(files.filter((rel) => packaged.has(rel.split('/').pop())), [],
+      '预设产物不含与包内引擎同名的文件')
+    assert.deepEqual(files.filter((rel) => rel.includes('pt-engine-fingerprint')), [], '不再写引擎指纹文件')
+    const rows = parseYaml(readFileSync(join(presetDir, 'fixture', 'agent.cordis.yml'), 'utf8'))
+    const prefix = 'dsh-plugin-prompt-tool/engine/'
+    const engineRows = rows.filter((row) => typeof row?.name === 'string'
+      && (row.name.startsWith(prefix) || /^\.{1,2}\/\.?engine\//.test(row.name)))
+    assert.ok(engineRows.length > 0, '组合应含引擎行')
+    for (const row of engineRows) {
+      assert.match(row.name, /^dsh-plugin-prompt-tool\/engine\/[^/]+\.mjs$/, `${row.id}: 引擎行应引用插件包说明符`)
+      assert.ok(packaged.has(row.name.slice(prefix.length)), `${row.id}: 说明符 ${row.name} 应在包内引擎目录存在`)
+    }
   } finally {
-    rmSync(fake, { recursive: true, force: true })
+    rmSync(dir, { recursive: true, force: true })
   }
 })
 
@@ -460,7 +477,8 @@ test('writePreset outputId 覆盖：别名目录独立渲染（旧容器 id 兼�
     assert.equal(existsSync(join(presetDir, 'fixture', 'preset.md')), false, '模板同名目录不受别名渲染影响')
     const sub = readFileSync(join(presetDir, 'prompt-tool', 'agent.cordis.yml'), 'utf8')
     assert.match(sub, /configsDir: \.\.\/prompt-tool\/prompt-configs/, '组合 configsDir 重写到别名目录')
-    assert.match(sub, /name: \.\.\/\.engine\/prompt-config-engine\.mjs/, '引擎引用共享 .engine')
+    assert.match(sub, /name: dsh-plugin-prompt-tool\/engine\/prompt-config-engine\.mjs/,
+      '引擎引用插件包说明符（不再物化 .engine）')
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
@@ -627,7 +645,10 @@ test('writePreset 自定义工具渲染 custom-tools/<n>-<id>.yml（源 = preset
     assert.deepEqual(parsed.parameters, { type: 'object', properties: { who: { type: 'string', description: '对象' } }, required: ['who'] }, '参数 DSL 经官方转换器物化为标准 JSON Schema')
     const composition = parseYaml(readFileSync(join(presetDir, 'fixture', 'agent.cordis.yml'), 'utf8'))
     const toolRow = composition.find((row) => row?.id === 'tool-config-engine')
-    assert.equal(toolRow.config.configsDir, '../fixture/custom-tools', 'custom-tools 路径应重写到当前预设')
+    assert.equal(toolRow.name, 'dsh-plugin-prompt-tool/engine/tool-config-engine.mjs',
+      'tool-config-engine 行引用插件包说明符')
+    assert.equal(toolRow.config.configsDir, '../fixture/custom-tools',
+      'custom-tools 路径应重写为相对虚拟引擎基准 <预设根>/.engine/ 的 ../<id>/custom-tools')
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
@@ -1096,5 +1117,7 @@ test('writePreset：模板名与输出目录名分离，安全 id 输出仍渲�
   })
   const composition = readFileSync(join(outputRoot, 'pt-safe', 'agent.cordis.yml'), 'utf8')
   assert.match(composition, /configsDir: \.\.\/pt-safe\/prompt-configs/, '引擎配置目录应指向输出目录自身')
+  assert.match(composition, /name: dsh-plugin-prompt-tool\/engine\/prompt-config-engine\.mjs/,
+    '引擎引用插件包说明符（与输出目录名解耦）')
   assert.equal(existsSync(join(outputRoot, 'standard')), false, '模板名不会被当成输出目录')
 })

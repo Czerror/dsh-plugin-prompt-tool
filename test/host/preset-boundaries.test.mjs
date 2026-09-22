@@ -40,11 +40,13 @@ test('writer 保留正文、二进制、自有 engine 和兄弟目录，仅重�
   assert.equal(readFileSync(join(sibling, 'engine/owned.mjs'), 'utf8'), 'SIBLING')
   assert.equal(readFileSync(join(dir, 'engine/private.mjs'), 'utf8'), 'export default {}')
   const rows = parse(readFileSync(join(dir, 'agent.cordis.yml'), 'utf8'))
-  assert.equal(rows[0].name, './engine/private.mjs')
-  assert.equal(rows[0].config.text, './engine/private.mjs ../prompt-configs')
-  assert.equal(rows[1].name, '../.engine/prompt-config-engine.mjs')
+  assert.equal(rows[0].name, './engine/private.mjs', '预设自有模块说明符不改写')
+  assert.equal(rows[0].config.text, './engine/private.mjs ../prompt-configs', '正文里的路径原样保留')
+  // 共享引擎行一律改写为插件包说明符（引擎由插件包提供，不再物化 <预设根>/.engine/）。
+  assert.equal(rows[1].name, 'dsh-plugin-prompt-tool/engine/prompt-config-engine.mjs')
   assert.equal(rows[1].config.configsDir, '../own/prompt-configs')
   assert.equal(rows[1].config.text, './engine/private.mjs ../prompt-configs')
+  assert.equal(existsSync(join(root, '.engine')), false, '写者不再物化 <预设根>/.engine/')
 })
 
 test('隔离候选使用最终 ID，但不改目标、共享引擎与来源；失败清理暂存', () => {
@@ -131,15 +133,18 @@ test('复制交换被占用时拒绝安装，来源不变且没有原地覆盖�
   }
 })
 
-test('自有同名引擎不被共享引擎接管，链接预设根和文件读取失败拒绝', (t) => {
+test('预设自带 engine/ 原样保留，组合引用改写为包名说明符；链接预设根和文件读取失败拒绝', (t) => {
   const root = mkdtempSync(join(home, 'owned-engine-'))
   const dir = preset(root, 'own', 'id: own\ncomposition: ./agent.cordis.yml\n')
   mkdirSync(join(dir, 'engine'))
   writeFileSync(join(dir, 'engine/prompt-config-engine.mjs'), 'OWN ENGINE')
   writeFileSync(join(dir, 'agent.cordis.yml'), '- id: prompt-config-engine\n  name: ./engine/prompt-config-engine.mjs\n  config:\n    configsDir: ../prompt-configs\n')
   const candidate = writePreset('', { presetDir: root, presetTemplate: 'own', materializeOnly: true, presetOrder: 5, promptConfigs: [] })
-  assert.equal(parse(readFileSync(join(candidate, 'agent.cordis.yml'), 'utf8'))[0].name, './engine/prompt-config-engine.mjs')
+  // 共享引擎引用（包名说明符）与预设自带的同名文件是两回事：引用一律改写，
+  // 预设自带的 engine/ 目录既不被删除、也不被当作共享引擎产物接管。
+  assert.equal(parse(readFileSync(join(candidate, 'agent.cordis.yml'), 'utf8'))[0].name, 'dsh-plugin-prompt-tool/engine/prompt-config-engine.mjs')
   assert.equal(readFileSync(join(candidate, 'engine/prompt-config-engine.mjs'), 'utf8'), 'OWN ENGINE')
+  assert.equal(readFileSync(join(dir, 'engine/prompt-config-engine.mjs'), 'utf8'), 'OWN ENGINE', '来源预设的自有引擎文件不被改写')
   rmSync(candidate, { recursive: true })
   const linkedRoot = join(home, 'root-link')
   symlinkSync(root, linkedRoot, process.platform === 'win32' ? 'junction' : 'dir')

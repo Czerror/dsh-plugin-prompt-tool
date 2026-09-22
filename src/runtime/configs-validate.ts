@@ -76,6 +76,8 @@ export async function validatePromptConfigs(value: unknown, options: { strategyD
   }
   const engineOptions = {
     ...(options.strategyDir ? { strategyDir: options.strategyDir } : {}),
+    // templateBaseUrl 表达的是**历史引擎位置** `<预设根>/.engine/`（引擎现在包内，缺省基准不再适用）：
+    // loadTemplate 由它推出预设根做 templateFile 越界校验，并让相对 templateFile 继续按该位置解析。
     ...(options.presetDir ? { templateBaseUrl: pathToFileURL(join(dirname(options.presetDir), '.engine', 'schema.mjs')).href } : {}),
   }
   const files: PromptConfigFile[] = []

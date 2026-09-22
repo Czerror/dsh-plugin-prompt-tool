@@ -106,8 +106,32 @@ export const ENGINE_MANAGED_PATHS = {
   'declared-triggers.mjs': { field: 'triggersFile', directory: 'triggers.yml' },
 } as const
 
-/** 仅处理 Cordis 行的已知共享引擎引用和受管配置位置，正文与自有引擎保持不变。 */
-export function rewritePresetEngineReferences(raw: string, outputId: string, engineFiles: ReadonlySet<string>, sourceDir?: string): string {
+/** 插件包内引擎模块的说明符前缀（引擎由插件提供，预设包不再携带引擎）。 */
+export const PRESET_ENGINE_PREFIX = 'dsh-plugin-prompt-tool/engine/'
+
+/**
+ * 行名引用的共享引擎模块名。
+ *
+ * 必须同时识别两种形态：组合源的本地写法（`./engine/x.mjs`，以及旧预设的
+ * `../.engine/x.mjs`）与**产物的包名说明符**（`dsh-plugin-prompt-tool/engine/x.mjs`）。
+ * 复制/导入预设时源文件已是产物形态——只认前者会让受管字段重写静默失效（副本的
+ * `configsDir` 会继续指向原预设）。
+ */
+function engineModuleNameOf(name: string): string | undefined {
+  if (name.startsWith(PRESET_ENGINE_PREFIX)) {
+    const rest = name.slice(PRESET_ENGINE_PREFIX.length)
+    return rest.length > 0 && !rest.includes('/') ? rest : undefined
+  }
+  return /^(?:\.\/engine\/|\.\.\/\.engine\/)([^/]+\.mjs)$/.exec(name)?.[1]
+}
+
+/**
+ * 仅处理 Cordis 行的已知共享引擎引用和受管配置位置，正文与自有引擎保持不变。
+ *
+ * 阶段 2 起引擎由插件包提供：`./engine/x.mjs` 与旧预设的 `../.engine/x.mjs` 一律改写为包名
+ * 说明符 `dsh-plugin-prompt-tool/engine/x.mjs`；源包自带的 `engine/` 目录不再被采纳。
+ */
+export function rewritePresetEngineReferences(raw: string, outputId: string, engineFiles: ReadonlySet<string>): string {
   const doc = parseDocument(raw, { logLevel: 'silent' })
   if (doc.errors.length > 0 || !(doc.contents instanceof YAMLSeq)) throw new Error('组合必须是合法 YAML 数组')
   let changed = false
@@ -115,14 +139,14 @@ export function rewritePresetEngineReferences(raw: string, outputId: string, eng
     for (const row of rows.items) {
       if (!(row instanceof YAMLMap)) continue
       const name = row.get('name')
-      const match = typeof name === 'string' ? /^(\.\/engine\/|\.\.\/\.engine\/)([^/]+\.mjs)$/.exec(name) : null
-      if (match !== null && engineFiles.has(match[2]!)
-        && (match[1] === '../.engine/' || sourceDir === undefined || !presetPathExists(join(sourceDir, 'engine', match[2]!)))) {
-        if (match[1] === './engine/') { row.set('name', `../.engine/${match[2]}`); changed = true }
+      const engineModule = typeof name === 'string' ? engineModuleNameOf(name) : undefined
+      if (engineModule !== undefined && engineFiles.has(engineModule)) {
+        const specifier = `${PRESET_ENGINE_PREFIX}${engineModule}`
+        if (name !== specifier) { row.set('name', specifier); changed = true }
         const config = row.get('config', true)
         if (config instanceof YAMLMap) {
           // 受管位置查表（与组合源 yml 的一致性由守卫保证）；表外的引擎模块不改写。
-          const managed = ENGINE_MANAGED_PATHS[match[2] as keyof typeof ENGINE_MANAGED_PATHS] as
+          const managed = ENGINE_MANAGED_PATHS[engineModule as keyof typeof ENGINE_MANAGED_PATHS] as
             { field: string; directory: string } | undefined
           const field = managed?.field ?? 'configsDir'
           const directory = managed?.directory

@@ -6,10 +6,10 @@
 //   5. 与晋升门控声明共挂时门控仍在外层（未晋升步的注入被剥离）、reject 不被吞掉。
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
-import { fileURLToPath, pathToFileURL } from 'node:url'
+import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { Context } from '@deepseek-ai/cordis'
 import { NamedEntries, ScopedLayers, bindScopeParent, createScope, scopeOf } from '@deepseek-ai/dsh-scope'
 import { agentEvents } from '@deepseek-ai/dsh-agent'
@@ -34,6 +34,8 @@ const mountGate = (ctx) =>
   mountDeclarations(ctx, compileDeclarations(GATE_DECLARATIONS, { ctx }), { plugin: 'pre-step-wiring' })
 
 const ENGINE_DIR = new URL('../../engine/', import.meta.url).href
+/** 包内共享引擎源码（组合行写包名说明符；`<预设根>/.engine/` 不再物化）。 */
+const PACKAGE_ENGINE = new URL('../../engine/prompt-config-engine.mjs', import.meta.url).href
 const signalOf = () => new AbortController().signal
 
 const userMessage = (text = 'claimed', id = 'u-claimed') => ({
@@ -89,8 +91,9 @@ const installEngine = (app, mount, specs, options = {}) =>
   )
 
 /**
- * 物化布局下的引擎行（`<presetRoot>/<template>/agent.cordis.yml` + `.engine/`）：
- * 用来验证引擎把「本 mount 是否仍挂着官方指令行」作为装配事实上报给协调器。
+ * 预设根布局下的引擎行（`<presetRoot>/<template>/agent.cordis.yml`）：用来验证引擎把
+ * 「本 mount 是否仍挂着官方指令行」作为装配事实上报给协调器。共享引擎自阶段 2 起由插件包
+ * 提供（组合行写包名说明符），`<预设根>/.engine/` 不再物化。
  */
 const runEngineRow = async (compositionRow) => {
   const root = mkdtempSync(join(tmpdir(), 'pt-facts-'))
@@ -102,10 +105,6 @@ const runEngineRow = async (compositionRow) => {
     'utf8',
   )
   writeFileSync(join(templateDir, 'agent.cordis.yml'), compositionRow, 'utf8')
-  const engineFile = fileURLToPath(new URL('../../engine/prompt-config-engine.mjs', import.meta.url))
-  // 真实物化布局：引擎只物化一份于 `<presetRoot>/.engine/`，组合引用 `../.engine/`，
-  // configsDir 相对引擎文件解析 → `../<template>/prompt-configs`。
-  cpSync(dirname(engineFile), join(root, '.engine'), { recursive: true })
   const registered = []
   const app = new Context()
   app.provide(PRE_STEP_COORDINATOR_SERVICE, {
@@ -114,8 +113,13 @@ const runEngineRow = async (compositionRow) => {
       return () => {}
     },
   })
-  const engine = await import(pathToFileURL(join(root, '.engine', 'prompt-config-engine.mjs')).href)
-  engine.apply(app, { configsDir: '../standard/prompt-configs' })
+  const engine = await import(PACKAGE_ENGINE)
+  // 受管字段仍按历史语义相对 `<预设根>/.engine/` 书写，装配期由 preset-registry 换算为
+  // 绝对 file://；这里给出等价值（基准目录本身不再物化）。
+  engine.apply(app, {
+    configsDir: pathToFileURL(join(templateDir, 'prompt-configs')).href,
+    presetRoot: `${pathToFileURL(root).href}/`,
+  })
   rmSync(root, { recursive: true, force: true })
   return registered
 }

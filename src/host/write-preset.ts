@@ -5,11 +5,10 @@
  *   meta + content + modules(模块清单)+ params(直读参数)+ 可选 promptConfigs 覆盖。
  * 默认提示词配置与组合 token 都由引擎按 params 生成,参数文件不含任何模板语法。
  * 输出 = 官方对齐布局：presetDir/<template>/（预设目录，agent.cordis.yml 组合本体
- * 直接可挂载）+ presetDir/.engine/（共享引擎，点前缀不占预设槽）。
+ * 直接可挂载）。共享引擎自阶段 2 起由插件包提供（组合行引用包内说明符），不再物化。
  */
 
 import { writeFileSync, mkdirSync, rmSync, cpSync, mkdtempSync, renameSync, existsSync, readdirSync, readFileSync } from 'node:fs'
-import { createHash } from 'node:crypto'
 import { join } from 'node:path'
 import { parseDocument, stringify as stringifyYaml } from 'yaml'
 // 纯策略模块同时由 host writer 与生成运行时消费；保持校验算法单一来源。
@@ -19,7 +18,7 @@ import { validateSubagentToolPolicy } from '../../engine/subagent-tool-policy-co
 import { compileDeclarations } from '../../engine/trigger-spec.mjs'
 import { DEFAULT_PRESET_DIR } from './paths.ts'
 import { DEFAULT_PRESET_ID } from '../shared/preset-ids.ts'
-import { assertPresetDirectory, assertPresetId, assertPresetTree, canonicalPresetRoot, engineModuleFileNames, presetPathExists, rewritePresetEngineReferences } from './preset-install.ts'
+import { assertPresetDirectory, assertPresetId, assertPresetTree, engineModuleFileNames, rewritePresetEngineReferences } from './preset-install.ts'
 import { compileCustomTool } from './custom-tools.ts'
 import { validateCustomToolIdentities } from '../shared/engine-capabilities.ts'
 import { ENGINE_PARAM_KEYS, type PresetWriterParams } from '../shared/engine-params.ts'
@@ -50,37 +49,6 @@ const ENGINE_DIR = packageEngineDir()
  */
 export const RENDER_VERSION = 5
 export const RENDER_STAMP = `# prompt-tool:render v${RENDER_VERSION}`
-
-/** 包内引擎指纹（有序相对路径 + 内容摘要）：引擎文件未变时共享引擎不重刷。
- *  每次 settings 变更都会 rebuildPreset → writePreset，引擎重刷（130 文件复制 +
- *  Windows 锁等待）是纯浪费；指纹遍历 + 摘要约十几毫秒，远小于复制成本。
- *  只看路径与大小会漏掉等字节内容更新（改版本号、改同长度常量），用户目录里
- *  的旧引擎会一直不刷新——所以摘要必须覆盖内容。 */
-export function engineFingerprint(dir: string = ENGINE_DIR): string {
-  const parts: string[] = []
-  const walk = (rel: string): void => {
-    for (const entry of readdirSync(join(dir, rel), { withFileTypes: true })) {
-      const child = rel.length === 0 ? entry.name : `${rel}/${entry.name}`
-      if (entry.isDirectory()) {
-        // 生成期资产（组合库/源）运行时不需要，不复制也不计入指纹。
-        if (rel.length === 0 && entry.name === 'compositions') continue
-        walk(child)
-      }
-      else parts.push(child)
-    }
-  }
-  walk('')
-  const digest = createHash('sha256')
-  for (const rel of parts.sort()) {
-    digest.update(rel)
-    digest.update('\0')
-    digest.update(readFileSync(join(dir, rel)))
-    digest.update('\0')
-  }
-  return digest.digest('hex')
-}
-
-const ENGINE_FINGERPRINT_MARKER = '.pt-engine-fingerprint'
 
 /** 剥离文本中的预设级变量引用（{{key}} → 空串）；内置变量（{{DSH_HOME}} 等）保留。
  *  模板变量插值停用时由 writePreset 调用，避免 {{key}} 残留导致官方渲染 unknown variable。 */
@@ -135,48 +103,8 @@ function isLockError(error: unknown): boolean {
   return code === 'EPERM' || code === 'EACCES' || code === 'EBUSY'
 }
 
-/** 共享引擎是安装级资产；独立于单预设候选物化，指纹不变时不写盘。 */
-export function syncPresetEngine(root: string): void {
-  const presetDir = canonicalPresetRoot(root, true)
-  mkdirSync(presetDir, { recursive: true })
-  const sharedEngine = join(presetDir, '.engine')
-  if (presetPathExists(sharedEngine)) assertPresetTree(sharedEngine)
-  const fingerprint = engineFingerprint()
-  let currentMarker = ''
-  try {
-    currentMarker = readFileSync(join(sharedEngine, ENGINE_FINGERPRINT_MARKER), 'utf8')
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
-  }
-  if (currentMarker === fingerprint) return
-  const stagedEngine = mkdtempSync(join(presetDir, '.engine.tmp-'))
-  let committed = false
-  try {
-    for (const entry of readdirSync(ENGINE_DIR, { withFileTypes: true })) {
-      if (entry.name === 'compositions') continue
-      cpSync(join(ENGINE_DIR, entry.name), join(stagedEngine, entry.name), { recursive: true, force: true })
-    }
-    writeFileSync(join(stagedEngine, ENGINE_FINGERPRINT_MARKER), fingerprint, 'utf8')
-    const engineBackup = join(presetDir, `.engine.bak-${Date.now().toString(36)}`)
-    let oldMoved = false
-    if (presetPathExists(sharedEngine)) {
-      withLockRetry(() => renameSync(sharedEngine, engineBackup))
-      oldMoved = true
-    }
-    try {
-      withLockRetry(() => renameSync(stagedEngine, sharedEngine))
-    } catch (error) {
-      if (oldMoved) {
-        try { withLockRetry(() => renameSync(engineBackup, sharedEngine)) } catch { /* 保留 backup 供人工恢复 */ }
-      }
-      throw error
-    }
-    committed = true
-    if (oldMoved) rmSync(engineBackup, { recursive: true, force: true })
-  } finally {
-    if (!committed) rmSync(stagedEngine, { recursive: true, force: true })
-  }
-}
+// 共享引擎自阶段 2 起由**插件包**提供（组合行引用 `dsh-plugin-prompt-tool/engine/*.mjs`），
+// 不再物化到 `<预设根>/.engine/`；用户目录里既有的 `.engine/` 不再被引用，保留不主动清理。
 
 /**
  * 原地合并写：srcDir 覆盖到已存在的 destDir（目录交换被占用时的回退路径）。
@@ -317,7 +245,7 @@ export function writePreset(prompt: string, options: WritePresetOptions): string
 
   // 官方对齐布局：presetDir 是预设根（官方 USER_PRESET_DIR），每个预设一个
   // 官方预设目录 presetDir/<template>/（agent.cordis.yml 组合本体直接可挂载），
-  // 共享引擎物化一份于 presetDir/.engine（点前缀，官方 discovery 跳过）。
+  // 共享引擎由插件包提供（组合行引用包名说明符），不再物化到 presetDir/.engine。
   const targetDir = assertPresetDirectory(presetDir, outputId, true)
   mkdirSync(presetDir, { recursive: true })
   const tmpDir = mkdtempSync(join(presetDir, `.${outputId}.tmp-`))
@@ -326,11 +254,11 @@ export function writePreset(prompt: string, options: WritePresetOptions): string
   // 1) 组合文件:modules 模块库装配 + 参数桥行级合并 + YAML 校验。
   const composition = renderComposition(Array.isArray(options.promptConfigs) && options.promptConfigs.length > 0 ? { ...spec, promptConfigs: options.promptConfigs } : spec, runtime, templateDir)
   assertCompositionArray(composition, spec)
-  // 共享引擎路径重写（引擎只物化一份于预设根 .engine）：组合的引擎引用
-  // ./engine/ → ../.engine/（相对预设目录 = 预设根/.engine）；configsDir 相对
-  // 引擎文件（.engine/）解析 → ../<template>/{prompt-configs,custom-tools}（指向本预设目录）。
+  // 引擎引用重写：组合源的 ./engine/ 与旧预设的 ../.engine/ 一律写成包名说明符
+  // dsh-plugin-prompt-tool/engine/<module>.mjs（引擎不再物化）；受管配置字段保持
+  // 「相对历史引擎位置 <预设根>/.engine/」的形态，由 preset-registry 在注册期换算为绝对 file://。
   const subComposition = rewritePresetEngineReferences(composition, outputId,
-    engineModuleFileNames(ENGINE_DIR), templateDir)
+    engineModuleFileNames(ENGINE_DIR))
   writeFileSync(join(outDir, 'agent.cordis.yml'), `${RENDER_STAMP}\n${subComposition}`, 'utf8')
 
   // 2) 宿主预设元数据：新布局 preset.yml = 参数 + 元数据一体。
@@ -576,7 +504,6 @@ export function writePreset(prompt: string, options: WritePresetOptions): string
 
   // 候选模式在此结束，安装事务由调用方单独执行，绝不进入原地覆盖回退。
   if (options.materializeOnly) return outDir
-  syncPresetEngine(presetDir)
 
   // 7) 原子提交:新目录完全写好后替换旧目录;失败时恢复旧目录并清理临时目录。
   //    目录被占用（Windows 打开句柄/进程 cwd 拒绝整目录改名，如预设内 skills 被
