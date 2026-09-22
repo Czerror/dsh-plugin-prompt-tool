@@ -70,6 +70,9 @@ function makeHarness(initial, options = {}) {
     tools: { register: () => () => {} },
     effect,
     extend: () => ({ agentPresets: registry }),
+    // 真实 cordis ctx 直接暴露服务属性（traceable proxy）；实现按 `ctx.agentPresets` 取 registry，
+    // 不再改写 baseUrl，因此这里必须提供同名属性。
+    agentPresets: registry,
     on: (event, callback) => {
       const entries = listeners.get(event) ?? []
       entries.push(callback)

@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { readFileSync, statSync } from 'node:fs'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { parse } from 'yaml'
 import type { Context } from '@deepseek-ai/cordis'
@@ -9,6 +9,46 @@ import type { PresetDefinition } from '@deepseek-ai/dsh-agent-preset-registry'
 import { listPresets, loadPresetSpec } from './manifest.ts'
 
 type Registration = { definition: PresetDefinition; fingerprint: string; dispose: () => Promise<void> }
+
+function isJsExpr(value: unknown): boolean {
+  return typeof value === 'object' && value !== null && typeof (value as { __jsExpr?: unknown }).__jsExpr === 'string'
+}
+
+/** 行级换算：只认行对象自己的 `name`，不误伤 config 里的同名业务字段。 */
+function absolutizeRow(row: unknown, presetDir: string): unknown {
+  if (row === null || typeof row !== 'object' || Array.isArray(row) || isJsExpr(row)) return row
+  const out: Record<string, unknown> = {}
+  for (const [key, item] of Object.entries(row as Record<string, unknown>)) {
+    if (key === 'name' && typeof item === 'string' && item.startsWith('.')) {
+      out[key] = pathToFileURL(resolve(presetDir, item)).href
+    } else if (key === 'config' && Array.isArray(item)) {
+      // `cordis:group` 的子行列表：递归换算，组内相对引擎行同样成立。
+      out[key] = item.map((child) => absolutizeRow(child, presetDir))
+    } else out[key] = item
+  }
+  return out
+}
+
+/**
+ * 装配期换算：把组合里的**本地模块说明符**（`name` 以 `.` 开头的行）换成绝对 file URL。
+ *
+ * 为什么必须换算：注册用的 Loader 树必须以**宿主锚点**建——`register()` 取调用方 ctx 的
+ * `baseUrl` 解析每一行（`vendor/loader/lib/types/config/tree.js`），一旦把 baseUrl 改写成
+ * 预设目录，组合内的包名行（`@deepseek-ai/dsh-*`）就会从预设目录起解析、向上找不到
+ * node_modules，整份预设注册被拒。锚点回归宿主后，预设目录内按目录写的相对说明符
+ * （`../.engine/prompt-config-engine.mjs`）才需要在这里换算。
+ *
+ * 为什么只换算 `name`：`configsDir` / `strategyDir` / `policyFile` / `triggersFile` 由引擎按
+ * `import.meta.url`（`<预设根>/.engine/`）自解析，保持相对形态才继续成立；换算它们反而会让
+ * `new URL()` 把盘符当 scheme 而拒绝。
+ *
+ * 换算只发生在内存里的注册定义，正本 `agent.cordis.yml` 一字不改——因此用户改 `DSH_HOME`
+ * 或复制整个预设根后，下次注册会按新位置重新换算。
+ */
+export function absolutizeLocalModules(rows: unknown, presetDir: string): unknown {
+  if (!Array.isArray(rows)) return rows
+  return rows.map((row) => absolutizeRow(row, presetDir))
+}
 
 function readDefinition(root: string, id: string): PresetDefinition {
   const preset = loadPresetSpec(join(root, id))
@@ -27,7 +67,7 @@ function readDefinition(root: string, id: string): PresetDefinition {
     ...(typeof preset.name === 'string' && preset.name.length > 0 ? { name: preset.name } : {}),
     ...(typeof preset.description === 'string' ? { description: preset.description } : {}),
     ...(order === undefined ? {} : { order }),
-    plugins: plugins as PresetDefinition['plugins'],
+    plugins: absolutizeLocalModules(plugins, join(root, id)) as PresetDefinition['plugins'],
   }
 }
 
@@ -57,8 +97,9 @@ export function createPresetRegistrySync(ctx: Context, root: string): {
           const fingerprint = JSON.stringify(definition)
           const current = registrations.get(preset.id)
           if (current?.fingerprint === fingerprint && !forceIds.includes(preset.id)) continue
-          // register 使用调用方 Context.baseUrl 解析所有相对插件与 include 路径。
-          const registry = ctx.extend({ baseUrl: pathToFileURL(join(root, preset.id, 'agent.cordis.yml')).href }).agentPresets
+          // 不改写 baseUrl：Loader 树继承宿主锚点，包名行才解析得到；预设目录内的相对
+          // 说明符已由 readDefinition 换算为绝对 file URL。
+          const registry = ctx.agentPresets
           const register = async (candidate: PresetDefinition): Promise<() => Promise<void>> => {
             const dispose = await registry.register(candidate)
             try {

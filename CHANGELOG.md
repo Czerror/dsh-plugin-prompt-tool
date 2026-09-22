@@ -1,5 +1,12 @@
 # Changelog
 
+## 预设装配锚点修复（2026-09-23）
+
+- **修复 DSH 0.1.7 下整份预设注册被拒**：官方 `agentPresets.register()` 以调用方 ctx 的 `baseUrl` 建立预设 Loader 树，插件此前把它改写到预设目录，导致组合内的包名行（`@deepseek-ai/dsh-*`）从预设目录起解析、向上找不到 node_modules 而全部 `never started`，`mountPreset` 失败即整份预设注册被拒——表现为预设选择器里 `pt-*` 全部缺失、默认预设 `selectedDefault` 指向不存在的 id（新会话装配抛 `agent-preset/not-found`）。
+- 现在注册锚点回归宿主，预设目录内的**本地模块说明符**（`../.engine/*.mjs`）改在装配期换算为绝对 `file://` URL；换算只存在于内存注册定义，正本 `agent.cordis.yml` 保持相对，因此改 `DSH_HOME` 或复制整个预设根后按新位置重新换算。`configsDir` / `strategyDir` / `policyFile` / `triggersFile` 由引擎按 `import.meta.url`（`<预设根>/.engine/`）自解析，不参与换算。
+- 取向与官方一致：`editing-cordis-compositions` 要求「Resolve assets from installed packages rather than a preset directory」，`!!js` 仅用于插件配置与 `disabled`（行 `name` 不做表达式求值）。
+- 升级后需用户重启 DSH 服务生效；本轮未触碰用户 profile 与预设文件。
+
 ## 引擎复审、配置区与 DSH 0.1.7 适配（2026-09-22）
 
 - 适配已发布 DSH `0.1.7-alpha.1`、Cordis `4.0.3`：ConfigForms 与 volatile 设置、显式预设注册、默认选择同步、工具预览 revision lease；官方组合和技能来源更新到 `c36a83ff6b`。

@@ -75,6 +75,26 @@ UI fields
 该目录不只是输出位置，也是预设定义的读取根；不存在对应定义时回退包内模板，
 不读取其他部署根中的同名用户副本。
 
+### 注册锚点与本地引用（2026-09-23）
+
+官方 `agentPresets.register()` 用**调用方 Context 的 `baseUrl`** 建立预设的 Loader 树
+（`vendor/loader/lib/types/config/tree.js`：相对说明符按 baseUrl 解析，包名说明符走 baseUrl 的
+node_modules 链）。因此插件**不得**改写 baseUrl：一旦把锚点换到预设目录，组合内的包名行
+（`@deepseek-ai/dsh-*`）就会从预设目录起向上找不到 node_modules，整份预设注册被拒
+（表现为 `pt-*` 在预设选择器里全部缺失、默认预设指向不存在的 id）。
+
+锚点归于宿主后，预设目录内按目录书写的**本地模块说明符**（`name` 以 `.` 开头，如
+`../.engine/prompt-config-engine.mjs`）在**装配期**换算为绝对 `file://` URL。换算只发生在内存
+里的注册定义：正本 `agent.cordis.yml` 一字不改，因此用户改 `DSH_HOME` 或复制整个预设根后，
+下次注册会按新位置重新换算。`configsDir`、`strategyDir`、`policyFile`、`triggersFile` 由引擎按
+`import.meta.url`（`<预设根>/.engine/`）自解析，必须保持相对形态，不参与换算——实测把
+`configsDir` 写成 Windows 盘符路径（`d:/…`）会被引擎的 `new URL()` 当成 URL scheme，报
+`is not readable: The URL must be of scheme file`（`engine/schema.mjs` 的读取失败分支）。
+
+该取向与官方一致：`editing-cordis-compositions` 技能要求「Resolve assets from installed
+packages rather than a preset directory」，并把 `!!js` 限制在插件配置与 `disabled` 上（行 `name`
+不做表达式求值，见 `vendor/loader/lib/types/config/entry.js`）。
+
 ### 预设目录与独立补建（2026-09-18）
 
 宿主内置根会遮蔽同名用户预设，因此插件包内目录和 `preset.yml.id` 直接使用

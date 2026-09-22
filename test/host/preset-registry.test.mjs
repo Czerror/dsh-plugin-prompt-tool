@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -40,7 +40,7 @@ test('注册清单保留兼容快照、可选名称和顶层排序，UI仍隐藏
     },
     resolve: async (id) => definitions.get(id),
   }
-  const sync = createPresetRegistrySync({ extend: () => ({ agentPresets: registry }) }, root)
+  const sync = createPresetRegistrySync({ agentPresets: registry }, root)
   try {
     await sync.refresh()
     assert.deepEqual([...definitions.keys()].sort(), ['alpha', 'prompt-tool'])
@@ -96,6 +96,13 @@ test('官方 registry：相对路径、候选失败、刷新与释放保留现�
     await sync.refresh()
     assert.equal((await lease('alpha')).key, old.key, '未变定义不重挂')
 
+    // 反例：同一份组合若不换算，相对说明符会从**宿主锚点**解析而失败——这正是装配期换算
+    // 存在的理由（旧实现靠改写 baseUrl 才让这一行可解析，代价是包名行整份注册被拒）。
+    const raw = await ctx.agentPresets.register({ id: 'raw-relative', plugins: [{ id: 'local', name: './local.mjs' }] })
+    try {
+      assert.notEqual((await ctx.agentPresets.resolve('raw-relative')).broken, undefined, '未换算的相对行必须失败')
+    } finally { await raw() }
+
     const parent = createScope(ctx, {})
     scopes.push(parent)
     await ctx.agentPresets.mount(parent.ctx, 'alpha')
@@ -146,9 +153,53 @@ test('官方 registry：相对路径、候选失败、刷新与释放保留现�
   }
 })
 
+test('装配期换算：相对说明符绝对化，configsDir 与 !!js 保持原样', async () => {
+  const root = join(home, 'absolutize')
+  const dir = join(root, 'gamma')
+  mkdirSync(join(dir, 'prompt-configs'), { recursive: true })
+  writeFileSync(join(dir, 'preset.yml'), 'id: gamma\nname: Gamma\nmodules: []\n')
+  writeFileSync(join(dir, 'local.mjs'), pluginSource)
+  writeFileSync(join(dir, 'agent.cordis.yml'), [
+    '- id: engine',
+    '  name: ./local.mjs',
+    '  config:',
+    '    configsDir: ../gamma/prompt-configs',
+    "    tool: !!js \"'gamma_tool'\"",
+    '- id: group',
+    '  name: cordis:group',
+    '  group: true',
+    '  config:',
+    '    - id: nested',
+    '      name: ./local.mjs',
+    "      config: { tool: !!js \"'nested_tool'\" }",
+    '- id: pkg',
+    "  name: '@deepseek-ai/dsh-tool-pwsh'",
+    '',
+  ].join('\n'))
+  const definitions = new Map()
+  const registry = {
+    register: async (definition) => {
+      definitions.set(definition.id, definition)
+      return async () => { definitions.delete(definition.id) }
+    },
+    resolve: async (id) => definitions.get(id),
+  }
+  const sync = createPresetRegistrySync({ agentPresets: registry }, root)
+  try {
+    await sync.refresh()
+    const [engine, group, pkg] = definitions.get('gamma').plugins
+    assert.equal(engine.name, pathToFileURL(join(dir, 'local.mjs')).href, '相对说明符换成绝对 file URL')
+    assert.equal(engine.config.configsDir, '../gamma/prompt-configs', '引擎自解析键必须保持相对')
+    assert.deepEqual(engine.config.tool, { __jsExpr: "'gamma_tool'" }, '!!js 表达式保持延迟节点')
+    assert.equal(group.config[0].name, pathToFileURL(join(dir, 'local.mjs')).href, 'group 子行同样换算')
+    assert.equal(pkg.name, '@deepseek-ai/dsh-tool-pwsh', '包名说明符不改写')
+    assert.equal(readFileSync(join(dir, 'agent.cordis.yml'), 'utf8').includes('file://'), false, '正本不得写回绝对路径')
+  } finally { await sync.dispose() }
+})
+
 test('注册刷新排队期间卸载：待执行任务不得重新注册', async () => {
   let registrations = 0
-  const sync = createPresetRegistrySync({ extend() { registrations++; throw new Error('不得重新注册') } }, join(home, 'presets'))
+  const sync = createPresetRegistrySync({ get agentPresets() { registrations++; throw new Error('不得重新注册') } }, join(home, 'presets'))
   const refresh = sync.refresh()
   await sync.dispose()
   await refresh
@@ -176,7 +227,7 @@ test('候选通过但正式注册失败时恢复旧定义，后续刷新仍可�
     },
     resolve: async (id) => ({ id }),
   }
-  const sync = createPresetRegistrySync({ extend: () => ({ agentPresets: registry }) }, root)
+  const sync = createPresetRegistrySync({ agentPresets: registry }, root)
   try {
     await sync.refresh()
     const original = definitions.get('alpha')
