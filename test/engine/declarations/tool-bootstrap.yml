@@ -17,7 +17,8 @@
 # | required 工具缺失 → 暴露完整目录                                      | :346-355    | `tools.requireMatch: true`（actions.mjs:412-427：`[...allow].some(name => !available.has(name))`，与原模块 `missing.length > 0` 对齐） |
 # | 未晋升时把首请求 `maxTokens` 钉到 `bootstrapMaxTokens`                | :466-483    | 声明 3 `request-params.patch`（actions.mjs 的 registerRequestParams；改写的唯一实现 layers.mjs 的 applyAgentRequestParams） |
 # | 晋升后**按值**剥离该 cap（仅当恰好等于注入值）                        | :469-477    | 声明 4 `request-params.unset`（layers.mjs 的按值删键语义） |
-# | 该监听注册在最外层（`prepend: true`）                                 | :460-465, :483 | `waterfallPosition: outermost` → `registrationOptions` 的 `prepend: true`（trigger.mjs:100-102） |
+# | 该监听注册在最外层（`prepend: true`）                                 | :460-465, :483 | `waterfallPosition: outermost` → `registrationOptions` 的 `prepend: true`（trigger.mjs:108-111） |
+# | 受控相位的目录窄化 + sections 过滤是**否决型**，须在普通注册之外       | :357（改前普通注册） | 声明 1/2 亦取 `waterfallPosition: outermost`（B8 T1 加固；改前只有组合行序这条不成立的保证）。真实 cordis 反例：test/engine/assemble-authority.test.mjs |
 # | `promoteOn: 'either'`（首 `tool/call` 或首 `assistant/message` 均晋升）| :34-40, :215 | `phase.promoteOn: either`（parsePromoteOn 的同义词汇，shared.mjs:14-18） |
 # | 装配/请求改写失败一律降级（暴露完整目录 / 保留原请求）                 | :449-453, :574-577 | 动作自带 expose-all / keep 降级 |
 #
@@ -61,7 +62,7 @@
     target:
       tools: { allow: [bash, str_replace_editor], requireMatch: true }
       sections: { keep: ['deployment:persona-prefix', 'deployment:persona-suffix'] }
-  waterfallPosition: default
+  waterfallPosition: outermost
 
 - id: tool-bootstrap-catalog-compacted
   channel: system-prompt/assemble
@@ -75,7 +76,7 @@
         allow: [bash, str_replace_editor, read, write, edit, glob, grep, todo_write, ask_user_question]
         requireMatch: true
       sections: { keep: ['deployment:persona-prefix', 'deployment:persona-suffix'] }
-  waterfallPosition: default
+  waterfallPosition: outermost
 
 - id: tool-bootstrap-budget
   channel: agent/request

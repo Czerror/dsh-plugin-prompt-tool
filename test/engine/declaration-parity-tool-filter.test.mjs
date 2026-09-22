@@ -111,12 +111,23 @@ test('声明文件：模式互斥（同一份名单不并存 allow 与 deny）�
     assert.deepEqual(mask.deny ?? mask.allow, masks[0].deny ?? masks[0].allow,
       '同一份名单判据驱动呈现、SDK 裁剪与执行 guard')
   }
-  // 通道与位置：`system-prompt/assemble`，未 prepend；受众按原模块写 false（2026-09-22 拍板：
+  // 通道与位置：三条都在 `system-prompt/assemble`；受众按原模块写 false（2026-09-22 拍板：
   // 执行边界留待 agent scope 的 guard，呈现这一层不做受众判定）。
+  //
+  // B8 T1（2026-09-22）：**呈现过滤是否决型门控**——它裁 `assembly.tools`、本质是否决，
+  // 必须位于普通注册之外，故取 `waterfallPosition: outermost`（→ `registrationOptions` 的
+  // `prepend: true`）。真实 cordis 反例见 `test/engine/assemble-authority.test.mjs`。
+  // 另外两条保持 `default`：`sdk-strip` 改写的是 `tools:sdk` 段正文、不构成否决；`guard`
+  // 不在 `ON_REGISTERED_KINDS` 内，带 `prepend` 会挂载期抛错（actions.mjs:823-826）。
   for (const declaration of DECLARATIONS) {
     assert.equal(declaration.channel, 'system-prompt/assemble')
-    assert.equal(declaration.waterfallPosition, 'default')
     assert.equal(declaration.when, undefined, '本轮声明不需要 when')
+  }
+  assert.equal(DECLARATIONS.find((item) => item.id === 'tool-filter-presentation').waterfallPosition, 'outermost',
+    'B8 T1：呈现过滤是否决型门控，必须位于普通注册之外')
+  for (const id of ['tool-filter-sdk', 'tool-filter-guard']) {
+    assert.equal(DECLARATIONS.find((item) => item.id === id).waterfallPosition, 'default',
+      `${id} 保持默认位置：sdk-strip 非否决；guard 不支持 prepend`)
   }
   const guard = DECLARATIONS.find((item) => item.do.kind === 'guard')
   assert.equal(guard.do.includeSubagents, false, '执行 guard 的受众与旧实现一致（只作用主会话）')

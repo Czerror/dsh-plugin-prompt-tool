@@ -218,6 +218,17 @@ pre-step 来源：
 - 模型实际收到的提示词文本顺序更接近 `system-section → runtime-context → pre-step`；`agent-request` / `llm-stream` / `tool-pipeline` / `turn-stop` / `subagent-start` / `subagent-end` 是控制通道，不构成提示词文本优先级。
 - 生成文件名使用 4 位零填充前缀（`0000-`），避免大角色卡 / 大预设超过 10 条后字典序错乱。
 
+### 同 scope 内的注册顺序（2026-09-22）
+
+上表的「顺序」说的是**配置层**的展示与文本顺序；宿主 waterfall 里另有一条**注册顺序**语义，两者互不替代：
+
+- waterfall **由外向内**执行，最外层监听器的返回值即最终结果（`@deepseek-ai/cordis` 的 `events.ts`：`cbs.shift()` 取数组头部先跑，`waterfall()` 返回最外层监听器的返回值）。
+- 普通注册（`push`）**先注册者在外**；`prepend: true` 等价 `unshift`，插到链首 = 最外层，且**同为 prepend 时后注册者更外层**。
+- 因此**否决型**动作（清空 `contexts`、窄化 `tools`、按名单掩码、剥离请求参数）必须 prepend 才能落在普通注册之外；**协作式填充**（`runtime-context` 的同步占位与填充）与**纯副作用**监听器保持普通注册，不去抢外层。
+- 本引擎把这条位置表达在声明里：`triggers` 声明的 `waterfallPosition: outermost` 映射为 `prepend: true`（`engine/trigger.mjs` 的 `registrationOptions`），**缺省 `default` 即普通注册**。它表达的是**位置**，不承担同一通道内声明之间的排序——后者归 `channelOrder`。
+- 顺序语义只能用真实 cordis 用例证明：`test/engine/assemble-authority.test.mjs` 用「先注册的 `prepend` 竞争者」作反例，验证三类否决型装配门控确实位于普通注册之外。手写的 mock `ctx.on` 只记录选项、**不实现顺序**，不能用作顺序证据。
+- **已知边界**：`prepend` 只保证「比**已存在**的普通注册更外层」。若第三方插件同样 `prepend` 且注册更晚，它仍处于更外层、可以翻越门控；`global: true` 的注册也不受本 scope 约束。这正是「不再依赖组合行序」的确切含义——位置改由注册选项保证，而该保证有明确上界，不等价于「与顺序无关」。
+
 ### 条件判定与事件层（2026-09-19）
 
 `pre-step`、`tool-pipeline` 与三个事件层支持声明式条件：`subject` 决定匹配对象，`match`

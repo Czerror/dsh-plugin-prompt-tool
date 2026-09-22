@@ -26,7 +26,11 @@
 # 且整条声明不接观察者。B7 T1 的跨能力缺口修复后不再需要——这是行为不变、纯性能档的清理。
 #
 # ── 声明 → 原模块映射（路径 (a)：未晋升时清空 assembly.contexts）─────────────
-#   监听通道   context-gate.mjs:174 `ctx.on('system-prompt/assemble', …)`（未 prepend）
+#   监听通道   context-gate.mjs:174 `ctx.on('system-prompt/assemble', …)`（改前普通注册）
+#   位置       B8 T1 加固为 `waterfallPosition: outermost`：未晋升清空 contexts 是否决型门控，
+#              必须位于普通注册之外。改前只有组合行序这条**不成立**的保证——行应用是并发的，
+#              行序并不决定监听器顺序（见 PLAN 审查结论 ②）。
+#              真实 cordis 反例：test/engine/assemble-authority.test.mjs。
 #   开关       :177 `if (!enabled) return assembled` → 本文件存在与否即开关
 #   未晋升判定 :179 `promotion.status(context.agent).promoted` 取反
 #   原样返回   :180 `contexts` 非数组或为空时不动 → 动作侧同一判据（actions.mjs:322）
@@ -37,7 +41,7 @@
 - id: context-gate-runtime-contexts
   channel: system-prompt/assemble
   channelOrder: 0
-  waterfallPosition: default
+  waterfallPosition: outermost
   when:
     not:
       phase: { promoteOn: either, includeSubagents: false }

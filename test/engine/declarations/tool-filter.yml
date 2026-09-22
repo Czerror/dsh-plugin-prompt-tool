@@ -18,7 +18,11 @@
 #             （未声明 = 不注册，与 declared-triggers 的「声明由预设提供」同一纪律）
 #   失败降级：tool-filter.mjs:76-79「过滤失败暴露完整目录」= assembly 动作的
 #             expose-all 降级（actions.mjs:63 的词汇、:86 的声明、:332-335 的 catch），逐条同向
-#   位置：    tool-filter.mjs:69 未 prepend → waterfallPosition: default
+#   位置：    tool-filter.mjs:69 改前**未** prepend；B8 T1 加固为
+#             `waterfallPosition: outermost`（呈现过滤是否决型门控：它裁 assembly.tools，
+#             必须位于普通注册之外）。原模块当时只有组合行序这条保证，而行应用是并发的、
+#             行序并不决定监听器顺序（见 PLAN 审查结论 ②）。
+#             真实 cordis 反例：test/engine/assemble-authority.test.mjs。
 #   PTC 新增覆盖（非等价对拍，PLAN §5 的缺口修复）：同一份名单再驱动
 #             sdk-strip（tools:sdk 段正文，actions.mjs:530-556）与 guard（run_code
 #             子调用裁决，actions.mjs:447-521）。原模块**没有**这两处——只裁列表挡不住
@@ -46,7 +50,7 @@
 - id: tool-filter-presentation
   channel: system-prompt/assemble
   channelOrder: 0
-  waterfallPosition: default
+  waterfallPosition: outermost
   do:
     kind: assembly
     id: tool-filter-presentation
@@ -68,7 +72,7 @@
   channel: system-prompt/assemble
   channelOrder: 2
   waterfallPosition: default
-  # guard **不支持** when/prepend（actions.mjs:702-705 挂载期报错），受众由动作自身
+  # guard **不支持** when/prepend（actions.mjs:823-826 挂载期报错），受众由动作自身
   # 的 includeSubagents 表达（actions.mjs:450、:471），故本声明不带 when。
   do:
     kind: guard
