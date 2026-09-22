@@ -277,7 +277,7 @@ export interface LayerParamContract {
 export interface LayerContract {
   strategies: readonly string[]
   subjects: readonly string[]
-  content: 'text' | 'request' | 'stream' | 'tool-result' | 'observe' | 'subagent-result'
+  content: 'text' | 'request' | 'stream' | 'tool-result' | 'subagent-result'
   variables: boolean
   messageMetadata: boolean
   params: Readonly<Record<string, LayerParamContract>>

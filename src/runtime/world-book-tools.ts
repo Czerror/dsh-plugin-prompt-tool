@@ -91,14 +91,21 @@ export function registerWorldBookTools(ctx: Context, host: WorldBookToolHost): (
       },
       execute: async () => {
         const entries = listWorldBookEntries(host.activeDir())
-          .map((config) => ({
-            id: String(config.id ?? ''),
-            name: String(config.name ?? config.id ?? ''),
-            keys: Array.isArray(config.params && (config.params as Record<string, unknown>).keys)
-              ? (config.params as Record<string, unknown>).keys as string[] : undefined,
-            constant: (config.params && (config.params as Record<string, unknown>).constant) === true,
-            enabled: config.enabled !== false,
-          }))
+          .map((config) => {
+            const params = config.params as Record<string, unknown> | undefined
+            const keys = params?.keys
+            return {
+              id: String(config.id ?? ''),
+              name: String(config.name ?? config.id ?? ''),
+              // 无 keys 的条目（constant 常驻条目、ST 导入的无键条目）必须**省略**该属性：
+              // 写成 `keys: undefined` 会让对象带上「值为 undefined 的自有属性」，
+              // 宿主在校验 output.schema 之前先做 lossless JSON 快照，该属性会判定为非法
+              // 并让整次 world_book_list 失败（schema 里 keys 本身不是 required）。
+              ...(Array.isArray(keys) ? { keys: keys as string[] } : {}),
+              constant: params?.constant === true,
+              enabled: config.enabled !== false,
+            }
+          })
         return { entries }
       },
     })))

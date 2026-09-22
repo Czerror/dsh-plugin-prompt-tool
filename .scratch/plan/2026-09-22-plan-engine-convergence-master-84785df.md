@@ -25,11 +25,11 @@
 
 - 10 个能力里 **7 个是「判断 → 执行」**（`tool-filter`/`tool-bootstrap`/`context-gate`/`anchor-turn`/`deliberation-gate`/`progress-reminder`/`promoted-code-mode`），**3 个是能力提供者**（`subagent-tool-policy`/`tool-config-engine`/`str-replace-editor`，用户确认必须保留）。
 - **判断需七类原语**：文本锚定 ✅已有(`anchor-match`) / 相位 ✅已有(`compaction-epoch`) / 来源 ❌ / 计数阈值 ❌ / 名单 ❌ / 会话状态 ❌ / **当前预设** ❌（取法唯一正确：`composedPreset(agent.ctx)`，见下）。
-- **执行需四类动作**：注入文本 ✅ / 改装配 ❌分散 / 裁决 ❌分散 / 追加上下文 ❌分散。
-- **六类判断里 `deliberation-gate` 属"计数阈值"而非字词锚定**（`deliberation-gate.mjs:12-13` 用的是轮内字符数），做词检测的 `classifyReasoning` 在 `compaction-epoch.mjs:37-53` 仅服务 `promoteGate`——所以"字词句锚定"单类覆盖不了深思门控。
+- **执行需七类动作**（与 B3 T2 对齐）：注入文本 ✅ / 改装配 ❌分散 / 裁决 ❌分散 / 追加上下文与续跑 ❌分散 / **执行层 guard ❌完全缺失**（依 R4 补）/ 裁 SDK 声明文本 ❌缺失 / 改模型请求参数 ⚠️已有声明层先例（`layers.mjs` 的 `agent-request`），但未进统一动作库。
+- **七类判断里 `deliberation-gate` 属"计数阈值"而非字词锚定**（`deliberation-gate.mjs:12-13` 用的是轮内字符数），做词检测的 `classifyReasoning` 在 `compaction-epoch.mjs:37-53` 仅服务 `promoteGate`——所以"字词句锚定"单类覆盖不了深思门控。
 - 七个模块的"过时"依据：6 个移植自已进入维护期的上游 `dsh-anchored-standard`（其姊妹项目作者已公开勘误强归因理论），且其中 5 个在真实部署的任何预设里都未挂载。
 
-**因此本轮的最终形态是**：`引擎 = 触发器引擎（判断原语 + 动作库）+ 3 个能力提供者`，原 7 个专用模块**先重建为等价声明、再删除**（PTC 呈现为唯一净损失）。
+**因此本轮的最终形态是**：`引擎 = 触发器引擎（判断原语 + 动作库）+ 3 个能力提供者`，原 7 个专用模块**先重建为等价声明、再删除**（净损失**两项，均已拍板**：`promoted-code-mode` 的相位 PTC 呈现、`stages` 渐进披露——后者 2026-09-22 拍板放弃，理由是它只是触发器机制的一个应用，行为可由「多条件 + 多触发 + 多动作」自行声明；`bootstrapMaxTokens` 与 `personaSectionsOnly` 属**迁移项**，不得计入损失）。
 
 ### 外部项目实证补充（2026-09-22，来源 dsh-agent-studio）
 
@@ -66,6 +66,7 @@
 | `dsh-anchored-standard` `180184c252fbbf23dcf0f608fef6ea4c63a78a15` | `shared/context-gate.mjs:141-183`、`shared/deliberation-gate.mjs:20-42`、`shared/cot-drip.mjs:82-138`、`shared/tool-bootstrap.mjs:287-297` | 可抽取来源/相位/计数判断及过滤、裁决、追加、请求字段动作；旧默认措辞、阈值和模型归因留在可选预设声明，不进入机制默认。 |
 | `dsh-router-standard` `b39112dce54b90e67b50b166c2773861d7945d1f` | `preset/router-standard/router-bootstrap.mjs:621/703/787-819`；`docs/statement.md:5-35` | stages 包含工具注册、状态推进和工具面更新三个职责；应拆到已有工具提供者与触发器，不能仅因动作库没有注册工具就判定不可保留。其具体阶段、文案、持久状态格式不照搬。 |
 | `dsh-purge` `b0a53211514bb39745633349179dbae24c4f4294` | `lib/index.js:207-237`、`lib/identity.js:199-204` | `global + prepend` 是顺序反例，不是本项目应复制的注册方式；其插件名子串匹配也不替代已拍板的大小写不敏感精确匹配。 |
+| `Mo-Morris/bibi-share` 的 `dsh/` 四份文档（本地只读副本 `D:\AI\workspase\bibi-share-dsh\`，非 git 依赖） | 教程 `tool-plugin-tutorial-draft.md:555-567` 扩展点分工表、`:303` 返回值校验、`service-provider-plugin-tutorial-draft.md:103-148` 服务定义形态、`skills-plugin-tutorial-draft.md:599-740` 自定义 Provider 决策表 | 工具面共四层（视图/投递/**执行 guard**/文本），本项目缺执行层——与 **R4** 同向且互为独立佐证；`execute()` 返回值不符 `output.schema` 会被宿主归一化为错误；服务定义宜用 `Service` 子类 + `declare module` 声明合并。技能侧确认官方支持数据库/远程/插件内置三类自定义来源（见 B3 T1 第 7 类之外的技能讨论，本轮不立项）。 |
 
 上游维护状态不构成删除行为的技术证明：`dsh-anchored-standard/FAREWELL.md` 说明停止主动开发；`dsh-router-standard/docs/statement.md` 明确作废理论强归因、保留工程实现。本项目移除专用模块的依据是用户确定的机制化方向，不能据此额外推导“已有功能无须迁移”。
 
@@ -81,7 +82,7 @@
 | deliberation-gate | 轮内字符数、裁决次数、受众 | 工具调用裁决动作 | 字符数不是词匹配；记录是否可重建、计数顺序与轮边界必须明确 |
 | progress-reminder | 结果次数、轮号、已投递次数 | post-execute additionalContexts | 只在 accept 结果追加；并发、每轮上限、取消/错误不改变计数契约 |
 | tool-bootstrap 的窄化、预算、人设段 | 晋升/epoch、工具名、阶段、section 名 | 工具面过滤、agent/request 字段覆盖与释放、sections 过滤 | 三项都是可声明行为；预算释放不能误清除后续其它来源设置的值 |
-| tool-bootstrap 的 stages 推进工具 | 工具事件与会话级阶段状态 | 工具定义归 `tool-config-engine`，状态变化与后续过滤归触发器 | 现有提供者只有 shell/http/delegate/fs/ask-user 执行形态，不能声称已经支持机制调用；需补一个最小受控接线方案及行为证明，不能用 shell/HTTP 绕路或增加第四个提供者 |
+| tool-bootstrap 的 stages 推进工具 | 工具事件与会话级阶段状态 | **2026-09-22 拍板：放弃内置渐进披露**——上文（源码基线表 `dsh-router-standard` 行）建议的「工具定义归 `tool-config-engine` + 触发器管状态 + 补最小受控接线」**经用户否决**：它的状态与过滤本就是「多条件 + 多触发 + 多动作」的一个应用，用户可自行用声明实现，故不迁移、不注册推进工具、不新增提供者 | 删除须无残留：5 个参数键、`StageDraft` 与编辑器、组合源 4 个参数、11 个测试文件用例与 4 份文档（含技能文档承诺的能力面） |
 | promoted-code-mode | 原有相位呈现不迁移 | 按已有拍板删除；需要静态 PTC 的预设复用官方 tool-presentation | 静态呈现与“晋升后切换”区别明确，切换预设后的首个请求正确 |
 | 三个保留提供者 | 各自既有配置与授权 | 子代理策略、自定义工具、官方 str_replace_editor | 保留扩权审批、工具 approvalGate、文件系统作用域；不归入普通 predicate 副作用 |
 
@@ -209,7 +210,7 @@
 
 | 文件 | 被哪些支线涉及 | 约束 |
 |---|---|---|
-| `engine/{context-gate,tool-bootstrap,tool-filter,anchor-turn,deliberation-gate,progress-reminder,promoted-code-mode}.mjs` | B2 / B3 / B4 / **B7（删除）** / B8 | B7 删除前 B8 不得开工 |
+| `engine/{context-gate,tool-bootstrap,tool-filter,anchor-turn,deliberation-gate,progress-reminder,promoted-code-mode}.mjs` | B2 / B3 / B4 / **B7（删除）** / B8 | B3 先定义最小会话态接口、B4 才迁移（R7）；B7 删除前 B8 不得开工 |
 | `engine/schema.mjs` | B5 / B8（③ 的 order 校验） | B5 先 |
 | `src/shared/engine-params.ts` | B2 / B6（单一来源） / B7（参数清理） / B8（④ 的参数） | B6 → B7 → B8 依次 |
 | `docs/engine-reuse.md`、`docs/injection-point-contracts.md` | B0 / B3 / B6 / B7 / B8 | 同一执行者串行落笔，不得并发编辑 |
@@ -221,8 +222,9 @@
 `B0 → B1 → B2 → B3 → B4 → B5 → B6 → B7 → B8`
 
 - B0 先行的理由：把「必须手工同步」变成「漂移即红」，后续每支都在红灯保护下改。
+- B4 排在 B3 之后的理由（R7）：**最小会话态接口由 B3 定义**（类型 + 两类形态），B4 只做迁移与策略变更；两者不再互为前置，B3 不等待 B4。
 - B7 排在 B3/B4/B6 之后：删除模块前必须先在触发器引擎里**重建等价声明并对拍通过**，且参数清理要在 B6 的单一来源上做。
-- B8 最后的理由（用户拍板）：重构会让 ② 退化为声明里的触发器优先级、③ 挂在 B5 归一后的层注册表上、④ 退化为改一处参数目录。
+- B8 最后的理由（用户拍板）：重构后 ② 收敛为新载体上**一处注册选项**（R13——**不得**表述为「声明里的数字优先级」：`channelOrder` 只排同一官方通道内的次序，宿主 waterfall 位置仍是布尔 `waterfallPosition`）、③ 挂在 B5 归一后的层注册表上、④ 退化为改一处参数目录。
 
 ### 全局纪律（各支共同遵守）
 
@@ -230,7 +232,7 @@
 2. **不顺手做 B7 的 ②**：迁移时保持现有注册选项（普通注册），否则结构变更与行为变更混在同一提交里无法定位。
 3. 不修改 DSH 源码仓库，只使用已发布官方包与官方扩展点；不引入任何运行时依赖；`engine/` 保持自包含（可整体复制），新框架文件放在 `engine/` 内并同步更新复制协议文档。
 4. 官方 seam 语义不可伪造（维持 ADR 0002：九层插入点彼此独立，无插件级全局顺序）。
-5. 每支独立提交、独立可回滚；测试 cwd 固定 `D:\AI\workspase\_temp`，用独立 `DSH_HOME`，结束清理。
+5. 每支独立提交；**「可回滚」以「其下游支线尚未撤回」为前提**（R7）：不得再声称「任意单支 `git revert` 都不波及其它支线」——B7 触及共享 `.engine` 与两个真实预设，回滚范围见 B7 的回滚段。测试 cwd 固定 `D:\AI\workspase\_temp`，用独立 `DSH_HOME`，结束清理。
 6. 引擎与组合属装配期读取，交付说明标注「需用户重启 DSH 后生效」；不启停在役服务。
 
 ## 分支清单
@@ -240,8 +242,8 @@
 | **B0** | 镜像守卫先行 + 文档修正 | `2026-09-22-plan-engine-b0-guards-docs-84785df.md` | 无 | 测试镜像、三份文档 |
 | **B1** | 既有 helper 收敛（零行为） | `2026-09-22-plan-engine-b1-helper-convergence-84785df.md` | B0 | 8 个引擎模块 |
 | **B2** | 配置契约统一 + 能力开关单源 | `2026-09-22-plan-engine-b2-config-contract-84785df.md` | B1 | `fields.mjs`（新增）+ 2 个保留模块 + 4 个无白名单模块 + engine-params.ts |
-| **B3** | 触发器引擎（判断原语 + 动作库） | `2026-09-22-plan-engine-b3-capability-runtime-84785df.md` | B2 | 新增引擎文件 + 三个提供者样板 |
-| **B4** | 会话态与生命周期统一 | `2026-09-22-plan-engine-b4-session-state-84785df.md` | B3 | 全部持有会话态的模块 |
+| **B3** | 触发器引擎（判断原语 + 动作库） | `2026-09-22-plan-engine-b3-capability-runtime-84785df.md` | B2 | 新增引擎文件 + 三个提供者样板 + **最小会话态接口**（R7） |
+| **B4** | 会话态与生命周期统一（迁移到 B3 接口） | `2026-09-22-plan-engine-b4-session-state-84785df.md` | B3（单向） | 全部持有会话态的模块 |
 | **B5** | 层注册表归一（schema 四表合一） | `2026-09-22-plan-engine-b5-layer-registry-84785df.md` | 无（可并行） | engine/schema.mjs、bridge 契约 |
 | **B6** | 跨层镜像归一 | `2026-09-22-plan-engine-b6-cross-layer-mirrors-84785df.md` | B0 | src/host、src/runtime、src/client/data、src/shared |
 | **B7** | 专用能力重建、删除与预设迁移 | `2026-09-22-plan-engine-b7-capability-consolidation-84785df.md` | B3 / B4 / B6 | 7 个引擎模块 + 7 个组合源 yml + 参数目录 + UI 能力卡 + recipe + 两个真实预设 |
@@ -273,10 +275,30 @@ git -C $Repo diff --check
 
 ## 回滚与检查点
 
-- 每支一个提交；回滚即 `git revert <该支提交>`，不波及其它支线。
-- B7 的提交独立于 B0–B6，可单独 revert 而不回退重构。
+- 每支一个提交，回滚即 `git revert <该支提交>`；但**范围按「下游是否已撤回」判定**（R7）：撤回 B7 前必须先撤回依赖其新声明的支线（B8），否则留下指向已删除模块或已删除声明键的代码。
+- B7 的提交独立于 B0–B6，可单独 revert 而不回退重构；但 B7 同时触及共享 `.engine`（`src/host/write-preset.ts:330` 的 `../.engine/`）与两个真实预设目录，代码 revert **不足以**恢复磁盘上的共享引擎与已迁移预设，须按 B7 的回滚段逐步恢复。
 - 中断检查点：支线之间工作树须保持 `typecheck` / `lint` 通过；未完成的支线不得留下半迁移的模块（同一模块的声明与消费点必须同进同退）。
 - 数据侧无需回滚：本轮不新增持久格式；组合源 yml 的默认值变化随提交回退。
+
+## 审查修订落实（R1–R13）
+
+审查提出的 13 项修订要求**已全部落实到各支线 PLAN 文本**（只改 PLAN，不涉及源码，本轮仍只是方案产出）：
+
+| 条目 | 落实位置 |
+|---|---|
+| R1 能力净损失越权 | B7 T1 / 已知边界 / 文档任务；总纲两处净损失陈述改为「两项 + 迁移项」；**`stages` 于 2026-09-22 拍板放弃**（理由：该功能可由「多条件 + 多触发 + 多动作」自行声明，不作为内置能力保留），`bootstrapMaxTokens` 落 B3 新增的**第 (7) 类动作「改模型请求参数」** |
+| R2 helper 非等价替换 | B1 T1：白名单只列真 get-or-create，剔除 compaction-epoch / tool-bootstrap / strategies，补三条序列断言 |
+| R3 stages 复位被扩大 | B4 T2：按**字段**声明 `resetOn`，三条序列分别验证（阶段保留 / 晋升复位 / 失败压缩不复位） |
+| R4 只裁 SDK 挡不住执行 | B3 T2（`ctx.tools.guard()` + TS/Python 双载荷）；B7 的 tool-filter 验收含真实 `run_code` 子调用拒绝 |
+| R5 先删后迁 | B7 T2：备份整组（定义 + 生成目录 + 共享引擎 + 指纹）→ 候选迁移 → 删除，含「第二个预设迁移失败」断言 |
+| R6 声明链未闭合、B8 依赖已删入口 | B3 T3（声明位置 / 校验 / 物化入口）；B7 T2 与 Wave 4；B8 T7–T10 及新增「落点口径」表全部改到 B7 收敛后的新载体 |
+| R7 B3/B4 互为前置 | 最小会话态接口移入 B3、B4 为单向下游；B6 只负责当时存在的声明（7 个模块的闭合交 B7）；总纲依赖图、冲突表与回滚范围同步 |
+| R8 WeakMap 非零行为变更 | B4 T1：步骤一统一访问接口（策略不变），步骤二单列为行为变更并覆盖四种情形 |
+| R9 草稿/桥/缺省要求原值相等 | B6 T1：改为「草稿 → 参数桥 → 引擎有效配置」的行为闭合 |
+| R10 缺键与未知键行为 | B2 T4：默认值保留兼容、不同步引入 fail loud；要严格化则单列迁移范围 |
+| R11 守卫抓不到所承诺的漂移 | B0 T1：两组分开——第一组三处漂移先红后绿，第二组四类守卫用定向变异证明有效 |
+| R12 两条加载路径差异不止变量合并 | B6 T4/T5：只共享扫描/读取，解析与校验留各自边界，五种输入对拍 |
+| R13 数字 order 误映射为布尔 prepend | B3 T3：`channelOrder` 与 `waterfallPosition` 分离；总纲 B8 理由段的旧表述同步改写 |
 
 ## 状态
 
@@ -297,6 +319,7 @@ git -C $Repo diff --check
 本轮为**方案查证**，未执行任何代码或测试改动。证据分布：
 
 - 四支勘察报告（配置契约面 / 运行时行为面 / 跨层耦合面）与两轮 ST 对照查证的全部行号证据，分落在各支线 PLAN 的「审查结论」与「验收记录」节。
+- 2026-09-22 复审：审查的 R1–R13 已逐条落实到九份 PLAN 文本（见上节）；本轮仍未执行任何代码或测试改动，未开工任何支线，PLAN 未归档。
 - 关键基线：`engine/` 37 文件 6928 行、依赖边 55 条无环、19 个本地组合源模块、24 个 library 模块、71 个参数定义、18 个引擎测试文件。
 - ST 对照基线：`F:\ai\other\SillyTavern` 版本 1.19.0、commit `7c399419`（2026-09-14）。
 
@@ -307,7 +330,7 @@ git -C $Repo diff --check
 - **`prepend` 不是绝对否决**：同为 `prepend` 时后注册者更外层（详见 B7 的边界断言）。
 - **变量运行时改写不在本轮**：按拍板只修 `docs/architecture-params.md:130` 的错误表述；该能力若要做，另立支线并需授权门与版本校验。
 - **ST global 变量不复刻**：预设级变量在持久性上可承担该角色，但作用域是「每个预设一份」而非 ST 的「跨预设一份」；差异写入文档。
-- **这是一次「机制统一 + 能力净缩减」**：B7 之后引擎只保留触发器机制与三个能力提供者，7 个专用能力模块先重建为等价声明再删除。四项能力**真正放弃**且必须写进交付说明：`stages` 渐进披露、`bootstrapMaxTokens` 预算、`personaSectionsOnly`、`promoted-code-mode` 的相位 PTC 呈现。其余能力行为可由声明重建，不算损失。
+- **这是一次「机制统一 + 能力净缩减」**：B7 之后引擎只保留触发器机制与三个能力提供者，7 个专用能力模块先重建为等价声明再删除。**净损失只有两项**，且必须在交付说明中如实列出：(a) `promoted-code-mode` 的相位 PTC 呈现（纯呈现时机，无行为等价物）；(b) `stages` 渐进披露（**2026-09-22 拍板放弃**：它只是触发器机制的一个应用，其状态与过滤可由「多条件 + 多触发 + 多动作」自行声明，故不作为内置能力保留；连带 5 个参数键、UI 字段与文档精简）。其余一律**迁移而非放弃**，其中两项最容易被误写成放弃、必须逐条验收：`bootstrapMaxTokens`（首轮预算窄化 → B3 新增的**第 (7) 类动作「改模型请求参数」**，与 `layers.mjs` 的 `agent-request` 层同源）、`personaSectionsOnly`（sections 过滤 → 动作第 (2) 类「改装配 sections」+ 相位判断）。
 - **名单语义改为模式互斥**：现状 `tool-filter` 的 `deny` 优先于 `allow`（`tool-filter.mjs:52-53`），两个名单同写时结果不可预期，与用户「白名单里加=可用、黑名单里加=不可用」的心理模型冲突。新语义为「选一个模式 + 一个列表 + 可选条件」，allow 模式内部仍按 fail-closed 实现，**默认方向不翻转**。
 - **三个能力提供者不归一**：`subagent-tool-policy`、`tool-config-engine`、`str-replace-editor` 的本质是"给模型提供能力"，与"干预流程"不同层，强行并入会让引擎失去单一职责。
 - B0–B6 为内部重构；B7 起为用户可见的结构与能力变化（UI 能力卡 10 → 3、参数目录缩减、recipe 重做）。

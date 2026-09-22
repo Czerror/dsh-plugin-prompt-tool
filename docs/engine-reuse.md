@@ -20,7 +20,7 @@
 
 ### 官方与本地分类
 
-- `engine/compositions/library/`：跟随核验过的官方最新 master，当前原样切出 22 个模块。官方预设本身的
+- `engine/compositions/library/`：跟随核验过的官方最新 master，当前原样切出 24 个模块。官方预设本身的
   `delegation-ptc`、`skill-filesystem-cordis` 差异可保留，但不允许注入本地补丁。
 - `engine/compositions/source/local/`：19 个本地自有或本地改写模块的唯一源码。
   `tool-bash-disabled` 与 `persistent-shell-posix` 是本地适配，不因使用官方包就归为官方模块。
@@ -31,6 +31,35 @@
 - **不提供旧名别名、兼容导出、双读或自动迁移。** 已撤销的模块名直接拒绝；`tool-bash`
   和 `persistent-shell` 只表示原样官方模块。本地适配须使用明确的新名。嵌套官方编辑器的
   row/tool 名 `str-replace-editor` 保持，但它不是可独立引用的组合模块。
+
+## 模型工具的宿主约束（exec 字段与 SDK 段变量校验）
+
+新写或跨项目复制模型工具时，两条宿主约束必须遵守（此前只写在代码注释里，此处上提）：
+
+1. **`tools:sdk` 段与 `{{var}}` 校验：现有代码注释与官方实现不符，此处按实测记录。**
+   `src/runtime/session-var-tools.ts:21-23` 的注释称「工具 `description` 会进入宿主 `tools:sdk` 段，
+   宿主对该段做 `{{var}}` 变量校验（变量名须匹配 `[a-z][a-z0-9_]*` 且已注册），文本中不得出现双花括号字面量」。
+   但在已安装的 `@deepseek-ai/dsh-tools@0.1.6-alpha.2` 上：
+   - `sdkSection()` 返回的 `tools:sdk` 段**显式设了 `interpolate: false`**（`lib/index.js:2743-2758`）；
+   - 装配端对 `interpolate === false` 的 section **保留字面文本、不做插值**（`@deepseek-ai/dsh-system-prompt`
+     的 `lib/index.js:105-116`，其注释原文是「Sections with `interpolate: false` retain literal text」——
+     只有**其它** section 的非法/未注册/无值引用才抛错，见同文件 `:60` 的
+     `VARIABLE_NAME = /^[a-z][a-z0-9_]*$/` 与 `:167`/`:170`/`:173`）。
+   - `dsh-tools` 只注册 `tools:sdk` 与 `tools:ptc-only` 两个工具类 section，二者都不从 `description` 构造文本。
+
+   即：**当前实现下该段不会触发 `{{var}}` 校验**。两种解释待定——注释描述的是更早版本的行为，
+   或另有尚未查明的校验路径。**在查明之前，工具 `description` 沿用现有写法**（占位符示例写成单花括号
+   `{变量名}`）：它不会造成问题，而注释所警告的风险也尚未被证伪。
+
+2. **`exec` 上可用的字段由官方 `ToolRunContext` 决定**（安装包
+   `@deepseek-ai/dsh-tools` 的 `lib/types/index.d.ts:198-294`）：`callId` / `rootCallId` / `name` /
+   `schema?` / `arguments` / `agent?` / `parent?` / `signal` / `token` / `deferContext()`。两点须注意：
+   - `signal` 是**必填的 caller-owned 取消信号**（同上 `:222-223`）。官方注释要求「异步工作必须观察或
+     转发 `exec.signal`，并只在其 settle 之后结束」（`:112`）；`tools/execute` 包装器可以替换它，
+     但**不能移除**（`:271-277`）。
+   - `agent?` 是发起该调用的 agent（`:211`）。官方 `@deepseek-ai/dsh-agent`
+     （`lib/types/runtime-types.d.ts:139-143`）声明了 `readonly session: Session`，本项目据此用
+     `exec.agent?.session` 取当前会话（`src/runtime/session-var-tools.ts:60`）。
 
 ## 复制协议（跨项目复用）
 

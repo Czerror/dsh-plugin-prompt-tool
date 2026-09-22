@@ -46,6 +46,7 @@ export function registerCharacterTools(ctx: Context, host: CharacterToolHost): (
                   id: { type: 'string', required: true },
                   name: { type: 'string', required: true },
                   description: { type: 'string' },
+                  hasAvatar: { type: 'boolean', required: true },
                   imported: { type: 'boolean', required: true },
                 },
               },

@@ -3,6 +3,7 @@
 //  顶层 DSH_HOME 样板按 harness 统一为一份（见 isolatedHome），两份逐字相同的 findAllNested 合并为一份。
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { readFileSync, readdirSync } from 'node:fs'
 import { parse as parseYaml } from 'yaml'
 import { isolatedHome } from '../fixtures/host-harness.mjs'
 
@@ -11,8 +12,7 @@ const { home } = isolatedHome('pt-params-bridge-')
 const { FIXTURE_PRESET_ID, installFixturePresetInHome } = await import('../fixtures/preset-template.mjs')
 // 夹具装进隔离 DSH_HOME 的官方预设根：本文件用「夹具模板 + renderComposition」替代已下线的 buildCordis 兼容层。
 installFixturePresetInHome(home)
-const { ENGINE_PARAM_DEFINITIONS, buildEngineModuleParams } = await import('../../src/shared/engine-params.ts')
-const { ENGINE_PARAM_KEYS, WRITER_PARAM_KEYS } = await import('../../src/shared/engine-params.ts')
+const { ENGINE_PARAM_DEFINITIONS, ENGINE_PARAM_KEYS, buildEngineModuleParams } = await import('../../src/shared/engine-params.ts')
 const { PARAM_KEYS } = await import('../../src/shared/param-keys.ts')
 const {
   MODEL_SEGMENT_MAP,
@@ -257,7 +257,7 @@ test('参数桥完整性：本地模块行 config 键 ⊆ ALLOWED_KEYS；stageAd
     'context-gate': new Set(['promoteOn', 'includeSubagents', 'enabled', 'allowKinds',
       'messageSources', 'deferredSources', 'deferredGraceSteps', 'instructionHint']),
     'promoted-code-mode': new Set(['usePtcMode', 'includeSubagents', 'promoteOn']),
-    'tool-filter': new Set(['allow', 'deny', 'enabled']),
+    'tool-filter': new Set(['allow', 'deny', 'includeSubagents', 'enabled']),
   }
   const rows = parseYaml(fixtureComposition({
     stages: [{ name: '了解', tools: ['read', 'glob'] }],
@@ -410,19 +410,111 @@ test('PARAM_KEYS 派生一致性：= ENGINE_PARAM_KEYS + promptConfigs', () => {
   assert.equal(PARAM_KEYS.size, ENGINE_PARAM_KEYS.length + EXTRA.size, 'PARAM_KEYS 无重复键')
 })
 
-test('ENGINE_PARAM_KEYS 每个非 writer 键都有参数桥装配消费（防「加键没装配」）', () => {
-  const writerKeys = new Set(WRITER_PARAM_KEYS)
+test('BRIDGE_SAMPLES 覆盖的每个键都必须被参数桥装配消费（防「加键没装配」）', () => {
+  // 原判定是「非 writer 键必须有参数桥消费」，但 WRITER_PARAM_KEYS === ENGINE_PARAM_KEYS
+  // 使该判定恒为真 → 循环体从不执行（守卫空转）。改为按实际样本集校验：
+  // 凡有样本值的引擎键，都必须能被参数桥消费成组合行 config。
   const bridgeConsumed = new Set(Object.keys(buildModuleConfigsFromParams({})))
-  for (const key of ENGINE_PARAM_KEYS) {
-    if (writerKeys.has(key)) continue // writePreset.runtimeOf 透传（模型 patch / prompt-injector 等）。
-    assert.ok(BRIDGE_SAMPLES[key] !== undefined, `${key} 缺测试样本值`)
+  const sampleKeys = Object.keys(BRIDGE_SAMPLES)
+  assert.ok(sampleKeys.length > 0, 'BRIDGE_SAMPLES 不得为空')
+  for (const key of sampleKeys) {
+    assert.ok(ENGINE_PARAM_KEYS.includes(key), `${key} 的样本值应属于引擎参数键`)
     const configs = buildModuleConfigsFromParams({ [key]: BRIDGE_SAMPLES[key] })
     assert.ok(Object.keys(configs).length > 0, `${key} 应被参数桥消费（产出组合行 config）`)
     for (const id of Object.keys(configs)) bridgeConsumed.add(id)
   }
   const allConfigs = buildModuleConfigsFromParams(BRIDGE_SAMPLES)
   assert.ok(Object.hasOwn(allConfigs, 'tool-bootstrap') && Object.hasOwn(allConfigs, 'context-gate'),
-    '参数桥应覆盖核心引擎行；writer 参数仍需由 runtimeOf 透传')
+    '参数桥应覆盖核心引擎行')
+})
+
+test('runtimeOf 保留 ENGINE_PARAM_KEYS 全键透传（输出是 Record<string, unknown>，无类型保护）', () => {
+  // runtimeOf 的返回类型是 Record<string, unknown>：输出键没有类型保护，
+  // 全键透传只靠实现里的 `ENGINE_PARAM_KEYS.map(...)`，删掉它会静默丢参数且 TS 不报错。
+  const runtimeOfBody = readFileSync(new URL('../../src/host/write-preset.ts', import.meta.url), 'utf8')
+    .match(/function runtimeOf\([\s\S]*?\n\}/)?.[0]
+  assert.ok(runtimeOfBody !== undefined, 'write-preset.ts 应可定位 runtimeOf 实现')
+  assert.match(runtimeOfBody, /ENGINE_PARAM_KEYS\.map\(/,
+    'runtimeOf 必须保留 ENGINE_PARAM_KEYS 全键透传')
+  const handled = new Set([...runtimeOfBody.matchAll(/options\.([A-Za-z0-9_]+)/g)].map((match) => match[1]))
+  // 解析型守卫的自证：正则一旦失效，断言不得静默空转。
+  assert.ok(handled.size > 0, 'runtimeOf 显式处理键的解析结果不得为空')
+})
+
+test('装配态回读同样保留 ENGINE_PARAM_KEYS 全键覆盖（index.ts reloadPresetParams）', () => {
+  const reloadBody = readFileSync(new URL('../../src/index.ts', import.meta.url), 'utf8')
+    .match(/const reloadPresetParams = \(\)[\s\S]*?\n  \}/)?.[0]
+  assert.ok(reloadBody !== undefined, 'index.ts 应可定位 reloadPresetParams')
+  assert.match(reloadBody, /for \(const key of ENGINE_PARAM_KEYS\)/,
+    'reloadPresetParams 必须保留 ENGINE_PARAM_KEYS 全键回读（否则预设参数保存后运行时部分键不更新）')
+})
+
+test('组合源 yml 出现的键都有归属：参数目录登记，或该模块自有配置键', () => {
+  // 断言的是「有登记」而非值相等：yml 行默认是运行时真源，
+  // ENGINE_PARAM_DEFINITIONS.defaultValue 只是编辑草稿（见 docs/architecture-params.md）。
+  const localDir = new URL('../../engine/compositions/source/local/', import.meta.url)
+  const ymlFiles = readdirSync(localDir).filter((name) => name.endsWith('.yml'))
+  assert.ok(ymlFiles.length > 0, '本地组合源目录不得为空')
+
+  /** 模块自有配置键（engine/<row>.mjs 的 ALLOWED_KEYS）；无同名模块文件时返回 undefined。 */
+  const ownKeysOf = (rowId) => {
+    let source
+    try {
+      source = readFileSync(new URL(`../../engine/${rowId}.mjs`, import.meta.url), 'utf8')
+    } catch {
+      return undefined
+    }
+    const block = source.match(/const ALLOWED_KEYS = new Set\(\[([\s\S]*?)\]\)/)?.[1]
+    return new Set(block === undefined ? [] : [...block.matchAll(/'([^']+)'/g)].map((match) => match[1]))
+  }
+
+  // 组合源 yml 的顶层是行数组，且行内 config 可再嵌套行数组（delegation 组），故需递归收集。
+  const rows = []
+  const collect = (items) => {
+    for (const item of Array.isArray(items) ? items : []) {
+      if (item === null || typeof item !== 'object' || Array.isArray(item)) continue
+      if (typeof item.id === 'string'
+        && item.config !== null && typeof item.config === 'object' && !Array.isArray(item.config)) {
+        rows.push({ id: item.id, keys: Object.keys(item.config) })
+      }
+      collect(item.config)
+    }
+  }
+  for (const file of ymlFiles) collect(parseYaml(readFileSync(new URL(file, localDir), 'utf8')))
+  assert.ok(rows.length > 0, '组合源 yml 应含至少一个模块行')
+
+  const ownCache = new Map()
+  const unowned = []
+  const skipped = new Set()
+  const pendingWhitelist = new Set()
+  let checked = 0
+  for (const row of rows) {
+    if (!ownCache.has(row.id)) ownCache.set(row.id, ownKeysOf(row.id))
+    const own = ownCache.get(row.id)
+    // 无同名模块文件 = 官方行或改名行（实测：fs-local / str-replace-editor / terminal-bash /
+    // persistent-bash / terminal-pwsh / persistent-pwsh）：其配置键由官方包契约负责，不断言。
+    if (own === undefined) {
+      skipped.add(row.id)
+      continue
+    }
+    // 有同名模块文件但没有 ALLOWED_KEYS（实测：prompt-config-engine / tool-config-engine /
+    // subagent-tool-policy）：这正是 B2 T4「四个无白名单模块补字段声明与校验」的待办对象。
+    // B0 不改引擎行为，故此处只登记；B2 补完白名单后这些行会自然进入下面的严格检查。
+    if (own.size === 0) {
+      pendingWhitelist.add(row.id)
+      continue
+    }
+    for (const key of row.keys) {
+      checked += 1
+      const registered = ENGINE_PARAM_KEYS.some((paramKey) => {
+        const binding = ENGINE_PARAM_DEFINITIONS[paramKey].module
+        return binding?.row === row.id && (binding.key ?? paramKey) === key
+      })
+      if (!registered && !own.has(key)) unowned.push(`${row.id}.${key}`)
+    }
+  }
+  assert.ok(checked > 0, `应检查到组合源 yml 的配置键（否则守卫空转）；跳过：无同名模块文件 ${[...skipped].join(',') || '无'}；待 B2 补白名单 ${[...pendingWhitelist].join(',') || '无'}`)
+  assert.deepEqual(unowned, [], `这些键既未在参数目录登记，也不属于该模块的 ALLOWED_KEYS → 无人拥有（跳过：${[...skipped].join(',') || '无'}；待 B2 T4 补白名单：${[...pendingWhitelist].join(',') || '无'}）`)
 })
 
 test('MODEL_SEGMENT_MAP 显式迁移源唯一，覆盖全部旧模型字段', () => {
